@@ -29,7 +29,7 @@
 - ✅ **钩子方法自动补全 (30+ hooks)**
 
 #### 3. 代码片段
-- ✅ 13 个常用模板
+- ✅ 17 个常用模板
 - ✅ kbe-prop - 基础属性
 - ✅ kbe-vector3 - VECTOR3 属性
 - ✅ kbe-array - 数组属性
@@ -43,6 +43,10 @@
 - ✅ kbe-method-multi - 多参数方法
 - ✅ kbe-comment - 注释模板
 - ✅ kbe-entity-reg - 实体注册
+- ✅ kbe-hot-reload-entity - 实体热更新
+- ✅ kbe-hot-reload-script - 脚本热更新
+- ✅ kbe-hot-reload-best-practice - 热更新最佳实践
+- ✅ kbe-is-reload - 检查热更新状态
 
 #### 4. 悬停文档
 - ✅ 类型详细说明
@@ -73,6 +77,49 @@
 - ✅ 完整的钩子数据 (src/hooks.ts)
 - ✅ 智能提示支持
 - ✅ 悬停文档支持
+
+#### 9. 热更新支持 ⭐ 新增
+- ✅ 4 个热更新代码片段
+- ✅ KBEngine.reloadEntityDef() 智能提示
+- ✅ KBEngine.isReload() 状态检查
+- ✅ importlib.reload() Python 脚本热更新
+- ✅ 完整的悬停文档和示例
+
+#### 10. 服务器管理 ⭐ 新增
+- ✅ 9 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots）
+- ✅ 启动/停止/重启控制
+- ✅ 实时状态显示
+- ✅ 进程 PID 显示
+- ✅ 组件独立日志输出
+- ✅ 状态栏集成
+- ✅ 源码：src/serverManager.ts
+
+#### 11. 日志查看集成 ⭐ 新增
+- ✅ 实时日志收集（连接 logger.exe 端口 20022）
+- ✅ 日志解析器（文本和二进制格式）
+- ✅ WebView 可视化界面
+- ✅ 多级过滤（级别、组件、关键词）
+- ✅ 正则表达式搜索
+- ✅ 日志导出（txt/log/json）
+- ✅ 彩色日志级别显示
+- ✅ 源码：src/logCollector.ts, src/logParser.ts, src/logWebView.ts
+
+#### 12. Python 调试支持 ⭐ 新增
+- ✅ 自定义调试配置（.kbengine/debug.json）
+- ✅ 组件特定调试设置
+- ✅ 自动生成 launch.json 配置
+- ✅ 支持启动调试和附加到进程
+- ✅ 路径映射和环境变量
+- ✅ 源码：src/debugConfig.ts
+
+#### 13. 监控面板 ⭐ 新增
+- ✅ 实时性能数据收集
+- ✅ CPU、内存、网络、实体数量监控
+- ✅ 系统概览卡片
+- ✅ 组件详细指标卡片
+- ✅ 可视化图表（Chart.js）
+- ✅ 数据导出（JSON）
+- ✅ 源码：src/monitoringCollector.ts, src/monitoringWebView.ts
 
 ### 📚 文档
 - ✅ README.md - 项目说明
@@ -109,7 +156,14 @@ kode/
 │   └── kbengine.json        # 代码片段 (13个)
 ├── src/
 │   ├── extension.ts         # 主扩展文件
-│   └── hooks.ts             # 钩子数据 (30+ hooks)
+│   ├── hooks.ts             # 钩子数据 (30+ hooks)
+│   ├── serverManager.ts     # 服务器管理器
+│   ├── logCollector.ts      # 日志收集器
+│   ├── logParser.ts         # 日志解析器
+│   ├── logWebView.ts        # 日志 WebView
+│   ├── debugConfig.ts       # 调试配置管理器
+│   ├── monitoringCollector.ts # 监控数据收集器
+│   └── monitoringWebView.ts  # 监控面板 WebView
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── .gitignore
