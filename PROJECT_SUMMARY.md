@@ -121,6 +121,15 @@
 - ✅ 数据导出（JSON）
 - ✅ 源码：src/monitoringCollector.ts, src/monitoringWebView.ts
 
+#### 14. Python ↔ Def 双向跳转 ⭐ 新增
+- ✅ 实体定义映射管理器
+- ✅ 从 .def 跳转到 Python（已有）
+- ✅ **从 Python 跳转回 .def 文件**
+- ✅ **Python 文件智能提示（属性和方法）**
+- ✅ 自动扫描 .def 文件和 Python 文件
+- ✅ 支持多个 Python 路径配置
+- ✅ 源码：src/entityMapping.ts
+
 ### 📚 文档
 - ✅ README.md - 项目说明
 - ✅ CHANGELOG.md - 变更日志
@@ -163,7 +172,8 @@ kode/
 │   ├── logWebView.ts        # 日志 WebView
 │   ├── debugConfig.ts       # 调试配置管理器
 │   ├── monitoringCollector.ts # 监控数据收集器
-│   └── monitoringWebView.ts  # 监控面板 WebView
+│   ├── monitoringWebView.ts  # 监控面板 WebView
+│   └── entityMapping.ts     # Python-Def 映射管理器
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── .gitignore
@@ -256,11 +266,11 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 📈 统计数据
 
-- **代码文件**: 2 个 TypeScript 文件
+- **代码文件**: 10 个 TypeScript 文件
 - **钩子数量**: 30+ 个
-- **代码片段**: 13 个
+- **代码片段**: 17 个
 - **文档页数**: 5 个
-- **总行数**: 1000+ 行
+- **总行数**: 4000+ 行
 
 ---
 

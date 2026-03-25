@@ -270,6 +270,22 @@
           "type": "boolean",
           "default": false,
           "description": "启动组件时自动附加调试器"
+        },
+        "kbengine.pythonDefsPath": {
+          "type": "array",
+          "default": [
+            "assets/scripts/entity_defs",
+            "scripts/entity_defs"
+          ],
+          "description": "生成的 Python 实体定义文件搜索路径（相对于工作区根目录）",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kbengine.enablePythonNavigation": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用从生成的 Python 文件跳转到 .def 文件的功能"
         }
       }
     }

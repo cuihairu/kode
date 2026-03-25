@@ -8,6 +8,7 @@ import { LogViewerWebView } from './logWebView';
 import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
+import { EntityMappingManager } from './entityMapping';
 
 /**
  * Kode - KBEngine Development Environment
@@ -123,12 +124,30 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(hoverProvider);
 
-  // 注册定义跳转提供者
+  // 注册定义跳转提供者（.def 文件）
   const definitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'kbengine-def', scheme: 'file' },
     new KBEngineDefinitionProvider()
   );
   context.subscriptions.push(definitionProvider);
+
+  // 初始化实体映射管理器
+  const entityMappingManager = new EntityMappingManager(context);
+
+  // 注册 Python 文件的定义提供者（Python → .def 跳转）
+  const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
+    { language: 'python', scheme: 'file' },
+    new PythonDefinitionProvider(entityMappingManager)
+  );
+  context.subscriptions.push(pythonDefinitionProvider);
+
+  // 注册 Python 文件的智能提示提供者（提供来自 .def 的属性和方法）
+  const pythonCompletionProvider = vscode.languages.registerCompletionItemProvider(
+    { language: 'python', scheme: 'file' },
+    new PythonCompletionProvider(entityMappingManager),
+    '.' // 输入 . 时触发
+  );
+  context.subscriptions.push(pythonCompletionProvider);
 
   // 注册诊断检查器
   const diagnostics = vscode.languages.createDiagnosticCollection('kbengine');
@@ -388,6 +407,7 @@ export function activate(context: vscode.ExtensionContext) {
       debugConfigManager.dispose();
       monitoringWebView.dispose();
       monitoringCollector.dispose();
+      entityMappingManager.dispose();
     }
   });
 }
@@ -842,6 +862,120 @@ class ServerControlProvider implements vscode.TreeDataProvider<ServerTreeItem> {
 
       return new ServerTreeItem(component, status, pid);
     });
+  }
+}
+
+/**
+ * Python 文件定义提供者
+ * 从生成的 Python 文件跳转回 .def 文件
+ */
+class PythonDefinitionProvider implements vscode.DefinitionProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  provideDefinition(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.Location | vscode.Location[]> {
+
+    const range = document.getWordRangeAtPosition(position, /[\w.]+/);
+    if (!range) {
+      return null;
+    }
+
+    const word = document.getText(range);
+    const line = document.lineAt(position.line);
+    const lineText = line.text;
+
+    // 获取实体名称（从文件名推断）
+    const entityName = path.basename(document.fileName, '.py');
+
+    // 检查是否在访问属性或方法
+    // 例如: self.propertyName, self.methodName()
+    const propertyMatch = lineText.match(/self\.(\w+)/);
+    if (propertyMatch) {
+      const symbolName = propertyMatch[1];
+
+      // 尝试作为属性查找
+      const mapping = this.entityMappingManager.getMapping(entityName);
+      if (mapping) {
+        // 检查是否是属性
+        if (mapping.properties[symbolName]) {
+          const location = mapping.properties[symbolName];
+          return new vscode.Location(
+            vscode.Uri.file(location.defFile),
+            new vscode.Position(location.line - 1, 0)
+          );
+        }
+
+        // 检查是否是方法
+        if (mapping.methods[symbolName]) {
+          const location = mapping.methods[symbolName];
+          return new vscode.Location(
+            vscode.Uri.file(location.defFile),
+            new vscode.Position(location.line - 1, 0)
+          );
+        }
+      }
+    }
+
+    return null;
+  }
+}
+
+/**
+ * Python 文件智能提示提供者
+ * 提供 .def 文件中定义的属性和方法
+ */
+class PythonCompletionProvider implements vscode.CompletionItemProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  provideCompletionItems(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+
+    const line = document.lineAt(position.line);
+    const lineText = line.text.substring(0, position.character);
+
+    // 检查是否在输入 self.xxx
+    const selfMatch = lineText.match(/self\.(\w*)$/);
+    if (!selfMatch) {
+      return null;
+    }
+
+    // 获取实体名称
+    const entityName = path.basename(document.fileName, '.py');
+    const mapping = this.entityMappingManager.getMapping(entityName);
+
+    if (!mapping) {
+      return null;
+    }
+
+    const items: vscode.CompletionItem[] = [];
+
+    // 添加属性提示
+    for (const [propName, propInfo] of Object.entries(mapping.properties)) {
+      const item = new vscode.CompletionItem(propName, vscode.CompletionItemKind.Property);
+      item.detail = 'Entity Property';
+      item.documentation = new vscode.MarkdownString(
+        `定义于: \`${path.basename(propInfo.defFile)}:${propInfo.line}\`\n\n从 .def 文件自动生成的实体属性。`
+      );
+      items.push(item);
+    }
+
+    // 添加方法提示
+    for (const [methodName, methodInfo] of Object.entries(mapping.methods)) {
+      const item = new vscode.CompletionItem(methodName, vscode.CompletionItemKind.Method);
+      item.detail = 'Entity Method';
+      item.documentation = new vscode.MarkdownString(
+        `定义于: \`${path.basename(methodInfo.defFile)}:${methodInfo.line}\`\n\n从 .def 文件自动生成的实体方法。`
+      );
+      items.push(item);
+    }
+
+    return items;
   }
 }
 
