@@ -3,7 +3,7 @@
 **版本**: 0.1.0
 **状态**: 核心功能已完成
 **总代码行数**: 7000+ 行
-**文件数量**: 13 个 TypeScript 文件
+**文件数量**: 16 个 TypeScript 文件
 
 ---
 
@@ -22,7 +22,7 @@
 - DetailLevel 提示
 - XML 标签提示
 - 钩子方法自动补全 (30+ hooks)
-- **源代码**: `src/extension.ts` (KBEngineCompletionProvider)
+- **源代码**: `src/languageProviders.ts` (KBEngineCompletionProvider)
 
 ### 3. 代码片段
 - 17 个常用模板
@@ -36,23 +36,23 @@
 - 类型详细说明
 - Flags 用途解释
 - 钩子完整文档（调用时机、函数签名、使用示例、源码位置）
-- **源代码**: `src/extension.ts` (KBEngineHoverProvider)
+- **源代码**: `src/languageProviders.ts` (KBEngineHoverProvider)
 
 ### 5. 跳转定义
 - 从 entities.xml 跳转到 .def 文件
-- **源代码**: `src/extension.ts` (KBEngineDefinitionProvider)
+- **源代码**: `src/languageProviders.ts` (KBEngineDefinitionProvider)
 
 ### 6. 语法检查
 - 实时语法验证
 - Flags 组合冲突检测 (BASE + CELL)
 - 类型有效性检查
-- **源代码**: `src/extension.ts` (validateDocument)
+- **源代码**: `src/languageProviders.ts` (validateDocument)
 
 ### 7. 实体浏览器
 - 侧边栏显示所有实体
 - 实体类型标识（Cell/Base/Client）
 - 快速导航到 .def 文件
-- **源代码**: `src/extension.ts` (EntityExplorerProvider)
+- **源代码**: `src/explorerProviders.ts` (EntityExplorerProvider)
 
 ### 8. 钩子系统
 - 30+ KBEngine 钩子
@@ -65,7 +65,7 @@
 - KBEngine.isReload() 状态检查
 - importlib.reload() Python 脚本热更新
 - 完整的悬停文档和示例
-- **源代码**: `src/extension.ts` (KBENGINE_RELOAD_FUNCTIONS)
+- **源代码**: `src/kbengineMetadata.ts`, `src/languageProviders.ts`
 
 ### 10. 服务器管理
 - 9 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots）
@@ -137,6 +137,9 @@
 kode/
 ├── src/
 │   ├── extension.ts              # 主扩展文件
+│   ├── languageProviders.ts      # 语言能力
+│   ├── explorerProviders.ts      # 树视图与导航
+│   ├── kbengineMetadata.ts       # KBEngine 元数据
 │   ├── hooks.ts                  # 钩子数据 (30+ hooks)
 │   ├── serverManager.ts          # 服务器管理器
 │   ├── logCollector.ts           # 日志收集器
@@ -162,7 +165,7 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 13 个 |
+| TypeScript 文件 | 16 个 |
 | 钩子数量 | 30+ 个 |
 | 代码片段 | 17 个 |
 | 文档页数 | 5 个 |

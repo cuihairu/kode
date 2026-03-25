@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- VuePress documentation site under `docs/`
+- Detailed configuration reference for all `kbengine.*` settings
+- Entity explorer navigation command for opening `.def` files directly
+- Dependency graph export support for SVG and PNG
+- Entity definition navigation inside `.def` files
+
+### Changed
+- Refactored language support code into focused modules
+- Enhanced `.def` syntax highlighting with KBEngine-specific semantic scopes
+- Expanded hover support for tags, values, and custom symbols
+- Made hover and diagnostics behavior configurable
+
 ### Planned
-- Python integration (jump from Python to .def)
-- Entity dependency graph visualization
 - Refactoring support (rename properties/methods)
-- Code generator for entity templates
 - Performance analysis suggestions
+- More entity templates and snippet generation tooling
 
 ## [0.1.0] - 2026-03-25
 

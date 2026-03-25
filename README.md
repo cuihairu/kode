@@ -28,7 +28,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ **钩子方法自动补全 (30+ hooks)**
 
 ### 📝 代码片段
-- ✅ 13 个常用代码模板
+- ✅ 17 个常用代码模板
 - ✅ 一键插入属性定义
 - ✅ 快速生成方法定义
 
@@ -78,7 +78,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ WebView 可视化界面
 - ✅ 多级过滤（级别、组件、关键词）
 - ✅ 正则表达式搜索
-- ✅ 日志导出（txt/log 格式）
+- ✅ 日志导出（txt/log/json 格式）
 - ✅ 彩色日志级别显示
 
 ### 🐛 Python 调试支持
@@ -98,7 +98,6 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ### 🔗 Python ↔ Def 双向跳转
 - ✅ 实体定义映射管理器
-- ✅ 从 .def 文件跳转到生成的 Python 文件
 - ✅ 从生成的 Python 文件跳转回 .def 定义
 - ✅ Python 文件智能提示（自动补全属性和方法）
 - ✅ 自动扫描和建立映射关系
@@ -151,6 +150,19 @@ pnpm run package
 code --install-extension kode-0.1.0.vsix
 ```
 
+## 📘 文档
+
+- 配置与使用文档位于 [docs/](./docs/)
+- 配置说明重点见 [docs/guide/configuration.md](./docs/guide/configuration.md)
+- 本项目已添加 VuePress 文档骨架，可通过 `pnpm run docs:dev` 本地预览
+
+## 🔖 版本策略
+
+当前阶段默认沿用 `0.1.x` 作为修复与完善版本线。
+
+- 修复问题、补充文档、增强现有功能：继续使用 `0.1.x`
+- 只有在出现明确的新阶段功能升级时，才考虑提升到 `0.2.0`
+
 ## 📸 截图
 
 ### 语法高亮和智能提示
@@ -195,7 +207,11 @@ code .
 ```
 kode/
 ├── src/
-│   └── extension.ts              # 主入口文件
+│   ├── extension.ts              # 主入口文件
+│   ├── languageProviders.ts      # 语言能力
+│   ├── explorerProviders.ts      # 树视图与导航
+│   ├── kbengineMetadata.ts       # KBEngine 元数据
+│   └── ...
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── snippets/
@@ -220,12 +236,16 @@ pnpm run compile
 
 # 监听模式编译
 pnpm run watch
+
+# 文档
+pnpm run docs:dev
 ```
 
 ## 📖 使用文档
 
 详细的使用文档和开发指南，请查看：
 
+- [VuePress 文档](./docs/README.md) - 新版文档入口
 - [设计文档](./resources/docs/vscode-extension-design.md) - 完整的设计方案
 - [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
 - [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计
