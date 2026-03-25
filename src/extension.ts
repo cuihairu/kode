@@ -511,7 +511,7 @@ class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTreeItem> 
       entities.push(new EntityTreeItem(
         entityName,
         description.join(', '),
-        vscode.TreeItemKind.CollapsibleState.Collapsed
+        vscode.TreeItemCollapsibleState.Collapsed
       ));
     }
 
