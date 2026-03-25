@@ -9,6 +9,7 @@
     "email": "cuihairu@gmail.com"
   },
   "license": "Apache-2.0",
+  "icon": "resources/logo.png",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -50,7 +51,7 @@
       "activitybar": [{
         "id": "kbengine-explorer",
         "title": "KBEngine Explorer",
-        "icon": "resources/kbengine-icon.svg"
+        "icon": "resources/logo.png"
       }]
     },
     "views": {
