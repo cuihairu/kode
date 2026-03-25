@@ -1,7 +1,7 @@
 module.exports = {
   title: 'Kode',
   description: 'KBEngine VSCode Extension Documentation',
-  base: '/',
+  base: process.env.GITHUB_ACTIONS ? '/kode/' : '/',
   head: [
     ['meta', { name: 'theme-color', content: '#1f6feb' }],
     ['meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }],
