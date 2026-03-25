@@ -130,6 +130,15 @@
 - ✅ 支持多个 Python 路径配置
 - ✅ 源码：src/entityMapping.ts
 
+#### 15. 实体依赖关系图 ⭐ 新增
+- ✅ 自动分析实体继承关系
+- ✅ 可视化实体依赖图（Mermaid.js）
+- ✅ 支持继承关系显示
+- ✅ 统计信息面板（实体数量、最大深度等）
+- ✅ 从图跳转到实体定义文件
+- ✅ 支持导出图表（PNG/SVG）
+- ✅ 源码：src/entityDependency.ts, src/entityDependencyWebView.ts
+
 ### 📚 文档
 - ✅ README.md - 项目说明
 - ✅ CHANGELOG.md - 变更日志
@@ -173,7 +182,9 @@ kode/
 │   ├── debugConfig.ts       # 调试配置管理器
 │   ├── monitoringCollector.ts # 监控数据收集器
 │   ├── monitoringWebView.ts  # 监控面板 WebView
-│   └── entityMapping.ts     # Python-Def 映射管理器
+│   ├── entityMapping.ts     # Python-Def 映射管理器
+│   ├── entityDependency.ts  # 实体依赖分析器
+│   └── entityDependencyWebView.ts # 依赖图 WebView
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── .gitignore
@@ -232,8 +243,8 @@ kode/
 - [ ] 发布到 VSCode Marketplace
 
 ### 未来功能
-- [ ] Python 集成 (从 Python 跳转到 .def)
-- [ ] 实体依赖关系图
+- [x] Python 集成 (从 Python 跳转到 .def) ✅ 已完成
+- [x] 实体依赖关系图 ✅ 已完成
 - [ ] 重构支持 (重命名属性/方法)
 - [ ] 代码生成器
 - [ ] 性能分析建议
@@ -266,11 +277,11 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 📈 统计数据
 
-- **代码文件**: 10 个 TypeScript 文件
+- **代码文件**: 12 个 TypeScript 文件
 - **钩子数量**: 30+ 个
 - **代码片段**: 17 个
 - **文档页数**: 5 个
-- **总行数**: 4000+ 行
+- **总行数**: 5500+ 行
 
 ---
 

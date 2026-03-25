@@ -156,6 +156,11 @@
         "command": "kbengine.monitoring.show",
         "title": "Show Monitoring Panel",
         "icon": "$(graph)"
+      },
+      {
+        "command": "kbengine.dependency.show",
+        "title": "Show Entity Dependency Graph",
+        "icon": "$(graph-scatter)"
       }
     ],
     "menus": {

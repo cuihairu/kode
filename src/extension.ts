@@ -9,6 +9,7 @@ import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { EntityMappingManager } from './entityMapping';
+import { EntityDependencyWebView } from './entityDependencyWebView';
 
 /**
  * Kode - KBEngine Development Environment
@@ -376,6 +377,17 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(showMonitoringCommand);
 
+  // 初始化实体依赖关系图
+  const outputChannel = vscode.window.createOutputChannel('KBEngine Dependency');
+  const dependencyWebView = new EntityDependencyWebView(context, outputChannel);
+
+  // 注册依赖关系相关命令
+  const showDependencyCommand = vscode.commands.registerCommand(
+    'kbengine.dependency.show',
+    () => dependencyWebView.show()
+  );
+  context.subscriptions.push(showDependencyCommand);
+
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'kbengine.serverControl';
@@ -408,6 +420,8 @@ export function activate(context: vscode.ExtensionContext) {
       monitoringWebView.dispose();
       monitoringCollector.dispose();
       entityMappingManager.dispose();
+      dependencyWebView.dispose();
+      outputChannel.dispose();
     }
   });
 }
