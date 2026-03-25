@@ -54,6 +54,13 @@
         "path": "./syntaxes/kbengine.tmLanguage.json"
       }
     ],
+    "themes": [
+      {
+        "label": "KBEngine Dark",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/kbengine-color-theme.json"
+      }
+    ],
     "snippets": [
       {
         "language": "kbengine-def",

@@ -1,0 +1,170 @@
+{
+  "name": "KBEngine Dark",
+  "colors": {
+    "editor.background": "#1e1e1e",
+    "editor.foreground": "#d4d4d4",
+    "activityBarBadge.background": "#007acc",
+    "sideBarTitle.foreground": "#bbbbbb"
+  },
+  "tokenColors": [
+    {
+      "name": "Comments",
+      "scope": ["comment", "punctuation.definition.comment"],
+      "settings": {
+        "foreground": "#6A9955",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "String",
+      "scope": ["string.quoted.double.xml", "string.quoted.single.xml"],
+      "settings": {
+        "foreground": "#ce9178"
+      }
+    },
+    {
+      "name": "KBEngine Integer Types",
+      "scope": "support.type.primitive.integer.kbengine",
+      "settings": {
+        "foreground": "#4ec9b0",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Float Types",
+      "scope": "support.type.primitive.float.kbengine",
+      "settings": {
+        "foreground": "#b5cea8",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Boolean",
+      "scope": "support.type.primitive.boolean.kbengine",
+      "settings": {
+        "foreground": "#569cd6",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine String",
+      "scope": "support.type.primitive.string.kbengine",
+      "settings": {
+        "foreground": "#ce9178",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Vector Types",
+      "scope": "support.type.vector.kbengine",
+      "settings": {
+        "foreground": "#4ec9b0",
+        "fontStyle": "italic bold"
+      }
+    },
+    {
+      "name": "KBEngine Reference",
+      "scope": "support.type.reference.kbengine",
+      "settings": {
+        "foreground": "#dcdcaa",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Container Types",
+      "scope": "support.type.container.kbengine",
+      "settings": {
+        "foreground": "#dcdcaa",
+        "fontStyle": "italic bold"
+      }
+    },
+    {
+      "name": "KBEngine Python",
+      "scope": "support.type.python.kbengine",
+      "settings": {
+        "foreground": "#4ec9b0"
+      }
+    },
+    {
+      "name": "KBEngine Flags",
+      "scope": "constant.language.flag.kbengine",
+      "settings": {
+        "foreground": "#C586C0",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Detail Level",
+      "scope": "support.constant.detail-level.kbengine",
+      "settings": {
+        "foreground": "#d7ba7d",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Keywords",
+      "scope": ["keyword.control.kbengine", "keyword.declaration.flag.kbengine"],
+      "settings": {
+        "foreground": "#569cd6",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Entity Names",
+      "scope": ["entity.name.function.xml", "entity.name.tag.localname.xml"],
+      "settings": {
+        "foreground": "#DCDCAA",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "XML Tag Punctuation",
+      "scope": ["punctuation.definition.tag.begin.xml", "punctuation.definition.tag.end.xml"],
+      "settings": {
+        "foreground": "#808080"
+      }
+    },
+    {
+      "name": "XML Attribute Names",
+      "scope": "entity.other.attribute-name.xml",
+      "settings": {
+        "foreground": "#9CDCFE"
+      }
+    },
+    {
+      "name": "XML Attribute Values",
+      "scope": "string.quoted.double.xml",
+      "settings": {
+        "foreground": "#CE9178"
+      }
+    },
+    {
+      "name": "KBEngine Numbers",
+      "scope": ["constant.numeric.xml", "support.type.numeric.kbengine"],
+      "settings": {
+        "foreground": "#b5cea8"
+      }
+    },
+    {
+      "name": "KBEngine Constants",
+      "scope": ["constant.language.xml", "constant.other.flag.kbengine"],
+      "settings": {
+        "foreground": "#569cd6"
+      }
+    },
+    {
+      "name": "KBEngine Storage Types",
+      "scope": ["storage.type.*.kbengine"],
+      "settings": {
+        "foreground": "#569cd6"
+      }
+    },
+    {
+      "name": "KBEngine Operators",
+      "scope": "keyword.operator.xml",
+      "settings": {
+        "foreground": "#d4d4d4"
+      }
+    }
+  ]
+}
