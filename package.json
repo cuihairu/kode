@@ -151,6 +151,11 @@
         "command": "kbengine.debug.createConfig",
         "title": "Create Debug Config Template",
         "icon": "$(file-create)"
+      },
+      {
+        "command": "kbengine.monitoring.show",
+        "title": "Show Monitoring Panel",
+        "icon": "$(graph)"
       }
     ],
     "menus": {

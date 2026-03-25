@@ -6,6 +6,8 @@ import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './server
 import { KBEngineLogCollector, CollectorStatus, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
 import { DebugConfigManager } from './debugConfig';
+import { MonitoringWebView } from './monitoringWebView';
+import { MonitoringCollector } from './monitoringCollector';
 
 /**
  * Kode - KBEngine Development Environment
@@ -344,6 +346,17 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(attachToComponentCommand);
 
+  // 初始化监控面板
+  const monitoringCollector = new MonitoringCollector(context);
+  const monitoringWebView = new MonitoringWebView(context, monitoringCollector);
+
+  // 注册监控相关命令
+  const showMonitoringCommand = vscode.commands.registerCommand(
+    'kbengine.monitoring.show',
+    () => monitoringWebView.show()
+  );
+  context.subscriptions.push(showMonitoringCommand);
+
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'kbengine.serverControl';
@@ -373,6 +386,8 @@ export function activate(context: vscode.ExtensionContext) {
       logCollector.dispose();
       logViewer.dispose();
       debugConfigManager.dispose();
+      monitoringWebView.dispose();
+      monitoringCollector.dispose();
     }
   });
 }
