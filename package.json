@@ -354,8 +354,8 @@
     "pretest": "pnpm run compile",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "pnpm run compile && vsce package --no-yarn",
-    "publish": "vsce publish --no-yarn"
+    "package": "pnpm run compile && vsce package --no-yarn --no-dependencies",
+    "publish": "vsce publish --no-yarn --no-dependencies"
   },
   "devDependencies": {
     "@types/glob": "^7.1.3",

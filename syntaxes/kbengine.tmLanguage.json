@@ -2,76 +2,117 @@
   "scopeName": "source.kbengine-def",
   "patterns": [
     {
-      "include": "#root-element"
+      "include": "#xml-syntax"
     }
   ],
   "repository": {
-    "root-element": {
+    "xml-syntax": {
       "patterns": [
         {
-          "name": "meta.tag.xml",
-          "begin": "(<>)",
-          "end": "(</>)",
-          "patterns": [
-            {
-              "include": "#properties-section"
-            },
-            {
-              "include": "#client-methods-section"
-            },
-            {
-              "include": "#base-methods-section"
-            },
-            {
-              "include": "#cell-methods-section"
-            }
-          ]
+          "include": "#comment"
+        },
+        {
+          "include": "#doctype"
+        },
+        {
+          "include": "#tag-opening"
+        },
+        {
+          "include": "#tag-closing"
+        },
+        {
+          "include": "#kbengine-types"
+        },
+        {
+          "include": "#kbengine-flags"
         }
       ]
     },
-    "properties-section": {
-      "begin": "(<Properties>)",
-      "end": "(</Properties>)",
-      "name": "meta.section.properties.xml",
+    "comment": {
+      "name": "comment.block.xml",
+      "begin": "<!--",
+      "end": "-->",
       "patterns": [
         {
-          "include": "#property-definition"
+          "match": "--",
+          "name": "invalid.illegal.bad-comments-or-CDATA.xml"
         }
       ]
     },
-    "property-definition": {
-      "begin": "(<[A-Za-z_][A-Za-z0-9_]*>)",
-      "end": "(</[A-Za-z_][A-Za-z0-9_]*>)",
-      "name": "meta.property.definition.xml",
+    "doctype": {
+      "name": "meta.tag.sgml.doctype.xml",
+      "begin": "<!DOCTYPE",
+      "end": ">",
+      "captures": {
+        "0": {
+          "name": "punctuation.definition.tag.xml"
+        }
+      }
+    },
+    "tag-opening": {
+      "name": "meta.tag.xml",
+      "begin": "(<)([A-Za-z0-9_]+)",
+      "end": "(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.xml"
+        },
+        "2": {
+          "name": "entity.name.tag.xml"
+        }
+      },
       "patterns": [
         {
-          "include": "#property-type"
-        },
-        {
-          "include": "#property-flags"
-        },
-        {
-          "include": "#property-default"
-        },
-        {
-          "include": "#property-database"
-        },
-        {
-          "include": "#property-identifier"
-        },
-        {
-          "include": "#property-detail-level"
+          "include": "#attribute"
         }
       ]
     },
-    "property-type": {
-      "begin": "(<Type>)",
-      "end": "(</Type>)",
-      "name": "meta.property.type.xml",
+    "tag-closing": {
+      "name": "meta.tag.xml",
+      "begin": "(</)([A-Za-z0-9_]+)",
+      "end": "(>)",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.begin.xml"
+        },
+        "2": {
+          "name": "entity.name.tag.xml"
+        },
+        "3": {
+          "name": "punctuation.definition.tag.end.xml"
+        }
+      }
+    },
+    "attribute": {
+      "name": "entity.other.attribute-name.xml",
+      "match": "\\b([A-Za-z0-9_-]+)\\b(?=\\s*\\=)",
+      "captures": {
+        "1": {
+          "name": "entity.other.attribute-name.xml"
+        }
+      }
+    },
+    "kbengine-types": {
       "patterns": [
         {
-          "match": "\\b(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|BOOL|STRING|VECTOR2|VECTOR3|VECTOR4|MAILBOX)\\b",
+          "match": "\\b(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64)\\b",
+          "name": "support.type.primitive.integer.kbengine"
+        },
+        {
+          "match": "\\b(FLOAT|DOUBLE)\\b",
+          "name": "support.type.primitive.float.kbengine"
+        },
+        {
+          "match": "\\b(BOOL|STRING)\\b",
           "name": "support.type.primitive.kbengine"
+        },
+        {
+          "match": "\\b(VECTOR2|VECTOR3|VECTOR4)\\b",
+          "name": "support.type.vector.kbengine"
+        },
+        {
+          "match": "\\b(MAILBOX)\\b",
+          "name": "support.type.reference.kbengine"
         },
         {
           "match": "\\b(ARRAY|FIXED_DICT|TUPLE)\\b",
@@ -79,107 +120,43 @@
         }
       ]
     },
-    "property-flags": {
-      "begin": "(<Flags>)",
-      "end": "(</Flags>)",
-      "name": "meta.property.flags.xml",
+    "kbengine-flags": {
       "patterns": [
         {
-          "match": "\\b(BASE|CLIENT|CELL_PUBLIC|CELL_PRIVATE|ALL_CLIENTS|OWN_CLIENT|BASE_CLIENT|CELL_PUBLIC_AND_PRIVATE)\\b",
-          "name": "constant.other.flag.kbengine"
-        }
-      ]
-    },
-    "property-default": {
-      "begin": "(<Default>)",
-      "end": "(</Default>)",
-      "name": "meta.property.default.xml"
-    },
-    "property-database": {
-      "begin": "(<Database>)",
-      "end": "(</Database>)",
-      "name": "meta.property.database.xml",
-      "patterns": [
+          "match": "\\b(BASE)\\b",
+          "name": "constant.language.flag.base.kbengine"
+        },
         {
-          "match": "\\b\\d+\\b",
-          "name": "constant.numeric.integer.kbengine"
-        }
-      ]
-    },
-    "property-identifier": {
-      "begin": "(<Identifier>)",
-      "end": "(</Identifier>)",
-      "name": "meta.property.identifier.xml",
-      "patterns": [
+          "match": "\\b(CLIENT)\\b",
+          "name": "constant.language.flag.client.kbengine"
+        },
         {
-          "match": "\\b\\d+\\b",
-          "name": "constant.numeric.integer.kbengine"
-        }
-      ]
-    },
-    "property-detail-level": {
-      "begin": "(<DetailLevel>)",
-      "end": "(</DetailLevel>)",
-      "name": "meta.property.detail-level.xml",
-      "patterns": [
+          "match": "\\b(CELL_PUBLIC)\\b",
+          "name": "constant.language.flag.cell-public.kbengine"
+        },
+        {
+          "match": "\\b(CELL_PRIVATE)\\b",
+          "name": "constant.language.flag.cell-private.kbengine"
+        },
+        {
+          "match": "\\b(CELL_PUBLIC_AND_PRIVATE)\\b",
+          "name": "constant.language.flag.cell-both.kbengine"
+        },
+        {
+          "match": "\\b(ALL_CLIENTS)\\b",
+          "name": "constant.language.flag.all-clients.kbengine"
+        },
+        {
+          "match": "\\b(OWN_CLIENT)\\b",
+          "name": "constant.language.flag.own-client.kbengine"
+        },
+        {
+          "match": "\\b(BASE_CLIENT)\\b",
+          "name": "constant.language.flag.base-client.kbengine"
+        },
         {
           "match": "\\b(LOW|MEDIUM|HIGH|CRITICAL)\\b",
-          "name": "constant.other.detail-level.kbengine"
-        }
-      ]
-    },
-    "client-methods-section": {
-      "begin": "(<ClientMethods>)",
-      "end": "(</ClientMethods>)",
-      "name": "meta.section.client-methods.xml",
-      "patterns": [
-        {
-          "include": "#method-definition"
-        }
-      ]
-    },
-    "base-methods-section": {
-      "begin": "(<BaseMethods>)",
-      "end": "(</BaseMethods>)",
-      "name": "meta.section.base-methods.xml",
-      "patterns": [
-        {
-          "include": "#method-definition"
-        }
-      ]
-    },
-    "cell-methods-section": {
-      "begin": "(<CellMethods>)",
-      "end": "(</CellMethods>)",
-      "name": "meta.section.cell-methods.xml",
-      "patterns": [
-        {
-          "include": "#method-definition"
-        }
-      ]
-    },
-    "method-definition": {
-      "begin": "(<[A-Za-z_][A-Za-z0-9_]*>)",
-      "end": "(</[A-Za-z_][A-Za-z0-9_]*>)",
-      "name": "meta.method.definition.xml",
-      "patterns": [
-        {
-          "include": "#method-arg"
-        }
-      ]
-    },
-    "method-arg": {
-      "begin": "(<Arg>)",
-      "end": "(</Arg>)",
-      "name": "meta.method.arg.xml",
-      "patterns": [
-        {
-          "match": "\\b(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|BOOL|STRING|VECTOR2|VECTOR3|VECTOR4|MAILBOX)\\b",
-          "name": "support.type.primitive.kbengine"
-        },
-        {
-          "match": "\\b(ARRAY|FIXED_DICT|TUPLE)\\b",
-          "name": "support.type.container.kbengine"
+          "name": "constant.language.detail-level.kbengine"
         }
       ]
     }
