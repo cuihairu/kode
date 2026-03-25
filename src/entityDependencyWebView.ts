@@ -13,6 +13,7 @@ export class EntityDependencyWebView {
   private panel: vscode.WebviewPanel | null = null;
   private analyzer: EntityDependencyAnalyzer;
   private currentGraph: DependencyGraph | null = null;
+  private pendingExport: { format: 'png' | 'svg'; uri: vscode.Uri } | null = null;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -57,6 +58,9 @@ export class EntityDependencyWebView {
             break;
           case 'export':
             await this.exportGraph(message.format);
+            break;
+          case 'exportData':
+            await this.saveExportedGraph(message.format, message.data);
             break;
         }
       },
@@ -330,6 +334,8 @@ ${mermaidGraph}
   </div>
 
   <script>
+    const vscode = acquireVsCodeApi();
+
     // 初始化 Mermaid
     mermaid.initialize({
       startOnLoad: true,
@@ -357,10 +363,83 @@ ${mermaidGraph}
       });
     }
 
+    async function buildExportData(format) {
+      const svg = document.querySelector('#graph-container svg');
+      if (!svg) {
+        vscode.postMessage({
+          command: 'exportData',
+          format: format,
+          data: null
+        });
+        return;
+      }
+
+      if (format === 'svg') {
+        const serialized = new XMLSerializer().serializeToString(svg);
+        vscode.postMessage({
+          command: 'exportData',
+          format: format,
+          data: serialized
+        });
+        return;
+      }
+
+      const svgRect = svg.getBoundingClientRect();
+      const width = Math.ceil(svgRect.width || Number(svg.getAttribute('width')) || 1200);
+      const height = Math.ceil(svgRect.height || Number(svg.getAttribute('height')) || 800);
+      const serialized = new XMLSerializer().serializeToString(svg);
+      const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+      const blobUrl = URL.createObjectURL(svgBlob);
+      const image = new Image();
+
+      image.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext('2d');
+        if (!context) {
+          vscode.postMessage({
+            command: 'exportData',
+            format: format,
+            data: null
+          });
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+
+        context.fillStyle = getComputedStyle(document.body).backgroundColor || '#1e1e1e';
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64 = dataUrl.replace(/^data:image\\/png;base64,/, '');
+        vscode.postMessage({
+          command: 'exportData',
+          format: format,
+          data: base64
+        });
+        URL.revokeObjectURL(blobUrl);
+      };
+
+      image.onerror = () => {
+        vscode.postMessage({
+          command: 'exportData',
+          format: format,
+          data: null
+        });
+        URL.revokeObjectURL(blobUrl);
+      };
+
+      image.src = blobUrl;
+    }
+
     // 处理 VSCode 消息
     window.addEventListener('message', event => {
       const message = event.data;
-      // 可以在这里处理来自扩展的消息
+      if (message.command === 'beginExport') {
+        buildExportData(message.format);
+      }
     });
   </script>
 </body>
@@ -382,7 +461,7 @@ ${mermaidGraph}
    * 导出图表
    */
   private async exportGraph(format: 'png' | 'svg'): Promise<void> {
-    if (!this.currentGraph) {
+    if (!this.currentGraph || !this.panel) {
       vscode.window.showWarningMessage('没有可导出的图表');
       return;
     }
@@ -395,11 +474,36 @@ ${mermaidGraph}
       }
     });
 
-    if (uri) {
-      vscode.window.showInformationMessage(`导出功能即将推出：${uri.toString()}`);
-      // TODO: 实现 SVG/PNG 导出
-      // 需要在 WebView 中渲染完成后，将 SVG 转换为文件
+    if (!uri) {
+      return;
     }
+
+    this.pendingExport = { format, uri };
+    await this.panel.webview.postMessage({
+      command: 'beginExport',
+      format
+    });
+  }
+
+  private async saveExportedGraph(format: 'png' | 'svg', data: string | null): Promise<void> {
+    if (!this.pendingExport) {
+      return;
+    }
+
+    const pendingExport = this.pendingExport;
+    this.pendingExport = null;
+
+    if (!data || pendingExport.format !== format) {
+      vscode.window.showErrorMessage(`导出 ${format.toUpperCase()} 失败`);
+      return;
+    }
+
+    const content = format === 'svg'
+      ? Buffer.from(data, 'utf8')
+      : Buffer.from(data, 'base64');
+
+    await vscode.workspace.fs.writeFile(pendingExport.uri, content);
+    vscode.window.showInformationMessage(`依赖图已导出到 ${pendingExport.uri.fsPath}`);
   }
 
   /**

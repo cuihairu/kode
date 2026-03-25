@@ -95,6 +95,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "kbengine.entity.open",
+        "title": "Open Entity Definition",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "kbengine.server.start",
         "title": "Start Server",
         "icon": "$(play)"
@@ -413,6 +418,8 @@
     "vscode:prepublish": "echo 'skip prepublish'",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "docs:dev": "vuepress dev docs",
+    "docs:build": "vuepress build docs",
     "pretest": "pnpm run compile",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
@@ -432,6 +439,7 @@
     "eslint": "^7.26.0",
     "glob": "^7.1.7",
     "mocha": "^8.4.0",
-    "typescript": "^4.2.5"
+    "typescript": "^4.2.5",
+    "vuepress": "^1.9.10"
   }
 }

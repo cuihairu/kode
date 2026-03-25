@@ -122,6 +122,38 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(refreshCommand);
 
+  const openEntityCommand = vscode.commands.registerCommand(
+    'kbengine.entity.open',
+    async (entityName: string) => {
+      if (!entityName) {
+        return;
+      }
+
+      const entityDefsPathConfig = vscode.workspace
+        .getConfiguration('kbengine')
+        .get<string>('entityDefsPath', 'scripts/entity_defs');
+
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        return;
+      }
+
+      const entityUri = vscode.Uri.joinPath(
+        workspaceFolder.uri,
+        entityDefsPathConfig,
+        `${entityName}.def`
+      );
+
+      try {
+        const document = await vscode.workspace.openTextDocument(entityUri);
+        await vscode.window.showTextDocument(document);
+      } catch {
+        vscode.window.showWarningMessage(`未找到实体定义文件: ${entityName}.def`);
+      }
+    }
+  );
+  context.subscriptions.push(openEntityCommand);
+
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
 

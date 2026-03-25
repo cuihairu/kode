@@ -77,6 +77,11 @@ class EntityTreeItem extends vscode.TreeItem {
     super(label, collapsibleState);
     this.description = description;
     this.iconPath = new vscode.ThemeIcon('symbol-namespace');
+    this.command = {
+      command: 'kbengine.entity.open',
+      title: '打开实体定义',
+      arguments: [label]
+    };
   }
 }
 
