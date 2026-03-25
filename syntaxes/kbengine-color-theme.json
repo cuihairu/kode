@@ -17,9 +17,40 @@
     },
     {
       "name": "String",
-      "scope": ["string.quoted.double.xml", "string.quoted.single.xml"],
+      "scope": ["string.quoted.double.xml", "string.quoted.single.xml", "string.quoted.double.kbengine"],
       "settings": {
         "foreground": "#ce9178"
+      }
+    },
+    {
+      "name": "KBEngine Section Tags",
+      "scope": "entity.name.tag.section.kbengine",
+      "settings": {
+        "foreground": "#569CD6",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Scalar Tags",
+      "scope": [
+        "entity.name.tag.scalar.type.kbengine",
+        "entity.name.tag.scalar.arg.kbengine",
+        "entity.name.tag.scalar.flags.kbengine",
+        "entity.name.tag.scalar.detail-level.kbengine",
+        "entity.name.tag.scalar.default.kbengine",
+        "entity.name.tag.scalar.numeric.kbengine"
+      ],
+      "settings": {
+        "foreground": "#4FC1FF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Property And Method Tags",
+      "scope": "entity.name.symbol.kbengine",
+      "settings": {
+        "foreground": "#DCDCAA",
+        "fontStyle": "bold"
       }
     },
     {
@@ -72,7 +103,7 @@
     },
     {
       "name": "KBEngine Container Types",
-      "scope": "support.type.container.kbengine",
+      "scope": ["support.type.container.kbengine", "support.type.container.tag.kbengine"],
       "settings": {
         "foreground": "#dcdcaa",
         "fontStyle": "italic bold"
@@ -87,9 +118,9 @@
     },
     {
       "name": "KBEngine Flags",
-      "scope": "constant.language.flag.kbengine",
+      "scope": ["constant.language.flag.kbengine", "constant.other.flag.kbengine"],
       "settings": {
-        "foreground": "#C586C0",
+        "foreground": "#FFB86C",
         "fontStyle": "bold"
       }
     },
@@ -140,16 +171,37 @@
     },
     {
       "name": "KBEngine Numbers",
-      "scope": ["constant.numeric.xml", "support.type.numeric.kbengine"],
+      "scope": ["constant.numeric.xml", "support.type.numeric.kbengine", "constant.numeric.kbengine"],
       "settings": {
         "foreground": "#b5cea8"
       }
     },
     {
       "name": "KBEngine Constants",
-      "scope": ["constant.language.xml", "constant.other.flag.kbengine"],
+      "scope": ["constant.language.xml", "constant.language.kbengine"],
       "settings": {
         "foreground": "#569cd6"
+      }
+    },
+    {
+      "name": "KBEngine Default Values",
+      "scope": "string.unquoted.default.kbengine",
+      "settings": {
+        "foreground": "#CE9178"
+      }
+    },
+    {
+      "name": "KBEngine Flag Separators",
+      "scope": "punctuation.separator.flag.kbengine",
+      "settings": {
+        "foreground": "#808080"
+      }
+    },
+    {
+      "name": "KBEngine Generic Punctuation",
+      "scope": "punctuation.definition.generic.kbengine",
+      "settings": {
+        "foreground": "#808080"
       }
     },
     {

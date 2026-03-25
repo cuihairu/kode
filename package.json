@@ -234,6 +234,61 @@
           "default": true,
           "description": "启用 KBEngine 实时语法检查"
         },
+        "kbengine.enableStructureDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用 .def 结构化校验（重复定义、标签位置、缺失字段等）"
+        },
+        "kbengine.diagnostics.checkUnknownTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查未知的 KBEngine 类型"
+        },
+        "kbengine.diagnostics.checkUnknownFlags": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查未知的 Flags 值"
+        },
+        "kbengine.diagnostics.checkUnknownDetailLevels": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查未知的 DetailLevel 值"
+        },
+        "kbengine.diagnostics.checkFlagConflicts": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查 BASE 与 CELL Flags 冲突"
+        },
+        "kbengine.diagnostics.checkDuplicateDefinitions": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查属性和方法的重复定义"
+        },
+        "kbengine.diagnostics.checkInvalidChildren": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查属性或方法下非法的子标签"
+        },
+        "kbengine.diagnostics.checkMissingPropertyFields": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断：检查属性缺少 Type/Flags 或重复定义字段"
+        },
+        "kbengine.hover.showTagDocs": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示 .def 标签说明"
+        },
+        "kbengine.hover.showValueDocs": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示类型、Flags、DetailLevel 等值的说明"
+        },
+        "kbengine.hover.showSymbolDocs": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示自定义属性名和方法名的摘要信息"
+        },
         "kbengine.entityDefsPath": {
           "type": "string",
           "default": "scripts/entity_defs",
