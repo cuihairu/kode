@@ -161,6 +161,16 @@
         "command": "kbengine.dependency.show",
         "title": "Show Entity Dependency Graph",
         "icon": "$(graph-scatter)"
+      },
+      {
+        "command": "kbengine.generator.wizard",
+        "title": "Create Entity from Wizard",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "kbengine.generator.templates",
+        "title": "Create Entity from Template",
+        "icon": "$(file-template)"
       }
     ],
     "menus": {
@@ -291,6 +301,26 @@
           "type": "boolean",
           "default": true,
           "description": "启用从生成的 Python 文件跳转到 .def 文件的功能"
+        },
+        "kbengine.generator.defOutputPath": {
+          "type": "string",
+          "default": "scripts/entity_defs",
+          "description": "代码生成器：.def 文件输出目录"
+        },
+        "kbengine.generator.pythonOutputPath": {
+          "type": "string",
+          "default": "scripts",
+          "description": "代码生成器：Python 文件输出目录"
+        },
+        "kbengine.generator.generatePython": {
+          "type": "boolean",
+          "default": true,
+          "description": "代码生成器：是否生成 Python 文件"
+        },
+        "kbengine.generator.registerInEntitiesXml": {
+          "type": "boolean",
+          "default": true,
+          "description": "代码生成器：是否在 entities.xml 中自动注册实体"
         }
       }
     }

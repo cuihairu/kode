@@ -10,6 +10,7 @@ import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { EntityMappingManager } from './entityMapping';
 import { EntityDependencyWebView } from './entityDependencyWebView';
+import { KBEngineCodeGenerator } from './codeGenerator';
 
 /**
  * Kode - KBEngine Development Environment
@@ -388,6 +389,22 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(showDependencyCommand);
 
+  // 初始化代码生成器
+  const codeGenerator = new KBEngineCodeGenerator(context);
+
+  // 注册代码生成器相关命令
+  const showGeneratorWizardCommand = vscode.commands.registerCommand(
+    'kbengine.generator.wizard',
+    () => codeGenerator.showWizard()
+  );
+  context.subscriptions.push(showGeneratorWizardCommand);
+
+  const showTemplatesCommand = vscode.commands.registerCommand(
+    'kbengine.generator.templates',
+    () => codeGenerator.showTemplates()
+  );
+  context.subscriptions.push(showTemplatesCommand);
+
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'kbengine.serverControl';
@@ -421,6 +438,7 @@ export function activate(context: vscode.ExtensionContext) {
       monitoringCollector.dispose();
       entityMappingManager.dispose();
       dependencyWebView.dispose();
+      codeGenerator.dispose();
       outputChannel.dispose();
     }
   });

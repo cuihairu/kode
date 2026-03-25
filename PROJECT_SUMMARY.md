@@ -139,6 +139,15 @@
 - ✅ 支持导出图表（PNG/SVG）
 - ✅ 源码：src/entityDependency.ts, src/entityDependencyWebView.ts
 
+#### 16. 代码生成器 ⭐ 新增
+- ✅ 实体创建向导
+- ✅ 5 个预定义模板（账号、角色、NPC、物品、空实体）
+- ✅ 自动生成 .def 文件
+- ✅ 自动生成 Python 文件
+- ✅ 自动在 entities.xml 中注册
+- ✅ 支持自定义属性和方法
+- ✅ 源码：src/codeGenerator.ts
+
 ### 📚 文档
 - ✅ README.md - 项目说明
 - ✅ CHANGELOG.md - 变更日志
@@ -184,7 +193,8 @@ kode/
 │   ├── monitoringWebView.ts  # 监控面板 WebView
 │   ├── entityMapping.ts     # Python-Def 映射管理器
 │   ├── entityDependency.ts  # 实体依赖分析器
-│   └── entityDependencyWebView.ts # 依赖图 WebView
+│   ├── entityDependencyWebView.ts # 依赖图 WebView
+│   └── codeGenerator.ts     # 代码生成器
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── .gitignore
@@ -245,8 +255,8 @@ kode/
 ### 未来功能
 - [x] Python 集成 (从 Python 跳转到 .def) ✅ 已完成
 - [x] 实体依赖关系图 ✅ 已完成
+- [x] 代码生成器 ✅ 已完成
 - [ ] 重构支持 (重命名属性/方法)
-- [ ] 代码生成器
 - [ ] 性能分析建议
 
 ## 📞 快速命令
@@ -277,11 +287,11 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 📈 统计数据
 
-- **代码文件**: 12 个 TypeScript 文件
+- **代码文件**: 13 个 TypeScript 文件
 - **钩子数量**: 30+ 个
 - **代码片段**: 17 个
 - **文档页数**: 5 个
-- **总行数**: 5500+ 行
+- **总行数**: 7000+ 行
 
 ---
 
