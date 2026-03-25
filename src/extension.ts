@@ -3,6 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { KBENGINE_HOOKS, getHookByName, HOOK_CATEGORY_NAMES } from './hooks';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
+import { KBEngineLogCollector, CollectorStatus, LogCollectorConfig } from './logCollector';
+import { LogViewerWebView } from './logWebView';
 
 /**
  * Kode - KBEngine Development Environment
@@ -219,6 +221,57 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(showLogsCommand);
+
+  // 初始化日志收集器
+  const logConfig: LogCollectorConfig = {
+    host: '127.0.0.1',
+    port: 20022,
+    autoReconnect: true,
+    reconnectInterval: 5000,
+    maxBufferSize: 10000
+  };
+
+  const logCollector = new KBEngineLogCollector(logConfig, context);
+
+  // 初始化日志查看器
+  const logViewer = new LogViewerWebView(context, logCollector);
+
+  // 注册日志相关命令
+  const showLogViewerCommand = vscode.commands.registerCommand(
+    'kbengine.logs.showViewer',
+    () => logViewer.show()
+  );
+  context.subscriptions.push(showLogViewerCommand);
+
+  const connectLoggerCommand = vscode.commands.registerCommand(
+    'kbengine.logs.connect',
+    async () => {
+      try {
+        await logCollector.connect();
+      } catch (error) {
+        vscode.window.showErrorMessage(`连接日志收集器失败: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(connectLoggerCommand);
+
+  const disconnectLoggerCommand = vscode.commands.registerCommand(
+    'kbengine.logs.disconnect',
+    () => logCollector.disconnect()
+  );
+  context.subscriptions.push(disconnectLoggerCommand);
+
+  const clearLogsCommand = vscode.commands.registerCommand(
+    'kbengine.logs.clear',
+    () => logViewer.clearLogs()
+  );
+  context.subscriptions.push(clearLogsCommand);
+
+  const exportLogsCommand = vscode.commands.registerCommand(
+    'kbengine.logs.export',
+    () => logViewer.exportLogs()
+  );
+  context.subscriptions.push(exportLogsCommand);
 
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

@@ -106,6 +106,31 @@
         "command": "kbengine.server.showLogs",
         "title": "Show Logs",
         "icon": "$(output)"
+      },
+      {
+        "command": "kbengine.logs.showViewer",
+        "title": "Show Log Viewer",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "kbengine.logs.connect",
+        "title": "Connect to Logger",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.logs.disconnect",
+        "title": "Disconnect from Logger",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "kbengine.logs.clear",
+        "title": "Clear Logs",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "kbengine.logs.export",
+        "title": "Export Logs",
+        "icon": "$(save)"
       }
     ],
     "menus": {
@@ -180,6 +205,21 @@
             "type": "string",
             "enum": ["machine", "logger", "dbmgr", "baseappmgr", "cellappmgr", "loginapp", "baseapp", "cellapp", "bots"]
           }
+        },
+        "kbengine.loggerPort": {
+          "type": "number",
+          "default": 20022,
+          "description": "KBEngine Logger 端口号（默认 20022）"
+        },
+        "kbengine.logAutoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动服务器时自动连接日志收集器"
+        },
+        "kbengine.maxLogEntries": {
+          "type": "number",
+          "default": 10000,
+          "description": "最大日志条目数"
         }
       }
     }
