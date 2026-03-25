@@ -63,3 +63,9 @@ your-project/
 - 实体代码生成器
 
 详细能力见 [功能概览](./features.md)。
+
+## 下一步阅读建议
+
+- 想调行为和路径：看 [配置说明](./configuration.md)
+- 想知道命令入口和面板用途：看 [命令与面板](./commands.md)
+- 想参与维护和发布：看 [开发与发布](./development.md)
