@@ -30,6 +30,10 @@ module.exports = {
             'configuration',
             'features',
             'commands',
+            'language',
+            'logging',
+            'dependency-graph',
+            'generator',
             'development'
           ]
         }

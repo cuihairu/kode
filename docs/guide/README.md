@@ -68,4 +68,6 @@ your-project/
 
 - 想调行为和路径：看 [配置说明](./configuration.md)
 - 想知道命令入口和面板用途：看 [命令与面板](./commands.md)
+- 想了解 `.def` 的语言能力：看 [语言能力](./language.md)
+- 想看日志、依赖图和生成器：看 [日志查看](./logging.md)、[实体依赖图](./dependency-graph.md)、[代码生成器](./generator.md)
 - 想参与维护和发布：看 [开发与发布](./development.md)
