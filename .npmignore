@@ -1,0 +1,24 @@
+# Source files
+src/
+*.ts
+!*.d.ts
+
+# Build files
+.vscode-test/
+
+# Documentation
+resources/docs/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+
+# Development
+.eslintrc.*
+.prettierrc.*
+.editorconfig

@@ -1,14 +1,46 @@
-.architect
-bootstrap.css
-bootstrap.js
-bootstrap.json
-bootstrap.jsonp
-build/
-classic.json
-classic.jsonp
-ext/
-modern.json
-modern.jsonp
-resources/sass/.sass-cache/
-resources/.arch-internal-preview.css
-.arch-internal-preview.css
+# Compiled files
+*.js
+*.js.map
+*.d.ts
+!src/**/*.ts
+
+# Build output
+out/
+dist/
+*.vsix
+
+# Node modules
+node_modules/
+
+# VS Code
+.vscode-test/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

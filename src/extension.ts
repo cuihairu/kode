@@ -1,0 +1,426 @@
+import * as vscode from 'vscode';
+import * as path from 'path';
+import * as fs from 'fs';
+
+/**
+ * KBEngine VSCode 扩展主入口
+ */
+
+// KBEngine 支持的类型
+const KBENGINE_TYPES = [
+  // 基础类型
+  { name: 'UINT8', detail: '无符号8位整数', documentation: '范围: 0-255, 占用1字节' },
+  { name: 'UINT16', detail: '无符号16位整数', documentation: '范围: 0-65535, 占用2字节' },
+  { name: 'UINT32', detail: '无符号32位整数', documentation: '范围: 0-4294967295, 占用4字节' },
+  { name: 'UINT64', detail: '无符号64位整数', documentation: '范围: 0-18446744073709551615, 占用8字节' },
+  { name: 'INT8', detail: '有符号8位整数', documentation: '范围: -128-127, 占用1字节' },
+  { name: 'INT16', detail: '有符号16位整数', documentation: '范围: -32768-32767, 占用2字节' },
+  { name: 'INT32', detail: '有符号32位整数', documentation: '范围: -2147483648-2147483647, 占用4字节' },
+  { name: 'INT64', detail: '有符号64位整数', documentation: '范围: -9223372036854775808-9223372036854775807, 占用8字节' },
+  { name: 'FLOAT', detail: '单精度浮点数', documentation: '32位IEEE 754浮点数' },
+  { name: 'DOUBLE', detail: '双精度浮点数', documentation: '64位IEEE 754浮点数' },
+  { name: 'BOOL', detail: '布尔值', documentation: 'true 或 false' },
+  { name: 'STRING', detail: '字符串', documentation: '变长字符串类型' },
+  { name: 'VECTOR2', detail: '2D向量', documentation: '包含 x, y 两个浮点数' },
+  { name: 'VECTOR3', detail: '3D向量', documentation: '包含 x, y, z 三个浮点数' },
+  { name: 'VECTOR4', detail: '4D向量', documentation: '包含 x, y, z, w 四个浮点数' },
+  { name: 'MAILBOX', detail: '实体引用', documentation: '指向其他实体的引用类型' },
+  // 容器类型
+  { name: 'ARRAY', detail: '数组', documentation: '动态数组类型: ARRAY<TYPE>' },
+  { name: 'FIXED_DICT', detail: '固定字典', documentation: '类Python字典结构，需要定义实现类' },
+  { name: 'TUPLE', detail: '元组', documentation: '固定长度元组，每个位置可以指定不同类型' }
+];
+
+// KBEngine 支持的 Flags
+const KBENGINE_FLAGS = [
+  {
+    name: 'BASE',
+    detail: 'BaseApp存储',
+    documentation: '数据存储在BaseApp，不会自动分片'
+  },
+  {
+    name: 'CLIENT',
+    detail: '客户端可见',
+    documentation: '数据会同步到客户端'
+  },
+  {
+    name: 'BASE_CLIENT',
+    detail: 'BaseApp存储 + 客户端可见',
+    documentation: '数据存储在BaseApp并同步到客户端（最常用组合）'
+  },
+  {
+    name: 'CELL_PUBLIC',
+    detail: 'CellApp公开',
+    documentation: '其他实体可以访问该属性'
+  },
+  {
+    name: 'CELL_PRIVATE',
+    detail: 'CellApp私有',
+    documentation: '只有实体自己可以访问该属性'
+  },
+  {
+    name: 'CELL_PUBLIC_AND_PRIVATE',
+    detail: 'CellApp公开+私有',
+    documentation: '同时设置CELL_PUBLIC和CELL_PRIVATE标志'
+  },
+  {
+    name: 'ALL_CLIENTS',
+    detail: '所有客户端可见',
+    documentation: '属性会广播给所有能感知到该实体的客户端'
+  },
+  {
+    name: 'OWN_CLIENT',
+    detail: '仅拥有者可见',
+    documentation: '属性只同步给控制该实体的客户端'
+  }
+];
+
+// Detail Level 常量
+const DETAIL_LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+export function activate(context: vscode.ExtensionContext) {
+  console.log('KBEngine Language Extension is now active!');
+
+  // 注册智能提示提供者
+  const completionProvider = vscode.languages.registerCompletionItemProvider(
+    { language: 'kbengine-def', scheme: 'file' },
+    new KBEngineCompletionProvider(),
+    '<', ' ', '\t'
+  );
+  context.subscriptions.push(completionProvider);
+
+  // 注册悬停文档提供者
+  const hoverProvider = vscode.languages.registerHoverProvider(
+    { language: 'kbengine-def', scheme: 'file' },
+    new KBEngineHoverProvider()
+  );
+  context.subscriptions.push(hoverProvider);
+
+  // 注册定义跳转提供者
+  const definitionProvider = vscode.languages.registerDefinitionProvider(
+    { language: 'kbengine-def', scheme: 'file' },
+    new KBEngineDefinitionProvider()
+  );
+  context.subscriptions.push(definitionProvider);
+
+  // 注册诊断检查器
+  const diagnostics = vscode.languages.createDiagnosticCollection('kbengine');
+  context.subscriptions.push(diagnostics);
+
+  // 监听文档变化，实时检查
+  if (vscode.workspace.workspaceFolders) {
+    const watcher = vscode.workspace.onDidChangeTextDocument(event => {
+      if (event.document.languageId === 'kbengine-def') {
+        validateDocument(event.document, diagnostics);
+      }
+    });
+    context.subscriptions.push(watcher);
+
+    // 初始检查所有 .def 文件
+    vscode.workspace.findFiles('**/*.def', null).then(files => {
+      files.forEach(uri => {
+        vscode.workspace.textDocuments.forEach(doc => {
+          if (doc.uri.toString() === uri.toString()) {
+            validateDocument(doc, diagnostics);
+          }
+        });
+      });
+    });
+  }
+
+  // 注册侧边栏视图
+  const entityExplorerProvider = new EntityExplorerProvider();
+  vscode.window.registerTreeDataProvider(
+    'kbengine.entityExplorer',
+    entityExplorerProvider
+  );
+
+  // 刷新实体浏览器的命令
+  const refreshCommand = vscode.commands.registerCommand(
+    'kbengine.refreshExplorer',
+    () => entityExplorerProvider.refresh()
+  );
+  context.subscriptions.push(refreshCommand);
+}
+
+/**
+ * 智能提示提供者
+ */
+class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
+  provideCompletionItems(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+
+    const line = document.lineAt(position.line);
+    const lineText = line.text.substring(0, position.character);
+    const items: vscode.CompletionItem[] = [];
+
+    // 在 <Type> 标签内提示类型
+    if (lineText.match(/<Type>\s*\w*$/)) {
+      KBENGINE_TYPES.forEach(type => {
+        const item = new vscode.CompletionItem(type.name, vscode.CompletionItemKind.Class);
+        item.detail = type.detail;
+        item.documentation = new vscode.MarkdownString(type.documentation);
+        items.push(item);
+      });
+      return items;
+    }
+
+    // 在 <Flags> 标签内提示标志
+    if (lineText.match(/<Flags>\s*\w*$/)) {
+      KBENGINE_FLAGS.forEach(flag => {
+        const item = new vscode.CompletionItem(flag.name, vscode.CompletionItemKind.Enum);
+        item.detail = flag.detail;
+        item.documentation = new vscode.MarkdownString(flag.documentation);
+        items.push(item);
+      });
+      return items;
+    }
+
+    // 在 <DetailLevel> 标签内提示级别
+    if (lineText.match(/<DetailLevel>\s*\w*$/)) {
+      DETAIL_LEVELS.forEach(level => {
+        const item = new vscode.CompletionItem(level, vscode.CompletionItemKind.Constant);
+        items.push(item);
+      });
+      return items;
+    }
+
+    // 提示 XML 标签
+    if (lineText.endsWith('<')) {
+      const tags = [
+        'Properties', 'ClientMethods', 'BaseMethods', 'CellMethods',
+        'Type', 'Flags', 'Default', 'Database', 'Identifier', 'DetailLevel', 'Arg'
+      ];
+      tags.forEach(tag => {
+        const item = new vscode.CompletionItem(tag, vscode.CompletionItemKind.Property);
+        items.push(item);
+      });
+      return items;
+    }
+
+    return items;
+  }
+}
+
+/**
+ * 悬停文档提供者
+ */
+class KBEngineHoverProvider implements vscode.HoverProvider {
+  provideHover(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.Hover> {
+
+    const range = document.getWordRangeAtPosition(position, /\w+/);
+    if (!range) {
+      return null;
+    }
+
+    const word = document.getText(range);
+
+    // 查找类型文档
+    const type = KBENGINE_TYPES.find(t => t.name === word);
+    if (type) {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(`**${type.name}**\n\n`);
+      markdown.appendMarkdown(`${type.detail}\n\n`);
+      markdown.appendMarkdown('**说明**:\n');
+      markdown.appendMarkdown(type.documentation);
+      return new vscode.Hover(markdown);
+    }
+
+    // 查找 Flag 文档
+    const flag = KBENGINE_FLAGS.find(f => f.name === word);
+    if (flag) {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(`**${flag.name}**\n\n`);
+      markdown.appendMarkdown(`${flag.detail}\n\n`);
+      markdown.appendMarkdown('**说明**:\n');
+      markdown.appendMarkdown(flag.documentation);
+      return new vscode.Hover(markdown);
+    }
+
+    return null;
+  }
+}
+
+/**
+ * 定义跳转提供者
+ */
+class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
+  provideDefinition(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.Location> {
+
+    const range = document.getWordRangeAtPosition(position, /\w+/);
+    if (!range) {
+      return null;
+    }
+
+    const word = document.getText(range);
+
+    // 从 entities.xml 跳转到对应的 .def 文件
+    if (document.fileName.endsWith('entities.xml')) {
+      const defPath = findEntityDefFile(word);
+      if (defPath) {
+        return new vscode.Location(vscode.Uri.file(defPath), new vscode.Position(0, 0));
+      }
+    }
+
+    return null;
+  }
+}
+
+/**
+ * 查找实体定义文件
+ */
+function findEntityDefFile(entityName: string): string | null {
+  if (!vscode.workspace.workspaceFolders) {
+    return null;
+  }
+
+  const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+  const possiblePaths = [
+    path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`),
+    path.join(workspaceRoot, '**/entity_defs', `${entityName}.def`),
+    path.join(workspaceRoot, '**', `${entityName}.def`)
+  ];
+
+  for (const possiblePath of possiblePaths) {
+    if (fs.existsSync(possiblePath)) {
+      return possiblePath;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 验证文档
+ */
+function validateDocument(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection
+): void {
+  const diagnosticsList: vscode.Diagnostic[] = [];
+  const text = document.getText();
+
+  // 检查类型名称
+  KBENGINE_TYPES.forEach(type => {
+    const regex = new RegExp(`<Type>\\s*(${type.name})\\s*</Type>`, 'g');
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      // 类型有效，无需检查
+    }
+  });
+
+  // 检查 Flags 组合
+  const baseAndCellRegex = /<Flags>\s*.*\bBASE\b.*\bCELL_\w+\b.*<\/Flags>/g;
+  let match;
+  while ((match = baseAndCellRegex.exec(text)) !== null) {
+    const startPos = document.positionAt(match.index);
+    const endPos = document.positionAt(match.index + match[0].length);
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(startPos, endPos),
+      'BASE 和 CELL 标志不能同时使用',
+      vscode.DiagnosticSeverity.Warning
+    );
+    diagnosticsList.push(diagnostic);
+  }
+
+  diagnostics.set(document.uri, diagnosticsList);
+}
+
+/**
+ * 实体浏览器提供者
+ */
+class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<EntityTreeItem | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  getTreeItem(element: EntityTreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: EntityTreeItem): Promise<EntityTreeItem[]> {
+    if (!vscode.workspace.workspaceFolders) {
+      return [];
+    }
+
+    if (!element) {
+      // 根节点：显示所有实体
+      return this.getEntityList();
+    }
+
+    return [];
+  }
+
+  private async getEntityList(): Promise<EntityTreeItem[]> {
+    const entities: EntityTreeItem[] = [];
+
+    if (!vscode.workspace.workspaceFolders) {
+      return entities;
+    }
+
+    const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const entitiesXmlPath = path.join(workspaceRoot, 'scripts/entities.xml');
+
+    if (!fs.existsSync(entitiesXmlPath)) {
+      return entities;
+    }
+
+    const content = fs.readFileSync(entitiesXmlPath, 'utf-8');
+    const entityMatches = content.matchAll(/<(\w+)\s+([^>]+)>/g);
+
+    for (const match of entityMatches) {
+      const entityName = match[1];
+      const attributes = match[2];
+
+      const hasCell = /\bhasCell\s*=\s*"true"/i.test(attributes);
+      const hasBase = /\bhasBase\s*=\s*"true"/i.test(attributes);
+      const hasClient = /\bhasClient\s*=\s*"true"/i.test(attributes);
+
+      const description = [];
+      if (hasCell) description.push('Cell');
+      if (hasBase) description.push('Base');
+      if (hasClient) description.push('Client');
+
+      entities.push(new EntityTreeItem(
+        entityName,
+        description.join(', '),
+        vscode.TreeItemKind.CollapsibleState.Collapsed
+      ));
+    }
+
+    return entities;
+  }
+}
+
+/**
+ * 实体树项
+ */
+class EntityTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly label: string,
+    public readonly description: string,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+  ) {
+    super(label, collapsibleState);
+    this.description = description;
+    this.iconPath = new vscode.ThemeIcon('symbol-namespace');
+  }
+}
+
+export function deactivate() {
+  console.log('KBEngine Language Extension is now deactivated!');
+}

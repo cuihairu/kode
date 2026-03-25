@@ -1,0 +1,155 @@
+{
+  "KBEngine Property Basic": {
+    "prefix": "kbe-prop",
+    "description": "KBEngine 基础属性定义",
+    "body": [
+      "<${1:PropertyName}>",
+      "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR2,VECTOR3,VECTOR4|} </Type>",
+      "\t<Flags> ${3|BASE_CLIENT,CELL_PUBLIC,CELL_PRIVATE,ALL_CLIENTS,OWN_CLIENT|} </Flags>",
+      "\t<Default> ${4:0} </Default>",
+      "</${1:PropertyName}>$0"
+    ]
+  },
+  "KBEngine Vector3 Property": {
+    "prefix": "kbe-vector3",
+    "description": "KBEngine VECTOR3 属性",
+    "body": [
+      "<${1:Position}>",
+      "\t<Type> VECTOR3 </Type>",
+      "\t<Flags> ${2|CELL_PUBLIC,CELL_PRIVATE|} </Flags>",
+      "\t<Default> </Default>",
+      "</${1:Position}>$0"
+    ]
+  },
+  "KBEngine Array Property": {
+    "prefix": "kbe-array",
+    "description": "KBEngine 数组属性",
+    "body": [
+      "<${1:PropertyName}>",
+      "\t<Type>",
+      "\t\tARRAY<${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR2,VECTOR3,VECTOR4|}>",
+      "\t</Type>",
+      "\t<Flags> ${3|BASE_CLIENT,CELL_PUBLIC,CELL_PRIVATE|} </Flags>",
+      "\t<Default> </Default>",
+      "</${1:PropertyName}>$0"
+    ]
+  },
+  "KBEngine FIXED_DICT Property": {
+    "prefix": "kbe-fixed-dict",
+    "description": "KBEngine 固定字典属性",
+    "body": [
+      "<${1:PropertyName}>",
+      "\t<Type>",
+      "\t\t<FIXED_DICT>",
+      "\t\t\t<implementedBy>",
+      "\t\t\t\t<Type> scripts/data/${2:DataClass}.py </Type>",
+      "\t\t\t</implementedBy>",
+      "\t\t\t<Properties>",
+      "\t\t\t\t<${3:field}>",
+      "\t\t\t\t\t<Type> ${4|UINT8,UINT16,UINT32,UINT64,STRING,VECTOR3|} </Type>",
+      "\t\t\t\t</${3:field}>",
+      "\t\t\t</Properties>",
+      "\t\t</FIXED_DICT>",
+      "\t</Type>",
+      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Default> </Default>",
+      "</${1:PropertyName}>$0"
+    ]
+  },
+  "KBEngine TUPLE Property": {
+    "prefix": "kbe-tuple",
+    "description": "KBEngine 元组属性",
+    "body": [
+      "<${1:PropertyName}>",
+      "\t<Type>",
+      "\t\t<TUPLE>",
+      "\t\t\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,BOOL,STRING|} </Type>",
+      "\t\t\t<Type> ${3|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,BOOL,STRING|} </Type>",
+      "\t\t</TUPLE>",
+      "\t</Type>",
+      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Default> </Default>",
+      "</${1:PropertyName}>$0"
+    ]
+  },
+  "KBEngine Property with Database": {
+    "prefix": "kbe-prop-db",
+    "description": "KBEngine 带数据库长度的属性",
+    "body": [
+      "<${1:PropertyName}>",
+      "\t<Type> STRING </Type>",
+      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Default> \"\" </Default>",
+      "\t<Database> ${2:50} </Database>",
+      "</${1:PropertyName}>$0"
+    ]
+  },
+  "KBEngine Property with DetailLevel": {
+    "prefix": "kbe-prop-detail",
+    "description": "KBEngine 带细节级别的属性",
+    "body": [
+      "<${1:PropertyName}>",
+      "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,VECTOR3|} </Type>",
+      "\t<Flags> CELL_PUBLIC </Flags>",
+      "\t<Default> ${3:0} </Default>",
+      "\t<DetailLevel> ${4|LOW,MEDIUM,HIGH,CRITICAL|} </DetailLevel>",
+      "</${1:PropertyName}>$0"
+    ]
+  },
+  "KBEngine Client Method": {
+    "prefix": "kbe-client-method",
+    "description": "KBEngine 客户端方法",
+    "body": [
+      "<${1:methodName}>",
+      "\t<Arg> ${2|UINT8,UINT16,UINT32,UINT64,STRING,VECTOR3|} </Arg>",
+      "</${1:methodName}>$0"
+    ]
+  },
+  "KBEngine Base Method": {
+    "prefix": "kbe-base-method",
+    "description": "KBEngine BaseApp 方法",
+    "body": [
+      "<${1:methodName}>",
+      "\t<Arg> ${2|UINT8,UINT16,UINT32,UINT64,STRING,VECTOR3|} </Arg>",
+      "</${1:methodName}>$0"
+    ]
+  },
+  "KBEngine Cell Method": {
+    "prefix": "kbe-cell-method",
+    "description": "KBEngine CellApp 方法",
+    "body": [
+      "<${1:methodName}>",
+      "\t<Arg> ${2|UINT8,UINT16,UINT32,UINT64,STRING,VECTOR3|} </Arg>",
+      "</${1:methodName}>$0"
+    ]
+  },
+  "KBEngine Method with Multiple Args": {
+    "prefix": "kbe-method-multi",
+    "description": "KBEngine 多参数方法",
+    "body": [
+      "<${1:methodName}>",
+      "\t<Arg> ${2|UINT8,UINT16,UINT32,UINT64,STRING|} </Arg>",
+      "\t<Arg> ${3|UINT8,UINT16,UINT32,UINT64,STRING|} </Arg>",
+      "\t<Arg> ${4|UINT8,UINT16,UINT32,UINT64,STRING|} </Arg>",
+      "</${1:methodName}>$0"
+    ]
+  },
+  "KBEngine Entity Comment": {
+    "prefix": "kbe-comment",
+    "description": "KBEngine 实体注释",
+    "body": [
+      "<!--",
+      "\t@desc: ${1:属性描述}",
+      "\t@author: ${2:作者}",
+      "\t@date: ${3:${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}}",
+      "-->$0"
+    ]
+  },
+  "KBEngine Entity Registration": {
+    "prefix": "kbe-entity-reg",
+    "description": "KBEngine 实体注册",
+    "body": [
+      "<${1:EntityName} has${2|Cell,Base,Client|}=\"true\"></${1:EntityName}>$0"
+    ]
+  }
+}
