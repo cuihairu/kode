@@ -4,7 +4,7 @@
 
 ## 环境要求
 
-- Node.js 14.x 或更高版本
+- Node.js 20.x 或更高版本
 - pnpm 8.x
 - VSCode 1.60.0 或更高版本
 

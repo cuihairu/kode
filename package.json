@@ -12,7 +12,8 @@
   "icon": "resources/logo.png",
   "packageManager": "pnpm@8.15.0",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.60.0",
+    "node": ">=20"
   },
   "categories": [
     "Programming Languages",
