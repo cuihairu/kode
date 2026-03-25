@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Code generator for entity templates
 - Performance analysis suggestions
 
-## [0.0.1] - 2026-03-25
+## [0.1.0] - 2026-03-25
 
 ### Added
 - Syntax highlighting for .def files
@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Flags smart suggestions
   - DetailLevel completion
   - XML tag suggestions
+  - **Hooks completion (30+ hooks)**
 - Code snippets
   - 13 common templates for properties and methods
   - Quick insert for property definitions
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Type descriptions and usage
   - Flag explanations
   - Best practices
+  - **Hooks documentation with examples and source locations**
 - Go to definition
   - Jump from entities.xml to .def files
   - Quick navigation to entity definitions
@@ -45,12 +47,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Display all entities from entities.xml
   - Show entity types (Cell/Base/Client)
   - Quick navigation to .def files
+- **Hooks system support**
+  - 30+ KBEngine hooks with full documentation
+  - 12 categories: lifecycle, network, database, movement, space, witness, position, teleport, trap, cell, script, system
+  - Hover documentation for all hooks including timing, signature, examples, and source locations
+  - Auto-completion for hook methods
 
 ### Documentation
 - Complete design document
 - Developer quick start guide
 - Naming suggestions document
 - Contributing guidelines
+- **Complete hooks reference**
 
-[Unreleased]: https://github.com/cuihairu/kode/compare/v0.0.1...HEAD
-[0.0.1]: https://github.com/cuihairu/kode/releases/tag/v0.0.1
+### Changed
+- **Updated license to Apache-2.0**
+
+[Unreleased]: https://github.com/cuihairu/kode/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/cuihairu/kode/releases/tag/v0.1.0

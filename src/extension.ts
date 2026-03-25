@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { KBENGINE_HOOKS, getHookByName, HOOK_CATEGORY_NAMES } from './hooks';
 
 /**
+ * Kode - KBEngine Development Environment
  * KBEngine VSCode 扩展主入口
  */
 
@@ -201,6 +203,40 @@ class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
       return items;
     }
 
+    // 提示钩子方法（在方法名位置）
+    if (lineText.match(/<[A-Za-z]+Methods>[\s\S]*<[a-zA-Z]/)) {
+      // 检查是否在定义方法名
+      const methodMatch = lineText.match(/<([a-zA-Z]+)>/);
+      if (methodMatch) {
+        const methodName = methodMatch[1];
+        // 如果已经输入了部分钩子名，提示匹配的钩子
+        KBENGINE_HOOKS.forEach(hook => {
+          if (hook.name.toLowerCase().startsWith(methodName.toLowerCase())) {
+            const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
+            item.detail = `${HOOK_CATEGORY_NAMES[hook.category]} - ${hook.description}`;
+            item.documentation = new vscode.MarkdownString(
+              `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}\n\n签名:\n\`\`\`python\n${hook.signature}\n\`\`\``
+            );
+            items.push(item);
+          }
+        });
+        return items;
+      }
+    }
+
+    // 检查是否在输入钩子名（以 on 开头）
+    if (lineText.match(/<on[a-zA-Z]*$/)) {
+      KBENGINE_HOOKS.forEach(hook => {
+        const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
+        item.detail = `${HOOK_CATEGORY_NAMES[hook.category]} - ${hook.description}`;
+        item.documentation = new vscode.MarkdownString(
+          `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}`
+        );
+        items.push(item);
+      });
+      return items;
+    }
+
     return items;
   }
 }
@@ -241,6 +277,27 @@ class KBEngineHoverProvider implements vscode.HoverProvider {
       markdown.appendMarkdown(`${flag.detail}\n\n`);
       markdown.appendMarkdown('**说明**:\n');
       markdown.appendMarkdown(flag.documentation);
+      return new vscode.Hover(markdown);
+    }
+
+    // 查找钩子文档
+    const hook = getHookByName(word);
+    if (hook) {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(`**${hook.name}** - ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
+      markdown.appendMarkdown(`${hook.description}\n\n`);
+      markdown.appendMarkdown('**调用时机**: ' + hook.timing + '\n\n');
+      markdown.appendMarkdown('**函数签名**:\n');
+      markdown.appendCodeblock(hook.signature, 'python');
+      markdown.appendMarkdown('\n**详细说明**:\n');
+      markdown.appendMarkdown(hook.documentation);
+      if (hook.sourceLocation) {
+        markdown.appendMarkdown('\n\n**源码位置**: `' + hook.sourceLocation + '`');
+      }
+      if (hook.example) {
+        markdown.appendMarkdown('\n\n**使用示例**:\n');
+        markdown.appendCodeblock(hook.example, 'python');
+      }
       return new vscode.Hover(markdown);
     }
 

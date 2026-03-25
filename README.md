@@ -1,6 +1,6 @@
 # Kode - KBEngine Development Environment
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS_Code-1.60.0+-blue.svg)](https://code.visualstudio.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.x-blue.svg)](https://www.typescriptlang.org/)
 
@@ -25,6 +25,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ Flags 智能提示
 - ✅ DetailLevel 提示
 - ✅ XML 标签提示
+- ✅ **钩子方法自动补全 (30+ hooks)**
 
 ### 📝 代码片段
 - ✅ 13 个常用代码模板
@@ -35,6 +36,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 类型详细说明
 - ✅ Flags 用途解释
 - ✅ 使用建议
+- ✅ **钩子完整文档** (调用时机、函数签名、使用示例、源码位置)
 
 ### 🔍 跳转定义
 - ✅ 从 `entities.xml` 跳转到 `.def` 文件
@@ -49,6 +51,12 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 侧边栏显示所有实体
 - ✅ 实体类型标识（Cell/Base/Client）
 - ✅ 快速导航
+
+### 🔗 钩子系统 (Hooks System)
+- ✅ 30+ KBEngine 钩子支持
+- ✅ 12 个分类：生命周期、网络、数据库、移动、空间、视野、位置、传送、陷阱、Cell、脚本、系统
+- ✅ 完整的钩子文档和使用示例
+- ✅ 源码位置标注
 
 ## 🚀 安装
 
@@ -173,7 +181,7 @@ npm run watch
 
 ## 📝 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+本项目采用 Apache-2.0 许可证 - 详见 [LICENSE](LICENSE) 文件
 
 ## 🙏 致谢
 
