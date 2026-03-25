@@ -52,7 +52,7 @@ git clone https://github.com/YOUR_USERNAME/kode.git
 git remote add upstream https://github.com/cuihairu/kode.git
 
 # 3. 安装依赖
-npm install
+pnpm install
 
 # 4. 在 VSCode 中打开项目
 code .
@@ -69,7 +69,7 @@ git rebase upstream/master
 git checkout -b feature/your-feature-name
 
 # 3. 进行开发
-npm run watch  # 监听模式编译
+pnpm run watch  # 监听模式编译
 
 # 4. 测试更改
 # 按 F5 在 VSCode 中启动扩展开发主机

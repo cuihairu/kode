@@ -80,6 +80,25 @@ const KBENGINE_FLAGS = [
 // Detail Level 常量
 const DETAIL_LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
+// KBEngine 热更新相关函数
+const KBENGINE_RELOAD_FUNCTIONS = [
+  {
+    name: 'KBEngine.reloadEntityDef',
+    detail: '重新加载实体定义',
+    documentation: '热更新实体定义，使修改后的 .def 文件生效。\n\n**参数**:\n- fullReload (bool): True=完全重新加载所有实体，False=只加载新的实体\n\n**示例**:\n```python\nimport KBEngine\n# 完全重新加载\nKBEngine.reloadEntityDef(True)\n# 或只加载新的\nKBEngine.reloadEntityDef(False)\n```\n\n**注意**:\n- 修改了 .def 文件中的属性或方法定义后需要调用\n- fullReload=True 会重新加载所有实体定义，可能会影响性能\n- 修改后需要重新创建实体才能看到新的属性或方法\n\n**源码位置**: `kbe/src/lib/entitydef/entitydef.cpp:120-150`'
+  },
+  {
+    name: 'KBEngine.isReload',
+    detail: '检查是否热更新',
+    documentation: '检查当前是否是热更新场景。\n\n**返回值**: bool\n- True: 当前是热更新场景\n- False: 当前是正常启动场景\n\n**示例**:\n```python\nimport KBEngine\n\ndef onEntitiesEnabled(self):\n    if KBEngine.isReload():\n        INFO_MSG(\"Hot-reloaded!\")\n    else:\n        INFO_MSG(\"Normal startup!\")\n```\n\n**使用场景**:\n- 在 onEntitiesEnabled 中区分热更新和正常启动\n- 热更新后需要重新初始化某些状态时使用\n\n**源码位置**: `kbe/src/lib/entitydef/entitydef.cpp:114-117`'
+  },
+  {
+    name: 'importlib.reload',
+    detail: 'Python 脚本热更新',
+    documentation: '重新加载 Python 模块，用于热更新 Python 脚本代码。\n\n**参数**:\n- module: 要重新加载的模块对象\n\n**返回值**: 重新加载后的模块对象\n\n**示例**:\n```python\nimport importlib\nimport my_module\n\n# 修改了 my_module.py 后\nmy_module = importlib.reload(my_module)\n```\n\n**注意**:\n- 只对修改了 Python 方法的代码有效\n- 如果修改了 .def 文件，需要使用 KBEngine.reloadEntityDef()\n- 重新加载模块后，需要重新导入模块中的类和函数\n- 已存在的实例不会自动更新\n\n**使用场景**:\n- 修改了实体类的 Python 方法\n- 修改了游戏逻辑代码\n- 调试时快速测试代码修改\n\n**限制**:\n- 不能修改属性定义（需要用 reloadEntityDef）\n- 不能修改方法签名（参数、返回值）\n- 不能修改继承关系'
+  }
+];
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
 
@@ -237,6 +256,33 @@ class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
       return items;
     }
 
+    // 检查是否在 Python 脚本中输入热更新相关函数
+    if (document.fileName.endsWith('.py') || document.fileName.endsWith('.def')) {
+      // 检查 KBEngine. 或 importlib. 开头
+      if (lineText.match(/KBEngine\.[a-zA-Z]*$/)) {
+        KBENGINE_RELOAD_FUNCTIONS.filter(fn => fn.name.startsWith('KBEngine.')).forEach(fn => {
+          const shortName = fn.name.replace('KBEngine.', '');
+          const item = new vscode.CompletionItem(shortName, vscode.CompletionItemKind.Function);
+          item.detail = fn.detail;
+          item.documentation = new vscode.MarkdownString(fn.documentation);
+          items.push(item);
+        });
+        return items;
+      }
+
+      // 检查 importlib.reload
+      if (lineText.match(/importlib\.[a-zA-Z]*$/)) {
+        const fn = KBENGINE_RELOAD_FUNCTIONS.find(f => f.name === 'importlib.reload');
+        if (fn) {
+          const item = new vscode.CompletionItem('reload', vscode.CompletionItemKind.Function);
+          item.detail = fn.detail;
+          item.documentation = new vscode.MarkdownString(fn.documentation);
+          items.push(item);
+        }
+        return items;
+      }
+    }
+
     return items;
   }
 }
@@ -298,6 +344,16 @@ class KBEngineHoverProvider implements vscode.HoverProvider {
         markdown.appendMarkdown('\n\n**使用示例**:\n');
         markdown.appendCodeblock(hook.example, 'python');
       }
+      return new vscode.Hover(markdown);
+    }
+
+    // 查找热更新函数文档
+    const reloadFunc = KBENGINE_RELOAD_FUNCTIONS.find(f => f.name.endsWith(word) || word === f.name);
+    if (reloadFunc) {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(`**${reloadFunc.name}**\n\n`);
+      markdown.appendMarkdown(`${reloadFunc.detail}\n\n`);
+      markdown.appendMarkdown(reloadFunc.documentation);
       return new vscode.Hover(markdown);
     }
 

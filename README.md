@@ -76,16 +76,16 @@ git clone https://github.com/cuihairu/kode.git
 
 # 安装依赖
 cd kode
-npm install
+pnpm install
 
 # 编译
-npm run compile
+pnpm run compile
 
 # 打包
-npm run package
+pnpm run package
 
 # 安装
-code --install-extension kode-0.0.1.vsix
+code --install-extension kode-0.1.0.vsix
 ```
 
 ## 📸 截图
@@ -116,7 +116,7 @@ git clone git@github.com:cuihairu/kode.git
 
 # 2. 安装依赖
 cd kode
-npm install
+pnpm install
 
 # 3. 在 VSCode 中打开项目
 code .
@@ -150,13 +150,13 @@ kode/
 
 ```bash
 # 运行测试
-npm test
+pnpm test
 
 # 编译
-npm run compile
+pnpm run compile
 
 # 监听模式编译
-npm run watch
+pnpm run watch
 ```
 
 ## 📖 使用文档

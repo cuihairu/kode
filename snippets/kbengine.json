@@ -151,5 +151,75 @@
     "body": [
       "<${1:EntityName} has${2|Cell,Base,Client|}=\"true\"></${1:EntityName}>$0"
     ]
+  },
+  "KBEngine Hot Reload Entity": {
+    "prefix": "kbe-hot-reload-entity",
+    "description": "KBEngine 实体定义热更新",
+    "body": [
+      "# 实体定义热更新（需要修改 .def 文件后调用）",
+      "import KBEngine",
+      "",
+      "# 完全重新加载所有实体定义",
+      "KBEngine.reloadEntityDef(True)",
+      "",
+      "# 或者只加载新的实体定义（不重新加载已有的）",
+      "# KBEngine.reloadEntityDef(False)"
+    ]
+  },
+  "KBEngine Hot Reload Script": {
+    "prefix": "kbe-hot-reload-script",
+    "description": "KBEngine 脚本热更新",
+    "body": [
+      "# Python 脚本热更新",
+      "import importlib",
+      "",
+      "# 重新加载指定模块",
+      "${1:module_name} = importlib.reload(${1:module_name})",
+      "",
+      "# 注意：只对修改了 Python 方法的代码有效",
+      "# 如果修改了 .def 文件中的属性或方法定义，需要使用 reloadEntityDef"
+    ]
+  },
+  "KBEngine Hot Reload Best Practice": {
+    "prefix": "kbe-hot-reload-best-practice",
+    "description": "KBEngine 热更新最佳实践",
+    "body": [
+      "# KBEngine 热更新最佳实践",
+      "import KBEngine",
+      "",
+      "def onEntitiesEnabled(self):",
+      "    \"\"\"",
+      "    实体启用时的钩子",
+      "    在这里可以检查是否是热更新场景",
+      "    \"\"\"",
+      "    if KBEngine.isReload():",
+      "        # 热更新场景下的初始化逻辑",
+      "        INFO_MSG(f\"{self.__class__.__name__} hot-reloaded!\")",
+      "        # 重新初始化必要的属性和状态",
+      "        self.${2:reinit_on_reload}()",
+      "    else:",
+      "        # 正常启动时的初始化逻辑",
+      "        INFO_MSG(f\"{self.__class__.__name__} created!\")",
+      "",
+      "def ${2:reinit_on_reload}(self):",
+      "    \"\"\"热更新后重新初始化\"\"\"",
+      "    # 在这里重新初始化需要在热更新后恢复的状态",
+      "    pass"
+    ]
+  },
+  "KBEngine Reload Check": {
+    "prefix": "kbe-is-reload",
+    "description": "KBEngine 检查是否热更新",
+    "body": [
+      "# 检查当前是否是热更新场景",
+      "import KBEngine",
+      "",
+      "if KBEngine.isReload():",
+      "    # 热更新场景",
+      "    INFO_MSG(\"Running in reload mode\")",
+      "else:",
+      "    # 正常启动场景",
+      "    INFO_MSG(\"Running in normal mode\")"
+    ]
   }
 }
