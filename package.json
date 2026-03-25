@@ -74,6 +74,10 @@
         {
           "id": "kbengine.entityExplorer",
           "name": "Entities"
+        },
+        {
+          "id": "kbengine.serverControl",
+          "name": "Servers"
         }
       ]
     },
@@ -82,6 +86,26 @@
         "command": "kbengine.refreshExplorer",
         "title": "Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.server.start",
+        "title": "Start Server",
+        "icon": "$(play)"
+      },
+      {
+        "command": "kbengine.server.stop",
+        "title": "Stop Server",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "kbengine.server.restart",
+        "title": "Restart Server",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.server.showLogs",
+        "title": "Show Logs",
+        "icon": "$(output)"
       }
     ],
     "menus": {
@@ -90,6 +114,33 @@
           "command": "kbengine.refreshExplorer",
           "when": "view == kbengine.entityExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.server.start",
+          "when": "view == kbengine.serverControl",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "kbengine.server.start",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.server.stop",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.server.restart",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.server.showLogs",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
         }
       ]
     },
@@ -110,6 +161,25 @@
           "type": "string",
           "default": "scripts/entities.xml",
           "description": "entities.xml 文件的默认路径"
+        },
+        "kbengine.binPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/../kbengine/kbe/bin",
+          "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}"
+        },
+        "kbengine.configPath": {
+          "type": "string",
+          "default": "${workspaceFolder}/server",
+          "description": "KBEngine 配置文件路径"
+        },
+        "kbengine.autoStart": {
+          "type": "array",
+          "default": ["machine", "logger", "dbmgr"],
+          "description": "自动启动的组件列表",
+          "items": {
+            "type": "string",
+            "enum": ["machine", "logger", "dbmgr", "baseappmgr", "cellappmgr", "loginapp", "baseapp", "cellapp", "bots"]
+          }
         }
       }
     }

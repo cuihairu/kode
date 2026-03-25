@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { KBENGINE_HOOKS, getHookByName, HOOK_CATEGORY_NAMES } from './hooks';
+import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 
 /**
  * Kode - KBEngine Development Environment
@@ -162,6 +163,89 @@ export function activate(context: vscode.ExtensionContext) {
     () => entityExplorerProvider.refresh()
   );
   context.subscriptions.push(refreshCommand);
+
+  // 初始化服务器管理器
+  const serverManager = new KBEngineServerManager(context);
+
+  // 注册服务器控制视图
+  const serverControlProvider = new ServerControlProvider(serverManager);
+  vscode.window.registerTreeDataProvider(
+    'kbengine.serverControl',
+    serverControlProvider
+  );
+
+  // 服务器状态变化时刷新视图
+  serverManager.onDidChangeStatus(() => {
+    serverControlProvider.refresh();
+    updateStatusBar(serverManager);
+  });
+
+  // 注册服务器控制命令
+  const startServerCommand = vscode.commands.registerCommand(
+    'kbengine.server.start',
+    (component) => {
+      if (component) {
+        serverManager.startComponent(component);
+      } else {
+        serverManager.startAutoComponents();
+      }
+    }
+  );
+  context.subscriptions.push(startServerCommand);
+
+  const stopServerCommand = vscode.commands.registerCommand(
+    'kbengine.server.stop',
+    (component) => {
+      if (component) {
+        serverManager.stopComponent(component.name);
+      } else {
+        serverManager.stopAll();
+      }
+    }
+  );
+  context.subscriptions.push(stopServerCommand);
+
+  const restartServerCommand = vscode.commands.registerCommand(
+    'kbengine.server.restart',
+    (component) => serverManager.restartComponent(component.name)
+  );
+  context.subscriptions.push(restartServerCommand);
+
+  const showLogsCommand = vscode.commands.registerCommand(
+    'kbengine.server.showLogs',
+    (component) => {
+      // 日志会在启动时自动显示在输出通道
+      vscode.window.showInformationMessage(`查看 ${component.displayName} 日志`);
+    }
+  );
+  context.subscriptions.push(showLogsCommand);
+
+  // 创建状态栏项
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem.command = 'kbengine.serverControl';
+  context.subscriptions.push(statusBarItem);
+
+  // 更新状态栏
+  function updateStatusBar(manager: KBEngineServerManager) {
+    const runningCount = manager.getRunningServers().size;
+    const totalCount = SERVER_COMPONENTS.length;
+
+    if (runningCount > 0) {
+      statusBarItem.text = `$(server) KBEngine: ${runningCount}/${totalCount} Running`;
+      statusBarItem.backgroundColor = new vscode.ThemeColor('terminal.ansiGreen');
+      statusBarItem.show();
+    } else {
+      statusBarItem.hide();
+    }
+  }
+
+  // 启动时更新状态栏
+  updateStatusBar(serverManager);
+
+  // 清理资源
+  context.subscriptions.push({
+    dispose: () => serverManager.dispose()
+  });
 }
 
 /**
@@ -533,6 +617,90 @@ class EntityTreeItem extends vscode.TreeItem {
     this.iconPath = new vscode.ThemeIcon('symbol-namespace');
   }
 }
+
+/**
+ * 服务器控制树项
+ */
+class ServerTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly component: any,
+    public readonly status: ServerStatus,
+    public readonly pid?: number
+  ) {
+    super(component.displayName, vscode.TreeItemCollapsibleState.None);
+
+    const statusIcon = getStatusIcon(status);
+    this.iconPath = new vscode.ThemeIcon(statusIcon);
+    this.contextValue = `server_${component.name}`;
+
+    if (status === ServerStatus.Running) {
+      this.description = `PID: ${pid}`;
+    } else if (status === ServerStatus.Starting) {
+      this.description = '启动中...';
+    } else if (status === ServerStatus.Stopping) {
+      this.description = '停止中...';
+    } else if (status === ServerStatus.Error) {
+      this.description = '错误';
+    }
+
+    this.tooltip = `${component.displayName}\n${component.description}\n状态: ${status}`;
+  }
+}
+
+/**
+ * 获取状态图标
+ */
+function getStatusIcon(status: ServerStatus): string {
+  switch (status) {
+    case ServerStatus.Running:
+      return 'circle-filled';
+    case ServerStatus.Starting:
+      return 'clock';
+    case ServerStatus.Stopping:
+      return 'loading';
+    case ServerStatus.Error:
+      return 'error';
+    case ServerStatus.Stopped:
+    default:
+      return 'circle-large-outline';
+  }
+}
+
+/**
+ * 服务器控制提供者
+ */
+class ServerControlProvider implements vscode.TreeDataProvider<ServerTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<ServerTreeItem | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  constructor(private serverManager: KBEngineServerManager) {}
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  getTreeItem(element: ServerTreeItem): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: ServerTreeItem): Promise<ServerTreeItem[]> {
+    if (element) {
+      return [];
+    }
+
+    const components = this.serverManager.getAllServers();
+    const runningServers = this.serverManager.getRunningServers();
+
+    return components.map(component => {
+      const runningServer = runningServers.get(component.name);
+      const status = runningServer?.status || ServerStatus.Stopped;
+      const pid = runningServer?.pid;
+
+      return new ServerTreeItem(component, status, pid);
+    });
+  }
+}
+
 
 export function deactivate() {
   console.log('KBEngine Language Extension is now deactivated!');
