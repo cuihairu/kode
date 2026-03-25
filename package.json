@@ -131,6 +131,26 @@
         "command": "kbengine.logs.export",
         "title": "Export Logs",
         "icon": "$(save)"
+      },
+      {
+        "command": "kbengine.debug.start",
+        "title": "Start Debugging",
+        "icon": "$(bug)"
+      },
+      {
+        "command": "kbengine.debug.attach",
+        "title": "Attach to Component",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.debug.updateLaunchJson",
+        "title": "Update launch.json",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.debug.createConfig",
+        "title": "Create Debug Config Template",
+        "icon": "$(file-create)"
       }
     ],
     "menus": {
@@ -164,6 +184,16 @@
         },
         {
           "command": "kbengine.server.showLogs",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.debug.start",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.debug.attach",
           "when": "view == kbengine.serverControl",
           "group": "inline"
         }
@@ -220,6 +250,21 @@
           "type": "number",
           "default": 10000,
           "description": "最大日志条目数"
+        },
+        "kbengine.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python 解释器路径（用于调试）"
+        },
+        "kbengine.debugPort": {
+          "type": "number",
+          "default": 5678,
+          "description": "Python 调试端口（默认 5678）"
+        },
+        "kbengine.autoAttachDebug": {
+          "type": "boolean",
+          "default": false,
+          "description": "启动组件时自动附加调试器"
         }
       }
     }

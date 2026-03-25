@@ -5,6 +5,7 @@ import { KBENGINE_HOOKS, getHookByName, HOOK_CATEGORY_NAMES } from './hooks';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 import { KBEngineLogCollector, CollectorStatus, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
+import { DebugConfigManager } from './debugConfig';
 
 /**
  * Kode - KBEngine Development Environment
@@ -273,6 +274,76 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(exportLogsCommand);
 
+  // 初始化调试配置管理器
+  const debugConfigManager = new DebugConfigManager(context);
+
+  // 注册调试相关命令
+  const updateLaunchJsonCommand = vscode.commands.registerCommand(
+    'kbengine.debug.updateLaunchJson',
+    async () => {
+      await debugConfigManager.updateLaunchJson();
+    }
+  );
+  context.subscriptions.push(updateLaunchJsonCommand);
+
+  const createDebugConfigCommand = vscode.commands.registerCommand(
+    'kbengine.debug.createConfig',
+    async () => {
+      await debugConfigManager.createExampleConfig();
+    }
+  );
+  context.subscriptions.push(createDebugConfigCommand);
+
+  const startDebuggingCommand = vscode.commands.registerCommand(
+    'kbengine.debug.start',
+    async (component) => {
+      if (component && component.name) {
+        await debugConfigManager.startDebugging(component.name);
+      } else {
+        vscode.window.showQuickPick(
+          SERVER_COMPONENTS.map(c => ({
+            label: c.displayName,
+            description: c.description,
+            name: c.name
+          })),
+          {
+            placeHolder: '选择要调试的组件'
+          }
+        ).then(async (selection) => {
+          if (selection) {
+            await debugConfigManager.startDebugging(selection.name);
+          }
+        });
+      }
+    }
+  );
+  context.subscriptions.push(startDebuggingCommand);
+
+  const attachToComponentCommand = vscode.commands.registerCommand(
+    'kbengine.debug.attach',
+    async (component) => {
+      if (component && component.name) {
+        await debugConfigManager.attachToComponent(component.name);
+      } else {
+        vscode.window.showQuickPick(
+          SERVER_COMPONENTS.map(c => ({
+            label: c.displayName,
+            description: c.description,
+            name: c.name
+          })),
+          {
+            placeHolder: '选择要附加的组件'
+          }
+        ).then(async (selection) => {
+          if (selection) {
+            await debugConfigManager.attachToComponent(selection.name);
+          }
+        });
+      }
+    }
+  );
+  context.subscriptions.push(attachToComponentCommand);
+
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'kbengine.serverControl';
@@ -297,7 +368,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 清理资源
   context.subscriptions.push({
-    dispose: () => serverManager.dispose()
+    dispose: () => {
+      serverManager.dispose();
+      logCollector.dispose();
+      logViewer.dispose();
+      debugConfigManager.dispose();
+    }
   });
 }
 
