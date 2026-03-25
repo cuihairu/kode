@@ -12,6 +12,10 @@ dist/
 # Node modules
 node_modules/
 
+# Lock files (we use pnpm)
+package-lock.json
+yarn.lock
+
 # VS Code
 .vscode-test/
 *.code-workspace
