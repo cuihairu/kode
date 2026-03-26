@@ -318,7 +318,10 @@ export function activate(context: vscode.ExtensionContext) {
   // 注册监控相关命令
   const showMonitoringCommand = vscode.commands.registerCommand(
     'kbengine.monitoring.show',
-    () => monitoringWebView.show()
+    () => {
+      monitoringWebView.show();
+      vscode.window.showInformationMessage(monitoringCollector.getUnavailableReason());
+    }
   );
   context.subscriptions.push(showMonitoringCommand);
 

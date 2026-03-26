@@ -132,6 +132,7 @@ export class MonitoringWebView {
    */
   private getHtml(overview: SystemOverview, metrics: ComponentMetrics[]): string {
     const metricsHtml = metrics.map(m => this.formatMetricCard(m)).join('\n');
+    const unavailableReason = this.escapeHtml(this.collector.getUnavailableReason());
 
     return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -292,6 +293,15 @@ export class MonitoringWebView {
       background-color: var(--vscode-button-hoverBackground);
     }
 
+    .notice {
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--vscode-testing-iconFailed);
+      background-color: var(--vscode-inputValidation-errorBackground);
+      color: var(--vscode-editor-foreground);
+      line-height: 1.5;
+    }
+
     .charts-container {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -327,6 +337,8 @@ export class MonitoringWebView {
     <button id="refreshBtn">刷新</button>
     <button id="exportBtn">导出数据</button>
   </div>
+
+  <div class="notice">当前监控面板仅保留占位展示。${unavailableReason}</div>
 
   <div class="overview">
     <div class="overview-card">
@@ -500,6 +512,17 @@ export class MonitoringWebView {
   </script>
 </body>
 </html>`;
+  }
+
+  private escapeHtml(text: string): string {
+    const map: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, char => map[char]);
   }
 
   /**

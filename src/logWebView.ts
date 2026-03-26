@@ -159,11 +159,20 @@ export class LogViewerWebView {
         this.updateWebView();
         break;
       case 'connect':
-        this.collector.connect();
+        void this.connectCollector();
         break;
       case 'disconnect':
         this.collector.disconnect();
         break;
+    }
+  }
+
+  private async connectCollector(): Promise<void> {
+    try {
+      await this.collector.connect();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      vscode.window.showErrorMessage(`日志连接不可用: ${message}`);
     }
   }
 
@@ -204,6 +213,7 @@ export class LogViewerWebView {
    */
   private getHtml(logs: LogEntry[]): string {
     const logsHtml = logs.map(log => this.formatLogEntry(log)).join('\n');
+    const unavailableReason = this.escapeHtml(this.collector.getUnavailableReason());
 
     return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -260,6 +270,15 @@ export class LogViewerWebView {
       padding: 5px 10px;
       font-size: 12px;
       color: var(--vscode-descriptionForeground);
+    }
+
+    .notice {
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--vscode-testing-iconFailed);
+      background-color: var(--vscode-inputValidation-errorBackground);
+      color: var(--vscode-editor-foreground);
+      line-height: 1.5;
     }
 
     .log-container {
@@ -356,6 +375,7 @@ export class LogViewerWebView {
     <button id="connectBtn">连接</button>
     <button id="disconnectBtn">断开</button>
   </div>
+  <div class="notice">日志直连当前不可用：${unavailableReason}</div>
   <div class="stats">
     显示 ${logs.length} 条日志（总计 ${this.currentLogs.length} 条）
   </div>
