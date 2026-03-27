@@ -5,7 +5,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { SERVER_COMPONENTS, ServerComponent } from './serverManager';
+import { SERVER_COMPONENTS } from './serverManager';
 
 /**
  * 单个组件的调试配置

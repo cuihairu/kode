@@ -457,7 +457,6 @@ export class LogViewerWebView {
   private formatLogEntry(log: LogEntry): string {
     const levelClass = `level-${LogLevel[log.level].toLowerCase()}`;
     const levelIcon = LogParser.getLevelIcon(log.level);
-    const levelColor = LogParser.getLevelColor(log.level);
     const timestamp = log.timestamp.toLocaleTimeString('zh-CN');
 
     // 组件名称颜色

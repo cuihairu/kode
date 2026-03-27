@@ -150,7 +150,7 @@ export class KBEngineLogCollector {
     return this.logEntries.filter(entry => entry.component === component);
   }
 
-  searchLogs(keyword: string, useRegex: boolean = false): LogEntry[] {
+  searchLogs(keyword: string, useRegex = false): LogEntry[] {
     if (useRegex) {
       try {
         const regex = new RegExp(keyword, 'i');

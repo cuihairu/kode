@@ -2,8 +2,7 @@ import * as vscode from 'vscode';
 import {
   discoverLocalComponents,
   KBEngineComponentInfo,
-  queryWatcherPath,
-  WatcherQueryResult
+  queryWatcherPath
 } from './kbengineProtocol';
 
 export interface ComponentMetrics {
@@ -62,7 +61,7 @@ export class MonitoringCollector {
 
   constructor(private context: vscode.ExtensionContext) {}
 
-  start(updateIntervalMs: number = 1000): void {
+  start(updateIntervalMs = 1000): void {
     this.refreshIntervalMs = updateIntervalMs;
 
     if (!this.paused) {
@@ -139,7 +138,7 @@ export class MonitoringCollector {
     );
   }
 
-  getMetricsHistory(componentName: string, duration: number = 60): ComponentMetrics[] {
+  getMetricsHistory(componentName: string, duration = 60): ComponentMetrics[] {
     const history = this.metricsHistory.get(componentName) || [];
     return history.slice(-duration);
   }

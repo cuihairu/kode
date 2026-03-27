@@ -44,11 +44,9 @@ jobs:
 
     - name: 运行测试
       run: pnpm test
-      continue-on-error: true
 
     - name: 运行代码检查
       run: pnpm run lint
-      continue-on-error: true
 
     - name: 打包 VSIX 扩展
       run: pnpm run package

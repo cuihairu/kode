@@ -75,31 +75,8 @@ export class EntityMappingManager {
         methods: {}
       };
 
-      // 解析属性
-      const propertyRegex = /<(\w+)>\s*<Type>/g;
-      let match;
-      while ((match = propertyRegex.exec(text)) !== null) {
-        const line = this.getLineNumber(text, match.index);
-        mapping.properties[match[1]] = {
-          defFile: defPath,
-          line
-        };
-      }
-
-      // 解析方法
-      const methodRegex = /<(\w+)>\s*$/gm;
-      const lines = text.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        if (methodRegex.test(lines[i])) {
-          const match = methodRegex.exec(lines[i]);
-          if (match) {
-            mapping.methods[match[1]] = {
-              defFile: defPath,
-              line: i + 1
-            };
-          }
-        }
-      }
+      this.collectPropertyMappings(text, defPath, mapping);
+      this.collectMethodMappings(text, defPath, mapping);
 
       this.mappings.set(entityName, mapping);
     } catch (error) {
@@ -140,6 +117,70 @@ export class EntityMappingManager {
   private getLineNumber(text: string, index: number): number {
     const beforeIndex = text.substring(0, index);
     return beforeIndex.split('\n').length;
+  }
+
+  private collectPropertyMappings(text: string, defPath: string, mapping: EntityMapping): void {
+    const propertySections = ['Properties', 'CellProperties', 'ClientProperties'];
+
+    for (const sectionName of propertySections) {
+      const sections = this.extractTagBodies(text, sectionName);
+      for (const section of sections) {
+        const propertyRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
+        let propertyMatch: RegExpExecArray | null;
+
+        while ((propertyMatch = propertyRegex.exec(section)) !== null) {
+          const propertyName = propertyMatch[1];
+          const propertyBody = propertyMatch[2];
+          if (!/<Type>/i.test(propertyBody)) {
+            continue;
+          }
+
+          const line = this.getLineNumber(text, text.indexOf(propertyMatch[0]));
+          mapping.properties[propertyName] = {
+            defFile: defPath,
+            line
+          };
+        }
+      }
+    }
+  }
+
+  private collectMethodMappings(text: string, defPath: string, mapping: EntityMapping): void {
+    const methodSections = ['BaseMethods', 'CellMethods', 'ClientMethods'];
+
+    for (const sectionName of methodSections) {
+      const sections = this.extractTagBodies(text, sectionName);
+      for (const section of sections) {
+        const methodRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
+        let methodMatch: RegExpExecArray | null;
+
+        while ((methodMatch = methodRegex.exec(section)) !== null) {
+          const methodName = methodMatch[1];
+          const methodBody = methodMatch[2];
+          if (!/<Arg>/i.test(methodBody) && methodBody.trim().length > 0) {
+            continue;
+          }
+
+          const line = this.getLineNumber(text, text.indexOf(methodMatch[0]));
+          mapping.methods[methodName] = {
+            defFile: defPath,
+            line
+          };
+        }
+      }
+    }
+  }
+
+  private extractTagBodies(text: string, tagName: string): string[] {
+    const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'gi');
+    const bodies: string[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(text)) !== null) {
+      bodies.push(match[1]);
+    }
+
+    return bodies;
   }
 
   /**

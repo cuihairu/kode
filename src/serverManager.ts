@@ -384,6 +384,20 @@ export class KBEngineServerManager {
   }
 
   /**
+   * 显示组件对应的输出通道
+   */
+  showComponentLogs(componentName: string): boolean {
+    const component = SERVER_COMPONENTS.find(item => item.name === componentName);
+    if (!component) {
+      return false;
+    }
+
+    const outputChannel = this.getOutputChannel(component);
+    outputChannel.show(true);
+    return true;
+  }
+
+  /**
    * 获取服务器状态
    */
   getServerStatus(componentName: string): ServerStatus {

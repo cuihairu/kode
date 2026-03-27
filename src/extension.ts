@@ -204,8 +204,12 @@ export function activate(context: vscode.ExtensionContext) {
   const showLogsCommand = vscode.commands.registerCommand(
     'kbengine.server.showLogs',
     (component) => {
-      // 日志会在启动时自动显示在输出通道
-      vscode.window.showInformationMessage(`查看 ${component.displayName} 日志`);
+      if (!component?.name) {
+        return;
+      }
+
+      serverManager.showComponentLogs(component.name);
+      logViewer.show();
     }
   );
   context.subscriptions.push(showLogsCommand);

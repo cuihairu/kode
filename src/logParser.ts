@@ -38,19 +38,6 @@ export interface LogEntry {
 }
 
 /**
- * KBEngine LOG_ITEM 结构（参考 KBEngine 源码）
- * kbe/src/lib/helper/debug_helper.h
- */
-interface LogItemStruct {
-  id: number;
-  logType: number;
-  componentType: number;
-  severity: number;
-  message: string;
-  timestamp: number;
-}
-
-/**
  * 日志解析器类
  */
 export class LogParser {
@@ -86,11 +73,11 @@ export class LogParser {
       // KBEngine logger.cpp 组装格式:
       // "   INFO dbmgr01 1000 12345 [2026-03-26 18:21:11 001] - message"
       const kbengineMatch = trimmed.match(
-        /^\s*([A-Z_]+)\s+([a-z_]+?)(\d+)\s+(-?\d+)\s+(-?\d+)\s+\[(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{1,3})\]\s+-\s+([\s\S]*)$/i
+        /^\s*([A-Z_]+)\s+([a-z_]+?)(\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+\[(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{1,3})\]\s+-\s+([\s\S]*)$/i
       );
 
       if (kbengineMatch) {
-        const [, levelStr, component, , , , year, month, day, hour, minute, second, ms, message] =
+        const [, levelStr, component, , , , , year, month, day, hour, minute, second, ms, message] =
           kbengineMatch;
 
         return {
@@ -148,7 +135,7 @@ export class LogParser {
       let offset = 0;
 
       // 读取 ID (4 bytes)
-      const id = buffer.readUInt32LE(offset);
+      buffer.readUInt32LE(offset);
       offset += 4;
 
       // 读取 logType (1 byte)
@@ -231,8 +218,6 @@ export class LogParser {
     const now = new Date();
     let level = LogLevel.INFO;
     let component = 'unknown';
-    let message = data;
-
     // 尝试检测日志级别
     const lowerData = data.toLowerCase();
     if (lowerData.includes('error') || lowerData.includes('failed')) {

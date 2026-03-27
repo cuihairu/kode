@@ -115,7 +115,7 @@ export class EntityDependencyAnalyzer {
     }
 
     // 第二遍：解析依赖关系
-    for (const [entityName, node] of this.entities) {
+    for (const [, node] of this.entities) {
       await this.parseDependencies(node);
     }
 
@@ -147,16 +147,18 @@ export class EntityDependencyAnalyzer {
       };
 
       // 检查实体类型（Base/Cell/Client）
-      const hasBase = /<Base>\s*<[^>]*>/i.test(text);
-      const hasCell = /<Cell>\s*<[^>]*>/i.test(text);
-      const hasClient = /<Client>\s*<[^>]*>/i.test(text);
+      const hasBase = /<Properties>/i.test(text) || /<BaseMethods>/i.test(text);
+      const hasCell = /<CellProperties>/i.test(text) || /<CellMethods>/i.test(text);
+      const hasClient = /<ClientProperties>/i.test(text) || /<ClientMethods>/i.test(text);
 
       if (hasBase) node.types.push(EntityType.Base);
       if (hasCell) node.types.push(EntityType.Cell);
       if (hasClient) node.types.push(EntityType.Client);
 
-      // 查找父实体（通过 <Implements> 标签）
-      const implementsMatch = text.match(/<Implements>\s*<(\w+)\s*\/>/i);
+      // 查找父实体
+      const implementsMatch =
+        text.match(/<Implements>\s*<(\w+)\s*\/>/i)
+        || text.match(/<Parent>\s*([A-Z][A-Za-z0-9_]*)\s*<\/Parent>/i);
       if (implementsMatch) {
         node.parent = implementsMatch[1];
       }
@@ -174,26 +176,35 @@ export class EntityDependencyAnalyzer {
     try {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(node.defFile));
       const text = Buffer.from(content).toString('utf8');
+      const sections = [
+        'Properties',
+        'CellProperties',
+        'ClientProperties'
+      ];
 
-      // 解析属性中的实体引用
-      const propertyRegex = /<(\w+)>\s*<Type>\s*(\w+)(?:\s*<\w+>)?/g;
-      let match;
+      for (const sectionName of sections) {
+        const sectionBlocks = extractTagBodies(text, sectionName);
+        for (const sectionBody of sectionBlocks) {
+          const propertyBlocks = extractNamedChildBlocks(sectionBody);
+          for (const property of propertyBlocks) {
+            const references = this.extractReferencesFromProperty(property.name, property.body);
+            for (const reference of references) {
+              node.references.push(reference);
+              if (this.entities.has(reference.entityName)) {
+                this.edges.push({
+                  from: node.name,
+                  to: reference.entityName,
+                  type: reference.type,
+                  label: reference.propertyName
+                });
 
-      while ((match = propertyRegex.exec(text)) !== null) {
-        const propertyName = match[1];
-        const typeName = match[2];
-
-        // 检查是否是引用类型
-        if (typeName === 'MAILBOX') {
-          // MAILBOX 通常指向另一个实体
-          // 需要更多上下文来确定目标实体
-          // 这里暂时标记为可能的关系
-        }
-
-        // 检查容器类型
-        if (typeName === 'ARRAY' || typeName === 'FIXED_DICT' || typeName === 'TUPLE') {
-          // 这些容器可能包含实体
-          // 需要更复杂的解析来提取实际的实体类型
+                const targetNode = this.entities.get(reference.entityName);
+                if (targetNode) {
+                  targetNode.referencedBy++;
+                }
+              }
+            }
+          }
         }
       }
 
@@ -207,8 +218,10 @@ export class EntityDependencyAnalyzer {
         });
 
         // 增加被引用计数
-        const parentNode = this.entities.get(node.parent)!;
-        parentNode.referencedBy++;
+        const parentNode = this.entities.get(node.parent);
+        if (parentNode) {
+          parentNode.referencedBy++;
+        }
       }
 
     } catch (error) {
@@ -272,7 +285,10 @@ export class EntityDependencyAnalyzer {
       // 查找父实体
       const parentMatch = attributes.match(/\bparent\s*=\s*"(\w+)"/i);
       if (parentMatch) {
-        const node = this.entities.get(entityName)!;
+        const node = this.entities.get(entityName);
+        if (!node) {
+          continue;
+        }
         node.parent = parentMatch[1];
 
         if (this.entities.has(parentMatch[1])) {
@@ -407,7 +423,7 @@ export class EntityDependencyAnalyzer {
   getChildren(entityName: string): EntityNode[] {
     const children: EntityNode[] = [];
 
-    for (const [name, node] of this.entities) {
+    for (const [, node] of this.entities) {
       if (node.parent === entityName) {
         children.push(node);
       }
@@ -440,4 +456,208 @@ export class EntityDependencyAnalyzer {
 
     return ancestors;
   }
+
+  private extractReferencesFromProperty(
+    propertyName: string,
+    propertyBody: string
+  ): Array<{ entityName: string; type: DependencyType; propertyName: string }> {
+    const references: Array<{ entityName: string; type: DependencyType; propertyName: string }> = [];
+    const typeBodies = extractTagBodies(propertyBody, 'Type');
+
+    for (const rawTypeBody of typeBodies) {
+      const typeBody = rawTypeBody.trim();
+      const containerMatch = typeBody.match(/^([A-Z_]+)\s*<([\s\S]+)>$/);
+
+      if (containerMatch) {
+        const containerType = containerMatch[1];
+        const innerType = stripXmlTags(containerMatch[2]).trim();
+        const dependencyType = this.mapContainerType(containerType);
+        if (dependencyType && this.isEntityReference(innerType)) {
+          references.push({
+            entityName: innerType,
+            type: dependencyType,
+            propertyName
+          });
+        }
+        continue;
+      }
+
+      if (typeBody === 'MAILBOX') {
+        const mailboxEntity = this.findMailboxTarget(propertyBody);
+        if (mailboxEntity) {
+          references.push({
+            entityName: mailboxEntity,
+            type: DependencyType.Mailbox,
+            propertyName
+          });
+        }
+        continue;
+      }
+
+      if (typeBody === 'FIXED_DICT') {
+        const dictReferences = this.extractFixedDictReferences(propertyName, propertyBody);
+        references.push(...dictReferences);
+        continue;
+      }
+
+      if (typeBody === 'TUPLE') {
+        const tupleReferences = this.extractTupleReferences(propertyName, propertyBody);
+        references.push(...tupleReferences);
+      }
+    }
+
+    return dedupeReferences(references);
+  }
+
+  private extractFixedDictReferences(
+    propertyName: string,
+    propertyBody: string
+  ): Array<{ entityName: string; type: DependencyType; propertyName: string }> {
+    const references: Array<{ entityName: string; type: DependencyType; propertyName: string }> = [];
+    const implementedByBlocks = extractTagBodies(propertyBody, 'implementedBy');
+
+    for (const block of implementedByBlocks) {
+      for (const typeBody of extractTagBodies(block, 'Type')) {
+        const candidate = stripXmlTags(typeBody).trim();
+        if (this.isEntityReference(candidate)) {
+          references.push({
+            entityName: candidate,
+            type: DependencyType.FixedDict,
+            propertyName
+          });
+        }
+      }
+    }
+
+    const nestedProperties = extractTagBodies(propertyBody, 'Properties');
+    for (const nestedPropertySection of nestedProperties) {
+      const propertyBlocks = extractNamedChildBlocks(nestedPropertySection);
+      for (const nestedProperty of propertyBlocks) {
+        const nestedReferences = this.extractReferencesFromProperty(
+          `${propertyName}.${nestedProperty.name}`,
+          nestedProperty.body
+        ).map(reference => ({
+          ...reference,
+          type: reference.type === DependencyType.Mailbox
+            ? DependencyType.FixedDict
+            : reference.type
+        }));
+        references.push(...nestedReferences);
+      }
+    }
+
+    return references;
+  }
+
+  private extractTupleReferences(
+    propertyName: string,
+    propertyBody: string
+  ): Array<{ entityName: string; type: DependencyType; propertyName: string }> {
+    const references: Array<{ entityName: string; type: DependencyType; propertyName: string }> = [];
+
+    for (const typeBody of extractTagBodies(propertyBody, 'Type')) {
+      const candidate = stripXmlTags(typeBody).trim();
+      if (this.isEntityReference(candidate)) {
+        references.push({
+          entityName: candidate,
+          type: DependencyType.Tuple,
+          propertyName
+        });
+      }
+    }
+
+    return references;
+  }
+
+  private findMailboxTarget(propertyBody: string): string | null {
+    const entityMatch =
+      propertyBody.match(/<EntityType>\s*([A-Z][A-Za-z0-9_]*)\s*<\/EntityType>/i)
+      || propertyBody.match(/<Utype>\s*([A-Z][A-Za-z0-9_]*)\s*<\/Utype>/i)
+      || propertyBody.match(/<Default>\s*([A-Z][A-Za-z0-9_]*)\s*<\/Default>/i);
+
+    return entityMatch ? entityMatch[1] : null;
+  }
+
+  private isEntityReference(typeName: string): boolean {
+    return /^[A-Z][A-Za-z0-9_]*$/.test(typeName) && this.entities.has(typeName);
+  }
+
+  private mapContainerType(typeName: string): DependencyType | null {
+    switch (typeName) {
+      case 'ARRAY':
+        return DependencyType.Array;
+      case 'FIXED_DICT':
+        return DependencyType.FixedDict;
+      case 'TUPLE':
+        return DependencyType.Tuple;
+      default:
+        return null;
+    }
+  }
+}
+
+function extractTagBodies(text: string, tagName: string): string[] {
+  const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'gi');
+  const bodies: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    bodies.push(match[1]);
+  }
+
+  return bodies;
+}
+
+function extractNamedChildBlocks(text: string): Array<{ name: string; body: string }> {
+  const regex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
+  const reserved = new Set([
+    'Type',
+    'Flags',
+    'Default',
+    'Database',
+    'Identifier',
+    'DetailLevel',
+    'Arg',
+    'implementedBy',
+    'Properties',
+    'CellProperties',
+    'ClientProperties',
+    'BaseMethods',
+    'CellMethods',
+    'ClientMethods'
+  ]);
+  const blocks: Array<{ name: string; body: string }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const name = match[1];
+    if (reserved.has(name)) {
+      continue;
+    }
+
+    blocks.push({
+      name,
+      body: match[2]
+    });
+  }
+
+  return blocks;
+}
+
+function stripXmlTags(text: string): string {
+  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function dedupeReferences(
+  references: Array<{ entityName: string; type: DependencyType; propertyName: string }>
+): Array<{ entityName: string; type: DependencyType; propertyName: string }> {
+  const seen = new Set<string>();
+  return references.filter(reference => {
+    const key = `${reference.entityName}:${reference.type}:${reference.propertyName}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }

@@ -362,7 +362,7 @@ function parseWatcherFrame(body: Buffer): WatcherQueryResult {
   return result;
 }
 
-export async function discoverLocalComponents(timeoutMs: number = 800): Promise<KBEngineComponentInfo[]> {
+export async function discoverLocalComponents(timeoutMs = 800): Promise<KBEngineComponentInfo[]> {
   const socket = dgram.createSocket('udp4');
   const components = new Map<string, KBEngineComponentInfo>();
 
@@ -431,7 +431,7 @@ export async function discoverLocalComponents(timeoutMs: number = 800): Promise<
 export async function queryWatcherPath(
   component: KBEngineComponentInfo,
   path: string,
-  timeoutMs: number = 800
+  timeoutMs = 800
 ): Promise<WatcherQueryResult[]> {
   const messageId = WATCHER_QUERY_MSG_IDS[component.componentType];
   if (!messageId) {

@@ -3,25 +3,42 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 
-export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<EntityTreeItem | undefined>();
+type EntityDetail =
+  | { label: string; value: string; icon: string }
+  | { label: string; value: string; icon: string; command: vscode.Command };
+
+interface ParsedEntityInfo {
+  name: string;
+  description: string;
+  defPath: string;
+  details: EntityDetail[];
+}
+
+type EntityTreeNode = EntityTreeItem | EntityDetailItem;
+
+export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTreeNode> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<EntityTreeNode | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  getTreeItem(element: EntityTreeItem): vscode.TreeItem {
+  getTreeItem(element: EntityTreeNode): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: EntityTreeItem): Promise<EntityTreeItem[]> {
+  async getChildren(element?: EntityTreeNode): Promise<EntityTreeNode[]> {
     if (!vscode.workspace.workspaceFolders) {
       return [];
     }
 
     if (!element) {
       return this.getEntityList();
+    }
+
+    if (element instanceof EntityTreeItem) {
+      return element.details.map(detail => new EntityDetailItem(detail));
     }
 
     return [];
@@ -58,14 +75,100 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       if (hasBase) description.push('Base');
       if (hasClient) description.push('Client');
 
-      entities.push(new EntityTreeItem(
+      const defPath = path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`);
+      const parsedEntity = this.buildEntityInfo(
         entityName,
         description.join(', '),
-        vscode.TreeItemCollapsibleState.Collapsed
-      ));
+        defPath,
+        { hasCell, hasBase, hasClient }
+      );
+
+      entities.push(
+        new EntityTreeItem(
+          parsedEntity.name,
+          parsedEntity.description,
+          parsedEntity.defPath,
+          parsedEntity.details
+        )
+      );
     }
 
     return entities;
+  }
+
+  private buildEntityInfo(
+    name: string,
+    description: string,
+    defPath: string,
+    flags: { hasCell: boolean; hasBase: boolean; hasClient: boolean }
+  ): ParsedEntityInfo {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const relativeDefPath = workspaceRoot ? path.relative(workspaceRoot, defPath) : defPath;
+    const details: EntityDetail[] = [
+      {
+        label: 'Definition',
+        value: relativeDefPath || defPath,
+        icon: 'go-to-file',
+        command: {
+          command: 'kbengine.entity.open',
+          title: '打开实体定义',
+          arguments: [name]
+        }
+      },
+      {
+        label: 'Components',
+        value: description || 'None',
+        icon: 'symbol-class'
+      }
+    ];
+
+    if (fs.existsSync(defPath)) {
+      const content = fs.readFileSync(defPath, 'utf8');
+      const propertyCount = this.countMatches(
+        content,
+        /<(Properties|CellProperties|ClientProperties)>[\s\S]*?<\/\1>/g,
+        /<([A-Za-z_][A-Za-z0-9_]*)>\s*<Type>/g
+      );
+      const methodCount = this.countMatches(
+        content,
+        /<(BaseMethods|CellMethods|ClientMethods)>[\s\S]*?<\/\1>/g,
+        /<([A-Za-z_][A-Za-z0-9_]*)>\s*(?:<Arg>|<\/[A-Za-z_][A-Za-z0-9_]*>)/g
+      );
+
+      details.push(
+        { label: 'Properties', value: String(propertyCount), icon: 'symbol-property' },
+        { label: 'Methods', value: String(methodCount), icon: 'symbol-method' }
+      );
+    } else {
+      details.push({
+        label: 'Status',
+        value: 'Definition file not found',
+        icon: 'warning'
+      });
+    }
+
+    details.push(
+      { label: 'Base', value: flags.hasBase ? 'Yes' : 'No', icon: 'circle-filled' },
+      { label: 'Cell', value: flags.hasCell ? 'Yes' : 'No', icon: 'circle-filled' },
+      { label: 'Client', value: flags.hasClient ? 'Yes' : 'No', icon: 'circle-filled' }
+    );
+
+    return { name, description, defPath, details };
+  }
+
+  private countMatches(text: string, sectionRegex: RegExp, itemRegex: RegExp): number {
+    let count = 0;
+    let sectionMatch: RegExpExecArray | null;
+
+    while ((sectionMatch = sectionRegex.exec(text)) !== null) {
+      const sectionBody = sectionMatch[0];
+      const scopedRegex = new RegExp(itemRegex.source, itemRegex.flags);
+      while (scopedRegex.exec(sectionBody) !== null) {
+        count += 1;
+      }
+    }
+
+    return count;
   }
 }
 
@@ -73,9 +176,10 @@ class EntityTreeItem extends vscode.TreeItem {
   constructor(
     public readonly label: string,
     public readonly description: string,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+    public readonly defPath: string,
+    public readonly details: EntityDetail[]
   ) {
-    super(label, collapsibleState);
+    super(label, vscode.TreeItemCollapsibleState.Collapsed);
     this.description = description;
     this.iconPath = new vscode.ThemeIcon('symbol-namespace');
     this.command = {
@@ -83,6 +187,19 @@ class EntityTreeItem extends vscode.TreeItem {
       title: '打开实体定义',
       arguments: [label]
     };
+    this.tooltip = `${label}\n${description}\n${defPath}`;
+  }
+}
+
+class EntityDetailItem extends vscode.TreeItem {
+  constructor(detail: EntityDetail) {
+    super(detail.label, vscode.TreeItemCollapsibleState.None);
+    this.description = detail.value;
+    this.iconPath = new vscode.ThemeIcon(detail.icon);
+    this.contextValue = 'entity_detail';
+    if ('command' in detail) {
+      this.command = detail.command;
+    }
   }
 }
 

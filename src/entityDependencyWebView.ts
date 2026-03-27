@@ -4,7 +4,7 @@
  */
 
 import * as vscode from 'vscode';
-import { EntityDependencyAnalyzer, DependencyGraph, EntityNode, DependencyEdge, DependencyType, EntityType } from './entityDependency';
+import { EntityDependencyAnalyzer, DependencyGraph, DependencyType, EntityType } from './entityDependency';
 
 /**
  * 实体依赖关系 WebView 面板
