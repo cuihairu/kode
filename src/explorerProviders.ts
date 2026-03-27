@@ -42,9 +42,10 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
 
     const content = fs.readFileSync(entitiesXmlPath, 'utf-8');
-    const entityMatches = content.matchAll(/<(\w+)\s+([^>]+)>/g);
+    const entityMatches = /<(\w+)\s+([^>]+)>/g;
+    let match: RegExpExecArray | null;
 
-    for (const match of entityMatches) {
+    while ((match = entityMatches.exec(content)) !== null) {
       const entityName = match[1];
       const attributes = match[2];
 

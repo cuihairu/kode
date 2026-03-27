@@ -12,8 +12,7 @@
   "icon": "resources/logo.png",
   "packageManager": "pnpm@8.15.0",
   "engines": {
-    "vscode": "^1.60.0",
-    "node": ">=20"
+    "vscode": "^1.50.0"
   },
   "categories": [
     "Programming Languages",
@@ -416,7 +415,7 @@
   },
   "homepage": "https://github.com/cuihairu/kode#readme",
   "scripts": {
-    "vscode:prepublish": "echo 'skip prepublish'",
+    "vscode:prepublish": "pnpm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vuepress dev docs",
@@ -425,14 +424,14 @@
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
     "package": "pnpm run compile && vsce package --no-yarn --no-dependencies",
-    "publish": "vsce publish --no-yarn --no-dependencies"
+    "publish": "pnpm run compile && vsce publish --no-yarn --no-dependencies"
   },
   "devDependencies": {
     "@types/glob": "^7.1.3",
     "@types/minimatch": "^6.0.0",
     "@types/mocha": "^8.2.2",
-    "@types/node": "14.x",
-    "@types/vscode": "^1.60.0",
+    "@types/node": "12.x",
+    "@types/vscode": "^1.50.0",
     "@typescript-eslint/eslint-plugin": "^4.23.0",
     "@typescript-eslint/parser": "^4.23.0",
     "@vscode/test-electron": "^1.0.2",

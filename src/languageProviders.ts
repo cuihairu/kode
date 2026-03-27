@@ -438,8 +438,10 @@ function validateScalarTagValues(
       continue;
     }
 
-    const candidates = Array.from(value.matchAll(/\b[A-Z][A-Z0-9_]*\b/g)).map(match => match[0]);
-    for (const candidate of candidates) {
+    const typeCandidateRegex = /\b[A-Z][A-Z0-9_]*\b/g;
+    let typeCandidateMatch: RegExpExecArray | null;
+    while ((typeCandidateMatch = typeCandidateRegex.exec(value)) !== null) {
+      const candidate = typeCandidateMatch[0];
       if (featureConfig.diagnosticsCheckUnknownTypes && !knownTypes.has(candidate)) {
         pushDiagnosticForMatch(
           document,

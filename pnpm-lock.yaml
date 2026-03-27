@@ -15,11 +15,11 @@ devDependencies:
     specifier: ^8.2.2
     version: 8.2.3
   '@types/node':
-    specifier: 14.x
-    version: 14.18.63
+    specifier: 12.x
+    version: 12.20.55
   '@types/vscode':
-    specifier: ^1.60.0
-    version: 1.110.0
+    specifier: ^1.50.0
+    version: 1.50.0
   '@typescript-eslint/eslint-plugin':
     specifier: ^4.23.0
     version: 4.33.0(@typescript-eslint/parser@4.33.0)(eslint@7.32.0)(typescript@4.9.5)
@@ -1438,26 +1438,26 @@ packages:
     resolution: {integrity: sha512-HLFeCYgz89uk22N5Qg3dvGvsv46B8GLvKKo1zKG4NybA8U2DiEO3w9lqGg29t/tfLRJpJ6iQxnVw4OnB7MoM9g==}
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/connect-history-api-fallback@1.5.4:
     resolution: {integrity: sha512-n6Cr2xS1h4uAulPRdlw6Jl6s1oG8KrVilPN2yUITEs+K48EzMJJ3W1xy8K5eWuFvjp3R74AOIGSmp2UfBJ8HFw==}
     dependencies:
       '@types/express-serve-static-core': 5.1.1
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/connect@3.4.38:
     resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/express-serve-static-core@5.1.1:
     resolution: {integrity: sha512-v4zIMr/cX7/d2BpAEX3KNKL/JrT1s43s96lLvvdTmza1oEvDudCqK9aF/djc/SWgy8Yh0h30TZx5VpzqFCxk5A==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
       '@types/qs': 6.15.0
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -1475,7 +1475,7 @@ packages:
     resolution: {integrity: sha512-ZUxbzKl0IfJILTS6t7ip5fQQM/J3TJYubDm3nMbgubNNYS62eXeUpoLUC8/7fJNiFYHTrGPQn7hspDUzIHX3UA==}
     dependencies:
       '@types/minimatch': 6.0.0
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/highlight.js@9.12.4:
@@ -1489,7 +1489,7 @@ packages:
   /@types/http-proxy@1.17.17:
     resolution: {integrity: sha512-ED6LB+Z1AVylNTu7hdzuBqOgMnvG/ld6wGCG8wFnAzKX5uyW2K3WD52v0gnLCTK/VLpXtKckgWuyScYK6cSPaw==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/json-schema@7.0.15:
@@ -1499,7 +1499,7 @@ packages:
   /@types/keyv@3.1.4:
     resolution: {integrity: sha512-BQ5aZNSCpj7D6K2ksrRCTmKRLEpnPvWDiLPfoGyhZ++8YtiK9d/3DBKPJgry359X/P1PfruyYwvnvwFjuEiEIg==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/linkify-it@5.0.0:
@@ -1530,8 +1530,8 @@ packages:
     resolution: {integrity: sha512-ekGvFhFgrc2zYQoX4JeZPmVzZxw6Dtllga7iGHzfbYIYkAMUx/sAFP2GdFpLff+vdHXu5fl7WX9AT+TtqYcsyw==}
     dev: true
 
-  /@types/node@14.18.63:
-    resolution: {integrity: sha512-fAtCfv4jJg+ExtXhvCkCqUKZ+4ok/JQk01qDKhL5BDDoS3AxKXhV5/MAVUZyQnSEd2GT92fkgZl0pz0Q0AzcIQ==}
+  /@types/node@12.20.55:
+    resolution: {integrity: sha512-J8xLz7q2OFulZ2cyGTLE1TbbZcjpno7FaN6zdJNrgAdrJ+DZzh/uFR6YrTb4C+nXakvud8Q4+rbhoIWlYQbUFQ==}
     dev: true
 
   /@types/q@1.5.8:
@@ -1549,20 +1549,20 @@ packages:
   /@types/responselike@1.0.3:
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/send@1.2.1:
     resolution: {integrity: sha512-arsCikDvlU99zl1g69TcAB3mzZPpxgw0UQnaHeC1Nwb015xp8bknZv5rIfri9xTOcMuaVgvabfIRA7PSZVuZIQ==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/serve-static@2.2.0:
     resolution: {integrity: sha512-8mam4H1NHLtu7nmtalF7eyBH14QyOASmcxHhSfEoRyr0nP/YdoesEtU+uSRvMe96TW/HPTtkoKqQLl53N7UXMQ==}
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
     dev: true
 
   /@types/source-list-map@0.1.6:
@@ -1579,8 +1579,8 @@ packages:
       source-map: 0.6.1
     dev: true
 
-  /@types/vscode@1.110.0:
-    resolution: {integrity: sha512-AGuxUEpU4F4mfuQjxPPaQVyuOMhs+VT/xRok1jiHVBubHK7lBRvCuOMZG0LKUwxncrPorJ5qq/uil3IdZBd5lA==}
+  /@types/vscode@1.50.0:
+    resolution: {integrity: sha512-QnIeyi4L2DiD9M2bAQKRzT/EQvc80qP9UL6JD5TiLlNRL1khIDg4ej4mDSRbtFrDAsRntFI1RhMvdomUThMsqg==}
     dev: true
 
   /@types/webpack-dev-server@3.11.6:
@@ -1598,7 +1598,7 @@ packages:
   /@types/webpack-sources@3.2.3:
     resolution: {integrity: sha512-4nZOdMwSPHZ4pTEZzSp0AsTM4K7Qmu40UKW4tJDiOVs20UzYF9l+qUe4s0ftfN0pin06n+5cWWDJXH+sbhAiDw==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
       '@types/source-list-map': 0.1.6
       source-map: 0.7.6
     dev: true
@@ -1606,7 +1606,7 @@ packages:
   /@types/webpack@4.41.40:
     resolution: {integrity: sha512-u6kMFSBM9HcoTpUXnL6mt2HSzftqb3JgYV6oxIgL2dl6sX6aCa5k6SOkzv5DuZjBTPUE/dJltKtwwuqrkZHpfw==}
     dependencies:
-      '@types/node': 14.18.63
+      '@types/node': 12.20.55
       '@types/tapable': 1.0.12
       '@types/uglify-js': 3.17.5
       '@types/webpack-sources': 3.2.3

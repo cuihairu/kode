@@ -211,15 +211,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(showLogsCommand);
 
   // 初始化日志收集器
+  const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
+  const logAutoConnect = kbengineConfig.get<boolean>('logAutoConnect', true);
   const logConfig: LogCollectorConfig = {
     host: '127.0.0.1',
-    port: 20022,
+    port: kbengineConfig.get<number>('loggerPort', 20022),
     autoReconnect: true,
     reconnectInterval: 5000,
-    maxBufferSize: 10000
+    maxBufferSize: kbengineConfig.get<number>('maxLogEntries', 10000)
   };
 
   const logCollector = new KBEngineLogCollector(logConfig, context);
+
+  if (logAutoConnect) {
+    void logCollector.connect().catch(() => {
+      // logger 可能尚未启动，collector 内部会继续按配置重连
+    });
+  }
 
   // 初始化日志查看器
   const logViewer = new LogViewerWebView(context, logCollector);
@@ -320,7 +328,6 @@ export function activate(context: vscode.ExtensionContext) {
     'kbengine.monitoring.show',
     () => {
       monitoringWebView.show();
-      vscode.window.showInformationMessage(monitoringCollector.getUnavailableReason());
     }
   );
   context.subscriptions.push(showMonitoringCommand);
@@ -364,7 +371,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     if (runningCount > 0) {
       statusBarItem.text = `$(server) KBEngine: ${runningCount}/${totalCount} Running`;
-      statusBarItem.backgroundColor = new vscode.ThemeColor('terminal.ansiGreen');
       statusBarItem.show();
     } else {
       statusBarItem.hide();
