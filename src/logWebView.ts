@@ -213,7 +213,7 @@ export class LogViewerWebView {
    */
   private getHtml(logs: LogEntry[]): string {
     const logsHtml = logs.map(log => this.formatLogEntry(log)).join('\n');
-    const unavailableReason = this.escapeHtml(this.collector.getUnavailableReason());
+    const statusSummary = this.escapeHtml(this.collector.getStatusSummary());
 
     return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -375,7 +375,7 @@ export class LogViewerWebView {
     <button id="connectBtn">连接</button>
     <button id="disconnectBtn">断开</button>
   </div>
-  <div class="notice">日志直连当前不可用：${unavailableReason}</div>
+  <div class="notice">连接状态：${statusSummary}</div>
   <div class="stats">
     显示 ${logs.length} 条日志（总计 ${this.currentLogs.length} 条）
   </div>

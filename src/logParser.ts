@@ -1,6 +1,6 @@
 /**
  * KBEngine 日志解析器
- * 解析 KBEngine logger.exe 发送的日志格式
+ * 解析 KBEngine logger 发送的日志格式
  */
 
 /**
@@ -81,27 +81,56 @@ export class LogParser {
    */
   static parseLoggerMessage(data: string): LogEntry | null {
     try {
-      // logger 发送的格式通常是文本格式
-      // 示例: [2024-03-25 14:30:00] [INFO] [component] message
-      const regex = /^\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\]\s*\[([A-Z]+)\]\s*(?:\[([^\]]+)\])?\s*(.+)$/;
+      const trimmed = data.trimEnd();
 
-      const match = data.match(regex);
-      if (!match) {
-        // 如果不符合标准格式，尝试其他格式
-        return this.parseNonStandardFormat(data);
+      // KBEngine logger.cpp 组装格式:
+      // "   INFO dbmgr01 1000 12345 [2026-03-26 18:21:11 001] - message"
+      const kbengineMatch = trimmed.match(
+        /^\s*([A-Z_]+)\s+([a-z_]+?)(\d+)\s+(-?\d+)\s+(-?\d+)\s+\[(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{1,3})\]\s+-\s+([\s\S]*)$/i
+      );
+
+      if (kbengineMatch) {
+        const [, levelStr, component, , , , year, month, day, hour, minute, second, ms, message] =
+          kbengineMatch;
+
+        return {
+          id: ++this.nextId,
+          timestamp: new Date(
+            Number(year),
+            Number(month) - 1,
+            Number(day),
+            Number(hour),
+            Number(minute),
+            Number(second),
+            Number(ms)
+          ),
+          component: component.toLowerCase(),
+          level: this.parseLogLevel(levelStr),
+          type: this.parseLogType(levelStr),
+          message: message.trim(),
+          raw: data
+        };
       }
 
-      const [, timestamp, levelStr, component, message] = match;
+      const standardMatch = trimmed.match(
+        /^\[(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\]\s*\[([A-Z_]+)\]\s*(?:\[([^\]]+)\])?\s*(.+)$/
+      );
 
-      return {
-        id: ++this.nextId,
-        timestamp: new Date(timestamp),
-        component: component || 'unknown',
-        level: this.parseLogLevel(levelStr),
-        type: LogType.LOG_TYPE_NORMAL,
-        message: message.trim(),
-        raw: data
-      };
+      if (standardMatch) {
+        const [, timestamp, levelStr, component, message] = standardMatch;
+
+        return {
+          id: ++this.nextId,
+          timestamp: new Date(timestamp),
+          component: (component || 'unknown').toLowerCase(),
+          level: this.parseLogLevel(levelStr),
+          type: this.parseLogType(levelStr),
+          message: message.trim(),
+          raw: data
+        };
+      }
+
+      return this.parseNonStandardFormat(trimmed);
     } catch (error) {
       console.error('Failed to parse log message:', error);
       return null;
@@ -166,14 +195,19 @@ export class LogParser {
   private static parseLogLevel(levelStr: string): LogLevel {
     switch (levelStr.toUpperCase()) {
       case 'DEBUG':
+      case 'S_DBG':
         return LogLevel.DEBUG;
       case 'INFO':
       case 'PRINT':
+      case 'S_INFO':
+      case 'S_NORM':
         return LogLevel.INFO;
       case 'WARNING':
       case 'WARN':
+      case 'S_WARN':
         return LogLevel.WARNING;
       case 'ERROR':
+      case 'S_ERR':
         return LogLevel.ERROR;
       case 'CRITICAL':
       case 'FATAL':
@@ -181,6 +215,12 @@ export class LogParser {
       default:
         return LogLevel.INFO;
     }
+  }
+
+  private static parseLogType(levelStr: string): LogType {
+    return levelStr.toUpperCase().startsWith('S_')
+      ? LogType.LOG_TYPE_SCRIPT
+      : LogType.LOG_TYPE_NORMAL;
   }
 
   /**
@@ -206,7 +246,7 @@ export class LogParser {
     }
 
     // 尝试提取组件名
-    const componentMatch = data.match(/\[?(\w+app)\]?/i);
+    const componentMatch = data.match(/\b(machine|logger|dbmgr|baseappmgr|cellappmgr|loginapp|baseapp|cellapp|bots|interfaces|client)\d*\b/i);
     if (componentMatch) {
       component = componentMatch[1].toLowerCase();
     }
