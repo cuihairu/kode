@@ -2,11 +2,16 @@ name: CI/CD
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches:
+      - '**'
+    tags:
+      - 'v*'
   pull_request:
-    branches: [ main, master, develop ]
+    branches:
+      - '**'
   release:
     types: [ created ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -32,7 +37,7 @@ jobs:
         cache: 'pnpm'
 
     - name: 安装依赖
-      run: pnpm install
+      run: pnpm install --frozen-lockfile
 
     - name: 编译 TypeScript
       run: pnpm run compile
@@ -51,8 +56,8 @@ jobs:
     - name: 上传 VSIX 文件
       uses: actions/upload-artifact@v4
       with:
-        name: kode-vsix-${{ matrix.node-version }}
-        path: "*.vsix"
+        name: kode-vsix-${{ github.ref_name }}-${{ github.sha }}
+        path: "kode-*.vsix"
         retention-days: 30
 
     - name: 发布到 VSCode Marketplace (Release)
@@ -61,11 +66,11 @@ jobs:
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
-    - name: 创建 GitHub Release (如果有新的 tag)
-      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    - name: 创建 GitHub Release (Tag Push)
+      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v1
       with:
-        files: "*.vsix"
+        files: "kode-*.vsix"
         draft: false
         prerelease: false
       env:
