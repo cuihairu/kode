@@ -9,6 +9,10 @@ import {
   KBENGINE_RELOAD_FUNCTIONS,
   KBENGINE_TYPES
 } from './kbengineMetadata';
+import {
+  getPythonSelfAccessAtPosition,
+  getPythonSelfCompletionContext
+} from './pythonLanguageUtils';
 
 function getLanguageFeatureConfig() {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -922,34 +926,37 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.Location | vscode.Location[]> {
-    const range = document.getWordRangeAtPosition(position, /[\w.]+/);
-    if (!range) {
+    const line = document.lineAt(position.line);
+    const access = getPythonSelfAccessAtPosition(line.text, position.character);
+    if (!access) {
       return null;
     }
 
-    const line = document.lineAt(position.line);
-    const lineText = line.text;
     const entityName = path.basename(document.fileName, '.py');
-    const propertyMatch = lineText.match(/self\.(\w+)/);
-    if (propertyMatch) {
-      const symbolName = propertyMatch[1];
-      const mapping = this.entityMappingManager.getMapping(entityName);
-      if (mapping) {
-        if (mapping.properties[symbolName]) {
-          const location = mapping.properties[symbolName];
-          return new vscode.Location(
-            vscode.Uri.file(location.defFile),
-            new vscode.Position(location.line - 1, 0)
-          );
-        }
+    const mapping = this.entityMappingManager.getMapping(entityName);
+    if (mapping) {
+      if (mapping.properties[access.fullPath]) {
+        const location = mapping.properties[access.fullPath];
+        return new vscode.Location(
+          vscode.Uri.file(location.defFile),
+          new vscode.Position(location.line - 1, 0)
+        );
+      }
 
-        if (mapping.methods[symbolName]) {
-          const location = mapping.methods[symbolName];
-          return new vscode.Location(
-            vscode.Uri.file(location.defFile),
-            new vscode.Position(location.line - 1, 0)
-          );
-        }
+      if (mapping.properties[access.rootSymbol]) {
+        const location = mapping.properties[access.rootSymbol];
+        return new vscode.Location(
+          vscode.Uri.file(location.defFile),
+          new vscode.Position(location.line - 1, 0)
+        );
+      }
+
+      if (mapping.methods[access.rootSymbol]) {
+        const location = mapping.methods[access.rootSymbol];
+        return new vscode.Location(
+          vscode.Uri.file(location.defFile),
+          new vscode.Position(location.line - 1, 0)
+        );
       }
     }
 
@@ -965,9 +972,10 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     position: vscode.Position
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
     const line = document.lineAt(position.line);
-    const lineText = line.text.substring(0, position.character);
-    const selfMatch = lineText.match(/self\.(\w*)$/);
-    if (!selfMatch) {
+    const completionContext = getPythonSelfCompletionContext(
+      line.text.substring(0, position.character)
+    );
+    if (!completionContext) {
       return null;
     }
 
@@ -979,8 +987,51 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     }
 
     const items: vscode.CompletionItem[] = [];
+    const partialLower = completionContext.partialSymbol.toLowerCase();
+    const seenProperties = new Set<string>();
+
+    if (completionContext.parentPath) {
+      const nestedPrefix = `${completionContext.parentPath}.`;
+      for (const [propPath, propInfo] of Object.entries(mapping.properties)) {
+        if (!propPath.startsWith(nestedPrefix)) {
+          continue;
+        }
+
+        const remainder = propPath.slice(nestedPrefix.length);
+        const nextSegment = remainder.split('.')[0];
+        if (!nextSegment) {
+          continue;
+        }
+
+        if (partialLower && !nextSegment.toLowerCase().startsWith(partialLower)) {
+          continue;
+        }
+
+        if (seenProperties.has(nextSegment)) {
+          continue;
+        }
+        seenProperties.add(nextSegment);
+
+        const item = new vscode.CompletionItem(nextSegment, vscode.CompletionItemKind.Property);
+        item.detail = 'Nested Entity Property';
+        item.documentation = new vscode.MarkdownString(
+          `定义于: \`${path.basename(propInfo.defFile)}:${propInfo.line}\`\n\n从 .def 文件中的嵌套属性自动推导。`
+        );
+        items.push(item);
+      }
+
+      return items;
+    }
 
     for (const [propName, propInfo] of Object.entries(mapping.properties)) {
+      if (propName.includes('.')) {
+        continue;
+      }
+
+      if (partialLower && !propName.toLowerCase().startsWith(partialLower)) {
+        continue;
+      }
+
       const item = new vscode.CompletionItem(propName, vscode.CompletionItemKind.Property);
       item.detail = 'Entity Property';
       item.documentation = new vscode.MarkdownString(
@@ -990,6 +1041,10 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     }
 
     for (const [methodName, methodInfo] of Object.entries(mapping.methods)) {
+      if (partialLower && !methodName.toLowerCase().startsWith(partialLower)) {
+        continue;
+      }
+
       const item = new vscode.CompletionItem(methodName, vscode.CompletionItemKind.Method);
       item.detail = 'Entity Method';
       item.documentation = new vscode.MarkdownString(

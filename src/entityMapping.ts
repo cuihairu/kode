@@ -123,24 +123,9 @@ export class EntityMappingManager {
     const propertySections = ['Properties', 'CellProperties', 'ClientProperties'];
 
     for (const sectionName of propertySections) {
-      const sections = this.extractTagBodies(text, sectionName);
+      const sections = this.extractTagBodiesWithIndex(text, sectionName);
       for (const section of sections) {
-        const propertyRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
-        let propertyMatch: RegExpExecArray | null;
-
-        while ((propertyMatch = propertyRegex.exec(section)) !== null) {
-          const propertyName = propertyMatch[1];
-          const propertyBody = propertyMatch[2];
-          if (!/<Type>/i.test(propertyBody)) {
-            continue;
-          }
-
-          const line = this.getLineNumber(text, text.indexOf(propertyMatch[0]));
-          mapping.properties[propertyName] = {
-            defFile: defPath,
-            line
-          };
-        }
+        this.collectPropertyBlocks(text, defPath, mapping, section.body, section.index, '');
       }
     }
   }
@@ -172,15 +157,60 @@ export class EntityMappingManager {
   }
 
   private extractTagBodies(text: string, tagName: string): string[] {
+    return this.extractTagBodiesWithIndex(text, tagName).map(item => item.body);
+  }
+
+  private extractTagBodiesWithIndex(text: string, tagName: string): Array<{ body: string; index: number }> {
     const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'gi');
-    const bodies: string[] = [];
+    const bodies: Array<{ body: string; index: number }> = [];
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(text)) !== null) {
-      bodies.push(match[1]);
+      const body = match[1];
+      const index = match.index + match[0].indexOf(body);
+      bodies.push({ body, index });
     }
 
     return bodies;
+  }
+
+  private collectPropertyBlocks(
+    fullText: string,
+    defPath: string,
+    mapping: EntityMapping,
+    sectionBody: string,
+    sectionOffset: number,
+    prefixPath: string
+  ): void {
+    const propertyRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
+    let propertyMatch: RegExpExecArray | null;
+
+    while ((propertyMatch = propertyRegex.exec(sectionBody)) !== null) {
+      const propertyName = propertyMatch[1];
+      const propertyBody = propertyMatch[2];
+      if (!/<Type>/i.test(propertyBody)) {
+        continue;
+      }
+
+      const propertyPath = prefixPath ? `${prefixPath}.${propertyName}` : propertyName;
+      const line = this.getLineNumber(fullText, sectionOffset + propertyMatch.index);
+      mapping.properties[propertyPath] = {
+        defFile: defPath,
+        line
+      };
+
+      const nestedPropertySections = this.extractTagBodiesWithIndex(propertyBody, 'Properties');
+      for (const nestedSection of nestedPropertySections) {
+        this.collectPropertyBlocks(
+          fullText,
+          defPath,
+          mapping,
+          nestedSection.body,
+          sectionOffset + propertyMatch.index + propertyMatch[0].indexOf(nestedSection.body),
+          propertyPath
+        );
+      }
+    }
   }
 
   /**
