@@ -1,7 +1,7 @@
 # Kode - KBEngine Development Environment
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![VS Code](https://img.shields.io/badge/VS_Code-1.60.0+-blue.svg)](https://code.visualstudio.com/)
+[![VS Code](https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg)](https://code.visualstudio.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.x-blue.svg)](https://www.typescriptlang.org/)
 
 > **Kode** (KBEngine IDE) - 完整的 KBEngine 游戏服务器开发环境支持
@@ -181,7 +181,7 @@ code --install-extension kode-0.1.0.vsix
 
 - Node.js 20.x 或更高版本
 - Git
-- VSCode 1.60.0 或更高版本
+- VSCode 1.50.0 或更高版本
 
 ### 开发步骤
 
