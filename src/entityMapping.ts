@@ -134,19 +134,16 @@ export class EntityMappingManager {
     const methodSections = ['BaseMethods', 'CellMethods', 'ClientMethods'];
 
     for (const sectionName of methodSections) {
-      const sections = this.extractTagBodies(text, sectionName);
+      const sections = this.extractTagBodiesWithIndex(text, sectionName);
       for (const section of sections) {
-        const methodRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
-        let methodMatch: RegExpExecArray | null;
-
-        while ((methodMatch = methodRegex.exec(section)) !== null) {
-          const methodName = methodMatch[1];
-          const methodBody = methodMatch[2];
+        for (const methodBlock of this.extractDirectChildBlocks(section.body)) {
+          const methodName = methodBlock.name;
+          const methodBody = methodBlock.body;
           if (!/<Arg>/i.test(methodBody) && methodBody.trim().length > 0) {
             continue;
           }
 
-          const line = this.getLineNumber(text, text.indexOf(methodMatch[0]));
+          const line = this.getLineNumber(text, section.index + methodBlock.index);
           mapping.methods[methodName] = {
             defFile: defPath,
             line
@@ -161,17 +158,72 @@ export class EntityMappingManager {
   }
 
   private extractTagBodiesWithIndex(text: string, tagName: string): Array<{ body: string; index: number }> {
-    const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'gi');
+    const regex = new RegExp(`<(\\/)?${tagName}>`, 'gi');
     const bodies: Array<{ body: string; index: number }> = [];
     let match: RegExpExecArray | null;
+    const openTagStack: number[] = [];
 
     while ((match = regex.exec(text)) !== null) {
-      const body = match[1];
-      const index = match.index + match[0].indexOf(body);
-      bodies.push({ body, index });
+      const isClosingTag = match[1] === '/';
+
+      if (!isClosingTag) {
+        openTagStack.push(match.index);
+        continue;
+      }
+
+      const openTagIndex = openTagStack.pop();
+      if (openTagIndex === undefined || openTagStack.length > 0) {
+        continue;
+      }
+
+      const openTagText = `<${tagName}>`;
+      const bodyStart = openTagIndex + openTagText.length;
+      const bodyEnd = match.index;
+      bodies.push({
+        body: text.slice(bodyStart, bodyEnd),
+        index: bodyStart
+      });
     }
 
     return bodies;
+  }
+
+  private extractDirectChildBlocks(
+    text: string
+  ): Array<{ name: string; body: string; index: number }> {
+    const regex = /<(\/)?([A-Za-z_][A-Za-z0-9_]*)>/g;
+    const blocks: Array<{ name: string; body: string; index: number }> = [];
+    const stack: Array<{ name: string; tagStart: number; bodyStart: number }> = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(text)) !== null) {
+      const isClosingTag = match[1] === '/';
+      const tagName = match[2];
+
+      if (!isClosingTag) {
+        stack.push({
+          name: tagName,
+          tagStart: match.index,
+          bodyStart: regex.lastIndex
+        });
+        continue;
+      }
+
+      const lastOpenTag = stack.pop();
+      if (!lastOpenTag || lastOpenTag.name !== tagName) {
+        continue;
+      }
+
+      if (stack.length === 0) {
+        blocks.push({
+          name: tagName,
+          body: text.slice(lastOpenTag.bodyStart, match.index),
+          index: lastOpenTag.tagStart
+        });
+      }
+    }
+
+    return blocks;
   }
 
   private collectPropertyBlocks(
@@ -182,18 +234,15 @@ export class EntityMappingManager {
     sectionOffset: number,
     prefixPath: string
   ): void {
-    const propertyRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
-    let propertyMatch: RegExpExecArray | null;
-
-    while ((propertyMatch = propertyRegex.exec(sectionBody)) !== null) {
-      const propertyName = propertyMatch[1];
-      const propertyBody = propertyMatch[2];
+    for (const propertyBlock of this.extractDirectChildBlocks(sectionBody)) {
+      const propertyName = propertyBlock.name;
+      const propertyBody = propertyBlock.body;
       if (!/<Type>/i.test(propertyBody)) {
         continue;
       }
 
       const propertyPath = prefixPath ? `${prefixPath}.${propertyName}` : propertyName;
-      const line = this.getLineNumber(fullText, sectionOffset + propertyMatch.index);
+      const line = this.getLineNumber(fullText, sectionOffset + propertyBlock.index);
       mapping.properties[propertyPath] = {
         defFile: defPath,
         line
@@ -201,12 +250,19 @@ export class EntityMappingManager {
 
       const nestedPropertySections = this.extractTagBodiesWithIndex(propertyBody, 'Properties');
       for (const nestedSection of nestedPropertySections) {
+        const nestedSectionOffset = fullText.indexOf(
+          nestedSection.body,
+          sectionOffset + propertyBlock.index
+        );
+
         this.collectPropertyBlocks(
           fullText,
           defPath,
           mapping,
           nestedSection.body,
-          sectionOffset + propertyMatch.index + propertyMatch[0].indexOf(nestedSection.body),
+          nestedSectionOffset >= 0
+            ? nestedSectionOffset
+            : sectionOffset + propertyBlock.index + nestedSection.index,
           propertyPath
         );
       }

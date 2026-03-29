@@ -416,11 +416,12 @@
   "homepage": "https://github.com/cuihairu/kode#readme",
   "scripts": {
     "vscode:prepublish": "pnpm run compile",
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vuepress dev docs",
     "docs:build": "vuepress build docs",
-    "pretest": "pnpm run compile",
+    "pretest": "pnpm run clean && pnpm run compile",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
     "package": "pnpm run compile && vsce package --no-yarn --no-dependencies",

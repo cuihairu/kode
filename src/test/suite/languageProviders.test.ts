@@ -60,7 +60,52 @@ describe('Python language helpers', () => {
     );
   });
 
+  it('resolves the correct self access when multiple accesses exist on one line', () => {
+    const line = 'value = self.inventory + self.mana';
+
+    assert.deepStrictEqual(
+      getPythonSelfAccessAtPosition(line, line.indexOf('inventory')),
+      {
+        rootSymbol: 'inventory',
+        currentSymbol: 'inventory',
+        fullPath: 'inventory'
+      }
+    );
+
+    assert.deepStrictEqual(
+      getPythonSelfAccessAtPosition(line, line.indexOf('mana')),
+      {
+        rootSymbol: 'mana',
+        currentSymbol: 'mana',
+        fullPath: 'mana'
+      }
+    );
+  });
+
+  it('returns the current nested segment while keeping the root symbol', () => {
+    const line = 'return self.inventory.weapon.damage';
+
+    assert.deepStrictEqual(
+      getPythonSelfAccessAtPosition(line, line.indexOf('damage')),
+      {
+        rootSymbol: 'inventory',
+        currentSymbol: 'damage',
+        fullPath: 'inventory.weapon.damage'
+      }
+    );
+  });
+
   it('detects completion context for direct and chained self access', () => {
+    assert.deepStrictEqual(
+      getPythonSelfCompletionContext('self.'),
+      {
+        rootSymbol: null,
+        parentPath: '',
+        fullPath: '',
+        partialSymbol: ''
+      }
+    );
+
     assert.deepStrictEqual(
       getPythonSelfCompletionContext('self.inv'),
       {
