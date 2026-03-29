@@ -447,15 +447,20 @@
       "brace-expansion": "1.1.13",
       "braces": "3.0.3",
       "diff": "5.2.2",
+      "esbuild": "0.25.0",
       "form-data": "2.5.4",
       "got": "11.8.5",
+      "http-proxy-middleware": "2.0.9",
+      "json5": "1.0.2",
+      "loader-utils": "1.4.2",
       "micromatch": "4.0.8",
       "minimatch": "3.1.4",
+      "markdown-it": "12.3.2",
       "nanoid": "3.3.8",
       "node-forge": "1.4.0",
       "nth-check": "2.0.1",
       "path-to-regexp": "0.1.13",
-      "serialize-javascript": "6.0.2",
+      "serialize-javascript": "7.0.5",
       "tough-cookie": "4.1.3"
     }
   }
