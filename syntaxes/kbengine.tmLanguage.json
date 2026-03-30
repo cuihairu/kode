@@ -84,7 +84,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.section.kbengine"
+          "name": "entity.name.tag.section.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -92,7 +92,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.section.kbengine"
+          "name": "entity.name.tag.section.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -116,7 +116,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.type.kbengine"
+          "name": "entity.name.tag.scalar.type.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -124,7 +124,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.type.kbengine"
+          "name": "entity.name.tag.scalar.type.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -146,7 +146,7 @@
         },
         {
           "match": "\\b[a-zA-Z_][\\w./]*\\b",
-          "name": "entity.name.type.custom.kbengine"
+          "name": "entity.name.type.custom.kbengine support.class.kbengine support.type"
         }
       ]
     },
@@ -159,7 +159,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.arg.kbengine"
+          "name": "entity.name.tag.scalar.arg.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -167,7 +167,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.arg.kbengine"
+          "name": "entity.name.tag.scalar.arg.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -186,7 +186,7 @@
         },
         {
           "match": "\\b[a-zA-Z_][\\w.]*\\b",
-          "name": "entity.name.type.custom.kbengine"
+          "name": "entity.name.type.custom.kbengine support.class.kbengine support.type"
         }
       ]
     },
@@ -199,7 +199,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.flags.kbengine"
+          "name": "entity.name.tag.scalar.flags.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -207,7 +207,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.flags.kbengine"
+          "name": "entity.name.tag.scalar.flags.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -235,7 +235,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.detail-level.kbengine"
+          "name": "entity.name.tag.scalar.detail-level.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -243,7 +243,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.detail-level.kbengine"
+          "name": "entity.name.tag.scalar.detail-level.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -267,7 +267,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.default.kbengine"
+          "name": "entity.name.tag.scalar.default.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -275,7 +275,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.default.kbengine"
+          "name": "entity.name.tag.scalar.default.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -310,7 +310,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.numeric.kbengine"
+          "name": "entity.name.tag.scalar.numeric.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -318,7 +318,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.numeric.kbengine"
+          "name": "entity.name.tag.scalar.numeric.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -345,7 +345,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "support.type.container.tag.kbengine"
+          "name": "support.type.container.tag.kbengine entity.name.tag.xml support.type"
         }
       },
       "endCaptures": {
@@ -353,7 +353,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "support.type.container.tag.kbengine"
+          "name": "support.type.container.tag.kbengine entity.name.tag.xml support.type"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -377,7 +377,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.symbol.kbengine"
+          "name": "entity.name.symbol.kbengine entity.name.tag.xml entity.name.function"
         }
       },
       "endCaptures": {
@@ -385,7 +385,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.symbol.kbengine"
+          "name": "entity.name.symbol.kbengine entity.name.tag.xml entity.name.function"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"

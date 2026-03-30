@@ -29,25 +29,33 @@ import {
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
+  const defDocumentSelector: vscode.DocumentSelector = [
+    { language: 'kbengine-def', scheme: 'file' },
+    { scheme: 'file', pattern: '**/*.def' },
+    { language: 'kbengine-def', scheme: 'untitled' }
+  ];
+
+  const isDefDocument = (document: vscode.TextDocument): boolean =>
+    document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
 
   // 注册智能提示提供者
   const completionProvider = vscode.languages.registerCompletionItemProvider(
-    { language: 'kbengine-def', scheme: 'file' },
+    defDocumentSelector,
     new KBEngineCompletionProvider(),
-    '<', ' ', '\t'
+    '<', ' ', '\t', '>', '/', ':'
   );
   context.subscriptions.push(completionProvider);
 
   // 注册悬停文档提供者
   const hoverProvider = vscode.languages.registerHoverProvider(
-    { language: 'kbengine-def', scheme: 'file' },
+    defDocumentSelector,
     new KBEngineHoverProvider()
   );
   context.subscriptions.push(hoverProvider);
 
   // 注册定义跳转提供者（.def 文件）
   const definitionProvider = vscode.languages.registerDefinitionProvider(
-    { language: 'kbengine-def', scheme: 'file' },
+    defDocumentSelector,
     new KBEngineDefinitionProvider()
   );
   context.subscriptions.push(definitionProvider);
@@ -77,21 +85,24 @@ export function activate(context: vscode.ExtensionContext) {
   // 监听文档变化，实时检查
   if (vscode.workspace.workspaceFolders) {
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
-      if (event.document.languageId === 'kbengine-def') {
+      if (isDefDocument(event.document)) {
         validateDocument(event.document, diagnostics);
       }
     });
     context.subscriptions.push(watcher);
 
     // 初始检查所有 .def 文件
-    vscode.workspace.findFiles('**/*.def', null).then(files => {
-      files.forEach(uri => {
-        vscode.workspace.textDocuments.forEach(doc => {
-          if (doc.uri.toString() === uri.toString()) {
-            validateDocument(doc, diagnostics);
-          }
-        });
-      });
+    const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {
+      if (isDefDocument(document)) {
+        validateDocument(document, diagnostics);
+      }
+    });
+    context.subscriptions.push(openWatcher);
+
+    vscode.workspace.textDocuments.forEach(document => {
+      if (isDefDocument(document)) {
+        validateDocument(document, diagnostics);
+      }
     });
   }
 
@@ -101,7 +112,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     vscode.workspace.textDocuments.forEach(doc => {
-      if (doc.languageId === 'kbengine-def') {
+      if (isDefDocument(doc)) {
         validateDocument(doc, diagnostics);
       }
     });

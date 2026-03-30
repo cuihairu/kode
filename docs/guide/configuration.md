@@ -320,3 +320,66 @@ Python 调试器端口，默认 `5678`。
   "kbengine.diagnostics.checkMissingPropertyFields": false
 }
 ```
+
+## 调试兼容性说明
+
+### 旧版 VSCode / Python 扩展
+
+如果项目运行环境固定为 Python 3.7.3，且开发环境需要兼容 VSCode 1.50，建议使用以下组合：
+
+- VSCode 1.50.x
+- ms-python.python 2020.8.109390
+- Python 3.7.3
+
+在这组环境下，`Attach to Component` 应使用旧版 Python 调试配置语义：
+
+- `type: "python"`
+- `request: "attach"`
+- `pythonPath`
+- `host`
+- `port`
+
+不要混用较新的字段形式：
+
+- `type: "debugpy"`
+- `python`
+- `connect: { host, port }`
+
+较新的字段在旧版 Python 扩展中可能无法被正确识别，最终表现为误导性的提示：
+
+```text
+Test discovery err,please check the configuration settings for the tests
+```
+
+这条报错通常不表示测试配置本身有问题，而是 Python 扩展在激活、解释器选择、调试配置解析或导入项目模块时失败后，统一回落成“测试发现失败”。
+
+### 推荐测试设置
+
+如果当前工作区不使用 VSCode 内置测试发现，建议在 `settings.json` 中显式关闭：
+
+```json
+{
+  "python.testing.pytestEnabled": false,
+  "python.testing.unittestEnabled": false,
+  "python.testing.nosetestsEnabled": false
+}
+```
+
+如果项目本身需要测试功能，再按实际使用的测试框架单独开启，不要同时开启多个测试框架。
+
+### Attach 报错排查
+
+当 `Attach to Component` 触发如下报错时：
+
+```text
+Test discovery err,please check the configuration settings for the tests
+```
+
+建议按下面顺序排查：
+
+1. 确认 VSCode 选择的解释器就是目标 Python 3.7.3，而不是系统中的其他 Python。
+2. 确认扩展生成的 `launch.json` 使用旧版字段：`type: "python"`、`pythonPath`、`host`、`port`。
+3. 确认目标进程已经在对应调试端口监听，而不是仅启动了进程但未注入调试器。
+4. 确认 `pathMappings` 与实际工程路径一致，避免附加后源码映射失败。
+5. 如果未使用 VSCode 测试功能，关闭 `python.testing.*` 配置，避免旧版扩展在后台触发测试发现。
+6. 打开 VSCode 的 `Output > Python` 查看真实异常。很多情况下，真正的根因是解释器错误、缺少依赖、导入失败或调试配置字段不兼容。

@@ -193,6 +193,13 @@ export class DebugConfigManager {
   }
 
   /**
+   * 旧版 ms-python 扩展使用 `python` 作为调试器类型。
+   */
+  private getDebuggerType(): string {
+    return 'python';
+  }
+
+  /**
    * 生成 VSCode launch.json 配置
    */
   generateLaunchConfigurations(): any[] {
@@ -209,9 +216,9 @@ export class DebugConfigManager {
 
       configurations.push({
         name: `KBEngine: ${component.displayName}`,
-        type: 'debugpy',
+        type: this.getDebuggerType(),
         request: 'launch',
-        python: config.pythonPath,
+        pythonPath: config.pythonPath,
         program: path.join(config.cwd, config.script),
         cwd: config.cwd,
         args: config.args || [],
@@ -219,20 +226,17 @@ export class DebugConfigManager {
         console: 'integratedTerminal',
         justMyCode: false,
         pathMappings: config.pathMappings,
-        // 禁用内置的 debugpy 重定向，因为 KBEngine 有自己的日志系统
-        subProcess: false
+        redirectOutput: false
       });
     }
 
     // 添加"附加到进程"配置
     configurations.push({
       name: 'KBEngine: Attach to Component',
-      type: 'debugpy',
+      type: this.getDebuggerType(),
       request: 'attach',
-      connect: {
-        host: 'localhost',
-        port: this.config.defaultDebugPort
-      },
+      host: 'localhost',
+      port: this.config.defaultDebugPort,
       pathMappings: [{
         localRoot: workspaceFolder,
         remoteRoot: workspaceFolder
@@ -378,9 +382,9 @@ export class DebugConfigManager {
 
     const debugConfig: vscode.DebugConfiguration = {
       name: `KBEngine: ${componentName}`,
-      type: 'debugpy',
+      type: this.getDebuggerType(),
       request: 'launch',
-      python: config.pythonPath,
+      pythonPath: config.pythonPath,
       program: path.join(config.cwd, config.script),
       cwd: config.cwd,
       args: config.args || [],
@@ -388,7 +392,7 @@ export class DebugConfigManager {
       console: 'integratedTerminal',
       justMyCode: false,
       pathMappings: config.pathMappings,
-      subProcess: false
+      redirectOutput: false
     };
 
     try {
@@ -408,12 +412,10 @@ export class DebugConfigManager {
 
     const attachConfig: vscode.DebugConfiguration = {
       name: `KBEngine: Attach to ${componentName}`,
-      type: 'debugpy',
+      type: this.getDebuggerType(),
       request: 'attach',
-      connect: {
-        host: 'localhost',
-        port: config.debugPort
-      },
+      host: 'localhost',
+      port: config.debugPort,
       pathMappings: config.pathMappings,
       justMyCode: false
     };

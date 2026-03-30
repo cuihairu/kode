@@ -162,3 +162,67 @@
 - 日志面板读取 `kbengine.loggerPort`
 - 调试流程读取 `kbengine.pythonPath`、`kbengine.debugPort`
 - 生成器读取 `kbengine.generator.*`
+## 调试命令兼容说明
+
+### `Attach to Component`
+
+在旧版开发环境中：
+
+- VSCode 1.50.x
+- ms-python.python 2020.8.109390
+- Python 3.7.3
+
+`Attach to Component` 依赖旧版 Python 扩展的调试配置格式。生成的 `launch.json` 应保持为：
+
+```json
+{
+  "type": "python",
+  "request": "attach",
+  "pythonPath": "python",
+  "host": "localhost",
+  "port": 5678
+}
+```
+
+不要将其写成较新的配置形式：
+
+```json
+{
+  "type": "debugpy",
+  "request": "attach",
+  "connect": {
+    "host": "localhost",
+    "port": 5678
+  }
+}
+```
+
+在旧版 Python 扩展里，后者可能无法被正确识别，并在附加时出现误导性的提示：
+
+```text
+Test discovery err,please check the configuration settings for the tests
+```
+
+### 推荐使用顺序
+
+1. 先配置 `kbengine.pythonPath` 和 `kbengine.debugPort`
+2. 运行 `Update launch.json`
+3. 确认目标进程已经监听调试端口
+4. 再执行 `Attach to Component`
+
+### 报错说明
+
+如果出现：
+
+```text
+Test discovery err,please check the configuration settings for the tests
+```
+
+优先检查以下内容：
+
+1. Python 扩展选中的解释器是否就是项目使用的 Python 3.7.3
+2. 当前工作区是否误开启了 `python.testing.*`
+3. 目标进程是否真的已打开调试端口
+4. `launch.json` 是否仍包含不兼容旧版扩展的 `debugpy` / `connect` / `python` 字段
+
+这条错误多数情况下并不是真正的“测试发现配置错误”，而是旧版 Python 扩展在调试配置解析、解释器调用或模块导入失败后的统一兜底提示。

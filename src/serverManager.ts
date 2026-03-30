@@ -159,10 +159,15 @@ export class KBEngineServerManager {
     }
 
     const possiblePaths = [
-      path.join(workspaceFolder, '../kbengine/kbe/bin'),
-      path.join(workspaceFolder, '../../kbengine/kbe/bin'),
+      path.join(workspaceFolder, '../kbe/bin/server'),
+      path.join(workspaceFolder, '../../kbe/bin/server'),
+      path.join(workspaceFolder, '../kbengine/kbe/bin/server'),
+      path.join(workspaceFolder, '../../kbengine/kbe/bin/server'),
+      process.env.KBENGINE_HOME ? path.join(process.env.KBENGINE_HOME, 'kbe/bin/server') : '',
       process.env.KBENGINE_HOME ? path.join(process.env.KBENGINE_HOME, 'kbe/bin') : '',
+      'D:/kbengine/kbe/bin/server',
       'D:/kbengine/kbe/bin',
+      'D:/kbe/bin/server',
       '/usr/local/kbengine/kbe/bin',
       '/opt/kbengine/kbe/bin'
     ];

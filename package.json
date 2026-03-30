@@ -29,6 +29,7 @@
   ],
   "activationEvents": [
     "onLanguage:kbengine-def",
+    "workspaceContains:**/*.def",
     "onCommand:kbengine.refreshExplorer"
   ],
   "main": "./out/extension.js",
@@ -306,7 +307,7 @@
         },
         "kbengine.binPath": {
           "type": "string",
-          "default": "${workspaceFolder}/../kbengine/kbe/bin",
+          "default": "${workspaceFolder}/../kbe/bin/server",
           "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}"
         },
         "kbengine.configPath": {

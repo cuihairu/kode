@@ -266,7 +266,7 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
       }
     }
 
-    if (document.languageId === 'kbengine-def') {
+    if (document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def')) {
       const location = findEntityDefinitionInDef(document, position, word);
       if (location) {
         return location;
@@ -790,6 +790,24 @@ function getSymbolHover(
     markdown.appendMarkdown(`**参数个数**: ${symbolInfo.args.length}\n\n`);
     if (symbolInfo.args.length > 0) {
       markdown.appendMarkdown(`**Args**: \`${symbolInfo.args.join(', ')}\``);
+    }
+  }
+
+  const hook = getHookByName(symbolInfo.name);
+  if (hook) {
+    markdown.appendMarkdown(`\n\n---\n\n**KBEngine Hook**: ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
+    markdown.appendMarkdown(`${hook.description}\n\n`);
+    markdown.appendMarkdown(`**调用时机**: ${hook.timing}\n\n`);
+    markdown.appendMarkdown('**函数签名**:\n');
+    markdown.appendCodeblock(hook.signature, 'python');
+    markdown.appendMarkdown('\n**详细说明**:\n');
+    markdown.appendMarkdown(hook.documentation);
+    if (hook.sourceLocation) {
+      markdown.appendMarkdown(`\n\n**源码位置**: \`${hook.sourceLocation}\``);
+    }
+    if (hook.example) {
+      markdown.appendMarkdown('\n\n**使用示例**:\n');
+      markdown.appendCodeblock(hook.example, 'python');
     }
   }
 
