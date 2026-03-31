@@ -27,6 +27,10 @@
 - 监控面板
 - 实体依赖关系图
 
+说明：
+日志查看器当前仍属于实验性协议适配。
+监控面板在 watcher 无响应时只保证部分指标可见。
+
 ## 依赖图能力
 
 - Mermaid 可视化
@@ -42,3 +46,6 @@
 - 自动生成 `.def`
 - 自动生成 Python
 - 自动注册到 `entities.xml`
+
+说明：
+生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响。

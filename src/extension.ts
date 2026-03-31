@@ -13,6 +13,7 @@ import {
   pickServerComponent,
   ServerControlProvider
 } from './explorerProviders';
+import { resolveServerComponent } from './serverCommandTarget';
 import {
   KBEngineCompletionProvider,
   KBEngineDefinitionProvider,
@@ -158,8 +159,10 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         const document = await vscode.workspace.openTextDocument(entityUri);
         await vscode.window.showTextDocument(document);
-      } catch {
-        vscode.window.showWarningMessage(`未找到实体定义文件: ${entityName}.def`);
+      } catch (error) {
+        vscode.window.showWarningMessage(
+          `打开实体定义失败: ${entityName}.def (${error})`
+        );
       }
     }
   );
@@ -184,11 +187,12 @@ export function activate(context: vscode.ExtensionContext) {
   // 注册服务器控制命令
   const startServerCommand = vscode.commands.registerCommand(
     'kbengine.server.start',
-    (component) => {
+    (target) => {
+      const component = resolveServerComponent(target);
       if (component) {
-        serverManager.startComponent(component);
+        void serverManager.startComponent(component);
       } else {
-        serverManager.startAutoComponents();
+        void serverManager.startAutoComponents();
       }
     }
   );
@@ -196,11 +200,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   const stopServerCommand = vscode.commands.registerCommand(
     'kbengine.server.stop',
-    (component) => {
+    (target) => {
+      const component = resolveServerComponent(target);
       if (component) {
-        serverManager.stopComponent(component.name);
+        void serverManager.stopComponent(component.name);
       } else {
-        serverManager.stopAll();
+        void serverManager.stopAll();
       }
     }
   );
@@ -208,14 +213,22 @@ export function activate(context: vscode.ExtensionContext) {
 
   const restartServerCommand = vscode.commands.registerCommand(
     'kbengine.server.restart',
-    (component) => serverManager.restartComponent(component.name)
+    (target) => {
+      const component = resolveServerComponent(target);
+      if (!component) {
+        return;
+      }
+
+      void serverManager.restartComponent(component.name);
+    }
   );
   context.subscriptions.push(restartServerCommand);
 
   const showLogsCommand = vscode.commands.registerCommand(
     'kbengine.server.showLogs',
-    (component) => {
-      if (!component?.name) {
+    (target) => {
+      const component = resolveServerComponent(target);
+      if (!component) {
         return;
       }
 
@@ -257,6 +270,9 @@ export function activate(context: vscode.ExtensionContext) {
   const connectLoggerCommand = vscode.commands.registerCommand(
     'kbengine.logs.connect',
     async () => {
+      vscode.window.showWarningMessage(
+        KBEngineLogCollector.PROTOCOL_WARNING
+      );
       try {
         await logCollector.connect();
       } catch (error) {
@@ -306,8 +322,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   const startDebuggingCommand = vscode.commands.registerCommand(
     'kbengine.debug.start',
-    async (component) => {
-      if (component && component.name) {
+    async (target) => {
+      const component = resolveServerComponent(target);
+      if (component) {
         await debugConfigManager.startDebugging(component.name);
       } else {
         const selection = await pickServerComponent('选择要调试的组件');
@@ -321,8 +338,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   const attachToComponentCommand = vscode.commands.registerCommand(
     'kbengine.debug.attach',
-    async (component) => {
-      if (component && component.name) {
+    async (target) => {
+      const component = resolveServerComponent(target);
+      if (component) {
         await debugConfigManager.attachToComponent(component.name);
       } else {
         const selection = await pickServerComponent('选择要附加的组件');
@@ -376,7 +394,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.command = 'kbengine.serverControl';
+  statusBarItem.command = 'workbench.view.extension.kbengine-explorer';
   context.subscriptions.push(statusBarItem);
 
   // 更新状态栏

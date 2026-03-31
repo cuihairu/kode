@@ -30,7 +30,25 @@
   "activationEvents": [
     "onLanguage:kbengine-def",
     "workspaceContains:**/*.def",
-    "onCommand:kbengine.refreshExplorer"
+    "onCommand:kbengine.refreshExplorer",
+    "onCommand:kbengine.entity.open",
+    "onCommand:kbengine.server.start",
+    "onCommand:kbengine.server.stop",
+    "onCommand:kbengine.server.restart",
+    "onCommand:kbengine.server.showLogs",
+    "onCommand:kbengine.logs.showViewer",
+    "onCommand:kbengine.logs.connect",
+    "onCommand:kbengine.logs.disconnect",
+    "onCommand:kbengine.logs.clear",
+    "onCommand:kbengine.logs.export",
+    "onCommand:kbengine.debug.start",
+    "onCommand:kbengine.debug.attach",
+    "onCommand:kbengine.debug.updateLaunchJson",
+    "onCommand:kbengine.debug.createConfig",
+    "onCommand:kbengine.monitoring.show",
+    "onCommand:kbengine.dependency.show",
+    "onCommand:kbengine.generator.wizard",
+    "onCommand:kbengine.generator.templates"
   ],
   "main": "./out/extension.js",
   "contributes": {

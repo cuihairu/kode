@@ -101,12 +101,14 @@ export class EntityDependencyAnalyzer {
     this.entities.clear();
     this.edges = [];
 
-    // 查找所有 .def 文件
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       return this.getEmptyGraph();
     }
 
+    await this.loadFromEntitiesXml();
+
+    // 查找所有 .def 文件
     const defFiles = await vscode.workspace.findFiles('**/*.def', null);
 
     // 第一遍：读取所有实体信息
@@ -137,14 +139,17 @@ export class EntityDependencyAnalyzer {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(defPath));
       const text = Buffer.from(content).toString('utf8');
       const entityName = path.basename(defPath, '.def');
-
-      const node: EntityNode = {
+      const existingNode = this.entities.get(entityName);
+      const node: EntityNode = existingNode || {
         name: entityName,
         defFile: defPath,
         types: [],
         references: [],
         referencedBy: 0
       };
+      node.defFile = defPath;
+      node.references = [];
+      node.types = [];
 
       // 检查实体类型（Base/Cell/Client）
       const hasBase = /<Properties>/i.test(text) || /<BaseMethods>/i.test(text);
@@ -290,15 +295,6 @@ export class EntityDependencyAnalyzer {
           continue;
         }
         node.parent = parentMatch[1];
-
-        if (this.entities.has(parentMatch[1])) {
-          this.edges.push({
-            from: entityName,
-            to: parentMatch[1],
-            type: DependencyType.Inheritance,
-            label: '继承'
-          });
-        }
       }
     }
   }
@@ -313,9 +309,15 @@ export class EntityDependencyAnalyzer {
     }
 
     const workspaceRoot = workspaceFolder.uri.fsPath;
+    const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
     const possiblePaths = [
+      path.join(
+        workspaceRoot,
+        kbengineConfig.get<string>('entityDefsPath', 'scripts/entity_defs'),
+        `${entityName}.def`
+      ),
       path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`),
-      path.join(workspaceRoot, '**/entity_defs', `${entityName}.def`),
+      path.join(workspaceRoot, 'entity_defs', `${entityName}.def`)
     ];
 
     for (const possiblePath of possiblePaths) {

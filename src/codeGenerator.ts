@@ -180,6 +180,11 @@ export class KBEngineCodeGenerator {
     lines.push('<root>');
     lines.push('');
 
+    if (entity.config.parent) {
+      lines.push(`  <Parent>${entity.config.parent}</Parent>`);
+      lines.push('');
+    }
+
     // Properties 节点
     if (entity.baseProperties && entity.baseProperties.length > 0) {
       lines.push('  <Properties>');
@@ -289,9 +294,6 @@ export class KBEngineCodeGenerator {
     const lines: string[] = [];
 
     lines.push(`${indent}<${method.name}>`);
-    if (method.exposed !== false) {
-      lines.push(`${indent}  <Exposed/>`);
-    }
 
     if (method.args && method.args.length > 0) {
       for (const arg of method.args) {
@@ -437,7 +439,12 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const entitiesXmlPath = path.join(workspaceFolder.uri.fsPath, 'scripts/entities.xml');
+    const entitiesXmlPath = path.join(
+      workspaceFolder.uri.fsPath,
+      vscode.workspace
+        .getConfiguration('kbengine')
+        .get<string>('entitiesXmlPath', 'scripts/entities.xml')
+    );
 
     if (!fs.existsSync(entitiesXmlPath)) {
       throw new Error(`entities.xml 不存在: ${entitiesXmlPath}`);
@@ -446,7 +453,8 @@ export class KBEngineCodeGenerator {
     let content = fs.readFileSync(entitiesXmlPath, 'utf8');
 
     // 检查是否已经注册
-    if (content.includes(`<${entity.name}>`)) {
+    const entityPattern = new RegExp(`<${entity.name}(?=[\\s>/])`, 'i');
+    if (entityPattern.test(content)) {
       vscode.window.showWarningMessage(`实体 ${entity.name} 已经在 entities.xml 中注册`);
       return;
     }
@@ -553,32 +561,46 @@ export class KBEngineCodeGenerator {
     };
 
     if (addProperties?.value) {
-      entity.baseProperties = [
+      const sampleFlags = selectedType.hasBase
+        ? 'BASE'
+        : selectedType.hasCell
+          ? 'CELL_PRIVATE'
+          : 'OTHER_CLIENTS';
+
+      const sampleProperties: PropertyDefinition[] = [
         {
           name: 'id',
           type: 'UINT64',
-          flags: selectedType.hasBase ? 'BASE' : 'CELL',
+          flags: sampleFlags,
           default: '0',
-          persistent: true,
-          identifier: true
+          persistent: selectedType.hasBase,
+          identifier: selectedType.hasBase
         },
         {
           name: 'name',
           type: 'STRING',
-          flags: selectedType.hasBase ? 'BASE' : 'CELL',
+          flags: sampleFlags,
           default: '""',
-          dbLength: 50,
-          persistent: true
+          dbLength: selectedType.hasBase ? 50 : undefined,
+          persistent: selectedType.hasBase
         }
       ];
 
-      entity.baseMethods = [
-        {
-          name: 'getName',
-          exposed: false,
-          returnType: 'STRING'
-        }
-      ];
+      const sampleMethod: MethodDefinition = {
+        name: 'getName',
+        exposed: false,
+        returnType: 'STRING'
+      };
+
+      if (selectedType.hasBase) {
+        entity.baseProperties = sampleProperties;
+        entity.baseMethods = [sampleMethod];
+      } else if (selectedType.hasCell) {
+        entity.cellProperties = sampleProperties;
+        entity.cellMethods = [sampleMethod];
+      } else if (selectedType.hasClient) {
+        entity.clientProperties = sampleProperties;
+      }
     }
 
     // 生成文件

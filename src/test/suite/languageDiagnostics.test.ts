@@ -38,7 +38,8 @@ describe('validateDocument', () => {
     const { loadedModule, restore } = loadModuleWithMocks<LanguageProvidersModule>(
       __filename,
       '../../languageProviders',
-      { vscode: createVscodeStub(), fs: fsStub }
+      { vscode: createVscodeStub(), fs: fsStub },
+      true
     );
     restoreModuleMocks = restore;
     validateDocument = loadedModule.validateDocument;

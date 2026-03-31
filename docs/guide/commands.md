@@ -136,8 +136,8 @@
 
 1. 运行 `Create Entity from Wizard`
 2. 选择输出配置
-3. 生成 `.def` 与 Python 文件
-4. 自动写入 `entities.xml`
+3. 生成 `.def` 与可选 Python 文件
+4. 如果启用了 `kbengine.generator.registerInEntitiesXml`，写入 `entities.xml`
 5. 在实体浏览器中继续编辑
 
 ### 查看线上行为
@@ -146,6 +146,10 @@
 2. 打开日志查看器
 3. 打开监控面板观察资源变化
 4. 使用依赖图查看实体关系
+
+注意：
+日志与监控都依赖 KBEngine 的协议交互。
+日志协议适配当前仍属实验性实现；监控面板在 watcher 无响应时会退化成部分数据可见。
 
 ### 调试某个组件
 
@@ -161,6 +165,7 @@
 - 实体导航读取 `kbengine.entityDefsPath`
 - 服务器启动读取 `kbengine.autoStart`
 - 日志面板读取 `kbengine.loggerPort`
+- 依赖图读取 `kbengine.entitiesXmlPath` 和 `kbengine.entityDefsPath`
 - 生成器读取 `kbengine.generator.*`
 
 调试流程是例外。调试不再读取旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug`，而是统一读取 `.kbengine/debug.json`。

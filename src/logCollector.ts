@@ -23,6 +23,9 @@ export enum CollectorStatus {
  * 源码显示需要注册 log watcher 并走内部消息协议，当前插件尚未完成这层实现。
  */
 export class KBEngineLogCollector {
+  static readonly PROTOCOL_WARNING =
+    'KBEngine logger 采集仍是实验性实现，当前协议适配可能因服务端版本或 watcher 注册差异而不可用。';
+
   private status: CollectorStatus = CollectorStatus.Disconnected;
   private socket: net.Socket | null = null;
   private receiveBuffer = Buffer.alloc(0);
@@ -167,27 +170,27 @@ export class KBEngineLogCollector {
 
   getUnavailableReason(): string {
     if (this.lastError) {
-      return this.lastError.message;
+      return `${this.lastError.message} ${KBEngineLogCollector.PROTOCOL_WARNING}`.trim();
     }
 
     if (this.status === CollectorStatus.Connected) {
-      return '';
+      return KBEngineLogCollector.PROTOCOL_WARNING;
     }
 
-    return '尚未连接 KBEngine logger。';
+    return `尚未连接 KBEngine logger。${KBEngineLogCollector.PROTOCOL_WARNING}`;
   }
 
   getStatusSummary(): string {
     switch (this.status) {
       case CollectorStatus.Connected:
-        return `已连接 ${this.config.host}:${this.config.port}`;
+        return `已连接 ${this.config.host}:${this.config.port}，但日志协议仍属实验性`;
       case CollectorStatus.Connecting:
         return `正在连接 ${this.config.host}:${this.config.port}`;
       case CollectorStatus.Error:
-        return this.lastError?.message || '日志连接失败';
+        return this.getUnavailableReason();
       case CollectorStatus.Disconnected:
       default:
-        return `未连接 ${this.config.host}:${this.config.port}`;
+        return `未连接 ${this.config.host}:${this.config.port}；${KBEngineLogCollector.PROTOCOL_WARNING}`;
     }
   }
 

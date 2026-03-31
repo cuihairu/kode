@@ -104,6 +104,14 @@ export class DebugConfigManager {
       this.loadConfig();
       vscode.window.showInformationMessage('KBEngine 调试配置已更新');
     });
+    this.configWatcher.onDidCreate(() => {
+      this.loadConfig();
+      vscode.window.showInformationMessage('KBEngine 调试配置已创建');
+    });
+    this.configWatcher.onDidDelete(() => {
+      this.loadConfig();
+      vscode.window.showWarningMessage('KBEngine 调试配置已删除，已恢复默认配置');
+    });
 
     this.context.subscriptions.push(this.configWatcher);
   }
@@ -167,9 +175,12 @@ export class DebugConfigManager {
       return false;
     }
 
+    const vscodeDir = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
     const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
 
     try {
+      await vscode.workspace.fs.createDirectory(vscodeDir);
+
       let existingConfig: any = { configurations: [], inputs: [] };
       try {
         const launchData = await vscode.workspace.fs.readFile(launchJsonPath);
@@ -268,18 +279,32 @@ export class DebugConfigManager {
         ].join('\n')
       : `KBEngine ${componentName} 调试不是启动 Python 文件，而是先通过 telnet 开启调试，再执行 PID 附加。`;
 
-    vscode.window.showInformationMessage(message);
+    const action = await vscode.window.showInformationMessage(
+      message,
+      { modal: true },
+      '继续附加'
+    );
+
+    if (action !== '继续附加') {
+      return false;
+    }
+
     return this.attachToComponent(componentName);
   }
 
   async attachToComponent(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
+    const processId = await this.promptForProcessId(componentName);
+
+    if (!processId) {
+      return false;
+    }
 
     const attachConfig: vscode.DebugConfiguration = {
       name: `KBEngine: Attach to ${componentName}`,
       type: this.getDebuggerType(),
       request: 'attach',
-      processId: '${input:kbengineProcessId}',
+      processId,
       pathMappings: config.pathMappings,
       justMyCode: false
     };
@@ -295,6 +320,32 @@ export class DebugConfigManager {
 
   getConfig(): KBEngineDebugConfig {
     return this.config;
+  }
+
+  private async promptForProcessId(componentName: string): Promise<number | undefined> {
+    const value = await vscode.window.showInputBox({
+      prompt: `输入 ${componentName} 进程 PID`,
+      placeHolder: '例如 12345',
+      validateInput: input => {
+        const trimmed = input.trim();
+        if (!/^\d+$/.test(trimmed)) {
+          return 'PID 必须是正整数';
+        }
+
+        const parsed = Number(trimmed);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+          return 'PID 必须是有效的正整数';
+        }
+
+        return undefined;
+      }
+    });
+
+    if (!value) {
+      return undefined;
+    }
+
+    return Number(value.trim());
   }
 
   dispose(): void {

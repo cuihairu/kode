@@ -4,11 +4,11 @@
 [![VS Code](https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg)](https://code.visualstudio.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.x-blue.svg)](https://www.typescriptlang.org/)
 
-> **Kode** (KBEngine IDE) - 完整的 KBEngine 游戏服务器开发环境支持
+> **Kode** (KBEngine IDE) - 面向 KBEngine 的 VS Code 开发辅助扩展
 
 ## 📖 简介
 
-**Kode** 是一个为 [KBEngine](https://github.com/kbengine/kbengine) 游戏服务器框架提供完整语言支持的 VSCode 扩展。
+**Kode** 是一个为 [KBEngine](https://github.com/kbengine/kbengine) 游戏服务器框架提供语言支持、导航和辅助面板的 VSCode 扩展。
 
 KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式架构。Kode 为 KBEngine 的实体定义（`.def`）文件提供专业的开发工具支持。
 
@@ -74,19 +74,22 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 支持自定义路径和环境变量
 
 ### 📊 日志查看集成
-- ✅ 实时日志收集（连接到 logger.exe）
+- ✅ 连接 KBEngine logger 端口
 - ✅ WebView 可视化界面
 - ✅ 多级过滤（级别、组件、关键词）
 - ✅ 正则表达式搜索
 - ✅ 日志导出（txt/log/json 格式）
 - ✅ 彩色日志级别显示
 
-### 🐛 Python 调试支持
+当前 logger 协议适配仍属实验性实现，不同 KBEngine 版本下可能需要进一步校正。
+
+### 🐛 嵌入式 Python 调试支持
 - ✅ 自定义调试配置（.kbengine/debug.json）
 - ✅ 组件特定调试设置
 - ✅ 自动生成 launch.json
-- ✅ 支持启动调试和附加到进程
-- ✅ 路径映射和环境变量配置
+- ✅ 通过 telnet 提示引导开启调试
+- ✅ 按 PID 附加到 KBEngine 组件进程
+- ✅ 路径映射配置
 
 ### 📈 监控面板
 - ✅ 实时性能数据收集
@@ -95,6 +98,8 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 组件详细指标卡片
 - ✅ 可视化图表（柱状图、曲线图）
 - ✅ 数据导出（JSON 格式）
+
+监控数据依赖 `machine` 发现和 `watcher` 查询共同提供。若 watcher 无响应，部分指标会退化为 machine discovery 近似值。
 
 ### 🔗 Python ↔ Def 双向跳转
 - ✅ 实体定义映射管理器

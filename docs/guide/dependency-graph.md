@@ -16,6 +16,15 @@ Kode 提供实体依赖关系图，用于查看实体继承结构和实体间引
 
 - `kbengine.dependency.show`
 
+## 配置联动
+
+依赖图会读取这些配置：
+
+- `kbengine.entitiesXmlPath`
+- `kbengine.entityDefsPath`
+
+如果你的项目没有把实体文件放在默认的 `scripts/` 目录下，需要先把这两个路径配对，否则图里会缺节点或无法打开定义。
+
 ## 图中展示内容
 
 ### 节点

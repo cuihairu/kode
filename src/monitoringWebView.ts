@@ -177,9 +177,12 @@ export class MonitoringWebView {
       }
     }).then(uri => {
       if (uri) {
-        vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8')).then(() => {
-          vscode.window.showInformationMessage(`监控数据已导出到 ${uri.fsPath}`);
-        });
+        vscode.workspace.fs.writeFile(uri, Buffer.from(data, 'utf8'))
+          .then(() => {
+            vscode.window.showInformationMessage(`监控数据已导出到 ${uri.fsPath}`);
+          }, (error: unknown) => {
+            vscode.window.showErrorMessage(`导出监控数据失败: ${error}`);
+          });
       }
     });
   }

@@ -46,6 +46,9 @@ export interface MonitoringDiagnostic {
 type WatcherValueMap = Record<string, string | number | boolean>;
 
 export class MonitoringCollector {
+  static readonly PARTIAL_DATA_WARNING =
+    '监控数据依赖 machine discovery 与 watcher 查询联合提供；watcher 无响应时，部分指标可能缺失或回退为 machine discovery 近似值。';
+
   private updateInterval: NodeJS.Timeout | null = null;
   private readonly metrics: ComponentMetrics[] = [];
   private readonly metricsHistory = new Map<string, ComponentMetrics[]>();
@@ -144,7 +147,11 @@ export class MonitoringCollector {
   }
 
   getUnavailableReason(): string {
-    return this.lastError?.message || this.lastStatus;
+    if (this.lastError) {
+      return this.lastError.message;
+    }
+
+    return this.lastStatus;
   }
 
   getStatusSummary(): string {
@@ -222,8 +229,11 @@ export class MonitoringCollector {
         this.metricsHistory.set(metric.component, history);
       }
 
+      const incompleteCount = nextMetrics.filter(metric => metric.statusLevel !== 'info').length;
       this.lastError = null;
-      this.lastStatus = `已连接本地 machine，发现 ${nextMetrics.length} 个组件。`;
+      this.lastStatus = incompleteCount > 0
+        ? `已连接本地 machine，发现 ${nextMetrics.length} 个组件，其中 ${incompleteCount} 个 watcher 无响应。${MonitoringCollector.PARTIAL_DATA_WARNING}`
+        : `已连接本地 machine，发现 ${nextMetrics.length} 个组件，watcher 数据完整。`;
       this._onMetricsUpdate.fire();
     } catch (error) {
       this.metrics.length = 0;

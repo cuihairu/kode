@@ -227,6 +227,7 @@ export class KBEngineServerManager {
     }
 
     const exePath = this.getExecutablePath(component);
+    const configPath = this.getConfigPath();
 
     // 检查可执行文件是否存在
     if (!fs.existsSync(exePath)) {
@@ -236,14 +237,31 @@ export class KBEngineServerManager {
       return false;
     }
 
+    if (!configPath) {
+      vscode.window.showErrorMessage('KBEngine 配置目录为空，请检查 kbengine.configPath');
+      return false;
+    }
+
+    if (!fs.existsSync(configPath)) {
+      vscode.window.showErrorMessage(`找不到 KBEngine 配置目录：${configPath}`);
+      return false;
+    }
+
+    const configStat = fs.statSync(configPath);
+    if (!configStat.isDirectory()) {
+      vscode.window.showErrorMessage(`KBEngine 配置路径不是目录：${configPath}`);
+      return false;
+    }
+
     const outputChannel = this.getOutputChannel(component);
     outputChannel.show();
     outputChannel.appendLine(`[INFO] 正在启动 ${component.displayName}...`);
     outputChannel.appendLine(`[INFO] 可执行文件: ${exePath}`);
+    outputChannel.appendLine(`[INFO] 配置目录: ${configPath}`);
 
     try {
       const childProcess = spawn(exePath, [], {
-        cwd: this.getConfigPath(),
+        cwd: configPath,
         env: { ...process.env }
       });
 

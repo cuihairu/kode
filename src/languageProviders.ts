@@ -466,7 +466,7 @@ function validateScalarTagValues(
           text,
           candidate,
           typeMatch.index,
-          `自定义类型 ${candidate} 已在 types.xml 中注册，但未找到对应的 user_type Python 文件`,
+          `自定义类型 ${candidate} 已在 types.xml 中注册，但未找到对应的 user_type Python 文件，请检查 user_type/${candidate}.py`,
           vscode.DiagnosticSeverity.Warning
         );
         continue;
@@ -479,7 +479,7 @@ function validateScalarTagValues(
           text,
           candidate,
           typeMatch.index,
-          `自定义类型 ${candidate} 未在 types.xml 中注册`,
+          `自定义类型 ${candidate} 未在 types.xml 中注册，请先在 types.xml 注册后再引用`,
           vscode.DiagnosticSeverity.Error
         );
       }

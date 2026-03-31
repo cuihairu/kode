@@ -52,7 +52,15 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
 
     const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
-    const entitiesXmlPath = path.join(workspaceRoot, 'scripts/entities.xml');
+    const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
+    const entitiesXmlPath = path.join(
+      workspaceRoot,
+      kbengineConfig.get<string>('entitiesXmlPath', 'scripts/entities.xml')
+    );
+    const entityDefsPath = path.join(
+      workspaceRoot,
+      kbengineConfig.get<string>('entityDefsPath', 'scripts/entity_defs')
+    );
 
     if (!fs.existsSync(entitiesXmlPath)) {
       return entities;
@@ -75,7 +83,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       if (hasBase) description.push('Base');
       if (hasClient) description.push('Client');
 
-      const defPath = path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`);
+      const defPath = path.join(entityDefsPath, `${entityName}.def`);
       const parsedEntity = this.buildEntityInfo(
         entityName,
         description.join(', '),

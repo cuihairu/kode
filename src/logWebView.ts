@@ -190,20 +190,28 @@ export class LogViewerWebView {
    */
   exportLogs(): void {
     const filteredLogs = this.applyFilter(this.currentLogs);
-    const content = filteredLogs.map(log => LogParser.formatLogEntry(log)).join('\n');
 
     vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file('kbengine_logs.txt'),
       filters: {
         'Text Files': ['txt'],
         'Log Files': ['log'],
+        'JSON Files': ['json'],
         'All Files': ['*']
       }
     }).then(uri => {
       if (uri) {
-        vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8')).then(() => {
-          vscode.window.showInformationMessage(`日志已导出到 ${uri.fsPath}`);
-        });
+        const lowerPath = uri.fsPath.toLowerCase();
+        const content = lowerPath.endsWith('.json')
+          ? JSON.stringify(filteredLogs, null, 2)
+          : filteredLogs.map(log => LogParser.formatLogEntry(log)).join('\n');
+
+        vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'))
+          .then(() => {
+            vscode.window.showInformationMessage(`日志已导出到 ${uri.fsPath}`);
+          }, (error: unknown) => {
+            vscode.window.showErrorMessage(`导出日志失败: ${error}`);
+          });
       }
     });
   }

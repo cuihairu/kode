@@ -81,9 +81,6 @@ export class EntityDependencyWebView {
     }
 
     try {
-      // 先加载 entities.xml
-      await this.analyzer.loadFromEntitiesXml();
-
       // 分析依赖关系
       this.currentGraph = await this.analyzer.analyze();
 
@@ -451,9 +448,16 @@ ${mermaidGraph}
    */
   private async openEntityFile(entityName: string): Promise<void> {
     const node = this.analyzer.getEntityNode(entityName);
-    if (node) {
+    if (!node) {
+      vscode.window.showWarningMessage(`未找到实体节点: ${entityName}`);
+      return;
+    }
+
+    try {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.file(node.defFile));
       await vscode.window.showTextDocument(document);
+    } catch (error) {
+      vscode.window.showErrorMessage(`打开实体定义失败: ${error}`);
     }
   }
 
@@ -502,8 +506,12 @@ ${mermaidGraph}
       ? Buffer.from(data, 'utf8')
       : Buffer.from(data, 'base64');
 
-    await vscode.workspace.fs.writeFile(pendingExport.uri, content);
-    vscode.window.showInformationMessage(`依赖图已导出到 ${pendingExport.uri.fsPath}`);
+    try {
+      await vscode.workspace.fs.writeFile(pendingExport.uri, content);
+      vscode.window.showInformationMessage(`依赖图已导出到 ${pendingExport.uri.fsPath}`);
+    } catch (error) {
+      vscode.window.showErrorMessage(`写入导出文件失败: ${error}`);
+    }
   }
 
   /**
