@@ -1,6 +1,6 @@
 # 配置说明
 
-本页整理了 Kode 当前支持的所有 `kbengine.*` 配置项，并补充了使用场景、推荐值和常见组合。
+本页整理 Kode 当前支持的所有 `kbengine.*` 配置项，并补充使用场景、推荐值和常见组合。
 
 ## 配置方式
 
@@ -69,23 +69,20 @@
 | `kbengine.diagnostics.checkMissingPropertyFields` | `boolean` | `true` | 检查属性缺少 `Type` / `Flags` |
 | `kbengine.hover.showTagDocs` | `boolean` | `true` | 悬停标签时显示说明 |
 | `kbengine.hover.showValueDocs` | `boolean` | `true` | 悬停类型、Flags、等级值时显示说明 |
-| `kbengine.hover.showSymbolDocs` | `boolean` | `true` | 悬停自定义属性/方法时显示摘要 |
+| `kbengine.hover.showSymbolDocs` | `boolean` | `true` | 悬停自定义属性或方法时显示摘要 |
 | `kbengine.entityDefsPath` | `string` | `"scripts/entity_defs"` | 实体定义目录 |
 | `kbengine.entitiesXmlPath` | `string` | `"scripts/entities.xml"` | `entities.xml` 路径 |
-| `kbengine.binPath` | `string` | `"${workspaceFolder}/../kbengine/kbe/bin"` | KBEngine 二进制目录 |
+| `kbengine.binPath` | `string` | `"${workspaceFolder}/../kbe/bin/server"` | KBEngine 二进制目录 |
 | `kbengine.configPath` | `string` | `"${workspaceFolder}/server"` | 服务器配置目录 |
 | `kbengine.autoStart` | `string[]` | `["machine","logger","dbmgr"]` | 自动启动组件 |
 | `kbengine.loggerPort` | `number` | `20022` | 日志端口 |
-| `kbengine.logAutoConnect` | `boolean` | `true` | 启动服务器时自动连日志 |
+| `kbengine.logAutoConnect` | `boolean` | `true` | 启动服务器时自动连接日志 |
 | `kbengine.maxLogEntries` | `number` | `10000` | 日志最大缓存数 |
-| `kbengine.pythonPath` | `string` | `"python"` | 调试时使用的 Python 路径 |
-| `kbengine.debugPort` | `number` | `5678` | Python 调试端口 |
-| `kbengine.autoAttachDebug` | `boolean` | `false` | 启动组件后自动附加调试器 |
-| `kbengine.pythonDefsPath` | `string[]` | `["assets/scripts/entity_defs","scripts/entity_defs"]` | Python 生成定义搜索路径 |
-| `kbengine.enablePythonNavigation` | `boolean` | `true` | 启用 Python 到 `.def` 跳转 |
+| `kbengine.pythonDefsPath` | `string[]` | `["assets/scripts/entity_defs","scripts/entity_defs"]` | Python 定义搜索路径 |
+| `kbengine.enablePythonNavigation` | `boolean` | `true` | 启用 Python 到 `.def` 的导航 |
 | `kbengine.generator.defOutputPath` | `string` | `"scripts/entity_defs"` | 代码生成器 `.def` 输出目录 |
 | `kbengine.generator.pythonOutputPath` | `string` | `"scripts"` | 代码生成器 Python 输出目录 |
-| `kbengine.generator.generatePython` | `boolean` | `true` | 代码生成器是否生成 Python |
+| `kbengine.generator.generatePython` | `boolean` | `true` | 代码生成器是否生成 Python 文件 |
 | `kbengine.generator.registerInEntitiesXml` | `boolean` | `true` | 生成后自动注册到 `entities.xml` |
 
 ## 逐项说明
@@ -111,21 +108,29 @@
 - 缺少 `Type` / `Flags`
 - 属性内部重复定义多个 `Type` / `Flags`
 
-如果你觉得提示过于频繁，优先关这个，而不是直接关闭全部诊断。
-
 ### 诊断子项
 
 #### `kbengine.diagnostics.checkUnknownTypes`
 
 检查 `<Type>` 中未识别的类型名。
 
-适合保持开启，因为这类通常是真错误。
+当前规则已经按 KBEngine 的真实模型区分两类类型：
+
+- 内建基础类型：直接视为合法，不会去 `types.xml` 或 `user_type` 校验
+- 用户自定义类型：先在 `types.xml` 注册，再到 `user_type/*.py` 查找对应 Python 文件
+
+从上层 `kbengine` 源码看，类型定义是按 `entity_defs/types.xml` 体系加载的，而 `user_type` 会加入脚本路径。因此扩展当前按这些路径优先查找：
+
+- `entity_defs/types.xml`
+- `scripts/entity_defs/types.xml`
+- `assets/scripts/entity_defs/types.xml`
+- `user_type/<Type>.py`
+- `scripts/user_type/<Type>.py`
+- `assets/scripts/user_type/<Type>.py`
 
 #### `kbengine.diagnostics.checkUnknownFlags`
 
 检查 `<Flags>` 中未识别的标志值。
-
-适合保持开启，因为拼写错误很常见。
 
 #### `kbengine.diagnostics.checkUnknownDetailLevels`
 
@@ -135,13 +140,9 @@
 
 检查 `BASE` / `BASE_CLIENT` 与 `CELL_*` 混用。
 
-这是 KBEngine 中很有价值的一条规则，建议开启。
-
 #### `kbengine.diagnostics.checkDuplicateDefinitions`
 
 检查同一区块下的重名属性和方法。
-
-如果你的项目大量生成中间代码、或者还在频繁重构，这项可能会比较吵。
 
 #### `kbengine.diagnostics.checkInvalidChildren`
 
@@ -155,13 +156,11 @@
 </BaseMethods>
 ```
 
-上面的 `<Flags>` 会被识别为方法区块中的非法标签。
+这里的 `<Flags>` 会被识别为方法区块中的非法标签。
 
 #### `kbengine.diagnostics.checkMissingPropertyFields`
 
 检查属性缺少 `Type` / `Flags`，以及重复声明多个 `Type` / `Flags`。
-
-如果你经常写到一半保存，这项可能最容易打断流畅度。
 
 ### Hover 子项
 
@@ -169,13 +168,9 @@
 
 控制是否在悬停 `<Type>`、`<Flags>`、`<Properties>` 这类标签时显示说明。
 
-如果你已经熟悉 `.def` 结构，建议关闭。
-
 #### `kbengine.hover.showValueDocs`
 
 控制是否在悬停 `UINT32`、`BASE_CLIENT`、`HIGH` 这类值时显示说明。
-
-这项通常保留价值更高。
 
 #### `kbengine.hover.showSymbolDocs`
 
@@ -193,26 +188,24 @@
 - `entities.xml` 跳转到实体定义
 - 代码生成器输出 `.def`
 
-默认适合标准 KBEngine 项目。如果你的目录结构不同，需要优先改这个。
-
 #### `kbengine.entitiesXmlPath`
 
 `entities.xml` 路径。适合项目拆分目录、把实体注册文件放到自定义位置时使用。
 
 #### `kbengine.binPath`
 
-KBEngine 的二进制目录，支持：
-
-- `${workspaceFolder}`
-- `${env:VAR}`
-
-示例：
+KBEngine 二进制目录。当前默认值已经调整为更贴近项目实际使用习惯的：
 
 ```json
 {
-  "kbengine.binPath": "${workspaceFolder}/../kbengine/kbe/bin"
+  "kbengine.binPath": "${workspaceFolder}/../kbe/bin/server"
 }
 ```
+
+支持：
+
+- `${workspaceFolder}`
+- `${env:VAR}`
 
 #### `kbengine.configPath`
 
@@ -236,14 +229,6 @@ KBEngine 的二进制目录，支持：
 - `cellapp`
 - `bots`
 
-示例：
-
-```json
-{
-  "kbengine.autoStart": ["machine", "logger", "dbmgr", "baseappmgr", "cellappmgr"]
-}
-```
-
 #### `kbengine.loggerPort`
 
 日志收集器连接端口，默认 `20022`。
@@ -256,19 +241,7 @@ KBEngine 的二进制目录，支持：
 
 日志 WebView 最大缓存条数。日志量很大时，可以适当降低。
 
-### Python 调试与导航
-
-#### `kbengine.pythonPath`
-
-Python 解释器路径，用于调试配置和启动调试。
-
-#### `kbengine.debugPort`
-
-Python 调试器端口，默认 `5678`。
-
-#### `kbengine.autoAttachDebug`
-
-启动组件时自动附加调试器。适合单人调试，不适合频繁启停的大型项目。
+### Python 导航
 
 #### `kbengine.pythonDefsPath`
 
@@ -276,7 +249,44 @@ Python 调试器端口，默认 `5678`。
 
 #### `kbengine.enablePythonNavigation`
 
-控制是否启用 Python 与 `.def` 双向导航。
+控制是否启用 Python 与 `.def` 之间的双向导航。
+
+### 调试配置文件
+
+KBEngine 调试不再通过工作区设置项拼 Python 启动参数，而是统一读取工作区下的 `.kbengine/debug.json`。
+
+这个文件只描述两类信息：
+
+- telnet 地址、端口和开启调试命令
+- PID attach 所需的 `pathMappings`
+
+推荐结构如下：
+
+```json
+{
+  "version": "1.0.0",
+  "debug": {
+    "defaultTelnetHost": "127.0.0.1",
+    "defaultTelnetPort": 0,
+    "components": {
+      "baseapp": {
+        "telnetHost": "127.0.0.1",
+        "telnetPort": 0,
+        "telnetEnableCommands": [
+          "# 先连接 telnet",
+          "# 再输入项目实际使用的开启调试命令"
+        ],
+        "pathMappings": [
+          {
+            "localRoot": "${workspaceFolder}",
+            "remoteRoot": "${workspaceFolder}"
+          }
+        ]
+      }
+    }
+  }
+}
+```
 
 ### 代码生成器
 
@@ -304,13 +314,13 @@ Python 调试器端口，默认 `5678`。
 
 如果没有刷新：
 
-- 确认改的是工作区或用户设置，而不是无效的 JSON 文件
+- 确认修改的是工作区或用户设置
 - 确认当前打开的是 `.def` 文件
 - 极端情况下手动关闭并重新打开文件
 
 ### 哪些配置最值得先调？
 
-如果你觉得“太吵”，优先调这四项：
+如果你觉得提示过多，优先调这四项：
 
 ```json
 {
@@ -321,65 +331,25 @@ Python 调试器端口，默认 `5678`。
 }
 ```
 
-## 调试兼容性说明
+## 调试模型说明
 
-### 旧版 VSCode / Python 扩展
+### KBEngine 调试模型
 
-如果项目运行环境固定为 Python 3.7.3，且开发环境需要兼容 VSCode 1.50，建议使用以下组合：
+KBEngine 组件是 C++ 进程内嵌 Python 运行时，不是由扩展直接启动一个 Python 脚本。因此调试模型必须是：
 
-- VSCode 1.50.x
-- ms-python.python 2020.8.109390
-- Python 3.7.3
+1. 先通过 telnet 向组件输入项目实际使用的开启调试命令
+2. 再使用 `debugpy` 的 `processId` 方式附加到目标进程
 
-在这组环境下，`Attach to Component` 应使用旧版 Python 调试配置语义：
-
-- `type: "python"`
-- `request: "attach"`
-- `pythonPath`
-- `host`
-- `port`
-
-不要混用较新的字段形式：
-
-- `type: "debugpy"`
-- `python`
-- `connect: { host, port }`
-
-较新的字段在旧版 Python 扩展中可能无法被正确识别，最终表现为误导性的提示：
-
-```text
-Test discovery err,please check the configuration settings for the tests
-```
-
-这条报错通常不表示测试配置本身有问题，而是 Python 扩展在激活、解释器选择、调试配置解析或导入项目模块时失败后，统一回落成“测试发现失败”。
-
-### 推荐测试设置
-
-如果当前工作区不使用 VSCode 内置测试发现，建议在 `settings.json` 中显式关闭：
-
-```json
-{
-  "python.testing.pytestEnabled": false,
-  "python.testing.unittestEnabled": false,
-  "python.testing.nosetestsEnabled": false
-}
-```
-
-如果项目本身需要测试功能，再按实际使用的测试框架单独开启，不要同时开启多个测试框架。
+这也是扩展当前生成的唯一调试配置形式。
 
 ### Attach 报错排查
 
-当 `Attach to Component` 触发如下报错时：
+如果 `Attach to Component` 或 `Start Debugging` 失败，建议按下面顺序排查：
 
-```text
-Test discovery err,please check the configuration settings for the tests
-```
+1. 目标组件是否已经通过 telnet 成功开启调试
+2. 输入的 PID 是否就是目标组件本身
+3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致
+4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前源码目录
+5. 本机是否已安装 `ms-python.debugpy`，并且 VS Code 能正常使用它进行 PID attach
 
-建议按下面顺序排查：
-
-1. 确认 VSCode 选择的解释器就是目标 Python 3.7.3，而不是系统中的其他 Python。
-2. 确认扩展生成的 `launch.json` 使用旧版字段：`type: "python"`、`pythonPath`、`host`、`port`。
-3. 确认目标进程已经在对应调试端口监听，而不是仅启动了进程但未注入调试器。
-4. 确认 `pathMappings` 与实际工程路径一致，避免附加后源码映射失败。
-5. 如果未使用 VSCode 测试功能，关闭 `python.testing.*` 配置，避免旧版扩展在后台触发测试发现。
-6. 打开 VSCode 的 `Output > Python` 查看真实异常。很多情况下，真正的根因是解释器错误、缺少依赖、导入失败或调试配置字段不兼容。
+旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug` 已经移除，避免继续误导成“启动 Python 文件调试”。

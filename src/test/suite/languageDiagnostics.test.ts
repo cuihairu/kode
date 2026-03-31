@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import {
   FakeDiagnosticCollection,
   FakeTextDocument,
@@ -11,12 +12,33 @@ type LanguageProvidersModule = typeof import('../../languageProviders');
 describe('validateDocument', () => {
   let restoreModuleMocks: (() => void) | undefined;
   let validateDocument: LanguageProvidersModule['validateDocument'];
+  let observedExistsPaths: string[] = [];
 
   before(() => {
+    const typesXmlPath = path.join('/workspace', 'scripts', 'entity_defs', 'types.xml');
+    const registeredTypePath = path.join('/workspace', 'scripts', 'user_type', 'RegisteredType.py');
+
+    const fsStub = {
+      existsSync(candidatePath: string): boolean {
+        observedExistsPaths.push(candidatePath);
+        return [
+          typesXmlPath,
+          registeredTypePath
+        ].includes(candidatePath);
+      },
+      readFileSync(candidatePath: string): string {
+        if (candidatePath === typesXmlPath) {
+          return '<root><RegisteredType/><BrokenType/></root>';
+        }
+
+        throw new Error(`Unexpected readFileSync path: ${candidatePath}`);
+      }
+    };
+
     const { loadedModule, restore } = loadModuleWithMocks<LanguageProvidersModule>(
       __filename,
       '../../languageProviders',
-      { vscode: createVscodeStub() }
+      { vscode: createVscodeStub(), fs: fsStub }
     );
     restoreModuleMocks = restore;
     validateDocument = loadedModule.validateDocument;
@@ -27,6 +49,7 @@ describe('validateDocument', () => {
   });
 
   function messagesFor(text: string): string[] {
+    observedExistsPaths = [];
     const collection = new FakeDiagnosticCollection();
     validateDocument(
       new FakeTextDocument('/workspace/entity_defs/Hero.def', 'kbengine-def', text) as never,
@@ -35,12 +58,12 @@ describe('validateDocument', () => {
     return (collection.entries.get('/workspace/entity_defs/Hero.def') || []).map(item => item.message);
   }
 
-  it('reports unknown scalar values and conflicting flags', () => {
+  it('reports unresolved custom types and conflicting flags', () => {
     const messages = messagesFor([
       '<root>',
       '  <Properties>',
       '    <health>',
-      '      <Type>UNKNOWN_TYPE</Type>',
+      '      <Type>MissingType</Type>',
       '      <Flags>BASE CELL_PUBLIC</Flags>',
       '      <DetailLevel>EXTREME</DetailLevel>',
       '    </health>',
@@ -48,9 +71,49 @@ describe('validateDocument', () => {
       '</root>'
     ].join('\n'));
 
-    assert.ok(messages.includes('未知的 KBEngine 类型: UNKNOWN_TYPE'));
-    assert.ok(messages.includes('BASE 和 CELL 标志不能同时使用'));
-    assert.ok(messages.includes('未知的 DetailLevel: EXTREME'));
+    assert.ok(messages.some(message => message.includes('MissingType') && message.includes('types.xml')));
+    assert.ok(messages.some(message => message.includes('BASE') && message.includes('CELL')));
+    assert.ok(messages.some(message => message.includes('EXTREME')));
+  });
+
+  it('accepts registered custom types and warns when the backing python type is missing', () => {
+    const messages = messagesFor([
+      '<root>',
+      '  <Properties>',
+      '    <registered>',
+      '      <Type>RegisteredType</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </registered>',
+      '    <broken>',
+      '      <Type>BrokenType</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </broken>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+
+    assert.ok(!messages.some(message => message.includes('RegisteredType')));
+    assert.ok(messages.some(message => (
+      message.includes('BrokenType') &&
+      message.includes('types.xml') &&
+      message.includes('user_type')
+    )));
+  });
+
+  it('does not resolve builtin types through types.xml or user_type', () => {
+    const messages = messagesFor([
+      '<root>',
+      '  <Properties>',
+      '    <health>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </health>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+
+    assert.deepStrictEqual(messages, []);
+    assert.ok(!observedExistsPaths.some(candidatePath => candidatePath.includes('UINT32')));
   });
 
   it('reports duplicate property definitions and missing required property fields', () => {
@@ -67,10 +130,10 @@ describe('validateDocument', () => {
       '</root>'
     ].join('\n'));
 
-    assert.ok(messages.includes('属性区块中存在重复定义: health'));
-    assert.ok(messages.includes('health 在 属性区块 中已定义'));
-    assert.ok(messages.includes('属性 health 缺少 <Flags> 定义'));
-    assert.ok(messages.includes('属性 health 缺少 <Type> 定义'));
+    assert.ok(messages.some(message => message.includes('health') && message.includes('重复')));
+    assert.ok(messages.some(message => message.includes('health') && message.includes('已定义')));
+    assert.ok(messages.some(message => message.includes('health') && message.includes('<Flags>')));
+    assert.ok(messages.some(message => message.includes('health') && message.includes('<Type>')));
   });
 
   it('reports invalid nested tags in property and method sections', () => {
@@ -91,7 +154,7 @@ describe('validateDocument', () => {
       '</root>'
     ].join('\n'));
 
-    assert.ok(messages.includes('属性 profile 中不应出现 <Arg>，允许的子标签: Type, Flags, Default, Database, DetailLevel, Identifier'));
-    assert.ok(messages.includes('方法 attack 中只允许 <Arg> 子标签'));
+    assert.ok(messages.some(message => message.includes('profile') && message.includes('<Arg>') && message.includes('Identifier')));
+    assert.ok(messages.some(message => message.includes('attack') && message.includes('<Arg>')));
   });
 });

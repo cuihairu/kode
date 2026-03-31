@@ -442,18 +442,44 @@ function validateScalarTagValues(
       continue;
     }
 
-    const typeCandidateRegex = /\b[A-Z][A-Z0-9_]*\b/g;
+    const typeCandidateRegex = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
     let typeCandidateMatch: RegExpExecArray | null;
     while ((typeCandidateMatch = typeCandidateRegex.exec(value)) !== null) {
       const candidate = typeCandidateMatch[0];
-      if (featureConfig.diagnosticsCheckUnknownTypes && !knownTypes.has(candidate)) {
+      if (knownTypes.has(candidate)) {
+        continue;
+      }
+
+      if (!featureConfig.diagnosticsCheckUnknownTypes) {
+        continue;
+      }
+
+      const customTypeResolution = resolveCustomTypeReference(document, candidate);
+      if (customTypeResolution.status === 'resolved' || customTypeResolution.status === 'unverifiable') {
+        continue;
+      }
+
+      if (customTypeResolution.status === 'missingPythonFile') {
         pushDiagnosticForMatch(
           document,
           diagnosticsList,
           text,
           candidate,
           typeMatch.index,
-          `未知的 KBEngine 类型: ${candidate}`,
+          `自定义类型 ${candidate} 已在 types.xml 中注册，但未找到对应的 user_type Python 文件`,
+          vscode.DiagnosticSeverity.Warning
+        );
+        continue;
+      }
+
+      if (customTypeResolution.status === 'missingTypeRegistration') {
+        pushDiagnosticForMatch(
+          document,
+          diagnosticsList,
+          text,
+          candidate,
+          typeMatch.index,
+          `自定义类型 ${candidate} 未在 types.xml 中注册`,
           vscode.DiagnosticSeverity.Error
         );
       }
@@ -812,6 +838,82 @@ function getSymbolHover(
   }
 
   return new vscode.Hover(markdown);
+}
+
+type CustomTypeResolutionStatus =
+  | 'resolved'
+  | 'missingTypeRegistration'
+  | 'missingPythonFile'
+  | 'unverifiable';
+
+interface CustomTypeResolution {
+  status: CustomTypeResolutionStatus;
+}
+
+function resolveCustomTypeReference(
+  document: vscode.TextDocument,
+  candidate: string
+): CustomTypeResolution {
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return { status: 'unverifiable' };
+  }
+
+  const typesXmlPath = findExistingPath([
+    path.join(workspaceRoot, 'types.xml'),
+    path.join(workspaceRoot, 'entity_defs', 'types.xml'),
+    path.join(workspaceRoot, 'scripts', 'entity_defs', 'types.xml'),
+    path.join(workspaceRoot, 'assets', 'scripts', 'entity_defs', 'types.xml'),
+    path.join(workspaceRoot, 'scripts', 'types.xml'),
+    path.join(workspaceRoot, 'assets', 'scripts', 'types.xml')
+  ]);
+
+  if (!typesXmlPath) {
+    return { status: 'unverifiable' };
+  }
+
+  let typesXmlContent = '';
+  try {
+    typesXmlContent = fs.readFileSync(typesXmlPath, 'utf8');
+  } catch {
+    return { status: 'unverifiable' };
+  }
+
+  const typeRegistrationPattern = new RegExp(`<${candidate}(?=[\\s>/])`, 'i');
+  if (!typeRegistrationPattern.test(typesXmlContent)) {
+    return { status: 'missingTypeRegistration' };
+  }
+
+  const customPythonTypePath = findExistingPath([
+    path.join(workspaceRoot, 'user_type', `${candidate}.py`),
+    path.join(workspaceRoot, 'scripts', 'user_type', `${candidate}.py`),
+    path.join(workspaceRoot, 'assets', 'scripts', 'user_type', `${candidate}.py`)
+  ]);
+
+  if (!customPythonTypePath) {
+    return { status: 'missingPythonFile' };
+  }
+
+  return { status: 'resolved' };
+}
+
+function getWorkspaceRootForDocument(document: vscode.TextDocument): string | null {
+  const folder = vscode.workspace.workspaceFolders?.find(item => {
+    const folderPath = item.uri.fsPath;
+    return document.fileName === folderPath || document.fileName.startsWith(`${folderPath}${path.sep}`) || document.fileName.startsWith(`${folderPath}/`);
+  });
+
+  return folder?.uri.fsPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || null;
+}
+
+function findExistingPath(candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function findEnclosingSymbol(

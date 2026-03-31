@@ -4,7 +4,7 @@
 
 ## 命令面板中的命令
 
-你可以通过 `Cmd/Ctrl + Shift + P` 打开命令面板，输入 `KBEngine` 或 `Kode` 查找相关命令。
+可以通过 `Cmd/Ctrl + Shift + P` 打开命令面板，输入 `KBEngine` 或 `Kode` 查找相关命令。
 
 ## 实体浏览器
 
@@ -22,7 +22,7 @@
 - 作用：打开指定实体的 `.def` 文件
 - 入口：
   - 点击实体浏览器中的实体项
-  - 命令调用
+  - 命令面板
 
 ## 服务器控制
 
@@ -82,22 +82,22 @@
 ### `kbengine.debug.updateLaunchJson`
 
 - 标题：`Update launch.json`
-- 作用：根据当前 KBEngine 配置生成或更新 VSCode 调试配置
+- 作用：根据 `.kbengine/debug.json` 生成或更新 VSCode 的 PID attach 配置
 
 ### `kbengine.debug.createConfig`
 
 - 标题：`Create Debug Config Template`
-- 作用：创建示例调试配置文件
+- 作用：创建示例调试配置文件 `.kbengine/debug.json`
 
 ### `kbengine.debug.start`
 
 - 标题：`Start Debugging`
-- 作用：启动指定组件的调试流程
+- 作用：显示目标组件的 telnet 调试提示，然后进入 PID attach 流程
 
 ### `kbengine.debug.attach`
 
 - 标题：`Attach to Component`
-- 作用：附加到已有组件进程
+- 作用：按 PID 附加到已开启调试的 KBEngine 组件进程
 
 ## 可视化面板
 
@@ -138,20 +138,21 @@
 2. 选择输出配置
 3. 生成 `.def` 与 Python 文件
 4. 自动写入 `entities.xml`
-5. 在实体浏览器中点击打开并继续编辑
+5. 在实体浏览器中继续编辑
 
 ### 查看线上行为
 
-1. 启动服务器控制面板中的组件
+1. 启动需要观察的组件
 2. 打开日志查看器
 3. 打开监控面板观察资源变化
-4. 使用依赖图查看实体结构关系
+4. 使用依赖图查看实体关系
 
 ### 调试某个组件
 
-1. 先配置 `kbengine.pythonPath` 与调试端口
-2. 运行 `Update launch.json`
-3. 执行 `Start Debugging` 或 `Attach to Component`
+1. 先执行 `Create Debug Config Template`，生成 `.kbengine/debug.json`
+2. 在 `.kbengine/debug.json` 里填写目标组件的 `telnetHost`、`telnetPort`、`telnetEnableCommands` 和 `pathMappings`
+3. 运行 `Start Debugging` 查看提示，先通过 telnet 向目标组件输入项目实际使用的开启调试命令
+4. 再执行 `Attach to Component`，输入目标组件进程 PID
 
 ## 命令是否支持配置联动
 
@@ -160,69 +161,51 @@
 - 实体导航读取 `kbengine.entityDefsPath`
 - 服务器启动读取 `kbengine.autoStart`
 - 日志面板读取 `kbengine.loggerPort`
-- 调试流程读取 `kbengine.pythonPath`、`kbengine.debugPort`
 - 生成器读取 `kbengine.generator.*`
-## 调试命令兼容说明
+
+调试流程是例外。调试不再读取旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug`，而是统一读取 `.kbengine/debug.json`。
+
+## 调试命令说明
 
 ### `Attach to Component`
 
-在旧版开发环境中：
+KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Python 运行时是嵌在 C++ 组件进程里的，因此扩展只保留两步：
 
-- VSCode 1.50.x
-- ms-python.python 2020.8.109390
-- Python 3.7.3
+1. 通过 telnet 向目标组件输入项目实际使用的开启调试命令
+2. 通过 `debugpy` 的 `processId` 方式附加到已开启调试的进程
 
-`Attach to Component` 依赖旧版 Python 扩展的调试配置格式。生成的 `launch.json` 应保持为：
-
-```json
-{
-  "type": "python",
-  "request": "attach",
-  "pythonPath": "python",
-  "host": "localhost",
-  "port": 5678
-}
-```
-
-不要将其写成较新的配置形式：
+扩展生成的 `launch.json` 会固定为 PID attach 形式：
 
 ```json
 {
+  "name": "KBEngine: Attach to baseapp",
   "type": "debugpy",
   "request": "attach",
-  "connect": {
-    "host": "localhost",
-    "port": 5678
-  }
+  "processId": "${input:kbengineProcessId}",
+  "justMyCode": false,
+  "pathMappings": [
+    {
+      "localRoot": "${workspaceFolder}",
+      "remoteRoot": "${workspaceFolder}"
+    }
+  ]
 }
-```
-
-在旧版 Python 扩展里，后者可能无法被正确识别，并在附加时出现误导性的提示：
-
-```text
-Test discovery err,please check the configuration settings for the tests
 ```
 
 ### 推荐使用顺序
 
-1. 先配置 `kbengine.pythonPath` 和 `kbengine.debugPort`
-2. 运行 `Update launch.json`
-3. 确认目标进程已经监听调试端口
-4. 再执行 `Attach to Component`
+1. 运行 `Create Debug Config Template`
+2. 在 `.kbengine/debug.json` 中填写 telnet 地址、端口、开启调试命令和路径映射
+3. 运行 `Update launch.json`
+4. 运行 `Start Debugging` 查看提示并先开启调试
+5. 运行 `Attach to Component`，输入 PID
 
-### 报错说明
+### 排查要点
 
-如果出现：
+如果 `Attach to Component` 失败，优先检查这些点：
 
-```text
-Test discovery err,please check the configuration settings for the tests
-```
-
-优先检查以下内容：
-
-1. Python 扩展选中的解释器是否就是项目使用的 Python 3.7.3
-2. 当前工作区是否误开启了 `python.testing.*`
-3. 目标进程是否真的已打开调试端口
-4. `launch.json` 是否仍包含不兼容旧版扩展的 `debugpy` / `connect` / `python` 字段
-
-这条错误多数情况下并不是真正的“测试发现配置错误”，而是旧版 Python 扩展在调试配置解析、解释器调用或模块导入失败后的统一兜底提示。
+1. 目标 KBEngine 组件是否已经通过 telnet 真正开启调试
+2. 输入的 PID 是否就是目标组件进程，而不是其他 manager 或辅助进程
+3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致
+4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前工作区源码目录
+5. 当前机器里是否已经安装并启用 `ms-python.debugpy`

@@ -1,62 +1,26 @@
-/**
- * KBEngine 调试配置管理器
- * 为不同组件提供自定义的 Python 调试配置
- */
-
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { SERVER_COMPONENTS } from './serverManager';
 
-/**
- * 单个组件的调试配置
- */
 export interface ComponentDebugConfig {
-  /** Python 解释器路径 */
-  pythonPath: string;
-  /** 工作目录 */
-  cwd: string;
-  /** 要调试的脚本文件 */
-  script?: string;
-  /** 参数 */
-  args?: string[];
-  /** 环境变量 */
-  env?: { [key: string]: string };
-  /** 调试端口 */
-  debugPort: number;
-  /** 是否在启动时自动附加 */
-  autoAttach: boolean;
-  /** 路径映射 */
+  telnetHost?: string;
+  telnetPort?: number;
+  telnetEnableCommands?: string[];
   pathMappings?: Array<{
     localRoot: string;
     remoteRoot: string;
   }>;
 }
 
-/**
- * KBEngine 调试配置
- */
 export interface KBEngineDebugConfig {
-  /** 默认 Python 解释器路径 */
-  defaultPythonPath: string;
-  /** 默认调试端口 */
-  defaultDebugPort: number;
-  /** 组件特定的配置 */
+  defaultTelnetHost?: string;
+  defaultTelnetPort?: number;
   components: { [componentName: string]: ComponentDebugConfig };
-  /** 全局环境变量 */
-  globalEnv?: { [key: string]: string };
 }
 
-/**
- * 调试配置文件格式（kbengine.debug.json）
- */
 export interface DebugConfigFile {
   version: string;
   debug: KBEngineDebugConfig;
 }
 
-/**
- * KBEngine 调试配置管理器
- */
 export class DebugConfigManager {
   private config: KBEngineDebugConfig;
   private configWatcher: vscode.FileSystemWatcher | null = null;
@@ -69,63 +33,43 @@ export class DebugConfigManager {
     this.watchConfig();
   }
 
-  /**
-   * 获取默认配置
-   */
   private getDefaultConfig(): KBEngineDebugConfig {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const defaultPathMappings = [{
+      localRoot: workspaceFolder,
+      remoteRoot: workspaceFolder
+    }];
 
     return {
-      defaultPythonPath: 'python',
-      defaultDebugPort: 5678,
+      defaultTelnetHost: '127.0.0.1',
+      defaultTelnetPort: 0,
       components: {
         baseapp: {
-          pythonPath: 'python',
-          cwd: path.join(workspaceFolder, 'scripts/base'),
-          script: 'kbemain.py',
-          debugPort: 5678,
-          autoAttach: false,
-          pathMappings: [{
-            localRoot: workspaceFolder,
-            remoteRoot: workspaceFolder
-          }]
+          telnetHost: '127.0.0.1',
+          telnetPort: 0,
+          telnetEnableCommands: [],
+          pathMappings: defaultPathMappings
         },
         cellapp: {
-          pythonPath: 'python',
-          cwd: path.join(workspaceFolder, 'scripts/cell'),
-          script: 'kbemain.py',
-          debugPort: 5679,
-          autoAttach: false,
-          pathMappings: [{
-            localRoot: workspaceFolder,
-            remoteRoot: workspaceFolder
-          }]
+          telnetHost: '127.0.0.1',
+          telnetPort: 0,
+          telnetEnableCommands: [],
+          pathMappings: defaultPathMappings
         },
         loginapp: {
-          pythonPath: 'python',
-          cwd: path.join(workspaceFolder, 'scripts/login'),
-          script: 'kbemain.py',
-          debugPort: 5680,
-          autoAttach: false
+          telnetHost: '127.0.0.1',
+          telnetPort: 0,
+          telnetEnableCommands: []
         },
         dbmgr: {
-          pythonPath: 'python',
-          cwd: path.join(workspaceFolder, 'scripts/db'),
-          script: 'kbemain.py',
-          debugPort: 5681,
-          autoAttach: false
+          telnetHost: '127.0.0.1',
+          telnetPort: 0,
+          telnetEnableCommands: []
         }
-      },
-      globalEnv: {
-        PYTHONPATH: path.join(workspaceFolder, 'scripts'),
-        PYTHONUNBUFFERED: '1'
       }
     };
   }
 
-  /**
-   * 加载配置文件
-   */
   private async loadConfig(): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
@@ -137,23 +81,16 @@ export class DebugConfigManager {
     try {
       const configData = await vscode.workspace.fs.readFile(configPath);
       const configFile: DebugConfigFile = JSON.parse(Buffer.from(configData).toString('utf8'));
-
-      // 合并用户配置和默认配置
       this.config = {
         ...this.config,
         ...configFile.debug
       };
-
       this._onDidChangeConfig.fire();
-    } catch (error) {
-      // 配置文件不存在或格式错误，使用默认配置
+    } catch {
       this.config = this.getDefaultConfig();
     }
   }
 
-  /**
-   * 监视配置文件变化
-   */
   private watchConfig(): void {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
@@ -171,85 +108,58 @@ export class DebugConfigManager {
     this.context.subscriptions.push(this.configWatcher);
   }
 
-  /**
-   * 获取组件的调试配置
-   */
   getComponentConfig(componentName: string): ComponentDebugConfig {
     const userConfig = this.config.components[componentName];
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
 
     return {
-      pythonPath: userConfig?.pythonPath || this.config.defaultPythonPath,
-      cwd: userConfig?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '',
-      script: userConfig?.script,
-      args: userConfig?.args,
-      env: {
-        ...this.config.globalEnv,
-        ...userConfig?.env
-      },
-      debugPort: userConfig?.debugPort || this.config.defaultDebugPort,
-      autoAttach: userConfig?.autoAttach || false,
-      pathMappings: userConfig?.pathMappings
+      telnetHost: userConfig?.telnetHost || this.config.defaultTelnetHost,
+      telnetPort: userConfig?.telnetPort || this.config.defaultTelnetPort,
+      telnetEnableCommands: userConfig?.telnetEnableCommands || [],
+      pathMappings: userConfig?.pathMappings || [{
+        localRoot: workspaceFolder,
+        remoteRoot: workspaceFolder
+      }]
     };
   }
 
-  /**
-   * 旧版 ms-python 扩展使用 `python` 作为调试器类型。
-   */
   private getDebuggerType(): string {
-    return 'python';
+    return 'debugpy';
   }
 
-  /**
-   * 生成 VSCode launch.json 配置
-   */
+  private generateLaunchInputs(existingInputs: any[] = []): any[] {
+    const nonKbInputs = existingInputs.filter(item => item.id !== 'kbengineProcessId');
+    return [
+      ...nonKbInputs,
+      {
+        id: 'kbengineProcessId',
+        type: 'promptString',
+        description: '请输入已开启调试的 KBEngine 进程 PID'
+      }
+    ];
+  }
+
   generateLaunchConfigurations(): any[] {
     const configurations: any[] = [];
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
 
-    // 为每个组件生成调试配置
-    for (const component of SERVER_COMPONENTS) {
-      const config = this.getComponentConfig(component.name);
-
-      if (!config.script) {
-        continue; // 没有指定脚本文件，跳过
-      }
-
+    for (const [componentName, componentConfig] of Object.entries(this.config.components)) {
       configurations.push({
-        name: `KBEngine: ${component.displayName}`,
+        name: `KBEngine: Attach to ${componentName}`,
         type: this.getDebuggerType(),
-        request: 'launch',
-        pythonPath: config.pythonPath,
-        program: path.join(config.cwd, config.script),
-        cwd: config.cwd,
-        args: config.args || [],
-        env: config.env,
-        console: 'integratedTerminal',
+        request: 'attach',
+        processId: '${input:kbengineProcessId}',
         justMyCode: false,
-        pathMappings: config.pathMappings,
-        redirectOutput: false
+        pathMappings: componentConfig.pathMappings || [{
+          localRoot: workspaceFolder,
+          remoteRoot: workspaceFolder
+        }]
       });
     }
-
-    // 添加"附加到进程"配置
-    configurations.push({
-      name: 'KBEngine: Attach to Component',
-      type: this.getDebuggerType(),
-      request: 'attach',
-      host: 'localhost',
-      port: this.config.defaultDebugPort,
-      pathMappings: [{
-        localRoot: workspaceFolder,
-        remoteRoot: workspaceFolder
-      }],
-      justMyCode: false
-    });
 
     return configurations;
   }
 
-  /**
-   * 更新或创建 launch.json
-   */
   async updateLaunchJson(): Promise<boolean> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
@@ -257,54 +167,42 @@ export class DebugConfigManager {
       return false;
     }
 
-    const launchJsonPath = vscode.Uri.joinPath(
-      workspaceFolder.uri,
-      '.vscode',
-      'launch.json'
-    );
+    const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
 
     try {
-      // 读取现有配置
-      let existingConfig: any = { configurations: [] };
+      let existingConfig: any = { configurations: [], inputs: [] };
       try {
         const launchData = await vscode.workspace.fs.readFile(launchJsonPath);
         existingConfig = JSON.parse(Buffer.from(launchData).toString('utf8'));
-      } catch (error) {
-        // 文件不存在，使用空配置
+      } catch {
+        existingConfig = { configurations: [], inputs: [] };
       }
 
-      // 生成新配置
       const newConfigurations = this.generateLaunchConfigurations();
-
-      // 合并配置（保留用户自定义的配置）
-      const kbConfigs = newConfigurations.filter(c => c.name?.startsWith('KBEngine:'));
-      const userConfigs = existingConfig.configurations.filter(
-        (c: any) => !c.name?.startsWith('KBEngine:')
+      const kbConfigs = newConfigurations.filter(item => item.name?.startsWith('KBEngine:'));
+      const userConfigs = (existingConfig.configurations || []).filter(
+        (item: any) => !item.name?.startsWith('KBEngine:')
       );
 
       const finalConfig = {
         version: existingConfig.version || '0.2.0',
-        configurations: [...userConfigs, ...kbConfigs]
+        configurations: [...userConfigs, ...kbConfigs],
+        inputs: this.generateLaunchInputs(existingConfig.inputs || [])
       };
 
-      // 写入文件
       await vscode.workspace.fs.writeFile(
         launchJsonPath,
         Buffer.from(JSON.stringify(finalConfig, null, 2), 'utf8')
       );
 
-      vscode.window.showInformationMessage('launch.json 已更新');
+      vscode.window.showInformationMessage('launch.json 已更新为 KBEngine PID 附加配置');
       return true;
-
     } catch (error) {
       vscode.window.showErrorMessage(`更新 launch.json 失败: ${error}`);
       return false;
     }
   }
 
-  /**
-   * 创建示例配置文件
-   */
   async createExampleConfig(): Promise<boolean> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
@@ -315,41 +213,31 @@ export class DebugConfigManager {
     const kbengineDir = vscode.Uri.joinPath(workspaceFolder.uri, '.kbengine');
 
     try {
-      // 创建 .kbengine 目录
       await vscode.workspace.fs.createDirectory(kbengineDir);
 
-      // 创建示例配置文件
       const exampleConfig: DebugConfigFile = {
         version: '1.0.0',
         debug: {
-          defaultPythonPath: 'python',
-          defaultDebugPort: 5678,
+          defaultTelnetHost: '127.0.0.1',
+          defaultTelnetPort: 0,
           components: {
             baseapp: {
-              pythonPath: 'python',
-              cwd: '${workspaceFolder}/scripts/base',
-              script: 'kbemain.py',
-              debugPort: 5678,
-              autoAttach: false,
-              env: {
-                KB_ENGINE_COMPONENTS: 'Base'
-              },
+              telnetHost: '127.0.0.1',
+              telnetPort: 0,
+              telnetEnableCommands: [
+                '# 先通过 telnet 连接到 baseapp 的调试控制端口',
+                '# 再输入项目实际使用的开启调试命令'
+              ],
               pathMappings: [{
                 localRoot: '${workspaceFolder}',
                 remoteRoot: '${workspaceFolder}'
               }]
             },
             cellapp: {
-              pythonPath: 'python',
-              cwd: '${workspaceFolder}/scripts/cell',
-              script: 'kbemain.py',
-              debugPort: 5679,
-              autoAttach: false
+              telnetHost: '127.0.0.1',
+              telnetPort: 0,
+              telnetEnableCommands: []
             }
-          },
-          globalEnv: {
-            PYTHONPATH: '${workspaceFolder}/scripts',
-            PYTHONUNBUFFERED: '1'
           }
         }
       };
@@ -360,53 +248,30 @@ export class DebugConfigManager {
         Buffer.from(JSON.stringify(exampleConfig, null, 2), 'utf8')
       );
 
-      vscode.window.showInformationMessage('示例配置已创建: .kbengine/debug.json');
+      vscode.window.showInformationMessage('示例调试配置已创建: .kbengine/debug.json');
       return true;
-
     } catch (error) {
-      vscode.window.showErrorMessage(`创建配置文件失败: ${error}`);
+      vscode.window.showErrorMessage(`创建调试配置失败: ${error}`);
       return false;
     }
   }
 
-  /**
-   * 启动组件调试
-   */
   async startDebugging(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
+    const telnetLines = (config.telnetEnableCommands || []).filter(Boolean);
 
-    if (!config.script) {
-      vscode.window.showWarningMessage(`组件 ${componentName} 没有配置调试脚本`);
-      return false;
-    }
+    const message = telnetLines.length > 0
+      ? [
+          `KBEngine ${componentName} 调试需要先通过 telnet 开启调试，再按 PID 附加。`,
+          `telnet ${config.telnetHost || '127.0.0.1'} ${config.telnetPort || 0}`,
+          ...telnetLines
+        ].join('\n')
+      : `KBEngine ${componentName} 调试不是启动 Python 文件，而是先通过 telnet 开启调试，再执行 PID 附加。`;
 
-    const debugConfig: vscode.DebugConfiguration = {
-      name: `KBEngine: ${componentName}`,
-      type: this.getDebuggerType(),
-      request: 'launch',
-      pythonPath: config.pythonPath,
-      program: path.join(config.cwd, config.script),
-      cwd: config.cwd,
-      args: config.args || [],
-      env: config.env,
-      console: 'integratedTerminal',
-      justMyCode: false,
-      pathMappings: config.pathMappings,
-      redirectOutput: false
-    };
-
-    try {
-      const success = await vscode.debug.startDebugging(undefined, debugConfig);
-      return success === true;
-    } catch (error) {
-      vscode.window.showErrorMessage(`启动调试失败: ${error}`);
-      return false;
-    }
+    vscode.window.showInformationMessage(message);
+    return this.attachToComponent(componentName);
   }
 
-  /**
-   * 附加到运行中的组件
-   */
   async attachToComponent(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
 
@@ -414,8 +279,7 @@ export class DebugConfigManager {
       name: `KBEngine: Attach to ${componentName}`,
       type: this.getDebuggerType(),
       request: 'attach',
-      host: 'localhost',
-      port: config.debugPort,
+      processId: '${input:kbengineProcessId}',
       pathMappings: config.pathMappings,
       justMyCode: false
     };
@@ -429,16 +293,10 @@ export class DebugConfigManager {
     }
   }
 
-  /**
-   * 获取所有配置
-   */
   getConfig(): KBEngineDebugConfig {
     return this.config;
   }
 
-  /**
-   * 清理资源
-   */
   dispose(): void {
     if (this.configWatcher) {
       this.configWatcher.dispose();

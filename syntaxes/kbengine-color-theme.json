@@ -26,7 +26,7 @@
       "name": "KBEngine Section Tags",
       "scope": "entity.name.tag.section.kbengine",
       "settings": {
-        "foreground": "#66D9EF",
+        "foreground": "#E6DB74",
         "fontStyle": "bold"
       }
     },
@@ -41,7 +41,7 @@
         "entity.name.tag.scalar.numeric.kbengine"
       ],
       "settings": {
-        "foreground": "#F92672",
+        "foreground": "#66D9EF",
         "fontStyle": "bold"
       }
     },
@@ -57,7 +57,7 @@
       "name": "KBEngine Integer Types",
       "scope": "support.type.primitive.integer.kbengine",
       "settings": {
-        "foreground": "#AE81FF",
+        "foreground": "#66D9EF",
         "fontStyle": "bold"
       }
     },
@@ -65,7 +65,7 @@
       "name": "KBEngine Float Types",
       "scope": "support.type.primitive.float.kbengine",
       "settings": {
-        "foreground": "#AE81FF",
+        "foreground": "#66D9EF",
         "fontStyle": "bold"
       }
     },
@@ -73,7 +73,7 @@
       "name": "KBEngine Boolean",
       "scope": "support.type.primitive.boolean.kbengine",
       "settings": {
-        "foreground": "#AE81FF",
+        "foreground": "#F92672",
         "fontStyle": "bold"
       }
     },
@@ -89,7 +89,7 @@
       "name": "KBEngine Vector Types",
       "scope": "support.type.vector.kbengine",
       "settings": {
-        "foreground": "#FD971F",
+        "foreground": "#AE81FF",
         "fontStyle": "italic bold"
       }
     },
@@ -97,7 +97,7 @@
       "name": "KBEngine Reference",
       "scope": "support.type.reference.kbengine",
       "settings": {
-        "foreground": "#FD971F",
+        "foreground": "#AE81FF",
         "fontStyle": "bold"
       }
     },
@@ -105,7 +105,7 @@
       "name": "KBEngine Container Types",
       "scope": ["support.type.container.kbengine", "support.type.container.tag.kbengine"],
       "settings": {
-        "foreground": "#FD971F",
+        "foreground": "#AE81FF",
         "fontStyle": "italic bold"
       }
     },
@@ -113,7 +113,7 @@
       "name": "KBEngine Python",
       "scope": "support.type.python.kbengine",
       "settings": {
-        "foreground": "#FD971F",
+        "foreground": "#A6E22E",
         "fontStyle": "bold"
       }
     },
@@ -145,7 +145,7 @@
       "name": "KBEngine Entity Names",
       "scope": ["entity.name.function.xml", "entity.name.tag.localname.xml"],
       "settings": {
-        "foreground": "#A6E22E",
+        "foreground": "#E6DB74",
         "fontStyle": "bold"
       }
     },
@@ -153,7 +153,7 @@
       "name": "XML Tag Punctuation",
       "scope": ["punctuation.definition.tag.begin.xml", "punctuation.definition.tag.end.xml"],
       "settings": {
-        "foreground": "#F8F8F0",
+        "foreground": "#F92672",
         "fontStyle": "bold"
       }
     },
@@ -204,7 +204,7 @@
       "name": "KBEngine Generic Punctuation",
       "scope": "punctuation.definition.generic.kbengine",
       "settings": {
-        "foreground": "#F8F8F0",
+        "foreground": "#F92672",
         "fontStyle": "bold"
       }
     },
@@ -223,16 +223,24 @@
       "name": "KBEngine Custom Types",
       "scope": "entity.name.type.custom.kbengine",
       "settings": {
-        "foreground": "#FD971F",
-        "fontStyle": "italic"
+        "foreground": "#A6E22E",
+        "fontStyle": "italic bold"
       }
     },
     {
       "name": "KBEngine Storage Types",
       "scope": ["storage.type.*.kbengine"],
       "settings": {
-        "foreground": "#FD971F",
+        "foreground": "#AE81FF",
         "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Type Aliases",
+      "scope": ["support.class.kbengine", "support.type"],
+      "settings": {
+        "foreground": "#A6E22E",
+        "fontStyle": "italic bold"
       }
     },
     {

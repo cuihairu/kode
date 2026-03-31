@@ -353,21 +353,6 @@
           "default": 10000,
           "description": "最大日志条目数"
         },
-        "kbengine.pythonPath": {
-          "type": "string",
-          "default": "python",
-          "description": "Python 解释器路径（用于调试）"
-        },
-        "kbengine.debugPort": {
-          "type": "number",
-          "default": 5678,
-          "description": "Python 调试端口（默认 5678）"
-        },
-        "kbengine.autoAttachDebug": {
-          "type": "boolean",
-          "default": false,
-          "description": "启动组件时自动附加调试器"
-        },
         "kbengine.pythonDefsPath": {
           "type": "array",
           "default": [
