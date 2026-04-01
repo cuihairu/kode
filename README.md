@@ -159,7 +159,7 @@ code --install-extension kode-0.1.0.vsix
 
 - 配置与使用文档位于 [docs/](./docs/)
 - 配置说明重点见 [docs/guide/configuration.md](./docs/guide/configuration.md)
-- 本项目已添加 VuePress 文档骨架，可通过 `pnpm run docs:dev` 本地预览
+- 本项目已添加 VitePress 文档站点，可通过 `pnpm run docs:dev` 本地预览
 
 ## 🔖 版本策略
 
@@ -250,7 +250,7 @@ pnpm run docs:dev
 
 详细的使用文档和开发指南，请查看：
 
-- [VuePress 文档](./docs/README.md) - 新版文档入口
+- [VitePress 文档](./docs/README.md) - 新版文档入口
 - [设计文档](./resources/docs/vscode-extension-design.md) - 完整的设计方案
 - [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
 - [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计

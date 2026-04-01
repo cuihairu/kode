@@ -32,7 +32,7 @@ pnpm run package
 
 ## 文档开发
 
-VuePress 文档入口在 `docs/`。
+VitePress 文档入口在 `docs/`。
 
 ### 本地预览
 

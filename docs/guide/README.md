@@ -17,7 +17,7 @@ code .
 
 ## 文档站点
 
-本项目使用 VuePress 生成文档站点。
+本项目使用 VitePress 生成文档站点。
 
 ```bash
 pnpm run docs:dev

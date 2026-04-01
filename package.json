@@ -423,8 +423,8 @@
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "docs:dev": "vuepress dev docs",
-    "docs:build": "vuepress build docs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
     "pretest": "pnpm run clean && pnpm run compile",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
@@ -432,8 +432,9 @@
     "publish": "pnpm run compile && vsce publish --no-yarn --no-dependencies"
   },
   "devDependencies": {
+    "@types/glob": "7.2.0",
     "@types/mocha": "^8.2.2",
-    "@types/node": "12.x",
+    "@types/node": "~20.19.37",
     "@types/vscode": "^1.50.0",
     "@typescript-eslint/eslint-plugin": "^4.23.0",
     "@typescript-eslint/parser": "^4.23.0",
@@ -443,7 +444,7 @@
     "glob": "^7.1.7",
     "mocha": "^11.7.5",
     "typescript": "^4.2.5",
-    "vuepress": "^1.9.10"
+    "vitepress": "^1.6.4"
   },
   "pnpm": {
     "overrides": {
