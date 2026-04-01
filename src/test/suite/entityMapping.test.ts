@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import Module = require('module');
+import * as Module from 'module';
 
 class FakePosition {
   constructor(public line: number, public character: number) {}

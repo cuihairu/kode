@@ -125,7 +125,7 @@ export class LogViewerWebView {
         try {
           const regex = new RegExp(this.filter.keyword, 'i');
           filtered = filtered.filter(log => regex.test(log.message));
-        } catch (error) {
+        } catch {
           // 正则表达式错误，不过滤
         }
       } else {

@@ -19,7 +19,7 @@
   ],
   "ignorePatterns": [
     "out/",
-    "docs/.vuepress/",
+    "docs/.vitepress/",
     "node_modules/"
   ],
   "rules": {

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import Module = require('module');
+import * as Module from 'module';
 
 const manifest = Module.createRequire(__filename)('../../../package.json');
 
