@@ -6,11 +6,12 @@ type LogCollectorModule = typeof import('../../logCollector');
 describe('KBEngineLogCollector', () => {
   let restoreModuleMocks: (() => void) | undefined;
   let KBEngineLogCollector: LogCollectorModule['KBEngineLogCollector'];
+  const noop = (): undefined => undefined;
 
   before(() => {
     const outputChannel = {
-      appendLine() {},
-      dispose() {}
+      appendLine: noop,
+      dispose: noop
     };
 
     const { loadedModule, restore } = loadModuleWithMocks<LogCollectorModule>(
@@ -23,8 +24,10 @@ describe('KBEngineLogCollector', () => {
           },
           EventEmitter: class FakeEventEmitter<T> {
             event = () => undefined;
-            fire(_value?: T): void {}
-            dispose(): void {}
+            fire(value?: T): void {
+              void value;
+            }
+            dispose = noop;
           }
         }),
         net: { Socket: class FakeSocket {} }

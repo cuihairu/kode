@@ -1,5 +1,9 @@
 .github/
 .vscode/
+.spec-workflow/
+.gitignore
+.npmrc
+.vscodeignore
 docs/
 resources/docs/
 src/
@@ -18,5 +22,8 @@ tsconfig.json
 .npmignore
 pnpm-lock.yaml
 *.vsix
+CONTRIBUTING.md
+COMPLETED_FEATURES.md
+PROJECT_SUMMARY.md
 out/**/*.map
 out/test/

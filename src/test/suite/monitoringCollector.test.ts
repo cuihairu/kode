@@ -6,6 +6,7 @@ type MonitoringCollectorModule = typeof import('../../monitoringCollector');
 describe('MonitoringCollector', () => {
   let restoreModuleMocks: (() => void) | undefined;
   let MonitoringCollector: MonitoringCollectorModule['MonitoringCollector'];
+  const noop = (): undefined => undefined;
 
   before(() => {
     const component = {
@@ -50,8 +51,10 @@ describe('MonitoringCollector', () => {
         vscode: createVscodeStub({
           EventEmitter: class FakeEventEmitter<T> {
             event = () => undefined;
-            fire(_value?: T): void {}
-            dispose(): void {}
+            fire(value?: T): void {
+              void value;
+            }
+            dispose = noop;
           }
         }),
         './kbengineProtocol': fakeProtocol

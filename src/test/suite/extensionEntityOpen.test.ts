@@ -8,21 +8,22 @@ describe('extension entity open command', () => {
   let activate: ExtensionModule['activate'];
   let commands = new Map<string, (...args: unknown[]) => unknown>();
   let warningMessages: string[] = [];
+  const noop = (): undefined => undefined;
 
   before(() => {
     commands = new Map();
     warningMessages = [];
 
-    const noopDisposable = { dispose() {} };
+    const noopDisposable = { dispose: noop };
     const vscodeStub = createVscodeStub({
       languages: {
         registerCompletionItemProvider: () => noopDisposable,
         registerHoverProvider: () => noopDisposable,
         registerDefinitionProvider: () => noopDisposable,
         createDiagnosticCollection: () => ({
-          set() {},
-          delete() {},
-          dispose() {}
+          set: noop,
+          delete: noop,
+          dispose: noop
         })
       },
       workspace: {
@@ -51,8 +52,8 @@ describe('extension entity open command', () => {
       },
       window: {
         registerTreeDataProvider: () => noopDisposable,
-        createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {}, text: '', command: '' }),
-        createOutputChannel: () => ({ appendLine() {}, append() {}, show() {}, dispose() {} }),
+        createStatusBarItem: () => ({ show: noop, hide: noop, dispose: noop, text: '', command: '' }),
+        createOutputChannel: () => ({ appendLine: noop, append: noop, show: noop, dispose: noop }),
         showWarningMessage: (message: string) => {
           warningMessages.push(message);
           return undefined;
@@ -72,8 +73,10 @@ describe('extension entity open command', () => {
       },
       EventEmitter: class FakeEventEmitter<T> {
         event = () => undefined;
-        fire(_value?: T): void {}
-        dispose(): void {}
+        fire(value?: T): void {
+          void value;
+        }
+        dispose = noop;
       },
       Uri: {
         joinPath: (base: { fsPath: string }, ...parts: string[]) => ({ fsPath: [base.fsPath, ...parts].join('/') })
@@ -89,32 +92,32 @@ describe('extension entity open command', () => {
         vscode: vscodeStub,
         './serverManager': {
           KBEngineServerManager: class {
-            onDidChangeStatus() {}
+            onDidChangeStatus = noop;
             getRunningServers() { return new Map(); }
-            dispose() {}
+            dispose = noop;
           },
           SERVER_COMPONENTS: []
         },
         './logCollector': {
           KBEngineLogCollector: class {
             static PROTOCOL_WARNING = 'protocol warning';
-            onLogEntry() {}
+            onLogEntry = noop;
             connect() { return Promise.resolve(); }
-            disconnect() {}
-            dispose() {}
+            disconnect = noop;
+            dispose = noop;
           }
         },
-        './logWebView': { LogViewerWebView: class { show() {}; clearLogs() {}; exportLogs() {}; dispose() {} } },
-        './debugConfig': { DebugConfigManager: class { updateLaunchJson() {}; createExampleConfig() {}; startDebugging() {}; attachToComponent() {}; dispose() {} } },
-        './monitoringWebView': { MonitoringWebView: class { show() {}; dispose() {} } },
-        './monitoringCollector': { MonitoringCollector: class { dispose() {} } },
-        './entityMapping': { EntityMappingManager: class { dispose() {} } },
-        './entityDependencyWebView': { EntityDependencyWebView: class { show() {}; dispose() {} } },
-        './codeGenerator': { KBEngineCodeGenerator: class { showWizard() {}; showTemplates() {}; dispose() {} } },
+        './logWebView': { LogViewerWebView: class { show = noop; clearLogs = noop; exportLogs = noop; dispose = noop; } },
+        './debugConfig': { DebugConfigManager: class { updateLaunchJson = noop; createExampleConfig = noop; startDebugging = noop; attachToComponent = noop; dispose = noop; } },
+        './monitoringWebView': { MonitoringWebView: class { show = noop; dispose = noop; } },
+        './monitoringCollector': { MonitoringCollector: class { dispose = noop; } },
+        './entityMapping': { EntityMappingManager: class { dispose = noop; } },
+        './entityDependencyWebView': { EntityDependencyWebView: class { show = noop; dispose = noop; } },
+        './codeGenerator': { KBEngineCodeGenerator: class { showWizard = noop; showTemplates = noop; dispose = noop; } },
         './explorerProviders': {
-          EntityExplorerProvider: class { refresh() {} },
+          EntityExplorerProvider: class { refresh = noop; },
           pickServerComponent: async () => undefined,
-          ServerControlProvider: class { refresh() {} }
+          ServerControlProvider: class { refresh = noop; }
         },
         './serverCommandTarget': { resolveServerComponent: () => undefined },
         './languageProviders': {
@@ -123,7 +126,7 @@ describe('extension entity open command', () => {
           KBEngineHoverProvider: class {},
           PythonCompletionProvider: class {},
           PythonDefinitionProvider: class {},
-          validateDocument() {}
+          validateDocument: noop
         }
       },
       true

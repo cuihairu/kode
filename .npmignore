@@ -10,15 +10,25 @@ src/
 resources/docs/
 *.md
 !README.md
+COMPLETED_FEATURES.md
+PROJECT_SUMMARY.md
 
 # Git
 .git/
 .gitignore
+.vscodeignore
 
 # CI/CD
 .github/
+.spec-workflow/
 
 # Development
 .eslintrc.*
 .prettierrc.*
 .editorconfig
+
+# Local tooling
+.npmrc
+
+# Internal notes
+CONTRIBUTING.md

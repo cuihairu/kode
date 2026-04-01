@@ -8,6 +8,7 @@ describe('KBEngineServerManager', () => {
   let KBEngineServerManager: ServerManagerModule['KBEngineServerManager'];
   let SERVER_COMPONENTS: ServerManagerModule['SERVER_COMPONENTS'];
   let errorMessages: string[];
+  const noop = (): undefined => undefined;
 
   before(() => {
     errorMessages = [];
@@ -45,10 +46,10 @@ describe('KBEngineServerManager', () => {
       },
       window: {
         createOutputChannel: () => ({
-          show() {},
-          appendLine() {},
-          append() {},
-          dispose() {}
+          show: noop,
+          appendLine: noop,
+          append: noop,
+          dispose: noop
         }),
         showErrorMessage: (message: string) => {
           errorMessages.push(message);
@@ -59,8 +60,10 @@ describe('KBEngineServerManager', () => {
       },
       EventEmitter: class FakeEventEmitter<T> {
         event = () => undefined;
-        fire(_value?: T): void {}
-        dispose(): void {}
+        fire(value?: T): void {
+          void value;
+        }
+        dispose = noop;
       }
     });
 
@@ -96,7 +99,9 @@ describe('KBEngineServerManager', () => {
     const manager = new KBEngineServerManager({ subscriptions: [] } as never);
     const logger = SERVER_COMPONENTS.find(component => component.name === 'logger');
 
-    const result = await manager.startComponent(logger!);
+    assert.ok(logger);
+
+    const result = await manager.startComponent(logger);
 
     assert.strictEqual(result, false);
     assert.ok(errorMessages.some(message => message.includes('不是目录')));

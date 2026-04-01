@@ -1,6 +1,7 @@
 import * as assert from 'assert';
+import Module = require('module');
 
-const manifest = require('../../../package.json');
+const manifest = Module.createRequire(__filename)('../../../package.json');
 
 describe('Extension manifest', () => {
   it('registers activation events for all contributed commands', () => {
