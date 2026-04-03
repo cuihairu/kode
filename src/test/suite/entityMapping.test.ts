@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import * as Module from 'module';
+import { loadModuleWithMocks } from './testUtils';
 
 class FakePosition {
   constructor(public line: number, public character: number) {}
@@ -48,11 +48,6 @@ class FakeWatcher {
 type EntityMappingModule = typeof import('../../entityMapping');
 
 describe('EntityMappingManager', () => {
-  const moduleLoader = Module as unknown as {
-    _load: (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
-    createRequire(filename: string): NodeRequire;
-  };
-
   const defPath = '/workspace/entity_defs/Hero.def';
   const pythonPath = '/workspace/assets/scripts/entity_defs/Hero.py';
   const defText = [
@@ -87,10 +82,10 @@ describe('EntityMappingManager', () => {
     '</root>'
   ].join('\n');
 
-  let originalLoad: typeof moduleLoader._load;
   let EntityMappingManager: EntityMappingModule['EntityMappingManager'];
   let openedSelection: FakeRange | undefined;
   let openDocumentPath: string | undefined;
+  let restoreModuleMocks: (() => void) | undefined;
 
   before(() => {
     const fakeVscode = {
@@ -126,26 +121,21 @@ describe('EntityMappingManager', () => {
       }
     };
 
-    originalLoad = moduleLoader._load;
-    moduleLoader._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
-      if (request === 'vscode') {
-        return fakeVscode;
-      }
-
-      if (request === 'fs') {
-        return fakeFs;
-      }
-
-      return originalLoad(request, parent, isMain);
-    };
-
-    const runtimeRequire = moduleLoader.createRequire(__filename);
-    const entityMappingModule = runtimeRequire('../../entityMapping') as EntityMappingModule;
-    EntityMappingManager = entityMappingModule.EntityMappingManager;
+    const { loadedModule, restore } = loadModuleWithMocks<EntityMappingModule>(
+      __filename,
+      '../../entityMapping',
+      {
+        vscode: fakeVscode,
+        fs: fakeFs
+      },
+      true
+    );
+    restoreModuleMocks = restore;
+    EntityMappingManager = loadedModule.EntityMappingManager;
   });
 
   after(() => {
-    moduleLoader._load = originalLoad;
+    restoreModuleMocks?.();
   });
 
   beforeEach(() => {

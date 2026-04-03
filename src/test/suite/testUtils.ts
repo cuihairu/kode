@@ -1,4 +1,9 @@
-import * as Module from 'module';
+import { createRequire } from 'module';
+
+const moduleLoader = createRequire(__filename)('module') as typeof import('module') & {
+  _load: (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
+  createRequire(filename: string): NodeRequire;
+};
 
 export class FakePosition {
   constructor(public line: number, public character: number) {}
@@ -188,10 +193,7 @@ export function createModuleLoader(): {
   _load: (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
   createRequire(filename: string): NodeRequire;
 } {
-  return Module as unknown as {
-    _load: (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
-    createRequire(filename: string): NodeRequire;
-  };
+  return moduleLoader;
 }
 
 export function loadModuleWithMocks<T>(

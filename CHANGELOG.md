@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- VuePress documentation site under `docs/`
+- VitePress documentation site under `docs/`
 - Detailed configuration reference for all `kbengine.*` settings
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced `.def` syntax highlighting with KBEngine-specific semantic scopes
 - Expanded hover support for tags, values, and custom symbols
 - Made hover and diagnostics behavior configurable
+- Updated test module mocking helpers for Node.js 22 compatibility
+- Aligned README and documentation wording with the current VitePress setup
 
 ### Planned
 - Refactoring support (rename properties/methods)
