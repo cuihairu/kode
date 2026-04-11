@@ -72,7 +72,8 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     if (lineText.endsWith('<')) {
       const tags = [
         'Properties', 'ClientMethods', 'BaseMethods', 'CellMethods',
-        'Type', 'Flags', 'Default', 'Database', 'Identifier', 'DetailLevel', 'Arg'
+        'Type', 'Flags', 'Default', 'Persistent', 'Identifier', 'Index',
+        'DatabaseLength', 'DetailLevel', 'Arg', 'Utype', 'Exposed'
       ];
       tags.forEach(tag => {
         const item = new vscode.CompletionItem(tag, vscode.CompletionItemKind.Property);
@@ -315,10 +316,8 @@ interface SymbolContext {
   name: string;
   section: KBEngineSectionName;
   range: vscode.Range;
-  typeCount: number;
-  flagsCount: number;
-  argCount: number;
-  nestedTags: string[];
+  hasType: boolean;
+  hasFlags: boolean;
 }
 
 const PROPERTY_SECTIONS = new Set<KBEngineSectionName>([
@@ -337,12 +336,15 @@ const ALLOWED_PROPERTY_CHILDREN = new Set([
   'Type',
   'Flags',
   'Default',
-  'Database',
+  'Persistent',
   'DetailLevel',
-  'Identifier'
+  'Identifier',
+  'Index',
+  'DatabaseLength',
+  'Utype'
 ]);
 
-const ALLOWED_METHOD_CHILDREN = new Set(['Arg']);
+const ALLOWED_METHOD_CHILDREN = new Set(['Arg', 'Utype', 'Exposed']);
 
 const ALLOWED_TOP_LEVEL_SECTIONS = new Set<KBEngineSectionName>([
   'Properties',
@@ -392,23 +394,39 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
   },
   Flags: {
     detail: '属性同步/存储标志标签',
-    documentation: '用于描述属性的存储位置和同步范围，例如 `BASE_CLIENT`、`CELL_PUBLIC`、`OWN_CLIENT`。'
+    documentation: '用于描述属性的存储位置和同步范围，例如 `BASE`、`CELL_PUBLIC`、`OWN_CLIENT`。'
   },
   Default: {
     detail: '默认值标签',
     documentation: '用于声明属性的默认值。字符串、数字和布尔值都可以在这里配置。'
   },
-  Database: {
-    detail: '数据库长度标签',
-    documentation: '通常用于声明数据库存储长度，常见于 `STRING` 等需要长度限制的字段。'
+  Persistent: {
+    detail: '持久化标签',
+    documentation: '用于声明属性是否持久化到数据库。源码按 `true` 识别为启用。'
   },
   Identifier: {
     detail: '标识字段标签',
-    documentation: '用于标记属性是否参与标识用途。通常应填写数值或布尔约定值。'
+    documentation: '用于标记属性是否作为索引键。源码按 `true` 识别为启用。'
+  },
+  Index: {
+    detail: '索引类型标签',
+    documentation: '用于声明属性的索引类型，源码会读取并转为大写。'
+  },
+  DatabaseLength: {
+    detail: '数据库长度标签',
+    documentation: '用于声明属性在数据库中的长度限制，对应源码中的 `DatabaseLength`。'
   },
   DetailLevel: {
     detail: '细节级别标签',
-    documentation: '用于定义属性同步的细节等级，可选值为 `LOW`、`MEDIUM`、`HIGH`、`CRITICAL`。'
+    documentation: '用于定义属性同步细节等级，可选值为 `NEAR`、`MEDIUM`、`FAR`。'
+  },
+  Utype: {
+    detail: '显式 Utype 标签',
+    documentation: '用于显式指定属性或方法的 Utype；未提供时由引擎自动分配。'
+  },
+  Exposed: {
+    detail: '暴露方法标签',
+    documentation: '用于 Base/Cell 方法，表示该方法允许远端调用。'
   },
   implementedBy: {
     detail: 'FIXED_DICT 实现类标签',
@@ -489,46 +507,22 @@ function validateScalarTagValues(
   const flagsRegex = /<Flags>\s*([\s\S]*?)\s*<\/Flags>/g;
   let flagsMatch: RegExpExecArray | null;
   while ((flagsMatch = flagsRegex.exec(text)) !== null) {
-    const value = flagsMatch[1].trim();
+    const rawValue = flagsMatch[1].trim();
+    const value = rawValue.toUpperCase();
     if (!value) {
       continue;
     }
 
-    const flags = value.split(/[\s|,]+/).filter(Boolean);
-    let hasBase = false;
-    let hasCell = false;
-
-    for (const flag of flags) {
-      if (featureConfig.diagnosticsCheckUnknownFlags && !knownFlags.has(flag)) {
-        pushDiagnosticForMatch(
-          document,
-          diagnosticsList,
-          text,
-          flag,
-          flagsMatch.index,
-          `未知的 KBEngine Flags 值: ${flag}`,
-          vscode.DiagnosticSeverity.Error
-        );
-        continue;
-      }
-
-      if (knownFlags.has(flag) && (flag === 'BASE' || flag === 'BASE_CLIENT')) {
-        hasBase = true;
-      }
-
-      if (knownFlags.has(flag) && flag.startsWith('CELL_')) {
-        hasCell = true;
-      }
-    }
-
-    if (featureConfig.diagnosticsCheckFlagConflicts && hasBase && hasCell) {
-      const startPos = document.positionAt(flagsMatch.index);
-      const endPos = document.positionAt(flagsMatch.index + flagsMatch[0].length);
-      diagnosticsList.push(new vscode.Diagnostic(
-        new vscode.Range(startPos, endPos),
-        'BASE 和 CELL 标志不能同时使用',
-        vscode.DiagnosticSeverity.Warning
-      ));
+    if (featureConfig.diagnosticsCheckUnknownFlags && !knownFlags.has(value)) {
+      pushDiagnosticForMatch(
+        document,
+        diagnosticsList,
+        text,
+        rawValue,
+        flagsMatch.index,
+        `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
+        vscode.DiagnosticSeverity.Error
+      );
     }
   }
 
@@ -572,11 +566,6 @@ function validateDefStructure(
 
     if (isClosingTag) {
       const currentSymbol = symbolStack[symbolStack.length - 1];
-      if (currentSymbol?.nestedTags.length && currentSymbol.nestedTags[currentSymbol.nestedTags.length - 1] === tagName) {
-        currentSymbol.nestedTags.pop();
-        continue;
-      }
-
       if (currentSymbol?.name === tagName) {
         finalizeSymbol(diagnosticsList, currentSymbol);
         symbolStack.pop();
@@ -626,60 +615,25 @@ function validateDefStructure(
           name: tagName,
           section: currentSection.section,
           range,
-          typeCount: 0,
-          flagsCount: 0,
-          argCount: 0,
-          nestedTags: []
+          hasType: false,
+          hasFlags: false
         });
       }
       continue;
     }
 
-    if (currentSymbol.nestedTags.length > 0) {
-      if (isNestedTrackedTag(tagName)) {
-        currentSymbol.nestedTags.push(tagName);
-      }
-      continue;
-    }
-
     if (PROPERTY_SECTIONS.has(currentSymbol.section)) {
-      if (!ALLOWED_PROPERTY_CHILDREN.has(tagName)) {
-        if (!featureConfig.diagnosticsCheckInvalidChildren) {
-          continue;
-        }
-        diagnosticsList.push(new vscode.Diagnostic(
-          range,
-          `属性 ${currentSymbol.name} 中不应出现 <${tagName}>，允许的子标签: ${Array.from(ALLOWED_PROPERTY_CHILDREN).join(', ')}`,
-          vscode.DiagnosticSeverity.Warning
-        ));
-      } else {
-        if (tagName === 'Type') {
-          currentSymbol.typeCount += 1;
-        }
-        if (tagName === 'Flags') {
-          currentSymbol.flagsCount += 1;
-        }
-        if (isNestedTrackedTag(tagName)) {
-          currentSymbol.nestedTags.push(tagName);
-        }
+      if (tagName === 'Type') {
+        currentSymbol.hasType = true;
+      }
+      if (tagName === 'Flags') {
+        currentSymbol.hasFlags = true;
       }
       continue;
     }
 
     if (METHOD_SECTIONS.has(currentSymbol.section)) {
-      if (!ALLOWED_METHOD_CHILDREN.has(tagName)) {
-        if (!featureConfig.diagnosticsCheckInvalidChildren) {
-          continue;
-        }
-        diagnosticsList.push(new vscode.Diagnostic(
-          range,
-          `方法 ${currentSymbol.name} 中只允许 <Arg> 子标签`,
-          vscode.DiagnosticSeverity.Warning
-        ));
-      } else {
-        currentSymbol.argCount += 1;
-        currentSymbol.nestedTags.push(tagName);
-      }
+      continue;
     }
   }
 }
@@ -690,7 +644,7 @@ function finalizeSymbol(
 ): void {
   const featureConfig = getLanguageFeatureConfig();
   if (PROPERTY_SECTIONS.has(symbol.section)) {
-    if (featureConfig.diagnosticsCheckMissingPropertyFields && symbol.typeCount === 0) {
+    if (featureConfig.diagnosticsCheckMissingPropertyFields && !symbol.hasType) {
       diagnosticsList.push(new vscode.Diagnostic(
         symbol.range,
         `属性 ${symbol.name} 缺少 <Type> 定义`,
@@ -698,27 +652,11 @@ function finalizeSymbol(
       ));
     }
 
-    if (featureConfig.diagnosticsCheckMissingPropertyFields && symbol.flagsCount === 0) {
+    if (featureConfig.diagnosticsCheckMissingPropertyFields && !symbol.hasFlags) {
       diagnosticsList.push(new vscode.Diagnostic(
         symbol.range,
         `属性 ${symbol.name} 缺少 <Flags> 定义`,
-        vscode.DiagnosticSeverity.Warning
-      ));
-    }
-
-    if (featureConfig.diagnosticsCheckMissingPropertyFields && symbol.typeCount > 1) {
-      diagnosticsList.push(new vscode.Diagnostic(
-        symbol.range,
-        `属性 ${symbol.name} 只能定义一个 <Type>`,
-        vscode.DiagnosticSeverity.Warning
-      ));
-    }
-
-    if (featureConfig.diagnosticsCheckMissingPropertyFields && symbol.flagsCount > 1) {
-      diagnosticsList.push(new vscode.Diagnostic(
-        symbol.range,
-        `属性 ${symbol.name} 只能定义一个 <Flags>`,
-        vscode.DiagnosticSeverity.Warning
+        vscode.DiagnosticSeverity.Error
       ));
     }
   }
@@ -756,10 +694,6 @@ function isReservedTagName(tagName: string): boolean {
     || ALLOWED_METHOD_CHILDREN.has(tagName)
     || tagName === 'FIXED_DICT'
     || tagName === 'TUPLE';
-}
-
-function isNestedTrackedTag(tagName: string): boolean {
-  return isReservedTagName(tagName);
 }
 
 function getSectionLabel(section: KBEngineSectionName): string {

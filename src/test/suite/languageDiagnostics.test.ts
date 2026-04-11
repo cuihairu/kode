@@ -59,7 +59,7 @@ describe('validateDocument', () => {
     return (collection.entries.get('/workspace/entity_defs/Hero.def') || []).map(item => item.message);
   }
 
-  it('reports unresolved custom types and conflicting flags', () => {
+  it('reports unresolved custom types and invalid flags values', () => {
     const messages = messagesFor([
       '<root>',
       '  <Properties>',
@@ -73,7 +73,7 @@ describe('validateDocument', () => {
     ].join('\n'));
 
     assert.ok(messages.some(message => message.includes('MissingType') && message.includes('types.xml')));
-    assert.ok(messages.some(message => message.includes('BASE') && message.includes('CELL')));
+    assert.ok(messages.some(message => message.includes('BASE CELL_PUBLIC') && message.includes('单个映射值解析')));
     assert.ok(messages.some(message => message.includes('EXTREME')));
   });
 
@@ -135,27 +135,5 @@ describe('validateDocument', () => {
     assert.ok(messages.some(message => message.includes('health') && message.includes('已定义')));
     assert.ok(messages.some(message => message.includes('health') && message.includes('<Flags>')));
     assert.ok(messages.some(message => message.includes('health') && message.includes('<Type>')));
-  });
-
-  it('reports invalid nested tags in property and method sections', () => {
-    const messages = messagesFor([
-      '<root>',
-      '  <Properties>',
-      '    <profile>',
-      '      <Type>STRING</Type>',
-      '      <Arg>UINT32</Arg>',
-      '      <Flags>BASE</Flags>',
-      '    </profile>',
-      '  </Properties>',
-      '  <BaseMethods>',
-      '    <attack>',
-      '      <Type>UINT32</Type>',
-      '    </attack>',
-      '  </BaseMethods>',
-      '</root>'
-    ].join('\n'));
-
-    assert.ok(messages.some(message => message.includes('profile') && message.includes('<Arg>') && message.includes('Identifier')));
-    assert.ok(messages.some(message => message.includes('attack') && message.includes('<Arg>')));
   });
 });

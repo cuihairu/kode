@@ -68,6 +68,9 @@ describe('KBEngineCompletionProvider', () => {
     assert.ok(itemLabels.includes('Properties'));
     assert.ok(itemLabels.includes('Type'));
     assert.ok(itemLabels.includes('Flags'));
+    assert.ok(itemLabels.includes('Persistent'));
+    assert.ok(itemLabels.includes('DatabaseLength'));
+    assert.ok(itemLabels.includes('Utype'));
     assert.ok(itemLabels.includes('Arg'));
   });
 
