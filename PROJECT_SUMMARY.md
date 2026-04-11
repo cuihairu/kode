@@ -16,9 +16,9 @@
 ### 🎯 核心功能实现
 
 #### 1. 语法高亮
-- ✅ 16 种基础类型
+- ✅ 源码对齐的基础/容器/细节语义高亮
 - ✅ 容器类型 (ARRAY, FIXED_DICT, TUPLE)
-- ✅ 8 种 Flags 标志
+- ✅ 源码对齐的 Flags / DetailLevel
 - ✅ XML 标签和属性
 
 #### 2. 智能提示 (IntelliSense)
@@ -63,7 +63,7 @@
 
 #### 6. 语法检查
 - ✅ 实时语法验证
-- ✅ Flags 冲突检测 (BASE + CELL)
+- ✅ 源码可证实的 Flags / DetailLevel / 必填字段校验
 - ✅ 类型有效性检查
 
 #### 7. 实体浏览器
@@ -80,13 +80,12 @@
 
 #### 9. 热更新支持 ⭐ 新增
 - ✅ 4 个热更新代码片段
-- ✅ KBEngine.reloadEntityDef() 智能提示
-- ✅ KBEngine.isReload() 状态检查
+- ✅ KBEngine.reloadScript() 智能提示
 - ✅ importlib.reload() Python 脚本热更新
-- ✅ 完整的悬停文档和示例
+- ✅ 重载相关悬停文档和示例
 
 #### 10. 服务器管理 ⭐ 新增
-- ✅ 9 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots）
+- ✅ 10 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots, interfaces）
 - ✅ 启动/停止/重启控制
 - ✅ 实时状态显示
 - ✅ 进程 PID 显示
@@ -95,7 +94,7 @@
 - ✅ 源码：src/serverManager.ts
 
 #### 11. 日志查看集成 ⭐ 新增
-- ✅ 实时日志收集（连接 logger.exe 端口 20022）
+- ✅ logger 连接入口与状态说明
 - ✅ 日志解析器（文本和二进制格式）
 - ✅ WebView 可视化界面
 - ✅ 多级过滤（级别、组件、关键词）
@@ -113,8 +112,8 @@
 - ✅ 源码：src/debugConfig.ts
 
 #### 13. 监控面板 ⭐ 新增
-- ✅ 实时性能数据收集
-- ✅ CPU、内存、网络、实体数量监控
+- ✅ 基于 machine + watcher 的运行态监控
+- ✅ CPU、内存、实体数量与已核实 watcher 指标展示
 - ✅ 系统概览卡片
 - ✅ 组件详细指标卡片
 - ✅ 可视化图表（Chart.js）
@@ -287,7 +286,7 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 📈 统计数据
 
-- **代码文件**: 16 个 TypeScript 文件
+- **代码文件**: 19 个 TypeScript 文件
 - **钩子数量**: 30+ 个
 - **代码片段**: 17 个
 - **文档页数**: 5 个

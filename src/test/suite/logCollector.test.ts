@@ -55,7 +55,26 @@ describe('KBEngineLogCollector', () => {
       {} as never
     );
 
-    assert.ok(collector.getUnavailableReason().includes('实验性实现'));
-    assert.ok(collector.getStatusSummary().includes('实验性'));
+    assert.ok(collector.getUnavailableReason().includes('尚未完成'));
+    assert.ok(collector.getStatusSummary().includes('尚未完成'));
+  });
+
+  it('fails fast with a protocol warning when attempting to connect', async () => {
+    const collector = new KBEngineLogCollector(
+      {
+        host: '127.0.0.1',
+        port: 20022,
+        autoReconnect: true,
+        reconnectInterval: 5000,
+        maxBufferSize: 1000
+      },
+      {} as never
+    );
+
+    await assert.rejects(
+      collector.connect(),
+      (error: Error) => error.message.includes('未完成 KBEngine logger watcher 协议适配')
+    );
+    assert.ok(collector.getStatusSummary().includes('尚未完成'));
   });
 });

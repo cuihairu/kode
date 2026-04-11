@@ -85,6 +85,30 @@ describe('KBEngine .def language features', () => {
     assert.strictEqual(location.uri.fsPath, '/workspace/scripts/entity_defs/Avatar.def');
   });
 
+  it('resolves parent class references inside def files', () => {
+    const provider = new KBEngineDefinitionProvider();
+    const text = [
+      '<root>',
+      '  <Parent>',
+      '    <Avatar/>',
+      '  </Parent>',
+      '</root>'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      text
+    );
+
+    const location = provider.provideDefinition(
+      document as never,
+      document.positionAt(text.indexOf('Avatar') + 1) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/scripts/entity_defs/Avatar.def');
+  });
+
   it('shows custom property details in symbol hover', () => {
     const provider = new KBEngineHoverProvider();
     const text = [
@@ -114,5 +138,54 @@ describe('KBEngine .def language features', () => {
     assert.ok(hover.contents.value.includes('**Type**: `UINT32`'));
     assert.ok(hover.contents.value.includes('**Flags**: `BASE`'));
     assert.ok(hover.contents.value.includes('**Default**: `100`'));
+  });
+
+  it('shows source-backed tag hover for DetailLevels', () => {
+    const provider = new KBEngineHoverProvider();
+    const text = [
+      '<root>',
+      '  <DetailLevels>',
+      '    <NEAR>',
+      '      <radius>10</radius>',
+      '      <hyst>2</hyst>',
+      '    </NEAR>',
+      '  </DetailLevels>',
+      '</root>'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      text
+    );
+
+    const hover = provider.provideHover(
+      document as never,
+      document.positionAt(text.indexOf('DetailLevels')) as never
+    ) as unknown as FakeHover;
+
+    assert.ok(hover);
+    assert.ok(hover.contents.value.includes('**DetailLevels**'));
+    assert.ok(hover.contents.value.includes('NEAR'));
+    assert.ok(hover.contents.value.includes('radius'));
+    assert.ok(hover.contents.value.includes('hyst'));
+  });
+
+  it('shows tag hover for FIXED_DICT helper tags', () => {
+    const provider = new KBEngineHoverProvider();
+    const text = '<root><Type>FIXED_DICT<implementedBy>Demo.Type</implementedBy></Type></root>';
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      text
+    );
+
+    const hover = provider.provideHover(
+      document as never,
+      document.positionAt(text.indexOf('implementedBy')) as never
+    ) as unknown as FakeHover;
+
+    assert.ok(hover);
+    assert.ok(hover.contents.value.includes('**implementedBy**'));
+    assert.ok(hover.contents.value.includes('FIXED_DICT'));
   });
 });

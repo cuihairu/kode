@@ -3,16 +3,16 @@
 **版本**: 0.1.0
 **状态**: 核心功能已完成
 **总代码行数**: 7000+ 行
-**文件数量**: 16 个 TypeScript 文件
+**文件数量**: 19 个 TypeScript 文件
 
 ---
 
 ## ✅ 已完成功能 (16 个)
 
 ### 1. 语法高亮
-- 16 种基础类型 (UINT8-64, INT8-64, FLOAT, DOUBLE, BOOL, STRING, VECTOR2-4, MAILBOX)
+- 源码对齐的基础类型与容器类型高亮
 - 容器类型 (ARRAY, FIXED_DICT, TUPLE)
-- 8 种 Flags 标志高亮
+- 源码对齐的 Flags / DetailLevel 高亮
 - XML 标签和属性高亮
 - **源文件**: `syntaxes/kbengine.tmLanguage.json`
 
@@ -44,7 +44,7 @@
 
 ### 6. 语法检查
 - 实时语法验证
-- Flags 组合冲突检测 (BASE + CELL)
+- 源码可证实的 Flags / DetailLevel / 必填字段校验
 - 类型有效性检查
 - **源代码**: `src/languageProviders.ts` (validateDocument)
 
@@ -61,14 +61,13 @@
 
 ### 9. 热更新支持
 - 4 个热更新代码片段
-- KBEngine.reloadEntityDef() 智能提示
-- KBEngine.isReload() 状态检查
+- KBEngine.reloadScript() 智能提示
 - importlib.reload() Python 脚本热更新
-- 完整的悬停文档和示例
+- 重载相关悬停文档和示例
 - **源代码**: `src/kbengineMetadata.ts`, `src/languageProviders.ts`
 
 ### 10. 服务器管理
-- 9 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots）
+- 10 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots, interfaces）
 - 启动/停止/重启控制
 - 实时状态显示（停止/启动中/运行中）
 - 进程 PID 显示
@@ -77,7 +76,7 @@
 - **源文件**: `src/serverManager.ts`
 
 ### 11. 日志查看集成
-- 实时日志收集（连接到 logger.exe 端口 20022）
+- logger 连接入口与状态说明
 - 日志解析器（文本和二进制格式）
 - WebView 可视化界面
 - 多级过滤（级别、组件、关键词）
@@ -95,8 +94,8 @@
 - **源文件**: `src/debugConfig.ts`
 
 ### 13. 监控面板
-- 实时性能数据收集
-- CPU、内存、网络、实体数量监控
+- 基于 machine + watcher 的运行态监控
+- CPU、内存、实体数量与已核实 watcher 指标展示
 - 系统概览卡片
 - 组件详细指标卡片
 - 可视化图表（Chart.js）
@@ -165,7 +164,7 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 16 个 |
+| TypeScript 文件 | 19 个 |
 | 钩子数量 | 30+ 个 |
 | 代码片段 | 17 个 |
 | 文档页数 | 5 个 |

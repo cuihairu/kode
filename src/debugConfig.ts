@@ -3,6 +3,8 @@ import * as vscode from 'vscode';
 export interface ComponentDebugConfig {
   telnetHost?: string;
   telnetPort?: number;
+  telnetPassword?: string;
+  telnetDefaultLayer?: string;
   telnetEnableCommands?: string[];
   pathMappings?: Array<{
     localRoot: string;
@@ -20,6 +22,19 @@ export interface DebugConfigFile {
   version: string;
   debug: KBEngineDebugConfig;
 }
+
+const SOURCE_DEFAULT_COMPONENTS: Array<{
+  name: string;
+  telnetPort: number;
+}> = [
+  { name: 'loginapp', telnetPort: 31000 },
+  { name: 'dbmgr', telnetPort: 32000 },
+  { name: 'interfaces', telnetPort: 33000 },
+  { name: 'logger', telnetPort: 34000 },
+  { name: 'baseapp', telnetPort: 40000 },
+  { name: 'cellapp', telnetPort: 50000 },
+  { name: 'bots', telnetPort: 51000 }
+];
 
 export class DebugConfigManager {
   private config: KBEngineDebugConfig;
@@ -39,34 +54,26 @@ export class DebugConfigManager {
       localRoot: workspaceFolder,
       remoteRoot: workspaceFolder
     }];
+    const components = Object.fromEntries(
+      SOURCE_DEFAULT_COMPONENTS.map(({ name, telnetPort }) => [
+        name,
+        {
+          telnetHost: '127.0.0.1',
+          telnetPort,
+          telnetPassword: 'pwd123456',
+          telnetDefaultLayer: 'python',
+          telnetEnableCommands: [],
+          pathMappings: ['baseapp', 'cellapp', 'interfaces', 'bots', 'loginapp', 'dbmgr'].includes(name)
+            ? defaultPathMappings
+            : undefined
+        }
+      ])
+    );
 
     return {
       defaultTelnetHost: '127.0.0.1',
       defaultTelnetPort: 0,
-      components: {
-        baseapp: {
-          telnetHost: '127.0.0.1',
-          telnetPort: 0,
-          telnetEnableCommands: [],
-          pathMappings: defaultPathMappings
-        },
-        cellapp: {
-          telnetHost: '127.0.0.1',
-          telnetPort: 0,
-          telnetEnableCommands: [],
-          pathMappings: defaultPathMappings
-        },
-        loginapp: {
-          telnetHost: '127.0.0.1',
-          telnetPort: 0,
-          telnetEnableCommands: []
-        },
-        dbmgr: {
-          telnetHost: '127.0.0.1',
-          telnetPort: 0,
-          telnetEnableCommands: []
-        }
-      }
+      components
     };
   }
 
@@ -123,6 +130,8 @@ export class DebugConfigManager {
     return {
       telnetHost: userConfig?.telnetHost || this.config.defaultTelnetHost,
       telnetPort: userConfig?.telnetPort || this.config.defaultTelnetPort,
+      telnetPassword: userConfig?.telnetPassword || 'pwd123456',
+      telnetDefaultLayer: userConfig?.telnetDefaultLayer || 'python',
       telnetEnableCommands: userConfig?.telnetEnableCommands || [],
       pathMappings: userConfig?.pathMappings || [{
         localRoot: workspaceFolder,
@@ -153,7 +162,7 @@ export class DebugConfigManager {
 
     for (const [componentName, componentConfig] of Object.entries(this.config.components)) {
       configurations.push({
-        name: `KBEngine: Attach to ${componentName}`,
+        name: `KBEngine: Python attach to ${componentName}`,
         type: this.getDebuggerType(),
         request: 'attach',
         processId: '${input:kbengineProcessId}',
@@ -161,7 +170,11 @@ export class DebugConfigManager {
         pathMappings: componentConfig.pathMappings || [{
           localRoot: workspaceFolder,
           remoteRoot: workspaceFolder
-        }]
+        }],
+        presentation: {
+          group: 'KBEngine',
+          order: 1
+        }
       });
     }
 
@@ -206,7 +219,7 @@ export class DebugConfigManager {
         Buffer.from(JSON.stringify(finalConfig, null, 2), 'utf8')
       );
 
-      vscode.window.showInformationMessage('launch.json 已更新为 KBEngine PID 附加配置');
+      vscode.window.showInformationMessage('launch.json 已更新为 KBEngine Python 附加配置（telnet 开启调试后再按 PID 附加）');
       return true;
     } catch (error) {
       vscode.window.showErrorMessage(`更新 launch.json 失败: ${error}`);
@@ -234,10 +247,12 @@ export class DebugConfigManager {
           components: {
             baseapp: {
               telnetHost: '127.0.0.1',
-              telnetPort: 0,
+              telnetPort: 40000,
+              telnetPassword: 'pwd123456',
+              telnetDefaultLayer: 'python',
               telnetEnableCommands: [
-                '# 先通过 telnet 连接到 baseapp 的调试控制端口',
-                '# 再输入项目实际使用的开启调试命令'
+                '# 先连接源码默认 telnet 端口，再根据项目实际环境输入开启 Python 调试的命令',
+                '# KBEngine 源码只明确提供 telnet 控制端口，不内置 debugpy 命令格式'
               ],
               pathMappings: [{
                 localRoot: '${workspaceFolder}',
@@ -246,7 +261,16 @@ export class DebugConfigManager {
             },
             cellapp: {
               telnetHost: '127.0.0.1',
-              telnetPort: 0,
+              telnetPort: 50000,
+              telnetPassword: 'pwd123456',
+              telnetDefaultLayer: 'python',
+              telnetEnableCommands: []
+            },
+            loginapp: {
+              telnetHost: '127.0.0.1',
+              telnetPort: 31000,
+              telnetPassword: 'pwd123456',
+              telnetDefaultLayer: 'python',
               telnetEnableCommands: []
             }
           }
@@ -270,14 +294,25 @@ export class DebugConfigManager {
   async startDebugging(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
     const telnetLines = (config.telnetEnableCommands || []).filter(Boolean);
+    const telnetCommand = `telnet ${config.telnetHost || '127.0.0.1'} ${config.telnetPort || 0}`;
+    const telnetMeta = [
+      `password: ${config.telnetPassword || 'pwd123456'}`,
+      `default layer: ${config.telnetDefaultLayer || 'python'}`
+    ];
 
     const message = telnetLines.length > 0
       ? [
-          `KBEngine ${componentName} 调试需要先通过 telnet 开启调试，再按 PID 附加。`,
-          `telnet ${config.telnetHost || '127.0.0.1'} ${config.telnetPort || 0}`,
+          `KBEngine ${componentName} 调试以 telnet 控制端口为前提，再按 PID 做 Python 附加。`,
+          telnetCommand,
+          ...telnetMeta,
           ...telnetLines
         ].join('\n')
-      : `KBEngine ${componentName} 调试不是启动 Python 文件，而是先通过 telnet 开启调试，再执行 PID 附加。`;
+      : [
+          `KBEngine ${componentName} 调试不是直接启动 Python 文件。`,
+          `请先连接 telnet 控制端口确认或开启你的项目调试入口，再执行 PID 附加。`,
+          telnetCommand,
+          ...telnetMeta
+        ].join('\n');
 
     const action = await vscode.window.showInformationMessage(
       message,
@@ -301,7 +336,7 @@ export class DebugConfigManager {
     }
 
     const attachConfig: vscode.DebugConfiguration = {
-      name: `KBEngine: Attach to ${componentName}`,
+      name: `KBEngine: Python attach to ${componentName}`,
       type: this.getDebuggerType(),
       request: 'attach',
       processId,

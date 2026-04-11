@@ -31,9 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Syntax highlighting for .def files
-  - 16 basic types (UINT8-64, INT8-64, FLOAT, DOUBLE, BOOL, STRING, VECTOR2/3/4, MAILBOX)
+  - Source-backed KBEngine primitive/container/detail syntax highlighting
   - Container types (ARRAY, FIXED_DICT, TUPLE)
-  - 8 flag types (BASE, CLIENT, BASE_CLIENT, CELL_PUBLIC, CELL_PRIVATE, etc.)
+  - Source-backed flag names and DetailLevel values
 - IntelliSense support
   - Type auto-completion
   - Flags smart suggestions

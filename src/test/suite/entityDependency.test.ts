@@ -17,7 +17,7 @@ describe('EntityDependencyAnalyzer', () => {
       },
       readFileSync(candidatePath: string): string {
         assert.strictEqual(candidatePath, '/workspace/config/entities/entities.xml');
-        return '<root>\n  <Hero parent="Avatar" hasBase="true" hasCell="true" hasClient="false" />\n</root>';
+        return '<root>\n  <Hero hasBase="true" hasCell="true" hasClient="false" />\n</root>';
       }
     };
 
@@ -25,7 +25,7 @@ describe('EntityDependencyAnalyzer', () => {
       workspace: {
         workspaceFolders: [{ uri: { fsPath: '/workspace' } }],
         fs: {
-          readFile: async () => Buffer.from('<root>\n  <Parent>Avatar</Parent>\n  <Properties></Properties>\n</root>', 'utf8')
+          readFile: async () => Buffer.from('<root>\n  <Parent><Avatar/></Parent>\n  <Properties></Properties>\n</root>', 'utf8')
         },
         findFiles: async () => [{ fsPath: '/workspace/config/entity_defs/Hero.def' }],
         getConfiguration: (section?: string) => ({
@@ -58,7 +58,7 @@ describe('EntityDependencyAnalyzer', () => {
     restoreModuleMocks?.();
   });
 
-  it('uses configured entity paths and preserves entities.xml parent info during analyze', async () => {
+  it('uses configured entity paths and resolves source-backed parent syntax during analyze', async () => {
     const analyzer = new EntityDependencyAnalyzer({} as never);
 
     const graph = await analyzer.analyze();

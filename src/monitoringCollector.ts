@@ -47,7 +47,7 @@ type WatcherValueMap = Record<string, string | number | boolean>;
 
 export class MonitoringCollector {
   static readonly PARTIAL_DATA_WARNING =
-    '监控数据依赖 machine discovery 与 watcher 查询联合提供；watcher 无响应时，部分指标可能缺失或回退为 machine discovery 近似值。';
+    '监控数据由 machine discovery 的基础状态与 watcher 的补充指标共同组成；watcher 无响应时，仍可看到 machine 返回的基础状态，但 watcher 指标会缺失。';
 
   private updateInterval: NodeJS.Timeout | null = null;
   private readonly metrics: ComponentMetrics[] = [];
@@ -437,7 +437,8 @@ export class MonitoringCollector {
       return this.toSafeNumber(component.extradata);
     }
 
-    return this.resolveNumber(rootValues.entitySize) ?? 0;
+    void rootValues;
+    return 0;
   }
 
   private resolveConnections(
@@ -448,11 +449,8 @@ export class MonitoringCollector {
       return this.toSafeNumber(component.extradata1);
     }
 
-    return (
-      this.resolveNumber(rootValues.numClients) ??
-      this.resolveNumber(rootValues.clients) ??
-      0
-    );
+    void rootValues;
+    return 0;
   }
 
   private resolveMessagesPerSecond(

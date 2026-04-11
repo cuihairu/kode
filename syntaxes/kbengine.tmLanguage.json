@@ -77,7 +77,7 @@
     },
     "section-tag": {
       "name": "meta.block.section.kbengine",
-      "begin": "(<)(root|Properties|CellProperties|ClientProperties|BaseMethods|CellMethods|ClientMethods|implementedBy)(?=[\\s>])",
+      "begin": "(<)(root|Parent|Properties|BaseMethods|CellMethods|ClientMethods|DetailLevels|Volatile|implementedBy)(?=[\\s>])",
       "end": "(</)(\\2)(>)",
       "beginCaptures": {
         "1": {
@@ -370,7 +370,7 @@
     },
     "entity-entry": {
       "name": "meta.block.entity-entry.kbengine",
-      "begin": "(<)(?!root\\b|Properties\\b|CellProperties\\b|ClientProperties\\b|BaseMethods\\b|CellMethods\\b|ClientMethods\\b|Type\\b|Flags\\b|Default\\b|Database\\b|Identifier\\b|DetailLevel\\b|Arg\\b|implementedBy\\b|FIXED_DICT\\b|TUPLE\\b)([A-Za-z_][A-Za-z0-9_]*)(?=[\\s>])",
+      "begin": "(<)(?!root\\b|Parent\\b|Properties\\b|BaseMethods\\b|CellMethods\\b|ClientMethods\\b|Type\\b|Flags\\b|Default\\b|Persistent\\b|DatabaseLength\\b|Identifier\\b|DetailLevel\\b|DetailLevels\\b|Arg\\b|Utype\\b|Exposed\\b|Volatile\\b|radius\\b|hyst\\b|of\\b|implementedBy\\b|FIXED_DICT\\b|TUPLE\\b)([A-Za-z_][A-Za-z0-9_]*)(?=[\\s>])",
       "end": "(</)(\\2)(>)",
       "beginCaptures": {
         "1": {
@@ -490,7 +490,7 @@
           "name": "support.type.vector.kbengine storage.type.vector.kbengine"
         },
         {
-          "match": "\\b(MAILBOX)\\b",
+          "match": "\\b(ENTITYCALL)\\b",
           "name": "support.type.reference.kbengine storage.type.reference.kbengine"
         },
         {
@@ -498,7 +498,7 @@
           "name": "support.type.container.kbengine storage.type.container.kbengine"
         },
         {
-          "match": "\\b(PYTHON|ENTITY)\\b",
+          "match": "\\b(PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)\\b",
           "name": "support.type.python.kbengine storage.type.python.kbengine"
         }
       ]
@@ -506,17 +506,17 @@
     "kbengine-flags": {
       "patterns": [
         {
-          "match": "\\b(BASE|CLIENT|CELL_PUBLIC|CELL_PRIVATE|CELL_PUBLIC_AND_PRIVATE|BASE_CLIENT|ALL_CLIENTS|OWN_CLIENT)\\b",
+          "match": "\\b(CELL_PUBLIC|CELL_PRIVATE|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|OWN_CLIENT|BASE_AND_CLIENT|BASE|OTHER_CLIENTS|CELL|CELL_AND_CLIENT|CELL_AND_CLIENTS|CELL_AND_OTHER_CLIENTS)\\b",
           "name": "constant.language.flag.kbengine keyword.declaration.flag.kbengine"
         },
         {
-          "match": "\\b(INSTALL_ALWAYS|FLAG_DESTROY|BASE_AND_CLIENT)\\b",
+          "match": "\\b(INSTALL_ALWAYS|FLAG_DESTROY)\\b",
           "name": "constant.other.flag.kbengine"
         }
       ]
     },
     "kbengine-detail-level": {
-      "match": "\\b(LOW|MEDIUM|HIGH|CRITICAL)\\b",
+      "match": "\\b(NEAR|MEDIUM|FAR)\\b",
       "name": "support.constant.detail-level.kbengine constant.other.level.kbengine"
     },
     "numbers": {

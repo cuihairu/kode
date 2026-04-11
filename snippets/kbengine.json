@@ -5,7 +5,7 @@
     "body": [
       "<${1:PropertyName}>",
       "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR2,VECTOR3,VECTOR4|} </Type>",
-      "\t<Flags> ${3|BASE_CLIENT,CELL_PUBLIC,CELL_PRIVATE,ALL_CLIENTS,OWN_CLIENT|} </Flags>",
+      "\t<Flags> ${3|BASE_AND_CLIENT,CELL_PUBLIC,CELL_PRIVATE,ALL_CLIENTS,OWN_CLIENT|} </Flags>",
       "\t<Default> ${4:0} </Default>",
       "</${1:PropertyName}>$0"
     ]
@@ -29,7 +29,7 @@
       "\t<Type>",
       "\t\tARRAY<${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR2,VECTOR3,VECTOR4|}>",
       "\t</Type>",
-      "\t<Flags> ${3|BASE_CLIENT,CELL_PUBLIC,CELL_PRIVATE|} </Flags>",
+      "\t<Flags> ${3|BASE_AND_CLIENT,CELL_PUBLIC,CELL_PRIVATE|} </Flags>",
       "\t<Default> </Default>",
       "</${1:PropertyName}>$0"
     ]
@@ -51,7 +51,7 @@
       "\t\t\t</Properties>",
       "\t\t</FIXED_DICT>",
       "\t</Type>",
-      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Flags> BASE_AND_CLIENT </Flags>",
       "\t<Default> </Default>",
       "</${1:PropertyName}>$0"
     ]
@@ -67,7 +67,7 @@
       "\t\t\t<Type> ${3|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,BOOL,STRING|} </Type>",
       "\t\t</TUPLE>",
       "\t</Type>",
-      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Flags> BASE_AND_CLIENT </Flags>",
       "\t<Default> </Default>",
       "</${1:PropertyName}>$0"
     ]
@@ -78,9 +78,9 @@
     "body": [
       "<${1:PropertyName}>",
       "\t<Type> STRING </Type>",
-      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Flags> BASE_AND_CLIENT </Flags>",
       "\t<Default> \"\" </Default>",
-      "\t<Database> ${2:50} </Database>",
+      "\t<DatabaseLength> ${2:50} </DatabaseLength>",
       "</${1:PropertyName}>$0"
     ]
   },
@@ -92,7 +92,7 @@
       "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,VECTOR3|} </Type>",
       "\t<Flags> CELL_PUBLIC </Flags>",
       "\t<Default> ${3:0} </Default>",
-      "\t<DetailLevel> ${4|LOW,MEDIUM,HIGH,CRITICAL|} </DetailLevel>",
+      "\t<DetailLevel> ${4|NEAR,MEDIUM,FAR|} </DetailLevel>",
       "</${1:PropertyName}>$0"
     ]
   },
@@ -154,16 +154,16 @@
   },
   "KBEngine Hot Reload Entity": {
     "prefix": "kbe-hot-reload-entity",
-    "description": "KBEngine 实体定义热更新",
+    "description": "KBEngine 脚本热重载",
     "body": [
-      "# 实体定义热更新（需要修改 .def 文件后调用）",
+      "# baseapp/cellapp 组件脚本热重载",
       "import KBEngine",
       "",
-      "# 完全重新加载所有实体定义",
-      "KBEngine.reloadEntityDef(True)",
+      "# 完整重载当前组件脚本",
+      "KBEngine.reloadScript(True)",
       "",
-      "# 或者只加载新的实体定义（不重新加载已有的）",
-      "# KBEngine.reloadEntityDef(False)"
+      "# 或者执行轻量重载",
+      "# KBEngine.reloadScript(False)"
     ]
   },
   "KBEngine Hot Reload Script": {
@@ -177,49 +177,32 @@
       "${1:module_name} = importlib.reload(${1:module_name})",
       "",
       "# 注意：只对修改了 Python 方法的代码有效",
-      "# 如果修改了 .def 文件中的属性或方法定义，需要使用 reloadEntityDef"
+      "# KBEngine 组件级脚本重载可使用 KBEngine.reloadScript(fullReload)"
     ]
   },
   "KBEngine Hot Reload Best Practice": {
     "prefix": "kbe-hot-reload-best-practice",
-    "description": "KBEngine 热更新最佳实践",
+    "description": "KBEngine 脚本重载入口示例",
     "body": [
-      "# KBEngine 热更新最佳实践",
+      "# KBEngine 脚本重载入口示例",
       "import KBEngine",
       "",
-      "def onEntitiesEnabled(self):",
+      "def reload_current_component():",
       "    \"\"\"",
-      "    实体启用时的钩子",
-      "    在这里可以检查是否是热更新场景",
+      "    由控制台或调试流程触发当前组件脚本重载。",
+      "    仅适用于 baseapp/cellapp 组件域。",
       "    \"\"\"",
-      "    if KBEngine.isReload():",
-      "        # 热更新场景下的初始化逻辑",
-      "        INFO_MSG(f\"{self.__class__.__name__} hot-reloaded!\")",
-      "        # 重新初始化必要的属性和状态",
-      "        self.${2:reinit_on_reload}()",
-      "    else:",
-      "        # 正常启动时的初始化逻辑",
-      "        INFO_MSG(f\"{self.__class__.__name__} created!\")",
-      "",
-      "def ${2:reinit_on_reload}(self):",
-      "    \"\"\"热更新后重新初始化\"\"\"",
-      "    # 在这里重新初始化需要在热更新后恢复的状态",
-      "    pass"
+      "    KBEngine.reloadScript(${1:True})"
     ]
   },
   "KBEngine Reload Check": {
     "prefix": "kbe-is-reload",
-    "description": "KBEngine 检查是否热更新",
+    "description": "KBEngine reloadScript 调用示例",
     "body": [
-      "# 检查当前是否是热更新场景",
+      "# 调用当前组件脚本重载",
       "import KBEngine",
       "",
-      "if KBEngine.isReload():",
-      "    # 热更新场景",
-      "    INFO_MSG(\"Running in reload mode\")",
-      "else:",
-      "    # 正常启动场景",
-      "    INFO_MSG(\"Running in normal mode\")"
+      "KBEngine.reloadScript(${1:True})"
     ]
   }
 }

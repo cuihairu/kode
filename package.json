@@ -278,20 +278,10 @@
           "default": true,
           "description": "诊断：检查未知的 DetailLevel 值"
         },
-        "kbengine.diagnostics.checkFlagConflicts": {
-          "type": "boolean",
-          "default": true,
-          "description": "诊断：检查 BASE 与 CELL Flags 冲突"
-        },
         "kbengine.diagnostics.checkDuplicateDefinitions": {
           "type": "boolean",
           "default": true,
           "description": "诊断：检查属性和方法的重复定义"
-        },
-        "kbengine.diagnostics.checkInvalidChildren": {
-          "type": "boolean",
-          "default": true,
-          "description": "诊断：检查属性或方法下非法的子标签"
         },
         "kbengine.diagnostics.checkMissingPropertyFields": {
           "type": "boolean",
@@ -352,7 +342,8 @@
               "loginapp",
               "baseapp",
               "cellapp",
-              "bots"
+              "bots",
+              "interfaces"
             ]
           }
         },

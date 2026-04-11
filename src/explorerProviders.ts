@@ -134,7 +134,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       const content = fs.readFileSync(defPath, 'utf8');
       const propertyCount = this.countMatches(
         content,
-        /<(Properties|CellProperties|ClientProperties)>[\s\S]*?<\/\1>/g,
+        /<(Properties)>[\s\S]*?<\/\1>/g,
         /<([A-Za-z_][A-Za-z0-9_]*)>\s*<Type>/g
       );
       const methodCount = this.countMatches(

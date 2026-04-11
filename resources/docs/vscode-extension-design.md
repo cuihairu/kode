@@ -69,7 +69,7 @@ INT8, INT16, INT32, INT64
 FLOAT, DOUBLE
 BOOL, STRING
 VECTOR2, VECTOR3, VECTOR4
-MAILBOX
+ENTITYCALL
 
 <!-- 容器类型 -->
 ARRAY<TYPE>
@@ -93,16 +93,16 @@ TUPLE
 ### 2.3 支持的 Flags
 ```
 <!-- 基础标志 -->
-BASE           - BaseApp 存储
-CLIENT         - 客户端可见
+BASE           - 仅 Base
 CELL_PUBLIC    - CellApp 公开
 CELL_PRIVATE   - CellApp 私有
 ALL_CLIENTS    - 所有客户端可见
 OWN_CLIENT     - 仅拥有者客户端可见
+BASE_AND_CLIENT - Base 与客户端
 
 <!-- 组合标志（常用） -->
-BASE_CLIENT    = BASE | CLIENT
-CELL_PUBLIC_AND_PRIVATE = CELL_PUBLIC | CELL_PRIVATE
+CELL           = CELL_PUBLIC
+CELL_AND_CLIENT = CELL_PUBLIC_AND_OWN
 ```
 
 ### 2.4 entities.xml 格式
@@ -126,8 +126,8 @@ CELL_PUBLIC_AND_PRIVATE = CELL_PUBLIC | CELL_PRIVATE
 **需要高亮的关键词**:
 - XML 标签: `<Properties>`, `<ClientMethods>`, `<BaseMethods>`, `<CellMethods>`
 - 类型名称: `UINT8`, `STRING`, `VECTOR3`, `ARRAY`, `FIXED_DICT`, `TUPLE`
-- Flags 标志: `BASE_CLIENT`, `CELL_PUBLIC`, `ALL_CLIENTS`
-- 特殊标签: `<Type>`, `<Flags>`, `<Default>`, `<Database>`, `<Identifier>`, `<DetailLevel>`
+- Flags 标志: `BASE_AND_CLIENT`, `CELL_PUBLIC`, `ALL_CLIENTS`
+- 特殊标签: `<Type>`, `<Flags>`, `<Default>`, `<DatabaseLength>`, `<Identifier>`, `<DetailLevel>`
 
 **颜色方案建议**:
 ```json
@@ -168,7 +168,7 @@ const types = [
 
 // Flags 提示
 const flags = [
-  { label: 'BASE_CLIENT', detail: 'BaseApp存储 + 客户端可见', documentation: '最常用的组合标志' },
+  { label: 'BASE_AND_CLIENT', detail: 'Base 与客户端', documentation: '对应源码中的 BASE_AND_CLIENT' },
   { label: 'CELL_PUBLIC', detail: 'CellApp公开', documentation: '其他实体可访问' },
   { label: 'ALL_CLIENTS', detail: '所有客户端可见', documentation: '广播给所有客户端' },
   { label: 'OWN_CLIENT', detail: '仅拥有者可见', documentation: '仅控制该实体的客户端可见' }
@@ -208,10 +208,10 @@ function findDefinition(document: TextDocument, position: Position): Definition 
 **检查项目**:
 1. ✅ XML 结构合法性
 2. ✅ 类型名称拼写检查
-3. ✅ Flags 组合合法性
+3. ⚠️ 仅检查源码可证实的 Flags 名称
 4. ✅ 属性名重复检查
 5. ✅ 方法名重复检查
-6. ✅ 默认值类型匹配
+6. ❌ 默认值类型严格匹配
 7. ✅ 实体引用存在性检查（entities.xml）
 
 **错误示例**:
@@ -220,7 +220,7 @@ function findDefinition(document: TextDocument, position: Position): Definition 
 <WrongType>  // Error: 未知类型 'WrongType'
 
 // Flags 组合错误
-<Flags> BASE_CLIENT CELL_PUBLIC </Flags>  // Warning: BASE 和 CELL 不能同时存在
+<Flags> BASE_CLIENT CELL_PUBLIC </Flags>  // 旧设计示意，当前已不作为源码事实
 
 // 默认值类型不匹配
 <Level>
@@ -246,7 +246,7 @@ function findDefinition(document: TextDocument, position: Position): Definition 
     "body": [
       "<${1:PropertyName}>",
       "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR3|} </Type>",
-      "\t<Flags> ${3|BASE_CLIENT,CELL_PUBLIC,CELL_PRIVATE,ALL_CLIENTS,OWN_CLIENT|} </Flags>",
+      "\t<Flags> ${3|BASE_AND_CLIENT,CELL_PUBLIC,CELL_PRIVATE,ALL_CLIENTS,OWN_CLIENT|} </Flags>",
       "\t<Default> ${4:0} </Default>",
       "</${1:PropertyName}>"
     ]
@@ -259,7 +259,7 @@ function findDefinition(document: TextDocument, position: Position): Definition 
       "\t<Type>",
       "\t\tARRAY<${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR3|}>",
       "\t</Type>",
-      "\t<Flags> ${3|BASE_CLIENT,CELL_PUBLIC|} </Flags>",
+      "\t<Flags> ${3|BASE_AND_CLIENT,CELL_PUBLIC|} </Flags>",
       "\t<Default> </Default>",
       "</${1:PropertyName}>"
     ]
@@ -279,7 +279,7 @@ function findDefinition(document: TextDocument, position: Position): Definition 
       "\t\t\t</Properties>",
       "\t\t</FIXED_DICT>",
       "\t</Type>",
-      "\t<Flags> BASE_CLIENT </Flags>",
+      "\t<Flags> BASE_AND_CLIENT </Flags>",
       "\t<Default> </Default>",
       "</${1:PropertyName}>"
     ]
@@ -322,7 +322,7 @@ interface EntityRelation {
   hasBase: boolean;
   hasClient: boolean;
   components: string[];  // ENTITY_COMPONENT 引用的实体
-  references: string[];  // MAILBOX 类型引用的实体
+  references: string[];  // ENTITYCALL / 容器中的实体引用
 }
 
 function generateGraph(entities: EntityRelation[]): string {

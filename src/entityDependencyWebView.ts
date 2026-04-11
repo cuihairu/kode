@@ -128,10 +128,6 @@ export class EntityDependencyWebView {
           // 继承关系使用实线箭头
           mermaid += `  ${fromId} -->|${label}| ${toId}\n`;
           break;
-        case DependencyType.Mailbox:
-          // MAILBOX 引用使用虚线
-          mermaid += `  ${fromId} -.->|${label}| ${toId}\n`;
-          break;
         default:
           mermaid += `  ${fromId} -->|${label}| ${toId}\n`;
       }

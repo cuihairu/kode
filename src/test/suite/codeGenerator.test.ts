@@ -76,7 +76,7 @@ describe('KBEngineCodeGenerator', () => {
     writtenFiles = {};
   });
 
-  it('writes parent information into generated def content and omits Exposed tags', () => {
+  it('writes source-backed parent, property and method structures into generated def content', () => {
     const generator = new KBEngineCodeGenerator({ subscriptions: [] } as never);
     const content = (generator as unknown as {
       generateDefContent: (entity: EntityDefinition) => string;
@@ -89,12 +89,26 @@ describe('KBEngineCodeGenerator', () => {
         parent: 'Entity',
         description: 'test'
       },
+      baseProperties: [{
+        name: 'hp',
+        type: 'UINT32',
+        flags: 'BASE_AND_CLIENT',
+        persistent: true,
+        dbLength: 8,
+        identifier: true,
+        detailLevel: 'NEAR'
+      }],
       baseMethods: [{ name: 'moveTo', exposed: true, args: [{ name: 'spaceID', type: 'UINT32' }] }]
     });
 
-    assert.ok(content.includes('<Parent>Entity</Parent>'));
-    assert.ok(content.includes('<Arg>UINT32 spaceID</Arg>'));
-    assert.ok(!content.includes('<Exposed/>'));
+    assert.ok(content.includes('<Parent>'));
+    assert.ok(content.includes('<Entity/>'));
+    assert.ok(content.includes('<Properties>'));
+    assert.ok(!content.includes('<CellProperties>'));
+    assert.ok(content.includes('<Persistent>true</Persistent>'));
+    assert.ok(content.includes('<DatabaseLength>8</DatabaseLength>'));
+    assert.ok(content.includes('<Arg>UINT32</Arg>'));
+    assert.ok(content.includes('<Exposed/>'));
   });
 
   it('registers entities using the configured entities.xml path', async () => {
@@ -110,6 +124,6 @@ describe('KBEngineCodeGenerator', () => {
 
     const output = writtenFiles['/workspace/config/entities/entities.xml'];
     assert.ok(output);
-    assert.ok(output.includes('<Avatar parent="Entity" hasCell="true" hasBase="true" hasClient="true" />'));
+    assert.ok(output.includes('<Avatar hasCell="true" hasBase="true" hasClient="true" />'));
   });
 });

@@ -76,7 +76,7 @@ describe('MonitoringCollector', () => {
     await collector.refreshNow();
 
     assert.ok(collector.getStatusSummary().includes('watcher 无响应'));
-    assert.ok(collector.getStatusSummary().includes('部分指标可能缺失'));
+    assert.ok(collector.getStatusSummary().includes('machine 返回的基础状态'));
     assert.strictEqual(collector.getAllMetrics()[0]?.statusLevel, 'warning');
   });
 });

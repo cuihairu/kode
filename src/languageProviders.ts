@@ -22,14 +22,133 @@ function getLanguageFeatureConfig() {
     diagnosticsCheckUnknownTypes: config.get<boolean>('diagnostics.checkUnknownTypes', true),
     diagnosticsCheckUnknownFlags: config.get<boolean>('diagnostics.checkUnknownFlags', true),
     diagnosticsCheckUnknownDetailLevels: config.get<boolean>('diagnostics.checkUnknownDetailLevels', true),
-    diagnosticsCheckFlagConflicts: config.get<boolean>('diagnostics.checkFlagConflicts', true),
     diagnosticsCheckDuplicateDefinitions: config.get<boolean>('diagnostics.checkDuplicateDefinitions', true),
-    diagnosticsCheckInvalidChildren: config.get<boolean>('diagnostics.checkInvalidChildren', true),
     diagnosticsCheckMissingPropertyFields: config.get<boolean>('diagnostics.checkMissingPropertyFields', true),
     hoverShowTagDocs: config.get<boolean>('hover.showTagDocs', true),
     hoverShowValueDocs: config.get<boolean>('hover.showValueDocs', true),
     hoverShowSymbolDocs: config.get<boolean>('hover.showSymbolDocs', true)
   };
+}
+
+const TOP_LEVEL_DEF_TAGS = [
+  'Properties',
+  'BaseMethods',
+  'CellMethods',
+  'ClientMethods',
+  'DetailLevels'
+];
+
+const PROPERTY_CHILD_TAGS = [
+  'Type',
+  'Flags',
+  'Default',
+  'Persistent',
+  'Identifier',
+  'Index',
+  'DatabaseLength',
+  'DetailLevel',
+  'Utype'
+];
+
+const BASE_OR_CELL_METHOD_CHILD_TAGS = ['Arg', 'Utype', 'Exposed'];
+const CLIENT_METHOD_CHILD_TAGS = ['Arg', 'Utype'];
+const DETAIL_LEVEL_TAGS = ['NEAR', 'MEDIUM', 'FAR'];
+const DETAIL_LEVEL_VALUE_TAGS = ['radius', 'hyst'];
+const CONTAINER_TYPE_CHILD_TAGS = ['of', 'Properties', 'implementedBy'];
+
+function createCompletionItems(
+  labels: string[],
+  kind: vscode.CompletionItemKind
+): vscode.CompletionItem[] {
+  return labels.map(label => new vscode.CompletionItem(label, kind));
+}
+
+function getTextBeforePosition(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): string {
+  const start = new vscode.Position(0, 0);
+  return document.getText(new vscode.Range(start, position));
+}
+
+function getOpenTagStack(text: string): string[] {
+  const stack: string[] = [];
+  const tagRegex = /<\/?([A-Za-z][\w-]*)[^>]*\/?>/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = tagRegex.exec(text)) !== null) {
+    const [tagText, tagName] = match;
+    if (tagText.startsWith('</')) {
+      for (let i = stack.length - 1; i >= 0; i -= 1) {
+        if (stack[i] === tagName) {
+          stack.splice(i, 1);
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (tagText.endsWith('/>')) {
+      continue;
+    }
+
+    stack.push(tagName);
+  }
+
+  return stack;
+}
+
+function getDefTagCompletionLabels(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): string[] {
+  const textBeforeCursor = getTextBeforePosition(document, position);
+  const stack = getOpenTagStack(textBeforeCursor);
+  const currentTag = stack[stack.length - 1];
+  const parentTag = stack[stack.length - 2];
+  const trimmedText = textBeforeCursor.trimEnd();
+
+  if ((currentTag === 'Type' || currentTag === 'Arg') && /(ARRAY|TUPLE|FIXED_DICT)\s*<$/i.test(trimmedText)) {
+    if (/FIXED_DICT\s*<$/i.test(trimmedText)) {
+      return CONTAINER_TYPE_CHILD_TAGS.filter(tag => tag !== 'of');
+    }
+
+    return ['of'];
+  }
+
+  if (!currentTag || currentTag === 'root') {
+    return TOP_LEVEL_DEF_TAGS;
+  }
+
+  if (currentTag === 'Properties') {
+    return [];
+  }
+
+  if (TOP_LEVEL_DEF_TAGS.includes(currentTag) && currentTag !== 'DetailLevels') {
+    return [];
+  }
+
+  if (currentTag === 'DetailLevels') {
+    return DETAIL_LEVEL_TAGS;
+  }
+
+  if (DETAIL_LEVEL_TAGS.includes(currentTag) && parentTag === 'DetailLevels') {
+    return DETAIL_LEVEL_VALUE_TAGS;
+  }
+
+  if (parentTag === 'Properties') {
+    return PROPERTY_CHILD_TAGS;
+  }
+
+  if (parentTag === 'BaseMethods' || parentTag === 'CellMethods') {
+    return BASE_OR_CELL_METHOD_CHILD_TAGS;
+  }
+
+  if (parentTag === 'ClientMethods') {
+    return CLIENT_METHOD_CHILD_TAGS;
+  }
+
+  return [];
 }
 
 export class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
@@ -41,7 +160,7 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     const lineText = line.text.substring(0, position.character);
     const items: vscode.CompletionItem[] = [];
 
-    if (lineText.match(/<Type>\s*\w*$/)) {
+    if (lineText.match(/<(Type|Arg|of)>\s*\w*$/)) {
       KBENGINE_TYPES.forEach(type => {
         const item = new vscode.CompletionItem(type.name, vscode.CompletionItemKind.Class);
         item.detail = type.detail;
@@ -70,16 +189,10 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     }
 
     if (lineText.endsWith('<')) {
-      const tags = [
-        'Properties', 'ClientMethods', 'BaseMethods', 'CellMethods',
-        'Type', 'Flags', 'Default', 'Persistent', 'Identifier', 'Index',
-        'DatabaseLength', 'DetailLevel', 'Arg', 'Utype', 'Exposed'
-      ];
-      tags.forEach(tag => {
-        const item = new vscode.CompletionItem(tag, vscode.CompletionItemKind.Property);
-        items.push(item);
-      });
-      return items;
+      return createCompletionItems(
+        getDefTagCompletionLabels(document, position),
+        vscode.CompletionItemKind.Property
+      );
     }
 
     if (lineText.match(/<[A-Za-z]+Methods>[\s\S]*<[a-zA-Z]/)) {
@@ -154,6 +267,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     const word = document.getText(range);
+    const isDefDocument = document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
 
     if (featureConfig.hoverShowSymbolDocs) {
       const symbolHover = getSymbolHover(document, position, word);
@@ -203,7 +317,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
 
       const hook = getHookByName(word);
-      if (hook) {
+      if (hook && !isDefDocument) {
         const markdown = new vscode.MarkdownString();
         markdown.appendMarkdown(`**${hook.name}** - ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
         markdown.appendMarkdown(`${hook.description}\n\n`);
@@ -301,8 +415,6 @@ export function validateDocument(
 
 type KBEngineSectionName =
   | 'Properties'
-  | 'CellProperties'
-  | 'ClientProperties'
   | 'BaseMethods'
   | 'CellMethods'
   | 'ClientMethods';
@@ -320,11 +432,7 @@ interface SymbolContext {
   hasFlags: boolean;
 }
 
-const PROPERTY_SECTIONS = new Set<KBEngineSectionName>([
-  'Properties',
-  'CellProperties',
-  'ClientProperties'
-]);
+const PROPERTY_SECTIONS = new Set<KBEngineSectionName>(['Properties']);
 
 const METHOD_SECTIONS = new Set<KBEngineSectionName>([
   'BaseMethods',
@@ -348,8 +456,6 @@ const ALLOWED_METHOD_CHILDREN = new Set(['Arg', 'Utype', 'Exposed']);
 
 const ALLOWED_TOP_LEVEL_SECTIONS = new Set<KBEngineSectionName>([
   'Properties',
-  'CellProperties',
-  'ClientProperties',
   'BaseMethods',
   'CellMethods',
   'ClientMethods'
@@ -358,35 +464,31 @@ const ALLOWED_TOP_LEVEL_SECTIONS = new Set<KBEngineSectionName>([
 const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> = {
   root: {
     detail: 'KBEngine 实体定义根节点',
-    documentation: '`.def` 文件的根标签，所有属性定义、方法定义和容器结构都应放在该节点下。'
+    documentation: '`.def` 文件的根标签。源码会在该节点下读取 `Properties`、方法区块和 `DetailLevels` 等实体定义信息。'
   },
   Properties: {
-    detail: 'Base 属性区块',
-    documentation: '定义实体的 Base 属性。区块内通常使用 `<属性名><Type/><Flags/>...</属性名>` 结构。'
-  },
-  CellProperties: {
-    detail: 'Cell 属性区块',
-    documentation: '定义实体的 Cell 属性。常见于空间、位置、AOI 等 CellApp 侧数据。'
-  },
-  ClientProperties: {
-    detail: 'Client 属性区块',
-    documentation: '定义客户端相关属性，用于描述直接暴露给客户端的属性集合。'
+    detail: '属性区块',
+    documentation: '源码通过 `<Properties>` 读取实体属性。区块内通常使用 `<属性名><Type/><Flags/>...</属性名>` 结构。'
   },
   BaseMethods: {
     detail: 'Base 方法区块',
-    documentation: '定义 BaseApp 可调用的方法。子节点通常为方法名标签，内部包含一个或多个 `<Arg>`。'
+    documentation: '源码通过 `<BaseMethods>` 读取 BaseApp 方法。方法节点内部可包含 `<Arg>`、`<Utype>` 和 `<Exposed>`。'
   },
   CellMethods: {
     detail: 'Cell 方法区块',
-    documentation: '定义 CellApp 可调用的方法。子节点通常为方法名标签，内部包含一个或多个 `<Arg>`。'
+    documentation: '源码通过 `<CellMethods>` 读取 CellApp 方法。方法节点内部可包含 `<Arg>`、`<Utype>` 和 `<Exposed>`。'
   },
   ClientMethods: {
     detail: '客户端方法区块',
-    documentation: '定义同步到客户端或供客户端调用的方法。子节点通常为方法名标签，内部包含一个或多个 `<Arg>`。'
+    documentation: '源码通过 `<ClientMethods>` 读取客户端方法。方法节点内部可包含 `<Arg>` 和 `<Utype>`，不处理 `<Exposed>`。'
+  },
+  DetailLevels: {
+    detail: '细节等级区块',
+    documentation: '源码通过 `<DetailLevels>` 读取 `NEAR`、`MEDIUM`、`FAR` 三档同步细节配置，每档都要求同时提供 `<radius>` 和 `<hyst>`。'
   },
   Type: {
     detail: '类型声明标签',
-    documentation: '用于声明属性类型、方法参数类型或容器内部元素类型，例如 `UINT32`、`VECTOR3`、`ARRAY<UINT8>`。'
+    documentation: '用于声明属性类型、方法参数类型或容器内部元素类型，例如 `UINT32`、`VECTOR3`、`ARRAY<of>UINT8</of>`。'
   },
   Arg: {
     detail: '方法参数标签',
@@ -420,6 +522,18 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
     detail: '细节级别标签',
     documentation: '用于定义属性同步细节等级，可选值为 `NEAR`、`MEDIUM`、`FAR`。'
   },
+  of: {
+    detail: '容器元素类型标签',
+    documentation: '用于 `ARRAY` 或 `TUPLE` 的内部类型声明，源码会读取 `<of>` 子节点作为元素类型。'
+  },
+  radius: {
+    detail: '细节等级半径标签',
+    documentation: '用于 `DetailLevels` 的 `NEAR`、`MEDIUM`、`FAR` 节点内，源码会读取其数值作为该档位半径。'
+  },
+  hyst: {
+    detail: '细节等级迟滞标签',
+    documentation: '用于 `DetailLevels` 的 `NEAR`、`MEDIUM`、`FAR` 节点内，源码会读取其数值作为该档位迟滞。'
+  },
   Utype: {
     detail: '显式 Utype 标签',
     documentation: '用于显式指定属性或方法的 Utype；未提供时由引擎自动分配。'
@@ -430,7 +544,7 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
   },
   implementedBy: {
     detail: 'FIXED_DICT 实现类标签',
-    documentation: '用于给 `FIXED_DICT` 指定实现类，内部通常通过 `<Type>` 指向 Python 类或脚本路径。'
+    documentation: '用于给 `FIXED_DICT` 指定实现模块名。源码会直接读取该节点字符串，并尝试加载对应实现。'
   },
   FIXED_DICT: {
     detail: '固定字典容器',
@@ -699,8 +813,6 @@ function isReservedTagName(tagName: string): boolean {
 function getSectionLabel(section: KBEngineSectionName): string {
   switch (section) {
     case 'Properties':
-    case 'CellProperties':
-    case 'ClientProperties':
       return '属性区块';
     case 'BaseMethods':
     case 'CellMethods':
@@ -739,7 +851,7 @@ function getSymbolHover(
       markdown.appendMarkdown(`**DetailLevel**: \`${symbolInfo.detailLevel}\`\n\n`);
     }
     if (symbolInfo.database) {
-      markdown.appendMarkdown(`**Database**: \`${symbolInfo.database}\`\n\n`);
+      markdown.appendMarkdown(`**DatabaseLength**: \`${symbolInfo.database}\`\n\n`);
     }
     if (symbolInfo.identifier) {
       markdown.appendMarkdown(`**Identifier**: \`${symbolInfo.identifier}\`\n\n`);
@@ -750,24 +862,6 @@ function getSymbolHover(
     markdown.appendMarkdown(`**参数个数**: ${symbolInfo.args.length}\n\n`);
     if (symbolInfo.args.length > 0) {
       markdown.appendMarkdown(`**Args**: \`${symbolInfo.args.join(', ')}\``);
-    }
-  }
-
-  const hook = getHookByName(symbolInfo.name);
-  if (hook) {
-    markdown.appendMarkdown(`\n\n---\n\n**KBEngine Hook**: ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
-    markdown.appendMarkdown(`${hook.description}\n\n`);
-    markdown.appendMarkdown(`**调用时机**: ${hook.timing}\n\n`);
-    markdown.appendMarkdown('**函数签名**:\n');
-    markdown.appendCodeblock(hook.signature, 'python');
-    markdown.appendMarkdown('\n**详细说明**:\n');
-    markdown.appendMarkdown(hook.documentation);
-    if (hook.sourceLocation) {
-      markdown.appendMarkdown(`\n\n**源码位置**: \`${hook.sourceLocation}\``);
-    }
-    if (hook.example) {
-      markdown.appendMarkdown('\n\n**使用示例**:\n');
-      markdown.appendCodeblock(hook.example, 'python');
     }
   }
 
@@ -855,7 +949,7 @@ function findEnclosingSymbol(
   offset: number,
   word: string
 ): SymbolHoverInfo | null {
-  const sectionRegex = /<(Properties|CellProperties|ClientProperties|BaseMethods|CellMethods|ClientMethods)>([\s\S]*?)<\/\1>/g;
+  const sectionRegex = /<(Properties|BaseMethods|CellMethods|ClientMethods)>([\s\S]*?)<\/\1>/g;
   let sectionMatch: RegExpExecArray | null;
 
   while ((sectionMatch = sectionRegex.exec(text)) !== null) {
@@ -894,7 +988,8 @@ function findEntityDefinitionInDef(
   }
 
   if (!isPositionInsideTagValue(document, position, 'Type')
-    && !isPositionInsideTagValue(document, position, 'Arg')) {
+    && !isPositionInsideTagValue(document, position, 'Arg')
+    && !isPositionInsideChildTag(document, position, 'Parent')) {
     return null;
   }
 
@@ -918,7 +1013,7 @@ function buildSymbolHoverInfo(
     flags: extractFirstTagValue(body, 'Flags'),
     defaultValue: extractFirstTagValue(body, 'Default'),
     detailLevel: extractFirstTagValue(body, 'DetailLevel'),
-    database: extractFirstTagValue(body, 'Database'),
+    database: extractFirstTagValue(body, 'DatabaseLength'),
     identifier: extractFirstTagValue(body, 'Identifier'),
     args: extractAllTagValues(body, 'Arg')
   };
@@ -962,6 +1057,34 @@ function isPositionInsideTagValue(
     const innerEnd = innerStart + innerValue.length;
     if (offset >= innerStart && offset <= innerEnd) {
       return true;
+    }
+  }
+
+  return false;
+}
+
+function isPositionInsideChildTag(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  parentTagName: string
+): boolean {
+  const text = document.getText();
+  const offset = document.offsetAt(position);
+  const parentRegex = new RegExp(`<${parentTagName}>\\s*([\\s\\S]*?)\\s*<\\/${parentTagName}>`, 'g');
+  let parentMatch: RegExpExecArray | null;
+
+  while ((parentMatch = parentRegex.exec(text)) !== null) {
+    const innerContent = parentMatch[1];
+    const innerContentStart = parentMatch.index + parentMatch[0].indexOf(innerContent);
+    const childRegex = /<([A-Za-z_][A-Za-z0-9_]*)\b[^/>]*\/>/g;
+    let childMatch: RegExpExecArray | null;
+
+    while ((childMatch = childRegex.exec(innerContent)) !== null) {
+      const childStart = innerContentStart + childMatch.index;
+      const childEnd = childStart + childMatch[0].length;
+      if (offset >= childStart && offset <= childEnd) {
+        return true;
+      }
     }
   }
 
@@ -1118,9 +1241,9 @@ function findEntityDefFile(entityName: string): string | null {
 
   const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
   const possiblePaths = [
+    path.join(workspaceRoot, 'entity_defs', `${entityName}.def`),
     path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`),
-    path.join(workspaceRoot, '**/entity_defs', `${entityName}.def`),
-    path.join(workspaceRoot, '**', `${entityName}.def`)
+    path.join(workspaceRoot, 'assets/scripts/entity_defs', `${entityName}.def`)
   ];
 
   for (const possiblePath of possiblePaths) {

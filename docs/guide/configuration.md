@@ -25,9 +25,7 @@
   "kbengine.diagnostics.checkUnknownTypes": true,
   "kbengine.diagnostics.checkUnknownFlags": true,
   "kbengine.diagnostics.checkUnknownDetailLevels": true,
-  "kbengine.diagnostics.checkFlagConflicts": true,
   "kbengine.diagnostics.checkDuplicateDefinitions": false,
-  "kbengine.diagnostics.checkInvalidChildren": false,
   "kbengine.diagnostics.checkMissingPropertyFields": false,
   "kbengine.hover.showTagDocs": false,
   "kbengine.hover.showValueDocs": true,
@@ -44,9 +42,7 @@
   "kbengine.diagnostics.checkUnknownTypes": true,
   "kbengine.diagnostics.checkUnknownFlags": true,
   "kbengine.diagnostics.checkUnknownDetailLevels": true,
-  "kbengine.diagnostics.checkFlagConflicts": true,
   "kbengine.diagnostics.checkDuplicateDefinitions": true,
-  "kbengine.diagnostics.checkInvalidChildren": true,
   "kbengine.diagnostics.checkMissingPropertyFields": true,
   "kbengine.hover.showTagDocs": true,
   "kbengine.hover.showValueDocs": true,
@@ -63,9 +59,7 @@
 | `kbengine.diagnostics.checkUnknownTypes` | `boolean` | `true` | 检查未知类型 |
 | `kbengine.diagnostics.checkUnknownFlags` | `boolean` | `true` | 检查未知 Flags |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `boolean` | `true` | 检查未知 DetailLevel |
-| `kbengine.diagnostics.checkFlagConflicts` | `boolean` | `true` | 检查 `BASE` 与 `CELL_*` 冲突 |
 | `kbengine.diagnostics.checkDuplicateDefinitions` | `boolean` | `true` | 检查重复属性和重复方法 |
-| `kbengine.diagnostics.checkInvalidChildren` | `boolean` | `true` | 检查错误的子标签位置 |
 | `kbengine.diagnostics.checkMissingPropertyFields` | `boolean` | `true` | 检查属性缺少 `Type` / `Flags` |
 | `kbengine.hover.showTagDocs` | `boolean` | `true` | 悬停标签时显示说明 |
 | `kbengine.hover.showValueDocs` | `boolean` | `true` | 悬停类型、Flags、等级值时显示说明 |
@@ -136,31 +130,13 @@
 
 检查 `<DetailLevel>` 中非法值。
 
-#### `kbengine.diagnostics.checkFlagConflicts`
-
-检查 `BASE` / `BASE_CLIENT` 与 `CELL_*` 混用。
-
 #### `kbengine.diagnostics.checkDuplicateDefinitions`
 
 检查同一区块下的重名属性和方法。
 
-#### `kbengine.diagnostics.checkInvalidChildren`
-
-检查非法子标签，例如：
-
-```xml
-<BaseMethods>
-  <moveTo>
-    <Flags>BASE_CLIENT</Flags>
-  </moveTo>
-</BaseMethods>
-```
-
-这里的 `<Flags>` 会被识别为方法区块中的非法标签。
-
 #### `kbengine.diagnostics.checkMissingPropertyFields`
 
-检查属性缺少 `Type` / `Flags`，以及重复声明多个 `Type` / `Flags`。
+检查属性缺少 `Type` / `Flags`。
 
 ### Hover 子项
 
@@ -170,7 +146,7 @@
 
 #### `kbengine.hover.showValueDocs`
 
-控制是否在悬停 `UINT32`、`BASE_CLIENT`、`HIGH` 这类值时显示说明。
+控制是否在悬停 `UINT32`、`BASE_AND_CLIENT`、`FAR` 这类值时显示说明。
 
 #### `kbengine.hover.showSymbolDocs`
 
@@ -326,7 +302,7 @@ KBEngine 调试不再通过工作区设置项拼 Python 启动参数，而是统
 {
   "kbengine.hover.showTagDocs": false,
   "kbengine.diagnostics.checkDuplicateDefinitions": false,
-  "kbengine.diagnostics.checkInvalidChildren": false,
+  "kbengine.diagnostics.checkUnknownDetailLevels": false,
   "kbengine.diagnostics.checkMissingPropertyFields": false
 }
 ```

@@ -16,9 +16,9 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ### 🎨 语法高亮
 - ✅ 完整的 `.def` 文件语法高亮
-- ✅ 16 种基础类型支持
+- ✅ 源码对齐的基础/容器/细节语义高亮
 - ✅ 容器类型（ARRAY, FIXED_DICT, TUPLE）高亮
-- ✅ 8 种 Flags 标志高亮
+- ✅ 源码对齐的 Flags / DetailLevel 高亮
 
 ### 💡 智能提示 (IntelliSense)
 - ✅ 类型自动补全
@@ -44,7 +44,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ### ✅ 语法检查
 - ✅ 实时语法验证
-- ✅ Flags 组合冲突检测
+- ✅ 源码可证实的 Flags / DetailLevel / 必填字段校验
 - ✅ 类型有效性检查
 
 ### 🌲 实体浏览器
@@ -60,13 +60,12 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ### 🔥 热更新支持
 - ✅ 热更新代码片段（4个）
-- ✅ KBEngine.reloadEntityDef() 智能提示
-- ✅ KBEngine.isReload() 状态检查
+- ✅ KBEngine.reloadScript() 智能提示
 - ✅ importlib.reload() Python 脚本热更新
-- ✅ 完整的悬停文档和使用示例
+- ✅ 重载相关悬停文档和使用示例
 
 ### 🖥️ 服务器管理
-- ✅ 9个组件启动/停止控制
+- ✅ 10个组件启动/停止控制
 - ✅ 实时状态显示（停止/启动中/运行中）
 - ✅ 进程 PID 显示
 - ✅ 组件独立日志输出
@@ -74,14 +73,14 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 支持自定义路径和环境变量
 
 ### 📊 日志查看集成
-- ✅ 连接 KBEngine logger 端口
+- ✅ logger 连接入口与状态说明
 - ✅ WebView 可视化界面
 - ✅ 多级过滤（级别、组件、关键词）
 - ✅ 正则表达式搜索
 - ✅ 日志导出（txt/log/json 格式）
 - ✅ 彩色日志级别显示
 
-当前 logger 协议适配仍属实验性实现，不同 KBEngine 版本下可能需要进一步校正。
+当前 logger 协议适配尚未完成，扩展会明确提示该能力暂不支持，而不是假装已经接通官方协议。
 
 ### 🐛 嵌入式 Python 调试支持
 - ✅ 自定义调试配置（.kbengine/debug.json）
@@ -92,14 +91,14 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 路径映射配置
 
 ### 📈 监控面板
-- ✅ 实时性能数据收集
-- ✅ CPU、内存、网络、实体数量监控
+- ✅ 基于 machine + watcher 的运行态监控
+- ✅ CPU、内存、实体数量与已核实 watcher 指标展示
 - ✅ 系统概览卡片
 - ✅ 组件详细指标卡片
 - ✅ 可视化图表（柱状图、曲线图）
 - ✅ 数据导出（JSON 格式）
 
-监控数据依赖 `machine` 发现和 `watcher` 查询共同提供。若 watcher 无响应，部分指标会退化为 machine discovery 近似值。
+监控数据依赖 `machine` 发现和 `watcher` 查询共同提供。若 watcher 无响应，面板只保留 machine 返回的基础状态，不再把缺失的 watcher 指标伪装成完整遥测。
 
 ### 🔗 Python ↔ Def 双向跳转
 - ✅ 实体定义映射管理器

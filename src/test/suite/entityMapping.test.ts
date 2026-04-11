@@ -49,7 +49,7 @@ type EntityMappingModule = typeof import('../../entityMapping');
 
 describe('EntityMappingManager', () => {
   const defPath = '/workspace/entity_defs/Hero.def';
-  const pythonPath = '/workspace/assets/scripts/entity_defs/Hero.py';
+  const pythonPath = '/workspace/scripts/base/Hero.py';
   const defText = [
     '<root>',
     '  <Properties>',
@@ -153,6 +153,7 @@ describe('EntityMappingManager', () => {
     const mapping = manager.getMapping('Hero');
     assert.ok(mapping);
     assert.strictEqual(mapping?.pythonFile, pythonPath);
+    assert.deepStrictEqual(mapping?.pythonFiles, [pythonPath]);
     assert.deepStrictEqual(mapping?.properties, {
       health: { defFile: defPath, line: 3 },
       inventory: { defFile: defPath, line: 6 },
@@ -181,5 +182,58 @@ describe('EntityMappingManager', () => {
     assert.strictEqual(openedSelection?.start.character, 0);
     assert.strictEqual(openedSelection?.end.line, 11);
     assert.strictEqual(openedSelection?.end.character, 0);
+  });
+
+  it('keeps def mappings even when no python script exists yet', async () => {
+    const fakeFs = {
+      existsSync() {
+        return false;
+      }
+    };
+
+    restoreModuleMocks?.();
+    const fakeVscode = {
+      workspace: {
+        workspaceFolders: [{ uri: new FakeUri('/workspace') }],
+        findFiles: async () => [],
+        fs: {
+          readFile: async (uri: FakeUri) => {
+            assert.strictEqual(uri.fsPath, defPath);
+            return Buffer.from(defText, 'utf8');
+          }
+        },
+        createFileSystemWatcher: () => new FakeWatcher(),
+        openTextDocument: async (uri: FakeUri) => ({ uri })
+      },
+      window: {
+        showTextDocument: async () => ({})
+      },
+      Uri: FakeUri,
+      Position: FakePosition,
+      Range: FakeRange
+    };
+
+    const { loadedModule, restore } = loadModuleWithMocks<EntityMappingModule>(
+      __filename,
+      '../../entityMapping',
+      {
+        vscode: fakeVscode,
+        fs: fakeFs
+      },
+      true
+    );
+    restoreModuleMocks = restore;
+    EntityMappingManager = loadedModule.EntityMappingManager;
+
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    await (manager as unknown as {
+      parseDefFile(entityName: string, defPath: string): Promise<void>;
+    }).parseDefFile('Hero', defPath);
+
+    const mapping = manager.getMapping('Hero');
+    assert.ok(mapping);
+    assert.strictEqual(mapping?.pythonFile, '/workspace/scripts/base/Hero.py');
+    assert.deepStrictEqual(mapping?.pythonFiles, ['/workspace/scripts/base/Hero.py']);
+    assert.ok(mapping?.properties.health);
   });
 });

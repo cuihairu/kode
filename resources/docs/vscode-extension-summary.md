@@ -92,7 +92,7 @@ code .
     <Properties>
         <Level>
             <Type> UINT32 </Type>
-            <Flags> BASE_CLIENT </Flags>
+            <Flags> BASE_AND_CLIENT </Flags>
             <Default> 1 </Default>
         </Level>
     </Properties>
@@ -115,21 +115,21 @@ code .
 |------|------|------|
 | **语法高亮** | ✅ | 支持 .def 文件的完整语法高亮 |
 | **智能提示** | ✅ | 类型、Flags、DetailLevel 自动补全 |
-| **代码片段** | ✅ | 13 个常用代码模板 |
+| **代码片段** | ✅ | 17 个常用代码模板 |
 | **悬停文档** | ✅ | 类型、Flag 的详细说明 |
 | **跳转定义** | ✅ | 从 entities.xml 跳转到 .def |
-| **语法检查** | ✅ | 检测 BASE + CELL 冲突等错误 |
+| **语法检查** | ✅ | 检测未知类型、Flags、DetailLevel、重复定义等源码可证实问题 |
 | **实体浏览器** | ✅ | 侧边栏显示所有实体 |
 
 ### 📝 支持的类型提示
 
-**基础类型**: `UINT8`, `UINT16`, `UINT32`, `UINT64`, `INT8`, `INT16`, `INT32`, `INT64`, `FLOAT`, `DOUBLE`, `BOOL`, `STRING`, `VECTOR2`, `VECTOR3`, `VECTOR4`, `MAILBOX`
+**基础类型**: `UINT8`, `UINT16`, `UINT32`, `UINT64`, `INT8`, `INT16`, `INT32`, `INT64`, `FLOAT`, `DOUBLE`, `BOOL`, `STRING`, `VECTOR2`, `VECTOR3`, `VECTOR4`, `ENTITYCALL`
 
 **容器类型**: `ARRAY`, `FIXED_DICT`, `TUPLE`
 
 ### 🏳️ 支持的 Flags
 
-`BASE`, `CLIENT`, `BASE_CLIENT`, `CELL_PUBLIC`, `CELL_PRIVATE`, `CELL_PUBLIC_AND_PRIVATE`, `ALL_CLIENTS`, `OWN_CLIENT`
+`BASE`, `BASE_AND_CLIENT`, `CELL_PUBLIC`, `CELL_PRIVATE`, `ALL_CLIENTS`, `OWN_CLIENT`, `CELL_PUBLIC_AND_OWN`, `OTHER_CLIENTS`
 
 ### 📦 代码片段
 
@@ -166,7 +166,7 @@ code .
 <Type> ARRAY<UINT32> </Type>    <!-- 黄色 - 容器类型 -->
 
 <!-- Flags -->
-<Flags> BASE_CLIENT </Flags>    <!-- 橙色 - Flags -->
+<Flags> BASE_AND_CLIENT </Flags>    <!-- 橙色 - Flags -->
 <Flags> CELL_PUBLIC </Flags>    <!-- 橙色 - Flags -->
 
 <!-- 方法名 -->

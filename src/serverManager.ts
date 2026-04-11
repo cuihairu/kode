@@ -10,6 +10,7 @@ export interface ServerComponent {
   name: string;
   displayName: string;
   executable: string;
+  defaultArgs?: string[];
   order: number;
   required: boolean;
   description: string;
@@ -23,6 +24,7 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     name: 'machine',
     displayName: 'Machine',
     executable: 'machine',
+    defaultArgs: ['--cid=2129652375332859700', '--gus=1'],
     order: 1,
     required: true,
     description: '机器管理器（必须最先启动）'
@@ -31,15 +33,26 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     name: 'logger',
     displayName: 'Logger',
     executable: 'logger',
+    defaultArgs: ['--cid=1129653375331859700', '--gus=2'],
     order: 2,
     required: false,
     description: '日志服务器'
   },
   {
+    name: 'interfaces',
+    displayName: 'Interfaces',
+    executable: 'interfaces',
+    defaultArgs: ['--cid=1129652375332859700', '--gus=3'],
+    order: 3,
+    required: false,
+    description: '外部接口服务'
+  },
+  {
     name: 'dbmgr',
     displayName: 'DBMgr',
     executable: 'dbmgr',
-    order: 3,
+    defaultArgs: ['--cid=3129652375332859700', '--gus=4'],
+    order: 4,
     required: true,
     description: '数据库管理器'
   },
@@ -47,7 +60,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     name: 'baseappmgr',
     displayName: 'BaseAppMgr',
     executable: 'baseappmgr',
-    order: 4,
+    defaultArgs: ['--cid=4129652375332859700', '--gus=5'],
+    order: 5,
     required: true,
     description: 'BaseApp 管理器'
   },
@@ -55,22 +69,16 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     name: 'cellappmgr',
     displayName: 'CellAppMgr',
     executable: 'cellappmgr',
-    order: 5,
-    required: true,
-    description: 'CellApp 管理器'
-  },
-  {
-    name: 'loginapp',
-    displayName: 'LoginApp',
-    executable: 'loginapp',
+    defaultArgs: ['--cid=5129652375332859700', '--gus=6'],
     order: 6,
     required: true,
-    description: '登录服务器'
+    description: 'CellApp 管理器'
   },
   {
     name: 'baseapp',
     displayName: 'BaseApp',
     executable: 'baseapp',
+    defaultArgs: ['--cid=6129652375332859700', '--gus=7'],
     order: 7,
     required: true,
     description: '网关服务器'
@@ -79,15 +87,26 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     name: 'cellapp',
     displayName: 'CellApp',
     executable: 'cellapp',
+    defaultArgs: ['--cid=7129652375332859700', '--gus=8'],
     order: 8,
     required: true,
     description: '游戏服务器'
   },
   {
+    name: 'loginapp',
+    displayName: 'LoginApp',
+    executable: 'loginapp',
+    defaultArgs: ['--cid=8129652375332859700', '--gus=9'],
+    order: 9,
+    required: true,
+    description: '登录服务器'
+  },
+  {
     name: 'bots',
     displayName: 'Bots',
     executable: 'bots',
-    order: 9,
+    defaultArgs: ['--gus=1'],
+    order: 10,
     required: false,
     description: '机器人测试客户端'
   }
@@ -114,6 +133,14 @@ export interface RunningServer {
   status: ServerStatus;
   startTime: Date;
   logs: string[];
+}
+
+function ensureTrailingSeparator(value: string): string {
+  if (!value) {
+    return value;
+  }
+
+  return value.endsWith(path.sep) ? value : `${value}${path.sep}`;
 }
 
 /**
@@ -194,6 +221,42 @@ export class KBEngineServerManager {
     return configPath;
   }
 
+  private detectKbeRoot(binPath: string): string {
+    if (process.env.KBE_ROOT) {
+      return process.env.KBE_ROOT;
+    }
+
+    if (!binPath) {
+      return '';
+    }
+
+    const normalized = path.normalize(binPath);
+    const suffix = path.normalize(path.join('kbe', 'bin', 'server'));
+    if (normalized.endsWith(suffix)) {
+      return normalized.slice(0, -(suffix.length + 1));
+    }
+
+    return '';
+  }
+
+  private buildComponentEnvironment(configPath: string, binPath: string): NodeJS.ProcessEnv {
+    const env = { ...process.env };
+    const kbeRoot = this.detectKbeRoot(binPath);
+
+    if (kbeRoot) {
+      env.KBE_ROOT = kbeRoot;
+      env.KBE_RES_PATH = [
+        path.join(kbeRoot, 'kbe', 'res'),
+        configPath,
+        path.join(configPath, 'res'),
+        path.join(configPath, 'scripts')
+      ].join(path.delimiter);
+    }
+
+    env.KBE_BIN_PATH = ensureTrailingSeparator(binPath);
+    return env;
+  }
+
   /**
    * 获取可执行文件的完整路径
    */
@@ -227,6 +290,7 @@ export class KBEngineServerManager {
     }
 
     const exePath = this.getExecutablePath(component);
+    const binPath = this.getBinPath();
     const configPath = this.getConfigPath();
 
     // 检查可执行文件是否存在
@@ -258,11 +322,12 @@ export class KBEngineServerManager {
     outputChannel.appendLine(`[INFO] 正在启动 ${component.displayName}...`);
     outputChannel.appendLine(`[INFO] 可执行文件: ${exePath}`);
     outputChannel.appendLine(`[INFO] 配置目录: ${configPath}`);
+    outputChannel.appendLine(`[INFO] 启动参数: ${(component.defaultArgs || []).join(' ') || '(none)'}`);
 
     try {
-      const childProcess = spawn(exePath, [], {
+      const childProcess = spawn(exePath, component.defaultArgs || [], {
         cwd: configPath,
-        env: { ...process.env }
+        env: this.buildComponentEnvironment(configPath, binPath)
       });
 
       const runningServer: RunningServer = {

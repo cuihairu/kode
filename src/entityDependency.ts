@@ -22,8 +22,6 @@ export enum EntityType {
 export enum DependencyType {
   /** 继承关系 */
   Inheritance = 'inheritance',
-  /** MAILBOX 引用 */
-  Mailbox = 'mailbox',
   /** ARRAY 包含实体 */
   Array = 'array',
   /** FIXED_DICT 包含实体 */
@@ -149,23 +147,21 @@ export class EntityDependencyAnalyzer {
       };
       node.defFile = defPath;
       node.references = [];
-      node.types = [];
+      node.types = existingNode ? [...existingNode.types] : [];
 
-      // 检查实体类型（Base/Cell/Client）
-      const hasBase = /<Properties>/i.test(text) || /<BaseMethods>/i.test(text);
-      const hasCell = /<CellProperties>/i.test(text) || /<CellMethods>/i.test(text);
-      const hasClient = /<ClientProperties>/i.test(text) || /<ClientMethods>/i.test(text);
+      // 当 entities.xml 尚未提供类型标记时，只从明确的方法区块补充组件域。
+      const hasBase = /<BaseMethods>/i.test(text);
+      const hasCell = /<CellMethods>/i.test(text);
+      const hasClient = /<ClientMethods>/i.test(text);
 
-      if (hasBase) node.types.push(EntityType.Base);
-      if (hasCell) node.types.push(EntityType.Cell);
-      if (hasClient) node.types.push(EntityType.Client);
+      if (hasBase && !node.types.includes(EntityType.Base)) node.types.push(EntityType.Base);
+      if (hasCell && !node.types.includes(EntityType.Cell)) node.types.push(EntityType.Cell);
+      if (hasClient && !node.types.includes(EntityType.Client)) node.types.push(EntityType.Client);
 
       // 查找父实体
-      const implementsMatch =
-        text.match(/<Implements>\s*<(\w+)\s*\/>/i)
-        || text.match(/<Parent>\s*([A-Z][A-Za-z0-9_]*)\s*<\/Parent>/i);
-      if (implementsMatch) {
-        node.parent = implementsMatch[1];
+      const parentMatch = text.match(/<Parent>\s*<([A-Za-z_][A-Za-z0-9_]*)\s*\/>\s*<\/Parent>/i);
+      if (parentMatch) {
+        node.parent = parentMatch[1];
       }
 
       this.entities.set(entityName, node);
@@ -181,11 +177,7 @@ export class EntityDependencyAnalyzer {
     try {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(node.defFile));
       const text = Buffer.from(content).toString('utf8');
-      const sections = [
-        'Properties',
-        'CellProperties',
-        'ClientProperties'
-      ];
+      const sections = ['Properties'];
 
       for (const sectionName of sections) {
         const sectionBlocks = extractTagBodies(text, sectionName);
@@ -243,7 +235,11 @@ export class EntityDependencyAnalyzer {
       return;
     }
 
-    const entitiesXmlPath = path.join(workspaceFolder.uri.fsPath, 'scripts/entities.xml');
+    const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
+    const entitiesXmlPath = path.join(
+      workspaceFolder.uri.fsPath,
+      kbengineConfig.get<string>('entitiesXmlPath', 'scripts/entities.xml')
+    );
 
     if (!fs.existsSync(entitiesXmlPath)) {
       return;
@@ -287,15 +283,6 @@ export class EntityDependencyAnalyzer {
         this.entities.set(entityName, node);
       }
 
-      // 查找父实体
-      const parentMatch = attributes.match(/\bparent\s*=\s*"(\w+)"/i);
-      if (parentMatch) {
-        const node = this.entities.get(entityName);
-        if (!node) {
-          continue;
-        }
-        node.parent = parentMatch[1];
-      }
     }
   }
 
@@ -484,18 +471,6 @@ export class EntityDependencyAnalyzer {
         continue;
       }
 
-      if (typeBody === 'MAILBOX') {
-        const mailboxEntity = this.findMailboxTarget(propertyBody);
-        if (mailboxEntity) {
-          references.push({
-            entityName: mailboxEntity,
-            type: DependencyType.Mailbox,
-            propertyName
-          });
-        }
-        continue;
-      }
-
       if (typeBody === 'FIXED_DICT') {
         const dictReferences = this.extractFixedDictReferences(propertyName, propertyBody);
         references.push(...dictReferences);
@@ -538,12 +513,7 @@ export class EntityDependencyAnalyzer {
         const nestedReferences = this.extractReferencesFromProperty(
           `${propertyName}.${nestedProperty.name}`,
           nestedProperty.body
-        ).map(reference => ({
-          ...reference,
-          type: reference.type === DependencyType.Mailbox
-            ? DependencyType.FixedDict
-            : reference.type
-        }));
+        );
         references.push(...nestedReferences);
       }
     }
@@ -570,16 +540,6 @@ export class EntityDependencyAnalyzer {
 
     return references;
   }
-
-  private findMailboxTarget(propertyBody: string): string | null {
-    const entityMatch =
-      propertyBody.match(/<EntityType>\s*([A-Z][A-Za-z0-9_]*)\s*<\/EntityType>/i)
-      || propertyBody.match(/<Utype>\s*([A-Z][A-Za-z0-9_]*)\s*<\/Utype>/i)
-      || propertyBody.match(/<Default>\s*([A-Z][A-Za-z0-9_]*)\s*<\/Default>/i);
-
-    return entityMatch ? entityMatch[1] : null;
-  }
-
   private isEntityReference(typeName: string): boolean {
     return /^[A-Z][A-Za-z0-9_]*$/.test(typeName) && this.entities.has(typeName);
   }
@@ -622,8 +582,6 @@ function extractNamedChildBlocks(text: string): Array<{ name: string; body: stri
     'Arg',
     'implementedBy',
     'Properties',
-    'CellProperties',
-    'ClientProperties',
     'BaseMethods',
     'CellMethods',
     'ClientMethods'

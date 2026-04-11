@@ -24,7 +24,7 @@ export enum CollectorStatus {
  */
 export class KBEngineLogCollector {
   static readonly PROTOCOL_WARNING =
-    'KBEngine logger 采集仍是实验性实现，当前协议适配可能因服务端版本或 watcher 注册差异而不可用。';
+    'KBEngine logger watcher 协议适配尚未完成，当前版本只提供界面与状态提示，不宣称可直接接入官方 logger 协议。';
 
   private status: CollectorStatus = CollectorStatus.Disconnected;
   private socket: net.Socket | null = null;
@@ -54,70 +54,14 @@ export class KBEngineLogCollector {
   }
 
   async connect(): Promise<void> {
-    if (this.status === CollectorStatus.Connecting || this.status === CollectorStatus.Connected) {
-      return;
-    }
-
-    this.isManualDisconnect = false;
-    this.clearReconnectTimer();
-    this.disposeSocket();
-    this.receiveBuffer = Buffer.alloc(0);
-    this.lastError = null;
-    this.updateStatus(CollectorStatus.Connecting);
-
-    await new Promise<void>((resolve, reject) => {
-      const socket = new net.Socket();
-      let settled = false;
-
-      socket.setKeepAlive(true);
-
-      socket.once('connect', () => {
-        this.socket = socket;
-        this.registerToLogger();
-        this.startHeartbeat();
-        this.updateStatus(CollectorStatus.Connected);
-        this.outputChannel.appendLine(
-          `[INFO] 已连接 KBEngine logger (${this.config.host}:${this.config.port})`
-        );
-
-        settled = true;
-        resolve();
-      });
-
-      socket.on('data', data => {
-        this.handleData(data);
-      });
-
-      socket.on('error', error => {
-        this.lastError = error;
-        this.outputChannel.appendLine(`[ERROR] ${error.message}`);
-        this._onError.fire(error);
-
-        if (!settled) {
-          settled = true;
-          this.updateStatus(CollectorStatus.Error);
-          reject(error);
-          return;
-        }
-
-        this.updateStatus(CollectorStatus.Error);
-      });
-
-      socket.on('close', hadError => {
-        this.stopHeartbeat();
-        this.socket = null;
-
-        if (!this.isManualDisconnect) {
-          this.updateStatus(hadError || this.lastError ? CollectorStatus.Error : CollectorStatus.Disconnected);
-          this.scheduleReconnect();
-          return;
-        }
-
-        this.updateStatus(CollectorStatus.Disconnected);
-      });
-
-      socket.connect(this.config.port, this.config.host);
-    });
+    const error = new Error(
+      `当前版本未完成 KBEngine logger watcher 协议适配，无法直接连接 ${this.config.host}:${this.config.port}。${KBEngineLogCollector.PROTOCOL_WARNING}`
+    );
+    this.lastError = error;
+    this.updateStatus(CollectorStatus.Error);
+    this.outputChannel.appendLine(`[WARN] ${error.message}`);
+    this._onError.fire(error);
+    throw error;
   }
 
   disconnect(): void {
@@ -183,7 +127,7 @@ export class KBEngineLogCollector {
   getStatusSummary(): string {
     switch (this.status) {
       case CollectorStatus.Connected:
-        return `已连接 ${this.config.host}:${this.config.port}，但日志协议仍属实验性`;
+        return `已连接 ${this.config.host}:${this.config.port}，但 logger watcher 协议仍未完成适配`;
       case CollectorStatus.Connecting:
         return `正在连接 ${this.config.host}:${this.config.port}`;
       case CollectorStatus.Error:
@@ -208,45 +152,6 @@ export class KBEngineLogCollector {
     this._onDidChangeStatus.fire(this.status);
   }
 
-  private handleData(data: Buffer): void {
-    this.receiveBuffer = Buffer.concat([this.receiveBuffer, data]);
-
-    while (this.receiveBuffer.length >= 4) {
-      const messageId = this.receiveBuffer.readUInt16LE(0);
-      const bodyLength = this.receiveBuffer.readUInt16LE(2);
-      const frameLength = 4 + bodyLength;
-
-      if (this.receiveBuffer.length < frameLength) {
-        return;
-      }
-
-      const body = this.receiveBuffer.subarray(4, frameLength);
-      this.receiveBuffer = this.receiveBuffer.subarray(frameLength);
-
-      if (messageId !== 65501) {
-        this.outputChannel.appendLine(
-          `[WARN] 收到未处理的 logger 消息: id=${messageId}, len=${bodyLength}`
-        );
-        continue;
-      }
-
-      if (body.length < 4) {
-        continue;
-      }
-
-      const logLength = body.readUInt32LE(0);
-      if (body.length < 4 + logLength) {
-        continue;
-      }
-
-      const text = body.toString('utf8', 4, 4 + logLength);
-      const entries = LogParser.parseBatch(text);
-      for (const entry of entries) {
-        this.pushLogEntry(entry);
-      }
-    }
-  }
-
   private pushLogEntry(entry: LogEntry): void {
     this.logEntries.push(entry);
 
@@ -255,46 +160,6 @@ export class KBEngineLogCollector {
     }
 
     this._onLogEntry.fire(entry);
-  }
-
-  private registerToLogger(): void {
-    const socket = this.socket;
-    if (!socket) {
-      return;
-    }
-
-    const componentCount = 14;
-    const bodyLength = 4 + 4 + 4 + 4 + 1 + 1 + 1 + componentCount * 4 + 1 + 1;
-    const buffer = Buffer.alloc(4 + bodyLength);
-    let offset = 0;
-
-    buffer.writeUInt16LE(702, offset);
-    offset += 2;
-    buffer.writeUInt16LE(bodyLength, offset);
-    offset += 2;
-
-    buffer.writeInt32LE(this.getDefaultUid(), offset);
-    offset += 4;
-    buffer.writeUInt32LE(0xffffffff, offset);
-    offset += 4;
-    buffer.writeInt32LE(0, offset);
-    offset += 4;
-    buffer.writeInt32LE(0, offset);
-    offset += 4;
-
-    buffer.writeUInt8(0, offset++);
-    buffer.writeUInt8(0, offset++);
-    buffer.writeUInt8(componentCount, offset++);
-
-    for (let i = 0; i < componentCount; i++) {
-      buffer.writeInt32LE(i, offset);
-      offset += 4;
-    }
-
-    buffer.writeUInt8(0, offset++);
-    buffer.writeUInt8(1, offset++);
-
-    socket.write(buffer);
   }
 
   private sendDeregister(): void {

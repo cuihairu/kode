@@ -24,6 +24,10 @@ export const KBENGINE_TYPES: KBEngineMetadataItem[] = [
   { name: 'VECTOR4', detail: '四维向量', documentation: '包含 x、y、z、w 四个分量。' },
   { name: 'ENTITYCALL', detail: '实体引用', documentation: '实体调用或实体引用类型。' },
   { name: 'PYTHON', detail: 'Python 对象', documentation: '由 KBEngine 序列化的 Python 对象。' },
+  { name: 'PY_DICT', detail: 'Python 字典对象', documentation: '由 KBEngine 序列化的 Python dict。' },
+  { name: 'PY_TUPLE', detail: 'Python 元组对象', documentation: '由 KBEngine 序列化的 Python tuple。' },
+  { name: 'PY_LIST', detail: 'Python 列表对象', documentation: '由 KBEngine 序列化的 Python list。' },
+  { name: 'BLOB', detail: '二进制流', documentation: '字节流类型，常用于原始二进制数据。' },
   { name: 'ARRAY', detail: '数组容器', documentation: '由内部 Type 节点声明元素类型。' },
   { name: 'FIXED_DICT', detail: '固定字典容器', documentation: '需要 Properties 子节点，支持 implementedBy。' },
   { name: 'TUPLE', detail: '元组容器', documentation: '固定顺序的复合类型。' }
@@ -98,18 +102,13 @@ export const DETAIL_LEVELS = ['NEAR', 'MEDIUM', 'FAR'];
 
 export const KBENGINE_RELOAD_FUNCTIONS: KBEngineMetadataItem[] = [
   {
-    name: 'KBEngine.reloadEntityDef',
-    detail: '重新加载实体定义',
-    documentation: '对应 EntityDef::reload(fullReload)，用于热更新实体定义。'
-  },
-  {
-    name: 'KBEngine.isReload',
-    detail: '判断当前是否处于热更新流程',
-    documentation: '对应 EntityDef::isReload()。'
+    name: 'KBEngine.reloadScript',
+    detail: '重新加载当前组件脚本',
+    documentation: '对应 baseapp/cellapp 暴露的 `KBEngine.reloadScript(fullReload)`，用于重新加载当前组件内的 Python 脚本。'
   },
   {
     name: 'importlib.reload',
     detail: '重新加载 Python 模块',
-    documentation: '仅用于 Python 模块热更，不替代实体定义热更。'
+    documentation: 'Python 标准库提供的模块重载工具。适用于普通模块重载，不是 KBEngine 专有 API。'
   }
 ];

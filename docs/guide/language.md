@@ -18,8 +18,7 @@
 
 - 区块标签
   - `Properties`
-  - `CellProperties`
-  - `ClientProperties`
+  - `Parent`
   - `BaseMethods`
   - `CellMethods`
   - `ClientMethods`
@@ -27,7 +26,7 @@
   - `Type`
   - `Flags`
   - `Default`
-  - `Database`
+  - `DatabaseLength`
   - `Identifier`
   - `DetailLevel`
   - `Arg`
@@ -38,7 +37,7 @@
   - `FIXED_DICT`
   - `TUPLE`
 - 标志值
-  - `BASE_CLIENT`
+  - `BASE_AND_CLIENT`
   - `CELL_PUBLIC`
   - `ALL_CLIENTS`
 - 自定义属性名和方法名
@@ -63,10 +62,9 @@
 
 在 `<DetailLevel>` 中会提供：
 
-- `LOW`
+- `NEAR`
 - `MEDIUM`
-- `HIGH`
-- `CRITICAL`
+- `FAR`
 
 ### 标签补全
 
@@ -96,8 +94,8 @@
 例如悬停：
 
 - `UINT32`
-- `BASE_CLIENT`
-- `HIGH`
+- `BASE_AND_CLIENT`
+- `FAR`
 
 会显示值的含义、用途和说明。
 
@@ -112,7 +110,7 @@
 ```xml
 <HP>
   <Type> UINT32 </Type>
-  <Flags> BASE_CLIENT </Flags>
+  <Flags> BASE_AND_CLIENT </Flags>
 </HP>
 ```
 
@@ -141,7 +139,7 @@
 ```xml
 <Target>
   <Type> Avatar </Type>
-  <Flags> BASE_CLIENT </Flags>
+  <Flags> BASE_AND_CLIENT </Flags>
 </Target>
 ```
 
@@ -156,9 +154,7 @@
 - 未知类型
 - 未知 Flags
 - 未知 DetailLevel
-- `BASE` 与 `CELL_*` 冲突
 - 重复属性或方法
-- 非法子标签
 - 属性缺少 `Type` / `Flags`
 
 ### 推荐使用方式
@@ -166,7 +162,6 @@
 如果你觉得过于频繁，不要直接关掉全部诊断，优先关闭这些更吵的规则：
 
 - `kbengine.diagnostics.checkDuplicateDefinitions`
-- `kbengine.diagnostics.checkInvalidChildren`
 - `kbengine.diagnostics.checkMissingPropertyFields`
 
 更完整的说明见 [配置说明](./configuration.md)。

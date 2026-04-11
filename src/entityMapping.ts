@@ -17,6 +17,8 @@ export interface EntityMapping {
   defFile: string;
   /** Python 文件路径 */
   pythonFile: string;
+  /** 可能的 Python 文件路径 */
+  pythonFiles: string[];
   /** 属性映射（属性名 → .def 中的行号） */
   properties: { [propertyName: string]: { defFile: string, line: number } };
   /** 方法映射（方法名 → .def 中的行号） */
@@ -61,16 +63,13 @@ export class EntityMappingManager {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(defPath));
       const text = Buffer.from(content).toString('utf8');
 
-      // 查找对应的 Python 文件
-      const pythonPath = this.findPythonFile(defPath);
-      if (!pythonPath) {
-        return;
-      }
+      const pythonPaths = this.findPythonFiles(defPath);
 
       const mapping: EntityMapping = {
         name: entityName,
         defFile: defPath,
-        pythonFile: pythonPath,
+        pythonFile: pythonPaths[0],
+        pythonFiles: pythonPaths,
         properties: {},
         methods: {}
       };
@@ -87,28 +86,24 @@ export class EntityMappingManager {
   /**
    * 查找对应的 Python 文件
    */
-  private findPythonFile(defPath: string): string | null {
-    const defDir = path.dirname(defPath);
+  private findPythonFiles(defPath: string): string[] {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-
-    // KBEngine 通常生成的 Python 文件在 assets/scripts/entity_defs/
-    const possiblePaths = [
-      path.join(workspaceRoot, 'assets/scripts/entity_defs'),
-      path.join(workspaceRoot, 'scripts/entity_defs'),
-      defDir.replace('entity_defs', 'generated/entity_defs'),
-      defDir.replace('entity_defs', 'entity_defs_generated')
-    ];
-
     const entityName = path.basename(defPath, '.def');
+    const possiblePaths = [
+      path.join(workspaceRoot, 'scripts/base', `${entityName}.py`),
+      path.join(workspaceRoot, 'scripts/cell', `${entityName}.py`),
+      path.join(workspaceRoot, 'scripts/interfaces', `${entityName}.py`),
+      path.join(workspaceRoot, 'assets/scripts/base', `${entityName}.py`),
+      path.join(workspaceRoot, 'assets/scripts/cell', `${entityName}.py`),
+      path.join(workspaceRoot, 'assets/scripts/interfaces', `${entityName}.py`),
+      path.join(workspaceRoot, 'assets/scripts/entity_defs', `${entityName}.py`),
+      path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.py`)
+    ];
+    const existingPaths = possiblePaths.filter(candidatePath => fs.existsSync(candidatePath));
 
-    for (const searchPath of possiblePaths) {
-      const pythonPath = path.join(searchPath, `${entityName}.py`);
-      if (fs.existsSync(pythonPath)) {
-        return pythonPath;
-      }
-    }
-
-    return null;
+    return existingPaths.length > 0 ? existingPaths : [
+      path.join(workspaceRoot, 'scripts/base', `${entityName}.py`)
+    ];
   }
 
   /**
@@ -120,7 +115,7 @@ export class EntityMappingManager {
   }
 
   private collectPropertyMappings(text: string, defPath: string, mapping: EntityMapping): void {
-    const propertySections = ['Properties', 'CellProperties', 'ClientProperties'];
+    const propertySections = ['Properties'];
 
     for (const sectionName of propertySections) {
       const sections = this.extractTagBodiesWithIndex(text, sectionName);
@@ -294,7 +289,7 @@ export class EntityMappingManager {
   private handlePythonFileChanged(pythonPath: string): void {
     // 重新扫描相关映射
     for (const [entityName, mapping] of this.mappings) {
-      if (mapping.pythonFile === pythonPath) {
+      if (mapping.pythonFiles.includes(pythonPath)) {
         this.parseDefFile(entityName, mapping.defFile);
         break;
       }

@@ -181,35 +181,24 @@ export class KBEngineCodeGenerator {
     lines.push('');
 
     if (entity.config.parent) {
-      lines.push(`  <Parent>${entity.config.parent}</Parent>`);
+      lines.push('  <Parent>');
+      lines.push(`    <${entity.config.parent}/>`);
+      lines.push('  </Parent>');
       lines.push('');
     }
 
-    // Properties 节点
-    if (entity.baseProperties && entity.baseProperties.length > 0) {
+    const allProperties = [
+      ...(entity.baseProperties || []),
+      ...(entity.cellProperties || []),
+      ...(entity.clientProperties || [])
+    ];
+
+    if (allProperties.length > 0) {
       lines.push('  <Properties>');
-      for (const prop of entity.baseProperties) {
+      for (const prop of allProperties) {
         lines.push(this.generatePropertyCode(prop, '    '));
       }
       lines.push('  </Properties>');
-      lines.push('');
-    }
-
-    if (entity.cellProperties && entity.cellProperties.length > 0) {
-      lines.push('  <CellProperties>');
-      for (const prop of entity.cellProperties) {
-        lines.push(this.generatePropertyCode(prop, '    '));
-      }
-      lines.push('  </CellProperties>');
-      lines.push('');
-    }
-
-    if (entity.clientProperties && entity.clientProperties.length > 0) {
-      lines.push('  <ClientProperties>');
-      for (const prop of entity.clientProperties) {
-        lines.push(this.generatePropertyCode(prop, '    '));
-      }
-      lines.push('  </ClientProperties>');
       lines.push('');
     }
 
@@ -217,7 +206,7 @@ export class KBEngineCodeGenerator {
     if (entity.baseMethods && entity.baseMethods.length > 0) {
       lines.push('  <BaseMethods>');
       for (const method of entity.baseMethods) {
-        lines.push(this.generateMethodCode(method, '    '));
+        lines.push(this.generateMethodCode(method, '    ', true));
       }
       lines.push('  </BaseMethods>');
       lines.push('');
@@ -227,7 +216,7 @@ export class KBEngineCodeGenerator {
     if (entity.cellMethods && entity.cellMethods.length > 0) {
       lines.push('  <CellMethods>');
       for (const method of entity.cellMethods) {
-        lines.push(this.generateMethodCode(method, '    '));
+        lines.push(this.generateMethodCode(method, '    ', true));
       }
       lines.push('  </CellMethods>');
       lines.push('');
@@ -237,7 +226,7 @@ export class KBEngineCodeGenerator {
     if (entity.clientMethods && entity.clientMethods.length > 0) {
       lines.push('  <ClientMethods>');
       for (const method of entity.clientMethods) {
-        lines.push(this.generateMethodCode(method, '    '));
+        lines.push(this.generateMethodCode(method, '    ', false));
       }
       lines.push('  </ClientMethods>');
       lines.push('');
@@ -263,15 +252,12 @@ export class KBEngineCodeGenerator {
       lines.push(`${indent}  <Default>${prop.default}</Default>`);
     }
 
+    if (prop.persistent !== undefined) {
+      lines.push(`${indent}  <Persistent>${prop.persistent}</Persistent>`);
+    }
+
     if (prop.dbLength !== undefined) {
-      lines.push(`${indent}  <Database>`);
-
-      if (prop.persistent !== undefined) {
-        lines.push(`${indent}    <Persistent>${prop.persistent}</Persistent>`);
-      }
-
-      lines.push(`${indent}    <Length>${prop.dbLength}</Length>`);
-      lines.push(`${indent}  </Database>`);
+      lines.push(`${indent}  <DatabaseLength>${prop.dbLength}</DatabaseLength>`);
     }
 
     if (prop.detailLevel) {
@@ -290,14 +276,18 @@ export class KBEngineCodeGenerator {
   /**
    * 生成方法代码
    */
-  private generateMethodCode(method: MethodDefinition, indent: string): string {
+  private generateMethodCode(method: MethodDefinition, indent: string, supportsExposed: boolean): string {
     const lines: string[] = [];
 
     lines.push(`${indent}<${method.name}>`);
 
+    if (supportsExposed && method.exposed) {
+      lines.push(`${indent}  <Exposed/>`);
+    }
+
     if (method.args && method.args.length > 0) {
       for (const arg of method.args) {
-        lines.push(`${indent}  <Arg>${arg.type} ${arg.name}</Arg>`);
+        lines.push(`${indent}  <Arg>${arg.type}</Arg>`);
       }
     }
 
@@ -479,10 +469,6 @@ export class KBEngineCodeGenerator {
    */
   private generateEntityRegistration(config: EntityTypeConfig): string {
     const attrs: string[] = [];
-
-    if (config.parent) {
-      attrs.push(`parent="${config.parent}"`);
-    }
 
     attrs.push(`hasCell="${config.hasCell}"`);
     attrs.push(`hasBase="${config.hasBase}"`);
@@ -819,8 +805,8 @@ export class KBEngineCodeGenerator {
         { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
         { name: 'direction', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
         { name: 'spaceID', type: 'UINT32', flags: 'CELL_PRIVATE', default: '0' },
-        { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_PRIVATE', default: '100' },
-        { name: 'mp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_PRIVATE', default: '100' }
+        { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' },
+        { name: 'mp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' }
       ],
       clientMethods: [
         { name: 'onHPChanged', exposed: true, args: [{ name: 'oldHP', type: 'UINT32' }, { name: 'newHP', type: 'UINT32' }] }
@@ -850,7 +836,7 @@ export class KBEngineCodeGenerator {
       ],
       cellProperties: [
         { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
-        { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_PRIVATE', default: '100' }
+        { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' }
       ]
     };
   }
