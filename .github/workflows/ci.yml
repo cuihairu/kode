@@ -16,6 +16,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     strategy:
       matrix:
@@ -23,35 +24,44 @@ jobs:
 
     steps:
     - name: Checkout 代码
+      timeout-minutes: 3
       uses: actions/checkout@v4
 
     - name: 安装 pnpm
+      timeout-minutes: 3
       uses: pnpm/action-setup@v2
       with:
         version: 8
 
     - name: 设置 Node.js ${{ matrix.node-version }}
+      timeout-minutes: 5
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'pnpm'
 
     - name: 安装依赖
+      timeout-minutes: 5
       run: pnpm install --frozen-lockfile
 
     - name: 编译 TypeScript
+      timeout-minutes: 15
       run: pnpm run compile
 
     - name: 运行测试
+      timeout-minutes: 10
       run: pnpm test
 
     - name: 运行代码检查
+      timeout-minutes: 5
       run: pnpm run lint
 
     - name: 打包 VSIX 扩展
+      timeout-minutes: 15
       run: pnpm run package
 
     - name: 上传 VSIX 文件
+      timeout-minutes: 3
       uses: actions/upload-artifact@v4
       with:
         name: kode-vsix-${{ github.ref_name }}-${{ github.sha }}
@@ -59,12 +69,14 @@ jobs:
         retention-days: 30
 
     - name: 发布到 VSCode Marketplace (Release)
+      timeout-minutes: 10
       if: github.event_name == 'release' && github.event.action == 'created'
       run: pnpm run publish -- --publishTarget vscode-marketplace --pat ${{ secrets.VSCE_PAT }}
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
     - name: 创建 GitHub Release (Tag Push)
+      timeout-minutes: 10
       if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v1
       with:
