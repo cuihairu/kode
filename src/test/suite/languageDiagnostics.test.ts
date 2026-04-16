@@ -8,6 +8,7 @@ import {
 } from './testUtils';
 
 type LanguageProvidersModule = typeof import('../../languageProviders');
+type DefinitionWorkspaceModule = typeof import('../../definitionWorkspace');
 
 describe('validateDocument', () => {
   let restoreModuleMocks: (() => void) | undefined;
@@ -16,14 +17,18 @@ describe('validateDocument', () => {
 
   before(() => {
     const typesXmlPath = path.join('/workspace', 'scripts', 'entity_defs', 'types.xml');
+    const entitiesXmlPath = path.join('/workspace', 'scripts', 'entities.xml');
     const registeredTypePath = path.join('/workspace', 'scripts', 'user_type', 'RegisteredType.py');
+    const avatarDefPath = path.join('/workspace', 'scripts', 'entity_defs', 'Avatar.def');
 
     const fsStub = {
       existsSync(candidatePath: string): boolean {
         observedExistsPaths.push(candidatePath);
         return [
           typesXmlPath,
-          registeredTypePath
+          entitiesXmlPath,
+          registeredTypePath,
+          avatarDefPath
         ].includes(candidatePath);
       },
       readFileSync(candidatePath: string): string {
@@ -31,17 +36,37 @@ describe('validateDocument', () => {
           return '<root><RegisteredType/><BrokenType/></root>';
         }
 
+        if (candidatePath === entitiesXmlPath) {
+          return '<root><Avatar hasBase="true" hasCell="true"/></root>';
+        }
+
         throw new Error(`Unexpected readFileSync path: ${candidatePath}`);
       }
     };
 
+    const vscodeStub = createVscodeStub();
+    const { loadedModule: definitionWorkspaceModule, restore: restoreDefinitionWorkspace } =
+      loadModuleWithMocks<DefinitionWorkspaceModule>(
+        __filename,
+        '../../definitionWorkspace',
+        { vscode: vscodeStub, fs: fsStub },
+        true
+      );
+
     const { loadedModule, restore } = loadModuleWithMocks<LanguageProvidersModule>(
       __filename,
       '../../languageProviders',
-      { vscode: createVscodeStub(), fs: fsStub },
+      {
+        vscode: vscodeStub,
+        fs: fsStub,
+        './definitionWorkspace': definitionWorkspaceModule
+      },
       true
     );
-    restoreModuleMocks = restore;
+    restoreModuleMocks = () => {
+      restore();
+      restoreDefinitionWorkspace();
+    };
     validateDocument = loadedModule.validateDocument;
   });
 
@@ -115,6 +140,21 @@ describe('validateDocument', () => {
 
     assert.deepStrictEqual(messages, []);
     assert.ok(!observedExistsPaths.some(candidatePath => candidatePath.includes('UINT32')));
+  });
+
+  it('accepts entity types registered in entities.xml without requiring types.xml registration', () => {
+    const messages = messagesFor([
+      '<root>',
+      '  <Properties>',
+      '    <target>',
+      '      <Type>Avatar</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </target>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+
+    assert.deepStrictEqual(messages, []);
   });
 
   it('reports duplicate property definitions and missing required property fields', () => {

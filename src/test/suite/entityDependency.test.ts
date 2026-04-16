@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import { createVscodeStub, loadModuleWithMocks } from './testUtils';
 
 type EntityDependencyModule = typeof import('../../entityDependency');
+type DefinitionWorkspaceModule = typeof import('../../definitionWorkspace');
 
 describe('EntityDependencyAnalyzer', () => {
   let restoreModuleMocks: (() => void) | undefined;
@@ -43,14 +44,29 @@ describe('EntityDependencyAnalyzer', () => {
       }
     });
 
+    const { loadedModule: definitionWorkspaceModule, restore: restoreDefinitionWorkspace } =
+      loadModuleWithMocks<DefinitionWorkspaceModule>(
+        __filename,
+        '../../definitionWorkspace',
+        { vscode: vscodeStub, fs: fakeFs },
+        true
+      );
+
     const { loadedModule, restore } = loadModuleWithMocks<EntityDependencyModule>(
       __filename,
       '../../entityDependency',
-      { vscode: vscodeStub, fs: fakeFs },
+      {
+        vscode: vscodeStub,
+        fs: fakeFs,
+        './definitionWorkspace': definitionWorkspaceModule
+      },
       true
     );
 
-    restoreModuleMocks = restore;
+    restoreModuleMocks = () => {
+      restore();
+      restoreDefinitionWorkspace();
+    };
     EntityDependencyAnalyzer = loadedModule.EntityDependencyAnalyzer;
   });
 

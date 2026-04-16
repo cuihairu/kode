@@ -201,7 +201,11 @@ describe('KBEngineServerManager', () => {
     const interfaces = SERVER_COMPONENTS.find(component => component.name === 'interfaces');
 
     assert.ok(interfaces);
-    const result = await manager.startComponent(interfaces!);
+    if (!interfaces) {
+      throw new Error('interfaces component should exist');
+    }
+
+    const result = await manager.startComponent(interfaces);
 
     assert.strictEqual(result, true);
     assert.strictEqual(spawnCalls.length, 1);

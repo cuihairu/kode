@@ -1,7 +1,16 @@
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { EntityMappingManager } from './entityMapping';
+import {
+  findCustomTypeInfo,
+  findDefinitionEntryByCategory,
+  findDefinitionFileByCategory,
+  findCustomTypePythonFile,
+  findEntityDefinitionFile,
+  getRegisteredCustomTypes,
+  getRegisteredEntities,
+  getWorkspaceRootForDocument
+} from './definitionWorkspace';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
 import {
   DETAIL_LEVELS,
@@ -31,11 +40,15 @@ function getLanguageFeatureConfig() {
 }
 
 const TOP_LEVEL_DEF_TAGS = [
+  'Parent',
+  'Interfaces',
+  'Components',
   'Properties',
   'BaseMethods',
   'CellMethods',
   'ClientMethods',
-  'DetailLevels'
+  'DetailLevels',
+  'Volatile'
 ];
 
 const PROPERTY_CHILD_TAGS = [
@@ -124,7 +137,19 @@ function getDefTagCompletionLabels(
     return [];
   }
 
-  if (TOP_LEVEL_DEF_TAGS.includes(currentTag) && currentTag !== 'DetailLevels') {
+  if (currentTag === 'Interfaces') {
+    return ['Interface', 'interface', 'Type', 'type'];
+  }
+
+  if (currentTag === 'Components' || currentTag === 'Parent') {
+    return [];
+  }
+
+  if (currentTag === 'Volatile') {
+    return ['position', 'yaw', 'pitch', 'roll', 'optimized'];
+  }
+
+  if (TOP_LEVEL_DEF_TAGS.includes(currentTag) && currentTag !== 'DetailLevels' && currentTag !== 'Interfaces') {
     return [];
   }
 
@@ -161,7 +186,7 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     const items: vscode.CompletionItem[] = [];
 
     if (lineText.match(/<(Type|Arg|of)>\s*\w*$/)) {
-      KBENGINE_TYPES.forEach(type => {
+      getKnownTypeSuggestions(document).forEach(type => {
         const item = new vscode.CompletionItem(type.name, vscode.CompletionItemKind.Class);
         item.detail = type.detail;
         item.documentation = new vscode.MarkdownString(type.documentation);
@@ -268,6 +293,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
 
     const word = document.getText(range);
     const isDefDocument = document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
+    const typeValueHover = getTypeValueHover(document, position, word);
+    if (typeValueHover) {
+      return typeValueHover;
+    }
+
+    const customTypeHover = getCustomTypeHover(document, position, word);
+    if (customTypeHover) {
+      return customTypeHover;
+    }
 
     if (featureConfig.hoverShowSymbolDocs) {
       const symbolHover = getSymbolHover(document, position, word);
@@ -375,9 +409,21 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
     const word = document.getText(range);
 
     if (document.fileName.endsWith('entities.xml')) {
-      const defPath = findEntityDefFile(word);
+      const defPath = findEntityDefinitionFile(word, document);
       if (defPath) {
         return new vscode.Location(vscode.Uri.file(defPath), new vscode.Position(0, 0));
+      }
+    }
+
+    if (document.fileName.endsWith('types.xml')) {
+      const customTypeLocation = findCustomTypeDefinition(document, position, word);
+      if (customTypeLocation) {
+        return customTypeLocation;
+      }
+
+      const typeValueLocation = findTypeValueDefinitionInTypesXml(document, position, word);
+      if (typeValueLocation) {
+        return typeValueLocation;
       }
     }
 
@@ -414,10 +460,14 @@ export function validateDocument(
 }
 
 type KBEngineSectionName =
+  | 'Parent'
+  | 'Interfaces'
+  | 'Components'
   | 'Properties'
   | 'BaseMethods'
   | 'CellMethods'
-  | 'ClientMethods';
+  | 'ClientMethods'
+  | 'Volatile';
 
 interface SectionContext {
   section: KBEngineSectionName;
@@ -455,10 +505,14 @@ const ALLOWED_PROPERTY_CHILDREN = new Set([
 const ALLOWED_METHOD_CHILDREN = new Set(['Arg', 'Utype', 'Exposed']);
 
 const ALLOWED_TOP_LEVEL_SECTIONS = new Set<KBEngineSectionName>([
+  'Parent',
+  'Interfaces',
+  'Components',
   'Properties',
   'BaseMethods',
   'CellMethods',
-  'ClientMethods'
+  'ClientMethods',
+  'Volatile'
 ]);
 
 const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> = {
@@ -556,13 +610,36 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
   }
 };
 
+Object.assign(TAG_HOVER_DOCS, {
+  Parent: {
+    detail: '父类区块',
+    documentation: '对应 KBEngine 的 `loadParentClass`，用于声明当前实体或组件继承的父定义。'
+  },
+  Interfaces: {
+    detail: '接口区块',
+    documentation: '对应 KBEngine 的 `loadInterfaces`，用于组合 `entity_defs/interfaces/*.def` 中的接口定义。'
+  },
+  Components: {
+    detail: '组件区块',
+    documentation: '对应 KBEngine 的 `loadComponents`，用于声明当前实体挂载的组件属性及其组件定义类型。'
+  },
+  Interface: {
+    detail: '接口引用标签',
+    documentation: '在 `<Interfaces>` 下使用，内部通常写成 `<SomeInterface/>`，KBEngine 会到 `entity_defs/interfaces/SomeInterface.def` 加载定义。'
+  },
+  Volatile: {
+    detail: '易变同步区块',
+    documentation: '对应 KBEngine 的 `loadVolatileInfo`，用于配置 position、yaw、pitch、roll 等实时同步参数。'
+  }
+});
+
 function validateScalarTagValues(
   document: vscode.TextDocument,
   diagnosticsList: vscode.Diagnostic[],
   text: string,
   featureConfig: ReturnType<typeof getLanguageFeatureConfig>
 ): void {
-  const knownTypes = new Set(KBENGINE_TYPES.map(type => type.name));
+  const knownTypeContext = getKnownTypeContext(document);
   const knownFlags = new Set(KBENGINE_FLAGS.map(flag => flag.name));
   const knownLevels = new Set(DETAIL_LEVELS);
 
@@ -578,7 +655,7 @@ function validateScalarTagValues(
     let typeCandidateMatch: RegExpExecArray | null;
     while ((typeCandidateMatch = typeCandidateRegex.exec(value)) !== null) {
       const candidate = typeCandidateMatch[0];
-      if (knownTypes.has(candidate)) {
+      if (knownTypeContext.builtins.has(candidate) || knownTypeContext.entityTypes.has(candidate)) {
         continue;
       }
 
@@ -586,7 +663,7 @@ function validateScalarTagValues(
         continue;
       }
 
-      const customTypeResolution = resolveCustomTypeReference(document, candidate);
+      const customTypeResolution = resolveCustomTypeReference(document, candidate, knownTypeContext.customTypes);
       if (customTypeResolution.status === 'resolved' || customTypeResolution.status === 'unverifiable') {
         continue;
       }
@@ -802,6 +879,8 @@ function pushDiagnosticForMatch(
 
 function isReservedTagName(tagName: string): boolean {
   return tagName === 'root'
+    || tagName === 'Interface'
+    || tagName === 'interface'
     || tagName === 'implementedBy'
     || ALLOWED_TOP_LEVEL_SECTIONS.has(tagName as KBEngineSectionName)
     || ALLOWED_PROPERTY_CHILDREN.has(tagName)
@@ -811,14 +890,27 @@ function isReservedTagName(tagName: string): boolean {
 }
 
 function getSectionLabel(section: KBEngineSectionName): string {
-  switch (section) {
-    case 'Properties':
-      return '属性区块';
-    case 'BaseMethods':
-    case 'CellMethods':
-    case 'ClientMethods':
-      return '方法区块';
+  if (section === 'Parent') {
+    return '????';
   }
+
+  if (section === 'Interfaces') {
+    return '????';
+  }
+
+  if (section === 'Components') {
+    return '????';
+  }
+
+  if (section === 'Properties') {
+    return '????';
+  }
+
+  if (section === 'Volatile') {
+    return '??????';
+  }
+
+  return '????';
 }
 
 function getSymbolHover(
@@ -868,6 +960,119 @@ function getSymbolHover(
   return new vscode.Hover(markdown);
 }
 
+function getCustomTypeHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Hover | null {
+  if (isPositionInsideTagValue(document, position, 'Type')) {
+    return null;
+  }
+
+  const customTypeInfo = findCustomTypeAtPosition(document, position, word);
+  if (!customTypeInfo) {
+    return null;
+  }
+
+  return createCustomTypeHover(customTypeInfo, 'Custom type from `types.xml`');
+}
+
+function getTypeValueHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Hover | null {
+  if (!isPositionInsideTagValue(document, position, 'Type')) {
+    return null;
+  }
+
+  const customTypeInfo = findCustomTypeInfo(word, document);
+  if (customTypeInfo) {
+    return createCustomTypeHover(customTypeInfo, 'Referenced custom type from `types.xml`');
+  }
+
+  const componentPath = findDefinitionFileByCategory(word, 'component', document);
+  if (componentPath) {
+    return createDefinitionReferenceHover(word, 'Component type', componentPath);
+  }
+
+  const entityPath = findEntityDefinitionFile(word, document);
+  if (entityPath) {
+    const entityInfo = getRegisteredEntityInfo(document, word);
+    const extraLines = entityInfo
+      ? [
+          `**Base**: \`${entityInfo.hasBase}\``,
+          `**Cell**: \`${entityInfo.hasCell}\``,
+          `**Client**: \`${entityInfo.hasClient}\``
+        ]
+      : [];
+    return createDefinitionReferenceHover(word, 'Entity type', entityPath, extraLines);
+  }
+
+  return null;
+}
+
+function createCustomTypeHover(
+  customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>,
+  summary: string
+): vscode.Hover {
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(`**${customTypeInfo.name}**\n\n`);
+  markdown.appendMarkdown(`${summary}\n\n`);
+  markdown.appendMarkdown(`**AliasType**: \`${customTypeInfo.aliasType}\`\n\n`);
+
+  if (customTypeInfo.rawValue && customTypeInfo.rawValue !== customTypeInfo.aliasType) {
+    markdown.appendMarkdown(`**Raw**: \`${customTypeInfo.rawValue}\`\n\n`);
+  }
+
+  if (customTypeInfo.implementedBy) {
+    markdown.appendMarkdown(`**implementedBy**: \`${customTypeInfo.implementedBy}\`\n\n`);
+  }
+
+  if (customTypeInfo.pythonFilePath) {
+    markdown.appendMarkdown(`**Python**: \`${path.basename(customTypeInfo.pythonFilePath)}\`\n\n`);
+  }
+
+  if (customTypeInfo.properties.length > 0) {
+    markdown.appendMarkdown('**Properties**:\n');
+    for (const property of customTypeInfo.properties) {
+      markdown.appendMarkdown(`- \`${property.name}\`: \`${property.typeName || 'UNKNOWN'}\`\n`);
+    }
+  }
+
+  return new vscode.Hover(markdown);
+}
+
+function createDefinitionReferenceHover(
+  name: string,
+  summary: string,
+  filePath: string,
+  extraLines: string[] = []
+): vscode.Hover {
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(`**${name}**\n\n`);
+  markdown.appendMarkdown(`${summary}\n\n`);
+  markdown.appendMarkdown(`**Definition**: \`${path.basename(filePath)}\`\n\n`);
+
+  for (const line of extraLines) {
+    markdown.appendMarkdown(`${line}\n\n`);
+  }
+
+  return new vscode.Hover(markdown);
+}
+
+function getRegisteredEntityInfo(
+  document: vscode.TextDocument,
+  entityName: string
+) {
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  return getRegisteredEntities(workspaceRoot).find(entity => entity.name === entityName) || null;
+}
+
 type CustomTypeResolutionStatus =
   | 'resolved'
   | 'missingTypeRegistration'
@@ -880,68 +1085,29 @@ interface CustomTypeResolution {
 
 function resolveCustomTypeReference(
   document: vscode.TextDocument,
-  candidate: string
+  candidate: string,
+  registeredCustomTypes?: Set<string>
 ): CustomTypeResolution {
   const workspaceRoot = getWorkspaceRootForDocument(document);
   if (!workspaceRoot) {
     return { status: 'unverifiable' };
   }
 
-  const typesXmlPath = findExistingPath([
-    path.join(workspaceRoot, 'types.xml'),
-    path.join(workspaceRoot, 'entity_defs', 'types.xml'),
-    path.join(workspaceRoot, 'scripts', 'entity_defs', 'types.xml'),
-    path.join(workspaceRoot, 'assets', 'scripts', 'entity_defs', 'types.xml'),
-    path.join(workspaceRoot, 'scripts', 'types.xml'),
-    path.join(workspaceRoot, 'assets', 'scripts', 'types.xml')
-  ]);
-
-  if (!typesXmlPath) {
+  const customTypes = registeredCustomTypes ?? getRegisteredCustomTypes(workspaceRoot);
+  if (!customTypes.size) {
     return { status: 'unverifiable' };
   }
 
-  let typesXmlContent = '';
-  try {
-    typesXmlContent = fs.readFileSync(typesXmlPath, 'utf8');
-  } catch {
-    return { status: 'unverifiable' };
-  }
-
-  const typeRegistrationPattern = new RegExp(`<${candidate}(?=[\\s>/])`, 'i');
-  if (!typeRegistrationPattern.test(typesXmlContent)) {
+  if (!customTypes.has(candidate)) {
     return { status: 'missingTypeRegistration' };
   }
 
-  const customPythonTypePath = findExistingPath([
-    path.join(workspaceRoot, 'user_type', `${candidate}.py`),
-    path.join(workspaceRoot, 'scripts', 'user_type', `${candidate}.py`),
-    path.join(workspaceRoot, 'assets', 'scripts', 'user_type', `${candidate}.py`)
-  ]);
-
+  const customPythonTypePath = findCustomTypePythonFile(workspaceRoot, candidate);
   if (!customPythonTypePath) {
     return { status: 'missingPythonFile' };
   }
 
   return { status: 'resolved' };
-}
-
-function getWorkspaceRootForDocument(document: vscode.TextDocument): string | null {
-  const folder = vscode.workspace.workspaceFolders?.find(item => {
-    const folderPath = item.uri.fsPath;
-    return document.fileName === folderPath || document.fileName.startsWith(`${folderPath}${path.sep}`) || document.fileName.startsWith(`${folderPath}/`);
-  });
-
-  return folder?.uri.fsPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || null;
-}
-
-function findExistingPath(candidates: string[]): string | null {
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
 }
 
 function findEnclosingSymbol(
@@ -983,22 +1149,73 @@ function findEntityDefinitionInDef(
   position: vscode.Position,
   word: string
 ): vscode.Location | null {
-  if (!looksLikeEntityName(word)) {
+  const definitionReference = findDefinitionReferenceInDef(document, position, word);
+  return createDefinitionLocation(document, definitionReference);
+}
+
+function findTypeValueDefinitionInTypesXml(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Location | null {
+  if (!isPositionInsideTagValue(document, position, 'Type')) {
     return null;
   }
 
-  if (!isPositionInsideTagValue(document, position, 'Type')
-    && !isPositionInsideTagValue(document, position, 'Arg')
-    && !isPositionInsideChildTag(document, position, 'Parent')) {
+  return createDefinitionLocation(document, findTypeValueDefinitionReference(document, word));
+}
+
+function findCustomTypeDefinition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Location | null {
+  if (isPositionInsideTagValue(document, position, 'Type')) {
     return null;
   }
 
-  const defPath = findEntityDefFile(word);
-  if (!defPath || defPath === document.uri.fsPath) {
+  const customTypeInfo = findCustomTypeAtPosition(document, position, word);
+  if (!customTypeInfo) {
     return null;
   }
 
-  return new vscode.Location(vscode.Uri.file(defPath), new vscode.Position(0, 0));
+  if (isPositionInsideImplementedByValue(document, position)) {
+    if (customTypeInfo.pythonFilePath) {
+      return new vscode.Location(vscode.Uri.file(customTypeInfo.pythonFilePath), new vscode.Position(0, 0));
+    }
+    return null;
+  }
+
+  if (customTypeInfo.pythonFilePath) {
+    return new vscode.Location(vscode.Uri.file(customTypeInfo.pythonFilePath), new vscode.Position(0, 0));
+  }
+
+  return new vscode.Location(
+    vscode.Uri.file(customTypeInfo.filePath),
+    new vscode.Position(customTypeInfo.line - 1, 0)
+  );
+}
+
+function findCustomTypeAtPosition(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+) {
+  if (!document.fileName.endsWith('types.xml')) {
+    return null;
+  }
+
+  const customTypeInfo = findCustomTypeInfo(word, document);
+  if (!customTypeInfo) {
+    return null;
+  }
+
+  const offset = document.offsetAt(position);
+  if (offset < customTypeInfo.startOffset || offset > customTypeInfo.endOffset) {
+    return null;
+  }
+
+  return customTypeInfo;
 }
 
 function buildSymbolHoverInfo(
@@ -1063,6 +1280,13 @@ function isPositionInsideTagValue(
   return false;
 }
 
+function isPositionInsideImplementedByValue(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): boolean {
+  return isPositionInsideTagValue(document, position, 'implementedBy');
+}
+
 function isPositionInsideChildTag(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -1094,6 +1318,164 @@ function isPositionInsideChildTag(
 function looksLikeEntityName(word: string): boolean {
   const builtInTypes = new Set(KBENGINE_TYPES.map(type => type.name));
   return !builtInTypes.has(word) && /^[A-Z][A-Za-z0-9_]*$/.test(word);
+}
+
+function createDefinitionLocation(
+  document: vscode.TextDocument,
+  definitionReference: { filePath: string; line?: number } | null
+): vscode.Location | null {
+  if (!definitionReference) {
+    return null;
+  }
+
+  if (definitionReference.filePath === document.uri.fsPath && definitionReference.line === undefined) {
+    return null;
+  }
+
+  return new vscode.Location(
+    vscode.Uri.file(definitionReference.filePath),
+    new vscode.Position((definitionReference.line || 1) - 1, 0)
+  );
+}
+
+function findTypeValueDefinitionReference(
+  document: vscode.TextDocument,
+  word: string
+): { filePath: string; line?: number } | null {
+  const customTypeEntry = findDefinitionEntryByCategory(word, 'type', document);
+  if (customTypeEntry) {
+    return { filePath: customTypeEntry.filePath, line: customTypeEntry.line };
+  }
+
+  const componentPath = findDefinitionFileByCategory(word, 'component', document);
+  if (componentPath) {
+    return { filePath: componentPath };
+  }
+
+  const entityPath = findEntityDefinitionFile(word, document);
+  if (entityPath) {
+    return { filePath: entityPath };
+  }
+
+  return null;
+}
+
+function findDefinitionReferenceInDef(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): { filePath: string; line?: number } | null {
+  if (!looksLikeEntityName(word)) {
+    return null;
+  }
+
+  if (isPositionInsideTagValue(document, position, 'Arg')) {
+    const entityPath = findEntityDefinitionFile(word, document);
+    if (entityPath) {
+      return { filePath: entityPath };
+    }
+  }
+
+  if (isPositionInsideTagValue(document, position, 'Type')) {
+    return findTypeValueDefinitionReference(document, word);
+  }
+
+  if (isPositionInsideChildTag(document, position, 'Interfaces')) {
+    const interfacePath = findDefinitionFileByCategory(word, 'interface', document);
+    if (interfacePath) {
+      return { filePath: interfacePath };
+    }
+  }
+
+  if (isPositionInsideChildTag(document, position, 'Parent')) {
+    const siblingPath = findDefinitionSiblingForParent(document, word);
+    if (siblingPath) {
+      return { filePath: siblingPath };
+    }
+  }
+
+  return null;
+}
+
+function findDefinitionSiblingForParent(
+  document: vscode.TextDocument,
+  word: string
+): string | null {
+  const normalizedPath = document.uri.fsPath.replace(/\\/g, '/');
+  if (normalizedPath.includes('/components/')) {
+    const componentPath = findDefinitionFileByCategory(word, 'component', document);
+    if (componentPath) {
+      return componentPath;
+    }
+  }
+
+  return findEntityDefinitionFile(word, document);
+}
+
+interface KnownTypeContext {
+  builtins: Set<string>;
+  customTypes: Set<string>;
+  entityTypes: Set<string>;
+}
+
+interface KnownTypeSuggestion {
+  name: string;
+  detail: string;
+  documentation: string;
+}
+
+function getKnownTypeContext(document: vscode.TextDocument): KnownTypeContext {
+  const builtins = new Set(KBENGINE_TYPES.map(type => type.name));
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+
+  if (!workspaceRoot) {
+    return {
+      builtins,
+      customTypes: new Set<string>(),
+      entityTypes: new Set<string>()
+    };
+  }
+
+  return {
+    builtins,
+    customTypes: getRegisteredCustomTypes(workspaceRoot),
+    entityTypes: new Set(getRegisteredEntities(workspaceRoot).map(entity => entity.name))
+  };
+}
+
+function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSuggestion[] {
+  const suggestions = new Map<string, KnownTypeSuggestion>();
+
+  for (const type of KBENGINE_TYPES) {
+    suggestions.set(type.name, {
+      name: type.name,
+      detail: type.detail,
+      documentation: type.documentation
+    });
+  }
+
+  const knownTypeContext = getKnownTypeContext(document);
+  for (const typeName of [...knownTypeContext.customTypes].sort()) {
+    if (!suggestions.has(typeName)) {
+      suggestions.set(typeName, {
+        name: typeName,
+        detail: 'Custom type',
+        documentation: '来自 types.xml 的自定义类型。'
+      });
+    }
+  }
+
+  for (const entityName of [...knownTypeContext.entityTypes].sort()) {
+    if (!suggestions.has(entityName)) {
+      suggestions.set(entityName, {
+        name: entityName,
+        detail: 'Entity type',
+        documentation: '来自 entities.xml 的实体类型引用。'
+      });
+    }
+  }
+
+  return [...suggestions.values()];
 }
 
 export class PythonDefinitionProvider implements vscode.DefinitionProvider {
@@ -1234,23 +1616,3 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
   }
 }
 
-function findEntityDefFile(entityName: string): string | null {
-  if (!vscode.workspace.workspaceFolders) {
-    return null;
-  }
-
-  const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
-  const possiblePaths = [
-    path.join(workspaceRoot, 'entity_defs', `${entityName}.def`),
-    path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`),
-    path.join(workspaceRoot, 'assets/scripts/entity_defs', `${entityName}.def`)
-  ];
-
-  for (const possiblePath of possiblePaths) {
-    if (fs.existsSync(possiblePath)) {
-      return possiblePath;
-    }
-  }
-
-  return null;
-}

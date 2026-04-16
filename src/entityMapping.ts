@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { joinWorkspacePath } from './workspacePath';
 
 /**
  * 实体定义映射信息
@@ -90,19 +91,19 @@ export class EntityMappingManager {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
     const entityName = path.basename(defPath, '.def');
     const possiblePaths = [
-      path.join(workspaceRoot, 'scripts/base', `${entityName}.py`),
-      path.join(workspaceRoot, 'scripts/cell', `${entityName}.py`),
-      path.join(workspaceRoot, 'scripts/interfaces', `${entityName}.py`),
-      path.join(workspaceRoot, 'assets/scripts/base', `${entityName}.py`),
-      path.join(workspaceRoot, 'assets/scripts/cell', `${entityName}.py`),
-      path.join(workspaceRoot, 'assets/scripts/interfaces', `${entityName}.py`),
-      path.join(workspaceRoot, 'assets/scripts/entity_defs', `${entityName}.py`),
-      path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.py`)
+      joinWorkspacePath(workspaceRoot, 'scripts/base', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'scripts/cell', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'scripts/interfaces', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'assets/scripts/base', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'assets/scripts/cell', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'assets/scripts/interfaces', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'assets/scripts/entity_defs', `${entityName}.py`),
+      joinWorkspacePath(workspaceRoot, 'scripts/entity_defs', `${entityName}.py`)
     ];
     const existingPaths = possiblePaths.filter(candidatePath => fs.existsSync(candidatePath));
 
     return existingPaths.length > 0 ? existingPaths : [
-      path.join(workspaceRoot, 'scripts/base', `${entityName}.py`)
+      joinWorkspacePath(workspaceRoot, 'scripts/base', `${entityName}.py`)
     ];
   }
 

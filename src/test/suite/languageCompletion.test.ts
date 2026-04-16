@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import {
   FakeCompletionItem,
   FakePosition,
@@ -8,19 +9,60 @@ import {
 } from './testUtils';
 
 type LanguageProvidersModule = typeof import('../../languageProviders');
+type DefinitionWorkspaceModule = typeof import('../../definitionWorkspace');
 
 describe('KBEngineCompletionProvider', () => {
   let restoreModuleMocks: (() => void) | undefined;
   let KBEngineCompletionProvider: LanguageProvidersModule['KBEngineCompletionProvider'];
 
   before(() => {
+    const typesXmlPath = path.join('/workspace', 'scripts', 'entity_defs', 'types.xml');
+    const entitiesXmlPath = path.join('/workspace', 'scripts', 'entities.xml');
+    const avatarDefPath = path.join('/workspace', 'scripts', 'entity_defs', 'Avatar.def');
+    const fsStub = {
+      existsSync(candidatePath: string): boolean {
+        return [
+          typesXmlPath,
+          entitiesXmlPath,
+          avatarDefPath
+        ].includes(candidatePath);
+      },
+      readFileSync(candidatePath: string): string {
+        if (candidatePath === typesXmlPath) {
+          return '<root><RegisteredType/></root>';
+        }
+
+        if (candidatePath === entitiesXmlPath) {
+          return '<root><Avatar hasBase="true"/></root>';
+        }
+
+        throw new Error(`Unexpected readFileSync path: ${candidatePath}`);
+      }
+    };
+
+    const vscodeStub = createVscodeStub();
+    const { loadedModule: definitionWorkspaceModule, restore: restoreDefinitionWorkspace } =
+      loadModuleWithMocks<DefinitionWorkspaceModule>(
+        __filename,
+        '../../definitionWorkspace',
+        { vscode: vscodeStub, fs: fsStub },
+        true
+      );
+
     const { loadedModule, restore } = loadModuleWithMocks<LanguageProvidersModule>(
       __filename,
       '../../languageProviders',
-      { vscode: createVscodeStub() },
+      {
+        vscode: vscodeStub,
+        fs: fsStub,
+        './definitionWorkspace': definitionWorkspaceModule
+      },
       true
     );
-    restoreModuleMocks = restore;
+    restoreModuleMocks = () => {
+      restore();
+      restoreDefinitionWorkspace();
+    };
     KBEngineCompletionProvider = loadedModule.KBEngineCompletionProvider;
   });
 
@@ -49,6 +91,8 @@ describe('KBEngineCompletionProvider', () => {
     assert.ok(itemLabels.includes('UINT32'));
     assert.ok(itemLabels.includes('VECTOR3'));
     assert.ok(itemLabels.includes('FIXED_DICT'));
+    assert.ok(itemLabels.includes('RegisteredType'));
+    assert.ok(itemLabels.includes('Avatar'));
   });
 
   it('suggests top-level def tags after an opening angle bracket', () => {
@@ -66,6 +110,9 @@ describe('KBEngineCompletionProvider', () => {
 
     const itemLabels = labels(items);
     assert.ok(itemLabels.includes('Properties'));
+    assert.ok(itemLabels.includes('Parent'));
+    assert.ok(itemLabels.includes('Interfaces'));
+    assert.ok(itemLabels.includes('Components'));
     assert.ok(itemLabels.includes('BaseMethods'));
     assert.ok(itemLabels.includes('CellMethods'));
     assert.ok(itemLabels.includes('ClientMethods'));

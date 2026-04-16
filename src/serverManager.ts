@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
+import { joinWorkspacePath, usesPosixPath } from './workspacePath';
 
 /**
  * KBEngine 服务器组件信息
@@ -186,10 +187,10 @@ export class KBEngineServerManager {
     }
 
     const possiblePaths = [
-      path.join(workspaceFolder, '../kbe/bin/server'),
-      path.join(workspaceFolder, '../../kbe/bin/server'),
-      path.join(workspaceFolder, '../kbengine/kbe/bin/server'),
-      path.join(workspaceFolder, '../../kbengine/kbe/bin/server'),
+      joinWorkspacePath(workspaceFolder, '../kbe/bin/server'),
+      joinWorkspacePath(workspaceFolder, '../../kbe/bin/server'),
+      joinWorkspacePath(workspaceFolder, '../kbengine/kbe/bin/server'),
+      joinWorkspacePath(workspaceFolder, '../../kbengine/kbe/bin/server'),
       process.env.KBENGINE_HOME ? path.join(process.env.KBENGINE_HOME, 'kbe/bin/server') : '',
       process.env.KBENGINE_HOME ? path.join(process.env.KBENGINE_HOME, 'kbe/bin') : '',
       'D:/kbengine/kbe/bin/server',
@@ -246,10 +247,10 @@ export class KBEngineServerManager {
     if (kbeRoot) {
       env.KBE_ROOT = kbeRoot;
       env.KBE_RES_PATH = [
-        path.join(kbeRoot, 'kbe', 'res'),
+        joinWorkspacePath(kbeRoot, 'kbe', 'res'),
         configPath,
-        path.join(configPath, 'res'),
-        path.join(configPath, 'scripts')
+        joinWorkspacePath(configPath, 'res'),
+        joinWorkspacePath(configPath, 'scripts')
       ].join(path.delimiter);
     }
 
@@ -262,9 +263,9 @@ export class KBEngineServerManager {
    */
   getExecutablePath(component: ServerComponent): string {
     const binPath = this.getBinPath();
-    const isWindows = process.platform === 'win32';
+    const isWindows = process.platform === 'win32' && !usesPosixPath(binPath);
     const exeName = isWindows ? `${component.executable}.exe` : component.executable;
-    return path.join(binPath, exeName);
+    return joinWorkspacePath(binPath, exeName);
   }
 
   /**

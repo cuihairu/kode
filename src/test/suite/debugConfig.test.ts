@@ -13,9 +13,9 @@ class FakeUri {
   }
 }
 
-class FakeEventEmitter<T> {
+class FakeEventEmitter {
   event = () => undefined;
-  fire(_value?: T): void {
+  fire(): void {
     return;
   }
   dispose(): void {

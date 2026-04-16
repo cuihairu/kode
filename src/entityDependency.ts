@@ -5,7 +5,11 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
+import {
+  findEntityDefinitionFile,
+  getRegisteredEntities,
+  getWorkspaceRootForDocument
+} from './definitionWorkspace';
 
 /**
  * 实体类型
@@ -230,36 +234,18 @@ export class EntityDependencyAnalyzer {
    * 从 entities.xml 读取实体列表和类型
    */
   async loadFromEntitiesXml(): Promise<void> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    const workspaceRoot = getWorkspaceRootForDocument();
+    if (!workspaceRoot) {
       return;
     }
 
-    const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
-    const entitiesXmlPath = path.join(
-      workspaceFolder.uri.fsPath,
-      kbengineConfig.get<string>('entitiesXmlPath', 'scripts/entities.xml')
-    );
-
-    if (!fs.existsSync(entitiesXmlPath)) {
-      return;
-    }
-
-    const content = fs.readFileSync(entitiesXmlPath, 'utf-8');
-    const entityMatches = /<(\w+)\s+([^>]+)>/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = entityMatches.exec(content)) !== null) {
-      const entityName = match[1];
-      const attributes = match[2];
-
-      // 查找对应的 .def 文件
+    for (const entity of getRegisteredEntities(workspaceRoot)) {
+      const entityName = entity.name;
       const defPath = this.findEntityDefFile(entityName);
       if (!defPath) {
         continue;
       }
 
-      // 如果实体不存在，创建它
       if (!this.entities.has(entityName)) {
         const node: EntityNode = {
           name: entityName,
@@ -269,20 +255,18 @@ export class EntityDependencyAnalyzer {
           referencedBy: 0
         };
 
-        // 解析类型
-        if (/\bhasCell\s*=\s*"true"/i.test(attributes)) {
+        if (entity.hasCell) {
           node.types.push(EntityType.Cell);
         }
-        if (/\bhasBase\s*=\s*"true"/i.test(attributes)) {
+        if (entity.hasBase) {
           node.types.push(EntityType.Base);
         }
-        if (/\bhasClient\s*=\s*"true"/i.test(attributes)) {
+        if (entity.hasClient) {
           node.types.push(EntityType.Client);
         }
 
         this.entities.set(entityName, node);
       }
-
     }
   }
 
@@ -290,30 +274,7 @@ export class EntityDependencyAnalyzer {
    * 查找实体定义文件
    */
   private findEntityDefFile(entityName: string): string | null {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
-      return null;
-    }
-
-    const workspaceRoot = workspaceFolder.uri.fsPath;
-    const kbengineConfig = vscode.workspace.getConfiguration('kbengine');
-    const possiblePaths = [
-      path.join(
-        workspaceRoot,
-        kbengineConfig.get<string>('entityDefsPath', 'scripts/entity_defs'),
-        `${entityName}.def`
-      ),
-      path.join(workspaceRoot, 'scripts/entity_defs', `${entityName}.def`),
-      path.join(workspaceRoot, 'entity_defs', `${entityName}.def`)
-    ];
-
-    for (const possiblePath of possiblePaths) {
-      if (fs.existsSync(possiblePath)) {
-        return possiblePath;
-      }
-    }
-
-    return null;
+    return findEntityDefinitionFile(entityName);
   }
 
   /**

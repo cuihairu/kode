@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { joinWorkspacePath } from './workspacePath';
 
 /**
  * 实体类型配置
@@ -144,7 +145,11 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const defFilePath = path.join(workspaceFolder.uri.fsPath, this.config.defOutputPath, `${entity.config.name}.def`);
+    const defFilePath = joinWorkspacePath(
+      workspaceFolder.uri.fsPath,
+      this.config.defOutputPath,
+      `${entity.config.name}.def`
+    );
     const content = this.generateDefContent(entity);
 
     // 确保目录存在
@@ -305,7 +310,11 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const pythonFilePath = path.join(workspaceFolder.uri.fsPath, this.config.pythonOutputPath, `${entity.config.name}.py`);
+    const pythonFilePath = joinWorkspacePath(
+      workspaceFolder.uri.fsPath,
+      this.config.pythonOutputPath,
+      `${entity.config.name}.py`
+    );
     const content = this.generatePythonContent(entity);
 
     // 确保目录存在
@@ -429,7 +438,7 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const entitiesXmlPath = path.join(
+    const entitiesXmlPath = joinWorkspacePath(
       workspaceFolder.uri.fsPath,
       vscode.workspace
         .getConfiguration('kbengine')
