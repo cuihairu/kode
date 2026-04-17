@@ -13,6 +13,7 @@ describe('definitionWorkspace', () => {
   let getRegisteredCustomTypes: DefinitionWorkspaceModule['getRegisteredCustomTypes'];
   let getCustomTypeInfos: DefinitionWorkspaceModule['getCustomTypeInfos'];
   let getDefinitionEntries: DefinitionWorkspaceModule['getDefinitionEntries'];
+  let findEntityDefinitionsRoot: DefinitionWorkspaceModule['findEntityDefinitionsRoot'];
 
   before(() => {
     const entityDefsRoot = path.join('/workspace', 'scripts', 'entity_defs');
@@ -78,6 +79,7 @@ describe('definitionWorkspace', () => {
     getRegisteredCustomTypes = loadedModule.getRegisteredCustomTypes;
     getCustomTypeInfos = loadedModule.getCustomTypeInfos;
     getDefinitionEntries = loadedModule.getDefinitionEntries;
+    findEntityDefinitionsRoot = loadedModule.findEntityDefinitionsRoot;
   });
 
   after(() => {
@@ -129,5 +131,12 @@ describe('definitionWorkspace', () => {
     assert.strictEqual(entries[0].line, 12);
     assert.strictEqual(entries[1].line, 3);
     assert.strictEqual(entries[2].line, 2);
+  });
+
+  it('exposes the resolved entity definition root for shared path resolution', () => {
+    assert.strictEqual(
+      normalizePath(findEntityDefinitionsRoot('/workspace') || undefined),
+      '/workspace/scripts/entity_defs'
+    );
   });
 });

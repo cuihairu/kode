@@ -22,6 +22,7 @@ import {
   PythonDefinitionProvider,
   validateDocument
 } from './languageProviders';
+import { findEntityDefinitionFile } from './definitionWorkspace';
 
 /**
  * Kode - KBEngine Development Environment
@@ -141,23 +142,16 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const entityDefsPathConfig = vscode.workspace
-        .getConfiguration('kbengine')
-        .get<string>('entityDefsPath', 'scripts/entity_defs');
-
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-      if (!workspaceFolder) {
+      const definitionPath = findEntityDefinitionFile(entityName);
+      if (!definitionPath) {
+        vscode.window.showWarningMessage(
+          `鎵撳紑瀹炰綋瀹氫箟澶辫触: ${entityName}.def (鏈壘鍒板畾涔夋枃浠?`
+        );
         return;
       }
 
-      const entityUri = vscode.Uri.joinPath(
-        workspaceFolder.uri,
-        entityDefsPathConfig,
-        `${entityName}.def`
-      );
-
       try {
-        const document = await vscode.workspace.openTextDocument(entityUri);
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(definitionPath));
         await vscode.window.showTextDocument(document);
       } catch (error) {
         vscode.window.showWarningMessage(

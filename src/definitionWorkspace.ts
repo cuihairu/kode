@@ -254,6 +254,34 @@ export function findEntityDefinitionFile(
   return findExistingLookupPath(candidate);
 }
 
+export function findEntityDefinitionsRoot(
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  return getDefinitionWorkspaceLayout(workspaceRoot).entityDefsRoot;
+}
+
+export function findEntitiesXmlFile(
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  return getDefinitionWorkspaceLayout(workspaceRoot).entitiesXmlPath;
+}
+
 export function findDefinitionFileByCategory(
   name: string,
   category: DefinitionCategory,

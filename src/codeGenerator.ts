@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { findEntitiesXmlFile, findEntityDefinitionsRoot } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 
 /**
@@ -116,8 +117,9 @@ export class KBEngineCodeGenerator {
     }
 
     const config = vscode.workspace.getConfiguration('kbengine.generator');
+    const configuredDefOutputPath = config.get<string>('defOutputPath') || 'scripts/entity_defs';
     return {
-      defOutputPath: config.get<string>('defOutputPath') || 'scripts/entity_defs',
+      defOutputPath: this.resolveDefOutputPath(configuredDefOutputPath, workspaceFolder.uri.fsPath),
       pythonOutputPath: config.get<string>('pythonOutputPath') || 'scripts',
       generatePython: config.get<boolean>('generatePython') ?? true,
       registerInEntitiesXml: config.get<boolean>('registerInEntitiesXml') ?? true
@@ -136,6 +138,19 @@ export class KBEngineCodeGenerator {
     };
   }
 
+  private resolveDefOutputPath(configuredPath: string, workspaceRoot: string): string {
+    if (path.isAbsolute(configuredPath)) {
+      return configuredPath;
+    }
+
+    const normalizedConfiguredPath = configuredPath.replace(/\\/g, '/');
+    if (normalizedConfiguredPath !== 'scripts/entity_defs') {
+      return configuredPath;
+    }
+
+    return findEntityDefinitionsRoot(workspaceRoot) || configuredPath;
+  }
+
   /**
    * 生成 .def 文件
    */
@@ -145,11 +160,10 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const defFilePath = joinWorkspacePath(
-      workspaceFolder.uri.fsPath,
-      this.config.defOutputPath,
-      `${entity.config.name}.def`
-    );
+    const outputRoot = path.isAbsolute(this.config.defOutputPath)
+      ? this.config.defOutputPath
+      : joinWorkspacePath(workspaceFolder.uri.fsPath, this.config.defOutputPath);
+    const defFilePath = joinWorkspacePath(outputRoot, `${entity.config.name}.def`);
     const content = this.generateDefContent(entity);
 
     // 确保目录存在
@@ -438,7 +452,7 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const entitiesXmlPath = joinWorkspacePath(
+    const entitiesXmlPath = findEntitiesXmlFile() || joinWorkspacePath(
       workspaceFolder.uri.fsPath,
       vscode.workspace
         .getConfiguration('kbengine')

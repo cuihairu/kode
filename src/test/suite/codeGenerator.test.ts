@@ -7,18 +7,37 @@ type EntityDefinition = import('../../codeGenerator').EntityDefinition;
 describe('KBEngineCodeGenerator', () => {
   let restoreModuleMocks: (() => void) | undefined;
   let KBEngineCodeGenerator: CodeGeneratorModule['KBEngineCodeGenerator'];
+  let mkdirCalls: string[];
   let fakeFs: {
     existsSync: (candidatePath: string) => boolean;
     readFileSync: (candidatePath: string) => string;
     writeFileSync: (candidatePath: string, content: string) => void;
+    mkdirSync: (candidatePath: string, options?: { recursive?: boolean }) => void;
   };
   let writtenFiles: Record<string, string>;
+  let resolvedEntitiesXmlPath: string | null;
+  let resolvedEntityDefsRoot: string | null;
+  let generatorConfigValues: Record<string, unknown>;
 
   before(() => {
+    mkdirCalls = [];
     writtenFiles = {};
+    resolvedEntitiesXmlPath = '/workspace/config/entities/entities.xml';
+    resolvedEntityDefsRoot = '/workspace/config/entity_defs';
+    generatorConfigValues = {
+      defOutputPath: 'scripts/entity_defs',
+      pythonOutputPath: 'scripts',
+      generatePython: true,
+      registerInEntitiesXml: true
+    };
     fakeFs = {
       existsSync(candidatePath: string): boolean {
-        return candidatePath === '/workspace/config/entities/entities.xml';
+        return [
+          '/workspace/config/entities/entities.xml',
+          '/workspace/config/entity_defs',
+          '/workspace/custom_defs',
+          '/workspace/scripts/entity_defs'
+        ].includes(candidatePath);
       },
       readFileSync(candidatePath: string): string {
         assert.strictEqual(candidatePath, '/workspace/config/entities/entities.xml');
@@ -26,6 +45,9 @@ describe('KBEngineCodeGenerator', () => {
       },
       writeFileSync(candidatePath: string, content: string): void {
         writtenFiles[candidatePath] = content;
+      },
+      mkdirSync(candidatePath: string): void {
+        mkdirCalls.push(candidatePath);
       }
     };
 
@@ -35,13 +57,7 @@ describe('KBEngineCodeGenerator', () => {
         getConfiguration: (section?: string) => ({
           get<T>(key: string, defaultValue: T): T {
             if (section === 'kbengine.generator') {
-              const values: Record<string, unknown> = {
-                defOutputPath: 'scripts/entity_defs',
-                pythonOutputPath: 'scripts',
-                generatePython: true,
-                registerInEntitiesXml: true
-              };
-              return (values[key] as T | undefined) ?? defaultValue;
+              return (generatorConfigValues[key] as T | undefined) ?? defaultValue;
             }
 
             if (section === 'kbengine') {
@@ -60,7 +76,14 @@ describe('KBEngineCodeGenerator', () => {
     const { loadedModule, restore } = loadModuleWithMocks<CodeGeneratorModule>(
       __filename,
       '../../codeGenerator',
-      { vscode: vscodeStub, fs: fakeFs },
+      {
+        vscode: vscodeStub,
+        fs: fakeFs,
+        './definitionWorkspace': {
+          findEntitiesXmlFile: () => resolvedEntitiesXmlPath,
+          findEntityDefinitionsRoot: () => resolvedEntityDefsRoot
+        }
+      },
       true
     );
 
@@ -73,7 +96,16 @@ describe('KBEngineCodeGenerator', () => {
   });
 
   beforeEach(() => {
+    mkdirCalls = [];
     writtenFiles = {};
+    resolvedEntitiesXmlPath = '/workspace/config/entities/entities.xml';
+    resolvedEntityDefsRoot = '/workspace/config/entity_defs';
+    generatorConfigValues = {
+      defOutputPath: 'scripts/entity_defs',
+      pythonOutputPath: 'scripts',
+      generatePython: true,
+      registerInEntitiesXml: true
+    };
   });
 
   it('writes source-backed parent, property and method structures into generated def content', () => {
@@ -125,5 +157,53 @@ describe('KBEngineCodeGenerator', () => {
     const output = writtenFiles['/workspace/config/entities/entities.xml'];
     assert.ok(output);
     assert.ok(output.includes('<Avatar hasCell="true" hasBase="true" hasClient="true" />'));
+  });
+
+  it('prefers definitionWorkspace when resolving entities.xml', async () => {
+    resolvedEntitiesXmlPath = '/workspace/config/entities/entities.xml';
+    const generator = new KBEngineCodeGenerator({ subscriptions: [] } as never);
+
+    await generator.registerInEntitiesXml({
+      name: 'Hero',
+      hasBase: true,
+      hasCell: false,
+      hasClient: false
+    });
+
+    assert.ok(writtenFiles['/workspace/config/entities/entities.xml']);
+  });
+
+  it('writes generated defs into the resolved definition workspace root by default', async () => {
+    const generator = new KBEngineCodeGenerator({ subscriptions: [] } as never);
+
+    const defFilePath = await generator.generateDefFile({
+      config: {
+        name: 'Avatar',
+        hasBase: true,
+        hasCell: false,
+        hasClient: false
+      }
+    });
+
+    assert.strictEqual(defFilePath, '/workspace/config/entity_defs/Avatar.def');
+    assert.ok(writtenFiles['/workspace/config/entity_defs/Avatar.def']);
+    assert.deepStrictEqual(mkdirCalls, []);
+  });
+
+  it('keeps explicit generator def output path higher priority than definitionWorkspace', async () => {
+    generatorConfigValues.defOutputPath = 'custom_defs';
+    const generator = new KBEngineCodeGenerator({ subscriptions: [] } as never);
+
+    const defFilePath = await generator.generateDefFile({
+      config: {
+        name: 'Npc',
+        hasBase: true,
+        hasCell: false,
+        hasClient: false
+      }
+    });
+
+    assert.strictEqual(defFilePath, '/workspace/custom_defs/Npc.def');
+    assert.ok(writtenFiles['/workspace/custom_defs/Npc.def']);
   });
 });
