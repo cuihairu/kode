@@ -86,6 +86,7 @@ describe('EntityMappingManager', () => {
   let openedSelection: FakeRange | undefined;
   let openDocumentPath: string | undefined;
   let restoreModuleMocks: (() => void) | undefined;
+  let readFilePath: string | undefined;
 
   before(() => {
     const fakeVscode = {
@@ -94,6 +95,7 @@ describe('EntityMappingManager', () => {
         findFiles: async () => [],
         fs: {
           readFile: async (uri: FakeUri) => {
+            readFilePath = uri.fsPath;
             assert.strictEqual(uri.fsPath, defPath);
             return Buffer.from(defText, 'utf8');
           }
@@ -141,6 +143,7 @@ describe('EntityMappingManager', () => {
   beforeEach(() => {
     openedSelection = undefined;
     openDocumentPath = undefined;
+    readFilePath = undefined;
   });
 
   it('parses nested properties and method mappings from def files', async () => {
@@ -164,6 +167,7 @@ describe('EntityMappingManager', () => {
       attack: { defFile: defPath, line: 21 },
       notify: { defFile: defPath, line: 26 }
     });
+    assert.strictEqual(readFilePath, defPath);
   });
 
   it('opens the def file at the mapped line when jumping to a property', async () => {

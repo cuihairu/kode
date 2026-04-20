@@ -260,7 +260,7 @@ describe('EntityExplorerProvider', () => {
     assert.deepStrictEqual(
       brokenTypeItem.viewModel.summary.map((item: any) => [item.label, item.value]),
       [
-        ['Definition', 'scripts\\entity_defs\\types.xml'],
+        ['Definition', path.join('scripts', 'entity_defs', 'types.xml')],
         ['Category', 'Type'],
         ['AliasType', 'FIXED_DICT'],
         ['Python', 'Missing'],

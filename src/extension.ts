@@ -123,10 +123,11 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册侧边栏视图
   const entityExplorerProvider = new EntityExplorerProvider();
-  vscode.window.registerTreeDataProvider(
+  const entityExplorerRegistration = vscode.window.registerTreeDataProvider(
     'kbengine.entityExplorer',
     entityExplorerProvider
   );
+  context.subscriptions.push(entityExplorerRegistration);
 
   // 刷新实体浏览器的命令
   const refreshCommand = vscode.commands.registerCommand(
@@ -145,7 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
       const definitionPath = findEntityDefinitionFile(entityName);
       if (!definitionPath) {
         vscode.window.showWarningMessage(
-          `鎵撳紑瀹炰綋瀹氫箟澶辫触: ${entityName}.def (鏈壘鍒板畾涔夋枃浠?`
+          `打开实体定义失败: ${entityName}.def (未找到定义文件)`
         );
         return;
       }
@@ -167,16 +168,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册服务器控制视图
   const serverControlProvider = new ServerControlProvider(serverManager);
-  vscode.window.registerTreeDataProvider(
+  const serverControlRegistration = vscode.window.registerTreeDataProvider(
     'kbengine.serverControl',
     serverControlProvider
   );
+  context.subscriptions.push(serverControlRegistration);
 
   // 服务器状态变化时刷新视图
-  serverManager.onDidChangeStatus(() => {
+  const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
     serverControlProvider.refresh();
     updateStatusBar(serverManager);
   });
+  context.subscriptions.push(serverStatusSubscription);
 
   // 注册服务器控制命令
   const startServerCommand = vscode.commands.registerCommand(

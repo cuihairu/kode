@@ -330,6 +330,7 @@ export class KBEngineServerManager {
         cwd: configPath,
         env: this.buildComponentEnvironment(configPath, binPath)
       });
+      let startupTimer: NodeJS.Timeout | undefined;
 
       const runningServer: RunningServer = {
         component,
@@ -356,19 +357,28 @@ export class KBEngineServerManager {
       });
 
       childProcess.on('error', (error: Error) => {
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = undefined;
+        }
         outputChannel.appendLine(`[ERROR] 进程错误: ${error.message}`);
         runningServer.status = ServerStatus.Error;
+        this.runningServers.delete(component.name);
         this._onDidChangeStatus.fire();
       });
 
       childProcess.on('exit', (code: number | null, signal: string | null) => {
+        if (startupTimer) {
+          clearTimeout(startupTimer);
+          startupTimer = undefined;
+        }
         outputChannel.appendLine(`[INFO] 进程退出: code=${code}, signal=${signal}`);
         this.runningServers.delete(component.name);
         this._onDidChangeStatus.fire();
       });
 
       // 延迟标记为运行中
-      setTimeout(() => {
+      startupTimer = setTimeout(() => {
         if (this.runningServers.has(component.name)) {
           runningServer.status = ServerStatus.Running;
           this._onDidChangeStatus.fire();
@@ -517,5 +527,7 @@ export class KBEngineServerManager {
     this.runningServers.forEach(server => {
       server.process.kill();
     });
+    this.runningServers.clear();
+    this._onDidChangeStatus.dispose();
   }
 }

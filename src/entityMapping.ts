@@ -61,7 +61,7 @@ export class EntityMappingManager {
    */
   private async parseDefFile(entityName: string, defPath: string): Promise<void> {
     try {
-      const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(defPath));
+      const content = await vscode.workspace.fs.readFile(vscode.Uri.file(defPath));
       const text = Buffer.from(content).toString('utf8');
 
       const pythonPaths = this.findPythonFiles(defPath);
