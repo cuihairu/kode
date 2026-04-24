@@ -8,6 +8,7 @@ import {
 
 type ExplorerProvidersModule = typeof import('../../explorerProviders');
 type DefinitionWorkspaceModule = typeof import('../../definitionWorkspace');
+type DatabaseSchemaModule = typeof import('../../databaseSchema');
 
 function normalizePath(value: string): string {
   return value.replace(/\\/g, '/');
@@ -100,11 +101,19 @@ describe('EntityExplorerProvider', () => {
             '    <health>',
             '      <Type>UINT32</Type>',
             '      <Flags>BASE</Flags>',
+            '      <Persistent>true</Persistent>',
+            '      <Index>INDEX</Index>',
             '    </health>',
             '    <mana>',
             '      <Type>UINT16</Type>',
             '      <Flags>BASE</Flags>',
+            '      <Persistent>true</Persistent>',
             '    </mana>',
+            '    <positionMarker>',
+            '      <Type>VECTOR3</Type>',
+            '      <Flags>CELL_PUBLIC</Flags>',
+            '      <Persistent>true</Persistent>',
+            '    </positionMarker>',
             '  </Properties>',
             '  <BaseMethods>',
             '    <Spawn>',
@@ -131,11 +140,31 @@ describe('EntityExplorerProvider', () => {
         }
 
         if (candidatePath === chatInterfacePath) {
-          return '<root><ClientMethods><Ping><Arg>UINT8</Arg></Ping></ClientMethods></root>';
+          return [
+            '<root>',
+            '  <Properties>',
+            '    <channel>',
+            '      <Type>UINT8</Type>',
+            '      <Flags>BASE</Flags>',
+            '      <Persistent>true</Persistent>',
+            '    </channel>',
+            '  </Properties>',
+            '  <BaseMethods>',
+            '    <Broadcast>',
+            '      <Exposed/>',
+            '    </Broadcast>',
+            '  </BaseMethods>',
+            '  <ClientMethods>',
+            '    <Ping>',
+            '      <Arg>UINT8</Arg>',
+            '    </Ping>',
+            '  </ClientMethods>',
+            '</root>'
+          ].join('\n');
         }
 
         if (candidatePath === combatComponentPath) {
-          return '<root><Properties><power><Type>UINT8</Type><Flags>BASE</Flags></power></Properties></root>';
+          return '<root><Properties><power><Type>UINT8</Type><Flags>BASE</Flags><Persistent>true</Persistent></power></Properties></root>';
         }
 
         throw new Error(`Unexpected readFileSync path: ${candidatePath}`);
@@ -207,19 +236,33 @@ describe('EntityExplorerProvider', () => {
         true
       );
 
+    const { loadedModule: databaseSchemaModule, restore: restoreDatabaseSchema } =
+      loadModuleWithMocks<DatabaseSchemaModule>(
+        __filename,
+        '../../databaseSchema',
+        {
+          vscode: vscodeStub,
+          fs: fsStub,
+          './definitionWorkspace': definitionWorkspaceModule
+        },
+        true
+      );
+
     const { loadedModule, restore } = loadModuleWithMocks<ExplorerProvidersModule>(
       __filename,
       '../../explorerProviders',
       {
         vscode: vscodeStub,
         fs: fsStub,
-        './definitionWorkspace': definitionWorkspaceModule
+        './definitionWorkspace': definitionWorkspaceModule,
+        './databaseSchema': databaseSchemaModule
       },
       true
     );
 
     restoreModuleMocks = () => {
       restore();
+      restoreDatabaseSchema();
       restoreDefinitionWorkspace();
     };
     EntityExplorerProvider = loadedModule.EntityExplorerProvider;
@@ -245,7 +288,7 @@ describe('EntityExplorerProvider', () => {
 
     const entityItems = await provider.getChildren(rootItems[1] as never);
     assert.deepStrictEqual(entityItems.map(item => item.label), ['Avatar', 'Orphan']);
-    assert.strictEqual(entityItems[0].description, 'Base, Cell');
+    assert.strictEqual(entityItems[0].description, 'BaseApp / CellApp, Server Only');
     assert.strictEqual(entityItems[1].description, 'Unregistered');
 
     const interfaceItems = await provider.getChildren(rootItems[2] as never);
@@ -322,7 +365,7 @@ describe('EntityExplorerProvider', () => {
 
     assert.deepStrictEqual(
       avatarItem.viewModel.sections.map((section: any) => section.label),
-      ['Parent', 'Interfaces', 'Components', 'Properties', 'BaseMethods', 'CellMethods', 'ClientMethods']
+      ['Parent', 'Interfaces', 'Components', 'Runtime', 'Exposed', 'Database', 'Properties', 'CellMethods', 'ClientMethods']
     );
 
     const sections = await provider.getChildren(avatarItem as never);
@@ -330,11 +373,22 @@ describe('EntityExplorerProvider', () => {
 
     const summaryItems = await provider.getChildren(sections[0] as never);
     assert.ok(summaryItems.some(item => item.label === 'Registered' && item.description === 'Yes'));
-    assert.ok(summaryItems.some(item => item.label === 'Properties' && item.description === '2'));
+    assert.ok(summaryItems.some(item => item.label === 'Runtime' && item.description === 'BaseApp / CellApp'));
+    assert.ok(summaryItems.some(item => item.label === 'Visibility' && item.description === 'Server only (no client entity)'));
+    assert.ok(summaryItems.some(item => item.label === 'Registration' && item.description === 'Registered on BaseApp / CellApp'));
+    assert.ok(summaryItems.some(item => item.label === 'Properties' && item.description === '4'));
+    assert.ok(summaryItems.some(item => item.label === 'Methods' && item.description === '5'));
+    assert.ok(summaryItems.some(item => item.label === 'Mixed In' && item.description === '1'));
+    assert.ok(summaryItems.some(item => item.label === 'Exposed' && item.description === '2'));
+    assert.ok(summaryItems.some(item => item.label === 'DB Tables' && item.description === '2'));
+    assert.ok(summaryItems.some(item => item.label === 'DB Fields' && item.description === '13'));
 
     const parentSection = sections.find(item => item.label === 'Parent');
     const interfacesSection = sections.find(item => item.label === 'Interfaces');
     const componentsSection = sections.find(item => item.label === 'Components');
+    const runtimeSection = sections.find(item => item.label === 'Runtime');
+    const exposedSection = sections.find(item => item.label === 'Exposed');
+    const databaseSection = sections.find(item => item.label === 'Database');
     const propertiesSection = sections.find(item => item.label === 'Properties');
     const baseMethodsSection = sections.find(item => item.label === 'BaseMethods');
     const cellMethodsSection = sections.find(item => item.label === 'CellMethods');
@@ -343,8 +397,11 @@ describe('EntityExplorerProvider', () => {
     assert.ok(parentSection);
     assert.ok(interfacesSection);
     assert.ok(componentsSection);
+    assert.ok(runtimeSection);
+    assert.ok(exposedSection);
+    assert.ok(databaseSection);
     assert.ok(propertiesSection);
-    assert.ok(baseMethodsSection);
+    assert.ok(!baseMethodsSection);
     assert.ok(cellMethodsSection);
     assert.ok(clientMethodsSection);
 
@@ -358,22 +415,79 @@ describe('EntityExplorerProvider', () => {
     assert.deepStrictEqual(componentItems.map(item => item.label), ['Combat']);
     assert.strictEqual(componentItems[0].description, 'combat -> Combat');
 
-    const propertyItems = await provider.getChildren(propertiesSection as never);
-    assert.deepStrictEqual(propertyItems.map(item => item.label), ['health', 'mana']);
+    const runtimeItems = await provider.getChildren(runtimeSection as never);
+    assert.deepStrictEqual(runtimeItems.map(item => item.label), ['Roles', 'Visibility', 'BaseApp', 'CellApp', 'Client']);
+    assert.strictEqual(runtimeItems[0].description, 'BaseApp / CellApp');
+    assert.strictEqual(runtimeItems[1].description, 'Server Only');
+    assert.strictEqual(runtimeItems[2].description, 'Declared On');
+    assert.strictEqual(runtimeItems[3].description, 'Declared On');
+    assert.strictEqual(runtimeItems[4].description, 'Not Declared');
 
-    const methodItems = await provider.getChildren(baseMethodsSection as never);
-    assert.deepStrictEqual(methodItems.map(item => item.label), ['Spawn']);
-    assert.strictEqual(methodItems[0].description, 'BaseMethods · Exposed');
-    assert.strictEqual((methodItems[0] as any).command.command, 'kbengine.entity.method.open');
-    assert.deepStrictEqual((methodItems[0] as any).command.arguments, ['Avatar', 'Spawn', 'BaseMethods']);
+    const databaseGroups = await provider.getChildren(databaseSection as never);
+    assert.deepStrictEqual(databaseGroups.map(item => item.label), ['tbl_Avatar', 'tbl_Avatar_combat']);
+
+    const rootDatabaseItems = await provider.getChildren(databaseGroups[0] as never);
+    assert.ok(rootDatabaseItems.some(item => item.label === 'sm_health'));
+    assert.ok(rootDatabaseItems.some(item => item.label === 'sm_channel'));
+    assert.ok(rootDatabaseItems.some(item => item.label === 'sm_positionMarker_0'));
+    const healthField = rootDatabaseItems.find(item => item.label === 'sm_health') as any;
+    assert.strictEqual(healthField.command.command, 'kbengine.database.open');
+    assert.deepStrictEqual(healthField.command.arguments, ['Avatar', 'tbl_Avatar', 'sm_health']);
+
+    const componentDatabaseItems = await provider.getChildren(databaseGroups[1] as never);
+    assert.deepStrictEqual(componentDatabaseItems.map(item => item.label), ['sm_power']);
+
+    const exposedGroups = await provider.getChildren(exposedSection as never);
+    assert.deepStrictEqual(exposedGroups.map(item => item.label), ['Own', 'Mixin · Chat']);
+
+    const ownExposedItems = await provider.getChildren(exposedGroups[0] as never);
+    assert.deepStrictEqual(ownExposedItems.map(item => item.label), ['Spawn']);
+    assert.strictEqual((ownExposedItems[0] as any).command.command, 'kbengine.entity.method.open');
+
+    const mixinExposedItems = await provider.getChildren(exposedGroups[1] as never);
+    assert.deepStrictEqual(mixinExposedItems.map(item => item.label), ['Broadcast']);
+
+    const propertyGroups = await provider.getChildren(propertiesSection as never);
+    assert.deepStrictEqual(propertyGroups.map(item => item.label), ['Own', 'Mixin · Chat']);
+
+    const ownPropertyItems = await provider.getChildren(propertyGroups[0] as never);
+    assert.deepStrictEqual(ownPropertyItems.map(item => item.label), ['health', 'mana', 'positionMarker']);
+
+    const mixinPropertyItems = await provider.getChildren(propertyGroups[1] as never);
+    assert.deepStrictEqual(mixinPropertyItems.map(item => item.label), ['channel']);
 
     const cellMethodItems = await provider.getChildren(cellMethodsSection as never);
     assert.deepStrictEqual(cellMethodItems.map(item => item.label), ['Move']);
     assert.strictEqual((cellMethodItems[0] as any).command.arguments[2], 'CellMethods');
 
-    const clientMethodItems = await provider.getChildren(clientMethodsSection as never);
-    assert.deepStrictEqual(clientMethodItems.map(item => item.label), ['Notify']);
-    assert.strictEqual((clientMethodItems[0] as any).command.arguments[2], 'ClientMethods');
+    const clientMethodGroups = await provider.getChildren(clientMethodsSection as never);
+    assert.deepStrictEqual(clientMethodGroups.map(item => item.label), ['Own', 'Mixin · Chat']);
+
+    const ownClientMethodItems = await provider.getChildren(clientMethodGroups[0] as never);
+    assert.deepStrictEqual(ownClientMethodItems.map(item => item.label), ['Notify']);
+    assert.strictEqual((ownClientMethodItems[0] as any).command.arguments[2], 'ClientMethods');
+
+    const mixinClientMethodItems = await provider.getChildren(clientMethodGroups[1] as never);
+    assert.deepStrictEqual(mixinClientMethodItems.map(item => item.label), ['Ping']);
+
+    const rootInterfaceItems = await provider.getChildren(rootItems[2] as never);
+    const chatItem = rootInterfaceItems[0] as any;
+    const chatSections = await provider.getChildren(chatItem as never);
+    const interfaceExposedSection = chatSections.find(item => item.label === 'Exposed');
+    const interfaceClientMethodsSection = chatSections.find(item => item.label === 'ClientMethods');
+    assert.ok(interfaceExposedSection);
+    assert.ok(interfaceClientMethodsSection);
+
+    const interfaceExposedItems = await provider.getChildren(interfaceExposedSection as never);
+    assert.deepStrictEqual(interfaceExposedItems.map(item => item.label), ['Own']);
+
+    const interfaceOwnExposedItems = await provider.getChildren(interfaceExposedItems[0] as never);
+    assert.deepStrictEqual(interfaceOwnExposedItems.map(item => item.label), ['Broadcast']);
+
+    const interfaceMethodItems = await provider.getChildren(interfaceClientMethodsSection as never);
+    assert.deepStrictEqual(interfaceMethodItems.map(item => item.label), ['Ping']);
+    assert.strictEqual((interfaceMethodItems[0] as any).command.command, 'kbengine.entity.method.open');
+    assert.deepStrictEqual((interfaceMethodItems[0] as any).command.arguments, ['Chat', 'Ping', 'ClientMethods']);
   });
 
   it('parses entity definition structure from content', () => {

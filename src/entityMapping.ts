@@ -15,6 +15,7 @@ import {
   hasTruthyChildTag,
   parseDefDocument
 } from './defParser';
+import { findDefinitionFileByCategory } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 
 export type EntityMethodSection = 'BaseMethods' | 'CellMethods' | 'ClientMethods';
@@ -78,33 +79,103 @@ export class EntityMappingManager {
    */
   private async parseDefFile(entityName: string, defPath: string): Promise<void> {
     try {
-      const content = await vscode.workspace.fs.readFile(vscode.Uri.file(defPath));
-      const text = Buffer.from(content).toString('utf8');
-      const document = parseDefDocument(text);
-      const pythonPaths = this.findPythonFiles(defPath);
-
-      const mapping: EntityMapping = {
-        name: entityName,
-        defFile: defPath,
-        pythonFile: pythonPaths[0],
-        pythonFiles: pythonPaths,
-        properties: {},
-        methods: {}
-      };
-
-      this.collectPropertyMappings(document, defPath, mapping);
-      this.collectMethodMappings(document, defPath, mapping);
-
+      const mapping = await this.buildMapping(entityName, defPath);
       this.mappings.set(entityName, mapping);
     } catch (error) {
       console.error(`解析 .def 文件失败: ${defPath}`, error);
     }
   }
 
+  private async buildMapping(entityName: string, defPath: string): Promise<EntityMapping> {
+    const pythonPaths = this.findPythonFiles(defPath, true);
+    const mapping: EntityMapping = {
+      name: entityName,
+      defFile: defPath,
+      pythonFile: pythonPaths[0],
+      pythonFiles: [...pythonPaths],
+      properties: {},
+      methods: {}
+    };
+
+    await this.collectDefMappings(defPath, mapping, new Set<string>());
+
+    if (mapping.pythonFiles.length === 0) {
+      mapping.pythonFiles = pythonPaths;
+    }
+    mapping.pythonFile = mapping.pythonFiles[0];
+
+    return mapping;
+  }
+
+  private async collectDefMappings(
+    defPath: string,
+    mapping: EntityMapping,
+    visitedDefPaths: Set<string>
+  ): Promise<void> {
+    const normalizedDefPath = normalizeLookupPath(defPath);
+    if (visitedDefPaths.has(normalizedDefPath)) {
+      return;
+    }
+    visitedDefPaths.add(normalizedDefPath);
+
+    const document = await this.readDefDocument(defPath);
+    this.mergePythonFiles(mapping, this.findPythonFiles(defPath, false));
+    this.collectPropertyMappings(document, defPath, mapping);
+    this.collectMethodMappings(document, defPath, mapping);
+    await this.collectInterfaceMappings(document, defPath, mapping, visitedDefPaths);
+  }
+
+  private async readDefDocument(defPath: string): Promise<DefDocument> {
+    const content = await vscode.workspace.fs.readFile(vscode.Uri.file(defPath));
+    const text = Buffer.from(content).toString('utf8');
+    return parseDefDocument(text);
+  }
+
+  private async collectInterfaceMappings(
+    document: DefDocument,
+    defPath: string,
+    mapping: EntityMapping,
+    visitedDefPaths: Set<string>
+  ): Promise<void> {
+    const interfacesNode = getDirectChildElement(document.root, 'Interfaces');
+    if (!interfacesNode) {
+      return;
+    }
+
+    for (const interfaceWrapper of getDirectChildElements(interfacesNode)) {
+      for (const interfaceNode of getDirectChildElements(interfaceWrapper)) {
+        const interfaceDefPath = findDefinitionFileByCategory(
+          interfaceNode.name,
+          'interface',
+          { fileName: defPath }
+        );
+        if (!interfaceDefPath) {
+          continue;
+        }
+
+        await this.collectDefMappings(interfaceDefPath, mapping, visitedDefPaths);
+      }
+    }
+  }
+
+  private mergePythonFiles(mapping: EntityMapping, candidatePaths: string[]): void {
+    const seen = new Set(mapping.pythonFiles.map(candidatePath => normalizeLookupPath(candidatePath)));
+
+    for (const candidatePath of candidatePaths) {
+      const normalizedCandidatePath = normalizeLookupPath(candidatePath);
+      if (seen.has(normalizedCandidatePath)) {
+        continue;
+      }
+
+      seen.add(normalizedCandidatePath);
+      mapping.pythonFiles.push(candidatePath);
+    }
+  }
+
   /**
    * 查找对应的 Python 文件
    */
-  private findPythonFiles(defPath: string): string[] {
+  private findPythonFiles(defPath: string, includeFallback = true): string[] {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
     const entityName = path.basename(defPath, '.def');
     const possiblePaths = [
@@ -119,9 +190,20 @@ export class EntityMappingManager {
     ];
     const existingPaths = possiblePaths.filter(candidatePath => fs.existsSync(candidatePath));
 
-    return existingPaths.length > 0 ? existingPaths : [
-      joinWorkspacePath(workspaceRoot, 'scripts/base', `${entityName}.py`)
-    ];
+    if (existingPaths.length > 0 || !includeFallback) {
+      return existingPaths;
+    }
+
+    return [this.getDefaultPythonPath(defPath, workspaceRoot, entityName)];
+  }
+
+  private getDefaultPythonPath(defPath: string, workspaceRoot: string, entityName: string): string {
+    const normalizedDefPath = defPath.replace(/\\/g, '/').toLowerCase();
+    if (normalizedDefPath.includes('/interfaces/')) {
+      return joinWorkspacePath(workspaceRoot, 'scripts/interfaces', `${entityName}.py`);
+    }
+
+    return joinWorkspacePath(workspaceRoot, 'scripts/base', `${entityName}.py`);
   }
 
   private collectPropertyMappings(document: DefDocument, defPath: string, mapping: EntityMapping): void {
@@ -143,10 +225,19 @@ export class EntityMappingManager {
       }
 
       for (const methodNode of getDirectChildElements(sectionNode)) {
+        const line = getLineNumberAt(document, methodNode.tagStart);
         const definitions = mapping.methods[methodNode.name] || [];
+        if (definitions.some(definition =>
+          definition.defFile === defPath
+          && definition.line === line
+          && definition.section === sectionName
+        )) {
+          continue;
+        }
+
         definitions.push({
           defFile: defPath,
-          line: getLineNumberAt(document, methodNode.tagStart),
+          line,
           section: sectionName,
           exposed: hasTruthyChildTag(methodNode, 'Exposed')
         });
@@ -168,10 +259,12 @@ export class EntityMappingManager {
       }
 
       const propertyPath = prefixPath ? `${prefixPath}.${propertyNode.name}` : propertyNode.name;
-      mapping.properties[propertyPath] = {
-        defFile: defPath,
-        line: getLineNumberAt(document, propertyNode.tagStart)
-      };
+      if (!mapping.properties[propertyPath]) {
+        mapping.properties[propertyPath] = {
+          defFile: defPath,
+          line: getLineNumberAt(document, propertyNode.tagStart)
+        };
+      }
 
       const nestedPropertySection = getDirectChildElement(propertyNode, 'Properties');
       if (nestedPropertySection) {
@@ -218,6 +311,11 @@ export class EntityMappingManager {
     return this.mappings.get(entityName);
   }
 
+  getMappingForPythonFile(pythonFile: string): EntityMapping | undefined {
+    return this.findMappingForPythonFile(pythonFile)
+      || this.getMapping(path.basename(pythonFile, '.py'));
+  }
+
   /**
    * 获取所有映射
    */
@@ -230,8 +328,7 @@ export class EntityMappingManager {
     fullPath: string,
     rootSymbol?: string
   ): Promise<{ defFile: string; line: number } | null> {
-    const entityName = path.basename(pythonFile, '.py');
-    const mapping = await this.ensureMapping(entityName);
+    const mapping = await this.ensureMappingForPythonFile(pythonFile);
     if (!mapping) {
       return null;
     }
@@ -245,8 +342,7 @@ export class EntityMappingManager {
     pythonFile: string,
     methodName: string
   ): Promise<EntityMethodDefinitionLocation | null> {
-    const entityName = path.basename(pythonFile, '.py');
-    const mapping = await this.ensureMapping(entityName);
+    const mapping = await this.ensureMappingForPythonFile(pythonFile);
     if (!mapping) {
       return null;
     }
@@ -280,14 +376,32 @@ export class EntityMappingManager {
     return this.openFileAtLocation(definition.defFile, definition.line);
   }
 
+  async resolveMethodImplementation(
+    entityName: string,
+    methodName: string,
+    section: EntityMethodSection
+  ): Promise<{ filePath: string; line: number } | null> {
+    const mapping = await this.ensureMapping(entityName);
+    if (!mapping) {
+      return null;
+    }
+
+    return this.findMethodImplementation(mapping, methodName, section);
+  }
+
   private findMethodImplementation(
     mapping: EntityMapping,
     methodName: string,
     section: EntityMethodSection
   ): { filePath: string; line: number } | null {
-    const candidateFiles = mapping.pythonFiles.filter(candidatePath =>
-      inferMethodSectionFromPythonFile(candidatePath) === section
-    );
+    const candidateFiles = uniqueFilePaths([
+      ...mapping.pythonFiles.filter(candidatePath =>
+        inferMethodSectionFromPythonFile(candidatePath) === section
+      ),
+      ...mapping.pythonFiles.filter(candidatePath =>
+        inferMethodSectionFromPythonFile(candidatePath) === undefined
+      )
+    ]);
 
     for (const candidateFile of candidateFiles) {
       const line = this.findPythonMethodLine(candidateFile, methodName);
@@ -340,6 +454,28 @@ export class EntityMappingManager {
     }
 
     return mapping;
+  }
+
+  private async ensureMappingForPythonFile(pythonFile: string): Promise<EntityMapping | undefined> {
+    let mapping = this.findMappingForPythonFile(pythonFile)
+      || this.mappings.get(path.basename(pythonFile, '.py'));
+    if (!mapping) {
+      await this.scanEntityMappings();
+      mapping = this.findMappingForPythonFile(pythonFile)
+        || this.mappings.get(path.basename(pythonFile, '.py'));
+    }
+
+    return mapping;
+  }
+
+  private findMappingForPythonFile(pythonFile: string): EntityMapping | undefined {
+    const normalizedPythonPath = normalizeLookupPath(pythonFile);
+
+    return Array.from(this.mappings.values()).find(mapping =>
+      mapping.pythonFiles.some(candidatePath =>
+        normalizeLookupPath(candidatePath) === normalizedPythonPath
+      )
+    );
   }
 
   private selectMethodDefinition(
@@ -397,6 +533,27 @@ function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSecti
   }
 
   return undefined;
+}
+
+function normalizeLookupPath(targetPath: string): string {
+  return targetPath.replace(/\\/g, '/').toLowerCase();
+}
+
+function uniqueFilePaths(candidatePaths: string[]): string[] {
+  const seen = new Set<string>();
+  const uniquePaths: string[] = [];
+
+  for (const candidatePath of candidatePaths) {
+    const normalizedCandidatePath = normalizeLookupPath(candidatePath);
+    if (seen.has(normalizedCandidatePath)) {
+      continue;
+    }
+
+    seen.add(normalizedCandidatePath);
+    uniquePaths.push(candidatePath);
+  }
+
+  return uniquePaths;
 }
 
 function escapeRegExp(value: string): string {

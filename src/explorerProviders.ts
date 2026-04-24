@@ -9,9 +9,14 @@ import {
   parseDefDocument
 } from './defParser';
 import {
+  createDatabaseSchemaUri,
+  getDatabaseSchemaSnapshot
+} from './databaseSchema';
+import {
   CustomTypeStructureNode,
   DefinitionCategory,
   DefinitionEntry,
+  getEntityRuntimeProfile,
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
   getDefinitionEntries,
@@ -25,6 +30,7 @@ type EntityTreeNode =
   | ExplorerGroupItem
   | DefinitionTreeItem
   | DefinitionSectionItem
+  | DefinitionGroupItem
   | DefinitionLeafItem;
 
 interface DefinitionStats {
@@ -49,11 +55,19 @@ interface DefinitionLeafDescriptor {
   command?: vscode.Command;
 }
 
+interface DefinitionGroupDescriptor {
+  label: string;
+  description?: string;
+  icon: string;
+  items: DefinitionLeafDescriptor[];
+}
+
 interface DefinitionSectionDescriptor {
   key: string;
   label: string;
   icon: string;
-  items: DefinitionLeafDescriptor[];
+  items?: DefinitionLeafDescriptor[];
+  groups?: DefinitionGroupDescriptor[];
 }
 
 interface DefinitionSummaryDescriptor {
@@ -66,6 +80,25 @@ interface DefinitionSummaryDescriptor {
 interface DefinitionViewModel {
   summary: DefinitionSummaryDescriptor[];
   sections: DefinitionSectionDescriptor[];
+}
+
+interface DatabaseSectionModel {
+  tableCount: number;
+  fieldCount: number;
+  section?: DefinitionSectionDescriptor;
+}
+
+interface InheritedDefinitionGroup {
+  label: string;
+  properties: string[];
+  baseMethods: DefinitionMethodStats[];
+  cellMethods: DefinitionMethodStats[];
+  clientMethods: DefinitionMethodStats[];
+}
+
+interface DefinitionHierarchyStats {
+  local: DefinitionStats;
+  inherited: InheritedDefinitionGroup[];
 }
 
 export function parseDefinitionStructure(content: string): DefinitionStats {
@@ -171,7 +204,15 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
 
     if (element instanceof DefinitionSectionItem) {
-      return element.section.items.map(item => new DefinitionLeafItem(item));
+      if (element.section.groups?.length) {
+        return element.section.groups.map(group => new DefinitionGroupItem(group));
+      }
+
+      return (element.section.items || []).map(item => new DefinitionLeafItem(item));
+    }
+
+    if (element instanceof DefinitionGroupItem) {
+      return element.group.items.map(item => new DefinitionLeafItem(item));
     }
 
     return [];
@@ -196,13 +237,13 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     category: DefinitionCategory
   ): DefinitionTreeItem[] {
     return getDefinitionEntries(workspaceRoot, category).map(entry => {
-      const description = this.buildDefinitionDescription(entry);
+      const description = this.buildDefinitionDescription(workspaceRoot, entry);
       const viewModel = this.buildDefinitionViewModel(workspaceRoot, entry);
       return new DefinitionTreeItem(entry, description, viewModel);
     });
   }
 
-  private buildDefinitionDescription(entry: DefinitionEntry): string {
+  private buildDefinitionDescription(workspaceRoot: string, entry: DefinitionEntry): string {
     if (entry.category === 'type') {
       const parts: string[] = [entry.aliasType || 'ALIAS'];
       if (entry.implementedBy) {
@@ -215,15 +256,23 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
 
     if (entry.category === 'entity') {
+      const runtimeProfile = getEntityRuntimeProfile(entry.name, workspaceRoot);
       const parts: string[] = [];
-      if (entry.hasBase) {
-        parts.push('Base');
+      if (runtimeProfile?.runtimeLabel) {
+        parts.push(runtimeProfile.runtimeLabel);
+      } else {
+        if (entry.hasBase) {
+          parts.push('Base');
+        }
+        if (entry.hasCell) {
+          parts.push('Cell');
+        }
+        if (entry.hasClient) {
+          parts.push('Client');
+        }
       }
-      if (entry.hasCell) {
-        parts.push('Cell');
-      }
-      if (entry.hasClient) {
-        parts.push('Client');
+      if (runtimeProfile) {
+        parts.push(runtimeProfile.visibilityLabel);
       }
       if (!entry.registered) {
         parts.push('Unregistered');
@@ -254,12 +303,21 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     ];
 
     if (entry.category === 'entity') {
+      const runtimeProfile = getEntityRuntimeProfile(entry.name, workspaceRoot);
       summary.push(
         { label: 'Registered', value: entry.registered ? 'Yes' : 'No', icon: entry.registered ? 'check' : 'warning' },
         { label: 'Base', value: entry.hasBase ? 'Yes' : 'No', icon: 'circle-filled' },
         { label: 'Cell', value: entry.hasCell ? 'Yes' : 'No', icon: 'circle-filled' },
         { label: 'Client', value: entry.hasClient ? 'Yes' : 'No', icon: 'circle-filled' }
       );
+
+      if (runtimeProfile) {
+        summary.push(
+          { label: 'Runtime', value: runtimeProfile.runtimeLabel, icon: 'server-process' },
+          { label: 'Visibility', value: runtimeProfile.visibilitySummary, icon: 'eye' },
+          { label: 'Registration', value: runtimeProfile.registrationSummary, icon: 'symbol-event' }
+        );
+      }
     }
 
     if (entry.category === 'type') {
@@ -326,15 +384,44 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       return { summary, sections };
     }
 
-    const stats = this.readDefinitionStats(entry.filePath);
+    const hierarchyStats = this.readDefinitionHierarchyStats(workspaceRoot, entry);
+    const databaseModel = entry.category === 'entity'
+      ? this.createDatabaseSectionModel(workspaceRoot, entry)
+      : { tableCount: 0, fieldCount: 0 } as DatabaseSectionModel;
+    const stats = hierarchyStats.local;
+    const inherited = hierarchyStats.inherited;
+    const inheritedPropertyCount = inherited.reduce((sum, group) => sum + group.properties.length, 0);
+    const inheritedMethodCount = inherited.reduce(
+      (sum, group) => sum + group.baseMethods.length + group.cellMethods.length + group.clientMethods.length,
+      0
+    );
+    const exposedGroups = this.createExposedSectionGroups(entry, inherited, stats);
+    const exposedCount = exposedGroups.reduce((sum, group) => sum + group.items.length, 0);
     summary.push(
-      { label: 'Properties', value: String(stats.properties.length), icon: 'symbol-property' },
+      { label: 'Properties', value: String(stats.properties.length + inheritedPropertyCount), icon: 'symbol-property' },
       {
         label: 'Methods',
-        value: String(stats.baseMethods.length + stats.cellMethods.length + stats.clientMethods.length),
+        value: String(
+          stats.baseMethods.length + stats.cellMethods.length + stats.clientMethods.length + inheritedMethodCount
+        ),
         icon: 'symbol-method'
       }
     );
+
+    if (inherited.length > 0) {
+      summary.push({ label: 'Mixed In', value: String(inherited.length), icon: 'symbol-interface' });
+    }
+
+    if (exposedCount > 0) {
+      summary.push({ label: 'Exposed', value: String(exposedCount), icon: 'radio-tower' });
+    }
+
+    if (databaseModel.section) {
+      summary.push(
+        { label: 'DB Tables', value: String(databaseModel.tableCount), icon: 'database' },
+        { label: 'DB Fields', value: String(databaseModel.fieldCount), icon: 'symbol-field' }
+      );
+    }
 
     const sections: DefinitionSectionDescriptor[] = [];
 
@@ -376,17 +463,60 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       });
     }
 
-    if (stats.properties.length > 0) {
+    if (entry.category === 'entity') {
+      const runtimeProfile = getEntityRuntimeProfile(entry.name, workspaceRoot);
+      if (runtimeProfile) {
+        sections.push({
+          key: 'runtime',
+          label: 'Runtime',
+          icon: 'server-process',
+          items: [
+            {
+              label: 'Roles',
+              description: runtimeProfile.runtimeLabel,
+              icon: 'server-process'
+            },
+            {
+              label: 'Visibility',
+              description: runtimeProfile.visibilityLabel,
+              icon: runtimeProfile.client.enabled ? 'device-desktop' : 'vm'
+            },
+            {
+              label: 'BaseApp',
+              description: this.describeRuntimeFacet(runtimeProfile.base),
+              icon: 'symbol-class'
+            },
+            {
+              label: 'CellApp',
+              description: this.describeRuntimeFacet(runtimeProfile.cell),
+              icon: 'symbol-class'
+            },
+            {
+              label: 'Client',
+              description: this.describeRuntimeFacet(runtimeProfile.client),
+              icon: 'device-desktop'
+            }
+          ]
+        });
+      }
+    }
+
+    if (exposedGroups.length > 0) {
       sections.push({
-        key: 'properties',
-        label: 'Properties',
-        icon: 'symbol-property',
-        items: stats.properties.map(name => ({
-          label: name,
-          description: entry.category === 'entity' ? 'Property' : this.getCategoryLabel(entry.category),
-          icon: 'symbol-property'
-        }))
+        key: 'exposed',
+        label: 'Exposed',
+        icon: 'radio-tower',
+        groups: exposedGroups
       });
+    }
+
+    if (databaseModel.section) {
+      sections.push(databaseModel.section);
+    }
+
+    const propertySection = this.createPropertySectionDescriptor(entry, inherited, stats);
+    if (propertySection) {
+      sections.push(propertySection);
     }
 
     const methodSections: Array<{ label: EntityMethodSection; values: DefinitionMethodStats[]; icon: string }> = [
@@ -396,19 +526,230 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     ];
 
     for (const section of methodSections) {
-      if (section.values.length === 0) {
-        continue;
+      const methodSection = this.createMethodSectionDescriptor(entry, section.label, section.icon, inherited, stats);
+      if (methodSection) {
+        sections.push(methodSection);
       }
-
-      sections.push({
-        key: section.label,
-        label: section.label,
-        icon: section.icon,
-        items: section.values.map(method => this.createMethodItem(entry, method, section.label))
-      });
     }
 
     return { summary, sections };
+  }
+
+  private createPropertySectionDescriptor(
+    entry: DefinitionEntry,
+    inherited: InheritedDefinitionGroup[],
+    stats: DefinitionStats
+  ): DefinitionSectionDescriptor | null {
+    const ownItems = stats.properties.map(name => ({
+      label: name,
+      description: entry.category === 'entity' ? 'Property' : `${this.getCategoryLabel(entry.category)} Property`,
+      icon: 'symbol-property'
+    }));
+    const inheritedGroups = inherited
+      .filter(group => group.properties.length > 0)
+      .map(group => ({
+        label: group.label,
+        description: 'Mixed In',
+        icon: 'symbol-interface',
+        items: group.properties.map(name => ({
+          label: name,
+          description: 'Mixed Property',
+          icon: 'symbol-property'
+        }))
+      }));
+
+    if (inheritedGroups.length === 0) {
+      if (ownItems.length === 0) {
+        return null;
+      }
+
+      return {
+        key: 'properties',
+        label: 'Properties',
+        icon: 'symbol-property',
+        items: ownItems
+      };
+    }
+
+    const groups: DefinitionGroupDescriptor[] = [];
+    if (ownItems.length > 0) {
+      groups.push({
+        label: 'Own',
+        description: 'Declared Here',
+        icon: 'symbol-class',
+        items: ownItems
+      });
+    }
+    groups.push(...inheritedGroups);
+
+    return {
+      key: 'properties',
+      label: 'Properties',
+      icon: 'symbol-property',
+      groups
+    };
+  }
+
+  private createExposedSectionGroups(
+    entry: DefinitionEntry,
+    inherited: InheritedDefinitionGroup[],
+    stats: DefinitionStats
+  ): DefinitionGroupDescriptor[] {
+    const groups: DefinitionGroupDescriptor[] = [];
+    const ownItems = this.createExposedItems(entry, 'Own', stats.baseMethods, 'BaseMethods')
+      .concat(this.createExposedItems(entry, 'Own', stats.cellMethods, 'CellMethods'));
+
+    if (ownItems.length > 0) {
+      groups.push({
+        label: 'Own',
+        description: 'Declared Here',
+        icon: 'symbol-class',
+        items: ownItems
+      });
+    }
+
+    for (const group of inherited) {
+      const items = this.createExposedItems(entry, group.label, group.baseMethods, 'BaseMethods')
+        .concat(this.createExposedItems(entry, group.label, group.cellMethods, 'CellMethods'));
+      if (items.length === 0) {
+        continue;
+      }
+
+      groups.push({
+        label: group.label,
+        description: 'Mixed In',
+        icon: 'symbol-interface',
+        items
+      });
+    }
+
+    return groups;
+  }
+
+  private createDatabaseSectionModel(
+    workspaceRoot: string,
+    entry: DefinitionEntry
+  ): DatabaseSectionModel {
+    const snapshot = getDatabaseSchemaSnapshot(entry.name, workspaceRoot);
+    if (!snapshot || snapshot.tables.length === 0) {
+      return {
+        tableCount: 0,
+        fieldCount: 0
+      };
+    }
+
+    const groups: DefinitionGroupDescriptor[] = snapshot.tables.map(table => ({
+      label: table.name,
+      description: table.parentTableName ? `${table.kind} -> ${table.parentTableName}` : table.kind,
+      icon: table.kind === 'entity' ? 'database' : 'table',
+      items: table.fields.map(field => ({
+        label: field.name,
+        description: `${field.typeLabel} -> ${field.sourcePath}`,
+        icon: 'symbol-field',
+        command: {
+          command: 'kbengine.database.open',
+          title: 'Open Database Schema',
+          arguments: [entry.name, table.name, field.name]
+        }
+      }))
+    }));
+
+    return {
+      tableCount: snapshot.tables.length,
+      fieldCount: snapshot.tables.reduce((sum, table) => sum + table.fields.length, 0),
+      section: {
+        key: 'database',
+        label: 'Database',
+        icon: 'database',
+        groups
+      }
+    };
+  }
+
+  private createExposedItems(
+    entry: DefinitionEntry,
+    sourceLabel: string,
+    methods: DefinitionMethodStats[],
+    section: EntityMethodSection
+  ): DefinitionLeafDescriptor[] {
+    return methods
+      .filter(method => method.exposed)
+      .map(method => ({
+        label: method.name,
+        description: section,
+        icon: 'radio-tower',
+        command: this.createMethodCommand(entry, method, section)
+      }));
+  }
+
+  private createMethodSectionDescriptor(
+    entry: DefinitionEntry,
+    section: EntityMethodSection,
+    icon: string,
+    inherited: InheritedDefinitionGroup[],
+    stats: DefinitionStats
+  ): DefinitionSectionDescriptor | null {
+    const localMethods = this.filterSectionMethods(stats, section).filter(method => !method.exposed);
+    const inheritedGroups = inherited
+      .map(group => ({
+        label: group.label,
+        description: 'Mixed In',
+        icon: 'symbol-interface',
+        items: this.filterSectionMethods(group, section)
+          .filter(method => !method.exposed)
+          .map(method => this.createMethodItem(entry, method, section))
+      }))
+      .filter(group => group.items.length > 0);
+
+    if (inheritedGroups.length === 0) {
+      if (localMethods.length === 0) {
+        return null;
+      }
+
+      return {
+        key: section,
+        label: section,
+        icon,
+        items: localMethods.map(method => this.createMethodItem(entry, method, section))
+      };
+    }
+
+    const groups: DefinitionGroupDescriptor[] = [];
+    if (localMethods.length > 0) {
+      groups.push({
+        label: 'Own',
+        description: 'Declared Here',
+        icon: 'symbol-class',
+        items: localMethods.map(method => this.createMethodItem(entry, method, section))
+      });
+    }
+    groups.push(...inheritedGroups);
+
+    if (groups.length === 0) {
+      return null;
+    }
+
+    return {
+      key: section,
+      label: section,
+      icon,
+      groups
+    };
+  }
+
+  private filterSectionMethods(
+    stats: Pick<DefinitionStats, 'baseMethods' | 'cellMethods' | 'clientMethods'>
+      | Pick<InheritedDefinitionGroup, 'baseMethods' | 'cellMethods' | 'clientMethods'>,
+    section: EntityMethodSection
+  ): DefinitionMethodStats[] {
+    switch (section) {
+      case 'BaseMethods':
+        return stats.baseMethods;
+      case 'CellMethods':
+        return stats.cellMethods;
+      case 'ClientMethods':
+        return stats.clientMethods;
+    }
   }
 
   private createDefinitionReferenceItem(
@@ -464,14 +805,22 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       label: method.name,
       description: method.exposed ? `${section} · Exposed` : section,
       icon: method.exposed ? 'radio-tower' : 'symbol-method',
-      command: entry.category === 'entity'
-        ? {
-          command: 'kbengine.entity.method.open',
-          title: 'Open Entity Method',
-          arguments: [entry.name, method.name, section]
-        }
-        : createOpenDefinitionCommand(entry.filePath, entry.line)
+      command: this.createMethodCommand(entry, method, section)
     };
+  }
+
+  private createMethodCommand(
+    entry: DefinitionEntry,
+    method: DefinitionMethodStats,
+    section: EntityMethodSection
+  ): vscode.Command | undefined {
+    return entry.category === 'entity' || entry.category === 'interface'
+      ? {
+        command: 'kbengine.entity.method.open',
+        title: 'Open Entity Method',
+        arguments: [entry.name, method.name, section]
+      }
+      : createOpenDefinitionCommand(entry.filePath, entry.line);
   }
 
   private createTypeStructureItems(
@@ -563,6 +912,24 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     return entry.category === 'component' ? 'component' : 'entity';
   }
 
+  private describeRuntimeFacet(
+    facet: {
+      enabled: boolean;
+      declared: boolean;
+      scriptExists: boolean;
+    }
+  ): string {
+    if (facet.declared) {
+      return facet.enabled ? 'Declared On' : 'Declared Off';
+    }
+
+    if (facet.scriptExists) {
+      return facet.enabled ? 'Inferred From Script' : 'Script Present';
+    }
+
+    return 'Not Declared';
+  }
+
   private getCategoryLabel(category: DefinitionCategory): string {
     switch (category) {
       case 'type':
@@ -603,6 +970,62 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       };
     }
   }
+
+  private readDefinitionHierarchyStats(
+    workspaceRoot: string,
+    entry: DefinitionEntry
+  ): DefinitionHierarchyStats {
+    const local = this.readDefinitionStats(entry.filePath);
+    if (entry.category !== 'entity' && entry.category !== 'interface') {
+      return { local, inherited: [] };
+    }
+
+    return {
+      local,
+      inherited: this.collectInheritedDefinitionGroups(workspaceRoot, local.interfaces, [])
+    };
+  }
+
+  private collectInheritedDefinitionGroups(
+    workspaceRoot: string,
+    interfaceNames: string[],
+    chain: string[],
+    visited = new Set<string>()
+  ): InheritedDefinitionGroup[] {
+    const groups: InheritedDefinitionGroup[] = [];
+
+    for (const interfaceName of interfaceNames) {
+      const interfacePath = findDefinitionFileByCategory(interfaceName, 'interface', workspaceRoot);
+      if (!interfacePath) {
+        continue;
+      }
+
+      const normalizedPath = interfacePath.replace(/\\/g, '/').toLowerCase();
+      if (visited.has(normalizedPath)) {
+        continue;
+      }
+      visited.add(normalizedPath);
+
+      const stats = this.readDefinitionStats(interfacePath);
+      const nextChain = [...chain, interfaceName];
+      groups.push({
+        label: `Mixin · ${nextChain.join(' / ')}`,
+        properties: stats.properties,
+        baseMethods: stats.baseMethods,
+        cellMethods: stats.cellMethods,
+        clientMethods: stats.clientMethods
+      });
+
+      groups.push(...this.collectInheritedDefinitionGroups(
+        workspaceRoot,
+        stats.interfaces,
+        nextChain,
+        visited
+      ));
+    }
+
+    return groups;
+  }
 }
 
 class ExplorerGroupItem extends vscode.TreeItem {
@@ -639,9 +1062,18 @@ class DefinitionSectionItem extends vscode.TreeItem {
     public readonly section: DefinitionSectionDescriptor
   ) {
     super(section.label, vscode.TreeItemCollapsibleState.Collapsed);
-    this.description = String(section.items.length);
+    this.description = String(section.groups?.length ?? section.items?.length ?? 0);
     this.iconPath = new vscode.ThemeIcon(section.icon);
     this.contextValue = `definition_section_${definition.category}_${section.key}`;
+  }
+}
+
+class DefinitionGroupItem extends vscode.TreeItem {
+  constructor(public readonly group: DefinitionGroupDescriptor) {
+    super(group.label, vscode.TreeItemCollapsibleState.Collapsed);
+    this.description = group.description;
+    this.iconPath = new vscode.ThemeIcon(group.icon);
+    this.contextValue = 'definition_group_item';
   }
 }
 

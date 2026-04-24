@@ -157,23 +157,48 @@ describe('validateDocument', () => {
     assert.deepStrictEqual(messages, []);
   });
 
-  it('reports duplicate property definitions and missing required property fields', () => {
+  it('reports duplicate property definitions only when Flags overlap on the same runtime scope', () => {
+    const messages = messagesFor([
+      '<root>',
+      '  <Properties>',
+      '    <health>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </health>',
+      '    <health>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>CELL_PUBLIC</Flags>',
+      '    </health>',
+      '    <health>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE_AND_CLIENT</Flags>',
+      '    </health>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+
+    assert.ok(messages.some(message => message.includes('health') && message.includes('重复') && message.includes('Base')));
+    assert.ok(messages.some(message => message.includes('health') && message.includes('已在 Base 作用域定义')));
+    assert.ok(!messages.some(message => message.includes('health') && message.includes('Cell')));
+    assert.ok(!messages.some(message => message.includes('<Flags>')));
+    assert.ok(!messages.some(message => message.includes('<Type>')));
+  });
+
+  it('still reports missing required property fields', () => {
     const messages = messagesFor([
       '<root>',
       '  <Properties>',
       '    <health>',
       '      <Type>UINT32</Type>',
       '    </health>',
-      '    <health>',
+      '    <mana>',
       '      <Flags>BASE</Flags>',
-      '    </health>',
+      '    </mana>',
       '  </Properties>',
       '</root>'
     ].join('\n'));
 
-    assert.ok(messages.some(message => message.includes('health') && message.includes('重复')));
-    assert.ok(messages.some(message => message.includes('health') && message.includes('已定义')));
     assert.ok(messages.some(message => message.includes('health') && message.includes('<Flags>')));
-    assert.ok(messages.some(message => message.includes('health') && message.includes('<Type>')));
+    assert.ok(messages.some(message => message.includes('mana') && message.includes('<Type>')));
   });
 });

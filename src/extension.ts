@@ -22,6 +22,12 @@ import {
   PythonDefinitionProvider,
   validateDocument
 } from './languageProviders';
+import {
+  createDatabaseSchemaUri,
+  getDatabaseSchemaSnapshot,
+  KBEngineDatabaseSchemaProvider,
+  locateDatabaseSchemaLine
+} from './databaseSchema';
 import { findEntityDefinitionFile } from './definitionWorkspace';
 
 /**
@@ -31,6 +37,10 @@ import { findEntityDefinitionFile } from './definitionWorkspace';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
+  const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
+  );
   const defDocumentSelector: vscode.DocumentSelector = [
     { language: 'kbengine-def', scheme: 'file' },
     { scheme: 'file', pattern: '**/*.def' },
@@ -63,15 +73,15 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(hoverProvider);
 
+  // 初始化实体映射管理器
+  const entityMappingManager = new EntityMappingManager(context);
+
   // 注册定义跳转提供者（.def 文件）
   const definitionProvider = vscode.languages.registerDefinitionProvider(
     definitionNavigationSelector,
-    new KBEngineDefinitionProvider()
+    new KBEngineDefinitionProvider(entityMappingManager)
   );
   context.subscriptions.push(definitionProvider);
-
-  // 初始化实体映射管理器
-  const entityMappingManager = new EntityMappingManager(context);
 
   // 注册 Python 文件的定义提供者（Python → .def 跳转）
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
@@ -193,6 +203,32 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(openEntityMethodCommand);
+
+  const openDatabaseSchemaCommand = vscode.commands.registerCommand(
+    'kbengine.database.open',
+    async (entityName: string, tableName?: string, fieldName?: string) => {
+      if (!entityName) {
+        return;
+      }
+
+      try {
+        const uri = createDatabaseSchemaUri(entityName);
+        const document = await vscode.workspace.openTextDocument(uri);
+        const snapshot = getDatabaseSchemaSnapshot(entityName);
+        const line = snapshot
+          ? locateDatabaseSchemaLine(snapshot, tableName || `tbl_${entityName}`, fieldName)
+          : 1;
+        const position = new vscode.Position(Math.max(line - 1, 0), 0);
+        const selection = new vscode.Range(position, position);
+        await vscode.window.showTextDocument(document, { selection });
+      } catch (error) {
+        vscode.window.showWarningMessage(
+          `打开数据库结构失败: ${entityName}${tableName ? ` (${tableName}${fieldName ? `.${fieldName}` : ''})` : ''} (${error})`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(openDatabaseSchemaCommand);
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);

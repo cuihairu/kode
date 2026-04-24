@@ -37,28 +37,59 @@ describe('Python providers', () => {
       inventory: { defFile: '/workspace/entity_defs/Hero.def', line: 12 },
       'inventory.weapon': { defFile: '/workspace/entity_defs/Hero.def', line: 16 },
       'inventory.weapon.damage': { defFile: '/workspace/entity_defs/Hero.def', line: 20 },
-      'inventory.weapon.range': { defFile: '/workspace/entity_defs/Hero.def', line: 24 }
+      'inventory.weapon.range': { defFile: '/workspace/entity_defs/Hero.def', line: 24 },
+      ifaceSpeed: { defFile: '/workspace/entity_defs/interfaces/MoveIface.def', line: 3 }
     };
     const methods: Record<string, Array<{ defFile: string; line: number; section: string; exposed: boolean }>> = {
-      attack: [{ defFile: '/workspace/entity_defs/Hero.def', line: 40, section: 'BaseMethods', exposed: true }]
+      attack: [{ defFile: '/workspace/entity_defs/Hero.def', line: 40, section: 'BaseMethods', exposed: true }],
+      dash: [{ defFile: '/workspace/entity_defs/interfaces/MoveIface.def', line: 8, section: 'BaseMethods', exposed: true }]
+    };
+    const heroMapping = {
+      name: 'Hero',
+      defFile: '/workspace/entity_defs/Hero.def',
+      pythonFile: '/workspace/scripts/base/Hero.py',
+      pythonFiles: ['/workspace/scripts/base/Hero.py', '/workspace/scripts/interfaces/MoveIface.py'],
+      properties,
+      methods
+    };
+    const interfaceMapping = {
+      name: 'MoveIface',
+      defFile: '/workspace/entity_defs/interfaces/MoveIface.def',
+      pythonFile: '/workspace/scripts/interfaces/MoveIface.py',
+      pythonFiles: ['/workspace/scripts/interfaces/MoveIface.py'],
+      properties: {
+        ifaceSpeed: { defFile: '/workspace/entity_defs/interfaces/MoveIface.def', line: 3 }
+      },
+      methods: {
+        dash: [{ defFile: '/workspace/entity_defs/interfaces/MoveIface.def', line: 8, section: 'BaseMethods', exposed: true }]
+      }
     };
 
     return {
       getMapping(entityName: string) {
-        if (entityName !== 'Hero') {
-          return undefined;
+        if (entityName === 'Hero') {
+          return heroMapping;
         }
 
-        return {
-          name: 'Hero',
-          defFile: '/workspace/entity_defs/Hero.def',
-          pythonFile: '/workspace/scripts/Hero.py',
-          properties,
-          methods
-        };
+        if (entityName === 'MoveIface') {
+          return interfaceMapping;
+        }
+
+        return undefined;
       },
-      async resolvePropertyDefinition(_pythonFile: string, fullPath: string, rootSymbol?: string) {
-        const mapping = this.getMapping('Hero');
+      getMappingForPythonFile(pythonFile: string) {
+        if (pythonFile === '/workspace/scripts/base/Hero.py' || pythonFile === '/workspace/scripts/Hero.py') {
+          return heroMapping;
+        }
+
+        if (pythonFile === '/workspace/scripts/interfaces/MoveIface.py') {
+          return interfaceMapping;
+        }
+
+        return undefined;
+      },
+      async resolvePropertyDefinition(pythonFile: string, fullPath: string, rootSymbol?: string) {
+        const mapping = this.getMappingForPythonFile(pythonFile) || this.getMapping('Hero');
         if (!mapping) {
           return null;
         }
@@ -67,8 +98,8 @@ describe('Python providers', () => {
           || (rootSymbol ? mapping.properties[rootSymbol] : undefined)
           || null;
       },
-      async resolveMethodDefinition(_pythonFile: string, methodName: string) {
-        const mapping = this.getMapping('Hero');
+      async resolveMethodDefinition(pythonFile: string, methodName: string) {
+        const mapping = this.getMappingForPythonFile(pythonFile) || this.getMapping('Hero');
         return mapping?.methods[methodName]?.[0] || null;
       }
     };
@@ -131,9 +162,51 @@ describe('Python providers', () => {
     assert.strictEqual(location.position.line, 39);
   });
 
+  it('resolves interface python method declarations to interface def definitions', async () => {
+    const provider = new PythonDefinitionProvider(createMappingManager() as never);
+    const document = new FakeTextDocument('/workspace/scripts/interfaces/MoveIface.py', 'python', '    def dash(self):');
+
+    const location = await provider.provideDefinition(
+      document as never,
+      new FakePosition(0, '    def dash'.indexOf('dash')) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/entity_defs/interfaces/MoveIface.def');
+    assert.strictEqual(location.position.line, 7);
+  });
+
+  it('resolves interface-backed self properties from entity python files', async () => {
+    const provider = new PythonDefinitionProvider(createMappingManager() as never);
+    const document = new FakeTextDocument('/workspace/scripts/base/Hero.py', 'python', 'return self.ifaceSpeed');
+
+    const location = await provider.provideDefinition(
+      document as never,
+      new FakePosition(0, 'return self.ifaceSpeed'.indexOf('ifaceSpeed')) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/entity_defs/interfaces/MoveIface.def');
+    assert.strictEqual(location.position.line, 2);
+  });
+
+  it('resolves direct self method access to def method definitions', async () => {
+    const provider = new PythonDefinitionProvider(createMappingManager() as never);
+    const document = new FakeTextDocument('/workspace/scripts/base/Hero.py', 'python', 'self.dash()');
+
+    const location = await provider.provideDefinition(
+      document as never,
+      new FakePosition(0, 'self.dash()'.indexOf('dash')) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/entity_defs/interfaces/MoveIface.def');
+    assert.strictEqual(location.position.line, 7);
+  });
+
   it('returns top-level property and method completion items for direct self access', () => {
     const provider = new PythonCompletionProvider(createMappingManager() as never);
-    const document = new FakeTextDocument('/workspace/scripts/Hero.py', 'python', 'self.');
+    const document = new FakeTextDocument('/workspace/scripts/base/Hero.py', 'python', 'self.');
 
     const items = provider.provideCompletionItems(
       document as never,
@@ -141,7 +214,7 @@ describe('Python providers', () => {
     ) as FakeCompletionItem[];
 
     const labels = items.map(item => item.label).sort();
-    assert.deepStrictEqual(labels, ['attack', 'health', 'inventory']);
+    assert.deepStrictEqual(labels, ['attack', 'dash', 'health', 'ifaceSpeed', 'inventory']);
   });
 
   it('returns deduplicated nested property completions for chained self access', () => {

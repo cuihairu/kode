@@ -10,7 +10,10 @@ describe('extension entity open command', () => {
   let warningMessages: string[] = [];
   let openedDocumentPaths: string[] = [];
   let shownDocumentPaths: string[] = [];
+  let shownSelectionStarts: Array<{ line: number; character: number } | null> = [];
   let resolvedDefinitionPath: string | null = '/workspace/scripts/entity_defs/Avatar.def';
+  let databaseSchemaSnapshot: unknown = null;
+  let databaseSchemaLine = 1;
   const noop = (): undefined => undefined;
 
   before(() => {
@@ -18,7 +21,10 @@ describe('extension entity open command', () => {
     warningMessages = [];
     openedDocumentPaths = [];
     shownDocumentPaths = [];
+    shownSelectionStarts = [];
     resolvedDefinitionPath = '/workspace/scripts/entity_defs/Avatar.def';
+    databaseSchemaSnapshot = null;
+    databaseSchemaLine = 1;
 
     const noopDisposable = { dispose: noop };
     const vscodeStub = createVscodeStub({
@@ -35,6 +41,7 @@ describe('extension entity open command', () => {
       workspace: {
         workspaceFolders: [{ uri: { fsPath: '/workspace' } }],
         textDocuments: [],
+        registerTextDocumentContentProvider: () => noopDisposable,
         getConfiguration: (section?: string) => ({
           get<T>(key: string, defaultValue: T): T {
             if (section === 'kbengine') {
@@ -71,8 +78,12 @@ describe('extension entity open command', () => {
         },
         showErrorMessage: () => undefined,
         showInformationMessage: () => Promise.resolve(undefined),
-        showTextDocument: async (document: { uri: { fsPath: string } }) => {
+        showTextDocument: async (
+          document: { uri: { fsPath: string } },
+          options?: { selection?: { start: { line: number; character: number } } }
+        ) => {
           shownDocumentPaths.push(document.uri.fsPath);
+          shownSelectionStarts.push(options?.selection?.start ?? null);
           return undefined;
         }
       },
@@ -148,6 +159,12 @@ describe('extension entity open command', () => {
           PythonCompletionProvider: class {},
           PythonDefinitionProvider: class {},
           validateDocument: noop
+        },
+        './databaseSchema': {
+          createDatabaseSchemaUri: (entityName: string) => new FakeUri(`kbengine-db-schema:/${entityName}.schema`),
+          getDatabaseSchemaSnapshot: () => databaseSchemaSnapshot,
+          KBEngineDatabaseSchemaProvider: class { dispose = noop; },
+          locateDatabaseSchemaLine: () => databaseSchemaLine
         }
       },
       true
@@ -165,7 +182,10 @@ describe('extension entity open command', () => {
     warningMessages = [];
     openedDocumentPaths = [];
     shownDocumentPaths = [];
+    shownSelectionStarts = [];
     resolvedDefinitionPath = '/workspace/scripts/entity_defs/Avatar.def';
+    databaseSchemaSnapshot = null;
+    databaseSchemaLine = 1;
   });
 
   it('opens the resolved entity definition from definitionWorkspace', async () => {
@@ -206,5 +226,24 @@ describe('extension entity open command', () => {
 
     assert.ok(warningMessages.some(message => message.includes('MissingOpen.def')));
     assert.ok(warningMessages.some(message => message.includes('ENOENT')));
+  });
+
+  it('opens the virtual database schema and jumps to the requested field', async () => {
+    databaseSchemaSnapshot = { tables: [] };
+    databaseSchemaLine = 7;
+    activate({ subscriptions: [], extensionUri: { fsPath: '/workspace/ext' } } as never);
+
+    const command = commands.get('kbengine.database.open');
+    assert.ok(command);
+
+    await command?.('Avatar', 'tbl_Avatar', 'sm_health');
+
+    assert.deepStrictEqual(openedDocumentPaths, ['kbengine-db-schema:/Avatar.schema']);
+    assert.deepStrictEqual(shownDocumentPaths, ['kbengine-db-schema:/Avatar.schema']);
+    assert.deepStrictEqual(
+      shownSelectionStarts.map(position => position ? { line: position.line, character: position.character } : null),
+      [{ line: 6, character: 0 }]
+    );
+    assert.deepStrictEqual(warningMessages, []);
   });
 });

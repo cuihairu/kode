@@ -9,18 +9,29 @@ import {
   findTextNodeAtOffset,
   getDirectChildElement,
   getDirectChildElements,
+  getLineNumberAt,
   getScalarChildValue,
   getScalarChildValues,
   hasTruthyChildTag,
   parseDefDocument
 } from './defParser';
-import { EntityMappingManager } from './entityMapping';
+import { EntityMappingManager, EntityMethodSection } from './entityMapping';
+import {
+  createDatabaseSchemaUri,
+  findDatabaseSchemaFieldAtPosition,
+  findDatabaseSchemaSourceLocation,
+  findDatabaseSchemaTargetsForSource,
+  getDatabaseSchemaSnapshot,
+  isDatabaseSchemaDocument,
+  locateDatabaseSchemaLine
+} from './databaseSchema';
 import {
   findCustomTypeInfo,
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
   findCustomTypePythonFile,
   findEntityDefinitionFile,
+  getEntityRuntimeProfile,
   getRegisteredCustomTypes,
   getRegisteredEntities,
   getWorkspaceRootForDocument
@@ -82,6 +93,28 @@ const CLIENT_METHOD_CHILD_TAGS = ['Arg', 'Utype'];
 const DETAIL_LEVEL_TAGS = ['NEAR', 'MEDIUM', 'FAR'];
 const DETAIL_LEVEL_VALUE_TAGS = ['radius', 'hyst'];
 const CONTAINER_TYPE_CHILD_TAGS = ['of', 'Properties', 'implementedBy'];
+const ENTITY_BASE_DATA_FLAGS = new Set(['BASE', 'BASE_AND_CLIENT']);
+const ENTITY_CELL_DATA_FLAGS = new Set([
+  'CELL_PUBLIC',
+  'CELL_PRIVATE',
+  'ALL_CLIENTS',
+  'CELL_PUBLIC_AND_OWN',
+  'OWN_CLIENT',
+  'OTHER_CLIENTS'
+]);
+const ENTITY_CLIENT_DATA_FLAGS = new Set([
+  'BASE_AND_CLIENT',
+  'ALL_CLIENTS',
+  'CELL_PUBLIC_AND_OWN',
+  'OWN_CLIENT',
+  'OTHER_CLIENTS'
+]);
+const PROPERTY_SCOPE_LABELS = {
+  base: 'Base',
+  cell: 'Cell',
+  client: 'Client'
+} as const;
+type PropertyScope = keyof typeof PROPERTY_SCOPE_LABELS;
 
 function createCompletionItems(
   labels: string[],
@@ -317,6 +350,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       return customTypeHover;
     }
 
+    const entityRegistrationHover = getEntityRegistrationHover(document, position, word);
+    if (entityRegistrationHover) {
+      return entityRegistrationHover;
+    }
+
     if (featureConfig.hoverShowSymbolDocs) {
       const symbolHover = getSymbolHover(document, position, word);
       if (symbolHover) {
@@ -412,10 +450,16 @@ interface SymbolHoverInfo {
 }
 
 export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
+  constructor(private entityMappingManager?: EntityMappingManager) {}
+
   provideDefinition(
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.Location> {
+    if (isDatabaseSchemaDocument(document)) {
+      return findDatabaseSchemaDefinition(document, position);
+    }
+
     const range = document.getWordRangeAtPosition(position, /\w+/);
     if (!range) {
       return null;
@@ -443,10 +487,7 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
     }
 
     if (document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def')) {
-      const location = findEntityDefinitionInDef(document, position, word);
-      if (location) {
-        return location;
-      }
+      return findEntityDefinitionInDef(document, position, word, this.entityMappingManager);
     }
 
     return null;
@@ -759,23 +800,57 @@ function validateSectionStructure(
   featureConfig: ReturnType<typeof getLanguageFeatureConfig>
 ): void {
   const seenSymbols = new Map<string, vscode.Range>();
+  const seenPropertyScopes = new Map<string, Map<PropertyScope, vscode.Range>>();
 
   for (const symbolNode of getDirectChildElements(sectionNode)) {
     const symbolRange = createNodeRange(document, symbolNode);
-    const existing = seenSymbols.get(symbolNode.name);
-    if (featureConfig.diagnosticsCheckDuplicateDefinitions && existing) {
-      diagnosticsList.push(new vscode.Diagnostic(
-        symbolRange,
-        `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name}`,
-        vscode.DiagnosticSeverity.Warning
-      ));
-      diagnosticsList.push(new vscode.Diagnostic(
-        existing,
-        `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已定义`,
-        vscode.DiagnosticSeverity.Information
-      ));
+    if (featureConfig.diagnosticsCheckDuplicateDefinitions && sectionName === 'Properties') {
+      const propertyScopes = getPropertyFlagScopes(symbolNode);
+      const seenScopes = seenPropertyScopes.get(symbolNode.name) || new Map<PropertyScope, vscode.Range>();
+
+      for (const scope of propertyScopes) {
+        const existing = seenScopes.get(scope);
+        if (!existing) {
+          continue;
+        }
+
+        diagnosticsList.push(new vscode.Diagnostic(
+          symbolRange,
+          `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name} (${describePropertyScope(scope)})`,
+          vscode.DiagnosticSeverity.Warning
+        ));
+        diagnosticsList.push(new vscode.Diagnostic(
+          existing,
+          `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已在 ${describePropertyScope(scope)} 作用域定义`,
+          vscode.DiagnosticSeverity.Information
+        ));
+      }
+
+      for (const scope of propertyScopes) {
+        if (!seenScopes.has(scope)) {
+          seenScopes.set(scope, symbolRange);
+        }
+      }
+
+      if (propertyScopes.length > 0) {
+        seenPropertyScopes.set(symbolNode.name, seenScopes);
+      }
     } else {
-      seenSymbols.set(symbolNode.name, symbolRange);
+      const existing = seenSymbols.get(symbolNode.name);
+      if (featureConfig.diagnosticsCheckDuplicateDefinitions && existing) {
+        diagnosticsList.push(new vscode.Diagnostic(
+          symbolRange,
+          `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name}`,
+          vscode.DiagnosticSeverity.Warning
+        ));
+        diagnosticsList.push(new vscode.Diagnostic(
+          existing,
+          `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已定义`,
+          vscode.DiagnosticSeverity.Information
+        ));
+      } else {
+        seenSymbols.set(symbolNode.name, symbolRange);
+      }
     }
 
     if (sectionName === 'Properties' && featureConfig.diagnosticsCheckMissingPropertyFields) {
@@ -806,6 +881,47 @@ function validatePropertyStructure(
       vscode.DiagnosticSeverity.Error
     ));
   }
+}
+
+function getPropertyFlagScopes(propertyNode: DefElementNode): PropertyScope[] {
+  const flags = normalizePropertyFlag(getScalarChildValue(propertyNode, 'Flags'));
+  if (!flags) {
+    return [];
+  }
+
+  const scopes: PropertyScope[] = [];
+  if (ENTITY_BASE_DATA_FLAGS.has(flags)) {
+    scopes.push('base');
+  }
+  if (ENTITY_CELL_DATA_FLAGS.has(flags)) {
+    scopes.push('cell');
+  }
+  if (ENTITY_CLIENT_DATA_FLAGS.has(flags)) {
+    scopes.push('client');
+  }
+  return scopes;
+}
+
+function normalizePropertyFlag(flags: string | undefined): string | undefined {
+  const normalizedFlag = flags?.trim().toUpperCase();
+  if (!normalizedFlag) {
+    return undefined;
+  }
+
+  switch (normalizedFlag) {
+    case 'CELL_AND_CLIENT':
+      return 'CELL_PUBLIC_AND_OWN';
+    case 'CELL_AND_CLIENTS':
+      return 'ALL_CLIENTS';
+    case 'CELL_AND_OTHER_CLIENTS':
+      return 'OTHER_CLIENTS';
+    default:
+      return normalizedFlag;
+  }
+}
+
+function describePropertyScope(scope: PropertyScope): string {
+  return PROPERTY_SCOPE_LABELS[scope];
 }
 
 function visitElementNodes(node: DefElementNode, visitor: (node: DefElementNode) => void): void {
@@ -971,14 +1087,7 @@ function getTypeValueHover(
 
   const entityPath = findEntityDefinitionFile(word, document);
   if (entityPath) {
-    const entityInfo = getRegisteredEntityInfo(document, word);
-    const extraLines = entityInfo
-      ? [
-          `**Base**: \`${entityInfo.hasBase}\``,
-          `**Cell**: \`${entityInfo.hasCell}\``,
-          `**Client**: \`${entityInfo.hasClient}\``
-        ]
-      : [];
+    const extraLines = getEntityRuntimeHoverLines(document, word);
     return createDefinitionReferenceHover(word, 'Entity type', entityPath, extraLines);
   }
 
@@ -1034,6 +1143,38 @@ function createDefinitionReferenceHover(
   return new vscode.Hover(markdown);
 }
 
+function getEntityRegistrationHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Hover | null {
+  if (!document.fileName.endsWith('entities.xml')) {
+    return null;
+  }
+
+  const ast = parseDefAst(document);
+  const root = ast?.root;
+  if (!root) {
+    return null;
+  }
+
+  const offset = document.offsetAt(position);
+  const textNode = findTextNodeAtOffset(root, offset);
+  const elementNode = textNode?.parent || findDeepestElementAtOffset(root, offset);
+  if (!elementNode || elementNode.parent !== root || elementNode.name !== word) {
+    return null;
+  }
+
+  const defPath = findEntityDefinitionFile(word, document);
+  const extraLines = getEntityRuntimeHoverLines(document, word);
+  return createDefinitionReferenceHover(
+    word,
+    'Entity registration from `entities.xml`',
+    defPath || `${word}.def`,
+    extraLines
+  );
+}
+
 function getRegisteredEntityInfo(
   document: vscode.TextDocument,
   entityName: string
@@ -1044,6 +1185,61 @@ function getRegisteredEntityInfo(
   }
 
   return getRegisteredEntities(workspaceRoot).find(entity => entity.name === entityName) || null;
+}
+
+function getEntityRuntimeHoverLines(
+  document: vscode.TextDocument,
+  entityName: string
+): string[] {
+  const entityInfo = getRegisteredEntityInfo(document, entityName);
+  const runtimeProfile = getEntityRuntimeProfile(entityName, document);
+  if (!entityInfo) {
+    return [];
+  }
+
+  const renderFacet = (
+    label: 'Base' | 'Cell' | 'Client',
+    facet: ReturnType<typeof getEntityRuntimeProfile> extends infer T
+      ? T extends { base: infer F } ? F : never
+      : never,
+    declaredValue: boolean
+  ): string => {
+    const state = facet.enabled ? 'enabled' : 'disabled';
+    if (facet.declared) {
+      return `**${label}**: \`${declaredValue}\` (declared, ${state})`;
+    }
+
+    if (facet.scriptExists) {
+      return `**${label}**: \`${facet.enabled}\` (inferred from script)`;
+    }
+
+    return `**${label}**: \`false\` (not declared, no script)`;
+  };
+
+  if (!runtimeProfile) {
+    return [
+      `**Base**: \`${entityInfo.hasBase}\``,
+      `**Cell**: \`${entityInfo.hasCell}\``,
+      `**Client**: \`${entityInfo.hasClient}\``
+    ];
+  }
+
+  const extraLines = [
+    renderFacet('Base', runtimeProfile.base, entityInfo.hasBase),
+    renderFacet('Cell', runtimeProfile.cell, entityInfo.hasCell),
+    renderFacet('Client', runtimeProfile.client, entityInfo.hasClient),
+    `**Runtime**: \`${runtimeProfile.runtimeRoles.join(' / ') || 'None'}\``,
+    `**Visibility**: ${runtimeProfile.visibilitySummary}`,
+    `**Registration**: ${runtimeProfile.registrationSummary}`
+  ];
+
+  if (!runtimeProfile.client.enabled) {
+    extraLines.push('**Meaning**: client SDK will not create this entity type on the client side.');
+  } else {
+    extraLines.push('**Meaning**: client SDK may generate and instantiate this entity type on the client side.');
+  }
+
+  return extraLines;
 }
 
 type CustomTypeResolutionStatus =
@@ -1191,10 +1387,98 @@ function findEnclosingSymbol(
 function findEntityDefinitionInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
-  word: string
-): vscode.Location | null {
+  word: string,
+  entityMappingManager?: EntityMappingManager
+): vscode.ProviderResult<vscode.Location> {
+  const databaseSchemaLocation = findDatabaseSchemaLocationFromDef(document, position, word);
+  if (databaseSchemaLocation) {
+    return databaseSchemaLocation;
+  }
+
+  const symbolInfo = findDefSymbolInfo(document, position, word);
+  if (symbolInfo?.section && METHOD_SECTIONS.has(symbolInfo.section)) {
+    return findMethodImplementationLocationInDef(
+      document,
+      symbolInfo.symbolNode.name,
+      symbolInfo.section,
+      entityMappingManager
+    );
+  }
+
   const definitionReference = findDefinitionReferenceInDef(document, position, word);
   return createDefinitionLocation(document, definitionReference);
+}
+
+function findDatabaseSchemaDefinition(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.Location | null {
+  const entityName = decodeURIComponent(document.uri.path.replace(/^\/+/, '').replace(/\.schema$/, ''));
+  const snapshot = getDatabaseSchemaSnapshot(entityName, document);
+  if (!snapshot) {
+    return null;
+  }
+
+  const target = findDatabaseSchemaFieldAtPosition(document, position);
+  if (!target) {
+    return null;
+  }
+
+  const source = findDatabaseSchemaSourceLocation(snapshot, target.table, target.field);
+  if (!source) {
+    return null;
+  }
+
+  return new vscode.Location(
+    vscode.Uri.file(source.filePath),
+    new vscode.Position(Math.max(source.line - 1, 0), 0)
+  );
+}
+
+function findDatabaseSchemaLocationFromDef(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Location | null {
+  const symbolInfo = findDefSymbolInfo(document, position, word);
+  if (!symbolInfo || symbolInfo.section !== 'Properties') {
+    return null;
+  }
+
+  const entityName = path.basename(document.fileName, '.def');
+  const snapshot = getDatabaseSchemaSnapshot(entityName, document);
+  if (!snapshot) {
+    return null;
+  }
+
+  const sourcePath = buildPropertyPath(symbolInfo.symbolNode);
+  const targets = findDatabaseSchemaTargetsForSource(snapshot, document.fileName, sourcePath);
+  if (targets.length === 0) {
+    return null;
+  }
+
+  const primaryTarget = targets[0];
+  return new vscode.Location(
+    createDatabaseSchemaUri(entityName),
+    new vscode.Position(
+      Math.max(locateDatabaseSchemaLine(snapshot, primaryTarget.tableName, primaryTarget.fieldName) - 1, 0),
+      0
+    )
+  );
+}
+
+function buildPropertyPath(symbolNode: DefElementNode): string {
+  const segments: string[] = [];
+  let current: DefElementNode | null = symbolNode;
+
+  while (current) {
+    if (current.parent?.name === 'Properties') {
+      segments.push(current.name);
+    }
+    current = current.parent;
+  }
+
+  return segments.reverse().join('.');
 }
 
 function findTypeValueDefinitionInTypesXml(
@@ -1401,6 +1685,60 @@ function findDefinitionReferenceInDef(
   return null;
 }
 
+function findDefSymbolInfo(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): { section: KBEngineSectionName; symbolNode: DefElementNode } | null {
+  const node = getDefNodeAtWord(document, position, word);
+  const info = getSymbolNodeInfo(node);
+  if (!info || info.symbolNode.name !== word) {
+    return null;
+  }
+
+  return info;
+}
+
+function findMethodImplementationLocationInDef(
+  document: vscode.TextDocument,
+  methodName: string,
+  section: KBEngineSectionName,
+  entityMappingManager?: EntityMappingManager
+): vscode.ProviderResult<vscode.Location> {
+  if (!entityMappingManager || !METHOD_SECTIONS.has(section)) {
+    return null;
+  }
+
+  const definitionName = path.basename(document.fileName, '.def');
+  return entityMappingManager.resolveMethodImplementation(
+    definitionName,
+    methodName,
+    section as EntityMethodSection
+  ).then(reference => {
+    if (reference) {
+      return new vscode.Location(
+        vscode.Uri.file(reference.filePath),
+        new vscode.Position(reference.line - 1, 0)
+      );
+    }
+
+    const ast = parseDefDocument(document.getText());
+    const symbolInfo = findDefSymbolInfo(
+      document,
+      document.positionAt(document.getText().indexOf(methodName)),
+      methodName
+    );
+    if (!symbolInfo) {
+      return null;
+    }
+
+    return new vscode.Location(
+      document.uri,
+      new vscode.Position(getLineNumberAt(ast, symbolInfo.symbolNode.tagStart) - 1, 0)
+    );
+  });
+}
+
 function findDefinitionSiblingForParent(
   document: vscode.TextDocument,
   word: string
@@ -1549,8 +1887,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
       return null;
     }
 
-    const entityName = path.basename(document.fileName, '.py');
-    const mapping = this.entityMappingManager.getMapping(entityName);
+    const mapping = this.entityMappingManager.getMappingForPythonFile(document.fileName);
 
     if (!mapping) {
       return null;

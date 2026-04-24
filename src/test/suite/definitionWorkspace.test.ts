@@ -13,19 +13,29 @@ describe('definitionWorkspace', () => {
   let getRegisteredCustomTypes: DefinitionWorkspaceModule['getRegisteredCustomTypes'];
   let getCustomTypeInfos: DefinitionWorkspaceModule['getCustomTypeInfos'];
   let getDefinitionEntries: DefinitionWorkspaceModule['getDefinitionEntries'];
+  let getRegisteredEntities: DefinitionWorkspaceModule['getRegisteredEntities'];
+  let getEntityRuntimeProfile: DefinitionWorkspaceModule['getEntityRuntimeProfile'];
   let findEntityDefinitionsRoot: DefinitionWorkspaceModule['findEntityDefinitionsRoot'];
 
   before(() => {
     const entityDefsRoot = path.join('/workspace', 'scripts', 'entity_defs');
     const typesXmlPath = path.join(entityDefsRoot, 'types.xml');
+    const entitiesXmlPath = path.join('/workspace', 'scripts', 'entities.xml');
     const registeredTypePath = path.join('/workspace', 'scripts', 'user_type', 'RegisteredType.py');
+    const avatarBasePath = path.join('/workspace', 'scripts', 'base', 'Avatar.py');
+    const avatarClientPath = path.join('/workspace', 'scripts', 'client', 'Avatar.py');
+    const spaceCellPath = path.join('/workspace', 'scripts', 'cell', 'Space.py');
 
     const fsStub = {
       existsSync(candidatePath: string): boolean {
         return [
           entityDefsRoot,
           typesXmlPath,
-          registeredTypePath
+          entitiesXmlPath,
+          registeredTypePath,
+          avatarBasePath,
+          avatarClientPath,
+          spaceCellPath
         ].includes(candidatePath);
       },
       readFileSync(candidatePath: string): string {
@@ -46,6 +56,16 @@ describe('definitionWorkspace', () => {
             '    ARRAY',
             '    <of>RegisteredType</of>',
             '  </ArrayType>',
+            '</root>'
+          ].join('\n');
+        }
+
+        if (candidatePath === entitiesXmlPath) {
+          return [
+            '<root>',
+            '  <Avatar hasBase="true" hasClient="true" />',
+            '  <Space hasCell="true" />',
+            '  <Pet />',
             '</root>'
           ].join('\n');
         }
@@ -79,6 +99,8 @@ describe('definitionWorkspace', () => {
     getRegisteredCustomTypes = loadedModule.getRegisteredCustomTypes;
     getCustomTypeInfos = loadedModule.getCustomTypeInfos;
     getDefinitionEntries = loadedModule.getDefinitionEntries;
+    getRegisteredEntities = loadedModule.getRegisteredEntities;
+    getEntityRuntimeProfile = loadedModule.getEntityRuntimeProfile;
     findEntityDefinitionsRoot = loadedModule.findEntityDefinitionsRoot;
   });
 
@@ -138,5 +160,67 @@ describe('definitionWorkspace', () => {
       normalizePath(findEntityDefinitionsRoot('/workspace') || undefined),
       '/workspace/scripts/entity_defs'
     );
+  });
+
+  it('captures declared runtime flags from entities.xml and keeps undeclared facets distinct', () => {
+    const entities = getRegisteredEntities('/workspace');
+    const avatar = entities.find(item => item.name === 'Avatar');
+    const space = entities.find(item => item.name === 'Space');
+    const pet = entities.find(item => item.name === 'Pet');
+
+    assert.deepStrictEqual(avatar, {
+      name: 'Avatar',
+      hasBaseDeclared: true,
+      hasCellDeclared: false,
+      hasClientDeclared: true,
+      hasBase: true,
+      hasCell: false,
+      hasClient: true
+    });
+
+    assert.deepStrictEqual(space, {
+      name: 'Space',
+      hasBaseDeclared: false,
+      hasCellDeclared: true,
+      hasClientDeclared: false,
+      hasBase: false,
+      hasCell: true,
+      hasClient: false
+    });
+
+    assert.deepStrictEqual(pet, {
+      name: 'Pet',
+      hasBaseDeclared: false,
+      hasCellDeclared: false,
+      hasClientDeclared: false,
+      hasBase: false,
+      hasCell: false,
+      hasClient: false
+    });
+  });
+
+  it('derives runtime visibility from declared flags and script presence', () => {
+    const avatar = getEntityRuntimeProfile('Avatar', '/workspace');
+    const space = getEntityRuntimeProfile('Space', '/workspace');
+    const pet = getEntityRuntimeProfile('Pet', '/workspace');
+
+    assert.ok(avatar);
+    assert.deepStrictEqual(avatar?.runtimeRoles, ['BaseApp', 'Client']);
+    assert.strictEqual(avatar?.registrationSummary, 'Registered on BaseApp / Client');
+    assert.strictEqual(avatar?.visibilitySummary, 'Has client entity definition');
+    assert.strictEqual(avatar?.base.source, 'declared');
+    assert.strictEqual(avatar?.client.source, 'declared');
+    assert.strictEqual(avatar?.cell.source, 'disabled');
+
+    assert.ok(space);
+    assert.deepStrictEqual(space?.runtimeRoles, ['CellApp']);
+    assert.strictEqual(space?.visibilitySummary, 'Server only (no client entity)');
+    assert.strictEqual(space?.cell.source, 'declared');
+
+    assert.ok(pet);
+    assert.deepStrictEqual(pet?.runtimeRoles, []);
+    assert.strictEqual(pet?.visibilitySummary, 'Server only (no client entity)');
+    assert.strictEqual(pet?.base.source, 'disabled');
+    assert.strictEqual(pet?.client.source, 'disabled');
   });
 });

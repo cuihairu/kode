@@ -50,8 +50,15 @@ type EntityMappingModule = typeof import('../../entityMapping');
 describe('EntityMappingManager', () => {
   const defPath = '/workspace/entity_defs/Hero.def';
   const pythonPath = '/workspace/scripts/base/Hero.py';
+  const interfaceDefPath = '/workspace/entity_defs/interfaces/MoveIface.def';
+  const interfacePythonPath = '/workspace/scripts/interfaces/MoveIface.py';
   const defText = [
     '<root>',
+    '  <Interfaces>',
+    '    <Interface>',
+    '      <MoveIface/>',
+    '    </Interface>',
+    '  </Interfaces>',
     '  <Properties>',
     '    <health>',
     '      <Type>UINT32</Type>',
@@ -82,23 +89,54 @@ describe('EntityMappingManager', () => {
     '  </ClientMethods>',
     '</root>'
   ].join('\n');
+  const interfaceDefText = [
+    '<root>',
+    '  <Properties>',
+    '    <ifaceSpeed>',
+    '      <Type>UINT32</Type>',
+    '    </ifaceSpeed>',
+    '  </Properties>',
+    '  <BaseMethods>',
+    '    <dash>',
+    '      <Exposed/>',
+    '    </dash>',
+    '  </BaseMethods>',
+    '  <CellMethods>',
+    '    <syncMove>',
+    '    </syncMove>',
+    '  </CellMethods>',
+    '  <ClientMethods>',
+    '    <notifyIface>',
+    '    </notifyIface>',
+    '  </ClientMethods>',
+    '</root>'
+  ].join('\n');
 
   let EntityMappingManager: EntityMappingModule['EntityMappingManager'];
   let openedSelection: FakeRange | undefined;
   let openDocumentPath: string | undefined;
   let restoreModuleMocks: (() => void) | undefined;
-  let readFilePath: string | undefined;
+  let readFilePaths: string[] = [];
 
-  before(() => {
+  function loadEntityMappingModule(hasPythonFiles = true): void {
+    restoreModuleMocks?.();
+
     const fakeVscode = {
       workspace: {
         workspaceFolders: [{ uri: new FakeUri('/workspace') }],
         findFiles: async () => [],
         fs: {
           readFile: async (uri: FakeUri) => {
-            readFilePath = uri.fsPath;
-            assert.strictEqual(uri.fsPath, defPath);
-            return Buffer.from(defText, 'utf8');
+            readFilePaths.push(uri.fsPath);
+            if (uri.fsPath === defPath) {
+              return Buffer.from(defText, 'utf8');
+            }
+
+            if (uri.fsPath === interfaceDefPath) {
+              return Buffer.from(interfaceDefText, 'utf8');
+            }
+
+            throw new Error(`Unexpected readFile path: ${uri.fsPath}`);
           }
         },
         createFileSystemWatcher: () => new FakeWatcher(),
@@ -120,16 +158,32 @@ describe('EntityMappingManager', () => {
 
     const fakeFs = {
       existsSync(candidatePath: string) {
-        return candidatePath === pythonPath;
+        if (!hasPythonFiles) {
+          return false;
+        }
+
+        return candidatePath === pythonPath || candidatePath === interfacePythonPath;
       },
       readFileSync(candidatePath: string, encoding: string) {
-        assert.strictEqual(candidatePath, pythonPath);
         assert.strictEqual(encoding, 'utf8');
-        return [
-          'class Hero:',
-          '    def attack(self, target):',
-          '        return target'
-        ].join('\n');
+
+        if (candidatePath === pythonPath) {
+          return [
+            'class Hero:',
+            '    def attack(self, target):',
+            '        return target'
+          ].join('\n');
+        }
+
+        if (candidatePath === interfacePythonPath) {
+          return [
+            'class MoveIface:',
+            '    def dash(self):',
+            '        return None'
+          ].join('\n');
+        }
+
+        throw new Error(`Unexpected readFileSync path: ${candidatePath}`);
       }
     };
 
@@ -138,12 +192,25 @@ describe('EntityMappingManager', () => {
       '../../entityMapping',
       {
         vscode: fakeVscode,
-        fs: fakeFs
+        fs: fakeFs,
+        './definitionWorkspace': {
+          findDefinitionFileByCategory(name: string, category: string) {
+            if (name === 'MoveIface' && category === 'interface') {
+              return interfaceDefPath;
+            }
+
+            return null;
+          }
+        }
       },
       true
     );
     restoreModuleMocks = restore;
     EntityMappingManager = loadedModule.EntityMappingManager;
+  }
+
+  before(() => {
+    loadEntityMappingModule();
   });
 
   after(() => {
@@ -153,10 +220,10 @@ describe('EntityMappingManager', () => {
   beforeEach(() => {
     openedSelection = undefined;
     openDocumentPath = undefined;
-    readFilePath = undefined;
+    readFilePaths = [];
   });
 
-  it('parses nested properties and method mappings from def files', async () => {
+  it('parses nested properties and interface method mappings from def files', async () => {
     const manager = new EntityMappingManager({ subscriptions: [] } as never);
 
     await (manager as unknown as {
@@ -166,18 +233,22 @@ describe('EntityMappingManager', () => {
     const mapping = manager.getMapping('Hero');
     assert.ok(mapping);
     assert.strictEqual(mapping?.pythonFile, pythonPath);
-    assert.deepStrictEqual(mapping?.pythonFiles, [pythonPath]);
+    assert.deepStrictEqual(mapping?.pythonFiles, [pythonPath, interfacePythonPath]);
     assert.deepStrictEqual(mapping?.properties, {
-      health: { defFile: defPath, line: 3 },
-      inventory: { defFile: defPath, line: 6 },
-      'inventory.weapon': { defFile: defPath, line: 9 },
-      'inventory.weapon.damage': { defFile: defPath, line: 12 }
+      health: { defFile: defPath, line: 8 },
+      inventory: { defFile: defPath, line: 11 },
+      'inventory.weapon': { defFile: defPath, line: 14 },
+      'inventory.weapon.damage': { defFile: defPath, line: 17 },
+      ifaceSpeed: { defFile: interfaceDefPath, line: 3 }
     });
     assert.deepStrictEqual(mapping?.methods, {
-      attack: [{ defFile: defPath, line: 21, section: 'BaseMethods', exposed: true }],
-      notify: [{ defFile: defPath, line: 27, section: 'ClientMethods', exposed: false }]
+      attack: [{ defFile: defPath, line: 26, section: 'BaseMethods', exposed: true }],
+      notify: [{ defFile: defPath, line: 32, section: 'ClientMethods', exposed: false }],
+      dash: [{ defFile: interfaceDefPath, line: 8, section: 'BaseMethods', exposed: true }],
+      syncMove: [{ defFile: interfaceDefPath, line: 13, section: 'CellMethods', exposed: false }],
+      notifyIface: [{ defFile: interfaceDefPath, line: 17, section: 'ClientMethods', exposed: false }]
     });
-    assert.strictEqual(readFilePath, defPath);
+    assert.deepStrictEqual(readFilePaths, [defPath, interfaceDefPath]);
   });
 
   it('opens the def file at the mapped line when jumping to a property', async () => {
@@ -192,13 +263,13 @@ describe('EntityMappingManager', () => {
     assert.strictEqual(didOpen, true);
     assert.strictEqual(openDocumentPath, defPath);
     assert.ok(openedSelection);
-    assert.strictEqual(openedSelection?.start.line, 11);
+    assert.strictEqual(openedSelection?.start.line, 16);
     assert.strictEqual(openedSelection?.start.character, 0);
-    assert.strictEqual(openedSelection?.end.line, 11);
+    assert.strictEqual(openedSelection?.end.line, 16);
     assert.strictEqual(openedSelection?.end.character, 0);
   });
 
-  it('opens the python implementation for a mapped method before falling back to def', async () => {
+  it('opens the python implementation for a mapped entity method before falling back to def', async () => {
     const manager = new EntityMappingManager({ subscriptions: [] } as never);
 
     await (manager as unknown as {
@@ -214,46 +285,42 @@ describe('EntityMappingManager', () => {
     assert.strictEqual(openedSelection?.start.character, 0);
   });
 
+  it('opens interface python implementations before falling back to interface def', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+
+    await (manager as unknown as {
+      parseDefFile(entityName: string, defPath: string): Promise<void>;
+    }).parseDefFile('Hero', defPath);
+
+    const didOpen = await manager.openMethodTarget('Hero', 'dash', 'BaseMethods');
+
+    assert.strictEqual(didOpen, true);
+    assert.strictEqual(openDocumentPath, interfacePythonPath);
+    assert.ok(openedSelection);
+    assert.strictEqual(openedSelection?.start.line, 1);
+  });
+
+  it('resolves interface python files back to interface-based property and method definitions', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+
+    await (manager as unknown as {
+      parseDefFile(entityName: string, defPath: string): Promise<void>;
+    }).parseDefFile('Hero', defPath);
+
+    const propertyDefinition = await manager.resolvePropertyDefinition(interfacePythonPath, 'ifaceSpeed', 'ifaceSpeed');
+    const methodDefinition = await manager.resolveMethodDefinition(interfacePythonPath, 'dash');
+
+    assert.deepStrictEqual(propertyDefinition, { defFile: interfaceDefPath, line: 3 });
+    assert.deepStrictEqual(methodDefinition, {
+      defFile: interfaceDefPath,
+      line: 8,
+      section: 'BaseMethods',
+      exposed: true
+    });
+  });
+
   it('keeps def mappings even when no python script exists yet', async () => {
-    const fakeFs = {
-      existsSync() {
-        return false;
-      }
-    };
-
-    restoreModuleMocks?.();
-    const fakeVscode = {
-      workspace: {
-        workspaceFolders: [{ uri: new FakeUri('/workspace') }],
-        findFiles: async () => [],
-        fs: {
-          readFile: async (uri: FakeUri) => {
-            assert.strictEqual(uri.fsPath, defPath);
-            return Buffer.from(defText, 'utf8');
-          }
-        },
-        createFileSystemWatcher: () => new FakeWatcher(),
-        openTextDocument: async (uri: FakeUri) => ({ uri })
-      },
-      window: {
-        showTextDocument: async () => ({})
-      },
-      Uri: FakeUri,
-      Position: FakePosition,
-      Range: FakeRange
-    };
-
-    const { loadedModule, restore } = loadModuleWithMocks<EntityMappingModule>(
-      __filename,
-      '../../entityMapping',
-      {
-        vscode: fakeVscode,
-        fs: fakeFs
-      },
-      true
-    );
-    restoreModuleMocks = restore;
-    EntityMappingManager = loadedModule.EntityMappingManager;
+    loadEntityMappingModule(false);
 
     const manager = new EntityMappingManager({ subscriptions: [] } as never);
     await (manager as unknown as {

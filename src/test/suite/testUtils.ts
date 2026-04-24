@@ -14,7 +14,16 @@ export class FakeRange {
 }
 
 export class FakeUri {
-  constructor(public fsPath: string) {}
+  scheme: string;
+  path: string;
+
+  constructor(public fsPath: string) {
+    const schemeMatch = /^([a-z0-9+.-]+):/i.exec(fsPath);
+    this.scheme = schemeMatch?.[1] || 'file';
+    this.path = this.scheme === 'file'
+      ? fsPath
+      : fsPath.replace(/^[a-z0-9+.-]+:/i, '');
+  }
 
   static parse(fsPath: string): FakeUri {
     return new FakeUri(fsPath);

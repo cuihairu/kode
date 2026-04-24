@@ -45,6 +45,9 @@ export interface CustomTypeInfo {
 
 export interface RegisteredEntityInfo {
   name: string;
+  hasBaseDeclared: boolean;
+  hasCellDeclared: boolean;
+  hasClientDeclared: boolean;
   hasBase: boolean;
   hasCell: boolean;
   hasClient: boolean;
@@ -57,6 +60,9 @@ export interface DefinitionEntry {
   exists: boolean;
   registered: boolean;
   line?: number;
+  hasBaseDeclared?: boolean;
+  hasCellDeclared?: boolean;
+  hasClientDeclared?: boolean;
   hasBase?: boolean;
   hasCell?: boolean;
   hasClient?: boolean;
@@ -71,11 +77,31 @@ export interface DefinitionEntry {
 export interface DefinitionWorkspaceLayout {
   workspaceRoot: string;
   entityDefsRoot: string | null;
+  entityScriptsRoot: string | null;
   interfacesRoot: string | null;
   componentsRoot: string | null;
   entitiesXmlPath: string | null;
   typesXmlPath: string | null;
   userTypeRoots: string[];
+}
+
+export interface EntityRuntimeFacet {
+  enabled: boolean;
+  declared: boolean;
+  scriptExists: boolean;
+  scriptPath: string | null;
+  source: 'declared' | 'inferred' | 'disabled';
+}
+
+export interface EntityRuntimeProfile {
+  base: EntityRuntimeFacet;
+  cell: EntityRuntimeFacet;
+  client: EntityRuntimeFacet;
+  runtimeRoles: string[];
+  runtimeLabel: string;
+  visibilityLabel: string;
+  registrationSummary: string;
+  visibilitySummary: string;
 }
 
 export function getWorkspaceRootForDocument(
@@ -141,6 +167,7 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
   return {
     workspaceRoot,
     entityDefsRoot,
+    entityScriptsRoot,
     interfacesRoot: entityDefsRoot ? joinWorkspacePath(entityDefsRoot, 'interfaces') : null,
     componentsRoot: entityDefsRoot ? joinWorkspacePath(entityDefsRoot, 'components') : null,
     entitiesXmlPath: findExistingPath(entitiesXmlCandidates),
@@ -172,6 +199,9 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
 
     entities.push({
       name,
+      hasBaseDeclared: Object.prototype.hasOwnProperty.call(entityNode.attributes, 'hasBase'),
+      hasCellDeclared: Object.prototype.hasOwnProperty.call(entityNode.attributes, 'hasCell'),
+      hasClientDeclared: Object.prototype.hasOwnProperty.call(entityNode.attributes, 'hasClient'),
       hasBase: isTrueAttributeValue(entityNode.attributes.hasBase),
       hasCell: isTrueAttributeValue(entityNode.attributes.hasCell),
       hasClient: isTrueAttributeValue(entityNode.attributes.hasClient)
@@ -265,6 +295,81 @@ export function findEntityDefinitionsRoot(
   }
 
   return getDefinitionWorkspaceLayout(workspaceRoot).entityDefsRoot;
+}
+
+export function getEntityRuntimeProfile(
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): EntityRuntimeProfile | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const entityInfo = getRegisteredEntities(workspaceRoot).find(entity => entity.name === entityName);
+  if (!entityInfo) {
+    return null;
+  }
+
+  const createFacet = (
+    role: 'base' | 'cell' | 'client',
+    declared: boolean,
+    declaredValue: boolean
+  ): EntityRuntimeFacet => {
+    const scriptRoot = layout.entityScriptsRoot
+      ? joinWorkspacePath(layout.entityScriptsRoot, role)
+      : null;
+    const scriptPath = scriptRoot
+      ? findExistingLookupPath(joinWorkspacePath(scriptRoot, `${entityName}.py`))
+      : null;
+    const scriptExists = !!scriptPath;
+    const enabled = declared ? declaredValue : scriptExists;
+
+    return {
+      enabled,
+      declared,
+      scriptExists,
+      scriptPath,
+      source: declared
+        ? (declaredValue ? 'declared' : 'disabled')
+        : (scriptExists ? 'inferred' : 'disabled')
+    };
+  };
+
+  const base = createFacet('base', entityInfo.hasBaseDeclared, entityInfo.hasBase);
+  const cell = createFacet('cell', entityInfo.hasCellDeclared, entityInfo.hasCell);
+  const client = createFacet('client', entityInfo.hasClientDeclared, entityInfo.hasClient);
+
+  const runtimeRoles = [
+    base.enabled ? 'BaseApp' : null,
+    cell.enabled ? 'CellApp' : null,
+    client.enabled ? 'Client' : null
+  ].filter((value): value is string => !!value);
+  const runtimeLabel = runtimeRoles.join(' / ') || 'None';
+  const visibilityLabel = client.enabled ? 'Client Entity' : 'Server Only';
+
+  const registrationSummary = runtimeRoles.length > 0
+    ? `Registered on ${runtimeRoles.join(' / ')}`
+    : 'Registered, but no runtime role enabled';
+
+  const visibilitySummary = client.enabled
+    ? 'Has client entity definition'
+    : 'Server only (no client entity)';
+
+  return {
+    base,
+    cell,
+    client,
+    runtimeRoles,
+    runtimeLabel,
+    visibilityLabel,
+    registrationSummary,
+    visibilitySummary
+  };
 }
 
 export function findEntitiesXmlFile(
@@ -381,6 +486,9 @@ export function getDefinitionEntries(
         category,
         exists: pathExists(filePath),
         registered: true,
+        hasBaseDeclared: entity.hasBaseDeclared,
+        hasCellDeclared: entity.hasCellDeclared,
+        hasClientDeclared: entity.hasClientDeclared,
         hasBase: entity.hasBase,
         hasCell: entity.hasCell,
         hasClient: entity.hasClient

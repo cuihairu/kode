@@ -34,6 +34,7 @@
     "onCommand:kbengine.refreshExplorer",
     "onCommand:kbengine.entity.open",
     "onCommand:kbengine.entity.method.open",
+    "onCommand:kbengine.database.open",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -124,6 +125,11 @@
         "command": "kbengine.entity.method.open",
         "title": "Open Entity Method",
         "icon": "$(symbol-method)"
+      },
+      {
+        "command": "kbengine.database.open",
+        "title": "Open Database Schema",
+        "icon": "$(database)"
       },
       {
         "command": "kbengine.server.start",
