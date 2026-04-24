@@ -7,9 +7,11 @@
 docs/
 resources/docs/
 src/
+vendor/**/LICENSE
 coverage/
 .nyc_output/
 .cache/
+.tmp/
 .idea/
 .DS_Store
 *.log

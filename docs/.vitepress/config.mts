@@ -1,9 +1,14 @@
 import { defineConfig } from 'vitepress';
 
 export default defineConfig({
+  lang: 'zh-CN',
   title: 'Kode',
   description: 'KBEngine VSCode Extension Documentation',
   base: process.env.GITHUB_ACTIONS ? '/kode/' : '/',
+  rewrites: {
+    'README.md': 'index.md',
+    'guide/README.md': 'guide/index.md'
+  },
   lastUpdated: true,
   themeConfig: {
     nav: [

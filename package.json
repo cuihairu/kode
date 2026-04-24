@@ -12,6 +12,7 @@
   "icon": "resources/logo.png",
   "packageManager": "pnpm@8.15.0",
   "engines": {
+    "node": "^20.19.0 || >=22.12.0",
     "vscode": "^1.50.0"
   },
   "categories": [
@@ -416,17 +417,17 @@
   },
   "homepage": "https://github.com/cuihairu/kode#readme",
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
+    "vscode:prepublish": "npm run compile",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "pretest": "pnpm run clean && pnpm run compile",
+    "pretest": "npm run clean && npm run compile",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "pnpm run compile && vsce package --no-yarn",
-    "publish": "pnpm run compile && vsce publish --no-yarn"
+    "package": "npm run compile && vsce package --no-yarn --no-dependencies",
+    "publish": "npm run compile && vsce publish --no-yarn --no-dependencies"
   },
   "devDependencies": {
     "@types/mocha": "^8.2.2",
@@ -440,7 +441,7 @@
     "glob": "^10.5.0",
     "mocha": "^11.7.5",
     "typescript": "^4.2.5",
-    "vitepress": "^1.6.4"
+    "vitepress": "2.0.0-alpha.17"
   },
   "pnpm": {
     "overrides": {
@@ -464,8 +465,5 @@
       "serialize-javascript": "7.0.5",
       "tough-cookie": "4.1.3"
     }
-  },
-  "dependencies": {
-    "fast-xml-parser": "^5.7.1"
   }
 }

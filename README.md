@@ -179,7 +179,7 @@ code --install-extension kode-0.1.0.vsix
 
 ### 环境要求
 
-- Node.js 20.x 或更高版本
+- Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
 - Git
 - VSCode 1.50.0 或更高版本
 
@@ -245,7 +245,7 @@ pnpm run docs:dev
 
 详细的使用文档和开发指南，请查看：
 
-- [VitePress 文档](./docs/README.md) - 新版文档入口
+- [VitePress 文档](./docs/) - 新版文档入口
 - [设计文档](./resources/docs/vscode-extension-design.md) - 完整的设计方案
 - [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
 - [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计
