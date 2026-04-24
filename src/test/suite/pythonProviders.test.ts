@@ -32,6 +32,17 @@ describe('Python providers', () => {
   });
 
   function createMappingManager() {
+    const properties: Record<string, { defFile: string; line: number }> = {
+      health: { defFile: '/workspace/entity_defs/Hero.def', line: 8 },
+      inventory: { defFile: '/workspace/entity_defs/Hero.def', line: 12 },
+      'inventory.weapon': { defFile: '/workspace/entity_defs/Hero.def', line: 16 },
+      'inventory.weapon.damage': { defFile: '/workspace/entity_defs/Hero.def', line: 20 },
+      'inventory.weapon.range': { defFile: '/workspace/entity_defs/Hero.def', line: 24 }
+    };
+    const methods: Record<string, Array<{ defFile: string; line: number; section: string; exposed: boolean }>> = {
+      attack: [{ defFile: '/workspace/entity_defs/Hero.def', line: 40, section: 'BaseMethods', exposed: true }]
+    };
+
     return {
       getMapping(entityName: string) {
         if (entityName !== 'Hero') {
@@ -42,22 +53,28 @@ describe('Python providers', () => {
           name: 'Hero',
           defFile: '/workspace/entity_defs/Hero.def',
           pythonFile: '/workspace/scripts/Hero.py',
-          properties: {
-            health: { defFile: '/workspace/entity_defs/Hero.def', line: 8 },
-            inventory: { defFile: '/workspace/entity_defs/Hero.def', line: 12 },
-            'inventory.weapon': { defFile: '/workspace/entity_defs/Hero.def', line: 16 },
-            'inventory.weapon.damage': { defFile: '/workspace/entity_defs/Hero.def', line: 20 },
-            'inventory.weapon.range': { defFile: '/workspace/entity_defs/Hero.def', line: 24 }
-          },
-          methods: {
-            attack: { defFile: '/workspace/entity_defs/Hero.def', line: 40 }
-          }
+          properties,
+          methods
         };
+      },
+      async resolvePropertyDefinition(_pythonFile: string, fullPath: string, rootSymbol?: string) {
+        const mapping = this.getMapping('Hero');
+        if (!mapping) {
+          return null;
+        }
+
+        return mapping.properties[fullPath]
+          || (rootSymbol ? mapping.properties[rootSymbol] : undefined)
+          || null;
+      },
+      async resolveMethodDefinition(_pythonFile: string, methodName: string) {
+        const mapping = this.getMapping('Hero');
+        return mapping?.methods[methodName]?.[0] || null;
       }
     };
   }
 
-  it('resolves nested property definitions using the full self access path', () => {
+  it('resolves nested property definitions using the full self access path', async () => {
     const provider = new PythonDefinitionProvider(createMappingManager() as never);
     const document = new FakeTextDocument(
       '/workspace/scripts/Hero.py',
@@ -65,7 +82,7 @@ describe('Python providers', () => {
       'return self.inventory.weapon.damage'
     );
 
-    const location = provider.provideDefinition(
+    const location = await provider.provideDefinition(
       document as never,
       new FakePosition(0, 'return self.inventory.weapon.damage'.indexOf('damage')) as never
     ) as unknown as FakeLocation;
@@ -75,7 +92,7 @@ describe('Python providers', () => {
     assert.strictEqual(location.position.line, 19);
   });
 
-  it('falls back to the root property or method when a nested path is not mapped', () => {
+  it('falls back to the root property or method when a nested path is not mapped', async () => {
     const provider = new PythonDefinitionProvider(createMappingManager() as never);
     const propertyDocument = new FakeTextDocument(
       '/workspace/scripts/Hero.py',
@@ -84,11 +101,11 @@ describe('Python providers', () => {
     );
     const methodDocument = new FakeTextDocument('/workspace/scripts/Hero.py', 'python', 'self.attack(target)');
 
-    const propertyLocation = provider.provideDefinition(
+    const propertyLocation = await provider.provideDefinition(
       propertyDocument as never,
       new FakePosition(0, 'return self.inventory.unknown'.indexOf('unknown')) as never
     ) as unknown as FakeLocation;
-    const methodLocation = provider.provideDefinition(
+    const methodLocation = await provider.provideDefinition(
       methodDocument as never,
       new FakePosition(0, 'self.attack(target)'.indexOf('attack')) as never
     ) as unknown as FakeLocation;
@@ -98,6 +115,20 @@ describe('Python providers', () => {
 
     assert.ok(methodLocation);
     assert.strictEqual(methodLocation.position.line, 39);
+  });
+
+  it('resolves python method declarations to def method definitions', async () => {
+    const provider = new PythonDefinitionProvider(createMappingManager() as never);
+    const document = new FakeTextDocument('/workspace/scripts/base/Hero.py', 'python', '    def attack(self, target):');
+
+    const location = await provider.provideDefinition(
+      document as never,
+      new FakePosition(0, '    def attack'.indexOf('attack')) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/entity_defs/Hero.def');
+    assert.strictEqual(location.position.line, 39);
   });
 
   it('returns top-level property and method completion items for direct self access', () => {

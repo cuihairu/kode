@@ -1,5 +1,19 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import {
+  DefDocument,
+  DefElementNode,
+  DefNode,
+  findAncestorElement,
+  findDeepestElementAtOffset,
+  findTextNodeAtOffset,
+  getDirectChildElement,
+  getDirectChildElements,
+  getScalarChildValue,
+  getScalarChildValues,
+  hasTruthyChildTag,
+  parseDefDocument
+} from './defParser';
 import { EntityMappingManager } from './entityMapping';
 import {
   findCustomTypeInfo,
@@ -394,6 +408,7 @@ interface SymbolHoverInfo {
   database?: string;
   identifier?: string;
   args: string[];
+  exposed?: boolean;
 }
 
 export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
@@ -449,9 +464,8 @@ export function validateDocument(
   }
 
   const diagnosticsList: vscode.Diagnostic[] = [];
-  const text = document.getText();
 
-  validateScalarTagValues(document, diagnosticsList, text, featureConfig);
+  validateScalarTagValues(document, diagnosticsList, featureConfig);
   if (featureConfig.enableStructureDiagnostics) {
     validateDefStructure(document, diagnosticsList, featureConfig);
   }
@@ -469,19 +483,6 @@ type KBEngineSectionName =
   | 'ClientMethods'
   | 'Volatile';
 
-interface SectionContext {
-  section: KBEngineSectionName;
-  symbols: Map<string, vscode.Range>;
-}
-
-interface SymbolContext {
-  name: string;
-  section: KBEngineSectionName;
-  range: vscode.Range;
-  hasType: boolean;
-  hasFlags: boolean;
-}
-
 const PROPERTY_SECTIONS = new Set<KBEngineSectionName>(['Properties']);
 
 const METHOD_SECTIONS = new Set<KBEngineSectionName>([
@@ -490,19 +491,12 @@ const METHOD_SECTIONS = new Set<KBEngineSectionName>([
   'ClientMethods'
 ]);
 
-const ALLOWED_PROPERTY_CHILDREN = new Set([
-  'Type',
-  'Flags',
-  'Default',
-  'Persistent',
-  'DetailLevel',
-  'Identifier',
-  'Index',
-  'DatabaseLength',
-  'Utype'
+const DEF_SYMBOL_SECTIONS = new Set<KBEngineSectionName>([
+  'Properties',
+  'BaseMethods',
+  'CellMethods',
+  'ClientMethods'
 ]);
-
-const ALLOWED_METHOD_CHILDREN = new Set(['Arg', 'Utype', 'Exposed']);
 
 const ALLOWED_TOP_LEVEL_SECTIONS = new Set<KBEngineSectionName>([
   'Parent',
@@ -636,103 +630,53 @@ Object.assign(TAG_HOVER_DOCS, {
 function validateScalarTagValues(
   document: vscode.TextDocument,
   diagnosticsList: vscode.Diagnostic[],
-  text: string,
   featureConfig: ReturnType<typeof getLanguageFeatureConfig>
 ): void {
+  const ast = parseDefAst(document);
+  if (!ast?.root) {
+    return;
+  }
+
   const knownTypeContext = getKnownTypeContext(document);
   const knownFlags = new Set(KBENGINE_FLAGS.map(flag => flag.name));
   const knownLevels = new Set(DETAIL_LEVELS);
 
-  const typeRegex = /<Type>\s*([\s\S]*?)\s*<\/Type>/g;
-  let typeMatch: RegExpExecArray | null;
-  while ((typeMatch = typeRegex.exec(text)) !== null) {
-    const value = typeMatch[1].trim();
-    if (!value || /<[^>]+>/.test(value)) {
-      continue;
+  visitElementNodes(ast.root, node => {
+    if (node.name === 'Type') {
+      validateTypeNode(document, diagnosticsList, node, knownTypeContext, featureConfig);
+      return;
     }
 
-    const typeCandidateRegex = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
-    let typeCandidateMatch: RegExpExecArray | null;
-    while ((typeCandidateMatch = typeCandidateRegex.exec(value)) !== null) {
-      const candidate = typeCandidateMatch[0];
-      if (knownTypeContext.builtins.has(candidate) || knownTypeContext.entityTypes.has(candidate)) {
-        continue;
-      }
-
-      if (!featureConfig.diagnosticsCheckUnknownTypes) {
-        continue;
-      }
-
-      const customTypeResolution = resolveCustomTypeReference(document, candidate, knownTypeContext.customTypes);
-      if (customTypeResolution.status === 'resolved' || customTypeResolution.status === 'unverifiable') {
-        continue;
-      }
-
-      if (customTypeResolution.status === 'missingPythonFile') {
-        pushDiagnosticForMatch(
+    if (node.name === 'Flags') {
+      const rawValue = getNodeValue(node);
+      const normalizedValue = rawValue.toUpperCase();
+      if (featureConfig.diagnosticsCheckUnknownFlags && normalizedValue && !knownFlags.has(normalizedValue)) {
+        pushDiagnosticForNodeValue(
           document,
           diagnosticsList,
-          text,
-          candidate,
-          typeMatch.index,
-          `自定义类型 ${candidate} 已在 types.xml 中注册，但未找到对应的 user_type Python 文件，请检查 user_type/${candidate}.py`,
-          vscode.DiagnosticSeverity.Warning
+          node,
+          rawValue,
+          `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
+          vscode.DiagnosticSeverity.Error
         );
-        continue;
       }
+      return;
+    }
 
-      if (customTypeResolution.status === 'missingTypeRegistration') {
-        pushDiagnosticForMatch(
+    if (node.name === 'DetailLevel') {
+      const value = getNodeValue(node);
+      if (featureConfig.diagnosticsCheckUnknownDetailLevels && value && !knownLevels.has(value)) {
+        pushDiagnosticForNodeValue(
           document,
           diagnosticsList,
-          text,
-          candidate,
-          typeMatch.index,
-          `自定义类型 ${candidate} 未在 types.xml 中注册，请先在 types.xml 注册后再引用`,
+          node,
+          value,
+          `未知的 DetailLevel: ${value}`,
           vscode.DiagnosticSeverity.Error
         );
       }
     }
-  }
-
-  const flagsRegex = /<Flags>\s*([\s\S]*?)\s*<\/Flags>/g;
-  let flagsMatch: RegExpExecArray | null;
-  while ((flagsMatch = flagsRegex.exec(text)) !== null) {
-    const rawValue = flagsMatch[1].trim();
-    const value = rawValue.toUpperCase();
-    if (!value) {
-      continue;
-    }
-
-    if (featureConfig.diagnosticsCheckUnknownFlags && !knownFlags.has(value)) {
-      pushDiagnosticForMatch(
-        document,
-        diagnosticsList,
-        text,
-        rawValue,
-        flagsMatch.index,
-        `未知的 KBEngine Flags 值: ${rawValue}。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。`,
-        vscode.DiagnosticSeverity.Error
-      );
-    }
-  }
-
-  const detailRegex = /<DetailLevel>\s*([\s\S]*?)\s*<\/DetailLevel>/g;
-  let detailMatch: RegExpExecArray | null;
-  while ((detailMatch = detailRegex.exec(text)) !== null) {
-    const value = detailMatch[1].trim();
-    if (featureConfig.diagnosticsCheckUnknownDetailLevels && value && !knownLevels.has(value)) {
-      pushDiagnosticForMatch(
-        document,
-        diagnosticsList,
-        text,
-        value,
-        detailMatch.index,
-        `未知的 DetailLevel: ${value}`,
-        vscode.DiagnosticSeverity.Error
-      );
-    }
-  }
+  });
 }
 
 function validateDefStructure(
@@ -740,177 +684,204 @@ function validateDefStructure(
   diagnosticsList: vscode.Diagnostic[],
   featureConfig: ReturnType<typeof getLanguageFeatureConfig>
 ): void {
-  const sectionStack: SectionContext[] = [];
-  const symbolStack: SymbolContext[] = [];
-  const tagRegex = /<\/?([A-Za-z_][A-Za-z0-9_]*)\b[^>]*>/g;
-  const text = document.getText();
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRegex.exec(text)) !== null) {
-    const fullTag = match[0];
-    const tagName = match[1];
-    const isClosingTag = fullTag.startsWith('</');
-    const range = new vscode.Range(
-      document.positionAt(match.index),
-      document.positionAt(match.index + fullTag.length)
-    );
-
-    if (isClosingTag) {
-      const currentSymbol = symbolStack[symbolStack.length - 1];
-      if (currentSymbol?.name === tagName) {
-        finalizeSymbol(diagnosticsList, currentSymbol);
-        symbolStack.pop();
-        continue;
-      }
-
-      const currentSection = sectionStack[sectionStack.length - 1];
-      if (currentSection?.section === tagName) {
-        sectionStack.pop();
-      }
-      continue;
-    }
-
-    if (ALLOWED_TOP_LEVEL_SECTIONS.has(tagName as KBEngineSectionName)) {
-      sectionStack.push({
-        section: tagName as KBEngineSectionName,
-        symbols: new Map<string, vscode.Range>()
-      });
-      continue;
-    }
-
-    const currentSection = sectionStack[sectionStack.length - 1];
-    if (!currentSection) {
-      continue;
-    }
-
-    const currentSymbol = symbolStack[symbolStack.length - 1];
-    if (!currentSymbol) {
-      if (!isReservedTagName(tagName)) {
-        const existing = currentSection.symbols.get(tagName);
-        if (featureConfig.diagnosticsCheckDuplicateDefinitions && existing) {
-          diagnosticsList.push(new vscode.Diagnostic(
-            range,
-            `${getSectionLabel(currentSection.section)}中存在重复定义: ${tagName}`,
-            vscode.DiagnosticSeverity.Warning
-          ));
-          diagnosticsList.push(new vscode.Diagnostic(
-            existing,
-            `${tagName} 在 ${getSectionLabel(currentSection.section)} 中已定义`,
-            vscode.DiagnosticSeverity.Information
-          ));
-        } else {
-          currentSection.symbols.set(tagName, range);
-        }
-
-        symbolStack.push({
-          name: tagName,
-          section: currentSection.section,
-          range,
-          hasType: false,
-          hasFlags: false
-        });
-      }
-      continue;
-    }
-
-    if (PROPERTY_SECTIONS.has(currentSymbol.section)) {
-      if (tagName === 'Type') {
-        currentSymbol.hasType = true;
-      }
-      if (tagName === 'Flags') {
-        currentSymbol.hasFlags = true;
-      }
-      continue;
-    }
-
-    if (METHOD_SECTIONS.has(currentSymbol.section)) {
-      continue;
-    }
-  }
-}
-
-function finalizeSymbol(
-  diagnosticsList: vscode.Diagnostic[],
-  symbol: SymbolContext
-): void {
-  const featureConfig = getLanguageFeatureConfig();
-  if (PROPERTY_SECTIONS.has(symbol.section)) {
-    if (featureConfig.diagnosticsCheckMissingPropertyFields && !symbol.hasType) {
-      diagnosticsList.push(new vscode.Diagnostic(
-        symbol.range,
-        `属性 ${symbol.name} 缺少 <Type> 定义`,
-        vscode.DiagnosticSeverity.Error
-      ));
-    }
-
-    if (featureConfig.diagnosticsCheckMissingPropertyFields && !symbol.hasFlags) {
-      diagnosticsList.push(new vscode.Diagnostic(
-        symbol.range,
-        `属性 ${symbol.name} 缺少 <Flags> 定义`,
-        vscode.DiagnosticSeverity.Error
-      ));
-    }
-  }
-}
-
-function pushDiagnosticForMatch(
-  document: vscode.TextDocument,
-  diagnosticsList: vscode.Diagnostic[],
-  text: string,
-  value: string,
-  startOffset: number,
-  message: string,
-  severity: vscode.DiagnosticSeverity
-): void {
-  const offset = text.indexOf(value, startOffset);
-  if (offset === -1) {
+  const ast = parseDefAst(document);
+  const root = ast?.root;
+  if (!root) {
     return;
   }
 
-  diagnosticsList.push(new vscode.Diagnostic(
-    new vscode.Range(
-      document.positionAt(offset),
-      document.positionAt(offset + value.length)
-    ),
-    message,
-    severity
-  ));
+  for (const sectionNode of getDirectChildElements(root)) {
+    const sectionName = toSectionName(sectionNode.name);
+    if (!sectionName || !ALLOWED_TOP_LEVEL_SECTIONS.has(sectionName)) {
+      continue;
+    }
+
+    validateSectionStructure(document, diagnosticsList, sectionNode, sectionName, featureConfig);
+  }
 }
 
-function isReservedTagName(tagName: string): boolean {
-  return tagName === 'root'
-    || tagName === 'Interface'
-    || tagName === 'interface'
-    || tagName === 'implementedBy'
-    || ALLOWED_TOP_LEVEL_SECTIONS.has(tagName as KBEngineSectionName)
-    || ALLOWED_PROPERTY_CHILDREN.has(tagName)
-    || ALLOWED_METHOD_CHILDREN.has(tagName)
-    || tagName === 'FIXED_DICT'
-    || tagName === 'TUPLE';
+function validateTypeNode(
+  document: vscode.TextDocument,
+  diagnosticsList: vscode.Diagnostic[],
+  typeNode: DefElementNode,
+  knownTypeContext: KnownTypeContext,
+  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
+): void {
+  const value = getNodeValue(typeNode);
+  if (!value || getDirectChildElements(typeNode).length > 0 || !featureConfig.diagnosticsCheckUnknownTypes) {
+    return;
+  }
+
+  const typeCandidateRegex = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
+  let typeCandidateMatch: RegExpExecArray | null;
+
+  while ((typeCandidateMatch = typeCandidateRegex.exec(value)) !== null) {
+    const candidate = typeCandidateMatch[0];
+    if (knownTypeContext.builtins.has(candidate) || knownTypeContext.entityTypes.has(candidate)) {
+      continue;
+    }
+
+    const customTypeResolution = resolveCustomTypeReference(document, candidate, knownTypeContext.customTypes);
+    if (customTypeResolution.status === 'resolved' || customTypeResolution.status === 'unverifiable') {
+      continue;
+    }
+
+    if (customTypeResolution.status === 'missingPythonFile') {
+      pushDiagnosticForNodeValue(
+        document,
+        diagnosticsList,
+        typeNode,
+        candidate,
+        `自定义类型 ${candidate} 已在 types.xml 中注册，但未找到对应的 user_type Python 文件，请检查 user_type/${candidate}.py`,
+        vscode.DiagnosticSeverity.Warning
+      );
+      continue;
+    }
+
+    if (customTypeResolution.status === 'missingTypeRegistration') {
+      pushDiagnosticForNodeValue(
+        document,
+        diagnosticsList,
+        typeNode,
+        candidate,
+        `自定义类型 ${candidate} 未在 types.xml 中注册，请先在 types.xml 注册后再引用`,
+        vscode.DiagnosticSeverity.Error
+      );
+    }
+  }
+}
+
+function validateSectionStructure(
+  document: vscode.TextDocument,
+  diagnosticsList: vscode.Diagnostic[],
+  sectionNode: DefElementNode,
+  sectionName: KBEngineSectionName,
+  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
+): void {
+  const seenSymbols = new Map<string, vscode.Range>();
+
+  for (const symbolNode of getDirectChildElements(sectionNode)) {
+    const symbolRange = createNodeRange(document, symbolNode);
+    const existing = seenSymbols.get(symbolNode.name);
+    if (featureConfig.diagnosticsCheckDuplicateDefinitions && existing) {
+      diagnosticsList.push(new vscode.Diagnostic(
+        symbolRange,
+        `${getSectionLabel(sectionName)}中存在重复定义: ${symbolNode.name}`,
+        vscode.DiagnosticSeverity.Warning
+      ));
+      diagnosticsList.push(new vscode.Diagnostic(
+        existing,
+        `${symbolNode.name} 在 ${getSectionLabel(sectionName)} 中已定义`,
+        vscode.DiagnosticSeverity.Information
+      ));
+    } else {
+      seenSymbols.set(symbolNode.name, symbolRange);
+    }
+
+    if (sectionName === 'Properties' && featureConfig.diagnosticsCheckMissingPropertyFields) {
+      validatePropertyStructure(document, diagnosticsList, symbolNode);
+    }
+  }
+}
+
+function validatePropertyStructure(
+  document: vscode.TextDocument,
+  diagnosticsList: vscode.Diagnostic[],
+  propertyNode: DefElementNode
+): void {
+  const propertyRange = createNodeRange(document, propertyNode);
+
+  if (!getDirectChildElement(propertyNode, 'Type')) {
+    diagnosticsList.push(new vscode.Diagnostic(
+      propertyRange,
+      `属性 ${propertyNode.name} 缺少 <Type> 定义`,
+      vscode.DiagnosticSeverity.Error
+    ));
+  }
+
+  if (!getDirectChildElement(propertyNode, 'Flags')) {
+    diagnosticsList.push(new vscode.Diagnostic(
+      propertyRange,
+      `属性 ${propertyNode.name} 缺少 <Flags> 定义`,
+      vscode.DiagnosticSeverity.Error
+    ));
+  }
+}
+
+function visitElementNodes(node: DefElementNode, visitor: (node: DefElementNode) => void): void {
+  visitor(node);
+
+  for (const child of getDirectChildElements(node)) {
+    visitElementNodes(child, visitor);
+  }
+}
+
+function getNodeValue(node: DefElementNode): string {
+  return documentTextSlice(node).trim();
+}
+
+function documentTextSlice(node: DefElementNode): string {
+  return node.children
+    .filter((child): child is Exclude<DefNode, DefElementNode> => child.kind === 'text')
+    .map(child => child.text)
+    .join('');
+}
+
+function pushDiagnosticForNodeValue(
+  document: vscode.TextDocument,
+  diagnosticsList: vscode.Diagnostic[],
+  node: DefElementNode,
+  value: string,
+  message: string,
+  severity: vscode.DiagnosticSeverity
+): void {
+  const offset = document.getText().indexOf(value, node.contentStart);
+  const range = offset >= 0 && offset <= node.contentEnd
+    ? new vscode.Range(
+        document.positionAt(offset),
+        document.positionAt(offset + value.length)
+      )
+    : createNodeValueRange(document, node);
+
+  diagnosticsList.push(new vscode.Diagnostic(range, message, severity));
+}
+
+function createNodeRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
+  return new vscode.Range(
+    document.positionAt(node.tagStart),
+    document.positionAt(node.closeTagEnd)
+  );
+}
+
+function createNodeValueRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
+  return new vscode.Range(
+    document.positionAt(node.contentStart),
+    document.positionAt(node.contentEnd)
+  );
 }
 
 function getSectionLabel(section: KBEngineSectionName): string {
   if (section === 'Parent') {
-    return '????';
+    return '父类区块';
   }
 
   if (section === 'Interfaces') {
-    return '????';
+    return '接口区块';
   }
 
   if (section === 'Components') {
-    return '????';
+    return '组件区块';
   }
 
   if (section === 'Properties') {
-    return '????';
+    return '属性区块';
   }
 
   if (section === 'Volatile') {
-    return '??????';
+    return '易变同步区块';
   }
 
-  return '????';
+  return '方法区块';
 }
 
 function getSymbolHover(
@@ -918,9 +889,7 @@ function getSymbolHover(
   position: vscode.Position,
   word: string
 ): vscode.Hover | null {
-  const offset = document.offsetAt(position);
-  const text = document.getText();
-  const symbolInfo = findEnclosingSymbol(text, offset, word);
+  const symbolInfo = findEnclosingSymbol(document, position, word);
   if (!symbolInfo) {
     return null;
   }
@@ -954,6 +923,10 @@ function getSymbolHover(
     markdown.appendMarkdown(`**参数个数**: ${symbolInfo.args.length}\n\n`);
     if (symbolInfo.args.length > 0) {
       markdown.appendMarkdown(`**Args**: \`${symbolInfo.args.join(', ')}\``);
+    }
+    if (symbolInfo.exposed) {
+      markdown.appendMarkdown(`\n\n**Exposed**: \`true\`\n\n`);
+      markdown.appendMarkdown('该方法可被客户端远程调用。');
     }
   }
 
@@ -1083,6 +1056,97 @@ interface CustomTypeResolution {
   status: CustomTypeResolutionStatus;
 }
 
+function parseDefAst(document: vscode.TextDocument): DefDocument | null {
+  const fileName = document.fileName.toLowerCase();
+  if (!(
+    document.languageId === 'kbengine-def'
+    || fileName.endsWith('.def')
+    || fileName.endsWith('types.xml')
+    || fileName.endsWith('entities.xml')
+  )) {
+    return null;
+  }
+
+  try {
+    return parseDefDocument(document.getText());
+  } catch {
+    return null;
+  }
+}
+
+function toSectionName(name: string): KBEngineSectionName | null {
+  switch (name) {
+    case 'Parent':
+    case 'Interfaces':
+    case 'Components':
+    case 'Properties':
+    case 'BaseMethods':
+    case 'CellMethods':
+    case 'ClientMethods':
+    case 'Volatile':
+      return name;
+    default:
+      return null;
+  }
+}
+
+function getDefNodeAtPosition(document: vscode.TextDocument, position: vscode.Position): DefNode | null {
+  const ast = parseDefAst(document);
+  if (!ast?.root) {
+    return null;
+  }
+
+  const offset = document.offsetAt(position);
+  const textNode = findTextNodeAtOffset(ast.root, offset);
+  if (textNode) {
+    return textNode;
+  }
+
+  return findDeepestElementAtOffset(ast.root, offset);
+}
+
+function getDefNodeAtWord(document: vscode.TextDocument, position: vscode.Position, word: string): DefNode | null {
+  const range = document.getWordRangeAtPosition(position, /\w+/);
+  if (!range) {
+    return getDefNodeAtPosition(document, position);
+  }
+
+  const text = document.getText(range);
+  if (text !== word) {
+    return getDefNodeAtPosition(document, position);
+  }
+
+  return getDefNodeAtPosition(document, range.start);
+}
+
+function getSymbolNodeInfo(
+  node: DefNode | null | undefined
+): { section: KBEngineSectionName; symbolNode: DefElementNode } | null {
+  if (!node) {
+    return null;
+  }
+
+  let current: DefElementNode | null = node.kind === 'element' ? node : node.parent;
+
+  while (current) {
+    const sectionNode = current.parent;
+    const sectionName = toSectionName(sectionNode?.name || '');
+    if (sectionNode && sectionName && DEF_SYMBOL_SECTIONS.has(sectionName)) {
+      return {
+        section: sectionName,
+        symbolNode: current
+      };
+    }
+    current = current.parent;
+  }
+
+  return null;
+}
+
+function isOffsetInsideNodeValue(node: DefElementNode, offset: number): boolean {
+  return offset >= node.contentStart && offset <= node.contentEnd;
+}
+
 function resolveCustomTypeReference(
   document: vscode.TextDocument,
   candidate: string,
@@ -1111,37 +1175,17 @@ function resolveCustomTypeReference(
 }
 
 function findEnclosingSymbol(
-  text: string,
-  offset: number,
+  document: vscode.TextDocument,
+  position: vscode.Position,
   word: string
 ): SymbolHoverInfo | null {
-  const sectionRegex = /<(Properties|BaseMethods|CellMethods|ClientMethods)>([\s\S]*?)<\/\1>/g;
-  let sectionMatch: RegExpExecArray | null;
-
-  while ((sectionMatch = sectionRegex.exec(text)) !== null) {
-    const section = sectionMatch[1] as KBEngineSectionName;
-    const sectionContent = sectionMatch[2];
-    const sectionContentStart = sectionMatch.index + sectionMatch[0].indexOf(sectionContent);
-    const symbolRegex = /<([A-Za-z_][A-Za-z0-9_]*)>([\s\S]*?)<\/\1>/g;
-    let symbolMatch: RegExpExecArray | null;
-
-    while ((symbolMatch = symbolRegex.exec(sectionContent)) !== null) {
-      const name = symbolMatch[1];
-      if (name !== word) {
-        continue;
-      }
-
-      const absoluteStart = sectionContentStart + symbolMatch.index;
-      const absoluteEnd = absoluteStart + symbolMatch[0].length;
-      if (offset < absoluteStart || offset > absoluteEnd) {
-        continue;
-      }
-
-      return buildSymbolHoverInfo(section, name, symbolMatch[2]);
-    }
+  const node = getDefNodeAtWord(document, position, word);
+  const info = getSymbolNodeInfo(node);
+  if (!info || info.symbolNode.name !== word) {
+    return null;
   }
 
-  return null;
+  return buildSymbolHoverInfo(info.section, info.symbolNode);
 }
 
 function findEntityDefinitionInDef(
@@ -1220,41 +1264,20 @@ function findCustomTypeAtPosition(
 
 function buildSymbolHoverInfo(
   section: KBEngineSectionName,
-  name: string,
-  body: string
+  symbolNode: DefElementNode
 ): SymbolHoverInfo {
   return {
-    name,
+    name: symbolNode.name,
     section,
-    type: extractFirstTagValue(body, 'Type'),
-    flags: extractFirstTagValue(body, 'Flags'),
-    defaultValue: extractFirstTagValue(body, 'Default'),
-    detailLevel: extractFirstTagValue(body, 'DetailLevel'),
-    database: extractFirstTagValue(body, 'DatabaseLength'),
-    identifier: extractFirstTagValue(body, 'Identifier'),
-    args: extractAllTagValues(body, 'Arg')
+    type: getScalarChildValue(symbolNode, 'Type'),
+    flags: getScalarChildValue(symbolNode, 'Flags'),
+    defaultValue: getScalarChildValue(symbolNode, 'Default'),
+    detailLevel: getScalarChildValue(symbolNode, 'DetailLevel'),
+    database: getScalarChildValue(symbolNode, 'DatabaseLength'),
+    identifier: getScalarChildValue(symbolNode, 'Identifier'),
+    args: getScalarChildValues(symbolNode, 'Arg'),
+    exposed: hasTruthyChildTag(symbolNode, 'Exposed')
   };
-}
-
-function extractFirstTagValue(text: string, tagName: string): string | undefined {
-  const match = text.match(new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`));
-  const value = match?.[1]?.trim();
-  return value || undefined;
-}
-
-function extractAllTagValues(text: string, tagName: string): string[] {
-  const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'g');
-  const values: string[] = [];
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    const value = match[1].trim();
-    if (value) {
-      values.push(value);
-    }
-  }
-
-  return values;
 }
 
 function isPositionInsideTagValue(
@@ -1262,22 +1285,17 @@ function isPositionInsideTagValue(
   position: vscode.Position,
   tagName: string
 ): boolean {
-  const text = document.getText();
-  const offset = document.offsetAt(position);
-  const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'g');
-  let match: RegExpExecArray | null;
+  const node = getDefNodeAtPosition(document, position);
+  const elementNode = node?.kind === 'element' ? node : node?.parent;
+  const candidateNode = elementNode?.name === tagName
+    ? elementNode
+    : findAncestorElement(node, tagName);
 
-  while ((match = regex.exec(text)) !== null) {
-    const fullMatch = match[0];
-    const innerValue = match[1];
-    const innerStart = match.index + fullMatch.indexOf(innerValue);
-    const innerEnd = innerStart + innerValue.length;
-    if (offset >= innerStart && offset <= innerEnd) {
-      return true;
-    }
+  if (!candidateNode) {
+    return false;
   }
 
-  return false;
+  return isOffsetInsideNodeValue(candidateNode, document.offsetAt(position));
 }
 
 function isPositionInsideImplementedByValue(
@@ -1292,27 +1310,13 @@ function isPositionInsideChildTag(
   position: vscode.Position,
   parentTagName: string
 ): boolean {
-  const text = document.getText();
-  const offset = document.offsetAt(position);
-  const parentRegex = new RegExp(`<${parentTagName}>\\s*([\\s\\S]*?)\\s*<\\/${parentTagName}>`, 'g');
-  let parentMatch: RegExpExecArray | null;
-
-  while ((parentMatch = parentRegex.exec(text)) !== null) {
-    const innerContent = parentMatch[1];
-    const innerContentStart = parentMatch.index + parentMatch[0].indexOf(innerContent);
-    const childRegex = /<([A-Za-z_][A-Za-z0-9_]*)\b[^/>]*\/>/g;
-    let childMatch: RegExpExecArray | null;
-
-    while ((childMatch = childRegex.exec(innerContent)) !== null) {
-      const childStart = innerContentStart + childMatch.index;
-      const childEnd = childStart + childMatch[0].length;
-      if (offset >= childStart && offset <= childEnd) {
-        return true;
-      }
-    }
+  const node = getDefNodeAtPosition(document, position);
+  const elementNode = node?.kind === 'element' ? node : node?.parent;
+  if (!elementNode || !elementNode.selfClosing) {
+    return false;
   }
 
-  return false;
+  return !!findAncestorElement(elementNode, parentTagName);
 }
 
 function looksLikeEntityName(word: string): boolean {
@@ -1481,40 +1485,47 @@ function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSugges
 export class PythonDefinitionProvider implements vscode.DefinitionProvider {
   constructor(private entityMappingManager: EntityMappingManager) {}
 
-  provideDefinition(
+  async provideDefinition(
     document: vscode.TextDocument,
     position: vscode.Position
-  ): vscode.ProviderResult<vscode.Location | vscode.Location[]> {
+  ): Promise<vscode.Location | vscode.Location[] | null> {
     const line = document.lineAt(position.line);
     const access = getPythonSelfAccessAtPosition(line.text, position.character);
-    if (!access) {
-      return null;
+    if (access) {
+      const propertyLocation = await this.entityMappingManager.resolvePropertyDefinition(
+        document.fileName,
+        access.fullPath,
+        access.rootSymbol
+      );
+      if (propertyLocation) {
+        return new vscode.Location(
+          vscode.Uri.file(propertyLocation.defFile),
+          new vscode.Position(propertyLocation.line - 1, 0)
+        );
+      }
+
+      const methodLocation = await this.entityMappingManager.resolveMethodDefinition(
+        document.fileName,
+        access.rootSymbol
+      );
+      if (methodLocation) {
+        return new vscode.Location(
+          vscode.Uri.file(methodLocation.defFile),
+          new vscode.Position(methodLocation.line - 1, 0)
+        );
+      }
     }
 
-    const entityName = path.basename(document.fileName, '.py');
-    const mapping = this.entityMappingManager.getMapping(entityName);
-    if (mapping) {
-      if (mapping.properties[access.fullPath]) {
-        const location = mapping.properties[access.fullPath];
+    const declaredMethodName = getPythonMethodDeclarationAtPosition(line.text, position.character);
+    if (declaredMethodName) {
+      const methodLocation = await this.entityMappingManager.resolveMethodDefinition(
+        document.fileName,
+        declaredMethodName
+      );
+      if (methodLocation) {
         return new vscode.Location(
-          vscode.Uri.file(location.defFile),
-          new vscode.Position(location.line - 1, 0)
-        );
-      }
-
-      if (mapping.properties[access.rootSymbol]) {
-        const location = mapping.properties[access.rootSymbol];
-        return new vscode.Location(
-          vscode.Uri.file(location.defFile),
-          new vscode.Position(location.line - 1, 0)
-        );
-      }
-
-      if (mapping.methods[access.rootSymbol]) {
-        const location = mapping.methods[access.rootSymbol];
-        return new vscode.Location(
-          vscode.Uri.file(location.defFile),
-          new vscode.Position(location.line - 1, 0)
+          vscode.Uri.file(methodLocation.defFile),
+          new vscode.Position(methodLocation.line - 1, 0)
         );
       }
     }
@@ -1599,20 +1610,41 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
       items.push(item);
     }
 
-    for (const [methodName, methodInfo] of Object.entries(mapping.methods)) {
+    for (const [methodName, methodDefinitions] of Object.entries(mapping.methods)) {
       if (partialLower && !methodName.toLowerCase().startsWith(partialLower)) {
         continue;
       }
 
+      const primaryDefinition = methodDefinitions[0];
+      if (!primaryDefinition) {
+        continue;
+      }
+
       const item = new vscode.CompletionItem(methodName, vscode.CompletionItemKind.Method);
-      item.detail = 'Entity Method';
+      item.detail = primaryDefinition.exposed ? 'Entity Method (Exposed)' : 'Entity Method';
       item.documentation = new vscode.MarkdownString(
-        `定义于: \`${path.basename(methodInfo.defFile)}:${methodInfo.line}\`\n\n从 .def 文件自动生成的实体方法。`
+        `定义于: \`${path.basename(primaryDefinition.defFile)}:${primaryDefinition.line}\`\n\n从 .def 文件自动生成的实体方法。`
       );
       items.push(item);
     }
 
     return items;
   }
+}
+
+function getPythonMethodDeclarationAtPosition(lineText: string, character: number): string | null {
+  const match = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(lineText);
+  if (!match) {
+    return null;
+  }
+
+  const methodName = match[1];
+  const nameStart = lineText.indexOf(methodName);
+  const nameEnd = nameStart + methodName.length;
+  if (character < nameStart || character > nameEnd) {
+    return null;
+  }
+
+  return methodName;
 }
 

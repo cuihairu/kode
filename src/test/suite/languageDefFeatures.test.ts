@@ -193,6 +193,34 @@ describe('KBEngine .def language features', () => {
     assert.ok(hover.contents.value.includes('**Default**: `100`'));
   });
 
+  it('shows exposed metadata in method hover', () => {
+    const provider = new KBEngineHoverProvider();
+    const text = [
+      '<root>',
+      '  <BaseMethods>',
+      '    <attack>',
+      '      <Arg>UINT32</Arg>',
+      '      <Exposed/>',
+      '    </attack>',
+      '  </BaseMethods>',
+      '</root>'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      text
+    );
+
+    const hover = provider.provideHover(
+      document as never,
+      document.positionAt(text.indexOf('attack')) as never
+    ) as unknown as FakeHover;
+
+    assert.ok(hover);
+    assert.ok(hover.contents.value.includes('**attack**'));
+    assert.ok(hover.contents.value.includes('**Exposed**: `true`'));
+  });
+
   it('shows source-backed tag hover for DetailLevels', () => {
     const provider = new KBEngineHoverProvider();
     const text = [

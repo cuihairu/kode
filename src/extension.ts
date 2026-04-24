@@ -5,7 +5,7 @@ import { LogViewerWebView } from './logWebView';
 import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
-import { EntityMappingManager } from './entityMapping';
+import { EntityMappingManager, EntityMethodSection } from './entityMapping';
 import { EntityDependencyWebView } from './entityDependencyWebView';
 import { KBEngineCodeGenerator } from './codeGenerator';
 import {
@@ -36,6 +36,14 @@ export function activate(context: vscode.ExtensionContext) {
     { scheme: 'file', pattern: '**/*.def' },
     { language: 'kbengine-def', scheme: 'untitled' }
   ];
+  const kbengineXmlSelector: vscode.DocumentSelector = [
+    { language: 'xml', scheme: 'file', pattern: '**/types.xml' },
+    { language: 'xml', scheme: 'file', pattern: '**/entities.xml' }
+  ];
+  const definitionNavigationSelector: vscode.DocumentSelector = [
+    ...defDocumentSelector,
+    ...kbengineXmlSelector
+  ];
 
   const isDefDocument = (document: vscode.TextDocument): boolean =>
     document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
@@ -50,14 +58,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册悬停文档提供者
   const hoverProvider = vscode.languages.registerHoverProvider(
-    defDocumentSelector,
+    definitionNavigationSelector,
     new KBEngineHoverProvider()
   );
   context.subscriptions.push(hoverProvider);
 
   // 注册定义跳转提供者（.def 文件）
   const definitionProvider = vscode.languages.registerDefinitionProvider(
-    defDocumentSelector,
+    definitionNavigationSelector,
     new KBEngineDefinitionProvider()
   );
   context.subscriptions.push(definitionProvider);
@@ -162,6 +170,29 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(openEntityCommand);
+
+  const openEntityMethodCommand = vscode.commands.registerCommand(
+    'kbengine.entity.method.open',
+    async (entityName: string, methodName: string, section: EntityMethodSection) => {
+      if (!entityName || !methodName || !section) {
+        return;
+      }
+
+      try {
+        const didOpen = await entityMappingManager.openMethodTarget(entityName, methodName, section);
+        if (!didOpen) {
+          vscode.window.showWarningMessage(
+            `打开实体方法失败: ${entityName}.${methodName} (${section})`
+          );
+        }
+      } catch (error) {
+        vscode.window.showWarningMessage(
+          `打开实体方法失败: ${entityName}.${methodName} (${section}) (${error})`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(openEntityMethodCommand);
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);

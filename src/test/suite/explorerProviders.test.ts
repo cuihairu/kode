@@ -109,8 +109,19 @@ describe('EntityExplorerProvider', () => {
             '  <BaseMethods>',
             '    <Spawn>',
             '      <Arg>UINT8</Arg>',
+            '      <Exposed/>',
             '    </Spawn>',
             '  </BaseMethods>',
+            '  <CellMethods>',
+            '    <Move>',
+            '      <Arg>VECTOR3</Arg>',
+            '    </Move>',
+            '  </CellMethods>',
+            '  <ClientMethods>',
+            '    <Notify>',
+            '      <Arg>UINT8</Arg>',
+            '    </Notify>',
+            '  </ClientMethods>',
             '</root>'
           ].join('\n');
         }
@@ -311,7 +322,7 @@ describe('EntityExplorerProvider', () => {
 
     assert.deepStrictEqual(
       avatarItem.viewModel.sections.map((section: any) => section.label),
-      ['Parent', 'Interfaces', 'Components', 'Properties', 'BaseMethods']
+      ['Parent', 'Interfaces', 'Components', 'Properties', 'BaseMethods', 'CellMethods', 'ClientMethods']
     );
 
     const sections = await provider.getChildren(avatarItem as never);
@@ -326,12 +337,16 @@ describe('EntityExplorerProvider', () => {
     const componentsSection = sections.find(item => item.label === 'Components');
     const propertiesSection = sections.find(item => item.label === 'Properties');
     const baseMethodsSection = sections.find(item => item.label === 'BaseMethods');
+    const cellMethodsSection = sections.find(item => item.label === 'CellMethods');
+    const clientMethodsSection = sections.find(item => item.label === 'ClientMethods');
 
     assert.ok(parentSection);
     assert.ok(interfacesSection);
     assert.ok(componentsSection);
     assert.ok(propertiesSection);
     assert.ok(baseMethodsSection);
+    assert.ok(cellMethodsSection);
+    assert.ok(clientMethodsSection);
 
     const parentItems = await provider.getChildren(parentSection as never);
     assert.deepStrictEqual(parentItems.map(item => item.label), ['Creature']);
@@ -348,6 +363,17 @@ describe('EntityExplorerProvider', () => {
 
     const methodItems = await provider.getChildren(baseMethodsSection as never);
     assert.deepStrictEqual(methodItems.map(item => item.label), ['Spawn']);
+    assert.strictEqual(methodItems[0].description, 'BaseMethods · Exposed');
+    assert.strictEqual((methodItems[0] as any).command.command, 'kbengine.entity.method.open');
+    assert.deepStrictEqual((methodItems[0] as any).command.arguments, ['Avatar', 'Spawn', 'BaseMethods']);
+
+    const cellMethodItems = await provider.getChildren(cellMethodsSection as never);
+    assert.deepStrictEqual(cellMethodItems.map(item => item.label), ['Move']);
+    assert.strictEqual((cellMethodItems[0] as any).command.arguments[2], 'CellMethods');
+
+    const clientMethodItems = await provider.getChildren(clientMethodsSection as never);
+    assert.deepStrictEqual(clientMethodItems.map(item => item.label), ['Notify']);
+    assert.strictEqual((clientMethodItems[0] as any).command.arguments[2], 'ClientMethods');
   });
 
   it('parses entity definition structure from content', () => {
@@ -379,8 +405,17 @@ describe('EntityExplorerProvider', () => {
       '  <BaseMethods>',
       '    <Spawn>',
       '      <Arg>UINT8</Arg>',
+      '      <Exposed/>',
       '    </Spawn>',
       '  </BaseMethods>',
+      '  <CellMethods>',
+      '    <Move>',
+      '      <Arg>VECTOR3</Arg>',
+      '    </Move>',
+      '  </CellMethods>',
+      '  <ClientMethods>',
+      '    <Notify/>',
+      '  </ClientMethods>',
       '</root>'
     ].join('\n'));
 
@@ -388,8 +423,8 @@ describe('EntityExplorerProvider', () => {
     assert.deepStrictEqual(stats.interfaces, ['Chat']);
     assert.deepStrictEqual(stats.components, [{ propertyName: 'combat', typeName: 'Combat' }]);
     assert.deepStrictEqual(stats.properties, ['health', 'mana']);
-    assert.deepStrictEqual(stats.baseMethods, ['Spawn']);
-    assert.deepStrictEqual(stats.cellMethods, []);
-    assert.deepStrictEqual(stats.clientMethods, []);
+    assert.deepStrictEqual(stats.baseMethods, [{ name: 'Spawn', exposed: true }]);
+    assert.deepStrictEqual(stats.cellMethods, [{ name: 'Move', exposed: false }]);
+    assert.deepStrictEqual(stats.clientMethods, [{ name: 'Notify', exposed: false }]);
   });
 });

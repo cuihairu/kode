@@ -6,7 +6,25 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import {
+  DefDocument,
+  DefElementNode,
+  getDirectChildElement,
+  getDirectChildElements,
+  getLineNumberAt,
+  hasTruthyChildTag,
+  parseDefDocument
+} from './defParser';
 import { joinWorkspacePath } from './workspacePath';
+
+export type EntityMethodSection = 'BaseMethods' | 'CellMethods' | 'ClientMethods';
+
+export interface EntityMethodDefinitionLocation {
+  defFile: string;
+  line: number;
+  section: EntityMethodSection;
+  exposed: boolean;
+}
 
 /**
  * 实体定义映射信息
@@ -20,10 +38,10 @@ export interface EntityMapping {
   pythonFile: string;
   /** 可能的 Python 文件路径 */
   pythonFiles: string[];
-  /** 属性映射（属性名 → .def 中的行号） */
+  /** 属性映射（属性名 -> .def 中的行号） */
   properties: { [propertyName: string]: { defFile: string, line: number } };
-  /** 方法映射（方法名 → .def 中的行号） */
-  methods: { [methodName: string]: { defFile: string, line: number } };
+  /** 方法映射（方法名 -> .def 中的行号） */
+  methods: { [methodName: string]: EntityMethodDefinitionLocation[] };
 }
 
 /**
@@ -47,7 +65,6 @@ export class EntityMappingManager {
       return;
     }
 
-    // 查找所有 .def 文件
     const defFiles = await vscode.workspace.findFiles('**/*.def', null);
 
     for (const defFile of defFiles) {
@@ -63,7 +80,7 @@ export class EntityMappingManager {
     try {
       const content = await vscode.workspace.fs.readFile(vscode.Uri.file(defPath));
       const text = Buffer.from(content).toString('utf8');
-
+      const document = parseDefDocument(text);
       const pythonPaths = this.findPythonFiles(defPath);
 
       const mapping: EntityMapping = {
@@ -75,8 +92,8 @@ export class EntityMappingManager {
         methods: {}
       };
 
-      this.collectPropertyMappings(text, defPath, mapping);
-      this.collectMethodMappings(text, defPath, mapping);
+      this.collectPropertyMappings(document, defPath, mapping);
+      this.collectMethodMappings(document, defPath, mapping);
 
       this.mappings.set(entityName, mapping);
     } catch (error) {
@@ -107,160 +124,58 @@ export class EntityMappingManager {
     ];
   }
 
-  /**
-   * 获取文本中某个位置的行号
-   */
-  private getLineNumber(text: string, index: number): number {
-    const beforeIndex = text.substring(0, index);
-    return beforeIndex.split('\n').length;
-  }
-
-  private collectPropertyMappings(text: string, defPath: string, mapping: EntityMapping): void {
-    const propertySections = ['Properties'];
-
-    for (const sectionName of propertySections) {
-      const sections = this.extractTagBodiesWithIndex(text, sectionName);
-      for (const section of sections) {
-        this.collectPropertyBlocks(text, defPath, mapping, section.body, section.index, '');
-      }
+  private collectPropertyMappings(document: DefDocument, defPath: string, mapping: EntityMapping): void {
+    const propertySection = getDirectChildElement(document.root, 'Properties');
+    if (!propertySection) {
+      return;
     }
+
+    this.collectPropertyBlocks(document, defPath, mapping, propertySection, '');
   }
 
-  private collectMethodMappings(text: string, defPath: string, mapping: EntityMapping): void {
-    const methodSections = ['BaseMethods', 'CellMethods', 'ClientMethods'];
+  private collectMethodMappings(document: DefDocument, defPath: string, mapping: EntityMapping): void {
+    const methodSections: EntityMethodSection[] = ['BaseMethods', 'CellMethods', 'ClientMethods'];
 
     for (const sectionName of methodSections) {
-      const sections = this.extractTagBodiesWithIndex(text, sectionName);
-      for (const section of sections) {
-        for (const methodBlock of this.extractDirectChildBlocks(section.body)) {
-          const methodName = methodBlock.name;
-          const methodBody = methodBlock.body;
-          if (!/<Arg>/i.test(methodBody) && methodBody.trim().length > 0) {
-            continue;
-          }
-
-          const line = this.getLineNumber(text, section.index + methodBlock.index);
-          mapping.methods[methodName] = {
-            defFile: defPath,
-            line
-          };
-        }
-      }
-    }
-  }
-
-  private extractTagBodies(text: string, tagName: string): string[] {
-    return this.extractTagBodiesWithIndex(text, tagName).map(item => item.body);
-  }
-
-  private extractTagBodiesWithIndex(text: string, tagName: string): Array<{ body: string; index: number }> {
-    const regex = new RegExp(`<(\\/)?${tagName}>`, 'gi');
-    const bodies: Array<{ body: string; index: number }> = [];
-    let match: RegExpExecArray | null;
-    const openTagStack: number[] = [];
-
-    while ((match = regex.exec(text)) !== null) {
-      const isClosingTag = match[1] === '/';
-
-      if (!isClosingTag) {
-        openTagStack.push(match.index);
+      const sectionNode = getDirectChildElement(document.root, sectionName);
+      if (!sectionNode) {
         continue;
       }
 
-      const openTagIndex = openTagStack.pop();
-      if (openTagIndex === undefined || openTagStack.length > 0) {
-        continue;
-      }
-
-      const openTagText = `<${tagName}>`;
-      const bodyStart = openTagIndex + openTagText.length;
-      const bodyEnd = match.index;
-      bodies.push({
-        body: text.slice(bodyStart, bodyEnd),
-        index: bodyStart
-      });
-    }
-
-    return bodies;
-  }
-
-  private extractDirectChildBlocks(
-    text: string
-  ): Array<{ name: string; body: string; index: number }> {
-    const regex = /<(\/)?([A-Za-z_][A-Za-z0-9_]*)>/g;
-    const blocks: Array<{ name: string; body: string; index: number }> = [];
-    const stack: Array<{ name: string; tagStart: number; bodyStart: number }> = [];
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(text)) !== null) {
-      const isClosingTag = match[1] === '/';
-      const tagName = match[2];
-
-      if (!isClosingTag) {
-        stack.push({
-          name: tagName,
-          tagStart: match.index,
-          bodyStart: regex.lastIndex
+      for (const methodNode of getDirectChildElements(sectionNode)) {
+        const definitions = mapping.methods[methodNode.name] || [];
+        definitions.push({
+          defFile: defPath,
+          line: getLineNumberAt(document, methodNode.tagStart),
+          section: sectionName,
+          exposed: hasTruthyChildTag(methodNode, 'Exposed')
         });
-        continue;
-      }
-
-      const lastOpenTag = stack.pop();
-      if (!lastOpenTag || lastOpenTag.name !== tagName) {
-        continue;
-      }
-
-      if (stack.length === 0) {
-        blocks.push({
-          name: tagName,
-          body: text.slice(lastOpenTag.bodyStart, match.index),
-          index: lastOpenTag.tagStart
-        });
+        mapping.methods[methodNode.name] = definitions;
       }
     }
-
-    return blocks;
   }
 
   private collectPropertyBlocks(
-    fullText: string,
+    document: DefDocument,
     defPath: string,
     mapping: EntityMapping,
-    sectionBody: string,
-    sectionOffset: number,
+    sectionNode: DefElementNode,
     prefixPath: string
   ): void {
-    for (const propertyBlock of this.extractDirectChildBlocks(sectionBody)) {
-      const propertyName = propertyBlock.name;
-      const propertyBody = propertyBlock.body;
-      if (!/<Type>/i.test(propertyBody)) {
+    for (const propertyNode of getDirectChildElements(sectionNode)) {
+      if (!getDirectChildElement(propertyNode, 'Type')) {
         continue;
       }
 
-      const propertyPath = prefixPath ? `${prefixPath}.${propertyName}` : propertyName;
-      const line = this.getLineNumber(fullText, sectionOffset + propertyBlock.index);
+      const propertyPath = prefixPath ? `${prefixPath}.${propertyNode.name}` : propertyNode.name;
       mapping.properties[propertyPath] = {
         defFile: defPath,
-        line
+        line: getLineNumberAt(document, propertyNode.tagStart)
       };
 
-      const nestedPropertySections = this.extractTagBodiesWithIndex(propertyBody, 'Properties');
-      for (const nestedSection of nestedPropertySections) {
-        const nestedSectionOffset = fullText.indexOf(
-          nestedSection.body,
-          sectionOffset + propertyBlock.index
-        );
-
-        this.collectPropertyBlocks(
-          fullText,
-          defPath,
-          mapping,
-          nestedSection.body,
-          nestedSectionOffset >= 0
-            ? nestedSectionOffset
-            : sectionOffset + propertyBlock.index + nestedSection.index,
-          propertyPath
-        );
+      const nestedPropertySection = getDirectChildElement(propertyNode, 'Properties');
+      if (nestedPropertySection) {
+        this.collectPropertyBlocks(document, defPath, mapping, nestedPropertySection, propertyPath);
       }
     }
   }
@@ -288,7 +203,6 @@ export class EntityMappingManager {
    * 处理 Python 文件变化
    */
   private handlePythonFileChanged(pythonPath: string): void {
-    // 重新扫描相关映射
     for (const [entityName, mapping] of this.mappings) {
       if (mapping.pythonFiles.includes(pythonPath)) {
         this.parseDefFile(entityName, mapping.defFile);
@@ -311,43 +225,154 @@ export class EntityMappingManager {
     return Array.from(this.mappings.values());
   }
 
-  /**
-   * 从 Python 文件跳转到 .def 文件
-   */
-  async jumpToDef(pythonFile: string, symbol: string, type: 'property' | 'method'): Promise<boolean> {
-    // 查找包含此符号的实体
+  async resolvePropertyDefinition(
+    pythonFile: string,
+    fullPath: string,
+    rootSymbol?: string
+  ): Promise<{ defFile: string; line: number } | null> {
     const entityName = path.basename(pythonFile, '.py');
-
-    let mapping = this.mappings.get(entityName);
+    const mapping = await this.ensureMapping(entityName);
     if (!mapping) {
-      // 尝试重新扫描
-      await this.scanEntityMappings();
-      mapping = this.mappings.get(entityName);
-      if (!mapping) {
-        return false;
-      }
+      return null;
     }
 
-    const location = type === 'property'
-      ? mapping.properties[symbol]
-      : mapping.methods[symbol];
+    return mapping.properties[fullPath]
+      || (rootSymbol ? mapping.properties[rootSymbol] : undefined)
+      || null;
+  }
 
-    if (!location) {
+  async resolveMethodDefinition(
+    pythonFile: string,
+    methodName: string
+  ): Promise<EntityMethodDefinitionLocation | null> {
+    const entityName = path.basename(pythonFile, '.py');
+    const mapping = await this.ensureMapping(entityName);
+    if (!mapping) {
+      return null;
+    }
+
+    return this.selectMethodDefinition(
+      mapping.methods[methodName] || [],
+      inferMethodSectionFromPythonFile(pythonFile)
+    );
+  }
+
+  async openMethodTarget(
+    entityName: string,
+    methodName: string,
+    section: EntityMethodSection
+  ): Promise<boolean> {
+    const mapping = await this.ensureMapping(entityName);
+    if (!mapping) {
       return false;
     }
 
-    // 打开 .def 文件并跳转到指定位置
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(location.defFile));
-    const position = new vscode.Position(location.line - 1, 0);
+    const implementationTarget = this.findMethodImplementation(mapping, methodName, section);
+    if (implementationTarget) {
+      return this.openFileAtLocation(implementationTarget.filePath, implementationTarget.line);
+    }
 
+    const definition = this.selectMethodDefinition(mapping.methods[methodName] || [], section);
+    if (!definition) {
+      return false;
+    }
+
+    return this.openFileAtLocation(definition.defFile, definition.line);
+  }
+
+  private findMethodImplementation(
+    mapping: EntityMapping,
+    methodName: string,
+    section: EntityMethodSection
+  ): { filePath: string; line: number } | null {
+    const candidateFiles = mapping.pythonFiles.filter(candidatePath =>
+      inferMethodSectionFromPythonFile(candidatePath) === section
+    );
+
+    for (const candidateFile of candidateFiles) {
+      const line = this.findPythonMethodLine(candidateFile, methodName);
+      if (line !== null) {
+        return {
+          filePath: candidateFile,
+          line
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private findPythonMethodLine(pythonFile: string, methodName: string): number | null {
+    if (!fs.existsSync(pythonFile)) {
+      return null;
+    }
+
+    try {
+      const content = fs.readFileSync(pythonFile, 'utf8');
+      const regex = new RegExp(`^\\s*(?:async\\s+)?def\\s+${escapeRegExp(methodName)}\\s*\\(`, 'm');
+      const match = regex.exec(content);
+      if (!match) {
+        return null;
+      }
+
+      return getLineNumber(content, match.index);
+    } catch {
+      return null;
+    }
+  }
+
+  private async openFileAtLocation(filePath: string, line: number): Promise<boolean> {
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+    const position = new vscode.Position(Math.max(line - 1, 0), 0);
     const range = new vscode.Range(position, position);
-
-    // 显示并选中文本
     const textEditor = await vscode.window.showTextDocument(document, {
       selection: range
     });
 
     return textEditor !== undefined;
+  }
+
+  private async ensureMapping(entityName: string): Promise<EntityMapping | undefined> {
+    let mapping = this.mappings.get(entityName);
+    if (!mapping) {
+      await this.scanEntityMappings();
+      mapping = this.mappings.get(entityName);
+    }
+
+    return mapping;
+  }
+
+  private selectMethodDefinition(
+    definitions: EntityMethodDefinitionLocation[],
+    preferredSection?: EntityMethodSection
+  ): EntityMethodDefinitionLocation | null {
+    if (definitions.length === 0) {
+      return null;
+    }
+
+    if (preferredSection) {
+      const matchedDefinition = definitions.find(definition => definition.section === preferredSection);
+      if (matchedDefinition) {
+        return matchedDefinition;
+      }
+    }
+
+    return definitions[0];
+  }
+
+  /**
+   * 从 Python 文件跳转到 .def 文件
+   */
+  async jumpToDef(pythonFile: string, symbol: string, type: 'property' | 'method'): Promise<boolean> {
+    const location = type === 'property'
+      ? await this.resolvePropertyDefinition(pythonFile, symbol, symbol)
+      : await this.resolveMethodDefinition(pythonFile, symbol);
+
+    if (!location) {
+      return false;
+    }
+
+    return this.openFileAtLocation(location.defFile, location.line);
   }
 
   /**
@@ -358,4 +383,27 @@ export class EntityMappingManager {
       this.pythonWatcher.dispose();
     }
   }
+}
+
+function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
+  const normalizedPath = pythonFile.replace(/\\/g, '/').toLowerCase();
+
+  if (normalizedPath.includes('/scripts/base/')) {
+    return 'BaseMethods';
+  }
+
+  if (normalizedPath.includes('/scripts/cell/')) {
+    return 'CellMethods';
+  }
+
+  return undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getLineNumber(text: string, index: number): number {
+  const beforeIndex = text.substring(0, index);
+  return beforeIndex.split('\n').length;
 }

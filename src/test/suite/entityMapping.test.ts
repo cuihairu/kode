@@ -73,6 +73,7 @@ describe('EntityMappingManager', () => {
     '  <BaseMethods>',
     '    <attack>',
     '      <Arg>UINT32</Arg>',
+    '      <Exposed/>',
     '    </attack>',
     '  </BaseMethods>',
     '  <ClientMethods>',
@@ -120,6 +121,15 @@ describe('EntityMappingManager', () => {
     const fakeFs = {
       existsSync(candidatePath: string) {
         return candidatePath === pythonPath;
+      },
+      readFileSync(candidatePath: string, encoding: string) {
+        assert.strictEqual(candidatePath, pythonPath);
+        assert.strictEqual(encoding, 'utf8');
+        return [
+          'class Hero:',
+          '    def attack(self, target):',
+          '        return target'
+        ].join('\n');
       }
     };
 
@@ -164,8 +174,8 @@ describe('EntityMappingManager', () => {
       'inventory.weapon.damage': { defFile: defPath, line: 12 }
     });
     assert.deepStrictEqual(mapping?.methods, {
-      attack: { defFile: defPath, line: 21 },
-      notify: { defFile: defPath, line: 26 }
+      attack: [{ defFile: defPath, line: 21, section: 'BaseMethods', exposed: true }],
+      notify: [{ defFile: defPath, line: 27, section: 'ClientMethods', exposed: false }]
     });
     assert.strictEqual(readFilePath, defPath);
   });
@@ -186,6 +196,22 @@ describe('EntityMappingManager', () => {
     assert.strictEqual(openedSelection?.start.character, 0);
     assert.strictEqual(openedSelection?.end.line, 11);
     assert.strictEqual(openedSelection?.end.character, 0);
+  });
+
+  it('opens the python implementation for a mapped method before falling back to def', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+
+    await (manager as unknown as {
+      parseDefFile(entityName: string, defPath: string): Promise<void>;
+    }).parseDefFile('Hero', defPath);
+
+    const didOpen = await manager.openMethodTarget('Hero', 'attack', 'BaseMethods');
+
+    assert.strictEqual(didOpen, true);
+    assert.strictEqual(openDocumentPath, pythonPath);
+    assert.ok(openedSelection);
+    assert.strictEqual(openedSelection?.start.line, 1);
+    assert.strictEqual(openedSelection?.start.character, 0);
   });
 
   it('keeps def mappings even when no python script exists yet', async () => {

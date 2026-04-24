@@ -1,6 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import {
+  DefDocument,
+  DefElementNode,
+  getDirectChildElement,
+  getDirectChildElements,
+  getLineNumberAt,
+  getScalarChildValue,
+  parseDefDocument
+} from './defParser';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
@@ -147,23 +156,25 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
     return [];
   }
 
+  const document = parseXmlDocument(content);
+  if (!document?.root) {
+    return [];
+  }
+
   const entities: RegisteredEntityInfo[] = [];
   const seenNames = new Set<string>();
-  const entityRegex = /<([A-Za-z_][A-Za-z0-9_]*)\b([^>]*)\/?>/g;
-  let match: RegExpExecArray | null;
 
-  while ((match = entityRegex.exec(content)) !== null) {
-    const name = match[1];
+  for (const entityNode of getDirectChildElements(document.root)) {
+    const name = entityNode.name;
     if (name === 'root' || seenNames.has(name)) {
       continue;
     }
 
-    const attributes = match[2] || '';
     entities.push({
       name,
-      hasBase: hasTrueAttribute(attributes, 'hasBase'),
-      hasCell: hasTrueAttribute(attributes, 'hasCell'),
-      hasClient: hasTrueAttribute(attributes, 'hasClient')
+      hasBase: isTrueAttributeValue(entityNode.attributes.hasBase),
+      hasCell: isTrueAttributeValue(entityNode.attributes.hasCell),
+      hasClient: isTrueAttributeValue(entityNode.attributes.hasClient)
     });
     seenNames.add(name);
   }
@@ -179,25 +190,13 @@ export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
     return [];
   }
 
-  const rootBodyInfo = getXmlRootBodyInfo(content);
-  return getTopLevelXmlNodes(rootBodyInfo.body, rootBodyInfo.startOffset)
-    .map(node => {
-      const rawValue = extractCustomTypeRawValue(node.body);
-      const implementedBy = normalizeXmlText(extractTagValue(node.body, 'implementedBy'));
-      return {
-        name: node.name,
-        filePath: layout.typesXmlPath as string,
-        line: getLineNumberForOffset(content, node.startOffset),
-        startOffset: node.startOffset,
-        endOffset: node.endOffset,
-        aliasType: extractCustomTypeAliasType(rawValue),
-        rawValue,
-        structure: parseCustomTypeStructure(rawValue),
-        implementedBy,
-        properties: parseCustomTypeProperties(node.body),
-        pythonFilePath: findCustomTypePythonFileByImplementation(layout, node.name, implementedBy)
-      };
-    })
+  const document = parseXmlDocument(content);
+  if (!document?.root) {
+    return [];
+  }
+
+  return getDirectChildElements(document.root)
+    .map(typeNode => buildCustomTypeInfo(document, layout, typeNode))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -498,104 +497,71 @@ function readTextFile(filePath: string): string | null {
   return null;
 }
 
-function getXmlRootBodyInfo(content: string): { body: string; startOffset: number } {
-  const match = content.match(/<root\b[^>]*>([\s\S]*?)<\/root>/i);
-  if (!match || typeof match.index !== 'number') {
-    return { body: content, startOffset: 0 };
+function parseXmlDocument(content: string): DefDocument | null {
+  try {
+    return parseDefDocument(content);
+  } catch {
+    return null;
   }
+}
+
+function buildCustomTypeInfo(
+  document: DefDocument,
+  layout: DefinitionWorkspaceLayout,
+  typeNode: DefElementNode
+): CustomTypeInfo {
+  const rawValue = extractCustomTypeRawValue(typeNode);
+  const implementedBy = getScalarChildValue(typeNode, 'implementedBy');
 
   return {
-    body: match[1],
-    startOffset: match.index + match[0].indexOf(match[1])
+    name: typeNode.name,
+    filePath: layout.typesXmlPath as string,
+    line: getLineNumberAt(document, typeNode.tagStart),
+    startOffset: typeNode.tagStart,
+    endOffset: typeNode.closeTagEnd,
+    aliasType: extractCustomTypeAliasType(rawValue),
+    rawValue,
+    structure: parseCustomTypeStructure(rawValue),
+    implementedBy,
+    properties: parseCustomTypeProperties(typeNode),
+    pythonFilePath: findCustomTypePythonFileByImplementation(layout, typeNode.name, implementedBy)
   };
 }
 
-function getTopLevelXmlNodes(
-  content: string,
-  startOffset = 0
-): Array<{ name: string; body: string; startOffset: number; endOffset: number }> {
-  const nodes: Array<{ name: string; body: string; startOffset: number; endOffset: number }> = [];
-  let cursor = 0;
-
-  while (cursor < content.length) {
-    const openIndex = content.indexOf('<', cursor);
-    if (openIndex === -1) {
-      break;
-    }
-
-    if (content.startsWith('<!--', openIndex)) {
-      const commentEnd = content.indexOf('-->', openIndex + 4);
-      cursor = commentEnd === -1 ? content.length : commentEnd + 3;
-      continue;
-    }
-
-    if (content.startsWith('</', openIndex)) {
-      cursor = openIndex + 2;
-      continue;
-    }
-
-    const openTagMatch = /^<([A-Za-z_][A-Za-z0-9_]*)(?:\b[^>]*?)?(\/?)>/.exec(content.slice(openIndex));
-    if (!openTagMatch) {
-      cursor = openIndex + 1;
-      continue;
-    }
-
-    const tagName = openTagMatch[1];
-    const fullTagText = openTagMatch[0];
-    const isSelfClosing = /\/>$/.test(fullTagText);
-    const tagEnd = openIndex + fullTagText.length;
-
-    if (isSelfClosing) {
-      nodes.push({
-        name: tagName,
-        body: '',
-        startOffset: startOffset + openIndex,
-        endOffset: startOffset + tagEnd
-      });
-      cursor = tagEnd;
-      continue;
-    }
-
-    const closeInfo = findClosingTag(content, tagName, tagEnd);
-    if (!closeInfo) {
-      cursor = tagEnd;
-      continue;
-    }
-
-    nodes.push({
-      name: tagName,
-      body: content.slice(tagEnd, closeInfo.startIndex),
-      startOffset: startOffset + openIndex,
-      endOffset: startOffset + closeInfo.endIndex
-    });
-    cursor = closeInfo.endIndex;
-  }
-
-  return nodes;
-}
-
-function parseCustomTypeProperties(body: string): CustomTypePropertyInfo[] {
-  const propertiesBody = extractTagValue(body, 'Properties');
-  if (!propertiesBody) {
+function parseCustomTypeProperties(typeNode: DefElementNode): CustomTypePropertyInfo[] {
+  const propertiesNode = getDirectChildElement(typeNode, 'Properties');
+  if (!propertiesNode) {
     return [];
   }
 
-  return getTopLevelXmlNodes(propertiesBody)
+  return getDirectChildElements(propertiesNode)
     .map(property => ({
       name: property.name,
-      typeName: normalizeXmlText(extractTagValue(property.body, 'Type'))
+      typeName: getScalarChildValue(property, 'Type')
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function extractCustomTypeRawValue(body: string): string {
-  const withoutComments = body.replace(/<!--[\s\S]*?-->/g, ' ');
-  const withoutImplementationBlocks = withoutComments
-    .replace(/<implementedBy>\s*[\s\S]*?\s*<\/implementedBy>/ig, ' ')
-    .replace(/<Properties>\s*[\s\S]*?\s*<\/Properties>/ig, ' ')
-    .trim();
+function extractCustomTypeRawValue(typeNode: DefElementNode): string {
+  const chunks: string[] = [];
 
-  return normalizeXmlText(withoutImplementationBlocks) || 'ALIAS';
+  for (const child of typeNode.children) {
+    if (child.kind === 'text') {
+      const normalized = normalizeXmlText(child.text);
+      if (normalized) {
+        chunks.push(normalized);
+      }
+      continue;
+    }
+
+    if (child.name === 'implementedBy' || child.name === 'Properties') {
+      continue;
+    }
+
+    chunks.push(renderStructureNode(child));
+  }
+
+  return chunks.join(' ').trim() || 'ALIAS';
 }
 
 function extractCustomTypeAliasType(rawValue: string): string {
@@ -604,69 +570,45 @@ function extractCustomTypeAliasType(rawValue: string): string {
 }
 
 function parseCustomTypeStructure(rawValue: string): CustomTypeStructureNode {
+  const document = parseXmlDocument(`<root>${rawValue}</root>`);
+  const root = document?.root;
   const normalizedRawValue = normalizeXmlText(rawValue) || 'ALIAS';
 
   return {
     name: extractCustomTypeAliasType(normalizedRawValue),
     rawValue: normalizedRawValue,
-    children: getTopLevelXmlNodes(normalizedRawValue).map(node => ({
-      tag: node.name,
-      value: parseCustomTypeStructure(node.body)
-    }))
+    children: root
+      ? getDirectChildElements(root).map(node => ({
+          tag: node.name,
+          value: parseCustomTypeStructure(getInnerXml(node))
+        }))
+      : []
   };
 }
 
-function extractTagValue(text: string, tagName: string): string | undefined {
-  const match = text.match(new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'i'));
-  return match?.[1];
+function renderStructureNode(node: DefElementNode): string {
+  if (node.selfClosing) {
+    return `<${node.name}/>`;
+  }
+
+  return `<${node.name}>${getInnerXml(node)}</${node.name}>`;
+}
+
+function getInnerXml(node: DefElementNode): string {
+  return node.children
+    .map(child => {
+      if (child.kind === 'text') {
+        return child.text;
+      }
+
+      return renderStructureNode(child);
+    })
+    .join('');
 }
 
 function normalizeXmlText(value: string | undefined): string | undefined {
   const normalized = value?.replace(/\s+/g, ' ').trim();
   return normalized || undefined;
-}
-
-function getLineNumberForOffset(content: string, offset: number): number {
-  return content.slice(0, offset).split(/\r?\n/).length;
-}
-
-function findClosingTag(
-  content: string,
-  tagName: string,
-  searchStart: number
-): { startIndex: number; endIndex: number } | null {
-  const tagRegex = /<\/?([A-Za-z_][A-Za-z0-9_]*)(?:\b[^>]*)\s*(\/?)>/g;
-  tagRegex.lastIndex = searchStart;
-  let depth = 1;
-  let match: RegExpExecArray | null;
-
-  while ((match = tagRegex.exec(content)) !== null) {
-    const fullMatch = match[0];
-    const currentTagName = match[1];
-    const isClosing = fullMatch.startsWith('</');
-    const isSelfClosing = match[2] === '/';
-
-    if (currentTagName !== tagName) {
-      continue;
-    }
-
-    if (isClosing) {
-      depth -= 1;
-      if (depth === 0) {
-        return {
-          startIndex: match.index,
-          endIndex: match.index + fullMatch.length
-        };
-      }
-      continue;
-    }
-
-    if (!isSelfClosing) {
-      depth += 1;
-    }
-  }
-
-  return null;
 }
 
 function findCustomTypePythonFileByImplementation(
@@ -699,8 +641,8 @@ function findCustomTypePythonFileByImplementation(
   return findExistingPath(candidates) || undefined;
 }
 
-function hasTrueAttribute(attributes: string, attributeName: string): boolean {
-  return new RegExp(`\\b${attributeName}\\s*=\\s*["']true["']`, 'i').test(attributes);
+function isTrueAttributeValue(value: string | undefined): boolean {
+  return value?.trim().toLowerCase() === 'true';
 }
 
 function listDefinitionFiles(directory: string | null): string[] {

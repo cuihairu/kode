@@ -2,6 +2,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
+  getDirectChildElement,
+  getDirectChildElements,
+  getElementText,
+  hasTruthyChildTag,
+  parseDefDocument
+} from './defParser';
+import {
   CustomTypeStructureNode,
   DefinitionCategory,
   DefinitionEntry,
@@ -10,6 +17,7 @@ import {
   getDefinitionEntries,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
+import { EntityMethodSection } from './entityMapping';
 import { KBENGINE_TYPES } from './kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 
@@ -21,12 +29,17 @@ type EntityTreeNode =
 
 interface DefinitionStats {
   properties: string[];
-  baseMethods: string[];
-  cellMethods: string[];
-  clientMethods: string[];
+  baseMethods: DefinitionMethodStats[];
+  cellMethods: DefinitionMethodStats[];
+  clientMethods: DefinitionMethodStats[];
   parent?: string;
   interfaces: string[];
   components: Array<{ propertyName: string; typeName: string }>;
+}
+
+interface DefinitionMethodStats {
+  name: string;
+  exposed: boolean;
 }
 
 interface DefinitionLeafDescriptor {
@@ -56,103 +69,58 @@ interface DefinitionViewModel {
 }
 
 export function parseDefinitionStructure(content: string): DefinitionStats {
-  const extractParent = (): string | undefined => {
-    const match = content.match(/<Parent>\s*<([A-Za-z_][A-Za-z0-9_]*)\s*\/>\s*<\/Parent>/i);
-    return match?.[1];
-  };
+  const document = parseDefDocument(content);
+  const root = document.root;
 
-  const extractPropertiesFromBody = (body: string): string[] => {
-    if (!body) {
+  if (!root) {
+    return {
+      properties: [],
+      baseMethods: [],
+      cellMethods: [],
+      clientMethods: [],
+      interfaces: [],
+      components: []
+    };
+  }
+
+  const extractMethods = (sectionName: EntityMethodSection): DefinitionMethodStats[] => {
+    const sectionNode = getDirectChildElement(root, sectionName);
+    if (!sectionNode) {
       return [];
     }
 
-    const values: string[] = [];
-    const propertyRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = propertyRegex.exec(body)) !== null) {
-      if (/<Type>[\s\S]*?<\/Type>/i.test(match[2])) {
-        values.push(match[1]);
-      }
-    }
-
-    return values;
+    return getDirectChildElements(sectionNode).map(methodNode => ({
+      name: methodNode.name,
+      exposed: hasTruthyChildTag(methodNode, 'Exposed')
+    }));
   };
 
-  const extractMethods = (sectionName: 'BaseMethods' | 'CellMethods' | 'ClientMethods'): string[] => {
-    const body = content.match(new RegExp(`<${sectionName}>([\\s\\S]*?)<\\/${sectionName}>`, 'i'))?.[1] || '';
-    if (!body) {
-      return [];
-    }
+  const parentName = getDirectChildElements(getDirectChildElement(root, 'Parent'))[0]?.name;
+  const interfacesNode = getDirectChildElement(root, 'Interfaces');
+  const interfaceNames = getDirectChildElements(interfacesNode)
+    .flatMap(interfaceWrapper => getDirectChildElements(interfaceWrapper).map(item => item.name));
 
-    const values: string[] = [];
-    const methodRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
-    let match: RegExpExecArray | null;
+  const componentsNode = getDirectChildElement(root, 'Components');
+  const components = getDirectChildElements(componentsNode)
+    .map(componentNode => ({
+      propertyName: componentNode.name,
+      typeName: getElementText(getDirectChildElement(componentNode, 'Type')).trim()
+    }))
+    .filter(component => component.typeName);
 
-    while ((match = methodRegex.exec(body)) !== null) {
-      if (/<Arg>[\s\S]*?<\/Arg>/i.test(match[2]) || /<Utype>[\s\S]*?<\/Utype>/i.test(match[2])) {
-        values.push(match[1]);
-      }
-    }
-
-    return values;
-  };
-
-  const extractInterfaces = (): string[] => {
-    const interfacesBody = content.match(/<Interfaces>([\s\S]*?)<\/Interfaces>/i)?.[1];
-    if (!interfacesBody) {
-      return [];
-    }
-
-    const names: string[] = [];
-    const interfaceRegex = /<(?:Interface|interface|Type|type)>\s*<([A-Za-z_][A-Za-z0-9_]*)\s*\/>\s*<\/(?:Interface|interface|Type|type)>/g;
-    let match: RegExpExecArray | null;
-    while ((match = interfaceRegex.exec(interfacesBody)) !== null) {
-      names.push(match[1]);
-    }
-    return names;
-  };
-
-  const extractNamedBlocks = (text: string): Array<{ name: string; body: string }> => {
-    const blockRegex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
-    const blocks: Array<{ name: string; body: string }> = [];
-    let match: RegExpExecArray | null;
-
-    while ((match = blockRegex.exec(text)) !== null) {
-      blocks.push({
-        name: match[1],
-        body: match[2]
-      });
-    }
-
-    return blocks;
-  };
-
-  const extractComponents = (): Array<{ propertyName: string; typeName: string }> => {
-    const componentsBody = content.match(/<Components>([\s\S]*?)<\/Components>/i)?.[1];
-    if (!componentsBody) {
-      return [];
-    }
-
-    const componentEntries: Array<{ propertyName: string; typeName: string }> = [];
-    for (const block of extractNamedBlocks(componentsBody)) {
-      const typeName = block.body.match(/<Type>\s*<?([A-Za-z_][A-Za-z0-9_]*)\/?>?\s*<\/Type>/i)?.[1];
-      if (typeName) {
-        componentEntries.push({ propertyName: block.name, typeName });
-      }
-    }
-
-    return componentEntries;
-  };
+  const propertiesNode = getDirectChildElement(root, 'Properties');
+  const properties = getDirectChildElements(propertiesNode)
+    .filter(propertyNode => !!getDirectChildElement(propertyNode, 'Type'))
+    .map(propertyNode => propertyNode.name);
 
   return {
-    properties: extractPropertiesFromBody(content.match(/<Properties>([\s\S]*?)<\/Properties>/i)?.[1] || ''),
+    properties,
     baseMethods: extractMethods('BaseMethods'),
     cellMethods: extractMethods('CellMethods'),
     clientMethods: extractMethods('ClientMethods'),
-    parent: extractParent(),
-    interfaces: extractInterfaces(),
-    components: extractComponents()
+    parent: parentName,
+    interfaces: interfaceNames,
+    components
   };
 }
 
@@ -421,7 +389,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       });
     }
 
-    const methodSections: Array<{ label: string; values: string[]; icon: string }> = [
+    const methodSections: Array<{ label: EntityMethodSection; values: DefinitionMethodStats[]; icon: string }> = [
       { label: 'BaseMethods', values: stats.baseMethods, icon: 'symbol-method' },
       { label: 'CellMethods', values: stats.cellMethods, icon: 'symbol-method' },
       { label: 'ClientMethods', values: stats.clientMethods, icon: 'symbol-method' }
@@ -436,11 +404,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
         key: section.label,
         label: section.label,
         icon: section.icon,
-        items: section.values.map(name => ({
-          label: name,
-          description: section.label,
-          icon: section.icon
-        }))
+        items: section.values.map(method => this.createMethodItem(entry, method, section.label))
       });
     }
 
@@ -488,6 +452,25 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       description: `${typeName} · ${resolvedReference.label}`,
       icon: resolvedReference.icon,
       command: resolvedReference.command
+    };
+  }
+
+  private createMethodItem(
+    entry: DefinitionEntry,
+    method: DefinitionMethodStats,
+    section: EntityMethodSection
+  ): DefinitionLeafDescriptor {
+    return {
+      label: method.name,
+      description: method.exposed ? `${section} · Exposed` : section,
+      icon: method.exposed ? 'radio-tower' : 'symbol-method',
+      command: entry.category === 'entity'
+        ? {
+          command: 'kbengine.entity.method.open',
+          title: 'Open Entity Method',
+          arguments: [entry.name, method.name, section]
+        }
+        : createOpenDefinitionCommand(entry.filePath, entry.line)
     };
   }
 
