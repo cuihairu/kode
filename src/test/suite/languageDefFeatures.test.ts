@@ -47,6 +47,7 @@ describe('KBEngine .def language features', () => {
             '      </score>',
             '    </Properties>',
             '  </RegisteredType>',
+            '  <TIMESTAMP>UINT64</TIMESTAMP>',
             '  <OtherCustomType>UINT16</OtherCustomType>',
             '</root>'
           ].join('\n');
@@ -156,7 +157,7 @@ describe('KBEngine .def language features', () => {
     const document = new FakeTextDocument(
       '/workspace/entities.xml',
       'xml',
-      '<root><Avatar>Avatar</Avatar></root>'
+      '<?xml version="1.0" encoding="UTF-8"?>\n<root><Avatar>Avatar</Avatar></root>'
     );
 
     const location = provider.provideDefinition(
@@ -470,6 +471,34 @@ describe('KBEngine .def language features', () => {
     assert.strictEqual(location.position.line, 1);
   });
 
+  it('resolves alias custom type references inside def files to types.xml without requiring python', () => {
+    const provider = new KBEngineDefinitionProvider();
+    const text = [
+      '<root>',
+      '  <Properties>',
+      '    <createdAt>',
+      '      <Type>TIMESTAMP</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </createdAt>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      text
+    );
+
+    const location = provider.provideDefinition(
+      document as never,
+      document.positionAt(text.indexOf('TIMESTAMP') + 1) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/scripts/entity_defs/types.xml');
+    assert.strictEqual(location.position.line, 10);
+  });
+
   it('resolves def method symbols to python implementations', async () => {
     const provider = new KBEngineDefinitionProvider(mappingManagerStub as never);
     const text = [
@@ -681,6 +710,29 @@ describe('KBEngine .def language features', () => {
     assert.strictEqual(location.position.line, 0);
   });
 
+  it('keeps top-level alias type definitions in types.xml instead of jumping to python', () => {
+    const provider = new KBEngineDefinitionProvider();
+    const text = [
+      '<root>',
+      '  <TIMESTAMP>UINT64</TIMESTAMP>',
+      '</root>'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/types.xml',
+      'xml',
+      text
+    );
+
+    const location = provider.provideDefinition(
+      document as never,
+      document.positionAt(text.indexOf('TIMESTAMP') + 1) as never
+    ) as unknown as FakeLocation;
+
+    assert.ok(location);
+    assert.strictEqual(location.uri.fsPath, '/workspace/scripts/entity_defs/types.xml');
+    assert.strictEqual(location.position.line, 1);
+  });
+
   it('resolves entity type references inside types.xml properties', () => {
     const provider = new KBEngineDefinitionProvider();
     const text = [
@@ -769,6 +821,6 @@ describe('KBEngine .def language features', () => {
 
     assert.ok(location);
     assert.strictEqual(location.uri.fsPath, '/workspace/scripts/entity_defs/types.xml');
-    assert.strictEqual(location.position.line, 10);
+    assert.strictEqual(location.position.line, 9);
   });
 });

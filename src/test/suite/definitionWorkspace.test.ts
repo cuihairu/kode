@@ -41,6 +41,7 @@ describe('definitionWorkspace', () => {
       readFileSync(candidatePath: string): string {
         if (candidatePath === typesXmlPath) {
           return [
+            '<?xml version="1.0" encoding="UTF-8"?>',
             '<root>',
             '  <RegisteredType>UINT32</RegisteredType>',
             '  <BagType>',
@@ -62,6 +63,7 @@ describe('definitionWorkspace', () => {
 
         if (candidatePath === entitiesXmlPath) {
           return [
+            '<?xml version="1.0" encoding="UTF-8"?>',
             '<root>',
             '  <Avatar hasBase="true" hasClient="true" />',
             '  <Space hasCell="true" />',
@@ -150,9 +152,9 @@ describe('definitionWorkspace', () => {
     assert.strictEqual(normalizePath(entries[0].filePath), '/workspace/scripts/entity_defs/types.xml');
     assert.strictEqual(entries[0].aliasType, 'ARRAY');
     assert.strictEqual(entries[0].typeStructure?.children[0].value.name, 'RegisteredType');
-    assert.strictEqual(entries[0].line, 12);
-    assert.strictEqual(entries[1].line, 3);
-    assert.strictEqual(entries[2].line, 2);
+    assert.strictEqual(entries[0].line, 13);
+    assert.strictEqual(entries[1].line, 4);
+    assert.strictEqual(entries[2].line, 3);
   });
 
   it('exposes the resolved entity definition root for shared path resolution', () => {

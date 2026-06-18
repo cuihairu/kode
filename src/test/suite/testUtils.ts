@@ -66,6 +66,25 @@ export class FakeHover {
   constructor(public contents: FakeMarkdownString) {}
 }
 
+export class FakeCallHierarchyItem {
+  constructor(
+    public kind: number,
+    public name: string,
+    public detail: string,
+    public uri: FakeUri,
+    public range: FakeRange,
+    public selectionRange: FakeRange
+  ) {}
+}
+
+export class FakeCallHierarchyIncomingCall {
+  constructor(public from: FakeCallHierarchyItem, public fromRanges: FakeRange[]) {}
+}
+
+export class FakeCallHierarchyOutgoingCall {
+  constructor(public to: FakeCallHierarchyItem, public fromRanges: FakeRange[]) {}
+}
+
 export class FakeDiagnostic {
   constructor(
     public range: FakeRange,
@@ -181,6 +200,9 @@ export function createVscodeStub(overrides?: Record<string, unknown>): Record<st
     Location: FakeLocation,
     MarkdownString: FakeMarkdownString,
     Hover: FakeHover,
+    CallHierarchyItem: FakeCallHierarchyItem,
+    CallHierarchyIncomingCall: FakeCallHierarchyIncomingCall,
+    CallHierarchyOutgoingCall: FakeCallHierarchyOutgoingCall,
     Diagnostic: FakeDiagnostic,
     DiagnosticSeverity: {
       Error: 0,
@@ -191,6 +213,9 @@ export function createVscodeStub(overrides?: Record<string, unknown>): Record<st
     CompletionItemKind: {
       Property: 10,
       Method: 1
+    },
+    SymbolKind: {
+      Method: 6
     },
     ...overrides
   };

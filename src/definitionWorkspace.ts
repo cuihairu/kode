@@ -43,6 +43,13 @@ export interface CustomTypeInfo {
   pythonFilePath?: string;
 }
 
+export interface CustomTypeDeclarationInfo {
+  name: string;
+  filePath: string;
+  line: number;
+  implementedBy?: string;
+}
+
 export interface RegisteredEntityInfo {
   name: string;
   hasBaseDeclared: boolean;
@@ -213,28 +220,25 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
 }
 
 export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
-  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
-  const content = layout.typesXmlPath ? readTextFile(layout.typesXmlPath) : null;
-
-  if (!content || !layout.typesXmlPath) {
+  const snapshot = getTypesXmlSnapshot(workspaceRoot);
+  if (!snapshot) {
     return [];
   }
 
-  const document = parseXmlDocument(content);
-  if (!document?.root) {
-    return [];
-  }
-
-  return getDirectChildElements(document.root)
-    .map(typeNode => buildCustomTypeInfo(document, layout, typeNode))
+  return snapshot.typeNodes
+    .map(typeNode => buildCustomTypeInfo(snapshot.document, snapshot.layout, typeNode))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export function getRegisteredCustomTypes(workspaceRoot: string): Set<string> {
   const typeNames = new Set<string>();
+  const snapshot = getTypesXmlSnapshot(workspaceRoot);
+  if (!snapshot) {
+    return typeNames;
+  }
 
-  for (const customType of getCustomTypeInfos(workspaceRoot)) {
-    typeNames.add(customType.name);
+  for (const typeNode of snapshot.typeNodes) {
+    typeNames.add(typeNode.name);
   }
 
   return typeNames;
@@ -260,6 +264,53 @@ export function findCustomTypeInfo(
   }
 
   return getCustomTypeInfos(workspaceRoot).find(type => type.name === typeName) || null;
+}
+
+export function findCustomTypeDeclarationInfo(
+  typeName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): CustomTypeDeclarationInfo | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const snapshot = getTypesXmlSnapshot(workspaceRoot);
+  if (!snapshot) {
+    return null;
+  }
+
+  const typeNode = snapshot.typeNodes.find(node => node.name === typeName);
+  if (!typeNode) {
+    return null;
+  }
+
+  return {
+    name: typeNode.name,
+    filePath: snapshot.layout.typesXmlPath as string,
+    line: getLineNumberAt(snapshot.document, typeNode.tagStart),
+    implementedBy: getScalarChildValue(typeNode, 'implementedBy')
+  };
+}
+
+export function findCustomTypePythonImplementationFile(
+  typeName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>,
+  implementedBy?: string
+): string | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  return findCustomTypePythonFileByImplementation(layout, typeName, implementedBy) || null;
 }
 
 export function findEntityDefinitionFile(
@@ -613,6 +664,30 @@ function parseXmlDocument(content: string): DefDocument | null {
   }
 }
 
+function getTypesXmlSnapshot(workspaceRoot: string): {
+  layout: DefinitionWorkspaceLayout;
+  document: DefDocument;
+  typeNodes: DefElementNode[];
+} | null {
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const content = layout.typesXmlPath ? readTextFile(layout.typesXmlPath) : null;
+
+  if (!content || !layout.typesXmlPath) {
+    return null;
+  }
+
+  const document = parseXmlDocument(content);
+  if (!document?.root) {
+    return null;
+  }
+
+  return {
+    layout,
+    document,
+    typeNodes: getDirectChildElements(document.root)
+  };
+}
+
 function buildCustomTypeInfo(
   document: DefDocument,
   layout: DefinitionWorkspaceLayout,
@@ -726,7 +801,7 @@ function findCustomTypePythonFileByImplementation(
 ): string | undefined {
   const moduleCandidates = new Set<string>();
 
-  if (implementedBy) {
+  if (implementedBy?.trim()) {
     const normalizedModule = implementedBy.trim().replace(/\./g, '/');
     if (normalizedModule) {
       moduleCandidates.add(normalizedModule);

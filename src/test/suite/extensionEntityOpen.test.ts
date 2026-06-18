@@ -32,6 +32,7 @@ describe('extension entity open command', () => {
         registerCompletionItemProvider: () => noopDisposable,
         registerHoverProvider: () => noopDisposable,
         registerDefinitionProvider: () => noopDisposable,
+        registerCallHierarchyProvider: () => noopDisposable,
         createDiagnosticCollection: () => ({
           set: noop,
           delete: noop,
@@ -153,6 +154,7 @@ describe('extension entity open command', () => {
         },
         './serverCommandTarget': { resolveServerComponent: () => undefined },
         './languageProviders': {
+          KBEngineCallHierarchyProvider: class {},
           KBEngineCompletionProvider: class {},
           KBEngineDefinitionProvider: class {},
           KBEngineHoverProvider: class {},

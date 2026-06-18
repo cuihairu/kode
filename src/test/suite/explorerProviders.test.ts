@@ -376,6 +376,8 @@ describe('EntityExplorerProvider', () => {
     assert.ok(summaryItems.some(item => item.label === 'Runtime' && item.description === 'BaseApp / CellApp'));
     assert.ok(summaryItems.some(item => item.label === 'Visibility' && item.description === 'Server only (no client entity)'));
     assert.ok(summaryItems.some(item => item.label === 'Registration' && item.description === 'Registered on BaseApp / CellApp'));
+    assert.ok(summaryItems.some(item => item.label === 'Interfaces' && item.description === '1'));
+    assert.ok(summaryItems.some(item => item.label === 'Components' && item.description === '1'));
     assert.ok(summaryItems.some(item => item.label === 'Properties' && item.description === '4'));
     assert.ok(summaryItems.some(item => item.label === 'Methods' && item.description === '5'));
     assert.ok(summaryItems.some(item => item.label === 'Mixed In' && item.description === '1'));
@@ -410,10 +412,14 @@ describe('EntityExplorerProvider', () => {
 
     const interfaceItems = await provider.getChildren(interfacesSection as never);
     assert.deepStrictEqual(interfaceItems.map(item => item.label), ['Chat']);
+    assert.strictEqual((interfaceItems[0] as any).command.command, 'vscode.open');
+    assert.strictEqual(normalizePath((interfaceItems[0] as any).command.arguments[0].fsPath), '/workspace/scripts/entity_defs/interfaces/Chat.def');
 
     const componentItems = await provider.getChildren(componentsSection as never);
     assert.deepStrictEqual(componentItems.map(item => item.label), ['Combat']);
     assert.strictEqual(componentItems[0].description, 'combat -> Combat');
+    assert.strictEqual((componentItems[0] as any).command.command, 'vscode.open');
+    assert.strictEqual(normalizePath((componentItems[0] as any).command.arguments[0].fsPath), '/workspace/scripts/entity_defs/components/Combat.def');
 
     const runtimeItems = await provider.getChildren(runtimeSection as never);
     assert.deepStrictEqual(runtimeItems.map(item => item.label), ['Roles', 'Visibility', 'BaseApp', 'CellApp', 'Client']);

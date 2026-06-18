@@ -2,12 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
-  getDirectChildElement,
-  getDirectChildElements,
-  getElementText,
-  hasTruthyChildTag,
-  parseDefDocument
-} from './defParser';
+  createDefinitionSemanticsLoader,
+  DefinitionMethod,
+  DefinitionProperty,
+  parseLocalDefinition
+} from './definitionSemantics';
 import {
   createDatabaseSchemaUri,
   getDatabaseSchemaSnapshot
@@ -22,7 +21,7 @@ import {
   getDefinitionEntries,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
-import { EntityMethodSection } from './entityMapping';
+import { DefinitionSymbolIdentity, EntityMethodSection } from './entityMapping';
 import { KBENGINE_TYPES } from './kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 
@@ -46,6 +45,7 @@ interface DefinitionStats {
 interface DefinitionMethodStats {
   name: string;
   exposed: boolean;
+  identity?: DefinitionSymbolIdentity;
 }
 
 interface DefinitionLeafDescriptor {
@@ -101,59 +101,62 @@ interface DefinitionHierarchyStats {
   inherited: InheritedDefinitionGroup[];
 }
 
-export function parseDefinitionStructure(content: string): DefinitionStats {
-  const document = parseDefDocument(content);
-  const root = document.root;
-
-  if (!root) {
-    return {
-      properties: [],
-      baseMethods: [],
-      cellMethods: [],
-      clientMethods: [],
-      interfaces: [],
-      components: []
-    };
-  }
-
-  const extractMethods = (sectionName: EntityMethodSection): DefinitionMethodStats[] => {
-    const sectionNode = getDirectChildElement(root, sectionName);
-    if (!sectionNode) {
-      return [];
+function toMethodStats(method: DefinitionMethod): DefinitionMethodStats {
+  return {
+    name: method.name,
+    exposed: method.exposed,
+    identity: {
+      ownerKind: method.owner.kind,
+      ownerName: method.owner.name,
+      sourceKind: method.source.kind,
+      sourceChain: [...method.source.chain],
+      section: method.section,
+      symbolName: method.name
     }
+  };
+}
 
-    return getDirectChildElements(sectionNode).map(methodNode => ({
-      name: methodNode.name,
-      exposed: hasTruthyChildTag(methodNode, 'Exposed')
-    }));
+function flattenProperties(properties: DefinitionProperty[]): DefinitionProperty[] {
+  const flattened: DefinitionProperty[] = [];
+  const visit = (property: DefinitionProperty) => {
+    flattened.push(property);
+    for (const child of property.children) {
+      visit(child);
+    }
+    if (property.arrayElement) {
+      visit(property.arrayElement);
+    }
   };
 
-  const parentName = getDirectChildElements(getDirectChildElement(root, 'Parent'))[0]?.name;
-  const interfacesNode = getDirectChildElement(root, 'Interfaces');
-  const interfaceNames = getDirectChildElements(interfacesNode)
-    .flatMap(interfaceWrapper => getDirectChildElements(interfaceWrapper).map(item => item.name));
+  for (const property of properties) {
+    visit(property);
+  }
 
-  const componentsNode = getDirectChildElement(root, 'Components');
-  const components = getDirectChildElements(componentsNode)
-    .map(componentNode => ({
-      propertyName: componentNode.name,
-      typeName: getElementText(getDirectChildElement(componentNode, 'Type')).trim()
-    }))
-    .filter(component => component.typeName);
+  return flattened;
+}
 
-  const propertiesNode = getDirectChildElement(root, 'Properties');
-  const properties = getDirectChildElements(propertiesNode)
-    .filter(propertyNode => !!getDirectChildElement(propertyNode, 'Type'))
-    .map(propertyNode => propertyNode.name);
+function toStatsFromProperties(properties: DefinitionProperty[]): string[] {
+  return flattenProperties(properties)
+    .filter(property => !property.fullPath.includes('.') && !property.fullPath.includes('[]'))
+    .map(property => property.name);
+}
+
+export function parseDefinitionStructure(content: string): DefinitionStats {
+  const local = parseLocalDefinition(content, 'entity', 'Anonymous', '/tmp/Anonymous.def');
 
   return {
-    properties,
-    baseMethods: extractMethods('BaseMethods'),
-    cellMethods: extractMethods('CellMethods'),
-    clientMethods: extractMethods('ClientMethods'),
-    parent: parentName,
-    interfaces: interfaceNames,
-    components
+    properties: local.properties
+      .filter(property => !property.fullPath.includes('.'))
+      .map(property => property.name),
+    baseMethods: local.methodsBySection.BaseMethods.map(toMethodStats),
+    cellMethods: local.methodsBySection.CellMethods.map(toMethodStats),
+    clientMethods: local.methodsBySection.ClientMethods.map(toMethodStats),
+    parent: local.parentName,
+    interfaces: local.interfaces.map(item => item.name),
+    components: local.components.map(component => ({
+      propertyName: component.slotName,
+      typeName: component.typeName
+    }))
   };
 }
 
@@ -397,6 +400,17 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     );
     const exposedGroups = this.createExposedSectionGroups(entry, inherited, stats);
     const exposedCount = exposedGroups.reduce((sum, group) => sum + group.items.length, 0);
+    const interfaceCount = stats.interfaces.length;
+    const componentCount = stats.components.length;
+
+    if (interfaceCount > 0) {
+      summary.push({ label: 'Interfaces', value: String(interfaceCount), icon: 'symbol-interface' });
+    }
+
+    if (componentCount > 0) {
+      summary.push({ label: 'Components', value: String(componentCount), icon: 'extensions' });
+    }
+
     summary.push(
       { label: 'Properties', value: String(stats.properties.length + inheritedPropertyCount), icon: 'symbol-property' },
       {
@@ -818,7 +832,14 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       ? {
         command: 'kbengine.entity.method.open',
         title: 'Open Entity Method',
-        arguments: [entry.name, method.name, section]
+        arguments: [method.identity || {
+          ownerKind: entry.category === 'entity' ? 'entity' : 'interface',
+          ownerName: entry.name,
+          sourceKind: 'local',
+          sourceChain: [],
+          section,
+          symbolName: method.name
+        }]
       }
       : createOpenDefinitionCommand(entry.filePath, entry.line);
   }
@@ -958,7 +979,35 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
   private readDefinitionStats(defPath: string): DefinitionStats {
     try {
-      return parseDefinitionStructure(fs.readFileSync(defPath, 'utf8'));
+      const loader = createDefinitionSemanticsLoader(defPath);
+      if (!loader) {
+        throw new Error('workspace root missing');
+      }
+
+      const name = path.basename(defPath, '.def');
+      const normalized = defPath.replace(/\\/g, '/').toLowerCase();
+      const category: DefinitionCategory = normalized.includes('/interfaces/')
+        ? 'interface'
+        : normalized.includes('/components/')
+          ? 'component'
+          : 'entity';
+      const local = loader.loadLocal(name, category);
+      if (!local) {
+        throw new Error('definition semantics missing');
+      }
+
+      return {
+        properties: toStatsFromProperties(local.properties),
+        baseMethods: local.methodsBySection.BaseMethods.map(toMethodStats),
+        cellMethods: local.methodsBySection.CellMethods.map(toMethodStats),
+        clientMethods: local.methodsBySection.ClientMethods.map(toMethodStats),
+        parent: local.parentName,
+        interfaces: local.interfaces.map(item => item.name),
+        components: local.components.map(component => ({
+          propertyName: component.slotName,
+          typeName: component.typeName
+        }))
+      };
     } catch {
       return {
         properties: [],
@@ -975,56 +1024,44 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     workspaceRoot: string,
     entry: DefinitionEntry
   ): DefinitionHierarchyStats {
-    const local = this.readDefinitionStats(entry.filePath);
-    if (entry.category !== 'entity' && entry.category !== 'interface') {
-      return { local, inherited: [] };
+    const loader = createDefinitionSemanticsLoader(workspaceRoot);
+    if (!loader) {
+      return {
+        local: this.readDefinitionStats(entry.filePath),
+        inherited: []
+      };
+    }
+
+    const category = entry.category === 'component' ? 'component' : entry.category === 'interface' ? 'interface' : 'entity';
+    const resolved = loader.loadResolved(entry.name, category, true);
+    if (!resolved) {
+      return {
+        local: this.readDefinitionStats(entry.filePath),
+        inherited: []
+      };
     }
 
     return {
-      local,
-      inherited: this.collectInheritedDefinitionGroups(workspaceRoot, local.interfaces, [])
+      local: {
+        properties: toStatsFromProperties(resolved.local.properties),
+        baseMethods: resolved.local.methodsBySection.BaseMethods.map(toMethodStats),
+        cellMethods: resolved.local.methodsBySection.CellMethods.map(toMethodStats),
+        clientMethods: resolved.local.methodsBySection.ClientMethods.map(toMethodStats),
+        parent: resolved.local.parentName,
+        interfaces: resolved.local.interfaces.map(item => item.name),
+        components: resolved.local.components.map(component => ({
+          propertyName: component.slotName,
+          typeName: component.typeName
+        }))
+      },
+      inherited: resolved.inheritanceGroups.map(group => ({
+        label: group.label,
+        properties: toStatsFromProperties(group.properties),
+        baseMethods: group.methodsBySection.BaseMethods.map(toMethodStats),
+        cellMethods: group.methodsBySection.CellMethods.map(toMethodStats),
+        clientMethods: group.methodsBySection.ClientMethods.map(toMethodStats)
+      }))
     };
-  }
-
-  private collectInheritedDefinitionGroups(
-    workspaceRoot: string,
-    interfaceNames: string[],
-    chain: string[],
-    visited = new Set<string>()
-  ): InheritedDefinitionGroup[] {
-    const groups: InheritedDefinitionGroup[] = [];
-
-    for (const interfaceName of interfaceNames) {
-      const interfacePath = findDefinitionFileByCategory(interfaceName, 'interface', workspaceRoot);
-      if (!interfacePath) {
-        continue;
-      }
-
-      const normalizedPath = interfacePath.replace(/\\/g, '/').toLowerCase();
-      if (visited.has(normalizedPath)) {
-        continue;
-      }
-      visited.add(normalizedPath);
-
-      const stats = this.readDefinitionStats(interfacePath);
-      const nextChain = [...chain, interfaceName];
-      groups.push({
-        label: `Mixin · ${nextChain.join(' / ')}`,
-        properties: stats.properties,
-        baseMethods: stats.baseMethods,
-        cellMethods: stats.cellMethods,
-        clientMethods: stats.clientMethods
-      });
-
-      groups.push(...this.collectInheritedDefinitionGroups(
-        workspaceRoot,
-        stats.interfaces,
-        nextChain,
-        visited
-      ));
-    }
-
-    return groups;
   }
 }
 

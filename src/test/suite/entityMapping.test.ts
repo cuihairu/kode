@@ -171,7 +171,11 @@ describe('EntityMappingManager', () => {
           return [
             'class Hero:',
             '    def attack(self, target):',
-            '        return target'
+            '        return target',
+            '',
+            '    @staticmethod',
+            '    def helper():',
+            '        return None'
           ].join('\n');
         }
 
@@ -282,7 +286,7 @@ describe('EntityMappingManager', () => {
     assert.strictEqual(openDocumentPath, pythonPath);
     assert.ok(openedSelection);
     assert.strictEqual(openedSelection?.start.line, 1);
-    assert.strictEqual(openedSelection?.start.character, 0);
+    assert.strictEqual(openedSelection?.start.character, 8);
   });
 
   it('opens interface python implementations before falling back to interface def', async () => {
@@ -298,6 +302,7 @@ describe('EntityMappingManager', () => {
     assert.strictEqual(openDocumentPath, interfacePythonPath);
     assert.ok(openedSelection);
     assert.strictEqual(openedSelection?.start.line, 1);
+    assert.strictEqual(openedSelection?.start.character, 8);
   });
 
   it('resolves interface python files back to interface-based property and method definitions', async () => {

@@ -15,7 +15,11 @@ import {
   hasTruthyChildTag,
   parseDefDocument
 } from './defParser';
-import { EntityMappingManager, EntityMethodSection } from './entityMapping';
+import {
+  DefinitionSymbolIdentity,
+  EntityMappingManager,
+  EntityMethodSection
+} from './entityMapping';
 import {
   createDatabaseSchemaUri,
   findDatabaseSchemaFieldAtPosition,
@@ -26,7 +30,9 @@ import {
   locateDatabaseSchemaLine
 } from './databaseSchema';
 import {
+  findCustomTypeDeclarationInfo,
   findCustomTypeInfo,
+  findCustomTypePythonImplementationFile,
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
   findCustomTypePythonFile,
@@ -1058,12 +1064,12 @@ function getCustomTypeHover(
     return null;
   }
 
-  const customTypeInfo = findCustomTypeAtPosition(document, position, word);
-  if (!customTypeInfo) {
+  const customTypeTarget = findCustomTypeAtPosition(document, position, word);
+  if (!customTypeTarget) {
     return null;
   }
 
-  return createCustomTypeHover(customTypeInfo, 'Custom type from `types.xml`');
+  return createCustomTypeHover(customTypeTarget.info, 'Custom type from `types.xml`');
 }
 
 function getTypeValueHover(
@@ -1362,8 +1368,16 @@ function resolveCustomTypeReference(
     return { status: 'missingTypeRegistration' };
   }
 
-  const customPythonTypePath = findCustomTypePythonFile(workspaceRoot, candidate);
-  if (!customPythonTypePath) {
+  const declarationInfo = findCustomTypeDeclarationInfo(candidate, workspaceRoot);
+  if (!declarationInfo) {
+    return { status: 'resolved' };
+  }
+
+  if (declarationInfo.implementedBy && !findCustomTypePythonImplementationFile(
+    declarationInfo.name,
+    workspaceRoot,
+    declarationInfo.implementedBy
+  )) {
     return { status: 'missingPythonFile' };
   }
 
@@ -1399,6 +1413,7 @@ function findEntityDefinitionInDef(
   if (symbolInfo?.section && METHOD_SECTIONS.has(symbolInfo.section)) {
     return findMethodImplementationLocationInDef(
       document,
+      position,
       symbolInfo.symbolNode.name,
       symbolInfo.section,
       entityMappingManager
@@ -1502,25 +1517,21 @@ function findCustomTypeDefinition(
     return null;
   }
 
-  const customTypeInfo = findCustomTypeAtPosition(document, position, word);
-  if (!customTypeInfo) {
+  const customTypeTarget = findCustomTypeAtPosition(document, position, word);
+  if (!customTypeTarget) {
     return null;
   }
 
-  if (isPositionInsideImplementedByValue(document, position)) {
-    if (customTypeInfo.pythonFilePath) {
-      return new vscode.Location(vscode.Uri.file(customTypeInfo.pythonFilePath), new vscode.Position(0, 0));
+  if (customTypeTarget.isImplementedByValue) {
+    if (customTypeTarget.info.pythonFilePath) {
+      return new vscode.Location(vscode.Uri.file(customTypeTarget.info.pythonFilePath), new vscode.Position(0, 0));
     }
     return null;
   }
 
-  if (customTypeInfo.pythonFilePath) {
-    return new vscode.Location(vscode.Uri.file(customTypeInfo.pythonFilePath), new vscode.Position(0, 0));
-  }
-
   return new vscode.Location(
-    vscode.Uri.file(customTypeInfo.filePath),
-    new vscode.Position(customTypeInfo.line - 1, 0)
+    vscode.Uri.file(document.fileName),
+    new vscode.Position(customTypeTarget.line - 1, 0)
   );
 }
 
@@ -1528,22 +1539,64 @@ function findCustomTypeAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position,
   word: string
-) {
+): { info: NonNullable<ReturnType<typeof findCustomTypeInfo>>; line: number; isImplementedByValue: boolean } | null {
   if (!document.fileName.endsWith('types.xml')) {
     return null;
   }
 
-  const customTypeInfo = findCustomTypeInfo(word, document);
+  const node = getDefNodeAtWord(document, position, word);
+  const isImplementedByValue = isPositionInsideImplementedByValue(document, position);
+  const topLevelTypeNode = isImplementedByValue
+    ? findAncestorElement(node, 'implementedBy')?.parent || null
+    : (node?.kind === 'element' ? node : node?.parent) || null;
+
+  if (!topLevelTypeNode || topLevelTypeNode.parent?.name !== 'root') {
+    return null;
+  }
+
+  if (!isImplementedByValue && topLevelTypeNode.name !== word) {
+    return null;
+  }
+
+  const customTypeInfo = findCustomTypeInfo(topLevelTypeNode.name, document);
   if (!customTypeInfo) {
     return null;
   }
 
-  const offset = document.offsetAt(position);
-  if (offset < customTypeInfo.startOffset || offset > customTypeInfo.endOffset) {
+  const ast = parseDefAst(document);
+  if (!ast) {
     return null;
   }
 
-  return customTypeInfo;
+  return {
+    info: customTypeInfo,
+    line: getLineNumberAt(ast, topLevelTypeNode.tagStart),
+    isImplementedByValue
+  };
+}
+
+function findCurrentDocumentCustomTypeReference(
+  document: vscode.TextDocument,
+  typeName: string
+): { filePath: string; line: number } | null {
+  if (!document.fileName.endsWith('types.xml')) {
+    return null;
+  }
+
+  const ast = parseDefAst(document);
+  if (!ast?.root) {
+    return null;
+  }
+
+  const typeNode = getDirectChildElements(ast.root).find(node => node.name === typeName);
+  if (!typeNode) {
+    return null;
+  }
+
+  return {
+    filePath: document.fileName,
+    line: getLineNumberAt(ast, typeNode.tagStart)
+  };
 }
 
 function buildSymbolHoverInfo(
@@ -1630,6 +1683,11 @@ function findTypeValueDefinitionReference(
   document: vscode.TextDocument,
   word: string
 ): { filePath: string; line?: number } | null {
+  const currentDocumentTypeReference = findCurrentDocumentCustomTypeReference(document, word);
+  if (currentDocumentTypeReference) {
+    return currentDocumentTypeReference;
+  }
+
   const customTypeEntry = findDefinitionEntryByCategory(word, 'type', document);
   if (customTypeEntry) {
     return { filePath: customTypeEntry.filePath, line: customTypeEntry.line };
@@ -1701,6 +1759,7 @@ function findDefSymbolInfo(
 
 function findMethodImplementationLocationInDef(
   document: vscode.TextDocument,
+  position: vscode.Position,
   methodName: string,
   section: KBEngineSectionName,
   entityMappingManager?: EntityMappingManager
@@ -1709,32 +1768,47 @@ function findMethodImplementationLocationInDef(
     return null;
   }
 
-  const definitionName = path.basename(document.fileName, '.def');
-  return entityMappingManager.resolveMethodImplementation(
-    definitionName,
+  const ast = parseDefAst(document);
+  const symbolInfo = findDefSymbolInfo(document, position, methodName);
+  if (!ast || !symbolInfo) {
+    return null;
+  }
+
+  const line = getLineNumberAt(ast, symbolInfo.symbolNode.tagStart);
+  return entityMappingManager.resolveDefinitionSymbolAtPosition(
+    document.fileName,
+    line,
     methodName,
     section as EntityMethodSection
-  ).then(reference => {
-    if (reference) {
+  ).then(identity => {
+    if (!identity) {
       return new vscode.Location(
-        vscode.Uri.file(reference.filePath),
-        new vscode.Position(reference.line - 1, 0)
+        document.uri,
+        new vscode.Position(Math.max(line - 1, 0), 0)
       );
     }
 
-    const ast = parseDefDocument(document.getText());
-    const symbolInfo = findDefSymbolInfo(
-      document,
-      document.positionAt(document.getText().indexOf(methodName)),
-      methodName
-    );
-    if (!symbolInfo) {
-      return null;
+    return entityMappingManager.resolveMethodImplementationByIdentity(identity).then(reference => {
+      if (reference) {
+        return new vscode.Location(
+          vscode.Uri.file(reference.filePath),
+          new vscode.Position(reference.line - 1, reference.character)
+        );
+      }
+
+      return new vscode.Location(
+        document.uri,
+        new vscode.Position(Math.max(line - 1, 0), 0)
+      );
+    });
+  }).then(reference => {
+    if (reference) {
+      return reference;
     }
 
     return new vscode.Location(
       document.uri,
-      new vscode.Position(getLineNumberAt(ast, symbolInfo.symbolNode.tagStart) - 1, 0)
+      new vscode.Position(Math.max(line - 1, 0), 0)
     );
   });
 }
@@ -1872,6 +1946,86 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
   }
 }
 
+export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async prepareCallHierarchy(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): Promise<vscode.CallHierarchyItem | vscode.CallHierarchyItem[] | null> {
+    if (document.languageId === 'python') {
+      const pythonMethod = await this.entityMappingManager.resolvePythonMethodAtPosition(
+        document.fileName,
+        position.line + 1,
+        position.character
+      );
+      return pythonMethod ? createPythonCallHierarchyItem(pythonMethod) : null;
+    }
+
+    if (document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def')) {
+      const range = document.getWordRangeAtPosition(position, /\w+/);
+      if (!range) {
+        return null;
+      }
+
+      const word = document.getText(range);
+      const symbolInfo = findDefSymbolInfo(document, position, word);
+      if (!symbolInfo || !METHOD_SECTIONS.has(symbolInfo.section)) {
+        return null;
+      }
+
+      const ast = parseDefAst(document);
+      if (!ast) {
+        return null;
+      }
+
+      const identity = await this.entityMappingManager.resolveDefinitionSymbolAtPosition(
+        document.fileName,
+        getLineNumberAt(ast, symbolInfo.symbolNode.tagStart),
+        symbolInfo.symbolNode.name,
+        symbolInfo.section as EntityMethodSection
+      );
+      if (!identity) {
+        return null;
+      }
+
+      const implementation = await this.entityMappingManager.resolveMethodImplementationByIdentity(identity);
+      if (!implementation) {
+        return null;
+      }
+
+      return createPythonCallHierarchyItem({
+        filePath: implementation.filePath,
+        methodName: symbolInfo.symbolNode.name,
+        line: implementation.line,
+        character: implementation.character
+      });
+    }
+
+    return null;
+  }
+
+  async provideCallHierarchyIncomingCalls(
+    item: vscode.CallHierarchyItem
+  ): Promise<vscode.CallHierarchyIncomingCall[]> {
+    const calls = await this.entityMappingManager.getIncomingPythonMethodCalls(item.uri.fsPath, item.name);
+    return calls.map(call => new vscode.CallHierarchyIncomingCall(
+      createPythonCallHierarchyItem(call.caller),
+      [createSelectionRange(call.callLine, call.callCharacter, item.name)]
+    ));
+  }
+
+  async provideCallHierarchyOutgoingCalls(
+    item: vscode.CallHierarchyItem
+  ): Promise<vscode.CallHierarchyOutgoingCall[]> {
+    const calls = await this.entityMappingManager.getOutgoingPythonMethodCalls(item.uri.fsPath, item.name);
+    return calls.map(call => new vscode.CallHierarchyOutgoingCall(
+      createPythonCallHierarchyItem(call),
+      [createSelectionRange(call.line, call.character, call.methodName)]
+    ));
+  }
+}
+
 export class PythonCompletionProvider implements vscode.CompletionItemProvider {
   constructor(private entityMappingManager: EntityMappingManager) {}
 
@@ -1983,5 +2137,26 @@ function getPythonMethodDeclarationAtPosition(lineText: string, character: numbe
   }
 
   return methodName;
+}
+
+function createPythonCallHierarchyItem(
+  method: { filePath: string; methodName: string; line: number; character: number }
+): vscode.CallHierarchyItem {
+  const selectionRange = createSelectionRange(method.line, method.character, method.methodName);
+  return new vscode.CallHierarchyItem(
+    vscode.SymbolKind.Method,
+    method.methodName,
+    path.basename(method.filePath),
+    vscode.Uri.file(method.filePath),
+    selectionRange,
+    selectionRange
+  );
+}
+
+function createSelectionRange(line: number, character: number, text: string): vscode.Range {
+  return new vscode.Range(
+    new vscode.Position(Math.max(line - 1, 0), Math.max(character, 0)),
+    new vscode.Position(Math.max(line - 1, 0), Math.max(character, 0) + text.length)
+  );
 }
 

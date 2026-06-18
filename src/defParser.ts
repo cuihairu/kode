@@ -275,6 +275,10 @@ function normalizePreserveOrderNodes(
         continue;
       }
 
+      if (isNonElementXmlNode(name)) {
+        continue;
+      }
+
       if (name === '#text') {
         nodes.push({
           kind: 'text',
@@ -309,6 +313,13 @@ function normalizePreserveOrderNodes(
   }
 
   return nodes;
+}
+
+function isNonElementXmlNode(name: string): boolean {
+  return name === '#comment'
+    || name === '#cdata'
+    || name.startsWith('?')
+    || name.startsWith('!');
 }
 
 function normalizeAttributes(rawAttributes: unknown): Record<string, string> {

@@ -33,7 +33,7 @@ describe('validateDocument', () => {
       },
       readFileSync(candidatePath: string): string {
         if (candidatePath === typesXmlPath) {
-          return '<root><RegisteredType/><BrokenType/></root>';
+          return '<root><RegisteredType/><BrokenType><implementedBy>BrokenType</implementedBy></BrokenType><TIMESTAMP>UINT64</TIMESTAMP></root>';
         }
 
         if (candidatePath === entitiesXmlPath) {
@@ -124,6 +124,22 @@ describe('validateDocument', () => {
       message.includes('types.xml') &&
       message.includes('user_type')
     )));
+  });
+
+  it('does not require a user_type python file for alias types registered in types.xml', () => {
+    const messages = messagesFor([
+      '<root>',
+      '  <Properties>',
+      '    <createdAt>',
+      '      <Type>TIMESTAMP</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </createdAt>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+
+    assert.deepStrictEqual(messages, []);
+    assert.ok(!observedExistsPaths.some(candidatePath => candidatePath.includes('TIMESTAMP.py')));
   });
 
   it('does not resolve builtin types through types.xml or user_type', () => {

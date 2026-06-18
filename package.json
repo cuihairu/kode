@@ -432,8 +432,8 @@
     "pretest": "npm run clean && npm run compile",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "npm run compile && vsce package --no-yarn --no-dependencies",
-    "publish": "npm run compile && vsce publish --no-yarn --no-dependencies"
+    "package": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 package --no-yarn --no-dependencies",
+    "publish": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 publish --no-yarn --no-dependencies"
   },
   "devDependencies": {
     "@types/mocha": "^8.2.2",
@@ -442,7 +442,6 @@
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
     "@vscode/test-electron": "^2.5.2",
-    "@vscode/vsce": "^3.7.1",
     "eslint": "^8.57.1",
     "glob": "^10.5.0",
     "mocha": "^11.7.5",

@@ -5,7 +5,11 @@ import { LogViewerWebView } from './logWebView';
 import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
-import { EntityMappingManager, EntityMethodSection } from './entityMapping';
+import {
+  DefinitionSymbolIdentity,
+  EntityMappingManager,
+  EntityMethodSection
+} from './entityMapping';
 import { EntityDependencyWebView } from './entityDependencyWebView';
 import { KBEngineCodeGenerator } from './codeGenerator';
 import {
@@ -15,6 +19,7 @@ import {
 } from './explorerProviders';
 import { resolveServerComponent } from './serverCommandTarget';
 import {
+  KBEngineCallHierarchyProvider,
   KBEngineCompletionProvider,
   KBEngineDefinitionProvider,
   KBEngineHoverProvider,
@@ -89,6 +94,15 @@ export function activate(context: vscode.ExtensionContext) {
     new PythonDefinitionProvider(entityMappingManager)
   );
   context.subscriptions.push(pythonDefinitionProvider);
+
+  const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
+    [
+      ...definitionNavigationSelector,
+      { language: 'python', scheme: 'file' }
+    ],
+    new KBEngineCallHierarchyProvider(entityMappingManager)
+  );
+  context.subscriptions.push(callHierarchyProvider);
 
   // 注册 Python 文件的智能提示提供者（提供来自 .def 的属性和方法）
   const pythonCompletionProvider = vscode.languages.registerCompletionItemProvider(
@@ -183,21 +197,31 @@ export function activate(context: vscode.ExtensionContext) {
 
   const openEntityMethodCommand = vscode.commands.registerCommand(
     'kbengine.entity.method.open',
-    async (entityName: string, methodName: string, section: EntityMethodSection) => {
-      if (!entityName || !methodName || !section) {
+    async (
+      identityOrEntityName: DefinitionSymbolIdentity | string,
+      methodName?: string,
+      section?: EntityMethodSection
+    ) => {
+      const label = typeof identityOrEntityName === 'string'
+        ? `${identityOrEntityName}.${methodName || ''} (${section || ''})`
+        : `${identityOrEntityName.ownerName}.${identityOrEntityName.symbolName} (${identityOrEntityName.section || ''})`;
+
+      if (!identityOrEntityName) {
         return;
       }
 
       try {
-        const didOpen = await entityMappingManager.openMethodTarget(entityName, methodName, section);
+        const didOpen = typeof identityOrEntityName === 'string'
+          ? await entityMappingManager.openMethodTarget(identityOrEntityName, methodName, section)
+          : await entityMappingManager.openMethodTarget(identityOrEntityName);
         if (!didOpen) {
           vscode.window.showWarningMessage(
-            `打开实体方法失败: ${entityName}.${methodName} (${section})`
+            `打开实体方法失败: ${label}`
           );
         }
       } catch (error) {
         vscode.window.showWarningMessage(
-          `打开实体方法失败: ${entityName}.${methodName} (${section}) (${error})`
+          `打开实体方法失败: ${label} (${error})`
         );
       }
     }
