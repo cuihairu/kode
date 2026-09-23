@@ -18,7 +18,16 @@ describe('KBEngine .def language features', () => {
   let KBEngineDefinitionProvider: LanguageProvidersModule['KBEngineDefinitionProvider'];
   let KBEngineHoverProvider: LanguageProvidersModule['KBEngineHoverProvider'];
   let mappingManagerStub: {
-    resolveMethodImplementation: (entityName: string, methodName: string, section: string) => Promise<{ filePath: string; line: number } | null>;
+    resolveMethodImplementation: (entityName: string, methodName: string, section: string) => Promise<{ filePath: string; line: number; character: number } | null>;
+    resolveDefinitionSymbolAtPosition: (defFile: string, line: number, symbolName: string, section?: string) => Promise<{
+      ownerKind: string;
+      ownerName: string;
+      sourceKind: string;
+      sourceChain: string[];
+      section: string;
+      symbolName: string;
+    } | null>;
+    resolveMethodImplementationByIdentity: (identity: { ownerName?: string; symbolName?: string } | null) => Promise<{ filePath: string; line: number; character: number } | null>;
   };
 
   before(() => {
@@ -139,7 +148,40 @@ describe('KBEngine .def language features', () => {
         if (entityName === 'Hero' && methodName === 'attack' && section === 'BaseMethods') {
           return {
             filePath: '/workspace/scripts/base/Hero.py',
-            line: 12
+            line: 12,
+            character: 8
+          };
+        }
+
+        return null;
+      },
+      async resolveDefinitionSymbolAtPosition(
+        defFile: string,
+        line: number,
+        symbolName: string,
+        section?: string
+      ) {
+        if (symbolName === 'attack' && section === 'BaseMethods') {
+          return {
+            ownerKind: 'entity',
+            ownerName: 'Hero',
+            sourceKind: 'local',
+            sourceChain: [],
+            section: 'BaseMethods',
+            symbolName: 'attack'
+          };
+        }
+
+        return null;
+      },
+      async resolveMethodImplementationByIdentity(
+        identity: { ownerName?: string; symbolName?: string } | null
+      ) {
+        if (identity?.ownerName === 'Hero' && identity?.symbolName === 'attack') {
+          return {
+            filePath: '/workspace/scripts/base/Hero.py',
+            line: 12,
+            character: 8
           };
         }
 

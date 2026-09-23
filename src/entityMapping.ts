@@ -638,7 +638,9 @@ export class EntityMappingManager {
       return false;
     }
 
-    const index = await this.ensureIndex(identity.ownerName);
+    const index = typeof identityOrEntityName === 'string'
+      ? await this.ensureIndex(identity.ownerName)
+      : await this.ensureIndexForOwner(identity);
     if (!index) {
       return false;
     }
@@ -663,12 +665,37 @@ export class EntityMappingManager {
   async resolveMethodImplementationByIdentity(
     identity: DefinitionSymbolIdentity
   ): Promise<{ filePath: string; line: number; character: number } | null> {
-    const index = await this.ensureIndex(identity.ownerName);
+    const index = await this.ensureIndexForOwner(identity);
     if (!index) {
       return null;
     }
 
     return this.findMethodImplementationByIdentity(index, identity);
+  }
+
+  private async ensureIndexForOwner(
+    identity: DefinitionSymbolIdentity
+  ): Promise<EntityMappingIndex | undefined> {
+    const direct = this.mappingIndexes.get(identity.ownerName);
+    if (direct) {
+      return direct;
+    }
+
+    // 接口/组件符号不单独建索引,需要回溯到引用它的实体索引
+    const findByOwner = (): EntityMappingIndex | undefined =>
+      [...this.mappingIndexes.values()].find(index =>
+        index.pythonOwnerFiles.some(item =>
+          item.ownerKind === identity.ownerKind && item.ownerName === identity.ownerName
+        )
+      );
+
+    const ownerIndex = findByOwner();
+    if (ownerIndex) {
+      return ownerIndex;
+    }
+
+    await this.scanEntityMappings();
+    return this.mappingIndexes.get(identity.ownerName) || findByOwner();
   }
 
   async resolveMethodImplementation(

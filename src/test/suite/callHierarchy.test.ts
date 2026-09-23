@@ -54,6 +54,38 @@ describe('KBEngineCallHierarchyProvider', () => {
 
         return null;
       },
+      async resolveDefinitionSymbolAtPosition(
+        defFile: string,
+        line: number,
+        symbolName: string,
+        section?: string
+      ) {
+        if (symbolName === 'attack' && section === 'BaseMethods') {
+          return {
+            ownerKind: 'entity',
+            ownerName: 'Hero',
+            sourceKind: 'local',
+            sourceChain: [],
+            section: 'BaseMethods',
+            symbolName: 'attack'
+          };
+        }
+
+        return null;
+      },
+      async resolveMethodImplementationByIdentity(
+        identity: { ownerName?: string; symbolName?: string } | null
+      ) {
+        if (identity?.ownerName === 'Hero' && identity?.symbolName === 'attack') {
+          return {
+            filePath: '/workspace/scripts/base/Hero.py',
+            line: 2,
+            character: 8
+          };
+        }
+
+        return null;
+      },
       async getIncomingPythonMethodCalls(pythonFile: string, methodName: string) {
         if (pythonFile === '/workspace/scripts/base/Hero.py' && methodName === 'attack') {
           return [{

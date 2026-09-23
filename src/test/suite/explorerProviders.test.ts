@@ -464,14 +464,15 @@ describe('EntityExplorerProvider', () => {
 
     const cellMethodItems = await provider.getChildren(cellMethodsSection as never);
     assert.deepStrictEqual(cellMethodItems.map(item => item.label), ['Move']);
-    assert.strictEqual((cellMethodItems[0] as any).command.arguments[2], 'CellMethods');
+    assert.strictEqual(((cellMethodItems[0] as any).command.arguments[0] as any).section, 'CellMethods');
+    assert.strictEqual(((cellMethodItems[0] as any).command.arguments[0] as any).ownerName, 'Avatar');
 
     const clientMethodGroups = await provider.getChildren(clientMethodsSection as never);
     assert.deepStrictEqual(clientMethodGroups.map(item => item.label), ['Own', 'Mixin · Chat']);
 
     const ownClientMethodItems = await provider.getChildren(clientMethodGroups[0] as never);
     assert.deepStrictEqual(ownClientMethodItems.map(item => item.label), ['Notify']);
-    assert.strictEqual((ownClientMethodItems[0] as any).command.arguments[2], 'ClientMethods');
+    assert.strictEqual(((ownClientMethodItems[0] as any).command.arguments[0] as any).section, 'ClientMethods');
 
     const mixinClientMethodItems = await provider.getChildren(clientMethodGroups[1] as never);
     assert.deepStrictEqual(mixinClientMethodItems.map(item => item.label), ['Ping']);
@@ -493,7 +494,14 @@ describe('EntityExplorerProvider', () => {
     const interfaceMethodItems = await provider.getChildren(interfaceClientMethodsSection as never);
     assert.deepStrictEqual(interfaceMethodItems.map(item => item.label), ['Ping']);
     assert.strictEqual((interfaceMethodItems[0] as any).command.command, 'kbengine.entity.method.open');
-    assert.deepStrictEqual((interfaceMethodItems[0] as any).command.arguments, ['Chat', 'Ping', 'ClientMethods']);
+    assert.deepStrictEqual((interfaceMethodItems[0] as any).command.arguments, [{
+      ownerKind: 'interface',
+      ownerName: 'Chat',
+      sourceKind: 'local',
+      sourceChain: [],
+      section: 'ClientMethods',
+      symbolName: 'Ping'
+    }]);
   });
 
   it('parses entity definition structure from content', () => {
@@ -543,8 +551,41 @@ describe('EntityExplorerProvider', () => {
     assert.deepStrictEqual(stats.interfaces, ['Chat']);
     assert.deepStrictEqual(stats.components, [{ propertyName: 'combat', typeName: 'Combat' }]);
     assert.deepStrictEqual(stats.properties, ['health', 'mana']);
-    assert.deepStrictEqual(stats.baseMethods, [{ name: 'Spawn', exposed: true }]);
-    assert.deepStrictEqual(stats.cellMethods, [{ name: 'Move', exposed: false }]);
-    assert.deepStrictEqual(stats.clientMethods, [{ name: 'Notify', exposed: false }]);
+    assert.deepStrictEqual(stats.baseMethods, [{
+      name: 'Spawn',
+      exposed: true,
+      identity: {
+        ownerKind: 'entity',
+        ownerName: 'Anonymous',
+        sourceKind: 'local',
+        sourceChain: [],
+        section: 'BaseMethods',
+        symbolName: 'Spawn'
+      }
+    }]);
+    assert.deepStrictEqual(stats.cellMethods, [{
+      name: 'Move',
+      exposed: false,
+      identity: {
+        ownerKind: 'entity',
+        ownerName: 'Anonymous',
+        sourceKind: 'local',
+        sourceChain: [],
+        section: 'CellMethods',
+        symbolName: 'Move'
+      }
+    }]);
+    assert.deepStrictEqual(stats.clientMethods, [{
+      name: 'Notify',
+      exposed: false,
+      identity: {
+        ownerKind: 'entity',
+        ownerName: 'Anonymous',
+        sourceKind: 'local',
+        sourceChain: [],
+        section: 'ClientMethods',
+        symbolName: 'Notify'
+      }
+    }]);
   });
 });
