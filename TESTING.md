@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 11.46% |
-| Branches | 10.56% |
-| Functions | 12.50% |
-| Lines | 11.52% |
+| Statements | 14.24% |
+| Branches | 11.36% |
+| Functions | 15.13% |
+| Lines | 14.34% |
 
 纯逻辑层明细:
 
@@ -61,6 +61,14 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | defParser.ts | 90.5% | 82.7% |
 | definitionSemantics.ts | 83.5% | 72.3% |
 | logParser.ts | 78.7% | 68.3% |
+| kbengineProtocol.ts | 49.4% | 28.8% |
+
+kbengineProtocol 的编解码纯函数(帧构造、组件广播包解析、watcher 帧解析)已
+全覆盖;未达更高的部分是 `discoverLocalComponents`/`queryWatcherPath` 两个
+真实 UDP/TCP socket 客户端,不属纯逻辑可测域。协议测试里另有引擎条件用例:
+COMPONENT_NAMES 逐项对齐 `COMPONENT_TYPE` 枚举(common.h)、广播端口
+20086=KBE_PORT_START+86 与 watcher 回调 msgid 65502 的源码字面验证——
+并已据此修出真实缺陷:原 COMPONENT_NAMES 缺 TOOL_TYPE=14('tool')。
 
 说明:
 

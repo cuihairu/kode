@@ -38,11 +38,15 @@ export interface WatcherQueryResult {
   keys: string[];
 }
 
-const MACHINE_MSG_QUERY_ALL_INTERFACES = 4;
-const CONSOLE_WATCHER_CB_MSG_ID = 65502;
-const MACHINE_BROADCAST_PORT = 20086;
+export const MACHINE_MSG_QUERY_ALL_INTERFACES = 4;
+// 引擎侧依据:CONSOLE_WATCHERCB_MSGID = 65502(kbe/src/lib/helper/console_helper.h);
+// KBE_MACHINE_BROADCAST_SEND_PORT = KBE_PORT_START + 86(kbe/src/lib/network/common.h)。
+export const CONSOLE_WATCHER_CB_MSG_ID = 65502;
+export const MACHINE_BROADCAST_PORT = 20086;
 
-const COMPONENT_NAMES = [
+// 与引擎 COMPONENT_TYPE 枚举(kbe/src/lib/common/common.h)逐值对齐:
+// UNKNOWN=0 … INTERFACES=13,TOOL=14;COMPONENT_END_TYPE=15 为哨兵不收录。
+export const COMPONENT_NAMES = [
   'unknown',
   'dbmgr',
   'loginapp',
@@ -56,7 +60,8 @@ const COMPONENT_NAMES = [
   'logger',
   'bots',
   'watcher',
-  'interfaces'
+  'interfaces',
+  'tool'
 ];
 
 const WATCHER_QUERY_MSG_IDS: Record<number, number> = {
@@ -177,11 +182,11 @@ class BufferCursor {
   }
 }
 
-function swapUint16(value: number): number {
+export function swapUint16(value: number): number {
   return ((value & 0xff) << 8) | ((value >> 8) & 0xff);
 }
 
-function buildFrame(messageId: number, body: Buffer): Buffer {
+export function buildFrame(messageId: number, body: Buffer): Buffer {
   const buffer = Buffer.alloc(4 + body.length);
   buffer.writeUInt16LE(messageId, 0);
   buffer.writeUInt16LE(body.length, 2);
@@ -189,7 +194,7 @@ function buildFrame(messageId: number, body: Buffer): Buffer {
   return buffer;
 }
 
-function buildCString(value: string): Buffer {
+export function buildCString(value: string): Buffer {
   return Buffer.concat([Buffer.from(value, 'utf8'), Buffer.from([0])]);
 }
 
@@ -207,15 +212,15 @@ function getDefaultUsername(): string {
   return process.env.USER || process.env.LOGNAME || 'unknown';
 }
 
-function toIPv4(buffer: Buffer): string {
+export function toIPv4(buffer: Buffer): string {
   return Array.from(buffer.values()).join('.');
 }
 
-function bigIntToNumber(value: bigint): number {
+export function bigIntToNumber(value: bigint): number {
   return value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value);
 }
 
-function parseComponentInfo(buffer: Buffer): KBEngineComponentInfo {
+export function parseComponentInfo(buffer: Buffer): KBEngineComponentInfo {
   const reader = new BufferCursor(buffer);
   const uid = reader.readInt32();
   const username = reader.readCString();
@@ -278,7 +283,7 @@ function parseComponentInfo(buffer: Buffer): KBEngineComponentInfo {
   };
 }
 
-function parseWatcherFrame(body: Buffer): WatcherQueryResult {
+export function parseWatcherFrame(body: Buffer): WatcherQueryResult {
   const reader = new BufferCursor(body);
   const type = reader.readUInt8();
   const result: WatcherQueryResult = {
