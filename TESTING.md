@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 19.53% |
-| Branches | 16.05% |
-| Functions | 21.05% |
-| Lines | 19.63% |
+| Statements | 23.74% |
+| Branches | 19.36% |
+| Functions | 25.00% |
+| Lines | 23.88% |
 
 纯逻辑层明细:
 
@@ -65,6 +65,7 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | entityMapping.ts | 14.3% | 14.8% |
 | monitoringCollector.ts | 38.1% | 32.0% |
 | entityDependency.ts | 15.9% | 9.0% |
+| databaseSchema.ts | 52.7% | 38.8% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -98,6 +99,14 @@ entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子
 这正是类内"先取 Properties body 再解析子块"两段式调用成立的前提。
 15.9% 的剩余部分是 EntityDependencyAnalyzer 类本体,依赖 vscode 文件读取,
 由 mocha 层覆盖。
+
+databaseSchema 的虚拟文档 URI/文档识别、schema 文本渲染、表/字段行定位、
+mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
+前缀列、VECTOR 展开列、同名去重)与 `scripts/entity_defs` 端到端快照
+(真实 def 文件 → 快照 → tbl_Hero/sm_hp/tbl_Hero_bag)已覆盖,并锁定
+mysql 列型映射事实(UINT32 → `int unsigned`);47.3% 的剩余部分是
+def→属性描述符的深解析(parsePropertyNode 递归等,由端到端用例间接穿透)
+与 Provider 生命周期。
 
 说明:
 

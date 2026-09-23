@@ -29,11 +29,6 @@ function buildComponentPacket(fields: {
   groupOrderID?: number;
 }): Buffer {
   const chunks: Buffer[] = [];
-  const push = (fn: () => void) => {
-    const b = Buffer.alloc(8);
-    const written = fn.call(null, b) ?? b;
-    chunks.push(written);
-  };
   const le32 = (value: number) => {
     const b = Buffer.alloc(4);
     b.writeInt32LE(value, 0);

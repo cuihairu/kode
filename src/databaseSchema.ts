@@ -23,23 +23,23 @@ export const KBENGINE_DATABASE_SCHEMA_SCHEME = 'kbengine-db-schema';
 const DB_TABLE_PREFIX = 'tbl_';
 const DB_COLUMN_PREFIX = 'sm_';
 
-type RuntimeScope = 'base' | 'cell' | 'client';
-type DatabaseBackend = 'mysql' | 'redis';
+export type RuntimeScope = 'base' | 'cell' | 'client';
+export type DatabaseBackend = 'mysql' | 'redis';
 
-interface RuntimeAvailability {
+export interface RuntimeAvailability {
   hasBase: boolean;
   hasCell: boolean;
   hasClient: boolean;
 }
 
-interface DefSourceRef {
+export interface DefSourceRef {
   filePath: string;
   line: number;
   path: string;
   category: DefinitionCategory;
 }
 
-interface PersistentPropertyDescriptor {
+export interface PersistentPropertyDescriptor {
   name: string;
   typeName: string;
   persistent: boolean;
@@ -54,7 +54,7 @@ interface PersistentPropertyDescriptor {
   componentTypeName?: string;
 }
 
-interface TableFieldDescriptor {
+export interface TableFieldDescriptor {
   name: string;
   typeLabel: string;
   sourcePath: string;
@@ -65,7 +65,7 @@ interface TableFieldDescriptor {
   flags?: string;
 }
 
-interface TableSchemaDescriptor {
+export interface TableSchemaDescriptor {
   name: string;
   kind: 'entity' | 'array' | 'component';
   title: string;
@@ -742,7 +742,7 @@ function getPersistentComponentProperties(
   return clonePersistentProperties(properties);
 }
 
-function buildMysqlTableSchemas(
+export function buildMysqlTableSchemas(
   entityName: string,
   entitySource: DefSourceRef,
   properties: PersistentPropertyDescriptor[],
@@ -861,7 +861,7 @@ function createComponentTable(parentTableName: string, property: PersistentPrope
   };
 }
 
-function expandColumnNames(property: PersistentPropertyDescriptor, fixedDictPrefix = ''): string[] {
+export function expandColumnNames(property: PersistentPropertyDescriptor, fixedDictPrefix = ''): string[] {
   const baseName = `${DB_COLUMN_PREFIX}${fixedDictPrefix}${property.name}`;
   switch (property.typeName) {
     case 'VECTOR2':
