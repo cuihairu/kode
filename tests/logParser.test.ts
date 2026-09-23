@@ -132,3 +132,68 @@ describe('LogParser batch and formatting', () => {
     expect(LogParser.getLevelColor(LogLevel.WARNING)).toMatch(/^#/);
   });
 });
+
+describe('LogParser level mapping and degraded inputs', () => {
+  const standardLine = (level: string) =>
+    LogParser.parseLoggerMessage(`[2026-03-26 18:21:11][${level}] msg`)!;
+
+  it('maps every engine level token', () => {
+    expect(standardLine('DEBUG').level).toBe(LogLevel.DEBUG);
+    expect(standardLine('S_DBG').level).toBe(LogLevel.DEBUG);
+    expect(standardLine('INFO').level).toBe(LogLevel.INFO);
+    expect(standardLine('PRINT').level).toBe(LogLevel.INFO);
+    expect(standardLine('S_INFO').level).toBe(LogLevel.INFO);
+    expect(standardLine('S_NORM').level).toBe(LogLevel.INFO);
+    expect(standardLine('WARNING').level).toBe(LogLevel.WARNING);
+    expect(standardLine('WARN').level).toBe(LogLevel.WARNING);
+    expect(standardLine('S_WARN').level).toBe(LogLevel.WARNING);
+    expect(standardLine('ERROR').level).toBe(LogLevel.ERROR);
+    expect(standardLine('S_ERR').level).toBe(LogLevel.ERROR);
+    expect(standardLine('CRITICAL').level).toBe(LogLevel.CRITICAL);
+    expect(standardLine('FATAL').level).toBe(LogLevel.CRITICAL);
+    // 未知 token 回落 INFO(parseLogLevel 的 default 分支)
+    expect(standardLine('WHATEVER').level).toBe(LogLevel.INFO);
+  });
+
+  it('ranks non-standard lines by keyword heuristics and extracts the component', () => {
+    const heuristic = (text: string) => LogParser.parseLoggerMessage(text)!;
+
+    expect(heuristic('download failed on cellapp3').level).toBe(LogLevel.ERROR);
+    expect(heuristic('cellapp3 disk usage warning').level).toBe(LogLevel.WARNING);
+    expect(heuristic('machine: fatal shutdown imminent').level).toBe(LogLevel.CRITICAL);
+    expect(heuristic('logger debug trace of space 42').level).toBe(LogLevel.DEBUG);
+    expect(heuristic('dbmgr01 processed a mailbox').level).toBe(LogLevel.INFO);
+
+    // 组件提取与级别启发式独立工作
+    expect(heuristic('download failed on cellapp3').component).toBe('cellapp');
+    expect(heuristic('machine: fatal shutdown imminent').component).toBe('machine');
+    expect(heuristic('no component token here').component).toBe('unknown');
+  });
+
+  it('returns null for malformed inputs instead of throwing', () => {
+    // 类型外的运行时垃圾走 catch 分支,不抛出
+    expect(LogParser.parseLoggerMessage(undefined as unknown as string)).toBeNull();
+    // 截断的二进制 LOG_ITEM 越界读取同样降级为 null
+    expect(LogParser.parseBinaryLogItem(Buffer.alloc(2))).toBeNull();
+  });
+
+  it('labels every level with name, icon and color including fallbacks', () => {
+    for (const level of [
+      LogLevel.DEBUG,
+      LogLevel.INFO,
+      LogLevel.WARNING,
+      LogLevel.ERROR,
+      LogLevel.CRITICAL
+    ] as const) {
+      expect(LogParser.getLevelName(level).length).toBeGreaterThan(0);
+      expect(LogParser.getLevelIcon(level).length).toBeGreaterThan(0);
+      expect(LogParser.getLevelColor(level)).toMatch(/^#/);
+    }
+
+    // 越界值:icon/color 的 switch 带 default 分支;getLevelName 没有,
+    // 越界返回 undefined——三函数不一致是实现现状,如实锁定
+    expect(LogParser.getLevelIcon(99 as LogLevel)).toBe('📝');
+    expect(LogParser.getLevelColor(99 as LogLevel)).toBe('#000000');
+    expect(LogParser.getLevelName(99 as LogLevel)).toBeUndefined();
+  });
+});

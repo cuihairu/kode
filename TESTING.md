@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 14.24% |
-| Branches | 11.36% |
+| Statements | 14.69% |
+| Branches | 12.04% |
 | Functions | 15.13% |
-| Lines | 14.34% |
+| Lines | 14.80% |
 
 纯逻辑层明细:
 
@@ -60,8 +60,13 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 90.5% | 82.7% |
 | definitionSemantics.ts | 83.5% | 72.3% |
-| logParser.ts | 78.7% | 68.3% |
+| logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 49.4% | 28.8% |
+
+logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
+其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
+级别值返回 undefined,而 `getLevelIcon`/`getLevelColor` 有 default——
+三函数不一致,测试如实记录,是否统一留待后续决策。
 
 kbengineProtocol 的编解码纯函数(帧构造、组件广播包解析、watcher 帧解析)已
 全覆盖;未达更高的部分是 `discoverLocalComponents`/`queryWatcherPath` 两个
