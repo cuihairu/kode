@@ -252,7 +252,7 @@ pnpm run docs:dev
 
 ## 🧪 测试
 
-双层测试架构:纯逻辑层 vitest(`tests/`,60 个用例)+ vscode 集成层
+双层测试架构:纯逻辑层 vitest(`tests/`,71 个用例)+ vscode 集成层
 @vscode/test-electron(`src/test/suite/`,99 个用例);带 KBEngine 源码检出时
 自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)。
 

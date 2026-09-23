@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest pure-logic tests under `tests/` (60 cases) plus
+- Two-layer test suite: vitest pure-logic tests under `tests/` (71 cases) plus
   the existing mocha/@vscode/test-electron integration tests (99 cases), with
   v8 coverage reporting; engine-source-backed conditional tests verify hook call
   sites, type registrations, and flags against a local KBEngine checkout

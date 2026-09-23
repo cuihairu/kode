@@ -34,33 +34,38 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
   `kbe/src/lib/entitydef/` 全目录中不存在带引号字面量。
 - **Flags / DetailLevel**:每个名称在 `entitydef.cpp` 中有对应字面量。
 
+> 本地复现 CI 口径:设 `KBENGINE_ROOT=off` 强制 `resolveEngineRoot()` 返回 null
+> (本地同级 kbengine 检出会使命令式 fallback 命中,仅"不设环境变量"复现不了 CI)。
+> skipIf 的 describe 回调体在注册期仍会执行,各条件 suite 顶部对 null root 有
+> 显式 guard,收集阶段不会触碰任何引擎文件路径。
+
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
 vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 6.03% |
-| Branches | 5.56% |
-| Functions | 6.18% |
-| Lines | 5.99% |
+| Statements | 11.46% |
+| Branches | 10.56% |
+| Functions | 12.50% |
+| Lines | 11.52% |
 
 纯逻辑层明细:
 
-| 模块 | Lines |
-|------|-------|
-| hooks.ts | 100% |
-| kbengineMetadata.ts | 100% |
-| pythonLanguageUtils.ts | 100% |
-| workspacePath.ts | 100% |
-| defParser.ts | 90.5% |
-| logParser.ts | 78.7% |
+| 模块 | Lines | Branch |
+|------|-------|--------|
+| hooks.ts | 100% | 100% |
+| kbengineMetadata.ts | 100% | 100% |
+| pythonLanguageUtils.ts | 100% | 90.9% |
+| workspacePath.ts | 100% | 100% |
+| defParser.ts | 90.5% | 82.7% |
+| definitionSemantics.ts | 83.5% | 72.3% |
+| logParser.ts | 78.7% | 68.3% |
 
 说明:
 
-- 0% 的模块分两类:依赖 vscode API 的模块(其行为由 mocha/@vscode/test-electron
-  侧的 99 个用例覆盖,两个 runner 的覆盖率不做工具级合并)与尚未有单测的
-  `definitionSemantics.ts`(纯逻辑,是覆盖率抬升的第一优先项)。
+- 0% 的模块全部是依赖 vscode API 的模块(其行为由 mocha/@vscode/test-electron
+  侧的 99 个用例覆盖,两个 runner 的覆盖率不做工具级合并)。
 - 总体百分比低是因为分母包含全部 23 个源码文件;随纯逻辑测试推进持续抬升,
   每次抬升后更新本表。
 
