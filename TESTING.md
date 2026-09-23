@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 15.15% |
-| Branches | 12.73% |
-| Functions | 15.39% |
-| Lines | 15.27% |
+| Statements | 16.63% |
+| Branches | 14.33% |
+| Functions | 16.84% |
+| Lines | 16.72% |
 
 纯逻辑层明细:
 
@@ -62,6 +62,7 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | definitionSemantics.ts | 92.2% | 83.9% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 49.4% | 28.8% |
+| entityMapping.ts | 14.3% | 14.8% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -74,6 +75,13 @@ kbengineProtocol 的编解码纯函数(帧构造、组件广播包解析、watch
 COMPONENT_NAMES 逐项对齐 `COMPONENT_TYPE` 枚举(common.h)、广播端口
 20086=KBE_PORT_START+86 与 watcher 回调 msgid 65502 的源码字面验证——
 并已据此修出真实缺陷:原 COMPONENT_NAMES 缺 TOOL_TYPE=14('tool')。
+
+entityMapping 的底部纯函数池(方法归属绑定键、八字段身份比对含
+propertyPath/sourceChain 归一、Python 文件路径推断组件/接口/实体与方法段、
+路径去重、正则转义、行号/列号、`def` 块与 `self.*` 调用提取)已覆盖;
+14.3% 的剩余部分是 EntityMappingManager 类本体,深度依赖 vscode
+(ExtensionContext/FileSystemWatcher),由 mocha/@vscode/test-electron 侧
+100 个用例覆盖。纯函数仅加了 `export`,无任何行为变更。
 
 说明:
 

@@ -1075,7 +1075,7 @@ function buildFallbackPythonPath(entityName: string): string {
   return joinWorkspacePath(workspaceRoot, 'scripts/base', `${entityName}.py`);
 }
 
-function buildMethodOwnerBindingKey(identity: {
+export function buildMethodOwnerBindingKey(identity: {
   ownerKind: DefinitionSemanticCategory;
   ownerName: string;
   section?: EntityMethodSection;
@@ -1089,7 +1089,7 @@ function buildMethodOwnerBindingKey(identity: {
   ].join('::').toLowerCase();
 }
 
-function sameIdentity(left: DefinitionSymbolIdentity, right: DefinitionSymbolIdentity): boolean {
+export function sameIdentity(left: DefinitionSymbolIdentity, right: DefinitionSymbolIdentity): boolean {
   return left.ownerKind === right.ownerKind
     && left.ownerName === right.ownerName
     && left.sourceKind === right.sourceKind
@@ -1104,7 +1104,7 @@ function inferOwnerNameFromPythonFile(pythonFile: string): string {
   return path.basename(pythonFile, '.py');
 }
 
-function inferOwnerKindFromPythonFile(
+export function inferOwnerKindFromPythonFile(
   pythonFile: string
 ): DefinitionSemanticCategory | undefined {
   const normalizedPath = normalizeLookupPath(pythonFile);
@@ -1120,7 +1120,7 @@ function inferOwnerKindFromPythonFile(
   return undefined;
 }
 
-function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
+export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
   const normalizedPath = normalizeLookupPath(pythonFile);
 
   if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')) {
@@ -1138,7 +1138,7 @@ function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSecti
   return undefined;
 }
 
-function uniqueFilePaths(candidatePaths: string[]): string[] {
+export function uniqueFilePaths(candidatePaths: string[]): string[] {
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const candidatePath of candidatePaths) {
@@ -1152,15 +1152,15 @@ function uniqueFilePaths(candidatePaths: string[]): string[] {
   return unique;
 }
 
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function getLineNumber(text: string, index: number): number {
+export function getLineNumber(text: string, index: number): number {
   return text.substring(0, index).split('\n').length;
 }
 
-function getColumnNumber(text: string, index: number): number {
+export function getColumnNumber(text: string, index: number): number {
   const lineStart = text.lastIndexOf('\n', index - 1);
   return index - (lineStart + 1);
 }
@@ -1169,7 +1169,7 @@ function normalizePropertyLookupPath(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function parsePythonMethodBlocks(
+export function parsePythonMethodBlocks(
   content: string,
   pythonFile: string
 ): IndexedPythonMethodLocation[] {
