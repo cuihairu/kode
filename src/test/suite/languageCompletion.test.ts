@@ -201,7 +201,7 @@ describe('KBEngineCompletionProvider', () => {
     assert.ok(itemLabels.includes('FIXED_DICT'));
   });
 
-  it('suggests container child tags inside ARRAY and FIXED_DICT types', () => {
+  it('suggests of as the only ARRAY child tag and none for FIXED_DICT', () => {
     const provider = new KBEngineCompletionProvider();
     const arrayDocument = new FakeTextDocument(
       '/workspace/scripts/entity_defs/Hero.def',
@@ -223,10 +223,11 @@ describe('KBEngineCompletionProvider', () => {
       new FakePosition(0, '      <Type>FIXED_DICT<'.length) as never
     ) as FakeCompletionItem[];
 
+    // ARRAY:引擎 FixedArrayType::initialize 强制 <of> 子节点,补全只给 of。
     assert.deepStrictEqual(labels(arrayItems), ['of']);
-    assert.ok(labels(dictItems).includes('Properties'));
-    assert.ok(labels(dictItems).includes('implementedBy'));
-    assert.ok(!labels(dictItems).includes('of'));
+    // FIXED_DICT:只能经 types.xml 别名声明,def 属性内联结构引擎不加载
+    // (FixedDictType 无 DataTypes::initialize 注册),不提供子标签补全。
+    assert.deepStrictEqual(labels(dictItems), []);
   });
 
   it('suggests source-backed KBEngine reload helpers in python files', () => {

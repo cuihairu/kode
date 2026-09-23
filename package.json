@@ -435,7 +435,7 @@
     "docs:build": "vitepress build docs",
     "pretest": "npm run clean && npm run compile",
     "lint": "eslint src --ext ts",
-    "test": "vitest run && node ./out/test/runTest.js",
+    "test": "vitest run && pnpm clean && pnpm compile && node ./out/test/runTest.js",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "package": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 package --no-yarn --no-dependencies",

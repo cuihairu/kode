@@ -414,7 +414,7 @@ describe('KBEngine .def language features', () => {
     assert.ok(hover.contents.value.includes('hyst'));
   });
 
-  it('shows tag hover for FIXED_DICT helper tags', () => {
+  it('provides no helper hover for FIXED_DICT inline structure in def files', () => {
     const provider = new KBEngineHoverProvider();
     const text = '<root><Type>FIXED_DICT<implementedBy>Demo.Type</implementedBy></Type></root>';
     const document = new FakeTextDocument(
@@ -428,9 +428,10 @@ describe('KBEngine .def language features', () => {
       document.positionAt(text.indexOf('implementedBy')) as never
     ) as unknown as FakeHover;
 
-    assert.ok(hover);
-    assert.ok(hover.contents.value.includes('**implementedBy**'));
-    assert.ok(hover.contents.value.includes('FIXED_DICT'));
+    // 审计结论:FIXED_DICT 只能经 entity_defs/types.xml 别名声明(def 属性内联
+    // 结构引擎不加载,<implementedBy> 引擎不读、仅存在于客户端 SDK 序列化流),
+    // 因此 def 内联 FIXED_DICT 的 helper hover 已移除——这里锁定不得回归。
+    assert.ok(!hover);
   });
 
   it('resolves interface references inside def files', () => {
