@@ -1,5 +1,5 @@
 // Keep the XML runtime parser vendored so VSIX packaging does not depend on pnpm's node_modules layout.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { XMLParser } = require('../vendor/fast-xml-parser/fxp.cjs') as {
   XMLParser: new (options?: Record<string, unknown>) => {
     parse(text: string): unknown;

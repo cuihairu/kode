@@ -16,7 +16,6 @@ import {
   parseDefDocument
 } from './defParser';
 import {
-  DefinitionSymbolIdentity,
   EntityMappingManager,
   EntityMethodSection
 } from './entityMapping';
@@ -35,7 +34,6 @@ import {
   findCustomTypePythonImplementationFile,
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
-  findCustomTypePythonFile,
   findEntityDefinitionFile,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,

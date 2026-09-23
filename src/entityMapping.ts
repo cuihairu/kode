@@ -14,13 +14,10 @@ import {
   DefinitionOwnerRef,
   DefinitionProperty,
   DefinitionSemanticCategory,
-  ResolvedDefinitionComponentSlot,
   ResolvedDefinitionSemantics,
   normalizeLookupPath
 } from './definitionSemantics';
 import {
-  findDefinitionFileByCategory,
-  findEntityDefinitionFile,
   getDefinitionWorkspaceLayout
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
@@ -66,7 +63,7 @@ export interface PythonMethodCallReference {
   character: number;
 }
 
-interface IndexedPropertyDefinition extends EntityPropertyDefinitionLocation {}
+type IndexedPropertyDefinition = EntityPropertyDefinitionLocation;
 
 interface IndexedMethodDefinition extends EntityMethodDefinitionLocation {
   owner: DefinitionOwnerRef;
