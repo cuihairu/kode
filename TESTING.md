@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 16.63% |
-| Branches | 14.33% |
-| Functions | 16.84% |
-| Lines | 16.72% |
+| Statements | 19.53% |
+| Branches | 16.05% |
+| Functions | 21.05% |
+| Lines | 19.63% |
 
 纯逻辑层明细:
 
@@ -61,8 +61,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | defParser.ts | 90.5% | 82.7% |
 | definitionSemantics.ts | 92.2% | 83.9% |
 | logParser.ts | 100% | 98.3% |
-| kbengineProtocol.ts | 49.4% | 28.8% |
+| kbengineProtocol.ts | 60.0% | 34.2% |
 | entityMapping.ts | 14.3% | 14.8% |
+| monitoringCollector.ts | 38.1% | 32.0% |
+| entityDependency.ts | 15.9% | 9.0% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -82,6 +84,20 @@ propertyPath/sourceChain 归一、Python 文件路径推断组件/接口/实体�
 14.3% 的剩余部分是 EntityMappingManager 类本体,深度依赖 vscode
 (ExtensionContext/FileSystemWatcher),由 mocha/@vscode/test-electron 侧
 100 个用例覆盖。纯函数仅加了 `export`,无任何行为变更。
+
+monitoringCollector 的状态机(暂停/恢复、刷新间隔、启动前后安全的
+stop/dispose)、按组件的历史切片、系统总览聚合、watcher 值数值归一
+(resolveNumber/resolveBooleanLabel)与 uint64 安全钳制已覆盖;38.1%
+的剩余部分是 refresh/refreshNow 等真实发起 machine discovery 与
+watcher 查询的 socket 路径,不属纯逻辑可测域。vscodeStub 相应补了
+最小 EventEmitter 与 ExtensionContext 占位(真实事件行为仍由 mocha 层覆盖)。
+
+entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子块提取、
+标签剥离、引用三元组去重)已覆盖,并锁定实现语义:非贪婪匹配在首个同名
+闭标签截断;保留名包裹块(如 BaseMethods)整体跳过、内层不再展开——
+这正是类内"先取 Properties body 再解析子块"两段式调用成立的前提。
+15.9% 的剩余部分是 EntityDependencyAnalyzer 类本体,依赖 vscode 文件读取,
+由 mocha 层覆盖。
 
 说明:
 

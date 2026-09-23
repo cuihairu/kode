@@ -28,6 +28,37 @@ export class Uri {
   }
 }
 
+// monitoringCollector 在实例字段初始化 EventEmitter(模块求值不触发,
+// new 实例时才需要)。这里提供最小事件语义,真实事件行为仍由 mocha 层覆盖。
+export class EventEmitter<T> {
+  private listeners: Array<(value: T) => void> = [];
+
+  readonly event = (listener: (value: T) => void): { dispose: () => void } => {
+    this.listeners.push(listener);
+    return {
+      dispose: () => {
+        this.listeners = this.listeners.filter(candidate => candidate !== listener);
+      }
+    };
+  };
+
+  fire(value: T): void {
+    for (const listener of [...this.listeners]) {
+      listener(value);
+    }
+  }
+
+  dispose(): void {
+    this.listeners = [];
+  }
+}
+
+// 仅作构造参数占位(真实上下文行为由 mocha 层覆盖)。
+export interface ExtensionContext {
+  subscriptions: Array<{ dispose(): void }>;
+  [key: string]: unknown;
+}
+
 export const workspace = {
   workspaceFolders: [] as Array<{ uri: Uri; name: string; index: number }>,
   findFiles: async () => [] as Uri[],

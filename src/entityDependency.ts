@@ -491,7 +491,7 @@ export class EntityDependencyAnalyzer {
   }
 }
 
-function extractTagBodies(text: string, tagName: string): string[] {
+export function extractTagBodies(text: string, tagName: string): string[] {
   const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*<\\/${tagName}>`, 'gi');
   const bodies: string[] = [];
   let match: RegExpExecArray | null;
@@ -503,7 +503,7 @@ function extractTagBodies(text: string, tagName: string): string[] {
   return bodies;
 }
 
-function extractNamedChildBlocks(text: string): Array<{ name: string; body: string }> {
+export function extractNamedChildBlocks(text: string): Array<{ name: string; body: string }> {
   const regex = /<([A-Za-z_][A-Za-z0-9_]*)>\s*([\s\S]*?)\s*<\/\1>/g;
   const reserved = new Set([
     'Type',
@@ -537,11 +537,11 @@ function extractNamedChildBlocks(text: string): Array<{ name: string; body: stri
   return blocks;
 }
 
-function stripXmlTags(text: string): string {
+export function stripXmlTags(text: string): string {
   return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function dedupeReferences(
+export function dedupeReferences(
   references: Array<{ entityName: string; type: DependencyType; propertyName: string }>
 ): Array<{ entityName: string; type: DependencyType; propertyName: string }> {
   const seen = new Set<string>();
