@@ -26,7 +26,7 @@
 - ✅ Flags 智能提示
 - ✅ DetailLevel 提示
 - ✅ XML 标签提示
-- ✅ **钩子方法自动补全 (30+ hooks)**
+- ✅ **钩子方法自动补全 (36 hooks,全部带源码调用位置)**
 
 #### 3. 代码片段
 - ✅ 17 个常用模板
@@ -72,8 +72,8 @@
 - ✅ 快速导航
 
 #### 8. 钩子系统 ⭐ 新增
-- ✅ 30+ KBEngine 钩子
-- ✅ 12 个分类
+- ✅ 36 个 KBEngine 实体脚本回调（全部经引擎源码逐条核实）
+- ✅ 10 个分类
 - ✅ 完整的钩子数据 (src/hooks.ts)
 - ✅ 智能提示支持
 - ✅ 悬停文档支持
@@ -182,7 +182,7 @@ kode/
 │   └── kbengine.json        # 代码片段 (13个)
 ├── src/
 │   ├── extension.ts         # 主扩展文件
-│   ├── hooks.ts             # 钩子数据 (30+ hooks)
+│   ├── hooks.ts             # 钩子数据 (36 hooks,含源码调用位置)
 │   ├── serverManager.ts     # 服务器管理器
 │   ├── logCollector.ts      # 日志收集器
 │   ├── logParser.ts         # 日志解析器
@@ -209,24 +209,26 @@ kode/
 
 ## 🎯 钩子系统详情
 
-### 支持的钩子分类 (12 个)
+### 支持的钩子分类 (10 个,共 36 个回调)
 
-| 分类 | 钩子数量 | 说明 |
+全部条目依据 KBEngine 引擎源码取证:每个回调的 `sourceLocation` 指向引擎调用该脚本回调的
+确切位置(`Py_BuildValue` / `SCRIPT_OBJECT_CALL_ARGS` 调用行),签名参数亦取自该处格式串。
+曾在早期版本列出、但未在源码中出现的回调名(如 onCreate/onLogon/onRemoteCall 等)已全部剔除。
+
+| 分类 | 钩子数量 | 回调 |
 |------|----------|------|
-| **lifecycle** | 4 | 实体生命周期 (onCreate, onDestroy, onLogon, onLogout) |
-| **network** | 8 | 网络通信 (onRemoteCall, onGetCell, onClientDeath 等) |
-| **database** | 3 | 数据库 (onWriteToDB, onDBLoaded, onSaveEntityCompleted) |
-| **movement** | 4 | 移动 (onMove, onMoveOver, onMoveFailure, onTurn) |
-| **space** | 2 | 空间 (onEnterSpace, onLeaveSpace) |
-| **witness** | 4 | 视野 (onGetWitness, onLoseWitness, onEnteredView, onLeaveView) |
-| **position** | 2 | 位置 (onPositionChanged, onDirectionChanged) |
-| **teleport** | 3 | 传送 (onTeleport, onTeleportSuccess, onTeleportFailure) |
-| **trap** | 2 | 陷阱 (onEnterTrap, onLeaveTrap) |
-| **cell** | 4 | Cell (onEnteredCell, onEnteringCell, onLeavingCell, onLeftCell) |
-| **script** | 2 | 脚本 (onScriptAppReady, onScriptAppTick) |
-| **system** | 2 | 系统 (onShuttingDown, onGlobalTick) |
+| **lifecycle** | 3 | onDestroy, onTimer, onRestore |
+| **database** | 2 | onWriteToDB, onPreArchive |
+| **movement** | 4 | onMove, onMoveOver, onMoveFailure, onTurn |
+| **space** | 3 | onEnterSpace, onLeaveSpace, onSpaceGone |
+| **teleport** | 3 | onTeleport, onTeleportSuccess, onTeleportFailure |
+| **trap** | 3 | onEnterTrap, onLeaveTrap, onLeaveTrapID |
+| **cell** | 6 | onGetCell, onCreateCellFailure, onEnteredCell, onEnteringCell, onLeavingCell, onLeftCell |
+| **witness** | 6 | onGetWitness, onLoseWitness, onWitnessed, onEnteredView, onUpdateBegin, onUpdateEnd |
+| **control** | 1 | onLoseControlledBy |
+| **client** | 5 | onClientEnabled, onLogOnAttempt, onClientDeath, onClientGetCell, onStreamComplete |
 
-**总计**: 30+ 个钩子
+**总计**: 36 个钩子
 
 ### 钩子数据文件
 
@@ -278,7 +280,7 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 🎉 项目亮点
 
-1. **完整的钩子系统** - 30+ 个钩子，每个都有详细文档
+1. **完整的钩子系统** - 36 个钩子，每个都有详细文档与源码调用位置
 2. **源码级文档** - 包含源码位置，便于深入研究
 3. **实用的代码片段** - 17 个常用模板，提高开发效率
 4. **专业的项目结构** - 符合 VSCode 扩展最佳实践
@@ -287,7 +289,7 @@ pnpm run publish         # 发布到 Marketplace
 ## 📈 统计数据
 
 - **代码文件**: 19 个 TypeScript 文件
-- **钩子数量**: 30+ 个
+- **钩子数量**: 36 个
 - **代码片段**: 17 个
 - **文档页数**: 5 个
 - **总行数**: 7000+ 行

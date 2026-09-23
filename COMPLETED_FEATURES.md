@@ -21,7 +21,7 @@
 - Flags 智能提示
 - DetailLevel 提示
 - XML 标签提示
-- 钩子方法自动补全 (30+ hooks)
+- 钩子方法自动补全 (36 hooks,全部带源码调用位置)
 - **源代码**: `src/languageProviders.ts` (KBEngineCompletionProvider)
 
 ### 3. 代码片段
@@ -55,8 +55,8 @@
 - **源代码**: `src/explorerProviders.ts` (EntityExplorerProvider)
 
 ### 8. 钩子系统
-- 30+ KBEngine 钩子
-- 12 个分类：生命周期、网络、数据库、移动、空间、视野、位置、传送、陷阱、Cell、脚本、系统
+- 36 个 KBEngine 实体脚本回调（全部经引擎源码逐条核实）
+- 10 个分类：生命周期、数据库与归档、移动、空间、传送、陷阱、Cell、视野、控制权、客户端
 - **源文件**: `src/hooks.ts`
 
 ### 9. 热更新支持
@@ -139,7 +139,7 @@ kode/
 │   ├── languageProviders.ts      # 语言能力
 │   ├── explorerProviders.ts      # 树视图与导航
 │   ├── kbengineMetadata.ts       # KBEngine 元数据
-│   ├── hooks.ts                  # 钩子数据 (30+ hooks)
+│   ├── hooks.ts                  # 钩子数据 (36 hooks,含源码调用位置)
 │   ├── serverManager.ts          # 服务器管理器
 │   ├── logCollector.ts           # 日志收集器
 │   ├── logParser.ts              # 日志解析器
@@ -165,7 +165,7 @@ kode/
 | 指标 | 数量 |
 |------|------|
 | TypeScript 文件 | 19 个 |
-| 钩子数量 | 30+ 个 |
+| 钩子数量 | 36 个 |
 | 代码片段 | 17 个 |
 | 文档页数 | 5 个 |
 | 总行数 | 7000+ 行 |
