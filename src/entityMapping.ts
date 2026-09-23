@@ -183,6 +183,7 @@ export class EntityMappingManager {
 
     return {
       rootName: entityName,
+      rootCategory,
       rootDefFile: defPath,
       semantics,
       propertyDefinitions,
@@ -190,6 +191,11 @@ export class EntityMappingManager {
       pythonOwnerFiles,
       pythonMethods
     };
+  }
+
+  private storeIndex(index: EntityMappingIndex): void {
+    this.mappingIndexes.set(index.rootName, index);
+    this.mappingIndexesByRoot.set(normalizeLookupPath(index.rootDefFile), index);
   }
 
   private collectPythonOwnerFiles(semantics: ResolvedDefinitionSemantics): PythonOwnerFile[] {
