@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 14.69% |
-| Branches | 12.04% |
-| Functions | 15.13% |
-| Lines | 14.80% |
+| Statements | 15.15% |
+| Branches | 12.73% |
+| Functions | 15.39% |
+| Lines | 15.27% |
 
 纯逻辑层明细:
 
@@ -59,7 +59,7 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 90.5% | 82.7% |
-| definitionSemantics.ts | 83.5% | 72.3% |
+| definitionSemantics.ts | 92.2% | 83.9% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 49.4% | 28.8% |
 

@@ -275,3 +275,203 @@ describe('DefinitionSemanticsLoader resolution across inheritance', () => {
     expect(createDefinitionSemanticsLoader()).toBeNull();
   });
 });
+
+describe('definition semantics corner cases and clone propagation', () => {
+  // 第二夹具:覆盖节点值式接口引用、重复/空组件槽、嵌套 Properties、
+  // 接口带组件与父接口(嵌套 Mixin)、组件 Parent 链、空文件与同名目录降级。
+  const HERO2_DEF = [
+    '<root>',                                                        // 1
+    '  <Interfaces>',                                                // 2
+    '    <Interface>MoveIface2</Interface>',                         // 3
+    '    <Interface>GhostIface</Interface>',                         // 4
+    '    <Type>MoveIfaceBase</Type>',                                // 5
+    '  </Interfaces>',                                               // 6
+    '  <Components>',                                                // 6
+    '    <healthPack>',                                              // 7
+    '      <Type>HealthComp2</Type>',                                // 8
+    '    </healthPack>',                                             // 9
+    '    <healthPack>',                                              // 10
+    '      <Type>HealthComp2</Type>',                                // 11
+    '    </healthPack>',                                             // 12
+    '    <emptySlot></emptySlot>',                                   // 13
+    '  </Components>',                                               // 14
+    '  <Properties>',                                                // 15
+    '    <hp>',                                                      // 16
+    '      <Type>UINT32</Type>',                                     // 17
+    '      <Identifier>true</Identifier>',                           // 18
+    '    </hp>',                                                     // 19
+    '    <meta>',                                                    // 20
+    '      <Type>UINT32</Type>',                                     // 21
+    '      <Properties>',                                            // 22
+    '        <weight>',                                              // 23
+    '          <Type>UINT8</Type>',                                  // 24
+    '        </weight>',                                             // 25
+    '      </Properties>',                                           // 26
+    '    </meta>',                                                   // 27
+    '  </Properties>',                                               // 28
+    '  <BaseMethods>',                                               // 29
+    '    <attack><Arg>INT8</Arg></attack>',                          // 30
+    '  </BaseMethods>',                                              // 31
+    '</root>'                                                        // 32
+  ].join('\n');
+
+  const MOVE_IFACE2_DEF = [
+    '<root>',
+    '  <Parent>MoveIfaceBase</Parent>',
+    '  <Properties>',
+    '    <bag>',
+    '      <Type>',
+    '        ARRAY',
+    '        <of>UINT32</of>',
+    '      </Type>',
+    '    </bag>',
+    '  </Properties>',
+    '  <Components>',
+    '    <svc>',
+    '      <Type>HealthComp2</Type>',
+    '    </svc>',
+    '  </Components>',
+    '  <CellMethods>',
+    '    <dash><Exposed/></dash>',
+    '  </CellMethods>',
+    '</root>'
+  ].join('\n');
+
+  const MOVE_IFACE_BASE_DEF = '<root><Properties><baseProp><Type>UINT8</Type></baseProp></Properties></root>';
+  const HEALTH_COMP2_DEF = '<root><Parent>CompBase</Parent><Properties><regen><Type>UINT8</Type></regen></Properties></root>';
+  const COMP_BASE_DEF = '<root><Properties><baseCharge><Type>UINT8</Type></baseCharge></Properties></root>';
+
+  const FILES2: Array<[string, string]> = [
+    ['scripts/entity_defs/Hero2.def', HERO2_DEF],
+    // 接口的 <Parent> 按 entity 类别查找(parentCategory 分支),须落 entity 目录
+    ['scripts/entity_defs/MoveIfaceBase.def', MOVE_IFACE_BASE_DEF],
+    ['scripts/entity_defs/interfaces/MoveIface2.def', MOVE_IFACE2_DEF],
+    ['scripts/entity_defs/components/HealthComp2.def', HEALTH_COMP2_DEF],
+    ['scripts/entity_defs/components/CompBase.def', COMP_BASE_DEF],
+    ['scripts/entity_defs/Empty.def', '']
+  ];
+
+  let root2 = '';
+
+  beforeAll(() => {
+    root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-semantics2-'));
+    for (const [relative, content] of FILES2) {
+      const absolute = path.join(root2, relative);
+      fs.mkdirSync(path.dirname(absolute), { recursive: true });
+      fs.writeFileSync(absolute, content, 'utf8');
+    }
+    // 同名目录:fs.readFileSync(EISDIR) 抛出 → 读取降级 catch 分支
+    fs.mkdirSync(path.join(root2, 'scripts/entity_defs/NoRead.def'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(root2, { recursive: true, force: true });
+  });
+
+  it('degrades empty files and unreadable paths to cached nulls', () => {
+    const loader = createDefinitionSemanticsLoader(root2)!;
+
+    expect(loader.loadLocal('Empty', 'entity')).toBeNull();
+    // 空文件内容同样写入负缓存
+    expect(loader.loadLocal('Empty', 'entity')).toBeNull();
+    // 同名目录触发 EISDIR,读取 catch 分支返回 null
+    expect(loader.loadLocal('NoRead', 'entity')).toBeNull();
+    // resolved 负缓存同样命中
+    expect(loader.loadResolved('Nope2', 'entity')).toBeNull();
+    expect(loader.loadResolved('Nope2', 'entity')).toBeNull();
+  });
+
+  it('parses node-value interface refs and dedupes component slots', () => {
+    const loader = createDefinitionSemanticsLoader(root2)!;
+    const hero2 = loader.loadLocal('Hero2', 'entity')!;
+
+    // 节点值形式 <Interface>Name</Interface> 与自闭合 <MoveIface/> 等价,
+    // <Type>Name</Type> 同样被接受
+    expect(hero2.interfaces.map(ref => ref.name)).toEqual([
+      'MoveIface2',
+      'GhostIface',
+      'MoveIfaceBase'
+    ]);
+    // 本地解析阶段即丢弃无 Type 的空槽,同名槽保留待 resolved 去重
+    expect(hero2.components.map(slot => slot.slotName)).toEqual(['healthPack', 'healthPack']);
+
+    const hp = hero2.properties[0];
+    expect(hp.identifier).toBe(true);
+    // 嵌套 <Properties> 递归为 children
+    expect(hp.name).toBe('hp');
+    const meta = hero2.properties[1];
+    expect(meta.children.map(child => child.name)).toEqual(['weight']);
+
+    const resolved = loader.loadResolved('Hero2', 'entity')!;
+    expect(loader.loadResolved('Hero2', 'entity')).toBe(resolved); // resolved 缓存命中
+    // resolved 阶段:同名槽去重 + 空 Type 槽剔除 + 接口引入的 svc 槽
+    expect(resolved.components.map(slot => slot.slotName)).toEqual(['healthPack', 'svc']);
+    // 未解析的接口(GhostIface 无 def)不产生继承组,父接口产生嵌套组
+    expect(resolved.inheritanceGroups.map(group => group.owner.name)).toEqual([
+      'MoveIface2',
+      'MoveIfaceBase'
+    ]);
+  });
+
+  it('propagates cloned sources for array elements, methods and nested mixins', () => {
+    const loader = createDefinitionSemanticsLoader(root2)!;
+    const resolved = loader.loadResolved('Hero2', 'entity')!;
+
+    const mixin = resolved.inheritanceGroups[0];
+    // 接口属性 bag(ARRAY)克隆保留 arrayElement
+    const bag = mixin.properties.find(property => property.name === 'bag')!;
+    expect(bag.arrayElement!.typeName).toBe('UINT32');
+    expect(bag.source.kind).toBe('interface');
+    expect(bag.source.chain).toContain('MoveIface2');
+    // 接口方法段的克隆
+    expect(mixin.methodsBySection.CellMethods.map(method => method.name)).toEqual(['dash']);
+    // 父接口组(Mixin 链)带 baseProp
+    const base = resolved.inheritanceGroups[1];
+    expect(base.properties.map(property => property.name)).toEqual(['baseProp']);
+    expect(base.label).toContain('MoveIfaceBase');
+
+    // 组件槽递归解析其 Parent 链(HealthComp2 → CompBase)
+    const healthPack = resolved.components.find(slot => slot.slotName === 'healthPack')!;
+    expect(healthPack.resolved!.parentName).toBe('CompBase');
+    const parentGroup = healthPack.resolved!.inheritanceGroups[0];
+    expect(parentGroup.owner.name).toBe('CompBase');
+    expect(parentGroup.properties[0].name).toBe('baseCharge');
+  });
+
+  it('interprets truthy identifier spellings as the engine wire values', () => {
+    const spellings: Array<[string, boolean | undefined]> = [
+      ['true', true],
+      ['1', true],
+      ['yes', true],
+      ['false', false],
+      ['0', false],
+      ['no', false],
+      // 未知拼写严格回落 false(布尔解析无 undefined 语义)
+      ['maybe', false]
+    ];
+
+    for (const [word, expected] of spellings) {
+      const content = `<root><Properties><p><Type>UINT8</Type><Identifier>${word}</Identifier></p></Properties></root>`;
+      const parsed = parseLocalDefinition(content, 'entity', 'P', '/tmp/P.def');
+      expect(parsed.properties[0].identifier, `Identifier=${word}`).toBe(expected);
+    }
+
+    // Default 是原样字符串,不走数值归一;数值归一只作用于 DatabaseLength
+    const withBadDefault = parseLocalDefinition(
+      '<root><Properties><p><Type>UINT8</Type><Default>abc</Default><DatabaseLength>notnum</DatabaseLength></p></Properties></root>',
+      'entity',
+      'P',
+      '/tmp/P.def'
+    );
+    expect(withBadDefault.properties[0].defaultValue).toBe('abc');
+    expect(withBadDefault.properties[0].databaseLength).toBeUndefined();
+
+    const withGoodLength = parseLocalDefinition(
+      '<root><Properties><p><Type>UINT8</Type><DatabaseLength>128</DatabaseLength></p></Properties></root>',
+      'entity',
+      'P',
+      '/tmp/P.def'
+    );
+    expect(withGoodLength.properties[0].databaseLength).toBe(128);
+  });
+});
