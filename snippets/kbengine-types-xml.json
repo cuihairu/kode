@@ -1,0 +1,28 @@
+{
+	"KBEngine FIXED_DICT Type Alias": {
+		"prefix": "kbe-fixed-dict",
+		"description": "KBEngine types.xml FIXED_DICT 类型别名(放置于 scripts/entity_defs/types.xml,.def 属性通过别名引用;引擎不解析 .def 内联 FIXED_DICT)",
+		"body": [
+			"<${1:MyAliasName}>",
+			"\t<FIXED_DICT>",
+			"\t\t<Properties>",
+			"\t\t\t<${2:field}>",
+			"\t\t\t\t<Type> ${3|UINT8,UINT16,UINT32,UINT64,STRING,UNICODE,VECTOR2,VECTOR3,VECTOR4|} </Type>",
+			"\t\t\t</${2:field}>",
+			"\t\t</Properties>",
+			"\t</FIXED_DICT>",
+			"</${1:MyAliasName}>$0"
+		]
+	},
+	"KBEngine ARRAY Type Alias": {
+		"prefix": "kbe-array-alias",
+		"description": "KBEngine types.xml ARRAY 类型别名(放置于 scripts/entity_defs/types.xml,.def 属性通过别名引用)",
+		"body": [
+			"<${1:MyAliasName}>",
+			"\t<ARRAY>",
+			"\t\t<of> ${2|UINT8,UINT16,UINT32,UINT64,STRING,VECTOR2,VECTOR3,VECTOR4|} </of>",
+			"\t</ARRAY>",
+			"</${1:MyAliasName}>$0"
+		]
+	}
+}

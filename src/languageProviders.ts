@@ -98,7 +98,6 @@ const BASE_OR_CELL_METHOD_CHILD_TAGS = ['Arg', 'Utype', 'Exposed'];
 const CLIENT_METHOD_CHILD_TAGS = ['Arg', 'Utype'];
 const DETAIL_LEVEL_TAGS = ['NEAR', 'MEDIUM', 'FAR'];
 const DETAIL_LEVEL_VALUE_TAGS = ['radius', 'hyst'];
-const CONTAINER_TYPE_CHILD_TAGS = ['of', 'Properties', 'implementedBy'];
 const ENTITY_BASE_DATA_FLAGS = new Set(['BASE', 'BASE_AND_CLIENT']);
 const ENTITY_CELL_DATA_FLAGS = new Set([
   'CELL_PUBLIC',
@@ -174,11 +173,8 @@ function getDefTagCompletionLabels(
   const parentTag = stack[stack.length - 2];
   const trimmedText = textBeforeCursor.trimEnd();
 
-  if ((currentTag === 'Type' || currentTag === 'Arg') && /(ARRAY|TUPLE|FIXED_DICT)\s*<$/i.test(trimmedText)) {
-    if (/FIXED_DICT\s*<$/i.test(trimmedText)) {
-      return CONTAINER_TYPE_CHILD_TAGS.filter(tag => tag !== 'of');
-    }
-
+  if ((currentTag === 'Type' || currentTag === 'Arg') && /ARRAY\s*<$/i.test(trimmedText)) {
+    // 引擎源码 FixedArrayType::initialize 强制要求 <of> 子节点声明元素类型
     return ['of'];
   }
 
@@ -619,7 +615,7 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
   },
   of: {
     detail: '容器元素类型标签',
-    documentation: '用于 `ARRAY` 或 `TUPLE` 的内部类型声明，源码会读取 `<of>` 子节点作为元素类型。'
+    documentation: '用于 `ARRAY` 的内部类型声明，引擎源码读取 `<of>` 子节点作为元素类型。'
   },
   radius: {
     detail: '细节等级半径标签',
@@ -637,17 +633,9 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
     detail: '暴露方法标签',
     documentation: '用于 Base/Cell 方法，表示该方法允许远端调用。'
   },
-  implementedBy: {
-    detail: 'FIXED_DICT 实现类标签',
-    documentation: '用于给 `FIXED_DICT` 指定实现模块名。源码会直接读取该节点字符串，并尝试加载对应实现。'
-  },
   FIXED_DICT: {
     detail: '固定字典容器',
-    documentation: 'KBEngine 容器类型之一，通常配合 `implementedBy` 和内层 `Properties` 使用。'
-  },
-  TUPLE: {
-    detail: '元组容器',
-    documentation: 'KBEngine 容器类型之一，内部可以包含多个 `<Type>`，用于定义固定顺序和长度的元素列表。'
+    documentation: 'KBEngine 容器类型之一。在当前引擎版本中仅支持于 `scripts/entity_defs/types.xml` 内以别名声明(需 `<Properties>` 子节点)，`.def` 属性通过别名引用；引擎不解析 `.def` 属性内联的 `FIXED_DICT`。'
   }
 };
 

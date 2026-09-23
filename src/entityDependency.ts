@@ -29,9 +29,7 @@ export enum DependencyType {
   /** ARRAY 包含实体 */
   Array = 'array',
   /** FIXED_DICT 包含实体 */
-  FixedDict = 'fixed_dict',
-  /** TUPLE 包含实体 */
-  Tuple = 'tuple'
+  FixedDict = 'fixed_dict'
 }
 
 /**
@@ -437,11 +435,6 @@ export class EntityDependencyAnalyzer {
         references.push(...dictReferences);
         continue;
       }
-
-      if (typeBody === 'TUPLE') {
-        const tupleReferences = this.extractTupleReferences(propertyName, propertyBody);
-        references.push(...tupleReferences);
-      }
     }
 
     return dedupeReferences(references);
@@ -482,25 +475,6 @@ export class EntityDependencyAnalyzer {
     return references;
   }
 
-  private extractTupleReferences(
-    propertyName: string,
-    propertyBody: string
-  ): Array<{ entityName: string; type: DependencyType; propertyName: string }> {
-    const references: Array<{ entityName: string; type: DependencyType; propertyName: string }> = [];
-
-    for (const typeBody of extractTagBodies(propertyBody, 'Type')) {
-      const candidate = stripXmlTags(typeBody).trim();
-      if (this.isEntityReference(candidate)) {
-        references.push({
-          entityName: candidate,
-          type: DependencyType.Tuple,
-          propertyName
-        });
-      }
-    }
-
-    return references;
-  }
   private isEntityReference(typeName: string): boolean {
     return /^[A-Z][A-Za-z0-9_]*$/.test(typeName) && this.entities.has(typeName);
   }
@@ -511,8 +485,6 @@ export class EntityDependencyAnalyzer {
         return DependencyType.Array;
       case 'FIXED_DICT':
         return DependencyType.FixedDict;
-      case 'TUPLE':
-        return DependencyType.Tuple;
       default:
         return null;
     }

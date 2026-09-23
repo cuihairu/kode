@@ -25,8 +25,9 @@
 - **源代码**: `src/languageProviders.ts` (KBEngineCompletionProvider)
 
 ### 3. 代码片段
-- 17 个常用模板
-- kbe-prop, kbe-vector3, kbe-array, kbe-fixed-dict, kbe-tuple
+- 16 个常用模板(.def)+ 2 个 types.xml 类型别名模板
+- kbe-prop, kbe-vector3, kbe-array(引擎 ARRAY/<of> 语法), kbe-hot-reload-* 等
+- types.xml 专用: kbe-fixed-dict / kbe-array-alias(TUPLE/内联 FIXED_DICT 无引擎源码依据,已剔除)
 - kbe-prop-db, kbe-prop-detail
 - kbe-client-method, kbe-base-method, kbe-cell-method
 - kbe-hot-reload-entity, kbe-hot-reload-script
@@ -154,7 +155,8 @@ kode/
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── snippets/
-│   └── kbengine.json             # 代码片段 (17个)
+│   ├── kbengine.json             # 代码片段 (16个)
+│   ├── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
 └── package.json                  # 扩展配置
 ```
 
@@ -166,7 +168,7 @@ kode/
 |------|------|
 | TypeScript 文件 | 19 个 |
 | 钩子数量 | 36 个 |
-| 代码片段 | 17 个 |
+| 代码片段 | 16 个 + 2 个 types.xml |
 | 文档页数 | 5 个 |
 | 总行数 | 7000+ 行 |
 | 已完成功能 | 16 个 |
@@ -178,7 +180,7 @@ kode/
 ### MVP 完善
 - [ ] 测试所有功能
 - [ ] 修复发现的问题
-- [ ] 添加单元测试
+- [x] 添加单元测试(vitest + @vscode/test-electron 双层,共 159 个真实断言用例)
 - [ ] 优化性能
 
 ### 发布准备

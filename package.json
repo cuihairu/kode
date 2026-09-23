@@ -87,6 +87,10 @@
       {
         "language": "kbengine-def",
         "path": "./snippets/kbengine.json"
+      },
+      {
+        "language": "xml",
+        "path": "./snippets/kbengine-types-xml.json"
       }
     ],
     "viewsContainers": {
@@ -431,7 +435,9 @@
     "docs:build": "vitepress build docs",
     "pretest": "npm run clean && npm run compile",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
+    "test": "vitest run && node ./out/test/runTest.js",
+    "test:unit": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "package": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 package --no-yarn --no-dependencies",
     "publish": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 publish --no-yarn --no-dependencies"
   },
@@ -441,12 +447,14 @@
     "@types/vscode": "^1.50.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
+    "@vitest/coverage-v8": "^5.0.1",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^8.57.1",
     "glob": "^10.5.0",
     "mocha": "^11.7.5",
     "typescript": "^4.2.5",
-    "vitepress": "2.0.0-alpha.17"
+    "vitepress": "2.0.0-alpha.17",
+    "vitest": "^5.0.1"
   },
   "pnpm": {
     "overrides": {

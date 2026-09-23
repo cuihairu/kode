@@ -28,7 +28,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ **钩子方法自动补全 (36 hooks,全部带 KBEngine 源码调用位置)**
 
 ### 📝 代码片段
-- ✅ 17 个常用代码模板
+- ✅ 16 个常用 .def 代码模板 + 2 个 types.xml 类型别名模板(ARRAY 采用引擎 `<of>` 语法;BOOL/TUPLE 等引擎未注册类型已剔除)
 - ✅ 一键插入属性定义
 - ✅ 快速生成方法定义
 
@@ -249,6 +249,17 @@ pnpm run docs:dev
 - [设计文档](./resources/docs/vscode-extension-design.md) - 完整的设计方案
 - [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
 - [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计
+
+## 🧪 测试
+
+双层测试架构:纯逻辑层 vitest(`tests/`,60 个用例)+ vscode 集成层
+@vscode/test-electron(`src/test/suite/`,99 个用例);带 KBEngine 源码检出时
+自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)。
+
+```bash
+pnpm test           # 全量
+pnpm test:coverage  # vitest + 覆盖率
+```
 
 ## 🤝 贡献
 

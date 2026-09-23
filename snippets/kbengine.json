@@ -4,7 +4,7 @@
     "description": "KBEngine 基础属性定义",
     "body": [
       "<${1:PropertyName}>",
-      "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR2,VECTOR3,VECTOR4|} </Type>",
+      "\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,STRING,VECTOR2,VECTOR3,VECTOR4|} </Type>",
       "\t<Flags> ${3|BASE_AND_CLIENT,CELL_PUBLIC,CELL_PRIVATE,ALL_CLIENTS,OWN_CLIENT|} </Flags>",
       "\t<Default> ${4:0} </Default>",
       "</${1:PropertyName}>$0"
@@ -23,51 +23,14 @@
   },
   "KBEngine Array Property": {
     "prefix": "kbe-array",
-    "description": "KBEngine 数组属性",
+    "description": "KBEngine 数组属性(内联 ARRAY,元素类型在 <of> 子节点)",
     "body": [
       "<${1:PropertyName}>",
       "\t<Type>",
-      "\t\tARRAY<${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,BOOL,STRING,VECTOR2,VECTOR3,VECTOR4|}>",
+      "\t\tARRAY",
+      "\t\t<of> ${2|UINT8,UINT16,UINT32,UINT64,INT8,INT16,INT32,INT64,FLOAT,DOUBLE,STRING,UNICODE,BLOB,ENTITYCALL,PYTHON,PY_DICT,PY_TUPLE,PY_LIST,VECTOR2,VECTOR3,VECTOR4|} </of>",
       "\t</Type>",
       "\t<Flags> ${3|BASE_AND_CLIENT,CELL_PUBLIC,CELL_PRIVATE|} </Flags>",
-      "\t<Default> </Default>",
-      "</${1:PropertyName}>$0"
-    ]
-  },
-  "KBEngine FIXED_DICT Property": {
-    "prefix": "kbe-fixed-dict",
-    "description": "KBEngine 固定字典属性",
-    "body": [
-      "<${1:PropertyName}>",
-      "\t<Type>",
-      "\t\t<FIXED_DICT>",
-      "\t\t\t<implementedBy>",
-      "\t\t\t\t<Type> scripts/data/${2:DataClass}.py </Type>",
-      "\t\t\t</implementedBy>",
-      "\t\t\t<Properties>",
-      "\t\t\t\t<${3:field}>",
-      "\t\t\t\t\t<Type> ${4|UINT8,UINT16,UINT32,UINT64,STRING,VECTOR3|} </Type>",
-      "\t\t\t\t</${3:field}>",
-      "\t\t\t</Properties>",
-      "\t\t</FIXED_DICT>",
-      "\t</Type>",
-      "\t<Flags> BASE_AND_CLIENT </Flags>",
-      "\t<Default> </Default>",
-      "</${1:PropertyName}>$0"
-    ]
-  },
-  "KBEngine TUPLE Property": {
-    "prefix": "kbe-tuple",
-    "description": "KBEngine 元组属性",
-    "body": [
-      "<${1:PropertyName}>",
-      "\t<Type>",
-      "\t\t<TUPLE>",
-      "\t\t\t<Type> ${2|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,BOOL,STRING|} </Type>",
-      "\t\t\t<Type> ${3|UINT8,UINT16,UINT32,UINT64,FLOAT,DOUBLE,BOOL,STRING|} </Type>",
-      "\t\t</TUPLE>",
-      "\t</Type>",
-      "\t<Flags> BASE_AND_CLIENT </Flags>",
       "\t<Default> </Default>",
       "</${1:PropertyName}>$0"
     ]

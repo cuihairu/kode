@@ -29,12 +29,11 @@
 - ✅ **钩子方法自动补全 (36 hooks,全部带源码调用位置)**
 
 #### 3. 代码片段
-- ✅ 17 个常用模板
+- ✅ 16 个常用模板(.def)+ 2 个 types.xml 类型别名模板
 - ✅ kbe-prop - 基础属性
 - ✅ kbe-vector3 - VECTOR3 属性
 - ✅ kbe-array - 数组属性
-- ✅ kbe-fixed-dict - 固定字典
-- ✅ kbe-tuple - 元组属性
+- ✅ types.xml 专用: kbe-fixed-dict / kbe-array-alias(FIXED_DICT 在当前引擎版本仅支持经 types.xml 别名声明,引擎不解析 .def 内联 FIXED_DICT;TUPLE 类型在引擎注册表中不存在,已剔除)
 - ✅ kbe-prop-db - 带数据库长度
 - ✅ kbe-prop-detail - 带细节级别
 - ✅ kbe-client-method - 客户端方法
@@ -244,7 +243,7 @@ kode/
 ### MVP 完善
 - [ ] 测试所有功能
 - [ ] 修复发现的问题
-- [ ] 添加单元测试
+- [x] 添加单元测试(vitest 纯逻辑层 60 用例 + @vscode/test-electron 集成层 99 用例)
 - [ ] 优化性能
 
 ### 发布准备
@@ -282,7 +281,7 @@ pnpm run publish         # 发布到 Marketplace
 
 1. **完整的钩子系统** - 36 个钩子，每个都有详细文档与源码调用位置
 2. **源码级文档** - 包含源码位置，便于深入研究
-3. **实用的代码片段** - 17 个常用模板，提高开发效率
+3. **实用的代码片段** - 16 个常用 .def 模板 + 2 个 types.xml 模板(全部经引擎源码核实)
 4. **专业的项目结构** - 符合 VSCode 扩展最佳实践
 5. **详细的文档** - 从设计到开发的完整文档
 
@@ -290,7 +289,7 @@ pnpm run publish         # 发布到 Marketplace
 
 - **代码文件**: 19 个 TypeScript 文件
 - **钩子数量**: 36 个
-- **代码片段**: 17 个
+- **代码片段**: 16 个 + 2 个 types.xml
 - **文档页数**: 5 个
 - **总行数**: 7000+ 行
 
