@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 23.74% |
-| Branches | 19.36% |
-| Functions | 25.00% |
-| Lines | 23.88% |
+| Statements | 25.50% |
+| Branches | 20.05% |
+| Functions | 28.15% |
+| Lines | 25.58% |
 
 纯逻辑层明细:
 
@@ -66,6 +66,7 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | monitoringCollector.ts | 38.1% | 32.0% |
 | entityDependency.ts | 15.9% | 9.0% |
 | databaseSchema.ts | 52.7% | 38.8% |
+| logCollector.ts | 68.9% | 41.9% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -107,6 +108,13 @@ mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
 mysql 列型映射事实(UINT32 → `int unsigned`);47.3% 的剩余部分是
 def→属性描述符的深解析(parsePropertyNode 递归等,由端到端用例间接穿透)
 与 Provider 生命周期。
+
+logCollector 的状态机(初始未连接、connect 按实现现状拒绝 logger
+watcher 协议并落 Error 状态、断开/销毁安全与幂等)、状态事件序列、
+环形缓冲截断(maxBufferSize 裁掉最老条目)、按级别/组件过滤、大小写
+不敏感与正则检索(非法正则降级为空列表)已覆盖;31.1% 的剩余部分是
+sendHeartbeat/sendDeregister 的 socket 写路径与心跳/重连定时器,
+不属纯逻辑可测域。
 
 说明:
 
