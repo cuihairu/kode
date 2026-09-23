@@ -75,7 +75,14 @@ describe('KBEngine metadata tables', () => {
 });
 
 describe.skipIf(!engineRoot)('KBEngine metadata vs engine source', () => {
-  const entityDefDir = path.join(engineRoot!, 'kbe', 'src', 'lib', 'entitydef');
+  // skipIf 只把用例标记为跳过,describe 回调体在注册期仍会同步执行;
+  // CI 上没有引擎源码(engineRoot 为 null),必须在这里挡住目录访问,
+  // 否则下面的 path.join/readFileSync 在收集阶段就抛 TypeError。
+  if (!engineRoot) {
+    return;
+  }
+
+  const entityDefDir = path.join(engineRoot, 'kbe', 'src', 'lib', 'entitydef');
 
   function readEngineSource(relative: string): string {
     return fs.readFileSync(path.join(entityDefDir, relative), 'utf8');

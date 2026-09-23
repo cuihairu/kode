@@ -84,6 +84,12 @@ describe('KBEngine hook data', () => {
 });
 
 describe.skipIf(!engineRoot)('KBEngine hooks vs engine source', () => {
+  // 同 kbengineMetadata.test.ts:skipIf 不会阻止 describe 回调体的注册期执行,
+  // 先挡住 null root,保证 CI(无引擎源码)上不会走到任何引擎文件访问。
+  if (!engineRoot) {
+    return;
+  }
+
   const engineFiles = [
     'kbe/src/server/cellapp/entity.cpp',
     'kbe/src/server/baseapp/entity.cpp',
