@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 90.9% |
-| Branches | 81.22% |
-| Functions | 95.26% |
-| Lines | 90.86% |
+| Statements | 91.18% |
+| Branches | 81.41% |
+| Functions | 95.52% |
+| Lines | 91.14% |
 
 纯逻辑层明细:
 
@@ -64,7 +64,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | kbengineProtocol.ts | 95.5% | 83.6% |
 | entityMapping.ts | 95.2% | 85.6% |
 | languageProviders.ts | 64.2% | 55.9% |
-| monitoringCollector.ts | 92.3% | 85.4% |
+| monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 94.2% | 84.3% |
 | databaseSchema.ts | 95.2% | 85.5% |
 | logCollector.ts | 100% | 100% |
@@ -522,6 +522,16 @@ TopE→MidE→BaseE 上 BaseE 组零属性时来源链从方法段回溯,继承�
 'Parent · MidE / BaseE'。99.5% 的剩余一行(buildInheritanceLabel 的空
 chain 分支)在当前调用图下不可达——所有 interface/parent 来源的 chain
 都至少含引用名或父名。
+
+monitoringCollector 的剩余分支已在真实回环上补齐(tests/
+monitoringCollectorGaps.test.ts,5 用例):dbmgr(type 1)经 msgid 41006
+采集写/删/查实体数与建账号数详情;watcher 端口不可达且 uid=0 时 UID 行
+仍以 '0' 入列——details.length===0 的 'Watcher · 无返回' 占位分支在当前
+取值域下不可达(如实记录);start(40) 定时器多轮 tick 不抛错且 stop/
+dispose 干净;refresh 的 in-flight 重入守卫并发折叠;向内部历史 Map 预置
+301 条假历史后一次成功采集触发 300 环形截断(getMetricsHistory 默认只回
+最近 60 条,须直读内部 Map 验证)。98.9% 的剩余为 case 5 break 的 v8
+语句映射粒度与上述死分支。
 
 说明:
 
