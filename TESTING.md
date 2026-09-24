@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 46.47% |
-| Branches | 40.09% |
-| Functions | 54.60% |
-| Lines | 46.35% |
+| Statements | 58.46% |
+| Branches | 52.51% |
+| Functions | 65.26% |
+| Lines | 58.40% |
 
 纯逻辑层明细:
 
@@ -58,20 +58,21 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | kbengineMetadata.ts | 100% | 100% |
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
-| defParser.ts | 91.1% | 83.7% |
-| definitionSemantics.ts | 92.2% | 83.9% |
+| defParser.ts | 91.8% | 84.7% |
+| definitionSemantics.ts | 93.1% | 84.7% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 60.0% | 34.2% |
 | entityMapping.ts | 14.3% | 14.8% |
+| languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 38.1% | 32.0% |
-| entityDependency.ts | 15.9% | 9.0% |
-| databaseSchema.ts | 52.7% | 38.8% |
+| entityDependency.ts | 17.5% | 9.0% |
+| databaseSchema.ts | 65.8% | 48.1% |
 | logCollector.ts | 68.9% | 41.9% |
 | codeGenerator.ts | 51.3% | 48.6% |
-| definitionWorkspace.ts | 84.0% | 72.6% |
+| definitionWorkspace.ts | 88.8% | 78.8% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 31.5% | 32.4% |
-| logWebView.ts | 38.6% | 37.5% |
+| logWebView.ts | 38.5% | 37.5% |
 | monitoringWebView.ts | 50.4% | 51.8% |
 | entityDependencyWebView.ts | 39.4% | 33.3% |
 | debugConfig.ts | 63.3% | 54.0% |
@@ -107,14 +108,14 @@ entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子
 标签剥离、引用三元组去重)已覆盖,并锁定实现语义:非贪婪匹配在首个同名
 闭标签截断;保留名包裹块(如 BaseMethods)整体跳过、内层不再展开——
 这正是类内"先取 Properties body 再解析子块"两段式调用成立的前提。
-15.9% 的剩余部分是 EntityDependencyAnalyzer 类本体,依赖 vscode 文件读取,
+17.5% 的剩余部分是 EntityDependencyAnalyzer 类本体,依赖 vscode 文件读取,
 由 mocha 层覆盖。
 
 databaseSchema 的虚拟文档 URI/文档识别、schema 文本渲染、表/字段行定位、
 mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
 前缀列、VECTOR 展开列、同名去重)与 `scripts/entity_defs` 端到端快照
 (真实 def 文件 → 快照 → tbl_Hero/sm_hp/tbl_Hero_bag)已覆盖,并锁定
-mysql 列型映射事实(UINT32 → `int unsigned`);47.3% 的剩余部分是
+mysql 列型映射事实(UINT32 → `int unsigned`);34.2% 的剩余部分是
 def→属性描述符的深解析(parsePropertyNode 递归等,由端到端用例间接穿透)
 与 Provider 生命周期。
 
@@ -146,7 +147,8 @@ Registered, but no runtime role enabled 标签)、types.xml 自定义类型
 号、implementedBy→user_type python 实现文件解析)、entity def 文件与
 四类别(type/entity/interface/component)条目解析(注册实体与未注册 def
 合并、registered 优先后按名排序)。未覆盖部分是依赖 vscode 文档定位的
-getWorkspaceRootForDocument 分支与条目结构渲染细节。
+getWorkspaceRootForDocument 分支与条目结构渲染细节。批18 的
+languageProviders 用例经真实文件树引用进一步抬升至 88.8%。
 
 serverCommandTarget 的目标解析已全覆盖(直名/嵌套 component 载荷/非对象/
 未知名/非字符串名,100%);serverManager 的纯逻辑面已覆盖:组件常量表
@@ -160,7 +162,7 @@ spawn/停止/重启编排,不属纯逻辑可测域。logWebView 的过滤与渲�
 已覆盖(级别/组件/关键词组合过滤、非法正则退回不过滤、空过滤原样返回、
 level 类名与图标、组件颜色映射与灰色回落、escapeHtml 五字符转义、
 title 属性按实现现状直插未转义 raw 的不对称事实、HTML 骨架含真实
-collector 状态摘要、collector 条目订阅累积);38.6% 的剩余部分是
+collector 状态摘要、collector 条目订阅累积);38.5% 的剩余部分是
 WebviewPanel 生命周期(show/消息处理/导出),由 mocha 层覆盖。
 
 monitoringWebView 的纯过滤/聚合/渲染已覆盖(21 用例批次之一):指标过滤
@@ -217,10 +219,42 @@ section→group→leaf 逐层展开,由 mocha 层覆盖。vscodeStub 相应补�
 TreeItem/ThemeIcon/TreeItemCollapsibleState/Command(树项子类模块求值
 即需要基类)。
 
+languageProviders 的 def 语言特性纯逻辑已在真实临时文件树上覆盖(38 用例,
+vscodeStub 新增 CompletionItemKind/CompletionItem/MarkdownString/Hover/
+Location/DiagnosticSeverity/Diagnostic/DiagnosticCollection 与 makeTextDocument
+最小 TextDocument 工厂,Location 对齐 vscode 真实语义——传 Position 包装为
+start=end 的 Range):def 标签补全(顶层 9 标签、属性子标签 9 项、方法段按
+Base/Cell=[Arg,Utype,Exposed] 与 Client=[Arg,Utype] 分拆、Interfaces 引用
+标签、Volatile 五字段、DetailLevels 三级与其 radius/hyst 子标签、Components/
+Parent/Properties 新属性行为空、ARRAY `<` 强制 of、`<Type>` 值补全含 builtin/
+custom(detail 'Custom type')/entity(detail 'Entity type')三类且 Class kind、
+`<Flags>` 全量无前缀过滤 Enum kind、`<DetailLevel>` Constant kind、方法段
+hook 名前缀匹配 Method kind、.py 内 `KBEngine.` reload 函数取短名与
+`importlib.` 单 reload)、hover 链(TAG_HOVER_DOCS 标签文档、UINT32/
+CELL_PUBLIC/NEAR 元数据条目、hook 名按回调元数据渲染、属性符号标题
+'属性区块中的自定义定义' 与 **Type**/**Flags**/**Default** 字段列表、方法
+符号 **参数个数**/**Args**/**Exposed**、Type 值内实体引用 'Entity type' +
+`**Definition**: \`Monster.def\``、Type 值内自定义类型 **AliasType**、无词
+null)、validateDocument 诊断(未知 Flags/未知 DetailLevel Error 含原文值、
+归一化拼写 base/CELL_AND_CLIENT 合法零诊断、未注册自定义类型 Error、已注册
+但缺 user_type python 文件 Warning 含 `user_type/DOLL.py` 路径而实现文件存在
+时零诊断、缺 `<Type>`/`<Flags>` 两条 Error、方法段重复 Warning '方法区块中
+存在重复定义' + Information '已定义' 成对、属性段同 Flags 作用域重复成对报
+且消息含 '(Base)'/'已在 Base 作用域定义' 而跨作用域重名放行、开关关闭清除
+已有诊断、坏 XML 免疫零诊断)、定义跳转(entities.xml 注册名 → Hero.def、
+Interfaces 内自闭合 `<MoveIface/>` → interfaces/MoveIface.def、Components
+的 Type 值 → components/HealthComp.def、types.xml 自定义类型 → 声明行
+Position(line-1, 0)、未知词与 python 文档 null)。64.2% 的剩余部分是
+validateDefStructure 结构诊断规则集(缺 DetailLevel/重复声明等)、方法符号
+→ Python 实现跳转(entityMappingManager 路径)、数据库 schema 虚拟文档跳转
+与各链条防御分支,由 mocha 域与后续批次覆盖。
+
 说明:
 
-- 0% 的模块全部是依赖 vscode API 的模块(其行为由 mocha/@vscode/test-electron
-  侧的 110 个用例覆盖,两个 runner 的覆盖率不做工具级合并)。
+- extension.ts 依赖 vscode 激活生命周期,未被任何 vitest 用例 import,
+  不进覆盖率报告(报告口径为 vitest 实际加载的 23 个源码文件);其行为由
+  mocha/@vscode/test-electron 侧的 110 个用例覆盖,两个 runner 的覆盖率不做
+  工具级合并。
 - 总体百分比低是因为分母包含全部 23 个源码文件;随纯逻辑测试推进持续抬升,
   每次抬升后更新本表。
 

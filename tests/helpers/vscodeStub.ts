@@ -151,3 +151,160 @@ export const window = {
     dispose: () => undefined
   })
 };
+
+// ---- languageProviders 测试所需(vscode 真实枚举值对齐) ----
+
+export enum CompletionItemKind {
+  Method = 1,
+  Function = 2,
+  Class = 6,
+  Property = 9,
+  Enum = 12,
+  Constant = 20
+}
+
+export class CompletionItem {
+  detail?: string;
+  documentation?: string | MarkdownString;
+  constructor(public label: string, public kind?: CompletionItemKind) {}
+}
+
+export class MarkdownString {
+  value = '';
+  appendMarkdown(value: string): void {
+    this.value += value;
+  }
+  appendCodeblock(code: string, lang = ''): void {
+    this.value += `\n\`\`\`${lang}\n${code}\n\`\`\`\n`;
+  }
+}
+
+export class Hover {
+  constructor(public contents: MarkdownString | MarkdownString[]) {}
+}
+
+// vscode.Location 第二参接受 Range|Position;传 Position 时真实 vscode
+// 包装为 start=end 的 Range,stub 对齐该语义(languageProviders 全部传 Position)。
+export class Location {
+  constructor(public uri: Uri, rangeOrPosition: Range | Position) {
+    this.range = rangeOrPosition instanceof Position
+      ? new Range(rangeOrPosition, rangeOrPosition)
+      : rangeOrPosition;
+  }
+
+  range: Range;
+}
+
+export enum DiagnosticSeverity {
+  Error = 0,
+  Warning = 1,
+  Information = 2,
+  Hint = 3
+}
+
+export class Diagnostic {
+  source?: string;
+  code?: string | number;
+  constructor(
+    public range: Range,
+    public message: string,
+    public severity: DiagnosticSeverity
+  ) {}
+}
+
+// 仅支持 validateDocument 使用的 set/delete 面。
+export class DiagnosticCollection {
+  private entries = new Map<Uri, Diagnostic[]>();
+
+  set(uri: Uri, diagnostics: Diagnostic[]): void {
+    this.entries.set(uri, diagnostics);
+  }
+
+  delete(uri: Uri): void {
+    this.entries.delete(uri);
+  }
+
+  get(uri: Uri): Diagnostic[] {
+    return this.entries.get(uri) ?? [];
+  }
+
+  dispose(): void {
+    this.entries.clear();
+  }
+}
+
+// 测试用 TextDocument 工厂:按 \n 分行的最小实现,覆盖 languageProviders
+// 用到的 getText/positionAt/offsetAt/lineAt/getWordRangeAtPosition 面。
+export interface MinimalTextDocument {
+  uri: Uri;
+  fileName: string;
+  languageId: string;
+  getText(range?: Range): string;
+  positionAt(offset: number): Position;
+  offsetAt(position: Position): number;
+  lineAt(line: number): { text: string };
+  getWordRangeAtPosition(position: Position, rangeRegex?: RegExp): Range | undefined;
+}
+
+export function makeTextDocument(
+  text: string,
+  options?: { fileName?: string; languageId?: string }
+): MinimalTextDocument {
+  const fileName = options?.fileName ?? '/tmp/Anonymous.def';
+  const languageId = options?.languageId ?? 'kbengine-def';
+  const uri = Uri.file(fileName);
+  const lineStarts: number[] = [0];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '\n') {
+      lineStarts.push(i + 1);
+    }
+  }
+
+  const offsetAt = (position: Position): number => {
+    const base = lineStarts[Math.min(position.line, lineStarts.length - 1)] ?? 0;
+    return base + position.character;
+  };
+
+  return {
+    uri,
+    fileName,
+    languageId,
+    getText(range?: Range): string {
+      if (!range) {
+        return text;
+      }
+      return text.slice(offsetAt(range.start), offsetAt(range.end));
+    },
+    positionAt(offset: number): Position {
+      let line = 0;
+      while (line + 1 < lineStarts.length && lineStarts[line + 1] <= offset) {
+        line += 1;
+      }
+      return new Position(line, offset - lineStarts[line]);
+    },
+    offsetAt,
+    lineAt(line: number): { text: string } {
+      return { text: (text.split('\n')[line] ?? '') };
+    },
+    getWordRangeAtPosition(position: Position, rangeRegex: RegExp = /\w+/): Range | undefined {
+      const lineText = text.split('\n')[position.line] ?? '';
+      const wordRegex = new RegExp(
+        rangeRegex.source,
+        rangeRegex.flags.includes('g') ? rangeRegex.flags : `${rangeRegex.flags}g`
+      );
+      let match: RegExpExecArray | null;
+      while ((match = wordRegex.exec(lineText)) !== null) {
+        if (position.character >= match.index && position.character <= match.index + match[0].length) {
+          return new Range(
+            new Position(position.line, match.index),
+            new Position(position.line, match.index + match[0].length)
+          );
+        }
+        if (match[0].length === 0) {
+          break;
+        }
+      }
+      return undefined;
+    }
+  };
+}
