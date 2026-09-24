@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 89.04% |
-| Branches | 78.9% |
-| Functions | 94.34% |
-| Lines | 88.97% |
+| Statements | 89.86% |
+| Branches | 79.89% |
+| Functions | 95% |
+| Lines | 89.81% |
 
 纯逻辑层明细:
 
@@ -69,13 +69,13 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | databaseSchema.ts | 95.2% | 85.5% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 92.4% | 84.0% |
-| definitionWorkspace.ts | 88.8% | 78.8% |
+| definitionWorkspace.ts | 98.9% | 91.0% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 94.9% | 72.1% |
 | logWebView.ts | 95.2% | 87.5% |
 | monitoringWebView.ts | 96.2% | 90.9% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
-| debugConfig.ts | 91.7% | 82.5% |
+| debugConfig.ts | 100% | 84.1% |
 | explorerProviders.ts | 96.7% | 83.8% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
@@ -454,6 +454,37 @@ scripts/ 侧、再对 assets/ 侧 `def <名>(` 正则命中(第 2 行第 8 列),
 Ghost.def 的 <vanish/> 行(0 基行 3 列 0,selection Range 断言)。
 剩余 4.9% 为 getPythonCandidates 的 componentSlotName 尾分支(当前
 DefinitionSemanticCategory 类型联合下不可达)与读文件异常防御。
+
+debugConfig 的配置 watcher 生命周期已覆盖(tests/debugConfigWatcher.test.ts,
+4 用例):createFileSystemWatcher 以记录型假例替换(on* 注册进闭包数组 +
+fire 方法驱动),真实走 stub 内存 fs 的 `.kbengine/debug.json`——挂载后
+pattern 含目标路径、初始读到默认配置;writeFile 落盘 + fireChange →
+重载生效(defaultTelnetPort 0→12345)且提示"KBEngine 调试配置已更新";
+fireCreate 报"已创建";fs.delete + fireDelete 报"已删除,已恢复默认配置"
+且端口回落 0;dispose 恰好拆除 watcher 一次。
+
+definitionWorkspace 的守卫与枚举缺口已覆盖(tests/
+definitionWorkspaceGaps.test.ts,13 用例):document 目标在无工作区时的
+八入口归一 null 守卫(findCustomTypeInfo/findCustomTypeDeclarationInfo/
+findCustomTypePythonImplementationFile/findEntityDefinitionFile/
+findEntityDefinitionsRoot/findEntitiesXmlFile/getEntityRuntimeProfile/
+findDefinitionEntryByCategory);坏 XML 短路(entities.xml 有文本无元素→
+getRegisteredEntities []、types.xml 同态→快照 null、types.xml 整树缺失→
+findCustomTypeDeclarationInfo 与 category='type' 查找 null、无元素 types.xml
+→ getRegisteredCustomTypes 空)、未闭合元素使 parseDefDocument throw→
+parseXmlDocument catch 归一 null;路径分支——win32 风格根 'C:\ws' 走
+path.join(entityDefsRoot 含反斜杠)、配置 entityDefsPath 为绝对路径时
+resolveWorkspacePath 直返(fixture 根下真实存在的绝对目录,从候选中胜出);
+FIXED_DICT 结构渲染——types.xml 值内嵌 `<meta/>` 自闭合与 `<of>UINT8</of>`
+嵌套元素,renderStructureNode/getInnerXml 递归产出原样子串;
+readTextFile 逐候选 catch-continue 后耗尽返回 null(patch fs.readFileSync
+全 throw);listDefinitionFiles 的 readdirSync 降级链(patch 机制:fs 模块
+命名空间不可重定义,经 vi.hoisted + vi.mock getter 注入)——属性缺失→
+磁盘枚举无贡献只剩注册实体、带 withFileTypes throw 降级读字符串目录项
+(只收 .def 后缀)、全部尝试 throw 后放弃(注册实体仍并入且 exists 按真实
+磁盘判定)、dirent 列表跳过无名条目与子目录。98.9% 的剩余为 entityDefsRoot
+null 守卫与 findExistingLookupPath 非字符串分支(当前调用图下不可达)及
+v8 语句映射粒度。
 
 说明:
 
