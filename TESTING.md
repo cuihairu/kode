@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 34.85% |
-| Branches | 28.82% |
-| Functions | 38.94% |
-| Lines | 34.8% |
+| Statements | 37.41% |
+| Branches | 31.53% |
+| Functions | 42.5% |
+| Lines | 37.28% |
 
 纯逻辑层明细:
 
@@ -72,6 +72,8 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 31.5% | 32.4% |
 | logWebView.ts | 38.6% | 37.5% |
+| monitoringWebView.ts | 50.4% | 51.8% |
+| entityDependencyWebView.ts | 39.4% | 33.3% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -158,6 +160,23 @@ level 类名与图标、组件颜色映射与灰色回落、escapeHtml 五字符
 title 属性按实现现状直插未转义 raw 的不对称事实、HTML 骨架含真实
 collector 状态摘要、collector 条目订阅累积);38.6% 的剩余部分是
 WebviewPanel 生命周期(show/消息处理/导出),由 mocha 层覆盖。
+
+monitoringWebView 的纯过滤/聚合/渲染已覆盖(21 用例批次之一):指标过滤
+(组件类型精确匹配、关键词 trim+小写后横扫 component/类型/地址/状态/
+details 的 label:value、空过滤返回内容相同的新数组——实现无条件走
+filter())、诊断过滤(severity 精确匹配、经 metrics 反查组件类型剔除
+跨类组件、无 component 的诊断不被组件过滤剔除、关键词扫 source/component/
+message)、总览六字段归并与零值基线、历史序列(真实 collector 历史 →
+ISO 时间戳图表点)、指标卡(CPU >80 error / >50 warning 阈值类、
+statusLevel 联动、cellapp 的 Object Pools 明细标题与其余 Watcher Details、
+对象池行仅在 size/memory 非零时出现且内存以 B 计、uptime 分钟、detail
+值转义)、诊断渲染(severity 类名、source:component 作用域、无 component
+裸 source 的 "scope | 时间" 格式)、HTML 骨架注入真实卡片与诊断。
+50.4% 的剩余部分是 WebviewPanel 生命周期、定时刷新与导出,由 mocha 层
+覆盖。entityDependencyWebView 的 mermaid 图生成已覆盖(节点 emoji 类型
+标签与 '-'→'_' id、边箭头含空标签管道段、classDef 三色与按类型分配、
+空图仅头部+classDef、HTML 骨架嵌入图源);39.4% 的剩余部分是面板生命周期
+与 PNG/SVG 导出路径,由 mocha 层覆盖。
 
 说明:
 
