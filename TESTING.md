@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 92.25% |
-| Branches | 83.16% |
-| Functions | 96.05% |
-| Lines | 92.18% |
+| Statements | 92.50% |
+| Branches | 83.35% |
+| Functions | 96.18% |
+| Lines | 92.44% |
 
 纯逻辑层明细:
 
@@ -61,7 +61,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | defParser.ts | 98.7% | 90.8% |
 | definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
-| kbengineProtocol.ts | 95.5% | 83.6% |
+| kbengineProtocol.ts | 100% | 90.4% |
 | entityMapping.ts | 97.9% | 89.1% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 98.9% | 90.3% |
@@ -596,6 +596,18 @@ getPythonCandidates/score 的 componentSlotName 分支(L324-330/L889,
 批33 类型级锁定,selectMethodDefinition 调用均不传槽名)、
 collectPythonMethods 的存在性早退(L449,收集层候选恒已过存在性
 检查)。97.9% 的剩余即这几处。
+
+kbengineProtocol 的 socket 失败路径已补齐(tests/
+kbengineProtocolGaps.test.ts,5 用例),语句/函数/行 100%:
+discoverLocalComponents 的 UDP socket error 事件拒绝、绑定回调报告
+string 地址的绑定失败形态;queryWatcherPath 的 TCP socket error 拒绝
+与"完成后再来的迟到帧重置计时器让 finish 二次触发"的 settled 守卫
+(TCP 的 error 处理会清除计时器,迟到 finish 只能经 data 重置链路到
+达);无 watcher 消息 id 的组件类型返回空结果。真实回环里这些失败
+形态不可稳定触发(批32 结论),用 vi.mock('dgram'/'net') getter
+工厂注入受控假例(TCP 经 new 构造,假例须以 class 形态提供),超时
+计时器用 fake timers 精确控制(真实 20ms 计时会在等待期间先 settle);
+纯真实 UDP/TCP 路径仍由回环集成测试覆盖。
 
 说明:
 
