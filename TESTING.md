@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 92.50% |
-| Branches | 83.35% |
+| Statements | 92.52% |
+| Branches | 83.39% |
 | Functions | 96.18% |
-| Lines | 92.44% |
+| Lines | 92.46% |
 
 纯逻辑层明细:
 
@@ -73,7 +73,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 80.9% |
 | logWebView.ts | 100% | 96.9% |
-| monitoringWebView.ts | 96.2% | 90.9% |
+| monitoringWebView.ts | 96.9% | 91.8% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 100% | 84.1% |
 | explorerProviders.ts | 96.7% | 83.8% |
@@ -608,6 +608,13 @@ string 地址的绑定失败形态;queryWatcherPath 的 TCP socket error 拒绝
 工厂注入受控假例(TCP 经 new 构造,假例须以 class 形态提供),超时
 计时器用 fake timers 精确控制(真实 20ms 计时会在等待期间先 settle);
 纯真实 UDP/TCP 路径仍由回环集成测试覆盖。
+
+monitoringWebView 的 updateWebView 无面板早退已补(tests/
+monitoringWebViewGaps.test.ts,1 用例):不 show 直接调用守卫早退,
+不触碰 collector 数据读取。一条实现现状如实记录:updateTimer 字段
+只有声明与两处清理(面板 onDidDispose 与 dispose),没有任何调度
+赋值点,恒为 null,清理分支内部语句(L81-82/L1115-1116)为结构
+死分支。96.9% 的剩余即这四处。
 
 说明:
 
