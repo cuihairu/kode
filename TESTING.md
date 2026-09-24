@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 32.46% |
-| Branches | 27.15% |
-| Functions | 35.26% |
-| Lines | 32.57% |
+| Statements | 34.85% |
+| Branches | 28.82% |
+| Functions | 38.94% |
+| Lines | 34.8% |
 
 纯逻辑层明细:
 
@@ -58,7 +58,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | kbengineMetadata.ts | 100% | 100% |
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
-| defParser.ts | 90.5% | 82.7% |
+| defParser.ts | 91.1% | 83.7% |
 | definitionSemantics.ts | 92.2% | 83.9% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 60.0% | 34.2% |
@@ -69,6 +69,9 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | logCollector.ts | 68.9% | 41.9% |
 | codeGenerator.ts | 51.3% | 48.6% |
 | definitionWorkspace.ts | 84.0% | 72.6% |
+| serverCommandTarget.ts | 100% | 100% |
+| serverManager.ts | 31.5% | 32.4% |
+| logWebView.ts | 38.6% | 37.5% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -140,6 +143,21 @@ Registered, but no runtime role enabled 标签)、types.xml 自定义类型
 四类别(type/entity/interface/component)条目解析(注册实体与未注册 def
 合并、registered 优先后按名排序)。未覆盖部分是依赖 vscode 文档定位的
 getWorkspaceRootForDocument 分支与条目结构渲染细节。
+
+serverCommandTarget 的目标解析已全覆盖(直名/嵌套 component 载荷/非对象/
+未知名/非字符串名,100%);serverManager 的纯逻辑面已覆盖:组件常量表
+(10 组件严格启动序、name=executable、required 集合、per 组件 cid 与
+gus=order 且 bots 例外只带 gus)、ServerStatus 五态、启动前全 stopped、
+输出通道按知名组件显隐、二进制探测(真实临时树命中 `../kbengine/kbe/bin/
+server` 候选)、kbe 根剥离(KBE_ROOT 环境变量优先/`kbe/bin/server` 后缀
+剥根/其余为空)与组件环境构造(KBE_RES_PATH 四段 delimiter 拼接、
+KBE_BIN_PATH 补尾分隔符、无根时省略环境变量);31.5% 的剩余部分是真实
+spawn/停止/重启编排,不属纯逻辑可测域。logWebView 的过滤与渲染纯逻辑
+已覆盖(级别/组件/关键词组合过滤、非法正则退回不过滤、空过滤原样返回、
+level 类名与图标、组件颜色映射与灰色回落、escapeHtml 五字符转义、
+title 属性按实现现状直插未转义 raw 的不对称事实、HTML 骨架含真实
+collector 状态摘要、collector 条目订阅累积);38.6% 的剩余部分是
+WebviewPanel 生命周期(show/消息处理/导出),由 mocha 层覆盖。
 
 说明:
 
