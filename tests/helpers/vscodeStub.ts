@@ -21,6 +21,11 @@ export class Uri {
     return new Uri(value);
   }
 
+  static joinPath(base: Uri, ...segments: string[]): Uri {
+    const baseDir = base.fsPath.replace(/\/+$/, '');
+    return new Uri([baseDir, ...segments].join('/'));
+  }
+
   private constructor(public readonly fsPath: string) {}
 
   toString(): string {
@@ -59,8 +64,40 @@ export interface ExtensionContext {
   [key: string]: unknown;
 }
 
+// 内存文件系统:debugConfig 的 loadConfig/updateLaunchJson 等经
+// workspace.fs 读写真实路径内容;文件不存在时按实现语义抛错(进 catch)。
+const memoryFiles = new Map<string, Uint8Array>();
+
+export const memoryFileSystem = {
+  files: memoryFiles,
+  reset: (): void => {
+    memoryFiles.clear();
+  },
+  set: (fsPath: string, content: string): void => {
+    memoryFiles.set(fsPath, Buffer.from(content, 'utf8'));
+  }
+};
+
+export const fs = {
+  createDirectory: async (): Promise<void> => undefined,
+  readFile: async (uri: Uri): Promise<Uint8Array> => {
+    const data = memoryFiles.get(uri.fsPath);
+    if (data === undefined) {
+      throw new Error(`ENOENT: ${uri.fsPath}`);
+    }
+    return data;
+  },
+  writeFile: async (uri: Uri, content: Uint8Array): Promise<void> => {
+    memoryFiles.set(uri.fsPath, content);
+  },
+  delete: async (uri: Uri): Promise<void> => {
+    memoryFiles.delete(uri.fsPath);
+  }
+};
+
 export const workspace = {
   workspaceFolders: [] as Array<{ uri: Uri; name: string; index: number }>,
+  fs,
   findFiles: async () => [] as Uri[],
   getConfiguration: () => ({ get: <T>(_key: string, defaultValue: T): T => defaultValue }),
   openTextDocument: async () => ({ uri: Uri.file('') }),

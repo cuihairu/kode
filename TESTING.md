@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 37.41% |
-| Branches | 31.53% |
-| Functions | 42.5% |
-| Lines | 37.28% |
+| Statements | 39.18% |
+| Branches | 32.82% |
+| Functions | 44.34% |
+| Lines | 39.05% |
 
 纯逻辑层明细:
 
@@ -74,6 +74,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | logWebView.ts | 38.6% | 37.5% |
 | monitoringWebView.ts | 50.4% | 51.8% |
 | entityDependencyWebView.ts | 39.4% | 33.3% |
+| debugConfig.ts | 63.3% | 54.0% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -177,6 +178,20 @@ statusLevel 联动、cellapp 的 Object Pools 明细标题与其余 Watcher Deta
 标签与 '-'→'_' id、边箭头含空标签管道段、classDef 三色与按类型分配、
 空图仅头部+classDef、HTML 骨架嵌入图源);39.4% 的剩余部分是面板生命周期
 与 PNG/SVG 导出路径,由 mocha 层覆盖。
+
+debugConfig 的配置装载与 launch 配置生成已覆盖(18 用例):默认组件表
+(7 组件 telnet 端口 31000..51000 的种子顺序、共用 host/密码/layer、
+logger 是唯一不带工作区 pathMappings 的组件)、.kbengine/debug.json
+装载(stub 内存 fs 真实读写:合法文件按 components 覆盖、未覆盖组件继承
+文件顶层默认、坏 JSON 回落默认、无工作区不建 watcher、有工作区注册
+FileSystemWatcher)、getComponentConfig 的已知/未知组件与显式覆盖值、
+debugpy 调试器类型、launch inputs 重建(清除旧 kbengineProcessId、
+保留外来 inputs 且顺序在前)、7 个 attach 配置按种子顺序生成(logger
+回落工作区映射)、launch.json 合并(版本保留、用户配置在前 KBEngine
+配置在后、inputs 过滤重建)与缺失时标准骨架、示例配置三组件写出。
+63.3% 的剩余部分是 startDebugging 的 vscode.debug 会话与 PID 输入框,
+由 mocha 层覆盖。vscodeStub 相应补了 Uri.joinPath 与内存 fs
+(文件缺失按实现语义抛错进 catch),测试 helper 扩展,非产品行为变更。
 
 说明:
 
