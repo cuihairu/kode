@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 70.92% |
-| Branches | 62.68% |
-| Functions | 78.15% |
-| Lines | 70.78% |
+| Statements | 73.22% |
+| Branches | 64.77% |
+| Functions | 80.13% |
+| Lines | 73.07% |
 
 纯逻辑层明细:
 
@@ -64,7 +64,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | kbengineProtocol.ts | 84.5% | 56.2% |
 | entityMapping.ts | 89.4% | 79.2% |
 | languageProviders.ts | 64.2% | 55.9% |
-| monitoringCollector.ts | 38.1% | 32.0% |
+| monitoringCollector.ts | 92.3% | 85.4% |
 | entityDependency.ts | 94.2% | 84.3% |
 | databaseSchema.ts | 65.8% | 48.1% |
 | logCollector.ts | 68.9% | 41.9% |
@@ -134,11 +134,25 @@ window.showTextDocument 与可 fire 的 FileSystemWatcher(记录回调,真实
 
 monitoringCollector 的状态机(暂停/恢复、刷新间隔、启动前后安全的
 stop/dispose)、按组件的历史切片、系统总览聚合、watcher 值数值归一
-(resolveNumber/resolveBooleanLabel)与 uint64 安全钳制已覆盖;38.1%
-的剩余部分是 refresh/refreshNow 等真实发起 machine discovery 与
-watcher 查询的 socket 路径(回环集成测试套路已在 kbengineProtocol
-批次验证可行,后续批次照搬)。vscodeStub 相应补了
-最小 EventEmitter 与 ExtensionContext 占位(真实事件行为仍由 mocha 层覆盖)。
+(resolveNumber/resolveBooleanLabel)与 uint64 安全钳制已覆盖;refresh
+全链路已在**本机回环零 mock 集成测试**中覆盖(tests/
+monitoringCollectorSocket.test.ts,6 用例,UDP machine 应答端 + 每组件
+独立 TCP watcher 服务端):baseapp 全指标聚合(fullName+groupOrderID、
+entityCount/connections 取 extradata[1]、load/uptime/messagesPerSecond
+取 watcher 值、详情五项、summary 'watcher 数据完整'、诊断 root=N 项
+stats=M 项、历史入列、onMetricsUpdate 触发、请求 msgid 41001+路径
+''/'stats');cellapp 对象池(Witness/EntityRef 四路查询 msgid 41002、
+池内存/大小求和、详情 UID+11 项裁剪为 10、isDestroyed 布尔→'是');
+多组件按 fullName localeCompare 排序、logger(10) fullName 不追加序号、
+速率取 secsNumlogs、msgid 41008;watcher 端口拒连 → '仅 machine 可见,
+watcher 无返回' warning 级 + summary 追加 PARTIAL_DATA_WARNING + 详情
+只剩 UID;discovery 空结果 → 指标清空 + machine 源 error 诊断;恶意
+广播包 → collector 源 error 诊断且 status 与诊断消息一致。vitest 配置
+相应改为 fileParallelism:false——两个 socket 集成文件共享固定端口
+20086,文件串行执行避免并行 worker 抢绑。7.7% 剩余为 startTimer 的
+定时器驱动的 refresh 循环与零散防御分支(定时器行为由 mocha 域覆盖)。
+vscodeStub 相应补了最小 EventEmitter 与 ExtensionContext 占位(真实事
+件行为仍由 mocha 层覆盖)。
 
 entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子块提取、
 标签剥离、引用三元组去重)已覆盖,并锁定实现语义:非贪婪匹配在首个同名
