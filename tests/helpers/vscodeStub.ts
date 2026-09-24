@@ -64,6 +64,38 @@ export interface ExtensionContext {
   [key: string]: unknown;
 }
 
+export interface Command {
+  command: string;
+  title: string;
+  arguments?: unknown[];
+}
+
+// explorerProviders 的树项子类 extends TreeItem,模块求值即需要此基类。
+export enum TreeItemCollapsibleState {
+  None = 0,
+  Collapsed = 1,
+  Expanded = 2
+}
+
+export class ThemeIcon {
+  static readonly File = new ThemeIcon('file');
+  static readonly Folder = new ThemeIcon('folder');
+  constructor(public readonly id: string) {}
+}
+
+export class TreeItem {
+  label?: string;
+  description?: string | boolean;
+  iconPath?: ThemeIcon | { light?: Uri; dark?: Uri };
+  command?: Command;
+  contextValue?: string;
+  tooltip?: string;
+
+  constructor(label?: string, public collapsibleState?: TreeItemCollapsibleState) {
+    this.label = label;
+  }
+}
+
 // 内存文件系统:debugConfig 的 loadConfig/updateLaunchJson 等经
 // workspace.fs 读写真实路径内容;文件不存在时按实现语义抛错(进 catch)。
 const memoryFiles = new Map<string, Uint8Array>();

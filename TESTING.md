@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 39.18% |
-| Branches | 32.82% |
-| Functions | 44.34% |
-| Lines | 39.05% |
+| Statements | 46.47% |
+| Branches | 40.09% |
+| Functions | 54.60% |
+| Lines | 46.35% |
 
 纯逻辑层明细:
 
@@ -75,6 +75,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | monitoringWebView.ts | 50.4% | 51.8% |
 | entityDependencyWebView.ts | 39.4% | 33.3% |
 | debugConfig.ts | 63.3% | 54.0% |
+| explorerProviders.ts | 74.2% | 65.4% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -192,6 +193,29 @@ debugpy 调试器类型、launch inputs 重建(清除旧 kbengineProcessId、
 63.3% 的剩余部分是 startDebugging 的 vscode.debug 会话与 PID 输入框,
 由 mocha 层覆盖。vscodeStub 相应补了 Uri.joinPath 与内存 fs
 (文件缺失按实现语义抛错进 catch),测试 helper 扩展,非产品行为变更。
+
+explorerProviders 的树构建纯逻辑已在真实临时 workspace 上覆盖(20 用例):
+parseDefinitionStructure 的 def 结构解析(顶层属性只滤含 '.' 路径——数组壳
+保留,与 toStatsFromProperties 的 '.'+'[]' 双滤不同;三方法段 exposed 旗标
+与八字段符号身份 ownerName/section/symbolName/sourceKind='local';Parent/
+Interfaces/Components 槽位)、四根组实时计数(description 为 String(count)
+、组图标与 contextValue)、描述文案(注册实体经运行时档案拼
+'BaseApp / CellApp / Client, Client Entity';全禁用实体 'None, Server Only'
+;未注册 def 拿不到档案只剩 'Unregistered';type 'UINT16, Python Missing';
+interface/component 按文件名或 'Missing')、视图模型(Hero 汇总:混入接口
+属性计入 Properties=2 且 'Mixin · MoveIface' 独立组、方法计数 4、exposed=2
+、DB 主表+组件子表=2 而子表按实现现状 0 字段、section 键精确序列;Monster
+继承展平:父类链与接口混入各占一个 'Mixed In' 组、Parent · Hero 组名;
+无 persistent 属性也无条件建空主表 tbl_Monster 0 字段;!exists 短路为
+'Definition file not found' + 空 sections + warning 图标无命令)、类别
+标签/图标映射、resolveParentCategory(component 不归并)、describeRuntimeFacet
+全部五态、服务器树(10 组件按种子序全 Stopped:circle-large-outline、
+无 description、tooltip '状态: stopped' 尾缀;带元素无子;refresh 安全)。
+74.2% 的剩余部分是 type 深结构渲染(createTypeStructureItems/
+createTypePropertyItem 递归)、方法条目命令构造与 getChildren 的
+section→group→leaf 逐层展开,由 mocha 层覆盖。vscodeStub 相应补了
+TreeItem/ThemeIcon/TreeItemCollapsibleState/Command(树项子类模块求值
+即需要基类)。
 
 说明:
 
