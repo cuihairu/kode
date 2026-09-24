@@ -41,14 +41,14 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
-vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
+vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 28.66% |
-| Branches | 22.79% |
-| Functions | 30.52% |
-| Lines | 28.80% |
+| Statements | 32.46% |
+| Branches | 27.15% |
+| Functions | 35.26% |
+| Lines | 32.57% |
 
 纯逻辑层明细:
 
@@ -68,6 +68,7 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | databaseSchema.ts | 52.7% | 38.8% |
 | logCollector.ts | 68.9% | 41.9% |
 | codeGenerator.ts | 51.3% | 48.6% |
+| definitionWorkspace.ts | 84.0% | 72.6% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -125,6 +126,20 @@ codeGenerator 的纯生成器已覆盖(entities.xml 注册行、def 属性/方�
 解析到定义根且无目录时回落约定绝对路径、五个内置模板与未知模板回落)。
 48.7% 的剩余部分是向导编排(showWizard/QuickPick/写文件/注册 entities.xml),
 由 mocha 层覆盖。私有生成方法经实例直调,测真实行为,零 mock。
+
+definitionWorkspace 的纯工作区解析已在真实临时文件树上覆盖(22 用例):
+目录布局(entityDefsRoot 候选解析与"目录不存在回落约定路径"、存在性文件
+entities.xml/types.xml 无回落保持 null、entityScriptsRoot=定义根父目录、
+user_type 根候选序列)、entities.xml 实体注册解析(文档序、按名去重、
+has*Declared=属性存在性与 has*=值语义分离)、运行时档案三态(declared/
+inferred/disabled:声明值直接生效、未声明由脚本存在推断、显式 false 归
+disabled;runtimeRoles 拼接、Client Entity/Server Only 与 Registered on/
+Registered, but no runtime role enabled 标签)、types.xml 自定义类型
+(aliasType/rawValue 剔除 implementedBy/Properties、属性按名排序、声明行
+号、implementedBy→user_type python 实现文件解析)、entity def 文件与
+四类别(type/entity/interface/component)条目解析(注册实体与未注册 def
+合并、registered 优先后按名排序)。未覆盖部分是依赖 vscode 文档定位的
+getWorkspaceRootForDocument 分支与条目结构渲染细节。
 
 说明:
 
