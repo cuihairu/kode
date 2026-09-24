@@ -25,13 +25,13 @@
 - **源代码**: `src/languageProviders.ts` (KBEngineCompletionProvider)
 
 ### 3. 代码片段
-- 16 个常用模板(.def)+ 2 个 types.xml 类型别名模板
-- kbe-prop, kbe-vector3, kbe-array(引擎 ARRAY/<of> 语法), kbe-hot-reload-* 等
+- 11 个常用模板(.def)+ 4 个 Python 热更模板(snippets/kbengine-python.json)+ 2 个 types.xml 类型别名模板
+- kbe-prop, kbe-vector3, kbe-array(引擎 ARRAY/<of> 语法)等 def 模板
 - types.xml 专用: kbe-fixed-dict / kbe-array-alias(TUPLE/内联 FIXED_DICT 无引擎源码依据,已剔除)
 - kbe-prop-db, kbe-prop-detail
-- kbe-client-method, kbe-base-method, kbe-cell-method
-- kbe-hot-reload-entity, kbe-hot-reload-script
-- **源文件**: `snippets/kbengine.json`
+- kbe-client-method, kbe-base-method, kbe-cell-method, kbe-method-multi
+- 热更(Python): kbe-hot-reload-entity, kbe-hot-reload-script, kbe-hot-reload-best-practice, kbe-is-reload
+- **源文件**: `snippets/kbengine.json`(11) + `snippets/kbengine-python.json`(4) + `snippets/kbengine-types-xml.json`(2)
 
 ### 4. 悬停文档
 - 类型详细说明
@@ -61,11 +61,12 @@
 - **源文件**: `src/hooks.ts`
 
 ### 9. 热更新支持
-- 4 个热更新代码片段
+- 4 个热更新代码片段(snippets/kbengine-python.json,贡献给 python 语言)
 - KBEngine.reloadScript() 智能提示
 - importlib.reload() Python 脚本热更新
 - 重载相关悬停文档和示例
 - **源代码**: `src/kbengineMetadata.ts`, `src/languageProviders.ts`
+- **源文件**: `snippets/kbengine-python.json`
 
 ### 10. 服务器管理
 - 10 个组件管理（machine, logger, dbmgr, baseappmgr, cellappmgr, loginapp, baseapp, cellapp, bots, interfaces）
@@ -155,7 +156,8 @@ kode/
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── snippets/
-│   ├── kbengine.json             # 代码片段 (16个)
+│   ├── kbengine.json             # def 代码片段 (11个)
+│   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   ├── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
 └── package.json                  # 扩展配置
 ```
@@ -168,7 +170,7 @@ kode/
 |------|------|
 | TypeScript 文件 | 19 个 |
 | 钩子数量 | 36 个 |
-| 代码片段 | 16 个 + 2 个 types.xml |
+| 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 文档页数 | 5 个 |
 | 总行数 | 7000+ 行 |
 | 已完成功能 | 16 个 |
@@ -180,7 +182,7 @@ kode/
 ### MVP 完善
 - [ ] 测试所有功能
 - [ ] 修复发现的问题
-- [x] 添加单元测试(vitest + @vscode/test-electron 双层,共 159 个真实断言用例)
+- [x] 添加单元测试(vitest + @vscode/test-electron 双层,共 326 个真实断言用例)
 - [ ] 优化性能
 
 ### 发布准备

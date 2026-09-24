@@ -13,11 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest pure-logic tests under `tests/` (71 cases) plus
-  the existing mocha/@vscode/test-electron integration tests (99 cases), with
+- Two-layer test suite: vitest pure-logic tests under `tests/` (216 cases) plus
+  the existing mocha/@vscode/test-electron integration tests (110 cases), with
   v8 coverage reporting; engine-source-backed conditional tests verify hook call
   sites, type registrations, and flags against a local KBEngine checkout
   (see TESTING.md)
+- Python document hover/completion registration and a dedicated python snippet
+  contribution (`snippets/kbengine-python.json`) so the four hot-reload
+  templates are available in `.py` files
+- Hook hover now short-circuits to hook docs before symbol hover, so method
+  names in Methods sections show 调用时机/函数签名 instead of symbol-only hover
+- Multi-line Methods/BaseMethods sections suggest hooks on later lines without
+  a same-line section tag
 
 ### Changed
 - Refactored language support code into focused modules
@@ -34,7 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (inline `<of>` syntax) and `FIXED_DICT` (types.xml aliases only)
 - Rewrote the `kbe-array` snippet to the engine's `ARRAY<of>…</of>` syntax,
   moved `FIXED_DICT` templates to new types.xml snippets (`kbengine-types-xml.json`),
-  and dropped the fabricated `kbe-tuple` snippet
+  dropped the fabricated `kbe-tuple` snippet, and moved the four hot-reload
+  templates out of `kbengine.json` (11 def snippets) into `kbengine-python.json`
 - Fixed `joinWorkspacePath` producing mixed-separator paths for `C:\` workspaces
   on non-Windows hosts (now explicit `path.win32.join`)
 

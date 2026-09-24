@@ -28,7 +28,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ **钩子方法自动补全 (36 hooks,全部带 KBEngine 源码调用位置)**
 
 ### 📝 代码片段
-- ✅ 16 个常用 .def 代码模板 + 2 个 types.xml 类型别名模板(ARRAY 采用引擎 `<of>` 语法;BOOL/TUPLE 等引擎未注册类型已剔除)
+- ✅ 11 个常用 .def 代码模板 + 4 个 Python 热更模板(snippets/kbengine-python.json)+ 2 个 types.xml 类型别名模板(ARRAY 采用引擎 `<of>` 语法;BOOL/TUPLE 等引擎未注册类型已剔除)
 - ✅ 一键插入属性定义
 - ✅ 快速生成方法定义
 
@@ -59,7 +59,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - ✅ 源码位置标注
 
 ### 🔥 热更新支持
-- ✅ 热更新代码片段（4个）
+- ✅ 热更新代码片段（4个,snippets/kbengine-python.json,Python 文件可用）
 - ✅ KBEngine.reloadScript() 智能提示
 - ✅ importlib.reload() Python 脚本热更新
 - ✅ 重载相关悬停文档和使用示例
@@ -215,7 +215,9 @@ kode/
 ├── syntaxes/
 │   └── kbengine.tmLanguage.json  # 语法高亮规则
 ├── snippets/
-│   └── kbengine.json             # 代码片段
+│   ├── kbengine.json             # def 代码片段 (11)
+│   ├── kbengine-python.json      # Python 热更片段 (4)
+│   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2)
 ├── resources/
 │   └── docs/                     # 项目文档
 ├── .vscode/
@@ -252,8 +254,8 @@ pnpm run docs:dev
 
 ## 🧪 测试
 
-双层测试架构:纯逻辑层 vitest(`tests/`,71 个用例)+ vscode 集成层
-@vscode/test-electron(`src/test/suite/`,99 个用例);带 KBEngine 源码检出时
+双层测试架构:纯逻辑层 vitest(`tests/`,216 个用例)+ vscode 集成层
+@vscode/test-electron(`src/test/suite/`,110 个用例);带 KBEngine 源码检出时
 自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)。
 
 ```bash

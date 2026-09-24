@@ -144,7 +144,7 @@ getWorkspaceRootForDocument 分支与条目结构渲染细节。
 说明:
 
 - 0% 的模块全部是依赖 vscode API 的模块(其行为由 mocha/@vscode/test-electron
-  侧的 99 个用例覆盖,两个 runner 的覆盖率不做工具级合并)。
+  侧的 110 个用例覆盖,两个 runner 的覆盖率不做工具级合并)。
 - 总体百分比低是因为分母包含全部 23 个源码文件;随纯逻辑测试推进持续抬升,
   每次抬升后更新本表。
 
