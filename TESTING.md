@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 69.56% |
-| Branches | 62.07% |
-| Functions | 76.97% |
-| Lines | 69.38% |
+| Statements | 70.92% |
+| Branches | 62.68% |
+| Functions | 78.15% |
+| Lines | 70.78% |
 
 纯逻辑层明细:
 
@@ -61,7 +61,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | defParser.ts | 91.8% | 84.7% |
 | definitionSemantics.ts | 93.1% | 84.7% |
 | logParser.ts | 100% | 98.3% |
-| kbengineProtocol.ts | 60.0% | 34.2% |
+| kbengineProtocol.ts | 84.5% | 56.2% |
 | entityMapping.ts | 89.4% | 79.2% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 38.1% | 32.0% |
@@ -84,11 +84,26 @@ logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边�
 三函数不一致,测试如实记录,是否统一留待后续决策。
 
 kbengineProtocol 的编解码纯函数(帧构造、组件广播包解析、watcher 帧解析)已
-全覆盖;未达更高的部分是 `discoverLocalComponents`/`queryWatcherPath` 两个
-真实 UDP/TCP socket 客户端,不属纯逻辑可测域。协议测试里另有引擎条件用例:
+全覆盖;两个真实 UDP/TCP socket 客户端已在**本机回环零 mock 集成测试**中
+覆盖(tests/kbengineProtocolSocket.test.ts,5 用例):discoverLocalComponents
+以真实 dgram 应答端验证——请求帧 msgid=4(MACHINE_MSG_QUERY_ALL_INTERFACES)、
+body 为 uid i32LE+username cstring+swapUint16(bindPort) u16LE 且帧内回填
+端口与数据报源端口一致、按 parseComponentInfo 29 字段线序伪造的组件包
+(baseapp=6/cellapp=5,含 intaddr/intport swap 还原、cpu float、componentID
+bigint)解析正确、type:componentID:pid 重复包去重、恶意截断包走 catch →
+reject;queryWatcherPath 以真实 net server 验证——未知组件类型直接 [],
+请求帧 msgid=WATCHER_QUERY_MSG_IDS[type] 且 body 为路径 cstring、**服务端
+分片发送(先 3 字节再延时补齐两帧)客户端流式重组正确**,type 0 值帧
+(首字节 type 标记 + path/name cstring + watcherId u16 + valueType u8 +
+值,UINT32=3)与 type 1 目录帧(rootPath '/' 归一为 ''+keys cstring 串)
+双帧 results≥2 提前结束,连接拒绝 rejects。协议测试里另有引擎条件用例:
 COMPONENT_NAMES 逐项对齐 `COMPONENT_TYPE` 枚举(common.h)、广播端口
 20086=KBE_PORT_START+86 与 watcher 回调 msgid 65502 的源码字面验证——
 并已据此修出真实缺陷:原 COMPONENT_NAMES 缺 TOOL_TYPE=14('tool')。
+集成测试另锁定两处引擎语义:type 5/6 的 fullName 为
+`componentName+groupOrderID` 多实例编号;watcher 帧 body 首字节为 type
+标记。kbengineProtocol 剩余 15.5% 为 parseWatcherFrame 部分值类型分支与
+零散防御路径。
 
 entityMapping 的底部纯函数池(方法归属绑定键、八字段身份比对含
 propertyPath/sourceChain 归一、Python 文件路径推断组件/接口/实体与方法段、
@@ -121,7 +136,8 @@ monitoringCollector 的状态机(暂停/恢复、刷新间隔、启动前后安�
 stop/dispose)、按组件的历史切片、系统总览聚合、watcher 值数值归一
 (resolveNumber/resolveBooleanLabel)与 uint64 安全钳制已覆盖;38.1%
 的剩余部分是 refresh/refreshNow 等真实发起 machine discovery 与
-watcher 查询的 socket 路径,不属纯逻辑可测域。vscodeStub 相应补了
+watcher 查询的 socket 路径(回环集成测试套路已在 kbengineProtocol
+批次验证可行,后续批次照搬)。vscodeStub 相应补了
 最小 EventEmitter 与 ExtensionContext 占位(真实事件行为仍由 mocha 层覆盖)。
 
 entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子块提取、
