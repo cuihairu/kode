@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 80.72% |
-| Branches | 69.30% |
-| Functions | 87.10% |
-| Lines | 80.60% |
+| Statements | 82.09% |
+| Branches | 70.94% |
+| Functions | 88.55% |
+| Lines | 82.00% |
 
 纯逻辑层明细:
 
@@ -73,7 +73,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 94.9% | 72.1% |
 | logWebView.ts | 95.2% | 87.5% |
-| monitoringWebView.ts | 50.4% | 51.8% |
+| monitoringWebView.ts | 96.2% | 90.9% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 63.3% | 54.0% |
 | explorerProviders.ts | 74.2% | 65.4% |
@@ -283,7 +283,21 @@ statusLevel 联动、cellapp 的 Object Pools 明细标题与其余 Watcher Deta
 值转义)、诊断渲染(severity 类名、source:component 作用域、无 component
 裸 source 的 "scope | 时间" 格式)、HTML 骨架注入真实卡片与诊断。
 50.4% 的剩余部分是 WebviewPanel 生命周期、定时刷新与导出,由 mocha 层
-覆盖。entityDependencyWebView 的 mermaid 图生成已覆盖(节点 emoji 类型
+覆盖。批27 又把 monitoringWebView 的面板生命周期搬进 vitest
+(tests/monitoringPanel.test.ts,17 用例,注入可控假 collector):show 的
+面板参数与 collector.start(默认 2000ms)联动、同实例二次 show 走
+reveal、onDidDispose 停采集并重建时重新 start、面板打开期间 collector
+推送实时进 html;六类消息——refresh 触发 refreshNow、setFilters 字符串
+过滤重渲染且非字符串强制回落空串、setRefreshInterval/setHistoryWindow
+正数才生效(0/负数/非数字不动且不转发 collector)、togglePause 未暂停
+pause+重渲染/暂停中 resume;exportMetrics 落盘 pretty JSON
+(overview/filters/metrics/diagnostics/history 五键,filters 与当前过滤
+状态一致)、取消不落盘、writeFile 抛错报"导出监控数据失败"。实现现状
+如实记录:dispose 仅对 panel 有守卫,collector.dispose 在守卫外无条件
+调用,重复 dispose 会重复转发。假 collector 须补 getMetricsHistory
+(getHtml→buildHistorySeries 链路调用,漏配则 updateWebView 全体炸)。
+96.2% 的剩余为 updateWebView 空守卫与零散分支。entityDependencyWebView
+的 mermaid 图生成已覆盖(节点 emoji 类型
 标签与 '-'→'_' id、边箭头含空标签管道段、classDef 三色与按类型分配、
 空图仅头部+classDef、HTML 骨架嵌入图源)。批26 把面板生命周期与导出路径
 也搬进 vitest(tests/entityDependencyPanel.test.ts,18 用例):show 的
