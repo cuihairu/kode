@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 91.56% |
-| Branches | 81.94% |
-| Functions | 95.78% |
-| Lines | 91.48% |
+| Statements | 91.66% |
+| Branches | 82.06% |
+| Functions | 95.92% |
+| Lines | 91.58% |
 
 纯逻辑层明细:
 
@@ -72,7 +72,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | definitionWorkspace.ts | 98.9% | 91.0% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 80.9% |
-| logWebView.ts | 95.2% | 87.5% |
+| logWebView.ts | 100% | 96.9% |
 | monitoringWebView.ts | 96.2% | 90.9% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 100% | 84.1% |
@@ -559,6 +559,11 @@ serverManager 的配置解析与环境装配已补齐(tests/serverManagerGaps.te
 在真实取值域下几乎不可抛,L326 的 defaultArgs join 又先于 try 执行,
 getter-args 方案到不了 spawn(如实记录)。语句与函数 100%,分支剩余为
 探测候选的短路组合。
+
+logWebView 的面板状态守卫已补齐(tests/logWebViewGaps.test.ts,3 用例):
+updateWebView 在无面板时早退且不触发面板创建;show 建面板后 dispose
+释放面板对象并置空实例引用,二次 dispose 幂等;二次 show 走 reveal 不
+重建面板。logWebView.ts 语句与函数 100%。
 
 说明:
 
