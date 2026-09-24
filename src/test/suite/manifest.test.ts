@@ -15,4 +15,19 @@ describe('Extension manifest', () => {
       );
     }
   });
+
+  it('contributes hot-reload snippets for the python language', () => {
+    const snippets = manifest.contributes.snippets as Array<{ language: string; path: string }>;
+
+    const pythonSnippet = snippets.find(entry => entry.language === 'python');
+    assert.ok(pythonSnippet, 'python snippet contribution missing');
+    assert.strictEqual(pythonSnippet.path, './snippets/kbengine-python.json');
+  });
+
+  it('keeps def and types.xml snippet contributions intact', () => {
+    const snippets = manifest.contributes.snippets as Array<{ language: string; path: string }>;
+
+    assert.ok(snippets.some(entry => entry.language === 'kbengine-def' && entry.path === './snippets/kbengine.json'));
+    assert.ok(snippets.some(entry => entry.language === 'xml' && entry.path === './snippets/kbengine-types-xml.json'));
+  });
 });

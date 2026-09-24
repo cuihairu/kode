@@ -114,58 +114,5 @@
     "body": [
       "<${1:EntityName} has${2|Cell,Base,Client|}=\"true\"></${1:EntityName}>$0"
     ]
-  },
-  "KBEngine Hot Reload Entity": {
-    "prefix": "kbe-hot-reload-entity",
-    "description": "KBEngine 脚本热重载",
-    "body": [
-      "# baseapp/cellapp 组件脚本热重载",
-      "import KBEngine",
-      "",
-      "# 完整重载当前组件脚本",
-      "KBEngine.reloadScript(True)",
-      "",
-      "# 或者执行轻量重载",
-      "# KBEngine.reloadScript(False)"
-    ]
-  },
-  "KBEngine Hot Reload Script": {
-    "prefix": "kbe-hot-reload-script",
-    "description": "KBEngine 脚本热更新",
-    "body": [
-      "# Python 脚本热更新",
-      "import importlib",
-      "",
-      "# 重新加载指定模块",
-      "${1:module_name} = importlib.reload(${1:module_name})",
-      "",
-      "# 注意：只对修改了 Python 方法的代码有效",
-      "# KBEngine 组件级脚本重载可使用 KBEngine.reloadScript(fullReload)"
-    ]
-  },
-  "KBEngine Hot Reload Best Practice": {
-    "prefix": "kbe-hot-reload-best-practice",
-    "description": "KBEngine 脚本重载入口示例",
-    "body": [
-      "# KBEngine 脚本重载入口示例",
-      "import KBEngine",
-      "",
-      "def reload_current_component():",
-      "    \"\"\"",
-      "    由控制台或调试流程触发当前组件脚本重载。",
-      "    仅适用于 baseapp/cellapp 组件域。",
-      "    \"\"\"",
-      "    KBEngine.reloadScript(${1:True})"
-    ]
-  },
-  "KBEngine Reload Check": {
-    "prefix": "kbe-is-reload",
-    "description": "KBEngine reloadScript 调用示例",
-    "body": [
-      "# 调用当前组件脚本重载",
-      "import KBEngine",
-      "",
-      "KBEngine.reloadScript(${1:True})"
-    ]
   }
 }

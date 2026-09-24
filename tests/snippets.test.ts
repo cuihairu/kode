@@ -18,6 +18,9 @@ const defSnippets: Record<string, SnippetEntry> = JSON.parse(
 const typesXmlSnippets: Record<string, SnippetEntry> = JSON.parse(
   fs.readFileSync(path.join(snippetsDir, 'kbengine-types-xml.json'), 'utf8')
 );
+const pythonSnippets: Record<string, SnippetEntry> = JSON.parse(
+  fs.readFileSync(path.join(snippetsDir, 'kbengine-python.json'), 'utf8')
+);
 
 const typeNames = new Set(KBENGINE_TYPES.map(item => item.name));
 const flagNames = new Set(KBENGINE_FLAGS.map(item => item.name));
@@ -30,10 +33,16 @@ function firstRootElement(text: string): DefElementNode {
 }
 
 function parsePlaceholderChoices(text: string): string[][] {
-  return [...text.matchAll(/\$\{\d+\|([^|]+)\|\}/g)].map(match => match[1].split(','));
+  const choices: string[][] = [];
+  const regex = /\$\{\d+\|([^|]+)\|\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    choices.push(match[1].split(','));
+  }
+  return choices;
 }
 
-const ALL_SNIPPETS: Record<string, SnippetEntry> = { ...defSnippets, ...typesXmlSnippets };
+const ALL_SNIPPETS: Record<string, SnippetEntry> = { ...defSnippets, ...typesXmlSnippets, ...pythonSnippets };
 
 describe('def snippets (kbengine.json)', () => {
   it('declares unique kbe-* prefixes with non-empty bodies', () => {
@@ -145,11 +154,39 @@ describe('def snippets (kbengine.json)', () => {
 
   it('references real reload entry points in hot-reload snippets', () => {
     const allBodies = Object.values(defSnippets).map(entry => entry.body.join('\n')).join('\n');
+    const pythonBodies = Object.values(pythonSnippets).map(entry => entry.body.join('\n')).join('\n');
 
-    expect(allBodies).toContain('KBEngine.reloadScript');
-    expect(allBodies).toContain('importlib.reload');
+    expect(pythonBodies).toContain('KBEngine.reloadScript');
+    expect(pythonBodies).toContain('importlib.reload');
     // 已被源码审计剔除的虚构回调不得在示例代码中出现
     expect(allBodies).not.toContain('onCreate');
+    expect(pythonBodies).not.toContain('onCreate');
+    // def 片段不再混入 Python 热更代码
+    expect(allBodies).not.toContain('importlib.reload');
+  });
+});
+
+describe('python snippets (kbengine-python.json)', () => {
+  it('declares unique kbe-* prefixes with non-empty bodies', () => {
+    const prefixes = Object.values(pythonSnippets).map(entry => entry.prefix);
+
+    expect(new Set(prefixes).size).toBe(prefixes.length);
+    for (const [title, entry] of Object.entries(pythonSnippets)) {
+      expect(entry.prefix, title).toMatch(/^kbe-/);
+      expect(entry.description.length, entry.prefix).toBeGreaterThan(0);
+      expect(entry.body.length, entry.prefix).toBeGreaterThan(0);
+    }
+  });
+
+  it('offers the four hot-reload prefixes for python language contribution', () => {
+    const prefixes = Object.values(pythonSnippets).map(entry => entry.prefix).sort();
+
+    expect(prefixes).toEqual([
+      'kbe-hot-reload-best-practice',
+      'kbe-hot-reload-entity',
+      'kbe-hot-reload-script',
+      'kbe-is-reload'
+    ]);
   });
 });
 

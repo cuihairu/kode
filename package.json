@@ -91,6 +91,10 @@
       {
         "language": "xml",
         "path": "./snippets/kbengine-types-xml.json"
+      },
+      {
+        "language": "python",
+        "path": "./snippets/kbengine-python.json"
       }
     ],
     "viewsContainers": {
