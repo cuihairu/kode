@@ -133,23 +133,65 @@ export const workspace = {
   findFiles: async () => [] as Uri[],
   getConfiguration: () => ({ get: <T>(_key: string, defaultValue: T): T => defaultValue }),
   openTextDocument: async () => ({ uri: Uri.file('') }),
-  createFileSystemWatcher: () => ({
-    onDidChange: () => ({ dispose: () => undefined }),
-    onDidCreate: () => ({ dispose: () => undefined }),
-    onDidDelete: () => ({ dispose: () => undefined }),
-    dispose: () => undefined
-  })
+  createFileSystemWatcher: (): StubFileSystemWatcher => {
+    const changeListeners: Array<(uri: Uri) => void> = [];
+    const createListeners: Array<(uri: Uri) => void> = [];
+    const deleteListeners: Array<(uri: Uri) => void> = [];
+    const watcher: StubFileSystemWatcher = {
+      onDidChange(listener) {
+        changeListeners.push(listener);
+        return { dispose: () => void changeListeners.splice(changeListeners.indexOf(listener), 1) };
+      },
+      onDidCreate(listener) {
+        createListeners.push(listener);
+        return { dispose: () => void createListeners.splice(createListeners.indexOf(listener), 1) };
+      },
+      onDidDelete(listener) {
+        deleteListeners.push(listener);
+        return { dispose: () => void deleteListeners.splice(deleteListeners.indexOf(listener), 1) };
+      },
+      dispose(): void {
+        changeListeners.length = 0;
+        createListeners.length = 0;
+        deleteListeners.length = 0;
+      },
+      fireChange(uri: Uri): void {
+        for (const listener of [...changeListeners]) {
+          listener(uri);
+        }
+      }
+    };
+    lastFileSystemWatcher.current = watcher;
+    return watcher;
+  }
 };
 
 export const window = {
   showErrorMessage: async () => undefined,
   showInformationMessage: async () => undefined,
   showWarningMessage: async () => undefined,
+  // 真实 vscode 返回 editor;openMethodTarget 断言 editor !== undefined,
+  // 默认给真值对象,测试可临时覆盖为 undefined 模拟拒开。
+  showTextDocument: async (_document: unknown, _options?: unknown): Promise<unknown> => ({}),
   createOutputChannel: () => ({
     appendLine: () => undefined,
     show: () => undefined,
     dispose: () => undefined
   })
+};
+
+// entityMapping 的 watchPythonFiles 需要可观察的 watcher:记录回调并允许
+// 测试主动 fire;真实事件行为仍由 mocha 层覆盖。
+export interface StubFileSystemWatcher {
+  onDidChange(listener: (uri: Uri) => void): { dispose(): void };
+  onDidCreate(listener: (uri: Uri) => void): { dispose(): void };
+  onDidDelete(listener: (uri: Uri) => void): { dispose(): void };
+  dispose(): void;
+  fireChange(uri: Uri): void;
+}
+
+export const lastFileSystemWatcher: { current: StubFileSystemWatcher | null } = {
+  current: null
 };
 
 // ---- languageProviders 测试所需(vscode 真实枚举值对齐) ----

@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 58.46% |
-| Branches | 52.51% |
-| Functions | 65.26% |
-| Lines | 58.40% |
+| Statements | 66.14% |
+| Branches | 59.48% |
+| Functions | 74.86% |
+| Lines | 65.98% |
 
 纯逻辑层明细:
 
@@ -62,7 +62,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | definitionSemantics.ts | 93.1% | 84.7% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 60.0% | 34.2% |
-| entityMapping.ts | 14.3% | 14.8% |
+| entityMapping.ts | 89.4% | 79.2% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 38.1% | 32.0% |
 | entityDependency.ts | 17.5% | 9.0% |
@@ -92,10 +92,30 @@ COMPONENT_NAMES 逐项对齐 `COMPONENT_TYPE` 枚举(common.h)、广播端口
 
 entityMapping 的底部纯函数池(方法归属绑定键、八字段身份比对含
 propertyPath/sourceChain 归一、Python 文件路径推断组件/接口/实体与方法段、
-路径去重、正则转义、行号/列号、`def` 块与 `self.*` 调用提取)已覆盖;
-14.3% 的剩余部分是 EntityMappingManager 类本体,深度依赖 vscode
-(ExtensionContext/FileSystemWatcher),由 mocha/@vscode/test-electron 侧
-100 个用例覆盖。纯函数仅加了 `export`,无任何行为变更。
+路径去重、正则转义、行号/列号、`def` 块与 `self.*` 调用提取)已覆盖。
+EntityMappingManager 类本体已在真实临时文件树上覆盖(32 用例):构造即
+扫描(scripts/entity_defs 三实体入索引,interfaces/components 的 def 不作
+根)、python watcher 注册进 context.subscriptions、legacy 映射(pythonFile
+取首个 owner 文件,pythonFiles 含实体 base/cell/client 与混入接口、组件
+共 5 个 owner 文件,无 owner 文件时回落 scripts/base/<Entity>.py 单元素)、
+按实体名/python owner 文件双查、属性按 fullPath 解析与 rootSymbol 回退、
+方法解析按 ownerKind/ownerName/section/sourceKind 打分(同名跨 section 时
+base 推断选中 BaseMethods、exposed 旗标透传)、resolveDefinitionSymbolAtPosition
+按 defFile+line+propertyPath/section 三元定位属性与方法身份(无 path 无
+section 或未知 def 为 null)、python 方法位置解析(方法名起始列为
+`'    def x'.indexOf(name)`,首行 character 小于起始列不命中、块内后续行
+命中)、调用图(outgoing 的 self.* 调用去重并解析到同索引方法、未解析调用
+跳过;incoming 带 callLine/callCharacter,无索引为空)、实现解析经绑定直取
+(line/character 为真实文件行列)与 legacy 三参入口(无实现实体 null)、
+openMethodTarget 双形态(identity → 打开 python 实现,selection 为
+line-1/character;字符串 legacy → 无实现时打开 def 文件;编辑器拒开返回
+false;不完整 legacy 身份短路 false)、jumpToDef property/method 双分支、
+watcher fire 变更重扫 owner 实体、无关路径 no-op、dispose 幂等且查询仍
+可用、无 workspaceFolders 时构造/解析/dispose 全安全。stub 相应补了
+window.showTextDocument 与可 fire 的 FileSystemWatcher(记录回调,真实
+事件行为仍由 mocha 层覆盖)。10.6% 的剩余部分是接口/组件符号的索引回溯
+(ensureIndexForOwner 的 findByOwner 分支)、绑定未命中时的 owner 文件
+扫描 fallback 与零散防御分支,由 mocha 域与后续批次覆盖。
 
 monitoringCollector 的状态机(暂停/恢复、刷新间隔、启动前后安全的
 stop/dispose)、按组件的历史切片、系统总览聚合、watcher 值数值归一
