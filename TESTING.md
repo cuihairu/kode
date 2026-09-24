@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 91.97% |
-| Branches | 82.78% |
-| Functions | 95.92% |
-| Lines | 91.90% |
+| Statements | 92.25% |
+| Branches | 83.16% |
+| Functions | 96.05% |
+| Lines | 92.18% |
 
 纯逻辑层明细:
 
@@ -62,7 +62,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 95.5% | 83.6% |
-| entityMapping.ts | 95.2% | 85.6% |
+| entityMapping.ts | 97.9% | 89.1% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
@@ -579,6 +579,23 @@ snapshot 入口的 entityDefsRoot null 守卫(L174,layout 恒回落
 preferredEntityDefsRoot 非空首选候选);getPropertyScopes 的 switch
 default(L913,RuntimeScope 联合仅 base/cell/client)。99.4% 的剩余即
 这两处。
+
+entityMapping 的索引与解析缺口已补齐(tests/entityMappingGaps.test.ts,
+8 用例):组件槽 rebased 属性覆盖 children 递归(FIXED_DICT 实体侧与
+组件 rebase 侧)与 ARRAY 元素,未解析组件槽(MissingComp)整槽跳过;
+同名实体属性与组件槽让 rebased 路径重复,propertyDefinitions 收两条
+而 toLegacyMapping 只保留先到的实体侧定义;def 方法无 python 绑定时
+回退正则查找;索引建好后删文件(存在性检查先返)与换成目录(读取
+EISDIR 被 catch 吞)均容错返 null;python owner 文件是目录时整体解析
+失败被 parseDefFile 捕获(vitest v5 默认 clearMocks 会在用例间清空
+mock.calls,错误记录用自持数组承载);调用图里未定义被调的入边被丢
+弃;组件符号经引用实体索引回溯解析(findByOwner)。四条死分支如实
+记录:scanEntityMappings/buildIndex 的 loader 守卫(L128/L167,调用
+处路径恒非空)、push 的 null 早退(L205,调用恒传对象)、
+getPythonCandidates/score 的 componentSlotName 分支(L324-330/L889,
+批33 类型级锁定,selectMethodDefinition 调用均不传槽名)、
+collectPythonMethods 的存在性早退(L449,收集层候选恒已过存在性
+检查)。97.9% 的剩余即这几处。
 
 说明:
 
