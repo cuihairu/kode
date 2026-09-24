@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 91.66% |
-| Branches | 82.06% |
+| Statements | 91.97% |
+| Branches | 82.78% |
 | Functions | 95.92% |
-| Lines | 91.58% |
+| Lines | 91.90% |
 
 纯逻辑层明细:
 
@@ -66,7 +66,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
-| databaseSchema.ts | 95.2% | 85.5% |
+| databaseSchema.ts | 99.4% | 94.4% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 95.1% |
 | definitionWorkspace.ts | 98.9% | 91.0% |
@@ -564,6 +564,21 @@ logWebView 的面板状态守卫已补齐(tests/logWebViewGaps.test.ts,3 用例)
 updateWebView 在无面板时早退且不触发面板创建;show 建面板后 dispose
 释放面板对象并置空实例引用,二次 dispose 幂等;二次 show 走 reveal 不
 重建面板。logWebView.ts 语句与函数 100%。
+
+databaseSchema 的守卫与合并缺口已补齐(tests/databaseSchemaGaps.test.ts,
+12 用例):实体 def 是目录(find 命中但 readFileSync 抛 EISDIR)时快照
+返回 null;父链 def 缺失/无 root/不可读三种形态均回落空属性、实体自身
+照常成表;scope 全被可用性拒绝(hasCell=false 的 CELL_PUBLIC)与缺 Type
+的属性被丢弃;父链同名属性 identifier 提升;CELL_AND_CLIENTS/
+CELL_AND_OTHER_CLIENTS 归一为 ALL_CLIENTS/OTHER_CLIENTS 后获得有效
+scope;FIXED_DICT 同名子属性同列去重,无 Type 与 Persistent false 的
+子属性在 children 层跳过;组件 def 缺失(ghost)、目录(CompC)、无
+root 内容(CompD)均落空组件表,无 Cell/Client 方法段的组件走方法段
+continue,带 ClientMethods 的注册 client scope。两条死分支如实记录:
+snapshot 入口的 entityDefsRoot null 守卫(L174,layout 恒回落
+preferredEntityDefsRoot 非空首选候选);getPropertyScopes 的 switch
+default(L913,RuntimeScope 联合仅 base/cell/client)。99.4% 的剩余即
+这两处。
 
 说明:
 
