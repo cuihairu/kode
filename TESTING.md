@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 66.14% |
-| Branches | 59.48% |
-| Functions | 74.86% |
-| Lines | 65.98% |
+| Statements | 69.56% |
+| Branches | 62.07% |
+| Functions | 76.97% |
+| Lines | 69.38% |
 
 纯逻辑层明细:
 
@@ -65,7 +65,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | entityMapping.ts | 89.4% | 79.2% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 38.1% | 32.0% |
-| entityDependency.ts | 17.5% | 9.0% |
+| entityDependency.ts | 94.2% | 84.3% |
 | databaseSchema.ts | 65.8% | 48.1% |
 | logCollector.ts | 68.9% | 41.9% |
 | codeGenerator.ts | 51.3% | 48.6% |
@@ -128,8 +128,21 @@ entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子
 标签剥离、引用三元组去重)已覆盖,并锁定实现语义:非贪婪匹配在首个同名
 闭标签截断;保留名包裹块(如 BaseMethods)整体跳过、内层不再展开——
 这正是类内"先取 Properties body 再解析子块"两段式调用成立的前提。
-17.5% 的剩余部分是 EntityDependencyAnalyzer 类本体,依赖 vscode 文件读取,
-由 mocha 层覆盖。
+EntityDependencyAnalyzer 类本体已在真实临时文件树 + memoryFileSystem 双写
+上覆盖(14 用例;注册解析走真实磁盘,workspace.fs.readFile 走 stub 内存):
+analyze 两遍扫描(注册实体经 entities.xml 先行入图,含 Cell→Base→Client
+类型序;未注册 def 经 findFiles 入图且类型只从方法区块推断)、ARRAY<X>
+容器引用(ArrAy 边)与 FIXED_DICT+implementedBy 引用(FixedDict 边)、
+Parent 自闭合子标签语法 → 继承边 label '继承' 并计入 referencedBy、
+引擎内联 ARRAY<of>X</of> 不产生引用(锁定现状)、同属性重复引用去重、
+referencedBy 跨边种类累计、stats(total/base/cell/client、mostReferenced
+并列时先入序者胜、maxDepth 实现现状恒为 1——深度只从无 parent 根节点
+起算且父链方向不展开)、不可读 def 不产生节点但注册实体间引用边照常解析
+(节点未经 parseEntityFile 无 parent,继承边缺席)、getEntityNode/
+getChildren/getAncestors 查询与 loadFromEntitiesXml 幂等(types 不翻倍)、
+无 workspaceFolders 返回空图。嵌套 Properties 属性因顶层同名闭标截断在
+类链路不可达,其递归分支与 mapContainerType default 共 5.8% 未覆盖,
+由 mocha 域与后续批次覆盖。
 
 databaseSchema 的虚拟文档 URI/文档识别、schema 文本渲染、表/字段行定位、
 mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
