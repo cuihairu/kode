@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 75.68% |
-| Branches | 66.71% |
-| Functions | 81.31% |
-| Lines | 75.58% |
+| Statements | 78.40% |
+| Branches | 67.74% |
+| Functions | 84.47% |
+| Lines | 78.22% |
 
 纯逻辑层明细:
 
@@ -71,7 +71,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | codeGenerator.ts | 92.4% | 84.0% |
 | definitionWorkspace.ts | 88.8% | 78.8% |
 | serverCommandTarget.ts | 100% | 100% |
-| serverManager.ts | 31.5% | 32.4% |
+| serverManager.ts | 94.9% | 72.1% |
 | logWebView.ts | 38.5% | 37.5% |
 | monitoringWebView.ts | 50.4% | 51.8% |
 | entityDependencyWebView.ts | 39.4% | 33.3% |
@@ -234,8 +234,23 @@ gus=order 且 bots 例外只带 gus)、ServerStatus 五态、启动前全 stoppe
 输出通道按知名组件显隐、二进制探测(真实临时树命中 `../kbengine/kbe/bin/
 server` 候选)、kbe 根剥离(KBE_ROOT 环境变量优先/`kbe/bin/server` 后缀
 剥根/其余为空)与组件环境构造(KBE_RES_PATH 四段 delimiter 拼接、
-KBE_BIN_PATH 补尾分隔符、无根时省略环境变量);31.5% 的剩余部分是真实
-spawn/停止/重启编排,不属纯逻辑可测域。logWebView 的过滤与渲染纯逻辑
+KBE_BIN_PATH 补尾分隔符、无根时省略环境变量)。批24 又把真实 spawn/
+停止/重启编排搬进**真实子进程集成测试**(tests/serverManagerProcesses
+.test.ts,18 用例,bin 目录 shell 脚本零 mock):启动前检查链五连(已在
+运行 warning、可执行文件缺失、配置目录空/不存在/是文件各报具体路径)、
+真实进程启动后 Starting 宽限期 1 秒转 Running(事件计数、PID、info 提示、
+stdout 日志含 cwd 与 KBE_BIN_PATH 注入值)、stderr 进 [ERROR] 通道、
+秒退进程走 exit 处理器(code=3 透传且不触发"启动成功")、chmod 000 的
+EACCES 走 error 事件清条目、stopComponent 对未运行组件 false、SIGTERM
+正常停止(进程真死以 kill(pid,0) 验证)、**忽略 SIGTERM 的进程 5 秒后
+升级 SIGKILL**、startAutoComponents 按配置启动、stopAll 全停、
+restartComponent 对未知名 false/空闲组件直启/运行中组件换新 PID、
+dispose 清通道杀残进程。测试基建两处关键:stopXxx 的消息记录 stub 必须
+直接 push(首批误写成返回函数的函数,调用后什么都没记);SIGKILL 用例
+在脚本 trap 行后输出标记,测试等到标记再停止——否则高负载下 SIGTERM
+抢在 bash 执行 trap 之前送达,进程被默认动作杀死,阶梯断言偶发翻车。
+94.9% 的剩余为 spawn 同步 throw 的 catch(spawn 失败走 error 事件,
+几乎不可同步抛)、无 workspaceFolder 的探测分支与单组件时的排序比较器。logWebView 的过滤与渲染纯逻辑
 已覆盖(级别/组件/关键词组合过滤、非法正则退回不过滤、空过滤原样返回、
 level 类名与图标、组件颜色映射与灰色回落、escapeHtml 五字符转义、
 title 属性按实现现状直插未转义 raw 的不对称事实、HTML 骨架含真实
