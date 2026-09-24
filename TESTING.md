@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 91.18% |
-| Branches | 81.41% |
+| Statements | 91.36% |
+| Branches | 81.72% |
 | Functions | 95.52% |
-| Lines | 91.14% |
+| Lines | 91.28% |
 
 纯逻辑层明细:
 
@@ -65,7 +65,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | entityMapping.ts | 95.2% | 85.6% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 98.9% | 90.3% |
-| entityDependency.ts | 94.2% | 84.3% |
+| entityDependency.ts | 97.4% | 93.3% |
 | databaseSchema.ts | 95.2% | 85.5% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 95.1% |
@@ -532,6 +532,20 @@ dispose 干净;refresh 的 in-flight 重入守卫并发折叠;向内部历史 Ma
 301 条假历史后一次成功采集触发 300 环形截断(getMetricsHistory 默认只回
 最近 60 条,须直读内部 Map 验证)。98.9% 的剩余为 case 5 break 的 v8
 语句映射粒度与上述死分支。
+
+entityDependency 的剩余分支已补齐(tests/entityDependencyGaps.test.ts,
+8 用例):注册口径只有 Base 的实体从 def 的 CellMethods/ClientMethods
+方法区块补齐 Cell/Client 类型;entities.xml 注册但 def 文件缺失的实体
+被跳过不入图;悬空 parent(父名无节点)的祖先遍历走 else break 返回空;
+FIXED_DICT<X> 容器形态产出 fixed_dict 引用,未知容器(TUPLE<X>)经
+mapContainerType default 回落 null 丢弃;无工作区直接调 loadFromEntitiesXml
+提前返回;解析阶段 readFile 抛错被 catch——节点保留、引用为空。两条死
+分支如实记录:calculateMaxDepth 的向上递归(L330,调用条件 !node.parent
+与递归条件 node.parent 矛盾,恒不可达,maxDepth 恒为 1);属性内嵌
+<Properties> 的递归展开(L465-471,嵌套 Properties 使顶层 section 提取
+在首个同名闭标截断、属性整块丢失,内层闭合块反被当成顶层属性,故属性
+body 永不含 Properties section,递归入口结构上不可达)。97.4% 的剩余
+即这两处。
 
 说明:
 
