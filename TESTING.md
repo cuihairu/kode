@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 25.50% |
-| Branches | 20.05% |
-| Functions | 28.15% |
-| Lines | 25.58% |
+| Statements | 28.66% |
+| Branches | 22.79% |
+| Functions | 30.52% |
+| Lines | 28.80% |
 
 纯逻辑层明细:
 
@@ -67,6 +67,7 @@ vitest 覆盖率(2026-09-23,`pnpm test:coverage`):
 | entityDependency.ts | 15.9% | 9.0% |
 | databaseSchema.ts | 52.7% | 38.8% |
 | logCollector.ts | 68.9% | 41.9% |
+| codeGenerator.ts | 51.3% | 48.6% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -115,6 +116,15 @@ watcher 协议并落 Error 状态、断开/销毁安全与幂等)、状态事件
 不敏感与正则检索(非法正则降级为空列表)已覆盖;31.1% 的剩余部分是
 sendHeartbeat/sendDeregister 的 socket 写路径与心跳/重连定时器,
 不属纯逻辑可测域。
+
+codeGenerator 的纯生成器已覆盖(entities.xml 注册行、def 属性/方法块
+含 Exposed/Arg/Default/Persistent/DatabaseLength/DetailLevel/Identifier
+各可选的渲染与省略、Python 方法签名与 docstring、def 文档骨架、Python
+类名按域取后缀 Cell/Base/原样、onEnterWorld 仅 Cell 实体、Base/Cell
+方法段、输出路径解析三态:绝对原样/无关相对原样/scripts/entity_defs
+解析到定义根且无目录时回落约定绝对路径、五个内置模板与未知模板回落)。
+48.7% 的剩余部分是向导编排(showWizard/QuickPick/写文件/注册 entities.xml),
+由 mocha 层覆盖。私有生成方法经实例直调,测真实行为,零 mock。
 
 说明:
 
