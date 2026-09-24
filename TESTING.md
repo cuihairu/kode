@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 91.36% |
-| Branches | 81.72% |
-| Functions | 95.52% |
-| Lines | 91.28% |
+| Statements | 91.56% |
+| Branches | 81.94% |
+| Functions | 95.78% |
+| Lines | 91.48% |
 
 纯逻辑层明细:
 
@@ -71,7 +71,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | codeGenerator.ts | 100% | 95.1% |
 | definitionWorkspace.ts | 98.9% | 91.0% |
 | serverCommandTarget.ts | 100% | 100% |
-| serverManager.ts | 94.9% | 72.1% |
+| serverManager.ts | 100% | 80.9% |
 | logWebView.ts | 95.2% | 87.5% |
 | monitoringWebView.ts | 96.2% | 90.9% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
@@ -546,6 +546,19 @@ mapContainerType default 回落 null 丢弃;无工作区直接调 loadFromEntiti
 在首个同名闭标截断、属性整块丢失,内层闭合块反被当成顶层属性,故属性
 body 永不含 Properties section,递归入口结构上不可达)。97.4% 的剩余
 即这两处。
+
+serverManager 的配置解析与环境装配已补齐(tests/serverManagerGaps.test.ts,
+11 用例):binPath 空配置走 detectBinPath 候选探测(真实建第一候选目录
+命中)与全候选落空返回空串;${env:} 变量替换;无工作区早退;KBE_ROOT
+环境变量优先、kbe/bin/server 后缀推导与其他形态拒绝;buildComponentEnvironment
+装配 KBE_ROOT/KBE_RES_PATH 四段 delimiter 串与 KBE_BIN_PATH 尾分隔符,
+空 binPath 走 ensureTrailingSeparator 空串早退;startAutoComponents 乱序
+声明按 order 升序编排;getAllServers 暴露组件目录;showComponentLogs 的
+无效名 false 与有效名开通道 true。spawn 同步 throw 的启动失败 catch 经
+模块级 getter 工厂(批34 套路)以抛错假例驱动——参数校验后同步 throw
+在真实取值域下几乎不可抛,L326 的 defaultArgs join 又先于 try 执行,
+getter-args 方案到不了 spawn(如实记录)。语句与函数 100%,分支剩余为
+探测候选的短路组合。
 
 说明:
 
