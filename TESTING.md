@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 85.94% |
-| Branches | 75.62% |
-| Functions | 91.57% |
-| Lines | 85.87% |
+| Statements | 87.85% |
+| Branches | 77.45% |
+| Functions | 93.28% |
+| Lines | 87.75% |
 
 纯逻辑层明细:
 
@@ -76,7 +76,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | monitoringWebView.ts | 96.2% | 90.9% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 91.7% | 82.5% |
-| explorerProviders.ts | 74.2% | 65.4% |
+| explorerProviders.ts | 96.7% | 83.8% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -403,6 +403,27 @@ Position(line-1, 0)、未知词与 python 文档 null)。64.2% 的剩余部分�
 validateDefStructure 结构诊断规则集(缺 DetailLevel/重复声明等)、方法符号
 → Python 实现跳转(entityMappingManager 路径)、数据库 schema 虚拟文档跳转
 与各链条防御分支,由 mocha 域与后续批次覆盖。
+
+explorerProviders 的树形下钻与缺口分支已在真实临时 workspace 上覆盖(16 用例,
+vscodeStub 补 workspaceFolders 桩——getWorkspaceRootForDocument 无参时回落
+workspaceFolders[0],即可驱动 getChildren 全链):五层 instanceof 下钻(根四组
+Types/Entities/Interfaces/Components 实时计数、Entities 组→def 条目、定义→
+summary+八视图段精确序列、summary→汇总叶、exposed/database 组走
+DefinitionGroupItem 而方法段直出 items、叶与未知元素空数组收口)、type 深分支
+(WIDGET 无 Properties 子节点则 properties 段缺席;BAGSPEC 的 typeProperties
+来自类型节点直接子级 Properties,五引用解析 description 精确串 'UINT32 ·
+Built-in'/'BAGSPEC · Type'/'HealthComp · Component'/'Hero · Entity'/
+'NoSuchType123 · Unresolved';python 段取 scripts/user_type/ 下 implementedBy
+模块路径点转斜杠文件)、internals 缺口分支(readDefinitionStats 把入参当
+workspaceRoot 用——name 取 basename(root)、category 按 /interfaces//components/
+路径特征判定,坏文件回落六键空 shape;resolveTypeReference 五分支;
+createTypeStructureItems(undefined)→[];描述文案 'UINT16, implementedBy:
+game.widget, Python Missing' 与实体 'Base, Cell, Unregistered')、
+pickServerComponent(SERVER_COMPONENTS 全量经 monkey-patch 捕获,
+placeHolder 直通)与 ServerControlProvider(假 manager 注入,Running/Starting/
+Stopping/Error 四状态描述 'PID: 4321'/'启动中...'/'停止中...'/'错误',
+getTreeItem 透传、带元素无子)。96.7% 的剩余部分是树控件装配与 mocha 域。
+CellMethods 全 exposed 时整段缺席(批17 已知现状),夹具以非 exposed move 保住该段。
 
 说明:
 
