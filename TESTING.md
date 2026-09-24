@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 78.40% |
-| Branches | 67.74% |
-| Functions | 84.47% |
-| Lines | 78.22% |
+| Statements | 79.47% |
+| Branches | 68.35% |
+| Functions | 86.05% |
+| Lines | 79.31% |
 
 纯逻辑层明细:
 
@@ -72,7 +72,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | definitionWorkspace.ts | 88.8% | 78.8% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 94.9% | 72.1% |
-| logWebView.ts | 38.5% | 37.5% |
+| logWebView.ts | 95.2% | 87.5% |
 | monitoringWebView.ts | 50.4% | 51.8% |
 | entityDependencyWebView.ts | 39.4% | 33.3% |
 | debugConfig.ts | 63.3% | 54.0% |
@@ -254,8 +254,22 @@ dispose 清通道杀残进程。测试基建两处关键:stopXxx 的消息记录
 已覆盖(级别/组件/关键词组合过滤、非法正则退回不过滤、空过滤原样返回、
 level 类名与图标、组件颜色映射与灰色回落、escapeHtml 五字符转义、
 title 属性按实现现状直插未转义 raw 的不对称事实、HTML 骨架含真实
-collector 状态摘要、collector 条目订阅累积);38.5% 的剩余部分是
-WebviewPanel 生命周期(show/消息处理/导出),由 mocha 层覆盖。
+collector 状态摘要、collector 条目订阅累积)。批25 把 WebviewPanel 生命
+周期也搬进 vitest(tests/logWebViewPanel.test.ts,16 用例,monkey-patch
+面板工厂+保存对话框+可控假 collector):show 的面板创建参数
+(viewType/title/ViewColumn.Two/enableScripts)与初始渲染、**panel 是
+实例私有状态——同一实例二次 show 走 reveal、不同实例各自建面板**(首批
+用例误跨实例断言 reveal);onDidDispose 置空后同实例重建新面板;面板
+打开期间 collector 新日志实时进 html;六类消息全走捕获的
+onDidReceiveMessage handler——filter 整体替换 filter 对象、search 改写
+keyword/useRegex 叠加过滤、clear 清空+通知 collector+空状态重渲染、
+disconnect 直通、connect 成功静默/失败报"日志连接不可用: <原因>";
+exportLogs 经 showSaveDialog:txt 走 LogParser.formatLogEntry 逐行拼接、
+.json 走 pretty JSON(toISOString 归一后深比对)、**只导出当前过滤子
+集**、对话框取消不落盘无消息、writeFile 抛错报"导出日志失败"。stub 新增
+ViewColumn 枚举(模块命名空间 frozen,常量必须由 stub 导出);导出内容
+经 stub 内存文件系统(memoryFileSystem.files)断言。95.2% 的剩余为
+updateWebView 的 panel 空守卫与零散分支。
 
 monitoringWebView 的纯过滤/聚合/渲染已覆盖(21 用例批次之一):指标过滤
 (组件类型精确匹配、关键词 trim+小写后横扫 component/类型/地址/状态/

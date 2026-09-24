@@ -77,6 +77,16 @@ export enum TreeItemCollapsibleState {
   Expanded = 2
 }
 
+// logWebView 的 show() 以 vscode.ViewColumn.Two 创建面板,模块命名空间
+// frozen,常量必须由 stub 导出;面板工厂与保存对话框由测试文件按用例
+// monkey-patch 到 window 上。
+export enum ViewColumn {
+  Active = 1,
+  Beside = 2,
+  One = 3,
+  Two = 4
+}
+
 export class ThemeIcon {
   static readonly File = new ThemeIcon('file');
   static readonly Folder = new ThemeIcon('folder');
