@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 83.61% |
-| Branches | 72.58% |
-| Functions | 90.00% |
-| Lines | 83.56% |
+| Statements | 85.94% |
+| Branches | 75.62% |
+| Functions | 91.57% |
+| Lines | 85.87% |
 
 纯逻辑层明细:
 
@@ -66,7 +66,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 92.3% | 85.4% |
 | entityDependency.ts | 94.2% | 84.3% |
-| databaseSchema.ts | 65.8% | 48.1% |
+| databaseSchema.ts | 95.2% | 85.5% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 92.4% | 84.0% |
 | definitionWorkspace.ts | 88.8% | 78.8% |
@@ -178,9 +178,16 @@ databaseSchema 的虚拟文档 URI/文档识别、schema 文本渲染、表/字�
 mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
 前缀列、VECTOR 展开列、同名去重)与 `scripts/entity_defs` 端到端快照
 (真实 def 文件 → 快照 → tbl_Hero/sm_hp/tbl_Hero_bag)已覆盖,并锁定
-mysql 列型映射事实(UINT32 → `int unsigned`);34.2% 的剩余部分是
-def→属性描述符的深解析(parsePropertyNode 递归等,由端到端用例间接穿透)
-与 Provider 生命周期。
+mysql 列型映射事实(UINT32 → `int unsigned`)。深解析与 Provider 已在
+tests/databaseSchemaDeep.test.ts 覆盖(17 用例):真实临时 def 树上的
+Parent 子元素继承与自引用短路、Interfaces 同名属性 merge 补齐
+(Identifier/Index/DatabaseLength)、Components 节组件(含 Type 缺失/
+def 文件缺失仍建空组件表、同 Type 二次走 componentCache)、
+FIXED_DICT 嵌套平铺与 ARRAY-of-FIXED_DICT 子表(表名取数组属性名)、
+CELL_AND_CLIENT 旗标归一、无 Flags 属性剔除、无元素 root 返回 null;
+以及 Provider 生命周期(decode 实体名渲染、refresh 两分支)、渲染文本
+字段定位向上回溯、source 定位三态、target 反查(路径归一/前缀规则/
+dedupe)。剩余 4.8% 为类型别名映射长尾与零散防御分支。
 
 logCollector 的状态机(初始未连接、connect 按实现现状拒绝 logger
 watcher 协议并落 Error 状态、断开/销毁安全与幂等)、状态事件序列、
