@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 73.22% |
-| Branches | 64.77% |
-| Functions | 80.13% |
-| Lines | 73.07% |
+| Statements | 75.68% |
+| Branches | 66.71% |
+| Functions | 81.31% |
+| Lines | 75.58% |
 
 纯逻辑层明细:
 
@@ -68,7 +68,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | entityDependency.ts | 94.2% | 84.3% |
 | databaseSchema.ts | 65.8% | 48.1% |
 | logCollector.ts | 68.9% | 41.9% |
-| codeGenerator.ts | 51.3% | 48.6% |
+| codeGenerator.ts | 92.4% | 84.0% |
 | definitionWorkspace.ts | 88.8% | 78.8% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 31.5% | 32.4% |
@@ -195,8 +195,22 @@ codeGenerator 的纯生成器已覆盖(entities.xml 注册行、def 属性/方�
 类名按域取后缀 Cell/Base/原样、onEnterWorld 仅 Cell 实体、Base/Cell
 方法段、输出路径解析三态:绝对原样/无关相对原样/scripts/entity_defs
 解析到定义根且无目录时回落约定绝对路径、五个内置模板与未知模板回落)。
-48.7% 的剩余部分是向导编排(showWizard/QuickPick/写文件/注册 entities.xml),
-由 mocha 层覆盖。私有生成方法经实例直调,测真实行为,零 mock。
+文件落盘与命令编排层已在**真实临时工作区树上覆盖**(tests/
+codeGeneratorFiles.test.ts,21 用例):generateDefFile/generatePythonFile
+落盘路径与内容全量比对(内嵌生成时间戳归一化后比较)、无工作区拒绝;
+registerInEntitiesXml 在 </root> 前精确插行、重复注册走 warning 且文件
+原样、坏 XML(无闭 root)/entities.xml 缺失(报具体路径)/无工作区三类
+拒绝;showWizard 全流程(可脚本化窗口 stub:showInputBox 记录 options、
+showQuickPick 接受数组或 Promise——向导第 3 步传入异步实体列表)——
+名称校验正则、类型取消/名称取消提前返回、Base+Cell 全流程生成 def
+(Parent 块+示例属性+BaseMethods)+python(HeroCell 后缀+onEnterWorld)
++注册 entities.xml+四条 info 消息、生成失败走 error 通道(register 前
+def/py 已成功各推一条 info);showTemplates 模板取消/名称取消提前返回、
+account 模板改名生成全链路(login/createAvatar 带 Exposed、MyAccountBase
+后缀、注册行三域旗标);loadConfig 无工作区回落默认值、有工作区解析到
+定义根绝对路径;getExistingEntities 从 def 文件集取 basename、无工作区
+空表;dispose 无副作用。7.6% 剩余为向导的零散分支组合,由 mocha 层补充
+覆盖。私有生成方法经实例直调,测真实行为,零 mock。
 
 definitionWorkspace 的纯工作区解析已在真实临时文件树上覆盖(22 用例):
 目录布局(entityDefsRoot 候选解析与"目录不存在回落约定路径"、存在性文件
