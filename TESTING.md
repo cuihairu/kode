@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 89.86% |
-| Branches | 79.89% |
-| Functions | 95% |
-| Lines | 89.81% |
+| Statements | 90.13% |
+| Branches | 80.12% |
+| Functions | 95.26% |
+| Lines | 90.06% |
 
 纯逻辑层明细:
 
@@ -58,7 +58,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | kbengineMetadata.ts | 100% | 100% |
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
-| defParser.ts | 91.8% | 84.7% |
+| defParser.ts | 98.7% | 90.8% |
 | definitionSemantics.ts | 93.1% | 84.7% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 95.5% | 83.6% |
@@ -485,6 +485,16 @@ readTextFile 逐候选 catch-continue 后耗尽返回 null(patch fs.readFileSync
 磁盘判定)、dirent 列表跳过无名条目与子目录。98.9% 的剩余为 entityDefsRoot
 null 守卫与 findExistingLookupPath 非字符串分支(当前调用图下不可达)及
 v8 语句映射粒度。
+
+defParser 的遍历工具与文本定位缺口已覆盖(tests/defParserGaps.test.ts,
+9 用例):getDirectTextNodes/getElementText 的空参守卫与文本子节点收集
+(含 CDATA 与相邻文本拼接 'xy'、text 节点 parent 回指);findAncestorElement
+的 null 守卫、从文本节点经 parent 链上溯(字符串名与数组名两形态)与
+链耗尽 null;assignTextNodePosition 的两个回退分支经真实 parseDefDocument
+触达——`&quot;` 解码为 `"` 后解码产物在原文中不存在,indexOf 落空回退
+searchOffset(开标结束处,start=end=9)、`<![CDATA[]]>` 产空文本节点
+保留在 searchOffset。98.7% 的剩余两行(非对象项/':@' 键 continue)为
+v8 语句映射粒度——带属性元素的解析每次必经,实际已执行。
 
 说明:
 
