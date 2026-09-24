@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 90.13% |
-| Branches | 80.12% |
+| Statements | 90.59% |
+| Branches | 80.73% |
 | Functions | 95.26% |
-| Lines | 90.06% |
+| Lines | 90.53% |
 
 纯逻辑层明细:
 
@@ -68,7 +68,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | entityDependency.ts | 94.2% | 84.3% |
 | databaseSchema.ts | 95.2% | 85.5% |
 | logCollector.ts | 100% | 100% |
-| codeGenerator.ts | 92.4% | 84.0% |
+| codeGenerator.ts | 100% | 95.1% |
 | definitionWorkspace.ts | 98.9% | 91.0% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 94.9% | 72.1% |
@@ -495,6 +495,19 @@ defParser 的遍历工具与文本定位缺口已覆盖(tests/defParserGaps.test
 searchOffset(开标结束处,start=end=9)、`<![CDATA[]]>` 产空文本节点
 保留在 searchOffset。98.7% 的剩余两行(非对象项/':@' 键 continue)为
 v8 语句映射粒度——带属性元素的解析每次必经,实际已执行。
+
+codeGenerator 的剩余缺口已覆盖(tests/codeGeneratorGaps.test.ts,7 用例):
+generateDefContent 的 CellMethods/ClientMethods 段渲染(exposed 标记只在
+base/cell 侧,client 侧 supportsExposed=false 无 `<Exposed/>`,Arg 行直出
+类型);generatePythonFile 的无工作区 throw('没有打开的工作区')与深输出
+目录递归创建(gen/out/deep 落盘断言);showWizard 的 Cell-only 分支
+(sampleFlags CELL_PRIVATE + cellProperties/cellMethods 赋值 + entities.xml
+注册)与 Client-only 分支(OTHER_CLIENTS;实现现状只赋 clientProperties
+不赋 clientMethods,ClientMethods 段缺席,如实断言);生成后 '是否打开
+生成的文件？' 应答 '是' 时 openTextDocument+showTextDocument 打开 def 文件;
+generateFromTemplate 在工作区消失时经 generateDefFile throw 走 catch 报
+'生成失败: … 没有打开的工作区'。语句 100%、函数 100%,剩余 4.9% 分支为
+配置回退与属性渲染的粒度组合。
 
 说明:
 
