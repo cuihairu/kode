@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 82.09% |
-| Branches | 70.94% |
-| Functions | 88.55% |
-| Lines | 82.00% |
+| Statements | 82.86% |
+| Branches | 71.62% |
+| Functions | 89.07% |
+| Lines | 82.79% |
 
 纯逻辑层明细:
 
@@ -75,7 +75,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | logWebView.ts | 95.2% | 87.5% |
 | monitoringWebView.ts | 96.2% | 90.9% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
-| debugConfig.ts | 63.3% | 54.0% |
+| debugConfig.ts | 91.7% | 82.5% |
 | explorerProviders.ts | 74.2% | 65.4% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
@@ -309,7 +309,18 @@ openEntity 对已知实体 openTextDocument/showTextDocument 串起 defFile、
 框握手 beginExport postMessage、取消静默、currentGraph 为 null 时
 warning;导出落盘——svg 走 utf8、png 走 base64 解码、无 pendingExport
 的 exportData 静默忽略、data null 与 format 不匹配各报"导出 X 失败"、
-writeFile 抛错报"写入导出文件失败";dispose 幂等。analyzer 在构造内
+writeFile 抛错报"写入导出文件失败";dispose 幂等。批28 再把 debugConfig
+的调试会话编排搬进 vitest(tests/debugConfigAttach.test.ts,9 用例,stub
+新增 debug.startDebugging):startDebugging 的 modal 提示两分支——有
+telnetEnableCommands 时消息含 telnet 命令/password/layer/命令行全文,
+确认('继续附加')后进 attach,取消不发;attachToComponent 组装
+DebugConfiguration(name/request=attach/processId/pathMappings 透传组件
+配置/justMyCode=false)→ startDebugging 结果透传,false 与抛错
+('附加调试失败')各走一路;promptForProcessId 校验链——负号先被
+/^\d+$/ 拦进"PID 必须是正整数"(格式错误优先于数值错误),'0' 与超
+MAX_SAFE_INTEGER 归"PID 必须是有效的正整数",取消 PID 则整个 attach
+不发;createExampleConfig/updateLaunchJson 的写盘失败各报具体原因。
+91.7% 的剩余为 watcher 回调与零散防御分支。analyzer 在构造内
 自建,测试经 internals 替换为假例(analyze/getEntityNode 可控)。
 97.9% 的剩余为 refreshGraph 的 panel 空守卫与 mermaid 的未知类型分支。
 
