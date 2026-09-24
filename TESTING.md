@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 87.85% |
-| Branches | 77.45% |
-| Functions | 93.28% |
-| Lines | 87.75% |
+| Statements | 88.47% |
+| Branches | 78.21% |
+| Functions | 93.55% |
+| Lines | 88.38% |
 
 纯逻辑层明细:
 
@@ -61,7 +61,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | defParser.ts | 91.8% | 84.7% |
 | definitionSemantics.ts | 93.1% | 84.7% |
 | logParser.ts | 100% | 98.3% |
-| kbengineProtocol.ts | 84.5% | 56.2% |
+| kbengineProtocol.ts | 95.5% | 83.6% |
 | entityMapping.ts | 89.4% | 79.2% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 92.3% | 85.4% |
@@ -102,8 +102,8 @@ COMPONENT_NAMES 逐项对齐 `COMPONENT_TYPE` 枚举(common.h)、广播端口
 并已据此修出真实缺陷:原 COMPONENT_NAMES 缺 TOOL_TYPE=14('tool')。
 集成测试另锁定两处引擎语义:type 5/6 的 fullName 为
 `componentName+groupOrderID` 多实例编号;watcher 帧 body 首字节为 type
-标记。kbengineProtocol 剩余 15.5% 为 parseWatcherFrame 部分值类型分支与
-零散防御路径。
+标记。kbengineProtocol 其余取值类型分支、身份探测回落与 TCP 帧缺口已在
+真实回环补齐(tests/kbengineProtocolReaders.test.ts,7 用例,另见下)。
 
 entityMapping 的底部纯函数池(方法归属绑定键、八字段身份比对含
 propertyPath/sourceChain 归一、Python 文件路径推断组件/接口/实体与方法段、
@@ -424,6 +424,21 @@ placeHolder 直通)与 ServerControlProvider(假 manager 注入,Running/Starting
 Stopping/Error 四状态描述 'PID: 4321'/'启动中...'/'停止中...'/'错误',
 getTreeItem 透传、带元素无子)。96.7% 的剩余部分是树控件装配与 mocha 域。
 CellMethods 全 exposed 时整段缺席(批17 已知现状),夹具以非 exposed move 保住该段。
+
+kbengineProtocol 的剩余分支已在真实回环上补齐(tests/
+kbengineProtocolReaders.test.ts,7 用例):parseWatcherFrame 全取值类型
+矩阵(UINT16/UINT32/UINT64 含 9007199254740993n→MAX_SAFE_INTEGER 钳制/
+INT8/INT16/INT32/INT64/FLOAT/CHAR/COMPONENT_TYPE,BufferCursor 各宽度
+读取器经此触达);discoverLocalComponents 的身份探测回落链(patch
+process.getuid=undefined + env 三组对照——uid 优先于 UID、用户名
+USER→LOGNAME→'unknown'、不可解析 uid 得 -1,均以 20086 端口真实
+UDP 应答端捕获请求帧逐字节断言,端口字段回填客户端源端口的
+swapUint16);queryWatcherPath 三缺口——帧头声明 1000 字节只到帧头时
+while 在长度不足处 break 等超时收尾 resolve [](残包不进解析器)、
+非 65502 msgid 帧静默跳过其余帧照常入列、对端在 connect→resetTimeout
+之后 resetAndDestroy 发真 RST(Node 的 destroy 会先读空内核缓冲只送
+FIN,不会触发 error)走 error→clearTimeout→reject。剩余 4.5% 为
+dgram/UDP error 处理与 finish 重入守卫等不可稳定触发的防御路径。
 
 说明:
 
