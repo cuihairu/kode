@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 88.47% |
-| Branches | 78.21% |
-| Functions | 93.55% |
-| Lines | 88.38% |
+| Statements | 89.04% |
+| Branches | 78.9% |
+| Functions | 94.34% |
+| Lines | 88.97% |
 
 纯逻辑层明细:
 
@@ -62,7 +62,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | definitionSemantics.ts | 93.1% | 84.7% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 95.5% | 83.6% |
-| entityMapping.ts | 89.4% | 79.2% |
+| entityMapping.ts | 95.2% | 85.6% |
 | languageProviders.ts | 64.2% | 55.9% |
 | monitoringCollector.ts | 92.3% | 85.4% |
 | entityDependency.ts | 94.2% | 84.3% |
@@ -439,6 +439,21 @@ while 在长度不足处 break 等超时收尾 resolve [](残包不进解析器)
 之后 resetAndDestroy 发真 RST(Node 的 destroy 会先读空内核缓冲只送
 FIN,不会触发 error)走 error→clearTimeout→reject。剩余 4.5% 为
 dgram/UDP error 处理与 finish 重入守卫等不可稳定触发的防御路径。
+
+entityMapping 的实现解析回落链已在真实临时 workspace 上覆盖
+(tests/entityMappingFallback.test.ts,6 用例):resolveMethodImplementationByIdentity
+的 ensureIndexForOwner 三层——实体名直查未中时按 pythonOwnerFiles 的
+ownerKind+ownerName 回溯引用实体索引(接口符号 MoveIface → Hero 索引
+绑定直查命中 MoveIface.py 第 2 行第 8 列)、回溯也未中时重扫
+scanEntityMappings 后仍空返回 undefined;绑定直查失败的正则回退
+findPythonMethodLine——扫描时脚本全缺席的 Ghost 在落盘第二前缀
+assets/scripts/base/Ghost.py 后按候选序先 existsSync 拒掉缺失的
+scripts/ 侧、再对 assets/ 侧 `def <名>(` 正则命中(第 2 行第 8 列),
+文件存在但无该 def 时未命中返回 null;openMethodTarget 遗留路径三分支
+——实体无索引 false、实现与定义双缺 false、仅 def 有定义时打开
+Ghost.def 的 <vanish/> 行(0 基行 3 列 0,selection Range 断言)。
+剩余 4.9% 为 getPythonCandidates 的 componentSlotName 尾分支(当前
+DefinitionSemanticCategory 类型联合下不可达)与读文件异常防御。
 
 说明:
 
