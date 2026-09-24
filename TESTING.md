@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 82.86% |
-| Branches | 71.62% |
-| Functions | 89.07% |
-| Lines | 82.79% |
+| Statements | 83.61% |
+| Branches | 72.58% |
+| Functions | 90.00% |
+| Lines | 83.56% |
 
 纯逻辑层明细:
 
@@ -67,7 +67,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | monitoringCollector.ts | 92.3% | 85.4% |
 | entityDependency.ts | 94.2% | 84.3% |
 | databaseSchema.ts | 65.8% | 48.1% |
-| logCollector.ts | 68.9% | 41.9% |
+| logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 92.4% | 84.0% |
 | definitionWorkspace.ts | 88.8% | 78.8% |
 | serverCommandTarget.ts | 100% | 100% |
@@ -185,9 +185,15 @@ def→属性描述符的深解析(parsePropertyNode 递归等,由端到端用例
 logCollector 的状态机(初始未连接、connect 按实现现状拒绝 logger
 watcher 协议并落 Error 状态、断开/销毁安全与幂等)、状态事件序列、
 环形缓冲截断(maxBufferSize 裁掉最老条目)、按级别/组件过滤、大小写
-不敏感与正则检索(非法正则降级为空列表)已覆盖;31.1% 的剩余部分是
-sendHeartbeat/sendDeregister 的 socket 写路径与心跳/重连定时器,
-不属纯逻辑可测域。
+不敏感与正则检索(非法正则降级为空列表)已覆盖。socket 辅助路径已在
+tests/logCollectorSocket.test.ts 覆盖(14 用例):deregister 703 帧
+4 字节与 heartbeat 701 帧字 14 字节布局逐字节断言(fake socket 记录
+write)、心跳 setInterval 每秒一发且 stopHeartbeat/re-start 不叠定时器
+(vitest fake timers)、重连调度三短路(autoReconnect 关/手动断开/
+已在排程)与到点重试 connect 拒绝后复位、UID 探测链(getuid → env
+uid → env UID → -1)、Connected/Connecting 状态文本(全角标点逐字
+断言)、dispose 拆除 socket 与双定时器且重复安全。logCollector 达
+100% 全覆盖。
 
 codeGenerator 的纯生成器已覆盖(entities.xml 注册行、def 属性/方法块
 含 Exposed/Arg/Default/Persistent/DatabaseLength/DetailLevel/Identifier
