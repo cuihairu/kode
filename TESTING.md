@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 90.59% |
-| Branches | 80.73% |
+| Statements | 90.9% |
+| Branches | 81.22% |
 | Functions | 95.26% |
-| Lines | 90.53% |
+| Lines | 90.86% |
 
 纯逻辑层明细:
 
@@ -59,7 +59,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 98.7% | 90.8% |
-| definitionSemantics.ts | 93.1% | 84.7% |
+| definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 95.5% | 83.6% |
 | entityMapping.ts | 95.2% | 85.6% |
@@ -508,6 +508,20 @@ base/cell 侧,client 侧 supportsExposed=false 无 `<Exposed/>`,Arg 行直出
 generateFromTemplate 在工作区消失时经 generateDefFile throw 走 catch 报
 '生成失败: … 没有打开的工作区'。语句 100%、函数 100%,剩余 4.9% 分支为
 配置回退与属性渲染的粒度组合。
+
+definitionSemantics 的解析与继承合并缺口已覆盖(tests/
+definitionSemanticsGaps.test.ts,7 用例):Interfaces 三种引用形态——
+`<Interface/>` 自闭合无名跳过、`<Interface><Monster/></Interface>` 取首子
+元素名(getNodeValue 的子元素回退)、`<MoveIface/>` 直取标签名;
+parseOptionalBoolean 未知拼写('maybe')→ undefined;ARRAY of 的 `<Type>`
+元素内嵌 `<Properties>` 递归解析(元素子属性 fullPath 为 `bag[].x`);
+坏 XML(未闭合元素)使 parseLocalDefinition throw 后 negative 结果缓存,
+二次调用直接命中缓存;接口与父链的组件槽去重——IA/IB 两接口同名 slot
+"pack" 只保留一个、SlotP3→SlotP2→SlotP1 父链同槽合并;纯继承链
+TopE→MidE→BaseE 上 BaseE 组零属性时来源链从方法段回溯,继承组标签
+'Parent · MidE / BaseE'。99.5% 的剩余一行(buildInheritanceLabel 的空
+chain 分支)在当前调用图下不可达——所有 interface/parent 来源的 chain
+都至少含引用名或父名。
 
 说明:
 
