@@ -263,6 +263,76 @@ describe('KBEngine .def language features', () => {
     assert.strictEqual(location.uri.fsPath, '/workspace/scripts/entity_defs/Avatar.def');
   });
 
+  it('shows hook documentation when hovering a hook name in def files', () => {
+    const provider = new KBEngineHoverProvider();
+    const text = [
+      '<root>',
+      '  <CellMethods>',
+      '    <onTeleport>',
+      '      <Arg>VECTOR3</Arg>',
+      '    </onTeleport>',
+      '  </CellMethods>',
+      '</root>'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      text
+    );
+
+    const hover = provider.provideHover(
+      document as never,
+      document.positionAt(text.indexOf('onTeleport') + 1) as never
+    ) as unknown as FakeHover;
+
+    assert.ok(hover, 'expected hook hover in def document');
+    assert.ok(hover.contents.value.includes('onTeleport'));
+    assert.ok(hover.contents.value.includes('调用时机') || hover.contents.value.includes('函数签名'));
+  });
+
+  it('shows hook documentation when hovering a hook name in python files', () => {
+    const provider = new KBEngineHoverProvider();
+    const text = [
+      'class HeroCell():',
+      '    def onTimer(self, tid):',
+      '        pass'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/cell/Hero.py',
+      'python',
+      text
+    );
+
+    const hover = provider.provideHover(
+      document as never,
+      document.positionAt(text.indexOf('onTimer') + 1) as never
+    ) as unknown as FakeHover;
+
+    assert.ok(hover, 'expected hook hover in python document');
+    assert.ok(hover.contents.value.includes('onTimer'));
+    assert.ok(hover.contents.value.includes('函数签名') || hover.contents.value.includes('调用时机'));
+  });
+
+  it('shows source location on python hook hover', () => {
+    const provider = new KBEngineHoverProvider();
+    const text = 'def onTimer(self, tid):\n    pass';
+    const document = new FakeTextDocument(
+      '/workspace/scripts/cell/Hero.py',
+      'python',
+      text
+    );
+
+    const hover = provider.provideHover(
+      document as never,
+      document.positionAt(text.indexOf('onTimer') + 1) as never
+    ) as unknown as FakeHover;
+
+    assert.ok(hover, 'expected hook hover in python document');
+    assert.ok(hover.contents.value.includes('onTimer'));
+    assert.ok(hover.contents.value.includes('调用时机'));
+    assert.ok(hover.contents.value.includes('源码位置'));
+  });
+
   it('shows custom property details in symbol hover', () => {
     const provider = new KBEngineHoverProvider();
     const text = [

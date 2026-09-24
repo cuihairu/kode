@@ -230,6 +230,99 @@ describe('KBEngineCompletionProvider', () => {
     assert.deepStrictEqual(labels(dictItems), []);
   });
 
+  it('suggests hooks while typing a method name on a later line of a Methods section', () => {
+    const provider = new KBEngineCompletionProvider();
+    const source = [
+      '<root>',
+      '  <CellMethods>',
+      '    <onTele'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      source
+    );
+
+    const items = provider.provideCompletionItems(
+      document as never,
+      new FakePosition(2, '    <onTele'.length) as never
+    ) as FakeCompletionItem[];
+
+    const itemLabels = labels(items);
+    assert.ok(itemLabels.includes('onTeleport'), `got: ${itemLabels.join(', ')}`);
+    assert.ok(itemLabels.includes('onTeleportSuccess'));
+    assert.ok(itemLabels.includes('onTeleportFailure'));
+    assert.ok(!itemLabels.includes('onTimer'));
+  });
+
+  it('suggests hooks inside multi-line BaseMethods without a same-line section tag', () => {
+    const provider = new KBEngineCompletionProvider();
+    const source = [
+      '<root>',
+      '  <BaseMethods>',
+      '    <on'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      source
+    );
+
+    const items = provider.provideCompletionItems(
+      document as never,
+      new FakePosition(2, '    <on'.length) as never
+    ) as FakeCompletionItem[];
+
+    const itemLabels = labels(items);
+    assert.ok(itemLabels.length >= 30, `expected hook list, got ${itemLabels.length}`);
+    assert.ok(itemLabels.every(label => label.startsWith('on')));
+    assert.ok(itemLabels.includes('onTimer'));
+    assert.ok(itemLabels.includes('onDestroy'));
+  });
+
+  it('does not suggest hooks outside Methods sections', () => {
+    const provider = new KBEngineCompletionProvider();
+    const source = [
+      '<root>',
+      '  <Properties>',
+      '    <hp'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      source
+    );
+
+    const items = provider.provideCompletionItems(
+      document as never,
+      new FakePosition(2, '    <hp'.length) as never
+    ) as FakeCompletionItem[];
+
+    const itemLabels = labels(items);
+    assert.ok(!itemLabels.some(label => label.startsWith('on')), `got: ${itemLabels.join(', ')}`);
+  });
+
+  it('does not suggest hooks when the method prefix is outside any Methods section', () => {
+    const provider = new KBEngineCompletionProvider();
+    const source = [
+      '<root>',
+      '  <Properties>',
+      '    <onTele'
+    ].join('\n');
+    const document = new FakeTextDocument(
+      '/workspace/scripts/entity_defs/Hero.def',
+      'kbengine-def',
+      source
+    );
+
+    const items = provider.provideCompletionItems(
+      document as never,
+      new FakePosition(2, '    <onTele'.length) as never
+    ) as FakeCompletionItem[];
+
+    assert.deepStrictEqual(labels(items), []);
+  });
+
   it('suggests source-backed KBEngine reload helpers in python files', () => {
     const provider = new KBEngineCompletionProvider();
     const document = new FakeTextDocument(

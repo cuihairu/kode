@@ -267,32 +267,23 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       );
     }
 
-    if (lineText.match(/<[A-Za-z]+Methods>[\s\S]*<[a-zA-Z]/)) {
-      const methodMatch = lineText.match(/<([a-zA-Z]+)>/);
-      if (methodMatch) {
-        const methodName = methodMatch[1];
-        KBENGINE_HOOKS.forEach(hook => {
-          if (hook.name.toLowerCase().startsWith(methodName.toLowerCase())) {
-            const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
-            item.detail = `${HOOK_CATEGORY_NAMES[hook.category]} - ${hook.description}`;
-            item.documentation = new vscode.MarkdownString(
-              `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}\n\n签名:\n\`\`\`python\n${hook.signature}\n\`\`\``
-            );
-            items.push(item);
-          }
-        });
-        return items;
-      }
-    }
+    const openTags = getOpenTagStack(getTextBeforePosition(document, position));
+    const enclosingTag = openTags[openTags.length - 1];
+    const inMethodsSection =
+      enclosingTag === 'BaseMethods' || enclosingTag === 'CellMethods' || enclosingTag === 'ClientMethods';
+    const methodPrefixMatch = lineText.match(/<([A-Za-z][A-Za-z0-9_]*)$/);
 
-    if (lineText.match(/<on[a-zA-Z]*$/)) {
+    if (inMethodsSection && methodPrefixMatch) {
+      const methodName = methodPrefixMatch[1].toLowerCase();
       KBENGINE_HOOKS.forEach(hook => {
-        const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
-        item.detail = `${HOOK_CATEGORY_NAMES[hook.category]} - ${hook.description}`;
-        item.documentation = new vscode.MarkdownString(
-          `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}`
-        );
-        items.push(item);
+        if (hook.name.toLowerCase().startsWith(methodName)) {
+          const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
+          item.detail = `${HOOK_CATEGORY_NAMES[hook.category]} - ${hook.description}`;
+          item.documentation = new vscode.MarkdownString(
+            `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}\n\n签名:\n\`\`\`python\n${hook.signature}\n\`\`\``
+          );
+          items.push(item);
+        }
       });
       return items;
     }
@@ -339,7 +330,6 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     const word = document.getText(range);
-    const isDefDocument = document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
     const typeValueHover = getTypeValueHover(document, position, word);
     if (typeValueHover) {
       return typeValueHover;
@@ -355,10 +345,20 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       return entityRegistrationHover;
     }
 
+    if (featureConfig.hoverShowValueDocs) {
+      const earlyHook = getHookByName(word);
+      if (earlyHook) {
+        return createHookHover(earlyHook);
+      }
+    }
+
     if (featureConfig.hoverShowSymbolDocs) {
-      const symbolHover = getSymbolHover(document, position, word);
-      if (symbolHover) {
-        return symbolHover;
+      const knownHook = getHookByName(word);
+      if (!knownHook) {
+        const symbolHover = getSymbolHover(document, position, word);
+        if (symbolHover) {
+          return symbolHover;
+        }
       }
     }
 
@@ -403,23 +403,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
 
       const hook = getHookByName(word);
-      if (hook && !isDefDocument) {
-        const markdown = new vscode.MarkdownString();
-        markdown.appendMarkdown(`**${hook.name}** - ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
-        markdown.appendMarkdown(`${hook.description}\n\n`);
-        markdown.appendMarkdown('**调用时机**: ' + hook.timing + '\n\n');
-        markdown.appendMarkdown('**函数签名**:\n');
-        markdown.appendCodeblock(hook.signature, 'python');
-        markdown.appendMarkdown('\n**详细说明**:\n');
-        markdown.appendMarkdown(hook.documentation);
-        if (hook.sourceLocation) {
-          markdown.appendMarkdown('\n\n**源码位置**: `' + hook.sourceLocation + '`');
-        }
-        if (hook.example) {
-          markdown.appendMarkdown('\n\n**使用示例**:\n');
-          markdown.appendCodeblock(hook.example, 'python');
-        }
-        return new vscode.Hover(markdown);
+      if (hook) {
+        return createHookHover(hook);
       }
 
       const reloadFunc = KBENGINE_RELOAD_FUNCTIONS.find(f => f.name.endsWith(word) || word === f.name);
@@ -1038,6 +1023,25 @@ function getSymbolHover(
     }
   }
 
+  return new vscode.Hover(markdown);
+}
+
+function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(`**${hook.name}** - ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
+  markdown.appendMarkdown(`${hook.description}\n\n`);
+  markdown.appendMarkdown('**调用时机**: ' + hook.timing + '\n\n');
+  markdown.appendMarkdown('**函数签名**:\n');
+  markdown.appendCodeblock(hook.signature, 'python');
+  markdown.appendMarkdown('\n**详细说明**:\n');
+  markdown.appendMarkdown(hook.documentation);
+  if (hook.sourceLocation) {
+    markdown.appendMarkdown('\n\n**源码位置**: `' + hook.sourceLocation + '`');
+  }
+  if (hook.example) {
+    markdown.appendMarkdown('\n\n**使用示例**:\n');
+    markdown.appendCodeblock(hook.example, 'python');
+  }
   return new vscode.Hover(markdown);
 }
 

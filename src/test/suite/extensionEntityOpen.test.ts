@@ -14,6 +14,8 @@ describe('extension entity open command', () => {
   let resolvedDefinitionPath: string | null = '/workspace/scripts/entity_defs/Avatar.def';
   let databaseSchemaSnapshot: unknown = null;
   let databaseSchemaLine = 1;
+  let registeredHoverSelectors: unknown[] = [];
+  let registeredCompletionSelectors: unknown[] = [];
   const noop = (): undefined => undefined;
 
   before(() => {
@@ -25,12 +27,20 @@ describe('extension entity open command', () => {
     resolvedDefinitionPath = '/workspace/scripts/entity_defs/Avatar.def';
     databaseSchemaSnapshot = null;
     databaseSchemaLine = 1;
+    registeredHoverSelectors = [];
+    registeredCompletionSelectors = [];
 
     const noopDisposable = { dispose: noop };
     const vscodeStub = createVscodeStub({
       languages: {
-        registerCompletionItemProvider: () => noopDisposable,
-        registerHoverProvider: () => noopDisposable,
+        registerCompletionItemProvider: (selector: unknown) => {
+          registeredCompletionSelectors.push(selector);
+          return noopDisposable;
+        },
+        registerHoverProvider: (selector: unknown) => {
+          registeredHoverSelectors.push(selector);
+          return noopDisposable;
+        },
         registerDefinitionProvider: () => noopDisposable,
         registerCallHierarchyProvider: () => noopDisposable,
         createDiagnosticCollection: () => ({
@@ -188,6 +198,21 @@ describe('extension entity open command', () => {
     resolvedDefinitionPath = '/workspace/scripts/entity_defs/Avatar.def';
     databaseSchemaSnapshot = null;
     databaseSchemaLine = 1;
+    registeredHoverSelectors = [];
+    registeredCompletionSelectors = [];
+  });
+
+  it('registers hover and completion providers for python documents', () => {
+    activate({ subscriptions: [], extensionUri: { fsPath: '/workspace/ext' } } as never);
+
+    const pythonFilter = (entry: unknown): boolean =>
+      JSON.stringify(entry).includes('"language":"python"');
+
+    assert.ok(registeredHoverSelectors.some(pythonFilter), 'hover provider missing python selector');
+    assert.ok(
+      registeredCompletionSelectors.some(pythonFilter),
+      'completion provider missing python selector'
+    );
   });
 
   it('opens the resolved entity definition from definitionWorkspace', async () => {

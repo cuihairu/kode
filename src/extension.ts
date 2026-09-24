@@ -59,21 +59,30 @@ export function activate(context: vscode.ExtensionContext) {
     ...defDocumentSelector,
     ...kbengineXmlSelector
   ];
+  const pythonDocumentSelector: vscode.DocumentSelector = [
+    { language: 'python', scheme: 'file' }
+  ];
 
   const isDefDocument = (document: vscode.TextDocument): boolean =>
     document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
 
-  // 注册智能提示提供者
+  // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全）
   const completionProvider = vscode.languages.registerCompletionItemProvider(
-    defDocumentSelector,
+    [
+      ...defDocumentSelector,
+      ...pythonDocumentSelector
+    ],
     new KBEngineCompletionProvider(),
-    '<', ' ', '\t', '>', '/', ':'
+    '<', ' ', '\t', '>', '/', ':', '.'
   );
   context.subscriptions.push(completionProvider);
 
-  // 注册悬停文档提供者
+  // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档）
   const hoverProvider = vscode.languages.registerHoverProvider(
-    definitionNavigationSelector,
+    [
+      ...definitionNavigationSelector,
+      ...pythonDocumentSelector
+    ],
     new KBEngineHoverProvider()
   );
   context.subscriptions.push(hoverProvider);
