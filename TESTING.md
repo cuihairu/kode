@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 79.47% |
-| Branches | 68.35% |
-| Functions | 86.05% |
-| Lines | 79.31% |
+| Statements | 80.72% |
+| Branches | 69.30% |
+| Functions | 87.10% |
+| Lines | 80.60% |
 
 纯逻辑层明细:
 
@@ -74,7 +74,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | serverManager.ts | 94.9% | 72.1% |
 | logWebView.ts | 95.2% | 87.5% |
 | monitoringWebView.ts | 50.4% | 51.8% |
-| entityDependencyWebView.ts | 39.4% | 33.3% |
+| entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 63.3% | 54.0% |
 | explorerProviders.ts | 74.2% | 65.4% |
 
@@ -285,8 +285,19 @@ statusLevel 联动、cellapp 的 Object Pools 明细标题与其余 Watcher Deta
 50.4% 的剩余部分是 WebviewPanel 生命周期、定时刷新与导出,由 mocha 层
 覆盖。entityDependencyWebView 的 mermaid 图生成已覆盖(节点 emoji 类型
 标签与 '-'→'_' id、边箭头含空标签管道段、classDef 三色与按类型分配、
-空图仅头部+classDef、HTML 骨架嵌入图源);39.4% 的剩余部分是面板生命周期
-与 PNG/SVG 导出路径,由 mocha 层覆盖。
+空图仅头部+classDef、HTML 骨架嵌入图源)。批26 把面板生命周期与导出路径
+也搬进 vitest(tests/entityDependencyPanel.test.ts,18 用例):show 的
+面板参数与初始分析→mermaid→html 链路(含统计卡片渲染)、同实例二次
+show 走 reveal、onDidDispose 后同实例重建、analyze 抛错进 error 通道与
+outputChannel 双路(html 保持空串);消息域——refresh 重析重渲染、
+openEntity 对已知实体 openTextDocument/showTextDocument 串起 defFile、
+未知实体 warning、文档打开抛错报"打开实体定义失败"、export 经保存对话
+框握手 beginExport postMessage、取消静默、currentGraph 为 null 时
+warning;导出落盘——svg 走 utf8、png 走 base64 解码、无 pendingExport
+的 exportData 静默忽略、data null 与 format 不匹配各报"导出 X 失败"、
+writeFile 抛错报"写入导出文件失败";dispose 幂等。analyzer 在构造内
+自建,测试经 internals 替换为假例(analyze/getEntityNode 可控)。
+97.9% 的剩余为 refreshGraph 的 panel 空守卫与 mermaid 的未知类型分支。
 
 debugConfig 的配置装载与 launch 配置生成已覆盖(18 用例):默认组件表
 (7 组件 telnet 端口 31000..51000 的种子顺序、共用 host/密码/layer、
