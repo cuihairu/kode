@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 92.75% |
-| Branches | 83.89% |
-| Functions | 96.57% |
-| Lines | 92.70% |
+| Statements | 94.41% |
+| Branches | 86.17% |
+| Functions | 97.23% |
+| Lines | 94.33% |
 
 纯逻辑层明细:
 
@@ -63,7 +63,7 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 90.4% |
 | entityMapping.ts | 97.9% | 89.1% |
-| languageProviders.ts | 64.2% | 55.9% |
+| languageProviders.ts | 73.1% | 66.7% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
 | databaseSchema.ts | 99.4% | 94.4% |
@@ -655,6 +655,20 @@ Gaps.test.ts 扩至 10 用例):批35 归为伪影的 defParser L278-279
 实例记账为 0。defParser 98.7%→99.4% lines,剩余 1 行即 L268。至此
 除 languageProviders(64.2%,并行会话文件)外,全部源码文件的剩余
 未覆盖行均已定案:结构死分支、类型级死分支或 v8 记账伪影。
+
+并行会话收尾后 languageProviders 解锁,批49 开补其 provider 入口层
+(tests/languageProvidersGaps.test.ts,16 用例):标签栈的闭合回退
+与自闭合跳过、方法段直接子级与深层嵌套的空回落、importlib. 前缀的
+reload 补全;Type 值内 types.xml 自定义类型悬停、types.xml 元素名
+悬停(词不在 Type 值内的另一入口)、entities.xml 实体注册悬停(带
+Base/Cell/Client 运行时行)、python 文档钩子悬停与热更函数悬停及未知
+词 null;定义跳转的 types.xml 元素名定位、类型值引用定位(GIFT 的
+`<Type>DOLL</Type>` 跳 DOLL 定义行)与无词位置 null;结构诊断的未知
+顶层段跳过、带子元素 Type 节点早退、别名 Flags 归一(CELL_AND_CLIENTS
+→CELL_PUBLIC_AND_OWN、CELL_AND_OTHER_CLIENTS→OTHER_CLIENTS)与无
+root 空文档。钩子名以 KBENGINE_HOOKS[0].name 动态构造(批18 铁律,
+猜 'onSave'/'onInit' 两度落空)。剩余为悬停内部工具、数据库 schema
+双向跳转与 python 自补全/调用层级链路,后续批次继续。
 
 说明:
 
