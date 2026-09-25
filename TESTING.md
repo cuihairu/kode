@@ -252,7 +252,7 @@ server` 候选)、kbe 根剥离(KBE_ROOT 环境变量优先/`kbe/bin/server` 后
 剥根/其余为空)与组件环境构造(KBE_RES_PATH 四段 delimiter 拼接、
 KBE_BIN_PATH 补尾分隔符、无根时省略环境变量)。批24 又把真实 spawn/
 停止/重启编排搬进**真实子进程集成测试**(tests/serverManagerProcesses
-.test.ts,18 用例,bin 目录 shell 脚本零 mock):启动前检查链五连(已在
+.test.ts,18 用例,零 mock):启动前检查链五连(已在
 运行 warning、可执行文件缺失、配置目录空/不存在/是文件各报具体路径)、
 真实进程启动后 Starting 宽限期 1 秒转 Running(事件计数、PID、info 提示、
 stdout 日志含 cwd 与 KBE_BIN_PATH 注入值)、stderr 进 [ERROR] 通道、
@@ -262,11 +262,14 @@ EACCES 走 error 事件清条目、stopComponent 对未运行组件 false、SIGT
 升级 SIGKILL**、startAutoComponents 按配置启动、stopAll 全停、
 restartComponent 对未知名 false/空闲组件直启/运行中组件换新 PID、
 dispose 清通道杀残进程。测试基建两处关键:stopXxx 的消息记录 stub 必须
-直接 push(首批误写成返回函数的函数,调用后什么都没记);SIGKILL 用例
-在脚本 trap 行后输出标记,测试等到标记再停止——否则高负载下 SIGTERM
-抢在 bash 执行 trap 之前送达,进程被默认动作杀死,阶梯断言偶发翻车。
-94.9% 的剩余为 spawn 同步 throw 的 catch(spawn 失败走 error 事件,
-几乎不可同步抛)、无 workspaceFolder 的探测分支与单组件时的排序比较器。logWebView 的过滤与渲染纯逻辑
+直接 push(首批误写成返回函数的函数,调用后什么都没记);批53 起子进程
+统一由 tests/sim/fakeComponentBin 生成(node 脚本假二进制,跨平台),
+ignore-sigterm 行为先装 SIGTERM 处理器再打标记,结构性消除批24 的
+"信号抢在 bash trap 安装前送达"竞态。批53 同时给 serverManager 加了
+ProcessRunner 注入点(默认透传 spawn),tests/serverManagerRunner
+.test.ts 专项验证参数透传与同步 throw 走 catch,spawn 同步 throw 的
+catch 分支由此可达。
+94.9% 的剩余为无 workspaceFolder 的探测分支与单组件时的排序比较器。logWebView 的过滤与渲染纯逻辑
 已覆盖(级别/组件/关键词组合过滤、非法正则退回不过滤、空过滤原样返回、
 level 类名与图标、组件颜色映射与灰色回落、escapeHtml 五字符转义、
 title 属性按实现现状直插未转义 raw 的不对称事实、HTML 骨架含真实

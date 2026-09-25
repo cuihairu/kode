@@ -136,6 +136,19 @@ export interface RunningServer {
   logs: string[];
 }
 
+/**
+ * 进程启动端口(docs/redesign.md L2):默认实现透传 child_process.spawn,
+ * 生产行为不变;测试可注入记录型/故障注入型 runner,或与
+ * tests/sim/fakeComponentBin 的假组件二进制组合做真实进程编排。
+ */
+export interface ProcessRunner {
+  spawn(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): ChildProcess;
+}
+
+const defaultProcessRunner: ProcessRunner = {
+  spawn: (command, args, options) => spawn(command, args, options)
+};
+
 function ensureTrailingSeparator(value: string): string {
   if (!value) {
     return value;
@@ -154,7 +167,10 @@ export class KBEngineServerManager {
 
   private outputChannels: Map<string, vscode.OutputChannel> = new Map();
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(
+    private context: vscode.ExtensionContext,
+    private readonly processRunner: ProcessRunner = defaultProcessRunner
+  ) {}
 
   /**
    * 获取 KBEngine 二进制路径
@@ -326,7 +342,7 @@ export class KBEngineServerManager {
     outputChannel.appendLine(`[INFO] 启动参数: ${(component.defaultArgs || []).join(' ') || '(none)'}`);
 
     try {
-      const childProcess = spawn(exePath, component.defaultArgs || [], {
+      const childProcess = this.processRunner.spawn(exePath, component.defaultArgs || [], {
         cwd: configPath,
         env: this.buildComponentEnvironment(configPath, binPath)
       });

@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -9,6 +8,7 @@ import {
 } from '../src/serverManager';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { FakeComponentBin } from './sim/fakeComponentBin';
 
 // KBEngineServerManager 的进程编排层:startComponent 检查链(已运行/可执行
 // 文件缺失/配置目录三态)、真实 spawn 的 stdout/stderr/error/exit 事件流、
@@ -68,12 +68,10 @@ const channelText = (fragment: string): string => {
   return (channel as { lines: string[] }).lines.join('');
 };
 
-const writeScript = (name: string, body: string, mode = 0o755): string => {
-  const scriptPath = path.join(root, 'bin', name);
-  fs.writeFileSync(scriptPath, `#!/bin/sh\n${body}`, 'utf8');
-  fs.chmodSync(scriptPath, mode);
-  return scriptPath;
-};
+let bin: FakeComponentBin;
+
+const writeScript = (name: string, behavior: Parameters<FakeComponentBin['write']>[1]): string =>
+  bin.write(name, behavior);
 
 beforeAll(() => {
   windowish.createOutputChannel = (name: string) => {
@@ -113,12 +111,12 @@ afterAll(() => {
   delete (stubWorkspace as unknown as Record<string, unknown>).getConfiguration;
 });
 
-beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvproc-'));
-  fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
+beforeEach(async () => {
+  bin = await FakeComponentBin.create();
+  root = bin.root;
   fs.mkdirSync(path.join(root, 'ws', 'cfg'), { recursive: true });
 
-  configTable.binPath = path.join(root, 'bin');
+  configTable.binPath = bin.binPath;
   configTable.configPath = path.join(root, 'ws', 'cfg');
   configTable.autoStart = ['logger'];
 
@@ -154,7 +152,7 @@ afterEach(async () => {
 
 describe('KBEngineServerManager startComponent preflight', () => {
   it('warns and refuses when the component is already running', async () => {
-    writeScript('dup', 'exec sleep 30');
+    writeScript('dup', { kind: 'run' });
     const manager = makeManager();
     const component = makeComponent('dup');
 
@@ -171,11 +169,11 @@ describe('KBEngineServerManager startComponent preflight', () => {
     expect(await manager.startComponent(makeComponent('ghost'))).toBe(false);
 
     expect(messages.error).toHaveLength(1);
-    expect(messages.error[0]).toBe(`找不到 ghost 可执行文件：${path.join(root, 'bin', 'ghost')}`);
+    expect(messages.error[0]).toBe(`找不到 ghost 可执行文件：${path.join(bin.binPath, 'ghost')}`);
   });
 
   it('rejects an empty configured config path', async () => {
-    writeScript('svc', 'exec sleep 30');
+    writeScript('svc', { kind: 'run' });
     configTable.configPath = '';
     const manager = makeManager();
 
@@ -185,7 +183,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
   });
 
   it('rejects a config path that does not exist', async () => {
-    writeScript('svc', 'exec sleep 30');
+    writeScript('svc', { kind: 'run' });
     configTable.configPath = path.join(root, 'ws', 'missing');
     const manager = makeManager();
 
@@ -197,7 +195,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
   });
 
   it('rejects a config path that is a plain file', async () => {
-    writeScript('svc', 'exec sleep 30');
+    writeScript('svc', { kind: 'run' });
     const filePath = path.join(root, 'ws', 'cfg-file');
     fs.writeFileSync(filePath, 'x', 'utf8');
     configTable.configPath = filePath;
@@ -211,7 +209,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
 
 describe('KBEngineServerManager real process lifecycle', () => {
   it('starts a real process and promotes it to running after the grace period', async () => {
-    writeScript('long', 'echo ready\npwd\necho "KBE_BIN_PATH=$KBE_BIN_PATH"\nexec sleep 30');
+    writeScript('long', { kind: 'run', stdoutMarker: 'ready', printCwd: true, echoEnv: ['KBE_BIN_PATH'] });
     const manager = makeManager();
     let statusFires = 0;
     manager.onDidChangeStatus(() => {
@@ -233,7 +231,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
     const logs = (server?.logs ?? []).join('');
     expect(logs).toContain('ready');
     expect(logs).toContain(path.join(root, 'ws', 'cfg'));
-    expect(logs).toContain(`KBE_BIN_PATH=${path.join(root, 'bin')}${path.sep}`);
+    expect(logs).toContain(`KBE_BIN_PATH=${bin.binPath}${path.sep}`);
 
     expect(messages.info).toHaveLength(1);
     expect(messages.info[0]).toBe(`Long 启动成功 (PID: ${server?.pid})`);
@@ -244,7 +242,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
   });
 
   it('routes child stderr into the [ERROR] output channel', async () => {
-    writeScript('noisy', 'echo boom >&2\nexec sleep 30');
+    writeScript('noisy', { kind: 'run', stderr: 'boom' });
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('noisy'))).toBe(true);
@@ -255,7 +253,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
   });
 
   it('removes an exiting child and logs its exit code', async () => {
-    writeScript('flash', 'exit 3');
+    writeScript('flash', { kind: 'exit', code: 3 });
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('flash'))).toBe(true);
@@ -268,7 +266,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
   });
 
   it('surfaces spawn errors for an unexecutable binary and drops the entry', async () => {
-    writeScript('locked', 'exec sleep 30', 0o000);
+    writeScript('locked', { kind: 'unexecutable' });
     const manager = makeManager();
 
     // existsSync 通过但 exec 权限被剥,spawn 发出 EACCES error 事件
@@ -280,7 +278,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
   });
 
   it('stops a live process via SIGTERM and resolves true', async () => {
-    writeScript('term', 'exec sleep 30');
+    writeScript('term', { kind: 'run' });
     const manager = makeManager();
     const component = makeComponent('term');
 
@@ -304,7 +302,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
   }, 8000);
 
   it('escalates to SIGKILL when the child ignores SIGTERM', async () => {
-    writeScript('stubborn', "trap '' TERM\necho trapped\nexec sleep 30");
+    writeScript('stubborn', { kind: 'ignore-sigterm', marker: 'trapped' });
     const manager = makeManager();
 
     await manager.startComponent(makeComponent('stubborn'));
@@ -333,7 +331,7 @@ describe('KBEngineServerManager real process lifecycle', () => {
 
 describe('KBEngineServerManager batch orchestration', () => {
   it('starts the configured auto-start components in launch order', async () => {
-    writeScript('logger', 'exec sleep 30');
+    writeScript('logger', { kind: 'run' });
     const manager = makeManager();
 
     await manager.startAutoComponents();
@@ -343,8 +341,8 @@ describe('KBEngineServerManager batch orchestration', () => {
   }, 8000);
 
   it('stops every running component in reverse launch order', async () => {
-    writeScript('alpha', 'exec sleep 30');
-    writeScript('beta', 'exec sleep 30');
+    writeScript('alpha', { kind: 'run' });
+    writeScript('beta', { kind: 'run' });
     const manager = makeManager();
 
     await manager.startComponent(makeComponent('alpha'));
@@ -365,7 +363,7 @@ describe('KBEngineServerManager batch orchestration', () => {
 
   // restartComponent 只认 SERVER_COMPONENTS 里的真名,这里用 logger
   it('restarts an idle component by starting it fresh', async () => {
-    writeScript('logger', 'exec sleep 30');
+    writeScript('logger', { kind: 'run' });
     const manager = makeManager();
 
     expect(await manager.restartComponent('logger')).toBe(true);
@@ -373,7 +371,7 @@ describe('KBEngineServerManager batch orchestration', () => {
   }, 8000);
 
   it('replaces a live process with a fresh one on restart', async () => {
-    writeScript('logger', 'exec sleep 30');
+    writeScript('logger', { kind: 'run' });
     const manager = makeManager();
 
     await manager.startComponent(makeComponent('logger'));
@@ -389,7 +387,7 @@ describe('KBEngineServerManager batch orchestration', () => {
   }, 10000);
 
   it('disposes channels and kills leftover processes', async () => {
-    writeScript('doomed', 'exec sleep 30');
+    writeScript('doomed', { kind: 'run' });
     const manager = makeManager();
 
     await manager.startComponent(makeComponent('doomed'));

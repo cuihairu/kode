@@ -236,13 +236,20 @@ L4 真实层（显式化、独立于提交门槛）
 - 验收结果：vitest 57 文件 716 用例全绿，文件级并行恢复，全量 36s→约 13s；
   测试代码不再出现固定端口 20086 绑定（仅引擎源码字面断言保留）。✅
 
-### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口
+### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口 ✅（批53）
 
-- `tests/sim/fakeComponentBin.ts` 生成可编程假组件二进制。
-- `serverManager` 抽 `ProcessRunner` 注入点（默认透传 spawn）。
-- 迁移 `tests/serverManagerProcesses.test.ts` 到 FakeComponentBin；SIGKILL 用例
-  的 trap 标记等待机制内化为仿真器能力。
-- 验收：进程编排用例行为等价（含 SIGKILL 升级），不再内联 bash 拼装。
+- `tests/sim/fakeComponentBin.ts` 生成可编程假组件二进制。✅
+  行为：run（标记/cwd/env 回显/stderr）、exit（指定退出码）、
+  ignore-sigterm（先装 SIGTERM 处理器再打标记——结构性消除"信号抢在
+  trap 安装前送达"的竞态，替代原 bash trap 方案）、unexecutable（chmod 000
+  → EACCES）。node shebang 跨平台。
+- `serverManager` 抽 `ProcessRunner` 注入点（默认透传 spawn）。✅
+  mocha 层经 `module._load` mock `child_process` 的既有用例不受影响。
+- 迁移 `tests/serverManagerProcesses.test.ts` 到 FakeComponentBin。✅
+  18 用例行为等价（含 SIGKILL 升级），内联 bash 拼装清零；新增
+  tests/serverManagerRunner.test.ts 注入点专项 2 用例（参数透传记录 +
+  同步 throw 走 catch）。
+- 验收：全部通过（见批53 commit）。✅
 
 ### 阶段 3：FakeVscode 基建 + extension.ts 入测
 
@@ -264,7 +271,7 @@ L4 真实层（显式化、独立于提交门槛）
 | 阶段 | 状态 | 里程碑 commit |
 |------|------|---------------|
 | 1 | ✅ 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
-| 2 | 未开始 | — |
+| 2 | ✅ 完成（批53） | FakeComponentBin + ProcessRunner 注入 + 进程编排测试迁移 |
 | 3 | 未开始 | — |
 | 4 | 未开始 | — |
 
