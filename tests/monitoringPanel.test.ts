@@ -7,49 +7,28 @@ import type {
 } from '../src/monitoringCollector';
 import type * as vscode from 'vscode';
 import {
+  messages,
+  memoryFileSystem,
+  panelRegistry,
   Uri,
   ViewColumn,
-  memoryFileSystem,
   window as stubWindow,
+  windowState,
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
+import type { FakeWebviewPanel } from './helpers/vscodeStub';
 
 // MonitoringWebView 的面板生命周期:show 的创建/复用/重建与 collector
 // start/stop 联动、handleMessage 六类消息(过滤/刷新间隔/历史窗口/暂停/
 // 刷新/导出)、exportMetrics 的保存对话框与 JSON 落盘、dispose。collector
-// 为构造注入,测试传入可控假例;面板工厂/保存对话框由 monkey-patch 驱动。
-// 过滤与卡片渲染已由 monitoringWebView.test.ts 覆盖。
+// 为构造注入,测试传入可控假例;面板由 fake-vscode 的 panelRegistry 默认
+// 工厂创建(阶段 4:不再 monkey-patch 面板工厂),消息三通道直接读
+// windowState 入账。过滤与卡片渲染已由 monitoringWebView.test.ts 覆盖。
 
-interface StubPanel {
-  viewType: string;
-  title: string;
-  column: number;
-  options: { enableScripts: boolean };
-  revealCalls: number;
-  disposeCalls: number;
-  webview: {
-    html: string;
-    handlers: Array<(message: unknown) => void>;
-    onDidReceiveMessage(handler: (message: unknown) => void): { dispose(): void };
-  };
-  disposeHandlers: Array<() => void>;
-  onDidDispose(handler: () => void): { dispose(): void };
-  reveal(): void;
-  dispose(): void;
-}
-
-const panels: StubPanel[] = [];
 const saveDialogUris: Array<vscode.Uri | undefined> = [];
-const messages = { info: [] as string[], error: [] as string[] };
 
 const windowish = stubWindow as unknown as Record<string, unknown>;
-const originalWindow: Record<string, unknown> = {};
-const patchedKeys = [
-  'createWebviewPanel',
-  'showSaveDialog',
-  'showInformationMessage',
-  'showErrorMessage'
-];
+const originalShowSaveDialog = windowish.showSaveDialog;
 
 const metric = (over: Partial<ComponentMetrics> = {}): ComponentMetrics => ({
   component: 'cellapp1',
@@ -171,17 +150,16 @@ const internals = (webview: MonitoringWebView) =>
     historyWindow: number;
   };
 
-const currentPanel = (): StubPanel => panels[panels.length - 1];
+const currentPanel = (): FakeWebviewPanel =>
+  panelRegistry.panels[panelRegistry.panels.length - 1];
 
-const show = (): StubPanel => {
+const show = (): FakeWebviewPanel => {
   makeWebView().show();
   return currentPanel();
 };
 
 const send = (message: unknown): void => {
-  for (const handler of [...currentPanel().webview.handlers]) {
-    handler(message);
-  }
+  panelRegistry.fireMessage(currentPanel(), message);
 };
 
 const until = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> => {
@@ -195,68 +173,18 @@ const until = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> 
 };
 
 beforeAll(() => {
-  for (const key of patchedKeys) {
-    originalWindow[key] = windowish[key];
-  }
-  windowish.createWebviewPanel = (
-    viewType: string,
-    title: string,
-    column: number,
-    options: { enableScripts: boolean }
-  ) => {
-    const panel = {
-      viewType,
-      title,
-      column,
-      options,
-      revealCalls: 0,
-      disposeCalls: 0,
-      disposeHandlers: [] as Array<() => void>,
-      webview: {
-        html: '',
-        handlers: [] as Array<(message: unknown) => void>,
-        onDidReceiveMessage: (handler: (message: unknown) => void) => {
-          panel.webview.handlers.push(handler);
-          return { dispose: () => undefined };
-        }
-      },
-      onDidDispose: (handler: () => void) => {
-        panel.disposeHandlers.push(handler);
-        return { dispose: () => undefined };
-      },
-      reveal: () => {
-        panel.revealCalls += 1;
-      },
-      dispose: () => {
-        panel.disposeCalls += 1;
-      }
-    };
-    panels.push(panel as unknown as StubPanel);
-    return panel;
-  };
   windowish.showSaveDialog = async () => saveDialogUris.shift();
-  windowish.showInformationMessage = async (message: string) => {
-    messages.info.push(message);
-    return undefined;
-  };
-  windowish.showErrorMessage = async (message: string) => {
-    messages.error.push(message);
-    return undefined;
-  };
 });
 
 afterAll(() => {
-  for (const key of patchedKeys) {
-    windowish[key] = originalWindow[key];
-  }
+  windowish.showSaveDialog = originalShowSaveDialog;
   memoryFileSystem.reset();
 });
 
 beforeEach(() => {
-  panels.length = 0;
+  panelRegistry.reset();
+  windowState.reset();
   saveDialogUris.length = 0;
-  messages.info.length = 0;
-  messages.error.length = 0;
   memoryFileSystem.reset();
   stubWorkspace.workspaceFolders = [];
   fake = makeFakeCollector();
@@ -266,13 +194,13 @@ describe('MonitoringWebView.show', () => {
   it('creates the panel and starts the collector with the default interval', () => {
     const panel = show();
 
-    expect(panels).toHaveLength(1);
+    expect(panelRegistry.panels).toHaveLength(1);
     expect(panel.viewType).toBe('kbengine.monitoring');
     expect(panel.title).toBe('KBEngine Monitoring');
-    expect(panel.column).toBe(ViewColumn.Two);
-    expect(panel.options.enableScripts).toBe(true);
-    expect(panel.webview.handlers).toHaveLength(1);
-    expect(panel.disposeHandlers).toHaveLength(1);
+    expect(panel.showOptions).toBe(ViewColumn.Two);
+    expect((panel.options as { enableScripts: boolean }).enableScripts).toBe(true);
+    expect(panel.messageListeners).toHaveLength(1);
+    expect(panel.disposeListeners).toHaveLength(1);
     expect(fake.state.started).toEqual([2000]);
     expect(panel.webview.html).toContain('<!DOCTYPE html>');
     expect(panel.webview.html).toContain('FAKE SUMMARY');
@@ -293,8 +221,8 @@ describe('MonitoringWebView.show', () => {
 
     webview.show();
 
-    expect(panels).toHaveLength(1);
-    expect(panel.revealCalls).toBe(1);
+    expect(panelRegistry.panels).toHaveLength(1);
+    expect(panel.revealed).toBe(true);
     expect(fake.state.started).toEqual([2000]);
   });
 
@@ -303,12 +231,12 @@ describe('MonitoringWebView.show', () => {
     webview.show();
     const first = currentPanel();
 
-    first.disposeHandlers[0]();
+    panelRegistry.fireDispose(first);
     expect(fake.state.stopped).toBe(1);
 
     webview.show();
 
-    expect(panels).toHaveLength(2);
+    expect(panelRegistry.panels).toHaveLength(2);
     expect(fake.state.started).toEqual([2000, 2000]);
   });
 
@@ -498,7 +426,8 @@ describe('MonitoringWebView.dispose', () => {
     webview.dispose();
     webview.dispose();
 
-    expect(panel.disposeCalls).toBe(1);
+    // FakeWebviewPanel.dispose 幂等:二次调用不再触发销毁监听
+    expect(panel.disposed).toBe(true);
     // 实现现状:仅 panel.dispose 有守卫,collector.dispose 在守卫外
     // 无条件调用,重复 dispose 会重复转发
     expect(fake.state.disposed).toBe(2);

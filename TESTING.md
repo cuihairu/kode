@@ -758,6 +758,20 @@ extension.ts 99.5% lines / 100% functions,总覆盖 98.99%→99.01% lines。
 行为的假组件在 POSIX 下改用 /bin/sh 脚本——node 解释器冷启动可能超过 1 秒
 启动宽限期,"秒退不触发启动成功提示"的断言不再依赖启动速度。
 
+批55 落地重设计阶段 4 第一步:三个 WebView 面板测试(logWebViewPanel/
+monitoringPanel/entityDependencyPanel,51 用例)从各自内联的 monkey-patch
+面板工厂迁到 panelRegistry 默认假面板,断言语义不变。替换点:本地
+StubPanel → FakeWebviewPanel(创建参数入 panels 注册表、
+onDidReceiveMessage/onDidDispose 监听捕获于面板本体、fireMessage/
+fireDispose 驱动消息与销毁、postMessage 入 postedMessages 账) ;
+revealCalls/disposeCalls 计数 → revealed/disposed 布尔(FakeWebviewPanel
+.dispose 幂等,二次调用不再触发销毁监听,断言随之收紧);消息三通道与
+showTextDocument 直接消费 windowState 入账(messages/
+showTextDocumentCalls),每文件只剩 showSaveDialog 应答队列与
+workspace.fs.writeFile 故障注入两类 patch。src 的 createWebviewPanel
+消费面实际为三个(logWebView/monitoringWebView/entityDependencyWebView),
+redesign 原文"四个 WebView"计数有误,已更正。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/

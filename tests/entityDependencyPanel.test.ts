@@ -8,61 +8,32 @@ import {
 } from '../src/entityDependency';
 import type * as vscode from 'vscode';
 import {
+  messages,
+  memoryFileSystem,
+  panelRegistry,
   Uri,
   ViewColumn,
-  memoryFileSystem,
   window as stubWindow,
+  windowState,
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
+import type { FakeWebviewPanel } from './helpers/vscodeStub';
 
 // EntityDependencyWebView 的面板生命周期:show/refresh 的分析→mermaid→
 // html 链路、openEntityFile 的文档打开三态、exportGraph→pendingExport→
 // webview.postMessage 的导出握手、saveExportedGraph 的落盘。analyzer 在
-// 构造内自建,测试经 internals 替换为可控假例;面板工厂/保存对话框/
-// 文档打开由 monkey-patch 驱动。mermaid 生成已由 entityDependencyWebView
-// 既有纯逻辑测试覆盖。
+// 构造内自建,测试经 internals 替换为可控假例;面板由 fake-vscode 的
+// panelRegistry 默认工厂创建(阶段 4:不再 monkey-patch 面板工厂),
+// postMessage 经 webview.postedMessages 入账,消息三通道与文档展示直接
+// 读 windowState 入账。mermaid 生成已由 entityDependencyWebView 既有纯
+// 逻辑测试覆盖。
 
-interface StubPanel {
-  viewType: string;
-  title: string;
-  column: number;
-  options: { enableScripts: boolean };
-  revealCalls: number;
-  disposeCalls: number;
-  webview: {
-    html: string;
-    posted: Array<{ command: string; format?: string }>;
-    handlers: Array<(message: unknown) => void>;
-    onDidReceiveMessage(handler: (message: unknown) => void): { dispose(): void };
-    postMessage(message: unknown): Promise<boolean>;
-  };
-  disposeHandlers: Array<() => void>;
-  onDidDispose(handler: () => void): { dispose(): void };
-  reveal(): void;
-  dispose(): void;
-}
-
-const panels: StubPanel[] = [];
 const saveDialogUris: Array<vscode.Uri | undefined> = [];
-const messages = {
-  info: [] as string[],
-  warning: [] as string[],
-  error: [] as string[]
-};
 const openedDocuments: string[] = [];
-const shownDocuments: string[] = [];
 const channelLines: string[] = [];
 
 const windowish = stubWindow as unknown as Record<string, unknown>;
-const originalWindow: Record<string, unknown> = {};
-const patchedKeys = [
-  'createWebviewPanel',
-  'showSaveDialog',
-  'showInformationMessage',
-  'showWarningMessage',
-  'showErrorMessage',
-  'showTextDocument'
-];
+const originalShowSaveDialog = windowish.showSaveDialog;
 
 const originalOpenTextDocument = stubWorkspace.openTextDocument;
 
@@ -117,18 +88,24 @@ const makeWebView = (): EntityDependencyWebView => {
   return webview;
 };
 
-const currentPanel = (): StubPanel => panels[panels.length - 1];
+const currentPanel = (): FakeWebviewPanel =>
+  panelRegistry.panels[panelRegistry.panels.length - 1];
 
-const show = async (): Promise<StubPanel> => {
+const show = async (): Promise<FakeWebviewPanel> => {
   await makeWebView().show();
   return currentPanel();
 };
 
 const send = (message: unknown): void => {
-  for (const handler of [...currentPanel().webview.handlers]) {
-    void handler(message);
-  }
+  panelRegistry.fireMessage(currentPanel(), message);
 };
+
+/** webview 侧收到的 postMessage 载荷序列(beginExport 握手等) */
+const postedMessages = (): Array<{ command: string; format?: string }> =>
+  currentPanel().webview.postedMessages.map(entry => entry.message) as Array<{
+    command: string;
+    format?: string;
+  }>;
 
 const until = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> => {
   const deadline = Date.now() + timeoutMs;
@@ -141,67 +118,7 @@ const until = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> 
 };
 
 beforeAll(() => {
-  for (const key of patchedKeys) {
-    originalWindow[key] = windowish[key];
-  }
-  windowish.createWebviewPanel = (
-    viewType: string,
-    title: string,
-    column: number,
-    options: { enableScripts: boolean }
-  ) => {
-    const panel = {
-      viewType,
-      title,
-      column,
-      options,
-      revealCalls: 0,
-      disposeCalls: 0,
-      disposeHandlers: [] as Array<() => void>,
-      webview: {
-        html: '',
-        posted: [] as Array<{ command: string; format?: string }>,
-        handlers: [] as Array<(message: unknown) => void>,
-        onDidReceiveMessage: (handler: (message: unknown) => void) => {
-          panel.webview.handlers.push(handler);
-          return { dispose: () => undefined };
-        },
-        postMessage: async (message: unknown) => {
-          panel.webview.posted.push(message as { command: string; format?: string });
-          return true;
-        }
-      },
-      onDidDispose: (handler: () => void) => {
-        panel.disposeHandlers.push(handler);
-        return { dispose: () => undefined };
-      },
-      reveal: () => {
-        panel.revealCalls += 1;
-      },
-      dispose: () => {
-        panel.disposeCalls += 1;
-      }
-    };
-    panels.push(panel as unknown as StubPanel);
-    return panel;
-  };
   windowish.showSaveDialog = async () => saveDialogUris.shift();
-  windowish.showInformationMessage = async (message: string) => {
-    messages.info.push(message);
-    return undefined;
-  };
-  windowish.showWarningMessage = async (message: string) => {
-    messages.warning.push(message);
-    return undefined;
-  };
-  windowish.showErrorMessage = async (message: string) => {
-    messages.error.push(message);
-    return undefined;
-  };
-  windowish.showTextDocument = async (document: unknown) => {
-    shownDocuments.push(String(document));
-    return {};
-  };
   stubWorkspace.openTextDocument = async (uri: vscode.Uri) => {
     if (String(uri.fsPath).endsWith('/Missing.def')) {
       throw new Error('cannot open');
@@ -212,21 +129,16 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  for (const key of patchedKeys) {
-    windowish[key] = originalWindow[key];
-  }
+  windowish.showSaveDialog = originalShowSaveDialog;
   stubWorkspace.openTextDocument = originalOpenTextDocument;
   memoryFileSystem.reset();
 });
 
 beforeEach(() => {
-  panels.length = 0;
+  panelRegistry.reset();
+  windowState.reset();
   saveDialogUris.length = 0;
-  messages.info.length = 0;
-  messages.warning.length = 0;
-  messages.error.length = 0;
   openedDocuments.length = 0;
-  shownDocuments.length = 0;
   channelLines.length = 0;
   memoryFileSystem.reset();
   stubWorkspace.workspaceFolders = [];
@@ -249,13 +161,13 @@ describe('EntityDependencyWebView.show', () => {
   it('creates the panel and renders the analyzed graph on first show', async () => {
     const panel = await show();
 
-    expect(panels).toHaveLength(1);
+    expect(panelRegistry.panels).toHaveLength(1);
     expect(panel.viewType).toBe('kbengine.entityDependency');
     expect(panel.title).toBe('KBEngine 实体依赖关系');
-    expect(panel.column).toBe(ViewColumn.Two);
-    expect(panel.options.enableScripts).toBe(true);
-    expect(panel.webview.handlers).toHaveLength(1);
-    expect(panel.disposeHandlers).toHaveLength(1);
+    expect(panel.showOptions).toBe(ViewColumn.Two);
+    expect((panel.options as { enableScripts: boolean }).enableScripts).toBe(true);
+    expect(panel.messageListeners).toHaveLength(1);
+    expect(panel.disposeListeners).toHaveLength(1);
     expect(panel.webview.html).toContain('<!DOCTYPE html>');
     expect(panel.webview.html).toContain('graph TD');
     expect(panel.webview.html).toContain('🔵🟢 Hero');
@@ -272,8 +184,8 @@ describe('EntityDependencyWebView.show', () => {
 
     await webview.show();
 
-    expect(panels).toHaveLength(1);
-    expect(panel.revealCalls).toBe(1);
+    expect(panelRegistry.panels).toHaveLength(1);
+    expect(panel.revealed).toBe(true);
   });
 
   it('builds a fresh panel after disposal', async () => {
@@ -281,11 +193,11 @@ describe('EntityDependencyWebView.show', () => {
     await webview.show();
     const first = currentPanel();
 
-    first.disposeHandlers[0]();
+    panelRegistry.fireDispose(first);
     await webview.show();
     const second = currentPanel();
 
-    expect(panels).toHaveLength(2);
+    expect(panelRegistry.panels).toHaveLength(2);
     expect(second).not.toBe(first);
     expect(second.webview.html).toContain('graph TD');
   });
@@ -325,7 +237,7 @@ describe('EntityDependencyWebView message handling', () => {
     await until(() => openedDocuments.length === 1);
 
     expect(openedDocuments[0]).toBe('/ws/entity_defs/Hero.def');
-    expect(shownDocuments).toHaveLength(1);
+    expect(windowState.showTextDocumentCalls).toHaveLength(1);
     expect(messages.warning).toEqual([]);
   });
 
@@ -354,9 +266,9 @@ describe('EntityDependencyWebView message handling', () => {
     saveDialogUris.push(Uri.file('/tmp/kode-dep/graph.png'));
 
     send({ command: 'export', format: 'png' });
-    await until(() => panel.webview.posted.length === 1);
+    await until(() => panel.webview.postedMessages.length === 1);
 
-    expect(panel.webview.posted[0]).toEqual({ command: 'beginExport', format: 'png' });
+    expect(postedMessages()[0]).toEqual({ command: 'beginExport', format: 'png' });
   });
 
   it('silently drops a cancelled export dialog', async () => {
@@ -366,7 +278,7 @@ describe('EntityDependencyWebView message handling', () => {
     send({ command: 'export', format: 'svg' });
     await new Promise(resolve => setTimeout(resolve, 30));
 
-    expect(panel.webview.posted).toEqual([]);
+    expect(panel.webview.postedMessages).toEqual([]);
   });
 
   it('warns when exporting with no graph available', async () => {
@@ -378,7 +290,7 @@ describe('EntityDependencyWebView message handling', () => {
     await new Promise(resolve => setTimeout(resolve, 30));
 
     expect(messages.warning).toEqual(['没有可导出的图表']);
-    expect(currentPanel().webview.posted).toEqual([]);
+    expect(currentPanel().webview.postedMessages).toEqual([]);
   });
 });
 
@@ -391,7 +303,7 @@ describe('EntityDependencyWebView export persistence', () => {
     saveDialogUris.push(Uri.file(graphPath));
 
     send({ command: 'export', format: 'svg' });
-    await until(() => panel.webview.posted.length === 1);
+    await until(() => panel.webview.postedMessages.length === 1);
 
     send({
       command: 'exportData',
@@ -410,7 +322,7 @@ describe('EntityDependencyWebView export persistence', () => {
     saveDialogUris.push(Uri.file(pngPath));
 
     send({ command: 'export', format: 'png' });
-    await until(() => panel.webview.posted.length === 1);
+    await until(() => panel.webview.postedMessages.length === 1);
 
     const payload = Buffer.from('PNG-bytes', 'utf8').toString('base64');
     send({ command: 'exportData', format: 'png', data: payload });
@@ -437,7 +349,7 @@ describe('EntityDependencyWebView export persistence', () => {
     saveDialogUris.push(Uri.file(pngPath));
 
     send({ command: 'export', format: 'png' });
-    await until(() => panel.webview.posted.length === 1);
+    await until(() => panel.webview.postedMessages.length === 1);
 
     send({ command: 'exportData', format: 'png', data: null });
     await until(() => messages.error.length === 1);
@@ -450,7 +362,7 @@ describe('EntityDependencyWebView export persistence', () => {
     saveDialogUris.push(Uri.file(pngPath));
 
     send({ command: 'export', format: 'png' });
-    await until(() => panel.webview.posted.length === 1);
+    await until(() => panel.webview.postedMessages.length === 1);
 
     send({ command: 'exportData', format: 'svg', data: '<svg/>' });
     await until(() => messages.error.length === 1);
@@ -464,7 +376,7 @@ describe('EntityDependencyWebView export persistence', () => {
     saveDialogUris.push(Uri.file(graphPath));
 
     send({ command: 'export', format: 'svg' });
-    await until(() => panel.webview.posted.length === 1);
+    await until(() => panel.webview.postedMessages.length === 1);
 
     const originalWriteFile = stubWorkspace.fs.writeFile;
     stubWorkspace.fs.writeFile = async () => {
@@ -490,6 +402,7 @@ describe('EntityDependencyWebView.dispose', () => {
     webview.dispose();
     webview.dispose();
 
-    expect(panel.disposeCalls).toBe(1);
+    // FakeWebviewPanel.dispose 幂等:二次调用不再触发销毁监听
+    expect(panel.disposed).toBe(true);
   });
 });

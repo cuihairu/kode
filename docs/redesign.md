@@ -159,8 +159,9 @@ tests/fake-vscode/    可编程 vscode 替身（见 3.3）
   脚本化应答（现有 codeGenerator 测试已局部这样做，收敛为公共件）、TextDocument
   打开记录与可编程 showTextDocument（含拒开）。
 - **PanelRegistry**：WebviewPanel 工厂可编程（记录创建参数、捕获
-  `onDidReceiveMessage`、可 fire `onDidDispose`），四个 WebView 的消息域测试全部
-  消费它（替代目前的 monkey-patch 面板工厂）。
+  `onDidReceiveMessage`、可 fire `onDidDispose`），三个 WebView（logViewer/
+  monitoring/entityDependency——`src` 全部 `createWebviewPanel` 消费面）的消息域
+  测试全部消费它（替代目前的 monkey-patch 面板工厂）。
 - **CommandRegistry**：`registerCommand`/`executeCommand` 真记账，使
   `extension.ts` 的 `activate()` 可以在 vitest 内整体装配并断言注册表、状态栏与
   dispose 链——补上 P14。
@@ -283,8 +284,11 @@ L4 真实层（显式化、独立于提交门槛）
 
 ### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档
 
-- 四个 WebView 的面板测试迁到 PanelRegistry；mocha 层裁到烟测集；
-  `testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。
+- WebView 面板测试迁到 PanelRegistry。✅（批55；实际消费面为三个 WebView，
+  原文"四个"计数有误：logWebViewPanel/monitoringPanel/entityDependencyPanel
+  51 用例迁到 panelRegistry 默认假面板，断言语义不变，每文件仅剩
+  showSaveDialog 队列与 fs.writeFile 故障注入两类 patch）
+- mocha 层裁到烟测集；`testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。
 - 更新 `TESTING.md`（新分层说明）、`docs/guide/development.md`、`README.md`。
 - 验收：`pnpm test:unit`（L1-L3）在无引擎、无 VSCode 下载环境下全绿；
   `pnpm test` 全量绿；文档与新架构一致。

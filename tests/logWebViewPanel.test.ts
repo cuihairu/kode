@@ -4,50 +4,28 @@ import { LogViewerWebView } from '../src/logWebView';
 import { LogEntry, LogLevel, LogParser, LogType } from '../src/logParser';
 import type * as vscode from 'vscode';
 import {
+  messages,
+  memoryFileSystem,
+  panelRegistry,
   Uri,
   ViewColumn,
-  memoryFileSystem,
   window as stubWindow,
+  windowState,
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
+import type { FakeWebviewPanel } from './helpers/vscodeStub';
 
 // LogViewerWebView 的面板生命周期:show 的面板创建/复用/重建、经
-// onDidReceiveMessage 捕获的 handler 驱动 handleMessage 六类消息、
-// exportLogs 的保存对话框与内容落盘。collector 用可控假例(记录
-// connect/disconnect/clearLogs 调用、保留订阅回调可手动触发),
-// WebviewPanel 由 monkey-patch 的工厂返回可观察 stub。
+// panelRegistry 捕获的 onDidReceiveMessage handler 驱动 handleMessage
+// 六类消息、exportLogs 的保存对话框与内容落盘。collector 用可控假例
+// (记录 connect/disconnect/clearLogs 调用、保留订阅回调可手动触发)。
+// 面板由 fake-vscode 的 panelRegistry 默认工厂创建(阶段 4:不再
+// monkey-patch 面板工厂),消息三通道直接读 windowState 入账。
 
-interface PanelRecord {
-  viewType: string;
-  title: string;
-  column: number;
-  options: { enableScripts: boolean };
-}
-
-interface StubPanel extends PanelRecord {
-  revealCalls: number;
-  webview: {
-    html: string;
-    handlers: Array<(message: unknown) => void>;
-    onDidReceiveMessage(handler: (message: unknown) => void): { dispose(): void };
-  };
-  disposeHandlers: Array<() => void>;
-  onDidDispose(handler: () => void): { dispose(): void };
-  reveal(): void;
-}
-
-const panels: StubPanel[] = [];
 const saveDialogUris: Array<vscode.Uri | undefined> = [];
-const messages = { info: [] as string[], error: [] as string[] };
 
 const windowish = stubWindow as unknown as Record<string, unknown>;
-const originalWindow: Record<string, unknown> = {};
-const patchedKeys = [
-  'createWebviewPanel',
-  'showSaveDialog',
-  'showInformationMessage',
-  'showErrorMessage'
-];
+const originalShowSaveDialog = windowish.showSaveDialog;
 
 const originalWriteFile = stubWorkspace.fs.writeFile;
 
@@ -122,17 +100,16 @@ let fake: FakeCollector;
 const makeWebView = () =>
   new LogViewerWebView({ extensionUri: Uri.file('/ext/root') } as unknown as vscode.ExtensionContext, fake.collector);
 
-const currentPanel = (): StubPanel => panels[panels.length - 1];
+const currentPanel = (): FakeWebviewPanel =>
+  panelRegistry.panels[panelRegistry.panels.length - 1];
 
-const show = (): StubPanel => {
+const show = (): FakeWebviewPanel => {
   makeWebView().show();
   return currentPanel();
 };
 
 const send = (message: unknown): void => {
-  for (const handler of [...currentPanel().webview.handlers]) {
-    handler(message);
-  }
+  panelRegistry.fireMessage(currentPanel(), message);
 };
 
 const until = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> => {
@@ -146,65 +123,19 @@ const until = async (predicate: () => boolean, timeoutMs = 2000): Promise<void> 
 };
 
 beforeAll(() => {
-  for (const key of patchedKeys) {
-    originalWindow[key] = windowish[key];
-  }
-  windowish.createWebviewPanel = (
-    viewType: string,
-    title: string,
-    column: number,
-    options: { enableScripts: boolean }
-  ) => {
-    const panel = {
-      viewType,
-      title,
-      column,
-      options,
-      revealCalls: 0,
-      disposeHandlers: [] as Array<() => void>,
-      webview: {
-        html: '',
-        handlers: [] as Array<(message: unknown) => void>,
-        onDidReceiveMessage: (handler: (message: unknown) => void) => {
-          panel.webview.handlers.push(handler);
-          return { dispose: () => undefined };
-        }
-      },
-      onDidDispose: (handler: () => void) => {
-        panel.disposeHandlers.push(handler);
-        return { dispose: () => undefined };
-      },
-      reveal: () => {
-        panel.revealCalls += 1;
-      }
-    };
-    panels.push(panel as unknown as StubPanel);
-    return panel;
-  };
   windowish.showSaveDialog = async () => saveDialogUris.shift();
-  windowish.showInformationMessage = async (message: string) => {
-    messages.info.push(message);
-    return undefined;
-  };
-  windowish.showErrorMessage = async (message: string) => {
-    messages.error.push(message);
-    return undefined;
-  };
 });
 
 afterAll(() => {
-  for (const key of patchedKeys) {
-    windowish[key] = originalWindow[key];
-  }
+  windowish.showSaveDialog = originalShowSaveDialog;
   stubWorkspace.fs.writeFile = originalWriteFile;
   memoryFileSystem.reset();
 });
 
 beforeEach(() => {
-  panels.length = 0;
+  panelRegistry.reset();
+  windowState.reset();
   saveDialogUris.length = 0;
-  messages.info.length = 0;
-  messages.error.length = 0;
   memoryFileSystem.reset();
   stubWorkspace.workspaceFolders = [];
   fake = makeFakeCollector();
@@ -219,13 +150,13 @@ describe('LogViewerWebView.show', () => {
     fake.setEntries([entry({ id: 7, message: 'boot sequence' })]);
     const panel = show();
 
-    expect(panels).toHaveLength(1);
+    expect(panelRegistry.panels).toHaveLength(1);
     expect(panel.viewType).toBe('kbengine.logViewer');
     expect(panel.title).toBe('KBEngine Logs');
-    expect(panel.column).toBe(ViewColumn.Two);
-    expect(panel.options.enableScripts).toBe(true);
-    expect(panel.webview.handlers).toHaveLength(1);
-    expect(panel.disposeHandlers).toHaveLength(1);
+    expect(panel.showOptions).toBe(ViewColumn.Two);
+    expect((panel.options as { enableScripts: boolean }).enableScripts).toBe(true);
+    expect(panel.messageListeners).toHaveLength(1);
+    expect(panel.disposeListeners).toHaveLength(1);
     expect(panel.webview.html).toContain('<!DOCTYPE html>');
     expect(panel.webview.html).toContain('FAKE STATUS');
     expect(panel.webview.html).toContain('boot sequence');
@@ -245,21 +176,21 @@ describe('LogViewerWebView.show', () => {
     // panel 是实例私有状态:同一实例二次 show 走 reveal 分支
     webview.show();
 
-    expect(panels).toHaveLength(1);
-    expect(panel.revealCalls).toBe(1);
+    expect(panelRegistry.panels).toHaveLength(1);
+    expect(panel.revealed).toBe(true);
   });
 
   it('builds a fresh panel after the previous one is disposed', () => {
     const webview = makeWebView();
     webview.show();
     const first = currentPanel();
-    expect(first.disposeHandlers).toHaveLength(1);
+    expect(first.disposeListeners).toHaveLength(1);
 
-    first.disposeHandlers[0]();
+    panelRegistry.fireDispose(first);
     webview.show();
     const second = currentPanel();
 
-    expect(panels).toHaveLength(2);
+    expect(panelRegistry.panels).toHaveLength(2);
     expect(second).not.toBe(first);
     expect(second.webview.html).toContain('<!DOCTYPE html>');
   });
