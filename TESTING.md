@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 92.59% |
-| Branches | 83.51% |
-| Functions | 96.18% |
-| Lines | 92.53% |
+| Statements | 92.73% |
+| Branches | 83.85% |
+| Functions | 96.57% |
+| Lines | 92.67% |
 
 纯逻辑层明细:
 
@@ -76,7 +76,7 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | monitoringWebView.ts | 96.9% | 91.8% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 100% | 84.1% |
-| explorerProviders.ts | 97.6% | 85.0% |
+| explorerProviders.ts | 99.2% | 88.5% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -630,6 +630,19 @@ inheritedGroups 非空,groups 恒非空)、readDefinitionStats 的 loader
 空守卫(L982)与 readDefinitionHierarchyStats 的 loader 空守卫
 (L1027,入参路径恒非空)。97.6% 的剩余即这几处与 v8 语句分裂伪影
 (L578/L647/L731/L735/L1003-1004,邻行覆盖即必经)。
+
+批47 把上述"伪影"重新甄别为**可达组合分支**并全部命中(tests/
+explorerProvidersGaps.test.ts 扩至 6 用例):分支数据(if 两侧计数)
+显示 L574 假侧(无继承组+有属性)、L730 真侧(有继承组+自身非 exposed
+方法)、L646 真侧(快照 null)从未走过——不是伪影,是现有夹具没凑出
+组合。四个新用例:无父类实体 P1 让 properties section 直出 items(不
+经 groups 包装);父类 PBase 与子类 P2 都带非 exposed Base 方法(父组
+零方法会被 items 空过滤,Own 与继承组并存);def 是目录的 GhostDir 让
+数据库快照 EISDIR 被.catch、database section 整段缺席;同名命中 def
+补 Interfaces/Components 段让 readDefinitionStats 成功 return 的映射
+回调真实执行。explorerProviders 97.5%→99.2% lines,剩余 3 行即上述
+三处死分支。教训:v8 分支计数(if counts=[0,N])是甄别伪影与可达
+组合的准绳,语句 count=0 只说明该实例未走,须查分支两侧再下结论。
 
 说明:
 
