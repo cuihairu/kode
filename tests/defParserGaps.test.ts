@@ -108,4 +108,20 @@ describe('assignTextNodePosition fallbacks via parseDefDocument', () => {
     expect(textNode.startOffset).toBe(textNode.endOffset);
     expect(textNode.startOffset).toBeGreaterThanOrEqual(9);
   });
+
+  it('skips processing instructions from the node tree at any depth', () => {
+    // fxp preserveOrder 把 <?pi?> 产成 '?pi' 键(注释默认忽略不产出),
+    // 归一化循环对其 continue:顶层与子节点位置的处理指令都不入节点树
+    const document = parseDefDocument([
+      '<?render mode="fast"?>',
+      '<root>',
+      '  <?stage one?>',
+      '  <Child/>',
+      '</root>'
+    ].join('\n'));
+
+    expect(document.nodes).toHaveLength(1);
+    expect(document.root?.name).toBe('root');
+    expect(getDirectChildElement(document.root as DefElementNode, 'Child')).toBeTruthy();
+  });
 });

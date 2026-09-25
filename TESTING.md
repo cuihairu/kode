@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 92.73% |
-| Branches | 83.85% |
+| Statements | 92.75% |
+| Branches | 83.89% |
 | Functions | 96.57% |
-| Lines | 92.67% |
+| Lines | 92.70% |
 
 纯逻辑层明细:
 
@@ -58,7 +58,7 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | kbengineMetadata.ts | 100% | 100% |
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
-| defParser.ts | 98.7% | 90.8% |
+| defParser.ts | 99.4% | 91.8% |
 | definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 90.4% |
@@ -643,6 +643,18 @@ explorerProvidersGaps.test.ts 扩至 6 用例):分支数据(if 两侧计数)
 回调真实执行。explorerProviders 97.5%→99.2% lines,剩余 3 行即上述
 三处死分支。教训:v8 分支计数(if counts=[0,N])是甄别伪影与可达
 组合的准绳,语句 count=0 只说明该实例未走,须查分支两侧再下结论。
+
+批48 以同一准绳复审其余"死分支"定案并修正一处(测试文件 defParser
+Gaps.test.ts 扩至 10 用例):批35 归为伪影的 defParser L278-279
+(isNonElementXmlNode continue)实为可达——fxp preserveOrder 对
+`<?pi?>` 产出 '?pi' 键(实验验证),顶层或子节点含处理指令即命中;
+新用例以顶层+子节点双处理指令的 def 驱动,节点树只保留元素。L268
+(rawNode 空守卫)维持死分支:fxp preserveOrder 数组元素恒为对象,
+契约性不可达。monitoringCollector L402(case 5 break)复核为纯 v8
+语句粒度伪影:switch 分支计数显示 case 5 真侧走过 5 次,break 语句
+实例记账为 0。defParser 98.7%→99.4% lines,剩余 1 行即 L268。至此
+除 languageProviders(64.2%,并行会话文件)外,全部源码文件的剩余
+未覆盖行均已定案:结构死分支、类型级死分支或 v8 记账伪影。
 
 说明:
 
