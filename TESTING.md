@@ -41,14 +41,14 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
-vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
+vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 92.52% |
-| Branches | 83.39% |
+| Statements | 92.59% |
+| Branches | 83.51% |
 | Functions | 96.18% |
-| Lines | 92.46% |
+| Lines | 92.53% |
 
 纯逻辑层明细:
 
@@ -76,7 +76,7 @@ vitest 覆盖率(2026-09-24,`pnpm test:coverage`):
 | monitoringWebView.ts | 96.9% | 91.8% |
 | entityDependencyWebView.ts | 97.9% | 92.9% |
 | debugConfig.ts | 100% | 84.1% |
-| explorerProviders.ts | 96.7% | 83.8% |
+| explorerProviders.ts | 97.6% | 85.0% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -615,6 +615,21 @@ monitoringWebViewGaps.test.ts,1 用例):不 show 直接调用守卫早退,
 只有声明与两处清理(面板 onDidDispose 与 dispose),没有任何调度
 赋值点,恒为 null,清理分支内部语句(L81-82/L1115-1116)为结构
 死分支。96.9% 的剩余即这四处。
+
+explorerProviders 的统计与层级回落缺口已补齐(tests/explorerProvidersGaps
+.test.ts,3 用例):readDefinitionStats 把入参整体当工作区根、本地名取
+basename——用临时目录名与 `<目录名>.def` 同名命中真实解析路径,ARRAY-of
+属性(bag)走扁平化 arrayElement 分支且元素子属性(`bag[]`)被
+toStatsFromProperties 的 '.'/'[]' 过滤滤出名单,普通属性 focus 保留;
+buildDefinitionDescription 的未注册实体徽章回落(无 runtimeProfile 走
+else 拼 Base/Cell/Client + Unregistered);readDefinitionHierarchyStats
+对 def 文件缺失的条目 loadResolved 返 null,回落 local-only(经
+readDefinitionStats 的 catch 全吞返空 shape)。三条死分支如实记录:
+createMethodSectionDescriptor 的 groups 空守卫(L741,进入前置是
+inheritedGroups 非空,groups 恒非空)、readDefinitionStats 的 loader
+空守卫(L982)与 readDefinitionHierarchyStats 的 loader 空守卫
+(L1027,入参路径恒非空)。97.6% 的剩余即这几处与 v8 语句分裂伪影
+(L578/L647/L731/L735/L1003-1004,邻行覆盖即必经)。
 
 说明:
 
