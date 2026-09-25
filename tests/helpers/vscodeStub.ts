@@ -12,21 +12,35 @@ export class Range {
   ) {}
 }
 
+const URI_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/?\/?/;
+
 export class Uri {
+  readonly scheme: string;
+  readonly path: string;
+
   static file(fsPath: string): Uri {
-    return new Uri(fsPath);
+    return new Uri(fsPath, 'file');
   }
 
   static parse(value: string): Uri {
-    return new Uri(value);
+    // 带自定义 scheme 的虚拟 URI(如 kbengine-db-schema:/Hero.schema):
+    // scheme 单独记账,剩余部分作为 fsPath/path 供文档定位使用。
+    const match = URI_SCHEME_PATTERN.exec(value);
+    if (match && match[1] !== 'file') {
+      return new Uri(value.slice(match[0].length), match[1]);
+    }
+    return new Uri(value, 'file');
   }
 
   static joinPath(base: Uri, ...segments: string[]): Uri {
     const baseDir = base.fsPath.replace(/\/+$/, '');
-    return new Uri([baseDir, ...segments].join('/'));
+    return new Uri([baseDir, ...segments].join('/'), base.scheme);
   }
 
-  private constructor(public readonly fsPath: string) {}
+  private constructor(public readonly fsPath: string, scheme: string) {
+    this.scheme = scheme;
+    this.path = fsPath;
+  }
 
   toString(): string {
     return this.fsPath;
@@ -143,11 +157,21 @@ export const fs = {
   }
 };
 
+// 按配置段覆写 getConfiguration 返回值(如 hover.showValueDocs=false);
+// 未覆写的键回落到实现提供的默认值。
+export const configurationOverrides = new Map<string, Record<string, unknown>>();
+
 export const workspace = {
   workspaceFolders: [] as Array<{ uri: Uri; name: string; index: number }>,
   fs,
   findFiles: async () => [] as Uri[],
-  getConfiguration: () => ({ get: <T>(_key: string, defaultValue: T): T => defaultValue }),
+  getConfiguration: (section?: string) => ({
+    get: <T>(key: string, defaultValue: T): T => {
+      const overrides = section ? configurationOverrides.get(section) : undefined;
+      const value = overrides ? overrides[key] : undefined;
+      return (value === undefined ? defaultValue : value) as T;
+    }
+  }),
   openTextDocument: async () => ({ uri: Uri.file('') }),
   createFileSystemWatcher: (): StubFileSystemWatcher => {
     const changeListeners: Array<(uri: Uri) => void> = [];
@@ -306,11 +330,11 @@ export interface MinimalTextDocument {
 
 export function makeTextDocument(
   text: string,
-  options?: { fileName?: string; languageId?: string }
+  options?: { fileName?: string; languageId?: string; uri?: Uri }
 ): MinimalTextDocument {
   const fileName = options?.fileName ?? '/tmp/Anonymous.def';
   const languageId = options?.languageId ?? 'kbengine-def';
-  const uri = Uri.file(fileName);
+  const uri = options?.uri ?? Uri.file(fileName);
   const lineStarts: number[] = [0];
   for (let i = 0; i < text.length; i += 1) {
     if (text[i] === '\n') {
