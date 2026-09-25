@@ -309,13 +309,14 @@ describe('KBEngineDatabaseSchemaProvider', () => {
   it('fires change events for a named entity and ignores empty names', () => {
     const provider = new KBEngineDatabaseSchemaProvider();
     const fired: string[] = [];
-    provider.onDidChange(uri => fired.push(uri.toString()));
+    // vscodeStub 的 uri.scheme 单独记账:拼 scheme+fsPath 验证虚拟 URI 形态
+    provider.onDidChange(uri => fired.push(`${uri.scheme}:${uri.fsPath}`));
 
     provider.refresh(undefined);
     expect(fired).toEqual([]);
 
     provider.refresh('Hero');
-    expect(fired).toEqual(['kbengine-db-schema:/Hero.schema']);
+    expect(fired).toEqual(['kbengine-db-schema:Hero.schema']);
 
     provider.dispose();
   });

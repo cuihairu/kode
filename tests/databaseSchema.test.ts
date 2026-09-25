@@ -51,8 +51,9 @@ describe('createDatabaseSchemaUri and isDatabaseSchemaDocument', () => {
   it('builds the virtual document uri and round-trips the scheme check', () => {
     const uri = createDatabaseSchemaUri('Hero');
 
-    // vscodeStub 的 Uri 只带 fsPath(= parse 输入),scheme 由 toString 前缀验证
-    expect(uri.toString()).toBe('kbengine-db-schema:/Hero.schema');
+    // vscodeStub 的 Uri.parse 把 scheme 记在 scheme 字段,剩余部分作为 fsPath
+    expect(uri.scheme).toBe(KBENGINE_DATABASE_SCHEMA_SCHEME);
+    expect(uri.fsPath).toBe('Hero.schema');
     expect(isDatabaseSchemaDocument({ uri: { scheme: KBENGINE_DATABASE_SCHEMA_SCHEME } })).toBe(true);
     expect(isDatabaseSchemaDocument({ uri: { scheme: 'file' } })).toBe(false);
   });

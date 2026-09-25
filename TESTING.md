@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 94.41% |
-| Branches | 86.17% |
-| Functions | 97.23% |
-| Lines | 94.33% |
+| Statements | 96.60% |
+| Branches | 89.48% |
+| Functions | 98.28% |
+| Lines | 96.57% |
 
 纯逻辑层明细:
 
@@ -63,7 +63,7 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 90.4% |
 | entityMapping.ts | 97.9% | 89.1% |
-| languageProviders.ts | 73.1% | 66.7% |
+| languageProviders.ts | 85.3% | 82.1% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
 | databaseSchema.ts | 99.4% | 94.4% |
@@ -669,6 +669,39 @@ Base/Cell/Client 运行时行)、python 文档钩子悬停与热更函数悬停�
 root 空文档。钩子名以 KBENGINE_HOOKS[0].name 动态构造(批18 铁律,
 猜 'onSave'/'onInit' 两度落空)。剩余为悬停内部工具、数据库 schema
 双向跳转与 python 自补全/调用层级链路,后续批次继续。
+
+批50 开补悬停内部工具与数据库 schema 双向跳转(tests/
+languageProvidersInternals.test.ts,40 用例;vscodeStub 扩展 Uri 的
+scheme/parse/joinPath、makeTextDocument 的 uri 注入与
+configurationOverrides 配置覆写):symbol 悬停的 DetailLevel/
+DatabaseLength/Identifier 附加行与 Args/Exposed 方法行、reload 函数
+悬停与 showValueDocs=false 的值文档关断;Type 值引用悬停(Entity/
+Component 类型与 runtime 档案行、FIXED_DICT 的 Properties 详情与
+UNKNOWN 回落)、entities.xml 注册悬停(declared enabled/disabled、
+inferred from script、not declared no script、无 workspace 回落)、
+诊断重复定义的父类/接口/组件/易变同步四区块标签与自定义类型在无
+workspace/空 workspace 下的 unverifiable 回落;定义跳转的
+implementedBy → python、坏 xml null、无 python 文件 null、属性值词
+null、当前文档自含定义优先(types.xml 文档内 LOCALX 定义行)、类型
+值 → 实体 def 与全落空 null;schema 双向跳转的 def 属性 → 虚拟
+schema 文档、schema 字段/表行 → def 源行、无 def 实体的 schema 文档
+null、非字段行 null、快照缺字段 null、无快照实体 null、无 schema
+目标属性 null;def 内引用跳转的 Arg 值 → 实体 def、Parent 子标签 →
+兄弟 def(components/ 文档内走组件目录分支)、自引用 def 无行号
+null、无 manager 的方法符号 null;诊断区间回落(注释拆分值文本时
+indexOf 落空,回落到节点值区间)。剩余未覆盖行全部定案:死分支
+L407(hook 尾部命中——earlyHook 同词先行,showValueDocs=false 时
+整段关闭,两条件互斥)、L1216(runtimeProfile null 与 entityInfo
+null 同条件,L1179 已挡)、L1303/L1308(getDefNodeAtWord 入口与内部
+同 position 同 /\w+/ 幂等)、L1363(customTypes.has 与
+findCustomTypeDeclarationInfo 同 snapshot 恒等)、L1553(types.xml
+顶级元素恒在类型注册表)、L1558(parseDefAst 对 types.xml 恒成功)、
+L1578(需 parseDefDocument 成功且 root 缺失且光标有词的组合矛盾)、
+L1764(同参二次解析恒同)、L1799(前级两 then 恒返回 Location),
+及牵强组合 L1548(属性值词须同时绕过四处入口且值词与元素名错位,
+无自然场景)。languageProviders 73.1%→85.3% lines,总覆盖
+94.33%→96.57% lines。剩余为 python 侧链路(自补全/定义/调用层级,
+L1888-2147),批51 继续。
 
 说明:
 
