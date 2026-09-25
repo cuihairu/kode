@@ -265,6 +265,30 @@ export class Hover {
   constructor(public contents: MarkdownString | MarkdownString[]) {}
 }
 
+// call hierarchy 三件套(真实 vscode 构造签名对齐;SymbolKind.Method=6)
+export enum SymbolKind {
+  Method = 6
+}
+
+export class CallHierarchyItem {
+  constructor(
+    public kind: SymbolKind,
+    public name: string,
+    public detail: string,
+    public uri: Uri,
+    public range: Range,
+    public selectionRange: Range
+  ) {}
+}
+
+export class CallHierarchyIncomingCall {
+  constructor(public item: CallHierarchyItem, public fromRanges: Range[]) {}
+}
+
+export class CallHierarchyOutgoingCall {
+  constructor(public item: CallHierarchyItem, public toRanges: Range[]) {}
+}
+
 // vscode.Location 第二参接受 Range|Position;传 Position 时真实 vscode
 // 包装为 start=end 的 Range,stub 对齐该语义(languageProviders 全部传 Position)。
 export class Location {

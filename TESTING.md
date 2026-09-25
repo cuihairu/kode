@@ -45,10 +45,10 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 96.60% |
-| Branches | 89.48% |
-| Functions | 98.28% |
-| Lines | 96.57% |
+| Statements | 99.02% |
+| Branches | 91.92% |
+| Functions | 100% |
+| Lines | 98.99% |
 
 纯逻辑层明细:
 
@@ -63,13 +63,13 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 90.4% |
 | entityMapping.ts | 97.9% | 89.1% |
-| languageProviders.ts | 85.3% | 82.1% |
+| languageProviders.ts | 98.6% | 93.5% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
 | databaseSchema.ts | 99.4% | 94.4% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 95.1% |
-| definitionWorkspace.ts | 98.9% | 91.0% |
+| definitionWorkspace.ts | 98.9% | 91.5% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 80.9% |
 | logWebView.ts | 100% | 96.9% |
@@ -702,6 +702,29 @@ L1764(同参二次解析恒同)、L1799(前级两 then 恒返回 Location),
 无自然场景)。languageProviders 73.1%→85.3% lines,总覆盖
 94.33%→96.57% lines。剩余为 python 侧链路(自补全/定义/调用层级,
 L1888-2147),批51 继续。
+
+批51 开补 python 侧链路(tests/pythonProvidersInternals.test.ts,
+25 用例;vscodeStub 补 SymbolKind/CallHierarchyItem/Incoming/
+OutgoingCall 四件套)。PythonDefinitionProvider:self 属性访问按
+fullPath+rootSymbol 跳 def 属性定义、嵌套访问(bag.coins)整路径
+解析、属性解析 null 回落方法定义、def 方法声明行跳转、声明解析
+null 与光标在 def 关键字上(名字外)的 null;KBEngineCallHierarchy
+Provider:python 文档按 1-based 行号解析方法位置产出 CallHierarchy
+Item、def 方法桥接到 python 实现(resolveDefinitionSymbolAtPosition
+→resolveMethodImplementationByIdentity 两跳)、非 method 区块 null、
+identity null、implementation null、无词位置 null、其他语言 null、
+incoming/outgoing 调用清单(caller/callee item 与 from/to ranges,
+区间长度=方法名长度);PythonCompletionProvider:非 self 行 null、
+无 mapping null、self. 顶级补全(属性带点路径跳过、空方法表跳过、
+exposed detail 区分)、partial 前缀过滤、嵌套 self.bag. 补全
+(Nested Entity Property)、嵌套 partial 过滤、空段跳过与同段去重;
+KBEngineCompletionProvider 的 <Type> 前缀已知类型建议(内建 +
+types.xml 自定义 + entities.xml 实体三元合一,补此前批次漏网)。批51
+新增死分支定案:L1969(prepareCallHierarchy 的 !ast 早退——
+symbolInfo 非 null 已证 parseDefAst 成功,同参二次解析恒同)。至此
+languageProviders 全文件仅剩 11 行死分支(L407/L1216/L1303/L1308/
+L1363/L1553/L1558/L1578/L1764/L1799/L1969),functions 全项目 100%,
+languageProviders 85.3%→98.6% lines,总覆盖 96.57%→98.99% lines。
 
 说明:
 
