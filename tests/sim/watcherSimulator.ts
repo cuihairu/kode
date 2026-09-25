@@ -56,6 +56,12 @@ export class WatcherSimulator {
     const dirKeys = options.dirKeys ?? [];
 
     const server = net.createServer(socket => {
+      // 客户端在 results>=2 后提前拆除连接(接收缓冲尚有未读字节时 destroy
+      // 会对端收 RST),服务侧必须容忍早关,否则未处理的 'error' 在并行负载
+      // 下演变成未捕获异常炸掉测试进程
+      socket.on('error', () => {
+        // 客户端提前关闭属于协议允许的收尾方式,静默吸收
+      });
       socket.on('data', data => {
         let offset = 0;
         while (offset + 4 <= data.length) {

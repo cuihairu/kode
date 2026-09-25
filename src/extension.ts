@@ -211,13 +211,15 @@ export function activate(context: vscode.ExtensionContext) {
       methodName?: string,
       section?: EntityMethodSection
     ) => {
-      const label = typeof identityOrEntityName === 'string'
-        ? `${identityOrEntityName}.${methodName || ''} (${section || ''})`
-        : `${identityOrEntityName.ownerName}.${identityOrEntityName.symbolName} (${identityOrEntityName.section || ''})`;
-
+      // 空目标早退必须先于 label 拼接:原实现先读 identityOrEntityName.ownerName,
+      // 无参调用(命令面板)会在守卫前抛 TypeError——装配测试锁定的真实缺陷
       if (!identityOrEntityName) {
         return;
       }
+
+      const label = typeof identityOrEntityName === 'string'
+        ? `${identityOrEntityName}.${methodName || ''} (${section || ''})`
+        : `${identityOrEntityName.ownerName}.${identityOrEntityName.symbolName} (${identityOrEntityName.section || ''})`;
 
       try {
         const didOpen = typeof identityOrEntityName === 'string'

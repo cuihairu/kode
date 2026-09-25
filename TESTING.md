@@ -7,7 +7,8 @@
 | 层 | 框架 | 位置 | 职责 |
 |----|------|------|------|
 | 纯逻辑层 | vitest | `tests/` | 不依赖 vscode API 的模块:def 解析、元数据、钩子数据、片段、日志解析、Python 补全上下文等 |
-| 仿真器层 | vitest | `tests/sim/` | 本地 KBEngine 仿真基座:MachineSimulator(UDP 发现应答)、WatcherSimulator(组件 watcher TCP 服务)、SimCluster(一键拓扑);端口全部动态分配,组件包/watcher 帧复用生产侧编解码器(buildComponentInfo/buildWatcher*FrameBody),见 docs/redesign.md |
+| 仿真器层 | vitest | `tests/sim/` | 本地 KBEngine 仿真基座:MachineSimulator(UDP 发现应答)、WatcherSimulator(组件 watcher TCP 服务)、SimCluster(一键拓扑)、FakeComponentBin(可编程假组件二进制);端口全部动态分配,组件包/watcher 帧复用生产侧编解码器(buildComponentInfo/buildWatcher*FrameBody),见 docs/redesign.md |
+| vscode 替身层 | vitest | `tests/fake-vscode/` | 可编程 vscode 替身:core(值类型)/workspaceState(文档集合+可 fire 事件)/windowState(消息/通道/状态栏/树视图登记)/commandRegistry(registerCommand 记账+executeCommand 真分发)/languages(provider 注册记账)/panelRegistry(记录型假 WebviewPanel);tests/helpers/vscodeStub.ts 是它们的兼容 re-export 薄壳,monkey-patch 语义不变 |
 | vscode 集成层 | mocha + @vscode/test-electron | `src/test/suite/` | 需要真实 vscode API 的用例:补全/hover/诊断提供者、explorer、扩展激活、require 缓存隔离的集成测试 |
 
 两套用 vitest 的 `include: ['tests/**/*.test.ts']` 与 tsconfig 的 `exclude: ["tests"]` 严格隔离。
@@ -42,14 +43,14 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
-vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
+vitest 覆盖率(2026-09-25,`pnpm test:coverage`,批54 起 extension.ts 计入分母):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 99.02% |
-| Branches | 91.92% |
+| Statements | 99.03% |
+| Branches | 91.76% |
 | Functions | 100% |
-| Lines | 98.99% |
+| Lines | 99.01% |
 
 纯逻辑层明细:
 
@@ -62,8 +63,8 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | defParser.ts | 99.4% | 91.8% |
 | definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
-| kbengineProtocol.ts | 100% | 90.4% |
-| entityMapping.ts | 97.9% | 89.1% |
+| kbengineProtocol.ts | 100% | 91.2% |
+| entityMapping.ts | 97.9% | 88.7% |
 | languageProviders.ts | 98.6% | 93.5% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
@@ -72,12 +73,13 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`):
 | codeGenerator.ts | 100% | 95.1% |
 | definitionWorkspace.ts | 98.9% | 91.5% |
 | serverCommandTarget.ts | 100% | 100% |
-| serverManager.ts | 100% | 80.9% |
+| serverManager.ts | 100% | 82.6% |
 | logWebView.ts | 100% | 96.9% |
 | monitoringWebView.ts | 96.9% | 91.8% |
-| entityDependencyWebView.ts | 97.9% | 92.9% |
-| debugConfig.ts | 100% | 84.1% |
+| entityDependencyWebView.ts | 97.9% | 95.2% |
+| debugConfig.ts | 100% | 87.3% |
 | explorerProviders.ts | 99.2% | 88.5% |
+| extension.ts | 99.5% | 79.0% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -733,17 +735,45 @@ languageProviders 全文件仅剩 11 行死分支(L407/L1216/L1303/L1308/
 L1363/L1553/L1558/L1578/L1764/L1799/L1969),functions 全项目 100%,
 languageProviders 85.3%→98.6% lines,总覆盖 96.57%→98.99% lines。
 
+批54 落地重设计阶段 3(tests/fake-vscode/ 五模块 + tests/extension.test.ts
+6 用例):vscodeStub.ts 改为纯 re-export 薄壳——值类型迁 core.ts,workspace/
+window 状态化(workspaceState/windowState:消息三通道入账、输出通道/状态栏/
+树视图登记、textDocuments、可 fire 的三个工作区事件、contentProvider 记账),
+新增 commandRegistry(registerCommand 记账 + executeCommand 真分发)、
+languages(provider 注册记账)与 panelRegistry(记录型假 WebviewPanel,阶段 4
+消费)。33 个既有文件的 import 路径与 monkey-patch 语义零改动。extension.ts
+装配测试断言:注册面与 package.json 贡献点双向一致(21 命令/2 视图/6 语言
+注册/schema provider/状态栏)、21 条命令真分发(含 FakeComponentBin 真实进程
+的 start/stop/restart/showLogs 与状态栏运行数联动、debug 选中分支、三类
+打开命令的 catch 与空目标早退)、dispose 链逐项拆除、工作区初始扫描与
+documentChanged/documentOpened/configurationChanged 事件联动。两个教训:
+真实 vscode 未打开文件夹时 workspaceFolders === undefined,而空数组是
+truthy——置 [] 会误入"有工作区"分支,须显式 undefined;假组件经 shebang
+启动 node,并行负载下 stdout 标记可能晚于 1 秒 Running 宽限期到达,断言须
+轮询等待。批54 由装配测试修出真实缺陷:kbengine.entity.method.open 的空目标
+守卫位于 label 拼接之后,命令面板无参调用在守卫前抛 TypeError——守卫上移。
+extension.ts 99.5% lines / 100% functions,总覆盖 98.99%→99.01% lines。
+批54 顺带固化两处进程时序易碎点(全量并行下复现):serverManagerProcesses
+的 Running 断言后 stdout 三段输出(标记/cwd/环境回显)改为轮询等待;秒退
+行为的假组件在 POSIX 下改用 /bin/sh 脚本——node 解释器冷启动可能超过 1 秒
+启动宽限期,"秒退不触发启动成功提示"的断言不再依赖启动速度。
+
 说明:
 
-- extension.ts 依赖 vscode 激活生命周期,未被任何 vitest 用例 import,
-  不进覆盖率报告(报告口径为 vitest 实际加载的 23 个源码文件);其行为由
-  mocha/@vscode/test-electron 侧的 110 个用例覆盖,两个 runner 的覆盖率不做
+- 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
+  deactivate 由 tests/extension.test.ts 的 fake-vscode 装配测试驱动
+  (6 用例,详见 docs/redesign.md 阶段 3),99.5% lines / 100% functions,
+  唯一未盖 L234 是 openMethodTarget 永不抛错(内部自带 catch)导致的防御
+  catch,如实记录。mocha 侧 110 用例继续独立运行,两 runner 覆盖率不做
   工具级合并。
-- 总体百分比低是因为分母包含全部 23 个源码文件;随纯逻辑测试推进持续抬升,
+- 总体百分比的分母包含全部源码文件;随测试推进持续抬升,
   每次抬升后更新本表。
 
 ## 近期由测试发现并修复的真实缺陷
 
+- `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
+  拼接之后——命令面板无参调用在守卫前抛 TypeError → 守卫上移(批54 装配
+  测试发现)。
 - `workspacePath.ts` win32 分支在非 Windows 主机上因平台隐式 `path.join` 产出生
   混合分隔符的路径 → 改为显式 `path.win32.join`。
 - `snippets/kbengine.json` 的 `ARRAY<x>` 内联写法引擎不解析(FixedArrayType 强制

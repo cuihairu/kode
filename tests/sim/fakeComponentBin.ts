@@ -11,7 +11,10 @@ import * as path from 'path';
  * 行为规格(docs/redesign.md 阶段 2):
  * - run:常驻;可先打印启动标记、cwd、指定环境变量的注入值
  * - stderr:常驻;先向 stderr 输出一段文本
- * - exit:启动后立即以给定退出码退出
+ * - exit:启动后立即以给定退出码退出。POSIX 下用 /bin/sh 脚本——node
+ *   解释器冷启动在并行负载下可能超过 serverManager 的 1 秒启动宽限期,
+ *   会让"秒退进程不触发启动成功提示"的断言变成时序抽奖;sh 启动毫秒级,
+ *   退出确定性早于宽限期(win32 仍用 node 脚本,该平台无 shebang 语义)
  * - ignore-sigterm:先安装 SIGTERM 处理器再打印标记(标记出现即证明
  *   忽略已生效,规避"信号抢在 trap 安装前送达"的竞态),然后常驻,
  *   只能被 SIGKILL 杀死
@@ -36,7 +39,7 @@ export type FakeComponentBehavior =
 
 const KEEPALIVE = 'setInterval(function () {}, 3600000);';
 
-const scriptBody = (behavior: FakeComponentBehavior): string => {
+const scriptBody = (behavior: FakeComponentBehavior): { shebang: string; body: string } => {
   switch (behavior.kind) {
     case 'run': {
       const lines: string[] = [];
@@ -55,18 +58,23 @@ const scriptBody = (behavior: FakeComponentBehavior): string => {
         lines.push(`process.stderr.write(${JSON.stringify(`${behavior.stderr}\n`)});`);
       }
       lines.push(KEEPALIVE);
-      return lines.join('\n');
+      return { shebang: '#!/usr/bin/env node', body: lines.join('\n') };
     }
     case 'exit':
-      return `process.exit(${behavior.code});`;
+      return process.platform === 'win32'
+        ? { shebang: '#!/usr/bin/env node', body: `process.exit(${behavior.code});` }
+        : { shebang: '#!/bin/sh', body: `exit ${behavior.code};` };
     case 'ignore-sigterm':
-      return [
-        'process.on("SIGTERM", function () {});',
-        `process.stdout.write(${JSON.stringify(`${behavior.marker ?? 'sigterm-ignored'}\n`)});`,
-        KEEPALIVE
-      ].join('\n');
+      return {
+        shebang: '#!/usr/bin/env node',
+        body: [
+          'process.on("SIGTERM", function () {});',
+          `process.stdout.write(${JSON.stringify(`${behavior.marker ?? 'sigterm-ignored'}\n`)});`,
+          KEEPALIVE
+        ].join('\n')
+      };
     case 'unexecutable':
-      return KEEPALIVE;
+      return { shebang: '#!/usr/bin/env node', body: KEEPALIVE };
     default:
       throw new Error(`Unknown fake component behavior: ${(behavior as { kind: string }).kind}`);
   }
@@ -85,7 +93,8 @@ export class FakeComponentBin {
   /** 生成一个假组件可执行文件,返回其绝对路径 */
   write(name: string, behavior: FakeComponentBehavior): string {
     const scriptPath = path.join(this.binPath, name);
-    fs.writeFileSync(scriptPath, `#!/usr/bin/env node\n${scriptBody(behavior)}\n`, 'utf8');
+    const { shebang, body } = scriptBody(behavior);
+    fs.writeFileSync(scriptPath, `${shebang}\n${body}\n`, 'utf8');
     fs.chmodSync(scriptPath, behavior.kind === 'unexecutable' ? 0o000 : 0o755);
     return scriptPath;
   }

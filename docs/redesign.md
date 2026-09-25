@@ -251,12 +251,35 @@ L4 真实层（显式化、独立于提交门槛）
   同步 throw 走 catch）。
 - 验收：全部通过（见批53 commit）。✅
 
-### 阶段 3：FakeVscode 基建 + extension.ts 入测
+### 阶段 3：FakeVscode 基建 + extension.ts 入测 ✅（批54）
 
-- `tests/fake-vscode/`：WorkspaceState/WindowState/PanelRegistry/CommandRegistry。
-- `vscodeStub.ts` 改为兼容 re-export；新增 `extension.ts` 的 activate/dispose
-  装配测试（L3）。
-- 验收：extension.ts 进覆盖率分母且激活链各注册点被断言；现有 701 用例不破坏。
+- `tests/fake-vscode/` 五模块落地。✅
+  - `core.ts`：值类型（Position/Range/Uri/EventEmitter/TreeItem/Diagnostic
+    系/makeTextDocument 等，自旧 stub 原样迁入）+ 新增 StatusBarAlignment。
+  - `workspaceState.ts`：状态化 workspace——内存 fs、配置覆写、文档集合
+    （textDocuments）、三个可 fire 的工作区事件（documentChanged/
+    documentOpened/configurationChanged）、TextDocumentContentProvider 记账。
+  - `windowState.ts`：消息三通道入账、输出通道/状态栏/树视图登记、
+    showInputBox/showQuickPick/showSaveDialog 默认取消、createWebviewPanel
+    默认走 panelRegistry。
+  - `commandRegistry.ts`：registerCommand 真记账、executeCommand 真分发。
+  - `languages.ts`：四类 provider 注册记账 + DiagnosticCollection 入册。
+  - `panelRegistry.ts`：记录型假 WebviewPanel（捕获 onDidReceiveMessage/
+    onDidDispose、postMessage 入账、可 fire）——阶段 4 WebView 迁移的消费面。
+- `vscodeStub.ts` 改为纯 re-export 薄壳。✅ 33 个既有测试文件的 import 路径
+  与 monkey-patch 语义（共享同一可变对象）全部不变，718 用例零改动通过。
+- `extension.ts` 装配测试入测（tests/extension.test.ts，6 用例）。✅
+  注册面与 package.json 贡献点双向严格一致（21 命令/2 视图/6 语言服务注册/
+  虚拟文档 provider/状态栏参数与隐藏态）、21 条命令经 executeCommand 真分发
+  （含 FakeComponentBin 真实进程的 start/stop/restart/showLogs 全链路与状态栏
+  运行数联动）、dispose 链逐项拆除注册面、工作区分支的初始扫描与三类事件
+  联动、无工作区（workspaceFolders === undefined，空数组是 truthy）分支。
+- 验收达成：extension.ts 进覆盖率分母，99.5% lines / 100% functions
+  （唯一未盖 L234 为 openMethodTarget 永不抛错的防御 catch）；总体覆盖率
+  98.99%→99.01% lines（extension.ts 计入后不降反升）。✅
+- 顺带修出真实缺陷：`kbengine.entity.method.open` 的空目标守卫位于 label
+  拼接之后——命令面板无参调用会在守卫前抛 TypeError；守卫上移（行为仅在
+  原"抛错"场景变为静默 no-op）。
 
 ### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档
 
@@ -272,7 +295,7 @@ L4 真实层（显式化、独立于提交门槛）
 |------|------|---------------|
 | 1 | ✅ 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
 | 2 | ✅ 完成（批53） | FakeComponentBin + ProcessRunner 注入 + 进程编排测试迁移 |
-| 3 | 未开始 | — |
+| 3 | ✅ 完成（批54） | fake-vscode 五模块 + vscodeStub 兼容壳 + extension.ts 入测(99.5%) |
 | 4 | 未开始 | — |
 
 ## 7. 风险与对策

@@ -18,10 +18,10 @@ export default defineConfig({
     // 见 docs/redesign.md 阶段 1),文件级并行不再有固定端口争用。
     coverage: {
       provider: 'v8',
-      // 覆盖率如实统计全部 src 源码:依赖 vscode API 的模块在 vitest 下
-      // 无法执行,会按 0% 计入,这是真实覆盖水平,不做剔除美化。
+      // 覆盖率如实统计全部 src 源码:重设计阶段 3 起 extension.ts 的
+      // activate/deactivate 由 fake-vscode 装配测试驱动,进分母(P14/P16)。
       include: ['src/**/*.ts'],
-      exclude: ['src/test/**', 'src/extension.ts'],
+      exclude: ['src/test/**'],
       reporter: ['text', 'json-summary'],
       reportsDirectory: 'coverage'
     }

@@ -224,6 +224,15 @@ describe('KBEngineServerManager real process lifecycle', () => {
     expect(statusFires).toBeGreaterThan(0);
 
     await until(() => manager.getServerStatus('long') === ServerStatus.Running);
+    // 假组件经 shebang 启动 node,并行负载下 stdout 三段输出(标记/cwd/
+    // 环境回显)可能晚于 1 秒 Running 宽限期、且分属多个 data 事件到达
+    // (与 stderr 用例同型,轮询等待而非假设已在)
+    await until(() => {
+      const joined = (running.get('long')?.logs ?? []).join('');
+      return joined.includes('ready')
+        && joined.includes(path.join(root, 'ws', 'cfg'))
+        && joined.includes(`KBE_BIN_PATH=${bin.binPath}${path.sep}`);
+    });
 
     const server = running.get('long');
     expect(server?.pid).toBeGreaterThan(0);
