@@ -222,14 +222,19 @@ L4 真实层（显式化、独立于提交门槛）
 
 每阶段独立可交付、独立 commit，且完成后全量测试必须绿（见第 8 节门槛）。
 
-### 阶段 1：仿真器基座（`tests/sim/`）+ 动态端口
+### 阶段 1：仿真器基座（`tests/sim/`）+ 动态端口 ✅（批52）
 
-- 新建 `tests/sim/`：`MachineSimulator`、`WatcherSimulator`、`SimCluster` 骨架。
-- `discoverLocalComponents` 增加 `{host, port, timeoutMs}` 可选参数（默认不变）。
-- 迁移 `tests/kbengineProtocolSocket.test.ts`、`tests/monitoringCollectorSocket.test.ts`
-  到仿真器 + 动态端口；解除 `fileParallelism: false`。
-- 验收：vitest 全绿且恢复文件并行；两个 socket 测试文件不再出现 20086 字面量；
-  单轮时长不劣于现状 36s。
+- 新建 `tests/sim/`：`MachineSimulator`、`WatcherSimulator`、`SimCluster` 骨架。✅
+- `discoverLocalComponents` 增加 `{host, port, timeoutMs}` 可选参数（默认不变）。✅
+  配套：`MonitoringCollector` 构造器接受 `discoveryOptions` 透传；协议模块新增
+  `buildComponentInfo`/`encodeWatcherValue`/`buildWatcherValueFrameBody`/
+  `buildWatcherDirFrameBody` 编码器（parse 系列的对偶，仿真器复用）。
+- 迁移 socket 测试到仿真器 + 动态端口。✅（kbengineProtocolSocket/
+  kbengineProtocolReaders/kbengineProtocolGaps/monitoringCollectorSocket/
+  monitoringCollectorGaps 五个文件；新增 tests/sim.test.ts 仿真器自测 15 用例）
+- 解除 `fileParallelism: false`。✅
+- 验收结果：vitest 57 文件 716 用例全绿，文件级并行恢复，全量 36s→约 13s；
+  测试代码不再出现固定端口 20086 绑定（仅引擎源码字面断言保留）。✅
 
 ### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口
 
@@ -258,7 +263,7 @@ L4 真实层（显式化、独立于提交门槛）
 
 | 阶段 | 状态 | 里程碑 commit |
 |------|------|---------------|
-| 1 | 进行中 | — |
+| 1 | ✅ 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
 | 2 | 未开始 | — |
 | 3 | 未开始 | — |
 | 4 | 未开始 | — |

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import {
   discoverLocalComponents,
   KBEngineComponentInfo,
+  MachineDiscoveryOptions,
   queryWatcherPath
 } from './kbengineProtocol';
 
@@ -62,7 +63,10 @@ export class MonitoringCollector {
   private _onMetricsUpdate = new vscode.EventEmitter<void>();
   readonly onMetricsUpdate = this._onMetricsUpdate.event;
 
-  constructor(private context: vscode.ExtensionContext) {}
+  constructor(
+    private context: vscode.ExtensionContext,
+    private readonly discoveryOptions: MachineDiscoveryOptions = {}
+  ) {}
 
   start(updateIntervalMs = 1000): void {
     this.refreshIntervalMs = updateIntervalMs;
@@ -184,7 +188,7 @@ export class MonitoringCollector {
 
     try {
       const diagnostics: MonitoringDiagnostic[] = [];
-      const components = await discoverLocalComponents();
+      const components = await discoverLocalComponents(this.discoveryOptions);
       const monitorable = components.filter(component =>
         [1, 2, 3, 4, 5, 6, 10, 11, 13].includes(component.componentType)
       );

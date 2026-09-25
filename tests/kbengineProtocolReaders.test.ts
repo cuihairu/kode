@@ -1,9 +1,7 @@
-import * as dgram from 'dgram';
 import * as net from 'net';
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   CONSOLE_WATCHER_CB_MSG_ID,
-  MACHINE_BROADCAST_PORT,
   MACHINE_MSG_QUERY_ALL_INTERFACES,
   buildCString,
   buildFrame,
@@ -13,6 +11,7 @@ import {
   swapUint16
 } from '../src/kbengineProtocol';
 import type { KBEngineComponentInfo } from '../src/kbengineProtocol';
+import { MachineSimulator } from './sim/machineSimulator';
 
 // kbengineProtocol 的剩余缺口:parseWatcherFrame 的全部取值类型分支
 // (BufferCursor 各读取器经此触达)、discoverLocalComponents 请求体里的
@@ -134,35 +133,31 @@ const decodeRequest = (frame: Buffer): { messageId: number; uid: number; usernam
 };
 
 describe('discoverLocalComponents identity fallbacks', () => {
-  const responder = dgram.createSocket('udp4');
-  const captured: Array<{ frame: Buffer; sourcePort: number }> = [];
-  responder.on('message', (message, rinfo) =>
-    captured.push({ frame: Buffer.from(message), sourcePort: rinfo.port })
-  );
+  // 仿真器动态端口应答端:只捕获请求不回包(discovery 超时收尾为空)
+  let machine: MachineSimulator;
 
-  afterEach(() => {
-    captured.length = 0;
+  beforeAll(async () => {
+    machine = await MachineSimulator.start();
   });
 
   afterAll(async () => {
-    await new Promise<void>(resolve => responder.close(() => resolve()));
+    await machine.stop();
   });
 
   it('fills the request body from env and username fallbacks', async () => {
-    await new Promise<void>(resolve => responder.bind(MACHINE_BROADCAST_PORT, '127.0.0.1', () => resolve()));
-
     const restoreA = patchIdentity({ getuid: undefined, uid: '4321', USER: 'tester' });
-    const discoveredA = await discoverLocalComponents(60);
+    const discoveredA = await discoverLocalComponents({ port: machine.port, timeoutMs: 60 });
     restoreA();
 
     expect(discoveredA).toEqual([]);
-    expect(captured).toHaveLength(1);
-    const requestA = decodeRequest(captured[0].frame);
+    const capturedA = machine.getRequests();
+    expect(capturedA).toHaveLength(1);
+    const requestA = decodeRequest(capturedA[0].raw);
     expect(requestA.messageId).toBe(MACHINE_MSG_QUERY_ALL_INTERFACES);
     expect(requestA.uid).toBe(4321);
     expect(requestA.username).toBe('tester');
     // 端口字段按实现语义回填客户端自身绑定端口(网络序字节交换)
-    expect(requestA.portField).toBe(swapUint16(captured[0].sourcePort));
+    expect(requestA.portField).toBe(swapUint16(capturedA[0].sourcePort));
 
     // uid 走 UID,用户名走 LOGNAME
     const restoreB = patchIdentity({
@@ -172,11 +167,12 @@ describe('discoverLocalComponents identity fallbacks', () => {
       USER: undefined,
       LOGNAME: 'fallbackuser'
     });
-    await discoverLocalComponents(60);
+    await discoverLocalComponents({ port: machine.port, timeoutMs: 60 });
     restoreB();
 
-    expect(captured).toHaveLength(2);
-    const requestB = decodeRequest(captured[1].frame);
+    const capturedB = machine.getRequests();
+    expect(capturedB).toHaveLength(2);
+    const requestB = decodeRequest(capturedB[1].raw);
     expect(requestB.uid).toBe(77);
     expect(requestB.username).toBe('fallbackuser');
 
@@ -188,13 +184,16 @@ describe('discoverLocalComponents identity fallbacks', () => {
       USER: undefined,
       LOGNAME: undefined
     });
-    await discoverLocalComponents(60);
+    await discoverLocalComponents({ port: machine.port, timeoutMs: 60 });
     restoreC();
 
-    expect(captured).toHaveLength(3);
-    const requestC = decodeRequest(captured[2].frame);
+    const capturedC = machine.getRequests();
+    expect(capturedC).toHaveLength(3);
+    const requestC = decodeRequest(capturedC[2].raw);
     expect(requestC.uid).toBe(-1);
     expect(requestC.username).toBe('unknown');
+
+    machine.clearRequests();
   }, 8000);
 });
 

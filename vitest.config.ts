@@ -14,9 +14,8 @@ export default defineConfig({
     // src/test/suite(mocha + @vscode/test-electron),两套互不掺和。
     include: ['tests/**/*.test.ts'],
     environment: 'node',
-    // 回环 socket 集成测试(machine discovery 20086 等)共享固定端口,
-    // 文件必须串行执行,否则并行 worker 抢绑同端口会 EADDRINUSE。
-    fileParallelism: false,
+    // 回环 socket 集成测试已全部迁移 tests/sim 仿真器(端口动态分配,
+    // 见 docs/redesign.md 阶段 1),文件级并行不再有固定端口争用。
     coverage: {
       provider: 'v8',
       // 覆盖率如实统计全部 src 源码:依赖 vscode API 的模块在 vitest 下

@@ -38,6 +38,16 @@ export interface WatcherQueryResult {
   keys: string[];
 }
 
+/**
+ * machine 发现的可注入目标。生产默认 127.0.0.1:20086(引擎广播端口);
+ * 测试/仿真通过覆盖 host/port 指向本地仿真器,避免固定端口争用。
+ */
+export interface MachineDiscoveryOptions {
+  host?: string;
+  port?: number;
+  timeoutMs?: number;
+}
+
 export const MACHINE_MSG_QUERY_ALL_INTERFACES = 4;
 // 引擎侧依据:CONSOLE_WATCHERCB_MSGID = 65502(kbe/src/lib/helper/console_helper.h);
 // KBE_MACHINE_BROADCAST_SEND_PORT = KBE_PORT_START + 86(kbe/src/lib/network/common.h)。
@@ -367,7 +377,136 @@ export function parseWatcherFrame(body: Buffer): WatcherQueryResult {
   return result;
 }
 
-export async function discoverLocalComponents(timeoutMs = 800): Promise<KBEngineComponentInfo[]> {
+function ipv4ToBytes(value: string): Buffer {
+  const octets = value.split('.').map(octet => Number.parseInt(octet, 10));
+  if (octets.length !== 4 || octets.some(octet => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return Buffer.from([127, 0, 0, 1]);
+  }
+  return Buffer.from(octets);
+}
+
+/**
+ * parseComponentInfo 的逆过程:按线序全 LE 编码组件广播包。
+ * machine 侧(与本地仿真器)用它构造应答,客户端用 parseComponentInfo
+ * 解析——同一份协议规格的正反两面,防止两侧漂移。
+ */
+export function buildComponentInfo(info: KBEngineComponentInfo): Buffer {
+  const parts: Buffer[] = [];
+
+  const i32 = (value: number): Buffer => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeInt32LE(value, 0);
+    return buffer;
+  };
+  const u16 = (value: number): Buffer => {
+    const buffer = Buffer.alloc(2);
+    buffer.writeUInt16LE(value, 0);
+    return buffer;
+  };
+  const u32 = (value: number): Buffer => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32LE(value, 0);
+    return buffer;
+  };
+  const u64 = (value: bigint): Buffer => {
+    const buffer = Buffer.alloc(8);
+    buffer.writeBigUInt64LE(value, 0);
+    return buffer;
+  };
+  const f32 = (value: number): Buffer => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeFloatLE(value, 0);
+    return buffer;
+  };
+
+  parts.push(i32(info.uid));
+  parts.push(buildCString(info.username));
+  parts.push(i32(info.componentType));
+  parts.push(u64(info.componentID));
+  parts.push(u64(info.componentIDEx));
+  parts.push(i32(info.globalOrderID));
+  parts.push(i32(info.groupOrderID));
+  parts.push(i32(info.genuuidSections));
+  parts.push(ipv4ToBytes(info.intaddr));
+  parts.push(u16(swapUint16(info.intport)));
+  parts.push(ipv4ToBytes(info.extaddr));
+  parts.push(u16(swapUint16(info.extport)));
+  parts.push(buildCString(info.extaddrEx));
+  parts.push(u32(info.pid));
+  parts.push(f32(info.cpu));
+  parts.push(f32(info.mem));
+  parts.push(u32(info.usedmem));
+  parts.push(Buffer.from([info.state]));
+  parts.push(u32(info.machineID));
+  parts.push(u64(info.extradata));
+  parts.push(u64(info.extradata1));
+  parts.push(u64(info.extradata2));
+  parts.push(u64(info.extradata3));
+  parts.push(u32(info.backaddr));
+  parts.push(u16(info.backport));
+  return Buffer.concat(parts);
+}
+
+/**
+ * watcher 值编码:string→STRING(12)、bigint→UINT64(4)、boolean→BOOL(13)、
+ * 其余 number→UINT32(3)。取值类型集与 parseWatcherFrame 的读取矩阵一致。
+ */
+export function encodeWatcherValue(value: string | number | bigint | boolean): Buffer {
+  const typeTag = (type: number): Buffer => Buffer.from([type]);
+  const u32 = (numeric: number): Buffer => {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32LE(numeric, 0);
+    return buffer;
+  };
+  const u64 = (bigValue: bigint): Buffer => {
+    const buffer = Buffer.alloc(8);
+    buffer.writeBigUInt64LE(bigValue, 0);
+    return buffer;
+  };
+
+  if (typeof value === 'boolean') {
+    return Buffer.concat([typeTag(WATCHER_VALUE_TYPE_BOOL), Buffer.from([value ? 1 : 0])]);
+  }
+  if (typeof value === 'bigint') {
+    return Buffer.concat([typeTag(WATCHER_VALUE_TYPE_UINT64), u64(value)]);
+  }
+  if (typeof value === 'string') {
+    return Buffer.concat([typeTag(WATCHER_VALUE_TYPE_STRING), buildCString(value)]);
+  }
+  return Buffer.concat([typeTag(WATCHER_VALUE_TYPE_UINT32), u32(value)]);
+}
+
+/**
+ * 构造 type 0 值帧 body:首字节 type 标记 + 若干
+ * path/name/watcherId/valueType/value 元组(与 parseWatcherFrame 对偶)。
+ */
+export function buildWatcherValueFrameBody(
+  path: string,
+  entries: Record<string, string | number | bigint | boolean>
+): Buffer {
+  const tuples: Buffer[] = [Buffer.from([0])];
+  let watcherId = 1;
+  for (const [name, value] of Object.entries(entries)) {
+    const id = Buffer.alloc(2);
+    id.writeUInt16LE(watcherId, 0);
+    tuples.push(Buffer.concat([buildCString(path), buildCString(name), id, encodeWatcherValue(value)]));
+    watcherId += 1;
+  }
+  return Buffer.concat(tuples);
+}
+
+/**
+ * 构造 type 1 目录帧 body:首字节 type 标记 + rootPath + keys cstring 串。
+ * rootPath 传 '/' 时 parseWatcherFrame 归一为 ''。
+ */
+export function buildWatcherDirFrameBody(rootPath: string, keys: string[]): Buffer {
+  return Buffer.concat([Buffer.from([1]), buildCString(rootPath), ...keys.map(key => buildCString(key))]);
+}
+
+export async function discoverLocalComponents(
+  options: MachineDiscoveryOptions = {}
+): Promise<KBEngineComponentInfo[]> {
+  const { host = '127.0.0.1', port = MACHINE_BROADCAST_PORT, timeoutMs = 800 } = options;
   const socket = dgram.createSocket('udp4');
   const components = new Map<string, KBEngineComponentInfo>();
 
@@ -427,7 +566,7 @@ export async function discoverLocalComponents(timeoutMs = 800): Promise<KBEngine
       body.writeUInt16LE(swapUint16(address.port), offset);
 
       const frame = buildFrame(MACHINE_MSG_QUERY_ALL_INTERFACES, body);
-      socket.send(frame, MACHINE_BROADCAST_PORT, '127.0.0.1');
+      socket.send(frame, port, host);
       setTimeout(finish, timeoutMs);
     });
   });

@@ -7,6 +7,7 @@
 | 层 | 框架 | 位置 | 职责 |
 |----|------|------|------|
 | 纯逻辑层 | vitest | `tests/` | 不依赖 vscode API 的模块:def 解析、元数据、钩子数据、片段、日志解析、Python 补全上下文等 |
+| 仿真器层 | vitest | `tests/sim/` | 本地 KBEngine 仿真基座:MachineSimulator(UDP 发现应答)、WatcherSimulator(组件 watcher TCP 服务)、SimCluster(一键拓扑);端口全部动态分配,组件包/watcher 帧复用生产侧编解码器(buildComponentInfo/buildWatcher*FrameBody),见 docs/redesign.md |
 | vscode 集成层 | mocha + @vscode/test-electron | `src/test/suite/` | 需要真实 vscode API 的用例:补全/hover/诊断提供者、explorer、扩展激活、require 缓存隔离的集成测试 |
 
 两套用 vitest 的 `include: ['tests/**/*.test.ts']` 与 tsconfig 的 `exclude: ["tests"]` 严格隔离。
@@ -147,12 +148,14 @@ stats=M 项、历史入列、onMetricsUpdate 触发、请求 msgid 41001+路径
 速率取 secsNumlogs、msgid 41008;watcher 端口拒连 → '仅 machine 可见,
 watcher 无返回' warning 级 + summary 追加 PARTIAL_DATA_WARNING + 详情
 只剩 UID;discovery 空结果 → 指标清空 + machine 源 error 诊断;恶意
-广播包 → collector 源 error 诊断且 status 与诊断消息一致。vitest 配置
-相应改为 fileParallelism:false——两个 socket 集成文件共享固定端口
-20086,文件串行执行避免并行 worker 抢绑。7.7% 剩余为 startTimer 的
-定时器驱动的 refresh 循环与零散防御分支(定时器行为由 mocha 域覆盖)。
-vscodeStub 相应补了最小 EventEmitter 与 ExtensionContext 占位(真实事
-件行为仍由 mocha 层覆盖)。
+广播包 → collector 源 error 诊断且 status 与诊断消息一致。批52 起
+machine/watcher 对端统一由 tests/sim 仿真器提供(MachineSimulator/
+WatcherSimulator/SimCluster,端口全部动态分配、组件包与 watcher 帧
+复用生产侧 buildComponentInfo/buildWatcher*FrameBody 编码器),
+vitest 恢复文件级并行(全量 36s→约 13s),不再依赖固定端口 20086。
+7.7% 剩余为 startTimer 的定时器驱动的 refresh 循环与零散防御分支
+(定时器行为由 mocha 域覆盖)。vscodeStub 相应补了最小 EventEmitter
+与 ExtensionContext 占位(真实事件行为仍由 mocha 层覆盖)。
 
 entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子块提取、
 标签剥离、引用三元组去重)已覆盖,并锁定实现语义:非贪婪匹配在首个同名
@@ -431,9 +434,10 @@ kbengineProtocolReaders.test.ts,7 用例):parseWatcherFrame 全取值类型
 INT8/INT16/INT32/INT64/FLOAT/CHAR/COMPONENT_TYPE,BufferCursor 各宽度
 读取器经此触达);discoverLocalComponents 的身份探测回落链(patch
 process.getuid=undefined + env 三组对照——uid 优先于 UID、用户名
-USER→LOGNAME→'unknown'、不可解析 uid 得 -1,均以 20086 端口真实
-UDP 应答端捕获请求帧逐字节断言,端口字段回填客户端源端口的
-swapUint16);queryWatcherPath 三缺口——帧头声明 1000 字节只到帧头时
+USER→LOGNAME→'unknown'、不可解析 uid 得 -1,均以动态端口的
+MachineSimulator 捕获原始请求帧逐字节断言(不信仿真器解码),端口
+字段回填客户端源端口的 swapUint16);queryWatcherPath 三缺口——帧头
+声明 1000 字节只到帧头时
 while 在长度不足处 break 等超时收尾 resolve [](残包不进解析器)、
 非 65502 msgid 帧静默跳过其余帧照常入列、对端在 connect→resetTimeout
 之后 resetAndDestroy 发真 RST(Node 的 destroy 会先读空内核缓冲只送

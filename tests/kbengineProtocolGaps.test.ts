@@ -153,7 +153,7 @@ describe('discoverLocalComponents failure paths', () => {
     vi.useFakeTimers();
 
     try {
-      const promise = discoverLocalComponents(60000);
+      const promise = discoverLocalComponents({ timeoutMs: 60000 });
       await vi.advanceTimersByTimeAsync(1);
       expect(socket.sent).toHaveLength(1);
 
@@ -174,7 +174,7 @@ describe('discoverLocalComponents failure paths', () => {
     dgramState.impl = () => socket;
 
     try {
-      const promise = discoverLocalComponents(20);
+      const promise = discoverLocalComponents({ timeoutMs: 20 });
       await expect(promise).rejects.toThrow('Failed to bind UDP socket for machine discovery.');
       expect(socket.sent).toHaveLength(0);
       expect(socket.closeCalls).toBe(1);
