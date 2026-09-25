@@ -30,6 +30,15 @@ pnpm run docs:build
 pnpm run package
 ```
 
+## 测试
+
+测试不依赖真实 KBEngine 环境与 VSCode 下载:vitest(`tests/`)承载全部功能
+测试——纯逻辑、本地仿真器(`tests/sim/`)、fake-vscode 替身(`tests/fake-vscode/`)
+上的装配与面板测试;mocha(`src/test/suite/`)只做编译产物烟测(打包形态的
+`out/extension.js` 激活/命令/补全)。分层与运行方式详见
+[TESTING.md](https://github.com/cuihairu/kode/blob/main/TESTING.md) 与
+[重设计说明](../redesign.md)。
+
 ## 文档开发
 
 VitePress 文档入口在 `docs/`。

@@ -86,6 +86,8 @@ Kode 是 KBEngine 的 VSCode 开发插件。功能验证长期面临一个结构
 3. 不把真实 VSCode 烟测纳入提交门槛（门槛必须在一台只有 Node 的机器上可达成）；
    现状未被调用的 `@vscode/test-electron` 依赖转为显式的可选 `test:smoke` 脚本
    或移除，在阶段 4 决定。不合并两个 runner 的覆盖率数字（口径如实标注）。
+   （阶段 4 定案：依赖已移除——runTest.ts 从未调用它；未来 L4a 真机烟测如需，
+   再显式引入并独立于提交门槛。）
 4. 不改动语言层已有 701 个 vitest 用例的断言语义（它们继续有效）。
 
 ## 3. 新架构
@@ -197,7 +199,8 @@ L3 FakeVscode 全链路（vitest，扩展现有 *Panel/*Gaps 系列）
    诊断联动、entityMapping watcher 联动、extension.ts activate 装配与 dispose 链、
    服务器状态→状态栏/树视图刷新。
 L4 真实层（显式化、独立于提交门槛）
-   L4a 真实 VSCode 烟测（可选脚本 test:smoke，阶段 4 落地或移除依赖）：扩展激活、
+   L4a 真实 VSCode 烟测（可选脚本 test:smoke；阶段 4 定案：移除未使用的
+       @vscode/test-electron 依赖，本层暂不落地，如需再显式引入）：扩展激活、
        命令注册存在、一个补全/hover/诊断在真实 VSCode 里工作。不进 pnpm test。
    L4b 引擎源码条件校验（保留现有 skipIf 机制）：有引擎检出的机器上跑数据
        vs 源码逐行校验；无引擎自动 skip，不阻塞门槛。
@@ -282,16 +285,22 @@ L4 真实层（显式化、独立于提交门槛）
   拼接之后——命令面板无参调用会在守卫前抛 TypeError；守卫上移（行为仅在
   原"抛错"场景变为静默 no-op）。
 
-### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档
+### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档 ✅（批55/56）
 
 - WebView 面板测试迁到 PanelRegistry。✅（批55；实际消费面为三个 WebView，
   原文"四个"计数有误：logWebViewPanel/monitoringPanel/entityDependencyPanel
   51 用例迁到 panelRegistry 默认假面板，断言语义不变，每文件仅剩
   showSaveDialog 队列与 fs.writeFile 故障注入两类 patch）
-- mocha 层裁到烟测集；`testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。
-- 更新 `TESTING.md`（新分层说明）、`docs/guide/development.md`、`README.md`。
-- 验收：`pnpm test:unit`（L1-L3）在无引擎、无 VSCode 下载环境下全绿；
-  `pnpm test` 全量绿；文档与新架构一致。
+- mocha 层裁到烟测集；`testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。✅（批56）
+  19 文件 4930 行/110 用例 → 3 文件 10 用例：manifest 贡献点、out/extension.js
+  经 fake-vscode **编译副本**（新增 `tsconfig.mocha.json` 把 tests/fake-vscode +
+  vscodeStub 编译到 `out/tests/`，test 链插入该编译步骤）整体激活/dispose 链、
+  out/languageProviders.js 补全+悬停最小应答。与 vitest 同构的 17 个套件退役
+  （P7 定案：并不更真实，纯双份维护）。`@vscode/test-electron` 依赖移除——
+  runTest.ts 从未调用它；未来 L4a 真机烟测如需，再显式引入并独立于提交门槛。
+- 更新 `TESTING.md`（新分层说明）、`docs/guide/development.md`、`README.md`。✅（批56）
+- 验收：`pnpm test:unit`（L1-L3）在无引擎、无 VSCode 下载环境下全绿；✅
+  `pnpm test` 全量绿；✅ 文档与新架构一致。✅
 
 ### 进度
 
@@ -300,7 +309,7 @@ L4 真实层（显式化、独立于提交门槛）
 | 1 | ✅ 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
 | 2 | ✅ 完成（批53） | FakeComponentBin + ProcessRunner 注入 + 进程编排测试迁移 |
 | 3 | ✅ 完成（批54） | fake-vscode 五模块 + vscodeStub 兼容壳 + extension.ts 入测(99.5%) |
-| 4 | 未开始 | — |
+| 4 | ✅ 完成（批55/56） | WebView 面板测试迁 panelRegistry；mocha 裁为编译产物烟测(10 用例)；Fake* 退役、@vscode/test-electron 移除；文档对齐 |
 
 ## 7. 风险与对策
 

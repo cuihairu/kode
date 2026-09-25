@@ -1,6 +1,6 @@
 # Kode 测试说明
 
-本项目采用**双层测试架构**,所有断言都必须基于真实行为,严禁为凑覆盖率写假断言。
+本项目采用**两 runner 分层测试架构**(vitest 承载 L1-L3 全量 + mocha 承载编译产物烟测),所有断言都必须基于真实行为,严禁为凑覆盖率写假断言。
 
 ## 架构划分
 
@@ -9,15 +9,19 @@
 | 纯逻辑层 | vitest | `tests/` | 不依赖 vscode API 的模块:def 解析、元数据、钩子数据、片段、日志解析、Python 补全上下文等 |
 | 仿真器层 | vitest | `tests/sim/` | 本地 KBEngine 仿真基座:MachineSimulator(UDP 发现应答)、WatcherSimulator(组件 watcher TCP 服务)、SimCluster(一键拓扑)、FakeComponentBin(可编程假组件二进制);端口全部动态分配,组件包/watcher 帧复用生产侧编解码器(buildComponentInfo/buildWatcher*FrameBody),见 docs/redesign.md |
 | vscode 替身层 | vitest | `tests/fake-vscode/` | 可编程 vscode 替身:core(值类型)/workspaceState(文档集合+可 fire 事件)/windowState(消息/通道/状态栏/树视图登记)/commandRegistry(registerCommand 记账+executeCommand 真分发)/languages(provider 注册记账)/panelRegistry(记录型假 WebviewPanel);tests/helpers/vscodeStub.ts 是它们的兼容 re-export 薄壳,monkey-patch 语义不变 |
-| vscode 集成层 | mocha + @vscode/test-electron | `src/test/suite/` | 需要真实 vscode API 的用例:补全/hover/诊断提供者、explorer、扩展激活、require 缓存隔离的集成测试 |
+| 装配/面板层 | vitest | `tests/extension.test.ts`、`tests/*Panel.test.ts` | fake-vscode 之上整体装配 extension.ts(注册面与 package.json 双向一致、命令真分发、dispose 链)与 WebView 面板生命周期(panelRegistry 驱动) |
+| 编译产物烟测 | mocha(纯 Node) | `src/test/suite/` | 验证 tsc 产物与打包形态(main: ./out/extension.js):manifest 贡献点、out/extension.js 经 fake-vscode 编译副本整体激活与 dispose 链、补全/悬停最小应答。不下载 VSCode、不依赖引擎 |
 
-两套用 vitest 的 `include: ['tests/**/*.test.ts']` 与 tsconfig 的 `exclude: ["tests"]` 严格隔离。
+vitest 用 `include: ['tests/**/*.test.ts']` 与主 tsconfig 的 `exclude: ["tests"]` 严格隔离;
+`tsconfig.mocha.json` 单独把 tests/fake-vscode + tests/helpers/vscodeStub 编译到
+`out/tests/`(test 链中的 `tsc -p tsconfig.mocha.json` 步骤),供 mocha 烟测经
+module._load 注入——两个 runner 消费同一份替身实现(P12 的双替身分叉已消除)。
 
 ## 运行
 
 ```bash
-pnpm test           # 全量: vitest + 编译 + @vscode/test-electron mocha
-pnpm test:unit      # 仅 vitest
+pnpm test           # 全量: vitest + 编译(src + mocha 替身副本)+ mocha 烟测
+pnpm test:unit      # 仅 vitest(无引擎、无 VSCode 下载环境即可全绿)
 pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 ```
 
@@ -772,14 +776,29 @@ workspace.fs.writeFile 故障注入两类 patch。src 的 createWebviewPanel
 消费面实际为三个(logWebView/monitoringWebView/entityDependencyWebView),
 redesign 原文"四个 WebView"计数有误,已更正。
 
+批56 落地重设计阶段 4 收尾:mocha 层从 19 文件 4930 行/110 用例裁到编译
+产物烟测集(3 文件 10 用例)——manifest 贡献点、out/extension.js 装配激活
+(注册面与 package.json 双向一致/状态栏/命令真分发到 panelRegistry/dispose
+链逐项拆除)、out/languageProviders.js 补全+悬停最小应答(期望序列与 vitest
+层同规格)。其余 17 个套件与 vitest 层同构(P7:所谓"集成层"实际在纯 Node
+里跑,并不更真实),全部退役;testUtils.ts 的 Fake* 值类型退役,统一复用
+fake-vscode 的编译副本——新增 tsconfig.mocha.json 把 tests/fake-vscode +
+tests/helpers/vscodeStub 编译到 out/tests/(注意路径深度:从 out/test/suite
+出发是 `../../tests/helpers/vscodeStub`,两级 .. 到 out/,首版误写三级),
+test 链插入 `tsc -p tsconfig.mocha.json` 步骤。从未被调用的
+@vscode/test-electron 依赖移除(P7 定案:runTest.ts 实为纯 Mocha;若未来
+需要 L4a 真机烟测,再显式引入并独立于提交门槛)。烟测集的独立价值=验证
+tsc 产物与完整模块图在打包形态(main: ./out/extension.js)下可装配,这是
+vitest(消费 TS 源)给不了的。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
   deactivate 由 tests/extension.test.ts 的 fake-vscode 装配测试驱动
   (6 用例,详见 docs/redesign.md 阶段 3),99.5% lines / 100% functions,
   唯一未盖 L234 是 openMethodTarget 永不抛错(内部自带 catch)导致的防御
-  catch,如实记录。mocha 侧 110 用例继续独立运行,两 runner 覆盖率不做
-  工具级合并。
+  catch,如实记录。批56 起 mocha 层裁为编译产物烟测(10 用例,见批56 注),
+  两 runner 覆盖率不做工具级合并。
 - 总体百分比的分母包含全部源码文件;随测试推进持续抬升,
   每次抬升后更新本表。
 

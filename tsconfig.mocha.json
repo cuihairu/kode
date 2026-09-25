@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "tests",
+    "outDir": "out/tests",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "tests/fake-vscode/**/*.ts",
+    "tests/helpers/vscodeStub.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

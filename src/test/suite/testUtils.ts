@@ -1,3 +1,10 @@
+// mocha 烟测层共用工具(docs/redesign.md 阶段 4)。旧 Fake* 值类型已退役:
+// 统一复用 tests/fake-vscode 的编译副本(out/tests/helpers/vscodeStub.js,
+// 由 tsconfig.mocha.json 产出,与 vitest 层同一份替身实现——消除 P12 的
+// 双替身分叉)。模块加载仍走 module._load 补丁注入,目标是被测的编译产物
+// (out/*.js)而非 TS 源,这是本层区别于 vitest 层的价值:验证 tsc 产物与
+// 完整模块图在打包形态下可装配。
+
 import { createRequire } from 'module';
 
 const moduleLoader = createRequire(__filename)('module') as typeof import('module') & {
@@ -5,220 +12,55 @@ const moduleLoader = createRequire(__filename)('module') as typeof import('modul
   createRequire(filename: string): NodeRequire;
 };
 
-export class FakePosition {
-  constructor(public line: number, public character: number) {}
-}
-
-export class FakeRange {
-  constructor(public start: FakePosition, public end: FakePosition) {}
-}
-
-export class FakeUri {
-  scheme: string;
-  path: string;
-
-  constructor(public fsPath: string) {
-    const schemeMatch = /^([a-z0-9+.-]+):/i.exec(fsPath);
-    this.scheme = schemeMatch?.[1] || 'file';
-    this.path = this.scheme === 'file'
-      ? fsPath
-      : fsPath.replace(/^[a-z0-9+.-]+:/i, '');
-  }
-
-  static parse(fsPath: string): FakeUri {
-    return new FakeUri(fsPath);
-  }
-
-  static file(fsPath: string): FakeUri {
-    return new FakeUri(fsPath);
-  }
-
-  static joinPath(base: FakeUri, ...paths: string[]): FakeUri {
-    return new FakeUri([base.fsPath, ...paths].join('/'));
-  }
-
-  toString(): string {
-    return this.fsPath;
-  }
-}
-
-export class FakeLocation {
-  constructor(public uri: FakeUri, public position: FakePosition) {}
-}
-
-export class FakeMarkdownString {
-  value: string;
-
-  constructor(value = '') {
-    this.value = value;
-  }
-
-  appendMarkdown(text: string): void {
-    this.value += text;
-  }
-
-  appendCodeblock(code: string, language?: string): void {
-    this.value += `\n\`\`\`${language || ''}\n${code}\n\`\`\`\n`;
-  }
-}
-
-export class FakeHover {
-  constructor(public contents: FakeMarkdownString) {}
-}
-
-export class FakeCallHierarchyItem {
-  constructor(
-    public kind: number,
-    public name: string,
-    public detail: string,
-    public uri: FakeUri,
-    public range: FakeRange,
-    public selectionRange: FakeRange
-  ) {}
-}
-
-export class FakeCallHierarchyIncomingCall {
-  constructor(public from: FakeCallHierarchyItem, public fromRanges: FakeRange[]) {}
-}
-
-export class FakeCallHierarchyOutgoingCall {
-  constructor(public to: FakeCallHierarchyItem, public fromRanges: FakeRange[]) {}
-}
-
-export class FakeDiagnostic {
-  constructor(
-    public range: FakeRange,
-    public message: string,
-    public severity: number
-  ) {}
-}
-
-export class FakeCompletionItem {
-  detail?: string;
-  documentation?: FakeMarkdownString;
-
-  constructor(public label: string, public kind?: number) {}
-}
-
-export class FakeDiagnosticCollection {
-  entries = new Map<string, FakeDiagnostic[]>();
-  deleted: string[] = [];
-
-  set(uri: FakeUri, diagnostics: FakeDiagnostic[]): void {
-    this.entries.set(uri.fsPath, diagnostics);
-  }
-
-  delete(uri: FakeUri): void {
-    this.deleted.push(uri.fsPath);
-    this.entries.delete(uri.fsPath);
-  }
-}
-
-export class FakeTextDocument {
-  readonly uri: FakeUri;
-
-  constructor(
-    public fileName: string,
-    public languageId: string,
-    private text: string
-  ) {
-    this.uri = new FakeUri(fileName);
-  }
-
-  getText(range?: FakeRange): string {
-    if (!range) {
-      return this.text;
-    }
-
-    return this.text.slice(this.offsetAt(range.start), this.offsetAt(range.end));
-  }
-
-  lineAt(line: number): { text: string } {
-    return { text: this.text.split('\n')[line] || '' };
-  }
-
-  offsetAt(position: FakePosition): number {
-    const lines = this.text.split('\n');
-    let offset = 0;
-
-    for (let i = 0; i < position.line; i += 1) {
-      offset += lines[i].length + 1;
-    }
-
-    return offset + position.character;
-  }
-
-  positionAt(offset: number): FakePosition {
-    const before = this.text.slice(0, offset);
-    const lines = before.split('\n');
-    return new FakePosition(lines.length - 1, lines[lines.length - 1].length);
-  }
-
-  getWordRangeAtPosition(position: FakePosition): FakeRange | undefined {
-    const offset = this.offsetAt(position);
-    const wordRegex = /\w+/g;
-    let match: RegExpExecArray | null;
-
-    while ((match = wordRegex.exec(this.text)) !== null) {
-      const start = match.index;
-      const end = start + match[0].length;
-      if (offset >= start && offset <= end) {
-        return new FakeRange(this.positionAt(start), this.positionAt(end));
-      }
-    }
-
-    return undefined;
-  }
-}
-
-export const defaultKbengineConfig = {
-  enableDiagnostics: true,
-  enableStructureDiagnostics: true,
-  'diagnostics.checkUnknownTypes': true,
-  'diagnostics.checkUnknownFlags': true,
-  'diagnostics.checkUnknownDetailLevels': true,
-  'diagnostics.checkDuplicateDefinitions': true,
-  'diagnostics.checkMissingPropertyFields': true,
-  'hover.showTagDocs': true,
-  'hover.showValueDocs': true,
-  'hover.showSymbolDocs': true
-} as const;
-
-export function createVscodeStub(overrides?: Record<string, unknown>): Record<string, unknown> {
-  return {
-    workspace: {
-      workspaceFolders: [{ uri: new FakeUri('/workspace') }],
-      getConfiguration: () => ({
-        get<T>(key: keyof typeof defaultKbengineConfig, defaultValue: T): T {
-          return (defaultKbengineConfig[key] as T | undefined) ?? defaultValue;
-        }
-      })
-    },
-    Uri: FakeUri,
-    Position: FakePosition,
-    Range: FakeRange,
-    Location: FakeLocation,
-    MarkdownString: FakeMarkdownString,
-    Hover: FakeHover,
-    CallHierarchyItem: FakeCallHierarchyItem,
-    CallHierarchyIncomingCall: FakeCallHierarchyIncomingCall,
-    CallHierarchyOutgoingCall: FakeCallHierarchyOutgoingCall,
-    Diagnostic: FakeDiagnostic,
-    DiagnosticSeverity: {
-      Error: 0,
-      Warning: 1,
-      Information: 2
-    },
-    CompletionItem: FakeCompletionItem,
-    CompletionItemKind: {
-      Property: 10,
-      Method: 1
-    },
-    SymbolKind: {
-      Method: 6
-    },
-    ...overrides
+/** fake-vscode 编译副本的最小消费面(完整导出见 tests/helpers/vscodeStub.ts) */
+export interface CompiledVscodeStub {
+  window: Record<string, unknown>;
+  workspace: { workspaceFolders: unknown } & Record<string, unknown>;
+  commands: Record<string, unknown>;
+  Uri: { file(path: string): unknown };
+  Position: new (line: number, character: number) => unknown;
+  StatusBarAlignment: Record<string, number>;
+  makeTextDocument(
+    text: string,
+    options?: { fileName?: string; languageId?: string }
+  ): unknown;
+  commandRegistry: {
+    registeredCommandIds(): string[];
+    reset(): void;
   };
+  languagesRegistry: { reset(): void };
+  windowState: {
+    reset(): void;
+    statusBars: Array<{
+      alignment: number;
+      priority: number;
+      text: string;
+      visible: boolean;
+      disposed: boolean;
+    }>;
+  };
+  treeRegistrations: Array<{ viewId: string; provider: unknown }>;
+  workspaceState: { reset(): void };
+  panelRegistry: { panels: Array<{ viewType: string }>; reset(): void };
+}
+
+// require 编译副本:从 out/test/suite 出发解析到 out/tests/helpers/vscodeStub
+// (由 package.json test 链中的 `tsc -p tsconfig.mocha.json` 产出;两级 ..
+// 到 out/,与产物布局 out/tests 对齐)
+const compiledStub = createRequire(__filename)('../../tests/helpers/vscodeStub') as unknown as CompiledVscodeStub;
+
+/** 共享的 fake-vscode 编译副本单例(同一进程内与生产模块图注入同一实例) */
+export function loadCompiledVscodeStub(): CompiledVscodeStub {
+  return compiledStub;
+}
+
+/** 各登记层复位(workspaceFolders 不在此清空,由测试自行管理) */
+export function resetCompiledVscodeStub(stub: CompiledVscodeStub): void {
+  stub.commandRegistry.reset();
+  stub.languagesRegistry.reset();
+  stub.windowState.reset();
+  stub.workspaceState.reset();
+  stub.panelRegistry.reset();
 }
 
 export function createModuleLoader(): {

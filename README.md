@@ -254,12 +254,16 @@ pnpm run docs:dev
 
 ## 🧪 测试
 
-双层测试架构:纯逻辑层 vitest(`tests/`,216 个用例)+ vscode 集成层
-@vscode/test-electron(`src/test/suite/`,110 个用例);带 KBEngine 源码检出时
-自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)。
+两 runner 分层测试架构:vitest 承载全部功能测试(`tests/`,含纯逻辑层、
+本地 KBEngine 仿真器层、fake-vscode 替身上的装配与 WebView 面板层,无需真实
+KBEngine 环境即可全绿);mocha(`src/test/suite/`,10 个用例)只做编译产物
+烟测——验证打包形态的 out/extension.js 可装配激活。带 KBEngine 源码检出时
+自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)
+与[重设计说明](./docs/redesign.md)。
 
 ```bash
-pnpm test           # 全量
+pnpm test           # 全量: vitest + 编译 + mocha 烟测
+pnpm test:unit      # 仅 vitest(无引擎、无 VSCode 下载环境即可全绿)
 pnpm test:coverage  # vitest + 覆盖率
 ```
 
