@@ -791,6 +791,13 @@ test 链插入 `tsc -p tsconfig.mocha.json` 步骤。从未被调用的
 tsc 产物与完整模块图在打包形态(main: ./out/extension.js)下可装配,这是
 vitest(消费 TS 源)给不了的。
 
+批57 为重设计终验收尾:test:coverage 复跑核对总体覆盖率与批54 表格一致
+(99.03/91.76/100/99.01,批55/56 未动生产代码,分母不变);redesign.md 对
+两处"图里有、未立项"的项补定案——LoggerSimulator(插件侧 logger 协议未
+适配,真 TCP 对端无可验证语义,状态机结论已由假 socket 用例覆盖,协议适配
+批次再落地)与 SocketFactory/src/ports/ 目录(发现地址经批52 参数注入、
+socket 失败路径经 vi.mock 覆盖,无消费者的抽象违背最小侵入原则)。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/

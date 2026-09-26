@@ -109,10 +109,11 @@ Kode 是 KBEngine 的 VSCode 开发插件。功能验证长期面临一个结构
 │          进程/socket/定时器触点收敛到注入的端口适配器      │
 ├─────────────────────────────────────────────────────────┤
 │ L2 端口层（新，src/ports/）依赖倒置接口                   │
-│    ProcessRunner    —— spawn 的可注入抽象                 │
-│    SocketFactory    —— TCP/UDP 客户端的可注入抽象         │
+│    ProcessRunner    —— spawn 的可注入抽象（已落地，批53）  │
 │    MachineDiscoveryOptions —— 发现地址/端口/超时注入       │
+│                         （已落地，批52；经参数而非 src/ports/）│
 │    （默认实现 = 真实 child_process/net/dgram，生产行为不变）│
+│    （SocketFactory 未立项，见 3.4 末尾定案）               │
 ├─────────────────────────────────────────────────────────┤
 │ L1 纯域层（现状已基本达成）                               │
 │    defParser / definitionSemantics / definitionWorkspace │
@@ -140,6 +141,10 @@ tests/fake-vscode/    可编程 vscode 替身（见 3.3）
   可编程返回值帧（含分片发送、type 0 值帧/type 1 目录帧）、拒连、超时、恶意包。
 - **LoggerSimulator**：TCP 服务承载 logger 端口行为（当前插件侧协议未完成，仿真器
   为后续协议适配先行提供对端；现阶段用可编程的"接受连接即关闭/固定应答"）。
+  **终验定案：未立项**——`logCollector.connect` 按实现现状拒绝 logger watcher
+  协议（P4），真 TCP 对端没有可验证的行为语义；协议状态机结论已由假 socket
+  用例覆盖（tests/logCollector.test.ts，含 connect 拒绝路径），再加一层真连接
+  对状态机零增益、属死代码。协议适配批次启动时再随消费面一并落地。
 - **FakeComponentBin**：生成假组件可执行文件（跨平台 node/shell 脚本），行为可编程：
   正常运行并周期输出 stdout/stderr、秒退（指定 exit code）、忽略 SIGTERM 强制走
   SIGKILL 升级、输出启动标记。供 serverManager 的进程编排测试消费，替代目前
@@ -183,6 +188,14 @@ tests/fake-vscode/    可编程 vscode 替身（见 3.3）
 
 原则：**默认实现即生产行为**，所有新参数可选且缺省与今天完全一致——改造对用户
 零感知（G6）。
+
+终验定案（批57）：L2 架构图初稿列了 `SocketFactory`（TCP/UDP 客户端可注入
+抽象），最终**未立项**——协议客户端的测试性已由两条更小的路径解决：发现地址/
+端口/超时经 `discoverLocalComponents` 可选参数注入（批52），socket 失败路径经
+vitest `vi.mock('dgram'/'net')` 覆盖（tests/kbengineProtocolGaps.test.ts）。
+logCollector 的 host/port 本就可配置（改造表"保持"行）。为没有消费者的抽象建
+接口违背最小侵入原则，待真实故障注入需求出现再引入。同理 `src/ports/` 目录
+不落地——ProcessRunner 落在 `src/serverManager.ts` 内部，够用且可见。
 
 ## 4. 验证策略：没有真实 KBEngine 环境的测试分层
 
