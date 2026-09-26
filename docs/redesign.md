@@ -226,7 +226,7 @@ L4 真实层（显式化、独立于提交门槛）
 
 每阶段独立可交付、独立 commit，且完成后全量测试必须绿（见第 8 节门槛）。
 
-### 阶段 1：仿真器基座（`tests/sim/`）+ 动态端口 ✅（批52）
+### 阶段 1：仿真器基座（`tests/sim/`）+ 动态端口 [批52]
 
 - 新建 `tests/sim/`：`MachineSimulator`、`WatcherSimulator`、`SimCluster` 骨架。✅
 - `discoverLocalComponents` 增加 `{host, port, timeoutMs}` 可选参数（默认不变）。✅
@@ -240,7 +240,7 @@ L4 真实层（显式化、独立于提交门槛）
 - 验收结果：vitest 57 文件 716 用例全绿，文件级并行恢复，全量 36s→约 13s；
   测试代码不再出现固定端口 20086 绑定（仅引擎源码字面断言保留）。✅
 
-### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口 ✅（批53）
+### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口 [批53]
 
 - `tests/sim/fakeComponentBin.ts` 生成可编程假组件二进制。✅
   行为：run（标记/cwd/env 回显/stderr）、exit（指定退出码）、
@@ -255,7 +255,7 @@ L4 真实层（显式化、独立于提交门槛）
   同步 throw 走 catch）。
 - 验收：全部通过（见批53 commit）。✅
 
-### 阶段 3：FakeVscode 基建 + extension.ts 入测 ✅（批54）
+### 阶段 3：FakeVscode 基建 + extension.ts 入测 [批54]
 
 - `tests/fake-vscode/` 五模块落地。✅
   - `core.ts`：值类型（Position/Range/Uri/EventEmitter/TreeItem/Diagnostic
@@ -285,7 +285,7 @@ L4 真实层（显式化、独立于提交门槛）
   拼接之后——命令面板无参调用会在守卫前抛 TypeError；守卫上移（行为仅在
   原"抛错"场景变为静默 no-op）。
 
-### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档 ✅（批55/56）
+### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档 [批55/56]
 
 - WebView 面板测试迁到 PanelRegistry。✅（批55；实际消费面为三个 WebView，
   原文"四个"计数有误：logWebViewPanel/monitoringPanel/entityDependencyPanel

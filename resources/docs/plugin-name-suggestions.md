@@ -1,6 +1,6 @@
 # VSCode KBEngine 插件 - 命名建议
 
-## 🎯 推荐名称（按优先级排序）
+## 推荐名称（按优先级排序）
 
 ### 第一梯队：简洁专业
 
@@ -39,7 +39,7 @@
 
 ---
 
-## 🏆 最终推荐
+## 最终推荐
 
 ### **方案 A: KBE** (最推荐)
 ```
@@ -49,11 +49,11 @@
 市场名称: KBE - KBEngine Language Support
 ```
 **理由**:
-- ✅ 极简，3个字母
-- ✅ KBEngine 官方缩写
-- ✅ 易于搜索和记忆
-- ✅ 专业感强
-- ✅ 类似 Python 的 IDLE，Ruby 的 RStudio
+- [极简，3个字母]
+- [KBEngine 官方缩写]
+- [易于搜索和记忆]
+- [专业感强]
+- [类似 Python 的 IDLE，Ruby 的 RStudio]
 
 ### **方案 B: Kode**
 ```
@@ -63,10 +63,10 @@
 市场名称: Kode - KBEngine Development Environment
 ```
 **理由**:
-- ✅ IDE 全称，功能明确
-- ✅ "Kode" = "KBEngine Code" 的组合
-- ✅ 发音好听，朗朗上口
-- ✅ 类似 VSCode、JetBrains 等知名 IDE
+- [IDE 全称，功能明确]
+- ["Kode" = "KBEngine Code" 的组合]
+- [发音好听，朗朗上口]
+- [类似 VSCode、JetBrains 等知名 IDE]
 
 ### **方案 C: EntityForge** (最有创意)
 ```
@@ -76,14 +76,14 @@
 市场名称: EntityForge - KBEngine Entity Editor
 ```
 **理由**:
-- ✅ 游戏开发氛围浓厚
-- ✅ "Forge" 体现打造、构建的意思
-- ✅ 专注实体定义，功能明确
-- ✅ 易于品牌化
+- [游戏开发氛围浓厚]
+- ["Forge" 体现打造、构建的意思]
+- [专注实体定义，功能明确]
+- [易于品牌化]
 
 ---
 
-## 📦 Package.json 配置示例
+## Package.json 配置示例
 
 ### 方案 A: KBE
 ```json
@@ -123,7 +123,7 @@
 
 ---
 
-## 🎨 Logo 设计建议
+## Logo 设计建议
 
 ### KBE Logo
 ```
@@ -170,7 +170,7 @@
 
 ---
 
-## 🌐 域名和资源
+## 域名和资源
 
 ### KBE
 - GitHub: `github.com/kbe-editor/vscode-kbe`
@@ -192,7 +192,7 @@
 
 ---
 
-## 📊 市场搜索优化
+## 市场搜索优化
 
 ### 关键词（Tags）
 所有方案都应该包含：
@@ -232,9 +232,9 @@ Perfect for:
 
 ---
 
-## 🎯 我的最终推荐
+## 我的最终推荐
 
-### **🥇 第一选择: KBE**
+### ** [第一选择: KBE**]
 
 **理由**:
 1. **简洁至上** - 3个字母，极致简洁
@@ -254,7 +254,7 @@ Perfect for:
 
 ---
 
-### **🥈 第二选择: EntityForge**
+### ** [第二选择: EntityForge**]
 
 **理由**:
 1. **特色鲜明** - 专注实体定义编辑
@@ -274,7 +274,7 @@ Perfect for:
 
 ---
 
-### **🥉 第三选择: Kode**
+### ** [第三选择: Kode**]
 
 **理由**:
 1. **朗朗上口** - "Kode" 发音好听
@@ -293,7 +293,7 @@ Perfect for:
 
 ---
 
-## 💬 你的选择？
+## 你的选择？
 
 根据你的使用场景选择：
 

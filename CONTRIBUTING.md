@@ -2,7 +2,7 @@
 
 感谢你有兴趣为 Kode 做贡献！🎉
 
-## 📋 目录
+## 目录
 
 - [行为准则](#行为准则)
 - [如何贡献](#如何贡献)
@@ -10,7 +10,7 @@
 - [代码规范](#代码规范)
 - [提交规范](#提交规范)
 
-## 🤝 行为准则
+## 行为准则
 
 - 尊重所有贡献者
 - 欢迎不同观点和经验
@@ -18,7 +18,7 @@
 - 专注于对社区最有利的事情
 - 对其他社区成员表示同理心
 
-## 💡 如何贡献
+## 如何贡献
 
 ### 报告 Bug
 
@@ -40,7 +40,7 @@
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
 
-## 🔧 开发流程
+## 开发流程
 
 ### 环境设置
 
@@ -82,7 +82,7 @@ git commit -m "feat: add your feature"
 git push origin feature/your-feature-name
 ```
 
-## 📝 代码规范
+## 代码规范
 
 ### TypeScript 规范
 
@@ -135,7 +135,7 @@ src/
   parser.test.ts
 ```
 
-## 📨 提交规范
+## 提交规范
 
 我们使用 [Conventional Commits](https://www.conventionalcommits.org/) 规范：
 
@@ -176,7 +176,7 @@ git commit -m "docs(readme): update installation instructions"
 git commit -m "refactor(parser): extract XML parsing to separate module"
 ```
 
-## 🎨 Pull Request 指南
+## Pull Request 指南
 
 ### PR 标题
 
@@ -217,13 +217,13 @@ Closes #123
 - [ ] 没有新的警告
 - [ ] 提交消息遵循规范
 
-## 📚 资源
+## 资源
 
 - [VS Code 扩展 API](https://code.visualstudio.com/api)
 - [TypeScript 文档](https://www.typescriptlang.org/docs/)
 - [项目文档](./resources/docs/)
 
-## 💬 获取帮助
+## 获取帮助
 
 如果你有任何问题：
 
