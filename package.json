@@ -437,7 +437,6 @@
     "watch": "tsc -watch -p ./",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "pretest": "npm run clean && npm run compile",
     "lint": "eslint src --ext ts",
     "test": "vitest run && pnpm clean && pnpm compile && tsc -p tsconfig.mocha.json && node ./out/test/runTest.js",
     "test:unit": "vitest run",
