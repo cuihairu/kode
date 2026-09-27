@@ -325,10 +325,14 @@ export function findEntityDefinitionFile(
     return null;
   }
 
+  // 不可达(批62 定性):entityDefsRoot = 已存在候选 || 候选[0],候选列表恒含
+  // 非空相对路径,该值只能是字符串,守卫无触发路径。
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  /* istanbul ignore start */
   if (!layout.entityDefsRoot) {
     return null;
   }
+  /* istanbul ignore stop */
 
   const candidate = joinWorkspacePath(layout.entityDefsRoot, `${entityName}.def`);
   return findExistingLookupPath(candidate);
@@ -616,9 +620,15 @@ function pathExists(candidatePath: string | null | undefined): candidatePath is 
 }
 
 function findExistingLookupPath(candidatePath: string | null | undefined): string | null {
+  // 不可达(批62 定性):唯一能传非字符串的调用面是 listDefinitionFiles 的
+  // `directory: string | null`,其实参为 layout.entityDefsRoot/interfacesRoot/
+  // componentsRoot——三者只在 entityDefsRoot 为空时为 null,而 entityDefsRoot
+  // 恒为字符串(候选列表恒含非空相对路径),故 null 入参无来源。
+  /* istanbul ignore start */
   if (typeof candidatePath !== 'string') {
     return null;
   }
+  /* istanbul ignore stop */
 
   for (const lookupPath of getPathLookupCandidates(candidatePath)) {
     if (fs.existsSync(lookupPath)) {

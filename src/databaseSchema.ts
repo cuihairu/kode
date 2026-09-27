@@ -170,9 +170,13 @@ export function getDatabaseSchemaSnapshot(
   }
 
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  // 不可达(批62 定性):getDefinitionWorkspaceLayout 的 entityDefsRoot =
+  // 已存在候选 || 候选[0],候选列表恒含非空相对路径,该值只能是字符串。
+  /* istanbul ignore start */
   if (!layout.entityDefsRoot) {
     return null;
   }
+  /* istanbul ignore stop */
 
   const defFilePath = findEntityDefinitionFile(entityName, target);
   if (!defFilePath) {
@@ -909,8 +913,12 @@ function getPropertyScopes(flags: string | undefined, availability: RuntimeAvail
         return availability.hasCell;
       case 'client':
         return availability.hasClient;
+      // 不可达(批62 定性):scope 取自 FLAG_SCOPE_MAP,值类型 RuntimeScope 仅
+      // base/cell/client 三员,上面的 case 已穷尽,default 无值可命中。
+      /* istanbul ignore start */
       default:
         return false;
+      /* istanbul ignore stop */
     }
   });
 }

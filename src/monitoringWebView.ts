@@ -77,10 +77,14 @@ export class MonitoringWebView {
       () => {
         this.collector.stop();
         this.panel = null;
+        // 不可达(批62 定性):updateTimer 在本类中没有任何赋值点(自动刷新定时器
+        // 未接线,刷新节奏由 collector 的 start(interval) 承担),守卫恒为假。
+        /* istanbul ignore start */
         if (this.updateTimer) {
           clearTimeout(this.updateTimer);
           this.updateTimer = null;
         }
+        /* istanbul ignore stop */
       },
       undefined,
       this.context.subscriptions
@@ -1111,10 +1115,14 @@ export class MonitoringWebView {
       this.panel.dispose();
       this.panel = null;
     }
+    // 不可达(批62 定性):本类没有任何 updateTimer 赋值点(自动刷新定时器未接线),
+    // 字段恒为 null,清理臂无触发路径。
+    /* istanbul ignore start */
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;
     }
+    /* istanbul ignore stop */
     this.collector.dispose();
   }
 }

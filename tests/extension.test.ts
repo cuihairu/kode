@@ -366,7 +366,7 @@ describe('extension activate 装配', () => {
       expect(windowState.showTextDocumentCalls.at(-1)?.options)
         .toEqual({ selection: new Range(new Position(row, 0), new Position(row, 0)) });
 
-      // 打开失败的 catch 分支:openTextDocument 抛错 → 两类打开命令各报具体原因
+      // 打开失败的 catch 分支:openTextDocument 抛错 → 三类打开命令各报具体原因
       const originalOpen = workspace.openTextDocument;
       workspace.openTextDocument = (async (): Promise<never> => {
         throw new Error('boom');
@@ -374,6 +374,17 @@ describe('extension activate 装配', () => {
       messages.warning.length = 0;
       await commands.executeCommand('kbengine.entity.open', 'Avatar');
       await commands.executeCommand('kbengine.database.open', 'Hero');
+      // method.open 的 catch:索引已建、无 Python 实现 → 兜底打开 def 本体时
+      // 抛错,字符串与 identity 两种入参形态各自的 label 都带上失败原因
+      await commands.executeCommand('kbengine.entity.method.open', 'Avatar', 'respawn', 'BaseMethods');
+      await commands.executeCommand('kbengine.entity.method.open', {
+        ownerKind: 'entity',
+        ownerName: 'Avatar',
+        sourceKind: 'local',
+        sourceChain: [],
+        section: 'BaseMethods',
+        symbolName: 'respawn'
+      } as never);
       // 表名/字段名进 catch 模板的三个真值组合
       await commands.executeCommand('kbengine.database.open', 'Avatar', 'tbl_Avatar');
       await commands.executeCommand('kbengine.database.open', 'Avatar', 'tbl_Avatar', 'hp');
@@ -381,6 +392,9 @@ describe('extension activate 装配', () => {
       expect(messages.warning.some(message => message.includes('打开数据库结构失败: Hero (Error: boom)'))).toBe(true);
       expect(messages.warning.some(message => message.includes('打开数据库结构失败: Avatar (tbl_Avatar) (Error: boom)'))).toBe(true);
       expect(messages.warning.some(message => message.includes('打开数据库结构失败: Avatar (tbl_Avatar.hp) (Error: boom)'))).toBe(true);
+      expect(messages.warning.some(message => message.includes('打开实体方法失败: Avatar.respawn (BaseMethods) (Error: boom)'))).toBe(true);
+      // identity 形态的 label 取 ownerName/symbolName/section,与字符串形态同文
+      expect(messages.warning.filter(message => message.includes('打开实体方法失败: Avatar.respawn (BaseMethods) (Error: boom)'))).toHaveLength(2);
       workspace.openTextDocument = originalOpen;
 
       disposeAll(context);

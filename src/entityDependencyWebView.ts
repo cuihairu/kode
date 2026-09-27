@@ -109,7 +109,11 @@ export class EntityDependencyWebView {
           case 'Base': return '🔵';
           case 'Cell': return '🟢';
           case 'Client': return '🟡';
+          // 不可达(批62 定性):node.types 的元素类型 EntityType 只有 Base/Cell/Client
+          // 三员(entityDependency.ts 的解析与建边处也只 push 这三者),default 无值可命中。
+          /* istanbul ignore start */
           default: return '';
+          /* istanbul ignore stop */
         }
       }).join('');
 

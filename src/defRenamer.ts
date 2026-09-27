@@ -139,9 +139,14 @@ function getTagNameRange(
   }
   const match = new RegExp(`^<\\s*/?\\s*${escapeRegExp(element.name)}\\b`)
     .exec(text.slice(tagStart, tagEnd));
+  // 不可达(批62 定性):tagStart/tagEnd/name 都出自同一份 text 的同一次解析
+  // (defParser 的 tokenizeXml 扫描 `<`…`>` 得到),切片必以该标签名开头;
+  // 越界与自闭合已由上方范围守卫拦下,该正则无失配路径。
+  /* istanbul ignore start */
   if (!match) {
     return null;
   }
+  /* istanbul ignore stop */
   const start = tagStart + match[0].length - element.name.length;
   return { start, end: start + element.name.length };
 }

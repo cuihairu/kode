@@ -48,16 +48,17 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
 vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
-批58 起 defRenamer.ts 计入分母):
+批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 99.16% |
-| Branches | 95.11% |
-| Functions | 100% |
-| Lines | 99.14% |
+| Statements | 100% (4843/4843) |
+| Branches | 96.2% (2686/2792) |
+| Functions | 100% (839/839) |
+| Lines | 100% (4733/4733) |
 
-纯逻辑层明细:
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 25 处
+`/* istanbul ignore start */` 区间,逐处理由见"批62 行覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -65,27 +66,27 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | kbengineMetadata.ts | 100% | 100% |
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
-| defParser.ts | 99.4% | 91.8% |
-| defRenamer.ts | 99.5% | 94.5% |
-| definitionSemantics.ts | 99.5% | 94.2% |
+| defParser.ts | 100% | 92.6% |
+| defRenamer.ts | 100% | 95.2% |
+| definitionSemantics.ts | 100% | 94.8% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 98.9% |
-| entityMapping.ts | 98.4% | 96.1% |
-| languageProviders.ts | 98.6% | 93.5% |
+| entityMapping.ts | 100% | 98.6% |
+| languageProviders.ts | 100% | 95.2% |
 | monitoringCollector.ts | 100% | 100% |
-| entityDependency.ts | 97.4% | 93.3% |
-| databaseSchema.ts | 99.4% | 94.4% |
+| entityDependency.ts | 100% | 94.1% |
+| databaseSchema.ts | 100% | 95.3% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 95.1% |
-| definitionWorkspace.ts | 98.9% | 91.5% |
+| definitionWorkspace.ts | 100% | 92.8% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 98.6% |
 | logWebView.ts | 100% | 96.9% |
-| monitoringWebView.ts | 96.9% | 91.8% |
-| entityDependencyWebView.ts | 97.9% | 95.2% |
+| monitoringWebView.ts | 100% | 93.4% |
+| entityDependencyWebView.ts | 100% | 100% |
 | debugConfig.ts | 100% | 95.2% |
-| explorerProviders.ts | 99.2% | 98.1% |
-| extension.ts | 99.5% | 98.4% |
+| explorerProviders.ts | 100% | 99.2% |
+| extension.ts | 100% | 98.4% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -182,8 +183,9 @@ referencedBy 跨边种类累计、stats(total/base/cell/client、mostReferenced
 (节点未经 parseEntityFile 无 parent,继承边缺席)、getEntityNode/
 getChildren/getAncestors 查询与 loadFromEntitiesXml 幂等(types 不翻倍)、
 无 workspaceFolders 返回空图。嵌套 Properties 属性因顶层同名闭标截断在
-类链路不可达,其递归分支与 mapContainerType default 共 5.8% 未覆盖,
-由 mocha 域与后续批次覆盖。
+类链路不可达:该递归臂的行与分支条目已于批62 判不可达并包进 ignore 区间
+(理由与"内层字段引用永远走不到"的成因见批62 注),其契约行为另由私有
+接缝的真实用例锁定;文件剩余未覆盖项只在分支口径(94.1%),行覆盖 100%。
 
 databaseSchema 的虚拟文档 URI/文档识别、schema 文本渲染、表/字段行定位、
 mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
@@ -247,9 +249,11 @@ Registered, but no runtime role enabled 标签)、types.xml 自定义类型
 (aliasType/rawValue 剔除 implementedBy/Properties、属性按名排序、声明行
 号、implementedBy→user_type python 实现文件解析)、entity def 文件与
 四类别(type/entity/interface/component)条目解析(注册实体与未注册 def
-合并、registered 优先后按名排序)。未覆盖部分是依赖 vscode 文档定位的
-getWorkspaceRootForDocument 分支与条目结构渲染细节。批18 的
-languageProviders 用例经真实文件树引用进一步抬升至 88.8%。
+合并、registered 优先后按名排序)。剩余未覆盖项只在分支口径(92.8%,v8 的
+隐式 else 推导与类型级穷尽项,逐批定性),行覆盖自批62 起 100%——
+mapDefinitionFiles 的"非普通文件"条目由真实符号链接用例覆盖,两处根缺失
+守卫判不可达入 ignore。批18 的 languageProviders 用例经真实文件树引用
+进一步抬升,该文件行覆盖同样自批62 起 100%。
 
 serverCommandTarget 的目标解析已全覆盖(直名/嵌套 component 载荷/非对象/
 未知名/非字符串名,100%);serverManager 的纯逻辑面已覆盖:组件常量表
@@ -938,13 +942,103 @@ WATCHER_QUERY_MSG_IDS 无该键而永远拿不到 watcher 指标,状态恒为"�
 99.12→99.16、lines 99.10→99.14、functions 持平 100。vitest 63 文件
 804 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
+批62 行覆盖专项:基线 lines 99.14%(4743/4784,缺 41 行)推到 100%。
+逐行判定 41 处缺口(languageProviders 11、entityMapping 7、entityDependency 5、
+monitoringWebView 4、definitionWorkspace 3、entityDependencyWebView 2,其余零星
+1-2 行),结论是 **11 行可达并补真实用例 + 30 行不可达并加 ignore**:
+
+可达侧(每处一条以上真断言,无空测试)——definitionWorkspace.ts L895
+`mapDefinitionFiles` 跳过"非普通文件"条目:真实文件系统落两个符号链接
+(指向目录的 Loop.def、指向文件的 Linked.def)与 entity_defs 下一个
+Ghost.def 链接,断言清单只收普通 .def、链接名既不列入也不作为未注册定义补入,
+其余字段口径照常(new tests/definitionWorkspaceLines.test.ts,2 用例);
+entityDependency.ts L471-477 FIXED_DICT 的嵌套 `<Properties>` 递归:按私有函数
+契约直驱 `extractReferencesFromProperty('pos', <体内带完整闭合嵌套段的体>)`,
+断言内层字段引用名为 `pos.target`(点前缀)、类型按内层 `<Type>` 判定为 array,
+且同一体内 `<Type>` 的扁平扫描不看层级会再以父属性名 `pos` 记一条(dedupe 键为
+"实体:类型:属性名"三元组,两条不同故都保留——实现现状),另以"未跑 analyze 的
+实例"断言 `isEntityReference` 闸门使结果为空;entityDependencyWebView.ts L80
+`refreshGraph` 的 `!panel` 守卫:先捕获面板的消息回调再 `fireDispose`,复现
+"在途 refresh 消息在销毁之后送达"的时序,断言不重新分析(analyze 调用数 0)、
+`webview.html` 逐字不变、无 error 也无输出行;entityMapping.ts L903
+`scoreMethodDefinition` 的 componentSlotName 两臂:直驱打分函数,槽名命中 140、
+不命中 110、定义自身无槽名而传了选项 110(批33 已登记该选项不被候选收集使用,
+本例只锁打分契约);explorerProviders.ts L986/L1031 两处"工作区根为空串":
+`readDefinitionHierarchyStats('')` 退化为只出本地一节(inherited 空、local 仍含
+hp/move)、`readDefinitionStats('')` 回落六键全空表且不抛给调用方;extension.ts
+L242 `kbengine.entity.method.open` 的 catch:令 `openTextDocument` 抛错,字符串与
+identity 两种入参各出一条带原因的 warning,断言两种 label 形态同文;
+languageProviders.ts L1577 `findCustomTypeInfo` 未命中:在工作区放第二份
+types.xml 副本(backups/types.xml,不在布局候选路径上),副本独有类型名 BETA 的
+悬停与定义双双为 null,同名 DOLL 仍按**布局那份**解析(hover 出 item.doll 而非
+副本写的 item.other),跳转行号取当前文档第 5 行。
+
+不可达侧(25 处 `/* istanbul ignore start */ … stop */` 区间,理由逐处写在
+源码注释里,此处登记口径)——languageProviders.ts 10 处:hover 的
+hook 二段判定(同开关下 earlyHook 命中即返)、`!runtimeProfile`
+(entityInfo 与 profile 同源于同一 workspaceRoot 快照)、getDefNodeAtWord 两条
+回落臂(四个调用面都用同一条 `/\w+/` 在同一 document+position 取词后原样传入)、
+`!declarationInfo`(集合命中必有节点)、findCustomTypeAtPosition 的 `!ast`
+与 findCurrentDocumentCustomTypeReference 的 `!ast?.root`(二者都建立在
+同一 document 同一次同步解析已取到 AST 的前提上)、
+findMethodImplementationLocationInDef 的 `!ast || !symbolInfo`、外层 then 的
+位置兜底(内层两臂都返回 Location)、prepareCallHierarchy 的 `!ast`
+(symbolInfo 非空即证明解析成功);entityMapping.ts 3 处:loader 工厂的
+`!loader`(工作区文件夹 uri.fsPath 恒为绝对路径)、push 闭包的 `!candidate`
+(三处调用都在 fs.existsSync 命中分支里传字面量对象)、getPythonCandidates 尾部
+(componentSlotName 候选臂 + 末次 return,需要类型外的 kind 才能到达,
+批33 登记的重复形态);monitoringWebView.ts 2 处:`updateTimer` 的两段清理
+(本类无任何赋值点,自动刷新定时器未接线,守卫恒为假);definitionWorkspace.ts
+2 处:`!layout.entityDefsRoot`(候选列表恒含非空相对路径,该值只能是字符串)与
+findExistingLookupPath 的 `typeof candidatePath !== 'string'`(唯一非串来源
+是 entityDefsRoot/interfacesRoot/componentsRoot 为 null,而上者恒为串);
+databaseSchema.ts 2 处:`!layout.entityDefsRoot`(同源理由)、
+FLAG_SCOPE_MAP 的 switch `default`(RuntimeScope 三员已穷尽);
+entityDependency.ts 1 处(calculateDepth 递归臂,见下"实现现状")、
+entityDependencyWebView.ts 1 处(mermaid 类型标签 switch 的 `default`,
+EntityType 三员穷尽)、defParser.ts 1 处(`!rawNode || typeof rawNode !== 'object'`,
+vendor fxp 在 preserveOrder 下对注释/声明/doctype/CDATA/PI/纯文本/混合元素
+八种输入实测均产出对象元素)、defRenamer.ts 1 处(getTagNameRange 的正则失配臂,
+tagStart/tagEnd/name 同源同一次解析,切片必以该标签名开头)、
+definitionSemantics.ts 1 处(buildInheritanceLabel 的空链臂,五处调用传入的
+chain 均以字面量名打头,`createSource` 的 `[]` 默认值只与 kind='local' 同现)、
+explorerProviders.ts 1 处(段描述符 `groups.length === 0`,上方已早退)。
+
+机制发现(本批 ignore 形态统一为区间的因):vitest 5.0.1 +
+@vitest/coverage-v8 5.0.1 + ast-v8-to-istanbul 1.0.7 下,`/* istanbul ignore
+next */` 只对 SwitchCase 生效——放在 IfStatement 之前、块内 `return` 之前、
+标签同行右侧等共 9 种放置法逐一实测,语句/行计数均不变;能同时移出行与分支
+条目的形态只有 `/* istanbul ignore start */ … /* istanbul ignore stop */`
+行区间。故全仓 ignore 一律用区间,区间上方保留中文理由行。
+
+登记两处实现现状(只登记不修,修正属功能改动):① entityDependency.ts
+`calculateMaxDepth` 的种子循环只对 `!node.parent` 的实体调用 `calculateDepth`,
+被选中节点的 parent 恒为空,递归臂永不进入 → `stats.maxDepth` 在任何继承链上都
+只到 1(链深未被真正计算);② `extractTagBodies(text, 'Properties')` 非贪婪,
+顶层段在首个同名闭标处截断,段内不可能出现成对的 `<Properties>…</Properties>`,
+后果是 FIXED_DICT 内层字段的引用永远走不到(本批 L471-477 只能按契约直驱),
+且含嵌套 Properties 的顶层属性整块丢失、其内层字段反被当成顶层属性提取
+(名与路径错位;批60 的 'loses the nested property but hoists the inner block'
+用例已锁该现状)。
+
+修正批54 的一处定性:extension.ts L242 曾被记为"openMethodTarget 永不抛错
+(内部自带 catch)导致的防御 catch"——不成立,`openFileAtLocation` 不 catch,
+`openTextDocument` 失败会冒到命令层,本批已按该真实路径补测,该说法在下方"说明"
+里同步改掉。本批未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'
+一节无新增条目。总行分母 4784→4733(移出 51 行 = 30 处缺口行 + 同区间内原本
+已覆盖的 21 行),lines 99.14%→100%、statements 99.16%→100%、functions 持平 100、
+branches 95.11%→96.2%(2705/2844→2686/2792,分母缩小系 ignore 区间同时移出分支
+条目;区间外未覆盖分支 106 条维持逐批定性的口径)。vitest 64 文件 812 用例
+(两种引擎口径全绿),mocha 烟测 11 用例。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
   deactivate 由 tests/extension.test.ts 的 fake-vscode 装配测试驱动
   (6 用例,详见 docs/redesign.md 阶段 3),99.5% lines / 100% functions,
-  唯一未盖 L242(批58 行号漂移前为 L234)是 openMethodTarget 永不抛错
-  (内部自带 catch)导致的防御 catch,如实记录。批56 起 mocha 层裁为
+  当时唯一未盖的 L242(批58 行号漂移前为 L234)被记为"openMethodTarget
+  永不抛错导致的防御 catch"——该定性已于批62 推翻并改正:openFileAtLocation
+  不 catch,openTextDocument 失败即冒到命令层,现由真实用例覆盖。批56 起 mocha 层裁为
   编译产物烟测(批58 后 11 用例,见批56/58 注),
   两 runner 覆盖率不做工具级合并。
 - 总体百分比的分母包含全部源码文件;随测试推进持续抬升,

@@ -705,9 +705,15 @@ function createSource(
 }
 
 function buildInheritanceLabel(prefix: 'Mixin' | 'Parent', chain: string[]): string {
+  // 不可达(批62 定性):五处调用(本文件 L249/304/329/384 与 createSource)传入的
+  // chain 都以字面量名打头([interfaceRef.name] / [local.parentName] / parentChain
+  // .concat(...)),长度恒 ≥1;createSource 的形参默认值 [] 只与 kind='local'
+  // 的调用同现(走 'Own' 分支),故空链臂无触发路径。
+  /* istanbul ignore start */
   if (chain.length === 0) {
     return prefix;
   }
+  /* istanbul ignore stop */
 
   return `${prefix} · ${chain.join(' / ')}`;
 }

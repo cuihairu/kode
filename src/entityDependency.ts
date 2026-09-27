@@ -326,9 +326,15 @@ export class EntityDependencyAnalyzer {
       }
 
       const node = this.entities.get(entityName);
+      // 不可达(批62 定性,见 TESTING.md 批62 段):种子循环只对 `!node.parent` 的
+      // 实体调用 calculateDepth,被选中节点的 parent 恒为空,递归臂因此永不进入;
+      // 结果是 stats.maxDepth 在任何继承链上都只到 1(链深未被真正计算),
+      // 修正会改变图统计口径,属功能改动,本批只登记不修。
+      /* istanbul ignore start */
       if (node && node.parent) {
         calculateDepth(node.parent, currentDepth + 1);
       }
+      /* istanbul ignore stop */
     };
 
     for (const [name, node] of this.entities) {

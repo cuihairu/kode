@@ -269,6 +269,46 @@ describe('EntityMappingManager 私有工具的直接驱动', () => {
       section: 'BaseMethods'
     })).toBe(110);
   });
+
+  // 批62 行覆盖:四个打分条件里只剩 componentSlotName 一项无生产调用面传值
+  // (批33 已登记该选项在解析链上未被使用),这里按打分函数的契约直接驱动它,
+  // 锁定"槽名命中 +30 / 不命中不加"的分值规则,不代表候选收集会用该选项。
+  it('componentSlotName 选项按槽名是否相同加减分', () => {
+    const target = internals(manager as EntityMappingManager);
+    const slotDefinition = {
+      defFile: p(root, 'scripts', 'entity_defs', 'Hero.def'),
+      line: 8,
+      section: 'BaseMethods' as const,
+      exposed: false,
+      identity: {
+        ownerKind: 'component' as const,
+        ownerName: 'Bag',
+        sourceKind: 'local' as const,
+        sourceChain: [],
+        section: 'BaseMethods' as const,
+        symbolName: 'add',
+        componentSlotName: 'bag'
+      }
+    };
+    const options = {
+      ownerKind: 'component' as const,
+      ownerName: 'Bag',
+      section: 'BaseMethods' as const,
+      componentSlotName: 'bag'
+    };
+
+    // 四项全中(40+40+20+30)再加 local 的 10 分
+    expect(target.scoreMethodDefinition(slotDefinition, options)).toBe(140);
+    // 对照:槽名不同即少 30 分,其余打分不变
+    expect(target.scoreMethodDefinition(slotDefinition, { ...options, componentSlotName: 'wallet' })).toBe(110);
+    // 对照:定义自身无槽名时,传了选项也不加分
+    const { componentSlotName, ...identityWithoutSlot } = slotDefinition.identity;
+    expect(componentSlotName).toBe('bag');
+    expect(target.scoreMethodDefinition(
+      { ...slotDefinition, identity: identityWithoutSlot },
+      options
+    )).toBe(110);
+  });
 });
 
 describe('EntityMappingManager 真实索引上的解析未命中', () => {

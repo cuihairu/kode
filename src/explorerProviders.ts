@@ -737,9 +737,13 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
     groups.push(...inheritedGroups);
 
+    // 不可达(批62 定性):上方 `inheritedGroups.length === 0` 已早退,走到这里
+    // groups 至少含一个继承组,长度不可能为 0。
+    /* istanbul ignore start */
     if (groups.length === 0) {
       return null;
     }
+    /* istanbul ignore stop */
 
     return {
       key: section,

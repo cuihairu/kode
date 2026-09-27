@@ -123,10 +123,14 @@ export class EntityMappingManager {
       return;
     }
 
+    // 不可达(批62 定性):工厂只在传入根为空串时返回 null,而工作区文件夹的
+    // uri.fsPath 恒为绝对路径,上面的 !workspaceFolder 早退已覆盖唯一空根场景。
     const loader = createDefinitionSemanticsLoader(workspaceFolder.uri.fsPath);
+    /* istanbul ignore start */
     if (!loader) {
       return;
     }
+    /* istanbul ignore stop */
 
     const defFiles = await vscode.workspace.findFiles('**/*.def', null);
     for (const defFile of defFiles) {
@@ -201,9 +205,13 @@ export class EntityMappingManager {
     const seen = new Set<string>();
 
     const push = (candidate: PythonOwnerFile | null) => {
+      // 不可达(批62 定性):三处调用都在 fs.existsSync 命中分支里传对象字面量,
+      // 该闭包收不到 null。
+      /* istanbul ignore start */
       if (!candidate) {
         return;
       }
+      /* istanbul ignore stop */
 
       const key = `${candidate.ownerKind}:${candidate.ownerName}:${candidate.section || ''}:${normalizeLookupPath(candidate.filePath)}`;
       if (seen.has(key)) {
@@ -321,6 +329,11 @@ export class EntityMappingManager {
       return candidates;
     }
 
+    // 不可达(批62 定性):owner.kind 类型为 DefinitionSemanticCategory,只有
+    // entity/interface/component 三员且各自在上方早退 return,走到这里需要一个
+    // 类型外的 kind;componentSlotName 的槽位脚本候选已由 kind === 'component'
+    // 分支承担(批33 记录的重复形态),末次 return 同样只能由类型外 kind 达到。
+    /* istanbul ignore start */
     if (componentSlotName) {
       for (const prefix of assetPrefix) {
         candidates.push(joinWorkspacePath(workspaceRoot, prefix, sectionFolder, 'components', `${ownerName}.py`));
@@ -328,6 +341,7 @@ export class EntityMappingManager {
     }
 
     return candidates;
+    /* istanbul ignore stop */
   }
 
   private getSectionFolder(section: EntityMethodSection): 'base' | 'cell' | 'client' {

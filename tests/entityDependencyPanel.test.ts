@@ -91,10 +91,12 @@ const makeWebView = (): EntityDependencyWebView => {
 const currentPanel = (): FakeWebviewPanel =>
   panelRegistry.panels[panelRegistry.panels.length - 1];
 
-const show = async (): Promise<FakeWebviewPanel> => {
-  await makeWebView().show();
+const showOf = async (webview: EntityDependencyWebView): Promise<FakeWebviewPanel> => {
+  await webview.show();
   return currentPanel();
 };
+
+const show = async (): Promise<FakeWebviewPanel> => showOf(makeWebView());
 
 const send = (message: unknown): void => {
   panelRegistry.fireMessage(currentPanel(), message);
@@ -228,6 +230,35 @@ describe('EntityDependencyWebView message handling', () => {
 
     expect(panel.webview.html).toContain('graph TD');
     expect(messages.error).toEqual([]);
+  });
+
+  // 批62 行覆盖:面板已销毁时的在途 refresh 消息。真实 vscode 里销毁后面板不再
+  // 派发消息,fake 的 dispose 也会清空监听器,所以这里先捕获回调再销毁,复现
+  // "消息在销毁之后送达"这一守卫所防范的时序;断言的是守卫命中后的行为:
+  // 不重新分析、不写 html、不报错。
+  it('drops a refresh message that arrives after the panel was disposed', async () => {
+    const webview = makeWebView();
+    const panel = await showOf(webview);
+    // fake 的注册表把回调记为同步签名,类里传的是 async 函数,这里按实际返回值收窄
+    const messageListener = panel.messageListeners[0] as (message: unknown) => Promise<void>;
+    expect(typeof messageListener).toBe('function');
+
+    let analyzeCalls = 0;
+    analyzeImpl = async () => {
+      analyzeCalls += 1;
+      return makeGraph();
+    };
+    const htmlBefore = panel.webview.html;
+
+    panelRegistry.fireDispose(panel);
+    expect(panel.messageListeners).toEqual([]);
+
+    await messageListener!({ command: 'refresh' });
+
+    expect(analyzeCalls).toBe(0);
+    expect(panel.webview.html).toBe(htmlBefore);
+    expect(messages.error).toEqual([]);
+    expect(channelLines).toEqual([]);
   });
 
   it('opens the def document for a known entity', async () => {

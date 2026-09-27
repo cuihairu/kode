@@ -264,9 +264,14 @@ function normalizePreserveOrderNodes(
   const nodes: DefNode[] = [];
 
   for (const rawNode of rawNodes) {
+    // 不可达(批62 定性):vendor fxp 在 preserveOrder 下数组元素恒为对象——顶层注释/
+    // 内联注释/xml 声明/doctype/CDATA/处理指令/纯文本/混合元素八种输入实测均产出
+    // {"#text":...} 或 {"?pi":...} 形态对象,无字符串或 null 元素,该守卫无触发路径。
+    /* istanbul ignore start */
     if (!rawNode || typeof rawNode !== 'object') {
       continue;
     }
+    /* istanbul ignore stop */
 
      const attributes = normalizeAttributes((rawNode as Record<string, unknown>)[':@']);
 

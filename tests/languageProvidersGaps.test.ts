@@ -84,6 +84,20 @@ beforeAll(() => {
   ].join('\n'));
   write('user_type/item/doll.py', 'class Doll(object):\n    pass\n');
 
+  // 工作区内的第二份 types.xml 副本(备份目录,不在布局候选路径上):
+  // DOLL 与布局那份同名、BETA 只在副本里出现
+  write('backups/types.xml', [
+    '<root>',
+    '  <BETA>',
+    '    <Type>UINT8</Type>',
+    '  </BETA>',
+    '  <DOLL>',
+    '    <Type>UINT32</Type>',
+    '    <implementedBy>item.other</implementedBy>',
+    '  </DOLL>',
+    '</root>'
+  ].join('\n'));
+
   stubWorkspace.workspaceFolders = [
     { uri: Uri.file(root), name: 'ws', index: 0 }
   ];
@@ -353,6 +367,56 @@ describe('definition entry branches', () => {
     expect(location).toBeTruthy();
     expect(location.uri.fsPath.endsWith('types.xml')).toBe(true);
     expect(location.range.start.line).toBe(1);
+  });
+});
+
+// 批62 行覆盖:类型名登记只认布局解析出的那份 types.xml —— 副本文件里的名字
+// 不在登记表内时 findCustomTypeInfo 未命中,自定义类型面(悬停/定义)整段无结果;
+// 同名类型仍按布局那份的信息解析,跳转行号则取当前文档(实现现状)。
+describe('custom type lookup against a second types.xml copy', () => {
+  const hoverProvider = new KBEngineHoverProvider();
+  const definitionProvider = new KBEngineDefinitionProvider();
+
+  const copy = [
+    '<root>',
+    '  <BETA>',
+    '    <Type>UINT8</Type>',
+    '  </BETA>',
+    '  <DOLL>',
+    '    <Type>UINT32</Type>',
+    '    <implementedBy>item.other</implementedBy>',
+    '  </DOLL>',
+    '</root>'
+  ].join('\n');
+
+  const copyAt = (marked: string) => docAt(marked, 'backups/types.xml', 'kbengine-def');
+
+  it('副本独有的类型名既无悬停也无定义结果', () => {
+    const unknown = copyAt(copy.replace('BETA', 'BE|TA'));
+
+    expect(hoverProvider.provideHover(unknown.document, unknown.position)).toBeNull();
+    expect(definitionProvider.provideDefinition(unknown.document, unknown.position)).toBeNull();
+  });
+
+  it('同名类型按布局那份解析,跳转行号取当前文档', () => {
+    const known = copyAt(copy.replace('DOLL', 'DO|LL'));
+
+    const hover = hoverProvider.provideHover(known.document, known.position);
+    expect(hover).toBeTruthy();
+    const text = hoverText(hover);
+    // implementedBy 取的是 scripts/entity_defs/types.xml 的 item.doll,
+    // 不是副本里写的 item.other
+    expect(text).toContain('DOLL');
+    expect(text).toContain('item.doll');
+    expect(text).not.toContain('item.other');
+
+    const location = definitionProvider.provideDefinition(
+      known.document,
+      known.position
+    ) as { uri: { fsPath: string }; range: { start: { line: number } } };
+    expect(location.uri.fsPath).toBe(p(root, 'backups', 'types.xml'));
+    // 副本里 <DOLL> 位于第 5 行(0 基 4)
+    expect(location.range.start.line).toBe(4);
   });
 });
 

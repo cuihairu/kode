@@ -407,10 +407,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return new vscode.Hover(markdown);
       }
 
+      // 不可达(批62 定性):同一个 hoverShowValueDocs 开关下,前面的 earlyHook
+      // 命中即已返回,走到这里时 getHookByName(word) 必为假。
       const hook = getHookByName(word);
+      /* istanbul ignore start */
       if (hook) {
         return createHookHover(hook);
       }
+      /* istanbul ignore stop */
 
       const reloadFunc = KBENGINE_RELOAD_FUNCTIONS.find(f => f.name.endsWith(word) || word === f.name);
       if (reloadFunc) {
@@ -1217,6 +1221,9 @@ function getEntityRuntimeHoverLines(
     return `**${label}**: \`false\` (not declared, no script)`;
   };
 
+  // 不可达(批62 定性):entityInfo 与 runtimeProfile 同源于同一 workspaceRoot 的
+  // getRegisteredEntities 快照,上面 !entityInfo 已早退,此处 profile 必非 null。
+  /* istanbul ignore start */
   if (!runtimeProfile) {
     return [
       `**Base**: \`${entityInfo.hasBase}\``,
@@ -1224,6 +1231,7 @@ function getEntityRuntimeHoverLines(
       `**Client**: \`${entityInfo.hasClient}\``
     ];
   }
+  /* istanbul ignore stop */
 
   const extraLines = [
     renderFacet('Base', runtimeProfile.base, entityInfo.hasBase),
@@ -1303,15 +1311,22 @@ function getDefNodeAtPosition(document: vscode.TextDocument, position: vscode.Po
 }
 
 function getDefNodeAtWord(document: vscode.TextDocument, position: vscode.Position, word: string): DefNode | null {
+  // 不可达(批62 定性):四个调用面(hover/definition/callHierarchy/方法实现)都先用
+  // 同一条 /\w+/ 规则在同一个 document+position 上取词再原样传入,range 必存在且
+  // text === word,两条回落臂在该调用面上无触发路径。
   const range = document.getWordRangeAtPosition(position, /\w+/);
+  /* istanbul ignore start */
   if (!range) {
     return getDefNodeAtPosition(document, position);
   }
+  /* istanbul ignore stop */
 
   const text = document.getText(range);
+  /* istanbul ignore start */
   if (text !== word) {
     return getDefNodeAtPosition(document, position);
   }
+  /* istanbul ignore stop */
 
   return getDefNodeAtPosition(document, range.start);
 }
@@ -1363,10 +1378,14 @@ function resolveCustomTypeReference(
     return { status: 'missingTypeRegistration' };
   }
 
+  // 不可达(批62 定性):customTypes 与声明查询都读同一 workspaceRoot 的 types.xml
+  // 快照,集合命中必有节点,故 !declarationInfo 无触发路径。
   const declarationInfo = findCustomTypeDeclarationInfo(candidate, workspaceRoot);
+  /* istanbul ignore start */
   if (!declarationInfo) {
     return { status: 'resolved' };
   }
+  /* istanbul ignore stop */
 
   if (declarationInfo.implementedBy && !findCustomTypePythonImplementationFile(
     declarationInfo.name,
@@ -1558,10 +1577,14 @@ function findCustomTypeAtPosition(
     return null;
   }
 
+  // 不可达(批62 定性):node 出自同一 document 同一次同步调用内的 parseDefAst 结果,
+  // 解析失败时上面的 topLevelTypeNode 已早退,此处 ast 不可能为 null。
   const ast = parseDefAst(document);
+  /* istanbul ignore start */
   if (!ast) {
     return null;
   }
+  /* istanbul ignore stop */
 
   return {
     info: customTypeInfo,
@@ -1578,10 +1601,17 @@ function findCurrentDocumentCustomTypeReference(
     return null;
   }
 
+  // 不可达(批62 定性):唯一调用面 findTypeValueDefinitionReference 的两个入口
+  // (findTypeValueDefinitionInTypesXml / findDefinitionReferenceInDef)都先用
+  // isPositionInsideTagValue('Type') 判定,而它经 getDefNodeAtPosition 对同一
+  // document 解析并在 !ast?.root 处早退;parseDefAst 纯同步且确定性,同一次调用内
+  // 两次解析结果一致,该守卫无触发路径。
   const ast = parseDefAst(document);
+  /* istanbul ignore start */
   if (!ast?.root) {
     return null;
   }
+  /* istanbul ignore stop */
 
   const typeNode = getDirectChildElements(ast.root).find(node => node.name === typeName);
   if (!typeNode) {
@@ -1763,11 +1793,15 @@ function findMethodImplementationLocationInDef(
     return null;
   }
 
+  // 不可达(批62 定性):调用方(findEntityDefinitionInDef)已在同一 document+position
+  // 上用同一个词取到 symbolInfo 并确认段名为方法段,ast 亦因取到 node 而必非 null。
   const ast = parseDefAst(document);
   const symbolInfo = findDefSymbolInfo(document, position, methodName);
+  /* istanbul ignore start */
   if (!ast || !symbolInfo) {
     return null;
   }
+  /* istanbul ignore stop */
 
   const line = getLineNumberAt(ast, symbolInfo.symbolNode.tagStart);
   return entityMappingManager.resolveDefinitionSymbolAtPosition(
@@ -1801,10 +1835,14 @@ function findMethodImplementationLocationInDef(
       return reference;
     }
 
+    // 不可达(批62 定性):内层两臂(identity 缺失 / 实现未解析)都返回 Location,
+    // 外层 then 收到的 reference 恒真,此兜底无触发路径。
+    /* istanbul ignore start */
     return new vscode.Location(
       document.uri,
       new vscode.Position(Math.max(line - 1, 0), 0)
     );
+    /* istanbul ignore stop */
   });
 }
 
@@ -1969,10 +2007,16 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
         return null;
       }
 
+      // 不可达(批62 定性):symbolInfo 非空说明上一次 parseDefAst 已取到 AST
+      // (getDefNodeAtWord→getDefNodeAtPosition 在 ast 为空时必然返回 null),
+      // 且本分支的 languageId/文件名条件已满足 parseDefAst 的白名单;同一 document
+      // 的同步重复解析不可能改判为空。
       const ast = parseDefAst(document);
+      /* istanbul ignore start */
       if (!ast) {
         return null;
       }
+      /* istanbul ignore stop */
 
       const identity = await this.entityMappingManager.resolveDefinitionSymbolAtPosition(
         document.fileName,

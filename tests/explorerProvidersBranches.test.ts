@@ -60,6 +60,10 @@ interface ExplorerInternals {
   buildDefinitionDescription(workspaceRoot: string, entry: unknown): string;
   buildDefinitionViewModel(workspaceRoot: string, entry: unknown): ViewModelLike;
   readDefinitionStats(defPath: string): Record<string, unknown>;
+  readDefinitionHierarchyStats(workspaceRoot: string, entry: unknown): {
+    local: Record<string, unknown>;
+    inherited: unknown[];
+  };
   createTypePropertyItem(workspaceRoot: string, property: unknown): LeafLike;
   createTypeStructureItems(workspaceRoot: string, structure?: unknown): LeafLike[];
   createMethodItem(entry: unknown, method: unknown, section: string): LeafLike;
@@ -279,6 +283,50 @@ describe('explorer readDefinitionStats 的类别路径判定', () => {
     const compStats = provider.readDefinitionStats(compRoot);
     expect(compStats.properties).toEqual(['charge']);
     expect((compStats.cellMethods as Array<{ name: string }>).map(item => item.name)).toEqual(['apply']);
+  });
+
+  // 批62 行覆盖:两处"根缺失"守卫的空串入参。生产调用面(视图模型/层级统计)传入的
+  // 都是布局里非空的工作区根,空串只能由直接驱动私有方法构造,这里锁定的是守卫命中后
+  // 的回落形状:层级统计退化为"只有本地一节",统计函数退化为全空表且不抛给调用方。
+  it('根为空串时层级统计只出本地一节,统计函数回落全空表', () => {
+    const provider = makeExplorer();
+
+    write('probe/entities/Hero/scripts/entity_defs/Hero.def', [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </hp>',
+      '  </Properties>',
+      '  <BaseMethods>',
+      '    <move/>',
+      '  </BaseMethods>',
+      '</root>'
+    ].join('\n'));
+
+    const stats = provider.readDefinitionHierarchyStats('', {
+      name: 'Hero',
+      filePath: p('probe', 'entities', 'Hero'),
+      category: 'entity',
+      exists: true,
+      registered: true
+    } satisfies DefinitionEntryLike);
+
+    // 回落到"按 entry.filePath 单读本地",继承组整段缺席
+    expect(stats.inherited).toEqual([]);
+    expect(stats.local.properties).toEqual(['hp']);
+    expect((stats.local.baseMethods as Array<{ name: string }>).map(item => item.name)).toEqual(['move']);
+
+    // 空路径连布局都取不到:抛错被同函数的 catch 吞掉,调用方只看到空表
+    expect(provider.readDefinitionStats('')).toEqual({
+      properties: [],
+      baseMethods: [],
+      cellMethods: [],
+      clientMethods: [],
+      interfaces: [],
+      components: []
+    });
   });
 });
 

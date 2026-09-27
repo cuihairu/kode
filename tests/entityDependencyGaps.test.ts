@@ -109,8 +109,15 @@ afterAll(() => {
 const makeAnalyzer = (): EntityDependencyAnalyzer =>
   new EntityDependencyAnalyzer({ subscriptions: [] });
 
+interface Reference {
+  entityName: string;
+  type: DependencyType;
+  propertyName: string;
+}
+
 const internals = (analyzer: EntityDependencyAnalyzer): {
   entities: Map<string, unknown>;
+  extractReferencesFromProperty(propertyName: string, propertyBody: string): Reference[];
 } => analyzer as unknown as never;
 
 describe('type derivation and registration gaps', () => {
@@ -140,6 +147,50 @@ describe('reference extraction gaps', () => {
       propertyName: 'x'
     }]);
   }, 8000);
+
+  // 批62 行覆盖:FIXED_DICT 的嵌套 <Properties> 递归段。生产文本抽取路径走不到它
+  // (上方截断用例即为其成因:顶层 extractTagBodies 非贪婪,捕获段内不可能出现
+  //  成对的 <Properties>…</Properties>,故属性体内也就没有嵌套段可走)。
+  // 这里按私有函数自身的契约直接喂一个"体内带完整嵌套 Properties"的形态,锁定
+  // 递归的口径:内层字段引用名带父属性点前缀、类型按内层 <Type> 判定、
+  // 非实体类型不产出引用。
+  it('walks a complete nested Properties block when the body carries one', () => {
+    const analyzer = makeAnalyzer();
+    const nested = internals(analyzer).extractReferencesFromProperty('pos', [
+      '<Type>FIXED_DICT</Type>',
+      '<Properties>',
+      '  <target>',
+      '    <Type>ARRAY<Anchor></Type>',
+      '  </target>',
+      '  <peer>',
+      '    <Type>FLOAT</Type>',
+      '  </peer>',
+      '</Properties>'
+    ].join('\n'));
+
+    // 该实例未跑 analyze,实体表为空:isEntityReference 全落空 → 无任何引用
+    expect(nested).toEqual([]);
+
+    // 同一份体在已登记 Anchor 后:嵌套段递归给出点前缀引用,而体内 <Type> 的
+    // 扁平扫描不看层级,同一个内层字段还会以父属性名再记一次(实现现状,
+    // dedupe 按"实体:类型:属性名"三元组判重,两条键不同故都保留)
+    const seeded = makeAnalyzer();
+    internals(seeded).entities.set('Anchor', { name: 'Anchor' });
+    expect(internals(seeded).extractReferencesFromProperty('pos', [
+      '<Type>FIXED_DICT</Type>',
+      '<Properties>',
+      '  <target>',
+      '    <Type>ARRAY<Anchor></Type>',
+      '  </target>',
+      '  <peer>',
+      '    <Type>FLOAT</Type>',
+      '  </peer>',
+      '</Properties>'
+    ].join('\n'))).toEqual([
+      { entityName: 'Anchor', type: DependencyType.Array, propertyName: 'pos.target' },
+      { entityName: 'Anchor', type: DependencyType.Array, propertyName: 'pos' }
+    ]);
+  });
 
   it('treats FIXED_DICT<X> as a fixed-dict container reference', async () => {
     const graph = await makeAnalyzer().analyze();
