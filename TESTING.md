@@ -50,21 +50,24 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
 批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%,
 批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
-languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%):
+languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
+批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
+分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4819/4819) |
-| Branches | 97.95% (2682/2738) |
+| Statements | 100% (4815/4815) |
+| Branches | 98.64% (2693/2730) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4709/4709) |
+| Lines | 100% (4705/4705) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 43 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 47 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
 新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
+新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
 新增 1 处,逐处理由见"批62 行覆盖专项""批63 分支覆盖专项""批64 分支
-覆盖专项"与"批65 分支覆盖专项"):
+覆盖专项""批65 分支覆盖专项"与"批66 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -74,13 +77,13 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%):
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 100% | 100% |
 | defRenamer.ts | 100% | 95.2% |
-| definitionSemantics.ts | 100% | 94.8% |
+| definitionSemantics.ts | 100% | 100% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 98.9% |
 | entityMapping.ts | 100% | 98.6% |
 | languageProviders.ts | 100% | 100% |
 | monitoringCollector.ts | 100% | 100% |
-| entityDependency.ts | 100% | 94.1% |
+| entityDependency.ts | 100% | 100% |
 | databaseSchema.ts | 100% | 95.3% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 95.1% |
@@ -88,7 +91,7 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%):
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 98.6% |
 | logWebView.ts | 100% | 96.9% |
-| monitoringWebView.ts | 100% | 93.4% |
+| monitoringWebView.ts | 100% | 100% |
 | entityDependencyWebView.ts | 100% | 100% |
 | debugConfig.ts | 100% | 95.2% |
 | explorerProviders.ts | 100% | 99.2% |
@@ -1200,6 +1203,62 @@ mocha 烟测 11 用例。
 生产逻辑,未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'
 一节无新增条目。vitest 66 文件 837 用例(两种引擎口径全绿),mocha 烟测
 11 用例。
+
+批66 分支覆盖专项:先以 `pnpm test:coverage` 刷新 coverage-summary,按实测
+压当时分支最低三件——monitoringWebView.ts 93.4%(99/106 臂)、
+entityDependency.ts 94.1%(80/85 臂)、definitionSemantics.ts 94.8%
+(128/135 臂),逐臂补测到 100%,行/语句/函数维持 100%;总分支
+97.95%→98.64%(2682/2738→2693/2730)。三文件合计判定 15 条未覆盖臂,
+其中 **11 臂可达 + 4 臂(4 个条目)契约性不可达并加 ignore**:
+
+可达侧(新增 tests/monitoringWebViewBranches.test.ts 5 用例、
+tests/entityDependencyBranches.test.ts 2 用例、
+tests/definitionSemanticsBranches.test.ts 6 用例,全部真实例/真实临时文件
+树,未放宽任何断言)——monitoringWebView 7 臂:onMetricsUpdate 回调在面板
+未打开时的 no-op 臂(捕获式 fake collector 直接触发回调,panel 为 null 不
+得触达 updateWebView)、诊断过滤器 'warning'/'error' 的下拉选中态
+(`value="warning" selected`)、刷新间隔 1000/10000 选中态(真实
+collector.setRefreshInterval 驱动 getHtml 读取)、历史窗口 120 选中态、
+formatDiagnostic 的 error 分级臂(`diagnostic-item error` class)。另以
+info 对照臂防误报。entityDependency 2 臂:entities.xml 只给 hasClient 的
+注册实体(loadFromEntitiesXml 的 hasBase 假臂,types 保持 ['Client'],
+对照 FDMix hasBase 真臂);FIXED_DICT implementedBy 内的非实体标量
+`<Type>UINT32</Type>`(isEntityReference 的实体表 miss 假臂——'UINT32' 过
+标识符正则但不在实体表),正对照注册实体引用照常产生引用与 fixed_dict 边。
+definitionSemantics 6 臂:本地重复 `<hp>`/`<ping>` 在 loadResolved 生效
+映射合并循环的 has() 真臂(parseProperties/parseMethods 解析不去重,第二条
+撞 fullPath/方法名被跳过,首条保留);接口同名方法让位于实体自有方法
+(自有 shared 先占位,IMix 的 shared 被跳过、onlyI 照常并入);父链同名
+让位(自有 hp UINT8/ping 先占位,Par2 的 hp/ping 撞属性与方法 has() 真臂,
+pp/other 照常并入);无 `<Type>` 子元素的属性(typeNode 为 null,typeName
+与 arrayElement 走 `: undefined` 假臂)。
+
+不可达侧(新增 4 处精确区间,移出 4 个分支条目 / 8 条臂 = 4 条不可达缺口
+臂 + 4 条原已覆盖臂;真臂行为均由既有/本批正对照用例锁定)——
+entityDependency 三处 has→get 不变式守卫:①L192 `if
+(this.entities.has(reference.entityName))`:references 每条目都经
+isEntityReference(`/^[A-Z]…$/.test(name) && this.entities.has(name)`)同步
+过滤,且 analyze() 双遍扫描——第一遍(loadFromEntitiesXml + 逐文件
+parseEntityFile)先建全实体表,第二遍 parseDependencies 才取引用,期间无
+任何删除路径 ⇒ has() 恒真;②L201 `if (targetNode)` 与 ③L221
+`if (parentNode)`:均在 has() 判真后立刻 get(),期间无表变更 ⇒ 恒非空。
+三处区间只包 `if` 头一行,块体(建边/计数)保持在分母内继续被测。
+definitionSemantics 一处:L596(现 L603)`const nestedArrayPropertiesNode
+= typeNode ? getDirectChildElement(typeNode, 'Properties') : undefined`——
+位于 `if (arrayOfType)` 块内,而 arrayOfType 只能由上一行三元取 typeNode
+非空臂得到,typeNode 是不可变 const ⇒ 重检恒走真臂,`: undefined` 假臂无
+触发路径;整条语句随区间移出分母。批63 已实测 `ignore else` 不被
+ast-v8-to-istanbul 采纳,本批延续 `start … stop` 区间形态,区间上方逐条
+写明理由。
+
+分母口径(如实记,不美化):4 处区间移出 8 条臂 = 4 条不可达缺口臂 + 4 条
+原已覆盖臂;4 条被覆盖语句连同行一并移出分母(entityDependency 3 个 `if`
+语句 + definitionSemantics 1 条三元赋值)——statements 4819→4815、lines
+4709→4705(仍报 100%,但这是"被移出"而非"被补测覆盖",在此登记);分支
+分母 2738→2730(-8),分子 2682+15(新点亮)-4(移出的已覆盖臂)=2693。
+本批未改动任何生产逻辑,未暴露需要改动生产代码的缺陷,'近期由测试发现并
+修复的真实缺陷'一节无新增条目。vitest 69 文件 849 用例(两种引擎口径全
+绿),mocha 烟测 11 用例。
 
 说明:
 

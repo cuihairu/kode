@@ -593,7 +593,15 @@ function parseProperties(
         arrayElement: undefined
       };
 
+      // 不可达(批66 定性):此处位于 `if (arrayOfType)` 块内,而 arrayOfType
+      // 只能由上一行三元取 typeNode 非空臂得到(getScalarChildValue 命中才
+      // 产出真值),typeNode 是不可变 const ⇒ 重检恒走真臂,`: undefined`
+      // 假臂无触发路径。语句与两分支条目随区间移出分母(TESTING.md 分母
+      // 口径据实登记);真臂行为已由既有 ARRAY of <Type> 内嵌 <Properties>
+      // 递归用例覆盖锁定。
+      /* istanbul ignore start */
       const nestedArrayPropertiesNode = typeNode ? getDirectChildElement(typeNode, 'Properties') : undefined;
+      /* istanbul ignore stop */
       if (nestedArrayPropertiesNode) {
         property.arrayElement.children = parseProperties(
           document,

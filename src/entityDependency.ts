@@ -189,7 +189,16 @@ export class EntityDependencyAnalyzer {
             const references = this.extractReferencesFromProperty(property.name, property.body);
             for (const reference of references) {
               node.references.push(reference);
+              // 不可达(批66 定性):references 的每一条目都经 isEntityReference
+              // (`/^[A-Z]…$/.test(name) && this.entities.has(name)`)同步过滤,
+              // 且 analyze() 双遍扫描——第一遍(loadFromEntitiesXml + 逐文件
+              // parseEntityFile)先建全实体表,第二遍 parseDependencies 才取
+              // 引用,期间无任何删除路径 ⇒ has() 恒真,假臂(跳过建边)无触发
+              // 路径。分支条目(含已覆盖真臂)随区间移出分母,真臂行为由既有
+              // 建边/被引计数用例锁定;块体保持在分母内。
+              /* istanbul ignore start */
               if (this.entities.has(reference.entityName)) {
+              /* istanbul ignore stop */
                 this.edges.push({
                   from: node.name,
                   to: reference.entityName,
@@ -198,7 +207,11 @@ export class EntityDependencyAnalyzer {
                 });
 
                 const targetNode = this.entities.get(reference.entityName);
+                // 不可达(批66 定性):上方 has(name) 刚判真后立刻 get(name),
+                // 期间无任何表变更 ⇒ targetNode 恒非空,判空假臂无触发路径。
+                /* istanbul ignore start */
                 if (targetNode) {
+                /* istanbul ignore stop */
                   targetNode.referencedBy++;
                 }
               }
@@ -218,7 +231,12 @@ export class EntityDependencyAnalyzer {
 
         // 增加被引用计数
         const parentNode = this.entities.get(node.parent);
+        // 不可达(批66 定性):外层守卫 `node.parent && this.entities.has(node.parent)`
+        // 刚判真后立刻 get(node.parent),期间无任何表变更 ⇒ parentNode 恒非空,
+        // 判空假臂无触发路径(has→get 不变式,同 targetNode 臂定案)。
+        /* istanbul ignore start */
         if (parentNode) {
+        /* istanbul ignore stop */
           parentNode.referencedBy++;
         }
       }
