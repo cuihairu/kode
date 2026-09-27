@@ -273,7 +273,7 @@ function normalizePreserveOrderNodes(
     }
     /* istanbul ignore stop */
 
-     const attributes = normalizeAttributes((rawNode as Record<string, unknown>)[':@']);
+    const attributes = normalizeAttributes((rawNode as Record<string, unknown>)[':@']);
 
     for (const [name, value] of Object.entries(rawNode)) {
       if (name === ':@') {
@@ -287,7 +287,12 @@ function normalizePreserveOrderNodes(
       if (name === '#text') {
         nodes.push({
           kind: 'text',
+          // 不可达(批63 定性):fxp 在 preserveOrder 下把文本与 CDATA 一律产成
+          // {"#text":"字符串"},#text 作标签名被 fxp 拒绝(Invalid tag name),非字符串
+          // 值无从进入本行;仅覆盖右侧 '' 臂需手工伪造 rawNodes,公开入口无此路径。
+          /* istanbul ignore start */
           text: typeof value === 'string' ? value : '',
+          /* istanbul ignore stop */
           parent,
           startOffset: -1,
           endOffset: -1
@@ -310,9 +315,16 @@ function normalizePreserveOrderNodes(
         selfClosing: false
       };
 
+      // 不可达(批63 定性):preserveOrder 输出的元素值恒为子节点数组 —— 空元素给
+      // [],带文本的给 [{"#text":...}],混合/嵌套的给更长的数组;标量元素值只在
+      // parseTagValue:true 等非本仓库配置下出现(本文件固定
+      // {preserveOrder:true, ignoreAttributes:false, trimValues:false,
+      // parseTagValue:false}),故右侧 [] 臂不可触发。
+      /* istanbul ignore start */
       element.children = Array.isArray(value)
         ? normalizePreserveOrderNodes(value, element)
         : [];
+      /* istanbul ignore stop */
       nodes.push(element);
     }
   }
@@ -335,7 +347,12 @@ function normalizeAttributes(rawAttributes: unknown): Record<string, string> {
   const attributes: Record<string, string> = {};
   for (const [name, value] of Object.entries(rawAttributes)) {
     const normalizedName = name.replace(/^@_/, '');
+    // 不可达(批63 定性):fxp 的 :@ 属性表在 parseTagValue:false 下把每个 @_ 值
+    // 原样留作字符串(含空串属性 @="" 与实体引用),非字符串值与其中的 ?? 双臂
+    // 都无触发路径 —— 三处契约守卫同因:归一化层收到的形状完全由 vendor fxp 决定。
+    /* istanbul ignore start */
     attributes[normalizedName] = typeof value === 'string' ? value : String(value ?? '');
+    /* istanbul ignore stop */
   }
 
   return attributes;

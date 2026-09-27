@@ -48,17 +48,19 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
 vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
-批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%):
+批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%,
+批63 起 defParser.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4843/4843) |
-| Branches | 96.2% (2686/2792) |
+| Statements | 100% (4841/4841) |
+| Branches | 96.44% (2685/2784) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4733/4733) |
+| Lines | 100% (4731/4731) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 25 处
-`/* istanbul ignore start */` 区间,逐处理由见"批62 行覆盖专项"):
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 28 处
+`/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
+新增 3 处,逐处理由见"批62 行覆盖专项"与"批63 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -66,7 +68,7 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | kbengineMetadata.ts | 100% | 100% |
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
-| defParser.ts | 100% | 92.6% |
+| defParser.ts | 100% | 100% |
 | defRenamer.ts | 100% | 95.2% |
 | definitionSemantics.ts | 100% | 94.8% |
 | logParser.ts | 100% | 98.3% |
@@ -506,14 +508,17 @@ null 守卫与 findExistingLookupPath 非字符串分支(当前调用图下不�
 v8 语句映射粒度。
 
 defParser 的遍历工具与文本定位缺口已覆盖(tests/defParserGaps.test.ts,
-9 用例):getDirectTextNodes/getElementText 的空参守卫与文本子节点收集
+14 用例):getDirectTextNodes/getElementText 的空参守卫与文本子节点收集
 (含 CDATA 与相邻文本拼接 'xy'、text 节点 parent 回指);findAncestorElement
 的 null 守卫、从文本节点经 parent 链上溯(字符串名与数组名两形态)与
 链耗尽 null;assignTextNodePosition 的两个回退分支经真实 parseDefDocument
 触达——`&quot;` 解码为 `"` 后解码产物在原文中不存在,indexOf 落空回退
 searchOffset(开标结束处,start=end=9)、`<![CDATA[]]>` 产空文本节点
-保留在 searchOffset。98.7% 的剩余两行(非对象项/':@' 键 continue)为
-v8 语句映射粒度——带属性元素的解析每次必经,实际已执行。
+保留在 searchOffset;批63 另补 getScalarChildValue 的空白标量回落与顶层
+非元素节点下 findFirstElement 的跳节点/null 两臂。该文件历史遗留的
+"非对象项 continue""':@' 键 continue"两条行缺口:前者已于批62 判 vendor
+fxp 不可达并包进 ignore 区间,后者由带属性元素的解析真实走到;行/语句/
+函数自批62 起 100%,分支自批63 起 100%(逐臂判定见"批63 分支覆盖专项")。
 
 codeGenerator 的剩余缺口已覆盖(tests/codeGeneratorGaps.test.ts,7 用例):
 generateDefContent 的 CellMethods/ClientMethods 段渲染(exposed 标记只在
@@ -1030,6 +1035,53 @@ next */` 只对 SwitchCase 生效——放在 IfStatement 之前、块内 `retur
 branches 95.11%→96.2%(2705/2844→2686/2792,分母缩小系 ignore 区间同时移出分支
 条目;区间外未覆盖分支 106 条维持逐批定性的口径)。vitest 64 文件 812 用例
 (两种引擎口径全绿),mocha 烟测 11 用例。
+
+批63 分支覆盖专项:defParser.ts 分支 92.6%(87/94 臂)→100%(86/86 臂),
+行/语句/函数维持 100%。逐臂判定该文件 7 条未覆盖臂,结论是
+**2 臂可达并补真实用例 + 5 臂(4 个条目)不可达并加 ignore**:
+
+可达侧(tests/defParserGaps.test.ts 由 10 用例增至 14 用例,全部走真实
+parseDefDocument 产物,未放宽任何断言;覆盖率表旧注"9 用例"系批5x 遗留计数,
+一并改正)——L137 `getScalarChildValue` 的 `return value || undefined` 右臂:
+`<hp><DetailLevel>   </DetailLevel><Name>NEAR</Name></hp>` 里先断言子元素
+确实存在(`getDirectChildElement` 命中)且 `getElementText` 逐字为 `'   '`
+(排除 `!child` 早退,命中点只能是 trim 后空串),标量值 undefined;自闭合
+`<DetailLevel/>` 的 `children` 为 `[]`、`getElementText` 得 `''`,同样回落
+undefined;正向对照 `<Name>NEAR</Name>` 返回 `'NEAR'`,缺标签对照返回
+undefined。L443 `findFirstElement` 循环的"跳过非元素节点"臂:顶层 CDATA 是
+fxp 唯一会进树的非元素节点(注释不产出、`<?pi?>` 被 `isNonElementXmlNode`
+跳过、顶层纯文本被 fxp 丢弃,三种输入逐一实测),故
+`<![CDATA[leading]]><root><a>1</a></root>` 的 `nodes` 序为 `['text','element']`,
+循环必须跳过文本节点才拿到 `<root>`(逐字断言 kinds、`root.name`、顶层文本的
+`text` 与 `document.text.slice(startOffset, endOffset)` 定位、`root.children`
+不受影响);`<![CDATA[only]]>` 整树无元素 → `root === null`,锁
+findFirstElement 走完循环后的 null 回落。
+
+不可达侧(新增 3 处区间,移出 4 个条目 / 8 条臂)——L294 `#text` 值的
+`typeof value === 'string' ? value : ''`:fxp 把文本与 CDATA 一律产成
+`{"#text":"字符串"}`,且 `#text` 作标签名被 fxp 直接拒绝(`Invalid tag name`),
+非字符串值无从进入本行;L320 元素 children 的 `Array.isArray(value) ? … : []`:
+preserveOrder 的元素值恒为数组(空元素 `[]`、文本元素 `[{"#text":…}]`),
+标量元素值只在 `parseTagValue:true` 等非本仓库配置下出现;L345
+`normalizeAttributes` 的 `typeof value === 'string' ? value : String(value ?? '')`
+及其内 `??` 双臂:`:@` 表里每个 `@_` 属性值原样留作字符串(含空串属性 `@=""`
+与实体/数字引用)。三处同因:归一化层收到的形状完全由 vendor fxp 决定——
+为定案该结论,批63 以约 40 种输入形态(顶层/内联注释、xml 声明、doctype、
+CDATA、PI、纯文本、混合元素、空元素、自闭合、空属性值、重复属性、命名空间
+前缀属性名、实体引用等)逐一 dump fxp 在固定
+`{preserveOrder:true, ignoreAttributes:false, trimValues:false, parseTagValue:false}`
+下的产物,无一产出非字符串 `#text`、非数组元素值或非字符串属性值。区间上方
+逐处写明理由,中文注释行按批62 定的机制统一用 `start … stop` 形态。
+
+分母口径(如实记,不美化):3 处区间移出 8 条臂 = 5 条本批判不可达的缺口臂 +
+3 条原已覆盖的臂(L294 的 string 臂、L320 的数组臂、L345 的 string 臂);
+L320 与 L345 的三元与所在赋值语句同起一行,而区间按行生效,故这两条**已覆盖**
+语句连同其行一并移出分母——statements 4843→4841、lines 4733→4731(仍报 100%,
+但这两行是"被移出"而非"被补测覆盖",在此登记)。总分支
+96.2%→96.44%(2686/2792→2685/2784:分母 -8,分子 -3+2)。另附带修正
+defParser.ts 一处 5 空格缩进(批62 插标记时的排版残留,无行为变化)。
+本批未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增
+条目。vitest 64 文件 816 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 说明:
 
