@@ -52,10 +52,10 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 99.06% |
-| Branches | 92.89% |
+| Statements | 99.12% |
+| Branches | 94.76% |
 | Functions | 100% |
-| Lines | 99.03% |
+| Lines | 99.10% |
 
 纯逻辑层明细:
 
@@ -69,8 +69,8 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | defRenamer.ts | 99.5% | 94.5% |
 | definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
-| kbengineProtocol.ts | 100% | 91.2% |
-| entityMapping.ts | 97.9% | 88.7% |
+| kbengineProtocol.ts | 100% | 98.9% |
+| entityMapping.ts | 98.4% | 96.1% |
 | languageProviders.ts | 98.6% | 93.5% |
 | monitoringCollector.ts | 98.9% | 90.3% |
 | entityDependency.ts | 97.4% | 93.3% |
@@ -84,7 +84,7 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | monitoringWebView.ts | 96.9% | 91.8% |
 | entityDependencyWebView.ts | 97.9% | 95.2% |
 | debugConfig.ts | 100% | 95.2% |
-| explorerProviders.ts | 99.2% | 88.5% |
+| explorerProviders.ts | 99.2% | 98.1% |
 | extension.ts | 99.5% | 98.4% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
@@ -852,6 +852,58 @@ extension 79.0%→98.4%(61/62)、serverManager 82.6%→98.6%(68/69)、
 debugConfig 87.3%→95.2%(60/63),总分支 91.91%→92.89%(2642/2844),
 statements/lines/functions 持平(99.06/99.03/100)。vitest 60 文件
 766 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
+批60 分支覆盖专项:压批59 后分支最弱三文件(coverage-summary 为据:
+entityMapping.ts 88.7%、explorerProviders.ts 88.5%、kbengineProtocol.ts
+91.2%)。逐分支补测——entityMapping.ts(tests/entityMappingBranches.test.ts,
+12 用例):无工作区根的两级回落(getWorkspaceRoot 工作区外文件走第二
+startsWith 求值/无文件夹返 null、collectPythonOwnerFiles 空根布局返空表、
+toLegacyMapping 回落相对 scripts/base/<实体名>.py);私有工具直驱
+(buildIndex 空 def 路径返 null、collectPythonMethods 跳过缺失 owner 文件、
+bindPythonMethods 对非 .py 且不含 components/interfaces 段的文件按
+entity/interface/component 三键兜底且不绑定、rebasePropertyPath 点开头
+路径 split 落空回退整节点替换并递归 arrayElement、scoreMethodDefinition
+四选项全短路的 0 分与 local 命中的 110 分);真实索引上的解析未命中
+(按位置解析属性/方法两路 null、resolveMethodImplementation 无定义 null);
+身份缺 propertyPath 的直入表索引(类型上可选)在属性解析与按位置解析中的
+归一空路径比较。explorerProviders.ts(tests/explorerProvidersBranches.test.ts,
+13 用例):存在的接口/组件定义条目进视图模型后非实体侧分支才可达——属性
+描述取类别标签前缀(Interface/Component Property)、数据库模型零值、无
+database/runtime 段、组件方法条目命令回落"打开定义"(vscode.open)而接口
+仍走方法打开命令;只继承属性无自身属性的实体不建 Own 组;悬空 Parent 引用
+描述退化为引用名且无命令;readDefinitionStats 的 interfaces/components
+路径特征归类(嵌套目录使 basename 与 <目录名>.def 同名命中真实解析);
+类型条目兜底(aliasType 缺失时描述与汇总回落 ALIAS、rawValue 缺失时 alias
+段整段不建、深结构为空时回落单条目标签取 || 右侧、属性 typeName 缺失走
+UNKNOWN、叶子结构 rawValue 与名不等时描述带值前缀);工作区根自身的
+relative 为空回落绝对路径;方法条目 exposed 侧描述与图标、身份缺失时
+按条目类别组装兜底身份(entity/interface/component 三形态与透传侧)。
+kbengineProtocol.ts(tests/kbengineProtocolGaps.test.ts 扩至 12 用例):
+目录帧尾部无 NUL 段的 readCString 收口、buildComponentInfo/parseComponentInfo
+往返下畸形地址(段数不足与非数字段)双双回落 127.0.0.1 而正常地址按字节
+还原、getuid 与 uid/UID 环境变量全缺席时请求帧 uid i32LE 为 -1、UDP 落定
+后迟到坏包与 error 事件命中守卫不二次 close/reject、绑定回调在落定后报
+string 地址只直接返回、TCP 落定后的迟到 error 不改判也不二次 destroy。
+定性 17 条(不凑数):entityMapping L127 loader 守卫(scanEntityMappings 根
+恒非空)、L204/L208 push 闭包契约(调用点恒传对象且 section 真值)、L311
+else 侧与 L324 双侧(DefinitionSemanticCategory 联合被 entity/component/
+interface 三分支穷尽,批33 类型级锁定)、L641 隐式 else(v8 对 async 重入
+区域的推导计数,成功侧行为已由断言锁定,与批59 extension L236 同类)、
+L836 隐式 else(计数 [2,-1] 负值伪影)、L866 `|| null` 右值(matches.length
+=== 0 已前置早退)、L888 双侧(options.componentSlotName 无调用点传入,
+短路使右操作数恒不求值);explorerProviders L212/L1100(段描述符构造侧
+恒保证 items 与 groups 至少一侧非空,`|| []` 与末个 `?? 0` 为契约防御)、
+L740/L981/L1026(批43 登记维持:groups 恒非空、loader 入参路径恒非空);
+kbengineProtocol L598(finish 的真实调用恒发生在 timeout 赋值之后,落定后
+再调用直接早退,else 侧为声明顺序防御)。另修正批34 的两条登记:
+buildIndex 的 loader 守卫(今 L166)与 collectPythonMethods 的存在性早退
+(今 L448)只是公开调用图到不了,私有接缝接受的是合法类型输入(空 def
+路径、缺失 owner 文件),已改判为可达并真实覆盖,行为断言在案。分支覆盖
+entityMapping 88.7%→96.1%(273/284)、explorerProviders 88.5%→98.1%
+(255/260)、kbengineProtocol 91.2%→98.9%(90/91),总分支
+92.89%→94.76%(2695/2844),statements 99.06→99.12、lines 99.03→99.10、
+functions 持平 100。vitest 62 文件 798 用例(两种引擎口径全绿),
+mocha 烟测 11 用例。
 
 说明:
 
