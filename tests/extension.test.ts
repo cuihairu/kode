@@ -406,6 +406,74 @@ describe('extension activate 装配', () => {
     }
   }, 15000);
 
+  it('method.open 成功侧静默:字符串与 identity 两形态均不开 warning', async () => {
+    // didOpen 真臂(批72):索引建到 Avatar、无 Python 实现 → 兜底打开
+    // def 本体并返回 true,命令层跳过 warning。两形态各驱动一次。
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-extension-mopen-'));
+    const originalFindFiles = workspace.findFiles;
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      const defsRoot = path.join(root, 'scripts', 'entity_defs');
+      fs.mkdirSync(defsRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(defsRoot, 'Avatar.def'),
+        [
+          '<root>',
+          '  <Properties>',
+          '    <hp>',
+          '      <Type>UINT32</Type>',
+          '      <Flags>BASE_AND_CLIENT</Flags>',
+          '    </hp>',
+          '  </Properties>',
+          '  <BaseMethods>',
+          '    <respawn/>',
+          '  </BaseMethods>',
+          '</root>'
+        ].join('\n'),
+        'utf8'
+      );
+
+      workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
+        if (pattern !== '**/*.def') {
+          return originalFindFiles(pattern);
+        }
+        return [Uri.file(path.join(defsRoot, 'Avatar.def'))];
+      }) as typeof originalFindFiles;
+
+      const context = makeContext();
+      activate(context);
+
+      // 映射索引异步扫描落地,留节拍后调用(与大装配用例同口径)
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      messages.warning.length = 0;
+      // 成功侧(didOpen true → 跳过 warning):无 Python 实现时兜底打开
+      // def 本体。两入参形态各驱动一次,各自断言静默(该 if 的隐式 else 臂
+      // 在 v8-to-istanbul 转换中为负数伪影,执行次数不影响其计数值,
+      // 见 TESTING.md 批72 段;本用例的价值在行为锁定,非凑覆盖率)
+      await commands.executeCommand('kbengine.entity.method.open', 'Avatar', 'respawn', 'BaseMethods');
+      expect(messages.warning).toHaveLength(0);
+      await commands.executeCommand('kbengine.entity.method.open', {
+        ownerKind: 'entity',
+        ownerName: 'Avatar',
+        sourceKind: 'local',
+        sourceChain: [],
+        section: 'BaseMethods',
+        symbolName: 'respawn'
+      } as never);
+      expect(messages.warning).toHaveLength(0);
+      expect((workspaceState.openTextDocumentCalls.at(-1) as Uri).fsPath).toContain('Avatar.def');
+      expect(windowState.showTextDocumentCalls.at(-1)?.document).toBeDefined();
+
+      disposeAll(context);
+    } finally {
+      workspace.findFiles = originalFindFiles;
+      workspace.workspaceFolders = [];
+      workspace.textDocuments = [];
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 15000);
+
   it('server 命令经解析载荷驱动真实假组件进程,状态栏随运行数联动', async () => {
     const bin = await FakeComponentBin.create();
     try {

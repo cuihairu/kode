@@ -1449,6 +1449,43 @@ Number() 转换,均不抛错;唯一 null 路径是 catch,而 catch 仅对非字�
 生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增条目。
 vitest 73 文件 862 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
+批72 分支覆盖专项:按剩余缺口队列序位压 extension.ts(98.4%,61/62 臂)。
+唯一未覆盖臂经复测定性为 **istanbul 转换负数伪影而非真实缺口**,本批以
+登记收口 + 真用例强化执行证明,分支维持 61/62(98.38%),总分支 99.66%
+(2700/2709)持平,行/语句/函数维持 100%:
+
+定性——`kbengine.entity.method.open` 命令处理器的 `if (!didOpen)` 隐式
+else 臂(didOpen 真值 → 静默跳过 warning):coverage-final 原文显示该条目
+计数为 **[4,-1]**(真臂 4 次、隐式 else 臂 **负数**)。该臂真实可执行且
+已被执行:批59 的装配用例与本批新增聚焦用例都走成功侧并断言静默,负值
+系 v8-to-istanbul 对 async 处理器内 try/catch 无 else if 的块差分推导
+产物(批59 已登记同址 [4,-2],本轮复测 [4,-1],加驱 5 轮成功侧实测计数
+不变,系结构钉死而非执行次数问题)。
+
+处置评估(三选一,均不取前二)——①补用例点亮:计数与执行次数无关,
+实测无效;②单行 ignore:会把已覆盖真臂一并移出分母,总分支
+99.66%→99.59% 反向劣化,且源码"不可达"注记与事实不符(该臂可执行),
+语义不实;③生产侧改写 if/else 结构以消除伪影:超出覆盖率批次零生产
+改动口径。故按登记口径收口:extension 分支维持 61/62,唯一"缺口"为
+已执行但负计数的非真实缺口,后续批次不再列为行动项。
+
+可达侧(新增 tests/extension.test.ts 1 用例,真实临时 def 树 + findFiles
+应答桩):method.open 成功侧静默——字符串与 identity 两入参形态各驱动
+一次,无 Python 实现时兜底打开 Avatar.def 并返回 true,断言 warning 通道
+为零且文档真实打开;行为锁定价值独立于伪影登记。
+
+分母口径(如实记,不美化):本批零 ignore、零分母变动、零臂点亮(唯一
+缺口为伪影),statements/lines/functions 三项 100% 均维持且无移出。
+vitest 73 文件 863 用例(两种引擎口径全绿),mocha 烟测 11 用例。门禁
+如实记录:gate2 首跑出现 1 例与本批无关的瞬态环境失败
+(tests/serverManager.test.ts 的二进制根上溯探测用例,共享 tmpdir 被外部
+进程瞬时写入 `kbe/bin` 目录命中探测路径;复跑全绿、目录已消失、
+KBENGINE_ROOT=off 同刻全绿,非代码问题)。
+
+剩余缺口按序(批72 后):serverManager(98.6%)、entityMapping(98.6%)、
+kbengineProtocol(98.9%)、explorerProviders(99.2%);extension 的
+唯一残差为上述已登记伪影。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
