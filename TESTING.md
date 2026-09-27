@@ -52,10 +52,10 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 99.12% |
-| Branches | 94.76% |
+| Statements | 99.16% |
+| Branches | 95.11% |
 | Functions | 100% |
-| Lines | 99.10% |
+| Lines | 99.14% |
 
 纯逻辑层明细:
 
@@ -72,7 +72,7 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | kbengineProtocol.ts | 100% | 98.9% |
 | entityMapping.ts | 98.4% | 96.1% |
 | languageProviders.ts | 98.6% | 93.5% |
-| monitoringCollector.ts | 98.9% | 90.3% |
+| monitoringCollector.ts | 100% | 100% |
 | entityDependency.ts | 97.4% | 93.3% |
 | databaseSchema.ts | 99.4% | 94.4% |
 | logCollector.ts | 100% | 100% |
@@ -547,6 +547,9 @@ dispose 干净;refresh 的 in-flight 重入守卫并发折叠;向内部历史 Ma
 301 条假历史后一次成功采集触发 300 环形截断(getMetricsHistory 默认只回
 最近 60 条,须直读内部 Map 验证)。98.9% 的剩余为 case 5 break 的 v8
 语句映射粒度与上述死分支。
+(批61 更新:占位分支改由 discovery 接缝以无 uid 组件锁定两臂文案与短路
+顺序,已计入覆盖;"machine 发现链上 uid 恒为 number、该分支链路不可达"
+的结论不变,详见批61 注。)
 
 entityDependency 的剩余分支已补齐(tests/entityDependencyGaps.test.ts,
 8 用例):注册口径只有 Base 的实体从 def 的 CellMethods/ClientMethods
@@ -904,6 +907,36 @@ entityMapping 88.7%→96.1%(273/284)、explorerProviders 88.5%→98.1%
 92.89%→94.76%(2695/2844),statements 99.06→99.12、lines 99.03→99.10、
 functions 持平 100。vitest 62 文件 798 用例(两种引擎口径全绿),
 mocha 烟测 11 用例。
+
+批61 分支覆盖专项:压批60 后分支最弱单文件(monitoringCollector.ts
+90.3%,104 分支缺 10 条路径)。新增 tests/monitoringCollectorBranches.test.ts
+(6 用例)逐分支补齐——start() 的暂停态分支(只记间隔、不起定时器、不发
+首轮刷新,resume 后间隔生效且首轮刷新立即发生);refresh catch 对非 Error
+抛出值的归一(String 化后 message 即原值)与 Error 值原样采用的对照;
+bots(type 11)在可监控白名单内但协议表无 watcher 查询消息 id → 两路查询
+零结果 → queryWatcherValues 的 values 回落空表(binary 右侧)与 buildDetails
+的 switch default(不匹配任何 case,仅剩 UID 行),同端口热换 baseapp(6)
+作正向对照(load/uptime 按帧解码);logger(type 10)的 stats 缺 secsNumlogs
+时 ?? 0 回落、存在时按该键取(不经 messagesPerSecond);details 全空时的
+'Watcher' 占位行两臂与 || 短路顺序(根值空而 stats 有值 → 取 stats 键数
+出 '已响应';两路全空 → '无返回')。
+定性 0 条(本文件):10 条路径全部计入覆盖,分支 90.3%→100%(104/104)、
+statements 98.91→100、lines 98.9→100。接缝与真实链路的界线如实划清:
+bots/logger 两例走 tests/sim 仿真器的真实 UDP 发现 + TCP watcher 回环;
+非 Error 抛出与"无 uid 组件"两例经 vi.mock('../src/kbengineProtocol') 的
+getter 工厂局部替换 discoverLocalComponents(其余导出透传实际实现)——
+前者是语言合法而真实实现不产生的抛出值,后者是 `uid: number` 契约外的
+畸形报文形态(makeSimComponentInfo 显式过滤 undefined 覆写,故该组件由
+测试自行构造并在注释标注契约边界),两者只锁定消费端的归一/防御行为,
+**不代表发现链可产出该输入**;批41 的"machine 发现链上 uid 恒为 number
+(0 也以 '0' 入列),占位分支链路上不可达"结论维持,批41 注已加指针。
+另登记一处实现现状(非缺陷):type 11(bots)虽在可监控白名单内,却因
+WATCHER_QUERY_MSG_IDS 无该键而永远拿不到 watcher 指标,状态恒为"仅 machine
+可见"(引擎侧 bots 不起 watcher 服务,与该表一致)。本批未暴露真实缺陷,
+'由测试发现并修复的真实缺陷'一节无新增条目。总分支
+94.76%→95.11%(2705/2844),statements
+99.12→99.16、lines 99.10→99.14、functions 持平 100。vitest 63 文件
+804 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 说明:
 
