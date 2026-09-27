@@ -272,6 +272,31 @@ describe('LogViewerWebView message handling', () => {
     await until(() => messages.error.length === 1);
     expect(messages.error[0]).toBe('日志连接不可用: port closed');
   });
+
+  it('stringifies non-Error connect rejections through the error channel', async () => {
+    // connectCollector 的 catch 兜底臂:collector.connect 以裸字符串拒绝
+    // (非 Error 实例)→ `error instanceof Error` 假 → String(error) 归一
+    const oddCollector = {
+      onLogEntry: () => ({ dispose: () => undefined }),
+      getLogEntries: () => [],
+      clearLogs: () => undefined,
+      getStatusSummary: () => 'FAKE STATUS',
+      connect: async () => {
+        throw 'port closed';
+      },
+      disconnect: () => undefined
+    } as unknown as KBEngineLogCollector;
+    const webview = new LogViewerWebView(
+      { extensionUri: Uri.file('/ext/root') } as unknown as vscode.ExtensionContext,
+      oddCollector
+    );
+    webview.show();
+    panelRegistry.fireMessage(currentPanel(), { command: 'connect' });
+
+    await until(() => messages.error.length === 1);
+    expect(messages.error[0]).toBe('日志连接不可用: port closed');
+    webview.dispose();
+  });
 });
 
 describe('LogViewerWebView exportLogs', () => {

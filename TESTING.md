@@ -53,12 +53,13 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
 分支 100%,批67 起 codeGenerator.ts 分支 100%,批68 起 debugConfig.ts 与
-defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%):
+defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%,批70 起
+logWebView.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
 | Statements | 100% (4808/4808) |
-| Branches | 99.59% (2700/2711) |
+| Branches | 99.63% (2701/2711) |
 | Functions | 100% (839/839) |
 | Lines | 100% (4698/4698) |
 
@@ -71,7 +72,8 @@ defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%):
 新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处,
 逐处理由见"批62 行覆盖专项""批63
 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
-专项""批67 分支覆盖专项""批68 分支覆盖专项"与"批69 分支覆盖专项"):
+专项""批67 分支覆盖专项""批68 分支覆盖专项""批69 分支覆盖专项"与"批70
+分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -94,7 +96,7 @@ defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%):
 | definitionWorkspace.ts | 100% | 100% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 98.6% |
-| logWebView.ts | 100% | 96.9% |
+| logWebView.ts | 100% | 100% |
 | monitoringWebView.ts | 100% | 100% |
 | entityDependencyWebView.ts | 100% | 100% |
 | debugConfig.ts | 100% | 100% |
@@ -1404,6 +1406,24 @@ statements 4811→4808、lines 4701→4698(仍报 100%,但这是"被移出"而�
 2696+7(新点亮)-3(移出的已覆盖臂)=2700。本批未改动任何生产逻辑,
 未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无
 新增条目。vitest 73 文件 861 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
+批70 分支覆盖专项:按剩余缺口队列序位压 logWebView.ts(96.9%,31/32 臂),
+逐臂补测到 100%,行/语句/函数维持 100%;总分支 99.59%→99.63%
+(2700/2711→2701/2711)。未覆盖臂仅 1 条(arms_dump 与 coverage-final 原文
+复核一致),为**可达臂,纯测试点亮,本批零 ignore、零生产改动**:
+
+connectCollector 的 catch 兜底臂:collector.connect() 以**裸字符串拒绝**
+(非 Error 实例)时 `error instanceof Error` 假臂 → `String(error)` 归一
+(既有用例只覆盖了 Error 实例拒绝走 message 路径)。新增
+tests/logWebViewPanel.test.ts 1 用例:以裸字符串拒绝的假 collector 替代
+模块级 fake,走 show → 'connect' 消息 → panelRegistry 三通道入账,断言
+error 通道出现 '日志连接不可用: port closed'——与既有 Error 路径共用同一
+消息前缀,归一语义锁定。
+
+分母口径(如实记,不美化):本批无 ignore 区间,分母 2711 不变,分子
+2700+1=2701,无"被移出"条目。本批未改动任何生产逻辑,未暴露需要改动
+生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增条目。
+vitest 73 文件 862 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 说明:
 
