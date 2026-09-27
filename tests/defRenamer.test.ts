@@ -1,0 +1,625 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  DEF_IDENTIFIER_PATTERN,
+  DefRenameFileEdits,
+  DefRenameSymbol,
+  collectRenameEditsInText,
+  computeDefRenameEdits,
+  findEntityDefsRootFromFile,
+  getLineCharacterAtOffset,
+  resolveRenameSymbolAtOffset
+} from '../src/defRenamer';
+import { KBEngineRenameProvider } from '../src/languageProviders';
+import {
+  Position,
+  TextEdit,
+  WorkspaceEdit,
+  makeTextDocument
+} from './helpers/vscodeStub';
+import type { MinimalTextDocument } from './helpers/vscodeStub';
+
+// defRenamer 的纯逻辑与 KBEngineRenameProvider 装配:.def 属性/方法重命名的
+// 符号解析(光标须落在符号名上)、引用编辑计算(同文件 + 后代 def 复述)与
+// 边界(方法段命名空间、无实体根退化、非法新名拒绝)。真实临时文件树。
+
+const HERO_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <hp> <Type> UINT32 </Type> <Flags> ALL_CLIENTS </Flags> </hp>',
+  '    <hp> <Type> UINT8 </Type> </hp>',
+  '    <mp> <Type> UINT32 </Type> </mp>',
+  '  </Properties>',
+  '  <BaseMethods>',
+  '    <move> <Arg> UINT8 </Arg> </move>',
+  '  </BaseMethods>',
+  '  <CellMethods>',
+  '    <move/>',
+  '  </CellMethods>',
+  '</root>',
+  ''
+].join('\n');
+
+const MONSTER_DEF = [
+  '<root>',
+  '  <Parent> Hero </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT16 </Type> </hp>',
+  '  </Properties>',
+  '  <BaseMethods>',
+  '    <move/>',
+  '  </BaseMethods>',
+  '  <CellMethods>',
+  '    <move/>',
+  '  </CellMethods>',
+  '</root>',
+  ''
+].join('\n');
+
+const BOSS_DEF = [
+  '<root>',
+  '  <Parent> Monster </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT32 </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const BEAST_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <Ghost/>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <hp> <Type> FLOAT </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// Parent Hero 但不复述 hp:后代里"无该符号"的分支
+const HEIR_DEF = [
+  '<root>',
+  '  <Parent> Hero </Parent>',
+  '  <Properties>',
+  '    <gold> <Type> UINT32 </Type> </gold>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 悬空 Parent/Interfaces 引用:闭包跟随时目标不存在
+const DANGLING_DEF = [
+  '<root>',
+  '  <Parent> Nobody </Parent>',
+  '  <Interfaces>',
+  '    <Ghost/>',
+  '  </Interfaces>',
+  '</root>',
+  ''
+].join('\n');
+
+// 坏 XML 的后代:语义面为空,整体跳过
+const BROKEN_DEF = [
+  '<root>',
+  '  <Parent> Monster </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT32 </Type>',
+  ''
+].join('\n');
+
+const COMPONENT_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <hp> <Type> UINT32 </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const IBASE_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const MOVE_IFACE_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <IBase/>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const AVATAR_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <MoveIface/>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '    <own> <Type> UINT8 </Type> </own>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// Interfaces 的 <Interface><X/></Interface> 包裹形态(definitionSemantics 三形态之一)
+const GOLEM_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <Interface><IBase/></Interface>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const occurrences = (text: string, needle: string): number[] => {
+  const found: number[] = [];
+  let index = text.indexOf(needle);
+  while (index !== -1) {
+    found.push(index);
+    index = text.indexOf(needle, index + 1);
+  }
+  return found;
+};
+
+/** 光标放在第 n 个 needle 的名字内(needle 形如 '<hp>'/'</hp>',名字起点按标签形态偏移) */
+const cursorAt = (text: string, needle: string, occurrence = 0): number => {
+  const offsets = occurrences(text, needle);
+  expect(offsets.length).toBeGreaterThan(occurrence);
+  return offsets[occurrence] + (needle.startsWith('</') ? 2 : 1) + 1;
+};
+
+const applyEdits = (text: string, edits: Array<{ start: number; end: number }>, newName: string): string => {
+  let result = text;
+  let delta = 0;
+  for (const edit of [...edits].sort((left, right) => left.start - right.start)) {
+    result = result.slice(0, edit.start + delta) + newName + result.slice(edit.end + delta);
+    delta += newName.length - (edit.end - edit.start);
+  }
+  return result;
+};
+
+const editsByFile = (results: DefRenameFileEdits[]): Record<string, number> =>
+  Object.fromEntries(results.map(entry => [path.basename(entry.filePath), entry.edits.length]));
+
+let root: string;
+let noRootDir: string;
+let innerXmlDir: string;
+let heroPath: string;
+let monsterPath: string;
+let bossPath: string;
+let beastPath: string;
+let ibasePath: string;
+let moveIfacePath: string;
+let avatarPath: string;
+let golemPath: string;
+let heirPath: string;
+let danglingPath: string;
+let brokenPath: string;
+let componentPath: string;
+let lockedDir: string;
+
+beforeAll(() => {
+  root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-renamer-'));
+  const write = (relative: string, content: string): string => {
+    const target = path.join(root, ...relative.split('/'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf8');
+    return target;
+  };
+
+  write('scripts/entities.xml', [
+    '<root>',
+    '  <Avatar> <hasClient/> </Avatar>',
+    '</root>',
+    ''
+  ].join('\n'));
+  heroPath = write('scripts/entity_defs/Hero.def', HERO_DEF);
+  monsterPath = write('scripts/entity_defs/Monster.def', MONSTER_DEF);
+  bossPath = write('scripts/entity_defs/Boss.def', BOSS_DEF);
+  beastPath = write('scripts/entity_defs/Beast.def', BEAST_DEF);
+  ibasePath = write('scripts/entity_defs/interfaces/IBase.def', IBASE_DEF);
+  moveIfacePath = write('scripts/entity_defs/interfaces/MoveIface.def', MOVE_IFACE_DEF);
+  avatarPath = write('scripts/entity_defs/Avatar.def', AVATAR_DEF);
+  golemPath = write('scripts/entity_defs/Golem.def', GOLEM_DEF);
+  heirPath = write('scripts/entity_defs/Heir.def', HEIR_DEF);
+  danglingPath = write('scripts/entity_defs/Dangling.def', DANGLING_DEF);
+  brokenPath = write('scripts/entity_defs/Broken.def', BROKEN_DEF);
+  componentPath = write('scripts/entity_defs/components/HealthComp.def', COMPONENT_DEF);
+  lockedDir = path.join(root, 'scripts', 'entity_defs', 'locked');
+  fs.mkdirSync(lockedDir, { recursive: true });
+  fs.writeFileSync(path.join(lockedDir, 'Locked.def'), HEIR_DEF, 'utf8');
+
+  // 无 entities.xml 的孤树:向上找不到定义根,退化为仅同文件
+  noRootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-renamer-noroot-'));
+  fs.writeFileSync(path.join(noRootDir, 'Lone.def'), HERO_DEF, 'utf8');
+
+  // entities.xml 直接位于 entity_defs 内的非常规布局
+  innerXmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-renamer-innerxml-'));
+  fs.mkdirSync(path.join(innerXmlDir, 'entity_defs'), { recursive: true });
+  fs.writeFileSync(path.join(innerXmlDir, 'entity_defs', 'entities.xml'), '<root/>\n', 'utf8');
+  fs.writeFileSync(path.join(innerXmlDir, 'entity_defs', 'Inner.def'), HERO_DEF, 'utf8');
+});
+
+afterAll(() => {
+  for (const dir of [root, noRootDir, innerXmlDir]) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe('resolveRenameSymbolAtOffset 符号解析', () => {
+  it('开标签上的属性名解析为 property 符号', () => {
+    const offset = cursorAt(HERO_DEF, '<hp>');
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, offset);
+    expect(symbol).toEqual({
+      kind: 'property',
+      name: 'hp',
+      section: null,
+      wordStart: offset - 1,
+      wordEnd: offset + 1
+    });
+  });
+
+  it('闭标签上的属性名也可发起重命名,词区间指向闭标签名字', () => {
+    const closeOffset = cursorAt(HERO_DEF, '</hp>', 1);
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, closeOffset);
+    expect(symbol?.kind).toBe('property');
+    expect(symbol?.name).toBe('hp');
+    expect(HERO_DEF.slice(symbol!.wordStart, symbol!.wordEnd)).toBe('hp');
+    expect(symbol!.wordStart).toBe(occurrences(HERO_DEF, '</hp>')[1] + 2);
+  });
+
+  it('方法名解析为 method 符号并携带所属段', () => {
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<move>'));
+    expect(symbol?.kind).toBe('method');
+    expect(symbol?.name).toBe('move');
+    expect(symbol?.section).toBe('BaseMethods');
+  });
+
+  it('词尾右侧一格仍算命中该词', () => {
+    const openStart = occurrences(HERO_DEF, '<mp>')[0] + 1;
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, openStart + 2);
+    expect(symbol?.name).toBe('mp');
+  });
+
+  it('类型值、Flags 标签、Parent 值与空白处都不是可重命名符号', () => {
+    const typeValue = HERO_DEF.indexOf('UINT32') + 1;
+    expect(resolveRenameSymbolAtOffset(HERO_DEF, typeValue)).toBeNull();
+    const flagsTag = HERO_DEF.indexOf('<Flags>') + 3;
+    expect(resolveRenameSymbolAtOffset(HERO_DEF, flagsTag)).toBeNull();
+    const parentValue = MONSTER_DEF.indexOf('Hero') + 1;
+    expect(resolveRenameSymbolAtOffset(MONSTER_DEF, parentValue)).toBeNull();
+    const blank = HERO_DEF.indexOf('  <Properties>');
+    expect(resolveRenameSymbolAtOffset(HERO_DEF, blank)).toBeNull();
+  });
+
+  it('坏 XML 文本返回 null', () => {
+    expect(resolveRenameSymbolAtOffset('<root><hp>', 10)).toBeNull();
+    expect(resolveRenameSymbolAtOffset('', 0)).toBeNull();
+  });
+
+  it('越界光标返回 null,自闭合标签名可解析', () => {
+    const selfCloseText = '<root><Properties><mp /></Properties></root>';
+    expect(resolveRenameSymbolAtOffset(selfCloseText, -1)).toBeNull();
+    expect(resolveRenameSymbolAtOffset(selfCloseText, selfCloseText.length)).toBeNull();
+    const mpOffset = selfCloseText.indexOf('<mp ');
+    expect(resolveRenameSymbolAtOffset(selfCloseText, mpOffset + 2)?.name).toBe('mp');
+    const openText = '<root>\n  <Properties>\n    <hp/>\n  </Properties>\n</root>\n';
+    expect(resolveRenameSymbolAtOffset(openText, openText.indexOf('hp') + 2)?.name).toBe('hp');
+  });
+
+  it('无根元素(非 def 文本)返回 null/空编辑', () => {
+    const text = 'just some words here';
+    expect(resolveRenameSymbolAtOffset(text, 1)).toBeNull();
+    const symbol = { kind: 'property', name: 'hp', section: null } as DefRenameSymbol;
+    expect(collectRenameEditsInText(text, symbol)).toHaveLength(0);
+  });
+});
+
+describe('findEntityDefsRootFromFile 定义根定位', () => {
+  it('常规布局:entities.xml 在 entity_defs 父目录', () => {
+    const defsRoot = path.join(root, 'scripts', 'entity_defs');
+    expect(findEntityDefsRootFromFile(heroPath)).toBe(defsRoot);
+    expect(findEntityDefsRootFromFile(moveIfacePath)).toBe(defsRoot);
+  });
+
+  it('entities.xml 位于 entity_defs 内的布局取该目录为根', () => {
+    expect(findEntityDefsRootFromFile(path.join(innerXmlDir, 'entity_defs', 'Inner.def')))
+      .toBe(path.join(innerXmlDir, 'entity_defs'));
+  });
+
+  it('找不到 entities.xml 返回 null', () => {
+    expect(findEntityDefsRootFromFile(path.join(noRootDir, 'Lone.def'))).toBeNull();
+  });
+});
+
+describe('computeDefRenameEdits 引用编辑计算', () => {
+  const heroHpSymbol = (): DefRenameSymbol => {
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<hp>'));
+    expect(symbol).not.toBeNull();
+    return symbol!;
+  };
+
+  it('属性重命名覆盖同文件全部 Flags 变体与后代复述,无关实体不动', () => {
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    // Hero:两个 hp 变体的开+闭标签 = 4;Monster/Boss 各 1 个复述 = 2
+    expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'Boss.def': 2 });
+
+    const heroEntry = results.find(entry => entry.filePath === heroPath)!;
+    const renamed = applyEdits(HERO_DEF, heroEntry.edits, 'vigor');
+    expect(renamed).not.toContain('<hp>');
+    expect(renamed).not.toContain('</hp>');
+    expect(occurrences(renamed, '<vigor>')).toHaveLength(2);
+    // 无关属性不动
+    expect(renamed).toContain('<mp>');
+    // 无关实体 Beast 的 hp 不在结果里
+    expect(results.find(entry => entry.filePath === beastPath)).toBeUndefined();
+  });
+
+  it('方法重命名限同段:同文件跨段与后代其他段的同名方法都不动', () => {
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<move>'))!;
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol,
+      newName: 'stepTo'
+    });
+    // Hero BaseMethods 的 move 带 Arg 子元素:开+闭 = 2;CellMethods 的自闭合 move 不动。
+    // Monster(Parent Hero)BaseMethods 的自闭合 move 复述 = 1;其 CellMethods 不动。
+    expect(editsByFile(results)).toEqual({ 'Hero.def': 2, 'Monster.def': 1 });
+
+    const heroEntry = results.find(entry => entry.filePath === heroPath)!;
+    const renamed = applyEdits(HERO_DEF, heroEntry.edits, 'stepTo');
+    expect(renamed).toContain('<stepTo> <Arg> UINT8 </Arg> </stepTo>');
+    expect(renamed).toContain('<move/>');
+
+    const monsterEntry = results.find(entry => entry.filePath === monsterPath)!;
+    const monsterRenamed = applyEdits(MONSTER_DEF, monsterEntry.edits, 'stepTo');
+    expect(monsterRenamed).toContain('<BaseMethods>\n    <stepTo/>');
+    expect(monsterRenamed).toContain('<CellMethods>\n    <move/>');
+  });
+
+  it('接口属性经 Interfaces 传递闭包更新混入实体(含 <Interface> 包裹形态)', () => {
+    const symbol = resolveRenameSymbolAtOffset(IBASE_DEF, cursorAt(IBASE_DEF, '<drift>'))!;
+    const results = computeDefRenameEdits({
+      targetFilePath: ibasePath,
+      targetText: IBASE_DEF,
+      symbol,
+      newName: 'driftSpeed'
+    });
+    // IBase 源头 + MoveIface(直接混入并复述)+ Avatar(经 MoveIface 传递)+ Golem(包裹形态)
+    expect(editsByFile(results)).toEqual({
+      'IBase.def': 2,
+      'MoveIface.def': 2,
+      'Avatar.def': 2,
+      'Golem.def': 2
+    });
+
+    const avatarEntry = results.find(entry => entry.filePath === avatarPath)!;
+    const renamed = applyEdits(AVATAR_DEF, avatarEntry.edits, 'driftSpeed');
+    expect(renamed).toContain('<driftSpeed> <Type> FLOAT </Type> </driftSpeed>');
+    expect(renamed).toContain('<own> <Type> UINT8 </Type> </own>');
+  });
+
+  it('在复述处发起只更新该文件与其后代,不复改祖先源头(如实边界)', () => {
+    const symbol = resolveRenameSymbolAtOffset(MONSTER_DEF, cursorAt(MONSTER_DEF, '<hp>'))!;
+    const results = computeDefRenameEdits({
+      targetFilePath: monsterPath,
+      targetText: MONSTER_DEF,
+      symbol,
+      newName: 'eliteHp'
+    });
+    expect(editsByFile(results)).toEqual({ 'Monster.def': 2, 'Boss.def': 2 });
+    expect(results.find(entry => entry.filePath === heroPath)).toBeUndefined();
+  });
+
+  it('找不到定义根时退化为仅同文件', () => {
+    const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<hp>'))!;
+    const results = computeDefRenameEdits({
+      targetFilePath: path.join(noRootDir, 'Lone.def'),
+      targetText: HERO_DEF,
+      symbol,
+      newName: 'vigor'
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].edits).toHaveLength(4);
+  });
+
+  it('非法新名与原样新名返回空编辑', () => {
+    const symbol = heroHpSymbol();
+    for (const newName of ['9bad', 'x-y', '', 'a b', 'hp']) {
+      expect(computeDefRenameEdits({
+        targetFilePath: heroPath,
+        targetText: HERO_DEF,
+        symbol,
+        newName
+      })).toEqual([]);
+    }
+  });
+
+  it('目标文本不含该符号时返回空编辑,不再扫描引用', () => {
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: '<root>\n</root>\n',
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    expect(results).toEqual([]);
+  });
+
+  it('无该符号的后代、坏 XML 后代、悬空引用与组件 def 都不产生编辑', () => {
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'Boss.def': 2 });
+    // Heir(Parent Hero)不复述 hp;Broken(Parent Monster)坏 XML 语义面为空;
+    // Dangling 的 Parent/Interfaces 引用悬空;HealthComp 是组件命名空间
+    expect(results.find(entry => entry.filePath === heirPath)).toBeUndefined();
+    expect(results.find(entry => entry.filePath === brokenPath)).toBeUndefined();
+    expect(results.find(entry => entry.filePath === danglingPath)).toBeUndefined();
+    expect(results.find(entry => entry.filePath === componentPath)).toBeUndefined();
+  });
+
+  it('扫描中途不可读的后代文件被跳过', () => {
+    // chmod 000 让 readFileSync 抛 EACCES(批24 同款故障注入手法);
+    // 内容读盘即失败,闭包与编辑面共用缓存,Boss 整体缺席
+    fs.chmodSync(bossPath, 0o000);
+    try {
+      const results = computeDefRenameEdits({
+        targetFilePath: heroPath,
+        targetText: HERO_DEF,
+        symbol: heroHpSymbol(),
+        newName: 'vigor'
+      });
+      expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2 });
+    } finally {
+      fs.chmodSync(bossPath, 0o644);
+    }
+  });
+
+  it('不可枚举的子目录不影响其余文件的重命名', () => {
+    // locked/ 目录 chmod 000 后 readdirSync 抛 EACCES,枚举静默跳过该目录
+    fs.chmodSync(lockedDir, 0o000);
+    try {
+      const results = computeDefRenameEdits({
+        targetFilePath: heroPath,
+        targetText: HERO_DEF,
+        symbol: heroHpSymbol(),
+        newName: 'vigor'
+      });
+      expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'Boss.def': 2 });
+    } finally {
+      fs.chmodSync(lockedDir, 0o755);
+    }
+  });
+
+  it('编辑区间升序且互不重叠,并携带基准文本', () => {
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    for (const entry of results) {
+      expect(entry.text.length).toBeGreaterThan(0);
+      let previousEnd = -1;
+      for (const edit of entry.edits) {
+        expect(edit.start).toBeGreaterThan(previousEnd);
+        expect(entry.text.slice(edit.start, edit.end)).toBe('hp');
+        previousEnd = edit.end;
+      }
+    }
+  });
+});
+
+describe('collectRenameEditsInText 与偏移换算纯函数', () => {
+  it('同文件收集按符号种类与段过滤', () => {
+    const property = { kind: 'property', name: 'hp', section: null } as DefRenameSymbol;
+    expect(collectRenameEditsInText(HERO_DEF, property)).toHaveLength(4);
+
+    const method = { kind: 'method', name: 'move', section: 'CellMethods' } as DefRenameSymbol;
+    const edits = collectRenameEditsInText(HERO_DEF, method);
+    expect(edits).toHaveLength(1); // 自闭合只算开标签
+    expect(HERO_DEF.slice(edits[0].start, edits[0].end)).toBe('move');
+
+    expect(collectRenameEditsInText('<root>\n</root>\n', property)).toHaveLength(0);
+  });
+
+  it('getLineCharacterAtOffset 按 \\n 分行并钳制越界偏移', () => {
+    expect(getLineCharacterAtOffset('abc', 0)).toEqual({ line: 0, character: 0 });
+    expect(getLineCharacterAtOffset('a\nbc', 2)).toEqual({ line: 1, character: 0 });
+    expect(getLineCharacterAtOffset('a\nbc', 4)).toEqual({ line: 1, character: 2 });
+    expect(getLineCharacterAtOffset('a\nbc', 99)).toEqual({ line: 1, character: 2 });
+    expect(getLineCharacterAtOffset('a\nbc', -3)).toEqual({ line: 0, character: 0 });
+  });
+
+  it('DEF_IDENTIFIER_PATTERN 拒绝非 C 风格标识符', () => {
+    expect(DEF_IDENTIFIER_PATTERN.test('_hp2')).toBe(true);
+    expect(DEF_IDENTIFIER_PATTERN.test('2hp')).toBe(false);
+    expect(DEF_IDENTIFIER_PATTERN.test('h-p')).toBe(false);
+  });
+});
+
+describe('KBEngineRenameProvider 装配', () => {
+  const provider = new KBEngineRenameProvider();
+
+  const heroDocument = (): MinimalTextDocument =>
+    makeTextDocument(HERO_DEF, { fileName: heroPath });
+
+  it('prepareRename 返回词区间与占位名', () => {
+    const document = heroDocument();
+    const offset = cursorAt(HERO_DEF, '<hp>');
+    const result = provider.prepareRename(document, document.positionAt(offset));
+
+    expect(result).not.toBeNull();
+    expect(result!.placeholder).toBe('hp');
+    expect(document.offsetAt(result!.range.start)).toBe(offset - 1);
+    expect(document.offsetAt(result!.range.end)).toBe(offset + 1);
+  });
+
+  it('非符号位置 prepareRename 返回 null', () => {
+    const document = heroDocument();
+    const typeValue = HERO_DEF.indexOf('UINT32') + 1;
+    expect(provider.prepareRename(document, document.positionAt(typeValue))).toBeNull();
+  });
+
+  it('provideRenameEdits 产出跨文件 WorkspaceEdit 且区间可经各自行表回原', async () => {
+    const document = heroDocument();
+    const offset = cursorAt(HERO_DEF, '<hp>');
+    const workspaceEdit = await provider.provideRenameEdits(
+      document,
+      document.positionAt(offset),
+      'vigor'
+    );
+
+    expect(workspaceEdit).toBeInstanceOf(WorkspaceEdit);
+    expect(workspaceEdit!.size).toBe(3);
+
+    // 目标文件复用文档 uri,其余文件走 Uri.file(按 fsPath 索引断言)
+    const heroEdits = workspaceEdit!.get(document.uri);
+    expect(heroEdits).toHaveLength(4);
+    expect(heroEdits[0]).toBeInstanceOf(TextEdit);
+    expect(heroEdits.every(edit => edit.newText === 'vigor')).toBe(true);
+    expect(document.offsetAt(heroEdits[0].range.start)).toBe(occurrences(HERO_DEF, '<hp>')[0] + 1);
+
+    const byPath = new Map(workspaceEdit!.entries().map(([uri, edits]) => [uri.fsPath, edits] as const));
+    const monsterEdits = byPath.get(monsterPath)!;
+    expect(monsterEdits).toHaveLength(2);
+    // 区间须按 Monster 自己的行表换算:首处 hp 名字在第 3 行(0 基)第 5 列起
+    expect(monsterEdits[0].range.start).toEqual(new Position(3, 5));
+    expect(monsterEdits[0].range.end).toEqual(new Position(3, 7));
+  });
+
+  it('非法新名与非符号位置 provideRenameEdits 返回 null', async () => {
+    const document = heroDocument();
+    const offset = cursorAt(HERO_DEF, '<hp>');
+    expect(await provider.provideRenameEdits(document, document.positionAt(offset), '9bad')).toBeNull();
+    expect(await provider.provideRenameEdits(document, document.positionAt(offset), 'hp')).toBeNull();
+
+    const typeValue = HERO_DEF.indexOf('UINT32') + 1;
+    expect(await provider.provideRenameEdits(document, document.positionAt(typeValue), 'vigor')).toBeNull();
+  });
+});

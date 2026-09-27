@@ -96,11 +96,12 @@ describe('extension activate 装配', () => {
       .sort();
     expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
 
-    // 语言服务:补全 2(.def + Python)、悬停 1、定义 2、调用层级 1
+    // 语言服务:补全 2(.def + Python)、悬停 1、定义 2、调用层级 1、重命名 1
     expect(languagesRegistry.completionRegistrations).toHaveLength(2);
     expect(languagesRegistry.hoverRegistrations).toHaveLength(1);
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
+    expect(languagesRegistry.renameRegistrations).toHaveLength(1);
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual(['kbengine']);
 
     // 虚拟文档提供者:数据库 schema

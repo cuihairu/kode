@@ -47,14 +47,15 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
-vitest 覆盖率(2026-09-25,`pnpm test:coverage`,批54 起 extension.ts 计入分母):
+vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
+批58 起 defRenamer.ts 计入分母):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 99.03% |
-| Branches | 91.76% |
+| Statements | 99.06% |
+| Branches | 91.91% |
 | Functions | 100% |
-| Lines | 99.01% |
+| Lines | 99.03% |
 
 纯逻辑层明细:
 
@@ -65,6 +66,7 @@ vitest 覆盖率(2026-09-25,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | pythonLanguageUtils.ts | 100% | 90.9% |
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 99.4% | 91.8% |
+| defRenamer.ts | 99.5% | 94.5% |
 | definitionSemantics.ts | 99.5% | 94.2% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 91.2% |
@@ -798,13 +800,33 @@ vitest(消费 TS 源)给不了的。
 批次再落地)与 SocketFactory/src/ports/ 目录(发现地址经批52 参数注入、
 socket 失败路径经 vi.mock 覆盖,无消费者的抽象违背最小侵入原则)。
 
+批58 落地 COMPLETED_FEATURES「重构支持」:.def 属性/方法重命名
+(tests/defRenamer.test.ts,29 用例 + providerSmoke 烟测 1 用例)。新增纯模块
+src/defRenamer.ts(符号解析:光标须落在顶层 Properties/方法段直接子元素的
+开或闭标签名上;引用编辑:同文件同名符号 + Parent 链与 Interfaces 传递闭包
+后代 def 的同名复述,每文件至多读盘一次;定义根从目标文件向上找 entities.xml
+推导,KBEngine 常规布局 entities.xml 在 entity_defs 父目录、非常规内嵌布局
+取所在目录)与 languageProviders 的 KBEngineRenameProvider(原生 F2,无命令
+贡献点),extension.ts 以 def 选择器注册。覆盖:同文件 Flags 变体全部命中、
+方法段命名空间隔离(同文件跨段与后代其他段不动)、接口传递闭包(含
+<Interface><X/></Interface> 包裹形态)、复述处发起只向下传播(祖先源头
+不动,如实边界)、无 entities.xml 退化同文件、非法/同名新名拒绝、悬空
+Parent/Interfaces 引用、坏 XML 与不可读(chmod 000)/不可枚举(目录 chmod
+000)后代跳过、越界光标与非符号位置 null、WorkspaceEdit 跨文件区间按各自
+文件行表换算(曾审出借目标文档行表换算的设计错误,改为 edits 携带基准
+文本)。fake-vscode 相应补 TextEdit/WorkspaceEdit 值类型与
+registerRenameProvider 记账。defRenamer 99.5% lines,唯一未盖行 L143 为
+getTagNameRange 的 !match 防御分支——标签文本与元素名同源自 tokenizer,
+正则必中,契约性不可达,如实记录。总体覆盖率 99.06/91.91/100/99.03,
+vitest 60 文件 753 用例、mocha 烟测 11 用例。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
   deactivate 由 tests/extension.test.ts 的 fake-vscode 装配测试驱动
   (6 用例,详见 docs/redesign.md 阶段 3),99.5% lines / 100% functions,
   唯一未盖 L234 是 openMethodTarget 永不抛错(内部自带 catch)导致的防御
-  catch,如实记录。批56 起 mocha 层裁为编译产物烟测(10 用例,见批56 注),
+  catch,如实记录。批56 起 mocha 层裁为编译产物烟测(批58 后 11 用例,见批56/58 注),
   两 runner 覆盖率不做工具级合并。
 - 总体百分比的分母包含全部源码文件;随测试推进持续抬升,
   每次抬升后更新本表。

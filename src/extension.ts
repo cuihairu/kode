@@ -23,6 +23,7 @@ import {
   KBEngineCompletionProvider,
   KBEngineDefinitionProvider,
   KBEngineHoverProvider,
+  KBEngineRenameProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
   validateDocument
@@ -112,6 +113,13 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineCallHierarchyProvider(entityMappingManager)
   );
   context.subscriptions.push(callHierarchyProvider);
+
+  // 注册重命名提供者(.def 属性/方法 F2 重命名,引用面见 defRenamer 头注)
+  const renameProvider = vscode.languages.registerRenameProvider(
+    defDocumentSelector,
+    new KBEngineRenameProvider()
+  );
+  context.subscriptions.push(renameProvider);
 
   // 注册 Python 文件的智能提示提供者（提供来自 .def 的属性和方法）
   const pythonCompletionProvider = vscode.languages.registerCompletionItemProvider(

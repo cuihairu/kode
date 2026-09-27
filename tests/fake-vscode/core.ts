@@ -236,6 +236,57 @@ export class DiagnosticCollection {
   }
 }
 
+// rename provider 所需的 TextEdit/WorkspaceEdit(vscode 真实 API 面:
+// set/get/has/delete/entries/insert/replace;provider 只消费 set 与构造,
+// 其余供测试断言)。entries() 对齐真实(已废弃但仍存在)的同名方法。
+export class TextEdit {
+  constructor(public readonly range: Range, public readonly newText: string) {}
+
+  static replace(range: Range, newText: string): TextEdit {
+    return new TextEdit(range, newText);
+  }
+
+  static insert(position: Position, newText: string): TextEdit {
+    return new TextEdit(new Range(position, position), newText);
+  }
+}
+
+export class WorkspaceEdit {
+  private readonly entriesMap = new Map<Uri, TextEdit[]>();
+
+  set(uri: Uri, edits: TextEdit[]): void {
+    this.entriesMap.set(uri, edits);
+  }
+
+  get(uri: Uri): TextEdit[] {
+    return this.entriesMap.get(uri) ?? [];
+  }
+
+  delete(uri: Uri): void {
+    this.entriesMap.delete(uri);
+  }
+
+  has(uri: Uri): boolean {
+    return this.entriesMap.has(uri);
+  }
+
+  get size(): number {
+    return this.entriesMap.size;
+  }
+
+  insert(uri: Uri, position: Position, newText: string): void {
+    this.set(uri, [...this.get(uri), TextEdit.insert(position, newText)]);
+  }
+
+  replace(uri: Uri, range: Range, newText: string): void {
+    this.set(uri, [...this.get(uri), TextEdit.replace(range, newText)]);
+  }
+
+  entries(): Array<[Uri, TextEdit[]]> {
+    return [...this.entriesMap.entries()];
+  }
+}
+
 // 测试用 TextDocument 工厂:按 \n 分行的最小实现,覆盖 languageProviders
 // 用到的 getText/positionAt/offsetAt/lineAt/getWordRangeAtPosition 面。
 export interface MinimalTextDocument {

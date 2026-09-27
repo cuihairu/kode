@@ -42,6 +42,12 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - [从 `entities.xml` 跳转到 `.def` 文件]
 - [快速定位实体定义]
 
+### 重构支持
+- [.def 文件内 F2 重命名属性/方法]
+- [同文件同名声明与 Flags 作用域变体全部更新]
+- [Parent 链与 Interfaces 混入的后代 def 复述自动同步]
+- [如实边界：仅覆盖 .def 定义与引用面，Python 侧引用与 entities.xml/types.xml 不参与]
+
 ### 语法检查
 - [实时语法验证]
 - [源码可证实的 Flags / DetailLevel / 必填字段校验]
@@ -256,7 +262,7 @@ pnpm run docs:dev
 
 两 runner 分层测试架构:vitest 承载全部功能测试(`tests/`,含纯逻辑层、
 本地 KBEngine 仿真器层、fake-vscode 替身上的装配与 WebView 面板层,无需真实
-KBEngine 环境即可全绿);mocha(`src/test/suite/`,10 个用例)只做编译产物
+KBEngine 环境即可全绿);mocha(`src/test/suite/`,11 个用例)只做编译产物
 烟测——验证打包形态的 out/extension.js 可装配激活。带 KBEngine 源码检出时
 自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)
 与[重设计说明](./docs/redesign.md)。

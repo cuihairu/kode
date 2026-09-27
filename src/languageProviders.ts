@@ -40,6 +40,11 @@ import {
   getRegisteredEntities,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
+import {
+  computeDefRenameEdits,
+  getLineCharacterAtOffset,
+  resolveRenameSymbolAtOffset
+} from './defRenamer';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
 import {
   DETAIL_LEVELS,
@@ -2013,6 +2018,68 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
       createPythonCallHierarchyItem(call),
       [createSelectionRange(call.line, call.character, call.methodName)]
     ));
+  }
+}
+
+export class KBEngineRenameProvider implements vscode.RenameProvider {
+  /**
+   * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer
+   * 纯模块,这里只做 vscode 值类型的装配。作用域与边界见 defRenamer 头注。
+   */
+  prepareRename(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): vscode.ProviderResult<{ range: vscode.Range; placeholder: string }> {
+    const symbol = resolveRenameSymbolAtOffset(document.getText(), document.offsetAt(position));
+    if (!symbol) {
+      return null;
+    }
+    return {
+      range: new vscode.Range(
+        document.positionAt(symbol.wordStart),
+        document.positionAt(symbol.wordEnd)
+      ),
+      placeholder: symbol.name
+    };
+  }
+
+  async provideRenameEdits(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    newName: string
+  ): Promise<vscode.WorkspaceEdit | null> {
+    const symbol = resolveRenameSymbolAtOffset(document.getText(), document.offsetAt(position));
+    if (!symbol) {
+      return null;
+    }
+    const fileEdits = computeDefRenameEdits({
+      targetFilePath: document.fileName,
+      targetText: document.getText(),
+      symbol,
+      newName
+    });
+    if (fileEdits.length === 0) {
+      return null;
+    }
+    const workspaceEdit = new vscode.WorkspaceEdit();
+    for (const fileEdit of fileEdits) {
+      const uri = path.resolve(fileEdit.filePath) === path.resolve(document.fileName)
+        ? document.uri
+        : vscode.Uri.file(fileEdit.filePath);
+      // 偏移区间相对 fileEdit.text(各文件自己的行表),不能借目标文档换算
+      workspaceEdit.set(uri, fileEdit.edits.map(edit => {
+        const start = getLineCharacterAtOffset(fileEdit.text, edit.start);
+        const end = getLineCharacterAtOffset(fileEdit.text, edit.end);
+        return new vscode.TextEdit(
+          new vscode.Range(
+            new vscode.Position(start.line, start.character),
+            new vscode.Position(end.line, end.character)
+          ),
+          newName
+        );
+      }));
+    }
+    return workspaceEdit;
   }
 }
 

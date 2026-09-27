@@ -73,4 +73,60 @@ describe('compiled language provider smoke', () => {
     assert.ok(hover, 'hover for the Properties tag is expected');
     assert.strictEqual(provider.provideHover(document, away), null);
   });
+
+  it('renames a def property across the parent chain (compiled module)', async () => {
+    // 真实落盘树:entities.xml 定位定义根,Child.def 经 Parent 复述 hp
+    const defsRoot = path.join(root, 'ws', 'scripts', 'entity_defs');
+    fs.mkdirSync(defsRoot, { recursive: true });
+    fs.writeFileSync(path.join(defsRoot, 'entities.xml'), '<root/>\n', 'utf8');
+    const sampleText = [
+      '<root>',
+      '  <Properties>',
+      '    <hp> <Type> UINT32 </Type> </hp>',
+      '  </Properties>',
+      '</root>',
+      ''
+    ].join('\n');
+    fs.writeFileSync(path.join(defsRoot, 'Sample.def'), sampleText, 'utf8');
+    fs.writeFileSync(path.join(defsRoot, 'Child.def'), [
+      '<root>',
+      '  <Parent> Sample </Parent>',
+      '  <Properties>',
+      '    <hp> <Type> UINT16 </Type> </hp>',
+      '  </Properties>',
+      '</root>',
+      ''
+    ].join('\n'), 'utf8');
+
+    const provider = new providers.KBEngineRenameProvider();
+    const document = makeDocument(sampleText);
+    const offset = sampleText.indexOf('<hp>') + 1;
+    const position = document.positionAt(offset) as unknown as vscode.Position;
+
+    const prepared = provider.prepareRename(document, position);
+    assert.ok(prepared, 'prepareRename for the hp property is expected');
+    if (!('placeholder' in prepared)) {
+      assert.fail('prepareRename expected the placeholder form');
+    }
+    assert.strictEqual(prepared.placeholder, 'hp');
+    assert.strictEqual(document.offsetAt(prepared.range.start), offset);
+
+    const workspaceEdit = await provider.provideRenameEdits(document, position, 'vigor');
+    assert.ok(workspaceEdit, 'rename edits are expected');
+    assert.strictEqual(workspaceEdit.size, 2);
+
+    const byPath = new Map(workspaceEdit.entries().map(([uri, edits]) => [uri.fsPath, edits]));
+    const sampleEdits = byPath.get(path.join(defsRoot, 'Sample.def'));
+    const childEdits = byPath.get(path.join(defsRoot, 'Child.def'));
+    assert.ok(sampleEdits, 'edits for Sample.def are expected');
+    assert.ok(childEdits, 'edits for Child.def are expected');
+    assert.strictEqual(sampleEdits.length, 2, 'open + close tag names in Sample.def');
+    assert.strictEqual(childEdits.length, 2, 'open + close tag names in Child.def');
+    assert.strictEqual(document.offsetAt(sampleEdits[0].range.start), offset);
+    for (const edits of [sampleEdits, childEdits]) {
+      for (const edit of edits) {
+        assert.strictEqual(edit.newText, 'vigor');
+      }
+    }
+  });
 });
