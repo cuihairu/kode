@@ -53,24 +53,25 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
 分支 100%,批67 起 codeGenerator.ts 分支 100%,批68 起 debugConfig.ts 与
-defRenamer.ts 分支 100%):
+defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4811/4811) |
-| Branches | 99.22% (2696/2717) |
+| Statements | 100% (4808/4808) |
+| Branches | 99.59% (2700/2711) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4701/4701) |
+| Lines | 100% (4698/4698) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 52 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 55 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
 新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
 新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
 新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处 + 批68 在 debugConfig.ts
-新增 2 处、defRenamer.ts 新增 1 处,逐处理由见"批62 行覆盖专项""批63
+新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处,
+逐处理由见"批62 行覆盖专项""批63
 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
-专项""批67 分支覆盖专项"与"批68 分支覆盖专项"):
+专项""批67 分支覆盖专项""批68 分支覆盖专项"与"批69 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -87,7 +88,7 @@ defRenamer.ts 分支 100%):
 | languageProviders.ts | 100% | 100% |
 | monitoringCollector.ts | 100% | 100% |
 | entityDependency.ts | 100% | 100% |
-| databaseSchema.ts | 100% | 95.3% |
+| databaseSchema.ts | 100% | 100% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 100% |
 | definitionWorkspace.ts | 100% | 100% |
@@ -1351,6 +1352,58 @@ statements 4813→4811、lines 4703→4701(仍报 100%,但这是"被移出"而�
 2695+5(新点亮)-4(移出的已覆盖臂)=2696。本批未改动任何生产逻辑,
 未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无
 新增条目。vitest 72 文件 857 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
+批69 分支覆盖专项:压当时剩余缺口序首位的 databaseSchema.ts(95.3%,
+201/211 臂;复查 arms 数据,211 臂中 10 条未覆盖,与上轮自报一致),逐臂
+补测到 100%,行/语句/函数维持 100%;总分支 99.22%→99.59%
+(2696/2717→2700/2711)。10 条未覆盖臂中 **7 臂可达 + 3 臂(3 个条目)
+契约性不可达并加 ignore**:
+
+可达侧(新增 tests/databaseSchemaBranches.test.ts 4 用例,真实临时 def
+树,点亮 7 条臂,全部以行为锁断言语义正当)——组件槽带
+`<Persistent>false</Persistent>`:`children: isPersistent ? … : []` 的空数组
+臂(组件不成表,断言之);组件类目 Parent:CompParent.def 自身带
+`<Parent><GhostComp/></Parent>`,`parentCategory = category === 'component' ?
+'component' : 'entity'` 的 component 臂 + (findDefinitionFileByCategory
+落空后)三目 `parentCategory === 'entity' ? findEntityDefinitionFile(…) :
+null` 的 null 尾臂(复核 coverage-final 确认该条目实为三目整体,条件假臂
+位于 `null` 字面,此前未覆盖只因无组件类目父链用例;Lost/BadP/DirP 等实体
+类目用具例走的是查找命中或 `||` 短路,不进此尾臂)——parentCategory 恒
+'component' 时条件假、两路查找都已落空,parentPath 为 null,只损失父链
+属性不崩;可用性门控:实体 hasClient=false + 组件 ClientMethods 非空,
+registerScope('client', false) 走 `if (enabled)` 假臂(域不注册,组件表
+照常建、域内属性正常入列);FIXED_DICT 内层 `<Type>ENTITY_COMPONENT</Type>`
+(模块合成类型名出现在解析面,children 保持 undefined):追加层
+`property.children || []` 兜底右臂(组件空表照建,反之不崩);未知旗标
+`<Flags>TOTALLY_UNKNOWN</Flags>`:FLAG_SCOPE_MAP 查找落空的 `|| []` 兜底
+臂(scopes 空 → 属性整体丢弃,断言列缺失);非数值的
+`<DatabaseLength>abc</DatabaseLength>`:`Number.isFinite` 假 → undefined
+回落臂(元素列继承 undefined 长度,断言之)。arms_dump 的条目行号经
+coverage-final 原文复核(批68 同款流程),无误标。
+
+不可达侧(新增 3 处精确单行区间,移出 3 个条目 / 6 条臂 = 3 条不可达缺口
+臂 + 3 条原已覆盖臂)——① parsePropertyNode 的 `parentPath ? 嵌套名 :
+平名` 模板串臂:parsePropertyNode 唯一调用点是 parsePropertySection(L515
+透传),其唯一调用点在 L412 且未传 parentPath、落默认实参 '' ⇒ 左操作数
+恒空串,模板串臂无触发路径(嵌套路径由 parseFixedDictChildren 的 childPath
+独立构造,不经此三目);② FIXED_DICT 追加层的 `property.children || []`
+右臂:FIXED_DICT 描述符的 children 由全部三个构造点
+(parsePropertyNode/parseArrayElementDescriptor/parseFixedDictChildren)
+恒赋为数组(至少为 []),clone 路径亦保持数组(注:此结论仅对 FIXED_DICT
+成立,ENTITY_COMPONENT 侧无此保证,故该侧兜底臂按可达处理,见上);
+③ createArrayTable 的 `property.name || 'values'` 右臂:元素名出自
+defParser tokenizeXml,标签名正则 `[A-Za-z_][A-Za-z0-9_]*` 要求至少一个
+字符,ARRAY 描述符名恒非空(顶层属性名来自标签名,ARRAY 内层元素名恒为
+'value')。三处区间上方均逐条写明理由,延续 `start … stop` 形态。
+
+分母口径(如实记,不美化):3 处区间移出 6 条臂 = 3 条不可达缺口臂 + 3 条
+原已覆盖臂;3 条被覆盖语句连同行一并移出(L551 propertyPath 语句、
+L819 for 语句、L844 tableName 语句)——
+statements 4811→4808、lines 4701→4698(仍报 100%,但这是"被移出"而非
+"被补测覆盖",在此登记);分支分母 2717→2711(-6),分子
+2696+7(新点亮)-3(移出的已覆盖臂)=2700。本批未改动任何生产逻辑,
+未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无
+新增条目。vitest 73 文件 861 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 说明:
 

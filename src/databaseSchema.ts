@@ -548,7 +548,13 @@ function parsePropertyNode(
     return null;
   }
 
+    // 不可达(批69 定性):parsePropertyNode 的唯一调用点是 parsePropertySection
+  // (L515 透传),而 parsePropertySection 的唯一调用点在 L412,未传 parentPath,
+  // 落默认实参 '' ⇒ 此处左操作数恒空串,模板串臂无触发路径(嵌套路径由
+  // parseFixedDictChildren 的 childPath 独立构造,不经此三目)。
+  /* istanbul ignore start */
   const propertyPath = parentPath ? `${parentPath}.${propertyNode.name}` : propertyNode.name;
+  /* istanbul ignore stop */
   const descriptor: PersistentPropertyDescriptor = {
     name: propertyNode.name,
     typeName,
@@ -816,7 +822,12 @@ function appendPropertyToTable(
 
   if (property.typeName === 'FIXED_DICT') {
     const nextPrefix = `${fixedDictPrefix}${property.name}_`;
+    // 不可达(批69 定性):FIXED_DICT 描述符的 children 由全部三个构造点
+    // (parsePropertyNode/parseArrayElementDescriptor/parseFixedDictChildren)
+    // 恒赋为数组(至少为 []),clone 路径亦保持数组 ⇒ 兜底右臂无触发路径。
+    /* istanbul ignore start */
     for (const childProperty of property.children || []) {
+    /* istanbul ignore stop */
       appendPropertyToTable(table, tables, childProperty, currentTableName, nextPrefix);
     }
     return;
@@ -841,7 +852,12 @@ function appendPropertyToTable(
 }
 
 function createArrayTable(parentTableName: string, property: PersistentPropertyDescriptor): TableSchemaDescriptor {
+  // 不可达(批69 定性):元素名出自 defParser 的 tokenizeXml,标签名正则
+  // `[A-Za-z_][A-Za-z0-9_]*` 要求至少一个字符,ARRAY 描述符名恒非空
+  // (顶层属性名来自标签名,ARRAY 内层元素名恒为 'value')⇒ `|| 'values'` 右臂无触发路径。
+  /* istanbul ignore start */
   const tableName = `${parentTableName}_${property.name || 'values'}`;
+  /* istanbul ignore stop */
   return {
     name: tableName,
     kind: 'array',
