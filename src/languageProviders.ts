@@ -309,7 +309,12 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
 
       if (lineText.match(/importlib\.[a-zA-Z]*$/)) {
         const fn = KBENGINE_RELOAD_FUNCTIONS.find(f => f.name === 'importlib.reload');
+        // 不可达(批64 定性):KBENGINE_RELOAD_FUNCTIONS 是模块级静态白名单,
+        // 恒含 'importlib.reload'(src/kbengineMetadata.ts),故 fn 恒真。
+        // 精确单行区间只摘除该 if 的分支条目,补全项构造保持被覆盖计入分母。
+        /* istanbul ignore start */
         if (fn) {
+        /* istanbul ignore stop */
           const item = new vscode.CompletionItem('reload', vscode.CompletionItemKind.Function);
           item.detail = fn.detail;
           item.documentation = new vscode.MarkdownString(fn.documentation);
@@ -765,7 +770,13 @@ function validateTypeNode(
       continue;
     }
 
+    // 不可达(批64 定性):CustomTypeResolutionStatus 共四值,resolved/
+    // unverifiable/missingPythonFile 已在上方三分支 continue 穷尽,能走到此处
+    // 即 missingTypeRegistration。精确单行区间只摘除该 if 的分支条目,
+    // 诊断构造保持被覆盖计入分母。
+    /* istanbul ignore start */
     if (customTypeResolution.status === 'missingTypeRegistration') {
+    /* istanbul ignore stop */
       pushDiagnosticForNodeValue(
         document,
         diagnosticsList,
@@ -1044,10 +1055,17 @@ function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
   markdown.appendCodeblock(hook.signature, 'python');
   markdown.appendMarkdown('\n**详细说明**:\n');
   markdown.appendMarkdown(hook.documentation);
+  // 不可达(批64 定性):KBENGINE_HOOKS 全部 36 个 hook 均带 sourceLocation
+  // 与 example(src/hooks.ts 数据不变式,引擎侧用例亦锁定 sourceLocation),
+  // 两个 if 的假臂不可达。精确单行区间只摘除分支条目,悬停文案保持被覆盖计入分母。
+  /* istanbul ignore start */
   if (hook.sourceLocation) {
+  /* istanbul ignore stop */
     markdown.appendMarkdown('\n\n**源码位置**: `' + hook.sourceLocation + '`');
   }
+  /* istanbul ignore start */
   if (hook.example) {
+  /* istanbul ignore stop */
     markdown.appendMarkdown('\n\n**使用示例**:\n');
     markdown.appendCodeblock(hook.example, 'python');
   }
@@ -1369,7 +1387,12 @@ function resolveCustomTypeReference(
     return { status: 'unverifiable' };
   }
 
+  // 不可达(批64 定性):唯一调用方(validateTypeNode)恒传非空的
+  // knownTypeContext.customTypes,`?? getRegisteredCustomTypes` 右臂无触发
+  // 路径;该行语句已被覆盖,随区间离开语句/行分母(TESTING.md 分母口径据实登记)。
+  /* istanbul ignore start */
   const customTypes = registeredCustomTypes ?? getRegisteredCustomTypes(workspaceRoot);
+  /* istanbul ignore stop */
   if (!customTypes.size) {
     return { status: 'unverifiable' };
   }
@@ -1831,13 +1854,15 @@ function findMethodImplementationLocationInDef(
       );
     });
   }).then(reference => {
+    // 不可达(批64 定性,合并扩展批62 区间):内层两臂(identity 缺失 / 实现
+    // 未解析)都恒返回 Location,外层 then 收到的 reference 恒真——
+    // `if (reference)` 的假臂与兜底 return 均无触发路径。被覆盖的
+    // `return reference;` 亦随区间离开语句/行分母(TESTING.md 分母口径据实登记)。
+    /* istanbul ignore start */
     if (reference) {
       return reference;
     }
 
-    // 不可达(批62 定性):内层两臂(identity 缺失 / 实现未解析)都返回 Location,
-    // 外层 then 收到的 reference 恒真,此兜底无触发路径。
-    /* istanbul ignore start */
     return new vscode.Location(
       document.uri,
       new vscode.Position(Math.max(line - 1, 0), 0)

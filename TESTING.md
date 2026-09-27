@@ -49,18 +49,21 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
 批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%,
-批63 起 defParser.ts 分支 100%):
+批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
+languageProviders.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4841/4841) |
-| Branches | 96.44% (2685/2784) |
+| Statements | 100% (4821/4821) |
+| Branches | 97.88% (2684/2742) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4731/4731) |
+| Lines | 100% (4711/4711) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 28 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 42 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
-新增 3 处,逐处理由见"批62 行覆盖专项"与"批63 分支覆盖专项"):
+新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
+新增 5 处并合并扩展批62 既有区间 1 处,逐处理由见"批62 行覆盖专项""批63
+分支覆盖专项"与"批64 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -74,13 +77,13 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 98.9% |
 | entityMapping.ts | 100% | 98.6% |
-| languageProviders.ts | 100% | 95.2% |
+| languageProviders.ts | 100% | 100% |
 | monitoringCollector.ts | 100% | 100% |
 | entityDependency.ts | 100% | 94.1% |
 | databaseSchema.ts | 100% | 95.3% |
 | logCollector.ts | 100% | 100% |
 | codeGenerator.ts | 100% | 95.1% |
-| definitionWorkspace.ts | 100% | 92.8% |
+| definitionWorkspace.ts | 100% | 100% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 98.6% |
 | logWebView.ts | 100% | 96.9% |
@@ -251,8 +254,9 @@ Registered, but no runtime role enabled 标签)、types.xml 自定义类型
 (aliasType/rawValue 剔除 implementedBy/Properties、属性按名排序、声明行
 号、implementedBy→user_type python 实现文件解析)、entity def 文件与
 四类别(type/entity/interface/component)条目解析(注册实体与未注册 def
-合并、registered 优先后按名排序)。剩余未覆盖项只在分支口径(92.8%,v8 的
-隐式 else 推导与类型级穷尽项,逐批定性),行覆盖自批62 起 100%——
+合并、registered 优先后按名排序)。分支自批64 起 100%(不可达空值臂家族与
+sort 比较方向臂已定性入 ignore,可达的哨兵/兜底臂补真实用例,逐臂判定见
+"批64 分支覆盖专项"),行覆盖自批62 起 100%——
 mapDefinitionFiles 的"非普通文件"条目由真实符号链接用例覆盖,两处根缺失
 守卫判不可达入 ignore。批18 的 languageProviders 用例经真实文件树引用
 进一步抬升,该文件行覆盖同样自批62 起 100%。
@@ -1082,6 +1086,89 @@ L320 与 L345 的三元与所在赋值语句同起一行,而区间按行生效,�
 defParser.ts 一处 5 空格缩进(批62 插标记时的排版残留,无行为变化)。
 本批未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增
 条目。vitest 64 文件 816 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
+批64 分支覆盖专项:definitionWorkspace.ts 分支 92.8%(193/208 臂)→100%
+(178/178 臂)、languageProviders.ts 分支 95.2%(520/546 臂)→100%
+(534/534 臂),两文件行/语句/函数维持 100%,总分支 96.44%→97.88%
+(2685/2784→2684/2742)。
+
+可达侧(新增 tests/definitionWorkspaceBranches.test.ts 3 用例、
+tests/languageProvidersBranches.test.ts 17 用例,全部真实临时文件树/真实
+parseDefDocument 产物,未放宽任何断言,点亮 22 条缺口臂)——
+definitionWorkspace.ts 2 臂:`extractCustomTypeRawValue` 的 `|| 'ALIAS'`
+哨兵臂(仅 `<implementedBy>` 子元素的类型元素无文本块 ⇒ chunks 空 ⇒
+'ALIAS',对照 `<OK><Type>UINT8</Type></OK>` 照常渲染;aliasType 对 '<'
+开头的 rawValue 无标识符前缀、如实断言归一 'ALIAS');`parseCustomTypeStructure`
+的 root-null 兜底臂(`<LT>a &lt; b</LT>` 经实体解码得裸 `'a < b'`,再包装
+`<root>a < b</root>` tokenize 抛错 ⇒ parseXmlDocument 归 null ⇒
+`children: []`,先用 `expect(() => parseDefDocument(...)).toThrow()` 证明
+守卫条件)。其余 20 臂在 languageProviders.ts:错配闭标 `</zzz>` 的"逐项
+失配不弹栈"臂(补全仍归顶层 9 标签);非 .py/.def 文件 `KBEngine.`/
+`importlib.` 补全空回落;`hover.showSymbolDocs`/`hover.showTagDocs` 关断臂
+(默认正对照 + 关断断言 null,finally 还原);entities.xml 定义跳转的
+`if (defPath)` 假臂(布局候选恒取 scripts/entities.xml,assets 下同名文件
+不进注册快照,`<Oddball/>` 无 Oddball.def ⇒ null,Hero 正对照命中 Hero.def);
+enableStructureDiagnostics 关断后属性区块重复定义诊断消失而标量未知类型
+诊断保留(重复判定按 Flags 作用域,fixture 带 `<Flags>CELL_PUBLIC</Flags>`);
+DetailLevel 的 NEAR 合法臂、空值臂与 `diagnostics.checkUnknownDetailLevels`
+关断臂(BLAH 报错正对照);属性无 `<Type>` 子元素时悬停省略 Type 行;方法
+无 `<Arg>`/`<Exposed>` 时省略 Args/Exposed 行(带 Arg/Exposed 正对照);
+entities.xml 悬停的 `getRegisteredEntityInfo` `|| null` 右臂(未注册实体
+无 **Base** 运行时行,Hero 正对照);implementedBy 即文档根时
+`findAncestorElement(...)?.parent || null` 右臂(hover/definition 双 null);
+`isPositionInsideChildTag` 的文本节点→父元素臂与 Arg/Interfaces/Parent 三处
+未命中回落(含 components/ 目录下 `<Parent Unknown/>` 穿透实体查找的回落,
+Known.def/Iface1.def/Hero 正对照);补全去重的两处 `!suggestions.has` 假臂
+(自定义 UINT32 与内建同名保留内建 detail、自定义 Hero 与注册实体同名保留
+自定义 detail、仅注册实体的 NoDef 走实体 detail 对照);
+PythonDefinitionProvider 属性/方法双解析失败的 null 回落(假
+EntityMappingManager)。
+
+不可达侧(definitionWorkspace.ts 新增 9 处区间、languageProviders.ts 新增
+5 处区间并合并扩展批62 既有区间 1 处,合计移出 42 条臂 = 19 条不可达臂 +
+23 条原已覆盖臂)——definitionWorkspace.ts:布局空值臂家族 13 个条目
+(`entityDefsCandidates[0] || null` 右臂、entityDefsRoot/entityScriptsRoot/
+interfacesRoot/componentsRoot/scriptRoot/scriptPath 各 ternary 的 null/''
+臂、entities.xml/types.xml/user_type 候选的 `: ''` 臂、entity `.def` 的
+回退 `${name}.def` 臂,连同各自条目内已覆盖的对侧臂):candidates 由
+buildWorkspaceCandidates 生成,首项为 resolveWorkspacePath(root, 配置路径),
+相对路径经 path.join 的最小结果是 '.',恒非空 ⇒ entityDefsRoot/
+entityScriptsRoot 恒为非空字符串(批62 已据同一事实把
+`!layout.entityDefsRoot` 守卫判不可达),所有依赖二者的空值臂同因不可达;
+`findCustomTypePythonFileByImplementation` 的 `if (normalizedModule)` 假臂:
+外层 `implementedBy?.trim()` 为真 ⇒ 非空字符串经 replace(/\./g,'/') 仍非空;
+其嵌套 `if (firstSegment)` 假臂在 implementedBy 以 '.' 开头(如 '.doll')
+时**实际可达**,但 istanbul ignore 只支持整行区间、该分支条目与外层同落
+一个区间被连带摘除——已以前导点用例('.a.b' 不产生首段候选而 'a.b' 产生,
+a.py 命中对照)锁定行为,未裸奔;`compareDefinitionEntries` 的 if 条目与
+`left.registered ? -1` 真臂:唯一 registered 混排输入是 entity 类目,entries
+按 Map 插入序先 registered 后 unregistered 且 unregistered 侧已按名排序,
+V8 sort 比较方向恒为 (后元素, 前元素),混排对的 left 恒为 unregistered
+(节点探针 12/12、25/25、40/40、60/60 多种命名序均仅触发假臂),type/
+interface/component 类目全部 registered 不进本 if(if 条目本身两臂全被
+覆盖,随区间一并移出)。languageProviders.ts:`if (fn)` 假臂
+(KBENGINE_RELOAD_FUNCTIONS 模块级静态白名单恒含 'importlib.reload');
+`status === 'missingTypeRegistration'` 判定条目(CustomTypeResolutionStatus
+共四值,resolved/unverifiable/missingPythonFile 在上方 continue 穷尽,到达
+即第四值;区间只摘分支条目,诊断构造保持被覆盖计入分母);
+createHookHover 的 `if (hook.sourceLocation)`/`if (hook.example)` 假臂
+(KBENGINE_HOOKS 全部 36 个 hook 均带 sourceLocation 与 example 的数据
+不变式,引擎侧用例亦锁定 sourceLocation);`registeredCustomTypes ??
+getRegisteredCustomTypes` 右臂(唯一调用方 validateTypeNode 恒传非空集合);
+findMethodImplementationLocationInDef 尾部 `if (reference)` 判定与兜底
+return(合并扩展批62 区间:内层两臂恒返回 Location ⇒ 外层 reference 恒真,
+假臂与兜底均无触发路径)。
+
+分母口径(如实记,不美化):14 处新区间 + 1 处合并扩展共移出 42 条臂
+(19 条不可达 + 23 条已覆盖;19 条中 1 条 firstSegment 假臂可达但因行区间
+嵌套规则被连带摘除,已有行为锁定用例看住),另有 22 条原缺口臂被新用例
+点亮(2 + 20);区间内被覆盖的赋值/return 语句连同行一并移出分母——
+statements 4841→4821、lines 4731→4711(仍报 100%,但这部分是"被移出"而非
+"被补测覆盖",在此登记);分支分母 2784→2742(-42),分子 2685-23+22=2684。
+本批一次源码编辑曾误删 `const normalizedModule` 声明,被新增用例当场红掉
+后即补回,最终态无行为变化,未暴露生产代码缺陷,'近期由测试发现并修复的
+真实缺陷'一节无新增条目。vitest 66 文件 836 用例(两种引擎口径全绿),
+mocha 烟测 11 用例。
 
 说明:
 
