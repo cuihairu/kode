@@ -257,7 +257,15 @@ export class LogParser {
     for (const line of lines) {
       if (line.trim()) {
         const entry = this.parseLoggerMessage(line);
+        // 不可达(批71 定性):parseLoggerMessage 对任意字符串输入全函数
+        // (try 块内只有字符串方法、正则匹配、Date 构造与 \d 捕获组的
+        // Number() 转换,均不抛错;唯一 null 路径是 catch,而 catch 仅对
+        // 非字符串入参可达),parseBatch 逐行喂入 split(/\r?\n/) 的产物,
+        // 恒为字符串 ⇒ 判空假臂无触发路径。分支条目(含已覆盖真臂)随
+        // 区间移出分母,真臂行为由既有 parseBatch 用例锁定。
+        /* istanbul ignore start */
         if (entry) {
+        /* istanbul ignore stop */
           entries.push(entry);
         }
       }

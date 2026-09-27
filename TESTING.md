@@ -54,26 +54,27 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
 分支 100%,批67 起 codeGenerator.ts 分支 100%,批68 起 debugConfig.ts 与
 defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%,批70 起
-logWebView.ts 分支 100%):
+logWebView.ts 分支 100%,批71 起 logParser.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4808/4808) |
-| Branches | 99.63% (2701/2711) |
+| Statements | 100% (4807/4807) |
+| Branches | 99.66% (2700/2709) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4698/4698) |
+| Lines | 100% (4697/4697) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 55 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 56 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
 新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
 新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
 新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处 + 批68 在 debugConfig.ts
-新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处,
+新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处 +
+批71 在 logParser.ts 新增 1 处,
 逐处理由见"批62 行覆盖专项""批63
 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
-专项""批67 分支覆盖专项""批68 分支覆盖专项""批69 分支覆盖专项"与"批70
-分支覆盖专项"):
+专项""批67 分支覆盖专项""批68 分支覆盖专项""批69 分支覆盖专项""批70
+分支覆盖专项"与"批71 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -84,7 +85,7 @@ logWebView.ts 分支 100%):
 | defParser.ts | 100% | 100% |
 | defRenamer.ts | 100% | 100% |
 | definitionSemantics.ts | 100% | 100% |
-| logParser.ts | 100% | 98.3% |
+| logParser.ts | 100% | 100% |
 | kbengineProtocol.ts | 100% | 98.9% |
 | entityMapping.ts | 100% | 98.6% |
 | languageProviders.ts | 100% | 100% |
@@ -103,7 +104,8 @@ logWebView.ts 分支 100%):
 | explorerProviders.ts | 100% | 99.2% |
 | extension.ts | 100% | 98.4% |
 
-logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
+logParser 的语句与函数已全覆盖,分支自批71 起 100%(唯一未覆盖臂为
+parseBatch 的判空假臂,契约性不可达,见"批71 分支覆盖专项");
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
 级别值返回 undefined,而 `getLevelIcon`/`getLevelColor` 有 default——
 三函数不一致,测试如实记录,是否统一留待后续决策。
@@ -1422,6 +1424,28 @@ error 通道出现 '日志连接不可用: port closed'——与既有 Error 路
 
 分母口径(如实记,不美化):本批无 ignore 区间,分母 2711 不变,分子
 2700+1=2701,无"被移出"条目。本批未改动任何生产逻辑,未暴露需要改动
+生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增条目。
+vitest 73 文件 862 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
+批71 分支覆盖专项:按剩余缺口队列序位压 logParser.ts(98.3%,59/60 臂),
+逐臂收口到 100%,行/语句/函数维持 100%;总分支 99.63%→99.66%
+(2701/2711→2700/2709)。唯一未覆盖臂(arms_dump 与 coverage-final 原文
+复核一致)为 parseBatch 的 `if (entry)` 判空假臂,**契约性不可达,按既定
+口径加 1 处精确单行区间 ignore,零新增测试、零生产改动**(派发约束"不写
+不断言的假用例":点亮该臂只能 mock 静态方法返回 null,属假用例,不取):
+
+parseLoggerMessage 对任意字符串输入全函数——try 块内只有字符串方法
+(trimEnd/toLowerCase/trim)、正则匹配、Date 构造与 `\d` 捕获组的
+Number() 转换,均不抛错;唯一 null 路径是 catch,而 catch 仅对非字符串
+入参可达。parseBatch 逐行喂入 `split(/\r?\n/)` 的产物,恒为字符串 ⇒
+`if (entry)` 假臂无触发路径。真臂(条目非空入列)行为由既有 parseBatch
+用例锁定。区间上方逐条写明理由,延续 `start … stop` 形态。
+
+分母口径(如实记,不美化):1 处区间移出 1 个分支条目 / 2 条臂 = 1 条
+不可达缺口臂 + 1 条原已覆盖臂;1 条被覆盖语句(if 语句)连同行一并移出
+——statements 4808→4807、lines 4698→4697(仍报 100%,但这是"被移出"
+而非"被补测覆盖",在此登记);分支分母 2711→2709(-2),分子
+2701-1(移出的已覆盖臂)=2700。本批未改动任何生产逻辑,未暴露需要改动
 生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增条目。
 vitest 73 文件 862 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
