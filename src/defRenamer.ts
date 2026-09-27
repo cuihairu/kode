@@ -224,7 +224,15 @@ export function collectRenameEditsInText(text: string, symbol: DefRenameSymbol):
         continue;
       }
       const open = getTagNameRange(text, child, 'open');
+      // 不可达(批68 定性):open 侧的 tagStart/tagEnd 出自 defParser 的
+      // tokenizeXml——每个元素先建节点再以 open/self 令牌回填,二者恒满足
+      // tagStart ≥ 0 且 tagEnd > tagStart 且不越过文本长度 ⇒ 范围守卫对
+      // open 侧恒假,open 恒真,判空假臂无触发路径(close 侧由自闭合的
+      // closeTagStart === closeTagEnd 真实走到)。分支条目(含已覆盖真臂)
+      // 随区间移出分母,真臂行为由既有重命名用例锁定。
+      /* istanbul ignore start */
       if (open) {
+      /* istanbul ignore stop */
         ranges.push(open);
       }
       const close = getTagNameRange(text, child, 'close');

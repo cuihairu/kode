@@ -52,23 +52,25 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
 languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
-分支 100%,批67 起 codeGenerator.ts 分支 100%):
+分支 100%,批67 起 codeGenerator.ts 分支 100%,批68 起 debugConfig.ts 与
+defRenamer.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4813/4813) |
-| Branches | 98.89% (2695/2725) |
+| Statements | 100% (4811/4811) |
+| Branches | 99.22% (2696/2717) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4703/4703) |
+| Lines | 100% (4701/4701) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 49 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 52 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
 新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
 新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
-新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处,逐处理由见"批62 行覆盖
-专项""批63 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项"
-"批66 分支覆盖专项"与"批67 分支覆盖专项"):
+新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处 + 批68 在 debugConfig.ts
+新增 2 处、defRenamer.ts 新增 1 处,逐处理由见"批62 行覆盖专项""批63
+分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
+专项""批67 分支覆盖专项"与"批68 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -77,7 +79,7 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 | pythonLanguageUtils.ts | 100% | 100% |
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 100% | 100% |
-| defRenamer.ts | 100% | 95.2% |
+| defRenamer.ts | 100% | 100% |
 | definitionSemantics.ts | 100% | 100% |
 | logParser.ts | 100% | 98.3% |
 | kbengineProtocol.ts | 100% | 98.9% |
@@ -94,7 +96,7 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 | logWebView.ts | 100% | 96.9% |
 | monitoringWebView.ts | 100% | 100% |
 | entityDependencyWebView.ts | 100% | 100% |
-| debugConfig.ts | 100% | 95.2% |
+| debugConfig.ts | 100% | 100% |
 | explorerProviders.ts | 100% | 99.2% |
 | extension.ts | 100% | 98.4% |
 
@@ -1303,6 +1305,52 @@ ast-v8-to-istanbul 采纳,延续 `start … stop` 形态。
 2693+5(新点亮)-3(移出的已覆盖臂)=2695。本批未改动任何生产逻辑,未
 暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增
 条目。vitest 70 文件 854 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
+批68 分支覆盖专项:按收官顺序压当时最低的 debugConfig.ts(95.2%,60/63 臂)
+与 defRenamer.ts(95.2%,120/126 臂),逐臂补测到 100%,行/语句/函数维持
+100%;总分支 98.89%→99.22%(2695/2725→2696/2717)。两文件合计 9 条未覆盖
+臂,其中 **5 臂可达 + 4 臂(4 个条目)契约性不可达并加 ignore**:
+
+可达侧(新增 tests/defRenamerBranches.test.ts 2 用例、
+tests/debugConfigBranches.test.ts 1 用例,真实临时文件树/内存 fs 配置装载
++ 可脚本化窗口与 debug stub,未放宽任何断言)——defRenamer 5 臂:
+listDefFilesRecursive 的非 .def 文件后缀过滤假臂(定义树混入 notes.txt);
+parseDefFileSemantics 的无名 `<Interface/>` 跳过臂(`<Interfaces>` 内
+无名自闭合引用与实名引用并存);闭包行走两处 seen 去重守卫假臂(父链成环
+CycleA↔CycleB 且共享 SharedI 接口,第二次命中 CycleA 与 SharedI 时各触发
+一次);loadSemantics 的 `content === null` 假臂(Ghosty.def chmod 000,
+外层循环按 null 内容跳过它,但 Distant→Mid→Ghosty 的闭包行走把它从
+ownerIndex 入队,绕过外层守卫真实命中)。可达臂全部在 defRenamer 侧;
+debugConfig 侧 3 条未覆盖臂经逐条复核均为下述契约性不可达(批前
+arms_dump 曾把 telnetHost 兜底臂误报为未覆盖,复测 coverage-final 计数
+证实其早已覆盖,未覆盖者实为 telnetEnableCommands/Password/Layer 三处
+同族兜底)。debugConfigBranches 新增用例不贡献分支分母,系行为锁定——
+用户配置把 defaultTelnetHost 与组件 telnetHost 同时置空串,断言归一化
+结果为 '' 且简报真实出现 'telnet 127.0.0.1 0'(telnetHost 兜底臂的
+输入-输出双侧锁定)。
+
+不可达侧(新增 3 处精确区间,移出 4 个分支条目 / 8 条臂 = 4 条不可达缺口
+臂 + 4 条原已覆盖臂)——debugConfig 三处同族:startDebugging 组装 telnet
+简报时 config 出自 getComponentConfig,其 telnetEnableCommands/
+telnetPassword/telnetDefaultLayer 均已做同款 `||` 归一化且产出恒为真值
+(`userConfig?.x || []/'pwd123456'/'python'`)⇒ 简报处的 `||` 兜底右臂
+无触发路径(telnetLines 语句一处区间;password/default-layer 两个模板串
+共处一个数组字面量,合并一处区间)。defRenamer 一处:collectRenameEdits
+InText 的 `if (open)` 判空假臂——open 侧 tagStart/tagEnd 出自 defParser
+tokenizeXml 的令牌回填,恒满足 tagStart ≥ 0、tagEnd > tagStart、不越界
+⇒ 范围守卫对 open 侧恒假(close 侧由自闭合元素真实走到,批62 已定性其
+正则臂不可达,本臂为同族范围守卫契约)。两处区间上方均逐条写明理由,
+延续 `start … stop` 形态(批63 已实测 `ignore else` 不被采纳)。
+
+分母口径(如实记,不美化):3 处区间移出 8 条臂 = 4 条不可达缺口臂 + 4 条
+原已覆盖臂;2 条被覆盖语句连同行一并移出(debugConfig 的 telnetLines
+语句与 defRenamer 的 if 语句;password/default-layer 两个模板串与所在
+数组同属一个语句区,不另计独立条目,以 coverage-final 实测归账)——
+statements 4813→4811、lines 4703→4701(仍报 100%,但这是"被移出"而非
+"被补测覆盖",在此登记);分支分母 2725→2717(-8),分子
+2695+5(新点亮)-4(移出的已覆盖臂)=2696。本批未改动任何生产逻辑,
+未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无
+新增条目。vitest 72 文件 857 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 说明:
 

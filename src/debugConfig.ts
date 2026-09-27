@@ -293,11 +293,26 @@ export class DebugConfigManager {
 
   async startDebugging(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
+    // 不可达(批68 定性):telnetEnableCommands 与下方 password/layer 同族——
+    // getComponentConfig 已归一化(`userConfig?.telnetEnableCommands || []`),
+    // 产出恒为真值数组 ⇒ `|| []` 兜底右臂无触发路径。语句与两分支条目
+    // 随区间移出分母(TESTING.md 分母口径据实登记);真臂行为由既有
+    // startDebugging 编排用例锁定。
+    /* istanbul ignore start */
     const telnetLines = (config.telnetEnableCommands || []).filter(Boolean);
+    /* istanbul ignore stop */
     const telnetCommand = `telnet ${config.telnetHost || '127.0.0.1'} ${config.telnetPort || 0}`;
     const telnetMeta = [
+      // 以下两处 `||` 右臂不可达(批68 定性):config 出自 getComponentConfig,
+      // 其 telnetPassword/telnetDefaultLayer 已做同款归一化
+      // (`userConfig?.x || 'pwd123456'/'python'`),产出恒为非空字符串 ⇒
+      // 此处的左操作数恒真,兜底右臂无触发路径。语句与两分支条目随区间
+      // 移出分母(TESTING.md 分母口径据实登记);真臂行为由既有
+      // startDebugging 简报断言锁定。
+      /* istanbul ignore start */
       `password: ${config.telnetPassword || 'pwd123456'}`,
       `default layer: ${config.telnetDefaultLayer || 'python'}`
+      /* istanbul ignore stop */
     ];
 
     const message = telnetLines.length > 0
