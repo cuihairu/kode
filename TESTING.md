@@ -54,12 +54,13 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
 分支 100%,批67 起 codeGenerator.ts 分支 100%,批68 起 debugConfig.ts 与
 defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%,批70 起
-logWebView.ts 分支 100%,批71 起 logParser.ts 分支 100%):
+logWebView.ts 分支 100%,批71 起 logParser.ts 分支 100%,批73 起
+serverManager.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
 | Statements | 100% (4807/4807) |
-| Branches | 99.66% (2700/2709) |
+| Branches | 99.7% (2701/2709) |
 | Functions | 100% (839/839) |
 | Lines | 100% (4697/4697) |
 
@@ -96,7 +97,7 @@ logWebView.ts 分支 100%,批71 起 logParser.ts 分支 100%):
 | codeGenerator.ts | 100% | 100% |
 | definitionWorkspace.ts | 100% | 100% |
 | serverCommandTarget.ts | 100% | 100% |
-| serverManager.ts | 100% | 98.6% |
+| serverManager.ts | 100% | 100% |
 | logWebView.ts | 100% | 100% |
 | monitoringWebView.ts | 100% | 100% |
 | entityDependencyWebView.ts | 100% | 100% |
@@ -1485,6 +1486,35 @@ KBENGINE_ROOT=off 同刻全绿,非代码问题)。
 剩余缺口按序(批72 后):serverManager(98.6%)、entityMapping(98.6%)、
 kbengineProtocol(98.9%)、explorerProviders(99.2%);extension 的
 唯一残差为上述已登记伪影。
+
+批73 分支覆盖专项:压缺口队列序首位的 serverManager.ts(98.6%,
+68/69 臂),逐臂收口到 100%,行/语句/函数维持 100%;总分支
+99.66%→99.7%(2700/2709→2701/2709)。唯一未覆盖臂(arms_dump 与
+coverage-final 原文复核一致)为**可达竞态守卫真臂,纯测试点亮,本批零
+ignore、零生产改动**:
+
+startComponent 的宽限定时器回调(启动后 1000ms)内
+`if (this.runningServers.has(component.name))` 判空假臂——启动宽限期内
+条目被移除且 timer 未被清时,守卫拦下陈旧定时器,不复活状态、不发
+"启动成功"提示。既有删除点中 exit/error 处理器都会先 clearTimeout,
+唯一不清 timer 的删除点是 `dispose()` 的 `runningServers.clear()`——
+构造:注入"吞 kill"的 ProcessRunner 假进程(kill 只翻 killed 标记、
+不触发 exit 事件),startComponent('machine') 成功后立即 dispose(),
+宽限期(1000ms)过后 timer 到点即命中假臂。
+
+可达侧(新增 tests/serverManager.test.ts 1 用例,真实临时二进制树 +
+configPath 配置覆盖 + 注入型 runner)——断言链:startComponent 返回
+true 且状态 Starting;dispose 后 runningServers 清空;宽限期过后无
+"启动成功"提示、状态保持 Stopped(守卫静默语义锁定)。
+
+分母口径(如实记,不美化):本批零 ignore、零分母变动,分子
+2700+1=2701,statements/lines/functions 三项 100% 均无移出。
+vitest 73 文件 864 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+门禁四项首跑全绿,无瞬态异常。
+
+剩余缺口按序(批73 后):entityMapping(98.6%)、kbengineProtocol(98.9%)、
+explorerProviders(99.2%);serverManager 已收官,extension 残差为批72
+已登记伪影。
 
 说明:
 

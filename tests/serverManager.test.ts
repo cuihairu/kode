@@ -3,12 +3,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import type { ChildProcess } from 'node:child_process';
 import {
   KBEngineServerManager,
   SERVER_COMPONENTS,
   ServerStatus
 } from '../src/serverManager';
-import { workspace as stubWorkspace } from './helpers/vscodeStub';
+import {
+  configurationOverrides,
+  messages,
+  workspace as stubWorkspace
+} from './helpers/vscodeStub';
 
 // KBEngineServerManager 的可测纯逻辑:组件常量表、状态枚举、二进制/配置
 // 路径解析与环境构造(detectBinPath/detectKbeRoot/buildComponentEnvironment
@@ -152,4 +158,53 @@ describe('KBEngineServerManager path resolution', () => {
     expect(env.KBE_RES_PATH).toBeUndefined();
     expect(env.KBE_BIN_PATH).toBe(path.join(root, 'bin') + path.sep);
   });
+});
+
+describe('KBEngineServerManager startup grace guard (批73)', () => {
+  it('does not resurrect a disposed server when the grace timer fires', async () => {
+    // 竞态守卫真臂:dispose() 清空 runningServers 但不清 startupTimer;
+    // 假进程吞掉 kill(不发 exit)时,start-flow 的 exit 处理器无从清 timer,
+    // 宽限定时器到点后守卫判空,静默跳过——不复活状态、不发启动成功提示
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-grace-'));
+    fs.mkdirSync(path.join(root, 'kbengine', 'kbe', 'bin', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'kbengine', 'kbe', 'bin', 'server', 'machine'), '#!/bin/sh\n');
+    const configRoot = path.join(root, 'configs');
+    fs.mkdirSync(configRoot, { recursive: true });
+    stubWorkspace.workspaceFolders = [
+      { uri: { fsPath: path.join(root, 'ws') } as vscode.Uri, name: 'ws', index: 0 }
+    ];
+    configurationOverrides.set('kbengine', { configPath: configRoot });
+
+    // 吞 kill 的假进程:kill 只翻标记,不触发 exit/error
+    const runner = {
+      spawn: (): ChildProcess =>
+        Object.assign(new EventEmitter(), {
+          pid: 4321,
+          stdout: new EventEmitter(),
+          stderr: new EventEmitter(),
+          killed: false,
+          kill: function kill(): void {
+            this.killed = true;
+          }
+        }) as unknown as ChildProcess
+    };
+
+    const manager = new KBEngineServerManager({} as unknown as vscode.ExtensionContext, runner);
+
+    const started = await manager.startComponent(SERVER_COMPONENTS[0]);
+    expect(started).toBe(true);
+    expect(manager.getServerStatus('machine')).toBe(ServerStatus.Starting);
+
+    manager.dispose();
+    expect(manager.getRunningServers().size).toBe(0);
+
+    // 宽限期(1000ms)过后:守卫判空走假臂,无"启动成功"提示,状态不复活
+    await new Promise(resolve => setTimeout(resolve, 1300));
+    expect(messages.info.filter(message => message.includes('启动成功'))).toHaveLength(0);
+    expect(manager.getServerStatus('machine')).toBe(ServerStatus.Stopped);
+
+    configurationOverrides.delete('kbengine');
+    stubWorkspace.workspaceFolders = [];
+    fs.rmSync(root, { recursive: true, force: true });
+  }, 10000);
 });
