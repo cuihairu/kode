@@ -237,6 +237,17 @@ describe('launch configuration generation', () => {
     // logger 无组件映射时回落工作区映射
     expect(configurations[3].pathMappings).toEqual([{ localRoot: '/proj', remoteRoot: '/proj' }]);
   });
+
+  it('falls back to empty mapping roots without an open workspace folder', () => {
+    setWorkspaceAt(null);
+    const configurations = makeManager().generateLaunchConfigurations();
+
+    expect(configurations).toHaveLength(7);
+    for (const configuration of configurations) {
+      // 无工作区:workspaceFolder 兜底空串,所有映射根为 ''
+      expect(configuration.pathMappings).toEqual([{ localRoot: '', remoteRoot: '' }]);
+    }
+  });
 });
 
 describe('updateLaunchJson', () => {
@@ -293,6 +304,52 @@ describe('updateLaunchJson', () => {
     expect(written.configurations).toHaveLength(7);
     expect(written.inputs).toHaveLength(1);
     expect(written.inputs[0].id).toBe('kbengineProcessId');
+  });
+
+  it('fills in missing version/inputs keys and keeps unnamed user configs', async () => {
+    setWorkspaceAt('/proj');
+    // 只给 configurations 且条目无 name:version/inputs 缺键走兜底,
+    // 无名条目不匹配 KBEngine: 前缀原样保留在前
+    memoryFileSystem.set(
+      path.join('/proj', '.vscode', 'launch.json'),
+      JSON.stringify({ configurations: [{ type: 'node' }] })
+    );
+
+    const manager = makeManager();
+    await expect(manager.updateLaunchJson()).resolves.toBe(true);
+
+    const written = JSON.parse(Buffer.from(
+      memoryFileSystem.files.get(path.join('/proj', '.vscode', 'launch.json')) as Uint8Array
+    ).toString('utf8'));
+
+    expect(written.version).toBe('0.2.0');
+    expect(written.configurations[0]).toEqual({ type: 'node' });
+    expect(written.configurations.slice(1).map((c: { name: string }) => c.name)).toEqual(
+      manager.generateLaunchConfigurations().map(c => c.name)
+    );
+    expect(written.inputs.map((i: { id: string }) => i.id)).toEqual(['kbengineProcessId']);
+  });
+
+  it('treats a launch.json without configurations as empty', async () => {
+    setWorkspaceAt('/proj');
+    // 只给 version:configurations/inputs 双缺键都走兜底空表
+    memoryFileSystem.set(
+      path.join('/proj', '.vscode', 'launch.json'),
+      JSON.stringify({ version: '0.3.0' })
+    );
+
+    const manager = makeManager();
+    await expect(manager.updateLaunchJson()).resolves.toBe(true);
+
+    const written = JSON.parse(Buffer.from(
+      memoryFileSystem.files.get(path.join('/proj', '.vscode', 'launch.json')) as Uint8Array
+    ).toString('utf8'));
+
+    expect(written.version).toBe('0.3.0');
+    expect(written.configurations.map((c: { name: string }) => c.name)).toEqual(
+      manager.generateLaunchConfigurations().map(c => c.name)
+    );
+    expect(written.inputs.map((i: { id: string }) => i.id)).toEqual(['kbengineProcessId']);
   });
 });
 

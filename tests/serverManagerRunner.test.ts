@@ -1,6 +1,7 @@
 import * as childProcess from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { EventEmitter } from 'events';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineServerManager, type ProcessRunner, type ServerComponent } from '../src/serverManager';
 import type * as vscode from 'vscode';
@@ -175,4 +176,88 @@ describe('KBEngineServerManager ProcessRunner injection', () => {
     expect(manager.getRunningServers().size).toBe(0);
     expect(channelText('Boom')).toContain('[ERROR] 启动失败: Error: spawn exploded');
   }, 8000);
+});
+
+describe('KBEngineServerManager fake child process events', () => {
+  const makeFakeChild = (pid = 4242): childProcess.ChildProcess => {
+    const child = new EventEmitter() as unknown as childProcess.ChildProcess;
+    Object.assign(child, {
+      pid,
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill: () => true
+    });
+    return child;
+  };
+
+  it('spawns argless and logs (none) for a component without defaultArgs', async () => {
+    bin.write('bare', { kind: 'run' });
+    const spawned: string[][] = [];
+    const fakeChild = makeFakeChild();
+    const runner: ProcessRunner = {
+      spawn: (_cmd, args) => {
+        spawned.push(args);
+        return fakeChild;
+      }
+    };
+    const manager = new KBEngineServerManager({} as unknown as vscode.ExtensionContext, runner);
+    currentManager = manager;
+
+    // defaultArgs 缺失是公开 API 的合法形态(JSON 装载/外部调用方):
+    // 日志兜底 (none),spawn 参数兜底 []
+    const bare = { ...makeComponent('bare'), defaultArgs: undefined } as unknown as ServerComponent;
+    expect(await manager.startComponent(bare)).toBe(true);
+
+    expect(spawned[0]).toEqual([]);
+    expect(channelText('Bare')).toContain('启动参数: (none)');
+
+    fakeChild.emit('exit', 0, null);
+    expect(manager.getRunningServers().size).toBe(0);
+  }, 8000);
+
+  it('clears the startup timer on the first error and tolerates later events', async () => {
+    bin.write('flux', { kind: 'run' });
+    const fakeChild = makeFakeChild();
+    const manager = new KBEngineServerManager({} as unknown as vscode.ExtensionContext, {
+      spawn: () => fakeChild
+    } as ProcessRunner);
+    currentManager = manager;
+
+    expect(await manager.startComponent(makeComponent('flux'))).toBe(true);
+
+    // 第一次 error:启动定时器在 → 清除并移出运行表
+    fakeChild.emit('error', new Error('EACCES'));
+    expect(manager.getRunningServers().size).toBe(0);
+    expect(channelText('Flux')).toContain('[ERROR] 进程错误: EACCES');
+
+    // 定时器已空后的 exit 与二次 error:走 else,只记录日志不重复清理
+    fakeChild.emit('exit', 1, null);
+    fakeChild.emit('error', new Error('double fault'));
+    const text = channelText('Flux');
+    expect(text).toContain('[INFO] 进程退出: code=1, signal=null');
+    expect(text.match(/\[ERROR\] 进程错误/g)).toHaveLength(2);
+  }, 8000);
+
+  it('derives the .exe suffix only for windows-style bin paths on win32', () => {
+    // process.platform 可配置化驱动 win32 判定;vitest 5 默认 forks 池,
+    // 本文件独占进程,补丁区间内无 await,不影响其他文件
+    const manager = new KBEngineServerManager({} as unknown as vscode.ExtensionContext);
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+    try {
+      configTable.binPath = 'D:\\kbengine\\kbe\\bin\\server';
+      expect(manager.getExecutablePath(makeComponent('machine')))
+        .toBe(path.win32.join('D:\\kbengine\\kbe\\bin\\server', 'machine.exe'));
+
+      // win32 平台 + posix 风格 binPath 不加 .exe(usesPosixPath 守卫)
+      configTable.binPath = '/usr/local/kbengine/kbe/bin/server';
+      expect(manager.getExecutablePath(makeComponent('machine')))
+        .toBe('/usr/local/kbengine/kbe/bin/server/machine');
+    } finally {
+      if (original) {
+        Object.defineProperty(process, 'platform', original);
+      }
+    }
+  });
 });

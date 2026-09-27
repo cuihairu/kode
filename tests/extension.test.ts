@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
+import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -144,6 +145,15 @@ describe('extension activate 装配', () => {
     } as never);
     expect(messages.warning.filter(message => message.includes('打开实体方法失败'))).toHaveLength(2);
 
+    // 缺省 method/section 的两种形态:label 以空串兜底进 warning
+    await commands.executeCommand('kbengine.entity.method.open', 'Ghost');
+    await commands.executeCommand('kbengine.entity.method.open', {
+      ownerName: 'Ghost',
+      symbolName: 'move'
+    } as never);
+    expect(messages.warning.some(message => message.includes('Ghost. ()'))).toBe(true);
+    expect(messages.warning.some(message => message.includes('Ghost.move ()'))).toBe(true);
+
     // 数据库 schema 打开:虚拟 URI 文档 + 定位到首行的 selection
     messages.warning.length = 0;
     await commands.executeCommand('kbengine.database.open', 'Hero');
@@ -230,8 +240,46 @@ describe('extension activate 装配', () => {
 
   it('有工作区时激活扫描初始 def 文档并联动文档/配置事件', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-extension-'));
+    const originalFindFiles = workspace.findFiles;
     try {
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+
+      // 真实 def 树先行落盘:激活时实体索引与映射管理器可同步扫到。
+      // 带持久化属性 + BaseMethods 方法,让 database.open 的快照定位与
+      // method.open 的 def 兜底打开都有真实目标
+      const defsRoot = path.join(root, 'scripts', 'entity_defs');
+      fs.mkdirSync(defsRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(defsRoot, 'Avatar.def'),
+        [
+          '<root>',
+          '  <Properties>',
+          '    <hp>',
+          '      <Type>UINT32</Type>',
+          '      <Flags>BASE_AND_CLIENT</Flags>',
+          '    </hp>',
+          '  </Properties>',
+          '  <BaseMethods>',
+          '    <respawn/>',
+          '  </BaseMethods>',
+          '</root>'
+        ].join('\n'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(defsRoot, 'entities.xml'),
+        '<root>\n  <Avatar> <hasClient/></Avatar>\n</root>\n',
+        'utf8'
+      );
+
+      // 映射管理器经 findFiles 枚举 def 文件,默认桩返回空表;
+      // 按真实落盘树应答,激活时的异步扫描才能建到 Avatar 索引
+      workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
+        if (pattern !== '**/*.def') {
+          return originalFindFiles(pattern);
+        }
+        return [Uri.file(path.join(defsRoot, 'Avatar.def'))];
+      }) as typeof originalFindFiles;
 
       const badDef = makeTextDocument(BAD_DEF, {
         fileName: path.join(root, 'scripts', 'entity_defs', 'Hero.def')
@@ -257,15 +305,26 @@ describe('extension activate 装配', () => {
       workspaceEvents.documentChanged.fire({ document: changedDef });
       expect(collection.get(changedDef.uri).length).toBeGreaterThan(0);
 
+      // 变更/打开事件的非 def 文档:isDefDocument 假分支,跳过校验
+      const plainChanged = makeTextDocument('hello', {
+        fileName: path.join(root, 'notes-changed.txt'),
+        languageId: 'plaintext'
+      });
+      workspaceEvents.documentChanged.fire({ document: plainChanged });
+      workspaceEvents.documentOpened.fire(plainChanged);
+      expect(collection.get(plainChanged.uri)).toHaveLength(0);
+
       // 配置变更事件:不影响 kbengine 段时不重扫,影响时重扫 textDocuments
       const lateDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Late.def') });
-      workspace.textDocuments = [badDef, lateDef];
+      workspace.textDocuments = [badDef, lateDef, plainDoc];
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
       expect(collection.get(lateDef.uri)).toHaveLength(0);
       workspaceEvents.configurationChanged.fire({
         affectsConfiguration: (section: string) => section === 'kbengine'
       });
       expect(collection.get(lateDef.uri).length).toBeGreaterThan(0);
+      // 重扫对非 def 文档跳过校验(isDefDocument 假分支)
+      expect(collection.get(plainDoc.uri)).toHaveLength(0);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });
@@ -273,18 +332,39 @@ describe('extension activate 装配', () => {
       expect(collection.get(openedDef.uri).length).toBeGreaterThan(0);
 
       // entity.open happy path:真实落盘 def 后打开定义文件
-      const defsRoot = path.join(root, 'scripts', 'entity_defs');
-      fs.mkdirSync(defsRoot, { recursive: true });
-      fs.writeFileSync(path.join(defsRoot, 'Avatar.def'), '<root/>\n', 'utf8');
-      fs.writeFileSync(
-        path.join(defsRoot, 'entities.xml'),
-        '<root>\n  <Avatar> <hasClient/></Avatar>\n</root>\n',
-        'utf8'
-      );
       await commands.executeCommand('kbengine.entity.open', 'Avatar');
       expect(messages.warning).toHaveLength(0);
       expect((workspaceState.openTextDocumentCalls.at(-1) as Uri).fsPath).toContain('Avatar.def');
       expect(windowState.showTextDocumentCalls.at(-1)?.document).toBeDefined();
+
+      // method.open 成功侧(didOpen true,静默无 warning):无 Python 实现
+      // 时兜底打开 def 本体。索引扫描在激活后异步落地,留节拍后单发调用
+      messages.warning.length = 0;
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await commands.executeCommand('kbengine.entity.method.open', 'Avatar', 'respawn', 'BaseMethods');
+      expect(messages.warning).toHaveLength(0);
+      expect((workspaceState.openTextDocumentCalls.at(-1) as Uri).fsPath).toContain('Avatar.def');
+      expect(windowState.showTextDocumentCalls.at(-1)?.document).toBeDefined();
+
+      // database.open 命中真实快照:显式表名定位行由快照 API 决定,
+      // 期望行与命令内部同源计算(锁行为不锁快照排版细节)
+      messages.warning.length = 0;
+      await commands.executeCommand('kbengine.database.open', 'Avatar', 'tbl_Avatar');
+      expect(messages.warning).toHaveLength(0);
+      const snapshot = getDatabaseSchemaSnapshot('Avatar');
+      expect(snapshot?.tables.some(table => table.name === 'tbl_Avatar')).toBe(true);
+      const expectedLine = snapshot ? locateDatabaseSchemaLine(snapshot, 'tbl_Avatar') : 1;
+      const row = Math.max(expectedLine - 1, 0);
+      expect((workspaceState.openTextDocumentCalls.at(-1) as Uri).scheme)
+        .toBe('kbengine-db-schema');
+      expect(windowState.showTextDocumentCalls.at(-1)?.options)
+        .toEqual({ selection: new Range(new Position(row, 0), new Position(row, 0)) });
+
+      // 不带表名:默认 tbl_<实体名> 推导与显式表名同位
+      await commands.executeCommand('kbengine.database.open', 'Avatar');
+      expect(messages.warning).toHaveLength(0);
+      expect(windowState.showTextDocumentCalls.at(-1)?.options)
+        .toEqual({ selection: new Range(new Position(row, 0), new Position(row, 0)) });
 
       // 打开失败的 catch 分支:openTextDocument 抛错 → 两类打开命令各报具体原因
       const originalOpen = workspace.openTextDocument;
@@ -294,17 +374,23 @@ describe('extension activate 装配', () => {
       messages.warning.length = 0;
       await commands.executeCommand('kbengine.entity.open', 'Avatar');
       await commands.executeCommand('kbengine.database.open', 'Hero');
+      // 表名/字段名进 catch 模板的三个真值组合
+      await commands.executeCommand('kbengine.database.open', 'Avatar', 'tbl_Avatar');
+      await commands.executeCommand('kbengine.database.open', 'Avatar', 'tbl_Avatar', 'hp');
       expect(messages.warning.some(message => message.includes('打开实体定义失败: Avatar.def (Error: boom)'))).toBe(true);
       expect(messages.warning.some(message => message.includes('打开数据库结构失败: Hero (Error: boom)'))).toBe(true);
+      expect(messages.warning.some(message => message.includes('打开数据库结构失败: Avatar (tbl_Avatar) (Error: boom)'))).toBe(true);
+      expect(messages.warning.some(message => message.includes('打开数据库结构失败: Avatar (tbl_Avatar.hp) (Error: boom)'))).toBe(true);
       workspace.openTextDocument = originalOpen;
 
       disposeAll(context);
     } finally {
+      workspace.findFiles = originalFindFiles;
       workspace.workspaceFolders = [];
       workspace.textDocuments = [];
       fs.rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it('server 命令经解析载荷驱动真实假组件进程,状态栏随运行数联动', async () => {
     const bin = await FakeComponentBin.create();

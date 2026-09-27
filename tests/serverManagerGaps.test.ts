@@ -163,6 +163,14 @@ describe('bin path resolution gaps', () => {
     }
   });
 
+  it('expands an unset ${env:} placeholder to an empty string', () => {
+    // process.env[envVar] || '' 的空值侧:未定义变量替换为空串
+    delete process.env.KODE_SRVGAP_MISSING;
+    configTable.binPath = '${env:KODE_SRVGAP_MISSING}/bin';
+
+    expect(makeManager().getBinPath()).toBe('/bin');
+  });
+
   it('returns an empty bin path without a workspace folder', () => {
     configTable.binPath = '';
     stubWorkspace.workspaceFolders = [];
@@ -178,6 +186,36 @@ describe('bin path resolution gaps', () => {
 
     expect([root, path.join(root, 'bin')]).not.toContain(detected);
     expect(detected).toBe('');
+  });
+
+  it('detects KBENGINE_HOME/kbe/bin/server before the generic fallbacks', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvgap-home-'));
+    const binServer = path.join(home, 'kbe', 'bin', 'server');
+    fs.mkdirSync(binServer, { recursive: true });
+    process.env.KBENGINE_HOME = home;
+    configTable.binPath = '';
+
+    try {
+      expect(makeManager().getBinPath()).toBe(binServer);
+    } finally {
+      delete process.env.KBENGINE_HOME;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to KBENGINE_HOME/kbe/bin when the server subdirectory is missing', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvgap-home2-'));
+    const binDir = path.join(home, 'kbe', 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    process.env.KBENGINE_HOME = home;
+    configTable.binPath = '';
+
+    try {
+      expect(makeManager().getBinPath()).toBe(binDir);
+    } finally {
+      delete process.env.KBENGINE_HOME;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 
@@ -215,6 +253,14 @@ describe('kbe root and component environment gaps', () => {
       path.join(configPath, 'res'),
       path.join(configPath, 'scripts')
     ]);
+    expect(env.KBE_BIN_PATH).toBe(`${binPath}${path.sep}`);
+  });
+
+  it('keeps a single trailing separator on an already-suffixed bin path', () => {
+    // ensureTrailingSeparator 的幂等分支:已带尾分隔符不再追加
+    const binPath = path.join(root, 'kbe', 'bin', 'server');
+    const env = internals(makeManager()).buildComponentEnvironment(root, `${binPath}${path.sep}`);
+
     expect(env.KBE_BIN_PATH).toBe(`${binPath}${path.sep}`);
   });
 

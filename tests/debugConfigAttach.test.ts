@@ -53,6 +53,9 @@ const setWorkspaceAt = (fsPath: string | null): void => {
     : [];
 };
 
+// 构造器内 loadConfig 是异步读盘,留一个宏任务节拍让它落地
+const flushAsync = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
 beforeAll(() => {
   for (const key of patchedKeys) {
     originalWindow[key] = windowish[key];
@@ -145,6 +148,80 @@ describe('DebugConfigManager.startDebugging', () => {
     expect(debugCalls).toHaveLength(0);
     expect(messages.info).toHaveLength(1);
     expect(messages.info[0]).toContain(`telnet ${config.telnetHost} ${config.telnetPort}`);
+  }, 8000);
+
+  it('lists configured telnet enable commands in the long briefing', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    memoryFileSystem.set(
+      '/tmp/kode-dbg/.kbengine/debug.json',
+      JSON.stringify({
+        debug: {
+          components: {
+            baseapp: { telnetEnableCommands: ['layer 1', 'lookup 123'] }
+          }
+        }
+      })
+    );
+    const manager = makeManager();
+    await flushAsync();
+    infoQueue.push(undefined);
+
+    const result = await manager.startDebugging('baseapp');
+
+    // 长 briefing 分支:逐条列出开启调试的 telnet 命令;看完即取消不进附加
+    expect(result).toBe(false);
+    expect(debugCalls).toHaveLength(0);
+    const message = messages.info[0];
+    expect(message).toContain('以 telnet 控制端口为前提');
+    expect(message).toContain('telnet 127.0.0.1 0');
+    expect(message).toContain('layer 1');
+    expect(message).toContain('lookup 123');
+  }, 8000);
+
+  it('falls back to documented defaults for explicitly empty telnet fields', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    memoryFileSystem.set(
+      '/tmp/kode-dbg/.kbengine/debug.json',
+      JSON.stringify({
+        debug: {
+          components: {
+            cellapp: { telnetHost: '', telnetPort: 0, telnetPassword: '', telnetDefaultLayer: '' }
+          }
+        }
+      })
+    );
+    const manager = makeManager();
+    await flushAsync();
+    infoQueue.push(undefined);
+
+    const result = await manager.startDebugging('cellapp');
+
+    // 显式空值与缺省键同观感:主机/端口/密码/层级全部走文档默认
+    expect(result).toBe(false);
+    expect(messages.info[0]).toContain('telnet 127.0.0.1 0');
+    expect(messages.info[0]).toContain('password: pwd123456');
+    expect(messages.info[0]).toContain('default layer: python');
+  }, 8000);
+
+  it('uses the literal host fallback when the merged host is empty', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    // 合并层 defaultTelnetHost 置空串:getComponentConfig 吐出空主机,
+    // 提示层的 '127.0.0.1' 字面量兜底由此可达
+    memoryFileSystem.set(
+      '/tmp/kode-dbg/.kbengine/debug.json',
+      JSON.stringify({
+        debug: {
+          defaultTelnetHost: '',
+          components: { cellapp: {} }
+        }
+      })
+    );
+    const manager = makeManager();
+    await flushAsync();
+    infoQueue.push(undefined);
+
+    expect(await manager.startDebugging('cellapp')).toBe(false);
+    expect(messages.info[0]).toContain('telnet 127.0.0.1 0');
   }, 8000);
 
   it('propagates a false startDebugging result', async () => {

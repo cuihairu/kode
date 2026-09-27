@@ -53,7 +53,7 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | 指标 | 值 |
 |------|-----|
 | Statements | 99.06% |
-| Branches | 91.91% |
+| Branches | 92.89% |
 | Functions | 100% |
 | Lines | 99.03% |
 
@@ -79,13 +79,13 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 | codeGenerator.ts | 100% | 95.1% |
 | definitionWorkspace.ts | 98.9% | 91.5% |
 | serverCommandTarget.ts | 100% | 100% |
-| serverManager.ts | 100% | 82.6% |
+| serverManager.ts | 100% | 98.6% |
 | logWebView.ts | 100% | 96.9% |
 | monitoringWebView.ts | 96.9% | 91.8% |
 | entityDependencyWebView.ts | 97.9% | 95.2% |
-| debugConfig.ts | 100% | 87.3% |
+| debugConfig.ts | 100% | 95.2% |
 | explorerProviders.ts | 99.2% | 88.5% |
-| extension.ts | 99.5% | 79.0% |
+| extension.ts | 99.5% | 98.4% |
 
 logParser 的语句与函数已全覆盖(剩余 1.7% 分支为 v8 汇总的边界粒度);
 其中锁定了一个实现现状:`getLevelName` 的 switch 无 default 分支,越界
@@ -820,13 +820,47 @@ getTagNameRange 的 !match 防御分支——标签文本与元素名同源自 t
 正则必中,契约性不可达,如实记录。总体覆盖率 99.06/91.91/100/99.03,
 vitest 60 文件 753 用例、mocha 烟测 11 用例。
 
+批59 分支覆盖专项:压总分支缺口最低三文件(以 coverage-summary 解析
+为据:extension.ts 79.0%、serverManager.ts 82.6%、debugConfig.ts
+87.3%)。逐分支补测——extension.ts:非 def 文档的变更/打开/配置重扫
+三处 isDefDocument 假分支;method.open 字符串形态缺省 method/section
+与 identity 形态缺省 section 的 label 空串兜底;成功侧 didOpen true
+(fake findFiles 桩按真实落盘树应答,索引异步落地留节拍后单发,无
+Python 实现走 def 兜底打开);database.open 真实 def+entities.xml
+快照命中(显式表名与默认 tbl_<实体名> 两路,期望行与命令内部同源
+计算)与 catch 模板表名/字段名三真值组合。serverManager.ts:
+ensureTrailingSeparator 幂等分支、${env:} 未设变量展开空串、
+KBENGINE_HOME 两候选(server 目录优先/缺 server 回落 kbe/bin)、
+defaultArgs 缺失组件的 '(none)' 日志与空参 spawn(注入 fake child)、
+启动定时器清空后的二次 error/exit(else 分支)、process.platform
+补丁驱动 win32 判定两路(win 风格 binPath 加 .exe/posix 风格守卫不加,
+forks 池每文件独占进程,补丁区间无 await)。debugConfig.ts:
+generateLaunchConfigurations 无工作区空串映射根;launch.json 缺
+configurations/inputs/version 键兜底与无 name 用户条目保留;
+startDebugging 长 briefing(debug.json 配 telnetEnableCommands)、
+显式空 telnet 字段走文档默认、合并层空主机串触发提示层字面量兜底。
+定性 4 条(不凑数):serverManager L398 定时器回调 else 结构性不可达
+——先于 1s 回调删除运行表条目的 error/exit 处理器都会同步先清定时器,
+stopComponent 的 5s 强杀晚于回调,回调触发时条目必在;debugConfig
+L296/L299/L300 提示层 || 右侧契约不可达——getComponentConfig 输出
+恒定义 telnetEnableCommands(数组恒真值),telnetPassword/
+telnetDefaultLayer 已在合并层用同一非空字面量兜底,提示层输入恒真值。
+另:extension.ts L236 隐式 else 为 v8 记账伪影——成功侧行为已由
+断言锁定(静默无 warning 且打开 Avatar.def),v8 对 async 重入区域的
+无 else if 推导计数为负([4,-2]),非真实缺口,如实记录。分支覆盖
+extension 79.0%→98.4%(61/62)、serverManager 82.6%→98.6%(68/69)、
+debugConfig 87.3%→95.2%(60/63),总分支 91.91%→92.89%(2642/2844),
+statements/lines/functions 持平(99.06/99.03/100)。vitest 60 文件
+766 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
   deactivate 由 tests/extension.test.ts 的 fake-vscode 装配测试驱动
   (6 用例,详见 docs/redesign.md 阶段 3),99.5% lines / 100% functions,
-  唯一未盖 L234 是 openMethodTarget 永不抛错(内部自带 catch)导致的防御
-  catch,如实记录。批56 起 mocha 层裁为编译产物烟测(批58 后 11 用例,见批56/58 注),
+  唯一未盖 L242(批58 行号漂移前为 L234)是 openMethodTarget 永不抛错
+  (内部自带 catch)导致的防御 catch,如实记录。批56 起 mocha 层裁为
+  编译产物烟测(批58 后 11 用例,见批56/58 注),
   两 runner 覆盖率不做工具级合并。
 - 总体百分比的分母包含全部源码文件;随测试推进持续抬升,
   每次抬升后更新本表。
