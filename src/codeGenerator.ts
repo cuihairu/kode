@@ -148,7 +148,17 @@ export class KBEngineCodeGenerator {
       return configuredPath;
     }
 
+    // 不可达(批67 定性):findEntityDefinitionsRoot 的返回值即
+    // getDefinitionWorkspaceLayout(workspaceRoot).entityDefsRoot,恒为
+    // 非空字符串——候选列表首项由 path.join 生成、相对路径最小结果是
+    // '.',''(批62/64 已据同一事实把空值臂判不可达),目录不存在时返回
+    // 首选候选拼接路径而非 null ⇒ `|| configuredPath` 兜底无触发路径。
+    // 语句与两分支条目随区间移出分母(TESTING.md 分母口径据实登记);
+    // 真臂行为由既有"解析定义根"用例与 tests/codeGeneratorBranches 的
+    // 裸工作区用例锁定。
+    /* istanbul ignore start */
     return findEntityDefinitionsRoot(workspaceRoot) || configuredPath;
+    /* istanbul ignore stop */
   }
 
   /**
@@ -607,7 +617,15 @@ export class KBEngineCodeGenerator {
       } else if (selectedType.hasCell) {
         entity.cellProperties = sampleProperties;
         entity.cellMethods = [sampleMethod];
+      // 不可达(批67 定性):步骤 2 的类型选项为固定 7 项字面量,每项
+      // hasBase/hasCell/hasClient 至少一真;链式判断能到达本臂时前两域
+      // 必为假,而选项表保证 hasClient 必真 ⇒ 判假臂(不赋
+      // clientProperties)无触发路径。分支条目(含已覆盖真臂)随区间
+      // 移出分母,真臂行为由既有 Client-only 向导用例锁定;块体保持在
+      // 分母内。
+      /* istanbul ignore start */
       } else if (selectedType.hasClient) {
+      /* istanbul ignore stop */
         entity.clientProperties = sampleProperties;
       }
     }

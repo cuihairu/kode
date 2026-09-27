@@ -52,22 +52,23 @@ vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入�
 批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
 languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
-分支 100%):
+分支 100%,批67 起 codeGenerator.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4815/4815) |
-| Branches | 98.64% (2693/2730) |
+| Statements | 100% (4813/4813) |
+| Branches | 98.89% (2695/2725) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4705/4705) |
+| Lines | 100% (4703/4703) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 47 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 49 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
 新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
 新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
-新增 1 处,逐处理由见"批62 行覆盖专项""批63 分支覆盖专项""批64 分支
-覆盖专项""批65 分支覆盖专项"与"批66 分支覆盖专项"):
+新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处,逐处理由见"批62 行覆盖
+专项""批63 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项"
+"批66 分支覆盖专项"与"批67 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -86,7 +87,7 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 | entityDependency.ts | 100% | 100% |
 | databaseSchema.ts | 100% | 95.3% |
 | logCollector.ts | 100% | 100% |
-| codeGenerator.ts | 100% | 95.1% |
+| codeGenerator.ts | 100% | 100% |
 | definitionWorkspace.ts | 100% | 100% |
 | serverCommandTarget.ts | 100% | 100% |
 | serverManager.ts | 100% | 98.6% |
@@ -1259,6 +1260,49 @@ ast-v8-to-istanbul 采纳,本批延续 `start … stop` 区间形态,区间上�
 本批未改动任何生产逻辑,未暴露需要改动生产代码的缺陷,'近期由测试发现并
 修复的真实缺陷'一节无新增条目。vitest 69 文件 849 用例(两种引擎口径全
 绿),mocha 烟测 11 用例。
+
+批67 分支覆盖专项:审计计划 15 个功能块全部「已完成」、无 todo 可推进,
+整体覆盖率转入收官——全库已无 0% 模块(行/语句/函数三项自批62 起全量
+100%),按"覆盖率最低的 src 模块"取 codeGenerator.ts(95.1%,137/144 臂,
+全库最低),逐臂补测到 100%,行/语句/函数维持 100%;总分支 98.64%→98.89%
+(2693/2730→2695/2725)。共 7 条未覆盖臂,其中 **5 臂可达 + 2 臂(2 个
+条目)契约性不可达并加 ignore**:
+
+可达侧(新增 tests/codeGeneratorBranches.test.ts 4 用例,真实临时工作区树
++ 可脚本化窗口 stub,未放宽任何断言)——①generateDefFile 的
+`path.isAbsolute(defOutputPath)` 假臂:internals 注入相对
+defOutputPath('custom/defs'),落盘
+`path.join(workspaceRoot,'custom/defs','Hero.def')` 并断言真实文件内容;
+②showWizard 的 `if (this.config.generatePython)` 假臂与
+`if (this.config.registerInEntitiesXml)` 假臂(关断双开关跑完整向导:只写
+.def、不产 .py、entities.xml 未动、成功消息恰 2 条);③generateFromTemplate
+的同名双开关关断臂(模板流:只写 .def、无额外提示)。另以裸工作区用例
+锁定 resolveDefOutputPath 在无 entity_defs 目录时的"返回首选候选拼接
+路径"行为(该用例不贡献分支分母,见下)。
+
+不可达侧(新增 2 处精确区间,移出 2 个条目 / 4 条臂 = 2 条不可达缺口臂 + 2
+条原已覆盖臂;真臂行为均由既有流程与本批裸工作区用例锁定)——①resolveDef
+OutputPath 的 `findEntityDefinitionsRoot(workspaceRoot) || configuredPath`
+兜底臂:findEntityDefinitionsRoot 的返回值即
+getDefinitionWorkspaceLayout(workspaceRoot).entityDefsRoot,恒为非空字符串
+(候选列表首项由 path.join 生成,相对路径最小结果是 '.',批62/64 已据同一
+事实把该族空值臂判不可达;目录不存在时返回首选候选拼接路径而非 null)
+⇒ `|| configuredPath` 无触发路径;②showWizard 类型链末端
+`else if (selectedType.hasClient)` 判假臂:步骤 2 的类型选项为固定 7 项
+字面量,每项 hasBase/hasCell/hasClient 至少一真,链式判断走到第三臂时
+前两域必为假而 hasClient 必真 ⇒ 判假臂(不赋 clientProperties)无触发路径。
+两处区间上方均逐条写明理由,批63 已实测 `ignore else` 不被
+ast-v8-to-istanbul 采纳,延续 `start … stop` 形态。
+
+分母口径(如实记,不美化):2 处区间移出 2 个条目,另 hasCell 条目
+(`else if (selectedType.hasCell)`)的隐式 else 臂定位即被移除的 hasClient
+行,随区间一并移出——合计 5 条臂离开分母 = 2 条不可达缺口臂 + 3 条原已
+覆盖臂;2 条被覆盖语句连同行一并移出(return 语句 + hasClient if 语句)
+——statements 4815→4813、lines 4705→4703(仍报 100%,但这是"被移出"
+而非"被补测覆盖",在此登记);分支分母 2730→2725(-5),分子
+2693+5(新点亮)-3(移出的已覆盖臂)=2695。本批未改动任何生产逻辑,未
+暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增
+条目。vitest 70 文件 854 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 说明:
 
