@@ -76,4 +76,16 @@ describe('getPythonSelfCompletionContext', () => {
     expect(getPythonSelfCompletionContext('foo = 1')).toBeNull();
     expect(getPythonSelfCompletionContext('self == other')).toBeNull();
   });
+
+  it('keeps the empty access shape for consecutive dots and rejects trailing junk', () => {
+    // 'self..':组1 未匹配,命中串整体以 '.' 结尾,仍走 endsWithDot 早退形状
+    expect(getPythonSelfCompletionContext('self..')).toEqual({
+      rootSymbol: null,
+      parentPath: '',
+      fullPath: '',
+      partialSymbol: ''
+    });
+    // 'self.a..':尾随多余点令 $ 锚定失败,整体归 null
+    expect(getPythonSelfCompletionContext('self.a..')).toBeNull();
+  });
 });

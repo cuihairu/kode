@@ -50,26 +50,27 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
 批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%,
 批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
-languageProviders.ts 分支 100%):
+languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4821/4821) |
-| Branches | 97.88% (2684/2742) |
+| Statements | 100% (4819/4819) |
+| Branches | 97.95% (2682/2738) |
 | Functions | 100% (839/839) |
-| Lines | 100% (4711/4711) |
+| Lines | 100% (4709/4709) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 42 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 43 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
-新增 5 处并合并扩展批62 既有区间 1 处,逐处理由见"批62 行覆盖专项""批63
-分支覆盖专项"与"批64 分支覆盖专项"):
+新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
+新增 1 处,逐处理由见"批62 行覆盖专项""批63 分支覆盖专项""批64 分支
+覆盖专项"与"批65 分支覆盖专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
 | hooks.ts | 100% | 100% |
 | kbengineMetadata.ts | 100% | 100% |
-| pythonLanguageUtils.ts | 100% | 90.9% |
+| pythonLanguageUtils.ts | 100% | 100% |
 | workspacePath.ts | 100% | 100% |
 | defParser.ts | 100% | 100% |
 | defRenamer.ts | 100% | 95.2% |
@@ -1169,6 +1170,36 @@ statements 4841→4821、lines 4731→4711(仍报 100%,但这部分是"被移出
 后即补回,最终态无行为变化,未暴露生产代码缺陷,'近期由测试发现并修复的
 真实缺陷'一节无新增条目。vitest 66 文件 836 用例(两种引擎口径全绿),
 mocha 烟测 11 用例。
+
+批65 分支覆盖专项:pythonLanguageUtils.ts 分支 90.9%(20/22 臂)→100%
+(18/18 臂),行/语句/函数维持 100%,总分支 97.88%→97.95%
+(2684/2742→2682/2738)。coverage-summary 显示全库仅剩该文件两位数缺口,
+逐臂判定 2 条未覆盖臂,结论是 **0 臂可达 + 2 臂(2 个条目)契约性不可达
+并加 ignore**:
+
+不可达侧(新增 1 处区间,移出 2 个条目 / 4 条臂)——`getPythonSelfCompletionContext`
+尾部的 `partialSymbol`/`rootSymbol` 两个 `segments.length > 0 ? … : ''/null`
+三元:能走到 L71+ 必是"正则 `\bself\.(\w+(?:\.\w+)*)?\.?$` 命中且行不以
+'.' 结尾"——组1 未匹配时命中串只能是 'self.'/'self..'(双点亦被 `\.?` 吞掉),
+均以 '.' 结尾而走上方 `endsWithDot` 早退;组1 命中则 accessPath 至少含一个
+\w 段,segments 恒非空。两个三元恒取真臂,''/null 兜底无触发路径(节点探针
+10 种输入形状逐一实测:'self.'、'self..'、'self.a'、'self.a.'、'self.a..'、
+'x = self.'、'self.a.b.c'、'self.a.b.c.'、前导空格 ' self..'、尾随制表符
+'self..\t')。批63 已实测 `ignore else` 不被 ast-v8-to-istanbul 采纳,本批
+延续 `start … stop` 区间形态,区间上方逐条写明理由。
+
+可达侧行为锁定(tests/pythonLanguageUtils.test.ts 由 7 用例增至 8 用例,
+全部真实字符串直调,未放宽任何断言)——'self..' 双点输入仍归 endsWithDot
+早退形状(rootSymbol null、fullPath '');'self.a..' 尾随多余点令 $ 锚定
+失败整体归 null。两条锁死通往 ignore 区间的输入形状,兜底语义未裸奔。
+
+分母口径(如实记,不美化):1 处区间移出 4 条臂 = 2 条不可达缺口臂 + 2 条
+原已覆盖臂;两条被覆盖的三元赋值语句连同行一并移出分母——statements
+4821→4819、lines 4711→4709(仍报 100%,但这是"被移出"而非"被补测覆盖",
+在此登记);分支分母 2742→2738(-4),分子 2684-2=2682。本批未改动任何
+生产逻辑,未暴露需要改动生产代码的缺陷,'近期由测试发现并修复的真实缺陷'
+一节无新增条目。vitest 66 文件 837 用例(两种引擎口径全绿),mocha 烟测
+11 用例。
 
 说明:
 
