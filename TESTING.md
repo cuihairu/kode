@@ -1867,6 +1867,42 @@ pnpm test EXIT=0(vitest 879 + 编译 + mocha 烟测 11 passing)。
 分母内侧(被移出区间)亦无可达缺口;覆盖率维度在无新增源码前提下已无
 剩余动作。
 
+## 批81:外部质量轮(lint 复核 + 依赖安全审计 + 文档命令漂移核对,dev 依赖漏洞 16→0)
+
+- pnpm lint 复核:EXIT=0,无告警。
+- 依赖安全审计:`pnpm audit --prod` 零漏洞(生产依赖干净);全量审计
+  16 项(12 高危 + 4 中危)全部位于 dev 传递依赖——brace-expansion×3
+  (展开 DoS)、js-yaml×4(合并键二次方 CPU DoS)、nanoid×3(死循环/
+  整数溢出)、postcss×4(任意文件读/路径穿越)、vite×2(server.fs.deny
+  绕过、launch-editor NTLMv2 泄露),全部有补丁版本。
+- 修复(沿用项目既有 `pnpm.overrides` 钉版机制,均为同 major 内升级):
+  brace-expansion 1.1.13→1.1.18、nanoid 3.3.8→3.3.18(存量钉版落后于
+  新 advisory 补丁线);新增 js-yaml 4.3.2、postcss 8.5.23、vite 7.3.5
+  (原未钉)。复核:双审计(–prod 与全量)均 "No known vulnerabilities
+  found"。install 有一条 @types/node peer 警告(vite 7.3.5 声明
+  peer ^22||>=24,工程锁 20.19.37;类型层提示,非运行时依赖,不阻塞)。
+- README/TESTING 文档与实际命令漂移核对:**零漂移**——README 引用的
+  7 个脚本(compile/package/docs:dev/test/watch/test:unit/test:coverage)
+  全部存在于 package.json scripts 且描述与实现一致;文件引用 5 处
+  (docs/guide/configuration.md、resources/docs 三件、docs/redesign.md)
+  全部存在;片段计数 11/4/2 与三个 snippet 文件实数一致;vsix 文件名
+  kode-0.1.0.vsix 与 name+version 一致;Node 版本线与 engines 及
+  .nvmrc(22.12.0)一致;测试架构段(两 runner 分层、mocha 11 用例)
+  与本批门禁输出一致。TESTING.md「运行」三命令
+  (test/test:unit/test:coverage)逐字实测通过。
+
+记账:零 src/ 生产改动;依赖面收口——dev 传递依赖漏洞 16→0,
+生产依赖维持 0。
+
+门禁:pnpm lint EXIT=0;npx vitest run 879 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 870 用例全绿;pnpm test EXIT=0
+(vitest + 编译 + mocha 烟测 11 passing);另验 pnpm docs:build EXIT=0
+(被钉 vite 服务 vitepress 正常构建)。
+无 tag、无 release、无 force push。
+
+剩余外部质量动作(批81 后):**无**——lint 干净、依赖漏洞出清、
+文档零漂移;后续外部轮按需跟进 dependabot 周期告警与新 advisory。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
