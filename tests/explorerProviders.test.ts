@@ -10,8 +10,9 @@ import { workspace as stubWorkspace, Uri } from './helpers/vscodeStub';
 
 // explorerProviders 的纯逻辑:def 结构解析(导出)、树的描述/视图模型
 // 构建(私有方法经实例直调,断言真实输出),以及服务器树的状态映射。
-// 真实 vscode 树控件与 QuickPick 由 mocha 层覆盖。文件驱动部分用真实
-// 临时 workspace。
+// 树控件装配由 vitest extension.test.ts 与 mocha 激活烟测双覆盖,
+// QuickPick 由 explorerTreeDeep.test.ts 覆盖(批75 核对修正)。文件驱动
+// 部分用真实临时 workspace。
 
 const p = (root: string, ...segments: string[]) => path.join(root, ...segments);
 

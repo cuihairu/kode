@@ -23,8 +23,10 @@ import { KBENGINE_HOOKS } from '../src/hooks';
 // 顶层标签与方法段的空回落、Type 值自定义类型与实体注册悬停、python
 // 文档的钩子/热更函数悬停与未知词 null、types.xml 的自定义类型与类型
 // 值定义跳转、结构诊断的未知顶层标签与无值 Type 早退、别名 Flags 的
-// 归一。真实编辑器集成由 mocha 层覆盖;数据库 schema 虚拟文档跳转与
-// python 自补全链路留给后续批次。
+// 归一。编辑器集成由 vitest 装配与 mocha 编译产物烟测共同覆盖;数据库
+// schema 虚拟文档跳转(languageProvidersInternals「database schema cross
+// jumps」)与 python 自补全链路(本文件「offers reload member after
+// importlib prefix」等)均已由后续批次收口(批75 核对修正)。
 
 const p = (root: string, ...segments: string[]) => path.join(root, ...segments);
 

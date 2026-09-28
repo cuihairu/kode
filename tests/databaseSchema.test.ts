@@ -20,7 +20,9 @@ import type {
 
 // databaseSchema 的导出函数段:Uri/文档识别、schema 文本渲染、行定位、
 // mysql 表生成与列展开,均不触 vscode 运行时(vscodeStub 兜住 Uri)。
-// KBEngineDatabaseSchemaProvider(EventEmitter 生命周期)由 mocha 层覆盖。
+// KBEngineDatabaseSchemaProvider(EventEmitter 生命周期)由
+// tests/databaseSchemaDeep.test.ts 覆盖(批75 核对修正,原 mocha 声明系
+// 批56 裁剪前的过期表述)。
 
 const source = (over: Partial<DefSourceRef> = {}): DefSourceRef => ({
   filePath: '/proj/Hero.def',

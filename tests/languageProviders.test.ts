@@ -28,7 +28,8 @@ import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // languageProviders 的语言特性纯逻辑:def 补全/悬停/校验/定义跳转。
 // TextDocument 用测试工厂的最小实现(真实文本定位语义),workspace 引用
-// 解析走真实临时文件树。真实编辑器集成由 mocha 层覆盖。
+// 解析走真实临时文件树。编辑器集成由 vitest 装配(extension.test.ts 激活
+// 注册面)与 mocha 编译产物烟测(providerSmoke)共同覆盖(批75 核对修正)。
 
 const p = (root: string, ...segments: string[]) => path.join(root, ...segments);
 

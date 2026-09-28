@@ -159,10 +159,16 @@ line-1/character;字符串 legacy → 无实现时打开 def 文件;编辑器拒
 false;不完整 legacy 身份短路 false)、jumpToDef property/method 双分支、
 watcher fire 变更重扫 owner 实体、无关路径 no-op、dispose 幂等且查询仍
 可用、无 workspaceFolders 时构造/解析/dispose 全安全。stub 相应补了
-window.showTextDocument 与可 fire 的 FileSystemWatcher(记录回调,真实
-事件行为仍由 mocha 层覆盖)。10.6% 的剩余部分是接口/组件符号的索引回溯
-(ensureIndexForOwner 的 findByOwner 分支)、绑定未命中时的 owner 文件
-扫描 fallback 与零散防御分支,由 mocha 域与后续批次覆盖。
+window.showTextDocument 与可 fire 的 FileSystemWatcher(记录回调)。批75
+核对:原「真实事件行为由 mocha 层覆盖」声明已过期——watcher 事件行为与
+原 10.6% 剩余(接口/组件符号的索引回溯、绑定未命中 owner 文件扫描
+fallback、零散防御分支)均已由 vitest 收口:entityMappingManager.test.ts
+「watcher and lifecycle」(fireChange 重扫 owner/无关路径 no-op/dispose
+幂等)、entityMappingFallback.test.ts「walks from an interface symbol back
+to the referencing entity index」「regex-scans owner candidate files when
+no python binding matches」、entityMappingGaps.test.ts「resolves a
+component owner through the referencing entity index」,防御分支见
+entityMappingBranches.test.ts(模块 270/270 臂 100%,批72-73 收口)。
 
 monitoringCollector 的状态机(暂停/恢复、刷新间隔、启动前后安全的
 stop/dispose)、按组件的历史切片、系统总览聚合、watcher 值数值归一
@@ -184,9 +190,16 @@ machine/watcher 对端统一由 tests/sim 仿真器提供(MachineSimulator/
 WatcherSimulator/SimCluster,端口全部动态分配、组件包与 watcher 帧
 复用生产侧 buildComponentInfo/buildWatcher*FrameBody 编码器),
 vitest 恢复文件级并行(全量 36s→约 13s),不再依赖固定端口 20086。
-7.7% 剩余为 startTimer 的定时器驱动的 refresh 循环与零散防御分支
-(定时器行为由 mocha 域覆盖)。vscodeStub 相应补了最小 EventEmitter
-与 ExtensionContext 占位(真实事件行为仍由 mocha 层覆盖)。
+原 7.7% 剩余(startTimer 的定时器驱动的 refresh 循环与零散防御分支)批75
+核对已由 vitest 收口:monitoringCollectorGaps.test.ts「starts a repeating
+timer that survives several ticks」(start(40) 真间隔连跑多轮)、
+monitoringCollectorBranches.test.ts「start 在暂停态只记间隔,不起定时器也
+不刷新」「collapses concurrent refresh calls with an in-flight guard」;
+事件行为经真实订阅覆盖(monitoringCollectorSocket.test.ts 的
+onMetricsUpdate 订阅断言、monitoringPanel.test.ts collector 推送实时进
+html)。原「定时器/真实事件行为由 mocha 域覆盖」声明已过期(批56 后
+mocha 层仅余编译产物烟测)。vscodeStub 相应补了最小 EventEmitter
+与 ExtensionContext 占位。
 
 entityDependency 底部四个 XML 解析纯函数(标签体提取、保留名子块提取、
 标签剥离、引用三元组去重)已覆盖,并锁定实现语义:非贪婪匹配在首个同名
@@ -257,8 +270,13 @@ def/py 已成功各推一条 info);showTemplates 模板取消/名称取消提前
 account 模板改名生成全链路(login/createAvatar 带 Exposed、MyAccountBase
 后缀、注册行三域旗标);loadConfig 无工作区回落默认值、有工作区解析到
 定义根绝对路径;getExistingEntities 从 def 文件集取 basename、无工作区
-空表;dispose 无副作用。7.6% 剩余为向导的零散分支组合,由 mocha 层补充
-覆盖。私有生成方法经实例直调,测真实行为,零 mock。
+空表;dispose 无副作用。原 7.6% 剩余(向导的零散分支组合)批75 核对已由
+vitest 收口:codeGeneratorGaps.test.ts「showWizard sample property branches」
+(Cell/Client-only 示例属性分支)、「creates missing output directories
+recursively」「reports 生成失败 when the workspace is gone」与
+codeGeneratorBranches.test.ts 的 showWizard/showTemplates 编排用例——原
+「由 mocha 层补充覆盖」声明已过期。私有生成方法经实例直调,测真实行为,
+零 mock。
 
 definitionWorkspace 的纯工作区解析已在真实临时文件树上覆盖(22 用例):
 目录布局(entityDefsRoot 候选解析与"目录不存在回落约定路径"、存在性文件
@@ -336,8 +354,8 @@ statusLevel 联动、cellapp 的 Object Pools 明细标题与其余 Watcher Deta
 对象池行仅在 size/memory 非零时出现且内存以 B 计、uptime 分钟、detail
 值转义)、诊断渲染(severity 类名、source:component 作用域、无 component
 裸 source 的 "scope | 时间" 格式)、HTML 骨架注入真实卡片与诊断。
-50.4% 的剩余部分是 WebviewPanel 生命周期、定时刷新与导出,由 mocha 层
-覆盖。批27 又把 monitoringWebView 的面板生命周期搬进 vitest
+原 50.4% 的剩余部分(WebviewPanel 生命周期、定时刷新与导出)已由 vitest
+覆盖。批27 把 monitoringWebView 的面板生命周期搬进 vitest
 (tests/monitoringPanel.test.ts,17 用例,注入可控假 collector):show 的
 面板参数与 collector.start(默认 2000ms)联动、同实例二次 show 走
 reveal、onDidDispose 停采集并重建时重新 start、面板打开期间 collector
@@ -388,8 +406,12 @@ debugpy 调试器类型、launch inputs 重建(清除旧 kbengineProcessId、
 保留外来 inputs 且顺序在前)、7 个 attach 配置按种子顺序生成(logger
 回落工作区映射)、launch.json 合并(版本保留、用户配置在前 KBEngine
 配置在后、inputs 过滤重建)与缺失时标准骨架、示例配置三组件写出。
-63.3% 的剩余部分是 startDebugging 的 vscode.debug 会话与 PID 输入框,
-由 mocha 层覆盖。vscodeStub 相应补了 Uri.joinPath 与内存 fs
+原 63.3% 的剩余部分(startDebugging 的 vscode.debug 会话与 PID 输入框)
+批75 核对已由 vitest 收口:debugConfigAttach.test.ts「DebugConfigManager
+.startDebugging」(modal 简报两分支/telnet 命令清单/startDebugging false
+传播与失败进 error 通道)与「DebugConfigManager.promptForProcessId」(非
+数字与超安全整数拒绝、取消中止、合法 pid attach)——原「由 mocha 层覆盖」
+声明已过期。vscodeStub 相应补了 Uri.joinPath 与内存 fs
 (文件缺失按实现语义抛错进 catch),测试 helper 扩展,非产品行为变更。
 
 explorerProviders 的树构建纯逻辑已在真实临时 workspace 上覆盖(20 用例):
@@ -409,9 +431,14 @@ interface/component 按文件名或 'Missing')、视图模型(Hero 汇总:混入
 标签/图标映射、resolveParentCategory(component 不归并)、describeRuntimeFacet
 全部五态、服务器树(10 组件按种子序全 Stopped:circle-large-outline、
 无 description、tooltip '状态: stopped' 尾缀;带元素无子;refresh 安全)。
-74.2% 的剩余部分是 type 深结构渲染(createTypeStructureItems/
-createTypePropertyItem 递归)、方法条目命令构造与 getChildren 的
-section→group→leaf 逐层展开,由 mocha 层覆盖。vscodeStub 相应补了
+原 74.2% 的剩余部分(type 深结构渲染 createTypeStructureItems/
+createTypePropertyItem 递归、方法条目命令构造与 getChildren 的
+section→group→leaf 逐层展开)批75 核对已由 vitest 收口:explorerTreeDeep
+.test.ts「expands type definitions with alias, properties and python
+sections」「expands grouped sections via DefinitionGroupItem and ungrouped
+sections directly」(叶命令断言 kbengine.database.open)、
+explorerProvidersBranches.test.ts 的方法命令/别名回落/身份组装各用例——
+原「由 mocha 层覆盖」声明已过期。vscodeStub 相应补了
 TreeItem/ThemeIcon/TreeItemCollapsibleState/Command(树项子类模块求值
 即需要基类)。
 
@@ -440,10 +467,16 @@ null)、validateDocument 诊断(未知 Flags/未知 DetailLevel Error 含原文�
 已有诊断、坏 XML 免疫零诊断)、定义跳转(entities.xml 注册名 → Hero.def、
 Interfaces 内自闭合 `<MoveIface/>` → interfaces/MoveIface.def、Components
 的 Type 值 → components/HealthComp.def、types.xml 自定义类型 → 声明行
-Position(line-1, 0)、未知词与 python 文档 null)。64.2% 的剩余部分是
-validateDefStructure 结构诊断规则集(缺 DetailLevel/重复声明等)、方法符号
-→ Python 实现跳转(entityMappingManager 路径)、数据库 schema 虚拟文档跳转
-与各链条防御分支,由 mocha 域与后续批次覆盖。
+Position(line-1, 0)、未知词与 python 文档 null)。原 64.2% 的剩余部分
+批75 核对已由 vitest 收口:validateDefStructure 结构诊断规则集(缺
+DetailLevel/重复声明等;经 validateDocument 诊断用例驱动,实现于
+src/languageProviders.ts 由 validateDocument 调用)、方法符号 → Python
+实现跳转(entityMappingManager 路径;languageProvidersInternals.test.ts
+「def method implementation jumps」之「jumps to the python implementation
+when the identity resolves」)、数据库 schema 虚拟文档跳转
+(languageProvidersInternals.test.ts「database schema cross jumps」正反向
+各用例)与各链条防御分支(languageProvidersBranches.test.ts 跳转 null/
+jump 各臂)——原「由 mocha 域与后续批次覆盖」声明已过期。
 
 explorerProviders 的树形下钻与缺口分支已在真实临时 workspace 上覆盖(16 用例,
 vscodeStub 补 workspaceFolders 桩——getWorkspaceRootForDocument 无参时回落
@@ -463,7 +496,11 @@ game.widget, Python Missing' 与实体 'Base, Cell, Unregistered')、
 pickServerComponent(SERVER_COMPONENTS 全量经 monkey-patch 捕获,
 placeHolder 直通)与 ServerControlProvider(假 manager 注入,Running/Starting/
 Stopping/Error 四状态描述 'PID: 4321'/'启动中...'/'停止中...'/'错误',
-getTreeItem 透传、带元素无子)。96.7% 的剩余部分是树控件装配与 mocha 域。
+getTreeItem 透传、带元素无子)。原 96.7% 剩余的树控件装配(extension.ts
+两处 registerTreeDataProvider)批75 核对已由 vitest extension.test.ts
+覆盖(treeRegistrations 与 manifest 声明视图双向核对),并与 mocha 激活
+烟测「registers the tree views declared by the manifest」双口径一致——
+原「树控件装配与 mocha 域」声明已过期。
 CellMethods 全 exposed 时整段缺席(批17 已知现状),夹具以非 exposed move 保住该段。
 
 kbengineProtocol 的剩余分支已在真实回环上补齐(tests/
@@ -1559,6 +1596,67 @@ be6ec24 实测 2701/2709,与收口后 coverage-final 按源码行文本做多集
 
 剩余缺口按序(批74 后):**无**——全模块 Branches/Statements/Lines/Functions
 均已达 100%。后续批次如有新增源码,按同口径增量覆盖。
+
+## 批75:「由 mocha 层覆盖/补充」声明核对(零新用例、零生产改动)
+
+背景:vitest 覆盖率已全 100%(台账 2692/2692 臂),但 TESTING.md 多处残余
+段落仍写「由 mocha 层(域)覆盖/补充」——这些声明写于批56 裁剪前,而批56
+起 mocha 层已裁为编译产物烟测(3 文件 11 用例:manifest 3、out/extension.js
+装配激活 5、out/languageProviders.js 补全/悬停/重命名 3),上述残余区域
+无一在册。本批逐条到 mocha 与 vitest 两层找实证,结论:**8 处声明全部过期,
+所指区域均已在 vitest 有具名用例,零真缺口、零补测**。
+
+逐条核对结果(已覆盖 → 实证用例名/文件):
+
+1. entityMapping(watcher 事件 + 10.6% 索引回溯/绑定 fallback/防御分支)
+   → entityMappingManager.test.ts「watcher and lifecycle」、
+   entityMappingFallback.test.ts「walks from an interface symbol back to
+   the referencing entity index」「regex-scans owner candidate files when
+   no python binding matches」、entityMappingGaps.test.ts「resolves a
+   component owner through the referencing entity index」、
+   entityMappingBranches.test.ts。模块 270/270 臂 100%。
+2. monitoringCollector(startTimer 定时器 refresh 循环 + 事件行为)
+   → monitoringCollectorGaps.test.ts「starts a repeating timer that
+   survives several ticks」(start(40) 真间隔连跑多轮)、
+   monitoringCollectorBranches.test.ts「start 在暂停态只记间隔…」「collapses
+   concurrent refresh calls…」;onMetricsUpdate 真实订阅断言在
+   monitoringCollectorSocket.test.ts 与 monitoringPanel.test.ts。
+3. codeGenerator 向导(7.6% 零散分支组合)→ codeGeneratorGaps.test.ts
+   「showWizard sample property branches」等、codeGeneratorBranches.test.ts
+   showWizard/showTemplates 编排、codeGeneratorFiles.test.ts 落盘全链。
+4. monitoringWebView(50.4% 面板生命周期/定时刷新/导出)→
+   monitoringPanel.test.ts 17 用例(批27 搬入,原文第二句已自述,仅删去
+   过期归因半句)。
+5. debugConfig(63.3% startDebugging 会话与 PID 输入框)→
+   debugConfigAttach.test.ts「DebugConfigManager.startDebugging」
+   「DebugConfigManager.promptForProcessId」两 describe。
+6. explorerProviders(74.2% type 深结构/方法命令/getChildren 下钻)→
+   explorerTreeDeep.test.ts(含叶命令断言 kbengine.database.open)、
+   explorerProvidersBranches.test.ts。
+7. languageProviders(64.2% validateDefStructure/方法实现跳转/schema
+   虚拟文档跳转/防御分支)→ validateDefStructure 经 validateDocument
+   诊断用例驱动(src/languageProviders.ts 内部调用);方法实现跳转在
+   languageProvidersInternals.test.ts「def method implementation jumps」;
+   schema 正反向跳转在同文件「database schema cross jumps」;防御臂在
+   languageProvidersBranches.test.ts。
+8. explorerProviders 树控件装配(96.7% 残余)→ extension.ts 两处
+   registerTreeDataProvider 由 vitest extension.test.ts 覆盖
+   (treeRegistrations 与 manifest 双向核对),mocha 激活烟测「registers
+   the tree views declared by the manifest」同口径互证——此条是唯一
+   mocha 层确有实证的声明,现两层齐备。
+
+同步修正:tests/ 下 6 处同源过期注释(codeGenerator/languageProviders/
+languageProvidersGaps/entityMappingManager/explorerProviders/databaseSchema
+各文件的头部注释)改按实证归属;tests/extension.test.ts 的「只有 mocha 层
+间接触达(问题 P14),现在进 vitest 覆盖率分母」为历史叙述,表述属实,保留。
+补测判定:被指区域全部两层核查后均有 vitest 实证,按「已覆盖」记账,
+无「已补」项,无「不可测」项;产品代码零改动。
+
+门禁:pnpm lint EXIT=0;npx vitest run 与 KBENGINE_ROOT=off npx vitest run
+同为 74 文件 868 用例全绿;pnpm test EXIT=0(vitest 全量 + 编译 + mocha
+烟测 11 passing)。
+
+剩余缺口按序(批75 后):**无**——本批为声明核对,无覆盖率变化。
 
 说明:
 

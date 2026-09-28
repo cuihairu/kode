@@ -15,7 +15,8 @@ import {
 // EntityMappingManager 类本体:构造即扫描 scripts/entity_defs 并挂 python
 // watcher。测试用真实临时文件树 + stub findFiles 枚举,走 buildIndex →
 // storeIndex → 查询/解析/调用图/打开目标的完整链路。真实 watcher 与编辑器
-// 行为由 mocha 层覆盖。
+// 行为已由本文件用例覆盖(「watcher and lifecycle」fireChange 重扫/no-op/
+// dispose 幂等;批75 核对修正,原 mocha 声明系批56 裁剪前的过期表述)。
 
 const p = (root: string, ...segments: string[]) => path.join(root, ...segments);
 

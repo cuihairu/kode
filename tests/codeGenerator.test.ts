@@ -11,7 +11,9 @@ import type {
 } from '../src/codeGenerator';
 
 // KBEngineCodeGenerator 的纯生成器:private 方法经实例直调(真实行为,
-// 非 mock)。命令编排层(showWizard/QuickPick/写文件)由 mocha 层覆盖。
+// 非 mock)。命令编排层(showWizard/QuickPick/写文件)已在 vitest 覆盖
+// (codeGeneratorFiles/Gaps/Branches;批75 核对修正,原 mocha 声明系
+// 批56 裁剪前的过期表述)。
 
 const makeGenerator = () =>
   new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
