@@ -1749,6 +1749,50 @@ ENOENT、FakeComponentBin 落盘逢 `Unknown system error -122` 写失败。
 
 剩余缺口按序(批77 后):**无**——本批为声明复核,无覆盖率变化。
 
+## 批78:变异抽检扫「被覆盖但未锁定」缺口(logParser 双存活收口,+1 用例)
+
+派发口径为「找最大未测试模块/分支缺口补真测」。覆盖率数量维度已 exhausted:
+HEAD(含并行批77 复验提交)首手全量复测仍四指标 100%,并补做一项此前
+未做过的隐身核查——v8 覆盖率只报被加载模块,src/ 实有文件数与报告条目数
+25=25 精确吻合,**不存在从未被任何测试加载而隐身于报告的源文件**。
+
+本批改用**变异抽检**度量「未测试的真实缺口」(100% 行/臂覆盖≠行为锁定):
+对 7 个模块施放 8 个语义变异(常量/边界/正则/映射四类),逐一精准替换
+后先跑最相关测试文件、存活再跑全量确认,完毕即还原。首轮 6 个变异因
+脚本引号缺陷未写入文件即误报存活,判废重跑(文件零污染,不计结论)。
+有效结果 8 变异:**6 杀**——kbengineProtocol 广播端口 20086±1
+(kbengineProtocol.test.ts,非引擎条件套件所杀)、monitoringCollector
+默认刷新间隔 2000±1、serverManager bots gus 参数、debugConfig telnet
+端口种子、logWebView escapeHtml 实体大小写、workspacePath win32/posix
+判别正则各被对应测试文件击杀;**2 存活**(真缺口,均在 logParser,即
+「被覆盖但未被锁定」):
+
+- `COMPONENT_NAMES[10]='logger'` 漂移全量不可见——映射表此前只被
+  componentType 6(baseapp)与 99(兜底)两处断言,其余 10 个表项
+  无任何断言。收口:新增「resolves every known component type to its
+  engine name」逐项锁死 12 个引擎组件类型名(19 字节 LOG_ITEM 最小
+  缓冲逐项解析断言)。
+- `formatLogEntry` 的级别列 `padEnd(8)` 漂移到 12 全量不可见——原
+  断言用 `toContain`,对尾随填充天然免疫。收口:改精确 `toBe` 锁定
+  「ISO 时间戳 + 级别列 8 宽 + 组件列 12 宽 + 段式拼接」全串,并加
+  8 字符级别/超宽组件用例锁「长值不截断」侧。
+
+变异复验:两存活变异重新施放后均被新用例击杀(各恰挂新用例,其余
+14 用例不受扰)。执行事故如实记:抽检脚本首轮引号缺陷已判废重跑,
+结论以上述有效轮为准。
+
+记账:用例 868→869(净 +1:新增 1 用例,强化 1 用例体);覆盖率重测
+四指标维持 100%(4798/4798、2692/2692、838/838、4689/4689),分母
+无变化——本批为行为锁定增量,非覆盖率增量。TMPDIR 隔离
+(/tmp/kode-b78-tmp)沿用批77 的共享 /tmp 污染规避经验。
+
+门禁:pnpm lint EXIT=0;npx vitest run 与 KBENGINE_ROOT=off npx vitest run
+同为 74 文件 869 用例全绿;pnpm test EXIT=0(mocha 烟测 11 passing)。
+无 tag、无 release、无 force push。
+
+剩余缺口按序(批78 后):**无**——覆盖率数量维度持续满格;后续覆盖率
+批次如无新增源码,建议沿用变异抽检/断言强度扫描类「质量维度」清扫。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/

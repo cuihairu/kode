@@ -92,6 +92,30 @@ describe('LogParser.parseBinaryLogItem', () => {
 
     expect(entry!.component).toBe('component_99');
   });
+
+  it('resolves every known component type to its engine name', () => {
+    // 批78 变异抽检补锁:映射表此前只被 6(baseapp)与 99(兜底)两处
+    // 断言,单点漂移(如 10: 'logger')全量不可见。逐项锁死 12 个
+    // 引擎组件类型名,防表项漂移。
+    const entryFor = (componentType: number) => {
+      const buffer = Buffer.alloc(19);
+      buffer.writeUInt32LE(1, 0);
+      buffer.writeUInt8(LogType.LOG_TYPE_NORMAL, 4);
+      buffer.writeUInt8(componentType, 5);
+      buffer.writeUInt8(LogLevel.INFO, 6);
+      buffer.writeDoubleLE(1000, 7);
+      buffer.writeUInt32LE(0, 15);
+      return LogParser.parseBinaryLogItem(buffer)!;
+    };
+
+    const expectedNames = [
+      'machine', 'dbmgr', 'baseappmgr', 'cellappmgr', 'loginapp', 'baseapp',
+      'cellapp', 'client', 'bots', 'logger', 'interface', 'upload'
+    ];
+    expectedNames.forEach((name, index) => {
+      expect(entryFor(index + 1).component, `componentType ${index + 1}`).toBe(name);
+    });
+  });
 });
 
 describe('LogParser batch and formatting', () => {
@@ -121,9 +145,24 @@ describe('LogParser batch and formatting', () => {
       raw: 'raw'
     });
 
-    expect(formatted).toContain('ERROR');
-    expect(formatted).toContain('dbmgr');
-    expect(formatted).toContain('db down');
+    // 批78 变异抽检补锁:级别列 padEnd(8)、组件列 padEnd(12)的精确
+    // 输出。原 toContain 断言对尾随填充不可见,padEnd 宽度漂移
+    // (8→12)全量不可见,故改精确 toBe。
+    expect(formatted).toBe('[2026-03-26T10:00:00.000Z] [ERROR   ] [dbmgr       ] db down');
+
+    // 长值不截断:8 字符级别与超宽组件按原样输出(padEnd 不补也不裁)
+    const wide = LogParser.formatLogEntry({
+      id: 2,
+      timestamp: new Date(Date.UTC(2026, 2, 26, 10, 0, 1)),
+      component: 'a-very-long-component',
+      level: LogLevel.CRITICAL,
+      type: LogType.LOG_TYPE_NORMAL,
+      message: 'overflow',
+      raw: 'raw'
+    });
+    expect(wide).toBe(
+      '[2026-03-26T10:00:01.000Z] [CRITICAL] [a-very-long-component] overflow'
+    );
   });
 
   it('exposes level metadata', () => {
