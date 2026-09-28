@@ -253,9 +253,17 @@ describe('MonitoringWebView.show', () => {
 describe('MonitoringWebView message handling', () => {
   it('triggers collector refresh on the refresh command', async () => {
     show();
+    const startedAfterShow = fake.state.started.length;
 
     send({ command: 'refresh' });
     await until(() => fake.state.refreshed === 1);
+
+    // 真断言(批76 补):refresh 只透传 refreshNow 且恰一次,
+    // 不触碰采集器生命周期(不重发 start、不 stop、不改暂停态)
+    expect(fake.state.refreshed).toBe(1);
+    expect(fake.state.started).toHaveLength(startedAfterShow);
+    expect(fake.state.stopped).toBe(0);
+    expect(fake.state.paused).toBe(false);
   });
 
   it('applies string filters and re-renders', () => {

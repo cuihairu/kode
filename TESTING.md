@@ -1658,6 +1658,37 @@ languageProvidersGaps/entityMappingManager/explorerProviders/databaseSchema
 
 剩余缺口按序(批75 后):**无**——本批为声明核对,无覆盖率变化。
 
+## 批76:全量复核 + 无断言用例补真断言(覆盖率无变化,维持 100%)
+
+派发口径要求「挑当前最低覆盖且可离线测的模块补单测」。首手复核
+(npx vitest run --coverage 全量,json-summary 逐文件):分母 25 个
+src 文件(分母口径 src/**、排除 src/test/**,vitest.config 证实)
+Statements/Branches/Functions/Lines 全部 100%——总账 4798/4798、
+2692/2692、838/838、4689/4689,与批72-73 收口台账一致。**「最低覆盖
+模块」不存在,补测选择前提为空**:对 100% 模块再补用例只能是重复断言
+或凑数,违反「不写不断言的假用例」铁律,故本批零盲补。
+
+改做两层真实缺口扫描,发现并收口一处:
+
+- 断言用例扫描(脚本化逐 it 块检查 expect/assert 存在性,77 个测试
+  文件全量):仅 tests/monitoringPanel.test.ts「triggers collector
+  refresh on the refresh command」只靠 until 超时兜底、无结果断言——
+  批76 补真断言:refreshNow 恰触发一次(refreshed===1,防双发)、
+  采集器生命周期零副作用(不重发 start、不 stop、不改暂停态)。
+- skip/only 扫描:零 it.skip/describe.skip/test.skip/.only;仅
+  hooks/kbengineMetadata/kbengineProtocol 三套「vs engine source」
+  describe.skipIf 按环境跳过(本机与 CI 均无同级 kbengine 检出,
+  离线不可测,已在「引擎源码条件测试」节登记)。
+
+记账说明:本批用例数 868→868(改动为既有用例体内增断言,不新增
+it),覆盖率四指标维持 100%,分母无变化。mocha 烟测 11 用例不变。
+
+门禁:pnpm lint EXIT=0;npx vitest run 与 KBENGINE_ROOT=off npx vitest run
+同为 74 文件 868 用例全绿;pnpm test EXIT=0(mocha 烟测 11 passing)。
+
+剩余缺口按序(批76 后):**无**——全模块四指标 100% 维持,队列持续为空;
+后续批次如有新增源码,按同口径增量覆盖。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
