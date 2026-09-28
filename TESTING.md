@@ -1793,6 +1793,40 @@ HEAD(含并行批77 复验提交)首手全量复测仍四指标 100%,并补做�
 剩余缺口按序(批78 后):**无**——覆盖率数量维度持续满格;后续覆盖率
 批次如无新增源码,建议沿用变异抽检/断言强度扫描类「质量维度」清扫。
 
+## 批79:变异抽检第二轮(8 施 7 杀 1 存活,monitoringWebView CPU 阈值补锁,+1 用例)
+
+延续批78 口径,第二轮变异覆盖批78 未抽的模块(databaseSchema/
+entityDependency/monitoringWebView/codeGenerator/logCollector/
+languageProviders/explorerProviders/extension),8 个语义变异:
+
+- 7 杀:databaseSchema mysql 列型映射 UINT8→tinyint signed
+  (databaseSchemaDeep.test.ts,全量 vitest 层)、entityDependency
+  继承边 label '继承'(entityDependencyAnalyzer.test.ts,全量 vitest
+  层)、codeGenerator Cell 类名后缀、logCollector 心跳 1000ms、
+  languageProviders TOP_LEVEL_DEF_TAGS 顶标签表、explorerProviders
+  'Definition file not found'、extension 状态栏 priority 100 各被
+  对应测试文件定向击杀。
+- 1 存活(真缺口):monitoringWebView `formatMetricCard` 的 CPU 阈值
+  `>80` 漂移为 `>81` 全链(vitest 双口径 + mocha)不可见——既有阈值
+  用例取值 90/60/10 全在远端,(80,81] 与 (50,51] 边界无断言。收口:
+  新增「locks the exact cpu thresholds 80 and 50」四点锁(81 error、
+  80 落 warning、51 warning、50 中性),同时锁死 80/50 两阈值;
+  变异复验重施被新用例击杀(恰挂新用例,其余 16 用例不受扰)。
+- 执行注记:批78 简版回退路径把「pnpm test 内的全量 vitest 击杀」
+  误标为 mocha 层,本批对 M9/M10 复核定正(实为 databaseSchemaDeep/
+  entityDependencyAnalyzer 所杀);记录归因时以击杀用例文件为准。
+
+记账:用例 869→870(净 +1);覆盖率重测四指标维持 100%(4798/4798、
+2692/2692、838/838、4689/4689),分母无变化——行为锁定增量。
+
+门禁:pnpm lint EXIT=0;npx vitest run 与 KBENGINE_ROOT=off npx vitest run
+同为 74 文件 870 用例全绿;pnpm test EXIT=0(mocha 烟测 11 passing)。
+无 tag、无 release、无 force push。
+
+剩余缺口按序(批79 后):**无**——两轮变异抽检 16 施 13 杀 3 存活
+(均已收口),测试行为锁定强度持续加固;后续如无新增源码,可继续
+抽样或转向其他质量维度。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/

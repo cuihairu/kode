@@ -289,6 +289,33 @@ describe('MonitoringWebView.formatMetricCard', () => {
     expect(html).not.toContain('progress-fill error');
     expect(html).not.toContain('progress-fill warning');
   });
+
+  it('locks the exact cpu thresholds 80 and 50', () => {
+    // 批79 变异抽检补锁:既有用例取值 90/60/10 全在阈值远端,
+    // >80 漂移为 >81 全量不可见。progress-fill 类由 cpuUsage 驱动
+    // (metric-status 由 statusLevel 驱动,不在本锁内)。
+    const impl = internals(makeWebView());
+
+    // (80, 81] 边界:81 即 error
+    const at81 = impl.formatMetricCard(metric({ cpuUsage: 81 }));
+    expect(at81).toContain('progress-fill error');
+    expect(at81).not.toContain('progress-fill warning');
+
+    // 80 本身不越限(error 严格大于),落 warning 区
+    const at80 = impl.formatMetricCard(metric({ cpuUsage: 80 }));
+    expect(at80).not.toContain('progress-fill error');
+    expect(at80).toContain('progress-fill warning');
+
+    // (50, 51] 边界:51 即 warning
+    const at51 = impl.formatMetricCard(metric({ cpuUsage: 51 }));
+    expect(at51).toContain('progress-fill warning');
+    expect(at51).not.toContain('progress-fill error');
+
+    // 50 本身中性
+    const at50 = impl.formatMetricCard(metric({ cpuUsage: 50 }));
+    expect(at50).not.toContain('progress-fill warning');
+    expect(at50).not.toContain('progress-fill error');
+  });
 });
 
 describe('MonitoringWebView.formatDiagnostic', () => {
