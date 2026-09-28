@@ -74,7 +74,7 @@ extension.ts、entityMapping.ts、kbengineProtocol.ts、explorerProviders.ts
 新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处 +
 批71 在 logParser.ts 新增 1 处 + 批72 在 extension.ts 新增 1 处、
 entityMapping.ts 新增 4 处、kbengineProtocol.ts 新增 1 处、
-explorerProviders.ts 新增 2 处 + 批73 在 serverManager.ts 新增 1 处,
+explorerProviders.ts 新增 2 处,
 逐处理由见"批62 行覆盖专项""批63
 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
 专项""批67 分支覆盖专项""批68 分支覆盖专项""批69 分支覆盖专项""批70
@@ -1456,10 +1456,13 @@ vitest 73 文件 862 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
 批72 分支覆盖专项:按剩余缺口队列序位收官 entityMapping.ts(98.6%→100%)、
 kbengineProtocol.ts(98.9%→100%)、explorerProviders.ts(99.2%→100%)、
-extension.ts(98.4%→100%,唯一残差为 v8 负数伪影已登记)。四模块共补测
-4 个可达臂 + 登记 8 个契约性不可达/伪影臂(extension 1、entityMapping 4、
+extension.ts(98.4%→100%,唯一残差为 v8 负数伪影已登记)。四模块共登记
+8 个契约性不可达/伪影臂条目(extension 1、entityMapping 4、
 kbengineProtocol 1、explorerProviders 2),新增 8 处精确单行区间 ignore,
-总分支 99.66%→100%(2700/2709→2692/2692),行/语句/函数维持 100%:
+并新增 4 个真臂行为锁定用例(extensionBranches 2、entityMappingBranches 2)
+——本段四模块收口实际执行于批73 之后的合并提交 2eae752,故其计数自批73
+后的 2701/2709 起算(本批自身时点记录见批73 段):总分支 99.66%→100%
+(2700/2709 → 2701/2709 → 2692/2692),行/语句/函数维持 100%:
 
 extension.ts——`kbengine.entity.method.open` 的 `if (!didOpen)` 隐式 else 臂
 (v8-to-istanbul 负数伪影,[4,-1]):批71 已登记该伪影系结构钉死,本批以 1 处
@@ -1487,17 +1490,24 @@ explorerProviders.ts——`DefinitionSectionItem` 子项展开的
 DefinitionSectionDescriptor 构造点均显式提供 items 数组(契约不可达),
 ignore 登记,真臂由既有子项展开与描述行用例锁定。
 
-分母口径(如实记,不美化):8 处区间移出 8 个分支条目 / 16 条臂,
-其中 4 条可达臂(extension 2、entityMapping 1、kbengineProtocol 0、
-explorerProviders 0)经真用例点亮,12 条不可达/伪影臂经 ignore 移出。
-statements 4807→4798(-9)、lines 4697→4689(-8、仍 100%)、branches
-分母 2709→2692(-17)、分子 2700→2692。本批未改动任何生产逻辑,未暴露
-需改动生产代码的缺陷。vitest 74 文件 868 用例(两种引擎口径全绿),
-mocha 烟测 11 用例。门禁四项全绿。
+分母口径(如实记,不美化):8 处区间移出 8 个分支条目 / 17 条臂——
+逐臂构成为 9 条已覆盖真臂 + 8 条未覆盖死臂(含 2 条负数伪影
+[2,-1]/[4,-1]);全仓 8 条未覆盖臂经此全数移出,0 条臂被点亮,新增的
+4 个用例均为已覆盖真臂的行为锁定、不改变分母/分子状态(臂级取证:检出
+be6ec24 实测 2701/2709,与收口后 coverage-final 按源码行文本做多集匹配
+——移出条目恰 8 个、新增 0 个)。statements 4807→4798(-9)、
+lines 4697→4689(-8、仍 100%)、branches 分母 2709→2692(-17)、
+分子 2701→2692(-9,自批73 后起算;2700 为批71/72 时点,+1 为批73
+真臂点亮)。本批未改动任何生产逻辑,未暴露需改动生产代码的缺陷。
+vitest 74 文件 868 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+门禁四项全绿。
 
-批73 分支覆盖专项:serverManager.ts(98.6%→100%),总分支 100% 维持,
-行/语句/函数 100% 维持。唯一未覆盖臂为 startComponent 宽限定时器回调
-的 `if (this.runningServers.has(component.name))` 判空假臂——启动宽限期内
+批73 分支覆盖专项:压缺口队列序首位的 serverManager.ts(98.6%,68/69 臂)
+逐臂收口到 100%,行/语句/函数维持 100%;本批自身时点总分支 99.66%→99.7%
+(2700/2709→2701/2709)——100% 结算由随后的合并提交 2eae752 完成(该收口
+细节记于上文批72 段)。唯一未覆盖臂(arms_dump 与 coverage-final 原文复核
+一致)为 startComponent 宽限定时器回调的
+`if (this.runningServers.has(component.name))` 判空假臂——启动宽限期内
 条目被移除且 timer 未被清时,守卫拦下陈旧定时器,不复活状态、不发
 "启动成功"提示。既有删除点中 exit/error 处理器都会先 clearTimeout,
 唯一不清 timer 的删除点是 `dispose()` 的 `runningServers.clear()`——
@@ -1511,11 +1521,43 @@ true 且状态 Starting;dispose 后 runningServers 清空;宽限期过后无
 "启动成功"提示、状态保持 Stopped(守卫静默语义锁定)。
 
 分母口径(如实记,不美化):本批零 ignore、零分母变动,分子
-2692+1=2692(隐式 else 臂在 v8 计数中计为真臂),statements/lines/functions
-三项 100% 均维持。vitest 74 文件 868 用例(两种引擎口径全绿),
-mocha 烟测 11 用例。门禁四项全绿。
+2700+1=2701,statements/lines/functions 三项 100% 均无移出。
+vitest 73 文件 864 用例(两种引擎口径全绿),mocha 烟测 11 用例。
+门禁四项首跑全绿,无瞬态异常。
 
-剩余缺口按序(批73 后):**无**——全模块 Branches/Statements/Lines/Functions
+剩余缺口按序(批73 后):entityMapping(98.6%)、kbengineProtocol(98.9%)、
+explorerProviders(99.2%);serverManager 已收官,extension 残差为批72
+已登记伪影(上述三者与伪影残差随后由合并提交 2eae752 收口,见上文批72 段)。
+
+批74 分支覆盖专项(复核 + 记账修正):派发目标为 extension.ts(98.4%);
+经核该缺口已于批72-73 系列提交收口(52e5db5 / be6ec24 / 2eae752,均已在
+origin/main),本批做独立复核与失实记账修正——零生产改动、零新用例、
+零新 ignore 区间:
+
+复核(全量覆盖率实测)——总分支 Branches 100%(2692/2692)、Statements
+100%(4798/4798)、Functions 100%(838/838)、Lines 100%(4689/4689);
+extension.ts 单文件分支 60/60、语句 100%。臂级取证:检出收口前提交
+be6ec24 实测 2701/2709,与收口后 coverage-final 按源码行文本做多集匹配
+(条目键值随注记插入移位、不可直接比对)——移出条目恰 8 个、新增 0 个,
+移出 17 臂 = 9 条已覆盖真臂 + 8 条未覆盖死臂(全仓未覆盖臂恰为 8,全数
+移出、0 点亮),分子 2701−9=2692、分母 2709−17=2692 精确闭合。
+
+修正(合并提交 2eae752 重写 TESTING.md 引入的三处失实,按上述实测改正):
+- 头部 ignore 计数段:删除「批73 在 serverManager.ts 新增 1 处」子句
+  ——serverManager.ts 全文零 istanbul 注记(最后改动停在批53)且批73
+  段自述零 ignore;删除后逐批累加恰为 64 处,与 grep 实况一致。
+- 批72 段分母口径:「16 条臂 / 12 条不可达 / 4 条可达臂点亮 / 分子
+  2700→2692」按臂级取证改正为「17 臂 = 9 覆盖 + 8 未覆盖 / 0 点亮 /
+  分子 2701→2692」;开头补记四模块收口落于批73 之后的合并提交。
+- 批73 段:恢复其自身时点实测记录(总分支 99.66%→99.7%、分子
+  2700+1=2701、vitest 73 文件 864 用例、队列行)——合并提交误写为
+  「总分支 100% 维持、2692+1=2692、74 文件 868 用例、队列清零」。
+
+门禁:pnpm lint EXIT=0;npx vitest run 与 KBENGINE_ROOT=off npx vitest run
+同为 74 文件 868 用例全绿;pnpm test EXIT=0(mocha 烟测 11 passing)。
+无 tag、无 release、无 force push。
+
+剩余缺口按序(批74 后):**无**——全模块 Branches/Statements/Lines/Functions
 均已达 100%。后续批次如有新增源码,按同口径增量覆盖。
 
 说明:
