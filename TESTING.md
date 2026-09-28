@@ -1689,6 +1689,66 @@ it),覆盖率四指标维持 100%,分母无变化。mocha 烟测 11 用例不变
 剩余缺口按序(批76 后):**无**——全模块四指标 100% 维持,队列持续为空;
 后续批次如有新增源码,按同口径增量覆盖。
 
+## 批77:「由 mocha 层覆盖/补充」声明复核(零新用例、零生产改动)
+
+派发与批75 同题(核对 TESTING.md 内「由 mocha 层覆盖/补充」残余声明)。
+开工核查:批75(`3106ab7`)已抽 8 条清单并逐条落 vitest 实证、批76(`0ed994a`)
+复核在案,残余表述现均带「已过期」定语,无未核对声明。本批做独立复验:
+8 条所指区域逐条 grep 实证(用例名/文件与批75 登记一致,现复述以存证),
+结论:**维持批75 定案,零真缺口、零补测**。
+
+复验结果(已覆盖 → 实证用例名/文件,均为本批亲手 grep 确认存在):
+
+1. entityMapping watcher 事件 → entityMappingManager.test.ts
+   「watcher and lifecycle」(fireChange 重扫 owner/无关路径 no-op/dispose
+   幂等 3 用例);索引回溯/fallback → entityMappingFallback.test.ts
+   「walks from an interface symbol back to the referencing entity index」
+   「regex-scans owner candidate files when no python binding matches」、
+   entityMappingGaps.test.ts「resolves a component owner through the
+   referencing entity index」;防御臂 → entityMappingBranches.test.ts。
+2. monitoringCollector 定时器/事件 → monitoringCollectorGaps.test.ts
+   「starts a repeating timer that survives several ticks」
+   「collapses concurrent refresh calls with an in-flight guard」、
+   monitoringCollectorBranches.test.ts「start 在暂停态只记间隔,不起定时器
+   也不刷新」;onMetricsUpdate 真实订阅在 monitoringCollectorSocket.test.ts
+   与 monitoringPanel.test.ts(「pushes collector updates into the live
+   panel html」)。
+3. codeGenerator 向导 → codeGeneratorGaps.test.ts「showWizard sample
+   property branches」「creates missing output directories recursively」
+   「reports 生成失败 when the workspace is gone」、
+   codeGeneratorBranches.test.ts showWizard/showTemplates 编排、
+   codeGeneratorFiles.test.ts 落盘全链。
+4. monitoringWebView 面板 → monitoringPanel.test.ts 17 用例(逐 it 计数确认)。
+5. debugConfig 会话/PID 框 → debugConfigAttach.test.ts
+   「DebugConfigManager.startDebugging」「DebugConfigManager.promptForProcessId」
+   两 describe(18 处匹配)。
+6. explorerProviders 深结构 → explorerTreeDeep.test.ts「expands type
+   definitions with alias, properties and python sections」「expands grouped
+   sections via DefinitionGroupItem and ungrouped sections directly」
+   (含叶命令 `kbengine.database.open` 断言)、explorerProvidersBranches.test.ts。
+7. languageProviders → languageProvidersInternals.test.ts「def method
+   implementation jumps」「database schema cross jumps」、
+   languageProvidersBranches.test.ts;validateDefStructure 经 validateDocument
+   诊断用例驱动(内部调用)。
+8. 树控件装配 → vitest extension.test.ts treeRegistrations 与 manifest 双向
+   核对 + mocha activationSmoke.test.ts「registers the tree views declared
+   by the manifest」——唯一 mocha 层确有实证的声明,两层齐备。mocha 现状
+   复核:manifest 3 + activationSmoke 5 + providerSmoke 3 = 11 用例,与批75
+   登记一致。
+
+门禁环境注记(瞬态环境问题,非仓库缺陷,按既定口径复跑定性):本批首跑
+`npx vitest run` 连续两次 69-70 文件收集失败——vite SSR 缓存写 /tmp 逢
+ENOENT、FakeComponentBin 落盘逢 `Unknown system error -122` 写失败。
+查因为共享 /tmp(tmpfs 81% 满)写配额耗尽(EDQUOT),与仓库代码无关。
+改走 `TMPDIR=/home/cui/.cache/kode-tmp`(宿主盘 644G 空闲)后四门全绿,
+复跑稳定,无需代码动作。
+
+门禁:pnpm lint EXIT=0;npx vitest run 与 KBENGINE_ROOT=off npx vitest run
+同为 74 文件 868 用例全绿(TMPDIR 隔离后);pnpm test EXIT=0(vitest 全量 +
+编译 + mocha 烟测 11 passing)。
+
+剩余缺口按序(批77 后):**无**——本批为声明复核,无覆盖率变化。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
