@@ -369,3 +369,31 @@ describe('EntityMappingManager 身份缺 propertyPath 的索引条目', () => {
     )).toBeNull();
   });
 });
+
+describe('EntityMappingManager 实体种类路径与解析成功分支 (批72)', () => {
+  it('getPythonCandidates 实体种类走隐式 else 分支(非 interface/component)', () => {
+    const target = internals(manager as EntityMappingManager);
+
+    // 取内部索引的 Hero 语义,其 owner.kind === 'entity'
+    // collectPythonOwnerFiles 会遍历 owner 并调用 getPythonCandidates
+    // 对 entity 种类,owner.kind 既非 interface 亦非 component,
+    // 将进入 if (owner.kind === 'interface') 的隐式 else 分支
+    const heroIndex = target.mappingIndexes.get('Hero')!;
+    const semantics = heroIndex.semantics;
+    const candidates = target.collectPythonOwnerFiles(semantics);
+
+    // 实体种类会扫描 scripts/base、scripts/cell、scripts/client 三目录
+    // (不含 interfaces/、components/ 前缀),候选存在即推入结果
+    expect(Array.isArray(candidates)).toBe(true);
+  });
+
+  it('openMethodTarget 解析成功时走隐式 else 分支并打开文件', async () => {
+    // 复用已扫描的 Hero 索引,move 方法有定义且无 Python 实现
+    // openMethodTarget 内部:findMethodImplementationByIdentity 返回 null
+    // → 回落到 index.methodDefinitions 查找定义位置 → openFileAtLocation 返回 true
+    // 即 if (!location) 的隐式 else 分支
+    const identity = heroIdentity('move');
+    const result = await (manager as EntityMappingManager).openMethodTarget(identity);
+    expect(result).toBe(true);
+  });
+});

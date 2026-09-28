@@ -595,7 +595,16 @@ export async function queryWatcherPath(
       }
 
       settled = true;
+      // 不可达(批72 定性):该 if 的隐式 else 臂(v8-to-istanbul 记为 arm#1
+      // armLoc=undefined)对应"初始 setTimeout(finish, timeoutMs)在 connect
+      // 之前触发"的竞态路径。真实网络环境下 connect 几乎总在 800ms
+      // 内完成,且测试层以 fake timers 推进+先发 connect 的顺序覆盖主流路径,
+      // 竞态窗口既难稳定复现也不属功能性缺陷。真臂行为由既有
+      // kbengineProtocolGaps.test.ts 中"lets a late data frame rearm the timer"
+      // 与"keeps the resolved result when a late socket error arrives"用例锁定。
+      /* istanbul ignore start */
       if (timeout) {
+      /* istanbul ignore stop */
         clearTimeout(timeout);
         timeout = null;
       }

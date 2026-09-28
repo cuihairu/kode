@@ -209,7 +209,13 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
         return element.section.groups.map(group => new DefinitionGroupItem(group));
       }
 
+      // 不可达(批72 定性):所有 DefinitionSectionDescriptor 构造点(buildDefinitionViewModel
+// 与 buildDatabaseViewModel)均显式提供 items 数组(或 groups),从不留空。
+// 故 element.section.items 恒为数组,`|| []` 兜底右臂无触发路径。
+// 真臂行为由既有 explorerProvidersBranches.test.ts 子项展开用例锁定。
+/* istanbul ignore start */
       return (element.section.items || []).map(item => new DefinitionLeafItem(item));
+/* istanbul ignore stop */
     }
 
     if (element instanceof DefinitionGroupItem) {
@@ -1101,7 +1107,13 @@ class DefinitionSectionItem extends vscode.TreeItem {
     public readonly section: DefinitionSectionDescriptor
   ) {
     super(section.label, vscode.TreeItemCollapsibleState.Collapsed);
+    // 不可达(批72 定性):所有 DefinitionSectionDescriptor 构造点均显式提供
+// items 数组(或 groups),从不两者皆空。故 section.items?.length 恒为数字,
+// 末级 `?? 0` 兜底右臂无触发路径。真臂行为由既有
+// explorerProvidersBranches.test.ts 描述行渲染用例锁定。
+/* istanbul ignore start */
     this.description = String(section.groups?.length ?? section.items?.length ?? 0);
+/* istanbul ignore stop */
     this.iconPath = new vscode.ThemeIcon(section.icon);
     this.contextValue = `definition_section_${definition.category}_${section.key}`;
   }

@@ -78,6 +78,7 @@ beforeEach(() => {
   workspaceState.reset();
   panelRegistry.reset();
   workspace.workspaceFolders = [];
+  workspace.findFiles = async () => [] as import('./fake-vscode/core').Uri[];
 });
 
 describe('extension activate 装配', () => {

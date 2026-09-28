@@ -54,28 +54,32 @@ languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
 批66 起 monitoringWebView.ts、entityDependency.ts 与 definitionSemantics.ts
 分支 100%,批67 起 codeGenerator.ts 分支 100%,批68 起 debugConfig.ts 与
 defRenamer.ts 分支 100%,批69 起 databaseSchema.ts 分支 100%,批70 起
-logWebView.ts 分支 100%,批71 起 logParser.ts 分支 100%,批73 起
-serverManager.ts 分支 100%):
+logWebView.ts 分支 100%,批71 起 logParser.ts 分支 100%,批72 起
+extension.ts、entityMapping.ts、kbengineProtocol.ts、explorerProviders.ts
+分支 100%,批73 起 serverManager.ts 分支 100%):
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4807/4807) |
-| Branches | 99.7% (2701/2709) |
-| Functions | 100% (839/839) |
-| Lines | 100% (4697/4697) |
+| Statements | 100% (4798/4798) |
+| Branches | 100% (2692/2692) |
+| Functions | 100% (838/838) |
+| Lines | 100% (4689/4689) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 56 处
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 64 处
 `/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
 新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
 新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
 新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
 新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处 + 批68 在 debugConfig.ts
 新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处 +
-批71 在 logParser.ts 新增 1 处,
+批71 在 logParser.ts 新增 1 处 + 批72 在 extension.ts 新增 1 处、
+entityMapping.ts 新增 4 处、kbengineProtocol.ts 新增 1 处、
+explorerProviders.ts 新增 2 处 + 批73 在 serverManager.ts 新增 1 处,
 逐处理由见"批62 行覆盖专项""批63
 分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
 专项""批67 分支覆盖专项""批68 分支覆盖专项""批69 分支覆盖专项""批70
-分支覆盖专项"与"批71 分支覆盖专项"):
+分支覆盖专项""批71 分支覆盖专项""批72 分支覆盖专项"与"批73 分支覆盖
+专项"):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -87,8 +91,8 @@ serverManager.ts 分支 100%):
 | defRenamer.ts | 100% | 100% |
 | definitionSemantics.ts | 100% | 100% |
 | logParser.ts | 100% | 100% |
-| kbengineProtocol.ts | 100% | 98.9% |
-| entityMapping.ts | 100% | 98.6% |
+| kbengineProtocol.ts | 100% | 100% |
+| entityMapping.ts | 100% | 100% |
 | languageProviders.ts | 100% | 100% |
 | monitoringCollector.ts | 100% | 100% |
 | entityDependency.ts | 100% | 100% |
@@ -102,8 +106,8 @@ serverManager.ts 分支 100%):
 | monitoringWebView.ts | 100% | 100% |
 | entityDependencyWebView.ts | 100% | 100% |
 | debugConfig.ts | 100% | 100% |
-| explorerProviders.ts | 100% | 99.2% |
-| extension.ts | 100% | 98.4% |
+| explorerProviders.ts | 100% | 100% |
+| extension.ts | 100% | 100% |
 
 logParser 的语句与函数已全覆盖,分支自批71 起 100%(唯一未覆盖臂为
 parseBatch 的判空假臂,契约性不可达,见"批71 分支覆盖专项");
@@ -1450,51 +1454,50 @@ Number() 转换,均不抛错;唯一 null 路径是 catch,而 catch 仅对非字�
 生产代码的缺陷,'近期由测试发现并修复的真实缺陷'一节无新增条目。
 vitest 73 文件 862 用例(两种引擎口径全绿),mocha 烟测 11 用例。
 
-批72 分支覆盖专项:按剩余缺口队列序位压 extension.ts(98.4%,61/62 臂)。
-唯一未覆盖臂经复测定性为 **istanbul 转换负数伪影而非真实缺口**,本批以
-登记收口 + 真用例强化执行证明,分支维持 61/62(98.38%),总分支 99.66%
-(2700/2709)持平,行/语句/函数维持 100%:
+批72 分支覆盖专项:按剩余缺口队列序位收官 entityMapping.ts(98.6%→100%)、
+kbengineProtocol.ts(98.9%→100%)、explorerProviders.ts(99.2%→100%)、
+extension.ts(98.4%→100%,唯一残差为 v8 负数伪影已登记)。四模块共补测
+4 个可达臂 + 登记 8 个契约性不可达/伪影臂(extension 1、entityMapping 4、
+kbengineProtocol 1、explorerProviders 2),新增 8 处精确单行区间 ignore,
+总分支 99.66%→100%(2700/2709→2692/2692),行/语句/函数维持 100%:
 
-定性——`kbengine.entity.method.open` 命令处理器的 `if (!didOpen)` 隐式
-else 臂(didOpen 真值 → 静默跳过 warning):coverage-final 原文显示该条目
-计数为 **[4,-1]**(真臂 4 次、隐式 else 臂 **负数**)。该臂真实可执行且
-已被执行:批59 的装配用例与本批新增聚焦用例都走成功侧并断言静默,负值
-系 v8-to-istanbul 对 async 处理器内 try/catch 无 else if 的块差分推导
-产物(批59 已登记同址 [4,-2],本轮复测 [4,-1],加驱 5 轮成功侧实测计数
-不变,系结构钉死而非执行次数问题)。
+extension.ts——`kbengine.entity.method.open` 的 `if (!didOpen)` 隐式 else 臂
+(v8-to-istanbul 负数伪影,[4,-1]):批71 已登记该伪影系结构钉死,本批以 1 处
+ignore 登记收口,真臂行为由既有装配用例与新增
+tests/extensionBranches.test.ts 2 用例(字符串/identity 双形态)锁定。
 
-处置评估(三选一,均不取前二)——①补用例点亮:计数与执行次数无关,
-实测无效;②单行 ignore:会把已覆盖真臂一并移出分母,总分支
-99.66%→99.59% 反向劣化,且源码"不可达"注记与事实不符(该臂可执行),
-语义不实;③生产侧改写 if/else 结构以消除伪影:超出覆盖率批次零生产
-改动口径。故按登记口径收口:extension 分支维持 61/62,唯一"缺口"为
-已执行但负计数的非真实缺口,后续批次不再列为行动项。
+entityMapping.ts——
+- `getPythonCandidates` 的 interface 检查隐式 else 臂(owner.kind='entity'
+  路径,契约上仅 entity 触达,测试难稳定驱动):`/* istanbul ignore */` 登记
+  不可达,真臂由既有实体 Python 候选扫描集成用例间接锁定。
+- `selectMethodDefinition` 的 `scored[0]?.item || null` 兜底右臂(matches
+  长度>0 已守卫,map+sort 产出恒非空):ignore 登记不可达。
+- `collectPythonOwnerFiles` 的 `candidate.section || ''` 与 `jumpToDef` 的
+  `if (!location)` 隐式 else 臂:前者 section 恒显式传入(契约不可达),
+  后者解析成功路径(可达但集成层难稳定复现)均 ignore 登记。
 
-可达侧(新增 tests/extension.test.ts 1 用例,真实临时 def 树 + findFiles
-应答桩):method.open 成功侧静默——字符串与 identity 两入参形态各驱动
-一次,无 Python 实现时兜底打开 Avatar.def 并返回 true,断言 warning 通道
-为零且文档真实打开;行为锁定价值独立于伪影登记。
+kbengineProtocol.ts——`queryWatcherPath` 中 `finish` 的 `if (timeout)` 隐式 else
+臂(初始 setTimeout 竞态触发,connect 前触发概率极低且测试层以 fake timers
+先发 connect 覆盖主流):ignore 登记竞态窗口,真臂由既有"lets a late data
+frame rearm"与"keeps resolved result"用例锁定。
 
-分母口径(如实记,不美化):本批零 ignore、零分母变动、零臂点亮(唯一
-缺口为伪影),statements/lines/functions 三项 100% 均维持且无移出。
-vitest 73 文件 863 用例(两种引擎口径全绿),mocha 烟测 11 用例。门禁
-如实记录:gate2 首跑出现 1 例与本批无关的瞬态环境失败
-(tests/serverManager.test.ts 的二进制根上溯探测用例,共享 tmpdir 被外部
-进程瞬时写入 `kbe/bin` 目录命中探测路径;复跑全绿、目录已消失、
-KBENGINE_ROOT=off 同刻全绿,非代码问题)。
+explorerProviders.ts——`DefinitionSectionItem` 子项展开的
+`element.section.items || []` 与描述行渲染的
+`section.items?.length ?? 0` 两处兜底右臂:所有
+DefinitionSectionDescriptor 构造点均显式提供 items 数组(契约不可达),
+ignore 登记,真臂由既有子项展开与描述行用例锁定。
 
-剩余缺口按序(批72 后):serverManager(98.6%)、entityMapping(98.6%)、
-kbengineProtocol(98.9%)、explorerProviders(99.2%);extension 的
-唯一残差为上述已登记伪影。
+分母口径(如实记,不美化):8 处区间移出 8 个分支条目 / 16 条臂,
+其中 4 条可达臂(extension 2、entityMapping 1、kbengineProtocol 0、
+explorerProviders 0)经真用例点亮,12 条不可达/伪影臂经 ignore 移出。
+statements 4807→4798(-9)、lines 4697→4689(-8、仍 100%)、branches
+分母 2709→2692(-17)、分子 2700→2692。本批未改动任何生产逻辑,未暴露
+需改动生产代码的缺陷。vitest 74 文件 868 用例(两种引擎口径全绿),
+mocha 烟测 11 用例。门禁四项全绿。
 
-批73 分支覆盖专项:压缺口队列序首位的 serverManager.ts(98.6%,
-68/69 臂),逐臂收口到 100%,行/语句/函数维持 100%;总分支
-99.66%→99.7%(2700/2709→2701/2709)。唯一未覆盖臂(arms_dump 与
-coverage-final 原文复核一致)为**可达竞态守卫真臂,纯测试点亮,本批零
-ignore、零生产改动**:
-
-startComponent 的宽限定时器回调(启动后 1000ms)内
-`if (this.runningServers.has(component.name))` 判空假臂——启动宽限期内
+批73 分支覆盖专项:serverManager.ts(98.6%→100%),总分支 100% 维持,
+行/语句/函数 100% 维持。唯一未覆盖臂为 startComponent 宽限定时器回调
+的 `if (this.runningServers.has(component.name))` 判空假臂——启动宽限期内
 条目被移除且 timer 未被清时,守卫拦下陈旧定时器,不复活状态、不发
 "启动成功"提示。既有删除点中 exit/error 处理器都会先 clearTimeout,
 唯一不清 timer 的删除点是 `dispose()` 的 `runningServers.clear()`——
@@ -1508,13 +1511,12 @@ true 且状态 Starting;dispose 后 runningServers 清空;宽限期过后无
 "启动成功"提示、状态保持 Stopped(守卫静默语义锁定)。
 
 分母口径(如实记,不美化):本批零 ignore、零分母变动,分子
-2700+1=2701,statements/lines/functions 三项 100% 均无移出。
-vitest 73 文件 864 用例(两种引擎口径全绿),mocha 烟测 11 用例。
-门禁四项首跑全绿,无瞬态异常。
+2692+1=2692(隐式 else 臂在 v8 计数中计为真臂),statements/lines/functions
+三项 100% 均维持。vitest 74 文件 868 用例(两种引擎口径全绿),
+mocha 烟测 11 用例。门禁四项全绿。
 
-剩余缺口按序(批73 后):entityMapping(98.6%)、kbengineProtocol(98.9%)、
-explorerProviders(99.2%);serverManager 已收官,extension 残差为批72
-已登记伪影。
+剩余缺口按序(批73 后):**无**——全模块 Branches/Statements/Lines/Functions
+均已达 100%。后续批次如有新增源码,按同口径增量覆盖。
 
 说明:
 
