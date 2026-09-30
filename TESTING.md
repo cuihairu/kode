@@ -1957,6 +1957,22 @@ EXIT=0(vitest + 编译 + mocha 烟测 11 passing)。
 剩余覆盖率动作(批83 后):**无**——三轮变异累计 24 施 19 杀 5 存活
 全收口;后续轮次仅在新增源码或按需抽检时跟进。
 
+收尾复验注记(本批派发的零输出跟进轮;批84/85 并发入库后于 HEAD
+`9f63067` 新鲜重跑,零源码改动):四门禁全绿——pnpm lint EXIT=0;
+npx vitest run --coverage 74 文件 885 用例全绿,覆盖率重测 25 文件四指标
+100%(4798/4798、2692/2692、838/838、4689/4689),逐文件零 <100%;
+`git diff f0b81ee..HEAD -- src/` 为空(批80 后零源码改动),忽略区间台账
+64 对/17 文件无过期对象,批80 全剥离扫描结论维持有效;KBENGINE_ROOT=off
+npx vitest run 74 文件 876 用例全绿;pnpm test EXIT=0(vitest 885 +
+编译 + mocha 烟测 11 passing)。
+瞬态注记(按批72 口径复跑定性):关引擎口径首跑
+tests/monitoringCollectorSocket.test.ts「sums cellapp object pools and
+slices details to ten」1/876 失败(`watcher.getRequests()` 得 6 ≠ 4),
+当时宿主负载 ~75;该文件自批52 起未改,隔离复跑 3/3 绿、全量复跑 876 绿,
+定性为高负载下真实 socket 时序抖动,非仓库缺陷,无代码动作。
+coverage/coverage-summary.json 随本次重测刷新(gitignored 不入库,状态
+以本台账为准)。
+
 ## 批84:变异抽检第四轮(9 施 6 杀 3 存活,2 真缺口收口 + 1 语义等价,+3 用例)
 
 批次号:批82/批83 已被并发会话占用并入库(`5c8311f`、`962ac94`),本批
