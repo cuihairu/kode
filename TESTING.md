@@ -1903,6 +1903,16 @@ KBENGINE_ROOT=off npx vitest run 870 用例全绿;pnpm test EXIT=0
 剩余外部质量动作(批81 后):**无**——lint 干净、依赖漏洞出清、
 文档零漂移;后续外部轮按需跟进 dependabot 周期告警与新 advisory。
 
+## 批82:覆盖率确认批次(全 25 源文件 100% 维持,无低覆盖率文件)
+
+本批为**纯确认批次**:全量覆盖率台账显示全部 25 个非生成源文件(`include: ['src/**/*.ts']`, `exclude: ['src/test/**']`)四指标(Statements/Branches/Functions/Lines)均为 **100% (4798/4798 | 2692/2692 | 838/838 | 4689/4689)**;报告条目 25 = 入口文件 25,无隐形模块。行覆盖率最低者即 100%,**无 0% 或 <100% 覆盖率文件**。故"挑行覆盖率最低或 0% 的非生成源文件补单测"这一动作在无新增源码前提下**无对象可施**,不造假用例,仅记账确认。
+
+门禁:pnpm lint EXIT=0;npx vitest run 879 用例全绿(引擎在位);KBENGINE_ROOT=off npx vitest run 870 用例全绿;pnpm test EXIT=0(vitest + 编译 + mocha 烟测 11 passing)。覆盖率四指标全 100% 维持。
+
+无 tag、无 release、无 force push。
+
+剩余覆盖率动作(批82 后):**无**——台账 100% + 64 忽略区间审计零过期(批80) + 变异抽检三轮 16 施 13 杀 3 存活全收口(批78/79);后续覆盖率轮次仅在新增源文件或重构改动时按需跟进。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
