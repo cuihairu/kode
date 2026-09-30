@@ -338,7 +338,7 @@
     },
     "container-tag": {
       "name": "meta.block.container.kbengine",
-      "begin": "(<)(FIXED_DICT|TUPLE)(?=[\\s>])",
+      "begin": "(<)(FIXED_DICT)(?=[\\s>])",
       "end": "(</)(\\2)(>)",
       "beginCaptures": {
         "1": {
@@ -478,11 +478,7 @@
           "name": "support.type.primitive.float.kbengine storage.type.numeric.kbengine"
         },
         {
-          "match": "\\b(BOOL|BOOLEAN)\\b",
-          "name": "support.type.primitive.boolean.kbengine storage.type.boolean.kbengine"
-        },
-        {
-          "match": "\\b(STRING)\\b",
+          "match": "\\b(STRING|UNICODE)\\b",
           "name": "support.type.primitive.string.kbengine storage.type.string.kbengine"
         },
         {
@@ -494,7 +490,7 @@
           "name": "support.type.reference.kbengine storage.type.reference.kbengine"
         },
         {
-          "match": "\\b(ARRAY|FIXED_DICT|FIXED_ARRAY|TUPLE|MAP)\\b",
+          "match": "\\b(ARRAY|FIXED_DICT)\\b",
           "name": "support.type.container.kbengine storage.type.container.kbengine"
         },
         {
@@ -508,10 +504,6 @@
         {
           "match": "\\b(CELL_PUBLIC|CELL_PRIVATE|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|OWN_CLIENT|BASE_AND_CLIENT|BASE|OTHER_CLIENTS|CELL|CELL_AND_CLIENT|CELL_AND_CLIENTS|CELL_AND_OTHER_CLIENTS)\\b",
           "name": "constant.language.flag.kbengine keyword.declaration.flag.kbengine"
-        },
-        {
-          "match": "\\b(INSTALL_ALWAYS|FLAG_DESTROY)\\b",
-          "name": "constant.other.flag.kbengine"
         }
       ]
     },

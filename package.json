@@ -456,12 +456,14 @@
     "mocha": "^11.7.5",
     "typescript": "^4.2.5",
     "vitepress": "2.0.0-alpha.17",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.1",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   },
   "pnpm": {
     "overrides": {
       "@tootallnate/once": "3.0.1",
-      "brace-expansion": "1.1.18",
+      "brace-expansion": "1.1.21",
       "braces": "3.0.3",
       "diff": "5.2.2",
       "esbuild": "0.25.0",

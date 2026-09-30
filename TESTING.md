@@ -2237,6 +2237,85 @@ KBENGINE_ROOT=off npx vitest run 74 文件 881 用例全绿;pnpm test EXIT=0
 - 总体百分比的分母包含全部源码文件;随测试推进持续抬升,
   每次抬升后更新本表。
 
+## 批88:MVP 完善首项「测试所有功能 + 修复发现的问题」(17 项逐项验证,语法资产 +16 用例收口,3 处引擎对齐修复)
+
+批次号:顺延批87(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:COMPLETED_FEATURES.md 下一步计划·MVP 完善首项——"测试所有功能 +
+修复发现的问题",对照「已完成功能」17 项逐项功能验证,发现问题顺手修并补
+回归用例。
+
+口径假设(非交互注明):派发文本中"vitest 与 @vscode/test-electron 双层"
+为陈旧表述——@vscode/test-electron 层已在重设计阶段4移除,现行双层为
+vitest 功能层 + mocha 编译产物烟测层(vitest.config.ts 注与批56/58 注),
+本次按现行架构执行;"自动化用例优先补进双层"即 vitest 层。
+
+17 项逐项功能验证(判据:automation 层 906 用例全绿;清单≡COMPLETED_FEATURES.md):
+
+| # | 功能 | 覆盖测试(tests/) | 判定 |
+|---|------|--------------------|------|
+| 1 | 语法高亮 | tmLanguage(批88 新建,16 用例) | 本批收口(原唯一零覆盖项) |
+| 2 | 智能提示 | languageProviders + Branches/Gaps/Internals(4 文件) | 已覆盖 |
+| 3 | 代码片段 | snippets | 已覆盖 |
+| 4 | 悬停文档 | languageProviders / languageProvidersInternals | 已覆盖 |
+| 5 | 跳转定义 | definitionSemantics(×4)/ definitionWorkspace(×5)/ pythonLanguageUtils | 已覆盖 |
+| 6 | 语法检查 | languageProviders(诊断用例) | 已覆盖 |
+| 7 | 实体浏览器 | explorerProviders + Branches/Gaps + explorerTreeDeep(4 文件) | 已覆盖 |
+| 8 | 钩子系统 | hooks | 已覆盖 |
+| 9 | 热更新支持 | hooks + serverCommandTarget + serverManager 族 | 已覆盖 |
+| 10 | 服务器管理 | serverManager + Gaps/Processes/Runner + serverCommandTarget(5 文件) | 已覆盖 |
+| 11 | 日志查看集成 | logCollector(×2)/ logParser / logWebView(×4) | 已覆盖 |
+| 12 | Python 调试支持 | debugConfig + Attach/Branches/Watcher(4 文件) | 已覆盖 |
+| 13 | 监控面板 | monitoringCollector(×4)/ monitoringPanel / monitoringWebView(×3) | 已覆盖 |
+| 14 | Python↔Def 双向跳转 | definitionSemantics 族 + pythonLanguageUtils + entityMapping 族(含 Fallback/Manager) | 已覆盖 |
+| 15 | 实体依赖关系图 | entityDependency + Analyzer/Branches/Gaps/Panel/WebView(6 文件) | 已覆盖 |
+| 16 | 代码生成器 | codeGenerator + Branches/Files/Gaps + databaseSchema(×4)(8 文件) | 已覆盖 |
+| 17 | 重构支持 | defRenamer + Branches + definitionWorkspace 族 | 已覆盖 |
+
+无法自动化项:无——17 项全部自动化覆盖;socket 类经由 tests/sim 仿真器
+(端口动态分配),引擎条件用例经 KBENGINE_ROOT 开关双层口径各计一次。
+
+发现的问题(3 类,均修并带回归锁):
+
+1. **语法高亮资产零自动化覆盖(缺口,17 项中唯一)**:syntaxes/
+   kbengine.tmLanguage.json 此前没有任何测试。新建 tests/tmLanguage.test.ts
+   16 用例,三层验证——资产自洽(package.json 贡献↔文件一一对应、
+   language-configuration.json 存在且可解析、22+ 处 #include 引用完整性、
+   全部 49 处 match/begin/end 正则可编译);源码对齐(类型/Flags/DetailLevel
+   清单 ≡ kbengineMetadata 注册表集合,注册表另由 kbengineMetadata.test.ts
+   在引擎在位时对 datatypes.cpp/datatype.cpp/common.cpp 逐名锁定,传递得到
+   语法≡引擎);功能验证(vscode-textmate 9 + vscode-oniguruma 真实 WASM
+   分词,按构造断言 scope,含跨行 ruleStack 连续性与"引擎未注册名单不得
+   高亮"负向锁)。
+
+2. **tmLanguage 与引擎注册表不对齐(缺陷,5 处修正)**:
+   - UNICODE 整体无高亮:分组正则只写 `(STRING)` 漏并 UNICODE → 补为
+     `(STRING|UNICODE)`,带回归锁(修复前整体缺失)。
+   - 5 个引擎未注册类型名被高亮:BOOL/BOOLEAN/FIXED_ARRAY/TUPLE/MAP 不在
+     引擎真值(datatypes.cpp 21 个 addDataType + datatype.h ARRAY/
+     FIXED_DICT 特判 = 23 名)→ 整块删除;容器标签位 `<TUPLE>` 同步删除,
+     幻影 `<TUPLE>` 标签仍由 entity-entry 排除表路由到通用标签规则兜底。
+   - 2 个引擎未注册旗标被高亮:INSTALL_ALWAYS/FLAG_DESTROY 不在 common.cpp
+     引擎旗标串 → 删除。
+   - 负向锁:引擎未注册 5 类型 + 2 旗标逐名断言不得得到 kbengine scope。
+
+3. **依赖治理(顺手修)**:新增 devDeps vscode-textmate ^9.3.2 /
+   vscode-oniguruma ^2.0.1 时 pnpm audit 报 3 条新 advisory——定位为
+   brace-expansion 新披露公告(批81 钉死的 1.1.18 之后发布,公告要求
+   ≥1.1.21),与本批新增包无关(dev-only,--prod 审计保持 0)→
+   pnpm.overrides 提到 1.1.21,两审计归 0。
+
+门禁:pnpm lint EXIT=0;npx vitest run 75 文件 906 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 75 文件 897 用例全绿(−9 引擎条件用例);
+pnpm test EXIT=0(vitest 906 + 编译 + mocha 烟测 11 passing);覆盖率重测
+四指标 100% 维持,分母无变化(4798/2692/838/4689,语法 JSON 与测试不触
+src),25 src 文件 0 例非 100;coverage/coverage-summary.json 同步重测落盘
+(gitignored,状态以台账为准)。
+
+记账:用例 890→906(+16,引擎在位口径;关引擎 881→897)。测试文件 74→75。
+无 tag、无 release、无 force push。COMPLETED_FEATURES.md 同步勾选
+"测试所有功能""修复发现的问题"并更正陈旧的 @vscode/test-electron 双层表述。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
@@ -2253,3 +2332,8 @@ KBENGINE_ROOT=off npx vitest run 74 文件 881 用例全绿;pnpm test EXIT=0
   命中、停前缀吐越界根名;`entityMapping.ts` 的 self 调用列计算同病
   (self.e/self.self/self.ef 跳转列错位)→ 两处改后缀/前缀算术,由回归锁
   双向验证(批86 变异抽检 M7 发现,批87 修复)。
+- `syntaxes/kbengine.tmLanguage.json` 与引擎类型/旗标注册表不对齐:UNICODE
+  整体无高亮(`(STRING)` 漏并),BOOL/BOOLEAN/FIXED_ARRAY/TUPLE/MAP 5 个引擎
+  未注册类型名与 INSTALL_ALWAYS/FLAG_DESTROY 2 个未注册旗标被错误高亮 → 按
+  引擎真值修正清单,tests/tmLanguage.test.ts 三层锁定含逐名负向锁(批88
+  逐项功能验证发现)。
