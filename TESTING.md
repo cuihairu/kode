@@ -1957,6 +1957,77 @@ EXIT=0(vitest + 编译 + mocha 烟测 11 passing)。
 剩余覆盖率动作(批83 后):**无**——三轮变异累计 24 施 19 杀 5 存活
 全收口;后续轮次仅在新增源码或按需抽检时跟进。
 
+## 批84:变异抽检第四轮(9 施 6 杀 3 存活,2 真缺口收口 + 1 语义等价,+3 用例)
+
+批次号:批82/批83 已被并发会话占用并入库(`5c8311f`、`962ac94`),本批
+顺延为批84(仓库既有惯例,非交互假设注明)。并发会话的三个测试文件在本批
+执行期间已自行修复并提交,本批未纳入、未改写其任何内容。
+
+前提核实(批80/83 口径):全量覆盖 25 个非测试源文件四指标 100%
+(4798/4798、2692/2692、838/838、4689/4689),报告条目 25 = 25 无隐形模块;
+逐文件行覆盖率最低者即 100%,零文件 <100% —— 「挑行覆盖率最低或 0% 的
+非生成源文件补单测」无对象可施,按协议转变异抽检。
+
+第四轮 9 个语义变异(选样避开批78/79/83 已抽模块,覆盖 defParser/
+defRenamer/definitionWorkspace/definitionSemantics/entityMapping/
+entityDependencyWebView/pythonLanguageUtils):
+
+- 6 杀:M1 defParser `hasTruthyChildTag` 真值表删 'yes'(definitionSemantics
+  .test.ts 的 truthy 拼写例,定向面即杀)、M5 entityMapping
+  `scoreMethodDefinition` 的 componentSlotName 权重 30→5
+  (entityMappingBranches.test.ts)、M6 entityDependencyWebView Cell 类型
+  emoji 🟢→🔵(entityDependencyWebView.test.ts + entityDependencyPanel
+  .test.ts)、M7 pythonLanguageUtils `self.` 链式访问改为单段
+  (pythonLanguageUtils.test.ts)、M8 definitionWorkspace implementedBy
+  模块名点号转斜杠反向(definitionWorkspace.test.ts + ...Branches.test.ts)、
+  M9 definitionSemantics 缓存键丢弃 allowComponents 维度(新增护栏击杀,
+  见下)。
+- 2 存活(真缺口,已收口):
+  - M2 defRenamer `isIdentifierChar` 的标识符字符类剔除 `_`——既有 fixture
+    只有 hp/mp/move 这类无下划线短名,词区间在下划线处截断后与元素名不等,
+    蛇形符号(`max_hp`)的重命名解析**直接返回 null**(功能整体失效)却
+    四层全不可见。收口:新增「snake_case 符号名整体成一个词…」把光标放在
+    下划线**之后**,锁整名解析 + 开/闭两处编辑切名 + 词尾退化位。
+  - M3 definitionWorkspace `normalizeXmlText` 空白折叠量词 `\s+`→`\s`——
+    既有 rawValue 断言全是单空格串('a < b'/'UINT16'/FIXED_DICT),量词漂移
+    后 rawValue 原样保留多空格,四层不可见。收口:新增 fixture `SPACED`
+    (行内三连空)与 `MULTILINE`(缩进换行跨行文本),锁 rawValue /
+    aliasType / structure.rawValue 三处折成单空格。
+- 1 存活(语义等价,**非缺口**,如实登记不补用例):M4 definitionSemantics
+  缓存键标签 `'components'` / `'plain'` 互换——`resolvedCache` 是实例私有
+  Map,键仅在进程内做 (category,name,allowComponents)→键 的一一映射,标签
+  文本无任何外部可观测面(不落日志、不序列化、不跨实例共享),互换后仍是
+  双射,原理上不存在能杀死它的用例。变异态下全量 vitest + 编译 + mocha 全绿
+  即「无差异」的实证。**但**顺着它发现一处相邻真实隐患:既有两例
+  (component-inclusive / component-free)各自新建 loader,只锁单模式结果,
+  未锁「同一 loader 上两模式的缓存键判别」。收口:新增「keeps
+  component-inclusive and component-free results in separate cache
+  entries」在同一 loader 上双向互查,并用 M9(键退化为 `category:name`)
+  验证该护栏精确击杀(恰挂新用例,其余用例不受扰)。
+
+变异复验:M2/M3 重施后均被新用例击杀(各恰挂对应新用例)。累计变异抽检
+33 施 25 杀 8 存活,其中真缺口 7 个全部收口,语义等价存活 1 个(M4)。
+
+执行事故与归因更正(如实记):M2/M3 首轮曾被判「全量击杀」,复核日志形态
+发现那两条 `FAIL tests/databaseSchema.test.ts [ tests/databaseSchema.test.ts ]`
+**没有 AssertionError**——是并发会话当时未完成版本里 `await` 出现在非
+async 回调的语法错误导致的**收集错误**,恰好把全量回退跑红,归因无效。
+在干净树重跑后二者双双存活,如实改判为真缺口并收口。教训入账:变异回退
+的「击杀」必须审计 FAIL 行形态(收集错误 `FAIL … [ … ]` vs 断言失败
+`FAIL … > 用例名` + AssertionError),二者不可混记——与批79 的 mocha/vitest
+层归因事故同类。
+
+记账:用例 881→884(引擎在位口径;关引擎 872→875),净 +3;覆盖率重测四指标
+维持 100%,分母无变化——行为锁定增量。coverage/ 已 gitignored 不入库。
+
+门禁:pnpm lint EXIT=0;npx vitest run 74 文件 884 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 74 文件 875 用例全绿;pnpm test EXIT=0
+(vitest 884 + 编译 + mocha 烟测 11 passing);覆盖率门禁四指标 100%。
+无 tag、无 release、无 force push。
+
+剩余覆盖率动作(批84 后):**无**——台账 100% + 忽略区间审计零过期(批80),
+变异抽检四轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/

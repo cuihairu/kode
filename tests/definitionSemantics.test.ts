@@ -243,6 +243,28 @@ describe('DefinitionSemanticsLoader resolution across inheritance', () => {
     expect(hero!.components[0].resolved!.effectiveProperties[0].name).toBe('regen');
   });
 
+  // 批84 变异抽检前向护栏:两种解析模式在同一 loader 上必须各占一个缓存条目。
+  // 既有两例各自新建 loader,只锁「单模式结果」,未锁「同实例键判别」——若缓存键
+  // 丢掉 allowComponents 维度(键退化为 category:name),先 true 后 false 的查询
+  // 会命中带 components 的旧条目,组件槽凭空回流。本例在**同一 loader** 上先后
+  // 查两种模式(两个方向),把该判别性锁成可观测行为。
+  it('keeps component-inclusive and component-free results in separate cache entries', () => {
+    const inclusiveFirst = createDefinitionSemanticsLoader(root)!;
+    const withComponents = inclusiveFirst.loadResolved('Hero', 'entity');
+    const withoutComponents = inclusiveFirst.loadResolved('Hero', 'entity', false);
+
+    expect(withComponents!.components).toHaveLength(1);
+    expect(withoutComponents!.components).toHaveLength(0);
+
+    // 反向:先组件自由模式入缓存,再问含组件模式,同样不得串味
+    const plainFirst = createDefinitionSemanticsLoader(root)!;
+    const plainResult = plainFirst.loadResolved('Hero', 'entity', false);
+    const inclusiveResult = plainFirst.loadResolved('Hero', 'entity');
+
+    expect(plainResult!.components).toHaveLength(0);
+    expect(inclusiveResult!.components).toHaveLength(1);
+  });
+
   it('supports component-free resolution mode', () => {
     const loader = createDefinitionSemanticsLoader(root)!;
     const hero = loader.loadResolved('Hero', 'entity', false);

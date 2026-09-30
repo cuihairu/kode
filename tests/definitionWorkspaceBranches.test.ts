@@ -39,6 +39,12 @@ beforeAll(() => {
     '    <Type>UINT8</Type>',
     '    <implementedBy>a.b</implementedBy>',
     '  </DOTTED_OK>',
+    // 批84 变异抽检收口(M3)用 fixture:rawValue 内含连续空白/跨行文本
+    '  <SPACED>a   b</SPACED>',
+    '  <MULTILINE>',
+    '    alpha',
+    '    beta',
+    '  </MULTILINE>',
     '</root>'
   ].join('\n'));
   // 正对照用:user_type 根下仅有 a.py,a/b.py 不存在
@@ -64,6 +70,26 @@ describe('extractCustomTypeRawValue ALIAS sentinel', () => {
     expect(ok?.rawValue).toBe('<Type>UINT8</Type>');
     // aliasType 只在 rawValue 上取裸标识符前缀,'<' 开头无匹配归一 'ALIAS'
     expect(ok?.aliasType).toBe('ALIAS');
+  });
+});
+
+describe('normalizeXmlText 连续空白折叠', () => {
+  // 批84 变异抽检收口(M3):\s+ 必须把连续空白(含缩进换行)折成单空格。既有断言的
+  // rawValue 全是单空格串('a < b'/'UINT16'/FIXED_DICT),量词从 \s+ 漂成 \s 后
+  // rawValue 原样保留多空格,四层皆不可见。SPACED 锁行内连空,MULTILINE 锁
+  // 缩进换行折叠,并连带锁 rawValue 上的 aliasType 取值。
+  it('collapses whitespace runs and indentation to single spaces', () => {
+    const infos = getCustomTypeInfos(root);
+
+    const spaced = infos.find(info => info.name === 'SPACED');
+    expect(spaced?.rawValue).toBe('a b');
+    expect(spaced?.aliasType).toBe('a');
+    expect(spaced?.structure.rawValue).toBe('a b');
+
+    const multiline = infos.find(info => info.name === 'MULTILINE');
+    expect(multiline?.rawValue).toBe('alpha beta');
+    expect(multiline?.aliasType).toBe('alpha');
+    expect(multiline?.structure.rawValue).toBe('alpha beta');
   });
 });
 

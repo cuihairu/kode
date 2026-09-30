@@ -284,6 +284,43 @@ describe('resolveRenameSymbolAtOffset 符号解析', () => {
     expect(symbol!.wordStart).toBe(occurrences(HERO_DEF, '</hp>')[1] + 2);
   });
 
+  // 批84 变异抽检收口(M2):标识符字符类必须含下划线。既有 fixture 只有 hp/mp/
+  // move 这类无下划线短名,isIdentifierChar 去掉 '_' 后词区间会在下划线处截断成
+  // 'hp',与元素名 'max_hp' 不等 → 解析直接返回 null,蛇形符号的重命名功能整体
+  // 失效,而定向面/全量/编译/mocha 四层皆不可见。本例把光标放在下划线**之后**,
+  // 强制词区间跨越 '_',并锁定整名编辑与词尾退化位。
+  it('snake_case 符号名整体成一个词,光标落在下划线之后同样命中', () => {
+    const snakeDef = [
+      '<root>',
+      '  <Properties>',
+      '    <max_hp> <Type> UINT32 </Type> </max_hp>',
+      '  </Properties>',
+      '</root>',
+      ''
+    ].join('\n');
+    const openTag = snakeDef.indexOf('<max_hp>');
+
+    const symbol = resolveRenameSymbolAtOffset(snakeDef, openTag + 1 + 'max_'.length);
+
+    expect(symbol).toEqual({
+      kind: 'property',
+      name: 'max_hp',
+      section: null,
+      wordStart: openTag + 1,
+      wordEnd: openTag + 1 + 'max_hp'.length
+    });
+    expect(snakeDef.slice(symbol!.wordStart, symbol!.wordEnd)).toBe('max_hp');
+
+    // 词区间覆盖整名 ⇒ 开/闭两处编辑都按整名切出
+    const edits = collectRenameEditsInText(snakeDef, symbol!);
+    expect(edits.map(edit => snakeDef.slice(edit.start, edit.end))).toEqual(['max_hp', 'max_hp']);
+
+    // 词尾右侧一格(紧贴 '>')仍算命中该词
+    expect(
+      resolveRenameSymbolAtOffset(snakeDef, openTag + 1 + 'max_hp'.length)?.name
+    ).toBe('max_hp');
+  });
+
   it('方法名解析为 method 符号并携带所属段', () => {
     const symbol = resolveRenameSymbolAtOffset(HERO_DEF, cursorAt(HERO_DEF, '<move>'));
     expect(symbol?.kind).toBe('method');
