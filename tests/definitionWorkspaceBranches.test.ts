@@ -117,3 +117,21 @@ describe('findCustomTypePythonFileByImplementation leading-dot module', () => {
     expect(infos.find(info => info.name === 'DOTED')?.pythonFilePath).toBeUndefined();
   });
 });
+
+describe('getCustomTypeInfos 名序锁定', () => {
+  // 批86 变异抽检补锁(M3):typeNodes 的 localeCompare 升序比较器此前无断言
+  // (既有用例全部 find()/按名取值,比较器反转或删除 sort 在其下全量不可见)。
+  // fixture 文档序 ALONE→OK→LT→DOTED→DOTTED_OK→SPACED→MULTILINE 并非字典序,
+  // 升序断言同时杀"比较器反转"与"删除 sort"两类变异。
+  it('sorts custom type names with localeCompare ascending order', () => {
+    const docOrder = ['ALONE', 'OK', 'LT', 'DOTED', 'DOTTED_OK', 'SPACED', 'MULTILINE'];
+    const infos = getCustomTypeInfos(root);
+
+    expect(infos.map(info => info.name)).toEqual(
+      [...docOrder].sort((left, right) => left.localeCompare(right))
+    );
+    // 非空锁证明:fixture 文档序本身不是字典序。一旦 fixture 调整成字典序,
+    // 上行断言对"删除 sort"失效,本行先红提示重新制造文档序/字典序差异。
+    expect(docOrder).not.toEqual([...docOrder].sort((left, right) => left.localeCompare(right)));
+  });
+});

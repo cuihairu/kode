@@ -437,3 +437,95 @@ describe('EntityDependencyWebView.dispose', () => {
     expect(panel.disposed).toBe(true);
   });
 });
+
+describe('webview 内联脚本 buildExportData 分支', () => {
+  // 批86 变异抽检补锁(M8):`if (format === 'svg')` 位于内联 webview 脚本模板
+  // 字符串内,面板侧既有用例只覆盖 !svg 早退与握手消息,svg 命中后的序列化
+  // 回包分支无执行面(比较器翻转后 svg 落进 png 影像管线,回包依赖
+  // image.onload,无 DOM 的装置下静默全绿)。此处抽取脚本正文在 Node 内用假
+  // DOM 元素执行,直接驱动 beginExport 消息走真实分支。
+  const runWebviewScript = (html: string): {
+    posted: Array<Record<string, unknown>>;
+    dispatch: (data: Record<string, unknown>) => void;
+  } => {
+    const marker = '<script>';
+    const start = html.indexOf(marker);
+    if (start < 0) {
+      throw new Error('webview html 缺少内联 <script> 段');
+    }
+    const body = html.slice(start + marker.length, html.indexOf('</script>', start));
+
+    const posted: Array<Record<string, unknown>> = [];
+    let onMessage: ((event: { data: Record<string, unknown> }) => void) | undefined;
+
+    // 假 svg 命中 querySelector;png 影像管线(Blob→Image→canvas)在假件下
+    // 永不触发 image.onload,因此 png 臂不产生同步 exportData 回包。
+    const svgStub = {
+      getBoundingClientRect: () => ({ width: 1200, height: 800 }),
+      getAttribute: () => null
+    };
+    class ImageStub {
+      src = '';
+    }
+
+    const load = new Function(
+      'acquireVsCodeApi', 'mermaid', 'window', 'document',
+      'XMLSerializer', 'Blob', 'URL', 'Image',
+      body
+    );
+    load(
+      () => ({
+        postMessage: (message: Record<string, unknown>) => {
+          posted.push(message);
+        }
+      }),
+      { initialize: () => undefined },
+      {
+        addEventListener: (type: string, listener: (event: { data: Record<string, unknown> }) => void) => {
+          if (type === 'message') {
+            onMessage = listener;
+          }
+        }
+      },
+      { querySelector: () => svgStub },
+      class XMLSerializerStub {
+        serializeToString(): string {
+          return '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+        }
+      },
+      class BlobStub {},
+      { createObjectURL: () => 'blob:stub', revokeObjectURL: () => undefined },
+      ImageStub
+    );
+
+    const handler = onMessage;
+    if (!handler) {
+      throw new Error('webview 脚本未注册 message 监听');
+    }
+    return { posted, dispatch: data => handler({ data }) };
+  };
+
+  it('serializes the svg element and posts exportData synchronously', async () => {
+    const panel = await show();
+    const { posted, dispatch } = runWebviewScript(panel.webview.html);
+
+    dispatch({ command: 'beginExport', format: 'svg' });
+
+    expect(posted).toContainEqual({
+      command: 'exportData',
+      format: 'svg',
+      data: '<svg xmlns="http://www.w3.org/2000/svg"></svg>'
+    });
+  });
+
+  it('keeps png export on the async image pipeline without a synchronous reply', async () => {
+    const panel = await show();
+    const { posted, dispatch } = runWebviewScript(panel.webview.html);
+
+    dispatch({ command: 'beginExport', format: 'png' });
+
+    // png 臂依赖 image.onload 异步回包;假 Image 不解码图片,故此装置下
+    // 不产生同步 exportData —— 与 svg 臂的行为差异即为分支锁。
+    expect(posted).toEqual([]);
+  });
+});

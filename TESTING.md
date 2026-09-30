@@ -2107,6 +2107,75 @@ KBENGINE_ROOT=off npx vitest run 74 文件 876 用例全绿;pnpm test EXIT=0
 剩余覆盖率动作(批85 后):**无**——台账 100% + 忽略区间审计零过期(批80
 口径复核),变异抽检五轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
 
+## 批86:变异抽检第六轮(8 施 4 杀 4 存活,2 补锁击杀 + 1 语义等价 + 1 反向发现收口,+3 用例)
+
+批次号:派发任务为批84,但 `99f4b9d`(批84)与 `9f63067`(批85)均已入库,
+写入前 `grep '^## 批'` 复核后本批顺延为批86(仓库既有惯例,非交互假设注明)。
+
+前提复测:全量 `npx vitest run --coverage` 74 文件 888 用例全绿,覆盖率四
+指标 100% 维持(stmts 4798/4798、branches 2692/2692、funcs 838/838、lines
+4689/4689;coverage-summary.json 25 文件 0 例非 100);istanbul 忽略台账
+17 文件/64 start/64 stop 与批80 审计一致、无过期区间。无行覆盖率缺口,按
+既定方法转变异抽检第六轮:换前几轮未抽过的源文件与算子(信号常量、正则
+字符类、排序比较器、归一化移除、类型守卫翻转、查找语义、模板内分支翻转)。
+
+抽检结果(8 施 4 杀 4 存活,存活全部收口,+3 用例):
+
+| # | 源文件 | 变异算子 | 结果(击杀用例/收口口径) |
+|---|--------|----------|--------------------------|
+| M1 | src/serverManager.ts | 信号常量 SIGTERM→SIGINT | 杀:serverManagerProcesses.test.ts(1 failed) |
+| M2 | src/defRenamer.ts | 正则字符类删 `*` | 存活→语义等价/防御性不可达登记 |
+| M3 | src/definitionWorkspace.ts | 排序比较器反转(localeCompare 反向) | 存活→补锁击杀:+1 用例(复施确认 1 failed) |
+| M4 | src/logWebView.ts | 归一化移除(删 keyword 侧 toLowerCase) | 杀:logWebView.test.ts(1 failed) |
+| M5 | src/debugConfig.ts | 分支翻转 `!==`→`===`(继续附加) | 杀:debugConfigAttach + debugConfigBranches(6 failed) |
+| M6 | src/serverCommandTarget.ts | 类型守卫翻转 `===`→`!==` | 杀:serverCommandTarget.test.ts(2 failed) |
+| M7 | src/pythonLanguageUtils.ts | 查找语义 indexOf→lastIndexOf | 存活→反向发现登记(不补测) |
+| M8 | src/entityDependencyWebView.ts | 内联脚本分支翻转 `format === 'svg'`→`!==` | 存活→补锁击杀:+2 用例(复施确认 2 failed) |
+
+存活处置明细:
+
+- M3(真缺口,收口):既有用例全部 find()/按名取值,比较器反转与删除 sort
+  在其下均不可见。新测断言 getCustomTypeInfos(root) 名序等于 fixture 文档
+  序的 localeCompare 升序,并自证非空锁(fixture 文档序 ALONE→OK→LT→
+  DOTED→DOTTED_OK→SPACED→MULTILINE 非字典序,一旦调成字典序该行先红提
+  示)。复施变异恰被新测击杀(1 failed | 4 passed)。
+- M8(真缺口,收口):`if (format === 'svg')` 位于内联 webview 脚本模板字
+  符串内,面板侧既有用例只覆盖 !svg 早退与握手消息,svg 命中后的序列化回包
+  分支无执行面(翻转后 svg 落进 png 影像管线,回包依赖 image.onload,无
+  DOM 装置下静默)。新测抽取脚本正文在 Node 内以假 DOM 执行:svg 臂同步
+  回包 exportData(序列化串断言),png 臂不同步回包(假 Image 不触发
+  onload)。复施变异双测击杀(2 failed | 19 passed)。
+- M2(语义等价/防御性不可达):escapeRegExp 在 defRenamer 仅用于构造标签
+  起始正则(`^<\s*/?\s*${escapeRegExp(element.name)}\b`,defRenamer.ts:140),
+  而 element.name 源自 defParser tokenizeXml 的标签名类
+  `[A-Za-z_][A-Za-z0-9_]*`,与正则元字符不相交,`*` 永不可达、无可观察面,
+  无诚实用例可杀(entityMapping 侧同名导出函数已有独立元字符测试,不构成
+  本处反证)。
+- M7(反向发现,不补测):`match.index + fullMatch.indexOf(accessPath)` 改
+  lastIndexOf 后四点实测全对,原码两点有缺陷——`('self.e',5)` 返回 null
+  漏掉真实命中而 `('self.ab',5)` 命中;`('self.e',1)` 返回越界根名 'e'
+  而 `('self.ab',1)` 返回 null,同一相对位置行为不一致。补"杀变异"的断言
+  必然打红原码,属产品缺陷修复范畴,超本批范围,如实登记不补测。
+
+全量存活复验口径:4 个存活在补锁前均经静树全量复跑确认(M2/M3 基线 881、
+M7/M8 基线 884;运行中 2s 轮询 git status 防并行会话污染,前后快照比对一
+致),排除并行会话改动导致的假击杀。
+
+记账:用例 885→888(引擎在位口径;关引擎 876→879),净 +3(M3 新增 1 个
+it、M8 新增 2 个 it);覆盖率重测四指标维持 100%,分母无变化
+(4798/2692/838/4689)。coverage/coverage-summary.json 已同步重测落盘,该
+目录 gitignored 不入库,状态以本台账为准。累计变异抽检 46 施 32 杀 14 存
+活,其中真缺口 11 个全部收口,语义等价存活 2 个(M4 批84、M2 本批),反向
+发现 1 个(M7 本批,14 = 11 + 2 + 1)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 74 文件 888 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 74 文件 879 用例全绿;pnpm test EXIT=0
+(vitest 888 + 编译 + mocha 烟测 11 passing);覆盖率门禁四指标 100%。
+无 tag、无 release、无 force push。
+
+剩余覆盖率动作(批86 后):**无**——台账 100% + 忽略区间审计零过期(批80
+口径复核),变异抽检六轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
