@@ -170,4 +170,34 @@ describe('MonitoringCollector lifecycle guards', () => {
     expect((trimmed[0] as { tick: number }).tick).toBe(2);
     expect((trimmed[299] as { component?: string }).component).toBe('baseapp0');
   }, 8000);
+
+  it('trims per-component history at the exact 301 boundary', async () => {
+    // 批85 变异收口(M1):既有 300 截断例只探 302(条件 >300 与 >301 双双触发),
+    // 环形缓冲上沿阈值 300→301 漂移全量不可见。本例预置 300 条假历史 + 1 条
+    // 新采集 = 301,恰落 (300,301] 区间:原实现 301>300 修剪至 300(逐出 tick 0),
+    // 变异体 301>301 为假保留 301 条,toHaveLength(300) 精确击杀。
+    const watcher = await startWatcher({
+      '': { load: 1 },
+      stats: { runningTime: 1 }
+    });
+    const machine = await startMachine([
+      makeSimComponentInfo({
+        componentType: 6,
+        componentID: 911n,
+        pid: 4313,
+        intport: watcher.port
+      })
+    ]);
+
+    const collector = makeCollector(machine);
+    const history = internals(collector).metricsHistory;
+    history.set('baseapp0', Array.from({ length: 300 }, (_, index) => ({ tick: index })));
+
+    await collector.refreshNow();
+
+    const boundary = internals(collector).metricsHistory.get('baseapp0');
+    expect(boundary).toHaveLength(300);
+    expect((boundary[0] as { tick: number }).tick).toBe(1);
+    expect((boundary[299] as { component?: string }).component).toBe('baseapp0');
+  }, 8000);
 });

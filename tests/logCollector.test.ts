@@ -106,6 +106,11 @@ describe('KBEngineLogCollector buffer and queries', () => {
     expect(collector.searchLogs('warn')).toEqual([3].map(() => collector.getLogEntries()[2]));
     expect(collector.searchLogs('fail', true).map(e => e.id)).toEqual([2]);
     expect(collector.searchLogs('created|backup', true).map(e => e.id)).toEqual([1, 4]);
+    // 批85 变异收口(M3):正则分支的大小写不敏感('i' 标志)此前无断言——既有
+    // 'fail' 全小写探针在 'g' 变异下同样命中,'i'→'g' 全量不可见。大写正则探针
+    // 锁死大小写不敏感:原实现命中,变异体返回空列表。
+    expect(collector.searchLogs('FAILED', true).map(e => e.id)).toEqual([2]);
+    expect(collector.searchLogs('CREATED|BACKUP', true).map(e => e.id)).toEqual([1, 4]);
     // 非法正则:catch 分支返回空列表而非抛出
     expect(collector.searchLogs('[invalid', true)).toEqual([]);
   });

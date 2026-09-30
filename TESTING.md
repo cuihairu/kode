@@ -2028,6 +2028,69 @@ KBENGINE_ROOT=off npx vitest run 74 文件 875 用例全绿;pnpm test EXIT=0
 剩余覆盖率动作(批84 后):**无**——台账 100% + 忽略区间审计零过期(批80),
 变异抽检四轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
 
+## 批85:变异抽检第五轮(5 施 3 杀 2 存活,2 真缺口收口,+1 用例)
+
+批次号:派发任务为批82,但 `5c8311f`(批82)、`962ac94`(批83)、
+`99f4b9d`(批84)均已入库,本批顺延为批85(仓库既有惯例,非交互假设注明)。
+
+前提核实(批80/83/84 口径):全量覆盖 25 个非测试源文件四指标 100%
+(4798/4798、2692/2692、838/838、4689/4689),报告条目 25 = 25 无隐形模块;
+逐文件行覆盖率最低者即 100%,零文件 0% 或 <100% —— 「挑行覆盖率最低或
+0% 的非生成源文件补单测」无对象可施,按协议转变异抽检。忽略区间台账
+64 对 start/stop、17 文件,逐文件计数与批80 基线完全一致
+(languageProviders 15、definitionWorkspace 11、entityMapping 7、
+databaseSchema 5、entityDependency 4、defParser 4、explorerProviders 3、
+monitoringWebView/definitionSemantics/defRenamer/debugConfig/
+codeGenerator 各 2、pythonLanguageUtils/logParser/kbengineProtocol/
+extension/entityDependencyWebView 各 1),覆盖率总数亦与基线一致——无过期
+忽略,台账诚实。
+
+第五轮 5 个语义变异(选样避开批78/79/83/84 已抽模块,覆盖
+monitoringCollector/logCollector/codeGenerator):
+
+- 3 杀:M2 monitoringCollector `statusLevel` 三元 `info/warning` 互换
+  (monitoringCollectorBranches.test.ts 3 例,定向层击杀)、M4 logCollector
+  非正则检索丢弃关键词侧 `toLowerCase`(logCollector.test.ts 大小写探针,
+  定向层击杀)、M5 codeGenerator `resolveDefOutputPath` 的
+  `!==`→`===`(codeGenerator.test.ts 3 例 + ...Branches 1 例 + ...Files
+  1 例,定向层击杀)。
+- 2 存活(真缺口,已收口):
+  - M1 monitoringCollector 历史环形缓冲上沿 `> 300`→`> 301`——既有截断例
+    只探 302(两阈值双双触发,修枝量 `length-300` 又未被变异),301 边界无
+    探针,全量 884 绿。收口:新增「trims per-component history at the
+    exact 301 boundary」预置 300 条假历史 + 1 条新采集 = 301,原实现修剪
+    至 300(逐出 tick 0),变异体保留 301(批79 CPU 阈值锁同类边界收口)。
+  - M3 logCollector 正则检索 `new RegExp(keyword, 'i')`→`'g'`——既有例的
+    正则探针全是小写模式('fail'/'created|backup'),大小写标志漂移全量不
+    可见(非正则分支的大小写探针 M4 恰能杀死,不在同一代码面)。收口:在既
+    有用例内追加大写正则探针 `searchLogs('FAILED', true)`→[2] 与
+    `searchLogs('CREATED|BACKUP', true)`→[1, 4],原实现命中,变异体落空。
+- 变异复验:重施 M1/M3 均恰挂新用例(新边界例单挂 / 既有用例挂在新增断言
+  行 112),其余用例不受扰。
+
+执行事故与归因更正(如实记):本轮首版 harness 用 `npx … | tail` 取日志,
+`if` 拿到的是 tail 的退出码(恒 0)——M2 定向层明明 3 例失败却被误判
+「定向绿」走向全量分支, verdict 全系 bogus(批79 mocha/vitest 层归因事故
+同类管道误读)。已重写 harness v2(不管道,直取 vitest 退出码),M1/M2/M3
+全部重跑取真 verdict:M2 改判定向杀,M1/M3 确认真存活后收口。教训入账:
+harness 的通过/失败判定必须直取引擎退出码,任何管道后段都会吞码——与批84
+「收集错误 vs 断言失败」同属 verdict 形态审计。
+
+记账:用例 884→885(引擎在位口径;关引擎 875→876),净 +1(M1 新增 it 块;
+M3 为既有用例内追加断言,不增用例数);覆盖率重测四指标维持 100%,分母无
+变化(4798/2692/838/4689)——行为锁定增量。coverage/coverage-summary.json
+已同步重测,该目录 gitignored 不入库,状态以本台账记录为准(派发任务要求
+的 json 同步即此:落盘刷新 + 台账登记,不提交)。累计变异抽检 38 施 28 杀
+10 存活,其中真缺口 9 个全部收口,语义等价存活 1 个(M4,批84)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 74 文件 885 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 74 文件 876 用例全绿;pnpm test EXIT=0
+(vitest 885 + 编译 + mocha 烟测 11 passing);覆盖率门禁四指标 100%。
+无 tag、无 release、无 force push。
+
+剩余覆盖率动作(批85 后):**无**——台账 100% + 忽略区间审计零过期(批80
+口径复核),变异抽检五轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
