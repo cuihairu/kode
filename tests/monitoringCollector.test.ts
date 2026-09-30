@@ -85,6 +85,18 @@ describe('MonitoringCollector paused state and interval', () => {
     expect(collector.getRefreshInterval()).toBe(7000);
   });
 
+  it('defaults the no-arg start to the 1000ms interval without waking the loop', () => {
+    // 批83 变异抽检补锁:start 缺省参 1000 此前无断言(变异 1000→4000
+    // 全量不可见)。paused 下 start 走缺省参赋值但不起定时器/不触发真实
+    // 刷新,零副作用锁定缺省值;paused 态不被无参 start 打破。
+    collector.pause();
+    collector.start();
+
+    expect(collector.isPaused()).toBe(true);
+    expect(collector.getRefreshInterval()).toBe(1000);
+    collector.stop();
+  });
+
   it('resumes and reports unpaused state', () => {
     collector.pause();
     collector.resume();

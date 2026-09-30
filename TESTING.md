@@ -1913,6 +1913,50 @@ KBENGINE_ROOT=off npx vitest run 870 用例全绿;pnpm test EXIT=0
 
 剩余覆盖率动作(批82 后):**无**——台账 100% + 64 忽略区间审计零过期(批80) + 变异抽检三轮 16 施 13 杀 3 存活全收口(批78/79);后续覆盖率轮次仅在新增源文件或重构改动时按需跟进。
 
+## 批83:变异抽检第三轮(8 施 6 杀 2 存活,start 缺省参与 Persistent 'yes' 双锁,+2 用例)
+
+前置核实(批80 口径):全量覆盖 25 个非生成源文件四指标 100%
+(4798/4798、2692/2692、838/838、4689/4689),无 0% 或 <100% 文件;
+忽略区间台账 64 对/17 文件与批80 审计基线一致,其间无 src 改动,
+批80 全剥离扫描结论(64/64 DEAD-REAL、零过期)维持有效。批82 号已由
+上游并发会话的纯确认批次占用,本批按批次号顺延为批83(非交互假设注明)。
+
+第三轮 8 个语义变异(选样避开批78/79 已抽模块,覆盖 kbengineProtocol/
+monitoringCollector/definitionSemantics/entityMapping/defParser):
+
+- 6 杀:MACHINE_BROADCAST_PORT 20086→20087、CONSOLE_WATCHER_CB_MSG_ID
+  65502→65503(kbengineProtocol.test.ts)、refreshIntervalMs 默认
+  2000→3000(monitoringCollector.test.ts)、sameIdentity 的 sourceChain
+  分隔符 ::→##(定向面漏、全量层击杀)、DEF_METHOD_SECTIONS
+  'ClientMethods' 改名(定向面漏、全量 37 例击杀)、swapUint16 掩码
+  0xff→0xfe(kbengineProtocolSocket.test.ts)。
+- 2 存活(真缺口,均经「替换后断言 + 全量 879 绿」严谨复验):
+  M4 `start()` 缺省参 1000 无断言(→4000 全量不可见);M5
+  parseOptionalBoolean(仅 Persistent 字段走此路径)的 'yes' 拼写无
+  断言——既有 Identifier 布尔表是独立解析面(未知值回落 false,与
+  本函数回落 undefined 语义不同),删 token 全量不可见。
+- 收口(+2 真用例):monitoringCollector.test.ts「defaults the no-arg
+  start to the 1000ms interval without waking the loop」(paused 下无参
+  start 走缺省参赋值,零副作用锁 1000 与 paused 态不变);
+  definitionSemantics.test.ts「maps every Persistent spelling through
+  the optional boolean tokens」(true/1/YES→true、false/0/no→false、
+  未知→undefined,连带锁 trim+lowercase 归一)。变异复验:重施 M4/M5
+  均恰挂新用例击杀,其余用例不受扰。
+
+记账:用例 879→881(引擎在位口径;关引擎 870→872);覆盖率重测四指标
+维持 100%,分母无变化——行为锁定增量。coverage/coverage-summary.json
+已同步重测,该目录 gitignored 不入库,状态以本台账记录为准。累计变异
+抽检 24 施 19 杀 5 存活(全部收口;批82 段「三轮 16 施」系指批78/79
+两轮累计,本批起为真实第三轮)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 74 文件 881 用例全绿;
+KBENGINE_ROOT=off npx vitest run 74 文件 872 用例全绿;pnpm test
+EXIT=0(vitest + 编译 + mocha 烟测 11 passing)。
+无 tag、无 release、无 force push。
+
+剩余覆盖率动作(批83 后):**无**——三轮变异累计 24 施 19 杀 5 存活
+全收口;后续轮次仅在新增源码或按需抽检时跟进。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/

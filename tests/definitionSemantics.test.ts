@@ -474,4 +474,25 @@ describe('definition semantics corner cases and clone propagation', () => {
     );
     expect(withGoodLength.properties[0].databaseLength).toBe(128);
   });
+
+  it('maps every Persistent spelling through the optional boolean tokens', () => {
+    // 批83 变异抽检补锁:parseOptionalBoolean(仅作用于 Persistent 字段)
+    // 的 'yes' 拼写此前无断言(删 token 全量不可见)。与 Identifier 的
+    // 独立布尔解析(未知值回落 false)不同,此处未知值回落 undefined。
+    const spellings: Array<[string, boolean | undefined]> = [
+      ['true', true],
+      ['1', true],
+      ['YES', true],
+      ['false', false],
+      ['0', false],
+      ['no', false],
+      ['maybe', undefined]
+    ];
+
+    for (const [word, expected] of spellings) {
+      const content = `<root><Properties><p><Type>UINT8</Type><Persistent>${word}</Persistent></p></Properties></root>`;
+      const parsed = parseLocalDefinition(content, 'entity', 'P', '/tmp/P.def');
+      expect(parsed.properties[0].persistent, `Persistent=${word}`).toBe(expected);
+    }
+  });
 });
