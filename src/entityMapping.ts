@@ -1273,7 +1273,9 @@ function parsePythonSelfCalls(
       calls.push({
         methodName: match[1],
         line: startLine + index,
-        character: match.index + match[0].indexOf(match[1]),
+        // match[0] 恒以 'self.' 开头,名字紧跟前缀(批86 M7 同类:indexOf(name)
+        // 在 name 为 'self' 子串时命中前缀内部,self.e/self.self 列错位)
+        character: match.index + 'self.'.length,
         filePath: pythonFile
       });
     }

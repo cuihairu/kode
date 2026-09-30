@@ -31,6 +31,33 @@ describe('getPythonSelfAccessAtPosition', () => {
     expect(getPythonSelfAccessAtPosition('x = self', 0)).toBeNull();
     expect(getPythonSelfAccessAtPosition('other.value', 3)).toBeNull();
   });
+
+  it('anchors the path after the self. prefix when the name repeats inside self', () => {
+    // 批87 缺陷收口(批86 M7 反向发现):原码 fullMatch.indexOf(accessPath) 会把
+    // 'self' 内部的同形子串当路径起点——'self.e' 命中相对 1,光标停在属性 e
+    // (相对 5)漏真命中返回 null,停在 self 中段反而吐出越界根名 'e'。fullMatch
+    // 恒为 'self.'+accessPath,后缀算术修复后两侧均按真实列命中。
+    expect(getPythonSelfAccessAtPosition('self.e', 5)).toEqual({
+      rootSymbol: 'e',
+      currentSymbol: 'e',
+      fullPath: 'e'
+    });
+    expect(getPythonSelfAccessAtPosition('self.e', 1)).toBeNull();
+    expect(getPythonSelfAccessAtPosition('self.self', 6)).toEqual({
+      rootSymbol: 'self',
+      currentSymbol: 'self',
+      fullPath: 'self'
+    });
+    expect(getPythonSelfAccessAtPosition('self.self', 1)).toBeNull();
+
+    // 对照:名字与 'self' 无同形交集时原码本就正确,修复不改其行为
+    expect(getPythonSelfAccessAtPosition('self.ab', 5)).toEqual({
+      rootSymbol: 'ab',
+      currentSymbol: 'ab',
+      fullPath: 'ab'
+    });
+    expect(getPythonSelfAccessAtPosition('self.ab', 1)).toBeNull();
+  });
 });
 
 describe('getPythonSelfSymbolAtPosition', () => {

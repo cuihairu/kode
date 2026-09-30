@@ -21,7 +21,9 @@ export function getPythonSelfAccessAtPosition(
   while ((match = regex.exec(lineText)) !== null) {
     const fullMatch = match[0];
     const accessPath = match[1];
-    const pathStart = match.index + fullMatch.indexOf(accessPath);
+    // fullMatch 恒等于 'self.' + accessPath(批86 M7 反向发现:indexOf 会命中
+    // 'self' 内部同形子串,'self.e' 的 'e' 令 pathStart 越界),按后缀算术取路径起点
+    const pathStart = match.index + fullMatch.length - accessPath.length;
     const segments = accessPath.split('.');
 
     let segmentOffset = pathStart;

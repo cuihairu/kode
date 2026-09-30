@@ -2176,6 +2176,54 @@ KBENGINE_ROOT=off npx vitest run 74 文件 879 用例全绿;pnpm test EXIT=0
 剩余覆盖率动作(批86 后):**无**——台账 100% + 忽略区间审计零过期(批80
 口径复核),变异抽检六轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
 
+## 批87:定位类 indexOf 同形子串缺陷收口(2 处修复,+2 用例,批86 M7 反向发现闭环)
+
+批次号:顺延批86(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:覆盖率四指标 100%(批86 刚复测)、队列行"无",按既定规则取最靠前
+可执行未完成项——PROJECT_SUMMARY"修复发现的问题"下唯一登记在案的开放缺陷
+(批86 M7 反向发现:pythonLanguageUtils 查找语义),执行修复并补齐对应测试;
+修复中同型扫描发现 entityMapping 同病一处,一并收口(同一 indexOf 同形子串
+缺陷类,"一次只做这一件"按缺陷类为边界)。
+
+缺陷机理(两处同根):匹配串恒以 `self.` 开头、名字紧随前缀,原码却用
+`indexOf(name)` 在整段匹配串里搜名字——name 是 'self' 子串时(e/ef/self/
+s/l/f/se 等)命中前缀内部而非真实起点:
+
+- src/pythonLanguageUtils.ts `getPythonSelfAccessAtPosition`:'self.e' 命中
+  相对 1 → 光标停在属性 e(相对 5)漏真命中返回 null,停在 self 中段反而吐出
+  越界根名 'e'(批86 M7 四点实测原码 2 错 2 对)。修复:后缀算术
+  `match.index + fullMatch.length - accessPath.length`(fullMatch 恒为
+  'self.'+accessPath,后缀必为路径)。
+- src/entityMapping.ts `parsePythonSelfCalls`:'self.e(' 命中相对 1、
+  'self.self(' 相对 0、'self.ef(' 相对 2 → method 跳转列错位。修复:前缀
+  算术 `match.index + 'self.'.length`。
+
+补齐测试(+2,回归锁双向验证):
+
+- tests/pythonLanguageUtils.test.ts:同形名字两侧锁定('self.e' 光标 5 命中/
+  光标 1 归 null;'self.self' 光标 6 命中/1 归 null)+ 非同形对照('self.ab'
+  两侧行为与原码一致,证明修复只动同形输入)。
+- tests/entityMapping.test.ts:self.e/self.self/self.ef 三行调用 character
+  恒为名字列 13(与既有 notifyDeath/loadEquip 断言同基线)。
+- 双向验证:回贴原码整跑恰此 2 条红(2 failed | 28 passed),回贴修复全绿
+  ——用例锁的是缺陷行为本身,非实现细节。
+
+记账:用例 888→890(引擎在位口径;关引擎 879→881),净 +2;覆盖率重测四指标
+100% 维持,分母无变化(4798/2692/838/4689,表达式改写不增删语句),25 文件
+0 例非 100。coverage/coverage-summary.json 同步重测落盘(gitignored,状态以
+台账为准)。批86 M7 反向发现闭环:开放缺陷 1→0;累计变异 46 施 32 杀 14 存
+活不变,其中反向发现 1 个已修复收口(14 = 真缺口 11 + 语义等价 2 + 反向发现
+1 且已修复)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 74 文件 890 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 74 文件 881 用例全绿;pnpm test EXIT=0
+(vitest 890 + 编译 + mocha 烟测 11 passing);覆盖率门禁四指标 100%。
+无 tag、无 release、无 force push。
+
+剩余覆盖率动作(批87 后):**无**——台账 100% + 忽略区间审计零过期(批80
+口径),变异六轮真缺口全收口;后续轮次仅在新增源码或按需抽检时跟进。
+
 说明:
 
 - 批54(重设计阶段 3)起 extension.ts 进 vitest 覆盖率分母:activate/
@@ -2200,3 +2248,8 @@ KBENGINE_ROOT=off npx vitest run 74 文件 879 用例全绿;pnpm test EXIT=0
   `<of>` 子节点)→ snippet 改为引擎真实语法。
 - 片段选择列表与补全元数据中的 `BOOL`/`TUPLE` 在引擎类型注册表中不存在 → 全部剔除,
   并由测试锁定不得回归。
+- `pythonLanguageUtils.ts` 的 self 访问路径起点用 `fullMatch.indexOf(accessPath)`,
+  name 为 'self' 同形子串('self.e' 的 'e')时命中前缀内部 → 光标停属性漏真
+  命中、停前缀吐越界根名;`entityMapping.ts` 的 self 调用列计算同病
+  (self.e/self.self/self.ef 跳转列错位)→ 两处改后缀/前缀算术,由回归锁
+  双向验证(批86 变异抽检 M7 发现,批87 修复)。

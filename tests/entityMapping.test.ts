@@ -216,6 +216,27 @@ describe('parsePythonMethodBlocks', () => {
     ]);
   });
 
+  it('anchors self-call characters after the self. prefix for prefix-shaped names', () => {
+    // 批87 缺陷收口(批86 M7 同类扫描):match[0].indexOf(match[1]) 会把 'self'
+    // 内部同形子串当名字起点——self.e(命中相对 1)、self.self(相对 0)、
+    // self.ef(相对 2)列全部错位;名字恒紧跟 'self.' 前缀,按前缀算术定位。
+    const shaped = [
+      'class A:',
+      '    def run(self):',
+      '        self.e()',
+      '        self.self()',
+      '        self.ef()'
+    ].join('\n');
+    const blocks = parsePythonMethodBlocks(shaped, '/scripts/entity/A.py');
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].calls).toEqual([
+      { methodName: 'e', line: 3, character: 13, filePath: '/scripts/entity/A.py' },
+      { methodName: 'self', line: 4, character: 13, filePath: '/scripts/entity/A.py' },
+      { methodName: 'ef', line: 5, character: 13, filePath: '/scripts/entity/A.py' }
+    ]);
+  });
+
   it('tracks self-calls across multiple lines and skips blank lines', () => {
     const nested = [
       'class A:',
