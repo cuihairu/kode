@@ -23,6 +23,7 @@
     "node_modules",
     ".vscode-test",
     "tests",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.bench.config.ts"
   ]
 }

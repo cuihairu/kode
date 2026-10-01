@@ -197,7 +197,12 @@ kode/
       删 5 个引擎未注册类型名、删 2 个引擎未注册旗标,均带回归锁)
 - [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 906 个用例;
       原 @vscode/test-electron 层在重构阶段4已移除,批88 假设口径)
-- [ ] 优化性能
+- [x] 优化性能(批92:基准先行——tests/perf/defPerf.bench.ts 对 173.4KB
+      确定性大 .def 测解析/诊断/高亮三路径;不改变行为优化三处——语法规则
+      fixed-entity-tag 消除扫描器重建、validateDocument 单次解析、
+      computeLineStarts 原生跳转;validateDocument −46%、全文件分词 −17%,
+      行为以 tests/perfRegression.test.ts 四份 golden 摘要逐位锁定,
+      见 TESTING.md 批92)
 
 ### 发布准备
 - [x] 创建扩展图标(已由用户设计资产 resources/logo.png 满足:package.json

@@ -246,12 +246,16 @@ export function findAncestorElement(
 }
 
 function computeLineStarts(text: string): number[] {
+  // 批92 性能优化:逐字符扫描换成 indexOf 分段跳转,产出与逐字符版本
+  // 完全一致的行起点表(每处 '\n' 的下一字符偏移)。
   const lineStarts = [0];
+  let from = 0;
+  let newline = text.indexOf('\n', from);
 
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] === '\n') {
-      lineStarts.push(index + 1);
-    }
+  while (newline !== -1) {
+    lineStarts.push(newline + 1);
+    from = newline + 1;
+    newline = text.indexOf('\n', from);
   }
 
   return lineStarts;

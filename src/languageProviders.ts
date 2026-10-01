@@ -505,9 +505,13 @@ export function validateDocument(
 
   const diagnosticsList: vscode.Diagnostic[] = [];
 
-  validateScalarTagValues(document, diagnosticsList, featureConfig);
+  // 批92 性能优化:标量校验与结构校验共用同一次 parseDefAst 结果。
+  // parseDefDocument 对同一段文本是确定性的,原先两阶段各自解析一遍,
+  // 大 .def 文档上纯解析开销翻倍。
+  const ast = parseDefAst(document);
+  validateScalarTagValues(document, diagnosticsList, featureConfig, ast);
   if (featureConfig.enableStructureDiagnostics) {
-    validateDefStructure(document, diagnosticsList, featureConfig);
+    validateDefStructure(document, diagnosticsList, featureConfig, ast);
   }
 
   diagnostics.set(document.uri, diagnosticsList);
@@ -662,9 +666,9 @@ Object.assign(TAG_HOVER_DOCS, {
 function validateScalarTagValues(
   document: vscode.TextDocument,
   diagnosticsList: vscode.Diagnostic[],
-  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
+  featureConfig: ReturnType<typeof getLanguageFeatureConfig>,
+  ast: DefDocument | null
 ): void {
-  const ast = parseDefAst(document);
   if (!ast?.root) {
     return;
   }
@@ -714,9 +718,9 @@ function validateScalarTagValues(
 function validateDefStructure(
   document: vscode.TextDocument,
   diagnosticsList: vscode.Diagnostic[],
-  featureConfig: ReturnType<typeof getLanguageFeatureConfig>
+  featureConfig: ReturnType<typeof getLanguageFeatureConfig>,
+  ast: DefDocument | null
 ): void {
-  const ast = parseDefAst(document);
   const root = ast?.root;
   if (!root) {
     return;

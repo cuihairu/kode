@@ -2484,6 +2484,81 @@ root next to the workspace」一红——该检测候选第 1 顺位为
 901→921)。测试文件 76→78。COMPLETED_FEATURES.md 勾选「性能分析建议」,
 README 新增「性能分析」节。
 
+## 批92:性能基准与优化(大 .def 文件解析/诊断/高亮热点)
+
+巡检取项:COMPLETED_FEATURES「MVP 完善」最靠前未完成项「优化性能」。
+先测基准、热点定位后再做不改变行为的优化;前后数字入本节,行为以
+tests/perfRegression.test.ts 回归锁固化。
+
+基准设施(新,不入门禁):vitest.bench.config.ts(include 仅
+tests/perf/*.bench.ts,与门禁 include tests/**/*.test.ts 互不重叠;
+tsconfig exclude 同步补该文件以保 pnpm test 编译)+ tests/perf/defPerf.bench.ts
++ tests/helpers/largeDefFixture.ts。fixture 确定性生成 173.4KB(800 属性 +
+600 方法 + 每 40 属性混 1 个缺 <Type>/幻影类型样本),median 取 9 轮(2 轮
+预热),运行 `npx vitest run --config vitest.bench.config.ts`。
+
+热点定位(优化前消融与采样,临时消融脚本未入库):
+
+- 解析:vendor fast-xml-parser 占 parseDefDocument ~56%(fxp.parse 单独
+  ~48ms vs 全量 56~90ms);行为等价替换风险大,本批不动。
+- 诊断:validateDocument 的 validateScalarTagValues 与 validateDefStructure
+  各自 parseDefAst 同一文档——拆解实测「关结构诊断」57→158ms 全开差值主要
+  就是第二次纯解析。
+- 高亮:vscode-textmate 对 end 反引用规则(`(</)(\2)(>)`)逐次压栈把闭合
+  标签名解析进 end 正则源,源变化即 dispose 整个规则集缓存重建 OnigScanner。
+  实测 tokenize 全程 createOnigScanner 2610 次/~600ms(占 tokenize ~63%);
+  entity-entry 捕获全部未知标签名(800 唯一属性名 + 600 方法名,`<IsExposed>`
+  又与宿主 op* 标签交替压栈 ×600),交替即反复重建。
+
+优化(均不改变行为):
+
+- syntaxes/kbengine.tmLanguage.json 新增 `fixed-entity-tag` 规则:begin
+  `(<)(IsExposed|Index)(?=[\s>])`,name/beginCaptures/endCaptures/end/
+  patterns 逐字段复制 entity-entry 且置于其前——高频标签不再落入
+  entity-entry 的动态名交替,消除 ~1200 次/文件的扫描器重建;token 流经
+  回归锁证明逐位不变(47726 tokens,djb2 c3c0cf5f)。
+- src/languageProviders.ts:validateDocument 解析一次 AST 共享给标量与结构
+  两个校验阶段(私有函数加参;parseDefDocument 对同段文本确定性,无行为差异)。
+- src/defParser.ts:computeLineStarts 逐字符扫描改 indexOf 分段跳转,
+  产出行起点表完全一致。
+
+前后对照(median ms,9 轮取中;同机背靠背轮次):
+
+| 路径 | baseline | optimized | Δ |
+|---|---|---|---|
+| parseDefDocument | 72.2 | 74.2(复测 65.5) | ≈持平(computeLineStarts ~1ms 级,噪声内) |
+| analyzeDefDocument + 格式化 | 76.9 | 87.2(复测 85.5) | ≈持平(parse 主导,本批未动) |
+| validateDocument | 191.0 | 102.9(复测 102.7) | **−46%** |
+| tmLanguage.tokenizeDoc | 1042.2 | 869.9(复测 766.5 / 643.4) | **−17%~−38%** |
+
+环境注记:本机为多会话共享工作负载,计时波动显著(一次复测 validateDocument
+到 196.2ms/p95 1239ms,恰逢 p95 尖峰示外部负载);表中数字取自背靠背同条件
+轮次,并附两次独立复测区间。另:一并行会话曾在本文件留基准草稿(parse
+180.8 / tokenize 1512.0,与本节数字不可比——两次测量互受对方负载干扰),
+并遗留未跟踪探针 tests/perf/_probe.bench.ts;草稿已由本节替换,探针不入库。
+
+回归锁(tests/perfRegression.test.ts 新增 4 用例):优化前抓取 golden——
+大 fixture 上语法 token 流(47726 tokens,djb2 c3c0cf5f)、validateDocument
+诊断(400 条消息/区间/严重度,djb2 910801f9)、defAnalyzer 建议 + 报告
+(220 条 + 221 行报告,djb2 0fd11ac3 / 76a9465c)、解析结构摘要(节点/行表/
+根子节点)——优化后四锁全绿,任何 scope/诊断/建议漂移即红。既有
+tmLanguage 16 用例同绿。
+
+门禁:pnpm lint EXIT=0;npx vitest run 79 文件 934 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 79 文件 925 用例全绿;pnpm test EXIT=0
+(vitest 934 + 编译 + mocha 烟测 11 passing);覆盖率重测四指标 100%
+(分母 4896→4897 stmts、2736→2734 branches、855 funcs、4779→4781 lines——
+净移除两处重复 parseDefAst 调用行)。
+
+瞬态记录(批72 口径):pnpm test 首轮 serverManager 1 红(共享 TMPDIR
+检测路径被并行会话夹具短暂占住);单文件复跑绿、全量复跑 EXIT=0,环境性
+瞬态非本批引入。
+
+无 tag、无 release、无 force push。记账:用例 930→934(+4 回归锁;关引擎
+921→925)。测试文件 78→79(+tests/perfRegression.test.ts)。COMPLETED_FEATURES.md
+勾选「优化性能」。基准设施不在门禁内(bench 配置与用例同 tests/**/*.test.ts
+互不重叠)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
