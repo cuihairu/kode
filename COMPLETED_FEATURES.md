@@ -200,7 +200,8 @@ kode/
 - [ ] 优化性能
 
 ### 发布准备
-- [ ] 创建扩展图标
+- [x] 创建扩展图标(批89:assets/icon.svg + 256² PNG 纯脚本产出,
+      package.json Marketplace 图标接线,README 展示,+4 资产锁用例)
 - [ ] 准备 Marketplace 截图
 - [ ] 完善文档
 - [ ] 发布到 VSCode Marketplace

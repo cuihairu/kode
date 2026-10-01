@@ -2316,6 +2316,59 @@ src),25 src 文件 0 例非 100;coverage/coverage-summary.json 同步重测落�
 无 tag、无 release、无 force push。COMPLETED_FEATURES.md 同步勾选
 "测试所有功能""修复发现的问题"并更正陈旧的 @vscode/test-electron 双层表述。
 
+## 批89:COMPLETED_FEATURES「创建扩展图标」收口(assets/icon.svg + 256² PNG 纯脚本产出,package.json/README 接线,+4 用例)
+
+批次号:顺延批88(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:COMPLETED_FEATURES.md 下一步计划·MVP 完善"创建扩展图标"——
+17 项功能逐项验证(批88)后首个明确未完成项。
+
+假设注明(非交互):
+
+- **工具链**:rsvg-convert/inkscape/ImageMagick/cairosvg 均不在位;ffmpeg
+  在且能光栅化最小 SVG(探测 rect 256² 通过),但其解码器对渐变/描边/
+  圆角的覆盖未证实,直接采用可能产出观感偏离的 PNG。按派发预案走
+  **纯脚本生成**:scripts/generate-icon.mjs 零依赖 Node 脚本,同源几何
+  常量一次产出 SVG(矢量真源)与 PNG(自渲染:SDF 覆盖 + 3×3 超采样
+  抗锯齿 + zlib deflate + 手写 CRC32 PNG 编码);ffmpeg 仅作旁证——独立
+  光栅化 assets/icon.svg 亦得 256×256,证明 SVG 可被第三方渲染器还原。
+- **设计自拟**:K 字标 + 靛青(#6366F1→#06B6D4)竖向渐变圆角方块;
+  字形仅用圆帽描边几何、不含 `<text>` 元素,渲染与字体环境无关、输出
+  字节确定可复现。
+- **接线边界**:package.json 顶层 icon(Marketplace 图标)改指
+  assets/icon.png;活动栏 viewsContainer 图标(resources/logo.png)本批
+  不动——它是彩色 PNG 且经 mask 呈现,换几何单色 SVG 属 UI 视觉变更,
+  超出"创建扩展图标"边界,记为后续可选项。
+
+交付:
+
+- assets/icon.svg(494B)与 assets/icon.png(3331B,256×256 8-bit RGBA,
+  ≥128 达 Marketplace 底线);生成器 scripts/generate-icon.mjs 随仓提交,
+  资产可再生。
+- package.json:`"icon": "resources/logo.png"` → `"assets/icon.png"`
+  (原指向文件存在且有效,本批为换新而非修破;resources/logo.png 文件
+  保留,活动栏容器仍在用)。
+- README.md:标题下展示 assets/icon.svg。
+
+补齐测试(+4,tests/icon.test.ts,延续批88「资产必有测试」纪律):
+
+- package.json Marketplace 图标指向 assets/icon.png 且 SVG/PNG 在位;
+  活动栏容器图标文件存在锁定(本批未动,防静默破坏)。
+- PNG 结构:魔数、IHDR ≥128×128、8-bit、颜色类型 RGBA。
+- SVG 矢量真源:viewBox 256²、rx=56、linearGradient、K 三笔几何、
+  无 `<text>`(字体无关锁)。
+- 再生字节同步:测试内重跑生成器,产物与已提交资产逐字节相等——
+  脚本与资产不漂移(改常量不重产即红)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 76 文件 910 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 76 文件 901 用例全绿(−9 引擎条件用例);
+pnpm test EXIT=0(vitest 910 + 编译 + mocha 烟测 11 passing);覆盖率重测
+四指标 100% 维持,分母无变化(4798/2692/838/4689,资产与脚本不触 src);
+双审计 0(纯脚本零新依赖)。无 tag、无 release、无 force push。
+
+记账:用例 906→910(+4,引擎在位口径;关引擎 897→901)。测试文件
+75→76。COMPLETED_FEATURES.md 同步勾选「创建扩展图标」。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

@@ -1,5 +1,7 @@
 # Kode - KBEngine Development Environment
 
+![Kode 扩展图标](assets/icon.svg)
+
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg)](https://code.visualstudio.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-4.x-blue.svg)](https://www.typescriptlang.org/)
