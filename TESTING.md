@@ -2411,13 +2411,16 @@ Marketplace 安装」「搜索 `Kode`」——两类点名纠正各配负向锁�
 
 **CI**:36813241293 红因即 README 本地 SVG(vsce 打包检查)。本地 CI 等价
 复现:`pnpm run package`(vsce@3.9.1)EXIT=0,Packaged kode-0.1.0.vsix
-(139 files)——推送后 CI 复绿结果另记于本段末(见「推送后」行)。
+(139 files)——推送后 CI 结果见本段末「推送后」行。
 
 门禁:pnpm lint EXIT=0;npx vitest run 76 文件 910 用例全绿(引擎在位);
 KBENGINE_ROOT=off npx vitest run 76 文件 901 用例全绿;pnpm test EXIT=0
 (vitest 910 + 编译 + mocha 烟测 11 passing);覆盖率四指标 100% 维持,分母
 无变化(资产/README/测试不触 src)。无 tag、无 release、无 force push。
 记账:用例 910→910(旧 4 锁改写为新 4 锁,净 0)。
+
+推送后:CI/CD run 36821277566 success(1m01s,vsce 打包步过)、Docs run
+36821277533 success(37s)——CI 红点(批89 36813241293 failure)收口。
 
 ## 近期由测试发现并修复的真实缺陷
 
