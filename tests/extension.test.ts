@@ -104,7 +104,11 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
-    expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual(['kbengine']);
+    // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存
+    expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
+      'kbengine',
+      'kbengine-def-analysis'
+    ]);
 
     // 虚拟文档提供者:数据库 schema
     expect(workspaceState.contentProviders.has('kbengine-db-schema')).toBe(true);

@@ -77,6 +77,9 @@ export const window = {
       appendLine: (value: string): void => {
         channel.lines.push(`${value}\n`);
       },
+      clear: (): void => {
+        channel.lines.length = 0;
+      },
       show: (): void => undefined,
       dispose: (): void => {
         channel.disposed = true;

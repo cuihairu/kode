@@ -209,7 +209,22 @@ kode/
 
 ### 未来增强功能
 - [x] 重构支持（重命名属性/方法，自动更新所有引用）→ 已落地为 .def 面重命名（见「已完成功能 17」，Python 侧等全局引用面为后续扩展方向）
-- [ ] 性能分析建议（静态分析 .def 文件，提供优化建议）
+- [x] 性能分析建议(批91:src/defAnalyzer.ts 静态检查 + `kbengine.def.analyze`
+      命令,报告入输出面板、诊断落问题列表,+22 用例)。检查项定案(与语言侧
+      实时诊断错位,只出「优化建议」):
+      ① phantom-type——引擎未注册类型(BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY),
+      加载必失败;
+      ② missing-type——属性缺 <Type> 或值为空;
+      ③ duplicate-type-tag——同属性多个 <Type>,取值歧义的冗余定义;
+      ④ heavy-sync-broadcast——ALL_CLIENTS + 大负载类型(STRING/UNICODE/BLOB/
+      容器/PY_*/VECTOR*)对全体客户端高频同步,建议收窄旗标或降粒度;
+      ⑤ redundant-detail-level——DetailLevel 配在无客户端可见旗标的属性上,
+      纯冗余字段;
+      ⑥ invalid-identifier——属性/方法名为 Python 关键字,实体类生成失败
+      (标识符字符集由 def 标签语法保证,故仅关键字可触发);
+      ⑦ method-property-collision——方法与属性同名,Python 类中互相覆盖。
+      范围注记:重复定义等结构校验已由语言侧实时诊断覆盖,本功能不重复;
+      自定义 types.xml 类型为引擎合法扩展,故不做「未知类型」误报
 - [ ] 实体模板库（更多预设模板）
 - [ ] 代码片段生成器（自定义代码片段）
 

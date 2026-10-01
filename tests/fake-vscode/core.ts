@@ -231,6 +231,11 @@ export class DiagnosticCollection {
     return this.entries.get(uri) ?? [];
   }
 
+  // 真实 vscode.DiagnosticCollection API 面:清空所有文件的诊断
+  clear(): void {
+    this.entries.clear();
+  }
+
   dispose(): void {
     this.entries.clear();
   }

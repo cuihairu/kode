@@ -2422,6 +2422,68 @@ KBENGINE_ROOT=off npx vitest run 76 文件 901 用例全绿;pnpm test EXIT=0
 推送后:CI/CD run 36821277566 success(1m01s,vsce 打包步过)、Docs run
 36821277533 success(37s)——CI 红点(批89 36813241293 failure)收口。
 
+## 批91:COMPLETED_FEATURES「性能分析建议」收口(.def 静态分析 7 检查项 + kbengine.def.analyze 命令,+20 用例,新码全测)
+
+批次号:顺延批90(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:COMPLETED_FEATURES.md「未来增强功能」未完成项中最明确可实施
+的一项——性能分析建议(静态分析 .def 文件,提供优化建议)。Marketplace
+截图与发布不做(无 GUI 环境且禁发布,派发文本已注明)。
+
+交付:
+
+- **src/defAnalyzer.ts**(新,纯逻辑):对 .def 文本的属性/方法定义做静态
+  检查,产出 DefAnalysisFinding[](check/severity/line/offset/length/name/
+  message)。检查项定案 7 项(与语言侧实时诊断错位,只出优化建议,详见
+  COMPLETED_FEATURES 同名条目):phantom-type(引擎未注册 BOOL/BOOLEAN/
+  TUPLE/MAP/FIXED_ARRAY,加载必失败)、missing-type(缺 <Type> 或值为空)、
+  duplicate-type-tag(多 <Type> 取值歧义)、heavy-sync-broadcast
+  (ALL_CLIENTS + 大负载类型同步开销)、redundant-detail-level(无客户端
+  可见旗标配 DetailLevel 纯冗余)、invalid-identifier(名为 Python 关键字
+  ——标识符字符集由 def 标签语法保证,故仅关键字可触发)、
+  method-property-collision(方法属性同名互相覆盖)。范围注记:重复定义
+  等结构校验语言侧已有实时诊断,不重复;自定义 types.xml 类型合法,不做
+  「未知类型」误报。
+- **extension.ts 接线**:新命令 `kbengine.def.analyze`(package.json
+  commands + activationEvents 声明)——扫描工作区 `**/*.def`(fsPath 排序
+  保证报告稳定),逐文件 analyzeDefDocument,报告写「KBEngine Def 分析」
+  输出面板并以诊断落 `kbengine-def-analysis` 问题列表(严重度 error/
+  warning/info → DiagnosticSeverity 三档映射),末尾汇总消息;空结果分支
+  提示「未找到 .def 文件」。呈现形式 = 命令 + 输出面板/问题列表双面
+  (派发允许"命令或面板",取双面)。
+- **fake-vscode 面补齐**:OutputChannel 补 `clear()`(批91 命令复跑清屏)、
+  DiagnosticCollection 补 `clear()`(真实 vscode API 面,extension 命令用)。
+
+补齐测试(+20,新码全测):
+
+- tests/defAnalyzer.test.ts(18):基础形态(空文档/无节/continue 分支)、
+  7 检查项正反用例(幻影定位到类型值、空/空白 <Type> 同报缺型、重复
+  <Type> 不误报幻影、ALL_CLIENTS+小标量与 CELL_PUBLIC 不误报广播、
+  DetailLevel 无旗标/有客户端旗标两侧、关键字方法、方法属性冲突、合法
+  方法零建议)、报告格式(空单行/逐条+三类计数汇总/计数各归其位)。
+- tests/defAnalyzerCommand.test.ts(2):命令装配——三档严重度夹具全触发
+  (报告三 check 全出现、诊断 [W,E,I,E] 文档序、fsPath 排序稳定、汇总
+  消息计数)+ 空结果分支(提示且不写报告);dispose 链断言面板已销毁。
+- tests/extension.test.ts:注册面断言更新——诊断集合 ['kbengine',
+  'kbengine-def-analysis'](新集合为有意注册面变化)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 78 文件 930 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 78 文件 921 用例全绿(−9 引擎条件用例);
+pnpm test EXIT=0(vitest 930 + 编译 + mocha 烟测 11 passing);覆盖率重测
+四指标 100%(分母随新码抬升:stmts 4798→4896、branches 2692→2736、
+funcs 838→855、lines 4689→4779;defAnalyzer.ts 100% 全指标)。双审计 0
+(零新依赖)。
+
+瞬态记录(批72 口径):首轮 off 门禁 serverManager「detects the binary
+root next to the workspace」一红——该检测候选第 1 顺位为
+`$TMPDIR/kbe/bin/server`,失败瞬间该路径被其它并行会话夹具短暂占住
+(共享 TMPDIR;复跑 EXIT=0 全绿且路径当时已消失)——环境性瞬态,非本批
+测试引入。
+
+无 tag、无 release、无 force push。记账:用例 910→930(+20;关引擎
+901→921)。测试文件 76→78。COMPLETED_FEATURES.md 勾选「性能分析建议」,
+README 新增「性能分析」节。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

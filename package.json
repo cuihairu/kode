@@ -51,7 +51,8 @@
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
     "onCommand:kbengine.generator.wizard",
-    "onCommand:kbengine.generator.templates"
+    "onCommand:kbengine.generator.templates",
+    "onCommand:kbengine.def.analyze"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -223,6 +224,10 @@
         "command": "kbengine.generator.templates",
         "title": "Create Entity from Template",
         "icon": "$(file-template)"
+      },
+      {
+        "command": "kbengine.def.analyze",
+        "title": "Analyze Def Performance"
       }
     ],
     "menus": {

@@ -35,6 +35,7 @@ import {
   locateDatabaseSchemaLine
 } from './databaseSchema';
 import { findEntityDefinitionFile } from './definitionWorkspace';
+import { analyzeDefDocument, formatDefAnalysisReport } from './defAnalyzer';
 
 /**
  * Kode - KBEngine Development Environment
@@ -507,6 +508,59 @@ export function activate(context: vscode.ExtensionContext) {
     () => codeGenerator.showTemplates()
   );
   context.subscriptions.push(showTemplatesCommand);
+
+  // .def 静态分析建议(性能分析):扫描工作区全部 .def,报告写入输出面板
+  // 并以诊断形式落到问题列表
+  const defAnalysisOutputChannel = vscode.window.createOutputChannel('KBEngine Def 分析');
+  const defAnalysisDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-def-analysis'
+  );
+  const analyzeDefCommand = vscode.commands.registerCommand(
+    'kbengine.def.analyze',
+    async () => {
+      const defUris = await vscode.workspace.findFiles('**/*.def');
+      if (defUris.length === 0) {
+        vscode.window.showInformationMessage('未找到 .def 文件,无法分析');
+        return;
+      }
+
+      defAnalysisOutputChannel.clear();
+      defAnalysisDiagnostics.clear();
+      let totalFindings = 0;
+      for (const uri of defUris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
+        const document = await vscode.workspace.openTextDocument(uri);
+        const findings = analyzeDefDocument(document.getText());
+        totalFindings += findings.length;
+        defAnalysisOutputChannel.appendLine(
+          formatDefAnalysisReport(uri.fsPath, findings)
+        );
+        defAnalysisDiagnostics.set(
+          uri,
+          findings.map(item => {
+            const start = document.positionAt(item.offset);
+            const end = document.positionAt(item.offset + item.length);
+            return new vscode.Diagnostic(
+              new vscode.Range(start, end),
+              item.message,
+              item.severity === 'error'
+                ? vscode.DiagnosticSeverity.Error
+                : item.severity === 'warning'
+                  ? vscode.DiagnosticSeverity.Warning
+                  : vscode.DiagnosticSeverity.Information
+            );
+          })
+        );
+      }
+
+      defAnalysisOutputChannel.show();
+      vscode.window.showInformationMessage(
+        `Def 分析完成: ${defUris.length} 个文件, ${totalFindings} 条建议`
+      );
+    }
+  );
+  context.subscriptions.push(analyzeDefCommand);
+  context.subscriptions.push(defAnalysisOutputChannel);
+  context.subscriptions.push(defAnalysisDiagnostics);
 
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
