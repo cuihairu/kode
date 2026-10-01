@@ -1,34 +1,43 @@
-import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
-// 扩展图标资产锁(批89:COMPLETED_FEATURES「创建扩展图标」收口)。
-// assets/icon.svg 为矢量真源,assets/icon.png(256×256)为 Marketplace 图标,
-// 两者均由 scripts/generate-icon.mjs 零依赖纯脚本自同源几何常量产出;
-// 此处锁定:声明一致、PNG 结构合规、SVG 无字体依赖、产物与脚本字节同步。
+// 扩展图标资产锁(批89 收口,批90 按用户点名改写):resources/logo.png 是
+// 用户的设计资产,package.json Marketplace 图标与 README 展示均声明接线到
+// 该文件。此处只锁声明接线与文件在位——不自行替换、不生成代餐(用户令:
+// 缺设计资产直接问用户要)。批90 同时锁住两类已点名纠正的回归:README 不
+// 得再引本地 SVG(vsce 打包禁令,CI 36813241293 红点)、不得再留虚构的
+// Marketplace 安装途径。
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const iconPng = path.join(root, 'assets', 'icon.png');
-const iconSvg = path.join(root, 'assets', 'icon.svg');
+const logoPath = path.join(root, 'resources', 'logo.png');
 
-const pkg = JSON.parse(
-  fs.readFileSync(path.join(root, 'package.json'), 'utf8')
-) as {
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as {
   icon: string;
   contributes: {
     viewsContainers: { activitybar: Array<{ id: string; icon: string }> };
   };
 };
 
-describe('扩展图标资产', () => {
-  it('package.json Marketplace 图标指向 assets/icon.png 且活动栏容器图标文件在位', () => {
-    expect(pkg.icon).toBe('assets/icon.png');
-    expect(fs.existsSync(iconPng)).toBe(true);
-    expect(fs.existsSync(iconSvg)).toBe(true);
+describe('扩展图标资产(用户设计资源)', () => {
+  it('package.json Marketplace 图标声明指向 resources/logo.png 且文件在位', () => {
+    expect(pkg.icon).toBe('resources/logo.png');
+    expect(fs.existsSync(logoPath)).toBe(true);
+  });
 
-    // 活动栏 viewsContainer 图标本批未动,锁定其文件存在防静默破坏
+  it('logo.png 为 ≥128 的 8-bit RGBA 合法 PNG(达 Marketplace 底线)', () => {
+    const buf = fs.readFileSync(logoPath);
+    expect(
+      buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    ).toBe(true);
+    expect(buf.readUInt32BE(16)).toBeGreaterThanOrEqual(128);
+    expect(buf.readUInt32BE(20)).toBeGreaterThanOrEqual(128);
+    expect(buf[24]).toBe(8);
+    expect(buf[25]).toBe(6);
+  });
+
+  it('活动栏 viewsContainer 图标声明的文件均在位', () => {
     for (const container of pkg.contributes.viewsContainers.activitybar) {
       expect(
         fs.existsSync(path.join(root, container.icon)),
@@ -37,38 +46,14 @@ describe('扩展图标资产', () => {
     }
   });
 
-  it('PNG 为 ≥128×128 的 8-bit RGBA 合法图像', () => {
-    const buf = fs.readFileSync(iconPng);
-    expect(
-      buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-    ).toBe(true);
-    const width = buf.readUInt32BE(16);
-    const height = buf.readUInt32BE(20);
-    expect(width).toBeGreaterThanOrEqual(128);
-    expect(height).toBeGreaterThanOrEqual(128);
-    expect(buf[24]).toBe(8); // 位深
-    expect(buf[25]).toBe(6); // 颜色类型 RGBA
-    expect(buf.length).toBeGreaterThan(8 + 25); // 结构非空
-  });
-
-  it('SVG 矢量真源几何自洽且无字体依赖', () => {
-    const svg = fs.readFileSync(iconSvg, 'utf8');
-    expect(svg).toContain('viewBox="0 0 256 256"');
-    expect(svg).toContain('rx="56"');
-    expect(svg).toContain('linearGradient');
-    // K 字三笔(圆帽描边),不使用 <text>:渲染与字体环境无关
-    expect(svg).toContain('stroke-linecap="round"');
-    expect((svg.match(/M84 64 L84 192/) ?? [])[0]).toBeTruthy();
-    expect(svg).not.toContain('<text');
-  });
-
-  it('重新生成产物与已提交资产字节同步(脚本与资产不漂移)', () => {
-    const pngBefore = fs.readFileSync(iconPng);
-    const svgBefore = fs.readFileSync(iconSvg);
-    execFileSync(process.execPath, [path.join(root, 'scripts', 'generate-icon.mjs')], {
-      cwd: root
-    });
-    expect(fs.readFileSync(iconPng).equals(pngBefore)).toBe(true);
-    expect(fs.readFileSync(iconSvg).equals(svgBefore)).toBe(true);
+  it('README 无本地 SVG 引用且无虚构的 Marketplace 安装途径(批90 点名回归锁)', () => {
+    const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+    // 本地(相对路径)SVG 引用违反 vsce 打包检查;shields.io 绝对 URL 徽章不受限
+    expect(readme).not.toMatch(/<img[^>]+src="[^"]+\.svg"/);
+    expect(readme).not.toMatch(/\]\([^)]*assets\/[^)]*\.svg\)/);
+    // 虚构上架途径:市场安装命令、市场搜索暗示(绝对 URL 徽章除外)
+    expect(readme).not.toContain('install-extension cuihairu.kode');
+    expect(readme).not.toContain('从 VSCode Marketplace 安装');
+    expect(readme).not.toContain('搜索 `Kode');
   });
 });

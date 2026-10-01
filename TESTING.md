@@ -2369,6 +2369,56 @@ pnpm test EXIT=0(vitest 910 + 编译 + mocha 烟测 11 passing);覆盖率重测
 记账:用例 906→910(+4,引擎在位口径;关引擎 897→901)。测试文件
 75→76。COMPLETED_FEATURES.md 同步勾选「创建扩展图标」。
 
+**更正(推送后用户点名,详见批90)**:本批擅自替换用户设计资产
+resources/logo.png 为生成代餐、README 引入 vsce 打包禁令下的本地 SVG
+(致 CI 36813241293 红),两项均已撤销并改为用户资产口径。
+
+## 批90:用户点名双纠正——撤销擅自替换设计资产(回归用户 logo)+ README 清除虚构 Marketplace 安装途径(CI 红点收口)
+
+批次号:顺延批89(写入前 `grep '^## 批'` 复核,非交互假设注明)。优先插队,
+两类纠正合并一笔提交。
+
+**纠正一:设计资产被擅自替换(批89 错误,用户点名撤销)**
+
+- 定性(用户令):**用户的设计资产(logo/icon/配图/品牌视觉)不许自行替换
+  或生成代餐,缺资产直接问用户要。** 已记入长期记忆(memory)。
+- 还原:package.json Marketplace 图标 assets/icon.png → `resources/logo.png`
+  (用户资产,原文件一直有效);README 展示由本地 SVG 改为用户的
+  `resources/logo.png`。
+- 撤销生成代餐:assets/icon.svg、assets/icon.png、scripts/generate-icon.mjs
+  删除,空目录 assets/、scripts/ 移除;tests/icon.test.ts 原 4 个「锁生成
+  资产」用例整体改写——「创建扩展图标」现仅验证用户 logo 的声明接线与
+  文件在位(声明指向、PNG 结构 ≥128 底线、活动栏容器文件在位)。
+
+**纠正二:README 虚构 Marketplace 安装途径(用户点名,并入本笔)**
+
+- 原 137-140 行「从 VSCode Marketplace 安装 + code --install-extension
+  cuihairu.kode + 搜索 Kode」是虚假途径(扩展从未上架)→ 删除,安装节
+  抬头如实声明「尚未发布到 VSCode Marketplace,不提供任何市场安装途径」,
+  不留任何市场安装命令/链接/搜索暗示。
+- 安装节只留真实路径,原「手动安装」节提至最前并更名「从源码构建并本地
+  安装」:git clone → pnpm install → compile → package(vsce 产 .vsix)→
+  `code --install-extension kode-0.1.0.vsix` 本地装。
+- 全文扫描其它虚构发布状态表述(已发布/上架/安装量/下载量/评分/verified):
+  唯一命中即该节;「Star History」为求星语非陈述句、shields.io 徽章为真实
+  外链,保留。文档口径:**README 只描述真实存在、真实可走的路径。**
+
+**回归锁(+4 改写为用户口径,净 0 个用例变化)**:tests/icon.test.ts 现为
+——① icon 声明 ≡ resources/logo.png 且文件在位;② logo.png PNG 结构
+(魔数/≥128/8-bit/RGBA);③ 活动栏容器图标文件在位(防静默破坏);④ README
+无本地 SVG 引用、无 `install-extension cuihairu.kode`、无「从 VSCode
+Marketplace 安装」「搜索 `Kode`」——两类点名纠正各配负向锁。
+
+**CI**:36813241293 红因即 README 本地 SVG(vsce 打包检查)。本地 CI 等价
+复现:`pnpm run package`(vsce@3.9.1)EXIT=0,Packaged kode-0.1.0.vsix
+(139 files)——推送后 CI 复绿结果另记于本段末(见「推送后」行)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 76 文件 910 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 76 文件 901 用例全绿;pnpm test EXIT=0
+(vitest 910 + 编译 + mocha 烟测 11 passing);覆盖率四指标 100% 维持,分母
+无变化(资产/README/测试不触 src)。无 tag、无 release、无 force push。
+记账:用例 910→910(旧 4 锁改写为新 4 锁,净 0)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

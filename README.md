@@ -1,6 +1,6 @@
 # Kode - KBEngine Development Environment
 
-![Kode 扩展图标](assets/icon.svg)
+![Kode 扩展图标](resources/logo.png)
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg)](https://code.visualstudio.com/)
@@ -134,15 +134,9 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ## 安装
 
-### 从 VSCode Marketplace 安装
+> **尚未发布到 VSCode Marketplace**——不提供任何市场安装途径,仅支持从源码构建后本地安装。
 
-```bash
-code --install-extension cuihairu.kode
-```
-
-或在 VSCode 中搜索 `Kode - KBEngine Development Environment`
-
-### 手动安装
+### 从源码构建并本地安装
 
 ```bash
 # 克隆仓库
@@ -155,10 +149,10 @@ pnpm install
 # 编译
 pnpm run compile
 
-# 打包
+# 打包(vsce package 产出 .vsix)
 pnpm run package
 
-# 安装
+# 本地安装
 code --install-extension kode-0.1.0.vsix
 ```
 
