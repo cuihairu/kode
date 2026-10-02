@@ -2422,6 +2422,25 @@ KBENGINE_ROOT=off npx vitest run 76 文件 901 用例全绿;pnpm test EXIT=0
 推送后:CI/CD run 36821277566 success(1m01s,vsce 打包步过)、Docs run
 36821277533 success(37s)——CI 红点(批89 36813241293 failure)收口。
 
+重派复核(2026-10-03 用户令重派,首验 2026-10-02):两件用户令确认落地
+且批91~94 无回潮——① 图标:package.json:12/107 Marketplace 与活动栏
+均指 resources/logo.png(9173 字节在位),assets/、scripts/ 目录不存在,
+全仓 grep `assets/icon|generate-icon|icon.svg` 仅命中本台账批89/90 历史
+段,无任何接线;② README:3 用户 logo,149 行负向声明、151-169 唯一真实
+安装路径(vsce package → `code --install-extension kode-0.1.0.vsix`),
+全文无 `install-extension cuihairu.kode`/「从 VSCode Marketplace 安装」,
+`.svg` 仅 shields.io 徽章绝对外链;tests/icon.test.ts 4 用例复跑全绿
+(icon≡logo.png、PNG 结构、活动栏文件、README 负向锁)。③ 批92 遗留
+未跟踪探针 tests/perf/_probe.bench.ts 已删(2026-10-02 随首验清理,bench
+正式设施为 tests/perf/defPerf.bench.ts);工作树净。
+
+重派门禁复跑:pnpm lint EXIT=0;npx vitest run 82 文件 971 用例全绿;
+KBENGINE_ROOT=off 962 全绿;pnpm test EXIT=0(vitest 971 + 编译 + mocha
+烟测 11 passing)。瞬态记录(批72 口径):首轮 lint 1 红系 TMPDIR
+(/tmp/kode-b78-tmp)被系统清理,pnpm 启动 realpathSync ENOENT 未及执行
+eslint——重建目录复跑 EXIT=0,环境性瞬态非本批引入。纯台账变更,无 src/
+资产/README 触碰;无 tag、无 release、无 force push。
+
 ## 批91:COMPLETED_FEATURES「性能分析建议」收口(.def 静态分析 7 检查项 + kbengine.def.analyze 命令,+20 用例,新码全测)
 
 批次号:顺延批90(写入前 `grep '^## 批'` 复核,非交互假设注明)。
@@ -2535,7 +2554,8 @@ tsconfig exclude 同步补该文件以保 pnpm test 编译)+ tests/perf/defPerf.
 到 196.2ms/p95 1239ms,恰逢 p95 尖峰示外部负载);表中数字取自背靠背同条件
 轮次,并附两次独立复测区间。另:一并行会话曾在本文件留基准草稿(parse
 180.8 / tokenize 1512.0,与本节数字不可比——两次测量互受对方负载干扰),
-并遗留未跟踪探针 tests/perf/_probe.bench.ts;草稿已由本节替换,探针不入库。
+并遗留未跟踪探针 tests/perf/_probe.bench.ts;草稿已由本节替换,探针不入库
+(2026-10-02 用户令重派首验时已删除,见批90 段「重派复核」)。
 
 回归锁(tests/perfRegression.test.ts 新增 4 用例):优化前抓取 golden——
 大 fixture 上语法 token 流(47726 tokens,djb2 c3c0cf5f)、validateDocument
