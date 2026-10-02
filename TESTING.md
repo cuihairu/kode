@@ -2606,6 +2606,62 @@ KBENGINE_ROOT=off npx vitest run 80 文件 942 用例全绿;pnpm test EXIT=0
 (+tests/codeGeneratorTemplates.test.ts)。COMPLETED_FEATURES.md 勾选
 「实体模板库(更多预设模板)」,「已完成功能 16 代码生成器」模板数 5→10。
 
+## 批94:COMPLETED_FEATURES「代码片段生成器(自定义代码片段)」收口(选区→片段文件合并写入,+20 用例,新码全测)
+
+巡检取项:COMPLETED_FEATURES「未来增强功能」最后一项未完成项「代码片段
+生成器(自定义代码片段)」(批93 令与批94 令均点名:发布准备三项
+(Marketplace 截图/完善文档/发布 Marketplace)维持不动,等用户明令)。
+不生成、不替换任何设计资产。
+
+假设注明(非交互自定):「自定义代码片段」落法为命令
+`kbengine.snippets.generateFromSelection`(Generate Snippet from
+Selection)——VSCode 无动态注册补全片段的 API,工作区级 `.code-snippets`
+文件是官方自定义片段机制,生成器把选区文本规范化后合并写入
+`.vscode/kbengine-custom.code-snippets`(2 空格缩进严格 JSON,尾部换行),
+VSCode 原生消费。选区按字面收录:只做片段语法转义(`$`/`\`)与公共缩进
+剥离,不自动推断占位符(用户可在片段文件内自行加 `${1:...}`);scope 取
+生成时文档 languageId;描述可选,取消按仓库既有口径(可选步取消继续)
+记空串不写该字段;同名条目覆盖并警告;片段文件被手改出注释/坏 JSON 时
+拒绝改写并提示,不静默覆盖用户文件。
+
+交付:src/snippetGenerator.ts(新,纯逻辑)——escapeSnippetText、
+selectionToSnippetBody(统一换行/去首尾空行/按非空行最少缩进去公共缩进/
+逐行转义)、mergeSnippetEntry(新建/合并/覆盖判定/顶层非对象与坏 JSON
+抛错);extension.ts 注册命令(选区守卫→名称/前缀必填校验→描述可选→
+空选区守卫→无工作区守卫→读改写合并,mkdir .vscode 后落盘);package.json
+contributes.commands + activationEvents 各 +1。
+
+补齐测试(+20 用例,新码全测):tests/snippetGenerator.test.ts(新,11)
+——转义保留字、CRLF/首尾空行/公共缩进/空白行安全收敛、合并保留旧条目、
+同名覆盖判定、空描述不写 description、顶层非对象与坏 JSON 抛错、路径
+常量锁;tests/snippetGeneratorCommand.test.ts(新,9)——activate 装配
+经 commandRegistry 真分发:落盘内容全等断言(含 dedent/转义端到端)、
+$ 与 \ 逐行转义、合并保留+同名覆盖警告、描述取消继续、无编辑器/空选区
+提示且不落盘(并断言未触达输入步)、纯空白选区提示、名称/前缀取消中止、
+无工作区报错、坏 JSON 报错且文件原样;名称/前缀 validateInput 回调
+(空串/纯空白拒绝、合法放行)直接断言。首测自曝一错:选区起点取字符 4
+时首行合法零缩进,公共缩进为 0 属预期行为,改选区起点对齐断言。
+
+门禁:pnpm lint EXIT=0;npx vitest run 82 文件 971 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 82 文件 962 用例全绿;pnpm test EXIT=0
+(vitest 971 + 编译 + mocha 烟测 11 passing);覆盖率四指标 100%(分母
+4907→4967 stmts、2739→2782 branches、860→869 funcs、4791→4850 lines)。
+
+瞬态记录(批72 口径):mocha 烟测首轮 1 红——「registers activation
+events for all contributed commands」缺
+onCommand:kbengine.snippets.generateFromSelection,系本批新增命令漏登
+activationEvents 的真缺陷(非环境瞬态),package.json 补登记后复跑
+11 passing;另覆盖率首轮 99.95/99.71/99.76/99.95——validateInput 回调
+在 fake 窗口下不被真实调用,补回调行为断言(优于 istanbul ignore)后
+四指标回 100%。
+
+无 tag、无 release、无 force push。记账:用例 951→971(+20:纯逻辑 11 +
+命令装配 9;关引擎 942→962)。测试文件 80→82
+(+tests/snippetGenerator.test.ts、+tests/snippetGeneratorCommand.test.ts)。
+COMPLETED_FEATURES.md 勾选「代码片段生成器(自定义代码片段)」;至此
+「未来增强功能」四项全部收口,全仓未完成项仅剩「发布准备」三项
+(Marketplace 截图/完善文档/发布 Marketplace),等用户明令。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

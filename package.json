@@ -52,7 +52,8 @@
     "onCommand:kbengine.dependency.show",
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.templates",
-    "onCommand:kbengine.def.analyze"
+    "onCommand:kbengine.def.analyze",
+    "onCommand:kbengine.snippets.generateFromSelection"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -228,6 +229,11 @@
       {
         "command": "kbengine.def.analyze",
         "title": "Analyze Def Performance"
+      },
+      {
+        "command": "kbengine.snippets.generateFromSelection",
+        "title": "Generate Snippet from Selection",
+        "icon": "$(symbol-snippet)"
       }
     ],
     "menus": {

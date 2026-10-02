@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS } from './serverManager';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -36,6 +38,13 @@ import {
 } from './databaseSchema';
 import { findEntityDefinitionFile } from './definitionWorkspace';
 import { analyzeDefDocument, formatDefAnalysisReport } from './defAnalyzer';
+import { joinWorkspacePath } from './workspacePath';
+import {
+  CUSTOM_SNIPPETS_RELATIVE_PATH,
+  mergeSnippetEntry,
+  selectionToSnippetBody
+} from './snippetGenerator';
+import type { MergeSnippetResult } from './snippetGenerator';
 
 /**
  * Kode - KBEngine Development Environment
@@ -561,6 +570,95 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(analyzeDefCommand);
   context.subscriptions.push(defAnalysisOutputChannel);
   context.subscriptions.push(defAnalysisDiagnostics);
+
+  // 自定义代码片段生成器:把选区文本做片段语法转义(\$ 与 \\)并去公共缩进
+  // 为片段体,经名称/前缀/描述三步输入后合并写入工作区
+  // .vscode/kbengine-custom.code-snippets;手改出注释/坏 JSON 的片段文件
+  // 不静默改写,报错让用户先整理
+  const generateSnippetCommand = vscode.commands.registerCommand(
+    'kbengine.snippets.generateFromSelection',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || editor.selection.isEmpty) {
+        vscode.window.showInformationMessage('请先在编辑器中选中要生成片段的文本');
+        return;
+      }
+
+      const snippetName = await vscode.window.showInputBox({
+        prompt: '输入代码片段名称',
+        placeHolder: 'MyDefTemplate',
+        validateInput: (value) => (!value || value.trim() === '' ? '片段名称不能为空' : null)
+      });
+      if (!snippetName) {
+        return;
+      }
+
+      const prefix = await vscode.window.showInputBox({
+        prompt: '输入触发前缀',
+        placeHolder: `kbe-${snippetName.toLowerCase()}`,
+        value: `kbe-${snippetName.toLowerCase()}`,
+        validateInput: (value) => (!value || value.trim() === '' ? '触发前缀不能为空' : null)
+      });
+      if (!prefix) {
+        return;
+      }
+
+      // 描述可选:取消(Esc)按仓库既有口径视为继续,记空串不写该字段
+      const description = await vscode.window.showInputBox({
+        prompt: '输入片段描述(可选)',
+        value: ''
+      }) ?? '';
+
+      const body = selectionToSnippetBody(editor.document.getText(editor.selection));
+      if (body.length === 0) {
+        vscode.window.showInformationMessage('选区不含有效文本,未生成片段');
+        return;
+      }
+
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        vscode.window.showErrorMessage('没有打开的工作区,无法保存自定义片段');
+        return;
+      }
+
+      const snippetsFilePath = joinWorkspacePath(
+        workspaceFolder.uri.fsPath,
+        CUSTOM_SNIPPETS_RELATIVE_PATH
+      );
+      const existingContent = fs.existsSync(snippetsFilePath)
+        ? fs.readFileSync(snippetsFilePath, 'utf8')
+        : null;
+
+      let merged: MergeSnippetResult;
+      try {
+        merged = mergeSnippetEntry(existingContent, snippetName, {
+          prefix,
+          body,
+          description,
+          scope: editor.document.languageId
+        });
+      } catch {
+        vscode.window.showErrorMessage(
+          `自定义片段文件不是合法的对象 JSON,请先手工整理后再生成: ${snippetsFilePath}`
+        );
+        return;
+      }
+
+      fs.mkdirSync(path.dirname(snippetsFilePath), { recursive: true });
+      fs.writeFileSync(snippetsFilePath, merged.content, 'utf8');
+
+      if (merged.overwritten) {
+        vscode.window.showWarningMessage(
+          `已覆盖同名自定义片段 ${snippetName}: ${snippetsFilePath}`
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          `已生成自定义代码片段 ${snippetName}(前缀 ${prefix}): ${snippetsFilePath}`
+        );
+      }
+    }
+  );
+  context.subscriptions.push(generateSnippetCommand);
 
   // 创建状态栏项
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
