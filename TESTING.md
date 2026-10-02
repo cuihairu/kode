@@ -2559,6 +2559,53 @@ KBENGINE_ROOT=off npx vitest run 79 文件 925 用例全绿;pnpm test EXIT=0
 勾选「优化性能」。基准设施不在门禁内(bench 配置与用例同 tests/**/*.test.ts
 互不重叠)。
 
+## 批93:COMPLETED_FEATURES「实体模板库(更多预设模板)」收口(预设模板 5→10,+17 用例,全库产物双侧零命中锁)
+
+巡检取项:COMPLETED_FEATURES「未来增强功能」最靠前未完成项「实体模板库
+(更多预设模板)」。按仓库既有口径:模板实体以私有方法入
+src/codeGenerator.ts,showTemplates 清单、getTemplateEntity switch、模板
+方法三处同步扩;产物正确性由本仓语言侧实时诊断与 defAnalyzer 建议两侧
+全绿锁定。不生成、不替换任何设计资产;发布准备三项(截图/完善文档/发布
+Marketplace)维持不动,等用户明令。
+
+假设注明(非交互自定):新增模板取 KBEngine 常见领域五项——怪物、场景、
+公会、队伍、邮件(账号/角色/NPC/物品/空实体既有五项保序不动,空实体收
+尾)。类型与旗标仅取引擎注册表(kbengineMetadata 锁定),不引入幻影类型;
+引擎无注册 BOOL,邮件已读状态用 UINT8;队伍成员数组用引擎内联写法
+`ARRAY<of>UINT64</of>`(entitydef.cpp 对 ARRAY 特判 `<of>` 子节点,见
+kbengineMetadata 注记与 kbe-array 片段);方法/属性名过 Python 关键字与
+同名冲突两检;DetailLevel 不配(避免冗余字段口径)。
+
+交付:src/codeGenerator.ts +5 模板方法(getMonsterTemplate/getSpaceTemplate/
+getGuildTemplate/getTeamTemplate/getMailTemplate)——怪物 Base+Cell+Client
+(生命/移动/仇恨半径 + 攻防方法)、场景 Base+Cell(ENTITYCALL 进出回调,
+无 Client 段)、公会 Base+Client(公告 + 成员管理)、队伍 Base+Client
+(队长/人数上限 + ARRAY 成员数组)、邮件 Base+Client(收发/标题/正文/
+已读 + 收件通知);showTemplates 清单 +5(怪物/场景/公会/队伍/邮件)、
+getTemplateEntity switch +5 case。
+
+补齐测试(+17 用例,新码全测):tests/codeGeneratorTemplates.test.ts(新
+文件 16 用例)——5 新模板注册映射各 1、逐模板关键构造断言 5(含场景
+ENTITYCALL/无 Client 段、队伍 ARRAY 内联写法),以及全库 10 模板
+it.each 生成 .def 双侧零命中:先断言 parseDefDocument 解析出 root
+(防 parseDefAst 失败早退造成「零诊断」空过),再 validateDocument
+零诊断 + analyzeDefDocument 零建议;tests/codeGeneratorFiles.test.ts
++1 端到端——按 value 选取队伍模板不依赖下标,同锁 10 项清单全量顺序,
+落盘 .def/.py + entities.xml 注册接线。既有 codeGenerator 四文件
+(Files/Branches/Gaps/纯生成)同绿,pickIndex(0/4) 不受清单扩序影响。
+
+门禁:pnpm lint EXIT=0;npx vitest run 80 文件 951 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 80 文件 942 用例全绿;pnpm test EXIT=0
+(vitest 951 + 编译 + mocha 烟测 11 passing);覆盖率四指标 100%(分母
+4897→4907 stmts、2734→2739 branches、855→860 funcs、4781→4791 lines)。
+
+瞬态记录:本批无红、无复跑,0 瞬态。
+
+无 tag、无 release、无 force push。记账:用例 934→951(+17:模板库新文件
+16 + Files 流程 1;关引擎 925→942)。测试文件 79→80
+(+tests/codeGeneratorTemplates.test.ts)。COMPLETED_FEATURES.md 勾选
+「实体模板库(更多预设模板)」,「已完成功能 16 代码生成器」模板数 5→10。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

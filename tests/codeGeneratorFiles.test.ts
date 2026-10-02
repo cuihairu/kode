@@ -379,6 +379,43 @@ describe('KBEngineCodeGenerator templates', () => {
     expect(ui.info[2]).toContain('entities.xml 中注册 MyAccount');
     expect(ui.error).toEqual([]);
   });
+
+  it('generates the team template from the extended 10-entry list', async () => {
+    // 批93:按 value 选取队伍模板(不依赖下标),同时锁清单全量与顺序
+    let listed: Array<{ label: string; value: string }> = [];
+    ui.picks.push(items => {
+      listed = items as Array<{ label: string; value: string }>;
+      return listed.find(item => item.value === 'team');
+    });
+    ui.inputs.push('MyTeam');
+
+    await makeGenerator().showTemplates();
+
+    expect(listed.map(item => item.value)).toEqual([
+      'account', 'avatar', 'npc', 'item', 'monster', 'space', 'guild', 'team', 'mail', 'empty'
+    ]);
+
+    const defContent = fs.readFileSync(
+      path.join(root, 'scripts', 'entity_defs', 'MyTeam.def'),
+      'utf8'
+    );
+    expect(defContent).toContain('<Type>ARRAY<of>UINT64</of></Type>');
+    expect(defContent).toContain('<captainID>');
+    expect(defContent).toContain('<joinTeam>');
+    expect(defContent).toContain('<Exposed/>');
+
+    const pyContent = fs.readFileSync(
+      path.join(root, 'scripts', 'MyTeam.py'),
+      'utf8'
+    );
+    expect(pyContent).toContain('class MyTeamBase():');
+    expect(pyContent).toContain('def joinTeam(self, memberID):');
+
+    expect(
+      fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')
+    ).toContain('  <MyTeam hasCell="false" hasBase="true" hasClient="true" />');
+    expect(ui.error).toEqual([]);
+  });
 });
 
 describe('KBEngineCodeGenerator config and lookups', () => {

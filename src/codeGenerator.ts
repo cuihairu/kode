@@ -711,6 +711,31 @@ export class KBEngineCodeGenerator {
         value: 'item'
       },
       {
+        label: '怪物实体',
+        description: '游戏怪物实体，包含生命值、移动与攻击',
+        value: 'monster'
+      },
+      {
+        label: '场景实体',
+        description: '场景/空间实体，含实体进出场景回调',
+        value: 'space'
+      },
+      {
+        label: '公会实体',
+        description: '玩家公会实体，包含公告与成员管理',
+        value: 'guild'
+      },
+      {
+        label: '队伍实体',
+        description: '玩家组队实体，包含成员数组与队长',
+        value: 'team'
+      },
+      {
+        label: '邮件实体',
+        description: '游戏邮件实体，包含收发与已读状态',
+        value: 'mail'
+      },
+      {
         label: '空实体',
         description: '空白的实体模板',
         value: 'empty'
@@ -742,6 +767,16 @@ export class KBEngineCodeGenerator {
         return this.getNpcTemplate();
       case 'item':
         return this.getItemTemplate();
+      case 'monster':
+        return this.getMonsterTemplate();
+      case 'space':
+        return this.getSpaceTemplate();
+      case 'guild':
+        return this.getGuildTemplate();
+      case 'team':
+        return this.getTeamTemplate();
+      case 'mail':
+        return this.getMailTemplate();
       case 'empty':
       default:
         return this.getEmptyTemplate();
@@ -898,6 +933,155 @@ export class KBEngineCodeGenerator {
         { name: 'itemID', type: 'UINT32', flags: 'BASE', default: '0', persistent: true },
         { name: 'itemType', type: 'UINT8', flags: 'BASE', default: '0', persistent: true },
         { name: 'count', type: 'UINT32', flags: 'BASE', default: '1', persistent: true }
+      ]
+    };
+  }
+
+  /**
+   * 获取怪物实体模板
+   */
+  private getMonsterTemplate(): EntityDefinition {
+    return {
+      config: {
+        name: 'Monster',
+        hasBase: true,
+        hasCell: true,
+        hasClient: true,
+        description: '游戏怪物实体'
+      },
+      baseProperties: [
+        { name: 'monsterID', type: 'UINT32', flags: 'BASE', default: '0', persistent: true },
+        { name: 'name', type: 'STRING', flags: 'BASE', default: '""', dbLength: 32, persistent: true },
+        { name: 'level', type: 'UINT8', flags: 'BASE', default: '1', persistent: true },
+        { name: 'respawnTime', type: 'UINT32', flags: 'BASE', default: '0', persistent: true }
+      ],
+      cellProperties: [
+        { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
+        { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' },
+        { name: 'moveSpeed', type: 'FLOAT', flags: 'CELL_PRIVATE', default: '5.0' },
+        { name: 'aggroRange', type: 'UINT32', flags: 'CELL_PRIVATE', default: '20' }
+      ],
+      baseMethods: [
+        { name: 'respawn' }
+      ],
+      cellMethods: [
+        { name: 'takeDamage', exposed: true, args: [{ name: 'damage', type: 'UINT32' }] },
+        { name: 'die' }
+      ],
+      clientMethods: [
+        { name: 'onMonsterDead', args: [{ name: 'killerID', type: 'UINT64' }] }
+      ]
+    };
+  }
+
+  /**
+   * 获取场景实体模板
+   */
+  private getSpaceTemplate(): EntityDefinition {
+    return {
+      config: {
+        name: 'Space',
+        hasBase: true,
+        hasCell: true,
+        hasClient: false,
+        description: '场景/空间实体'
+      },
+      baseProperties: [
+        { name: 'spaceKey', type: 'STRING', flags: 'BASE', default: '""', dbLength: 32, persistent: true },
+        { name: 'spaceType', type: 'UINT8', flags: 'BASE', default: '0', persistent: true }
+      ],
+      cellProperties: [
+        { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' }
+      ],
+      cellMethods: [
+        { name: 'onEnter', exposed: true, args: [{ name: 'entityCall', type: 'ENTITYCALL' }] },
+        { name: 'onLeave', exposed: true, args: [{ name: 'entityCall', type: 'ENTITYCALL' }] }
+      ]
+    };
+  }
+
+  /**
+   * 获取公会实体模板
+   */
+  private getGuildTemplate(): EntityDefinition {
+    return {
+      config: {
+        name: 'Guild',
+        hasBase: true,
+        hasCell: false,
+        hasClient: true,
+        description: '玩家公会实体'
+      },
+      baseProperties: [
+        { name: 'guildName', type: 'STRING', flags: 'BASE', default: '""', dbLength: 32, persistent: true },
+        { name: 'level', type: 'UINT8', flags: 'BASE', default: '1', persistent: true },
+        { name: 'announcement', type: 'STRING', flags: 'BASE', default: '""', dbLength: 256, persistent: true },
+        { name: 'memberCount', type: 'UINT8', flags: 'BASE', default: '0', persistent: true }
+      ],
+      baseMethods: [
+        { name: 'inviteMember', exposed: true, args: [{ name: 'memberID', type: 'UINT64' }] },
+        { name: 'kickMember', exposed: true, args: [{ name: 'memberID', type: 'UINT64' }] },
+        { name: 'disband' }
+      ],
+      clientMethods: [
+        { name: 'onGuildLevelChanged', args: [{ name: 'newLevel', type: 'UINT8' }] }
+      ]
+    };
+  }
+
+  /**
+   * 获取队伍实体模板
+   */
+  private getTeamTemplate(): EntityDefinition {
+    return {
+      config: {
+        name: 'Team',
+        hasBase: true,
+        hasCell: false,
+        hasClient: true,
+        description: '玩家组队实体'
+      },
+      baseProperties: [
+        { name: 'captainID', type: 'UINT64', flags: 'BASE', default: '0', persistent: true },
+        { name: 'maxMemberCount', type: 'UINT8', flags: 'BASE', default: '5', persistent: true },
+        { name: 'memberIDs', type: 'ARRAY<of>UINT64</of>', flags: 'BASE', persistent: true }
+      ],
+      baseMethods: [
+        { name: 'joinTeam', exposed: true, args: [{ name: 'memberID', type: 'UINT64' }] },
+        { name: 'leaveTeam', exposed: true, args: [{ name: 'memberID', type: 'UINT64' }] }
+      ],
+      clientMethods: [
+        { name: 'onTeamChanged' }
+      ]
+    };
+  }
+
+  /**
+   * 获取邮件实体模板
+   */
+  private getMailTemplate(): EntityDefinition {
+    return {
+      config: {
+        name: 'Mail',
+        hasBase: true,
+        hasCell: false,
+        hasClient: true,
+        description: '游戏邮件实体'
+      },
+      baseProperties: [
+        { name: 'senderName', type: 'STRING', flags: 'BASE', default: '""', dbLength: 32, persistent: true },
+        { name: 'receiverID', type: 'UINT64', flags: 'BASE', default: '0', persistent: true },
+        { name: 'title', type: 'STRING', flags: 'BASE', default: '""', dbLength: 64, persistent: true },
+        { name: 'content', type: 'STRING', flags: 'BASE', default: '""', dbLength: 256, persistent: true },
+        { name: 'sendTime', type: 'UINT64', flags: 'BASE', default: '0', persistent: true },
+        { name: 'isRead', type: 'UINT8', flags: 'BASE', default: '0', persistent: true }
+      ],
+      baseMethods: [
+        { name: 'markRead', exposed: true },
+        { name: 'deleteMail', exposed: true }
+      ],
+      clientMethods: [
+        { name: 'onMailReceived' }
       ]
     };
   }
