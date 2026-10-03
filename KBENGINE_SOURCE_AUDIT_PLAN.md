@@ -295,6 +295,52 @@
   - README、`docs/guide/*`、`PROJECT_SUMMARY.md`、`COMPLETED_FEATURES.md` 已同步收敛到源码核对后的能力边界。
   - 文档撤回了对 `reloadEntityDef/isReload`、旧 `.def` 区块、旧 Flags/DetailLevel、logger 已完成接入、监控近似 watcher 遥测等旧宣称。
   - 配置示例与功能说明改为跟随当前实现，避免再出现“代码已下调但文档仍宣称支持”的状态。
+- 复核(批95，2026-10-03)：批91~94 落地后文档再次漂移，已逐项核对修正——README/PROJECT_SUMMARY 的预定义模板数 5→10、补性能分析与代码片段生成条目，PROJECT_SUMMARY 统计与勾选状态对齐实测(27 个 .ts/17082 行/21 个 .md/974+11 用例)，CHANGELOG Unreleased 的双层测试表述改为真实口径、已交付的 Planned 三项迁入 Added，docs/guide/commands.md 补齐 4 条缺失命令(`entity.method.open`/`database.open`/`def.analyze`/`snippets.generateFromSelection`)；并新增 tests/docsCommands.test.ts 锁定「命令贡献点必有文档小节 + 已知失实表述不得回潮」。
+- 同批功能块清单补全：批58/91/94 落地的重构支持、性能分析建议、代码片段生成器此前不在本清单(见下 16~18)，登记为 `未核对`，后续批次按顺序核对。
+
+### 16. 重构支持（.def 属性/方法重命名）
+
+- 当前状态：`未核对`
+- 文件：
+  - `src/defRenamer.ts`
+  - `src/languageProviders.ts`（KBEngineRenameProvider）
+- 内容：
+  - 顶层 `Properties` 属性与三类方法段方法的 F2 重命名
+  - 同文件同名声明（含 Flags 作用域变体）更新
+  - `Parent` 链与 `Interfaces` 传递闭包后代 def 的同名复述更新
+- 核对重点：
+  - “同名 Flags 作用域变体视为同一文本符号”是否符合引擎装载语义
+  - 后代复述传播面是否与 `loadParentClass`/接口装载的实际解析范围一致
+  - 边界声明（Python 侧/entities.xml/types.xml 不参与）是否如实
+- 核对结果：
+  - 待核对。
+
+### 17. 性能分析建议（.def 静态分析）
+
+- 当前状态：`未核对`
+- 文件：
+  - `src/defAnalyzer.ts`
+- 内容：
+  - `kbengine.def.analyze` 命令，7 个检查项产出优化建议
+- 核对重点：
+  - 幻影类型清单是否与 `DataTypes` 注册表逐名一致
+  - 各检查项是否只以“优化建议”口径输出、不冒充引擎装载规则
+- 核对结果：
+  - 待核对。
+
+### 18. 代码片段生成器（自定义代码片段）
+
+- 当前状态：`未核对`
+- 文件：
+  - `src/snippetGenerator.ts`
+  - `src/extension.ts`（命令接线）
+- 内容：
+  - 选区文本转义/去公共缩进，合并写入工作区 `.code-snippets` 文件
+- 核对重点：
+  - 是否宣称了任何引擎能力（应为纯编辑器功能，scope 取文档语言）
+  - 转义与合并语义是否与 VSCode 片段文件格式一致
+- 核对结果：
+  - 待核对。
 
 ## 核对顺序
 

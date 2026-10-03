@@ -33,6 +33,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - [11 个常用 .def 代码模板 + 4 个 Python 热更模板(snippets/kbengine-python.json)+ 2 个 types.xml 类型别名模板(ARRAY 采用引擎 `<of>` 语法;BOOL/TUPLE 等引擎未注册类型已剔除)]
 - [一键插入属性定义]
 - [快速生成方法定义]
+- [选区生成自定义代码片段(Generate Snippet from Selection,合并写入 `.vscode/kbengine-custom.code-snippets`)]
 
 ### 悬停文档
 - [类型详细说明]
@@ -125,7 +126,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ### 代码生成器
 - [实体创建向导（逐步引导）]
-- [5 个预定义模板（账号、角色、NPC、物品、空实体）]
+- [10 个预定义模板（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体）]
 - [自动生成 .def 文件（符合 KBEngine 格式）]
 - [自动生成 Python 文件（包含钩子方法）]
 - [自动在 entities.xml 中注册实体]

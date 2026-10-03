@@ -24,6 +24,22 @@
   - 点击实体浏览器中的实体项
   - 命令面板
 
+### `kbengine.entity.method.open`
+
+- 标题：`Open Entity Method`
+- 作用：打开方法符号的定义或 Python 实现
+- 入口：
+  - 点击实体浏览器中的方法条目
+  - 命令面板
+
+### `kbengine.database.open`
+
+- 标题：`Open Database Schema`
+- 作用：打开实体属性对应的数据库表结构虚拟文档
+- 入口：
+  - 点击实体浏览器中的数据库条目
+  - 命令面板
+
 ## 服务器控制
 
 ### `kbengine.server.start`
@@ -128,7 +144,27 @@
 ### `kbengine.generator.templates`
 
 - 标题：`Create Entity from Template`
-- 作用：从预定义模板快速生成实体
+- 作用：从预定义模板快速生成实体（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体共 10 个）
+
+## 性能分析
+
+### `kbengine.def.analyze`
+
+- 标题：`Analyze Def Performance`
+- 作用：对工作区全部 `.def` 文件做静态检查并输出优化建议
+- 输出：
+  - 报告写入「KBEngine Def 分析」输出面板
+  - 诊断落入问题列表（`kbengine-def-analysis`）
+
+## 代码片段生成
+
+### `kbengine.snippets.generateFromSelection`
+
+- 标题：`Generate Snippet from Selection`
+- 作用：把编辑器选区文本做片段语法转义（`$`/`\`）并剥离公共缩进，经名称/前缀/描述三步输入后合并写入 `.vscode/kbengine-custom.code-snippets`
+- 行为：
+  - 同名片段条目覆盖并给出警告
+  - 片段文件被手改出注释/坏 JSON 时拒绝改写并提示
 
 ## 典型使用流程
 

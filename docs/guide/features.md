@@ -41,10 +41,20 @@
 ## 代码生成
 
 - 实体创建向导
-- 预置模板
+- 预置模板（10 个：账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体）
 - 自动生成 `.def`
 - 自动生成 Python
 - 自动注册到 `entities.xml`
 
 说明：
 生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响。
+
+## 性能分析
+
+- 工作区全量 `.def` 静态检查（`Analyze Def Performance` 命令）
+- 优化建议写入输出面板，并以诊断落入问题列表
+
+## 代码片段生成
+
+- 选区生成自定义片段（`Generate Snippet from Selection` 命令）
+- 片段语法转义并剥离公共缩进，合并写入 `.vscode/kbengine-custom.code-snippets`

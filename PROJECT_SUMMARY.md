@@ -139,20 +139,41 @@
 
 #### 16. 代码生成器 [新增]
 - [实体创建向导]
-- [5 个预定义模板（账号、角色、NPC、物品、空实体）]
+- [10 个预定义模板（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体）]
 - [自动生成 .def 文件]
 - [自动生成 Python 文件]
 - [自动在 entities.xml 中注册]
 - [支持自定义属性和方法]
 - [源码：src/codeGenerator.ts]
 
+#### 17. 重构支持（.def 属性/方法重命名）
+- [.def 文件内 F2 重命名属性/方法（原生 RenameProvider，无命令贡献点）]
+- [同文件同名声明与 Flags 作用域变体视为同一文本符号一并更新]
+- [Parent 链与 Interfaces 混入的传递闭包后代 def 同名复述同步（开/闭标签同步改）]
+- [如实边界：Python 侧引用、entities.xml、types.xml 不在重命名范围]
+- [源码：src/defRenamer.ts（纯逻辑）、src/languageProviders.ts（KBEngineRenameProvider）]
+
+#### 18. 性能分析建议
+- [工作区全量 .def 静态分析（命令 `kbengine.def.analyze`）]
+- [7 个检查项：幻影类型、缺 Type、重复 Type、重广播开销、冗余 DetailLevel、Python 关键字标识符、方法属性同名]
+- [报告写入「KBEngine Def 分析」输出面板并以诊断落入问题列表]
+- [源码：src/defAnalyzer.ts]
+
+#### 19. 代码片段生成器
+- [选区生成自定义片段（命令 `kbengine.snippets.generateFromSelection`）]
+- [片段语法转义（`$`/`\`）+ 公共缩进剥离，合并写入 `.vscode/kbengine-custom.code-snippets`]
+- [同名条目覆盖有警告；坏 JSON 片段文件拒绝改写]
+- [源码：src/snippetGenerator.ts]
+
 ### 文档
 - [README.md - 项目说明]
 - [CHANGELOG.md - 变更日志]
 - [CONTRIBUTING.md - 贡献指南]
-- [vscode-extension-design.md - 设计文档]
-- [vscode-extension-summary.md - 快速开始]
-- [plugin-name-suggestions.md - 命名方案]
+- [TESTING.md - 测试架构与批次台账]
+- [COMPLETED_FEATURES.md - 已完成功能清单]
+- [KBENGINE_SOURCE_AUDIT_PLAN.md - 引擎源码对照计划]
+- [docs/ - VitePress 文档站（11 个页面，`pnpm run docs:dev` 预览）]
+- [resources/docs/ - 早期设计与命名文档（3 个）]
 
 ### 开发配置
 - [package.json - 扩展配置]
@@ -170,42 +191,61 @@
 kode/
 ├── .vscode/
 │   ├── extensions.json       # 扩展推荐
-│   ├── launch.json          # 调试配置
-│   └── tasks.json           # 任务配置
+│   ├── launch.json           # 调试配置
+│   └── tasks.json            # 任务配置
+├── docs/                     # VitePress 文档站 (11 个 .md)
 ├── resources/
-│   └── docs/                # 项目文档
-│       ├── vscode-extension-design.md
-│       ├── vscode-extension-summary.md
-│       └── plugin-name-suggestions.md
+│   ├── logo.png              # 用户设计资产（Marketplace 图标/活动栏）
+│   └── docs/                 # 早期文档 (3 个 .md)
 ├── snippets/
-│   ├── kbengine.json        # def 代码片段 (11个)
-│   ├── kbengine-python.json # Python 热更片段 (4个)
+│   ├── kbengine.json         # def 代码片段 (11个)
+│   ├── kbengine-python.json  # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json # types.xml 别名片段 (2个)
-├── src/
-│   ├── extension.ts         # 主扩展文件
-│   ├── hooks.ts             # 钩子数据 (36 hooks,含源码调用位置)
-│   ├── serverManager.ts     # 服务器管理器
-│   ├── logCollector.ts      # 日志收集器
-│   ├── logParser.ts         # 日志解析器
-│   ├── logWebView.ts        # 日志 WebView
-│   ├── debugConfig.ts       # 调试配置管理器
+├── src/                      # 27 个 TypeScript 文件，17082 行
+│   ├── extension.ts          # 扩展入口（命令装配/注册面）
+│   ├── languageProviders.ts  # 补全/悬停/诊断/跳转/重命名 Provider
+│   ├── defParser.ts          # .def 解析与文本定位
+│   ├── defRenamer.ts         # .def 重命名纯逻辑
+│   ├── defAnalyzer.ts        # 性能分析静态检查
+│   ├── snippetGenerator.ts   # 自定义片段生成纯逻辑
+│   ├── definitionSemantics.ts      # 定义语义与继承合并
+│   ├── definitionWorkspace.ts      # 定义工作区解析
+│   ├── databaseSchema.ts     # 数据库 schema 虚拟文档
+│   ├── explorerProviders.ts  # 实体浏览器/服务器树
+│   ├── kbengineMetadata.ts   # 引擎元数据（类型/Flags/DetailLevel）
+│   ├── kbengineProtocol.ts   # machine 发现与 watcher 协议编解码
+│   ├── hooks.ts              # 钩子数据 (36 hooks,含源码调用位置)
+│   ├── serverManager.ts      # 服务器管理器
+│   ├── serverCommandTarget.ts # 服务器命令目标解析
+│   ├── logCollector.ts       # 日志收集器
+│   ├── logParser.ts          # 日志解析器
+│   ├── logWebView.ts         # 日志 WebView
+│   ├── debugConfig.ts        # 调试配置管理器
 │   ├── monitoringCollector.ts # 监控数据收集器
 │   ├── monitoringWebView.ts  # 监控面板 WebView
-│   ├── entityMapping.ts     # Python-Def 映射管理器
-│   ├── entityDependency.ts  # 实体依赖分析器
+│   ├── entityMapping.ts      # Python-Def 映射管理器
+│   ├── pythonLanguageUtils.ts # Python 补全上下文工具
+│   ├── entityDependency.ts   # 实体依赖分析器
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
-│   └── codeGenerator.ts     # 代码生成器
+│   ├── codeGenerator.ts      # 代码生成器 (10 模板)
+│   ├── workspacePath.ts      # 跨平台路径工具
+│   └── test/                 # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
-│   └── kbengine.tmLanguage.json  # 语法高亮规则
+│   ├── kbengine.tmLanguage.json  # 语法高亮规则
+│   └── kbengine-color-theme.json # 主题
+├── tests/                    # vitest 测试 (83 文件 974 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
-├── CHANGELOG.md             # 变更日志
-├── CONTRIBUTING.md          # 贡献指南
-├── LICENSE                  # Apache-2.0 许可证
-├── README.md                # 项目说明
+├── CHANGELOG.md              # 变更日志
+├── COMPLETED_FEATURES.md     # 已完成功能清单
+├── CONTRIBUTING.md           # 贡献指南
+├── KBENGINE_SOURCE_AUDIT_PLAN.md # 引擎源码对照计划
+├── LICENSE                   # Apache-2.0 许可证
+├── README.md                 # 项目说明
+├── TESTING.md                # 测试架构与批次台账
 ├── language-configuration.json
-├── package.json             # 扩展配置 (v0.1.0)
-└── tsconfig.json            # TypeScript 配置
+├── package.json              # 扩展配置 (v0.1.0)
+└── tsconfig.json             # TypeScript 配置
 ```
 
 ## 钩子系统详情
@@ -243,13 +283,13 @@ kode/
 ## 下一步计划
 
 ### MVP 完善
-- [ ] 测试所有功能
-- [ ] 修复发现的问题
-- [x] 添加单元测试(vitest 纯逻辑层 216 用例 + @vscode/test-electron 集成层 110 用例)
-- [ ] 优化性能
+- [x] 测试所有功能(批88:17 项已完成功能逐项验证,全部有自动化用例覆盖)
+- [x] 修复发现的问题(批88:tmLanguage 与引擎注册表对齐等修复,均带回归锁)
+- [x] 添加单元测试(vitest 功能层 974 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
+- [x] 优化性能(批92:validateDocument −46%、全文件分词 −17%,行为以 golden 回归锁)
 
 ### 发布准备
-- [ ] 创建扩展图标
+- [x] 创建扩展图标(已由用户设计资产 resources/logo.png 满足,批90 恢复用户资产口径)
 - [ ] 准备 Marketplace 截图
 - [ ] 完善文档
 - [ ] 发布到 VSCode Marketplace
@@ -258,8 +298,8 @@ kode/
 - [x] Python 集成 (从 Python 跳转到 .def) ✅ 已完成
 - [x] 实体依赖关系图 ✅ 已完成
 - [x] 代码生成器 ✅ 已完成
-- [ ] 重构支持 (重命名属性/方法)
-- [ ] 性能分析建议
+- [x] 重构支持 (重命名属性/方法)→ 批58 落地为 .def 面重命名（见功能 17）
+- [x] 性能分析建议 → 批91 落地（见功能 18）
 
 ## 快速命令
 
@@ -289,11 +329,12 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 统计数据
 
-- **代码文件**: 19 个 TypeScript 文件
+- **代码文件**: 27 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
 - **钩子数量**: 36 个
 - **代码片段**: 11 def + 4 Python + 2 types.xml
-- **文档页数**: 5 个
-- **总行数**: 7000+ 行
+- **预定义实体模板**: 10 个
+- **文档页数**: 21 个 Markdown（仓库根 7 + docs/ 11 + resources/docs 3）
+- **总行数**: 17082 行（src/ TypeScript，实测）
 
 ---
 

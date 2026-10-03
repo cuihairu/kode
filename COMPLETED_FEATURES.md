@@ -2,12 +2,12 @@
 
 **版本**: 0.1.0
 **状态**: 核心功能已完成
-**总代码行数**: 7000+ 行
-**文件数量**: 25 个 TypeScript 文件
+**总代码行数**: 17082 行（src/ TypeScript，实测）
+**文件数量**: 27 个 TypeScript 文件（不含 src/test 烟测）
 
 ---
 
-## 已完成功能 (17 个)
+## 已完成功能 (19 个)
 
 ### 1. 语法高亮
 - 源码对齐的基础类型与容器类型高亮
@@ -141,19 +141,40 @@
   - 嵌套结构（FIXED_DICT 内层字段等）不是独立符号；找不到 entities.xml 时退化为仅同文件；非法新名（非 C 风格标识符）或与原名相同拒绝执行
 - **源文件**: `src/defRenamer.ts`（纯逻辑）、`src/languageProviders.ts`（KBEngineRenameProvider）
 
+### 18. 性能分析建议（.def 静态分析）
+- 工作区全量 `.def` 静态检查，命令面板 `Analyze Def Performance`（`kbengine.def.analyze`，批91）
+- 7 个检查项（幻影类型/缺 Type/重复 Type/重广播开销/冗余 DetailLevel/Python 关键字标识符/方法属性同名），均为优化建议、与实时诊断错位
+- 报告写入「KBEngine Def 分析」输出面板，诊断落 `kbengine-def-analysis` 问题列表
+- **源文件**: `src/defAnalyzer.ts`
+
+### 19. 代码片段生成器（自定义代码片段）
+- 选区生成自定义片段，命令面板 `Generate Snippet from Selection`（`kbengine.snippets.generateFromSelection`，批94）
+- 片段语法转义（`$`/`\`）+ 公共缩进剥离，合并写入 `.vscode/kbengine-custom.code-snippets`，scope 取当前文档语言
+- 同名条目覆盖有警告；手改出注释/坏 JSON 的片段文件拒绝改写并提示
+- **源文件**: `src/snippetGenerator.ts`
+
 ---
 
 ## 项目结构
 
 ```
 kode/
-├── src/
-│   ├── extension.ts              # 主扩展文件
-│   ├── languageProviders.ts      # 语言能力
+├── src/                          # 27 个 TypeScript 文件，17082 行
+│   ├── extension.ts              # 扩展入口（命令装配/注册面）
+│   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
+│   ├── defParser.ts              # .def 解析与文本定位
+│   ├── defRenamer.ts             # .def 重命名纯逻辑
+│   ├── defAnalyzer.ts            # 性能分析静态检查
+│   ├── snippetGenerator.ts       # 自定义片段生成纯逻辑
+│   ├── definitionSemantics.ts    # 定义语义与继承合并
+│   ├── definitionWorkspace.ts    # 定义工作区解析
+│   ├── databaseSchema.ts         # 数据库 schema 虚拟文档
 │   ├── explorerProviders.ts      # 树视图与导航
 │   ├── kbengineMetadata.ts       # KBEngine 元数据
+│   ├── kbengineProtocol.ts       # machine 发现与 watcher 协议编解码
 │   ├── hooks.ts                  # 钩子数据 (36 hooks,含源码调用位置)
 │   ├── serverManager.ts          # 服务器管理器
+│   ├── serverCommandTarget.ts    # 服务器命令目标解析
 │   ├── logCollector.ts           # 日志收集器
 │   ├── logParser.ts              # 日志解析器
 │   ├── logWebView.ts             # 日志 WebView
@@ -161,17 +182,22 @@ kode/
 │   ├── monitoringCollector.ts    # 监控数据收集器
 │   ├── monitoringWebView.ts      # 监控面板 WebView
 │   ├── entityMapping.ts          # Python-Def 映射管理器
+│   ├── pythonLanguageUtils.ts    # Python 补全上下文工具
 │   ├── entityDependency.ts       # 实体依赖分析器
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
-│   └── codeGenerator.ts          # 代码生成器
+│   ├── codeGenerator.ts          # 代码生成器 (10 模板)
+│   ├── workspacePath.ts          # 跨平台路径工具
+│   └── test/                     # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
-│   └── kbengine.tmLanguage.json  # 语法高亮规则
+│   ├── kbengine.tmLanguage.json  # 语法高亮规则
+│   └── kbengine-color-theme.json # 主题
 ├── snippets/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
-│   ├── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
+│   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
+├── tests/                        # vitest 测试 (83 文件 974 用例)
 └── package.json                  # 扩展配置
-```
+``````
 
 ---
 
@@ -179,12 +205,13 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 25 个 |
+| TypeScript 文件 | 27 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
-| 文档页数 | 5 个 |
-| 总行数 | 7000+ 行 |
-| 已完成功能 | 17 个 |
+| 预定义实体模板 | 10 个 |
+| 文档页数 | 21 个 Markdown（根 7 + docs/ 11 + resources/docs 3） |
+| 总行数 | 17082 行（src/ TypeScript，实测） |
+| 已完成功能 | 19 个 |
 
 ---
 
@@ -195,8 +222,8 @@ kode/
       末项「语法高亮」以 tests/tmLanguage.test.ts 16 用例收口,见 TESTING.md 批88)
 - [x] 修复发现的问题(批88:tmLanguage 语法与引擎注册表对齐——补 UNICODE、
       删 5 个引擎未注册类型名、删 2 个引擎未注册旗标,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 906 个用例;
-      原 @vscode/test-electron 层在重构阶段4已移除,批88 假设口径)
+- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 974 个用例;
+      原 test-electron 集成层已在重构阶段4移除,批88 假设口径)
 - [x] 优化性能(批92:基准先行——tests/perf/defPerf.bench.ts 对 173.4KB
       确定性大 .def 测解析/诊断/高亮三路径;不改变行为优化三处——语法规则
       fixed-entity-tag 消除扫描器重建、validateDocument 单次解析、

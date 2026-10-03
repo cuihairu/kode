@@ -13,11 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest pure-logic tests under `tests/` (216 cases) plus
-  the existing mocha/@vscode/test-electron integration tests (110 cases), with
-  v8 coverage reporting; engine-source-backed conditional tests verify hook call
-  sites, type registrations, and flags against a local KBEngine checkout
-  (see TESTING.md)
+- Two-layer test suite: vitest functional tests under `tests/` (974 cases,
+  including engine-source conditional suites that verify hook call sites, type
+  registrations, and flags against a local KBEngine checkout) plus a mocha
+  compile-artifact smoke layer (`src/test/suite/`, 11 cases); the legacy
+  test-electron integration layer was removed in the redesign stage 4, with
+  v8 coverage reporting (see TESTING.md)
 - Python document hover/completion registration and a dedicated python snippet
   contribution (`snippets/kbengine-python.json`) so the four hot-reload
   templates are available in `.py` files
@@ -25,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   names in Methods sections show 调用时机/函数签名 instead of symbol-only hover
 - Multi-line Methods/BaseMethods sections suggest hooks on later lines without
   a same-line section tag
+- `.def` rename support: F2 rename of properties/methods updates the same-file
+  declaration (all Flags-scope variants) and the same-name restatements in
+  descendant defs (Parent chain + Interfaces closure)
+- Def performance analyzer (`kbengine.def.analyze`) with seven advisory checks
+  reported to an output channel and the problems list
+- Entity template library expanded from five to ten presets (monster, space,
+  guild, team, mail) using only engine-registered types and flags
+- Snippet generator command (`kbengine.snippets.generateFromSelection`) that
+  escapes and dedents the selection and merges it into
+  `.vscode/kbengine-custom.code-snippets`
 
 ### Changed
 - Refactored language support code into focused modules
@@ -45,12 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   templates out of `kbengine.json` (11 def snippets) into `kbengine-python.json`
 - Fixed `joinWorkspacePath` producing mixed-separator paths for `C:\` workspaces
   on non-Windows hosts (now explicit `path.win32.join`)
-
-
-### Planned
-- Refactoring support (rename properties/methods)
-- Performance analysis suggestions
-- More entity templates and snippet generation tooling
+- Performance: share one parsed AST across the diagnostic passes, add a
+  fixed-entity-tag grammar rule to avoid scanner rebuilds, and speed up the
+  line-table computation (validateDocument −46%, full-file tokenization −17%
+  on a 173KB fixture, behavior locked by golden regression tests)
 
 ## [0.1.0] - 2026-03-25
 

@@ -2682,6 +2682,64 @@ COMPLETED_FEATURES.md 勾选「代码片段生成器(自定义代码片段)」;�
 「未来增强功能」四项全部收口,全仓未完成项仅剩「发布准备」三项
 (Marketplace 截图/完善文档/发布 Marketplace),等用户明令。
 
+## 批95:KBENGINE_SOURCE_AUDIT_PLAN 功能块 15「文档与 README」复核(批91~94 文档漂移修正 + 功能块清单补全,+3 用例)
+
+批次号:顺延批94(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:KBENGINE_SOURCE_AUDIT_PLAN 下一未完成项——计划内 15 块虽标已完成,但
+批91~94 落地后功能块 15(文档与 README)再度漂移,且批58/91/94 新落地的重构支持/
+性能分析建议/代码片段生成器三块不在计划功能块清单内。本批按执行方式只做一块:
+功能块 15 复核;清单补全(新增 16~18 三块,登记为未核对)随批入账,留待后续批次
+逐块核对。
+
+这块当前功能列表(执行方式第 1 步):README.md、docs/(VitePress 站与 guide 页)、
+PROJECT_SUMMARY.md、COMPLETED_FEATURES.md、CHANGELOG.md。
+
+对应核对源(第 2 步):文档事实以仓库实测为准——src/ 27 个 .ts、17082 行(wc 实测)、
+测试 83 文件 974 用例(引擎在位)/965(关引擎)+ mocha 烟测 11、预定义模板 10
+(codeGeneratorTemplates 测试锁定)、命令 23 条(package.json 贡献点)、文档 21 个
+.md(根 7 + docs 11 + resources/docs 3);引擎侧口径沿用 kbengineMetadata 注册表
+锁(引擎检出在位)。
+
+已确认一致(第 3 步):README 重构支持/性能分析/截图待补节、logger 未适配与监控
+watcher 边界的如实声明、安装节仅源码构建路径(批90 负向锁随全量 vitest 复跑绿)、
+docs/guide 既有 19 条命令条目。
+
+已确认错误(第 4 步,均改):① README/PROJECT_SUMMARY「5 个预定义模板」——批93
+已扩到 10;② PROJECT_SUMMARY「216 用例 + @vscode/test-electron 110 用例」——现为
+vitest 974 + mocha 烟测 11,test-electron 层批56 已移除;③ PROJECT_SUMMARY 的
+MVP/未来功能 6 个已完成项仍空选、创建扩展图标未记用户资产口径;④ 两份统计(19/25
+个 TS 文件、7000+ 行、文档 5 个)全部过期;⑤ CHANGELOG Unreleased 的 216/110 测试
+表述失实、Planned 三项均已交付未迁移;⑥ docs/guide/commands.md 缺 4 条命令
+(entity.method.open/database.open/def.analyze/snippets.generateFromSelection);
+⑦ 两份项目结构树缺 12+ 个 src 文件与 tests/docs 目录。
+
+删/改/保留(第 5 步):改——上述 7 类;保留——CHANGELOG [0.1.0] 历史段(如实记录
+当时状态,不回写历史);新增——tests/docsCommands.test.ts 防漂移锁。
+
+补齐测试(+3,tests/docsCommands.test.ts,新码全测):package.json 每条贡献命令必须
+以 `### \`kbengine.*\`` 小节见于 docs/guide/commands.md、文档小节不得记载不存在的
+命令(双向锁),README/PROJECT_SUMMARY/COMPLETED_FEATURES/CHANGELOG 不得回潮
+「5 个预定义模板/216 用例/110 用例/@vscode/test-electron/7000+ 行/19|25 个
+TypeScript」失实表述(负向锁)。本批零 src/ 改动。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 974 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 83 文件 965 用例全绿(−9 引擎条件用例);pnpm test
+EXIT=0(vitest 974 + 编译 + mocha 烟测 11 passing);覆盖率四指标 100% 维持,分母
+不变(4967/2782/869/4850)。
+
+瞬态记录:本批无红、无复跑,0 瞬态。
+
+无 tag、无 release、无 force push。记账:用例 971→974(+3;关引擎 962→965)。测试
+文件 82→83(+tests/docsCommands.test.ts)。COMPLETED_FEATURES 功能清单 17→19(新增
+18 性能分析建议、19 代码片段生成器条目,统计对齐实测);PROJECT_SUMMARY 同步 17~19
+节、勾选状态与统计;计划文件(KBENGINE_SOURCE_AUDIT_PLAN.md)功能块 15 核对结果补
+复核记录,新增 16~18 三块(未核对)。
+
+剩余核对队列(批95 后):KBENGINE_SOURCE_AUDIT_PLAN 功能块 16(重构支持)、17(性能
+分析建议)、18(代码片段生成器)三块按源码核对;发布准备三项(Marketplace 截图/
+完善文档/发布 Marketplace)维持不动等用户明令。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
