@@ -100,4 +100,33 @@ describe('mergeSnippetEntry', () => {
     expect(() => mergeSnippetEntry('42', 'A', entry)).toThrow('顶层必须是对象');
     expect(() => mergeSnippetEntry('{ // 手改注释', 'A', entry)).toThrow();
   });
+
+  // 官方片段装载 vs/base/common/json.ts 的 setObjectProperty 对 __proto__ 键
+  // 改用 defineProperty 保留自身属性;普通赋值会命中 Object.prototype 的
+  // __proto__ 访问器把新条目吞掉(输出无该片段却报已生成),此处锁死修正。
+  it('片段名 __proto__ 按自身属性写入,不被原型访问器吞掉', () => {
+    const result = mergeSnippetEntry(null, '__proto__', entry);
+
+    expect(result.overwritten).toBe(false);
+    expect(result.content).toContain('"__proto__"');
+    const parsed = JSON.parse(result.content) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(['__proto__']);
+    expect(parsed['__proto__']).toEqual({
+      scope: 'kbengine-def',
+      prefix: 'kbe-a',
+      body: ['<a>', '</a>'],
+      description: '示例片段'
+    });
+  });
+
+  it('既有 __proto__ 条目再生成判定为覆盖且前缀更新', () => {
+    const existing = '{"__proto__": {"prefix": "stale", "body": ["stale"]}, "Kept": {"prefix": "kept", "body": ["x"]}}';
+    const result = mergeSnippetEntry(existing, '__proto__', { ...entry, prefix: 'kbe-b' });
+
+    expect(result.overwritten).toBe(true);
+    const parsed = JSON.parse(result.content) as Record<string, { prefix: string }>;
+    expect(Object.keys(parsed).sort()).toEqual(['Kept', '__proto__']);
+    expect(parsed['__proto__'].prefix).toBe('kbe-b');
+    expect(parsed.Kept.prefix).toBe('kept');
+  });
 });

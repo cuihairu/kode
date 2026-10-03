@@ -340,7 +340,7 @@
 
 ### 18. 代码片段生成器（自定义代码片段）
 
-- 当前状态：`未核对`
+- 当前状态：`已完成`
 - 文件：
   - `src/snippetGenerator.ts`
   - `src/extension.ts`（命令接线）
@@ -349,8 +349,13 @@
 - 核对重点：
   - 是否宣称了任何引擎能力（应为纯编辑器功能，scope 取文档语言）
   - 转义与合并语义是否与 VSCode 片段文件格式一致
-- 核对结果：
-  - 待核对。
+- 核对结果（批97，2026-10-04，执行方式五步输出）：
+  - 这块当前功能列表：纯逻辑层 `src/snippetGenerator.ts`——`escapeSnippetText`（片段语法转义）、`selectionToSnippetBody`（统一换行/去首尾空行/按非空行最少缩进去公共缩进/逐行转义）、`mergeSnippetEntry`（新建/合并/同名覆盖判定/顶层非对象与坏 JSON 抛错）、路径常量 `.vscode/kbengine-custom.code-snippets`；命令装配层 `src/extension.ts`——`kbengine.snippets.generateFromSelection`（选区守卫 → 名称/前缀必填 → 描述可选 → 空选区/无工作区守卫 → 读-合并-写，同名覆盖警告，坏 JSON 拒绝改写），package.json 贡献命令与激活事件。纯编辑器功能，无引擎参与，scope 恒取生成时文档 languageId。
+  - 对应官方源码文件（VS Code main，2026-10-04 取）：`src/vs/base/common/json.ts`——片段文件经 `parse`（L864）装载，属性写入走 `setObjectProperty`（L847-860）：`__proto__` 键改用 `Object.defineProperty` 保留自身属性，注释明写防原型污染；`src/vs/workbench/contrib/snippets/browser/snippetsFile.ts`——`load()`（L269-285）`jsonParse` 后以 `Object.entries`（L274）枚举自身键，`JsonSerializedSnippet` 字段与 `isJsonSerializedSnippet` 形状判定（L176-187，`body` 真值即平铺条目），`_parseSnippet`（L295）`body` 数组 `join('\n')`（L304）、prefix 缺省回退 `''`、`scope` 按 `split(',')` 取语言列表（L318）；`snippetsService.ts` 里 `.code-snippets` 文件不设 `defaultScopes`（L509），逐条 `scope` 生效（L507 语言文件才钉死默认域）；`src/vs/editor/contrib/snippet/browser/snippetParser.ts`——`_parseEscaped`（L790）：`\` 只转义 `$`/`}`/`\` 三字符、其余保留反斜杠，`_until` 反转义正则 `\\(\$|}|\\)`（L776），`_parse`（L781-787）兜底 `_parseAnything`（L1146）——散落 `{`/`}` 按字面文本；`src/vs/editor/contrib/snippet/browser/snippetSession.ts`——`adjustWhitespace`（L427-467）取插入行前导空白（L429），续行 `lineLeadingWhitespace + 行` 后 `normalizeIndentation`（L462/L466），片段体自身缩进不剥离。官方文档 User Defined Snippets（https://code.visualstudio.com/docs/editor/userdefinedsnippets）：片段文件为 JSONC、项目级 `.vscode/*.code-snippets` 位置、`prefix`/`body`/`description`/`scope` 字段与 `body` 转义示例。KBEngine 源码不涉及——本块与引擎装载/语义无交点，`../kbengine` 无可对照面，核对重点 1 即查「是否零引擎宣称」。
+  - 已确认一致：① 核对重点 1 全表面零引擎能力宣称——package.json 命令标题/图标/激活事件、四条命令消息、`docs/guide/commands.md` 与 `features.md` 小节、README/COMPLETED_FEATURES 功能 19/PROJECT_SUMMARY/CHANGELOG 条目、源码头注与行注全部纯编辑器口径，`kbengine` 仅出现在命令 id 与文件名（命名而非能力）；scope 取生成时文档 languageId（`.def` 即 package.json 注册的 `kbengine-def`），与官方 `.code-snippets` 逐条 `scope`（单语言 id 为合法列表项）语义一致——**保留**。② 转义与官方片段语法逐点一致——官方 `\` 为转义前缀（仅 `$`/`}`/`\`），本实现对 `\` 双重转义、对 `$` 前缀转义，产出与官方文档示例同形（文本 `$MyVar = 2` → 转义 `\$` → JSON `\\$`）；`}` 不转义但因 `$` 全量转义不可能进入占位符/选择支上下文，散落 `{`/`}` 官方按字面文本——**保留**。③ 去公共缩进与官方插入语义配套——官方 `adjustWhitespace` 给续行叠加插入行缩进并归一化、不剥片段体自身缩进，本实现先剥公共缩进避免叠加双份，源码注释「插入位置的缩进由编辑器补」属实——**保留**。④ 合并落盘格式与官方装载面一致——顶层对象、2 空格缩进、尾部换行；条目仅 `scope`/`prefix`/`body`（`description` 空串省略，官方以片段名回退显示），`body` 行数组（官方 `join('\n')` 消费）、`prefix` 单串（官方兼容串或数组）、`scope` 单语言 id（官方 `split(',')` 后列表项）；路径即官方项目级片段文件位置；严格 JSON 是官方 JSONC 超集的子集，可被官方加载器读取；既有条目原样透传——**保留**。⑤ 带注释/坏 JSON 拒绝改写——官方片段文件为 JSONC（容忍注释与尾逗号），本实现显式报错、不静默丢用户注释，`commands.md`/`COMPLETED_FEATURES`/`PROJECT_SUMMARY` 三处如实记载该边界——**保留**。
+  - 已确认错误（1 处已修，合并语义与片段文件装载不一致）：`mergeSnippetEntry` 用普通赋值 `root[name] = record` 写条目，片段名为 `__proto__` 且既有文件无该键时命中 `Object.prototype.__proto__` 访问器——条目不落任何自身属性即被丢掉（`overwritten` 判 false、序列化输出 `{}\n`），命令层照报「已生成自定义代码片段」，成功消息与落盘内容相悖；官方装载面对同一键专门防御（`setObjectProperty` 用 `defineProperty` 保留自身属性），且 `Object.entries` 枚举自身键——同一输入官方可装载、本实现写丢并报成功，属核对重点 2 的合并语义不一致。改为 `root = { ...root, [name]: record }`（spread/计算键按 CreateDataProperty 定义绕开访问器，常规名称行为不变），+2 用例（新建名 `__proto__` 落盘含 `"__proto__"` 自身属性键、键序与值全等；既有 `__proto__` 条目再生成 `overwritten` 判 true 且前缀更新、他条目保留）；变异复跑验证：换回普通赋值第 1 例红（输出 `{}\n`），还原后全绿。
+  - 删/改/保留：改——`src/snippetGenerator.ts` 的 `mergeSnippetEntry` 条目写入（普通赋值 → spread/计算键）与注释，`tests/snippetGenerator.test.ts` +2 用例（`__proto__` 名正锁 ×2）。文档——README/CHANGELOG/`commands.md`/`features.md`/COMPLETED_FEATURES 功能 19/PROJECT_SUMMARY 功能 19 中本块表述逐条复核属实未动（全仓 README/docs 粗粒度表述复核属已登记遗留，按本批边界不动）。保留——转义口径（`\`/`$`）、批94「选区按字面收录不推断占位符」口径、公共缩进剥离+编辑器补缩进、scope=文档 languageId、同名覆盖警告、坏 JSON/带注释拒绝改写不静默改写、`workspaceFolders[0]` 落盘（与 codeGenerator/debugConfig 等全仓既有约定一致）。
+  - 遗留登记（不改，后续候选）：① 公共缩进按字符数计（`/^[ \t]*/` 长度），纯 tab 或纯空格选区精确，tab/空格混用时相对层级可能残留偏移——修正需引入编辑器 `tabSize` 列语义，纯逻辑层暂无该输入，待排期；② 片段文件的读/写 IO 失败（权限、同名目录、磁盘满）不在命令层 catch，交 VS Code 通用命令错误呈现——文件仅在成功解析后才改写，无静默损毁，如需友好提示待排期；③ 多根工作区固定取首根落盘与 codeGenerator/debugConfig 等全仓 `workspaceFolders[0]` 约定一致（非本块引入），活动文档不在首根时片段仍写首根 `.vscode/`——如要按文档所在根落盘需全仓统一改口径，待排期。
 
 ## 核对顺序
 

@@ -2830,6 +2830,89 @@ pnpm test EXIT=0(mocha 烟测 11 passing);覆盖率四指标 100%:
 值级判重粒度、validDefPropertyName 受限名检查)待对应批次;发布准备三项
 (Marketplace 截图/完善文档/发布 Marketplace)维持不动等用户明令。
 
+## 批97:KBENGINE_SOURCE_AUDIT_PLAN 功能块 18「代码片段生成器」核对(合并装载语义 __proto__ 修正,+2 用例)
+
+批次号:顺延批96(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:KBENGINE_SOURCE_AUDIT_PLAN 剩余核对队列——功能块 18(代码片段生成器,
+src/snippetGenerator.ts + extension.ts 命令接线),两条核对重点(是否宣称引擎能力/
+转义与合并语义是否与 VSCode 片段文件格式一致)对照 VS Code 官方片段实现与文档,
+按执行方式五步输出写入计划文件。边界:发布准备三项 HELD 不碰;README/docs 粗粒度
+表述复核等已登记遗留 3 项不动。不生成、不替换任何设计资产。
+
+块18 核对结论:
+- 功能列表:纯逻辑(escapeSnippetText/selectionToSnippetBody/mergeSnippetEntry/
+  路径常量)+命令装配(选区守卫→名称/前缀必填→描述可选→空选区/无工作区守卫→
+  读-合并-写 .vscode/kbengine-custom.code-snippets,同名覆盖警告,坏 JSON 拒绝
+  改写);scope 恒取生成时文档 languageId,无引擎参与。
+- 对应官方源码(VS Code main,2026-10-04 取):json.ts 的 parse(L864)→
+  setObjectProperty(L847-860,__proto__ 键改用 defineProperty 保留自身属性、
+  注释明写防原型污染);snippetsFile.ts 的 load(L269-285)jsonParse 后以
+  Object.entries(L274) 枚举自身键、形状判定 L176-187、_parseSnippet 的 body
+  join('\n')(L304)/prefix 回退/scope split(',')(L318);snippetsService 对
+  .code-snippets 不设 defaultScopes(L509) 逐条 scope 生效;snippetParser.ts 的
+  _parseEscaped(L790,\ 只转义 $ } \、其余保留反斜杠)、_until 反转义正则(L776)、
+  _parse 兜底 _parseAnything(L1146,散落花括号按字面文本);snippetSession 的
+  adjustWhitespace(L427-467,续行前插插入行缩进后 normalizeIndentation,不剥
+  片段体自身缩进);官方文档 User Defined Snippets(片段文件 JSONC、项目级
+  .vscode/*.code-snippets 位置、四字段与 body 转义示例)。KBEngine 源码不涉及
+  (纯编辑器功能,../kbengine 无可对照面,核对重点 1 即查零引擎宣称)。
+- 一致(保留):① 全表面零引擎能力宣称(package.json 标题/图标/激活、四条命令
+  消息、commands.md/features.md 小节、README/COMPLETED 功能19/PROJECT_SUMMARY/
+  CHANGELOG、源码注释),kbengine 前缀为命名非能力;scope=文档 languageId 与
+  官方逐条 scope(单语言 id 即列表项)一致(.def→kbengine-def 注册 id)。
+  ② 转义与官方语法逐点一致(\ 双重转义、$ 前缀转义,与官方文档示例同形:
+  文本 $MyVar = 2 → \$ → JSON \\$);$ 全量转义故占位符/选择支不可能开启,
+  散落 } 官方按字面文本,无需转义。③ 去公共缩进与官方插入语义配套(官方续行
+  叠加插入行缩进、不剥体缩进,先剥公共避免双份),源码注释属实。④ 落盘格式
+  与官方装载面一致(顶层对象/2 空格/尾换行;body 行数组官方 join、prefix 单串、
+  scope 单 id split;严格 JSON 是官方 JSONC 超集的子集;既有条目透传;body
+  真值被 isJsonSerializedSnippet 识别为平铺条目而非 scope 二级形态)。
+  ⑤ 带注释/坏 JSON 拒绝改写不静默丢用户注释,commands.md/COMPLETED/
+  PROJECT_SUMMARY 三处如实记载(官方实为 JSONC,容忍注释)。
+- 错误(1 处已修,合并语义与片段文件装载不一致):mergeSnippetEntry 用普通赋值
+  root[name]=record,片段名 __proto__ 且既有文件无该键时命中 Object.prototype
+  的 __proto__ 访问器——条目不落任何自身属性即被丢掉(overwritten 判 false、
+  序列化输出 {}),命令层照报「已生成自定义代码片段」,成功消息与落盘内容相悖;
+  官方 setObjectProperty 对该键专门 defineProperty、Object.entries 枚举自身键
+  ——同一输入官方可装载、本实现写丢并报成功。改为 root = { ...root, [name]:
+  record }(spread/计算键按 CreateDataProperty 定义绕开访问器,常规名行为不变)。
+- 删/改/保留:改 src/snippetGenerator.ts 的 mergeSnippetEntry 写入行+注释;
+  tests/snippetGenerator.test.ts +2 用例(__proto__ 新建落盘正锁、既有条目
+  再生成覆盖锁);文档本块表述逐条复核属实未动(README/docs 粗粒度表述复核按
+  已登记边界不动);保留——转义口径、批94 按字面收录不推断占位符、公共缩进
+  剥离+编辑器补、scope 取文档语言、同名覆盖警告、坏 JSON 拒绝改写、
+  workspaceFolders[0] 全仓既有约定。
+- 遗留登记(不改,后续候选):① 公共缩进按字符数计,tab/空格混用选区相对层级
+  可能残留偏移(纯 tab/纯空格精确;修正需引入编辑器 tabSize 列语义,纯逻辑层
+  无该输入);② 片段文件读/写 IO 失败(权限/同名目录/磁盘满)不在命令层 catch,
+  交 VS Code 通用命令错误呈现(文件仅成功解析后改写,无静默损毁);③ 多根工作区
+  固定取首根落盘与 codeGenerator/debugConfig 等全仓 workspaceFolders[0] 约定
+  一致(非本块引入),活动文档不在首根时仍写首根,如要按文档所在根落盘需全仓
+  统一口径。
+
+补齐测试(+2,既有文件新增用例、零新文件):tests/snippetGenerator.test.ts
+mergeSnippetEntry describe 内 +2——名 __proto__ 新建:输出含 "__proto__" 自身
+属性键/Object.keys 单键/深度相等;既有 __proto__ 条目再生成:overwritten true、
+前缀更新、他条目保留。变异验证:写入行换回普通赋值,第 1 例红(expected
+'{}\n' to contain '"__proto__"'),还原后 13/13 绿——修复前缺陷被真实锁死。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 982 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 83 文件 973 用例全绿(+2,关引擎 971→973);
+覆盖率四指标 100%:4974/4974 语句、2790/2790 分支、871/871 函数、4857/4857 行
+(分母与批96 一致——修复为等量替换语句,新增用例不增源码行);pnpm test
+EXIT=0(vitest+编译+mocha 烟测 11 passing)。
+
+无 tag、无 release、无 force push。记账:用例 980→982(+2;关引擎 971→973)。
+测试文件 83 不变。计划文件功能块 18 转「已完成」并填五步核对结果(含官方源码
+行级引用与遗留登记)。
+
+剩余核对队列(批97 后):计划内 18 个功能块全部核对完成;余下为已登记遗留
+(块16/17:definitionSemantics 直取形态、诊断 Flags 值级判重粒度、
+validDefPropertyName 受限名检查;块18:混合缩进字符计数、IO 失败提示、多根首根
+约定)+ 发布准备三项(Marketplace 截图/完善文档/发布 Marketplace)维持不动等
+用户明令。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

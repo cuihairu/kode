@@ -86,7 +86,12 @@ export function mergeSnippetEntry(
   if (entry.description.trim() !== '') {
     record.description = entry.description;
   }
-  root[name] = record;
+  // 条目不走普通赋值:片段名 __proto__ 会命中 Object.prototype 的 __proto__
+  // 访问器,新条目不落任何自身属性即被丢掉(序列化无该片段,命令层却报已生成);
+  // 官方片段装载 vs/base/common/json.ts 的 setObjectProperty 正是为该键改用
+  // defineProperty 保留自身属性。spread/计算键按 CreateDataProperty 定义,
+  // 同样绕开访问器,常规名称行为不变。
+  root = { ...root, [name]: record };
 
   return { content: `${JSON.stringify(root, null, 2)}\n`, overwritten };
 }
