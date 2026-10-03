@@ -132,19 +132,22 @@
 
 ### 17. 重构支持（.def 属性/方法重命名）
 - .def 文件内 F2 重命名属性或方法，自动更新定义与引用（原生 RenameProvider，无需命令）
-- 符号解析：顶层 `Properties` 的属性（同名全部 Flags 作用域变体视为同一文本符号）与 Base/Cell/Client 方法段的方法（段是命名空间，跨段同名互不相干）
-- 引用面：同文件同名声明 + 后代 def（Parent 链与 Interfaces 混入的传递闭包）中的同名复述；开标签与闭标签名字同步更新
+- 符号解析：顶层 `Properties` 的属性（同名全部 Flags 作用域变体视为同一文本符号——引擎按 cell/base/client 三域分立建条目、同域同名复述即装载失败，改名不改变装载合法性）与 Base/Cell/Client 方法段的方法（段是命名空间，跨段同名互不相干）
+- 引用面：同文件同名声明 + 后代 def 的同名复述，传播边对齐引擎装载路径（批96 引擎复核）：`Parent`/接口名取元素首个子节点（文本取文本、元素取标签名，同引擎 getKey；混合内容只看首子节点，换行缩进得空名不产生边）；实体父类解析到定义根、组件 def 的 Parent 在 components/ 内、接口固定 interfaces/ 子目录；接口文件不读 Parent（引擎 loadInterfaces 不走 loadParentClass）；`<Interfaces>` 只认 interface/Interface/type/Type 四种 wrapper 拼写，直取形态（如 `<MoveIface/>`）引擎不装载、不产生传播边；开标签与闭标签名字同步更新
 - 定义根定位从目标文件向上找 `entities.xml` 推导（KBEngine 常规布局），无需打开工作区
 - **如实边界**：
   - 仅覆盖 .def 定义与引用面；Python 侧 `self.x` / 方法调用、entities.xml、types.xml、数据库 schema 虚拟文档与资源管理器引用**不在**重命名范围
   - 在复述处发起重命名只更新该文件与其后代，不会回改祖先源头声明（按声明点向下传播）
   - 嵌套结构（FIXED_DICT 内层字段等）不是独立符号；找不到 entities.xml 时退化为仅同文件；非法新名（非 C 风格标识符）或与原名相同拒绝执行
+  - 新名与既有方法/属性/组件同名不做装载校验（引擎侧为装载错误，可由功能 18 的同名检查项提示）
+  - 文件枚举覆盖定义根整树（含未在 entities.xml 登记的 def），面向"会被编辑的文件"而非"本轮被装载的文件"
 - **源文件**: `src/defRenamer.ts`（纯逻辑）、`src/languageProviders.ts`（KBEngineRenameProvider）
 
 ### 18. 性能分析建议（.def 静态分析）
 - 工作区全量 `.def` 静态检查，命令面板 `Analyze Def Performance`（`kbengine.def.analyze`，批91）
-- 7 个检查项（幻影类型/缺 Type/重复 Type/重广播开销/冗余 DetailLevel/Python 关键字标识符/方法属性同名），均为优化建议、与实时诊断错位
+- 7 个检查项（幻影类型/缺 Type/重复 Type/重广播开销/冗余 DetailLevel/Python 关键字标识符/方法属性同名），均为优化建议、与实时诊断错位；批96 引擎复核后各检查口径对齐源码（客户端可见旗标取 `ENTITY_CLIENT_DATA_FLAGS` 位集真值，装载失败类检查按引擎行为表述，关键字按"引擎不失败、脚本语法不可访问"表述，重复 `<Type>` 按引擎首取语义表述）
 - 报告写入「KBEngine Def 分析」输出面板，诊断落 `kbengine-def-analysis` 问题列表
+- 如实边界：同名检查只在单文件内比对；与继承链上父类/接口成员的同名冲突（引擎按模块全局拒绝）不在本检查范围
 - **源文件**: `src/defAnalyzer.ts`
 
 ### 19. 代码片段生成器（自定义代码片段）
@@ -242,21 +245,29 @@ kode/
 ### 未来增强功能
 - [x] 重构支持（重命名属性/方法，自动更新所有引用）→ 已落地为 .def 面重命名（见「已完成功能 17」，Python 侧等全局引用面为后续扩展方向）
 - [x] 性能分析建议(批91:src/defAnalyzer.ts 静态检查 + `kbengine.def.analyze`
-      命令,报告入输出面板、诊断落问题列表,+22 用例)。检查项定案(与语言侧
-      实时诊断错位,只出「优化建议」):
+      命令,报告入输出面板、诊断落问题列表,+22 用例;批96 引擎复核修正各
+      检查口径)。检查项定案(与语言侧实时诊断错位,只出「优化建议」):
       ① phantom-type——引擎未注册类型(BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY),
       加载必失败;
-      ② missing-type——属性缺 <Type> 或值为空;
-      ③ duplicate-type-tag——同属性多个 <Type>,取值歧义的冗余定义;
+      ② missing-type——属性缺 <Type> 或值为空,实体加载会失败;
+      ③ duplicate-type-tag——同属性多个 <Type>,引擎 enterNode 只装载首个、
+      其余被忽略,按首取语义提示保留一个;
       ④ heavy-sync-broadcast——ALL_CLIENTS + 大负载类型(STRING/UNICODE/BLOB/
       容器/PY_*/VECTOR*)对全体客户端高频同步,建议收窄旗标或降粒度;
       ⑤ redundant-detail-level——DetailLevel 配在无客户端可见旗标的属性上,
-      纯冗余字段;
-      ⑥ invalid-identifier——属性/方法名为 Python 关键字,实体类生成失败
+      纯冗余字段(客户端可见旗标集取引擎 common.h ENTITY_CLIENT_DATA_FLAGS
+      真值:ALL_CLIENTS/CELL_PUBLIC_AND_OWN/OWN_CLIENT/BASE_AND_CLIENT/
+      OTHER_CLIENTS;引擎旗标共 8 个、无 ANY_CLIENT,CELL_PUBLIC 为纯 cell
+      广播位——批96 修正了旧名单的漏项与幻影项);
+      ⑥ invalid-identifier——属性/方法名为 Python 关键字:引擎 C 层 setattr
+      不报错、装载不失败,但 Python 脚本语法无法用 self.X 访问该成员
       (标识符字符集由 def 标签语法保证,故仅关键字可触发);
-      ⑦ method-property-collision——方法与属性同名,Python 类中互相覆盖。
+      ⑦ method-property-collision——方法与属性同名:引擎装载时按名冲突直接
+      拒绝(scriptdef_module),实体加载会失败(非"Python 类中互相覆盖")。
       范围注记:重复定义等结构校验已由语言侧实时诊断覆盖,本功能不重复;
-      自定义 types.xml 类型为引擎合法扩展,故不做「未知类型」误报
+      自定义 types.xml 类型为引擎合法扩展,故不做「未知类型」误报;
+      同名检查只比单文件,继承链上的跨文件同名(引擎按模块全局拒绝)不在
+      范围
 - [x] 实体模板库（更多预设模板）(批93:预设模板 5→10——新增怪物/场景/
       公会/队伍/邮件,类型与旗标仅取引擎注册表,队伍成员数组用
       `ARRAY<of>UINT64</of>` 内联语法;全库 10 模板生成 .def 经实时诊断与

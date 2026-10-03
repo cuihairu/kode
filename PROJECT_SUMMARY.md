@@ -148,14 +148,15 @@
 
 #### 17. 重构支持（.def 属性/方法重命名）
 - [.def 文件内 F2 重命名属性/方法（原生 RenameProvider，无命令贡献点）]
-- [同文件同名声明与 Flags 作用域变体视为同一文本符号一并更新]
-- [Parent 链与 Interfaces 混入的传递闭包后代 def 同名复述同步（开/闭标签同步改）]
-- [如实边界：Python 侧引用、entities.xml、types.xml 不在重命名范围]
+- [同文件同名声明与 Flags 作用域变体视为同一文本符号一并更新（引擎按三域分立建条目，改名不改变装载合法性）]
+- [传播边对齐引擎装载路径（批96 复核）：Parent/接口名按引擎 getKey 取首个子节点（文本或元素），实体/组件/接口各按引擎目录解析，接口文件不读 Parent，直取形态接口引用不跟随]
+- [如实边界：Python 侧引用、entities.xml、types.xml 不在重命名范围；新名同名冲突不做装载校验]
 - [源码：src/defRenamer.ts（纯逻辑）、src/languageProviders.ts（KBEngineRenameProvider）]
 
 #### 18. 性能分析建议
 - [工作区全量 .def 静态分析（命令 `kbengine.def.analyze`）]
 - [7 个检查项：幻影类型、缺 Type、重复 Type、重广播开销、冗余 DetailLevel、Python 关键字标识符、方法属性同名]
+- [批96 引擎复核：客户端可见旗标集取 ENTITY_CLIENT_DATA_FLAGS 真值，同名冲突/缺 Type 按「装载失败」表述，关键字按「引擎不失败、脚本不可访问」表述，重复 <Type> 按引擎首取语义表述；同名检查限单文件]
 - [报告写入「KBEngine Def 分析」输出面板并以诊断落入问题列表]
 - [源码：src/defAnalyzer.ts]
 

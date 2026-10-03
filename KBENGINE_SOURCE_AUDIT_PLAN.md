@@ -300,7 +300,7 @@
 
 ### 16. 重构支持（.def 属性/方法重命名）
 
-- 当前状态：`未核对`
+- 当前状态：`已完成`
 - 文件：
   - `src/defRenamer.ts`
   - `src/languageProviders.ts`（KBEngineRenameProvider）
@@ -312,12 +312,17 @@
   - “同名 Flags 作用域变体视为同一文本符号”是否符合引擎装载语义
   - 后代复述传播面是否与 `loadParentClass`/接口装载的实际解析范围一致
   - 边界声明（Python 侧/entities.xml/types.xml 不参与）是否如实
-- 核对结果：
-  - 待核对。
+- 核对结果（批96，2026-10-03，执行方式五步输出）：
+  - 这块当前功能列表：符号解析（顶层属性/方法段方法，光标落在开或闭标签名上）、同文件同名编辑、后代复述传播、定义根向上推导、provider 装配（languageProviders 的 KBEngineRenameProvider 为纯薄壳，无独立语义，未改）。
+  - 对应官方源码文件：`kbe/src/lib/entitydef/entitydef.cpp`（loadDefInfo L339 起的装载顺序、loadInterfaces L551 起的 wrapper 拼写检查 L563-565、loadComponents L642 起——组件的接口仍从原定义根解析 L765、组件父类在 components/ 内解析 L774、loadParentClass L890-920 对 `<Parent>` 首个子节点取 getKey、loadDefPropertys 的按域 addPropertyDescription L1286-1297）、`kbe/src/lib/entitydef/scriptdef_module.cpp`（addPropertyDescription L533-610 与三类 addXxxMethodDescription L857/L920/L985 起的同域同名拒绝与跨域分立）、`kbe/src/lib/xml/xml.cpp`（getKey = trim(节点 Value)——文本节点取文本、元素取标签名）。
+  - 已确认一致：① 重点1“Flags 作用域变体视为同一文本符号”——引擎按 cell/base/client 三域分立建 PropertyDescription 条目，同域同名复述直接装载失败、跨域同名是各自独立条目而非合并；把同名变体作为一组文本一起改名只是同时改两条引擎本就分立的文本，改名前后装载合法性不变，编辑器侧文本分组不引入错误边，**保留**。② 重点3 边界声明——entities.xml 只持实体名、types.xml 只持类型别名，成员名不出现，Python 侧不参与，声明属实，**保留**。
+  - 已确认错误（重点2 传播面与引擎装载面不一致，4 处已修）：① Parent 取名只读文本（getScalarChildValue），漏引擎同样接受的 `<Parent><Hero/></Parent>` 元素形态——改为对 Parent 首个子节点做引擎 getKey 语义（文本取文本、元素取标签名）；同时按引擎锁定混合内容行为：标签间换行缩进使首子节点为空白文本 → 空名、引擎拼不出父类文件（装载失败），不产生边（“文本优先否则首元素”的写法会误跟随，已弃）。② Interfaces 只认 `Interface` 精确拼写，引擎同样接受的 `interface`/`type`/`Type`（entitydef.cpp L563-565）被当成“直取名”产生垃圾边——收敛为四拼写 wrapper 集合，接口名同样按首子节点取名（`<Interface>MoveIface</Interface>` 文本形态与元素形态都认）。③ `<Interfaces><MoveIface/></Interfaces>` 直取形态被跟随传播，而引擎对非 wrapper 子元素直接 continue 不装载——撤回该传播面（新增负向锁）。④ 边解析不按引擎路径：接口文件的 Parent 被跟随（引擎 loadInterfaces 不走 loadParentClass）、组件 Parent 落到实体命名空间解析（引擎在 components/ 内，L774）、引用名全域按类别递归匹配（引擎路径精确：实体父类平铺定义根、接口固定 interfaces/、组件的接口从原定义根解析 L765）——改为按 owner 类别的路径精确解析，闭包键从 `category:name` 改为命中文件路径，同名不同命名空间不再误连。
+  - 删/改/保留：改——src/defRenamer.ts 的 parseDefFileSemantics/getReferenceTargetName（新）/INTERFACE_WRAPPER_NAMES（新）/resolveLinkPaths（新）/collectOwnerClosure 重写与头部边界注释，tests/defRenamer.test.ts 夹具 MoveIface/Avatar 改 wrapper 形态并 +4 用例（Parent 元素形态正锁、直取形态负向锁、接口文件 Parent 负向锁、组件 Parent 同目录正锁+越界负向锁、混合内容 Parent 负向锁），tests/defRenamerBranches.test.ts 夹具同步 wrapper 形态；保留——Flags 变体同符号口径、复述处只向下传播、Python 侧/entities.xml/types.xml 边界声明、递归枚举容差（引擎只装载 entities.xml 登记实体，编辑器面向“会被编辑的文件”，超集只影响建议面，已在文档如实声明）；文档——docs/guide/language.md 更新范围/边界、COMPLETED_FEATURES 功能 17、PROJECT_SUMMARY 功能 17 同步引擎对齐语义（README 的粗粒度表述复核后本就属实，未动）。
+  - 遗留登记（不改，他块范围）：definitionSemantics.parseInterfaceRefs 仍接受 `<Interfaces>` 直取形态（块 6/8 时代的“三形态”口径，用于实体浏览器/依赖图/数据库 schema 的混入解析），与引擎装载语义存在同源偏差，登记为块 6/8 后续复核项——本块 renamer 已按引擎收敛，两模块口径差异已在各自注释注明。另：语言侧诊断的同作用域重复检查按 Flags **值**相等判重，比引擎的 domain 位重叠粗（如 BASE_AND_CLIENT 与 OWN_CLIENT 都含 client 位，引擎装载失败而诊断放行），属块 4 的既有粒度，一并登记待该块复核。新名与既有方法/属性/组件同名的引擎装载冲突不在 renamer 校验（engine 侧 addPropertyDescription/addXxxMethodDescription 按模块全局拒绝同名），已在边界声明补记并由 defAnalyzer 的 method-property-collision 检查项提示。
 
 ### 17. 性能分析建议（.def 静态分析）
 
-- 当前状态：`未核对`
+- 当前状态：`已完成`
 - 文件：
   - `src/defAnalyzer.ts`
 - 内容：
@@ -325,8 +330,13 @@
 - 核对重点：
   - 幻影类型清单是否与 `DataTypes` 注册表逐名一致
   - 各检查项是否只以“优化建议”口径输出、不冒充引擎装载规则
-- 核对结果：
-  - 待核对。
+- 核对结果（批96，2026-10-03，执行方式五步输出）：
+  - 这块当前功能列表：单文件静态分析（analyzeDefDocument）+ 报告格式化（formatDefAnalysisReport），7 检查项（phantom-type/missing-type/duplicate-type-tag/heavy-sync-broadcast/redundant-detail-level/invalid-identifier/method-property-collision），命令接线在 extension.ts，诊断落 `kbengine-def-analysis`。
+  - 对应官方源码文件：`kbe/src/lib/entitydef/datatypes.cpp`（addDataType L56-79 注册 21 个内建类型，BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY 逐名不在册）、`kbe/src/lib/entitydef/common.cpp`（stringToEntityDataFlags L45-77——旗标名单共 8 个：CELL_PUBLIC/CELL_PRIVATE/ALL_CLIENTS/CELL_PUBLIC_AND_OWN/OWN_CLIENT/BASE_AND_CLIENT/BASE/OTHER_CLIENTS，整串比对、无组合语法）、`kbe/src/lib/entitydef/common.h`（L19-27 位值、L45 ENTITY_CLIENT_DATA_FLAGS = BASE_AND_CLIENT|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|OTHER_CLIENTS|OWN_CLIENT）、`kbe/src/lib/entitydef/entitydef.cpp`（loadDefPropertys：Type 经 enterNode 只取首个、缺 Type 报错返回；L967-1009 validDefPropertyName 按 ENTITY_LIMITED_PROPERTYS 与 KBEngine.Entity 既有属性拒绝受限名）、`kbe/src/lib/entitydef/scriptdef_module.cpp`（addPropertyDescription L533-610 拒绝与方法名 L539/组件名 L547 冲突及同域同名属性 L590；三类 addXxxMethodDescription L857/L920/L985 拒绝与属性同名——双向都是装载错误）。
+  - 已确认一致：① 幻影类型清单——与 datatypes.cpp 注册表逐名核对，BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY 确不在册且 types.xml 别名机制救不回，"实体加载会失败"表述属实，**保留**；② heavy-sync-broadcast——ALL_CLIENTS 确为全体客户端广播位，大负载类型的同步开销提示为编辑器侧建议口径、未冒充引擎规则，**保留**；③ 检查定位与报告格式无引擎语义宣称，**保留**。
+  - 已确认错误（4 处已修）：① CLIENT_SYNC_FLAGS 名单失实——含引擎不存在的幻影名 ANY_CLIENT（common.cpp 8 名单里没有）、误含纯 cell 广播位 CELL_PUBLIC（0x1，不在 ENTITY_CLIENT_DATA_FLAGS）、漏掉真客户端位 OWN_CLIENT/CELL_PUBLIC_AND_OWN/BASE_AND_CLIENT——导致冗余 DetailLevel 检查双向失真（漏报 CELL_PUBLIC+DetailLevel、误报三个真客户端旗标下的有意义配置），改为 ENTITY_CLIENT_DATA_FLAGS 位集展开的 5 名单；② invalid-identifier 表述失实——"实体类无法生成该成员"不成立：引擎 C 层 setattr 挂关键字名不报错、装载不失败，真实影响只是 Python 脚本语法无法写 self.class 访问，改为如实口径；③ method-property-collision 表述失实——"Python 实体类中会互相覆盖"不成立：引擎装载时按名冲突直接拒绝（scriptdef_module 双向检查），改为"实体加载会失败"；④ duplicate-type-tag 表述不准——引擎 enterNode 只取首个 <Type>、行为确定而非"取值歧义"，改为按首取语义表述；附带把 missing-type 的含混表述（"无法确定存储与同步布局"）收敛为"实体加载会失败"（引擎找不到 Type 报错返回，与 phantom-type 同级事实）。
+  - 删/改/保留：改——src/defAnalyzer.ts 的 CLIENT_SYNC_FLAGS（引擎真值名单）、describeKeywordProblem、method-property-collision/missing-type/duplicate-type-tag 四处消息文案与注释；tests/defAnalyzer.test.ts +2 用例（真客户端旗标负向锁 ×3、CELL_PUBLIC 漏转报正锁 + ANY_CLIENT 幻影名负向锁）并补消息文案锁（装载不失败/实体加载会失败/只装载首个/不得回潮"互相覆盖""无法生成"）；tests/perfRegression.test.ts 建议 goldens 重取（findingCount 220→620：夹具 CELL_PUBLIC|ANY_CLIENTS 与 BASE_PUBLIC|CELL_PUBLIC 两类旗标的 DetailLevel 由漏转报，digest 827fa39f/77945013）；文档——COMPLETED_FEATURES 功能 18 与未来增强 ⑦、PROJECT_SUMMARY 功能 18 同步引擎口径（README/docs 的粗粒度表述复核后本就属实，未动）；保留——幻影类型清单、heavy-sync 口径、检查项与实时诊断的错位分工、Flags 按 '|' 容错拆分（引擎整串比对会拒绝组合旗标，该情形由语言侧实时诊断拦，分析侧容错只影响建议面）。
+  - 遗留登记（不改，后续候选）：① 引擎 validDefPropertyName 还会拒绝 ENTITY_LIMITED_PROPERTYS 受限名（id/position/direction/spaceID/autoLoad/cell/base/client/cellData/className/component/databaseID/isDestroyed/shouldAutoArchive/shouldAutoBackup/__ACCOUNT_NAME__ 等，common.h L125-158）与 KBEngine.Entity 既有属性名——kode 诊断与分析均未覆盖，属可新增检查项（有源码依据，待排期）；② 同名检查只比单文件，继承链跨文件同名（引擎按模块全局拒绝）不在范围，已在文档如实声明；③ 幻影类型清单只列高频误写 5 名，引擎 21 注册名的任意拼错属语言侧"未知类型"诊断范围，两模块分工维持现状。
 
 ### 18. 代码片段生成器（自定义代码片段）
 

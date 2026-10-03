@@ -17,7 +17,10 @@ import { buildLargeDefFixture } from './helpers/largeDefFixture';
 // 样本)在三条路径上的完整行为摘要——语法分词 token 流、语言服务诊断、
 // defAnalyzer 建议——用 djb2 摘要固化。优化(语法规则消重编译、诊断单次解析)
 // 必须保持这些摘要逐位不变;任何 scope/诊断/建议漂移都会在此失败。
-// golden 取自优化前实现(批92 记账时以本文件为对照)。
+// golden 取自优化前实现(批92 记账时以本文件为对照);批96 defAnalyzer 引擎
+// 复核(客户端可见旗标集对齐 ENTITY_CLIENT_DATA_FLAGS + 检查口径改写)后,
+// 建议 goldens 重取(220→620:夹具里 CELL_PUBLIC|ANY_CLIENTS 与
+// BASE_PUBLIC|CELL_PUBLIC 两类旗标的 DetailLevel 由漏转报),其余路径不变。
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -31,15 +34,15 @@ const djb2 = (input: string): string => {
 
 const fixture = buildLargeDefFixture();
 
-// 优化前(批92 基线)行为摘要
+// 批96 defAnalyzer 引擎对齐后的行为摘要
 const GOLDEN = {
   tokenCount: 47726,
   tokenDigest: 'c3c0cf5f',
   diagnosticCount: 400,
   diagnosticDigest: '910801f9',
-  findingCount: 220,
-  findingDigest: '0fd11ac3',
-  reportDigest: '76a9465c',
+  findingCount: 620,
+  findingDigest: '827fa39f',
+  reportDigest: '77945013',
   astNodes: 1,
   astLineStarts: 7291,
   astRootChildren: 11

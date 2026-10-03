@@ -4,15 +4,25 @@
 // 定义根定位从目标文件向上找 entities.xml 推导(KBEngine 布局 entities.xml
 // 位于 entity_defs 的父目录,见 definitionWorkspace 的布局候选)。
 //
-// 作用域与边界(如实说明,COMPLETED_FEATURES.md 同步记录):
+// 作用域与边界(如实说明,COMPLETED_FEATURES.md 同步记录;批96 引擎复核对齐):
 // - 符号 = 顶层 Properties 直接子元素(属性,同名全部 Flags 作用域变体算同一
 //   文本符号)或某方法段直接子元素(方法,段是命名空间,Base/Cell/Client
 //   互不相干)。嵌套结构(FIXED_DICT 内层字段等)不是独立符号。
-// - 引用 = 同文件同名符号 + 祖先闭包含目标 owner 的后代 def 中的同名复述
-//   (Parent 链与 Interfaces 混入的传递闭包;Components 槽不参与)。
+// - 引用 = 同文件同名符号 + 后代 def 的同名复述。传播边对齐引擎装载路径
+//   (entitydef.cpp):Parent/接口 wrapper 的名取首个子节点(文本取文本、
+//   元素取标签名,同引擎 getKey;`<Parent> Hero </Parent>` 与紧凑的
+//   `<Parent><Hero/></Parent>` 都认,但标签间换行缩进使首子节点成空白
+//   文本 → 空名不产生边,引擎同样装载不到),按 owner 类别解析——实体在
+//   定义根、组件 def 在 components/ 内,接口文件装载时不读 Parent
+//   (loadInterfaces 不走 loadParentClass);Interfaces 只认 wrapper 形态
+//   (interface/Interface/type/Type 包裹),固定解析到 interfaces/ 子目录。
+//   以接口名直接命名的 <Interfaces> 子元素引擎不装载,不产生传播边;
+//   悬空引用同样不产生边。
 // - 在复述处发起重命名只更新该文件与其后代,不复改祖先源头声明。
 // - 仅覆盖 .def 面:Python 侧 self.x / 方法调用、entities.xml、types.xml、
-//   数据库 schema 虚拟文档与资源管理器引用不在重命名范围内。
+//   数据库 schema 虚拟文档与资源管理器引用不在重命名范围内;新名与既有
+//   方法/属性/组件跨面同名的装载冲突不在此校验(引擎侧 addProperty/
+//   addMethodDescription 为装载错误,可由 defAnalyzer 的同名检查项提示)。
 // - 找不到 entities.xml 定位定义根时退化为仅同文件;新名非法(非 C 风格
 //   标识符)或与原名相同返回空编辑。
 import * as fs from 'fs';
@@ -22,8 +32,8 @@ import {
   DefDocument,
   DefElementNode,
   DefMethodSection,
+  getDirectChildElement,
   getDirectChildElements,
-  getScalarChildValue,
   parseDefDocument
 } from './defParser';
 
@@ -319,45 +329,91 @@ function listDefFilesRecursive(defsRoot: string): DefFileEntry[] {
   return entries.sort((left, right) => left.filePath.localeCompare(right.filePath));
 }
 
-/** def 文件的直接语义面:Parent 实体名 + Interfaces 引用名(对齐 definitionSemantics 的三形态) */
+/**
+ * 引擎在 `<Interfaces>` 下只认这四种 wrapper 拼写(entitydef.cpp:563-566,
+ * 大小写敏感);以接口名直接命名的子元素(如 `<MoveIface/>`)引擎不装载,
+ * 这里同样不跟随。
+ */
+const INTERFACE_WRAPPER_NAMES = new Set(['interface', 'Interface', 'type', 'Type']);
+
+/**
+ * 引擎的取名语义(entitydef.cpp 对 `<Parent>`/接口 wrapper 的取值:
+ * `enterNode` 拿到元素后取其**首个子节点**,再经 xml.cpp 的
+ * `getKey = kbe_trim(node->Value())`——文本节点取文本,元素取标签名):
+ * `<Parent> Hero </Parent>` 与 `<Parent><Hero/></Parent>` 两种紧凑写法都得
+ * 'Hero';但混合内容只看第一个子节点,`<Parent>` 与 `<Hero/>` 之间换行缩进
+ * 时首子节点是空白文本,引擎取到空名、拼不出父类文件(装载失败)——
+ * 这里同样得空名,不产生边。
+ */
+function getReferenceTargetName(node: DefElementNode): string {
+  const firstChild = node.children[0];
+  if (!firstChild) {
+    return '';
+  }
+  return (firstChild.kind === 'text' ? firstChild.text : firstChild.name).trim();
+}
+
+/** def 文件的直接语义面:Parent 名 + Interfaces 引用名(对齐引擎装载语法) */
 function parseDefFileSemantics(content: string): DefFileSemantics | null {
   const document = parseDefText(content);
   if (!document?.root) {
     return null;
   }
-  const parentName = getScalarChildValue(document.root, 'Parent')?.trim() || null;
+  const parentNode = getDirectChildElement(document.root, 'Parent');
+  const parentName = parentNode ? getReferenceTargetName(parentNode) || null : null;
   const interfaceNames: string[] = [];
   for (const section of getDirectChildElements(document.root)) {
     if (section.name !== 'Interfaces') {
       continue;
     }
     for (const reference of getDirectChildElements(section)) {
-      if (reference.name === 'Interface') {
-        // <Interface><MoveIface/></Interface> 取首子元素名;自闭合无名跳过
-        const firstChild = getDirectChildElements(reference)[0];
-        if (firstChild) {
-          interfaceNames.push(firstChild.name);
-        }
-      } else {
-        // <MoveIface/> 直取标签名
-        interfaceNames.push(reference.name);
+      if (!INTERFACE_WRAPPER_NAMES.has(reference.name)) {
+        continue;
+      }
+      // 自闭合/空 wrapper 得空名,等价悬空引用,跳过(引擎同样取不到名)
+      const name = getReferenceTargetName(reference);
+      if (name) {
+        interfaceNames.push(name);
       }
     }
   }
   return { parentName, interfaceNames };
 }
 
-function ownerKey(category: DefOwnerCategory, name: string): string {
-  return `${category}:${name}`;
+interface DefLinkPaths {
+  parentPath: string | null;
+  interfacePaths: string[];
 }
 
 /**
- * 文件 owner 的祖先闭包(Parent 链 + Interfaces 混入,传递),键为
- * `${category}:${name}`。Parent 指向实体;Interfaces 指向 interfaces/ 目录。
+ * 引擎的边解析面(entitydef.cpp):实体 Parent 平铺在定义根(`<root>/<P>.def`,
+ * loadParentClass L890-920);接口固定在 interfaces/ 子目录(loadInterfaces
+ * L551-640,组件亦从原定义根解析,L765);组件 def 的 Parent 在 components/
+ * 内解析(loadComponents L774)。接口文件装载时不读 Parent(loadInterfaces
+ * 只递归描述/DetailLevel/接口,不走 loadParentClass)——其 `<Parent>` 声明
+ * 对引擎不可见,这里同样不产生边。
+ */
+function resolveLinkPaths(defsRoot: string, entry: DefFileEntry, semantics: DefFileSemantics): DefLinkPaths {
+  const interfacePaths = semantics.interfaceNames.map(name =>
+    path.join(defsRoot, 'interfaces', `${name}.def`));
+  let parentPath: string | null = null;
+  if (semantics.parentName && entry.category !== 'interface') {
+    const parentDir = entry.category === 'component'
+      ? path.join(defsRoot, 'components')
+      : defsRoot;
+    parentPath = path.join(parentDir, `${semantics.parentName}.def`);
+  }
+  return { parentPath, interfacePaths };
+}
+
+/**
+ * 文件 owner 的祖先闭包(Parent 链 + Interfaces 混入,传递),值为命中文件
+ * 的绝对路径——按引擎装载路径精确解析,悬空引用不产生边。
  */
 function collectOwnerClosure(
   entry: DefFileEntry,
-  ownerIndex: Map<string, DefFileEntry>,
+  defsRoot: string,
+  fileIndex: Map<string, DefFileEntry>,
   loadSemantics: (filePath: string) => DefFileSemantics | null
 ): Set<string> {
   const closure = new Set<string>();
@@ -369,25 +425,19 @@ function collectOwnerClosure(
     if (!semantics) {
       continue;
     }
-    if (semantics.parentName) {
-      const parentEntry = ownerIndex.get(ownerKey('entity', semantics.parentName));
-      if (parentEntry) {
-        closure.add(ownerKey('entity', parentEntry.name));
-        if (!seen.has(parentEntry.filePath)) {
-          seen.add(parentEntry.filePath);
-          queue.push(parentEntry);
-        }
-      }
-    }
-    for (const interfaceName of semantics.interfaceNames) {
-      const ifaceEntry = ownerIndex.get(ownerKey('interface', interfaceName));
-      if (!ifaceEntry) {
+    const links = resolveLinkPaths(defsRoot, current, semantics);
+    for (const targetPath of [links.parentPath, ...links.interfacePaths]) {
+      if (!targetPath) {
         continue;
       }
-      closure.add(ownerKey('interface', ifaceEntry.name));
-      if (!seen.has(ifaceEntry.filePath)) {
-        seen.add(ifaceEntry.filePath);
-        queue.push(ifaceEntry);
+      const targetEntry = fileIndex.get(path.resolve(targetPath));
+      if (!targetEntry) {
+        continue;
+      }
+      closure.add(targetEntry.filePath);
+      if (!seen.has(targetEntry.filePath)) {
+        seen.add(targetEntry.filePath);
+        queue.push(targetEntry);
       }
     }
   }
@@ -420,9 +470,9 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
   const targetEntry = classifyDefFile(defsRoot, resolvedTarget);
 
   const files = listDefFilesRecursive(defsRoot);
-  const ownerIndex = new Map<string, DefFileEntry>();
+  const fileIndex = new Map<string, DefFileEntry>();
   for (const entry of files) {
-    ownerIndex.set(ownerKey(entry.category, entry.name), entry);
+    fileIndex.set(entry.filePath, entry);
   }
 
   // 每个文件至多读盘一次:语义面与编辑面共用同一份内容(不可读即 null)
@@ -438,7 +488,6 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
     return content === null ? null : parseDefFileSemantics(content);
   };
 
-  const targetOwnerKey = ownerKey(targetEntry.category, targetEntry.name);
   for (const entry of files) {
     if (entry.filePath === targetEntry.filePath) {
       continue;
@@ -447,8 +496,8 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
     if (content === null) {
       continue;
     }
-    const closure = collectOwnerClosure(entry, ownerIndex, loadSemantics);
-    if (!closure.has(targetOwnerKey)) {
+    const closure = collectOwnerClosure(entry, defsRoot, fileIndex, loadSemantics);
+    if (!closure.has(targetEntry.filePath)) {
       continue;
     }
     const edits = collectRenameEditsInText(content, symbol);

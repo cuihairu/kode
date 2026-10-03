@@ -11,6 +11,8 @@ import {
 // parseDefFileSemantics 的无名 <Interface/> 跳过臂、闭包行走 seen 去重守卫
 // 的假臂(父链成环 + 共享接口各触发一次)、以及 loadSemantics 对不可读
 // 后代(Ghosty.def chmod 000,经父链入队绕过外层 null 守卫)的 null 臂。
+// 批96 引擎对齐:接口引用夹具改为 wrapper 形态(直取形态引擎不装载,由
+// defRenamer.test.ts 的 DirectIface 负向锁覆盖)。
 // `if (open)` 的开标签假臂契约性不可达,已以精确单行区间 ignore 定案,
 // 理由见源码注记与 TESTING.md 批68 段。
 
@@ -23,12 +25,13 @@ const SOLO_DEF = [
   ''
 ].join('\n');
 
-// 无名自闭合 <Interface/> 与实名引用并存:无名者跳过,实名者照常入闭包
+// 无名自闭合 <Interface/> 与实名 wrapper 引用并存:无名者取不到接口名跳过
+// (引擎 getKey 得空串),实名者照常入闭包
 const NAMELESS_DEF = [
   '<root>',
   '  <Interfaces>',
   '    <Interface/>',
-  '    <SharedI/>',
+  '    <Interface><SharedI/></Interface>',
   '  </Interfaces>',
   '  <Properties>',
   '    <hp> <Type> UINT8 </Type> </hp>',
@@ -42,7 +45,7 @@ const CYCLE_A_DEF = [
   '<root>',
   '  <Parent> CycleB </Parent>',
   '  <Interfaces>',
-  '    <SharedI/>',
+  '    <Interface><SharedI/></Interface>',
   '  </Interfaces>',
   '</root>',
   ''
@@ -51,7 +54,7 @@ const CYCLE_B_DEF = [
   '<root>',
   '  <Parent> CycleA </Parent>',
   '  <Interfaces>',
-  '    <SharedI/>',
+  '    <Interface><SharedI/></Interface>',
   '  </Interfaces>',
   '</root>',
   ''
@@ -140,7 +143,7 @@ describe('computeDefRenameEdits branch gaps (批68)', () => {
 
   it('survives an unreadable ancestor queued through a readable parent chain', () => {
     // Ghosty.def 不可读:外层循环按 null 内容跳过它,但 Distant→Mid→Ghosty
-    // 的闭包行走把 Ghosty 从 ownerIndex 入队,loadSemantics 拿到 null
+    // 的闭包行走把 Ghosty 从 fileIndex 入队,loadSemantics 拿到 null
     fs.chmodSync(ghostyPath, 0o000);
     try {
       const results = computeDefRenameEdits({

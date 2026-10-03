@@ -15,6 +15,9 @@ import {
 // 「优化建议」——引擎注册对齐、同步开销、冗余定义三类,不做重复定义等
 // 既有实时诊断已覆盖的结构校验。检查项定案见 COMPLETED_FEATURES.md 同名
 // 条目与 README「性能分析」节。
+// 批96 引擎复核后各检查口径对齐源码:客户端可见旗标取 ENTITY_CLIENT_DATA_FLAGS
+// 真值(common.h),方法/属性同名与幻影类型按装载失败表述,Python 关键字按
+// 「引擎不失败、脚本语法不可访问」表述,重复 <Type> 按引擎首取语义表述。
 
 export interface DefAnalysisFinding {
   /** 检查项标识(见 CHECK describable 常量与文档) */
@@ -67,13 +70,23 @@ const HEAVY_SYNC_TYPE_NAMES = new Set([
   'VECTOR4'
 ]);
 
-// 客户端可见旗标:DetailLevel 只影响这些旗标下的 AOI 细节同步;
-// 纯服务端属性(CELL_PRIVATE 等)配 DetailLevel 属冗余字段。
-const CLIENT_SYNC_FLAGS = new Set(['ALL_CLIENTS', 'ANY_CLIENT', 'CELL_PUBLIC', 'OTHER_CLIENTS']);
+// 客户端可见旗标:引擎真值为 ENTITY_CLIENT_DATA_FLAGS 位集(kbengine
+// common.h L45 = ED_FLAG_BASE_AND_CLIENT | ALL_CLIENTS | CELL_PUBLIC_AND_OWN
+// | OTHER_CLIENTS | OWN_CLIENT;旗标名单见 common.cpp stringToEntityDataFlags,
+// 共 8 个、无 ANY_CLIENT)。DetailLevel 只影响这些旗标下的 AOI 细节同步;
+// 纯服务端旗标(CELL_PUBLIC/CELL_PRIVATE/BASE)配 DetailLevel 属冗余字段。
+const CLIENT_SYNC_FLAGS = new Set([
+  'ALL_CLIENTS',
+  'CELL_PUBLIC_AND_OWN',
+  'OWN_CLIENT',
+  'BASE_AND_CLIENT',
+  'OTHER_CLIENTS'
+]);
 
 // 属性/方法名会落地为 Python 实体类的成员名:defParser 标签字符集
 // ([A-Za-z_][A-Za-z0-9_]*)已保证标识符形态,此处只需拦 Python 关键字——
-// 关键字成员令实体类生成失败。
+// 引擎 C 层 setattr 挂关键字名不报错(装载不失败),但 Python 脚本语法上
+// 无法写 self.class 这类访问,成员事实上不可用。
 const PYTHON_KEYWORDS = new Set([
   'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
   'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally',
@@ -111,7 +124,7 @@ const nameSpan = (node: DefElementNode): { offset: number; length: number } => (
 });
 
 const describeKeywordProblem = (name: string): string =>
-  `名字 ${name} 是 Python 关键字,实体类无法生成该成员`;
+  `名字 ${name} 是 Python 关键字:引擎装载不失败,但脚本无法用 self.${name} 访问该成员,建议改名`;
 
 const analyzePropertyNode = (
   document: DefDocument,
@@ -140,7 +153,7 @@ const analyzePropertyNode = (
   const typeText = typeNode?.children.find((child): child is DefTextNode => child.kind === 'text');
   const typeValue = typeText ? typeText.text.trim() : '';
 
-  // 类型缺失或为空:引擎无法实例化属性
+  // 类型缺失或为空:引擎装载直接失败(loadDefPropertys 找不到 Type 报错返回)
   if (!typeNode || !typeValue) {
     findings.push(
       finding(
@@ -148,7 +161,7 @@ const analyzePropertyNode = (
         'error',
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
-        `属性 ${propertyNode.name} 缺少有效的 <Type>,引擎无法确定存储与同步布局`,
+        `属性 ${propertyNode.name} 缺少有效的 <Type>,实体加载会失败`,
         propertyNode.name
       )
     );
@@ -168,7 +181,7 @@ const analyzePropertyNode = (
     );
   }
 
-  // 重复 <Type>:存在取值歧义的冗余定义
+  // 重复 <Type>:引擎 enterNode 只取首个,其余被静默忽略(读者视角的歧义)
   if (typeNodes.length > 1) {
     findings.push(
       finding(
@@ -176,7 +189,7 @@ const analyzePropertyNode = (
         'warning',
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
-        `属性 ${propertyNode.name} 定义了 ${typeNodes.length} 个 <Type>,存在取值歧义,请仅保留一个`,
+        `属性 ${propertyNode.name} 定义了 ${typeNodes.length} 个 <Type>,引擎只装载首个、其余被忽略,请仅保留一个`,
         propertyNode.name
       )
     );
@@ -269,7 +282,7 @@ export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
             'error',
             nameSpan(methodNode),
             getLineNumberAt(document, methodNode.tagStart),
-            `方法 ${methodNode.name} 与同名属性冲突,Python 实体类中会互相覆盖`,
+            `方法 ${methodNode.name} 与属性同名:引擎装载时按名冲突直接拒绝(scriptdef_module),实体加载会失败`,
             methodNode.name
           )
         );

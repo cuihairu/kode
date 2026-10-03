@@ -23,7 +23,10 @@ import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // defRenamer 的纯逻辑与 KBEngineRenameProvider 装配:.def 属性/方法重命名的
 // 符号解析(光标须落在符号名上)、引用编辑计算(同文件 + 后代 def 复述)与
-// 边界(方法段命名空间、无实体根退化、非法新名拒绝)。真实临时文件树。
+// 边界(方法段命名空间、无实体根退化、非法新名拒绝)。传播边对齐引擎装载
+// 语义(批96 核对):Parent 取文本或首子元素名、按 owner 类别路径精确解析,
+// Interfaces 只认 wrapper 四拼写、直取形态不跟随,接口文件不读 Parent。
+// 真实临时文件树。
 
 const HERO_DEF = [
   '<root>',
@@ -132,7 +135,7 @@ const IBASE_DEF = [
 const MOVE_IFACE_DEF = [
   '<root>',
   '  <Interfaces>',
-  '    <IBase/>',
+  '    <Interface><IBase/></Interface>',
   '  </Interfaces>',
   '  <Properties>',
   '    <drift> <Type> FLOAT </Type> </drift>',
@@ -141,10 +144,12 @@ const MOVE_IFACE_DEF = [
   ''
 ].join('\n');
 
+// Avatar 用 wrapper 文本形态(<Interface>MoveIface</Interface>)——引擎 getKey
+// 对 wrapper 取"文本优先,空则首子元素名"(xml.cpp),两种写法都装载
 const AVATAR_DEF = [
   '<root>',
   '  <Interfaces>',
-  '    <MoveIface/>',
+  '    <Interface>MoveIface</Interface>',
   '  </Interfaces>',
   '  <Properties>',
   '    <drift> <Type> FLOAT </Type> </drift>',
@@ -154,7 +159,7 @@ const AVATAR_DEF = [
   ''
 ].join('\n');
 
-// Interfaces 的 <Interface><X/></Interface> 包裹形态(definitionSemantics 三形态之一)
+// Interfaces 的 <Interface><X/></Interface> 包裹形态(元素名取法)
 const GOLEM_DEF = [
   '<root>',
   '  <Interfaces>',
@@ -162,6 +167,129 @@ const GOLEM_DEF = [
   '  </Interfaces>',
   '  <Properties>',
   '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 引擎在 <Interfaces> 下还认 interface/type/Type 三种 wrapper 拼写
+// (entitydef.cpp:563-566,大小写敏感);各配一个实体锁定
+const LOWER_IFACE_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <interface><IBase/></interface>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const TYPE_WRAPPER_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <Type>IBase</Type>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const LOWER_TYPE_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <type>IBase</type>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 以接口名直接命名的 <Interfaces> 子元素:引擎装载时跳过(entitydef.cpp
+// 对非 wrapper 子元素 continue),不产生传播边——负向锁
+const DIRECT_IFACE_DEF = [
+  '<root>',
+  '  <Interfaces>',
+  '    <IBase/>',
+  '  </Interfaces>',
+  '  <Properties>',
+  '    <drift> <Type> FLOAT </Type> </drift>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// Parent 的元素形态 <Parent><Hero/></Parent>:引擎 loadParentClass 对
+// `<Parent>` 的**首个子节点**做 getKey(文本取文本、元素取标签名)——正锁
+const PARENT_ELEMENT_DEF = [
+  '<root>',
+  '  <Parent><Hero/></Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT16 </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 混合内容:<Parent> 与 <Hero/> 之间换行缩进 → 首子节点是空白文本,引擎
+// getKey 得空名、拼不出父类文件(装载失败),不产生边——负向锁
+const MIXED_PARENT_DEF = [
+  '<root>',
+  '  <Parent>',
+  '    <Hero/>',
+  '  </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT16 </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 接口文件里的 <Parent>:引擎 loadInterfaces 不走 loadParentClass
+// (entitydef.cpp L551-640 只递归描述/DetailLevel/接口),声明不可见——负向锁
+const IFACE_PARENTED_DEF = [
+  '<root>',
+  '  <Parent> Hero </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT16 </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 组件 def 的 Parent 在 components/ 内解析(entitydef.cpp loadComponents
+// L774:loadParentClass(defFilePath + "components/", ...))
+const BASE_GUN_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <power> <Type> UINT32 </Type> </power>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const CHILD_GUN_DEF = [
+  '<root>',
+  '  <Parent> BaseGun </Parent>',
+  '  <Properties>',
+  '    <power> <Type> UINT32 </Type> </power>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+// 组件 Parent 只在 components/ 找:components/Hero.def 不存在时,即使定义根
+// 有同名实体 Hero.def 也不产生边(引擎同样装载不到父类)——负向锁
+const WAND_DEF = [
+  '<root>',
+  '  <Parent> Hero </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT16 </Type> </hp>',
   '  </Properties>',
   '</root>',
   ''
@@ -208,6 +336,16 @@ let ibasePath: string;
 let moveIfacePath: string;
 let avatarPath: string;
 let golemPath: string;
+let lowerIfacePath: string;
+let typeWrapperPath: string;
+let lowerTypePath: string;
+let directIfacePath: string;
+let parentElementPath: string;
+let mixedParentPath: string;
+let ifaceParentedPath: string;
+let baseGunPath: string;
+let childGunPath: string;
+let wandPath: string;
 let heirPath: string;
 let danglingPath: string;
 let brokenPath: string;
@@ -237,6 +375,16 @@ beforeAll(() => {
   moveIfacePath = write('scripts/entity_defs/interfaces/MoveIface.def', MOVE_IFACE_DEF);
   avatarPath = write('scripts/entity_defs/Avatar.def', AVATAR_DEF);
   golemPath = write('scripts/entity_defs/Golem.def', GOLEM_DEF);
+  lowerIfacePath = write('scripts/entity_defs/LowerIface.def', LOWER_IFACE_DEF);
+  typeWrapperPath = write('scripts/entity_defs/TypeWrap.def', TYPE_WRAPPER_DEF);
+  lowerTypePath = write('scripts/entity_defs/LowerType.def', LOWER_TYPE_DEF);
+  directIfacePath = write('scripts/entity_defs/DirectIface.def', DIRECT_IFACE_DEF);
+  parentElementPath = write('scripts/entity_defs/ParentElem.def', PARENT_ELEMENT_DEF);
+  mixedParentPath = write('scripts/entity_defs/MixedParent.def', MIXED_PARENT_DEF);
+  ifaceParentedPath = write('scripts/entity_defs/interfaces/Parented.def', IFACE_PARENTED_DEF);
+  baseGunPath = write('scripts/entity_defs/components/BaseGun.def', BASE_GUN_DEF);
+  childGunPath = write('scripts/entity_defs/components/ChildGun.def', CHILD_GUN_DEF);
+  wandPath = write('scripts/entity_defs/components/Wand.def', WAND_DEF);
   heirPath = write('scripts/entity_defs/Heir.def', HEIR_DEF);
   danglingPath = write('scripts/entity_defs/Dangling.def', DANGLING_DEF);
   brokenPath = write('scripts/entity_defs/Broken.def', BROKEN_DEF);
@@ -399,8 +547,14 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
       symbol: heroHpSymbol(),
       newName: 'vigor'
     });
-    // Hero:两个 hp 变体的开+闭标签 = 4;Monster/Boss 各 1 个复述 = 2
-    expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'Boss.def': 2 });
+    // Hero:两个 hp 变体的开+闭标签 = 4;Monster/Boss/ParentElem 各 1 个复述 = 2
+    // (ParentElem 是 <Parent><Hero/></Parent> 元素形态——引擎 getKey 同样取到 Hero)
+    expect(editsByFile(results)).toEqual({
+      'Hero.def': 4,
+      'Monster.def': 2,
+      'Boss.def': 2,
+      'ParentElem.def': 2
+    });
 
     const heroEntry = results.find(entry => entry.filePath === heroPath)!;
     const renamed = applyEdits(HERO_DEF, heroEntry.edits, 'vigor');
@@ -436,7 +590,7 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(monsterRenamed).toContain('<CellMethods>\n    <move/>');
   });
 
-  it('接口属性经 Interfaces 传递闭包更新混入实体(含 <Interface> 包裹形态)', () => {
+  it('接口属性经 Interfaces 传递闭包更新混入实体(wrapper 四种拼写与文本/元素两种取名)', () => {
     const symbol = resolveRenameSymbolAtOffset(IBASE_DEF, cursorAt(IBASE_DEF, '<drift>'))!;
     const results = computeDefRenameEdits({
       targetFilePath: ibasePath,
@@ -444,18 +598,86 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
       symbol,
       newName: 'driftSpeed'
     });
-    // IBase 源头 + MoveIface(直接混入并复述)+ Avatar(经 MoveIface 传递)+ Golem(包裹形态)
+    // IBase 源头 + MoveIface(Interface 元素形态包裹)+ Avatar(wrapper 文本形态,经
+    // MoveIface 传递)+ Golem(Interface 元素形态)+ LowerIface(interface 拼写)+
+    // TypeWrap(Type 文本形态)+ LowerType(type 文本形态)
     expect(editsByFile(results)).toEqual({
       'IBase.def': 2,
       'MoveIface.def': 2,
       'Avatar.def': 2,
-      'Golem.def': 2
+      'Golem.def': 2,
+      'LowerIface.def': 2,
+      'TypeWrap.def': 2,
+      'LowerType.def': 2
     });
 
     const avatarEntry = results.find(entry => entry.filePath === avatarPath)!;
     const renamed = applyEdits(AVATAR_DEF, avatarEntry.edits, 'driftSpeed');
     expect(renamed).toContain('<driftSpeed> <Type> FLOAT </Type> </driftSpeed>');
     expect(renamed).toContain('<own> <Type> UINT8 </Type> </own>');
+  });
+
+  it('以接口名直接命名的 <Interfaces> 子元素引擎不装载,不产生传播边', () => {
+    // entitydef.cpp loadInterfaces 只认 wrapper 拼写的子元素,直取形态被跳过;
+    // DirectIface 复述了 drift 但闭包不含 IBase——旧实现对齐 definitionSemantics
+    // 三形态时会误跟随,引擎语义下必须缺席(负向锁)
+    const symbol = resolveRenameSymbolAtOffset(IBASE_DEF, cursorAt(IBASE_DEF, '<drift>'))!;
+    const results = computeDefRenameEdits({
+      targetFilePath: ibasePath,
+      targetText: IBASE_DEF,
+      symbol,
+      newName: 'driftSpeed'
+    });
+    expect(results.find(entry => entry.filePath === directIfacePath)).toBeUndefined();
+    // Beast 的 <Ghost/> 同为直取形态,且 Ghost 悬空——双因缺席
+    expect(results.find(entry => entry.filePath === beastPath)).toBeUndefined();
+  });
+
+  it('接口文件的 <Parent> 不被跟随:引擎 loadInterfaces 不走 loadParentClass', () => {
+    // Parented.def 位于 interfaces/,声明 <Parent> Hero 并复述 hp;引擎装载接口
+    // 文件时不读 Parent(entitydef.cpp L551-640),该复述对 Hero 的重命名不可见
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    expect(results.find(entry => entry.filePath === ifaceParentedPath)).toBeUndefined();
+  });
+
+  it('混合内容 Parent(标签间换行缩进)首子节点是空白文本,引擎取空名不产生边', () => {
+    // 引擎 loadParentClass 对 <Parent> 首个子节点做 getKey:MixedParent 的
+    // 首子节点是 "\n    " 文本,trim 后空名 → 拼不出父类文件(装载失败),
+    // 该复述对 Hero 的重命名不可见——"文本优先否则首元素"的写法会误跟随
+    const results = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    expect(results.find(entry => entry.filePath === mixedParentPath)).toBeUndefined();
+  });
+
+  it('组件 def 的 Parent 在 components/ 内解析:命中同目录组件、不误连同名根实体', () => {
+    // 正向:BaseGun(组件)的 power 经 ChildGun(Parent BaseGun)复述传播
+    const powerSymbol = resolveRenameSymbolAtOffset(BASE_GUN_DEF, cursorAt(BASE_GUN_DEF, '<power>'))!;
+    const results = computeDefRenameEdits({
+      targetFilePath: baseGunPath,
+      targetText: BASE_GUN_DEF,
+      symbol: powerSymbol,
+      newName: 'attackPower'
+    });
+    expect(editsByFile(results)).toEqual({ 'BaseGun.def': 2, 'ChildGun.def': 2 });
+
+    // 负向:Wand(组件)的 <Parent> Hero 在 components/ 内不存在(定义根的
+    // Hero.def 是实体命名空间),引擎装载不到父类,重命名 Hero 的 hp 不传播
+    const heroResults = computeDefRenameEdits({
+      targetFilePath: heroPath,
+      targetText: HERO_DEF,
+      symbol: heroHpSymbol(),
+      newName: 'vigor'
+    });
+    expect(heroResults.find(entry => entry.filePath === wandPath)).toBeUndefined();
   });
 
   it('在复述处发起只更新该文件与其后代,不复改祖先源头(如实边界)', () => {
@@ -511,13 +733,22 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
       symbol: heroHpSymbol(),
       newName: 'vigor'
     });
-    expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'Boss.def': 2 });
+    expect(editsByFile(results)).toEqual({
+      'Hero.def': 4,
+      'Monster.def': 2,
+      'Boss.def': 2,
+      'ParentElem.def': 2
+    });
     // Heir(Parent Hero)不复述 hp;Broken(Parent Monster)坏 XML 语义面为空;
-    // Dangling 的 Parent/Interfaces 引用悬空;HealthComp 是组件命名空间
+    // Dangling 的 Parent/Interfaces 引用悬空;HealthComp/Wand/BaseGun/ChildGun
+    // 是组件命名空间(且 Wand 的 Parent 在 components/ 内悬空)
     expect(results.find(entry => entry.filePath === heirPath)).toBeUndefined();
     expect(results.find(entry => entry.filePath === brokenPath)).toBeUndefined();
     expect(results.find(entry => entry.filePath === danglingPath)).toBeUndefined();
     expect(results.find(entry => entry.filePath === componentPath)).toBeUndefined();
+    expect(results.find(entry => entry.filePath === baseGunPath)).toBeUndefined();
+    expect(results.find(entry => entry.filePath === childGunPath)).toBeUndefined();
+    expect(results.find(entry => entry.filePath === wandPath)).toBeUndefined();
   });
 
   it('扫描中途不可读的后代文件被跳过', () => {
@@ -531,7 +762,7 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
         symbol: heroHpSymbol(),
         newName: 'vigor'
       });
-      expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2 });
+      expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'ParentElem.def': 2 });
     } finally {
       fs.chmodSync(bossPath, 0o644);
     }
@@ -547,7 +778,12 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
         symbol: heroHpSymbol(),
         newName: 'vigor'
       });
-      expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'Boss.def': 2 });
+      expect(editsByFile(results)).toEqual({
+        'Hero.def': 4,
+        'Monster.def': 2,
+        'Boss.def': 2,
+        'ParentElem.def': 2
+      });
     } finally {
       fs.chmodSync(lockedDir, 0o755);
     }
@@ -633,7 +869,8 @@ describe('KBEngineRenameProvider 装配', () => {
     );
 
     expect(workspaceEdit).toBeInstanceOf(WorkspaceEdit);
-    expect(workspaceEdit!.size).toBe(3);
+    // Hero/Monster/Boss/ParentElem(Parent 元素形态)
+    expect(workspaceEdit!.size).toBe(4);
 
     // 目标文件复用文档 uri,其余文件走 Uri.file(按 fsPath 索引断言)
     const heroEdits = workspaceEdit!.get(document.uri);

@@ -8,6 +8,10 @@ import {
 // defAnalyzer 纯逻辑测试(批91:性能分析建议)。检查项定案见
 // COMPLETED_FEATURES「性能分析建议」条目:幻影类型 / 缺类型 / 重复 Type /
 // 大字段全体广播 / DetailLevel 冗余 / 非法 Python 名 / 方法属性同名冲突。
+// 批96 引擎复核锁:客户端可见旗标取 common.h ENTITY_CLIENT_DATA_FLAGS 真值
+// (ALL_CLIENTS/CELL_PUBLIC_AND_OWN/OWN_CLIENT/BASE_AND_CLIENT/OTHER_CLIENTS;
+// 引擎无 ANY_CLIENT,CELL_PUBLIC 是纯 cell 广播位),关键字的口径改为
+// 「引擎不失败、脚本不可访问」,方法属性同名与缺 Type 按「装载失败」表述。
 
 const def = (body: string): string => ['<root>', body, '</root>'].join('\n');
 
@@ -59,6 +63,8 @@ describe('类型类检查(幻影/缺失/重复)', () => {
     const hit = firstOf(findings, 'missing-type');
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('hp');
+    // 引擎 loadDefPropertys 找不到 Type 直接报错返回——按装载失败表述
+    expect(hit.message).toContain('实体加载会失败');
   });
 
   it('空 <Type> 标签与纯空白 <Type> 同样报 missing-type', () => {
@@ -76,6 +82,8 @@ describe('类型类检查(幻影/缺失/重复)', () => {
     const hit = firstOf(findings, 'duplicate-type-tag');
     expect(hit.severity).toBe('warning');
     expect(hit.message).toContain('2 个 <Type>');
+    // 引擎 enterNode 只取首个匹配——按首取语义表述,不再宣称"取值歧义"
+    expect(hit.message).toContain('只装载首个');
     expect(checksOf(findings)).not.toContain('phantom-type');
   });
 });
@@ -95,7 +103,7 @@ describe('同步开销检查(大字段广播 / DetailLevel 冗余)', () => {
     expect(hit.message).toContain('ALL_CLIENTS');
   });
 
-  it('ALL_CLIENTS + 标量小类型不报;客户端可见但非全体旗标不报', () => {
+  it('ALL_CLIENTS + 标量小类型不报;非全体广播旗标不报', () => {
     const small = analyzeDefDocument(
       def(property('hp', '      <Type>UINT8</Type>\n      <Flags>ALL_CLIENTS</Flags>'))
     );
@@ -136,6 +144,47 @@ describe('同步开销检查(大字段广播 / DetailLevel 冗余)', () => {
     );
     expect(checksOf(synced)).not.toContain('redundant-detail-level');
   });
+
+  it('客户端可见旗标集取引擎真值:OWN_CLIENT/BASE_AND_CLIENT/CELL_PUBLIC_AND_OWN 下 DetailLevel 不冗余', () => {
+    // common.h L45 ENTITY_CLIENT_DATA_FLAGS 位集展开;旧名单缺这三项时会把
+    // 有意义的 DetailLevel 误报为冗余(假阳性),此处负向锁
+    for (const flag of ['OWN_CLIENT', 'BASE_AND_CLIENT', 'CELL_PUBLIC_AND_OWN']) {
+      const findings = analyzeDefDocument(
+        def(
+          property(
+            'pos',
+            `      <Type>VECTOR3</Type>\n      <Flags>${flag}</Flags>\n      <DetailLevel>NEAR</DetailLevel>`
+          )
+        )
+      );
+      expect(checksOf(findings), flag).not.toContain('redundant-detail-level');
+    }
+  });
+
+  it('CELL_PUBLIC 不携带客户端位:配 DetailLevel 报冗余;引擎无 ANY_CLIENT 旗标', () => {
+    // CELL_PUBLIC = 0x1,不在 ENTITY_CLIENT_DATA_FLAGS——旧名单把它当客户端
+    // 可见会漏报(假阴性);ANY_CLIENT 是引擎旗标注册表(common.cpp 8 个名单)
+    // 里不存在的名字,不得出现在客户端可见集合中
+    const cellPublic = analyzeDefDocument(
+      def(
+        property(
+          'tick',
+          '      <Type>UINT32</Type>\n      <Flags>CELL_PUBLIC</Flags>\n      <DetailLevel>FAR</DetailLevel>'
+        )
+      )
+    );
+    expect(checksOf(cellPublic)).toContain('redundant-detail-level');
+
+    const anyClient = analyzeDefDocument(
+      def(
+        property(
+          'pos',
+          '      <Type>VECTOR3</Type>\n      <Flags>ANY_CLIENT</Flags>\n      <DetailLevel>FAR</DetailLevel>'
+        )
+      )
+    );
+    expect(checksOf(anyClient)).toContain('redundant-detail-level');
+  });
 });
 
 describe('命名检查(非法标识符 / 关键字 / 方法属性冲突)', () => {
@@ -145,6 +194,9 @@ describe('命名检查(非法标识符 / 关键字 / 方法属性冲突)', () =>
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('class');
     expect(hit.message).toContain('Python 关键字');
+    // 引擎 C 层 setattr 挂关键字名不报错——不得宣称"实体类无法生成该成员"
+    expect(hit.message).toContain('装载不失败');
+    expect(hit.message).not.toContain('无法生成');
   });
 
   it('方法名为关键字同样报 error', () => {
@@ -183,6 +235,9 @@ describe('命名检查(非法标识符 / 关键字 / 方法属性冲突)', () =>
     const hit = firstOf(findings, 'method-property-collision');
     expect(hit.severity).toBe('error');
     expect(hit.name).toBe('hp');
+    // 引擎装载时按名冲突直接拒绝——不得宣称"Python 类中互相覆盖"
+    expect(hit.message).toContain('实体加载会失败');
+    expect(hit.message).not.toContain('互相覆盖');
   });
 
   it('方法名合法且无冲突时不报;缺的方法节走 continue 分支', () => {

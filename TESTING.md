@@ -2740,6 +2740,96 @@ EXIT=0(vitest 974 + 编译 + mocha 烟测 11 passing);覆盖率四指标 100% �
 分析建议)、18(代码片段生成器)三块按源码核对;发布准备三项(Marketplace 截图/
 完善文档/发布 Marketplace)维持不动等用户明令。
 
+## 批96:KBENGINE_SOURCE_AUDIT_PLAN 功能块 16「重构支持」核对(传播面对齐引擎装载语义,4 处修复) + 功能块 17「性能分析建议」核对(口径/旗标集修正,2 用例,建议 goldens 重取)
+
+批次号:顺延批95(写入前 `grep '^## 批'` 复核,非交互假设注明)。
+
+巡检取项:按 dispatch 主核对块16(重构支持,.def 属性/方法重命名,src/
+defRenamer.ts 与 languageProviders.ts 的 KBEngineRenameProvider),三条核对重点逐条
+对照 ../kbengine 源码;时间富余顺做块17(性能分析建议,src/defAnalyzer.ts)。
+两块均按执行方式五步输出写入 KBENGINE_SOURCE_AUDIT_PLAN.md。
+
+块16 核对结论:
+- 功能列表:符号解析(顶层属性/三类方法段方法)、同文件同名编辑(含 Flags 变体
+  分组)、后代复述传播(Parent 链与 Interfaces 闭包)、定义根向上推导、
+  KBEngineRenameProvider 薄壳装配。
+- 对应源码:entitydef.cpp(loadDefInfo L339 装载顺序、loadInterfaces L563-565
+  wrapper 四拼写、loadComponents L765/L774 组件路径、loadParentClass L890-920
+  首子节点取名)、scriptdef_module.cpp(三域分立条目与同域同名拒绝)、xml.cpp
+  (getKey = trim(节点 Value))。
+- 一致(保留):① Flags 作用域变体视为同一文本符号——引擎按 cell/base/client
+  三域分立建条目,同域同名复述装载失败、跨域同名分立,同名变体成组改名不改变
+  装载合法性;② Python 侧/entities.xml/types.xml 不参与的边界声明属实。
+- 错误(4 处已修,传播面与引擎装载解析不一致):① Parent 只读文本形态,漏引擎
+  同样接受的 <Parent><Hero/></Parent> 元素形态——改为首子节点 getKey 语义,并按
+  引擎锁定混合内容(标签间换行缩进 → 首子节点空白文本 → 空名不产生边);②
+  Interfaces 只认精确拼写 interface,引擎还认 interface/type/Type(entitydef.cpp
+  L563-565)——收敛为四拼写 wrapper 集合,接口名同按首子节点取名;③ 直取形态
+  <Interfaces><MoveIface/></Interfaces> 被跟随,引擎对非 wrapper 子元素 continue
+  不装载——撤回该传播面(新增负向锁);④ 边解析不按引擎路径(接口文件的
+  Parent 被跟随——loadInterfaces 不走 loadParentClass;组件 Parent 落实体命名
+  空间——引擎在 components/ 内;引用名全域递归匹配)——改为按 owner 类别路径
+  精确解析,闭包键从 category:name 改为命中文件路径。
+- 删/改/保留:改 src/defRenamer.ts(parseDefFileSemantics/getReferenceTargetName/
+  INTERFACE_WRAPPER_NAMES/resolveLinkPaths/collectOwnerClosure)与测试夹具;保留
+  Flags 变体口径、向下传播方向、三侧不参与边界、递归枚举容差;文档同步
+  language.md/COMPLETED_FEATURES 功能17/PROJECT_SUMMARY 功能17。
+- 遗留登记:definitionSemantics.parseInterfaceRefs 仍接受直取形态(块6/8 口径,
+  renamer 已引擎收敛,两模块差异已注释注明);语言侧诊断同作用域重复按 Flags
+  值判重比引擎位重叠粗(块4 复核项)。
+
+块17 核对结论:
+- 一致(保留):幻影类型清单与 datatypes.cpp addDataType L56-79 注册表逐名核对,
+  BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY 确不在册,「实体加载会失败」属实;
+  heavy-sync-broadcast 只以建议口径输出。
+- 错误(已修):① CLIENT_SYNC_FLAGS 名单失实——含引擎不存在的幻影名 ANY_CLIENT
+  (common.cpp stringToEntityDataFlags L45-77:旗标共 8 个)、误含纯 cell 广播位
+  CELL_PUBLIC(0x1,不在 common.h L45 ENTITY_CLIENT_DATA_FLAGS)、漏掉 OWN_CLIENT/
+  CELL_PUBLIC_AND_OWN/BASE_AND_CLIENT——冗余 DetailLevel 检查双向失真(漏报+误报),
+  改为引擎位集真值 5 名单;② invalid-identifier「实体类无法生成该成员」失实——
+  引擎 C 层 setattr 挂关键字名不报错,改为「装载不失败、脚本无法 self.X 访问」;
+  ③ method-property-collision「Python 类中互相覆盖」失实——引擎装载时按名冲突
+  直接拒绝(scriptdef_module L539/L920 起),改为「实体加载会失败」;
+  ④ duplicate-type-tag「取值歧义」不准——enterNode 只取首个,改为「只装载首个、
+  其余被忽略」;附带 missing-type 收敛为「实体加载会失败」(与 phantom 同级事实)。
+- 删/改/保留:改 src/defAnalyzer.ts 名单与四处文案;保留幻影清单、heavy-sync
+  口径、检查项与实时诊断错位分工、Flags '|' 容错拆分(组合旗标引擎整串比对拒绝,
+  由语言侧诊断拦);文档同步 COMPLETED_FEATURES 功能18/未来增强⑦、PROJECT_SUMMARY
+  功能18(README/docs 粗粒度表述复核属实未动)。
+- 遗留登记:引擎 validDefPropertyName 还拒 ENTITY_LIMITED_PROPERTYS 受限名与
+  KBEngine.Entity 既有属性名, kode 未覆盖(可新增检查,待排期);同名检查只比
+  单文件,继承链跨文件同名不在范围(已如实声明)。
+
+补齐测试(+6 全部为既有文件新增用例,零新文件):tests/defRenamer.test.ts +4
+(Parent 元素形态正锁、直取形态接口负向锁、接口文件 Parent 负向锁、组件 Parent
+同目录正锁+越界负向锁、混合内容 Parent 负向锁);tests/defAnalyzer.test.ts +2
+(真客户端旗标 ×3 负向锁、CELL_PUBLIC 漏转报正锁+ANY_CLIENT 幻影名负向锁),并
+补消息文案锁(装载不失败/实体加载会失败/只装载首个/禁回潮「互相覆盖」「无法
+生成」);tests/defRenamerBranches.test.ts 夹具同步 wrapper 形态(用例数不变);
+tests/perfRegression.test.ts 建议 goldens 重取——findingCount 220→620(夹具
+CELL_PUBLIC|ANY_CLIENTS 与 BASE_PUBLIC|CELL_PUBLIC 两类旗标的 DetailLevel 由漏
+转报),digest 0fd11ac3→827fa39f、76a9465c→77945013,token/诊断/AST 三组 golden
+不变(分词 47726/c3c0cf5f、诊断 400/910801f9 逐位未动)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 980 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 83 文件 971 用例全绿(−9 引擎条件用例);
+pnpm test EXIT=0(mocha 烟测 11 passing);覆盖率四指标 100%:
+4974/4974 语句、2790/2790 分支、871/871 函数、4857/4857 行(分母与批95 块16
+落地后一致,块17 文案/名单修改不增行)。
+
+瞬态记录:批96 首跑全量 1 例红于 serverManager.test.ts(该批其余 979 例绿),
+单文件复跑 11/11 绿、全量复跑 83 文件 980 例全绿——按批72 口径定性为瞬态
+(涉进程/时序),非本批改动引起(defAnalyzer/defRenamer 不涉该文件)。
+
+无 tag、无 release、无 force push。记账:用例 974→980(+6;关引擎 965→971)。
+测试文件 83 不变。计划文件功能块 16、17 均转「已完成」并填五步核对结果
+(含源码行号引用与遗留登记)。
+
+剩余核对队列(批96 后):KBENGINE_SOURCE_AUDIT_PLAN 功能块 18(代码片段生成器)
+按源码核对;块16/17 各自遗留登记项(definitionSemantics 直取形态、诊断 Flags
+值级判重粒度、validDefPropertyName 受限名检查)待对应批次;发布准备三项
+(Marketplace 截图/完善文档/发布 Marketplace)维持不动等用户明令。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
