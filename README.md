@@ -136,7 +136,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 ## 性能分析
 
 对工作区全部 `.def` 文件做静态检查并输出优化建议(命令面板执行
-**`Kode: Analyze Def Performance`**,报告写入 `KBEngine Def 分析` 输出面板,
+**`Analyze Def Performance`**,报告写入 `KBEngine Def 分析` 输出面板,
 同时以诊断形式落入问题列表):
 
 - 引擎未注册类型(如 `BOOL`/`TUPLE`)——实体加载会失败
@@ -228,7 +228,8 @@ kode/
 │   ├── kbengineMetadata.ts       # KBEngine 元数据
 │   └── ...
 ├── syntaxes/
-│   └── kbengine.tmLanguage.json  # 语法高亮规则
+│   ├── kbengine.tmLanguage.json  # 语法高亮规则
+│   └── kbengine-color-theme.json # 配色主题 (KBEngine Dark)
 ├── snippets/
 │   ├── kbengine.json             # def 代码片段 (11)
 │   ├── kbengine-python.json      # Python 热更片段 (4)

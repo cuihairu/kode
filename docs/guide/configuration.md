@@ -193,10 +193,11 @@ KBEngine 二进制目录。当前默认值已经调整为更贴近项目实际�
 
 控制点击启动时自动拉起哪些组件。
 
-可选值：
+可选值（即 `src/serverManager.ts` 的组件注册表）：
 
 - `machine`
 - `logger`
+- `interfaces`
 - `dbmgr`
 - `baseappmgr`
 - `cellappmgr`

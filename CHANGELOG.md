@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest functional tests under `tests/` (974 cases,
+- Two-layer test suite: vitest functional tests under `tests/` (982 cases,
   including engine-source conditional suites that verify hook call sites, type
   registrations, and flags against a local KBEngine checkout) plus a mocha
   compile-artifact smoke layer (`src/test/suite/`, 11 cases); the legacy
@@ -61,7 +61,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line-table computation (validateDocument −46%, full-file tokenization −17%
   on a 173KB fixture, behavior locked by golden regression tests)
 
-## [0.1.0] - 2026-03-25
+## [0.1.0] - unreleased
+
+Feature state as of 2026-03-25. No git tag has been created for it and the
+extension has not been published to the Marketplace; the release checklist
+lives in PROJECT_SUMMARY.md / COMPLETED_FEATURES.md.
 
 ### Added
 - Syntax highlighting for .def files
@@ -109,6 +113,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Updated license to Apache-2.0**
-
-[Unreleased]: https://github.com/cuihairu/kode/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/cuihairu/kode/releases/tag/v0.1.0

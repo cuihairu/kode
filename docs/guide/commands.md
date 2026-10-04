@@ -4,7 +4,8 @@
 
 ## 命令面板中的命令
 
-可以通过 `Cmd/Ctrl + Shift + P` 打开命令面板，输入 `KBEngine` 或 `Kode` 查找相关命令。
+可以通过 `Cmd/Ctrl + Shift + P` 打开命令面板，按标题关键词查找，如
+`Server`、`Entity`、`Log`（命令标题不带 `Kode:`/`KBEngine:` 前缀）。
 
 ## 实体浏览器
 

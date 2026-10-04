@@ -63,7 +63,7 @@ code .
 ```bash
 # 1. 同步上游更改
 git fetch upstream
-git rebase upstream/master
+git rebase upstream/main
 
 # 2. 创建新分支
 git checkout -b feature/your-feature-name
@@ -125,15 +125,18 @@ async function parseEntityDef(filePath: string): Promise<EntityDef | null> {
 
 - 为新功能添加单元测试
 - 确保测试覆盖核心逻辑
-- 测试文件应与源文件同名
+- vitest 测试放 `tests/`，文件名与 `src/` 被测模块对应（如 `src/defParser.ts` → `tests/defParser.test.ts`）
+- `src/test/suite/` 只保留编译产物烟测，不写业务断言
 
 ```
-src/
-  extension.ts
-  extension.test.ts
-  parser.ts
-  parser.test.ts
+src/extension.ts
+src/defParser.ts
+tests/extension.test.ts
+tests/defParser.test.ts
+src/test/suite/   # mocha 编译产物烟测
 ```
+
+分层与运行方式见 [TESTING.md](./TESTING.md)。
 
 ## 提交规范
 
@@ -221,13 +224,13 @@ Closes #123
 
 - [VS Code 扩展 API](https://code.visualstudio.com/api)
 - [TypeScript 文档](https://www.typescriptlang.org/docs/)
-- [项目文档](./resources/docs/)
+- [项目文档](./docs/)（`resources/docs/` 为早期设计沉淀，不再维护）
 
 ## 获取帮助
 
 如果你有任何问题：
 
-- 查看 [文档](./resources/docs/)
+- 查看 [文档](./docs/)
 - 查看 [Issues](https://github.com/cuihairu/kode/issues)
 - 创建新 Issue 或 Discussion
 

@@ -229,7 +229,7 @@ L4 真实层（显式化、独立于提交门槛）
 | 决策 | 选择 | 备选与否决理由 |
 |------|------|----------------|
 | 假集群形态 | 进程内 Node 仿真器（UDP/TCP/脚本二进制） | **A. 真实引擎 docker-compose**：官方无维护镜像，构建链长，CI 不可用，启动分钟级——违背 G1/G2。 |
-| vscode 替身 | 自研状态化 Fake（升级现有 stub） | **B. 引入 jest/vscode 测试框架或 sinon 全家桶**：现有 stub 已成型且贴着项目真实用例长出来；框架迁移成本高收益低。保持 vitest 原生 `vi` + 自研可编程对象。 |
+| vscode 替身 | 自行开发状态化 Fake（升级现有 stub） | **B. 引入 jest/vscode 测试框架或 sinon 全家桶**：现有 stub 已成型且贴着项目真实用例长出来；框架迁移成本高收益低。保持 vitest 原生 `vi` + 自行开发可编程对象。 |
 | 端口策略 | 动态端口（bind 0）+ 注入 | **C. 继续固定 20086 + 串行**：这是 P9 的根源，测试永远快不起来且并发不可复现。 |
 | 进程测试形态 | 保留真实 spawn + 可编程假二进制 | **D. 全 mock child_process**：spawn 的信号语义、exit 码、流行为 mock 成本高且失真；假二进制是真进程、零失真，只是把拼装收敛进 FakeComponentBin。 |
 | runner 格局 | vitest 承载 L1-L3；mocha 层与 vitest 同构（P7）故逐步并轨；真实 VSCode 验证另立可选 test:smoke | **E. 全部下沉 test-electron**：需要下载与显示环境，门槛不可达成（G1/G2）；**F. 维持现状双 runner**：mocha 层并不更真实（P7），纯粹双份维护成本。 |
