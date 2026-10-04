@@ -1,18 +1,27 @@
 # VSCode KBEngine 插件 - 快速开始指南
 
+> 状态标注（2026-10-04）：本文是立项期的脚手架记录，保留当时的工作过程叙述，
+> 不代表当前实现。当前功能与配置以 [README](../../README.md) 和
+> [docs/guide](../../docs/guide/) 为准；文中已发现并修正的差异：
+> `kbe-tuple` 片段从未落地（引擎 TUPLE 类型未注册）、`kbe-fixed-dict`
+> 实际位于 `snippets/kbengine-types-xml.json`（types.xml 别名）、
+> 「预期效果」一节的效率百分比无测量依据、`KBEngine-Deep-Dive-Complete.md`
+> 不在本仓库。
+
 ## 已创建的文件
 
-我已经为你创建了完整的 VSCode KBEngine 插件开发框架，包含以下文件：
+当时创建的 VSCode KBEngine 插件开发框架，包含以下文件：
 
 ### 1. 设计文档
-📄 **`vscode-extension-design.md`**
+**`vscode-extension-design.md`**
 - 完整的插件设计方案
 - 详细的功能说明
 - 技术实现细节
 - 开发路线图
 
 ### 2. 示例代码文件
-所有示例代码位于：`C:\Users\Administrator\workspaces\kbengine\note\examples\`
+立项期示例代码位于工作区草稿目录（未入库）；本仓库的实际代码在根目录
+`src/`、`snippets/`、`syntaxes/`，结构见 README「项目结构」一节。
 
 #### 核心文件
 ```
@@ -138,8 +147,7 @@ code .
 | `kbe-prop` | 基础属性定义 |
 | `kbe-vector3` | VECTOR3 属性 |
 | `kbe-array` | 数组属性 |
-| `kbe-fixed-dict` | 固定字典属性 |
-| `kbe-tuple` | 元组属性 |
+| `kbe-fixed-dict` | FIXED_DICT 类型别名（位于 `snippets/kbengine-types-xml.json`，供 types.xml 使用；`.def` 内联 FIXED_DICT 引擎不解析） |
 | `kbe-prop-db` | 带数据库长度的属性 |
 | `kbe-prop-detail` | 带细节级别的属性 |
 | `kbe-client-method` | 客户端方法 |
@@ -293,18 +301,6 @@ diagnostics.forEach(d => {
 
 ### KBEngine 文档
 - [KBEngine GitHub](https://github.com/kbengine/kbengine)
-- 本项目的 `KBEngine-Deep-Dive-Complete.md` - 完整的源码分析文档
-
----
-
-## 预期效果
-
-使用这个插件后，KBEngine 开发者可以：
-
-- **减少 50%** 的查阅文档时间（智能提示和悬停文档）
-- **减少 80%** 的语法错误（实时检查）
-- **减少 60%** 的重复输入（代码片段）
-- **减少 70%** 的导航时间（跳转定义）
 
 ---
 
@@ -315,7 +311,7 @@ diagnostics.forEach(d => {
 1. 查看 `README.md` 中的详细说明
 2. 查看 `vscode-extension-design.md` 中的设计文档
 3. 参考 VS Code 官方文档
-4. 查看本项目的 `KBEngine-Deep-Dive-Complete.md` 了解 KBEngine 架构
+4. 查看 KBEngine 官方仓库了解引擎架构
 
 ---
 

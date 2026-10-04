@@ -170,7 +170,7 @@
 
 #### `kbengine.binPath`
 
-KBEngine 二进制目录。当前默认值已经调整为更贴近项目实际使用习惯的：
+KBEngine 二进制目录，默认值：
 
 ```json
 {

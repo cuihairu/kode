@@ -12,7 +12,7 @@
 
 ## 语法高亮
 
-`.def` 不是按“普通 XML”处理，而是按 KBEngine 语义做高亮。
+`.def` 按 KBEngine 语义做高亮，不套用普通 XML 的着色规则。
 
 ### 当前高亮重点
 
@@ -183,7 +183,7 @@
 - `kbengine.diagnostics.checkDuplicateDefinitions`
 - `kbengine.diagnostics.checkMissingPropertyFields`
 
-更完整的说明见 [配置说明](./configuration.md)。
+完整配置说明见 [配置说明](./configuration.md)。
 
 ## 当前边界
 

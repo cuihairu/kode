@@ -12,12 +12,12 @@
 
 **Kode** 是一个为 [KBEngine](https://github.com/kbengine/kbengine) 游戏服务器框架提供语言支持、导航和辅助面板的 VSCode 扩展。
 
-KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式架构。Kode 为 KBEngine 的实体定义（`.def`）文件提供专业的开发工具支持。
+KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。Kode 面向 KBEngine 的实体定义（`.def`）文件，提供语法高亮、补全、悬停、跳转、诊断，以及实体浏览器、服务器控制、日志、监控、依赖图面板和代码生成器。
 
 ## 核心功能
 
 ### 语法高亮
-- [完整的 `.def` 文件语法高亮]
+- [`.def` 文件语法高亮]
 - [源码对齐的基础/容器/细节语义高亮]
 - [容器类型（ARRAY, FIXED_DICT, TUPLE）高亮]
 - [源码对齐的 Flags / DetailLevel 高亮]
@@ -39,7 +39,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 - [类型详细说明]
 - [Flags 用途解释]
 - [使用建议]
-- [**钩子完整文档** (调用时机、函数签名、使用示例、源码位置)]
+- [**钩子文档** (调用时机、函数签名、使用示例、源码位置)]
 
 ### 跳转定义
 - [从 `entities.xml` 跳转到 `.def` 文件]
@@ -139,7 +139,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 **`Analyze Def Performance`**,报告写入 `KBEngine Def 分析` 输出面板,
 同时以诊断形式落入问题列表):
 
-- 引擎未注册类型(如 `BOOL`/`TUPLE`)——实体加载会失败
+- 引擎未注册类型(如 `BOOL`/`TUPLE`),实体加载会失败
 - 属性缺少有效 `<Type>`、同属性重复 `<Type>` 的冗余定义
 - `ALL_CLIENTS` 广播大负载类型(字符串/BLOB/容器/PY_*/VECTOR)的同步开销提示
 - `DetailLevel` 配在无客户端可见旗标属性上的冗余字段
@@ -147,7 +147,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用独特的分布式
 
 ## 安装
 
-> **尚未发布到 VSCode Marketplace**——不提供任何市场安装途径,仅支持从源码构建后本地安装。
+> **尚未发布到 VSCode Marketplace**,仅支持从源码构建后本地安装。
 
 ### 从源码构建并本地安装
 
@@ -264,7 +264,7 @@ pnpm run docs:dev
 详细的使用文档和开发指南，请查看：
 
 - [VitePress 文档](./docs/) - 新版文档入口
-- [设计文档](./resources/docs/vscode-extension-design.md) - 完整的设计方案
+- [设计文档](./resources/docs/vscode-extension-design.md) - 立项设计方案
 - [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
 - [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计
 
@@ -273,7 +273,7 @@ pnpm run docs:dev
 两 runner 分层测试架构:vitest 承载全部功能测试(`tests/`,含纯逻辑层、
 本地 KBEngine 仿真器层、fake-vscode 替身上的装配与 WebView 面板层,无需真实
 KBEngine 环境即可全绿);mocha(`src/test/suite/`,11 个用例)只做编译产物
-烟测——验证打包形态的 out/extension.js 可装配激活。带 KBEngine 源码检出时
+烟测,验证打包形态的 out/extension.js 可装配激活。带 KBEngine 源码检出时
 自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)
 与[重设计说明](./docs/redesign.md)。
 
@@ -302,7 +302,7 @@ pnpm test:coverage  # vitest + 覆盖率
 ## 致谢
 
 - [KBEngine](https://github.com/kbengine/kbengine) - 优秀的游戏服务器框架
-- [VS Code](https://github.com/microsoft/vscode) - 强大的代码编辑器
+- [VS Code](https://github.com/microsoft/vscode) - 扩展的宿主编辑器
 - 所有贡献者
 
 ## 联系方式
@@ -312,8 +312,8 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ## Star History
 
-如果这个项目对你有帮助，请给一个 Star ⭐
+如果这个项目对你有帮助，请给一个 Star。
 
 ---
 
-**Kode** - 让 KBEngine 开发更高效！ 🚀
+当前版本 0.1.0，尚未发布到 Marketplace。已落地 19 项功能、23 条命令、24 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。

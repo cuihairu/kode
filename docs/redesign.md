@@ -241,36 +241,36 @@ L4 真实层（显式化、独立于提交门槛）
 
 ### 阶段 1：仿真器基座（`tests/sim/`）+ 动态端口 [批52]
 
-- 新建 `tests/sim/`：`MachineSimulator`、`WatcherSimulator`、`SimCluster` 骨架。✅
-- `discoverLocalComponents` 增加 `{host, port, timeoutMs}` 可选参数（默认不变）。✅
+- 新建 `tests/sim/`：`MachineSimulator`、`WatcherSimulator`、`SimCluster` 骨架。
+- `discoverLocalComponents` 增加 `{host, port, timeoutMs}` 可选参数（默认不变）。
   配套：`MonitoringCollector` 构造器接受 `discoveryOptions` 透传；协议模块新增
   `buildComponentInfo`/`encodeWatcherValue`/`buildWatcherValueFrameBody`/
   `buildWatcherDirFrameBody` 编码器（parse 系列的对偶，仿真器复用）。
-- 迁移 socket 测试到仿真器 + 动态端口。✅（kbengineProtocolSocket/
+- 迁移 socket 测试到仿真器 + 动态端口。（kbengineProtocolSocket/
   kbengineProtocolReaders/kbengineProtocolGaps/monitoringCollectorSocket/
   monitoringCollectorGaps 五个文件；新增 tests/sim.test.ts 仿真器自测 15 用例）
-- 解除 `fileParallelism: false`。✅
+- 解除 `fileParallelism: false`。
 - 验收结果：vitest 57 文件 716 用例全绿，文件级并行恢复，全量 36s→约 13s；
-  测试代码不再出现固定端口 20086 绑定（仅引擎源码字面断言保留）。✅
+  测试代码不再出现固定端口 20086 绑定（仅引擎源码字面断言保留）。
 
 ### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口 [批53]
 
-- `tests/sim/fakeComponentBin.ts` 生成可编程假组件二进制。✅
+- `tests/sim/fakeComponentBin.ts` 生成可编程假组件二进制。
   行为：run（标记/cwd/env 回显/stderr）、exit（指定退出码）、
   ignore-sigterm（先装 SIGTERM 处理器再打标记——结构性消除"信号抢在
   trap 安装前送达"的竞态，替代原 bash trap 方案）、unexecutable（chmod 000
   → EACCES）。node shebang 跨平台。
-- `serverManager` 抽 `ProcessRunner` 注入点（默认透传 spawn）。✅
+- `serverManager` 抽 `ProcessRunner` 注入点（默认透传 spawn）。
   mocha 层经 `module._load` mock `child_process` 的既有用例不受影响。
-- 迁移 `tests/serverManagerProcesses.test.ts` 到 FakeComponentBin。✅
+- 迁移 `tests/serverManagerProcesses.test.ts` 到 FakeComponentBin。
   18 用例行为等价（含 SIGKILL 升级），内联 bash 拼装清零；新增
   tests/serverManagerRunner.test.ts 注入点专项 2 用例（参数透传记录 +
   同步 throw 走 catch）。
-- 验收：全部通过（见批53 commit）。✅
+- 验收：全部通过（见批53 commit）。
 
 ### 阶段 3：FakeVscode 基建 + extension.ts 入测 [批54]
 
-- `tests/fake-vscode/` 五模块落地。✅
+- `tests/fake-vscode/` 五模块落地。
   - `core.ts`：值类型（Position/Range/Uri/EventEmitter/TreeItem/Diagnostic
     系/makeTextDocument 等，自旧 stub 原样迁入）+ 新增 StatusBarAlignment。
   - `workspaceState.ts`：状态化 workspace——内存 fs、配置覆写、文档集合
@@ -283,9 +283,9 @@ L4 真实层（显式化、独立于提交门槛）
   - `languages.ts`：四类 provider 注册记账 + DiagnosticCollection 入册。
   - `panelRegistry.ts`：记录型假 WebviewPanel（捕获 onDidReceiveMessage/
     onDidDispose、postMessage 入账、可 fire）——阶段 4 WebView 迁移的消费面。
-- `vscodeStub.ts` 改为纯 re-export 薄壳。✅ 33 个既有测试文件的 import 路径
+- `vscodeStub.ts` 改为纯 re-export 薄壳。33 个既有测试文件的 import 路径
   与 monkey-patch 语义（共享同一可变对象）全部不变，718 用例零改动通过。
-- `extension.ts` 装配测试入测（tests/extension.test.ts，6 用例）。✅
+- `extension.ts` 装配测试入测（tests/extension.test.ts，6 用例）。
   注册面与 package.json 贡献点双向严格一致（21 命令/2 视图/6 语言服务注册/
   虚拟文档 provider/状态栏参数与隐藏态）、21 条命令经 executeCommand 真分发
   （含 FakeComponentBin 真实进程的 start/stop/restart/showLogs 全链路与状态栏
@@ -293,38 +293,38 @@ L4 真实层（显式化、独立于提交门槛）
   联动、无工作区（workspaceFolders === undefined，空数组是 truthy）分支。
 - 验收达成：extension.ts 进覆盖率分母，99.5% lines / 100% functions
   （唯一未盖 L234 为 openMethodTarget 永不抛错的防御 catch）；总体覆盖率
-  98.99%→99.01% lines（extension.ts 计入后不降反升）。✅
+  98.99%→99.01% lines（extension.ts 计入后不降反升）。
 - 顺带修出真实缺陷：`kbengine.entity.method.open` 的空目标守卫位于 label
   拼接之后——命令面板无参调用会在守卫前抛 TypeError；守卫上移（行为仅在
   原"抛错"场景变为静默 no-op）。
 
 ### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档 [批55/56]
 
-- WebView 面板测试迁到 PanelRegistry。✅（批55；实际消费面为三个 WebView，
+- WebView 面板测试迁到 PanelRegistry。（批55；实际消费面为三个 WebView，
   原文"四个"计数有误：logWebViewPanel/monitoringPanel/entityDependencyPanel
   51 用例迁到 panelRegistry 默认假面板，断言语义不变，每文件仅剩
   showSaveDialog 队列与 fs.writeFile 故障注入两类 patch）
-- mocha 层裁到烟测集；`testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。✅（批56）
+- mocha 层裁到烟测集；`testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。（批56）
   19 文件 4930 行/110 用例 → 3 文件 10 用例：manifest 贡献点、out/extension.js
   经 fake-vscode **编译副本**（新增 `tsconfig.mocha.json` 把 tests/fake-vscode +
   vscodeStub 编译到 `out/tests/`，test 链插入该编译步骤）整体激活/dispose 链、
   out/languageProviders.js 补全+悬停最小应答。与 vitest 同构的 17 个套件退役
   （P7 定案：并不更真实，纯双份维护）。`@vscode/test-electron` 依赖移除——
   runTest.ts 从未调用它；未来 L4a 真机烟测如需，再显式引入并独立于提交门槛。
-- 更新 `TESTING.md`（新分层说明）、`docs/guide/development.md`、`README.md`。✅（批56）
+- 更新 `TESTING.md`（新分层说明）、`docs/guide/development.md`、`README.md`。（批56）
 - 验收：`pnpm test:unit`（L1-L3）在无引擎、无 VSCode 下载环境下全绿
-  （KBENGINE_ROOT=off 口径 59 文件 724 用例）；✅ `pnpm test` 全量绿
+  （KBENGINE_ROOT=off 口径 59 文件 724 用例）；`pnpm test` 全量绿
   （2026-09-26 实测全量门槛 31.6s：vitest 12.7s + 全量编译 + mocha 烟测
-  10 用例，G2 的 90s 目标余量充足）；✅ 文档与新架构一致。✅
+  10 用例，G2 的 90s 目标余量充足）；文档与新架构一致。
 
 ### 进度
 
 | 阶段 | 状态 | 里程碑 commit |
 |------|------|---------------|
-| 1 | ✅ 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
-| 2 | ✅ 完成（批53） | FakeComponentBin + ProcessRunner 注入 + 进程编排测试迁移 |
-| 3 | ✅ 完成（批54） | fake-vscode 五模块 + vscodeStub 兼容壳 + extension.ts 入测(99.5%) |
-| 4 | ✅ 完成（批55/56） | WebView 面板测试迁 panelRegistry；mocha 裁为编译产物烟测(10 用例)；Fake* 退役、@vscode/test-electron 移除；文档对齐 |
+| 1 | 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
+| 2 | 完成（批53） | FakeComponentBin + ProcessRunner 注入 + 进程编排测试迁移 |
+| 3 | 完成（批54） | fake-vscode 五模块 + vscodeStub 兼容壳 + extension.ts 入测(99.5%) |
+| 4 | 完成（批55/56） | WebView 面板测试迁 panelRegistry；mocha 裁为编译产物烟测(10 用例)；Fake* 退役、@vscode/test-electron 移除；文档对齐 |
 
 ## 7. 风险与对策
 
