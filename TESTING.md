@@ -223,19 +223,28 @@ getChildren/getAncestors 查询与 loadFromEntitiesXml 幂等(types 不翻倍)�
 接缝的真实用例锁定;文件剩余未覆盖项只在分支口径(94.1%),行覆盖 100%。
 
 databaseSchema 的虚拟文档 URI/文档识别、schema 文本渲染、表/字段行定位、
-mysql 表生成(合成 position/direction 列、ARRAY 子表、FIXED_DICT 平铺
-前缀列、VECTOR 展开列、同名去重)与 `scripts/entity_defs` 端到端快照
-(真实 def 文件 → 快照 → tbl_Hero/sm_hp/tbl_Hero_bag)已覆盖,并锁定
-mysql 列型映射事实(UINT32 → `int unsigned`)。深解析与 Provider 已在
+mysql 表生成与 `scripts/entity_defs` 端到端快照(真实 def 文件 → 快照 →
+tbl_Hero/sm_hp/tbl_Hero_bag)已覆盖,并锁定 mysql 列型映射事实(UINT32 →
+`int unsigned`)。批98 按引擎建表语义对账后锁定的结构:每表头部结构列
+id/sm_autoLoad(子表另加 parentID),位置/朝向六列 sm_0_position..
+sm_2_position、sm_0_direction..sm_2_direction 仅实体有 cell 内容时合成,
+向量命名 index 在前、FD 前缀夹在 index 与项名之间;属性入表只看
+Persistent 文本(忽略大小写恰为 "true",缺 Type 剔除,无 Flags 属性保留
+为空 scope 容忍预览);hasCell=false 实体的 cell 域属性照常落列(引擎
+持久映射无域过滤,只是不合成位置列),组件子表遵循引擎跳过规则
+(实体无 cell 内容且槽旗标无 base → 连表跳过);ARRAY 子表(表名走祖先
+项名链)、FIXED_DICT 平铺前缀列、VECTOR 展开列、同名去重已覆盖。
+types.xml 别名链(结构别名 FIXED_DICT/ARRAY 原地展开、别名→内建复用同
+一实例、别名环检测、数组元素双容器分支)已覆盖。深解析与 Provider 已在
 tests/databaseSchemaDeep.test.ts 覆盖(17 用例):真实临时 def 树上的
 Parent 子元素继承与自引用短路、Interfaces 同名属性 merge 补齐
 (Identifier/Index/DatabaseLength)、Components 节组件(含 Type 缺失/
 def 文件缺失仍建空组件表、同 Type 二次走 componentCache)、
 FIXED_DICT 嵌套平铺与 ARRAY-of-FIXED_DICT 子表(表名取数组属性名)、
-CELL_AND_CLIENT 旗标归一、无 Flags 属性剔除、无元素 root 返回 null;
+CELL_AND_CLIENT 旗标归一、无元素 root 返回 null;
 以及 Provider 生命周期(decode 实体名渲染、refresh 两分支)、渲染文本
 字段定位向上回溯、source 定位三态、target 反查(路径归一/前缀规则/
-dedupe)。剩余 4.8% 为类型别名映射长尾与零散防御分支。
+dedupe)。批98 起行/分支双 100%(485 语句/357 分支),无剩余。
 
 logCollector 的状态机(初始未连接、connect 按实现现状拒绝 logger
 watcher 协议并落 Error 状态、断开/销毁安全与幂等)、状态事件序列、
@@ -651,19 +660,26 @@ updateWebView 在无面板时早退且不触发面板创建;show 建面板后 di
 重建面板。logWebView.ts 语句与函数 100%。
 
 databaseSchema 的守卫与合并缺口已补齐(tests/databaseSchemaGaps.test.ts,
-12 用例):实体 def 是目录(find 命中但 readFileSync 抛 EISDIR)时快照
-返回 null;父链 def 缺失/无 root/不可读三种形态均回落空属性、实体自身
-照常成表;scope 全被可用性拒绝(hasCell=false 的 CELL_PUBLIC)与缺 Type
-的属性被丢弃;父链同名属性 identifier 提升;CELL_AND_CLIENTS/
-CELL_AND_OTHER_CLIENTS 归一为 ALL_CLIENTS/OTHER_CLIENTS 后获得有效
-scope;FIXED_DICT 同名子属性同列去重,无 Type 与 Persistent false 的
-子属性在 children 层跳过;组件 def 缺失(ghost)、目录(CompC)、无
-root 内容(CompD)均落空组件表,无 Cell/Client 方法段的组件走方法段
-continue,带 ClientMethods 的注册 client scope。两条死分支如实记录:
-snapshot 入口的 entityDefsRoot null 守卫(L174,layout 恒回落
-preferredEntityDefsRoot 非空首选候选);getPropertyScopes 的 switch
-default(L913,RuntimeScope 联合仅 base/cell/client)。99.4% 的剩余即
-这两处。
+批98 重写为 19 用例):实体 def 是目录(find 命中但 readFileSync 抛
+EISDIR)时快照返回 null;父链 def 缺失/无 root/不可读三种形态均回落空
+属性、实体自身照常成表;缺 Type 的属性丢弃,无 Flags 属性保留(空
+scope 容忍,引擎持久映射无域过滤);父链同名属性 identifier 提升;
+CELL_AND_CLIENTS/CELL_AND_OTHER_CLIENTS 归一为 ALL_CLIENTS/
+OTHER_CLIENTS;FIXED_DICT 同名子属性同列去重,无 Type 与 Persistent
+false 的子属性在 children 层跳过;组件 def 缺失(ghost)、目录(CompC)、
+无 root 内容(CompD)均落空组件表。组件域登记(getComponentModuleScopes)
+按 def 内容(属性旗标域 + 非空方法段,经 Parent 链与 Interfaces 包装键
+递归,含引擎四拼写外包装键的容忍臂)∪ 脚本存在性(base/cell/components
+脚本文件),client 域仅在自身具备且 base/cell 至少一域在场时落位;
+组件父链互指经预填与 visitedScopes 环守卫短路,槽按无域处理后依规则
+(实体无 cell 内容 + 槽旗标无 base → 连表跳过)丢槽。types.xml 别名面
+(结构别名原地展开、别名→内建复用同一实例、别名环、空指引)与数组
+元素 alias/inline 双容器分支已锁定。两条死分支如实记录:snapshot 入口
+的 entityDefsRoot null 守卫(批62 定性,istanbul ignore 区间,layout
+恒回落 preferredEntityDefsRoot 非空首选候选);has* 扫描的父臂(批98
+定性:has* 只由 getComponentModuleScopes 以 component 类目进入,接口
+类目在上方提前 return,entity 臂与可达孪生——属性收集的父臂——无触发
+路径)。批98 起该文件行/分支双 100%,无剩余。
 
 entityMapping 的索引与解析缺口已补齐(tests/entityMappingGaps.test.ts,
 8 用例):组件槽 rebased 属性覆盖 children 递归(FIXED_DICT 实体侧与
@@ -2913,6 +2929,99 @@ validDefPropertyName 受限名检查;块18:混合缩进字符计数、IO 失败�
 约定)+ 发布准备三项(Marketplace 截图/完善文档/发布 Marketplace)维持不动等
 用户明令。
 
+## 批98:KBENGINE_SOURCE_AUDIT_PLAN 功能块 19「数据库 Schema 查看」核对(建表语义对账 2 处修复 + 计划清单补块,+10 用例)
+
+批次号:顺延批97(写入前 `grep '^## 批'` 复核,非交互假设注明)。计划原清单
+只到功能块 18(批97 已全部核完),本批按批95「清单补块」先例新建功能块 19。
+
+巡检取项:KBENGINE_SOURCE_AUDIT_PLAN 新块19(数据库 Schema 查看:
+src/databaseSchema.ts 快照与别名解析 + explorerProviders database 段消费 +
+languageProviders 表/字段双向跳转),对照 ../kbengine 引擎建表与 entitydef
+装载语义按执行方式五步输出写入计划文件。边界:发布准备三项 HELD 不碰;块
+16/17/18 已登记遗留不动。不生成、不替换任何设计资产。
+
+块19 核对结论:
+- 功能列表:虚拟文档 URI/文档识别、schema 文本渲染、表/字段行定位;快照
+  (def → 表列模型:结构列 id/sm_autoLoad/parentID、位置朝向六列、ARRAY
+  子表、FIXED_DICT 平铺、VECTOR 展开、组件子表);types.xml 别名解析;
+  explorer database 段树形消费;languageProviders 跳转三态与 target 反查。
+- 对应官方源码:engine db_mysql/entity_table_mysql.cpp(L112 sm_autoLoad
+  索引、L150-154 建表循环组件槽跳过、L174-207 hasCell 时 position/
+  direction 两组 VECTOR3、L379-381 子表 parentID、L392 id AUTO_INCREMENT
+  主键、L417-418 sm_autoLoad 列、L210/215-231 init_db_item_name 分派、
+  L940 基形 `sm_%s%s`、L1357 ARRAY、L1486 FIXED_DICT、L1620 Component、
+  L1534 组件属性循环跳过)+ db_mysql/entity_table_mysql.h L271/312/353 向量
+  `sm_%d_%s%s` + db_interface/entity_table.h L40-44 前缀常量/L177
+  TABLEITEM_MAP;xml/xml.cpp L72-95 enterNode、L113-119 getKey(trim 后按
+  元素 TAG 名匹配);datatype.cpp L1658-1719 FixedArrayType::initialize;
+  entitydef/entitydef.cpp L551 loadInterfaces、L689-712 组件槽 Persistent
+  默认真、L1097 loadDefPropertys(缺 Flags/Type 报错路径 L1143/L1215)、
+  datatypes.cpp L94/105 loadTypes、scriptdef_module.cpp L302
+  autoMatchCompOwn。
+- 一致(保留):① 结构列三件套同形(id 主键、sm_autoLoad tinyint 默认 0
+  带索引、子表 parentID NOT NULL 带索引);位置朝向六列仅 hasCell 实体
+  (两组 VECTOR3 经向量命名展开为 sm_0_position..sm_2_direction);向量列
+  index 在前、FD 前缀夹在 index 与项名之间;FD 平铺 `sm_<名>_<键>`。
+  ② 属性入表判 Persistent 文本(忽略大小写恰 "true";组件槽相反默认持久、
+  "false" 才关,与 entitydef.cpp L689-712 同构),持久映射无域过滤
+  (cellOnly 落列),缺 Type 收集层剔除;STRING 长度缺省 255;ENTITYCALL
+  不落列(引擎 EntityTableItemMysql_ENTITYCALL::syncToDB 空实现,从不建列)。
+  ③ 组件跳过规则 (a) 与 L150-154 逐项对齐(实体无 cell + ENTITY_COMPONENT
+  槽无 base 域 → 连表跳过);槽域 = 组件模块域(autoMatchCompOwn:def
+  内容旗标域 + 非空方法段,经父链/接口递归 ∪ 脚本存在性,client 需 base/
+  cell 至少一域同在)。④ 别名链/结构别名原地展开/环检测/空指引与
+  DataTypes::loadTypes 同构;加载面缺 Flags/缺 Type/缺 def 走引擎报错
+  失败路径,kode 容忍为超集预览(测试注释如实标注)。⑤ ARRAY 子表名走
+  祖先项名链、元素项重置链与前缀;同名去重;Identifier/Index/
+  DatabaseLength 语义。
+- 错误(2 处已修,均在别名装载面):D-T1 parseArrayElementDescriptor 分支
+  按 raw typeName 字面判、容器恒取 <of>:数组元素是 types.xml 别名结构
+  (DOLL 等)时整元素跳过,别名 FIXED_DICT 元素即使进入也取错容器(inline
+  数组得空 children);引擎按解析后 kind 分支、别名元素复用 loadTypes 先建
+  的条目实例 → 改 raw||resolved 双分支 + 容器按 resolved.kind 三目。
+  D-A3 resolveAliasType 指引直接落内建类型(UINT16 等不在 typeAliases
+  map)返回 unresolved → mysql 列型标签丢失;引擎 getDataType 只认注册名、
+  别名只改 aliasName 复用同一内建实例 → 补 BUILTIN_DB_TYPE_NAMES(简单集
+  + VECTOR2/3/4)在环守卫前分流。另清理:mergeComponents 外层冗余类目
+  判断(接口提前 return,调用点恒 entity/component);has* 扫描父臂按
+  不可达契约收进 istanbul ignore 区间(批98 定性)。
+- 删/改/保留:改 src/databaseSchema.ts(parseArrayElementDescriptor 分支
+  结构、resolveAliasType 内建分流、BUILTIN_DB_TYPE_NAMES 常量、
+  mergeComponents 简化、has* 父臂 ignore 区间);测试 6 文件对账
+  (databaseSchema.test.ts 15→18、Gaps 12→19、Deep/Branches 各换 1 例
+  新语义断言、explorer/languageProviders 断言随结构列语义修正);保留——
+  虚拟文档/渲染/定位表面、快照容忍超集口径、TABLEITEM_MAP 按 UID 有序
+  列序不可复现故按文档序(展示选择,见计划遗留⑥)。
+
+补齐测试(+10,既有文件改写/新增、零新文件):databaseSchema.test.ts
+15→18(+4-1:VECTOR FD 前缀夹位、结构列与非持久剔除、STRING 长度缺省
+255、ENTITYCALL 丢列,换掉同名旧断言);Gaps 12→19(+8-1:Strict 结构列
+与 cellOnly 落列/无位置列、MergeP id 持久提升、组件 def 内容域 + ghost/
+目录/无 root 三态、脚本存在性 base 臂、父链/接口递归域、环守卫丢槽、
+规则 (a) 宽严对照、types.xml 别名微工作区容忍臂,换掉可用性剔除旧断言);
+Deep 空 Properties→结构列-only、Branches 可用性门→def 内容域登记各换 1。
+变异验证:回滚 D-A3 内建分流或 D-T1 容器三目,gaps 别名结构用例各致 1 红,
+还原后 19/19 绿——两缺陷被真实锁死。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 992 用例全绿(引擎在位);
+KBENGINE_ROOT=off npx vitest run 83 文件 983 用例全绿(+10,关引擎
+973→983);覆盖率四指标 100%:5122/5122 语句、2942/2942 分支、884/884
+函数、5003/5003 行(27 个 src 文件无一低于 100%,databaseSchema.ts 485
+语句/357 分支维持双 100%);pnpm test EXIT=0(vitest+编译+mocha 烟测
+11 passing)。
+
+无 tag、无 release、无 force push。记账:用例 982→992(+10;关引擎
+973→983)。测试文件 83 不变。计划文件新建功能块 19 转「已完成」并填五步
+核对结果(含引擎源码行级引用与遗留登记 8 项)。
+
+剩余核对队列(批98 后):计划内 19 个功能块全部核对完成;余下为已登记遗留
+(块16/17:definitionSemantics 直取形态、诊断 Flags 值级判重粒度、
+validDefPropertyName 受限名检查;块18:混合缩进字符计数、IO 失败提示、多根
+首根约定;块19:redis 后端、组件根表视角、脚本导入成功近似、规则 (b)
+不可达、容忍超集、列序展示选择、Flags 域位跨块、entities.xml 口径)
++ 发布准备三项(Marketplace 截图/完善文档/发布 Marketplace)维持不动等
+用户明令。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
@@ -2934,3 +3043,14 @@ validDefPropertyName 受限名检查;块18:混合缩进字符计数、IO 失败�
   未注册类型名与 INSTALL_ALWAYS/FLAG_DESTROY 2 个未注册旗标被错误高亮 → 按
   引擎真值修正清单,tests/tmLanguage.test.ts 三层锁定含逐名负向锁(批88
   逐项功能验证发现)。
+- `databaseSchema.ts` 数组元素的 FIXED_DICT/ARRAY 别名装载错位:
+  parseArrayElementDescriptor 按 raw typeName 字面判分支、容器恒取 `<of>`,
+  types.xml 结构别名元素整支跳过,inline 数组的别名 FIXED_DICT 元素即使
+  进入也取到空 children;引擎按解析后 kind 分支且别名元素复用 loadTypes
+  先建的条目实例 → 改 raw||resolved 双分支 + 容器按 resolved.kind 三目,
+  tests/databaseSchemaGaps.test.ts 别名结构用例锁定(批98 覆盖率回补发现)。
+- `databaseSchema.ts` 别名→内建链解析缺失:types.xml 指引直接落内建类型
+  (如 UINT16,不在 typeAliases map)时 resolveAliasType 返 unresolved,
+  mysql 列型标签丢失;引擎 getDataType 只认注册名、别名只改 aliasName
+  复用同一内建实例 → 补 BUILTIN_DB_TYPE_NAMES 在环守卫前分流,别名链
+  用例锁定(批98 覆盖率回补发现)。

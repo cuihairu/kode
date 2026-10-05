@@ -39,6 +39,7 @@ const HERO_DEF = [
   '      <Type>UINT32</Type>',
   '      <Flags>CELL_AND_CLIENTS</Flags>',
   '      <DetailLevel>NEAR</DetailLevel>',
+  '      <Persistent>true</Persistent>',
   '      <DatabaseLength>128</DatabaseLength>',
   '      <Identifier>true</Identifier>',
   '    </hp>',

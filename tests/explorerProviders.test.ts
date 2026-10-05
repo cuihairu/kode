@@ -367,10 +367,11 @@ describe('EntityExplorerProvider view models', () => {
     expect(summary['Methods']).toBe('4');
     // exposed: onSave(Base) + dash(Cell),方法段只收非 exposed 方法
     expect(summary['Exposed']).toBe('2');
-    // hp Persistent + healthPack 组件 → 主表 + 组件子表;
-    // 子表按实现现状无字段(regen 未被收入),主表 6 个合成位置/朝向列
+    // hp Persistent + healthPack 组件 → 主表 + 组件子表;主表 9 列(结构
+    // id/sm_autoLoad + 6 合成位置/朝向 + sm_hp),子表 3 结构列(regen 无
+    // Persistent 不落)
     expect(summary['DB Tables']).toBe('2');
-    expect(summary['DB Fields']).toBe('6');
+    expect(summary['DB Fields']).toBe('12');
 
     expect(keysOf(hero.viewModel)).toEqual([
       'interfaces', 'components', 'runtime', 'exposed', 'database',
@@ -407,9 +408,10 @@ describe('EntityExplorerProvider view models', () => {
     // summary 的 Visibility 用 visibilitySummary(描述文案),非标签
     expect(summary['Visibility']).toBe('Server only (no client entity)');
 
-    // 实现现状:无 persistent 属性也无条件建空主表(tbl_Monster,0 字段)
+    // 引擎语义:hp 经父链继承持久,主表落结构列(id/sm_autoLoad)+ sm_hp;
+    // Monster 未声明 hasCell 亦无 cell 脚本 → 无 position/direction 合成列
     expect(summary['DB Tables']).toBe('1');
-    expect(summary['DB Fields']).toBe('0');
+    expect(summary['DB Fields']).toBe('3');
 
     const keys = keysOf(monster.viewModel);
     expect(keys).toEqual([

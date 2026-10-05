@@ -6,11 +6,12 @@ import { getDatabaseSchemaSnapshot } from '../src/databaseSchema';
 import { workspace as stubWorkspace } from './helpers/vscodeStub';
 import type * as vscode from 'vscode';
 
-// databaseSchema 批69 分支补测:组件槽 Persistent=false 的 children 空数组臂、
-// 组件类目 Parent 的 component 臂与查找落空的 null 臂、可用性门控下
-// registerScope 的假臂(hasClient=false + ClientMethods)、FIXED_DICT 内层
-// ENTITY_COMPONENT 的 children 兜底臂、未知旗标的 `|| []` 兜底臂、以及
-// 非数值 DatabaseLength 的 NaN 回落臂。`parentPath ?` 模板串臂、FIXED_DICT
+// databaseSchema 分支补测(批69 建,批98 随引擎语义对齐改写):组件类目
+// Parent 的 component 臂与查找落空的 null 臂、组件槽 Persistent=false 的
+// children 空数组臂(槽不成表)、def 内容法(方法段非空)与脚本存在性法
+// (autoMatchCompOwn)并行的域登记、FIXED_DICT 内层 ENTITY_COMPONENT 的
+// children 兜底臂、未知旗标的 `|| []` 兜底臂(容忍超集:列保留)、非数值
+// DatabaseLength 的 NaN 回落臂。`parentPath ?` 模板串臂、FIXED_DICT
 // `children || []` 假臂与数组表名 `|| 'values'` 假臂契约性不可达,已以精确
 // 单行区间 ignore 定案,理由见源码注记与 TESTING.md 批69 段。
 
@@ -62,8 +63,9 @@ beforeAll(() => {
     '</root>'
   ]);
 
-  // Muted 的 hasClient=false:组件 ClientMethods 触发 registerScope 假臂;
-  // 组件槽 off 带 Persistent=false:children 空数组臂 + 不并入属性/不成表
+  // Muted 的 hasClient=false 声明不压制组件域登记(域登记只看 def 内容与
+  // 组件脚本存在性);组件槽 off 带 Persistent=false:children 空数组臂 +
+  // 不并入属性/不成表
   writeDef('scripts/entity_defs/Muted.def', [
     '<root>',
     '  <Components>',
@@ -139,27 +141,28 @@ afterAll(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('databaseSchema branch gaps (批69)', () => {
+describe('databaseSchema branch gaps (批69/批98)', () => {
   it('resolves a component-category parent chain even when the parent def is missing', () => {
     const snapshot = getDatabaseSchemaSnapshot('SoloP', root)!;
     const tableNames = snapshot.tables.map(table => table.name);
 
-    // 组件槽正常成表,自身属性照常进组件表
+    // 组件槽正常成表(实体声明 hasCell → 组件规则不生效),结构列 + 自身属性
     expect(tableNames).toContain('tbl_SoloP_pc');
     expect(snapshot.tables.find(table => table.name === 'tbl_SoloP_pc')!.fields.map(f => f.name))
-      .toContain('sm_pcfield');
+      .toEqual(['id', 'parentID', 'sm_autoLoad', 'sm_pcfield']);
     // 组件类目 Parent(GhostComp.def 缺失)只损失父链属性,不致崩
     expect(tableNames).toEqual(['tbl_SoloP', 'tbl_SoloP_pc']);
   });
 
-  it('gates component method scopes by availability and skips non-persistent component slots', () => {
+  it('registers component scopes from def content and keeps all persistent slots', () => {
     const snapshot = getDatabaseSchemaSnapshot('Muted', root)!;
     const tableNames = snapshot.tables.map(table => table.name);
 
-    // hasClient=false 时 ClientMethods 不注册 client 域,组件照常成表
+    // ClientMethods 非空 → 组件登记 client 域(def 内容法,实体 hasClient
+    // 声明不干预);域不再过滤持久列,组件照常成表
     expect(tableNames).toContain('tbl_Muted_m');
     expect(snapshot.tables.find(table => table.name === 'tbl_Muted_m')!.fields.map(f => f.name))
-      .toContain('sm_mfield');
+      .toEqual(['id', 'parentID', 'sm_autoLoad', 'sm_mfield']);
     // Persistent=false 的组件槽:children 走空数组臂且不并入属性,不成表
     expect(tableNames).not.toContain('tbl_Muted_off');
     expect(tableNames).toEqual(['tbl_Muted', 'tbl_Muted_m']);
@@ -168,23 +171,26 @@ describe('databaseSchema branch gaps (批69)', () => {
   it('survives an ENTITY_COMPONENT child inside FIXED_DICT without children', () => {
     const snapshot = getDatabaseSchemaSnapshot('FixedE', root)!;
 
-    // 解析面上的合成类型名:children undefined → 兜底空数组,组件空表照建
+    // 解析面上的合成类型名:children undefined → 兜底空数组,组件表照建,
+    // 落结构列(id + parentID + sm_autoLoad)
     const compTable = snapshot.tables.find(table => table.name === 'tbl_FixedE_comp');
     expect(compTable).toBeDefined();
     expect(compTable!.kind).toBe('component');
-    expect(compTable!.fields).toEqual([]);
+    expect(compTable!.fields.map(f => f.name)).toEqual(['id', 'parentID', 'sm_autoLoad']);
   });
 
   it('falls back on unknown flags and non-numeric DatabaseLength', () => {
     const snapshot = getDatabaseSchemaSnapshot('FixedE', root)!;
     const rootFields = snapshot.tables.find(table => table.name === 'tbl_FixedE')!.fields;
 
-    // 未知旗标 → scopes 兜底空数组 → 属性整体丢弃
-    expect(rootFields.map(f => f.name)).not.toContain('sm_ghosted');
+    // 未知旗标 → scopes 兜底空数组;域不再过滤持久列,列按容忍超集保留
+    expect(rootFields.map(f => f.name)).toContain('sm_ghosted');
     // 数组子表照常建;DatabaseLength 'abc' → NaN → undefined 回落且被元素列继承
     const arrTable = snapshot.tables.find(table => table.name === 'tbl_FixedE_arr')!;
     expect(arrTable.kind).toBe('array');
-    expect(arrTable.fields.map(f => f.name)).toEqual(['sm_value']);
-    expect(arrTable.fields[0].databaseLength).toBeUndefined();
+    expect(arrTable.fields.map(f => f.name)).toEqual([
+      'id', 'parentID', 'sm_autoLoad', 'sm_value'
+    ]);
+    expect(arrTable.fields.find(f => f.name === 'sm_value')!.databaseLength).toBeUndefined();
   });
 });

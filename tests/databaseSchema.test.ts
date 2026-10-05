@@ -20,9 +20,10 @@ import type {
 
 // databaseSchema 的导出函数段:Uri/文档识别、schema 文本渲染、行定位、
 // mysql 表生成与列展开,均不触 vscode 运行时(vscodeStub 兜住 Uri)。
-// KBEngineDatabaseSchemaProvider(EventEmitter 生命周期)由
-// tests/databaseSchemaDeep.test.ts 覆盖(批75 核对修正,原 mocha 声明系
-// 批56 裁剪前的过期表述)。
+// 批98 起列集对齐引擎装载语义:所有表固定 id/sm_autoLoad 结构列(子表加
+// parentID),实体 hasCell(entityCellContent 形参)时追加 sm_<i>_position/
+// direction 六列,向量列名 index 在前。KBEngineDatabaseSchemaProvider
+// (EventEmitter 生命周期)由 tests/databaseSchemaDeep.test.ts 覆盖。
 
 const source = (over: Partial<DefSourceRef> = {}): DefSourceRef => ({
   filePath: '/proj/Hero.def',
@@ -144,7 +145,8 @@ describe('renderDatabaseSchema', () => {
               databaseLength: 32,
               indexType: 'UNIQUE',
               identifier: true,
-              flags: 'BASE'
+              flags: 'BASE',
+              defaultValue: '100'
             }
           ]
         }
@@ -163,7 +165,7 @@ describe('renderDatabaseSchema', () => {
         'kind: entity',
         'source: Hero.def:3 (entity)',
         '',
-        'sm_hp  UINT32  len=32  index=UNIQUE  identifier=true  flags=BASE',
+        'sm_hp  UINT32  len=32  index=UNIQUE  identifier=true  flags=BASE  default=100',
         '  source: Hero.def:3 (scripts/Hero.def)',
         ''
       ].join('\n').trimEnd() + '\n'
@@ -174,14 +176,15 @@ describe('renderDatabaseSchema', () => {
 describe('expandColumnNames', () => {
   it('expands vector columns and prefixes plain ones', () => {
     expect(expandColumnNames(property({ name: 'hp', typeName: 'UINT32' }))).toEqual(['sm_hp']);
+    // 引擎向量命名:init_db_item_name 为 sm_<index>_<FD前缀><项名>,index 在前
     expect(expandColumnNames(property({ name: 'v', typeName: 'VECTOR2' }))).toEqual([
-      'sm_v_0', 'sm_v_1'
+      'sm_0_v', 'sm_1_v'
     ]);
     expect(expandColumnNames(property({ name: 'v', typeName: 'VECTOR3' }))).toEqual([
-      'sm_v_0', 'sm_v_1', 'sm_v_2'
+      'sm_0_v', 'sm_1_v', 'sm_2_v'
     ]);
     expect(expandColumnNames(property({ name: 'v', typeName: 'VECTOR4' }))).toEqual([
-      'sm_v_0', 'sm_v_1', 'sm_v_2', 'sm_v_3'
+      'sm_0_v', 'sm_1_v', 'sm_2_v', 'sm_3_v'
     ]);
   });
 
@@ -189,17 +192,22 @@ describe('expandColumnNames', () => {
     expect(expandColumnNames(property({ name: 'weight', typeName: 'UINT8' }), 'meta_'))
       .toEqual(['sm_meta_weight']);
   });
+
+  it('lands the fixed-dict prefix between the vector index and the item name', () => {
+    // FIXED_DICT 内向量:前缀夹在 index 与项名之间(引擎对 FD 键向量同规则)
+    expect(expandColumnNames(property({ name: 'v', typeName: 'VECTOR3' }), 'd_'))
+      .toEqual(['sm_0_d_v', 'sm_1_d_v', 'sm_2_d_v']);
+  });
 });
 
 describe('buildMysqlTableSchemas', () => {
   const entitySource = source({ line: 1, path: 'Hero' });
-  const availability = { hasBase: true, hasCell: false, hasClient: false };
 
-  it('creates the root table and skips non-persistent properties', () => {
+  it('creates the root table with structural columns and skips non-persistent properties', () => {
     const tables = buildMysqlTableSchemas('Hero', entitySource, [
       property(),
       property({ name: 'tmp', persistent: false })
-    ], availability);
+    ], false);
 
     expect(tables).toHaveLength(1);
     expect(tables[0]).toMatchObject({
@@ -207,8 +215,18 @@ describe('buildMysqlTableSchemas', () => {
       kind: 'entity',
       title: 'Hero'
     });
-    expect(tables[0].fields.map(f => f.name)).toEqual(['sm_hp']);
+    // 引擎建表固定结构列:id(自增主键)+ sm_autoLoad(索引);无 cell 内容时
+    // 不落 position/direction
+    expect(tables[0].fields.map(f => f.name)).toEqual(['id', 'sm_autoLoad', 'sm_hp']);
     expect(tables[0].fields[0]).toMatchObject({
+      typeLabel: 'bigint unsigned',
+      indexType: 'PRIMARY'
+    });
+    expect(tables[0].fields[1]).toMatchObject({
+      typeLabel: 'tinyint',
+      indexType: 'INDEX'
+    });
+    expect(tables[0].fields[2]).toMatchObject({
       // mysql 列型映射:UINT32 → int unsigned
       typeLabel: 'int unsigned',
       identifier: false
@@ -216,16 +234,15 @@ describe('buildMysqlTableSchemas', () => {
   });
 
   it('prepends synthetic position/direction columns for cell entities', () => {
-    const tables = buildMysqlTableSchemas('Hero', entitySource, [property()], {
-      hasBase: true, hasCell: true, hasClient: false
-    });
+    const tables = buildMysqlTableSchemas('Hero', entitySource, [property()], true);
 
     expect(tables[0].fields.map(f => f.name)).toEqual([
-      'sm_position_0', 'sm_position_1', 'sm_position_2',
-      'sm_direction_0', 'sm_direction_1', 'sm_direction_2',
+      'id', 'sm_autoLoad',
+      'sm_0_position', 'sm_1_position', 'sm_2_position',
+      'sm_0_direction', 'sm_1_direction', 'sm_2_direction',
       'sm_hp'
     ]);
-    expect(tables[0].fields[0].typeLabel).toBe('float');
+    expect(tables[0].fields[2].typeLabel).toBe('float');
   });
 
   it('routes ARRAY properties into child tables and recurses the element', () => {
@@ -235,14 +252,21 @@ describe('buildMysqlTableSchemas', () => {
         typeName: 'ARRAY',
         arrayElement: property({ name: 'value', typeName: 'UINT32' })
       })
-    ], availability);
+    ], false);
 
     expect(tables.map(t => t.name)).toEqual(['tbl_Hero', 'tbl_Hero_bag']);
     expect(tables[1]).toMatchObject({
       kind: 'array',
       parentTableName: 'tbl_Hero'
     });
-    expect(tables[1].fields.map(f => f.name)).toEqual(['sm_value']);
+    // 子表结构列:id + parentID(索引)+ sm_autoLoad,再落元素列
+    expect(tables[1].fields.map(f => f.name)).toEqual([
+      'id', 'parentID', 'sm_autoLoad', 'sm_value'
+    ]);
+    expect(tables[1].fields[1]).toMatchObject({
+      typeLabel: 'bigint unsigned',
+      indexType: 'INDEX'
+    });
   });
 
   it('flattens FIXED_DICT children with the path prefix and no extra table', () => {
@@ -252,21 +276,41 @@ describe('buildMysqlTableSchemas', () => {
         typeName: 'FIXED_DICT',
         children: [property({ name: 'weight', typeName: 'UINT8' })]
       })
-    ], availability);
+    ], false);
 
     expect(tables).toHaveLength(1);
-    expect(tables[0].fields.map(f => f.name)).toEqual(['sm_meta_weight']);
+    expect(tables[0].fields.map(f => f.name)).toEqual(['id', 'sm_autoLoad', 'sm_meta_weight']);
   });
 
   it('expands VECTOR3 into three columns and dedupes repeated names', () => {
     const tables = buildMysqlTableSchemas('Hero', entitySource, [
       property({ name: 'v', typeName: 'VECTOR3' }),
       property()
-    ], availability);
+    ], false);
 
     expect(tables[0].fields.map(f => f.name)).toEqual([
-      'sm_v_0', 'sm_v_1', 'sm_v_2', 'sm_hp'
+      'id', 'sm_autoLoad', 'sm_0_v', 'sm_1_v', 'sm_2_v', 'sm_hp'
     ]);
+  });
+
+  it('defaults STRING database length to 255 and keeps declared lengths', () => {
+    const tables = buildMysqlTableSchemas('Hero', entitySource, [
+      property({ name: 'name', typeName: 'STRING' }),
+      property({ name: 'title', typeName: 'UNICODE', databaseLength: 64 })
+    ], false);
+
+    const nameField = tables[0].fields.find(f => f.name === 'sm_name')!;
+    expect(nameField.databaseLength).toBe(255);
+    const titleField = tables[0].fields.find(f => f.name === 'sm_title')!;
+    expect(titleField.databaseLength).toBe(64);
+  });
+
+  it('drops ENTITYCALL columns entirely', () => {
+    const tables = buildMysqlTableSchemas('Hero', entitySource, [
+      property({ name: 'target', typeName: 'ENTITYCALL' })
+    ], false);
+
+    expect(tables[0].fields.map(f => f.name)).toEqual(['id', 'sm_autoLoad']);
   });
 });
 
@@ -298,6 +342,13 @@ describe('getDatabaseSchemaSnapshot against a temp workspace', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'utf8');
+    // 引擎实体 has* 由 autoMatchCompOwn 裁定:entities.xml 声明优先于脚本
+    // 存在性;此处显式声明 hasCell,root 表才落 position/direction 合成列。
+    fs.writeFileSync(path.join(workspaceRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '  <Hero hasBase="true" hasCell="true"/>',
+      '</root>'
+    ].join('\n'), 'utf8');
   });
 
   afterAll(() => {
@@ -314,7 +365,9 @@ describe('getDatabaseSchemaSnapshot against a temp workspace', () => {
 
     const fieldNames = snapshot!.tables[0].fields.map(f => f.name);
     expect(fieldNames).toContain('sm_hp');
-    expect(fieldNames).toContain('sm_position_0'); // bag 带 CELL_PUBLIC → cell 实体合成列
+    expect(fieldNames).toContain('id');
+    expect(fieldNames).toContain('sm_autoLoad');
+    expect(fieldNames).toContain('sm_0_position'); // entities.xml 声明 hasCell → cell 实体合成列
     expect(snapshot!.tableIndex.get('tbl_Hero_bag')).toBeDefined();
   });
 

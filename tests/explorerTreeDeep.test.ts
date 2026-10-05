@@ -222,8 +222,9 @@ describe('EntityExplorerProvider.getChildren drill-down', () => {
     expect(dbGroups.map(group => group.group!.label)).toEqual(['tbl_Hero', 'tbl_Hero_pack']);
 
     const dbLeaves = (await send(dbGroups[0])) as LeafLike[];
-    // hasCell 实体:合成位置/朝向列在字段最前,真实属性 sm_hp 紧随
-    expect(dbLeaves[0].label).toBe('sm_position_0');
+    // 引擎建表语义:结构列(id/sm_autoLoad)在最前,hasCell 实体随后是
+    // 合成位置/朝向六列,再落真实属性列(sm_hp 与 FD 平铺 sm_meta_weight)
+    expect(dbLeaves[0].label).toBe('id');
     expect(dbLeaves.map(leaf => leaf.label)).toContain('sm_hp');
     expect(dbLeaves.find(leaf => leaf.label === 'sm_hp')!.command!.command).toBe('kbengine.database.open');
   });
