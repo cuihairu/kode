@@ -154,6 +154,7 @@
 - 选区生成自定义片段，命令面板 `Generate Snippet from Selection`（`kbengine.snippets.generateFromSelection`，批94）
 - 片段语法转义（`$`/`\`）+ 公共缩进剥离，合并写入 `.vscode/kbengine-custom.code-snippets`，scope 取当前文档语言
 - 同名条目覆盖有警告；手改出注释/坏 JSON 的片段文件拒绝改写并提示
+- 片段文件读/写 IO 失败（权限、路径被目录/文件占位等）以错误提示呈现并带文件路径，不裸抛给宿主（批100）
 - **源文件**: `src/snippetGenerator.ts`
 
 ---
@@ -284,8 +285,9 @@ kode/
       from Selection」——选区文本做片段语法转义(`$`/`\`)并去公共缩进为
       片段体,经名称/前缀/描述三步输入后合并写入工作区
       `.vscode/kbengine-custom.code-snippets`,scope 取当前文档语言,同名
-      覆盖有警告,手改出注释/坏 JSON 拒绝改写并提示;假设注明:选区按字面
-      收录不自动推断占位符,用户可在片段文件内自行加 `${1:...}`,
+      覆盖有警告,手改出注释/坏 JSON 拒绝改写并提示;片段文件读/写 IO 失败
+      落错误通道提示并带文件路径(批100,见 TESTING.md 批100);假设注明:选区
+      按字面收录不自动推断占位符,用户可在片段文件内自行加 `${1:...}`,
       见 TESTING.md 批94)
 
 ---

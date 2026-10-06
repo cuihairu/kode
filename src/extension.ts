@@ -625,9 +625,19 @@ export function activate(context: vscode.ExtensionContext) {
         workspaceFolder.uri.fsPath,
         CUSTOM_SNIPPETS_RELATIVE_PATH
       );
-      const existingContent = fs.existsSync(snippetsFilePath)
-        ? fs.readFileSync(snippetsFilePath, 'utf8')
-        : null;
+      // 读取/写入的底层 IO 失败(权限、路径被文件占位等)不裸抛给宿主,
+      // 落到错误通道并给出片段文件路径
+      let existingContent: string | null;
+      try {
+        existingContent = fs.existsSync(snippetsFilePath)
+          ? fs.readFileSync(snippetsFilePath, 'utf8')
+          : null;
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `无法读取自定义片段文件: ${snippetsFilePath}(${(error as Error).message})`
+        );
+        return;
+      }
 
       let merged: MergeSnippetResult;
       try {
@@ -644,8 +654,15 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      fs.mkdirSync(path.dirname(snippetsFilePath), { recursive: true });
-      fs.writeFileSync(snippetsFilePath, merged.content, 'utf8');
+      try {
+        fs.mkdirSync(path.dirname(snippetsFilePath), { recursive: true });
+        fs.writeFileSync(snippetsFilePath, merged.content, 'utf8');
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `无法写入自定义片段文件: ${snippetsFilePath}(${(error as Error).message})`
+        );
+        return;
+      }
 
       if (merged.overwritten) {
         vscode.window.showWarningMessage(

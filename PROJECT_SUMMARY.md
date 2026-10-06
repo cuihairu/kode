@@ -164,6 +164,7 @@
 - [选区生成自定义片段（命令 `kbengine.snippets.generateFromSelection`）]
 - [片段语法转义（`$`/`\`）+ 公共缩进剥离，合并写入 `.vscode/kbengine-custom.code-snippets`]
 - [同名条目覆盖有警告；坏 JSON 片段文件拒绝改写]
+- [片段文件读/写 IO 失败以错误提示呈现并带文件路径(批100)]
 - [源码：src/snippetGenerator.ts]
 
 ### 文档

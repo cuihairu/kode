@@ -363,6 +363,9 @@
   - 已确认错误（1 处已修，合并语义与片段文件装载不一致）：`mergeSnippetEntry` 用普通赋值 `root[name] = record` 写条目，片段名为 `__proto__` 且既有文件无该键时命中 `Object.prototype.__proto__` 访问器——条目不落任何自身属性即被丢掉（`overwritten` 判 false、序列化输出 `{}\n`），命令层照报「已生成自定义代码片段」，成功消息与落盘内容相悖；官方装载面对同一键专门防御（`setObjectProperty` 用 `defineProperty` 保留自身属性），且 `Object.entries` 枚举自身键——同一输入官方可装载、本实现写丢并报成功，属核对重点 2 的合并语义不一致。改为 `root = { ...root, [name]: record }`（spread/计算键按 CreateDataProperty 定义绕开访问器，常规名称行为不变），+2 用例（新建名 `__proto__` 落盘含 `"__proto__"` 自身属性键、键序与值全等；既有 `__proto__` 条目再生成 `overwritten` 判 true 且前缀更新、他条目保留）；变异复跑验证：换回普通赋值第 1 例红（输出 `{}\n`），还原后全绿。
   - 删/改/保留：改——`src/snippetGenerator.ts` 的 `mergeSnippetEntry` 条目写入（普通赋值 → spread/计算键）与注释，`tests/snippetGenerator.test.ts` +2 用例（`__proto__` 名正锁 ×2）。文档——README/CHANGELOG/`commands.md`/`features.md`/COMPLETED_FEATURES 功能 19/PROJECT_SUMMARY 功能 19 中本块表述逐条复核属实未动（全仓 README/docs 粗粒度表述复核属已登记遗留，按本批边界不动）。保留——转义口径（`\`/`$`）、批94「选区按字面收录不推断占位符」口径、公共缩进剥离+编辑器补缩进、scope=文档 languageId、同名覆盖警告、坏 JSON/带注释拒绝改写不静默改写、`workspaceFolders[0]` 落盘（与 codeGenerator/debugConfig 等全仓既有约定一致）。
   - 遗留登记（不改，后续候选）：① 公共缩进按字符数计（`/^[ \t]*/` 长度），纯 tab 或纯空格选区精确，tab/空格混用时相对层级可能残留偏移——修正需引入编辑器 `tabSize` 列语义，纯逻辑层暂无该输入，待排期；② 片段文件的读/写 IO 失败（权限、同名目录、磁盘满）不在命令层 catch，交 VS Code 通用命令错误呈现——文件仅在成功解析后才改写，无静默损毁，如需友好提示待排期；③ 多根工作区固定取首根落盘与 codeGenerator/debugConfig 等全仓 `workspaceFolders[0]` 约定一致（非本块引入），活动文档不在首根时片段仍写首根 `.vscode/`——如要按文档所在根落盘需全仓统一改口径，待排期。
+- 核对结果补充（批100，2026-10-07，遗留②收口）：
+  - 改——`src/extension.ts` 命令层读/写两段 IO 各包 try/catch：读取失败（EISDIR/EACCES 等含路径被目录占位）报「无法读取自定义片段文件」+ 路径 + 底层 message 后返回；写入段（mkdirSync/writeFileSync，含 `.vscode` 被普通文件占位的 ENOTDIR）报「无法写入自定义片段文件」后返回——不再裸抛给宿主通用命令错误。坏 JSON 拒改写与解析后才落盘的既有口径不变。
+  - 测试——`tests/snippetGeneratorCommand.test.ts` +2 用例：片段文件路径被目录占位（读臂）、`.vscode` 被普通文件占位（写臂），各断错误文案含「无法读取/写入自定义片段文件」与片段文件路径、无成功消息、目标位置内容未被改动。
 
 ### 19. 数据库 Schema 查看
 

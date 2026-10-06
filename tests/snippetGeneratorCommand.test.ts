@@ -265,4 +265,44 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
       disposable.dispose();
     }
   });
+
+  it('片段文件读取失败(路径被目录占位)时报错且不改写', async () => {
+    // 路径存在但不是普通文件:readFileSync 抛 EISDIR,IO 失败必须落到
+    // 错误通道并带片段文件路径,不能裸抛给宿主
+    fs.mkdirSync(snippetsFilePath(), { recursive: true });
+
+    windowish.activeTextEditor = makeEditor(HP_DEF, { line: 2, character: 0 }, { line: 5, character: 9 });
+    scriptInputBox(['Fresh', 'kbe-fresh', '']);
+
+    const context = await activateAndWait();
+    await commands.executeCommand('kbengine.snippets.generateFromSelection');
+
+    expect(messages.error.at(-1)).toContain('无法读取自定义片段文件');
+    expect(messages.error.at(-1)).toContain(snippetsFilePath());
+    expect(messages.info).toEqual([]);
+    expect(fs.statSync(snippetsFilePath()).isDirectory()).toBe(true);
+    for (const disposable of context.subscriptions) {
+      disposable.dispose();
+    }
+  });
+
+  it('片段目录创建失败(.vscode 被文件占位)时报错', async () => {
+    // .vscode 是普通文件时 mkdirSync 必抛(ENOTDIR/EEXIST 一类),写入段
+    // 的 IO 失败同样要带路径落到错误通道
+    fs.writeFileSync(path.join(root, '.vscode'), '不是目录', 'utf8');
+
+    windowish.activeTextEditor = makeEditor(HP_DEF, { line: 2, character: 0 }, { line: 5, character: 9 });
+    scriptInputBox(['Fresh', 'kbe-fresh', '']);
+
+    const context = await activateAndWait();
+    await commands.executeCommand('kbengine.snippets.generateFromSelection');
+
+    expect(messages.error.at(-1)).toContain('无法写入自定义片段文件');
+    expect(messages.error.at(-1)).toContain(snippetsFilePath());
+    expect(messages.info).toEqual([]);
+    expect(fs.readFileSync(path.join(root, '.vscode'), 'utf8')).toBe('不是目录');
+    for (const disposable of context.subscriptions) {
+      disposable.dispose();
+    }
+  });
 });

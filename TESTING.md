@@ -3076,6 +3076,36 @@ EXIT=0(vitest+编译+mocha 烟测 11 passing)。
 (批99)」、遗留①转已落地;块19 遗留清单不动(多为等拍板项)。PROJECT_SUMMARY
 统计同步 999 用例/17684 行(实测)。
 
+## 批100:块18 遗留②收口——片段生成 IO 失败友好提示(+2 用例)
+
+批次号:批99 后顺延;巡检点火令继续取遗留登记中「有源码依据的纯代码项」。
+计划内 19 个功能块已全部核对完成,本批不新开功能块,按剩余队列做块内遗留。
+
+巡检取项:块18 遗留②(登记自批97)——`kbengine.snippets.generateFromSelection`
+的片段文件读/写 IO 失败(权限、路径被目录/文件占位、磁盘满)不在命令层
+catch,裸抛给宿主交通用命令错误呈现,无定位信息。
+
+改动(src/extension.ts,仅命令装配层,snippetGenerator 纯逻辑不动):
+读段(existsSync/readFileSync)与写段(mkdirSync/writeFileSync)各包
+try/catch——读取失败(EISDIR/EACCES 等)报「无法读取自定义片段文件」+
+片段文件路径 + 底层 message 后返回;写入段(`.vscode` 被普通文件占位时
+mkdirSync 必抛)报「无法写入自定义片段文件」后返回。坏 JSON 拒绝改写与
+「解析成功后才落盘、无静默损毁」的既有口径不变。
+
+补齐测试(+2,零新文件):tests/snippetGeneratorCommand.test.ts——
+片段文件路径被目录占位(读臂)、`.vscode` 被普通文件占位(写臂),各断
+错误文案含「无法读取/写入自定义片段文件」与片段文件路径、无成功消息、
+目标位置内容未被改动。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 1001 用例全绿;覆盖率四指标
+100%:5140/5140 语句、2950/2950 分支、885/885 函数、5021/5021 行;pnpm test
+EXIT=0(vitest+编译+mocha 烟测 11 passing)。
+
+记账:用例 999→1001(+2)。测试文件 83 不变。计划块18 补「核对结果补充
+(批100)」、遗留②转已落地(① tabSize 混合缩进、③ 多根落盘口径维持登记,
+均涉设计取舍等拍板);COMPLETED_FEATURES 功能19、PROJECT_SUMMARY 功能19、
+docs/guide/commands.md 行为清单同步。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
