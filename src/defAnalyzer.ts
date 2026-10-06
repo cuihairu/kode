@@ -42,7 +42,8 @@ export type DefAnalysisCheck =
   | 'heavy-sync-broadcast'
   | 'redundant-detail-level'
   | 'invalid-identifier'
-  | 'method-property-collision';
+  | 'method-property-collision'
+  | 'engine-limited-name';
 
 export const DEF_ANALYSIS_SEVERITY_ORDER: Record<DefAnalysisSeverity, number> = {
   error: 0,
@@ -96,6 +97,53 @@ const PYTHON_KEYWORDS = new Set([
 
 const isPythonKeyword = (name: string): boolean => PYTHON_KEYWORDS.has(name);
 
+// 引擎受限属性名:validDefPropertyName(entitydef.cpp L967)按
+// ENTITY_LIMITED_PROPERTYS 逐名拒绝(entitydef/common.h L125-158)。同一
+// 名单约束三处:def 属性注册(PyEntityDef::registerDefPropertys)、脚本
+// 实体类构造的属性/方法/客户端方法 DefContext(registerDefContext,抛
+// AssertionError)与 Components 槽名(loadComponents)——拒绝即模块装载
+// 失败,实体加载会失败。FIXED_DICT 键不受此限(引擎 DC_TYPE_FIXED_ITEM
+// 分支注释明写放开该限制)。引擎还会拒绝 KBEngine.Entity 既有属性名
+// (运行时 PyObject_GetAttrString 查询),该属性面不在引擎仓静态可推导,
+// 本检查只收受限名单臂。
+// 引擎源清单 "component" 行尾缺逗号、与下一行 "databaseID" 拼成单个条目
+// "componentdatabaseID"(C 字符串字面拼接语义)——两个名字单独并不被拒;
+// "interface" 与终止哨兵 "" 拼接后仍为 "interface",在名单内。此处按
+// 编译后真值收录。
+const ENTITY_LIMITED_PROPERTYS = new Set([
+  'id',
+  'position',
+  'direction',
+  'spaceID',
+  'autoLoad',
+  'cell',
+  'base',
+  'client',
+  'cellData',
+  'className',
+  'componentdatabaseID',
+  'isDestroyed',
+  'shouldAutoArchive',
+  'shouldAutoBackup',
+  '__ACCOUNT_NAME__',
+  '__ACCOUNT_PASSWORD__',
+  'clientAddr',
+  'clientEnabled',
+  'hasClient',
+  'roundTripTime',
+  'timeSinceHeardFromClient',
+  'allClients',
+  'hasWitness',
+  'isWitnessed',
+  'otherClients',
+  'topSpeed',
+  'topSpeedY',
+  'interface'
+]);
+
+const describeLimitedName = (kind: string, name: string): string =>
+  `${kind} ${name} 是引擎受限名(ENTITY_LIMITED_PROPERTYS):引擎按名拒绝,实体加载会失败;请改名`;
+
 const finding = (
   check: DefAnalysisCheck,
   severity: DefAnalysisSeverity,
@@ -143,6 +191,20 @@ const analyzePropertyNode = (
         nameSpan(propertyNode),
         lineAtNode(propertyNode),
         describeKeywordProblem(propertyNode.name),
+        propertyNode.name
+      )
+    );
+  }
+
+  // 引擎受限名:validDefPropertyName 名单臂,def 属性注册即拒绝
+  if (ENTITY_LIMITED_PROPERTYS.has(propertyNode.name)) {
+    findings.push(
+      finding(
+        'engine-limited-name',
+        'error',
+        nameSpan(propertyNode),
+        lineAtNode(propertyNode),
+        describeLimitedName('属性', propertyNode.name),
         propertyNode.name
       )
     );
@@ -275,6 +337,20 @@ export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
           )
         );
       }
+      // 方法名走同一受限名单(DC_TYPE_METHOD/DC_TYPE_CLIENT_METHOD 的
+      // DefContext 构造都过 validDefPropertyName,拒绝抛 AssertionError)
+      if (ENTITY_LIMITED_PROPERTYS.has(methodNode.name)) {
+        findings.push(
+          finding(
+            'engine-limited-name',
+            'error',
+            nameSpan(methodNode),
+            getLineNumberAt(document, methodNode.tagStart),
+            describeLimitedName('方法', methodNode.name),
+            methodNode.name
+          )
+        );
+      }
       if (propertyNames.has(methodNode.name)) {
         findings.push(
           finding(
@@ -284,6 +360,26 @@ export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
             getLineNumberAt(document, methodNode.tagStart),
             `方法 ${methodNode.name} 与属性同名:引擎装载时按名冲突直接拒绝(scriptdef_module),实体加载会失败`,
             methodNode.name
+          )
+        );
+      }
+    }
+  }
+
+  // Components 槽名同受受限名约束(loadComponents 对槽名逐个
+  // validDefPropertyName,拒绝则整个模块装载失败)
+  const componentsSection = getDirectChildElement(root, 'Components');
+  if (componentsSection) {
+    for (const componentNode of getDirectChildElements(componentsSection)) {
+      if (ENTITY_LIMITED_PROPERTYS.has(componentNode.name)) {
+        findings.push(
+          finding(
+            'engine-limited-name',
+            'error',
+            nameSpan(componentNode),
+            getLineNumberAt(document, componentNode.tagStart),
+            describeLimitedName('组件', componentNode.name),
+            componentNode.name
           )
         );
       }

@@ -144,6 +144,8 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 - `ALL_CLIENTS` 广播大负载类型(字符串/BLOB/容器/PY_*/VECTOR)的同步开销提示
 - `DetailLevel` 配在无客户端可见旗标属性上的冗余字段
 - 属性/方法名为 Python 关键字、方法与属性同名冲突
+- 属性/方法名/组件槽名命中引擎受限名清单(`ENTITY_LIMITED_PROPERTYS`),
+  实体加载会失败
 
 ## 安装
 

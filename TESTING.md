@@ -3022,6 +3022,60 @@ validDefPropertyName 受限名检查;块18:混合缩进字符计数、IO 失败�
 + 发布准备三项(Marketplace 截图/完善文档/发布 Marketplace)维持不动等
 用户明令。
 
+## 批99:块17 遗留①收口——引擎受限名检查落地(+7 用例)+ 由其咬出的模板/向导引擎非法 def 修复(5 处)
+
+批次号:批98 后顺延;巡检点火令从遗留登记取「有源码依据的纯代码项」开工。
+计划内 19 个功能块已全部核对完成(批98 收口),本批不新开功能块,按批98
+剩余队列做块内遗留。
+
+巡检取项:块17 遗留①(登记自批96)——引擎 `validDefPropertyName` 按
+`ENTITY_LIMITED_PROPERTYS` 拒绝受限名,kode 此前只查 Python 关键字与
+方法/属性同名,不查受限名。
+
+实现(src/defAnalyzer.ts,纯逻辑):
+- `DefAnalysisCheck` 联合新增 `engine-limited-name`;`ENTITY_LIMITED_PROPERTYS`
+  常量按引擎编译后真值逐名收录(`entitydef/common.h` L125-158):源清单
+  "component" 行尾缺逗号、与下一行 "databaseID" 经 C 字面拼接成单条目
+  "componentdatabaseID"(两个名字单独不被拒),"interface" 与终止哨兵 ""
+  拼接后仍在名单——按怪癖真值收录,注释行级引用。
+- 检查面三处,对应引擎三个调用面:Properties 属性节点(def XML 注册,
+  py_entitydef.cpp L2519)、方法节点(Base/Cell/ClientMethods,四类
+  DefContext 构造,py_entitydef.cpp L520/550/562/574,拒绝抛
+  AssertionError)、Components 槽名(entitydef.cpp L660 loadComponents);
+  FIXED_DICT 子键不查(引擎 DC_TYPE_FIXED_ITEM 分支明写放开);消息统一
+  「引擎按名拒绝,实体加载会失败;请改名」。KBEngine.Entity 运行时属性臂
+  (PyObject_GetAttrString)以静态不可推导为由不硬编码,范围注记如实声明
+  (COMPLETED_FEATURES ⑧)。
+
+新检查首跑即咬出代码生成器 5 处真实缺陷(批93「全库模板零命中锁」与向导
+流程测试此前无该维度,模板即示例却生成引擎拒绝装载的 def):
+- avatar 模板声明 position/direction/spaceID、npc/monster/space 模板声明
+  position——hasCell 实体的这三个名字由引擎自动提供,在 `<Properties>`
+  声明即受限名拒绝 → 从模板移除(avatar 的 moveTo 方法 Arg 名 position
+  不受此名单约束,保留);
+- 向导「添加示例属性」用受限名 `id` → 改名 `entityID`(常量注释注明缘由);
+- tests/codeGeneratorFiles.test.ts 向导完整流程断言 `<id>`→`<entityID>` 并
+  补 `not.toContain('<id>')`;向导产物补 `analyzeDefDocument` 零命中锁
+  (与批93 模板侧同口径),防示例属性再滑回受限名。
+
+补齐测试(+7,零新文件):tests/defAnalyzer.test.ts 新增 describe
+「引擎受限名检查(engine-limited-name)」——属性 position 命中(error 级,
+消息含名单名与「实体加载会失败」,行定位到标签行)、方法 id 命中、Components
+槽命中(受限/普通槽名双向断言)、C 拼接怪癖双向锁(component/databaseID
+不报、componentdatabaseID 报)、"interface" 正锁、FIXED_DICT 子键 id 豁免、
+普通名 hp/onTick 负向锁。门禁整轮收口后 defAnalyzer.ts 全指标回归 100%
+(首跑曾 45/46 分支:Components 循环普通名臂未覆盖,扩展组件用例收口)。
+
+真实缺陷台账新增一条(见下节)。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 999 用例全绿;覆盖率四指标
+100%:5134/5134 语句、2950/2950 分支、885/885 函数、5015/5015 行;pnpm test
+EXIT=0(vitest+编译+mocha 烟测 11 passing)。
+
+记账:用例 992→999(+7)。测试文件 83 不变。计划文件块17 补「核对结果补充
+(批99)」、遗留①转已落地;块19 遗留清单不动(多为等拍板项)。PROJECT_SUMMARY
+统计同步 999 用例/17684 行(实测)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
@@ -3054,3 +3108,9 @@ validDefPropertyName 受限名检查;块18:混合缩进字符计数、IO 失败�
   mysql 列型标签丢失;引擎 getDataType 只认注册名、别名只改 aliasName
   复用同一内建实例 → 补 BUILTIN_DB_TYPE_NAMES 在环守卫前分流,别名链
   用例锁定(批98 覆盖率回补发现)。
+- `codeGenerator.ts` 预设模板与向导示例属性生成引擎非法 def:avatar 模板
+  声明 position/direction/spaceID、npc/monster/space 声明 position(hasCell
+  实体这三个名字由引擎自动提供,声明即 `validDefPropertyName` 拒绝、实体
+  加载失败),向导示例属性用受限名 `id` → 模板移除受限名声明、示例属性
+  改名 entityID,向导流程测试补静态建议零命中锁(批99 引擎受限名检查
+  首跑发现)。

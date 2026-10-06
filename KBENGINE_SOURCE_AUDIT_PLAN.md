@@ -326,7 +326,7 @@
 - 文件：
   - `src/defAnalyzer.ts`
 - 内容：
-  - `kbengine.def.analyze` 命令，7 个检查项产出优化建议
+  - `kbengine.def.analyze` 命令，8 个检查项产出优化建议（批99 起，原 7 个）
 - 核对重点：
   - 幻影类型清单是否与 `DataTypes` 注册表逐名一致
   - 各检查项是否只以“优化建议”口径输出、不冒充引擎装载规则
@@ -337,6 +337,13 @@
   - 已确认错误（4 处已修）：① CLIENT_SYNC_FLAGS 名单失实——含引擎不存在的幻影名 ANY_CLIENT（common.cpp 8 名单里没有）、误含纯 cell 广播位 CELL_PUBLIC（0x1，不在 ENTITY_CLIENT_DATA_FLAGS）、漏掉真客户端位 OWN_CLIENT/CELL_PUBLIC_AND_OWN/BASE_AND_CLIENT——导致冗余 DetailLevel 检查双向失真（漏报 CELL_PUBLIC+DetailLevel、误报三个真客户端旗标下的有意义配置），改为 ENTITY_CLIENT_DATA_FLAGS 位集展开的 5 名单；② invalid-identifier 表述失实——"实体类无法生成该成员"不成立：引擎 C 层 setattr 挂关键字名不报错、装载不失败，真实影响只是 Python 脚本语法无法写 self.class 访问，改为如实口径；③ method-property-collision 表述失实——"Python 实体类中会互相覆盖"不成立：引擎装载时按名冲突直接拒绝（scriptdef_module 双向检查），改为"实体加载会失败"；④ duplicate-type-tag 表述不准——引擎 enterNode 只取首个 <Type>、行为确定而非"取值歧义"，改为按首取语义表述；附带把 missing-type 的含混表述（"无法确定存储与同步布局"）收敛为"实体加载会失败"（引擎找不到 Type 报错返回，与 phantom-type 同级事实）。
   - 删/改/保留：改——src/defAnalyzer.ts 的 CLIENT_SYNC_FLAGS（引擎真值名单）、describeKeywordProblem、method-property-collision/missing-type/duplicate-type-tag 四处消息文案与注释；tests/defAnalyzer.test.ts +2 用例（真客户端旗标负向锁 ×3、CELL_PUBLIC 漏转报正锁 + ANY_CLIENT 幻影名负向锁）并补消息文案锁（装载不失败/实体加载会失败/只装载首个/不得回潮"互相覆盖""无法生成"）；tests/perfRegression.test.ts 建议 goldens 重取（findingCount 220→620：夹具 CELL_PUBLIC|ANY_CLIENTS 与 BASE_PUBLIC|CELL_PUBLIC 两类旗标的 DetailLevel 由漏转报，digest 827fa39f/77945013）；文档——COMPLETED_FEATURES 功能 18 与未来增强 ⑦、PROJECT_SUMMARY 功能 18 同步引擎口径（README/docs 的粗粒度表述复核后本就属实，未动）；保留——幻影类型清单、heavy-sync 口径、检查项与实时诊断的错位分工、Flags 按 '|' 容错拆分（引擎整串比对会拒绝组合旗标，该情形由语言侧实时诊断拦，分析侧容错只影响建议面）。
   - 遗留登记（不改，后续候选）：① 引擎 validDefPropertyName 还会拒绝 ENTITY_LIMITED_PROPERTYS 受限名（id/position/direction/spaceID/autoLoad/cell/base/client/cellData/className/component/databaseID/isDestroyed/shouldAutoArchive/shouldAutoBackup/__ACCOUNT_NAME__ 等，common.h L125-158）与 KBEngine.Entity 既有属性名——kode 诊断与分析均未覆盖，属可新增检查项（有源码依据，待排期）；② 同名检查只比单文件，继承链跨文件同名（引擎按模块全局拒绝）不在范围，已在文档如实声明；③ 幻影类型清单只列高频误写 5 名，引擎 21 注册名的任意拼错属语言侧"未知类型"诊断范围，两模块分工维持现状。
+- 核对结果补充（批99，2026-10-05，遗留①收口，执行方式五步输出）：
+  - 这块当前功能列表：检查项 7→8——新增 `engine-limited-name`：属性/方法名/组件槽名命中引擎受限名单（def 属性注册、脚本类构造的 PROPERTY/COMPONENT_PROPERTY/METHOD/CLIENT_METHOD 四类 DefContext、loadComponents 三处共用 validDefPropertyName，拒绝即实体加载会失败）；FIXED_DICT 键不查（引擎 DC_TYPE_FIXED_ITEM 明写放开）。
+  - 对应官方源码文件：`entitydef/common.h` L125-158（名单含 C 字面拼接怪癖："component" 行尾缺逗号与 "databaseID" 拼成单条目 "componentdatabaseID"，两名单独不被拒；"interface" 与终止哨兵 "" 拼接后仍在名单）、`entitydef/entitydef.cpp` L967-1009（validDefPropertyName 名单臂 + KBEngine.Entity 运行时属性查询臂）、`entitydef/py_entitydef.cpp` L520/550/562/574（四类 DefContext 注册拒绝，抛 AssertionError）、L2519（def XML 属性注册拒绝）、`entitydef.cpp` L660（loadComponents 槽名拒绝）、L588-594（FIXED_ITEM 分支注释明写放开键限制）。
+  - 已确认一致：清单按编译后真值逐名收录（含 componentdatabaseID 条目）；KBEngine.Entity 属性臂不硬编码（运行时面不在引擎仓静态可推导，COMPLETED_FEATURES 范围注记如实声明）。
+  - 已确认错误：无新增——本项为遗留①登记的新增检查，非既有实现缺陷。
+  - 删/改/保留：改——`src/defAnalyzer.ts`（DefAnalysisCheck 联合 + ENTITY_LIMITED_PROPERTYS 常量与拼接怪癖注释 + Properties/方法节/Components 三处检查）、`tests/defAnalyzer.test.ts`（+7 用例：属性/方法/组件命中正锁、拼接怪癖双向锁、"interface" 正锁、FD 键豁免锁、普通名负向锁）、COMPLETED_FEATURES 检查项 ⑧ 与范围注记、README 性能分析节；保留——原 7 检查项与语言侧实时诊断的错位分工不变。
+  - 遗留登记（更新）：原①已由批99 落地——受限名单臂全量实现，Entity 运行时属性臂以静态不可推导为由不硬编码（COMPLETED_FEATURES 范围注记声明）；②③ 维持不变。
 
 ### 18. 代码片段生成器（自定义代码片段）
 

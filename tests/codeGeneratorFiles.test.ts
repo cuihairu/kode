@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
 import type { EntityDefinition } from '../src/codeGenerator';
+import { analyzeDefDocument } from '../src/defAnalyzer';
 import type * as vscode from 'vscode';
 import { Uri, workspace as stubWorkspace, window as stubWindow } from './helpers/vscodeStub';
 
@@ -287,7 +288,9 @@ describe('KBEngineCodeGenerator wizard', () => {
     expect(defContent).toContain('<Parent>');
     expect(defContent).toContain('<Monster/>');
     expect(defContent).toContain('<Properties>');
-    expect(defContent).toContain('<id>');
+    // 示例属性不用 'id'(引擎受限名,声明会加载失败),改名 entityID
+    expect(defContent).toContain('<entityID>');
+    expect(defContent).not.toContain('<id>');
     expect(defContent).toContain('<Type>UINT64</Type>');
     expect(defContent).toContain('<Flags>BASE</Flags>');
     expect(defContent).toContain('<name>');
@@ -295,6 +298,9 @@ describe('KBEngineCodeGenerator wizard', () => {
     expect(defContent).toContain('<BaseMethods>');
     expect(defContent).toContain('<getName>');
     expect(defContent).not.toContain('<Exposed/>');
+    // 零命中锁(与模板侧同口径):向导产物必须是引擎可加载、静态建议零条的
+    // .def,防示例属性再滑回受限名(如批99 修掉的 'id')
+    expect(analyzeDefDocument(defContent), '向导生成 .def 静态建议').toEqual([]);
 
     const pyContent = fs.readFileSync(path.join(root, 'scripts', 'Hero.py'), 'utf8');
     expect(pyContent).toContain('class HeroCell():');

@@ -264,6 +264,14 @@ kode/
       (标识符字符集由 def 标签语法保证,故仅关键字可触发);
       ⑦ method-property-collision——方法与属性同名:引擎装载时按名冲突直接
       拒绝(scriptdef_module),实体加载会失败(非"Python 类中互相覆盖")。
+      ⑧ engine-limited-name(批99)——属性/方法名/组件槽名命中引擎受限名
+      清单(entitydef/common.h ENTITY_LIMITED_PROPERTYS,def 属性注册、
+      脚本类构造与 loadComponents 三处经 validDefPropertyName 共用):
+      实体加载会失败。清单按引擎 C 字面拼接语义收录("component" 行尾缺
+      逗号与 "databaseID" 拼成单条目 "componentdatabaseID",两名单独不被
+      拒);"interface" 在名单内;FIXED_DICT 键不受限(引擎明写放开)。
+      引擎另拒绝 KBEngine.Entity 既有属性名(运行时查询),该属性面不在
+      引擎仓静态可推导,本检查只收受限名单臂;
       范围注记:重复定义等结构校验已由语言侧实时诊断覆盖,本功能不重复;
       自定义 types.xml 类型为引擎合法扩展,故不做「未知类型」误报;
       同名检查只比单文件,继承链上的跨文件同名(引擎按模块全局拒绝)不在

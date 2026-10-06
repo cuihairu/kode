@@ -588,7 +588,9 @@ export class KBEngineCodeGenerator {
 
       const sampleProperties: PropertyDefinition[] = [
         {
-          name: 'id',
+          // 不用 'id':引擎受限名(ENTITY_LIMITED_PROPERTYS),声明会导致实体
+          // 加载失败;实体 id 由引擎自动提供
+          name: 'entityID',
           type: 'UINT64',
           flags: sampleFlags,
           default: '0',
@@ -877,10 +879,9 @@ export class KBEngineCodeGenerator {
         { name: 'level', type: 'UINT32', flags: 'BASE', default: '1', persistent: true },
         { name: 'exp', type: 'UINT64', flags: 'BASE', default: '0', persistent: true }
       ],
+      // position/direction/spaceID 为引擎受限名(ENTITY_LIMITED_PROPERTYS),
+      // hasCell 实体由引擎自动提供,在 <Properties> 中声明会导致实体加载失败
       cellProperties: [
-        { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
-        { name: 'direction', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
-        { name: 'spaceID', type: 'UINT32', flags: 'CELL_PRIVATE', default: '0' },
         { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' },
         { name: 'mp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' }
       ],
@@ -911,7 +912,6 @@ export class KBEngineCodeGenerator {
         { name: 'name', type: 'STRING', flags: 'BASE', default: '""', dbLength: 32, persistent: true }
       ],
       cellProperties: [
-        { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
         { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' }
       ]
     };
@@ -956,7 +956,6 @@ export class KBEngineCodeGenerator {
         { name: 'respawnTime', type: 'UINT32', flags: 'BASE', default: '0', persistent: true }
       ],
       cellProperties: [
-        { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' },
         { name: 'hp', type: 'UINT32', flags: 'CELL_PUBLIC_AND_OWN', default: '100' },
         { name: 'moveSpeed', type: 'FLOAT', flags: 'CELL_PRIVATE', default: '5.0' },
         { name: 'aggroRange', type: 'UINT32', flags: 'CELL_PRIVATE', default: '20' }
@@ -989,9 +988,6 @@ export class KBEngineCodeGenerator {
       baseProperties: [
         { name: 'spaceKey', type: 'STRING', flags: 'BASE', default: '""', dbLength: 32, persistent: true },
         { name: 'spaceType', type: 'UINT8', flags: 'BASE', default: '0', persistent: true }
-      ],
-      cellProperties: [
-        { name: 'position', type: 'VECTOR3', flags: 'CELL_PRIVATE', default: '0,0,0' }
       ],
       cellMethods: [
         { name: 'onEnter', exposed: true, args: [{ name: 'entityCall', type: 'ENTITYCALL' }] },

@@ -261,6 +261,133 @@ describe('命名检查(非法标识符 / 关键字 / 方法属性冲突)', () =>
   });
 });
 
+describe('引擎受限名检查(engine-limited-name)', () => {
+  it('属性命中受限名单报 error 并定位到标签名', () => {
+    const findings = analyzeDefDocument(
+      def(property('position', '      <Type>VECTOR3</Type>'))
+    );
+    const hit = firstOf(findings, 'engine-limited-name');
+    expect(hit.severity).toBe('error');
+    expect(hit.name).toBe('position');
+    expect(hit.message).toContain('ENTITY_LIMITED_PROPERTYS');
+    expect(hit.message).toContain('实体加载会失败');
+    expect(hit.line).toBe(3); // 属性标签行(1 基)
+    expect(hit.length).toBe('position'.length);
+  });
+
+  it('方法名同样受受限名单约束', () => {
+    const findings = analyzeDefDocument(
+      def(
+        [
+          '  <BaseMethods>',
+          '    <id>',
+          '      <Arg>UINT8</Arg>',
+          '    </id>',
+          '  </BaseMethods>'
+        ].join('\n')
+      )
+    );
+    const hit = firstOf(findings, 'engine-limited-name');
+    expect(hit.severity).toBe('error');
+    expect(hit.name).toBe('id');
+    expect(hit.message).toContain('方法 id');
+  });
+
+  it('Components 槽名命中受限名单同样报错(loadComponents 拒绝)', () => {
+    const findings = analyzeDefDocument(
+      def(
+        [
+          '  <Components>',
+          '    <position>',
+          '      <Type>HealthComp</Type>',
+          '    </position>',
+          '    <movement>',
+          '      <Type>MovementComp</Type>',
+          '    </movement>',
+          '  </Components>'
+        ].join('\n')
+      )
+    );
+    // 普通槽名(非受限名)不报,只命中受限的那一个
+    const limited = findings.filter(item => item.check === 'engine-limited-name');
+    expect(limited.map(item => item.name)).toEqual(['position']);
+    const hit = limited[0];
+    expect(hit.message).toContain('组件 position');
+  });
+
+  it('引擎清单的 C 字面拼接怪癖按编译后真值收录:component/databaseID 不被拒,拼接名被拒', () => {
+    // 引擎源清单 "component" 行尾缺逗号、与 "databaseID" 拼成单个条目
+    // "componentdatabaseID"(entitydef/common.h L138-139)——两个名字
+    // 单独不在 validDefPropertyName 拒绝名单
+    const findings = analyzeDefDocument(
+      def(
+        [
+          '  <Properties>',
+          '    <component>',
+          '      <Type>UINT32</Type>',
+          '    </component>',
+          '    <databaseID>',
+          '      <Type>UINT64</Type>',
+          '    </databaseID>',
+          '    <componentdatabaseID>',
+          '      <Type>UINT32</Type>',
+          '    </componentdatabaseID>',
+          '  </Properties>'
+        ].join('\n')
+      )
+    );
+    const limited = findings.filter(item => item.check === 'engine-limited-name');
+    expect(limited.map(item => item.name)).toEqual(['componentdatabaseID']);
+  });
+
+  it('"interface" 与终止哨兵拼接后仍在名单内', () => {
+    const findings = analyzeDefDocument(
+      def(property('interface', '      <Type>UINT32</Type>'))
+    );
+    expect(firstOf(findings, 'engine-limited-name').name).toBe('interface');
+  });
+
+  it('FIXED_DICT 子键不受限(engine DC_TYPE_FIXED_ITEM 分支明写放开)', () => {
+    const findings = analyzeDefDocument(
+      def(
+        [
+          '  <Properties>',
+          '    <meta>',
+          '      <Type>FIXED_DICT</Type>',
+          '      <Properties>',
+          '        <id>',
+          '          <Type>UINT32</Type>',
+          '        </id>',
+          '      </Properties>',
+          '    </meta>',
+          '  </Properties>'
+        ].join('\n')
+      )
+    );
+    expect(checksOf(findings)).not.toContain('engine-limited-name');
+  });
+
+  it('普通属性与方法不受影响(负向锁)', () => {
+    const findings = analyzeDefDocument(
+      def(
+        [
+          '  <Properties>',
+          '    <hp>',
+          '      <Type>UINT8</Type>',
+          '    </hp>',
+          '  </Properties>',
+          '  <BaseMethods>',
+          '    <onTick>',
+          '      <Arg>UINT8</Arg>',
+          '    </onTick>',
+          '  </BaseMethods>'
+        ].join('\n')
+      )
+    );
+    expect(findings).toEqual([]);
+  });
+});
+
 describe('formatDefAnalysisReport 报告格式', () => {
   it('无建议时输出单行未发现', () => {
     expect(formatDefAnalysisReport('a.def', [])).toBe('a.def: 未发现可优化项');

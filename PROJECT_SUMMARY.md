@@ -155,7 +155,7 @@
 
 #### 18. 性能分析建议
 - [工作区全量 .def 静态分析（命令 `kbengine.def.analyze`）]
-- [7 个检查项：幻影类型、缺 Type、重复 Type、重广播开销、冗余 DetailLevel、Python 关键字标识符、方法属性同名]
+- [8 个检查项：幻影类型、缺 Type、重复 Type、重广播开销、冗余 DetailLevel、Python 关键字标识符、方法属性同名、引擎受限名(批99)]
 - [批96 引擎复核：客户端可见旗标集取 ENTITY_CLIENT_DATA_FLAGS 真值，同名冲突/缺 Type 按「装载失败」表述，关键字按「引擎不失败、脚本不可访问」表述，重复 <Type> 按引擎首取语义表述；同名检查限单文件]
 - [报告写入「KBEngine Def 分析」输出面板并以诊断落入问题列表]
 - [源码：src/defAnalyzer.ts]
@@ -202,7 +202,7 @@ kode/
 │   ├── kbengine.json         # def 代码片段 (11个)
 │   ├── kbengine-python.json  # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json # types.xml 别名片段 (2个)
-├── src/                      # 27 个 TypeScript 文件，17149 行
+├── src/                      # 27 个 TypeScript 文件，17684 行
 │   ├── extension.ts          # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts  # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts          # .def 解析与文本定位
@@ -234,7 +234,7 @@ kode/
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (83 文件 982 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (83 文件 999 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志
@@ -286,7 +286,7 @@ kode/
 ### MVP 完善
 - [x] 测试所有功能(批88:17 项已完成功能逐项验证,全部有自动化用例覆盖)
 - [x] 修复发现的问题(批88:tmLanguage 与引擎注册表对齐等修复,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 982 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
+- [x] 添加单元测试(vitest 功能层 999 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
 - [x] 优化性能(批92:validateDocument −46%、全文件分词 −17%,行为以 golden 回归锁)
 
 ### 发布准备
@@ -335,7 +335,7 @@ pnpm run publish         # 发布到 Marketplace
 - **代码片段**: 11 def + 4 Python + 2 types.xml
 - **预定义实体模板**: 10 个
 - **文档页数**: 21 个 Markdown（仓库根 7 + docs/ 11 + resources/docs 3）
-- **总行数**: 17149 行（src/ TypeScript，实测）
+- **总行数**: 17684 行（src/ TypeScript，实测）
 
 ---
 
