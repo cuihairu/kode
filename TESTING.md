@@ -3106,6 +3106,41 @@ EXIT=0(vitest+编译+mocha 烟测 11 passing)。
 均涉设计取舍等拍板);COMPLETED_FEATURES 功能19、PROJECT_SUMMARY 功能19、
 docs/guide/commands.md 行为清单同步。
 
+## 批101:块16 遗留核实——域位判重登记不成立,补双正锁(+2 用例,零生产改动)
+
+批次号:批100 后顺延;巡检取项为块16 遗留登记中「语言侧诊断的同作用域
+重复检查按 Flags 值相等判重,比引擎 domain 位重叠粗(BASE_AND_CLIENT 与
+OWN_CLIENT 都含 client 位,引擎装载失败而诊断放行),待块 4 复核」。
+
+核实结论(零生产改动——对照引擎后登记定性被推翻):
+- 引擎侧:py_entitydef.cpp L2539-2548 按位与测域归属(hasBaseFlags/
+  hasCellFlags/hasClientFlags = flags & ENTITY_BASE/CELL/CLIENT_DATA_FLAGS,
+  掩码见 entitydef/common.h L41-45),同域再经 addPropertyDescription
+  同名查重拒绝(scriptdef_module.cpp L590)。旗标解析为整串比对(无组合
+  语法),单旗标即单位——位与测试对单旗标等价于「旗标名 ∈ 掩码名集」。
+- kode 侧:`validateSectionStructure` 的 Properties 判重按
+  `getPropertyFlagScopes` 的三域位集合(languageProviders.ts L104-115,
+  与 common.h L41-45 三掩码逐名同集)分域查重——BASE_AND_CLIENT →
+  {base,client}、OWN_CLIENT → {cell,client},client 域重叠如实报重复。
+  遗留描述的「按值判重、诊断放行」与现实现不符,登记不成立,撤销。
+
+补齐测试(+2,零新文件,tests/languageProviders.test.ts):
+- BASE_AND_CLIENT + OWN_CLIENT 同名属性:报「重复定义: hp (Client)」+
+  已在 Client 作用域定义(遗留原例,反向锁死「放行」说法);
+- ALL_CLIENTS + CELL_PRIVATE 同名属性:仅 cell 域重叠,只报 (Cell),
+  base/client 域不误报。
+变异验证:从 ENTITY_CLIENT_DATA_FLAGS 集合剔除 OWN_CLIENT,第 1 例转红,
+还原后 40/40 绿——粒度回归(域位集漂移)被真实锁死。
+
+门禁:pnpm lint EXIT=0;npx vitest run 83 文件 1003 用例全绿;覆盖率四指标
+100%:5140/5140 语句、2950/2950 分支、885/885 函数、5021/5021 行(零生产
+改动,与批100 同值)。
+
+记账:用例 1001→1003(+2)。测试文件 83 不变。计划块16 遗留登记改写为
+核实结论(登记撤销),块19 遗留⑦(跨块引用)同步转已核实;块 4 诊断面
+无行为变化,COMPLETED_FEATURES/README 未动;PROJECT_SUMMARY 用例计数
+同步 1003。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

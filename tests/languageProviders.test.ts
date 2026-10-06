@@ -703,6 +703,57 @@ describe('validateDocument diagnostics', () => {
     expect(crossScope).toEqual([]);
   });
 
+  it('flags domain-bit overlap as duplicate: BASE_AND_CLIENT vs OWN_CLIENT share the client domain', () => {
+    // 批101 对块16 遗留「按 Flags 值相等判重」的核实锁:引擎按域位重叠判重
+    // (py_entitydef.cpp L2539-2548 位与 + addPropertyDescription 同域同名
+    // 拒绝),本实现按同一域位集合 getPropertyFlagScopes 判重——BASE_AND_CLIENT
+    // 与 OWN_CLIENT 都含 client 域,必须报重复,不得放行
+    const diags = validate([
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE_AND_CLIENT</Flags>',
+      '    </hp>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>OWN_CLIENT</Flags>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+    expect(diags.map(d => d.severity)).toEqual([
+      DiagnosticSeverity.Warning,
+      DiagnosticSeverity.Information
+    ]);
+    expect(diags[0].message).toContain('属性区块中存在重复定义: hp (Client)');
+    expect(diags[1].message).toContain('已在 Client 作用域定义');
+  });
+
+  it('ALL_CLIENTS vs CELL_PRIVATE overlap only in the cell domain', () => {
+    // 同名两旗标仅在 cell 域位重叠:重复只报 (Cell),base/client 域不得误报
+    const diags = validate([
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>ALL_CLIENTS</Flags>',
+      '    </hp>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>CELL_PRIVATE</Flags>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+    expect(diags.map(d => d.severity)).toEqual([
+      DiagnosticSeverity.Warning,
+      DiagnosticSeverity.Information
+    ]);
+    expect(diags[0].message).toContain('属性区块中存在重复定义: hp (Cell)');
+    expect(diags[1].message).toContain('已在 Cell 作用域定义');
+  });
+
   it('clears existing diagnostics when diagnostics are disabled', () => {
     const document = makeTextDocument('<root>\n</root>', {
       fileName: p(langRoot(), 'scripts', 'entity_defs', 'Toggle.def')
