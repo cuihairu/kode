@@ -2,7 +2,7 @@
 
 **版本**: 0.1.0
 **状态**: 核心功能已完成
-**总代码行数**: 17149 行（src/ TypeScript，实测）
+**总代码行数**: 17684 行（src/ TypeScript，实测）
 **文件数量**: 27 个 TypeScript 文件（不含 src/test 烟测）
 
 ---
@@ -163,7 +163,7 @@
 
 ```
 kode/
-├── src/                          # 27 个 TypeScript 文件，17149 行
+├── src/                          # 27 个 TypeScript 文件，17684 行
 │   ├── extension.ts              # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts              # .def 解析与文本定位
@@ -199,7 +199,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (83 文件 982 用例)
+├── tests/                        # vitest 测试 (83 文件 1003 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -214,7 +214,7 @@ kode/
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
 | 文档页数 | 21 个 Markdown（根 7 + docs/ 11 + resources/docs 3） |
-| 总行数 | 17149 行（src/ TypeScript，实测） |
+| 总行数 | 17684 行（src/ TypeScript，实测） |
 | 已完成功能 | 19 个 |
 
 ---
@@ -226,7 +226,7 @@ kode/
       末项「语法高亮」以 tests/tmLanguage.test.ts 16 用例收口,见 TESTING.md 批88)
 - [x] 修复发现的问题(批88:tmLanguage 语法与引擎注册表对齐——补 UNICODE、
       删 5 个引擎未注册类型名、删 2 个引擎未注册旗标,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 982 个用例;
+- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1003 个用例;
       原 test-electron 集成层已在重构阶段4移除,批88 假设口径)
 - [x] 优化性能(批92:基准先行——tests/perf/defPerf.bench.ts 对 173.4KB
       确定性大 .def 测解析/诊断/高亮三路径;不改变行为优化三处——语法规则
