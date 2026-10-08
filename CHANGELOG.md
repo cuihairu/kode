@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest functional tests under `tests/` (982 cases,
+- Two-layer test suite: vitest functional tests under `tests/` (1114 cases,
   including engine-source conditional suites that verify hook call sites, type
   registrations, and flags against a local KBEngine checkout) plus a mocha
   compile-artifact smoke layer (`src/test/suite/`, 11 cases); the legacy
@@ -29,13 +29,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.def` rename support: F2 rename of properties/methods updates the same-file
   declaration (all Flags-scope variants) and the same-name restatements in
   descendant defs (Parent chain + Interfaces closure)
-- Def performance analyzer (`kbengine.def.analyze`) with seven advisory checks
+- Def performance analyzer (`kbengine.def.analyze`) with eight advisory checks
   reported to an output channel and the problems list
 - Entity template library expanded from five to ten presets (monster, space,
   guild, team, mail) using only engine-registered types and flags
 - Snippet generator command (`kbengine.snippets.generateFromSelection`) that
   escapes and dedents the selection and merges it into
   `.vscode/kbengine-custom.code-snippets`
+- Telnet probe and session integration: status-bar and server-panel lamps
+  (connected / open without password / password rejected / off / unconfigured);
+  target resolution via settings, the kbengine.xml `<telnet_service>` section,
+  or the engine default component port table; probe runs every 5 seconds with
+  a 1.5-second per-port timeout. When the port is open the panel logs in
+  automatically (the password is only written to the socket, never logged),
+  offers a whitelisted command input plus read-only quick commands (`:quit` is
+  always rejected), and echoes the session output; a dropped connection flips
+  the lamp and can reconnect. Six new `kbengine.telnet.*` settings and the
+  `kbengine.telnet.showPanel` command
+- HTTP quick requests: a `kbengine.httpRequests` settings list (name, URL
+  template, method, headers, body, enable switch, keybinding hint) with
+  `${module}` / `${file}` / `${line}` / `${sel}` template variables, substituted
+  literally without URL encoding (`${module}` maps the workspace-relative
+  Python path, e.g. `entities/fight/FightAI.py` → `entities.fight.FightAI`).
+  Runs from a quick pick, or from a keybinding on `kbengine.httpRequest.run`
+  with `args.name`; the request/response log goes to the
+  "KBEngine HTTP 快捷请求" output channel, failures show a `✗` line plus an
+  error notification. One bundled example entry, disabled by default
 
 ### Changed
 - Refactored language support code into focused modules
@@ -60,6 +79,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-entity-tag grammar rule to avoid scanner rebuilds, and speed up the
   line-table computation (validateDocument −46%, full-file tokenization −17%
   on a 173KB fixture, behavior locked by golden regression tests)
+- Def analyzer checks realigned with the engine: client-visible flag set taken
+  from `ENTITY_CLIENT_DATA_FLAGS` (no `ANY_CLIENT`), duplicate `<Type>` follows
+  the engine's first-tag-wins loading, and an eighth check for engine-limited
+  names (`ENTITY_LIMITED_PROPERTYS`) whose hit makes entity loading fail. Preset
+  templates and the creation wizard no longer emit engine-invalid declarations
+  (position/direction/spaceID on has-cell entities, the restricted name `id`)
+- Snippet files containing comments or broken JSON are refused instead of being
+  overwritten; snippet generator read/write IO failures surface the file path
+  in the error message instead of throwing
+- Dependency security pins via `pnpm.overrides` (`@vue/server-renderer` 3.5.42,
+  `source-map-js` 1.2.2), closing two Dependabot alerts
+- Nightly build workflow added (rolling release channel)
 
 ## [0.1.0] - unreleased
 

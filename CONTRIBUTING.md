@@ -1,6 +1,6 @@
 # Contributing to Kode
 
-感谢你有兴趣为 Kode 做贡献！🎉
+感谢你有兴趣为 Kode 做贡献。
 
 ## 目录
 
@@ -23,13 +23,13 @@
 ### 报告 Bug
 
 1. 检查 [Issues](https://github.com/cuihairu/kode/issues) 确保问题未被报告
-2. 创建新 Issue，使用 Bug Report 模板
+2. 创建新 Issue，标题写清现象
 3. 提供详细的重现步骤、环境和截图
 
 ### 提出功能建议
 
 1. 检查 [Issues](https://github.com/cuihairu/kode/issues) 确保建议未被提出
-2. 创建 Feature Request Issue
+2. 创建新 Issue，标题写清建议内容
 3. 详细说明功能的使用场景和价值
 
 ### 提交代码
@@ -92,12 +92,12 @@ git push origin feature/your-feature-name
 - 编写有意义的变量和函数名
 
 ```typescript
-// ✅ 好的例子
+// 好的例子
 async function getEntityDefinition(entityName: string): Promise<EntityDef | null> {
   // ...
 }
 
-// ❌ 不好的例子
+// 不好的例子
 async function getDef(n: string) {
   // ...
 }
@@ -232,8 +232,8 @@ Closes #123
 
 - 查看 [文档](./docs/)
 - 查看 [Issues](https://github.com/cuihairu/kode/issues)
-- 创建新 Issue 或 Discussion
+- 创建新 Issue
 
 ---
 
-再次感谢你的贡献！🙏
+再次感谢你的贡献。
