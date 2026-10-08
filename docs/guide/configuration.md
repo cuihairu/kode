@@ -283,6 +283,32 @@ KBEngine 调试不再通过工作区设置项拼 Python 启动参数，而是统
 
 是否在生成实体后自动写入 `entities.xml`。
 
+### telnet 探测
+
+#### `kbengine.telnet.host`
+
+telnet 探测目标主机，默认 `127.0.0.1`。
+
+#### `kbengine.telnet.port`
+
+telnet 探测端口。`0`（默认）表示未显式指定，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000。
+
+#### `kbengine.telnet.password`
+
+telnet 登录密码，仅用于自动握手写 socket，不写入日志。留空则不自动登录，状态灯停在「端口开·未配密码」。
+
+#### `kbengine.telnet.enableCommands`
+
+telnet 面板允许发送的命令白名单（精确匹配或「命令 + 空格 + 参数」前缀匹配）。内置只读快捷命令（实体数量/实体清单/全局数据键/`:help`）默认放行；`:quit` 会关闭服务端进程，即使误配进白名单也恒被拒绝。
+
+#### `kbengine.telnet.configXmlPath`
+
+可选。指向元件 kbengine.xml，解析其 `<telnet_service>` 段作为端口/密码回落（支持 `${workspaceFolder}`）。设置显式 `kbengine.telnet.port > 0` 时以设置优先。
+
+#### `kbengine.telnet.probeIntervalSeconds`
+
+探测轮询间隔（秒），默认 `5`，低频探测。
+
 ## 常见问题
 
 ### 为什么设置改了没有立刻生效？

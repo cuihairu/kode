@@ -53,7 +53,8 @@
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.def.analyze",
-    "onCommand:kbengine.snippets.generateFromSelection"
+    "onCommand:kbengine.snippets.generateFromSelection",
+    "onCommand:kbengine.telnet.showPanel"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -234,6 +235,11 @@
         "command": "kbengine.snippets.generateFromSelection",
         "title": "Generate Snippet from Selection",
         "icon": "$(symbol-snippet)"
+      },
+      {
+        "command": "kbengine.telnet.showPanel",
+        "title": "Show Telnet Panel",
+        "icon": "$(plug)"
       }
     ],
     "menus": {
@@ -429,6 +435,39 @@
           "type": "boolean",
           "default": true,
           "description": "代码生成器：是否在 entities.xml 中自动注册实体"
+        },
+        "kbengine.telnet.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "telnet 探测目标主机"
+        },
+        "kbengine.telnet.port": {
+          "type": "number",
+          "default": 0,
+          "description": "telnet 探测端口（0 = 未显式指定，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）"
+        },
+        "kbengine.telnet.password": {
+          "type": "string",
+          "default": "",
+          "description": "telnet 登录密码（仅用于自动握手写 socket，不写入日志；留空则不自动登录，状态灯停在「端口开·未配密码」）"
+        },
+        "kbengine.telnet.enableCommands": {
+          "type": "array",
+          "default": [],
+          "description": "telnet 面板允许发送的命令白名单（精确匹配或「命令 + 空格 + 参数」前缀匹配；:quit 恒被拒绝，会关闭服务端进程）",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kbengine.telnet.configXmlPath": {
+          "type": "string",
+          "default": "",
+          "description": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（设置显式 port > 0 时优先设置）"
+        },
+        "kbengine.telnet.probeIntervalSeconds": {
+          "type": "number",
+          "default": 5,
+          "description": "telnet 端口探测轮询间隔（秒，低频探测）"
         }
       }
     }

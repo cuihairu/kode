@@ -53,6 +53,7 @@ const patchedKeys = [
 ];
 
 let root = '';
+let rootBase = '';
 
 const makeManager = (): KBEngineServerManager =>
   new KBEngineServerManager({} as unknown as vscode.ExtensionContext);
@@ -115,7 +116,11 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvgap-'));
+  // 私有父目录:root 上抬一层,候选 <root>/../kbe 落在 base 下,
+  // 不再生成共享固定路径 /tmp/kbe(与 serverManager.test.ts 并行时互踩)
+  rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvgap-'));
+  root = path.join(rootBase, 'srv');
+  fs.mkdirSync(root, { recursive: true });
   fs.mkdirSync(path.join(root, 'bin'), { recursive: true });
   fs.mkdirSync(path.join(root, 'ws', 'cfg'), { recursive: true });
 
@@ -135,12 +140,13 @@ beforeEach(() => {
 
 afterEach(async () => {
   stubWorkspace.workspaceFolders = [];
-  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(rootBase, { recursive: true, force: true });
 });
 
 describe('bin path resolution gaps', () => {
   it('auto-detects the first existing candidate when binPath is empty', () => {
-    // 第一候选 <root>/../kbe/bin/server = <tmp>/kbe/bin/server
+    // 工作区 ws 的 <ws>/../../kbe/bin/server = <root>/../kbe/bin/server
+    // = <rootBase>/kbe/bin/server(私有目录,不碰共享 /tmp/kbe)
     const candidate = path.join(root, '..', 'kbe', 'bin', 'server');
     fs.mkdirSync(path.join(root, '..', 'kbe', 'bin', 'server'), { recursive: true });
     configTable.binPath = '';

@@ -21,6 +21,12 @@ import {
 } from './explorerProviders';
 import { resolveServerComponent } from './serverCommandTarget';
 import {
+  readTelnetTargetsFromSettings,
+  TelnetService,
+  updateTelnetStatusBar
+} from './telnetService';
+import { TelnetWebView } from './telnetWebView';
+import {
   KBEngineCallHierarchyProvider,
   KBEngineCompletionProvider,
   KBEngineDefinitionProvider,
@@ -295,8 +301,16 @@ export function activate(context: vscode.ExtensionContext) {
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
 
-  // 注册服务器控制视图
-  const serverControlProvider = new ServerControlProvider(serverManager);
+  // telnet 探测与联动(工单:telnet 探测+联动):目标解析 设置 →
+  // kbengine.xml <telnet_service> → 引擎默认组件端口表;5s 低频探测
+  const telnetService = new TelnetService({
+    getTargets: readTelnetTargetsFromSettings,
+    intervalMs: Math.max(1, vscode.workspace.getConfiguration('kbengine').get<number>('telnet.probeIntervalSeconds', 5)) * 1000
+  });
+  telnetService.start();
+
+  // 注册服务器控制视图(注入 telnetService → 树尾追加 telnet 状态灯)
+  const serverControlProvider = new ServerControlProvider(serverManager, telnetService);
   const serverControlRegistration = vscode.window.registerTreeDataProvider(
     'kbengine.serverControl',
     serverControlProvider
@@ -309,6 +323,23 @@ export function activate(context: vscode.ExtensionContext) {
     updateStatusBar(serverManager);
   });
   context.subscriptions.push(serverStatusSubscription);
+
+  // telnet 面板与状态灯
+  const telnetWebView = new TelnetWebView(context, telnetService);
+  const telnetStatusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    99
+  );
+  const showTelnetPanelCommand = vscode.commands.registerCommand('kbengine.telnet.showPanel', () => {
+    telnetWebView.show();
+  });
+  context.subscriptions.push(showTelnetPanelCommand, telnetStatusBarItem);
+  const telnetStateSubscription = telnetService.onDidChange(() => {
+    serverControlProvider.refresh();
+    updateTelnetStatusBar(telnetService, telnetStatusBarItem);
+  });
+  context.subscriptions.push(telnetStateSubscription);
+  updateTelnetStatusBar(telnetService, telnetStatusBarItem);
 
   // 注册服务器控制命令
   const startServerCommand = vscode.commands.registerCommand(
@@ -701,6 +732,8 @@ export function activate(context: vscode.ExtensionContext) {
   // 清理资源
   context.subscriptions.push({
     dispose: () => {
+      telnetService.dispose();
+      telnetWebView.dispose();
       serverManager.dispose();
       logCollector.dispose();
       logViewer.dispose();

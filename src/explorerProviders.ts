@@ -22,6 +22,7 @@ import {
 import { DefinitionSymbolIdentity, EntityMethodSection } from './entityMapping';
 import { KBENGINE_TYPES } from './kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
+import { TelnetProbeState, TelnetService, TelnetTarget } from './telnetService';
 
 type EntityTreeNode =
   | ExplorerGroupItem
@@ -1163,21 +1164,24 @@ class ServerTreeItem extends vscode.TreeItem {
   }
 }
 
-export class ServerControlProvider implements vscode.TreeDataProvider<ServerTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<ServerTreeItem | undefined>();
+export class ServerControlProvider implements vscode.TreeDataProvider<ServerTreeItem | TelnetTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<ServerTreeItem | TelnetTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  constructor(private serverManager: KBEngineServerManager) {}
+  constructor(
+    private serverManager: KBEngineServerManager,
+    private readonly telnetService?: TelnetService
+  ) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  getTreeItem(element: ServerTreeItem): vscode.TreeItem {
+  getTreeItem(element: ServerTreeItem | TelnetTreeItem): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: ServerTreeItem): Promise<ServerTreeItem[]> {
+  async getChildren(element?: ServerTreeItem): Promise<(ServerTreeItem | TelnetTreeItem)[]> {
     if (element) {
       return [];
     }
@@ -1185,13 +1189,80 @@ export class ServerControlProvider implements vscode.TreeDataProvider<ServerTree
     const components = this.serverManager.getAllServers();
     const runningServers = this.serverManager.getRunningServers();
 
-    return components.map(component => {
+    const items: (ServerTreeItem | TelnetTreeItem)[] = components.map(component => {
       const runningServer = runningServers.get(component.name);
       const status = runningServer?.status || ServerStatus.Stopped;
       const pid = runningServer?.pid;
 
       return new ServerTreeItem(component, status, pid);
     });
+
+    // telnet 状态灯(工单:telnet 探测+联动):仅在装配时注入 telnetService
+    // 才追加,单参构造(既有行为)保持纯组件列表
+    if (this.telnetService) {
+      for (const target of this.telnetService.getTargets()) {
+        items.push(new TelnetTreeItem(target, this.telnetService.getState(target.key)));
+      }
+    }
+
+    return items;
+  }
+}
+
+class TelnetTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly target: TelnetTarget,
+    public readonly state: TelnetProbeState
+  ) {
+    super(`Telnet: ${target.label}`, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon(getTelnetStatusIcon(state));
+    this.contextValue = `telnet_${target.key}`;
+    this.description = `${target.host}:${target.port} · ${getTelnetStateLabel(state)}`;
+    this.tooltip = [
+      `telnet ${target.label}`,
+      `${target.host}:${target.port}`,
+      `状态: ${getTelnetStateLabel(state)}`,
+      '点击打开 Telnet 面板'
+    ].join('\n');
+    this.command = {
+      command: 'kbengine.telnet.showPanel',
+      title: 'Show Telnet Panel'
+    };
+  }
+}
+
+function getTelnetStatusIcon(state: TelnetProbeState): string {
+  switch (state) {
+    case 'connected':
+      return 'circle-filled';
+    case 'open':
+      return 'circle-large-outline';
+    case 'auth-required':
+      return 'warning';
+    case 'auth-rejected':
+    case 'closed':
+      return 'circle-slash';
+    case 'unconfigured':
+    default:
+      return 'circle-large-outline';
+  }
+}
+
+function getTelnetStateLabel(state: TelnetProbeState): string {
+  switch (state) {
+    case 'connected':
+      return '已连接';
+    case 'open':
+      return '已开启';
+    case 'auth-required':
+      return '端口开·未配密码';
+    case 'auth-rejected':
+      return '密码被拒';
+    case 'unconfigured':
+      return '未配置';
+    case 'closed':
+    default:
+      return '未开启';
   }
 }
 

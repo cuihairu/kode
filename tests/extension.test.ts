@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -113,13 +114,18 @@ describe('extension activate 装配', () => {
     // 虚拟文档提供者:数据库 schema
     expect(workspaceState.contentProviders.has('kbengine-db-schema')).toBe(true);
 
-    // 状态栏:右对齐/优先级 100/命令指向扩展视图,无运行组件时隐藏
-    expect(windowState.statusBars).toHaveLength(1);
-    const bar = windowState.statusBars[0];
+    // 状态栏两条:server 灯(右对齐/优先级 100/命令指向扩展视图)与
+    // telnet 灯(优先级 99/命令指向 telnet 面板);无运行组件时 server 灯隐藏
+    expect(windowState.statusBars).toHaveLength(2);
+    const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
-    expect(bar.priority).toBe(100);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
     expect(bar.visible).toBe(false);
+    const telnetBar = windowState.statusBars.find(item => item.priority === 99)!;
+    expect(telnetBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(telnetBar.command).toBe('kbengine.telnet.showPanel');
+    expect(telnetBar.visible).toBe(true);
+    expect(telnetBar.text).toBe('$(plug) Telnet: 未开启');
 
     // 所有 subscription 都可 dispose
     for (const disposable of context.subscriptions) {
@@ -136,6 +142,11 @@ describe('extension activate 装配', () => {
 
     // explorer 刷新
     await commands.executeCommand('kbengine.refreshExplorer');
+
+    // telnet 面板打开(命令回调直驱 webview show)
+    panelRegistry.reset();
+    await commands.executeCommand('kbengine.telnet.showPanel');
+    expect(panelRegistry.panels.map(panel => panel.viewType)).toContain('kbengine.telnetPanel');
 
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
@@ -493,7 +504,7 @@ describe('extension activate 装配', () => {
 
       const context = makeContext();
       activate(context);
-      const bar = windowState.statusBars[0];
+      const bar = windowState.statusBars.find(item => item.priority === 100)!;
 
       // start(解析载荷形态):真实 spawn → Starting 宽限期后 Running,
       // 状态变化事件驱动树视图刷新与状态栏显示
@@ -525,6 +536,29 @@ describe('extension activate 装配', () => {
       await bin.dispose();
     }
   });
+
+  it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async () => {
+    // 引擎默认表第一个目标 loginapp:31000;起真 server 让探测探到「开启」
+    const server = await new Promise<import('net').Server>(resolve => {
+      const created = net.createServer(socket => {
+        socket.on('error', () => undefined);
+        socket.destroy();
+      });
+      created.listen(31000, '127.0.0.1', () => resolve(created));
+    });
+    const context = makeContext();
+    try {
+      activate(context);
+      const telnetBar = windowState.statusBars.find(item => item.priority === 99)!;
+      // 探测翻转(默认定时器 5s 一轮;首轮 start 即发)→ onDidChange 回调
+      // → serverControlProvider.refresh() + updateTelnetStatusBar
+      await until(() => telnetBar.text === '$(plug) Telnet: 1/7 开启' && telnetBar.visible);
+      expect(telnetBar.command).toBe('kbengine.telnet.showPanel');
+    } finally {
+      disposeAll(context);
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  }, 15000);
 
   it('无工作区时激活不注册文档事件监听', () => {
     // 真实 vscode 在未打开文件夹时 workspaceFolders === undefined——

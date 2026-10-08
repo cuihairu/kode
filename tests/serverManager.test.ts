@@ -97,9 +97,14 @@ describe('KBEngineServerManager state helpers', () => {
 
 describe('KBEngineServerManager path resolution', () => {
   let root = '';
+  let rootBase = '';
 
   beforeAll(() => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-'));
+    // 私有父目录:第二候选 <ws>/../../kbe/bin/server 落在 base 下(base/kbe
+    // 恒不存在),不受共享 /tmp/kbe 瞬时目录影响(与 serverManagerGaps 并行不互踩)
+    rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-'));
+    root = path.join(rootBase, 'srv');
+    fs.mkdirSync(root, { recursive: true });
     // 命中候选 join(workspaceFolder, '../kbengine/kbe/bin/server')
     fs.mkdirSync(path.join(root, 'kbengine', 'kbe', 'bin', 'server'), { recursive: true });
     stubWorkspace.workspaceFolders = [{
@@ -111,7 +116,7 @@ describe('KBEngineServerManager path resolution', () => {
 
   afterAll(() => {
     stubWorkspace.workspaceFolders = [];
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(rootBase, { recursive: true, force: true });
   });
 
   it('detects the binary root next to the workspace', () => {

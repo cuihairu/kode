@@ -57,12 +57,18 @@ describe('compiled extension activation smoke', () => {
     );
   });
 
-  it('creates the status bar item hidden with the configured alignment', () => {
-    assert.strictEqual(stub.windowState.statusBars.length, 1);
-    const bar = stub.windowState.statusBars[0];
-    assert.strictEqual(bar.alignment, stub.StatusBarAlignment.Right);
-    assert.strictEqual(bar.priority, 100);
-    assert.strictEqual(bar.visible, false);
+  it('creates the status bar items with the configured alignment', () => {
+    assert.strictEqual(stub.windowState.statusBars.length, 2);
+    const server = stub.windowState.statusBars.find(bar => bar.priority === 100);
+    assert.ok(server);
+    assert.strictEqual(server.alignment, stub.StatusBarAlignment.Right);
+    assert.strictEqual(server.visible, false);
+    // telnet 探测状态灯:默认配置回落引擎七组件目标表,如实显示「未开启」
+    const telnet = stub.windowState.statusBars.find(bar => bar.priority === 99);
+    assert.ok(telnet);
+    assert.strictEqual(telnet.alignment, stub.StatusBarAlignment.Right);
+    assert.strictEqual(telnet.visible, true);
+    assert.strictEqual(telnet.text, '$(plug) Telnet: 未开启');
   });
 
   it('dispatches a compiled command end to end', async () => {
