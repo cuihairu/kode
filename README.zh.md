@@ -1,0 +1,349 @@
+<p align="center"><img src="resources/logo.png" width="64" height="64" alt="logo" /></p>
+
+<h1 align="center">Kode — KBEngine Development Environment</h1>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
+  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
+</p>
+
+[English](README.md) | [中文](README.zh.md)
+
+> **Kode** (KBEngine IDE) - 面向 KBEngine 的 VS Code 开发辅助扩展
+
+## 简介
+
+**Kode** 是一个为 [KBEngine](https://github.com/kbengine/kbengine) 游戏服务器框架提供语言支持、导航和辅助面板的 VSCode 扩展。
+
+KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。Kode 面向 KBEngine 的实体定义（`.def`）文件，提供语法高亮、补全、悬停、跳转、诊断，以及实体浏览器、服务器控制、日志、监控、依赖图面板和代码生成器。
+
+## 每日构建
+
+仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`，仓库不带版本 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
+
+| 资产 | 平台 | 安装 |
+|------|------|------|
+| `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.50 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
+
+仍**未发布到 VSCode Marketplace**，`nightly` 是当前唯一的预编译分发面；也可按下文「安装」从源码构建。
+
+## 核心功能
+
+### 语法高亮
+- [`.def` 文件语法高亮]
+- [源码对齐的基础/容器/细节语义高亮]
+- [容器类型（ARRAY, FIXED_DICT, TUPLE）高亮]
+- [源码对齐的 Flags / DetailLevel 高亮]
+
+### 智能提示 (IntelliSense)
+- [类型自动补全]
+- [Flags 智能提示]
+- [DetailLevel 提示]
+- [XML 标签提示]
+- [**钩子方法自动补全 (36 hooks,全部带 KBEngine 源码调用位置)**]
+
+### 代码片段
+- [11 个常用 .def 代码模板 + 4 个 Python 热更模板(snippets/kbengine-python.json)+ 2 个 types.xml 类型别名模板(ARRAY 采用引擎 `<of>` 语法;BOOL/TUPLE 等引擎未注册类型已剔除)]
+- [一键插入属性定义]
+- [快速生成方法定义]
+- [选区生成自定义代码片段(Generate Snippet from Selection,合并写入 `.vscode/kbengine-custom.code-snippets`)]
+
+### 悬停文档
+- [类型详细说明]
+- [Flags 用途解释]
+- [使用建议]
+- [**钩子文档** (调用时机、函数签名、使用示例、源码位置)]
+
+### 跳转定义
+- [从 `entities.xml` 跳转到 `.def` 文件]
+- [快速定位实体定义]
+
+### 重构支持
+- [.def 文件内 F2 重命名属性/方法]
+- [同文件同名声明与 Flags 作用域变体全部更新]
+- [Parent 链与 Interfaces 混入的后代 def 复述自动同步]
+- [如实边界：仅覆盖 .def 定义与引用面，Python 侧引用与 entities.xml/types.xml 不参与]
+
+### 语法检查
+- [实时语法验证]
+- [源码可证实的 Flags / DetailLevel / 必填字段校验]
+- [类型有效性检查]
+
+### 实体浏览器
+- [侧边栏显示所有实体]
+- [实体类型标识（Cell/Base/Client）]
+- [快速导航]
+
+### 钩子系统 (Hooks System)
+- [36 个 KBEngine 实体脚本回调（逐条核对引擎源码，剔除无源码依据的条目）]
+- [10 个分类：生命周期、数据库与归档、移动、空间、传送、陷阱、Cell、视野、控制权、客户端]
+- [完整的钩子文档和使用示例]
+- [源码位置标注]
+
+### 热更新支持
+- [热更新代码片段（4个,snippets/kbengine-python.json,Python 文件可用）]
+- [KBEngine.reloadScript() 智能提示]
+- [importlib.reload() Python 脚本热更新]
+- [重载相关悬停文档和使用示例]
+
+### 服务器管理
+- [10个组件启动/停止控制]
+- [实时状态显示（停止/启动中/运行中）]
+- [进程 PID 显示]
+- [组件独立日志输出]
+- [状态栏显示运行数量]
+- [支持自定义路径和环境变量]
+
+### 日志查看集成
+- [logger 连接入口与状态说明]
+- [WebView 可视化界面]
+- [多级过滤（级别、组件、关键词）]
+- [正则表达式搜索]
+- [日志导出（txt/log/json 格式）]
+- [彩色日志级别显示]
+
+当前 logger 协议适配尚未完成，扩展会明确提示该能力暂不支持，而不是假装已经接通官方协议。
+
+### 嵌入式 Python 调试支持
+- [自定义调试配置（.kbengine/debug.json）]
+- [组件特定调试设置]
+- [自动生成 launch.json]
+- [通过 telnet 提示引导开启调试]
+- [按 PID 附加到 KBEngine 组件进程]
+- [路径映射配置]
+
+### 监控面板
+- [基于 machine + watcher 的运行态监控]
+- [CPU、内存、实体数量与已核实 watcher 指标展示]
+- [系统概览卡片]
+- [组件详细指标卡片]
+- [可视化图表（柱状图、曲线图）]
+- [数据导出（JSON 格式）]
+
+监控数据依赖 `machine` 发现和 `watcher` 查询共同提供。若 watcher 无响应，面板只保留 machine 返回的基础状态，不再把缺失的 watcher 指标伪装成完整遥测。
+
+### Python ↔ Def 双向跳转
+- [实体定义映射管理器]
+- [从生成的 Python 文件跳转回 .def 定义]
+- [Python 文件智能提示（自动补全属性和方法）]
+- [自动扫描和建立映射关系]
+- [支持多个 Python 生成路径配置]
+
+### 实体依赖关系图
+- [自动分析实体继承关系]
+- [可视化实体依赖图（使用 Mermaid.js）]
+- [显示 Base/Cell/Client 实体类型]
+- [统计信息面板（实体数量、最大深度、最常引用实体）]
+- [从图跳转到实体定义文件]
+- [支持导出图表（PNG/SVG 格式）]
+
+### 代码生成器
+- [实体创建向导（逐步引导）]
+- [10 个预定义模板（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体）]
+- [自动生成 .def 文件（符合 KBEngine 格式）]
+- [自动生成 Python 文件（包含钩子方法）]
+- [自动在 entities.xml 中注册实体]
+- [支持自定义属性和方法定义]
+- [可配置输出路径和选项]
+
+### Telnet 探测与会话联动
+- [状态栏 + 服务器控制面板状态灯（已连接/已开启/密码被拒/未开启等）]
+- [配置三级：设置项 / kbengine.xml `<telnet_service>` 段 / 引擎七组件默认端口表]
+- [低频探测（默认 5s），探完即毁不占连接]
+- [端口开启自动握手登录，密码只走 socket 不落日志]
+- [面板命令输入（白名单 + 内置只读快捷命令）与输出流回显]
+- [未开启时如实提示并附 kbengine.xml 开启配置片段]
+
+### HTTP 快捷请求
+- [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用）]
+- [模板变量四枚：`${module}`（工作区相对模块路径，`entities/fight/FightAI.py` → `entities.fight.FightAI`）、`${file}`、`${line}`、`${sel}`；按字面替换、不做 URL 编码]
+- [触发两路：命令面板 quick pick，或经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发——打开 .py 按快捷键即发热更新]
+- [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」：`▶` 请求行 → `✓` 状态·耗时·回包；失败 `✗` 标记 + 错误弹窗，如实回执不悬挂]
+
+## 性能分析
+
+对工作区全部 `.def` 文件做静态检查并输出优化建议(命令面板执行
+**`Analyze Def Performance`**,报告写入 `KBEngine Def 分析` 输出面板,
+同时以诊断形式落入问题列表):
+
+- 引擎未注册类型(如 `BOOL`/`TUPLE`),实体加载会失败
+- 属性缺少有效 `<Type>`、同属性重复 `<Type>` 的冗余定义
+- `ALL_CLIENTS` 广播大负载类型(字符串/BLOB/容器/PY_*/VECTOR)的同步开销提示
+- `DetailLevel` 配在无客户端可见旗标属性上的冗余字段
+- 属性/方法名为 Python 关键字、方法与属性同名冲突
+- 属性/方法名/组件槽名命中引擎受限名清单(`ENTITY_LIMITED_PROPERTYS`),
+  实体加载会失败
+
+## 安装
+
+> **尚未发布到 VSCode Marketplace**。免本地构建可直接使用[每日构建](#每日构建)的 `kode-nightly.vsix`;或按下列步骤从源码构建后本地安装。
+
+### 从源码构建并本地安装
+
+```bash
+# 克隆仓库
+git clone https://github.com/cuihairu/kode.git
+
+# 安装依赖
+cd kode
+pnpm install
+
+# 编译
+pnpm run compile
+
+# 打包(vsce package 产出 .vsix)
+pnpm run package
+
+# 本地安装
+code --install-extension kode-0.1.0.vsix
+```
+
+## 文档
+
+- 配置与使用文档位于 [docs/](./docs/)
+- 配置说明重点见 [docs/guide/configuration.md](./docs/guide/configuration.md)
+- 本项目已添加 VitePress 文档站点，可通过 `pnpm run docs:dev` 本地预览
+
+## 版本策略
+
+当前阶段默认沿用 `0.1.x` 作为修复与完善版本线。
+
+- 修复问题、补充文档、增强现有功能：继续使用 `0.1.x`
+- 只有在出现明确的新阶段功能升级时，才考虑提升到 `0.2.0`
+
+## 截图
+
+### 语法高亮和智能提示
+截图素材尚未整理完成。当前可通过 `F5` 启动扩展开发主机，在 `.def` 文件中直接预览语法高亮、智能提示、悬停文档与诊断效果。
+
+### 实体浏览器
+实体浏览器与服务器控制面板的界面截图将随文档资源一并补充；现阶段建议结合 [docs/](./docs/) 中的功能说明和本地调试窗口进行验证。
+
+## 开发
+
+### 环境要求
+
+- Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
+- Git
+- VSCode 1.50.0 或更高版本
+
+### 开发步骤
+
+```bash
+# 1. 克隆仓库
+git clone git@github.com:cuihairu/kode.git
+
+# 2. 安装依赖
+cd kode
+pnpm install
+
+# 3. 在 VSCode 中打开项目
+code .
+
+# 4. 按 F5 启动调试
+# 会打开一个新的 VSCode 窗口（扩展开发主机）
+
+# 5. 在新窗口中测试功能
+```
+
+### 项目结构
+
+```
+kode/
+├── src/
+│   ├── extension.ts              # 主入口文件
+│   ├── languageProviders.ts      # 语言能力
+│   ├── explorerProviders.ts      # 树视图与导航
+│   ├── kbengineMetadata.ts       # KBEngine 元数据
+│   └── ...
+├── syntaxes/
+│   ├── kbengine.tmLanguage.json  # 语法高亮规则
+│   └── kbengine-color-theme.json # 配色主题 (KBEngine Dark)
+├── snippets/
+│   ├── kbengine.json             # def 代码片段 (11)
+│   ├── kbengine-python.json      # Python 热更片段 (4)
+│   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2)
+├── resources/
+│   └── docs/                     # 项目文档
+├── .vscode/
+│   └── launch.json               # 调试配置
+├── package.json                  # 扩展配置
+├── tsconfig.json                 # TypeScript 配置
+└── README.md                     # 本文件
+```
+
+### 测试
+
+```bash
+# 运行测试
+pnpm test
+
+# 编译
+pnpm run compile
+
+# 监听模式编译
+pnpm run watch
+
+# 文档
+pnpm run docs:dev
+```
+
+## 使用文档
+
+详细的使用文档和开发指南，请查看：
+
+- [VitePress 文档](./docs/) - 新版文档入口
+- [设计文档](./resources/docs/vscode-extension-design.md) - 立项设计方案
+- [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
+- [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计
+
+## 测试
+
+两 runner 分层测试架构:vitest 承载全部功能测试(`tests/`,含纯逻辑层、
+本地 KBEngine 仿真器层、fake-vscode 替身上的装配与 WebView 面板层,无需真实
+KBEngine 环境即可全绿);mocha(`src/test/suite/`,11 个用例)只做编译产物
+烟测,验证打包形态的 out/extension.js 可装配激活。带 KBEngine 源码检出时
+自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)
+与[重设计说明](./docs/redesign.md)。
+
+```bash
+pnpm test           # 全量: vitest + 编译 + mocha 烟测
+pnpm test:unit      # 仅 vitest(无引擎、无 VSCode 下载环境即可全绿)
+pnpm test:coverage  # vitest + 覆盖率
+```
+
+## 贡献
+
+欢迎贡献代码！请查看 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解详情。
+
+### 贡献指南
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+## 许可证
+
+本项目采用 Apache-2.0 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+## 致谢
+
+- [KBEngine](https://github.com/kbengine/kbengine) - 优秀的游戏服务器框架
+- [VS Code](https://github.com/microsoft/vscode) - 扩展的宿主编辑器
+- 所有贡献者
+
+## 联系方式
+
+- GitHub Issues: [https://github.com/cuihairu/kode/issues](https://github.com/cuihairu/kode/issues)
+- Email: cuihairu@gmail.com
+
+## Star History
+
+如果这个项目对你有帮助，请给一个 Star。
+
+---
+
+当前版本 0.1.0，尚未发布到 Marketplace。已落地 21 项功能、26 条命令、31 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。

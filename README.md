@@ -8,340 +8,334 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
 </p>
 
-> **Kode** (KBEngine IDE) - 面向 KBEngine 的 VS Code 开发辅助扩展
+[English](README.md) | [中文](README.zh.md)
 
-## 简介
+> **Kode** (KBEngine IDE) - A VS Code development assistant extension for KBEngine
 
-**Kode** 是一个为 [KBEngine](https://github.com/kbengine/kbengine) 游戏服务器框架提供语言支持、导航和辅助面板的 VSCode 扩展。
+## Introduction
 
-KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。Kode 面向 KBEngine 的实体定义（`.def`）文件，提供语法高亮、补全、悬停、跳转、诊断，以及实体浏览器、服务器控制、日志、监控、依赖图面板和代码生成器。
+**Kode** is a VS Code extension that provides language support, navigation, and helper panels for the [KBEngine](https://github.com/kbengine/kbengine) game server framework.
 
-## 每日构建
+KBEngine is an open-source MMO game server framework built on a distributed architecture. Kode targets KBEngine's entity definition (`.def`) files and provides syntax highlighting, completion, hover information, navigation, and diagnostics, along with panels for entity browsing, server control, logs, monitoring, and the dependency graph, plus a code generator.
 
-仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`，仓库不带版本 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
+## Daily Builds
 
-| 资产 | 平台 | 安装 |
+The repository automatically builds from `main` every day and **publishes a rolling release** to [the `nightly` tag on Releases](https://github.com/cuihairu/kode/releases/tag/nightly): each build replaces the previous release's assets and notes (including build time, commit, and an asset table). The tag stays `nightly` and the repository carries no version tags. The scheduled build skips automatically for that day when the default branch has no new commits within 48 hours. The build pipeline lives in [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml).
+
+| Asset | Platform | Install |
 |------|------|------|
-| `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.50 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
+| `kode-nightly.vsix` | Windows / macOS / Linux (universal for VS Code ≥1.50) | Download and run `code --install-extension kode-nightly.vsix` |
 
-仍**未发布到 VSCode Marketplace**，`nightly` 是当前唯一的预编译分发面；也可按下文「安装」从源码构建。
+The extension is **still not published to the VS Code Marketplace**; `nightly` is currently the only prebuilt distribution channel. You can also build from source as described in the Installation section below.
 
-## 核心功能
+## Core Features
 
-### 语法高亮
-- [`.def` 文件语法高亮]
-- [源码对齐的基础/容器/细节语义高亮]
-- [容器类型（ARRAY, FIXED_DICT, TUPLE）高亮]
-- [源码对齐的 Flags / DetailLevel 高亮]
+### Syntax Highlighting
+- [Syntax highlighting for `.def` files]
+- [Source-backed semantic highlighting for primitives/containers/detail values]
+- [Highlighting for container types (ARRAY, FIXED_DICT, TUPLE)]
+- [Source-backed Flags / DetailLevel highlighting]
 
-### 智能提示 (IntelliSense)
-- [类型自动补全]
-- [Flags 智能提示]
-- [DetailLevel 提示]
-- [XML 标签提示]
-- [**钩子方法自动补全 (36 hooks,全部带 KBEngine 源码调用位置)**]
+### IntelliSense
+- [Type auto-completion]
+- [Flags suggestions]
+- [DetailLevel suggestions]
+- [XML tag suggestions]
+- [**Hook method completion (36 hooks, each with its KBEngine source call-site location)**]
 
-### 代码片段
-- [11 个常用 .def 代码模板 + 4 个 Python 热更模板(snippets/kbengine-python.json)+ 2 个 types.xml 类型别名模板(ARRAY 采用引擎 `<of>` 语法;BOOL/TUPLE 等引擎未注册类型已剔除)]
-- [一键插入属性定义]
-- [快速生成方法定义]
-- [选区生成自定义代码片段(Generate Snippet from Selection,合并写入 `.vscode/kbengine-custom.code-snippets`)]
+### Code Snippets
+- [11 common .def templates + 4 Python hot-reload templates (snippets/kbengine-python.json) + 2 types.xml type-alias templates (ARRAY uses the engine's `<of>` syntax; engine-unregistered types such as BOOL/TUPLE have been removed)]
+- [One-click insertion of property definitions]
+- [Quick generation of method definitions]
+- [Snippet generation from the selection (Generate Snippet from Selection, merged into `.vscode/kbengine-custom.code-snippets`)]
 
-### 悬停文档
-- [类型详细说明]
-- [Flags 用途解释]
-- [使用建议]
-- [**钩子文档** (调用时机、函数签名、使用示例、源码位置)]
+### Hover Documentation
+- [Detailed type descriptions]
+- [Explanations of Flags usage]
+- [Usage recommendations]
+- [**Hook documentation** (invocation timing, function signatures, usage examples, source locations)]
 
-### 跳转定义
-- [从 `entities.xml` 跳转到 `.def` 文件]
-- [快速定位实体定义]
+### Go to Definition
+- [Navigate from `entities.xml` to `.def` files]
+- [Quick location of entity definitions]
 
-### 重构支持
-- [.def 文件内 F2 重命名属性/方法]
-- [同文件同名声明与 Flags 作用域变体全部更新]
-- [Parent 链与 Interfaces 混入的后代 def 复述自动同步]
-- [如实边界：仅覆盖 .def 定义与引用面，Python 侧引用与 entities.xml/types.xml 不参与]
+### Refactoring
+- [F2 renaming of properties/methods within .def files]
+- [Updates every same-name declaration in the file, across all Flags-scope variants]
+- [Auto-syncs restatements in descendant defs along the Parent chain and Interfaces mixins]
+- [Honest boundary: covers only .def definitions and references; Python-side references and entities.xml/types.xml are not touched]
 
-### 语法检查
-- [实时语法验证]
-- [源码可证实的 Flags / DetailLevel / 必填字段校验]
-- [类型有效性检查]
+### Syntax Checking
+- [Real-time syntax validation]
+- [Source-verifiable Flags / DetailLevel / required-field validation]
+- [Type validity checking]
 
-### 实体浏览器
-- [侧边栏显示所有实体]
-- [实体类型标识（Cell/Base/Client）]
-- [快速导航]
+### Entity Explorer
+- [Sidebar listing of all entities]
+- [Entity type badges (Cell/Base/Client)]
+- [Quick navigation]
 
-### 钩子系统 (Hooks System)
-- [36 个 KBEngine 实体脚本回调（逐条核对引擎源码，剔除无源码依据的条目）]
-- [10 个分类：生命周期、数据库与归档、移动、空间、传送、陷阱、Cell、视野、控制权、客户端]
-- [完整的钩子文档和使用示例]
-- [源码位置标注]
+### Hooks System
+- [36 KBEngine entity script callbacks (verified one by one against the engine source; entries without a source basis were removed)]
+- [10 categories: lifecycle, database & archiving, movement, space, teleport, trap, Cell, visibility, control, client]
+- [Complete hook documentation and usage examples]
+- [Source location annotations]
 
-### 热更新支持
-- [热更新代码片段（4个,snippets/kbengine-python.json,Python 文件可用）]
-- [KBEngine.reloadScript() 智能提示]
-- [importlib.reload() Python 脚本热更新]
-- [重载相关悬停文档和使用示例]
+### Hot-Reload Support
+- [Hot-reload code snippets (4, snippets/kbengine-python.json, available in Python files)]
+- [KBEngine.reloadScript() suggestions]
+- [importlib.reload() hot reload in Python scripts]
+- [Reload-related hover documentation and usage examples]
 
-### 服务器管理
-- [10个组件启动/停止控制]
-- [实时状态显示（停止/启动中/运行中）]
-- [进程 PID 显示]
-- [组件独立日志输出]
-- [状态栏显示运行数量]
-- [支持自定义路径和环境变量]
+### Server Management
+- [Start/stop control for 10 components]
+- [Live status display (stopped/starting/running)]
+- [Process PID display]
+- [Per-component log output]
+- [Status bar running-component count]
+- [Custom paths and environment variables]
 
-### 日志查看集成
-- [logger 连接入口与状态说明]
-- [WebView 可视化界面]
-- [多级过滤（级别、组件、关键词）]
-- [正则表达式搜索]
-- [日志导出（txt/log/json 格式）]
-- [彩色日志级别显示]
+### Log Viewer Integration
+- [logger connection entry point with status notes]
+- [WebView-based visualization]
+- [Multi-level filtering (level, component, keyword)]
+- [Regular-expression search]
+- [Log export (txt/log/json formats)]
+- [Color-coded log levels]
 
-当前 logger 协议适配尚未完成，扩展会明确提示该能力暂不支持，而不是假装已经接通官方协议。
+The logger protocol adaptation is not finished yet; the extension states clearly that this capability is not yet supported instead of pretending the official protocol is connected.
 
-### 嵌入式 Python 调试支持
-- [自定义调试配置（.kbengine/debug.json）]
-- [组件特定调试设置]
-- [自动生成 launch.json]
-- [通过 telnet 提示引导开启调试]
-- [按 PID 附加到 KBEngine 组件进程]
-- [路径映射配置]
+### Embedded Python Debugging
+- [Custom debug configuration (.kbengine/debug.json)]
+- [Per-component debug settings]
+- [Automatic launch.json generation]
+- [Guided debug enablement via telnet prompts]
+- [Attach to KBEngine component processes by PID]
+- [Path mapping configuration]
 
-### 监控面板
-- [基于 machine + watcher 的运行态监控]
-- [CPU、内存、实体数量与已核实 watcher 指标展示]
-- [系统概览卡片]
-- [组件详细指标卡片]
-- [可视化图表（柱状图、曲线图）]
-- [数据导出（JSON 格式）]
+### Monitoring Panel
+- [Runtime monitoring based on machine + watcher]
+- [CPU, memory, entity counts, and verified watcher metrics]
+- [System overview cards]
+- [Per-component detail cards]
+- [Visual charts (bar and line charts)]
+- [Data export (JSON format)]
 
-监控数据依赖 `machine` 发现和 `watcher` 查询共同提供。若 watcher 无响应，面板只保留 machine 返回的基础状态，不再把缺失的 watcher 指标伪装成完整遥测。
+Monitoring data requires both `machine` discovery and `watcher` queries. When the watcher does not respond, the panel keeps only the basic state returned by machine instead of dressing missing watcher metrics up as complete telemetry.
 
-### Python ↔ Def 双向跳转
-- [实体定义映射管理器]
-- [从生成的 Python 文件跳转回 .def 定义]
-- [Python 文件智能提示（自动补全属性和方法）]
-- [自动扫描和建立映射关系]
-- [支持多个 Python 生成路径配置]
+### Python ↔ Def Two-Way Navigation
+- [Entity definition mapping manager]
+- [Jump from generated Python files back to .def definitions]
+- [IntelliSense in Python files (completion of properties and methods)]
+- [Automatic scanning and mapping]
+- [Multiple Python generation path configurations]
 
-### 实体依赖关系图
-- [自动分析实体继承关系]
-- [可视化实体依赖图（使用 Mermaid.js）]
-- [显示 Base/Cell/Client 实体类型]
-- [统计信息面板（实体数量、最大深度、最常引用实体）]
-- [从图跳转到实体定义文件]
-- [支持导出图表（PNG/SVG 格式）]
+### Entity Dependency Graph
+- [Automatic analysis of entity inheritance]
+- [Visual entity dependency graph (Mermaid.js)]
+- [Shows Base/Cell/Client entity types]
+- [Statistics panel (entity count, maximum depth, most-referenced entities)]
+- [Jump from the graph to entity definition files]
+- [Graph export (PNG/SVG formats)]
 
-### 代码生成器
-- [实体创建向导（逐步引导）]
-- [10 个预定义模板（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体）]
-- [自动生成 .def 文件（符合 KBEngine 格式）]
-- [自动生成 Python 文件（包含钩子方法）]
-- [自动在 entities.xml 中注册实体]
-- [支持自定义属性和方法定义]
-- [可配置输出路径和选项]
+### Code Generator
+- [Entity creation wizard (step-by-step guidance)]
+- [10 predefined templates (account, avatar, NPC, item, monster, scene, guild, team, mail, empty entity)]
+- [Automatic .def generation (KBEngine-compliant format)]
+- [Automatic Python generation (with hook methods)]
+- [Automatic entity registration in entities.xml]
+- [Custom property and method definitions]
+- [Configurable output paths and options]
 
-### Telnet 探测与会话联动
-- [状态栏 + 服务器控制面板状态灯（已连接/已开启/密码被拒/未开启等）]
-- [配置三级：设置项 / kbengine.xml `<telnet_service>` 段 / 引擎七组件默认端口表]
-- [低频探测（默认 5s），探完即毁不占连接]
-- [端口开启自动握手登录，密码只走 socket 不落日志]
-- [面板命令输入（白名单 + 内置只读快捷命令）与输出流回显]
-- [未开启时如实提示并附 kbengine.xml 开启配置片段]
+### Telnet Probe and Session Integration
+- [Status bar + server control panel status lamps (connected / open / password rejected / off, etc.)]
+- [Three-tier configuration: settings / the kbengine.xml `<telnet_service>` section / the engine's default port table for the seven components]
+- [Low-frequency probing (5s by default); probe connections are destroyed immediately, never held]
+- [Automatic handshake login when the port is open; the password goes only through the socket and never into logs]
+- [Panel command input (whitelist + built-in read-only quick commands) with session output echo]
+- [Honest "telnet off" notice with the kbengine.xml enablement snippet when the port is closed]
 
-### HTTP 快捷请求
-- [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用）]
-- [模板变量四枚：`${module}`（工作区相对模块路径，`entities/fight/FightAI.py` → `entities.fight.FightAI`）、`${file}`、`${line}`、`${sel}`；按字面替换、不做 URL 编码]
-- [触发两路：命令面板 quick pick，或经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发——打开 .py 按快捷键即发热更新]
-- [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」：`▶` 请求行 → `✓` 状态·耗时·回包；失败 `✗` 标记 + 错误弹窗，如实回执不悬挂]
+### HTTP Quick Requests
+- [`kbengine.httpRequests` settings list: name / URL template / method / headers / body / enable switch / keybinding hint, with one bundled example (disabled by default)]
+- [Four template variables: `${module}` (workspace-relative module path, `entities/fight/FightAI.py` → `entities.fight.FightAI`), `${file}`, `${line}`, `${sel}`; substituted literally, no URL encoding]
+- [Two trigger paths: the command-palette quick pick, or a keybinding on `kbengine.httpRequest.run` with `args.name` via keybindings.json — open a .py file and press the shortcut to fire a hot reload]
+- [Execution log goes to the OUTPUT channel "KBEngine HTTP 快捷请求": `▶` request line → `✓` status · duration · response body; failures show a `✗` marker + error notification, with honest reporting and no hanging]
 
-## 性能分析
+## Def Performance Analysis
 
-对工作区全部 `.def` 文件做静态检查并输出优化建议(命令面板执行
-**`Analyze Def Performance`**,报告写入 `KBEngine Def 分析` 输出面板,
-同时以诊断形式落入问题列表):
+Runs a static check over all `.def` files in the workspace and reports optimization suggestions (execute **`Analyze Def Performance`** from the command palette; the report goes to the `KBEngine Def 分析` output panel and also lands in the Problems list as diagnostics):
 
-- 引擎未注册类型(如 `BOOL`/`TUPLE`),实体加载会失败
-- 属性缺少有效 `<Type>`、同属性重复 `<Type>` 的冗余定义
-- `ALL_CLIENTS` 广播大负载类型(字符串/BLOB/容器/PY_*/VECTOR)的同步开销提示
-- `DetailLevel` 配在无客户端可见旗标属性上的冗余字段
-- 属性/方法名为 Python 关键字、方法与属性同名冲突
-- 属性/方法名/组件槽名命中引擎受限名清单(`ENTITY_LIMITED_PROPERTYS`),
-  实体加载会失败
+- Engine-unregistered types (e.g. `BOOL`/`TUPLE`) — entity loading fails
+- Properties missing a valid `<Type>`, or redundant definitions with multiple `<Type>` tags on one property
+- Sync-cost hints for heavy-payload types (strings/BLOB/containers/PY_*/VECTOR) broadcast to `ALL_CLIENTS`
+- Redundant `DetailLevel` fields on properties without client-visible flags
+- Property/method names that are Python keywords, or methods colliding with property names
+- Property/method/component-slot names hitting the engine's limited-name list (`ENTITY_LIMITED_PROPERTYS`) — entity loading fails
 
-## 安装
+## Installation
 
-> **尚未发布到 VSCode Marketplace**。免本地构建可直接使用[每日构建](#每日构建)的 `kode-nightly.vsix`;或按下列步骤从源码构建后本地安装。
+> **Not yet published to the VS Code Marketplace.** To skip local builds, grab `kode-nightly.vsix` from the [Daily Builds](#daily-builds) section; otherwise build from source and install locally as follows.
 
-### 从源码构建并本地安装
+### Build from Source and Install Locally
 
 ```bash
-# 克隆仓库
+# Clone the repository
 git clone https://github.com/cuihairu/kode.git
 
-# 安装依赖
+# Install dependencies
 cd kode
 pnpm install
 
-# 编译
+# Compile
 pnpm run compile
 
-# 打包(vsce package 产出 .vsix)
+# Package (vsce package produces a .vsix)
 pnpm run package
 
-# 本地安装
+# Install locally
 code --install-extension kode-0.1.0.vsix
 ```
 
-## 文档
+## Documentation
 
-- 配置与使用文档位于 [docs/](./docs/)
-- 配置说明重点见 [docs/guide/configuration.md](./docs/guide/configuration.md)
-- 本项目已添加 VitePress 文档站点，可通过 `pnpm run docs:dev` 本地预览
+- Configuration and usage documentation lives in [docs/](./docs/)
+- The configuration reference is the highlight: [docs/guide/configuration.md](./docs/guide/configuration.md)
+- The project ships a VitePress documentation site; preview it locally with `pnpm run docs:dev`
 
-## 版本策略
+## Versioning
 
-当前阶段默认沿用 `0.1.x` 作为修复与完善版本线。
+The project currently stays on the `0.1.x` fix-and-polish line by default.
 
-- 修复问题、补充文档、增强现有功能：继续使用 `0.1.x`
-- 只有在出现明确的新阶段功能升级时，才考虑提升到 `0.2.0`
+- Fixes, documentation, and enhancements to existing features: stay on `0.1.x`
+- Move to `0.2.0` only when a clear new stage of feature work arrives
 
-## 截图
+## Screenshots
 
-### 语法高亮和智能提示
-截图素材尚未整理完成。当前可通过 `F5` 启动扩展开发主机，在 `.def` 文件中直接预览语法高亮、智能提示、悬停文档与诊断效果。
+### Syntax Highlighting and IntelliSense
+Screenshot material is not ready yet. For now, press `F5` to launch the Extension Development Host and preview syntax highlighting, IntelliSense, hover documentation, and diagnostics directly in `.def` files.
 
-### 实体浏览器
-实体浏览器与服务器控制面板的界面截图将随文档资源一并补充；现阶段建议结合 [docs/](./docs/) 中的功能说明和本地调试窗口进行验证。
+### Entity Explorer
+Screenshots of the entity explorer and server control panel will be added along with the documentation assets; in the meantime, verify them against the feature notes in [docs/](./docs/) and a local debug window.
 
-## 开发
+## Development
 
-### 环境要求
+### Requirements
 
-- Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
+- Node.js `^20.19.0 || >=22.12.0` (the version in `.nvmrc` is recommended)
 - Git
-- VSCode 1.50.0 或更高版本
+- VS Code 1.50.0 or later
 
-### 开发步骤
+### Development Steps
 
 ```bash
-# 1. 克隆仓库
+# 1. Clone the repository
 git clone git@github.com:cuihairu/kode.git
 
-# 2. 安装依赖
+# 2. Install dependencies
 cd kode
 pnpm install
 
-# 3. 在 VSCode 中打开项目
+# 3. Open the project in VS Code
 code .
 
-# 4. 按 F5 启动调试
-# 会打开一个新的 VSCode 窗口（扩展开发主机）
+# 4. Press F5 to start debugging
+# A new VS Code window opens (the Extension Development Host)
 
-# 5. 在新窗口中测试功能
+# 5. Exercise the features in that window
 ```
 
-### 项目结构
+### Project Structure
 
 ```
 kode/
 ├── src/
-│   ├── extension.ts              # 主入口文件
-│   ├── languageProviders.ts      # 语言能力
-│   ├── explorerProviders.ts      # 树视图与导航
-│   ├── kbengineMetadata.ts       # KBEngine 元数据
+│   ├── extension.ts              # Main entry point
+│   ├── languageProviders.ts      # Language features
+│   ├── explorerProviders.ts      # Tree views and navigation
+│   ├── kbengineMetadata.ts       # KBEngine metadata
 │   └── ...
 ├── syntaxes/
-│   ├── kbengine.tmLanguage.json  # 语法高亮规则
-│   └── kbengine-color-theme.json # 配色主题 (KBEngine Dark)
+│   ├── kbengine.tmLanguage.json  # Syntax highlighting rules
+│   └── kbengine-color-theme.json # Color theme (KBEngine Dark)
 ├── snippets/
-│   ├── kbengine.json             # def 代码片段 (11)
-│   ├── kbengine-python.json      # Python 热更片段 (4)
-│   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2)
+│   ├── kbengine.json             # def snippets (11)
+│   ├── kbengine-python.json      # Python hot-reload snippets (4)
+│   └── kbengine-types-xml.json   # types.xml type-alias snippets (2)
 ├── resources/
-│   └── docs/                     # 项目文档
+│   └── docs/                     # Project documents
 ├── .vscode/
-│   └── launch.json               # 调试配置
-├── package.json                  # 扩展配置
-├── tsconfig.json                 # TypeScript 配置
-└── README.md                     # 本文件
+│   └── launch.json               # Debug configuration
+├── package.json                  # Extension configuration
+├── tsconfig.json                 # TypeScript configuration
+└── README.md                     # This file
 ```
 
-### 测试
+### Testing
 
 ```bash
-# 运行测试
+# Run the tests
 pnpm test
 
-# 编译
+# Compile
 pnpm run compile
 
-# 监听模式编译
+# Watch-mode compile
 pnpm run watch
 
-# 文档
+# Documentation
 pnpm run docs:dev
 ```
 
-## 使用文档
+## Usage Documentation
 
-详细的使用文档和开发指南，请查看：
+For detailed usage documentation and development guides, see:
 
-- [VitePress 文档](./docs/) - 新版文档入口
-- [设计文档](./resources/docs/vscode-extension-design.md) - 立项设计方案
-- [快速开始](./resources/docs/vscode-extension-summary.md) - 开发者指南
-- [命名方案](./resources/docs/plugin-name-suggestions.md) - 品牌设计
+- [VitePress documentation](./docs/) - the current documentation entry point
+- [Design document](./resources/docs/vscode-extension-design.md) - the original project design
+- [Quick start](./resources/docs/vscode-extension-summary.md) - developer guide
+- [Naming proposal](./resources/docs/plugin-name-suggestions.md) - brand design
 
-## 测试
+## Testing Architecture
 
-两 runner 分层测试架构:vitest 承载全部功能测试(`tests/`,含纯逻辑层、
-本地 KBEngine 仿真器层、fake-vscode 替身上的装配与 WebView 面板层,无需真实
-KBEngine 环境即可全绿);mocha(`src/test/suite/`,11 个用例)只做编译产物
-烟测,验证打包形态的 out/extension.js 可装配激活。带 KBEngine 源码检出时
-自动追加"插件数据 vs 引擎源码"逐行校验用例。详见 [TESTING.md](./TESTING.md)
-与[重设计说明](./docs/redesign.md)。
+A two-runner, layered test setup: vitest carries all functional tests (`tests/`, including a pure-logic layer, a local KBEngine simulator layer, and an assembly/WebView panel layer on top of fake-vscode stubs — all green without a real KBEngine environment); mocha (`src/test/suite/`, 11 cases) only smoke-tests the compiled artifacts, verifying that the packaged `out/extension.js` activates cleanly. With a KBEngine source checkout present, line-by-line "plugin data vs engine source" verification cases are added automatically. See [TESTING.md](./TESTING.md) and the [redesign notes](./docs/redesign.md) for details.
 
 ```bash
-pnpm test           # 全量: vitest + 编译 + mocha 烟测
-pnpm test:unit      # 仅 vitest(无引擎、无 VSCode 下载环境即可全绿)
-pnpm test:coverage  # vitest + 覆盖率
+pnpm test           # Full suite: vitest + compile + mocha smoke tests
+pnpm test:unit      # vitest only (green with no engine and no VS Code download)
+pnpm test:coverage  # vitest + coverage
 ```
 
-## 贡献
+## Contributing
 
-欢迎贡献代码！请查看 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解详情。
+Contributions are welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
-### 贡献指南
+### Contributing Guide
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 许可证
+## License
 
-本项目采用 Apache-2.0 许可证 - 详见 [LICENSE](LICENSE) 文件
+This project is licensed under Apache-2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 致谢
+## Acknowledgements
 
-- [KBEngine](https://github.com/kbengine/kbengine) - 优秀的游戏服务器框架
-- [VS Code](https://github.com/microsoft/vscode) - 扩展的宿主编辑器
-- 所有贡献者
+- [KBEngine](https://github.com/kbengine/kbengine) - an excellent game server framework
+- [VS Code](https://github.com/microsoft/vscode) - the host editor for this extension
+- All contributors
 
-## 联系方式
+## Contact
 
 - GitHub Issues: [https://github.com/cuihairu/kode/issues](https://github.com/cuihairu/kode/issues)
 - Email: cuihairu@gmail.com
 
 ## Star History
 
-如果这个项目对你有帮助，请给一个 Star。
+If this project helps you, consider giving it a star.
 
 ---
 
-当前版本 0.1.0，尚未发布到 Marketplace。已落地 21 项功能、26 条命令、31 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+Current version 0.1.0, not yet published to the Marketplace. 21 features, 26 commands, and 31 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
