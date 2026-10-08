@@ -263,7 +263,11 @@ kode/
       Marketplace 图标与 README 展示均接线该文件;批89 擅自生成代餐被用户
       点名撤销,批90 恢复用户资产口径并锁回归,见 TESTING.md 批90)
 - [ ] 准备 Marketplace 截图
-- [ ] 完善文档
+- [x] 完善文档(批106:guide 功能概览/快速开始/文档索引对齐当前功能面
+      ——补 Telnet 探测、调试支持、HTTP 快捷请求三节与索引条目;CHANGELOG
+      [Unreleased] 补批94 后变更(1114 用例/八检查/telnet/HTTP/安全钉/
+      nightly);CONTRIBUTING 清虚构(不存在的 Issue 模板、Discussion)与
+      表情装饰;禁词/死链扫描零命中,见 TESTING.md 批106)
 - [ ] 发布到 VSCode Marketplace
 
 ### 未来增强功能

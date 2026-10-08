@@ -312,7 +312,8 @@ kode/
 ### 发布准备
 - [x] 创建扩展图标(已由用户设计资产 resources/logo.png 满足,批90 恢复用户资产口径)
 - [ ] 准备 Marketplace 截图
-- [ ] 完善文档
+- [x] 完善文档(批106:guide 三页对齐当前功能面,CHANGELOG 补账,
+      CONTRIBUTING 清虚构引用;详见 TESTING.md 批106)
 - [ ] 发布到 VSCode Marketplace
 
 ### 未来功能

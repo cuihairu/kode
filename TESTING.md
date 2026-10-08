@@ -3345,6 +3345,44 @@ src TypeScript 30→32 文件(18761→19188 行),命令 24→26
 (guide commands/configuration)同步;PROJECT_SUMMARY 顺手补批104 漂移
 (telnet 三文件入项目结构树、功能 20 补节)。
 
+## 批106:发布准备「完善文档」收口——guide 三页对齐当前功能面 + CHANGELOG 补账 + CONTRIBUTING 清虚构
+
+批次号:批105 后顺延(用户令:发布准备三件只做「完善文档」;Marketplace
+截图与发布属外部动作,等拍板,不做)。
+
+文档面审计(全仓 md 盘点 + 相对链接逐一验存 + 禁词/表情扫描):
+- 死链:零(初扫两条命中为中文括号文本误报);
+- 禁词(自研/遥遥领先/颠覆/革命性/赋能/已发布/上架/安装量/评分):零命中;
+- 真实缺口三处:guide 功能概览停批94 前(Telnet/调试/HTTP 三功能缺页)、
+  CHANGELOG [Unreleased] 停批94(982 用例/「七检查」/无 telnet 与 HTTP)、
+  CONTRIBUTING 引用不存在的 Issue 模板(仓库无 .github/ISSUE_TEMPLATE,
+  违反「文档只写真实路径」)。
+
+改动:
+- docs/guide/features.md:补三节——Telnet 探测与会话联动(五态灯/三级目标
+  解析/5s 探测/socket-only 密码/白名单命令/:quit 恒拒/断线重连)、调试支持
+  (.kbengine/debug.json、debugpy processId attach、先 telnet 开调试再按 PID
+  附着的模型说明)、HTTP 快捷请求(设置列表/四变量/两路触发/✗ 语义),互链
+  configuration/commands 页;
+- docs/guide/README.md:「扩展能力概览」补 Telnet 与 HTTP 两条;
+- docs/README.md:索引从三条补到六条(功能概览/语言能力/命令与面板/
+  开发与发布);
+- CHANGELOG.md:[Unreleased] 用例 982→1114、分析器「七检查」→「八检查」;
+  Added 补两条(Telnet 探测+联动:六设置/一命令/三级目标解析/白名单与
+  :quit 恒拒/断线重连;HTTP 快捷请求:一设置/两命令/四变量字面替换/内置
+  示例默认停用);Changed 补四条(分析器口径对齐引擎+第八检查+模板与向导
+  非法 def 修复/片段 IO 失败带文件路径/pnpm.overrides 两枚安全钉/nightly
+  workflow);
+- CONTRIBUTING.md:删三处表情装饰(🎉/✅❌/🙏),Bug 报告与功能建议不再引用
+  不存在的模板,「Issue 或 Discussion」收敛为 Issue(Discussions 未核实开启)。
+
+门禁:pnpm lint EXIT=0;pnpm test(vitest 92 文件 1114 用例 + mocha 烟测
+11 用例)全绿;文档锁(docsCommands)以最终文档状态复跑通过。
+
+记账:零生产代码改动(src/tests 不动,覆盖率与用例数与批105 同值:1114
+用例、四指标 100%;文档页数不变,只改既有页)。COMPLETED_FEATURES/
+PROJECT_SUMMARY 发布准备「完善文档」勾选。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
