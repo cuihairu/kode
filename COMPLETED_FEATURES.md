@@ -2,12 +2,12 @@
 
 **版本**: 0.1.0
 **状态**: 核心功能已完成
-**总代码行数**: 17684 行（src/ TypeScript，实测）
-**文件数量**: 27 个 TypeScript 文件（不含 src/test 烟测）
+**总代码行数**: 18761 行（src/ TypeScript，实测）
+**文件数量**: 30 个 TypeScript 文件（不含 src/test 烟测）
 
 ---
 
-## 已完成功能 (19 个)
+## 已完成功能 (20 个)
 
 ### 1. 语法高亮
 - 源码对齐的基础类型与容器类型高亮
@@ -157,13 +157,22 @@
 - 片段文件读/写 IO 失败（权限、路径被目录/文件占位等）以错误提示呈现并带文件路径，不裸抛给宿主（批100）
 - **源文件**: `src/snippetGenerator.ts`
 
+### 20. Telnet 探测与会话联动
+- 状态栏 + 服务器控制面板状态灯:已连接/已开启·未配密码/密码被拒/未开启/未配置,点击灯开面板
+- 目标解析三级:设置项(kbengine.telnet.host/port)显式指定 → kbengine.xml `<telnet_service>` 段(经 kbengine.telnet.configXmlPath)→ 引擎七组件默认端口表;探测低频(默认 5s,单端口 1.5s 超时,探完即毁不占连接)
+- 端口开启自动握手登录:密码走配置、只经 socket 提交,不进输出/日志面;引擎 PASSWD 态重提示识别为「密码被拒」如实亮灯
+- 面板活化:命令输入走 enableCommands 白名单 ∪ 内置只读快捷命令(`:quit` 关停服务端进程,两层恒拒);快捷命令钮(实体数量/实体清单前50/全局数据键/帮助);输出流回显(上限 500 行)
+- 未开启时面板如实提示并附 kbengine.xml `<telnet_service>` 开启配置片段,不空转;断线状态翻转提示、可重连,掉线不崩面板
+- 批104:三层架构(协议客户端/服务/面板)依赖全注入,真 TCP localhost 仿真三态握手全测;重连竞态缺陷由测试咬出修复
+- **源文件**: `src/telnetClient.ts`、`src/telnetService.ts`、`src/telnetWebView.ts`
+
 ---
 
 ## 项目结构
 
 ```
 kode/
-├── src/                          # 27 个 TypeScript 文件，17684 行
+├── src/                          # 30 个 TypeScript 文件，18761 行
 │   ├── extension.ts              # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts              # .def 解析与文本定位
@@ -191,6 +200,9 @@ kode/
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
 │   ├── codeGenerator.ts          # 代码生成器 (10 模板)
 │   ├── workspacePath.ts          # 跨平台路径工具
+│   ├── telnetClient.ts           # KBEngine telnet 协议客户端
+│   ├── telnetService.ts          # telnet 探测/会话服务
+│   ├── telnetWebView.ts          # Telnet 面板 WebView
 │   └── test/                     # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
@@ -199,7 +211,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (85 文件 1014 用例)
+├── tests/                        # vitest 测试 (89 文件 1077 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -209,13 +221,13 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 27 个（src/，不含 src/test，实测） |
+| TypeScript 文件 | 30 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
 | 文档页数 | 21 个 Markdown（根 7 + docs/ 11 + resources/docs 3） |
-| 总行数 | 17684 行（src/ TypeScript，实测） |
-| 已完成功能 | 19 个 |
+| 总行数 | 18761 行（src/ TypeScript，实测） |
+| 已完成功能 | 20 个 |
 
 ---
 
@@ -226,7 +238,7 @@ kode/
       末项「语法高亮」以 tests/tmLanguage.test.ts 16 用例收口,见 TESTING.md 批88)
 - [x] 修复发现的问题(批88:tmLanguage 语法与引擎注册表对齐——补 UNICODE、
       删 5 个引擎未注册类型名、删 2 个引擎未注册旗标,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1014 个用例;
+- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1077 个用例;
       原 test-electron 集成层已在重构阶段4移除,批88 假设口径)
 - [x] 优化性能(批92:基准先行——tests/perf/defPerf.bench.ts 对 173.4KB
       确定性大 .def 测解析/诊断/高亮三路径;不改变行为优化三处——语法规则

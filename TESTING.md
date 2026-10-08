@@ -3208,6 +3208,85 @@ Python;②主题切 Default Dark+ 对比是否恢复;③扩展面板搜 @builtin
 记账:用例 1003→1014(+11),测试文件 83→85。README/COMPLETED_FEATURES/
 PROJECT_SUMMARY 用例计数同步 1014/85 文件。
 
+## 批104:telnet 探测+联动(功能批一)——协议对齐三层落地 + 门禁期两处测试修正
+
+批次号:批103 后顺延(用户提议、拍板的功能批)。
+
+功能范围(对应用户五点):
+① 检测:读配置(kbengine.telnet.host/port/password/enableCommands/configXmlPath
+  六设置项;configXmlPath 指向 kbengine.xml 时解析 <telnet_service> 端口/密码/
+  default_layer;均缺省回落引擎七组件默认端口表 31000/32000/33000/34000/
+  40000/50000/51000)后 TCP 探测;状态栏灯 + 服务器控制面板 telnet 状态灯
+  (已连接/已开启·未配密码/密码被拒/未开启/未配置);
+② 开启时自动联动:自动握手登录(密码只经 socket write,不进任何回调文本/
+  日志面)→ Telnet 面板活化:命令输入(enableCommands 白名单 ∪ 内置只读
+  快捷命令;`:quit` 会关停服务端进程,白名单层与客户端层双重恒拒)、快捷
+  命令钮(实体数量/实体清单前50/全局数据键/帮助)、输出流回显(上限 500 行);
+③ 未开时:面板如实提示「telnet 未开启」并附 kbengine.xml <telnet_service>
+  开启配置片段,不空转;
+④ 运行中断线:状态翻转提示、可重连,掉线不崩面板;
+⑤ 探测低频:默认 5s(kbengine.telnet.probeIntervalSeconds),单端口 1.5s
+  超时,探测连接探完即毁。
+
+架构(三层,依赖全注入):
+- src/telnetClient.ts 协议层:纯客户端——IAC 协商/子协商剥除(IAC IAC 转义
+  字面)、ANSI 转义剥除、横幅解析(password: 要求密码 / [@password ~]# 密码
+  被拒,对齐 kbe/src/lib/server/telnet_server.cpp + telnet_handler.cpp)、
+  提示符识别([组件@层 ~]# 与 python 层 >>>)、命令白名单判定、五态状态机
+  (connecting/awaiting-password/ready/auth-rejected/closed);socket 工厂可注入。
+- src/telnetService.ts 服务层:目标解析(设置→kbengine.xml→默认表)、探测
+  状态机(probeOne/定时器可注入;会话在位时跳过探测,会话态即灯色)、
+  白名单闸、会话管理(断旧建新、输出环形缓冲 500 行)、状态灯文案。
+- src/telnetWebView.ts 面板层:目标列表状态灯、closed 指引片段、
+  auth-required 密码指引、select/connect/disconnect/send 消息协议、
+  未过闸回执(rejected)不静默吞。
+- 装配:extension.ts 第二状态栏(优先级 99,点击开面板)+ 命令
+  kbengine.telnet.showPanel + dispose 链;explorerProviders.ts 服务器控制
+  树尾追加 telnet 灯项(不注入服务则不出现,单参构造保持纯组件列表)。
+- package.json 六个 kbengine.telnet.* 设置项 + showPanel 命令声明。
+
+测试(+63 用例,4 新文件):
+- tests/telnetClient.test.ts(19):纯函数全分支 + 真 TCP localhost 仿真
+  三态握手(无密码直通/密码对自动登录且密码不出现在 onData/密码错
+  auth-rejected 后断线)、:quit 恒拒、服务端 RST 断线翻转与重连、
+  connect 失败、未装回调清理;
+- tests/telnetService.test.ts(23):目标解析、注入型探测状态机(翻转才发
+  事件/重入吞/清空/无目标不挂定时器)、真 TCP 联动(自动登录/白名单闸/
+  输出上限 500/断线拆除/重连/探测跳过在位会话)、探测超时臂(停摆 socket
+  注入,确定性覆盖,不依赖环境路由);
+- tests/telnetWebView.test.ts(11):渲染三态指引/输出回显/消息协议/守卫/
+  复用重建(记录型假 service,不依赖网络);
+- tests/telnetWiring.test.ts(11):readTelnetTargetsFromSettings 三路(设置/
+  真临时文件 kbengine.xml/${workspaceFolder} 展开/缺失回落)、状态灯五文案、
+  ServerControlProvider telnet 树项全状态;
+- tests/extension.test.ts:双状态栏断言(优先级 100 服务器/99 telnet)+ 命令
+  链路 telnet.showPanel + 真 TCP 探测翻转驱动状态灯联动用例;
+- src/test/suite/activationSmoke.test.ts(mocha 编译产物烟测):状态栏断言
+  1→2 同步(服务器隐藏/telnet 可见显示「未开启」)。
+
+由测试咬出并修复:
+- 生产缺陷:telnetService 重连竞态——connectTarget 断旧建新后,旧 client
+  迟到的 close 事件把新会话从 clients 表误删(重连后状态灯/命令失灵)→
+  onClose 加「仅当前会话才移除」守卫(详见「近期由测试发现并修复的真实
+  缺陷」末条);
+- 测试隔离:serverManagerGaps.test.ts 在共享固定路径 /tmp/kbe/bin/server
+  建临时候选(测试窗口期存在),与并行 worker 的 serverManager.test.ts
+  detectBinPath 第二候选 <ws>/../../kbe/bin/server(同样解析到 /tmp/kbe)
+  相撞,偶发断言拿到 /tmp/kbe → 两侧 root 均上抬一层私有 base 目录,
+  ../kbe 解析全部落在私有目录,不再触碰共享 /tmp/kbe;
+- 覆盖率收口:sendCommand 的 `?? false` 尾臂在 v8 重映射下永不计数
+  (可选链与空值合并同表达式),改写为显式 if 空守卫(行为恒等);
+  「无会话」断言原置于 start() 之前——targets 未装载、白名单闸先拒,
+  实际没走到无客户端臂 → 断言移到 start() 之后,真实命中。
+
+门禁:pnpm lint EXIT=0;pnpm test(vitest 89 文件 1077 用例 + mocha 烟测
+11 用例)全绿;覆盖率四指标 100%(5518/3180/961/5385)。
+
+记账:用例 1014→1077(+63),测试文件 85→89,src TypeScript 27→30 文件
+(17684→18761 行),命令 23→24(kbengine.telnet.showPanel),配置项 24→30
+(六个 kbengine.telnet.*)。README/COMPLETED_FEATURES/PROJECT_SUMMARY/
+docs(guide commands/configuration)同步。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
@@ -3246,3 +3325,7 @@ PROJECT_SUMMARY 用例计数同步 1014/85 文件。
   加载失败),向导示例属性用受限名 `id` → 模板移除受限名声明、示例属性
   改名 entityID,向导流程测试补静态建议零命中锁(批99 引擎受限名检查
   首跑发现)。
+- `telnetService.ts` 会话重连竞态:connectTarget 断旧建新后,旧 client 迟到的
+  close 事件把新会话从 clients 表误删(重连后状态灯不亮、命令全部失灵)→
+  onClose 加「仅当前会话(client === clients.get(key))才移除」守卫,重连
+  用例锁定(批104 telnet 联动真 TCP 测试发现)。

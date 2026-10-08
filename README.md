@@ -145,6 +145,14 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 - [支持自定义属性和方法定义]
 - [可配置输出路径和选项]
 
+### Telnet 探测与会话联动
+- [状态栏 + 服务器控制面板状态灯（已连接/已开启/密码被拒/未开启等）]
+- [配置三级：设置项 / kbengine.xml `<telnet_service>` 段 / 引擎七组件默认端口表]
+- [低频探测（默认 5s），探完即毁不占连接]
+- [端口开启自动握手登录，密码只走 socket 不落日志]
+- [面板命令输入（白名单 + 内置只读快捷命令）与输出流回显]
+- [未开启时如实提示并附 kbengine.xml 开启配置片段]
+
 ## 性能分析
 
 对工作区全部 `.def` 文件做静态检查并输出优化建议(命令面板执行
@@ -330,4 +338,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前版本 0.1.0，尚未发布到 Marketplace。已落地 19 项功能、23 条命令、24 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前版本 0.1.0，尚未发布到 Marketplace。已落地 20 项功能、24 条命令、30 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
