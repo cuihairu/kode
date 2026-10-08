@@ -1,10 +1,12 @@
-# Kode - KBEngine Development Environment
+<p align="center"><img src="resources/logo.png" width="64" height="64" alt="logo" /></p>
 
-![Kode 扩展图标](resources/logo.png)
+<h1 align="center">Kode — KBEngine Development Environment</h1>
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![VS Code](https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg)](https://code.visualstudio.com/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-4.x-blue.svg)](https://www.typescriptlang.org/)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
+  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
+</p>
 
 > **Kode** (KBEngine IDE) - 面向 KBEngine 的 VS Code 开发辅助扩展
 
