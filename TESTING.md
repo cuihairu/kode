@@ -3141,6 +3141,73 @@ OWN_CLIENT 都含 client 位,引擎装载失败而诊断放行),待块 4 复核�
 无行为变化,COMPLETED_FEATURES/README 未动;PROJECT_SUMMARY 用例计数
 同步 1003。
 
+## 批102:Dependabot security_update_not_possible 收口(pnpm.overrides 钉安全版,零测试改动)
+
+批次号:批101 后顺延(巡检派单:Dependabot npm_and_yarn 两条
+security_update_not_possible 红——@vue/server-renderer 需 3.5.42 但其约束
+只可解析 3.5.31;source-map-js 需 1.2.2 但只可解析 1.2.1)。
+
+根因与修法(零测试改动):
+- vue 家族同版本号互锁:`@vue/server-renderer@x` 精确依赖同版本号的
+  `@vue/shared`/`@vue/runtime-dom`/`@vue/compiler-ssr`,单包升级无解;
+  vitepress 2.0.0-alpha.17 经 `vue ^3.5.27` 传递引入。按仓库既有惯例
+  pnpm.overrides 整族钉 `vue`/`@vue/server-renderer`/`@vue/shared`
+  3.5.42(同批 @tootallnate/once 3.0.1、brace-expansion 1.1.21、
+  serialize-javascript 7.0.5 等一并钉至告警消版);
+- source-map-js 钉 1.2.2。
+lockfile 实测两包落位 3.5.42/1.2.2;Dependabot open alerts 实测 `[]`。
+
+门禁:pnpm lint EXIT=0;pnpm test(vitest + 编译 + mocha 烟测)全绿;
+docs:build 绿。
+
+记账:零生产、零测试改动,用例计数不变。README「每日构建」节等未动。
+
+## 批103:紧急高亮回归排查——扩展侧无回归(考古定性),注册面/打包防漏双回归锁 + MagicPython 共存分词实证(+11 用例,零生产改动)
+
+批次号:批102 后顺延;工单最高优先(用户实测:装最新 vsix 后原本正常的
+Python 代码高亮全废)。
+
+考古定性(五路取证,结论:扩展侧不存在高亮回归,.py 着色由 VS Code 内建
+python 扩展的 MagicPython(scopeName `source.python`)提供,扩展无注销
+他人语法的 API):
+- 注册面考古:git 全历史(-S 逐提交扫描)比对 languages/grammars/themes——
+  自初始提交 dc75f33 起恒等:仅 kbengine-def 一门语言、source.kbengine-def
+  一条语法、KBEngine Dark 一主题;从未注册过 python/.py/injectTo 注入;
+- 产物核对:下载 nightly vsix(c65c2ce 构建)解包——syntaxes 两文件与
+  仓库 HEAD sha256 逐字节一致,打包内 package.json contributes 与 HEAD
+  一致,语法/主题/片段/logo 资源无一缺失;与本地 HEAD 打包对比仅差
+  vitest.bench 配置(不进扩展宿主,inert);
+- 动态着色 API 排查:全仓 grep 无 semanticTokens/decorations/
+  files.associations/settings.json 写入通道;
+- 依赖面:vscode-textmate/vscode-oniguruma 仅 devDependencies(测试用),
+  不进包、不参与运行时分词;无 tree-sitter 类语法依赖;
+- 即用户环境侧因素(内建 python 扩展状态/主题/语言模式),非本扩展产物。
+
+回归锁(+11,两新文件,零生产改动):
+- tests/highlightRegistration.test.ts(6):注册面逐字段恒等锁
+  (languages/grammars/themes 完整结构 toEqual)、零 python 注册不变量
+  (.py 不映射/source.python 不注册/无注入,防与内建 MagicPython 冲突类
+  事故)、主题文件在位可解析、snippets 语言归属锁;.vscodeignore 打包
+  防漏锁——关键资产(语法/主题/语言配置/三片段/logo/out 主产物)逐一
+  验证不被任何排除行命中,且排除行白名单全集合锁定(防误加全类排除,
+  即工单④「打包漏 grammar 资源」的根因形态);
+- tests/pythonHighlightCoexistence.test.ts(4):MagicPython(取自
+  @shikijs/langs,vitepress 依赖链、与 microsoft/vscode 内建语法同源;
+  包不可解析时整组跳过不引网络)与 kode 语法共注册同一 vscode-textmate
+  Registry(等价干净环境共装形态)——.py 样例分词出完整 python scope、
+  python 分词零 kbengine scope 泄漏、.def 样例照常出 kbengine scope。
+
+用户侧复核清单(交付用户,非代码):①打开 .py 看右下角语言模式是否
+Python;②主题切 Default Dark+ 对比是否恢复;③扩展面板搜 @builtin python
+确认内建 python 扩展未被禁用;④帮助→切换开发人员工具 Console 查 grammar
+解析报错;⑤装 vsix 后执行 Reload Window。
+
+门禁:pnpm lint EXIT=0;npx vitest run 85 文件 1014 用例全绿;覆盖率四指标
+100%(零生产改动,与批100/101/102 同值)。
+
+记账:用例 1003→1014(+11),测试文件 83→85。README/COMPLETED_FEATURES/
+PROJECT_SUMMARY 用例计数同步 1014/85 文件。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

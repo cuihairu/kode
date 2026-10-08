@@ -235,7 +235,7 @@ kode/
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (83 文件 1003 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (85 文件 1014 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志
@@ -287,7 +287,7 @@ kode/
 ### MVP 完善
 - [x] 测试所有功能(批88:17 项已完成功能逐项验证,全部有自动化用例覆盖)
 - [x] 修复发现的问题(批88:tmLanguage 与引擎注册表对齐等修复,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 1003 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
+- [x] 添加单元测试(vitest 功能层 1014 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
 - [x] 优化性能(批92:validateDocument −46%、全文件分词 −17%,行为以 golden 回归锁)
 
 ### 发布准备
