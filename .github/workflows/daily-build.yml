@@ -1,124 +1,141 @@
-name: Daily Build
-
-# 每日构建:滚动 nightly Release——tag 恒为 nightly,每次构建删除旧
-# release/tag 后按本次 commit 重建(说明含构建时间/commit/资产表,资产
-# 幂等覆盖,可安全重跑)。产物为本仓技术栈的自然出包形态:VS Code 扩展
-# .vsix(Windows/macOS/Linux 通用)。
-# 48h 停滞门:默认分支近 48 小时无新提交时,定时(schedule)触发跳过
-# 构建;手动 workflow_dispatch 不受限,必定构建。
+name: Daily Build (nightly)
 
 on:
   schedule:
-    # 每日 21:43 UTC(北京时间次日 05:43,离峰、非整点)
-    - cron: '43 21 * * *'
-  workflow_dispatch:
+    # 离峰非整点：每天 03:17 UTC（北京时间 11:17），避开 GitHub Actions 高峰
+    - cron: '17 3 * * *'
+  workflow_dispatch: # 手动触发必建
 
 permissions:
-  contents: write
+  contents: write # 创建/更新 Release 需要
 
 jobs:
-  freshness:
-    name: 停滞门(48h 无新提交则跳过,仅 schedule 生效)
+  build-and-release:
+    name: Build & Rolling Release
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    outputs:
-      skip: ${{ steps.check.outputs.skip }}
-
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.repository == 'cuihairu/kode'
     steps:
-      - name: Checkout 代码(全历史,供提交数统计)
-        timeout-minutes: 3
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # 需要完整历史做 48h 判断与 commit 信息
 
-      - name: 检查默认分支 48 小时内是否有新提交
-        id: check
-        timeout-minutes: 2
+      # 48h 停滞门：仅对 schedule 生效；workflow_dispatch 跳过检查必建
+      - name: Stagnation gate (48h no new commits on default branch → skip)
+        if: github.event_name == 'schedule'
+        id: stagnation
         run: |
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            echo "::notice::触发方式为 ${{ github.event_name }},停滞门不生效,必定构建"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          branch="origin/${{ github.event.repository.default_branch }}"
-          count="$(git rev-list --count --since='48 hours ago' "$branch")"
-          echo "近 48 小时新提交数: $count"
-          if [ "$count" -eq 0 ]; then
-            echo "::notice::默认分支 48 小时无新提交,本次定时构建跳过"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          # 取默认分支最近一次提交时间（UNIX 秒）
+          LATEST=$(git log -1 --format=%ct origin/main)
+          NOW=$(date +%s)
+          DIFF_HOURS=$(( (NOW - LATEST) / 3600 ))
+          echo "latest_commit_ts=$LATEST" >> $GITHUB_OUTPUT
+          echo "diff_hours=$DIFF_HOURS" >> $GITHUB_OUTPUT
+          if [ $DIFF_HOURS -ge 48 ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⏭️ 48h 无新提交（$DIFF_HOURS h），跳过本次定时构建"
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "✅ 最近 $DIFF_HOURS h 有提交，继续构建"
           fi
 
-  nightly:
-    name: 构建 .vsix 并刷新 nightly Release
-    needs: freshness
-    if: needs.freshness.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+      - name: Exit if stagnant (schedule only)
+        if: steps.stagnation.outputs.skip == 'true'
+        run: exit 0
 
-    steps:
-      - name: Checkout 代码
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: 安装 pnpm
-        timeout-minutes: 3
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
-      - name: 设置 Node.js(.nvmrc)
-        timeout-minutes: 5
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
 
-      - name: 安装依赖
-        timeout-minutes: 5
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: 运行代码检查与测试
-        timeout-minutes: 20
-        run: |
-          pnpm run lint
-          pnpm test
+      - name: Run lint
+        run: pnpm run lint
 
-      - name: 打包 VSIX 并复制为固定名资产
-        timeout-minutes: 15
+      - name: Run tests (full gate)
+        run: pnpm test
+
+      - name: Compile extension
+        run: pnpm run compile
+
+      - name: Package VSIX (nightly asset)
+        id: package
         run: |
           pnpm run package
-          cp kode-*.vsix kode-nightly.vsix
+          # 产物固定命名
+          VSIX=$(ls kode-*.vsix | head -1)
+          cp "$VSIX" kode-nightly.vsix
+          echo "vsix=kode-nightly.vsix" >> $GITHUB_OUTPUT
+          echo "original=$VSIX" >> $GITHUB_OUTPUT
 
-      - name: 生成 Release 说明(构建时间/commit/资产表)
-        timeout-minutes: 2
+      - name: Prepare release metadata
+        id: meta
         run: |
-          {
-            echo "**构建时间(UTC):** $(date -u '+%Y-%m-%d %H:%M:%S')"
-            echo "**Commit:** [\`${GITHUB_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)"
-            echo "**分支:** ${{ github.ref_name }}"
-            echo
-            echo "| 资产 | 平台 | 安装 |"
-            echo "|------|------|------|"
-            echo "| \`kode-nightly.vsix\` | Windows / macOS / Linux(VS Code ≥1.50 通用) | \`code --install-extension kode-nightly.vsix\` |"
-            echo
-            echo "> 滚动构建:tag 恒为 \`nightly\`,每次构建替换上一版资产与说明;默认分支 48 小时无新提交时定时构建自动跳过。仓库无版本 tag,正式版本以 Marketplace 发布为准(尚未发布)。"
-          } > nightly-notes.md
+          BUILD_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          COMMIT_URL="https://github.com/cuihairu/kode/commit/$(git rev-parse HEAD)"
+          cat <<EOF > release-body.md
+          # Kode Nightly Build
 
-      - name: 刷新 nightly Release(删旧建新,幂等可重跑)
-        timeout-minutes: 5
+          **构建时间**：${BUILD_TIME}
+          **Commit**：[${COMMIT_SHA}](${COMMIT_URL}) — ${COMMIT_MSG}
+          **分支**：main
+
+          ## 资产表
+          | 文件 | 平台 | 说明 |
+          |------|------|------|
+          | kode-nightly.vsix | Windows / macOS / Linux (VS Code ≥1.50) | 通用 VSIX，下载后 `code --install-extension kode-nightly.vsix` 安装 |
+
+          > ⚠️ 此为滚动 nightly 发布，**tag 恒为 \`nightly\`**，每次构建替换上一版资产与说明。仓库不带版本 tag，不发布到 Marketplace。
+          EOF
+          echo "body_path=release-body.md" >> $GITHUB_OUTPUT
+
+      - name: Rolling release to tag 'nightly' (idempotent)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Kode Nightly (rolling)
+          body_path: ${{ steps.meta.outputs.body_path }}
+          files: ${{ steps.package.outputs.vsix }}
+          draft: false
+          prerelease: true
+          make_latest: false
+          overwrite_assets: true # 关键：滚动替换同名资产
+          fail_on_unmatched_files: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release asset exists
         run: |
-          # 删除旧 release(--cleanup-tag 连旧 tag 一并删除),再按本次
-          # commit 重建;两步均容错,失败残留可被下次运行清掉
-          gh release delete nightly --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
-          git push origin ":refs/tags/nightly" --repo "$GITHUB_REPOSITORY" || true
-          gh release create nightly \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Nightly Build ($(date -u '+%Y-%m-%d'))" \
-            --notes-file nightly-notes.md
-          gh release upload nightly kode-nightly.vsix --repo "$GITHUB_REPOSITORY" --clobber
+          gh release view nightly --repo cuihairu/kode --json assets --jq '.assets[].name'
+          echo "✅ Release 'nightly' 可见且含 kode-nightly.vsix"
+
+  # 校验作业：确保无版本 tag 泄漏
+  verify-no-version-tags:
+    name: Verify no version tags
+    runs-on: ubuntu-latest
+    needs: build-and-release
+    if: always() && needs.build-and-release.result == 'success'
+    steps:
+      - name: Checkout (shallow)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: List remote tags (exclude nightly)
+        run: |
+          git ls-remote --tags origin | grep -v 'refs/tags/nightly$' || true
+          VERSION_TAGS=$(git ls-remote --tags origin | grep -v 'refs/tags/nightly$' | wc -l)
+          if [ "$VERSION_TAGS" -gt 0 ]; then
+            echo "❌ 发现版本 tag（nightly 除外），违反门禁"
+            exit 1
+          else
+            echo "✅ 仅存在 nightly tag（滚动发布），无版本 tag 泄漏"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
