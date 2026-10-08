@@ -54,7 +54,9 @@
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.snippets.generateFromSelection",
-    "onCommand:kbengine.telnet.showPanel"
+    "onCommand:kbengine.telnet.showPanel",
+    "onCommand:kbengine.httpRequests.run",
+    "onCommand:kbengine.httpRequest.run"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -240,6 +242,14 @@
         "command": "kbengine.telnet.showPanel",
         "title": "Show Telnet Panel",
         "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.httpRequests.run",
+        "title": "Run HTTP Quick Request"
+      },
+      {
+        "command": "kbengine.httpRequest.run",
+        "title": "Run Named HTTP Quick Request"
       }
     ],
     "menus": {
@@ -468,6 +478,34 @@
           "type": "number",
           "default": 5,
           "description": "telnet 端口探测轮询间隔（秒，低频探测）"
+        },
+        "kbengine.httpRequests": {
+          "type": "array",
+          "default": [
+            {
+              "name": "热更新(示例)",
+              "url": "http://127.0.0.1:8090/hotfix?module_name=${module}",
+              "method": "GET",
+              "headers": {},
+              "body": "",
+              "enabled": false,
+              "keybinding": ""
+            }
+          ],
+          "description": "HTTP 快捷请求列表（增删改走设置界面列表编辑器，启停=条目 enabled 开关）。模板变量：${module}=当前文件工作区相对模块路径（entities/fight/FightAI.py → entities.fight.FightAI）、${file}=文件名、${line}=光标行（1 起）、${sel}=选中文本；变量按字面替换、不做 URL 编码；无活动编辑器时各变量为空串。实际快捷键经「键盘快捷方式」为命令 kbengine.httpRequest.run 配 args.name 绑定，条目 keybinding 字段仅作展示",
+          "items": {
+            "type": "object",
+            "required": ["name", "url"],
+            "properties": {
+              "name": { "type": "string", "description": "请求名（quick pick 与日志标识）" },
+              "url": { "type": "string", "description": "URL 模板，可含 ${module}/${file}/${line}/${sel}" },
+              "method": { "type": "string", "description": "HTTP 方法，缺省 GET" },
+              "headers": { "type": "object", "description": "请求头（值同样走模板替换）" },
+              "body": { "type": "string", "description": "请求体（非空才随请求发送，同样走模板替换）" },
+              "enabled": { "type": "boolean", "description": "启停开关，缺省启用" },
+              "keybinding": { "type": "string", "description": "键位展示串（quick pick 详情列显示）" }
+            }
+          }
         }
       }
     }

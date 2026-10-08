@@ -20,6 +20,8 @@ import {
   ServerControlProvider
 } from './explorerProviders';
 import { resolveServerComponent } from './serverCommandTarget';
+import { parseHttpRequestEntries } from './httpRequests';
+import { HttpRequestService } from './httpRequestService';
 import {
   readTelnetTargetsFromSettings,
   TelnetService,
@@ -340,6 +342,65 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(telnetStateSubscription);
   updateTelnetStatusBar(telnetService, telnetStatusBarItem);
+
+  // HTTP 快捷请求(批105):OUTPUT 流水 + 列表 quick pick + 具名运行
+  // (实际快捷键经「键盘快捷方式」为本命令配 args.name 绑定)
+  const httpRequestChannel = vscode.window.createOutputChannel('KBEngine HTTP 快捷请求');
+  const httpRequestService = new HttpRequestService({
+    getEntries: () =>
+      parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
+    log: line => httpRequestChannel.appendLine(line),
+    notifyError: message => {
+      void vscode.window.showErrorMessage(message);
+    },
+    getTemplateContext: () => {
+      const editor = vscode.window.activeTextEditor;
+      return {
+        filePath: editor?.document.uri.fsPath,
+        cursorLineZeroBased: editor?.selection.active.line,
+        selection: editor ? editor.document.getText(editor.selection) : undefined,
+        workspaceRoots: (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)
+      };
+    }
+  });
+  const runHttpQuickPickCommand = vscode.commands.registerCommand(
+    'kbengine.httpRequests.run',
+    async () => {
+      const entries = httpRequestService.listEnabled();
+      if (entries.length === 0) {
+        void vscode.window.showInformationMessage(
+          '没有已启用的 HTTP 快捷请求(在设置 kbengine.httpRequests 里增删改与启停)'
+        );
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        entries.map(entry => ({
+          label: entry.name,
+          description: `${entry.method} ${entry.url}`,
+          detail: entry.keybinding ? `键位: ${entry.keybinding}` : undefined,
+          entry
+        })),
+        { placeHolder: '选择要运行的 HTTP 快捷请求' }
+      );
+      if (picked) {
+        await httpRequestService.runByName(picked.entry.name);
+      }
+    }
+  );
+  const runNamedHttpCommand = vscode.commands.registerCommand(
+    'kbengine.httpRequest.run',
+    async (args?: { name?: string }) => {
+      const name = args?.name;
+      if (!name) {
+        void vscode.window.showWarningMessage(
+          'kbengine.httpRequest.run 需要 args.name(在键盘快捷方式里以 args 传入);或改用 kbengine.httpRequests.run 从列表选择'
+        );
+        return;
+      }
+      await httpRequestService.runByName(name);
+    }
+  );
+  context.subscriptions.push(httpRequestChannel, runHttpQuickPickCommand, runNamedHttpCommand);
 
   // 注册服务器控制命令
   const startServerCommand = vscode.commands.registerCommand(

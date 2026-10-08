@@ -309,6 +309,47 @@ telnet 面板允许发送的命令白名单（精确匹配或「命令 + 空格 
 
 探测轮询间隔（秒），默认 `5`，低频探测。
 
+### HTTP 快捷请求
+
+#### `kbengine.httpRequests`
+
+HTTP 快捷请求列表，增删改走设置界面的列表编辑器，启停 = 条目 `enabled` 开关。每条字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | 请求名（quick pick 与日志标识），必填 |
+| `url` | string | URL 模板，可含模板变量，必填 |
+| `method` | string | HTTP 方法，缺省 `GET` |
+| `headers` | object | 请求头（值同样走模板替换） |
+| `body` | string | 请求体（非空才随请求发送，同样走模板替换） |
+| `enabled` | boolean | 启停开关，缺省启用 |
+| `keybinding` | string | 键位展示串（quick pick 详情列显示） |
+
+模板变量（URL/请求体/请求头值通用，按字面替换、不做 URL 编码）：
+
+| 变量 | 含义 |
+|------|------|
+| `${module}` | 当前文件的工作区相对模块路径：`entities/fight/FightAI.py` → `entities.fight.FightAI`；不在工作区内退文件名去 `.py` |
+| `${file}` | 文件名（`FightAI.py`） |
+| `${line}` | 光标行（1 起） |
+| `${sel}` | 选中文本 |
+
+无活动编辑器时各变量替换为空串。
+
+内置示例一条（默认停用）：`http://127.0.0.1:8090/hotfix?module_name=${module}`——启用并把 `enabled` 改为 `true` 即可试跑。
+
+实际快捷键绑定：VS Code 无运行时注册键位的 API，请在「键盘快捷方式」里为命令 `kbengine.httpRequest.run` 绑定按键并在 `args` 里带请求名（`keybindings.json` 示例）：
+
+```json
+{
+  "key": "ctrl+alt+h",
+  "command": "kbengine.httpRequest.run",
+  "args": { "name": "热更新(示例)" }
+}
+```
+
+执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」：`▶` 请求行 → `✓` 状态码 · 耗时 → 回包（超 4000 字符截断标注全长）；失败以 `✗` 标记 + 错误弹窗呈现。
+
 ## 常见问题
 
 ### 为什么设置改了没有立刻生效？

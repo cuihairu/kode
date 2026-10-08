@@ -178,6 +178,29 @@
   - 未开启目标如实提示开启方法（附 kbengine.xml `<telnet_service>` 配置片段），不空转
   - 运行中断线自动拆除会话并翻转状态灯，面板保留可重连
 
+### `kbengine.httpRequests.run`
+
+- 标题：`Run HTTP Quick Request`
+- 作用：从「已启用」的 HTTP 快捷请求列表中选取一条并执行（快捷请求在设置 `kbengine.httpRequests` 里增删改与启停）
+- 行为：
+  - 无启用条目时如实提示，不空转
+  - 执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」：`▶` 请求行（模板替换后）→ `✓` 状态码 · 耗时 → 回包（超 4000 字符截断标注全长）
+  - 失败以 `✗` 标记 + 错误弹窗呈现（OUTPUT 通道无着色 API，不做红色字面）
+
+### `kbengine.httpRequest.run`
+
+- 标题：`Run Named HTTP Quick Request`
+- 作用：按名称直接运行一条启用的快捷请求，需要以 `args.name` 传参
+- 行为：
+  - 专为本命令配键盘快捷键设计：在「键盘快捷方式」里为它绑定按键并在 `args` 里带 `{"name": "请求名"}`，即可「打开 .py 按快捷键直发热更新」
+  - 未带 `args.name` 时如实警告并指路 `kbengine.httpRequests.run`；名称不存在或条目已停用时错误回执，不空转
+- 模板变量（URL/请求体/请求头值通用，按字面替换、不做 URL 编码）：
+  - `${module}`：当前文件的工作区相对模块路径（`entities/fight/FightAI.py` → `entities.fight.FightAI`；不在工作区内则退文件名）
+  - `${file}`：文件名（`FightAI.py`）
+  - `${line}`：光标行（1 起）
+  - `${sel}`：选中文本
+  - 无活动编辑器时各变量替换为空串
+
 ## 典型使用流程
 
 ### 新建实体
