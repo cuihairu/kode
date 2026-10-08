@@ -3287,6 +3287,64 @@ PROJECT_SUMMARY 用例计数同步 1014/85 文件。
 (六个 kbengine.telnet.*)。README/COMPLETED_FEATURES/PROJECT_SUMMARY/
 docs(guide commands/configuration)同步。
 
+## 批105:HTTP 快捷请求(功能批二)——模板变量三层落地 + statusCode 类型收口
+
+批次号:批104 后顺延(功能批二,用户提议、拍板)。
+
+功能范围(对应用户五点):
+① 设置新增「HTTP 快捷请求」列表 kbengine.httpRequests:名称/URL 模板/method/
+  请求头/请求体/启停/键位展示串,增删改走设置列表编辑器;内置示例一条(默认
+  停用):http://127.0.0.1:8090/hotfix?module_name=${module},与 package.json
+  默认值由测试深比对锁同步;
+② 模板变量四枚(URL/请求体/请求头值通用,按字面替换、不做 URL 编码):
+  ${module}=工作区相对模块路径去 .py 转点(entities/fight/FightAI.py →
+  entities.fight.FightAI;不在任一工作区根下退文件名去 .py)、${file}=文件名、
+  ${line}=光标行(1 起)、${sel}=选中文本;无活动编辑器各值如实空串;
+③ 触发两路:命令面板 kbengine.httpRequests.run quick pick(label=名称/
+  描述=method URL/详情=键位展示串,取消不执行)或为 kbengine.httpRequest.run
+  配 args.name 键位直发——VS Code 无运行时注册键位 API,经「键盘快捷方式」
+  keybindings.json 绑定(文档附示例),条目 keybinding 字段仅展示;
+④ 响应呈现:流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」——▶ 请求行(模板
+  替换后)/✓ 状态码·耗时/回包(超 4000 字符截断标注全长,空回包如实标注);
+  失败 ✗ 标记+错误弹窗(OUTPUT 通道无着色 API,engines 1.50 基线,不做红色
+  字面,文档如实写);
+⑤ 断面收口:URL 解析失败/非 http(s) 协议/连接拒绝/响应中断/超时(默认 10s,
+  req.setTimeout 到点 destroy)全部如实回执不悬挂。
+
+三层架构(同批104 注入式):
+- src/httpRequests.ts 纯逻辑:条目解析(非数组空表/缺 name-url 坏条目整条跳过/
+  method trim+大写缺省 GET/headers 只收字符串值/enabled 缺省启用)、模块路径
+  解析(posix 归一+根前缀匹配)、模板变量提取、四占位字面替换(替换回调防 $&
+  误读、未知占位保留);
+- src/httpRequestService.ts 执行层:HttpTransport 可注入;默认 transport 走
+  node http/https(URL 协议二选一、回包接收窗口 16KB 封顶——窗口内有多少收
+  多少、超窗末块 subarray 裁剪);服务层启停过滤/quick pick 数据源/流水与回执
+  (✗ 行与弹窗,失败缺 error 字段落「未知错误」);
+- src/extension.ts 装配:输出通道、getTemplateContext 从活动编辑器提取
+  (fsPath/光标行/选区/工作区根)、两条命令注册入 dispose 链。
+
+门禁期咬出与收口(三处,均有用例锁定):
+- 大回包首块超窗:原「窗口满则整块弃」把 16KB 大于接收窗口的首块全丢 → 改
+  room 制(真 TCP 延时分块用例锁定:首块 20000 字符收前 16000,后续块 room=0
+  如实丢弃);
+- 响应中断实况:服务端提前断开在 req 上发 error(ECONNRESET/socket hang up),
+  res 上无 error 事件 → 删 res.on('error') 死代码,断言按实况放宽『失败/✗』;
+- statusCode 类型收口:主工程 tsconfig 下 IncomingMessage.statusCode 是
+  number|undefined(vitest 独立解析才是 number),删 `?? 0` 死臂后 compile 报
+  TS2322 → end 回调改解构默认值 const { statusCode = 0 } = res(与失败路径
+  「无状态码=0」语义一致,不引入 v8 覆盖率的逻辑分支死臂,覆盖率四指标保持
+  100%)。
+
+门禁:pnpm lint EXIT=0;pnpm test(vitest 92 文件 1114 用例 + mocha 烟测
+11 用例)全绿;覆盖率四指标 100%(5648/3271/994/5511)。
+
+记账:用例 1077→1114(+37:纯逻辑 14/执行层 17/装配 6),测试文件 89→92,
+src TypeScript 30→32 文件(18761→19188 行),命令 24→26
+(kbengine.httpRequests.run/kbengine.httpRequest.run),配置项 30→31
+(kbengine.httpRequests)。README/COMPLETED_FEATURES/PROJECT_SUMMARY/docs
+(guide commands/configuration)同步;PROJECT_SUMMARY 顺手补批104 漂移
+(telnet 三文件入项目结构树、功能 20 补节)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

@@ -167,6 +167,20 @@
 - [片段文件读/写 IO 失败以错误提示呈现并带文件路径(批100)]
 - [源码：src/snippetGenerator.ts]
 
+#### 20. Telnet 探测与会话联动 [新增]
+- [状态栏 + 服务器控制面板状态灯（已连接/已开启·未配密码/密码被拒/未开启/未配置）]
+- [目标解析三级：设置项 / kbengine.xml `<telnet_service>` 段 / 引擎七组件默认端口表；低频探测（默认 5s）探完即毁]
+- [端口开启自动握手登录，密码只走 socket 不落日志；面板白名单命令 + 快捷命令钮 + 输出流回显]
+- [未开启时如实提示并附开启配置片段；断线状态翻转可重连]
+- [源码：src/telnetClient.ts、src/telnetService.ts、src/telnetWebView.ts]
+
+#### 21. HTTP 快捷请求 [新增]
+- [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用）]
+- [模板变量 `${module}`/`${file}`/`${line}`/`${sel}` 按字面替换（不做 URL 编码），`${module}` 取工作区相对模块路径去 `.py` 转点]
+- [触发两路：命令面板 quick pick 或 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发]
+- [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」；失败 `✗` 标记 + 错误弹窗（OUTPUT 通道无着色 API）]
+- [源码：src/httpRequests.ts、src/httpRequestService.ts]
+
 ### 文档
 - [README.md - 项目说明]
 - [CHANGELOG.md - 变更日志]
@@ -203,7 +217,7 @@ kode/
 │   ├── kbengine.json         # def 代码片段 (11个)
 │   ├── kbengine-python.json  # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json # types.xml 别名片段 (2个)
-├── src/                      # 30 个 TypeScript 文件，18761 行
+├── src/                      # 32 个 TypeScript 文件，19188 行
 │   ├── extension.ts          # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts  # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts          # .def 解析与文本定位
@@ -231,11 +245,16 @@ kode/
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
 │   ├── codeGenerator.ts      # 代码生成器 (10 模板)
 │   ├── workspacePath.ts      # 跨平台路径工具
+│   ├── telnetClient.ts       # KBEngine telnet 协议客户端
+│   ├── telnetService.ts      # telnet 探测/会话服务
+│   ├── telnetWebView.ts      # Telnet 面板 WebView
+│   ├── httpRequests.ts       # HTTP 快捷请求纯逻辑(条目解析/模板变量)
+│   ├── httpRequestService.ts # HTTP 快捷请求执行层(transport/流水)
 │   └── test/                 # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (89 文件 1077 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (92 文件 1114 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志
@@ -287,7 +306,7 @@ kode/
 ### MVP 完善
 - [x] 测试所有功能(批88:17 项已完成功能逐项验证,全部有自动化用例覆盖)
 - [x] 修复发现的问题(批88:tmLanguage 与引擎注册表对齐等修复,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 1077 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
+- [x] 添加单元测试(vitest 功能层 1114 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
 - [x] 优化性能(批92:validateDocument −46%、全文件分词 −17%,行为以 golden 回归锁)
 
 ### 发布准备
@@ -331,12 +350,12 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 统计数据
 
-- **代码文件**: 30 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
+- **代码文件**: 32 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
 - **钩子数量**: 36 个
 - **代码片段**: 11 def + 4 Python + 2 types.xml
 - **预定义实体模板**: 10 个
 - **文档页数**: 21 个 Markdown（仓库根 7 + docs/ 11 + resources/docs 3）
-- **总行数**: 18761 行（src/ TypeScript，实测）
+- **总行数**: 19188 行（src/ TypeScript，实测）
 
 ---
 

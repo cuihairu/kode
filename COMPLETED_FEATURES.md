@@ -2,12 +2,12 @@
 
 **版本**: 0.1.0
 **状态**: 核心功能已完成
-**总代码行数**: 18761 行（src/ TypeScript，实测）
-**文件数量**: 30 个 TypeScript 文件（不含 src/test 烟测）
+**总代码行数**: 19188 行（src/ TypeScript，实测）
+**文件数量**: 32 个 TypeScript 文件（不含 src/test 烟测）
 
 ---
 
-## 已完成功能 (20 个)
+## 已完成功能 (21 个)
 
 ### 1. 语法高亮
 - 源码对齐的基础类型与容器类型高亮
@@ -166,13 +166,22 @@
 - 批104:三层架构(协议客户端/服务/面板)依赖全注入,真 TCP localhost 仿真三态握手全测;重连竞态缺陷由测试咬出修复
 - **源文件**: `src/telnetClient.ts`、`src/telnetService.ts`、`src/telnetWebView.ts`
 
+### 21. HTTP 快捷请求
+- 设置 `kbengine.httpRequests` 列表:名称/URL 模板/method/请求头/请求体/启停/键位展示串;内置示例一条(默认停用,与 package.json 默认值由测试锁同步)
+- 模板变量四枚(URL/请求体/请求头值通用,按字面替换、不做 URL 编码):`${module}`(工作区相对模块路径 `entities/fight/FightAI.py` → `entities.fight.FightAI`,不在工作区退文件名去 `.py`)/`${file}`/`${line}`(光标行 1 起)/`${sel}`;无活动编辑器各值如实空串
+- 触发两路:命令面板 quick pick(显示 method URL 与键位详情)或为 `kbengine.httpRequest.run` 配 `args.name` 键位直发(VS Code 无运行时注册键位 API,经 keybindings.json 绑定,文档附示例)
+- 执行流水进 OUTPUT「KBEngine HTTP 快捷请求」:`▶` 请求行 → `✓` 状态·耗时·回包(超 4000 字符截断标注全长);失败 `✗` 标记+错误弹窗(OUTPUT 通道无着色 API,engines 1.50 基线,不做红色字面)
+- 默认 transport 走 node http/https:URL 解析与协议守卫、超时到点中止(默认 10s)、大回包接收窗口 16KB 截顶;连接拒绝/响应中断/超时如实回执不悬挂
+- 批105:三层架构(纯逻辑/服务/装配)依赖全注入,真 TCP localhost 仿真全测(成功/POST 体/ECONNREFUSED/坏 URL/ftp 协议/大回包分块截顶/响应中断/超时)
+- **源文件**: `src/httpRequests.ts`、`src/httpRequestService.ts`
+
 ---
 
 ## 项目结构
 
 ```
 kode/
-├── src/                          # 30 个 TypeScript 文件，18761 行
+├── src/                          # 32 个 TypeScript 文件，19188 行
 │   ├── extension.ts              # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts              # .def 解析与文本定位
@@ -203,6 +212,8 @@ kode/
 │   ├── telnetClient.ts           # KBEngine telnet 协议客户端
 │   ├── telnetService.ts          # telnet 探测/会话服务
 │   ├── telnetWebView.ts          # Telnet 面板 WebView
+│   ├── httpRequests.ts           # HTTP 快捷请求纯逻辑(条目解析/模板变量)
+│   ├── httpRequestService.ts     # HTTP 快捷请求执行层(transport/流水)
 │   └── test/                     # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
@@ -211,7 +222,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (89 文件 1077 用例)
+├── tests/                        # vitest 测试 (92 文件 1114 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -221,13 +232,13 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 30 个（src/，不含 src/test，实测） |
+| TypeScript 文件 | 32 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
 | 文档页数 | 21 个 Markdown（根 7 + docs/ 11 + resources/docs 3） |
-| 总行数 | 18761 行（src/ TypeScript，实测） |
-| 已完成功能 | 20 个 |
+| 总行数 | 19188 行（src/ TypeScript，实测） |
+| 已完成功能 | 21 个 |
 
 ---
 
@@ -238,7 +249,7 @@ kode/
       末项「语法高亮」以 tests/tmLanguage.test.ts 16 用例收口,见 TESTING.md 批88)
 - [x] 修复发现的问题(批88:tmLanguage 语法与引擎注册表对齐——补 UNICODE、
       删 5 个引擎未注册类型名、删 2 个引擎未注册旗标,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1077 个用例;
+- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1114 个用例;
       原 test-electron 集成层已在重构阶段4移除,批88 假设口径)
 - [x] 优化性能(批92:基准先行——tests/perf/defPerf.bench.ts 对 173.4KB
       确定性大 .def 测解析/诊断/高亮三路径;不改变行为优化三处——语法规则

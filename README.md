@@ -153,6 +153,12 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 - [面板命令输入（白名单 + 内置只读快捷命令）与输出流回显]
 - [未开启时如实提示并附 kbengine.xml 开启配置片段]
 
+### HTTP 快捷请求
+- [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用）]
+- [模板变量四枚：`${module}`（工作区相对模块路径，`entities/fight/FightAI.py` → `entities.fight.FightAI`）、`${file}`、`${line}`、`${sel}`；按字面替换、不做 URL 编码]
+- [触发两路：命令面板 quick pick，或经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发——打开 .py 按快捷键即发热更新]
+- [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」：`▶` 请求行 → `✓` 状态·耗时·回包；失败 `✗` 标记 + 错误弹窗，如实回执不悬挂]
+
 ## 性能分析
 
 对工作区全部 `.def` 文件做静态检查并输出优化建议(命令面板执行
@@ -338,4 +344,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前版本 0.1.0，尚未发布到 Marketplace。已落地 20 项功能、24 条命令、30 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前版本 0.1.0，尚未发布到 Marketplace。已落地 21 项功能、26 条命令、31 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
