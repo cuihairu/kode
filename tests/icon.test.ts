@@ -49,7 +49,10 @@ describe('扩展图标资产(用户设计资源)', () => {
   it('README 无本地 SVG 引用且无虚构的 Marketplace 安装途径(批90 点名回归锁)', () => {
     const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
     // 本地(相对路径)SVG 引用违反 vsce 打包检查;shields.io 绝对 URL 徽章不受限
-    expect(readme).not.toMatch(/<img[^>]+src="[^"]+\.svg"/);
+    // (批100 修正:7010811 把徽章改写为 HTML <img> 单行形态,原 <img[^>]+
+    // src="[^"]+\.svg" 连绝对 URL 一并命中,与自身注释口径相悖——收敛为仅
+    // 禁非 http(s) 的 src,HTML 形态同样受锁)
+    expect(readme).not.toMatch(/<img[^>]+src="(?!https?:)[^"]+\.svg"/);
     expect(readme).not.toMatch(/\]\([^)]*assets\/[^)]*\.svg\)/);
     // 虚构上架途径:市场安装命令、市场搜索暗示(绝对 URL 徽章除外)
     expect(readme).not.toContain('install-extension cuihairu.kode');
