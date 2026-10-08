@@ -1,0 +1,124 @@
+name: Daily Build
+
+# 每日构建:滚动 nightly Release——tag 恒为 nightly,每次构建删除旧
+# release/tag 后按本次 commit 重建(说明含构建时间/commit/资产表,资产
+# 幂等覆盖,可安全重跑)。产物为本仓技术栈的自然出包形态:VS Code 扩展
+# .vsix(Windows/macOS/Linux 通用)。
+# 48h 停滞门:默认分支近 48 小时无新提交时,定时(schedule)触发跳过
+# 构建;手动 workflow_dispatch 不受限,必定构建。
+
+on:
+  schedule:
+    # 每日 21:43 UTC(北京时间次日 05:43,离峰、非整点)
+    - cron: '43 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  freshness:
+    name: 停滞门(48h 无新提交则跳过,仅 schedule 生效)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+
+    steps:
+      - name: Checkout 代码(全历史,供提交数统计)
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 检查默认分支 48 小时内是否有新提交
+        id: check
+        timeout-minutes: 2
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "::notice::触发方式为 ${{ github.event_name }},停滞门不生效,必定构建"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          branch="origin/${{ github.event.repository.default_branch }}"
+          count="$(git rev-list --count --since='48 hours ago' "$branch")"
+          echo "近 48 小时新提交数: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "::notice::默认分支 48 小时无新提交,本次定时构建跳过"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  nightly:
+    name: 构建 .vsix 并刷新 nightly Release
+    needs: freshness
+    if: needs.freshness.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout 代码
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: 设置 Node.js(.nvmrc)
+        timeout-minutes: 5
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: 安装依赖
+        timeout-minutes: 5
+        run: pnpm install --frozen-lockfile
+
+      - name: 运行代码检查与测试
+        timeout-minutes: 20
+        run: |
+          pnpm run lint
+          pnpm test
+
+      - name: 打包 VSIX 并复制为固定名资产
+        timeout-minutes: 15
+        run: |
+          pnpm run package
+          cp kode-*.vsix kode-nightly.vsix
+
+      - name: 生成 Release 说明(构建时间/commit/资产表)
+        timeout-minutes: 2
+        run: |
+          {
+            echo "**构建时间(UTC):** $(date -u '+%Y-%m-%d %H:%M:%S')"
+            echo "**Commit:** [\`${GITHUB_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)"
+            echo "**分支:** ${{ github.ref_name }}"
+            echo
+            echo "| 资产 | 平台 | 安装 |"
+            echo "|------|------|------|"
+            echo "| \`kode-nightly.vsix\` | Windows / macOS / Linux(VS Code ≥1.50 通用) | \`code --install-extension kode-nightly.vsix\` |"
+            echo
+            echo "> 滚动构建:tag 恒为 \`nightly\`,每次构建替换上一版资产与说明;默认分支 48 小时无新提交时定时构建自动跳过。仓库无版本 tag,正式版本以 Marketplace 发布为准(尚未发布)。"
+          } > nightly-notes.md
+
+      - name: 刷新 nightly Release(删旧建新,幂等可重跑)
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 删除旧 release(--cleanup-tag 连旧 tag 一并删除),再按本次
+          # commit 重建;两步均容错,失败残留可被下次运行清掉
+          gh release delete nightly --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
+          git push origin ":refs/tags/nightly" --repo "$GITHUB_REPOSITORY" || true
+          gh release create nightly \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Nightly Build ($(date -u '+%Y-%m-%d'))" \
+            --notes-file nightly-notes.md
+          gh release upload nightly kode-nightly.vsix --repo "$GITHUB_REPOSITORY" --clobber

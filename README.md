@@ -16,6 +16,16 @@
 
 KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。Kode 面向 KBEngine 的实体定义（`.def`）文件，提供语法高亮、补全、悬停、跳转、诊断，以及实体浏览器、服务器控制、日志、监控、依赖图面板和代码生成器。
 
+## 每日构建
+
+仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`，仓库不带版本 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
+
+| 资产 | 平台 | 安装 |
+|------|------|------|
+| `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.50 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
+
+仍**未发布到 VSCode Marketplace**，`nightly` 是当前唯一的预编译分发面；也可按下文「安装」从源码构建。
+
 ## 核心功能
 
 ### 语法高亮
@@ -151,7 +161,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 
 ## 安装
 
-> **尚未发布到 VSCode Marketplace**,仅支持从源码构建后本地安装。
+> **尚未发布到 VSCode Marketplace**。免本地构建可直接使用[每日构建](#每日构建)的 `kode-nightly.vsix`;或按下列步骤从源码构建后本地安装。
 
 ### 从源码构建并本地安装
 
