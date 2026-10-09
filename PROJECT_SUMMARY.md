@@ -254,7 +254,7 @@ kode/
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (92 文件 1114 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (93 文件 1118 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志

@@ -3202,6 +3202,14 @@ Python;②主题切 Default Dark+ 对比是否恢复;③扩展面板搜 @builtin
 确认内建 python 扩展未被禁用;④帮助→切换开发人员工具 Console 查 grammar
 解析报错;⑤装 vsix 后执行 Reload Window。
 
+【批107 根因更正】本批"环境侧因素"结论已被用户 A/B 实测推翻:禁用 kode
+时 .py 着色正常、启用时消失,凶手在 kode 激活链内。最终定案根因=**切到
+KBEngine Dark 主题后 .py 着色消失**——该主题修复前的 tokenColors 仅含
+.kbengine/xml 专属规则(31 条),通用语言(.py/.js/.go)toke 无规则可配
+→ 全部落到前景兜底色,表现为"着色消失"。本批清单②"主题切 Default Dark+
+对比是否恢复"正是该根因的表征,清单其余项(语言模式/内建扩展/grammar 报错/
+Reload)与本根因无关,仅作常规核对保留。详见批107。
+
 门禁:pnpm lint EXIT=0;npx vitest run 85 文件 1014 用例全绿;覆盖率四指标
 100%(零生产改动,与批100/101/102 同值)。
 
@@ -3382,6 +3390,69 @@ src TypeScript 30→32 文件(18761→19188 行),命令 24→26
 记账:零生产代码改动(src/tests 不动,覆盖率与用例数与批105 同值:1114
 用例、四指标 100%;文档页数不变,只改既有页)。COMPLETED_FEATURES/
 PROJECT_SUMMARY 发布准备「完善文档」勾选。
+
+## 批107:KBEngine Dark 主题补通用 tokenColors(高亮消失根因修复)——.py 着色恢复 + .def 金样本零回归锁
+
+批次号:批106 后顺延(README 双语化 6ccc766 之后)。承接批103 高亮工单:
+用户 A/B 实测禁用 kode 时 .py 着色正常、启用即消失,坐实凶手在 kode 激活
+链内,批103 的"环境侧因素"定性作废(该批清单已在原位加更正注)。
+
+根因(探针实证,真 vscode-textmate Registry + 真 MagicPython/kbengine 语法):
+KBEngine Dark 主题 tokenColors 修复前仅 31 条规则,绝大多数绑定
+`.kbengine`/xml 专属 scope,通用 scope 只有 `comment` 与 `support.type`
+两条。切到本主题后 .py token(关键字/字符串/数字/函数名)无匹配规则 →
+前景色落到 `#000000`(在 `editor.background: #272822` 上不可见),用户所见
+即"着色消失"。探针基线:`.py` 除注释(#75715E)外全 `#000000`;`.def`
+21 个 token 色正常。
+
+修法(两文件):
+- syntaxes/kbengine-color-theme.json:在既有 31 条规则之后追加 15 条
+  通用规则,按 VS Code Dark+ 标准 scope 集覆盖字符串(`string`)/
+  正则(`string.regexp`)/转义(`constant.character.escape`)/
+  数字(`constant.numeric`)/语言常量(`constant.language`)/
+  关键字(`keyword`)/控制关键字(`keyword.control`)/
+  操作符(`keyword.operator`)/存储(`storage`)/类型(`entity.name.type`
+  + `support.class`)/函数(`entity.name.function` + `support.function`)/
+  属性名(`entity.other.attribute-name`)/变量(`variable` +
+  `variable.parameter`)/标签(`meta.tag`)/字符串标点
+  (`punctuation.definition.string`)/`invalid`;并置
+  `semanticHighlighting: true`(与 Dark+ 口径一致)。
+- syntaxes/kbengine.tmLanguage.json:把追加给 .def 符号/类型的标准 scope
+  调到 scope 栈**浅层**——`entity.name.symbol.kbengine entity.name.tag.xml
+  entity.name.function` → `entity.name.function entity.name.symbol.kbengine
+  entity.name.tag.xml`、`support.type.primitive.*.kbengine
+  storage.type.numeric.kbengine` → `storage.type.numeric.kbengine
+  support.type.primitive.*.kbengine`。kbengine scope 前缀/中段关系不变
+  (既有规则 `entity.name.symbol.kbengine`、`support.type.primitive.*`
+  照样命中),仅深度顺序调整。
+
+为何用浅层化而非排除选择器(实测定性,写入本批备忘):vscode-textmate 的
+主题 tokenColors 匹配**不支持通配符**——`entity.name.function.*`
+整条静默失配(致 python `class`/`def` 掉黑);也**不支持选择器排除**——
+`storage -storage.type.*.kbengine`、`entity.name.function
+-entity.name.symbol.kbengine` 均整条静默失配。主题匹配按"scope 路径深度
+优先、同深度取更长选择器"评分,故把通用规则无法吞掉的 `.def` 标准 scope
+压到浅层,让既有 kbengine 规则恒占最深层,是唯一能既补通用着色、又让
+`.def` 逐 token 零回归的手法。
+
+回归锁(+4,tests/themeHighlightCoverage.test.ts,新文件):
+- `.py` 关键 token 在本主题下取得预期前景色(16 条断言子集:import/class/
+  def/on_enter/self/entity/字符串/数字/控制关键字/操作符/常量/注释均得色,
+  不再落兜底色)——直击"着色消失"症状;
+- `.def` 金样本 21 token 前景色与修复前基线 `toEqual` 逐位一致(固化上
+  述 22 行样本的精确色表)——零回归硬锁;
+- python 分词零 kbengine scope 泄漏(主题修复不波及批103 结论)。
+- 共装池就绪守卫(包不可达时整组跳过,不引网络)。
+
+验收(用户侧,明日复核):①切 KBEngine Dark 打开 .py,着色恢复正常;
+②`Developer: Inspect Editor Tokens and Scopes` 确认 .py token 的
+foregroundColor 有值(非 `#000000`/"no theme");③切回默认主题与 .def 文件
+对比,.def 着色与既往一致。
+
+门禁:pnpm lint EXIT=0;npx vitest run 全量全绿;覆盖率四指标 100%
+(测试文件不计入 include,新增测试零生产代码路径,与批100~106 同值)。
+
+记账:用例 1114→1118(+4),测试文件 +1。
 
 ## 近期由测试发现并修复的真实缺陷
 

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest functional tests under `tests/` (1114 cases,
+- Two-layer test suite: vitest functional tests under `tests/` (1118 cases,
   including engine-source conditional suites that verify hook call sites, type
   registrations, and flags against a local KBEngine checkout) plus a mocha
   compile-artifact smoke layer (`src/test/suite/`, 11 cases); the legacy
@@ -91,6 +91,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency security pins via `pnpm.overrides` (`@vue/server-renderer` 3.5.42,
   `source-map-js` 1.2.2), closing two Dependabot alerts
 - Nightly build workflow added (rolling release channel)
+- KBEngine Dark theme now ships generic token colors following the VS Code
+  Dark+ scope set (strings, keywords, numbers, types, functions, variables,
+  operators, regexps), so common languages such as Python keep their syntax
+  coloring under this theme; `.def`-specific rules are untouched, and the
+  grammar keeps kbengine scopes deepest so `.def` coloring is byte-identical
+  (root cause of the "switching to KBEngine Dark kills .py highlighting"
+  report; regression-locked by a theme coverage test with a .def golden)
 
 ## [0.1.0] - unreleased
 

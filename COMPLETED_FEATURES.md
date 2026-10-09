@@ -222,7 +222,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (92 文件 1114 用例)
+├── tests/                        # vitest 测试 (93 文件 1118 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -249,7 +249,7 @@ kode/
       末项「语法高亮」以 tests/tmLanguage.test.ts 16 用例收口,见 TESTING.md 批88)
 - [x] 修复发现的问题(批88:tmLanguage 语法与引擎注册表对齐——补 UNICODE、
       删 5 个引擎未注册类型名、删 2 个引擎未注册旗标,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1114 个用例;
+- [x] 添加单元测试(vitest 功能层 + mocha 编译烟测层双层,共 1118 个用例;
       原 test-electron 集成层已在重构阶段4移除,批88 假设口径)
 - [x] 优化性能(批92:基准先行——tests/perf/defPerf.bench.ts 对 173.4KB
       确定性大 .def 测解析/诊断/高亮三路径;不改变行为优化三处——语法规则
@@ -265,7 +265,7 @@ kode/
 - [ ] 准备 Marketplace 截图
 - [x] 完善文档(批106:guide 功能概览/快速开始/文档索引对齐当前功能面
       ——补 Telnet 探测、调试支持、HTTP 快捷请求三节与索引条目;CHANGELOG
-      [Unreleased] 补批94 后变更(1114 用例/八检查/telnet/HTTP/安全钉/
+      [Unreleased] 补批94 后变更(1118 用例/八检查/telnet/HTTP/安全钉/
       nightly);CONTRIBUTING 清虚构(不存在的 Issue 模板、Discussion)与
       表情装饰;禁词/死链扫描零命中,见 TESTING.md 批106)
 - [ ] 发布到 VSCode Marketplace
