@@ -120,8 +120,9 @@ describe('buildTelnetTargets', () => {
     expect(targets[0]).toMatchObject({ key: '127.0.0.1:33000', label: 'kbengine.xml', port: 33000, password: 'xml-pwd' });
   });
 
-  it('设置与 xml 均无端口:引擎默认七组件端口表,密码沿用设置', () => {
-    const targets = buildTelnetTargets(settings({ password: 'p', enableCommands: ['get'] }), null);
+  it('xml 有 <telnet_service> 段但无端口:引擎默认七组件端口表,密码沿用设置', () => {
+    // 批111 用户令:段在=配置开启 telnet,端口缺省时才回落引擎默认表
+    const targets = buildTelnetTargets(settings({ password: 'p', enableCommands: ['get'] }), {});
     expect(targets.map(target => `${target.component}:${target.port}`)).toEqual([
       'loginapp:31000', 'dbmgr:32000', 'interfaces:33000', 'logger:34000',
       'baseapp:40000', 'cellapp:50000', 'bots:51000'
@@ -130,13 +131,19 @@ describe('buildTelnetTargets', () => {
     expect(targets[0].enableCommands).toEqual(['get']);
   });
 
+  it('设置与 xml 均未开启 telnet:空目标,不展示任何 telnet 内容', () => {
+    // 批111 用户令:配置里都没有开启 telnet 就不展示 telnet 相关的东西,
+    // 不再回落引擎默认七组件端口表
+    expect(buildTelnetTargets(settings(), null)).toEqual([]);
+  });
+
   it('设置显式端口且无密码无 xml:password 尾臂落空串', () => {
     const targets = buildTelnetTargets(settings({ port: 31000 }), null);
     expect(targets[0].password).toBe('');
   });
 
   it('host 空白回落 127.0.0.1', () => {
-    const targets = buildTelnetTargets(settings({ host: '   ' }), null);
+    const targets = buildTelnetTargets(settings({ host: '   ' }), {});
     expect(targets[0].host).toBe('127.0.0.1');
   });
 });

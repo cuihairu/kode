@@ -14,7 +14,9 @@ import { configurationOverrides, workspace as stubWorkspace } from './fake-vscod
 
 // 装配层两个导出(extension.ts 薄调用)的全分支驱动:
 // - readTelnetTargetsFromSettings:设置读取、configXmlPath 的存在/缺失/
-//   ${workspaceFolder} 展开三路;
+//   ${workspaceFolder} 展开、未配置时的约定路径探测(kbengine.xml /
+//   res/server/kbengine.xml / assets/res/server/kbengine.xml),以及批111
+//   用户令的门控口径:配置未开 telnet → 空目标,不回落引擎默认表;
 // - updateTelnetStatusBar:无目标隐藏、密码拒、N/M 开启、已连接、全未开
 //   五种灯色,以及点击灯开面板的 command 接线。
 
@@ -67,12 +69,9 @@ beforeEach(() => {
 });
 
 describe('readTelnetTargetsFromSettings', () => {
-  it('无任何配置:回落引擎默认七组件端口表', () => {
-    const targets = readTelnetTargetsFromSettings();
-    expect(targets.map(item => item.port)).toEqual([
-      31000, 32000, 33000, 34000, 40000, 50000, 51000
-    ]);
-    expect(targets[0].password).toBe('');
+  it('无任何配置且无工作区:配置未开 telnet → 空目标(不再回落默认表)', () => {
+    // 批111 用户令:配置里都没有开启 telnet 就不展示 telnet 相关的东西
+    expect(readTelnetTargetsFromSettings()).toEqual([]);
   });
 
   it('设置显式 host/port/password/enableCommands:单目标生效', () => {
@@ -118,10 +117,59 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
-  it('configXmlPath 指向不存在的文件:如实回落默认表(不猜)', () => {
+  it('configXmlPath 指向不存在的文件:配置未开 telnet → 空目标(不猜)', () => {
     override({ 'telnet.configXmlPath': '/no/such/kbengine.xml' });
-    const targets = readTelnetTargetsFromSettings();
-    expect(targets).toHaveLength(7);
+    expect(readTelnetTargetsFromSettings()).toEqual([]);
+  });
+
+  it('configXmlPath 指向存在的 xml 但无 <telnet_service> 段:段不在=未开 → 空目标', () => {
+    // 官方 demo 的 kbengine.xml 就没有该段:此时不展示 telnet 入口
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-nosection-'));
+    fs.writeFileSync(path.join(xmlDir, 'kbengine.xml'), '<root><res_paths/></root>');
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+    override({ 'telnet.configXmlPath': '${workspaceFolder}/kbengine.xml' });
+
+    try {
+      expect(readTelnetTargetsFromSettings()).toEqual([]);
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['工作区根', '', 'kbengine.xml'],
+    ['约定布局 res/server', 'res/server', 'kbengine.xml'],
+    ['嵌套 assets 布局', 'assets/res/server', 'kbengine.xml']
+  ])('未配置 configXmlPath:约定路径探测(%s)', (_name, subDir, fileName) => {
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-discover-'));
+    const target = subDir
+      ? path.join(xmlDir, ...subDir.split('/'), fileName)
+      : path.join(xmlDir, fileName);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(
+      target,
+      '<root><telnet_service><port>32555</port></telnet_service></root>'
+    );
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+
+    try {
+      const targets = readTelnetTargetsFromSettings();
+      expect(targets).toHaveLength(1);
+      expect(targets[0]).toMatchObject({ key: '127.0.0.1:32555', port: 32555, label: 'kbengine.xml' });
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
+
+  it('未配置 configXmlPath 且约定路径全缺:空目标(不猜)', () => {
+    const bareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-bare-'));
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: bareDir } } as never];
+
+    try {
+      expect(readTelnetTargetsFromSettings()).toEqual([]);
+    } finally {
+      fs.rmSync(bareDir, { recursive: true, force: true });
+    }
   });
 });
 

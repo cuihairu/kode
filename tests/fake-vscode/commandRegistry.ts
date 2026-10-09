@@ -14,6 +14,9 @@ const registrations = new Map<string, CommandRegistration>();
 /** 注册顺序保持 activate 的注册次序,便于与 package.json 贡献点比对 */
 const registrationOrder: CommandRegistration[] = [];
 
+/** VS Code 内建 setContext 的假体:key→value,when 门控(context key)断言用 */
+export const contexts = new Map<string, unknown>();
+
 export const commands = {
   registerCommand: (command: string, handler: CommandHandler): { dispose(): void } => {
     const registration: CommandRegistration = { command, handler, disposed: false };
@@ -27,6 +30,11 @@ export const commands = {
     };
   },
   executeCommand: async (command: string, ...args: unknown[]): Promise<unknown> => {
+    if (command === 'setContext') {
+      // 内建命令不经 registerCommand:真 VS Code 里由 workbench 提供
+      contexts.set(args[0] as string, args[1]);
+      return undefined;
+    }
     const registration = registrations.get(command);
     if (!registration) {
       throw new Error(`command not registered: ${command}`);
@@ -37,6 +45,8 @@ export const commands = {
 
 export const commandRegistry = {
   registrations,
+  /** setContext 入账(= contexts),when 门控断言用 */
+  contexts,
   /** 按注册次序返回命令 id */
   registeredCommandIds(): string[] {
     return registrationOrder.filter(item => !item.disposed).map(item => item.command);
@@ -48,5 +58,6 @@ export const commandRegistry = {
   reset: (): void => {
     registrations.clear();
     registrationOrder.length = 0;
+    contexts.clear();
   }
 };

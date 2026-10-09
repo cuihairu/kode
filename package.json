@@ -297,6 +297,12 @@
           "when": "view == kbengine.serverControl",
           "group": "inline"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "kbengine.telnet.showPanel",
+          "when": "kbengine.telnetConfigured"
+        }
       ]
     },
     "configuration": {
@@ -455,7 +461,7 @@
         "kbengine.telnet.port": {
           "type": "number",
           "default": 0,
-          "description": "telnet 探测端口（0 = 未显式指定，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）"
+          "description": "telnet 探测端口（0 = 未显式指定，改按元件 kbengine.xml 的 <telnet_service> 段；设置与 kbengine.xml 都未开启 telnet 时，扩展不展示任何 telnet 内容。kbengine.xml 有 <telnet_service> 段但未写端口时，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）"
         },
         "kbengine.telnet.password": {
           "type": "string",
@@ -473,7 +479,7 @@
         "kbengine.telnet.configXmlPath": {
           "type": "string",
           "default": "",
-          "description": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（设置显式 port > 0 时优先设置）"
+          "description": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（支持 ${workspaceFolder}；设置显式 port > 0 时优先设置）。未设置时按约定路径探测工作区根：kbengine.xml、res/server/kbengine.xml、assets/res/server/kbengine.xml，取第一个存在的文件"
         },
         "kbengine.telnet.probeIntervalSeconds": {
           "type": "number",

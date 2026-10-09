@@ -120,7 +120,8 @@ describe('extension activate 装配', () => {
     expect(kbeStubProvider.provideTextDocumentContent()).toBe(buildKbeStubDocument().content);
 
     // 状态栏两条:server 灯(右对齐/优先级 100/命令指向扩展视图)与
-    // telnet 灯(优先级 99/命令指向 telnet 面板);无运行组件时 server 灯隐藏
+    // telnet 灯(优先级 99/命令指向 telnet 面板);无运行组件时 server 灯隐藏。
+    // 批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,context key 落 false
     expect(windowState.statusBars).toHaveLength(2);
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
@@ -128,9 +129,8 @@ describe('extension activate 装配', () => {
     expect(bar.visible).toBe(false);
     const telnetBar = windowState.statusBars.find(item => item.priority === 99)!;
     expect(telnetBar.alignment).toBe(StatusBarAlignment.Right);
-    expect(telnetBar.command).toBe('kbengine.telnet.showPanel');
-    expect(telnetBar.visible).toBe(true);
-    expect(telnetBar.text).toBe('$(plug) Telnet: 未开启');
+    expect(telnetBar.visible).toBe(false);
+    expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose
     for (const disposable of context.subscriptions) {
@@ -543,7 +543,15 @@ describe('extension activate 装配', () => {
   });
 
   it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async () => {
-    // 引擎默认表第一个目标 loginapp:31000;起真 server 让探测探到「开启」
+    // 批111 起:配置显式开启 telnet(空 <telnet_service> 段=段在未写端口 →
+    // 引擎默认表)才探测;引擎默认表第一个目标 loginapp:31000,起真 server
+    // 让探测探到「开启」
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-probe-'));
+    fs.writeFileSync(
+      path.join(xmlDir, 'kbengine.xml'),
+      '<root><telnet_service></telnet_service></root>'
+    );
+    configurationOverrides.set('kbengine', { 'telnet.configXmlPath': path.join(xmlDir, 'kbengine.xml') });
     const server = await new Promise<import('net').Server>(resolve => {
       const created = net.createServer(socket => {
         socket.on('error', () => undefined);
@@ -559,8 +567,11 @@ describe('extension activate 装配', () => {
       // → serverControlProvider.refresh() + updateTelnetStatusBar
       await until(() => telnetBar.text === '$(plug) Telnet: 1/7 开启' && telnetBar.visible);
       expect(telnetBar.command).toBe('kbengine.telnet.showPanel');
+      expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(true);
     } finally {
       disposeAll(context);
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(xmlDir, { recursive: true, force: true });
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
   }, 15000);

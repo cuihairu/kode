@@ -313,9 +313,21 @@ export function activate(context: vscode.ExtensionContext) {
   const serverManager = new KBEngineServerManager(context);
 
   // telnet 探测与联动(工单:telnet 探测+联动):目标解析 设置 →
-  // kbengine.xml <telnet_service> → 引擎默认组件端口表;5s 低频探测
+  // kbengine.xml <telnet_service>(未指定路径时按约定路径探测);配置未开
+  // telnet → 空目标;5s 低频探测
   const telnetService = new TelnetService({
-    getTargets: readTelnetTargetsFromSettings,
+    getTargets: () => {
+      const targets = readTelnetTargetsFromSettings();
+      // 批111 用户令:配置未开 telnet 不展示 telnet 相关的东西——状态灯与
+      // 树项随空目标自然隐藏,命令面板入口经 context key 由 package.json
+      // 的 when 子句隐藏。探测每轮重读目标,context 同步刷新。
+      void vscode.commands.executeCommand(
+        'setContext',
+        'kbengine.telnetConfigured',
+        targets.length > 0
+      );
+      return targets;
+    },
     intervalMs: Math.max(1, vscode.workspace.getConfiguration('kbengine').get<number>('telnet.probeIntervalSeconds', 5)) * 1000
   });
   telnetService.start();

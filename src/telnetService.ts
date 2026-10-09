@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as net from 'net';
+import * as path from 'path';
 import {
   BUILTIN_QUICK_COMMANDS,
   isCommandAllowed,
@@ -11,7 +12,10 @@ import {
 /**
  * telnet 探测与联动服务(工单:telnet 探测+联动):
  * - 目标解析优先级:kode 设置(kbengine.telnet.host/port/password)→
- *   元件 kbengine.xml 的 <telnet_service> 段(可选指定)→ 引擎默认端口表;
+ *   元件 kbengine.xml 的 <telnet_service> 段(未显式指定 xml 路径时按约定
+ *   路径探测工作区根);批111 用户令:两处配置都未开启 telnet(无显式端口
+ *   且 xml 无 <telnet_service> 段)→ 空目标,telnet 状态灯/树项/面板入口
+ *   全部不出现,不再回落引擎默认端口表;
  * - 每 probeInterval 秒一轮 TCP connect(低频,不刷流量);
  * - 状态:unconfigured(无目标)/ closed(端口未开)/ open(端口开)/
  *   auth-required(端口开但未配密码,不自动登录)/ auth-rejected(密码拒)/
@@ -21,7 +25,11 @@ import {
  * - 运行中断线自动回到探测态,重连由用户点面板再建立,面板不崩。
  */
 
-/** 引擎各组件 telnet 默认端口(kbengine_defaults.xml <telnet_service><port/>) */
+/**
+ * 引擎各组件 telnet 默认端口(kbengine_defaults.xml <telnet_service><port/>)。
+ * 批111 用户令后仅在配置显式开启 telnet(kbengine.xml 有 <telnet_service> 段)
+ * 但未指定端口时使用,不再作为「什么都没配」时的兜底展示。
+ */
 export const ENGINE_DEFAULT_TELNET_PORTS: ReadonlyArray<{ component: string; port: number }> = [
   { component: 'loginapp', port: 31000 },
   { component: 'dbmgr', port: 32000 },
@@ -74,7 +82,12 @@ export function parseKbengineXmlTelnet(xml: string): { port?: number; password?:
   };
 }
 
-/** 目标集:设置显式 port > 0 时单目标;否则引擎默认表逐组件 */
+/**
+ * 目标集(批111 用户令:telnet 端口从配置读取,配置未开启就不展示):
+ * 设置显式 port > 0 或 kbengine.xml <telnet_service> 段在 → 有目标
+ * (段在而无端口 → 引擎默认表逐组件);两处都没开 → 空目标,telnet 全族
+ * 入口(状态灯/树项/面板)随之隐藏。
+ */
 export function buildTelnetTargets(
   settings: TelnetSettingsInput,
   xmlTelnet: { port?: number; password?: string; defaultLayer?: string } | null
@@ -96,15 +109,19 @@ export function buildTelnetTargets(
       }
     ];
   }
-  return ENGINE_DEFAULT_TELNET_PORTS.map(({ component, port }) => ({
-    key: `${host}:${port}`,
-    label: component,
-    component,
-    host,
-    port,
-    password: settings.password,
-    enableCommands
-  }));
+  if (xmlTelnet) {
+    return ENGINE_DEFAULT_TELNET_PORTS.map(({ component, port }) => ({
+      key: `${host}:${port}`,
+      label: component,
+      component,
+      host,
+      port,
+      password: settings.password,
+      enableCommands
+    }));
+  }
+  // 配置未开 telnet(无显式端口且 xml 无 <telnet_service> 段):不猜不兜底
+  return [];
 }
 
 export type TelnetProbeState =
@@ -116,9 +133,20 @@ export type TelnetProbeState =
   | 'connected';
 
 /**
+ * 配置未显式指定 kbengine.xml 时的约定探测路径(工作区根相对):
+ * 官方 server assets 布局 res/server/kbengine.xml、其 assets/ 嵌套变体、
+ * 以及直接置于工作区根的布局。取第一个存在的文件为准,不深入猜测。
+ */
+const KBENGINE_XML_CANDIDATE_PATHS = [
+  'kbengine.xml',
+  'res/server/kbengine.xml',
+  'assets/res/server/kbengine.xml'
+];
+
+/**
  * 从 kode 设置读取探测目标(kbengine.telnet.*):显式 configXmlPath 指向的
- * 元件 kbengine.xml 解析 <telnet_service> 段作端口/密码回落;文件缺失或
- * 不可读时如实跳过(不猜)。
+ * 元件 kbengine.xml(未设置时按约定路径探测工作区根)解析 <telnet_service>
+ * 段作端口/密码回落;配置未开 telnet → 空目标(批111 用户令,不展示)。
  */
 export function readTelnetTargetsFromSettings(): TelnetTarget[] {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -130,15 +158,19 @@ export function readTelnetTargetsFromSettings(): TelnetTarget[] {
   };
   let xmlTelnet: ReturnType<typeof parseKbengineXmlTelnet> = null;
   const configXmlPath = config.get<string>('telnet.configXmlPath', '');
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  let candidatePaths: string[] = [];
   if (configXmlPath) {
+    candidatePaths = [configXmlPath.replace(/\$\{workspaceFolder\}/g, workspaceRoot || '')];
+  } else if (workspaceRoot) {
+    candidatePaths = KBENGINE_XML_CANDIDATE_PATHS.map(relative => path.join(workspaceRoot, relative));
+  }
+  for (const candidate of candidatePaths) {
     try {
-      const resolved = configXmlPath.replace(
-        /\$\{workspaceFolder\}/g,
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || ''
-      );
-      xmlTelnet = parseKbengineXmlTelnet(fs.readFileSync(resolved, 'utf8'));
+      xmlTelnet = parseKbengineXmlTelnet(fs.readFileSync(candidate, 'utf8'));
+      break; // 第一个存在的文件即元件配置;其无段=未开,不换路径再猜
     } catch {
-      xmlTelnet = null; // 文件缺失/不可读:如实回落,不猜
+      xmlTelnet = null; // 缺失/不可读:试下一个约定路径,不猜内容
     }
   }
   return buildTelnetTargets(settings, xmlTelnet);
