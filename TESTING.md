@@ -3540,7 +3540,9 @@ compile→lint→test,与 ci.yml 同序;③release 步 softprops action 对
 「既有 nightly release 更新」路径 403(Resource not accessible by
 integration,permissions 声明齐备仍复发,上游 #572/#836;另有 v2 无效
 输入 overwrite_assets 警告)——该步换 gh release CLI(view/edit/upload
---clobber/create 分支),job 级再声明一次 contents: write。
+--clobber/create 分支),job 级再声明一次 contents: write;随附
+runner 上 gh CLI 只认 GH_TOKEN 不认 GITHUB_TOKEN 的环境变量名,verify
+步同口径补齐。
 
 记账:用例 1118→1166(+48),测试文件 +2(kbeModuleIndex.test.ts、
 batch109NavigationWalkthrough.test.ts),生产码 +1(kbeModuleIndex.ts)。
