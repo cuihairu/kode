@@ -3547,6 +3547,111 @@ runner 上 gh CLI 只认 GH_TOKEN 不认 GITHUB_TOKEN 的环境变量名,verify
 记账:用例 1118→1166(+48),测试文件 +2(kbeModuleIndex.test.ts、
 batch109NavigationWalkthrough.test.ts),生产码 +1(kbeModuleIndex.ts)。
 
+## 批110:def 高亮与导航重铸(XML 委托 + 语义着色 + 字段/方法跳实现)
+
+用户令五条:①def 主题「全是红的眼睛都花了」,要 Sublime 式标签对应关系,
+直接用 XML 语法高亮;②「def 其实就是 xml 语法」;③Properties=玩家属性
+特殊颜色且字段能导航到实现,BaseMethods=BaseApp 方法可远程调用、带
+Exposed 特殊显示(客户端可请求),ClientMethods=回调客户端要不同颜色;
+④Properties 字段开 Persistent=自动存储,要展示;⑤BASE_AND_CLIENT 等
+引擎常量特殊展示。随批另收插单:Properties 字段/方法名现网跳转不可用,
+要求可达实现。
+
+交付一:语法重铸(syntaxes/kbengine.tmLanguage.json 整文件重写)。
+基准分词整体委托内建 text.xml;语义层只做用户点名的要素,以少量前置
+规则挂在 include 之前。机制注记(探针实测):text.xml 的标签规则是从
+`<` 一步匹配整标签的 matchRule(名字只是它的 capture),短的名字级规则
+按长度必输;因此语义规则写成同跨度的全标签 captures 形式——同长度时
+先定义者胜,标点组显式还回 punctuation.definition.tag,宿主观感不破;
+值规则(true)用闭合标签 lookahead 从值自身位置起匹配;前置规则天然
+不进注释区与文本值(需 `<` 邻接或闭合标签 lookahead)。曾按注入
+(injection grammar)方案推进到探针绿,但发现两个结构性问题:①include
+不把 text.xml 压入 scope 栈,注入选择器必须指向 source.kbengine-def
+而非 text.xml;②注入与宿主同长竞争落败(标签名语义 scope 出不来),
+`R:` 优先级也不改写结果——注入方案整线废弃,删除临时注入文件,
+语义规则并入基础语法(资产反而更简)。
+
+交付二:主题重调(syntaxes/kbengine-color-theme.json)。根因=旧主题
+「XML 标点 + 泛型标签 + 关键字」全 #F92672 粗体,Mono 背景上一片红。
+新配色:标点灰 #808080、普通标签蓝 #569CD6、属性名 #9CDCFE、串
+#CE9178、裸值默认前景 #F8F8F2(新增 Default Foreground source 规则,
+v8 分词未命中不再落 colorMap[0]);语义色:Properties 金 #E6DB74 粗体、
+BaseMethods 青 #66D9EF 粗体、CellMethods 紫 #AE81FF 粗体、ClientMethods
+绿 #A6E22E 粗体、Exposed 及其 true 红 #F92672(粗体/常规)、Persistent
+及其 true 橙 #FD971F(粗体/常规)、Flags 值橙 #FD971F 粗体;批107
+Common 家族原样保留(.py 金样本不动)。宿主标点是泛型
+punctuation.definition.tag.xml(无 begin/end 后缀),灰规则三 scope
+并收。旧 *.kbengine 死规则(类型/容器/DetailLevel/私造关键字等)整批
+删除——类型值自此为普通文本,与引擎的对齐由 types.xml 诊断/补全承担。
+
+交付三:语言配置(language-configuration.json)。行注释 `//` 与块注释
+`/* */` 是 C 风格残留,def 是 XML 方言——块注释改 `<!-- -->`,删行
+注释;新增 colorizedBracketPairs(含 `<` `>`),编辑器原生尖括号配对
+着色(Sublime 式对应关系的主力面)。
+
+交付四:导航(src/languageProviders.ts + src/definitionWorkspace.ts)。
+- 属性链(新):光标在 Properties 字段名 → scripts/{base,cell,client}/
+  <实体>.py 的 `class <实体>` 声明行,按 base→cell→client 取第一个在盘
+  脚本;类行缺失(异常脚本)落脚本首行;无脚本回落原 db-schema 虚拟
+  文档链。新导出 findEntityScriptFile(不要求 entities.xml 登记,孤立
+  def 也能跳)/readWorkspaceTextFile(读失败返空串,零行兜底,不设
+  失败分支)/readWorkspaceTextLines;
+- 方法链(新回落):无工程索引(entityMappingManager 缺席)时按文件
+  约定 scripts/<role>/<实体>.py 找 `def <方法名>`;未实现/无脚本如实
+  null;管理器在位路径原样保留且优先(内部测试三用例不回归);
+- 悬停文案按用户口径:Properties=「玩家属性」(+Persistent 自动存储
+  说明)、BaseMethods=「BaseApp 方法(可远程调用)」(+Exposed 客户端
+  可直接请求)、CellMethods 同族、ClientMethods=「客户端回调方法」
+  (+服务端下发客户端实现);getSectionLabel 等既有文案不动。
+
+验收走查(tests/batch110DefVisuals.test.ts 新文件,即操作记录,10 步
+全绿;临时工作区复刻 scripts/{entities.xml, entity_defs/, base/,
+cell/, client/} 布局):①Properties 字段 hp → base/Hero.py class 行;
+②无 base 脚本时按 cell 回落(临时移走 base 脚本实测);③④方法名 →
+base/cell/client 三侧 def 行;⑤管理器在位优先走管理器(不回落文件
+约定);⑥方法未实现 null 不虚跳;⑦无脚本孤立 def 工作区属性/方法链
+如实 null;⑧无 workspace 双链 null(降级面);⑨段标签悬停按用户口径
+出文案(玩家属性/可远程调用/回调客户端);⑩脚本异常面:读取失败按
+零行兜底、无 class 行落脚本首行、字符串 target 口径探测。
+
+语法功能验证(tests/tmLanguage.test.ts 按新形态全量重写):资产自洽
+(单 grammar 条目、委托 include 殿后、语义 scope 清单在位、标点组
+还回、正则可编译、语言配置断言)、源码对齐(Flags 名单 ≡
+KBENGINE_FLAGS 注册表,幻影负向)、真实分词(vscode-textmate + oniguruma,
+宿主 text.xml 取 @shikijs/langs/xml 的 text.xml 条目;四段开/闭 scope、
+Exposed/Persistent 标签与 true 值、Flags 值、未注册旗标负向、注释区与
+文本值零 .kbengine 泄漏、宿主侧 doctype/注释/属性 scope、ruleStack 跨
+行连续)。既有锁面按新形态更新:themeHighlightCoverage 的 .def 金样本
+逐 token 重录(45 token,逐项对着色意图核对,非盲拍;.py 金样本原样);
+perfRegression token 流摘要按新语法重录(47726/a3b47cdf →
+47326/c4ba7ccb,锁意图不变);pythonHighlightCoexistence 的 .def 期望
+换语义 scope + XML 委托 scope;highlightRegistration 的 themes 描述串
+同步。实现过程中测试先行揪出三处真问题:①首版值规则与标签名规则在
+注入形态下均不生效(机制见上);②shiki 宿主属性名 scope 是
+entity.other.attribute-name.localname.xml(断言按前缀收口);③根 scope
+`source.kbengine-def` 自含 kbengine 字样,负向断言粗匹配必误伤(改按
+`.kbengine` 后缀/链中段精确匹配)。
+
+范围对账:类型值(如 UINT32)、DetailLevel 值、自定义类型名自此无专属
+着色(委托 XML 后为普通文本)——旧主题这些色是私造语法喂的,本批不
+再造语法,若后续需要应走语义前置规则追加而非恢复私造;属性/方法导航
+按文件约定解析,不依赖工程索引(source-analysis D2/D3 索引仍未建,
+不虚记);Persistent/Exposed 语义色只覆盖 `<Persistent>true</Persistent>`
+与 `<Exposed>true</Exposed>` 常见写法,带空格的自闭合等边角形态由
+`\s*` 容忍,属性带参写法(引擎无此用法)不在语义层承担。
+
+门禁:pnpm lint EXIT=0;pnpm test 全量全绿(vitest 96 文件 1176 用例 +
+mocha 编译烟测 11 用例);覆盖率四指标 100%(两处不可达防御臂按仓库
+惯例定性包 ignore:方法链角色映射 miss 与 manager 路径段名过滤,入口
+侧已滤不可触达);docs:build 本地过。
+
+记账:用例 1166→1176(+10),测试文件 +1(batch110DefVisuals.test.ts),
+tmLanguage/themeHighlightCoverage/perfRegression/pythonHighlight-
+Coexistence/highlightRegistration 五个既有测试文件随行为更新;生产码
++0(重铸 syntaxes/kbengine.tmLanguage.json、syntaxes/kbengine-color-
+theme.json、language-configuration.json 三个资产 + languageProviders.ts/
+definitionWorkspace.ts 两处导航)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `.def` highlighting rebuilt on the built-in XML grammar with a semantic
+  overlay: the four section tags (Properties / BaseMethods / CellMethods /
+  ClientMethods), `Exposed`, `Persistent`, and flag values such as
+  `BASE_AND_CLIENT` keep distinct engine-meaning colors, everything else
+  (tags, attributes, comments, strings, punctuation) renders with standard
+  XML coloring; the bundled theme was retuned to match (no more all-red
+  tags), `<`/`>` joined bracket-pair colorization, and def block comments
+  switched from C-style to `<!-- -->`
+- Property and method navigation from `.def` files: a Properties field name
+  jumps to the entity's `class` declaration line in
+  `scripts/{base,cell,client}/<Entity>.py` (first existing script wins,
+  base→cell→client fallback), and a method name falls back to the matching
+  role script's `def` line when no project index is configured (no jump when
+  the method is not implemented); section-tag hover text now explains
+  player-owned properties, remotely callable methods with `Exposed`, and
+  client callbacks
 - VitePress documentation site under `docs/`
 - Detailed configuration reference for all `kbengine.*` settings
 - Entity explorer navigation command for opening `.def` files directly
@@ -27,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `scripts/{base,cell,client}/<Name>.py` (base→cell→client fallback);
   workspaces without `entities.xml` degrade to per-file resolution with a
   one-time notice
-- Two-layer test suite: vitest functional tests under `tests/` (1166 cases,
+- Two-layer test suite: vitest functional tests under `tests/` (1176 cases,
   including engine-source conditional suites that verify hook call sites, type
   registrations, and flags against a local KBEngine checkout) plus a mocha
   compile-artifact smoke layer (`src/test/suite/`, 11 cases); the legacy

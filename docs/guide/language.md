@@ -12,41 +12,30 @@
 
 ## 语法高亮
 
-`.def` 按 KBEngine 语义做高亮，不套用普通 XML 的着色规则。
+`.def` 本身就是 XML 方言：整体按内建 XML 语法着色（标签蓝、属性名浅蓝、标点灰、字符串橙，与常规 XML 编辑观感一致），再叠加一层 KBEngine 语义色。
 
-### 当前高亮重点
+### 语义着色（叠加在 XML 基础色之上）
 
-- 区块标签
-  - `Properties`
-  - `Parent`
-  - `BaseMethods`
-  - `CellMethods`
-  - `ClientMethods`
-- 字段标签
-  - `Type`
-  - `Flags`
-  - `Default`
-  - `DatabaseLength`
-  - `Identifier`
-  - `DetailLevel`
-  - `Arg`
-- 类型值
-  - `UINT32`
-  - `VECTOR3`
-  - `ARRAY`
-  - `FIXED_DICT`
-  - `TUPLE`
-- 标志值
-  - `BASE_AND_CLIENT`
-  - `CELL_PUBLIC`
-  - `ALL_CLIENTS`
-- 自定义属性名和方法名
+- 区块标签：
+  - `Properties` — 玩家属性
+  - `BaseMethods` — BaseApp 上的方法，可远程调用
+  - `CellMethods` — CellApp 上的方法，可远程调用
+  - `ClientMethods` — 客户端回调方法
+- `Exposed` 及其 `true` 值 — 该方法客户端可直接请求
+- `Persistent` 及其 `true` 值 — 该属性自动存储
+- Flags 值：`BASE_AND_CLIENT`、`ALL_CLIENTS` 等引擎常量
+
+上述颜色由扩展自带主题提供（Properties 金、BaseMethods 青、CellMethods 紫、ClientMethods 绿、Exposed 红、Persistent/Flags 值橙）；换用其他主题时语义 scope 仍在，颜色由该主题决定。
+
+### 其余部分
+
+类型值（如 `UINT32`）、`DetailLevel` 值、自定义属性名与方法名均为普通 XML 分词，不再有专属着色——类型与值对齐由诊断和补全承担。`<` `>` 参与编辑器括号配对着色，注释块为 `<!-- -->`。
 
 ### 设计目标
 
-- 让 `.def` 看起来像 KBEngine DSL，而不是“套了颜色的 XML”
-- 让结构标签、值和业务定义有明显层次
-- 给后续诊断和跳转打基础
+- 视觉对应关系与常规 XML 编辑一致，结构一目了然
+- 用户点名的引擎要素（四区块、Exposed、Persistent、Flags 常量）一眼可辨
+- 语义层只覆盖上列要素，不私造语法
 
 ## 智能提示
 
@@ -133,6 +122,8 @@
 - 从 `entities.xml` 跳转到对应的 `.def`
 - 从 `.def` 中 `Type` / `Arg` 里的实体引用跳转到对应实体定义
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
+- 从 `Properties` 字段名跳到 `scripts/{base,cell,client}/<实体>.py` 的 `class` 声明行（base→cell→client 取第一个在盘脚本）
+- 从 `BaseMethods` / `CellMethods` / `ClientMethods` 方法名跳到对应角色脚本里的 `def` 行（未配置工程索引时按文件约定回落；脚本在而方法未实现时不跳）
 
 ### 典型示例
 

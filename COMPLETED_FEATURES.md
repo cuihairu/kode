@@ -10,11 +10,10 @@
 ## 已完成功能 (21 个)
 
 ### 1. 语法高亮
-- 源码对齐的基础类型与容器类型高亮
-- 容器类型 (ARRAY, FIXED_DICT, TUPLE)
-- 源码对齐的 Flags / DetailLevel 高亮
-- XML 标签和属性高亮
-- **源文件**: `syntaxes/kbengine.tmLanguage.json`
+- `.def` 整体委托内建 XML 语法 (text.xml) 着色：标签蓝、属性名浅蓝、标点灰、字符串橙，`<` `>` 参与括号配对着色，块注释 `<!-- -->`
+- 引擎语义叠加（用户口径）：`Properties`=玩家属性(金)、`BaseMethods`=BaseApp 可远程调用(青)、`CellMethods`(紫)、`ClientMethods`=回调客户端(绿)、`Exposed` 红、`Persistent` 橙、Flags 值如 `BASE_AND_CLIENT`(橙粗体)
+- 类型值/DetailLevel 值不再有专属着色（委托 XML 后为普通文本，对齐由诊断与补全承担）
+- **源文件**: `syntaxes/kbengine.tmLanguage.json` + `syntaxes/kbengine-color-theme.json` + `language-configuration.json`
 
 ### 2. 智能提示 (IntelliSense)
 - 类型自动补全

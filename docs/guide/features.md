@@ -2,7 +2,7 @@
 
 ## 语言能力
 
-- `.def` 语法高亮
+- `.def` 语法高亮（内建 XML 语法委托 + 引擎语义着色）
 - 类型、Flags、DetailLevel 智能提示
 - 标签、值、自定义符号 Hover
 - `entities.xml` 与 `.def` 跳转
