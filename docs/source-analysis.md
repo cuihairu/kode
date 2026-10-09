@@ -31,8 +31,8 @@
 ### 阶段 1:def 侧注册(`entitydef.cpp:153-250`)
 
 1. `__entitiesPath = getPyUserScriptsPath()`(`entitydef.cpp:159`);
-   `entitiesFile = <userScripts>/entities.xml`,`defFilePath =
-   <userScripts>/entity_defs/`(`entitydef.cpp:176-177`)。
+   `entitiesFile = <userScripts>/entities.xml`,
+   `defFilePath = <userScripts>/entity_defs/`(`entitydef.cpp:176-177`)。
 2. **types.xml 先于一切实体加载**:`DataTypes::initialize(defFilePath +
    "types.xml")`(`entitydef.cpp:181`),types.xml 位于 `entity_defs/` 内。
 3. 标志名映射表初始化:`CELL`/`BASE`/`CELL_AND_CLIENT` 等 → ED_FLAG 位

@@ -45,6 +45,12 @@ jobs:
         if: steps.stagnation.outputs.skip == 'true'
         run: exit 0
 
+      - name: 安装 pnpm
+        timeout-minutes: 3
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
