@@ -240,6 +240,7 @@ kode/
 │   ├── monitoringCollector.ts # 监控数据收集器
 │   ├── monitoringWebView.ts  # 监控面板 WebView
 │   ├── entityMapping.ts      # Python-Def 映射管理器
+│   ├── kbeModuleIndex.ts     # kbe 模块符号桩索引(导航/补全)
 │   ├── pythonLanguageUtils.ts # Python 补全上下文工具
 │   ├── entityDependency.ts   # 实体依赖分析器
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
@@ -254,7 +255,7 @@ kode/
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (93 文件 1118 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (95 文件 1166 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志

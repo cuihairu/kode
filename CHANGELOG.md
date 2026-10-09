@@ -13,7 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Entity explorer navigation command for opening `.def` files directly
 - Dependency graph export support for SVG and PNG
 - Entity definition navigation inside `.def` files
-- Two-layer test suite: vitest functional tests under `tests/` (1118 cases,
+- kbe module symbol stub index (`src/kbeModuleIndex.ts`): the built-in
+  `KBEngine` API surface (31 symbols anchored to the engine typings) is
+  served as a read-only `kbe-stub` virtual document; `kbe.KBEntity` — a
+  kode built-in alias of `Entity` (the engine itself has no such symbol) —
+  and from-imported bare names resolve via go-to-definition to their stub
+  declaration lines, and `kbe.` completion offers the full symbol list
+- Entity chain navigation per the source-verified design in
+  `docs/source-analysis.md`: `<Interfaces>` names in a def (self-closing
+  and paired forms, open and close tags) navigate to
+  `entity_defs/interfaces/<name>.def`; Python class-base lanes resolve
+  registered entities to `entity_defs/<Name>.def` and pure-script entities
+  to `scripts/{base,cell,client}/<Name>.py` (base→cell→client fallback);
+  workspaces without `entities.xml` degrade to per-file resolution with a
+  one-time notice
+- Two-layer test suite: vitest functional tests under `tests/` (1166 cases,
   including engine-source conditional suites that verify hook call sites, type
   registrations, and flags against a local KBEngine checkout) plus a mocha
   compile-artifact smoke layer (`src/test/suite/`, 11 cases); the legacy

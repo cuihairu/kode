@@ -3454,6 +3454,88 @@ foregroundColor 有值(非 `#000000`/"no theme");③切回默认主题与 .def �
 
 记账:用例 1114→1118(+4),测试文件 +1。
 
+## 批108+批109:kbe 模块符号桩索引 + entities.xml 链路导航(拍板设计落地)
+
+批次号:批107 后顺延(fd1afd8 源码分析落库之后)。设计底稿
+docs/source-analysis.md(D1-D10,每条带源码依据)经用户拍板通过,并附
+硬需求:def 内 `<Interfaces>` 段的接口名必须能跳转到对应
+`entity_defs/interfaces/<名>.def`(跨文件;entities.xml 清单→def 的
+引用链同通)。验收口径=真实走查:真实临时工作区 + 真实 provider 逐步
+触发导航,每步断言跳转目标文件在磁盘上真实存在,不是只画 UI。
+
+批108 交付(src/kbeModuleIndex.ts 新文件;tests/kbeModuleIndex.test.ts):
+- KBE_SYMBOLS 符号表 31 条,取自引擎 typings 面,每条带
+  sourceFile:sourceLine 锚点;有引擎检出时测试逐条回验锚点行确为对应
+  class/def 声明行(无检出整组 skip,与 hooks/metadata 的
+  「插件数据 vs 引擎源码」同口径);
+- KBEntity 为 kode 内置别名条目(aliasOf=Entity)——引擎原生无该符号
+  (source-analysis.md D7:源码未见),它是项目侧基类习惯,由桩索引如实
+  承担并在桩文档头部注明口径;
+- 别名解析(import KBEngine / import kbe / as 别名 / from-import,含
+  函数内缩进语句与括号多行形态)、`kbe.*` 访问定位(符号首末列均含,
+  前置点号守卫防 self.kbe 误接管)、补全语境(`kbe.` 与 `kbe.partial`)、
+  前缀过滤(大小写不敏感);
+- 桩文档 buildKbeStubDocument:每符号唯一声明行(行内容即签名),
+  KBE_SCHEME(`kbe-stub`)虚拟文档;extension.ts 注册
+  registerTextDocumentContentProvider 供 go-to-definition 落点渲染,
+  装配测试实调用该 provider 锁内容一致;
+- Python 补全装配:`kbe.<光标>` 语境吐全量符号(Class/Function kind,
+  detail 带签名),非模块语境(self.、裸词)不接管。
+
+批109 交付(链路导航,src/languageProviders.ts + src/definitionWorkspace.ts;
+tests/batch109NavigationWalkthrough.test.ts 新文件,即验收操作记录):
+- def 侧 `<Interfaces>`:接口名自闭合与配对写法、起/闭标签均命中 →
+  `entity_defs/interfaces/<名>.def`;目标未落盘不接管(交回默认行为);
+- Python 类继承头新链(getPythonClassBaseAtPosition):光标落在基类段 →
+  entities.xml 登记实体解析到 `entity_defs/<名>.def`;纯脚本实体(无
+  def)按 getEntityRuntimeProfile 三侧回落 base→cell→client 取同名 py;
+  未登记且无文件的基类不接管(交回 python 扩展);
+- kbe 模块面(`class GameObject(kbe.KBEntity)`)与 from-import 裸名
+  (`class FromImport(KBEntity)`)→ kbe-stub 桩文档对应声明行;
+- D8 降级(source-analysis 设计):工作区无 entities.xml 时提示一次
+  (按工作区根记忆,不逐键提示),导航回落现役逐文件解析。
+
+验收走查(操作记录,11 步全绿;临时工作区复刻引擎布局
+scripts/{entities.xml, entity_defs/, interfaces/, base/cell/client}):
+①entities.xml 元素名 Avatar → entity_defs/Avatar.def;②③Avatar.def
+配对写法 `<Combat></Combat>` 起/闭标签 → interfaces/Combat.def(硬需求
+主链);④`class Avatar(Monster)` → Monster.def;⑤纯脚本 Shade →
+base/Shade.py(Wraith 链跳同验);⑤b 仅 cell 侧 Wisp → cell/Wisp.py;
+⑤c 仅 client 侧 Faerie → client/Faerie.py;⑤d 未登记 UnknownThing
+不接管返 null;⑥`kbe.KBEntity` → 桩文档 KBEntity 声明行;⑦from-import
+`KBEntity` → 同桩行;⑧无 entities.xml 根 → null 且恰好一条提示。
+每步断言 `location.uri.fsPath` 经 fs.existsSync 在磁盘真实存在。
+
+本批由测试发现并修掉的真实缺陷:
+- getKbeCompletionContext 的 `\b` 前缀在 `self.kbe.` 处('.'与'k'之间
+  词边界成立)误判为模块语境、会在属性链上吐全量 kbe 符号 → 补前置
+  点号守卫(与 resolveKbeAccessAtPosition 同口径),测试锁
+  `self.kbe.` 不命中;
+- getKbeFromImportedSymbols 首版仅逐行识别,括号多行 from-import
+  (`from kbe import (KBEntity,` 换行续行)漏收 → 括号形态单独模式
+  先行收集,多行用例锁定;
+- isPositionInsideChildTag 原排除非自闭合元素,配对写法的闭合标签漏
+  接管(自闭合写法批前已通)→ 按 defParser 闭合标签 span 放宽判定,
+  配对/自闭合双态用例锁定。
+
+范围对账(source-analysis 第三节):批109 落地 D1(布局候选发现)、
+D4(def 定位与纯脚本回落)、D5 的 py 链与 Interfaces 跨文件段、
+D6(三侧判定复用 getEntityRuntimeProfile 的断言||脚本存在同款规则)、
+D7(桩分工)、D8(降级提示);D2(独立惰性索引与保存失效重建)、
+D3(清单顺序索引与同名诊断)、D5 的 def 链合并呈现、D9 诊断面属
+后续增量,本批导航走现役 layout/清单读取 + 逐文件解析,不虚记为
+已建索引。
+
+门禁:pnpm lint EXIT=0;pnpm test 全量全绿(vitest 95 文件 1166 用例 +
+mocha 编译烟测 11 用例);覆盖率四指标 100%(批108 新增生产码
+kbeModuleIndex.ts 全量覆盖;extension.ts 桩 provider 由装配测试实调用,
+补齐本批中途 funcs 99.9% 的最后一处缺口);docs:build 本地过
+(source-analysis.md 裸尖括号被 vite 当 SFC 解析的问题已修,独立提交
+9726c13)。
+
+记账:用例 1118→1166(+48),测试文件 +2(kbeModuleIndex.test.ts、
+batch109NavigationWalkthrough.test.ts),生产码 +1(kbeModuleIndex.ts)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
@@ -3496,3 +3578,7 @@ foregroundColor 有值(非 `#000000`/"no theme");③切回默认主题与 .def �
   close 事件把新会话从 clients 表误删(重连后状态灯不亮、命令全部失灵)→
   onClose 加「仅当前会话(client === clients.get(key))才移除」守卫,重连
   用例锁定(批104 telnet 联动真 TCP 测试发现)。
+- `kbeModuleIndex.ts` 补全语境的 `\b` 前缀在属性链 `self.kbe.` 处误判为
+  模块访问('.'与'k'之间词边界成立),会在 self 属性上误吐全量 kbe 模块
+  符号 → 补前置点号守卫,`self.kbe.` 与 `getItems().kbe.` 用例锁定
+  (批108 补全装配测试发现)。

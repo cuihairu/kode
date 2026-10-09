@@ -241,6 +241,13 @@ client}/<Name>.py` 同名类。
 
 ## 五、实施边界
 
-- 本文档先行落库,实现按第三节设计**待过目后**另批进行;
-- 现工作区中批108 的 kbe 桩索引未提交件(src/kbeModuleIndex.ts 等)对应
-  D7 分工,同在此闸门之后。
+- 设计已经用户拍板通过,并附硬需求:def 内 `<Interfaces>` 接口名必须跨
+  文件跳转到 `entity_defs/interfaces/<名>.def`。批108/109 落地:kbe 桩
+  索引(src/kbeModuleIndex.ts)对应 D7 分工;链路导航(src/
+  languageProviders.ts、src/definitionWorkspace.ts)覆盖 D1/D4、D5 的
+  py 链与 Interfaces 跨文件段、D6、D8;
+- D2(独立惰性索引与保存失效重建)、D3(清单顺序索引与同名诊断)、
+  D5 的 def 链合并呈现、D9 诊断面属后续增量;当前导航走现役
+  layout/清单读取 + 逐文件解析,对账口径见 TESTING.md 批108/109 节;
+- 验收走查记录:tests/batch109NavigationWalkthrough.test.ts(11 步,
+  每步断言跳转目标在磁盘真实存在),结果记于 TESTING.md 同节。
