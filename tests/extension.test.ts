@@ -5,6 +5,7 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
+import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -111,8 +112,12 @@ describe('extension activate 装配', () => {
       'kbengine-def-analysis'
     ]);
 
-    // 虚拟文档提供者:数据库 schema
+    // 虚拟文档提供者:数据库 schema + kbe 符号桩文档(批108,内容由桩索引出)
     expect(workspaceState.contentProviders.has('kbengine-db-schema')).toBe(true);
+    const kbeStubProvider = workspaceState.contentProviders.get(KBE_SCHEME) as {
+      provideTextDocumentContent(): string;
+    };
+    expect(kbeStubProvider.provideTextDocumentContent()).toBe(buildKbeStubDocument().content);
 
     // 状态栏两条:server 灯(右对齐/优先级 100/命令指向扩展视图)与
     // telnet 灯(优先级 99/命令指向 telnet 面板);无运行组件时 server 灯隐藏

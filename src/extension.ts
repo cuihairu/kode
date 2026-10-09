@@ -53,6 +53,7 @@ import {
   selectionToSnippetBody
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
+import { KBE_SCHEME, buildKbeStubDocument } from './kbeModuleIndex';
 
 /**
  * Kode - KBEngine Development Environment
@@ -64,6 +65,14 @@ export function activate(context: vscode.ExtensionContext) {
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
+  );
+  // kbe 模块符号桩文档(批108):go-to-definition 的只读跳转源
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
+      provideTextDocumentContent(): string {
+        return buildKbeStubDocument().content;
+      }
+    })
   );
   const defDocumentSelector: vscode.DocumentSelector = [
     { language: 'kbengine-def', scheme: 'file' },

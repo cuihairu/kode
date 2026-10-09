@@ -9,7 +9,9 @@ import {
   PythonDefinitionProvider
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
+import { KBE_SYMBOLS } from '../src/kbeModuleIndex';
 import {
+  CompletionItemKind,
   Position,
   Range,
   SymbolKind,
@@ -548,5 +550,39 @@ describe('KBEngineCompletionProvider type suggestions', () => {
     expect(labels).toContain('UINT32');
     expect(labels).toContain('DOLL');
     expect(labels).toContain('Hero');
+  });
+});
+
+describe('PythonCompletionProvider kbe 模块符号补全(批108 装配)', () => {
+  it('kbe. 语境返回全部索引符号(类/函数分型,detail 带签名)', () => {
+    // 走查分支先于 self 补全返回,不触及映射管理器
+    const provider = new PythonCompletionProvider({} as unknown as EntityMappingManager);
+    const { document, position } = pyDoc('import kbe\nx = kbe.|');
+
+    const items = provider.provideCompletionItems(document, position) as Array<{
+      label: string;
+      kind?: number;
+      detail?: string;
+    }>;
+
+    expect(items).toHaveLength(KBE_SYMBOLS.length);
+    const byName = new Map(items.map(item => [item.label, item]));
+    // 类与函数各抽一:KBEntity(kind Class)与 createEntity(kind Function)
+    expect(byName.get('KBEntity')).toMatchObject({ label: 'KBEntity' });
+    expect(byName.get('KBEntity')?.kind).toBe(CompletionItemKind.Class);
+    expect(byName.get('createEntity')?.kind).toBe(CompletionItemKind.Function);
+    expect(byName.get('createEntity')?.detail).toContain('def createEntity(');
+  });
+
+  it('非模块语境不返回 kbe 符号', () => {
+    const provider = new PythonCompletionProvider({
+      getMappingForPythonFile: () => null
+    } as unknown as EntityMappingManager);
+    const { document, position } = pyDoc('import kbe\nx = self.|');
+
+    const items = provider.provideCompletionItems(document, position) as Array<{ label: string }> | null;
+    // self 补全对未映射文件返回空(null),kbe 符号自然不出现
+    const labels = (items ?? []).map(item => item.label);
+    expect(labels).not.toContain('KBEntity');
   });
 });

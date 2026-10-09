@@ -465,6 +465,31 @@ export function findEntitiesXmlFile(
   return getDefinitionWorkspaceLayout(workspaceRoot).entitiesXmlPath;
 }
 
+// entities.xml 缺席降级提示(source-analysis 设计 D8)的已提示工作区记账。
+// 引擎侧 entities.xml 缺省合法(纯脚本定义,entitydef.cpp:184-186),kode
+// 按同一口径降级为逐文件解析,但提示每个工作区根只发一次,不逐键打扰。
+const entitiesXmlMissingNotifiedRoots = new Set<string>();
+
+export const ENTITIES_XML_MISSING_NOTICE =
+  '未找到 entities.xml:实体导航按逐文件解析降级(引擎允许纯脚本定义)';
+
+export function notifyEntitiesXmlMissingOnce(
+  workspaceRoot: string,
+  notify: (message: string) => void
+): void {
+  if (entitiesXmlMissingNotifiedRoots.has(workspaceRoot)) {
+    return;
+  }
+
+  entitiesXmlMissingNotifiedRoots.add(workspaceRoot);
+  notify(ENTITIES_XML_MISSING_NOTICE);
+}
+
+/** 测试隔离用:清空降级提示记账。 */
+export function resetEntitiesXmlMissingNotices(): void {
+  entitiesXmlMissingNotifiedRoots.clear();
+}
+
 export function findDefinitionFileByCategory(
   name: string,
   category: DefinitionCategory,

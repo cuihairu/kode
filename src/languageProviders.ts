@@ -35,10 +35,12 @@ import {
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
   findEntityDefinitionFile,
+  findEntitiesXmlFile,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
   getRegisteredEntities,
-  getWorkspaceRootForDocument
+  getWorkspaceRootForDocument,
+  notifyEntitiesXmlMissingOnce
 } from './definitionWorkspace';
 import {
   computeDefRenameEdits,
@@ -56,6 +58,17 @@ import {
   getPythonSelfAccessAtPosition,
   getPythonSelfCompletionContext
 } from './pythonLanguageUtils';
+import {
+  buildKbeStubDocument,
+  buildKbeStubUriString,
+  filterKbeSymbols,
+  getKbeAliases,
+  getKbeCompletionContext,
+  getKbeFromImportedSymbols,
+  getKbeSymbol,
+  getPythonClassBaseAtPosition,
+  resolveKbeAccessAtPosition
+} from './kbeModuleIndex';
 
 function getLanguageFeatureConfig() {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -486,7 +499,20 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
     }
 
     if (document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def')) {
-      return findEntityDefinitionInDef(document, position, word, this.entityMappingManager);
+      const location = findEntityDefinitionInDef(document, position, word, this.entityMappingManager);
+      if (!location && looksLikeEntityName(word)) {
+        // 降级提示(source-analysis 设计 D8):链路词未命中且工作区没有
+        // entities.xml 时按一次口径提示,导航回落逐文件解析(引擎允许
+        // entities.xml 缺省,entitydef.cpp:184-186)。
+        const workspaceRoot = getWorkspaceRootForDocument(document);
+        if (workspaceRoot && !findEntitiesXmlFile(workspaceRoot)) {
+          notifyEntitiesXmlMissingOnce(workspaceRoot, message => {
+            void vscode.window.showInformationMessage(message);
+          });
+        }
+      }
+
+      return location;
     }
 
     return null;
@@ -1701,10 +1727,14 @@ function isPositionInsideChildTag(
 ): boolean {
   const node = getDefNodeAtPosition(document, position);
   const elementNode = node?.kind === 'element' ? node : node?.parent;
-  if (!elementNode || !elementNode.selfClosing) {
+  if (!elementNode) {
     return false;
   }
 
+  // 批109 放宽:引擎对接口引用不要求自闭合写法(`entity_defs/interfaces/
+  // <名>.def` 按引用名加载,entitydef.cpp:551-639,见 docs/source-analysis.md),
+  // `<Iface/>` 与 `<Iface></Iface>` 均导航——defParser 的元素跨度覆盖闭合标签,
+  // 起止标签名上的光标都落在元素节点上。
   return !!findAncestorElement(elementNode, parentTagName);
 }
 
@@ -1964,6 +1994,51 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     position: vscode.Position
   ): Promise<vscode.Location | vscode.Location[] | null> {
     const line = document.lineAt(position.line);
+
+    // kbe/KBEngine 模块符号(批108):别名已在文档引入且 position 落在
+    // 模块符号上时,跳到内置桩文档的对应声明行。未引入或非模块面访问
+    // (self.kbe 之类)时交回下方实体属性/方法链路。
+    const kbeAccess = resolveKbeAccessAtPosition(
+      line.text,
+      position.character,
+      getKbeAliases(document.getText())
+    );
+    if (kbeAccess && getKbeSymbol(kbeAccess.symbol)) {
+      const stub = buildKbeStubDocument();
+      return new vscode.Location(
+        vscode.Uri.parse(buildKbeStubUriString()),
+        new vscode.Position(stub.symbolLines[kbeAccess.symbol], 0)
+      );
+    }
+
+    // 类继承头基类(批109):class X(Base) 行,光标落在基类标识符上时沿
+    // 注册链解析——①from-import 引入的 kbe 符号走内置桩文档;②登记实体走
+    // entities.xml 链(def 文件优先,纯脚本实体回落 scripts/{base,cell,
+    // client}/<Name>.py,与引擎同名类注册口径一致,见 docs/source-analysis.md
+    // 第五节 D5/D7)。都未命中则交回下方 self 属性/方法链路与 python 扩展。
+    const classBase = getPythonClassBaseAtPosition(line.text, position.character);
+    if (classBase) {
+      const fromImports = getKbeFromImportedSymbols(document.getText());
+      if (fromImports.has(classBase) && getKbeSymbol(classBase)) {
+        const stub = buildKbeStubDocument();
+        return new vscode.Location(
+          vscode.Uri.parse(buildKbeStubUriString()),
+          new vscode.Position(stub.symbolLines[classBase], 0)
+        );
+      }
+
+      const baseDefPath = findEntityDefinitionFile(classBase, document);
+      if (baseDefPath) {
+        return new vscode.Location(vscode.Uri.file(baseDefPath), new vscode.Position(0, 0));
+      }
+
+      const baseProfile = getEntityRuntimeProfile(classBase, document);
+      const baseScriptPath =
+        baseProfile?.base.scriptPath || baseProfile?.cell.scriptPath || baseProfile?.client.scriptPath;
+      if (baseScriptPath) {
+        return new vscode.Location(vscode.Uri.file(baseScriptPath), new vscode.Position(0, 0));
+      }
+    }
     const access = getPythonSelfAccessAtPosition(line.text, position.character);
     if (access) {
       const propertyLocation = await this.entityMappingManager.resolvePropertyDefinition(
@@ -2164,6 +2239,26 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     position: vscode.Position
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
     const line = document.lineAt(position.line);
+    const linePrefix = line.text.substring(0, position.character);
+
+    // kbe/KBEngine 模块符号补全(批108):`kbe.` / `KBEngine.` 语境下按索引
+    // 前缀过滤。仅识别已引入/已使用的模块别名,非模块语境照常走 self 补全。
+    const kbeAliases = getKbeAliases(document.getText());
+    const kbeContext = getKbeCompletionContext(linePrefix, kbeAliases);
+    if (kbeContext) {
+      return filterKbeSymbols(kbeContext.partialSymbol).map(entry => {
+        const item = new vscode.CompletionItem(
+          entry.name,
+          entry.kind === 'class' ? vscode.CompletionItemKind.Class : vscode.CompletionItemKind.Function
+        );
+        item.detail = entry.signature;
+        item.documentation = new vscode.MarkdownString(
+          `${entry.summary}\n\n源码: \`${entry.sourceFile}:${entry.sourceLine}\``
+        );
+        return item;
+      });
+    }
+
     const completionContext = getPythonSelfCompletionContext(
       line.text.substring(0, position.character)
     );

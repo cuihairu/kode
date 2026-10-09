@@ -815,6 +815,32 @@ describe('definition navigation', () => {
     );
   });
 
+  it('jumps from a paired Interfaces tag (open and close names) to the interface def', () => {
+    // 批109:引擎不要求自闭合写法(entitydef.cpp:551-639),配对写法起止
+    // 标签名上的光标同样导航到 interfaces/<名>.def
+    const open = locate([
+      '<root>',
+      '  <Interfaces>',
+      '    <MoveI|face>',
+      '    </MoveIface>',
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n'), 'Hero.def');
+
+    const close = locate([
+      '<root>',
+      '  <Interfaces>',
+      '    <MoveIface>',
+      '    </MoveI|face>',
+      '  </Interfaces>',
+      '</root>'
+    ].join('\n'), 'Hero.def');
+
+    const expected = p(langRoot(), 'scripts', 'entity_defs', 'interfaces', 'MoveIface.def');
+    expect(open?.uri.fsPath).toBe(expected);
+    expect(close?.uri.fsPath).toBe(expected);
+  });
+
   it('jumps from a Type value to the component def', () => {
     const location = locate([
       '<root>',
@@ -858,6 +884,12 @@ describe('definition navigation', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'Hero.def')).toBeNull();
+  });
+
+  it('returns null on a malformed def document (no parseable root)', () => {
+    // 批109 锁:无法解析的文档上 getDefNodeAtPosition 为 null,节点守卫
+    // 直接放行为 false,各级引用检查全部落空
+    expect(locate('Just some random Wor|ds here', 'Junk.def')).toBeNull();
   });
 
   it('returns null for python documents', () => {
