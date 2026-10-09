@@ -31,7 +31,7 @@
         "punctuation.definition.tag.end.xml"
       ],
       "settings": {
-        "foreground": "#808080"
+        "foreground": "#969696"
       }
     },
     {
@@ -52,7 +52,7 @@
       "name": "KBEngine Properties Section",
       "scope": "entity.name.tag.section.properties.kbengine",
       "settings": {
-        "foreground": "#E6DB74",
+        "foreground": "#E5C07B",
         "fontStyle": "bold"
       }
     },
@@ -60,7 +60,7 @@
       "name": "KBEngine Base Methods Section",
       "scope": "entity.name.tag.section.base-methods.kbengine",
       "settings": {
-        "foreground": "#66D9EF",
+        "foreground": "#98C379",
         "fontStyle": "bold"
       }
     },
@@ -68,7 +68,7 @@
       "name": "KBEngine Cell Methods Section",
       "scope": "entity.name.tag.section.cell-methods.kbengine",
       "settings": {
-        "foreground": "#AE81FF",
+        "foreground": "#56B6C2",
         "fontStyle": "bold"
       }
     },
@@ -76,7 +76,7 @@
       "name": "KBEngine Client Methods Section",
       "scope": "entity.name.tag.section.client-methods.kbengine",
       "settings": {
-        "foreground": "#A6E22E",
+        "foreground": "#C678DD",
         "fontStyle": "bold"
       }
     },
@@ -84,38 +84,35 @@
       "name": "KBEngine Exposed",
       "scope": "entity.name.tag.exposed.kbengine",
       "settings": {
-        "foreground": "#F92672",
-        "fontStyle": "bold"
+        "foreground": "#E06C75"
       }
     },
     {
       "name": "KBEngine Exposed Value",
       "scope": "constant.language.exposed.kbengine",
       "settings": {
-        "foreground": "#F92672"
+        "foreground": "#E06C75"
       }
     },
     {
       "name": "KBEngine Persistent",
       "scope": "entity.name.tag.persistent.kbengine",
       "settings": {
-        "foreground": "#FD971F",
-        "fontStyle": "bold"
+        "foreground": "#D19A66"
       }
     },
     {
       "name": "KBEngine Persistent Value",
       "scope": "constant.language.persistent.kbengine",
       "settings": {
-        "foreground": "#FD971F"
+        "foreground": "#D19A66"
       }
     },
     {
       "name": "KBEngine Flags",
       "scope": "constant.language.flag.kbengine",
       "settings": {
-        "foreground": "#FD971F",
-        "fontStyle": "bold"
+        "foreground": "#61AFEF"
       }
     },
     {
@@ -221,7 +218,7 @@
       "name": "Common Meta Tags",
       "scope": "meta.tag",
       "settings": {
-        "foreground": "#808080"
+        "foreground": "#969696"
       }
     },
     {
