@@ -63,12 +63,16 @@ describe('compiled extension activation smoke', () => {
     assert.ok(server);
     assert.strictEqual(server.alignment, stub.StatusBarAlignment.Right);
     assert.strictEqual(server.visible, false);
-    // telnet 探测状态灯:默认配置回落引擎七组件目标表,如实显示「未开启」
+    // telnet 探测状态灯(批111 用户令):配置未开启 telnet 时整族入口隐藏,
+    // 状态灯不出现,setContext 落 false(命令面板入口经 when 子句同门控)
     const telnet = stub.windowState.statusBars.find(bar => bar.priority === 99);
     assert.ok(telnet);
     assert.strictEqual(telnet.alignment, stub.StatusBarAlignment.Right);
-    assert.strictEqual(telnet.visible, true);
-    assert.strictEqual(telnet.text, '$(plug) Telnet: 未开启');
+    assert.strictEqual(telnet.visible, false);
+    assert.strictEqual(
+      stub.commandRegistry.contexts.get('kbengine.telnetConfigured'),
+      false
+    );
   });
 
   it('dispatches a compiled command end to end', async () => {

@@ -27,6 +27,8 @@ export interface CompiledVscodeStub {
   commandRegistry: {
     registeredCommandIds(): string[];
     reset(): void;
+    /** 内建 setContext 入账(批111 telnet 门控 when 断言用) */
+    contexts: Map<string, unknown>;
   };
   languagesRegistry: { reset(): void };
   windowState: {
