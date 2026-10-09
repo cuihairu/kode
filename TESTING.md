@@ -3531,7 +3531,12 @@ mocha 编译烟测 11 用例);覆盖率四指标 100%(批108 新增生产码
 kbeModuleIndex.ts 全量覆盖;extension.ts 桩 provider 由装配测试实调用,
 补齐本批中途 funcs 99.9% 的最后一处缺口);docs:build 本地过
 (source-analysis.md 裸尖括号被 vite 当 SFC 解析的问题已修,独立提交
-9726c13)。
+9726c13)。CI 侧另修 daily-build.yml(nightly)双根因:①缺
+pnpm/action-setup 安装步(setup-node 的 cache:'pnpm' 只启用缓存不安装,
+「Unable to locate executable file: pnpm」);②步序 install→test→compile
+早于 compile,打包防漏锁(highlightRegistration.test.ts)要求
+out/extension.js 在位,新 checkout 无编译产物必红——改为 install→
+compile→lint→test,与 ci.yml 同序。
 
 记账:用例 1118→1166(+48),测试文件 +2(kbeModuleIndex.test.ts、
 batch109NavigationWalkthrough.test.ts),生产码 +1(kbeModuleIndex.ts)。

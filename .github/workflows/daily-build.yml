@@ -60,14 +60,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Compile extension
+        run: pnpm run compile
+
       - name: Run lint
         run: pnpm run lint
 
       - name: Run tests (full gate)
         run: pnpm test
-
-      - name: Compile extension
-        run: pnpm run compile
 
       - name: Package VSIX (nightly asset)
         id: package
