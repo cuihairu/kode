@@ -402,6 +402,35 @@ export function findEntityScriptFile(
   );
 }
 
+// 批111:接口混入脚本 scripts/interfaces/<接口名>.py(引擎把 <Interfaces>
+// 声明的接口实现混入实体各角色脚本;方法实现可能落在这里)。与
+// findEntityScriptFile 同口径:不要求登记,存在即返回,否则 null。
+export function findInterfaceScriptFile(
+  interfaceName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
+  // getDefinitionWorkspaceLayout 的区间理由。
+  /* istanbul ignore start */
+  if (!layout.entityScriptsRoot) {
+    return null;
+  }
+  /* istanbul ignore stop */
+
+  return findExistingLookupPath(
+    joinWorkspacePath(layout.entityScriptsRoot, 'interfaces', `${interfaceName}.py`)
+  );
+}
+
 // 批110:配套文本读取(供导航方在脚本里定位 class/def 行)。读不到
 // (路径不存在/IO 失败)时返回空串,调用方按"零行"自然走 null 兜底,
 // 不再单设失败分支。

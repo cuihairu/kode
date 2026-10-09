@@ -96,7 +96,7 @@ interface DefFileEntry {
   name: string;
 }
 
-interface DefFileSemantics {
+export interface DefFileSemantics {
   parentName: string | null;
   interfaceNames: string[];
 }
@@ -340,21 +340,32 @@ const INTERFACE_WRAPPER_NAMES = new Set(['interface', 'Interface', 'type', 'Type
  * 引擎的取名语义(entitydef.cpp 对 `<Parent>`/接口 wrapper 的取值:
  * `enterNode` 拿到元素后取其**首个子节点**,再经 xml.cpp 的
  * `getKey = kbe_trim(node->Value())`——文本节点取文本,元素取标签名):
- * `<Parent> Hero </Parent>` 与 `<Parent><Hero/></Parent>` 两种紧凑写法都得
- * 'Hero';但混合内容只看第一个子节点,`<Parent>` 与 `<Hero/>` 之间换行缩进
- * 时首子节点是空白文本,引擎取到空名、拼不出父类文件(装载失败)——
- * 这里同样得空名,不产生边。
+ * `<Parent> Hero </Parent>` 与 `<Parent><Hero/></Parent>` 都得 'Hero'。
+ * 批111 核对 tinyxml 源修正空白口径:tinyxml 以 condenseWhiteSpace=true
+ * (默认,KBEngine 未改)解析时,元素间纯空白文本节点在 TiXmlElement::Parse
+ * 的 Blank() 分支被丢弃(tinyxmlparser.cpp:1204-1213),不成为子节点——
+ * 换行缩进排版下首子节点仍是首个非空白内容,`<Parent>` 换行缩进包
+ * `<Hero/>` 照常装载。本扩展的 def 解析器会保留空白文本节点,这里按引擎
+ * 口径跳过纯空白文本;混合内容仍只认首个非空白子节点(文本优先)。
  */
 function getReferenceTargetName(node: DefElementNode): string {
-  const firstChild = node.children[0];
-  if (!firstChild) {
-    return '';
+  for (const child of node.children) {
+    if (child.kind === 'text') {
+      const text = child.text.trim();
+      if (text) {
+        return text;
+      }
+      continue;
+    }
+    return child.name.trim();
   }
-  return (firstChild.kind === 'text' ? firstChild.text : firstChild.name).trim();
+  return '';
 }
 
-/** def 文件的直接语义面:Parent 名 + Interfaces 引用名(对齐引擎装载语法) */
-function parseDefFileSemantics(content: string): DefFileSemantics | null {
+/** def 文件的直接语义面:Parent 名 + Interfaces 引用名(对齐引擎装载语法)。
+ * 批111 起同时供导航方复用:方法实现候选脚本闭包按同一语义走 Parent/
+ * Interfaces 链,避免两处各写一份引擎取值口径。 */
+export function parseDefFileSemantics(content: string): DefFileSemantics | null {
   const document = parseDefText(content);
   if (!document?.root) {
     return null;

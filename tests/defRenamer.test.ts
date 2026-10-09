@@ -236,8 +236,10 @@ const PARENT_ELEMENT_DEF = [
   ''
 ].join('\n');
 
-// 混合内容:<Parent> 与 <Hero/> 之间换行缩进 → 首子节点是空白文本,引擎
-// getKey 得空名、拼不出父类文件(装载失败),不产生边——负向锁
+// 混合排版:<Parent> 与 <Hero/> 之间换行缩进。批111 核对 tinyxml 源修正:
+// condenseWhiteSpace=true(默认)下纯空白文本节点在 TiXmlElement::Parse 的
+// Blank() 分支被丢弃(tinyxmlparser.cpp:1204-1213),不成为子节点——引擎
+// loadParentClass 的 enterNode 首子节点仍是 <Hero/>,照常装载,产生边——正向锁
 const MIXED_PARENT_DEF = [
   '<root>',
   '  <Parent>',
@@ -547,13 +549,16 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
       symbol: heroHpSymbol(),
       newName: 'vigor'
     });
-    // Hero:两个 hp 变体的开+闭标签 = 4;Monster/Boss/ParentElem 各 1 个复述 = 2
-    // (ParentElem 是 <Parent><Hero/></Parent> 元素形态——引擎 getKey 同样取到 Hero)
+    // Hero:两个 hp 变体的开+闭标签 = 4;Monster/Boss/ParentElem/MixedParent
+    // 各 1 个复述 = 2(ParentElem 是 <Parent><Hero/></Parent> 紧凑元素形态,
+    // MixedParent 是换行缩进排版——tinyxml 丢弃纯空白文本节点,引擎 getKey
+    // 同样取到 Hero)
     expect(editsByFile(results)).toEqual({
       'Hero.def': 4,
       'Monster.def': 2,
       'Boss.def': 2,
-      'ParentElem.def': 2
+      'ParentElem.def': 2,
+      'MixedParent.def': 2
     });
 
     const heroEntry = results.find(entry => entry.filePath === heroPath)!;
@@ -645,17 +650,20 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
     expect(results.find(entry => entry.filePath === ifaceParentedPath)).toBeUndefined();
   });
 
-  it('混合内容 Parent(标签间换行缩进)首子节点是空白文本,引擎取空名不产生边', () => {
-    // 引擎 loadParentClass 对 <Parent> 首个子节点做 getKey:MixedParent 的
-    // 首子节点是 "\n    " 文本,trim 后空名 → 拼不出父类文件(装载失败),
-    // 该复述对 Hero 的重命名不可见——"文本优先否则首元素"的写法会误跟随
+  it('混合排版 Parent(标签间换行缩进)引擎照常装载,产生边', () => {
+    // 批111 核对 tinyxml 源修正:condenseWhiteSpace=true(默认)下纯空白文本
+    // 节点在 TiXmlElement::Parse 的 Blank() 分支被丢弃(tinyxmlparser.cpp:
+    // 1204-1213),loadParentClass 的 enterNode 首子节点是 <Hero/> 元素,
+    // getKey 取标签名 'Hero'——MixedParent 复述的 hp 参与 Hero 重命名传播
     const results = computeDefRenameEdits({
       targetFilePath: heroPath,
       targetText: HERO_DEF,
       symbol: heroHpSymbol(),
       newName: 'vigor'
     });
-    expect(results.find(entry => entry.filePath === mixedParentPath)).toBeUndefined();
+    const mixedEntry = results.find(entry => entry.filePath === mixedParentPath);
+    expect(mixedEntry).toBeDefined();
+    expect(editsByFile([mixedEntry!])).toEqual({ 'MixedParent.def': 2 });
   });
 
   it('组件 def 的 Parent 在 components/ 内解析:命中同目录组件、不误连同名根实体', () => {
@@ -737,7 +745,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
       'Hero.def': 4,
       'Monster.def': 2,
       'Boss.def': 2,
-      'ParentElem.def': 2
+      'ParentElem.def': 2,
+      'MixedParent.def': 2
     });
     // Heir(Parent Hero)不复述 hp;Broken(Parent Monster)坏 XML 语义面为空;
     // Dangling 的 Parent/Interfaces 引用悬空;HealthComp/Wand/BaseGun/ChildGun
@@ -762,7 +771,12 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
         symbol: heroHpSymbol(),
         newName: 'vigor'
       });
-      expect(editsByFile(results)).toEqual({ 'Hero.def': 4, 'Monster.def': 2, 'ParentElem.def': 2 });
+      expect(editsByFile(results)).toEqual({
+        'Hero.def': 4,
+        'Monster.def': 2,
+        'ParentElem.def': 2,
+        'MixedParent.def': 2
+      });
     } finally {
       fs.chmodSync(bossPath, 0o644);
     }
@@ -782,7 +796,8 @@ describe('computeDefRenameEdits 引用编辑计算', () => {
         'Hero.def': 4,
         'Monster.def': 2,
         'Boss.def': 2,
-        'ParentElem.def': 2
+        'ParentElem.def': 2,
+        'MixedParent.def': 2
       });
     } finally {
       fs.chmodSync(lockedDir, 0o755);
@@ -869,8 +884,8 @@ describe('KBEngineRenameProvider 装配', () => {
     );
 
     expect(workspaceEdit).toBeInstanceOf(WorkspaceEdit);
-    // Hero/Monster/Boss/ParentElem(Parent 元素形态)
-    expect(workspaceEdit!.size).toBe(4);
+    // Hero/Monster/Boss/ParentElem(Parent 元素形态)/MixedParent(换行缩进排版)
+    expect(workspaceEdit!.size).toBe(5);
 
     // 目标文件复用文档 uri,其余文件走 Uri.file(按 fsPath 索引断言)
     const heroEdits = workspaceEdit!.get(document.uri);

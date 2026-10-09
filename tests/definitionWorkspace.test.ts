@@ -11,6 +11,7 @@ import {
   findEntitiesXmlFile,
   findEntityDefinitionFile,
   findEntityDefinitionsRoot,
+  findInterfaceScriptFile,
   getCustomTypeInfos,
   getDefinitionEntries,
   getDefinitionWorkspaceLayout,
@@ -62,6 +63,7 @@ beforeAll(() => {
   write('scripts/base/Hero.py', 'class Hero:\n    pass\n');
   write('scripts/base/Golem.py', 'class Golem:\n    pass\n');
   write('scripts/cell/Golem.py', 'class Golem:\n    pass\n');
+  write('scripts/interfaces/MoveIface.py', 'class MoveIface:\n    pass\n');
   write('scripts/user_type/item/pos.py', '# item pos helpers\n');
 });
 
@@ -307,6 +309,8 @@ describe('entity definition file lookups', () => {
     expect(findEntityDefinitionFile('Hero', root)).toBe(p('scripts', 'entity_defs', 'Hero.def'));
     expect(findEntityDefinitionFile('MISSING', root)).toBeNull();
     expect(findEntityDefinitionsRoot(root)).toBe(p('scripts', 'entity_defs'));
+    // 批111:接口混入脚本,字符串 target 口径
+    expect(findInterfaceScriptFile('MoveIface', root)).toBe(p('scripts', 'interfaces', 'MoveIface.py'));
   });
 
   it('falls back to the conventional root in a bare workspace', () => {
@@ -323,6 +327,8 @@ describe('entity definition file lookups', () => {
     // 无 target 时走 getWorkspaceRootForDocument → stub 无 workspace → null
     expect(findEntityDefinitionFile('Hero')).toBeNull();
     expect(findEntitiesXmlFile()).toBeNull();
+    // 批111:接口混入脚本查找同口径
+    expect(findInterfaceScriptFile('MoveIface')).toBeNull();
   });
 
   it('finds entities.xml inside the structured workspace', () => {

@@ -37,16 +37,19 @@ import {
   findEntityDefinitionFile,
   findEntitiesXmlFile,
   findEntityScriptFile,
+  findInterfaceScriptFile,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
   getRegisteredEntities,
   getWorkspaceRootForDocument,
   notifyEntitiesXmlMissingOnce,
+  readWorkspaceTextFile,
   readWorkspaceTextLines
 } from './definitionWorkspace';
 import {
   computeDefRenameEdits,
   getLineCharacterAtOffset,
+  parseDefFileSemantics,
   resolveRenameSymbolAtOffset
 } from './defRenamer';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
@@ -1475,6 +1478,16 @@ function findEntityDefinitionInDef(
 ): vscode.ProviderResult<vscode.Location> {
   const symbolInfo = findDefSymbolInfo(document, position, word);
 
+  // 批111 用户令:引用族全量接通——DetailLevel 值引用同文件
+  // <DetailLevels> 下的档位声明(NEAR/MEDIUM/FAR),点击值跳档位行。
+  // 必须先于 Properties 链:DetailLevel 值的 symbolInfo.section 也是
+  // 'Properties',若排在脚本/class 与 schema 之后,凡有脚本的实体都会
+  // 被那两条链截获,本链成死代码。
+  const detailLevelLocation = findDetailLevelDefinitionInDef(document, position, word);
+  if (detailLevelLocation) {
+    return detailLevelLocation;
+  }
+
   // 批110 用户令:Properties 字段优先导航到实体脚本实现(scripts/
   // {base,cell,client}/<实体>.py 的实体类声明行);脚本不存在时再回
   // 落数据库 schema 虚拟文档。
@@ -1883,8 +1896,85 @@ function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.
   return null;
 }
 
-// 批110 用户令:方法无映射管理器时的文件回落——直接在对应角色脚本里找
-// `def <方法名>`,找到才产出 Location;无脚本或未实现都返回 null。
+// 批111 用户令:引用族全量接通——方法实现不只在实体自身角色脚本。引擎把
+// <Interfaces> 声明的接口实现与 <Parent> 链的父类实现混入实体类,方法可能
+// 落在任一层的 .py。候选脚本按近似 MRO 顺序收集:本实体角色脚本 → 本 def
+// 接口脚本 → 父 def 角色脚本 → 父 def 接口脚本 → 逐级上溯。接口 def 不跟随
+// Parent(引擎 loadInterfaces 不读 Parent);组件 def 的 Parent 在 components/
+// 目录内解析(与 defRenamer 装载口径一致);见环即止(有限 def 集必终止)。
+function collectMethodCandidateScripts(
+  document: vscode.TextDocument,
+  role: 'base' | 'cell' | 'client'
+): string[] {
+  const candidates: string[] = [];
+  const seenScripts = new Set<string>();
+  const seenDefs = new Set<string>();
+  const pushScript = (scriptPath: string | null): void => {
+    if (scriptPath && !seenScripts.has(scriptPath)) {
+      seenScripts.add(scriptPath);
+      candidates.push(scriptPath);
+    }
+  };
+
+  let defPath: string | null = document.fileName;
+  // 当前文档用缓冲区文本(未保存改动也参与解析);上游 def 走磁盘。
+  let defContent: string = document.getText();
+  let defName = path.basename(document.fileName, '.def');
+
+  while (defPath && defContent) {
+    // 环防护由下方 parentDefPath 的 seen 判定承担(入队前拦截),
+    // 循环顶不再重复检查:进入循环体的 defPath 恒为未见过的路径。
+    seenDefs.add(defPath);
+
+    const isInterfaceDef = /(^|[\\/])interfaces[\\/][^\\/]*$/.test(defPath);
+    const semantics = parseDefFileSemantics(defContent);
+    if (isInterfaceDef) {
+      // 接口 def 的实现脚本在 scripts/interfaces/<接口名>.py(引擎 loadInterfaces
+      // 的装载口径),不在 scripts/<role>/;接口 def 不跟随 Parent。
+      pushScript(findInterfaceScriptFile(defName, document));
+    }
+    pushScript(findEntityScriptFile(defName, role, document));
+    if (semantics) {
+      for (const interfaceName of semantics.interfaceNames) {
+        pushScript(findInterfaceScriptFile(interfaceName, document));
+      }
+    }
+
+    if (isInterfaceDef || !semantics?.parentName) {
+      break;
+    }
+
+    const parentDefPath = findParentDefPath(defPath, semantics.parentName, document);
+    if (!parentDefPath || seenDefs.has(parentDefPath)) {
+      break;
+    }
+    defPath = parentDefPath;
+    defName = semantics.parentName;
+    defContent = readWorkspaceTextFile(parentDefPath);
+  }
+
+  return candidates;
+}
+
+// 父 def 路径:实体 Parent 平铺在定义根;组件 def 的 Parent 在 components/
+// 内解析(defRenamer.resolveLinkPaths 同口径)。不存在返回 null(悬空引用
+// 不产生候选)。
+function findParentDefPath(
+  currentDefPath: string,
+  parentName: string,
+  document: vscode.TextDocument
+): string | null {
+  const parentDir = path.dirname(currentDefPath);
+  if (path.basename(parentDir) === 'components') {
+    const candidate = path.join(parentDir, `${parentName}.def`);
+    return readWorkspaceTextFile(candidate) ? candidate : null;
+  }
+
+  return findEntityDefinitionFile(parentName, document);
+}
+
+// 批110 用户令:方法无映射管理器时的文件回落——在候选脚本闭包里按顺序找
+// `def <方法名>`,命中即止;全无实现(或脚本缺失)返回 null,不虚跳。
 function findMethodScriptLocationInDef(
   document: vscode.TextDocument,
   methodName: string,
@@ -1899,21 +1989,56 @@ function findMethodScriptLocationInDef(
   }
   /* istanbul ignore stop */
 
-  const entityName = path.basename(document.fileName, '.def');
-  const scriptPath = findEntityScriptFile(entityName, role, document);
-  if (!scriptPath) {
+  for (const scriptPath of collectMethodCandidateScripts(document, role)) {
+    const defLineIndex = readWorkspaceTextLines(scriptPath).findIndex(line => {
+      const match = /^\s*def\s+([A-Za-z_]\w*)/.exec(line);
+      return match?.[1] === methodName;
+    });
+    if (defLineIndex >= 0) {
+      return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(defLineIndex, 0));
+    }
+  }
+
+  return null;
+}
+
+// 批111 用户令:DetailLevel 值(NEAR/MEDIUM/FAR)引用同文件 <DetailLevels>
+// 下的档位声明节点,点击值跳到档位声明行;无该段或档位缺失返回 null。
+function findDetailLevelDefinitionInDef(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Location | null {
+  if (!isPositionInsideTagValue(document, position, 'DetailLevel')) {
     return null;
   }
 
-  const defLineIndex = readWorkspaceTextLines(scriptPath).findIndex(line => {
-    const match = /^\s*def\s+([A-Za-z_]\w*)/.exec(line);
-    return match?.[1] === methodName;
-  });
-  if (defLineIndex < 0) {
+  const ast = parseDefAst(document);
+  const root = ast?.root;
+  // 不可达(批111 定性):上方 isPositionInsideTagValue 经 getDefNodeAtPosition
+  // 对同一 document 同步解析,解析失败时该处早退;parseDefAst 确定性,
+  // 此处 root 恒非空。
+  /* istanbul ignore start */
+  if (!root) {
+    return null;
+  }
+  /* istanbul ignore stop */
+
+  const detailLevels = getDirectChildElement(root, 'DetailLevels');
+  if (!detailLevels) {
     return null;
   }
 
-  return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(defLineIndex, 0));
+  for (const level of getDirectChildElements(detailLevels)) {
+    if (level.name === word) {
+      return new vscode.Location(
+        document.uri,
+        new vscode.Position(getLineNumberAt(ast, level.tagStart) - 1, 0)
+      );
+    }
+  }
+
+  return null;
 }
 
 function findMethodImplementationLocationInDef(

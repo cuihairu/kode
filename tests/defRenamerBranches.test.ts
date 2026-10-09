@@ -50,6 +50,19 @@ const CYCLE_A_DEF = [
   '</root>',
   ''
 ].join('\n');
+
+// <Parent> 只有换行缩进(tinyxml 丢弃纯空白文本节点,引擎 enterNode 首子节点
+// 为空 → 无父类):getReferenceTargetName 跳过空白文本后无剩余子节点,取空名
+const BLANK_PARENT_DEF = [
+  '<root>',
+  '  <Parent>',
+  '  </Parent>',
+  '  <Properties>',
+  '    <hp> <Type> UINT8 </Type> </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
 const CYCLE_B_DEF = [
   '<root>',
   '  <Parent> CycleA </Parent>',
@@ -98,6 +111,7 @@ beforeAll(() => {
   write('scripts/entity_defs/Nameless.def', NAMELESS_DEF);
   write('scripts/entity_defs/CycleA.def', CYCLE_A_DEF);
   write('scripts/entity_defs/CycleB.def', CYCLE_B_DEF);
+  write('scripts/entity_defs/BlankParent.def', BLANK_PARENT_DEF);
   write('scripts/entity_defs/Distant.def', DISTANT_DEF);
   write('scripts/entity_defs/Mid.def', MID_DEF);
   ghostyPath = write('scripts/entity_defs/Ghosty.def', GHOSTY_DEF);
@@ -139,6 +153,15 @@ describe('computeDefRenameEdits branch gaps (批68)', () => {
     expect(path.basename(results[0].filePath)).toBe('Solo.def');
     expect(results[0].edits).toHaveLength(2);
     expect(results[0].text).toBe(SOLO_DEF);
+
+    // BlankParent 的 <Parent> 只含换行缩进:跳过空白文本后无剩余子节点,
+    // 取空名(与引擎 enterNode 取到空首子节点同口径),闭包不含它
+    expect(computeDefRenameEdits({
+      targetFilePath: path.join(root, 'scripts', 'entity_defs', 'BlankParent.def'),
+      targetText: BLANK_PARENT_DEF,
+      symbol: hpSymbol(),
+      newName: 'vigor'
+    })).toHaveLength(1);
   });
 
   it('survives an unreadable ancestor queued through a readable parent chain', () => {
