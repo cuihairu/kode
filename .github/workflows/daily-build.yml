@@ -13,6 +13,8 @@ jobs:
   build-and-release:
     name: Build & Rolling Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 创建/更新 Release 需要(job 级再声明一次,不依赖默认)
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.repository == 'cuihairu/kode'
@@ -102,20 +104,31 @@ jobs:
           EOF
           echo "body_path=release-body.md" >> $GITHUB_OUTPUT
 
+      # 滚动发布:release 已存在则原位改标题/换说明/--clobber 替换资产,
+      # 不存在则创建(恒为 nightly 滚动 tag,不带版本号)。用 gh CLI 而非
+      # release action:action 在"既有 release 更新"路径上反复出现 403
+      # 回归(softprops/action-gh-release#572/#836,权限声明齐备仍复发),
+      # CLI 行为确定且 Verify 步本就依赖 gh。
       - name: Rolling release to tag 'nightly' (idempotent)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: Kode Nightly (rolling)
-          body_path: ${{ steps.meta.outputs.body_path }}
-          files: ${{ steps.package.outputs.vsix }}
-          draft: false
-          prerelease: true
-          make_latest: false
-          overwrite_assets: true # 关键：滚动替换同名资产
-          fail_on_unmatched_files: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VSIX="${{ steps.package.outputs.vsix }}"
+          if gh release view nightly --repo cuihairu/kode >/dev/null 2>&1; then
+            gh release edit nightly --repo cuihairu/kode \
+              --title "Kode Nightly (rolling)" \
+              --notes-file "${{ steps.meta.outputs.body_path }}" \
+              --prerelease
+            gh release upload nightly --repo cuihairu/kode "$VSIX" --clobber
+          else
+            gh release create nightly --repo cuihairu/kode \
+              --title "Kode Nightly (rolling)" \
+              --notes-file "${{ steps.meta.outputs.body_path }}" \
+              --prerelease \
+              --latest=false \
+              "$VSIX"
+          fi
+          echo "✅ Release 'nightly' 已滚动更新:$VSIX"
 
       - name: Verify release asset exists
         run: |
