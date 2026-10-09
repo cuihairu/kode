@@ -285,13 +285,15 @@ KBEngine 调试不再通过工作区设置项拼 Python 启动参数，而是统
 
 ### telnet 探测
 
+telnet 相关内容（状态栏灯、服务器控制树中的 telnet 状态项、面板命令入口）只在配置显式开启 telnet 时展示：设置显式 `kbengine.telnet.port > 0`，或元件 kbengine.xml 里存在 `<telnet_service>` 段。两处都没有时不探测、不展示，也不再回落引擎默认端口表。
+
 #### `kbengine.telnet.host`
 
 telnet 探测目标主机，默认 `127.0.0.1`。
 
 #### `kbengine.telnet.port`
 
-telnet 探测端口。`0`（默认）表示未显式指定，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000。
+telnet 探测端口。`0`（默认）表示未显式指定，改按元件 kbengine.xml 的 `<telnet_service>` 段；kbengine.xml 有该段但未写端口时，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000。
 
 #### `kbengine.telnet.password`
 
@@ -303,7 +305,7 @@ telnet 面板允许发送的命令白名单（精确匹配或「命令 + 空格 
 
 #### `kbengine.telnet.configXmlPath`
 
-可选。指向元件 kbengine.xml，解析其 `<telnet_service>` 段作为端口/密码回落（支持 `${workspaceFolder}`）。设置显式 `kbengine.telnet.port > 0` 时以设置优先。
+可选。指向元件 kbengine.xml，解析其 `<telnet_service>` 段作为端口/密码回落（支持 `${workspaceFolder}`）。设置显式 `kbengine.telnet.port > 0` 时以设置优先。未设置时按约定路径探测工作区根：`kbengine.xml`、`res/server/kbengine.xml`、`assets/res/server/kbengine.xml`，取第一个存在的文件。
 
 #### `kbengine.telnet.probeIntervalSeconds`
 
@@ -382,7 +384,7 @@ HTTP 快捷请求列表，增删改走设置界面的列表编辑器，启停 = 
 KBEngine 组件是 C++ 进程内嵌 Python 运行时，不是由扩展直接启动一个 Python 脚本。因此调试模型必须是：
 
 1. 先通过 telnet 向组件输入项目实际使用的开启调试命令
-2. 再使用 `debugpy` 的 `processId` 方式附加到目标进程
+2. 再从 VS Code 内建进程选择器（`${command:pickProcess}`）里选目标进程，经 `debugpy` 附加
 
 这也是扩展当前生成的唯一调试配置形式。
 
@@ -391,9 +393,9 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，不是由扩展直接启�
 如果 `Attach to Component` 或 `Start Debugging` 失败，建议按下面顺序排查：
 
 1. 目标组件是否已经通过 telnet 成功开启调试
-2. 输入的 PID 是否就是目标组件本身
+2. 进程选择器里选的是否就是目标组件本身
 3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致
 4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前源码目录
-5. 本机是否已安装 `ms-python.debugpy`，并且 VS Code 能正常使用它进行 PID attach
+5. 本机是否已安装 `ms-python.debugpy`，并且 VS Code 能正常通过它进行进程附加
 
 旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug` 已经移除，避免继续误导成“启动 Python 文件调试”。

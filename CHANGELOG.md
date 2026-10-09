@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Reference-field navigation now covers the whole family in `.def` files:
+  `Parent` and `<Interfaces>` mixin names jump to their def files, `Type`/`Arg`
+  entity and component references resolve to `entity_defs/` or
+  `entity_defs/components/`, custom type aliases jump to their types.xml
+  declaration, `DetailLevel` values jump to the `<DetailLevels>` entry line,
+  and method names in BaseMethods/CellMethods/ClientMethods resolve their
+  implementation through the engine's loading closure (own role script →
+  interface mixin scripts → parent chain; interface defs resolve to
+  `scripts/interfaces/` and do not follow `Parent`)
+- Telnet surfaces (status bar lamp, server-tree telnet items, panel command
+  entry) are only shown when telnet is explicitly enabled in configuration —
+  a non-zero `kbengine.telnet.port` or a `<telnet_service>` section in the
+  component kbengine.xml (auto-discovered at the conventional workspace-root
+  paths when `kbengine.telnet.configXmlPath` is unset: `kbengine.xml`,
+  `res/server/kbengine.xml`, `assets/res/server/kbengine.xml`); the old
+  "nothing configured → seven default component ports" fallback is gone
+- Debug attach now uses the VS Code built-in process picker
+  (`${command:pickProcess}`) in both the generated launch.json and the
+  attach command, replacing the manual PID promptString input; updating
+  launch.json removes the obsolete `kbengineProcessId` input left by older
+  versions
 - Version bumped to 0.1.1 so nightly VSIX installs are distinguishable in the
   extensions panel (the rolling release keeps the same `kode-nightly.vsix`
   filename, which made stale installs look identical to fresh ones)

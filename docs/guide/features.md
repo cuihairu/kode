@@ -32,8 +32,9 @@
 
 ## Telnet 探测与会话联动
 
+- 配置显式开启 telnet（设置显式端口，或 kbengine.xml 有 `<telnet_service>` 段）才展示 telnet 相关内容；两处都没配时不探测、不展示，状态灯、树项与面板命令入口全部隐藏
 - 状态栏与服务器控制面板状态灯：已连接 / 已开启·未配密码 / 密码被拒 / 未开启 / 未配置
-- 目标解析三级：设置项 → `kbengine.xml` 的 `<telnet_service>` 段 → 引擎七组件默认端口表
+- 目标解析三级：设置项 → `kbengine.xml` 的 `<telnet_service>` 段（未显式指定路径时按约定路径探测工作区根：`kbengine.xml`、`res/server/kbengine.xml`、`assets/res/server/kbengine.xml`）→ 引擎七组件默认端口表（仅段在而未写端口时）
 - 探测默认 5 秒一轮，单端口 1.5 秒超时，探完即毁不占连接
 - 端口开启时自动握手登录；密码只经 socket 提交，不进日志
 - 面板命令输入走白名单加内置只读快捷命令，`:quit` 恒被拒绝
@@ -42,8 +43,8 @@
 ## 调试支持
 
 - 调试配置统一读取工作区 `.kbengine/debug.json`：telnet 地址/端口/开启命令，加 attach 用的 `pathMappings`
-- 生成的启动配置是 `debugpy` 的 `processId` attach 形态
-- 调试模型：先经 telnet 向组件输入开启调试命令，再按 PID 附加
+- 生成的启动配置是 `debugpy` 的 attach 形态，进程经 VS Code 内建进程选择器（`${command:pickProcess}`）挑选
+- 调试模型：先经 telnet 向组件输入开启调试命令，再从进程选择器里选目标进程附加
 
 说明：
 KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存在「扩展直接启动 Python 脚本」的形态。

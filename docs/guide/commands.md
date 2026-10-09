@@ -109,12 +109,12 @@
 ### `kbengine.debug.start`
 
 - 标题：`Start Debugging`
-- 作用：显示目标组件的 telnet 调试提示，然后进入 PID attach 流程
+- 作用：显示目标组件的 telnet 调试提示，然后进入进程选择器 attach 流程
 
 ### `kbengine.debug.attach`
 
 - 标题：`Attach to Component`
-- 作用：按 PID 附加到已开启调试的 KBEngine 组件进程
+- 作用：弹出 VS Code 内建进程选择器，附加到已开启调试的 KBEngine 组件进程
 
 ## 可视化面板
 
@@ -248,16 +248,16 @@
 KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Python 运行时是嵌在 C++ 组件进程里的，因此扩展只保留两步：
 
 1. 通过 telnet 向目标组件输入项目实际使用的开启调试命令
-2. 通过 `debugpy` 的 `processId` 方式附加到已开启调试的进程
+2. 通过 VS Code 内建进程选择器（`${command:pickProcess}`，由 debugpy 解析弹出）选择目标进程附加
 
-扩展生成的 `launch.json` 会固定为 PID attach 形式：
+扩展生成的 `launch.json` 固定为进程选择器 attach 形式：
 
 ```json
 {
   "name": "KBEngine: Attach to baseapp",
   "type": "debugpy",
   "request": "attach",
-  "processId": "${input:kbengineProcessId}",
+  "processId": "${command:pickProcess}",
   "justMyCode": false,
   "pathMappings": [
     {
@@ -268,20 +268,22 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
 }
 ```
 
+旧版本生成的 `${input:kbengineProcessId}` 手输 PID 输入项已废弃；运行 `Update launch.json` 会自动清除该遗留输入。
+
 ### 推荐使用顺序
 
 1. 运行 `Create Debug Config Template`
 2. 在 `.kbengine/debug.json` 中填写 telnet 地址、端口、开启调试命令和路径映射
 3. 运行 `Update launch.json`
 4. 运行 `Start Debugging` 查看提示并先开启调试
-5. 运行 `Attach to Component`，输入 PID
+5. 运行 `Attach to Component`，在弹出的进程选择器里选目标进程
 
 ### 排查要点
 
 如果 `Attach to Component` 失败，优先检查这些点：
 
 1. 目标 KBEngine 组件是否已经通过 telnet 真正开启调试
-2. 输入的 PID 是否就是目标组件进程，而不是其他 manager 或辅助进程
+2. 进程选择器里选的是否就是目标组件进程，而不是其他 manager 或辅助进程
 3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致
 4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前工作区源码目录
 5. 当前机器里是否已经安装并启用 `ms-python.debugpy`

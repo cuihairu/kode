@@ -120,10 +120,13 @@
 ### 当前支持
 
 - 从 `entities.xml` 跳转到对应的 `.def`
-- 从 `.def` 中 `Type` / `Arg` 里的实体引用跳转到对应实体定义
+- 从 `.def` 中 `Type` / `Arg` 里的实体引用跳转到对应实体定义（实体引用解析到定义根平铺位置，组件引用解析到 `components/` 子目录）
+- 从 `.def` 的 `Parent` 跳到父类 def、`<Interfaces>` 包裹内的接口名跳到 `interfaces/` 下的接口 def
+- 从 `Properties` 字段 `DetailLevel` 值跳到同文件 `<DetailLevels>` 下的档位声明行
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
 - 从 `Properties` 字段名跳到 `scripts/{base,cell,client}/<实体>.py` 的 `class` 声明行（base→cell→client 取第一个在盘脚本）
 - 从 `BaseMethods` / `CellMethods` / `ClientMethods` 方法名跳到对应角色脚本里的 `def` 行（未配置工程索引时按文件约定回落；脚本在而方法未实现时不跳）
+- 方法/属性实现脚本按引用闭包解析：自身角色脚本 → `<Interfaces>` 混入的 `scripts/interfaces/<接口>.py` → `Parent` 链逐级向上（接口 def 自身的实现在 `scripts/interfaces/<接口名>.py`，接口不跟随 `Parent`）
 
 ### 典型示例
 
@@ -143,7 +146,7 @@
 ### 更新范围
 
 - 同文件内同名声明：属性的全部 Flags 作用域变体、方法所属段内的同名方法
-- 后代实体定义中的同名复述：`Parent` 链与 `Interfaces` 混入的传递闭包覆盖到的 `.def`（传播边对齐引擎装载路径：`Parent`/接口名取元素的**首个子节点**——文本取文本、元素取标签名，同引擎 `getKey` 语义，紧凑的 `<Parent><Hero/></Parent>` 与文本写法都认，但标签间换行缩进会使首子节点成为空白文本、引擎拼不出父类文件，此时不产生边；实体父类解析到定义根平铺位置、组件 def 的 `Parent` 在 `components/` 内解析、接口固定解析到 `interfaces/` 子目录；接口文件装载时不读 `Parent`；`<Interfaces>` 只认 `interface`/`Interface`/`type`/`Type` 四种包裹拼写，以接口名直接命名的子元素（如 `<MoveIface/>`）引擎不装载、不产生传播边）
+- 后代实体定义中的同名复述：`Parent` 链与 `Interfaces` 混入的传递闭包覆盖到的 `.def`（传播边对齐引擎装载路径：`Parent`/接口名取元素的**首个非空白子节点**——文本取文本、元素取标签名，同引擎 `getKey` 语义；tinyxml 默认丢弃元素间纯空白文本节点（`condenseWhiteSpace=true`，KBEngine 未改），换行缩进的展开写法与紧凑写法同样装载，`<Parent>` 里只留空白时无子节点、不产生边；实体父类解析到定义根平铺位置、组件 def 的 `Parent` 在 `components/` 内解析、接口固定解析到 `interfaces/` 子目录；接口文件装载时不读 `Parent`；`<Interfaces>` 只认 `interface`/`Interface`/`type`/`Type` 四种包裹拼写，以接口名直接命名的子元素（如 `<MoveIface/>`）引擎不装载、不产生传播边）
 - 开标签与闭标签上的名字同步更新
 
 ### 边界

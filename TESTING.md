@@ -3660,6 +3660,100 @@ Coexistence/highlightRegistration 五个既有测试文件随行为更新;生产
 theme.json、language-configuration.json 三个资产 + languageProviders.ts/
 definitionWorkspace.ts 两处导航)。
 
+## 批111:引用族导航全量接通 + telnet 配置门控 + attach 进程选择器
+
+用户令三条:①引用型字段整族没接导航(Interfaces/CellMethods/BaseMethods
+同族),清单至少含源码里所有 def 中引用别的定义的段落,一次性全量接通,
+逐段验收=清单式实跳走查记录,别修一个交一个;②telnet 端口应从配置读取,
+配置里没开启 telnet 就没必要展示 telnet 相关的东西;③debug 点击 attach
+时不是类似 VS Code 的 `${command:pickProcess}` 选进程吗。
+
+交付一:引用族导航全量接通(src/languageProviders.ts +
+src/definitionWorkspace.ts + src/defRenamer.ts)。
+- 方法段实现链重铸:collectMethodCandidateScripts 按引擎装载路径构造
+  候选脚本闭包——自有角色脚本 → 本 def `<Interfaces>` 混入的
+  scripts/interfaces/<接口>.py → 父 def 角色脚本 → 父 def 接口脚本 →
+  逐级上溯(seenDefs 环守卫);`<Interfaces>` 混入只认引擎装载拼写
+  (wrapper 四拼写 interface/Interface/type/Type,接口名取 wrapper 首子
+  节点,entitydef.cpp loadInterfaces:551-639;直取形态 `<MoveIface/>`
+  引擎不装载);接口 def 自身实现即 scripts/interfaces/<接口名>.py 且不
+  跟随 Parent;Parent 解析支持组件 def 的 components/ 目录(对齐
+  loadParentClass 实体平铺/组件入 components/ 的分叉);
+- def→def 引用段:Parent 子标签、Interfaces 混入名、Type 值(实体/组件
+  双路)、Arg 值、自定义别名(types.xml)在既有链上收口;DetailLevel 值
+  → 同文件 `<DetailLevels>` 档位声明行(新链,置于 Properties 链**之前**
+  ——DetailLevel 值的 symbolInfo.section 也是 'Properties',排后必被
+  截获成死代码,走查测试㉒㉓锁定顺序);
+- defRenamer 传播边与导航共用 parseDefFileSemantics,批96 引擎对齐
+  结论(wrapper-only)随 getReferenceTargetName 的空白口径修正一并
+  落源(见缺陷记账)。
+
+验收走查(tests/batch111ReferenceNavigationWalkthrough.test.ts 新文件,
+27 项清单式实跳记录,临时工作区复刻 scripts/{entities.xml, entity_defs/
+(含 interfaces/、components/), base/, cell/, client/, interfaces/} 布局;
+每项断言落点文件+行,负例断言 null 不虚跳):
+①自有角色脚本优先(Hero.onKill→base/Hero.py)②接口混入脚本(Hero.onScan→
+interfaces/MoveIface.py)③父 def 角色脚本(Hero.onRoam→base/Mob.py)
+④祖父 def 传递(NPC.onHeir→base/Grandparent.py)⑤CellMethods 自有脚本
+⑥ClientMethods 自有脚本 ⑦组件 def 经 components/ 父链(MoveComponent.
+onTick→cell/BaseComponent.py)⑧组件 def 自身无脚本落父脚本 ⑨接口 def
+自身脚本 ⑩-⑬负例四路(悬空 Parent/空父 def/Parent 环/可解析但未实现)
+⑭-㉑def→def 八路(Parent/Interfaces/Type 实体/Type 组件×2/自定义别名/
+Arg/自引用负例)㉒㉓DetailLevel 值→档位行 ㉔㉕负例(无 DetailLevels 段/
+档位未声明)㉖㉗补例(父 def 坏 XML/组件父 def 缺席)。既有锁面随行为
+更新:defRenamer.test.ts(混合排版 Parent 由负例翻正例锁,传播图 +2)、
+defRenamerBranches.test.ts(新增 `<Parent>` 纯空白取空名锁)、
+definitionWorkspace.test.ts(findInterfaceScriptFile 字符串 target 与
+无工作区两臂)。
+
+交付二:telnet 配置门控(src/telnetService.ts + src/extension.ts +
+package.json)。目标解析改为配置显式开启才展示:设置显式
+kbengine.telnet.port>0,或 kbengine.xml `<telnet_service>` 段在(未显式
+指定 configXmlPath 时按约定路径探测工作区根:kbengine.xml、
+res/server/kbengine.xml、assets/res/server/kbengine.xml——官方
+kbengine_demos_assets 布局经 GitHub 实查,取第一个存在的文件,不深入
+猜测);两处都没开 → 空目标,状态灯/服务器控制树 telnet 项随空目标
+自然隐藏,命令面板入口经 `kbengine.telnetConfigured` context key 由
+package.json when 子句隐藏(探测每轮重读目标时同步刷新 context);
+「什么都没配 → 七组件默认端口表」的兜底路径删除,ENGINE_DEFAULT_
+TELNET_PORTS 仅在段在而未写端口时使用(引擎 kbengine_defaults.xml 口径)。
+官方 demo 的 kbengine.xml 实查无 `<telnet_service>` 段——正是用户场景
+(配置没提 telnet 却亮七盏灯)。测试:telnetService.test.ts(默认表
+改锁段在口径 + 新增空目标门控)、telnetWiring.test.ts(readTelnetTargets
+FromSettings 八路:无配置无工作区/显式设置/xml 三约定路径命中 it.each/
+xml 无段/路径全缺/悬空 configXmlPath)、extension.test.ts(激活无配置
+灯隐藏 + context false;真 TCP 探测用例改经临时 kbengine.xml 显式开启)、
+fake-vscode/commandRegistry 增内建 setContext 假体(contexts 入账)。
+
+交付三:attach 进程选择器(src/debugConfig.ts)。launch.json 生成与
+attachToComponent 的 processId 统一改 `${command:pickProcess}`(VS Code
+内建进程选择器,debugpy 解析弹出原生进程列表),promptString 手输 PID
+的 kbengineProcessId 输入项废弃——updateLaunchJson 顺带清除旧文件遗留
+该输入;promptForProcessId 及其校验链整段删除(选择器取消由 debugpy 侧
+放弃会话,startDebugging 返回 false 即附加未发生);简报与提示文案
+「按 PID 附加」→「经进程选择器附加」。测试:debugConfig.test.ts
+(inputs 生成改锁清除语义,七配置 processId 字面量)、
+debugConfigAttach.test.ts(promptForProcessId 三用例删除,pickProcess
+attach 三用例补位:字面量/无输入框/错误通道与 false 传播)。
+
+文档对账:language.md 跳转定义清单补引用族新链(Parent/Interfaces/
+Type/Arg/DetailLevel/方法闭包)、重命名传播边的空白口径改真(tinyxml
+condenseWhiteSpace 默认开,引擎解析期丢弃纯空白文本节点,展开排版
+照常装载——原「换行缩进引擎拼不出父类文件」记载有误);source-analysis
+.md loadInterfaces 段补 wrapper-only 与空白口径;configuration.md/features
+.md/commands.md 三页随 telnet 门控与 pickProcess 同步(含 launch.json
+样例与排查要点改写)。
+
+门禁:pnpm lint EXIT=0;tsc --noEmit EXIT=0;覆盖率四指标 100%
+(5866/3387/1023/5725,分母较批110 净减=promptForProcessId 校验链删除
+随 pickProcess 落地);vitest 97 文件 1209 用例全绿。
+
+记账:用例 1176→1209(+33:走查 +27、telnet 门控 +6),测试文件 +1
+(batch111ReferenceNavigationWalkthrough.test.ts);生产码三处
+(languageProviders/defRenamer/definitionWorkspace 导航族 + telnetService
+门控与约定路径探测 + debugConfig 选择器,extension.ts 接线,package.json
+两描述与 commandPalette when)。
+
 ## 近期由测试发现并修复的真实缺陷
 
 - `extension.ts` 的 `kbengine.entity.method.open` 命令空目标守卫位于 label
@@ -3706,3 +3800,15 @@ definitionWorkspace.ts 两处导航)。
   模块访问('.'与'k'之间词边界成立),会在 self 属性上误吐全量 kbe 模块
   符号 → 补前置点号守卫,`self.kbe.` 与 `getItems().kbe.` 用例锁定
   (批108 补全装配测试发现)。
+- `defRenamer.ts` 引用目标的空白口径与引擎相反:旧实现取元素**首个子节点**
+  时保留纯空白文本节点,判定 `<Parent>`/`<Interface>` 换行缩进排版「引擎
+  拼不出父类文件、不产生传播边」——实查 tinyxml 源(condenseWhiteSpace=
+  true 默认,KBEngine 未改;TiXmlElement::Parse 先 SkipWhiteSpace 再建
+  文本节点,Blank() 的纯空白节点直接 delete)证明解析期已丢弃空白文本,
+  展开排版照常装载 → getReferenceTargetName 改为跳过纯空白文本后取首个
+  非空白子节点,混合排版传播边由负例翻正例锁定(批111 走查用例②失败
+  追查引擎源发现,连带修正 language.md/source-analysis.md 两处记载)。
+- `languageProviders.ts` DetailLevel 定义链排序缺陷:DetailLevel 值光标
+  的 symbolInfo.section 也是 'Properties',该链排在 Properties→脚本链
+  之后必被截获,凡有脚本的实体整链为死代码 → 链序提前至 Properties 链
+  之前并注记原因,走查用例㉒㉓锁定(批111 清单走查设计推演发现)。

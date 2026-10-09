@@ -61,10 +61,14 @@
 
 #### 接口(Interfaces)
 
-`<Interfaces>` 逐接口取元素名,def 文件 = `defFilePath + "interfaces/" +
-名字 + ".def"`,方法与属性**平铺并入同一模块**;接口 def 自身还能再带
-`Components`/`Interfaces`,递归处理(`entitydef.cpp:551-639`,调用点
-`entitydef.cpp:354`)。
+`<Interfaces>` 逐接口取包裹元素(`interface`/`Interface`/`type`/`Type`
+四种拼写,`enterNode` 级联)再取其**首子节点的元素名**为接口名——以接口名
+直接命名的子元素(如 `<MoveIface/>`)会被 `getKey` 检查跳过、不装载;
+`enterNode` 返回首子节点时 tinyxml 已在解析期丢弃纯空白文本节点
+(`condenseWhiteSpace=true` 默认),换行缩进排版不影响取名,def 文件 =
+`defFilePath + "interfaces/" + 名字 + ".def"`,方法与属性**平铺并入同一
+模块**;接口 def 自身还能再带 `Components`/`Interfaces`,递归处理
+(`entitydef.cpp:551-639`,调用点 `entitydef.cpp:354`)。
 
 #### 组件(Components)
 
