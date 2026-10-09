@@ -25,7 +25,7 @@
 - `Persistent` 及其 `true` 值 — 该属性自动存储
 - Flags 值：`BASE_AND_CLIENT`、`ALL_CLIENTS` 等引擎常量
 
-上述颜色由扩展自带主题提供（Properties 金、BaseMethods 青、CellMethods 紫、ClientMethods 绿、Exposed 红、Persistent/Flags 值橙）；换用其他主题时语义 scope 仍在，颜色由该主题决定。
+上述颜色由扩展自带主题提供（Properties 琥珀、BaseMethods 绿、CellMethods 青、ClientMethods 紫——四区块加粗，Exposed 红、Persistent 橙、Flags 值蓝；全部对深色背景 ≥4.5:1 对比度）；换用其他主题时语义 scope 仍在，颜色由该主题决定。
 
 ### 其余部分
 

@@ -3581,7 +3581,15 @@ BaseMethods 青 #66D9EF 粗体、CellMethods 紫 #AE81FF 粗体、ClientMethods
 及其 true 橙 #FD971F(粗体/常规)、Flags 值橙 #FD971F 粗体;批107
 Common 家族原样保留(.py 金样本不动)。宿主标点是泛型
 punctuation.definition.tag.xml(无 begin/end 后缀),灰规则三 scope
-并收。旧 *.kbengine 死规则(类型/容器/DetailLevel/私造关键字等)整批
+并收。二调(用户复检仍评「难看」后,按 ui-ux-pro-max 技能规则重配):
+深色模式用去饱和色调变体(弃 Monokai 原生饱和度)、前景/背景全对
+≥4.5:1(AA)、强调克制(粗体只留四区块)。新语义板=One Dark 色调家族:
+Properties 琥珀 #E5C07B、BaseMethods 绿 #98C379、CellMethods 青
+#56B6C2、ClientMethods 紫 #C678DD(四区块粗体),Exposed 及其 true 红
+#E06C75、Persistent 及其 true 橙 #D19A66、Flags 值蓝 #61AFEF,标点
+#808080→#969696(补过 AA 线);金样本 93 对探针重录,分词 scope 未动
+——token 流摘要锁(47326/c4ba7ccb)不变即证。
+旧 *.kbengine 死规则(类型/容器/DetailLevel/私造关键字等)整批
 删除——类型值自此为普通文本,与引擎的对齐由 types.xml 诊断/补全承担。
 
 交付三:语言配置(language-configuration.json)。行注释 `//` 与块注释
