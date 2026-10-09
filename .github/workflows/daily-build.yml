@@ -131,6 +131,8 @@ jobs:
           echo "✅ Release 'nightly' 已滚动更新:$VSIX"
 
       - name: Verify release asset exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # gh CLI 只认 GH_TOKEN
         run: |
           gh release view nightly --repo cuihairu/kode --json assets --jq '.assets[].name'
           echo "✅ Release 'nightly' 可见且含 kode-nightly.vsix"
