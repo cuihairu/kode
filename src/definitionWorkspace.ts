@@ -371,6 +371,49 @@ export function findEntityDefinitionsRoot(
   return getDefinitionWorkspaceLayout(workspaceRoot).entityDefsRoot;
 }
 
+// 批110 用户令:属性/方法要能导航到实体脚本实现。返回
+// scripts/<role>/<实体>.py(base|cell|client)中第一个存在的路径,
+// 不存在时返回 null。与 getEntityRuntimeProfile 不同,这里不要求
+// 实体已登记在 entities.xml(纯脚本/孤立 def 也要能跳)。
+export function findEntityScriptFile(
+  entityName: string,
+  role: 'base' | 'cell' | 'client',
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
+  // getDefinitionWorkspaceLayout 的区间理由。
+  /* istanbul ignore start */
+  if (!layout.entityScriptsRoot) {
+    return null;
+  }
+  /* istanbul ignore stop */
+
+  return findExistingLookupPath(
+    joinWorkspacePath(layout.entityScriptsRoot, role, `${entityName}.py`)
+  );
+}
+
+// 批110:配套文本读取(供导航方在脚本里定位 class/def 行)。读不到
+// (路径不存在/IO 失败)时返回空串,调用方按"零行"自然走 null 兜底,
+// 不再单设失败分支。
+export function readWorkspaceTextFile(filePath: string): string {
+  return readTextFile(filePath) ?? '';
+}
+
+// 批110:行数组口径(导航方只需要逐行扫描)。
+export function readWorkspaceTextLines(filePath: string): string[] {
+  return readWorkspaceTextFile(filePath).split('\n');
+}
+
 export function getEntityRuntimeProfile(
   entityName: string,
   target?: string | Pick<vscode.TextDocument, 'fileName'>

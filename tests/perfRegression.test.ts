@@ -36,10 +36,11 @@ const fixture = buildLargeDefFixture();
 
 // 批96 defAnalyzer 引擎对齐后的行为摘要
 const GOLDEN = {
-  tokenCount: 47726,
-  // 批107:标准 scope 调到 scope 栈浅层(theme 通用规则与 .def 规则共存),
-  // scope 顺序变化 → 摘要更新 c3c0cf5f → a3b47cdf(token 数/区间不变)
-  tokenDigest: 'a3b47cdf',
+  tokenCount: 47326,
+  // 批110:def 分词重铸(XML 委托 + 语义前置规则)→ token 流整体重录
+  // 47726/a3b47cdf → 47326/c4ba7ccb;批107 的浅层化手法与批92 的锁意图
+  // (性能优化不得漂移分词行为)不变,后续优化仍受本摘要约束
+  tokenDigest: 'c4ba7ccb',
   diagnosticCount: 400,
   diagnosticDigest: '910801f9',
   findingCount: 620,
@@ -55,10 +56,26 @@ describe('批92 性能优化行为回归锁(大 .def 三路径 golden)', () => {
     workspaceState.reset();
   });
 
-  it('语法分词 token 流逐位不变(47726 tokens 摘要锁)', async () => {
+  it('语法分词 token 流摘要锁', async () => {
     const grammarJson = JSON.parse(
       fs.readFileSync(path.join(root, 'syntaxes', 'kbengine.tmLanguage.json'), 'utf8')
     ) as IRawGrammar;
+    // 批110:def 分词委托 text.xml,Registry 需能取到宿主语法(与编辑器
+    // 内建 xml 语法等价,取 @shikijs/langs/xml 的 text.xml 条目)
+    let textXml: IRawGrammar | null = null;
+    try {
+      const xmlModule = (await import('@shikijs/langs/xml')) as { default: unknown };
+      const xmlRaw = xmlModule.default;
+      const xmlGrammars = (Array.isArray(xmlRaw) ? xmlRaw : [xmlRaw]) as Array<{
+        scopeName: string;
+      }>;
+      textXml =
+        (xmlGrammars.find(item => item.scopeName === 'text.xml') as IRawGrammar | undefined) ??
+        null;
+    } catch {
+      textXml = null;
+    }
+    expect(textXml, 'text.xml 宿主语法应可解析').toBeTruthy();
     const wasm = fs.readFileSync(
       path.join(root, 'node_modules', 'vscode-oniguruma', 'release', 'onig.wasm')
     );
@@ -70,8 +87,15 @@ describe('批92 性能优化行为回归锁(大 .def 三路径 golden)', () => {
         createOnigScanner: (sources: string[]) => createOnigScanner(sources),
         createOnigString: (source: string) => createOnigString(source)
       }),
-      loadGrammar: async scopeName =>
-        scopeName === 'source.kbengine-def' ? grammarJson : null
+      loadGrammar: async scopeName => {
+        if (scopeName === 'source.kbengine-def') {
+          return grammarJson;
+        }
+        if (scopeName === 'text.xml') {
+          return textXml;
+        }
+        return null;
+      }
     });
     const grammar: IGrammar | null = await registry.loadGrammar('source.kbengine-def');
     expect(grammar, '语法应可加载').toBeTruthy();

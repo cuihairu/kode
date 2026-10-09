@@ -6,22 +6,21 @@ import { Registry } from 'vscode-textmate';
 import type { IRawGrammar } from 'vscode-textmate';
 import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma';
 
-// KBEngine Dark 主题通用 tokenColors 覆盖回归(批107,高亮消失根因修复的验收面):
-// 根因=主题仅含 .kbengine/xml 专属规则(31 条),切到本主题后 .py 等通用
+// KBEngine Dark 主题通用 tokenColors 覆盖回归(批107 建面,批110 重铸):
+// 批107 根因=主题仅含 .kbengine/xml 专属规则,切到本主题后 .py 等通用
 // 语言 token 无规则可配 → 全部落到前景色,用户所见即"着色消失"。
-// 修复=按 VS Code Dark+ 标准 scope 集补通用规则(字符串/关键字/数字/
-// 类型/函数/变量/操作符/正则等),并在 kbengine.tmLanguage.json 里把
-// 追加给 .def 的标准 scope(entity.name.function、storage.type.numeric.*)
-// 调到 scope 栈浅层,让既有 kbengine 规则始终占据最深层——vscode-textmate
-// 主题匹配按"路径深度优先、同深度取更长选择器"评分,且不支持通配符与
-// 排除选择器(实测 `entity.name.function.*`、`a -b` 均整条静默失配),
-// 浅层化是唯一能让通用规则与 .def 专属规则共存的手法。
+// 修复=按 VS Code Dark+ 标准 scope 集补通用规则。批110 用户令 def 改版:
+// 分词委托内建 XML + 少量语义前置规则(Properties=玩家属性、三方法段
+// 分色、Exposed=客户端可请求、Persistent=自动存储、Flags 值=引擎常量),
+// 旧"全红"基线随之作废,.def 金样本按新语义逐 token 重录(探针实测后
+// 逐项对着色意图核对,非盲拍快照)。
 // 本文件在真实 vscode-textmate Registry(主题 + MagicPython + kbengine
 // 共装形态)下断言:
 // 一、.py 样例的关键 token 在本主题下取得预期前景色(不再落前景兜底色);
-// 二、.def 样例逐 token 前景色与修复前基线完全一致(.def 着色零回归);
+// 二、.def 样例逐 token 前景色与批110 语义基线一致;
 // 三、python 分词零 kbengine scope 泄漏(主题修复不改变批103 结论)。
-// MagicPython 取自 @shikijs/langs(与 microsoft/vscode 内建语法同源);
+// MagicPython/text.xml 取自 @shikijs/langs(与 microsoft/vscode 内建语法
+// 同源;text.xml 是 [java, xml] 数组,按 scopeName 取 text.xml);
 // 包不可解析时整组跳过(测试不引入网络依赖)。
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,36 +38,128 @@ const PYTHON_SAMPLE = [
 
 const DEF_SAMPLE = [
   '<Properties>',
-  '  <Property Name="hp" Type="UINT32" Flags="BASE_AND_CLIENT">',
-  '    <DetailLevel>0</DetailLevel>',
-  '  </Property>',
-  '</Properties>'
+  '  <hp id="1">',
+  '    <Type>UINT32</Type>',
+  '    <Flags>BASE_AND_CLIENT</Flags>',
+  '    <Persistent>true</Persistent>',
+  '  </hp>',
+  '</Properties>',
+  '<BaseMethods>',
+  '  <onKill>',
+  '    <Exposed>true</Exposed>',
+  '  </onKill>',
+  '</BaseMethods>',
+  '<CellMethods>',
+  '  <onScan>',
+  '    <Arg>ENTITY_ID</Arg>',
+  '  </onScan>',
+  '</CellMethods>',
+  '<ClientMethods>',
+  '  <onDamage>',
+  '    <Arg>UINT8</Arg>',
+  '  </onDamage>',
+  '</ClientMethods>'
 ].join('\n');
 
-// .def 金样本:修复前基线逐 token 前景色(探针实测,22 行样本共 21 个
-// 非空白 token)。主题修复后必须与此逐位一致。
+// .def 金样本:批110 语义基线逐 token 前景色(探针实测,四段+Exposed/
+// Persistent/Flags 全要素)。着色意图:标点灰、普通标签蓝、属性名浅蓝、
+// 字符串橙、裸值默认前景、Properties 金、BaseMethods 青、CellMethods 紫、
+// ClientMethods 绿、Exposed/其 true 值红、Persistent/其 true 值与 Flags
+// 值橙。主题与语法任何一方漂移都会在此逐位暴露。
 const DEF_GOLDEN: Array<[string, string]> = [
-  ['<Properties>', '#F92672'],
-  ['<Property', '#F92672'],
-  ['Name', '#A6E22E'],
-  ['=', '#F8F8F2'],
-  ['"hp"', '#E6DB74'],
-  ['Type', '#A6E22E'],
-  ['=', '#F8F8F2'],
-  ['"', '#E6DB74'],
-  ['UINT32', '#66D9EF'],
-  ['"', '#E6DB74'],
-  ['Flags', '#A6E22E'],
-  ['=', '#F8F8F2'],
-  ['"', '#E6DB74'],
-  ['BASE_AND_CLIENT', '#F92672'],
-  ['"', '#E6DB74'],
-  ['>', '#F92672'],
-  ['<DetailLevel>', '#F92672'],
-  ['0', '#F8F8F2'],
-  ['</DetailLevel>', '#F92672'],
-  ['</Property>', '#F92672'],
-  ['</Properties>', '#F92672']
+  ['<', '#808080'],
+  ['Properties', '#E6DB74'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['hp', '#569CD6'],
+  ['id', '#9CDCFE'],
+  ['=', '#808080'],
+  ['"1"', '#CE9178'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['Type', '#569CD6'],
+  ['>', '#808080'],
+  ['UINT32', '#F8F8F2'],
+  ['</', '#808080'],
+  ['Type', '#569CD6'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['Flags', '#569CD6'],
+  ['>', '#808080'],
+  ['BASE_AND_CLIENT', '#FD971F'],
+  ['</', '#808080'],
+  ['Flags', '#569CD6'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['Persistent', '#FD971F'],
+  ['>', '#808080'],
+  ['true', '#FD971F'],
+  ['</', '#808080'],
+  ['Persistent', '#FD971F'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['hp', '#569CD6'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['Properties', '#E6DB74'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['BaseMethods', '#66D9EF'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['onKill', '#569CD6'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['Exposed', '#F92672'],
+  ['>', '#808080'],
+  ['true', '#F92672'],
+  ['</', '#808080'],
+  ['Exposed', '#F92672'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['onKill', '#569CD6'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['BaseMethods', '#66D9EF'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['CellMethods', '#AE81FF'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['onScan', '#569CD6'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['Arg', '#569CD6'],
+  ['>', '#808080'],
+  ['ENTITY_ID', '#F8F8F2'],
+  ['</', '#808080'],
+  ['Arg', '#569CD6'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['onScan', '#569CD6'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['CellMethods', '#AE81FF'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['ClientMethods', '#A6E22E'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['onDamage', '#569CD6'],
+  ['>', '#808080'],
+  ['<', '#808080'],
+  ['Arg', '#569CD6'],
+  ['>', '#808080'],
+  ['UINT8', '#F8F8F2'],
+  ['</', '#808080'],
+  ['Arg', '#569CD6'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['onDamage', '#569CD6'],
+  ['>', '#808080'],
+  ['</', '#808080'],
+  ['ClientMethods', '#A6E22E'],
+  ['>', '#808080']
 ];
 
 // .py 必须取得的前景色(期望子集:每个 [token, 颜色] 都须在实际结果中出现)。
@@ -110,17 +201,29 @@ describe('KBEngine Dark 主题通用着色覆盖(批107)', () => {
     );
 
     let magicPython: IRawGrammar | null = null;
+    let textXml: IRawGrammar | null = null;
     try {
       const langsModule = (await import('@shikijs/langs/python')) as {
         default: unknown;
       };
       const raw = langsModule.default;
       magicPython = (Array.isArray(raw) ? raw[0] : raw) as IRawGrammar;
+
+      // 批110:kbengine-def 分词委托 text.xml,Registry 须能取到宿主语法。
+      // @shikijs/langs/xml 的 default 是 [java, text.xml] 数组,按 scopeName 取。
+      const xmlModule = (await import('@shikijs/langs/xml')) as {
+        default: unknown;
+      };
+      const xmlRaw = xmlModule.default;
+      const xmlGrammars = (Array.isArray(xmlRaw) ? xmlRaw : [xmlRaw]) as Array<{
+        scopeName: string;
+      }>;
+      textXml = (xmlGrammars.find(item => item.scopeName === 'text.xml') ?? null) as IRawGrammar | null;
     } catch {
       magicPython = null; // 包不可达(未提升/改版)时整组跳过
     }
 
-    if (!magicPython) {
+    if (!magicPython || !textXml) {
       registry = null;
       return;
     }
@@ -138,6 +241,9 @@ describe('KBEngine Dark 主题通用着色覆盖(批107)', () => {
       loadGrammar: async scopeName => {
         if (scopeName === 'source.python') {
           return magicPython;
+        }
+        if (scopeName === 'text.xml') {
+          return textXml;
         }
         if (scopeName === 'source.kbengine-def') {
           return kbGrammar;

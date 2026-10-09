@@ -34,10 +34,17 @@ const PYTHON_SAMPLE = [
 
 const DEF_SAMPLE = [
   '<Properties>',
-  '  <Property Name="hp" Type="UINT32" Flags="BASE_AND_CLIENT">',
-  '    <DetailLevel>0</DetailLevel>',
-  '  </Property>',
-  '</Properties>'
+  '  <hp>',
+  '    <Type>UINT32</Type>',
+  '    <Flags>BASE_AND_CLIENT</Flags>',
+  '    <Persistent>true</Persistent>',
+  '  </hp>',
+  '</Properties>',
+  '<BaseMethods>',
+  '  <onKill>',
+  '    <Exposed>true</Exposed>',
+  '  </onKill>',
+  '</BaseMethods>'
 ].join('\n');
 
 const allScopes = (grammar: { tokenizeLine: (line: string, stack: unknown) => { tokens: Array<{ scopes: string[] }> } }, text: string): Set<string> => {
@@ -70,17 +77,27 @@ describe('python ↔ kbengine-def 语法共装分词(批103)', () => {
     );
 
     let magicPython: IRawGrammar | null = null;
+    let textXml: IRawGrammar | null = null;
     try {
       const langsModule = (await import('@shikijs/langs/python')) as {
         default: unknown;
       };
       const raw = langsModule.default;
       magicPython = (Array.isArray(raw) ? raw[0] : raw) as IRawGrammar;
+      // 批110:def 分词委托 text.xml,共装池补宿主语法
+      const xmlModule = (await import('@shikijs/langs/xml')) as { default: unknown };
+      const xmlRaw = xmlModule.default;
+      const xmlGrammars = (Array.isArray(xmlRaw) ? xmlRaw : [xmlRaw]) as Array<{
+        scopeName: string;
+      }>;
+      textXml =
+        (xmlGrammars.find(item => item.scopeName === 'text.xml') as IRawGrammar | undefined) ??
+        null;
     } catch {
       magicPython = null; // 包不可达(未提升/改版)时整组跳过
     }
 
-    if (!magicPython) {
+    if (!magicPython || !textXml) {
       registry = null;
       return;
     }
@@ -94,6 +111,9 @@ describe('python ↔ kbengine-def 语法共装分词(批103)', () => {
       loadGrammar: async scopeName => {
         if (scopeName === 'source.python') {
           return magicPython;
+        }
+        if (scopeName === 'text.xml') {
+          return textXml;
         }
         if (scopeName === 'source.kbengine-def') {
           return kbGrammar;
@@ -145,18 +165,24 @@ describe('python ↔ kbengine-def 语法共装分词(批103)', () => {
     expect(leaked).toEqual([]);
   });
 
-  it('.def 样例在共装池中照常出 kbengine scope(.def 未受牵连)', async () => {
+  it('.def 样例在共装池中照常出 kbengine 语义 scope 与 XML 委托 scope(.def 未受牵连)', async () => {
     if (!registry) {
       return;
     }
     const grammar = await registry.loadGrammar('source.kbengine-def');
     expect(grammar).not.toBeNull();
     const scopes = allScopes(grammar!, DEF_SAMPLE);
+    // 批110 起语义层换为四段/Exposed/Persistent/Flags 常量 scope,基准分词
+    // 委托内建 XML(entity.name.tag.localname.xml 在位即委托生效)
     const wanted = [
       'source.kbengine-def',
-      'entity.name.symbol.kbengine',
-      'support.type.primitive.integer.kbengine',
-      'constant.language.flag.kbengine'
+      'entity.name.tag.section.properties.kbengine',
+      'entity.name.tag.section.base-methods.kbengine',
+      'entity.name.tag.persistent.kbengine',
+      'constant.language.persistent.kbengine',
+      'constant.language.exposed.kbengine',
+      'constant.language.flag.kbengine',
+      'entity.name.tag.localname.xml'
     ];
     const missed = wanted.filter(scope => !scopes.has(scope));
     expect(missed, `kbengine scope 缺失: ${missed.join(', ')}`).toEqual([]);

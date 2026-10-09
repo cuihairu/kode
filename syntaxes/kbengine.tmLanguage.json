@@ -1,558 +1,105 @@
 {
   "scopeName": "source.kbengine-def",
+  "comment": ".def 是 XML 方言(批110 用户定版):基准分词整体委托内建 text.xml,\n仅在其前面挂少量语义前置规则。text.xml 的标签规则是从 '<' 一步匹配\n整个标签(名字只是它的 capture),同名短规则按长度必输;因此语义规则\n写成同跨度的全标签 captures 形式——同长度时先定义者胜,且标点组显式\n还回 punctuation.definition.tag,不破坏宿主观感。语义层只做用户点名\n的引擎要素:Properties=玩家属性(金)、BaseMethods/CellMethods/\nClientMethods 三段各自分色、Exposed=客户端可请求(红)、Persistent=\n自动存储(橙)及其 true 值、Flags 值=引擎常量(橙,名单与\nsrc/kbengineMetadata.ts 的 KBENGINE_FLAGS 对齐)。前置规则不进注释与\n文本值(需 '<' 邻接或有闭合标签 lookahead),其余一律走 text.xml。\n专属着色如需扩充,应加在此处 patterns 前段,不要私造独立语法。",
   "patterns": [
     {
-      "include": "#root"
-    }
-  ],
-  "repository": {
-    "root": {
-      "patterns": [
-        {
-          "include": "#doctype"
-        },
-        {
-          "include": "#comment"
-        },
-        {
-          "include": "#cdata"
-        },
-        {
-          "include": "#section-tag"
-        },
-        {
-          "include": "#type-value-tag"
-        },
-        {
-          "include": "#arg-value-tag"
-        },
-        {
-          "include": "#flags-value-tag"
-        },
-        {
-          "include": "#detail-level-tag"
-        },
-        {
-          "include": "#default-value-tag"
-        },
-        {
-          "include": "#numeric-value-tag"
-        },
-        {
-          "include": "#container-tag"
-        },
-        {
-          "include": "#fixed-entity-tag"
-        },
-        {
-          "include": "#entity-entry"
-        },
-        {
-          "include": "#generic-tag"
-        },
-        {
-          "include": "#numbers"
-        },
-        {
-          "include": "#constants"
-        }
-      ]
-    },
-    "doctype": {
-      "begin": "<!(DOCTYPE)",
-      "end": ">",
+      "match": "(</?)(Properties)(\\s*/?>)",
       "captures": {
         "1": {
-          "name": "keyword.other.doctype.xml"
-        }
-      },
-      "name": "meta.tag.sgml.doctype.xml"
-    },
-    "comment": {
-      "begin": "<!--",
-      "end": "-->",
-      "name": "comment.block.xml punctuation.definition.comment.xml"
-    },
-    "cdata": {
-      "begin": "<!\\[CDATA\\[",
-      "end": "\\]\\]>",
-      "name": "string.unquoted.cdata.xml"
-    },
-    "section-tag": {
-      "name": "meta.block.section.kbengine",
-      "begin": "(<)(root|Parent|Properties|BaseMethods|CellMethods|ClientMethods|DetailLevels|Volatile|implementedBy)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
-        "1": {
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.section.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.section.kbengine entity.name.tag.xml"
+          "name": "entity.name.tag.section.properties.kbengine"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
         }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#root"
-        }
-      ]
+      }
     },
-    "type-value-tag": {
-      "name": "meta.block.type-value.kbengine",
-      "begin": "(<)(Type)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
+    {
+      "match": "(</?)(BaseMethods)(\\s*/?>)",
+      "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.type.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.type.kbengine entity.name.tag.xml"
+          "name": "entity.name.tag.section.base-methods.kbengine"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
         }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#container-tag"
-        },
-        {
-          "include": "#kbengine-types"
-        },
-        {
-          "match": "[<>]",
-          "name": "punctuation.definition.generic.kbengine"
-        },
-        {
-          "match": "\\b[a-zA-Z_][\\w./]*\\b",
-          "name": "entity.name.type.custom.kbengine support.class.kbengine support.type"
-        }
-      ]
+      }
     },
-    "arg-value-tag": {
-      "name": "meta.block.arg-value.kbengine",
-      "begin": "(<)(Arg)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
+    {
+      "match": "(</?)(CellMethods)(\\s*/?>)",
+      "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.arg.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.arg.kbengine entity.name.tag.xml"
+          "name": "entity.name.tag.section.cell-methods.kbengine"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
         }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#kbengine-types"
-        },
-        {
-          "match": "[<>]",
-          "name": "punctuation.definition.generic.kbengine"
-        },
-        {
-          "match": "\\b[a-zA-Z_][\\w.]*\\b",
-          "name": "entity.name.type.custom.kbengine support.class.kbengine support.type"
-        }
-      ]
+      }
     },
-    "flags-value-tag": {
-      "name": "meta.block.flags-value.kbengine",
-      "begin": "(<)(Flags)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
+    {
+      "match": "(</?)(ClientMethods)(\\s*/?>)",
+      "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.flags.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.flags.kbengine entity.name.tag.xml"
+          "name": "entity.name.tag.section.client-methods.kbengine"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
         }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#kbengine-flags"
-        },
-        {
-          "match": "[|,]",
-          "name": "punctuation.separator.flag.kbengine"
-        }
-      ]
+      }
     },
-    "detail-level-tag": {
-      "name": "meta.block.detail-level.kbengine",
-      "begin": "(<)(DetailLevel)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
+    {
+      "match": "(</?)(Exposed)(\\s*/?>)",
+      "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.detail-level.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.detail-level.kbengine entity.name.tag.xml"
+          "name": "entity.name.tag.exposed.kbengine"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
         }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#kbengine-detail-level"
-        }
-      ]
+      }
     },
-    "default-value-tag": {
-      "name": "meta.block.default-value.kbengine",
-      "begin": "(<)(Default)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
+    {
+      "match": "(</?)(Persistent)(\\s*/?>)",
+      "captures": {
         "1": {
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.tag.scalar.default.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.default.kbengine entity.name.tag.xml"
+          "name": "entity.name.tag.persistent.kbengine"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
         }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "match": "\"[^\"]*\"",
-          "name": "string.quoted.double.kbengine"
-        },
-        {
-          "include": "#constants"
-        },
-        {
-          "include": "#numbers"
-        },
-        {
-          "match": "\\b[^<\\s][^<]*\\b",
-          "name": "string.unquoted.default.kbengine"
-        }
-      ]
+      }
     },
-    "numeric-value-tag": {
-      "name": "meta.block.numeric-value.kbengine",
-      "begin": "(<)(Database|Identifier)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.numeric.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.scalar.numeric.kbengine entity.name.tag.xml"
-        },
-        "3": {
-          "name": "punctuation.definition.tag.end.xml"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#numbers"
-        },
-        {
-          "include": "#constants"
-        }
-      ]
+    {
+      "match": "true\\b(?=\\s*</Exposed>)",
+      "name": "constant.language.exposed.kbengine"
     },
-    "container-tag": {
-      "name": "meta.block.container.kbengine",
-      "begin": "(<)(FIXED_DICT)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "support.type.container.tag.kbengine entity.name.tag.xml support.type"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "support.type.container.tag.kbengine entity.name.tag.xml support.type"
-        },
-        "3": {
-          "name": "punctuation.definition.tag.end.xml"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#root"
-        }
-      ]
+    {
+      "match": "true\\b(?=\\s*</Persistent>)",
+      "name": "constant.language.persistent.kbengine"
     },
-    "fixed-entity-tag": {
-      "name": "meta.block.entity-entry.kbengine",
-      "begin": "(<)(IsExposed|Index)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
-        },
-        "3": {
-          "name": "punctuation.definition.tag.end.xml"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#root"
-        }
-      ]
+    {
+      "match": "\\b(CELL_PUBLIC_AND_OWN|CELL_PUBLIC|CELL_PRIVATE|CELL_AND_OTHER_CLIENTS|CELL_AND_CLIENTS|CELL_AND_CLIENT|BASE_AND_CLIENT|OTHER_CLIENTS|OWN_CLIENT|ALL_CLIENTS|CELL|BASE)\\b",
+      "name": "constant.language.flag.kbengine"
     },
-    "entity-entry": {
-      "name": "meta.block.entity-entry.kbengine",
-      "begin": "(<)(?!root\\b|Parent\\b|Properties\\b|BaseMethods\\b|CellMethods\\b|ClientMethods\\b|Type\\b|Flags\\b|Default\\b|Persistent\\b|DatabaseLength\\b|Identifier\\b|DetailLevel\\b|DetailLevels\\b|Arg\\b|Utype\\b|Exposed\\b|Volatile\\b|radius\\b|hyst\\b|of\\b|implementedBy\\b|FIXED_DICT\\b|TUPLE\\b)([A-Za-z_][A-Za-z0-9_]*)(?=[\\s>])",
-      "end": "(</)(\\2)(>)",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
-        },
-        "3": {
-          "name": "punctuation.definition.tag.end.xml"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#tag-attributes-and-end"
-        },
-        {
-          "include": "#root"
-        }
-      ]
-    },
-    "generic-tag": {
-      "name": "meta.tag.xml",
-      "begin": "(<)([A-Za-z0-9_:-]+)",
-      "end": "(>)",
-      "beginCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.begin.xml"
-        },
-        "2": {
-          "name": "entity.name.tag.localname.xml"
-        }
-      },
-      "endCaptures": {
-        "1": {
-          "name": "punctuation.definition.tag.end.xml"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#attribute"
-        }
-      ]
-    },
-    "tag-attributes-and-end": {
-      "patterns": [
-        {
-          "include": "#attribute"
-        },
-        {
-          "match": ">",
-          "name": "punctuation.definition.tag.end.xml"
-        }
-      ]
-    },
-    "attribute": {
-      "begin": "\\s([A-Za-z0-9_-]+)\\s*(=)\\s*",
-      "end": "(?<=[^\\s=])",
-      "beginCaptures": {
-        "1": {
-          "name": "entity.other.attribute-name.xml"
-        },
-        "2": {
-          "name": "punctuation.separator.key-value.xml"
-        }
-      },
-      "patterns": [
-        {
-          "include": "#attribute-value"
-        }
-      ]
-    },
-    "attribute-value": {
-      "name": "string.quoted.double.xml",
-      "begin": "\"",
-      "end": "\"",
-      "patterns": [
-        {
-          "include": "#constants"
-        },
-        {
-          "include": "#kbengine-types"
-        },
-        {
-          "include": "#kbengine-flags"
-        }
-      ]
-    },
-    "kbengine-types": {
-      "patterns": [
-        {
-          "match": "\\b(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64)\\b",
-          "name": "storage.type.numeric.kbengine support.type.primitive.integer.kbengine"
-        },
-        {
-          "match": "\\b(FLOAT|DOUBLE)\\b",
-          "name": "storage.type.numeric.kbengine support.type.primitive.float.kbengine"
-        },
-        {
-          "match": "\\b(STRING|UNICODE)\\b",
-          "name": "support.type.primitive.string.kbengine storage.type.string.kbengine"
-        },
-        {
-          "match": "\\b(VECTOR2|VECTOR3|VECTOR4)\\b",
-          "name": "support.type.vector.kbengine storage.type.vector.kbengine"
-        },
-        {
-          "match": "\\b(ENTITYCALL)\\b",
-          "name": "support.type.reference.kbengine storage.type.reference.kbengine"
-        },
-        {
-          "match": "\\b(ARRAY|FIXED_DICT)\\b",
-          "name": "support.type.container.kbengine storage.type.container.kbengine"
-        },
-        {
-          "match": "\\b(PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)\\b",
-          "name": "support.type.python.kbengine storage.type.python.kbengine"
-        }
-      ]
-    },
-    "kbengine-flags": {
-      "patterns": [
-        {
-          "match": "\\b(CELL_PUBLIC|CELL_PRIVATE|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|OWN_CLIENT|BASE_AND_CLIENT|BASE|OTHER_CLIENTS|CELL|CELL_AND_CLIENT|CELL_AND_CLIENTS|CELL_AND_OTHER_CLIENTS)\\b",
-          "name": "constant.language.flag.kbengine keyword.declaration.flag.kbengine"
-        }
-      ]
-    },
-    "kbengine-detail-level": {
-      "match": "\\b(NEAR|MEDIUM|FAR)\\b",
-      "name": "support.constant.detail-level.kbengine constant.other.level.kbengine"
-    },
-    "numbers": {
-      "match": "\\b([0-9]+\\.?[0-9]*)\\b",
-      "name": "constant.numeric.kbengine"
-    },
-    "constants": {
-      "match": "\\b(true|false|TRUE|FALSE|NULL)\\b",
-      "name": "constant.language.kbengine"
+    {
+      "include": "text.xml"
     }
-  }
+  ]
 }

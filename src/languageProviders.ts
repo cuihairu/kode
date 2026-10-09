@@ -36,11 +36,13 @@ import {
   findDefinitionFileByCategory,
   findEntityDefinitionFile,
   findEntitiesXmlFile,
+  findEntityScriptFile,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
   getRegisteredEntities,
   getWorkspaceRootForDocument,
-  notifyEntitiesXmlMissingOnce
+  notifyEntitiesXmlMissingOnce,
+  readWorkspaceTextLines
 } from './definitionWorkspace';
 import {
   computeDefRenameEdits,
@@ -585,20 +587,20 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
     documentation: '`.def` 文件的根标签。源码会在该节点下读取 `Properties`、方法区块和 `DetailLevels` 等实体定义信息。'
   },
   Properties: {
-    detail: '属性区块',
-    documentation: '源码通过 `<Properties>` 读取实体属性。区块内通常使用 `<属性名><Type/><Flags/>...</属性名>` 结构。'
+    detail: '玩家属性',
+    documentation: '实体属性区块。字段可通过 `Persistent` 开启自动存储,`Flags` 决定同步范围;字段名可跳转到 scripts/{base,cell,client}/<实体>.py 的实体类实现。'
   },
   BaseMethods: {
-    detail: 'Base 方法区块',
-    documentation: '源码通过 `<BaseMethods>` 读取 BaseApp 方法。方法节点内部可包含 `<Arg>`、`<Utype>` 和 `<Exposed>`。'
+    detail: 'BaseApp 方法(可远程调用)',
+    documentation: 'BaseApp 上的方法。带 `<Exposed>true</Exposed>` 时客户端可以直接请求该方法。方法名可跳转到 scripts/base/<实体>.py 的 `def` 实现。'
   },
   CellMethods: {
-    detail: 'Cell 方法区块',
-    documentation: '源码通过 `<CellMethods>` 读取 CellApp 方法。方法节点内部可包含 `<Arg>`、`<Utype>` 和 `<Exposed>`。'
+    detail: 'CellApp 方法(可远程调用)',
+    documentation: 'CellApp 上的方法。带 `<Exposed>true</Exposed>` 时客户端可以直接请求该方法。方法名可跳转到 scripts/cell/<实体>.py 的 `def` 实现。'
   },
   ClientMethods: {
-    detail: '客户端方法区块',
-    documentation: '源码通过 `<ClientMethods>` 读取客户端方法。方法节点内部可包含 `<Arg>` 和 `<Utype>`，不处理 `<Exposed>`。'
+    detail: '客户端回调方法',
+    documentation: '服务端回调客户端的方法:引擎把这里的声明下发给客户端实体脚本实现。方法名可跳转到 scripts/client/<实体>.py 的 `def` 实现。'
   },
   DetailLevels: {
     detail: '细节等级区块',
@@ -1471,12 +1473,23 @@ function findEntityDefinitionInDef(
   word: string,
   entityMappingManager?: EntityMappingManager
 ): vscode.ProviderResult<vscode.Location> {
+  const symbolInfo = findDefSymbolInfo(document, position, word);
+
+  // 批110 用户令:Properties 字段优先导航到实体脚本实现(scripts/
+  // {base,cell,client}/<实体>.py 的实体类声明行);脚本不存在时再回
+  // 落数据库 schema 虚拟文档。
+  if (symbolInfo?.section === 'Properties') {
+    const propertyScriptLocation = findPropertyScriptLocationInDef(document);
+    if (propertyScriptLocation) {
+      return propertyScriptLocation;
+    }
+  }
+
   const databaseSchemaLocation = findDatabaseSchemaLocationFromDef(document, position, word);
   if (databaseSchemaLocation) {
     return databaseSchemaLocation;
   }
 
-  const symbolInfo = findDefSymbolInfo(document, position, word);
   if (symbolInfo?.section && METHOD_SECTIONS.has(symbolInfo.section)) {
     return findMethodImplementationLocationInDef(
       document,
@@ -1839,6 +1852,70 @@ function findDefSymbolInfo(
   return info;
 }
 
+const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 'cell' | 'client'>> = {
+  BaseMethods: 'base',
+  CellMethods: 'cell',
+  ClientMethods: 'client'
+};
+
+// 批110 用户令:属性字段导航到实现。实体实现在 scripts/{base,cell,client}/
+// <实体>.py 的实体类声明行;按 base→cell→client 取第一个存在的脚本,
+// 类行缺失(异常脚本)时落在脚本首行。
+function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.Location | null {
+  const entityName = path.basename(document.fileName, '.def');
+  for (const role of ['base', 'cell', 'client'] as const) {
+    const scriptPath = findEntityScriptFile(entityName, role, document);
+    if (!scriptPath) {
+      continue;
+    }
+
+    const lines = readWorkspaceTextLines(scriptPath);
+    for (let index = 0; index < lines.length; index += 1) {
+      const match = /^\s*class\s+([A-Za-z_]\w*)/.exec(lines[index]);
+      if (match && match[1] === entityName) {
+        return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(index, 0));
+      }
+    }
+
+    return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(0, 0));
+  }
+
+  return null;
+}
+
+// 批110 用户令:方法无映射管理器时的文件回落——直接在对应角色脚本里找
+// `def <方法名>`,找到才产出 Location;无脚本或未实现都返回 null。
+function findMethodScriptLocationInDef(
+  document: vscode.TextDocument,
+  methodName: string,
+  section: KBEngineSectionName
+): vscode.Location | null {
+  const role = METHOD_SECTION_SCRIPT_ROLES[section];
+  // 不可达(批110 定性):唯一入口 findEntityDefinitionInDef 只在
+  // METHOD_SECTIONS 命中后进入方法链,section 恒映射出角色。
+  /* istanbul ignore start */
+  if (!role) {
+    return null;
+  }
+  /* istanbul ignore stop */
+
+  const entityName = path.basename(document.fileName, '.def');
+  const scriptPath = findEntityScriptFile(entityName, role, document);
+  if (!scriptPath) {
+    return null;
+  }
+
+  const defLineIndex = readWorkspaceTextLines(scriptPath).findIndex(line => {
+    const match = /^\s*def\s+([A-Za-z_]\w*)/.exec(line);
+    return match?.[1] === methodName;
+  });
+  if (defLineIndex < 0) {
+    return null;
+  }
+
+  return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(defLineIndex, 0));
+}
+
 function findMethodImplementationLocationInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -1846,9 +1923,18 @@ function findMethodImplementationLocationInDef(
   section: KBEngineSectionName,
   entityMappingManager?: EntityMappingManager
 ): vscode.ProviderResult<vscode.Location> {
-  if (!entityMappingManager || !METHOD_SECTIONS.has(section)) {
+  // 批110 用户令:无映射管理器(未开工程索引)时按文件约定回落:
+  // scripts/<role>/<实体>.py 中的 `def <方法名>`。
+  if (!entityMappingManager) {
+    return findMethodScriptLocationInDef(document, methodName, section);
+  }
+
+  // 不可达(批110 定性):同一调用方已在段名过滤后才进入本函数。
+  /* istanbul ignore start */
+  if (!METHOD_SECTIONS.has(section)) {
     return null;
   }
+  /* istanbul ignore stop */
 
   // 不可达(批62 定性):调用方(findEntityDefinitionInDef)已在同一 document+position
   // 上用同一个词取到 symbolInfo 并确认段名为方法段,ast 亦因取到 node 而必非 null。
