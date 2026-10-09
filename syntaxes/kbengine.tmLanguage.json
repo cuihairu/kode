@@ -380,7 +380,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.symbol.kbengine entity.name.tag.xml entity.name.function"
+          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -388,7 +388,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.symbol.kbengine entity.name.tag.xml entity.name.function"
+          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -412,7 +412,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.symbol.kbengine entity.name.tag.xml entity.name.function"
+          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
         }
       },
       "endCaptures": {
@@ -420,7 +420,7 @@
           "name": "punctuation.definition.tag.begin.xml"
         },
         "2": {
-          "name": "entity.name.symbol.kbengine entity.name.tag.xml entity.name.function"
+          "name": "entity.name.function entity.name.symbol.kbengine entity.name.tag.xml"
         },
         "3": {
           "name": "punctuation.definition.tag.end.xml"
@@ -506,11 +506,11 @@
       "patterns": [
         {
           "match": "\\b(UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64)\\b",
-          "name": "support.type.primitive.integer.kbengine storage.type.numeric.kbengine"
+          "name": "storage.type.numeric.kbengine support.type.primitive.integer.kbengine"
         },
         {
           "match": "\\b(FLOAT|DOUBLE)\\b",
-          "name": "support.type.primitive.float.kbengine storage.type.numeric.kbengine"
+          "name": "storage.type.numeric.kbengine support.type.primitive.float.kbengine"
         },
         {
           "match": "\\b(STRING|UNICODE)\\b",

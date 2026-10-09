@@ -58,11 +58,14 @@ describe('高亮注册面恒等锁(批103)', () => {
   });
 
   it('themes 锁定:KBEngine Dark(vs-dark)且文件在位可解析', () => {
+    // description 于批107 补入(注明适用面:通用开发语言 + KBEngine .def)
     expect(pkg.contributes.themes).toEqual([
       {
         label: 'KBEngine Dark',
         uiTheme: 'vs-dark',
-        path: './syntaxes/kbengine-color-theme.json'
+        path: './syntaxes/kbengine-color-theme.json',
+        description:
+          '通用深色主题,覆盖常见语言(Python/JS/Go 等)的通用语法着色,并对 KBEngine .def 文件提供专属高亮'
       }
     ]);
     const themePath = path.join(root, 'syntaxes', 'kbengine-color-theme.json');

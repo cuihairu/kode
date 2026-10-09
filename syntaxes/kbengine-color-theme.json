@@ -1,5 +1,6 @@
 {
   "name": "KBEngine Dark",
+  "semanticHighlighting": true,
   "colors": {
     "editor.background": "#272822",
     "editor.foreground": "#F8F8F2",
@@ -265,6 +266,118 @@
       ],
       "settings": {
         "foreground": "#F8F8F2"
+      }
+    },
+    {
+      "name": "Common Strings",
+      "scope": "string",
+      "settings": {
+        "foreground": "#CE9178"
+      }
+    },
+    {
+      "name": "Common Regular Expressions",
+      "scope": "string.regexp",
+      "settings": {
+        "foreground": "#D16969"
+      }
+    },
+    {
+      "name": "Common String Escapes",
+      "scope": "constant.character.escape",
+      "settings": {
+        "foreground": "#CE9178"
+      }
+    },
+    {
+      "name": "Common Numbers",
+      "scope": "constant.numeric",
+      "settings": {
+        "foreground": "#B5CEA8"
+      }
+    },
+    {
+      "name": "Common Language Constants",
+      "scope": "constant.language",
+      "settings": {
+        "foreground": "#569CD6"
+      }
+    },
+    {
+      "name": "Common Keywords",
+      "scope": "keyword",
+      "settings": {
+        "foreground": "#569CD6"
+      }
+    },
+    {
+      "name": "Common Control Keywords",
+      "scope": "keyword.control",
+      "settings": {
+        "foreground": "#C586C0"
+      }
+    },
+    {
+      "name": "Common Operators",
+      "scope": "keyword.operator",
+      "settings": {
+        "foreground": "#D4D4D4"
+      }
+    },
+    {
+      "name": "Common Storage",
+      "scope": ["storage", "storage.type", "storage.modifier"],
+      "settings": {
+        "foreground": "#569CD6"
+      }
+    },
+    {
+      "name": "Common Types",
+      "scope": ["entity.name.type", "support.class"],
+      "settings": {
+        "foreground": "#4EC9B0"
+      }
+    },
+    {
+      "name": "Common Functions",
+      "scope": ["entity.name.function", "support.function"],
+      "settings": {
+        "foreground": "#DCDCAA"
+      }
+    },
+    {
+      "name": "Common Attribute Names",
+      "scope": "entity.other.attribute-name",
+      "settings": {
+        "foreground": "#9CDCFE"
+      }
+    },
+    {
+      "name": "Common Variables",
+      "scope": ["variable", "variable.parameter"],
+      "settings": {
+        "foreground": "#9CDCFE"
+      }
+    },
+    {
+      "name": "Common Meta Tags",
+      "scope": "meta.tag",
+      "settings": {
+        "foreground": "#569CD6"
+      }
+    },
+    {
+      "name": "Common String Punctuation",
+      "scope": "punctuation.definition.string",
+      "settings": {
+        "foreground": "#CE9178"
+      }
+    },
+    {
+      "name": "Common Invalid",
+      "scope": "invalid",
+      "settings": {
+        "foreground": "#F44747"
       }
     }
   ]

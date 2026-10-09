@@ -37,7 +37,9 @@ const fixture = buildLargeDefFixture();
 // 批96 defAnalyzer 引擎对齐后的行为摘要
 const GOLDEN = {
   tokenCount: 47726,
-  tokenDigest: 'c3c0cf5f',
+  // 批107:标准 scope 调到 scope 栈浅层(theme 通用规则与 .def 规则共存),
+  // scope 顺序变化 → 摘要更新 c3c0cf5f → a3b47cdf(token 数/区间不变)
+  tokenDigest: 'a3b47cdf',
   diagnosticCount: 400,
   diagnosticDigest: '910801f9',
   findingCount: 620,

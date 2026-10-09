@@ -85,7 +85,8 @@
       {
         "label": "KBEngine Dark",
         "uiTheme": "vs-dark",
-        "path": "./syntaxes/kbengine-color-theme.json"
+        "path": "./syntaxes/kbengine-color-theme.json",
+        "description": "通用深色主题,覆盖常见语言(Python/JS/Go 等)的通用语法着色,并对 KBEngine .def 文件提供专属高亮"
       }
     ],
     "snippets": [
