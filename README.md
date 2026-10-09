@@ -193,7 +193,7 @@ pnpm run compile
 pnpm run package
 
 # Install locally
-code --install-extension kode-0.1.0.vsix
+code --install-extension kode-0.1.1.vsix
 ```
 
 ## Documentation
@@ -338,4 +338,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.0, not yet published to the Marketplace. 21 features, 26 commands, and 31 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Current version 0.1.1, not yet published to the Marketplace. 21 features, 26 commands, and 31 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.

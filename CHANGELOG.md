@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Version bumped to 0.1.1 so nightly VSIX installs are distinguishable in the
+  extensions panel (the rolling release keeps the same `kode-nightly.vsix`
+  filename, which made stale installs look identical to fresh ones)
+
 ### Added
 - `.def` highlighting rebuilt on the built-in XML grammar with a semantic
   overlay: the four section tags (Properties / BaseMethods / CellMethods /
