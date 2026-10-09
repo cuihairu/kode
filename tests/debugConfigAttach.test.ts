@@ -10,10 +10,11 @@ import {
 } from './helpers/vscodeStub';
 
 // DebugConfigManager 的调试会话编排:startDebugging 的 modal 提示两分支
-// (有/无 telnet 命令)、attachToComponent 的 PID 输入→DebugConfiguration
-// 组装→vscode.debug.startDebugging、promptForProcessId 的输入校验链、
-// createExampleConfig/updateLaunchJson 的写盘失败通道。配置装载与 launch
-// 生成已由 debugConfig.test.ts 覆盖。
+// (有/无 telnet 命令)、attachToComponent 的 ${command:pickProcess}
+// DebugConfiguration 组装→vscode.debug.startDebugging(批111 用户令:进程
+// 选择改走 VS Code 内建进程选择器,不再手输 PID)、createExampleConfig/
+// updateLaunchJson 的写盘失败通道。配置装载与 launch 生成已由
+// debugConfig.test.ts 覆盖。
 
 interface InputBoxOptions {
   prompt?: string;
@@ -112,7 +113,6 @@ describe('DebugConfigManager.startDebugging', () => {
     const manager = makeManager();
     const config = manager.getComponentConfig('baseapp');
     infoQueue.push('继续附加');
-    inputs.push('4321');
 
     const result = await manager.startDebugging('baseapp');
 
@@ -131,9 +131,12 @@ describe('DebugConfigManager.startDebugging', () => {
     const attachConfig = debugCalls[0].config;
     expect(attachConfig.name).toBe('KBEngine: Python attach to baseapp');
     expect(attachConfig.request).toBe('attach');
-    expect(attachConfig.processId).toBe(4321);
+    // 批111 用户令:进程选择走 VS Code 内建进程选择器,不再手输 PID
+    expect(attachConfig.processId).toBe('${command:pickProcess}');
     expect(attachConfig.pathMappings).toEqual(config.pathMappings);
     expect(attachConfig.justMyCode).toBe(false);
+    // 选择器形态下扩展自身不再弹输入框
+    expect(inputOptions).toHaveLength(0);
   }, 8000);
 
   it('shows the short briefing when the component has no telnet commands', async () => {
@@ -228,7 +231,6 @@ describe('DebugConfigManager.startDebugging', () => {
     setWorkspaceAt('/tmp/kode-dbg');
     const manager = makeManager();
     infoQueue.push('继续附加');
-    inputs.push('77');
     debugResult = false;
 
     expect(await manager.startDebugging('loginapp')).toBe(false);
@@ -240,7 +242,6 @@ describe('DebugConfigManager.startDebugging', () => {
     setWorkspaceAt('/tmp/kode-dbg');
     const manager = makeManager();
     infoQueue.push('继续附加');
-    inputs.push('77');
     debugThrows = new Error('no debugpy');
 
     const result = await manager.startDebugging('loginapp');
@@ -250,44 +251,42 @@ describe('DebugConfigManager.startDebugging', () => {
   }, 8000);
 });
 
-describe('DebugConfigManager.promptForProcessId', () => {
-  it('rejects non numeric, zero and unsafe integer inputs', async () => {
+describe('DebugConfigManager.attachToComponent (批111 pickProcess)', () => {
+  it('attaches through the built-in process picker without any input box', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     const manager = makeManager();
-    infoQueue.push('继续附加');
-    inputs.push(undefined);
 
-    await manager.startDebugging('baseapp');
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
 
-    const validate = inputOptions[0].validateInput;
-    expect(validate?.('abc')).toBe('PID 必须是正整数');
-    expect(validate?.('12x')).toBe('PID 必须是正整数');
-    expect(validate?.('0')).toBe('PID 必须是有效的正整数');
-    // 负号先被 /^\d+$/ 拦下,归入格式错误而非数值错误
-    expect(validate?.('-5')).toBe('PID 必须是正整数');
-    expect(validate?.('99999999999999999999')).toBe('PID 必须是有效的正整数');
-    expect(validate?.('42')).toBeUndefined();
-    expect(inputOptions[0].prompt).toContain('baseapp');
+    expect(debugCalls).toHaveLength(1);
+    const attachConfig = debugCalls[0].config;
+    expect(attachConfig.name).toBe('KBEngine: Python attach to baseapp');
+    expect(attachConfig.type).toBe('debugpy');
+    expect(attachConfig.request).toBe('attach');
+    // ${command:pickProcess} 由 debugpy 解析弹出原生进程列表;取消选择时
+    // debugpy 侧放弃会话,startDebugging 返回 false 即附加未发生
+    expect(attachConfig.processId).toBe('${command:pickProcess}');
+    expect(attachConfig.justMyCode).toBe(false);
+    expect(inputOptions).toHaveLength(0);
   }, 8000);
 
-  it('aborts the attach when the pid prompt is cancelled', async () => {
+  it('reports failures through the error channel', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     const manager = makeManager();
-    inputs.push(undefined);
-    infoQueue.push('继续附加');
+    debugThrows = new Error('no debugpy');
 
-    expect(await manager.startDebugging('baseapp')).toBe(false);
-    expect(debugCalls).toHaveLength(0);
+    expect(await manager.attachToComponent('cellapp')).toBe(false);
+    expect(messages.error).toEqual(['附加调试失败: Error: no debugpy']);
   }, 8000);
 
-  it('attaches with the parsed pid when the input is valid', async () => {
+  it('propagates a false startDebugging result without error spam', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     const manager = makeManager();
-    inputs.push(' 9007 ');
-    infoQueue.push('继续附加');
+    debugResult = false;
 
-    expect(await manager.startDebugging('baseapp')).toBe(true);
-    expect(debugCalls[0].config.processId).toBe(9007);
+    expect(await manager.attachToComponent('loginapp')).toBe(false);
+    expect(debugCalls).toHaveLength(1);
+    expect(messages.error).toEqual([]);
   }, 8000);
 });
 

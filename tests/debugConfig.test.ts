@@ -6,7 +6,7 @@ import type { DebugConfigFile, KBEngineDebugConfig } from '../src/debugConfig';
 import { memoryFileSystem, workspace as stubWorkspace, Uri } from './helpers/vscodeStub';
 
 // DebugConfigManager 的配置装载/合并/launch 配置生成纯逻辑。
-// startDebugging/promptForProcessId 依赖真实 vscode.debug 与输入框,
+// startDebugging/attachToComponent 依赖真实 vscode.debug 与进程选择器,
 // 不在纯逻辑测试域。文件读写经 stub 的内存 fs,路径语义真实。
 
 type ManagerInternals = DebugConfigManager & {
@@ -187,26 +187,19 @@ describe('launch configuration generation', () => {
     expect(makeManager().getDebuggerType()).toBe('debugpy');
   });
 
-  it('rebuilds the prompt input and keeps foreign inputs', () => {
+  it('drops the obsolete pid input and keeps foreign inputs', () => {
+    // 批111 用户令:进程选择改走 ${command:pickProcess},promptString 手输
+    // PID 的 kbengineProcessId 输入项废弃,更新 launch.json 时顺带清除
     const manager = makeManager();
 
-    expect(manager.generateLaunchInputs()).toEqual([
-      {
-        id: 'kbengineProcessId',
-        type: 'promptString',
-        description: '请输入已开启调试的 KBEngine 进程 PID'
-      }
-    ]);
+    expect(manager.generateLaunchInputs()).toEqual([]);
 
     const merged = manager.generateLaunchInputs([
       { id: 'kbengineProcessId', type: 'promptString', description: 'stale' },
       { id: 'userAsk', type: 'promptString', description: 'keep me' }
     ]);
 
-    expect(merged).toHaveLength(2);
-    expect(merged[0]).toEqual({ id: 'userAsk', type: 'promptString', description: 'keep me' });
-    expect(merged[1].id).toBe('kbengineProcessId');
-    expect(merged[1].description).not.toBe('stale');
+    expect(merged).toEqual([{ id: 'userAsk', type: 'promptString', description: 'keep me' }]);
   });
 
   it('generates one attach configuration per component in seed order', () => {
@@ -229,7 +222,7 @@ describe('launch configuration generation', () => {
       name: 'KBEngine: Python attach to baseapp',
       type: 'debugpy',
       request: 'attach',
-      processId: '${input:kbengineProcessId}',
+      processId: '${command:pickProcess}',
       justMyCode: false,
       pathMappings: [{ localRoot: '/proj', remoteRoot: '/proj' }],
       presentation: { group: 'KBEngine', order: 1 }
@@ -284,10 +277,8 @@ describe('updateLaunchJson', () => {
       'My own config',
       ...makeManager().generateLaunchConfigurations().map(c => c.name)
     ]);
-    expect(written.inputs.map((i: { id: string }) => i.id)).toEqual([
-      'userAsk',
-      'kbengineProcessId'
-    ]);
+    // 旧文件遗留的 kbengineProcessId 输入被清除,外来输入保留
+    expect(written.inputs.map((i: { id: string }) => i.id)).toEqual(['userAsk']);
   });
 
   it('creates the standard skeleton when launch.json is absent', async () => {
@@ -302,8 +293,8 @@ describe('updateLaunchJson', () => {
 
     expect(written.version).toBe('0.2.0');
     expect(written.configurations).toHaveLength(7);
-    expect(written.inputs).toHaveLength(1);
-    expect(written.inputs[0].id).toBe('kbengineProcessId');
+    // 批111 用户令:进程选择走 ${command:pickProcess},不再生成 inputs
+    expect(written.inputs).toEqual([]);
   });
 
   it('fills in missing version/inputs keys and keeps unnamed user configs', async () => {
@@ -327,7 +318,8 @@ describe('updateLaunchJson', () => {
     expect(written.configurations.slice(1).map((c: { name: string }) => c.name)).toEqual(
       manager.generateLaunchConfigurations().map(c => c.name)
     );
-    expect(written.inputs.map((i: { id: string }) => i.id)).toEqual(['kbengineProcessId']);
+    // inputs 缺键走兜底空表:不再生成手输 PID 输入项
+    expect(written.inputs).toEqual([]);
   });
 
   it('treats a launch.json without configurations as empty', async () => {
@@ -349,7 +341,7 @@ describe('updateLaunchJson', () => {
     expect(written.configurations.map((c: { name: string }) => c.name)).toEqual(
       manager.generateLaunchConfigurations().map(c => c.name)
     );
-    expect(written.inputs.map((i: { id: string }) => i.id)).toEqual(['kbengineProcessId']);
+    expect(written.inputs).toEqual([]);
   });
 });
 

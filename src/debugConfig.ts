@@ -145,15 +145,11 @@ export class DebugConfigManager {
   }
 
   private generateLaunchInputs(existingInputs: any[] = []): any[] {
-    const nonKbInputs = existingInputs.filter(item => item.id !== 'kbengineProcessId');
-    return [
-      ...nonKbInputs,
-      {
-        id: 'kbengineProcessId',
-        type: 'promptString',
-        description: '请输入已开启调试的 KBEngine 进程 PID'
-      }
-    ];
+    // 批111 用户令:进程选择改走 VS Code 内建 ${command:pickProcess}
+    // (debugpy 解析后弹原生进程选择器),promptString 手输 PID 的
+    // kbengineProcessId 输入项废弃;更新 launch.json 时顺带清掉旧文件
+    // 遗留的该输入项。
+    return existingInputs.filter(item => item.id !== 'kbengineProcessId');
   }
 
   generateLaunchConfigurations(): any[] {
@@ -165,7 +161,8 @@ export class DebugConfigManager {
         name: `KBEngine: Python attach to ${componentName}`,
         type: this.getDebuggerType(),
         request: 'attach',
-        processId: '${input:kbengineProcessId}',
+        // 批111 用户令:进程选择走 VS Code 内建进程选择器(${command:pickProcess})
+        processId: '${command:pickProcess}',
         justMyCode: false,
         pathMappings: componentConfig.pathMappings || [{
           localRoot: workspaceFolder,
@@ -219,7 +216,7 @@ export class DebugConfigManager {
         Buffer.from(JSON.stringify(finalConfig, null, 2), 'utf8')
       );
 
-      vscode.window.showInformationMessage('launch.json 已更新为 KBEngine Python 附加配置（telnet 开启调试后再按 PID 附加）');
+      vscode.window.showInformationMessage('launch.json 已更新为 KBEngine Python 附加配置（telnet 开启调试后经进程选择器附加）');
       return true;
     } catch (error) {
       vscode.window.showErrorMessage(`更新 launch.json 失败: ${error}`);
@@ -317,14 +314,14 @@ export class DebugConfigManager {
 
     const message = telnetLines.length > 0
       ? [
-          `KBEngine ${componentName} 调试以 telnet 控制端口为前提，再按 PID 做 Python 附加。`,
+          `KBEngine ${componentName} 调试以 telnet 控制端口为前提，再经进程选择器做 Python 附加。`,
           telnetCommand,
           ...telnetMeta,
           ...telnetLines
         ].join('\n')
       : [
           `KBEngine ${componentName} 调试不是直接启动 Python 文件。`,
-          `请先连接 telnet 控制端口确认或开启你的项目调试入口，再执行 PID 附加。`,
+          `请先连接 telnet 控制端口确认或开启你的项目调试入口，再经进程选择器附加。`,
           telnetCommand,
           ...telnetMeta
         ].join('\n');
@@ -344,17 +341,14 @@ export class DebugConfigManager {
 
   async attachToComponent(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
-    const processId = await this.promptForProcessId(componentName);
-
-    if (!processId) {
-      return false;
-    }
-
     const attachConfig: vscode.DebugConfiguration = {
       name: `KBEngine: Python attach to ${componentName}`,
       type: this.getDebuggerType(),
       request: 'attach',
-      processId,
+      // 批111 用户令:附加进程改走 VS Code 内建进程选择器——
+      // ${command:pickProcess} 由 debugpy 适配器解析并弹出原生进程列表,
+      // 不再手输 PID;选择器里取消则 startDebugging 返回 false。
+      processId: '${command:pickProcess}',
       pathMappings: config.pathMappings,
       justMyCode: false
     };
@@ -370,32 +364,6 @@ export class DebugConfigManager {
 
   getConfig(): KBEngineDebugConfig {
     return this.config;
-  }
-
-  private async promptForProcessId(componentName: string): Promise<number | undefined> {
-    const value = await vscode.window.showInputBox({
-      prompt: `输入 ${componentName} 进程 PID`,
-      placeHolder: '例如 12345',
-      validateInput: input => {
-        const trimmed = input.trim();
-        if (!/^\d+$/.test(trimmed)) {
-          return 'PID 必须是正整数';
-        }
-
-        const parsed = Number(trimmed);
-        if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-          return 'PID 必须是有效的正整数';
-        }
-
-        return undefined;
-      }
-    });
-
-    if (!value) {
-      return undefined;
-    }
-
-    return Number(value.trim());
   }
 
   dispose(): void {
