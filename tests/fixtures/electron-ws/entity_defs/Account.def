@@ -1,0 +1,25 @@
+<root>
+	<Parent>Mob</Parent>
+	<Properties>
+		<hp>
+			<Type>UINT32</Type>
+			<Flags>ALL_CLIENTS</Flags>
+			<Persistent>true</Persistent>
+		</hp>
+	</Properties>
+	<BaseMethods>
+		<onKill>
+			<Arg>ENTITY_ID</Arg>
+			<Exposed>true</Exposed>
+		</onKill>
+	</BaseMethods>
+	<CellMethods>
+		<onTick>
+		</onTick>
+	</CellMethods>
+	<ClientMethods>
+		<onSpawn>
+			<Arg>UINT8</Arg>
+		</onSpawn>
+	</ClientMethods>
+</root>

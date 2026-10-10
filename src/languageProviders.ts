@@ -38,9 +38,11 @@ import {
   findEntitiesXmlFile,
   findEntityScriptFile,
   findInterfaceScriptFile,
+  getDefinitionWorkspaceLayout,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
   getRegisteredEntities,
+  getScriptsRootForDefFile,
   getWorkspaceRootForDocument,
   notifyEntitiesXmlMissingOnce,
   readWorkspaceTextFile,
@@ -59,6 +61,7 @@ import {
   KBENGINE_RELOAD_FUNCTIONS,
   KBENGINE_TYPES
 } from './kbengineMetadata';
+import { logNavigation } from './navigationLog';
 import {
   getPythonSelfAccessAtPosition,
   getPythonSelfCompletionContext
@@ -397,6 +400,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         markdown.appendMarkdown(`**${word}**\n\n`);
         markdown.appendMarkdown(`${tagDoc.detail}\n\n`);
         markdown.appendMarkdown(tagDoc.documentation);
+        // 根修令③:实现位置给真实解析路径,不给花括号模板。
+        const implementationNote = describeImplementationForHover(document, word);
+        if (implementationNote) {
+          markdown.appendMarkdown(`\n\n${implementationNote}`);
+        }
         return new vscode.Hover(markdown);
       }
     }
@@ -591,7 +599,7 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
   },
   Properties: {
     detail: '玩家属性',
-    documentation: '实体属性区块。字段可通过 `Persistent` 开启自动存储,`Flags` 决定同步范围;字段名可跳转到 scripts/{base,cell,client}/<实体>.py 的实体类实现。'
+    documentation: '实体属性区块。字段可通过 `Persistent` 开启自动存储,`Flags` 决定同步范围;字段名可跳转到实体脚本的类实现(悬停时下方给出本工程的真实解析路径)。'
   },
   BaseMethods: {
     detail: 'BaseApp 方法(可远程调用)',
@@ -1476,7 +1484,11 @@ function findEntityDefinitionInDef(
   word: string,
   entityMappingManager?: EntityMappingManager
 ): vscode.ProviderResult<vscode.Location> {
+  const entityName = path.basename(document.fileName, '.def');
   const symbolInfo = findDefSymbolInfo(document, position, word);
+  // 真机诊断日志(用户令):每点一次 F12 一段,断在哪一级直接可读。
+  logNavigation(`F12 ${document.fileName} ${position.line + 1}:${position.character + 1} word=${word}`);
+  logNavigation(`符号解析 section=${symbolInfo?.section ?? 'null'} symbol=${symbolInfo?.symbolNode.name ?? 'null'}`);
 
   // 批111 用户令:引用族全量接通——DetailLevel 值引用同文件
   // <DetailLevels> 下的档位声明(NEAR/MEDIUM/FAR),点击值跳档位行。
@@ -1488,40 +1500,63 @@ function findEntityDefinitionInDef(
     return detailLevelLocation;
   }
 
-  // 批110 用户令:Properties 字段优先导航到实体脚本实现(scripts/
-  // {base,cell,client}/<实体>.py 的实体类声明行);脚本不存在时再回
-  // 落数据库 schema 虚拟文档。
+  // 批110 用户令:Properties 字段优先导航到实体脚本实现;脚本不存在时
+  // 再回落数据库 schema 虚拟文档。
   if (symbolInfo?.section === 'Properties') {
     const propertyScriptLocation = findPropertyScriptLocationInDef(document);
     if (propertyScriptLocation) {
+      logNavigation(
+        `属性落点 ${propertyScriptLocation.uri.fsPath}:${propertyScriptLocation.range.start.line}`
+      );
       return propertyScriptLocation;
     }
   }
 
   const databaseSchemaLocation = findDatabaseSchemaLocationFromDef(document, position, word);
   if (databaseSchemaLocation) {
+    logNavigation(`schema 回落 ${databaseSchemaLocation.uri.fsPath}`);
     return databaseSchemaLocation;
   }
 
-  // 属性链统一口径(2026-10-10 用户令):属性跳转的落点只能是类定义行/
-  // __init__ 行/脚本首行/显式提示四者之一——脚本与 schema 均未命中时给
-  // 显式提示(指明属性名与期望脚本),不许无声 null。
+  // 根修令④(2026-10-10 用户令):属性找不到实现必须落到类(脚本存在,
+  // d3711f5 已覆盖);脚本确实不存在 → 跳 entities.xml 声明行或同名 def
+  // 首行,提示仅作辅助,不许只弹提示不跳。
   if (symbolInfo?.section === 'Properties') {
-    const entityName = path.basename(document.fileName, '.def');
+    const expected = describeExpectedScriptPaths(document, entityName, ['base', 'cell', 'client']);
     void vscode.window.showInformationMessage(
-      `属性 ${word} 未找到实现:scripts/{base,cell,client}/${entityName}.py 与数据库 schema 均未命中(脚本缺失或属性未声明 <Type>/<Persistent>)`
+      `属性 ${word} 未找到脚本实现,期望位置:${expected.join('、')}(辅助提示,已回落到注册声明/def 首行)`
     );
-    return null;
+    return findRegistryFallbackLocation(document, entityName);
   }
 
   if (symbolInfo?.section && METHOD_SECTIONS.has(symbolInfo.section)) {
-    return findMethodImplementationLocationInDef(
+    const methodLocation = findMethodImplementationLocationInDef(
       document,
       position,
       symbolInfo.symbolNode.name,
       symbolInfo.section,
       entityMappingManager
     );
+    // 管理器路径返回 Promise(内部恒有落点:实现或 def 声明行),原样回传;
+    // 同步结果为 null = 无管理器回落链全空(根修令④:给提示 + 可跳落点)。
+    if (methodLocation instanceof Promise) {
+      return methodLocation;
+    }
+    if (methodLocation) {
+      logNavigation(`方法落点 ${methodLocation.uri.fsPath}:${methodLocation.range.start.line}`);
+      return methodLocation;
+    }
+
+    const methodRole = METHOD_SECTION_SCRIPT_ROLES[symbolInfo.section];
+    const expected = describeExpectedScriptPaths(
+      document,
+      entityName,
+      methodRole ? [methodRole] : ['base', 'cell', 'client']
+    );
+    void vscode.window.showInformationMessage(
+      `方法 ${word} 未找到脚本实现,期望位置:${expected.join('、')}(辅助提示,已回落到注册声明/def 首行)`
+    );
+    return findRegistryFallbackLocation(document, entityName);
   }
 
   const definitionReference = findDefinitionReferenceInDef(document, position, word);
@@ -1541,6 +1576,116 @@ function findEntityDefinitionInDef(
   }
 
   return null;
+}
+
+// 根修令③(2026-10-10 用户令):文案给真实路径,不给花括号模板。收集
+// 文件相对(def 反推)与工作区布局两级推断的全部候选脚本位置;路径在
+// 工作区根下时按工作区相对展示,否则绝对路径。
+function describeExpectedScriptPaths(
+  document: vscode.TextDocument,
+  entityName: string,
+  roles: Array<'base' | 'cell' | 'client'>
+): string[] {
+  const roots: string[] = [];
+  const defScriptsRoot = getScriptsRootForDefFile(document.fileName);
+  if (defScriptsRoot) {
+    roots.push(defScriptsRoot);
+  }
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  const layoutScriptsRoot = workspaceRoot
+    ? getDefinitionWorkspaceLayout(workspaceRoot).entityScriptsRoot
+    : null;
+  if (layoutScriptsRoot && !roots.includes(layoutScriptsRoot)) {
+    roots.push(layoutScriptsRoot);
+  }
+
+  const seen = new Set<string>();
+  const shown: string[] = [];
+  for (const scriptsRoot of roots) {
+    for (const role of roles) {
+      const candidate = path.join(scriptsRoot, role, `${entityName}.py`);
+      if (seen.has(candidate)) {
+        continue;
+      }
+      seen.add(candidate);
+      shown.push(formatWorkspaceRelativePath(candidate, workspaceRoot));
+    }
+  }
+  return shown;
+}
+
+function formatWorkspaceRelativePath(candidate: string, workspaceRoot: string | null): string {
+  if (workspaceRoot && candidate.startsWith(`${workspaceRoot}${path.sep}`)) {
+    return path.relative(workspaceRoot, candidate);
+  }
+  return candidate;
+}
+
+// 根修令③:段标签悬停附带本工程的真实实现解析——命中给实际脚本路径,
+// 未命中列全部期望位置,不给花括号模板。
+function describeImplementationForHover(
+  document: vscode.TextDocument,
+  sectionWord: string
+): string | null {
+  const sectionRoles: Partial<Record<string, Array<'base' | 'cell' | 'client'>>> = {
+    Properties: ['base', 'cell', 'client'],
+    BaseMethods: ['base'],
+    CellMethods: ['cell'],
+    ClientMethods: ['client']
+  };
+  const roles = sectionRoles[sectionWord];
+  if (!roles) {
+    return null;
+  }
+
+  const entityName = path.basename(document.fileName, '.def');
+  for (const role of roles) {
+    const scriptPath = findEntityScriptFile(entityName, role, document);
+    if (scriptPath) {
+      return `当前实现:${formatWorkspaceRelativePath(scriptPath, getWorkspaceRootForDocument(document))}`;
+    }
+  }
+  return `未找到实体脚本,期望位置:${describeExpectedScriptPaths(document, entityName, roles).join('、')}`;
+}
+
+// 根修令④:脚本确实不存在时的可跳落点——实体在 entities.xml 的声明行
+// 优先(注册事实所在,def 反推与工作区布局两级各取一次),否则同名 def
+// (即当前文档)首行。
+function findEntityDeclarationLine(xmlPath: string, entityName: string): number {
+  if (!/^[A-Za-z_]\w*$/.test(entityName)) {
+    return -1;
+  }
+  const pattern = new RegExp(`^\\s*<${entityName}(\\s|/>|>)`);
+  return readWorkspaceTextLines(xmlPath).findIndex(line => pattern.test(line));
+}
+
+function findRegistryFallbackLocation(
+  document: vscode.TextDocument,
+  entityName: string
+): vscode.Location {
+  const xmlCandidates: string[] = [];
+  const defScriptsRoot = getScriptsRootForDefFile(document.fileName);
+  if (defScriptsRoot) {
+    xmlCandidates.push(path.join(defScriptsRoot, 'entities.xml'));
+  }
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (workspaceRoot) {
+    const layoutEntitiesXml = findEntitiesXmlFile(workspaceRoot);
+    if (layoutEntitiesXml) {
+      xmlCandidates.push(layoutEntitiesXml);
+    }
+  }
+
+  for (const xmlPath of xmlCandidates) {
+    const line = findEntityDeclarationLine(xmlPath, entityName);
+    if (line >= 0) {
+      logNavigation(`注册表回落 ${xmlPath}:${line}`);
+      return new vscode.Location(vscode.Uri.file(xmlPath), new vscode.Position(line, 0));
+    }
+  }
+
+  logNavigation(`def 首行回落 ${document.fileName}:0`);
+  return new vscode.Location(document.uri, new vscode.Position(0, 0));
 }
 
 function findDatabaseSchemaDefinition(
@@ -1908,7 +2053,9 @@ const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 
 function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.Location | null {
   const entityName = path.basename(document.fileName, '.def');
 
-  for (const scriptPath of collectPropertyCandidateScripts(document)) {
+  const candidateScripts = collectPropertyCandidateScripts(document);
+  logNavigation(`属性候选链 [${candidateScripts.join(' | ') || '空'}]`);
+  for (const scriptPath of candidateScripts) {
     const lineIndex = resolvePropertyLandingLine(
       readWorkspaceTextLines(scriptPath),
       entityName
@@ -2100,7 +2247,9 @@ function findMethodScriptLocationInDef(
   }
   /* istanbul ignore stop */
 
-  for (const scriptPath of collectMethodCandidateScripts(document, role)) {
+  const candidateScripts = collectMethodCandidateScripts(document, role);
+  logNavigation(`方法候选链 [${candidateScripts.join(' | ') || '空'}]`);
+  for (const scriptPath of candidateScripts) {
     const defLineIndex = readWorkspaceTextLines(scriptPath).findIndex(line => {
       const match = /^\s*def\s+([A-Za-z_]\w*)/.exec(line);
       return match?.[1] === methodName;
@@ -2110,12 +2259,8 @@ function findMethodScriptLocationInDef(
     }
   }
 
-  // 真修单:方法符号已解析但实现缺失(角色脚本不存在或没有 def 方法)时
-  // 给显式提示,不许无声 null —— 用户此前 F12「点了没反应」即此臂静默。
-  const entityName = path.basename(document.fileName, '.def');
-  void vscode.window.showInformationMessage(
-    `方法 ${methodName} 未实现:${role} 角色脚本中没有 def ${methodName}(期望 scripts/${role}/${entityName}.py)`
-  );
+  // 根修令④:实现缺失时不再在此处提示——统一交调用方给「真实期望位置
+  // 提示 + 注册声明/def 首行落点」,本函数只如实返回 null。
   return null;
 }
 

@@ -1,0 +1,4 @@
+<root>
+	<Account hasBase="true" hasCell="true" hasClient="true"/>
+	<Mob hasBase="true" hasCell="true" hasClient="false"/>
+</root>

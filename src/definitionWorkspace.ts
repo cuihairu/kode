@@ -332,6 +332,40 @@ export function findCustomTypePythonImplementationFile(
   return findCustomTypePythonFileByImplementation(layout, typeName, implementedBy) || null;
 }
 
+// 根修令①(2026-10-10 用户真机反馈):布局三候选(entity_defs /
+// scripts/entity_defs / assets/scripts/entity_defs)之外的工程——嵌套目录、
+// 打开上层仓库根、自定义 defs 目录名——此前推不出脚本目录,属性/方法/
+// 三类方法段导航一起静默失效。引擎装载语义里 entity_defs 与
+// base/cell/client/interfaces 恒为同层(scripts 根 = defs 目录的父目录),
+// 故以 def 文件自身路径向上找 defs 目录反推,识别口径:目录名为
+// entity_defs,或目录内含 entities.xml / types.xml(非标准命名时以工程
+// 标志文件定位)。向上至多 6 层防跨出工程,到文件系统根未命中返回 null。
+export function findEntityDefsDirForDefFile(defPath: string): string | null {
+  let dir = path.dirname(defPath);
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (
+      path.basename(dir) === 'entity_defs'
+      || fs.existsSync(path.join(dir, 'entities.xml'))
+      || fs.existsSync(path.join(dir, 'types.xml'))
+    ) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return null;
+    }
+    dir = parent;
+  }
+  return null;
+}
+
+// def 自身反推出的 scripts 根(defs 目录的父目录);def 不在任何可识别的
+// defs 目录下时返回 null,调用方回落工作区候选链。
+export function getScriptsRootForDefFile(defPath: string): string | null {
+  const defsDir = findEntityDefsDirForDefFile(defPath);
+  return defsDir ? path.dirname(defsDir) : null;
+}
+
 export function findEntityDefinitionFile(
   entityName: string,
   target?: string | Pick<vscode.TextDocument, 'fileName'>
@@ -380,6 +414,21 @@ export function findEntityScriptFile(
   role: 'base' | 'cell' | 'client',
   target?: string | Pick<vscode.TextDocument, 'fileName'>
 ): string | null {
+  // 根修令①:文件相对解析优先于工作区相对解析——def 自身反推出的
+  // scripts 根命中即返回;未命中(或 def 不在可识别 defs 目录下)再走
+  // 工作区候选链。string 形态的 target 语义是工作区根,无 def 路径可反推。
+  if (typeof target !== 'string' && target) {
+    const defScriptsRoot = getScriptsRootForDefFile(target.fileName);
+    if (defScriptsRoot) {
+      const defRelativeHit = findExistingLookupPath(
+        path.join(defScriptsRoot, role, `${entityName}.py`)
+      );
+      if (defRelativeHit) {
+        return defRelativeHit;
+      }
+    }
+  }
+
   const workspaceRoot = typeof target === 'string'
     ? target
     : getWorkspaceRootForDocument(target);
@@ -409,6 +458,19 @@ export function findInterfaceScriptFile(
   interfaceName: string,
   target?: string | Pick<vscode.TextDocument, 'fileName'>
 ): string | null {
+  // 根修令①:同 findEntityScriptFile,文件相对优先,工作区候选链回落。
+  if (typeof target !== 'string' && target) {
+    const defScriptsRoot = getScriptsRootForDefFile(target.fileName);
+    if (defScriptsRoot) {
+      const defRelativeHit = findExistingLookupPath(
+        path.join(defScriptsRoot, 'interfaces', `${interfaceName}.py`)
+      );
+      if (defRelativeHit) {
+        return defRelativeHit;
+      }
+    }
+  }
+
   const workspaceRoot = typeof target === 'string'
     ? target
     : getWorkspaceRootForDocument(target);
