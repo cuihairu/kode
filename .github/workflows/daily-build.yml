@@ -50,8 +50,8 @@ jobs:
       - name: 安装 pnpm
         timeout-minutes: 3
         uses: pnpm/action-setup@v6
-        with:
-          version: 8
+        # 2026-10-10:不写 version,统一由 package.json packageManager 决定
+        # (v6 见两处版本并存会直接报 Multiple versions of pnpm specified)
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
