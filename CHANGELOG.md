@@ -5,7 +5,7 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.2] - 2026-10-10
 
 ### Changed
 - Removed two dead settings that no code ever read: `kbengine.pythonDefsPath`
@@ -73,8 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   jumps to the entity's `class` declaration line in
   `scripts/{base,cell,client}/<Entity>.py` (first existing script wins,
   base→cell→client fallback), and a method name falls back to the matching
-  role script's `def` line when no project index is configured (no jump when
-  the method is not implemented); section-tag hover text now explains
+  role script's `def` line when no project index is configured (an
+  information hint names the expected script when the method is not
+  implemented); section-tag hover text now explains
   player-owned properties, remotely callable methods with `Exposed`, and
   client callbacks
 - VitePress documentation site under `docs/`
@@ -138,6 +139,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `args.name`; the request/response log goes to the
   "KBEngine HTTP 快捷请求" output channel, failures show a `✗` line plus an
   error notification. One bundled example entry, disabled by default
+
+### Fixed
+- 修:CellMethods 方法字段无法导航 — F12 on a real-project method name
+  stayed silent. Verified against the official KBEngine SDK template
+  (tab indentation, `<root>` wrapper, empty `<Properties>`): navigation
+  itself resolves on intact buffers — word-start and mid-name cursors both
+  land on the role script's `def` line — so the repro's red traced to the
+  harness corrupting the buffer: the cursor-marker strip deleted the tag's
+  `<` (turning `<onTick>` into bare text, which parses as the parent's
+  text node and drops the METHOD_SECTIONS branch), and a tag rename left a
+  mismatched closing tag that made the def parser bail to null. The one
+  genuine product gap is closed: a method symbol with no implementation
+  (role script missing or no matching `def`) now shows an information
+  hint naming `scripts/<role>/<Entity>.py` instead of a silent null
 
 ### Changed
 - Refactored language support code into focused modules

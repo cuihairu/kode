@@ -3904,3 +3904,40 @@ debug.json×telnet 纠错(telnet 探测/面板/状态灯不读 debug.json)。
 烟测同步(树视图 4 与 package.json 贡献一致)。文档对账:configuration.md
 重写、commands.md attachRemote/showFinal 小节 + 纠错、features.md 三层链
 + 最终配置视图节、CHANGELOG 五条、本节。
+
+## 批113(真修单):CellMethods 导航红测试转绿 + 方法未实现显式提示
+
+用户令:tests/realReproCellMethods.test.ts(官方 SDK 模板真实工程形态,
+CASE_A 词首/CASE_C 词中两红)修到绿,根因一行写死,不许删测试、不许改
+断言凑绿;静默失败改显式。
+
+根因一行(两处,均在复现壳,不在产品链):①CASE_A/CASE_B 的光标标记
+`<|` 用 `replace('<|','')` 剥离(tests/realReproCellMethods.test.ts
+cursorOf)把标签的 `<` 连带删掉,缓冲区里 `<onTick>` 成裸文本 `onTick>`,
+fxp 把它并进父段 text 节点 → getDefNodeAtWord 命中 text 节点 →
+getSymbolNodeInfo null → section undefined → METHOD_SECTIONS 分支进不去
+(即用户探到的签名);对照仓库走查测试口径 `replace('|','')`
+(tests/batch111ReferenceNavigationWalkthrough.test.ts cursorOf)缓冲区
+完好所以 fixture 全绿。②CASE_C 红:前一用例 `.replace('<onTick>',
+'<onTickUnused>')` 只改开标签留 `</onTick>`,累积文件标签失配,
+defParser.consumeNextToken 吞不到闭合 token 抛错(src/defParser.ts
+consumeNextToken)→ parseDefAst 落 null → 整链静默 null。tab 缩进、
+`<root>` 包裹、空 `<Properties>`、段顺序均与故障无关(完好缓冲区上
+真实模板词首/词中光标实测均落 cell/Account.py def 行)。
+
+修复:
+- 复现壳两处缓冲区损坏修正(断言一字未动):cursorOf 只剥 `|` 保留
+  `<`;改名连闭合标签一起改;CASE_B 记录行同步为「NULL(有提示)」。
+- 产品真缺陷(静默 null → 显式):findMethodScriptLocationInDef 无映射
+  管理器回落链找不到 `def <方法>` 时,弹信息提示指明
+  `scripts/<role>/<实体>.py` 期望位置,不再无声 null;映射管理器路径
+  本就降级跳 def 声明行,不变。
+
+回归锁定:realReproCellMethods.test.ts 新增「根因回归」用例——角色脚本
+缺失时 F12 返 null 且 messages.info 含方法名与期望脚本路径;CASE_A/C
+即完好缓冲区真实模板导航回归(词首+词中)。
+
+覆盖率与门禁:1274/1274 绿,coverage 100%×4(6146 stmts/3564 branches/
+1073 funcs/5995 lines),eslint/tsc 干净。版本 0.1.1→0.1.2,CHANGELOG
+[0.1.2] 增 Fixed 节(修:CellMethods 方法字段无法导航),features.md 同
+步「未实现即提示」表述。

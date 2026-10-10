@@ -125,7 +125,7 @@
 - 从 `Properties` 字段 `DetailLevel` 值跳到同文件 `<DetailLevels>` 下的档位声明行
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
 - 从 `Properties` 字段名跳到 `scripts/{base,cell,client}/<实体>.py` 的 `class` 声明行（base→cell→client 取第一个在盘脚本）
-- 从 `BaseMethods` / `CellMethods` / `ClientMethods` 方法名跳到对应角色脚本里的 `def` 行（未配置工程索引时按文件约定回落；脚本在而方法未实现时不跳）
+- 从 `BaseMethods` / `CellMethods` / `ClientMethods` 方法名跳到对应角色脚本里的 `def` 行（未配置工程索引时按文件约定回落；方法未实现——脚本缺失或没有对应 `def` 行——时弹信息提示指明期望的 `scripts/<角色>/<实体>.py`，不再无声无息）
 - 方法/属性实现脚本按引用闭包解析：自身角色脚本 → `<Interfaces>` 混入的 `scripts/interfaces/<接口>.py` → `Parent` 链逐级向上（接口 def 自身的实现在 `scripts/interfaces/<接口名>.py`，接口不跟随 `Parent`）
 
 ### 典型示例

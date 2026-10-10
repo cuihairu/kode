@@ -1999,6 +1999,12 @@ function findMethodScriptLocationInDef(
     }
   }
 
+  // 真修单:方法符号已解析但实现缺失(角色脚本不存在或没有 def 方法)时
+  // 给显式提示,不许无声 null —— 用户此前 F12「点了没反应」即此臂静默。
+  const entityName = path.basename(document.fileName, '.def');
+  void vscode.window.showInformationMessage(
+    `方法 ${methodName} 未实现:${role} 角色脚本中没有 def ${methodName}(期望 scripts/${role}/${entityName}.py)`
+  );
   return null;
 }
 
