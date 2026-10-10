@@ -8,10 +8,17 @@ import { Position, Uri, makeTextDocument, workspace as stubWorkspace } from './h
 
 // 真实复现:拿 kbengine 官方 SDK 模板当被测工程(只读复制到临时目录),
 // 不用测试自造的 fixture —— 用户实测「CellMethods 函数字段无法导航」。
-const KBE_TEMPLATES = path.join(
+// 2026-10-10:真实样本快照入库(源自 kbengine 官方 SDK 模板,tests/fixtures/),
+// 不再依赖本机 ~/workspaces/kbengine —— CI 机器无此仓库曾致 ENOENT 红灯。
+// 快照缺失时回退本机路径(开发者本地可刷新快照)。
+const KBE_TEMPLATE_SNAPSHOT = path.join(__dirname, 'fixtures', 'kbengine-tpl-scripts');
+const KBE_TEMPLATE_LOCAL = path.join(
   os.homedir(),
   'workspaces/kbengine/kbe/res/sdk_templates/server/python_assets/scripts'
 );
+const KBE_TEMPLATES = fs.existsSync(KBE_TEMPLATE_SNAPSHOT)
+  ? KBE_TEMPLATE_SNAPSHOT
+  : KBE_TEMPLATE_LOCAL;
 
 let root = '';
 const p = (...parts: string[]) => path.join(root, ...parts);
