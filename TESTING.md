@@ -4072,3 +4072,81 @@ Code electron 用例加四种布局断言,每种断言「有落点」而非「�
 1086 funcs/6140 lines),eslint/tsc 干净。版本 0.1.3→0.1.4,CHANGELOG
 增 [0.1.4],docs/guide/language.md 跳转定义同步 def 相对优先、方法段
 必有落点与真实路径提示口径。
+
+## 批116:继承链跨文件同名检查(inherited-name-collision,检查项 8→9)
+
+用户令:按 KBENGINE_SOURCE_AUDIT_PLAN 遗留登记候选(① 引擎受限名 ② 继承
+链跨文件同名)挑一项落地。① 已由批99 落地(engine-limited-name),故选
+②——审计计划 L339 原登记「同名检查只比单文件,继承链跨文件同名(引擎按
+模块全局拒绝)不在范围」,本批收口。
+
+引擎语义(核对 kbengine 仓源码,只读):
+- 装载路径:entitydef.cpp L339-395 loadDefInfo 令实体自身的
+  loadAllDefDescriptions → loadInterfaces → loadComponents →
+  loadParentClass(递归 loadDefInfo)全部装入同一个 ScriptDefModule,子先
+  父后,每次 add 都跑判重——继承链全链共享一张名字面,单文件同名检查
+  天然漏掉跨文件臂。
+- 判重矩阵(scriptdef_module.cpp):属性 vs 祖先方法名全局拒绝(L537
+  hasMethodName);属性 vs 祖先组件槽名全局拒绝(L545 hasComponentName);
+  属性 vs 祖先属性/组件槽按分段 map 判重(L588-592 "is exist")——分段即
+  域位(base/cell/client 三 map,common.h L19-45 ENTITY_*_DATA_FLAGS 掩码
+  展开:BASE|BASE_AND_CLIENT→base、CELL_PUBLIC|CELL_PRIVATE→cell、
+  ALL_CLIENTS|CELL_PUBLIC_AND_OWN→cell+client、OWN_CLIENT|OTHER_CLIENTS→
+  client),异域位同名引擎允许共存,CELL→CELL_PUBLIC 等别名与引擎
+  g_entityFlagMapping 同映射(entitydef.cpp L161-174);方法 vs 祖先属性/
+  组件全局拒绝(base/cell/client 三段 addXxxMethodDescription 的
+  hasPropertyName/hasComponentName,L860/868、L923/931、L988/996);方法
+  vs 祖先方法仅同段拒绝(三段独立命名空间);组件槽 vs 任何祖先同名无
+  条件拒绝——组件槽经 addComponentProperty 走 addPropertyDescription
+  (entitydef.cpp L742/810、L821),另入 componentDescr_(scriptdef_module
+  .cpp L1069),两处都撞。
+- 边解析同引擎路径:loadParentClass(entitydef.cpp L890-920)父类解析到
+  定义根平铺位置(`defFilePath + parentClassName + ".def"`),组件 def 的
+  Parent 在 components/ 内解析,接口固定 interfaces/;loadInterfaces
+  (L551-640)递归装接口自身但从不调 loadParentClass——接口文件自身的
+  <Parent> 不产生边;Parent/接口名按首边(同引擎 enterNode/getKey 首语义)。
+
+实现:
+- src/defAnalyzer.ts:collectInheritedNames(:424)从入口 def 出发 BFS,
+  逐祖先聚合属性(域位并集)/组件槽/三段方法入 InheritedNames 字面,边由
+  parseDefFileSemantics 给出(首 Parent + Interfaces 四拼写);入口自身
+  声明不入面(只走边);defsRoot 定位复用 findEntityDefsRootFromFile;
+  readText 可注入(默认读盘,命令链注入打开文档缓存);畸形(解析抛错)/
+  空文档祖先跳过,悬空 Parent 静默,不虚构祖先面;来源列表至多列 3 个
+  命中祖先。判冲突三臂:describePropertyCollision(:538,祖先方法臂/
+  域位相交臂)、describeMethodCollision(:568,同段臂/属性组件臂)、
+  describeComponentCollision(:598,无条件)。全部按「实体加载会失败」
+  表述并注明来源(继承自 xxx.def)。
+- src/extension.ts:kbengine.def.analyze 把每个打开的 def 文本缓存为
+  readDefText(:749)注入 collectInheritedNames(:755),命令链与单文件
+  检查共用同一份打开文档,不重复读盘。
+
+测试文件变化:
+- 新增 tests/defAnalyzerInheritedNames.test.ts(27 用例,mkdtemp 真盘树,
+  Linux 大小写敏感故夹具名与 <Parent> 严格同大小写):域位判重同/异域位、
+  CELL 别名归一、祖先旗标无法识别或缺 <Flags> 不误报、祖父链传递、方法↔
+  属性双向、异段共存(base vs cell、client vs base)、同段报(ClientMethods
+  段含祖先面聚合)、接口混入、接口自身 Parent 无边、组件槽 vs 父属性异域
+  位仍报(无条件)、组件槽 vs 父组件槽、组件 def Parent 在 components/、
+  Parent 环双向报、悬空 Parent、畸形+空文档祖先跳过、无 entities.xml、
+  readText 全 null、多祖先聚合全部列名、超 3 祖先截断到 3、单文件
+  method-property-collision 与继承检查独立报、单参调用行为不变、闭包面
+  (不含自身含传递闭包/接口作入口空面/接口 Interfaces 递归产生边)。
+- tests/defAnalyzerCommand.test.ts +1 真盘命令链用例:findFiles 枚举
+  Child/Monster/Orphan 三个 def,Orphan 首个 Parent 指向不在枚举内的
+  Dangling——同域位同名落诊断(继承自 Monster.def)、悬空边走 readDefText
+  缓存 miss 静默跳过、汇总消息 3 个文件 1 条建议。
+- perfRegression goldens 不受影响(tests/fixtures/kbengine-templates/ 无
+  <Parent>,grep 证实,findingCount 620 与 digest 不变)。
+
+覆盖率坑(实证):v8 provider 不认 /* istanbul ignore next */,本仓口径用
+/* istanbul ignore start */ … /* istanbul ignore stop */ 且必须带定性注释;
+闭包收集里 parseDefFileSemantics 与 parseDefDocument 跑同一解析器,root
+非空时 semantics 必非空,该防御臂以 start/stop 注释豁免。夹具注意:入口
+自身声明不入继承面,CellMethods 段聚合臂需要祖先(而非入口)带该段才覆盖。
+
+覆盖率与门禁:1337/1337 绿(批115 后 +28),coverage 100%×4(6430 stmts/
+3755 branches/1101 funcs/6272 lines),eslint/tsc 干净,mocha 冒烟 11
+passing。版本 0.1.4→0.1.5,CHANGELOG 增 [0.1.5],COMPLETED_FEATURES 功能
+18 检查项 ⑨ 与如实边界、README 性能分析节、KBENGINE_SOURCE_AUDIT_PLAN
+遗留②收口(五步输出)同步。

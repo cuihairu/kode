@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   DEF_METHOD_SECTIONS,
   DefDocument,
@@ -9,6 +11,7 @@ import {
   getLineNumberAt,
   parseDefDocument
 } from './defParser';
+import { findEntityDefsRootFromFile, parseDefFileSemantics } from './defRenamer';
 
 // .def 静态分析建议(性能分析建议,COMPLETED_FEATURES「未来增强功能」条目)。
 // 定位与语言侧实时诊断(语法检查,languageProviders)错位:本模块只产出
@@ -43,12 +46,67 @@ export type DefAnalysisCheck =
   | 'redundant-detail-level'
   | 'invalid-identifier'
   | 'method-property-collision'
-  | 'engine-limited-name';
+  | 'engine-limited-name'
+  | 'inherited-name-collision';
 
 export const DEF_ANALYSIS_SEVERITY_ORDER: Record<DefAnalysisSeverity, number> = {
   error: 0,
   warning: 1,
   info: 2
+};
+
+/** 祖先闭包面上一个名字的声明聚合(跨祖先并集,批116 继承链同名检查)。 */
+export interface InheritedNameInfo {
+  /** 祖先属性命中的域位并集(base/cell/client) */
+  propertyDomains: Set<string>;
+  /** 祖先组件槽命中的域位并集(组件槽经 addComponentProperty 走同一属性注册面) */
+  componentDomains: Set<string>;
+  /** 祖先方法所在段(base/cell/client) */
+  methodSections: Set<string>;
+  /** 各类声明的来源 def(相对定义根路径,去重,至多 3 个,提示文案用) */
+  propertySources: string[];
+  componentSources: string[];
+  methodSources: string[];
+}
+
+/** 祖先闭包面:名字 → 声明聚合,analyzeDefDocument 的可选入参。 */
+export type InheritedNames = Map<string, InheritedNameInfo>;
+
+// 旗标 → 三域位映射(common.h L19-45 真值:base=BASE|BASE_AND_CLIENT,
+// cell=CELL_PUBLIC|CELL_PRIVATE|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|OWN_CLIENT|
+// OTHER_CLIENTS,client=BASE_AND_CLIENT|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|
+// OWN_CLIENT|OTHER_CLIENTS)。同名属性判重按域位相交——不同域位同名引擎允许
+// 共存(addPropertyDescription 的 findXxxPropertyDescription 按域查找)。
+// CELL 是 g_entityFlagMapping 的别名(entitydef.cpp L161),归一到 CELL_PUBLIC。
+const PROPERTY_FLAG_DOMAINS: Record<string, string[]> = {
+  BASE: ['base'],
+  BASE_AND_CLIENT: ['base', 'client'],
+  CELL_PUBLIC: ['cell'],
+  CELL_PRIVATE: ['cell'],
+  ALL_CLIENTS: ['cell', 'client'],
+  CELL_PUBLIC_AND_OWN: ['cell', 'client'],
+  OWN_CLIENT: ['client'],
+  OTHER_CLIENTS: ['client']
+};
+
+const flagDomainsOfTokens = (tokens: string[]): Set<string> => {
+  const domains = new Set<string>();
+  for (const token of tokens) {
+    const flag = token.trim().toUpperCase();
+    const normalized = flag === 'CELL' ? 'CELL_PUBLIC' : flag;
+    for (const domain of PROPERTY_FLAG_DOMAINS[normalized] ?? []) {
+      domains.add(domain);
+    }
+  }
+  return domains;
+};
+
+// Flags 取值与 analyzePropertyNode 同口径按 '|' 容错拆分(引擎整串比对会拒绝
+// 组合旗标,该情形由语言侧实时诊断拦,分析侧容错只影响建议面)
+const propertyFlagDomains = (node: DefElementNode): Set<string> => {
+  const flagsNode = getDirectChildElement(node, 'Flags');
+  const flagsText = flagsNode?.children.find((child): child is DefTextNode => child.kind === 'text');
+  return flagDomainsOfTokens((flagsText?.text ?? '').split('|').map(flag => flag.trim()).filter(Boolean));
 };
 
 // 引擎从未注册、写了必加载失败的类型名(datatypes.cpp addDataType 真值的
@@ -299,10 +357,269 @@ const analyzePropertyNode = (
   }
 };
 
+const MAX_LISTED_SOURCES = 3;
+
+const readFileOrNull = (filePath: string): string | null => {
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+};
+
+const relativeDefLabel = (defsRoot: string, filePath: string): string =>
+  path.relative(defsRoot, filePath).split(path.sep).join('/');
+
+const mergeInheritedName = (
+  inherited: InheritedNames,
+  name: string,
+  defsRoot: string,
+  filePath: string,
+  mark: 'property' | 'component' | 'method',
+  domains: Set<string> | null,
+  section: string | null
+): void => {
+  let info = inherited.get(name);
+  if (!info) {
+    info = {
+      propertyDomains: new Set(),
+      componentDomains: new Set(),
+      methodSections: new Set(),
+      propertySources: [],
+      componentSources: [],
+      methodSources: []
+    };
+    inherited.set(name, info);
+  }
+  const label = relativeDefLabel(defsRoot, filePath);
+  const sources = mark === 'property' ? info.propertySources : mark === 'component' ? info.componentSources : info.methodSources;
+  if (!sources.includes(label) && sources.length < MAX_LISTED_SOURCES) {
+    sources.push(label);
+  }
+  if (mark === 'property' && domains) {
+    for (const domain of domains) {
+      info.propertyDomains.add(domain);
+    }
+  }
+  if (mark === 'component' && domains) {
+    for (const domain of domains) {
+      info.componentDomains.add(domain);
+    }
+  }
+  if (mark === 'method' && section) {
+    info.methodSections.add(section);
+  }
+};
+
+/**
+ * 收集被分析 def 的祖先闭包声明面(Parent 链 + Interfaces 混入,传递)。
+ * 引擎把父类/接口的描述装进同一 ScriptDefModule(entitydef.cpp loadDefInfo:
+ * 自身描述 → loadInterfaces → loadComponents → loadParentClass 递归),同名
+ * 冲突在装载时按模块全局拒绝——本面即该判重的输入。定义根定位不到(无
+ * entities.xml)或闭包不可读时返回空面(退化为仅单文件检查,不虚构祖先)。
+ * 环见 seen 即止;接口文件不跟随 Parent(loadInterfaces 不走 loadParentClass),
+ * 组件 def 的 Parent 在 components/ 内解析(与 defRenamer.resolveLinkPaths
+ * 同口径)。
+ */
+export function collectInheritedNames(
+  entryPath: string,
+  readText: (filePath: string) => string | null = readFileOrNull
+): InheritedNames {
+  const defsRoot = findEntityDefsRootFromFile(entryPath);
+  const inherited: InheritedNames = new Map();
+  if (!defsRoot) {
+    return inherited;
+  }
+
+  const categoryOf = (filePath: string): 'entity' | 'component' | 'interface' => {
+    const relative = path.relative(defsRoot, filePath).split(path.sep);
+    if (relative.includes('interfaces')) {
+      return 'interface';
+    }
+    if (relative.includes('components')) {
+      return 'component';
+    }
+    return 'entity';
+  };
+
+  const entryResolved = path.resolve(entryPath);
+  const seen = new Set([entryResolved]);
+  const queue: string[] = [entryResolved];
+  while (queue.length > 0) {
+    const filePath = queue.shift() as string;
+    const content = readText(filePath);
+    if (content === null) {
+      continue;
+    }
+    // 祖先文件不可解析(畸形 XML 抛错/空文档无根)即跳过:闭包面缺失不影响
+    // 其余祖先,与 defRenamer.parseDefText 的容错口径一致
+    let document: DefDocument;
+    try {
+      document = parseDefDocument(content);
+    } catch {
+      continue;
+    }
+    const root = document.root;
+    if (!root) {
+      continue;
+    }
+
+    // 入口自身只走出边,其声明不进祖先面(同文件判重由既有检查项覆盖)
+    if (filePath !== entryResolved) {
+      const propertiesSection = getDirectChildElement(root, 'Properties');
+      if (propertiesSection) {
+        for (const propertyNode of getDirectChildElements(propertiesSection)) {
+          mergeInheritedName(inherited, propertyNode.name, defsRoot, filePath, 'property', propertyFlagDomains(propertyNode), null);
+        }
+      }
+      const componentsSection = getDirectChildElement(root, 'Components');
+      if (componentsSection) {
+        for (const componentNode of getDirectChildElements(componentsSection)) {
+          mergeInheritedName(inherited, componentNode.name, defsRoot, filePath, 'component', propertyFlagDomains(componentNode), null);
+        }
+      }
+      for (const sectionName of DEF_METHOD_SECTIONS) {
+        const sectionNode = getDirectChildElement(root, sectionName);
+        if (!sectionNode) {
+          continue;
+        }
+        const section = sectionName === 'BaseMethods' ? 'base' : sectionName === 'CellMethods' ? 'cell' : 'client';
+        for (const methodNode of getDirectChildElements(sectionNode)) {
+          mergeInheritedName(inherited, methodNode.name, defsRoot, filePath, 'method', null, section);
+        }
+      }
+    }
+
+    const semantics = parseDefFileSemantics(content);
+    /* istanbul ignore start: parseDefFileSemantics 内部对同一文本跑同一解析器
+       (parseDefText = try/catch 包裹 parseDefDocument),root 非空时必非空,
+       该臂仅防御性保留(v8 覆盖率口径下 start/stop 才生效) */
+    if (!semantics) {
+      continue;
+    }
+    /* istanbul ignore stop */
+    const category = categoryOf(filePath);
+    const edges: string[] = [];
+    if (semantics.parentName && category !== 'interface') {
+      const parentDir = category === 'component' ? path.join(defsRoot, 'components') : defsRoot;
+      edges.push(path.join(parentDir, `${semantics.parentName}.def`));
+    }
+    for (const name of semantics.interfaceNames) {
+      edges.push(path.join(defsRoot, 'interfaces', `${name}.def`));
+    }
+    for (const edge of edges) {
+      const resolved = path.resolve(edge);
+      if (!seen.has(resolved)) {
+        seen.add(resolved);
+        queue.push(resolved);
+      }
+    }
+  }
+  return inherited;
+}
+
+/**
+ * 继承链同名判重(批116,引擎判重语义见 scriptdef_module.cpp):
+ * - 自身属性 vs 祖先方法:hasMethodName 全局拒绝,无条件失败;
+ * - 自身属性 vs 祖先属性/组件槽:findXxxPropertyDescription 按域查找,域位
+ *   相交才拒绝(不同域位同名可共存,不报);
+ * - 自身方法 vs 祖先属性/组件:hasPropertyName/hasComponentName 全局拒绝,
+ *   无条件失败;
+ * - 自身方法 vs 祖先方法:仅同段拒绝(段即命名空间,异段同名可共存);
+ * - 自身组件槽 vs 祖先任何同名声明:组件槽经 addComponentProperty 走
+ *   addPropertyDescription,hasComponentName 查 componentDescr_ 全局,
+ *   无条件失败。
+ * 无冲突返回 null(不同域位/异段共存是引擎合法形态)。
+ */
+// 提示文案的来源注记:命中面由 mergeInheritedName 构造,任一列表非空才进
+// 对应分支,来源恒有至少一个 def,无需判空臂
+const cite = (sources: string[]): string => `(继承自 ${sources.join('、')})`;
+
+const describePropertyCollision = (
+  document: DefDocument,
+  node: DefElementNode,
+  ownDomains: Set<string>,
+  info: InheritedNameInfo
+): DefAnalysisFinding | null => {
+  if (info.methodSources.length > 0) {
+    return finding(
+      'inherited-name-collision',
+      'error',
+      nameSpan(node),
+      getLineNumberAt(document, node.tagStart),
+      `属性 ${node.name} 与继承链上的方法同名:父子/接口描述装入同一 ScriptDefModule,hasMethodName 全局拒绝,实体加载会失败${cite(info.methodSources)}`,
+      node.name
+    );
+  }
+  const overlaps = [...info.propertyDomains, ...info.componentDomains].some(domain => ownDomains.has(domain));
+  if (overlaps) {
+    return finding(
+      'inherited-name-collision',
+      'error',
+      nameSpan(node),
+      getLineNumberAt(document, node.tagStart),
+      `属性 ${node.name} 与继承链上的属性/组件槽同域位同名:同一模块 addPropertyDescription 判重拒绝,实体加载会失败${cite([...info.propertySources, ...info.componentSources])}`,
+      node.name
+    );
+  }
+  return null;
+};
+
+const describeMethodCollision = (
+  document: DefDocument,
+  node: DefElementNode,
+  section: string,
+  info: InheritedNameInfo
+): DefAnalysisFinding | null => {
+  if (info.methodSections.has(section)) {
+    return finding(
+      'inherited-name-collision',
+      'error',
+      nameSpan(node),
+      getLineNumberAt(document, node.tagStart),
+      `方法 ${node.name} 与继承链上的方法同段同名:同一模块同段判重拒绝,实体加载会失败${cite(info.methodSources)}`,
+      node.name
+    );
+  }
+  if (info.propertySources.length > 0 || info.componentSources.length > 0) {
+    return finding(
+      'inherited-name-collision',
+      'error',
+      nameSpan(node),
+      getLineNumberAt(document, node.tagStart),
+      `方法 ${node.name} 与继承链上的属性/组件同名:addXxxMethodDescription 的 hasPropertyName/hasComponentName 全局拒绝,实体加载会失败${cite([...info.propertySources, ...info.componentSources])}`,
+      node.name
+    );
+  }
+  return null;
+};
+
+// 组件槽判重无条件(见上方规则),恒产出 finding,无 null 臂
+const describeComponentCollision = (
+  document: DefDocument,
+  node: DefElementNode,
+  info: InheritedNameInfo
+): DefAnalysisFinding => {
+  const sources = [...info.propertySources, ...info.componentSources, ...info.methodSources];
+  return finding(
+    'inherited-name-collision',
+    'error',
+    nameSpan(node),
+    getLineNumberAt(document, node.tagStart),
+    `组件槽 ${node.name} 与继承链上的声明同名:组件槽经 addComponentProperty 走 addPropertyDescription,同名判重拒绝,实体加载会失败${cite(sources)}`,
+    node.name
+  );
+};
+
 /**
  * 对一份 .def 文本做静态分析,返回优化建议列表(按文档顺序)。
+ * inheritedNames 为祖先闭包声明面(collectInheritedNames 产出);缺省时退化为
+ * 仅单文件检查(既有行为不变)。
  */
-export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
+export function analyzeDefDocument(
+  text: string,
+  inheritedNames: InheritedNames = new Map()
+): DefAnalysisFinding[] {
   const document = parseDefDocument(text);
   const findings: DefAnalysisFinding[] = [];
   const root = document.root;
@@ -316,6 +633,22 @@ export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
     for (const propertyNode of getDirectChildElements(propertiesSection)) {
       analyzePropertyNode(document, propertyNode, findings);
       propertyNames.add(propertyNode.name);
+
+      // 继承链同名(批116):祖先闭包面非空且该名字被祖先声明时按引擎判重
+      // 规则报——方法同名全局拒绝;属性/组件槽同名按域位相交(不同域位同名
+      // 引擎允许共存,不报)
+      const info = inheritedNames.get(propertyNode.name);
+      if (info) {
+        const inheritedFinding = describePropertyCollision(
+          document,
+          propertyNode,
+          propertyFlagDomains(propertyNode),
+          info
+        );
+        if (inheritedFinding) {
+          findings.push(inheritedFinding);
+        }
+      }
     }
   }
 
@@ -363,6 +696,16 @@ export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
           )
         );
       }
+      // 继承链同名(批116):方法与祖先属性/组件同名全局拒绝;与祖先方法同名
+      // 仅同段拒绝(段即命名空间,异段同名引擎允许共存)
+      const inheritedInfo = inheritedNames.get(methodNode.name);
+      if (inheritedInfo) {
+        const section = sectionName === 'BaseMethods' ? 'base' : sectionName === 'CellMethods' ? 'cell' : 'client';
+        const inheritedFinding = describeMethodCollision(document, methodNode, section, inheritedInfo);
+        if (inheritedFinding) {
+          findings.push(inheritedFinding);
+        }
+      }
     }
   }
 
@@ -382,6 +725,13 @@ export function analyzeDefDocument(text: string): DefAnalysisFinding[] {
             componentNode.name
           )
         );
+      }
+      // 继承链同名(批116):组件槽经 addComponentProperty 走
+      // addPropertyDescription,与继承链上任何同名声明都判重(hasComponentName
+      // 查 componentDescr_ 全局,无域位豁免),无条件报
+      const inheritedInfo = inheritedNames.get(componentNode.name);
+      if (inheritedInfo) {
+        findings.push(describeComponentCollision(document, componentNode, inheritedInfo));
       }
     }
   }

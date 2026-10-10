@@ -144,9 +144,9 @@
 
 ### 18. 性能分析建议（.def 静态分析）
 - 工作区全量 `.def` 静态检查，命令面板 `Analyze Def Performance`（`kbengine.def.analyze`，批91）
-- 7 个检查项（幻影类型/缺 Type/重复 Type/重广播开销/冗余 DetailLevel/Python 关键字标识符/方法属性同名），均为优化建议、与实时诊断错位；批96 引擎复核后各检查口径对齐源码（客户端可见旗标取 `ENTITY_CLIENT_DATA_FLAGS` 位集真值，装载失败类检查按引擎行为表述，关键字按"引擎不失败、脚本语法不可访问"表述，重复 `<Type>` 按引擎首取语义表述）
+- 7 个检查项（幻影类型/缺 Type/重复 Type/重广播开销/冗余 DetailLevel/Python 关键字标识符/方法属性同名），均为优化建议、与实时诊断错位；批96 引擎复核后各检查口径对齐源码（客户端可见旗标取 `ENTITY_CLIENT_DATA_FLAGS` 位集真值，装载失败类检查按引擎行为表述，关键字按"引擎不失败、脚本语法不可访问"表述，重复 `<Type>` 按引擎首取语义表述）；批99 增第 8 项引擎受限名，批116 增第 9 项继承链跨文件同名（`inherited-name-collision`，闭包口径与重命名传播一致）
 - 报告写入「KBEngine Def 分析」输出面板，诊断落 `kbengine-def-analysis` 问题列表
-- 如实边界：同名检查只在单文件内比对；与继承链上父类/接口成员的同名冲突（引擎按模块全局拒绝）不在本检查范围
+- 如实边界：单文件同名检查只比本文件；继承链上的跨文件同名由 `inherited-name-collision` 覆盖（闭包沿 `Parent` 首边与 `<Interfaces>` 混入展开，与引擎 `loadParentClass`/`loadInterfaces` 装载路径同径；接口文件自身的 `Parent` 不产生边，对齐引擎 `loadInterfaces` 不走 `loadParentClass`）
 - **源文件**: `src/defAnalyzer.ts`
 
 ### 19. 代码片段生成器（自定义代码片段）
@@ -301,9 +301,24 @@ kode/
       引擎另拒绝 KBEngine.Entity 既有属性名(运行时查询),该属性面不在
       引擎仓静态可推导,本检查只收受限名单臂;
       范围注记:重复定义等结构校验已由语言侧实时诊断覆盖,本功能不重复;
-      自定义 types.xml 类型为引擎合法扩展,故不做「未知类型」误报;
-      同名检查只比单文件,继承链上的跨文件同名(引擎按模块全局拒绝)不在
-      范围
+      自定义 types.xml 类型为引擎合法扩展,故不做「未知类型」误报。
+      ⑨ inherited-name-collision(批116)——继承链跨文件同名:沿实体 def
+      的 `Parent` 首边与 `<Interfaces>` 混入递归展开闭包(不含入口自身),
+      把祖先/接口的属性(按 Flags 解析域位并集)、组件槽(经
+      addComponentProperty 与属性同注册面)与方法(按段)并入一张名字面,
+      再与入口自身声明判冲突;判重矩阵对齐引擎单模块装载语义
+      (entitydef.cpp L339-395 loadDefInfo 令子/父/接口描述装入同一
+      ScriptDefModule):属性 vs 祖先方法/组件槽名全局拒绝
+      (scriptdef_module.cpp L537/L545)、属性 vs 祖先属性/组件槽按域位
+      相交拒绝(L588-592 "is exist",异域位同名引擎可共存)、方法 vs 祖先
+      属性/组件全局拒绝(L860/868、L923/931、L988/996)、方法 vs 祖先方法
+      仅同段拒绝(base/cell/client 三段独立命名空间)、组件槽 vs 任何祖先
+      同名无条件拒绝(组件槽经 addComponentProperty 走 addPropertyDescription,
+      entitydef.cpp L742/810/L821);边解析同引擎路径——父类到定义根平铺、
+      组件 def 的 Parent 在 components/ 内、接口到 interfaces/、接口文件
+      自身 Parent 不产生边(entitydef.cpp L551-640 loadInterfaces 不走
+      loadParentClass)、Parent/接口名取首边;闭包对畸形/空文档祖先跳过,
+      悬空 Parent 静默,不虚构祖先面;报告来源列表至多列 3 个命中祖先
 - [x] 实体模板库（更多预设模板）(批93:预设模板 5→10——新增怪物/场景/
       公会/队伍/邮件,类型与旗标仅取引擎注册表,队伍成员数组用
       `ARRAY<of>UINT64</of>` 内联语法;全库 10 模板生成 .def 经实时诊断与

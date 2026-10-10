@@ -5,6 +5,30 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-10-10
+
+### Added
+- `inherited-name-collision` def-analysis check (ninth check item): the
+  analyzer now walks each entity def's inheritance closure — the `<Parent>`
+  chain and `<Interfaces>` mix-ins, resolved the same way the engine loads
+  them (parent on the def root, component parents inside `components/`,
+  interfaces inside `interfaces/`, interface files never follow their own
+  `<Parent>`) — and reports names that the engine would reject at load
+  time. Collision rules mirror the single shared `ScriptDefModule` the
+  engine installs child, parent and interface descriptions into: a
+  property against an ancestor method or component-slot name is rejected
+  globally; a property against an ancestor property/component slot is
+  rejected only on overlapping flag domains (disjoint domains coexist
+  legally, `CELL` aliases are normalized first); a method against an
+  ancestor property/component is rejected globally; a method against an
+  ancestor method only within the same section; a component slot against
+  any ancestor same name is rejected unconditionally. Every hit is
+  reported as an error with the ancestor file(s) it came from (up to
+  three listed)
+- Malformed or empty ancestor files in the closure are skipped and
+  dangling `Parent` references are silently ignored — the analyzer never
+  invents an ancestor surface, so no false positives from unreadable files
+
 ## [0.1.4] - 2026-10-10
 
 ### Fixed

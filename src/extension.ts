@@ -45,7 +45,7 @@ import {
   locateDatabaseSchemaLine
 } from './databaseSchema';
 import { findEntityDefinitionFile } from './definitionWorkspace';
-import { analyzeDefDocument, formatDefAnalysisReport } from './defAnalyzer';
+import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
 import {
   CUSTOM_SNIPPETS_RELATIVE_PATH,
@@ -737,10 +737,22 @@ export function activate(context: vscode.ExtensionContext) {
 
       defAnalysisOutputChannel.clear();
       defAnalysisDiagnostics.clear();
-      let totalFindings = 0;
-      for (const uri of defUris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
+      // 每个 .def 只打开一次:文本缓存供单文件检查与继承链闭包(collectInheritedNames)共用
+      const sortedUris = defUris.sort((a, b) => a.fsPath.localeCompare(b.fsPath));
+      const openedDocuments = new Map<string, vscode.TextDocument>();
+      const defTexts = new Map<string, string>();
+      for (const uri of sortedUris) {
         const document = await vscode.workspace.openTextDocument(uri);
-        const findings = analyzeDefDocument(document.getText());
+        openedDocuments.set(uri.fsPath, document);
+        defTexts.set(path.resolve(uri.fsPath), document.getText());
+      }
+      const readDefText = (filePath: string): string | null =>
+        defTexts.get(path.resolve(filePath)) ?? null;
+
+      let totalFindings = 0;
+      for (const uri of sortedUris) {
+        const document = openedDocuments.get(uri.fsPath) as vscode.TextDocument;
+        const findings = analyzeDefDocument(document.getText(), collectInheritedNames(uri.fsPath, readDefText));
         totalFindings += findings.length;
         defAnalysisOutputChannel.appendLine(
           formatDefAnalysisReport(uri.fsPath, findings)

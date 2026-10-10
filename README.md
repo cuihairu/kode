@@ -169,8 +169,9 @@ Runs a static check over all `.def` files in the workspace and reports optimizat
 - Properties missing a valid `<Type>`, or redundant definitions with multiple `<Type>` tags on one property
 - Sync-cost hints for heavy-payload types (strings/BLOB/containers/PY_*/VECTOR) broadcast to `ALL_CLIENTS`
 - Redundant `DetailLevel` fields on properties without client-visible flags
-- Property/method names that are Python keywords, or methods colliding with property names
+- Property/method names that are Python keywords, or a method colliding with a property name in the same file
 - Property/method/component-slot names hitting the engine's limited-name list (`ENTITY_LIMITED_PROPERTYS`) — entity loading fails
+- Inheritance-chain name collisions (`Parent` chain and `Interfaces` mix-ins). The engine installs child, parent and interface descriptions into one module, so a property or component-slot name collides on overlapping flag domains, a property and a method collide anywhere, methods collide only inside the same section, and a component slot collides with any same name — entity loading fails in every case
 
 ## Installation
 

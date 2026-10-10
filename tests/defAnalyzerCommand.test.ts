@@ -138,4 +138,83 @@ describe('kbengine.def.analyze 命令', () => {
     disposeAll(context);
     expect(deactivate()).toBeUndefined();
   });
+
+  it('继承链闭包接入命令链:同域位同名落诊断,悬空 Parent 走缓存 miss', async () => {
+    // 真盘夹具:collectInheritedNames 经 findEntityDefsRootFromFile/读盘解析
+    // 闭包(走 fs.existsSync + 文本缓存);Orphan 的首个 Parent 指向不在
+    // findFiles 枚举内的 Dangling.def,覆盖 readDefText 的缓存 miss 臂
+    const defsDir = path.join(root, 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    fs.writeFileSync(path.join(root, 'entities.xml'), '<root></root>');
+
+    const childDef = [
+      '<root>',
+      '  <Parent>Monster</Parent>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>INT32</Type>',
+      '      <Flags>CELL_PUBLIC</Flags>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n');
+    const ancestorDef = [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>INT32</Type>',
+      '      <Flags>CELL_PUBLIC</Flags>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n');
+    const orphanDef = [
+      '<root>',
+      '  <Parent>Dangling</Parent>',
+      '  <Properties>',
+      '    <mp>',
+      '      <Type>INT32</Type>',
+      '      <Flags>BASE</Flags>',
+      '    </mp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n');
+    fs.writeFileSync(path.join(defsDir, 'Child.def'), childDef);
+    fs.writeFileSync(path.join(defsDir, 'Monster.def'), ancestorDef);
+    fs.writeFileSync(path.join(defsDir, 'Orphan.def'), orphanDef);
+
+    const childUri = Uri.file(path.join(defsDir, 'Child.def'));
+    const defsMonsterUri = Uri.file(path.join(defsDir, 'Monster.def'));
+    const orphanUri = Uri.file(path.join(defsDir, 'Orphan.def'));
+    workspace.findFiles = (async (): Promise<Uri[]> => [
+      childUri,
+      defsMonsterUri,
+      orphanUri
+    ]) as typeof workspace.findFiles;
+    workspace.openTextDocument = (async (uri: unknown) => {
+      const filePath = (uri as Uri).fsPath;
+      const text = filePath.endsWith('Child.def')
+        ? childDef
+        : filePath.endsWith('Orphan.def')
+          ? orphanDef
+          : ancestorDef;
+      return makeTextDocument(text, { uri: uri as Uri, fileName: filePath });
+    }) as typeof workspace.openTextDocument;
+
+    const context = makeContext();
+    activate(context);
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    await commands.executeCommand('kbengine.def.analyze');
+
+    const analysis = windowState.channels.find(entry => entry.name === 'KBEngine Def 分析');
+    const joined = analysis?.lines.join('') ?? '';
+    expect(joined).toContain('inherited-name-collision');
+    expect(joined).toContain('继承自 Monster.def');
+    // 悬空边静默跳过:不虚构祖先面,也不产生误报
+    expect(joined).not.toContain('Dangling.def');
+    expect(messages.info.at(-1)).toBe('Def 分析完成: 3 个文件, 1 条建议');
+
+    disposeAll(context);
+  });
 });

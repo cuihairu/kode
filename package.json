@@ -2,7 +2,7 @@
   "name": "kode",
   "displayName": "Kode - KBEngine Development Environment",
   "description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "cuihairu",
   "author": {
     "name": "cuihairu",
