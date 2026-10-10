@@ -32,8 +32,8 @@ jobs:
     - name: 安装 pnpm
       timeout-minutes: 3
       uses: pnpm/action-setup@v6
-      with:
-        version: 8
+      # 2026-10-10:不再在此写 version,统一以 package.json 的 packageManager 为单一来源
+      # (v6 会因两处版本并存直接报错:Multiple versions of pnpm specified)
 
     - name: 设置 Node.js 24.x
       timeout-minutes: 5
