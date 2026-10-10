@@ -457,11 +457,11 @@ export function activate(context: vscode.ExtensionContext) {
     'kbengine.server.start',
     (target) => {
       const component = resolveServerComponent(target);
-      if (component) {
-        void serverManager.startComponent(component);
-      } else {
-        void serverManager.startAutoComponents();
-      }
+      // 2026-10-10 fix(CI 38027480815):必须返回 Promise,否则 executeCommand 立刻
+      // 返回、在途启动的报错渗进后续测试(beforeEach 已清,旧 async 仍会吐错)。
+      return component
+        ? serverManager.startComponent(component)
+        : serverManager.startAutoComponents();
     }
   );
   context.subscriptions.push(startServerCommand);
@@ -470,11 +470,9 @@ export function activate(context: vscode.ExtensionContext) {
     'kbengine.server.stop',
     (target) => {
       const component = resolveServerComponent(target);
-      if (component) {
-        void serverManager.stopComponent(component.name);
-      } else {
-        void serverManager.stopAll();
-      }
+      return component
+        ? serverManager.stopComponent(component.name)
+        : serverManager.stopAll();
     }
   );
   context.subscriptions.push(stopServerCommand);
@@ -484,10 +482,10 @@ export function activate(context: vscode.ExtensionContext) {
     (target) => {
       const component = resolveServerComponent(target);
       if (!component) {
-        return;
+        return undefined;
       }
 
-      void serverManager.restartComponent(component.name);
+      return serverManager.restartComponent(component.name);
     }
   );
   context.subscriptions.push(restartServerCommand);

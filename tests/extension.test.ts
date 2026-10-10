@@ -190,7 +190,9 @@ describe('extension activate 装配', () => {
     // 服务器命令:启动缺二进制报错、停止未运行 false、未知目标 no-op
     await commands.executeCommand('kbengine.server.start', 'machine');
     expect(messages.error.some(message => message.includes('找不到 machine 可执行文件'))).toBe(true);
-    // stop 处理器以 void 丢弃 Promise(不等待结果),命令面返回 undefined
+    // 2026-10-10:处理器改为返回 Promise(修 CI 38027480815 跨测试渗错:在途启动
+    // 的报错渗进后续测试)。此处 'machine' 走 startAutoComponents 自动链(start 报错
+    // 来自它),故 stop/restart 目标同样未解析 → stopAll/restart no-op → undefined。
     await expect(commands.executeCommand('kbengine.server.stop', 'machine')).resolves.toBeUndefined();
     await expect(commands.executeCommand('kbengine.server.restart', 'nope')).resolves.toBeUndefined();
 
