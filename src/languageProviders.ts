@@ -1503,6 +1503,17 @@ function findEntityDefinitionInDef(
     return databaseSchemaLocation;
   }
 
+  // 属性链统一口径(2026-10-10 用户令):属性跳转的落点只能是类定义行/
+  // __init__ 行/脚本首行/显式提示四者之一——脚本与 schema 均未命中时给
+  // 显式提示(指明属性名与期望脚本),不许无声 null。
+  if (symbolInfo?.section === 'Properties') {
+    const entityName = path.basename(document.fileName, '.def');
+    void vscode.window.showInformationMessage(
+      `属性 ${word} 未找到实现:scripts/{base,cell,client}/${entityName}.py 与数据库 schema 均未命中(脚本缺失或属性未声明 <Type>/<Persistent>)`
+    );
+    return null;
+  }
+
   if (symbolInfo?.section && METHOD_SECTIONS.has(symbolInfo.section)) {
     return findMethodImplementationLocationInDef(
       document,
@@ -1514,7 +1525,22 @@ function findEntityDefinitionInDef(
   }
 
   const definitionReference = findDefinitionReferenceInDef(document, position, word);
-  return createDefinitionLocation(document, definitionReference);
+  if (definitionReference) {
+    return createDefinitionLocation(document, definitionReference);
+  }
+
+  // 属性链同口径:点击属性的 <Type> 值未解析时给显式提示——内建类型无
+  // 定义文件(引擎 C++ 内建),自定义类型未在 types.xml 声明。
+  if (isPositionInsideTagValue(document, position, 'Type')) {
+    const builtInTypes = new Set(KBENGINE_TYPES.map(type => type.name));
+    void vscode.window.showInformationMessage(
+      builtInTypes.has(word)
+        ? `内建类型 ${word} 无定义文件(引擎 C++ 内建,无对应声明文件)`
+        : `自定义类型 ${word} 未找到声明:types.xml 未声明或 implementedBy 脚本缺失`
+    );
+  }
+
+  return null;
 }
 
 function findDatabaseSchemaDefinition(
@@ -1872,28 +1898,113 @@ const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 
 };
 
 // 批110 用户令:属性字段导航到实现。实体实现在 scripts/{base,cell,client}/
-// <实体>.py 的实体类声明行;按 base→cell→client 取第一个存在的脚本,
-// 类行缺失(异常脚本)时落在脚本首行。
+// <实体>.py 的实体类声明行;按 base→cell→client 取第一个存在的脚本。
+// 2026-10-10 补充口径:属性先于 __init__ 装载,脚本里未必有同名赋值——
+// 落点按「类定义行 → __init__ 行 → 首个类行 → 脚本首行」四档解析,
+// 全落空才走显式提示,不许无声 null。候选脚本沿引擎装载链收集:本 def
+// 角色脚本 → 接口 def 的 scripts/interfaces/ 脚本 → <Parent> 链各层角色
+// 脚本(组件 def 的 Parent 在 components/ 内解析,接口 def 不跟随
+// Parent,口径同 collectMethodCandidateScripts)。
 function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.Location | null {
   const entityName = path.basename(document.fileName, '.def');
-  for (const role of ['base', 'cell', 'client'] as const) {
-    const scriptPath = findEntityScriptFile(entityName, role, document);
-    if (!scriptPath) {
-      continue;
-    }
 
-    const lines = readWorkspaceTextLines(scriptPath);
-    for (let index = 0; index < lines.length; index += 1) {
-      const match = /^\s*class\s+([A-Za-z_]\w*)/.exec(lines[index]);
-      if (match && match[1] === entityName) {
-        return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(index, 0));
-      }
-    }
-
-    return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(0, 0));
+  for (const scriptPath of collectPropertyCandidateScripts(document)) {
+    const lineIndex = resolvePropertyLandingLine(
+      readWorkspaceTextLines(scriptPath),
+      entityName
+    );
+    return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(lineIndex, 0));
   }
 
   return null;
+}
+
+// 属性落点四档:与 def 同名的类定义行 → __init__ 行 → 首个类行(类名与
+// def 不一致时)→ 脚本首行。引擎在 __init__ 之前装载属性,脚本里没有同名
+// 赋值时类/__init__ 仍是唯一可定位的锚点。
+function resolvePropertyLandingLine(lines: string[], entityName: string): number {
+  let firstInitLine = -1;
+  let firstClassLine = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const classMatch = /^\s*class\s+([A-Za-z_]\w*)/.exec(lines[index]);
+    if (classMatch) {
+      if (classMatch[1] === entityName) {
+        return index;
+      }
+      if (firstClassLine < 0) {
+        firstClassLine = index;
+      }
+      continue;
+    }
+
+    if (firstInitLine < 0 && /^\s*def\s+__init__\s*\(/.test(lines[index])) {
+      firstInitLine = index;
+    }
+  }
+
+  if (firstInitLine >= 0) {
+    return firstInitLine;
+  }
+  return firstClassLine >= 0 ? firstClassLine : 0;
+}
+
+// 属性候选脚本闭包:结构同 collectMethodCandidateScripts(方法实现候选),
+// 差别只在接口 def 只取 scripts/interfaces/<接口名>.py、不跟随 Parent,
+// 且每层 def 按 base→cell→client 全角色入队(属性不区分方法段角色)。
+function collectPropertyCandidateScripts(document: vscode.TextDocument): string[] {
+  const candidates: string[] = [];
+  const seenScripts = new Set<string>();
+  const seenDefs = new Set<string>();
+  const pushScript = (scriptPath: string | null): void => {
+    if (scriptPath && !seenScripts.has(scriptPath)) {
+      seenScripts.add(scriptPath);
+      candidates.push(scriptPath);
+    }
+  };
+
+  let defPath: string | null = document.fileName;
+  // 当前文档用缓冲区文本(未保存改动也参与解析);上游 def 走磁盘。
+  let defContent: string = document.getText();
+  let defName = path.basename(document.fileName, '.def');
+
+  while (defPath && defContent) {
+    // 环防护由下方 parentDefPath 的 seen 判定承担(入队前拦截),
+    // 循环顶不再重复检查:进入循环体的 defPath 恒为未见过的路径。
+    seenDefs.add(defPath);
+
+    const isInterfaceDef = /(^|[\\/])interfaces[\\/][^\\/]*$/.test(defPath);
+    const semantics = parseDefFileSemantics(defContent);
+    if (isInterfaceDef) {
+      // 接口 def 的实现脚本在 scripts/interfaces/<接口名>.py(引擎
+      // loadInterfaces 的装载口径),不在 scripts/<role>/;接口 def 不跟随 Parent。
+      pushScript(findInterfaceScriptFile(defName, document));
+      break;
+    }
+
+    for (const role of ['base', 'cell', 'client'] as const) {
+      pushScript(findEntityScriptFile(defName, role, document));
+    }
+    if (semantics) {
+      for (const interfaceName of semantics.interfaceNames) {
+        pushScript(findInterfaceScriptFile(interfaceName, document));
+      }
+    }
+
+    if (!semantics?.parentName) {
+      break;
+    }
+
+    const parentDefPath = findParentDefPath(defPath, semantics.parentName, document);
+    if (!parentDefPath || seenDefs.has(parentDefPath)) {
+      break;
+    }
+    defPath = parentDefPath;
+    defName = semantics.parentName;
+    defContent = readWorkspaceTextFile(parentDefPath);
+  }
+
+  return candidates;
 }
 
 // 批111 用户令:引用族全量接通——方法实现不只在实体自身角色脚本。引擎把

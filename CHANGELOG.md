@@ -5,6 +5,27 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-10-10
+
+### Fixed
+- Property navigation in `.def` files no longer silently returns nothing.
+  Landing spots resolve in four tiers: the `class` line matching the def
+  name → the `__init__` line → the first `class` line → the first line of
+  the script. The engine loads properties before `__init__`, so the class
+  line stays a reliable anchor even when the property name never appears
+  in the script
+- Property lookups now walk the engine's loading closure: component defs
+  resolve to their role scripts, interface defs resolve to
+  `scripts/interfaces/<name>.py`, and entity defs climb declared
+  `<Interfaces>` mixins and the `<Parent>` chain (cycle-safe, stops at
+  empty or malformed parent defs)
+- When neither the script closure nor the database schema resolves a
+  property, an explicit message names the property and the expected
+  `scripts/<role>/<entity>.py` locations instead of doing nothing
+- Clicking a `<Type>` value now explains the miss: built-in types
+  (`UINT32` etc.) report "engine built-in, no declaration file", unknown
+  custom types report "not declared in types.xml" instead of a silent null
+
 ## [0.1.2] - 2026-10-10
 
 ### Changed

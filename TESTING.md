@@ -3941,3 +3941,63 @@ consumeNextToken)→ parseDefAst 落 null → 整链静默 null。tab 缩进、
 1073 funcs/5995 lines),eslint/tsc 干净。版本 0.1.1→0.1.2,CHANGELOG
 [0.1.2] 增 Fixed 节(修:CellMethods 方法字段无法导航),features.md 同
 步「未实现即提示」表述。
+
+## 批114:Properties 属性导航统一口径——四档落点 + 引用闭包 + 全场景显式提示
+
+用户令:tests/realReproCellMethods.test.ts 的 CASE_F/CASE_G 不许删,
+从「记录返回值」改成断言非无声(落点或提示);补充口径(用户原话):
+「属性是在加载 python __init__ 之前加载,没有定义也应该定位到这个类的
+__init__ 方法或者类的定义上,而不是什么都不做」——属性跳转落点只能是
+「类定义行 / __init__ 行 / 脚本首行 / 显式提示」四者之一,silent null
+一律禁止(方法段同口径)。
+
+回落断在哪一行(排查结论):schema 回落链本身没断——findDatabaseSchema
+LocationFromDef 实测能落 `Account.schema@13`(databaseSchema 虚拟文档);
+它「没接上」是因为 parsePropertyNode(src/databaseSchema.ts:693-696)
+要求属性必须有 `<Type>` 子节点、:713 要求 `<Persistent>true</Persistent>`
+才成 schema 行,裸属性(官方模板大量形态)永远进不了 schema 分母,脚本
+又缺失时就静默 null。真正无声的缺口:①接口/组件 def 的属性(findProperty
+ScriptLocationInDef 只按 basename 找角色脚本,接口脚本在 scripts/interfaces/
+从未被属性链查询);②点属性 `<Type>` 值(findDefSymbolInfo 要求
+symbolNode.name === word,Type 值处的 symbolNode 是属性元素,整链进不去
+也无提示)。
+
+修复(全部在 src/languageProviders.ts 属性链):
+- 落点四档 resolvePropertyLandingLine:与 def 同名的类定义行 → `__init__`
+  行 → 首个类行(类名与 def 不一致)→ 脚本首行。
+- 候选闭包 collectPropertyCandidateScripts:结构同方法段的
+  collectMethodCandidateScripts——组件/实体 def 按 base→cell→client 全
+  角色 + `<Interfaces>` 混入脚本,沿 `<Parent>` 逐级上溯(components/ 内
+  解析、见环即止、空父 def 即止);接口 def 只取 scripts/interfaces/
+  `<接口名>.py` 不跟随 Parent。
+- 显式提示两处:属性全链 + schema 均未命中 → 提示属性名与期望的
+  `scripts/{base,cell,client}/<实体>.py`;`<Type>` 值未解析 → 内建类型
+  提示「引擎 C++ 内建,无对应声明文件」,自定义类型提示「types.xml 未
+  声明或 implementedBy 脚本缺失」。
+
+实测落点(realReproCellMethods.test.ts 全绿,23/23):
+- CASE_F 脚本全缺裸属性 → NULL + 显式提示(不再无声);CASE_H 脚本存在
+  无该属性 → base/Account.py:0(`class Account:`);CASE_G 点 UINT32 →
+  NULL + 内建类型提示;CASE_A/C/D/E 原绿保持。
+- ①组件 def → scripts/cell/BaseComponent.py;①接口 def →
+  scripts/interfaces/Poller.py。
+- ②Parent 链 → scripts/base/Mob.py(沿 Parent 上溯);②悬空 Parent /
+  ②Parent 自指环 / ②空父 def / ②畸形父 def / ②Interfaces → 各自回落
+  自有角色脚本,均不死循环不无声。
+- ③类名与 def 不一致(Avatar≠Account)→ base/Account.py:2 首个类行;
+  ③无同名类 → :1 `def __init__` 行;③多类脚本 → :0 首个类行。
+- ④无 entities.xml + def 在约定路径外(defs/Lone.def)→ base/Lone.py。
+- schema 回落(带 Type+Persistent)→ Account.schema@13;点未声明自定义
+  类型 MyBag → NULL + 「未找到声明」提示。
+
+测试壳修正(与批113 同类的缓冲区损坏,断言不受影响):四形态用例改自
+包含——共享 Account.def 上 `readDef().replace` 累积残留会让
+parseDefFileSemantics 看到错误的 Parent/Interfaces 链(②悬空/环/空父
+用例实际走到了 Mob 链,没测到目标分支);自包含字符串须闭合
+`</Properties>`,未闭合时 parseDefDocument 抛「Failed to locate XML
+token」整链静默 null(与 CASE_B 只改开标签同根因)。
+
+覆盖率与门禁:1291/1291 绿,coverage 100%×4(6195 stmts/3596 branches/
+1077 funcs/6043 lines),eslint/tsc 干净。版本 0.1.2→0.1.3,CHANGELOG
+增 [0.1.3],docs/guide/language.md 属性导航表述同步四档落点与 Type 值
+提示口径。
