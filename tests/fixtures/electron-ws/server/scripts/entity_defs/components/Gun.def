@@ -1,0 +1,7 @@
+<root>
+	<CellMethods>
+		<onFire>
+			<Arg>UINT8</Arg>
+		</onFire>
+	</CellMethods>
+</root>

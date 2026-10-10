@@ -250,7 +250,7 @@ describe('批110 验收走查:def 语义导航与悬停', () => {
     expect(location!.range.start.line).toBe(6);
   });
 
-  it('⑥ 方法未实现(脚本在、def 缺)→ null,不虚跳', async () => {
+  it('⑥ 方法未实现(脚本在、def 缺)→ 回落 entities.xml 声明行,不虚跳', async () => {
     // 闭合标签同步替换,保持 def XML 结构完整
     const missing = defAt(
       HERO_DEF
@@ -258,9 +258,12 @@ describe('批110 验收走查:def 语义导航与悬停', () => {
         .replace('    </onMissing>', '    </onNothing>'),
       heroDefPath()
     );
-    expect(
-      (await defProvider.provideDefinition(missing.document, missing.position)) ?? null
-    ).toBeNull();
+    const location = await defProvider.provideDefinition(
+      missing.document,
+      missing.position
+    ) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(wsRoot, 'scripts', 'entities.xml'));
+    expect(location!.range.start.line).toBe(1);
   });
 
   it('⑩ 脚本异常面:读取失败按零行兜底、无 class 行落脚本首行', () => {
@@ -289,30 +292,46 @@ describe('批110 验收走查:def 语义导航与悬停', () => {
     }
   });
 
-  it('⑦ 无脚本孤立 def 工作区:导航如实 null,不抛异常', async () => {
+  it('⑦ 无脚本孤立 def 工作区:落 def 首行,不再无声 null', async () => {
     const lonePath = p(bareRoot, 'entity_defs', 'Lone.def');
     const prop = defAt(
-      ['<root>', '  <Properties>', '    <|hp>', '  </Properties>', '</root>'].join('\n'),
+      [
+        '<root>',
+        '  <Properties>',
+        '    <|hp>',
+        '    </hp>',
+        '  </Properties>',
+        '</root>'
+      ].join('\n'),
       lonePath
     );
     const propLocation = defProvider.provideDefinition(
       prop.document,
       prop.position
     ) as unknown as LocationLike;
-    expect(propLocation ?? null).toBeNull();
+    expect(propLocation?.uri.fsPath).toBe(lonePath);
+    expect(propLocation!.range.start.line).toBe(0);
 
     const method = defAt(
-      ['<root>', '  <BaseMethods>', '    <|onHit>', '  </BaseMethods>', '</root>'].join('\n'),
+      [
+        '<root>',
+        '  <BaseMethods>',
+        '    <|onHit>',
+        '    </onHit>',
+        '  </BaseMethods>',
+        '</root>'
+      ].join('\n'),
       lonePath
     );
     const methodLocation = await defProvider.provideDefinition(
       method.document,
       method.position
     ) as unknown as LocationLike;
-    expect(methodLocation ?? null).toBeNull();
+    expect(methodLocation?.uri.fsPath).toBe(lonePath);
+    expect(methodLocation!.range.start.line).toBe(0);
   });
 
-  it('⑧ 无 workspace:两个新链均 null(降级面)', async () => {
+  it('⑧ 无 workspace:def 相对解析仍落点(根修令①:文件相对优先)', async () => {
     const saved = stubWorkspace.workspaceFolders;
     stubWorkspace.workspaceFolders = [];
     try {
@@ -320,7 +339,12 @@ describe('批110 验收走查:def 语义导航与悬停', () => {
         HERO_DEF.replace('    <hp>', '    <|hp>'),
         p(wsRoot, 'scripts', 'entity_defs', 'Hero.def')
       );
-      expect(defProvider.provideDefinition(prop.document, prop.position) ?? null).toBeNull();
+      const propLocation = defProvider.provideDefinition(
+        prop.document,
+        prop.position
+      ) as unknown as LocationLike;
+      expect(propLocation?.uri.fsPath).toBe(p(wsRoot, 'scripts', 'base', 'Hero.py'));
+      expect(propLocation!.range.start.line).toBe(2);
 
       const method = defAt(
         HERO_DEF.replace('    <onKill>', '    <|onKill>'),
@@ -330,7 +354,8 @@ describe('批110 验收走查:def 语义导航与悬停', () => {
         method.document,
         method.position
       ) as unknown as LocationLike;
-      expect(methodLocation ?? null).toBeNull();
+      expect(methodLocation?.uri.fsPath).toBe(p(wsRoot, 'scripts', 'base', 'Hero.py'));
+      expect(methodLocation!.range.start.line).toBe(4);
     } finally {
       stubWorkspace.workspaceFolders = saved;
     }

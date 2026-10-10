@@ -662,7 +662,7 @@ describe('database schema cross jumps', () => {
     expect(provider.provideDefinition(document, new Position(4, 2))).toBeNull();
   });
 
-  it('returns null when the def entity has no database snapshot', () => {
+  it('falls back to the def first line when the def entity has no database snapshot', () => {
     const { document, position } = defAt([
       '<root>',
       '  <Properties>',
@@ -673,10 +673,12 @@ describe('database schema cross jumps', () => {
       '</root>'
     ].join('\n'), 'Ann.def');
 
-    expect(provider.provideDefinition(document, position)).toBeNull();
+    const location = provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entity_defs', 'Ann.def'));
+    expect(location!.range.start.line).toBe(0);
   });
 
-  it('returns null when the property produces no schema targets', () => {
+  it('lands on the entities.xml declaration when the property produces no schema targets', () => {
     const { document, position } = docAt(
       [
         '<root>',
@@ -691,7 +693,9 @@ describe('database schema cross jumps', () => {
       'kbengine-def'
     );
 
-    expect(provider.provideDefinition(document, position)).toBeNull();
+    const location = provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
+    expect(location!.range.start.line).toBe(2);
   });
 });
 
@@ -752,10 +756,12 @@ describe('def cross reference jumps', () => {
     expect(provider.provideDefinition(document, position)).toBeNull();
   });
 
-  it('returns null for a method symbol without an entity mapping manager', () => {
+  it('lands on the entities.xml declaration for a method symbol without an entity mapping manager', () => {
     const { document, position } = defAt(HERO_DEF.replace('    <onKill>', '    <|onKill>'), 'Hero.def');
 
-    expect(provider.provideDefinition(document, position)).toBeNull();
+    const location = provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
+    expect(location!.range.start.line).toBe(1);
   });
 });
 

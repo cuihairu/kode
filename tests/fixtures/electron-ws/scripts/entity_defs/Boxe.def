@@ -1,0 +1,7 @@
+<root>
+	<Properties>
+		<hp>
+			<Type>UINT32</Type>
+		</hp>
+	</Properties>
+</root>

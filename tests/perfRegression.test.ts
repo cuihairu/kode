@@ -130,7 +130,9 @@ describe('批92 性能优化行为回归锁(大 .def 三路径 golden)', () => {
 
     expect(diagnostics).toHaveLength(GOLDEN.diagnosticCount);
     expect(djb2(parts.join('|'))).toBe(GOLDEN.diagnosticDigest);
-  });
+    // 显式超时(2026-10-10):覆盖率插桩放大本测试耗时(实测 7.4s>5s 默认),
+    // 与上方分词锁同口径给足余量;摘要断言不变,锁意图不受影响。
+  }, 120000);
 
   it('defAnalyzer 建议与报告逐条不变(220 条摘要锁)', () => {
     const findings = analyzeDefDocument(fixture);

@@ -2,7 +2,7 @@
   "name": "kode",
   "displayName": "Kode - KBEngine Development Environment",
   "description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "cuihairu",
   "author": {
     "name": "cuihairu",
@@ -602,6 +602,7 @@
     "test": "vitest run && pnpm clean && pnpm compile && tsc -p tsconfig.mocha.json && node ./out/test/runTest.js",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:electron": "pnpm run compile && node out/test/electron/runTest.js",
     "package": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 package --no-yarn --no-dependencies",
     "publish": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 publish --no-yarn --no-dependencies"
   },

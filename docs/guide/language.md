@@ -125,10 +125,12 @@
 - 从 `Properties` 字段 `DetailLevel` 值跳到同文件 `<DetailLevels>` 下的档位声明行
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
 - 从 `Properties` 字段名跳到实现脚本，落点四档：与 def 同名的 `class` 定义行 → `__init__` 行 → 首个 `class` 行（类名与 def 不一致时）→ 脚本首行（base→cell→client 取第一个在盘脚本；引擎在 `__init__` 之前装载属性，属性名未必出现在脚本里，类/`__init__` 行仍是可靠锚点）
-- 属性实现脚本按引用闭包解析：组件 def 落 `scripts/cell/<组件>.py` 等角色脚本，接口 def 落 `scripts/interfaces/<接口名>.py`（不跟随 `Parent`），实体 def 沿自身角色脚本 → `<Interfaces>` 混入脚本 → `Parent` 链逐级向上；全链落空且数据库 schema 也未命中时弹信息提示指明属性名与期望的 `scripts/<角色>/<实体>.py`，不再无声无息
+- 脚本目录按 def 文件自身位置反推：从 `.def` 向上找最近的 `entity_defs` 目录（按名字匹配，或同级含 `entities.xml`/`types.xml`），其父目录即脚本根，脚本 = `<父>/{base,cell,client}/<实体名>.py`；找不到再回落工作区候选链（`entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`）。文件相对解析优先于工作区相对解析，非标准布局（如 `server/scripts/entity_defs`）同样可跳
+- 属性实现脚本按引用闭包解析：组件 def 落 `scripts/cell/<组件>.py` 等角色脚本，接口 def 落 `scripts/interfaces/<接口名>.py`（不跟随 `Parent`），实体 def 沿自身角色脚本 → `<Interfaces>` 混入脚本 → `Parent` 链逐级向上；全链落空且数据库 schema 也未命中时必有落点：脚本确实不存在 → 该实体在 `entities.xml` 的声明行（无注册表时退 def 首行），同时弹辅助提示列出全部已检查的候选路径，不再只弹提示不跳
 - 点属性 `<Type>` 值：内建类型（`UINT32` 等）弹「引擎内建、无对应声明文件」提示；自定义类型未在 types.xml 声明时弹「未找到声明」提示，均不无声
-- 从 `BaseMethods` / `CellMethods` / `ClientMethods` 方法名跳到对应角色脚本里的 `def` 行（未配置工程索引时按文件约定回落；方法未实现——脚本缺失或没有对应 `def` 行——时弹信息提示指明期望的 `scripts/<角色>/<实体>.py`，不再无声无息）
+- 从 `BaseMethods` / `CellMethods` / `ClientMethods` 方法名跳到对应角色脚本里的 `def` 行；工程索引未收录该符号或脚本时按文件约定（def 相对候选链）回落，仍找不到实现 → 落 `entities.xml` 声明行或 def 首行（同属性口径，必有落点），提示仅作辅助
 - 方法实现脚本按引用闭包解析：自身角色脚本 → `<Interfaces>` 混入的 `scripts/interfaces/<接口>.py` → `Parent` 链逐级向上（接口 def 自身的实现在 `scripts/interfaces/<接口名>.py`，接口不跟随 `Parent`）
+- 悬停与补全提示里的脚本路径一律是真实解析到的路径（工作区内显示工作区相对路径，区外显示绝对路径），解析不到时明说「未找到实体脚本，期望位置：」并列出全部候选，不再出现 `scripts/{base,cell,client}/xxx.py` 花括号模板
 
 ### 典型示例
 

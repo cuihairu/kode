@@ -27,10 +27,10 @@ import type { MinimalTextDocument } from './helpers/vscodeStub';
 //   ⑦ 组件 def 经 components/ 父链(MoveComponent.onTick → cell/BaseComponent.py)
 //   ⑧ 组件 def 自身无脚本落父脚本(ChildComponent.onTick → cell/BaseComponent.py)
 //   ⑨ 接口 def 自身脚本(MoveIface.onScan → interfaces/MoveIface.py)
-//   ⑩ 负例:悬空 Parent(Target.onMiss → null)
-//   ⑪ 负例:空父 def(EmptyParentCase.onEdge → null)
-//   ⑫ 负例:Parent 环(CycleA.onLoop → null)
-//   ⑬ 负例:闭包可解析但方法无实现(Orphan.onGhost → null)
+//   ⑩ 负例:悬空 Parent(Target.onMiss → entities.xml 声明行)
+//   ⑪ 负例:空父 def(EmptyParentCase.onEdge → entities.xml 声明行)
+//   ⑫ 负例:Parent 环(CycleA.onLoop → def 首行)
+//   ⑬ 负例:闭包可解析但方法无实现(Orphan.onGhost → def 首行)
 // def → def 引用段:
 //   ⑭ Parent 子标签 → 兄弟 def(Hero 的 Mob)
 //   ⑮ Interfaces 子标签 → 接口 def(Hero 的 MoveIface)
@@ -46,8 +46,8 @@ import type { MinimalTextDocument } from './helpers/vscodeStub';
 //   ㉔ 负例:无 DetailLevels 段(Lone 的 NEAR → null)
 //   ㉕ 负例:有 DetailLevels 段但档位未声明(Hero 的 FAR 值点在 sight 上 → null)
 // 补例(方法闭包边界):
-//   ㉖ 负例:父 def 坏 XML(UnderBroken.onEdge → null,语义面为空即止)
-//   ㉗ 负例:组件父 def 不存在(OrphanComponent.onTick → null)
+//   ㉖ 负例:父 def 坏 XML(UnderBroken.onEdge → def 首行,语义面为空即止)
+//   ㉗ 负例:组件父 def 不存在(OrphanComponent.onTick → def 首行)
 
 const p = (root: string, ...segments: string[]) => path.join(root, ...segments);
 
@@ -542,58 +542,70 @@ describe('批111 走查 A:方法段 → 脚本 def 行', () => {
     expect(location?.range.start.line).toBe(lineOf(MOVE_IFACE_PY, line => line.includes('def onScan')));
   });
 
-  it('⑩ 负例:悬空 Parent(Target.onMiss)→ null', async () => {
+  it('⑩ 负例:悬空 Parent(Target.onMiss)→ entities.xml 声明行', async () => {
     const { document, position } = docAt(
       TARGET_DEF.replace('    <onMiss/>', '    <|onMiss/>'),
       'scripts/entity_defs/Target.def'
     );
 
-    expect(await provider.provideDefinition(document, position)).toBeNull();
+    const location = await provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
+    expect(location!.range.start.line).toBe(4);
   });
 
-  it('⑪ 负例:空父 def(EmptyParentCase.onEdge)→ null', async () => {
+  it('⑪ 负例:空父 def(EmptyParentCase.onEdge)→ entities.xml 声明行', async () => {
     const { document, position } = docAt(
       EMPTY_PARENT_CASE_DEF.replace('    <onEdge/>', '    <|onEdge/>'),
       'scripts/entity_defs/EmptyParentCase.def'
     );
 
-    expect(await provider.provideDefinition(document, position)).toBeNull();
+    const location = await provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
+    expect(location!.range.start.line).toBe(5);
   });
 
-  it('⑫ 负例:Parent 环(CycleA.onLoop)→ null', async () => {
+  it('⑫ 负例:Parent 环(CycleA.onLoop)→ def 首行', async () => {
     const { document, position } = docAt(
       CYCLE_A_DEF.replace('    <onLoop/>', '    <|onLoop/>'),
       'scripts/entity_defs/CycleA.def'
     );
 
-    expect(await provider.provideDefinition(document, position)).toBeNull();
+    const location = await provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entity_defs', 'CycleA.def'));
+    expect(location!.range.start.line).toBe(0);
   });
 
-  it('⑬ 负例:闭包可解析但方法无实现(Orphan.onGhost)→ null', async () => {
+  it('⑬ 负例:闭包可解析但方法无实现(Orphan.onGhost)→ def 首行', async () => {
     const { document, position } = docAt(
       ORPHAN_DEF.replace('    <onGhost/>', '    <|onGhost/>'),
       'scripts/entity_defs/Orphan.def'
     );
 
-    expect(await provider.provideDefinition(document, position)).toBeNull();
+    const location = await provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entity_defs', 'Orphan.def'));
+    expect(location!.range.start.line).toBe(0);
   });
 
-  it('㉖ 负例:父 def 坏 XML(UnderBroken.onEdge)→ null', async () => {
+  it('㉖ 负例:父 def 坏 XML(UnderBroken.onEdge)→ def 首行', async () => {
     const { document, position } = docAt(
       UNDER_BROKEN_DEF.replace('    <onEdge/>', '    <|onEdge/>'),
       'scripts/entity_defs/UnderBroken.def'
     );
 
-    expect(await provider.provideDefinition(document, position)).toBeNull();
+    const location = await provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entity_defs', 'UnderBroken.def'));
+    expect(location!.range.start.line).toBe(0);
   });
 
-  it('㉗ 负例:组件父 def 不存在(OrphanComponent.onTick)→ null', async () => {
+  it('㉗ 负例:组件父 def 不存在(OrphanComponent.onTick)→ def 首行', async () => {
     const { document, position } = docAt(
       ORPHAN_COMPONENT_DEF.replace('    <onTick/>', '    <|onTick/>'),
       'scripts/entity_defs/components/OrphanComponent.def'
     );
 
-    expect(await provider.provideDefinition(document, position)).toBeNull();
+    const location = await provider.provideDefinition(document, position) as unknown as LocationLike;
+    expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entity_defs', 'components', 'OrphanComponent.def'));
+    expect(location!.range.start.line).toBe(0);
   });
 });
 

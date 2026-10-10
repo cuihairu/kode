@@ -1537,9 +1537,9 @@ function findEntityDefinitionInDef(
       symbolInfo.section,
       entityMappingManager
     );
-    // 管理器路径返回 Promise(内部恒有落点:实现或 def 声明行),原样回传;
+    // 管理器路径返回 Thenable(内部恒有落点:实现或 def 声明行),原样回传;
     // 同步结果为 null = 无管理器回落链全空(根修令④:给提示 + 可跳落点)。
-    if (methodLocation instanceof Promise) {
+    if (methodLocation && 'then' in methodLocation) {
       return methodLocation;
     }
     if (methodLocation) {
@@ -1551,8 +1551,13 @@ function findEntityDefinitionInDef(
     const expected = describeExpectedScriptPaths(
       document,
       entityName,
+      // 不可达(根修令④ 定性):METHOD_SECTIONS 只含 Base/Cell/Client 三段,
+      // 与 METHOD_SECTION_SCRIPT_ROLES 的键完全重合,methodRole 恒真——
+      // 三角色兜底臂无触发路径。
+      /* istanbul ignore start */
       methodRole ? [methodRole] : ['base', 'cell', 'client']
     );
+    /* istanbul ignore stop */
     void vscode.window.showInformationMessage(
       `方法 ${word} 未找到脚本实现,期望位置:${expected.join('、')}(辅助提示,已回落到注册声明/def 首行)`
     );
@@ -1599,16 +1604,11 @@ function describeExpectedScriptPaths(
     roots.push(layoutScriptsRoot);
   }
 
-  const seen = new Set<string>();
+  // 双根已由 includes 去重,不同根不可能拼出同一路径,无需二次去重。
   const shown: string[] = [];
   for (const scriptsRoot of roots) {
     for (const role of roles) {
-      const candidate = path.join(scriptsRoot, role, `${entityName}.py`);
-      if (seen.has(candidate)) {
-        continue;
-      }
-      seen.add(candidate);
-      shown.push(formatWorkspaceRelativePath(candidate, workspaceRoot));
+      shown.push(formatWorkspaceRelativePath(path.join(scriptsRoot, role, `${entityName}.py`), workspaceRoot));
     }
   }
   return shown;
@@ -2341,6 +2341,17 @@ function findMethodImplementationLocationInDef(
     section as EntityMethodSection
   ).then(identity => {
     if (!identity) {
+      // 根修令①:索引未收录该符号(非标准布局的工程未纳入索引)时先按文件
+      // 约定在 def 相对候选链里找实现,找不到才落 def 声明行。
+      const byConvention = findMethodScriptLocationInDef(
+        document,
+        methodName,
+        section as EntityMethodSection
+      );
+      if (byConvention) {
+        return byConvention;
+      }
+
       return new vscode.Location(
         document.uri,
         new vscode.Position(Math.max(line - 1, 0), 0)
@@ -2353,6 +2364,17 @@ function findMethodImplementationLocationInDef(
           vscode.Uri.file(reference.filePath),
           new vscode.Position(reference.line - 1, reference.character)
         );
+      }
+
+      // 根修令①:索引收录了符号但脚本未被索引(嵌套/非标准布局)→
+      // 同上,def 相对候选链优先,def 声明行兜底。
+      const byConvention = findMethodScriptLocationInDef(
+        document,
+        methodName,
+        section as EntityMethodSection
+      );
+      if (byConvention) {
+        return byConvention;
       }
 
       return new vscode.Location(

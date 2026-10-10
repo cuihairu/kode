@@ -1,0 +1,12 @@
+<root>
+	<Properties>
+		<crew>
+			<Type>UINT16</Type>
+		</crew>
+	</Properties>
+	<CellMethods>
+		<onSail>
+			<Arg>UINT8</Arg>
+		</onSail>
+	</CellMethods>
+</root>

@@ -514,12 +514,20 @@ describe('根因回归:方法未实现时显式提示(真修单:不许无声 nul
     ].join('\n');
     fs.writeFileSync(defPath, patched, 'utf8');
     fs.rmSync(path.join(root, 'scripts/cell/Account.py'), { force: true });
+    // 前序用例(④ 无 entities.xml)会删注册表且不恢复;本用例自包含,先补回
+    const entitiesXml = path.join(root, 'scripts/entities.xml');
+    if (!fs.existsSync(entitiesXml)) {
+      fs.copyFileSync(path.join(KBE_TEMPLATES, 'entities.xml'), entitiesXml);
+    }
 
     const { text, position } = cursorOf(patched.replace('<onGhost>', '<|onGhost>'));
     const doc = makeTextDocument(text, { fileName: defPath, languageId: 'kbengine-def' });
     messages.info.length = 0;
     const loc = (await provider.provideDefinition(doc, position)) as unknown as LocationLike | null;
-    expect(loc).toBeNull();
+    // 根修令④:实现缺失不再无声 null——落 entities.xml 的 Account 声明行(0 基第 8 行)
+    expect(loc?.uri.fsPath).toBe(path.join(root, 'scripts', 'entities.xml'));
+    expect(loc!.range.start.line).toBe(8);
+    // 提示降级为辅助:仍报期望实现位置(真实路径,非花括号模板)
     expect(
       messages.info.some(entry => entry.includes('onGhost') && entry.includes('cell/Account.py'))
     ).toBe(true);

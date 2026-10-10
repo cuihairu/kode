@@ -5,6 +5,58 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-10-10
+
+### Fixed
+- Root cause of "hover shows something but nothing jumps" is gone. Script
+  directories are now derived from the `.def` file's own location: walk up
+  from the def to the nearest `entity_defs` directory (matched by name, or
+  by a sibling `entities.xml`/`types.xml`) and take its parent as the
+  scripts root. The old workspace-relative derivation only knew three
+  hard-coded candidates (`entity_defs`, `scripts/entity_defs`,
+  `assets/scripts/entity_defs`), so any other layout — `server/scripts/`,
+  `nested/…`, an arbitrary project prefix — silently resolved to a
+  non-existent directory and property, method, and the three method
+  sections all failed together. File-relative resolution is now tried
+  first, the workspace candidate chain only as a fallback
+- Entity-mapping index misses no longer strand method navigation. When the
+  index has not collected a symbol or its script reference (non-standard
+  layouts are not indexed), method lookup now walks the def-relative
+  candidate chain before falling back to the def's own declaration line
+- Missing implementations always land somewhere navigable instead of only
+  popping a message: script present but the property/method absent goes to
+  the `class` line; script truly absent goes to the entity's declaration
+  line in `entities.xml`, or the def's first line when no registry is
+  reachable. The message is kept as an auxiliary note
+- Hover and completion text no longer prints placeholder templates.
+  `scripts/{base,cell,client}/xxx.py` braces are replaced by the real
+  resolved paths (workspace-relative under a workspace, absolute
+  otherwise); when nothing resolves, the message reads
+  "entity script not found, expected at:" followed by every candidate
+  path that was checked
+- `src/languageProviders.ts(1546)`: the `Location | Thenable` return of
+  the method lookup was read for `.uri`/`.range` before narrowing, which
+  broke `tsc` (TS2339). The sync entry point still has to return
+  synchronously — 42 existing call sites call `provideDefinition` without
+  `await` — so the Thenable is passed through after `'then' in` narrowing
+  instead of being awaited
+
+### Added
+- "KBEngine Navigation" output channel logging every resolution step:
+  entry point, symbol parse result, the property/method candidate chain
+  actually tried, the chosen landing, schema hits, registry fallbacks,
+  and def-first-line fallbacks
+- Real-host verification: a VS Code Electron suite that drives
+  `vscode.executeDefinitionProvider` inside a live editor and asserts a
+  landing (file exists on disk, exact path, exact line) — not merely a
+  message — for four layouts: standard `scripts/entity_defs`, non-standard
+  `server/scripts/entity_defs`, `entity_defs` at the workspace root, and a
+  component def. All four land
+- 16 layout matrix tests covering the four layouts above plus a renamed
+  defs directory recognized by its `types.xml` sibling, entity defs with
+  no scripts at all, workspace-less resolution, hyphenated entity names
+  (declaration-name guard), index-miss fallback, and depth exhaustion
+
 ## [0.1.3] - 2026-10-10
 
 ### Fixed

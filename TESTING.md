@@ -4001,3 +4001,74 @@ token」整链静默 null(与 CASE_B 只改开标签同根因)。
 1077 funcs/6043 lines),eslint/tsc 干净。版本 0.1.2→0.1.3,CHANGELOG
 增 [0.1.3],docs/guide/language.md 属性导航表述同步四档落点与 Type 值
 提示口径。
+
+## 批115:根修令——def 相对脚本解析 + 方法段索引回落 + 必有落点(四种布局真机验收)
+
+用户令(根修令):属性/提示有但不跳,属性找不到应跳到类上;BaseMethods、
+CellMethods 都不行。同源根因=findEntityScriptFile 只从「工作区根 +
+kbengine.entityDefsPath + 固定三候选(entity_defs / scripts/entity_defs /
+assets/scripts/entity_defs)」推脚本目录,布局不在三候选内就指向不存在
+目录;collectMethodCandidateScripts 调同一函数,故属性/方法/三类方法段
+一起失效。要求:①从 .def 文件自身反推脚本根(向上找最近 entity_defs
+目录,父目录当 scriptsRoot,工作区候选链只作回落);②组件/接口 def 分别
+处理(components/、interfaces/ 下 def → cell|base 同名脚本与
+interfaces/<名>.py);③提示禁花括号模板,改真实解析路径,解析不到就列出
+全部候选;④属性找不到实现落 class 行(保持 d3711f5),脚本确实不存在落
+entities.xml 声明行或 def 首行,方法段同口径,不许只弹提示不跳;⑤真 VS
+Code electron 用例加四种布局断言,每种断言「有落点」而非「有提示」。
+
+根因两层(第二层是真机仍不跳的原因):
+1. 工作区相对推导只认三候选布局(用户已定位,批114 后遗留)。
+2. 真机走 entityMappingManager(工程索引)路径:identity-miss 与
+   reference-miss 两臂都直接回落 def 声明行,从不查 def 相对候选链——
+   属性臂不走管理器所以修好,方法段在真机全部仍不跳。已用真机
+   debug 用例证实:findEntityScriptFile 返回 def 相对命中,但
+   executeDefinitionProvider 仍落 Ship.def:7。
+
+修复:
+- ①def 相对反推:findEntityDefsDirForDefFile(definitionWorkspace.ts:343)
+  从 def 文件自身向上最多 6 层找最近 entity_defs 目录(名字匹配,或同级
+  含 entities.xml/types.xml),父目录当 entityScriptsRoot;
+  getScriptsRootForDefFile(:364);findEntityScriptFile(:421)与
+  findInterfaceScriptFile(:463)先查 def 相对再回落工作区候选链——文件
+  相对解析优先于工作区相对解析。
+- ②组件/接口:def 在 entity_defs/components/、entity_defs/interfaces/
+  下时脚本在 cell|base 同名文件与 interfaces/<名>.py,候选闭包口径不变。
+- ③真实路径提示:describeExpectedScriptPaths(languageProviders.ts:1589)
+  双根(def 相对 scriptsRoot + 布局 entityScriptsRoot)includes 去重,工作
+  区内显示工作区相对路径,区外绝对路径;describeImplementationForHover
+  (:1626)命中显示「当前实现:<真实路径>」,落空显示「未找到实体脚本,
+  期望位置:<全部候选>」;花括号模板禁止。
+- ④必有落点:属性脚本缺失 → entities.xml 声明行
+  (findRegistryFallbackLocation :1662,def 相对 <scriptsRoot>/entities.xml
+  优先,再布局 findEntitiesXmlFile)或 def 首行;方法段同口径。
+- 管理器路径回落:findMethodImplementationLocationInDef 的 identity-miss
+  臂(:2346)与 reference-miss 臂(:2371)先查 findMethodScriptLocationInDef
+  (:2236)再落 def 声明行。
+- TS2339:languageProviders.ts:1542 `'then' in methodLocation` 收窄后
+  回传 Thenable,同步契约不变(42 处无 await 调用,await 会破契约)。
+
+实测落点(真 VS Code electron,xvfb,断言落点文件在盘存在):
+- 标准 scripts/entity_defs → scripts/base/Boxe.py:0
+- 非标准 server/scripts/entity_defs → server/scripts/cell/Ship.py:2
+- 仅 entity_defs 在根 → base/Account.py:0
+- 组件 def → server/scripts/cell/Gun.py:2
+
+测试文件变化:
+- 新增 tests/navigationLayoutMatrix.test.ts(16 用例:L1–L6 布局落点、
+  M1–M5 回落/提示、N1–N2 索引未收录回落、U1–U3 边界)。
+- 新增 src/test/electron/suite/navigationLayouts.test.ts +
+  tests/fixtures/electron-ws/(真机四布局 F12 断言,每种断言有落点)。
+- 既有断言按根修令④ 更新:batch110 ⑥→entities.xml:1、⑦→well-formed
+  defs + def 首行、⑧→base/Hero.py:2/4;batch111 ⑩→entities.xml:4、
+  ⑪→entities.xml:5、⑫⑬㉖㉗→def 首行;languageProvidersInternals
+  Ann.def 首行、Watcher→entities.xml:2、Hero.onKill→entities.xml:1;
+  realRepro 真修单→entities.xml:8(补 entities.xml 还原,防用例间夹具
+  污染)。
+- perfRegression 诊断金标显式 120s 超时(覆盖率插桩下实测 7.4s>5s 默
+  认,已 stash 证 pre-existing,摘要断言不变)。
+
+覆盖率与门禁:1309/1309 绿,coverage 100%×4(6294 stmts/3669 branches/
+1086 funcs/6140 lines),eslint/tsc 干净。版本 0.1.3→0.1.4,CHANGELOG
+增 [0.1.4],docs/guide/language.md 跳转定义同步 def 相对优先、方法段
+必有落点与真实路径提示口径。

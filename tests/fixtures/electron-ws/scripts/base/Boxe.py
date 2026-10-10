@@ -1,0 +1,2 @@
+class Boxe:
+    pass
