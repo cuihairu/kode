@@ -32,6 +32,9 @@ export interface StubFileSystemWatcher {
   onDidDelete(listener: (uri: Uri) => void): { dispose(): void };
   dispose(): void;
   fireChange(uri: Uri): void;
+  /** 创建/删除两类事件分开 fire(最终配置联动 watcher 三臂分别驱动) */
+  fireCreate(uri: Uri): void;
+  fireDelete(uri: Uri): void;
 }
 
 export const lastFileSystemWatcher: { current: StubFileSystemWatcher | null } = {
@@ -122,6 +125,16 @@ export const workspace = {
       },
       fireChange(uri: Uri): void {
         for (const listener of [...changeListeners]) {
+          listener(uri);
+        }
+      },
+      fireCreate(uri: Uri): void {
+        for (const listener of [...createListeners]) {
+          listener(uri);
+        }
+      },
+      fireDelete(uri: Uri): void {
+        for (const listener of [...deleteListeners]) {
           listener(uri);
         }
       }

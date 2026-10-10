@@ -54,6 +54,18 @@ import {
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
 import { KBE_SCHEME, buildKbeStubDocument } from './kbeModuleIndex';
+import {
+  SERVER_CONFIG_SELECTOR,
+  ServerConfigHoverProvider
+} from './serverConfigHover';
+import {
+  KBE_CONFIG_SCHEME,
+  KBE_CONFIG_VIRTUAL_PATH,
+  FinalConfigContentProvider,
+  FinalConfigTreeProvider,
+  buildFinalServerConfig
+} from './serverConfigMerge';
+import { TelnetTreeProvider } from './telnetTree';
 
 /**
  * Kode - KBEngine Development Environment
@@ -114,6 +126,14 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineHoverProvider()
   );
   context.subscriptions.push(hoverProvider);
+
+  // 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令:
+  // 悬停配置字段显示引擎源码注释整理的作用说明)
+  const serverConfigHoverProvider = vscode.languages.registerHoverProvider(
+    SERVER_CONFIG_SELECTOR,
+    new ServerConfigHoverProvider()
+  );
+  context.subscriptions.push(serverConfigHoverProvider);
 
   // 初始化实体映射管理器
   const entityMappingManager = new EntityMappingManager(context);
@@ -313,14 +333,15 @@ export function activate(context: vscode.ExtensionContext) {
   const serverManager = new KBEngineServerManager(context);
 
   // telnet 探测与联动(工单:telnet 探测+联动):目标解析 设置 →
-  // kbengine.xml <telnet_service>(未指定路径时按约定路径探测);配置未开
-  // telnet → 空目标;5s 低频探测
+  // kbengine.xml <telnet_service>(未指定路径时按 configPath/约定路径探测)
+  // → 引擎 kbengine_defaults.xml(批112 用户令);配置未开 telnet → 空目标;
+  // 5s 低频探测
   const telnetService = new TelnetService({
     getTargets: () => {
       const targets = readTelnetTargetsFromSettings();
-      // 批111 用户令:配置未开 telnet 不展示 telnet 相关的东西——状态灯与
-      // 树项随空目标自然隐藏,命令面板入口经 context key 由 package.json
-      // 的 when 子句隐藏。探测每轮重读目标,context 同步刷新。
+      // 批111 用户令:配置未开 telnet 不展示 telnet 相关的东西——状态灯、
+      // 独立树视图与命令面板入口随空目标/context key 自然隐藏。探测每轮
+      // 重读目标,context 同步刷新。
       void vscode.commands.executeCommand(
         'setContext',
         'kbengine.telnetConfigured',
@@ -332,13 +353,21 @@ export function activate(context: vscode.ExtensionContext) {
   });
   telnetService.start();
 
-  // 注册服务器控制视图(注入 telnetService → 树尾追加 telnet 状态灯)
-  const serverControlProvider = new ServerControlProvider(serverManager, telnetService);
+  // Servers 进程树(批112 用户令:telnet 不与 server 进程混置,已移出本树)
+  const serverControlProvider = new ServerControlProvider(serverManager);
   const serverControlRegistration = vscode.window.registerTreeDataProvider(
     'kbengine.serverControl',
     serverControlProvider
   );
   context.subscriptions.push(serverControlRegistration);
+
+  // telnet 独立树视图(批112 用户令:单独分类,与 server 进程分开)
+  const telnetTreeProvider = new TelnetTreeProvider(telnetService);
+  const telnetTreeRegistration = vscode.window.registerTreeDataProvider(
+    'kbengine.telnetStatus',
+    telnetTreeProvider
+  );
+  context.subscriptions.push(telnetTreeRegistration);
 
   // 服务器状态变化时刷新视图
   const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
@@ -358,7 +387,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(showTelnetPanelCommand, telnetStatusBarItem);
   const telnetStateSubscription = telnetService.onDidChange(() => {
-    serverControlProvider.refresh();
+    telnetTreeProvider.refresh();
     updateTelnetStatusBar(telnetService, telnetStatusBarItem);
   });
   context.subscriptions.push(telnetStateSubscription);
@@ -551,6 +580,59 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(updateLaunchJsonCommand);
 
+  // 最终服务端配置合成(批112 用户令:defaults 先载、元件 kbengine.xml 覆盖)。
+  // 默认开启令:激活即出(后台预览不抢焦点)、侧栏常驻节点、文件保存联动刷新,
+  // 命令入口保留不删。
+  const finalConfigProvider = new FinalConfigContentProvider();
+  const finalConfigContentProvider = vscode.workspace.registerTextDocumentContentProvider(
+    KBE_CONFIG_SCHEME,
+    finalConfigProvider
+  );
+  context.subscriptions.push(finalConfigContentProvider);
+
+  // 打开合成视图。auto = 激活自动路径:定位失败静默跳过不弹错、后台标签;
+  // 手动命令 = 明示报错、正常聚焦打开。
+  const openFinalConfig = async (auto: boolean): Promise<void> => {
+    if (buildFinalServerConfig().text.length === 0) {
+      if (!auto) {
+        vscode.window.showErrorMessage(
+          '无法定位引擎默认配置 kbengine_defaults.xml(请检查 kbengine.binPath 是否指向引擎的 kbe/bin/server)'
+        );
+      }
+      return;
+    }
+    const uri = vscode.Uri.parse(`${KBE_CONFIG_SCHEME}:${KBE_CONFIG_VIRTUAL_PATH}`);
+    const document = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(
+      document,
+      auto ? { preview: true, preserveFocus: true } : undefined
+    );
+  };
+
+  const showFinalConfigCommand = vscode.commands.registerCommand(
+    'kbengine.config.showFinal',
+    () => openFinalConfig(false)
+  );
+  context.subscriptions.push(showFinalConfigCommand);
+
+  // 侧栏常驻入口:始终可见可回,不随配置门控
+  const finalConfigTreeRegistration = vscode.window.registerTreeDataProvider(
+    'kbengine.config',
+    new FinalConfigTreeProvider()
+  );
+  context.subscriptions.push(finalConfigTreeRegistration);
+
+  // 变更联动:defaults / 元件 kbengine.xml 保存或增删后重算已打开的合成文档
+  if (
+    vscode.workspace.getConfiguration('kbengine').get<boolean>('autoRefreshFinalConfig', true)
+  ) {
+    const finalConfigWatcher = vscode.workspace.createFileSystemWatcher('**/kbengine*.xml');
+    finalConfigWatcher.onDidChange(() => finalConfigProvider.refresh());
+    finalConfigWatcher.onDidCreate(() => finalConfigProvider.refresh());
+    finalConfigWatcher.onDidDelete(() => finalConfigProvider.refresh());
+    context.subscriptions.push(finalConfigWatcher);
+  }
+
   const createDebugConfigCommand = vscode.commands.registerCommand(
     'kbengine.debug.createConfig',
     async () => {
@@ -590,6 +672,15 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(attachToComponentCommand);
+
+  // 远程附加(批112 用户令:配置服务器 IP 数组,点击远程弹目标选择)
+  const attachRemoteCommand = vscode.commands.registerCommand(
+    'kbengine.debug.attachRemote',
+    async () => {
+      await debugConfigManager.attachRemote();
+    }
+  );
+  context.subscriptions.push(attachRemoteCommand);
 
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);
@@ -810,6 +901,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 启动时更新状态栏
   updateStatusBar(serverManager);
+
+  // 默认开启令:激活即出最终配置视图(后台标签,不抢焦点);定位不到
+  // defaults(未配 binPath 或引擎目录不在)静默跳过,不弹错
+  if (
+    vscode.workspace.getConfiguration('kbengine').get<boolean>('showFinalConfigOnOpen', true)
+  ) {
+    void openFinalConfig(true);
+  }
 
   // 清理资源
   context.subscriptions.push({

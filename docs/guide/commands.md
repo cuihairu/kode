@@ -99,7 +99,7 @@
 ### `kbengine.debug.updateLaunchJson`
 
 - 标题：`Update launch.json`
-- 作用：根据 `.kbengine/debug.json` 生成或更新 VSCode 的 PID attach 配置
+- 作用：根据 `.kbengine/debug.json` 的 `pathMappings` 生成或更新 VSCode 的 PID attach 配置；已配置 `kbengine.debug.remoteTargets` 时，同时把远程目标以 debugpy `connect` 形式追加进去
 
 ### `kbengine.debug.createConfig`
 
@@ -114,7 +114,32 @@
 ### `kbengine.debug.attach`
 
 - 标题：`Attach to Component`
-- 作用：弹出 VS Code 内建进程选择器，附加到已开启调试的 KBEngine 组件进程
+- 作用：列出本机进程供选择，附加到已开启调试的 KBEngine 组件进程
+- 行为：
+  - 匹配目标组件名的进程置顶并标 ✓，其余按系统进程清单原序排列
+  - 选中后以该进程 PID 直接组装 debugpy attach 配置，不再手输 PID
+  - 获取不到进程列表时明示报错，不空转
+
+### `kbengine.debug.attachRemote`
+
+- 标题：`Attach to Remote Component`
+- 作用：附加到远程机器上已开启调试的 KBEngine 组件进程（debugpy `connect` 模式，直连远端 debugpy 监听端口）
+- 前提：在设置 `kbengine.debug.remoteTargets` 里配置目标列表（名称 + IP + debugpy 端口，端口缺省 5678）；远端组件需先经 telnet 发开启调试命令并起好 debugpy 监听
+- 行为：
+  - 未配置目标时提示去设置，不空转
+  - 弹出目标选择，模态确认后以 `connect: {host, port}` 组装附加配置，不写 `pathMappings`
+
+## 配置相关
+
+### `kbengine.config.showFinal`
+
+- 标题：`Show Final Server Config`
+- 作用：打开「最终生效配置」只读视图——按引擎装载规则合成：先载引擎默认 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导），再以元件 `kbengine.xml`（`kbengine.configPath` 下优先，其次约定路径 `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`）同键覆盖（子键按名对齐）
+- 行为：
+  - 合成文件不落盘，虚拟文档 `kbengine-final.xml`，字段可悬浮看作用说明
+  - 文档头注标明 defaults 与元件配置的来源路径
+  - 定位不到 defaults 时明示报错；默认（`kbengine.showFinalConfigOnOpen`，可用 `kbengine.autoRefreshFinalConfig` 关联动）激活后自动在后台打开
+  - telnet 端口/密码等服务参数与该合成口径同源读取
 
 ## 可视化面板
 
@@ -172,6 +197,7 @@
 
 - 标题：`Show Telnet Panel`
 - 作用：打开 telnet 控制面板（探测状态灯 + 命令会话）
+- 目标解析链：kode 设置（`kbengine.telnet.host/port/password`）→ 元件 `kbengine.xml` 的 `<telnet_service>` 段（`kbengine.telnet.configXmlPath` 指定，未指定时按 `kbengine.configPath` 与约定路径探测）→ 引擎 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导）；`.kbengine/debug.json` 不参与 telnet 探测
 - 行为：
   - 面板按目标列出状态灯：未配置 / 未开启 / 已开启（未接会话）/ 端口开·未配密码 / 密码被拒 / 已连接
   - 已开启目标可建立持久会话（自动握手登录），提供白名单内命令输入、内置只读快捷命令与输出回显
@@ -224,10 +250,10 @@
 
 ### 调试某个组件
 
-1. 先执行 `Create Debug Config Template`，生成 `.kbengine/debug.json`
-2. 在 `.kbengine/debug.json` 里填写目标组件的 `telnetHost`、`telnetPort`、`telnetEnableCommands` 和 `pathMappings`
+1. 确认目标组件的 telnet 已开启（地址/端口/密码按解析链确认：kode 设置 `kbengine.telnet.*` → 元件 `kbengine.xml` 的 `<telnet_service>` 段 → 引擎 `kbengine_defaults.xml`）
+2. 运行 `Create Debug Config Template`，生成 `.kbengine/debug.json`；其中的 `telnetHost`/`telnetPort`/`telnetEnableCommands` 只用于 `Start Debugging` 的提示语，`pathMappings` 用于 launch.json 生成——都不影响 telnet 探测与面板
 3. 运行 `Start Debugging` 查看提示，先通过 telnet 向目标组件输入项目实际使用的开启调试命令
-4. 再执行 `Attach to Component`，输入目标组件进程 PID
+4. 运行 `Attach to Component`，在进程列表里选目标进程（匹配组件名的进程置顶标 ✓）
 
 ## 命令是否支持配置联动
 
@@ -239,7 +265,7 @@
 - 依赖图读取 `kbengine.entitiesXmlPath` 和 `kbengine.entityDefsPath`
 - 生成器读取 `kbengine.generator.*`
 
-调试流程是例外。调试不再读取旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug`，而是统一读取 `.kbengine/debug.json`。
+调试流程是例外。本地附加不再读取旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug`；`.kbengine/debug.json` 只服务 `Start Debugging` 的提示语与 `pathMappings`，不参与 telnet 探测/面板/状态灯。远程附加（`kbengine.debug.attachRemote`）的目标列表来自设置 `kbengine.debug.remoteTargets`。
 
 ## 调试命令说明
 
@@ -270,20 +296,23 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
 
 旧版本生成的 `${input:kbengineProcessId}` 手输 PID 输入项已废弃；运行 `Update launch.json` 会自动清除该遗留输入。
 
+配置了 `kbengine.debug.remoteTargets` 时，`Update launch.json` 会把每个远程目标以 debugpy `connect` 形式追加为独立配置（`connect: {host, port}`，不写 `pathMappings`）。
+
 ### 推荐使用顺序
 
-1. 运行 `Create Debug Config Template`
-2. 在 `.kbengine/debug.json` 中填写 telnet 地址、端口、开启调试命令和路径映射
-3. 运行 `Update launch.json`
-4. 运行 `Start Debugging` 查看提示并先开启调试
-5. 运行 `Attach to Component`，在弹出的进程选择器里选目标进程
+1. 确认目标组件 telnet 已开启（kode 设置 `kbengine.telnet.*` 或元件 `kbengine.xml` 的 `<telnet_service>` 段）
+2. 运行 `Create Debug Config Template`
+3. 在 `.kbengine/debug.json` 中填写开启调试命令与路径映射（`telnetHost`/`telnetPort` 只影响提示语）
+4. 运行 `Update launch.json`
+5. 运行 `Start Debugging` 查看提示并先开启调试
+6. 运行 `Attach to Component`，在弹出的进程列表里选目标进程（匹配组件名的置顶标 ✓）
 
 ### 排查要点
 
 如果 `Attach to Component` 失败，优先检查这些点：
 
-1. 目标 KBEngine 组件是否已经通过 telnet 真正开启调试
-2. 进程选择器里选的是否就是目标组件进程，而不是其他 manager 或辅助进程
-3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致
+1. 目标 KBEngine 组件是否已经通过 telnet 真正开启调试（telnet 地址/端口/密码按解析链确认：kode 设置 `kbengine.telnet.*` → 元件 `kbengine.xml` 的 `<telnet_service>` 段 → 引擎 `kbengine_defaults.xml`）
+2. 进程列表里选的是否就是目标组件进程，而不是其他 manager 或辅助进程
+3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致（只影响 `Start Debugging` 的提示语，不影响 telnet 连接本身）
 4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前工作区源码目录
 5. 当前机器里是否已经安装并启用 `ms-python.debugpy`

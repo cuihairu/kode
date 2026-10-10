@@ -3,7 +3,9 @@ import * as net from 'net';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildTelnetTargets,
+  deriveEngineDefaultsXmlPath,
   makeProbeOne,
+  parseKbengineDefaultsTelnet,
   parseKbengineXmlTelnet,
   TelnetService,
   TelnetTarget
@@ -145,6 +147,93 @@ describe('buildTelnetTargets', () => {
   it('host 空白回落 127.0.0.1', () => {
     const targets = buildTelnetTargets(settings({ host: '   ' }), {});
     expect(targets[0].host).toBe('127.0.0.1');
+  });
+});
+
+describe('parseKbengineDefaultsTelnet(批112:引擎 defaults 真实端口/密码)', () => {
+  const defaultsXml = [
+    '<root>',
+    '  <loginapp>',
+    '    <telnet_service><port> 31000 </port><password> pwd123456 </password></telnet_service>',
+    '  </loginapp>',
+    '  <baseapp>',
+    '    <telnet_service><port> 40000 </port><password> pwd123456 </password></telnet_service>',
+    '  </baseapp>',
+    '  <machine>',
+    '    <externalTcpPorts_min> 20099 </externalTcpPorts_min>',
+    '  </machine>',
+    '</root>'
+  ].join('\n');
+
+  it('逐组件解析 telnet 端口;无 telnet 段的组件(machine)跳过;密码取首个非空', () => {
+    const info = parseKbengineDefaultsTelnet(defaultsXml);
+    expect(info).not.toBeNull();
+    expect(info!.ports).toEqual({ loginapp: 31000, baseapp: 40000 });
+    expect(info!.password).toBe('pwd123456');
+  });
+
+  it('端口非法(非数字/0)不收录;全组件无 telnet 段且无密码 → null', () => {
+    expect(
+      parseKbengineDefaultsTelnet(
+        '<root><dbmgr><telnet_service><port> abc </port></telnet_service></dbmgr></root>'
+      )
+    ).toBeNull();
+    expect(parseKbengineDefaultsTelnet('<root><dbmgr><debug> 1 </debug></dbmgr></root>')).toBeNull();
+  });
+
+  it('无端口但有密码:password 收录,ports 为空对象', () => {
+    const info = parseKbengineDefaultsTelnet(
+      '<root><logger><telnet_service><password> only-pwd </password></telnet_service></logger></root>'
+    );
+    expect(info).toEqual({ ports: {}, password: 'only-pwd' });
+  });
+});
+
+describe('deriveEngineDefaultsXmlPath(批112:binPath 推导引擎 defaults)', () => {
+  it('kbe/bin/server 后缀 → <引擎根>/kbe/res/server/kbengine_defaults.xml', () => {
+    expect(deriveEngineDefaultsXmlPath('/opt/kbengine/kbe/bin/server')).toBe(
+      '/opt/kbengine/kbe/res/server/kbengine_defaults.xml'
+    );
+  });
+
+  it('后缀不在/剥完为空/空串 → null(与 serverManager.detectKbeRoot 同口径)', () => {
+    expect(deriveEngineDefaultsXmlPath('/opt/kbengine/kbe/bin')).toBeNull();
+    expect(deriveEngineDefaultsXmlPath('kbe/bin/server')).toBeNull();
+    expect(deriveEngineDefaultsXmlPath('')).toBeNull();
+  });
+});
+
+describe('buildTelnetTargets 引擎 defaults 补值(批112)', () => {
+  it('xml 段在而无端口:逐组件端口优先取 defaults 解析值,缺省落常量表', () => {
+    const targets = buildTelnetTargets(
+      settings(),
+      {},
+      { ports: { baseapp: 40001 }, password: 'def-pwd' }
+    );
+    const byComponent = Object.fromEntries(targets.map(target => [target.component, target]));
+    expect(byComponent.baseapp.port).toBe(40001);
+    expect(byComponent.loginapp.port).toBe(31000); // defaults 未覆盖 → 常量表
+  });
+
+  it('密码链:设置 > xml > defaults > 空串(表臂与显式端口臂同口径)', () => {
+    const tableTargets = buildTelnetTargets(settings(), {}, { ports: {}, password: 'def-pwd' });
+    expect(tableTargets[0].password).toBe('def-pwd');
+    const explicitTargets = buildTelnetTargets(
+      settings(),
+      { port: 31000 },
+      { ports: {}, password: 'def-pwd' }
+    );
+    expect(explicitTargets[0].password).toBe('def-pwd');
+    const xmlWins = buildTelnetTargets(
+      settings(),
+      { port: 31000, password: 'xml-pwd' },
+      { ports: {}, password: 'def-pwd' }
+    );
+    expect(xmlWins[0].password).toBe('xml-pwd');
+  });
+
+  it('defaults 不当开启开关:xml 段不在时即使 defaults 有值也空目标(批111 门控)', () => {
+    expect(buildTelnetTargets(settings(), null, { ports: { baseapp: 40001 } })).toEqual([]);
   });
 });
 

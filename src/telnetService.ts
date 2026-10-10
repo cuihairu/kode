@@ -8,14 +8,17 @@ import {
   KBEngineTelnetClient,
   TelnetClientState
 } from './telnetClient';
+import { expandWorkspacePlaceholders } from './workspacePath';
 
 /**
  * telnet 探测与联动服务(工单:telnet 探测+联动):
  * - 目标解析优先级:kode 设置(kbengine.telnet.host/port/password)→
  *   元件 kbengine.xml 的 <telnet_service> 段(未显式指定 xml 路径时按约定
- *   路径探测工作区根);批111 用户令:两处配置都未开启 telnet(无显式端口
- *   且 xml 无 <telnet_service> 段)→ 空目标,telnet 状态灯/树项/面板入口
- *   全部不出现,不再回落引擎默认端口表;
+ *   路径探测工作区根)→ 引擎 kbengine_defaults.xml(批112 用户令:经
+ *   kbengine.binPath 推导 <引擎根>/kbe/res/server/kbengine_defaults.xml,
+ *   解析各组件 <telnet_service> 段的真实端口/密码,替代写死的默认端口表);
+ *   批111 用户令:显式端口与元件 xml 段都没有 → 空目标,telnet 状态灯/
+ *   树项/面板入口全部不出现(引擎 defaults 只补值,不当开启开关);
  * - 每 probeInterval 秒一轮 TCP connect(低频,不刷流量);
  * - 状态:unconfigured(无目标)/ closed(端口未开)/ open(端口开)/
  *   auth-required(端口开但未配密码,不自动登录)/ auth-rejected(密码拒)/
@@ -83,14 +86,84 @@ export function parseKbengineXmlTelnet(xml: string): { port?: number; password?:
 }
 
 /**
+ * 引擎 kbengine_defaults.xml(kbe/res/server/)各组件 <telnet_service>
+ * 段的解析产物:逐组件真实端口 + 密码(引擎侧全组件同一密码,取首个非空)。
+ */
+export interface TelnetDefaultsInfo {
+  ports: Record<string, number>;
+  password?: string;
+}
+
+/**
+ * 从引擎 kbengine_defaults.xml 读取各组件 telnet 真实端口/密码(批112 用户令:
+ * "不然怎么知道 telnet_service 这个字段配置的端口和密码"):kbengine.xml 未写
+ * 端口时,以引擎 defaults 的组件段为准(覆盖 ENGINE_DEFAULT_TELNET_PORTS
+ * 常量表)。既无端口也无密码可读 → null(调用方当作引擎不可知处理)。
+ */
+export function parseKbengineDefaultsTelnet(xml: string): TelnetDefaultsInfo | null {
+  const ports: Record<string, number> = {};
+  let password: string | undefined;
+  for (const { component } of ENGINE_DEFAULT_TELNET_PORTS) {
+    const section = xml.match(new RegExp(`<${component}>([\\s\\S]*?)</${component}>`));
+    if (!section) {
+      continue;
+    }
+    const telnet = section[1].match(/<telnet_service>([\s\S]*?)<\/telnet_service>/);
+    if (!telnet) {
+      continue;
+    }
+    const portText = telnet[1].match(/<port>([\s\S]*?)<\/port>/);
+    if (portText) {
+      const port = Number(portText[1].trim());
+      if (Number.isFinite(port) && port > 0) {
+        ports[component] = port;
+      }
+    }
+    if (password === undefined) {
+      const passwordText = telnet[1].match(/<password>([\s\S]*?)<\/password>/);
+      const value = passwordText ? passwordText[1].trim() : '';
+      if (value.length > 0) {
+        password = value;
+      }
+    }
+  }
+  return Object.keys(ports).length > 0 || password !== undefined ? { ports, password } : null;
+}
+
+/**
+ * 由 kbengine.binPath 推导引擎 defaults 文件路径(与 serverManager 的
+ * detectKbeRoot 同款口径:剥掉 kbe/bin/server 后缀得引擎根,再拼
+ * kbe/res/server/kbengine_defaults.xml)。后缀不在或剥完为空 → null。
+ */
+export function deriveEngineDefaultsXmlPath(binPath: string): string | null {
+  if (!binPath) {
+    return null;
+  }
+  const normalized = path.normalize(binPath);
+  const suffix = path.normalize(path.join('kbe', 'bin', 'server'));
+  if (!normalized.endsWith(suffix)) {
+    return null;
+  }
+  const root = normalized.slice(0, -(suffix.length + 1));
+  if (root.length === 0) {
+    return null;
+  }
+  return path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml');
+}
+
+/**
  * 目标集(批111 用户令:telnet 端口从配置读取,配置未开启就不展示):
  * 设置显式 port > 0 或 kbengine.xml <telnet_service> 段在 → 有目标
- * (段在而无端口 → 引擎默认表逐组件);两处都没开 → 空目标,telnet 全族
- * 入口(状态灯/树项/面板)随之隐藏。
+ * (段在而无端口 → 逐组件端口,批112 起优先取引擎 defaults 解析值,
+ * defaults 读不到再落写死的引擎默认端口表;defaults 仅补值,不当开启
+ * 开关——引擎装好后 defaults 恒有 telnet_service 段,若当开关则任何
+ * 工作区都会重现批111 已废除的「什么都没配也亮灯」);两处都没开 → 空目标,
+ * telnet 全族入口(状态灯/树项/面板)随之隐藏,defaults 不当开启开关。
  */
 export function buildTelnetTargets(
   settings: TelnetSettingsInput,
-  xmlTelnet: { port?: number; password?: string; defaultLayer?: string } | null
+  xmlTelnet: { port?: number; password?: string; defaultLayer?: string } | null,
+  defaultsTelnet: TelnetDefaultsInfo | null = null
 ): TelnetTarget[] {
   const host = settings.host.trim() || '127.0.0.1';
   const enableCommands = [...settings.enableCommands];
@@ -104,21 +177,24 @@ export function buildTelnetTargets(
         component: label,
         host,
         port: explicitPort,
-        password: settings.password || xmlTelnet?.password || '',
+        password: settings.password || xmlTelnet?.password || defaultsTelnet?.password || '',
         enableCommands
       }
     ];
   }
   if (xmlTelnet) {
-    return ENGINE_DEFAULT_TELNET_PORTS.map(({ component, port }) => ({
-      key: `${host}:${port}`,
-      label: component,
-      component,
-      host,
-      port,
-      password: settings.password,
-      enableCommands
-    }));
+    return ENGINE_DEFAULT_TELNET_PORTS.map(({ component, port }) => {
+      const resolvedPort = defaultsTelnet?.ports[component] ?? port;
+      return {
+        key: `${host}:${resolvedPort}`,
+        label: component,
+        component,
+        host,
+        port: resolvedPort,
+        password: settings.password || xmlTelnet?.password || defaultsTelnet?.password || '',
+        enableCommands
+      };
+    });
   }
   // 配置未开 telnet(无显式端口且 xml 无 <telnet_service> 段):不猜不兜底
   return [];
@@ -135,7 +211,9 @@ export type TelnetProbeState =
 /**
  * 配置未显式指定 kbengine.xml 时的约定探测路径(工作区根相对):
  * 官方 server assets 布局 res/server/kbengine.xml、其 assets/ 嵌套变体、
- * 以及直接置于工作区根的布局。取第一个存在的文件为准,不深入猜测。
+ * 以及直接置于工作区根的布局。kbengine.configPath 指向的服务器资产目录
+ * 优先于这些约定(引擎 KBE_RES_PATH 的项目侧即在此找 kbengine.xml)。
+ * 取第一个存在的文件为准,不深入猜测。
  */
 const KBENGINE_XML_CANDIDATE_PATHS = [
   'kbengine.xml',
@@ -145,8 +223,11 @@ const KBENGINE_XML_CANDIDATE_PATHS = [
 
 /**
  * 从 kode 设置读取探测目标(kbengine.telnet.*):显式 configXmlPath 指向的
- * 元件 kbengine.xml(未设置时按约定路径探测工作区根)解析 <telnet_service>
- * 段作端口/密码回落;配置未开 telnet → 空目标(批111 用户令,不展示)。
+ * 元件 kbengine.xml(未设置时按 configPath 与约定路径探测)解析
+ * <telnet_service> 段作端口/密码回落;再经 kbengine.binPath 推导引擎
+ * kbengine_defaults.xml(批112 用户令),解析各组件 telnet 真实端口/密码
+ * 补值——即「defaults 先载、元件 kbengine.xml 覆盖」的合成口径
+ * (展示见 serverConfigMerge.ts)。配置未开 telnet → 空目标(批111 用户令)。
  */
 export function readTelnetTargetsFromSettings(): TelnetTarget[] {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -161,9 +242,14 @@ export function readTelnetTargetsFromSettings(): TelnetTarget[] {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   let candidatePaths: string[] = [];
   if (configXmlPath) {
-    candidatePaths = [configXmlPath.replace(/\$\{workspaceFolder\}/g, workspaceRoot || '')];
+    candidatePaths = [expandWorkspacePlaceholders(configXmlPath, workspaceRoot)];
   } else if (workspaceRoot) {
     candidatePaths = KBENGINE_XML_CANDIDATE_PATHS.map(relative => path.join(workspaceRoot, relative));
+    // configPath(kbengine.configPath,服务器资产目录)下优先,引擎即在此找元件配置
+    const configPath = expandWorkspacePlaceholders(config.get<string>('configPath', ''), workspaceRoot);
+    if (configPath.length > 0) {
+      candidatePaths.unshift(path.join(configPath, 'kbengine.xml'));
+    }
   }
   for (const candidate of candidatePaths) {
     try {
@@ -173,7 +259,21 @@ export function readTelnetTargetsFromSettings(): TelnetTarget[] {
       xmlTelnet = null; // 缺失/不可读:试下一个约定路径,不猜内容
     }
   }
-  return buildTelnetTargets(settings, xmlTelnet);
+  let defaultsTelnet: TelnetDefaultsInfo | null = null;
+  const binPath = config.get<string>('binPath', '');
+  if (binPath && workspaceRoot) {
+    const defaultsPath = deriveEngineDefaultsXmlPath(
+      expandWorkspacePlaceholders(binPath, workspaceRoot)
+    );
+    if (defaultsPath) {
+      try {
+        defaultsTelnet = parseKbengineDefaultsTelnet(fs.readFileSync(defaultsPath, 'utf8'));
+      } catch {
+        defaultsTelnet = null; // 缺失/不可读:引擎值不可知,回落常量端口表
+      }
+    }
+  }
+  return buildTelnetTargets(settings, xmlTelnet, defaultsTelnet);
 }
 
 /**

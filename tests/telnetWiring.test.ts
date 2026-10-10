@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ServerControlProvider } from '../src/explorerProviders';
+import { TelnetTreeProvider } from '../src/telnetTree';
 import {
   readTelnetTargetsFromSettings,
   TelnetService,
@@ -171,6 +171,100 @@ describe('readTelnetTargetsFromSettings', () => {
       fs.rmSync(bareDir, { recursive: true, force: true });
     }
   });
+
+  it('configPath 下的 kbengine.xml 优先于约定路径(引擎 KBE_RES_PATH 项目侧)', () => {
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-configpath-'));
+    const configDir = path.join(xmlDir, 'server');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(configDir, 'kbengine.xml'),
+      '<root><telnet_service><port>32666</port></telnet_service></root>'
+    );
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+    override({ configPath: '${workspaceFolder}/server' });
+
+    try {
+      const targets = readTelnetTargetsFromSettings();
+      expect(targets).toHaveLength(1);
+      expect(targets[0]).toMatchObject({ key: '127.0.0.1:32666', port: 32666 });
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
+
+  it('xml 段在而无端口 + binPath 指向引擎树:逐组件端口/密码取 kbengine_defaults.xml', () => {
+    // 批112 用户令:引擎 defaults 先载、元件 kbengine.xml 覆盖——defaults 补值
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-defaults-'));
+    fs.writeFileSync(
+      path.join(xmlDir, 'kbengine.xml'),
+      '<root><telnet_service></telnet_service></root>'
+    );
+    const engineDir = path.join(xmlDir, 'kbe');
+    fs.mkdirSync(path.join(engineDir, 'res', 'server'), { recursive: true });
+    fs.mkdirSync(path.join(engineDir, 'bin'), { recursive: true });
+    fs.writeFileSync(
+      path.join(engineDir, 'res', 'server', 'kbengine_defaults.xml'),
+      [
+        '<root>',
+        '  <loginapp><telnet_service><port> 31000 </port><password> pwd123456 </password></telnet_service></loginapp>',
+        '  <baseapp><telnet_service><port> 40001 </port><password> pwd123456 </password></telnet_service></baseapp>',
+        '</root>'
+      ].join('\n')
+    );
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+    override({ binPath: '${workspaceFolder}/kbe/bin/server' });
+
+    try {
+      const targets = readTelnetTargetsFromSettings();
+      expect(targets).toHaveLength(7);
+      const byComponent = Object.fromEntries(targets.map(target => [target.component, target]));
+      expect(byComponent.baseapp.port).toBe(40001); // defaults 解析值覆盖常量表
+      expect(byComponent.loginapp.port).toBe(31000);
+      expect(byComponent.cellapp.port).toBe(50000); // defaults 未覆盖 → 常量表
+      expect(targets.every(target => target.password === 'pwd123456')).toBe(true);
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
+
+  it('binPath 推得出 defaults 但文件缺失:catch 臂回落常量端口表', () => {
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-noread-'));
+    fs.writeFileSync(
+      path.join(xmlDir, 'kbengine.xml'),
+      '<root><telnet_service></telnet_service></root>'
+    );
+    fs.mkdirSync(path.join(xmlDir, 'kbe', 'bin'), { recursive: true });
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+    override({ binPath: '${workspaceFolder}/kbe/bin/server' });
+
+    try {
+      const targets = readTelnetTargetsFromSettings();
+      expect(targets.map(target => target.port)).toEqual([
+        31000, 32000, 33000, 34000, 40000, 50000, 51000
+      ]);
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
+
+  it('binPath 推导不出引擎 defaults(后缀不在):回落常量端口表', () => {
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-nodefaults-'));
+    fs.writeFileSync(
+      path.join(xmlDir, 'kbengine.xml'),
+      '<root><telnet_service></telnet_service></root>'
+    );
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+    override({ binPath: '${workspaceFolder}/kbe/bin' });
+
+    try {
+      const targets = readTelnetTargetsFromSettings();
+      expect(targets.map(target => target.port)).toEqual([
+        31000, 32000, 33000, 34000, 40000, 50000, 51000
+      ]);
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('updateTelnetStatusBar', () => {
@@ -219,7 +313,7 @@ describe('updateTelnetStatusBar', () => {
   });
 });
 
-describe('ServerControlProvider telnet 树项(注入 telnetService 才追加)', () => {
+describe('TelnetTreeProvider(批112 用户令:telnet 独立树视图,与 server 进程分开)', () => {
   const telnetTarget = (over: Partial<TelnetTarget> = {}): TelnetTarget => ({
     key: '127.0.0.1:31000',
     label: 'loginapp',
@@ -234,20 +328,16 @@ describe('ServerControlProvider telnet 树项(注入 telnetService 才追加)', 
   const makeProvider = (
     targets: TelnetTarget[],
     states: Record<string, string>
-  ): ServerControlProvider => {
+  ): TelnetTreeProvider => {
     const service = new TelnetService({ getTargets: () => targets });
     (service as unknown as { targets: unknown }).targets = targets;
     for (const [key, state] of Object.entries(states)) {
       (service as unknown as { states: Map<string, string> }).states.set(key, state);
     }
-    const manager = {
-      getAllServers: () => [],
-      getRunningServers: () => new Map()
-    };
-    return new ServerControlProvider(manager as never, service);
+    return new TelnetTreeProvider(service);
   };
 
-  it('注入后树尾追加 telnet 状态灯项;单参构造保持纯组件列表', async () => {
+  it('独立树只列 telnet 状态灯项,刷新走 onDidChangeTreeData', async () => {
     const provider = makeProvider([telnetTarget()], { '127.0.0.1:31000': 'connected' });
     const children = await provider.getChildren();
     expect(children).toHaveLength(1);
@@ -259,11 +349,10 @@ describe('ServerControlProvider telnet 树项(注入 telnetService 才追加)', 
     expect(item.command?.command).toBe('kbengine.telnet.showPanel');
     expect(item.tooltip).toContain('telnet loginapp');
     expect(provider.getTreeItem(item)).toBe(item);
-    await expect(provider.getChildren(item as never)).resolves.toEqual([]);
 
-    // 单参构造(既有行为):不注入则纯组件列表,无 telnet 项
-    const bare = new ServerControlProvider({ getAllServers: () => [], getRunningServers: () => new Map() } as never);
-    await expect(bare.getChildren()).resolves.toHaveLength(0);
+    // 空目标时独立树为空列表(manifest when 子句隐藏整个视图)
+    const bare = new TelnetTreeProvider({ getTargets: () => [], getState: () => 'unconfigured' });
+    expect(bare.getChildren()).toHaveLength(0);
   });
 
   it('各状态灯图标与文案逐一定位', async () => {
@@ -281,7 +370,7 @@ describe('ServerControlProvider telnet 树项(注入 telnetService 才追加)', 
       k4: 'auth-rejected',
       k5: 'unconfigured'
     });
-    const items = await provider.getChildren();
+    const items = provider.getChildren();
     const byLabel = Object.fromEntries(items.map(item => [item.label, item]));
     expect((byLabel['Telnet: loginapp'].iconPath as { id: string }).id).toBe('circle-slash');
     expect(byLabel['Telnet: loginapp'].description).toContain('未开启');

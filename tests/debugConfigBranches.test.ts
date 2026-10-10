@@ -17,7 +17,10 @@ type ManagerInternals = DebugConfigManager & {
 };
 
 const makeManager = (): ManagerInternals =>
-  new DebugConfigManager({ subscriptions: [] } as unknown as vscode.ExtensionContext) as ManagerInternals;
+  new DebugConfigManager(
+    { subscriptions: [] } as unknown as vscode.ExtensionContext,
+    { listProcesses: () => [{ pid: 4321, name: 'cellapp' }] }
+  ) as ManagerInternals;
 
 const setWorkspaceAt = (fsPath: string | null): void => {
   stubWorkspace.workspaceFolders = fsPath
@@ -43,7 +46,7 @@ const originalWindow: Record<string, unknown> = {};
 const originalDebugStart = debugish.startDebugging;
 
 beforeAll(() => {
-  for (const key of ['showInputBox', 'showInformationMessage', 'showErrorMessage']) {
+  for (const key of ['showInputBox', 'showInformationMessage', 'showErrorMessage', 'showQuickPick']) {
     originalWindow[key] = windowish[key];
   }
   windowish.showInputBox = async (): Promise<string | undefined> => ui.inputs.shift();
@@ -55,6 +58,10 @@ beforeAll(() => {
     ui.error.push(message);
     return undefined;
   };
+  windowish.showQuickPick = async (): Promise<unknown> => ({
+    label: '$(check) cellapp',
+    description: '4321'
+  });
   debugish.startDebugging = async (folder: unknown, config: Record<string, unknown>) => {
     ui.debugCalls.push({ folder, config });
     return true;

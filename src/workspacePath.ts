@@ -13,3 +13,16 @@ export function joinWorkspacePath(basePath: string, ...segments: string[]): stri
 export function usesPosixPath(targetPath: string): boolean {
   return !/^[A-Za-z]:[\\/]/.test(targetPath) && targetPath.includes('/');
 }
+
+/**
+ * 展开 ${workspaceFolder} 与 ${env:VAR} 占位符(与 serverManager.getBinPath
+ * 同款口径;批112 起 telnet 引擎 defaults 推导与最终配置合成共用此实现)。
+ */
+export function expandWorkspacePlaceholders(
+  value: string,
+  workspaceRoot: string | undefined
+): string {
+  return value
+    .replace(/\$\{workspaceFolder\}/g, workspaceRoot || '')
+    .replace(/\$\{env:(.+?)\}/g, (_, envVar) => process.env[envVar] || '');
+}

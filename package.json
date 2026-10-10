@@ -46,7 +46,9 @@
     "onCommand:kbengine.logs.export",
     "onCommand:kbengine.debug.start",
     "onCommand:kbengine.debug.attach",
+    "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.updateLaunchJson",
+    "onCommand:kbengine.config.showFinal",
     "onCommand:kbengine.debug.createConfig",
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
@@ -121,6 +123,15 @@
         {
           "id": "kbengine.serverControl",
           "name": "Servers"
+        },
+        {
+          "id": "kbengine.telnetStatus",
+          "name": "Telnet",
+          "when": "kbengine.telnetConfigured"
+        },
+        {
+          "id": "kbengine.config",
+          "name": "Config"
         }
       ]
     },
@@ -199,6 +210,14 @@
         "command": "kbengine.debug.attach",
         "title": "Attach to Component",
         "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.debug.attachRemote",
+        "title": "Attach to Remote Component"
+      },
+      {
+        "command": "kbengine.config.showFinal",
+        "title": "Show Final Server Config"
       },
       {
         "command": "kbengine.debug.updateLaunchJson",
@@ -302,6 +321,9 @@
         {
           "command": "kbengine.telnet.showPanel",
           "when": "kbengine.telnetConfigured"
+        },
+        {
+          "command": "kbengine.config.showFinal"
         }
       ]
     },
@@ -378,6 +400,39 @@
           "default": "${workspaceFolder}/server",
           "description": "KBEngine 配置文件路径"
         },
+        "kbengine.showFinalConfigOnOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "扩展激活且能定位引擎默认配置(经 kbengine.binPath 推导 kbe/res/server/kbengine_defaults.xml)时,自动在后台打开合成的最终配置只读视图(kbengine-final.xml);定位失败静默跳过。kbengine.config.showFinal 命令可随时手动打开"
+        },
+        "kbengine.autoRefreshFinalConfig": {
+          "type": "boolean",
+          "default": true,
+          "description": "引擎默认配置或元件 kbengine.xml 文件变更/增删后,自动重算并刷新已打开的最终配置视图内容"
+        },
+        "kbengine.debug.remoteTargets": {
+          "type": "array",
+          "default": [],
+          "description": "远程调试目标列表（「Attach to Remote Component」命令弹出的选择项）。远端组件需已起 debugpy 监听（通常先经 telnet 发开启调试命令），扩展以 debugpy connect 模式附加、不写 pathMappings。命令 kbengine.debug.attachRemote，同时会把这些目标追加进 launch.json",
+          "items": {
+            "type": "object",
+            "required": ["name", "host"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "目标名（quick pick 展示，如「外网 baseapp」）"
+              },
+              "host": {
+                "type": "string",
+                "description": "服务器 IP / 主机名"
+              },
+              "port": {
+                "type": "number",
+                "description": "debugpy 监听端口，缺省 5678"
+              }
+            }
+          }
+        },
         "kbengine.autoStart": {
           "type": "array",
           "default": [
@@ -417,22 +472,6 @@
           "default": 10000,
           "description": "最大日志条目数"
         },
-        "kbengine.pythonDefsPath": {
-          "type": "array",
-          "default": [
-            "assets/scripts/entity_defs",
-            "scripts/entity_defs"
-          ],
-          "description": "生成的 Python 实体定义文件搜索路径（相对于工作区根目录）",
-          "items": {
-            "type": "string"
-          }
-        },
-        "kbengine.enablePythonNavigation": {
-          "type": "boolean",
-          "default": true,
-          "description": "启用从生成的 Python 文件跳转到 .def 文件的功能"
-        },
         "kbengine.generator.defOutputPath": {
           "type": "string",
           "default": "scripts/entity_defs",
@@ -461,12 +500,12 @@
         "kbengine.telnet.port": {
           "type": "number",
           "default": 0,
-          "description": "telnet 探测端口（0 = 未显式指定，改按元件 kbengine.xml 的 <telnet_service> 段；设置与 kbengine.xml 都未开启 telnet 时，扩展不展示任何 telnet 内容。kbengine.xml 有 <telnet_service> 段但未写端口时，按引擎默认组件端口表逐个探测：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）"
+          "description": "telnet 探测端口（0 = 未显式指定，改按元件 kbengine.xml 的 <telnet_service> 段；设置与 kbengine.xml 都未开启 telnet 时，扩展不展示任何 telnet 内容。kbengine.xml 有 <telnet_service> 段但未写端口时，逐组件端口优先读引擎 kbengine_defaults.xml 的 <telnet_service> 段（经 kbengine.binPath 推导 <引擎根>/kbe/res/server/kbengine_defaults.xml），读不到再按引擎默认端口表：loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000）"
         },
         "kbengine.telnet.password": {
           "type": "string",
           "default": "",
-          "description": "telnet 登录密码（仅用于自动握手写 socket，不写入日志；留空则不自动登录，状态灯停在「端口开·未配密码」）"
+          "description": "telnet 登录密码（仅用于自动握手写 socket，不写入日志；留空则按元件 kbengine.xml 段 → 引擎 kbengine_defaults.xml 段的顺序回落取密码；都没有则不自动登录，状态灯停在「端口开·未配密码」）"
         },
         "kbengine.telnet.enableCommands": {
           "type": "array",
@@ -479,7 +518,7 @@
         "kbengine.telnet.configXmlPath": {
           "type": "string",
           "default": "",
-          "description": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（支持 ${workspaceFolder}；设置显式 port > 0 时优先设置）。未设置时按约定路径探测工作区根：kbengine.xml、res/server/kbengine.xml、assets/res/server/kbengine.xml，取第一个存在的文件"
+          "description": "可选：元件 kbengine.xml 路径，解析其 <telnet_service> 段作为端口/密码回落（支持 ${workspaceFolder}；设置显式 port > 0 时优先设置）。未设置时按约定路径探测工作区根：kbengine.xml、res/server/kbengine.xml、assets/res/server/kbengine.xml，取第一个存在的文件。元件配置未写的端口/密码继续向引擎 kbengine_defaults.xml 回落"
         },
         "kbengine.telnet.probeIntervalSeconds": {
           "type": "number",

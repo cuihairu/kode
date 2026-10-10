@@ -11,6 +11,7 @@ import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
 import { messages, treeRegistrations, window as fakeWindow, windowState } from './fake-vscode/windowState';
 import {
+  lastFileSystemWatcher,
   workspace,
   workspaceEvents,
   workspaceState,
@@ -93,16 +94,17 @@ describe('extension activate 装配', () => {
     expect(commandRegistry.allRegisteredCommandIds().sort())
       .toEqual(declared.commands.map(entry => entry.command).sort());
 
-    // 树视图:两个视图 id 与 views 贡献点一致
+    // 树视图:实体/进程/telnet/最终配置四个视图 id 与 views 贡献点一致
     const declaredViewIds = Object.values(declared.views)
       .flat()
       .map(view => view.id)
       .sort();
     expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
 
-    // 语言服务:补全 2(.def + Python)、悬停 1、定义 2、调用层级 1、重命名 1
+    // 语言服务:补全 2(.def + Python)、悬停 2(.def/hook + 引擎配置字段,
+    // 批112)、定义 2、调用层级 1、重命名 1
     expect(languagesRegistry.completionRegistrations).toHaveLength(2);
-    expect(languagesRegistry.hoverRegistrations).toHaveLength(1);
+    expect(languagesRegistry.hoverRegistrations).toHaveLength(2);
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
@@ -113,11 +115,13 @@ describe('extension activate 装配', () => {
     ]);
 
     // 虚拟文档提供者:数据库 schema + kbe 符号桩文档(批108,内容由桩索引出)
+    // + 最终服务端配置合成(批112,defaults+kbengine.xml 合成虚拟文档)
     expect(workspaceState.contentProviders.has('kbengine-db-schema')).toBe(true);
     const kbeStubProvider = workspaceState.contentProviders.get(KBE_SCHEME) as {
       provideTextDocumentContent(): string;
     };
     expect(kbeStubProvider.provideTextDocumentContent()).toBe(buildKbeStubDocument().content);
+    expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
     // 状态栏两条:server 灯(右对齐/优先级 100/命令指向扩展视图)与
     // telnet 灯(优先级 99/命令指向 telnet 面板);无运行组件时 server 灯隐藏。
@@ -599,4 +603,130 @@ describe('extension activate 装配', () => {
 
     disposeAll(context);
   });
+});
+
+describe('最终配置默认开启(批112 默认开启令)', () => {
+  // 建一棵最小引擎目录树:binPath 可推导出 kbe/res/server/kbengine_defaults.xml
+  const makeEngineTree = (): string => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-open-'));
+    fs.mkdirSync(path.join(root, 'kbe', 'res', 'server'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'),
+      '<defaults><baseapp><archivePeriod> 300 </archivePeriod></baseapp></defaults>'
+    );
+    return root;
+  };
+
+  it('激活即出:能定位 defaults 时后台打开合成视图,不抢焦点', async () => {
+    const root = makeEngineTree();
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+      const context = makeContext();
+      activate(context);
+
+      // 激活内的自动打开是异步尾焰:轮询等它落地
+      await until(() => windowState.showTextDocumentCalls.length > 0);
+      const call = windowState.showTextDocumentCalls[0] as {
+        document: unknown;
+        options: { preview: boolean; preserveFocus: boolean } | undefined;
+      };
+      const document = call.document;
+      const options = call.options;
+      expect(document).toBeDefined();
+      expect(options).toEqual({ preview: true, preserveFocus: true });
+      // 走的是虚拟文档 openTextDocument
+      expect(workspaceState.openTextDocumentCalls.length).toBeGreaterThan(0);
+      disposeAll(context);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 8000);
+
+  it('定位不到 defaults:激活静默跳过不弹错', async () => {
+    const context = makeContext();
+    activate(context);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(windowState.showTextDocumentCalls).toHaveLength(0);
+    expect(messages.error).toEqual([]);
+    disposeAll(context);
+  });
+
+  it('showFinalConfigOnOpen=false:激活不自动打开', async () => {
+    const root = makeEngineTree();
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      configurationOverrides.set('kbengine', {
+        binPath: '${workspaceFolder}/kbe/bin/server',
+        showFinalConfigOnOpen: false
+      });
+      const context = makeContext();
+      activate(context);
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(windowState.showTextDocumentCalls).toHaveLength(0);
+      disposeAll(context);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('手动命令:定位失败明示报错;autoRefreshFinalConfig=false 不挂 watcher', async () => {
+    configurationOverrides.set('kbengine', { autoRefreshFinalConfig: false });
+    const context = makeContext();
+    activate(context);
+    expect(lastFileSystemWatcher.current).toBeNull();
+
+    await commands.executeCommand('kbengine.config.showFinal');
+    expect(messages.error.some(message => message.includes('无法定位引擎默认配置'))).toBe(true);
+    expect(windowState.showTextDocumentCalls).toHaveLength(0);
+    disposeAll(context);
+  });
+
+  it('attachRemote 命令经 CommandRegistry 真分发(未配置目标提示)', async () => {
+    const context = makeContext();
+    activate(context);
+    await commands.executeCommand('kbengine.debug.attachRemote');
+    expect(messages.info.some(message => message.includes('kbengine.debug.remoteTargets'))).toBe(true);
+    disposeAll(context);
+  });
+
+  it('手动命令聚焦打开;联动 watcher 三臂刷新合成内容', async () => {
+    const root = makeEngineTree();
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+      const context = makeContext();
+      activate(context);
+
+      // 激活自动路径先落地,记基线后再验手动路径(聚焦,不带 preview 选项)
+      await until(() => windowState.showTextDocumentCalls.length > 0);
+      const before = windowState.showTextDocumentCalls.length;
+      await commands.executeCommand('kbengine.config.showFinal');
+      await until(() => windowState.showTextDocumentCalls.length > before);
+      const manual = windowState.showTextDocumentCalls[windowState.showTextDocumentCalls.length - 1] as {
+        options: unknown;
+      };
+      expect(manual.options).toBeUndefined();
+
+      // 变更联动:watcher change/create/delete 三臂都触发内容提供者重算
+      const watcher = lastFileSystemWatcher.current;
+      expect(watcher).not.toBeNull();
+      const provider = workspaceState.contentProviders.get('kbengine-config') as {
+        onDidChange(listener: (uri: unknown) => void): { dispose(): void };
+        provideTextDocumentContent(uri: unknown): string;
+      };
+      const fired: unknown[] = [];
+      provider.onDidChange(uri => fired.push(uri));
+      watcher!.fireChange(Uri.file('/any/kbengine_defaults.xml'));
+      watcher!.fireCreate(Uri.file('/any/kbengine.xml'));
+      watcher!.fireDelete(Uri.file('/any/kbengine.xml'));
+      expect(fired).toHaveLength(3);
+      expect(provider.provideTextDocumentContent({})).toContain('仅引擎默认');
+
+      // autoRefreshFinalConfig=false 时 watcher 不存在,联动自然关闭
+      disposeAll(context);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 8000);
 });

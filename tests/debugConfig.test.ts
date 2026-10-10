@@ -1,7 +1,12 @@
 import type * as vscode from 'vscode';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DebugConfigManager } from '../src/debugConfig';
+import {
+  DebugConfigManager,
+  makeProcessLister,
+  parsePsProcesses,
+  parseTasklistProcesses
+} from '../src/debugConfig';
 import type { DebugConfigFile, KBEngineDebugConfig } from '../src/debugConfig';
 import { memoryFileSystem, workspace as stubWorkspace, Uri } from './helpers/vscodeStub';
 
@@ -369,5 +374,53 @@ describe('createExampleConfig', () => {
 
   it('fails without a workspace', async () => {
     await expect(makeManager().createExampleConfig()).resolves.toBe(false);
+  });
+});
+
+describe('进程清单解析(批112 attach 进程过滤)', () => {
+  it('parsePsProcesses:匹配行收进程,垃圾行跳过,非正 PID 跳过', () => {
+    const entries = parsePsProcesses(
+      ['4321 baseapp', '1 systemd', 'garbage line', '0 zeropid', '  '].join('\n')
+    );
+    expect(entries).toEqual([
+      { pid: 4321, name: 'baseapp' },
+      { pid: 1, name: 'systemd' }
+    ]);
+  });
+
+  it('parseTasklistProcesses:CSV 只取前两列,内存列千位逗号不干扰', () => {
+    const entries = parseTasklistProcesses(
+      [
+        '"baseapp.exe","4321","Console","1","100,000 K"',
+        '"systemd","1","Console","1","5,000 K"',
+        '"", "4321"',
+        '"","4321"',
+        '"" ,"0"'
+      ].join('\r\n')
+    );
+    expect(entries).toEqual([
+      { pid: 4321, name: 'baseapp.exe' },
+      { pid: 1, name: 'systemd' }
+    ]);
+  });
+
+  it('makeProcessLister:posix 走 ps,win32 走 tasklist,命令失败返回空清单', () => {
+    const psLister = makeProcessLister(() => '4321 baseapp\n1 systemd\n', 'linux');
+    expect(psLister()).toEqual([
+      { pid: 4321, name: 'baseapp' },
+      { pid: 1, name: 'systemd' }
+    ]);
+
+    const tasklistLister = makeProcessLister(
+      () => '"baseapp.exe","4321","Console","1","100,000 K"\n',
+      'win32'
+    );
+    expect(tasklistLister()).toEqual([{ pid: 4321, name: 'baseapp.exe' }]);
+
+    // 无 ps/无权限:命令抛错,清单返空,不抛给调用方
+    const brokenLister = makeProcessLister(() => {
+      throw new Error('spawn ps ENOENT');
+    });
+    expect(brokenLister()).toEqual([]);
   });
 });
