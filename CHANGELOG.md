@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Removed two dead settings that no code ever read: `kbengine.pythonDefsPath`
+  and `kbengine.enablePythonNavigation`. Python→`.def` navigation resolves
+  the def tree through `kbengine.entityDefsPath` plus built-in layout
+  fallbacks (`entity_defs`, `scripts/entity_defs`, `assets/scripts/entity_defs`)
 - Reference-field navigation now covers the whole family in `.def` files:
   `Parent` and `<Interfaces>` mixin names jump to their def files, `Type`/`Arg`
   entity and component references resolve to `entity_defs/` or
@@ -17,23 +21,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implementation through the engine's loading closure (own role script →
   interface mixin scripts → parent chain; interface defs resolve to
   `scripts/interfaces/` and do not follow `Parent`)
-- Telnet surfaces (status bar lamp, server-tree telnet items, panel command
-  entry) are only shown when telnet is explicitly enabled in configuration —
-  a non-zero `kbengine.telnet.port` or a `<telnet_service>` section in the
-  component kbengine.xml (auto-discovered at the conventional workspace-root
-  paths when `kbengine.telnet.configXmlPath` is unset: `kbengine.xml`,
-  `res/server/kbengine.xml`, `assets/res/server/kbengine.xml`); the old
-  "nothing configured → seven default component ports" fallback is gone
-- Debug attach now uses the VS Code built-in process picker
-  (`${command:pickProcess}`) in both the generated launch.json and the
-  attach command, replacing the manual PID promptString input; updating
-  launch.json removes the obsolete `kbengineProcessId` input left by older
-  versions
+- Telnet surfaces (status bar lamp, dedicated tree view, panel command entry)
+  are only shown when telnet is explicitly enabled in configuration — a
+  non-zero `kbengine.telnet.port` or a `<telnet_service>` section in the
+  component kbengine.xml; the old "nothing configured → seven default
+  component ports" fallback is gone. Engine defaults never enable telnet on
+  their own — they only supply values when the component section exists
+- Telnet port/password now resolve through the engine's own layering: kode
+  settings → component kbengine.xml `<telnet_service>` (found via
+  `kbengine.telnet.configXmlPath`, else `kbengine.configPath/kbengine.xml`,
+  else conventional workspace-root paths) → engine `kbengine_defaults.xml`
+  derived from `kbengine.binPath`
+- Telnet moved out of the Servers process tree into its own sidebar view
+  ("Telnet", visible only while telnet is configured)
+- Debug attach lists local processes inside the extension: processes whose
+  name matches the target component are pinned to the top with a check mark,
+  picking one assembles the attach configuration with its PID directly —
+  no more manual PID input; updating launch.json removes the obsolete
+  `kbengineProcessId` input left by older versions
 - Version bumped to 0.1.1 so nightly VSIX installs are distinguishable in the
   extensions panel (the rolling release keeps the same `kode-nightly.vsix`
   filename, which made stale installs look identical to fresh ones)
 
 ### Added
+- Final server config view: the engine's own layering (defaults first, then
+  component kbengine.xml overriding key by key, child sections aligned by
+  name) rendered as a read-only virtual document `kbengine-final.xml` with a
+  source header. It opens automatically in a background preview tab when the
+  extension activates and defaults can be located
+  (`kbengine.showFinalConfigOnOpen`, default on), stays reachable from a
+  persistent "Final Config" node in the Config sidebar view and the
+  `Show Final Server Config` command, and recomputes itself when either
+  source file changes (`kbengine.autoRefreshFinalConfig`, default on).
+  Telnet port/password read from the same merged picture
+- Remote debug attach: `kbengine.debug.remoteTargets` (name + host + debugpy
+  port, port defaults to 5678) plus the `Attach to Remote Component` command
+  with a target picker; attaches in debugpy `connect` mode and appends the
+  targets to launch.json
+- Hover documentation for server config fields: hovering a field in
+  `kbengine.xml` / `kbengine_defaults.xml` (and the final-config view) shows
+  what it controls, curated from the engine's own bilingual comments
 - `.def` highlighting rebuilt on the built-in XML grammar with a semantic
   overlay: the four section tags (Properties / BaseMethods / CellMethods /
   ClientMethods), `Exposed`, `Persistent`, and flag values such as

@@ -3812,3 +3812,95 @@ condenseWhiteSpace 默认开,引擎解析期丢弃纯空白文本节点,展开�
   的 symbolInfo.section 也是 'Properties',该链排在 Properties→脚本链
   之后必被截获,凡有脚本的实体整链为死代码 → 链序提前至 Properties 链
   之前并注记原因,走查用例㉒㉓锁定(批111 清单走查设计推演发现)。
+
+## 批112:telnet 读引擎默认配置 + attach 进程过滤/远程附加 + 服务端配置悬浮/最终配置视图 + 默认开启联动
+
+用户令五条:①telnet 端口/密码应能从引擎默认配置读——项目 kbengine.xml
+没写 telnet 段端口时回落 kbengine_defaults.xml;②attach 按进程名过滤,
+不是把全系统进程甩给用户;③远程调试:设置里配服务器数组,点远程弹目标
+选择,以 debugpy connect 模式附加;④配置字段悬浮显示作用(整理引擎源码
+注释);⑤展示最终合成配置:引擎默认先载、自定义同键覆盖,文件不存在但
+要展示。中途追加四条:⑥telnet 单独分类——澄清为「UI 中不与 server 进程
+放在一起」,独立树视图;⑦最终配置默认开启:激活即出(后台标签不抢焦点,
+找不到 defaults 静默跳过)、侧栏常驻节点、文件保存联动刷新,设置
+`kbengine.showFinalConfigOnOpen`/`kbengine.autoRefreshFinalConfig` 默认
+true;⑧删除死设置 `kbengine.pythonDefsPath`/`kbengine.enablePythonNavigation`;
+⑨配置文档重写(逐字段成文/真实默认值/分层覆盖口径/修误导)与
+debug.json×telnet 纠错(telnet 探测/面板/状态灯不读 debug.json)。
+
+交付一:telnet 三层取值链(src/telnetService.ts)。
+- `parseKbengineDefaultsTelnet` 解析引擎 defaults 的 `<telnet_service>`:
+  逐组件截段,收端口(数值>0)与密码(首个非空);`deriveEngineDefaultsXmlPath`
+  由 binPath 推导 `kbe/res/server/kbengine_defaults.xml`(与
+  detectKbeRoot 同构,后缀不匹配/根为空返 null);
+- `buildTelnetTargets(settings, xmlTelnet, defaultsTelnet)`:显式端口链
+  设置>0 → 元件段 port;密码链 设置 → 元件段 → defaults → 空;表格臂
+  仅元件段存在才展开(默认永不把 telnet「打开」,批111 门控保持),逐
+  组件端口 defaults 值 → 引擎常量表;
+- `readTelnetTargetsFromSettings` 元件配置定位统一:configXmlPath →
+  `configPath/kbengine.xml` → 约定路径(与 serverConfigMerge 同口径),
+  `${workspaceFolder}`/`${env:VAR}` 经 expandWorkspacePlaceholders 展开。
+- UI 分离:TelnetTreeProvider/TelnetTreeItem 移入 src/telnetTree.ts,新
+  视图 `kbengine.telnetStatus`(when: kbengine.telnetConfigured),
+  ServerControlProvider 回归纯进程树。
+
+交付二:attach 进程过滤与远程附加(src/debugConfig.ts)。
+- 进程清单器注入:构造器 `(context, deps)`,`listProcesses` 缺省走真
+  ps/tasklist(parsePsProcesses/parseTasklistProcesses);
+- attachToComponent:清单为空明示报错;匹配组件名的进程置顶带 `$(check)`
+  标记(1.50 typings 无 QuickPickItemKind 分隔符,排序+前缀代替),选中
+  PID 直写 DebugConfiguration.processId,不再手输;
+- attachRemote:remoteTargets 过滤空 name/host,quick pick 选目标 +
+  模态确认(提示先经 telnet 开调试),debugpy `connect: {host, port}`
+  (端口缺省 5678),不写 pathMappings;generateLaunchConfigurations 把
+  远程目标追加为 order 2 的 connect 配置。
+
+交付三:配置字段悬浮(src/serverConfigHover.ts)。
+- SERVER_CONFIG_SELECTOR 命中 `**/kbengine*.xml`(元件配置、引擎 defaults、
+  合成视图三者皆中);约 70 条字段说明逐条对照引擎 defaults 双语注释整理,
+  歧义键带段(`telnet_service.port`),先查 `段.字段` 再查裸键;段由当前
+  行向上找最近整行 opener 判定。
+
+交付四:最终配置合成与默认开启(src/serverConfigMerge.ts + extension.ts)。
+- parseConfigXml(容错栈解析:注释/声明剥离、多余闭合忽略、自闭合不入
+  栈)→ mergeConfigXml(引擎同键覆盖:仅默认保留/仅自定义新增/双容器递归
+  /整名替换,重复名列表整表替换)→ renderConfigXml(叶子值两侧留空、tab
+  缩进);buildFinalServerConfig 产出带来源头注的合成文本;
+- 展示:虚拟文档 `kbengine-config:/kbengine-final.xml`(命中悬浮
+  pattern);三个入口——Config 侧栏视图「最终配置」节点(常驻不门控)、
+  `kbengine.config.showFinal` 命令(定位失败明示报错)、激活自动后台打开
+  (showFinalConfigOnOpen 默认 true,静默跳过);
+- 联动:autoRefreshFinalConfig 默认 true 时挂 `**/kbengine*.xml`
+  FileSystemWatcher,change/create/delete 三臂触发内容提供者
+  onDidChange 重算。
+
+交付五:文档(config 文档重写令 + 纠错令)。configuration.md 整页重写:
+32 个设置项逐字段成文(类型/真实默认值/含义/误配),服务端三层覆盖口径
+配前后对照表,binPath/configPath 按 serverManager/serverConfigMerge 实现
+写全用途;commands.md/features.md 逐处改正「telnet 读 debug.json」误导
+(telnet 解析链 = 设置 → 元件 kbengine.xml → 引擎 defaults,debug.json
+只服务调试提示语与 pathMappings)。
+
+验收(tests/):
+- telnetService.test.ts:defaults 解析(含 ports 空/仅密码形态)、路径
+  推导、buildTelnetTargets defaults 覆盖/密码链/门控保持;telnetWiring
+  补 configPath 优先与临时引擎树合并用例(binPath `${workspaceFolder}`
+  展开);
+- debugConfigAttach/Branches:进程过滤排序(大小写不敏感、置顶 `$(check)`
+  、余序保持)、取消/空清单/错误通道/真 ps 缺省臂;attachRemote 四态
+  (未配置/选择+确认/cancel 三态/false 不刷错)+ launch.json 追加断言;
+- serverConfigHover.test.ts(新):选择器形态、带段键/裸键回退、未知返
+  null、孤儿文档、提供者委托;
+- serverConfigMerge.test.ts(新):解析容错四态、合并四分支、渲染排版、
+  configPath 优先链、纯默认/合并/垃圾自定义、提供者重算、refresh 事件、
+  树节点命令;
+- extension.test.ts:装配面(悬停 2、内容提供者 3、树视图 4 与清单一致)、
+  默认开启三态(定位成功后台开/静默跳过/关开关不开)、手动命令聚焦打开、
+  watcher 三臂联动;
+- workspacePath.test.ts:expandWorkspacePlaceholders(${workspaceFolder}
+  全量展开/未设工作区落空串/${env:VAR} 缺失落空串)。
+
+覆盖率与产物:新增分支全部有测试抵达,coverage 保持 100%×4;mocha 装配
+烟测同步(树视图 4 与 package.json 贡献一致)。文档对账:configuration.md
+重写、commands.md attachRemote/showFinal 小节 + 纠错、features.md 三层链
++ 最终配置视图节、CHANGELOG 五条、本节。
