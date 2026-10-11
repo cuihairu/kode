@@ -79,7 +79,7 @@ beforeAll(() => {
     '    </focus>',
     '  </Properties>',
     '  <Interfaces>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <Components>',
     '    <pack>',

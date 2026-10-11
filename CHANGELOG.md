@@ -5,6 +5,26 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-10-11
+
+### Fixed
+- Interface references now follow the engine's `<Interfaces>` load
+  semantics. The engine (`loadInterfaces`, entitydef.cpp L559-561) only
+  loads children whose wrapper tag is exactly `interface`, `Interface`,
+  `type` or `Type` (case-sensitive) — a direct-take form like
+  `<MoveIface/>` is silently skipped and never produces a mix-in. The
+  analyzer previously accepted any child element, so the entity browser,
+  mapping graph and schema views showed interfaces the engine would not
+  load. The four-spelling wrapper is now required, and the interface name
+  is taken from the first non-comment child (text or element tag), the
+  same `enterNode`/`getKey` rule the engine applies
+- Parent and interface naming now share one implementation:
+  `getReferenceTargetName` in `src/defRenamer.ts` is the single source of
+  truth for both, so the two modules can no longer drift apart
+- The `<interface>` hover doc no longer suggests the direct-take form;
+  it documents the four accepted spellings and that other spellings are
+  silently skipped by the engine
+
 ## [0.1.5] - 2026-10-10
 
 ### Added

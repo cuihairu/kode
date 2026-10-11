@@ -4150,3 +4150,66 @@ Code electron 用例加四种布局断言,每种断言「有落点」而非「�
 passing。版本 0.1.4→0.1.5,CHANGELOG 增 [0.1.5],COMPLETED_FEATURES 功能
 18 检查项 ⑨ 与如实边界、README 性能分析节、KBENGINE_SOURCE_AUDIT_PLAN
 遗留②收口(五步输出)同步。
+
+## 批117:Interfaces 装载语义对齐(直取形态撤回)
+
+用户令:续推——audit plan 块16 遗留登记首项(parseInterfaceRefs 直取形态
+deviation)落地。审计计划 L321 原登记「parseInterfaceRefs 取 <Interfaces>
+任意子元素名,与引擎 loadInterfaces 只认四拼写 wrapper 不符」,本批收口。
+
+引擎语义(核对 kbengine 仓源码,只读):
+- 装载路径:entitydef.cpp L551-640 loadInterfaces——XML_FOR_BEGIN 遍历
+  <Interfaces> 子元素,L559-561 要求 getKey(wrapper) 精确等于
+  interface/Interface/type/Type(大小写敏感),否则 continue——直取形态
+  <MoveIface/> 与任何非四拼写标签引擎静默跳过,不产生混入。
+- 取名:接口名 = enterNode(wrapper, Interface/interface/Type/type)的首个
+  非注释子节点;XML::getKey(xml.cpp L113-117)= kbe_trim(node->Value()),
+  元素取标签名、文本节点取文本——故 <interface>MoveIface</interface>
+  取文本 'MoveIface',嵌套元素形态 <interface><Monster/></Interface>
+  取 'Monster'(引擎怪癖:会去 interfaces/ 装载 Monster.def)。
+
+实现:
+- src/definitionSemantics.ts:parseInterfaceRefs 重写——只收 INTERFACE_
+  WRAPPER_NAMES 四拼写的子元素(非四拼写 continue),取名委托
+  getReferenceTargetName;Parent 取名同步改调 getReferenceTargetName。
+- src/defRenamer.ts:getReferenceTargetName 由模块私有提升为导出,
+  新增导出 INTERFACE_WRAPPER_NAMES 集合(parseDefFileSemantics 共用)。
+- src/languageProviders.ts:<interface> hover 文档改为四拼写口径,直取形态
+  标注「引擎静默跳过」。
+
+确认的三处错误(修复前):
+- 直取形态误报:<MoveIface/> 被当作混入接口展示,引擎根本不装载;
+- 大小写宽容:非四拼写(如 <INTERFACE>)被接受,引擎精确比对会跳过;
+- Parent 取名曾有两份实现(defRenamer 与 definitionSemantics 各一),
+  现收敛为 getReferenceTargetName 单一来源。
+
+测试文件变化:
+- 13 个夹具单行转换(保留行号,断言行号不受影响):definitionSemantics.
+  test.ts(HERO_DEF <MoveIface/>→<interface>MoveIface</interface>)、
+  definitionSemanticsBranches.test.ts、definitionSemanticsGaps.test.ts、
+  entityMappingFallback/entityMappingManager、explorerProviders(2 处)/
+  explorerProvidersGaps/explorerTreeDeep——全部直取形态改为四拼写
+  wrapper。故意不转:batch111ReferenceNavigationWalkthrough(游标主体)、
+  languageProviders.test.ts、realReproCellMethods(本就是 wrapper)、
+  defRenamer 负例锁(直取形态本就该拒绝,保留)。
+- tests/definitionSemanticsGaps.test.ts 新锁 4 例:直取形态+非四拼写一并
+  丢弃(对照 wrapper 正例)、组件槽无 Type/空 Type 丢弃、嵌套
+  <Type><GunComp/></Type> 取子元素名(覆盖 getNodeValue 真臂)。
+- tests/navigationLayoutMatrix.test.ts U1b:反推走到文件系统根未命中→
+  null。坑见下。
+
+覆盖率实证(两个坑):
+- 批116 宣称的 100% 分支并不确定:git-stash 基线跑发现两个新臂在已
+  提交状态就是 [0,x](getNodeValue 真臂、反推根臂),非本批引入;改为
+  确定性锁测试,最终跑 "No files with missing coverage" 100%×4
+  (6431 stmts/3755 branches/1101 funcs/6273 lines)。
+- U1b 环境坑:os.tmpdir() 在本机为 /home/cui/.hermes/cache/scratch
+  (TMPDIR 覆盖,4 层深),mkdtemp 路径 6 层反推走不到文件系统根;且沙箱
+  无法在 / 下 mkdir(EACCES)。反推只 stat 祖先不写盘,故用文件系统根下
+  两级不存在路径(path.parse(root).root + 不存在的 X.def),循环内
+  parent === dir 判根返回根臂。
+
+覆盖率与门禁:1340/1340 绿(批116 后 +3),coverage 100%×4(6431/3755/
+1101/6273),eslint/tsc 干净,mocha 冒烟 11 passing。版本 0.1.5→0.1.6,
+CHANGELOG 增 [0.1.6],COMPLETED_FEATURES 功能 7 补一句引擎装载口径,
+KBENGINE_SOURCE_AUDIT_PLAN 块16 遗留首项收口(五步输出)同步。

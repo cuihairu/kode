@@ -65,7 +65,7 @@ beforeAll(() => {
   write('scripts/entity_defs/Hero.def', [
     '<root>',
     '  <Interfaces>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <Components>',
     '    <pack>',

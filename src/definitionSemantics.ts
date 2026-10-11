@@ -19,6 +19,7 @@ import {
   findEntityDefinitionFile,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
+import { getReferenceTargetName, INTERFACE_WRAPPER_NAMES } from './defRenamer';
 
 export type DefinitionSemanticCategory = Exclude<DefinitionCategory, 'type'>;
 export type DefinitionMemberSourceKind = 'local' | 'interface' | 'parent' | 'component';
@@ -458,7 +459,9 @@ export function parseLocalDefinition(
   }
 
   const parentNode = getDirectChildElement(root, 'Parent');
-  const parentName = getNodeValue(parentNode);
+  // Parent 取名同引擎 enterNode/getKey(文本取文本、元素取标签名),与
+  // defRenamer 的 parseDefFileSemantics 共用同一实现,不再各写一份
+  const parentName = parentNode ? getReferenceTargetName(parentNode) : '';
   const interfaceRefs = parseInterfaceRefs(document, getDirectChildElement(root, 'Interfaces'));
   const componentRefs = parseComponentRefs(document, getDirectChildElement(root, 'Components'), owner);
   const properties = parseProperties(document, getDirectChildElement(root, 'Properties'), owner);
@@ -492,10 +495,14 @@ function parseInterfaceRefs(
 
   const interfaces: DefinitionInterfaceRef[] = [];
   for (const child of getDirectChildElements(interfacesNode)) {
-    const tag = child.name.trim().toLowerCase();
-    const name = tag === 'interface' || tag === 'type'
-      ? getNodeValue(child)
-      : child.name.trim();
+    // 引擎 loadInterfaces(entitydef.cpp L559-561)只装载 wrapper 标签为
+    // interface/Interface/type/Type 四拼写的子元素(大小写敏感精确比对),
+    // 其余 continue——直取形态(<MoveIface/>)引擎静默跳过,不产生混入;
+    // 取名语义与 <Parent> 同:首个非注释子节点,文本取文本、元素取标签名
+    if (!INTERFACE_WRAPPER_NAMES.has(child.name)) {
+      continue;
+    }
+    const name = getReferenceTargetName(child);
     if (!name) {
       continue;
     }

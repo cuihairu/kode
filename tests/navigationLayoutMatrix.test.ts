@@ -502,6 +502,14 @@ describe('根修令导出助手单元:反推边界', () => {
     expect(findEntityDefsDirForDefFile(deepDef)).toBeNull();
   });
 
+  it('U1b 反推走到文件系统根未命中 → null(浅层路径锁根臂)', () => {
+    // 反推只 stat 祖先目录、不读文件:用文件系统根下两级的不存在路径
+    // (与 TMPDIR 深浅无关),循环内 parent === dir 判根返回 null
+    const fsRoot = path.parse(root).root;
+    const shallowDef = path.join(fsRoot, 'kode-nav-rootarm', 'X.def');
+    expect(findEntityDefsDirForDefFile(shallowDef)).toBeNull();
+  });
+
   it('U2 反推未命中且无 workspace → findEntityScriptFile null', () => {
     const saved = stubWorkspace.workspaceFolders;
     stubWorkspace.workspaceFolders = [];

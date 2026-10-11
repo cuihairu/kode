@@ -12,7 +12,7 @@ import {
 const HERO_DEF = [
   '<root>',                                     // 1
   '  <Interfaces>',                             // 2
-  '    <MoveIface/>',                           // 3
+  '    <interface>MoveIface</interface>',                           // 3
   '  </Interfaces>',                            // 4
   '  <Components>',                             // 5
   '    <healthPack>',                           // 6
@@ -407,8 +407,8 @@ describe('definition semantics corner cases and clone propagation', () => {
     const loader = createDefinitionSemanticsLoader(root2)!;
     const hero2 = loader.loadLocal('Hero2', 'entity')!;
 
-    // 节点值形式 <Interface>Name</Interface> 与自闭合 <MoveIface/> 等价,
-    // <Type>Name</Type> 同样被接受
+    // 节点值形式 <Interface>Name</Interface> 与 <Type>Name</Type> 四拼写
+    // wrapper 均被接受(引擎 L559-561);直取形态(<X/>)引擎静默跳过
     expect(hero2.interfaces.map(ref => ref.name)).toEqual([
       'MoveIface2',
       'GhostIface',

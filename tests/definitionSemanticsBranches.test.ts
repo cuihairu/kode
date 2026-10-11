@@ -51,7 +51,7 @@ beforeAll(() => {
   ].join('\n'));
   write(root, 'scripts/entity_defs/IfaceDup.def', [
     '<root>',
-    '  <Interfaces><IMix/></Interfaces>',
+    '  <Interfaces><interface>IMix</interface></Interfaces>',
     '  <BaseMethods><shared/></BaseMethods>',
     '</root>'
   ].join('\n'));

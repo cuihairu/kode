@@ -44,7 +44,7 @@ beforeAll(async () => {
   write(root, 'scripts/entity_defs/Hero.def', [
     '<root>',
     '  <Interfaces>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <BaseMethods>',
     '    <onSave/>',

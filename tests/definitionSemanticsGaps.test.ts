@@ -50,8 +50,8 @@ beforeAll(() => {
   write(root, 'scripts/entity_defs/DupSlot.def', [
     '<root>',
     '  <Interfaces>',
-    '    <IA/>',
-    '    <IB/>',
+    '    <interface>IA</interface>',
+    '    <interface>IB</interface>',
     '  </Interfaces>',
     '</root>'
   ].join('\n'));
@@ -85,7 +85,7 @@ describe('parseLocalDefinition parsing gaps', () => {
     '  <Interfaces>',
     '    <Interface/>',
     '    <Interface><Monster/></Interface>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <Properties>',
     '    <mood>',
@@ -109,8 +109,83 @@ describe('parseLocalDefinition parsing gaps', () => {
 
   it('skips nameless interface refs and derives names from child elements', () => {
     // <Interface/> 无名跳过;<Interface><Monster/></Interface> 取首子元素名;
-    // <MoveIface/> 直接取标签名
+    // 直取形态引擎静默跳过(entitydef.cpp L559-561),故只认四拼写 wrapper
     expect(semantics.interfaces.map(ref => ref.name)).toEqual(['Monster', 'MoveIface']);
+  });
+
+  it('drops direct-name interface children the engine skips, exact wrapper spelling', () => {
+    // 引擎 loadInterfaces(entitydef.cpp L559-561)只认 interface/Interface/
+    // type/Type 四拼写 wrapper(大小写敏感精确比对),其余子元素 continue:
+    // 直取形态 <X/> 与非四拼写的 <INTERFACE/> 引擎静默跳过,不产生混入
+    const direct = parseLocalDefinition(
+      [
+        '<root>',
+        '  <Interfaces>',
+        '    <MoveIface/>',
+        '    <INTERFACE>Mixed</INTERFACE>',
+        '  </Interfaces>',
+        '</root>'
+      ].join('\n'),
+      'entity',
+      'DirectForms',
+      '/tmp/DirectForms.def'
+    );
+    expect(direct.interfaces).toEqual([]);
+
+    const wrapped = parseLocalDefinition(
+      [
+        '<root>',
+        '  <Interfaces>',
+        '    <interface>MoveIface</interface>',
+        '  </Interfaces>',
+        '</root>'
+      ].join('\n'),
+      'entity',
+      'WrappedForm',
+      '/tmp/WrappedForm.def'
+    );
+    expect(wrapped.interfaces).toEqual([{ name: 'MoveIface', line: 3 }]);
+  });
+
+  it('drops component slots with no Type tag and with an empty Type element', () => {
+    // <slot/> 无 Type 节点、<typed><Type/> 空 Type 元素:本地解析阶段即丢弃,
+    // 引擎 loadComponents 亦取不到类型,不产生槽位
+    const noType = parseLocalDefinition(
+      [
+        '<root>',
+        '  <Components>',
+        '    <slot/>',
+        '    <typed>',
+        '      <Type/>',
+        '    </typed>',
+        '  </Components>',
+        '</root>'
+      ].join('\n'),
+      'entity',
+      'NoTypeSlots',
+      '/tmp/NoTypeSlots.def'
+    );
+    expect(noType.components).toEqual([]);
+
+    // 嵌套元素写法 <Type><GunComp/></Type> 无直接文本,回落取首子元素标签名
+    // (容忍超集:与 <Parent><Hero/></Parent> 取名口径一致)
+    const nested = parseLocalDefinition(
+      [
+        '<root>',
+        '  <Components>',
+        '    <gun>',
+        '      <Type>',
+        '        <GunComp/>',
+        '      </Type>',
+        '    </gun>',
+        '  </Components>',
+        '</root>'
+      ].join('\n'),
+      'entity',
+      'NestedTypeSlots',
+      '/tmp/NestedTypeSlots.def'
+    );
+    expect(nested.components.map(slot => slot.typeName)).toEqual(['GunComp']);
   });
 
   it('returns undefined persistent for unknown boolean spellings', () => {

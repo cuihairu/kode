@@ -694,7 +694,7 @@ Object.assign(TAG_HOVER_DOCS, {
   },
   Interface: {
     detail: '接口引用标签',
-    documentation: '在 `<Interfaces>` 下使用，内部通常写成 `<SomeInterface/>`，KBEngine 会到 `entity_defs/interfaces/SomeInterface.def` 加载定义。'
+    documentation: '在 `<Interfaces>` 下使用，写成 `<interface>SomeInterface</interface>`（或 Interface/type/Type 拼写，引擎按四拼写精确比对装载），KBEngine 会到 `entity_defs/interfaces/SomeInterface.def` 加载定义；直接以接口名作标签（如 `<SomeInterface/>`）引擎会静默跳过。'
   },
   Volatile: {
     detail: '易变同步区块',

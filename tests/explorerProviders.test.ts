@@ -37,7 +37,7 @@ beforeAll(() => {
   write('scripts/entity_defs/Hero.def', [
     '<root>',
     '  <Interfaces>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <Components>',
     '    <healthPack>',
@@ -170,7 +170,7 @@ describe('parseDefinitionStructure', () => {
     '<root>',
     '  <Parent>Monster</Parent>',
     '  <Interfaces>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <Components>',
     '    <healthPack>',

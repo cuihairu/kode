@@ -334,7 +334,7 @@ function listDefFilesRecursive(defsRoot: string): DefFileEntry[] {
  * 大小写敏感);以接口名直接命名的子元素(如 `<MoveIface/>`)引擎不装载,
  * 这里同样不跟随。
  */
-const INTERFACE_WRAPPER_NAMES = new Set(['interface', 'Interface', 'type', 'Type']);
+export const INTERFACE_WRAPPER_NAMES = new Set(['interface', 'Interface', 'type', 'Type']);
 
 /**
  * 引擎的取名语义(entitydef.cpp 对 `<Parent>`/接口 wrapper 的取值:
@@ -348,7 +348,7 @@ const INTERFACE_WRAPPER_NAMES = new Set(['interface', 'Interface', 'type', 'Type
  * `<Hero/>` 照常装载。本扩展的 def 解析器会保留空白文本节点,这里按引擎
  * 口径跳过纯空白文本;混合内容仍只认首个非空白子节点(文本优先)。
  */
-function getReferenceTargetName(node: DefElementNode): string {
+export function getReferenceTargetName(node: DefElementNode): string {
   for (const child of node.children) {
     if (child.kind === 'text') {
       const text = child.text.trim();

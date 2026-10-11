@@ -64,7 +64,7 @@ beforeAll(async () => {
     '    </hp>',
     '  </Properties>',
     '  <Interfaces>',
-    '    <MoveIface/>',
+    '    <interface>MoveIface</interface>',
     '  </Interfaces>',
     '  <Components>',
     '    <healthPack>',

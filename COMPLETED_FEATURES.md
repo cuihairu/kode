@@ -52,6 +52,7 @@
 - 侧边栏显示所有实体
 - 实体类型标识（Cell/Base/Client）
 - 快速导航到 .def 文件
+- 混入接口面按引擎装载口径解析（`<Interfaces>` 只认 `interface`/`Interface`/`type`/`Type` 四拼写 wrapper，直取形态引擎静默跳过、浏览器不展示；批117 与 defRenamer 收敛为同一实现）
 - **源代码**: `src/explorerProviders.ts` (EntityExplorerProvider)
 
 ### 8. 钩子系统
