@@ -98,6 +98,7 @@
   - 以 `entitydef.cpp` 的属性与方法装载逻辑为准，`<Flags>` 改为按单个映射值校验，不再做自由组合与“冲突”判断。
   - 删除了“非法子标签”“重复 `<Type>/<Flags>`”这类源码未明确拒绝的编辑器臆测诊断。
   - 保留并强化了源码会直接导致装载失败的检查：未知类型、未知 `Flags`、未知 `DetailLevel`、缺少 `Type`、缺少 `Flags`、重复属性定义。
+- 复核（2026-10-11，续做单第 4 项）：本条核对时记录的 6 项检查已随后续批次演进为 9 项（`src/defAnalyzer.ts:41-50`：phantom-type、missing-type、duplicate-type-tag、heavy-sync-broadcast、redundant-detail-level、invalid-identifier、method-property-collision、engine-limited-name（批 99）、inherited-name-collision（批 116））。上文本为核对当时快照，未回填，属计划文本滞后，非功能偏差。
 
 ### 5. `.def` 跳转定义
 
@@ -166,6 +167,7 @@
   - 依赖分析改为优先读取 `entities.xml` 的 `hasBase/hasCell/hasClient`，并按源码 `Parent -> <EntityName/>` 结构解析继承，不再读取不存在的 `parent="..."` 属性或 `Implements` 语法。
   - 属性依赖只分析 `Properties` 与容器里的实体引用，删除了 `MAILBOX` 猜测逻辑和 `CellProperties/ClientProperties` 伪区块解析。
   - 依赖图继续保留继承、`ENTITYCALL`/容器引用这类可解释关系，不再把编辑器层启发式结果当成官方事实。
+- 偏差登记（2026-10-11，续做单第 4 项复核发现）：`entityDependency.ts:164` 的继承边正则只认 `<Parent><X/></Parent>` 元素形态；文本形态 `<Parent>X</Parent>` 引擎 `loadParentClass()/getKey` 同样装载（块 16 批 96 已定性两种形态等价），故纯文本形态 def 的继承边在依赖图中丢失。按续做单铁律（核对类不许改功能代码）此处仅登记，待后续批次收口。
 
 ### 9. 代码生成器
 
@@ -237,6 +239,10 @@
 - 核对结果：
   - 现有 logger watcher 注册协议号与回包处理缺少源码依据，已下调为明确“不支持当前未完成适配”的状态。
   - 日志界面保留过滤、导出与状态呈现，但不再假装已经完成官方 logger 协议对接。
+- 复核（2026-10-11，续做单第 3 项，二选一定案：b 不支持/未完成适配）：
+  - 引擎侧协议面为 `registerLogWatcher` / `deregisterLogWatcher` / `writeLog` 三个流消息，见引擎仓只读核对 `kbe/src/server/tools/logger/logger_interface.h:57-63`，消息号走生成消息表分配，源码中无固定常量可引。
+  - 插件侧未实现注册或回包处理：`logCollector.ts:55-64` 的 `connect()` 直接抛出“未完成 KBEngine logger watcher 协议适配”异常，从不建立 socket；仅有的 701/703 魔数位于不可达的 `sendHeartbeat`/`sendDeregister` 助手（`logCollector.ts:164-184`），且无引擎出处可引。
+  - 结论维持降级：日志界面仅为界面与过滤/导出能力，logger 实时收集为「不支持/未完成适配」；`docs/guide/logging.md` 与 `README.zh.md` 已是如实口径，无需再改。
 
 ### 13. 监控面板
 
