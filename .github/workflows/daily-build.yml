@@ -1,9 +1,7 @@
 name: Daily Build (nightly)
 
 on:
-  schedule:
-    # 离峰非整点：每天 03:17 UTC（北京时间 11:17），避开 GitHub Actions 高峰
-    - cron: '17 3 * * *'
+# 2026-10-11 版本发布红线（用户令）：版本只能用户手动触发，schedule 自动发版已移除。
   workflow_dispatch: # 手动触发必建
 
 permissions:
