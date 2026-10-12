@@ -306,7 +306,9 @@ export class EntityMappingManager {
   ): string[] {
     const candidates: string[] = [];
     const sectionFolder = this.getSectionFolder(section);
-    const assetPrefix = ['scripts', 'assets/scripts'];
+    // 与 getDefinitionWorkspaceLayout 的布局候选同口径:官方 newassets
+    // (server_assets/scripts)也在内,否则该布局的脚本进不了索引候选。
+    const assetPrefix = ['scripts', 'assets/scripts', 'server_assets/scripts'];
     const ownerName = owner.name;
 
     if (owner.kind === 'entity') {
@@ -345,6 +347,11 @@ export class EntityMappingManager {
       for (const prefix of assetPrefix) {
         for (const folder of interfaceFolders) {
           candidates.push(joinWorkspacePath(workspaceRoot, prefix, folder, `${ownerName}.py`));
+          // 用户工程实测命名变体(2026-10-12):scripts/base/interfaces/
+          // Interface_Activity.py,def 里接口名是 Activity。
+          candidates.push(
+            joinWorkspacePath(workspaceRoot, prefix, folder, `Interface_${ownerName}.py`)
+          );
         }
       }
       return candidates;

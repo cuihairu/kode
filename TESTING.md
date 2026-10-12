@@ -4213,3 +4213,68 @@ deviation)落地。审计计划 L321 原登记「parseInterfaceRefs 取 <Interfa
 1101/6273),eslint/tsc 干净,mocha 冒烟 11 passing。版本 0.1.5→0.1.6,
 CHANGELOG 增 [0.1.6],COMPLETED_FEATURES 功能 7 补一句引擎装载口径,
 KBENGINE_SOURCE_AUDIT_PLAN 块16 遗留首项收口(五步输出)同步。
+
+## 批118:导航布局补齐——bots//单数 interface//平铺 + 角色目录嵌套
+interfaces//components/(三笔,2026-10-12)
+
+用户令:实测最新 nightly「F12 只弹提示不跳」「路径对、文件名对但落不到
+代码行」。复核 c1d8ba4/3b45b67/8707b35 前后差异:三笔均无回归——是形态
+缺口不是提交回归。根因(对引擎模板与自家生成器双向实证):kbe/res/
+sdk_templates/server/python_assets/scripts/ 下只有 base/cell/bots/
+interface(无 client/),接口在单数 interface/;本扩展代码生成器
+pythonOutputPath 默认 'scripts' 把实体脚本平铺在 scripts/<实体>.py。
+三种形态候选链都没认,所以只弹「期望位置」提示(提示里给的路径本身
+就是错的形态)。定位起点 src/definitionWorkspace.ts。
+
+修复(eab5cf2 + 353b837,6 文件 +281/−29):
+- scriptFoldersForRole:client→['client','bots'] 两级,其余角色单目录;
+  INTERFACE_SCRIPT_FOLDERS=['interfaces','interface'] 复数在前保持既有
+  行为;findEntityScriptFile/findInterfaceScriptFile 两臂(先 def 相对再
+  工作区布局)都加角色目录与平铺形态。
+- entityMapping.getPythonCandidates 实体/接口两 kind 同口径补候选。
+- describeExpectedScriptPaths 提示文案补 bots/ 与平铺路径;ClientMethods
+  悬停文案提 bots/(BotsApp Python 客户端框架)。
+- 回归:tests/navigationRegression.test.ts +9 用例(官方模板 base/cell/
+  bots + 单数 interface/、生成器平铺、跨根平铺、ClientMethods 全空提示);
+  realReproCellMethods 夹具清理列补 bots/ 与平铺形态。
+
+修复(本笔,角色目录嵌套 + 组件脚本):
+- 用户实测:接口脚本在 server_assets/scripts/base/interfaces/
+  Interface_Activity.py,组件脚本在 base//cell/ components/ 下,约定链
+  完全找不到。根因:findInterfaceScriptFile 只查 scripts 根级
+  interfaces/、interface/,没有角色目录嵌套形态,也没有 Interface_<名>.py
+  命名变体;findComponentScriptFile 此前不存在——组件脚本不进方法实现
+  候选链(管理器路径有,定义 provider 约定链没有)。
+- findInterfaceScriptFile 加可选 role 形参(未给=属性链不区分角色;给了
+  =按段角色配对,BaseApp 跳 base、CellApp 跳 cell):角色嵌套目录优先、
+  scripts 根级兜底;文件名两形态 <接口名>.py 与 Interface_<接口名>.py。
+  新增 findComponentScriptFile:scripts/<role>/components/<名>.py,同 def
+  相对优先、工作区布局回落。
+- parseDefFileSemantics 增 componentTypeNames:组件槽 <Components> 每个槽
+  取 <Type> 值作脚本候选名(无 <Type>/空 Type 不产生候选)。
+- collectMethodCandidateScripts 按段角色把接口与组件脚本并入候选链
+  (近似 MRO:本实体角色脚本→接口→组件→父链逐级上溯)。
+- entityMapping.getPythonCandidates 接口 kind 增 Interface_<名>.py 变体;
+  assetPrefix 增 server_assets/scripts(与 getDefinitionWorkspaceLayout
+  布局候选同口径)。
+
+回归锁定:tests/navigationRegression.test.ts 新增「角色目录下嵌套的
+interfaces/ 与 components/(用户实测布局)」describe 13 用例——BaseMethods
+接口方法落 base/interfaces/Interface_Activity.py:1、CellMethods 落
+cell/interfaces/Interface_Health.py:1、角色嵌套优先于根级同名接口脚本
+(根级同名文件同带 def startActivity 仍不命中)、角色嵌套整体缺失回落
+scripts 根级、BaseMethods 组件落 base/components/HealthComp.py:1、
+CellMethods 落 cell/components/Motion.py:1、跨根组件脚本走工作区布局臂、
+def 不在 defs 目录跳过 def 相对臂走布局臂、属性链无角色口径、字符串
+target 语义、组件槽 <Type> 解析(含畸形槽)。
+
+两个坑:①直接调用传字符串 def 路径会被当工作区根(既有契约:字符串
+target 是显式单一根),要传文档对象才走 def 相对优先。②
+findInterfaceScriptFile 每个接口名只返回第一个命中——角色嵌套存在时根级
+同名文件被遮蔽是设计优先级(用户令「base 的 def 跳 base」),不是 bug;
+回落场景要用角色嵌套整体缺失的接口名验证。
+
+覆盖率与门禁:1373/1373 绿,coverage 100%×4(6515 stmts/3797 branches/
+1108 funcs/6356 lines),tsc 干净,mocha 冒烟 11 passing。版本冻结 0.1.0
+(用户 2026-10-12 令:批间不许 bump 版本号,版本号由用户给,首个 0.1.0
+要等基本功能稳定),CHANGELOG 增 [0.1.0]。

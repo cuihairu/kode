@@ -35,6 +35,7 @@ import {
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
   findEntityDefsDirForDefFile,
+  findComponentScriptFile,
   findEntityDefinitionFile,
   findEntitiesXmlFile,
   findEntityScriptFile,
@@ -2211,12 +2212,18 @@ function collectMethodCandidateScripts(
     if (isInterfaceDef) {
       // 接口 def 的实现脚本在 scripts/interfaces/<接口名>.py(引擎 loadInterfaces
       // 的装载口径),不在 scripts/<role>/;接口 def 不跟随 Parent。
-      pushScript(findInterfaceScriptFile(defName, document));
+      pushScript(findInterfaceScriptFile(defName, document, role));
     }
     pushScript(findEntityScriptFile(defName, role, document));
     if (semantics) {
+      // 接口与组件脚本均按段角色配对解析(2026-10-12 用户令:BaseApp
+      // 的 def 跳 base、CellApp 跳 cell):接口查 scripts/<role>/interfaces/
+      // 及 Interface_<名>.py 变体,组件查 scripts/<role>/components/。
       for (const interfaceName of semantics.interfaceNames) {
-        pushScript(findInterfaceScriptFile(interfaceName, document));
+        pushScript(findInterfaceScriptFile(interfaceName, document, role));
+      }
+      for (const componentType of semantics.componentTypeNames) {
+        pushScript(findComponentScriptFile(componentType, role, document));
       }
     }
 

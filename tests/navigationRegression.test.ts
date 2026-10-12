@@ -3,7 +3,12 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineDefinitionProvider } from '../src/languageProviders';
-import { findEntityScriptFile, findInterfaceScriptFile } from '../src/definitionWorkspace';
+import { parseDefFileSemantics } from '../src/defRenamer';
+import {
+  findComponentScriptFile,
+  findEntityScriptFile,
+  findInterfaceScriptFile
+} from '../src/definitionWorkspace';
 import { EntityMappingManager } from '../src/entityMapping';
 import { messages } from './fake-vscode/windowState';
 import {
@@ -19,7 +24,9 @@ import type { MinimalTextDocument } from './helpers/vscodeStub';
 // <实体>.py 的 class/def 行;脚本不在文档所属根时跨工作区根自动寻找;Parent
 // 链按 def 相对 defs 目录上溯;约定链全空时弹「期望位置」提示并落注册声明,
 // 管理器路径每一臂留导航日志。跨提交行为矩阵(8707b35/3b45b67/c1d8ba4)已证
-// 单风格布局无回归,本文件锁定的是上述缺口形态。
+// 单风格布局无回归,本文件锁定的是上述缺口形态。尾部另锁角色目录下嵌套的
+// scripts/<角色>/interfaces/ 与 scripts/<角色>/components/(含 Interface_<名>.py
+// 命名变体)及段角色配对:BaseApp 的 def 跳 base、CellApp 跳 cell。
 
 interface LocationLike {
   uri: { fsPath: string };
@@ -565,5 +572,277 @@ describe('引擎官方模板形态(base/cell/bots + interface 单数)与生成�
       expect(messages.info.some(entry => entry.includes('onGone') && entry.includes('bots/Hero.py'))).toBe(true);
       expect(messages.info.some(entry => entry.includes('scripts/Hero.py'))).toBe(true);
     });
+  });
+});
+
+describe('角色目录下嵌套的 interfaces/ 与 components/(用户实测布局)', () => {
+  // 用户 2026-10-12 实测:server_assets/scripts/ 下接口脚本嵌在角色目录里
+  // (base/interfaces/Interface_Activity.py),组件脚本在角色目录下 components/;
+  // 且要求角色配对——BaseApp 的 def 跳 base、CellApp 的 def 跳 cell。此前
+  // findInterfaceScriptFile 只查 scripts 根级 interfaces/、interface/,约定
+  // 链也不查组件脚本,这两种形态都找不到。
+  const provider = new KBEngineDefinitionProvider();
+  const ifaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav-reg-iface-'));
+  // 根 B:def 在自有 scripts 根下,组件脚本在另一工作区根(覆盖工作区布局臂)
+  const ifaceRootB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav-reg-iface-b-'));
+  const scripts = (relative: string) => p(ifaceRoot, 'server_assets', 'scripts', ...relative.split('/'));
+  const w = (relative: string, content: string): void => {
+    fs.mkdirSync(path.dirname(scripts(relative)), { recursive: true });
+    fs.writeFileSync(scripts(relative), content, 'utf8');
+  };
+
+  const gameDef = () => scripts('entity_defs/Game.def');
+  // 直接调用口径:文档对象 target(字符串 target 的语义是工作区根,不是 def 路径)
+  const gameDoc = () =>
+    makeTextDocument(fs.readFileSync(gameDef(), 'utf8'), {
+      fileName: gameDef(),
+      languageId: 'kbengine-def'
+    });
+  const GAME_DEF = [
+    '<root>',
+    '\t<Properties>',
+    '\t\t<gold>',
+    '\t\t\t<Type>UINT32</Type>',
+    '\t\t</gold>',
+    '\t</Properties>',
+    '\t<Components>',
+    '\t\t<HP>',
+    '\t\t\t<Type>HealthComp</Type>',
+    '\t\t</HP>',
+    '\t\t<Move>',
+    '\t\t\t<Type>Motion</Type>',
+    '\t\t</Move>',
+    '\t</Components>',
+    '\t<Interfaces>',
+    '\t\t<interface>Activity</interface>',
+    '\t\t<interface>Health</interface>',
+    '\t\t<interface>Quest</interface>',
+    '\t</Interfaces>',
+    '\t<BaseMethods>',
+    '\t\t<onCreate>',
+    '\t\t</onCreate>',
+    '\t\t<startActivity>',
+    '\t\t</startActivity>',
+    '\t\t<apply>',
+    '\t\t</apply>',
+    '\t\t<quest>',
+    '\t\t</quest>',
+    '\t</BaseMethods>',
+    '\t<CellMethods>',
+    '\t\t<onStep>',
+    '\t\t</onStep>',
+    '\t\t<heal>',
+    '\t\t</heal>',
+    '\t\t<move>',
+    '\t\t</move>',
+    '\t</CellMethods>',
+    '</root>'
+  ].join('\n');
+  const BASE_GAME_PY = ['class Game:', '\tdef onCreate(self):', '\t\tpass', ''].join('\n');
+  const CELL_GAME_PY = ['class Game:', '\tdef onStep(self):', '\t\tpass', ''].join('\n');
+  const IFACE_ACTIVITY_PY = ['class Activity:', '\tdef startActivity(self):', '\t\tpass', ''].join('\n');
+  const IFACE_HEALTH_PY = ['class Health:', '\tdef heal(self):', '\t\tpass', ''].join('\n');
+  const COMP_HEALTH_PY = ['class HealthComp:', '\tdef apply(self):', '\t\tpass', ''].join('\n');
+  const COMP_MOTION_PY = ['class Motion:', '\tdef move(self):', '\t\tpass', ''].join('\n');
+  // 根级同名接口脚本:同带 def startActivity,用于证明角色嵌套目录优先于
+  // scripts 根级(命中若落到这里说明优先级反了)
+  const ROOT_IFACE_ACTIVITY_PY = ['class Activity:', '\tdef startActivity(self):', '\t\tpass', ''].join('\n');
+  // 无角色嵌套副本的接口:只能落 scripts 根级
+  const ROOT_IFACE_QUEST_PY = ['class Quest:', '\tdef quest(self):', '\t\tpass', ''].join('\n');
+  const ENTITIES_XML_IFACE = [
+    '<root>',
+    '\t<Game hasBase="true" hasCell="true"/>',
+    '</root>',
+    ''
+  ].join('\n');
+  // 根 B 的 def:组件脚本在另一工作区根,验证工作区布局臂
+  const SPLITTER_DEF = [
+    '<root>',
+    '\t<Components>',
+    '\t\t<HP>',
+    '\t\t\t<Type>HealthComp</Type>',
+    '\t\t</HP>',
+    '\t</Components>',
+    '\t<BaseMethods>',
+    '\t\t<apply>',
+    '\t\t</apply>',
+    '\t</BaseMethods>',
+    '</root>'
+  ].join('\n');
+
+  beforeAll(() => {
+    w('entities.xml', ENTITIES_XML_IFACE);
+    w('entity_defs/Game.def', GAME_DEF);
+    w('base/Game.py', BASE_GAME_PY);
+    w('cell/Game.py', CELL_GAME_PY);
+    w('base/interfaces/Interface_Activity.py', IFACE_ACTIVITY_PY);
+    w('cell/interfaces/Interface_Health.py', IFACE_HEALTH_PY);
+    w('base/components/HealthComp.py', COMP_HEALTH_PY);
+    w('cell/components/Motion.py', COMP_MOTION_PY);
+    w('interfaces/Activity.py', ROOT_IFACE_ACTIVITY_PY);
+    w('interfaces/Quest.py', ROOT_IFACE_QUEST_PY);
+    // 根 B 只有 def,没有脚本(def 相对臂不命中)
+    fs.mkdirSync(p(ifaceRootB, 'entity_defs'), { recursive: true });
+    fs.writeFileSync(
+      p(ifaceRootB, 'entity_defs', 'Splitter.def'),
+      SPLITTER_DEF,
+      'utf8'
+    );
+    // 根 B 的散落 def(不在 entity_defs 下):def 相对臂整体跳过,
+    // 由工作区布局臂命中另一根的组件脚本
+    fs.mkdirSync(p(ifaceRootB, 'loose'), { recursive: true });
+    fs.writeFileSync(p(ifaceRootB, 'loose', 'SoloComp.def'), SPLITTER_DEF, 'utf8');
+  });
+
+  afterAll(() => {
+    fs.rmSync(ifaceRoot, { recursive: true, force: true });
+    fs.rmSync(ifaceRootB, { recursive: true, force: true });
+  });
+
+  const withFolders = async (run: () => Promise<void>): Promise<void> => {
+    const folders = stubWorkspace.workspaceFolders;
+    stubWorkspace.workspaceFolders = [
+      ...folders,
+      { uri: Uri.file(ifaceRoot), name: 'iface', index: folders.length },
+      { uri: Uri.file(ifaceRootB), name: 'iface-b', index: folders.length + 1 }
+    ];
+    try {
+      await run();
+    } finally {
+      stubWorkspace.workspaceFolders = folders;
+    }
+  };
+
+  it('BaseMethods 接口方法落到 base/interfaces/Interface_Activity.py 的 def 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<startActivity>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'base', 'interfaces', 'Interface_Activity.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('CellMethods 接口方法落到 cell/interfaces/(角色配对:CellApp 跳 cell)', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<heal>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'cell', 'interfaces', 'Interface_Health.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('角色嵌套目录优先于 scripts 根级同名接口脚本', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<startActivity>', provider);
+      expect(location?.uri.fsPath).not.toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'interfaces', 'Activity.py')
+      );
+    });
+  });
+
+  it('角色嵌套整体缺失 → 回落 scripts 根级接口脚本', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<quest>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'interfaces', 'Quest.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('BaseMethods 组件方法落到 base/components/ 的 def 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<apply>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'base', 'components', 'HealthComp.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('CellMethods 组件方法落到 cell/components/(角色配对)', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<move>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'cell', 'components', 'Motion.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('跨根:组件脚本在另一工作区根时走工作区布局臂命中', async () => {
+    await withFolders(async () => {
+      const location = await probe(p(ifaceRootB, 'entity_defs', 'Splitter.def'), '<apply>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'base', 'components', 'HealthComp.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('def 不在 defs 目录时跳过 def 相对臂,由工作区布局臂命中', async () => {
+    await withFolders(async () => {
+      const location = await probe(p(ifaceRootB, 'loose', 'SoloComp.def'), '<apply>', provider);
+      expect(location?.uri.fsPath).toBe(
+        p(ifaceRoot, 'server_assets', 'scripts', 'base', 'components', 'HealthComp.py')
+      );
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('属性链不区分角色:实体脚本优先,接口脚本按无角色口径解析', async () => {
+    await withFolders(async () => {
+      const location = await probe(gameDef(), '<gold>', provider);
+      expect(location?.uri.fsPath).toBe(p(ifaceRoot, 'server_assets', 'scripts', 'base', 'Game.py'));
+      expect(location?.range.start.line).toBe(0);
+    });
+  });
+
+  it('findInterfaceScriptFile 按段角色解析嵌套目录与 Interface_ 前缀变体', () => {
+    expect(findInterfaceScriptFile('Activity', gameDoc(), 'base')).toBe(
+      p(ifaceRoot, 'server_assets', 'scripts', 'base', 'interfaces', 'Interface_Activity.py')
+    );
+    expect(findInterfaceScriptFile('Health', gameDoc(), 'cell')).toBe(
+      p(ifaceRoot, 'server_assets', 'scripts', 'cell', 'interfaces', 'Interface_Health.py')
+    );
+    expect(findInterfaceScriptFile('Nobody', gameDoc(), 'base')).toBeNull();
+  });
+
+  it('findComponentScriptFile 按角色解析组件脚本,缺失如实 null', () => {
+    expect(findComponentScriptFile('HealthComp', 'base', gameDoc())).toBe(
+      p(ifaceRoot, 'server_assets', 'scripts', 'base', 'components', 'HealthComp.py')
+    );
+    expect(findComponentScriptFile('Motion', 'cell', gameDoc())).toBe(
+      p(ifaceRoot, 'server_assets', 'scripts', 'cell', 'components', 'Motion.py')
+    );
+    expect(findComponentScriptFile('Missing', 'base', gameDoc())).toBeNull();
+  });
+
+  it('findComponentScriptFile 字符串 target 语义是工作区根,缺 target 走全部根', () => {
+    expect(findComponentScriptFile('Motion', 'cell', ifaceRoot)).toBe(
+      p(ifaceRoot, 'server_assets', 'scripts', 'cell', 'components', 'Motion.py')
+    );
+    expect(findComponentScriptFile('Missing', 'base')).toBeNull();
+  });
+
+  it('组件槽取 <Type> 值作脚本候选名;无 <Type> 或空 <Type> 的槽不产生候选', () => {
+    const semantics = parseDefFileSemantics([
+      '<root>',
+      '\t<Components>',
+      '\t\t<HP>',
+      '\t\t\t<Type>HealthComp</Type>',
+      '\t\t</HP>',
+      '\t\t<Broken>',
+      '\t\t</Broken>',
+      '\t\t<Empty>',
+      '\t\t\t<Type></Type>',
+      '\t\t</Empty>',
+      '\t</Components>',
+      '</root>'
+    ].join('\n'));
+    expect(semantics?.componentTypeNames).toEqual(['HealthComp']);
+    expect(semantics?.interfaceNames).toEqual([]);
   });
 });

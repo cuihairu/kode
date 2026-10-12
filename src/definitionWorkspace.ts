@@ -454,6 +454,19 @@ export function scriptFoldersForRole(role: 'base' | 'cell' | 'client'): string[]
 // 复数 interfaces/,两者都认(复数在前保持既有工程行为)。
 const INTERFACE_SCRIPT_FOLDERS = ['interfaces', 'interface'];
 
+// 角色目录下的接口脚本嵌套形态(2026-10-12 用户实测:
+// scripts/base/interfaces/、scripts/cell/interfaces/),按角色目录展开。
+function interfaceFoldersForRole(role: 'base' | 'cell' | 'client'): string[] {
+  return scriptFoldersForRole(role).flatMap(folder => [`${folder}/interfaces`, `${folder}/interface`]);
+}
+
+// 接口脚本文件名两种形态:<接口名>.py 与 Interface_<接口名>.py(用户工程
+// 实测 scripts/base/interfaces/Interface_Activity.py,def 里接口名是
+// Activity 时靠前缀变体命中)。
+function interfaceScriptFileNames(interfaceName: string): string[] {
+  return [`${interfaceName}.py`, `Interface_${interfaceName}.py`];
+}
+
 // 批110 用户令:属性/方法要能导航到实体脚本实现。返回
 // scripts/<role>/<实体>.py(base|cell|client,client 兼容 bots)、官方模板
 // interface/ 接口脚本、以及生成器平铺形态 scripts/<实体>.py(本扩展代码
@@ -521,17 +534,78 @@ export function findEntityScriptFile(
 // 批111:接口混入脚本 scripts/interfaces/<接口名>.py(引擎把 <Interfaces>
 // 声明的接口实现混入实体各角色脚本;方法实现可能落在这里)。与
 // findEntityScriptFile 同口径:不要求登记,存在即返回,否则 null。
+// 角色形参(2026-10-12 用户令):BaseApp 的 def 跳 base、CellApp 跳 cell——
+// 给定角色时该角色的嵌套目录优先于 scripts 根级;未给角色(属性链不区分
+// 方法段角色)时按既有口径先根级、后全角色嵌套。
 export function findInterfaceScriptFile(
   interfaceName: string,
-  target?: string | Pick<vscode.TextDocument, 'fileName'>
+  target?: string | Pick<vscode.TextDocument, 'fileName'>,
+  role?: 'base' | 'cell' | 'client'
 ): string | null {
+  const fileNames = interfaceScriptFileNames(interfaceName);
+  // 给定角色:角色嵌套目录优先、scripts 根级兜底;未给角色:根级在前、
+  // 全角色嵌套在后(既有布局行为不变)。
+  const roles: Array<'base' | 'cell' | 'client'> = role ? [role] : ['base', 'cell', 'client'];
+  const nestedFolders = roles.flatMap(interfaceFoldersForRole);
+  const orderedFolders = role
+    ? [...nestedFolders, ...INTERFACE_SCRIPT_FOLDERS]
+    : [...INTERFACE_SCRIPT_FOLDERS, ...nestedFolders];
+
   // 根修令①:同 findEntityScriptFile,文件相对优先,工作区候选链回落。
   if (typeof target !== 'string' && target) {
     const defScriptsRoot = getScriptsRootForDefFile(target.fileName);
     if (defScriptsRoot) {
-      for (const folder of INTERFACE_SCRIPT_FOLDERS) {
+      for (const folder of orderedFolders) {
+        for (const fileName of fileNames) {
+          const defRelativeHit = findExistingLookupPath(path.join(defScriptsRoot, folder, fileName));
+          if (defRelativeHit) {
+            return defRelativeHit;
+          }
+        }
+      }
+    }
+  }
+
+  for (const workspaceRoot of getWorkspaceRootCandidatesForLookup(target)) {
+    const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+    // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
+    // getDefinitionWorkspaceLayout 的区间理由。
+    /* istanbul ignore start */
+    if (!layout.entityScriptsRoot) {
+      continue;
+    }
+    /* istanbul ignore stop */
+
+    for (const folder of orderedFolders) {
+      for (const fileName of fileNames) {
+        const hit = findExistingLookupPath(
+          joinWorkspacePath(layout.entityScriptsRoot, folder, fileName)
+        );
+        if (hit) {
+          return hit;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+// 组件脚本 scripts/<role>/components/<名>.py(引擎按应用侧分置组件,
+// 与实体脚本同一角色目录;管理器候选口径 getPythonCandidates 组件分支同此)。
+// 与 findEntityScriptFile 同口径:不要求登记,存在即返回,否则 null。
+// 2026-10-12 用户令:base/cell 下的组件脚本也要进方法实现候选链。
+export function findComponentScriptFile(
+  componentName: string,
+  role: 'base' | 'cell' | 'client',
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string | null {
+  if (typeof target !== 'string' && target) {
+    const defScriptsRoot = getScriptsRootForDefFile(target.fileName);
+    if (defScriptsRoot) {
+      for (const folder of scriptFoldersForRole(role)) {
         const defRelativeHit = findExistingLookupPath(
-          path.join(defScriptsRoot, folder, `${interfaceName}.py`)
+          path.join(defScriptsRoot, folder, 'components', `${componentName}.py`)
         );
         if (defRelativeHit) {
           return defRelativeHit;
@@ -550,9 +624,9 @@ export function findInterfaceScriptFile(
     }
     /* istanbul ignore stop */
 
-    for (const folder of INTERFACE_SCRIPT_FOLDERS) {
+    for (const folder of scriptFoldersForRole(role)) {
       const hit = findExistingLookupPath(
-        joinWorkspacePath(layout.entityScriptsRoot, folder, `${interfaceName}.py`)
+        joinWorkspacePath(layout.entityScriptsRoot, folder, 'components', `${componentName}.py`)
       );
       if (hit) {
         return hit;

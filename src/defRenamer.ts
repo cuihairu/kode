@@ -99,6 +99,7 @@ interface DefFileEntry {
 export interface DefFileSemantics {
   parentName: string | null;
   interfaceNames: string[];
+  componentTypeNames: string[];
 }
 
 function isIdentifierChar(ch: string | undefined): boolean {
@@ -388,7 +389,24 @@ export function parseDefFileSemantics(content: string): DefFileSemantics | null 
       }
     }
   }
-  return { parentName, interfaceNames };
+
+  // 组件槽 <Components> 下每个槽取 <Type> 值(组件 def 名),与
+  // parseComponentRefs 同口径;无 <Type> 的畸形槽不产生候选。2026-10-12
+  // 用户令:base/cell 下的组件脚本也要进方法实现候选链。
+  const componentTypeNames: string[] = [];
+  for (const section of getDirectChildElements(document.root)) {
+    if (section.name !== 'Components') {
+      continue;
+    }
+    for (const slot of getDirectChildElements(section)) {
+      const typeNameNode = getDirectChildElement(slot, 'Type');
+      const typeName = typeNameNode ? getReferenceTargetName(typeNameNode) : '';
+      if (typeName) {
+        componentTypeNames.push(typeName);
+      }
+    }
+  }
+  return { parentName, interfaceNames, componentTypeNames };
 }
 
 interface DefLinkPaths {
