@@ -21,6 +21,7 @@ import {
 } from './entityMapping';
 import {
   createDatabaseSchemaUri,
+  describePropertyDatabaseStorage,
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
   findDatabaseSchemaTargetsForSource,
@@ -473,6 +474,7 @@ interface SymbolHoverInfo {
   detailLevel?: string;
   database?: string;
   identifier?: string;
+  persistent: boolean;
   args: string[];
   exposed?: boolean;
 }
@@ -1076,6 +1078,14 @@ function getSymbolHover(
     if (symbolInfo.identifier) {
       markdown.appendMarkdown(`**Identifier**: \`${symbolInfo.identifier}\`\n\n`);
     }
+    // Persistent 字段的数据库落点(2026-10-13 用户令):悬停展示库表与列名;
+    // types.xml 别名类型沿快照别名链展开,完整建表结构走 kbengine.database.open。
+    if (symbolInfo.persistent) {
+      const storageLine = describePropertyDatabaseStorageHover(document, symbolInfo.name);
+      if (storageLine) {
+        markdown.appendMarkdown(`\n\n**数据库存储**: ${storageLine}`);
+      }
+    }
   }
 
   if (METHOD_SECTIONS.has(symbolInfo.section)) {
@@ -1090,6 +1100,43 @@ function getSymbolHover(
   }
 
   return new vscode.Hover(markdown);
+}
+
+/**
+ * 属性悬停的数据库存储描述行。快照按实体 def 构建后按属性路径取目标:
+ * 同表多列合并成「表 X 列 a、b」,ARRAY/组件槽子表单独成「子表 Y」;
+ * 非持久属性无目标返回 null,悬停不显示该行。
+ */
+function describePropertyDatabaseStorageHover(
+  document: vscode.TextDocument,
+  propertyName: string
+): string | null {
+  const entityName = path.basename(document.fileName, '.def');
+  const storage = describePropertyDatabaseStorage(entityName, propertyName, document);
+  if (!storage) {
+    return null;
+  }
+
+  const columnsByTable = new Map<string, string[]>();
+  const childTables: string[] = [];
+  for (const target of storage.targets) {
+    if (!target.fieldName) {
+      childTables.push(target.tableName);
+      continue;
+    }
+    const columns = columnsByTable.get(target.tableName) ?? [];
+    columns.push(target.fieldName);
+    columnsByTable.set(target.tableName, columns);
+  }
+
+  const parts: string[] = [];
+  for (const [tableName, columns] of columnsByTable) {
+    parts.push(`表 \`${tableName}\` 列 ${columns.map(column => `\`${column}\``).join('、')}`);
+  }
+  for (const tableName of childTables) {
+    parts.push(`子表 \`${tableName}\``);
+  }
+  return parts.join(';');
 }
 
 function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
@@ -1910,6 +1957,9 @@ function buildSymbolHoverInfo(
     detailLevel: getScalarChildValue(symbolNode, 'DetailLevel'),
     database: getScalarChildValue(symbolNode, 'DatabaseLength'),
     identifier: getScalarChildValue(symbolNode, 'Identifier'),
+    // 引擎装载语义:Properties 字段文本恰为 "true"(忽略大小写)才持久,
+    // 与 databaseSchema 的 isTruePersistent 同口径(loadDefPropertys)。
+    persistent: getScalarChildValue(symbolNode, 'Persistent')?.trim().toLowerCase() === 'true',
     args: getScalarChildValues(symbolNode, 'Arg'),
     exposed: hasTruthyChildTag(symbolNode, 'Exposed')
   };

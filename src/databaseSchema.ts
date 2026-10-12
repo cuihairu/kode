@@ -341,6 +341,55 @@ export function findDatabaseSchemaTargetsForSource(
   return dedupeSchemaTargets(targets);
 }
 
+export interface PropertyDatabaseStorageInfo {
+  entityName: string;
+  targets: Array<{ tableName: string; fieldName?: string }>;
+}
+
+/**
+ * def 属性的数据库存储落点(2026-10-13 用户令:Persistent 字段悬停展示在
+ * 数据库中的名字)。按属性路径查快照目标:标量/向量/FIXED_DICT 键链出
+ * 列名(sm_ 前缀),ARRAY/组件槽出子表;types.xml 别名在快照构建时已沿
+ * 别名链展开。聚合只按属性路径、不按来源文件过滤——别名/组件结构的
+ * 子列 source.filePath 是 types.xml/组件 def(结构定义文件),schema 反向
+ * 跳转才需要严格文件口径。非持久属性不建表无目标,返回 null。
+ */
+export function describePropertyDatabaseStorage(
+  entityName: string,
+  propertyName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): PropertyDatabaseStorageInfo | null {
+  const snapshot = getDatabaseSchemaSnapshot(entityName, target);
+  if (!snapshot) {
+    return null;
+  }
+
+  const targets: Array<{ tableName: string; fieldName?: string }> = [];
+  for (const table of snapshot.tables) {
+    if (
+      table.source.path === propertyName
+      || table.source.path.startsWith(`${propertyName}.`)
+    ) {
+      targets.push({ tableName: table.name });
+    }
+
+    for (const field of table.fields) {
+      if (
+        field.sourcePath === propertyName
+        || field.sourcePath.startsWith(`${propertyName}.`)
+      ) {
+        targets.push({ tableName: table.name, fieldName: field.name });
+      }
+    }
+  }
+
+  if (targets.length === 0) {
+    return null;
+  }
+
+  return { entityName: snapshot.entityName, targets: dedupeSchemaTargets(targets) };
+}
+
 export function locateDatabaseSchemaLine(
   snapshot: DatabaseSchemaSnapshot,
   tableName: string,

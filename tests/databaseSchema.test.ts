@@ -6,6 +6,7 @@ import {
   KBENGINE_DATABASE_SCHEMA_SCHEME,
   buildMysqlTableSchemas,
   createDatabaseSchemaUri,
+  describePropertyDatabaseStorage,
   expandColumnNames,
   getDatabaseSchemaSnapshot,
   isDatabaseSchemaDocument,
@@ -373,5 +374,45 @@ describe('getDatabaseSchemaSnapshot against a temp workspace', () => {
 
   it('returns null outside a recognizable workspace', () => {
     expect(getDatabaseSchemaSnapshot('Hero', '/nonexistent-root')).toBeNull();
+  });
+});
+
+describe('describePropertyDatabaseStorage', () => {
+  let storageRoot = '';
+
+  beforeAll(() => {
+    storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-db-store-'));
+    const defFile = path.join(storageRoot, 'scripts', 'entity_defs', 'Hero.def');
+    fs.mkdirSync(path.dirname(defFile), { recursive: true });
+    fs.writeFileSync(defFile, [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'utf8');
+  });
+
+  afterAll(() => {
+    fs.rmSync(storageRoot, { recursive: true, force: true });
+  });
+
+  it('maps a persistent property to its table and column', () => {
+    const info = describePropertyDatabaseStorage('Hero', 'hp', storageRoot);
+
+    expect(info).not.toBeNull();
+    expect(info!.entityName).toBe('Hero');
+    expect(info!.targets).toEqual([{ tableName: 'tbl_Hero', fieldName: 'sm_hp' }]);
+  });
+
+  it('returns null when the entity def cannot be resolved', () => {
+    expect(describePropertyDatabaseStorage('Ghost', 'hp', storageRoot)).toBeNull();
+  });
+
+  it('returns null for a property with no schema targets', () => {
+    expect(describePropertyDatabaseStorage('Hero', 'missing', storageRoot)).toBeNull();
   });
 });

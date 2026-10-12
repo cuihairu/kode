@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Version is frozen at this placeholder on request; it is not a published
 release (no tag, no GitHub Release) — nightly rolling builds continue.
 
+### Added
+- Hovering a `Persistent` property in `Properties` now shows its database
+  storage: the table and column names (`tbl_<Entity>`, `sm_<name>`), the
+  three expanded columns for `VECTOR2/3/4`, flattened `FIXED_DICT` key
+  chains, and the child table for `ARRAY` properties. Properties typed
+  through a `types.xml` alias resolve along the alias chain because the
+  schema snapshot expands aliases at build time. Full table SQL stays in
+  the `kbengine.database.open` schema document
+
 ### Fixed
 - `F12` on `Properties`, `BaseMethods` and `CellMethods` now lands on the
   real implementation line in the layouts KBEngine actually ships. The

@@ -4311,3 +4311,35 @@ node.parent。不使用 parseDefFileSemantics(defRenamer)的原因:依赖
 覆盖率与门禁:1388/1388 绿,coverage 100%×4(6533 stmts/3809 branches/
 1109 funcs/6374 lines),eslint 干净,tsc 干净,mocha 冒烟 11 passing。
 版本仍冻结 0.1.0。
+
+## 批120:Persistent 属性悬停展示数据库落点(2026-10-13)
+
+用户令(前轮排队):def Properties 开了 Persistent 的字段会存数据库并
+映射到表,悬停要提示该字段在数据库中的名字;types.xml 里标记数据库
+存储使用的类型,对应 Properties 也要展示对应的名字或表结构。
+
+落地:悬停 Properties 字段名(Persistent=true)追加「数据库存储」行——
+标量/向量/FIXED_DICT 键链出列名(sm_ 前缀,向量 sm_<i>_<名> 引擎
+init_db_item_name 口径),ARRAY/组件槽出子表名,同表多列合并一行;
+完整建表结构仍走 kbengine.database.open 的 schema 虚拟文档。新增
+describePropertyDatabaseStorage(databaseSchema.ts):按实体名建快照后
+**只按属性路径聚合、不按来源文件过滤**——别名/组件结构的子列
+source.filePath 是 types.xml/组件 def,schema 反向跳转才需要严格文件
+口径(findDatabaseSchemaTargetsForSource 保持不动)。types.xml 别名在
+快照构建时沿别名链展开,属性侧无需单独处理(用户令第二句由此覆盖)。
+
+引擎口径(只读核对):loadTypes(datatypes.cpp)取别名条目**首子节点**
+getValStr——文本节点取文本、元素取空串,故 `FIXED_DICT`/`ARRAY` 文本
+指引才装载,<Type>FIXED_DICT</Type> 元素形态引擎整份报错,批98 不展开
+口径与此一致;FD 键无 <Type> 不落列(FixedDictType::initialize)。
+
+回归锁定:tests/languageProvidersInternals.test.ts 增「persistent
+property database storage hover」6 用例(标量表+列/向量三列合并/
+文本指引 FD 别名展开列/数组子表/非持久无行/实体 def 缺失无行,FD
+用例的 types.xml 追加条目 afterAll 还原)+ databaseSchema.test.ts 增
+describePropertyDatabaseStorage 3 用例(表+列、实体缺失 null、无目标
+null)。红测试先行;FD 列曾被严格文件口径吞掉,倒逼聚合不按文件过滤。
+
+覆盖率与门禁:1397/1397 绿,coverage 100%×4(6570 stmts/3831 branches/
+1112 funcs/6410 lines),eslint+tsc 干净,mocha 冒烟 11 passing。版本仍
+冻结 0.1.0。

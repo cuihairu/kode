@@ -854,3 +854,167 @@ describe('def method implementation jumps', () => {
     expect(typed.range.start.character).toBe(7);
   });
 });
+
+describe('persistent property database storage hover', () => {
+  const provider = new KBEngineHoverProvider();
+
+  beforeAll(() => {
+    // 追加引擎可装载的文本指引型 FIXED_DICT 别名(loadTypes 取首子节点
+    // getValStr:<Type>FIXED_DICT</Type> 元素形态取值空串,引擎整份报错,
+    // 批98 口径不展开;文本形态才装载)。先跑完的用例不受影响,afterAll 还原。
+    const typesXmlPath = p(root, 'scripts', 'entity_defs', 'types.xml');
+    const original = fs.readFileSync(typesXmlPath, 'utf8');
+    (globalThis as { __typesXmlOriginal?: string }).__typesXmlOriginal = original;
+    fs.writeFileSync(typesXmlPath, original.replace('</root>', [
+      '  <FDPAIR>',
+      '    FIXED_DICT',
+      '    <Properties>',
+      '      <name>',
+      '        <Type>UNICODE</Type>',
+      '      </name>',
+      '    </Properties>',
+      '  </FDPAIR>',
+      '</root>'
+    ].join('\n')), 'utf8');
+
+    // 独立实体 Stor:标量/向量/types.xml FIXED_DICT 别名/数组/非持久各一,
+    // 不动共享 HERO_DEF(entities.xml 也不必注册,findEntityDefinitionFile
+    // 只按布局找 entity_defs/<名>.def)。
+    fs.writeFileSync(p(root, 'scripts', 'entity_defs', 'Stor.def'), [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '    <pos>',
+      '      <Type>VECTOR3</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </pos>',
+      '    <info>',
+      '      <Type>FDPAIR</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </info>',
+      '    <bag>',
+      '      <Type>',
+      '        ARRAY',
+      '        <of>UINT32</of>',
+      '      </Type>',
+      '      <Persistent>true</Persistent>',
+      '    </bag>',
+      '    <temp>',
+      '      <Type>UINT8</Type>',
+      '    </temp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'utf8');
+  });
+
+  afterAll(() => {
+    const original = (globalThis as { __typesXmlOriginal?: string }).__typesXmlOriginal;
+    if (original) {
+      fs.writeFileSync(p(root, 'scripts', 'entity_defs', 'types.xml'), original, 'utf8');
+    }
+  });
+
+  it('shows table and column names for a persistent scalar', () => {
+    const { document, position } = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <h|p>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Stor.def');
+
+    const text = hoverText(provider.provideHover(document, position));
+    expect(text).toContain('**数据库存储**');
+    expect(text).toContain('`tbl_Stor`');
+    expect(text).toContain('`sm_hp`');
+  });
+
+  it('lists every vector column of a persistent VECTOR3', () => {
+    const { document, position } = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <po|s>',
+      '      <Type>VECTOR3</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </pos>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Stor.def');
+
+    const text = hoverText(provider.provideHover(document, position));
+    expect(text).toContain('`sm_0_pos`、`sm_1_pos`、`sm_2_pos`');
+  });
+
+  it('expands a types.xml FIXED_DICT alias into its column names', () => {
+    const { document, position } = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <in|fo>',
+      '      <Type>FDPAIR</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </info>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Stor.def');
+
+    const text = hoverText(provider.provideHover(document, position));
+    expect(text).toContain('`sm_info_name`');
+  });
+
+  it('points an ARRAY property at its child table', () => {
+    const { document, position } = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <b|ag>',
+      '      <Type>',
+      '        ARRAY',
+      '        <of>UINT32</of>',
+      '      </Type>',
+      '      <Persistent>true</Persistent>',
+      '    </bag>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Stor.def');
+
+    const text = hoverText(provider.provideHover(document, position));
+    expect(text).toContain('子表 `tbl_Stor_bag`');
+  });
+
+  it('omits the storage line for a non-persistent property', () => {
+    const { document, position } = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <te|mp>',
+      '      <Type>UINT8</Type>',
+      '    </temp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Stor.def');
+
+    const text = hoverText(provider.provideHover(document, position));
+    expect(text).not.toContain('数据库存储');
+  });
+
+  it('omits the storage line when the entity def is not on disk', () => {
+    // 悬停文档的实体名在磁盘上无 def → 快照 null,属性行照常但不给库表
+    const { document, position } = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <h|p>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Ghost.def');
+
+    const text = hoverText(provider.provideHover(document, position));
+    expect(text).not.toContain('数据库存储');
+  });
+});
