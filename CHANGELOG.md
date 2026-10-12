@@ -5,6 +5,32 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-10-12
+
+Version is frozen at this placeholder on request; it is not a published
+release (no tag, no GitHub Release) — nightly rolling builds continue.
+
+### Fixed
+- `F12` on `Properties`, `BaseMethods` and `CellMethods` now lands on the
+  real implementation line in the layouts KBEngine actually ships. The
+  candidate chain never tried three of them, so navigation returned only a
+  "expected paths" message:
+  - `scripts/<role>/interfaces/<Name>.py` and the `Interface_<Name>.py`
+    naming variant (old layouts and user projects, e.g.
+    `server_assets/scripts/base/interfaces/Interface_Activity.py`)
+  - `scripts/<role>/components/<Name>.py` for component methods
+  - `scripts/<entity>.py` flat layout (this extension's own code generator
+    default `pythonOutputPath: scripts`)
+  - the client role also resolves the official template's `bots/` folder,
+    and the interface folder is now both the official `interface/` (singular)
+    and the historical `interfaces/` (plural)
+- Interface and component script resolution is role-paired: a `BaseApp`
+  entity's declaration resolves under `base/`, a `CellApp` entity's under
+  `cell/`; the role-nested folder wins over a same-named script at the
+  `scripts/` root, with the root kept as fallback
+- The expected-locations hint now lists every entity script path that was
+  tried, including the `bots/` client folder and the flat layout
+
 ## [0.1.6] - 2026-10-11
 
 ### Fixed
