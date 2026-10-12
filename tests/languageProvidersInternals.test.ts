@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineDefinitionProvider, KBEngineHoverProvider, validateDocument } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import { getDatabaseSchemaSnapshot, renderDatabaseSchema } from '../src/databaseSchema';
+import { messages } from './fake-vscode/windowState';
 import {
   Diagnostic,
   DiagnosticCollection,
@@ -808,26 +809,36 @@ describe('def method implementation jumps', () => {
     return { document, location: await provider.provideDefinition(document, position) };
   };
 
-  it('falls back to the def location when no identity resolves', async () => {
-    const { document, location } = await defineOnKill(makeManager(null, null));
+  it('falls back to the registry declaration with a hint when no identity resolves', async () => {
+    messages.info.length = 0;
+    const { location } = await defineOnKill(makeManager(null, null));
     const typed = location as unknown as LocationLike;
-    const onKillLine = heroDefLines.findIndex(line => line.includes('<onKill>'));
 
+    // 2026-10-12 用户令:管理器路径约定链落空不再静默落 def 声明行(光标常已
+    // 在该行,等同没跳)——改弹「期望位置」提示并落 entities.xml 注册声明行。
     expect(typed).toBeTruthy();
-    expect(typed.uri.toString()).toBe(document.uri.toString());
-    expect(typed.range.start.line).toBe(onKillLine);
+    expect(typed.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
+    const declaredLine = fs.readFileSync(p(root, 'scripts', 'entities.xml'), 'utf8')
+      .split('\n')
+      .findIndex(line => line.includes('<Hero'));
+    expect(typed.range.start.line).toBe(declaredLine);
+    expect(messages.info.some(entry => entry.includes('onKill') && entry.includes('base/Hero.py'))).toBe(true);
   });
 
-  it('falls back to the def location when the implementation is missing', async () => {
-    const { document, location } = await defineOnKill(
+  it('falls back to the registry declaration with a hint when the implementation is missing', async () => {
+    messages.info.length = 0;
+    const { location } = await defineOnKill(
       makeManager({ ownerName: 'Hero', symbolName: 'onKill' }, null)
     );
     const typed = location as unknown as LocationLike;
-    const onKillLine = heroDefLines.findIndex(line => line.includes('<onKill>'));
 
     expect(typed).toBeTruthy();
-    expect(typed.uri.toString()).toBe(document.uri.toString());
-    expect(typed.range.start.line).toBe(onKillLine);
+    expect(typed.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
+    const declaredLine = fs.readFileSync(p(root, 'scripts', 'entities.xml'), 'utf8')
+      .split('\n')
+      .findIndex(line => line.includes('<Hero'));
+    expect(typed.range.start.line).toBe(declaredLine);
+    expect(messages.info.some(entry => entry.includes('onKill') && entry.includes('base/Hero.py'))).toBe(true);
   });
 
   it('jumps to the python implementation when the identity resolves', async () => {

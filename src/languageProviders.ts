@@ -34,6 +34,7 @@ import {
   findCustomTypePythonImplementationFile,
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
+  findEntityDefsDirForDefFile,
   findEntityDefinitionFile,
   findEntitiesXmlFile,
   findEntityScriptFile,
@@ -1584,7 +1585,8 @@ function findEntityDefinitionInDef(
 }
 
 // 根修令③(2026-10-10 用户令):文案给真实路径,不给花括号模板。收集
-// 文件相对(def 反推)与工作区布局两级推断的全部候选脚本位置;路径在
+// 文件相对(def 反推)与工作区布局(文档所属根 + 其余工作区根,2026-10-12
+// 多根自动寻找同口径)两级推断的全部候选脚本位置;路径在
 // 工作区根下时按工作区相对展示,否则绝对路径。
 function describeExpectedScriptPaths(
   document: vscode.TextDocument,
@@ -1596,12 +1598,21 @@ function describeExpectedScriptPaths(
   if (defScriptsRoot) {
     roots.push(defScriptsRoot);
   }
+  const layoutRoots: string[] = [];
   const workspaceRoot = getWorkspaceRootForDocument(document);
-  const layoutScriptsRoot = workspaceRoot
-    ? getDefinitionWorkspaceLayout(workspaceRoot).entityScriptsRoot
-    : null;
-  if (layoutScriptsRoot && !roots.includes(layoutScriptsRoot)) {
-    roots.push(layoutScriptsRoot);
+  if (workspaceRoot) {
+    layoutRoots.push(workspaceRoot);
+  }
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (!layoutRoots.includes(folder.uri.fsPath)) {
+      layoutRoots.push(folder.uri.fsPath);
+    }
+  }
+  for (const layoutRoot of layoutRoots) {
+    const layoutScriptsRoot = getDefinitionWorkspaceLayout(layoutRoot).entityScriptsRoot;
+    if (layoutScriptsRoot && !roots.includes(layoutScriptsRoot)) {
+      roots.push(layoutScriptsRoot);
+    }
   }
 
   // 双根已由 includes 去重,不同根不可能拼出同一路径,无需二次去重。
@@ -1667,6 +1678,11 @@ function findRegistryFallbackLocation(
   const defScriptsRoot = getScriptsRootForDefFile(document.fileName);
   if (defScriptsRoot) {
     xmlCandidates.push(path.join(defScriptsRoot, 'entities.xml'));
+  }
+  // defs 目录自身的 entities.xml(部分工程/夹具把清单放在 entity_defs 内)
+  const defsDir = findEntityDefsDirForDefFile(document.fileName);
+  if (defsDir) {
+    xmlCandidates.push(path.join(defsDir, 'entities.xml'));
   }
   const workspaceRoot = getWorkspaceRootForDocument(document);
   if (workspaceRoot) {
@@ -2215,8 +2231,10 @@ function collectMethodCandidateScripts(
 }
 
 // 父 def 路径:实体 Parent 平铺在定义根;组件 def 的 Parent 在 components/
-// 内解析(defRenamer.resolveLinkPaths 同口径)。不存在返回 null(悬空引用
-// 不产生候选)。
+// 内解析(defRenamer.resolveLinkPaths 同口径)。实体链先按 def 自身反推的
+// defs 目录找同名 def(2026-10-12 用户令:非候选布局如 server_assets 的
+// Parent 链不再因工作区布局探测落空而断),再回落工作区布局。不存在返回
+// null(悬空引用不产生候选)。
 function findParentDefPath(
   currentDefPath: string,
   parentName: string,
@@ -2226,6 +2244,14 @@ function findParentDefPath(
   if (path.basename(parentDir) === 'components') {
     const candidate = path.join(parentDir, `${parentName}.def`);
     return readWorkspaceTextFile(candidate) ? candidate : null;
+  }
+
+  const defsDir = findEntityDefsDirForDefFile(currentDefPath);
+  if (defsDir) {
+    const candidate = path.join(defsDir, `${parentName}.def`);
+    if (readWorkspaceTextFile(candidate)) {
+      return candidate;
+    }
   }
 
   return findEntityDefinitionFile(parentName, document);
@@ -2334,6 +2360,37 @@ function findMethodImplementationLocationInDef(
   /* istanbul ignore stop */
 
   const line = getLineNumberAt(ast, symbolInfo.symbolNode.tagStart);
+  // 根修令④同口径补齐(2026-10-12 用户令「跳转不了也弹出 log」):管理器
+  // 路径每一臂都留痕,约定链也落空时给「期望位置」提示并落注册声明/def 首行,
+  // 不再静默落 def 声明行(光标常已在该行,用户视角等同没跳)。
+  const entityName = path.basename(document.fileName, '.def');
+  const conventionFallback = (): vscode.Location => {
+    const byConvention = findMethodScriptLocationInDef(
+      document,
+      methodName,
+      section as EntityMethodSection
+    );
+    if (byConvention) {
+      logNavigation(`方法落点(约定链) ${byConvention.uri.fsPath}:${byConvention.range.start.line}`);
+      return byConvention;
+    }
+
+    const methodRole = METHOD_SECTION_SCRIPT_ROLES[section];
+    // 不可达(根修令④ 定性):section 已过 METHOD_SECTIONS 过滤,与
+    // METHOD_SECTION_SCRIPT_ROLES 键完全重合(口径同 :1556),methodRole 恒真。
+    /* istanbul ignore start */
+    const expected = describeExpectedScriptPaths(
+      document,
+      entityName,
+      methodRole ? [methodRole] : ['base', 'cell', 'client']
+    );
+    /* istanbul ignore stop */
+    void vscode.window.showInformationMessage(
+      `方法 ${methodName} 未找到脚本实现,期望位置:${expected.join('、')}(辅助提示,已回落到注册声明/def 首行)`
+    );
+    return findRegistryFallbackLocation(document, entityName);
+  };
+
   return entityMappingManager.resolveDefinitionSymbolAtPosition(
     document.fileName,
     line,
@@ -2342,24 +2399,14 @@ function findMethodImplementationLocationInDef(
   ).then(identity => {
     if (!identity) {
       // 根修令①:索引未收录该符号(非标准布局的工程未纳入索引)时先按文件
-      // 约定在 def 相对候选链里找实现,找不到才落 def 声明行。
-      const byConvention = findMethodScriptLocationInDef(
-        document,
-        methodName,
-        section as EntityMethodSection
-      );
-      if (byConvention) {
-        return byConvention;
-      }
-
-      return new vscode.Location(
-        document.uri,
-        new vscode.Position(Math.max(line - 1, 0), 0)
-      );
+      // 约定在 def 相对候选链里找实现,找不到才落注册声明/def 首行。
+      logNavigation(`方法索引未收录 ${methodName}(${section}),按约定链回落`);
+      return conventionFallback();
     }
 
     return entityMappingManager.resolveMethodImplementationByIdentity(identity).then(reference => {
       if (reference) {
+        logNavigation(`方法落点(索引) ${reference.filePath}:${reference.line - 1}`);
         return new vscode.Location(
           vscode.Uri.file(reference.filePath),
           new vscode.Position(reference.line - 1, reference.character)
@@ -2367,20 +2414,9 @@ function findMethodImplementationLocationInDef(
       }
 
       // 根修令①:索引收录了符号但脚本未被索引(嵌套/非标准布局)→
-      // 同上,def 相对候选链优先,def 声明行兜底。
-      const byConvention = findMethodScriptLocationInDef(
-        document,
-        methodName,
-        section as EntityMethodSection
-      );
-      if (byConvention) {
-        return byConvention;
-      }
-
-      return new vscode.Location(
-        document.uri,
-        new vscode.Position(Math.max(line - 1, 0), 0)
-      );
+      // 同上,def 相对候选链优先,注册声明/def 首行兜底。
+      logNavigation(`方法索引未绑定实现 ${methodName},按约定链回落`);
+      return conventionFallback();
     });
   }).then(reference => {
     // 不可达(批64 定性,合并扩展批62 区间):内层两臂(identity 缺失 / 实现

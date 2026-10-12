@@ -133,7 +133,13 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
   const entityDefsCandidates = buildWorkspaceCandidates(
     workspaceRoot,
     config.get<string>('entityDefsPath', 'scripts/entity_defs'),
-    ['entity_defs', 'scripts/entity_defs', 'assets/scripts/entity_defs']
+    [
+      'entity_defs',
+      'scripts/entity_defs',
+      'assets/scripts/entity_defs',
+      // 官方 newassets(kbcmd --newassets)生成的固定风格
+      'server_assets/scripts/entity_defs'
+    ]
   );
   // 不可达(批64 定性):候选列表由 buildWorkspaceCandidates 生成,首项为
   // resolveWorkspacePath(root, 配置路径)——相对路径经 path.join 的最小结果是
@@ -154,7 +160,12 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
     ...buildWorkspaceCandidates(
       workspaceRoot,
       config.get<string>('entitiesXmlPath', 'scripts/entities.xml'),
-      ['entities.xml', 'scripts/entities.xml', 'assets/scripts/entities.xml']
+      [
+        'entities.xml',
+        'scripts/entities.xml',
+        'assets/scripts/entities.xml',
+        'server_assets/scripts/entities.xml'
+      ]
     )
   ]);
 
@@ -171,6 +182,7 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
         'entity_defs/types.xml',
         'scripts/entity_defs/types.xml',
         'assets/scripts/entity_defs/types.xml',
+        'server_assets/scripts/entity_defs/types.xml',
         'scripts/types.xml',
         'assets/scripts/types.xml'
       ]
@@ -405,6 +417,31 @@ export function findEntityDefinitionsRoot(
   return getDefinitionWorkspaceLayout(workspaceRoot).entityDefsRoot;
 }
 
+// 文档目标的工作区根查找序列:文档所属根优先,其余工作区根按声明顺序
+// 跟进(多根工程里 def 与脚本可能分属两个根,2026-10-12 用户令「找不到就
+// 自动寻找」)。string 形态的 target 是调用方显式指定的单一根,不扩散。
+function getWorkspaceRootCandidatesForLookup(
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string[] {
+  const primary = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+  if (typeof target === 'string') {
+    return primary ? [primary] : [];
+  }
+
+  const roots: string[] = [];
+  if (primary) {
+    roots.push(primary);
+  }
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    if (!roots.includes(folder.uri.fsPath)) {
+      roots.push(folder.uri.fsPath);
+    }
+  }
+  return roots;
+}
+
 // 批110 用户令:属性/方法要能导航到实体脚本实现。返回
 // scripts/<role>/<实体>.py(base|cell|client)中第一个存在的路径,
 // 不存在时返回 null。与 getEntityRuntimeProfile 不同,这里不要求
@@ -429,26 +466,25 @@ export function findEntityScriptFile(
     }
   }
 
-  const workspaceRoot = typeof target === 'string'
-    ? target
-    : getWorkspaceRootForDocument(target);
+  for (const workspaceRoot of getWorkspaceRootCandidatesForLookup(target)) {
+    const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+    // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
+    // getDefinitionWorkspaceLayout 的区间理由。
+    /* istanbul ignore start */
+    if (!layout.entityScriptsRoot) {
+      continue;
+    }
+    /* istanbul ignore stop */
 
-  if (!workspaceRoot) {
-    return null;
+    const hit = findExistingLookupPath(
+      joinWorkspacePath(layout.entityScriptsRoot, role, `${entityName}.py`)
+    );
+    if (hit) {
+      return hit;
+    }
   }
 
-  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
-  // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
-  // getDefinitionWorkspaceLayout 的区间理由。
-  /* istanbul ignore start */
-  if (!layout.entityScriptsRoot) {
-    return null;
-  }
-  /* istanbul ignore stop */
-
-  return findExistingLookupPath(
-    joinWorkspacePath(layout.entityScriptsRoot, role, `${entityName}.py`)
-  );
+  return null;
 }
 
 // 批111:接口混入脚本 scripts/interfaces/<接口名>.py(引擎把 <Interfaces>
@@ -471,26 +507,25 @@ export function findInterfaceScriptFile(
     }
   }
 
-  const workspaceRoot = typeof target === 'string'
-    ? target
-    : getWorkspaceRootForDocument(target);
+  for (const workspaceRoot of getWorkspaceRootCandidatesForLookup(target)) {
+    const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+    // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
+    // getDefinitionWorkspaceLayout 的区间理由。
+    /* istanbul ignore start */
+    if (!layout.entityScriptsRoot) {
+      continue;
+    }
+    /* istanbul ignore stop */
 
-  if (!workspaceRoot) {
-    return null;
+    const hit = findExistingLookupPath(
+      joinWorkspacePath(layout.entityScriptsRoot, 'interfaces', `${interfaceName}.py`)
+    );
+    if (hit) {
+      return hit;
+    }
   }
 
-  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
-  // 不可达(批64 定性):entityScriptsRoot 恒为非空字符串,见
-  // getDefinitionWorkspaceLayout 的区间理由。
-  /* istanbul ignore start */
-  if (!layout.entityScriptsRoot) {
-    return null;
-  }
-  /* istanbul ignore stop */
-
-  return findExistingLookupPath(
-    joinWorkspacePath(layout.entityScriptsRoot, 'interfaces', `${interfaceName}.py`)
-  );
+  return null;
 }
 
 // 批110:配套文本读取(供导航方在脚本里定位 class/def 行)。读不到
