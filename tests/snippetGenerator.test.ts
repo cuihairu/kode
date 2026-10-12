@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   CUSTOM_SNIPPETS_RELATIVE_PATH,
   escapeSnippetText,
+  leadingWhitespaceColumns,
   mergeSnippetEntry,
-  selectionToSnippetBody
+  selectionToSnippetBody,
+  stripCommonIndent
 } from '../src/snippetGenerator';
 
 // 批94「代码片段生成器(自定义代码片段)」纯逻辑层:片段语法转义、
 // 选区归一为片段体、片段文件 JSON 合并(含覆盖判定与坏 JSON 拒绝)。
 // 命令装配层由 tests/snippetGeneratorCommand.test.ts 覆盖。
+// 批121:去公共缩进从字符数改为 tabSize 列语义(审计块18 遗留①收口)。
 
 describe('escapeSnippetText', () => {
   it('转义片段语法保留字 \\ 与 $,其余原样', () => {
@@ -42,6 +45,57 @@ describe('selectionToSnippetBody', () => {
 
   it('逐行做片段语法转义', () => {
     expect(selectionToSnippetBody('$root\n\\literal')).toEqual(['\\$root', '\\\\literal']);
+  });
+
+  // 审计块18 遗留①收口:原口径按 /^[ \t]*/ 字符数算公共缩进,
+  // tab/空格混用时层级错位;按 tabSize 列语义后纯 tab/纯空格选区
+  // 结果不变,混合选区保得住相对层级(红测试先行:老口径下三例全红)。
+  it('混合 tab/空格按 tabSize 列语义去公共缩进', () => {
+    // 4 空格=列 4、tab=列 4、2 空格=列 2 → 公共列 2;
+    // foo/bar 相对 baz 各深 2 列。老口径取公共 1 字符 → ['   foo','bar',' baz'] 错位。
+    expect(selectionToSnippetBody('    foo\n\tbar\n  baz', 4))
+      .toEqual(['  foo', 'bar', 'baz']);
+  });
+
+  it('tab 跨过公共列时整枚剥除,相对层级只会偏浅不会偏深', () => {
+    // tabSize 4:行1 tab=列 4,行2 2 空格=列 2 → 公共列 2;
+    // 行1 的 tab 整枚剥除(跨过列 2),残层 0——tab 原子性下无法再细拆,
+    // 但绝不能反向把行2 排到更深(老口径 ['foo',' bar'] 正好颠倒层级)。
+    expect(selectionToSnippetBody('\tfoo\n  bar', 4)).toEqual(['foo', 'bar']);
+  });
+
+  it('tab 恰好落到公共列时精确停止,余文保留原字符', () => {
+    // tabSize 4:行1 tab+2 空格=列 6,行2 tab=列 4 → 公共列 4;
+    // 行1 的 tab 剥除后列恰好为 4,2 空格保留为相对层级
+    expect(selectionToSnippetBody('\t  deep\n\tshallow', 4))
+      .toEqual(['  deep', 'shallow']);
+  });
+
+  it('tabSize=2 的列语义与非默认 tabSize 生效', () => {
+    // tabSize 2:行1 2 空格+tab=列 4,行2 tab=列 2 → 公共列 2;
+    // 行1 剥 2 空格后停在列 2,tab 原样保留(若按 tabSize 4 会整枚剥除)
+    expect(selectionToSnippetBody('  \tdeep\n\tbar', 2)).toEqual(['\tdeep', 'bar']);
+  });
+});
+
+describe('leadingWhitespaceColumns', () => {
+  it('空格 1 列,tab 前进到下一 tabSize 倍数,非空白开头为 0', () => {
+    expect(leadingWhitespaceColumns('', 4)).toBe(0);
+    expect(leadingWhitespaceColumns('x', 4)).toBe(0);
+    expect(leadingWhitespaceColumns('  \tx', 4)).toBe(4);
+    expect(leadingWhitespaceColumns('\t\tx', 4)).toBe(8);
+    expect(leadingWhitespaceColumns('\tx', 2)).toBe(2);
+    expect(leadingWhitespaceColumns('   ', 4)).toBe(3);
+  });
+});
+
+describe('stripCommonIndent', () => {
+  it('剥到公共列为止,余文保留原字符,短空白行安全收敛空串', () => {
+    expect(stripCommonIndent('  \tfoo', 2, 4)).toBe('\tfoo');
+    expect(stripCommonIndent('    foo', 2, 4)).toBe('  foo');
+    expect(stripCommonIndent('\tfoo', 2, 4)).toBe('foo');
+    expect(stripCommonIndent('x', 2, 4)).toBe('x');
+    expect(stripCommonIndent('   ', 10, 4)).toBe('');
   });
 });
 

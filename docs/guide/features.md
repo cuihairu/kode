@@ -93,4 +93,4 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 ## 代码片段生成
 
 - 选区生成自定义片段（`Generate Snippet from Selection` 命令）
-- 片段语法转义并剥离公共缩进，合并写入 `.vscode/kbengine-custom.code-snippets`
+- 片段语法转义并剥离公共缩进（按编辑器 `tabSize` 列语义，tab/空格混用仍保相对层级），合并写入 `.vscode/kbengine-custom.code-snippets`

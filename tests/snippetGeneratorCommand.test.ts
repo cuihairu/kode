@@ -39,10 +39,12 @@ const scriptInputBox = (answers: Array<string | undefined>): Array<InputBoxOptio
 const makeEditor = (
   docText: string,
   start: { line: number; character: number },
-  end: { line: number; character: number }
+  end: { line: number; character: number },
+  options?: { tabSize: number }
 ): unknown => ({
   document: makeTextDocument(docText, { fileName: path.join(root, 'Avatar.def') }),
-  selection: { isEmpty: false, start, end }
+  selection: { isEmpty: false, start, end },
+  options: options ?? { tabSize: 4 }
 });
 
 const activateAndWait = async (): Promise<ExtensionContext> => {
@@ -301,6 +303,55 @@ describe('kbengine.snippets.generateFromSelection 命令', () => {
     expect(messages.error.at(-1)).toContain(snippetsFilePath());
     expect(messages.info).toEqual([]);
     expect(fs.readFileSync(path.join(root, '.vscode'), 'utf8')).toBe('不是目录');
+    for (const disposable of context.subscriptions) {
+      disposable.dispose();
+    }
+  });
+
+  // 批121:编辑器 tabSize 参与去公共缩进的列语义(审计块18 遗留①收口)。
+  it('编辑器 tabSize 参与列语义:混合缩进按列去公共缩进', async () => {
+    // tabSize 2:行1 2 空格+tab=列 4,行2 tab=列 2 → 公共列 2;
+    // 行1 剥 2 空格后停在列 2,tab 原样保留(若按 tabSize 4 会整枚剥除)
+    windowish.activeTextEditor = makeEditor(
+      '  \tdeep\n\tbar',
+      { line: 0, character: 0 },
+      { line: 1, character: 5 },
+      { tabSize: 2 }
+    );
+    scriptInputBox(['Mix', 'kbe-mix', '']);
+
+    const context = await activateAndWait();
+    await commands.executeCommand('kbengine.snippets.generateFromSelection');
+
+    const parsed = JSON.parse(fs.readFileSync(snippetsFilePath(), 'utf8')) as {
+      Mix: { body: string[] };
+    };
+    expect(parsed.Mix.body).toEqual(['\tdeep', 'bar']);
+
+    for (const disposable of context.subscriptions) {
+      disposable.dispose();
+    }
+  });
+
+  it('编辑器未给出 tabSize 时按默认 4 计列', async () => {
+    // options 缺 tabSize → 回落默认 4:行1 tab=列 4,行2 2 空格=列 2
+    // → 公共列 2,行1 的 tab 整枚剥除
+    windowish.activeTextEditor = makeEditor(
+      '\tfoo\n  bar',
+      { line: 0, character: 0 },
+      { line: 1, character: 6 },
+      {}
+    );
+    scriptInputBox(['Def', 'kbe-def', '']);
+
+    const context = await activateAndWait();
+    await commands.executeCommand('kbengine.snippets.generateFromSelection');
+
+    const parsed = JSON.parse(fs.readFileSync(snippetsFilePath(), 'utf8')) as {
+      Def: { body: string[] };
+    };
+    expect(parsed.Def.body).toEqual(['foo', 'bar']);
+
     for (const disposable of context.subscriptions) {
       disposable.dispose();
     }

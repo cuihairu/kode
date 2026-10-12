@@ -20,6 +20,12 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   the `kbengine.database.open` schema document
 
 ### Fixed
+- Generating a snippet from a selection now measures the common indent in
+  editor `tabSize` columns instead of characters, so a selection that mixes
+  tabs and spaces keeps its relative nesting. The character count treated
+  one tab as one column, which could push an outer line inside an inner
+  one; only selections that mix both whitespace kinds were affected, pure
+  tab or pure space selections are unchanged
 - `F12` on `Properties`, `BaseMethods` and `CellMethods` now lands on the
   real implementation line in the layouts KBEngine actually ships. The
   candidate chain never tried three of them, so navigation returned only a

@@ -823,7 +823,16 @@ export function activate(context: vscode.ExtensionContext) {
         value: ''
       }) ?? '';
 
-      const body = selectionToSnippetBody(editor.document.getText(editor.selection));
+      // tabSize 列语义参与去公共缩进:选区 tab/空格混用时字符数口径
+      // 保不住相对层级(审计块18 遗留①);d.ts 声明 tabSize 为 string|number,
+      // 非数字回落默认 4
+      const editorTabSize = typeof editor.options.tabSize === 'number'
+        ? editor.options.tabSize
+        : 4;
+      const body = selectionToSnippetBody(
+        editor.document.getText(editor.selection),
+        editorTabSize
+      );
       if (body.length === 0) {
         vscode.window.showInformationMessage('选区不含有效文本,未生成片段');
         return;

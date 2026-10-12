@@ -33,10 +33,47 @@ export function escapeSnippetText(text: string): string {
 }
 
 /**
+ * 行首空白列宽(编辑器 tabSize 列语义):空格 1 列,tab 前进到下一
+ * tabSize 倍数。字符数口径在 tab/空格混用时与列语义不等价(1 枚 tab
+ * 可折 4 列),去公共缩进必须按列算才保得住相对层级。
+ */
+export function leadingWhitespaceColumns(line: string, tabSize: number): number {
+  let column = 0;
+  let index = 0;
+  while (index < line.length && (line[index] === ' ' || line[index] === '\t')) {
+    column += line[index] === ' ' ? 1 : tabSize - (column % tabSize);
+    index += 1;
+  }
+  return column;
+}
+
+/**
+ * 按公共列数剥行首空白,余文保留原字符。剥除判据是「剥前列数 < 公共列」:
+ * tab 不可拆,跨公共列的整枚一并剥除,该行保留的相对缩进只会偏浅不会偏深
+ * (反向会颠倒层级);列数到达或遇非空白即止。
+ */
+export function stripCommonIndent(line: string, commonColumns: number, tabSize: number): string {
+  let column = 0;
+  let index = 0;
+  while (
+    index < line.length
+    && column < commonColumns
+    && (line[index] === ' ' || line[index] === '\t')
+  ) {
+    column += line[index] === ' ' ? 1 : tabSize - (column % tabSize);
+    index += 1;
+  }
+  return line.slice(index);
+}
+
+/**
  * 选区文本 → 片段体行:统一换行为 \n,去掉首尾空行,按非空行的最少缩进
  * 去公共缩进(插入位置的缩进由编辑器补),逐行做片段语法转义。
+ * 缩进按 tabSize 列语义计(编辑器 tabSize 由命令层传入):纯字符数口径
+ * 在 tab/空格混用时相对层级残留偏移,列口径与编辑器 normalizeIndentation
+ * 的插入语义对齐。
  */
-export function selectionToSnippetBody(text: string): string[] {
+export function selectionToSnippetBody(text: string, tabSize = 4): string[] {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
 
   while (lines.length > 0 && lines[0].trim() === '') {
@@ -51,10 +88,10 @@ export function selectionToSnippetBody(text: string): string[] {
 
   const indents = lines
     .filter(line => line.trim() !== '')
-    .map(line => line.match(/^[ \t]*/)![0].length);
+    .map(line => leadingWhitespaceColumns(line, tabSize));
   const commonIndent = Math.min(...indents);
 
-  return lines.map(line => escapeSnippetText(line.slice(commonIndent)));
+  return lines.map(line => escapeSnippetText(stripCommonIndent(line, commonIndent, tabSize)));
 }
 
 /**

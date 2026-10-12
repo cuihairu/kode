@@ -4343,3 +4343,32 @@ null)。红测试先行;FD 列曾被严格文件口径吞掉,倒逼聚合不按�
 覆盖率与门禁:1397/1397 绿,coverage 100%×4(6570 stmts/3831 branches/
 1112 funcs/6410 lines),eslint+tsc 干净,mocha 冒烟 11 passing。版本仍
 冻结 0.1.0。
+
+## 批121:片段生成去公共缩进改 tabSize 列语义(2026-10-13)
+
+巡检推进单:审计块18 遗留①(公共缩进按字符数计,tab/空格混用相对层级残留
+偏移,登记「修正需引入编辑器 tabSize 列语义,纯逻辑层暂无该输入」)收口。
+
+落地:纯逻辑层 `src/snippetGenerator.ts` 新增导出 `leadingWhitespaceColumns`
+(空格 1 列、tab 前进到下一 tabSize 倍数,与编辑器列位一致)与
+`stripCommonIndent`(逐字符剥前导空白至累计列数达公共列,余文保留原字符);
+`selectionToSnippetBody` 增可选 `tabSize` 形参(默认 4——既有纯空格/纯 tab
+选区结果逐字节不变)。命令层 `src/extension.ts` 传 `editor.options.tabSize`
+(d.ts 声明 string|number,非数字回落 4)。
+
+语义依据:VS Code main `snippetsSession.ts` 的 `adjustWhitespace`(L427-467)
+给续行叠加插入行缩进后 `normalizeIndentation`(L462/L466)按编辑器配置归一化
+缩进——插入面消费的是列语义;生成面按字符数算公共缩进在 tab/空格混用时与
+列语义不等价(1 枚 tab 可折 4 列)。实证:4空格foo/tab-bar/2空格baz 老口径取
+公共 1 字符产出 `['   foo','bar',' baz']`,baz(列 2,最外层)反被排到 bar
+内层;列口径取公共列 2 产出 `['  foo','bar','baz']`。tab 原子性的唯一残余
+偏差已进注释与文档:tab 跨公共列时整枚剥除,残层偏浅但绝不反向偏深。
+
+回归锁定:tests/snippetGenerator.test.ts 增混合缩进 4 例(4空格/tab/2空格
+混合、tab 跨公共列、tab 恰好落公共列、tabSize=2)+ 两个导出纯函数直测;
+tests/snippetGeneratorCommand.test.ts 增 2 例证明 tabSize 从编辑器选项流到
+列语义(tabSize=2 保 tab、options 缺 tabSize 回落 4)。红测试先行:修复前
+4 例纯逻辑 + 2 例命令层全红;makeEditor 增可选 options 形参默认 { tabSize:4 }。
+
+覆盖率与门禁:1405/1405 绿,coverage 100%×4(6583 stmts/3845 branches/
+1114 funcs/6423 lines),eslint+tsc 干净,mocha 冒烟 11 passing。版本仍冻结 0.1.0。
