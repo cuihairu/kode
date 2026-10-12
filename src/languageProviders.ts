@@ -45,6 +45,7 @@ import {
   getRegisteredEntities,
   getScriptsRootForDefFile,
   getWorkspaceRootForDocument,
+  scriptFoldersForRole,
   notifyEntitiesXmlMissingOnce,
   readWorkspaceTextFile,
   readWorkspaceTextLines
@@ -612,7 +613,7 @@ const TAG_HOVER_DOCS: Record<string, { detail: string; documentation: string }> 
   },
   ClientMethods: {
     detail: '客户端回调方法',
-    documentation: '服务端回调客户端的方法:引擎把这里的声明下发给客户端实体脚本实现。方法名可跳转到 scripts/client/<实体>.py 的 `def` 实现。'
+    documentation: '服务端回调客户端的方法:引擎把这里的声明下发给客户端实体脚本实现。方法名可跳转到 scripts/client/<实体>.py 或官方模板 scripts/bots/<实体>.py(BotsApp)的 `def` 实现。'
   },
   DetailLevels: {
     detail: '细节等级区块',
@@ -1616,11 +1617,16 @@ function describeExpectedScriptPaths(
   }
 
   // 双根已由 includes 去重,不同根不可能拼出同一路径,无需二次去重。
+  // 目录序列与 findEntityScriptFile 的候选链同口径:client 兼容官方模板
+  // bots/,每个根末尾附生成器平铺形态 scripts/<实体>.py。
   const shown: string[] = [];
   for (const scriptsRoot of roots) {
     for (const role of roles) {
-      shown.push(formatWorkspaceRelativePath(path.join(scriptsRoot, role, `${entityName}.py`), workspaceRoot));
+      for (const folder of scriptFoldersForRole(role)) {
+        shown.push(formatWorkspaceRelativePath(path.join(scriptsRoot, folder, `${entityName}.py`), workspaceRoot));
+      }
     }
+    shown.push(formatWorkspaceRelativePath(path.join(scriptsRoot, `${entityName}.py`), workspaceRoot));
   }
   return shown;
 }

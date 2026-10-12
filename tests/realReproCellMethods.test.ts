@@ -248,9 +248,13 @@ describe('属性导航四形态(用户令 2026-10-10 补充口径:组件/接口/
   const defPath = () => path.join(root, 'scripts/entity_defs/Account.def');
   const writeDef = (content: string) => fs.writeFileSync(defPath(), content, 'utf8');
   const removeAccountScripts = () => {
-    for (const role of ['base', 'cell', 'client']) {
+    // bots/ 也在清理列:官方模板自带 bots/Account.py(BotsApp 客户端脚本,
+    // 2026-10-12 起候选链会命中它),漏清会让「自有脚本全缺」类用例失真。
+    for (const role of ['base', 'cell', 'client', 'bots']) {
       fs.rmSync(path.join(root, `scripts/${role}/Account.py`), { force: true });
     }
+    // 生成器平铺形态同列(候选链新口径)
+    fs.rmSync(path.join(root, 'scripts/Account.py'), { force: true });
   };
   const writeBaseAccountPy = (content: string) => {
     fs.mkdirSync(path.join(root, 'scripts/base'), { recursive: true });

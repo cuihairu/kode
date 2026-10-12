@@ -442,10 +442,25 @@ function getWorkspaceRootCandidatesForLookup(
   return roots;
 }
 
+// 角色脚本目录序列(2026-10-12 用户实测官方模板核定):引擎 python_assets
+// 模板的 scripts/ 下只有 base/cell/bots/interface,客户端实体脚本在 bots/
+// (BotsApp Python 客户端框架),没有 client/;server_assets 等其他模板才有
+// client/。client 角色按 client→bots 两级找,其余角色单目录。
+export function scriptFoldersForRole(role: 'base' | 'cell' | 'client'): string[] {
+  return role === 'client' ? ['client', 'bots'] : [role];
+}
+
+// 接口脚本目录序列:引擎官方模板是单数 interface/,历史口径与生成器是
+// 复数 interfaces/,两者都认(复数在前保持既有工程行为)。
+const INTERFACE_SCRIPT_FOLDERS = ['interfaces', 'interface'];
+
 // 批110 用户令:属性/方法要能导航到实体脚本实现。返回
-// scripts/<role>/<实体>.py(base|cell|client)中第一个存在的路径,
-// 不存在时返回 null。与 getEntityRuntimeProfile 不同,这里不要求
-// 实体已登记在 entities.xml(纯脚本/孤立 def 也要能跳)。
+// scripts/<role>/<实体>.py(base|cell|client,client 兼容 bots)、官方模板
+// interface/ 接口脚本、以及生成器平铺形态 scripts/<实体>.py(本扩展代码
+// 生成器默认 pythonOutputPath='scripts',实体脚本平铺在 scripts 根,无角色
+// 子目录;角色目录优先——混合工程里角色目录才是引擎实际装载的那份)中
+// 第一个存在的路径,不存在时返回 null。与 getEntityRuntimeProfile 不同,
+// 这里不要求实体已登记在 entities.xml(纯脚本/孤立 def 也要能跳)。
 export function findEntityScriptFile(
   entityName: string,
   role: 'base' | 'cell' | 'client',
@@ -457,11 +472,19 @@ export function findEntityScriptFile(
   if (typeof target !== 'string' && target) {
     const defScriptsRoot = getScriptsRootForDefFile(target.fileName);
     if (defScriptsRoot) {
-      const defRelativeHit = findExistingLookupPath(
-        path.join(defScriptsRoot, role, `${entityName}.py`)
+      for (const folder of scriptFoldersForRole(role)) {
+        const defRelativeHit = findExistingLookupPath(
+          path.join(defScriptsRoot, folder, `${entityName}.py`)
+        );
+        if (defRelativeHit) {
+          return defRelativeHit;
+        }
+      }
+      const defRelativeFlat = findExistingLookupPath(
+        path.join(defScriptsRoot, `${entityName}.py`)
       );
-      if (defRelativeHit) {
-        return defRelativeHit;
+      if (defRelativeFlat) {
+        return defRelativeFlat;
       }
     }
   }
@@ -476,11 +499,19 @@ export function findEntityScriptFile(
     }
     /* istanbul ignore stop */
 
-    const hit = findExistingLookupPath(
-      joinWorkspacePath(layout.entityScriptsRoot, role, `${entityName}.py`)
+    for (const folder of scriptFoldersForRole(role)) {
+      const hit = findExistingLookupPath(
+        joinWorkspacePath(layout.entityScriptsRoot, folder, `${entityName}.py`)
+      );
+      if (hit) {
+        return hit;
+      }
+    }
+    const flatHit = findExistingLookupPath(
+      joinWorkspacePath(layout.entityScriptsRoot, `${entityName}.py`)
     );
-    if (hit) {
-      return hit;
+    if (flatHit) {
+      return flatHit;
     }
   }
 
@@ -498,11 +529,13 @@ export function findInterfaceScriptFile(
   if (typeof target !== 'string' && target) {
     const defScriptsRoot = getScriptsRootForDefFile(target.fileName);
     if (defScriptsRoot) {
-      const defRelativeHit = findExistingLookupPath(
-        path.join(defScriptsRoot, 'interfaces', `${interfaceName}.py`)
-      );
-      if (defRelativeHit) {
-        return defRelativeHit;
+      for (const folder of INTERFACE_SCRIPT_FOLDERS) {
+        const defRelativeHit = findExistingLookupPath(
+          path.join(defScriptsRoot, folder, `${interfaceName}.py`)
+        );
+        if (defRelativeHit) {
+          return defRelativeHit;
+        }
       }
     }
   }
@@ -517,11 +550,13 @@ export function findInterfaceScriptFile(
     }
     /* istanbul ignore stop */
 
-    const hit = findExistingLookupPath(
-      joinWorkspacePath(layout.entityScriptsRoot, 'interfaces', `${interfaceName}.py`)
-    );
-    if (hit) {
-      return hit;
+    for (const folder of INTERFACE_SCRIPT_FOLDERS) {
+      const hit = findExistingLookupPath(
+        joinWorkspacePath(layout.entityScriptsRoot, folder, `${interfaceName}.py`)
+      );
+      if (hit) {
+        return hit;
+      }
     }
   }
 

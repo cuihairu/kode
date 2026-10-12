@@ -18,7 +18,8 @@ import {
   normalizeLookupPath
 } from './definitionSemantics';
 import {
-  getDefinitionWorkspaceLayout
+  getDefinitionWorkspaceLayout,
+  scriptFoldersForRole
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 
@@ -310,7 +311,12 @@ export class EntityMappingManager {
 
     if (owner.kind === 'entity') {
       for (const prefix of assetPrefix) {
-        candidates.push(joinWorkspacePath(workspaceRoot, prefix, sectionFolder, `${ownerName}.py`));
+        // 官方模板 bots/(ClientMethods 的 BotsApp 客户端脚本)+ 生成器平铺
+        // 形态 scripts/<实体>.py,与角色目录并列入候选(2026-10-12 用户实测)。
+        for (const folder of scriptFoldersForRole(sectionFolder)) {
+          candidates.push(joinWorkspacePath(workspaceRoot, prefix, folder, `${ownerName}.py`));
+        }
+        candidates.push(joinWorkspacePath(workspaceRoot, prefix, `${ownerName}.py`));
       }
       return candidates;
     }
@@ -330,9 +336,11 @@ export class EntityMappingManager {
     /* istanbul ignore start */
     if (owner.kind === 'interface') {
     /* istanbul ignore stop */
+      // 官方模板是单数 interface/,历史口径是复数 interfaces/(2026-10-12
+      // 用户实测核定),两种都入候选,复数在前保持既有工程行为。
       const interfaceFolders = preferInterfaceScriptFolder
-        ? [`${sectionFolder}/interfaces`, 'interfaces']
-        : ['interfaces', `${sectionFolder}/interfaces`];
+        ? [`${sectionFolder}/interfaces`, 'interfaces', `${sectionFolder}/interface`, 'interface']
+        : ['interfaces', `${sectionFolder}/interfaces`, 'interface', `${sectionFolder}/interface`];
 
       for (const prefix of assetPrefix) {
         for (const folder of interfaceFolders) {

@@ -368,3 +368,202 @@ describe('无工作区根(未打开任何文件夹)的孤立 def', () => {
     expect(findEntityScriptFile('Solo', 'base', '')).toBeNull();
   });
 });
+
+describe('引擎官方模板形态(base/cell/bots + interface 单数)与生成器平铺形态', () => {
+  // 用户 2026-10-12 实测核定:kbe/res/sdk_templates/server/python_assets/scripts/
+  // 下只有 base/bots/cell/interface 等目录,没有 client/,接口脚本在单数
+  // interface/;本扩展代码生成器(pythonOutputPath='scripts')把实体脚本平铺
+  // 在 scripts/<实体>.py。三者此前都没有被候选链承认。
+  const provider = new KBEngineDefinitionProvider();
+  const tmplRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav-reg-tmpl-'));
+  const flatRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-nav-reg-flat-'));
+  const w = (root: string, relative: string, content: string): void => {
+    const target = p(root, ...relative.split('/'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf8');
+  };
+
+  const heroDef = () => p(tmplRoot, 'scripts', 'entity_defs', 'Hero.def');
+  const mageDef = () => p(flatRoot, 'scripts', 'entity_defs', 'Mage.def');
+  const magePy = () => p(flatRoot, 'scripts', 'Mage.py');
+
+  const HERO_DEF = [
+    '<root>',
+    '\t<Properties>',
+    '\t\t<hp>',
+    '\t\t\t<Type>UINT32</Type>',
+    '\t\t</hp>',
+    '\t</Properties>',
+    '\t<Interfaces>',
+    '\t\t<interface>Combat</interface>',
+    '\t</Interfaces>',
+    '\t<BaseMethods>',
+    '\t\t<onCreate>',
+    '\t\t</onCreate>',
+    '\t\t<onSlash>',
+    '\t\t</onSlash>',
+    '\t</BaseMethods>',
+    '\t<CellMethods>',
+    '\t\t<onTick>',
+    '\t\t</onTick>',
+    '\t</CellMethods>',
+    '\t<ClientMethods>',
+    '\t\t<onSpawn>',
+    '\t\t</onSpawn>',
+    '\t\t<onGone>',
+    '\t\t</onGone>',
+    '\t</ClientMethods>',
+    '</root>'
+  ].join('\n');
+  const BASE_HERO_PY = [
+    'class Hero(KBEngine.Proxy):',
+    '\tdef onCreate(self):',
+    '\t\tpass',
+    ''
+  ].join('\n');
+  const CELL_HERO_PY = ['class Hero:', '\tdef onTick(self):', '\t\tpass', ''].join('\n');
+  const BOTS_HERO_PY = ['class Hero:', '\tdef onSpawn(self):', '\t\tpass', ''].join('\n');
+  const INTERFACE_COMBAT_PY = ['class Combat:', '\tdef onSlash(self):', '\t\tpass', ''].join('\n');
+  // 生成器形态:实体脚本平铺在 scripts 根,类名为 <实体>Base
+  const MAGE_DEF = [
+    '<root>',
+    '\t<Properties>',
+    '\t\t<mp>',
+    '\t\t\t<Type>UINT32</Type>',
+    '\t\t</mp>',
+    '\t</Properties>',
+    '\t<BaseMethods>',
+    '\t\t<onCast>',
+    '\t\t</onCast>',
+    '\t</BaseMethods>',
+    '</root>'
+  ].join('\n');
+  const MAGE_PY = [
+    'class MageBase():',
+    '\tdef __init__(self):',
+    '\t\tpass',
+    '\tdef onCast(self):',
+    '\t\tpass',
+    ''
+  ].join('\n');
+  const ENTITIES_XML_TMPL = [
+    '<root>',
+    '\t<Hero hasBase="true" hasCell="true" hasClient="true"/>',
+    '</root>',
+    ''
+  ].join('\n');
+
+  beforeAll(() => {
+    w(tmplRoot, 'scripts/entities.xml', ENTITIES_XML_TMPL);
+    w(tmplRoot, 'scripts/entity_defs/Hero.def', HERO_DEF);
+    w(tmplRoot, 'scripts/base/Hero.py', BASE_HERO_PY);
+    w(tmplRoot, 'scripts/cell/Hero.py', CELL_HERO_PY);
+    w(tmplRoot, 'scripts/bots/Hero.py', BOTS_HERO_PY);
+    w(tmplRoot, 'scripts/interface/Combat.py', INTERFACE_COMBAT_PY);
+    w(flatRoot, 'scripts/entity_defs/Mage.def', MAGE_DEF);
+    w(flatRoot, 'scripts/Mage.py', MAGE_PY);
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmplRoot, { recursive: true, force: true });
+    fs.rmSync(flatRoot, { recursive: true, force: true });
+  });
+
+  const withFolders = async (run: () => Promise<void>): Promise<void> => {
+    const folders = stubWorkspace.workspaceFolders;
+    stubWorkspace.workspaceFolders = [
+      ...folders,
+      { uri: Uri.file(tmplRoot), name: 'tmpl', index: folders.length },
+      { uri: Uri.file(flatRoot), name: 'flat', index: folders.length + 1 }
+    ];
+    try {
+      await run();
+    } finally {
+      stubWorkspace.workspaceFolders = folders;
+    }
+  };
+
+  it('ClientMethods 落到官方模板 bots/ 目录的 def 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(heroDef(), '<onSpawn>', provider);
+      expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'bots', 'Hero.py'));
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('BaseMethods 落到 base/ 的 def 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(heroDef(), '<onCreate>', provider);
+      expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'base', 'Hero.py'));
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('CellMethods 落到 cell/ 的 def 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(heroDef(), '<onTick>', provider);
+      expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'cell', 'Hero.py'));
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('Properties 落到 base/ 实体类行', async () => {
+    await withFolders(async () => {
+      const location = await probe(heroDef(), '<hp>', provider);
+      expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'base', 'Hero.py'));
+      expect(location?.range.start.line).toBe(0);
+    });
+  });
+
+  it('接口实现落到单数 interface/ 目录(引擎官方模板目录名)', async () => {
+    await withFolders(async () => {
+      const location = await probe(heroDef(), '<onSlash>', provider);
+      expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'interface', 'Combat.py'));
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('生成器平铺形态:Properties 落到 scripts/<实体>.py 的 __init__ 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(mageDef(), '<mp>', provider);
+      expect(location?.uri.fsPath).toBe(magePy());
+      // 类名 <实体>Base ≠ 实体名时,落点按 __init__ 行优先(先于首个类行)
+      expect(location?.range.start.line).toBe(1);
+    });
+  });
+
+  it('生成器平铺形态:BaseMethods 落到 scripts/<实体>.py 的 def 行', async () => {
+    await withFolders(async () => {
+      const location = await probe(mageDef(), '<onCast>', provider);
+      expect(location?.uri.fsPath).toBe(magePy());
+      expect(location?.range.start.line).toBe(3);
+    });
+  });
+
+  it('跨根:def 侧 scripts 根无平铺脚本 → 找到其他根的平铺脚本', async () => {
+    await withFolders(async () => {
+      // def 放在 flatRoot 根级 entity_defs(其 scripts 根=flatRoot,无平铺脚本);
+      // 平铺脚本放 tmplRoot/scripts/(另一工作区根的布局 scripts 根)
+      w(flatRoot, 'entity_defs/Mage2.def', '<root>\n\t<BaseMethods>\n\t\t<onBlast>\n\t\t</onBlast>\n\t</BaseMethods>\n</root>\n');
+      w(tmplRoot, 'scripts/Mage2.py', 'class Mage2Base():\n\tdef onBlast(self):\n\t\tpass\n');
+      try {
+        const location = await probe(p(flatRoot, 'entity_defs', 'Mage2.def'), '<onBlast>', provider);
+        expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'Mage2.py'));
+        expect(location?.range.start.line).toBe(1);
+      } finally {
+        fs.rmSync(p(flatRoot, 'entity_defs'), { recursive: true, force: true });
+        fs.rmSync(p(tmplRoot, 'scripts', 'Mage2.py'), { force: true });
+      }
+    });
+  });
+
+  it('ClientMethods 全空 → 提示列出 bots 目录与平铺路径', async () => {
+    await withFolders(async () => {
+      messages.info.length = 0;
+      const location = await probe(heroDef(), '<onGone>', provider);
+      expect(location?.uri.fsPath).toBe(p(tmplRoot, 'scripts', 'entities.xml'));
+      expect(messages.info.some(entry => entry.includes('onGone') && entry.includes('bots/Hero.py'))).toBe(true);
+      expect(messages.info.some(entry => entry.includes('scripts/Hero.py'))).toBe(true);
+    });
+  });
+});
