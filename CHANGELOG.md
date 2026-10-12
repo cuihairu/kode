@@ -30,6 +30,12 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   `scripts/` root, with the root kept as fallback
 - The expected-locations hint now lists every entity script path that was
   tried, including the `bots/` client folder and the flat layout
+- The entity dependency graph now builds inheritance edges from the text
+  form `<Parent>Hero</Parent>` too. The extractor only recognized the
+  element form `<Parent><Hero/></Parent>`, while the engine's
+  `loadParentClass` (entitydef.cpp L890) loads both — a text-form def lost
+  its inheritance edge in the graph. The wrapper stays case-sensitive like
+  the engine's `enterNode` match, and a lowercase `<parent>` is ignored
 
 ## [0.1.6] - 2026-10-11
 
