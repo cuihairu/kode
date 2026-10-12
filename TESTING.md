@@ -4274,7 +4274,7 @@ findInterfaceScriptFile 每个接口名只返回第一个命中——角色嵌�
 同名文件被遮蔽是设计优先级(用户令「base 的 def 跳 base」),不是 bug;
 回落场景要用角色嵌套整体缺失的接口名验证。
 
-覆盖率与门禁:1373/1373 绿,coverage 100%×4(6515 stmts/3797 branches/
+覆盖率与门禁:1376/1376 绿,coverage 100%×4(6515 stmts/3797 branches/
 1108 funcs/6356 lines),tsc 干净,mocha 冒烟 11 passing。版本冻结 0.1.0
 (用户 2026-10-12 令:批间不许 bump 版本号,版本号由用户给,首个 0.1.0
 要等基本功能稳定),CHANGELOG 增 [0.1.0]。
