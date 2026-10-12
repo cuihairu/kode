@@ -160,10 +160,14 @@ export class EntityDependencyAnalyzer {
       if (hasCell && !node.types.includes(EntityType.Cell)) node.types.push(EntityType.Cell);
       if (hasClient && !node.types.includes(EntityType.Client)) node.types.push(EntityType.Client);
 
-      // 查找父实体
-      const parentMatch = text.match(/<Parent>\s*<([A-Za-z_][A-Za-z0-9_]*)\s*\/>\s*<\/Parent>/i);
-      if (parentMatch) {
-        node.parent = parentMatch[1];
+      // 查找父实体(引擎 loadParentClass,entitydef.cpp:890:enterNode 按
+      // 'Parent' 精确匹配取首个非注释子节点,getKey 取文本 trim 或元素
+      // 标签名——文本形态 <Parent>X</Parent> 与元素形态 <Parent><X/></Parent>
+      // 都装载,小写 <parent> 不装载。原正则只认元素形态,纯文本形态 def
+      // 的继承边在依赖图丢失,块8 偏差收口)。
+      const parentName = resolveParentReferenceName(text);
+      if (parentName) {
+        node.parent = parentName;
       }
 
       this.entities.set(entityName, node);
@@ -513,6 +517,43 @@ export class EntityDependencyAnalyzer {
         return null;
     }
   }
+}
+
+/**
+ * 从 def 原文提取 `<Parent>` 引用名,对齐引擎 loadParentClass
+ * (entitydef.cpp:890):enterNode 按 'Parent' 精确比较取首个非注释子节点,
+ * getKey(xml.cpp:113)取文本 trim 或元素标签名——`<Parent>X</Parent>` 与
+ * `<Parent><X/></Parent>` 都得 'X',小写 `<parent>` 与纯空白块体不装载。
+ * 与模块内其余提取助手同口径:面向原文的宽容提取,不依赖严格 XML 解析
+ * (扫描覆盖整个工作区的 def 文件,而 defParser 的严格分词会拒绝引擎允许的
+ * `<Type>ARRAY<X></Type>` 混合内容,整份 def 连父类一并丢)。
+ */
+export function resolveParentReferenceName(text: string): string | undefined {
+  const wrapper = /<Parent>([\s\S]*?)<\/Parent>/.exec(text);
+  if (!wrapper) {
+    return undefined;
+  }
+
+  // 首个非空白、非注释子节点:文本取 trim,元素取标签名
+  const body = wrapper[1];
+  let index = 0;
+  while (index < body.length) {
+    if (/\s/.test(body[index])) {
+      index += 1;
+      continue;
+    }
+    if (body.startsWith('<!--', index)) {
+      const end = body.indexOf('-->', index + 4);
+      index = end === -1 ? body.length : end + 3;
+      continue;
+    }
+    if (body[index] === '<') {
+      const tag = /^<\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(body.slice(index));
+      return tag ? tag[1] : undefined;
+    }
+    return body.slice(index).split('<')[0].trim();
+  }
+  return undefined;
 }
 
 export function extractTagBodies(text: string, tagName: string): string[] {

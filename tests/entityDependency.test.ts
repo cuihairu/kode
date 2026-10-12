@@ -4,12 +4,48 @@ import {
   extractNamedChildBlocks,
   extractTagBodies,
   dedupeReferences,
+  resolveParentReferenceName,
   stripXmlTags
 } from '../src/entityDependency';
 
-// entityDependency 底部的四个模块级纯函数(仅加 export,零行为变更)。
+// entityDependency 底部的模块级纯函数(仅加 export,零行为变更)。
 // EntityDependencyAnalyzer 类本体依赖 vscode(findFiles/fs.readFile),
 // 由 mocha + @vscode/test-electron 侧覆盖。
+
+describe('resolveParentReferenceName', () => {
+  it('returns undefined when no Parent wrapper exists', () => {
+    expect(resolveParentReferenceName('<root><Properties/></root>')).toBeUndefined();
+  });
+
+  it('takes the tag name from an element child', () => {
+    expect(resolveParentReferenceName('<root><Parent><Hero/></Parent></root>')).toBe('Hero');
+  });
+
+  it('takes the trimmed text from a whitespace-padded text child', () => {
+    expect(resolveParentReferenceName('<root>\n  <Parent>\n    Hero\n  </Parent>\n</root>'))
+      .toBe('Hero');
+  });
+
+  it('skips a terminated comment before the first meaningful child', () => {
+    expect(resolveParentReferenceName('<Parent><!-- 旧父类 --><Hero/></Parent>')).toBe('Hero');
+  });
+
+  it('drops an unterminated comment and finds nothing', () => {
+    expect(resolveParentReferenceName('<Parent><!-- <Hero/></Parent>')).toBeUndefined();
+  });
+
+  it('returns undefined for a whitespace-only body', () => {
+    expect(resolveParentReferenceName('<Parent>   </Parent>')).toBeUndefined();
+  });
+
+  it('returns undefined when the element child has no identifier name', () => {
+    expect(resolveParentReferenceName('<Parent><-bad/></Parent>')).toBeUndefined();
+  });
+
+  it('is case-sensitive on the wrapper like the engine enterNode match', () => {
+    expect(resolveParentReferenceName('<parent>Hero</parent>')).toBeUndefined();
+  });
+});
 
 describe('extractTagBodies', () => {
   it('extracts trimmed bodies for every occurrence, case-insensitively', () => {

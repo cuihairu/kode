@@ -168,6 +168,7 @@
   - 属性依赖只分析 `Properties` 与容器里的实体引用，删除了 `MAILBOX` 猜测逻辑和 `CellProperties/ClientProperties` 伪区块解析。
   - 依赖图继续保留继承、`ENTITYCALL`/容器引用这类可解释关系，不再把编辑器层启发式结果当成官方事实。
 - 偏差登记（2026-10-11，续做单第 4 项复核发现）：`entityDependency.ts:164` 的继承边正则只认 `<Parent><X/></Parent>` 元素形态；文本形态 `<Parent>X</Parent>` 引擎 `loadParentClass()/getKey` 同样装载（块 16 批 96 已定性两种形态等价），故纯文本形态 def 的继承边在依赖图中丢失。按续做单铁律（核对类不许改功能代码）此处仅登记，待后续批次收口。
+- 偏差收口（2026-10-12，巡检推进单）：新增 `resolveParentReferenceName`（`src/entityDependency.ts`）对齐引擎取值口径——`loadParentClass`（entitydef.cpp:890）`enterNode` 按 `Parent` 精确匹配取首个非注释子节点，`getKey`（xml.cpp:113）取文本 trim 或元素标签名；两种形态与小写 `<parent>` 不装载口径一致。`parseEntityFile` 改调该函数取 `node.parent`。锁定用例 `tests/entityDependencyParentText.test.ts`（4 例）+ `resolveParentReferenceName` 纯函数 8 例。
 
 ### 9. 代码生成器
 

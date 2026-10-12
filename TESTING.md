@@ -4278,3 +4278,36 @@ findInterfaceScriptFile 每个接口名只返回第一个命中——角色嵌�
 1108 funcs/6356 lines),tsc 干净,mocha 冒烟 11 passing。版本冻结 0.1.0
 (用户 2026-10-12 令:批间不许 bump 版本号,版本号由用户给,首个 0.1.0
 要等基本功能稳定),CHANGELOG 增 [0.1.0]。
+
+## 批119:块8 偏差收口——依赖图继承边认文本形态 Parent(2026-10-12)
+
+用户令「todo 有未完成的都拉起来推进」。块8 登记项(2026-10-11 续做单
+第 4 项复核发现):entityDependency.ts 继承边正则只认
+`<Parent><X/></Parent>` 元素形态,文本形态 `<Parent>X</Parent>` 引擎
+同样装载,纯文本形态 def 的继承边在依赖图丢失。
+
+引擎口径(只读核对):loadParentClass(entitydef.cpp:890)经
+enterNode(defNode, "Parent") 找包装——defNode 是 getRootNode() 返回的
+root 首子节点,enterNode 沿兄弟扫、getKey 精确等于 "Parent" 才命中
+(小写 `<parent>` 不装载);命中后取包装内首个非注释子节点,再
+getKey:文本取 trim、元素取标签名。两种形态都得 'X'。
+
+修复:新增模块级纯函数 resolveParentReferenceName(entityDependency.ts)
+——case-sensitive 提取首个 `<Parent>` 块体,体内跳过空白与注释后取
+首个有意义子节点(文本 trim / 元素标签名)。parseEntityFile 改调它取
+node.parent。不使用 parseDefFileSemantics(defRenamer)的原因:依赖
+分析器按既有口径对全工作区 def 文件做宽容原文提取,而 defParser 严格
+分词会拒绝引擎允许的 `<Type>ARRAY<X></Type>` 混合内容(实证:该形态
+令 parseDefDocument 抛 Failed to locate XML token,整份 def 连父类
+一并丢),测试夹具 Anchor/Monster/Guild 等正是这类形态。
+
+回归锁定:tests/entityDependencyParentText.test.ts 4 用例(文本形态
+建继承边、换行缩进文本形态沿祖先链连走两跳、小写包装不装载、空 def
+无父不崩)+ tests/entityDependency.test.ts 增 resolveParentReferenceName
+纯函数 8 用例(无包装/元素子/空白文本子/终止注释跳过/未终止注释/
+纯空白块体/元素子无标识符名/包装大小写敏感)。红测试先行实证:修复前
+2 失败正是文本形态两例。
+
+覆盖率与门禁:1388/1388 绿,coverage 100%×4(6533 stmts/3809 branches/
+1109 funcs/6374 lines),eslint 干净,tsc 干净,mocha 冒烟 11 passing。
+版本仍冻结 0.1.0。

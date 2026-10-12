@@ -20,7 +20,7 @@
 | 5 .def 跳转定义 | 已对照 | `src/languageProviders.ts:477`（definition provider）、`:2015-2016`（Parent 跳转）；`src/definitionWorkspace.ts:588-600`（entities.xml 查找） |
 | 6 Python↔def 映射 | 已对照 | 计划文档块 6；`src/entityMapping.ts`、`src/pythonLanguageUtils.ts` |
 | 7 实体浏览器 | 已对照 | `src/definitionWorkspace.ts:1032-1034`（hasBase/hasCell/hasClient 仅认 `true`）；实机截图 `entity-explorer.png` |
-| 8 实体依赖分析 | **偏差（已登记）** | `src/entityDependency.ts:164` 继承边正则只认 `<Parent><X/></Parent>` 元素形态，文本形态 `<Parent>X</Parent>` 引擎 `getKey` 同样装载（块 16 批 96 定性），文本形态 def 继承边丢失；按铁律未改功能代码，登记待后续批次收口 |
+| 8 实体依赖分析 | 偏差已收口（2026-10-12 巡检推进单） | 原 `src/entityDependency.ts:164` 继承边正则只认 `<Parent><X/></Parent>` 元素形态、文本形态 `<Parent>X</Parent>` 继承边丢失；已改 `resolveParentReferenceName` 对齐引擎 `loadParentClass`（entitydef.cpp:890）两种形态 + 大小写敏感口径，锁定用例 `tests/entityDependencyParentText.test.ts` + 纯函数 8 例，详见 `KBENGINE_SOURCE_AUDIT_PLAN.md` 块 8 与 `TESTING.md` 批 119 |
 | 9 代码生成器 | 已对照 | 计划文档块 9；`src/codeGenerator.ts` |
 | 10 服务器管理 | 已对照 | 计划文档块 10；`src/serverManager.ts` |
 | 11 调试支持 | 已对照 | 计划文档块 11；`src/debugConfig.ts` |
