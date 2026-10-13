@@ -38,7 +38,15 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   an existing file stay out of the settings. `types.xml`,
   `messages_fixed(_defaults).xml` and the engine defaults source root need
   no settings at all. When `pythonOutputPath` is still its default, the
-  python root is derived from the discovered def root
+  python root is derived from the discovered def root. `kbengine.configPath`
+  joins the same chain: the setting (default or explicit) is validated by
+  the engine-load probe `res/server/kbengine.xml`, and when it does not
+  pass, the assets root is discovered from the conventional locations
+  (workspace root, `assets/`, `server_assets/`), the remembered choice, or
+  a unique deep-scan hit — several candidates mean an activation-time
+  quick pick, never a guess. The discovered root is also used by the
+  telnet probe and the final-config view to locate the element
+  `kbengine.xml` (its `res/server/kbengine.xml` location is probed too)
 - RPC 方法标记：Python 实现脚本里，方法名命中实体 def 方法声明的函数在
   声明行上方出一行可点 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def
   文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens。

@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { joinWorkspacePath, usesPosixPath } from './workspacePath';
-import { resolveKbeSourceRoot } from './workspaceDiscovery';
+import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 
 /**
  * KBEngine 服务器组件信息
@@ -231,7 +231,9 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 获取配置文件路径
+   * 获取配置文件路径:原值(默认或显式)以引擎装载探针验收,未通过时用
+   * 发现兜底(约定 → 记忆选择 → 唯一深扫描,批128);都失败则原样返回,
+   * 让启动检查链给出带期望形态的报错
    */
   getConfigPath(): string {
     const config = vscode.workspace.getConfiguration('kbengine');
@@ -240,7 +242,11 @@ export class KBEngineServerManager {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
     configPath = configPath.replace(/\$\{workspaceFolder\}/g, workspaceFolder);
 
-    return configPath;
+    if (configPath && hasEngineConfigProbe(configPath)) {
+      return configPath;
+    }
+    const discovered = workspaceFolder ? resolveDiscoveredConfigRoot(workspaceFolder) : null;
+    return discovered || configPath;
   }
 
   private detectKbeRoot(binPath: string): string {
@@ -345,10 +351,9 @@ export class KBEngineServerManager {
 
     // 批127:引擎期望的 res/server/kbengine.xml 不在时不拦截启动(引擎可能
     // 有别的取法),但在输出通道留可见警告,用户可把日志贴回来定位
-    const expectedConfigFile = path.join(configPath, 'res', 'server', 'kbengine.xml');
-    if (!fs.existsSync(expectedConfigFile)) {
+    if (!hasEngineConfigProbe(configPath)) {
       this.getOutputChannel(component).appendLine(
-        `[WARN] 期望的引擎配置文件不存在：${expectedConfigFile}（启动可能失败）`
+        `[WARN] 期望的引擎配置文件不存在：${path.join(configPath, 'res', 'server', 'kbengine.xml')}（启动可能失败）`
       );
     }
 

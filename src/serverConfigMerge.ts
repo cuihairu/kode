@@ -6,7 +6,7 @@ import {
   deriveEngineDefaultsXmlPath
 } from './telnetService';
 import { expandWorkspacePlaceholders } from './workspacePath';
-import { resolveKbeSourceRoot } from './workspaceDiscovery';
+import { resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 
 /**
  * 最终服务端配置合成(批112 用户令):按引擎装载规则——先加载
@@ -116,16 +116,30 @@ export function renderConfigXmlSections(root: ConfigXmlNode): string {
  * 元件 kbengine.xml 定位:kbengine.configPath(服务器资产目录,引擎
  * KBE_RES_PATH 中的项目侧)下的 kbengine.xml 优先,再按约定路径探测
  * 工作区根(与 telnet 约定路径一致)。取第一个存在的文件。
+ * 批128:configPath 未设或未过探针时,发现出的资产根同样参与(其下
+ * res/server/kbengine.xml 是引擎装载口径的元件配置位置)。
  */
 export function resolveCustomConfigXmlPath(workspaceRoot: string | undefined): string | null {
   const config = vscode.workspace.getConfiguration('kbengine');
-  const configPath = expandWorkspacePlaceholders(
+  const settingPath = expandWorkspacePlaceholders(
     config.get<string>('configPath', ''),
     workspaceRoot
   );
+  // 批128:设置自身候选(直接文件与装载口径位置)之后,发现出的资产根
+  // 参与探测,最后才是工作区根约定。设置下的直接文件仍是第一优先(批112 契约)
+  const discovered = workspaceRoot ? resolveDiscoveredConfigRoot(workspaceRoot) : null;
   const candidates: string[] = [];
-  if (configPath.length > 0) {
-    candidates.push(path.join(configPath, 'kbengine.xml'));
+  if (settingPath.length > 0) {
+    candidates.push(
+      path.join(settingPath, 'kbengine.xml'),
+      path.join(settingPath, 'res', 'server', 'kbengine.xml')
+    );
+  }
+  if (discovered && discovered !== settingPath) {
+    candidates.push(
+      path.join(discovered, 'kbengine.xml'),
+      path.join(discovered, 'res', 'server', 'kbengine.xml')
+    );
   }
   if (workspaceRoot) {
     candidates.push(

@@ -172,6 +172,24 @@ describe('readTelnetTargetsFromSettings', () => {
     }
   });
 
+  it('未配置 configPath:发现出的资产根参与探测(server_assets 布局,批128)', () => {
+    // server_assets 是发现约定链的一员,其 res/server/kbengine.xml 即元件配置
+    const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-cfgroot-'));
+    const target = path.join(xmlDir, 'server_assets', 'res', 'server', 'kbengine.xml');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, '<root><telnet_service><port>32666</port></telnet_service></root>');
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: xmlDir } } as never];
+    override({ configPath: '' });
+
+    try {
+      const targets = readTelnetTargetsFromSettings();
+      expect(targets).toHaveLength(1);
+      expect(targets[0]).toMatchObject({ key: '127.0.0.1:32666', port: 32666, label: 'kbengine.xml' });
+    } finally {
+      fs.rmSync(xmlDir, { recursive: true, force: true });
+    }
+  });
+
   it('configPath 下的 kbengine.xml 优先于约定路径(引擎 KBE_RES_PATH 项目侧)', () => {
     const xmlDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-telnet-configpath-'));
     const configDir = path.join(xmlDir, 'server');

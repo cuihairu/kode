@@ -9,6 +9,7 @@ import {
   TelnetClientState
 } from './telnetClient';
 import { expandWorkspacePlaceholders } from './workspacePath';
+import { resolveDiscoveredConfigRoot } from './workspaceDiscovery';
 
 /**
  * telnet 探测与联动服务(工单:telnet 探测+联动):
@@ -244,12 +245,27 @@ export function readTelnetTargetsFromSettings(): TelnetTarget[] {
   if (configXmlPath) {
     candidatePaths = [expandWorkspacePlaceholders(configXmlPath, workspaceRoot)];
   } else if (workspaceRoot) {
-    candidatePaths = KBENGINE_XML_CANDIDATE_PATHS.map(relative => path.join(workspaceRoot, relative));
-    // configPath(kbengine.configPath,服务器资产目录)下优先,引擎即在此找元件配置
-    const configPath = expandWorkspacePlaceholders(config.get<string>('configPath', ''), workspaceRoot);
-    if (configPath.length > 0) {
-      candidatePaths.unshift(path.join(configPath, 'kbengine.xml'));
+    // configPath(kbengine.configPath,服务器资产目录)下优先,引擎即在此找元件配置;
+    // 批128:设置自身候选之后,发现出的资产根参与(装载口径位置 res/server/ 一并探测)
+    const settingPath = expandWorkspacePlaceholders(config.get<string>('configPath', ''), workspaceRoot);
+    const discovered = resolveDiscoveredConfigRoot(workspaceRoot);
+    const preferred: string[] = [];
+    if (settingPath.length > 0) {
+      preferred.push(
+        path.join(settingPath, 'kbengine.xml'),
+        path.join(settingPath, 'res', 'server', 'kbengine.xml')
+      );
     }
+    if (discovered && discovered !== settingPath) {
+      preferred.push(
+        path.join(discovered, 'kbengine.xml'),
+        path.join(discovered, 'res', 'server', 'kbengine.xml')
+      );
+    }
+    candidatePaths = [
+      ...preferred,
+      ...KBENGINE_XML_CANDIDATE_PATHS.map(relative => path.join(workspaceRoot, relative))
+    ];
   }
   for (const candidate of candidatePaths) {
     try {

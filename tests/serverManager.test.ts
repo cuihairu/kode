@@ -165,6 +165,72 @@ describe('KBEngineServerManager path resolution', () => {
   });
 });
 
+describe('getConfigPath 资产根发现兜底(批128)', () => {
+  let rootBase = '';
+  let root = '';
+
+  beforeAll(() => {
+    rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvcfg-'));
+    root = path.join(rootBase, 'cfg');
+    fs.mkdirSync(root, { recursive: true });
+    stubWorkspace.workspaceFolders = [{
+      uri: { fsPath: root } as vscode.Uri,
+      name: 'cfg',
+      index: 0
+    }];
+  });
+
+  afterAll(() => {
+    stubWorkspace.workspaceFolders = [];
+    fs.rmSync(rootBase, { recursive: true, force: true });
+  });
+
+  it('falls back to the discovered assets root when the default misses the probe', () => {
+    // 默认值 ${workspaceFolder}/server 未过探针,约定 assets 命中
+    fs.mkdirSync(path.join(root, 'assets', 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'assets', 'res', 'server', 'kbengine.xml'), '<xml/>', 'utf8');
+    configurationOverrides.set('kbengine', {});
+
+    expect(makeManager().getConfigPath()).toBe(path.join(root, 'assets'));
+  });
+
+  it('keeps an explicit setting that passes the engine probe', () => {
+    fs.mkdirSync(path.join(root, 'myassets', 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'myassets', 'res', 'server', 'kbengine.xml'), '<xml/>', 'utf8');
+    configurationOverrides.set('kbengine', { configPath: path.join(root, 'myassets') });
+
+    expect(makeManager().getConfigPath()).toBe(path.join(root, 'myassets'));
+  });
+
+  it('keeps the raw setting when both probe and discovery fail', () => {
+    // 都失败:原样返回,让启动检查链给出带期望形态的报错(批127 口径)。
+    // 独立空工作区:共享夹具里 assets/ 已被前面的用例建出,会合法命中发现
+    const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srvcfg-empty-'));
+    const savedFolders = stubWorkspace.workspaceFolders;
+    try {
+      stubWorkspace.workspaceFolders = [{
+        uri: { fsPath: emptyRoot } as vscode.Uri,
+        name: 'empty',
+        index: 0
+      }];
+      configurationOverrides.set('kbengine', { configPath: path.join(emptyRoot, 'nowhere') });
+
+      expect(makeManager().getConfigPath()).toBe(path.join(emptyRoot, 'nowhere'));
+    } finally {
+      stubWorkspace.workspaceFolders = savedFolders;
+      fs.rmSync(emptyRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('expands the workspace placeholder before probing', () => {
+    fs.mkdirSync(path.join(root, 'server', 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'server', 'res', 'server', 'kbengine.xml'), '<xml/>', 'utf8');
+    configurationOverrides.set('kbengine', { configPath: '${workspaceFolder}/server' });
+
+    expect(makeManager().getConfigPath()).toBe(path.join(root, 'server'));
+  });
+});
+
 describe('KBEngineServerManager startup grace guard (批73)', () => {
   it('does not resurrect a disposed server when the grace timer fires', async () => {
     // 竞态守卫真臂:dispose() 清空 runningServers 但不清 startupTimer;

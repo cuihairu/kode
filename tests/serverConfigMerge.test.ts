@@ -189,6 +189,20 @@ describe('resolveCustomConfigXmlPath / buildFinalServerConfig(装配读值)', ()
     }
   });
 
+  it('未配置 configPath:发现出的资产根参与探测(server_assets 布局,批128)', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-disc-'));
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
+      const discoveredXml = path.join(root, 'server_assets', 'res', 'server', 'kbengine.xml');
+      fs.mkdirSync(path.dirname(discoveredXml), { recursive: true });
+      fs.writeFileSync(discoveredXml, '<root><baseapp><debug> 3 </debug></baseapp></root>');
+
+      expect(resolveCustomConfigXmlPath(root)).toBe(discoveredXml);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('binPath 推导不出 defaults:命令层拿空文本与默认定位', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-nodefault-'));
     try {

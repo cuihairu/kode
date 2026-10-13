@@ -40,8 +40,19 @@ export const DISCOVERY_CONVENTIONS = {
     'kbe/src/lib/entitydef/entitydef.cpp',
     'kbe/src/lib/db_mysql/entity_table_mysql.cpp',
     'kbe/src/common/entitydef/entitydef.cpp'
-  ]
+  ],
+  // 服务器资产根(kbengine.configPath)约定:'' 即工作区根本身。命中验收
+  // 不是目录存在,而是引擎装载探针 <候选>/res/server/kbengine.xml 在
+  configRoots: ['', 'assets', 'server_assets']
 } as const;
+
+/**
+ * 资产根验收谓词:引擎以该目录为 cwd 启动并从 <根>/res/server/kbengine.xml
+ * 读元件配置,探针文件不在 = 起不来。发现、报告与 serverManager 共用此口径。
+ */
+export function hasEngineConfigProbe(configPath: string): boolean {
+  return fs.existsSync(path.join(configPath, 'res', 'server', 'kbengine.xml'));
+}
 
 const SKIP_DIRECTORY_NAMES = new Set(['node_modules', '.git', '.vscode', 'out', 'dist']);
 
@@ -55,6 +66,8 @@ export interface DiscoveredCandidateSet {
   typesXml: string[];
   kbeSourceRoots: string[];
   messagesXml: string[];
+  /** 深扫描命中的资产根(res/server/kbengine.xml 探针所在目录族) */
+  configRoots: string[];
   /** 本次扫描实际访问的条目数(受 maxVisited 截顶) */
   scanVisited: number;
   /** true = 在 maxVisited/maxDepth 触顶截断,命中集可能不全 */
@@ -81,6 +94,7 @@ export function scanWorkspaceAnchors(
     typesXml: [],
     kbeSourceRoots: [],
     messagesXml: [],
+    configRoots: [],
     scanVisited: 0,
     scanTruncated: false
   };
@@ -127,6 +141,15 @@ export function scanWorkspaceAnchors(
           if (kbeRoot && found.kbeSourceRoots.indexOf(kbeRoot) === -1) {
             found.kbeSourceRoots.push(kbeRoot);
           }
+        } else if (
+          // 资产根探针形态:kbengine.xml 恰在 <root>/res/server/ 下,资产根
+          // 即再上两级目录(约定链之外的深嵌布局由此兜底,如 demo/res/server)
+          entry.name === 'kbengine.xml'
+          && path.basename(dir) === 'server'
+          && path.basename(path.dirname(dir)) === 'res'
+        ) {
+          // 每个根的 res/server 下只有一个 kbengine.xml,同一根不会被推两次
+          found.configRoots.push(path.dirname(path.dirname(dir)));
         }
       }
     }
@@ -157,7 +180,7 @@ function findKbeRootAnchor(filePath: string): string | null {
 
 const scanCache = new Map<string, DiscoveredCandidateSet>();
 
-export type DiscoveryKey = 'entityDefs' | 'entitiesXml' | 'typesXml';
+export type DiscoveryKey = 'entityDefs' | 'entitiesXml' | 'typesXml' | 'configRoot';
 
 const rememberedChoices = new Map<string, Partial<Record<DiscoveryKey, string>>>();
 
@@ -245,6 +268,28 @@ export function resolveDiscoveredTypesXmlPath(workspaceRoot: string): string | n
 }
 
 /**
+ * 服务器资产根发现(kbengine.configPath 未通过探针时的兜底):约定链按序
+ * 取第一个探针命中(工作区根/assets/server_assets),约定全 miss 而深扫描
+ * 多候选时用记忆的选择(激活期询问所得),深扫描唯一命中直接采用——口径与
+ * def 根家族一致:约定优先、宁缺勿猜。
+ */
+export function resolveDiscoveredConfigRoot(workspaceRoot: string): string | null {
+  const conventional = firstExisting(
+    DISCOVERY_CONVENTIONS.configRoots
+      .map(relative => path.join(workspaceRoot, relative))
+      .filter(hasEngineConfigProbe)
+  );
+  if (conventional) {
+    return conventional;
+  }
+  const remembered = getDiscoveryChoice(workspaceRoot, 'configRoot');
+  if (remembered && hasEngineConfigProbe(remembered)) {
+    return remembered;
+  }
+  return firstSingle(cachedScan(workspaceRoot).configRoots);
+}
+
+/**
  * 引擎源码根:约定锚点直查 → 记忆的选择 → 深扫描。供 binPath 兜底
  * (serverManager/serverConfigMerge)与 messages_fixed.xml 定位共用。
  */
@@ -302,6 +347,13 @@ export function collectDiscoveryCandidates(workspaceRoot: string): DiscoveryCand
     typesXml: [
       ...DISCOVERY_CONVENTIONS.typesXml.filter(exists).map(p => path.join(workspaceRoot, p)),
       ...scan.typesXml
+    ],
+    // 资产根候选:探针验收(不是目录存在),约定命中与深扫描命中合并
+    configRoot: [
+      ...DISCOVERY_CONVENTIONS.configRoots
+        .map(relative => path.join(workspaceRoot, relative))
+        .filter(hasEngineConfigProbe),
+      ...scan.configRoots
     ]
   };
   const deduped = (key: DiscoveryKey): string[] => [...new Set(candidates[key])];
@@ -309,6 +361,7 @@ export function collectDiscoveryCandidates(workspaceRoot: string): DiscoveryCand
   const entityDefs = deduped('entityDefs');
   const entitiesXml = deduped('entitiesXml');
   const typesXml = deduped('typesXml');
+  const configRoot = deduped('configRoot');
   const ambiguous: DiscoveryKey[] = [];
   if (entityDefs.length > 1) {
     ambiguous.push('entityDefs');
@@ -319,8 +372,11 @@ export function collectDiscoveryCandidates(workspaceRoot: string): DiscoveryCand
   if (typesXml.length > 1) {
     ambiguous.push('typesXml');
   }
+  if (configRoot.length > 1) {
+    ambiguous.push('configRoot');
+  }
   return {
-    candidates: { entityDefs, entitiesXml, typesXml },
+    candidates: { entityDefs, entitiesXml, typesXml, configRoot },
     ambiguous
   };
 }
@@ -336,7 +392,8 @@ export interface DiscoveryPromptDeps {
 const KEY_LABELS: Record<DiscoveryKey, string> = {
   entityDefs: '实体定义目录(entity_defs)',
   entitiesXml: 'entities.xml',
-  typesXml: 'types.xml'
+  typesXml: 'types.xml',
+  configRoot: '服务器资产根(kbengine.configPath)'
 };
 
 /**
@@ -443,6 +500,8 @@ export interface DiscoveryLayoutFacts {
   typesXmlPath: string | null;
   /** kbengine.configPath 原值(资产根,可能为空串;仅 ${workspaceFolder} 展开) */
   configPath: string;
+  /** 生效资产根(装配层经管理器口径:原值探针命中优先,否则发现兜底) */
+  configPathEffective: string;
   /** kbengine.binPath 原值(可能含 ${env:...} 占位,可为空串) */
   binPathSetting: string;
   /** 生效 binPath(装配层经管理器解析,含 kbe 源码根自动检测回落) */
@@ -612,26 +671,53 @@ export function buildDiscoveryReport(
     remembered: null
   });
 
-  const configPath = facts.configPath
-    ? resolveAgainstWorkspace(workspaceRoot, facts.configPath)
+  // 资产根:生效值(原值探针命中优先,否则发现兜底)以引擎装载口径验收
+  // ——目录存在且 res/server/kbengine.xml 在(服务器以该目录为 cwd 启动,
+  // 缺此文件引擎起不来)。来源按生效值落在哪条链上标注(批128 起含发现链)
+  const configPathEffective = facts.configPathEffective
+    ? resolveAgainstWorkspace(workspaceRoot, facts.configPathEffective)
     : '';
-  const configProbe = configPath
-    ? path.join(configPath, 'res', 'server', 'kbengine.xml')
+  const configProbe = configPathEffective
+    ? path.join(configPathEffective, 'res', 'server', 'kbengine.xml')
     : null;
-  // 资产根以引擎装载口径验收:目录存在且 res/server/kbengine.xml 在
-  // (服务器以该目录为 cwd 启动,缺此文件引擎起不来)
   const configProbeOk = existsValue(configProbe);
+  const configConventionRoots = DISCOVERY_CONVENTIONS.configRoots.map(relative =>
+    path.join(workspaceRoot, relative)
+  );
+  const configConventionProbes = configConventionRoots.map(root =>
+    path.join(root, 'res', 'server', 'kbengine.xml')
+  );
+  const configConventionHitProbes = configConventionProbes.filter(probe => fs.existsSync(probe));
+  const rememberableConfigRoot = rememberedChoices.get(workspaceRoot)?.['configRoot'] ?? null;
+  const configRemembered = rememberableConfigRoot && fs.existsSync(rememberableConfigRoot)
+    ? rememberableConfigRoot
+    : null;
+  const configExplicitResolved = facts.configPath
+    ? resolveAgainstWorkspace(workspaceRoot, facts.configPath)
+    : null;
+  const configSource: DiscoveryValueSource = !configPathEffective
+    ? 'none'
+    : configExplicitResolved && configPathEffective === configExplicitResolved
+      ? 'explicit-config'
+      : configRemembered && configPathEffective === configRemembered
+        ? 'remembered-choice'
+        : configConventionRoots.indexOf(configPathEffective) !== -1
+          ? 'convention'
+          : scan.configRoots.indexOf(configPathEffective) !== -1
+            ? 'deep-scan'
+            : 'fallback';
   fields.push({
     label: '资产根 kbengine.configPath',
     status: configProbeOk ? 'ok' : 'missing',
-    resolved: configPath || null,
-    source: configPath ? 'explicit-config' : 'none',
+    resolved: configPathEffective || null,
+    source: configSource,
     explicitConfig: facts.configPath || null,
-    explicitConfigExists: facts.configPath ? fs.existsSync(configPath) : null,
-    conventions: [configProbe].filter((value): value is string => value !== null),
-    conventionHits: configProbeOk ? [configProbe as string] : [],
-    scanHits: [],
-    remembered: null
+    // 有设置才有存在性可言(configExplicitResolved 与设置同真值)
+    explicitConfigExists: configExplicitResolved ? fs.existsSync(configExplicitResolved) : null,
+    conventions: configConventionProbes,
+    conventionHits: configConventionHitProbes,
+    scanHits: scan.configRoots,
+    remembered: configRemembered
   });
 
   // binPath 来源:设置非空即显式配置(可能含 ${env:...} 展开);设置为空而
@@ -717,7 +803,7 @@ function remediationFor(field: DiscoveryFieldReport): string {
     case '组件目录 components':
       return '该目录由实体定义目录推导,先修好实体定义目录';
     case '资产根 kbengine.configPath':
-      return '设置 kbengine.configPath 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/)';
+      return '设置 kbengine.configPath 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/),或把资产根放在约定位置(工作区根、assets/、server_assets/,探针均为 res/server/kbengine.xml)';
     case '引擎二进制 kbengine.binPath':
       return '设置 kbengine.binPath 指向 kbe/bin/server(引擎源码根会被自动推导)';
     case '引擎消息消息表 messages_fixed.xml':

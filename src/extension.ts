@@ -1036,6 +1036,8 @@ export function activate(context: vscode.ExtensionContext) {
       entitiesXmlPath: layout.entitiesXmlPath,
       typesXmlPath: layout.typesXmlPath,
       configPath: config.get<string>('configPath', ''),
+      // 生效资产根走管理器口径(原值探针命中优先,否则发现兜底,批128)
+      configPathEffective: serverManager.getConfigPath(),
       binPathSetting: config.get<string>('binPath', ''),
       binPath: serverManager.getBinPath(),
       entityDefsPathSetting: config.get<string>('entityDefsPath', ''),

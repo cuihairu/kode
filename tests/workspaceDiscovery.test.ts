@@ -7,7 +7,9 @@ import {
   applyDiscoveryChoices,
   collectDiscoveryCandidates,
   getDiscoveryChoice,
+  hasEngineConfigProbe,
   resetDiscoveryState,
+  resolveDiscoveredConfigRoot,
   resolveDiscoveredEntitiesXmlPath,
   resolveDiscoveredEntityDefsRoot,
   resolveDiscoveredTypesXmlPath,
@@ -140,6 +142,7 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
       typesXml: [],
       kbeSourceRoots: [],
       messagesXml: [],
+      configRoots: [],
       scanVisited: 0,
       scanTruncated: false
     });
@@ -149,6 +152,7 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
       typesXml: [],
       kbeSourceRoots: [],
       messagesXml: [],
+      configRoots: [],
       scanVisited: 0,
       scanTruncated: false
     });
@@ -168,6 +172,7 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
         typesXml: [],
         kbeSourceRoots: [],
         messagesXml: [],
+        configRoots: [],
         // 符号链接条目本身计入访问数,只是不跟随
         scanVisited: 1,
         scanTruncated: false
@@ -525,5 +530,69 @@ describe('activation wiring(批125 发现流程经 activate 装配)', () => {
       stubWorkspace.workspaceFolders = [];
       resetDiscoveryState();
     }
+  });
+});
+
+describe('configRoot 发现(批128:kbengine.configPath 约定兜底)', () => {
+  it('collects nested res/server/kbengine.xml probe roots but not root-level files', () => {
+    write('demo/res/server/kbengine.xml');
+    write('kbengine.xml');
+
+    const scan = scanWorkspaceAnchors(root);
+    expect(scan.configRoots).toEqual([p('demo')]);
+    expect(hasEngineConfigProbe(p('demo'))).toBe(true);
+    expect(hasEngineConfigProbe(root)).toBe(false);
+  });
+
+  it('resolves the first probe-passing convention (workspace root beats assets)', () => {
+    write('res/server/kbengine.xml');
+    write('assets/res/server/kbengine.xml');
+
+    expect(resolveDiscoveredConfigRoot(root)).toBe(root);
+  });
+
+  it('resolves the assets convention when the root itself has no probe file', () => {
+    write('assets/res/server/kbengine.xml');
+
+    expect(resolveDiscoveredConfigRoot(root)).toBe(p('assets'));
+  });
+
+  it('prefers the remembered choice when conventions miss and the scan is ambiguous', () => {
+    write('demo/res/server/kbengine.xml');
+    write('toolkit/res/server/kbengine.xml');
+    setDiscoveryChoice(root, 'configRoot', p('toolkit'));
+
+    expect(resolveDiscoveredConfigRoot(root)).toBe(p('toolkit'));
+  });
+
+  it('takes a unique deep-scan hit directly', () => {
+    write('demo/res/server/kbengine.xml');
+
+    expect(resolveDiscoveredConfigRoot(root)).toBe(p('demo'));
+  });
+
+  it('returns null for multiple scan hits without a remembered choice', () => {
+    // 宁缺勿猜:两个深嵌资产根不猜,交激活期询问
+    write('demo/res/server/kbengine.xml');
+    write('toolkit/res/server/kbengine.xml');
+
+    expect(resolveDiscoveredConfigRoot(root)).toBeNull();
+  });
+
+  it('falls through when the remembered root lost its probe file', () => {
+    mkdir('gone/assets');
+    write('demo/res/server/kbengine.xml');
+    setDiscoveryChoice(root, 'configRoot', p('gone/assets'));
+
+    expect(resolveDiscoveredConfigRoot(root)).toBe(p('demo'));
+  });
+
+  it('reports configRoot candidates with probe validation and ambiguity', () => {
+    write('assets/res/server/kbengine.xml');
+    write('server_assets/res/server/kbengine.xml');
+
+    const report = collectDiscoveryCandidates(root);
+    expect(report.candidates.configRoot).toEqual([p('assets'), p('server_assets')]);
+    expect(report.ambiguous).toContain('configRoot');
   });
 });

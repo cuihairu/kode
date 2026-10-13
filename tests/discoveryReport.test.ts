@@ -8,6 +8,7 @@ import {
   buildDiscoveryReport,
   renderDiscoveryReport,
   resetDiscoveryState,
+  resolveDiscoveredConfigRoot,
   setDiscoveryChoice
 } from '../src/workspaceDiscovery';
 import type { DiscoveredCandidateSet, DiscoveryFieldLabel, DiscoveryLayoutFacts } from '../src/workspaceDiscovery';
@@ -32,12 +33,17 @@ const mkdir = (relative: string) => {
 };
 
 // 与 extension.ts 装配同口径:layout + 配置原值(binPath 侧直接给生效值,
-// 报告只负责盘点,不重复管理器的自动检测逻辑)
+// 报告只负责盘点,不重复管理器的自动检测逻辑);生效资产根与
+// serverManager.getConfigPath() 同规则——原值过探针才用原值,否则发现兜底
 const factsFor = (binPath = ''): DiscoveryLayoutFacts => {
   const layout = getDefinitionWorkspaceLayout(root);
   const overrides = configurationOverrides.get('kbengine') ?? {};
   const setting = (key: string): string =>
     typeof overrides[key] === 'string' ? (overrides[key] as string) : '';
+  const configSetting = setting('configPath');
+  const configSettingProbed =
+    configSetting !== ''
+    && fs.existsSync(path.join(configSetting, 'res', 'server', 'kbengine.xml'));
   return {
     entityDefsRoot: layout.entityDefsRoot || '',
     entityScriptsRoot: layout.entityScriptsRoot,
@@ -49,7 +55,11 @@ const factsFor = (binPath = ''): DiscoveryLayoutFacts => {
     entitiesXmlPathSetting: setting('entitiesXmlPath'),
     // types.xml 无独立配置项,布局内硬编码候选链
     typesXmlPathSetting: '',
-    configPath: setting('configPath'),
+    configPath: configSetting,
+    configPathEffective:
+      configSettingProbed
+        ? configSetting
+        : resolveDiscoveredConfigRoot(root) || configSetting,
     binPathSetting: setting('binPath'),
     binPath
   };
@@ -266,6 +276,56 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
       .toContain('res/server/kbengine.xml');
   });
 
+  it('falls back to the discovered convention root when the explicit setting points nowhere', () => {
+    // 批128:显式配置指空时生效值走发现兜底——报告如实摊开双栏:
+    // 显式配置(不存在)与来源为约定链的生效根
+    write('assets/res/server/kbengine.xml');
+    configurationOverrides.set('kbengine', { configPath: p('ghost-root') });
+
+    const configField = fieldByLabel('资产根 kbengine.configPath');
+    expect(configField?.resolved).toBe(p('assets'));
+    expect(configField?.source).toBe('convention');
+    expect(configField?.status).toBe('ok');
+    expect(configField?.explicitConfig).toBe(p('ghost-root'));
+    expect(configField?.explicitConfigExists).toBe(false);
+    expect(configField?.conventionHits).toEqual([p('assets/res/server/kbengine.xml')]);
+  });
+
+  it('labels a remembered config-root choice as remembered-choice', () => {
+    write('demo/res/server/kbengine.xml');
+    setDiscoveryChoice(root, 'configRoot', p('demo'));
+
+    const configField = fieldByLabel('资产根 kbengine.configPath');
+    expect(configField?.resolved).toBe(p('demo'));
+    expect(configField?.source).toBe('remembered-choice');
+    expect(configField?.remembered).toBe(p('demo'));
+    expect(configField?.status).toBe('ok');
+  });
+
+  it('labels a unique deep-scan config root as deep-scan', () => {
+    write('demo/res/server/kbengine.xml');
+
+    const configField = fieldByLabel('资产根 kbengine.configPath');
+    expect(configField?.resolved).toBe(p('demo'));
+    expect(configField?.source).toBe('deep-scan');
+    expect(configField?.scanHits).toEqual([p('demo')]);
+    expect(configField?.status).toBe('ok');
+  });
+
+  it('labels a caller-supplied effective root outside every tracked chain as fallback', () => {
+    // facts 契约允许任意生效值:不在显式/记忆/约定/深扫描任一链上 → 回落
+    mkdir('somewhere-root');
+    const report = buildDiscoveryReport(
+      root,
+      { ...factsFor(), configPathEffective: p('somewhere-root') },
+      undefined,
+      GENERATED_AT
+    );
+    const configField = report.fields.find(field => field.label === '资产根 kbengine.configPath');
+    expect(configField?.resolved).toBe(p('somewhere-root'));
+    expect(configField?.source).toBe('fallback');
+  });
+
   it('labels an empty configPath as missing with remediation', () => {
     const configField = fieldByLabel('资产根 kbengine.configPath');
     expect(configField?.status).toBe('missing');
@@ -361,6 +421,7 @@ describe('buildDiscoveryReport(扫描元信息)', () => {
       typesXml: [],
       kbeSourceRoots: [],
       messagesXml: [],
+      configRoots: [],
       scanVisited: 5,
       scanTruncated: true
     };

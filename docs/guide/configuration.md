@@ -11,7 +11,7 @@ Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务�
 | 层 | 文件 | 定位方式 |
 | --- | --- | --- |
 | 1 引擎默认 | `kbe/res/server/kbengine_defaults.xml` | 由 `kbengine.binPath`(指向 `kbe/bin/server`)向上推导 |
-| 2 元件覆盖 | `kbengine.xml` | `kbengine.configPath` 下的 `kbengine.xml` 优先;未设时按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
+| 2 元件覆盖 | `kbengine.xml` | `kbengine.configPath` 下的 `kbengine.xml` 与其 `res/server/kbengine.xml` 优先;未设或未命中时发现出的资产根(批128)参与;最后按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
 | 3 最终生效 | (合成,不落盘) | 第 1 层先载,第 2 层同键覆盖 |
 
 覆盖口径:
@@ -121,7 +121,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
-| `kbengine.configPath` | 显式配置(默认 `${workspaceFolder}/server`);元件 `kbengine.xml` 另有 3 个约定位置探测 | 部分(`kbengine.xml` 可探,资产根本身不可) | **保留默认**:启动组件的 cwd 与 `KBE_RES_PATH` 必须指真实资产根,猜错组件起不来,代价高于收益;不启动服务器则无需配置 |
+| `kbengine.configPath` | 显式配置(默认 `${workspaceFolder}/server`);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
 | `kbengine.telnet.port` | 显式 >0 锁定;0 = 按元件段 → 引擎 defaults 链(批112) | **能**(配置链,批112 已做) | **自动取值**,配置只作覆盖 |
 | `kbengine.telnet.password` | 设置 → 元件段 → defaults → 空(批112) | **能**(同上) | **自动取值**,配置只作覆盖 |
 | `kbengine.telnet.configXmlPath` | 空 = 按 3 个约定位置自动找 `kbengine.xml` | **能**(已是覆盖式) | **自动发现**,配置只作覆盖 |
@@ -207,8 +207,9 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
   1. 组件进程的工作目录(cwd)——引擎按相对路径找资产时以这里为基准;
   2. 进程环境 `KBE_RES_PATH` 的项目侧条目:完整顺序为 `KBE_ROOT/kbe/res`、`configPath`、`configPath/res`、`configPath/scripts`;
   3. 元件 `kbengine.xml` 的首选定位处:`configPath/kbengine.xml`。
-- 启动前会校验:空串、目录不存在、路径不是目录都会报错并中止启动
-- 误配:指到仓库根而不是资产目录 → 引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;或指错后元件 `kbengine.xml` 定位不到,telnet 与最终配置都退回纯默认
+- 批128 起自动发现:原值(默认或显式)未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链(工作区根、`assets/`、`server_assets/`)→ 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`
+- 启动前会校验:发现与显式都落空时空串、目录不存在、路径不是目录都会报错并中止启动;目录在而探针文件缺 → 输出通道留 `[WARN]` 不拦截(批127)
+- 误配:指到仓库根而不是资产目录 → 探针不通过,自动发现接管;发现也落空时引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;元件 `kbengine.xml` 定位不到时 telnet 与最终配置退回纯默认
 
 ### 最终配置视图
 

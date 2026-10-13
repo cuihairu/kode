@@ -60,10 +60,10 @@ extension.ts、entityMapping.ts、kbengineProtocol.ts、explorerProviders.ts
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (7165/7165) |
-| Branches | 100% (4318/4318) |
-| Functions | 100% (1208/1208) |
-| Lines | 100% (6986/6986) |
+| Statements | 100% (7198/7198) |
+| Branches | 100% (4367/4367) |
+| Functions | 100% (1214/1214) |
+| Lines | 100% (7019/7019) |
 
 纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 78 处
 `/* istanbul ignore start */` 区间——批62 的 25 处起家,批63 起各批在
@@ -4488,4 +4488,40 @@ scanVisited/scanTruncated 字段。
 
 覆盖率与门禁:1548/1548 绿(109 测试文件),coverage 100%×4(7165 stmts/
 4318 branches/1208 funcs/6986 lines,40 源文件全覆盖,istanbul 忽略台账
+仍 78 处),eslint+tsc 干净。版本仍冻结 0.1.0。
+
+## 批128:kbengine.configPath 补约定发现(2026-10-14)
+
+todo 令:`kbengine.configPath` 补约定发现(telnet 已有 res/server/kbengine.xml
+探测链,可复用)。批125 定的"资产根不发现"由此翻转:探针验收消除了
+"猜错起不来"的风险面。
+
+纯逻辑层 `src/workspaceDiscovery.ts`:约定链 `configRoots = ['', 'assets',
+'server_assets']`,验收谓词 `hasEngineConfigProbe`(其下有
+res/server/kbengine.xml);深扫描在 file 分支识别"kbengine.xml 恰在
+<root>/res/server/ 下"的形态,资产根收入 `DiscoveredCandidateSet.configRoots`
+(每根的 res/server 下仅一个 kbengine.xml,不会重复);`DiscoveryKey` 增加
+`configRoot`(激活期多候选询问与 workspaceState 回放自动生效);
+`resolveDiscoveredConfigRoot`:约定探针首个命中 → 记忆选择(探针复核)→
+深扫描唯一命中(多候选宁缺勿猜)。
+
+消费面三处对齐:`serverManager.getConfigPath()` 原值过探针才用原值,否则
+发现兜底,都失败保持原值让批127 报错链给出带期望形态的报错;
+`serverConfigMerge.resolveCustomConfigXmlPath` 与 telnet 探测链在设置自身
+候选(直接文件 + 其 res/server 装载口径位置)之后插入发现根的两候选,
+批112 "设置下 kbengine.xml 优先"契约不变。批127 报告的资产根字段改为
+生效值口径:来源按生效值落在哪条链标注(explicit-config/remembered-choice/
+convention/deep-scan/fallback/none),约定链摊开为三档探针路径。
+
+回归锁定:tests/workspaceDiscovery.test.ts +8(configRoots 扫描收集与根级
+文件不收集/约定首个命中/记忆选择优先/唯一深扫描/多候选 null/记忆失效
+坠落/盘点歧义);tests/discoveryReport.test.ts +4(显式指空走约定兜底/
+记忆选择/深扫描来源/契约注入 fallback)+ factsFor 与 manager 同规则;
+tests/serverManager.test.ts +4(getConfigPath 默认未过探针兜底/显式过探针
+保留/双失败保持原值/${workspaceFolder} 展开后探测);
+tests/serverConfigMerge.test.ts +1、tests/telnetWiring.test.ts +1
+(server_assets 布局经发现根取到元件 kbengine.xml)。
+
+覆盖率与门禁:1566/1566 绿(109 测试文件),coverage 100%×4(7198 stmts/
+4367 branches/1214 funcs/7019 lines,40 源文件全覆盖,istanbul 忽略台账
 仍 78 处),eslint+tsc 干净。版本仍冻结 0.1.0。
