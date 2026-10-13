@@ -16,6 +16,7 @@ const hoverRegistrations: ProviderRegistration[] = [];
 const definitionRegistrations: ProviderRegistration[] = [];
 const callHierarchyRegistrations: ProviderRegistration[] = [];
 const renameRegistrations: ProviderRegistration[] = [];
+const codeLensRegistrations: ProviderRegistration[] = [];
 const diagnosticCollections: Array<{ name: string; collection: DiagnosticCollection }> = [];
 
 const register = (bucket: ProviderRegistration[]) =>
@@ -40,6 +41,7 @@ export const languages = {
   registerDefinitionProvider: register(definitionRegistrations),
   registerCallHierarchyProvider: register(callHierarchyRegistrations),
   registerRenameProvider: register(renameRegistrations),
+  registerCodeLensProvider: register(codeLensRegistrations),
   createDiagnosticCollection: (name: string): DiagnosticCollection => {
     const collection = new DiagnosticCollection();
     diagnosticCollections.push({ name, collection });
@@ -53,6 +55,7 @@ export const languagesRegistry = {
   definitionRegistrations,
   callHierarchyRegistrations,
   renameRegistrations,
+  codeLensRegistrations,
   diagnosticCollections,
   reset: (): void => {
     completionRegistrations.length = 0;
@@ -60,6 +63,7 @@ export const languagesRegistry = {
     definitionRegistrations.length = 0;
     callHierarchyRegistrations.length = 0;
     renameRegistrations.length = 0;
+    codeLensRegistrations.length = 0;
     diagnosticCollections.length = 0;
   }
 };

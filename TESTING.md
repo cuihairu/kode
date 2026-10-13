@@ -4372,3 +4372,78 @@ tests/snippetGeneratorCommand.test.ts 增 2 例证明 tabSize 从编辑器选项
 
 覆盖率与门禁:1405/1405 绿,coverage 100%×4(6583 stmts/3845 branches/
 1114 funcs/6423 lines),eslint+tsc 干净,mocha 冒烟 11 passing。版本仍冻结 0.1.0。
+
+## 批122:数据库模拟(2026-10-13)
+
+用户令:数据库 Schema 查看器之外,补一个能按 schema 造数据、跑起来看的模拟面。
+
+落地:`src/databaseSimulator.ts`(纯逻辑主体 + 尾部一个 vscode 内容提供器)。
+行模拟按引擎 MySQL 后端写库规格建规格:INSERT/UPDATE 判定取
+`entity_table_mysql.cpp:778-818`(dbid>0 → UPDATE where id=dbid,否则 INSERT
+后取 LAST_INSERT_ID);子表行 INSERT 每元素一行 parentID=父 id、行序=子表 id
+升序、UPDATE 按升序逐位覆盖多余行删除;`sm_autoLoad` 首写 0、已有实体 -1
+不改写;UNIQUE 冲突仅由 MySQL 索引判定,引擎无写前校验。这些规格在注释里带
+引擎源码行号取证,与真实引擎的差异逐条进 `SIMULATION_DIFFERENCES` 并在
+模拟文档尾部同步展示,不装看不见的差异。
+
+装配:`src/extension.ts` 注册 `kbengine-db-simulation` 文本内容提供器 +
+`kbengine.database.simulate`(活动实体 .def 开模拟文档;无活动 .def 如实提示,
+不静默空转)与 `kbengine.database.exportSimulation`(模拟文档全文经
+showSaveDialog 落盘;取消直接返回,写出失败进错误通道不裸抛)。schema 快照
+来自 `src/databaseSchema.ts`,不自建第二份解析。
+
+回归锁定:tests/databaseSimulator.test.ts(类型取样/校验/键链展开/子表行序/
+sm_autoLoad 语义/DDL/JSON/INSERT 渲染/差异清单)+
+tests/databaseSimulationCommand.test.ts(两命令端到端:开文档、空实体提示、
+导出成功/取消/失败三分支)。
+
+## 批125:配置自动发现(2026-10-13)
+
+用户令:types/entities/interfaces 全失效的根因是 def 根定位失败,补自动发现,
+能少配就少配。
+
+落地:纯逻辑层 `src/workspaceDiscovery.ts`(不 import vscode)三层解析:约定
+路径(`DISCOVERY_CONVENTIONS`,与 `getDefinitionWorkspaceLayout` 候选同源)→
+有界深扫描(限深 7、限访 20000、`node_modules`/`.git`/`out`/`dist` 剪枝,
+结果按工作区缓存)→ 多候选时激活期一次性询问并记忆(workspaceState)。
+同步读路径只认唯一命中,多候选宁缺勿猜,不静默改写 def 根;显式配置永远
+优先;能从已存在文件推断的子模块路径不进配置。接线:`src/definitionWorkspace.ts`
+的 def 根发现兜底、`src/serverManager.ts` 读发现结果、
+`src/serverConfigMerge.ts` 合并口径、`src/codeGenerator.ts` 的
+`pythonOutputPath` 在配置为默认值时从发现出的 def 根推导(def 根父目录,
+工作区外或就在根时保持默认,不产出 `../` 或空段路径)。
+
+顺带收口:`findKbeRootAnchor` 原实现把根目录排除在循环外、循环后补查一次
+根名,该补查的真分支不可达(根 basename 恒非 `kbe`),v8 分支覆盖因此
+99.97% 未达门禁;改为循环内查到根即返回 null,行为不变,分支全覆盖。
+
+回归锁定:tests/workspaceDiscovery.test.ts(约定命中/深扫描兜底/多候选记忆/
+空工作区全 null/锚点去重)+ tests/codeGenerator.test.ts(python 根推导)、
+tests/serverConfigMerge.test.ts、tests/serverManager.test.ts、
+tests/extension.test.ts 注册面与命令面。
+
+## 批126:RPC 方法标记 CodeLens(2026-10-13)
+
+用户令:从 def 跳到代码后,该函数在 def 中定义了却和其他函数一样,要能看出
+哪些是 RPC;先做 CodeLens。
+
+落地:纯逻辑层 `src/rpcCodeLens.ts`(不 import vscode)收集 Python 声明行
+(`METHOD_DECLARATION_PATTERN`,`def name(` 与 `async def name(`),按方法名
+交外部解析器判定是否命中实体 def 方法声明,命中才产出一行 lens 规格;标题
+`RPC · <区块> · [Exposed ·] <来源 def 文件名>`,basename 按 `/` 与 `\`
+双分隔符取(Windows 工程路径可用)。装配层 `src/languageProviders.ts` 新增
+`RpcCodeLensProvider`(依赖注入 `EntityMappingManager`,与 F12 反向跳转
+同源解析),`src/extension.ts` 在 python 文档选择器上注册;点击经内置
+`vscode.open` + selection 跳回 def 声明行,不新增命令。声明行正则与
+`getPythonMethodDeclarationAtPosition` 共用同一导出,避免两处漂移。
+
+已知边界(已登记语言能力页):按方法名匹配,不分实现归属——闭包脚本里恰好与
+某实体 def 声明同名的辅助函数也会出 lens。
+
+回归锁定:tests/rpcCodeLens.test.ts 28 例(声明行收集/非声明行排除/CRLF/
+标题含 Windows 路径/按名去重只解析一次/lens 选区落在方法名上/`vscode.open`
+参数形态/选区换算)+ tests/extension.test.ts 注册 1 处与 dispose 拆除。
+
+覆盖率与门禁:1517/1517 绿(108 测试文件),coverage 100%×4(7048 stmts/
+4190 branches/1190 funcs/6872 lines,40 源文件全覆盖,istanbul 忽略台账 78 处),
+eslint+tsc 干净,mocha 冒烟 11 passing。版本仍冻结 0.1.0。

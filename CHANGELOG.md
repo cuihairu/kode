@@ -18,6 +18,31 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   through a `types.xml` alias resolve along the alias chain because the
   schema snapshot expands aliases at build time. Full table SQL stays in
   the `kbengine.database.open` schema document
+- Database simulation: `kbengine.database.simulate` opens a `.dbsim`
+  virtual document that renders the DDL, simulated row JSON and INSERT
+  statements from the schema snapshot in one view, plus a diff list of
+  where the simulator behaves differently from the real engine. The
+  write semantics are taken from the engine's MySQL backend (dbid>0 means
+  UPDATE, otherwise INSERT then LAST_INSERT_ID; one row per array element
+  with the parent id; `sm_autoLoad` 0 on first write and -1 afterwards;
+  unique conflicts are decided by MySQL indexes, the engine has no
+  pre-check). `kbengine.database.exportSimulation` saves the simulation
+  document as Markdown
+- Workspace auto-discovery for the KBEngine paths. The resolution order is
+  explicit settings, then the conventional layouts, then a bounded deep
+  scan (depth 7, 20000 visited entries, `node_modules`/`.git`/`out`/
+  `dist` pruned, cached per workspace). A sync read only accepts a unique
+  hit — several candidates mean an activation-time quick pick that is
+  remembered per workspace, never a silent guess that rewrites the def
+  root. Explicit configuration still wins, and sub-paths that follow from
+  an existing file stay out of the settings. `types.xml`,
+  `messages_fixed(_defaults).xml` and the engine defaults source root need
+  no settings at all. When `pythonOutputPath` is still its default, the
+  python root is derived from the discovered def root
+- RPC 方法标记：Python 实现脚本里，方法名命中实体 def 方法声明的函数在
+  声明行上方出一行可点 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def
+  文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens。
+  按方法名匹配，同名辅助函数也会出 lens（见语言能力页边界说明）
 
 ### Fixed
 - Generating a snippet from a selection now measures the common indent in

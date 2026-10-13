@@ -95,6 +95,62 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒) |
 | `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表 |
 
+## 路径类配置的自动发现(批125)
+
+设计约束:**尽量减少配置项,能自动发现的就自动发现**。核心功能(打开 `.def` → 实体浏览器/依赖图/属性面板/数据库 schema/悬停存储信息)在干净工作区零配置即可用——下面五项路径配置全部退化为「可选覆盖」:配置了就照配置,没配就按发现链找。
+
+发现链(按序取第一个命中):
+
+1. **显式配置**:`kbengine.entityDefsPath` / `kbengine.entitiesXmlPath` / `kbengine.binPath` 的设置值(支持 `${workspaceFolder}`);
+2. **约定路径**:引擎/官方资产固定布局,如 `entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`;
+3. **有界深扫描**:约定全 miss 时扫工作区找锚点(目录名 `entity_defs`、文件名 `entities.xml`/`types.xml`/`messages_fixed.xml`、引擎源码锚点 `entitydef.cpp`/`entity_table_mysql.cpp`),限深 7 层、限 2 万条目,剪掉 `node_modules`/`.git`/`out`/`dist`/点目录,结果按工作区缓存;
+4. **唯一命中即用,多候选不猜**:同步读路径只认唯一命中——多个候选时宁缺勿猜(猜测会连带改写 interfaces/components/user_type 全套根目录),改由激活期弹**一次** quick pick 让你选,选择按工作区记忆(`workspaceState`),之后不再询问。
+
+能从已存在文件推断的子路径一律不进配置:def 根推出 `interfaces/`、`components/`、`user_type/` 子目录;`types.xml` 优先取 def 根之下;`entities.xml` 优先取 def 根同父;`messages_fixed.xml` 优先取 `<引擎根>/res/server/`(先用户改的 `messages_fixed.xml`,缺省回 `messages_fixed_defaults.xml`),纯资产仓再退深扫描。
+
+**三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
+
+### 全量配置项对照表(32 项)
+
+`现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
+
+| 配置项 | 现在怎么用 | 能否自动发现 | 处置 |
+| --- | --- | --- | --- |
+| `kbengine.entityDefsPath` | 显式配置 → 约定 4 布局 → 深扫描唯一命中 → 多候选 quick pick 记忆 | **能**(约定布局 + 深扫描) | **自动发现**,配置只作覆盖 |
+| `kbengine.entitiesXmlPath` | 同上链;另优先取 def 根同父目录 | **能** | **自动发现**,配置只作覆盖 |
+| `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
+| `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
+| `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
+| `kbengine.configPath` | 显式配置(默认 `${workspaceFolder}/server`);元件 `kbengine.xml` 另有 3 个约定位置探测 | 部分(`kbengine.xml` 可探,资产根本身不可) | **保留默认**:启动组件的 cwd 与 `KBE_RES_PATH` 必须指真实资产根,猜错组件起不来,代价高于收益;不启动服务器则无需配置 |
+| `kbengine.telnet.port` | 显式 >0 锁定;0 = 按元件段 → 引擎 defaults 链(批112) | **能**(配置链,批112 已做) | **自动取值**,配置只作覆盖 |
+| `kbengine.telnet.password` | 设置 → 元件段 → defaults → 空(批112) | **能**(同上) | **自动取值**,配置只作覆盖 |
+| `kbengine.telnet.configXmlPath` | 空 = 按 3 个约定位置自动找 `kbengine.xml` | **能**(已是覆盖式) | **自动发现**,配置只作覆盖 |
+| `kbengine.enableDiagnostics` | 开关,默认开 | 否(用户偏好,非可发现事实) | **保留**,默认开即零配置可用 |
+| `kbengine.enableStructureDiagnostics` | 同上 | 否 | **保留**,理由同上 |
+| `kbengine.diagnostics.checkUnknownTypes` | 开关,默认开 | 否 | **保留**(偏好开关,5 项诊断细分同理) |
+| `kbengine.diagnostics.checkUnknownFlags` | 同上 | 否 | **保留** |
+| `kbengine.diagnostics.checkUnknownDetailLevels` | 同上 | 否 | **保留** |
+| `kbengine.diagnostics.checkDuplicateDefinitions` | 同上 | 否 | **保留** |
+| `kbengine.diagnostics.checkMissingPropertyFields` | 同上 | 否 | **保留** |
+| `kbengine.hover.showTagDocs` | 开关,默认开 | 否 | **保留**(偏好开关,3 项悬停细分同理) |
+| `kbengine.hover.showValueDocs` | 同上 | 否 | **保留** |
+| `kbengine.hover.showSymbolDocs` | 同上 | 否 | **保留** |
+| `kbengine.showFinalConfigOnOpen` | 开关,默认开;定位不到 defaults 静默跳过 | 否 | **保留**,默认开零打扰 |
+| `kbengine.autoRefreshFinalConfig` | 开关,默认开 | 否 | **保留** |
+| `kbengine.autoStart` | 组件名列表,默认 `["machine","logger","dbmgr"]` | 否(启动策略是决策不是事实) | **保留**,默认即官方最小可跑组合 |
+| `kbengine.loggerPort` | 固定 20022(引擎 logger 监听端口) | 否(运行时网络端口,工作区无痕迹) | **保留**,默认值 = 引擎默认端口 |
+| `kbengine.logAutoConnect` | 开关,默认开 | 否 | **保留** |
+| `kbengine.maxLogEntries` | 数值 10000 | 否 | **保留**(内存/历史的权衡偏好) |
+| `kbengine.debug.remoteTargets` | 空列表;远端机器+端口 | 否(远端基础设施,工作区不存在) | **保留**,默认空 = 功能不用即不配 |
+| `kbengine.generator.generatePython` | 开关,默认开 | 否 | **保留** |
+| `kbengine.generator.registerInEntitiesXml` | 开关,默认开 | 否 | **保留** |
+| `kbengine.telnet.host` | 默认 `127.0.0.1` | 否(远端填 IP 是用户知识) | **保留**,本地默认开箱即用 |
+| `kbengine.telnet.enableCommands` | 空白名单 = 只放行内置只读快捷命令 | 否(安全策略,放行范围是决策) | **保留**,默认全禁是安全底线,不可代猜 |
+| `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
+| `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
+
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。
+
 ## 逐项说明
 
 ### 诊断
@@ -127,18 +183,21 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 - 类型:string;默认 `scripts/entity_defs`(相对工作区根)
 - 用途:实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出
+- 批125 起未配置/默认路径不存在时自动发现(约定布局 → 深扫描唯一命中 → 多候选激活期询问一次并记忆),配置只作覆盖
 - 误配:指错目录则实体浏览器为空
 
 #### `kbengine.entitiesXmlPath`
 
 - 类型:string;默认 `scripts/entities.xml`
 - 用途:依赖图读取与实体注册。项目把注册文件放在自定义位置时改这项
+- 批125 起约定候选全 miss 时深扫描兜底(优先 def 根同父目录),配置只作覆盖
 
 #### `kbengine.binPath`
 
 - 类型:string;默认 `${workspaceFolder}/../kbe/bin/server`
 - 支持占位符:`${workspaceFolder}`、`${env:VAR}`
 - 用途:① 启动/停止组件进程;② 推导引擎根(`KBE_ROOT`)与引擎默认配置路径——把路径末尾的 `kbe/bin/server` 换成 `kbe/res/server/kbengine_defaults.xml`
+- 批125 起未配置时优先按引擎源码根锚点(`kbe/src/lib/entitydef/entitydef.cpp`、`entity_table_mysql.cpp` 等)推导 `kbe/bin/server`,再退兄弟目录猜测
 - 误配:没指到 `kbe/bin/server` 这一级 → 服务器启动失败,最终配置视图和 defaults 数值回落也不可用;此时 `kbengine.config.showFinal` 会明示报错,激活自动打开则静默跳过
 
 #### `kbengine.configPath`
@@ -186,8 +245,8 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成的 `.def` 写到哪 |
-| `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪 |
+| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成的 `.def` 写到哪;默认值即发现出的 def 根,配置只作覆盖 |
+| `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪;默认值时从发现出的 def 根父目录推导(如 `assets/scripts`),配置只作覆盖 |
 | `kbengine.generator.generatePython` | boolean | `true` | 向导/模板创建实体时是否同时生成 Python 文件 |
 | `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(写的是 `entitiesXmlPath` 指向的文件) |
 

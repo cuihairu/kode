@@ -41,6 +41,22 @@
   - 点击实体浏览器中的数据库条目
   - 命令面板
 
+### `kbengine.database.simulate`
+
+- 标题：`Simulate Entity Database`
+- 作用：在 schema 之上模拟建表与行数据，打开数据库模拟虚拟文档（DDL、模拟行 JSON、INSERT 语句与引擎差异说明一体展示）；不传实体名时取当前活动 `.def` 文件推断
+- 入口：
+  - 命令面板
+- 详见：[数据库模拟](database-simulation.md)
+
+### `kbengine.database.exportSimulation`
+
+- 标题：`Export Entity Database Simulation`
+- 作用：把当前打开的数据库模拟虚拟文档导出为 Markdown 文件；需先打开 `.dbsim` 模拟文档
+- 入口：
+  - 命令面板
+- 详见：[数据库模拟](database-simulation.md)
+
 ## 服务器控制
 
 ### `kbengine.server.start`

@@ -20,6 +20,12 @@ import {
   EntityMethodSection
 } from './entityMapping';
 import {
+  METHOD_DECLARATION_PATTERN,
+  buildRpcCodeLenses,
+  findPythonMethodDeclarations,
+  RpcMethodHit
+} from './rpcCodeLens';
+import {
   createDatabaseSchemaUri,
   describePropertyDatabaseStorage,
   findDatabaseSchemaFieldAtPosition,
@@ -2677,6 +2683,61 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
   }
 }
 
+export class RpcCodeLensProvider implements vscode.CodeLensProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    const declarations = findPythonMethodDeclarations(document.getText());
+
+    // 同名方法只解析一次:闭包脚本里同名方法可能重复出现,而解析结果
+    // (是否 def 声明 + 声明位置)与方法名一一对应,按名缓存无歧义
+    const hits = new Map<string, RpcMethodHit>();
+    for (const declaration of declarations) {
+      if (hits.has(declaration.methodName)) {
+        continue;
+      }
+      const location = await this.entityMappingManager.resolveMethodDefinition(
+        document.fileName,
+        declaration.methodName
+      );
+      if (location) {
+        hits.set(declaration.methodName, {
+          methodName: declaration.methodName,
+          section: location.section,
+          defFile: location.defFile,
+          defLine: location.line,
+          exposed: location.exposed
+        });
+      }
+    }
+
+    return buildRpcCodeLenses(declarations, methodName => hits.get(methodName)).map(spec =>
+      new vscode.CodeLens(
+        new vscode.Range(
+          new vscode.Position(spec.declaration.line, spec.declaration.character),
+          new vscode.Position(
+            spec.declaration.line,
+            spec.declaration.character + spec.hit.methodName.length
+          )
+        ),
+        {
+          title: spec.title,
+          command: 'vscode.open',
+          arguments: [
+            vscode.Uri.file(spec.hit.defFile),
+            { selection: createDefinitionSelection(spec.hit.defLine) }
+          ]
+        }
+      )
+    );
+  }
+}
+
+export function createDefinitionSelection(defLine: number): vscode.Range {
+  const position = new vscode.Position(defLine - 1, 0);
+  return new vscode.Range(position, position);
+}
+
 export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvider {
   constructor(private entityMappingManager: EntityMappingManager) {}
 
@@ -2943,7 +3004,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
 }
 
 function getPythonMethodDeclarationAtPosition(lineText: string, character: number): string | null {
-  const match = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/.exec(lineText);
+  const match = METHOD_DECLARATION_PATTERN.exec(lineText);
   if (!match) {
     return null;
   }

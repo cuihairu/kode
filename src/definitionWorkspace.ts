@@ -2,6 +2,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
+  getDiscoveryChoice,
+  resolveDiscoveredEntitiesXmlPath,
+  resolveDiscoveredEntityDefsRoot,
+  resolveDiscoveredTypesXmlPath
+} from './workspaceDiscovery';
+import {
   DefDocument,
   DefElementNode,
   getDirectChildElement,
@@ -148,7 +154,17 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
   // 本文件所有依赖该二者的空值臂(下方各 ternary 的 null/'' 臂)同因此不可达。
   /* istanbul ignore start */
   const preferredEntityDefsRoot = entityDefsCandidates[0] || null;
-  const entityDefsRoot = findExistingPath(entityDefsCandidates) || preferredEntityDefsRoot;
+  /* istanbul ignore stop */
+  let entityDefsRoot = findExistingPath(entityDefsCandidates) || preferredEntityDefsRoot;
+  // 批125 自动发现:约定候选全 miss 时用有界深扫描兜底,多候选记忆的选择优先
+  if (!entityDefsRoot || !fs.existsSync(entityDefsRoot)) {
+    entityDefsRoot = getDiscoveryChoice(workspaceRoot, 'entityDefs')
+      || resolveDiscoveredEntityDefsRoot(workspaceRoot)
+      || entityDefsRoot;
+  }
+  // 不可达(批64 定性):entityDefsRoot 恒为非空字符串——候选首项恒真,
+  // 发现兜底各臂要么命中要么保持原值,空值臂同上方区间理由。
+  /* istanbul ignore start */
   const entityScriptsRoot = entityDefsRoot ? getDirectoryPath(entityDefsRoot) : null;
   /* istanbul ignore stop */
 
@@ -208,8 +224,14 @@ export function getDefinitionWorkspaceLayout(workspaceRoot: string): DefinitionW
     interfacesRoot: entityDefsRoot ? joinWorkspacePath(entityDefsRoot, 'interfaces') : null,
     componentsRoot: entityDefsRoot ? joinWorkspacePath(entityDefsRoot, 'components') : null,
     /* istanbul ignore stop */
-    entitiesXmlPath: findExistingPath(entitiesXmlCandidates),
-    typesXmlPath: findExistingPath(typesXmlCandidates),
+    // 批125 自动发现:约定候选全 miss 时用深扫描兜底(entities.xml 优先取
+    // 实体定义目录同父目录,types.xml 优先取定义目录之下)
+    entitiesXmlPath: findExistingPath(entitiesXmlCandidates)
+      || getDiscoveryChoice(workspaceRoot, 'entitiesXml')
+      || resolveDiscoveredEntitiesXmlPath(workspaceRoot),
+    typesXmlPath: findExistingPath(typesXmlCandidates)
+      || getDiscoveryChoice(workspaceRoot, 'typesXml')
+      || resolveDiscoveredTypesXmlPath(workspaceRoot),
     userTypeRoots
   };
 }

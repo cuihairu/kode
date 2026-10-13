@@ -6,7 +6,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { findEntitiesXmlFile, findEntityDefinitionsRoot } from './definitionWorkspace';
+import { findEntitiesXmlFile, findEntityDefinitionsRoot, getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 
 /**
@@ -120,7 +120,11 @@ export class KBEngineCodeGenerator {
     const configuredDefOutputPath = config.get<string>('defOutputPath') || 'scripts/entity_defs';
     return {
       defOutputPath: this.resolveDefOutputPath(configuredDefOutputPath, workspaceFolder.uri.fsPath),
-      pythonOutputPath: config.get<string>('pythonOutputPath') || 'scripts',
+      // 批125 自动发现:配置为默认值时从发现出的 def 根推导 python 根(def 根父目录)
+      pythonOutputPath: this.resolvePythonOutputPath(
+        config.get<string>('pythonOutputPath') || 'scripts',
+        workspaceFolder.uri.fsPath
+      ),
       generatePython: config.get<boolean>('generatePython') ?? true,
       registerInEntitiesXml: config.get<boolean>('registerInEntitiesXml') ?? true
     };
@@ -159,6 +163,26 @@ export class KBEngineCodeGenerator {
     /* istanbul ignore start */
     return findEntityDefinitionsRoot(workspaceRoot) || configuredPath;
     /* istanbul ignore stop */
+  }
+
+  private resolvePythonOutputPath(configuredPath: string, workspaceRoot: string): string {
+    if (configuredPath !== 'scripts') {
+      return configuredPath;
+    }
+    const scriptsRoot = getDefinitionWorkspaceLayout(workspaceRoot).entityScriptsRoot;
+    // 不可达(批64 定性):entityScriptsRoot 即 layout 的 entityDefsRoot 父目录,
+    // entityDefsRoot 恒为非空字符串 ⇒ scriptsRoot 恒真(null 臂无触发路径)。
+    /* istanbul ignore start */
+    if (!scriptsRoot) {
+      return configuredPath;
+    }
+    /* istanbul ignore stop */
+    const relative = path.relative(workspaceRoot, scriptsRoot);
+    // def 根在工作区外或就在工作区根时保持默认,不产出 ../ 或空段路径
+    if (!relative || relative.startsWith('..')) {
+      return configuredPath;
+    }
+    return relative.split(path.sep).join('/');
   }
 
   /**

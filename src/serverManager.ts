@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { spawn, ChildProcess } from 'child_process';
 import { joinWorkspacePath, usesPosixPath } from './workspacePath';
+import { resolveKbeSourceRoot } from './workspaceDiscovery';
 
 /**
  * KBEngine 服务器组件信息
@@ -202,7 +203,11 @@ export class KBEngineServerManager {
       return '';
     }
 
+    // 批125 自动发现:引擎源码根锚点(entitydef.cpp / entity_table_mysql.cpp)
+    // 命中时直接推导 kbe/bin/server,优先于逐个猜兄弟目录
+    const kbeSourceRoot = resolveKbeSourceRoot(workspaceFolder);
     const possiblePaths = [
+      kbeSourceRoot ? path.join(kbeSourceRoot, 'bin', 'server') : '',
       joinWorkspacePath(workspaceFolder, '../kbe/bin/server'),
       joinWorkspacePath(workspaceFolder, '../../kbe/bin/server'),
       joinWorkspacePath(workspaceFolder, '../kbengine/kbe/bin/server'),

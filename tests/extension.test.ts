@@ -108,6 +108,8 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
+    // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(1);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
@@ -260,6 +262,7 @@ describe('extension activate 装配', () => {
     // 树视图/语言服务注册被 dispose 链摘除
     expect(treeRegistrations).toHaveLength(0);
     expect(languagesRegistry.completionRegistrations).toHaveLength(0);
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(0);
     // 已注销命令不再可执行
     await expect(commands.executeCommand('kbengine.refreshExplorer'))
       .rejects.toThrow('command not registered');

@@ -8,6 +8,7 @@
 - `entities.xml` 与 `.def` 跳转
 - `.def` 内实体引用跳转
 - Python 与 `.def` 双向导航
+- RPC 方法标记（Python 实现脚本里命中 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明）
 - `.def` 属性/方法 F2 重命名（同文件声明 + 后代 def 复述，见语言能力页边界说明）
 
 ## 诊断能力
@@ -56,6 +57,20 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 三个入口：侧栏 Config 视图的「最终配置」节点、命令面板 `Show Final Server Config`、激活后自动后台打开（`kbengine.showFinalConfigOnOpen`，默认开）
 - defaults 或元件 `kbengine.xml` 保存后自动重算（`kbengine.autoRefreshFinalConfig`，默认开）；字段悬浮可看作用说明
 - 分层口径与前后对照见 [配置说明](./configuration.md) 的「服务端配置的三层」
+
+## 数据库模拟
+
+- 在数据库 schema 快照之上模拟建表与行数据:`.dbsim` 虚拟文档一体展示 DDL、模拟行 JSON、INSERT 语句与引擎差异清单
+- DDL 逐条对齐引擎 MySQL 落库实现(表前缀 `tbl_`、`parentID` 子表列、`sm_autoLoad`、逐类型列型别、`(@DATALEN@)` 空宽度剥离、`ENGINE=InnoDB`),出处见 [数据库模拟](./database-simulation.md)
+- 行校验走严格引擎语义:任一不过整条拒绝,DELETE 递归级联清子表;UNIQUE 预检是模拟器比引擎多做的事,已如实登记
+- 入口:`Simulate Entity Database`(不传实体名时取活动 `.def` 推断)、`Export Entity Database Simulation`(导出 Markdown)
+
+## 配置自动发现
+
+- 干净工作区零配置可用核心功能(打开 `.def` → 实体浏览器/依赖图/属性面板/数据库 schema/悬停)
+- 发现链:显式配置 → 约定布局 → 有界深扫描(限深 7 层/2 万条目,剪 node_modules/.git 等)→ 唯一命中即用,多候选激活期弹一次 quick pick 并按工作区记忆
+- 纯发现、无配置项:`types.xml`、`messages_fixed(_defaults).xml`、引擎 defaults 的源码根兜底;def 根推出的子路径(interfaces/components/user_type)不进配置
+- 详见 [配置说明](./configuration.md) 的「路径类配置的自动发现」与全量对照表
 
 ## HTTP 快捷请求
 

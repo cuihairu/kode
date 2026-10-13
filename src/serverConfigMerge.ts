@@ -6,6 +6,7 @@ import {
   deriveEngineDefaultsXmlPath
 } from './telnetService';
 import { expandWorkspacePlaceholders } from './workspacePath';
+import { resolveKbeSourceRoot } from './workspaceDiscovery';
 
 /**
  * 最终服务端配置合成(批112 用户令):按引擎装载规则——先加载
@@ -164,7 +165,14 @@ export function buildFinalServerConfig(): FinalServerConfig {
     vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
     workspaceRoot
   );
-  const defaultsPath = deriveEngineDefaultsXmlPath(binPath);
+  // 批125 自动发现:binPath 未配/推导不出时,用引擎源码根锚点兜底再推 defaults
+  let defaultsPath = deriveEngineDefaultsXmlPath(binPath);
+  if (!defaultsPath && workspaceRoot) {
+    const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
+    if (kbeSourceRoot) {
+      defaultsPath = deriveEngineDefaultsXmlPath(path.join(kbeSourceRoot, 'bin', 'server'));
+    }
+  }
   let defaultsXml: string | null = null;
   if (defaultsPath) {
     try {

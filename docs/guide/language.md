@@ -124,6 +124,7 @@
 - 从 `.def` 的 `Parent` 跳到父类 def、`<Interfaces>` 包裹内的接口名跳到 `interfaces/` 下的接口 def
 - 从 `Properties` 字段 `DetailLevel` 值跳到同文件 `<DetailLevels>` 下的档位声明行
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
+- RPC 方法标记：Python 实现脚本里，方法名命中实体 def 方法声明（`BaseMethods`/`CellMethods`/`ClientMethods`）的函数，在声明行上方出一行 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def 文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens
 - 从 `Properties` 字段名跳到实现脚本，落点四档：与 def 同名的 `class` 定义行 → `__init__` 行 → 首个 `class` 行（类名与 def 不一致时）→ 脚本首行（base→cell→client 取第一个在盘脚本；引擎在 `__init__` 之前装载属性，属性名未必出现在脚本里，类/`__init__` 行仍是可靠锚点）
 - 脚本目录按 def 文件自身位置反推：从 `.def` 向上找最近的 `entity_defs` 目录（按名字匹配，或同级含 `entities.xml`/`types.xml`），其父目录即脚本根，脚本 = `<父>/{base,cell,client}/<实体名>.py`；找不到再回落工作区候选链（`entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`）。文件相对解析优先于工作区相对解析，非标准布局（如 `server/scripts/entity_defs`）同样可跳
 - 属性实现脚本按引用闭包解析：组件 def 落 `scripts/cell/<组件>.py` 等角色脚本，接口 def 落 `scripts/interfaces/<接口名>.py`（不跟随 `Parent`），实体 def 沿自身角色脚本 → `<Interfaces>` 混入脚本 → `Parent` 链逐级向上；全链落空且数据库 schema 也未命中时必有落点：脚本确实不存在 → 该实体在 `entities.xml` 的声明行（无注册表时退 def 首行），同时弹辅助提示列出全部已检查的候选路径，不再只弹提示不跳
@@ -188,6 +189,7 @@
 目前还没有完整做到：
 
 - 重命名只覆盖 `.def` 定义与引用面，Python 侧引用同步与实体本身的更名属于下一阶段
+- RPC 方法标记按方法名匹配，不分实现归属：闭包脚本（父类/接口实现）里恰好与某实体 def 声明同名的辅助函数也会出 lens；解析器只回答「该名字是不是 def 声明的 RPC 方法」，不回答「这一行是不是它的实现」
 - 默认值与类型的严格匹配检查
 - 跨全部项目实体引用的深度静态分析
 

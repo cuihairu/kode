@@ -2,8 +2,10 @@ import type * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { resetDiscoveryState, setDiscoveryChoice } from '../src/workspaceDiscovery';
 import type {
   EntityDefinition,
   MethodDefinition,
@@ -221,5 +223,64 @@ describe('built-in templates', () => {
   it('maps unknown template types to the empty template', () => {
     expect(internals.getTemplateEntity('unknown').config.name)
       .toBe(internals.getTemplateEntity('empty').config.name);
+  });
+});
+
+describe('resolvePythonOutputPath(批125 自动发现推导 python 根)', () => {
+  const pythonOutputOf = (workspaceRoot: string): string => {
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: workspaceRoot } } as never];
+    const gen = makeGenerator();
+    return (gen as unknown as { config: { pythonOutputPath: string } }).config.pythonOutputPath;
+  };
+
+  afterEach(() => {
+    configurationOverrides.delete('kbengine.generator');
+    stubWorkspace.workspaceFolders = [];
+    resetDiscoveryState();
+  });
+
+  it('keeps non-default configured paths untouched', () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-genpy-'));
+    try {
+      configurationOverrides.set('kbengine.generator', { pythonOutputPath: 'custom/py' });
+      expect(pythonOutputOf(ws)).toBe('custom/py');
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
+  it('derives the python root from the discovered def parent directory', () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-genpy-'));
+    try {
+      fs.mkdirSync(path.join(ws, 'assets', 'scripts', 'entity_defs'), { recursive: true });
+      expect(pythonOutputOf(ws)).toBe('assets/scripts');
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the default when the scripts root equals the workspace root', () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-genpy-'));
+    try {
+      // 根级 entity_defs:entityScriptsRoot 即工作区根,relative 为空段
+      fs.mkdirSync(path.join(ws, 'entity_defs'), { recursive: true });
+      expect(pythonOutputOf(ws)).toBe('scripts');
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the default when the def root sits outside the workspace', () => {
+    const rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-genpy-out-'));
+    try {
+      const ws = path.join(rootBase, 'ws');
+      fs.mkdirSync(ws, { recursive: true });
+      const outside = path.join(rootBase, 'outside', 'entity_defs');
+      fs.mkdirSync(outside, { recursive: true });
+      setDiscoveryChoice(ws, 'entityDefs', outside);
+      expect(pythonOutputOf(ws)).toBe('scripts');
+    } finally {
+      fs.rmSync(rootBase, { recursive: true, force: true });
+    }
   });
 });

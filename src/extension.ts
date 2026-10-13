@@ -36,6 +36,7 @@ import {
   KBEngineRenameProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
+  RpcCodeLensProvider,
   validateDocument
 } from './languageProviders';
 import {
@@ -44,6 +45,13 @@ import {
   KBEngineDatabaseSchemaProvider,
   locateDatabaseSchemaLine
 } from './databaseSchema';
+import {
+  createDatabaseSimulationUri,
+  getSimulationEntityName,
+  isDatabaseSimulationDocument,
+  KBENGINE_DATABASE_SIMULATION_SCHEME,
+  KBEngineDatabaseSimulationProvider
+} from './databaseSimulator';
 import { findEntityDefinitionFile } from './definitionWorkspace';
 import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
@@ -65,6 +73,8 @@ import {
   FinalConfigTreeProvider,
   buildFinalServerConfig
 } from './serverConfigMerge';
+import type { DiscoveryKey, DiscoveryPromptDeps } from './workspaceDiscovery';
+import { runWorkspaceDiscovery } from './workspaceDiscovery';
 import { TelnetTreeProvider } from './telnetTree';
 
 /**
@@ -77,6 +87,15 @@ export function activate(context: vscode.ExtensionContext) {
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
+  );
+  // 数据库模拟(批122):schema 快照之上的行模拟虚拟文档,scheme 与
+  // databaseSchema 的 kbengine-db-schema 并列
+  const databaseSimulationProvider = new KBEngineDatabaseSimulationProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      KBENGINE_DATABASE_SIMULATION_SCHEME,
+      databaseSimulationProvider
+    )
   );
   // kbe 模块符号桩文档(批108):go-to-definition 的只读跳转源
   context.subscriptions.push(
@@ -151,6 +170,15 @@ export function activate(context: vscode.ExtensionContext) {
     new PythonDefinitionProvider(entityMappingManager)
   );
   context.subscriptions.push(pythonDefinitionProvider);
+
+  // RPC 方法标记(批126 用户令:Python 侧函数看不出哪些是 def 声明的
+  // RPC):在实现脚本里命中 def 方法声明的声明行上方出一行可点 CodeLens
+  // (区块/Exposed/来源 def,点击回声明),普通函数不出
+  const rpcCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    new RpcCodeLensProvider(entityMappingManager)
+  );
+  context.subscriptions.push(rpcCodeLensProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [
@@ -328,6 +356,64 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(openDatabaseSchemaCommand);
+
+  // 活动编辑器的 .def 路径给出实体名;非 .def 返回 undefined(批122)
+  function resolveActiveDefEntityName(): string | undefined {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'kbengine-def') {
+      return undefined;
+    }
+    return path.basename(editor.document.uri.fsPath, '.def');
+  }
+
+  // 数据库模拟(批122):活动 .def 为实体打开模拟文档;无活动 .def 如实提示,
+  // 不静默空转
+  const simulateDatabaseCommand = vscode.commands.registerCommand(
+    'kbengine.database.simulate',
+    async (entityName?: string) => {
+      const resolvedEntityName = entityName ?? resolveActiveDefEntityName();
+      if (!resolvedEntityName) {
+        vscode.window.showInformationMessage('请先打开一个实体 .def 文件');
+        return;
+      }
+      try {
+        const uri = createDatabaseSimulationUri(resolvedEntityName);
+        await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri));
+      } catch (error) {
+        vscode.window.showWarningMessage(`打开数据库模拟失败: ${resolvedEntityName} (${error})`);
+      }
+    }
+  );
+  context.subscriptions.push(simulateDatabaseCommand);
+
+  // 数据库模拟导出(批122):当前模拟文档全文经 showSaveDialog 落盘;取消直接
+  // 返回,写出失败进错误通道不裸抛
+  const exportDatabaseSimulationCommand = vscode.commands.registerCommand(
+    'kbengine.database.exportSimulation',
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor || !isDatabaseSimulationDocument(editor.document)) {
+        vscode.window.showWarningMessage('请先打开数据库模拟文档');
+        return;
+      }
+      const defaultUri = vscode.Uri.file(
+        `${getSimulationEntityName(editor.document.uri)}-simulation.md`
+      );
+      const target = await vscode.window.showSaveDialog({
+        defaultUri,
+        filters: { Markdown: ['md'] }
+      });
+      if (!target) {
+        return;
+      }
+      try {
+        await vscode.workspace.fs.writeFile(target, Buffer.from(editor.document.getText(), 'utf8'));
+      } catch (error) {
+        vscode.window.showErrorMessage(`导出数据库模拟失败: ${error}`);
+      }
+    }
+  );
+  context.subscriptions.push(exportDatabaseSimulationCommand);
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
@@ -920,6 +1006,25 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 启动时更新状态栏
   updateStatusBar(serverManager);
+
+  // 批125 自动发现:激活期盘点工作区锚点(entities.xml/entity_defs/types.xml/
+  // kbe 源码根),多候选弹一次 quick pick 并记忆(workspaceState 回放,后续
+  // 会话不再询问);单候选/零命中零打扰。显式配置永远优先于发现结果。
+  // workspaceState 缺失(测试替身/嵌入场景)时静默跳过,不做磁盘级记忆。
+  const primaryWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (primaryWorkspaceRoot && context.workspaceState) {
+    const workspaceState = context.workspaceState;
+    const discoveryStateKey = `kbengine.discovery.${primaryWorkspaceRoot}`;
+    const discoveryDeps: DiscoveryPromptDeps = {
+      showQuickPick: (items, title) =>
+        vscode.window.showQuickPick(items, { placeHolder: title, ignoreFocusOut: true }),
+      recall: () =>
+        workspaceState.get<Partial<Record<DiscoveryKey, string>>>(discoveryStateKey),
+      remember: (_root, choices) =>
+        void workspaceState.update(discoveryStateKey, choices)
+    };
+    void runWorkspaceDiscovery(discoveryDeps, primaryWorkspaceRoot);
+  }
 
   // 默认开启令:激活即出最终配置视图(后台标签,不抢焦点);定位不到
   // defaults(未配 binPath 或引擎目录不在)静默跳过,不弹错

@@ -358,3 +358,58 @@ describe('summarizeFinalTelnet(合成配置的 telnet 速览)', () => {
     expect(summary.find(entry => entry.component === 'dbmgr')!.port).toBeNull();
   });
 });
+
+describe('buildFinalServerConfig 引擎源码根兜底(批125 自动发现)', () => {
+  beforeEach(() => {
+    configurationOverrides.clear();
+    memoryFileSystem.reset();
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('binPath 未配时经 kbe 源码根锚点推出 defaults 路径并合成展示', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-anchor-'));
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
+      fs.mkdirSync(path.join(root, 'kbe', 'src', 'lib', 'entitydef'), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, 'kbe', 'src', 'lib', 'entitydef', 'entitydef.cpp'),
+        '// anchor\n',
+        'utf8'
+      );
+      fs.mkdirSync(path.join(root, 'kbe', 'res', 'server'), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'),
+        '<baseapp><debug> 7 </debug></baseapp>',
+        'utf8'
+      );
+      configurationOverrides.set('kbengine', { binPath: '' });
+
+      const result = buildFinalServerConfig();
+
+      expect(result.defaultsPath)
+        .toBe(path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'));
+      expect(result.defaultsOnly).toBe(true);
+      expect(result.text).toContain('<debug> 7 </debug>');
+    } finally {
+      stubWorkspace.workspaceFolders = [];
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('binPath 未配且无引擎锚点时仍为空文本,不猜测路径', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-noanchor-'));
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
+      configurationOverrides.set('kbengine', { binPath: '' });
+
+      const result = buildFinalServerConfig();
+
+      expect(result.text).toBe('');
+      expect(result.defaultsPath).toBeNull();
+      expect(result.defaultsOnly).toBe(true);
+    } finally {
+      stubWorkspace.workspaceFolders = [];
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

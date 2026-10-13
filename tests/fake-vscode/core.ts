@@ -13,6 +13,10 @@ export class Range {
   ) {}
 }
 
+export class CodeLens {
+  constructor(public readonly range: Range, public readonly command?: unknown) {}
+}
+
 const URI_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/?\/?/;
 
 export class Uri {

@@ -213,3 +213,66 @@ describe('KBEngineServerManager startup grace guard (批73)', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }, 10000);
 });
+
+describe('detectBinPath kbe 源码根锚点兜底(批125 自动发现)', () => {
+  let rootBase = '';
+
+  beforeAll(() => {
+    // 私有父目录 + 二级 ws:候选 <ws>/../../kbe/bin/server 落在 rootBase 下
+    // (恒不存在),不受共享 /tmp/kbe 瞬时目录影响
+    rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-disc-'));
+    const ws = path.join(rootBase, 'disc', 'ws');
+    fs.mkdirSync(path.join(ws, 'kbe', 'src', 'lib', 'entitydef'), { recursive: true });
+    fs.writeFileSync(
+      path.join(ws, 'kbe', 'src', 'lib', 'entitydef', 'entitydef.cpp'),
+      '// anchor\n',
+      'utf8'
+    );
+    fs.mkdirSync(path.join(ws, 'kbe', 'bin', 'server'), { recursive: true });
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: ws } } as never];
+  });
+
+  afterAll(() => {
+    stubWorkspace.workspaceFolders = [];
+    fs.rmSync(rootBase, { recursive: true, force: true });
+  });
+
+  it('binPath 未配时优先从引擎源码根推导 kbe/bin/server', () => {
+    const savedHome = process.env.KBENGINE_HOME;
+    delete process.env.KBENGINE_HOME;
+    configurationOverrides.set('kbengine', { binPath: '' });
+    try {
+      expect(makeManager().getBinPath())
+        .toBe(path.join(rootBase, 'disc', 'ws', 'kbe', 'bin', 'server'));
+    } finally {
+      if (savedHome === undefined) {
+        delete process.env.KBENGINE_HOME;
+      } else {
+        process.env.KBENGINE_HOME = savedHome;
+      }
+      configurationOverrides.delete('kbengine');
+    }
+  });
+
+  it('无锚点也无兄弟目录时仍为空,不假装找到', () => {
+    const bare = path.join(rootBase, 'bare', 'ws');
+    fs.mkdirSync(bare, { recursive: true });
+    const savedHome = process.env.KBENGINE_HOME;
+    delete process.env.KBENGINE_HOME;
+    configurationOverrides.set('kbengine', { binPath: '' });
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: bare } } as never];
+    try {
+      expect(makeManager().getBinPath()).toBe('');
+    } finally {
+      stubWorkspace.workspaceFolders = [{
+        uri: { fsPath: path.join(rootBase, 'disc', 'ws') }
+      } as never];
+      if (savedHome === undefined) {
+        delete process.env.KBENGINE_HOME;
+      } else {
+        process.env.KBENGINE_HOME = savedHome;
+      }
+      configurationOverrides.delete('kbengine');
+    }
+  });
+});
