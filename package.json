@@ -60,7 +60,8 @@
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
     "onCommand:kbengine.httpRequests.run",
-    "onCommand:kbengine.httpRequest.run"
+    "onCommand:kbengine.httpRequest.run",
+    "onCommand:kbengine.discovery.report"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -282,6 +283,10 @@
       {
         "command": "kbengine.httpRequest.run",
         "title": "Run Named HTTP Quick Request"
+      },
+      {
+        "command": "kbengine.discovery.report",
+        "title": "Show Discovery Report"
       }
     ],
     "menus": {

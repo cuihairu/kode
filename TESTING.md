@@ -47,7 +47,7 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
-vitest 覆盖率(2026-10-13,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
+vitest 覆盖率(2026-10-14,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
 批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%,
 批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
 languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
@@ -60,10 +60,10 @@ extension.ts、entityMapping.ts、kbengineProtocol.ts、explorerProviders.ts
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (7048/7048) |
-| Branches | 100% (4190/4190) |
-| Functions | 100% (1190/1190) |
-| Lines | 100% (6872/6872) |
+| Statements | 100% (7165/7165) |
+| Branches | 100% (4318/4318) |
+| Functions | 100% (1208/1208) |
+| Lines | 100% (6986/6986) |
 
 纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 78 处
 `/* istanbul ignore start */` 区间——批62 的 25 处起家,批63 起各批在
@@ -105,7 +105,7 @@ workspaceDiscovery.ts 经循环重构后 0 处。
 navigationLog、snippetGenerator、serverConfigHover、serverConfigMerge、
 telnetClient、telnetService、telnetTree、telnetWebView、databaseSimulator、
 workspaceDiscovery、rpcCodeLens)在各自批次记录中登记,
-2026-10-13 v8 实测全部 40 源文件 Lines/Branch 双 100%
+2026-10-14 v8 实测全部 40 源文件 Lines/Branch 双 100%
 ("No files with missing coverage. 40 files fully covered")。
 
 logParser 的语句与函数已全覆盖,分支自批71 起 100%(唯一未覆盖臂为
@@ -4446,3 +4446,46 @@ tests/extension.test.ts 注册面与命令面。
 覆盖率与门禁:1517/1517 绿(108 测试文件),coverage 100%×4(7048 stmts/
 4190 branches/1190 funcs/6872 lines,40 源文件全覆盖,istanbul 忽略台账 78 处),
 eslint+tsc 干净,mocha 冒烟 11 passing。版本仍冻结 0.1.0。
+
+## 批127:发现与定位诊断报告(2026-10-14)
+
+用户令:多加错误 log 之类的,可以反馈回来——用户工程目录在公司内网隔离,
+无法提供目录结构,发现/定位失败必须做成可见、可复制回传的诊断输出。
+
+落地分三面:
+
+1. 纯逻辑层 `src/workspaceDiscovery.ts`:`buildDiscoveryReport(root, facts,
+   scanOverride?, generatedAt?)` 对 8 个键逐键摊开(三个 def 树锚点 + 派生
+   interfaces/components + messages_fixed + 资产根 + 引擎二进制),每键给
+   最终取用值/来源/状态(ok=解析且在盘,ambiguous=未解析但存在候选>1,
+   missing=其余——含回落到不存在路径,批127 之前这一情形全程静默)、显式
+   配置原值与存在性(相对路径与 ${workspaceFolder} 占位先同基再比)、约定
+   链命中/未命中、深扫描命中、记忆选择(过期记忆如实过滤为无);
+   `collectDiscoveryIssues` 产问题清单 + 逐项一句补救
+   (`remediationFor` 对标签字面量联合做穷尽 switch,新增键漏写编译即报);
+   `renderDiscoveryReport` 渲纯文本(标题/工作区/生成时间/深扫描元信息/
+   逐键块/编号问题)。facts 由装配层组装(layout + 配置原值),纯层不碰
+   vscode;`scanOverride` 是 DI 缝——截断等真实工作区复现不出的扫描形态
+   经此注入。深扫描补 `scanVisited`/`scanTruncated` 计数与触顶标注
+   ("零命中不能等同于工作区里真的没有")。
+2. 装配层 `src/extension.ts`:第 4 个输出通道「KBEngine 发现与定位」+
+   `kbengine.discovery.report` 命令(未开工作区警告不空转;有问题弹警告
+   指路,全正常信息提示);激活期自动发现完成后静默落一份报告,有问题才
+   弹提示。
+3. `src/serverManager.ts` 启动链路补信号:配置目录为空/不存在报错带期望
+   形态(资产根 + res/server/kbengine.xml + scripts/);目录存在但探针文件
+   缺席不拦截启动,组件通道留 `[WARN]` 一行。
+
+回归锁定:tests/discoveryReport.test.ts 24 例(约定树全 ok/静默回落摊开/
+显式配置指空/过期记忆过滤/深扫描命中/记忆选择/歧义 vs 全缺/契约注入值标
+derived 与 fallback/空事实视为未解析/资产根探针三态/相对 configPath/
+binPath 显式与推导/messages_fixed 派生与纯深扫描/扫描元信息与截断注入/
+render 标题块与存在性后缀);tests/extension.test.ts +4(命令写通道与警告/
+未开工作区守卫/激活自动报告轮询 4s/全 ok 夹具静默);
+tests/serverManagerProcesses.test.ts +2(探针缺席警告/探针在位通道干净);
+tests/workspaceDiscovery.test.ts +1(预算截断置位)+ 既有断言补
+scanVisited/scanTruncated 字段。
+
+覆盖率与门禁:1548/1548 绿(109 测试文件),coverage 100%×4(7165 stmts/
+4318 branches/1208 funcs/6986 lines,40 源文件全覆盖,istanbul 忽略台账
+仍 78 处),eslint+tsc 干净。版本仍冻结 0.1.0。

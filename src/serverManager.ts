@@ -324,12 +324,16 @@ export class KBEngineServerManager {
     }
 
     if (!configPath) {
-      vscode.window.showErrorMessage('KBEngine 配置目录为空，请检查 kbengine.configPath');
+      vscode.window.showErrorMessage(
+        'KBEngine 配置目录为空，请检查 kbengine.configPath（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）'
+      );
       return false;
     }
 
     if (!fs.existsSync(configPath)) {
-      vscode.window.showErrorMessage(`找不到 KBEngine 配置目录：${configPath}`);
+      vscode.window.showErrorMessage(
+        `找不到 KBEngine 配置目录：${configPath}（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）`
+      );
       return false;
     }
 
@@ -337,6 +341,15 @@ export class KBEngineServerManager {
     if (!configStat.isDirectory()) {
       vscode.window.showErrorMessage(`KBEngine 配置路径不是目录：${configPath}`);
       return false;
+    }
+
+    // 批127:引擎期望的 res/server/kbengine.xml 不在时不拦截启动(引擎可能
+    // 有别的取法),但在输出通道留可见警告,用户可把日志贴回来定位
+    const expectedConfigFile = path.join(configPath, 'res', 'server', 'kbengine.xml');
+    if (!fs.existsSync(expectedConfigFile)) {
+      this.getOutputChannel(component).appendLine(
+        `[WARN] 期望的引擎配置文件不存在：${expectedConfigFile}（启动可能失败）`
+      );
     }
 
     const outputChannel = this.getOutputChannel(component);

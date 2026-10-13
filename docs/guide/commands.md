@@ -244,6 +244,20 @@
   - `${sel}`：选中文本
   - 无活动编辑器时各变量替换为空串
 
+### `kbengine.discovery.report`
+
+- 标题：`Show Discovery Report`
+- 作用：生成「发现与定位」诊断报告并展示在 OUTPUT 面板「KBEngine 发现与定位」通道，报告可整段复制回传维护者，不必贴工作区文件树
+- 报告内容（逐键摊开，失败不再静默）：
+  - 三个 def 树锚点（entity_defs / entities.xml / types.xml）与派生目录（interfaces / components）：最终取用值及来源（显式配置 / 记忆选择 / 约定链 / 深扫描 / 回落候选首项）、显式配置原值与存在性、约定链命中与未命中、深扫描命中、记忆选择
+  - 资产根 `kbengine.configPath`（按引擎装载口径验 `res/server/kbengine.xml`）与引擎二进制 `kbengine.binPath`（含 kbe 源码根自动检测）、引擎消息表 messages_fixed.xml
+  - 有界深扫描元信息：访问条目数、是否触顶截断（截断即标注「命中集可能不全」）
+  - 问题清单：每项附一句补救建议（缺 entities.xml → 指 `kbengine.entitiesXmlPath`；资产根缺探针文件 → 指期望形态等）
+- 行为：
+  - 未打开工作区时警告提示，不空转
+  - 存在问题时弹警告指路 OUTPUT 面板；全部正常时信息提示
+  - 激活期自动发现完成后也会静默落一份报告到同一通道（有问题时才弹提示）
+
 ## 典型使用流程
 
 ### 新建实体

@@ -45,12 +45,20 @@ export const DISCOVERY_CONVENTIONS = {
 
 const SKIP_DIRECTORY_NAMES = new Set(['node_modules', '.git', '.vscode', 'out', 'dist']);
 
+/** 有界深扫描默认上限(诊断报告如实呈现,触顶即标注截断) */
+export const DEFAULT_SCAN_DEPTH = 7;
+export const DEFAULT_SCAN_MAX_VISITED = 20000;
+
 export interface DiscoveredCandidateSet {
   entityDefs: string[];
   entitiesXml: string[];
   typesXml: string[];
   kbeSourceRoots: string[];
   messagesXml: string[];
+  /** 本次扫描实际访问的条目数(受 maxVisited 截顶) */
+  scanVisited: number;
+  /** true = 在 maxVisited/maxDepth 触顶截断,命中集可能不全 */
+  scanTruncated: boolean;
 }
 
 export interface ScanOptions {
@@ -65,19 +73,24 @@ export function scanWorkspaceAnchors(
   workspaceRoot: string,
   options: ScanOptions = {}
 ): DiscoveredCandidateSet {
-  const maxDepth = options.maxDepth ?? 7;
-  const maxVisited = options.maxVisited ?? 20000;
+  const maxDepth = options.maxDepth ?? DEFAULT_SCAN_DEPTH;
+  const maxVisited = options.maxVisited ?? DEFAULT_SCAN_MAX_VISITED;
   const found: DiscoveredCandidateSet = {
     entityDefs: [],
     entitiesXml: [],
     typesXml: [],
     kbeSourceRoots: [],
-    messagesXml: []
+    messagesXml: [],
+    scanVisited: 0,
+    scanTruncated: false
   };
   let visited = 0;
+  let truncated = false;
 
   const walk = (dir: string, depth: number): void => {
     if (depth > maxDepth || visited >= maxVisited) {
+      // 触顶截断:命中集可能不全,报告如实标注,不当作零命中
+      truncated = true;
       return;
     }
     let entries: fs.Dirent[];
@@ -88,6 +101,7 @@ export function scanWorkspaceAnchors(
     }
     for (const entry of entries) {
       if (visited >= maxVisited) {
+        truncated = true;
         return;
       }
       visited += 1;
@@ -119,6 +133,8 @@ export function scanWorkspaceAnchors(
   };
 
   walk(workspaceRoot, 0);
+  found.scanVisited = visited;
+  found.scanTruncated = truncated;
   return found;
 }
 
@@ -347,4 +363,414 @@ export async function runWorkspaceDiscovery(deps: DiscoveryPromptDeps, workspace
       applyDiscoveryChoices(workspaceRoot, { ...choices, [key]: picked });
     }
   }
+}
+
+// ---- 发现与定位诊断(批127:失败不再静默)----
+//
+// 背景:同步读路径"宁缺勿猜"时,layout 把 def 根回落到候选首项——一个可能
+// 不存在的路径——下游 interfaces/components/types/entities 全跟着失效,
+// 且全程无任何可见信号。本层把每次定位的输入与结论如实摊开,供输出通道
+// 与命令按需呈现;报告可整段复制回给维护者,不必贴工作区文件树。
+
+export type DiscoveryFieldStatus = 'ok' | 'ambiguous' | 'missing';
+
+export type DiscoveryValueSource =
+  | 'explicit-config'
+  | 'remembered-choice'
+  | 'convention'
+  | 'deep-scan'
+  | 'derived'
+  | 'fallback'
+  | 'none';
+
+/** 报告字段的固定标签(字面联合供 remediationFor 做穷尽 switch,新增标签漏补即编译错) */
+export type DiscoveryFieldLabel =
+  | '实体定义目录 entity_defs'
+  | 'entities.xml'
+  | 'types.xml'
+  | '接口目录 interfaces'
+  | '组件目录 components'
+  | '引擎消息消息表 messages_fixed.xml'
+  | '资产根 kbengine.configPath'
+  | '引擎二进制 kbengine.binPath';
+
+export interface DiscoveryFieldReport {
+  label: DiscoveryFieldLabel;
+  status: DiscoveryFieldStatus;
+  /** 最终取用的值(null = 未解析出) */
+  resolved: string | null;
+  /** 最终值的来源(未解析时为 none) */
+  source: DiscoveryValueSource;
+  /** 显式配置原值(null = 未设置) */
+  explicitConfig: string | null;
+  /** 显式配置是否指向真实存在的文件/目录 */
+  explicitConfigExists: boolean | null;
+  /** 约定链全集(工作区相对拼成绝对路径) */
+  conventions: string[];
+  /** 约定链中实际存在的 */
+  conventionHits: string[];
+  /** 深扫描命中的全集 */
+  scanHits: string[];
+  /** 会话内/持久化的多候选选择 */
+  remembered: string | null;
+}
+
+export interface DiscoveryIssue {
+  label: string;
+  message: string;
+  remediation: string;
+}
+
+export interface DiscoveryReport {
+  workspaceRoot: string;
+  generatedAt: string;
+  scanVisited: number;
+  scanTruncated: boolean;
+  scanMaxDepth: number;
+  scanMaxVisited: number;
+  fields: DiscoveryFieldReport[];
+  issues: DiscoveryIssue[];
+}
+
+/** 诊断所需的解析结果(装配层从 layout 与设置取,纯逻辑层不碰 vscode) */
+export interface DiscoveryLayoutFacts {
+  /** layout.entityDefsRoot:恒为非空字符串,但可能指向不存在的路径 */
+  entityDefsRoot: string;
+  entityScriptsRoot: string | null;
+  interfacesRoot: string | null;
+  componentsRoot: string | null;
+  entitiesXmlPath: string | null;
+  typesXmlPath: string | null;
+  /** kbengine.configPath 原值(资产根,可能为空串;仅 ${workspaceFolder} 展开) */
+  configPath: string;
+  /** kbengine.binPath 原值(可能含 ${env:...} 占位,可为空串) */
+  binPathSetting: string;
+  /** 生效 binPath(装配层经管理器解析,含 kbe 源码根自动检测回落) */
+  binPath: string;
+  entityDefsPathSetting: string;
+  entitiesXmlPathSetting: string;
+  typesXmlPathSetting: string;
+}
+
+const SOURCE_LABELS: Record<DiscoveryValueSource, string> = {
+  'explicit-config': '显式配置',
+  'remembered-choice': '记忆选择',
+  convention: '约定链',
+  'deep-scan': '深扫描',
+  derived: '推导(interfaces/components 由 def 根,binPath/messages 由引擎源码根)',
+  fallback: '回落候选首项(不存在)',
+  none: '未解析'
+};
+
+function existsValue(value: string | null | undefined): boolean {
+  return value !== null && value !== undefined && fs.existsSync(value);
+}
+
+/** 显式配置是否生效:非空且不等于任何约定链条目时才可能是配置值本身 */
+function labelAnchorSource(
+  resolved: string,
+  explicit: string | null,
+  conventions: string[],
+  remembered: string | null,
+  scanHits: string[]
+): DiscoveryValueSource {
+  if (explicit && resolved === explicit) {
+    return 'explicit-config';
+  }
+  if (remembered && resolved === remembered) {
+    return 'remembered-choice';
+  }
+  if (conventions.indexOf(resolved) !== -1) {
+    return 'convention';
+  }
+  if (scanHits.indexOf(resolved) !== -1) {
+    return 'deep-scan';
+  }
+  return existsValue(resolved) ? 'derived' : 'fallback';
+}
+
+function anchorField(
+  label: DiscoveryFieldLabel,
+  key: DiscoveryKey,
+  workspaceRoot: string,
+  conventions: readonly string[],
+  scanHits: string[],
+  explicit: string,
+  resolved: string | null
+): DiscoveryFieldReport {
+  const rememberable = rememberedChoices.get(workspaceRoot)?.[key] ?? null;
+  const remembered = rememberable && fs.existsSync(rememberable) ? rememberable : null;
+  const absoluteConventions = conventions.map(relative => path.join(workspaceRoot, relative));
+  const conventionHits = absoluteConventions.filter(p => fs.existsSync(p));
+  // 歧义口径只数真实存在的候选(约定链全集仅供展示,零命中 ≠ 多候选)
+  const existingCandidates = uniqueList(conventionHits.concat(scanHits));
+  // ok = 解析且真实存在;歧义 = 未解析但存在的候选不止一个;missing = 其余
+  // (含回落到不存在路径——批127 要点:这一情形此前完全静默)
+  const status: DiscoveryFieldStatus =
+    existsValue(resolved)
+      ? 'ok'
+      : resolved === null && existingCandidates.length > 1
+        ? 'ambiguous'
+        : 'missing';
+  // 配置可能是相对路径或 ${workspaceFolder} 占位,与最终取用值比较前先同基
+  const explicitResolved = explicit ? resolveAgainstWorkspace(workspaceRoot, explicit) : null;
+
+  return {
+    label,
+    status,
+    resolved,
+    source: resolved
+      ? labelAnchorSource(resolved, explicitResolved, absoluteConventions, remembered, scanHits)
+      : 'none',
+    explicitConfig: explicit || null,
+    explicitConfigExists: explicitResolved ? fs.existsSync(explicitResolved) : null,
+    conventions: absoluteConventions,
+    conventionHits,
+    scanHits,
+    remembered
+  };
+}
+
+function uniqueList(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+/** 组装一份完整诊断:三个 def 根家族锚点 + 派生目录 + 资产根/引擎侧路径 */
+export function buildDiscoveryReport(
+  workspaceRoot: string,
+  facts: DiscoveryLayoutFacts,
+  scanOverride?: DiscoveredCandidateSet,
+  generatedAt: string = new Date().toISOString()
+): DiscoveryReport {
+  // scanOverride:装配层不传(走缓存的真实深扫描);测试用它注入截断等
+  // 无法用正常工作区复现的扫描形态
+  const scan = scanOverride ?? cachedScan(workspaceRoot);
+  const fields: DiscoveryFieldReport[] = [];
+
+  fields.push(
+    anchorField(
+      '实体定义目录 entity_defs',
+      'entityDefs',
+      workspaceRoot,
+      DISCOVERY_CONVENTIONS.entityDefs,
+      scan.entityDefs,
+      facts.entityDefsPathSetting,
+      facts.entityDefsRoot || null
+    )
+  );
+  fields.push(
+    anchorField(
+      'entities.xml',
+      'entitiesXml',
+      workspaceRoot,
+      DISCOVERY_CONVENTIONS.entitiesXml,
+      scan.entitiesXml,
+      facts.entitiesXmlPathSetting,
+      facts.entitiesXmlPath
+    )
+  );
+  fields.push(
+    anchorField(
+      'types.xml',
+      'typesXml',
+      workspaceRoot,
+      DISCOVERY_CONVENTIONS.typesXml,
+      scan.typesXml,
+      facts.typesXmlPathSetting,
+      facts.typesXmlPath
+    )
+  );
+
+  const derivedField = (label: DiscoveryFieldLabel, resolved: string | null): DiscoveryFieldReport => ({
+    label,
+    status: existsValue(resolved) ? 'ok' : 'missing',
+    resolved,
+    source: existsValue(resolved) ? 'derived' : 'none',
+    explicitConfig: null,
+    explicitConfigExists: null,
+    conventions: [],
+    conventionHits: [],
+    scanHits: [],
+    remembered: null
+  });
+
+  fields.push(derivedField('接口目录 interfaces', facts.interfacesRoot));
+  fields.push(derivedField('组件目录 components', facts.componentsRoot));
+
+  const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
+  const engineMessages = resolveEngineMessagesXmlPath(workspaceRoot);
+  fields.push({
+    label: '引擎消息消息表 messages_fixed.xml',
+    status: existsValue(engineMessages) ? 'ok' : 'missing',
+    resolved: engineMessages,
+    source: existsValue(engineMessages) ? (kbeSourceRoot ? 'derived' : 'deep-scan') : 'none',
+    explicitConfig: null,
+    explicitConfigExists: null,
+    conventions: [],
+    conventionHits: [],
+    scanHits: scan.messagesXml,
+    remembered: null
+  });
+
+  const configPath = facts.configPath
+    ? resolveAgainstWorkspace(workspaceRoot, facts.configPath)
+    : '';
+  const configProbe = configPath
+    ? path.join(configPath, 'res', 'server', 'kbengine.xml')
+    : null;
+  // 资产根以引擎装载口径验收:目录存在且 res/server/kbengine.xml 在
+  // (服务器以该目录为 cwd 启动,缺此文件引擎起不来)
+  const configProbeOk = existsValue(configProbe);
+  fields.push({
+    label: '资产根 kbengine.configPath',
+    status: configProbeOk ? 'ok' : 'missing',
+    resolved: configPath || null,
+    source: configPath ? 'explicit-config' : 'none',
+    explicitConfig: facts.configPath || null,
+    explicitConfigExists: facts.configPath ? fs.existsSync(configPath) : null,
+    conventions: [configProbe].filter((value): value is string => value !== null),
+    conventionHits: configProbeOk ? [configProbe as string] : [],
+    scanHits: [],
+    remembered: null
+  });
+
+  // binPath 来源:设置非空即显式配置(可能含 ${env:...} 展开);设置为空而
+  // 生效值非空 = kbe 源码根/兄弟目录自动检测推导
+  const binPathSettingResolved = facts.binPathSetting
+    ? resolveAgainstWorkspace(workspaceRoot, facts.binPathSetting)
+    : '';
+  fields.push({
+    label: '引擎二进制 kbengine.binPath',
+    status: existsValue(facts.binPath) ? 'ok' : 'missing',
+    resolved: facts.binPath || null,
+    source: !facts.binPath
+      ? 'none'
+      : facts.binPathSetting
+        ? 'explicit-config'
+        : 'derived',
+    explicitConfig: facts.binPathSetting || null,
+    explicitConfigExists: facts.binPathSetting ? fs.existsSync(binPathSettingResolved) : null,
+    conventions: [],
+    conventionHits: [],
+    scanHits: kbeSourceRoot ? [kbeSourceRoot] : [],
+    remembered: null
+  });
+
+  return {
+    workspaceRoot,
+    generatedAt,
+    scanVisited: scan.scanVisited,
+    scanTruncated: scan.scanTruncated,
+    scanMaxDepth: DEFAULT_SCAN_DEPTH,
+    scanMaxVisited: DEFAULT_SCAN_MAX_VISITED,
+    fields,
+    issues: collectDiscoveryIssues(fields, scan.scanTruncated)
+  };
+}
+
+/** 解析配置原值:支持 ${workspaceFolder} 占位与相对路径 */
+function resolveAgainstWorkspace(workspaceRoot: string, value: string): string {
+  const withWorkspace = value.replace(/\$\{workspaceFolder\}/g, workspaceRoot);
+  return path.isAbsolute(withWorkspace) ? withWorkspace : path.join(workspaceRoot, withWorkspace);
+}
+
+function collectDiscoveryIssues(
+  fields: DiscoveryFieldReport[],
+  scanTruncated: boolean
+): DiscoveryIssue[] {
+  const issues: DiscoveryIssue[] = [];
+
+  for (const field of fields) {
+    if (field.status === 'ok') {
+      continue;
+    }
+    issues.push({
+      label: field.label,
+      message:
+        field.status === 'ambiguous'
+          ? `${field.label}找到 ${uniqueList(field.conventionHits.concat(field.scanHits)).length} 个候选但未选定:多候选需要激活期选一次并记忆,若当时取消则不再询问,本会话静默失效`
+          : `${field.label}未解析出可用路径${field.resolved ? `(当前回落值不存在: ${field.resolved})` : ''}`,
+      remediation: remediationFor(field)
+    });
+  }
+
+  if (scanTruncated) {
+    issues.push({
+      label: '深扫描',
+      message: '有界深扫描触顶截断,命中集可能不全——零命中不能等同于"工作区里真的没有"',
+      remediation: '把工作区收窄到 KBEngine 工程本身,或显式配置对应路径项'
+    });
+  }
+
+  return issues;
+}
+
+function remediationFor(field: DiscoveryFieldReport): string {
+  switch (field.label) {
+    case '实体定义目录 entity_defs':
+      return `设置 kbengine.entityDefsPath 指向实体 .def 所在目录;或让目录名为 entity_defs 且位于约定链内(${field.conventions.join(' / ')}),多候选时下次激活会只询问一次`;
+    case 'entities.xml':
+      return '设置 kbengine.entitiesXmlPath 指向 entities.xml;或把它放在实体定义目录的同级/上级';
+    case 'types.xml':
+      return 'types.xml 无独立配置项:放在实体定义目录之下即可被找到(约定链兜底);缺失时先检查 entity_defs 根是否解析正确';
+    case '接口目录 interfaces':
+    case '组件目录 components':
+      return '该目录由实体定义目录推导,先修好实体定义目录';
+    case '资产根 kbengine.configPath':
+      return '设置 kbengine.configPath 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/)';
+    case '引擎二进制 kbengine.binPath':
+      return '设置 kbengine.binPath 指向 kbe/bin/server(引擎源码根会被自动推导)';
+    case '引擎消息消息表 messages_fixed.xml':
+      return '需要引擎源码根(kbe/src 下 entitydef.cpp 锚点)或 messages_fixed.xml 在工作区内';
+  }
+}
+
+const EMPTY_VALUES = '(无)';
+
+/** 渲染成可直接复制的诊断文本 */
+export function renderDiscoveryReport(report: DiscoveryReport): string {
+  const lines: string[] = [];
+  lines.push('Kode 发现与定位诊断');
+  lines.push(`工作区: ${report.workspaceRoot}`);
+  lines.push(`生成时间: ${report.generatedAt}`);
+  lines.push(
+    `深扫描: 访问 ${report.scanVisited} 条目, ` +
+      `${report.scanTruncated ? '已截断(命中集可能不全)' : '未截断'} ` +
+      `(上限 深度 ${report.scanMaxDepth} / ${report.scanMaxVisited} 条目)`
+  );
+  lines.push('');
+
+  for (const field of report.fields) {
+    lines.push(`[${field.status}] ${field.label}`);
+    lines.push(
+      `  最终: ${field.resolved ?? EMPTY_VALUES} (来源: ${SOURCE_LABELS[field.source]})`
+    );
+    lines.push(
+      `  显式配置: ${field.explicitConfig ?? EMPTY_VALUES}` +
+        (field.explicitConfigExists === null
+          ? ''
+          : ` ${field.explicitConfigExists ? '(存在)' : '(不存在)'}`)
+    );
+    lines.push(
+      `  约定链命中: ${field.conventionHits.length ? field.conventionHits.join(', ') : EMPTY_VALUES}`
+    );
+    if (field.conventions.length > field.conventionHits.length) {
+      lines.push(
+        `  约定链未命中: ${field.conventions
+          .filter(p => field.conventionHits.indexOf(p) === -1)
+          .join(', ')}`
+      );
+    }
+    lines.push(`  深扫描命中: ${field.scanHits.length ? field.scanHits.join(', ') : EMPTY_VALUES}`);
+    lines.push(`  记忆选择: ${field.remembered ?? EMPTY_VALUES}`);
+    lines.push('');
+  }
+
+  lines.push(`问题 ${report.issues.length} 项`);
+  report.issues.forEach((issue, index) => {
+    lines.push(`${index + 1}. ${issue.label}`);
+    lines.push(`   ${issue.message}`);
+    lines.push(`   补救: ${issue.remediation}`);
+  });
+  return lines.join('\n');
 }

@@ -147,6 +147,111 @@ describe('extension activate 装配', () => {
     disposeAll(context);
   });
 
+  it('发现与定位诊断:命令落报告进输出通道,问题数走提示', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-discovery-'));
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const context = makeContext();
+    activate(context);
+
+    await commands.executeCommand('kbengine.discovery.report');
+    const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+    expect(channel).toBeDefined();
+    const text = channel!.lines.join('');
+    expect(text).toContain('Kode 发现与定位诊断');
+    // 空工作区:def 根回落约定首项(不存在)计为问题 → 警告提示
+    expect(text).toContain('[missing] 实体定义目录 entity_defs');
+    expect(messages.warning.some(message => message.includes('发现与定位存在'))).toBe(true);
+
+    fs.rmSync(root, { recursive: true, force: true });
+    disposeAll(context);
+  });
+
+  it('发现与定位诊断:未打开工作区时提示且不写报告', async () => {
+    const context = makeContext();
+    activate(context);
+
+    await commands.executeCommand('kbengine.discovery.report');
+    expect(messages.warning).toContain('未打开工作区,无法生成发现与定位诊断');
+    disposeAll(context);
+  });
+
+  it('发现与定位诊断:激活期发现完成后自动落报告,有问题时弹提示', async () => {
+    // context 带 workspaceState memento(激活期发现链路的前置);空工作区
+    // 零候选不打扰,但报告如实记录 missing 并提示
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-discovery-auto-'));
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const context = makeContext();
+    const memento = new Map<string, unknown>();
+    context.workspaceState = {
+      get: <T>(key: string): T | undefined => memento.get(key) as T | undefined,
+      update: async (key: string, value: unknown): Promise<void> => {
+        memento.set(key, value);
+      }
+    } as ExtensionContext['workspaceState'];
+    activate(context);
+
+    try {
+      await until(() => messages.warning.some(message => message.includes('发现与定位存在')), 4000);
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+      expect(channel).toBeDefined();
+      expect(channel!.lines.join('')).toContain('[missing] 实体定义目录 entity_defs');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+      disposeAll(context);
+    }
+  });
+
+  it('发现与定位诊断:全链路可解析时报告全 ok 并走信息提示', async () => {
+    // def 树约定链全命中 + 资产根带 res/server/kbengine.xml 探针 + binPath
+    // 经 kbe 源码根自动检测命中 → 问题数 0
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-discovery-ok-'));
+    fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), '<xml/>', 'utf8');
+    fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), '<xml/>', 'utf8');
+    fs.mkdirSync(path.join(root, 'scripts', 'entity_defs', 'interfaces'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'scripts', 'entity_defs', 'components'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'assets', 'res', 'server'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'assets', 'res', 'server', 'kbengine.xml'),
+      '<xml/>',
+      'utf8'
+    );
+    fs.mkdirSync(path.join(root, 'kbe', 'src', 'lib', 'entitydef'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'kbe', 'src', 'lib', 'entitydef', 'entitydef.cpp'), 'x', 'utf8');
+    fs.mkdirSync(path.join(root, 'kbe', 'bin', 'server'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'kbe', 'res', 'server'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'kbe', 'res', 'server', 'messages_fixed.xml'), '<xml/>', 'utf8');
+    configurationOverrides.set('kbengine', { configPath: path.join(root, 'assets') });
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const context = makeContext();
+    const memento = new Map<string, unknown>();
+    context.workspaceState = {
+      get: <T>(key: string): T | undefined => memento.get(key) as T | undefined,
+      update: async (key: string, value: unknown): Promise<void> => {
+        memento.set(key, value);
+      }
+    } as ExtensionContext['workspaceState'];
+    activate(context);
+
+    try {
+      await commands.executeCommand('kbengine.discovery.report');
+      // 等激活期发现的 .then 自动落报告跑完(问题数 0 → 不弹提示)
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
+      const text = channel!.lines.join('');
+      expect(text).toContain('[ok] 实体定义目录 entity_defs');
+      expect(text).toContain('[ok] 资产根 kbengine.configPath');
+      expect(text).toContain('[ok] 引擎二进制 kbengine.binPath');
+      expect(text).toContain('问题 0 项');
+      expect(messages.info).toContain('发现与定位全部正常');
+      expect(messages.warning.some(message => message.includes('发现与定位存在'))).toBe(false);
+    } finally {
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(root, { recursive: true, force: true });
+      disposeAll(context);
+    }
+  });
+
   it('激活后逐条执行命令,关键链路经 CommandRegistry 真分发', async () => {
     const context = makeContext();
     activate(context);

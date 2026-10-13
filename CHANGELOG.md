@@ -43,6 +43,21 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   声明行上方出一行可点 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def
   文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens。
   按方法名匹配，同名辅助函数也会出 lens（见语言能力页边界说明）
+- Discovery diagnostics: `kbengine.discovery.report` writes a
+  pasteable plain-text report to the `KBEngine 发现与定位` output channel
+  that lays out, per key, the final value in use and where it came from
+  (explicit config / remembered choice / convention chain / deep scan /
+  derived / fallback / none), the explicit setting's raw value and
+  on-disk existence, convention hits and misses, deep-scan hits and the
+  remembered choice, plus a numbered issue list with one-line remediation
+  per problem. `kbengine.configPath` is validated against the engine load
+  anchor `res/server/kbengine.xml`, and the bounded deep scan reports its
+  visited-entry count and flags truncation (zero hits are not proof of
+  absence). The report is also written silently after activation-time
+  discovery, and a visible warning with the issue count points at the
+  channel; starting a server with an assets root that lacks the expected
+  engine config file now logs a `[WARN]` line in the component channel
+  instead of failing quietly
 
 ### Fixed
 - Generating a snippet from a selection now measures the common indent in

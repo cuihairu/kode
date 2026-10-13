@@ -100,6 +100,21 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
     expect(scanWorkspaceAnchors(root, { maxVisited: 2 }).entitiesXml).toEqual([p('d/entities.xml')]);
   });
 
+  it('flags scanTruncated and scanVisited when the budget cuts the walk', () => {
+    // 批127:截断不再静默——命中集可能不全,报告须标注
+    mkdir('d');
+    write('d/entities.xml');
+
+    const cut = scanWorkspaceAnchors(root, { maxVisited: 1 });
+    expect(cut.entitiesXml).toEqual([]);
+    expect(cut.scanTruncated).toBe(true);
+    expect(cut.scanVisited).toBe(1);
+
+    const full = scanWorkspaceAnchors(root);
+    expect(full.scanTruncated).toBe(false);
+    expect(full.scanVisited).toBeGreaterThan(0);
+  });
+
   it('stops mid-directory when the budget runs out between sibling entries', () => {
     mkdir('sub');
     write('sub/a_decoy.xml');
@@ -124,14 +139,18 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
       entitiesXml: [],
       typesXml: [],
       kbeSourceRoots: [],
-      messagesXml: []
+      messagesXml: [],
+      scanVisited: 0,
+      scanTruncated: false
     });
     expect(scanWorkspaceAnchors(p('missing-dir'))).toEqual({
       entityDefs: [],
       entitiesXml: [],
       typesXml: [],
       kbeSourceRoots: [],
-      messagesXml: []
+      messagesXml: [],
+      scanVisited: 0,
+      scanTruncated: false
     });
   });
 
@@ -148,7 +167,10 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
         entitiesXml: [],
         typesXml: [],
         kbeSourceRoots: [],
-        messagesXml: []
+        messagesXml: [],
+        // 符号链接条目本身计入访问数,只是不跟随
+        scanVisited: 1,
+        scanTruncated: false
       });
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });

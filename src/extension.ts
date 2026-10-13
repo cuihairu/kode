@@ -52,7 +52,7 @@ import {
   KBENGINE_DATABASE_SIMULATION_SCHEME,
   KBEngineDatabaseSimulationProvider
 } from './databaseSimulator';
-import { findEntityDefinitionFile } from './definitionWorkspace';
+import { findEntityDefinitionFile, getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
 import {
@@ -73,8 +73,12 @@ import {
   FinalConfigTreeProvider,
   buildFinalServerConfig
 } from './serverConfigMerge';
-import type { DiscoveryKey, DiscoveryPromptDeps } from './workspaceDiscovery';
-import { runWorkspaceDiscovery } from './workspaceDiscovery';
+import type { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from './workspaceDiscovery';
+import {
+  buildDiscoveryReport,
+  renderDiscoveryReport,
+  runWorkspaceDiscovery
+} from './workspaceDiscovery';
 import { TelnetTreeProvider } from './telnetTree';
 
 /**
@@ -1012,9 +1016,63 @@ export function activate(context: vscode.ExtensionContext) {
   // 会话不再询问);单候选/零命中零打扰。显式配置永远优先于发现结果。
   // workspaceState 缺失(测试替身/嵌入场景)时静默跳过,不做磁盘级记忆。
   const primaryWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (primaryWorkspaceRoot && context.workspaceState) {
+
+  // 批127 发现与定位诊断:定位失败不再静默——报告摊开每个键的显式配置/
+  // 约定链/深扫描/记忆选择与最终取用,写入输出通道供复制回传。
+  const discoveryReportChannel = vscode.window.createOutputChannel('KBEngine 发现与定位');
+  const writeDiscoveryReport = (workspaceRoot: string): number => {
+    const config = vscode.workspace.getConfiguration('kbengine');
+    const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+    const facts: DiscoveryLayoutFacts = {
+      // 不可达(批64 定性):layout.entityDefsRoot 恒为非空字符串(见
+      // definitionWorkspace.ts 同口径区间),空值臂无来源;保留守卫防布局
+      // 契约变更时静默出错。
+      /* istanbul ignore start */
+      entityDefsRoot: layout.entityDefsRoot || '',
+      /* istanbul ignore stop */
+      entityScriptsRoot: layout.entityScriptsRoot,
+      interfacesRoot: layout.interfacesRoot,
+      componentsRoot: layout.componentsRoot,
+      entitiesXmlPath: layout.entitiesXmlPath,
+      typesXmlPath: layout.typesXmlPath,
+      configPath: config.get<string>('configPath', ''),
+      binPathSetting: config.get<string>('binPath', ''),
+      binPath: serverManager.getBinPath(),
+      entityDefsPathSetting: config.get<string>('entityDefsPath', ''),
+      entitiesXmlPathSetting: config.get<string>('entitiesXmlPath', ''),
+      // types.xml 无独立配置项,布局内硬编码候选链,显式配置恒空
+      typesXmlPathSetting: ''
+    };
+    const report = buildDiscoveryReport(workspaceRoot, facts);
+    discoveryReportChannel.clear();
+    discoveryReportChannel.appendLine(renderDiscoveryReport(report));
+    return report.issues.length;
+  };
+  const discoveryReportCommand = vscode.commands.registerCommand(
+    'kbengine.discovery.report',
+    () => {
+      if (!primaryWorkspaceRoot) {
+        vscode.window.showWarningMessage('未打开工作区,无法生成发现与定位诊断');
+        return;
+      }
+      const issueCount = writeDiscoveryReport(primaryWorkspaceRoot);
+      discoveryReportChannel.show(true);
+      if (issueCount > 0) {
+        vscode.window.showWarningMessage(
+          `发现与定位存在 ${issueCount} 项问题,详见「KBEngine 发现与定位」输出面板`
+        );
+      } else {
+        vscode.window.showInformationMessage('发现与定位全部正常');
+      }
+    }
+  );
+  context.subscriptions.push(discoveryReportCommand, discoveryReportChannel);
+
+  // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传
+  const discoveryRoot = primaryWorkspaceRoot;
+  if (discoveryRoot && context.workspaceState) {
     const workspaceState = context.workspaceState;
-    const discoveryStateKey = `kbengine.discovery.${primaryWorkspaceRoot}`;
+    const discoveryStateKey = `kbengine.discovery.${discoveryRoot}`;
     const discoveryDeps: DiscoveryPromptDeps = {
       showQuickPick: (items, title) =>
         vscode.window.showQuickPick(items, { placeHolder: title, ignoreFocusOut: true }),
@@ -1023,7 +1081,14 @@ export function activate(context: vscode.ExtensionContext) {
       remember: (_root, choices) =>
         void workspaceState.update(discoveryStateKey, choices)
     };
-    void runWorkspaceDiscovery(discoveryDeps, primaryWorkspaceRoot);
+    void runWorkspaceDiscovery(discoveryDeps, discoveryRoot).then(() => {
+      const issueCount = writeDiscoveryReport(discoveryRoot);
+      if (issueCount > 0) {
+        vscode.window.showWarningMessage(
+          `发现与定位存在 ${issueCount} 项问题,详见「KBEngine 发现与定位」输出面板`
+        );
+      }
+    });
   }
 
   // 默认开启令:激活即出最终配置视图(后台标签,不抢焦点);定位不到
