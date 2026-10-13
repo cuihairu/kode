@@ -7,7 +7,6 @@
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行；不打版本号 tag、不建正式 Release、不跑发版 workflow）
 - [ ] 批123 网络包结构生成：从 def 树产出客户端可见方法的参数序列、utype 序列与消息编号表（机读 json + 人读 markdown），规格与冲突报错对齐引擎装载语义，复用现有 def 解析
 - [ ] 批124 def 图形化架构流程图：webview 内展示 client 通知到 baseapp/cellapp 的调用与属性自动同步关系，边语义按 Flags 位带引擎出处，支持导出
-- [ ] 法宣工程配置目录无法定位时给出可见诊断（当前失败静默：多候选宁缺勿猜回落到不存在的约定路径，或激活期 quick pick 取消后不记忆）
 - [ ] `kbengine.configPath` 补约定发现（telnet 已有 `res/server/kbengine.xml` 探测链，可复用）
 
 ## 已完成
@@ -25,3 +24,4 @@
 - [x] 批125 配置自动发现与精简 — `b683108`（+1 测试文件，配置对照表入 configuration.md，干净工作区零配置可用核心功能）
 - [x] 批126 RPC 方法标记 CodeLens — `b683108`（+1 测试文件 28 例，全套 1517 用例绿，coverage 100%×4）
 - [x] 文档-源码一致性审计 23 项修复 — 见 `docs/审计-文档一致性.md`（超前 5 / 滞后 7 / 不符 11）
+- [x] 批127 发现与定位失败可见 — `3f36eae`（+1 测试文件 24 例，全套 1548 用例绿，coverage 100%×4；`Show Discovery Report` 命令 + 激活自动报告，报告整段可复制回传）
