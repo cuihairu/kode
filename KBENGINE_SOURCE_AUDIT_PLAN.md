@@ -340,7 +340,7 @@
 - 文件：
   - `src/defAnalyzer.ts`
 - 内容：
-  - `kbengine.def.analyze` 命令，8 个检查项产出优化建议（批99 起，原 7 个）
+  - `kbengine.def.analyze` 命令，9 个检查项产出优化建议（批99 起原 7 个，批116 增 inherited-name-collision 为第 9 项）
 - 核对重点：
   - 幻影类型清单是否与 `DataTypes` 注册表逐名一致
   - 各检查项是否只以“优化建议”口径输出、不冒充引擎装载规则

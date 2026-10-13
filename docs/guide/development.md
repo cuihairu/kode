@@ -5,7 +5,7 @@
 ## 环境要求
 
 - Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
-- pnpm 8.x
+- pnpm 以 `package.json` 的 `packageManager` 字段为准（当前 pnpm 12.10.1）
 - VSCode 1.50.0 或更高版本
 
 ## 本地开发

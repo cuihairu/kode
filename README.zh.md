@@ -10,7 +10,7 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-> **Kode** (KBEngine IDE) - 面向 KBEngine 的 VS Code 开发辅助扩展
+> **Kode** (KBEngine Development Environment) - 面向 KBEngine 的 VS Code 开发辅助扩展
 
 ## 简介
 
@@ -200,7 +200,7 @@ pnpm run compile
 pnpm run package
 
 # 本地安装
-code --install-extension kode-0.1.1.vsix
+code --install-extension kode-0.1.0.vsix
 ```
 
 ## 文档
@@ -219,10 +219,20 @@ code --install-extension kode-0.1.1.vsix
 ## 截图
 
 ### 语法高亮和智能提示
-截图素材尚未整理完成。当前可通过 `F5` 启动扩展开发主机，在 `.def` 文件中直接预览语法高亮、智能提示、悬停文档与诊断效果。
+![def 语法高亮](./docs/screenshots/def-highlighting.png)
+
+![def 智能提示](./docs/screenshots/def-intellisense.png)
 
 ### 实体浏览器
-实体浏览器与服务器控制面板的界面截图将随文档资源一并补充；现阶段建议结合 [docs/](./docs/) 中的功能说明和本地调试窗口进行验证。
+![实体浏览器](./docs/screenshots/entity-explorer.png)
+
+### 依赖图
+![依赖图](./docs/screenshots/dependency-graph.png)
+
+### 日志查看器与监控面板
+![日志查看器](./docs/screenshots/log-viewer.png)
+
+![监控面板](./docs/screenshots/monitoring-panel.png)
 
 ## 开发
 
@@ -350,4 +360,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前版本 0.1.1，尚未发布到 Marketplace。已落地 21 项功能、26 条命令、31 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前版本 0.1.0，尚未发布到 Marketplace。已落地 27 项功能、30 条命令、32 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。

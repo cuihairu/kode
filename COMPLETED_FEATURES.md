@@ -1,13 +1,13 @@
 # Kode - 已完成功能列表
 
-**版本**: 0.1.1
+**版本**: 0.1.0（版本号冻结，发版由用户手动触发）
 **状态**: 核心功能已完成
-**总代码行数**: 19188 行（src/ TypeScript，实测）
-**文件数量**: 32 个 TypeScript 文件（不含 src/test 烟测）
+**总代码行数**: 23508 行（src/ TypeScript，实测）
+**文件数量**: 40 个 TypeScript 文件（不含 src/test 烟测）
 
 ---
 
-## 已完成功能 (21 个)
+## 已完成功能 (27 个)
 
 ### 1. 语法高亮
 - `.def` 整体委托内建 XML 语法 (text.xml) 着色：标签蓝、属性名浅蓝、标点灰、字符串橙，`<` `>` 参与括号配对着色，块注释 `<!-- -->`
@@ -175,13 +175,37 @@
 - 批105:三层架构(纯逻辑/服务/装配)依赖全注入,真 TCP localhost 仿真全测(成功/POST 体/ECONNREFUSED/坏 URL/ftp 协议/大回包分块截顶/响应中断/超时)
 - **源文件**: `src/httpRequests.ts`、`src/httpRequestService.ts`
 
+### 22. 最终配置视图
+- 服务端配置三层合并（本地 `kbengine.xml` → 组件 `kbengine.xml` → 引擎 defaults）后的最终生效视图，字段悬浮可看作用说明；`kbengine.autoRefreshFinalConfig` 默认开，defaults 或元件 `kbengine.xml` 保存后自动重算
+- **源文件**: `src/serverConfigMerge.ts`、`src/serverConfigHover.ts`
+
+### 23. 数据库 Schema 查看器
+- 按 `Persistent` 属性与 `types.xml` 别名链展开建表语义（表前缀 `tbl_`、`sm_<name>` 列、`VECTOR2/3/4` 三展开列、`FIXED_DICT` 键链、`ARRAY` 子表），以 `kbengine-db-schema:` 虚拟文档展示完整建表 SQL
+- **源文件**: `src/databaseSchema.ts`
+
+### 24. kbe 模块符号桩导航
+- 引擎 C++ 侧 kbe 模块符号桩索引，为引擎内建符号（无对应声明文件）提供导航与补全落点
+- **源文件**: `src/kbeModuleIndex.ts`
+
+### 25. 数据库模拟
+- 在 schema 快照之上模拟行数据与增改删预览：`.dbsim` 虚拟文档一体展示 DDL、模拟行 JSON、INSERT 语句与引擎差异清单；写库语义对齐引擎 MySQL 后端（dbid>0 走 UPDATE、子表行 parentID、`sm_autoLoad` 首写 0 已有 -1、UNIQUE 仅 MySQL 索引判定）
+- **源文件**: `src/databaseSimulator.ts`
+
+### 26. 配置自动发现
+- 路径类配置零配置可用：显式配置 → 约定布局 → 有界深扫描（限深 7 层/2 万条目，剪 `node_modules`/`.git`/`out`/`dist`）→ 唯一命中即用，多候选激活期弹一次 quick pick 并按工作区记忆；`types.xml`、`messages_fixed(_defaults).xml`、引擎 defaults 源码根兜底纯发现无配置项；`pythonOutputPath` 为默认值时从发现出的 def 根推导
+- **源文件**: `src/workspaceDiscovery.ts`
+
+### 27. RPC 方法标记
+- Python 实现脚本里，方法名命中实体 def 方法声明（`BaseMethods`/`CellMethods`/`ClientMethods`）的函数在声明行上方出一行可点 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def 文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens。按方法名匹配，同名辅助函数也会出 lens（边界见语言能力页）
+- **源文件**: `src/rpcCodeLens.ts`
+
 ---
 
 ## 项目结构
 
 ```
 kode/
-├── src/                          # 32 个 TypeScript 文件，19188 行
+├── src/                          # 40 个 TypeScript 文件，23508 行
 │   ├── extension.ts              # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts              # .def 解析与文本定位
@@ -191,27 +215,34 @@ kode/
 │   ├── definitionSemantics.ts    # 定义语义与继承合并
 │   ├── definitionWorkspace.ts    # 定义工作区解析
 │   ├── databaseSchema.ts         # 数据库 schema 虚拟文档
+│   ├── databaseSimulator.ts      # 数据库行模拟(纯逻辑+虚拟文档提供器)
 │   ├── explorerProviders.ts      # 树视图与导航
 │   ├── kbengineMetadata.ts       # KBEngine 元数据
 │   ├── kbengineProtocol.ts       # machine 发现与 watcher 协议编解码
 │   ├── hooks.ts                  # 钩子数据 (36 hooks,含源码调用位置)
 │   ├── serverManager.ts          # 服务器管理器
 │   ├── serverCommandTarget.ts    # 服务器命令目标解析
+│   ├── serverConfigHover.ts      # 服务端配置字段悬浮
+│   ├── serverConfigMerge.ts      # 服务端配置三层合并
 │   ├── logCollector.ts           # 日志收集器
 │   ├── logParser.ts              # 日志解析器
 │   ├── logWebView.ts             # 日志 WebView
 │   ├── debugConfig.ts            # 调试配置管理器
 │   ├── monitoringCollector.ts    # 监控数据收集器
 │   ├── monitoringWebView.ts      # 监控面板 WebView
+│   ├── navigationLog.ts          # 导航流水日志
 │   ├── entityMapping.ts          # Python-Def 映射管理器
 │   ├── kbeModuleIndex.ts         # kbe 模块符号桩索引(导航/补全)
 │   ├── pythonLanguageUtils.ts    # Python 补全上下文工具
+│   ├── rpcCodeLens.ts            # RPC 方法标记 CodeLens 纯逻辑
 │   ├── entityDependency.ts       # 实体依赖分析器
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
 │   ├── codeGenerator.ts          # 代码生成器 (10 模板)
 │   ├── workspacePath.ts          # 跨平台路径工具
+│   ├── workspaceDiscovery.ts     # 工作区自动发现(纯逻辑)
 │   ├── telnetClient.ts           # KBEngine telnet 协议客户端
 │   ├── telnetService.ts          # telnet 探测/会话服务
+│   ├── telnetTree.ts             # telnet 独立树视图
 │   ├── telnetWebView.ts          # Telnet 面板 WebView
 │   ├── httpRequests.ts           # HTTP 快捷请求纯逻辑(条目解析/模板变量)
 │   ├── httpRequestService.ts     # HTTP 快捷请求执行层(transport/流水)
@@ -223,7 +254,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (95 文件 1166 用例)
+├── tests/                        # vitest 测试 (108 文件 1517 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -233,13 +264,13 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 32 个（src/，不含 src/test，实测） |
+| TypeScript 文件 | 40 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
-| 文档页数 | 21 个 Markdown（根 7 + docs/ 11 + resources/docs 3） |
-| 总行数 | 19188 行（src/ TypeScript，实测） |
-| 已完成功能 | 21 个 |
+| 文档页数 | 26 个 Markdown（根 9 + docs/ 14 + resources/docs 3） |
+| 总行数 | 23508 行（src/ TypeScript，实测） |
+| 已完成功能 | 27 个 |
 
 ---
 
@@ -263,7 +294,10 @@ kode/
 - [x] 创建扩展图标(已由用户设计资产 resources/logo.png 满足:package.json
       Marketplace 图标与 README 展示均接线该文件;批89 擅自生成代餐被用户
       点名撤销,批90 恢复用户资产口径并锁回归,见 TESTING.md 批90)
-- [ ] 准备 Marketplace 截图
+- [x] 准备 Marketplace 截图（docs/screenshots/ 6 张实机截图已落：
+      def-highlighting / def-intellisense / entity-explorer /
+      dependency-graph / log-viewer / monitoring-panel，commit 8c3ffec 起
+      陆续落地，README 截图节已引用）
 - [x] 完善文档(批106:guide 功能概览/快速开始/文档索引对齐当前功能面
       ——补 Telnet 探测、调试支持、HTTP 快捷请求三节与索引条目;CHANGELOG
       [Unreleased] 补批94 后变更(1166 用例/八检查/telnet/HTTP/安全钉/
@@ -336,5 +370,5 @@ kode/
 ---
 
 **项目地址**: https://github.com/cuihairu/kode
-**当前版本**: 0.1.1
+**当前版本**: 0.1.0（版本号冻结，发版由用户手动触发）
 **许可证**: Apache-2.0

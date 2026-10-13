@@ -9,7 +9,7 @@
 - [推送到 GitHub]
 
 ### 版本信息
-- **版本号**: 0.1.1
+- **版本号**: 0.1.0（版本号冻结，发版由用户手动触发）
 - **许可证**: Apache-2.0
 - **发布者**: cuihairu
 
@@ -180,6 +180,33 @@
 - [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」；失败 `✗` 标记 + 错误弹窗（OUTPUT 通道无着色 API）]
 - [源码：src/httpRequests.ts、src/httpRequestService.ts]
 
+#### 22. 最终配置视图 [新增]
+- [服务端配置三层合并（本地 kbengine.xml → 组件 kbengine.xml → 引擎 defaults）后的最终生效视图]
+- [字段悬浮可看作用说明；`kbengine.autoRefreshFinalConfig` 默认开，保存后自动重算]
+- [源码：src/serverConfigMerge.ts、src/serverConfigHover.ts]
+
+#### 23. 数据库 Schema 查看器 [新增]
+- [按 `Persistent` 属性与 types.xml 别名链展开建表语义，`kbengine-db-schema:` 虚拟文档展示完整建表 SQL]
+- [源码：src/databaseSchema.ts]
+
+#### 24. kbe 模块符号桩导航 [新增]
+- [引擎 C++ 侧 kbe 模块符号桩索引，为引擎内建符号提供导航与补全落点]
+- [源码：src/kbeModuleIndex.ts]
+
+#### 25. 数据库模拟 [新增]
+- [schema 快照之上模拟行数据与增改删预览，`.dbsim` 虚拟文档一体展示 DDL/模拟行 JSON/INSERT 语句/引擎差异清单]
+- [写库语义对齐引擎 MySQL 后端（dbid>0 走 UPDATE、子表行 parentID、`sm_autoLoad` 首写 0 已有 -1、UNIQUE 仅 MySQL 索引判定）]
+- [源码：src/databaseSimulator.ts]
+
+#### 26. 配置自动发现 [新增]
+- [显式配置 → 约定布局 → 有界深扫描（限深 7 层/2 万条目）→ 唯一命中即用，多候选激活期询问并按工作区记忆；显式配置永远优先]
+- [`types.xml`、`messages_fixed(_defaults).xml`、引擎 defaults 源码根兜底纯发现无配置项]
+- [源码：src/workspaceDiscovery.ts]
+
+#### 27. RPC 方法标记 [新增]
+- [Python 实现脚本里命中实体 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明行；普通函数不出]
+- [源码：src/rpcCodeLens.ts]
+
 ### 文档
 - [README.md - 项目说明]
 - [CHANGELOG.md - 变更日志]
@@ -187,7 +214,7 @@
 - [TESTING.md - 测试架构与批次台账]
 - [COMPLETED_FEATURES.md - 已完成功能清单]
 - [KBENGINE_SOURCE_AUDIT_PLAN.md - 引擎源码对照计划]
-- [docs/ - VitePress 文档站（11 个页面，`pnpm run docs:dev` 预览）]
+- [docs/ - VitePress 文档站（14 个页面，`pnpm run docs:dev` 预览）]
 - [resources/docs/ - 早期设计与命名文档（3 个）]
 
 ### 开发配置
@@ -216,7 +243,7 @@ kode/
 │   ├── kbengine.json         # def 代码片段 (11个)
 │   ├── kbengine-python.json  # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json # types.xml 别名片段 (2个)
-├── src/                      # 32 个 TypeScript 文件，19188 行
+├── src/                      # 40 个 TypeScript 文件，23508 行
 │   ├── extension.ts          # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts  # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts          # .def 解析与文本定位
@@ -226,27 +253,34 @@ kode/
 │   ├── definitionSemantics.ts      # 定义语义与继承合并
 │   ├── definitionWorkspace.ts      # 定义工作区解析
 │   ├── databaseSchema.ts     # 数据库 schema 虚拟文档
+│   ├── databaseSimulator.ts  # 数据库行模拟(纯逻辑+虚拟文档提供器)
 │   ├── explorerProviders.ts  # 实体浏览器/服务器树
 │   ├── kbengineMetadata.ts   # 引擎元数据（类型/Flags/DetailLevel）
 │   ├── kbengineProtocol.ts   # machine 发现与 watcher 协议编解码
 │   ├── hooks.ts              # 钩子数据 (36 hooks,含源码调用位置)
 │   ├── serverManager.ts      # 服务器管理器
 │   ├── serverCommandTarget.ts # 服务器命令目标解析
+│   ├── serverConfigHover.ts  # 服务端配置字段悬浮
+│   ├── serverConfigMerge.ts  # 服务端配置三层合并
 │   ├── logCollector.ts       # 日志收集器
 │   ├── logParser.ts          # 日志解析器
 │   ├── logWebView.ts         # 日志 WebView
 │   ├── debugConfig.ts        # 调试配置管理器
 │   ├── monitoringCollector.ts # 监控数据收集器
 │   ├── monitoringWebView.ts  # 监控面板 WebView
+│   ├── navigationLog.ts      # 导航流水日志
 │   ├── entityMapping.ts      # Python-Def 映射管理器
 │   ├── kbeModuleIndex.ts     # kbe 模块符号桩索引(导航/补全)
 │   ├── pythonLanguageUtils.ts # Python 补全上下文工具
+│   ├── rpcCodeLens.ts        # RPC 方法标记 CodeLens 纯逻辑
 │   ├── entityDependency.ts   # 实体依赖分析器
 │   ├── entityDependencyWebView.ts # 依赖图 WebView
 │   ├── codeGenerator.ts      # 代码生成器 (10 模板)
 │   ├── workspacePath.ts      # 跨平台路径工具
+│   ├── workspaceDiscovery.ts # 工作区自动发现(纯逻辑)
 │   ├── telnetClient.ts       # KBEngine telnet 协议客户端
 │   ├── telnetService.ts      # telnet 探测/会话服务
+│   ├── telnetTree.ts         # telnet 独立树视图
 │   ├── telnetWebView.ts      # Telnet 面板 WebView
 │   ├── httpRequests.ts       # HTTP 快捷请求纯逻辑(条目解析/模板变量)
 │   ├── httpRequestService.ts # HTTP 快捷请求执行层(transport/流水)
@@ -254,7 +288,7 @@ kode/
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (95 文件 1166 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (108 文件 1517 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志
@@ -265,7 +299,7 @@ kode/
 ├── README.md                 # 项目说明
 ├── TESTING.md                # 测试架构与批次台账
 ├── language-configuration.json
-├── package.json              # 扩展配置 (v0.1.1)
+├── package.json              # 扩展配置 (v0.1.0)
 └── tsconfig.json             # TypeScript 配置
 ```
 
@@ -306,12 +340,14 @@ kode/
 ### MVP 完善
 - [x] 测试所有功能(批88:17 项已完成功能逐项验证,全部有自动化用例覆盖)
 - [x] 修复发现的问题(批88:tmLanguage 与引擎注册表对齐等修复,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 1114 用例 + mocha 编译产物烟测层 11 用例双层,详见 TESTING.md)
+- [x] 添加单元测试(vitest 功能层 1517 用例 + mocha 编译产物烟测层 11 用例双层,当前口径,详见 TESTING.md)
 - [x] 优化性能(批92:validateDocument −46%、全文件分词 −17%,行为以 golden 回归锁)
 
 ### 发布准备
 - [x] 创建扩展图标(已由用户设计资产 resources/logo.png 满足,批90 恢复用户资产口径)
-- [ ] 准备 Marketplace 截图
+- [x] 准备 Marketplace 截图(docs/screenshots/ 6 张实机截图已落:def-highlighting /
+      def-intellisense / entity-explorer / dependency-graph / log-viewer /
+      monitoring-panel,README 截图节已引用)
 - [x] 完善文档(批106:guide 三页对齐当前功能面,CHANGELOG 补账,
       CONTRIBUTING 清虚构引用;详见 TESTING.md 批106)
 - [ ] 发布到 VSCode Marketplace
@@ -351,17 +387,17 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 统计数据
 
-- **代码文件**: 32 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
+- **代码文件**: 40 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
 - **钩子数量**: 36 个
 - **代码片段**: 11 def + 4 Python + 2 types.xml
 - **预定义实体模板**: 10 个
-- **文档页数**: 21 个 Markdown（仓库根 7 + docs/ 11 + resources/docs 3）
-- **总行数**: 19188 行（src/ TypeScript，实测）
+- **文档页数**: 26 个 Markdown（仓库根 9 + docs/ 14 + resources/docs 3）
+- **总行数**: 23508 行（src/ TypeScript，实测）
 
 ---
 
 **项目地址**: https://github.com/cuihairu/kode
 
-**当前版本**: 0.1.1
+**当前版本**: 0.1.0（版本号冻结，发版由用户手动触发）
 
 **许可证**: Apache-2.0

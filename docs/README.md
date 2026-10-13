@@ -9,6 +9,7 @@ Kode 是一个面向 KBEngine 项目的 VSCode 扩展，覆盖 `.def` 语言支�
 - [语言能力](./guide/language.md)
 - [命令与面板](./guide/commands.md)
 - [完整配置说明](./guide/configuration.md)
+- [数据库模拟](./guide/database-simulation.md)
 - [开发与发布](./guide/development.md)
 
 ## 文档开发

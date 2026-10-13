@@ -47,7 +47,7 @@ pnpm test:coverage  # vitest + v8 覆盖率(输出 coverage/)
 
 ## 当前覆盖率(v8,全 `src/**` 口径,如实统计,不做剔除美化)
 
-vitest 覆盖率(2026-09-27,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
+vitest 覆盖率(2026-10-13,`pnpm test:coverage`,批54 起 extension.ts 计入分母,
 批58 起 defRenamer.ts 计入分母,批62 起全 `src/**` 行/语句/函数三项 100%,
 批63 起 defParser.ts 分支 100%,批64 起 definitionWorkspace.ts 与
 languageProviders.ts 分支 100%,批65 起 pythonLanguageUtils.ts 分支 100%,
@@ -60,26 +60,17 @@ extension.ts、entityMapping.ts、kbengineProtocol.ts、explorerProviders.ts
 
 | 指标 | 值 |
 |------|-----|
-| Statements | 100% (4798/4798) |
-| Branches | 100% (2692/2692) |
-| Functions | 100% (838/838) |
-| Lines | 100% (4689/4689) |
+| Statements | 100% (7048/7048) |
+| Branches | 100% (4190/4190) |
+| Functions | 100% (1190/1190) |
+| Lines | 100% (6872/6872) |
 
-纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 64 处
-`/* istanbul ignore start */` 区间——批62 的 25 处 + 批63 在 defParser.ts
-新增 3 处 + 批64 在 definitionWorkspace.ts 新增 9 处、languageProviders.ts
-新增 5 处并合并扩展批62 既有区间 1 处 + 批65 在 pythonLanguageUtils.ts
-新增 1 处 + 批66 在 entityDependency.ts 新增 3 处、definitionSemantics.ts
-新增 1 处 + 批67 在 codeGenerator.ts 新增 2 处 + 批68 在 debugConfig.ts
-新增 2 处、defRenamer.ts 新增 1 处 + 批69 在 databaseSchema.ts 新增 3 处 +
-批71 在 logParser.ts 新增 1 处 + 批72 在 extension.ts 新增 1 处、
-entityMapping.ts 新增 4 处、kbengineProtocol.ts 新增 1 处、
-explorerProviders.ts 新增 2 处,
-逐处理由见"批62 行覆盖专项""批63
-分支覆盖专项""批64 分支覆盖专项""批65 分支覆盖专项""批66 分支覆盖
-专项""批67 分支覆盖专项""批68 分支覆盖专项""批69 分支覆盖专项""批70
-分支覆盖专项""批71 分支覆盖专项""批72 分支覆盖专项"与"批73 分支覆盖
-专项"):
+纯逻辑层明细(批62 后全部模块 Lines 100%;Lines 口径含 78 处
+`/* istanbul ignore start */` 区间——批62 的 25 处起家,批63 起各批在
+自身批次记录里登记新增区间与逐处理由,台账以实测为准:批80 过期忽略区间
+审计全量剥离探针后复核无过期,2026-10-13 实测 78 对 start/stop,
+workspaceDiscovery.ts 经循环重构后 0 处。
+逐处理由见"批62 行覆盖专项"及批63 起各批分支覆盖专项):
 
 | 模块 | Lines | Branch |
 |------|-------|--------|
@@ -108,6 +99,14 @@ explorerProviders.ts 新增 2 处,
 | debugConfig.ts | 100% | 100% |
 | explorerProviders.ts | 100% | 100% |
 | extension.ts | 100% | 100% |
+
+上表为批62~73 建档时的模块清单;批73 后新增的 15 个模块
+(defAnalyzer、httpRequests、httpRequestService、kbeModuleIndex、
+navigationLog、snippetGenerator、serverConfigHover、serverConfigMerge、
+telnetClient、telnetService、telnetTree、telnetWebView、databaseSimulator、
+workspaceDiscovery、rpcCodeLens)在各自批次记录中登记,
+2026-10-13 v8 实测全部 40 源文件 Lines/Branch 双 100%
+("No files with missing coverage. 40 files fully covered")。
 
 logParser 的语句与函数已全覆盖,分支自批71 起 100%(唯一未覆盖臂为
 parseBatch 的判空假臂,契约性不可达,见"批71 分支覆盖专项");
