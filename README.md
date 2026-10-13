@@ -10,7 +10,7 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-> **Kode** (KBEngine IDE) - A VS Code development assistant extension for KBEngine
+> **Kode** (KBEngine Development Environment) - A VS Code development assistant extension for KBEngine
 
 ## Introduction
 
@@ -27,6 +27,18 @@ The repository automatically builds from `main` every day and **publishes a roll
 | `kode-nightly.vsix` | Windows / macOS / Linux (universal for VS Code ≥1.50) | Download and run `code --install-extension kode-nightly.vsix` |
 
 The extension is **still not published to the VS Code Marketplace**; `nightly` is currently the only prebuilt distribution channel. You can also build from source as described in the Installation section below.
+
+
+## 本地测试口径
+
+CI 与本地开发按改动面三路分流——改一行文档不该全量编译。
+
+1. **文档改动**（`*.md`、`docs/**`、图片）：不编译。主 CI workflow 的
+   `paths-ignore` 已跳过这些路径。
+2. **代码改动**：只跑改动子集，不全量。
+   - `pnpm test -- --testPathPatterns=<改动>`
+3. **全量**（`pnpm test`）：仅以下情形触发——package.json / pnpm-lock.yaml、
+   `.github/**`、Docker/Compose 配置、发布前。
 
 ## Core Features
 
@@ -194,7 +206,7 @@ pnpm run compile
 pnpm run package
 
 # Install locally
-code --install-extension kode-0.1.1.vsix
+code --install-extension kode-0.1.0.vsix
 ```
 
 ## Documentation
@@ -213,10 +225,20 @@ The project currently stays on the `0.1.x` fix-and-polish line by default.
 ## Screenshots
 
 ### Syntax Highlighting and IntelliSense
-Screenshot material is not ready yet. For now, press `F5` to launch the Extension Development Host and preview syntax highlighting, IntelliSense, hover documentation, and diagnostics directly in `.def` files.
+![def syntax highlighting](./docs/screenshots/def-highlighting.png)
+
+![def IntelliSense](./docs/screenshots/def-intellisense.png)
 
 ### Entity Explorer
-Screenshots of the entity explorer and server control panel will be added along with the documentation assets; in the meantime, verify them against the feature notes in [docs/](./docs/) and a local debug window.
+![entity explorer](./docs/screenshots/entity-explorer.png)
+
+### Dependency Graph
+![dependency graph](./docs/screenshots/dependency-graph.png)
+
+### Log Viewer and Monitoring Panel
+![log viewer](./docs/screenshots/log-viewer.png)
+
+![monitoring panel](./docs/screenshots/monitoring-panel.png)
 
 ## Development
 
@@ -339,4 +361,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.1, not yet published to the Marketplace. 21 features, 26 commands, and 31 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Current version 0.1.0, not yet published to the Marketplace. 27 features, 30 commands, and 32 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
