@@ -19,6 +19,7 @@ import {
   getRegisteredEntities,
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
+import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './serverConfigMerge';
 
 export const KBENGINE_DATABASE_SCHEMA_SCHEME = 'kbengine-db-schema';
 const DB_TABLE_PREFIX = 'tbl_';
@@ -79,6 +80,8 @@ export interface DatabaseSchemaSnapshot {
   defFilePath?: string;
   tables: TableSchemaDescriptor[];
   tableIndex: Map<string, TableSchemaDescriptor>;
+  /** 引擎配置 <dbmgr><databaseInterfaces><default> 读得的连接要素(未读得为 undefined) */
+  database?: DatabaseInterfaceConfig;
 }
 
 // types.xml 别名条目(批98 对齐 DataTypes::loadTypes):根节点直接子元素的标签名
@@ -249,6 +252,8 @@ export function getDatabaseSchemaSnapshot(
   );
   const tables = buildMysqlTableSchemas(entityName, entitySource, properties, buildContext.entityHasCell);
   const tableIndex = new Map<string, TableSchemaDescriptor>(tables.map(table => [table.name, table]));
+  // 批131 用户令:连接信息直接读 KBEngine 自身配置,SQL 与悬停带真实库表名
+  const database = resolveDatabaseInterfaceConfig() ?? undefined;
 
   return {
     backend: 'mysql',
@@ -256,7 +261,8 @@ export function getDatabaseSchemaSnapshot(
     entitySource,
     defFilePath,
     tables,
-    tableIndex
+    tableIndex,
+    database
   };
 }
 
@@ -341,9 +347,20 @@ export function findDatabaseSchemaTargetsForSource(
   return dedupeSchemaTargets(targets);
 }
 
+export interface PropertyDatabaseStorageTarget {
+  tableName: string;
+  fieldName?: string;
+  /** 命中列的全量描述(类型/长度/默认值),悬停拼 DDL 摘要用 */
+  field?: TableFieldDescriptor;
+  /** 命中子表的全量描述(ARRAY/组件槽),悬停说明去向与 parentID 关联用 */
+  table?: TableSchemaDescriptor;
+}
+
 export interface PropertyDatabaseStorageInfo {
   entityName: string;
-  targets: Array<{ tableName: string; fieldName?: string }>;
+  /** 引擎配置读得的连接要素;未读得为 undefined,悬停只给表级全名 */
+  database?: DatabaseInterfaceConfig;
+  targets: PropertyDatabaseStorageTarget[];
 }
 
 /**
@@ -353,6 +370,7 @@ export interface PropertyDatabaseStorageInfo {
  * 别名链展开。聚合只按属性路径、不按来源文件过滤——别名/组件结构的
  * 子列 source.filePath 是 types.xml/组件 def(结构定义文件),schema 反向
  * 跳转才需要严格文件口径。非持久属性不建表无目标,返回 null。
+ * 批131:目标带全量列/表描述与连接要素,悬停拼 db.table.column 全名。
  */
 export function describePropertyDatabaseStorage(
   entityName: string,
@@ -364,13 +382,13 @@ export function describePropertyDatabaseStorage(
     return null;
   }
 
-  const targets: Array<{ tableName: string; fieldName?: string }> = [];
+  const targets: PropertyDatabaseStorageTarget[] = [];
   for (const table of snapshot.tables) {
     if (
       table.source.path === propertyName
       || table.source.path.startsWith(`${propertyName}.`)
     ) {
-      targets.push({ tableName: table.name });
+      targets.push({ tableName: table.name, table });
     }
 
     for (const field of table.fields) {
@@ -378,7 +396,7 @@ export function describePropertyDatabaseStorage(
         field.sourcePath === propertyName
         || field.sourcePath.startsWith(`${propertyName}.`)
       ) {
-        targets.push({ tableName: table.name, fieldName: field.name });
+        targets.push({ tableName: table.name, fieldName: field.name, field });
       }
     }
   }
@@ -387,7 +405,18 @@ export function describePropertyDatabaseStorage(
     return null;
   }
 
-  return { entityName: snapshot.entityName, targets: dedupeSchemaTargets(targets) };
+  return {
+    entityName: snapshot.entityName,
+    database: snapshot.database,
+    targets: dedupeSchemaTargets(targets)
+  };
+}
+
+// 表名反引号引用(粘贴进外部 MySQL 客户端不撞保留字);库名读得时带库前缀
+export function quoteSchemaTableName(snapshot: DatabaseSchemaSnapshot, tableName: string): string {
+  return snapshot.database
+    ? `\`${snapshot.database.databaseName}\`.\`${tableName}\``
+    : `\`${tableName}\``;
 }
 
 export function locateDatabaseSchemaLine(
@@ -395,16 +424,19 @@ export function locateDatabaseSchemaLine(
   tableName: string,
   fieldName?: string
 ): number {
-  let line = 1;
-  line += 4;
-  line += 1;
+  // 头部:标题 1 + 空行 1 + [Database 1] + Backend 1 + Source 1 + 空行 1
+  let line = 6;
+  if (snapshot.database) {
+    line += 1;
+  }
 
   for (const table of snapshot.tables) {
     if (table.name === tableName && !fieldName) {
       return line;
     }
 
-    line += 4;
+    // 表头:kind + [parent] + source + 空行(子表多一行 parent 注记)
+    line += table.parentTableName ? 5 : 4;
 
     for (const field of table.fields) {
       if (table.name === tableName && field.name === fieldName) {
@@ -414,7 +446,8 @@ export function locateDatabaseSchemaLine(
       line += 2;
     }
 
-    line += 1;
+    // 字段块后:SQL 行 + 空行
+    line += 2;
   }
 
   return 1;
@@ -428,6 +461,11 @@ export function renderDatabaseSchema(snapshot: DatabaseSchemaSnapshot | null): s
   const lines: string[] = [];
   lines.push(`# KBEngine Database Schema: ${snapshot.entityName}`);
   lines.push('');
+  if (snapshot.database) {
+    lines.push(
+      `Database: ${snapshot.database.databaseName}@${snapshot.database.host}:${snapshot.database.port}`
+    );
+  }
   lines.push(`Backend: ${snapshot.backend.toUpperCase()}`);
   lines.push(`Source: ${snapshot.defFilePath || `${snapshot.entityName}.def`}`);
   lines.push('');
@@ -463,6 +501,8 @@ export function renderDatabaseSchema(snapshot: DatabaseSchemaSnapshot | null): s
       lines.push(`  source: ${path.basename(field.source.filePath)}:${field.source.line} (${field.sourcePath})`);
     }
 
+    // 批131 用户令:每表一行可粘贴 SQL(带库表前缀与反引号转义,直接进外部客户端)
+    lines.push(`SQL: SELECT * FROM ${quoteSchemaTableName(snapshot, table.name)} LIMIT 100;`);
     lines.push('');
   }
 
@@ -1588,11 +1628,11 @@ function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/').toLowerCase();
 }
 
-function dedupeSchemaTargets(
-  targets: Array<{ tableName: string; fieldName?: string }>
-): Array<{ tableName: string; fieldName?: string }> {
+function dedupeSchemaTargets<T extends { tableName: string; fieldName?: string }>(
+  targets: T[]
+): T[] {
   const seen = new Set<string>();
-  const deduped: Array<{ tableName: string; fieldName?: string }> = [];
+  const deduped: T[] = [];
 
   for (const target of targets) {
     const key = `${target.tableName}::${target.fieldName || ''}`;

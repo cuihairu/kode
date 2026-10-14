@@ -933,6 +933,8 @@ describe('persistent property database storage hover', () => {
     expect(text).toContain('**数据库存储**');
     expect(text).toContain('`tbl_Stor`');
     expect(text).toContain('`sm_hp`');
+    // 批131:完整表.列全名 + 引擎 DDL 片段 + 具体取值区间
+    expect(text).toContain('`tbl_Stor`.`sm_hp` = int unsigned not null DEFAULT 0(取值 0..4294967295)');
   });
 
   it('lists every vector column of a persistent VECTOR3', () => {
@@ -949,6 +951,8 @@ describe('persistent property database storage hover', () => {
 
     const text = hoverText(provider.provideHover(document, position));
     expect(text).toContain('`sm_0_pos`、`sm_1_pos`、`sm_2_pos`');
+    // 同 DDL 列并一条:向量三列共用 float not null DEFAULT 0
+    expect(text).toContain('= float not null DEFAULT 0');
   });
 
   it('expands a types.xml FIXED_DICT alias into its column names', () => {
@@ -965,6 +969,9 @@ describe('persistent property database storage hover', () => {
 
     const text = hoverText(provider.provideHover(document, position));
     expect(text).toContain('`sm_info_name`');
+    // varchar 长度给具体数值(引擎缺省 255,entity_table_mysql.cpp:1829-1833)
+    expect(text).toContain('varchar(255)');
+    expect(text).toContain('≤ 255 字符');
   });
 
   it('points an ARRAY property at its child table', () => {
@@ -984,6 +991,8 @@ describe('persistent property database storage hover', () => {
 
     const text = hoverText(provider.provideHover(document, position));
     expect(text).toContain('子表 `tbl_Stor_bag`');
+    // 批131:子表说明去向与 parentID 关联(容器属性不在主表)
+    expect(text).toContain('元素行经 `parentID` 关联 `tbl_Stor`');
   });
 
   it('omits the storage line for a non-persistent property', () => {

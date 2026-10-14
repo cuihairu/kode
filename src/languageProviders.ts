@@ -35,6 +35,7 @@ import {
   isDatabaseSchemaDocument,
   locateDatabaseSchemaLine
 } from './databaseSchema';
+import { buildPropertyDatabaseStorageHover } from './databaseSimulator';
 import {
   findCustomTypeDeclarationInfo,
   findCustomTypeInfo,
@@ -1116,8 +1117,8 @@ function getSymbolHover(
 }
 
 /**
- * 属性悬停的数据库存储描述行。快照按实体 def 构建后按属性路径取目标:
- * 同表多列合并成「表 X 列 a、b」,ARRAY/组件槽子表单独成「子表 Y」;
+ * 属性悬停的数据库存储描述行(批131 用户令升级:完整 db.table.column +
+ * 引擎 DDL 片段 + 具体大小限制;库表名转义,粘贴进外部 MySQL 客户端即用)。
  * 非持久属性无目标返回 null,悬停不显示该行。
  */
 function describePropertyDatabaseStorageHover(
@@ -1125,31 +1126,9 @@ function describePropertyDatabaseStorageHover(
   propertyName: string
 ): string | null {
   const entityName = path.basename(document.fileName, '.def');
-  const storage = describePropertyDatabaseStorage(entityName, propertyName, document);
-  if (!storage) {
-    return null;
-  }
-
-  const columnsByTable = new Map<string, string[]>();
-  const childTables: string[] = [];
-  for (const target of storage.targets) {
-    if (!target.fieldName) {
-      childTables.push(target.tableName);
-      continue;
-    }
-    const columns = columnsByTable.get(target.tableName) ?? [];
-    columns.push(target.fieldName);
-    columnsByTable.set(target.tableName, columns);
-  }
-
-  const parts: string[] = [];
-  for (const [tableName, columns] of columnsByTable) {
-    parts.push(`表 \`${tableName}\` 列 ${columns.map(column => `\`${column}\``).join('、')}`);
-  }
-  for (const tableName of childTables) {
-    parts.push(`子表 \`${tableName}\``);
-  }
-  return parts.join(';');
+  return buildPropertyDatabaseStorageHover(
+    describePropertyDatabaseStorage(entityName, propertyName, document)
+  );
 }
 
 function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {

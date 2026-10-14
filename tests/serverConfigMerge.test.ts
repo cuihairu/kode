@@ -8,11 +8,14 @@ import {
   KBE_CONFIG_SCHEME,
   KBE_CONFIG_VIRTUAL_PATH,
   buildFinalServerConfig,
+  extractDatabaseInterfaceConfig,
   mergeConfigXml,
   parseConfigXml,
   renderConfigXml,
   renderConfigXmlSections,
+  resetDatabaseInterfaceConfigCache,
   resolveCustomConfigXmlPath,
+  resolveDatabaseInterfaceConfig,
   summarizeFinalTelnet,
   type ConfigXmlNode
 } from '../src/serverConfigMerge';
@@ -423,6 +426,189 @@ describe('buildFinalServerConfig 引擎源码根兜底(批125 自动发现)', ()
       expect(result.defaultsOnly).toBe(true);
     } finally {
       stubWorkspace.workspaceFolders = [];
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// 批131(用户令:MySQL 连接直接读 KBEngine 自身配置):dbmgr
+// <databaseInterfaces><default> 的连接要素从合成树读出,端口 0 落引擎
+// 默认 3306(db_interface_mysql.cpp:166-167),密码不提取(encrypt=true 为
+// RSA 密文,kode 不读不解读)。
+describe('extractDatabaseInterfaceConfig(dbmgr 连接要素提取,批131)', () => {
+  it('读 host/port/auth/unicodeString:自定义值原样,encrypt=false 落 false', () => {
+    const tree = parseConfigXml([
+      '<defaults>',
+      '  <dbmgr>',
+      '    <databaseInterfaces>',
+      '      <default>',
+      '        <host> 127.0.0.1 </host>',
+      '        <port> 3307 </port>',
+      '        <auth>',
+      '          <username> game </username>',
+      '          <password> secret </password>',
+      '          <encrypt> false </encrypt>',
+      '        </auth>',
+      '        <databaseName> game_db </databaseName>',
+      '        <unicodeString>',
+      '          <characterSet> utf8 </characterSet>',
+      '        </unicodeString>',
+      '      </default>',
+      '    </databaseInterfaces>',
+      '  </dbmgr>',
+      '</defaults>'
+    ].join('\n'))!;
+
+    expect(extractDatabaseInterfaceConfig(tree)).toEqual({
+      host: '127.0.0.1',
+      port: 3307,
+      username: 'game',
+      databaseName: 'game_db',
+      encrypt: false,
+      characterSet: 'utf8'
+    });
+  });
+
+  it('引擎 defaults 原始形态:port 0 → 3306,encrypt 非 false 即按加密处理', () => {
+    const tree = parseConfigXml([
+      '<root>',
+      '  <dbmgr>',
+      '    <databaseInterfaces>',
+      '      <default>',
+      '        <host> localhost </host>',
+      '        <port> 0 </port>',
+      '        <auth>',
+      '          <username> kbe </username>',
+      '          <password> pwd123456 </password>',
+      '          <encrypt> true </encrypt>',
+      '        </auth>',
+      '        <databaseName> kbe </databaseName>',
+      '        <unicodeString>',
+      '          <characterSet> utf8mb4 </characterSet>',
+      '        </unicodeString>',
+      '      </default>',
+      '    </databaseInterfaces>',
+      '  </dbmgr>',
+      '</root>'
+    ].join('\n'))!;
+
+    expect(extractDatabaseInterfaceConfig(tree)).toEqual({
+      host: 'localhost',
+      port: 3306,
+      username: 'kbe',
+      databaseName: 'kbe',
+      encrypt: true,
+      characterSet: 'utf8mb4'
+    });
+  });
+
+  it('叶子全缺:逐项落引擎默认值;端口非数字同落 3306', () => {
+    const tree = parseConfigXml(
+      '<root><dbmgr><databaseInterfaces><default><port> abc </port></default></databaseInterfaces></dbmgr></root>'
+    )!;
+
+    expect(extractDatabaseInterfaceConfig(tree)).toEqual({
+      host: 'localhost',
+      port: 3306,
+      username: 'kbe',
+      databaseName: 'kbe',
+      encrypt: true,
+      characterSet: 'utf8mb4'
+    });
+  });
+
+  it('无 dbmgr / 无 databaseInterfaces / 无 default 段 → null', () => {
+    expect(extractDatabaseInterfaceConfig(parseConfigXml('<root><cellapp/></root>')!)).toBeNull();
+    expect(
+      extractDatabaseInterfaceConfig(parseConfigXml('<root><dbmgr><debug> 1 </debug></dbmgr></root>')!)
+    ).toBeNull();
+    expect(
+      extractDatabaseInterfaceConfig(
+        parseConfigXml('<root><dbmgr><databaseInterfaces/></dbmgr></root>')!
+      )
+    ).toBeNull();
+  });
+});
+
+describe('resolveDatabaseInterfaceConfig(合成口径读值与缓存,批131)', () => {
+  beforeEach(() => {
+    configurationOverrides.clear();
+    memoryFileSystem.reset();
+    stubWorkspace.workspaceFolders = [];
+    resetDatabaseInterfaceConfigCache();
+  });
+
+  it('defaults + 元件 kbengine.xml 合成后读连接:自定义库名/端口覆盖默认', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-dbiface-merge-'));
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
+      const engine = path.join(root, 'kbe');
+      fs.mkdirSync(path.join(engine, 'bin'), { recursive: true });
+      fs.mkdirSync(path.join(engine, 'res', 'server'), { recursive: true });
+      fs.writeFileSync(
+        path.join(engine, 'res', 'server', 'kbengine_defaults.xml'),
+        [
+          '<root>',
+          '  <dbmgr>',
+          '    <databaseInterfaces>',
+          '      <default>',
+          '        <host> localhost </host>',
+          '        <port> 0 </port>',
+          '        <auth><username> kbe </username><encrypt> true </encrypt></auth>',
+          '        <databaseName> kbe </databaseName>',
+          '      </default>',
+          '    </databaseInterfaces>',
+          '  </dbmgr>',
+          '</root>'
+        ].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(root, 'kbengine.xml'),
+        [
+          '<root>',
+          '  <dbmgr>',
+          '    <databaseInterfaces>',
+          '      <default>',
+          '        <port> 13306 </port>',
+          '        <databaseName> game_db </databaseName>',
+          '      </default>',
+          '    </databaseInterfaces>',
+          '  </dbmgr>',
+          '</root>'
+        ].join('\n')
+      );
+      configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
+
+      expect(resolveDatabaseInterfaceConfig()).toEqual({
+        host: 'localhost',
+        port: 13306,
+        username: 'kbe',
+        databaseName: 'game_db',
+        encrypt: true,
+        characterSet: 'utf8mb4'
+      });
+
+      // 缓存生效:元件配置改写后不 reset 不重读,reset 后才取新值
+      fs.writeFileSync(
+        path.join(root, 'kbengine.xml'),
+        '<root><dbmgr><databaseInterfaces><default><databaseName> game2 </databaseName></default></databaseInterfaces></dbmgr></root>'
+      );
+      expect(resolveDatabaseInterfaceConfig()!.databaseName).toBe('game_db');
+      resetDatabaseInterfaceConfigCache();
+      expect(resolveDatabaseInterfaceConfig()!.databaseName).toBe('game2');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('defaults 不可得 → null,不虚构连接', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-dbiface-none-'));
+    try {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
+      configurationOverrides.set('kbengine', { binPath: '/no/such/bin' });
+
+      expect(resolveDatabaseInterfaceConfig()).toBeNull();
+    } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

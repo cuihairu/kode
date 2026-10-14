@@ -70,8 +70,10 @@ describe('createDatabaseSchemaUri and isDatabaseSchemaDocument', () => {
 });
 
 describe('locateDatabaseSchemaLine', () => {
-  // 行号公式:标题 1 行 + 4 行头 + 1 空行 = 首表表名行 6;
-  // 每字段 2 行;表尾空行 1 行。
+  // 行号公式(批131):标题 1 + 空行 1 + [Database 1] + Backend/Source 2 +
+  // 空行 1 = 首表表名行 6(有 Database 行时 7);表头 kind + [parent] +
+  // source + 空行(子表多 parent 行,首字段 +5);每字段 2 行;字段块后
+  // SQL 行 + 空行 2 行。
   const snapshot: DatabaseSchemaSnapshot = {
     ...emptySnapshot,
     tables: [
@@ -111,8 +113,26 @@ describe('locateDatabaseSchemaLine', () => {
     expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero')).toBe(6);
     expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_hp')).toBe(10);
     expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_speed')).toBe(12);
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag')).toBe(15);
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag', 'sm_value')).toBe(19);
+    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag')).toBe(16);
+    // 子表带 parent 注记行:首字段在表名 +5(此前 +4 少算一行,已修)
+    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag', 'sm_value')).toBe(21);
+  });
+
+  it('shifts the whole layout by one when a database line is present', () => {
+    const withDatabase: DatabaseSchemaSnapshot = {
+      ...snapshot,
+      database: {
+        host: 'localhost',
+        port: 3306,
+        username: 'kbe',
+        databaseName: 'kbe',
+        encrypt: true,
+        characterSet: 'utf8mb4'
+      }
+    };
+    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero')).toBe(7);
+    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero', 'sm_speed')).toBe(13);
+    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero_bag', 'sm_value')).toBe(22);
   });
 
   it('falls back to line 1 for unknown tables or fields', () => {
@@ -168,9 +188,40 @@ describe('renderDatabaseSchema', () => {
         '',
         'sm_hp  UINT32  len=32  index=UNIQUE  identifier=true  flags=BASE  default=100',
         '  source: Hero.def:3 (scripts/Hero.def)',
+        'SQL: SELECT * FROM `tbl_Hero` LIMIT 100;',
         ''
       ].join('\n').trimEnd() + '\n'
     );
+  });
+
+  it('renders the database line and db-qualified SQL when config is readable(批131)', () => {
+    const snapshot: DatabaseSchemaSnapshot = {
+      backend: 'mysql',
+      entityName: 'Hero',
+      defFilePath: '/proj/Hero.def',
+      database: {
+        host: '127.0.0.1',
+        port: 13306,
+        username: 'game',
+        databaseName: 'game_db',
+        encrypt: false,
+        characterSet: 'utf8mb4'
+      },
+      tables: [
+        {
+          name: 'tbl_Hero',
+          kind: 'entity',
+          title: 'Hero',
+          source: source({ path: 'entity' }),
+          fields: []
+        }
+      ],
+      tableIndex: new Map()
+    };
+
+    const text = renderDatabaseSchema(snapshot);
+    expect(text).toContain('Database: game_db@127.0.0.1:13306');
+    expect(text).toContain('SQL: SELECT * FROM `game_db`.`tbl_Hero` LIMIT 100;');
   });
 });
 
@@ -405,7 +456,9 @@ describe('describePropertyDatabaseStorage', () => {
 
     expect(info).not.toBeNull();
     expect(info!.entityName).toBe('Hero');
-    expect(info!.targets).toEqual([{ tableName: 'tbl_Hero', fieldName: 'sm_hp' }]);
+    expect(info!.targets).toMatchObject([{ tableName: 'tbl_Hero', fieldName: 'sm_hp' }]);
+    // 批131:目标带全量列描述(悬停拼 DDL 摘要用)
+    expect(info!.targets[0].field).toMatchObject({ name: 'sm_hp', typeLabel: 'int unsigned' });
   });
 
   it('returns null when the entity def cannot be resolved', () => {

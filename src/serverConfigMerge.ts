@@ -169,11 +169,20 @@ export interface FinalServerConfig {
   defaultsOnly: boolean;
 }
 
+export interface MergedConfigTree {
+  /** null = defaults 缺失或不可解析,合成无从谈起 */
+  merged: ConfigXmlNode | null;
+  defaultsPath: string | null;
+  customPath: string | null;
+  /** true = 元件 kbengine.xml 解析成功并参与了同键覆盖 */
+  customApplied: boolean;
+}
+
 /**
- * 合成最终生效配置:defaults 必须在(binPath 推导不出/读不到则 text 空,
- * 由命令层提示);元件 kbengine.xml 找不到时展示纯 defaults,不算错误。
+ * defaults + 元件 kbengine.xml 的合成树(批131 抽出):最终配置展示与
+ * dbmgr 数据库接口读值共用一套装载口径,不各读各的。
  */
-export function buildFinalServerConfig(): FinalServerConfig {
+export function buildMergedConfigTree(): MergedConfigTree {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const binPath = expandWorkspacePlaceholders(
     vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
@@ -196,9 +205,6 @@ export function buildFinalServerConfig(): FinalServerConfig {
     }
   }
   const defaultsTree = defaultsXml !== null ? parseConfigXml(defaultsXml) : null;
-  if (!defaultsTree) {
-    return { text: '', defaultsPath, customPath: null, defaultsOnly: true };
-  }
   const customPath = resolveCustomConfigXmlPath(workspaceRoot);
   let customTree: ConfigXmlNode | null = null;
   if (customPath) {
@@ -213,18 +219,113 @@ export function buildFinalServerConfig(): FinalServerConfig {
     }
     /* istanbul ignore stop */
   }
-  const merged = customTree ? mergeConfigXml(defaultsTree, customTree) : defaultsTree;
+  const merged = defaultsTree
+    ? (customTree ? mergeConfigXml(defaultsTree, customTree) : defaultsTree)
+    : null;
+  return { merged, defaultsPath, customPath, customApplied: customTree !== null };
+}
+
+/**
+ * 合成最终生效配置:defaults 必须在(binPath 推导不出/读不到则 text 空,
+ * 由命令层提示);元件 kbengine.xml 找不到时展示纯 defaults,不算错误。
+ */
+export function buildFinalServerConfig(): FinalServerConfig {
+  const { merged, defaultsPath, customPath, customApplied } = buildMergedConfigTree();
+  if (!merged) {
+    return { text: '', defaultsPath, customPath: null, defaultsOnly: true };
+  }
   // 展示头注(批112 默认开启令:变更联动时标一句来源与覆盖口径,读者不用猜)
-  const source =
-    customTree !== null
-      ? `先载引擎默认 ${defaultsPath},再以元件配置 ${customPath} 同键覆盖(子键按名对齐)`
-      : `仅引擎默认 ${defaultsPath}(未找到元件 kbengine.xml)`;
+  const source = customApplied
+    ? `先载引擎默认 ${defaultsPath},再以元件配置 ${customPath} 同键覆盖(子键按名对齐)`
+    : `仅引擎默认 ${defaultsPath}(未找到元件 kbengine.xml)`;
   return {
     text: `<!-- kode 合成最终配置:${source};只读展示,不落盘 -->\n${renderConfigXmlSections(merged)}`,
     defaultsPath,
     customPath,
-    defaultsOnly: !customTree
+    defaultsOnly: !customApplied
   };
+}
+
+/** dbmgr 数据库接口连接要素(批131 用户令:连接信息直接读 KBEngine 自身配置) */
+export interface DatabaseInterfaceConfig {
+  host: string;
+  /** 引擎 <port> 0 = 用 mysql 默认 3306(db_interface_mysql.cpp:166-167) */
+  port: number;
+  username: string;
+  databaseName: string;
+  /** true = <encrypt> true:密码经引擎 RSA 加密,kode 不读不解读 */
+  encrypt: boolean;
+  characterSet: string;
+}
+
+// 叶子缺省时的引擎默认值(kbengine_defaults.xml <dbmgr><databaseInterfaces><default>)
+const ENGINE_DB_INTERFACE_DEFAULTS = {
+  host: 'localhost',
+  port: 3306,
+  username: 'kbe',
+  databaseName: 'kbe',
+  characterSet: 'utf8mb4'
+} as const;
+
+/**
+ * 从合成配置树提取 <dbmgr><databaseInterfaces><default> 的连接要素(纯函数)。
+ * username/encrypt 藏在 <auth> 下,characterSet 藏在 <unicodeString> 下
+ * (kbengine_defaults.xml dbmgr 段结构);密码不提取——encrypt=true 时是
+ * RSA 密文,明文也无须进入扩展内存。
+ */
+export function extractDatabaseInterfaceConfig(root: ConfigXmlNode): DatabaseInterfaceConfig | null {
+  // 引擎 defaults 以 <root> 包裹装载(kbengine_defaults.xml:1),dbmgr 在
+  // 伪根下一层;无包裹的合成树则直接是顶层段。两层候选都找。
+  const candidates = [...root.children, ...root.children.flatMap(child => child.children)];
+  const dbmgr = candidates.find(child => child.name === 'dbmgr');
+  const interfaces = dbmgr?.children.find(child => child.name === 'databaseInterfaces');
+  const iface = interfaces?.children.find(child => child.name === 'default');
+  if (!iface) {
+    return null;
+  }
+
+  const leafText = (parent: ConfigXmlNode | undefined, name: string): string => {
+    const child = parent?.children.find(item => item.name === name);
+    return child ? child.text.trim() : '';
+  };
+
+  const auth = iface.children.find(child => child.name === 'auth');
+  const unicode = iface.children.find(child => child.name === 'unicodeString');
+  const rawPort = Number(leafText(iface, 'port'));
+  return {
+    host: leafText(iface, 'host') || ENGINE_DB_INTERFACE_DEFAULTS.host,
+    port: rawPort > 0 ? rawPort : ENGINE_DB_INTERFACE_DEFAULTS.port,
+    username: leafText(auth, 'username') || ENGINE_DB_INTERFACE_DEFAULTS.username,
+    databaseName: leafText(iface, 'databaseName') || ENGINE_DB_INTERFACE_DEFAULTS.databaseName,
+    encrypt: leafText(auth, 'encrypt').toLowerCase() !== 'false',
+    characterSet: leafText(unicode, 'characterSet') || ENGINE_DB_INTERFACE_DEFAULTS.characterSet
+  };
+}
+
+// 连接要素按「工作区根 + binPath 设置」缓存:悬停/跳转每次重建快照,不缓存
+// 则每击一次 F12 都重跑一轮 defaults/元件定位探测(含发现扫描),代价不成比例。
+let databaseInterfaceCache: { key: string; value: DatabaseInterfaceConfig | null } | null = null;
+
+/** 配置或 kbengine*.xml 落盘变更后由扩展层调用,令下次读值重算 */
+export function resetDatabaseInterfaceConfigCache(): void {
+  databaseInterfaceCache = null;
+}
+
+/** 引擎最终生效配置里的数据库连接要素;defaults 不可得时返回 null,不虚构 */
+export function resolveDatabaseInterfaceConfig(): DatabaseInterfaceConfig | null {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const binPath = expandWorkspacePlaceholders(
+    vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
+    workspaceRoot
+  );
+  const key = `${workspaceRoot ?? ''}\n${binPath}`;
+  if (databaseInterfaceCache?.key === key) {
+    return databaseInterfaceCache.value;
+  }
+  const { merged } = buildMergedConfigTree();
+  const value = merged ? extractDatabaseInterfaceConfig(merged) : null;
+  databaseInterfaceCache = { key, value };
+  return value;
 }
 
 /** 合成配置虚拟文档 scheme(展示用,不落盘) */

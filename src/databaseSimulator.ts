@@ -19,6 +19,7 @@ import * as vscode from 'vscode';
 import {
   getDatabaseSchemaSnapshot,
   type DatabaseSchemaSnapshot,
+  type PropertyDatabaseStorageInfo,
   type TableFieldDescriptor
 } from './databaseSchema';
 
@@ -167,6 +168,26 @@ export function validateRowValue(field: TableFieldDescriptor, value: string | nu
 
 function describeValue(value: string | number): string {
   return typeof value === 'string' ? `'${value}'` : String(value);
+}
+
+/**
+ * 列取值约束文案(批131 悬停用):整数按 mysql 区间(BigInt 精确)、
+ * varchar 按解析后长度;float/blob 无区间返回 null。
+ */
+export function describeColumnValueConstraint(field: TableFieldDescriptor): string | null {
+  const columnType = resolveColumnValueType(field);
+  const base = field.typeLabel.toLowerCase().replace(' unsigned', '');
+  if (columnType.kind === 'unsigned') {
+    return `0..${UNSIGNED_MAX[base]}`;
+  }
+  if (columnType.kind === 'integer') {
+    const range = SIGNED_RANGES[base];
+    return `${range[0]}..${range[1]}`;
+  }
+  if (columnType.kind === 'string' && columnType.length !== undefined) {
+    return `≤ ${columnType.length} 字符`;
+  }
+  return null;
 }
 
 /**
@@ -435,30 +456,97 @@ function escapeSqlText(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-/** 单列 DDL 片段,形态对齐引擎 CREATE/ALTER 列定义(entity_table_mysql.cpp:379-395、:416-418、§4) */
-function renderColumnDdl(field: TableFieldDescriptor): string {
+/**
+ * 单列 DDL 类型体(不含列名,批131 悬停复用):形态对齐引擎 CREATE/ALTER
+ * 列定义(entity_table_mysql.cpp:379-395、:416-418、§4)。
+ */
+export function renderColumnDdlBody(field: TableFieldDescriptor): string {
   if (field.name === 'parentID') {
-    return 'parentID bigint(20) unsigned NOT NULL';
+    return 'bigint(20) unsigned NOT NULL';
   }
   if (field.name === 'sm_autoLoad') {
-    return 'sm_autoLoad tinyint not null DEFAULT 0';
+    return 'tinyint not null DEFAULT 0';
   }
   const columnType = resolveColumnValueType(field);
   if (columnType.kind === 'blob') {
-    return `${field.name} blob`;
+    return 'blob';
   }
   if (columnType.kind === 'float') {
     // VECTOR 合成列恒 float not null DEFAULT 0,无显示宽度(:741-749);
     // FLOAT/DOUBLE 属性列同数字列走 @DATALEN+,DEFAULT 取 def 默认值(:666/:684)
     if (field.typeLabel.toLowerCase().startsWith('vector')) {
-      return `${field.name} float not null DEFAULT 0`;
+      return 'float not null DEFAULT 0';
     }
-    return `${field.name} ${digitColumnBody(field)}`;
+    return digitColumnBody(field);
   }
   if (columnType.kind === 'string') {
-    return `${field.name} varchar(${columnType.length}) not null DEFAULT '${escapeSqlText(field.defaultValue ?? '')}'`;
+    return `varchar(${columnType.length}) not null DEFAULT '${escapeSqlText(field.defaultValue ?? '')}'`;
   }
-  return `${field.name} ${digitColumnBody(field)}`;
+  return digitColumnBody(field);
+}
+
+/** 单列 DDL 片段,形态对齐引擎 CREATE/ALTER 列定义(同上) */
+function renderColumnDdl(field: TableFieldDescriptor): string {
+  return `${field.name} ${renderColumnDdlBody(field)}`;
+}
+
+/**
+ * 属性数据库存储悬停文案(批131 用户令:完整 db.table.column + 引擎 DDL
+ * 片段 + 具体大小限制,粘贴即用)。纯函数:列目标按表分组、同 DDL 列并作
+ * 一条(向量三列);ARRAY/组件槽子表单列一条,说明去向与 parentID 关联。
+ */
+export function buildPropertyDatabaseStorageHover(
+  storage: PropertyDatabaseStorageInfo | null
+): string | null {
+  if (!storage || storage.targets.length === 0) {
+    return null;
+  }
+
+  const qualifiedTable = (tableName: string): string =>
+    storage.database
+      ? `\`${storage.database.databaseName}\`.\`${tableName}\``
+      : `\`${tableName}\``;
+
+  const parts: string[] = [];
+  const columnsByTable = new Map<string, TableFieldDescriptor[]>();
+  const childTables: Array<NonNullable<PropertyDatabaseStorageInfo['targets'][number]['table']>> = [];
+
+  for (const target of storage.targets) {
+    if (target.field) {
+      const columns = columnsByTable.get(target.tableName) ?? [];
+      columns.push(target.field);
+      columnsByTable.set(target.tableName, columns);
+    } else if (target.table) {
+      childTables.push(target.table);
+    }
+  }
+
+  for (const [tableName, columns] of columnsByTable) {
+    // 同 DDL 列并一条(向量三列/同型 FIXED_DICT 键);异型键逐条展开
+    const columnsByBody = new Map<string, TableFieldDescriptor[]>();
+    for (const column of columns) {
+      const body = renderColumnDdlBody(column);
+      const group = columnsByBody.get(body) ?? [];
+      group.push(column);
+      columnsByBody.set(body, group);
+    }
+    for (const [body, group] of columnsByBody) {
+      const names = group.map(column => `\`${column.name}\``).join('、');
+      const constraint = describeColumnValueConstraint(group[0]);
+      parts.push(
+        `${qualifiedTable(tableName)}.${names} = ${body}${constraint ? `(取值 ${constraint})` : ''}`
+      );
+    }
+  }
+
+  for (const table of childTables) {
+    const parentNote = table.parentTableName
+      ? `,元素行经 \`parentID\` 关联 \`${table.parentTableName}\``
+      : '';
+    parts.push(`子表 ${qualifiedTable(table.name)}(ARRAY/组件元素逐行一条${parentNote})`);
+  }
+
+  return parts.length > 0 ? parts.join('; ') : null;
 }
 
 /** 数字/浮点列类型体:显示宽度只在 def 声明 DatabaseLength 时输出

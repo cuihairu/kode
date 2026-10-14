@@ -7,10 +7,13 @@ import {
   SIMULATION_DIFFERENCES,
   applyRowOperation,
   buildDatabaseSimulationText,
+  buildPropertyDatabaseStorageHover,
   createDatabaseSimulationUri,
   defaultRowValue,
+  describeColumnValueConstraint,
   getSimulationEntityName,
   isDatabaseSimulationDocument,
+  renderColumnDdlBody,
   renderInsertStatements,
   renderMysqlDdl,
   renderRowsJson,
@@ -849,5 +852,147 @@ describe('row validation and simulation branch edges(补锁,批122 收口)', () 
     expect(ddl).toContain('PRIMARY KEY idKey (id)');
     expect(ddl).not.toContain(', INDEX (');
     expect(ddl).not.toContain(', UNIQUE (');
+  });
+});
+
+// 批131(用户令:提示带完整 db.table.column + 源码限制数值):
+// renderColumnDdlBody 列类型体、describeColumnValueConstraint 取值约束、
+// buildPropertyDatabaseStorageHover 悬停文案(纯函数,不触运行时)。
+describe('renderColumnDdlBody(批131 悬停复用的列类型体)', () => {
+  it('结构列与向量/字符串/数字/浮点/blob 逐类同引擎 DDL', () => {
+    expect(renderColumnDdlBody(field('parentID', { typeLabel: 'bigint unsigned' })))
+      .toBe('bigint(20) unsigned NOT NULL');
+    expect(renderColumnDdlBody(field('sm_autoLoad', { typeLabel: 'tinyint' })))
+      .toBe('tinyint not null DEFAULT 0');
+    expect(renderColumnDdlBody(field('sm_target', { typeLabel: 'blob' }))).toBe('blob');
+    expect(renderColumnDdlBody(field('sm_vec_x', { typeLabel: 'vector3' })))
+      .toBe('float not null DEFAULT 0');
+    expect(renderColumnDdlBody(field('sm_speed', { typeLabel: 'float', defaultValue: '1.5' })))
+      .toBe('float not null DEFAULT 1.5');
+    // DatabaseLength 才落显示宽度;未声明则整段剥掉
+    expect(renderColumnDdlBody(field('sm_coins', { typeLabel: 'bigint unsigned', databaseLength: 32 })))
+      .toBe('bigint(32) unsigned not null DEFAULT 0');
+    expect(renderColumnDdlBody(field('sm_hp', { typeLabel: 'int unsigned', defaultValue: '10' })))
+      .toBe('int unsigned not null DEFAULT 10');
+    expect(renderColumnDdlBody(field('sm_name', { typeLabel: 'varchar', databaseLength: 64, defaultValue: "ab'" })))
+      .toBe("varchar(64) not null DEFAULT 'ab\\''");
+  });
+});
+
+describe('describeColumnValueConstraint(源码限制数值)', () => {
+  it('整型按 mysql 区间、varchar 按解析长度、浮点无约束', () => {
+    expect(describeColumnValueConstraint(field('a', { typeLabel: 'int unsigned' })))
+      .toBe('0..4294967295');
+    expect(describeColumnValueConstraint(field('a', { typeLabel: 'int' })))
+      .toBe('-2147483648..2147483647');
+    expect(describeColumnValueConstraint(field('a', { typeLabel: 'bigint' })))
+      .toBe('-9223372036854775808..9223372036854775807');
+    // 未声明 DatabaseLength 的 varchar 按引擎缺省 255(entity_table_mysql.cpp:1829-1833)
+    expect(describeColumnValueConstraint(field('a', { typeLabel: 'varchar' })))
+      .toBe('≤ 255 字符');
+    expect(describeColumnValueConstraint(field('a', { typeLabel: 'float' }))).toBeNull();
+    expect(describeColumnValueConstraint(field('a', { typeLabel: 'blob' }))).toBeNull();
+  });
+});
+
+describe('buildPropertyDatabaseStorageHover(属性悬停存储文案,批131)', () => {
+  const databaseConfig = {
+    host: '127.0.0.1',
+    port: 13306,
+    username: 'game',
+    databaseName: 'game_db',
+    encrypt: false,
+    characterSet: 'utf8mb4'
+  };
+
+  it('empty or null storage returns null without emitting the line', () => {
+    expect(buildPropertyDatabaseStorageHover(null)).toBeNull();
+    expect(buildPropertyDatabaseStorageHover({ entityName: 'Hero', targets: [] })).toBeNull();
+  });
+
+  it('单标量列:完整 db.table.column + DDL 片段 + 取值区间', () => {
+    const hover = buildPropertyDatabaseStorageHover({
+      entityName: 'Hero',
+      database: databaseConfig,
+      targets: [{ tableName: 'tbl_Hero', fieldName: 'sm_hp', field: field('sm_hp', { typeLabel: 'int unsigned', defaultValue: '10' }) }]
+    });
+    expect(hover).toBe(
+      '`game_db`.`tbl_Hero`.`sm_hp` = int unsigned not null DEFAULT 10(取值 0..4294967295)'
+    );
+  });
+
+  it('无配置时只给表级全名,不虚构库名', () => {
+    const hover = buildPropertyDatabaseStorageHover({
+      entityName: 'Hero',
+      targets: [{ tableName: 'tbl_Hero', fieldName: 'sm_hp', field: field('sm_hp') }]
+    });
+    expect(hover).toBe('`tbl_Hero`.`sm_hp` = int unsigned not null DEFAULT 0(取值 0..4294967295)');
+  });
+
+  it('同 DDL 多列并一条(向量三列),异型列逐条展开', () => {
+    const vector = buildPropertyDatabaseStorageHover({
+      entityName: 'Hero',
+      targets: [
+        { tableName: 'tbl_Hero', fieldName: 'sm_0_pos', field: field('sm_0_pos', { typeLabel: 'vector3' }) },
+        { tableName: 'tbl_Hero', fieldName: 'sm_1_pos', field: field('sm_1_pos', { typeLabel: 'vector3' }) },
+        { tableName: 'tbl_Hero', fieldName: 'sm_2_pos', field: field('sm_2_pos', { typeLabel: 'vector3' }) }
+      ]
+    });
+    expect(vector).toBe(
+      '`tbl_Hero`.`sm_0_pos`、`sm_1_pos`、`sm_2_pos` = float not null DEFAULT 0'
+    );
+
+    const mixed = buildPropertyDatabaseStorageHover({
+      entityName: 'Hero',
+      targets: [
+        { tableName: 'tbl_Hero', fieldName: 'sm_name', field: field('sm_name', { typeLabel: 'varchar', databaseLength: 64 }) },
+        { tableName: 'tbl_Hero', fieldName: 'sm_weight', field: field('sm_weight', { typeLabel: 'int unsigned' }) }
+      ]
+    });
+    expect(mixed).toBe(
+      [
+        '`tbl_Hero`.`sm_name` = varchar(64) not null DEFAULT \'\'(取值 ≤ 64 字符)',
+        '`tbl_Hero`.`sm_weight` = int unsigned not null DEFAULT 0(取值 0..4294967295)'
+      ].join('; ')
+    );
+  });
+
+  it('ARRAY 子表单列一条:说明去向与 parentID 关联', () => {
+    const hero = heroSnapshot();
+    const bag = hero.tables.find(table => table.name === 'tbl_Hero_bag')!;
+    const hover = buildPropertyDatabaseStorageHover({
+      entityName: 'Hero',
+      database: databaseConfig,
+      targets: [{ tableName: 'tbl_Hero_bag', table: bag }]
+    });
+    expect(hover).toBe(
+      '子表 `game_db`.`tbl_Hero_bag`(ARRAY/组件元素逐行一条,元素行经 `parentID` 关联 `tbl_Hero`)'
+    );
+  });
+});
+
+describe('buildPropertyDatabaseStorageHover 防御面(批131)', () => {
+  it('目标缺列与表描述时跳过;全部跳空返回 null', () => {
+    expect(
+      buildPropertyDatabaseStorageHover({
+        entityName: 'Hero',
+        targets: [{ tableName: 'tbl_Orphan', fieldName: 'sm_x' }]
+      })
+    ).toBeNull();
+  });
+
+  it('子表无 parent 注记时不带关联说明', () => {
+    const orphan = makeTable({
+      name: 'tbl_Hero_bag',
+      kind: 'array',
+      title: 'bag',
+      fields: []
+    });
+    expect(
+      buildPropertyDatabaseStorageHover({
+        entityName: 'Hero',
+        targets: [{ tableName: 'tbl_Hero_bag', table: orphan }]
+      })
+    ).toBe('子表 `tbl_Hero_bag`(ARRAY/组件元素逐行一条)');
   });
 });

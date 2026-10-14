@@ -71,7 +71,8 @@ import {
   KBE_CONFIG_VIRTUAL_PATH,
   FinalConfigContentProvider,
   FinalConfigTreeProvider,
-  buildFinalServerConfig
+  buildFinalServerConfig,
+  resetDatabaseInterfaceConfigCache
 } from './serverConfigMerge';
 import type { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from './workspaceDiscovery';
 import {
@@ -241,6 +242,8 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
+    // binPath/configPath 变更影响数据库连接读值(批131),重算后再扫文档
+    resetDatabaseInterfaceConfigCache();
     vscode.workspace.textDocuments.forEach(doc => {
       if (isDefDocument(doc)) {
         validateDocument(doc, diagnostics);
@@ -720,9 +723,19 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.getConfiguration('kbengine').get<boolean>('autoRefreshFinalConfig', true)
   ) {
     const finalConfigWatcher = vscode.workspace.createFileSystemWatcher('**/kbengine*.xml');
-    finalConfigWatcher.onDidChange(() => finalConfigProvider.refresh());
-    finalConfigWatcher.onDidCreate(() => finalConfigProvider.refresh());
-    finalConfigWatcher.onDidDelete(() => finalConfigProvider.refresh());
+    // kbengine*.xml 增删改同时影响数据库连接读值(批131):失效缓存再联动
+    finalConfigWatcher.onDidChange(() => {
+      resetDatabaseInterfaceConfigCache();
+      finalConfigProvider.refresh();
+    });
+    finalConfigWatcher.onDidCreate(() => {
+      resetDatabaseInterfaceConfigCache();
+      finalConfigProvider.refresh();
+    });
+    finalConfigWatcher.onDidDelete(() => {
+      resetDatabaseInterfaceConfigCache();
+      finalConfigProvider.refresh();
+    });
     context.subscriptions.push(finalConfigWatcher);
   }
 
