@@ -39,6 +39,8 @@ import {
   findCustomTypeDeclarationInfo,
   findCustomTypeInfo,
   findCustomTypePythonImplementationFile,
+  findImplementedBySymbolLine,
+  findTypesXmlImplementedByReference,
   findDefinitionEntryByCategory,
   findDefinitionFileByCategory,
   findEntityDefsDirForDefFile,
@@ -379,6 +381,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const customTypeHover = getCustomTypeHover(document, position, word);
     if (customTypeHover) {
       return customTypeHover;
+    }
+
+    const implementedByReverseHover = getImplementedByReverseHover(document, position, word);
+    if (implementedByReverseHover) {
+      return implementedByReverseHover;
     }
 
     const entityRegistrationHover = getEntityRegistrationHover(document, position, word);
@@ -1188,6 +1195,39 @@ function getCustomTypeHover(
   return createCustomTypeHover(customTypeTarget.info, 'Custom type from `types.xml`');
 }
 
+// types.xml implementedBy 反向跳转提示(python 侧):光标在被引用符号上时
+// 给出引用方与落点,点击跳转(F12/Ctrl+点击)走 PythonDefinitionProvider
+// 的反向链,提示与跳转同一套解析,不另起一套
+function getImplementedByReverseHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  word: string
+): vscode.Hover | null {
+  if (!document.fileName.toLowerCase().endsWith('.py')) {
+    return null;
+  }
+
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const reference = findTypesXmlImplementedByReference(workspaceRoot, document.fileName, word);
+  if (!reference) {
+    return null;
+  }
+
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(`**${word}**\n\n`);
+  markdown.appendMarkdown(
+    `types.xml 自定义类型 \`${reference.typeName}\` 以 \`implementedBy\` 引用此符号。\n\n`
+  );
+  markdown.appendMarkdown(
+    `F12 / Ctrl+点击 跳回 \`${path.basename(reference.filePath)}\` 第 ${reference.line} 行。`
+  );
+  return new vscode.Hover(markdown);
+}
+
 function getTypeValueHover(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -1864,7 +1904,17 @@ function findCustomTypeDefinition(
 
   if (customTypeTarget.isImplementedByValue) {
     if (customTypeTarget.info.pythonFilePath) {
-      return new vscode.Location(vscode.Uri.file(customTypeTarget.info.pythonFilePath), new vscode.Position(0, 0));
+      // 引擎语义(datatype.cpp loadImplModule):implementedBy 拆成
+      // moduleName.symbolName 后落在模块内符号上,落点是符号定义行,
+      // 不是文件首行;符号解析不到才回落首行(跳转必须始终有落点)
+      const symbolLine = findImplementedBySymbolLine(
+        customTypeTarget.info.pythonFilePath,
+        customTypeTarget.info.implementedBy
+      );
+      return new vscode.Location(
+        vscode.Uri.file(customTypeTarget.info.pythonFilePath),
+        new vscode.Position(symbolLine ? symbolLine - 1 : 0, 0)
+      );
     }
     return null;
   }
@@ -2639,6 +2689,28 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         return new vscode.Location(vscode.Uri.file(baseScriptPath), new vscode.Position(0, 0));
       }
     }
+
+    // types.xml implementedBy 反向跳转:光标落在被 types.xml 引用的符号上
+    // (class/def/赋值或任意使用处)时跳回 implementedBy 行——正向跳得到
+    // 去,反向跳得回来。模块按快照 pythonFilePath 比对定,不猜文件名。
+    const reverseWorkspaceRoot = getWorkspaceRootForDocument(document);
+    if (reverseWorkspaceRoot) {
+      const reverseWordRange = document.getWordRangeAtPosition(position, /\w+/);
+      if (reverseWordRange) {
+        const reference = findTypesXmlImplementedByReference(
+          reverseWorkspaceRoot,
+          document.fileName,
+          document.getText(reverseWordRange)
+        );
+        if (reference) {
+          return new vscode.Location(
+            vscode.Uri.file(reference.filePath),
+            new vscode.Position(reference.line - 1, 0)
+          );
+        }
+      }
+    }
+
     const access = getPythonSelfAccessAtPosition(line.text, position.character);
     if (access) {
       const propertyLocation = await this.entityMappingManager.resolvePropertyDefinition(

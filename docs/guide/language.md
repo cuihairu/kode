@@ -124,6 +124,7 @@
 - 从 `.def` 的 `Parent` 跳到父类 def、`<Interfaces>` 包裹内的接口名跳到 `interfaces/` 下的接口 def
 - 从 `Properties` 字段 `DetailLevel` 值跳到同文件 `<DetailLevels>` 下的档位声明行
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
+- `types.xml` 的 `<implementedBy>` 值（形如 `MODULE.symbol`，引擎按 `.` 拆两段：`ImportModule` 前段 + `GetAttrString` 后段）双向跳转：正向从 implementedBy 值跳到实现文件里符号的定义行（`class`/`def`/赋值三种形态，符号解析不到才回落文件首行）；反向从 Python 符号（定义名或任意引用处）跳回 `types.xml` 的 implementedBy 行，悬停给出引用方类型与落点行，点击与提示同一套解析
 - RPC 方法标记：Python 实现脚本里，方法名命中实体 def 方法声明（`BaseMethods`/`CellMethods`/`ClientMethods`）的函数，在声明行上方出一行 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def 文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens
 - 从 `Properties` 字段名跳到实现脚本，落点四档：与 def 同名的 `class` 定义行 → `__init__` 行 → 首个 `class` 行（类名与 def 不一致时）→ 脚本首行（base→cell→client 取第一个在盘脚本；引擎在 `__init__` 之前装载属性，属性名未必出现在脚本里，类/`__init__` 行仍是可靠锚点）
 - 脚本目录按 def 文件自身位置反推：从 `.def` 向上找最近的 `entity_defs` 目录（按名字匹配，或同级含 `entities.xml`/`types.xml`），其父目录即脚本根，脚本 = `<父>/{base,cell,client}/<实体名>.py`；找不到再回落工作区候选链（`entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`），约定全 miss 时走有界深扫描（限深 7 层/2 万条目，剪 `node_modules`/`.git`/`out`/`dist`），同步读只认唯一命中，多候选宁缺勿猜。文件相对解析优先于工作区相对解析，非标准布局（如 `server/scripts/entity_defs`）同样可跳

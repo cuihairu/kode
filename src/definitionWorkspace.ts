@@ -39,6 +39,8 @@ export interface CustomTypeInfo {
   name: string;
   filePath: string;
   line: number;
+  /** implementedBy 子标签所在行;无 implementedBy 时回落类型节点行 */
+  implementedByLine: number;
   startOffset: number;
   endOffset: number;
   aliasType: string;
@@ -1058,11 +1060,18 @@ function buildCustomTypeInfo(
 ): CustomTypeInfo {
   const rawValue = extractCustomTypeRawValue(typeNode);
   const implementedBy = getScalarChildValue(typeNode, 'implementedBy');
+  const implementedByNode = getDirectChildElement(typeNode, 'implementedBy');
 
   return {
     name: typeNode.name,
     filePath: layout.typesXmlPath as string,
     line: getLineNumberAt(document, typeNode.tagStart),
+    // 反向跳转落点:implementedBy 引用行本身(跳得过去也要回得来);
+    // 无 implementedBy 的类型回落节点行,字段恒有值
+    implementedByLine: getLineNumberAt(
+      document,
+      implementedByNode ? implementedByNode.tagStart : typeNode.tagStart
+    ),
     startOffset: typeNode.tagStart,
     endOffset: typeNode.closeTagEnd,
     aliasType: extractCustomTypeAliasType(rawValue),
@@ -1193,6 +1202,75 @@ function findCustomTypePythonFileByImplementation(
   }
 
   return findExistingPath(candidates) || undefined;
+}
+
+/** 在 python 模块源码里找符号的定义行(1-based,找不到 null)。
+ *  implementedBy 的符号经引擎 GetAttrString 挂在模块属性上,合法定义形态:
+ *  `class <sym>` / `def <sym>` / `<sym> =`(datatype.cpp loadImplModule:
+ *  L2331-2357 按属性名取,不要求 class) */
+export function findPythonSymbolDefinitionLine(source: string, symbol: string): number | null {
+  if (!symbol) {
+    return null;
+  }
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(
+    `^[ \\t]*(?:class|def)[ \\t]+${escaped}\\b|^[ \\t]*${escaped}[ \\t]*=`,
+    'm'
+  );
+  const match = pattern.exec(source);
+  if (!match) {
+    return null;
+  }
+  return source.slice(0, match.index).split('\n').length;
+}
+
+/** implementedBy 值解析到 python 文件内的符号定义行(1-based)。
+ *  引擎语义(datatype.cpp loadImplModule:值按 '.' 拆必须恰好两段
+ *  moduleName.symbolName,ImportModule 前段 + GetAttrString 后段),
+ *  非两段值引擎本就报错,这里如实回 null,跳转回落文件首行 */
+export function findImplementedBySymbolLine(
+  pythonFilePath: string,
+  implementedBy?: string
+): number | null {
+  const parts = implementedBy?.trim().split('.') ?? [];
+  if (parts.length !== 2 || !parts[1]) {
+    return null;
+  }
+  const source = readTextFile(pythonFilePath);
+  return source ? findPythonSymbolDefinitionLine(source, parts[1]) : null;
+}
+
+/** types.xml 反向引用解析:哪些自定义类型的 implementedBy 指向该 python
+ *  文件里的该符号。按快照里 pythonFilePath 与文件路径比对定模块,不猜
+ *  模块名(package 子模块布局下文件名≠模块名);命中回 implementedBy 行 */
+export function findTypesXmlImplementedByReference(
+  workspaceRoot: string,
+  pythonFilePath: string,
+  symbolName: string
+): { filePath: string; line: number; typeName: string } | null {
+  const snapshot = getTypesXmlSnapshot(workspaceRoot);
+  if (!snapshot) {
+    return null;
+  }
+
+  for (const typeNode of snapshot.typeNodes) {
+    const info = buildCustomTypeInfo(snapshot.document, snapshot.layout, typeNode);
+    if (
+      info.pythonFilePath &&
+      path.resolve(info.pythonFilePath) === path.resolve(pythonFilePath)
+    ) {
+      const parts = info.implementedBy?.trim().split('.') ?? [];
+      if (parts.length === 2 && parts[0] && parts[1] === symbolName) {
+        return {
+          filePath: info.filePath,
+          line: info.implementedByLine,
+          typeName: info.name
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 function isTrueAttributeValue(value: string | undefined): boolean {
