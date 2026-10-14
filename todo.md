@@ -38,8 +38,8 @@
     4. **按钮要能出现在面板上**——侧边栏 view 标题栏与编辑器右上角两处都要能挂
     5. **首次安装自动扫描 `.bat` 自动生成配置**——装完即有用，不要求用户手写配置
     6. **本地脚本范围已明确**（用户 2026-10-14）：基本就是**启停服务器**与**导配置表**两类，扫描与配置模型按这两类设计，不做泛化
-  - 待补需求（未拍）：自动扫描的范围与时机（扫哪个目录、何时扫、如何去重）、扫描结果是否需确认后再写入；破坏性动作（热更/重启/停服）是否加确认；动作失败的输出与日志去向
-  - 分析落档已补齐（docs-only）：扫描范围/时机/去重选项表、变量替换与作用域、错误处理与日志去向、四项待拍汇总表，见 `docs/design/quick-actions-and-db-hint.md` 1.4-1.7（均为「建议」态，未拍板）；文档状态头与 todo 对齐（六条已拍、四项待拍、拍板前不进实现）
+  - 待补需求（原「未拍」）→ **四项已代决（巡检，2026-10-15，依用户 2026-10-14 授权；用户可推翻后回滚）**：扫描按建议（一层 .bat+词表+路径类别去重+仅无动作时提示确认+取消记忆）；确认后写入（quick pick 多选）；破坏性动作默认弹确认；失败输出走 OUTPUT 通道+弹窗不落文件
+  - 实现方案已落档（待用户确认后开工）：数据结构/接口/目录结构/执行流程/测试计划见 `docs/design/quick-actions-and-db-hint.md` 1.8-1.11，批次 B/C 简案见 4.1-4.2
   - 现状核对：已是 VSCode 扩展；已注册 31 个命令（含 `kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 2 项
 
 - [x] 需求：types.xml 着色增强（来源：用户 2026-10-14）— `8201a1c`（+1 测试文件 8 例，全套 1664 用例绿，coverage 100%×4；结论：types.xml 无独立 grammar、默认由 XML 插件接管 → 注入语法路线：package.json 贡献点 `injectTo:["text.xml"]` + 语法文件自带 `injectionSelector: "L:text.xml - (comment, string)"`（与 VS Code 自带 markdown-math/jsdoc 注入同机制），语义色不进注释与属性值、不抢类型定义标签；五 scope：内置 `support.type.kbengine.builtin` / 自定义引用 `entity.name.type.kbengine.custom` / ARRAY `keyword.other.kbengine.array` / FIXED_DICT `keyword.other.kbengine.fixed-dict` / implementedBy `variable.other.kbengine.implementedby`；KBEngine Dark 主题新增 5 条 tokenColors，五类两两可区分（真实 Registry+主题 tokenizeLine2 实测），Dark+/Light+ 下内置与自定义折叠为该主题标准类型色、两指令折叠为标准关键字色——scope 语义仍在，如实报告；验证为临时工作区 fixture 走查，真实 types.xml 在用户本机待实测）
