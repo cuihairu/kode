@@ -40,6 +40,15 @@
   - 待补需求（未拍）：自动扫描的范围与时机（扫哪个目录、何时扫、如何去重）、扫描结果是否需确认后再写入；破坏性动作（热更/重启/停服）是否加确认；动作失败的输出与日志去向
   - 现状核对：已是 VSCode 扩展；已注册 31 个命令（含 `kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 2 项
 
+- [ ] 需求：types.xml 着色增强（来源：用户 2026-10-14）
+  - 前提：types.xml **默认由 XML 插件接管**着色
+  - 要求：在 XML 基础之上叠加 **KBEngine 语义着色**——
+    1. **KBEngine 自带类型**着色（内置类型有别于普通 XML 文本）
+    2. **用户自定义类型**也着色（能与内置类型区分开）
+    3. **特殊指令 `ARRAY` 与 `FIXED_DICT` 需要特殊颜色**（显著区别于其它 token）
+  - 实现提示：本仓已有 `grammars` 贡献点与自定义主题，先核对 types.xml 当前是**走 XML 语法还是已有独立 grammar**；若已有独立 grammar 则在其中加 token 与 scope，若依赖 XML 插件则用**注入语法（injection grammar）**叠加，避免与 XML 插件冲突
+  - 验收：内置类型 / 自定义类型 / ARRAY / FIXED_DICT 四类在真实 types.xml 中颜色可区分；主题切换后仍可区分（用语义 scope 而非硬编码色值）
+
 - [ ] 缺陷：types.xml 跨文件引用跳转不精确 + 无反向跳转（来源：用户 2026-10-14）
   - 现象一：`implementedBy` 引用形如 **`SKILL_SLOT_DATA.weapon_skill_slot_list_inst`**，其中 **`SKILL_SLOT_DATA` 是文件名或模块名**——**现在没有正确跳到具体的行**（只落到页面/文件，没落到那一行）
   - 现象二：**跳转只有正向没有反向**——跳过去之后回不来
