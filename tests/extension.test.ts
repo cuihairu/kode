@@ -351,6 +351,10 @@ describe('extension activate 装配', () => {
       'kbengine.entityDependency'
     ]));
 
+    // 实体流程图:无活动 def 编辑器时提示,不建面板
+    await commands.executeCommand('kbengine.flow.show');
+    expect(messages.info).toContain('请先打开一个实体 .def 文件');
+
     // 生成器:输入框/选择器默认取消,提前返回不抛
     await commands.executeCommand('kbengine.generator.wizard');
     await commands.executeCommand('kbengine.generator.templates');

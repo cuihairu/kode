@@ -1209,7 +1209,7 @@ function collectDefinitionHasFlags(
 // 实体 has*(dbmgr 装载面):entities.xml 属性声明优先(autoMatchCompOwn 的
 // assertion),否则 scripts/cell/<Name>.py(.pyc)存在性;def 内容旗标在
 // autoMatchCompOwn 处被覆盖,不参与判定。
-function resolveEntityHasCell(
+export function resolveEntityHasCell(
   entityName: string,
   workspaceRoot: string,
   layout: ReturnType<typeof getDefinitionWorkspaceLayout>

@@ -13,6 +13,7 @@ import {
   EntityMethodSection
 } from './entityMapping';
 import { EntityDependencyWebView } from './entityDependencyWebView';
+import { EntityFlowWebView } from './entityFlowWebView';
 import { KBEngineCodeGenerator } from './codeGenerator';
 import {
   EntityExplorerProvider,
@@ -812,6 +813,15 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(showDependencyCommand);
 
+  // 实体架构流程图(批124):客户端到 base/cell 的方法调用与属性自动同步,
+  // 边语义按 Flags 位带引擎出处。实体名缺省取活动 .def 编辑器。
+  const flowWebView = new EntityFlowWebView(context);
+  const showEntityFlowCommand = vscode.commands.registerCommand(
+    'kbengine.flow.show',
+    (entityName?: string) => flowWebView.show(entityName)
+  );
+  context.subscriptions.push(showEntityFlowCommand);
+
   // 初始化代码生成器
   const codeGenerator = new KBEngineCodeGenerator(context);
 
@@ -1132,6 +1142,7 @@ export function activate(context: vscode.ExtensionContext) {
       monitoringCollector.dispose();
       entityMappingManager.dispose();
       dependencyWebView.dispose();
+      flowWebView.dispose();
       codeGenerator.dispose();
       outputChannel.dispose();
     }
