@@ -49,7 +49,7 @@
   - 实现提示：本仓已有 `grammars` 贡献点与自定义主题，先核对 types.xml 当前是**走 XML 语法还是已有独立 grammar**；若已有独立 grammar 则在其中加 token 与 scope，若依赖 XML 插件则用**注入语法（injection grammar）**叠加，避免与 XML 插件冲突
   - 验收：内置类型 / 自定义类型 / ARRAY / FIXED_DICT 四类在真实 types.xml 中颜色可区分；主题切换后仍可区分（用语义 scope 而非硬编码色值）
 
-- [ ] 缺陷：types.xml 跨文件引用跳转不精确 + 无反向跳转（来源：用户 2026-10-14）
+- [x] 缺陷：types.xml 跨文件引用跳转不精确 + 无反向跳转（来源：用户 2026-10-14）— `ed3cd2f`（+1 测试文件 14 例，全套 1656 用例绿，coverage 100%×4；正向 implementedBy 值落符号定义行（class/def/赋值三形态，引擎 datatype.cpp loadImplModule L2331-2357 两段语义），符号解析不到才回落首行；反向 Python 符号（定义名或任意引用处）跳回 types.xml 的 implementedBy 行 + 悬停提示引用方与落点；验证为临时工作区 fixture 走查，真实 types.xml 在用户本机待实测）
   - 现象一：`implementedBy` 引用形如 **`SKILL_SLOT_DATA.weapon_skill_slot_list_inst`**，其中 **`SKILL_SLOT_DATA` 是文件名或模块名**——**现在没有正确跳到具体的行**（只落到页面/文件，没落到那一行）
   - 现象二：**跳转只有正向没有反向**——跳过去之后回不来
   - 验收：`MODULE.symbol` 形式的引用要能解析并**跳到定义所在的具体行**；**支持反向跳转**（如转到定义 / 转到引用），**采用与既有方案一致的「提示 + 点击跳转」形态**，不另起一套交互
