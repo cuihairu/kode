@@ -344,3 +344,120 @@ describe('KBEngineTelnetClient 握手三态(真 TCP localhost 仿真)', () => {
     expect(client.state).toBe('closed');
   });
 });
+
+describe('KBEngineTelnetClient 引擎真实字节流(逐段取自 telnet_handler.cpp)', () => {
+  /**
+   * 引擎密码通过后的真实下行流,此前用例从未复现的两处真实形态:
+   * - 欢迎横幅、提示符、光标归位、IAC 协商**同段到达**;
+   * - L884-900 五条协商命令的数组末尾各带一个字面 '\0' 终止字节——
+   *   不属于 IAC 序列,会缀在提示符之后。
+   */
+  /** getWelcome() + sendEnter/sendNewLine:横幅、提示符、光标归位 */
+  const engineWelcome = (component: string, layer: 'root' | 'python'): Buffer => {
+    const prompt =
+      layer === 'python' ? `[${component}@python ~] >>> ` : `[${component}@root ~]# `;
+    return Buffer.concat([
+      Buffer.from(
+        `\x1b[1;32mwelcome to ${component} \r\n` +
+          'Version: 2.5.10. \r\n' +
+          '---------------------------------------------\r\n' +
+          'Command List:\r\n' +
+          '---------------------------------------------\x1b[0m\r\n'
+      ),
+      Buffer.from(`${prompt}\r\n${prompt}\x1b[9999999999D\x1b[${prompt.length}C`)
+    ]);
+  };
+
+  /**
+   * 密码通过后的完整流:L561-565 的五条 IAC 协商命令同段追在提示符之后。
+   * 引擎无密码路径(telnet_server.cpp L184-191)只发 getWelcome(),不协商。
+   */
+  const engineHandshake = (component: string, layer: 'root' | 'python'): Buffer => {
+    const prompt =
+      layer === 'python' ? `[${component}@python ~] >>> ` : `[${component}@root ~]# `;
+    return Buffer.concat([
+      engineWelcome(component, layer),
+      Buffer.from([
+        255, 250, 24, 0, 118, 116, 49, 48, 48, 255, 240, 0,
+        255, 251, 3, 0,
+        255, 251, 1, 0,
+        255, 253, 24, 0,
+        255, 250, 24, 1, 255, 240, 0
+      ])
+    ]);
+  };
+
+  const makeCommandServer = (
+    component: string,
+    layer: 'root' | 'python',
+    password?: string,
+    response = '3'
+  ): { portPromise: Promise<number>; received: () => string } => {
+    const receivedParts: string[] = [];
+    const portPromise = listen(socket => {
+      let handshaken = false;
+      if (password) {
+        socket.write('password:');
+      } else {
+        handshaken = true;
+        socket.write(engineWelcome(component, layer));
+      }
+      socket.on('data', chunk => {
+        receivedParts.push(chunk.toString());
+        if (!handshaken) {
+          handshaken = true;
+          socket.write(engineHandshake(component, layer));
+          return;
+        }
+        // 命令响应:python 表达式结果 + 新提示符(命令本身由引擎逐字回显)
+        const prompt =
+          layer === 'python' ? `[${component}@python ~] >>> ` : `[${component}@root ~]# `;
+        socket.write(`\r\n${response}\r\n${prompt}`);
+      });
+    });
+    return { portPromise, received: () => receivedParts.join('') };
+  };
+
+  it('python 层(引擎默认 default_layer):密码通过后真实流进 ready,命令可发且回显可达', async () => {
+    const server = makeCommandServer('interfaces', 'python', 'pwd123456');
+    const port = await server.portPromise;
+    const client = makeClient(port, 'pwd123456');
+    const collected = collect(client);
+    client.connect();
+
+    await untilState(client, 'ready');
+    expect(server.received()).toContain('pwd123456');
+    expect(collected.chunks.join('')).toContain('welcome to interfaces');
+    expect(collected.chunks.join('')).toContain('[interfaces@python ~] >>>');
+
+    expect(client.sendCommand('len(entities)')).toBe(true);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(collected.chunks.join('')).toContain('\r\n3\r\n');
+    client.disconnect();
+  });
+
+  it('root 层:真实流同样进 ready(协商 NUL 终止字节不再挡提示符检测)', async () => {
+    const server = makeCommandServer('baseapp', 'root', 'pwd123456');
+    const port = await server.portPromise;
+    const client = makeClient(port, 'pwd123456');
+    client.connect();
+
+    await untilState(client, 'ready');
+    expect(client.sendCommand(':help')).toBe(true);
+    client.disconnect();
+  });
+
+  it('无密码组件:横幅+光标归位同段到达也进 ready,sendCommand 后收到响应', async () => {
+    const server = makeCommandServer('cellapp', 'python');
+    const port = await server.portPromise;
+    const client = makeClient(port);
+    const collected = collect(client);
+    client.connect();
+
+    await untilState(client, 'ready');
+    expect(client.sendCommand('len(entities)')).toBe(true);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(collected.chunks.join('')).toContain('\r\n3\r\n');
+    client.disconnect();
+  });
+});

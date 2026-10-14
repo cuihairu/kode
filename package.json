@@ -59,6 +59,7 @@
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
+    "onCommand:kbengine.telnet.disconnect",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report"
@@ -277,6 +278,11 @@
         "icon": "$(plug)"
       },
       {
+        "command": "kbengine.telnet.disconnect",
+        "title": "Disconnect Telnet Session",
+        "icon": "$(debug-disconnect)"
+      },
+      {
         "command": "kbengine.httpRequests.run",
         "title": "Run HTTP Quick Request"
       },
@@ -299,6 +305,11 @@
         {
           "command": "kbengine.server.start",
           "when": "view == kbengine.serverControl",
+          "group": "navigation"
+        },
+        {
+          "command": "kbengine.telnet.disconnect",
+          "when": "view == kbengine.telnetStatus",
           "group": "navigation"
         }
       ],
@@ -340,10 +351,26 @@
           "when": "kbengine.telnetConfigured"
         },
         {
+          "command": "kbengine.telnet.disconnect",
+          "when": "kbengine.telnetConfigured"
+        },
+        {
           "command": "kbengine.config.showFinal"
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "kbengine.telnet.disconnect",
+        "key": "ctrl+]",
+        "when": "activeWebviewPanelId == kbengine.telnetPanel"
+      },
+      {
+        "command": "kbengine.telnet.disconnect",
+        "key": "ctrl+d",
+        "when": "activeWebviewPanelId == kbengine.telnetPanel"
+      }
+    ],
     "configuration": {
       "title": "KBEngine",
       "properties": {

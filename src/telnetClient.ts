@@ -4,10 +4,12 @@ import * as net from 'net';
  * KBEngine telnet 协议客户端(kbe/src/lib/server/telnet_server.cpp +
  * telnet_handler.cpp 对齐):
  * - 有密码组件:连接后服务端先发字面 "password:";密码对 → 欢迎横幅 +
- *   IAC 协商;密码错 → 静默重发 "[{组件}@password ~]# " 并停在 PASSWD 态。
- * - 无密码组件:连接后直接发欢迎横幅。
- * - 提示符 "[{组件}@{层} ~]# "(python 层 ">>> ");`:quit` 会关闭服务端
- *   进程,必须在白名单层恒拒。
+ *   提示符 + 五条 IAC 协商(每条末尾带字面 '\0' 终止字节,
+ *   telnet_handler.cpp L884-900);密码错 → 静默重发
+ *   "[{组件}@password ~]# " 并停在 PASSWD 态。
+ * - 无密码组件:连接后直接发欢迎横幅,不发 IAC 协商。
+ * - 提示符 "[{组件}@{层} ~]# "(python 层 "[{组件}@python ~] >>> ");
+ *   `:quit` 会关闭服务端进程,必须在白名单层恒拒。
  *
  * 密码只经 write 发往 socket,不进入任何回调文本/日志面。
  */
@@ -78,9 +80,14 @@ export function parseBanner(text: string): TelnetBanner {
   return { requiresPassword, passwordRejected, text: trimmed };
 }
 
-/** 提示符检测:"[{组件}@{层} ~]# / >" 或 python 层 ">>> " */
+/**
+ * 提示符检测:引擎 getInputStartString() 只产两种形态
+ * (telnet_handler.cpp L143-147)——root/readonly 层 "[{组件}@{层} ~]# ",
+ * python 层 "[{组件}@python ~] >>> "(`~]` 与 `>>>` 之间有一个空格,
+ * 引擎默认 default_layer 就是 python,kbengine_defaults.xml L266)。
+ */
 export function looksLikePrompt(text: string): boolean {
-  return /\[[^\]]+@[^\]]+ ~\][#>]\s*$/.test(text) || />\s*>\s*>\s*$/.test(text);
+  return /\[[^\]]+@[^\]]+ ~\]\s*(?:#|>>>|>)\s*$/.test(text) || />\s*>\s*>\s*$/.test(text);
 }
 
 /**
@@ -186,8 +193,16 @@ export class KBEngineTelnetClient {
 
   private handleData(chunk: Buffer): void {
     this.pending = Buffer.concat([this.pending, chunk]);
-    // 逐到达块清洗;引擎协商字节集中在前几字节,不做跨块 IAC 半包拼装
-    const text = stripAnsiEscapes(stripTelnetControl(this.pending).toString('utf8'));
+    // 逐到达块清洗;引擎协商字节集中在前几字节,不做跨块 IAC 半包拼装。
+    // 引擎五条 IAC 协商命令的数组末尾各带字面 '\0' 终止字节
+    // (telnet_handler.cpp L884-900):不属于 IAC 序列、上面的剥离吃不掉,
+    // 会缀在提示符之后,把结尾检测搅死——再把 C0 控制字节(\r\n\t 除外)
+    // 一并剥掉,提示符检测才能看到干净结尾
+    const text = stripAnsiEscapes(stripTelnetControl(this.pending).toString('utf8')).replace(
+      // eslint-disable-next-line no-control-regex
+      /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,
+      ''
+    );
     this.pending = Buffer.alloc(0);
     if (text.length === 0) {
       return;

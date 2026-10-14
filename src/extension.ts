@@ -475,7 +475,12 @@ export function activate(context: vscode.ExtensionContext) {
   const showTelnetPanelCommand = vscode.commands.registerCommand('kbengine.telnet.showPanel', () => {
     telnetWebView.show();
   });
-  context.subscriptions.push(showTelnetPanelCommand, telnetStatusBarItem);
+  // 断开当前 telnet 会话:面板 Ctrl+]/Ctrl+D 与顶部入口(telnet 树标题栏
+  // 按钮/命令面板)共用此命令
+  const disconnectTelnetCommand = vscode.commands.registerCommand('kbengine.telnet.disconnect', () => {
+    telnetWebView.disconnectActive();
+  });
+  context.subscriptions.push(showTelnetPanelCommand, disconnectTelnetCommand, telnetStatusBarItem);
   const telnetStateSubscription = telnetService.onDidChange(() => {
     telnetTreeProvider.refresh();
     updateTelnetStatusBar(telnetService, telnetStatusBarItem);

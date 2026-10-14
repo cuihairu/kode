@@ -220,6 +220,16 @@
   - 已开启目标可建立持久会话（自动握手登录），提供白名单内命令输入、内置只读快捷命令与输出回显
   - 未开启目标如实提示开启方法（附 kbengine.xml `<telnet_service>` 配置片段），不空转
   - 运行中断线自动拆除会话并翻转状态灯，面板保留可重连
+  - 面板内 `Ctrl+]` / `Ctrl+D` 断开会话（telnet 标准转义，仅面板聚焦时生效），命令见 `kbengine.telnet.disconnect`
+
+### `kbengine.telnet.disconnect`
+
+- 标题：`Disconnect Telnet Session`
+- 作用：主动断开当前 telnet 会话。扩展断开的是自己的连接，不发送引擎 `:quit`——`:quit` 会关闭整个服务端进程，白名单层恒拒
+- 入口：telnet 树标题栏按钮、命令面板、telnet 面板内 `Ctrl+]` / `Ctrl+D`
+- 行为：
+  - 优先断开会话面板当前选中的目标；未选中或选中目标无会话时取首个已连接目标
+  - 没有已连接的会话时如实提示，不空转
 
 ### `kbengine.httpRequests.run`
 

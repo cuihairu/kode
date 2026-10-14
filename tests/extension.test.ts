@@ -264,6 +264,10 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.telnet.showPanel');
     expect(panelRegistry.panels.map(panel => panel.viewType)).toContain('kbengine.telnetPanel');
 
+    // telnet 断开(顶部入口/快捷键共用):无已连接会话时如实提示
+    await commands.executeCommand('kbengine.telnet.disconnect');
+    expect(messages.info.some(message => message.includes('没有已连接的 telnet 会话'))).toBe(true);
+
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
     expect(messages.warning.some(message => message.includes('未找到定义文件'))).toBe(true);
