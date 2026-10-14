@@ -40,7 +40,7 @@
   - 待补需求（未拍）：自动扫描的范围与时机（扫哪个目录、何时扫、如何去重）、扫描结果是否需确认后再写入；破坏性动作（热更/重启/停服）是否加确认；动作失败的输出与日志去向
   - 现状核对：已是 VSCode 扩展；已注册 31 个命令（含 `kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 2 项
 
-- [ ] 需求：types.xml 着色增强（来源：用户 2026-10-14）
+- [x] 需求：types.xml 着色增强（来源：用户 2026-10-14）— `8201a1c`（+1 测试文件 8 例，全套 1664 用例绿，coverage 100%×4；结论：types.xml 无独立 grammar、默认由 XML 插件接管 → 注入语法路线：package.json 贡献点 `injectTo:["text.xml"]` + 语法文件自带 `injectionSelector: "L:text.xml - (comment, string)"`（与 VS Code 自带 markdown-math/jsdoc 注入同机制），语义色不进注释与属性值、不抢类型定义标签；五 scope：内置 `support.type.kbengine.builtin` / 自定义引用 `entity.name.type.kbengine.custom` / ARRAY `keyword.other.kbengine.array` / FIXED_DICT `keyword.other.kbengine.fixed-dict` / implementedBy `variable.other.kbengine.implementedby`；KBEngine Dark 主题新增 5 条 tokenColors，五类两两可区分（真实 Registry+主题 tokenizeLine2 实测），Dark+/Light+ 下内置与自定义折叠为该主题标准类型色、两指令折叠为标准关键字色——scope 语义仍在，如实报告；验证为临时工作区 fixture 走查，真实 types.xml 在用户本机待实测）
   - 前提：types.xml **默认由 XML 插件接管**着色
   - 要求：在 XML 基础之上叠加 **KBEngine 语义着色**——
     1. **KBEngine 自带类型**着色（内置类型有别于普通 XML 文本）
