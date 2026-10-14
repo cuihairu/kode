@@ -5,9 +5,10 @@
 ## 未完成
 
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行；不打版本号 tag、不建正式 Release、不跑发版 workflow）
-- [ ] 批124 def 图形化架构流程图：webview 内展示 client 通知到 baseapp/cellapp 的调用与属性自动同步关系，边语义按 Flags 位带引擎出处，支持导出
 
 ## 已完成
+
+- [x] 批124 def 图形化架构流程图 — `1e93f24`（+2 测试文件 62 例，全套 1743 用例绿，coverage 100%×4；webview 内 client→base/cell 方法调用与属性自动同步，边语义按 Flags 位带引擎出处与成员声明回跳，未 Exposed 方法单列，导出 Markdown/SVG/PNG）
 
 - [x] Marketplace 截图准备 — 6 张实机截图落 `docs/screenshots/`，README 双语引用 — commit `8c3ffec`（截图批）/ `b683108`（README 引用）
 - [x] KBENGINE_SOURCE_AUDIT_PLAN 13 个功能块逐块复核 — 块4 检查项 9 项补记 `8252760`；块8 文本形态 Parent 收口 `f76bdca`（纯函数 8 例 + 锁定用例）；块12 日志定案 b 不支持（计划文档块 12 已记）；其余 10 块已对照无漂移

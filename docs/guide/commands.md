@@ -176,6 +176,21 @@
 - 导出 SVG
 - 导出 PNG
 
+### `kbengine.flow.show`
+
+- 标题：`Show Entity Flow Graph`
+- 作用：打开实体架构流程图——客户端到 baseapp/cellapp 的方法调用与属性自动同步关系
+
+流程图面板支持：
+
+- 实体名缺省取活动 .def 编辑器；无法定位时提示打开实体定义文件
+- 图上边语义按属性 Flags 位标注，逐边列出引擎出处（文件:行号）与成员声明位置
+- 点击成员行回跳 .def 声明处
+- 未 Exposed 的 BaseMethods 单列「客户端调不到的方法」
+- 刷新重读磁盘上的 def/entities.xml
+- 导出 Markdown（直写文件）
+- 导出 SVG/PNG（经 webview 渲染后导出）
+
 ## 代码生成器
 
 ### `kbengine.generator.wizard`

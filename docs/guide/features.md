@@ -26,6 +26,7 @@
 - 日志查看器
 - 监控面板
 - 实体依赖关系图
+- 实体架构流程图
 
 说明：
 日志查看器当前尚未完成官方 logger watcher 协议适配。
@@ -75,7 +76,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 
 ## 配置自动发现
 
-- 干净工作区零配置可用核心功能(打开 `.def` → 实体浏览器/依赖图/属性面板/数据库 schema/悬停)
+- 干净工作区零配置可用核心功能(打开 `.def` → 实体浏览器/依赖图/流程图/属性面板/数据库 schema/悬停)
 - 发现链:显式配置 → 约定布局 → 有界深扫描(限深 7 层/2 万条目,剪 node_modules/.git 等)→ 唯一命中即用,多候选激活期弹一次 quick pick 并按工作区记忆
 - 服务器资产根 `kbengine.configPath` 同链发现(批128):原值以引擎装载探针 `res/server/kbengine.xml` 验收,未通过时按约定链(工作区根、assets/、server_assets/)→ 记忆选择 → 深扫描唯一命中兜底,telnet 探测与最终配置视图同步受益
 - 纯发现、无配置项:`types.xml`、`messages_fixed(_defaults).xml`、引擎 defaults 的源码根兜底;def 根推出的子路径(interfaces/components/user_type)不进配置
@@ -98,6 +99,15 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 图中跳转到实体定义
 - 导出 SVG
 - 导出 PNG
+
+## 流程图能力
+
+- 客户端到 baseapp/cellapp 的方法调用与属性自动同步关系，Mermaid 可视化
+- 边语义按属性 `Flags` 位标注，逐边列出引擎出处（文件:行号）与成员声明位置
+- 点击成员行回跳 `.def` 声明处
+- 未 Exposed 的 BaseMethods 单列「客户端调不到的方法」
+- 刷新重读磁盘上的 `def`/`entities.xml`
+- 导出 Markdown、SVG、PNG
 
 ## 代码生成
 
