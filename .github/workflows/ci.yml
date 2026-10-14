@@ -6,9 +6,23 @@ on:
       - '**'
     tags:
       - 'v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '*.svg'
+      - '.editorconfig'
   pull_request:
     branches:
       - '**'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '*.svg'
+      - '.editorconfig'
   release:
     types: [ created ]
   workflow_dispatch:
