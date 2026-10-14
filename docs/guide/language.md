@@ -128,6 +128,16 @@
 
 - `kbengine.hover.showSymbolDocs`
 
+### 数据库存储（Persistent 属性）
+
+悬停带 `<Persistent>true</Persistent>` 的属性时追加一行数据库落点提示：
+
+- 完整 `` `db`.`table`.`column` `` 全名（库名读自引擎配置；读不到时只给表级全名，不虚构）
+- 引擎 DDL 片段（列型、`not null`、`DEFAULT`）与具体取值约束：整型按 MySQL 区间、varchar 按解析后长度（未声明 `<DatabaseLength>` 缺省 255）
+- 同 DDL 多列并作一条（如 VECTOR3 的三列）；ARRAY / 组件属性说明去往的子表与 `parentID` 关联
+
+完整能力说明见 [功能总览](./features.md) 的「属性 → 数据库提示与 Schema 视图」。
+
 ## 跳转定义
 
 ### 当前支持

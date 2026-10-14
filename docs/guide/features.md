@@ -58,6 +58,14 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - defaults 或元件 `kbengine.xml` 保存后自动重算（`kbengine.autoRefreshFinalConfig`，默认开）；字段悬浮可看作用说明
 - 分层口径与前后对照见 [配置说明](./configuration.md) 的「服务端配置的三层」
 
+## 属性 → 数据库提示与 Schema 视图
+
+- Persistent 属性悬停追加「数据库存储」行：完整 `` `db`.`table`.`column` `` 全名 + 引擎 DDL 片段（列型、`not null`、`DEFAULT`）+ 具体取值约束（整型按 MySQL 区间、varchar 按解析后长度；未写 `<DatabaseLength>` 缺省 255，`entity_table_mysql.cpp:1829-1833`）；同 DDL 多列并作一条（向量三列一条）
+- ARRAY / 组件属性不在主表：悬停说明去往的子表与 `parentID` 关联，F12 落 schema 的子表行（子表带 `parent:` 注记）
+- 连接要素直接读引擎自身配置（不手填）：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 defaults + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306（`db_interface_mysql.cpp:166-167`）；密码不读不展示（`encrypt=true` 为 RSA 密文）。读值按「工作区 + binPath」缓存，`kbengine*.xml` 或配置变更即失效重读
+- Schema 视图（`kbengine.database.open`）：配置读得时顶部一行 `Database: 库名@host:端口`；每表尾部一行可直接粘贴的 SELECT（带库表前缀与反引号转义，库名读不到时退化为表级全名，仍合法）
+- 尚未实现：用真实表结构反向校验虚拟表结构（漂移对比），待定 MySQL 访问通道
+
 ## 数据库模拟
 
 - 在数据库 schema 快照之上模拟建表与行数据:`.dbsim` 虚拟文档一体展示 DDL、模拟行 JSON、INSERT 语句与引擎差异清单

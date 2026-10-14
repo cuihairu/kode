@@ -36,7 +36,7 @@
 ### `kbengine.database.open`
 
 - 标题：`Open Database Schema`
-- 作用：打开实体属性对应的数据库表结构虚拟文档
+- 作用：打开实体属性对应的数据库表结构虚拟文档（配置可读时顶部带 `Database: 库名@host:端口` 连接行，每表尾部一行可直接粘贴进外部 MySQL 客户端的 SELECT）
 - 入口：
   - 点击实体浏览器中的数据库条目
   - 命令面板
