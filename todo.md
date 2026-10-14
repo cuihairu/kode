@@ -30,4 +30,11 @@
   - 动机：像 VSCode debug 界面那样，顶部能一键执行常用动作
   - 已点名的三类动作：① KBEngine 自带热更新 ② **自研的 HTTP 本地版本热更新** ③ 本地开服的 bat 脚本
   - 验收（本阶段）：需求边界先分析清楚并落档——动作种类清单、配置归属、按钮位置、变量替换与作用域、错误处理与日志去向；经用户拍板后再进实现
+  - **用户 2026-10-14 已拍的五点**：
+    1. **配置驱动动作注册**（方案 A）——动作由配置定义，不硬编码进 `contributes.commands`，加新动作不改代码、不重打包
+    2. **配置跟 KBEngine 工程走**，不跟编辑器走——动作是 KBEngine 工程属性（换人/换机随工程携带），落点复用既有 `kbengine_debug.json` 那套配置
+    3. **路径绝不写死**——每人打开的目录不同，必须支持变量替换（`${workspaceFolder}` / `${env:XXX}` 等）
+    4. **按钮要能出现在面板上**——侧边栏 view 标题栏与编辑器右上角两处都要能挂
+    5. **首次安装自动扫描 `.bat` 自动生成配置**——装完即有用，不要求用户手写配置
+  - 待补需求（未拍）：自动扫描的范围与时机（扫哪个目录、何时扫、如何去重）、扫描结果是否需确认后再写入；破坏性动作（热更/重启/停服）是否加确认；动作失败的输出与日志去向
   - 现状核对：已是 VSCode 扩展；已注册 31 个命令（含 `kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 2 项
