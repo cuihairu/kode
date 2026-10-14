@@ -14,7 +14,9 @@ import { describe, expect, it } from 'vitest';
 // extensions/python 着色,扩展无注销他人语法的通道;共存分词实证见
 // tests/pythonHighlightCoexistence.test.ts)。本文件把"注册面恒等"锁成
 // 回归锁,防未来任何人误改语法注册/语言 id/打包漏资源(工单①②④类):
-// 一、注册面逐字段锁定(languages/grammars/themes 的完整结构);
+// 一、注册面逐字段锁定(languages/grammars/themes 的完整结构;
+//     批130 起 grammars 扩为两条:def 主语法 + types.xml 注入语法,
+//     注入面锁死只许 text.xml);
 // 二、"零 python 注册"不变量(防与内建 MagicPython 冲突类事故);
 // 三、.vscodeignore 打包防漏锁(高亮/主题/片段/图标/主产物不得被排除,
 //     CI 产物清单核对发现的历史隐患:tests/ 与 *.md 全量进包属体积问题,
@@ -47,12 +49,20 @@ describe('高亮注册面恒等锁(批103)', () => {
     ]);
   });
 
-  it('grammars 逐字段锁定:仅 source.kbengine-def 一条,无注入/无第二 scope', () => {
+  it('grammars 逐字段锁定:def 主语法 + types.xml 注入语法(批130 起)', () => {
+    // 第二条是注入语法:无 language 键,injectTo 只许 text.xml——
+    // types.xml 默认由 XML 插件着色,kode 只在其上叠加 KBEngine 语义
+    // scope,不抢宿主分词。
     expect(pkg.contributes.grammars).toEqual([
       {
         language: 'kbengine-def',
         scopeName: 'source.kbengine-def',
         path: './syntaxes/kbengine.tmLanguage.json'
+      },
+      {
+        scopeName: 'text.kbengine-types',
+        path: './syntaxes/kbengine-types-injection.json',
+        injectTo: ['text.xml']
       }
     ]);
   });
@@ -65,7 +75,7 @@ describe('高亮注册面恒等锁(批103)', () => {
         uiTheme: 'vs-dark',
         path: './syntaxes/kbengine-color-theme.json',
         description:
-          '通用深色主题,覆盖常见语言(Python/JS/Go 等)的通用语法着色,.def 文件走 XML 语法并叠加引擎语义着色'
+          '通用深色主题,覆盖常见语言(Python/JS/Go 等)的通用语法着色,.def 与 types.xml 走 XML 语法并叠加引擎语义着色'
       }
     ]);
     const themePath = path.join(root, 'syntaxes', 'kbengine-color-theme.json');
@@ -88,7 +98,12 @@ describe('高亮注册面恒等锁(批103)', () => {
     for (const grammar of pkg.contributes.grammars) {
       expect(String(grammar.scopeName)).not.toBe('source.python');
       expect(String(grammar.scopeName)).not.toContain('injection');
-      expect(grammar.injectTo).toBeUndefined();
+      // 注入仅限 text.xml(types.xml 语义着色,批130);注入任何其它
+      // 宿主(尤其 source.python)都会改变他人文件的着色行为——锁死
+      const injectTo = grammar.injectTo as string[] | undefined;
+      if (injectTo !== undefined) {
+        expect(injectTo).toEqual(['text.xml']);
+      }
     }
   });
 
@@ -106,6 +121,7 @@ describe('高亮注册面恒等锁(批103)', () => {
 // 目录前缀(dir/、dir/**)、全目录(dir)、按后缀(*.ext、**/*.ext)。
 const CRITICAL_ASSETS = [
   'syntaxes/kbengine.tmLanguage.json',
+  'syntaxes/kbengine-types-injection.json',
   'syntaxes/kbengine-color-theme.json',
   'language-configuration.json',
   'snippets/kbengine.json',

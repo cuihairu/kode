@@ -8,6 +8,7 @@
 
 - `.def` 文件
 - `entities.xml`
+- `types.xml`
 - 生成后的 Python 实体文件与 `.def` 的双向关联
 
 ## 语法高亮
@@ -30,6 +31,18 @@
 ### 其余部分
 
 类型值（如 `UINT32`）、`DetailLevel` 值、自定义属性名与方法名均为普通 XML 分词，不再有专属着色——类型与值对齐由诊断和补全承担。`<` `>` 参与编辑器括号配对着色，注释块为 `<!-- -->`。
+
+### types.xml 语义着色（注入语法）
+
+`types.xml` 不注册独立语言，默认由 VS Code XML 插件接管基础着色；Kode 用注入语法（injection grammar）在其上叠加引擎语义 scope，不抢宿主分词：
+
+- KBEngine 内置类型（`UINT32`、`ARRAY` 元素类型位置等）→ `support.type.kbengine.builtin`
+- 用户自定义类型引用（`<Type>SKILL_SLOT</Type>` 等）→ `entity.name.type.kbengine.custom`
+- `ARRAY` 指令 → `keyword.other.kbengine.array`
+- `FIXED_DICT` 指令 → `keyword.other.kbengine.fixed-dict`
+- `<implementedBy>` 的 `MODULE.symbol` 值 → `variable.other.kbengine.implementedby`
+
+注入选择器带 `- (comment, string)` 排除：语义色不进注释与属性值；类型定义标签（`<SKILL_SLOT>` 本身）保持 XML 标签色，只有 `<Type>` 引用处着语义色。颜色由主题按 scope 决定，不写死色值——扩展自带「KBEngine Dark」主题下五类两两可区分（内置绿 `#98C379` / 自定义琥珀 `#E5C07B` / ARRAY 紫 `#C678DD` 粗体 / FIXED_DICT 橙 `#D19A66` 粗体 / implementedBy 蓝 `#61AFEF`，均对 `#272822` ≥4.5:1）；VS Code 内置 Dark+/Light+ 等主题将把内置与自定义折叠为该主题的标准类型色、两条指令折叠为标准关键字色（scope 语义仍在，换回 KBEngine Dark 即恢复全区分）。
 
 ### 设计目标
 

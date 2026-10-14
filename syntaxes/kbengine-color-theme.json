@@ -124,6 +124,43 @@
       }
     },
     {
+      "name": "KBEngine Builtin Types (types.xml)",
+      "scope": "support.type.kbengine.builtin",
+      "settings": {
+        "foreground": "#98C379"
+      }
+    },
+    {
+      "name": "KBEngine Custom Types (types.xml)",
+      "scope": "entity.name.type.kbengine.custom",
+      "settings": {
+        "foreground": "#E5C07B"
+      }
+    },
+    {
+      "name": "KBEngine Array Directive (types.xml)",
+      "scope": "keyword.other.kbengine.array",
+      "settings": {
+        "foreground": "#C678DD",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Fixed Dict Directive (types.xml)",
+      "scope": "keyword.other.kbengine.fixed-dict",
+      "settings": {
+        "foreground": "#D19A66",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine ImplementedBy (types.xml)",
+      "scope": "variable.other.kbengine.implementedby",
+      "settings": {
+        "foreground": "#61AFEF"
+      }
+    },
+    {
       "name": "Common Strings",
       "scope": "string",
       "settings": {

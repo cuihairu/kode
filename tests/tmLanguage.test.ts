@@ -58,7 +58,8 @@ const flagAlternationOf = (): string[] => {
 
 describe('kbengine.tmLanguage 资产自洽', () => {
   it('package.json 贡献与语法文件一一对应且配置文件存在', () => {
-    expect(pkg.contributes.grammars).toHaveLength(1);
+    // 两条:def 主语法(批103 前唯一)+ types.xml 注入语法(批130 起)
+    expect(pkg.contributes.grammars).toHaveLength(2);
     const entry = pkg.contributes.grammars[0];
     expect(entry.language).toBe('kbengine-def');
     expect(entry.scopeName).toBe(grammarJson.scopeName);
@@ -68,6 +69,14 @@ describe('kbengine.tmLanguage 资产自洽', () => {
     const declared = path.join(root, entry.path.replace(/^\.\//, ''));
     expect(declared).toBe(grammarPath);
     expect(fs.existsSync(declared)).toBe(true);
+
+    const injectionEntry = pkg.contributes.grammars[1];
+    expect(injectionEntry.language).toBeUndefined();
+    expect(injectionEntry.scopeName).toBe('text.kbengine-types');
+    expect(injectionEntry.injectTo).toEqual(['text.xml']);
+    const injectionPath = path.join(root, injectionEntry.path.replace(/^\.\//, ''));
+    expect(injectionPath).toBe(path.join(root, 'syntaxes', 'kbengine-types-injection.json'));
+    expect(() => JSON.parse(fs.readFileSync(injectionPath, 'utf8'))).not.toThrow();
 
     const language = pkg.contributes.languages.find(item => item.id === 'kbengine-def');
     expect(language?.configuration).toBe('./language-configuration.json');

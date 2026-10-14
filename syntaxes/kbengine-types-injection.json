@@ -1,0 +1,30 @@
+{
+  "scopeName": "text.kbengine-types",
+  "injectionSelector": "L:text.xml - (comment, string)",
+  "patterns": [
+    {
+      "match": "(?<=<Type>)(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
+      "name": "support.type.kbengine.builtin"
+    },
+    {
+      "match": "\\b(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",
+      "name": "support.type.kbengine.builtin"
+    },
+    {
+      "match": "\\bARRAY\\b",
+      "name": "keyword.other.kbengine.array"
+    },
+    {
+      "match": "\\bFIXED_DICT\\b",
+      "name": "keyword.other.kbengine.fixed-dict"
+    },
+    {
+      "match": "(?<=<Type>)[A-Za-z_][A-Za-z0-9_]*",
+      "name": "entity.name.type.kbengine.custom"
+    },
+    {
+      "match": "(?<=<implementedBy>)[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?",
+      "name": "variable.other.kbengine.implementedby"
+    }
+  ]
+}
