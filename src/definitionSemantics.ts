@@ -6,10 +6,10 @@ import {
   DEF_METHOD_SECTIONS,
   getDirectChildElement,
   getDirectChildElements,
+  getDirectChildElementsByName,
   getElementText,
   getLineNumberAt,
   getScalarChildValue,
-  getScalarChildValues,
   hasTruthyChildTag,
   parseDefDocument
 } from './defParser';
@@ -46,6 +46,8 @@ export interface DefinitionComponentRef {
   typeName: string;
   line: number;
   owner: DefinitionOwnerRef;
+  /** 组件槽 <Utype> 子值(批123);null = 未声明,占用属性 utype 空间 */
+  utype: number | null;
 }
 
 export interface DefinitionProperty {
@@ -54,6 +56,8 @@ export interface DefinitionProperty {
   line: number;
   typeName?: string;
   flags?: string;
+  /** <Utype> 子值(批123);null = 未声明。属性 utype 与方法 utype 是两套独立空间 */
+  utype?: number | null;
   persistent?: boolean;
   identifier?: boolean;
   indexType?: string;
@@ -66,12 +70,26 @@ export interface DefinitionProperty {
   arrayElement?: DefinitionProperty;
 }
 
+/**
+ * 结构化参数序列条目(批123)。name = <Arg> 直文本(如 UINT8 / ARRAY);
+ * ARRAY 时 ofType 为 <of> 子解析结果,嵌套 ARRAY 递归(对齐引擎
+ * FixedArrayType::initialize 的 <of> 递归链)。
+ */
+export interface DefinitionArgType {
+  name: string;
+  ofType?: DefinitionArgType;
+}
+
 export interface DefinitionMethod {
   name: string;
   line: number;
   section: DefMethodSection;
   args: string[];
+  /** 与 args 一一对应的结构化参数序列(批123:含 ARRAY 的 of 链) */
+  argTypes: DefinitionArgType[];
   exposed: boolean;
+  /** <Utype> 子值(批123);null = 未声明。引擎口径:≤0 视同未设置,>65535 溢出报错 */
+  utype: number | null;
   owner: DefinitionOwnerRef;
   source: DefinitionMemberSource;
 }
@@ -536,7 +554,8 @@ function parseComponentRefs(
       slotName: child.name,
       typeName,
       line: getLineNumberAt(document, child.tagStart),
-      owner
+      owner,
+      utype: parseUtypeValue(getScalarChildValue(child, 'Utype'))
     });
   }
 
@@ -563,6 +582,7 @@ function parseProperties(
       line: getLineNumberAt(document, propertyNode.tagStart),
       typeName,
       flags: getScalarChildValue(propertyNode, 'Flags'),
+      utype: parseUtypeValue(getScalarChildValue(propertyNode, 'Utype')),
       persistent: parseOptionalBoolean(getScalarChildValue(propertyNode, 'Persistent')),
       identifier: hasTruthyChildTag(propertyNode, 'Identifier'),
       indexType: getScalarChildValue(propertyNode, 'Index'),
@@ -639,12 +659,27 @@ function parseMethods(
     }
 
     for (const methodNode of getDirectChildElements(sectionNode)) {
+      // args 与 argTypes 同一循环产出,保证 1:1(空文本 Arg 两处一致剔除)
+      const args: string[] = [];
+      const argTypes: DefinitionArgType[] = [];
+      for (const argNode of getDirectChildElementsByName(methodNode, 'Arg')) {
+        const argName = getElementText(argNode).trim();
+        if (!argName) {
+          continue;
+        }
+        args.push(argName);
+        argTypes.push(parseArgType(argNode, argName));
+      }
+
+      const utypeText = getScalarChildValue(methodNode, 'Utype');
       methods.push({
         name: methodNode.name,
         line: getLineNumberAt(document, methodNode.tagStart),
         section,
-        args: getScalarChildValues(methodNode, 'Arg'),
+        args,
+        argTypes,
         exposed: hasTruthyChildTag(methodNode, 'Exposed'),
+        utype: parseUtypeValue(utypeText),
         owner,
         source: createSource('local')
       });
@@ -652,6 +687,35 @@ function parseMethods(
   }
 
   return methods;
+}
+
+// 引擎 Arg 解析(entitydef.cpp loadDef*Methods):<Arg> 直文本即类型名;
+// "ARRAY" 走 FixedArrayType::initialize,读 <of> 子,嵌套递归。缺 <of> 节点
+// 与空 <of></of> 分开保留(ofType: {name:''}):引擎前者报 not found "of".、
+// 后者报 key[ARRAY] did not find type[]!,生成侧按此分流
+function parseArgType(argNode: DefElementNode, name: string): DefinitionArgType {
+  if (name !== 'ARRAY') {
+    return { name };
+  }
+  const ofNode = getDirectChildElement(argNode, 'of');
+  if (!ofNode) {
+    return { name };
+  }
+  const ofName = getElementText(ofNode).trim();
+  if (!ofName) {
+    return { name, ofType: { name: '' } };
+  }
+  return { name, ofType: parseArgType(ofNode, ofName) };
+}
+
+// 引擎 getValInt 语义:非数字文本得 0(视同未设置,自动分配);溢出判定不在
+// 解析层,由生成侧按 >65535 做(uint16 截断比对,engine 层报错)
+function parseUtypeValue(text: string | undefined): number | null {
+  if (text === undefined) {
+    return null;
+  }
+  const parsed = Number(text.trim());
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function getNodeValue(node?: DefElementNode): string {

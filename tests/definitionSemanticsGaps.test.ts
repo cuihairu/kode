@@ -240,3 +240,20 @@ describe('loader cache and inheritance merge gaps', () => {
       .toEqual(['yell']);
   });
 });
+
+describe('parseMethods 空参数剔除', () => {
+  it('drops empty Arg elements so args and argTypes stay 1:1', () => {
+    const local = parseLocalDefinition([
+      '<root>',
+      '  <BaseMethods>',
+      '    <hit><Arg></Arg><Arg>UINT32</Arg></hit>',
+      '  </BaseMethods>',
+      '</root>'
+    ].join('\n'), 'entity', 'ArgE', '/tmp/ArgE.def');
+
+    expect(local.methods).toHaveLength(1);
+    expect(local.methods[0].args).toEqual(['UINT32']);
+    expect(local.methods[0].argTypes).toHaveLength(1);
+    expect(local.methods[0].argTypes[0]).toMatchObject({ name: 'UINT32' });
+  });
+});
