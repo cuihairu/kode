@@ -764,6 +764,95 @@ describe('QuickActionManager.run backends', () => {
   });
 });
 
+describe('QuickActionManager.runByName(自动热重载按名触发)', () => {
+  const runByName = (
+    manager: QuickActionManager,
+    name: string,
+    options?: { suppressConfirm?: boolean; skipLastRun?: boolean }
+  ): Promise<boolean> =>
+    (manager as unknown as { runByName: (n: string, o?: unknown) => Promise<boolean> }).runByName(
+      name,
+      options
+    );
+
+  it('按名命中即执行,suppressConfirm 跳过确认框', async () => {
+    setConfig({
+      quickActions: [{ name: '热更', type: 'command', command: 'kbengine.server.restart', args: [] }]
+    });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    const ok = await runByName(manager, '热更', { suppressConfirm: true });
+
+    expect(ok).toBe(true);
+    expect(confirmCalls).toHaveLength(0);
+    expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
+    expect(channelLines()).toContain('热更 → ✓');
+
+    manager.dispose();
+  });
+
+  it('未传 suppressConfirm 时按动作自身的 confirm 弹确认框', async () => {
+    setConfig({
+      quickActions: [{ name: '重启', type: 'command', command: 'kbengine.server.restart', args: [] }]
+    });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    const ok = await runByName(manager, '重启');
+
+    expect(ok).toBe(false);
+    expect(confirmCalls).toHaveLength(1);
+    expect(commandRuns).toHaveLength(0);
+
+    manager.dispose();
+  });
+
+  it('skipLastRun 不写 lastRun 记忆,默认仍写', async () => {
+    setConfig({
+      quickActions: [{ name: '热更', type: 'command', command: 'kbengine.server.restart', args: [] }]
+    });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await runByName(manager, '热更', { suppressConfirm: true, skipLastRun: true });
+    expect(memento.get('kbengine.quickActions.lastRun')).toBeUndefined();
+
+    await runByName(manager, '热更', { suppressConfirm: true });
+    expect(memento.get('kbengine.quickActions.lastRun')).toBe('热更');
+
+    manager.dispose();
+  });
+
+  it('找不到名字:只记 OUTPUT 流水,不弹窗不打扰', async () => {
+    setConfig({
+      quickActions: [{ name: '热更', type: 'command', command: 'kbengine.server.restart', args: [] }]
+    });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    const ok = await runByName(manager, '不存在的热更');
+
+    expect(ok).toBe(false);
+    expect(confirmCalls).toHaveLength(0);
+    expect(commandRuns).toHaveLength(0);
+    expect(messages.error).toHaveLength(0);
+    expect(messages.info).toHaveLength(0);
+    expect(channelLines()).toContain('不存在的热更');
+
+    manager.dispose();
+  });
+
+  it('空名字直接返回,不读配置也不落流水', async () => {
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    const ok = await runByName(manager, '');
+
+    expect(ok).toBe(false);
+    expect(commandRuns).toHaveLength(0);
+    expect(confirmCalls).toHaveLength(0);
+    expect(channelLines()).toBe('');
+
+    manager.dispose();
+  });
+});
+
 describe('QuickActionManager.offerScanOnActivate', () => {
   it('does nothing without a workspace folder', async () => {
     stubWorkspace.workspaceFolders = [];

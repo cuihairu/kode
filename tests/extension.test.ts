@@ -12,6 +12,7 @@ import { languagesRegistry } from './fake-vscode/languages';
 import { messages, treeRegistrations, window as fakeWindow, windowState } from './fake-vscode/windowState';
 import {
   lastFileSystemWatcher,
+  memoryFileSystem,
   workspace,
   workspaceEvents,
   workspaceState,
@@ -897,5 +898,36 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  }, 8000);
+});
+
+describe('extension activate 自动热重载装配(盘点 G5)', () => {
+  it('开启后文件保存按名执行快速动作,默认关不建监视器', async () => {
+    const context = makeContext();
+    workspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    memoryFileSystem.set(
+      '/ws/.kbengine/debug.json',
+      JSON.stringify({
+        quickActions: [
+          { name: '热更', type: 'command', command: 'kbengine.test.hotReloadProbe', args: [] }
+        ]
+      })
+    );
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 0 }
+    });
+    activate(context);
+    // 覆盖探测命令,避免真的动 KBEngine 进程;装配只关心按名触发这条链
+    const registration = commands.registerCommand('kbengine.test.hotReloadProbe', () => undefined);
+
+    expect(lastFileSystemWatcher.current).not.toBeNull();
+    lastFileSystemWatcher.current!.fireChange(Uri.file('/ws/scripts/base/Account.py'));
+
+    const channelLines = (): string =>
+      windowState.channels.map(channel => channel.lines.join('')).join('');
+    await until(() => channelLines().includes('热更 → ✓'));
+
+    registration.dispose();
+    disposeAll(context);
   }, 8000);
 });

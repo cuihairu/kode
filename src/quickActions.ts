@@ -83,6 +83,14 @@ export interface QuickActionManagerDeps {
   executeCommand?: CommandRunner;
 }
 
+/** 无人值守通道(自动热重载等)的执行选项 */
+export interface QuickActionRunOptions {
+  /** 跳过执行确认框(自动热重载等无人值守通道传 true) */
+  readonly suppressConfirm?: boolean;
+  /** 不记入「上次执行」记忆(默认仍记,Explorer ▶ 跟着最近一次执行走) */
+  readonly skipLastRun?: boolean;
+}
+
 /** 工作区根清单;无工作区(只开了单文件)返回空数组,变量解析由调用方报错 */
 function workspaceFolders(): readonly WorkspaceFolderRef[] {
   return vscode.workspace.workspaceFolders?.map(folder => ({
@@ -306,6 +314,24 @@ export class QuickActionManager {
     await this.run(action);
   }
 
+  /**
+   * 按名执行动作(自动热重载等无人值守通道):命中即走 run 链。
+   * 名字为空直接返回;找不到只记 OUTPUT 流水,不弹窗不打扰。
+   * suppressConfirm/skipLastRun 透传给 run。
+   */
+  async runByName(name: string, options: QuickActionRunOptions = {}): Promise<boolean> {
+    if (name.length === 0) {
+      return false;
+    }
+    const { actions } = await this.loadActions();
+    const action = actions.find(item => item.name === name);
+    if (!action) {
+      this.append(`未找到名为「${name}」的快速动作`);
+      return false;
+    }
+    return this.run(action, options);
+  }
+
   /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */
   async offerScanOnActivate(): Promise<void> {
     const [folder] = workspaceFolders();
@@ -353,10 +379,13 @@ export class QuickActionManager {
   }
 
   /** 单个动作执行链:变量替换 → 确认 → 分发 → 流水(失败一次性弹窗) */
-  private async run(action: QuickAction): Promise<boolean> {
+  private async run(action: QuickAction, options: QuickActionRunOptions = {}): Promise<boolean> {
     // 选中即记忆:Explorer ▶ 主按钮的默认目标跟着最近一次执行走;
-    // 极简装配上下文没有 workspaceState 时照常执行,只是不记忆
-    await this.context.workspaceState?.update(QUICK_ACTION_LAST_RUN_KEY, action.name);
+    // 极简装配上下文没有 workspaceState 时照常执行,只是不记忆;
+    // 无人值守通道(skipLastRun)不污染「上次执行」记忆
+    if (!options.skipLastRun) {
+      await this.context.workspaceState?.update(QUICK_ACTION_LAST_RUN_KEY, action.name);
+    }
     let resolved: QuickAction;
     try {
       resolved = resolveAction(action, workspaceFolders());
@@ -366,7 +395,7 @@ export class QuickActionManager {
       await vscode.window.showErrorMessage(message);
       return false;
     }
-    if (resolved.confirm) {
+    if (!options.suppressConfirm && resolved.confirm) {
       const confirmed = await vscode.window.showInformationMessage(
         `执行 ${resolved.name}：${describeActionTarget(resolved)}?`,
         { modal: true },

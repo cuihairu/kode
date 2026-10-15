@@ -24,6 +24,7 @@ import { resolveServerComponent } from './serverCommandTarget';
 import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager } from './quickActions';
+import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
 import {
@@ -911,6 +912,12 @@ export function activate(context: vscode.ExtensionContext) {
     () => quickActionManager.runDefault()
   );
   context.subscriptions.push(runDefaultQuickActionCommand);
+
+  // 自动热重载(盘点 G5):文件保存/监视 → 按名触发 quick action。门控默认关
+  // 防误触;无人值守通道跳过确认框,找不到名字只落 OUTPUT 流水不弹窗。
+  setupHotReload(context, actionName =>
+    void quickActionManager.runByName(actionName, { suppressConfirm: true })
+  );
 
   // Python 生态接线(盘点 G1/G2):先导出 .kbengine/stubs/KBEngine.pyi
   // (符号索引发射,盘点 G2),再同步 python.analysis.extraPaths(scripts 根

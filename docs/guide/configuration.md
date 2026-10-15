@@ -95,6 +95,10 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒) |
 | `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表 |
 | `kbengine.db.tablePrefix` | string | `""`（空 = 引擎默认 `tbl_`） | 数据库表名前缀，schema 视图与 SQL 模板同源替换 |
+| `kbengine.hotReload.enabled` | boolean | `false` | 文件保存/监视时自动触发指定快速动作（默认关防误触） |
+| `kbengine.hotReload.actionName` | string | 空 | 要触发的 `quickActions` 动作名（留空则事件到来也不触发） |
+| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视的文件匹配模式，每个模式各建一个文件监视 |
+| `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数，连发保存合并成一次触发 |
 
 ## 路径类配置的自动发现(批125)
 
@@ -356,6 +360,25 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 ```
 
 首装扫描会在工作区根一层找 `.bat`,只收启停(`start` / `stop` / `restart` / `boot` / `server`)与导表(`export` / `convert` / `导表`)词表命中的脚本,勾选后写成 `${workspaceFolder}/<文件名>.bat` 变量形态(`start` / `boot` 开头的自动 `background: true`),并保留既有 `version` / `debug` 段。
+
+### 自动热重载 `kbengine.hotReload.*`(盘点 G5)
+
+文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控**默认关**防误触:开启前不建任何文件监视,装配链与激活期行为零变化;`enabled` 改成 `true` 即刻按 `globs` 建监视、改成 `false` 拆除,配置变更即时生效,不必重启窗口。
+
+| 设置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.hotReload.enabled` | boolean | `false` | 总开关,开时按 `globs` 各建一个文件监视 |
+| `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在 |
+| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
+| `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
+
+行为口径:
+
+- **三通道都触发**:文件的变更、创建、删除都算保存事件,任一触发都进入去抖。
+- **去抖合并**:一次触发到下一次触发之间的连发事件合并成一次执行;去抖期间关掉开关会取消尚未触发的计时。
+- **无人值守**:触发路径跳过执行确认框(即使动作 `confirm` 为 `true`);动作自身的失败仍照常弹窗报错——那是执行结果,不是交互确认。执行记录照常写入「上次执行」记忆,因此 Explorer 顶栏 ▶ 也指向最近一次触发的动作。
+- **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
+- **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
 
 ### 数据库表名前缀 `kbengine.db.tablePrefix`
 

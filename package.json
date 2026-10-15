@@ -974,6 +974,31 @@
           "type": "boolean",
           "default": true,
           "description": "自动把内置 KBEngine Python API 索引导出为 .kbengine/stubs/KBEngine.pyi（内容与补全/悬停同源；与 extraPaths 接线配合供 Pylance 解析 import KBEngine；重新导出会覆盖该文件）"
+        },
+        "kbengine.hotReload.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "文件保存/监视时自动触发指定快速动作（默认关防误触；开启后按 globs 各建一个文件监视，配置改动即时生效）"
+        },
+        "kbengine.hotReload.actionName": {
+          "type": "string",
+          "default": "",
+          "description": "要触发的 quickActions 动作名（须在 .kbengine/debug.json 的 quickActions 数组里存在；留空则监视有事件也不触发）"
+        },
+        "kbengine.hotReload.globs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.py"
+          ],
+          "description": "监视的文件匹配模式（VS Code glob；每个模式各建一个文件监视）"
+        },
+        "kbengine.hotReload.debounceMs": {
+          "type": "number",
+          "default": 500,
+          "description": "触发前的去抖毫秒数（连发保存合并成一次触发；0 为不去抖）"
         }
       }
     }
