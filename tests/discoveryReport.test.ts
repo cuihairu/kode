@@ -67,6 +67,19 @@ const factsFor = (binPath = ''): DiscoveryLayoutFacts => {
 
 const GENERATED_AT = '2026-10-13T00:00:00.000Z';
 
+// 截断扫描形态:模拟深扫描在大仓触顶(消息表漏采)——②④级源码根兜底只在
+// 这种形态下可达,经 scanOverride 注入复现
+const truncatedScan = (): DiscoveredCandidateSet => ({
+  entityDefs: [],
+  entitiesXml: [],
+  typesXml: [],
+  kbeSourceRoots: [],
+  messagesXml: [],
+  configRoots: [],
+  scanVisited: 5,
+  scanTruncated: true
+});
+
 const fieldByLabel = (label: DiscoveryFieldLabel) => {
   const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
   return report.fields.find(field => field.label === label);
@@ -370,7 +383,7 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
     write('kbe/src/lib/entitydef/entitydef.cpp');
     write('kbe/res/server/messages_fixed.xml');
 
-    const messages = fieldByLabel('引擎消息消息表 messages_fixed.xml');
+    const messages = fieldByLabel('引擎消息表 messages_fixed.xml');
     expect(messages?.status).toBe('ok');
     expect(messages?.source).toBe('derived');
     expect(messages?.resolved).toBe(p('kbe/res/server/messages_fixed.xml'));
@@ -381,11 +394,101 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
     // messages_fixed.xml —— 来源标 deep-scan 而非 derived
     write('deep/nested/messages_fixed.xml');
 
-    const messages = fieldByLabel('引擎消息消息表 messages_fixed.xml');
+    const messages = fieldByLabel('引擎消息表 messages_fixed.xml');
     expect(messages?.status).toBe('ok');
     expect(messages?.source).toBe('deep-scan');
     expect(messages?.resolved).toBe(p('deep/nested/messages_fixed.xml'));
     expect(messages?.scanHits).toEqual([p('deep/nested/messages_fixed.xml')]);
+  });
+});
+
+describe('buildDiscoveryReport(引擎消息表:双名与信息性,批129)', () => {
+  it('accepts a template-shipped messages_fixed_defaults.xml in a pure asset tree', () => {
+    // 资产模板把引擎缺省消息表拷进自己的 res/server 是常态,深扫描要认
+    write('res/server/messages_fixed_defaults.xml');
+
+    const messages = fieldByLabel('引擎消息表 messages_fixed.xml');
+    expect(messages?.status).toBe('ok');
+    expect(messages?.source).toBe('deep-scan');
+    expect(messages?.resolved).toBe(p('res/server/messages_fixed_defaults.xml'));
+  });
+
+  it('prefers the user copy when both names exist in the workspace', () => {
+    write('res/server/messages_fixed_defaults.xml');
+    write('res/server/messages_fixed.xml');
+
+    const messages = fieldByLabel('引擎消息表 messages_fixed.xml');
+    expect(messages?.resolved).toBe(p('res/server/messages_fixed.xml'));
+  });
+
+  it('downgrades to informational (not an issue) in a pure asset workspace', () => {
+    // 没有引擎源码根、工作区也没有消息表 = 纯资产工作区常态:引擎跑自带的
+    // messages_fixed_defaults.xml,这不是用户要修的问题,不该计入问题清单
+    const messages = fieldByLabel('引擎消息表 messages_fixed.xml');
+    expect(messages?.status).toBe('informational');
+    expect(messages?.source).toBe('none');
+    expect(messages?.resolved).toBeNull();
+
+    const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
+    expect(
+      report.issues.find(issue => issue.label === '引擎消息表 messages_fixed.xml')
+    ).toBeUndefined();
+  });
+
+  it('still reports missing when the kbe source root exists but res/server lacks both files', () => {
+    // 找到了引擎源码根却连 messages_fixed_defaults.xml 都没有:引擎仓不完整,
+    // 这才是要报的真问题
+    write('kbe/src/lib/entitydef/entitydef.cpp');
+
+    const messages = fieldByLabel('引擎消息表 messages_fixed.xml');
+    expect(messages?.status).toBe('missing');
+
+    const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
+    const issue = report.issues.find(item => item.label === '引擎消息表 messages_fixed.xml');
+    expect(issue).toBeDefined();
+    expect(issue?.remediation).toContain('messages_fixed_defaults.xml');
+  });
+
+  it('renders the informational state with a note instead of an issue', () => {
+    const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
+    const text = renderDiscoveryReport(report);
+
+    expect(text).toContain('[informational] 引擎消息表 messages_fixed.xml');
+    expect(text).toContain('纯资产工作区常态');
+  });
+
+  it('falls back to the engine source res when the injected scan missed it', () => {
+    // ②级:扫描截断漏掉引擎 res(引擎根经约定锚点仍可解析),精确探测兜底
+    write('kbe/src/lib/entitydef/entitydef.cpp');
+    write('kbe/res/server/messages_fixed.xml');
+
+    const report = buildDiscoveryReport(root, factsFor(), truncatedScan(), GENERATED_AT);
+    const messages = report.fields.find(field => field.label === '引擎消息表 messages_fixed.xml');
+    expect(messages?.status).toBe('ok');
+    expect(messages?.source).toBe('derived');
+    expect(messages?.resolved).toBe(p('kbe/res/server/messages_fixed.xml'));
+  });
+
+  it('falls back to the engine source defaults when the injected scan missed both', () => {
+    // ④级:扫描漏掉引擎 res 且无用户副本,源码根缺省表兜底
+    write('kbe/src/lib/entitydef/entitydef.cpp');
+    write('kbe/res/server/messages_fixed_defaults.xml');
+
+    const report = buildDiscoveryReport(root, factsFor(), truncatedScan(), GENERATED_AT);
+    const messages = report.fields.find(field => field.label === '引擎消息表 messages_fixed.xml');
+    expect(messages?.status).toBe('ok');
+    expect(messages?.resolved).toBe(p('kbe/res/server/messages_fixed_defaults.xml'));
+  });
+
+  it('lists a *_assets convention root in the config root field', () => {
+    write('flyff_assets/res/server/kbengine.xml');
+
+    const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
+    const config = report.fields.find(field => field.label === '资产根 kbengine.configPath');
+    expect(config?.status).toBe('ok');
+    expect(config?.source).toBe('convention');
+    // 该字段的约定链口径存探针路径(<根>/res/server/kbengine.xml),非根路径
+    expect(config?.conventionHits).toContain(p('flyff_assets/res/server/kbengine.xml'));
   });
 });
 

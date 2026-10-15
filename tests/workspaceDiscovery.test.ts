@@ -6,6 +6,7 @@ import {
   DISCOVERY_CONVENTIONS,
   applyDiscoveryChoices,
   collectDiscoveryCandidates,
+  conventionalConfigRoots,
   getDiscoveryChoice,
   hasEngineConfigProbe,
   resetDiscoveryState,
@@ -66,6 +67,15 @@ describe('scanWorkspaceAnchors(一次有界 walk 收集全部锚点)', () => {
     expect(scan.typesXml).toEqual([p('scripts/entity_defs/types.xml')]);
     expect(scan.kbeSourceRoots).toEqual([p('kbe')]);
     expect(scan.messagesXml).toEqual([p('kbe/res/server/messages_fixed.xml')]);
+  });
+
+  it('collects messages_fixed_defaults.xml under its own name', () => {
+    // 批129:资产模板常把引擎缺省消息表拷进自己的 res/server,深扫描只认
+    // 用户副本时纯资产工作区永远误报缺失
+    write('res/server/messages_fixed_defaults.xml');
+
+    const scan = scanWorkspaceAnchors(root);
+    expect(scan.messagesXml).toEqual([p('res/server/messages_fixed_defaults.xml')]);
   });
 
   it('skips node_modules/.git/dot directories while walking', () => {
@@ -286,6 +296,25 @@ describe('resolveKbeSourceRoot / resolveEngineMessagesXmlPath(引擎锚点)', ()
 
     write('kbe/res/server/messages_fixed.xml');
     expect(resolveEngineMessagesXmlPath(root)).toBe(p('kbe/res/server/messages_fixed.xml'));
+  });
+
+  it('prefers a workspace user copy over the engine source root copy', () => {
+    // 批129:生效表是用户副本(引擎 defaults 先载打底、用户副本后载覆盖,
+    // kbemain.h:71-74);用户副本无论落在资产树还是引擎树都优先于任何 defaults
+    write('deep/nested/messages_fixed.xml');
+    write('kbe/src/lib/entitydef/entitydef.cpp');
+    write('kbe/res/server/messages_fixed.xml');
+
+    expect(resolveEngineMessagesXmlPath(root)).toBe(p('deep/nested/messages_fixed.xml'));
+  });
+
+  it('prefers workspace defaults over engine source defaults when no user copy exists', () => {
+    // 两棵树分开找,不要求两个文件同目录(引擎注释 kbemain.h:133-137:
+    // defaults 在引擎 res 树,用户副本在资产树)
+    write('res/server/messages_fixed_defaults.xml');
+    write('kbe/src/lib/entitydef/entitydef.cpp');
+
+    expect(resolveEngineMessagesXmlPath(root)).toBe(p('res/server/messages_fixed_defaults.xml'));
   });
 
   it('skips the engine res probe when the kbe root has no messages file', () => {
@@ -594,5 +623,27 @@ describe('configRoot 发现(批128:kbengine.configPath 约定兜底)', () => {
     const report = collectDiscoveryCandidates(root);
     expect(report.candidates.configRoot).toEqual([p('assets'), p('server_assets')]);
     expect(report.ambiguous).toContain('configRoot');
+  });
+
+  it('accepts first-level *_assets directories as convention roots (probe still rules)', () => {
+    // 批129:flyff_assets 这类 *_assets 命名进约定链;目录名只是准入,
+    // 命中仍以 res/server/kbengine.xml 探针验收
+    write('flyff_assets/res/server/kbengine.xml');
+    write('plain/res/server/kbengine.xml');
+    write('fake_assets'); // 文件不是目录,不入链
+
+    expect(resolveDiscoveredConfigRoot(root)).toBe(p('flyff_assets'));
+    expect(conventionalConfigRoots(root)).toContain(p('flyff_assets'));
+    expect(conventionalConfigRoots(root)).not.toContain(p('plain'));
+  });
+
+  it('falls back to static conventions when the workspace root is unreadable', () => {
+    // 工作区根读不到(权限/不存在):约定链退回静态名单,不空转
+    const ghost = p('ghost-workspace');
+    expect(conventionalConfigRoots(ghost)).toEqual([
+      ghost,
+      path.join(ghost, 'assets'),
+      path.join(ghost, 'server_assets')
+    ]);
   });
 });

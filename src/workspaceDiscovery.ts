@@ -54,6 +54,30 @@ export function hasEngineConfigProbe(configPath: string): boolean {
   return fs.existsSync(path.join(configPath, 'res', 'server', 'kbengine.xml'));
 }
 
+/**
+ * 资产根约定候选(批129 起含动态段):静态名单('', assets, server_assets)之外,
+ * 工作区一级目录里凡 *_assets 命名(如 flyff_assets)也进约定链——这类命名是
+ * 资产目录的行业惯例,不该只靠深扫描兜底。命中仍以 res/server/kbengine.xml
+ * 探针验收:目录名只是准入,不是结论(引擎注释 kbemain.h:133-137 也显示
+ * defaults 在引擎 res 树、用户副本在资产树,两树各在一处)。
+ * 动态段只读一级(readdir 一次),深层与异形布局仍交深扫描。
+ */
+export function conventionalConfigRoots(workspaceRoot: string): string[] {
+  const statics = DISCOVERY_CONVENTIONS.configRoots.map(relative =>
+    path.join(workspaceRoot, relative)
+  );
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(workspaceRoot, { withFileTypes: true });
+  } catch {
+    return statics;
+  }
+  const dynamics = entries
+    .filter(entry => entry.isDirectory() && entry.name.endsWith('_assets'))
+    .map(entry => path.join(workspaceRoot, entry.name));
+  return [...new Set([...statics, ...dynamics])];
+}
+
 const SKIP_DIRECTORY_NAMES = new Set(['node_modules', '.git', '.vscode', 'out', 'dist']);
 
 /** 有界深扫描默认上限(诊断报告如实呈现,触顶即标注截断) */
@@ -65,6 +89,7 @@ export interface DiscoveredCandidateSet {
   entitiesXml: string[];
   typesXml: string[];
   kbeSourceRoots: string[];
+  /** 引擎消息表两种文件名(用户副本 messages_fixed.xml / 缺省 messages_fixed_defaults.xml) */
   messagesXml: string[];
   /** 深扫描命中的资产根(res/server/kbengine.xml 探针所在目录族) */
   configRoots: string[];
@@ -134,7 +159,7 @@ export function scanWorkspaceAnchors(
           found.entitiesXml.push(fullPath);
         } else if (entry.name === 'types.xml') {
           found.typesXml.push(fullPath);
-        } else if (entry.name === 'messages_fixed.xml') {
+        } else if (entry.name === 'messages_fixed.xml' || entry.name === 'messages_fixed_defaults.xml') {
           found.messagesXml.push(fullPath);
         } else if (entry.name === 'entitydef.cpp' || entry.name === 'entity_table_mysql.cpp') {
           const kbeRoot = findKbeRootAnchor(fullPath);
@@ -275,9 +300,7 @@ export function resolveDiscoveredTypesXmlPath(workspaceRoot: string): string | n
  */
 export function resolveDiscoveredConfigRoot(workspaceRoot: string): string | null {
   const conventional = firstExisting(
-    DISCOVERY_CONVENTIONS.configRoots
-      .map(relative => path.join(workspaceRoot, relative))
-      .filter(hasEngineConfigProbe)
+    conventionalConfigRoots(workspaceRoot).filter(hasEngineConfigProbe)
   );
   if (conventional) {
     return conventional;
@@ -305,22 +328,49 @@ export function resolveKbeSourceRoot(workspaceRoot: string): string | null {
 }
 
 /**
- * 引擎 messages_fixed.xml:引擎资源目录精确位置(<源码根>/res/server/ 下用户
- * 改的 messages_fixed.xml,缺省回 messages_fixed_defaults.xml)优先;纯资产仓
- * (工作区无引擎源码)时深扫描兜底找用户 messages_fixed.xml。都没有为 null。
+ * 引擎消息表定位(批129 双名四级,对齐引擎装载序 kbemain.h:71-74:
+ * defaults 先载打底、用户副本后载覆盖,故用户副本是生效表):
+ * ① 工作区用户副本 messages_fixed.xml ② 引擎源码根用户副本
+ * ③ 工作区 messages_fixed_defaults.xml ④ 引擎源码根 defaults。
+ * 用户副本与 defaults 各在各的树里,四级独立取用,不要求同目录。
+ * 工作区命中取深扫描序首个——多份消息表属病态,报告 scanHits 全量可见,
+ * 此字段纯诊断不落下游,不适用 def 根的宁缺勿猜。全部落空为 null(纯资产
+ * 工作区常态,报告降级为信息性而非问题)。
+ * 拆出 resolveEngineMessagesXmlFrom(注入扫描结果):②④两级只在扫描截断/
+ * 超深漏掉引擎 res 时可达(引擎源码根总在工作区内,扫描本可见),测试经
+ * 注入复现,报告侧与 buildDiscoveryReport 的 scanOverride 同源。
  */
-export function resolveEngineMessagesXmlPath(workspaceRoot: string): string | null {
-  const kbeRoot = resolveKbeSourceRoot(workspaceRoot);
-  if (kbeRoot) {
-    const exact = firstExisting([
-      path.join(kbeRoot, 'res', 'server', 'messages_fixed.xml'),
-      path.join(kbeRoot, 'res', 'server', 'messages_fixed_defaults.xml')
-    ]);
-    if (exact) {
-      return exact;
-    }
+export function resolveEngineMessagesXmlFrom(
+  scan: DiscoveredCandidateSet,
+  kbeRoot: string | null
+): string | null {
+  const scanHit = (fileName: string): string | null =>
+    scan.messagesXml.find(found => path.basename(found) === fileName) ?? null;
+  const userCopy = scanHit('messages_fixed.xml');
+  if (userCopy) {
+    return userCopy;
   }
-  return firstSingle(cachedScan(workspaceRoot).messagesXml);
+
+  const sourceUserCopy = kbeRoot ? path.join(kbeRoot, 'res', 'server', 'messages_fixed.xml') : null;
+  if (sourceUserCopy && fs.existsSync(sourceUserCopy)) {
+    return sourceUserCopy;
+  }
+
+  const defaultsCopy = scanHit('messages_fixed_defaults.xml');
+  if (defaultsCopy) {
+    return defaultsCopy;
+  }
+  const sourceDefaults = kbeRoot
+    ? path.join(kbeRoot, 'res', 'server', 'messages_fixed_defaults.xml')
+    : null;
+  if (sourceDefaults && fs.existsSync(sourceDefaults)) {
+    return sourceDefaults;
+  }
+  return null;
+}
+
+export function resolveEngineMessagesXmlPath(workspaceRoot: string): string | null {
+  return resolveEngineMessagesXmlFrom(cachedScan(workspaceRoot), resolveKbeSourceRoot(workspaceRoot));
 }
 
 export interface DiscoveryCandidateReport {
@@ -350,9 +400,7 @@ export function collectDiscoveryCandidates(workspaceRoot: string): DiscoveryCand
     ],
     // 资产根候选:探针验收(不是目录存在),约定命中与深扫描命中合并
     configRoot: [
-      ...DISCOVERY_CONVENTIONS.configRoots
-        .map(relative => path.join(workspaceRoot, relative))
-        .filter(hasEngineConfigProbe),
+      ...conventionalConfigRoots(workspaceRoot).filter(hasEngineConfigProbe),
       ...scan.configRoots
     ]
   };
@@ -429,7 +477,8 @@ export async function runWorkspaceDiscovery(deps: DiscoveryPromptDeps, workspace
 // 且全程无任何可见信号。本层把每次定位的输入与结论如实摊开,供输出通道
 // 与命令按需呈现;报告可整段复制回给维护者,不必贴工作区文件树。
 
-export type DiscoveryFieldStatus = 'ok' | 'ambiguous' | 'missing';
+/** informational = 解析不出但属工作区形态常态(如纯资产仓没有引擎消息表),不计入问题 */
+export type DiscoveryFieldStatus = 'ok' | 'ambiguous' | 'missing' | 'informational';
 
 export type DiscoveryValueSource =
   | 'explicit-config'
@@ -447,7 +496,7 @@ export type DiscoveryFieldLabel =
   | 'types.xml'
   | '接口目录 interfaces'
   | '组件目录 components'
-  | '引擎消息消息表 messages_fixed.xml'
+  | '引擎消息表 messages_fixed.xml'
   | '资产根 kbengine.configPath'
   | '引擎二进制 kbengine.binPath';
 
@@ -519,6 +568,12 @@ const SOURCE_LABELS: Record<DiscoveryValueSource, string> = {
   derived: '推导(interfaces/components 由 def 根,binPath/messages 由引擎源码根)',
   fallback: '回落候选首项(不存在)',
   none: '未解析'
+};
+
+/** 信息性字段的备注(报告里说明为何不计入问题,批129) */
+const INFORMATIONAL_NOTES: Partial<Record<DiscoveryFieldLabel, string>> = {
+  '引擎消息表 messages_fixed.xml':
+    '纯资产工作区常态:引擎运行自带的 messages_fixed_defaults.xml,消息表不是必选项'
 };
 
 function existsValue(value: string | null | undefined): boolean {
@@ -657,12 +712,15 @@ export function buildDiscoveryReport(
   fields.push(derivedField('组件目录 components', facts.componentsRoot));
 
   const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
-  const engineMessages = resolveEngineMessagesXmlPath(workspaceRoot);
+  const engineMessages = resolveEngineMessagesXmlFrom(scan, kbeSourceRoot);
+  const messagesOk = existsValue(engineMessages);
+  // 状态口径(批129):解析成功 ok;无源码根且工作区无消息表 = 纯资产常态,
+  // informational 不计问题;找到源码根却两份消息表皆无 = 引擎仓不完整,missing
   fields.push({
-    label: '引擎消息消息表 messages_fixed.xml',
-    status: existsValue(engineMessages) ? 'ok' : 'missing',
+    label: '引擎消息表 messages_fixed.xml',
+    status: messagesOk ? 'ok' : kbeSourceRoot ? 'missing' : 'informational',
     resolved: engineMessages,
-    source: existsValue(engineMessages) ? (kbeSourceRoot ? 'derived' : 'deep-scan') : 'none',
+    source: messagesOk ? (kbeSourceRoot ? 'derived' : 'deep-scan') : 'none',
     explicitConfig: null,
     explicitConfigExists: null,
     conventions: [],
@@ -681,9 +739,7 @@ export function buildDiscoveryReport(
     ? path.join(configPathEffective, 'res', 'server', 'kbengine.xml')
     : null;
   const configProbeOk = existsValue(configProbe);
-  const configConventionRoots = DISCOVERY_CONVENTIONS.configRoots.map(relative =>
-    path.join(workspaceRoot, relative)
-  );
+  const configConventionRoots = conventionalConfigRoots(workspaceRoot);
   const configConventionProbes = configConventionRoots.map(root =>
     path.join(root, 'res', 'server', 'kbengine.xml')
   );
@@ -767,7 +823,7 @@ function collectDiscoveryIssues(
   const issues: DiscoveryIssue[] = [];
 
   for (const field of fields) {
-    if (field.status === 'ok') {
+    if (field.status === 'ok' || field.status === 'informational') {
       continue;
     }
     issues.push({
@@ -806,8 +862,8 @@ function remediationFor(field: DiscoveryFieldReport): string {
       return '设置 kbengine.configPath 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/),或把资产根放在约定位置(工作区根、assets/、server_assets/,探针均为 res/server/kbengine.xml)';
     case '引擎二进制 kbengine.binPath':
       return '设置 kbengine.binPath 指向 kbe/bin/server(引擎源码根会被自动推导)';
-    case '引擎消息消息表 messages_fixed.xml':
-      return '需要引擎源码根(kbe/src 下 entitydef.cpp 锚点)或 messages_fixed.xml 在工作区内';
+    case '引擎消息表 messages_fixed.xml':
+      return '该字段只在找到引擎源码根(kbe/src 下 entitydef.cpp 锚点)但其 res/server 缺两份消息表时报问题;把 messages_fixed.xml 或 messages_fixed_defaults.xml 放进工作区即可被深扫描识别';
   }
 }
 
@@ -849,6 +905,10 @@ export function renderDiscoveryReport(report: DiscoveryReport): string {
     }
     lines.push(`  深扫描命中: ${field.scanHits.length ? field.scanHits.join(', ') : EMPTY_VALUES}`);
     lines.push(`  记忆选择: ${field.remembered ?? EMPTY_VALUES}`);
+    const informationalNote = INFORMATIONAL_NOTES[field.label];
+    if (field.status === 'informational' && informationalNote) {
+      lines.push(`  备注: ${informationalNote}`);
+    }
     lines.push('');
   }
 

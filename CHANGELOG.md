@@ -158,6 +158,24 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   `loadParentClass` (entitydef.cpp L890) loads both — a text-form def lost
   its inheritance edge in the graph. The wrapper stays case-sensitive like
   the engine's `enterNode` match, and a lowercase `<parent>` is ignored
+- The engine messages table is now discovered under both names with the
+  engine's own load order (`kbemain.h:71-74` loads the defaults first and
+  the user copy on top). The deep scan previously only collected
+  `messages_fixed.xml`, so asset templates that ship
+  `messages_fixed_defaults.xml` in their own `res/server/` were always
+  reported missing. Resolution is now four-level — workspace user copy,
+  engine-source user copy, workspace defaults, engine-source defaults —
+  and never requires the two files in one directory (the engine comments
+  put the defaults in the engine res tree and the user copy in the asset
+  tree). A pure-asset workspace with neither file is the normal case and
+  is now reported as `informational` with an explanatory note instead of
+  counting as an issue; a found engine source root whose `res/server/`
+  lacks both files still reports missing
+- The config-root convention chain now also accepts first-level
+  `*_assets` directories (e.g. `flyff_assets`), matching common project
+  layouts without waiting for the deep scan. Directory names only qualify
+  a candidate — the engine-load probe `res/server/kbengine.xml` still
+  decides
 
 ## [0.1.6] - 2026-10-11
 
