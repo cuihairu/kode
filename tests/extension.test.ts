@@ -273,6 +273,10 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.quickActions.show');
     expect(messages.info.some(message => message.includes('未配置快速执行动作'))).toBe(true);
 
+    // 批136 Explorer 顶栏 ▶ 主按钮:无配置动作时同样指路,不假装执行了什么
+    await commands.executeCommand('kbengine.quickActions.runDefault');
+    expect(messages.info.some(message => message.includes('未发现可执行脚本'))).toBe(true);
+
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
     expect(messages.warning.some(message => message.includes('未找到定义文件'))).toBe(true);

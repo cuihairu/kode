@@ -897,11 +897,18 @@ export function activate(context: vscode.ExtensionContext) {
   // 快速执行动作(批126):动作清单由 .kbengine/debug.json 的 quickActions 驱动,
   // 按钮挂视图标题栏与编辑器标题栏,命令本体只有一个 show。
   // 首装扫一层 .bat 的提示在激活末跑一次(不 await,不挡激活)。
+  // 批136(用户令「学 debugger 那样在 Explorer 顶部放个按钮」):新增
+  // runDefault —— Explorer 顶栏 ▶ 一键跑上次执行的动作,▾ 下拉仍是 show。
   const quickActionManager = new QuickActionManager(context);
   const showQuickActionsCommand = vscode.commands.registerCommand('kbengine.quickActions.show', () =>
     quickActionManager.show()
   );
   context.subscriptions.push(showQuickActionsCommand);
+  const runDefaultQuickActionCommand = vscode.commands.registerCommand(
+    'kbengine.quickActions.runDefault',
+    () => quickActionManager.runDefault()
+  );
+  context.subscriptions.push(runDefaultQuickActionCommand);
   // 首装扫描要读写 workspaceState(取消记忆);宿主没给(嵌入/烟测替身)就不扫
   if (context.workspaceState) {
     void quickActionManager.offerScanOnActivate();

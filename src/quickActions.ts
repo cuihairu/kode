@@ -30,6 +30,8 @@ import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner'
 
 export const QUICK_ACTION_CHANNEL_NAME = 'KBEngine 快速执行动作';
 export const QUICK_ACTION_SCAN_DISMISS_KEY = 'kbengine.quickActions.scanDismissed';
+/** Explorer ▶ 主按钮的默认目标:上次实际执行的动作名(选中即记忆) */
+export const QUICK_ACTION_LAST_RUN_KEY = 'kbengine.quickActions.lastRun';
 export const QUICK_ACTION_CONFIRM_LABEL = '执行';
 /** 本地热更新不该更久(设计 1.6);与 HTTP 快捷请求同量级 */
 export const QUICK_ACTION_TIMEOUT_MS = 10000;
@@ -214,6 +216,30 @@ function resolveAction(action: QuickAction, folders: readonly WorkspaceFolderRef
   };
 }
 
+/**
+ * 清单按后端分组(用户令 2026-10-15「学 debugger 那样…下拉」):同类型连续段
+ * 共用一条分隔线(标签=后端名),不重排用户配置顺序;每个组的开头都有一条,
+ * 包括第一组——分隔线本身就是组名。
+ */
+function buildQuickPickItems(actions: readonly QuickAction[]): vscode.QuickPickItem[] {
+  return actions.flatMap((action, index) => {
+    const previous = actions[index - 1];
+    const item: vscode.QuickPickItem = {
+      label: action.name,
+      description: action.type,
+      detail: describeActionTarget(action)
+    };
+    if (previous !== undefined && previous.type === action.type) {
+      return [item];
+    }
+    const separator: vscode.QuickPickItem = {
+      label: action.type,
+      kind: vscode.QuickPickItemKind.Separator
+    };
+    return [separator, item];
+  });
+}
+
 export class QuickActionManager {
   private readonly channel: vscode.OutputChannel;
   private readonly runScript: ScriptRunner;
@@ -245,22 +271,38 @@ export class QuickActionManager {
       );
       return;
     }
-    const picked = await vscode.window.showQuickPick(
-      actions.map(action => ({
-        label: action.name,
-        description: action.type,
-        detail: describeActionTarget(action)
-      })),
-      { placeHolder: '选择要执行的快速动作' }
-    );
+    const picked = await vscode.window.showQuickPick(buildQuickPickItems(actions), {
+      placeHolder: '选择要执行的快速动作'
+    });
     if (!picked) {
       return;
     }
-    // 按 label 回找配置项;清单与配置同源,回找不到就当取消(不猜着执行)
-    const action = actions.find(item => item.name === picked.label);
+    // 真 UI 分隔线不可选;替身能给出的按防御口径当取消(不猜着执行)
+    // 按 label 回找配置项;清单与配置同源,回找不到也当取消
+    const action =
+      picked.kind === vscode.QuickPickItemKind.Separator
+        ? undefined
+        : actions.find(item => item.name === picked.label);
     if (!action) {
       return;
     }
+    await this.run(action);
+  }
+
+  /**
+   * Explorer ▶ 主按钮(用户令 2026-10-15「学 debugger 那样…点一下就执行」):
+   * 跑上次实际执行过的动作;没记过就清单第一个;一条都没有时指路配置文件。
+   */
+  async runDefault(): Promise<void> {
+    const { actions } = await this.loadActions();
+    if (actions.length === 0) {
+      await vscode.window.showInformationMessage(
+        '未发现可执行脚本：在 .kbengine/debug.json 的 quickActions 数组里添加'
+      );
+      return;
+    }
+    const lastRun = this.context.workspaceState?.get<string>(QUICK_ACTION_LAST_RUN_KEY);
+    const action = actions.find(item => item.name === lastRun) ?? actions[0];
     await this.run(action);
   }
 
@@ -312,6 +354,9 @@ export class QuickActionManager {
 
   /** 单个动作执行链:变量替换 → 确认 → 分发 → 流水(失败一次性弹窗) */
   private async run(action: QuickAction): Promise<boolean> {
+    // 选中即记忆:Explorer ▶ 主按钮的默认目标跟着最近一次执行走;
+    // 极简装配上下文没有 workspaceState 时照常执行,只是不记忆
+    await this.context.workspaceState?.update(QUICK_ACTION_LAST_RUN_KEY, action.name);
     let resolved: QuickAction;
     try {
       resolved = resolveAction(action, workspaceFolders());

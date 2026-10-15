@@ -69,7 +69,8 @@
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
-    "onCommand:kbengine.quickActions.show"
+    "onCommand:kbengine.quickActions.show",
+    "onCommand:kbengine.quickActions.runDefault"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -321,15 +322,30 @@
       {
         "command": "kbengine.quickActions.show",
         "title": "Run Quick Actions",
-        "icon": "$(run-all)"
+        "icon": "$(chevron-down)"
+      },
+      {
+        "command": "kbengine.quickActions.runDefault",
+        "title": "Run Default Quick Action",
+        "icon": "$(play)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "kbengine.quickActions.runDefault",
+          "when": "view == kbengine.entityExplorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.quickActions.show",
+          "when": "view == kbengine.entityExplorer",
+          "group": "navigation@2"
+        },
+        {
           "command": "kbengine.refreshExplorer",
           "when": "view == kbengine.entityExplorer",
-          "group": "navigation"
+          "group": "navigation@0"
         },
         {
           "command": "kbengine.server.start",

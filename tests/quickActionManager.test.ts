@@ -180,6 +180,7 @@ describe('QuickActionManager.show', () => {
     await manager.show();
 
     expect(pickCalls[0].items).toEqual([
+      expect.objectContaining({ label: 'script', kind: vscode.QuickPickItemKind.Separator }),
       expect.objectContaining({
         label: 'start_server',
         description: 'script',
@@ -220,7 +221,9 @@ describe('QuickActionManager.show', () => {
 
     expect(pickCalls).toHaveLength(1);
     expect(pickCalls[0].items).toEqual([
+      expect.objectContaining({ label: 'command', kind: vscode.QuickPickItemKind.Separator }),
       expect.objectContaining({ label: 'restart', description: 'command', detail: 'kbengine.server.restart baseapp' }),
+      expect.objectContaining({ label: 'http', kind: vscode.QuickPickItemKind.Separator }),
       expect.objectContaining({ label: 'hotfix', description: 'http', detail: 'http://127.0.0.1:9000/reload' })
     ]);
     expect(commandRuns).toHaveLength(0);
@@ -267,7 +270,8 @@ describe('QuickActionManager.show', () => {
     await manager.show();
 
     expect(messages.info[0]).toBe('快速执行动作配置中有 1 条无效，已跳过');
-    expect(pickCalls[0].items).toHaveLength(1);
+    // 唯一有效动作 + 它前面那条组名分隔线
+    expect(pickCalls[0].items).toHaveLength(2);
     manager.dispose();
   });
 
@@ -291,6 +295,132 @@ describe('QuickActionManager.show', () => {
 
     expect(messages.info[0]).toContain('未配置快速执行动作');
     expect(pickCalls).toHaveLength(0);
+    manager.dispose();
+  });
+
+  it('groups consecutive actions of the same backend under one separator', async () => {
+    // 用户令「学 debugger 那样下拉选目标」:下拉=清单 quick pick,同后端连续段
+    // 共用一条分隔线,不重排用户配置顺序
+    setConfig({
+      quickActions: [
+        { name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false },
+        { name: 'refresh', type: 'command', command: 'kbengine.refreshExplorer', confirm: false },
+        { name: 'hotfix', type: 'http', url: 'http://127.0.0.1:9000/reload', confirm: false }
+      ]
+    });
+    pickAnswers.push(undefined);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.show();
+
+    const items = pickCalls[0].items as Array<{ label?: string; kind?: number }>;
+    expect(items.map(item => item.label)).toEqual(['command', 'restart', 'refresh', 'http', 'hotfix']);
+    expect(items[0].kind).toBe(vscode.QuickPickItemKind.Separator);
+    expect(items[1].kind).toBeUndefined();
+    expect(items[3].kind).toBe(vscode.QuickPickItemKind.Separator);
+    manager.dispose();
+  });
+
+  it('ignores a separator answer without running anything', async () => {
+    // 真 UI 分隔线不可选;替身能给出,按防御口径当取消,不猜着执行
+    setConfig({
+      quickActions: [{ name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false }]
+    });
+    pickAnswers.push({ label: 'command', kind: vscode.QuickPickItemKind.Separator });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.show();
+
+    expect(commandRuns).toHaveLength(0);
+    manager.dispose();
+  });
+});
+
+describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
+  it('points at the config file when no actions exist', async () => {
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.runDefault();
+
+    expect(messages.info[0]).toContain('未发现可执行脚本');
+    expect(messages.info[0]).toContain('.kbengine/debug.json');
+    expect(commandRuns).toHaveLength(0);
+    expect(scriptRuns).toHaveLength(0);
+    manager.dispose();
+  });
+
+  it('runs the first action when nothing was run before', async () => {
+    setConfig({
+      quickActions: [
+        { name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false },
+        { name: 'refresh', type: 'command', command: 'kbengine.refreshExplorer', confirm: false }
+      ]
+    });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.runDefault();
+
+    expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
+    expect(memento.get('kbengine.quickActions.lastRun')).toBe('restart');
+    manager.dispose();
+  });
+
+  it('runs the action remembered from a previous pick', async () => {
+    setConfig({
+      quickActions: [
+        { name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false },
+        { name: 'refresh', type: 'command', command: 'kbengine.refreshExplorer', confirm: false }
+      ]
+    });
+    memento.set('kbengine.quickActions.lastRun', 'refresh');
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.runDefault();
+
+    expect(commandRuns).toEqual([{ command: 'kbengine.refreshExplorer', args: [] }]);
+    manager.dispose();
+  });
+
+  it('falls back to the first action when the remembered one is gone', async () => {
+    setConfig({
+      quickActions: [{ name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false }]
+    });
+    memento.set('kbengine.quickActions.lastRun', 'removed');
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.runDefault();
+
+    expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
+    manager.dispose();
+  });
+
+  it('still runs the first action without a workspace state host', async () => {
+    // 极简装配上下文(嵌入/烟测替身)没有 workspaceState:执行照常,只是不记忆
+    setConfig({
+      quickActions: [{ name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false }]
+    });
+    const manager = new QuickActionManager(
+      { subscriptions: [] } as unknown as vscode.ExtensionContext,
+      makeDeps()
+    );
+
+    await manager.runDefault();
+
+    expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
+    manager.dispose();
+  });
+
+  it('records the picked action as the last run for the default button', async () => {
+    setConfig({
+      quickActions: [{ name: 'start_server', type: 'script', script: '${workspaceFolder}/start_server.bat' }]
+    });
+    pickAnswers.push({ label: 'start_server' });
+    confirmAnswers.push('执行');
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.show();
+
+    expect(memento.get('kbengine.quickActions.lastRun')).toBe('start_server');
     manager.dispose();
   });
 });

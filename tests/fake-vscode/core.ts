@@ -110,6 +110,12 @@ export enum StatusBarAlignment {
   Right = 2
 }
 
+// quickActions 的 show() 用分隔线分组展示不同后端;真值与 vscode 对齐。
+export enum QuickPickItemKind {
+  Separator = -1,
+  Default = 0
+}
+
 // debugConfig 的 attachToComponent 经 vscode.debug.startDebugging 启动
 // 调试会话;对象成员可变,测试按用例 monkey-patch startDebugging。
 export const debug = {
