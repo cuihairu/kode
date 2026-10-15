@@ -207,6 +207,23 @@
 - [Python 实现脚本里命中实体 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明行；普通函数不出]
 - [源码：src/rpcCodeLens.ts]
 
+
+#### 28. def 图形化架构流程图 [新增]
+- [webview 展示客户端 → baseapp/cellapp 的方法调用与属性自动同步关系；边语义按属性 Flags 位标注并附引擎出处（文件:行号）与成员声明位置，点击成员行回跳 .def 声明行；未 Exposed 的 BaseMethods 单列「客户端调不到的方法」；刷新重读磁盘 def/entities.xml；导出 Markdown（直写文件）与 SVG/PNG]
+- [源码：src/entityFlowGraph.ts、src/entityFlowWebView.ts]
+
+#### 29. 快速执行动作 [新增]
+- [动作清单写在工作区 `.kbengine/debug.json` 顶层 `quickActions` 数组（跟工程走，不进 VS Code 设置与 launch.json）；三类白名单后端 `command`/`script`/`http`，不提供任意 shell 入口，`http` 只发配置写死的 URL；路径变量 `${workspaceFolder}`/`${workspaceFolder:名字}`/`${env:}` 执行期替换，未知变量报错中止不静默空串；入口挂 Servers 视图标题栏与 def/Python/XML 编辑器标题栏；首装扫一层 `.bat` 只收启停与导表两类多选登记并记忆取消]
+- [源码：src/quickActions.ts、src/quickActionConfig.ts、src/quickActionScanner.ts]
+
+#### 30. SQL 模板扩展与自定义表前缀 [新增]
+- [在既有最小 SELECT 上补两路模板：按 `parentID` 关联子表的 `LEFT JOIN`（保住空元素的属性行）与只列 `Persistent=true` 属性的列集；新增 `kbengine.db.tablePrefix`（缺省空 = 引擎默认 `tbl_`，出处 entity_table_mysql.cpp），模板与 schema 视图表名走同一取值函数替换]
+- [源码：src/databaseSchema.ts]
+
+#### 31. 数据库漂移校验 [新增]
+- [拿真实 MySQL 表结构反向校验 def 推导的虚拟表结构，逐表报缺表/缺列/多列/型别不符（显示宽度差异不计）/残留表；连接要素直读引擎配置 `<dbmgr><databaseInterfaces><default>`（端口 0 → 3306），不新增设置项；密码是 RSA 密文或连不上时降级「未校验」而非报错；只读双保险——语句白名单 SELECT/SHOW/DESCRIBE/EXPLAIN（INSERT/UPDATE/DELETE/DDL/GRANT/TRUNCATE/多语句拒绝并说明原因）+ 建连即 `SET SESSION TRANSACTION READ ONLY`，读写账号也写不进去]
+- [源码：src/databaseDrift.ts]
+
 ### 文档
 - [README.md - 项目说明]
 - [CHANGELOG.md - 变更日志]
@@ -214,7 +231,7 @@
 - [TESTING.md - 测试架构与批次台账]
 - [COMPLETED_FEATURES.md - 已完成功能清单]
 - [KBENGINE_SOURCE_AUDIT_PLAN.md - 引擎源码对照计划]
-- [docs/ - VitePress 文档站（14 个页面，`pnpm run docs:dev` 预览）]
+- [docs/ - VitePress 文档站（16 个页面，`pnpm run docs:dev` 预览）]
 - [resources/docs/ - 早期设计与命名文档（3 个）]
 
 ### 开发配置
@@ -235,7 +252,7 @@ kode/
 │   ├── extensions.json       # 扩展推荐
 │   ├── launch.json           # 调试配置
 │   └── tasks.json            # 任务配置
-├── docs/                     # VitePress 文档站 (11 个 .md)
+├── docs/                     # VitePress 文档站 (16 个 .md)
 ├── resources/
 │   ├── logo.png              # 用户设计资产（Marketplace 图标/活动栏）
 │   └── docs/                 # 早期文档 (3 个 .md)
@@ -243,7 +260,7 @@ kode/
 │   ├── kbengine.json         # def 代码片段 (11个)
 │   ├── kbengine-python.json  # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json # types.xml 别名片段 (2个)
-├── src/                      # 40 个 TypeScript 文件，23508 行
+├── src/                      # 47 个 TypeScript 文件，28856 行
 │   ├── extension.ts          # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts  # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts          # .def 解析与文本定位
@@ -284,11 +301,18 @@ kode/
 │   ├── telnetWebView.ts      # Telnet 面板 WebView
 │   ├── httpRequests.ts       # HTTP 快捷请求纯逻辑(条目解析/模板变量)
 │   ├── httpRequestService.ts # HTTP 快捷请求执行层(transport/流水)
+│   ├── messageTable.ts       # 网络包结构生成(属性/方法/槽位占号)
+│   ├── entityFlowGraph.ts    # def 架构流程图纯逻辑(边语义/Flags 出处)
+│   ├── entityFlowWebView.ts  # 架构流程图 WebView
+│   ├── quickActionConfig.ts  # 快速执行动作纯层(解析/变量/词表)
+│   ├── quickActionScanner.ts # 快速执行动作首装扫描纯层
+│   ├── quickActions.ts       # 快速执行动作装配层(三后端/扫描写入)
+│   ├── databaseDrift.ts      # 数据库漂移校验(只读白名单/比对报告)
 │   └── test/                 # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
 │   └── kbengine-color-theme.json # 主题
-├── tests/                    # vitest 测试 (108 文件 1517 用例,含 sim/fake-vscode 设施)
+├── tests/                    # vitest 测试 (120 文件 1872 用例,含 sim/fake-vscode 设施)
 ├── .gitignore
 ├── .npmignore
 ├── CHANGELOG.md              # 变更日志
@@ -340,7 +364,7 @@ kode/
 ### MVP 完善
 - [x] 测试所有功能(批88:17 项已完成功能逐项验证,全部有自动化用例覆盖)
 - [x] 修复发现的问题(批88:tmLanguage 与引擎注册表对齐等修复,均带回归锁)
-- [x] 添加单元测试(vitest 功能层 1517 用例 + mocha 编译产物烟测层 11 用例双层,当前口径,详见 TESTING.md)
+- [x] 添加单元测试(vitest 功能层 1872 用例 + mocha 编译产物烟测层 11 用例双层,当前口径,详见 TESTING.md)
 - [x] 优化性能(批92:validateDocument −46%、全文件分词 −17%,行为以 golden 回归锁)
 
 ### 发布准备
@@ -387,12 +411,12 @@ pnpm run publish         # 发布到 Marketplace
 
 ## 统计数据
 
-- **代码文件**: 40 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
+- **代码文件**: 47 个 TypeScript 文件（src/，不含 src/test 烟测，实测）
 - **钩子数量**: 36 个
 - **代码片段**: 11 def + 4 Python + 2 types.xml
 - **预定义实体模板**: 10 个
-- **文档页数**: 26 个 Markdown（仓库根 9 + docs/ 14 + resources/docs 3）
-- **总行数**: 23508 行（src/ TypeScript，实测）
+- **文档页数**: 28 个 Markdown（仓库根 9 + docs/ 16 + resources/docs 3）
+- **总行数**: 28856 行（src/ TypeScript，实测）
 
 ---
 

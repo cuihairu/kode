@@ -2,8 +2,8 @@
 
 **版本**: 0.1.0（版本号冻结，发版由用户手动触发）
 **状态**: 核心功能已完成
-**总代码行数**: 23508 行（src/ TypeScript，实测）
-**文件数量**: 40 个 TypeScript 文件（不含 src/test 烟测）
+**总代码行数**: 28856 行（src/ TypeScript，实测）
+**文件数量**: 47 个 TypeScript 文件（不含 src/test 烟测）
 
 ---
 
@@ -199,13 +199,29 @@
 - Python 实现脚本里，方法名命中实体 def 方法声明（`BaseMethods`/`CellMethods`/`ClientMethods`）的函数在声明行上方出一行可点 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def 文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens。按方法名匹配，同名辅助函数也会出 lens（边界见语言能力页）
 - **源文件**: `src/rpcCodeLens.ts`
 
+### 28. def 图形化架构流程图
+- `kbengine.flow.show` 打开 webview，展示一个实体从客户端到 baseapp/cellapp 的方法调用与属性自动同步关系：边上按属性 Flags 位标注语义并逐边列出引擎出处（文件:行号）与成员声明位置，点击成员行回跳 `.def` 声明处；未 `Exposed` 的 `BaseMethods` 单列「客户端调不到的方法」；刷新重读磁盘上的 def/entities.xml；导出 Markdown（直写文件）与 SVG/PNG（经 webview 渲染导出）。实体名缺省取活动 `.def` 编辑器
+- **源文件**: `src/entityFlowGraph.ts`、`src/entityFlowWebView.ts`
+
+### 29. 快速执行动作
+- `kbengine.quickActions.show`（`Run Quick Actions`；Servers 视图标题栏按钮 + def/Python/XML 编辑器标题栏按钮）执行工作区 `.kbengine/debug.json` 顶层 `quickActions` 数组定义的动作清单——跟着 KBEngine 工程走，不进 VS Code 设置、不进 `launch.json`。三类白名单后端：`command`（VS Code 命令 id + `args` 原样透传）、`script`（执行配置显式声明的脚本，`background: true` 起服类不等退出码）、`http`（只请求配置写死的 URL，不接受运行时拼接）；不提供任意 shell 执行入口。路径变量 `${workspaceFolder}`/`${workspaceFolder:名字}`/`${env:变量名}` 执行期替换，未知变量报错中止并指名变量（不静默空串替换）。动作缺省弹 modal 确认（`confirm: false` 跳过），流水进 OUTPUT 面板「KBEngine 快速执行动作」并原样留 stdout/stderr，失败一次性弹窗（动作名 + 退出码/状态码/原因）；非法配置条目逐条剔除并计数，不整表失败。首装扫一层工作区根的 `.bat`，命中「启停服务器 / 导配置表」词表的多选登记，取消后本工作区不再自动弹
+- **源文件**: `src/quickActions.ts`、`src/quickActionConfig.ts`、`src/quickActionScanner.ts`
+
+### 30. SQL 模板扩展与自定义表前缀
+- 容器属性不落主表，故在既有最小 SELECT 之外补两路模板：按 `parentID` 关联子表的 `LEFT JOIN`（`tbl_<Entity>_<Property>`，保住空元素的属性行）与只列 `Persistent=true` 属性的列集；子表 JOIN 同样出现在 ARRAY/组件属性的悬停行里。新增可选配置 `kbengine.db.tablePrefix`（缺省空 = 沿用引擎默认 `tbl_`，出处 `entity_table_mysql.cpp`），SELECT/JOIN 模板与 schema 视图表名走同一取值函数替换，两处不各写一份；不改前缀的工程留空即行为不变
+- **源文件**: `src/databaseSchema.ts`
+
+### 31. 数据库漂移校验
+- `kbengine.database.checkDrift` 拿真实 MySQL 表结构反向校验由 `.def` 推导的虚拟表结构——哪些属性进表、类型映射、容器拆子表、列名转换四段映射算错时唯一能暴露的地方。逐表报五类：缺表（该实体或容器属性未走过建表流程）、缺列（属性新增后未同步建表）、多列、型别不符（显示宽度差异不计：`bigint unsigned` ≡ `bigint(20) unsigned`）、残留表（属性删了表还留着）。报告整段写进 OUTPUT 面板「KBEngine 数据库漂移」可整段复制回传，有问题弹警告、无漂移弹信息提示。连接信息直读 KBEngine 引擎配置（合成后的 `<dbmgr><databaseInterfaces><default>`，端口 `0` → 3306），不新增任何设置项；账号密码需明文存放（`<encrypt>false</encrypt>`），引擎默认 RSA 密文读不出明文时如实降级「未校验」而非报错。只读双保险：语句白名单只放行 SELECT/SHOW/DESCRIBE/EXPLAIN（INSERT/UPDATE/DELETE/DDL/GRANT/TRUNCATE/多语句一律拒绝并说明原因）+ 建连即 `SET SESSION TRANSACTION READ ONLY`，即便读到的配置是读写账号也写不进去
+- **源文件**: `src/databaseDrift.ts`
+
 ---
 
 ## 项目结构
 
 ```
 kode/
-├── src/                          # 40 个 TypeScript 文件，23508 行
+├── src/                          # 47 个 TypeScript 文件，28856 行
 │   ├── extension.ts              # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts              # .def 解析与文本定位
@@ -246,6 +262,13 @@ kode/
 │   ├── telnetWebView.ts          # Telnet 面板 WebView
 │   ├── httpRequests.ts           # HTTP 快捷请求纯逻辑(条目解析/模板变量)
 │   ├── httpRequestService.ts     # HTTP 快捷请求执行层(transport/流水)
+│   ├── messageTable.ts           # 网络包结构生成(属性/方法/槽位占号)
+│   ├── entityFlowGraph.ts        # def 架构流程图纯逻辑(边语义/Flags 出处)
+│   ├── entityFlowWebView.ts      # 架构流程图 WebView
+│   ├── quickActionConfig.ts      # 快速执行动作纯层(解析/变量/词表)
+│   ├── quickActionScanner.ts     # 快速执行动作首装扫描纯层
+│   ├── quickActions.ts           # 快速执行动作装配层(三后端/扫描写入)
+│   ├── databaseDrift.ts          # 数据库漂移校验(只读白名单/比对报告)
 │   └── test/                     # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
@@ -254,7 +277,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (108 文件 1517 用例)
+├── tests/                        # vitest 测试 (120 文件 1872 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -264,13 +287,13 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 40 个（src/，不含 src/test，实测） |
+| TypeScript 文件 | 47 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
-| 文档页数 | 26 个 Markdown（根 9 + docs/ 14 + resources/docs 3） |
-| 总行数 | 23508 行（src/ TypeScript，实测） |
-| 已完成功能 | 27 个 |
+| 文档页数 | 28 个 Markdown（根 9 + docs/ 16 + resources/docs 3） |
+| 总行数 | 28856 行（src/ TypeScript，实测） |
+| 已完成功能 | 31 个 |
 
 ---
 

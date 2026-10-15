@@ -66,6 +66,65 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   channel; starting a server with an assets root that lacks the expected
   engine config file now logs a `[WARN]` line in the component channel
   instead of failing quietly
+- Entity flow graph: `kbengine.flow.show` opens a webview that maps one
+  entity's client → baseapp/cellapp relationships — remote method calls
+  and automatic property sync. Edge semantics are read from the property
+  Flags bits and each edge lists the engine source (file:line) next to the
+  member declaration it came from; `BaseMethods` without `Exposed` are
+  listed separately as methods the client cannot call. Clicking a member
+  row jumps to its `.def` declaration and the panel refreshes from disk
+  (def/entities.xml) rather than caching. The graph exports as Markdown
+  (written straight to a file), SVG and PNG; the entity name defaults to
+  the active `.def` editor and the panel says so when none can be located
+- Quick actions: `kbengine.quickActions.show` (`Run Quick Actions`, a
+  button in the Servers view title bar and one in the `.def`/Python/XML
+  editor title bars) runs a project-defined action list. The list lives in
+  the top-level `quickActions` array of `.kbengine/debug.json` so it
+  follows the KBEngine project instead of VS Code settings or
+  `launch.json`. Three whitelisted backends, no arbitrary shell entry:
+  `command` runs a VS Code command id with `args` passed through,
+  `script` runs the script named in the config (`background: true`
+  reports the server as started without waiting for an exit code), and
+  `http` requests the URL written in the config — never assembled at
+  runtime. Paths accept `${workspaceFolder}`, `${workspaceFolder:<name>}`
+  and `${env:...}`, resolved at execution; an unknown variable aborts the
+  action with the variable named instead of silently becoming an empty
+  string. Actions ask for a modal confirmation by default (`confirm:
+  false` skips it), the run log goes to the `KBEngine 快速执行动作` output
+  channel with script stdout/stderr verbatim, and a failure pops one error
+  box (name + exit code / HTTP status / reason). Malformed config entries
+  are dropped one by one with a count instead of failing the whole list.
+  On first install the workspace root is scanned one level deep for `.bat`
+  files; those matching the start/stop-server or export-config-tables
+  word lists are offered for registration as a multi-select, and
+  cancelling is remembered per workspace so the prompt is not shown again
+- SQL templates for child tables plus a configurable table prefix.
+  ARRAY/component properties do not live in the main table, so two
+  template shapes join the existing minimal SELECT: a child-table join
+  that `LEFT JOIN`s `tbl_<Entity>_<Property>` on `parentID` so empty
+  elements keep their property rows, and a Persistent-filtered column
+  list that only includes attributes marked `Persistent=true`. The new
+  `kbengine.db.tablePrefix` setting (default empty = the engine's `tbl_`
+  prefix from `entity_table_mysql.cpp`) feeds both the schema-view table
+  names and every template through one shared resolution function, so the
+  two cannot drift apart
+- Database drift check: `kbengine.database.checkDrift` compares the real
+  MySQL table structure against the virtual tables derived from the
+  `.def` files, per table reporting missing tables (entity has not been
+  through the table-creation flow), missing columns (property added
+  without a resync), extra columns, column-type mismatches (display-width
+  differences do not count) and leftover tables. The report goes to the
+  `KBEngine 数据库漂移` output channel in one pasteable block. Connection
+  details are read from KBEngine's own engine config (the merged
+  `<dbmgr><databaseInterfaces><default>` element, port 0 → 3306) — no new
+  setting is introduced; a config that only stores an RSA-encrypted
+  password cannot be read, so the command reports the entity as unchecked
+  instead of asking for a hand-typed password. Queries are read-only by
+  rule: the statement is checked against a whitelist (SELECT/SHOW/
+  DESCRIBE/EXPLAIN, with INSERT/UPDATE/DELETE/DDL/GRANT/TRUNCATE and
+  multi-statement input refused with the reason) and the connection is
+  opened with `SET SESSION TRANSACTION READ ONLY`, so even a read-write
+  account cannot write through it
 
 ### Fixed
 - Generating a snippet from a selection now measures the common indent in
