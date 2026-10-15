@@ -275,28 +275,42 @@ export function getDatabaseSchemaSnapshot(
   };
 }
 
+// 渲染版式锚点(TABLE 行 / 字段行)与 renderDatabaseSchema 同源:定位跳转与
+// 悬停都从这里取,不再各处手写镜像行数(批133 用户令:版式改版式,定位
+// 就跟着失效)。字段行允许前导空白(友好版式里列行缩进),但首 token 后必须
+// 是空白——SQL 行的 `SQL:` 冒号与中文分组标题都不会误命中。
+const DATABASE_SCHEMA_TABLE_ANCHOR = /^\s*TABLE\s+([A-Za-z0-9_]+)/;
+const DATABASE_SCHEMA_FIELD_LINE = /^\s*([A-Za-z0-9_]+)\s+/;
+
+export function databaseSchemaFieldLineName(lineText: string): string | null {
+  if (DATABASE_SCHEMA_TABLE_ANCHOR.test(lineText)) {
+    return null;
+  }
+  const match = DATABASE_SCHEMA_FIELD_LINE.exec(lineText);
+  return match ? match[1] : null;
+}
+
 export function findDatabaseSchemaFieldAtPosition(
   document: vscode.TextDocument,
   position: vscode.Position
 ): { table: string; field?: string } | null {
-  const lineText = document.lineAt(position.line).text.trim();
-  const tableMatch = /^TABLE\s+([A-Za-z0-9_]+)/.exec(lineText);
+  const lineText = document.lineAt(position.line).text;
+  const tableMatch = DATABASE_SCHEMA_TABLE_ANCHOR.exec(lineText);
   if (tableMatch) {
     return { table: tableMatch[1] };
   }
 
-  const fieldMatch = /^([A-Za-z0-9_]+)\s+/.exec(lineText);
-  if (!fieldMatch) {
+  const field = databaseSchemaFieldLineName(lineText);
+  if (!field) {
     return null;
   }
 
   for (let currentLine = position.line - 1; currentLine >= 0; currentLine -= 1) {
-    const currentText = document.lineAt(currentLine).text.trim();
-    const currentTableMatch = /^TABLE\s+([A-Za-z0-9_]+)/.exec(currentText);
+    const currentTableMatch = DATABASE_SCHEMA_TABLE_ANCHOR.exec(document.lineAt(currentLine).text);
     if (currentTableMatch) {
       return {
         table: currentTableMatch[1],
-        field: fieldMatch[1]
+        field
       };
     }
   }
@@ -527,33 +541,66 @@ export function locateDatabaseSchemaLine(
   tableName: string,
   fieldName?: string
 ): number {
-  // 头部:标题 1 + 空行 1 + [Database 1] + Backend 1 + Source 1 + 空行 1
-  let line = 6;
-  if (snapshot.database) {
-    line += 1;
+  // 定位从渲染文本里找锚点,不再手写镜像版式行数(批133 用户令:友好版式改版后
+  // 原 `line = 6` / `+= 5` / `+= 2` 的镜像计数全部失效)
+  const lines = renderDatabaseSchema(snapshot).split('\n');
+  const tableStart = lines.findIndex(line => {
+    const match = DATABASE_SCHEMA_TABLE_ANCHOR.exec(line);
+    return match !== null && match[1] === tableName;
+  });
+  if (tableStart === -1) {
+    return 1;
+  }
+  if (!fieldName) {
+    return tableStart + 1;
   }
 
-  for (const table of snapshot.tables) {
-    if (table.name === tableName && !fieldName) {
-      return line;
+  let blockEnd = lines.length;
+  for (let index = tableStart + 1; index < lines.length; index += 1) {
+    if (DATABASE_SCHEMA_TABLE_ANCHOR.test(lines[index])) {
+      blockEnd = index;
+      break;
     }
-
-    // 表头:kind + [parent] + source + 空行(子表多一行 parent 注记)
-    line += table.parentTableName ? 5 : 4;
-
-    for (const field of table.fields) {
-      if (table.name === tableName && field.name === fieldName) {
-        return line;
-      }
-
-      line += 2;
-    }
-
-    // 字段块后:SQL 行 + 空行(行数与 renderDatabaseSchema 同源)
-    line += renderTableSqlLines(snapshot, table).length + 1;
   }
-
+  for (let index = tableStart + 1; index < blockEnd; index += 1) {
+    if (databaseSchemaFieldLineName(lines[index]) === fieldName) {
+      return index + 1;
+    }
+  }
+  // 表在、字段不在(改名或未落列):与旧实现同口径退首行,不高亮错行
   return 1;
+}
+
+// 引擎自动建的固定几列,语义固定(建表与 EntityTableItemMysql 的实现都是写死
+// 的),直接给注解;其余引擎列只报索引与来源键
+const SYNTHETIC_COLUMN_NOTES: Record<string, string> = {
+  id: '主键（自增）',
+  autoLoad: '带索引；标记是否已读入内存',
+  parentID: '带索引；指回父表主键',
+  'position.x': '位置 x（引擎为 hasCell 实体预留 6 列）',
+  'position.y': '位置 y',
+  'position.z': '位置 z',
+  'direction.roll': '方向 roll',
+  'direction.pitch': '方向 pitch',
+  'direction.yaw': '方向 yaw'
+};
+
+const TABLE_KIND_LABELS: Record<TableSchemaDescriptor['kind'], string> = {
+  entity: '实体表',
+  component: '组件表',
+  array: '数组子表'
+};
+
+// 工作区内给相对路径,工作区外照给绝对路径(不虚构相对关系);undefined 的
+// defFilePath 在调用侧(622)已先行折算,这里只收字符串
+function displaySourcePath(filePath: string): string {
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    const relative = path.relative(folder.uri.fsPath, filePath);
+    if (relative && !relative.startsWith('..')) {
+      return relative;
+    }
+  }
+  return filePath;
 }
 
 export function renderDatabaseSchema(snapshot: DatabaseSchemaSnapshot | null): string {
@@ -562,49 +609,62 @@ export function renderDatabaseSchema(snapshot: DatabaseSchemaSnapshot | null): s
   }
 
   const lines: string[] = [];
-  lines.push(`# KBEngine Database Schema: ${snapshot.entityName}`);
+  lines.push(`# 数据库表结构: ${snapshot.entityName}`);
   lines.push('');
   if (snapshot.database) {
     lines.push(
-      `Database: ${snapshot.database.databaseName}@${snapshot.database.host}:${snapshot.database.port}`
+      `数据库: ${snapshot.database.databaseName}@${snapshot.database.host}:${snapshot.database.port}`
     );
   }
-  lines.push(`Backend: ${snapshot.backend.toUpperCase()}`);
-  lines.push(`Source: ${snapshot.defFilePath || `${snapshot.entityName}.def`}`);
+  lines.push(`存储引擎: MySQL`);
+  lines.push(`定义文件: ${snapshot.defFilePath ? displaySourcePath(snapshot.defFilePath) : `${snapshot.entityName}.def`}`);
+  const propertyColumns = snapshot.tables.reduce(
+    (sum, table) => sum + table.fields.filter(field => !field.synthetic).length,
+    0
+  );
+  const totalColumns = snapshot.tables.reduce((sum, table) => sum + table.fields.length, 0);
+  lines.push(`表: ${snapshot.tables.length} 张 · 列: ${totalColumns}（其中 .def 声明 ${propertyColumns}）`);
+  lines.push('');
+  lines.push('读图方式');
+  lines.push('  - tbl_ 表前缀与 sm_ 列前缀由引擎加（表前缀可用 kbengine.db.tablePrefix 改）');
+  lines.push('  - 引擎列由引擎自动建（id / autoLoad / parentID / 位置朝向 6 列），.def 里不用声明；属性列才是你在 .def 里写的');
+  lines.push('  - 组件表与数组子表用 parentID 指回父表；数组子表一行一个元素');
+  lines.push('  - flags= 是 .def 声明的可见域（BASE / CELL / CLIENT 及其组合），BASE_AND_CLIENT 表示 base 脚本与客户端都能读写');
+  lines.push('  - 表尾 SQL 可直接粘进 MySQL 客户端（默认查 100 行）');
   lines.push('');
 
   for (const table of snapshot.tables) {
+    // TABLE 锚点行与 SQL 三行保持原样:跳转定位与文档说明按它们解析
     lines.push(`TABLE ${table.name}`);
-    lines.push(`kind: ${table.kind}`);
+    lines.push(`表类型: ${TABLE_KIND_LABELS[table.kind]}`);
     if (table.parentTableName) {
-      lines.push(`parent: ${table.parentTableName}`);
+      lines.push(`父表: ${table.parentTableName}`);
     }
-    lines.push(`source: ${path.basename(table.source.filePath)}:${table.source.line} (${table.source.path})`);
+    lines.push(`定义来源: ${displaySourcePath(table.source.filePath)}:${table.source.line}`);
     lines.push('');
 
-    for (const field of table.fields) {
-      const annotations: string[] = [field.typeLabel];
-      if (field.databaseLength !== undefined) {
-        annotations.push(`len=${field.databaseLength}`);
-      }
-      if (field.indexType) {
-        annotations.push(`index=${field.indexType}`);
-      }
-      if (field.identifier) {
-        annotations.push('identifier=true');
-      }
-      if (field.flags) {
-        annotations.push(`flags=${field.flags}`);
-      }
-      if (field.defaultValue !== undefined) {
-        annotations.push(`default=${field.defaultValue}`);
-      }
+    const syntheticFields = table.fields.filter(field => field.synthetic);
+    const propertyFields = table.fields.filter(field => !field.synthetic);
+    const columnWidth = Math.max(8, ...table.fields.map(field => field.name.length));
 
-      lines.push(`${field.name}  ${annotations.join('  ')}`);
-      lines.push(`  source: ${path.basename(field.source.filePath)}:${field.source.line} (${field.sourcePath})`);
+    if (syntheticFields.length > 0) {
+      lines.push('引擎列（引擎自动建，.def 无需声明）');
+      for (const field of syntheticFields) {
+        lines.push(renderFieldLine(field, columnWidth, syntheticColumnNote(field)));
+      }
     }
 
-    // 批131 用户令:每表一行可粘贴 SQL(带库表前缀与反引号转义,直接进外部客户端)
+    if (propertyFields.length > 0) {
+      lines.push('属性列（.def 里声明的）');
+      for (const field of propertyFields) {
+        lines.push(renderFieldLine(field, columnWidth, ''));
+      }
+    } else if (syntheticFields.length > 0) {
+      // 空表照实提示,不让读者以为是自己漏看了
+      lines.push('属性列: 无（本表只有引擎列，没有 .def 声明的数据列）');
+    }
+
+    // 每表三行可粘贴 SQL(带库表前缀与反引号转义,直接进外部客户端)
     for (const sqlLine of renderTableSqlLines(snapshot, table)) {
       lines.push(sqlLine);
     }
@@ -612,6 +672,48 @@ export function renderDatabaseSchema(snapshot: DatabaseSchemaSnapshot | null): s
   }
 
   return `${lines.join('\n').trimEnd()}\n`;
+}
+
+function renderFieldLine(
+  field: TableFieldDescriptor,
+  columnWidth: number,
+  note: string
+): string {
+  const details: string[] = [field.typeLabel];
+  if (field.databaseLength !== undefined) {
+    details.push(`长度 ${field.databaseLength}`);
+  }
+  if (field.indexType) {
+    details.push(`索引 ${field.indexType}`);
+  }
+  if (field.identifier) {
+    details.push('唯一标识');
+  }
+  if (field.flags) {
+    details.push(`flags=${field.flags}`);
+  }
+  if (field.defaultValue !== undefined) {
+    details.push(`默认值 ${field.defaultValue}`);
+  }
+  if (note) {
+    details.push(note);
+  }
+  // 属性列尾部标 def 落点,悬停与跳转按它回 def
+  const suffix = field.synthetic || !field.source.path
+    ? ''
+    : `    ← ${path.basename(field.source.filePath)}:${field.source.line} <${field.source.path}>`;
+  return `  ${field.name.padEnd(columnWidth)}  ${details.join('  ')}${suffix}`;
+}
+
+function syntheticColumnNote(field: TableFieldDescriptor): string {
+  const note = SYNTHETIC_COLUMN_NOTES[field.sourcePath];
+  if (note) {
+    return note;
+  }
+  if (field.indexType) {
+    return `带 ${field.indexType} 索引`;
+  }
+  return field.sourcePath ? `引擎列（${field.sourcePath}）` : '引擎列';
 }
 
 function parseTypeAliases(typesXmlPath: string | null): Map<string, TypeAliasEntry> {

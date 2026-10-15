@@ -18,7 +18,7 @@ import {
   resolveEntityTableName,
   resolveSchemaTablePrefix
 } from '../src/databaseSchema';
-import { configurationOverrides } from './helpers/vscodeStub';
+import { Uri, configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
 import type {
   DatabaseSchemaSnapshot,
   DefSourceRef,
@@ -76,11 +76,9 @@ describe('createDatabaseSchemaUri and isDatabaseSchemaDocument', () => {
 });
 
 describe('locateDatabaseSchemaLine', () => {
-  // 行号公式(批131):标题 1 + 空行 1 + [Database 1] + Backend/Source 2 +
-  // 空行 1 = 首表表名行 6(有 Database 行时 7);表头 kind + [parent] +
-  // source + 空行(子表多 parent 行,首字段 +5);每字段 2 行;字段块后
-  // SQL 行 + 空行(批B 起 SQL 行为「全列 SELECT + 属性列集 + 子表 JOIN」,
-  // 行数与 renderTableSqlLines 同源:根表 2 行、子表 3 行)。
+  // 行号不再手写镜像版式(批133 用户令:友好版式改版后旧的 `line = 6` /
+  // `+= 5` / `+= 2` 镜像公式全部失效)。定位改为从 renderDatabaseSchema 的
+  // 渲染文本里找锚点,断言「返回行就是那个锚点所在行」而非锁死具体行号。
   const snapshot: DatabaseSchemaSnapshot = {
     ...emptySnapshot,
     tables: [
@@ -116,16 +114,19 @@ describe('locateDatabaseSchemaLine', () => {
     };
   }
 
-  it('locates table header and field lines by the fixed layout', () => {
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero')).toBe(6);
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_hp')).toBe(10);
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_speed')).toBe(12);
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag')).toBe(17);
-    // 子表带 parent 注记行:首字段在表名 +5(此前 +4 少算一行,已修)
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag', 'sm_value')).toBe(22);
+  const rendered = (subject: DatabaseSchemaSnapshot): string[] =>
+    renderDatabaseSchema(subject).split('\n');
+
+  it('points at the table header and field lines', () => {
+    const lines = rendered(snapshot);
+    expect(lines[locateDatabaseSchemaLine(snapshot, 'tbl_Hero') - 1]).toBe('TABLE tbl_Hero');
+    expect(lines[locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_hp') - 1]).toContain('sm_hp');
+    expect(lines[locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_speed') - 1]).toContain('sm_speed');
+    expect(lines[locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag') - 1]).toBe('TABLE tbl_Hero_bag');
+    expect(lines[locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag', 'sm_value') - 1]).toContain('sm_value');
   });
 
-  it('shifts the whole layout by one when a database line is present', () => {
+  it('stays anchored when a database line is present', () => {
     const withDatabase: DatabaseSchemaSnapshot = {
       ...snapshot,
       database: {
@@ -137,9 +138,10 @@ describe('locateDatabaseSchemaLine', () => {
         characterSet: 'utf8mb4'
       }
     };
-    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero')).toBe(7);
-    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero', 'sm_speed')).toBe(13);
-    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero_bag', 'sm_value')).toBe(23);
+    const lines = rendered(withDatabase);
+    expect(lines[locateDatabaseSchemaLine(withDatabase, 'tbl_Hero') - 1]).toBe('TABLE tbl_Hero');
+    expect(lines[locateDatabaseSchemaLine(withDatabase, 'tbl_Hero', 'sm_speed') - 1]).toContain('sm_speed');
+    expect(lines[locateDatabaseSchemaLine(withDatabase, 'tbl_Hero_bag', 'sm_value') - 1]).toContain('sm_value');
   });
 
   it('falls back to line 1 for unknown tables or fields', () => {
@@ -153,7 +155,7 @@ describe('renderDatabaseSchema', () => {
     expect(renderDatabaseSchema(null)).toBe('# KBEngine Database Schema\n\nNo schema available.\n');
   });
 
-  it('renders tables with annotations and source lines', () => {
+  it('renders tables with a legend, engine/property groups and def anchors(批133)', () => {
     const snapshot: DatabaseSchemaSnapshot = {
       backend: 'mysql',
       entityName: 'Hero',
@@ -165,6 +167,15 @@ describe('renderDatabaseSchema', () => {
           title: 'Hero',
           source: source({ path: 'entity' }),
           fields: [
+            {
+              name: 'id',
+              typeLabel: 'bigint unsigned',
+              sourcePath: 'id',
+              source: source(),
+              indexType: 'PRIMARY',
+              identifier: false,
+              synthetic: true
+            },
             {
               name: 'sm_hp',
               typeLabel: 'UINT32',
@@ -182,24 +193,172 @@ describe('renderDatabaseSchema', () => {
       tableIndex: new Map()
     };
 
-    expect(renderDatabaseSchema(snapshot)).toBe(
-      [
-        '# KBEngine Database Schema: Hero',
-        '',
-        'Backend: MYSQL',
-        'Source: /proj/Hero.def',
-        '',
-        'TABLE tbl_Hero',
-        'kind: entity',
-        'source: Hero.def:3 (entity)',
-        '',
-        'sm_hp  UINT32  len=32  index=UNIQUE  identifier=true  flags=BASE  default=100',
-        '  source: Hero.def:3 (scripts/Hero.def)',
-        'SQL: SELECT * FROM `tbl_Hero` LIMIT 100;',
-        'SQL(属性列): SELECT `sm_hp` FROM `tbl_Hero` LIMIT 100;',
-        ''
-      ].join('\n').trimEnd() + '\n'
-    );
+    const text = renderDatabaseSchema(snapshot);
+    // 头部与读图方式
+    expect(text).toContain('# 数据库表结构: Hero');
+    expect(text).toContain('存储引擎: MySQL');
+    expect(text).toContain('定义文件: /proj/Hero.def');
+    expect(text).toContain('表: 1 张 · 列: 2（其中 .def 声明 1）');
+    expect(text).toContain('读图方式');
+    expect(text).toContain('kbengine.db.tablePrefix');
+    // 表头:TABLE 锚点行不动(跳转定位按它解析),其余改中文标签
+    expect(text).toContain('TABLE tbl_Hero');
+    expect(text).toContain('表类型: 实体表');
+    expect(text).toContain('定义来源: /proj/Hero.def:3');
+    expect(text).not.toContain('kind:');
+    expect(text).not.toContain('Backend:');
+    expect(text).not.toContain('Source:');
+    // 引擎列与属性列分组,注解与 def 落点各自到位
+    expect(text).toContain('引擎列（引擎自动建，.def 无需声明）');
+    expect(text).toMatch(/id\s+bigint unsigned\s+索引 PRIMARY\s+主键（自增）/);
+    expect(text).toContain('属性列（.def 里声明的）');
+    expect(text).toMatch(/sm_hp\s+UINT32\s+长度 32\s+索引 UNIQUE\s+唯一标识\s+flags=BASE\s+默认值 100/);
+    expect(text).toContain('← Hero.def:3 <hp>');
+    // SQL 三行格式不动(可直接粘贴)
+    expect(text).toContain('SQL: SELECT * FROM `tbl_Hero` LIMIT 100;');
+    expect(text).toContain('SQL(属性列): SELECT `sm_hp` FROM `tbl_Hero` LIMIT 100;');
+    expect(text).toBe(text.trimEnd() + '\n');
+  });
+
+  it('annotates engine columns by their fixed meaning and marks parent tables', () => {
+    const snapshot: DatabaseSchemaSnapshot = {
+      ...emptySnapshot,
+      tables: [
+        {
+          name: 'tbl_Hero_bag',
+          kind: 'array',
+          title: 'bag',
+          source: source({ path: 'bag[]' }),
+          parentTableName: 'tbl_Hero',
+          fields: [
+            {
+              name: 'parentID',
+              typeLabel: 'bigint unsigned',
+              sourcePath: 'parentID',
+              source: source(),
+              indexType: 'INDEX',
+              identifier: false,
+              synthetic: true
+            },
+            {
+              name: 'sm_0_position',
+              typeLabel: 'float',
+              sourcePath: 'position.x',
+              source: source(),
+              identifier: false,
+              synthetic: true
+            },
+            {
+              name: 'sm_reserved',
+              typeLabel: 'int unsigned',
+              sourcePath: 'reserved.col',
+              source: source(),
+              indexType: 'INDEX',
+              identifier: false,
+              synthetic: true
+            },
+            {
+              name: 'sm_extra',
+              typeLabel: 'int unsigned',
+              sourcePath: 'extra.col',
+              source: source(),
+              identifier: false,
+              synthetic: true
+            },
+            {
+              name: 'sm_anon',
+              typeLabel: 'int unsigned',
+              sourcePath: '',
+              source: source(),
+              identifier: false,
+              synthetic: true
+            }
+          ]
+        }
+      ] as DatabaseSchemaSnapshot['tables']
+    };
+
+    const text = renderDatabaseSchema(snapshot);
+    expect(text).toContain('TABLE tbl_Hero_bag');
+    expect(text).toContain('父表: tbl_Hero');
+    expect(text).toMatch(/parentID\s+bigint unsigned\s+索引 INDEX\s+带索引；指回父表主键/);
+    expect(text).toMatch(/sm_0_position\s+float\s+位置 x（引擎为 hasCell 实体预留 6 列）/);
+    // 只有引擎列的表照实提示,不留一个没人看懂的空表
+    expect(text).toContain('属性列: 无（本表只有引擎列，没有 .def 声明的数据列）');
+    // 兜底注解:固定几列之外的引擎列报索引或来源键,不留空白注解
+    expect(text).toMatch(/sm_reserved\s+int unsigned\s+索引 INDEX\s+带 INDEX 索引/);
+    expect(text).toMatch(/sm_extra\s+int unsigned\s+引擎列（extra\.col）/);
+    expect(text).toMatch(/sm_anon\s+int unsigned\s+引擎列/);
+  });
+
+  it('displays table sources workspace-relative inside the workspace and absolute outside(批133)', () => {
+    // 定义来源的路径显示跟工作区走:区内相对;恰为工作区根(relative 空串)
+    // 与区外(relative 以 '..' 开头)照退绝对路径,不虚构相对关系;
+    // 字段行尾随 basename 短标,完整路径跳转由 source 提供
+    const saved = stubWorkspace.workspaceFolders;
+    stubWorkspace.workspaceFolders = [
+      { uri: Uri.file('/ws'), name: 'ws', index: 0 }
+    ];
+    try {
+      const snapshot: DatabaseSchemaSnapshot = {
+        ...emptySnapshot,
+        tables: [
+          {
+            name: 'tbl_Hero',
+            kind: 'entity',
+            title: 'Hero',
+            source: source({ filePath: '/ws/scripts/entity_defs/Hero.def' }),
+            fields: [
+              { name: 'sm_hp', typeLabel: 'UINT32', sourcePath: 'hp', source: source({ filePath: '/ws' }), identifier: false }
+            ]
+          },
+          {
+            name: 'tbl_Hero_bag',
+            kind: 'array',
+            title: 'bag',
+            source: source({ filePath: '/ws', path: 'bag[]' }),
+            parentTableName: 'tbl_Hero',
+            fields: [
+              { name: 'sm_x', typeLabel: 'UINT32', sourcePath: 'x', source: source({ filePath: '/outside/Hero.def' }), identifier: false }
+            ]
+          }
+        ] as DatabaseSchemaSnapshot['tables'],
+        tableIndex: new Map()
+      };
+
+      const text = renderDatabaseSchema(snapshot);
+      expect(text).toContain('定义来源: scripts/entity_defs/Hero.def:3');
+      expect(text).toContain('定义来源: /ws:3');
+      expect(text).toContain('← ws:3 <hp>');
+      expect(text).toContain('← Hero.def:3 <hp>');
+    } finally {
+      stubWorkspace.workspaceFolders = saved;
+    }
+  });
+
+  it('keeps absolute paths for sources outside the workspace(批133)', () => {
+    // workspaceFolders 未定义(无工作区打开)时同样照给绝对路径
+    const saved = stubWorkspace.workspaceFolders;
+    (stubWorkspace as unknown as Record<string, unknown>).workspaceFolders = undefined;
+    try {
+      const snapshot: DatabaseSchemaSnapshot = {
+        ...emptySnapshot,
+        tables: [
+          {
+            name: 'tbl_Hero',
+            kind: 'entity',
+            title: 'Hero',
+            source: source({ filePath: '/outside/Hero.def' }),
+            fields: []
+          }
+        ] as DatabaseSchemaSnapshot['tables'],
+        tableIndex: new Map()
+      };
+
+      expect(renderDatabaseSchema(snapshot)).toContain('定义来源: /outside/Hero.def:3');
+    } finally {
+      stubWorkspace.workspaceFolders = saved;
+    }
   });
 
   it('renders the database line and db-qualified SQL when config is readable(批131)', () => {
@@ -228,7 +387,7 @@ describe('renderDatabaseSchema', () => {
     };
 
     const text = renderDatabaseSchema(snapshot);
-    expect(text).toContain('Database: game_db@127.0.0.1:13306');
+    expect(text).toContain('数据库: game_db@127.0.0.1:13306');
     expect(text).toContain('SQL: SELECT * FROM `game_db`.`tbl_Hero` LIMIT 100;');
   });
 });

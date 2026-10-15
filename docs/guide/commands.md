@@ -36,7 +36,7 @@
 ### `kbengine.database.open`
 
 - 标题：`Open Database Schema`
-- 作用：打开实体属性对应的数据库表结构虚拟文档（配置可读时顶部带 `Database: 库名@host:port` 连接行；每表尾部给可直接粘贴进外部 MySQL 客户端的 SQL：全列 SELECT、只含 def 属性列的 `SQL(属性列)`，子表另有按 `parentID` 关联父表的 `SQL(子表 JOIN)`；表前缀可由 `kbengine.db.tablePrefix` 覆盖）
+- 作用：打开实体属性对应的数据库表结构虚拟文档（中文标签渲染：头部给 `数据库: 库名@host:端口` 连接行与「读图方式」图例，每表标 `表类型` / `定义来源` 并分「引擎列（引擎自动建，.def 无需声明）」与「属性列（.def 里声明的）」两组，属性列行尾 `← 文件:行 <属性>` 标 def 落点；每表尾部给可直接粘贴进外部 MySQL 客户端的 SQL：全列 SELECT、只含 def 属性列的 `SQL(属性列)`，子表另有按 `parentID` 关联父表的 `SQL(子表 JOIN)`；表前缀可由 `kbengine.db.tablePrefix` 覆盖）
 - 入口：
   - 活动栏 KBEngine Explorer → **Entities** 视图 → 展开实体 → `Database` 分组 → 点击表或字段条目
   - 命令面板：`Open Database Schema` 无参直开时取当前活动 `.def` 推断实体；无活动 `.def` 时提示「请先打开一个实体 .def 文件」，不静默无反应

@@ -603,7 +603,8 @@ describe('database schema cross jumps', () => {
         languageId: 'plaintext',
         uri: Uri.parse('kbengine-db-schema:/Hero.schema')
       }),
-      fieldPosition: new Position(lines.findIndex(line => line.startsWith('sm_hp ')), 2),
+      // 批133 版式字段行带缩进:定位时去掉行首空白再认字段名
+      fieldPosition: new Position(lines.findIndex(line => line.trimStart().startsWith('sm_hp ')), 2),
       tablePosition: new Position(lines.findIndex(line => line.startsWith('TABLE ')), 2)
     };
   };

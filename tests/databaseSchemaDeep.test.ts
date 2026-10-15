@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
   KBEngineDatabaseSchemaProvider,
+  databaseSchemaFieldLineName,
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
   findDatabaseSchemaTargetsForSource,
@@ -340,18 +341,19 @@ describe('KBEngineDatabaseSchemaProvider', () => {
 // ---- 渲染文本上的字段定位 ----
 
 describe('findDatabaseSchemaFieldAtPosition', () => {
+  // 友好版式(批133):字段行缩进,SQL 行与中文分组标题不能误判成字段
   const rendered = [
-    '# KBEngine Database Schema: Hero',
+    '# 数据库表结构: Hero',
     '',
-    'Backend: MYSQL',
-    'Source: /proj/Hero.def',
+    '存储引擎: MySQL',
+    '定义文件: /proj/Hero.def',
     '',
     'TABLE tbl_Hero',
-    'kind: entity',
-    'source: Hero.def:1 (Hero)',
+    '表类型: 实体表',
+    '定义来源: /proj/Hero.def:1',
     '',
-    'sm_hp  int unsigned',
-    '  source: Hero.def:3 (hp)'
+    '  sm_hp  int unsigned',
+    'SQL: SELECT * FROM `tbl_Hero` LIMIT 100;'
   ].join('\n');
 
   it('identifies a table header line', () => {
@@ -368,7 +370,7 @@ describe('findDatabaseSchemaFieldAtPosition', () => {
 
   it('returns null for lines without a leading identifier', () => {
     const document = makeTextDocument(rendered, { fileName: '/x/Hero.schema' });
-    // 空行与 "  source:" 缩进行都不以字段名开头
+    // 空行与 SQL 行(`SQL:` 冒号后不是空白)都不以字段名开头
     expect(findDatabaseSchemaFieldAtPosition(document as unknown as vscode.TextDocument, new Position(1, 0))).toBeNull();
     expect(findDatabaseSchemaFieldAtPosition(document as unknown as vscode.TextDocument, new Position(10, 0))).toBeNull();
   });
@@ -376,6 +378,19 @@ describe('findDatabaseSchemaFieldAtPosition', () => {
   it('returns null when no table header sits above the field line', () => {
     const document = makeTextDocument('lonely_field INT\n', { fileName: '/x/Hero.schema' });
     expect(findDatabaseSchemaFieldAtPosition(document as unknown as vscode.TextDocument, new Position(0, 0))).toBeNull();
+  });
+});
+
+describe('databaseSchemaFieldLineName', () => {
+  it('accepts indented field rows and rejects anchors, headers and SQL lines', () => {
+    expect(databaseSchemaFieldLineName('  sm_hp  UINT32  长度 32')).toBe('sm_hp');
+    expect(databaseSchemaFieldLineName('sm_hp UINT32')).toBe('sm_hp');
+    // TABLE 锚点行是表头不是字段,定位循环按它切块
+    expect(databaseSchemaFieldLineName('TABLE tbl_Hero')).toBeNull();
+    // 中文分组标题不以 ASCII 标识符开头,SQL 行冒号后非空白
+    expect(databaseSchemaFieldLineName('引擎列（引擎自动建，.def 无需声明）')).toBeNull();
+    expect(databaseSchemaFieldLineName('SQL: SELECT * FROM `t` LIMIT 100;')).toBeNull();
+    expect(databaseSchemaFieldLineName('')).toBeNull();
   });
 });
 
@@ -471,6 +486,6 @@ describe('renderDatabaseSchema parent line', () => {
     const text = renderDatabaseSchema(snapshot);
 
     expect(text).toContain('TABLE tbl_Hero_bag');
-    expect(text).toContain('parent: tbl_Hero');
+    expect(text).toContain('父表: tbl_Hero');
   });
 });
