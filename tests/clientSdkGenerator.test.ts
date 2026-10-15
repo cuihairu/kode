@@ -458,6 +458,18 @@ describe('collectClientSdkEntities', () => {
     fs.rmSync(brokenRoot, { recursive: true, force: true });
   });
 
+  it('def XML 未闭合标签解析抛错时实体跳过', () => {
+    const brokenRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-sdk-throw-'));
+    const defsDir = path.join(brokenRoot, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    fs.writeFileSync(path.join(brokenRoot, 'scripts', 'entities.xml'), '<root><Broken hasBase="true"/></root>', 'utf8');
+    fs.writeFileSync(path.join(defsDir, 'Broken.def'), '<root>', 'utf8');
+
+    expect(parseClientSdkEntity('<root>', 'Broken')).toBeNull();
+    expect(collectClientSdkEntities(brokenRoot)).toEqual([]);
+    fs.rmSync(brokenRoot, { recursive: true, force: true });
+  });
+
   it('无 entities.xml 时为空表', () => {
     const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-sdk-empty-'));
     try {
