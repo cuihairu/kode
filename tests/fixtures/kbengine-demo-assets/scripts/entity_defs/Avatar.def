@@ -24,10 +24,12 @@
 			<DetailLevel> MEDIUM </DetailLevel>
 		</sight>
 		<skillSlots>
-			<Type> ARRAY </Type>
-			<of>
-				<Type> SKILL_SLOT </Type>
-			</of>
+			<Type>
+				ARRAY
+				<of> SKILL_SLOT </of>
+			</Type>
+			<Flags> BASE </Flags>
+			<Persistent> true </Persistent>
 		</skillSlots>
 	</Properties>
 

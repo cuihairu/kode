@@ -1,0 +1,23 @@
+<root>
+	<Properties>
+		<gold>
+			<Type> UINT32 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+			<Persistent> true </Persistent>
+		</gold>
+		<items>
+			<Type>
+				ARRAY
+				<of> ITEM_ID </of>
+			</Type>
+			<Persistent> true </Persistent>
+		</items>
+	</Properties>
+
+	<CellMethods>
+		<onItemGained>
+			<Arg> ITEM_ID </Arg>
+		</onItemGained>
+	</CellMethods>
+
+</root>

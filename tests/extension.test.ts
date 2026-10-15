@@ -108,8 +108,9 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
-    // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(1);
+    // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
+    // 引用反扫镜再加一份注册
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(2);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
@@ -815,14 +816,27 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
 
   it('手动命令:定位失败明示报错;autoRefreshFinalConfig=false 不挂 watcher', async () => {
     configurationOverrides.set('kbengine', { autoRefreshFinalConfig: false });
-    const context = makeContext();
-    activate(context);
-    expect(lastFileSystemWatcher.current).toBeNull();
+    // 批134 起 types.xml 反扫镜在激活期挂 def/types.xml/entities.xml 三个
+    // watcher,lastFileSystemWatcher 不再能当"终配 watcher 是否存在"用;
+    // 这里记录本激活创建的全部样式,直接断言 kbengine*.xml 不在列
+    const patterns: string[] = [];
+    const originalCreate = workspace.createFileSystemWatcher;
+    (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = (pattern: unknown) => {
+      patterns.push(String(pattern));
+      return originalCreate(pattern as never);
+    };
+    try {
+      const context = makeContext();
+      activate(context);
+      expect(patterns.some(pattern => pattern.includes('kbengine*.xml'))).toBe(false);
 
-    await commands.executeCommand('kbengine.config.showFinal');
-    expect(messages.error.some(message => message.includes('无法定位引擎默认配置'))).toBe(true);
-    expect(windowState.showTextDocumentCalls).toHaveLength(0);
-    disposeAll(context);
+      await commands.executeCommand('kbengine.config.showFinal');
+      expect(messages.error.some(message => message.includes('无法定位引擎默认配置'))).toBe(true);
+      expect(windowState.showTextDocumentCalls).toHaveLength(0);
+      disposeAll(context);
+    } finally {
+      (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = originalCreate;
+    }
   });
 
   it('attachRemote 命令经 CommandRegistry 真分发(未配置目标提示)', async () => {

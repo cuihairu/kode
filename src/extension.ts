@@ -39,6 +39,7 @@ import {
   PythonCompletionProvider,
   PythonDefinitionProvider,
   RpcCodeLensProvider,
+  TypesXmlCodeLensProvider,
   validateDocument
 } from './languageProviders';
 import {
@@ -195,6 +196,16 @@ export function activate(context: vscode.ExtensionContext) {
     new RpcCodeLensProvider(entityMappingManager)
   );
   context.subscriptions.push(rpcCodeLensProvider);
+
+  // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
+  // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开
+  // schema 文档定位到列;def/types.xml/entities.xml 改动由 provider 内
+  // watcher 失效重扫
+  const typesXmlCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    [{ language: 'xml', scheme: 'file', pattern: '**/types.xml' }],
+    new TypesXmlCodeLensProvider()
+  );
+  context.subscriptions.push(typesXmlCodeLensProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [

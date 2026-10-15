@@ -8,15 +8,17 @@
 	<ITEM_ID> UINT16 </ITEM_ID>
 	<ITEM_DESC> STRING </ITEM_DESC>
 
-	<!-- FIXED_DICT + implementedBy:引擎按「模块路径.实现对象」装载序列化实现 -->
+	<!-- FIXED_DICT + implementedBy:引擎按「模块路径.实现对象」装载序列化实现;
+	     FD 键的数组元素写在 <Type> 内(datatype.cpp FixedArrayType::initialize
+	     从 Type 节点找 <of>),<of> 文本才是元素类型 -->
 	<SKILL_SLOT>
 		FIXED_DICT
 		<Properties>
 			<slot_list>
-				<Type> ARRAY </Type>
-				<of>
-					<Type> UINT32 </Type>
-				</of>
+				<Type>
+					ARRAY
+					<of> UINT32 </of>
+				</Type>
 			</slot_list>
 			<count>
 				<Type> UINT32 </Type>
@@ -41,12 +43,11 @@
 		<implementedBy> POSITION_DATA.position_inst </implementedBy>
 	</POSITION>
 
-	<!-- 数组自定义类型:元素类型可再引用别名(ITEM_ID ← UINT16) -->
+	<!-- 数组自定义类型:条目指引是文本节点(datatypes.cpp loadTypes 读 FirstChild
+	     的 getValStr),<of> 与文本同级,元素类型走 of 的文本(ITEM_ID ← UINT16) -->
 	<ITEM_IDS>
-		<Type> ARRAY </Type>
-		<of>
-			<Type> ITEM_ID </Type>
-		</of>
+		ARRAY
+		<of> ITEM_ID </of>
 	</ITEM_IDS>
 
 </root>

@@ -170,8 +170,10 @@ describe('定义导航:实体/类型/接口/DetailLevel/方法/属性', () => {
 
   it('Properties 内 Type 值 → types.xml 自定义类型节点行', async () => {
     const def = fs.readFileSync(p('scripts/entity_defs/Avatar.def'), 'utf8');
+    // 数组元素类型写在 <Type> 内的 <of> 文本里(引擎 FixedArrayType::initialize
+    // 从 Type 节点找 <of>),光标落在元素别名上同样应导航回 types.xml 声明行
     const { document, position } = docAt(
-      def.replace('<Type> SKILL_SLOT </Type>', '<Type> SK|ILL_SLOT </Type>'),
+      def.replace('<of> SKILL_SLOT </of>', '<of> SK|ILL_SLOT </of>'),
       'scripts/entity_defs/Avatar.def'
     );
     const typesXml = fs.readFileSync(p('scripts/entity_defs/types.xml'), 'utf8');
@@ -395,6 +397,17 @@ describe('数据库 schema:实体表 + 组件表 + 数组子表', () => {
 
     const arrayTable = snapshot!.tableIndex.get('tbl_Avatar_bag_items');
     expect(arrayTable, '数组属性 items 应有子表').toBeDefined();
+    // 元素列走引擎 getValStr 文本语义(xml.cpp getValStr 只认文本子节点):
+    // <of><Type>ITEM_ID</Type></of> 的 of 首子是元素,引擎读空串装载失败,
+    // 正确写法是 <of> ITEM_ID </of> 文本形态 → 元素列 sm_value 落 ITEM_ID 解析型
+    expect(arrayTable!.fields.map(f => f.name)).toContain('sm_value');
+
+    // skillSlots 的 <of> 必须挂在 <Type> 内(datatype.cpp 从 Type 节点找 of):
+    // 元素是 SKILL_SLOT(FIXED_DICT)→ 键平铺成列 + 数组键再出子表
+    const skillTable = snapshot!.tableIndex.get('tbl_Avatar_skillSlots');
+    expect(skillTable, '数组属性 skillSlots 应有子表').toBeDefined();
+    expect(skillTable!.fields.map(f => f.name)).toContain('sm_count');
+    expect(snapshot!.tableIndex.get('tbl_Avatar_skillSlots_slot_list'), 'FD 内数组键应有子表').toBeDefined();
   });
 });
 

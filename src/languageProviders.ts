@@ -31,10 +31,14 @@ import {
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
   findDatabaseSchemaTargetsForSource,
+  findTypeStorageUsages,
   getDatabaseSchemaSnapshot,
+  getTypeStorageShape,
+  invalidateTypeStorageUsageIndex,
   isDatabaseSchemaDocument,
   locateDatabaseSchemaLine
 } from './databaseSchema';
+import type { TypeStorageShape } from './databaseSchema';
 import { buildPropertyDatabaseStorageHover } from './databaseSimulator';
 import {
   findCustomTypeDeclarationInfo,
@@ -1171,7 +1175,54 @@ function getCustomTypeHover(
     return null;
   }
 
-  return createCustomTypeHover(customTypeTarget.info, 'Custom type from `types.xml`');
+  return createCustomTypeHover(
+    customTypeTarget.info,
+    'Custom type from `types.xml`',
+    // 批134:声明行悬停追加落库形态;implementedBy 值上的悬停只谈引用,不谈存储
+    customTypeTarget.isImplementedByValue ? null : getTypeStorageShapeMarkdown(document, word)
+  );
+}
+
+// 批134:types.xml 类型声明行悬停的落库形态段。形态判定走 schema 构建
+// 器的别名/列展开语义(getTypeStorageShape 与引擎装载同源),这里把形态
+// 翻成说明文字;悬停的就是 types.xml 本体,直接按文档路径解析
+function getTypeStorageShapeMarkdown(document: vscode.TextDocument, word: string): string | null {
+  const shapeLines = describeTypeStorageShape(getTypeStorageShape(document.fileName, word));
+  return `**落库形态**:\n${shapeLines.map(line => `- ${line}`).join('\n')}\n\n`;
+}
+
+export function describeTypeStorageShape(shape: TypeStorageShape): string[] {
+  if (shape.kind === 'builtin') {
+    return [`主表单列${shape.columnType ? `（\`${shape.columnType}\`）` : ''}`];
+  }
+  if (shape.kind === 'fixedDict') {
+    const keys = shape.topLevelKeys.length > 0
+      ? `；顶层键各占一列：${shape.topLevelKeys.join('、')}`
+      : '';
+    return [`平铺成列，不成表${keys}`];
+  }
+  if (shape.kind === 'array') {
+    const element = shape.element
+      ? `元素落列：${describeTypeStorageElement(shape.element)}`
+      : '缺 <of>，元素类型未知';
+    return [`成子表 \`tbl_<实体>_<属性>\`，元素各占一行；${element}`];
+  }
+  return ['未知类型，引擎装载 types.xml 会失败'];
+}
+
+function describeTypeStorageElement(element: TypeStorageShape): string {
+  if (element.kind === 'builtin') {
+    return `\`sm_value\`${element.columnType ? `（\`${element.columnType}\`）` : ''}`;
+  }
+  if (element.kind === 'fixedDict') {
+    return element.topLevelKeys.length > 0
+      ? `键平铺：${element.topLevelKeys.join('、')}`
+      : '键平铺';
+  }
+  if (element.kind === 'array') {
+    return element.element ? '`sm_value`（套更深层子表）' : '`sm_value`';
+  }
+  return '未知元素类型';
 }
 
 // types.xml implementedBy 反向跳转提示(python 侧):光标在被引用符号上时
@@ -1237,7 +1288,8 @@ function getTypeValueHover(
 
 function createCustomTypeHover(
   customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>,
-  summary: string
+  summary: string,
+  shapeMarkdown: string | null = null
 ): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${customTypeInfo.name}**\n\n`);
@@ -1261,6 +1313,10 @@ function createCustomTypeHover(
     for (const property of customTypeInfo.properties) {
       markdown.appendMarkdown(`- \`${property.name}\`: \`${property.typeName || 'UNKNOWN'}\`\n`);
     }
+  }
+
+  if (shapeMarkdown) {
+    markdown.appendMarkdown(shapeMarkdown);
   }
 
   return new vscode.Hover(markdown);
@@ -2787,6 +2843,104 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
 export function createDefinitionSelection(defLine: number): vscode.Range {
   const position = new vscode.Position(defLine - 1, 0);
   return new vscode.Range(position, position);
+}
+
+// 批134:types.xml 类型声明行的引用反扫。一条真实使用出一枚镜(使用处
+// 实体.属性 → 落库表.列),点击走 kbengine.database.open 打开 schema 文档
+// 并定位到对应列;超过上限折叠成计数镜;类型无引用不出镜。
+export interface TypesXmlStorageLensSpec {
+  line: number;
+  character: number;
+  title: string;
+  target: { entity: string; table: string; column: string } | null;
+}
+
+const TYPE_STORAGE_LENS_LIMIT = 10;
+
+export function buildTypesXmlStorageLensSpecs(
+  content: string,
+  workspaceRoot: string
+): TypesXmlStorageLensSpec[] {
+  const document = parseDefDocument(content);
+  if (!document.root) {
+    return [];
+  }
+
+  const specs: TypesXmlStorageLensSpec[] = [];
+  for (const node of getDirectChildElements(document.root)) {
+    const usages = findTypeStorageUsages(workspaceRoot, node.name);
+    for (const usage of usages.slice(0, TYPE_STORAGE_LENS_LIMIT)) {
+      const position = getLineCharacterAtOffset(content, content.indexOf(node.name, node.tagStart));
+      specs.push({
+        line: position.line,
+        character: position.character,
+        title: `${usage.entity}.${usage.property} → ${usage.table}.${usage.column}`,
+        target: { entity: usage.entity, table: usage.table, column: usage.column }
+      });
+    }
+    if (usages.length > TYPE_STORAGE_LENS_LIMIT) {
+      const position = getLineCharacterAtOffset(content, content.indexOf(node.name, node.tagStart));
+      specs.push({
+        line: position.line,
+        character: position.character,
+        title: `+${usages.length - TYPE_STORAGE_LENS_LIMIT} 处落库未列出`,
+        target: null
+      });
+    }
+  }
+  return specs;
+}
+
+// def/types.xml/entities.xml 任一改动都会改变引用与落点:索引置空并
+// 触发重取;dispose 随扩展注销拆掉 watcher
+export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+  private readonly watchers: vscode.FileSystemWatcher[] = [];
+
+  constructor() {
+    for (const pattern of ['**/*.def', '**/types.xml', '**/entities.xml']) {
+      const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      const invalidate = (): void => {
+        invalidateTypeStorageUsageIndex();
+        this.onDidChangeCodeLensesEmitter.fire();
+      };
+      watcher.onDidChange(invalidate);
+      watcher.onDidCreate(invalidate);
+      watcher.onDidDelete(invalidate);
+      this.watchers.push(watcher);
+    }
+  }
+
+  provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    const workspaceRoot = getWorkspaceRootForDocument(document);
+    if (!workspaceRoot) {
+      return [];
+    }
+
+    return buildTypesXmlStorageLensSpecs(document.getText(), workspaceRoot).map(spec =>
+      new vscode.CodeLens(
+        new vscode.Range(
+          new vscode.Position(spec.line, spec.character),
+          new vscode.Position(spec.line, spec.character)
+        ),
+        spec.target
+          ? {
+            title: spec.title,
+            command: 'kbengine.database.open',
+            arguments: [spec.target.entity, spec.target.table, spec.target.column]
+          }
+          : undefined
+      )
+    );
+  }
+
+  dispose(): void {
+    for (const watcher of this.watchers) {
+      watcher.dispose();
+    }
+    this.onDidChangeCodeLensesEmitter.dispose();
+  }
 }
 
 export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvider {

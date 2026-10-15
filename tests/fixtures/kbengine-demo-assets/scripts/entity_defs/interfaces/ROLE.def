@@ -1,0 +1,8 @@
+<root>
+	<CellMethods>
+		<onMove>
+			<Arg> VECTOR3 </Arg>
+		</onMove>
+	</CellMethods>
+
+</root>

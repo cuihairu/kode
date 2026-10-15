@@ -15,6 +15,7 @@ import {
   DefinitionCategory,
   findDefinitionFileByCategory,
   findEntityDefinitionFile,
+  getDefinitionEntries,
   getDefinitionWorkspaceLayout,
   getRegisteredEntities,
   getWorkspaceRootForDocument
@@ -38,6 +39,8 @@ export interface DefSourceRef {
 export interface PersistentPropertyDescriptor {
   name: string;
   typeName: string;
+  /** 属性声明处的原始 <Type> 文本(别名不解析):types.xml 反扫按它命中使用处 */
+  declaredType?: string;
   persistent: boolean;
   databaseLength?: number;
   defaultValue?: string;
@@ -54,6 +57,8 @@ export interface PersistentPropertyDescriptor {
 export interface TableFieldDescriptor {
   name: string;
   typeLabel: string;
+  /** 落列属性的原始 <Type> 文本(别名不解析);合成引擎列没有声明处 */
+  declaredType?: string;
   sourcePath: string;
   source: DefSourceRef;
   databaseLength?: number;
@@ -1004,6 +1009,7 @@ function parsePropertyNode(
   const descriptor: PersistentPropertyDescriptor = {
     name: propertyNode.name,
     typeName: rawTypeName,
+    declaredType: rawTypeName,
     // Properties 段的引擎装载语义:默认不持久,文本(忽略大小写)恰为 "true"
     // 才持久(loadDefPropertys)。
     persistent: isTruePersistent(propertyNode),
@@ -1087,6 +1093,7 @@ function parseArrayElementDescriptor(
     // (空名使列名不带 value_ 前缀,且子表命名链跳过该层)。
     name: resolveEffectiveTypeName(rawElementTypeName, context) === 'FIXED_DICT' ? '' : 'value',
     typeName: rawElementTypeName,
+    declaredType: rawElementTypeName,
     persistent: true,
     databaseLength: parentDescriptor.databaseLength,
     identifier: false,
@@ -1184,6 +1191,7 @@ function parseFixedDictChildren(
     const childDescriptor: PersistentPropertyDescriptor = {
       name: childNode.name,
       typeName: rawTypeName,
+      declaredType: rawTypeName,
       persistent: true,
       databaseLength: parseOptionalNumber(getScalarChildValue(childNode, 'DatabaseLength')),
       identifier: false,
@@ -1617,6 +1625,7 @@ function appendPropertyToTable(
     table.fields.push({
       name: fieldName,
       typeLabel: resolveDbTypeLabel(property.typeName),
+      declaredType: property.declaredType,
       sourcePath: property.source.path,
       source: property.source,
       databaseLength: resolveEffectiveDatabaseLength(property),
@@ -1865,4 +1874,132 @@ function dedupeSchemaTargets<T extends { tableName: string; fieldName?: string }
   }
 
   return deduped;
+}
+
+// ---- types.xml 类型的落库形态与使用处反扫(批134) ----
+//
+// 落库规则只有 schema 构建器这一套实现(别名解析/列展开/子表命名都在上面),
+// 这里只把它的产出换成两种视图:
+// - getTypeStorageShape:给 types.xml 悬停的形态数据(FIXED_DICT 顶层键 /
+//   ARRAY 元素递归一层),不重复落库规则;
+// - buildTypeStorageUsageIndex / findTypeStorageUsages:遍历实体快照,把每个
+//   非合成列按 declaredType(原始 <Type> 文本)归档成「类型 → 真实落点」,
+//   落点表/列直接取快照,types.xml 的 CodeLens 与悬停都消费它。
+
+export type TypeStorageShape =
+  | { kind: 'builtin'; rawType: string; typeName: string; columnType: string | null }
+  | { kind: 'fixedDict'; rawType: string; topLevelKeys: string[] }
+  | { kind: 'array'; rawType: string; element: TypeStorageShape | null }
+  | { kind: 'unresolved'; rawType: string };
+
+export interface TypeStorageUsage {
+  /** 使用处所在实体(数组/FD 键落点跟随实体属性) */
+  entity: string;
+  /** 声明路径,如 itemId / items[] / skills[].count */
+  property: string;
+  /** 落点表名(tbl_...) */
+  table: string;
+  /** 落点列名(sm_...) */
+  column: string;
+  /** 声明处文件(实体 def 或 types.xml 的 FD 键声明) */
+  defFile: string;
+  /** 声明处行号(1 起) */
+  line: number;
+}
+
+export function getTypeStorageShape(typesXmlPath: string | null, typeName: string): TypeStorageShape {
+  const context: BuildContext = {
+    workspaceRoot: '',
+    entityDefsRoot: '',
+    entityScriptsRoot: null,
+    visitedDefinitions: new Set(),
+    componentCache: new Map(),
+    componentScopesCache: new Map(),
+    typeAliases: parseTypeAliases(typesXmlPath),
+    entityHasCell: false
+  };
+  return typeShapeOf(typeName, context, new Set());
+}
+
+function typeShapeOf(typeName: string, context: BuildContext, seen: Set<string>): TypeStorageShape {
+  if (seen.has(typeName)) {
+    // 别名环:引擎 resolveAlias 同样按 seen 短路,形态层面不再展开
+    return { kind: 'unresolved', rawType: typeName };
+  }
+  seen.add(typeName);
+
+  const resolved = resolveAliasType(typeName, context);
+  if (resolved.kind === 'builtin') {
+    return {
+      kind: 'builtin',
+      rawType: typeName,
+      typeName: resolved.typeName,
+      columnType: resolveDbTypeLabel(resolved.typeName)
+    };
+  }
+  if (resolved.kind === 'fixedDict') {
+    const propertiesNode = getDirectChildElement(resolved.node, 'Properties');
+    return {
+      kind: 'fixedDict',
+      rawType: typeName,
+      topLevelKeys: getDirectChildElements(propertiesNode).map(node => node.name)
+    };
+  }
+  if (resolved.kind === 'array') {
+    // 元素类型 = <of> 的文本(与 parseArrayElementDescriptor 同一读法)
+    const rawElementType = getScalarChildValue(resolved.node, 'of');
+    return {
+      kind: 'array',
+      rawType: typeName,
+      element: rawElementType ? typeShapeOf(rawElementType, context, seen) : null
+    };
+  }
+  return { kind: 'unresolved', rawType: typeName };
+}
+
+let typeStorageUsageIndex: { key: string; index: Map<string, TypeStorageUsage[]> } | null = null;
+
+export function invalidateTypeStorageUsageIndex(): void {
+  typeStorageUsageIndex = null;
+}
+
+export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, TypeStorageUsage[]> {
+  if (typeStorageUsageIndex && typeStorageUsageIndex.key === workspaceRoot) {
+    return typeStorageUsageIndex.index;
+  }
+
+  const index = new Map<string, TypeStorageUsage[]>();
+  for (const entry of getDefinitionEntries(workspaceRoot, 'entity')) {
+    if (!entry.exists) {
+      continue;
+    }
+    const snapshot = getDatabaseSchemaSnapshot(entry.name, workspaceRoot);
+    if (!snapshot) {
+      continue;
+    }
+    for (const table of snapshot.tables) {
+      for (const field of table.fields) {
+        if (field.synthetic || !field.declaredType) {
+          continue;
+        }
+        const usages = index.get(field.declaredType) || [];
+        usages.push({
+          entity: snapshot.entityName,
+          property: field.sourcePath,
+          table: table.name,
+          column: field.name,
+          defFile: field.source.filePath,
+          line: field.source.line
+        });
+        index.set(field.declaredType, usages);
+      }
+    }
+  }
+
+  typeStorageUsageIndex = { key: workspaceRoot, index };
+  return index;
+}
+
+export function findTypeStorageUsages(workspaceRoot: string, typeName: string): TypeStorageUsage[] {
+  return buildTypeStorageUsageIndex(workspaceRoot).get(typeName) || [];
 }
