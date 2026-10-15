@@ -283,6 +283,22 @@
   - 存在问题时弹警告指路 OUTPUT 面板；全部正常时信息提示
   - 激活期自动发现完成后也会静默落一份报告到同一通道（有问题时才弹提示）
 
+### `kbengine.quickActions.show`
+
+- 标题：`Run Quick Actions`
+- 作用：弹出「快速执行动作」清单并执行选中的那条。动作清单写在工作区的 `.kbengine/debug.json` 顶层 `quickActions` 数组里，跟着 KBEngine 工程走，不进 VS Code 设置、不进 `launch.json`
+- 入口：Servers 视图标题栏按钮、`.def` / Python / XML 编辑器右上角按钮、命令面板 `Run Quick Actions`
+- 三类后端（白名单，不提供任意 shell 入口）：
+  - `command`：VS Code 命令 id，`args` 原样透传（字符串项支持变量），复用被调命令自身的报错
+  - `script`：执行配置里显式声明的脚本；`background: true` 表示起服类不等退出码（进程活着即报「已启动」）
+  - `http`：请求配置里写死的 URL，不接受运行时拼接
+- 变量（执行时替换，作用于配置字面串）：`${workspaceFolder}`（首个工作区根）、`${workspaceFolder:名字}`（按名取根）、`${env:变量名}`。未知变量直接报错中止并指名变量，不做静默空串替换
+- 行为：
+  - 动作缺省弹 modal 确认框（`confirm: false` 跳过）；执行流水进 OUTPUT 面板「KBEngine 快速执行动作」，脚本的 stdout/stderr 原样进通道
+  - 失败一次性弹窗（动作名 + 退出码 / 状态码 / 原因），脚本 stdout/stderr 同时留在通道
+  - 配置条目非法（如白名单外的 `type`、缺必填字段）逐条剔除并计数提示，不整表失败
+  - 首装自动扫一层工作区根的 `.bat`，命中「启停服务器 / 导配置表」词表的脚本会多选提示登记；取消后本工作区不再自动弹
+
 ## 典型使用流程
 
 ### 新建实体

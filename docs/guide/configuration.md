@@ -301,6 +301,58 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」:`▶` 请求行 → `✓` 状态码 · 耗时 → 回包(超 4000 字符截断标注全长);失败以 `✗` 标记 + 错误弹窗呈现。
 
+### 快速执行动作(`.kbengine/debug.json` 的 `quickActions` 键)
+
+这个文件只服务调试流程与快速执行动作。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。
+
+动作是**顶层 `quickActions` 数组**(不进 `debug` 段:动作不是调试配置),跟着 KBEngine 工程走,不新增 `kbengine.*` 设置项。
+
+| 字段 | 适用类型 | 说明 |
+|------|------|------|
+| `name` | 全部 | 显示名,必填 |
+| `type` | 全部 | `command` / `script` / `http`,白名单外整条剔除 |
+| `command` | command | VS Code 命令 id,必填 |
+| `args` | command | 参数数组,字符串项走变量替换,缺省 `[]` |
+| `script` | script | 脚本路径,必填,支持变量 |
+| `cwd` | script | 工作目录,支持变量,缺省工作区根 |
+| `background` | script | `true` 表示起服类不等退出码,缺省 `false` |
+| `url` | http | URL,必填,支持变量;只发配置里写死的地址,不接受运行时拼接 |
+| `method` | http | `GET` / `POST` / `PUT` / `PATCH` / `HEAD` / `OPTIONS`,缺省 `POST` |
+| `body` | http | 请求体(非空才随请求发送),支持变量 |
+| `confirm` | 全部 | 执行前 modal 确认框,缺省 `true` |
+| `source` | 全部 | `manual` / `scan`,首装扫描生成的条目自动记 `scan` |
+| `category` | 全部 | `server` / `export`,仅扫描生成时写 |
+
+变量(执行时替换,只作用于配置字面串):
+
+| 变量 | 含义 |
+|------|------|
+| `${workspaceFolder}` | 首个工作区根 |
+| `${workspaceFolder:名字}` | 按视图名取工作区根(多根工程) |
+| `${env:变量名}` | 进程环境变量 |
+
+未知变量直接报错中止并指名变量——静默空串替换会把脚本跑成「路径为空」的假成功,比报错更糟。
+
+示例:
+
+```json
+{
+  "version": "1.0.0",
+  "quickActions": [
+    { "name": "重启 BaseApp", "type": "command",
+      "command": "kbengine.server.restart", "args": ["baseapp"] },
+    { "name": "启动全部组件", "type": "script",
+      "script": "${workspaceFolder}/start_server.bat", "background": true },
+    { "name": "导配置表", "type": "script",
+      "script": "${workspaceFolder}/export_tables.bat" },
+    { "name": "本地热更", "type": "http",
+      "url": "http://127.0.0.1:9000/reload", "method": "POST", "confirm": false }
+  ]
+}
+```
+
+首装扫描会在工作区根一层找 `.bat`,只收启停(`start` / `stop` / `restart` / `boot` / `server`)与导表(`export` / `convert` / `导表`)词表命中的脚本,勾选后写成 `${workspaceFolder}/<文件名>.bat` 变量形态(`start` / `boot` 开头的自动 `background: true`),并保留既有 `version` / `debug` 段。
+
 ### 调试配置文件(`.kbengine/debug.json`)
 
 这个文件只服务调试流程。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。

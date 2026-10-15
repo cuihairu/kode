@@ -63,7 +63,8 @@
     "onCommand:kbengine.telnet.disconnect",
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
-    "onCommand:kbengine.discovery.report"
+    "onCommand:kbengine.discovery.report",
+    "onCommand:kbengine.quickActions.show"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -306,6 +307,11 @@
       {
         "command": "kbengine.discovery.report",
         "title": "Show Discovery Report"
+      },
+      {
+        "command": "kbengine.quickActions.show",
+        "title": "Run Quick Actions",
+        "icon": "$(run-all)"
       }
     ],
     "menus": {
@@ -323,6 +329,23 @@
         {
           "command": "kbengine.telnet.disconnect",
           "when": "view == kbengine.telnetStatus",
+          "group": "navigation"
+        },
+        {
+          "command": "kbengine.quickActions.show",
+          "when": "view == kbengine.serverControl",
+          "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "kbengine.quickActions.show",
+          "when": "editorLangId == kbengine-def",
+          "group": "navigation"
+        },
+        {
+          "command": "kbengine.quickActions.show",
+          "when": "editorLangId == python || editorLangId == xml",
           "group": "navigation"
         }
       ],

@@ -144,8 +144,8 @@ export interface QuickActionConfig {
 | 文件 | 改动 |
 |---|---|
 | `src/extension.ts` | 注册命令 `kbengine.quickActions.show`（回调 `manager.show()`）；激活末尾 `manager.offerScanOnActivate()`；dispose 链 |
-| `package.json` | `contributes.commands` 加 `kbengine.quickActions.show`（`Run Quick Actions`，`$(play)`）；`menus.view/title` 挂 `view == kbengine.serverControl`；`menus.editor/title` 挂 `editorLangId == kbengine-def \|\| python \|\| xml`；`activationEvents` 补 `onCommand:` |
-| `tests/extension.test.ts` | `makeContext` 补内存 memento（`workspaceState.get/update`）；命令扫描补 `kbengine.quickActions.show` |
+| `package.json` | `contributes.commands` 加 `kbengine.quickActions.show`（`Run Quick Actions`，图标 `$(run-all)`——Servers 视图标题栏已有 `kbengine.server.start` 占 `$(play)`，同栏不重复图标）；`menus.view/title` 挂 `view == kbengine.serverControl`；`menus.editor/title` 挂 `editorLangId == kbengine-def \|\| python \|\| xml`；`activationEvents` 补 `onCommand:` |
+| `tests/extension.test.ts` | 装配一致性断言自动含新命令(`contributes.commands` ↔ 注册面),无需改列表；装配测试给的裸 context 没有 `workspaceState`，memento 缺省按「首次运行」处理（manager 侧容错，首装扫描只是提示，不该把激活链带崩） |
 | `tests/quickActionConfig.test.ts` 等 | 新增（见 1.11） |
 | `docs/guide/commands.md` `docs/guide/features.md` `docs/guide/configuration.md` | 新命令小节（docs 门禁强制）、工具面板清单、`.kbengine/debug.json` 的 `quickActions` 键说明与变量表 |
 

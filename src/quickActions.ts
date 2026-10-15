@@ -1,0 +1,410 @@
+/**
+ * 快速执行动作装配层(设计 1.9/1.10):
+ * - 动作清单 quick pick(标签/类型/目标三列)与三后端分发(command/script/http);
+ * - 默认执行器是真实现(spawn / node http),注入点只给测试与将来换实现;
+ * - 破坏性动作默认弹 modal 确认,流水统一进 OUTPUT 专用通道,失败一次性弹窗;
+ * - 首装扫一层 .bat,用户勾选确认后才写回 .kbengine/debug.json。
+ *
+ * 安全边界(用户 2026-10-15 追加):script/http 只执行配置里显式声明的目标,
+ * 执行期不拼接任何运行时参数——白名单来自配置本身,不是运行时字符串判断。
+ * 变量替换只作用在配置字面串上,未知变量直接报错中止(1.5 拒绝静默空串)。
+ */
+
+import * as child_process from 'child_process';
+import * as http from 'http';
+import * as https from 'https';
+import * as vscode from 'vscode';
+import {
+  baseNameOf,
+  buildScannedActions,
+  parseQuickActionConfigs,
+  resolveActionVariables,
+  QuickAction,
+  QuickActionCategory,
+  WorkspaceFolderRef
+} from './quickActionConfig';
+import { BatchScriptCandidate, DirectoryEntry, scanBatchScripts } from './quickActionScanner';
+
+export const QUICK_ACTION_CHANNEL_NAME = 'KBEngine 快速执行动作';
+export const QUICK_ACTION_SCAN_DISMISS_KEY = 'kbengine.quickActions.scanDismissed';
+export const QUICK_ACTION_CONFIRM_LABEL = '执行';
+/** 本地热更新不该更久(设计 1.6);与 HTTP 快捷请求同量级 */
+export const QUICK_ACTION_TIMEOUT_MS = 10000;
+/** 回包进通道的截顶长度(字符),超出丢弃——热更回包本就很小 */
+export const RESPONSE_PREVIEW_LIMIT = 4000;
+
+const CATEGORY_LABELS: Record<QuickActionCategory, string> = {
+  server: '启停服务器',
+  export: '导配置表'
+};
+
+/** 扫描确认清单项:label=bat 名,value=候选(与 buildScannedActions 同源) */
+interface ScanPickItem extends vscode.QuickPickItem {
+  value: BatchScriptCandidate;
+}
+
+export interface ScriptRunOptions {
+  script: string;
+  background: boolean;
+  cwd?: string;
+}
+
+export interface ScriptRunResult {
+  /** 后台启动与被信号终止时为 null(拿不到退出码) */
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export interface HttpRunOptions {
+  url: string;
+  method: string;
+  body?: string;
+}
+
+export interface HttpRunResult {
+  status: number;
+  body: string;
+}
+
+export type ScriptRunner = (options: ScriptRunOptions) => Promise<ScriptRunResult>;
+export type HttpRunner = (options: HttpRunOptions) => Promise<HttpRunResult>;
+export type CommandRunner = (command: string, args: string[]) => Promise<unknown> | Thenable<unknown>;
+
+export interface QuickActionManagerDeps {
+  runScript?: ScriptRunner;
+  runHttp?: HttpRunner;
+  executeCommand?: CommandRunner;
+}
+
+/**
+ * 默认 script 执行器:shell 起 bat(Windows .bat 必须走 shell)。
+ * 前台收 stdout/stderr 原样交流水层;后台不挂管道(管道写满会把长跑的
+ * 启服脚本挂死,输出归脚本自己的日志)。
+ */
+export const spawnScript: ScriptRunner = options =>
+  new Promise<ScriptRunResult>((resolve, reject) => {
+    // cwd 未给即工作区根(设计 1.8):bat 里的相对路径按工程根算
+    const cwd = options.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const child = child_process.spawn(options.script, [], {
+      cwd,
+      shell: true,
+      windowsHide: true,
+      stdio: options.background ? 'ignore' : ['ignore', 'pipe', 'pipe']
+    });
+    if (options.background) {
+      // 起服类不等退出码:进程活着即「已启动」
+      resolve({ code: null, stdout: '', stderr: '' });
+      return;
+    }
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    // 启动失败(路径不存在/cwd 无效)走 error,正常运行走 close;
+    // Promise 只认第一次 settle,两路都挂上不需要额外守卫。
+    child.on('error', (error: Error) => reject(error));
+    child.on('close', (code: number | null) => resolve({ code, stdout, stderr }));
+  });
+
+/**
+ * 默认 http 执行器:非 2xx 照实回状态码,由流水层判成败(不抛)。
+ * timeoutMs 是给测试留的缝(本地热更默认 10 秒,不该让用例真等 10 秒)。
+ */
+export const fetchHttp = (
+  options: HttpRunOptions,
+  timeoutMs: number = QUICK_ACTION_TIMEOUT_MS
+): Promise<HttpRunResult> =>
+  new Promise<HttpRunResult>((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(options.url);
+    } catch {
+      reject(new Error(`URL 无法解析: ${options.url}`));
+      return;
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      reject(new Error(`不支持的协议: ${parsed.protocol}`));
+      return;
+    }
+    const client = parsed.protocol === 'https:' ? https : http;
+    const req = client.request(parsed, { method: options.method }, res => {
+      const chunks: Buffer[] = [];
+      let received = 0;
+      res.on('data', (chunk: Buffer) => {
+        const room = RESPONSE_PREVIEW_LIMIT - received;
+        if (room > 0) {
+          chunks.push(room < chunk.length ? chunk.subarray(0, room) : chunk);
+        }
+        received += chunk.length;
+      });
+      res.on('end', () => resolve({ status: res.statusCode as number, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`请求超时(${timeoutMs}ms)`));
+    });
+    req.on('error', (error: Error) => reject(error));
+    if (options.body !== undefined && options.body.length > 0) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** quick pick 与确认框的目标描述:命令带参数,脚本/请求给原始目标 */
+function describeActionTarget(action: QuickAction): string {
+  if (action.type === 'command') {
+    return `${action.command} ${action.args.join(' ')}`;
+  }
+  if (action.type === 'script') {
+    return action.script;
+  }
+  return action.url;
+}
+
+/** 执行期变量替换(1.5):只碰配置字面串,解析不了就抛,绝不静默空串 */
+function resolveAction(action: QuickAction, folders: readonly WorkspaceFolderRef[]): QuickAction {
+  if (action.type === 'command') {
+    return { ...action, args: action.args.map(arg => resolveActionVariables(arg, folders)) };
+  }
+  if (action.type === 'script') {
+    return {
+      ...action,
+      script: resolveActionVariables(action.script, folders),
+      cwd: action.cwd === undefined ? undefined : resolveActionVariables(action.cwd, folders)
+    };
+  }
+  return {
+    ...action,
+    url: resolveActionVariables(action.url, folders),
+    body: action.body === undefined ? undefined : resolveActionVariables(action.body, folders)
+  };
+}
+
+export class QuickActionManager {
+  private readonly channel: vscode.OutputChannel;
+  private readonly runScript: ScriptRunner;
+  private readonly runHttp: HttpRunner;
+  private readonly executeCommand: CommandRunner;
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    deps: QuickActionManagerDeps = {}
+  ) {
+    this.channel = vscode.window.createOutputChannel(QUICK_ACTION_CHANNEL_NAME);
+    this.runScript = deps.runScript ?? spawnScript;
+    this.runHttp = deps.runHttp ?? fetchHttp;
+    this.executeCommand =
+      deps.executeCommand ?? ((command, args) => vscode.commands.executeCommand(command, ...args));
+    this.context.subscriptions.push({ dispose: (): void => this.dispose() });
+  }
+
+  /** 动作清单:读配置 → 无动作指路 → 勾选 → 执行 */
+  async show(): Promise<void> {
+    const { actions, invalidCount } = await this.loadActions();
+    if (invalidCount > 0) {
+      await vscode.window.showInformationMessage(`快速执行动作配置中有 ${invalidCount} 条无效，已跳过`);
+    }
+    if (actions.length === 0) {
+      await vscode.window.showInformationMessage(
+        '未配置快速执行动作：在 .kbengine/debug.json 的 quickActions 数组里添加'
+      );
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      actions.map(action => ({
+        label: action.name,
+        description: action.type,
+        detail: describeActionTarget(action)
+      })),
+      { placeHolder: '选择要执行的快速动作' }
+    );
+    if (!picked) {
+      return;
+    }
+    // 按 label 回找配置项;清单与配置同源,回找不到就当取消(不猜着执行)
+    const action = actions.find(item => item.name === picked.label);
+    if (!action) {
+      return;
+    }
+    await this.run(action);
+  }
+
+  /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */
+  async offerScanOnActivate(): Promise<void> {
+    const [folder] = this.workspaceFolders();
+    if (folder === undefined) {
+      return;
+    }
+    // memento 是可选状态:缺 workspaceState 的装配上下文按「首次运行」处理,
+    // 首装扫描只是提示,不该把激活链带崩
+    if (this.context.workspaceState?.get<boolean>(QUICK_ACTION_SCAN_DISMISS_KEY) === true) {
+      return;
+    }
+    const { actions } = await this.loadActions();
+    if (actions.length > 0) {
+      return;
+    }
+    let candidates: BatchScriptCandidate[];
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(folder.fsPath));
+      candidates = scanBatchScripts(folder.fsPath, () =>
+        entries.map(([name, type]): DirectoryEntry => ({ name, type }))
+      );
+    } catch {
+      // 根目录读不到(权限/虚拟文件系统):静默返回,不打扰用户
+      return;
+    }
+    if (candidates.length === 0) {
+      return;
+    }
+    const picked = await vscode.window.showQuickPick<ScanPickItem>(
+      candidates.map(candidate => ({
+        label: baseNameOf(candidate.path),
+        description: CATEGORY_LABELS[candidate.category],
+        value: candidate
+      })),
+      { canPickMany: true, placeHolder: '勾选要登记为快速执行动作的脚本' }
+    );
+    const chosen = (picked ?? []).map(item => item.value);
+    if (chosen.length === 0) {
+      await this.context.workspaceState?.update(QUICK_ACTION_SCAN_DISMISS_KEY, true);
+      return;
+    }
+    const scanned = buildScannedActions(chosen, folder.fsPath);
+    await this.writeQuickActions(folder.fsPath, scanned);
+    await vscode.window.showInformationMessage(`已写入 ${scanned.length} 个快速执行动作到 .kbengine/debug.json`);
+  }
+
+  /** 单个动作执行链:变量替换 → 确认 → 分发 → 流水(失败一次性弹窗) */
+  private async run(action: QuickAction): Promise<boolean> {
+    let resolved: QuickAction;
+    try {
+      resolved = resolveAction(action, this.workspaceFolders());
+    } catch (error) {
+      const message = errorMessage(error);
+      this.append(`${action.name} → ✗ ${message}`);
+      await vscode.window.showErrorMessage(message);
+      return false;
+    }
+    if (resolved.confirm) {
+      const confirmed = await vscode.window.showInformationMessage(
+        `执行 ${resolved.name}：${describeActionTarget(resolved)}?`,
+        { modal: true },
+        QUICK_ACTION_CONFIRM_LABEL
+      );
+      if (confirmed !== QUICK_ACTION_CONFIRM_LABEL) {
+        return false;
+      }
+    }
+    try {
+      if (resolved.type === 'command') {
+        await this.executeCommand(resolved.command, resolved.args);
+        this.append(`${resolved.name} → ✓`);
+        return true;
+      }
+      if (resolved.type === 'script') {
+        return await this.runScriptAction(resolved);
+      }
+      return await this.runHttpAction(resolved);
+    } catch (error) {
+      // 执行器抛错(spawn 失败/请求超时/命令未注册)统一收口
+      const message = errorMessage(error);
+      this.append(`${resolved.name} → ✗ ${message}`);
+      await vscode.window.showErrorMessage(message);
+      return false;
+    }
+  }
+
+  private async runScriptAction(action: Extract<QuickAction, { type: 'script' }>): Promise<boolean> {
+    const result = await this.runScript({
+      script: action.script,
+      background: action.background,
+      cwd: action.cwd
+    });
+    if (action.background) {
+      this.append(`${action.name} → 已启动`);
+      return true;
+    }
+    if (result.stdout.length > 0) {
+      this.append(result.stdout.trimEnd());
+    }
+    if (result.stderr.length > 0) {
+      this.append(result.stderr.trimEnd());
+    }
+    if (result.code === 0) {
+      this.append(`${action.name} → ✓ exit 0`);
+      return true;
+    }
+    // 被信号终止时拿不到退出码,照实写「未知」而不是编一个码
+    const exit = result.code === null ? '未知' : String(result.code);
+    this.append(`${action.name} → ✗ exit ${exit}`);
+    await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (exit ${exit})`);
+    return false;
+  }
+
+  private async runHttpAction(action: Extract<QuickAction, { type: 'http' }>): Promise<boolean> {
+    const result = await this.runHttp({ url: action.url, method: action.method, body: action.body });
+    const ok = result.status >= 200 && result.status < 300;
+    this.append(`${action.name} → ${ok ? '✓' : '✗'} HTTP ${result.status}`);
+    if (!ok) {
+      await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (HTTP ${result.status})`);
+      return false;
+    }
+    return true;
+  }
+
+  private workspaceFolders(): readonly WorkspaceFolderRef[] {
+    return (
+      vscode.workspace.workspaceFolders?.map(folder => ({ fsPath: folder.uri.fsPath, name: folder.name })) ?? []
+    );
+  }
+
+  private configUri(fsPath: string): vscode.Uri {
+    return vscode.Uri.joinPath(vscode.Uri.file(fsPath), '.kbengine', 'debug.json');
+  }
+
+  /** 读动作配置;文件缺失/坏 JSON 一律当没有动作(不打断用户) */
+  private async loadActions(): Promise<{ actions: QuickAction[]; invalidCount: number }> {
+    const config = await this.readConfigFile();
+    if (config === null) {
+      return { actions: [], invalidCount: 0 };
+    }
+    return parseQuickActionConfigs(config.quickActions);
+  }
+
+  private async readConfigFile(): Promise<Record<string, unknown> | null> {
+    const [folder] = this.workspaceFolders();
+    if (folder === undefined) {
+      return null;
+    }
+    try {
+      const data = await vscode.workspace.fs.readFile(this.configUri(folder.fsPath));
+      return JSON.parse(Buffer.from(data).toString('utf8')) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 写回动作清单:保留既有 version/debug 段,只落顶层 quickActions 键 */
+  private async writeQuickActions(fsPath: string, actions: QuickAction[]): Promise<void> {
+    const existing = (await this.readConfigFile()) ?? {};
+    const content = Buffer.from(JSON.stringify({ ...existing, quickActions: actions }, null, 2), 'utf8');
+    await vscode.workspace.fs.writeFile(this.configUri(fsPath), content);
+  }
+
+  private append(line: string): void {
+    this.channel.appendLine(`[${new Date().toTimeString().slice(0, 8)}] ${line}`);
+  }
+
+  dispose(): void {
+    this.channel.dispose();
+  }
+}

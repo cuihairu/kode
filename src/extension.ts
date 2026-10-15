@@ -23,6 +23,7 @@ import {
 import { resolveServerComponent } from './serverCommandTarget';
 import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
+import { QuickActionManager } from './quickActions';
 import {
   readTelnetTargetsFromSettings,
   TelnetService,
@@ -821,6 +822,19 @@ export function activate(context: vscode.ExtensionContext) {
     (entityName?: string) => flowWebView.show(entityName)
   );
   context.subscriptions.push(showEntityFlowCommand);
+
+  // 快速执行动作(批126):动作清单由 .kbengine/debug.json 的 quickActions 驱动,
+  // 按钮挂视图标题栏与编辑器标题栏,命令本体只有一个 show。
+  // 首装扫一层 .bat 的提示在激活末跑一次(不 await,不挡激活)。
+  const quickActionManager = new QuickActionManager(context);
+  const showQuickActionsCommand = vscode.commands.registerCommand('kbengine.quickActions.show', () =>
+    quickActionManager.show()
+  );
+  context.subscriptions.push(showQuickActionsCommand);
+  // 首装扫描要读写 workspaceState(取消记忆);宿主没给(嵌入/烟测替身)就不扫
+  if (context.workspaceState) {
+    void quickActionManager.offerScanOnActivate();
+  }
 
   // 初始化代码生成器
   const codeGenerator = new KBEngineCodeGenerator(context);

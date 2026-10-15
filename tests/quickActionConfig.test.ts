@@ -1,0 +1,261 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildScannedActions,
+  classifyBatchScript,
+  parseQuickActionConfigs,
+  resolveActionVariables
+} from '../src/quickActionConfig';
+import type { BatchScriptCandidate } from '../src/quickActionScanner';
+
+// 快速执行动作的纯函数层:配置解析校验、变量替换、脚本词表分类、扫描条目构造。
+// 设计口径见 docs/design/quick-actions-and-db-hint.md 1.8/1.5/1.4;未知变量
+// 一律抛错而非空串替换(1.5 拒绝静默空串)。
+
+const FOLDERS = [
+  { fsPath: '/ws/main', name: 'Main' },
+  { fsPath: '/ws/engine', name: 'Engine' }
+];
+
+describe('parseQuickActionConfigs', () => {
+  it('accepts all three backends and fills the documented defaults', () => {
+    const { actions, invalidCount } = parseQuickActionConfigs([
+      { name: 'restart', type: 'command', command: 'kbengine.server.restart', args: ['baseapp'] },
+      { name: 'start_server', type: 'script', script: '${workspaceFolder}/start_server.bat' },
+      { name: 'hotfix', type: 'http', url: 'http://127.0.0.1:9000/reload' }
+    ]);
+
+    expect(invalidCount).toBe(0);
+    expect(actions).toEqual([
+      {
+        name: 'restart',
+        type: 'command',
+        command: 'kbengine.server.restart',
+        args: ['baseapp'],
+        confirm: true,
+        source: 'manual'
+      },
+      {
+        name: 'start_server',
+        type: 'script',
+        script: '${workspaceFolder}/start_server.bat',
+        background: false,
+        confirm: true,
+        source: 'manual'
+      },
+      {
+        name: 'hotfix',
+        type: 'http',
+        url: 'http://127.0.0.1:9000/reload',
+        method: 'POST',
+        confirm: true,
+        source: 'manual'
+      }
+    ]);
+  });
+
+  it('keeps explicit values and optional fields', () => {
+    const { actions } = parseQuickActionConfigs([
+      {
+        name: 'stop_all',
+        type: 'script',
+        script: './stop.bat',
+        cwd: '${workspaceFolder}',
+        background: true,
+        confirm: false,
+        source: 'scan',
+        category: 'server'
+      },
+      { name: 'ping', type: 'http', url: 'http://127.0.0.1/ping', method: 'GET', body: '' }
+    ]);
+
+    expect(actions).toEqual([
+      {
+        name: 'stop_all',
+        type: 'script',
+        script: './stop.bat',
+        cwd: '${workspaceFolder}',
+        background: true,
+        confirm: false,
+        source: 'scan',
+        category: 'server'
+      },
+      { name: 'ping', type: 'http', url: 'http://127.0.0.1/ping', method: 'GET', body: '', confirm: true, source: 'manual' }
+    ]);
+  });
+
+  it('drops every malformed entry and counts them', () => {
+    const raw = [
+      null,
+      'not-an-object',
+      {},
+      { name: '  ', type: 'command', command: 'kbengine.refreshExplorer' },
+      { name: 'nope', type: 'shell' },
+      { name: 'no-target', type: 'command' },
+      { name: 'no-target', type: 'script' },
+      { name: 'no-target', type: 'http' },
+      { name: 'bad-method', type: 'http', url: 'http://127.0.0.1', method: 'DELETE' },
+      { name: 'bad-args', type: 'command', command: 'kbengine.refreshExplorer', args: 'baseapp' },
+      { name: 'bad-confirm', type: 'command', command: 'kbengine.refreshExplorer', confirm: 'yes' },
+      { name: 'bad-source', type: 'command', command: 'kbengine.refreshExplorer', source: 'auto' },
+      { name: 'bad-category', type: 'script', script: './x.bat', category: 'misc' }
+    ];
+
+    const { actions, invalidCount } = parseQuickActionConfigs(raw);
+    expect(actions).toEqual([]);
+    expect(invalidCount).toBe(13);
+  });
+
+  it('skips invalid entries while keeping the valid ones', () => {
+    const { actions, invalidCount } = parseQuickActionConfigs([
+      { name: 'keep', type: 'command', command: 'kbengine.refreshExplorer' },
+      { name: 'drop', type: 'command' }
+    ]);
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0].name).toBe('keep');
+    expect(invalidCount).toBe(1);
+  });
+
+  it('accepts an empty and non-array raw shape as an empty action list', () => {
+    expect(parseQuickActionConfigs([])).toEqual({ actions: [], invalidCount: 0 });
+    expect(parseQuickActionConfigs(undefined as unknown as unknown[])).toEqual({ actions: [], invalidCount: 0 });
+  });
+});
+
+describe('resolveActionVariables', () => {
+  it('substitutes ${workspaceFolder} with the first workspace folder', () => {
+    expect(resolveActionVariables('${workspaceFolder}/start.bat', FOLDERS)).toBe('/ws/main/start.bat');
+  });
+
+  it('substitutes ${workspaceFolder:Name} by folder name', () => {
+    expect(resolveActionVariables('${workspaceFolder:Engine}/build.bat', FOLDERS)).toBe('/ws/engine/build.bat');
+  });
+
+  it('substitutes ${env:NAME} from the process environment', () => {
+    process.env['KODE_QA_PORT'] = '9000';
+    process.env['KODE_QA_PATH'] = '/tmp/hotfix';
+    try {
+      expect(
+        resolveActionVariables('http://127.0.0.1:${env:KODE_QA_PORT}/reload?next=${env:KODE_QA_PATH}', FOLDERS)
+      ).toBe('http://127.0.0.1:9000/reload?next=/tmp/hotfix');
+    } finally {
+      delete process.env['KODE_QA_PORT'];
+      delete process.env['KODE_QA_PATH'];
+    }
+  });
+
+  it('throws naming the variable when it is unknown', () => {
+    expect(() => resolveActionVariables('${config:kbengine.x}', FOLDERS)).toThrow(/config:kbengine\.x/);
+  });
+
+  it('throws when no workspace folder is available', () => {
+    expect(() => resolveActionVariables('${workspaceFolder}/x.bat')).toThrow(/workspaceFolder/);
+  });
+
+  it('throws when the named workspace folder does not exist', () => {
+    expect(() => resolveActionVariables('${workspaceFolder:Missing}/x.bat', FOLDERS)).toThrow(/workspaceFolder:Missing/);
+  });
+
+  it('throws when the env variable is not set', () => {
+    delete process.env['KODE_QA_UNSET_VAR'];
+    expect(() => resolveActionVariables('${env:KODE_QA_UNSET_VAR}', FOLDERS)).toThrow(/env:KODE_QA_UNSET_VAR/);
+  });
+
+  it('returns the text unchanged when it has no variables', () => {
+    expect(resolveActionVariables('kbengine.server.restart', FOLDERS)).toBe('kbengine.server.restart');
+  });
+
+  it('substitutes several variables inside one string', () => {
+    const text = '${workspaceFolder:Engine}/${workspaceFolder}/start.bat';
+    expect(resolveActionVariables(text, FOLDERS)).toBe('/ws/engine/ws/main/start.bat');
+  });
+});
+
+describe('classifyBatchScript', () => {
+  it('classifies server scripts by the stop/start word list', () => {
+    expect(classifyBatchScript('start_server.bat')).toBe('server');
+    expect(classifyBatchScript('START_ALL.bat')).toBe('server');
+    expect(classifyBatchScript('boot.bat')).toBe('server');
+    expect(classifyBatchScript('restart_cell.bat')).toBe('server');
+    expect(classifyBatchScript('stop.bat')).toBe('server');
+    expect(classifyBatchScript('server_ctl.bat')).toBe('server');
+  });
+
+  it('classifies export scripts by the export word list', () => {
+    expect(classifyBatchScript('export_tables.bat')).toBe('export');
+    expect(classifyBatchScript('Convert.bat')).toBe('export');
+    expect(classifyBatchScript('导表.bat')).toBe('export');
+  });
+
+  it('prefers the server category when both word lists match', () => {
+    expect(classifyBatchScript('start_export.bat')).toBe('server');
+  });
+
+  it('returns null for unmatched names', () => {
+    expect(classifyBatchScript('readme.bat')).toBeNull();
+    expect(classifyBatchScript('tools/setup.bat')).toBeNull();
+  });
+});
+
+describe('buildScannedActions', () => {
+  it('builds script entries with variable paths and the scanned defaults', () => {
+    const candidates: BatchScriptCandidate[] = [
+      { path: '/ws/start_server.bat', category: 'server' },
+      { path: '/ws/stop_server.bat', category: 'server' },
+      { path: '/ws/EXPORT_TABLES.bat', category: 'export' }
+    ];
+
+    expect(buildScannedActions(candidates, '/ws')).toEqual([
+      {
+        name: 'start_server',
+        type: 'script',
+        script: '${workspaceFolder}/start_server.bat',
+        background: true,
+        confirm: true,
+        source: 'scan',
+        category: 'server'
+      },
+      {
+        name: 'stop_server',
+        type: 'script',
+        script: '${workspaceFolder}/stop_server.bat',
+        background: false,
+        confirm: true,
+        source: 'scan',
+        category: 'server'
+      },
+      {
+        name: 'EXPORT_TABLES',
+        type: 'script',
+        script: '${workspaceFolder}/EXPORT_TABLES.bat',
+        background: false,
+        confirm: true,
+        source: 'scan',
+        category: 'export'
+      }
+    ]);
+  });
+
+  it('marks boot-named scripts as background as well', () => {
+    const actions = buildScannedActions(
+      [{ path: '/ws/BOOT.bat', category: 'server' }],
+      '/ws'
+    );
+    expect(actions[0].background).toBe(true);
+  });
+
+  it('returns an empty list for no candidates', () => {
+    expect(buildScannedActions([], '/ws')).toEqual([]);
+  });
+
+  it('falls back to the file name for a candidate outside the workspace root', () => {
+    const actions = buildScannedActions(
+      [{ path: '/other/scripts/boot_cell.bat', category: 'server' }],
+      '/ws'
+    );
+
+    expect(actions[0].script).toBe('${workspaceFolder}/boot_cell.bat');
+    expect(actions[0].name).toBe('boot_cell');
+    expect(actions[0].background).toBe(true);
+  });
+});

@@ -268,6 +268,10 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.telnet.disconnect');
     expect(messages.info.some(message => message.includes('没有已连接的 telnet 会话'))).toBe(true);
 
+    // 快速执行动作(视图标题栏/编辑器标题栏按钮共用):无配置动作时指路配置文件
+    await commands.executeCommand('kbengine.quickActions.show');
+    expect(messages.info.some(message => message.includes('未配置快速执行动作'))).toBe(true);
+
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
     expect(messages.warning.some(message => message.includes('未找到定义文件'))).toBe(true);
@@ -475,8 +479,9 @@ describe('extension activate 装配', () => {
       expect(collection.get(openedDef.uri).length).toBeGreaterThan(0);
 
       // entity.open happy path:真实落盘 def 后打开定义文件
+      // (只判本命令的告警:激活期发现报告的告警与本用例无关,时序上也可能后到)
       await commands.executeCommand('kbengine.entity.open', 'Avatar');
-      expect(messages.warning).toHaveLength(0);
+      expect(messages.warning.filter(message => message.includes('打开实体定义失败'))).toHaveLength(0);
       expect((workspaceState.openTextDocumentCalls.at(-1) as Uri).fsPath).toContain('Avatar.def');
       expect(windowState.showTextDocumentCalls.at(-1)?.document).toBeDefined();
 

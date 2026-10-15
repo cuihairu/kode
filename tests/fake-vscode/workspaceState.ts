@@ -8,15 +8,22 @@ import { EventEmitter, Uri } from './core';
 
 // 内存文件系统:debugConfig 的 loadConfig/updateLaunchJson 等经
 // workspace.fs 读写真实路径内容;文件不存在时按实现语义抛错(进 catch)。
+// 目录读取(quickActionScanner 经 readDirectory 扫一层 .bat)同法记账。
 const memoryFiles = new Map<string, Uint8Array>();
+const memoryDirectories = new Map<string, Array<[string, number]>>();
 
 export const memoryFileSystem = {
   files: memoryFiles,
+  directories: memoryDirectories,
   reset: (): void => {
     memoryFiles.clear();
+    memoryDirectories.clear();
   },
   set: (fsPath: string, content: string): void => {
     memoryFiles.set(fsPath, Buffer.from(content, 'utf8'));
+  },
+  setDirectory: (fsPath: string, entries: Array<[string, number]>): void => {
+    memoryDirectories.set(fsPath, entries);
   }
 };
 
@@ -64,6 +71,13 @@ export const fs = {
   },
   writeFile: async (uri: Uri, content: Uint8Array): Promise<void> => {
     memoryFiles.set(uri.fsPath, content);
+  },
+  readDirectory: async (uri: Uri): Promise<Array<[string, number]>> => {
+    const entries = memoryDirectories.get(uri.fsPath);
+    if (entries === undefined) {
+      throw new Error(`ENOENT: ${uri.fsPath}`);
+    }
+    return entries;
   },
   delete: async (uri: Uri): Promise<void> => {
     memoryFiles.delete(uri.fsPath);

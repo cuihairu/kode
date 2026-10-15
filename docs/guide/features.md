@@ -92,6 +92,16 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 
 字段与变量表见 [配置说明](./configuration.md)，命令细节见 [命令与面板](./commands.md)。
 
+## 快速执行动作
+
+- 动作清单写在工作区 `.kbengine/debug.json` 顶层 `quickActions` 数组（跟着 KBEngine 工程走，不进 VS Code 设置、不进 `launch.json`）
+- 三类后端白名单：`command`（VS Code 命令）、`script`（配置里显式声明的脚本）、`http`（配置里写死的本地热更 URL）；不做任意 shell 入口
+- 触发两路：Servers 视图标题栏按钮 + `.def` / Python / XML 编辑器右上角按钮 + 命令面板 `Run Quick Actions`
+- 动作缺省弹 modal 确认框，流水进 OUTPUT 面板「KBEngine 快速执行动作」，失败一次性弹窗并留退出码/状态码
+- 首装扫一层工作区根的 `.bat`，命中启停 / 导配置表词表的脚本多选提示登记，取消后本工作区不再自动弹
+
+命令细节见 [命令与面板](./commands.md)，配置键与变量表见 [配置说明](./configuration.md)。
+
 ## 依赖图能力
 
 - Mermaid 可视化
