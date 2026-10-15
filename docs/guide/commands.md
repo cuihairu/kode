@@ -319,6 +319,17 @@
   - 记忆的动作被删掉/改坏时回落到清单第一条，不报错
   - 执行链与 `kbengine.quickActions.show` 完全一致（变量替换 → 确认 → 分发 → 流水）
 
+### `kbengine.python.syncExtraPaths`
+
+- 标题：`Sync Python Extra Paths`
+- 作用：把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`（WorkspaceFolder 级），让 Python 扩展（Pylance/pyright）能解析实体脚本里的 `import KBEngine`、`import common.*`
+- 入口：命令面板 `Sync Python Extra Paths`；扩展激活时也会自动同步一次（`kbengine.python.extraPathsSync` 默认开，激活期全程静默零提示）
+- 行为：
+  - scripts 根候选与实体索引同口径：`<工作区>/scripts`、`<工作区>/assets/scripts`、`<工作区>/server_assets/scripts`、一级 `<xxx>_assets/scripts`（批129 资产根约定）；只收磁盘上真实存在的
+  - 经带资源域的 `getConfiguration('python', folder).update(...)` 写入（WorkspaceFolder 级），settings.json 里的注释由宿主保全；只在发现结果与现值不同时写，无变化不碰文件
+  - 只管理本扩展写入的那一段：上次写入的集合记在 workspaceState，再同步时先剔除再写新集合，用户手填的路径永不被动
+  - 设置 `kbengine.python.extraPathsSync: false` 可整体关闭（关闭后命令只说明不写）；手动重跑会播报写入结果，激活期自动同步不打扰
+
 ## 典型使用流程
 
 ### 新建实体

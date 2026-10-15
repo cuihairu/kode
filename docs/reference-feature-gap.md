@@ -37,7 +37,7 @@ kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节�
 | 配置校验/发现 | 已实现:配置自动发现四级优先级(批127/128/129,发现报告命令)+ 最终合并配置视图(`src/serverConfigMerge.ts:351-366`) | 工作区初始化、路径映射(USAGE.md) | `jsonValidation` 校验 `*.project.json`(清单) | — | — |
 | 性能剖析 | **未实现**(缺口 G8) | TICK/CPROFILE/PYPROFILE/EVENT/NETWORK(USAGE.md,KBE Nex 3.x 二进制管理协议) | — | — | — |
 | 热重载(自动) | **未实现**(缺口 G5;手动热更可经 quickActions http/script 后端) | 文件监视自动热重载(USAGE.md) | 保存即同步(rojo serve 常驻) | — | — |
-| Python extraPaths 接线 | **未实现**(缺口 G1,全仓 0 处引用) | 按 base/cell 动态 extraPaths(USAGE.md) | — | — | — |
+| Python extraPaths 接线 | 已实现(批136,`src/pythonExtraPaths.ts`:scripts 根按 entityMapping 同口径 + 一级 `*_assets` 约定发现,写 WorkspaceFolder 级 `python.analysis.extraPaths`,只管理自己那一段,`kbengine.python.syncExtraPaths` 手动重跑 + 激活期自动一次,`kbengine.python.extraPathsSync` 默认开可关) | 按 base/cell 动态 extraPaths(USAGE.md) | — | — | — |
 | 配置文件 Schema 校验 | **未实现**(缺口 G3) | — | `jsonValidation` 对工程文件 | — | — |
 
 「本仓更强」如实说明:kode 的 def/types.xml 语义面(注入着色、形态悬停、反扫 CodeLens)、数据库工具三件套(schema/模拟/漂移)、静态分析与发现报告,参考四件均无对应面;Rojo 的工具链自动安装与 Roblox LSP 的完整 LSP(独立语言服务器)属其生态定位, kode 不照搬。
@@ -46,7 +46,7 @@ kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节�
 
 | 编号 | 缺口 | 来源 | 优先级 | 备注 |
 | --- | --- | --- | --- | --- |
-| G1 | `python.analysis.extraPaths` 自动接线(按 `getPythonScriptRoots` 反推的 scripts 根 + 引擎源码根写入 Python 扩展配置) | Nex X | **P1** | 让 Pylance 解析 `import KBEngine`/`kbe*`;kode 已有根发现,只差写配置这一步 |
+| G1 | `python.analysis.extraPaths` 自动接线(按 `getPythonScriptRoots` 反推的 scripts 根 + 引擎源码根写入 Python 扩展配置) | Nex X | **P1** | **已实现**(批136,`src/pythonExtraPaths.ts`):scripts 根同口径发现 + 一级 `*_assets` 约定,WorkspaceFolder 级写入,只管理自己那一段;G2 完成前 `import KBEngine` 的解析还取决于工程里有无 KBEngine.py |
 | G2 | KBEngine Python API 存根导出(从 `src/kbeModuleIndex.ts` 签名索引导出 `.pyi`,配合 G1) | Nex X(generateStubs + 内置提示文件) | **P1** | 索引已存在,导出为纯增量;不抄 Nex X 文件,自研索引生成 |
 | G3 | `.kbengine/debug.json` JSON Schema 校验(`contributes.jsonValidation`) | Rojo(`*.project.json` 同法) | **P1** | quickActions 配置错误直接在编辑器标红;schema 与 `quickActionConfig.ts` 解析规则同源 |
 | G4 | 客户端实体/SDK 多语言生成(C#/TS/C++/GDScript 模板) | Nex X | **P2** | 向导骨架已有;语言种类等用户点名单再排 |
@@ -59,7 +59,7 @@ kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节�
 
 ## 四、实施排序
 
-1. **G1 + G2 + G3(同一批,P1)**:Python 生态接线两件 + 配置校验一件,互相独立但都是小增量、高感知;G1/G2 让「装了 Python 扩展的用户」立即获得 KBEngine API 补全,G3 让 quickActions 配置错误前置暴露。
+1. **G1 + G2 + G3(同一批,P1)**:Python 生态接线两件 + 配置校验一件,互相独立但都是小增量、高感知;G1/G2 让「装了 Python 扩展的用户」立即获得 KBEngine API 补全,G3 让 quickActions 配置错误前置暴露。**G1 已落地(批136)**,G2/G3 待做。
 2. **G5(P2)**:自动热重载,依赖 quickActions 既有白名单,配置门控。
 3. **G6(P2)**:日志 ERROR 扫描,复用 logWebView。
 4. **G4(P2,等点名)**:多语言 SDK 生成,语言清单须用户拍板。

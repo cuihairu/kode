@@ -277,6 +277,10 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.quickActions.runDefault');
     expect(messages.info.some(message => message.includes('未发现可执行脚本'))).toBe(true);
 
+    // 盘点 G1 Python extraPaths 接线:无工作区时如实说明并跳过(不写任何配置)
+    await commands.executeCommand('kbengine.python.syncExtraPaths');
+    expect(messages.info.some(message => message.includes('未打开工作区'))).toBe(true);
+
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
     expect(messages.warning.some(message => message.includes('未找到定义文件'))).toBe(true);

@@ -70,7 +70,8 @@
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
     "onCommand:kbengine.quickActions.show",
-    "onCommand:kbengine.quickActions.runDefault"
+    "onCommand:kbengine.quickActions.runDefault",
+    "onCommand:kbengine.python.syncExtraPaths"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -328,6 +329,10 @@
         "command": "kbengine.quickActions.runDefault",
         "title": "Run Default Quick Action",
         "icon": "$(play)"
+      },
+      {
+        "command": "kbengine.python.syncExtraPaths",
+        "title": "Sync Python Extra Paths"
       }
     ],
     "menus": {
@@ -690,6 +695,11 @@
               }
             }
           }
+        },
+        "kbengine.python.extraPathsSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "自动把工作区发现的 KBEngine scripts 根写入 python.analysis.extraPaths（WorkspaceFolder 级；只管理本扩展写入的那一段，用户手填路径不动；无变化不写）"
         }
       }
     }

@@ -87,17 +87,27 @@ export const fs = {
 // openTextDocument 调用记账(kbengine.entity.open / kbengine.database.open
 // 装配断言用);默认返回值与旧 stub 完全一致,测试可整体替换。
 const openTextDocumentCalls: unknown[] = [];
+// updateWorkspaceConfiguration 记账(pythonExtraPaths 写 python.analysis.extraPaths)
+const workspaceConfigurationUpdates: Array<Record<string, unknown>> = [];
 
 export const workspace = {
   workspaceFolders: [] as Array<{ uri: Uri; name: string; index: number }>,
   textDocuments: [] as unknown[],
   fs,
   findFiles: async () => [] as Uri[],
-  getConfiguration: (section?: string) => ({
+  getConfiguration: (section?: string, scope?: unknown) => ({
     get: <T>(key: string, defaultValue: T): T => {
       const overrides = section ? configurationOverrides.get(section) : undefined;
       const value = overrides ? overrides[key] : undefined;
       return (value === undefined ? defaultValue : value) as T;
+    },
+    update: async (key: string, value: unknown, target: unknown): Promise<void> => {
+      workspaceConfigurationUpdates.push({
+        key: section ? `${section}.${key}` : key,
+        value,
+        scope: target,
+        folder: scope
+      });
     }
   }),
   openTextDocument: async (uri: unknown): Promise<unknown> => {
@@ -160,6 +170,7 @@ export const workspace = {
 
 export const workspaceState = {
   openTextDocumentCalls,
+  workspaceConfigurationUpdates,
   contentProviders: textDocumentContentProviders,
   /** 重置装配痕迹(事件监听器、文档集合、Provider 记账、内存 fs 与配置覆写)。
    *  workspaceFolders 由测试自行管理,不在此清空。 */
@@ -170,6 +181,7 @@ export const workspaceState = {
     workspace.textDocuments = [];
     textDocumentContentProviders.clear();
     openTextDocumentCalls.length = 0;
+    workspaceConfigurationUpdates.length = 0;
     lastFileSystemWatcher.current = null;
     memoryFileSystem.reset();
     configurationOverrides.clear();

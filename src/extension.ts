@@ -24,6 +24,7 @@ import { resolveServerComponent } from './serverCommandTarget';
 import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager } from './quickActions';
+import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import {
   readTelnetTargetsFromSettings,
   TelnetService,
@@ -909,6 +910,16 @@ export function activate(context: vscode.ExtensionContext) {
     () => quickActionManager.runDefault()
   );
   context.subscriptions.push(runDefaultQuickActionCommand);
+
+  // Python 生态接线(盘点 G1):scripts 根写进 python.analysis.extraPaths,
+  // Pylance 才能解析 import KBEngine。激活期自动同步一次(设置默认开,
+  // 只在有变化时写,全程零提示不打扰开窗),命令面板留手动重跑入口。
+  const syncPythonExtraPathsCommand = vscode.commands.registerCommand(
+    'kbengine.python.syncExtraPaths',
+    () => syncPythonExtraPaths(context)
+  );
+  context.subscriptions.push(syncPythonExtraPathsCommand);
+  void syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
   // 首装扫描要读写 workspaceState(取消记忆);宿主没给(嵌入/烟测替身)就不扫
   if (context.workspaceState) {
     void quickActionManager.offerScanOnActivate();
