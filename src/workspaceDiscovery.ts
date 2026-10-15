@@ -41,7 +41,7 @@ export const DISCOVERY_CONVENTIONS = {
     'kbe/src/lib/db_mysql/entity_table_mysql.cpp',
     'kbe/src/common/entitydef/entitydef.cpp'
   ],
-  // 服务器资产根(kbengine.configPath)约定:'' 即工作区根本身。命中验收
+  // 服务器资产根(kbengine.assetsRoot)约定:'' 即工作区根本身。命中验收
   // 不是目录存在,而是引擎装载探针 <候选>/res/server/kbengine.xml 在
   configRoots: ['', 'assets', 'server_assets']
 } as const;
@@ -293,7 +293,7 @@ export function resolveDiscoveredTypesXmlPath(workspaceRoot: string): string | n
 }
 
 /**
- * 服务器资产根发现(kbengine.configPath 未通过探针时的兜底):约定链按序
+ * 服务器资产根发现(kbengine.assetsRoot 未通过探针时的兜底):约定链按序
  * 取第一个探针命中(工作区根/assets/server_assets),约定全 miss 而深扫描
  * 多候选时用记忆的选择(激活期询问所得),深扫描唯一命中直接采用——口径与
  * def 根家族一致:约定优先、宁缺勿猜。
@@ -441,7 +441,7 @@ const KEY_LABELS: Record<DiscoveryKey, string> = {
   entityDefs: '实体定义目录(entity_defs)',
   entitiesXml: 'entities.xml',
   typesXml: 'types.xml',
-  configRoot: '服务器资产根(kbengine.configPath)'
+  configRoot: '服务器资产根(kbengine.assetsRoot)'
 };
 
 /**
@@ -497,7 +497,7 @@ export type DiscoveryFieldLabel =
   | '接口目录 interfaces'
   | '组件目录 components'
   | '引擎消息表 messages_fixed.xml'
-  | '资产根 kbengine.configPath'
+  | '资产根 kbengine.assetsRoot'
   | '引擎二进制 kbengine.binPath';
 
 export interface DiscoveryFieldReport {
@@ -547,7 +547,7 @@ export interface DiscoveryLayoutFacts {
   componentsRoot: string | null;
   entitiesXmlPath: string | null;
   typesXmlPath: string | null;
-  /** kbengine.configPath 原值(资产根,可能为空串;仅 ${workspaceFolder} 展开) */
+  /** kbengine.assetsRoot 原值(资产根,可能为空串;仅 ${workspaceFolder} 展开) */
   configPath: string;
   /** 生效资产根(装配层经管理器口径:原值探针命中优先,否则发现兜底) */
   configPathEffective: string;
@@ -763,7 +763,7 @@ export function buildDiscoveryReport(
             ? 'deep-scan'
             : 'fallback';
   fields.push({
-    label: '资产根 kbengine.configPath',
+    label: '资产根 kbengine.assetsRoot',
     status: configProbeOk ? 'ok' : 'missing',
     resolved: configPathEffective || null,
     source: configSource,
@@ -858,8 +858,8 @@ function remediationFor(field: DiscoveryFieldReport): string {
     case '接口目录 interfaces':
     case '组件目录 components':
       return '该目录由实体定义目录推导,先修好实体定义目录';
-    case '资产根 kbengine.configPath':
-      return '设置 kbengine.configPath 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/),或把资产根放在约定位置(工作区根、assets/、server_assets/,探针均为 res/server/kbengine.xml)';
+    case '资产根 kbengine.assetsRoot':
+      return '设置 kbengine.assetsRoot 指向 KBEngine 资产根(其下应有 res/server/kbengine.xml 与 scripts/),或把资产根放在约定位置(工作区根、assets/、server_assets/,探针均为 res/server/kbengine.xml)';
     case '引擎二进制 kbengine.binPath':
       return '设置 kbengine.binPath 指向 kbe/bin/server(引擎源码根会被自动推导)';
     case '引擎消息表 messages_fixed.xml':

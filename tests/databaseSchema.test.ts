@@ -539,7 +539,7 @@ describe('批B SQL 模板与库表前缀', () => {
   });
 
   it('qualifies both table names with the database read from engine config', () => {
-    configurationOverrides.set('kbengine', { configPath: path.join(root, 'kbengine.xml') });
+    configurationOverrides.set('kbengine', { assetsRoot: path.join(root, 'kbengine.xml') });
     const snapshot = getDatabaseSchemaSnapshot('Hero', root);
     configurationOverrides.delete('kbengine');
     const childTable = snapshot!.tableIndex.get('tbl_Hero_bag')!;

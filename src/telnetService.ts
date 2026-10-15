@@ -212,7 +212,7 @@ export type TelnetProbeState =
 /**
  * 配置未显式指定 kbengine.xml 时的约定探测路径(工作区根相对):
  * 官方 server assets 布局 res/server/kbengine.xml、其 assets/ 嵌套变体、
- * 以及直接置于工作区根的布局。kbengine.configPath 指向的服务器资产目录
+ * 以及直接置于工作区根的布局。kbengine.assetsRoot 指向的服务器资产目录
  * 优先于这些约定(引擎 KBE_RES_PATH 的项目侧即在此找 kbengine.xml)。
  * 取第一个存在的文件为准,不深入猜测。
  */
@@ -224,7 +224,7 @@ const KBENGINE_XML_CANDIDATE_PATHS = [
 
 /**
  * 从 kode 设置读取探测目标(kbengine.telnet.*):显式 configXmlPath 指向的
- * 元件 kbengine.xml(未设置时按 configPath 与约定路径探测)解析
+ * 元件 kbengine.xml(未设置时按 assetsRoot 与约定路径探测)解析
  * <telnet_service> 段作端口/密码回落;再经 kbengine.binPath 推导引擎
  * kbengine_defaults.xml(批112 用户令),解析各组件 telnet 真实端口/密码
  * 补值——即「defaults 先载、元件 kbengine.xml 覆盖」的合成口径
@@ -245,9 +245,9 @@ export function readTelnetTargetsFromSettings(): TelnetTarget[] {
   if (configXmlPath) {
     candidatePaths = [expandWorkspacePlaceholders(configXmlPath, workspaceRoot)];
   } else if (workspaceRoot) {
-    // configPath(kbengine.configPath,服务器资产目录)下优先,引擎即在此找元件配置;
+    // assetsRoot(kbengine.assetsRoot,服务器资产根)下优先,引擎即在此找元件配置;
     // 批128:设置自身候选之后,发现出的资产根参与(装载口径位置 res/server/ 一并探测)
-    const settingPath = expandWorkspacePlaceholders(config.get<string>('configPath', ''), workspaceRoot);
+    const settingPath = expandWorkspacePlaceholders(config.get<string>('assetsRoot', ''), workspaceRoot);
     const discovered = resolveDiscoveredConfigRoot(workspaceRoot);
     const preferred: string[] = [];
     if (settingPath.length > 0) {

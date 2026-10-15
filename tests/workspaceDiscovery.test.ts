@@ -562,7 +562,7 @@ describe('activation wiring(批125 发现流程经 activate 装配)', () => {
   });
 });
 
-describe('configRoot 发现(批128:kbengine.configPath 约定兜底)', () => {
+describe('configRoot 发现(批128:kbengine.assetsRoot 约定兜底)', () => {
   it('collects nested res/server/kbengine.xml probe roots but not root-level files', () => {
     write('demo/res/server/kbengine.xml');
     write('kbengine.xml');

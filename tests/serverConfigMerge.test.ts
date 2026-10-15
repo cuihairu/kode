@@ -168,7 +168,7 @@ describe('resolveCustomConfigXmlPath / buildFinalServerConfig(装配读值)', ()
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('configPath 下的 kbengine.xml 优先,其次约定路径,全缺为 null', () => {
+  it('assetsRoot 下的 kbengine.xml 优先,其次约定路径,全缺为 null', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-'));
     try {
       stubWorkspace.workspaceFolders = [];
@@ -185,14 +185,14 @@ describe('resolveCustomConfigXmlPath / buildFinalServerConfig(装配读值)', ()
       fs.mkdirSync(serverDir, { recursive: true });
       const configPathXml = path.join(serverDir, 'kbengine.xml');
       fs.writeFileSync(configPathXml, '<root><baseapp><debug> 2 </debug></baseapp></root>');
-      configurationOverrides.set('kbengine', { configPath: '${workspaceFolder}/server' });
+      configurationOverrides.set('kbengine', { assetsRoot: '${workspaceFolder}/server' });
       expect(resolveCustomConfigXmlPath(root)).toBe(configPathXml);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('未配置 configPath:发现出的资产根参与探测(server_assets 布局,批128)', () => {
+  it('未配置 assetsRoot:发现出的资产根参与探测(server_assets 布局,批128)', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-finalcfg-disc-'));
     try {
       stubWorkspace.workspaceFolders = [{ uri: { fsPath: root } } as never];

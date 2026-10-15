@@ -237,7 +237,7 @@ export class KBEngineServerManager {
    */
   getConfigPath(): string {
     const config = vscode.workspace.getConfiguration('kbengine');
-    let configPath = config.get<string>('configPath', '');
+    let configPath = config.get<string>('assetsRoot', '');
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
     configPath = configPath.replace(/\$\{workspaceFolder\}/g, workspaceFolder);
@@ -331,7 +331,7 @@ export class KBEngineServerManager {
 
     if (!configPath) {
       vscode.window.showErrorMessage(
-        'KBEngine 配置目录为空，请检查 kbengine.configPath（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）'
+        'KBEngine 配置目录为空，请检查 kbengine.assetsRoot（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）'
       );
       return false;
     }

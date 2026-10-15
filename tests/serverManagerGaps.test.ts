@@ -125,7 +125,7 @@ beforeEach(() => {
   fs.mkdirSync(path.join(root, 'ws', 'cfg'), { recursive: true });
 
   configTable.binPath = path.join(root, 'bin');
-  configTable.configPath = path.join(root, 'ws', 'cfg');
+  configTable.assetsRoot = path.join(root, 'ws', 'cfg');
   configTable.autoStart = [];
 
   channels.length = 0;

@@ -117,7 +117,7 @@ beforeEach(async () => {
   fs.mkdirSync(path.join(root, 'ws', 'cfg'), { recursive: true });
 
   configTable.binPath = bin.binPath;
-  configTable.configPath = path.join(root, 'ws', 'cfg');
+  configTable.assetsRoot = path.join(root, 'ws', 'cfg');
   configTable.autoStart = ['logger'];
 
   channels.length = 0;
@@ -174,20 +174,20 @@ describe('KBEngineServerManager startComponent preflight', () => {
 
   it('rejects an empty configured config path', async () => {
     writeScript('svc', { kind: 'run' });
-    configTable.configPath = '';
+    configTable.assetsRoot = '';
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('svc'))).toBe(false);
 
     // 批127:报错带期望形态(资产根 + res/server/kbengine.xml),可按提示自查
     expect(messages.error).toEqual([
-      'KBEngine 配置目录为空，请检查 kbengine.configPath（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）'
+      'KBEngine 配置目录为空，请检查 kbengine.assetsRoot（应指向资产根，其下应有 res/server/kbengine.xml 与 scripts/）'
     ]);
   });
 
   it('rejects a config path that does not exist', async () => {
     writeScript('svc', { kind: 'run' });
-    configTable.configPath = path.join(root, 'ws', 'missing');
+    configTable.assetsRoot = path.join(root, 'ws', 'missing');
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('svc'))).toBe(false);
@@ -201,7 +201,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
     // 批127:期望的引擎配置文件缺席不拦截启动,但输出通道留可见警告
     writeScript('svc', { kind: 'run' });
     fs.mkdirSync(path.join(root, 'ws', 'cfg-empty'), { recursive: true });
-    configTable.configPath = path.join(root, 'ws', 'cfg-empty');
+    configTable.assetsRoot = path.join(root, 'ws', 'cfg-empty');
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('svc'))).toBe(true);
@@ -219,7 +219,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
       '<xml/>',
       'utf8'
     );
-    configTable.configPath = path.join(root, 'ws', 'cfg-full');
+    configTable.assetsRoot = path.join(root, 'ws', 'cfg-full');
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('svc'))).toBe(true);
@@ -232,7 +232,7 @@ describe('KBEngineServerManager startComponent preflight', () => {
     writeScript('svc', { kind: 'run' });
     const filePath = path.join(root, 'ws', 'cfg-file');
     fs.writeFileSync(filePath, 'x', 'utf8');
-    configTable.configPath = filePath;
+    configTable.assetsRoot = filePath;
     const manager = makeManager();
 
     expect(await manager.startComponent(makeComponent('svc'))).toBe(false);

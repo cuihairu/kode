@@ -103,7 +103,7 @@ beforeEach(async () => {
   fs.mkdirSync(configRoot, { recursive: true });
 
   configTable.binPath = bin.binPath;
-  configTable.configPath = configRoot;
+  configTable.assetsRoot = configRoot;
 
   channels.length = 0;
   messages.info.length = 0;

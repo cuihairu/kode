@@ -159,7 +159,7 @@
 ### `kbengine.config.showFinal`
 
 - 标题：`Show Final Server Config`
-- 作用：打开「最终生效配置」只读视图——按引擎装载规则合成：先载引擎默认 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导），再以元件 `kbengine.xml`（`kbengine.configPath` 下优先，其次约定路径 `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`）同键覆盖（子键按名对齐）
+- 作用：打开「最终生效配置」只读视图——按引擎装载规则合成：先载引擎默认 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导），再以元件 `kbengine.xml`（`kbengine.assetsRoot` 下优先，其次约定路径 `kbengine.xml`/`res/server/kbengine.xml`/`assets/res/server/kbengine.xml`）同键覆盖（子键按名对齐）
 - 行为：
   - 合成文件不落盘，虚拟文档 `kbengine-final.xml`，字段可悬浮看作用说明
   - 文档头注标明 defaults 与元件配置的来源路径
@@ -238,7 +238,7 @@
 
 - 标题：`Show Telnet Panel`
 - 作用：打开 telnet 控制面板（探测状态灯 + 命令会话）
-- 目标解析链：kode 设置（`kbengine.telnet.host/port/password`）→ 元件 `kbengine.xml` 的 `<telnet_service>` 段（`kbengine.telnet.configXmlPath` 指定，未指定时按 `kbengine.configPath` 与约定路径探测）→ 引擎 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导）；`.kbengine/debug.json` 不参与 telnet 探测
+- 目标解析链：kode 设置（`kbengine.telnet.host/port/password`）→ 元件 `kbengine.xml` 的 `<telnet_service>` 段（`kbengine.telnet.configXmlPath` 指定，未指定时按 `kbengine.assetsRoot` 与约定路径探测）→ 引擎 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导）；`.kbengine/debug.json` 不参与 telnet 探测
 - 行为：
   - 面板按目标列出状态灯：未配置 / 未开启 / 已开启（未接会话）/ 端口开·未配密码 / 密码被拒 / 已连接
   - 已开启目标可建立持久会话（自动握手登录），提供白名单内命令输入、内置只读快捷命令与输出回显
@@ -284,7 +284,7 @@
 - 作用：生成「发现与定位」诊断报告并展示在 OUTPUT 面板「KBEngine 发现与定位」通道，报告可整段复制回传维护者，不必贴工作区文件树
 - 报告内容（逐键摊开，失败不再静默）：
   - 三个 def 树锚点（entity_defs / entities.xml / types.xml）与派生目录（interfaces / components）：最终取用值及来源（显式配置 / 记忆选择 / 约定链 / 深扫描 / 回落候选首项）、显式配置原值与存在性、约定链命中与未命中、深扫描命中、记忆选择
-  - 资产根 `kbengine.configPath`（按引擎装载口径验 `res/server/kbengine.xml`，批129 起约定链含工作区一级 `*_assets` 目录如 `flyff_assets`，命中仍以探针验收）与引擎二进制 `kbengine.binPath`（含 kbe 源码根自动检测）、引擎消息表（批129 双名：用户副本 `messages_fixed.xml` 与缺省 `messages_fixed_defaults.xml`，四级优先级对齐引擎装载序——工作区用户副本 → 引擎源码根用户副本 → 工作区缺省 → 引擎源码根缺省；纯资产工作区两者皆无为常态，报告标 `informational` 不计入问题，只有找到引擎源码根却两份皆缺才报问题）
+  - 资产根 `kbengine.assetsRoot`（按引擎装载口径验 `res/server/kbengine.xml`，批129 起约定链含工作区一级 `*_assets` 目录如 `flyff_assets`，命中仍以探针验收）与引擎二进制 `kbengine.binPath`（含 kbe 源码根自动检测）、引擎消息表（批129 双名：用户副本 `messages_fixed.xml` 与缺省 `messages_fixed_defaults.xml`，四级优先级对齐引擎装载序——工作区用户副本 → 引擎源码根用户副本 → 工作区缺省 → 引擎源码根缺省；纯资产工作区两者皆无为常态，报告标 `informational` 不计入问题，只有找到引擎源码根却两份皆缺才报问题）
   - 有界深扫描元信息：访问条目数、是否触顶截断（截断即标注「命中集可能不全」）
   - 问题清单：每项附一句补救建议（缺 entities.xml → 指 `kbengine.entitiesXmlPath`；资产根缺探针文件 → 指期望形态等）
 - 行为：

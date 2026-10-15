@@ -40,7 +40,7 @@ const factsFor = (binPath = ''): DiscoveryLayoutFacts => {
   const overrides = configurationOverrides.get('kbengine') ?? {};
   const setting = (key: string): string =>
     typeof overrides[key] === 'string' ? (overrides[key] as string) : '';
-  const configSetting = setting('configPath');
+  const configSetting = setting('assetsRoot');
   const configSettingProbed =
     configSetting !== ''
     && fs.existsSync(path.join(configSetting, 'res', 'server', 'kbengine.xml'));
@@ -260,32 +260,32 @@ describe('buildDiscoveryReport(失败可见:此前静默的情形)', () => {
 describe('buildDiscoveryReport(资产根与引擎侧)', () => {
   it('probes res/server/kbengine.xml under the configured assets root', () => {
     write('assets/res/server/kbengine.xml');
-    configurationOverrides.set('kbengine', { configPath: p('assets') });
+    configurationOverrides.set('kbengine', { assetsRoot: p('assets') });
 
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.status).toBe('ok');
     expect(configField?.resolved).toBe(p('assets'));
     expect(configField?.conventionHits).toEqual([p('assets/res/server/kbengine.xml')]);
   });
 
-  it('resolves a relative configPath against the workspace root', () => {
+  it('resolves a relative assetsRoot against the workspace root', () => {
     write('assets/res/server/kbengine.xml');
-    configurationOverrides.set('kbengine', { configPath: 'assets' });
+    configurationOverrides.set('kbengine', { assetsRoot: 'assets' });
 
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.resolved).toBe(p('assets'));
     expect(configField?.status).toBe('ok');
   });
 
-  it('reports configPath missing when the probe file is absent', () => {
+  it('reports assetsRoot missing when the probe file is absent', () => {
     mkdir('assets');
-    configurationOverrides.set('kbengine', { configPath: p('assets') });
+    configurationOverrides.set('kbengine', { assetsRoot: p('assets') });
 
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.status).toBe('missing');
     expect(configField?.conventionHits).toEqual([]);
     const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
-    expect(report.issues.find(item => item.label === '资产根 kbengine.configPath')?.remediation)
+    expect(report.issues.find(item => item.label === '资产根 kbengine.assetsRoot')?.remediation)
       .toContain('res/server/kbengine.xml');
   });
 
@@ -293,9 +293,9 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
     // 批128:显式配置指空时生效值走发现兜底——报告如实摊开双栏:
     // 显式配置(不存在)与来源为约定链的生效根
     write('assets/res/server/kbengine.xml');
-    configurationOverrides.set('kbengine', { configPath: p('ghost-root') });
+    configurationOverrides.set('kbengine', { assetsRoot: p('ghost-root') });
 
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.resolved).toBe(p('assets'));
     expect(configField?.source).toBe('convention');
     expect(configField?.status).toBe('ok');
@@ -308,7 +308,7 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
     write('demo/res/server/kbengine.xml');
     setDiscoveryChoice(root, 'configRoot', p('demo'));
 
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.resolved).toBe(p('demo'));
     expect(configField?.source).toBe('remembered-choice');
     expect(configField?.remembered).toBe(p('demo'));
@@ -318,7 +318,7 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
   it('labels a unique deep-scan config root as deep-scan', () => {
     write('demo/res/server/kbengine.xml');
 
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.resolved).toBe(p('demo'));
     expect(configField?.source).toBe('deep-scan');
     expect(configField?.scanHits).toEqual([p('demo')]);
@@ -334,13 +334,13 @@ describe('buildDiscoveryReport(资产根与引擎侧)', () => {
       undefined,
       GENERATED_AT
     );
-    const configField = report.fields.find(field => field.label === '资产根 kbengine.configPath');
+    const configField = report.fields.find(field => field.label === '资产根 kbengine.assetsRoot');
     expect(configField?.resolved).toBe(p('somewhere-root'));
     expect(configField?.source).toBe('fallback');
   });
 
-  it('labels an empty configPath as missing with remediation', () => {
-    const configField = fieldByLabel('资产根 kbengine.configPath');
+  it('labels an empty assetsRoot as missing with remediation', () => {
+    const configField = fieldByLabel('资产根 kbengine.assetsRoot');
     expect(configField?.status).toBe('missing');
     expect(configField?.source).toBe('none');
     expect(configField?.explicitConfig).toBeNull();
@@ -484,7 +484,7 @@ describe('buildDiscoveryReport(引擎消息表:双名与信息性,批129)', () =
     write('flyff_assets/res/server/kbengine.xml');
 
     const report = buildDiscoveryReport(root, factsFor(), undefined, GENERATED_AT);
-    const config = report.fields.find(field => field.label === '资产根 kbengine.configPath');
+    const config = report.fields.find(field => field.label === '资产根 kbengine.assetsRoot');
     expect(config?.status).toBe('ok');
     expect(config?.source).toBe('convention');
     // 该字段的约定链口径存探针路径(<根>/res/server/kbengine.xml),非根路径

@@ -126,6 +126,18 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   opened with `SET SESSION TRANSACTION READ ONLY`, so even a read-write
   account cannot write through it
 
+### Changed
+- `kbengine.configPath` is now `kbengine.assetsRoot`. The setting points at
+  the asset root (the engine's `assets` tree, e.g. `flyff_assets`), so the
+  name follows the engine's own terminology (`kbemain.h` comments place the
+  user copy at `../../../assets/res/server/`) and the `*_assets` convention
+  roots the discovery already scans. The default changed from
+  `${workspaceFolder}/server` to empty (auto-discovery): the old default
+  made an unconfigured workspace behave as if it had an explicit config,
+  so the empty default lets the intended "not set → discover" path actually
+  run. Users who already set the old key must re-enter it under the new
+  name; probe and discovery semantics are otherwise unchanged
+
 ### Fixed
 - Generating a snippet from a selection now measures the common indent in
   editor `tabSize` columns instead of characters, so a selection that mixes

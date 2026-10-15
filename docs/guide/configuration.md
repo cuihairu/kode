@@ -11,7 +11,7 @@ Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务�
 | 层 | 文件 | 定位方式 |
 | --- | --- | --- |
 | 1 引擎默认 | `kbe/res/server/kbengine_defaults.xml` | 由 `kbengine.binPath`(指向 `kbe/bin/server`)向上推导 |
-| 2 元件覆盖 | `kbengine.xml` | `kbengine.configPath` 下的 `kbengine.xml` 与其 `res/server/kbengine.xml` 优先;未设或未命中时发现出的资产根(批128)参与;最后按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
+| 2 元件覆盖 | `kbengine.xml` | `kbengine.assetsRoot` 下的 `kbengine.xml` 与其 `res/server/kbengine.xml` 优先;未设或未命中时发现出的资产根(批128)参与;最后按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
 | 3 最终生效 | (合成,不落盘) | 第 1 层先载,第 2 层同键覆盖 |
 
 覆盖口径:
@@ -75,7 +75,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录 |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径 |
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录 |
-| `kbengine.configPath` | string | `${workspaceFolder}/server` | 服务器资产目录 |
+| `kbengine.assetsRoot` | string | `""` | 资产根目录（其下含 `res/`、`scripts/`），留空自动发现 |
 | `kbengine.showFinalConfigOnOpen` | boolean | `true` | 激活后自动打开最终配置视图 |
 | `kbengine.autoRefreshFinalConfig` | boolean | `true` | 配置文件变更后自动刷新最终配置视图 |
 | `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表 |
@@ -122,7 +122,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
 | `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
-| `kbengine.configPath` | 显式配置(默认 `${workspaceFolder}/server`);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
+| `kbengine.assetsRoot` | 显式配置(默认空 = 自动发现);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
 | `kbengine.telnet.port` | 显式 >0 锁定;0 = 按元件段 → 引擎 defaults 链(批112) | **能**(配置链,批112 已做) | **自动取值**,配置只作覆盖 |
 | `kbengine.telnet.password` | 设置 → 元件段 → defaults → 空(批112) | **能**(同上) | **自动取值**,配置只作覆盖 |
 | `kbengine.telnet.configXmlPath` | 空 = 按 3 个约定位置自动找 `kbengine.xml` | **能**(已是覆盖式) | **自动发现**,配置只作覆盖 |
@@ -201,14 +201,14 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 - 批125 起未配置时优先按引擎源码根锚点(`kbe/src/lib/entitydef/entitydef.cpp`、`entity_table_mysql.cpp` 等)推导 `kbe/bin/server`,再退兄弟目录猜测
 - 误配:没指到 `kbe/bin/server` 这一级 → 服务器启动失败,最终配置视图和 defaults 数值回落也不可用;此时 `kbengine.config.showFinal` 会明示报错,激活自动打开则静默跳过
 
-#### `kbengine.configPath`
+#### `kbengine.assetsRoot`
 
-- 类型:string;默认 `${workspaceFolder}/server`
-- 这是服务器资产目录,三处生效:
+- 类型:string;默认 `""`(留空 = 自动发现)。批131(2026-10-15)自 `kbengine.configPath` 更名:与引擎领域术语对齐(引擎资产树就叫 assets,约定扫描也是 `*_assets`,见 `kbemain.h:133-137` 的 `../../../assets/res/server/`);同时废默认值 `${workspaceFolder}/server`——旧默认形同把未配置伪装成显式配置,空串才让代码里的「未设 → 自动发现」路径真实生效
+- 这是资产根(assets root,引擎资产树根,如 `flyff_assets`),三处生效:
   1. 组件进程的工作目录(cwd)——引擎按相对路径找资产时以这里为基准;
-  2. 进程环境 `KBE_RES_PATH` 的项目侧条目:完整顺序为 `KBE_ROOT/kbe/res`、`configPath`、`configPath/res`、`configPath/scripts`;
-  3. 元件 `kbengine.xml` 的首选定位处:`configPath/kbengine.xml`。
-- 批128 起自动发现:原值(默认或显式)未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链 → 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`。约定链批129 起含工作区一级 `*_assets` 目录(如 `flyff_assets`)——目录名只是准入,命中仍以探针验收
+  2. 进程环境 `KBE_RES_PATH` 的项目侧条目:完整顺序为 `KBE_ROOT/kbe/res`、资产根、`资产根/res`、`资产根/scripts`;
+  3. 元件 `kbengine.xml` 的首选定位处:`资产根/kbengine.xml`。
+- 批128 起自动发现:原值未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链 → 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`。约定链批129 起含工作区一级 `*_assets` 目录(如 `flyff_assets`)——目录名只是准入,命中仍以探针验收
 - 探针只验用户副本 `kbengine.xml`,不要求 `kbengine_defaults.xml` 在场:引擎对两份配置各在各的树里装载(kbemain.h:71-74 先载 defaults 再载用户副本覆盖;引擎注释 kbemain.h:133-137 示例即 defaults 在引擎 res 树、用户副本在资产树),资产根的锚点就是用户副本——引擎 `getPyUserResPath()` 也以 `matchRes("server/kbengine.xml")` 定位资产树。扩展同口径:defaults 从 binPath/引擎源码根推导(`deriveEngineDefaultsXmlPath`),用户副本从资产根找,两树独立
 - 启动前会校验:发现与显式都落空时空串、目录不存在、路径不是目录都会报错并中止启动;目录在而探针文件缺 → 输出通道留 `[WARN]` 不拦截(批127)
 - 误配:指到仓库根而不是资产目录 → 探针不通过,自动发现接管;发现也落空时引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;元件 `kbengine.xml` 定位不到时 telnet 与最终配置退回纯默认

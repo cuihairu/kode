@@ -221,7 +221,7 @@ describe('extension activate 装配', () => {
     fs.mkdirSync(path.join(root, 'kbe', 'bin', 'server'), { recursive: true });
     fs.mkdirSync(path.join(root, 'kbe', 'res', 'server'), { recursive: true });
     fs.writeFileSync(path.join(root, 'kbe', 'res', 'server', 'messages_fixed.xml'), '<xml/>', 'utf8');
-    configurationOverrides.set('kbengine', { configPath: path.join(root, 'assets') });
+    configurationOverrides.set('kbengine', { assetsRoot: path.join(root, 'assets') });
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     const context = makeContext();
     const memento = new Map<string, unknown>();
@@ -240,7 +240,7 @@ describe('extension activate 装配', () => {
       const channel = windowState.channels.find(entry => entry.name === 'KBEngine 发现与定位');
       const text = channel!.lines.join('');
       expect(text).toContain('[ok] 实体定义目录 entity_defs');
-      expect(text).toContain('[ok] 资产根 kbengine.configPath');
+      expect(text).toContain('[ok] 资产根 kbengine.assetsRoot');
       expect(text).toContain('[ok] 引擎二进制 kbengine.binPath');
       expect(text).toContain('问题 0 项');
       expect(messages.info).toContain('发现与定位全部正常');
@@ -630,7 +630,7 @@ describe('extension activate 装配', () => {
       bin.write('machine', { kind: 'run', stdoutMarker: 'up' });
       configurationOverrides.set('kbengine', {
         binPath: bin.binPath,
-        configPath: configRoot,
+        assetsRoot: configRoot,
         logAutoConnect: false
       });
 

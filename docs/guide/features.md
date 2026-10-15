@@ -36,7 +36,7 @@
 
 - 配置显式开启 telnet（设置显式端口，或 kbengine.xml 有 `<telnet_service>` 段）才展示 telnet 相关内容；两处都没配时不探测、不展示，状态灯、独立树视图与面板命令入口全部隐藏。引擎 defaults 里虽有 `<telnet_service>` 段，但 defaults 只供数值回落，不单独把 telnet 打开
 - 状态栏与服务器控制面板状态灯：已连接 / 已开启·未配密码 / 密码被拒 / 未开启 / 未配置
-- 目标解析链：kode 设置（`kbengine.telnet.host/port/password`）→ 元件 `kbengine.xml` 的 `<telnet_service>` 段（`kbengine.telnet.configXmlPath` 指定，未指定时 `kbengine.configPath/kbengine.xml` 优先，再按约定路径探测工作区根：`kbengine.xml`、`res/server/kbengine.xml`、`assets/res/server/kbengine.xml`）→ 引擎 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导）。端口与密码都按这个顺序取第一个非空值；`.kbengine/debug.json` 不参与 telnet 探测
+- 目标解析链：kode 设置（`kbengine.telnet.host/port/password`）→ 元件 `kbengine.xml` 的 `<telnet_service>` 段（`kbengine.telnet.configXmlPath` 指定，未指定时 `kbengine.assetsRoot/kbengine.xml` 优先，再按约定路径探测工作区根：`kbengine.xml`、`res/server/kbengine.xml`、`assets/res/server/kbengine.xml`）→ 引擎 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导）。端口与密码都按这个顺序取第一个非空值；`.kbengine/debug.json` 不参与 telnet 探测
 - 探测默认 5 秒一轮，单端口 1.5 秒超时，探完即毁不占连接
 - 端口开启时自动握手登录；密码只经 socket 提交，不进日志
 - 面板命令输入走白名单加内置只读快捷命令，`:quit` 恒被拒绝
@@ -79,7 +79,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 
 - 干净工作区零配置可用核心功能(打开 `.def` → 实体浏览器/依赖图/流程图/属性面板/数据库 schema/悬停)
 - 发现链:显式配置 → 约定布局 → 有界深扫描(限深 7 层/2 万条目,剪 node_modules/.git 等)→ 唯一命中即用,多候选激活期弹一次 quick pick 并按工作区记忆
-- 服务器资产根 `kbengine.configPath` 同链发现(批128):原值以引擎装载探针 `res/server/kbengine.xml` 验收,未通过时按约定链(工作区根、assets/、server_assets/)→ 记忆选择 → 深扫描唯一命中兜底,telnet 探测与最终配置视图同步受益
+- 服务器资产根 `kbengine.assetsRoot` 同链发现(批128):原值以引擎装载探针 `res/server/kbengine.xml` 验收,未通过时按约定链(工作区根、assets/、server_assets/)→ 记忆选择 → 深扫描唯一命中兜底,telnet 探测与最终配置视图同步受益
 - 纯发现、无配置项:`types.xml`、`messages_fixed(_defaults).xml`、引擎 defaults 的源码根兜底;def 根推出的子路径(interfaces/components/user_type)不进配置
 - 定位失败不再静默:`kbengine.discovery.report` 命令在 OUTPUT 面板逐键摊开发现结果(最终取用值与来源、显式配置存在性、约定链命中/未命中、深扫描命中、记忆选择、深扫描截断标注),附逐项补救建议,报告可整段复制回传维护者
 - 详见 [配置说明](./configuration.md) 的「路径类配置的自动发现」与全量对照表

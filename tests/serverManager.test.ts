@@ -197,7 +197,7 @@ describe('getConfigPath 资产根发现兜底(批128)', () => {
   it('keeps an explicit setting that passes the engine probe', () => {
     fs.mkdirSync(path.join(root, 'myassets', 'res', 'server'), { recursive: true });
     fs.writeFileSync(path.join(root, 'myassets', 'res', 'server', 'kbengine.xml'), '<xml/>', 'utf8');
-    configurationOverrides.set('kbengine', { configPath: path.join(root, 'myassets') });
+    configurationOverrides.set('kbengine', { assetsRoot: path.join(root, 'myassets') });
 
     expect(makeManager().getConfigPath()).toBe(path.join(root, 'myassets'));
   });
@@ -213,7 +213,7 @@ describe('getConfigPath 资产根发现兜底(批128)', () => {
         name: 'empty',
         index: 0
       }];
-      configurationOverrides.set('kbengine', { configPath: path.join(emptyRoot, 'nowhere') });
+      configurationOverrides.set('kbengine', { assetsRoot: path.join(emptyRoot, 'nowhere') });
 
       expect(makeManager().getConfigPath()).toBe(path.join(emptyRoot, 'nowhere'));
     } finally {
@@ -225,7 +225,7 @@ describe('getConfigPath 资产根发现兜底(批128)', () => {
   it('expands the workspace placeholder before probing', () => {
     fs.mkdirSync(path.join(root, 'server', 'res', 'server'), { recursive: true });
     fs.writeFileSync(path.join(root, 'server', 'res', 'server', 'kbengine.xml'), '<xml/>', 'utf8');
-    configurationOverrides.set('kbengine', { configPath: '${workspaceFolder}/server' });
+    configurationOverrides.set('kbengine', { assetsRoot: '${workspaceFolder}/server' });
 
     expect(makeManager().getConfigPath()).toBe(path.join(root, 'server'));
   });
@@ -244,7 +244,7 @@ describe('KBEngineServerManager startup grace guard (批73)', () => {
     stubWorkspace.workspaceFolders = [
       { uri: { fsPath: path.join(root, 'ws') } as vscode.Uri, name: 'ws', index: 0 }
     ];
-    configurationOverrides.set('kbengine', { configPath: configRoot });
+    configurationOverrides.set('kbengine', { assetsRoot: configRoot });
 
     // 吞 kill 的假进程:kill 只翻标记,不触发 exit/error
     const runner = {

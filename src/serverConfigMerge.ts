@@ -113,16 +113,16 @@ export function renderConfigXmlSections(root: ConfigXmlNode): string {
 }
 
 /**
- * 元件 kbengine.xml 定位:kbengine.configPath(服务器资产目录,引擎
+ * 元件 kbengine.xml 定位:kbengine.assetsRoot(服务器资产目录,引擎
  * KBE_RES_PATH 中的项目侧)下的 kbengine.xml 优先,再按约定路径探测
  * 工作区根(与 telnet 约定路径一致)。取第一个存在的文件。
- * 批128:configPath 未设或未过探针时,发现出的资产根同样参与(其下
+ * 批128:assetsRoot 未设或未过探针时,发现出的资产根同样参与(其下
  * res/server/kbengine.xml 是引擎装载口径的元件配置位置)。
  */
 export function resolveCustomConfigXmlPath(workspaceRoot: string | undefined): string | null {
   const config = vscode.workspace.getConfiguration('kbengine');
   const settingPath = expandWorkspacePlaceholders(
-    config.get<string>('configPath', ''),
+    config.get<string>('assetsRoot', ''),
     workspaceRoot
   );
   // 批128:设置自身候选(直接文件与装载口径位置)之后,发现出的资产根

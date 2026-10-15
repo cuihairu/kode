@@ -486,10 +486,10 @@
           "default": "${workspaceFolder}/../kbe/bin/server",
           "description": "KBEngine 二进制文件路径，支持 ${workspaceFolder} 和 ${env:VAR}"
         },
-        "kbengine.configPath": {
+        "kbengine.assetsRoot": {
           "type": "string",
-          "default": "${workspaceFolder}/server",
-          "description": "KBEngine 配置文件路径"
+          "default": "",
+          "description": "KBEngine 资产根目录（其下应有 res/server/kbengine.xml 与 scripts/，如 flyff_assets）；留空自动发现（约定位置与深扫描）"
         },
         "kbengine.showFinalConfigOnOpen": {
           "type": "boolean",
