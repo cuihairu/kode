@@ -4,6 +4,12 @@ import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS } from './serverManager';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
+import {
+  LogErrorScanView,
+  realLogErrorScanDeps,
+  runLogErrorScanCommand,
+  scanRawLogErrors
+} from './logErrorScan';
 import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
@@ -739,6 +745,20 @@ export function activate(context: vscode.ExtensionContext) {
     () => logViewer.exportLogs()
   );
   context.subscriptions.push(exportLogsCommand);
+
+  // 原始日志 ERROR 扫描(盘点 G6):离线聚合日志文件里的 ERROR/CRITICAL 行;
+  // 重扫按上一批文件重跑,不再弹对话框
+  const logErrorScanView = new LogErrorScanView(context, previous =>
+    scanRawLogErrors(
+      previous.files.map(file => file.uri),
+      realLogErrorScanDeps
+    )
+  );
+  const scanRawLogErrorsCommand = vscode.commands.registerCommand(
+    'kbengine.logs.scanErrors',
+    () => runLogErrorScanCommand(logErrorScanView)
+  );
+  context.subscriptions.push(scanRawLogErrorsCommand);
 
   // 初始化调试配置管理器
   const debugConfigManager = new DebugConfigManager(context);

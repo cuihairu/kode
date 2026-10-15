@@ -32,7 +32,7 @@ kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节�
 | 代码片段 | 已实现:3 份片段表(kbengine-def/xml/python,`package.json:113-122`)+ `kbengine.snippets.generateFromSelection`(选区生成,批121) | 无 snippets 贡献 | — | — | — |
 | 模板/代码生成 | 已实现:`src/codeGenerator.ts:103` 实体向导(def + 可选 Python + entities.xml 登记) | newEntity/newProxy/newSpace/newComponent/newFixedDict/generateStubs 六条生成命令(清单) | — | — | 生成 launch.json/tasks.json/ruleset.xml 三件套(README) |
 | 实体/DB 工具 | 已实现:实体浏览器(`src/explorerProviders.ts`)、数据库 schema 虚拟文档(`src/databaseSchema.ts:172`,批133 中文图例)、模拟器(`src/databaseSimulator.ts:746`)、漂移校验(`src/databaseDrift.ts`,只读白名单+READ ONLY 双保险)、依赖图/流程图 webview | 客户端实体生成、SDK 生成(README) | — | — | — |
-| 日志查看 | 已实现:`src/logCollector.ts:24` + `src/logWebView.ts`(`kbengine.logs.*` 五命令,等级过滤 LogFilter 已有) | 实时日志 + 等级过滤 + 原始日志 ERROR 扫描(USAGE.md) | — | — | — |
+| 日志查看 | 已实现:`src/logCollector.ts:24` + `src/logWebView.ts`(`kbengine.logs.*` 五命令,等级过滤 LogFilter 已有) + 原始日志 ERROR 扫描(`src/logErrorScan.ts`,盘点 G6) | 实时日志 + 等级过滤 + 原始日志 ERROR 扫描(USAGE.md) | — | — | — |
 | 运行/启动集成 | 已实现:serverControl 视图列进程 pid/状态(`src/explorerProviders.ts:1166-1195`)、`kbengine.server.start/stop/restart/showLogs`、快速执行动作三后端 command/script/http + Explorer 顶栏 ▶/▾(批136) | 服务器启停/pkill/热重载(手动 + 文件监视自动)、robots(USAGE.md) | rojo serve 起停 + Studio 实时同步 + 工具链自动安装(Aftman)(README) | — | 生成构建/调试配置间接支撑 |
 | 配置校验/发现 | 已实现:配置自动发现四级优先级(批127/128/129,发现报告命令)+ 最终合并配置视图(`src/serverConfigMerge.ts:351-366`) | 工作区初始化、路径映射(USAGE.md) | `jsonValidation` 校验 `*.project.json`(清单) | — | — |
 | 性能剖析 | **未实现**(缺口 G8) | TICK/CPROFILE/PYPROFILE/EVENT/NETWORK(USAGE.md,KBE Nex 3.x 二进制管理协议) | — | — | — |
@@ -52,7 +52,7 @@ kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节�
 | G3 | `.kbengine/debug.json` JSON Schema 校验(`contributes.jsonValidation`) | Rojo(`*.project.json` 同法) | **P1** | **已实现**(批136 G3,`contributes.jsonValidation` + `src/debugJsonSchema.ts`):整份文件(调试段 + quickActions)编辑器内直接标红;schema 枚举取 `quickActionConfig.ts` 的 `HTTP_METHODS`/`QUICK_ACTION_TYPES`,与清单内联对象由测试锁同源 |
 | G4 | 客户端实体/SDK 多语言生成(C#/TS/C++/GDScript 模板) | Nex X | **P2** | 向导骨架已有;语言种类等用户点名单再排 |
 | G5 | 自动热重载(文件保存/监视 → 触发指定 quick action) | Nex X(文件监视自动热更) | **P2** | **已实现**(批136 G5,`src/hotReload.ts` + `QuickActionManager.runByName`):门控默认关防误触,启用后按 globs 各建一个 watcher、三通道事件去抖合并、配置变更联动拆建;按名找不到只落 OUTPUT 流水不弹窗;复用 quickActions 白名单后端 |
-| G6 | 原始日志 ERROR 扫描视图(原始日志文件里的 ERROR 行聚合计数) | Nex X | **P2** | logWebView 已有等级过滤,此为增量面 |
+| G6 | 原始日志 ERROR 扫描视图(原始日志文件里的 ERROR 行聚合计数) | Nex X | **P2** | **已实现**(批137,`src/logErrorScan.ts` + `kbengine.logs.scanErrors`):离线扫原始日志文件(文件/文件夹一层 `.log`/`.txt`/`.out`),ERROR/CRITICAL 行按「组件+归一签名」聚合计数,面板可点击定位源文件行、按上一批文件重扫;与日志面板同一套解析器,不依赖 logger 协议 |
 | G7 | 生成器形态扩展(newProxy/newSpace/newComponent/newFixedDict 等向导) | Nex X(六条生成命令) | **P3** | 实体向导已有,其余形态按需 |
 | G8 | 性能剖析(TICK/CPROFILE/PYPROFILE/EVENT/NETWORK) | Nex X | **P3(待证)** | Nex X 走 KBE Nex 3.x 管理协议;本仓面向经典 kbengine,协议可用性未证,不排期直到用户点名 |
 | G9 | Space Viewer / Watcher 查询面板(spaces 与 cell 实体地图) | Nex X | **P3(待证)** | 同上依赖引擎管理协议;监控面板已有 machine 基础状态 |
@@ -62,7 +62,7 @@ kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节�
 
 1. **G1 + G2 + G3(同一批,P1)**:Python 生态接线两件 + 配置校验一件,互相独立但都是小增量、高感知;G1/G2 让「装了 Python 扩展的用户」立即获得 KBEngine API 补全,G3 让 quickActions 配置错误前置暴露。**G1/G2/G3 均已落地(批136)**,P1 清完。
 2. **G5(P2)**:自动热重载,依赖 quickActions 既有白名单,配置门控。**已落地(批136)**,P2 剩 G6 与等点名的 G4。
-3. **G6(P2)**:日志 ERROR 扫描,复用 logWebView。
+3. **G6(P2)**:日志 ERROR 扫描,复用 logWebView。**已落地(批137)**,P2 只剩等点名的 G4。
 4. **G4(P2,等点名)**:多语言 SDK 生成,语言清单须用户拍板。
 5. **G7/G8/G9(P3)**:形态扩展与协议依赖项,逐批点火前先证协议。
 6. **G10**:不排期。

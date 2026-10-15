@@ -51,6 +51,7 @@
     "onCommand:kbengine.logs.disconnect",
     "onCommand:kbengine.logs.clear",
     "onCommand:kbengine.logs.export",
+    "onCommand:kbengine.logs.scanErrors",
     "onCommand:kbengine.debug.start",
     "onCommand:kbengine.debug.attach",
     "onCommand:kbengine.debug.attachRemote",
@@ -500,6 +501,11 @@
         "command": "kbengine.logs.export",
         "title": "Export Logs",
         "icon": "$(save)"
+      },
+      {
+        "command": "kbengine.logs.scanErrors",
+        "title": "Scan Raw Log Errors",
+        "icon": "$(search)"
       },
       {
         "command": "kbengine.debug.start",

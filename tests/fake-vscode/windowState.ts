@@ -67,6 +67,9 @@ export const window = {
   showQuickPick: async (): Promise<undefined> => undefined,
   // logWebView 的 exportLogs 走保存对话框;默认取消(不落盘)。
   showSaveDialog: async (): Promise<undefined> => undefined,
+  // logErrorScan 的目标选择走打开对话框;默认取消(不建面板),测试按用例
+  // monkey-patch 为脚本化应答。
+  showOpenDialog: async (): Promise<undefined> => undefined,
   createOutputChannel: (name: string) => {
     const channel: RecordedOutputChannel = { name, lines: [], disposed: false };
     channels.push(channel);

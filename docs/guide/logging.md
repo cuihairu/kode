@@ -13,6 +13,7 @@ Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查�
 - 关键词搜索
 - 正则表达式搜索
 - 导出日志
+- 原始日志 ERROR 扫描（离线，不依赖 logger 连接）
 
 ## 相关命令
 
@@ -21,6 +22,7 @@ Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查�
 - `kbengine.logs.disconnect`
 - `kbengine.logs.clear`
 - `kbengine.logs.export`
+- `kbengine.logs.scanErrors`
 
 命令说明见 [命令与面板](./commands.md)。
 
@@ -75,6 +77,19 @@ Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查�
 - 留存问题现场
 - 提交给其他同事排查
 - 结合脚本做离线分析
+
+## 原始日志 ERROR 扫描
+
+`kbengine.logs.scanErrors` 面向磁盘上的原始日志文件做离线扫描，不依赖 logger 端口连接。运行后选择文件或文件夹（文件夹只扫一层 `.log`/`.txt`/`.out`，按文件名排序），扩展把 `ERROR`/`CRITICAL` 行按「组件 + 归一签名」聚合计数，在 WebView 面板展示。
+
+- 归一签名：把行内数字串折成 `N`、空白压缩、截到 160 字符，同一报错因 id/计数不同不会拆成多行
+- 聚合表：计数（降序）/级别/组件/签名/最近出现时间；时间只取行内自带时间戳的格式，非标准行显示 `—`
+- 点击命中行打开源文件并定位到该签名最早出现的行
+- 「重新扫描」按钮按上一批文件重跑，不重新弹对话框
+- 单文件超 64MB 读取上限、或读取失败时，该文件在扫描文件列表中标注失败原因，不中断其余文件
+- 汇总条给出文件数、总行数、ERROR/CRITICAL 总条数与签名种数
+
+扫描走与日志面板同一套解析器（logger 线格式 / 标准格式 / 非标准启发式），因此非标准行中含 `error`/`failed` 字样的也会计入。
 
 ## 使用建议
 

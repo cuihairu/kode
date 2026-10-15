@@ -79,6 +79,18 @@ export const fs = {
     }
     return entries;
   },
+  // stat 返回 vscode.FileType 真值(File=1/Directory=2,logErrorScan 按位
+  // 判目录)与字节量;文件与目录都不存在时按实现语义抛错(进调用方 catch)。
+  stat: async (uri: Uri): Promise<{ type: number; size: number }> => {
+    const data = memoryFiles.get(uri.fsPath);
+    if (data !== undefined) {
+      return { type: 1, size: data.byteLength };
+    }
+    if (memoryDirectories.has(uri.fsPath)) {
+      return { type: 2, size: 0 };
+    }
+    throw new Error(`ENOENT: ${uri.fsPath}`);
+  },
   delete: async (uri: Uri): Promise<void> => {
     memoryFiles.delete(uri.fsPath);
   }

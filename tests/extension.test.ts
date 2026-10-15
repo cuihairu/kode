@@ -931,3 +931,56 @@ describe('extension activate 自动热重载装配(盘点 G5)', () => {
     disposeAll(context);
   }, 8000);
 });
+
+describe('extension activate 原始日志 ERROR 扫描装配(盘点 G6)', () => {
+  it('scanErrors 命令:取消不建面板;选文件扫出聚合面板;重扫与点击行走默认链', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalShowOpenDialog = windowish.showOpenDialog;
+    memoryFileSystem.set(
+      '/ws/logs/server.log',
+      [
+        '   ERROR dbmgr01 1000 2000 30000 [2026-03-26 18:21:11 001] - saveAvatar(1001) failed: not found',
+        '[2026-03-26 18:23:00][ERROR][cellapp] loadBalance failed',
+        '   INFO dbmgr01 1000 2000 30001 [2026-03-26 18:23:01 002] - normal line'
+      ].join('\n')
+    );
+    workspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const context = makeContext();
+    try {
+      activate(context);
+
+      // 对话框默认取消(fake 默认 undefined):不建面板
+      await commands.executeCommand('kbengine.logs.scanErrors');
+      expect(panelRegistry.panels).toHaveLength(0);
+
+      // 选中日志文件:扫出 ERROR 聚合面板
+      windowish.showOpenDialog = async () => [Uri.file('/ws/logs/server.log')];
+      await commands.executeCommand('kbengine.logs.scanErrors');
+      expect(panelRegistry.panels).toHaveLength(1);
+      const panel = panelRegistry.panels[0];
+      expect(panel.viewType).toBe('kbengine.logErrorScan');
+      expect(panel.webview.html).toContain('saveAvatar(N) failed: not found');
+      expect(panel.webview.html).toContain('loadBalance failed');
+
+      // 点击命中行:默认打开链把选区落在命中行
+      const before = windowState.showTextDocumentCalls.length;
+      panelRegistry.fireMessage(panel, { command: 'open', file: '/ws/logs/server.log', line: 2 });
+      await until(() => windowState.showTextDocumentCalls.length > before);
+
+      // 重扫:内容更新后回到同一面板
+      memoryFileSystem.set(
+        '/ws/logs/server.log',
+        [
+          '   ERROR dbmgr01 1000 2000 30000 [2026-03-26 18:21:11 001] - saveAvatar(1001) failed: not found',
+          '[2026-03-26 19:00:00][CRITICAL][baseapp] disk full on volume 7'
+        ].join('\n')
+      );
+      panelRegistry.fireMessage(panel, { command: 'rescan' });
+      await until(() => panel.webview.html.includes('disk full on volume N'));
+      expect(panelRegistry.panels).toHaveLength(1);
+    } finally {
+      windowish.showOpenDialog = originalShowOpenDialog;
+      disposeAll(context);
+    }
+  }, 8000);
+});

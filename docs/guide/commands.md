@@ -119,6 +119,11 @@
 - 标题：`Export Logs`
 - 作用：导出日志内容
 
+### `kbengine.logs.scanErrors`
+
+- 标题：`Scan Raw Log Errors`
+- 作用：选择原始日志文件或文件夹（文件夹只扫一层 `.log`/`.txt`/`.out`），扫描其中的 `ERROR`/`CRITICAL` 行并按「组件 + 归一签名」聚合计数，在 WebView 面板展示计数/级别/组件/签名/最近时间；点击命中行打开源文件对应行，「重新扫描」按上一批文件重跑
+
 ## 调试相关
 
 ### `kbengine.debug.updateLaunchJson`

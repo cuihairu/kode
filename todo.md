@@ -6,7 +6,6 @@
 
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行：先在 package.json 提交目标版本号，再手动触发 Publish to Marketplace 工作流并填同一版本号；不打版本号 tag、不建正式 Release。发布准备已完成，见已完成「Marketplace 发布准备」）
 - [ ] P2 G4 客户端实体/SDK 多语言生成（来源:盘点 G4;向导骨架已有,语言种类 C#/TS/C++/GDScript 等用户点名单再排）
-- [ ] P2 G6 原始日志 ERROR 扫描视图（来源:盘点 G6;logWebView 已有等级过滤,此为原始日志 ERROR 行聚合计数增量面）
 - [ ] P3 G7 生成器形态扩展（newProxy/newSpace/newComponent/newFixedDict 等向导;来源:盘点 G7;实体向导已有,其余按需）
 - [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK;来源:盘点 G8;Nex X 走 KBE Nex 3.x 管理协议,本仓面向经典 kbengine 协议可用性未证,不排期直到用户点名）
 - [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9;同 G8 依赖引擎管理协议,监控面板已有 machine 基础状态,逐批点火前先证协议）
@@ -16,6 +15,7 @@
 
 ## 已完成
 
+- [x] P2 G6 原始日志 ERROR 扫描视图 — 批137（`src/logErrorScan.ts` +1 测试文件 21 例（签名归一 2 + 可扫名 1 + 单文件聚合 2 + 目标收集 3 + 整批扫描 2 + real deps 1 + 面板 7 + 命令 3）+ extension 装配 1 例，全套 2070 用例绿，coverage 100%×4，mocha 11 绿；`kbengine.logs.scanErrors` 选文件/文件夹（一层 `.log`/`.txt`/`.out`，按名排序、fsPath 去重），行过 LogParser 后 ERROR/CRITICAL 按「组件+归一签名」（数字折 N/空白压缩/截 160）聚合计数，面板给计数/级别/组件/签名/最近时间，点击行开源文件定位首见行，「重新扫描」按上一批文件重跑；时间只认行内带时间戳的格式，非标准行记 null 显示 `—`；单文件 64MB 上限与读取失败记 readError 不中断其余；与日志面板同解析器，不依赖 logger 协议；来源:盘点 G6 + 巡检推进单 R1016D）
 - [x] P2 G5 自动热重载 — 批136 G5（`src/hotReload.ts` +1 测试文件 15 例（默认值与畸形回落 4 + 去抖触发器 5 + 装配 6）+ quickActionManager runByName 5 例 + extension 装配 1 例，全套 2048 用例绿，coverage 100%×4（9015 stmts/5406 branches/1559 funcs/8769 lines），mocha 11 绿；`kbengine.hotReload.{enabled=false,actionName,globs,debounceMs}` 门控默认关防误触，开启才按 globs 各建一个 watcher（@types/vscode 只收单个 GlobPattern）、变更/创建/删除三通道事件经注入计时器去抖合并，配置变更监听联动拆建、subscriptions 只挂一条复合 disposable 随激活拆除；触发经 `QuickActionManager.runByName` 复用白名单三后端，跳过确认框、按名找不到只落 OUTPUT 通道流水不弹窗、空名字直接返回，执行照常写「上次执行」记忆供 Explorer ▶ 指向；配置容忍式读取（类型错/负去抖/剔空 globs 一律回落默认，不中断装配）；来源:盘点 G5 + 巡检推进单 R1016A）
 - [x] P1 G3 `.kbengine/debug.json` JSON Schema 校验 — 批136 G3（`src/debugJsonSchema.ts` 构建 schema + `package.json` 新增 `contributes.jsonValidation`（fileMatches `**/.kbengine/debug.json`，264 行内联对象）+1 测试文件 9 例（清单贡献 3 + 结构 4 + 解析器对拍 2），全套 2027 用例绿，coverage 100%×4（8937 stmts/5367 branches/1535 funcs/8693 lines），mocha 11 绿；整份文件编辑器内直接标红（调试段 defaultTelnetHost/telnetPort 默认、元件段 telnet* + telnetEnableCommands 数组 + pathMappings localRoot/remoteRoot 必填、顶层 version+debug 必填、quickActions 三后端 anyOf 各自必填），VS Code JSON 扩展承担校验零运行时代码；`quickActionConfig.ts` 导出 `HTTP_METHODS`/`QUICK_ACTION_TYPES` 作 schema 枚举真源，清单内联对象与 TS 构建产物由测试深等锁定防漂移，且锁死 schema 不落独立文件；校验只作提示，解析器逐条剔除与类型回落规则不变；来源:盘点 G3 + 巡检持续推进单）
 - [x] P1 G2 KBEngine Python API 存根导出 — 批136 G2（`src/pythonStubExport.ts` +1 测试文件 14 例：路径/同源内容 5 + 装配 9，+pythonExtraPaths 4 例（extraManaged 计划 1 + stub 目录并入 3），全套 2018 用例绿，coverage 100%×4（8924 stmts/5367 branches/1531 funcs/8682 lines），mocha 11 绿；`kbeModuleIndex` 抽共享发射器 `emitKbeStubBody`（虚拟桩文档字节不变），`buildKbeStubExportContent` 头部生成物口径（自动生成/重导出覆盖/建议 gitignore）；导出 `.kbengine/stubs/KBEngine.pyi`：内容一致零写、陈旧或读不到重写、目录不可写告警续行、`kbengine.python.stubExport` 默认开可关、激活期静默自动一次、`kbengine.python.exportStubs` 手动入口导出后链同步；G1 接线扩 extraManaged：导出开且文件在盘才并入存根目录；来源:盘点 G2 + 巡检持续推进单）
