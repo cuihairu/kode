@@ -3,7 +3,7 @@
   "displayName": "Kode - KBEngine Development Environment",
   "description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
   "version": "0.1.0",
-  "publisher": "cuihairu",
+  "publisher": "hairucui",
   "author": {
     "name": "cuihairu",
     "email": "cuihairu@gmail.com"
@@ -683,9 +683,10 @@
   },
   "homepage": "https://github.com/cuihairu/kode#readme",
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run bundle",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
@@ -694,8 +695,8 @@
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:electron": "pnpm run compile && node out/test/electron/runTest.js",
-    "package": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 package --no-yarn --no-dependencies",
-    "publish": "npm run compile && pnpm dlx @vscode/vsce@3.9.1 publish --no-yarn --no-dependencies"
+    "package": "pnpm exec vsce package --no-dependencies",
+    "publish": "pnpm exec vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@shikijs/langs": "^4.5.0",
@@ -706,16 +707,17 @@
     "@typescript-eslint/parser": "^8.58.0",
     "@vitest/coverage-v8": "^5.0.1",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "3.9.1",
+    "esbuild": "^0.28.2",
     "eslint": "^8.57.1",
     "glob": "^10.5.0",
     "mocha": "^11.7.5",
+    "mysql2": "^3.24.6",
     "typescript": "^4.2.5",
     "vitepress": "2.0.0-alpha.17",
     "vitest": "^5.0.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   },
-  "dependencies": {
-    "mysql2": "^3.24.6"
-  }
+  "dependencies": {}
 }
