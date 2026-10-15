@@ -38,3 +38,8 @@ overrides:
 
 allowBuilds:
   esbuild: true
+  # @vscode/vsce 3.9.1 引入:keytar 是发布用凭据库(原生模块需编译),
+  # vsce-sign 是 vsix 签名器;pnpm 12 对未放行的安装脚本直接报
+  # ERR_PNPM_IGNORED_BUILDS,CI 在安装依赖步即失败(2026-10-15)
+  '@vscode/vsce-sign': true
+  keytar: true
