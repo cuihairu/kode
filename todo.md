@@ -5,7 +5,7 @@
 ## 未完成
 
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行；不打版本号 tag、不建正式 Release、不跑发版 workflow）
-- [ ] 批134 types.xml 表结构形态悬停 + 类型引用反扫 CodeLens（用户已拍板「形态 + 引用反扫 CodeLens（推荐）」：FIXED_DICT/ARRAY 类型在 types.xml 悬停给引擎落库形态——builtin 落主表单列、FIXED_DICT 平铺成列不成表、ARRAY 成 `<容器>_<属性>` 子表；类型声明行 CodeLens 反扫真实引用落点如 `Avatar.items → tbl_Avatar_bag_items`；parseTypeAliases 等现私有,需小导出面）
+- [x] 批134 types.xml 表结构形态悬停 + 类型引用反扫 CodeLens — `3f02b50`（+2 测试文件 31 例（10 索引/形态契约 + 9 悬停 + 12 镜链），全套 1945 用例绿，coverage 100%×4（8732 stmts/5273 branches/1485 funcs/8496 lines）；`declaredType` 从属性/FD 键/数组元素三个解析点把原始 `<Type>` 文本带到列上，反扫落点直接取 schema 快照单一实现；`getTypeStorageShape` 形态数据 + `describeTypeStorageShape` 措辞（builtin 主表单列附列型、FIXED_DICT 平铺、ARRAY 子表递归一层、未解析明说装载失败、别名环 seen 短路）；悬停 `getCustomTypeHover` 声明行追加落库形态段（implementedBy 值除外）；`TypesXmlCodeLensProvider` 一条使用一枚镜（`Hero.itemId → tbl_Hero.sm_itemId`）点击走 `kbengine.database.open` 定位列，超 10 折叠 `+N 处落库未列出` 计数镜，无引用不出镜，watcher 挂 `**/*.def`/`**/types.xml`/`**/entities.xml` 失效重扫；**批133 遗遗留关闭**：引擎源码坐实 `xml.cpp:121-128` getValStr 只认文本、`datatype.cpp:1658-1712` of 取文本、`datatypes.cpp:105-169` 条目指引读首子文本，demo fixture 三处 `<of>` 写法不合引擎语义是 fixture 错不是解析器错，已修为规范形态并补 sm_value 元素列/skillSlots 子表断言；**fixture 打包修复**：components/.gitignore、interfaces/.gitignore、user_type/.gitignore 三个空目录占位模板把 Inventory.def、ROLE.def、SKILL_SLOT_DATA.py、POSITION_DATA.py 排除在版本库外（65 vs 台账 76 文件，fresh checkout 测试必挂），删占位并补录；extension.test CodeLens 注册 1→2、终配 watcher 探针改样式集合记录；来源:用户「那么能不能在type.xml 中展示表结构呢?」+ 拍板「形态 + 引用反扫 CodeLens（推荐）」）
 - [ ] 批135 代码侧属性标记反向跳转（用户「从types.xml 可以跳转到具体的代码，但从代码上没有类似的 type 的标记反向跳转」；字面不可行——Python 脚本无类型名；可行等价：`.py` 实体脚本 `self.<property>` 访问处 CodeLens 标属性类型与可见域,跳回 def 声明行）
 
 ## 已完成

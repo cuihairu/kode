@@ -4700,3 +4700,61 @@ docs/guide/commands.md `kbengine.database.open` 作用描述同步(旧
 经 `getScalarChildValue(containerNode, 'of')` 只读文本子节点,而规范写法
 `<of><Type> ITEM_ID </Type></of>` 取不到;friendly 版式的「属性列: 无」
 提示照实覆盖该形态,后续批以引擎 EntityTableItem_ARRAY 实现定案。
+
+## 批134:types.xml 表结构形态悬停 + 类型引用反扫 CodeLens(2026-10-15)
+
+来源:用户「那么能不能在type.xml 中展示表结构呢?」「还有从types.xml 可以
+跳转到 具体的代码,但从代码上没有类似的 type 的标记 反向跳转」,拍板
+「形态 + 引用反扫 CodeLens(推荐)」。
+
+**先收批133 遗留**(ARRAY 元素列是否落库,引擎源码坐实):demo fixture 里
+三处 `<of>` 写法不符合引擎文本语义,修的是 fixture 不是解析器——
+- `xml.cpp:121-128` `getValStr(node)` 只认 `node->ToText()`,元素子节点
+  读出空串;`xml.cpp:72-89` `enterNode(node, key)` 找到键后返回该节点的
+  `FirstChild`(跳注释)。
+- `datatype.cpp:1658-1712` `FixedArrayType::initialize`:`enterNode(node,
+  "of")` 后 `getValStr(arrayNode)`——元素类型必须是文本;`<of><Type>X
+  </Type></of>` 嵌套形态引擎读空串装载失败。**def 属性数组的 `<of>` 写在
+  `<Type>` 元素内**(PyEntityDef 从 Type 节点找 of),types.xml 数组别名
+  条目的 `<of>` 与文本指引同级。
+- `datatypes.cpp:105-169` `DataTypes::loadTypes`:条目指引取
+  `getValStr(entry->FirstChild())`,以 `<Type>` 元素开头的条目指引读空,
+  整个 types.xml 装载失败。
+据此把 fixture 修成引擎规范形态:Inventory.def `items` 的 `<of>` 挪进
+`<Type>` 内、Avatar.def `skillSlots` 补 Persistent/Flags 并改规范 `<of>`、
+types.xml 的 SKILL_SLOT.slot_list 与 ITEM_IDS 同步;`skillSlots` 原先
+非 persistent 无子表是**正确行为**。sm_value 元素列在规范形态下如实落列,
+批133 遗留关闭(解析器与引擎语义一致,一直没漂)。
+
+新增(测试先行):
+- `PersistentPropertyDescriptor`/`TableFieldDescriptor` 增 `declaredType`
+  (属性声明的原始 `<Type>` 文本,别名不解析),从属性/FD 键/数组元素三个
+  解析点一路带到列;反扫按它命中,落点表/列直接取 schema 快照(单一实现,
+  不另造落库规则)。
+- `getTypeStorageShape(typesXmlPath, typeName)`:悬停形态数据,别名链经
+  schema 构建器语义解析(builtin 附 `resolveDbTypeLabel` 列型、FIXED_DICT
+  给顶层键、ARRAY 递归一层元素形态;别名环按 seen 短路为 unresolved)。
+- `buildTypeStorageUsageIndex(workspaceRoot)` + `findTypeStorageUsages`:
+  逐实体建快照,非合成列按 declaredType 归拢使用处(entity/property 路径/
+  table/column/defFile/line);按工作区缓存,`invalidateTypeStorageUsageIndex`
+  失效。
+- 悬停:`getCustomTypeHover` 在声明行(implementedBy 值除外)追加
+  「落库形态」段,措辞经 `describeTypeStorageShape`(导出直测)。
+- CodeLens:`buildTypesXmlStorageLensSpecs` 纯函数 + `TypesXmlCodeLensProvider`
+  (watcher 挂 `**/*.def`/`**/types.xml`/`**/entities.xml`,变更即失效重扫并
+  fire onDidChangeCodeLenses);一条使用一枚镜,点击走 `kbengine.database.open`
+  打开 Schema 视图定位列,超 10 处折叠 `+N 处落库未列出` 计数镜(无命令),
+  无引用不出镜;注册于 `**/types.xml` 选择器。
+
+测试:`tests/typeStorageUsage.test.ts`(declaredType 契约 + 索引命中 + 形态
+直测 + 镜 builder/provider 全链,含别名环、Ghost 无 def 与 Broken 非法 def
+的索引早退、11 处使用溢出折叠、watcher 失效重建、工作区外空镜)、
+`tests/typeStorageShapeHover.test.ts`(四种形态措辞、implementedBy 值悬停
+不带形态);demo 资产 schema 用例补 sm_value 元素列与 skillSlots 子表断言,
+导航用例光标改落 `<of>` 别名(数组元素类型在 of 文本里)。extension.test
+CodeLens 注册数 1→2;终配 watcher 断言改记录样式集合(批134 起激活期多了
+三个 CodeLens watcher,lastFileSystemWatcher 不能再当终配探针)。全套 1945
+用例绿,coverage 100%×4(8732 stmts / 5273 branches / 1485 funcs / 8496
+lines),compile+lint 干净,docs:build 绿,mocha 烟测 11 例绿。
+docs/guide/language.md(Hover 新小节+跳转条目)与 features.md 同步。
+版本仍冻结 0.1.0。

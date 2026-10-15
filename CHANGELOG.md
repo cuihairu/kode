@@ -11,6 +11,19 @@ Version is frozen at this placeholder on request; it is not a published
 release (no tag, no GitHub Release) — nightly rolling builds continue.
 
 ### Added
+- `types.xml` type declarations now explain how they land in the database
+  and where they are used. Hovering a declaration name appends a storage
+  shape section: built-in aliases land as one main-table column (with the
+  resolved column type), FIXED_DICT flattens into columns without a table,
+  ARRAY becomes a `tbl_<Entity>_<Property>` child table with one row per
+  element (the element landing is described one level deep), and an
+  unresolved alias says the engine fails to load `types.xml`. Each type
+  declaration line also grows reverse-scan CodeLenses — one per real usage
+  (`Hero.itemId → tbl_Hero.sm_itemId`), clicking opens the entity's schema
+  document at that column; more than 10 usages fold into a count lens and
+  unused types stay silent. Usages are indexed from the same schema
+  snapshot the schema view renders, and `.def`/`types.xml`/`entities.xml`
+  changes invalidate the index and refresh the lenses
 - Hovering a `Persistent` property in `Properties` now shows its database
   storage: the table and column names (`tbl_<Entity>`, `sm_<name>`), the
   three expanded columns for `VECTOR2/3/4`, flattened `FIXED_DICT` key

@@ -66,6 +66,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 连接要素直接读引擎自身配置（不手填）：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 defaults + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306（`db_interface_mysql.cpp:166-167`）；密码仅在 `<encrypt>false</encrypt>`（明文配置）时读出且从不展示，`encrypt=true` 的 RSA 密文不解读。读值按「工作区 + binPath」缓存，`kbengine*.xml` 或配置变更即失效重读
 - Schema 视图（`kbengine.database.open`）：中文标签渲染（批133）。头部给实体名、`存储引擎`、`定义文件` 与 `表: N 张 · 列: M（其中 .def 声明 K）` 概览，配置读得时另给 `数据库: 库名@host:端口`，再附「读图方式」图例（`tbl_` / `sm_` 前缀、引擎列不落 def、`parentID` 关联、flags 含义、SQL 粘贴用法）；每表标 `表类型`（实体表 / 组件表 / 数组子表）、`定义来源`（工作区内相对路径）与 `父表：`，字段分「引擎列（引擎自动建，.def 无需声明）」（`id` / `autoLoad` / `parentID` / 位置朝向六列各带固定语义注解）与「属性列（.def 里声明的）」两组，属性列行尾 `← 文件:行 <属性>` 标 def 落点，只有引擎列的表照实提示 `属性列: 无（本表只有引擎列，没有 .def 声明的数据列）`；每表尾部给三行可粘贴 SQL（全列 SELECT、只含 def 属性列的 `SQL(属性列)`、子表的 `SQL(子表 JOIN)` 按 `parentID` 关联父表，`LEFT JOIN` 保住空元素属性行）；均带库表前缀与反引号转义，库名读不到时退化为表级全名，仍合法
 - 库表前缀可覆盖：设置 `kbengine.db.tablePrefix`（缺省空 = 引擎默认 `tbl_`），表名与三行 SQL 模板同源替换；ARRAY 子表悬停同样给出可粘贴的 JOIN 语句
+- types.xml 类型形态与引用反扫（批134）：类型声明名悬停追加「落库形态」（builtin 落主表单列附列型、FIXED_DICT 平铺成列不成表、ARRAY 成 `tbl_<实体>_<属性>` 子表并递归一层元素落列、未解析明说引擎装载会失败）；声明行上方 CodeLens 逐条反扫真实引用落点（`Hero.itemId → tbl_Hero.sm_itemId`），点击打开该实体 Schema 视图定位到对应列，超 10 处折叠计数镜，`.def`/`types.xml`/`entities.xml` 变更即失效重扫；反扫落点取自 schema 快照（与渲染同一套引擎语义），不另造落库规则
 - 数据库漂移校验（`kbengine.database.checkDrift`）：拿真实表结构反向校验 def 推导的虚拟表结构，报缺表 / 缺列 / 多列 / 型别不符 / 残留表；连接信息读引擎配置（`encrypt=false` 明文密码），只放行 `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN` 且连接以只读会话打开，连不上降级为「未校验」不报错。详见 [数据库漂移校验](./database-drift-check.md)
 
 ## 数据库模拟

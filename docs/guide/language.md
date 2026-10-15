@@ -138,6 +138,17 @@
 
 完整能力说明见 [功能总览](./features.md) 的「属性 → 数据库提示与 Schema 视图」。
 
+### types.xml 类型形态（落库形态）
+
+`types.xml` 类型声明名上悬停时，在自定义类型摘要后追加「落库形态」段：
+
+- 别名指向内建类型：主表单列（附解析后的列型，如 `smallint unsigned`）
+- FIXED_DICT：平铺成列、不成表；顶层键各占一列
+- ARRAY：成子表 `tbl_<实体>_<属性>`、元素各占一行；元素落列按元素类型递归一层（内建给 `sm_value` + 列型，FIXED_DICT 给键平铺，嵌套数组套更深层子表，缺 `<of>` 明说元素类型未知）
+- 未解析类型（链断或别名环）：明说「未知类型，引擎装载 types.xml 会失败」
+
+形态判定与 Schema 视图同一套引擎语义（别名解析、列展开同源）；`implementedBy` 值上的悬停只谈引用，不带形态段。
+
 ## 跳转定义
 
 ### 当前支持
@@ -149,6 +160,7 @@
 - 从生成的 Python 文件跳转回 `.def` 中的属性和方法
 - `types.xml` 的 `<implementedBy>` 值（形如 `MODULE.symbol`，引擎按 `.` 拆两段：`ImportModule` 前段 + `GetAttrString` 后段）双向跳转：正向从 implementedBy 值跳到实现文件里符号的定义行（`class`/`def`/赋值三种形态，符号解析不到才回落文件首行）；反向从 Python 符号（定义名或任意引用处）跳回 `types.xml` 的 implementedBy 行，悬停给出引用方类型与落点行，点击与提示同一套解析
 - RPC 方法标记：Python 实现脚本里，方法名命中实体 def 方法声明（`BaseMethods`/`CellMethods`/`ClientMethods`）的函数，在声明行上方出一行 CodeLens（`RPC · <区块> · [Exposed ·] <来源 def 文件名>`），点击跳回 def 声明行；未在 def 声明的普通函数不出 lens
+- types.xml 类型声明行引用反扫 CodeLens（批134）：声明名上方按真实引用逐条出镜（`Hero.itemId → tbl_Hero.sm_itemId` 形态，一条使用一枚），点击执行 `kbengine.database.open` 打开该实体 Schema 视图并定位到对应列；同一类型超过 10 处使用折叠出一枚 `+N 处落库未列出` 计数镜（无命令、仅提示）；类型无引用不出镜；`.def` / `types.xml` / `entities.xml` 增删改即失效重扫
 - 从 `Properties` 字段名跳到实现脚本，落点四档：与 def 同名的 `class` 定义行 → `__init__` 行 → 首个 `class` 行（类名与 def 不一致时）→ 脚本首行（base→cell→client 取第一个在盘脚本；引擎在 `__init__` 之前装载属性，属性名未必出现在脚本里，类/`__init__` 行仍是可靠锚点）
 - 脚本目录按 def 文件自身位置反推：从 `.def` 向上找最近的 `entity_defs` 目录（按名字匹配，或同级含 `entities.xml`/`types.xml`），其父目录即脚本根，脚本 = `<父>/{base,cell,client}/<实体名>.py`；找不到再回落工作区候选链（`entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`），约定全 miss 时走有界深扫描（限深 7 层/2 万条目，剪 `node_modules`/`.git`/`out`/`dist`），同步读只认唯一命中，多候选宁缺勿猜。文件相对解析优先于工作区相对解析，非标准布局（如 `server/scripts/entity_defs`）同样可跳
 - 属性实现脚本按引用闭包解析：组件 def 落 `scripts/cell/<组件>.py` 等角色脚本，接口 def 落 `scripts/interfaces/<接口名>.py`（不跟随 `Parent`），实体 def 沿自身角色脚本 → `<Interfaces>` 混入脚本 → `Parent` 链逐级向上；全链落空且数据库 schema 也未命中时必有落点：脚本确实不存在 → 该实体在 `entities.xml` 的声明行（无注册表时退 def 首行），同时弹辅助提示列出全部已检查的候选路径，不再只弹提示不跳
