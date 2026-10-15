@@ -26,6 +26,7 @@
 - [x] 文档-源码一致性审计 23 项修复 — 见 `docs/审计-文档一致性.md`（超前 5 / 滞后 7 / 不符 11）
 - [x] 批127 发现与定位失败可见 — `3f36eae`（+1 测试文件 24 例，全套 1548 用例绿，coverage 100%×4；`Show Discovery Report` 命令 + 激活自动报告，报告整段可复制回传）
 - [x] 批128 `kbengine.configPath` 补约定发现 — `9ef2c58`（探针验收 + 约定/记忆/深扫描兜底，telnet 与最终配置视图同步受益；全套 1566 用例绿，coverage 100%×4）
+- [x] 批129 发现与定位:引擎消息表双名与资产根 *_assets 约定 — `5f240f6`（+13 用例，全套 1885 用例绿，coverage 100%×4；深扫描收 `messages_fixed_defaults.xml`、四级优先级对齐引擎装载序 kbemain.h:71-74（工作区用户副本→源码根用户副本→工作区缺省→源码根缺省，两树独立不要求同目录）、纯资产工作区两份皆无标 informational 不计问题（仅源码根在而两份皆缺才报）、资产根约定链收一级 `*_assets` 目录如 flyff_assets（探针验收不变）；来源:用户报告纯资产工程 3 项问题误报 + messages_fixed_defaults 不被识别 + assets/xxx_assets 应进自动扫描）
 
 - [x] 快速执行动作（顶部按钮 / 配置驱动）——`bbf2cf9`（+4 测试文件 80 例，全套 1823 用例绿，coverage 100%×4；配置落 `.kbengine/debug.json` 顶层 `quickActions`，三类后端 `command`/`script`/`http` 白名单，路径走 `${workspaceFolder}`/`${env:}` 变量且未知变量报错中止，按钮挂 Servers 视图标题栏 + def/Python/XML 编辑器标题栏，首装扫一层 `.bat` 只收启停与导表两类多选登记并记忆取消）
   - 巡检复查修补 `c2a0c1a`（+1 用例，全套 1872 用例绿，coverage 100%×4）：后台脚本改等 `spawn` 事件再报「已启动」（起不来如实报错，不谎报）、回包恢复 4000 字符截顶、极简装配上下文缺 `workspaceState` 时首装扫描按首次运行处理

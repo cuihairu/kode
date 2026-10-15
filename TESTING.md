@@ -4525,3 +4525,38 @@ tests/serverConfigMerge.test.ts +1、tests/telnetWiring.test.ts +1
 覆盖率与门禁:1566/1566 绿(109 测试文件),coverage 100%×4(7198 stmts/
 4367 branches/1214 funcs/7019 lines,40 源文件全覆盖,istanbul 忽略台账
 仍 78 处),eslint+tsc 干净。版本仍冻结 0.1.0。
+
+## 批129:引擎消息表双名与资产根 *_assets 约定(2026-10-15)
+
+来源:用户实际工程(纯资产仓)发现与定位报告误报。三层修正:
+
+纯逻辑层 `src/workspaceDiscovery.ts`:深扫描 messages 锚点从单名
+`messages_fixed.xml` 扩为双名(含 `messages_fixed_defaults.xml`);定位拆出
+`resolveEngineMessagesXmlFrom(scan, kbeRoot)` 纯函数,四级优先级对齐引擎
+装载序(kbemain.h:71-74:defaults 先载打底、用户副本后载覆盖,用户副本即
+生效表):①工作区用户副本 ②引擎源码根用户副本 ③工作区缺省 ④引擎源码根
+缺省。②④两级仅在深扫描截断/超深漏掉引擎 res 时可达(引擎源码根总在工作区
+内,扫描本可见),经 scanOverride 注入截断形态复现;报告侧与 buildDiscoveryReport
+的注入扫描同源。用户副本与缺省各在各的树(引擎注释 kbemain.h:133-137:
+defaults 在引擎 res 树、用户副本在资产树),四级独立取用不要求同目录。
+
+问题口径:报告字段状态新增 `informational`——纯资产工作区(无引擎源码根
+且工作区无消息表)标信息性并附备注(引擎跑自带缺省表,非必选项),不计入
+问题清单;找到源码根却两份皆缺仍报 missing。补救文案改为双名口径。字段
+标签修正「引擎消息消息表」叠字。
+
+资产根约定链:`conventionalConfigRoots(workspaceRoot)` 统一供
+resolveDiscoveredConfigRoot / collectDiscoveryCandidates / 报告约定链三处,
+静态名单('', assets, server_assets)之外收工作区一级 `*_assets` 目录
+(flyff_assets 等行业命名),命中仍以 res/server/kbengine.xml 探针验收——
+目录名只是准入,不是结论;工作区根读不到时退回静态名单。
+
+回归锁定:tests/workspaceDiscovery.test.ts +5(双名扫描收集/工作区用户副本
+压过源码根副本/工作区缺省压过源码根缺省/*_assets 约定命中且探针仍验/根
+不可读退静态名单);tests/discoveryReport.test.ts +8(模板缺省表纯资产树
+ok/双名并存用户副本优先/纯资产 informational 不计问题/源码根在两份皆缺
+仍报/渲染信息性备注/*_assets 进约定链命中/截断注入下②级与④级源码根兜底)。
+
+覆盖率与门禁:1885/1885 绿(120 测试文件),coverage 100%×4(8577 stmts/
+5180 branches/1457 funcs/8349 lines,47 源文件全覆盖),docs:build+docsCommands
+3/3,eslint+tsc 干净。版本仍冻结 0.1.0。
