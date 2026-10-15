@@ -351,24 +351,29 @@ export function activate(context: vscode.ExtensionContext) {
 
   const openDatabaseSchemaCommand = vscode.commands.registerCommand(
     'kbengine.database.open',
-    async (entityName: string, tableName?: string, fieldName?: string) => {
-      if (!entityName) {
+    async (entityName?: string, tableName?: string, fieldName?: string) => {
+      // 命令面板无参直开时取活动 .def 推断实体,与 simulate 同口径;仍无实体
+      // 如实提示——此前命令体直接 return,面板点了毫无反应,数据库表结构入口
+      // 找不到(Entities 视图的数据库条目是唯一可达路径)
+      const resolvedEntityName = entityName ?? resolveActiveDefEntityName();
+      if (!resolvedEntityName) {
+        vscode.window.showInformationMessage('请先打开一个实体 .def 文件');
         return;
       }
 
       try {
-        const uri = createDatabaseSchemaUri(entityName);
+        const uri = createDatabaseSchemaUri(resolvedEntityName);
         const document = await vscode.workspace.openTextDocument(uri);
-        const snapshot = getDatabaseSchemaSnapshot(entityName);
+        const snapshot = getDatabaseSchemaSnapshot(resolvedEntityName);
         const line = snapshot
-          ? locateDatabaseSchemaLine(snapshot, tableName || resolveEntityTableName(entityName, snapshot), fieldName)
+          ? locateDatabaseSchemaLine(snapshot, tableName || resolveEntityTableName(resolvedEntityName, snapshot), fieldName)
           : 1;
         const position = new vscode.Position(Math.max(line - 1, 0), 0);
         const selection = new vscode.Range(position, position);
         await vscode.window.showTextDocument(document, { selection });
       } catch (error) {
         vscode.window.showWarningMessage(
-          `打开数据库结构失败: ${entityName}${tableName ? ` (${tableName}${fieldName ? `.${fieldName}` : ''})` : ''} (${error})`
+          `打开数据库结构失败: ${resolvedEntityName}${tableName ? ` (${tableName}${fieldName ? `.${fieldName}` : ''})` : ''} (${error})`
         );
       }
     }

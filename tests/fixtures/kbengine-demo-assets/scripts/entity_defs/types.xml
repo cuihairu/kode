@@ -1,0 +1,52 @@
+<root>
+	<!--
+		自定义类型定义文件(<你的资产库>/scripts/entity_defs/types.xml)
+		详细说明请参考：http://www.kbengine.org/cn/docs/programming/user_types.html
+	-->
+
+	<!-- 别名链:ITEM_ID/ITEM_DESC 只是别名,存储与网络层用别名名 -->
+	<ITEM_ID> UINT16 </ITEM_ID>
+	<ITEM_DESC> STRING </ITEM_DESC>
+
+	<!-- FIXED_DICT + implementedBy:引擎按「模块路径.实现对象」装载序列化实现 -->
+	<SKILL_SLOT>
+		FIXED_DICT
+		<Properties>
+			<slot_list>
+				<Type> ARRAY </Type>
+				<of>
+					<Type> UINT32 </Type>
+				</of>
+			</slot_list>
+			<count>
+				<Type> UINT32 </Type>
+			</count>
+		</Properties>
+		<implementedBy> SKILL_SLOT_DATA.weapon_skill_slot_list_inst </implementedBy>
+	</SKILL_SLOT>
+
+	<POSITION>
+		FIXED_DICT
+		<Properties>
+			<x>
+				<Type> FLOAT </Type>
+			</x>
+			<y>
+				<Type> FLOAT </Type>
+			</y>
+			<z>
+				<Type> FLOAT </Type>
+			</z>
+		</Properties>
+		<implementedBy> POSITION_DATA.position_inst </implementedBy>
+	</POSITION>
+
+	<!-- 数组自定义类型:元素类型可再引用别名(ITEM_ID ← UINT16) -->
+	<ITEM_IDS>
+		<Type> ARRAY </Type>
+		<of>
+			<Type> ITEM_ID </Type>
+		</of>
+	</ITEM_IDS>
+
+</root>

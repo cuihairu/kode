@@ -1,0 +1,30 @@
+<root>
+	<Properties>
+		<accountName>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<DatabaseLength> 128 </DatabaseLength>
+		</accountName>
+		<lastLoginTime>
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</lastLoginTime>
+	</Properties>
+
+	<ClientMethods>
+		<onLoginOK>
+		</onLoginOK>
+	</ClientMethods>
+
+	<BaseMethods>
+		<reqCreateAvatar>
+			<Exposed> true </Exposed>
+			<Arg> STRING </Arg>
+		</reqCreateAvatar>
+	</BaseMethods>
+
+	<CellMethods>
+	</CellMethods>
+
+</root>

@@ -473,3 +473,52 @@ describe('watcher and lifecycle', () => {
     }
   });
 });
+
+// 批132:getPythonScriptRoots 的两条分支直测(经私有方法 cast 调用)。
+// 真资产走 getPythonCandidates 全链已在 kbengineDemoAssets 走查里咬合;
+// 这里只锁根候选本身:嵌套资产根增补、不可识别 defs 目录回落工作区链。
+describe('getPythonScriptRoots', () => {
+  const rootsOf = (
+    workspaceRoot: string,
+    owner: { kind: string; name: string; filePath: string }
+  ): string[] => {
+    const probe = new EntityMappingManager({ subscriptions: [] });
+    try {
+      return (probe as unknown as {
+        getPythonScriptRoots(root: string, ref: unknown): string[];
+      }).getPythonScriptRoots(workspaceRoot, owner as never);
+    } finally {
+      probe.dispose();
+    }
+  };
+
+  it('def 在嵌套资产根的 entity_defs 下时,增补该资产 scripts 根', () => {
+    const root = mappingRoot();
+    const roots = rootsOf(root, {
+      kind: 'entity',
+      name: 'Hero',
+      filePath: p(root, 'kbengine_demo_assets', 'scripts', 'entity_defs', 'Hero.def')
+    });
+    // 前三位保持工作区相对候选(扁平布局顺序不变),嵌套资产根只增补在末尾
+    expect(roots.slice(0, 3)).toEqual([
+      p(root, 'scripts'),
+      p(root, 'assets', 'scripts'),
+      p(root, 'server_assets', 'scripts')
+    ]);
+    expect(roots[3]).toBe(p(root, 'kbengine_demo_assets', 'scripts'));
+  });
+
+  it('def 不在可识别 defs 目录时,只回落三条工作区候选', () => {
+    const root = mappingRoot();
+    const roots = rootsOf(root, {
+      kind: 'entity',
+      name: 'Loner',
+      filePath: p(root, 'weird', 'defs', 'Loner.def')
+    });
+    expect(roots).toEqual([
+      p(root, 'scripts'),
+      p(root, 'assets', 'scripts'),
+      p(root, 'server_assets', 'scripts')
+    ]);
+  });
+});

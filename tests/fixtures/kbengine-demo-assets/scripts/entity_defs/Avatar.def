@@ -1,0 +1,75 @@
+<root>
+	<Properties>
+		<name>
+			<Type> STRING </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+			<DatabaseLength> 64 </DatabaseLength>
+		</name>
+		<level>
+			<Type> UINT32 </Type>
+			<Flags> BASE_AND_CLIENT </Flags>
+			<Persistent> true </Persistent>
+		</level>
+		<hp>
+			<Type> UINT32 </Type>
+			<Flags> ALL_CLIENTS </Flags>
+		</hp>
+		<position>
+			<Type> VECTOR3 </Type>
+			<Flags> CELL_PUBLIC_AND_OWN </Flags>
+		</position>
+		<sight>
+			<Type> UINT16 </Type>
+			<DetailLevel> MEDIUM </DetailLevel>
+		</sight>
+		<skillSlots>
+			<Type> ARRAY </Type>
+			<of>
+				<Type> SKILL_SLOT </Type>
+			</of>
+		</skillSlots>
+	</Properties>
+
+	<!-- 组件声明:引擎 loadComponents 逐条装载,组件 def 在 components/ 子目录 -->
+	<Components>
+		<bag>
+			<Type> Inventory </Type>
+			<Persistent> true </Persistent>
+		</bag>
+	</Components>
+
+	<DetailLevels>
+		<NEAR>
+			<radius> 10 </radius>
+			<hyst> 1 </hyst>
+		</NEAR>
+		<MEDIUM>
+			<radius> 20 </radius>
+			<hyst> 2 </hyst>
+		</MEDIUM>
+		<FAR>
+			<radius> 30 </radius>
+			<hyst> 3 </hyst>
+		</FAR>
+	</DetailLevels>
+
+	<ClientMethods>
+		<onHPChanged>
+			<Arg> UINT32 </Arg>
+		</onHPChanged>
+	</ClientMethods>
+
+	<BaseMethods>
+		<reqCastSkill>
+			<Exposed> true </Exposed>
+			<Arg> UINT32 </Arg>
+		</reqCastSkill>
+	</BaseMethods>
+
+	<CellMethods>
+		<respawn>
+		</respawn>
+	</CellMethods>
+
+</root>

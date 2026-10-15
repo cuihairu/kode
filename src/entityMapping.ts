@@ -18,6 +18,7 @@ import {
   normalizeLookupPath
 } from './definitionSemantics';
 import {
+  findEntityDefsDirForDefFile,
   getDefinitionWorkspaceLayout,
   scriptFoldersForRole
 } from './definitionWorkspace';
@@ -306,26 +307,24 @@ export class EntityMappingManager {
   ): string[] {
     const candidates: string[] = [];
     const sectionFolder = this.getSectionFolder(section);
-    // 与 getDefinitionWorkspaceLayout 的布局候选同口径:官方 newassets
-    // (server_assets/scripts)也在内,否则该布局的脚本进不了索引候选。
-    const assetPrefix = ['scripts', 'assets/scripts', 'server_assets/scripts'];
+    const scriptRoots = this.getPythonScriptRoots(workspaceRoot, owner);
     const ownerName = owner.name;
 
     if (owner.kind === 'entity') {
-      for (const prefix of assetPrefix) {
+      for (const root of scriptRoots) {
         // 官方模板 bots/(ClientMethods 的 BotsApp 客户端脚本)+ 生成器平铺
         // 形态 scripts/<实体>.py,与角色目录并列入候选(2026-10-12 用户实测)。
         for (const folder of scriptFoldersForRole(sectionFolder)) {
-          candidates.push(joinWorkspacePath(workspaceRoot, prefix, folder, `${ownerName}.py`));
+          candidates.push(joinWorkspacePath(root, folder, `${ownerName}.py`));
         }
-        candidates.push(joinWorkspacePath(workspaceRoot, prefix, `${ownerName}.py`));
+        candidates.push(joinWorkspacePath(root, `${ownerName}.py`));
       }
       return candidates;
     }
 
     if (owner.kind === 'component') {
-      for (const prefix of assetPrefix) {
-        candidates.push(joinWorkspacePath(workspaceRoot, prefix, sectionFolder, 'components', `${ownerName}.py`));
+      for (const root of scriptRoots) {
+        candidates.push(joinWorkspacePath(root, sectionFolder, 'components', `${ownerName}.py`));
       }
       return candidates;
     }
@@ -344,13 +343,13 @@ export class EntityMappingManager {
         ? [`${sectionFolder}/interfaces`, 'interfaces', `${sectionFolder}/interface`, 'interface']
         : ['interfaces', `${sectionFolder}/interfaces`, 'interface', `${sectionFolder}/interface`];
 
-      for (const prefix of assetPrefix) {
+      for (const root of scriptRoots) {
         for (const folder of interfaceFolders) {
-          candidates.push(joinWorkspacePath(workspaceRoot, prefix, folder, `${ownerName}.py`));
+          candidates.push(joinWorkspacePath(root, folder, `${ownerName}.py`));
           // 用户工程实测命名变体(2026-10-12):scripts/base/interfaces/
           // Interface_Activity.py,def 里接口名是 Activity。
           candidates.push(
-            joinWorkspacePath(workspaceRoot, prefix, folder, `Interface_${ownerName}.py`)
+            joinWorkspacePath(root, folder, `Interface_${ownerName}.py`)
           );
         }
       }
@@ -363,13 +362,40 @@ export class EntityMappingManager {
     // 分支承担(批33 记录的重复形态),末次 return 同样只能由类型外 kind 达到。
     /* istanbul ignore start */
     if (componentSlotName) {
-      for (const prefix of assetPrefix) {
-        candidates.push(joinWorkspacePath(workspaceRoot, prefix, sectionFolder, 'components', `${ownerName}.py`));
+      for (const root of scriptRoots) {
+        candidates.push(joinWorkspacePath(root, sectionFolder, 'components', `${ownerName}.py`));
       }
     }
 
     return candidates;
     /* istanbul ignore stop */
+  }
+
+  /**
+   * Python 脚本根候选(批132:嵌套资产根兜底)。
+   * ① 与 getDefinitionWorkspaceLayout 的布局候选同口径的三条工作区根前缀
+   *   (scripts / assets/scripts / server_assets/scripts,含官方 newassets 形态);
+   * ② owner 自己的 def 文件位置反推的 scripts 根——资产根不在工作区根本身时
+   *   (<repo>/<xxx>_assets 布局,批129 约定扫描支持的形态),①全 miss,索引里
+   *   pythonOwnerFiles 恒空,RPC CodeLens 与 Python → def 反向跳转整链静默失效;
+   *   引擎语义 entity_defs 与 base/cell/client 恒同层,故 scripts 根 = def 所在
+   *   entity_defs 的父目录,与定义导航的文件相对口径一致。②排在①之后:扁平布局
+   *   候选顺序不变,嵌套布局只增补。
+   */
+  private getPythonScriptRoots(
+    workspaceRoot: string,
+    owner: DefinitionOwnerRef
+  ): string[] {
+    const roots = uniqueFilePaths([
+      joinWorkspacePath(workspaceRoot, 'scripts'),
+      joinWorkspacePath(workspaceRoot, 'assets', 'scripts'),
+      joinWorkspacePath(workspaceRoot, 'server_assets', 'scripts')
+    ]);
+    const defsDir = findEntityDefsDirForDefFile(owner.filePath);
+    if (defsDir) {
+      roots.push(path.dirname(defsDir));
+    }
+    return roots;
   }
 
   private getSectionFolder(section: EntityMethodSection): 'base' | 'cell' | 'client' {

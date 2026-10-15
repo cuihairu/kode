@@ -322,12 +322,14 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.logs.clear');
     await commands.executeCommand('kbengine.logs.export');
 
-    // 目标载荷的三处空值早退(命令体直接 return,无消息)
+    // 目标载荷的空值早退:实体/方法两条命令体直接 return 无消息,
+    // database.open 空值走「请先打开 .def」提示,不再静默
     const warningsBefore = messages.warning.length;
     await commands.executeCommand('kbengine.entity.open', '');
     await commands.executeCommand('kbengine.entity.method.open', null);
     await commands.executeCommand('kbengine.database.open', '');
     expect(messages.warning.length).toBe(warningsBefore);
+    expect(messages.info.some(message => message.includes('请先打开一个实体 .def 文件'))).toBe(true);
 
     // 调试:无工作区报具体消息、未选中组件 no-op
     await commands.executeCommand('kbengine.debug.updateLaunchJson');
@@ -513,6 +515,24 @@ describe('extension activate 装配', () => {
       expect(messages.warning).toHaveLength(0);
       expect(windowState.showTextDocumentCalls.at(-1)?.options)
         .toEqual({ selection: new Range(new Position(row, 0), new Position(row, 0)) });
+
+      // 命令面板无参直开:取活动 .def 推断实体,不再静默 no-op
+      // (用户从面板点 Open Database Schema 毫无反应,找不到入口)
+      const originalActiveEditor = fakeWindow.activeTextEditor;
+      messages.warning.length = 0;
+      fakeWindow.activeTextEditor = {
+        document: { uri: { fsPath: '/ws/scripts/entity_defs/Hero.def' }, languageId: 'kbengine-def' }
+      } as never;
+      await commands.executeCommand('kbengine.database.open');
+      expect(messages.warning).toHaveLength(0);
+      expect((workspaceState.openTextDocumentCalls.at(-1) as Uri).scheme).toBe('kbengine-db-schema');
+      expect(windowState.showTextDocumentCalls.at(-1)?.options).toBeDefined();
+
+      // 无活动 .def:如实提示,不空转
+      fakeWindow.activeTextEditor = undefined;
+      await commands.executeCommand('kbengine.database.open');
+      expect(messages.info.some(message => message.includes('请先打开一个实体 .def 文件'))).toBe(true);
+      fakeWindow.activeTextEditor = originalActiveEditor;
 
       // 打开失败的 catch 分支:openTextDocument 抛错 → 三类打开命令各报具体原因
       const originalOpen = workspace.openTextDocument;
