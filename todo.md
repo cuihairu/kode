@@ -5,6 +5,8 @@
 ## 未完成
 
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行；不打版本号 tag、不建正式 Release、不跑发版 workflow）
+- [ ] 批134 types.xml 表结构形态悬停 + 类型引用反扫 CodeLens（用户已拍板「形态 + 引用反扫 CodeLens（推荐）」：FIXED_DICT/ARRAY 类型在 types.xml 悬停给引擎落库形态——builtin 落主表单列、FIXED_DICT 平铺成列不成表、ARRAY 成 `<容器>_<属性>` 子表；类型声明行 CodeLens 反扫真实引用落点如 `Avatar.items → tbl_Avatar_bag_items`；parseTypeAliases 等现私有,需小导出面）
+- [ ] 批135 代码侧属性标记反向跳转（用户「从types.xml 可以跳转到具体的代码，但从代码上没有类似的 type 的标记反向跳转」；字面不可行——Python 脚本无类型名；可行等价：`.py` 实体脚本 `self.<property>` 访问处 CodeLens 标属性类型与可见域,跳回 def 声明行）
 
 ## 已完成
 
@@ -32,6 +34,7 @@
 
 - [x] 批132 官方模板测试验证工程 + 嵌套资产根脚本候选修复 — `6100888`（+1 测试文件 23 例 + 2 例分支直测 + 1 例无参入口，全套 1912 用例绿，coverage 100%×4（8584 stmts/5184 branches/1458 funcs/8356 lines，47 源文件全覆盖）；`tests/fixtures/kbengine-demo-assets` = 官方 SDK Python 模板逐字快照 63 文件 + 其上补 Avatar/Monster def、interfaces/ROLE.def、components/Inventory.def、含 implementedBy 的 types.xml、user_type 实现模块与各角色脚本，共 76 文件；`tests/kbengineDemoAssets.test.ts` 在「打开资产根上层」的工作区形态下一次走穿发现→13 例定义导航→implementedBy 双向→RPC CodeLens 接口混入→数据库 schema（实体表/组件表/数组子表）→配置合并→静默红线；产品修复：getPythonCandidates 只拼三条工作区相对脚本根，嵌套资产根（`<repo>/<xxx>_assets`，官方模板形态）全 miss 致 pythonOwnerFiles 恒空、RPC CodeLens 与 Python→def 反向跳转整链静默失效，新增 getPythonScriptRoots 以 owner def 位置反推 scripts 根追加在既有候选之后（扁平布局顺序不变，嵌套只增补）；来源:用户「最好创建一个相对完整的测试验证的模板项目,kbengine 的模板里有的」）
 - [x] 批132 补 数据库表结构入口不静默 — `6100888`（同上 commit；`kbengine.database.open` 命令面板无参直开经 resolveActiveDefEntityName 取活动 .def 推断实体、与 simulate 同口径，无活动 .def 弹「请先打开一个实体 .def 文件」而非命令体直接 return；唯一 UI 入口实为活动栏 KBEngine Explorer → Entities → 展开实体 → Database 分组，包级 menus 未给四条 database 命令任何挂点；入口说明补进 docs/guide/commands.md；来源:用户「我根本不知道哪里开启 数据库表功能没有」）
+- [x] 批133 数据库表结构文档友好化 — `cdf302e`（+契约化 locate 断言与引擎列注解/兜底注解/路径显示/字段行识别四组用例，全套 1916 用例绿，coverage 100%×4（8638 stmts/5210 branches/1469 funcs/8403 lines）；中文标签渲染：头部概览+「读图方式」图例、每表 `表类型`/`定义来源`/`父表：`、字段分引擎列（固定语义逐列注解）/属性列两组、属性列行尾 `← 文件:行 <属性>` 标 def 落点、空属性列表照实提示；`locateDatabaseSchemaLine` 弃手写行数镜像改解析渲染文本（TABLE 锚点+字段行识别导出为 `databaseSchemaFieldLineName`，与 `findDatabaseSchemaFieldAtPosition` 同源），TABLE 行与三行 SQL 逐字不动（F12 与粘贴依赖）；TESTING.md 批133 段登记遗留：ARRAY 标量元素 `sm_value` 列是否落库未从引擎源码坐实（`<of><Type> X </Type></of>` 规范写法经 `getScalarChildValue` 取不到，后续批定案）；来源:用户「看到database了，但这展示能在友好点吗，这都是啥啊」）
 
 - [x] 快速执行动作（顶部按钮 / 配置驱动）——`bbf2cf9`（+4 测试文件 80 例，全套 1823 用例绿，coverage 100%×4；配置落 `.kbengine/debug.json` 顶层 `quickActions`，三类后端 `command`/`script`/`http` 白名单，路径走 `${workspaceFolder}`/`${env:}` 变量且未知变量报错中止，按钮挂 Servers 视图标题栏 + def/Python/XML 编辑器标题栏，首装扫一层 `.bat` 只收启停与导表两类多选登记并记忆取消）
   - 巡检复查修补 `c2a0c1a`（+1 用例，全套 1872 用例绿，coverage 100%×4）：后台脚本改等 `spawn` 事件再报「已启动」（起不来如实报错，不谎报）、回包恢复 4000 字符截顶、极简装配上下文缺 `workspaceState` 时首装扫描按首次运行处理

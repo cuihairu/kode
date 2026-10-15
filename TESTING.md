@@ -4656,3 +4656,47 @@ Entities 视图路径 + 面板无参回落行为)。
 覆盖率与门禁:1912/1912 绿(新用例并入既有 it),coverage 100%×4(8584 stmts /
 5184 branches / 1458 funcs / 8356 lines,47 源文件全覆盖),compile+lint 干净,
 docs:build+docsCommands 3/3,mocha 烟测 11 例绿。版本仍冻结 0.1.0。
+
+## 批133:数据库表结构文档友好化(2026-10-15)
+
+来源:用户「看到database了,但这展示能在友好点吗,这都是啥啊」。旧渲染是裸
+键值行(`Backend: MYSQL` / `kind: entity` / `index=PRIMARY` / 每列下挂
+`source:` 行),对不了解引擎落库实现的用户没有可读性。
+
+改法(测试先行,定位与版式解耦是硬约束):
+- 渲染改中文标签:头部给实体名、`存储引擎`、`定义文件`(工作区相对)与
+  `表: N 张 · 列: M(其中 .def 声明 K)` 概览,配置读得时另给
+  `数据库: 库名@host:端口`;「读图方式」图例五条(tbl_/sm_ 前缀、引擎列
+  不落 def、parentID 关联、flags 含义、SQL 粘贴用法);每表标 `表类型`
+  (实体表/组件表/数组子表)、`定义来源`、子表 `父表:`;字段分「引擎列
+  (引擎自动建,.def 无需声明)」与「属性列(.def 里声明的)」两组,引擎列
+  按固定语义逐列注解(id 主键自增、autoLoad 带索引标记读入、parentID 指回
+  父表、位置朝向六列),属性列行尾 `← 文件:行 <属性>` 标 def 落点;只有
+  引擎列的表照实提示 `属性列: 无(本表只有引擎列,没有 .def 声明的数据列)`。
+- **TABLE 锚点行与三行 SQL 逐字不动**(F12 跳转与外部粘贴依赖其精确格式)。
+- `locateDatabaseSchemaLine` 弃手写行数镜像(`line = 6` / `+= 5` / `+= 2`
+  对渲染版式硬耦合,版式一改定位即失效),改为解析 renderDatabaseSchema
+  渲染文本:先找 `TABLE <name>` 锚点(表名捕获相等),再在表块内按
+  `databaseSchemaFieldLineName` 匹配字段行;未知表/未知字段与旧实现同口径
+  退首行。`findDatabaseSchemaFieldAtPosition` 同源改用共享锚点
+  (`databaseSchemaFieldLineName` 导出):字段行允许前导空白(新版式列行
+  缩进),SQL 行(`SQL:` 冒号后非空白)与中文分组标题不误命中。
+- `displaySourcePath`:工作区内相对、区外/工作区根本身/无工作区照给绝对
+  路径,不虚构相对关系;字段行尾随 basename 短标,完整路径跳转由 source
+  提供。
+
+测试:locateDatabaseSchemaLine describe 改契约断言(返回行即锚点行,不再锁
+死行号,版式再改也不脆);渲染断言按新形态重写并显式断言旧键值行消失
+(`not.toContain('kind:')` 等);新增引擎列注解/兜底注解/路径显示/字段行
+识别四组用例。全套 1916 用例绿,coverage 100%×4(8638 stmts / 5210 branches /
+1469 funcs / 8403 lines),compile+lint 干净,docs:build+docsCommands 3/3,
+mocha 烟测 11 例绿。docs/guide/features.md Schema 视图条目与
+docs/guide/commands.md `kbengine.database.open` 作用描述同步(旧
+`Database:`/`parent:` 键值描述已换新)。版本仍冻结 0.1.0,commit `cdf302e`。
+
+遗留(已核实、未在本批扩散):ARRAY 标量元素(`ARRAY of UINT32`)是否落
+`sm_value` 元素列未从引擎源码坐实——demo 资产 `tbl_Avatar_bag_items`
+(ARRAY of ITEM_ID)渲染只有引擎列、无元素列,`parseArrayElementDescriptor`
+经 `getScalarChildValue(containerNode, 'of')` 只读文本子节点,而规范写法
+`<of><Type> ITEM_ID </Type></of>` 取不到;friendly 版式的「属性列: 无」
+提示照实覆盖该形态,后续批以引擎 EntityTableItem_ARRAY 实现定案。

@@ -146,6 +146,19 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   keeps the symbol color alone. The split follows the engine's own load
   semantics (`datatype.cpp` `loadImplModule` treats the value as
   `module.symbol`)
+- The database schema document (`kbengine.database.open`) renders with
+  Chinese labels and a reading legend instead of raw key/value lines
+  (`Backend:` / `kind:` / `index=`). The header shows the entity name,
+  storage engine, def file and a table/column count, followed by a legend
+  explaining the `tbl_`/`sm_` prefixes, engine-managed columns,
+  `parentID` relations, `flags=` scopes and the paste-ready SQL. Each
+  table is titled with its kind (实体表/组件表/数组子表), source def
+  location and parent table, and splits its columns into an engine group
+  (with fixed meaning notes per column) and a property group whose rows
+  end with the def location (`← file:line <property>`). Tables without
+  def-declared columns say so explicitly. `TABLE` lines and the SQL lines
+  keep their exact format, so F12 jumps and pasting into a MySQL client
+  are unchanged
 
 ### Fixed
 - Generating a snippet from a selection now measures the common indent in
