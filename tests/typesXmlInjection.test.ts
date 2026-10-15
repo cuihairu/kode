@@ -5,12 +5,15 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { Registry } from 'vscode-textmate';
 import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma';
 
-// types.xml 注入语法功能验收(批130,来源:用户 2026-10-14 着色增强需求):
+// types.xml 注入语法功能验收(批130,来源:用户 2026-10-14 着色增强需求;
+// 批131 追加 implementedBy 分段着色):
 // types.xml 默认由 XML 插件接管着色,kode 不得抢宿主分词——用注入语法
 // (injection grammar)在其上叠加 KBEngine 语义 scope:
 //   ① 内置类型(UINT32 等)有别于普通 XML 文本
 //   ② 用户自定义类型也着色,且与内置类型可区分
 //   ③ ARRAY / FIXED_DICT 指令有显著区别于其它 token 的专属色
+//   ④ implementedBy 值分段:点号前逐段=模块段,最后一段=实现对象
+//      (引擎 datatype.cpp loadImplModule 把值当「模块路径.实现对象」装载)
 // 机制与 VS Code 自带注入语法同款(markdown-math/jsdoc 先例):
 //   package.json 贡献点给 injectTo:["text.xml"](VS Code 据此建
 //   scopeName→注入者映射),语法文件自带 injectionSelector 选择器
@@ -18,13 +21,13 @@ import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma'
 //   选择器带 "- (comment, string)" 排除:语义色不漏进注释与属性值。
 // 本文件在真实 vscode-textmate Registry(宿主 text.xml + 注入语法 +
 // KBEngine Dark 主题共装)下断言:
-//   一、五类 token 各自取得预期语义 scope(注入真实生效,规则命中);
+//   一、六类 token 各自取得预期语义 scope(注入真实生效,规则命中);
 //   二、注释与属性值内零 kbengine scope 泄漏(排除选择器生效);
-//   三、四类(内置/自定义/ARRAY/FIXED_DICT)前景色两两可区分,
+//   三、五类(内置/自定义/ARRAY/FIXED_DICT/implementedBy)前景色两两可区分,
 //       且与普通 XML 文本可区分——用户验收口径;
-//   四、四类落在不同 scope 家族(support.type / entity.name.type /
-//       keyword.other×2)——这是"换主题仍可区分"的机制保证:语义
-//       scope 不硬编码色值,主题换色不换语义归属。
+//   四、各 token 落在不同 scope 家族(support.type / entity.name.type /
+//       keyword.other×2 / variable.other / entity.name.namespace)——这是
+//       "换主题仍可区分"的机制保证:语义 scope 不硬编码色值,主题换色不换语义归属。
 // 宿主 text.xml 取自 @shikijs/langs(与 microsoft/vscode 内建语法同源;
 // default 是 [java, text.xml] 数组,按 scopeName 取)。包不可解析时整组
 // 跳过(测试不引入网络依赖)。
@@ -55,6 +58,22 @@ const TYPES_SAMPLE = [
 
 const COMMENT_SAMPLE = '<!-- 注释里的 UINT16 ARRAY FIXED_DICT 不应着色 -->';
 const ATTR_SAMPLE = '<ghost id="UINT16" kind="ARRAY"/>';
+
+// 批131:implementedBy 值形态专项——裸符号(模块缺省)与深层模块路径。
+// 引擎 datatype.cpp loadImplModule 把值当「模块路径.实现对象」装载,
+// 分段着色口径:点号前的每一段=模块段,紧贴闭标签的最后一段=符号段。
+const IMPL_FORMS_SAMPLE = [
+  '<types>',
+  '  <BARE>',
+  '    FIXED_DICT',
+  '    <implementedBy>BareImpl</implementedBy>',
+  '  </BARE>',
+  '  <DEEP>',
+  '    FIXED_DICT',
+  '    <implementedBy>kbtest.sub.DataImpl</implementedBy>',
+  '  </DEEP>',
+  '</types>'
+].join('\n');
 
 describe('types.xml 注入语法(批130)', () => {
   let registry: Registry | null = null;
@@ -136,6 +155,46 @@ describe('types.xml 注入语法(批130)', () => {
     return { scopes: found[occurrence - 1] ?? [], count: found.length };
   };
 
+  /** 同 scopesOfToken,但作用于任意样本(批131:implementedBy 值形态专项) */
+  const scopesIn = async (sample: string, needle: string): Promise<string[]> => {
+    const grammar = await registry!.loadGrammar('text.xml');
+    let stack = null;
+    const found: string[][] = [];
+    for (const line of sample.split('\n')) {
+      const result = grammar!.tokenizeLine(line, stack);
+      stack = result.ruleStack;
+      for (const token of result.tokens) {
+        if (line.slice(token.startIndex, token.endIndex) === needle) {
+          found.push(token.scopes);
+        }
+      }
+    }
+    return found[0] ?? [];
+  };
+
+  /** tokenizeLine2(前景色模式):取 needle 第 occurrence 次出现的主题前景色 */
+  const fgOfToken = async (needle: string, occurrence = 1): Promise<string> => {
+    const grammar = await registry!.loadGrammar('text.xml');
+    const colorMap = registry!.getColorMap();
+    let stack = null;
+    let seen = 0;
+    for (const line of TYPES_SAMPLE.split('\n')) {
+      const result = grammar!.tokenizeLine2(line, stack);
+      stack = result.ruleStack;
+      for (let i = 0; i < result.tokens.length; i += 2) {
+        const start = result.tokens[i];
+        const end = i + 2 < result.tokens.length ? result.tokens[i + 2] : line.length;
+        if (line.slice(start, end) === needle) {
+          seen += 1;
+          if (seen === occurrence) {
+            return colorMap[(result.tokens[i + 1] & FOREGROUND_MASK) >>> FOREGROUND_SHIFT];
+          }
+        }
+      }
+    }
+    throw new Error(`token not found: ${needle}#${occurrence} (seen ${seen})`);
+  };
+
   it('内置类型取得 support.type.kbengine.builtin(别名形式与 Type 值形式)', async () => {
     if (!registry) {
       return;
@@ -187,25 +246,53 @@ describe('types.xml 注入语法(批130)', () => {
     expect(dictHit.scopes).not.toContain('support.type.kbengine.builtin');
   });
 
-  it('implementedBy 值取得专属 scope(模块段与符号段一体着色)', async () => {
+  it('implementedBy 值分段着色:模块段与符号段 scope 分离(批131)', async () => {
     if (!registry) {
       return;
     }
-    const needle = 'SKILL_SLOT_DATA.weapon_skill_slot_list_inst';
+    // SKILL_SLOT_DATA.weapon_skill_slot_list_inst:
+    //   SKILL_SLOT_DATA = 模块段(namespace),weapon_skill_slot_list_inst = 符号段
+    const { scopes: moduleScopes } = await scopesOfToken('SKILL_SLOT_DATA');
+    expect(moduleScopes, '模块段缺 namespace scope').toContain('entity.name.namespace.kbengine.implmodule');
+    expect(moduleScopes, '模块段不得落符号段 scope').not.toContain('variable.other.kbengine.implementedby');
+    const { scopes: symbolScopes } = await scopesOfToken('weapon_skill_slot_list_inst');
+    expect(symbolScopes, '符号段缺 variable.other scope').toContain('variable.other.kbengine.implementedby');
+    expect(symbolScopes, '符号段不得落模块段 scope').not.toContain('entity.name.namespace.kbengine.implmodule');
+
+    // 回归锁:整值不再是一枚 token(批130 一体着色的反面)
     const grammar = await registry.loadGrammar('text.xml');
     let stack = null;
-    let hit = false;
+    let whole = false;
     for (const line of TYPES_SAMPLE.split('\n')) {
       const result = grammar.tokenizeLine(line, stack);
       stack = result.ruleStack;
       for (const token of result.tokens) {
-        if (line.slice(token.startIndex, token.endIndex) === needle) {
-          hit = true;
-          expect(token.scopes).toContain('variable.other.kbengine.implementedby');
+        if (line.slice(token.startIndex, token.endIndex) === 'SKILL_SLOT_DATA.weapon_skill_slot_list_inst') {
+          whole = true;
         }
       }
     }
-    expect(hit).toBe(true);
+    expect(whole, '整值应拆成多枚 token').toBe(false);
+  });
+
+  it('implementedBy 值形态:裸符号只有符号段,深层模块逐段全落模块段(批131)', async () => {
+    if (!registry) {
+      return;
+    }
+    // 裸符号(无点号):只落符号段 scope
+    const bare = await scopesIn(IMPL_FORMS_SAMPLE, 'BareImpl');
+    expect(bare).toContain('variable.other.kbengine.implementedby');
+    expect(bare).not.toContain('entity.name.namespace.kbengine.implmodule');
+
+    // 深层模块 kbtest.sub.DataImpl:kbtest、sub = 模块段,DataImpl = 符号段
+    for (const seg of ['kbtest', 'sub']) {
+      const scopes = await scopesIn(IMPL_FORMS_SAMPLE, seg);
+      expect(scopes, `${seg} 应为模块段`).toContain('entity.name.namespace.kbengine.implmodule');
+      expect(scopes, `${seg} 不得落符号段`).not.toContain('variable.other.kbengine.implementedby');
+    }
+    const deepSymbol = await scopesIn(IMPL_FORMS_SAMPLE, 'DataImpl');
+    expect(deepSymbol).toContain('variable.other.kbengine.implementedby');
+    expect(deepSymbol).not.toContain('entity.name.namespace.kbengine.implmodule');
   });
 
   it('注释与属性值内零 kbengine scope 泄漏(排除选择器生效)', async () => {
@@ -235,34 +322,12 @@ describe('types.xml 注入语法(批130)', () => {
     if (!registry) {
       return;
     }
-    const grammar = await registry.loadGrammar('text.xml');
-    const colorMap = registry.getColorMap();
-    const fgOf = (needle: string, occurrence = 1): string => {
-      let stack = null;
-      let seen = 0;
-      for (const line of TYPES_SAMPLE.split('\n')) {
-        const result = grammar.tokenizeLine2(line, stack);
-        stack = result.ruleStack;
-        for (let i = 0; i < result.tokens.length; i += 2) {
-          const start = result.tokens[i];
-          const end = i + 2 < result.tokens.length ? result.tokens[i + 2] : line.length;
-          if (line.slice(start, end) === needle) {
-            seen += 1;
-            if (seen === occurrence) {
-              return colorMap[(result.tokens[i + 1] & FOREGROUND_MASK) >>> FOREGROUND_SHIFT];
-            }
-          }
-        }
-      }
-      throw new Error(`token not found: ${needle}#${occurrence} (seen ${seen})`);
-    };
-
-    const builtin = fgOf('UINT32');
+    const builtin = await fgOfToken('UINT32');
     // 第 2 次 = <Type>SKILL_SLOT</Type> 引用处(1 是定义标签,3 是闭标签)
-    const custom = fgOf('SKILL_SLOT', 2);
-    const array = fgOf('ARRAY');
-    const fixedDict = fgOf('FIXED_DICT');
-    const plain = fgOf('slot_list'); // 宿主 XML 普通标签,非注入 scope
+    const custom = await fgOfToken('SKILL_SLOT', 2);
+    const array = await fgOfToken('ARRAY');
+    const fixedDict = await fgOfToken('FIXED_DICT');
+    const plain = await fgOfToken('slot_list'); // 宿主 XML 普通标签,非注入 scope
 
     const quads: Array<[string, string, string]> = [
       ['内置', builtin, custom],
@@ -285,7 +350,24 @@ describe('types.xml 注入语法(批130)', () => {
     }
   });
 
-  it('四类落在四个不同语义 scope(换主题仍可区分的机制保证)', () => {
+  it('implementedBy 模块段与符号段前景色可区分且不同于普通文本(批131)', async () => {
+    if (!registry) {
+      return;
+    }
+    const moduleColor = await fgOfToken('SKILL_SLOT_DATA');
+    const symbolColor = await fgOfToken('weapon_skill_slot_list_inst');
+    const plain = await fgOfToken('slot_list');
+    // 第 2 次 = <Type>SKILL_SLOT</Type> 引用处:implementedBy 就写在自定义类型体内,
+    // 模块段与相邻的自定义类型引用也需视觉可区分
+    const custom = await fgOfToken('SKILL_SLOT', 2);
+
+    expect(moduleColor, '模块段与符号段同色,分段着色无效').not.toBe(symbolColor);
+    expect(moduleColor, '模块段与普通 XML 文本同色').not.toBe(plain);
+    expect(symbolColor, '符号段与普通 XML 文本同色').not.toBe(plain);
+    expect(moduleColor, '模块段与自定义类型引用同色,同区块内不可区分').not.toBe(custom);
+  });
+
+  it('五类落在五个不同语义 scope(换主题仍可区分的机制保证)', () => {
     const grammar = JSON.parse(
       fs.readFileSync(path.join(root, 'syntaxes', 'kbengine-types-injection.json'), 'utf8')
     ) as { scopeName: string; injectionSelector: string; patterns: Array<{ name?: string }> };
@@ -298,21 +380,22 @@ describe('types.xml 注入语法(批130)', () => {
     // 内置类型的 <Type> 锚定式与裸文本式共用同一 scope(形态不同、语义相同)
     expect(scopes).toContain('support.type.kbengine.builtin');
 
-    // 四类各自独占一个 scope 字符串:不写死色值,主题按 scope 着色即可区分
-    const kinds = ['builtin', 'custom', 'array', 'fixed-dict'].map(kind => (
+    // 五类各自独占一个 scope 字符串:不写死色值,主题按 scope 着色即可区分
+    const kinds = ['builtin', 'custom', 'array', 'fixed-dict', 'implmodule'].map(kind => (
       scopes.find(name => name.endsWith(`.kbengine.${kind}`))
     ));
     for (const [index, kind] of kinds.entries()) {
       expect(kind, `缺少 .kbengine.${kinds[index] ?? ''} 归属的 scope`).toBeTruthy();
     }
-    expect(new Set(kinds).size).toBe(4); // 四个 scope 两两不同
+    expect(new Set(kinds).size).toBe(5); // 五个 scope 两两不同
 
     // 语义归属只用既有主题家族,不私造新家族:
     //   内置=support.type / 自定义=entity.name.type(类型声明)
-    //   ARRAY、FIXED_DICT=keyword.other(指令)/ implementedBy=variable.other
+    //   ARRAY、FIXED_DICT=keyword.other(指令)
+    //   implementedBy=variable.other(实现对象)/ entity.name.namespace(模块段,批131)
     const baseOf = (name: string) => name.replace(/\.kbengine\.[^.]+$/, '');
     expect(baseOf('support.type.kbengine.builtin')).toBe('support.type');
     expect(baseOf('entity.name.type.kbengine.custom')).toBe('entity.name.type');
-    expect(new Set(scopes.map(baseOf)).size).toBe(4); // 五类落四个家族(array/dict 同属 keyword.other)
+    expect(new Set(scopes.map(baseOf)).size).toBe(5); // 六 scope 落五家族(array/dict 同属 keyword.other)
   });
 });

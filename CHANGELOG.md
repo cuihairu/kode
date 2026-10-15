@@ -137,6 +137,15 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   so the empty default lets the intended "not set → discover" path actually
   run. Users who already set the old key must re-enter it under the new
   name; probe and discovery semantics are otherwise unchanged
+- `<implementedBy>` values in `types.xml` now color the module path and the
+  symbol separately (one color for the whole value before). Every dotted
+  segment before the last is now a module namespace scope
+  (`entity.name.namespace.kbengine.implmodule`), the segment right before
+  the closing tag stays the implementation symbol scope
+  (`variable.other.kbengine.implementedby`); a bare value without dots
+  keeps the symbol color alone. The split follows the engine's own load
+  semantics (`datatype.cpp` `loadImplModule` treats the value as
+  `module.symbol`)
 
 ### Fixed
 - Generating a snippet from a selection now measures the common indent in

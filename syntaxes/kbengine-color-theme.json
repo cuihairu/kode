@@ -17,7 +17,10 @@
     },
     {
       "name": "Comments",
-      "scope": ["comment", "punctuation.definition.comment"],
+      "scope": [
+        "comment",
+        "punctuation.definition.comment"
+      ],
       "settings": {
         "foreground": "#75715E",
         "fontStyle": "italic"
@@ -36,7 +39,10 @@
     },
     {
       "name": "XML Tags",
-      "scope": ["entity.name.tag.xml", "entity.name.tag.localname.xml"],
+      "scope": [
+        "entity.name.tag.xml",
+        "entity.name.tag.localname.xml"
+      ],
       "settings": {
         "foreground": "#569CD6"
       }
@@ -117,7 +123,10 @@
     },
     {
       "name": "KBEngine Type Aliases",
-      "scope": ["support.class.kbengine", "support.type"],
+      "scope": [
+        "support.class.kbengine",
+        "support.type"
+      ],
       "settings": {
         "foreground": "#A6E22E",
         "fontStyle": "italic bold"
@@ -158,6 +167,13 @@
       "scope": "variable.other.kbengine.implementedby",
       "settings": {
         "foreground": "#61AFEF"
+      }
+    },
+    {
+      "name": "KBEngine ImplementedBy module segment (types.xml)",
+      "scope": "entity.name.namespace.kbengine.implmodule",
+      "settings": {
+        "foreground": "#C678DD"
       }
     },
     {
@@ -218,21 +234,31 @@
     },
     {
       "name": "Common Storage",
-      "scope": ["storage", "storage.type", "storage.modifier"],
+      "scope": [
+        "storage",
+        "storage.type",
+        "storage.modifier"
+      ],
       "settings": {
         "foreground": "#569CD6"
       }
     },
     {
       "name": "Common Types",
-      "scope": ["entity.name.type", "support.class"],
+      "scope": [
+        "entity.name.type",
+        "support.class"
+      ],
       "settings": {
         "foreground": "#4EC9B0"
       }
     },
     {
       "name": "Common Functions",
-      "scope": ["entity.name.function", "support.function"],
+      "scope": [
+        "entity.name.function",
+        "support.function"
+      ],
       "settings": {
         "foreground": "#DCDCAA"
       }
@@ -246,7 +272,10 @@
     },
     {
       "name": "Common Variables",
-      "scope": ["variable", "variable.parameter"],
+      "scope": [
+        "variable",
+        "variable.parameter"
+      ],
       "settings": {
         "foreground": "#9CDCFE"
       }

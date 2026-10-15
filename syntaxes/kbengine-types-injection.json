@@ -23,7 +23,13 @@
       "name": "entity.name.type.kbengine.custom"
     },
     {
-      "match": "(?<=<implementedBy>)[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)?",
+      "comment": "implementedBy 模块段:点号前的每一段。引擎 datatype.cpp loadImplModule 把值当「模块路径.实现对象」装载,分段与引擎语义对齐(批131)。lookahead 钉住闭标签,点号后的尾巴必须是纯标识符序列——不会误伤 implementedBy 之外的文本",
+      "match": "(?<=<implementedBy>)[A-Za-z_][A-Za-z0-9_]*(?=\\.[A-Za-z_][A-Za-z0-9_.]*\\s*</implementedBy>)|(?<=\\.)[A-Za-z_][A-Za-z0-9_]*(?=\\.[A-Za-z_][A-Za-z0-9_.]*\\s*</implementedBy>)",
+      "name": "entity.name.namespace.kbengine.implmodule"
+    },
+    {
+      "comment": "implementedBy 符号段:紧贴闭标签的最后一段(实现对象)。裸值(无点号)整段落这里",
+      "match": "[A-Za-z_][A-Za-z0-9_]*(?=\\s*</implementedBy>)",
       "name": "variable.other.kbengine.implementedby"
     }
   ]

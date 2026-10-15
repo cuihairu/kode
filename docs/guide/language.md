@@ -40,9 +40,9 @@
 - 用户自定义类型引用（`<Type>SKILL_SLOT</Type>` 等）→ `entity.name.type.kbengine.custom`
 - `ARRAY` 指令 → `keyword.other.kbengine.array`
 - `FIXED_DICT` 指令 → `keyword.other.kbengine.fixed-dict`
-- `<implementedBy>` 的 `MODULE.symbol` 值 → `variable.other.kbengine.implementedby`
+- `<implementedBy>` 的值分段着色（批131）：点号前的每一段（模块路径）→ `entity.name.namespace.kbengine.implmodule`，紧贴闭标签的最后一段（实现对象）→ `variable.other.kbengine.implementedby`；裸值（无点号）整段落符号段。分段与引擎装载语义对齐（`datatype.cpp` 的 `loadImplModule` 把值当「模块路径.实现对象」处理）
 
-注入选择器带 `- (comment, string)` 排除：语义色不进注释与属性值；类型定义标签（`<SKILL_SLOT>` 本身）保持 XML 标签色，只有 `<Type>` 引用处着语义色。颜色由主题按 scope 决定，不写死色值——扩展自带「KBEngine Dark」主题下五类两两可区分（内置绿 `#98C379` / 自定义琥珀 `#E5C07B` / ARRAY 紫 `#C678DD` 粗体 / FIXED_DICT 橙 `#D19A66` 粗体 / implementedBy 蓝 `#61AFEF`，均对 `#272822` ≥4.5:1）；VS Code 内置 Dark+/Light+ 等主题将把内置与自定义折叠为该主题的标准类型色、两条指令折叠为标准关键字色（scope 语义仍在，换回 KBEngine Dark 即恢复全区分）。
+注入选择器带 `- (comment, string)` 排除：语义色不进注释与属性值；类型定义标签（`<SKILL_SLOT>` 本身）保持 XML 标签色，只有 `<Type>` 引用处着语义色。颜色由主题按 scope 决定，不写死色值——扩展自带「KBEngine Dark」主题下：内置绿 `#98C379` / 自定义琥珀 `#E5C07B` / ARRAY 紫 `#C678DD` 粗体 / FIXED_DICT 橙 `#D19A66` 粗体 / implementedBy 模块段紫 `#C678DD`（与 ARRAY 同色但不同场景，ARRAY 带粗体且不同时出现在一个值里）+ 符号段蓝 `#61AFEF`，均对 `#272822` ≥4.5:1；VS Code 内置 Dark+/Light+ 等主题将把内置与自定义折叠为该主题的标准类型色、两条指令折叠为标准关键字色（scope 语义仍在，换回 KBEngine Dark 即恢复全区分）。
 
 ### 设计目标
 
