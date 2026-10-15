@@ -10,9 +10,10 @@
 
 ## 已完成
 
-- [x] Marketplace 发布准备 — esbuild 单文件 bundle 打包链（mysql2/vendor 内联进 out/extension.js，vsce 锁 3.9.1 + `--no-dependencies` 绕开 pnpm 布局 ELSPROBLEMS，`.vscodeignore` 重写收紧）+ galleryBanner（logo 实取色：底 `#000000`、主题 dark）+ `publish.yml` 手动发版工作流（仅 workflow_dispatch 带版本号输入，输入须与 package.json 一致，publisher 非 `hairucui` 直接失败，compile/test/lint 门禁红则不发，凭据仅 `VSCE_PAT` secret 无明文）— 本地打包 15 文件 626.03 KB（`vsce ls` 审计恰 13 项载荷），vitest 1945 + mocha 11 绿，coverage 100%×4
+- [x] Marketplace 发布准备 — esbuild 单文件 bundle 打包链（mysql2/vendor 内联进 out/extension.js，vsce 锁 3.9.1 + `--no-dependencies` 绕开 pnpm 布局 ELSPROBLEMS，`.vscodeignore` 重写收紧）+ galleryBanner（logo 实取色：`#1296DB`、主题 dark）+ `publish.yml` 手动发版工作流（仅 workflow_dispatch 带版本号输入，输入须与 package.json 一致，publisher 非 `hairucui` 直接失败，compile/test/lint 门禁红则不发，凭据仅 `VSCE_PAT` secret 无明文）— 本地打包 15 文件 626.03 KB（`vsce ls` 审计恰 13 项载荷），vitest 1945 + mocha 11 绿，coverage 100%×4
 - [x] CI 修复（run 38695297696 ENOENT demo fixtures）— 根因非 Node 24 亦非竞态：CI 跑在 `5c3a383`，该树没有 Inventory.def/ROLE.def/SKILL_SLOT_DATA.py/POSITION_DATA.py（components/、interfaces/、user_type/ 三个占位 `.gitignore` 把夹具排除在版本库外），补录已随批134 `3f02b50` 落地；本单叠加夹具目录改 `fs.mkdtempSync` 独立临时目录（`tests/kbengineDemoAssets.test.ts` beforeAll）防固定路径互抢 — 本地 v24.21.0 连跑 2 次 vitest 1945 + mocha 11 全绿 0 skip，coverage 100%×4
 - [x] CI 修复（run 38705702432 / 38708536666 安装步失败）— `ERR_PNPM_IGNORED_BUILDS`：新增 `@vscode/vsce` 带进 keytar（原生凭据库）与 @vscode/vsce-sign（签名器），pnpm 12 对未放行安装脚本直接报错，CI 在 `安装依赖` 步即红（本地 `pnpm add` 只告警故未暴露）；`pnpm-workspace.yaml` 的 `allowBuilds` 补放行两包，vsix 签名与发布凭据链可用
+- [x] logo 换新（用户直接提供素材）— `resources/logo.svg` 用户矢量源落仓（蓝底 K 镂空 `#1296DB`），PNG 按同一素材栅格化 512×512 换入 resources/logo.png；vsce 禁 SVG 作 icon（`SVGs can't be used as icons`）故 PNG 走清单图标、SVG 留源；package.json 图标/活动栏接线不动；galleryBanner 配色改 `#1296DB`（logo 取色口径）；icon.test.ts 补矢量源在位/品牌色/banner 取色三锁，打包防漏锁 CRITICAL_ASSETS 补 logo.svg — vsix 16 文件 633.88 KB
 - [x] 批124 def 图形化架构流程图 — `1e93f24`（+2 测试文件 62 例，全套 1743 用例绿，coverage 100%×4；webview 内 client→base/cell 方法调用与属性自动同步，边语义按 Flags 位带引擎出处与成员声明回跳，未 Exposed 方法单列，导出 Markdown/SVG/PNG）
 
 - [x] Marketplace 截图准备 — 6 张实机截图落 `docs/screenshots/`，README 双语引用 — commit `8c3ffec`（截图批）/ `b683108`（README 引用）

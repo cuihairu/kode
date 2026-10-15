@@ -9,12 +9,17 @@ import { describe, expect, it } from 'vitest';
 // 缺设计资产直接问用户要)。批90 同时锁住两类已点名纠正的回归:README 不
 // 得再引本地 SVG(vsce 打包禁令,CI 36813241293 红点)、不得再留虚构的
 // Marketplace 安装途径。
+// 2026-10-15 用户直接换新 logo:矢量源落 resources/logo.svg(vsce 明文禁
+// SVG 作 icon——"SVGs can't be used as icons"——故 PNG 由该 svg 栅格化),
+// 此处补锁矢量源在位、品牌色一致、galleryBanner 配色照 logo 取色。
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const logoPath = path.join(root, 'resources', 'logo.png');
+const logoSvgPath = path.join(root, 'resources', 'logo.svg');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as {
   icon: string;
+  galleryBanner: { color: string; theme: string };
   contributes: {
     viewsContainers: { activitybar: Array<{ id: string; icon: string }> };
   };
@@ -35,6 +40,20 @@ describe('扩展图标资产(用户设计资源)', () => {
     expect(buf.readUInt32BE(20)).toBeGreaterThanOrEqual(128);
     expect(buf[24]).toBe(8);
     expect(buf[25]).toBe(6);
+  });
+
+  it('resources/logo.svg 为用户提供的矢量源在位且品牌色锁定', () => {
+    expect(fs.existsSync(logoSvgPath)).toBe(true);
+    const svg = fs.readFileSync(logoSvgPath, 'utf8');
+    expect(svg).toContain('viewBox="0 0 1024 1024"');
+    expect(svg).toContain('fill="#1296DB"');
+  });
+
+  it('galleryBanner 配色由 logo 矢量源取色,不另创配色', () => {
+    const svg = fs.readFileSync(logoSvgPath, 'utf8');
+    const fill = svg.match(/fill="([^"]+)"/)?.[1];
+    expect(pkg.galleryBanner.color).toBe(fill);
+    expect(pkg.galleryBanner.theme).toBe('dark');
   });
 
   it('活动栏 viewsContainer 图标声明的文件均在位', () => {

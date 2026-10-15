@@ -131,6 +131,7 @@ const CRITICAL_ASSETS = [
   'snippets/kbengine-python.json',
   'snippets/kbengine-types-xml.json',
   'resources/logo.png',
+  'resources/logo.svg',
   'out/extension.js'
 ];
 
