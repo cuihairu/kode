@@ -281,6 +281,10 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.python.syncExtraPaths');
     expect(messages.info.some(message => message.includes('未打开工作区'))).toBe(true);
 
+    // 盘点 G2 KBEngine 存根导出:无工作区时如实说明并跳过(不写任何文件)
+    await commands.executeCommand('kbengine.python.exportStubs');
+    expect(messages.info.some(message => message.includes('跳过 KBEngine 存根导出'))).toBe(true);
+
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
     expect(messages.warning.some(message => message.includes('未找到定义文件'))).toBe(true);

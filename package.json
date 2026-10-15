@@ -71,7 +71,8 @@
     "onCommand:kbengine.discovery.report",
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.runDefault",
-    "onCommand:kbengine.python.syncExtraPaths"
+    "onCommand:kbengine.python.syncExtraPaths",
+    "onCommand:kbengine.python.exportStubs"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -333,6 +334,10 @@
       {
         "command": "kbengine.python.syncExtraPaths",
         "title": "Sync Python Extra Paths"
+      },
+      {
+        "command": "kbengine.python.exportStubs",
+        "title": "Export KBEngine Python Stubs"
       }
     ],
     "menus": {
@@ -700,6 +705,11 @@
           "type": "boolean",
           "default": true,
           "description": "自动把工作区发现的 KBEngine scripts 根写入 python.analysis.extraPaths（WorkspaceFolder 级；只管理本扩展写入的那一段，用户手填路径不动；无变化不写）"
+        },
+        "kbengine.python.stubExport": {
+          "type": "boolean",
+          "default": true,
+          "description": "自动把内置 KBEngine Python API 索引导出为 .kbengine/stubs/KBEngine.pyi（内容与补全/悬停同源；与 extraPaths 接线配合供 Pylance 解析 import KBEngine；重新导出会覆盖该文件）"
         }
       }
     }

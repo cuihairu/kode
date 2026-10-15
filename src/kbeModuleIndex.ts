@@ -466,16 +466,9 @@ export interface KbeStubDocument {
   symbolLines: Record<string, number>;
 }
 
-/** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
-export function buildKbeStubDocument(): KbeStubDocument {
-  const lines: string[] = [
-    '# KBEngine Python API 内置桩(kode 提供,只读)',
-    '#',
-    '# 跳转目标为本桩文档;各符号下方标注引擎源码 typings 锚点',
-    '# (sourceFile:sourceLine,逐条可回验)。',
-    '# KBEntity 为 kode 内置别名(= Entity),对齐项目侧 kbe.KBEntity 基类习惯。',
-    ''
-  ];
+/** 逐符号发射桩体(class/def + docstring + 引擎 typings 锚点),
+ *  虚拟桩文档与导出 .pyi(盘点 G2)共用同一发射器,内容保证同源 */
+function emitKbeStubBody(lines: string[]): Record<string, number> {
   const symbolLines: Record<string, number> = {};
   let lastKind: KbeSymbolKind | null = null;
   for (const entry of KBE_SYMBOLS) {
@@ -493,7 +486,35 @@ export function buildKbeStubDocument(): KbeStubDocument {
     }
     lines.push(`    # 源码: ${entry.sourceFile}:${entry.sourceLine}`);
   }
+  return symbolLines;
+}
+
+/** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
+export function buildKbeStubDocument(): KbeStubDocument {
+  const lines: string[] = [
+    '# KBEngine Python API 内置桩(kode 提供,只读)',
+    '#',
+    '# 跳转目标为本桩文档;各符号下方标注引擎源码 typings 锚点',
+    '# (sourceFile:sourceLine,逐条可回验)。',
+    '# KBEntity 为 kode 内置别名(= Entity),对齐项目侧 kbe.KBEntity 基类习惯。',
+    ''
+  ];
+  const symbolLines = emitKbeStubBody(lines);
   return { content: lines.join('\n'), symbolLines };
+}
+
+/** 生成导出用 .pyi 内容(盘点 G2):同一符号索引,头部改为生成物口径 */
+export function buildKbeStubExportContent(): string {
+  const lines: string[] = [
+    '# KBEngine.pyi — kode 自动生成的 KBEngine Python API 存根',
+    '#',
+    '# 内容源自 kode 内置符号索引(src/kbeModuleIndex.ts),与 kode 的补全/',
+    '# 悬停/跳转同源;重新导出会覆盖本文件,手改不保留。',
+    '# 建议在 .gitignore 里忽略 .kbengine/stubs/(生成物,随索引更新)。',
+    ''
+  ];
+  emitKbeStubBody(lines);
+  return lines.join('\n');
 }
 
 /** 摘要按固定宽度折行,保持桩文档在常规窗口宽度可读 */

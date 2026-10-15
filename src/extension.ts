@@ -25,6 +25,7 @@ import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager } from './quickActions';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
+import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
 import {
   readTelnetTargetsFromSettings,
   TelnetService,
@@ -911,15 +912,28 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(runDefaultQuickActionCommand);
 
-  // Python 生态接线(盘点 G1):scripts 根写进 python.analysis.extraPaths,
-  // Pylance 才能解析 import KBEngine。激活期自动同步一次(设置默认开,
-  // 只在有变化时写,全程零提示不打扰开窗),命令面板留手动重跑入口。
+  // Python 生态接线(盘点 G1/G2):先导出 .kbengine/stubs/KBEngine.pyi
+  // (符号索引发射,盘点 G2),再同步 python.analysis.extraPaths(scripts 根
+  // + 存根目录,盘点 G1)——顺序保证首次激活存根就进得了 extraPaths。
+  // 激活期全程零提示不打扰开窗;命令面板留手动重跑入口(存根导出命令
+  // 导出后链一次同步,新目录即刻生效)。
   const syncPythonExtraPathsCommand = vscode.commands.registerCommand(
     'kbengine.python.syncExtraPaths',
     () => syncPythonExtraPaths(context)
   );
   context.subscriptions.push(syncPythonExtraPathsCommand);
-  void syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
+  const exportKbeStubsCommand = vscode.commands.registerCommand(
+    'kbengine.python.exportStubs',
+    async () => {
+      await exportKbeStubs();
+      await syncPythonExtraPaths(context);
+    }
+  );
+  context.subscriptions.push(exportKbeStubsCommand);
+  void (async () => {
+    await exportKbeStubs(fileSystemStubExportDeps, { silent: true });
+    await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
+  })();
   // 首装扫描要读写 workspaceState(取消记忆);宿主没给(嵌入/烟测替身)就不扫
   if (context.workspaceState) {
     void quickActionManager.offerScanOnActivate();

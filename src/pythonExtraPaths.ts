@@ -5,6 +5,8 @@
  * `import KBEngine` / `import common.*`,本仓已能按同口径发现 scripts 根
  * (与 entityMapping.getPythonScriptRoots 的三条前缀一致,外加批129 约定的
  * 一级 `*_assets` 目录),只差把存在的根写进工作区配置。
+ * 盘点 G2 的存根目录(`.kbengine/stubs`,pythonStubExport 导出)也在管理段:
+ * 设置开且 KBEngine.pyi 在盘才并入,排序在发现根之后。
  *
  * 写入走带资源域的 `getConfiguration('python', folder).update(...)`(本仓
  * @types/vscode 尚无 updateWorkspaceConfiguration);只管理自己那一段——
@@ -13,6 +15,11 @@
 
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import {
+  PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
+  kbeStubDir,
+  kbeStubFilePath
+} from './pythonStubExport';
 
 export const PYTHON_EXTRA_PATHS_SETTING = 'python.analysis.extraPaths';
 export const PYTHON_EXTRA_PATHS_MANAGED_KEY = 'kbengine.python.extraPaths.managed';
@@ -31,6 +38,8 @@ export interface PythonExtraPathsPlanInput {
   currentPaths: readonly string[];
   previouslyManaged: readonly string[];
   deps: PythonScriptRootDeps;
+  /** 磁盘存在性由调用方先判定的额外管理段(G2 存根目录),排在发现根之后 */
+  extraManaged?: readonly string[];
 }
 
 export interface PythonExtraPathsPlan {
@@ -94,7 +103,10 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
   const current = uniquePaths(input.currentPaths.map(normalizeExtraPath));
   const managedBefore = uniquePaths((input.previouslyManaged ?? []).map(normalizeExtraPath));
   const userPaths = current.filter(candidate => !managedBefore.includes(candidate));
-  const managedPaths = pythonScriptRootCandidates(input.workspaceRoot, input.deps);
+  const managedPaths = uniquePaths([
+    ...pythonScriptRootCandidates(input.workspaceRoot, input.deps),
+    ...(input.extraManaged ?? [])
+  ]);
   const nextPaths = uniquePaths([...userPaths, ...managedPaths]);
   const sameLength = nextPaths.length === current.length;
   const changed = !sameLength || nextPaths.some((candidate, index) => candidate !== current[index]);
@@ -152,6 +164,11 @@ export async function syncPythonExtraPaths(
     return;
   }
   const written: string[] = [];
+  // G2 存根目录只在「导出开 + KBEngine.pyi 真的在盘上」时并入管理段
+  // (由激活期先导出再同步的顺序保证手动同步也能拾取已有存根)
+  const stubExportEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('python.stubExport', PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
   for (const folder of folders) {
     const workspaceRoot = folder.uri.fsPath;
     const managedKey = `${PYTHON_EXTRA_PATHS_MANAGED_KEY}:${workspaceRoot}`;
@@ -159,11 +176,16 @@ export async function syncPythonExtraPaths(
     // 配置值形态不由本扩展控制:不是数组按没有现值处理,不炸
     const raw = scoped.get<unknown>('analysis.extraPaths', []);
     const currentPaths = Array.isArray(raw) ? raw : [];
+    const extraManaged =
+      stubExportEnabled && deps.exists(kbeStubFilePath(workspaceRoot))
+        ? [kbeStubDir(workspaceRoot)]
+        : [];
     const plan = planPythonExtraPaths({
       workspaceRoot,
       currentPaths: currentPaths.map(String),
       previouslyManaged: context.workspaceState?.get<string[]>(managedKey) ?? [],
-      deps
+      deps,
+      extraManaged
     });
     if (plan.managedPaths.length === 0) {
       continue;

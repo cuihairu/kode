@@ -142,6 +142,31 @@ describe('planPythonExtraPaths(只管理自己那一段)', () => {
     expect(plan.changed).toBe(false);
   });
 
+  it('extraManaged(G2 存根目录)追加在发现根之后,用户段仍最前', () => {
+    const plan = planPythonExtraPaths({
+      workspaceRoot: '/ws',
+      currentPaths: ['/user/lib'],
+      previouslyManaged: [],
+      extraManaged: ['/ws/.kbengine/stubs'],
+      deps
+    });
+
+    expect(plan.managedPaths).toEqual([
+      '/ws/scripts',
+      '/ws/assets/scripts',
+      '/ws/server_assets/scripts',
+      '/ws/.kbengine/stubs'
+    ]);
+    expect(plan.nextPaths).toEqual([
+      '/user/lib',
+      '/ws/scripts',
+      '/ws/assets/scripts',
+      '/ws/server_assets/scripts',
+      '/ws/.kbengine/stubs'
+    ]);
+    expect(plan.changed).toBe(true);
+  });
+
   it('极简装配输入:previouslyManaged 缺省按空管理段处理', () => {
     const plan = planPythonExtraPaths({
       workspaceRoot: '/ws',
@@ -211,7 +236,12 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(1);
     expect(workspaceState.workspaceConfigurationUpdates[0]).toEqual({
       key: PYTHON_EXTRA_PATHS_SETTING,
-      value: ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts'],
+      value: [
+        '/ws/scripts',
+        '/ws/assets/scripts',
+        '/ws/server_assets/scripts',
+        '/ws/.kbengine/stubs'
+      ],
       scope: vscode.ConfigurationTarget.WorkspaceFolder,
       folder: stubWorkspace.workspaceFolders[0]
     });
@@ -219,12 +249,18 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(memento.get(managedKey)).toEqual([
       '/ws/scripts',
       '/ws/assets/scripts',
-      '/ws/server_assets/scripts'
+      '/ws/server_assets/scripts',
+      '/ws/.kbengine/stubs'
     ]);
     expect(messages.info[0]).toContain('ws');
 
     configurationOverrides.set('python', {
-      'analysis.extraPaths': ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']
+      'analysis.extraPaths': [
+        '/ws/scripts',
+        '/ws/assets/scripts',
+        '/ws/server_assets/scripts',
+        '/ws/.kbengine/stubs'
+      ]
     });
     workspaceState.workspaceConfigurationUpdates.length = 0;
     await syncPythonExtraPaths(context, deps);
@@ -244,7 +280,8 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(workspaceState.workspaceConfigurationUpdates[0].value).toEqual([
       '/ws/scripts',
       '/ws/assets/scripts',
-      '/ws/server_assets/scripts'
+      '/ws/server_assets/scripts',
+      '/ws/.kbengine/stubs'
     ]);
     stubWorkspace.workspaceFolders = [];
   });
@@ -304,6 +341,59 @@ describe('syncPythonExtraPaths(装配层)', () => {
 
     expect(workspaceState.workspaceConfigurationUpdates).toHaveLength(0);
     expect(messages.info).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('G2 存根文件在盘且设置开时,存根目录并入 managed 段写入', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const stubFile = '/ws/.kbengine/stubs/KBEngine.pyi';
+    const deps = {
+      exists: (candidate: string): boolean =>
+        ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts', stubFile].includes(candidate),
+      listSubdirs: (): string[] => []
+    };
+
+    await syncPythonExtraPaths(makeContext(), deps);
+
+    const update = workspaceState.workspaceConfigurationUpdates[0];
+    expect(update.value).toEqual([
+      '/ws/scripts',
+      '/ws/assets/scripts',
+      '/ws/server_assets/scripts',
+      '/ws/.kbengine/stubs'
+    ]);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('G2 存根导出关闭时,存根文件在盘也不并入', async () => {
+    configurationOverrides.set('kbengine', { 'python.stubExport': false });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const stubFile = '/ws/.kbengine/stubs/KBEngine.pyi';
+    const deps = {
+      exists: (candidate: string): boolean =>
+        ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts', stubFile].includes(candidate),
+      listSubdirs: (): string[] => []
+    };
+
+    await syncPythonExtraPaths(makeContext(), deps);
+
+    const update = workspaceState.workspaceConfigurationUpdates[0];
+    expect(update.value).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('G2 存根文件不在盘时(尚未导出),不写不存在的目录', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const deps = {
+      exists: (candidate: string): boolean =>
+        ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts'].includes(candidate),
+      listSubdirs: (): string[] => []
+    };
+
+    await syncPythonExtraPaths(makeContext(), deps);
+
+    const update = workspaceState.workspaceConfigurationUpdates[0];
+    expect(update.value).toEqual(['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts']);
     stubWorkspace.workspaceFolders = [];
   });
 
