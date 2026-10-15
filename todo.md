@@ -5,6 +5,16 @@
 ## 未完成
 
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行：先在 package.json 提交目标版本号，再手动触发 Publish to Marketplace 工作流并填同一版本号；不打版本号 tag、不建正式 Release。发布准备已完成，见已完成「Marketplace 发布准备」）
+- [ ] P1 G1 Python 生态 extraPaths 接线（来源:Nex X 对比盘点 `docs/reference-feature-gap.md` G1;按 `getPythonScriptRoots` 反推的 scripts 根 + 引擎源码根写入 Python 扩展 `python.analysis.extraPaths`,让 Pylance 解析 `import KBEngine`/`kbe*`;kode 已有根发现只差写配置）
+- [ ] P1 G2 KBEngine Python API 存根导出（来源:盘点 G2,等价 Nex X generateStubs;从 `src/kbeModuleIndex.ts` 签名索引导出 `.pyi`,配合 G1;自研生成不抄 Nex X 文件）
+- [ ] P1 G3 `.kbengine/debug.json` JSON Schema 校验（来源:盘点 G3,Rojo 对 `*.project.json` 同法;`contributes.jsonValidation` + schema 与 `quickActionConfig.ts` 解析规则同源,配置错误编辑器直接标红）
+- [ ] P2 G4 客户端实体/SDK 多语言生成（来源:盘点 G4;向导骨架已有,语言种类 C#/TS/C++/GDScript 等用户点名单再排）
+- [ ] P2 G5 自动热重载（来源:盘点 G5,Nex X 文件监视自动热更;保存/监视 → 触发指定 quick action,配置门控默认关防误触,复用白名单后端）
+- [ ] P2 G6 原始日志 ERROR 扫描视图（来源:盘点 G6;logWebView 已有等级过滤,此为原始日志 ERROR 行聚合计数增量面）
+- [ ] P3 G7 生成器形态扩展（newProxy/newSpace/newComponent/newFixedDict 等向导;来源:盘点 G7;实体向导已有,其余按需）
+- [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK;来源:盘点 G8;Nex X 走 KBE Nex 3.x 管理协议,本仓面向经典 kbengine 协议可用性未证,不排期直到用户点名）
+- [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9;同 G8 依赖引擎管理协议,监控面板已有 machine 基础状态,逐批点火前先证协议）
+- [ ] 不排期 G10 Robots 管理 / 插件市场 / 工作区初始化（来源:盘点 G10;超出工程内开发工具定位,用户点名再评估）
 - [x] 批134 types.xml 表结构形态悬停 + 类型引用反扫 CodeLens — `3f02b50`（+2 测试文件 31 例（10 索引/形态契约 + 9 悬停 + 12 镜链），全套 1945 用例绿，coverage 100%×4（8732 stmts/5273 branches/1485 funcs/8496 lines）；`declaredType` 从属性/FD 键/数组元素三个解析点把原始 `<Type>` 文本带到列上，反扫落点直接取 schema 快照单一实现；`getTypeStorageShape` 形态数据 + `describeTypeStorageShape` 措辞（builtin 主表单列附列型、FIXED_DICT 平铺、ARRAY 子表递归一层、未解析明说装载失败、别名环 seen 短路）；悬停 `getCustomTypeHover` 声明行追加落库形态段（implementedBy 值除外）；`TypesXmlCodeLensProvider` 一条使用一枚镜（`Hero.itemId → tbl_Hero.sm_itemId`）点击走 `kbengine.database.open` 定位列，超 10 折叠 `+N 处落库未列出` 计数镜，无引用不出镜，watcher 挂 `**/*.def`/`**/types.xml`/`**/entities.xml` 失效重扫；**批133 遗遗留关闭**：引擎源码坐实 `xml.cpp:121-128` getValStr 只认文本、`datatype.cpp:1658-1712` of 取文本、`datatypes.cpp:105-169` 条目指引读首子文本，demo fixture 三处 `<of>` 写法不合引擎语义是 fixture 错不是解析器错，已修为规范形态并补 sm_value 元素列/skillSlots 子表断言；**fixture 打包修复**：components/.gitignore、interfaces/.gitignore、user_type/.gitignore 三个空目录占位模板把 Inventory.def、ROLE.def、SKILL_SLOT_DATA.py、POSITION_DATA.py 排除在版本库外（65 vs 台账 76 文件，fresh checkout 测试必挂），删占位并补录；extension.test CodeLens 注册 1→2、终配 watcher 探针改样式集合记录；来源:用户「那么能不能在type.xml 中展示表结构呢?」+ 拍板「形态 + 引用反扫 CodeLens（推荐）」）
 - [x] 批135 代码侧属性标记反向跳转 — `2a7c78b`（+1 测试文件 16 例 + defAnalyzer 域位 4 例 + manager 解析面 5 例，全套 1972 用例绿，coverage 100%×4（8779 stmts/5293 branches/1499 funcs/8540 lines）；字面需求不可行——Python 脚本无类型名可写，落地为可行等价：`.py` 实体脚本 `self.<属性>` 访问处一行 CodeLens `属性 · <[槽名.]属性> · <Type> · <可见域> · Persistent?`，点击回 def 声明行；`propertyFlagDomainList` 与属性判重同源同表（common.h 旗标真值），域位定序 base → cell → client 不依赖 Set 迭代序；解析走 `resolvePropertyDefinitionInfo`（与属性 F12 同一索引同口径，新增 `PropertyDefinitionInfo` 带 Type 直文本/可见域/持久化，`<Persistent>` 缺省视作非持久），同一属性多处访问按（根段,完整路径）键只解析一次但每处访问都出镜（读者停在任意行都看得到标记）；组件槽属性标 `healthPack.regen` 形态、接口继承属性按 ALL_CLIENTS 出 cell|client、恒等锁 CodeLens 注册 2→3；只认 `self.<属性路径>` 形态与 F12 一致，`self.get('属性')`/`self.set('属性', 值)` 引擎 API 形态不在识别范围（module docstring 明示）；来源:用户「从types.xml 可以跳转到具体的代码，但从代码上没有类似的 type 的标记反向跳转」）
 
