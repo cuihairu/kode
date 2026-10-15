@@ -449,6 +449,16 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   with `args.name`; the request/response log goes to the
   "KBEngine HTTP 快捷请求" output channel, failures show a `✗` line plus an
   error notification. One bundled example entry, disabled by default
+- Test fixture `tests/fixtures/kbengine-demo-assets`: the official SDK Python
+  asset template copied verbatim (63 files) with an entity model added on top
+  of it (Avatar/Monster defs, an `interfaces/` interface, a
+  `components/` component, a types.xml with `implementedBy`, the user_type
+  implementation modules and the role scripts). A 23-case walkthrough test
+  opens the workspace above the asset root and runs the whole chain once on
+  that one real layout: asset discovery, 13 definition-navigation cases,
+  `implementedBy` forward and reverse, RPC CodeLens through an interface mix-in,
+  the database schema snapshot (entity table, component table, array child
+  table), engine config merge, and the silent-failure red line
 
 ### Fixed
 - 修:CellMethods 方法字段无法导航 — F12 on a real-project method name
@@ -463,6 +473,23 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   genuine product gap is closed: a method symbol with no implementation
   (role script missing or no matching `def`) now shows an information
   hint naming `scripts/<role>/<Entity>.py` instead of a silent null
+- 修:资产根不是工作区根时 RPC 标记与反向跳转静默失效 — opening
+  `<repo>/<xxx>_assets` (the layout the official SDK template ships and the
+  `*_assets` convention scan supports) produced no CodeLens on any Python
+  method and dead Python → def reverse jumps. The script candidates were
+  built only from the three workspace-relative roots (`scripts`,
+  `assets/scripts`, `server_assets/scripts`), all of which miss when the
+  asset root is nested, so the index held no Python owner files and
+  `resolveMethodDefinition` always returned null. The scripts root derived
+  from the owning def (`entity_defs` is kept on the same level as
+  base/cell/client by the engine, so the def's `entity_defs` parent is the
+  scripts root) is now appended after the workspace roots: flat layouts keep
+  their candidate order, nested ones only gain
+- `kbengine.database.open` run from the command palette without an entity
+  name now opens the schema of the active `.def` entity, same convention as
+  `kbengine.database.simulate`; with no active `.def` it says
+  「请先打开一个实体 .def 文件」 instead of returning silently, when the only
+  reachable entry was the Database group inside the Entities view
 
 ### Changed
 - Refactored language support code into focused modules

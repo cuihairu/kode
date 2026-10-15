@@ -4589,3 +4589,70 @@ loadImplModule 的「模块路径.实现对象」装载语义。主题新增模�
 覆盖率与门禁:1887/1887 绿(120 测试文件,+2),coverage 100%×4(8577 stmts/
 5180 branches/1457 funcs/8349 lines,47 源文件全覆盖),docs:build+docsCommands
 3/3,mocha 烟测 11 例绿。版本仍冻结 0.1.0。
+
+## 批132:官方模板测试验证工程 + 嵌套资产根脚本候选修复(2026-10-15)
+
+来源:用户「现在测试数据用的项目模型的数据有了吗?最好创建一个相对完整的测试
+验证的模板项目,kbengine 的模板里有的」。
+
+测试资产:tests/fixtures/kbengine-demo-assets(76 文件)= 官方 SDK 模板逐字快照
+(/home/cui/workspaces/kbengine/kbe/res/sdk_templates/server/python_assets,63
+文件全量入库,引擎仓只读故整体拷贝进仓)+ 在官方模板之上补齐引擎模板没有的
+丰富实体模型:Avatar/Monster def(含 `<Components>` 声明、`<Interfaces>` 混入、
+DetailLevel)、interfaces/ROLE.def、components/Inventory.def、含 implementedBy
+的 types.xml(SKILL_SLOT/POSITION 别名)、user_type 实现模块与各角色脚本
+(base/cell/client/interfaces/组件)。不重写官方注释头,只补模型。
+
+端到端走查:tests/kbengineDemoAssets.test.ts(23 用例,6 describe)。工作区形态
+刻意选「打开资产根的上层」——tmp 根下仅一级目录 kbengine_demo_assets(名字以
+`_assets` 结尾,批129 约定扫描的动态段),资产根不是工作区根本身,验收动态段
++ 深扫描兜底在真模板布局上成立。六段:资产根发现、定义导航(13 例:entities.xml
+→def、Parent、Components Type→组件 def、Properties Type→types.xml 节点行、
+Interfaces→接口 def、DetailLevel 档位、三类方法段→角色脚本 def 行、接口混入
+方法→interfaces 脚本、组件方法→组件脚本、属性→class 行)、types.xml
+implementedBy 双向(正向 ×2 值→符号定义行;反向 user_type 符号→types.xml
+implementedBy 行,走 PythonDefinitionProvider)、RPC CodeLens(cell/Monster.py
+onAggro→Monster.def、onMove 接口混入→ROLE.def)、数据库 schema(tbl_Avatar 列
++ tbl_Avatar_bag 组件表 + tbl_Avatar_bag_items 数组子表)、元件配置合并
+(真模板 kbengine.xml 经 `<root>` 包裹节点 merge backupPeriod 覆盖,script_version
+与 dbmgr 保留)、静默红线(messages.info 空)。
+
+产品修复(走查验收中暴露,同一增量内修掉):getPythonCandidates 的脚本候选只按
+工作区相对三条前缀(scripts / assets/scripts / server_assets/scripts)拼,嵌套
+资产根(<repo>/<xxx>_assets/scripts/...,官方模板与批129 约定扫描支持的形态)
+全 miss → pythonOwnerFiles 恒空 → RPC CodeLens、Python→def 反向跳转、方法
+解析整链静默失效(定义导航走 layout 相对口径不受影响)。新增私有方法
+getPythonScriptRoots(entityMapping.ts:385):三条工作区前缀之外,以 owner 自身
+def 文件位置反推 scripts 根(findEntityDefsDirForDefFile 的父目录,引擎语义
+entity_defs 与 base/cell/client 恒同层),排在既有候选之后——扁平布局顺序不变,
+嵌套布局只增补。tests/entityMappingManager.test.ts +2 用例直测两条分支
+(嵌套增补 / 不可识别 defs 目录回落工作区链)。
+
+覆盖率与门禁:1912/1912 绿(121 测试文件,+1 新走查文件;基线 1887 + 23 走查
++ 2 分支直测),coverage 100%×4(8582 stmts / 5182 branches / 1458 funcs /
+8354 lines,47 源文件全覆盖),docs:build+docsCommands 3/3,mocha 烟测 11 例绿。
+版本仍冻结 0.1.0。
+
+## 批132 补:数据库表结构入口不静默(2026-10-15)
+
+来源:用户「我根本不知道哪里开启,数据库表功能没有」。查实的入口现状:
+活动栏 KBEngine Explorer → **Entities** 视图 → 展开实体 → `Database` 分组
+→ 表/字段条目(explorerProviders.createDatabaseSectionModel 生成的叶子节点带
+`kbengine.database.open` 命令)是唯一 UI 入口;悬停 Persistent 属性给落点提示;
+`kbengine.database.simulate` 有活动 .def 回落。**命令面板里的
+`Open Database Schema` 无参调用是静默 no-op**(`if (!entityName) return;`,
+命令体直接 return 且无消息)——用户从面板点它毫无反应,正是「找不到开启处」
+的直接原因;包级 menus 里四条 database 命令一项都没挂(只有 view/title 的
+server/db 之外条目与 view/item/context 的 server 条目)。
+
+修法(先测后改):`kbengine.database.open` 无参时经 resolveActiveDefEntityName
+取活动 .def 推断实体,与 simulate 同口径;仍无实体弹「请先打开一个实体 .def 文件」
+信息提示。tests/extension.test.ts 加用例:活动 .def 在位时无参直开打开
+kbengine-db-schema 虚拟文档并带 selection、无活动 .def 时入账 info 提示;原
+「三处空值早退无消息」断言同步改为 database.open 走 info、entity.open/
+entity.method.open 仍静默。入口说明补进 docs/guide/commands.md(明写
+Entities 视图路径 + 面板无参回落行为)。
+
+覆盖率与门禁:1912/1912 绿(新用例并入既有 it),coverage 100%×4(8584 stmts /
+5184 branches / 1458 funcs / 8356 lines,47 源文件全覆盖),compile+lint 干净,
+docs:build+docsCommands 3/3,mocha 烟测 11 例绿。版本仍冻结 0.1.0。
