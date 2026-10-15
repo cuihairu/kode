@@ -82,7 +82,9 @@ interface LocationLike {
 const originalFindFiles = stubWorkspace.findFiles;
 
 beforeAll(() => {
-  wsRoot = path.join(os.tmpdir(), 'kode-demo-assets-ws');
+  // mkdtemp 独立目录:不与其它进程/CI 步骤共抢固定路径(修复单 2026-10-15);
+  // 资产目录名 WS_DIR_NAME 保持 *__assets 命名,发现链测试口径不变
+  wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-demo-assets-'));
   assetsRoot = path.join(wsRoot, WS_DIR_NAME);
   fs.rmSync(wsRoot, { recursive: true, force: true });
   fs.mkdirSync(assetsRoot, { recursive: true });
