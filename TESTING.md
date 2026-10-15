@@ -4560,3 +4560,32 @@ ok/双名并存用户副本优先/纯资产 informational 不计问题/源码根
 覆盖率与门禁:1885/1885 绿(120 测试文件),coverage 100%×4(8577 stmts/
 5180 branches/1457 funcs/8349 lines,47 源文件全覆盖),docs:build+docsCommands
 3/3,eslint+tsc 干净。版本仍冻结 0.1.0。
+
+## 批131:assetsRoot 改名与 implementedBy 分段着色(2026-10-15)
+
+来源:用户令「3 都执行」+ 定名勘误(assetsRoot 复数,与引擎领域术语对齐——
+引擎资产树就叫 assets,kbemain.h:133-137 注释即 `../../../assets/res/server/`,
+约定扫描也是 `*_assets`)。
+
+assetsRoot 改名:`kbengine.configPath` → `kbengine.assetsRoot`,键、读取点
+(`.get<string>('assetsRoot')` 四处)、测试 mock 键(configTable/override 嵌套表)、
+发现与定位字段标签与补救文案、docs 三份指南 + 设计稿全量同步;debugConfig 的
+`.kbengine/debug.json` 同名局部变量与 serverManager 内部 configPath 标识符
+(注释已标明资产根语义)不动。默认值 `${workspaceFolder}/server` → `""`:旧默认
+在生产里经 VS Code 默认合并把未配置伪装成显式配置,空串才让代码「未设 → 自动
+发现」路径真实生效;已配过旧键的用户需在新键下重填。探针与发现链语义不变。
+
+implementedBy 分段着色:注入语法单规则拆两条——模块段
+`entity.name.namespace.kbengine.implmodule`(#C678DD,点号前每一段,lookahead
+钉闭标签防误伤其它文本)+ 符号段 `variable.other.kbengine.implementedby`
+(#61AFEF,紧贴闭标签最后一段,裸值整段落此);分段对齐引擎 datatype.cpp
+loadImplModule 的「模块路径.实现对象」装载语义。主题新增模块段色。
+
+回归锁定:tests/typesXmlInjection.test.ts 重写一体着色断言为分段断言 + 整值
+不再是单 token 的回归锁 + 值形态专项(裸符号只有符号段/深层模块 kbtest.sub
+逐段落模块段)+ 前景色四对可区分;scopesOfToken 抽出 scopesIn/fgOfToken 共用;
+静态 grammar 断言五 scope 五家族。改名侧 tests 十一个文件 mock 键与标题同步。
+
+覆盖率与门禁:1887/1887 绿(120 测试文件,+2),coverage 100%×4(8577 stmts/
+5180 branches/1457 funcs/8349 lines,47 源文件全覆盖),docs:build+docsCommands
+3/3,mocha 烟测 11 例绿。版本仍冻结 0.1.0。
