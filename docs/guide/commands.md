@@ -57,6 +57,15 @@
   - 命令面板
 - 详见：[数据库模拟](database-simulation.md)
 
+### `kbengine.database.checkDrift`
+
+- 标题：`Check Database Drift`
+- 作用：用真实表结构反向校验 `.def` 推导出的虚拟表结构，逐表比对缺表、缺列、多列、型别不符与残留表，报告写进「KBEngine 数据库漂移」输出面板；不传实体名时取当前活动 `.def` 文件推断
+- 前置条件：引擎配置里的数据库账号密码需明文存放（`<encrypt>false</encrypt>`）；密码为 RSA 密文或连不上时降级为「未校验」提示，不报错
+- 入口：
+  - 命令面板
+- 详见：[数据库漂移校验](database-drift-check.md)
+
 ## 服务器控制
 
 ### `kbengine.server.start`

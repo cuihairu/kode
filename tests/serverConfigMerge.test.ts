@@ -433,8 +433,9 @@ describe('buildFinalServerConfig 引擎源码根兜底(批125 自动发现)', ()
 
 // 批131(用户令:MySQL 连接直接读 KBEngine 自身配置):dbmgr
 // <databaseInterfaces><default> 的连接要素从合成树读出,端口 0 落引擎
-// 默认 3306(db_interface_mysql.cpp:166-167),密码不提取(encrypt=true 为
-// RSA 密文,kode 不读不解读)。
+// 默认 3306(db_interface_mysql.cpp:166-167)。
+// 批C 起例外:encrypt=false(明文配置)时一并读出明文密码供漂移校验连库,
+// 密文(encrypt=true)不解读,留 undefined 由上层降级为「未校验」。
 describe('extractDatabaseInterfaceConfig(dbmgr 连接要素提取,批131)', () => {
   it('读 host/port/auth/unicodeString:自定义值原样,encrypt=false 落 false', () => {
     const tree = parseConfigXml([
@@ -465,7 +466,9 @@ describe('extractDatabaseInterfaceConfig(dbmgr 连接要素提取,批131)', () =
       username: 'game',
       databaseName: 'game_db',
       encrypt: false,
-      characterSet: 'utf8'
+      characterSet: 'utf8',
+      // encrypt=false 即明文配置,密码一并读出(批C 漂移校验连库需要)
+      plainPassword: 'secret'
     });
   });
 
@@ -500,6 +503,19 @@ describe('extractDatabaseInterfaceConfig(dbmgr 连接要素提取,批131)', () =
       encrypt: true,
       characterSet: 'utf8mb4'
     });
+  });
+
+  it('encrypt=false 但没写 password:明文密码缺席(漂移校验据此降级)', () => {
+    const tree = parseConfigXml(
+      '<root><dbmgr><databaseInterfaces><default><auth><encrypt>false</encrypt><username>game</username></auth></default></databaseInterfaces></dbmgr></root>'
+    )!;
+
+    expect(extractDatabaseInterfaceConfig(tree)).toMatchObject({
+      encrypt: false,
+      plainPassword: undefined
+    });
+    // toEqual 口径:字段存在但值 undefined(toMatchObject 不看 undefined 键)
+    expect('plainPassword' in (extractDatabaseInterfaceConfig(tree) as object)).toBe(true);
   });
 
   it('叶子全缺:逐项落引擎默认值;端口非数字同落 3306', () => {

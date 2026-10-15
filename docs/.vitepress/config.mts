@@ -31,6 +31,7 @@ export default defineConfig({
             { text: '实体依赖图', link: '/guide/dependency-graph' },
             { text: '代码生成器', link: '/guide/generator' },
             { text: '数据库模拟', link: '/guide/database-simulation' },
+            { text: '数据库漂移校验', link: '/guide/database-drift-check' },
             { text: '开发与发布', link: '/guide/development' }
           ]
         }

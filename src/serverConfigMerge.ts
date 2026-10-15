@@ -256,6 +256,13 @@ export interface DatabaseInterfaceConfig {
   /** true = <encrypt> true:密码经引擎 RSA 加密,kode 不读不解读 */
   encrypt: boolean;
   characterSet: string;
+  /**
+   * 明文密码(仅 <encrypt>false</encrypt> 时提取):批C 漂移校验要用真实
+   * 连接要素连库,而「不新增配置项」意味着密码只能来自引擎配置本身。
+   * 密文账号(encrypt=true,引擎默认)读不出明文,留 undefined——
+   * 漂移校验据此降级为「未校验」,不让用户为了校验去手填密码。
+   */
+  plainPassword?: string;
 }
 
 // 叶子缺省时的引擎默认值(kbengine_defaults.xml <dbmgr><databaseInterfaces><default>)
@@ -270,8 +277,9 @@ const ENGINE_DB_INTERFACE_DEFAULTS = {
 /**
  * 从合成配置树提取 <dbmgr><databaseInterfaces><default> 的连接要素(纯函数)。
  * username/encrypt 藏在 <auth> 下,characterSet 藏在 <unicodeString> 下
- * (kbengine_defaults.xml dbmgr 段结构);密码不提取——encrypt=true 时是
- * RSA 密文,明文也无须进入扩展内存。
+ * (kbengine_defaults.xml dbmgr 段结构);密码只在 encrypt=false(明文配置)
+ * 时提取——encrypt=true 是 RSA 密文,不解读;漂移校验需要真实连接要素,
+ * 密文账号读不出明文时按「未校验」降级。
  */
 export function extractDatabaseInterfaceConfig(root: ConfigXmlNode): DatabaseInterfaceConfig | null {
   // 引擎 defaults 以 <root> 包裹装载(kbengine_defaults.xml:1),dbmgr 在
@@ -292,13 +300,15 @@ export function extractDatabaseInterfaceConfig(root: ConfigXmlNode): DatabaseInt
   const auth = iface.children.find(child => child.name === 'auth');
   const unicode = iface.children.find(child => child.name === 'unicodeString');
   const rawPort = Number(leafText(iface, 'port'));
+  const encrypt = leafText(auth, 'encrypt').toLowerCase() !== 'false';
   return {
     host: leafText(iface, 'host') || ENGINE_DB_INTERFACE_DEFAULTS.host,
     port: rawPort > 0 ? rawPort : ENGINE_DB_INTERFACE_DEFAULTS.port,
     username: leafText(auth, 'username') || ENGINE_DB_INTERFACE_DEFAULTS.username,
     databaseName: leafText(iface, 'databaseName') || ENGINE_DB_INTERFACE_DEFAULTS.databaseName,
-    encrypt: leafText(auth, 'encrypt').toLowerCase() !== 'false',
-    characterSet: leafText(unicode, 'characterSet') || ENGINE_DB_INTERFACE_DEFAULTS.characterSet
+    encrypt,
+    characterSet: leafText(unicode, 'characterSet') || ENGINE_DB_INTERFACE_DEFAULTS.characterSet,
+    plainPassword: encrypt ? undefined : leafText(auth, 'password') || undefined
   };
 }
 

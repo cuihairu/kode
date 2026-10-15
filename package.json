@@ -37,6 +37,7 @@
     "onCommand:kbengine.database.open",
     "onCommand:kbengine.database.simulate",
     "onCommand:kbengine.database.exportSimulation",
+    "onCommand:kbengine.database.checkDrift",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -178,6 +179,11 @@
         "command": "kbengine.database.exportSimulation",
         "title": "Export Entity Database Simulation",
         "icon": "$(save)"
+      },
+      {
+        "command": "kbengine.database.checkDrift",
+        "title": "Check Database Drift",
+        "icon": "$(check)"
       },
       {
         "command": "kbengine.server.start",
@@ -708,5 +714,8 @@
     "vitest": "^5.0.1",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.6"
   }
 }

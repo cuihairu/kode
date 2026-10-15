@@ -368,6 +368,12 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 子表 JOIN 同样出现在 ARRAY / 组件属性的悬停行里。不改引擎默认前缀的工程留空即可，行为与之前一致。
 
+### 数据库漂移校验的连接信息
+
+`kbengine.database.checkDrift` 的连接信息**全部来自引擎配置，不新增设置项**：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 `kbengine_defaults.xml` + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306。
+
+账号密码需明文存放（`<encrypt>false</encrypt>`）。引擎默认的 `encrypt=true` 是 RSA 密文，kode 不解读，此时命令如实提示「未校验」——不会为了跑一次校验要求改引擎配置或手填密码。校验口径与只读红线见 [数据库漂移校验](./database-drift-check.md)。
+
 ### 调试配置文件(`.kbengine/debug.json`)
 
 这个文件只服务调试流程。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。

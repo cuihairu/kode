@@ -46,8 +46,15 @@ import {
   getDatabaseSchemaSnapshot,
   KBEngineDatabaseSchemaProvider,
   locateDatabaseSchemaLine,
-  resolveEntityTableName
+  resolveEntityTableName,
+  resolveSchemaTablePrefix
 } from './databaseSchema';
+import {
+  checkDatabaseDrift,
+  createMysqlDriftExecutor,
+  DATABASE_DRIFT_CHANNEL_NAME,
+  publishDriftReport
+} from './databaseDrift';
 import {
   createDatabaseSimulationUri,
   getSimulationEntityName,
@@ -75,7 +82,8 @@ import {
   FinalConfigContentProvider,
   FinalConfigTreeProvider,
   buildFinalServerConfig,
-  resetDatabaseInterfaceConfigCache
+  resetDatabaseInterfaceConfigCache,
+  resolveDatabaseInterfaceConfig
 } from './serverConfigMerge';
 import type { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from './workspaceDiscovery';
 import {
@@ -424,6 +432,42 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(exportDatabaseSimulationCommand);
+
+  // 数据库漂移校验(批C):用真实表结构反向校验 def 推导的虚拟表结构——
+  // 属性→字段映射算错时唯一会暴露的地方。连接要素读引擎配置,不新增配置项;
+  // 语句白名单 + 只读会话双保险;连不上降级为「未校验」不报错
+  const databaseDriftChannel = vscode.window.createOutputChannel(DATABASE_DRIFT_CHANNEL_NAME);
+  context.subscriptions.push(databaseDriftChannel);
+  const checkDatabaseDriftCommand = vscode.commands.registerCommand(
+    'kbengine.database.checkDrift',
+    async (entityName?: string) => {
+      const resolvedEntityName = entityName ?? resolveActiveDefEntityName();
+      if (!resolvedEntityName) {
+        vscode.window.showInformationMessage('请先打开一个实体 .def 文件');
+        return;
+      }
+      const snapshot = getDatabaseSchemaSnapshot(resolvedEntityName);
+      if (!snapshot) {
+        vscode.window.showWarningMessage(`读取实体定义失败: ${resolvedEntityName}(未找到 .def 文件)`);
+        return;
+      }
+      const database = resolveDatabaseInterfaceConfig();
+      if (!database) {
+        vscode.window.showInformationMessage(
+          '数据库漂移未校验:读不到引擎数据库配置(检查 kbengine.binPath / configPath)'
+        );
+        return;
+      }
+      const report = await checkDatabaseDrift(
+        snapshot,
+        database,
+        resolveSchemaTablePrefix(),
+        createMysqlDriftExecutor
+      );
+      publishDriftReport(databaseDriftChannel, vscode.window, report);
+    }
+  );
+  context.subscriptions.push(checkDatabaseDriftCommand);
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);

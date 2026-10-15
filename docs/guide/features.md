@@ -63,10 +63,10 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 
 - Persistent 属性悬停追加「数据库存储」行：完整 `` `db`.`table`.`column` `` 全名 + 引擎 DDL 片段（列型、`not null`、`DEFAULT`）+ 具体取值约束（整型按 MySQL 区间、varchar 按解析后长度；未写 `<DatabaseLength>` 缺省 255，`entity_table_mysql.cpp:1829-1833`）；同 DDL 多列并作一条（向量三列一条）
 - ARRAY / 组件属性不在主表：悬停说明去往的子表与 `parentID` 关联，F12 落 schema 的子表行（子表带 `parent:` 注记）
-- 连接要素直接读引擎自身配置（不手填）：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 defaults + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306（`db_interface_mysql.cpp:166-167`）；密码不读不展示（`encrypt=true` 为 RSA 密文）。读值按「工作区 + binPath」缓存，`kbengine*.xml` 或配置变更即失效重读
+- 连接要素直接读引擎自身配置（不手填）：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 defaults + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306（`db_interface_mysql.cpp:166-167`）；密码仅在 `<encrypt>false</encrypt>`（明文配置）时读出且从不展示，`encrypt=true` 的 RSA 密文不解读。读值按「工作区 + binPath」缓存，`kbengine*.xml` 或配置变更即失效重读
 - Schema 视图（`kbengine.database.open`）：配置读得时顶部一行 `Database: 库名@host:端口`；每表尾部给三行可粘贴 SQL（全列 SELECT、只含 def 属性列的 `SQL(属性列)`、子表的 `SQL(子表 JOIN)` 按 `parentID` 关联父表，`LEFT JOIN` 保住空元素属性行）；均带库表前缀与反引号转义，库名读不到时退化为表级全名，仍合法
 - 库表前缀可覆盖：设置 `kbengine.db.tablePrefix`（缺省空 = 引擎默认 `tbl_`），表名与三行 SQL 模板同源替换；ARRAY 子表悬停同样给出可粘贴的 JOIN 语句
-- 尚未实现：用真实表结构反向校验虚拟表结构（漂移对比），待定 MySQL 访问通道
+- 数据库漂移校验（`kbengine.database.checkDrift`）：拿真实表结构反向校验 def 推导的虚拟表结构，报缺表 / 缺列 / 多列 / 型别不符 / 残留表；连接信息读引擎配置（`encrypt=false` 明文密码），只放行 `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN` 且连接以只读会话打开，连不上降级为「未校验」不报错。详见 [数据库漂移校验](./database-drift-check.md)
 
 ## 数据库模拟
 
