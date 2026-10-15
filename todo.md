@@ -63,9 +63,9 @@
   - 提示：本仓已有 logs 那组命令（`kbengine.logs.connect/disconnect/clear`），若 telnet 走的是同一套会话/终端组件，先核对**连接成功后输入通道是否被接管**，别另起一套终端实现
   - **配套需求：telnet 退出快捷键**（用户 2026-10-14）：支持 **`Ctrl+]`**（telnet 标准转义符）与 **`Ctrl+D`** 退出 telnet，并**在顶部同时给出对应入口**（快捷键 + 顶部菜单/按钮），不要只靠快捷键——用户需要在顶部能看到并点击
 
-- [ ] 属性 → 虚拟数据库表设计跳转与 SQL 生成（来源：用户 2026-10-14）
+- [x] 属性 → 虚拟数据库表设计跳转与 SQL 生成（来源：用户 2026-10-14）
   - [x] 提示批（拍板 1-8 中的实现面）— `745d254`（悬停完整 `` `db`.`tbl`.`col` `` 全名 + 引擎 DDL 片段 + 具体限制数值：整数 MySQL 区间/varchar 缺省 255（entity_table_mysql.cpp:1829-1833）；连接要素读引擎配置 `<dbmgr><databaseInterfaces><default>`（端口 0→3306，db_interface_mysql.cpp:166-167；密码不读，encrypt=true 为 RSA 密文；按工作区+binPath 缓存，kbengine*.xml/配置变更失效）；schema 视图加 `Database:` 行 + 每表一行带库表前缀反引号转义的可粘贴 SELECT；ARRAY 悬停说明子表去向与 parentID 关联、跳转落子表行；修 locateDatabaseSchemaLine 子表字段行差一行（parent 注记未计入）；全套 1681 用例绿，coverage 100%×4）
-  - [ ] 真实表结构反向校验（漂移对比）——**卡点：需 MySQL 访问通道，待用户拍板**（mysql2 npm 依赖（动 package.json，触发全套门禁）/ 系统 mysql CLI（零依赖但要求本机装客户端）/ 暂缓）
-  - [ ] 待定：SQL 模板覆盖到哪（SELECT 已做最小 / JOIN 按 parentID / 按 Persistent 过滤）、是否支持自定义库表前缀
+  - [x] 真实表结构反向校验（漂移对比）— `b7eda34`（用户 2026-10-15 拍板走 mysql2 npm 依赖；新增 `src/databaseDrift.ts` + 命令 `kbengine.database.checkDrift`：报缺表/缺列/多列/型别不符/残留表，报告进 OUTPUT「KBEngine 数据库漂移」；连接要素读引擎配置不新增设置项（`<encrypt>false</encrypt>` 明文密码才读，密文不解读）；只读双保险=语句白名单 SELECT/SHOW/DESCRIBE/EXPLAIN（拒写语句/多语句/注释伪装）+ 建连即 `SET SESSION TRANSACTION READ ONLY`；连不上/读表失败一律降级「未校验」不报错；+2 测试文件 38 例，全套 1871 用例绿，coverage 100%×4）
+  - [x] SQL 模板覆盖 + 自定义库表前缀 — `29b80fe`（schema 视图每表三行 SQL：全列 SELECT、`SQL(属性列)` 只列 def 属性落成的列剔引擎结构列、子表 `SQL(子表 JOIN)` 按 parentID LEFT JOIN 父表；ARRAY/组件悬停同给 JOIN 语句；新增 `kbengine.db.tablePrefix`（缺省空=引擎默认 `tbl_`）表名与模板同源替换；行号定位改为与渲染同源，不再各写一份；全套 1832 用例绿，coverage 100%×4）
   - 背景与拍板原文见 `docs/design/quick-actions-and-db-hint.md` 第二节
 
