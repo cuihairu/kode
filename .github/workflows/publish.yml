@@ -1,0 +1,90 @@
+name: Publish to Marketplace
+
+# 手动发版专用:仅 workflow_dispatch 触发,无 push/tag 自动发布。
+# 版本红线:版本号只能由用户手动给出 —— 触发前须先在 package.json 提交目标版本号,
+# 再以相同版本号手动触发本 workflow;输入与 package.json 不一致直接失败。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号(须与 package.json version 一致,如 0.1.1)'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: 门禁通过后发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+    - name: Checkout 代码
+      timeout-minutes: 3
+      uses: actions/checkout@v7
+
+    - name: 安装 pnpm
+      timeout-minutes: 3
+      uses: pnpm/action-setup@v6
+      # 以 package.json 的 packageManager 为单一来源,与 ci.yml 口径一致
+
+    - name: 设置 Node.js 24
+      timeout-minutes: 5
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: 'pnpm'
+
+    - name: 校验 publisher 与版本号
+      timeout-minutes: 3
+      run: |
+        publisher=$(node -p "require('./package.json').publisher")
+        if [ "$publisher" != "hairucui" ]; then
+          echo "::error::publisher 必须是 hairucui,当前为 ${publisher},拒绝发布"
+          exit 1
+        fi
+        pkg_version=$(node -p "require('./package.json').version")
+        if [ "${{ inputs.version }}" != "$pkg_version" ]; then
+          echo "::error::输入版本号 ${{ inputs.version }} 与 package.json version ${pkg_version} 不一致,先提交目标版本号再触发"
+          exit 1
+        fi
+
+    - name: 安装依赖
+      timeout-minutes: 5
+      run: pnpm install --frozen-lockfile
+
+    - name: 编译 TypeScript
+      timeout-minutes: 15
+      run: pnpm run compile
+
+    - name: 运行测试
+      timeout-minutes: 15
+      run: pnpm test
+
+    - name: 运行代码检查
+      timeout-minutes: 5
+      run: pnpm run lint
+
+    - name: 打包 VSIX
+      timeout-minutes: 15
+      run: pnpm run package
+
+    - name: 上传 VSIX 文件
+      timeout-minutes: 3
+      uses: actions/upload-artifact@v7
+      with:
+        name: kode-publish-${{ inputs.version }}-${{ github.sha }}
+        path: "kode-*.vsix"
+        retention-days: 30
+
+    - name: 发布到 Marketplace
+      timeout-minutes: 10
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      run: |
+        vsix="kode-${{ inputs.version }}.vsix"
+        if [ ! -f "$vsix" ]; then
+          echo "::error::未找到 ${vsix},打包产物异常"
+          ls kode-*.vsix || true
+          exit 1
+        fi
+        pnpm exec vsce publish --no-dependencies --packagePath "$vsix"

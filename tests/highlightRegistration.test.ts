@@ -116,9 +116,12 @@ describe('高亮注册面恒等锁(批103)', () => {
   });
 });
 
-// .vscodeignore 打包防漏:把关键资产路径逐一验证"不被任何排除行命中"。
+// .vscodeignore 打包防漏:把关键资产路径逐一验证"最终不被排除"。
 // 语义取 .vscodeignore(gitignore 子集)中真实会出现的形态:精确路径、
-// 目录前缀(dir/、dir/**)、全目录(dir)、按后缀(*.ext、**/*.ext)。
+// 目录前缀(dir/、dir/**)、全目录(dir)、按后缀(*.ext、**/*.ext),
+// 以及负向豁免(!path)——gitignore 语义为"最后命中的行生效",
+// 所以 out/** + !out/extension.js 的单文件 bundle 打包模型(2026-10-15
+// 执行单)下 out/extension.js 依然在包内,锁必须按此判定而非见排除即红。
 const CRITICAL_ASSETS = [
   'syntaxes/kbengine.tmLanguage.json',
   'syntaxes/kbengine-types-injection.json',
@@ -132,6 +135,9 @@ const CRITICAL_ASSETS = [
 ];
 
 function exclusionCovers(line: string, asset: string): boolean {
+  if (line === asset) {
+    return true;
+  }
   if (line.endsWith('/**')) {
     return asset.startsWith(line.slice(0, -3));
   }
@@ -158,12 +164,24 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(line => line.length > 0 && !line.startsWith('#'));
-  const exclusions = lines.filter(line => !line.startsWith('!'));
+
+  // gitignore 语义:逐行扫描,记下最后一条命中资产的行;是排除行才真被排除
+  function effectiveExclusion(asset: string): string | null {
+    let hit: string | null = null;
+    for (const line of lines) {
+      const negated = line.startsWith('!');
+      const pattern = negated ? line.slice(1) : line;
+      if (exclusionCovers(pattern, asset)) {
+        hit = negated ? null : line;
+      }
+    }
+    return hit;
+  }
 
   it('关键高亮/打包资产不被任何排除行命中', () => {
     for (const asset of CRITICAL_ASSETS) {
-      const hit = exclusions.filter(line => exclusionCovers(line, asset));
-      expect(hit, `${asset} 不得被 .vscodeignore 排除,命中: ${hit.join(', ')}`).toEqual([]);
+      const hit = effectiveExclusion(asset);
+      expect(hit, `${asset} 不得被 .vscodeignore 最终排除,命中: ${hit ?? ''}`).toBeNull();
       expect(fs.existsSync(path.join(root, asset)), `${asset} 应在仓库在位`).toBe(true);
     }
   });
@@ -171,18 +189,29 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
   it('排除行仅限既定集合(map/测试/文档/构建垃圾),防误加全类排除', () => {
     // 全类排除(如 *.json、syntaxes、out)是"打包漏 grammar 资源"的根因
     // 形态;锁白名单集合,新增排除必须改本用例过目。
+    // 2026-10-15 执行单:切换 esbuild 单文件 bundle 打包模型——
+    // out/ 只带 bundle 产物(out/** + !out/extension.js),
+    // vendor/ 整目录不进包(fxp 已内联),根目录脚本/杂项文档补齐。
     expect(new Set(lines)).toEqual(
       new Set([
         '.github/',
         '.vscode/',
+        '.vscode-test/',
         '.spec-workflow/',
+        '.vtmp/',
         '.gitignore',
         '.npmrc',
+        '.npmignore',
+        '.nvmrc',
         '.vscodeignore',
+        'pnpm-lock.yaml',
+        'pnpm-workspace.yaml',
         'docs/',
         'resources/docs/',
         'src/',
-        'vendor/**/LICENSE',
+        'tests/',
+        'build/',
+        'vendor/',
         'coverage/',
         '.nyc_output/',
         '.cache/',
@@ -194,16 +223,24 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         '*.temp',
         '*.ts',
         '!*.d.ts',
-        'tsconfig.json',
-        '.eslintrc.json',
-        '.npmignore',
-        'pnpm-lock.yaml',
         '*.vsix',
+        'tsconfig.json',
+        'tsconfig.mocha.json',
+        '.eslintrc.json',
+        'vitest.bench.config.js',
+        'vitest.bench.config.js.map',
+        '/*.js',
+        '/*.js.map',
         'CONTRIBUTING.md',
         'COMPLETED_FEATURES.md',
         'PROJECT_SUMMARY.md',
-        'out/**/*.map',
-        'out/test/'
+        'KBENGINE_SOURCE_AUDIT_PLAN.md',
+        'README.zh.md',
+        'TESTING.md',
+        'todo.md',
+        'CHANGELOG.zh.md',
+        'out/**',
+        '!out/extension.js'
       ])
     );
   });

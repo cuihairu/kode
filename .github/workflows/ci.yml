@@ -85,7 +85,7 @@ jobs:
     - name: 发布到 VSCode Marketplace (Release)
       timeout-minutes: 10
       if: github.event_name == 'release' && github.event.action == 'created'
-      run: pnpm run publish -- --publishTarget vscode-marketplace --pat ${{ secrets.VSCE_PAT }}
+      run: pnpm run publish
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
 

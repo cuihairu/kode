@@ -1,13 +1,22 @@
 .github/
 .vscode/
+.vscode-test/
 .spec-workflow/
+.vtmp/
 .gitignore
 .npmrc
+.npmignore
+.nvmrc
 .vscodeignore
+pnpm-lock.yaml
+pnpm-workspace.yaml
 docs/
 resources/docs/
 src/
-vendor/**/LICENSE
+tests/
+build/
+# vendor 已被 esbuild 打进 out/extension.js,独立副本不进包
+vendor/
 coverage/
 .nyc_output/
 .cache/
@@ -19,13 +28,23 @@ coverage/
 *.temp
 *.ts
 !*.d.ts
-tsconfig.json
-.eslintrc.json
-.npmignore
-pnpm-lock.yaml
 *.vsix
+tsconfig.json
+tsconfig.mocha.json
+.eslintrc.json
+vitest.bench.config.js
+vitest.bench.config.js.map
+/*.js
+/*.js.map
 CONTRIBUTING.md
 COMPLETED_FEATURES.md
 PROJECT_SUMMARY.md
-out/**/*.map
-out/test/
+KBENGINE_SOURCE_AUDIT_PLAN.md
+README.zh.md
+TESTING.md
+todo.md
+CHANGELOG.zh.md
+# bundle 后 out/ 只带单文件产物(src/extension.ts 全量打进 out/extension.js,
+# tsc 的逐模块 js/.map/.d.ts 与 out/test 是开发/测试面,一律不进包)
+out/**
+!out/extension.js

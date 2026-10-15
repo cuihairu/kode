@@ -10,6 +10,10 @@
   },
   "license": "Apache-2.0",
   "icon": "resources/logo.png",
+  "galleryBanner": {
+    "color": "#000000",
+    "theme": "dark"
+  },
   "packageManager": "pnpm@12.10.1+sha512.ba40a37eb1a370d60fea8c4cf1d364c13bcccef518e98ad2bcee954f539d38da37458e58261a3fa55e06523450ea0ffff9f497b135be41f2c15c1642bacace6c",
   "engines": {
     "node": "^20.19.0 || >=22.12.0",
@@ -683,7 +687,7 @@
   },
   "homepage": "https://github.com/cuihairu/kode#readme",
   "scripts": {
-    "vscode:prepublish": "npm run compile && npm run bundle",
+    "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18",
