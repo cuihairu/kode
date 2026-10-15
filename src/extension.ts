@@ -45,7 +45,8 @@ import {
   createDatabaseSchemaUri,
   getDatabaseSchemaSnapshot,
   KBEngineDatabaseSchemaProvider,
-  locateDatabaseSchemaLine
+  locateDatabaseSchemaLine,
+  resolveEntityTableName
 } from './databaseSchema';
 import {
   createDatabaseSimulationUri,
@@ -352,7 +353,7 @@ export function activate(context: vscode.ExtensionContext) {
         const document = await vscode.workspace.openTextDocument(uri);
         const snapshot = getDatabaseSchemaSnapshot(entityName);
         const line = snapshot
-          ? locateDatabaseSchemaLine(snapshot, tableName || `tbl_${entityName}`, fieldName)
+          ? locateDatabaseSchemaLine(snapshot, tableName || resolveEntityTableName(entityName, snapshot), fieldName)
           : 1;
         const position = new vscode.Position(Math.max(line - 1, 0), 0);
         const selection = new vscode.Range(position, position);

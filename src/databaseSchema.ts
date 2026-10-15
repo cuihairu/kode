@@ -61,6 +61,9 @@ export interface TableFieldDescriptor {
   indexType?: string;
   identifier: boolean;
   flags?: string;
+  /** 引擎结构列(id/sm_autoLoad/parentID/位置朝向六列):不由 def 属性推导,
+   *  「属性列集」SQL 模板据此把它们剔掉 */
+  synthetic?: boolean;
 }
 
 export interface TableSchemaDescriptor {
@@ -250,7 +253,13 @@ export function getDatabaseSchemaSnapshot(
     'entity',
     buildContext
   );
-  const tables = buildMysqlTableSchemas(entityName, entitySource, properties, buildContext.entityHasCell);
+  const tables = buildMysqlTableSchemas(
+    entityName,
+    entitySource,
+    properties,
+    buildContext.entityHasCell,
+    resolveSchemaTablePrefix()
+  );
   const tableIndex = new Map<string, TableSchemaDescriptor>(tables.map(table => [table.name, table]));
   // 批131 用户令:连接信息直接读 KBEngine 自身配置,SQL 与悬停带真实库表名
   const database = resolveDatabaseInterfaceConfig() ?? undefined;
@@ -414,9 +423,103 @@ export function describePropertyDatabaseStorage(
 
 // 表名反引号引用(粘贴进外部 MySQL 客户端不撞保留字);库名读得时带库前缀
 export function quoteSchemaTableName(snapshot: DatabaseSchemaSnapshot, tableName: string): string {
-  return snapshot.database
-    ? `\`${snapshot.database.databaseName}\`.\`${tableName}\``
-    : `\`${tableName}\``;
+  return quoteTableName(snapshot.database, tableName);
+}
+
+function quoteTableName(database: DatabaseInterfaceConfig | undefined, tableName: string): string {
+  return database ? `\`${database.databaseName}\`.\`${tableName}\`` : `\`${tableName}\``;
+}
+
+/** 引擎结构列(id/sm_autoLoad/parentID/位置朝向)之外的属性列 */
+function propertyColumnsOf(table: TableSchemaDescriptor): TableFieldDescriptor[] {
+  return table.fields.filter(field => !field.synthetic);
+}
+
+/**
+ * 属性列集 SELECT(批B):只列 def 属性落成的列,剔掉引擎结构列——
+ * 「我自己定义了哪些字段」直接可查,不必在 `SELECT *` 里肉眼挑。
+ */
+export function renderPropertyColumnSelect(
+  snapshot: DatabaseSchemaSnapshot,
+  table: TableSchemaDescriptor
+): string | null {
+  return renderPropertyColumnSelectFor(snapshot.database, table);
+}
+
+/** 同 renderPropertyColumnSelect,只吃连接要素(悬停侧手上没有快照时用) */
+export function renderPropertyColumnSelectFor(
+  database: DatabaseInterfaceConfig | undefined,
+  table: TableSchemaDescriptor
+): string | null {
+  const columns = propertyColumnsOf(table);
+  if (columns.length === 0) {
+    return null;
+  }
+
+  const names = columns.map(field => `\`${field.name}\``).join(', ');
+  return `SELECT ${names} FROM ${quoteTableName(database, table.name)} LIMIT 100;`;
+}
+
+/**
+ * 子表 JOIN(批B):元素行经 `parentID` 关联父表(引擎 EntityTableItemMysql
+ * 给每张子表固定 parentID 列),LEFT JOIN 保住无元素的属性行。
+ */
+export function renderChildTableJoinSelect(
+  snapshot: DatabaseSchemaSnapshot,
+  table: TableSchemaDescriptor
+): string | null {
+  return renderChildTableJoinSelectFor(snapshot.database, table);
+}
+
+/** 同 renderChildTableJoinSelect,只吃连接要素(悬停侧手上没有快照时用) */
+export function renderChildTableJoinSelectFor(
+  database: DatabaseInterfaceConfig | undefined,
+  table: TableSchemaDescriptor
+): string | null {
+  if (!table.parentTableName) {
+    return null;
+  }
+
+  const columns = table.fields.map(field => `c.\`${field.name}\``);
+  if (columns.length === 0) {
+    return null;
+  }
+
+  return [
+    `SELECT p.\`id\` AS parentID, ${columns.join(', ')}`,
+    `FROM ${quoteTableName(database, table.parentTableName)} AS p`,
+    `LEFT JOIN ${quoteTableName(database, table.name)} AS c ON c.\`parentID\` = p.\`id\``,
+    'LIMIT 100;'
+  ].join(' ');
+}
+
+/**
+ * 每表尾部 SQL 行:最小 SELECT(全列)+ 属性列集 + 子表 JOIN(仅子表)。
+ * 渲染与行号定位共用这一产出,两处不会各自漂移。
+ */
+export function renderTableSqlLines(
+  snapshot: DatabaseSchemaSnapshot,
+  table: TableSchemaDescriptor
+): string[] {
+  const result: string[] = [`SQL: SELECT * FROM ${quoteSchemaTableName(snapshot, table.name)} LIMIT 100;`];
+  const propertySelect = renderPropertyColumnSelect(snapshot, table);
+  if (propertySelect) {
+    result.push(`SQL(属性列): ${propertySelect}`);
+  }
+  const joinSelect = renderChildTableJoinSelect(snapshot, table);
+  if (joinSelect) {
+    result.push(`SQL(子表 JOIN): ${joinSelect}`);
+  }
+  return result;
+}
+
+/** 根表(实体表)名:优先取快照里的实体表;快照未建表时按配置前缀回落 */
+export function resolveEntityTableName(
+  entityName: string,
+  snapshot: DatabaseSchemaSnapshot | null
+): string {
+  const rootTable = snapshot?.tables.find(table => table.kind === 'entity');
+  return rootTable?.name ?? `${resolveSchemaTablePrefix()}${entityName}`;
 }
 
 export function locateDatabaseSchemaLine(
@@ -446,8 +549,8 @@ export function locateDatabaseSchemaLine(
       line += 2;
     }
 
-    // 字段块后:SQL 行 + 空行
-    line += 2;
+    // 字段块后:SQL 行 + 空行(行数与 renderDatabaseSchema 同源)
+    line += renderTableSqlLines(snapshot, table).length + 1;
   }
 
   return 1;
@@ -502,7 +605,9 @@ export function renderDatabaseSchema(snapshot: DatabaseSchemaSnapshot | null): s
     }
 
     // 批131 用户令:每表一行可粘贴 SQL(带库表前缀与反引号转义,直接进外部客户端)
-    lines.push(`SQL: SELECT * FROM ${quoteSchemaTableName(snapshot, table.name)} LIMIT 100;`);
+    for (const sqlLine of renderTableSqlLines(snapshot, table)) {
+      lines.push(sqlLine);
+    }
     lines.push('');
   }
 
@@ -1254,14 +1359,26 @@ function componentScriptExists(
   );
 }
 
+/**
+ * 库表前缀(设置 `kbengine.db.tablePrefix`,缺省空 = 引擎默认 `tbl_`,
+ * 出处 entity_table_mysql.cpp 的 TABLE_PREFIX)。设值后表名、schema 视图
+ * 与 SQL 模板同源替换,指向非默认前缀的工程。
+ */
+export function resolveSchemaTablePrefix(): string {
+  const configured = vscode.workspace.getConfiguration('kbengine').get<string>('db.tablePrefix', '');
+  const trimmed = configured.trim();
+  return trimmed.length > 0 ? trimmed : DB_TABLE_PREFIX;
+}
+
 export function buildMysqlTableSchemas(
   entityName: string,
   entitySource: DefSourceRef,
   properties: PersistentPropertyDescriptor[],
-  hasCellContent: boolean
+  hasCellContent: boolean,
+  tablePrefix: string = DB_TABLE_PREFIX
 ): TableSchemaDescriptor[] {
   const tables: TableSchemaDescriptor[] = [];
-  const rootTableName = `${DB_TABLE_PREFIX}${entityName}`;
+  const rootTableName = `${tablePrefix}${entityName}`;
   const rootTable: TableSchemaDescriptor = {
     name: rootTableName,
     kind: 'entity',
@@ -1496,7 +1613,8 @@ function createSyntheticField(
     sourcePath,
     source,
     indexType,
-    identifier: false
+    identifier: false,
+    synthetic: true
   };
 }
 

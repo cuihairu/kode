@@ -18,6 +18,7 @@
 import * as vscode from 'vscode';
 import {
   getDatabaseSchemaSnapshot,
+  renderChildTableJoinSelectFor,
   type DatabaseSchemaSnapshot,
   type PropertyDatabaseStorageInfo,
   type TableFieldDescriptor
@@ -544,6 +545,11 @@ export function buildPropertyDatabaseStorageHover(
       ? `,元素行经 \`parentID\` 关联 \`${table.parentTableName}\``
       : '';
     parts.push(`子表 ${qualifiedTable(table.name)}(ARRAY/组件元素逐行一条${parentNote})`);
+    // 批B:子表悬停直接给出可粘贴的 JOIN 语句(属性→字段映射最容易错的地方)
+    const joinSelect = renderChildTableJoinSelectFor(storage.database, table);
+    if (joinSelect) {
+      parts.push(`子表 JOIN: ${joinSelect}`);
+    }
   }
 
   return parts.length > 0 ? parts.join('; ') : null;

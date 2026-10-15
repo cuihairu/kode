@@ -965,8 +965,12 @@ describe('buildPropertyDatabaseStorageHover(属性悬停存储文案,批131)', (
       database: databaseConfig,
       targets: [{ tableName: 'tbl_Hero_bag', table: bag }]
     });
+    // 批B:子表悬停附可粘贴的 JOIN 语句(parentID 关联是映射最易错处)
     expect(hover).toBe(
-      '子表 `game_db`.`tbl_Hero_bag`(ARRAY/组件元素逐行一条,元素行经 `parentID` 关联 `tbl_Hero`)'
+      '子表 `game_db`.`tbl_Hero_bag`(ARRAY/组件元素逐行一条,元素行经 `parentID` 关联 `tbl_Hero`); '
+        + `子表 JOIN: SELECT p.\`id\` AS parentID, ${bag.fields
+          .map(field => `c.\`${field.name}\``)
+          .join(', ')} FROM \`game_db\`.\`tbl_Hero\` AS p LEFT JOIN \`game_db\`.\`tbl_Hero_bag\` AS c ON c.\`parentID\` = p.\`id\` LIMIT 100;`
     );
   });
 });

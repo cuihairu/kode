@@ -410,6 +410,11 @@
     "configuration": {
       "title": "KBEngine",
       "properties": {
+        "kbengine.db.tablePrefix": {
+          "type": "string",
+          "default": "",
+          "description": "数据库表名前缀（缺省空 = 引擎默认 tbl_；自定义前缀用于指向改过前缀的工程，schema 视图与 SQL 模板同源替换）"
+        },
         "kbengine.enableDiagnostics": {
           "type": "boolean",
           "default": true,

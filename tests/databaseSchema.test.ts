@@ -11,8 +11,14 @@ import {
   getDatabaseSchemaSnapshot,
   isDatabaseSchemaDocument,
   locateDatabaseSchemaLine,
-  renderDatabaseSchema
+  renderChildTableJoinSelect,
+  renderDatabaseSchema,
+  renderPropertyColumnSelect,
+  renderTableSqlLines,
+  resolveEntityTableName,
+  resolveSchemaTablePrefix
 } from '../src/databaseSchema';
+import { configurationOverrides } from './helpers/vscodeStub';
 import type {
   DatabaseSchemaSnapshot,
   DefSourceRef,
@@ -73,7 +79,8 @@ describe('locateDatabaseSchemaLine', () => {
   // 行号公式(批131):标题 1 + 空行 1 + [Database 1] + Backend/Source 2 +
   // 空行 1 = 首表表名行 6(有 Database 行时 7);表头 kind + [parent] +
   // source + 空行(子表多 parent 行,首字段 +5);每字段 2 行;字段块后
-  // SQL 行 + 空行 2 行。
+  // SQL 行 + 空行(批B 起 SQL 行为「全列 SELECT + 属性列集 + 子表 JOIN」,
+  // 行数与 renderTableSqlLines 同源:根表 2 行、子表 3 行)。
   const snapshot: DatabaseSchemaSnapshot = {
     ...emptySnapshot,
     tables: [
@@ -113,9 +120,9 @@ describe('locateDatabaseSchemaLine', () => {
     expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero')).toBe(6);
     expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_hp')).toBe(10);
     expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero', 'sm_speed')).toBe(12);
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag')).toBe(16);
+    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag')).toBe(17);
     // 子表带 parent 注记行:首字段在表名 +5(此前 +4 少算一行,已修)
-    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag', 'sm_value')).toBe(21);
+    expect(locateDatabaseSchemaLine(snapshot, 'tbl_Hero_bag', 'sm_value')).toBe(22);
   });
 
   it('shifts the whole layout by one when a database line is present', () => {
@@ -132,7 +139,7 @@ describe('locateDatabaseSchemaLine', () => {
     };
     expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero')).toBe(7);
     expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero', 'sm_speed')).toBe(13);
-    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero_bag', 'sm_value')).toBe(22);
+    expect(locateDatabaseSchemaLine(withDatabase, 'tbl_Hero_bag', 'sm_value')).toBe(23);
   });
 
   it('falls back to line 1 for unknown tables or fields', () => {
@@ -189,6 +196,7 @@ describe('renderDatabaseSchema', () => {
         'sm_hp  UINT32  len=32  index=UNIQUE  identifier=true  flags=BASE  default=100',
         '  source: Hero.def:3 (scripts/Hero.def)',
         'SQL: SELECT * FROM `tbl_Hero` LIMIT 100;',
+        'SQL(属性列): SELECT `sm_hp` FROM `tbl_Hero` LIMIT 100;',
         ''
       ].join('\n').trimEnd() + '\n'
     );
@@ -467,5 +475,160 @@ describe('describePropertyDatabaseStorage', () => {
 
   it('returns null for a property with no schema targets', () => {
     expect(describePropertyDatabaseStorage('Hero', 'missing', storageRoot)).toBeNull();
+  });
+});
+
+describe('批B SQL 模板与库表前缀', () => {
+  let root = '';
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-schema-sql-'));
+    const defFile = path.join(root, 'scripts', 'entity_defs', 'Hero.def');
+    fs.mkdirSync(path.dirname(defFile), { recursive: true });
+    fs.writeFileSync(defFile, [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Flags>BASE</Flags>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '    <speed>',
+      '      <Type>FLOAT</Type>',
+      '      <Persistent>false</Persistent>',
+      '    </speed>',
+      '    <bag>',
+      '      <Type>',
+      '        ARRAY',
+      '        <of>UINT32</of>',
+      '      </Type>',
+      '      <Persistent>true</Persistent>',
+      '    </bag>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'utf8');
+  });
+
+  afterAll(() => {
+    configurationOverrides.delete('kbengine');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('gives every table a full select plus a property-column select', () => {
+    const snapshot = getDatabaseSchemaSnapshot('Hero', root);
+    const rootTable = snapshot!.tables[0];
+
+    expect(renderTableSqlLines(snapshot!, rootTable)).toEqual([
+      'SQL: SELECT * FROM `tbl_Hero` LIMIT 100;',
+      // 属性列集只列 def 属性落成的列,引擎结构列(id/sm_autoLoad/位置朝向)不进
+      'SQL(属性列): SELECT `sm_hp` FROM `tbl_Hero` LIMIT 100;'
+    ]);
+    // Persistent=false 的 speed 不建列,两路模板都不出现
+    expect(renderTableSqlLines(snapshot!, rootTable).join('')).not.toContain('sm_speed');
+  });
+
+  it('joins a child table to its parent through parentID', () => {
+    const snapshot = getDatabaseSchemaSnapshot('Hero', root);
+    const childTable = snapshot!.tableIndex.get('tbl_Hero_bag')!;
+
+    expect(renderTableSqlLines(snapshot!, childTable)).toEqual([
+      'SQL: SELECT * FROM `tbl_Hero_bag` LIMIT 100;',
+      'SQL(属性列): SELECT `sm_value` FROM `tbl_Hero_bag` LIMIT 100;',
+      'SQL(子表 JOIN): SELECT p.`id` AS parentID, c.`id`, c.`parentID`, c.`sm_autoLoad`, c.`sm_value` FROM `tbl_Hero` AS p LEFT JOIN `tbl_Hero_bag` AS c ON c.`parentID` = p.`id` LIMIT 100;'
+    ]);
+  });
+
+  it('qualifies both table names with the database read from engine config', () => {
+    configurationOverrides.set('kbengine', { configPath: path.join(root, 'kbengine.xml') });
+    const snapshot = getDatabaseSchemaSnapshot('Hero', root);
+    configurationOverrides.delete('kbengine');
+    const childTable = snapshot!.tableIndex.get('tbl_Hero_bag')!;
+    const joinLine = renderTableSqlLines(snapshot!, childTable)[2];
+
+    // 连接要素读不到时库名缺席,表名照常——前缀替换与库前缀互不影响
+    expect(joinLine).toContain('LEFT JOIN `tbl_Hero_bag` AS c');
+  });
+
+  it('applies a custom table prefix to table names and every template', () => {
+    configurationOverrides.set('kbengine', { 'db.tablePrefix': 'kb_' });
+    const snapshot = getDatabaseSchemaSnapshot('Hero', root);
+    const childTable = snapshot!.tableIndex.get('kb_Hero_bag')!;
+    const lines = renderTableSqlLines(snapshot!, childTable);
+    const text = renderDatabaseSchema(snapshot!);
+    configurationOverrides.delete('kbengine');
+
+    expect(resolveSchemaTablePrefix()).toBe('tbl_');
+    expect(snapshot!.tables[0].name).toBe('kb_Hero');
+    expect(lines[0]).toBe('SQL: SELECT * FROM `kb_Hero_bag` LIMIT 100;');
+    expect(lines[1]).toBe('SQL(属性列): SELECT `sm_value` FROM `kb_Hero_bag` LIMIT 100;');
+    expect(lines[2]).toContain('FROM `kb_Hero` AS p LEFT JOIN `kb_Hero_bag` AS c');
+    expect(text).toContain('TABLE kb_Hero');
+    expect(text).not.toContain('tbl_Hero');
+  });
+
+  it('keeps the engine default when the prefix setting is blank', () => {
+    configurationOverrides.set('kbengine', { 'db.tablePrefix': '   ' });
+
+    expect(resolveSchemaTablePrefix()).toBe('tbl_');
+    expect(buildMysqlTableSchemas('Hero', source(), [], false)[0].name).toBe('tbl_Hero');
+
+    configurationOverrides.delete('kbengine');
+  });
+
+  it('builds table names from an explicit prefix argument', () => {
+    const tables = buildMysqlTableSchemas(
+      'Hero',
+      source(),
+      [property({ name: 'bag', typeName: 'ARRAY', arrayElement: property({ name: 'item' }) })],
+      false,
+      'my_'
+    );
+
+    expect(tables.map(table => table.name)).toEqual(['my_Hero', 'my_Hero_bag']);
+  });
+
+  it('omits the property select for a table with only engine columns', () => {
+    const syntheticOnly = {
+      name: 'tbl_Ghost',
+      kind: 'entity' as const,
+      title: 'Ghost',
+      source: source(),
+      fields: [
+        {
+          name: 'id',
+          typeLabel: 'bigint unsigned',
+          sourcePath: 'id',
+          source: source(),
+          identifier: false,
+          synthetic: true
+        }
+      ]
+    };
+
+    expect(renderPropertyColumnSelect(emptySnapshot, syntheticOnly)).toBeNull();
+    expect(renderTableSqlLines(emptySnapshot, syntheticOnly)).toEqual([
+      'SQL: SELECT * FROM `tbl_Ghost` LIMIT 100;'
+    ]);
+  });
+
+  it('omits the join for a table without a parent or without columns', () => {
+    const rootTable = {
+      name: 'tbl_Hero',
+      kind: 'entity' as const,
+      title: 'Hero',
+      source: source(),
+      fields: [property() as never]
+    };
+    const emptyChild = { ...rootTable, name: 'tbl_Hero_bag', kind: 'array' as const, parentTableName: 'tbl_Hero', fields: [] };
+
+    expect(renderChildTableJoinSelect(emptySnapshot, rootTable)).toBeNull();
+    expect(renderChildTableJoinSelect(emptySnapshot, emptyChild)).toBeNull();
+  });
+
+  it('resolves the root table name from the snapshot or falls back to the prefix', () => {
+    const snapshot = getDatabaseSchemaSnapshot('Hero', root)!;
+
+    expect(resolveEntityTableName('Hero', snapshot)).toBe('tbl_Hero');
+    expect(resolveEntityTableName('Ghost', null)).toBe('tbl_Ghost');
   });
 });

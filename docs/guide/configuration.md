@@ -94,6 +94,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.telnet.configXmlPath` | string | 空 | 元件 kbengine.xml 指定路径 |
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒) |
 | `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表 |
+| `kbengine.db.tablePrefix` | string | `""`（空 = 引擎默认 `tbl_`） | 数据库表名前缀，schema 视图与 SQL 模板同源替换 |
 
 ## 路径类配置的自动发现(批125)
 
@@ -352,6 +353,20 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 ```
 
 首装扫描会在工作区根一层找 `.bat`,只收启停(`start` / `stop` / `restart` / `boot` / `server`)与导表(`export` / `convert` / `导表`)词表命中的脚本,勾选后写成 `${workspaceFolder}/<文件名>.bat` 变量形态(`start` / `boot` 开头的自动 `background: true`),并保留既有 `version` / `debug` 段。
+
+### 数据库表名前缀 `kbengine.db.tablePrefix`
+
+类型:string;缺省空 = 沿用引擎默认 `tbl_`（出处 `entity_table_mysql.cpp` 的表前缀常量）。
+
+设成自定义值（如 `kb_`）后，schema 视图里的表名与三行 SQL 模板同源替换：
+
+| 模板 | 用途 |
+| --- | --- |
+| `SQL: SELECT * FROM ...` | 全列（引擎结构列 + 属性列） |
+| `SQL(属性列): SELECT ...` | 只列 def 属性落成的列，剔掉 `id` / `sm_autoLoad` / `parentID` / 位置朝向六列 |
+| `SQL(子表 JOIN): ...` | 仅 ARRAY / 组件子表：按 `parentID` 关联父表，`LEFT JOIN` 保住空元素的属性行 |
+
+子表 JOIN 同样出现在 ARRAY / 组件属性的悬停行里。不改引擎默认前缀的工程留空即可，行为与之前一致。
 
 ### 调试配置文件(`.kbengine/debug.json`)
 
