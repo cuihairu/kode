@@ -27,7 +27,7 @@
 - [x] 批127 发现与定位失败可见 — `3f36eae`（+1 测试文件 24 例，全套 1548 用例绿，coverage 100%×4；`Show Discovery Report` 命令 + 激活自动报告，报告整段可复制回传）
 - [x] 批128 `kbengine.configPath` 补约定发现 — `9ef2c58`（探针验收 + 约定/记忆/深扫描兜底，telnet 与最终配置视图同步受益；全套 1566 用例绿，coverage 100%×4）
 
-- [ ] 快速执行动作（顶部按钮 / 配置驱动）——**需求分析阶段，先不实现**（来源：用户 2026-10-14）
+- [x] 快速执行动作（顶部按钮 / 配置驱动）——`bbf2cf9`（+4 测试文件 80 例，全套 1823 用例绿，coverage 100%×4；配置落 `.kbengine/debug.json` 顶层 `quickActions`，三类后端 `command`/`script`/`http` 白名单，路径走 `${workspaceFolder}`/`${env:}` 变量且未知变量报错中止，按钮挂 Servers 视图标题栏 + def/Python/XML 编辑器标题栏，首装扫一层 `.bat` 只收启停与导表两类多选登记并记忆取消）
   - 动机：像 VSCode debug 界面那样，顶部能一键执行常用动作
   - 已点名的三类动作：① KBEngine 自带热更新 ② **自研的 HTTP 本地版本热更新** ③ 本地开服的 bat 脚本
   - 验收（本阶段）：需求边界先分析清楚并落档——动作种类清单、配置归属、按钮位置、变量替换与作用域、错误处理与日志去向；经用户拍板后再进实现
@@ -39,8 +39,8 @@
     5. **首次安装自动扫描 `.bat` 自动生成配置**——装完即有用，不要求用户手写配置
     6. **本地脚本范围已明确**（用户 2026-10-14）：基本就是**启停服务器**与**导配置表**两类，扫描与配置模型按这两类设计，不做泛化
   - 待补需求（原「未拍」）→ **四项已代决（巡检，2026-10-15，依用户 2026-10-14 授权；用户可推翻后回滚）**：扫描按建议（一层 .bat+词表+路径类别去重+仅无动作时提示确认+取消记忆）；确认后写入（quick pick 多选）；破坏性动作默认弹确认；失败输出走 OUTPUT 通道+弹窗不落文件
-  - 实现方案已落档（待用户确认后开工）：数据结构/接口/目录结构/执行流程/测试计划见 `docs/design/quick-actions-and-db-hint.md` 1.8-1.11，批次 B/C 简案见 4.1-4.2
-  - 现状核对：已是 VSCode 扩展；已注册 31 个命令（含 `kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 2 项
+  - 实现方案已落档（待用户确认后开工）：数据结构/接口/目录结构/执行流程/测试计划见 `docs/design/quick-actions-and-db-hint.md` 1.8-1.11，批次 B/C 简案见 4.1-4.2；**用户 2026-10-15 已拍板开工**，追加安全边界：script 只执行配置里显式声明的脚本、http 只发配置里写死的 URL，执行期不拼接运行时参数
+  - 现状核对：已是 VSCode 扩展；已注册 32 个命令（含 `kbengine.quickActions.show`、`kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 4 项
 
 - [x] 需求：types.xml 着色增强（来源：用户 2026-10-14）— `8201a1c`（+1 测试文件 8 例，全套 1664 用例绿，coverage 100%×4；结论：types.xml 无独立 grammar、默认由 XML 插件接管 → 注入语法路线：package.json 贡献点 `injectTo:["text.xml"]` + 语法文件自带 `injectionSelector: "L:text.xml - (comment, string)"`（与 VS Code 自带 markdown-math/jsdoc 注入同机制），语义色不进注释与属性值、不抢类型定义标签；五 scope：内置 `support.type.kbengine.builtin` / 自定义引用 `entity.name.type.kbengine.custom` / ARRAY `keyword.other.kbengine.array` / FIXED_DICT `keyword.other.kbengine.fixed-dict` / implementedBy `variable.other.kbengine.implementedby`；KBEngine Dark 主题新增 5 条 tokenColors，五类两两可区分（真实 Registry+主题 tokenizeLine2 实测），Dark+/Light+ 下内置与自定义折叠为该主题标准类型色、两指令折叠为标准关键字色——scope 语义仍在，如实报告；验证为临时工作区 fixture 走查，真实 types.xml 在用户本机待实测）
   - 前提：types.xml **默认由 XML 插件接管**着色
