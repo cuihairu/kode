@@ -4,12 +4,14 @@
 
 ## 未完成
 
-- [ ] 发布到 VSCode Marketplace（仅用户手动执行；不打版本号 tag、不建正式 Release、不跑发版 workflow）
+- [ ] 发布到 VSCode Marketplace（仅用户手动执行：先在 package.json 提交目标版本号，再手动触发 Publish to Marketplace 工作流并填同一版本号；不打版本号 tag、不建正式 Release。发布准备已完成，见已完成「Marketplace 发布准备」）
 - [x] 批134 types.xml 表结构形态悬停 + 类型引用反扫 CodeLens — `3f02b50`（+2 测试文件 31 例（10 索引/形态契约 + 9 悬停 + 12 镜链），全套 1945 用例绿，coverage 100%×4（8732 stmts/5273 branches/1485 funcs/8496 lines）；`declaredType` 从属性/FD 键/数组元素三个解析点把原始 `<Type>` 文本带到列上，反扫落点直接取 schema 快照单一实现；`getTypeStorageShape` 形态数据 + `describeTypeStorageShape` 措辞（builtin 主表单列附列型、FIXED_DICT 平铺、ARRAY 子表递归一层、未解析明说装载失败、别名环 seen 短路）；悬停 `getCustomTypeHover` 声明行追加落库形态段（implementedBy 值除外）；`TypesXmlCodeLensProvider` 一条使用一枚镜（`Hero.itemId → tbl_Hero.sm_itemId`）点击走 `kbengine.database.open` 定位列，超 10 折叠 `+N 处落库未列出` 计数镜，无引用不出镜，watcher 挂 `**/*.def`/`**/types.xml`/`**/entities.xml` 失效重扫；**批133 遗遗留关闭**：引擎源码坐实 `xml.cpp:121-128` getValStr 只认文本、`datatype.cpp:1658-1712` of 取文本、`datatypes.cpp:105-169` 条目指引读首子文本，demo fixture 三处 `<of>` 写法不合引擎语义是 fixture 错不是解析器错，已修为规范形态并补 sm_value 元素列/skillSlots 子表断言；**fixture 打包修复**：components/.gitignore、interfaces/.gitignore、user_type/.gitignore 三个空目录占位模板把 Inventory.def、ROLE.def、SKILL_SLOT_DATA.py、POSITION_DATA.py 排除在版本库外（65 vs 台账 76 文件，fresh checkout 测试必挂），删占位并补录；extension.test CodeLens 注册 1→2、终配 watcher 探针改样式集合记录；来源:用户「那么能不能在type.xml 中展示表结构呢?」+ 拍板「形态 + 引用反扫 CodeLens（推荐）」）
 - [ ] 批135 代码侧属性标记反向跳转（用户「从types.xml 可以跳转到具体的代码，但从代码上没有类似的 type 的标记反向跳转」；字面不可行——Python 脚本无类型名；可行等价：`.py` 实体脚本 `self.<property>` 访问处 CodeLens 标属性类型与可见域,跳回 def 声明行）
 
 ## 已完成
 
+- [x] Marketplace 发布准备 — esbuild 单文件 bundle 打包链（mysql2/vendor 内联进 out/extension.js，vsce 锁 3.9.1 + `--no-dependencies` 绕开 pnpm 布局 ELSPROBLEMS，`.vscodeignore` 重写收紧）+ galleryBanner（logo 实取色：底 `#000000`、主题 dark）+ `publish.yml` 手动发版工作流（仅 workflow_dispatch 带版本号输入，输入须与 package.json 一致，publisher 非 `hairucui` 直接失败，compile/test/lint 门禁红则不发，凭据仅 `VSCE_PAT` secret 无明文）— 本地打包 15 文件 626.03 KB（`vsce ls` 审计恰 13 项载荷），vitest 1945 + mocha 11 绿，coverage 100%×4
+- [x] CI 修复（run 38695297696 ENOENT demo fixtures）— 根因非 Node 24 亦非竞态：CI 跑在 `5c3a383`，该树没有 Inventory.def/ROLE.def/SKILL_SLOT_DATA.py/POSITION_DATA.py（components/、interfaces/、user_type/ 三个占位 `.gitignore` 把夹具排除在版本库外），补录已随批134 `3f02b50` 落地；本单叠加夹具目录改 `fs.mkdtempSync` 独立临时目录（`tests/kbengineDemoAssets.test.ts` beforeAll）防固定路径互抢 — 本地 v24.21.0 连跑 2 次 vitest 1945 + mocha 11 全绿 0 skip，coverage 100%×4
 - [x] 批124 def 图形化架构流程图 — `1e93f24`（+2 测试文件 62 例，全套 1743 用例绿，coverage 100%×4；webview 内 client→base/cell 方法调用与属性自动同步，边语义按 Flags 位带引擎出处与成员声明回跳，未 Exposed 方法单列，导出 Markdown/SVG/PNG）
 
 - [x] Marketplace 截图准备 — 6 张实机截图落 `docs/screenshots/`，README 双语引用 — commit `8c3ffec`（截图批）/ `b683108`（README 引用）
