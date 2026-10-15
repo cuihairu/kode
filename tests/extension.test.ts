@@ -984,3 +984,59 @@ describe('extension activate 原始日志 ERROR 扫描装配(盘点 G6)', () => 
     }
   }, 8000);
 });
+
+describe('extension activate 客户端实体 SDK 生成装配(盘点 G4)', () => {
+  it('clientSdk.generate 命令:选语言+输出目录+跳过策略后按 entities.xml 落盘', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalQuickPick = windowish.showQuickPick;
+    const originalInputBox = windowish.showInputBox;
+    const originalInfoCount = messages.info.length;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-sdk-activate-'));
+    const defsDir = path.join(root, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(root, 'scripts', 'entities.xml'),
+      '<root><Avatar hasBase="true"/></root>',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(defsDir, 'Avatar.def'),
+      '<root><Properties><hp><Type>UINT32</Type><Flags>OWN_CLIENT</Flags></hp></Properties></root>',
+      'utf8'
+    );
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const context = makeContext();
+    try {
+      activate(context);
+
+      const picks: Array<Array<{ value: string }>> = [
+        [{ value: 'typescript' }],
+        [{ value: 'skip' }]
+      ];
+      let pickCalls = 0;
+      windowish.showQuickPick = async (): Promise<unknown> => {
+        const next = picks[pickCalls];
+        pickCalls += 1;
+        return next;
+      };
+      windowish.showInputBox = async (): Promise<string | undefined> => 'scripts/client_entities';
+
+      await commands.executeCommand('kbengine.clientSdk.generate');
+
+      expect(pickCalls).toBe(2);
+      const filePath = path.join(root, 'scripts', 'client_entities', 'Avatar.ts');
+      expect(fs.existsSync(filePath)).toBe(true);
+      const content = fs.readFileSync(filePath, 'utf8');
+      expect(content).toContain('export class Avatar');
+      expect(content).toContain('public hp: number');
+      expect(content).toContain('protected onBaseOutgoing');
+      expect(messages.info[messages.info.length - 1]).toContain('Avatar.ts');
+    } finally {
+      windowish.showQuickPick = originalQuickPick;
+      windowish.showInputBox = originalInputBox;
+      messages.info.length = originalInfoCount;
+      disposeAll(context);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 8000);
+});

@@ -128,9 +128,10 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 自动生成 `.def`
 - 自动生成 Python
 - 自动注册到 `entities.xml`
+- 客户端实体 SDK 生成（按 `entities.xml` 登记的实体生成客户端骨架，TypeScript / C# 可多选）
 
 说明：
-生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响。
+生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响；客户端实体 SDK 受 `kbengine.clientSdk.outputDir` 影响。
 
 ## 性能分析
 

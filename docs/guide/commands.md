@@ -217,6 +217,11 @@
 - 标题：`Create Entity from Template`
 - 作用：从预定义模板快速生成实体（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体共 10 个）
 
+### `kbengine.clientSdk.generate`
+
+- 标题：`Generate Client Entity SDK`
+- 作用：按 `entities.xml` 登记的实体生成客户端实体骨架，语言在命令内勾选（TypeScript / C# 可多选），详见 [客户端实体 SDK 生成](./client-sdk.md)
+
 ## 性能分析
 
 ### `kbengine.def.analyze`

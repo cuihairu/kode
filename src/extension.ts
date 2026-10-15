@@ -21,6 +21,7 @@ import {
 import { EntityDependencyWebView } from './entityDependencyWebView';
 import { EntityFlowWebView } from './entityFlowWebView';
 import { KBEngineCodeGenerator } from './codeGenerator';
+import { runClientSdkGenerateCommand } from './clientSdkGenerator';
 import {
   EntityExplorerProvider,
   pickServerComponent,
@@ -981,6 +982,14 @@ export function activate(context: vscode.ExtensionContext) {
     () => codeGenerator.showTemplates()
   );
   context.subscriptions.push(showTemplatesCommand);
+
+  // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
+  // 语言清单在命令内选(已代决首批 TS + C#)
+  const clientSdkGenerateCommand = vscode.commands.registerCommand(
+    'kbengine.clientSdk.generate',
+    () => runClientSdkGenerateCommand()
+  );
+  context.subscriptions.push(clientSdkGenerateCommand);
 
   // .def 静态分析建议(性能分析):扫描工作区全部 .def,报告写入输出面板
   // 并以诊断形式落到问题列表

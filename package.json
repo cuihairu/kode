@@ -63,6 +63,7 @@
     "onCommand:kbengine.flow.show",
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.templates",
+    "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
@@ -561,6 +562,11 @@
         "icon": "$(file-template)"
       },
       {
+        "command": "kbengine.clientSdk.generate",
+        "title": "Generate Client Entity SDK",
+        "icon": "$(symbol-method)"
+      },
+      {
         "command": "kbengine.def.analyze",
         "title": "Analyze Def Performance"
       },
@@ -885,6 +891,11 @@
           "type": "boolean",
           "default": true,
           "description": "代码生成器：是否在 entities.xml 中自动注册实体"
+        },
+        "kbengine.clientSdk.outputDir": {
+          "type": "string",
+          "default": "scripts/client_entities",
+          "description": "客户端实体 SDK 生成器的输出目录（相对工作区根；语言清单在命令内选择，默认不覆盖已存在文件）"
         },
         "kbengine.telnet.host": {
           "type": "string",
