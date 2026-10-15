@@ -45,7 +45,10 @@ export type QuickAction = QuickActionCommand | QuickActionScript | QuickActionHt
 /** 路径变量形态:写配置用字面串,执行时才换成实际工作区根 */
 export const WORKSPACE_FOLDER_VAR = '${workspaceFolder}';
 
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'HEAD', 'OPTIONS'];
+/** http 后端可接受的方法(解析时统一大写;debug.json schema 的枚举同集合) */
+export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'HEAD', 'OPTIONS'];
+/** 三个执行后端(解析器只收这三种;debug.json schema 的枚举同集合) */
+export const QUICK_ACTION_TYPES = ['command', 'script', 'http'];
 const SERVER_WORDS = ['start', 'stop', 'restart', 'boot', 'server'];
 const EXPORT_WORDS = ['export', 'convert', '导表'];
 

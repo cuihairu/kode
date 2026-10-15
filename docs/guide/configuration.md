@@ -309,6 +309,8 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 动作是**顶层 `quickActions` 数组**(不进 `debug` 段:动作不是调试配置),跟着 KBEngine 工程走,不新增 `kbengine.*` 设置项。
 
+**编辑器侧校验**:kode 随包贡献了该文件的 JSON Schema(`.kbengine/debug.json` 一路匹配,含各级子文件夹),VS Code 的 JSON 扩展在编辑时直接标红——后端类型写错、`telnetPort` 写成字符串、`pathMappings` 条目缺 `localRoot`/`remoteRoot`、`method` 不在白名单等,都在保存前暴露,不必等执行才发现。Schema 由解析器口径生成(后端枚举与方法枚举取 `quickActionConfig.ts` 的常量),与 `package.json` 内联对象逐字节同源、由测试锁定防漂移。校验是提示,不是门禁:解析器仍然逐条剔除坏条目、逐字段的类型回落规则不变。
+
 | 字段 | 适用类型 | 说明 |
 |------|------|------|
 | `name` | 全部 | 显示名,必填 |

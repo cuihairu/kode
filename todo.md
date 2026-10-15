@@ -5,7 +5,6 @@
 ## 未完成
 
 - [ ] 发布到 VSCode Marketplace（仅用户手动执行：先在 package.json 提交目标版本号，再手动触发 Publish to Marketplace 工作流并填同一版本号；不打版本号 tag、不建正式 Release。发布准备已完成，见已完成「Marketplace 发布准备」）
-- [ ] P1 G3 `.kbengine/debug.json` JSON Schema 校验（来源:盘点 G3,Rojo 对 `*.project.json` 同法;`contributes.jsonValidation` + schema 与 `quickActionConfig.ts` 解析规则同源,配置错误编辑器直接标红）
 - [ ] P2 G4 客户端实体/SDK 多语言生成（来源:盘点 G4;向导骨架已有,语言种类 C#/TS/C++/GDScript 等用户点名单再排）
 - [ ] P2 G5 自动热重载（来源:盘点 G5,Nex X 文件监视自动热更;保存/监视 → 触发指定 quick action,配置门控默认关防误触,复用白名单后端）
 - [ ] P2 G6 原始日志 ERROR 扫描视图（来源:盘点 G6;logWebView 已有等级过滤,此为原始日志 ERROR 行聚合计数增量面）
@@ -18,6 +17,7 @@
 
 ## 已完成
 
+- [x] P1 G3 `.kbengine/debug.json` JSON Schema 校验 — 批136 G3（`src/debugJsonSchema.ts` 构建 schema + `package.json` 新增 `contributes.jsonValidation`（fileMatches `**/.kbengine/debug.json`，264 行内联对象）+1 测试文件 9 例（清单贡献 3 + 结构 4 + 解析器对拍 2），全套 2027 用例绿，coverage 100%×4（8937 stmts/5367 branches/1535 funcs/8693 lines），mocha 11 绿；整份文件编辑器内直接标红（调试段 defaultTelnetHost/telnetPort 默认、元件段 telnet* + telnetEnableCommands 数组 + pathMappings localRoot/remoteRoot 必填、顶层 version+debug 必填、quickActions 三后端 anyOf 各自必填），VS Code JSON 扩展承担校验零运行时代码；`quickActionConfig.ts` 导出 `HTTP_METHODS`/`QUICK_ACTION_TYPES` 作 schema 枚举真源，清单内联对象与 TS 构建产物由测试深等锁定防漂移，且锁死 schema 不落独立文件；校验只作提示，解析器逐条剔除与类型回落规则不变；来源:盘点 G3 + 巡检持续推进单）
 - [x] P1 G2 KBEngine Python API 存根导出 — 批136 G2（`src/pythonStubExport.ts` +1 测试文件 14 例：路径/同源内容 5 + 装配 9，+pythonExtraPaths 4 例（extraManaged 计划 1 + stub 目录并入 3），全套 2018 用例绿，coverage 100%×4（8924 stmts/5367 branches/1531 funcs/8682 lines），mocha 11 绿；`kbeModuleIndex` 抽共享发射器 `emitKbeStubBody`（虚拟桩文档字节不变），`buildKbeStubExportContent` 头部生成物口径（自动生成/重导出覆盖/建议 gitignore）；导出 `.kbengine/stubs/KBEngine.pyi`：内容一致零写、陈旧或读不到重写、目录不可写告警续行、`kbengine.python.stubExport` 默认开可关、激活期静默自动一次、`kbengine.python.exportStubs` 手动入口导出后链同步；G1 接线扩 extraManaged：导出开且文件在盘才并入存根目录；来源:盘点 G2 + 巡检持续推进单）
 - [x] P1 G1 Python 生态 extraPaths 接线 — 批136（`src/pythonExtraPaths.ts` +1 测试文件 20 例：规范化/根发现/差量计划 14 + 装配 6，全套 2000 用例绿，coverage 100%×4（8867 stmts/5337 branches/1519 funcs/8625 lines），mocha 11 绿；scripts 根按 entityMapping 同口径三条前缀 + 批129 一级 `*_assets` 约定发现，只收磁盘存在项；WorkspaceFolder 级写 `python.analysis.extraPaths`，只管理自己那一段——上次写入集记 workspaceState、再同步先剔除，用户手填路径永不被动；无变化不写、无可发现根静默；激活期自动同步一次全程零提示，`kbengine.python.syncExtraPaths` 手动重跑播报结果，`kbengine.python.extraPathsSync` 默认开可关；激活期提示污染装配测试两例暴露设计缺陷→改静默约定，来源:盘点 G1 + 巡检推进单）
 - [x] Marketplace 发布准备 — esbuild 单文件 bundle 打包链（mysql2/vendor 内联进 out/extension.js，vsce 锁 3.9.1 + `--no-dependencies` 绕开 pnpm 布局 ELSPROBLEMS，`.vscodeignore` 重写收紧）+ galleryBanner（logo 实取色：`#1296DB`、主题 dark）+ `publish.yml` 手动发版工作流（仅 workflow_dispatch 带版本号输入，输入须与 package.json 一致，publisher 非 `hairucui` 直接失败，compile/test/lint 门禁红则不发，凭据仅 `VSCE_PAT` secret 无明文）— 本地打包 15 文件 626.03 KB（`vsce ls` 审计恰 13 项载荷），vitest 1945 + mocha 11 绿，coverage 100%×4
