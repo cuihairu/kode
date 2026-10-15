@@ -109,8 +109,8 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
-    // 引用反扫镜再加一份注册
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(2);
+    // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(3);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',

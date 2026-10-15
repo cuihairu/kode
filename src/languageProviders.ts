@@ -26,6 +26,12 @@ import {
   RpcMethodHit
 } from './rpcCodeLens';
 import {
+  buildPropertyCodeLenses,
+  findPythonSelfPropertyAccesses,
+  propertyAccessKey,
+  PropertyCodeLensHit
+} from './propertyCodeLens';
+import {
   createDatabaseSchemaUri,
   describePropertyDatabaseStorage,
   findDatabaseSchemaFieldAtPosition,
@@ -2843,6 +2849,65 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
 export function createDefinitionSelection(defLine: number): vscode.Range {
   const position = new vscode.Position(defLine - 1, 0);
   return new vscode.Range(position, position);
+}
+
+// 批135:属性访问标记。Python 脚本里没有类型名可写(脚本即代码,与 RPC 那
+// 套「实现里看不出」不同),可行等价是 self.<属性> 访问处出一行 CodeLens,标
+// def 声明的类型与可见域,点击回 def 声明行。解析走属性 F12 同一索引
+// (resolvePropertyDefinitionInfo),def 侧信息零重复解析。只认 self.<属性>
+// 形态,与 F12 口径一致。
+export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    const accesses = findPythonSelfPropertyAccesses(document.getText());
+
+    // 同一属性多处访问只解析一次:解析结果按 (根段, 完整路径) 一一对应
+    const hits = new Map<string, PropertyCodeLensHit | null>();
+    for (const access of accesses) {
+      const key = propertyAccessKey(access);
+      if (hits.has(key)) {
+        continue;
+      }
+      const location = await this.entityMappingManager.resolvePropertyDefinitionInfo(
+        document.fileName,
+        access.fullPath,
+        access.rootSymbol
+      );
+      hits.set(key, location
+        ? {
+            propertyName: location.identity.symbolName,
+            componentSlotName: location.identity.componentSlotName,
+            typeName: location.typeName ?? null,
+            domains: location.domains,
+            persistent: location.persistent,
+            defFile: location.defFile,
+            defLine: location.line
+          }
+        : null);
+    }
+
+    return buildPropertyCodeLenses(accesses, access => hits.get(propertyAccessKey(access))).map(
+      spec =>
+        new vscode.CodeLens(
+          new vscode.Range(
+            new vscode.Position(spec.access.line, spec.access.character),
+            new vscode.Position(
+              spec.access.line,
+              spec.access.character + spec.access.rootSymbol.length
+            )
+          ),
+          {
+            title: spec.title,
+            command: 'vscode.open',
+            arguments: [
+              vscode.Uri.file(spec.hit.defFile),
+              { selection: createDefinitionSelection(spec.hit.defLine) }
+            ]
+          }
+        )
+    );
+  }
 }
 
 // 批134:types.xml 类型声明行的引用反扫。一条真实使用出一枚镜(使用处

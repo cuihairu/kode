@@ -38,6 +38,7 @@ import {
   KBEngineRenameProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
+  PropertyCodeLensProvider,
   RpcCodeLensProvider,
   TypesXmlCodeLensProvider,
   validateDocument
@@ -196,6 +197,15 @@ export function activate(context: vscode.ExtensionContext) {
     new RpcCodeLensProvider(entityMappingManager)
   );
   context.subscriptions.push(rpcCodeLensProvider);
+
+  // 属性访问标记(批135 用户令:types.xml 能跳到代码,代码侧没有等价的反向
+  // 标记):self.<属性> 访问处出一行 CodeLens,标 def 声明的类型与可见域,
+  // 点击回 def 声明行;只认 self.<属性> 形态,与属性 F12 同口径
+  const propertyCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    new PropertyCodeLensProvider(entityMappingManager)
+  );
+  context.subscriptions.push(propertyCodeLensProvider);
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
   // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开

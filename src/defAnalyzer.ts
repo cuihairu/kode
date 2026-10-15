@@ -89,6 +89,10 @@ const PROPERTY_FLAG_DOMAINS: Record<string, string[]> = {
   OTHER_CLIENTS: ['client']
 };
 
+export type PropertyFlagDomain = 'base' | 'cell' | 'client';
+
+export const PROPERTY_FLAG_DOMAIN_ORDER: PropertyFlagDomain[] = ['base', 'cell', 'client'];
+
 const flagDomainsOfTokens = (tokens: string[]): Set<string> => {
   const domains = new Set<string>();
   for (const token of tokens) {
@@ -99,6 +103,15 @@ const flagDomainsOfTokens = (tokens: string[]): Set<string> => {
     }
   }
   return domains;
+};
+
+// Flags 文本 → 三域位定序列表(批135 属性访问 CodeLens 展示面用)。与判重用
+// 的集合同源同表,仅把不定序集合收束成引擎域位顺序,展示不依赖 Set 迭代序。
+export const propertyFlagDomainList = (flags: string | undefined): PropertyFlagDomain[] => {
+  const domains = flagDomainsOfTokens(
+    (flags ?? '').split('|').map(token => token.trim()).filter(Boolean)
+  );
+  return PROPERTY_FLAG_DOMAIN_ORDER.filter(domain => domains.has(domain));
 };
 
 // Flags 取值与 analyzePropertyNode 同口径按 '|' 容错拆分(引擎整串比对会拒绝

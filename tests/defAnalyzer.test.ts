@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   analyzeDefDocument,
   formatDefAnalysisReport,
+  propertyFlagDomainList,
   type DefAnalysisFinding
 } from '../src/defAnalyzer';
 
@@ -440,5 +441,33 @@ describe('formatDefAnalysisReport 报告格式', () => {
     );
     const report = formatDefAnalysisReport('x.def', findings);
     expect(report.split('\n').at(-1)).toBe('x.def: 共 3 条建议(错误 1 / 警告 1 / 提示 1)');
+  });
+});
+
+describe('propertyFlagDomainList(Flags 文本 → 定序三域位,批135 展示面)', () => {
+  it('单旗标按 common.h 真值映射到引擎域位', () => {
+    expect(propertyFlagDomainList('BASE')).toEqual(['base']);
+    expect(propertyFlagDomainList('BASE_AND_CLIENT')).toEqual(['base', 'client']);
+    expect(propertyFlagDomainList('CELL_PUBLIC')).toEqual(['cell']);
+    expect(propertyFlagDomainList('CELL_PRIVATE')).toEqual(['cell']);
+    expect(propertyFlagDomainList('ALL_CLIENTS')).toEqual(['cell', 'client']);
+    expect(propertyFlagDomainList('CELL_PUBLIC_AND_OWN')).toEqual(['cell', 'client']);
+    expect(propertyFlagDomainList('OWN_CLIENT')).toEqual(['client']);
+    expect(propertyFlagDomainList('OTHER_CLIENTS')).toEqual(['client']);
+  });
+
+  it('CELL 归一为 CELL_PUBLIC 后取 cell 域', () => {
+    expect(propertyFlagDomainList('CELL')).toEqual(['cell']);
+  });
+
+  it('多旗标按 base → cell → client 定序,不随书写顺序变', () => {
+    expect(propertyFlagDomainList('ALL_CLIENTS|BASE')).toEqual(['base', 'cell', 'client']);
+    expect(propertyFlagDomainList('BASE|CELL_PUBLIC')).toEqual(['base', 'cell']);
+  });
+
+  it('未知旗标与空文本返回空列表', () => {
+    expect(propertyFlagDomainList('BOGUS')).toEqual([]);
+    expect(propertyFlagDomainList('')).toEqual([]);
+    expect(propertyFlagDomainList(undefined)).toEqual([]);
   });
 });

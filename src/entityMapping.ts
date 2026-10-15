@@ -7,6 +7,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { DefMethodSection } from './defParser';
+import { propertyFlagDomainList } from './defAnalyzer';
+import type { PropertyFlagDomain } from './defAnalyzer';
 import {
   createDefinitionSemanticsLoader,
   DefinitionMemberSourceKind,
@@ -51,6 +53,19 @@ export interface EntityPropertyDefinitionLocation {
   identity: DefinitionSymbolIdentity;
 }
 
+/**
+ * 属性声明的完整面(批135 属性访问 CodeLens 用):声明位置之上再带 <Type>
+ * 直文本、Flags 位集推导的可见域与持久化标记。域位与属性判重复用 defAnalyzer
+ * 同一份旗标真值,不另写一份映射。
+ */
+export interface PropertyDefinitionInfo extends EntityPropertyDefinitionLocation {
+  /** <Type> 直文本(别名未展开,与 def 声明行同源) */
+  typeName?: string;
+  /** Flags 位集推导的引擎三域位,定序 base → cell → client */
+  domains: PropertyFlagDomain[];
+  persistent: boolean;
+}
+
 export interface PythonMethodLocation {
   filePath: string;
   methodName: string;
@@ -65,7 +80,7 @@ export interface PythonMethodCallReference {
   character: number;
 }
 
-type IndexedPropertyDefinition = EntityPropertyDefinitionLocation;
+type IndexedPropertyDefinition = PropertyDefinitionInfo;
 
 interface IndexedMethodDefinition extends EntityMethodDefinitionLocation {
   owner: DefinitionOwnerRef;
@@ -423,7 +438,11 @@ export class EntityMappingManager {
           symbolName: property.name,
           propertyPath: property.fullPath,
           componentSlotName
-        }
+        },
+        typeName: property.typeName,
+        domains: propertyFlagDomainList(property.flags),
+        // <Persistent> 缺省视作非持久(与 databaseSchema 的 isTruePersistent 口径一致)
+        persistent: property.persistent ?? false
       });
 
       for (const child of property.children) {
@@ -621,6 +640,23 @@ export class EntityMappingManager {
     fullPath: string,
     rootSymbol?: string
   ): Promise<EntityPropertyDefinitionLocation | null> {
+    return this.findIndexedProperty(pythonFile, fullPath, rootSymbol);
+  }
+
+  /** 与 resolvePropertyDefinition 同解析口径,额外带 <Type>/可见域/持久化标记(批135) */
+  async resolvePropertyDefinitionInfo(
+    pythonFile: string,
+    fullPath: string,
+    rootSymbol?: string
+  ): Promise<PropertyDefinitionInfo | null> {
+    return this.findIndexedProperty(pythonFile, fullPath, rootSymbol);
+  }
+
+  private async findIndexedProperty(
+    pythonFile: string,
+    fullPath: string,
+    rootSymbol?: string
+  ): Promise<IndexedPropertyDefinition | null> {
     const index = await this.ensureIndexForPythonFile(pythonFile);
     if (!index) {
       return null;

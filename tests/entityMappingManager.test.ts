@@ -325,6 +325,58 @@ describe('resolvePropertyDefinition and resolveMethodDefinition', () => {
   });
 });
 
+describe('resolvePropertyDefinitionInfo(带类型/可见域/持久化,批135)', () => {
+  it('resolves the declaration surface of a direct property', async () => {
+    const info = await managerRef().resolvePropertyDefinitionInfo(heroPython(), 'hp');
+
+    expect(info?.identity.symbolName).toBe('hp');
+    expect(info?.typeName).toBe('UINT32');
+    expect(info?.domains).toEqual(['base']);
+    expect(info?.persistent).toBe(true);
+    expect(info?.defFile).toBe(heroDef());
+  });
+
+  it('carries the same resolution as resolvePropertyDefinition', async () => {
+    const location = await managerRef().resolvePropertyDefinition(heroPython(), 'hp.extra', 'hp');
+    const info = await managerRef().resolvePropertyDefinitionInfo(heroPython(), 'hp.extra', 'hp');
+
+    expect(info?.identity).toEqual(location?.identity);
+    expect(info?.typeName).toBe('UINT32');
+    expect(info?.persistent).toBe(true);
+  });
+
+  it('resolves component properties by their slot path with the slot name', async () => {
+    const info = await managerRef().resolvePropertyDefinitionInfo(
+      heroPython(), 'healthPack.regen', 'healthPack'
+    );
+
+    expect(info?.identity.symbolName).toBe('regen');
+    expect(info?.identity.componentSlotName).toBe('healthPack');
+    expect(info?.typeName).toBe('UINT32');
+    expect(info?.domains).toEqual(['cell']);
+    // HealthComp.regen 无 <Persistent> 元素,缺省非持久
+    expect(info?.persistent).toBe(false);
+    expect(info?.defFile).toBe(
+      p(mappingRoot(), 'scripts', 'entity_defs', 'components', 'HealthComp.def')
+    );
+  });
+
+  it('resolves inherited interface properties with their own domains', async () => {
+    const info = await managerRef().resolvePropertyDefinitionInfo(heroPython(), 'stride');
+
+    expect(info?.identity.symbolName).toBe('stride');
+    expect(info?.identity.ownerKind).toBe('interface');
+    expect(info?.typeName).toBe('UINT8');
+    expect(info?.domains).toEqual(['cell', 'client']);
+    expect(info?.persistent).toBe(false);
+  });
+
+  it('returns null when nothing matches', async () => {
+    expect(await managerRef().resolvePropertyDefinitionInfo(heroPython(), 'nope')).toBeNull();
+    expect(await managerRef().resolvePropertyDefinitionInfo('/nowhere/Foo.py', 'hp')).toBeNull();
+  });
+});
+
 describe('python positions and call graph', () => {
   it('resolves the python method enclosing a position', async () => {
     // '    def onSave' 的方法名起始列是 8(4 空格 + 'def ' + 空格)
