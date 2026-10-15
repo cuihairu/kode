@@ -1,7 +1,7 @@
 /**
  * 快速执行动作装配层(设计 1.9/1.10):
  * - 动作清单 quick pick(标签/类型/目标三列)与三后端分发(command/script/http);
- * - 默认执行器是真实现(spawn / node http),注入点只给测试与将来换实现;
+ * - 默认执行器是真实现(child_process / node http),注入点只给测试与将来换实现;
  * - 破坏性动作默认弹 modal 确认,流水统一进 OUTPUT 专用通道,失败一次性弹窗;
  * - 首装扫一层 .bat,用户勾选确认后才写回 .kbengine/debug.json。
  *
@@ -18,19 +18,23 @@ import {
   baseNameOf,
   buildScannedActions,
   parseQuickActionConfigs,
-  resolveActionVariables,
+  resolveActionVariables
+} from './quickActionConfig';
+import type {
   QuickAction,
   QuickActionCategory,
   WorkspaceFolderRef
 } from './quickActionConfig';
-import { BatchScriptCandidate, DirectoryEntry, scanBatchScripts } from './quickActionScanner';
+import { scanBatchScripts } from './quickActionScanner';
+import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
 
 export const QUICK_ACTION_CHANNEL_NAME = 'KBEngine 快速执行动作';
 export const QUICK_ACTION_SCAN_DISMISS_KEY = 'kbengine.quickActions.scanDismissed';
 export const QUICK_ACTION_CONFIRM_LABEL = '执行';
 /** 本地热更新不该更久(设计 1.6);与 HTTP 快捷请求同量级 */
 export const QUICK_ACTION_TIMEOUT_MS = 10000;
-/** 回包进通道的截顶长度(字符),超出丢弃——热更回包本就很小 */
+/** 回包进通道的截顶长度(字符),超出丢弃——热更回包本就很小,
+ *  而本地服务失控时不该让扩展宿主无限攒内存 */
 export const RESPONSE_PREVIEW_LIMIT = 4000;
 
 const CATEGORY_LABELS: Record<QuickActionCategory, string> = {
@@ -77,15 +81,33 @@ export interface QuickActionManagerDeps {
   executeCommand?: CommandRunner;
 }
 
+/** 工作区根清单;无工作区(只开了单文件)返回空数组,变量解析由调用方报错 */
+function workspaceFolders(): readonly WorkspaceFolderRef[] {
+  return vscode.workspace.workspaceFolders?.map(folder => ({
+    fsPath: folder.uri.fsPath,
+    name: folder.name
+  })) ?? [];
+}
+
+function padTwo(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** 流水行前缀:本地时区 HH:mm:ss,不依赖 toTimeString 的 GMT/时区尾巴 */
+function timestamp(): string {
+  const now = new Date();
+  return `${padTwo(now.getHours())}:${padTwo(now.getMinutes())}:${padTwo(now.getSeconds())}`;
+}
+
 /**
- * 默认 script 执行器:shell 起 bat(Windows .bat 必须走 shell)。
- * 前台收 stdout/stderr 原样交流水层;后台不挂管道(管道写满会把长跑的
- * 启服脚本挂死,输出归脚本自己的日志)。
+ * 默认 script 执行器:走 shell 起 bat(Windows .bat 必须经 shell 才能执行)。
+ * 前台收 stdout/stderr 原样交流水层;后台不接管道——长跑进程的输出若没人读,
+ * 管道写满会把启服脚本挂死,输出归脚本自己的日志。
  */
 export const spawnScript: ScriptRunner = options =>
   new Promise<ScriptRunResult>((resolve, reject) => {
-    // cwd 未给即工作区根(设计 1.8):bat 里的相对路径按工程根算
-    const cwd = options.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // cwd 未给即工作区根(设计 1.8):bat 内部按工程根写的相对路径才成立
+    const cwd = options.cwd ?? workspaceFolders()[0]?.fsPath;
     const child = child_process.spawn(options.script, [], {
       cwd,
       shell: true,
@@ -93,27 +115,28 @@ export const spawnScript: ScriptRunner = options =>
       stdio: options.background ? 'ignore' : ['ignore', 'pipe', 'pipe']
     });
     if (options.background) {
-      // 起服类不等退出码:进程活着即「已启动」
-      resolve({ code: null, stdout: '', stderr: '' });
-      return;
+      // 起服类不等退出码,但也不能一上来就报「已启动」——'spawn' 才代表进程
+      // 真起来了;起不来走下方 error 分支,失败要如实说。
+      child.once('spawn', () => resolve({ code: null, stdout: '', stderr: '' }));
+    } else {
+      let stdout = '';
+      let stderr = '';
+      child.stdout?.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+      child.on('close', (code: number | null) => resolve({ code, stdout, stderr }));
     }
-    let stdout = '';
-    let stderr = '';
-    child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    // 启动失败(路径不存在/cwd 无效)走 error,正常运行走 close;
-    // Promise 只认第一次 settle,两路都挂上不需要额外守卫。
+    // 启动失败(脚本路径不存在/cwd 无效)只走 error 不走 close;两支都挂了
+    // 这个监听,后台分支才不会因无人接手的 'error' 事件带走扩展宿主。
     child.on('error', (error: Error) => reject(error));
-    child.on('close', (code: number | null) => resolve({ code, stdout, stderr }));
   });
 
 /**
  * 默认 http 执行器:非 2xx 照实回状态码,由流水层判成败(不抛)。
- * timeoutMs 是给测试留的缝(本地热更默认 10 秒,不该让用例真等 10 秒)。
+ * timeoutMs 是给测试留的缝——本地热更默认 10 秒,用例不该真等 10 秒。
  */
 export const fetchHttp = (
   options: HttpRunOptions,
@@ -136,13 +159,16 @@ export const fetchHttp = (
       const chunks: Buffer[] = [];
       let received = 0;
       res.on('data', (chunk: Buffer) => {
+        // 接收窗口封顶:窗口内有多少收多少,窗口满后整段丢弃
         const room = RESPONSE_PREVIEW_LIMIT - received;
         if (room > 0) {
           chunks.push(room < chunk.length ? chunk.subarray(0, room) : chunk);
         }
         received += chunk.length;
       });
-      res.on('end', () => resolve({ status: res.statusCode as number, body: Buffer.concat(chunks).toString('utf8') }));
+      res.on('end', () =>
+        resolve({ status: res.statusCode as number, body: Buffer.concat(chunks).toString('utf8') })
+      );
     });
     req.setTimeout(timeoutMs, () => {
       req.destroy(new Error(`请求超时(${timeoutMs}ms)`));
@@ -161,7 +187,7 @@ function errorMessage(error: unknown): string {
 /** quick pick 与确认框的目标描述:命令带参数,脚本/请求给原始目标 */
 function describeActionTarget(action: QuickAction): string {
   if (action.type === 'command') {
-    return `${action.command} ${action.args.join(' ')}`;
+    return action.args.length > 0 ? `${action.command} ${action.args.join(' ')}` : action.command;
   }
   if (action.type === 'script') {
     return action.script;
@@ -203,6 +229,7 @@ export class QuickActionManager {
     this.runHttp = deps.runHttp ?? fetchHttp;
     this.executeCommand =
       deps.executeCommand ?? ((command, args) => vscode.commands.executeCommand(command, ...args));
+    // deactivate 走 dispose():通道与本管理器同一条释放链
     this.context.subscriptions.push({ dispose: (): void => this.dispose() });
   }
 
@@ -239,12 +266,12 @@ export class QuickActionManager {
 
   /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */
   async offerScanOnActivate(): Promise<void> {
-    const [folder] = this.workspaceFolders();
+    const [folder] = workspaceFolders();
     if (folder === undefined) {
       return;
     }
-    // memento 是可选状态:缺 workspaceState 的装配上下文按「首次运行」处理,
-    // 首装扫描只是提示,不该把激活链带崩
+    // workspaceState 缺失(极简装配上下文)按「首次运行」处理:首装扫描只是提示,
+    // 不该因为拿不到 memento 就中断激活链
     if (this.context.workspaceState?.get<boolean>(QUICK_ACTION_SCAN_DISMISS_KEY) === true) {
       return;
     }
@@ -287,7 +314,7 @@ export class QuickActionManager {
   private async run(action: QuickAction): Promise<boolean> {
     let resolved: QuickAction;
     try {
-      resolved = resolveAction(action, this.workspaceFolders());
+      resolved = resolveAction(action, workspaceFolders());
     } catch (error) {
       const message = errorMessage(error);
       this.append(`${action.name} → ✗ ${message}`);
@@ -361,12 +388,6 @@ export class QuickActionManager {
     return true;
   }
 
-  private workspaceFolders(): readonly WorkspaceFolderRef[] {
-    return (
-      vscode.workspace.workspaceFolders?.map(folder => ({ fsPath: folder.uri.fsPath, name: folder.name })) ?? []
-    );
-  }
-
   private configUri(fsPath: string): vscode.Uri {
     return vscode.Uri.joinPath(vscode.Uri.file(fsPath), '.kbengine', 'debug.json');
   }
@@ -381,7 +402,7 @@ export class QuickActionManager {
   }
 
   private async readConfigFile(): Promise<Record<string, unknown> | null> {
-    const [folder] = this.workspaceFolders();
+    const [folder] = workspaceFolders();
     if (folder === undefined) {
       return null;
     }
@@ -401,7 +422,7 @@ export class QuickActionManager {
   }
 
   private append(line: string): void {
-    this.channel.appendLine(`[${new Date().toTimeString().slice(0, 8)}] ${line}`);
+    this.channel.appendLine(`[${timestamp()}] ${line}`);
   }
 
   dispose(): void {

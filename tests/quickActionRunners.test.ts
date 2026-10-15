@@ -109,6 +109,14 @@ describe('spawnScript', () => {
     ).rejects.toThrow(/ENOENT/);
   });
 
+  it('fails a background script that cannot start instead of reporting it started', async () => {
+    const missing = path.join(makeTempDir(), 'not-created');
+
+    await expect(
+      spawnScript({ script: 'node -e "console.log(1)"', background: true, cwd: missing })
+    ).rejects.toThrow(/ENOENT/);
+  });
+
   it('starts a background script without waiting for it to exit', async () => {
     const result = await spawnScript({ script: 'node -e "setTimeout(() => {}, 50)"', background: true });
 
