@@ -1,5 +1,7 @@
 # 数据库模拟
 
+[English](./database-simulation.en.md) | [中文](./database-simulation.md)
+
 命令 `kbengine.database.simulate` 在数据库 schema 快照之上模拟「建表 + 首批行数据」,打开一个 `.dbsim` 虚拟文档;`kbengine.database.exportSimulation` 把当前模拟文档导出为 Markdown。模拟口径逐条对齐引擎 dbmgr/baseapp 的 MySQL 落库实现(kbe/src/lib/db_mysql / kbe/src/lib/db_interface),所有差异在文档尾部如实列出。
 
 ## 模拟什么

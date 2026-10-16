@@ -1,5 +1,7 @@
 # 配置说明
 
+[English](./configuration.en.md) | [中文](./configuration.md)
+
 Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务端 XML 配置(`kbengine_defaults.xml`、元件 `kbengine.xml`)。本页逐项给出类型、默认值与出处、含义、改动影响和常见误配;服务端配置怎么分层合并、telnet 端口/密码从哪来,先读前两节。
 
 设置项默认值均取自本扩展 package.json 贡献点,引擎侧取值取自 `kbengine_defaults.xml`;两处都查不到的,标「来源未考」。

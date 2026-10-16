@@ -1,5 +1,7 @@
 # 功能概览
 
+[English](./features.en.md) | [中文](./features.md)
+
 ## 语言能力
 
 - `.def` 语法高亮（内建 XML 语法委托 + 引擎语义着色）

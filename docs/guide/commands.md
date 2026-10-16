@@ -1,5 +1,7 @@
 # 命令与面板
 
+[English](./commands.en.md) | [中文](./commands.md)
+
 本页整理 Kode 在 VSCode 中暴露的主要命令、入口位置和适用场景。
 
 ## 命令面板中的命令

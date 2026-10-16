@@ -1,5 +1,7 @@
 # 客户端实体 SDK 生成
 
+[English](./client-sdk.en.md) | [中文](./client-sdk.md)
+
 按 `entities.xml` 登记的实体，从 `.def` 生成客户端实体骨架。当前支持 TypeScript 与 C# 两种目标语言，在命令内勾选（可多选）。
 
 ## 能力概览

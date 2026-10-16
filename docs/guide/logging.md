@@ -1,5 +1,7 @@
 # 日志查看
 
+[English](./logging.en.md) | [中文](./logging.md)
+
 Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查看、过滤和导出日志。
 
 当前 logger 协议适配尚未完成。扩展会明确提示该能力暂不支持，避免把未核实的协议实现当成可用能力。
