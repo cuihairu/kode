@@ -442,6 +442,27 @@ Recommended structure:
 }
 ```
 
+#### Generated When Missing (batch 143)
+
+When `.kbengine/debug.json` is absent from the workspace, the extension writes an annotated skeleton at activation — you no longer have to create the file first and guess what each field means:
+
+- The skeleton is written as **JSONC**, so `//` and block comments are allowed (same convention as `tsconfig.json`); every field carries a one-line explanation. Kode strips comments before parsing, so comments you write yourself never make the file unreadable.
+- Path examples always use the `${workspaceFolder}/...` form — open and edit.
+- Scripts found by the existing scan rule (one level of `.bat` under the working directory, filtered by the server/export word list) are written into `quickActions`; when nothing matches, the array stays empty.
+- **An existing file is never overwritten**: repeated activations and your edits are preserved as-is. If the directory is not writable, the extension says so in the `KBEngine 配置` output channel and nothing else is affected.
+
+#### Working Directory and the Environment Variable
+
+The scaffold location and the `.pyi` stub directory share one effective working directory, resolved highest priority first:
+
+| Tier | Source | Notes |
+| --- | --- | --- |
+| 1 | `KBENGINE_WORKSPACE` environment variable | Supports official VS Code variable substitution, e.g. `${workspaceFolder}/server`; the name follows this repo's existing `KBENGINE_*` style |
+| 2 | Top-level `workspaceRoot` in the config file | Shipped commented out in the skeleton — uncomment to take over |
+| 3 | Default | The first workspace folder |
+
+Values go through variable substitution first; a value that expands to an empty string counts as unset and falls through to the next tier. The effective value, its source, and every overridden alternative are written into the skeleton comments and the `KBEngine 配置` output channel — no tier is picked silently.
+
 ## FAQ
 
 ### Why didn't my settings change take effect immediately?
