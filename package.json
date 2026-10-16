@@ -34,6 +34,7 @@
   ],
   "activationEvents": [
     "onLanguage:kbengine-def",
+    "onLanguage:python",
     "workspaceContains:**/*.def",
     "onCommand:kbengine.refreshExplorer",
     "onCommand:kbengine.entity.open",
