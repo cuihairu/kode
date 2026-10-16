@@ -11,12 +11,27 @@ import { describe, expect, it } from 'vitest';
 const root = join(__dirname, '..');
 
 interface PackageJsonShape {
-  contributes: { commands: Array<{ command: string }> };
+  contributes: {
+    commands: Array<{ command: string }>;
+    configuration: { properties: Record<string, unknown> } | Array<{ properties: Record<string, unknown> }>;
+  };
 }
 
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as PackageJsonShape;
 const commandIds = pkg.contributes.commands.map(entry => entry.command);
 const commandsMd = readFileSync(join(root, 'docs', 'guide', 'commands.md'), 'utf8');
+
+/** package.json 贡献的全部 `kbengine.*` 设置键(configuration 可能是数组分段) */
+const contributedSettingKeys = (): string[] => {
+  const configuration = pkg.contributes.configuration;
+  const properties = Array.isArray(configuration)
+    ? Object.assign({}, ...configuration.map(section => section.properties))
+    : configuration.properties;
+  return Object.keys(properties);
+};
+
+const zhConfigurationMd = readFileSync(join(root, 'docs', 'guide', 'configuration.md'), 'utf8');
+const enConfigurationMd = readFileSync(join(root, 'docs', 'en', 'guide', 'configuration.md'), 'utf8');
 
 const documentedCommands = (): string[] => {
   const pattern = /^### `(kbengine\.[^\s`]+)`$/gm;
@@ -57,5 +72,48 @@ describe('docs 命令覆盖与失实表述锁', () => {
       const hits = staleMarkers.filter(marker => text.includes(marker));
       expect(hits, `${doc} 回潮失实表述: ${hits.join(', ')}`).toEqual([]);
     }
+  });
+
+  // 批145 设置项文档对账:批136-142 陆续新增的 9 个设置项(hotReload.* 已在表内,
+  // 余下 clientSdk.outputDir / python.extraPathsSync / python.stubExport /
+  // python.stubDir)从未进过 docs/guide/configuration.md 的「kbengine.* 设置项
+  // 总览」——用户照文档配不上项。此锁与上方命令锁同一形状:双向对账,但范围只取
+  // 「设置项总览」表(命令 id 同为 kbengine.* 前缀,散文里还点名了已移除的旧设置,
+  // 全量正则扫会把它们误判成失实,故只认表内行)。
+  const overviewTableRows = (text: string, headingPattern: RegExp): string[] => {
+    const lines = text.split('\n');
+    const rows: string[] = [];
+    let inside = false;
+    for (const line of lines) {
+      if (headingPattern.test(line)) {
+        inside = true;
+        continue;
+      }
+      if (inside && /^## /.test(line)) break;
+      if (inside) {
+        const match = line.match(/^\| `(kbengine\.[A-Za-z][A-Za-z0-9_.]*)`/);
+        if (match) rows.push(match[1]);
+      }
+    }
+    return rows;
+  };
+
+  it('package.json 每条贡献设置项都在中英配置说明总览表里', () => {
+    const keys = contributedSettingKeys();
+    expect(keys.length).toBeGreaterThanOrEqual(41);
+    const zhRows = overviewTableRows(zhConfigurationMd, /^## kbengine\.\* 设置项总览/);
+    const enRows = overviewTableRows(enConfigurationMd, /^## Overview of `kbengine\.\*` Settings/);
+    const missingZh = keys.filter(key => !zhRows.includes(key));
+    const missingEn = keys.filter(key => !enRows.includes(key));
+    expect(missingZh, `zh 总览表缺设置项: ${missingZh.join(', ')}`).toEqual([]);
+    expect(missingEn, `en 总览表缺设置项: ${missingEn.join(', ')}`).toEqual([]);
+  });
+
+  it('配置说明总览表不记载 package.json 里不存在的设置项', () => {
+    const keys = contributedSettingKeys();
+    const zhRows = overviewTableRows(zhConfigurationMd, /^## kbengine\.\* 设置项总览/);
+    const enRows = overviewTableRows(enConfigurationMd, /^## Overview of `kbengine\.\*` Settings/);
+    const unknown = [...zhRows, ...enRows].filter(key => !keys.includes(key));
+    expect(unknown, `总览表记载了不存在的设置项: ${[...new Set(unknown)].join(', ')}`).toEqual([]);
   });
 });
