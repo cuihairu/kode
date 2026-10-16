@@ -121,7 +121,7 @@ Field and variable tables in the [configuration reference](./configuration.md); 
 - Three whitelisted backend kinds: `command` (a VS Code command), `script` (a script explicitly declared in the config), `http` (a local hot-update URL written into the config); no arbitrary shell entry
 - Two trigger paths: the Servers view title bar button + top-right buttons in `.def` / Python / XML editors + the command palette `Run Quick Actions`
 - Actions pop a modal confirm by default; logs go to the OUTPUT panel "KBEngine 快速执行动作"; a failure pops once and keeps the exit/status code
-- First install scans one level of workspace-root `.bat` files; scripts matching start/stop or config-export keyword lists prompt a multi-select registration; canceling stops the auto-prompt for that workspace
+- First install scans one level of workspace-root `.bat` and `.ps1` files; all of them appear in a multi-select registration prompt (keyword lists only assign a category); canceling stops the auto-prompt for that workspace
 
 Command details in [Commands and Panels](./commands.md); config keys and variable tables in the [configuration reference](./configuration.md).
 

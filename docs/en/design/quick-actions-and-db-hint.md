@@ -55,6 +55,8 @@ Details (decided on behalf 2026-10-15 taking the "recommended" column; the user 
 | Scan timing | once in the background on activation when the workspace is a KBEngine project; **only when the config has no actions yet**, pop a confirmation list (quick pick multi-select, written on confirm); after the user cancels, never auto-pop again for this workspace (memento memory) | prompt every activation (annoying) |
 | Write form | into a new key of the same `kbengine_debug.json` config file (the actions array), each entry carrying a source annotation (scan-generated) | a separate actions config file (contradicts ratified #2 "reuse the existing config", not recommended) |
 
+> **2026-10-16 user order (overrides the "Scan scope" and "Identification rule" rows of 1.4):** the scan collects `.bat` and `.ps1`, listing **all** of them at one level for confirmation; the start/stop / table-export vocabulary only **assigns a category** (hits get `server`/`export`, non-hits omit `category`) and no longer filters.
+
 ## 1.5 Variable Substitution and Scope (analysis-documented wording, effective together with the 1.7 #1-4 on-behalf decisions)
 
 - **Supported set (recommendation)**: `${workspaceFolder}`, `${workspaceFolder:Name}`, `${env:XXX}` — the two families named by ratified #3, plus the multi-root qualified form. **Not supported**: `${config:}` / `${command:}` (couples actions into editor state, violating the "project property" positioning); editor variables like `${file}` / `${line}` also stay out of actions (actions are project-level, not selection-dependent).

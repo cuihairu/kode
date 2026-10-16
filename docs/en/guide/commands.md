@@ -328,7 +328,7 @@ The flow graph panel supports:
   - An action pops a modal confirmation by default (`confirm: false` skips it); the run log goes to the OUTPUT channel 「KBEngine 快速执行动作」 (KBEngine quick actions), and script stdout/stderr flows in verbatim
   - A failure pops once (action name + exit code / status code / reason), with the script's stdout/stderr left in the channel
   - Invalid config entries (e.g. a `type` outside the whitelist, missing required fields) are pruned one by one with a count notice; the whole table never fails
-  - On first install it scans one level of workspace-root `.bat` files; scripts hitting the "start/stop server / import config tables" vocabulary get a multi-select prompt to register; cancelling stops the auto-prompt for this workspace
+  - On first install it scans one level of workspace-root `.bat` and `.ps1` files; all of them appear in a multi-select registration prompt (the "start/stop server / import config tables" vocabulary only assigns a category); cancelling stops the auto-prompt for this workspace
   - The list is grouped by backend kind: consecutive same-type runs share one group-name separator line; config order is never reshuffled
 
 ### `kbengine.quickActions.runDefault`

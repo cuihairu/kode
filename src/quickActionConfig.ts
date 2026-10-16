@@ -212,7 +212,8 @@ export function buildScannedActions(
       background: lowerName.startsWith('start') || lowerName.startsWith('boot'),
       confirm: true,
       source: 'scan',
-      category: candidate.category
+      // 词表外脚本无分类:省略该键(schema「可省」),不写 null 也不编造类别
+      ...(candidate.category === null ? {} : { category: candidate.category })
     };
   });
 }

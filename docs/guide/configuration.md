@@ -352,7 +352,7 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 | `body` | http | 请求体(非空才随请求发送),支持变量 |
 | `confirm` | 全部 | 执行前 modal 确认框,缺省 `true` |
 | `source` | 全部 | `manual` / `scan`,首装扫描生成的条目自动记 `scan` |
-| `category` | 全部 | `server` / `export`,仅扫描生成时写 |
+| `category` | 全部 | `server` / `export`,仅扫描生成且命中词表时写(词表外脚本省略该字段) |
 
 变量(执行时替换,只作用于配置字面串):
 
@@ -382,7 +382,7 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 }
 ```
 
-首装扫描会在工作区根一层找 `.bat`,只收启停(`start` / `stop` / `restart` / `boot` / `server`)与导表(`export` / `convert` / `导表`)词表命中的脚本,勾选后写成 `${workspaceFolder}/<文件名>.bat` 变量形态(`start` / `boot` 开头的自动 `background: true`),并保留既有 `version` / `debug` 段。
+首装扫描会在工作区根一层找 `.bat` 与 `.ps1`,**全部列入勾选清单**(2026-10-16 口径:启停 `start` / `stop` / `restart` / `boot` / `server` 与导表 `export` / `convert` / `导表` 词表**只定分类不过滤**——命中分别记 `server` / `export`,词表外不写 `category`),勾选后写成 `${workspaceFolder}/<文件名>` 变量形态(`start` / `boot` 开头的自动 `background: true`),并保留既有 `version` / `debug` 段。
 
 ### 自动热重载 `kbengine.hotReload.*`(盘点 G5)
 
@@ -470,7 +470,7 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 - 骨架按 **JSONC** 写,允许 `//` 与块注释(同 `tsconfig.json` 口径),每个字段都带一行说明;kode 读配置前会剥注释,所以你自己写的注释不会让配置读不动
 - 路径示例一律 `${workspaceFolder}/...` 形态,打开即可编辑
-- 同时按既有扫描规则(工作目录一层的 `.bat` 加启停/导表词表)把扫到的脚本写进 `quickActions`;一个都没扫到就留空数组
+- 同时按既有扫描规则(工作目录一层的 `.bat`/`.ps1`,词表只定分类不过滤)把扫到的脚本写进 `quickActions`;一个都没扫到就留空数组
 - **已存在的文件绝不覆盖**:重复激活、用户改过的内容都原样保留;目录不可写时只在「KBEngine 配置」输出通道如实说明,不影响其余能力
 
 #### 工作目录与环境变量

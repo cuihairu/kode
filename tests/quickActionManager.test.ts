@@ -933,6 +933,54 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     manager.dispose();
   });
 
+  it('lists .bat/.ps1 outside the word list when the config has no quickActions', async () => {
+    setConfig({ version: '1.0.0', debug: {} });
+    memoryFileSystem.setDirectory('/ws', [['build.ps1', 1], ['docs-dev.bat', 1], ['readme.txt', 1]]);
+    pickAnswers.push([]);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.offerScanOnActivate();
+
+    expect(pickCalls).toHaveLength(1);
+    expect(pickCalls[0].items.map(item => item.label)).toEqual(['build.ps1', 'docs-dev.bat']);
+    expect(pickCalls[0].items.map(item => item.description)).toEqual(['', '']);
+    // 取消后不写配置、记住不再弹(与既有口径一致)
+    const untouched = JSON.parse(
+      Buffer.from(memoryFileSystem.files.get('/ws/.kbengine/debug.json') ?? '').toString('utf8')
+    );
+    expect(untouched.quickActions).toBeUndefined();
+    expect(memento.get('kbengine.quickActions.scanDismissed')).toBe(true);
+    manager.dispose();
+  });
+
+  it('writes a selected .ps1 without a category field', async () => {
+    setConfig({ version: '1.0.0', debug: {} });
+    memoryFileSystem.setDirectory('/ws', [['build.ps1', 1]]);
+    pickAnswers.push([
+      { label: 'build.ps1', value: { path: '/ws/build.ps1', category: null } }
+    ]);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.offerScanOnActivate();
+
+    const written = JSON.parse(
+      Buffer.from(memoryFileSystem.files.get('/ws/.kbengine/debug.json') ?? '').toString('utf8')
+    );
+    expect(written.quickActions).toEqual([
+      {
+        name: 'build',
+        type: 'script',
+        script: '${workspaceFolder}/build.ps1',
+        background: false,
+        confirm: true,
+        source: 'scan'
+      }
+    ]);
+    expect(written.quickActions[0]).not.toHaveProperty('category');
+    expect(messages.info[0]).toBe('已写入 1 个快速执行动作到 .kbengine/debug.json');
+    manager.dispose();
+  });
+
   it('writes the selected scripts into the config file and keeps the debug section', async () => {
     setConfig({ version: '1.0.0', debug: { defaultTelnetHost: '127.0.0.1' } });
     memoryFileSystem.setDirectory('/ws', [['start_server.bat', 1], ['convert.bat', 1]]);

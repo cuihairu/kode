@@ -1,7 +1,9 @@
 /**
- * 首装扫描纯层(设计 1.4,2026-10-15 巡检代决口径):
- * - 只扫工作区根一层、只收 .bat——本地脚本基本就是启停服务器与导配置表两类,不做泛化;
- * - 分类走词表(classifyBatchScript),按「绝对路径 + 类别」去重;
+ * 首装扫描纯层(设计 1.4,2026-10-15 已代决;2026-10-16 用户令更新):
+ * - 只扫工作区根一层、收 `.bat` 与 `.ps1`,不递归;
+ * - 启停/导表词表只定分类(category),**不再过滤**——非词表脚本同样进候选,
+ *   分类留空(写配置时省略;schema 本就「可省」),由用户在清单里勾选;
+ * - 按绝对路径去重;
  * - 目录读取整体注入,本层不碰 vscode.workspace.fs(真实目录读的适配在 quickActions)。
  */
 
@@ -11,7 +13,7 @@ import type { QuickActionCategory } from './quickActionConfig';
 /** vscode.FileSystemKind 的取值(File=1);fake-vscode 未导出该枚举,这里按真值常量收口 */
 export const FILE_SYSTEM_KIND_FILE = 1;
 
-const BAT_SCRIPT_PATTERN = /\.bat$/i;
+const SCRIPT_PATTERN = /\.(bat|ps1)$/i;
 
 export interface DirectoryEntry {
   name: string;
@@ -21,10 +23,11 @@ export interface DirectoryEntry {
 
 export interface BatchScriptCandidate {
   path: string;
-  category: QuickActionCategory;
+  /** 词表命中的分类(启停/导表);非词表脚本为 null,写配置时省略该字段 */
+  category: QuickActionCategory | null;
 }
 
-/** 是否被扫进候选(一层 .bat + 词表命中);路径与类别一并返回便于去重 */
+/** 是否被扫进候选(一层 .bat/.ps1,词表只随行给分类不过滤);分类与路径一并返回便于去重 */
 export function scanBatchScripts(
   root: string,
   readDir: (root: string) => DirectoryEntry[]
@@ -43,20 +46,15 @@ export function scanBatchScripts(
     if (entry.type !== FILE_SYSTEM_KIND_FILE) {
       continue;
     }
-    if (!BAT_SCRIPT_PATTERN.test(entry.name)) {
-      continue;
-    }
-    const category = classifyBatchScript(entry.name);
-    if (category === null) {
+    if (!SCRIPT_PATTERN.test(entry.name)) {
       continue;
     }
     const path = `${root}/${entry.name}`;
-    const key = `${category}:${path}`;
-    if (seen.has(key)) {
+    if (seen.has(path)) {
       continue;
     }
-    seen.add(key);
-    candidates.push({ path, category });
+    seen.add(path);
+    candidates.push({ path, category: classifyBatchScript(entry.name) });
   }
   return candidates;
 }

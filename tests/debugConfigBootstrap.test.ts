@@ -243,6 +243,23 @@ describe('ensureDebugConfig', () => {
     expect(logs.join('\n')).toContain(DEBUG_WORKSPACE_ENV_VAR);
   });
 
+  it('扫到词表外 .bat/.ps1 也写进 quickActions(不带 category)', () => {
+    const { deps, writes } = makeDeps({
+      entries: [
+        { name: 'build.ps1', type: 1 },
+        { name: 'docs-dev.bat', type: 1 },
+        { name: 'README.md', type: 1 }
+      ]
+    });
+    const result = ensureDebugConfig(deps, { env: {}, workspaceFolders: FOLDERS });
+
+    expect(result.scannedActions).toBe(2);
+    const actions = parseDebugConfigText(writes[0].content)!.quickActions as QuickAction[];
+    expect(actions.map(action => action.name)).toEqual(['build', 'docs-dev']);
+    expect(actions[0]).not.toHaveProperty('category');
+    expect(actions[1]).not.toHaveProperty('category');
+  });
+
   it('无配置时扫到启停脚本就写进 quickActions', () => {
     const { deps, writes } = makeDeps({
       entries: [

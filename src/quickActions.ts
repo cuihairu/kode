@@ -3,7 +3,7 @@
  * - 动作清单 quick pick(标签/类型/目标三列)与三后端分发(command/script/http);
  * - 默认执行器是真实现(child_process / node http),注入点只给测试与将来换实现;
  * - 破坏性动作默认弹 modal 确认,流水统一进 OUTPUT 专用通道,失败一次性弹窗;
- * - 首装扫一层 .bat,用户勾选确认后才写回 .kbengine/debug.json。
+ * - 首装扫一层 .bat/.ps1(词表只定分类不过滤),用户勾选确认后才写回 .kbengine/debug.json。
  *
  * 安全边界(用户 2026-10-15 追加):script/http 只执行配置里显式声明的目标,
  * 执行期不拼接任何运行时参数——白名单来自配置本身,不是运行时字符串判断。
@@ -364,7 +364,7 @@ export class QuickActionManager {
     const picked = await vscode.window.showQuickPick<ScanPickItem>(
       candidates.map(candidate => ({
         label: baseNameOf(candidate.path),
-        description: CATEGORY_LABELS[candidate.category],
+        description: candidate.category === null ? '' : CATEGORY_LABELS[candidate.category],
         value: candidate
       })),
       { canPickMany: true, placeHolder: '勾选要登记为快速执行动作的脚本' }

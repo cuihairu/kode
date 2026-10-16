@@ -6,8 +6,8 @@
  * - 工作目录可由环境变量 `KBENGINE_WORKSPACE` 指定,取值走批141 的官方变量
  *   替换;优先级 环境变量 > 配置文件 `workspaceRoot` > 首个工作区根,被覆盖的
  *   取值逐条如实说明,当前生效值与来源同时写进骨架注释和 OUTPUT 流水;
- * - 没有配置文件时按本仓既有扫描逻辑(quickActionScanner 的一层 `.bat` 加词表
- *   分类)把启停/导表脚本填进 `quickActions`,不另起一套识别规则;
+ * - 没有配置文件时按本仓既有扫描逻辑(quickActionScanner 的一层 `.bat`/`.ps1`,
+ *   词表只定分类不过滤)把扫到的脚本填进 `quickActions`,不另起一套识别规则;
  * - 骨架按 JSONC 写(带注释,同 `tsconfig.json` 口径),读配置前统一剥注释,
  *   否则「注释方便编辑」与「读得动」会互相打脸。
  */
@@ -352,7 +352,7 @@ export function ensureDebugConfig(
     deps.log(`  取舍:已采用更高优先级来源,丢弃 ${note}`);
   }
   if (actions.length === 0) {
-    deps.log('  未扫到启停/导表脚本,quickActions 留空(照骨架注释手写即可)');
+    deps.log('  未扫到 .bat/.ps1 脚本,quickActions 留空(照骨架注释手写即可)');
   } else {
     deps.log(`  按脚本扫描写入 ${actions.length} 条快速执行动作:${actions.map(action => action.name).join('、')}`);
   }

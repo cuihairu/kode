@@ -1,10 +1,11 @@
+import { existsSync, readdirSync, statSync } from 'fs';
 import { describe, expect, it } from 'vitest';
 import { scanBatchScripts } from '../src/quickActionScanner';
 import type { DirectoryEntry } from '../src/quickActionScanner';
 
-// 首装扫描纯层(设计 1.4 已代决口径):一层 .bat、词表分类、路径+类别去重。
-// 目录读取整体注入,不直接碰 vscode.workspace.fs;真实目录读的适配在
-// quickActionManager 侧,由其用例经内存 fs 驱动。
+// 首装扫描纯层(设计 1.4;2026-10-16 用户令更新):一层 .bat/.ps1 全收,
+// 启停/导表词表只定分类不过滤;目录读取整体注入,不直接碰 vscode.workspace.fs。
+// 真实目录读的适配在 quickActionManager 侧,由其用例经内存 fs 驱动。
 
 const readDirOf = (entries: DirectoryEntry[]) => () => entries;
 
@@ -23,18 +24,21 @@ describe('scanBatchScripts', () => {
     ]);
   });
 
-  it('ignores subdirectories, non-bat files and unmatched bat names', () => {
+  it('ignores subdirectories and non-script files but keeps every .bat/.ps1', () => {
     const entries: DirectoryEntry[] = [
       { name: 'scripts', type: 2 },
       { name: 'start_server.bat', type: 1 },
       { name: 'readme.txt', type: 1 },
       { name: 'readme.bat', type: 1 },
-      { name: 'BOOT_SH.bat', type: 1 }
+      { name: 'BOOT_SH.bat', type: 1 },
+      { name: 'build.ps1', type: 1 }
     ];
 
     expect(scanBatchScripts('/ws', readDirOf(entries))).toEqual([
       { path: '/ws/start_server.bat', category: 'server' },
-      { path: '/ws/BOOT_SH.bat', category: 'server' }
+      { path: '/ws/readme.bat', category: null },
+      { path: '/ws/BOOT_SH.bat', category: 'server' },
+      { path: '/ws/build.ps1', category: null }
     ]);
   });
 
@@ -49,7 +53,7 @@ describe('scanBatchScripts', () => {
     ]);
   });
 
-  it('dedupes by path plus category and keeps the server match first', () => {
+  it('dedupes by path and keeps the first occurrence', () => {
     const entries: DirectoryEntry[] = [
       { name: 'start_export.bat', type: 1 },
       { name: 'start_export.bat', type: 1 }
@@ -65,5 +69,35 @@ describe('scanBatchScripts', () => {
     expect(scanBatchScripts('/ws', () => {
       throw new Error('ENOENT');
     })).toEqual([]);
+  });
+});
+
+// 真实 kbengine 目录验收(只读;路径不存在的机器自动跳过)
+describe('scanBatchScripts on the real kbengine workspace', () => {
+  const KBENGINE = 'D:/workspaces/kbengine';
+
+  it('lists the top-level .bat/.ps1 scripts actually present there', () => {
+    if (!existsSync(KBENGINE)) {
+      console.warn(`skip: kbengine not at ${KBENGINE}`);
+      return;
+    }
+    const candidates = scanBatchScripts(KBENGINE, root =>
+      readdirSync(root).map(name => ({
+        name,
+        type: statSync(`${root}/${name}`).isFile() ? 1 : 2
+      }))
+    );
+    const names = candidates.map(candidate => candidate.path.slice(KBENGINE.length + 1));
+
+    // 真实在盘脚本:词表外的 bat 与 .ps1 都必须在(2026-10-16 口径)
+    expect(names).toEqual(
+      expect.arrayContaining(['build.bat', 'build.ps1', 'docs-dev.bat', 'docs-dev-clean.bat', 'new_assets.bat'])
+    );
+    // 一层口径:全部直接位于根下,且都是 .bat/.ps1
+    expect(names.every(name => !name.includes('/'))).toBe(true);
+    expect(names.every(name => /\.(bat|ps1)$/i.test(name))).toBe(true);
+    // 词表外脚本分类留空(不写 category),词表命中才给分类
+    expect(candidates.find(candidate => candidate.path.endsWith('build.ps1'))?.category).toBeNull();
+    expect(candidates.find(candidate => candidate.path.endsWith('build.bat'))?.category).toBeNull();
   });
 });

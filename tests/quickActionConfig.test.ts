@@ -236,6 +236,18 @@ describe('buildScannedActions', () => {
     ]);
   });
 
+  it('omits the category when the script is outside the word list', () => {
+    const actions = buildScannedActions(
+      [{ path: '/ws/docs-dev.bat', category: null }, { path: '/ws/build.ps1', category: null }],
+      '/ws'
+    );
+
+    expect(actions).toHaveLength(2);
+    expect(actions[0]).not.toHaveProperty('category');
+    expect(actions[1]).not.toHaveProperty('category');
+    expect(actions[1].script).toBe('${workspaceFolder}/build.ps1');
+  });
+
   it('marks boot-named scripts as background as well', () => {
     const actions = buildScannedActions(
       [{ path: '/ws/BOOT.bat', category: 'server' }],
