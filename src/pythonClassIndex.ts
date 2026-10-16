@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { deriveCompositionRoots, type CompositionRootMap } from './compositionRoots';
 
 /**
  * Python 类层级索引(mixin/跨类跳转根因修复)。
@@ -30,11 +31,14 @@ export interface PythonClassDef {
 export interface ParsedPythonFile {
   filePath: string;
   classes: PythonClassDef[];
+  /** 模块级实例赋值 `NAME = CLASS(...)`(types.xml implementedBy 指向实现对象,经此解析 实例→类) */
+  instanceAssignments: Array<{ variable: string; className: string; line: number }>;
 }
 
 const CLASS_RE = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)[ \t]*\(([^)]*)\)[ \t]*:/;
 const CLASS_RE_NOBASE = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)[ \t]*:/;
 const DEF_RE = /^([ \t]+)(?:async[ \t]+)?def[ \t]+([A-Za-z_]\w*)[ \t]*\(/;
+const MODULE_ASSIGN_RE = /^([A-Za-z_]\w*)[ \t]*=[ \t]*([A-Za-z_]\w*)[ \t]*\(/;
 
 /**
  * 扫描排除面:官方三件套之外再排引擎构建/依赖/临时树。
@@ -50,6 +54,7 @@ export const PY_SCAN_EXCLUDE =
 export function parsePythonFile(content: string, filePath: string): ParsedPythonFile {
   const lines = content.split(/\r?\n/);
   const classes: PythonClassDef[] = [];
+  const instanceAssignments: ParsedPythonFile['instanceAssignments'] = [];
   const stack: { indent: number; cls: PythonClassDef }[] = [];
 
   const closeTo = (indent: number): void => {
@@ -93,6 +98,17 @@ export function parsePythonFile(content: string, filePath: string): ParsedPython
       continue;
     }
 
+    const assignMatch = MODULE_ASSIGN_RE.exec(raw);
+    if (assignMatch && indent === 0) {
+      // 模块级实例赋值:先闭合缩进不小于 0 的既有类(类体到此结束)
+      while (stack.length > 0) {
+        const top = stack.pop()!;
+        top.cls.endLine = i;
+      }
+      instanceAssignments.push({ variable: assignMatch[1], className: assignMatch[2], line: i });
+      continue;
+    }
+
     const defMatch = DEF_RE.exec(raw);
     if (defMatch) {
       // 方法只归属缩进更小的最近类;def 自身缩进必须大于类缩进
@@ -114,7 +130,7 @@ export function parsePythonFile(content: string, filePath: string): ParsedPython
     }
   }
   closeTo(0);
-  return { filePath, classes };
+  return { filePath, classes, instanceAssignments };
 }
 
 /** C3 线性化(Python3 真实 MRO):l(X) = X + merge(l(B1), l(B2), …, [B1,B2,…]) */
@@ -198,6 +214,8 @@ export interface PythonMethodLocation {
   mro: string[];
   /** 解析所锚定的类:祖先解到 = 静态类自身;反向解到 = 继承静态类的类(主形态) */
   anchorClass?: string;
+  /** 命中的组合根(entities.xml × .def × Python 继承交叉派生;①祖先直解可缺省) */
+  compositionRoot?: string;
 }
 
 /**
@@ -210,6 +228,9 @@ export class PythonClassIndex {
   /** 直接子类:基类名 → 继承它的类(增量维护;主形态反向解析用) */
   private directSubclasses = new Map<string, PythonClassDef[]>();
   private scanPromise: Promise<void> | null = null;
+  /** 组合根派生结果(懒建;实体注册/类型/实体定义变化时置空重派) */
+  private rootsMap: CompositionRootMap | null = null;
+  private rootsPromise: Promise<void> | null = null;
 
   private indexClass(cls: PythonClassDef): void {
     const list = this.byName.get(cls.name) ?? [];
@@ -248,6 +269,138 @@ export class PythonClassIndex {
   }
 
   /** 首次查询时全量扫描(幂等,失败不抛) */
+  /**
+   * 组合根派生(懒):entities.xml 全部实体 + 各实体 .def(父/接口/组件/字段类型)
+   * + types.xml(implementedBy 字段对象类)。失败清缓存可重试(与扫描同口径)。
+   */
+  private async ensureCompositionRoots(): Promise<void> {
+    if (this.rootsMap) {
+      return;
+    }
+    if (this.rootsPromise) {
+      return this.rootsPromise;
+    }
+    this.rootsPromise = (async () => {
+      // 先完成 .py 扫描:根名「实现对象 → 类」的桥接要用到文件里的实例赋值表
+      await this.ensureScanned();
+      try {
+        const [entityXmlFiles, defFiles, typeXmlFiles] = await Promise.all([
+          vscode.workspace.findFiles('**/entities.xml', PY_SCAN_EXCLUDE),
+          vscode.workspace.findFiles('**/*.def', PY_SCAN_EXCLUDE),
+          vscode.workspace.findFiles('**/types.xml', PY_SCAN_EXCLUDE)
+        ]);
+        const readAll = async (files: vscode.Uri[]): Promise<string[]> => {
+          const contents: string[] = [];
+          for (const uri of files) {
+            try {
+              contents.push(await fs.promises.readFile(uri.fsPath, 'utf8'));
+            } catch {
+              // 单文件读不到跳过,不拖垮派生
+            }
+          }
+          return contents;
+        };
+        const entitiesXmlContents = await readAll(entityXmlFiles);
+        const typesXmlContents = await readAll(typeXmlFiles);
+        const entityDefs: Array<{ entity: string; content: string }> = [];
+        for (const uri of defFiles) {
+          const normalized = uri.fsPath.replace(/\\/g, '/').toLowerCase();
+          // 与 entityMapping 同口径:components/、interfaces/ 下的 def 不是实体注册
+          if (normalized.includes('/components/') || normalized.includes('/interfaces/')) {
+            continue;
+          }
+          const base = uri.fsPath.replace(/\\/g, '/').split('/').pop() ?? '';
+          const entity = base.replace(/\.def$/i, '');
+          try {
+            entityDefs.push({ entity, content: await fs.promises.readFile(uri.fsPath, 'utf8') });
+          } catch {
+            // 同上
+          }
+        }
+        const derived = deriveCompositionRoots({ entitiesXmlContents, entityDefs, typesXmlContents });
+        // 实现对象符号 → 类:types.xml 的 implementedBy 指向实例
+        // (如 weapon_skill_slot_list_inst = weapon_skill_slot_list()),组合根
+        // 记类名才能与 Python 类继承表交叉(收录查询/MRO 查找都按类名)。
+        const assignmentClass = new Map<string, string>();
+        for (const { parsed } of this.fileCache.values()) {
+          for (const item of parsed.instanceAssignments) {
+            if (!assignmentClass.has(item.variable)) {
+              assignmentClass.set(item.variable, item.className);
+            }
+          }
+        }
+        const resolvedRoots: string[] = [];
+        for (const root of derived.roots) {
+          const resolved = this.byName.has(root) ? root : assignmentClass.get(root) ?? root;
+          if (!resolvedRoots.includes(resolved)) {
+            resolvedRoots.push(resolved);
+          }
+        }
+        this.rootsMap = { roots: resolvedRoots, defMixins: derived.defMixins };
+      } catch {
+        // 派生失败:不当成功缓存,下次跳转重试;已建索引不受影响
+        this.rootsMap = null;
+        this.rootsPromise = null;
+      }
+    })();
+    return this.rootsPromise;
+  }
+
+  /**
+   * 「类 X 被哪些组合根收录」——三输入交叉:根自身的 Python MRO(含同名多文件)
+   * 或根 .def 声明的 mixin(Parent/接口/组件)名单命中 X。
+   * 按组合根派生序返回(entities.xml 实体序在前)。
+   */
+  async rootsContaining(className: string): Promise<string[]> {
+    await this.ensureCompositionRoots();
+    const map = this.rootsMap;
+    if (!map) {
+      return [];
+    }
+    const hits: string[] = [];
+    for (const root of map.roots) {
+      if (root === className) {
+        hits.push(root);
+        continue;
+      }
+      if (this.byName.has(root)) {
+        const names = linearizeC3(root, name => this.byName.get(name) ?? []);
+        if (names.includes(className)) {
+          hits.push(root);
+          continue;
+        }
+      }
+      if ((map.defMixins.get(root) ?? []).includes(className)) {
+        hits.push(root);
+      }
+    }
+    return hits;
+  }
+
+  /** 按 def 声明的 mixin 类名名单查方法提供者(Parent → 接口 → 组件 序) */
+  private lookupInMixinNames(names: string[], methodName: string): PythonMethodLocation | null {
+    for (const mixinName of names) {
+      const defs = this.byName.get(mixinName);
+      if (!defs) {
+        continue;
+      }
+      for (const def of defs) {
+        const loc = def.methods.get(methodName);
+        if (loc) {
+          return {
+            filePath: def.filePath,
+            line: loc.line,
+            character: loc.character,
+            className: mixinName,
+            mro: linearizeC3(mixinName, name => this.byName.get(name) ?? []),
+            anchorClass: mixinName
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   private async ensureScanned(): Promise<void> {
     if (this.scanPromise) {
       return this.scanPromise;
@@ -293,7 +446,14 @@ export class PythonClassIndex {
 
   /** 文档变更:只重解析该文件(增量,避免大仓输入卡顿) */
   async onDocumentChanged(document: vscode.TextDocument): Promise<void> {
-    if (!document.fileName.toLowerCase().endsWith('.py')) {
+    const lower = document.fileName.toLowerCase();
+    if (lower.endsWith('.def') || lower.endsWith('.xml')) {
+      // 实体注册/实体定义/类型定义变化 → 组合根派生失效,下次跳转重派
+      this.rootsMap = null;
+      this.rootsPromise = null;
+      return;
+    }
+    if (!lower.endsWith('.py')) {
       return;
     }
     await this.loadFile(document.fileName, document.version);
@@ -417,7 +577,32 @@ export class PythonClassIndex {
       return out;
     }
 
-    // ② 主形态:静态类自身解不到 → 反向经继承它的类解(兄弟 mixin 跨文件)
+    // ② 组合根(用户 2026-10-16:实体清单里每个实体、其字段对象、组件都是组合根,
+    // 不止单一入口类):静态类被哪些组合根收录 → 在每一个组合根的 MRO 里找。
+    // 每根先走 Python 继承(同名多文件合并),再走该根 .def 声明的 mixin
+    // (Parent → Interfaces → Components);多根/多处命中全部保留(上面 push 去重),
+    // 由 provider 出 Location[] 列表,不替用户跳第一个。
+    const rootNames = await this.rootsContaining(enclosing.name);
+    if (rootNames.length > 0 && this.rootsMap) {
+      for (const root of rootNames) {
+        const fromPython = this.lookupInMRO(root, methodName);
+        if (fromPython) {
+          push({ ...fromPython, compositionRoot: root }, out);
+        }
+        for (const mixinName of this.rootsMap.defMixins.get(root) ?? []) {
+          const fromMixin = this.lookupInMixinNames([mixinName], methodName);
+          if (fromMixin) {
+            push({ ...fromMixin, compositionRoot: root }, out);
+          }
+        }
+      }
+      if (out.length > 0) {
+        return out;
+      }
+    }
+
+    // ③ 兜底:静态类与组合根都解不到 → 反向经继承它的类解(非实体代码路径,
+    // 兄弟 mixin/工具类形态;保留既有行为,不因组合根缺失而直接失败)
     const descendants = await this.descendantsOf(enclosing.name);
     for (const sub of descendants) {
       push(this.lookupInMRO(sub.name, methodName), out);

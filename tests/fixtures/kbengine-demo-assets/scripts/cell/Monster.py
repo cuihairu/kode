@@ -20,3 +20,7 @@ class Monster(KBEngine.Entity):
 		移动回调(接口混入方法,声明在 interfaces/ROLE.def)
 		"""
 		DEBUG_MSG("Monster[%i].onMove: %s" % (self.id, position))
+
+	def think(self):
+		"""测试模型补充(组合根验收):跨类调用父实体 Avatar 的方法(<Parent> Avatar 链)。"""
+		self.respawn()

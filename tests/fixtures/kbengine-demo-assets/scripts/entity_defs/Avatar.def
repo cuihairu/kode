@@ -1,4 +1,9 @@
 <root>
+	<!-- 测试模型补充(组合根验收):Avatar 也混入接口 ROLE(与 Monster 同口径) -->
+	<Interfaces>
+		<interface> ROLE </interface>
+	</Interfaces>
+
 	<Properties>
 		<name>
 			<Type> STRING </Type>

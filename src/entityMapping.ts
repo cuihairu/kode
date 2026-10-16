@@ -136,9 +136,15 @@ export class EntityMappingManager {
    * 真实 .def 增删改由 watchDefFiles 清空(含本集合与索引),改完下次跳转重扫。
    */
   private missingOwnerPaths = new Set<string>();
+  /** 负缓存:已确认「类名不在任何 .def 索引(含 ownerName 回溯)」的对象级查询 */
+  private missingClassNames = new Set<string>();
+  /** 构造期全量 .def 扫描句柄(对象级探等待它,避免同一次跳转内重复全量 walk) */
+  private initialScan: Promise<void> = Promise.resolve();
 
   constructor(private context: vscode.ExtensionContext) {
-    void this.scanEntityMappings();
+    // 构造期全量 .def 扫描留句柄:对象级(类粒度)解析只等这一遍,不另起
+    // 全量 walk(真实 kbengine 树每遍 walk 秒级,多一走即压穿调用方超时预算)
+    this.initialScan = this.scanEntityMappings().catch(() => undefined);
     // 创建顺序有意为之:def watcher 先建、python watcher 后建——外部与既有
     // 用例把「最后创建的 watcher」当作 python watcher 语义使用(变更只重解析
     // 归属实体),两 watcher 各自独立,先 def 后 py 保持该约定不破。
@@ -639,6 +645,7 @@ export class EntityMappingManager {
       this.mappingIndexes.clear();
       this.mappingIndexesByRoot.clear();
       this.missingOwnerPaths.clear();
+      this.missingClassNames.clear();
     };
     this.defWatcher.onDidChange(invalidate);
     this.defWatcher.onDidCreate(invalidate);
@@ -695,7 +702,14 @@ export class EntityMappingManager {
     if (!index) {
       return null;
     }
+    return this.findIndexedPropertyIn(index, fullPath, rootSymbol);
+  }
 
+  private findIndexedPropertyIn(
+    index: EntityMappingIndex,
+    fullPath: string,
+    rootSymbol?: string
+  ): IndexedPropertyDefinition | null {
     const normalizedFullPath = normalizePropertyLookupPath(fullPath);
     const normalizedRoot = rootSymbol ? normalizePropertyLookupPath(rootSymbol) : undefined;
 
@@ -725,6 +739,39 @@ export class EntityMappingManager {
       ownerName,
       section
     });
+  }
+
+  /**
+   * 对象级(类粒度).def 解析:按类名直接取该类的 .def 索引,不看调用文件
+   * 是否匹配到 owner——「文件没匹配上 owner」不等于「对象没有 .def」,
+   * 放弃范围必须在对象/类粒度判定(接口/组件类经 ownerName 回溯到引用它的
+   * 实体索引)。
+   */
+  async resolveMethodDefinitionForClass(
+    className: string,
+    methodName: string
+  ): Promise<EntityMethodDefinitionLocation | null> {
+    const index = await this.ensureIndexForClass(className);
+    if (!index) {
+      return null;
+    }
+    return this.selectMethodDefinition(index.methodDefinitions, {
+      methodName,
+      ownerName: className
+    });
+  }
+
+  /** 对象级属性解析:取索引口径同 resolveMethodDefinitionForClass,查 <Properties> */
+  async resolvePropertyDefinitionForClass(
+    className: string,
+    fullPath: string,
+    rootSymbol?: string
+  ): Promise<EntityPropertyDefinitionLocation | null> {
+    const index = await this.ensureIndexForClass(className);
+    if (!index) {
+      return null;
+    }
+    return this.findIndexedPropertyIn(index, fullPath, rootSymbol);
   }
 
   async resolveDefinitionSymbolAtPosition(
@@ -1155,6 +1202,33 @@ export class EntityMappingManager {
       if (!index) {
         this.missingOwnerPaths.add(normalized);
       }
+    }
+    return index;
+  }
+
+  /** 对象级取索引:类名直接命中;接口/组件类不单独建索引,经 ownerName 回溯 */
+  private lookupIndexByClass(className: string): EntityMappingIndex | undefined {
+    const direct = this.mappingIndexes.get(className);
+    if (direct) {
+      return direct;
+    }
+    return [...this.mappingIndexes.values()].find(index =>
+      index.pythonOwnerFiles.some(item => item.ownerName === className)
+    );
+  }
+
+  private async ensureIndexForClass(className: string): Promise<EntityMappingIndex | undefined> {
+    if (this.missingClassNames.has(className)) {
+      return undefined;
+    }
+    if (this.mappingIndexes.size === 0) {
+      // 只等构造期扫描(不新起全量 walk):文件级子探/失败重试仍按原口径自扫
+      await this.initialScan;
+    }
+    const index = this.lookupIndexByClass(className);
+    if (!index && this.mappingIndexes.size > 0) {
+      // 索引表已有数据仍未命中才负缓存(空表=尚无数据,不落死)
+      this.missingClassNames.add(className);
     }
     return index;
   }
