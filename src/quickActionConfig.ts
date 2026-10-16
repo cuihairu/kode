@@ -9,6 +9,7 @@
  */
 
 import type { BatchScriptCandidate } from './quickActionScanner';
+import { substituteVariables, type VariableFolderRef } from './variableSubstitution';
 
 export type QuickActionCategory = 'server' | 'export';
 export type QuickActionSource = 'manual' | 'scan';
@@ -155,52 +156,19 @@ export function parseQuickActionConfigs(raw: unknown): {
 }
 
 /** 变量解析可用的工作区根(由 quickActions 从 vscode.workspace 映射) */
-export interface WorkspaceFolderRef {
-  fsPath: string;
-  name: string;
-}
-
-const VARIABLE_PATTERN = /\$\{([^${}]+)\}/g;
+export type WorkspaceFolderRef = VariableFolderRef;
 
 /**
- * 变量替换(1.5):支持 ${workspaceFolder} / ${workspaceFolder:Name} / ${env:XXX}。
- * 不支持 ${config:} / ${command:} / ${file} / ${line};未知变量抛错——
- * 静默空串替换会把脚本跑成「路径为空」的假成功,比报错更糟。
+ * 命令侧变量替换(批141 起委派 src/variableSubstitution,替换逻辑单一真源):
+ * 官方变量表全覆盖,未解析一律抛错——静默空串替换会把脚本跑成「路径为空」
+ * 的假成功,比报错更糟(${config:} / ${command:} 这类需要真实 VS Code
+ * 调试上下文的变量不在本扩展的解析能力内,同样如实报错)。
  */
-function resolveVariable(
-  raw: string,
-  expression: string,
-  folders: readonly WorkspaceFolderRef[]
-): string {
-  const [key, ...rest] = expression.split(':');
-  if (key === 'workspaceFolder') {
-    if (folders.length === 0) {
-      throw new Error(`变量无法解析: ${raw}`);
-    }
-    const wanted = rest.length > 0 ? rest.join(':') : undefined;
-    const found = wanted === undefined ? folders[0] : folders.find(item => item.name === wanted);
-    if (found === undefined) {
-      throw new Error(`变量无法解析: ${raw}`);
-    }
-    return found.fsPath;
-  }
-  if (key === 'env') {
-    const value = process.env[rest.join(':')];
-    if (value === undefined) {
-      throw new Error(`变量无法解析: ${raw}`);
-    }
-    return value;
-  }
-  throw new Error(`变量无法解析: ${raw}`);
-}
-
 export function resolveActionVariables(
   text: string,
   folders: readonly WorkspaceFolderRef[] = []
 ): string {
-  const resolved = text.replace(VARIABLE_PATTERN, (raw, expression: string) =>
-    resolveVariable(raw, expression, folders)
-  );
+  const resolved = substituteVariables(text, { folders }, 'throw');
   // 工作区根自带前导 '/',与文本里写死的路径分隔符相遇会产生 '//';折叠成单个
   // (':' 后的 '//' 是 URL 协议分隔,保留不动)
   return resolved.replace(/([^:])\/{2,}/g, match => `${match[0]}/`);

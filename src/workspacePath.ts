@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { substituteVariables, type VariableFolderRef } from './variableSubstitution';
 
 export function joinWorkspacePath(basePath: string, ...segments: string[]): string {
   if (usesPosixPath(basePath)) {
@@ -15,14 +16,20 @@ export function usesPosixPath(targetPath: string): boolean {
 }
 
 /**
- * 展开 ${workspaceFolder} 与 ${env:VAR} 占位符(与 serverManager.getBinPath
- * 同款口径;批112 起 telnet 引擎 defaults 推导与最终配置合成共用此实现)。
+ * 展开 VS Code 官方变量(批141 起委派 src/variableSubstitution,替换逻辑
+ * 单一真源;与 serverManager.getBinPath 同款口径,批112 起 telnet 引擎
+ * defaults 推导与最终配置合成共用此实现)。
+ *
+ * 沿用本函数既有的「未解析落空串」口径:路径类设置读不到变量时当没写,
+ * 不让一个缺失的环境变量把扩展装配整挂。抛错口径由 quickActionConfig
+ * 的命令侧自己选。
  */
 export function expandWorkspacePlaceholders(
   value: string,
   workspaceRoot: string | undefined
 ): string {
-  return value
-    .replace(/\$\{workspaceFolder\}/g, workspaceRoot || '')
-    .replace(/\$\{env:(.+?)\}/g, (_, envVar) => process.env[envVar] || '');
+  const folders: VariableFolderRef[] = workspaceRoot
+    ? [{ fsPath: workspaceRoot, name: '' }]
+    : [];
+  return substituteVariables(value, { folders });
 }
