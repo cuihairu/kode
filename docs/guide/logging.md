@@ -49,6 +49,82 @@ Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查�
 
 可以优先降低这个值。
 
+## 跳转决策路径日志
+
+F12 跳转落空时,把「查了哪几层、每层命中还是落空、为什么放弃、耗时多少」全部打到输出面板,便于自行判断断在哪一层,也便于把现场直接贴给维护者。
+
+### 开关
+
+- 配置 key:`kbengine.jumpLog`
+- 类型:boolean,可选值 `true` / `false`,默认 `false`(关闭)
+- 关闭时零开销:日志消息以惰性(`() =>`)形式传入,开关判断在拼字符串之前,关闭时不产生任何字符串构建与输出
+- 该开关是编辑器行为设置,**不挂在 `.kbengine/debug.json`**——那个文件承载的是调试启动动作(commands/scripts/cwd),日志开关走 VS Code 设置体系,改设置即时生效、无需改文件或重载窗口
+
+开启方式二选一。
+
+**方式一:VS Code 设置面板(搜索词 `jumpLog`)**
+
+1. `Ctrl+,` 打开 Settings;
+2. 搜索框输入 `jumpLog`,找到 **Kbengine: Jump Log**(描述为「跳转决策路径日志开关」的那一项);
+3. 勾选即开,下一次 F12 生效。
+
+**方式二:settings.json 片段**
+
+用户级或工作区 `.vscode/settings.json`:
+
+```json
+{
+  "kbengine.jumpLog": true
+}
+```
+
+### 输出位置
+
+1. 打开输出面板:`Ctrl+Shift+U`(菜单 视图 → 输出);
+2. 右上角下拉选择通道:**KBEngine Navigation**;
+3. 滤镜框输入过滤词:`[kode-jump]`。
+
+关闭:把设置改回 `false`(或删掉该键),下一次跳转即停止输出,无需重载。
+
+### 一次真实跳转失败的日志样本
+
+来源:真实 KBEngine 工程 `scripts/common/Functor.py:20` 的 `self.func(*(self.args + args))` 按 F12。
+
+```text
+[kode-jump][info] F12 .../scripts/common/Functor.py:20:11 行="self.func(*(self.args + args))"
+[kode-jump][info] 解析开始 query=func 文件=Functor.py:20 对象类=Functor
+[kode-jump][info] def 全量索引完成 1 个 .def → 实体 1 个,10ms
+[kode-jump][debug] def 索引[对象级] Functor → miss(负缓存)
+[kode-jump][debug] def 索引[文件级] Functor.py → miss(无 owner 归属)
+[kode-jump][info] 层1 entity-def 落空(property(func) object=Functor miss; property(func) file=Functor.py miss; method object=Functor miss; method file=Functor.py miss) 7ms
+[kode-jump][info] py 查询 Functor.py:20 方法=func
+[kode-jump][info] py 全仓索引完成 12 个文件 → 类 3 个,3ms(同会话缓存)
+[kode-jump][debug] py ①静态类 MRO 未命中(enclosing=Functor)
+[kode-jump][info] 组合根派生 1 根: [Account] 6ms
+[kode-jump][debug] py 组合根收录 Functor → [无]
+[kode-jump][info] py 落空: 静态类/组合根/反向后代均无 func(9ms)
+[kode-jump][info] 层2 python-mro 落空(no provider in mro/composition-roots/descendants) 9ms
+[kode-jump][info] 层3 file-scope 落空(class Functor (of 1 classes in file) does not define func) 0ms
+[kode-jump][info] 跳转放弃: 三层全落空(query=func) 总耗时 17ms
+```
+
+逐行含义:
+
+- `F12 …`:入口——文件、行:列、光标所在行文本;
+- `解析开始 … 对象类=Functor`:本次查询的符号(query)与 `self` 所在类;
+- `def 全量索引完成 …`:层1 所需 `.def` 索引的建立耗时(同会话缓存,只建一次);
+- `def 索引[对象级]/[文件级] …`:层1 的两个子探——按类名直取 `.def`、按文件归属取,双双 miss;
+- `层1 entity-def 落空(…)`:层1 结束,括号里是每个子探的落空原因;
+- `py 查询 …` 与 `py 全仓索引完成 …`:层2 开始;后者是「加载很久」的主要来源(首次全仓 `.py` 扫描,之后缓存);
+- `py ①静态类 MRO 未命中`:层2 第一步——在静态类自身的继承链里找 `func`,没有;
+- `组合根派生 …` 与 `py 组合根收录 … [无]`:层2 第二步——该类被哪些组合根(entities.xml × `.def` × Python 继承)收录;`Functor` 不属于任何组合根;
+- `层2 python-mro 落空(…)`:层2 第三步——MRO、组合根、反向后代都没有 `func`;
+- `层3 file-scope 落空(…)`:最后一层——当前文件的类作用域与本文件 MRO 也没有;
+- `跳转放弃: 三层全落空 … 总耗时 …`:放弃点——三层全落空才返回 null。此例失败是预期的:`func` 是 `__init__` 里赋的属性,不是任何类的方法。
+
+跳转命中时,对应层会打出 `层N … 命中 → 文件:行` 并直接跳过去。排查时把这一段面板输出贴出来,就能直接看出断在哪一层。
+
+
 ## 典型流程
 
 ### 日常查看
