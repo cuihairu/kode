@@ -55,7 +55,8 @@ export default defineConfig({
                 { text: '实体索引源码分析', link: '/source-analysis' },
                 { text: '参考插件功能差距', link: '/reference-feature-gap' },
                 { text: '文档一致性审计', link: '/审计-文档一致性' },
-                { text: '快捷动作与数据库提示设计', link: '/design/quick-actions-and-db-hint' }
+                { text: '快捷动作与数据库提示设计', link: '/design/quick-actions-and-db-hint' },
+                { text: '.pyi 类型桩可行性分析', link: '/design/def-pyi-stubs' }
               ]
             }
           ]
