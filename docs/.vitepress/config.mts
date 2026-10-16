@@ -115,7 +115,8 @@ export default defineConfig({
                 { text: 'Entity index source analysis', link: '/en/source-analysis' },
                 { text: 'Reference plugin feature gap', link: '/en/reference-feature-gap' },
                 { text: 'Doc consistency audit', link: '/en/审计-文档一致性' },
-                { text: 'Quick actions and db hint design', link: '/en/design/quick-actions-and-db-hint' }
+                { text: 'Quick actions and db hint design', link: '/en/design/quick-actions-and-db-hint' },
+                { text: 'Def/utype to .pyi stubs feasibility', link: '/en/design/def-pyi-stubs' }
               ]
             }
           ]
