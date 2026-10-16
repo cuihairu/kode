@@ -25,7 +25,6 @@ export default defineConfig({
           { text: '指南', link: '/guide/' },
           { text: '配置', link: '/guide/configuration' },
           { text: '功能', link: '/guide/features' },
-          { text: 'GitHub', link: 'https://github.com/cuihairu/kode' }
         ],
         sidebar: {
           '/guide/': [
@@ -85,7 +84,6 @@ export default defineConfig({
           { text: 'Guide', link: '/en/guide/' },
           { text: 'Configuration', link: '/en/guide/configuration' },
           { text: 'Features', link: '/en/guide/features' },
-          { text: 'GitHub', link: 'https://github.com/cuihairu/kode' }
         ],
         sidebar: {
           '/en/guide/': [
