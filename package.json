@@ -804,6 +804,11 @@
           "default": "",
           "description": "KBEngine 资产根目录（其下应有 res/server/kbengine.xml 与 scripts/，如 flyff_assets）；留空自动发现（约定位置与深扫描）"
         },
+        "kbengine.jumpLog": {
+          "type": "boolean",
+          "default": false,
+          "description": "跳转决策路径日志开关:开启后每次 F12 把「入口/对象类/.def 索引/PythonClassIndex MRO/组合根/类作用域/各层落空原因/放弃点/耗时」打到输出面板 KBEngine Navigation(过滤 [kode-jump])。默认关闭,关闭时零开销。"
+        },
         "kbengine.showFinalConfigOnOpen": {
           "type": "boolean",
           "default": true,

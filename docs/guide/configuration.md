@@ -64,6 +64,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | 配置项 | 类型 | 默认值 | 作用 |
 | --- | --- | --- | --- |
 | `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关 |
+| `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |

@@ -2762,8 +2762,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     position: vscode.Position
   ): Promise<TracedDefinitionResult> {
     const line = document.lineAt(position.line);
-    jumpLog(
-      'info',
+    jumpLog('info', () =>
       `F12 ${document.fileName}:${position.line + 1}:${position.character + 1} ` +
         `行="${line.text.trim().slice(0, 160)}"`
     );
@@ -2778,7 +2777,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     );
     if (kbeAccess && getKbeSymbol(kbeAccess.symbol)) {
       const stub = buildKbeStubDocument();
-      jumpLog('info', `前置命中 kbe-stub:${kbeAccess.symbol} → 内置桩`);
+      jumpLog('info', () => `前置命中 kbe-stub:${kbeAccess.symbol} → 内置桩`);
       return {
         location: new vscode.Location(
           vscode.Uri.parse(buildKbeStubUriString()),
@@ -2798,7 +2797,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       const fromImports = getKbeFromImportedSymbols(document.getText());
       if (fromImports.has(classBase) && getKbeSymbol(classBase)) {
         const stub = buildKbeStubDocument();
-        jumpLog('info', `前置命中 class-base:${classBase} → kbe from-import 桩`);
+        jumpLog('info', () => `前置命中 class-base:${classBase} → kbe from-import 桩`);
         return {
           location: new vscode.Location(
             vscode.Uri.parse(buildKbeStubUriString()),
@@ -2810,7 +2809,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
 
       const baseDefPath = findEntityDefinitionFile(classBase, document);
       if (baseDefPath) {
-        jumpLog('info', `前置命中 class-base:${classBase} → 实体 def ${path.basename(baseDefPath)}`);
+        jumpLog('info', () => `前置命中 class-base:${classBase} → 实体 def ${path.basename(baseDefPath)}`);
         return {
           location: new vscode.Location(vscode.Uri.file(baseDefPath), new vscode.Position(0, 0)),
           layers: [{ layer: 'class-base', query: classBase, status: 'hit', detail: `entity def ${path.basename(baseDefPath)}` }]
@@ -2821,7 +2820,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       const baseScriptPath =
         baseProfile?.base.scriptPath || baseProfile?.cell.scriptPath || baseProfile?.client.scriptPath;
       if (baseScriptPath) {
-        jumpLog('info', `前置命中 class-base:${classBase} → 实体脚本 ${path.basename(baseScriptPath)}`);
+        jumpLog('info', () => `前置命中 class-base:${classBase} → 实体脚本 ${path.basename(baseScriptPath)}`);
         return {
           location: new vscode.Location(vscode.Uri.file(baseScriptPath), new vscode.Position(0, 0)),
           layers: [{ layer: 'class-base', query: classBase, status: 'hit', detail: `entity script ${path.basename(baseScriptPath)}` }]
@@ -2843,7 +2842,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           document.getText(reverseWordRange)
         );
         if (reference) {
-          jumpLog('info', `前置命中 types-reverse:${document.getText(reverseWordRange)} → ${reference.filePath}:${reference.line}`);
+          jumpLog('info', () => `前置命中 types-reverse:${document.getText(reverseWordRange)} → ${reference.filePath}:${reference.line}`);
           return {
             location: new vscode.Location(
               vscode.Uri.file(reference.filePath),
@@ -2880,7 +2879,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     if (declaredMethodName) {
       return this.runDefinitionLayers(document, position, null, declaredMethodName);
     }
-    jumpLog('info', '跳转放弃: 光标既非 self 访问也非方法声明(context)');
+    jumpLog('info', () => '跳转放弃: 光标既非 self 访问也非方法声明(context)');
     const wordRange = document.getWordRangeAtPosition(position, /\w+/);
     return {
       location: null,
@@ -2933,8 +2932,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     } catch (error) {
       enclosingNote = `enclosing class error: ${layerErrorMessage(error)}`;
     }
-    jumpLog(
-      'info',
+    jumpLog('info', () =>
       `解析开始 query=${symbol} 文件=${basename}:${position.line + 1} ` +
         `对象类=${enclosingName ?? `(无:${enclosingNote})`}`
     );
@@ -3021,10 +3019,11 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
 
     if (defLocation) {
       const detail = defParts.join('; ');
+      // 闭包内 TS 不收窄 let:命中位置先固化为 const 再进日志闭包
+      const hitLocation = defLocation;
       layers.push({ layer: 'entity-def', query, status: 'hit', detail });
-      jumpLog(
-        'info',
-        `层1 entity-def 命中 → ${defLocation.uri.fsPath}:${defLocation.range.start.line + 1}` +
+      jumpLog('info', () =>
+        `层1 entity-def 命中 → ${hitLocation.uri.fsPath}:${hitLocation.range.start.line + 1}` +
           `(${detail.slice(0, 200)}) ${defTimer()}ms`
       );
       return { location: defLocation, layers };
@@ -3036,13 +3035,13 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       status: 'miss',
       detail: defDetail
     });
-    jumpLog('info', `层1 entity-def 落空(${defDetail.slice(0, 200)}) ${defTimer()}ms`);
+    jumpLog('info', () => `层1 entity-def 落空(${defDetail.slice(0, 200)}) ${defTimer()}ms`);
     const pyTimer = jumpTimeStart();
 
     // ── 层2 python-mro:跨文件 MRO + 组合根;异常降级为落空,绝不在本层断链 ──
     if (!this.pythonClassIndex) {
       layers.push({ layer: 'python-mro', query: symbol, status: 'skip', detail: 'python class index unavailable' });
-      jumpLog('info', '层2 python-mro 跳过(索引未注入)');
+      jumpLog('info', () => '层2 python-mro 跳过(索引未注入)');
     } else {
       try {
         const candidates = await this.pythonClassIndex.resolveSelfMethodCandidates(
@@ -3053,8 +3052,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         if (candidates.length === 1) {
           const detail = describeMethodLocation(candidates[0]);
           layers.push({ layer: 'python-mro', query: symbol, status: 'hit', detail });
-          jumpLog(
-            'info',
+          jumpLog('info', () =>
             `层2 python-mro 命中 → ${candidates[0].filePath}:${candidates[0].line + 1}` +
               `(${detail.slice(0, 160)}) ${pyTimer()}ms`
           );
@@ -3067,8 +3065,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             status: 'hit',
             detail: `${candidates.length} candidates: ${candidates.map(describeMethodLocation).join(', ')}`
           });
-          jumpLog(
-            'info',
+          jumpLog('info', () =>
             `层2 python-mro 命中 ${candidates.length} 候选 → [${candidates
               .map(describeMethodLocation)
               .join(' | ')
@@ -3080,11 +3077,11 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           ? 'no provider in mro/composition-roots/descendants'
           : enclosingNote || 'no enclosing class';
         layers.push({ layer: 'python-mro', query: symbol, status: 'miss', detail: missDetail });
-        jumpLog('info', `层2 python-mro 落空(${missDetail}) ${pyTimer()}ms`);
+        jumpLog('info', () => `层2 python-mro 落空(${missDetail}) ${pyTimer()}ms`);
       } catch (error) {
         const missDetail = `error: ${layerErrorMessage(error)}`;
         layers.push({ layer: 'python-mro', query: symbol, status: 'miss', detail: missDetail });
-        jumpLog('info', `层2 python-mro 异常降级为落空(${missDetail.slice(0, 160)})`);
+        jumpLog('info', () => `层2 python-mro 异常降级为落空(${missDetail.slice(0, 160)})`);
       }
     }
     const fileScopeTimer = jumpTimeStart();
@@ -3099,14 +3096,15 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         detail: fileScope.detail
       });
       if (fileScope.location) {
-        jumpLog(
-          'info',
-          `层3 file-scope 命中 → ${document.fileName}:${fileScope.location.range.start.line + 1}` +
+        // 闭包内 TS 不收窄:命中行先固化为 const 再进日志闭包
+        const hitLine = fileScope.location.range.start.line;
+        jumpLog('info', () =>
+          `层3 file-scope 命中 → ${document.fileName}:${hitLine + 1}` +
             `(${fileScope.detail.slice(0, 160)}) ${fileScopeTimer()}ms`
         );
         return { location: fileScope.location, layers };
       }
-      jumpLog('info', `层3 file-scope 落空(${fileScope.detail.slice(0, 200)}) ${fileScopeTimer()}ms`);
+      jumpLog('info', () => `层3 file-scope 落空(${fileScope.detail.slice(0, 200)}) ${fileScopeTimer()}ms`);
     } catch (error) {
       layers.push({
         layer: 'file-scope',
@@ -3116,7 +3114,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       });
     }
 
-    jumpLog('info', `跳转放弃: 三层全落空(query=${symbol}) 总耗时 ${totalTimer()}ms`);
+    jumpLog('info', () => `跳转放弃: 三层全落空(query=${symbol}) 总耗时 ${totalTimer()}ms`);
     return { location: null, layers };
   }
 

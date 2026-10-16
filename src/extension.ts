@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots } from './scanRoots';
+import { setJumpLogEnabled } from './navigationLog';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -120,6 +121,8 @@ import { TelnetTreeProvider } from './telnetTree';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
+  // 跳转决策路径日志开关(默认关闭;Settings 搜 kbengine.jumpLog 随时切换)
+  setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
@@ -294,6 +297,11 @@ export function activate(context: vscode.ExtensionContext) {
   const configWatcher = vscode.workspace.onDidChangeConfiguration(event => {
     if (!event.affectsConfiguration('kbengine')) {
       return;
+    }
+
+    // 跳转日志开关变更即时生效(不重载窗口)
+    if (event.affectsConfiguration('kbengine.jumpLog')) {
+      setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
     }
 
     // binPath/configPath 变更影响数据库连接读值(批131),重算后再扫文档

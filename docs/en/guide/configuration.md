@@ -64,6 +64,7 @@ Two boundaries:
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.enableDiagnostics` | boolean | `true` | Master switch for `.def` diagnostics |
+| `kbengine.jumpLog` | boolean | `false` | Jump decision-path logging (Output panel KBEngine Navigation, filter `[kode-jump]`; zero overhead when off) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | Switch for structural validation |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | Check unknown type names |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | Check unknown Flags values |

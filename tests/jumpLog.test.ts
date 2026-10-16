@@ -7,7 +7,13 @@ import { makeTextDocument } from './helpers/vscodeStub';
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonClassIndex } from '../src/pythonClassIndex';
 import { PythonDefinitionProvider } from '../src/languageProviders';
-import { clearRecentJumpLogs, getRecentJumpLogs, jumpLog } from '../src/navigationLog';
+import {
+  clearRecentJumpLogs,
+  getRecentJumpLogs,
+  isJumpLogEnabled,
+  jumpLog,
+  setJumpLogEnabled
+} from '../src/navigationLog';
 
 // 跳转决策路径日志(用户 2026-10-16 主动要求):每次跳转把「查了哪几层、
 // 每层结果、耗时」打到 KBEngine Navigation 通道,前缀 [kode-jump]。本测试
@@ -53,12 +59,34 @@ describe('jumpLog 决策路径日志', () => {
   afterEach(() => {
     stubWorkspace.findFiles = ORIGINAL;
     stubWorkspace.workspaceFolders = [];
+    setJumpLogEnabled(false);
     clearRecentJumpLogs();
   });
 
-  it('命中路径:入口→对象类→层1落空→层2命中→落点与耗时齐打', async () => {
+  it('默认关闭:决策路径零输出(开关注入前)', async () => {
     stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(FIXTURE), name: 'demo', index: 0 }];
+    clearRecentJumpLogs();
+    expect(isJumpLogEnabled()).toBe(false);
+
+    const index = new PythonClassIndex();
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const provider = new PythonDefinitionProvider(manager, index);
+    const file = path.join(FIXTURE, 'scripts', 'user_type', 'SKILL_SLOT_DATA.py');
+    const text = fs.readFileSync(file, 'utf8');
+    const callLine = lineOf(text, 'self.reindex()');
+    await provider.provideDefinitionTraced(
+      makeTextDocument(text, { fileName: file, languageId: 'python' }),
+      new Position(callLine, text.split('\n')[callLine].indexOf('self.reindex') + 7)
+    );
+    expect(getRecentJumpLogs(), '开关默认关 → 一条日志都不出').toEqual([]);
+    manager.dispose();
+  }, 60_000);
+
+  it('命中路径:开启后入口→对象类→层1落空→层2命中→落点与耗时齐打', async () => {
+    stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(FIXTURE), name: 'demo', index: 0 }];
+    setJumpLogEnabled(true);
     clearRecentJumpLogs();
 
     const index = new PythonClassIndex();
@@ -89,6 +117,7 @@ describe('jumpLog 决策路径日志', () => {
   it('失败路径:三层逐层落空 + 放弃点 + 总耗时', async () => {
     stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(FIXTURE), name: 'demo', index: 0 }];
+    setJumpLogEnabled(true);
     clearRecentJumpLogs();
 
     const index = new PythonClassIndex();
@@ -114,29 +143,26 @@ describe('jumpLog 决策路径日志', () => {
     manager.dispose();
   }, 60_000);
 
-  it('KODE_JUMP_LOG 开关:off 静默、info 只留决策路径', () => {
+  it('开关语义:关闭时消息函数零调用(零开销),开启后 info+debug 全量入通道', () => {
     clearRecentJumpLogs();
-    const saved = process.env.KODE_JUMP_LOG;
-    try {
-      process.env.KODE_JUMP_LOG = 'off';
-      // 通过 provider 侧不可控,直接验模块语义:off 时不入缓冲
-      const before = getRecentJumpLogs().length;
-      jumpLog('info', 'should-not-appear-off');
-      jumpLog('debug', 'should-not-appear-off-debug');
-      expect(getRecentJumpLogs().length).toBe(before);
+    setJumpLogEnabled(false);
+    let evaluated = 0;
+    jumpLog('info', () => {
+      evaluated += 1;
+      return 'must-not-evaluate-when-off';
+    });
+    expect(evaluated, '关闭时不得求值消息(不拼字符串)').toBe(0);
+    expect(getRecentJumpLogs()).toEqual([]);
 
-      process.env.KODE_JUMP_LOG = 'info';
-      jumpLog('info', 'info-line-kept');
-      jumpLog('debug', 'debug-line-suppressed');
-      const tail = getRecentJumpLogs().slice(-2).join('\n');
-      expect(tail).toContain('info-line-kept');
-      expect(tail).not.toContain('debug-line-suppressed');
-    } finally {
-      if (saved === undefined) {
-        delete process.env.KODE_JUMP_LOG;
-      } else {
-        process.env.KODE_JUMP_LOG = saved;
-      }
-    }
+    setJumpLogEnabled(true);
+    jumpLog('info', () => {
+      evaluated += 1;
+      return 'info-line-kept';
+    });
+    jumpLog('debug', 'debug-line-kept');
+    expect(evaluated, '开启后才求值').toBe(1);
+    const tail = getRecentJumpLogs().slice(-2).join('\n');
+    expect(tail).toContain('[kode-jump][info] info-line-kept');
+    expect(tail).toContain('[kode-jump][debug] debug-line-kept');
   });
 });
