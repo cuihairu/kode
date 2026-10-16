@@ -59,6 +59,7 @@ import {
   TypesXmlCodeLensProvider,
   validateDocument
 } from './languageProviders';
+import { PythonClassIndex } from './pythonClassIndex';
 import {
   createDatabaseSchemaUri,
   getDatabaseSchemaSnapshot,
@@ -198,10 +199,12 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(definitionProvider);
 
-  // 注册 Python 文件的定义提供者（Python → .def 跳转）
+  // 注册 Python 文件的定义提供者（Python → .def 跳转;并按 Python 类层级
+  // C3-MRO 兜底,修跨类/mixin 方法唯一实现也跳不到的根因)
+  const pythonClassIndex = new PythonClassIndex();
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },
-    new PythonDefinitionProvider(entityMappingManager)
+    new PythonDefinitionProvider(entityMappingManager, pythonClassIndex)
   );
   context.subscriptions.push(pythonDefinitionProvider);
 
@@ -267,6 +270,8 @@ export function activate(context: vscode.ExtensionContext) {
       if (isDefDocument(event.document)) {
         validateDocument(event.document, diagnostics);
       }
+      // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入
+      void pythonClassIndex.onDocumentChanged(event.document);
     });
     context.subscriptions.push(watcher);
 

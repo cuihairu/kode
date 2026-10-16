@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { PythonClassIndex } from './pythonClassIndex';
 import {
   DefDocument,
   DefElementNode,
@@ -2678,7 +2679,13 @@ function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSugges
 }
 
 export class PythonDefinitionProvider implements vscode.DefinitionProvider {
-  constructor(private entityMappingManager: EntityMappingManager) {}
+  constructor(
+    private entityMappingManager: EntityMappingManager,
+    // mixin/跨类跳转根因修复:.def 派生索引解析不到时(非实体文件或方法不在
+    // 任何 .def),回退 Python 类层级 C3-MRO 解析 —— entityMapping.ts:573
+    // 对非 .def 映射文件直接 return null 即丢定位处。
+    private pythonClassIndex?: PythonClassIndex
+  ) {}
 
   async provideDefinition(
     document: vscode.TextDocument,
@@ -2776,6 +2783,19 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           new vscode.Position(methodLocation.line - 1, 0)
         );
       }
+
+      // 根因兜底:方法不在任何 .def(由基类/mixin 跨类提供)→ Python C3-MRO
+      const pyAccess = await this.pythonClassIndex?.resolveSelfMethod(
+        document.fileName,
+        position.line,
+        access.rootSymbol
+      );
+      if (pyAccess) {
+        return new vscode.Location(
+          vscode.Uri.file(pyAccess.filePath),
+          new vscode.Position(pyAccess.line, pyAccess.character)
+        );
+      }
     }
 
     const declaredMethodName = getPythonMethodDeclarationAtPosition(line.text, position.character);
@@ -2788,6 +2808,19 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         return new vscode.Location(
           vscode.Uri.file(methodLocation.defFile),
           new vscode.Position(methodLocation.line - 1, 0)
+        );
+      }
+
+      // 同上兜底:声明行所在文件无 .def 时按 MRO 定位提供者
+      const pyDeclared = await this.pythonClassIndex?.resolveSelfMethod(
+        document.fileName,
+        position.line,
+        declaredMethodName
+      );
+      if (pyDeclared) {
+        return new vscode.Location(
+          vscode.Uri.file(pyDeclared.filePath),
+          new vscode.Position(pyDeclared.line, pyDeclared.character)
         );
       }
     }
