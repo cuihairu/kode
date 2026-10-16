@@ -115,17 +115,22 @@ export function linearizeC3(name: string, resolve: (base: string) => PythonClass
     let guard = 0;
     while (work.some(list => list.length > 0) && guard < 5000) {
       guard += 1;
-      let chosen: string | null = null;
+      let chosen = '';
+      let found = false;
       for (const list of work) {
+        if (list.length === 0) {
+          continue; // 被 splice 清空的列表必须跳过:list[0] 为 undefined
+        }
         const candidate = list[0];
         // 候选不得出现在任何列表的尾部(除首个位置)
-        const inTail = work.some(other => other.indexOf(candidate) > 0);
+        const inTail = work.some(other => other.length > 0 && other.indexOf(candidate) > 0);
         if (!inTail) {
           chosen = candidate;
+          found = true;
           break;
         }
       }
-      if (chosen === null) {
+      if (!found) {
         // 不可线性化(非法继承图):平铺剩余去重,不丢类
         for (const list of work) {
           for (const n of list) {
@@ -181,6 +186,8 @@ export interface PythonMethodLocation {
   className: string;
   /** MRO 序(用于 CodeLens/多实现呈现) */
   mro: string[];
+  /** 解析所锚定的类:祖先解到 = 静态类自身;反向解到 = 继承静态类的类(主形态) */
+  anchorClass?: string;
 }
 
 /**
@@ -190,7 +197,45 @@ export interface PythonMethodLocation {
 export class PythonClassIndex {
   private fileCache = new Map<string, { version: number; parsed: ParsedPythonFile }>();
   private byName = new Map<string, PythonClassDef[]>();
+  /** 直接子类:基类名 → 继承它的类(增量维护;主形态反向解析用) */
+  private directSubclasses = new Map<string, PythonClassDef[]>();
   private scanPromise: Promise<void> | null = null;
+
+  private indexClass(cls: PythonClassDef): void {
+    const list = this.byName.get(cls.name) ?? [];
+    list.push(cls);
+    this.byName.set(cls.name, list);
+    for (const base of cls.bases) {
+      const subs = this.directSubclasses.get(base) ?? [];
+      subs.push(cls);
+      this.directSubclasses.set(base, subs);
+    }
+  }
+
+  private unindexFile(filePath: string): void {
+    for (const [name, list] of [...this.byName.entries()]) {
+      const filtered = list.filter(item => item.filePath !== filePath);
+      if (filtered.length === list.length) {
+        continue;
+      }
+      if (filtered.length === 0) {
+        this.byName.delete(name);
+      } else {
+        this.byName.set(name, filtered);
+      }
+    }
+    for (const [base, subs] of [...this.directSubclasses.entries()]) {
+      const filtered = subs.filter(item => item.filePath !== filePath);
+      if (filtered.length === subs.length) {
+        continue;
+      }
+      if (filtered.length === 0) {
+        this.directSubclasses.delete(base);
+      } else {
+        this.directSubclasses.set(base, filtered);
+      }
+    }
+  }
 
   /** 首次查询时全量扫描(幂等,失败不抛) */
   private async ensureScanned(): Promise<void> {
@@ -218,13 +263,11 @@ export class PythonClassIndex {
       return;
     }
     const parsed = parsePythonFile(content, filePath);
+    // 增量:先摘除该文件旧索引条目再重挂,避免重复/陈旧基类关系
+    this.unindexFile(filePath);
     this.fileCache.set(filePath, { version, parsed });
-    // 重建 name 映射时剔除该文件旧条目
     for (const cls of parsed.classes) {
-      const list = this.byName.get(cls.name) ?? [];
-      const filtered = list.filter(item => item.filePath !== filePath);
-      filtered.push(cls);
-      this.byName.set(cls.name, filtered);
+      this.indexClass(cls);
     }
   }
 
@@ -271,25 +314,33 @@ export class PythonClassIndex {
     return linearizeC3(className, resolve);
   }
 
-  /**
-   * 解析 `filePath:line` 处 `self.<methodName>` 的真实实现:定位所在类 → MRO →
-   * 首个定义 `methodName` 的类。找不到返回 null。
-   */
-  async resolveSelfMethod(
-    filePath: string,
-    line: number,
-    methodName: string
-  ): Promise<PythonMethodLocation | null> {
+  /** 类 name 的全部后代(直接子类传递闭包,含环护栏) */
+  async descendantsOf(name: string): Promise<PythonClassDef[]> {
     await this.ensureScanned();
-    const enclosing = await this.findEnclosingClass(filePath, line);
-    if (!enclosing) {
-      return null;
+    const out: PythonClassDef[] = [];
+    const seen = new Set<string>([name]);
+    const queue: string[] = [name];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const sub of this.directSubclasses.get(current) ?? []) {
+        const key = `${sub.filePath}::${sub.name}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        out.push(sub);
+        queue.push(sub.name);
+      }
     }
-    const mro = await this.computeMRO(enclosing.name);
-    // MRO 顺序即运行时查找序:首个命中即 Python 实际会调用的实现
+    return out;
+  }
+
+  /** 在某类的 MRO 中找 methodName 的提供者(首个命中即运行时调用序) */
+  private lookupInMRO(className: string, methodName: string): PythonMethodLocation | null {
+    const mro = linearizeC3(className, n => this.byName.get(n) ?? []);
     for (const clsName of mro) {
       const defs = this.byName.get(clsName);
-      if (!defs || defs.length === 0) {
+      if (!defs) {
         continue;
       }
       for (const def of defs) {
@@ -300,12 +351,68 @@ export class PythonClassIndex {
             line: loc.line,
             character: loc.character,
             className: clsName,
-            mro
+            mro,
+            anchorClass: className
           };
         }
       }
     }
     return null;
+  }
+
+  /**
+   * 主形态解析:从 `self` 的**静态类**出发解 C3 MRO,跨文件命中 mixin 定义。
+   * ① 静态类自身 MRO(祖先)—— 覆盖「子类调基类」;
+   * ② 静态类 MRO 无果 → 反向找**继承静态类的类**(兄弟 mixin 经共同子类,
+   *    如 MixinB.self.x() 需经 Avatar = (MixinA, MixinB) 的 MRO 才落到 MixinA)。
+   * 去重后按 祖先优先 → 后代声明序 返回全部候选(供 Location[] 列表选择)。
+   */
+  async resolveSelfMethodCandidates(
+    filePath: string,
+    line: number,
+    methodName: string
+  ): Promise<PythonMethodLocation[]> {
+    await this.ensureScanned();
+    const enclosing = await this.findEnclosingClass(filePath, line);
+    if (!enclosing) {
+      return [];
+    }
+    const seen = new Set<string>();
+    const push = (loc: PythonMethodLocation | null, out: PythonMethodLocation[]): void => {
+      if (!loc) {
+        return;
+      }
+      const key = `${loc.filePath}::${loc.line}::${loc.character}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      out.push(loc);
+    };
+
+    const out: PythonMethodLocation[] = [];
+    // ① 祖先 MRO(静态类自身可解即最直接)
+    push(this.lookupInMRO(enclosing.name, methodName), out);
+    if (out.length > 0) {
+      return out;
+    }
+
+    // ② 主形态:静态类自身解不到 → 反向经继承它的类解(兄弟 mixin 跨文件)
+    const descendants = await this.descendantsOf(enclosing.name);
+    for (const sub of descendants) {
+      push(this.lookupInMRO(sub.name, methodName), out);
+    }
+    return out;
+  }
+
+  /** 兼容入口:首个候选(唯一实现场景即唯一解) */
+  async resolveSelfMethod(
+    filePath: string,
+    line: number,
+    methodName: string
+  ): Promise<PythonMethodLocation | null> {
+    const candidates = await this.resolveSelfMethodCandidates(filePath, line, methodName);
+    return candidates.length > 0 ? candidates[0] : null;
   }
 
   /** 某类「由哪些基类/mixin 提供」(CodeLens 用):MRO 去掉自身 */

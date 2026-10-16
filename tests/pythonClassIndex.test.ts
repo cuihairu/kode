@@ -196,3 +196,135 @@ describe.runIf(realAvailable)('真实 kbengine 跨类跳转(唯一实现)', () =
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 主形态:Avatar 共同继承多文件 mixin;check_xxx 在文件 A 定义、在文件 B
+// 经 self.check_xxx() 调用 —— 调用方静态类(MixinB/MixinC)MRO 里没有该方法,
+// 必须反向经继承它的 Avatar 的 MRO 才落到 A 的定义处。
+// 本机 kbengine 无此结构(kbe/ 与 .tmp 零个 2+ 基类、无 mixin 文件),故以
+// 夹具精确复刻该形态;真实跨类用例见上节。
+// ---------------------------------------------------------------------------
+describe('主形态(兄弟 mixin 跨文件 self 调用,Avatar 共同继承)', () => {
+  const A_FILE = [
+    'class MixinA:',
+    '\tdef check_alpha(self):',
+    '\t\tpass',
+    '',
+    '\tdef check_gamma(self):',
+    '\t\tpass',
+    ''
+  ].join('\n');
+  const B_FILE = [
+    'class MixinB:',
+    '\tdef run_b(self):',
+    '\t\tself.check_alpha()',
+    '\t\tself.check_delta()',
+    ''
+  ].join('\n');
+  const C_FILE = [
+    'class MixinC:',
+    '\tdef check_delta(self):',
+    '\t\tpass',
+    '',
+    '\tdef run_c(self):',
+    '\t\tself.check_gamma()',
+    ''
+  ].join('\n');
+  const AVATAR_FILE = [
+    'class Avatar(MixinA, MixinB, MixinC):',
+    '\tdef boot(self):',
+    '\t\tpass',
+    ''
+  ].join('\n');
+
+  // 3 组:A 定义 / B 调用 / Avatar 共同继承
+  const GROUPS = [
+    { method: 'check_alpha', defFile: 'mixin_a.py', defLine1: 2, callFile: 'mixin_b.py', callLine1: 3 },
+    { method: 'check_delta', defFile: 'mixin_c.py', defLine1: 2, callFile: 'mixin_b.py', callLine1: 4 },
+    { method: 'check_gamma', defFile: 'mixin_a.py', defLine1: 5, callFile: 'mixin_c.py', callLine1: 6 }
+  ];
+
+  it('3 组全部从调用方静态类反向经 Avatar MRO 跳到定义文件', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-avatar-'));
+    const files: Record<string, string> = {
+      'mixin_a.py': A_FILE,
+      'mixin_b.py': B_FILE,
+      'mixin_c.py': C_FILE,
+      'avatar.py': AVATAR_FILE
+    };
+    const paths: Record<string, string> = {};
+    for (const [name, content] of Object.entries(files)) {
+      paths[name] = path.join(tmp, name);
+      fs.writeFileSync(paths[name], content, 'utf8');
+    }
+
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('*.def')
+        ? []
+        : Object.values(paths).map(f => Uri.file(f))) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      for (const g of GROUPS) {
+        const loc = await index.resolveSelfMethod(
+          paths[g.callFile],
+          g.callLine1 - 1,
+          g.method
+        );
+        expect(loc, `${g.method} 未解析到定义`).not.toBeNull();
+        expect(loc!.filePath, `${g.method} 定义文件`).toBe(paths[g.defFile]);
+        expect(loc!.line, `${g.method} 定义行`).toBe(g.defLine1 - 1);
+        // 提供者是 A/C 中的 mixin 类,不是调用方静态类
+        expect(loc!.className).toMatch(/^Mixin/);
+        expect(loc!.className).not.toBe(g.callFile === 'mixin_b.py' ? 'MixinB' : 'MixinC');
+      }
+
+      // 关键:调用方静态类 MRO 自身解不到 → 必走反向(经 Avatar)
+      const mroOfB = await index.computeMRO('MixinB');
+      expect(mroOfB).not.toContain('MixinA'); // 静态 MRO 无 A,证明是反向命中
+      const avatarLoc = await index.resolveSelfMethod(paths['mixin_b.py'], 2, 'check_alpha');
+      expect(avatarLoc!.anchorClass, '锚定类应为 Avatar(反向)').toBe('Avatar');
+      expect(avatarLoc!.mro[0]).toBe('Avatar');
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 真实 kbengine 反向案例(主形态的「调用方静态类解不到,需经继承它的类解」):
+// vendored six.py —— _LazyDescr.__get__ 内 self._resolve() 静态类 _LazyDescr
+// 自身与祖先(object)均无 _resolve;实现在其两个子类里,故应返回全部候选。
+// ---------------------------------------------------------------------------
+describe('真实 kbengine 反向形态(six.py)', () => {
+  const SIX = path.join(
+    'D:', 'workspaces', 'kbengine', 'kbe', 'tools', 'server', 'webconsole', 'six.py'
+  );
+
+  it('six.py:92 调用 → 返回 MovedModule 与 MovedAttribute 两个实现候选', async () => {
+    if (!fs.existsSync(SIX)) {
+      console.warn('skip: kbengine six.py 不在', SIX);
+      return;
+    }
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('*.def') ? [] : [Uri.file(SIX)]) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      const cands = await index.resolveSelfMethodCandidates(SIX, 91, '_resolve'); // 1-based 92
+      expect(cands.length, '应有 2 个实现候选').toBe(2);
+      const lines = cands.map(c => c.line).sort((a, b) => a - b);
+      expect(lines, 'MovedModule._resolve(0-based 113) + MovedAttribute._resolve(0-based 158)')
+        .toEqual([113, 158]);
+      // 静态类自身 MRO 确实解不到(证明走的是反向)
+      const mroDescr = await index.computeMRO('_LazyDescr');
+      expect(mroDescr).not.toContain('MovedModule');
+      // 单候选入口(首个)也非空
+      const first = await index.resolveSelfMethod(SIX, 91, '_resolve');
+      expect(first).not.toBeNull();
+      expect(first!.anchorClass).toBeDefined();
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+});

@@ -2784,16 +2784,23 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         );
       }
 
-      // 根因兜底:方法不在任何 .def(由基类/mixin 跨类提供)→ Python C3-MRO
-      const pyAccess = await this.pythonClassIndex?.resolveSelfMethod(
+      // 根因兜底:方法不在任何 .def(由基类/mixin 跨类提供)→ 从 self 静态类
+      // 解 C3-MRO;静态类解不到再反向经继承它的类解(兄弟 mixin 主形态)。
+      // 多候选 → Location[](VS Code 原生列表选择,不替用户选第一个)。
+      const pyCandidates = await this.pythonClassIndex?.resolveSelfMethodCandidates(
         document.fileName,
         position.line,
         access.rootSymbol
       );
-      if (pyAccess) {
+      if (pyCandidates && pyCandidates.length === 1) {
         return new vscode.Location(
-          vscode.Uri.file(pyAccess.filePath),
-          new vscode.Position(pyAccess.line, pyAccess.character)
+          vscode.Uri.file(pyCandidates[0].filePath),
+          new vscode.Position(pyCandidates[0].line, pyCandidates[0].character)
+        );
+      }
+      if (pyCandidates && pyCandidates.length > 1) {
+        return pyCandidates.map(
+          c => new vscode.Location(vscode.Uri.file(c.filePath), new vscode.Position(c.line, c.character))
         );
       }
     }
@@ -2811,16 +2818,21 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         );
       }
 
-      // 同上兜底:声明行所在文件无 .def 时按 MRO 定位提供者
-      const pyDeclared = await this.pythonClassIndex?.resolveSelfMethod(
+      // 同上兜底:声明行所在文件无 .def 时按 MRO 定位提供者(多候选走列表)
+      const pyDeclared = await this.pythonClassIndex?.resolveSelfMethodCandidates(
         document.fileName,
         position.line,
         declaredMethodName
       );
-      if (pyDeclared) {
+      if (pyDeclared && pyDeclared.length === 1) {
         return new vscode.Location(
-          vscode.Uri.file(pyDeclared.filePath),
-          new vscode.Position(pyDeclared.line, pyDeclared.character)
+          vscode.Uri.file(pyDeclared[0].filePath),
+          new vscode.Position(pyDeclared[0].line, pyDeclared[0].character)
+        );
+      }
+      if (pyDeclared && pyDeclared.length > 1) {
+        return pyDeclared.map(
+          c => new vscode.Location(vscode.Uri.file(c.filePath), new vscode.Position(c.line, c.character))
         );
       }
     }
