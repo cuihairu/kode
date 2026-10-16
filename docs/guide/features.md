@@ -33,6 +33,12 @@
 日志查看器当前尚未完成官方 logger watcher 协议适配。
 监控面板在 watcher 无响应时只保留 machine 返回的基础状态。
 
+## 原始日志 ERROR 扫描（盘点 G6）
+
+- `Scan Raw Log Errors` 命令选原始日志文件或文件夹（文件夹只扫一层 `.log`/`.txt`/`.out`，按名排序、去重），经与日志面板同一个解析器挑出 `ERROR`/`CRITICAL` 行
+- 按「组件 + 归一签名」聚合计数（数字折成 `N`、空白压缩、签名截 160 字符），面板给计数 / 级别 / 组件 / 签名 / 最近时间，点行打开源文件对应行，「重新扫描」按上一批文件重跑
+- 不依赖 logger watcher 协议：logger 通道没连上时这条路径照样能用；单文件 64MB 上限，超限或读失败记 readError，不中断其余文件
+
 ## Telnet 探测与会话联动
 
 - 配置显式开启 telnet（设置显式端口，或 kbengine.xml 有 `<telnet_service>` 段）才展示 telnet 相关内容；两处都没配时不探测、不展示，状态灯、独立树视图与面板命令入口全部隐藏。引擎 defaults 里虽有 `<telnet_service>` 段，但 defaults 只供数值回落，不单独把 telnet 打开
@@ -49,6 +55,8 @@
 - 生成的启动配置是 `debugpy` 的 attach 形态；本地附加由扩展列出本机进程（匹配组件名的置顶标 ✓），选中即以 PID 组装配置，不再手输 PID
 - 远程附加（`kbengine.debug.attachRemote`）的目标来自设置 `kbengine.debug.remoteTargets`，以 debugpy `connect` 模式直连远端 debugpy 监听端口
 - 调试模型：先经 telnet 向组件输入开启调试命令，再附加目标进程
+- 编辑期校验（批136 G3）：kode 随包贡献 `.kbengine/debug.json` 的 JSON Schema（`contributes.jsonValidation` 匹配 `**/.kbengine/debug.json`），VS Code 的 JSON 扩展在保存前就把类型写错、`telnetPort` 写成字符串、`pathMappings` 缺 `localRoot`/`remoteRoot`、`method` 不在白名单等问题标红；校验只作提示，解析器逐条剔除与类型回落的规则不变
+- 缺失即自动生成（批143）：工作区里找不到 `.kbengine/debug.json` 时，激活期在生效工作目录建 `.kbengine/` 并写一份带注释的骨架；骨架按 JSONC 写（允许 `//` 与块注释，同 `tsconfig.json` 口径），kode 读配置前统一剥注释，你自己写的注释不会让配置读不动。**已存在的文件绝不覆盖**，目录不可写只往「KBEngine 配置」输出通道如实说明，不影响其余能力
 
 说明：
 KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存在「扩展直接启动 Python 脚本」的形态。
@@ -86,6 +94,18 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 定位失败不再静默:`kbengine.discovery.report` 命令在 OUTPUT 面板逐键摊开发现结果(最终取用值与来源、显式配置存在性、约定链命中/未命中、深扫描命中、记忆选择、深扫描截断标注),附逐项补救建议,报告可整段复制回传维护者
 - 详见 [配置说明](./configuration.md) 的「路径类配置的自动发现」与全量对照表
 
+## Python 生态接线（盘点 G1 / G2）
+
+- extraPaths 接线（批136 G1）：把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`（WorkspaceFolder 级），只管理本扩展写入的那一段——用户手填路径永不被动，无变化不写、无可发现根静默；`Sync Python Extra Paths` 命令手动重跑，激活期自动同步一次全程零提示（`kbengine.python.extraPathsSync` 默认开可关）
+- `.pyi` 存根导出（批136 G2）：把内置 KBEngine Python API 符号索引（与补全/悬停/跳转同源）导出为真文件 `KBEngine.pyi`——虚拟桩文档 Python 扩展看不见，真文件配合 extraPaths 接线才解析 `import KBEngine`；内容一致零写、索引更新后陈旧才重写，激活期静默自动一次，`Export KBEngine Python Stubs` 手动入口导出后链一次 extraPaths 同步
+- 存根目录可配（批142）：`kbengine.python.stubDir` 三级解析——设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。默认目录归 kode 自管（按内容比对刷新）；**用户指定的目录只进不出**：目录里已有任何 `.pyi` 一律当用户资产不覆盖，没有才生成一份，目录读不到如实提示不盲写
+
+## 变量替换（批141）
+
+- 路径类设置、`.kbengine/debug.json` 的 `quickActions` 与 `workspaceRoot`、`kbengine.python.stubDir` 走同一套 VS Code 官方变量替换，不再各处各写一份
+- 支持 `${workspaceFolder}`、`${workspaceFolderBasename}`、`${file}`、`${fileBasename}`、`${fileBasenameNoExtension}`、`${fileDirname}`、`${fileExtname}`、`${relativeFile}`、`${relativeFileDirname}`、`${cwd}`、`${userHome}`、`${pathSeparator}`、`${env:NAME}`
+- 相对路径族只在文件落于某个工作区根之下时给相对写法，区外回退绝对路径；未知变量按语义分两种口径——quick action 执行期报错并指名变量中止（静默空串会把脚本跑成「路径为空」的假成功），路径类设置回落空串沿既有约定
+
 ## HTTP 快捷请求
 
 - 设置 `kbengine.httpRequests` 列表：名称 / URL 模板 / method / 请求头 / 请求体 / 启停 / 键位展示串
@@ -104,6 +124,12 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 首装扫一层工作区根的 `.bat`，命中启停 / 导配置表词表的脚本多选提示登记，取消后本工作区不再自动弹
 
 命令细节见 [命令与面板](./commands.md)，配置键与变量表见 [配置说明](./configuration.md)。
+
+## 自动热重载（盘点 G5）
+
+- 文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控 `kbengine.hotReload.enabled` **默认关**防误触：开启前不建任何文件监视，激活期行为零变化；开关改动即时生效，不必重启窗口
+- 变更、创建、删除三通道都算保存事件，经去抖合并成一次执行；触发路径跳过执行确认框，动作自身的失败仍照常弹窗报错
+- `actionName` 留空或匹配不到任何动作时，事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水，不弹窗、不执行
 
 ## 依赖图能力
 
@@ -130,6 +156,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 自动生成 Python
 - 自动注册到 `entities.xml`
 - 客户端实体 SDK 生成（按 `entities.xml` 登记的实体生成客户端骨架，TypeScript / C# 可多选）
+- 定义形态向导（批139，盘点 G7）：实体向导之外一次生成一种形态——代理（`proxy_defs/` 下的 Proxy def，`Parent` 指向同名 Proxy）、空间（`entities.xml` 登记 `hasBase` + `hasCell`）、组件（`components/` 下 def，可选往实体 `<Properties>` 段末挂一条 `COMPONENT` 属性）、固定字典类型（写入 `types.xml`）。已存在的文件默认不覆盖，重复登记与结构异常都如实说明不硬插
 
 说明：
 生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响；客户端实体 SDK 受 `kbengine.clientSdk.outputDir` 影响。

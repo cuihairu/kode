@@ -33,6 +33,12 @@ Notes:
 the log viewer has not completed the official logger watcher protocol adaptation.
 When the watcher does not respond, the monitoring panel keeps only the base status returned by machine.
 
+## Raw Log ERROR Scan (inventory G6)
+
+- The `Scan Raw Log Errors` command picks raw log files or a folder (a folder scans one level of `.log`/`.txt`/`.out`, sorted by name and deduped); the same parser the log panel uses picks out the `ERROR`/`CRITICAL` lines
+- Aggregation is by "component + normalized signature" (numbers folded to `N`, whitespace collapsed, signature truncated to 160 characters); the panel shows count / level / component / signature / most recent time, clicking a row opens that line in the source file, and "Rescan" reruns over the same file set
+- Does not depend on the logger watcher protocol: this path keeps working when the logger channel is not connected; 64MB cap per file, and an oversize or unreadable file is recorded as a readError without interrupting the rest
+
 ## Telnet Probing and Session Integration
 
 - Telnet-related content shows only when telnet is explicitly enabled (an explicit port in the settings, or a `<telnet_service>` section in kbengine.xml); with neither configured there is no probing and no display — the status light, the standalone tree view, and the panel command entries are all hidden. The engine defaults do contain a `<telnet_service>` section, but defaults only provide value fallbacks and do not switch telnet on by themselves
@@ -49,6 +55,8 @@ When the watcher does not respond, the monitoring panel keeps only the base stat
 - The generated launch config is a `debugpy` attach form; local attach has the extension list local processes (matches on component names pinned and marked ✓), and selecting one assembles the config by PID — no more hand-typing PIDs
 - Remote attach (`kbengine.debug.attachRemote`) targets come from the setting `kbengine.debug.remoteTargets`, connecting in debugpy `connect` mode straight to the remote debugpy listening port
 - Debug model: first send the enable-debugging command into the component via telnet, then attach to the target process
+- In-editor validation (batch 136 G3): kode ships a JSON Schema for `.kbengine/debug.json` (`contributes.jsonValidation` matching `**/.kbengine/debug.json`), so the VS Code JSON extension flags wrong types, `telnetPort` written as a string, a `pathMappings` entry missing `localRoot`/`remoteRoot`, or a `method` outside the whitelist before you save; validation is a hint only — the parser still drops bad entries and falls back per field as before
+- Scaffolded when missing (batch 143): when `.kbengine/debug.json` is absent from the workspace, activation creates `.kbengine/` in the effective working directory and writes an annotated skeleton; the skeleton is written as JSONC (`//` and block comments allowed, same convention as `tsconfig.json`) and kode strips comments before parsing, so your own comments never break config loading. **An existing file is never overwritten**; if the directory is not writable it only reports that plainly on the "KBEngine 配置" output channel, leaving every other capability intact
 
 Notes:
 KBEngine components are C++ processes with embedded Python runtimes; debugging is attach-based — there is no "extension launches a Python script" form.
@@ -86,6 +94,18 @@ KBEngine components are C++ processes with embedded Python runtimes; debugging i
 - Location failures are no longer silent: the `kbengine.discovery.report` command lays out the discovery result key by key in the OUTPUT panel (final chosen value and source, explicit-config existence, convention-chain hits/misses, deep-scan hits, remembered choices, deep-scan truncation markers), with per-item remediation advice; the whole report can be copied back to maintainers
 - See the "path-like config auto-discovery" section and the full comparison table in the [configuration reference](./configuration.md)
 
+## Python Ecosystem Wiring (inventory G1 / G2)
+
+- extraPaths wiring (batch 136 G1): writes the KBEngine scripts roots discovered in the workspace into `python.analysis.extraPaths` (workspace-folder level), managing only the segment this extension wrote — paths you typed yourself are never touched; nothing is written when nothing changed, and a workspace with no discoverable root is skipped silently. The `Sync Python Extra Paths` command reruns it manually; activation syncs once with zero prompts (`kbengine.python.extraPathsSync` on by default, disableable)
+- `.pyi` stub export (batch 136 G2): exports the built-in KBEngine Python API symbol index (same source as completion/hover/navigation) as a real `KBEngine.pyi` file — virtual stub documents are invisible to the Python extension, and only a real file plus the extraPaths wiring resolves `import KBEngine`; identical content is a zero-write, a stale stub is rewritten, activation does it once silently, and the `Export KBEngine Python Stubs` manual entry chains one extraPaths sync after a successful export
+- Configurable stub directory (batch 142): `kbengine.python.stubDir` resolves in three tiers — setting > `KBENGINE_STUB_DIR` environment variable > the default convention `.kbengine/stubs`. The default directory is managed by kode (refreshed by content comparison); **a directory you specify is scan-only**: any `.pyi` already in it counts as your asset and is never overwritten, kode only generates when there is none, and an unreadable directory is reported plainly instead of being written blindly
+
+## Variable Substitution (batch 141)
+
+- Path-like settings, the `quickActions` and `workspaceRoot` of `.kbengine/debug.json`, and `kbengine.python.stubDir` all go through one set of official VS Code variable substitution instead of each writing its own
+- Supported: `${workspaceFolder}`, `${workspaceFolderBasename}`, `${file}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${cwd}`, `${userHome}`, `${pathSeparator}`, `${env:NAME}`
+- The relative-path family only yields the relative form when the file sits under some workspace root, falling back to an absolute path otherwise; unknown variables follow two policies by semantics — quick action execution fails and names the variable (a silent empty string would run the script as a fake success with an empty path), while path-like settings fall back to an empty string per the existing convention
+
 ## HTTP Quick Requests
 
 - The `kbengine.httpRequests` list holds: name / URL template / method / headers / body / enable flag / keybinding display string
@@ -104,6 +124,12 @@ Field and variable tables in the [configuration reference](./configuration.md); 
 - First install scans one level of workspace-root `.bat` files; scripts matching start/stop or config-export keyword lists prompt a multi-select registration; canceling stops the auto-prompt for that workspace
 
 Command details in [Commands and Panels](./commands.md); config keys and variable tables in the [configuration reference](./configuration.md).
+
+## Auto Hot Reload (inventory G5)
+
+- A file save / watcher event triggers the `quickActions` action named above. The gate `kbengine.hotReload.enabled` is **off by default** to avoid misfires: no file watcher is created before you turn it on, so activation behavior is unchanged; toggling it takes effect immediately, no window restart needed
+- Change, create, and delete all count as save events and are merged into one execution by debounce; the trigger path skips the execution confirm, while the action's own failures still pop errors as usual
+- When `actionName` is empty or matches no action, the event still fires but only writes one line to the OUTPUT channel "KBEngine 快速执行动作" — no popup, no execution
 
 ## Dependency Graph
 
@@ -130,6 +156,7 @@ Command details in [Commands and Panels](./commands.md); config keys and variabl
 - Automatic Python generation
 - Automatic registration into `entities.xml`
 - Client entity SDK generation (generates client skeletons for entities registered in `entities.xml`; TypeScript / C# multi-select)
+- Definition form wizard (batch 139, inventory G7): beyond the entity wizard, generates one form per run — proxy (a Proxy def under `proxy_defs/` whose `Parent` points at the same-named Proxy), space (registers `hasBase` + `hasCell` in `entities.xml`), component (a def under `components/`, optionally mounting a `COMPONENT` property at the end of the entity's `<Properties>` block), fixed-dict type (written into `types.xml`). Existing files are not overwritten by default; duplicate registrations and malformed structures are reported plainly rather than force-inserted
 
 Notes:
 the generator is affected by the `kbengine.generator.*` and `kbengine.entitiesXmlPath` settings; the client entity SDK by `kbengine.clientSdk.outputDir`.
