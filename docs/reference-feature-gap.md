@@ -1,5 +1,7 @@
 # 参考插件功能差距盘点
 
+[English](./reference-feature-gap.en.md) | [中文](./reference-feature-gap.md)
+
 > 2026-10-15。用户令:「先不要发了,先把其他参考的插件的功能看下,是否都实现了,没有实现就等全部实现了再说」。
 > 本文只做对比与借鉴登记,不含实现;实现按「实施排序」逐批点火。
 > **对比必须有出处**:所有参考插件的功能均来自其 Marketplace 清单(vsix 内 `package.json`)与 README/USAGE 原文读取(2026-10-15 下载),不凭记忆;安装量取自 Marketplace Gallery API `extensionquery` 统计项。

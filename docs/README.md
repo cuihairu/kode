@@ -1,25 +1,27 @@
-# Kode 文档
+# Kode Documentation
 
-Kode 是一个面向 KBEngine 项目的 VSCode 扩展，覆盖 `.def` 语言支持、诊断、跳转、实体浏览、日志、监控、依赖图和代码生成。
+[English](./README.md) | [中文](./README.zh.md)
 
-## 你可以在这里找到什么
+Kode is a VS Code extension for KBEngine projects, covering `.def` language support, diagnostics, navigation, entity browsing, logs, monitoring, dependency graphs, and code generation.
 
-- [快速开始](./guide/)
-- [功能概览](./guide/features.md)
-- [语言能力](./guide/language.md)
-- [命令与面板](./guide/commands.md)
-- [完整配置说明](./guide/configuration.md)
-- [数据库模拟](./guide/database-simulation.md)
-- [开发与发布](./guide/development.md)
+## What you can find here
 
-## 文档开发
+- [Quick start](./guide/)
+- [Feature overview](./guide/features.md)
+- [Language features](./guide/language.md)
+- [Commands and panels](./guide/commands.md)
+- [Full configuration reference](./guide/configuration.md)
+- [Database simulation](./guide/database-simulation.md)
+- [Development and release](./guide/development.md)
+
+## Working on the docs
 
 ```bash
 pnpm install
 pnpm run docs:dev
 ```
 
-构建静态文档：
+Build the static site:
 
 ```bash
 pnpm run docs:build

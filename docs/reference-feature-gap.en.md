@@ -1,0 +1,84 @@
+# Reference Extension Feature Gap Inventory
+
+[English](./reference-feature-gap.en.md) | [中文](./reference-feature-gap.md)
+
+> 2026-10-15. User order (translated): "Hold the release for now. First check the features of the other reference extensions — whether everything is implemented. If not, wait until everything is implemented before talking about releasing."
+> This document only registers comparisons and borrowings; no implementation here. Implementation proceeds batch by batch per the "implementation order" section.
+> **Every comparison must cite its source**: all reference extension features come from their Marketplace manifests (`package.json` inside the vsix) and the verbatim README/USAGE text (downloaded 2026-10-15), not from memory; install counts come from the Marketplace Gallery API `extensionquery` statistics.
+> KBEngine Nex X is **proprietary software (all rights reserved)** — only its manifest and public documentation were read; none of its distributed source code was read, copied, or consulted for implementation details.
+
+## 1. Reference Extension List
+
+| Extension | Version | Installs | Updated | License | Link |
+| --- | --- | --- | --- | --- | --- |
+| KBEngine Nex X | 2.0.0 | 28 | 2026-08-14 | Proprietary (all rights reserved) | <https://marketplace.visualstudio.com/items?itemName=KBEngineLab.kbengine-nex-x> |
+| Rojo - Roblox Studio Sync | 2.1.2 | 275,530 | 2022-08-25 | MPL-2.0 | <https://marketplace.visualstudio.com/items?itemName=evaera.vscode-rojo> |
+| Roblox LSP | 1.6.8 | 122,242 | 2024-07-05 | MIT | <https://marketplace.visualstudio.com/items?itemName=Nightrains.robloxlsp> |
+| Godot .NET Tools | 0.5.1 | 27,877 | 2023-11-21 | MIT | <https://marketplace.visualstudio.com/items?itemName=woberg.godot-dotnet-tools> |
+
+Sampling rationale: the user named KBEngine Nex X (the only direct peer); Marketplace searches for `kbengine`/`kbengine3`/`kb3`/`kbe` tags return only Nex X, so three more were added as "game engine engineering tools" peers — Rojo (engine sync/run integration), Roblox LSP (engine script language support), Godot .NET Tools (project file/debug config generation). `neikeq.godot-csharp-vscode` (591,853 installs, Godot C# debugger) and `ms-python.python` (241,252,451 installs) are cited as dimensional evidence only and are not in the main table.
+
+## 2. Feature Comparison Table
+
+kode status conventions: **implemented** entries carry `file:line` evidence; **not implemented** entries go to the gap list in section 3; **stronger in this repo** is stated as-is.
+
+| Dimension | kode (this repo) | KBEngine Nex X | Rojo | Roblox LSP | Godot .NET Tools |
+| --- | --- | --- | --- | --- | --- |
+| Syntax highlighting | Implemented: `package.json:77-112` contributes `kbengine-def` language + grammars + `text.xml` injections (five semantic color classes for types.xml, batch 131 implementedBy segments); theme `syntaxes/kbengine-color-theme.json` | No languages/grammars contributions (manifest confirms) | — | Luau grammar (`lua.tmLanguage.json`) + semanticTokenScopes | — |
+| Completion | Implemented: `src/languageProviders.ts:275` (.def entities/properties/methods), `:3159` (Python `self.<property>` mapped from def + `kbe.`/`KBEngine.` module symbols, indexed from engine sources) | Relies on built-in `KBEngine.py` tip files per app (resources/py/tips/*) | — | Full LSP completion (README feature table) | — |
+| Hover | Implemented: `src/languageProviders.ts:375` (def property hover with library table full name/DDL/numeric limits), `src/serverConfigHover.ts:151` (kbengine*.xml config hover) | No standalone hover surface seen (no matching contribution in the manifest) | — | LSP hover | — |
+| Go to definition / references | Implemented: `src/languageProviders.ts:506` (def→def), `:2680` (Python self.property→def declaration, batch 135 reverse CodeLens `:2859`), `:2961` (types.xml back-scan CodeLens, batch 134), implementedBy bidirectional (batch 119), `:3011` Call Hierarchy, `:3097` Rename | def XML completion and navigation (README) | — | LSP goto definition / find all references / rename | — |
+| Diagnostics | Implemented: `src/extension.ts:245-281` (kbengine diagnostic collection) + `kbengine.def.analyze` static analysis into the problems list | No diagnostics contribution seen | — | LSP diagnostics (workspace/single file, ten-level granularity in configuration) | — |
+| Debugging | Implemented (Python attach): `src/debugConfig.ts:307` writes `.vscode/launch.json` (connect mode attaches via process picker, telnet enables debugging); no `contributes.debuggers` (ships no debugger of its own, reuses ms-python) | No debuggers contribution | — | — | Generates three launch.json configs (Launch/Launch Editor/Attach) + dotnet build tasks (README) |
+| Command palette / entry points | Implemented: 36 commands (`package.json` contributes.commands); activity bar container with 4 views (entityExplorer/serverControl/telnetStatus/config); status bar; 2 keybinding groups | 17 commands (manifest) | 1 command (single menu, README explicitly says consolidated since V2) | 0 commands (LSP has no command surface) | 1 command |
+| Snippets | Implemented: 3 snippet tables (kbengine-def/xml/python, `package.json:113-122`) + `kbengine.snippets.generateFromSelection` (generate from selection, batch 121) | No snippets contribution | — | — | — |
+| Templates / code generation | Implemented: `src/codeGenerator.ts:103` entity wizard (def + optional Python + entities.xml registration) | Six generation commands: newEntity/newProxy/newSpace/newComponent/newFixedDict/generateStubs (manifest) | — | — | Generates the launch.json/tasks.json/ruleset.xml trio (README) |
+| Entity / DB tooling | Implemented: entity explorer (`src/explorerProviders.ts`), database schema virtual document (`src/databaseSchema.ts:172`, batch 133 Chinese legend), simulator (`src/databaseSimulator.ts:746`), drift check (`src/databaseDrift.ts`, read-only whitelist + READ ONLY double guard), dependency/flow graph webviews, client entity SDK generation (`src/clientSdkGenerator.ts`, TS/C# dual language, batch 138) | Client entity generation, SDK generation (README) | — | — | — |
+| Log viewing | Implemented: `src/logCollector.ts:24` + `src/logWebView.ts` (`kbengine.logs.*` five commands, level filtering via existing LogFilter) + raw log ERROR scan (`src/logErrorScan.ts`, inventory G6) | Live logs + level filtering + raw log ERROR scan (USAGE.md) | — | — | — |
+| Run / launch integration | Implemented: serverControl view lists process pid/status (`src/explorerProviders.ts:1166-1195`), `kbengine.server.start/stop/restart/showLogs`, quick actions with three backends command/script/http + Explorer title bar ▶/▾ (batch 136) | Server start/stop/pkill/hot reload (manual + file-watch automatic), robots (USAGE.md) | rojo serve start/stop + Studio live sync + toolchain auto-install (Aftman) (README) | — | Indirect support by generating build/debug configs |
+| Config validation / discovery | Implemented: four-tier priority config auto-discovery (batch 127/128/129, discovery report command) + final merged config view (`src/serverConfigMerge.ts:351-366`) | Workspace initialization, path mapping (USAGE.md) | `jsonValidation` for `*.project.json` (manifest) | — | — |
+| Profiling | **Not implemented** (gap G8) | TICK/CPROFILE/PYPROFILE/EVENT/NETWORK (USAGE.md, KBE Nex 3.x binary management protocol) | — | — | — |
+| Hot reload (automatic) | Implemented (batch 136 G5, `src/hotReload.ts`: `kbengine.hotReload.{enabled,actionName,globs,debounceMs}`, gated off by default, when enabled one watcher per glob, three-channel event debounce merge, config-change linked rebuild; reuses the whitelist three backends via `QuickActionManager.runByName`, name-not-found only logs to OUTPUT without a popup) | File-watch automatic hot reload (USAGE.md) | Sync-on-save (rojo serve resident) | — | — |
+| Python extraPaths wiring | Implemented (batch 136, `src/pythonExtraPaths.ts`: scripts root discovered with the same rules as entityMapping + first-level `*_assets` convention, writes workspace-folder-level `python.analysis.extraPaths`, manages only its own segment, `kbengine.python.syncExtraPaths` manual rerun + once automatically on activation, `kbengine.python.extraPathsSync` on by default and disableable; after batch 136 G2 landed, the stub dir `.kbengine/stubs` is merged into the managed segment when export is on and the file exists on disk) | Dynamic extraPaths per base/cell (USAGE.md) | — | — | — |
+| KBEngine API stubs (.pyi) | Implemented (batch 136 G2, `src/pythonStubExport.ts`: the symbol index (same source as completion/hover/navigation) exports a real `.kbengine/stubs/KBEngine.pyi` file, content-identical zero-write, stale rewrite, `kbengine.python.exportStubs` manual entry + once automatically on activation, `kbengine.python.stubExport` on by default and disableable; virtual stub documents are invisible to the Python extension, only a real file plus G1 extraPaths resolves `import KBEngine`) | generateStubs + built-in tip files resources/py/tips/* (manifest) | — | — | — |
+| Config file schema validation | Implemented (batch 136 G3, `contributes.jsonValidation` for `.kbengine/debug.json`, schema built in `src/debugJsonSchema.ts`) | — | `jsonValidation` for project files | — | — |
+
+"Stronger in this repo", stated as-is: kode's def/types.xml semantic surface (injection coloring, form hover, back-scan CodeLens), the database tool trio (schema/simulation/drift), static analysis and the discovery report have no counterpart in any of the four references; Rojo's toolchain auto-install and Roblox LSP's full LSP (standalone language server) belong to their ecosystem positioning, which kode does not copy.
+
+## 3. Gap List (not implemented → todo)
+
+| ID | Gap | Source | Priority | Notes |
+| --- | --- | --- | --- | --- |
+| G1 | `python.analysis.extraPaths` auto-wiring (write the scripts root inferred via `getPythonScriptRoots` + the engine source root into the Python extension config) | Nex X | **P1** | **Implemented** (batch 136, `src/pythonExtraPaths.ts`): scripts root discovered by the same rules + first-level `*_assets` convention, workspace-folder-level write, manages only its own segment; before G2, resolving `import KBEngine` still depends on whether the project has KBEngine.py |
+| G2 | KBEngine Python API stub export (export `.pyi` from the `src/kbeModuleIndex.ts` signature index, pairs with G1) | Nex X (generateStubs + built-in tip files) | **P1** | **Implemented** (batch 136 G2, `src/pythonStubExport.ts`): the symbol index exports `.kbengine/stubs/KBEngine.pyi` from the same source, resolving `import KBEngine` together with G1 wiring; homegrown generation, no Nex X files copied |
+| G3 | `.kbengine/debug.json` JSON schema validation (`contributes.jsonValidation`) | Rojo (same approach for `*.project.json`) | **P1** | **Implemented** (batch 136 G3, `contributes.jsonValidation` + `src/debugJsonSchema.ts`): the whole file (debug section + quickActions) gets inline red squiggles in the editor; schema enums come from `HTTP_METHODS`/`QUICK_ACTION_TYPES` in `quickActionConfig.ts`, kept in sync with the manifest's inline object by tests |
+| G4 | Client entity/SDK multi-language generation (C#/TS/C++/GDScript templates) | Nex X | **P2** | **Implemented (batch 138)** `kbengine.clientSdk.generate` (`src/clientSdkGenerator.ts`): generates client skeletons for entities registered in `entities.xml`, first batch TypeScript + C# (decided on behalf of the user); properties only include those whose Flags contain a client domain, ClientMethods become virtual callback slots, Exposed Base/Cell methods become wrapper calls, sending lands only on the `onBaseOutgoing`/`onCellOutgoing` seams without assuming any plugin API; FIXED_DICT types emit a companion file; GDScript/C++ left as follow-up increments (language-neutral model + per-language emitters already separated) |
+| G5 | Automatic hot reload (file save/watch → trigger a designated quick action) | Nex X (file-watch auto hot reload) | **P2** | **Implemented** (batch 136 G5, `src/hotReload.ts` + `QuickActionManager.runByName`): gate off by default against accidental triggers, once enabled one watcher per glob, three-channel event debounce merge, config-change linked rebuild; name-not-found only logs to OUTPUT without a popup; reuses the quickActions whitelist backends |
+| G6 | Raw log ERROR scan view (aggregate counts of ERROR lines in raw log files) | Nex X | **P2** | **Implemented** (batch 137, `src/logErrorScan.ts` + `kbengine.logs.scanErrors`): offline scan of raw log files (one level of `.log`/`.txt`/`.out` under a file/folder), ERROR/CRITICAL lines aggregated by "component + normalized signature", the panel click-locates the source file line, rescan on the previous batch of files; shares the same parser family as the log panel, no dependency on the logger protocol |
+| G7 | Generator form extensions (newProxy/newSpace/newComponent/newFixedDict wizards etc.) | Nex X (six generation commands) | **P3** | The entity wizard exists; the other forms on demand |
+| G8 | Profiling (TICK/CPROFILE/PYPROFILE/EVENT/NETWORK) | Nex X | **P3 (unproven)** | Nex X uses the KBE Nex 3.x management protocol; this repo targets classic kbengine, protocol availability unproven, not scheduled until the user names it |
+| G9 | Space Viewer / Watcher query panel (spaces and cell entity map) | Nex X | **P3 (unproven)** | Same dependency on the engine management protocol; the monitoring panel already has basic machine status |
+| G10 | Robots management / extension marketplace / workspace initialization | Nex X | **Not scheduled** | Beyond a dev tool's scope (external ecosystem/scaffolding); kode is positioned as an in-project tool; re-evaluate if the user names it |
+
+## 4. Implementation Order
+
+1. **G1 + G2 + G3 (one batch, P1)**: two Python ecosystem wirings + one config validation, independent of each other but all small increments with high visibility; G1/G2 give "users with the Python extension" immediate KBEngine API completion, G3 surfaces quickActions config errors earlier. **G1/G2/G3 all landed (batch 136)**, P1 cleared.
+2. **G5 (P2)**: automatic hot reload, depends on the existing quickActions whitelist, config-gated. **Landed (batch 136)**, P2 remaining: G6 and G4 awaiting the user's call.
+3. **G6 (P2)**: log ERROR scan, reuses logWebView. **Landed (batch 137)**, P2 only G4 left awaiting the user's call.
+4. **G4 (P2)**: multi-language SDK generation. **Landed (batch 138)**, first batch TS + C# (decided on behalf of the user); GDScript/C++ to be scheduled as increments.
+5. **G7/G8/G9 (P3)**: form extensions and protocol-dependent items; prove the protocol before lighting each batch.
+6. **G10**: not scheduled.
+
+## 5. Decided-on-Behalf Records
+
+From patrol order FW1016D onward the user authorized deciding on their behalf: items stuck on sign-off/design choices/requirement trade-offs/scheduling are executed directly per the recommended plan and marked "decided on behalf" in the repo's decision records; the user can overturn afterwards. Two entries settled:
+
+1. **G4 language list (requirement trade-off, 2026-10-16 batch 138)**: the first batch is **TypeScript + C#**. Rationale: the two mainstream client ecosystems of classic KBEngine are the js client (Web/Cocos family, TS) and Unity (C#); C++ and GDScript client projects are a small share and differ widely in typing/naming habits — doing these two first proves out the "language-neutral model + per-language emitter" layering, after which adding a language is just one mapping table plus one emitter function. **Boundary statement**: what is generated is a skeleton; no client plugin's call channel is implemented (nothing copied from Nex X, no Unity/js plugin API assumed), sending funnels into two seams that users wire themselves. The user can overturn (change the language list or remove the command); on overturn, revert docs/guide/client-sdk.md in sync.
+2. **G7 generator form extensions (scheduling trade-off, not started)**: the form list stays "on demand"; not scheduled without a specific user request; no invented tasks.
+
+## 6. Sources and Forensics
+
+- Marketplace Gallery API: `POST https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery` (filterType 8 `Microsoft.VisualStudio.Code` + filterType 10 `Publisher.Name` / filterType 2 Tag), flags 914; installs taken from `statistics[install]`.
+- Each extension's vsix was downloaded via the Gallery asset URL (`{publisher}.gallerycdn.vsassets.io/extensions/{publisher}/{name}/{version}/{timestamp}/Microsoft.VisualStudio.Services.VSIXPackage`), reading only `extension/package.json` and the README/CHANGELOG/USAGE text.
+- KBEngine Nex X's proprietary license statement is in its README; this inventory read none of its distributed source code.
+- kode-side evidence is this repo's `file:line`, as of 2026-10-15 main (9a69ab5).

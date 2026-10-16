@@ -1,5 +1,7 @@
 # KBEngine entitydef 源码分析(kode 实体索引设计底稿)
 
+[English](./source-analysis.en.md) | [中文](./source-analysis.md)
+
 > 源码先行令的产物。所有结论基于本机 KBEngine 源码检出
 > (`~/workspaces/kbengine`,下文路径均相对该根),先读仓库既有分析文档
 > (`docs/study/05-entitydef-and-entity-definition.md`、
