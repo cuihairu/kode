@@ -31,6 +31,36 @@ pnpm run docs:build
 pnpm run package
 ```
 
+## 改了代码但行为没变？先确认 VS Code 跑的是哪份产物
+
+「改了没生效」绝大多数不是逻辑问题,而是 VS Code 还在跑旧产物。按序排查:
+
+1. **已装扩展**:`%USERPROFILE%\.vscode\extensions` 下应存在
+   `cuihairu.kode-0.1.0` 目录;没有就是没装(你测的不是这份代码)。
+   ```powershell
+   Get-ChildItem $env:USERPROFILE\.vscode\extensions -Filter '*kode*'
+   ```
+2. **开发主机(F5)的产物**:入口是 `package.json` 的 `main` = `./out/extension.js`。
+   重建后确认新代码真在产物里(以跳转修复的符号为例):
+   ```bash
+   pnpm run vscode:prepublish
+   pnpm exec node -e "console.log(require('fs').readFileSync('out/extension.js','utf8').includes('resolveSelfMethodCandidates'))"
+   # 必须输出 true;false 说明编译未跑/跑的是旧编译
+   ```
+3. **重建并安装**(最短步骤;`out/`、`*.vsix` 均已 gitignore):
+   ```bash
+   pnpm install
+   pnpm run package        # vsce 自动执行 vscode:prepublish = compile + bundle
+   code --install-extension kode-0.1.0.vsix
+   ```
+   装完执行 `Developer: Reload Window` 再测。
+4. **确认扩展已激活**:激活事件只有 `workspaceContains:**/*.def` 与打开 `.def`
+   文件,**没有 `onLanguage:python`**——只开纯 Python 子目录(全树无 `.def`)时
+   扩展不激活,Python 跳转提供者也就不存在。先打开任意 `.def` 或切到含 `.def`
+   的工作区根再测。
+5. **不需要新增配置**:`contributes.configuration` 41 项里没有任何跳转/mixin/索引
+   开关;Python 定义提供者在 `src/extension.ts:205` 无条件注册。
+
 ## 测试
 
 测试不依赖真实 KBEngine 环境与 VSCode 下载:vitest(`tests/`)承载全部功能

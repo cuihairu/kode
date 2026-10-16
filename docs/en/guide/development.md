@@ -31,6 +31,40 @@ pnpm run docs:build
 pnpm run package
 ```
 
+## Changed Code Has No Effect? Check Which Build VS Code Runs
+
+Most "my change did nothing" reports are stale artifacts, not logic bugs. Check in order:
+
+1. **Installed extension**: `%USERPROFILE%\.vscode\extensions` must contain a
+   `cuihairu.kode-0.1.0` folder; if it is absent, the extension is not installed
+   and you are not testing this code.
+   ```powershell
+   Get-ChildItem $env:USERPROFILE\.vscode\extensions -Filter '*kode*'
+   ```
+2. **Extension Development Host (F5) artifact**: the entry point is `main` in
+   `package.json` = `./out/extension.js`. Rebuild, then confirm the new code is
+   actually in the artifact (using the jump-fix symbol as an example):
+   ```bash
+   pnpm run vscode:prepublish
+   pnpm exec node -e "console.log(require('fs').readFileSync('out/extension.js','utf8').includes('resolveSelfMethodCandidates'))"
+   # must print true; false means the compile is stale or was never run
+   ```
+3. **Rebuild and install** (shortest path; `out/` and `*.vsix` are gitignored):
+   ```bash
+   pnpm install
+   pnpm run package        # vsce runs vscode:prepublish = compile + bundle
+   code --install-extension kode-0.1.0.vsix
+   ```
+   Then run `Developer: Reload Window` before testing.
+4. **Confirm the extension activated**: activation events are only
+   `workspaceContains:**/*.def` and opening a `.def` file — there is no
+   `onLanguage:python`. In a pure-Python folder with no `.def` anywhere the
+   extension never activates, so the Python definition provider does not exist.
+   Open any `.def` file or switch to a workspace root that contains `.def`.
+5. **No new setting is required**: none of the 41 `contributes.configuration`
+   keys is a jump/mixin/index switch, and the Python definition provider is
+   registered unconditionally at `src/extension.ts:205`.
+
 ## Testing
 
 Tests depend on neither a real KBEngine environment nor a VSCode download:
