@@ -6,6 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { jumpLog, jumpTimeStart } from './navigationLog';
 import {
   findFilesAcrossRoots,
   getExternalScanRoots,
@@ -175,6 +176,7 @@ export class EntityMappingManager {
     }
     /* istanbul ignore stop */
 
+    const indexTimer = jumpTimeStart();
     const defFiles = await findFilesAcrossRoots('**/*.def', null);
     for (const defFile of defFiles) {
       const normalizedPath = normalizeLookupPath(defFile.fsPath);
@@ -185,6 +187,7 @@ export class EntityMappingManager {
       const entityName = path.basename(defFile.fsPath, '.def');
       await this.parseDefFile(entityName, defFile.fsPath, loader);
     }
+    jumpLog('info', `def 全量索引完成 ${defFiles.length} 个 .def → 实体 ${this.mappingIndexes.size} 个,${indexTimer()}ms`);
   }
 
   private async parseDefFile(
@@ -772,12 +775,17 @@ export class EntityMappingManager {
     const ownerName = inferOwnerNameFromPythonFile(pythonFile);
     const section = inferMethodSectionFromPythonFile(pythonFile);
 
-    return this.selectMethodDefinition(index.methodDefinitions, {
+    const located = this.selectMethodDefinition(index.methodDefinitions, {
       methodName,
       ownerKind,
       ownerName,
       section
     });
+    jumpLog(
+      'debug',
+      `def 方法[文件级] ${methodName} → ${located ? `${path.basename(located.defFile)}:${located.line}` : 'miss'}`
+    );
+    return located;
   }
 
   /**
@@ -1232,6 +1240,7 @@ export class EntityMappingManager {
     // 负缓存命中:该文件已确认无 .def 归属,直接走 null → 上层 PythonClassIndex
     // 兜底,不再每次重扫(修复前每次跳转两轮全量 .def 重扫)
     if (this.missingOwnerPaths.has(normalized)) {
+      jumpLog('debug', `def 索引[文件级] ${path.basename(pythonFile)} → miss(负缓存命中)`);
       return undefined;
     }
     let index = this.findIndexForPythonFile(pythonFile);
@@ -1242,6 +1251,10 @@ export class EntityMappingManager {
         this.missingOwnerPaths.add(normalized);
       }
     }
+    jumpLog(
+      'debug',
+      `def 索引[文件级] ${path.basename(pythonFile)} → ${index ? index.rootName : 'miss(无 owner 归属)'}`
+    );
     return index;
   }
 
@@ -1269,6 +1282,10 @@ export class EntityMappingManager {
       // 索引表已有数据仍未命中才负缓存(空表=尚无数据,不落死)
       this.missingClassNames.add(className);
     }
+    jumpLog(
+      'debug',
+      `def 索引[对象级] ${className} → ${index ? index.rootName : this.missingClassNames.has(className) ? 'miss(负缓存)' : 'miss'}`
+    );
     return index;
   }
 

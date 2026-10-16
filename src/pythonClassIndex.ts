@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from './compositionRoots';
 import { findFilesAcrossRoots } from './scanRoots';
+import { jumpLog, jumpTimeStart } from './navigationLog';
 
 /**
  * Python 类层级索引(mixin/跨类跳转根因修复)。
@@ -282,6 +283,7 @@ export class PythonClassIndex {
       return this.rootsPromise;
     }
     this.rootsPromise = (async () => {
+      const rootsTimer = jumpTimeStart();
       // 先完成 .py 扫描:根名「实现对象 → 类」的桥接要用到文件里的实例赋值表
       await this.ensureScanned();
       try {
@@ -338,6 +340,10 @@ export class PythonClassIndex {
           }
         }
         this.rootsMap = { roots: resolvedRoots, defMixins: derived.defMixins };
+        jumpLog(
+          'info',
+          `组合根派生 ${resolvedRoots.length} 根: [${resolvedRoots.join(', ')}] ${rootsTimer()}ms`
+        );
       } catch {
         // 派生失败:不当成功缓存,下次跳转重试;已建索引不受影响
         this.rootsMap = null;
@@ -407,6 +413,7 @@ export class PythonClassIndex {
       return this.scanPromise;
     }
     this.scanPromise = (async () => {
+      const scanTimer = jumpTimeStart();
       try {
         const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
         // 分块并行读:顺序同步读在大仓是「跳转前加载很久」的主来源
@@ -417,6 +424,7 @@ export class PythonClassIndex {
             files.slice(offset, offset + CONCURRENCY).map(uri => this.loadFile(uri.fsPath, -1))
           );
         }
+        jumpLog('info', `py 全仓索引完成 ${files.length} 个文件 → 类 ${this.byName.size} 个,${scanTimer()}ms(同会话缓存)`);
       } catch {
         // 扫描失败不阻断跳转,但必须清掉缓存的失败结果——否则 scanPromise
         // 永久停在「已扫描」态、跨文件类永远补不进来,每次跳转都落 null
@@ -553,9 +561,12 @@ export class PythonClassIndex {
     line: number,
     methodName: string
   ): Promise<PythonMethodLocation[]> {
+    const queryTimer = jumpTimeStart();
+    jumpLog('info', `py 查询 ${path.basename(filePath)}:${line + 1} 方法=${methodName}`);
     await this.ensureScanned();
     const enclosing = await this.findEnclosingClass(filePath, line);
     if (!enclosing) {
+      jumpLog('info', 'py 查询落空: 光标不在任何类内(或文件未入索引)');
       return [];
     }
     const seen = new Set<string>();
@@ -575,8 +586,13 @@ export class PythonClassIndex {
     // ① 祖先 MRO(静态类自身可解即最直接)
     push(this.lookupInMRO(enclosing.name, methodName), out);
     if (out.length > 0) {
+      jumpLog(
+        'info',
+        `py 命中(①静态类 MRO) ${out[0].className} → ${path.basename(out[0].filePath)}:${out[0].line + 1} ${queryTimer()}ms`
+      );
       return out;
     }
+    jumpLog('debug', `py ①静态类 MRO 未命中(enclosing=${enclosing.name})`);
 
     // ② 组合根(用户 2026-10-16:实体清单里每个实体、其字段对象、组件都是组合根,
     // 不止单一入口类):静态类被哪些组合根收录 → 在每一个组合根的 MRO 里找。
@@ -584,6 +600,7 @@ export class PythonClassIndex {
     // (Parent → Interfaces → Components);多根/多处命中全部保留(上面 push 去重),
     // 由 provider 出 Location[] 列表,不替用户跳第一个。
     const rootNames = await this.rootsContaining(enclosing.name);
+    jumpLog('debug', `py 组合根收录 ${enclosing.name} → [${rootNames.join(', ') || '无'}]`);
     if (rootNames.length > 0 && this.rootsMap) {
       for (const root of rootNames) {
         const fromPython = this.lookupInMRO(root, methodName);
@@ -598,6 +615,10 @@ export class PythonClassIndex {
         }
       }
       if (out.length > 0) {
+        jumpLog(
+          'info',
+          `py 命中(②组合根) root=${out[0].compositionRoot ?? '?'} → ${path.basename(out[0].filePath)}:${out[0].line + 1} ${queryTimer()}ms`
+        );
         return out;
       }
     }
@@ -607,6 +628,14 @@ export class PythonClassIndex {
     const descendants = await this.descendantsOf(enclosing.name);
     for (const sub of descendants) {
       push(this.lookupInMRO(sub.name, methodName), out);
+    }
+    if (out.length > 0) {
+      jumpLog(
+        'info',
+        `py 命中(③反向后代) ${out[0].className} → ${path.basename(out[0].filePath)}:${out[0].line + 1} ${queryTimer()}ms`
+      );
+    } else {
+      jumpLog('info', `py 落空: 静态类/组合根/反向后代均无 ${methodName}(${queryTimer()}ms)`);
     }
     return out;
   }
