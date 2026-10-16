@@ -217,6 +217,18 @@
 - 标题：`Create Entity from Template`
 - 作用：从预定义模板快速生成实体（账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体共 10 个）
 
+### `kbengine.generator.formWizard`
+
+- 标题：`Create Def Form from Wizard`
+- 作用：生成实体向导之外的定义形态，一次一种（代理 / 空间 / 组件 / 固定字典类型）
+- 各形态落点与附带改写：
+  - 代理：`scripts/proxy_defs/<实体名>Proxy.def`，`<Parent>` 指向 `<实体名>Proxy`；方法名按逗号分隔填写，方法声明在 `BaseMethods` 还是 `CellMethods` 由命令内选（引擎按版本装载面不同，生成器不替引擎断言）
+  - 空间：`entity_defs/<名称>.def`（父类 `Space` + 进出空间回调），并在 `entities.xml` 插一行 `hasBase="true" hasCell="true"`
+  - 组件：`entity_defs/components/<名称>.def`，可选挂载——在所选实体的 `<Properties>` 段末插一条 `<Type>COMPONENT</Type>` 属性
+  - 固定字典：`types.xml` 里插一个 `FIXED_DICT` 类型块（含 `<Properties>` 字段，可选 `implementedBy`）
+- 行为：已存在的 def 文件默认不覆盖，只给说明；`entities.xml` / `types.xml` 重复登记只记说明不改写；`types.xml` 不存在时新建最小根；实体 def 没有 `<Properties>` 段时不硬插，报说明
+- 落盘目录按当前工作区的定义布局解析（`entity_defs` / `components` / `types.xml` 随批125 自动发现），解析不到时如实说明不写盘
+
 ### `kbengine.clientSdk.generate`
 
 - 标题：`Generate Client Entity SDK`

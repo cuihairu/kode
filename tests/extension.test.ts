@@ -1040,3 +1040,44 @@ describe('extension activate 客户端实体 SDK 生成装配(盘点 G4)', () =>
     }
   }, 8000);
 });
+
+describe('extension activate 定义形态生成装配(盘点 G7)', () => {
+  it('formWizard 命令:选空间形态 + 名称后落 def 并登记 entities.xml', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalQuickPick = windowish.showQuickPick;
+    const originalInputBox = windowish.showInputBox;
+    const originalInfoCount = messages.info.length;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-forms-activate-'));
+    fs.mkdirSync(path.join(root, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), '<root>\n</root>\n', 'utf8');
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const context = makeContext();
+    try {
+      activate(context);
+
+      let pickCalls = 0;
+      windowish.showQuickPick = async (items: unknown[]): Promise<unknown> => {
+        const resolved = await items;
+        pickCalls += 1;
+        return resolved.find(item => (item as { label: string }).label.startsWith('空间实体'));
+      };
+      windowish.showInputBox = async (): Promise<string | undefined> => 'MySpace';
+
+      await commands.executeCommand('kbengine.generator.formWizard');
+
+      expect(pickCalls).toBe(1);
+      const defPath = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
+      expect(fs.readFileSync(defPath, 'utf8')).toContain('<Space/>');
+      expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toContain(
+        '<MySpace hasBase="true" hasCell="true" />'
+      );
+      expect(messages.info.some(info => info.includes('已生成空间实体'))).toBe(true);
+    } finally {
+      windowish.showQuickPick = originalQuickPick;
+      windowish.showInputBox = originalInputBox;
+      messages.info.length = originalInfoCount;
+      disposeAll(context);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 8000);
+});

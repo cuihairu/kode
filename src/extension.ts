@@ -21,6 +21,7 @@ import {
 import { EntityDependencyWebView } from './entityDependencyWebView';
 import { EntityFlowWebView } from './entityFlowWebView';
 import { KBEngineCodeGenerator } from './codeGenerator';
+import { runGeneratorFormWizard } from './generatorForms';
 import { runClientSdkGenerateCommand } from './clientSdkGenerator';
 import {
   EntityExplorerProvider,
@@ -982,6 +983,14 @@ export function activate(context: vscode.ExtensionContext) {
     () => codeGenerator.showTemplates()
   );
   context.subscriptions.push(showTemplatesCommand);
+
+  // 定义形态生成(盘点 G7):代理/空间/组件/固定字典四种形态的向导,实体向导之外
+  // 的定义面(此前只能手写)。已代决按「先出骨架 + 引擎装载口径附带改写」落地
+  const showGeneratorFormWizardCommand = vscode.commands.registerCommand(
+    'kbengine.generator.formWizard',
+    () => runGeneratorFormWizard()
+  );
+  context.subscriptions.push(showGeneratorFormWizardCommand);
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
   // 语言清单在命令内选(已代决首批 TS + C#)

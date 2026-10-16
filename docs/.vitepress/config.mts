@@ -14,8 +14,7 @@ export default defineConfig({
     nav: [
       { text: '指南', link: '/guide/' },
       { text: '配置', link: '/guide/configuration' },
-      { text: '功能', link: '/guide/features' },
-      { text: 'GitHub', link: 'https://github.com/cuihairu/kode' }
+      { text: '功能', link: '/guide/features' }
     ],
     sidebar: {
       '/guide/': [

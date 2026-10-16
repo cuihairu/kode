@@ -62,6 +62,7 @@
     "onCommand:kbengine.dependency.show",
     "onCommand:kbengine.flow.show",
     "onCommand:kbengine.generator.wizard",
+    "onCommand:kbengine.generator.formWizard",
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
@@ -555,6 +556,11 @@
         "command": "kbengine.generator.wizard",
         "title": "Create Entity from Wizard",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "kbengine.generator.formWizard",
+        "title": "Create Def Form from Wizard",
+        "icon": "$(symbol-structure)"
       },
       {
         "command": "kbengine.generator.templates",
