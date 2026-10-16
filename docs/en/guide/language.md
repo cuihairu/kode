@@ -1,6 +1,5 @@
 # Language Features
 
-[English](./language.en.md) | [中文](./language.md)
 
 This page covers Kode's language features on `.def` files: highlighting, completion, hover, navigation, and diagnostics.
 

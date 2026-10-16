@@ -1,6 +1,5 @@
 # Kode Redesign: A Test Bed That Does Not Depend on a Real KBEngine Environment
 
-[English](./redesign.en.md) | [中文](./redesign.md)
 
 > Status: all phases complete (phases 1-4, batches 52-56, 2026-09-26). Baseline measurement time: 2026-09-25.
 > The companion list of current-state problems is in section 1; the per-phase completion status is in the progress table in section 6.

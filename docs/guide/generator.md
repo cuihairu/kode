@@ -1,6 +1,5 @@
 # 代码生成器
 
-[English](./generator.en.md) | [中文](./generator.md)
 
 Kode 内置实体代码生成器，用来快速创建 `.def` 和配套 Python 文件。
 

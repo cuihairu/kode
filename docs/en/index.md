@@ -1,6 +1,5 @@
 # Kode Documentation
 
-[English](./README.md) | [中文](./README.zh.md)
 
 Kode is a VS Code extension for KBEngine projects, covering `.def` language support, diagnostics, navigation, entity browsing, logs, monitoring, dependency graphs, and code generation.
 

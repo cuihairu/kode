@@ -1,6 +1,5 @@
 # Code Generator
 
-[English](./generator.en.md) | [中文](./generator.md)
 
 Kode ships a built-in entity code generator for quickly creating `.def` files and companion Python files.
 

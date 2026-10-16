@@ -1,6 +1,5 @@
 # 功能概览
 
-[English](./features.en.md) | [中文](./features.md)
 
 ## 语言能力
 

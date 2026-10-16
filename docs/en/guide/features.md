@@ -1,6 +1,5 @@
 # Feature Overview
 
-[English](./features.en.md) | [中文](./features.md)
 
 ## Language Features
 

@@ -1,6 +1,5 @@
 # 数据库漂移校验
 
-[English](./database-drift-check.en.md) | [中文](./database-drift-check.md)
 
 命令 `kbengine.database.checkDrift`（`Check Database Drift`）拿真实 MySQL 表结构，反向校验 `.def` 推导出的虚拟表结构。
 

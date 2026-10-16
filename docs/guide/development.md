@@ -1,6 +1,5 @@
 # 开发与发布
 
-[English](./development.en.md) | [中文](./development.md)
 
 本页面向维护者，说明如何本地开发、调试、构建文档和控制版本策略。
 

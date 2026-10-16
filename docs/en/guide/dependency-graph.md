@@ -1,6 +1,5 @@
 # Entity Dependency Graph
 
-[English](./dependency-graph.en.md) | [中文](./dependency-graph.md)
 
 Kode provides an entity dependency graph for viewing entity inheritance structures and references between entities.
 

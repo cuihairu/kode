@@ -1,6 +1,5 @@
 # Log Viewer
 
-[English](./logging.en.md) | [中文](./logging.md)
 
 Kode ships a log viewer WebView for the KBEngine logger, to view, filter, and export logs.
 

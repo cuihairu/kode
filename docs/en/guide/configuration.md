@@ -1,6 +1,5 @@
 # Configuration Reference
 
-[English](./configuration.en.md) | [中文](./configuration.md)
 
 Kode's configuration falls into two piles: `kbengine.*` settings (VS Code `settings.json`) and the server-side XML configuration (`kbengine_defaults.xml`, the component `kbengine.xml`). This page gives, item by item, the type, default value and its source, meaning, impact of changes, and common misconfigurations; for how the server configuration layers and merges, and where the telnet port/password come from, read the first two sections first.
 

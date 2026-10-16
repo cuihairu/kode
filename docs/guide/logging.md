@@ -1,6 +1,5 @@
 # 日志查看
 
-[English](./logging.en.md) | [中文](./logging.md)
 
 Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查看、过滤和导出日志。
 

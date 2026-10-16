@@ -1,6 +1,5 @@
 # Client Entity SDK Generation
 
-[English](./client-sdk.en.md) | [中文](./client-sdk.md)
 
 Generates client entity skeletons from `.def` files for the entities registered in `entities.xml`. Currently TypeScript and C# are supported; pick them (multi-select) inside the command.
 

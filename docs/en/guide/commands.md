@@ -1,6 +1,5 @@
 # Commands and Panels
 
-[English](./commands.en.md) | [中文](./commands.md)
 
 This page collects the main commands Kode exposes in VS Code, where they are entered from, and when each applies.
 

@@ -1,6 +1,5 @@
 # Database Simulation
 
-[English](./database-simulation.en.md) | [中文](./database-simulation.md)
 
 The command `kbengine.database.simulate` simulates "table creation + first batch of row data" on top of a database schema snapshot and opens a `.dbsim` virtual document; `kbengine.database.exportSimulation` exports the current simulation document as Markdown. The simulation rules align item by item with the engine's dbmgr/baseapp MySQL persistence implementation (kbe/src/lib/db_mysql / kbe/src/lib/db_interface); all differences are honestly listed at the end of the document.
 

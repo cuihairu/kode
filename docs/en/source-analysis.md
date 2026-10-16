@@ -1,6 +1,5 @@
 # KBEngine entitydef Source Analysis (Design Draft for the kode Entity Index)
 
-[English](./source-analysis.en.md) | [中文](./source-analysis.md)
 
 > A product of the source-first order. Every conclusion is based on the local KBEngine
 > source checkout (`~/workspaces/kbengine`; all paths below are relative to that root). The

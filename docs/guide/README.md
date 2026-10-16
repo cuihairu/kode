@@ -1,6 +1,5 @@
 # 快速开始
 
-[English](./README.en.md) | [中文](./README.md)
 
 ## 安装依赖
 

@@ -1,6 +1,5 @@
 # Reference Extension Feature Gap Inventory
 
-[English](./reference-feature-gap.en.md) | [中文](./reference-feature-gap.md)
 
 > 2026-10-15. User order (translated): "Hold the release for now. First check the features of the other reference extensions — whether everything is implemented. If not, wait until everything is implemented before talking about releasing."
 > This document only registers comparisons and borrowings; no implementation here. Implementation proceeds batch by batch per the "implementation order" section.

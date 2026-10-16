@@ -1,6 +1,5 @@
 # 实体依赖图
 
-[English](./dependency-graph.en.md) | [中文](./dependency-graph.md)
 
 Kode 提供实体依赖关系图，用于查看实体继承结构和实体间引用关系。
 

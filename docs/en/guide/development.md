@@ -1,6 +1,5 @@
 # Development and Release
 
-[English](./development.en.md) | [中文](./development.md)
 
 This page targets maintainers: how to develop locally, debug, build the docs, and control the versioning policy.
 

@@ -1,6 +1,5 @@
 # 语言能力
 
-[English](./language.en.md) | [中文](./language.md)
 
 本页说明 Kode 在 `.def` 文件上的语言能力，包括高亮、补全、悬停、跳转和诊断。
 

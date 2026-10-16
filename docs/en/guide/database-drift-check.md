@@ -1,6 +1,5 @@
 # Database Drift Check
 
-[English](./database-drift-check.en.md) | [中文](./database-drift-check.md)
 
 The command `kbengine.database.checkDrift` (`Check Database Drift`) takes the real MySQL table structures and reverse-checks the virtual table structures derived from `.def` files.
 
