@@ -190,6 +190,10 @@ export class KBEngineServerManager {
     binPath = binPath
       .replace(/\$\{workspaceFolder\}/g, workspaceFolder)
       .replace(/\$\{env:(.+?)\}/g, (_, envVar) => process.env[envVar] || '');
+    // 相对值以仓库根为基准(不许假设 cwd);无根可锚 → 空串
+    if (binPath && !path.isAbsolute(binPath)) {
+      binPath = workspaceFolder ? path.join(workspaceFolder, binPath) : '';
+    }
 
     return binPath;
   }
@@ -241,6 +245,10 @@ export class KBEngineServerManager {
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
     configPath = configPath.replace(/\$\{workspaceFolder\}/g, workspaceFolder);
+    // 相对值以仓库根为基准(不许假设 cwd);无根可锚 → 空串(启动检查链报「未配置」)
+    if (configPath && !path.isAbsolute(configPath)) {
+      configPath = workspaceFolder ? path.join(workspaceFolder, configPath) : '';
+    }
 
     if (configPath && hasEngineConfigProbe(configPath)) {
       return configPath;

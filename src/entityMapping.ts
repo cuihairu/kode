@@ -243,7 +243,13 @@ export class EntityMappingManager {
   }
 
   private collectPythonOwnerFiles(semantics: ResolvedDefinitionSemantics): PythonOwnerFile[] {
-    const layout = getDefinitionWorkspaceLayout(this.getWorkspaceRoot(semantics.owner.filePath) || '');
+    // 相对候选必须锚定根(用户令 2026-10-16):拿不到扫描根时整段跳过,
+    // 绝不以空根造出相对候选去 fs 探测(那会相对 cwd 解析)
+    const ownerRoot = this.getWorkspaceRoot(semantics.owner.filePath);
+    if (!ownerRoot) {
+      return [];
+    }
+    const layout = getDefinitionWorkspaceLayout(ownerRoot);
     const files: PythonOwnerFile[] = [];
     const seen = new Set<string>();
 

@@ -31,5 +31,11 @@ export function expandWorkspacePlaceholders(
   const folders: VariableFolderRef[] = workspaceRoot
     ? [{ fsPath: workspaceRoot, name: '' }]
     : [];
-  return substituteVariables(value, { folders });
+  const resolved = substituteVariables(value, { folders });
+  if (resolved.length === 0 || path.isAbsolute(resolved)) {
+    return resolved;
+  }
+  // 相对结果一律以仓库根为基准解析(用户令 2026-10-16:不许假设当前 cwd);
+  // 无工作区根可锚 → 空串(调用方按「未解析出」跳过,绝不相对 cwd 探测)
+  return workspaceRoot ? joinWorkspacePath(workspaceRoot, resolved) : '';
 }

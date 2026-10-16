@@ -55,8 +55,13 @@ function resolveAssetsRoot(workspaceRoot: string): string {
   // 归一化:去 ${workspaceFolder} 后的 `..` 段;相对路径按工作区根解析(与
   // 发现报告口径一致)。配置原值存在即用——扫描根看目录存在性,不看引擎
   // 装载探针(探针只管启动链)。
+  // 相对值必须有仓库根可锚(path.resolve 的 '.' 会落 cwd,禁用);无根 → 空串
   const expanded = rawPath
-    ? path.resolve(workspaceRoot || '.', rawPath)
+    ? path.isAbsolute(rawPath)
+      ? path.resolve(rawPath)
+      : workspaceRoot
+        ? path.resolve(workspaceRoot, rawPath)
+        : ''
     : '';
   if (expanded && isDirectory(expanded)) {
     return expanded;
