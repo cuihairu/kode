@@ -1,3 +1,4 @@
+import { findFilesAcrossRoots } from './scanRoots';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1033,7 +1034,7 @@ export function activate(context: vscode.ExtensionContext) {
   const analyzeDefCommand = vscode.commands.registerCommand(
     'kbengine.def.analyze',
     async () => {
-      const defUris = await vscode.workspace.findFiles('**/*.def');
+      const defUris = await findFilesAcrossRoots('**/*.def');
       if (defUris.length === 0) {
         vscode.window.showInformationMessage('未找到 .def 文件,无法分析');
         return;

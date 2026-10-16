@@ -3,6 +3,7 @@
  * 分析实体之间的继承和引用关系，生成依赖图
  */
 
+import { findFilesAcrossRoots } from './scanRoots';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
@@ -109,7 +110,7 @@ export class EntityDependencyAnalyzer {
     await this.loadFromEntitiesXml();
 
     // 查找所有 .def 文件
-    const defFiles = await vscode.workspace.findFiles('**/*.def', null);
+    const defFiles = await findFilesAcrossRoots('**/*.def', null);
 
     // 第一遍：读取所有实体信息
     for (const defFile of defFiles) {

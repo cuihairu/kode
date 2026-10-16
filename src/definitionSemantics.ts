@@ -143,7 +143,12 @@ export class DefinitionSemanticsLoader {
   private localCache = new Map<string, LocalDefinitionSemantics | null>();
   private resolvedCache = new Map<string, ResolvedDefinitionSemantics | null>();
 
-  constructor(private readonly workspaceRoot: string) {}
+  /** 单根(既有口径)或多根(workspace 顶层 ∪ assetsRoot,2026-10-16 扫描根修正) */
+  constructor(private readonly workspaceRoot: string | string[]) {}
+
+  private get workspaceRoots(): string[] {
+    return Array.isArray(this.workspaceRoot) ? this.workspaceRoot : [this.workspaceRoot];
+  }
 
   loadLocal(
     name: string,
@@ -434,21 +439,32 @@ export class DefinitionSemanticsLoader {
     name: string,
     category: DefinitionSemanticCategory
   ): string | null {
-    if (category === 'entity') {
-      return findEntityDefinitionFile(name, this.workspaceRoot);
+    // 逐根解析:workspace 顶层与 assetsRoot 各自按约定布局找,先命中先用
+    // (多根工程里 def 与脚本可能分属两个根)
+    for (const root of this.workspaceRoots) {
+      const found = category === 'entity'
+        ? findEntityDefinitionFile(name, root)
+        : findDefinitionFileByCategory(name, category, root);
+      if (found) {
+        return found;
+      }
     }
-
-    return findDefinitionFileByCategory(name, category, this.workspaceRoot);
+    return null;
   }
 }
 
 export function createDefinitionSemanticsLoader(
-  target?: string | Pick<{ fileName: string }, 'fileName'>
+  target?: string | string[] | Pick<{ fileName: string }, 'fileName'>
 ): DefinitionSemanticsLoader | null {
-  const workspaceRoot = typeof target === 'string'
-    ? target
-    : getWorkspaceRootForDocument(target as { fileName: string } | undefined);
+  const workspaceRoot = Array.isArray(target)
+    ? target.filter(Boolean)
+    : typeof target === 'string'
+      ? target
+      : getWorkspaceRootForDocument(target as { fileName: string } | undefined);
 
+  if (Array.isArray(workspaceRoot)) {
+    return workspaceRoot.length > 0 ? new DefinitionSemanticsLoader(workspaceRoot) : null;
+  }
   return workspaceRoot ? new DefinitionSemanticsLoader(workspaceRoot) : null;
 }
 

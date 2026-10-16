@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from './compositionRoots';
+import { findFilesAcrossRoots } from './scanRoots';
 
 /**
  * Python 类层级索引(mixin/跨类跳转根因修复)。
@@ -285,9 +286,9 @@ export class PythonClassIndex {
       await this.ensureScanned();
       try {
         const [entityXmlFiles, defFiles, typeXmlFiles] = await Promise.all([
-          vscode.workspace.findFiles('**/entities.xml', PY_SCAN_EXCLUDE),
-          vscode.workspace.findFiles('**/*.def', PY_SCAN_EXCLUDE),
-          vscode.workspace.findFiles('**/types.xml', PY_SCAN_EXCLUDE)
+          findFilesAcrossRoots('**/entities.xml', PY_SCAN_EXCLUDE),
+          findFilesAcrossRoots('**/*.def', PY_SCAN_EXCLUDE),
+          findFilesAcrossRoots('**/types.xml', PY_SCAN_EXCLUDE)
         ]);
         const readAll = async (files: vscode.Uri[]): Promise<string[]> => {
           const contents: string[] = [];
@@ -407,7 +408,7 @@ export class PythonClassIndex {
     }
     this.scanPromise = (async () => {
       try {
-        const files = await vscode.workspace.findFiles('**/*.py', PY_SCAN_EXCLUDE);
+        const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
         // 分块并行读:顺序同步读在大仓是「跳转前加载很久」的主来源
         // (排除式漏扫 vcpkg/build 时实测 14,245 文件 × 10.13ms ≈ 144s)
         const CONCURRENCY = 16;

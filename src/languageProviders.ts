@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { getScanRootForFile } from './scanRoots';
 import {
   parsePythonFile,
   PythonClassIndex,
@@ -2822,7 +2823,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     // types.xml implementedBy 反向跳转:光标落在被 types.xml 引用的符号上
     // (class/def/赋值或任意使用处)时跳回 implementedBy 行——正向跳得到
     // 去,反向跳得回来。模块按快照 pythonFilePath 比对定,不猜文件名。
-    const reverseWorkspaceRoot = getWorkspaceRootForDocument(document);
+    const reverseWorkspaceRoot =
+      getWorkspaceRootForDocument(document) || getScanRootForFile(document.fileName);
     if (reverseWorkspaceRoot) {
       const reverseWordRange = document.getWordRangeAtPosition(position, /\w+/);
       if (reverseWordRange) {

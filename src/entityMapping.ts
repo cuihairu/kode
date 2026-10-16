@@ -6,6 +6,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import {
+  findFilesAcrossRoots,
+  getExternalScanRoots,
+  getIndexScanRoots,
+  getScanRootForFile
+} from './scanRoots';
 import { DefMethodSection } from './defParser';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
@@ -153,21 +159,23 @@ export class EntityMappingManager {
   }
 
   private async scanEntityMappings(): Promise<void> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    // 扫描根 = workspace 顶层 ∪ assetsRoot(2026-10-16):loader 按全部根逐个
+    // 解析 def(外部资产根下的 entities/接口/父链同样找得到)。空根集合(无
+    // 工作区且无 assetsRoot)= 原空工作区早退,不失败。
+    const scanRoots = getIndexScanRoots();
+    if (scanRoots.length === 0) {
       return;
     }
 
-    // 不可达(批62 定性):工厂只在传入根为空串时返回 null,而工作区文件夹的
-    // uri.fsPath 恒为绝对路径,上面的 !workspaceFolder 早退已覆盖唯一空根场景。
-    const loader = createDefinitionSemanticsLoader(workspaceFolder.uri.fsPath);
+    // 不可达(批62 定性):工厂只在根为空时返回 null,上方已对空集合早退。
+    const loader = createDefinitionSemanticsLoader(scanRoots);
     /* istanbul ignore start */
     if (!loader) {
       return;
     }
     /* istanbul ignore stop */
 
-    const defFiles = await vscode.workspace.findFiles('**/*.def', null);
+    const defFiles = await findFilesAcrossRoots('**/*.def', null);
     for (const defFile of defFiles) {
       const normalizedPath = normalizeLookupPath(defFile.fsPath);
       if (normalizedPath.includes('/interfaces/') || normalizedPath.includes('/components/')) {
@@ -616,18 +624,30 @@ export class EntityMappingManager {
   }
 
   private watchPythonFiles(): void {
+    // workspace 首根 + workspace 外 assetsRoot:外部资产根的脚本变更同样要
+    // 触发 owner 重解析(否则外部资产改脚本索引不动)
+    const patterns: string[] = [];
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
+    if (workspaceFolder) {
+      patterns.push(vscode.Uri.joinPath(workspaceFolder.uri, '**/*.py').toString());
+    }
+    for (const root of getExternalScanRoots()) {
+      patterns.push(vscode.Uri.joinPath(vscode.Uri.file(root), '**/*.py').toString());
+    }
+    if (patterns.length === 0) {
       return;
     }
 
-    const pattern = vscode.Uri.joinPath(workspaceFolder.uri, '**/*.py');
-    this.pythonWatcher = vscode.workspace.createFileSystemWatcher(pattern.toString());
-    this.pythonWatcher.onDidChange(uri => {
-      this.handlePythonFileChanged(uri.fsPath);
-    });
-
-    this.context.subscriptions.push(this.pythonWatcher);
+    const watchers = patterns.map(pattern =>
+      vscode.workspace.createFileSystemWatcher(pattern)
+    );
+    this.pythonWatcher = watchers[0];
+    for (const watcher of watchers) {
+      watcher.onDidChange(uri => {
+        this.handlePythonFileChanged(uri.fsPath);
+      });
+      this.context.subscriptions.push(watcher);
+    }
   }
 
   /**
@@ -635,22 +655,35 @@ export class EntityMappingManager {
    * (此前 .def 变更只可能被「恰有文件 miss」的重扫顺带带出,归属变化会滞留。)
    */
   private watchDefFiles(): void {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!workspaceFolder) {
-      return;
-    }
-    const pattern = vscode.Uri.joinPath(workspaceFolder.uri, '**/*.def');
-    this.defWatcher = vscode.workspace.createFileSystemWatcher(pattern.toString());
     const invalidate = (): void => {
       this.mappingIndexes.clear();
       this.mappingIndexesByRoot.clear();
       this.missingOwnerPaths.clear();
       this.missingClassNames.clear();
     };
-    this.defWatcher.onDidChange(invalidate);
-    this.defWatcher.onDidCreate(invalidate);
-    this.defWatcher.onDidDelete(invalidate);
-    this.context.subscriptions.push(this.defWatcher);
+    // workspace 首根 + workspace 外 assetsRoot(外部资产根的 .def 增删改同样失效整表)
+    const patterns: string[] = [];
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (workspaceFolder) {
+      patterns.push(vscode.Uri.joinPath(workspaceFolder.uri, '**/*.def').toString());
+    }
+    for (const root of getExternalScanRoots()) {
+      patterns.push(vscode.Uri.joinPath(vscode.Uri.file(root), '**/*.def').toString());
+    }
+    if (patterns.length === 0) {
+      return;
+    }
+
+    const watchers = patterns.map(pattern =>
+      vscode.workspace.createFileSystemWatcher(pattern)
+    );
+    this.defWatcher = watchers[0];
+    for (const watcher of watchers) {
+      watcher.onDidChange(invalidate);
+      watcher.onDidCreate(invalidate);
+      watcher.onDidDelete(invalidate);
+      this.context.subscriptions.push(watcher);
+    }
   }
 
   private handlePythonFileChanged(pythonPath: string): void {
@@ -1244,7 +1277,14 @@ export class EntityMappingManager {
     const workspaceFolder = vscode.workspace.workspaceFolders?.find(folder =>
       filePath.startsWith(`${folder.uri.fsPath}${path.sep}`) || filePath.startsWith(`${folder.uri.fsPath}/`)
     );
-    return workspaceFolder?.uri.fsPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || null;
+    if (workspaceFolder) {
+      return workspaceFolder.uri.fsPath;
+    }
+    // workspace 外的 assetsRoot 下文件 → 扫描根兜底(布局/owner 解析用),
+    // 都不匹配时维持既有行为:回落首个工作区根
+    return getScanRootForFile(filePath)
+      || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+      || null;
   }
 
   private createLegacyIdentity(

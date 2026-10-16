@@ -3,6 +3,7 @@
  * 根据模板快速生成 .def 文件和 Python 脚本
  */
 
+import { findFilesAcrossRoots } from './scanRoots';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -697,7 +698,7 @@ export class KBEngineCodeGenerator {
       return [];
     }
 
-    const defFiles = await vscode.workspace.findFiles('**/*.def', null);
+    const defFiles = await findFilesAcrossRoots('**/*.def', null);
     const entities: Array<{ label: string; description: string }> = [];
 
     for (const defFile of defFiles) {
