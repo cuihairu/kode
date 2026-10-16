@@ -26,6 +26,7 @@ import type {
   WorkspaceFolderRef
 } from './quickActionConfig';
 import { scanBatchScripts } from './quickActionScanner';
+import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
 
 export const QUICK_ACTION_CHANNEL_NAME = 'KBEngine 快速执行动作';
@@ -482,7 +483,9 @@ export class QuickActionManager {
     }
     try {
       const data = await vscode.workspace.fs.readFile(this.configUri(folder.fsPath));
-      return JSON.parse(Buffer.from(data).toString('utf8')) as Record<string, unknown>;
+      // 批142:骨架按 JSONC 写(带注释),读配置统一剥注释再解析,坏 JSON 按没有
+      // 动作处理——用户在文件里写的注释不该让整份配置读不动
+      return parseDebugConfigText(Buffer.from(data).toString('utf8'));
     } catch {
       return null;
     }

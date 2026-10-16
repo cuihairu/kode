@@ -1,5 +1,6 @@
 import * as child_process from 'child_process';
 import * as vscode from 'vscode';
+import { parseDebugConfigText } from './debugConfigBootstrap';
 
 export interface ComponentDebugConfig {
   telnetHost?: string;
@@ -24,7 +25,8 @@ export interface DebugConfigFile {
   debug: KBEngineDebugConfig;
 }
 
-const SOURCE_DEFAULT_COMPONENTS: Array<{
+/** 元件默认清单:元件名 + telnet 端口(批142 起骨架注释示例复用这份真源) */
+export const SOURCE_DEFAULT_COMPONENTS: Array<{
   name: string;
   telnetPort: number;
 }> = [
@@ -194,7 +196,11 @@ export class DebugConfigManager {
 
     try {
       const configData = await vscode.workspace.fs.readFile(configPath);
-      const configFile: DebugConfigFile = JSON.parse(Buffer.from(configData).toString('utf8'));
+      // 批142:骨架按 JSONC 写(带注释),读配置统一剥注释再解析
+      const configFile = parseDebugConfigText(Buffer.from(configData).toString('utf8')) as DebugConfigFile | null;
+      if (configFile === null) {
+        return;
+      }
       this.config = {
         ...this.config,
         ...configFile.debug

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
+import { parseDebugConfigText } from '../src/debugConfigBootstrap';
 import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
@@ -1080,4 +1081,37 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 8000);
+});
+
+describe('激活期 debug.json 缺失自动生成(批142)', () => {
+  it('工作区没有配置文件时生成带注释骨架,生效工作目录与来源落输出通道', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-debugcfg-'));
+    fs.writeFileSync(path.join(root, 'start_server.bat'), '@echo off\n');
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const context = makeContext();
+    try {
+      activate(context);
+
+      const configPath = path.join(root, '.kbengine', 'debug.json');
+      expect(fs.existsSync(configPath)).toBe(true);
+      const content = fs.readFileSync(configPath, 'utf8');
+      // 骨架是 JSONC:注释说明字段含义,剥注释后仍是合法 JSON
+      expect(content).toContain('// 配置版本号');
+      expect(content).toContain('${workspaceFolder}/start_server.bat');
+      expect(parseDebugConfigText(content)?.quickActions).toHaveLength(1);
+
+      const channel = windowState.channels.find(entry => entry.name === 'KBEngine 配置');
+      const text = channel?.lines.join('') ?? '';
+      expect(text).toContain(root);
+      expect(text).toContain('来源:默认值(首个工作区根)');
+      expect(text).toContain('按脚本扫描写入 1 条快速执行动作');
+
+      // 已有配置不覆盖:再激活一次内容不变
+      activate(context);
+      expect(fs.readFileSync(configPath, 'utf8')).toBe(content);
+    } finally {
+      disposeAll(context);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
