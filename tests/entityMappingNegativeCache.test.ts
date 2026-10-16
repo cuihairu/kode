@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
@@ -10,7 +13,10 @@ const originalFindFiles = stubWorkspace.findFiles;
 
 describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
   it('repeated misses for the same file stop rescanning; other files still scan once', async () => {
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    // 扫描根按"目录真实存在"过滤 getIndexScanRoots,占位路径 /ws 在任何
+    // 平台上都不落盘 → 根集合为空、构造期扫描早退,负缓存断言无从谈起。
+    const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-negcache-'));
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     let defScans = 0;
     stubWorkspace.findFiles = (async (pattern?: string) => {
       if (pattern && pattern.includes('*.def')) {
@@ -45,6 +51,7 @@ describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
     } finally {
       stubWorkspace.findFiles = originalFindFiles;
       stubWorkspace.workspaceFolders = [];
+      fs.rmSync(wsRoot, { recursive: true, force: true });
     }
   });
 });

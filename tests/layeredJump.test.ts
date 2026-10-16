@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { Position, Uri } from './fake-vscode/core';
@@ -200,7 +201,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
       expect(new Set(CASES.map(c => c.entity)).size).toBeGreaterThanOrEqual(2);
 
       fs.writeFileSync(
-        'D:/hermes/cache/scratch/kode_layered_jump_report.json',
+        path.join(os.tmpdir(), 'kode_layered_jump_report.json'),
         JSON.stringify(report, null, 2),
         'utf8'
       );
@@ -282,7 +283,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
       expect(loc.range.start.line).toBe(defLine);
 
       fs.writeFileSync(
-        'D:/hermes/cache/scratch/kode_counterexample_report.json',
+        path.join(os.tmpdir(), 'kode_counterexample_report.json'),
         JSON.stringify({
           classNotInAnyDef: {
             className: 'serializer_base',

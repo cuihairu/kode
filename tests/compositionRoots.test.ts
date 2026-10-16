@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import { Position, Uri } from './fake-vscode/core';
@@ -321,7 +322,7 @@ describe('组合根:≥2 实体 4 组端到端跳转', () => {
       }
 
       fs.writeFileSync(
-        'D:/hermes/cache/scratch/kode_composition_roots_report.json',
+        path.join(os.tmpdir(), 'kode_composition_roots_report.json'),
         JSON.stringify(report, null, 2),
         'utf8'
       );

@@ -190,8 +190,10 @@ export class KBEngineServerManager {
     binPath = binPath
       .replace(/\$\{workspaceFolder\}/g, workspaceFolder)
       .replace(/\$\{env:(.+?)\}/g, (_, envVar) => process.env[envVar] || '');
-    // 相对值以仓库根为基准(不许假设 cwd);无根可锚 → 空串
-    if (binPath && !path.isAbsolute(binPath)) {
+    // 相对值以仓库根为基准(不许假设 cwd);无根可锚 → 空串。
+    // 绝对判定含 win32 语义:Linux/macOS 主机上 path.isAbsolute 对
+    // `D:\...` 判假会把 Windows 风格 binPath 锚到 workspace 根下。
+    if (binPath && !path.isAbsolute(binPath) && !path.win32.isAbsolute(binPath)) {
       binPath = workspaceFolder ? path.join(workspaceFolder, binPath) : '';
     }
 
