@@ -2,14 +2,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
-import { Uri } from './fake-vscode/core';
+import { Position, Uri } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import {
   PythonClassIndex,
+  PY_SCAN_EXCLUDE,
   linearizeC3,
   parsePythonFile,
   type PythonClassDef
 } from '../src/pythonClassIndex';
+import { EntityMappingManager } from '../src/entityMapping';
+import { PythonDefinitionProvider } from '../src/languageProviders';
+import { makeTextDocument } from './helpers/vscodeStub';
 
 // mixin/跨类跳转根因修复:Python 类层级 + C3-MRO 解析。
 // 1) 夹具单测(常绿):解析类作用域、C3 线性化、self.<method> 归属。
@@ -325,6 +329,148 @@ describe('真实 kbengine 反向形态(six.py)', () => {
       expect(first!.anchorClass).toBeDefined();
     } finally {
       stubWorkspace.findFiles = original;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 「加载很久 / No definition found」修复回归(2026-10-16):
+// ① 扫描面收窄到 PY_SCAN_EXCLUDE(排 vcpkg/build/.tmp…;实测旧面 14,245 个
+//    .py × 10.13ms ≈ 144 秒,是「加载很久」主来源);
+// ② 扫描失败不得永久缓存(修复前 catch 吞掉后 scanPromise 停在已扫描态,
+//    跨文件类永远补不进来 → 每次跳转 No definition found);
+// ③ provider 级真实跳转:走完整 provideDefinition 链,不是只测索引 API。
+// ---------------------------------------------------------------------------
+describe('扫描面收窄与失败重试', () => {
+  const makeTmp = (): { dir: string; cleanup: () => void } => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-scan-scope-'));
+    fs.writeFileSync(path.join(dir, 'a.py'), 'class Alpha:\n\tdef meth(self):\n\t\tpass\n', 'utf8');
+    fs.writeFileSync(path.join(dir, 'b.py'), 'class Beta(Alpha):\n\tdef run(self):\n\t\tself.meth()\n', 'utf8');
+    return { dir, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  };
+
+  it('findFiles 收窄为 PY_SCAN_EXCLUDE(含 vcpkg/build),失败后下次重试并命中', async () => {
+    const { dir, cleanup } = makeTmp();
+    const original = stubWorkspace.findFiles;
+    const seen: Array<{ pattern?: string; exclude?: unknown }> = [];
+    let attempt = 0;
+    let failing = true;
+    stubWorkspace.findFiles = (async (pattern?: string, exclude?: unknown) => {
+      attempt += 1;
+      seen.push({ pattern, exclude });
+      if (failing) {
+        throw new Error('search service unavailable');
+      }
+      return ['a.py', 'b.py'].map(name => Uri.file(path.join(dir, name)));
+    }) as typeof stubWorkspace.findFiles;
+
+    try {
+      const index = new PythonClassIndex();
+      // 持续失败期间:当次降级(跨文件类未入索引)→ 解析不到
+      const first = await index.resolveSelfMethod(path.join(dir, 'b.py'), 2, 'meth');
+      expect(first, '持续扫描失败当次降级为 null').toBeNull();
+      const attemptsWhileFailing = attempt;
+      expect(attemptsWhileFailing, '失败期间确有扫描尝试').toBeGreaterThan(0);
+
+      // 恢复后必须重新发起 findFiles(修复前 catch 吞掉后 scanPromise 永久停在
+      // 「已扫描」态 → 不再尝试、永远 null),且跨文件命中
+      failing = false;
+      const second = await index.resolveSelfMethod(path.join(dir, 'b.py'), 2, 'meth');
+      expect(attempt, '恢复后必须重试 findFiles').toBeGreaterThan(attemptsWhileFailing);
+      expect(second, '恢复后应跨文件命中').not.toBeNull();
+      expect(second!.filePath).toBe(path.join(dir, 'a.py'));
+      expect(second!.className).toBe('Alpha');
+
+      // 排除面:pattern 为 **/*.py 且排除列表 = 收窄后的 PY_SCAN_EXCLUDE
+      expect(seen[0].pattern).toBe('**/*.py');
+      expect(seen[0].exclude).toBe(PY_SCAN_EXCLUDE);
+      expect(String(seen[0].exclude)).toContain('vcpkg');
+      expect(String(seen[0].exclude)).toContain('build');
+      expect(PY_SCAN_EXCLUDE).toContain('.tmp');
+    } finally {
+      stubWorkspace.findFiles = original;
+      cleanup();
+    }
+  });
+});
+
+// provider 级真实跳转(路径不存在的机器自动跳过):完整 provideDefinition 链 =
+// kbe 分支 → types.xml 反查 → self 访问 → property/method(.def,无归属→null)
+// → PythonClassIndex 兜底。三例均须落到 Machines.py 的真实定义行。
+describe('provideDefinition 真实 kbengine 跳转(端到端)', () => {
+  const ROOT = 'D:/workspaces/kbengine';
+  const CONTROLLER = path.join(ROOT, 'kbe', 'tools', 'server', 'pycluster', 'cluster_controller.py');
+  const ORIGINAL = stubWorkspace.findFiles;
+
+  const realFindFiles = async (pattern?: string, exclude?: unknown): Promise<Uri[]> => {
+    const wantDef = Boolean(pattern && pattern.includes('*.def'));
+    const excluded = new Set<string>();
+    for (const part of String(exclude ?? '').replace(/^\*\*\/\{/, '').replace(/\}\/\*\*$/, '').split(',')) {
+      const name = part.trim();
+      if (name) {
+        excluded.add(name);
+      }
+    }
+    const out: Uri[] = [];
+    const walk = (dir: string): void => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!excluded.has(entry.name) && entry.name !== '.git') {
+            walk(full);
+          }
+        } else if (wantDef ? entry.name.endsWith('.def') : entry.name.endsWith('.py')) {
+          out.push(Uri.file(full));
+        }
+      }
+    };
+    walk(ROOT);
+    return out;
+  };
+
+  it('cluster_controller 三处 self 方法 → Machines.py 真实定义行', async () => {
+    if (!fs.existsSync(CONTROLLER)) {
+      console.warn(`skip: ${CONTROLLER} not found`);
+      return;
+    }
+    stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ROOT), name: 'kbengine', index: 0 }];
+
+    try {
+      const manager = new EntityMappingManager({ subscriptions: [] } as never);
+      const provider = new PythonDefinitionProvider(manager, new PythonClassIndex());
+      const text = fs.readFileSync(CONTROLLER, 'utf8');
+      const lines = text.split('\n');
+      const cases = [
+        { line: 72, method: 'queryAllInterfaces', defLine: 210 },
+        { line: 181, method: 'startServer', defLine: 238 },
+        { line: 338, method: 'getComponentInfos', defLine: 396 }
+      ];
+
+      for (const item of cases) {
+        const lineText = lines[item.line];
+        const at = lineText.indexOf(item.method);
+        expect(at, `行 ${item.line + 1} 应含 ${item.method}`).toBeGreaterThan(0);
+        const document = makeTextDocument(text, { fileName: CONTROLLER, languageId: 'python' });
+        const location = (await provider.provideDefinition(
+          document,
+          new Position(item.line, at + 1)
+        )) as { uri: { fsPath: string }; range: { start: { line: number } } } | null;
+
+        expect(location, `${item.method} 应有落点`).not.toBeNull();
+        expect(location!.uri.fsPath.replace(/\\/g, '/')).toContain('pycommon/Machines.py');
+        expect(location!.range.start.line, `${item.method} 定义行`).toBe(item.defLine);
+      }
+      manager.dispose();
+    } finally {
+      stubWorkspace.findFiles = ORIGINAL;
+      stubWorkspace.workspaceFolders = [];
     }
   });
 });

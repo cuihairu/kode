@@ -128,9 +128,21 @@ export class EntityMappingManager {
   private mappingIndexes = new Map<string, EntityMappingIndex>();
   private mappingIndexesByRoot = new Map<string, EntityMappingIndex>();
   private pythonWatcher: vscode.FileSystemWatcher | null = null;
+  private defWatcher: vscode.FileSystemWatcher | null = null;
+  /**
+   * 负缓存:已确认「不在任何 .def 的 pythonOwnerFiles 里」的文件。
+   * 没有它,非 owner 的 .py 每次跳转都会在 property/method 两处各触发一次
+   * 全量 .def 枚举与逐个解析,是「加载很久」第二来源。
+   * 真实 .def 增删改由 watchDefFiles 清空(含本集合与索引),改完下次跳转重扫。
+   */
+  private missingOwnerPaths = new Set<string>();
 
   constructor(private context: vscode.ExtensionContext) {
     void this.scanEntityMappings();
+    // 创建顺序有意为之:def watcher 先建、python watcher 后建——外部与既有
+    // 用例把「最后创建的 watcher」当作 python watcher 语义使用(变更只重解析
+    // 归属实体),两 watcher 各自独立,先 def 后 py 保持该约定不破。
+    this.watchDefFiles();
     this.watchPythonFiles();
   }
 
@@ -612,6 +624,28 @@ export class EntityMappingManager {
     this.context.subscriptions.push(this.pythonWatcher);
   }
 
+  /**
+   * `.def` 增删改 → 整表失效:索引与「无归属」负缓存都清,下次跳转重扫。
+   * (此前 .def 变更只可能被「恰有文件 miss」的重扫顺带带出,归属变化会滞留。)
+   */
+  private watchDefFiles(): void {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return;
+    }
+    const pattern = vscode.Uri.joinPath(workspaceFolder.uri, '**/*.def');
+    this.defWatcher = vscode.workspace.createFileSystemWatcher(pattern.toString());
+    const invalidate = (): void => {
+      this.mappingIndexes.clear();
+      this.mappingIndexesByRoot.clear();
+      this.missingOwnerPaths.clear();
+    };
+    this.defWatcher.onDidChange(invalidate);
+    this.defWatcher.onDidCreate(invalidate);
+    this.defWatcher.onDidDelete(invalidate);
+    this.context.subscriptions.push(this.defWatcher);
+  }
+
   private handlePythonFileChanged(pythonPath: string): void {
     for (const [entityName, mapping] of this.mappingIndexes) {
       if (mapping.pythonOwnerFiles.some(item => normalizeLookupPath(item.filePath) === normalizeLookupPath(pythonPath))) {
@@ -953,6 +987,7 @@ export class EntityMappingManager {
 
   dispose(): void {
     this.pythonWatcher?.dispose();
+    this.defWatcher?.dispose();
   }
 
   private selectMethodDefinition(
@@ -1107,10 +1142,19 @@ export class EntityMappingManager {
   }
 
   private async ensureIndexForPythonFile(pythonFile: string): Promise<EntityMappingIndex | undefined> {
+    const normalized = normalizeLookupPath(pythonFile);
+    // 负缓存命中:该文件已确认无 .def 归属,直接走 null → 上层 PythonClassIndex
+    // 兜底,不再每次重扫(修复前每次跳转两轮全量 .def 重扫)
+    if (this.missingOwnerPaths.has(normalized)) {
+      return undefined;
+    }
     let index = this.findIndexForPythonFile(pythonFile);
     if (!index) {
       await this.scanEntityMappings();
       index = this.findIndexForPythonFile(pythonFile);
+      if (!index) {
+        this.missingOwnerPaths.add(normalized);
+      }
     }
     return index;
   }

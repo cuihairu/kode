@@ -36,6 +36,16 @@ const CLASS_RE = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)[ \t]*\(([^)]*)\)[ \t]*:/;
 const CLASS_RE_NOBASE = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)[ \t]*:/;
 const DEF_RE = /^([ \t]+)(?:async[ \t]+)?def[ \t]+([A-Za-z_]\w*)[ \t]*\(/;
 
+/**
+ * 扫描排除面:官方三件套之外再排引擎构建/依赖/临时树。
+ * 依据(2026-10-16 本机实测,D:\workspaces\kbengine):只排 node_modules/
+ * third_party/.git 时命中 14,245 个 .py(vcpkg 10,108 + build 3,614 + …),
+ * 平均 10.13ms/文件的顺序读 ≈ 144 秒——即用户实测的「跳转前加载很久」;
+ * 收窄后同仓 117 个文件 ≈ 1.2 秒。业务脚本(scripts/tools 等)不受影响。
+ */
+export const PY_SCAN_EXCLUDE =
+  '**/{node_modules,third_party,.git,vcpkg,build,dist,out,.tmp,perf,.venv,venv,site-packages,__pycache__}/**';
+
 /** 解析一个 .py 文件里的类与方法(纯函数,便于测试) */
 export function parsePythonFile(content: string, filePath: string): ParsedPythonFile {
   const lines = content.split(/\r?\n/);
@@ -244,12 +254,21 @@ export class PythonClassIndex {
     }
     this.scanPromise = (async () => {
       try {
-        const files = await vscode.workspace.findFiles('**/*.py', '**/{node_modules,third_party,.git}/**');
-        for (const uri of files) {
-          await this.loadFile(uri.fsPath, -1);
+        const files = await vscode.workspace.findFiles('**/*.py', PY_SCAN_EXCLUDE);
+        // 分块并行读:顺序同步读在大仓是「跳转前加载很久」的主来源
+        // (排除式漏扫 vcpkg/build 时实测 14,245 文件 × 10.13ms ≈ 144s)
+        const CONCURRENCY = 16;
+        for (let offset = 0; offset < files.length; offset += CONCURRENCY) {
+          await Promise.all(
+            files.slice(offset, offset + CONCURRENCY).map(uri => this.loadFile(uri.fsPath, -1))
+          );
         }
       } catch {
-        // 扫描失败不阻断跳转:降级为按需单文件解析
+        // 扫描失败不阻断跳转,但必须清掉缓存的失败结果——否则 scanPromise
+        // 永久停在「已扫描」态、跨文件类永远补不进来,每次跳转都落 null
+        // (与「加载很久后 No definition found」同根)。下次跳转重试;
+        // 已解析部分保留在 fileCache/byName 继续可用。
+        this.scanPromise = null;
       }
     })();
     return this.scanPromise;
@@ -258,7 +277,8 @@ export class PythonClassIndex {
   private async loadFile(filePath: string, version: number): Promise<void> {
     let content: string;
     try {
-      content = fs.readFileSync(filePath, 'utf8');
+      // 异步读:同步读会在扫描/变更时阻塞扩展宿主线程
+      content = await fs.promises.readFile(filePath, 'utf8');
     } catch {
       return;
     }
