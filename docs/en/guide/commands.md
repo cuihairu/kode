@@ -348,7 +348,7 @@ The flow graph panel supports:
 - Entries: command palette `Sync Python Extra Paths`; also synced once automatically at extension activation (`kbengine.python.extraPathsSync` default on, fully silent during activation)
 - Behavior:
   - The scripts-root candidates share the entity index's conventions: `<workspace>/scripts`, `<workspace>/assets/scripts`, `<workspace>/server_assets/scripts`, first-level `<xxx>_assets/scripts` (the batch 129 assets-root convention); only paths that really exist on disk are collected
-  - `.kbengine/stubs` (the stub export directory) joins the managed segment when `kbengine.python.stubExport` is on and `KBEngine.pyi` is on disk
+  - `.kbengine/stubs` (the stub export directory) joins the managed segment when `kbengine.python.stubExport` is on and `KBEngine.pyi` is on disk; a user-configured `kbengine.python.stubDir` directory does not join the managed segment
   - Written via resource-scoped `getConfiguration('python', folder).update(...)` (WorkspaceFolder level); comments in settings.json are preserved by the host; written only when the discovery result differs from the current value — no change, no file touch
   - It manages only the segment this extension wrote: the last-written set is remembered in workspaceState, and the next sync removes the old set before writing the new one; user-entered paths are never touched
   - Setting `kbengine.python.extraPathsSync: false` turns it all off (when off, the command only explains without writing); a manual rerun reports the write result, while activation-time auto sync stays quiet
@@ -356,11 +356,13 @@ The flow graph panel supports:
 ### `kbengine.python.exportStubs`
 
 - Title: `Export KBEngine Python Stubs`
-- Purpose: export the built-in KBEngine Python API symbol index (the same source as kode's completion/hover/navigation) as a real file at `<workspace>/.kbengine/stubs/KBEngine.pyi`, which together with the extraPaths wiring lets Pylance resolve `import KBEngine` (virtual stub documents are invisible to the Python extension)
+- Purpose: export the built-in KBEngine Python API symbol index (the same source as kode's completion/hover/navigation) as a real `.pyi` file, which together with the extraPaths wiring lets Pylance resolve `import KBEngine` (virtual stub documents are invisible to the Python extension)
+- Stub directory resolved in three tiers (batch 142): `kbengine.python.stubDir` setting > env var `KBENGINE_STUB_DIR` > default convention `<workspace>/.kbengine/stubs`; VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported
 - Entries: command palette `Export KBEngine Python Stubs`; also exported once automatically at activation (`kbengine.python.stubExport` default on, fully silent during activation)
 - Behavior:
-  - Zero write when the content matches disk; stale content (after an index update) is automatically overwritten; manual edits are not kept
-  - Ignoring `.kbengine/stubs/` in `.gitignore` is recommended (a generated artifact that follows kode index updates)
+  - The default convention directory is kode-managed: zero write when the content matches disk; stale content (after an index update) is automatically rewritten; manual edits are not kept
+  - A configured user directory is entered but never left: any `.pyi` already in the directory is treated as a user asset and never overwritten; one is generated only when no `.pyi` exists; an unreadable directory (missing/no permission) is reported honestly, never blindly written
+  - Ignoring `.kbengine/stubs/` in `.gitignore` is recommended (a generated artifact that follows kode index updates); pre-existing `.pyi` files in a user-configured directory are user assets — kode neither changes nor deletes them
   - An unwritable directory (a read-only mount, etc.) warns and continues with the remaining workspace folders
   - After a successful export it chains one extraPaths sync so the new stub directory takes effect immediately
   - Setting `kbengine.python.stubExport: false` turns it all off

@@ -84,6 +84,10 @@ Two boundaries:
 | `kbengine.loggerPort` | number | `20022` | logger port |
 | `kbengine.logAutoConnect` | boolean | `true` | Auto-connect logs on activation |
 | `kbengine.maxLogEntries` | number | `10000` | Log cache cap (entries) |
+| `kbengine.python.extraPathsSync` | boolean | `true` | Auto-write the discovered KBEngine scripts root into `python.analysis.extraPaths` |
+| `kbengine.python.stubExport` | boolean | `true` | Auto-export the built-in KBEngine API index as a `KBEngine.pyi` stub |
+| `kbengine.python.stubDir` | string | `""` | `.pyi` stub directory (empty = default convention `.kbengine/stubs`) |
+| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | Client entity SDK generator output directory |
 | `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | Generator `.def` output directory |
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | Generator Python output directory |
 | `kbengine.generator.generatePython` | boolean | `true` | Whether the generator also emits Python |
@@ -116,7 +120,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 
 **Three kinds of purely discovered resources with no settings at all** (since batch 125): `types.xml`, `messages_fixed(_defaults).xml`, and the engine `kbengine_defaults.xml` (when binPath cannot derive it, fall back via the engine source-root anchor, then derive).
 
-### Full Setting Comparison Table (32 items)
+### Full Setting Comparison Table (batch-125 inventory of 32 items; 9 more added since by batches 126–143, 41 today — the new ones are in the "Overview of `kbengine.*` Settings" table and the item-by-item notes)
 
 `How it resolves now` = how the value is actually taken today; `Auto-discoverable` = whether the value can be derived from the workspace/environment; `Disposition` = this round's conclusion and reasoning.
 
@@ -155,7 +159,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | `kbengine.telnet.probeIntervalSeconds` | Value 5 | No | **Keep** (frequency preference) |
 | `kbengine.httpRequests` | Default: one disabled example (`enabled: false`) | No (the user's business endpoints) | **Keep**; the example is disabled by default and has no side effects |
 
-Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback).
+Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Batches 126–143 added 9 more settings beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, and `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`), all registered in the overview table and the item-by-item notes.
 
 ## Item-by-Item Notes
 
@@ -257,6 +261,24 @@ With all three off, `.def` hover keeps only syntax highlighting. If hints feel t
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | Where generated Python goes; with the default value it is derived from the discovered def root's parent (e.g. `assets/scripts`), config serves only as override |
 | `kbengine.generator.generatePython` | boolean | `true` | Whether wizard/template entity creation also generates the Python file |
 | `kbengine.generator.registerInEntitiesXml` | boolean | `true` | Auto-write into `entities.xml` after generation (writing the file pointed to by `entitiesXmlPath`) |
+
+### Client Entity SDK Output Directory `kbengine.clientSdk.outputDir`
+
+- Type: string; default `scripts/client_entities` (relative to the workspace root)
+- Used by: the client entity SDK generator (`kbengine.clientSdk.generate`) output directory — TypeScript / C# skeletons and companion files all land here
+- The language list and overwrite policy are chosen in the command's quick pick; existing files are not overwritten by default — see [Client Entity SDK Generation](./client-sdk.md)
+
+### Python Wiring and Stubs `kbengine.python.*`
+
+| Setting | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kbengine.python.extraPathsSync` | boolean | `true` | Auto-write the workspace-discovered KBEngine scripts root into `python.analysis.extraPaths` (WorkspaceFolder level; manages only the segment this extension wrote, user-entered paths are never touched; no write when unchanged). When off, the `kbengine.python.syncExtraPaths` command only explains without writing |
+| `kbengine.python.stubExport` | boolean | `true` | Auto-export the built-in KBEngine Python API index (same source as completion/hover/navigation) as a `KBEngine.pyi` stub, which together with the extraPaths wiring lets Pylance resolve `import KBEngine` (virtual stub documents are invisible to the Python extension). Silent auto-export once on activation; `kbengine.python.exportStubs` is the manual entry |
+| `kbengine.python.stubDir` | string | empty | The `.pyi` stub directory, resolved in three tiers: setting > env var `KBENGINE_STUB_DIR` > default convention `.kbengine/stubs`. VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported; relative paths join against the workspace root, absolute paths are used as-is |
+
+With `kbengine.python.stubDir` left empty (the default), the directory is kode-managed `.kbengine/stubs`: zero write when content matches disk, stale content (after an index update) is automatically rewritten, manual edits are not kept — ignoring it in `.gitignore` is recommended. **With a directory configured, the directory is user-owned**: kode only scans, never overwrites — any `.pyi` already in the directory is treated as a user asset and left untouched; one is generated only when no `.pyi` exists; an unreadable directory (missing/no permission) is reported honestly, never blindly written.
+
+Boundary: the extraPaths managed segment recognizes only the default convention directory `.kbengine/stubs` (joined when export is on and `KBEngine.pyi` is on disk); a user-configured `kbengine.python.stubDir` directory does not join the managed segment — add it to `python.analysis.extraPaths` yourself if needed.
 
 ### telnet Probing
 

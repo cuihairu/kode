@@ -349,7 +349,7 @@
 - 入口：命令面板 `Sync Python Extra Paths`；扩展激活时也会自动同步一次（`kbengine.python.extraPathsSync` 默认开，激活期全程静默零提示）
 - 行为：
   - scripts 根候选与实体索引同口径：`<工作区>/scripts`、`<工作区>/assets/scripts`、`<工作区>/server_assets/scripts`、一级 `<xxx>_assets/scripts`（批129 资产根约定）；只收磁盘上真实存在的
-  - `.kbengine/stubs`（存根导出目录）在 `kbengine.python.stubExport` 开且 `KBEngine.pyi` 在盘时一并并入管理段
+  - `.kbengine/stubs`（存根导出目录）在 `kbengine.python.stubExport` 开且 `KBEngine.pyi` 在盘时一并并入管理段；`kbengine.python.stubDir` 配置的用户目录不并入管理段
   - 经带资源域的 `getConfiguration('python', folder).update(...)` 写入（WorkspaceFolder 级），settings.json 里的注释由宿主保全；只在发现结果与现值不同时写，无变化不碰文件
   - 只管理本扩展写入的那一段：上次写入的集合记在 workspaceState，再同步时先剔除再写新集合，用户手填的路径永不被动
   - 设置 `kbengine.python.extraPathsSync: false` 可整体关闭（关闭后命令只说明不写）；手动重跑会播报写入结果，激活期自动同步不打扰
@@ -357,11 +357,13 @@
 ### `kbengine.python.exportStubs`
 
 - 标题：`Export KBEngine Python Stubs`
-- 作用：把内置 KBEngine Python API 符号索引（与 kode 的补全/悬停/跳转同源）导出为 `<工作区>/.kbengine/stubs/KBEngine.pyi` 真文件，配合 extraPaths 接线让 Pylance 解析 `import KBEngine`（虚拟桩文档 Python 扩展看不见）
+- 作用：把内置 KBEngine Python API 符号索引（与 kode 的补全/悬停/跳转同源）导出为真实 `.pyi` 文件，配合 extraPaths 接线让 Pylance 解析 `import KBEngine`（虚拟桩文档 Python 扩展看不见）
+- 存根目录三级解析（批142）：`kbengine.python.stubDir` 设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `<工作区>/.kbengine/stubs`；支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量
 - 入口：命令面板 `Export KBEngine Python Stubs`；扩展激活时也会自动导出一次（`kbengine.python.stubExport` 默认开，激活期全程静默）
 - 行为：
-  - 内容与磁盘一致时零写；内容陈旧（索引更新后）自动重写覆盖，手改不保留
-  - 建议在 `.gitignore` 里忽略 `.kbengine/stubs/`（生成物，随 kode 索引更新）
+  - 默认约定目录归 kode 自管：内容与磁盘一致时零写；内容陈旧（索引更新后）自动重写覆盖，手改不保留
+  - 配置的用户目录只进不出：目录里已有任何 `.pyi` 一律按用户资产不覆盖，没有 `.pyi` 才生成；目录读不到（不存在/无权限）如实提示，不盲写
+  - 建议在 `.gitignore` 里忽略 `.kbengine/stubs/`（生成物，随 kode 索引更新）；用户自配目录的既有 `.pyi` 属于用户资产，kode 不改不删
   - 目录不可写（只读挂载等）时告警并继续其余工作区文件夹
   - 导出成功后链一次 extraPaths 同步，新存根目录即刻生效
   - 设置 `kbengine.python.stubExport: false` 可整体关闭

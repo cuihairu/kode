@@ -84,6 +84,10 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.loggerPort` | number | `20022` | logger 端口 |
 | `kbengine.logAutoConnect` | boolean | `true` | 激活时自动连日志 |
 | `kbengine.maxLogEntries` | number | `10000` | 日志缓存上限(条) |
+| `kbengine.python.extraPathsSync` | boolean | `true` | 自动把发现的 KBEngine scripts 根写入 `python.analysis.extraPaths` |
+| `kbengine.python.stubExport` | boolean | `true` | 自动导出内置 KBEngine API 索引为 `KBEngine.pyi` 存根 |
+| `kbengine.python.stubDir` | string | `""` | `.pyi` 存根目录(留空 = 默认约定 `.kbengine/stubs`) |
+| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器的输出目录 |
 | `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成器 `.def` 输出目录 |
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成器 Python 输出目录 |
 | `kbengine.generator.generatePython` | boolean | `true` | 生成器是否同时出 Python |
@@ -116,7 +120,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(32 项)
+### 全量配置项对照表(批125 盘点 32 项;此后批126–143 又新增 9 项,现状 41 项,新设置见上面「kbengine.* 设置项总览」与逐项说明)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 
@@ -155,7 +159,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126–143 在此表之外新增 9 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`),均已在总览表与逐项说明登记。
 
 ## 逐项说明
 
@@ -257,6 +261,24 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪;默认值时从发现出的 def 根父目录推导(如 `assets/scripts`),配置只作覆盖 |
 | `kbengine.generator.generatePython` | boolean | `true` | 向导/模板创建实体时是否同时生成 Python 文件 |
 | `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(写的是 `entitiesXmlPath` 指向的文件) |
+
+### 客户端实体 SDK 输出目录 `kbengine.clientSdk.outputDir`
+
+- 类型:string;默认 `scripts/client_entities`(相对工作区根)
+- 用途:客户端实体 SDK 生成器(`kbengine.clientSdk.generate`)的输出目录,TypeScript / C# 骨架与伴随文件都写到这里
+- 语言清单与覆盖策略在命令内的 quick pick 里选择,默认不覆盖已存在的文件;详见 [客户端实体 SDK 生成](./client-sdk.md)
+
+### Python 接线与存根 `kbengine.python.*`
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级;只管理本扩展写入的那一段,用户手填路径不动;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
+| `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,配合 extraPaths 接线供 Pylance 解析 `import KBEngine`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs` 手动入口 |
+| `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
+
+`kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
+
+边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 在盘时并入);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
 
 ### telnet 探测
 
