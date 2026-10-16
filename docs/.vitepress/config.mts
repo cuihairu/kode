@@ -11,6 +11,8 @@ export default defineConfig({
   },
   lastUpdated: true,
   themeConfig: {
+    logo: '/logo.svg',
+    siteTitle: 'Kode',
     nav: [
       { text: '指南', link: '/guide/' },
       { text: '配置', link: '/guide/configuration' },
