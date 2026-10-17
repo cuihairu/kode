@@ -3520,10 +3520,13 @@ base/Shade.py(Wraith 链跳同验);⑤b 仅 cell 侧 Wisp → cell/Wisp.py;
 范围对账(source-analysis 第三节):批109 落地 D1(布局候选发现)、
 D4(def 定位与纯脚本回落)、D5 的 py 链与 Interfaces 跨文件段、
 D6(三侧判定复用 getEntityRuntimeProfile 的断言||脚本存在同款规则)、
-D7(桩分工)、D8(降级提示);D2(独立惰性索引与保存失效重建)、
-D3(清单顺序索引与同名诊断)、D5 的 def 链合并呈现、D9 诊断面属
-后续增量,本批导航走现役 layout/清单读取 + 逐文件解析,不虚记为
-已建索引。
+D7(桩分工)、D8(降级提示);本批导航走现役 layout/清单读取 +
+逐文件解析,不虚记为已建索引。后续增量后续批次陆续收口:
+D3(清单顺序索引与同名诊断)由批147 落地(getRegisteredEntities 保序
++ 悬停清单序号,src/entitiesXmlAnalysis.ts 同名重复诊断),D5 的
+def 链合并呈现由批148 落地(src/defChain.ts 三面闭包 + 根级 `<Parent>`
+悬停,visited 防环截断);仍属后续增量:D2(独立惰性索引与保存
+失效重建)、D9 诊断面。
 
 门禁:pnpm lint EXIT=0;pnpm test 全量全绿(vitest 95 文件 1166 用例 +
 mocha 编译烟测 11 用例);覆盖率四指标 100%(批108 新增生产码
