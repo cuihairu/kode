@@ -99,6 +99,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - extraPaths 接线（批136 G1）：把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`（WorkspaceFolder 级），只管理本扩展写入的那一段——用户手填路径永不被动，无变化不写、无可发现根静默；`Sync Python Extra Paths` 命令手动重跑，激活期自动同步一次全程零提示（`kbengine.python.extraPathsSync` 默认开可关）
 - `.pyi` 存根导出（批136 G2）：把内置 KBEngine Python API 符号索引（与补全/悬停/跳转同源）导出为真文件 `KBEngine.pyi`——虚拟桩文档 Python 扩展看不见，真文件配合 extraPaths 接线才解析 `import KBEngine`；内容一致零写、索引更新后陈旧才重写，激活期静默自动一次，`Export KBEngine Python Stubs` 手动入口导出后链一次 extraPaths 同步
 - 存根目录可配（批142）：`kbengine.python.stubDir` 三级解析——设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。默认目录归 kode 自管（按内容比对刷新）；**用户指定的目录只进不出**：目录里已有任何 `.pyi` 一律当用户资产不覆盖，没有才生成一份，目录读不到如实提示不盲写
+- types.xml 类型桩（def-pyi-stubs §6）：把 `entity_defs/types.xml` 自定义类型导出成真 `.py` 模块 `kbe_types.py`（`FIXED_DICT`→`TypedDict`、`ARRAY`→`List[元素]`、别名→类型名，别名按依赖拓扑排序，成环/空指引跳过并说明）——真模块既是 Pylance 类型来源也可被运行时 `import kbe_types`；与 `KBEngine.pyi` 同目录同开关（`kbengine.python.stubExport`），内容确定性保证零写纪律，`Export KBEngine Python Type Stubs` 手动入口导出后链一次 extraPaths 同步
 
 ## 变量替换（批141）
 

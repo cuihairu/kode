@@ -11,6 +11,23 @@ Version is frozen at this placeholder on request; it is not a published
 release (no tag, no GitHub Release) — nightly rolling builds continue.
 
 ### Added
+- `kbengine.python.exportTypeStubs` exports the `types.xml` custom types
+  into `kbe_types.py`, a real Python module (option A of the def-pyi-stubs
+  feasibility analysis): FIXED_DICT becomes a TypedDict class with
+  properties in document order, ARRAY becomes `List[element]` (nested
+  arrays nest), and aliases become type-name assignments emitted in
+  dependency topological order; alias cycles and empty directives are
+  skipped with the reason stated instead of emitting an assignment that
+  references an undefined name. The artifact is deterministic (no
+  timestamp) and lives beside `KBEngine.pyi` in the stub directory —
+  same three-tier `kbengine.python.stubDir` resolution, same
+  `kbengine.python.stubExport` switch, same zero-write-when-unchanged /
+  rewrite-when-stale discipline; an existing `kbe_types.py` in a
+  user-configured directory is a user asset and is never overwritten.
+  Exported once silently after the KBEngine.pyi export at activation,
+  chained with one extraPaths sync (the managed segment now joins when
+  either artifact is on disk), with the manual command chaining the sync
+  as well
 - `types.xml` type declarations now explain how they land in the database
   and where they are used. Hovering a declaration name appends a storage
   shape section: built-in aliases land as one main-table column (with the

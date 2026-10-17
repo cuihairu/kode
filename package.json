@@ -76,7 +76,8 @@
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.runDefault",
     "onCommand:kbengine.python.syncExtraPaths",
-    "onCommand:kbengine.python.exportStubs"
+    "onCommand:kbengine.python.exportStubs",
+    "onCommand:kbengine.python.exportTypeStubs"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -621,6 +622,10 @@
       {
         "command": "kbengine.python.exportStubs",
         "title": "Export KBEngine Python Stubs"
+      },
+      {
+        "command": "kbengine.python.exportTypeStubs",
+        "title": "Export KBEngine Python Type Stubs"
       }
     ],
     "menus": {

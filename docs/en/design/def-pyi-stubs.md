@@ -2,6 +2,7 @@
 
 > Source: user request on 2026-10-16 — "Can the extension generate `.pyi` files for the utype-defined types, producing type hints automatically; is that realistic?"
 > This round only settles design and conclusions, no implementation code is written; every judgment carries a `file:line`, and corpus limitations are stated as they are.
+> **2026-10-17 reconciliation update: the type surface is now implemented** — the `kbengine.python.exportTypeStubs` command plus a silent auto-export of `kbe_types.py` at activation (a real `.py`, i.e. option A, reusing the `kbengine.python.stubExport` switch and the `stubDir` three-tier directory, with the extraPaths managed segment joining the same directory); the types.xml watcher auto-regeneration mentioned in §4 is not done (activation/manual command remain the triggers); the §7 to-verify list is unchanged.
 
 ## 0. Verdict summary
 
@@ -121,6 +122,8 @@
 6. **Overall: realistic with a precondition (total effort "medium")** — "type module generation" is doable and reuses mostly existing pieces; "entity self-annotation surface" is not realistic without changing user code or keeping the kode providers.
 
 ## 6. Design points (for the next ignition round, not produced this round)
+
+> 2026-10-17 implementation record: every recommended item in this section was taken — a separate command, a real `.py` (option A), the default directory kode-managed with user directories never overwritten, deterministic content for the zero-write discipline; watcher auto-regeneration stays as phase two.
 
 - Type table: `types.xml` aliases (`parseTypeAliases`) + the `.def` reference surface (`entityMapping` Type strings) compose a `Map<type name, type description>`; alias-recursion cycle protection follows the `clientSdkGenerator.ts:301` convention.
 - Emission: direct translation for the scalar/ARRAY/type-alias three tiers; FIXED_DICT emits a `TypedDict` (key order follows the types.xml document order, `databaseSchema.ts:724` node traversal); a `from __future__ import annotations` header, zero runtime dependency.

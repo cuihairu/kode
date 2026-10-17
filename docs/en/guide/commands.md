@@ -367,6 +367,20 @@ The flow graph panel supports:
   - After a successful export it chains one extraPaths sync so the new stub directory takes effect immediately
   - Setting `kbengine.python.stubExport: false` turns it all off
 
+### `kbengine.python.exportTypeStubs`
+
+- Title: `Export KBEngine Python Type Stubs`
+- Purpose: export the custom types (utype) in `entity_defs/types.xml` into a Python type stub module `kbe_types.py` — `FIXED_DICT` → `TypedDict` classes, `ARRAY` → `List[element]`, aliases → target type names — which together with the extraPaths wiring gives entity and tool scripts a real type source for `import kbe_types` (feasibility analysis: [Def/utype to .pyi stubs](../design/def-pyi-stubs.md))
+- A real `.py` rather than a `.pyi`: a pure `.pyi` has no runtime form, so `import kbe_types` on the Python side gets no value; a real module serves both as a Pylance type source and as a runtime import
+- Same directory and switch as `kbengine.python.exportStubs`: the `kbengine.python.stubDir` three-tier resolution, sharing the `kbengine.python.stubExport` switch; exported once automatically at activation, after KBEngine.pyi (silently)
+- Behavior:
+  - Deterministic content: the same input produces byte-identical content (no timestamp in the header), following the same zero-write-when-unchanged, rewrite-when-stale discipline as KBEngine.pyi
+  - Alias assignments are module-level eager evaluations, emitted in dependency topological order; types with empty `types.xml` directives or alias cycles are skipped with the reason stated in the message — no assignment referencing an undefined name is ever generated
+  - The built-in type mapping shares the table with the TS generator: integers → `int`, floats → `float`, strings → `str`, vectors → fixed-length `Tuple`, `PY_DICT/PY_TUPLE/PY_LIST` → typing generics, no counterpart → `Any` (lossy but valid)
+  - An existing `kbe_types.py` in a configured user directory is treated as a user asset and never overwritten; the default directory `.kbengine/stubs` is kode-managed
+  - When a workspace has no custom types, no file is generated and no message disturbs; after a successful export it chains one extraPaths sync
+- Setting `kbengine.python.stubExport: false` turns it all off (shared with the KBEngine.pyi stub export)
+
 ## Typical Workflows
 
 ### Creating an entity

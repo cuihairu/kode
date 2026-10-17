@@ -37,6 +37,7 @@ import { QuickActionManager } from './quickActions';
 import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
+import { exportPythonTypeStubs } from './pythonTypeStubs';
 import {
   DEBUG_CONFIG_CHANNEL_NAME,
   ensureDebugConfig,
@@ -978,8 +979,19 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(exportKbeStubsCommand);
+  // types.xml 自定义类型桩(docs/design/def-pyi-stubs.md §6):kbe_types.py 与
+  // KBEngine.pyi 同开关同目录,命令导出后同样链一次同步让新目录即刻生效
+  const exportPythonTypeStubsCommand = vscode.commands.registerCommand(
+    'kbengine.python.exportTypeStubs',
+    async () => {
+      await exportPythonTypeStubs();
+      await syncPythonExtraPaths(context);
+    }
+  );
+  context.subscriptions.push(exportPythonTypeStubsCommand);
   void (async () => {
     await exportKbeStubs(fileSystemStubExportDeps, { silent: true });
+    await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
     await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
   })();
   // 批142(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释

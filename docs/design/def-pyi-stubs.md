@@ -2,6 +2,7 @@
 
 > 来源:用户 2026-10-16 需求「能支持生成 utype 定义类型的 .pyi 文件吗,自动生成类型提示,现实吗?」。
 > 本轮只落设计与结论,不写实现代码;所有判断给 `file:line`,语料限制如实标注。
+> **2026-10-17 对账更新:类型面已实现**——`kbengine.python.exportTypeStubs` 命令 + 激活期静默自动导出 `kbe_types.py`(真 `.py` 即方案 A,复用 `kbengine.python.stubExport` 开关与 `stubDir` 三级目录,extraPaths 管理段同盘并入);§4 提的 types.xml watcher 自动重生成未做(仍走激活期/手动命令);§7 待证清单不变。
 
 ## 0. 结论速览
 
@@ -121,6 +122,8 @@
 6. **总评:有前提才现实(总工作量「中」)**——「类型模块生成」可做且大部分复用既有件;「实体自注解面」不现实,须改用户代码或维持 kode provider 补位。
 
 ## 6. 设计要点(供下一轮立项,非本轮产出)
+
+> 2026-10-17 落地记录:本节推荐项已全取——单独命令、真 `.py`(方案 A)、默认目录自管+用户目录不覆盖、确定性内容零写;watcher 自动重生成留二期。
 
 - 类型表:`types.xml` 别名(`parseTypeAliases`)+ `.def` 引用面(`entityMapping` Type 串)合成 `Map<类型名, 类型描述>`;别名递归防环沿 `clientSdkGenerator.ts:301` 口径。
 - 发射:标量/ARRAY/type alias 三类直译;FIXED_DICT 发 `TypedDict`(键序按 types.xml 文档序,`databaseSchema.ts:724` 的 node 遍历);`from __future__ import annotations` 头,零运行时依赖。

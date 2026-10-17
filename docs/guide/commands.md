@@ -368,6 +368,20 @@
   - 导出成功后链一次 extraPaths 同步，新存根目录即刻生效
   - 设置 `kbengine.python.stubExport: false` 可整体关闭
 
+### `kbengine.python.exportTypeStubs`
+
+- 标题：`Export KBEngine Python Type Stubs`
+- 作用：把 `entity_defs/types.xml` 里的自定义类型（utype）导出成 Python 类型桩模块 `kbe_types.py`——`FIXED_DICT` → `TypedDict` 类、`ARRAY` → `List[元素]`、别名 → 目标类型名，配合 extraPaths 接线让实体脚本与工具脚本获得 `import kbe_types` 的真实类型来源（立项分析见 [def-pyi-stubs 可行性](../design/def-pyi-stubs.md)）
+- 选择真 `.py` 而非 `.pyi`：纯 `.pyi` 没有运行时形态，Python 侧 `import kbe_types` 拿不到值；真模块既能当 Pylance 的类型来源也能被运行时导入
+- 目录与开关与 `kbengine.python.exportStubs` 同一套：`kbengine.python.stubDir` 三级解析、共用 `kbengine.python.stubExport` 开关；扩展激活时在 KBEngine.pyi 之后自动导出一次（静默）
+- 行为：
+  - 内容确定：同输入生成逐字节一致的内容（头部无时间戳），与 KBEngine.pyi 同一套「内容一致零写、陈旧重写」纪律
+  - 别名赋值是模块级急切求值，按依赖拓扑排序发射；`types.xml` 指引为空或别名成环的类型跳过并在提示里说明原因，绝不生成引用未定义名字的赋值
+  - 内置类型映射与 TS 生成器同表：整型 → `int`、浮点 → `float`、字符串 → `str`、向量 → 定长 `Tuple`、`PY_DICT/PY_TUPLE/PY_LIST` → typing 泛型、无对应物 → `Any`（有损但合法）
+  - 配置的用户目录里已有同名 `kbe_types.py` 按用户资产不覆盖；默认目录 `.kbengine/stubs` 归 kode 自管
+  - 工作区没有自定义类型时不生成文件、不提示打扰；导出成功后链一次 extraPaths 同步
+- 设置 `kbengine.python.stubExport: false` 可整体关闭（与 KBEngine.pyi 存根共用开关）
+
 ## 典型使用流程
 
 ### 新建实体
