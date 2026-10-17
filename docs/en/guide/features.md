@@ -7,6 +7,7 @@
 - Completion for types, Flags, DetailLevel
 - Hover for tags, values, custom symbols
 - Navigation between `entities.xml` and `.def`
+- Manifest ordinal on `entities.xml` registration hover (batch 147, the `**Utype**` line: the engine assigns utype in `entities.xml` list order, so the ordinal is the first-occurrence position)
 - Entity reference navigation inside `.def`
 - Bidirectional Python ↔ `.def` navigation
 - RPC method markers (functions in Python implementation scripts that hit def method declarations get a one-line clickable CodeLens jumping back to the def declaration)
@@ -19,6 +20,7 @@
 - Unknown DetailLevel check
 - Duplicate definition check
 - Missing `Type` / `Flags` check
+- Duplicate entity registration check in `entities.xml` (batch 147): the engine silently merges same-name entries, keeping the first one, so later entries never take effect; kode flags them with a warning, gated by the `kbengine.enableDiagnostics` master switch
 
 ## Tool Panels
 

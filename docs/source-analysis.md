@@ -251,8 +251,12 @@ client}/<Name>.py` 同名类。
   索引(src/kbeModuleIndex.ts)对应 D7 分工;链路导航(src/
   languageProviders.ts、src/definitionWorkspace.ts)覆盖 D1/D4、D5 的
   py 链与 Interfaces 跨文件段、D6、D8;
-- D2(独立惰性索引与保存失效重建)、D3(清单顺序索引与同名诊断)、
-  D5 的 def 链合并呈现、D9 诊断面属后续增量;当前导航走现役
-  layout/清单读取 + 逐文件解析,对账口径见 TESTING.md 批108/109 节;
+- D3 已落地(批147):清单顺序索引由现役 getRegisteredEntities 按子节点
+  序保真承担,悬停呈现清单序号;同名重复条目诊断(src/
+  entitiesXmlAnalysis.ts)随 .def 同一文档事件生命周期落 kbengine
+  collection,共用 kbengine.enableDiagnostics 总开关;仍属后续增量:
+  D2(独立惰性索引与保存失效重建)、D5 的 def 链合并呈现、D9 诊断面;
+  当前导航走现役 layout/清单读取 + 逐文件解析,对账口径见 TESTING.md
+  批108/109 节;
 - 验收走查记录:tests/batch109NavigationWalkthrough.test.ts(11 步,
   每步断言跳转目标在磁盘真实存在),结果记于 TESTING.md 同节。

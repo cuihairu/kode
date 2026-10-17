@@ -7,6 +7,7 @@
 - 类型、Flags、DetailLevel 智能提示
 - 标签、值、自定义符号 Hover
 - `entities.xml` 与 `.def` 跳转
+- entities.xml 实体登记悬停带清单序号（批147，`**Utype**` 行：引擎按 entities.xml 清单顺序分配 utype，序号取首次出现位置）
 - `.def` 内实体引用跳转
 - Python 与 `.def` 双向导航
 - RPC 方法标记（Python 实现脚本里命中 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明）
@@ -19,6 +20,7 @@
 - 未知 DetailLevel 检查
 - 重复定义检查
 - 缺失 `Type` / `Flags` 检查
+- entities.xml 同名重复登记检查（批147）：同名实体条目引擎按首条静默合并、后续条目不生效，kode 在重复条目上给出 warning；受 `kbengine.enableDiagnostics` 总开关控制
 
 ## 工具面板
 

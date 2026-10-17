@@ -274,11 +274,15 @@ same-named classes in `scripts/{base,cell, client}/<Name>.py`.
   Batches 108/109 landed this: the kbe stub index (src/kbeModuleIndex.ts) corresponds to the D7
   division of labour; chain navigation (src/languageProviders.ts, src/definitionWorkspace.ts)
   covers D1/D4, the py chain and the cross-file Interfaces segment of D5, D6, and D8;
-- D2 (an independent lazy index with rebuild-on-save invalidation), D3 (the manifest-ordered
-  index and same-name diagnostics), the def-chain merged presentation of D5, and the D9
-  diagnostic surface are follow-up increments; navigation currently uses the layout/manifest
-  reading in force plus per-file parsing, with the reconciliation rules recorded in the
-  TESTING.md batch-108/109 sections;
+- D3 has landed (batch 147): the manifest-ordered index is carried by the existing
+  getRegisteredEntities, which preserves child-node order, and the hover presents the
+  manifest ordinal; same-name duplicate entry diagnostics (src/entitiesXmlAnalysis.ts)
+  land in the kbengine collection through the same document-event lifecycle as .def
+  files, sharing the kbengine.enableDiagnostics master switch; still follow-up increments:
+  D2 (an independent lazy index with rebuild-on-save invalidation), the def-chain merged
+  presentation of D5, and the D9 diagnostic surface; navigation currently uses the
+  layout/manifest reading in force plus per-file parsing, with the reconciliation rules
+  recorded in the TESTING.md batch-108/109 sections;
 - Acceptance walkthrough record: tests/batch109NavigationWalkthrough.test.ts (11 steps, each
   asserting that the jump target really exists on disk), with the outcome recorded in the same
   TESTING.md section.

@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 | 配置项 | 类型 | 默认值 | 作用 |
 | --- | --- | --- | --- |
-| `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关 |
+| `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关（批147 起同管 entities.xml 同名重复登记检查） |
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
@@ -168,7 +168,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 | 配置项 | 关掉会怎样 | 常见误配 |
 | --- | --- | --- |
-| `enableDiagnostics` | `.def` 的类型、Flags、结构问题全部不再提示 | 忘了重开,以为代码没写错 |
+| `enableDiagnostics` | `.def` 的类型、Flags、结构问题与 entities.xml 同名重复登记全部不再提示 | 忘了重开,以为代码没写错 |
 | `enableStructureDiagnostics` | 重复属性/方法、子标签位置错、缺 `Type`/`Flags`、字段重复定义都不报 | 与上一项搞混:这项只管结构,类型名拼错归 `checkUnknownTypes` |
 | `diagnostics.checkUnknownTypes` | 类型名拼错不再报 | 自定义类型要能找到才不误报:先查 `entity_defs/types.xml`、`scripts/entity_defs/types.xml`、`assets/scripts/entity_defs/types.xml`,再到 `user_type/<Type>.py`、`scripts/user_type/<Type>.py`、`assets/scripts/user_type/<Type>.py` |
 | `diagnostics.checkUnknownFlags` | Flags 拼错不再报 | — |

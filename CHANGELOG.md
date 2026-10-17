@@ -11,6 +11,20 @@ Version is frozen at this placeholder on request; it is not a published
 release (no tag, no GitHub Release) — nightly rolling builds continue.
 
 ### Added
+- Same-name duplicate entity registrations in `entities.xml` are now
+  diagnosed as warnings: the engine silently merges duplicates by reusing
+  the first registered module (registerNewScriptDefModule,
+  entitydef.cpp:255-262), so later entries and their hasBase/hasCell/
+  hasClient assertions never take effect — kode marks each later entry
+  (source-analysis design point D3). The check rides the same
+  document-event lifecycle and the same `kbengine` diagnostic collection
+  as the live `.def` checks, gated by the shared
+  `kbengine.enableDiagnostics` master switch.
+- Registration hovers on `entities.xml` entity entries now show a
+  `**Utype**` line with the 1-based manifest ordinal (the engine assigns
+  utype in `entities.xml` child order, entitydef.cpp:253-265; the ordinal
+  is the first-occurrence position, matching the engine's first-wins
+  merge) plus the total entity count.
 - `kbengine.python.exportTypeStubs` exports the `types.xml` custom types
   into `kbe_types.py`, a real Python module (option A of the def-pyi-stubs
   feasibility analysis): FIXED_DICT becomes a TypedDict class with

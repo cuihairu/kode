@@ -6,7 +6,8 @@ import {
   KBEngineCompletionProvider,
   KBEngineDefinitionProvider,
   KBEngineHoverProvider,
-  validateDocument
+  validateDocument,
+  validateEntitiesXmlDocument
 } from '../src/languageProviders';
 import { KBENGINE_FLAGS, KBENGINE_RELOAD_FUNCTIONS, DETAIL_LEVELS } from '../src/kbengineMetadata';
 import { KBENGINE_HOOKS } from '../src/hooks';
@@ -780,6 +781,65 @@ describe('validateDocument diagnostics', () => {
 
   it('reports nothing for malformed documents', () => {
     expect(validate('<root><Properties</root>', 'Bad.def')).toEqual([]);
+  });
+});
+
+describe('validateEntitiesXmlDocument diagnostics', () => {
+  // entities.xml 清单诊断(D3):文档级装配面,纯发现逻辑见
+  // entitiesXmlAnalysis.test.ts。
+  const validate = (text: string): Diagnostic[] => {
+    const document = makeTextDocument(text, {
+      fileName: p(langRoot(), 'scripts', 'entities.xml'),
+      languageId: 'xml'
+    });
+    const collection = new DiagnosticCollection();
+    validateEntitiesXmlDocument(document, collection);
+    return collection.get(document.uri);
+  };
+
+  it('reports duplicate entity registrations as warnings on the later entry', () => {
+    const text = [
+      '<root>',
+      '  <Avatar hasBase="true"/>',
+      '  <Avatar hasCell="true"/>',
+      '</root>'
+    ].join('\n');
+    const diags = validate(text);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe(DiagnosticSeverity.Warning);
+    expect(diags[0].message).toContain('<Avatar>');
+    expect(diags[0].message).toContain('静默合并');
+    // 定位:第二条目的整个开标签,行 2 列 2 起,长 24(<Avatar hasCell="true"/>)
+    expect(diags[0].range).toEqual(new Range(new Position(2, 2), new Position(2, 26)));
+  });
+
+  it('reports nothing for a clean manifest', () => {
+    expect(validate('<root>\n  <Avatar/>\n  <Monster/>\n</root>')).toEqual([]);
+  });
+
+  it('clears existing diagnostics when diagnostics are disabled', () => {
+    const document = makeTextDocument('<root><Gate/><Gate/></root>', {
+      fileName: p(langRoot(), 'scripts', 'entities.xml'),
+      languageId: 'xml'
+    });
+    const collection = new DiagnosticCollection();
+    collection.set(document.uri, [new Diagnostic(
+      new Range(new Position(0, 0), new Position(0, 1)),
+      'stale',
+      DiagnosticSeverity.Error
+    )]);
+
+    const configStub = stubWorkspace.getConfiguration;
+    stubWorkspace.getConfiguration = (() => ({
+      get: (_key: string, defaultValue: unknown) => (defaultValue === true ? false : defaultValue)
+    })) as unknown as typeof stubWorkspace.getConfiguration;
+    try {
+      validateEntitiesXmlDocument(document, collection);
+    } finally {
+      stubWorkspace.getConfiguration = configStub;
+    }
+
+    expect(collection.get(document.uri)).toEqual([]);
   });
 });
 

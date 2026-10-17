@@ -363,11 +363,19 @@ describe('entities.xml fallbacks', () => {
     expect(text).toContain('**Oddball**');
     expect(text).toContain('Entity registration from `entities.xml`');
     expect(text).not.toContain('**Base**');
+    // 批147:未注册实体(不在注册快照)不出清单序号行
+    expect(text).not.toContain('**Utype**');
 
-    // 正对照:注册实体带运行时档案行
+    // 正对照:注册实体带运行时档案行;Hero 在清单首位 ⇒ utype 1
     const hero = docAt(root, '<root>\n  <He|ro hasBase="true"/>\n</root>', 'scripts/entities.xml');
     const heroText = hoverText(hoverProvider.provideHover(hero.document, hero.position));
     expect(heroText).toContain('**Base**');
+    expect(heroText).toContain('**Utype**: `1`(entities.xml 清单顺序,共 `2` 个实体)');
+
+    // 清单第二位 ⇒ utype 2
+    const noDef = docAt(root, '<root>\n  <No|Def/>\n</root>', 'scripts/entities.xml');
+    const noDefText = hoverText(hoverProvider.provideHover(noDef.document, noDef.position));
+    expect(noDefText).toContain('**Utype**: `2`(entities.xml 清单顺序,共 `2` 个实体)');
   });
 });
 

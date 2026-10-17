@@ -63,7 +63,7 @@ Two boundaries:
 
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.enableDiagnostics` | boolean | `true` | Master switch for `.def` diagnostics |
+| `kbengine.enableDiagnostics` | boolean | `true` | Master switch for `.def` diagnostics (since batch 147 it also gates the duplicate entity registration check in `entities.xml`) |
 | `kbengine.jumpLog` | boolean | `false` | Jump decision-path logging (Output panel KBEngine Navigation, filter `[kode-jump]`; zero overhead when off) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | Switch for structural validation |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | Check unknown type names |
@@ -168,7 +168,7 @@ Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user 
 
 | Setting | What turning it off does | Common misconfiguration |
 | --- | --- | --- |
-| `enableDiagnostics` | Type, Flags, and structural problems in `.def` are no longer flagged | Forgetting to reopen the file and assuming the code has no errors |
+| `enableDiagnostics` | Type, Flags, and structural problems in `.def`, plus duplicate `entities.xml` registrations, are no longer flagged | Forgetting to reopen the file and assuming the code has no errors |
 | `enableStructureDiagnostics` | Duplicate properties/methods, misplaced child tags, missing `Type`/`Flags`, and duplicated field definitions all go unreported | Confusing this with the item above: this one covers structure only; a misspelled type name belongs to `checkUnknownTypes` |
 | `diagnostics.checkUnknownTypes` | Misspelled type names no longer reported | Custom types must be locatable to avoid false positives: check `entity_defs/types.xml`, `scripts/entity_defs/types.xml`, `assets/scripts/entity_defs/types.xml` first, then `user_type/<Type>.py`, `scripts/user_type/<Type>.py`, `assets/scripts/user_type/<Type>.py` |
 | `diagnostics.checkUnknownFlags` | Misspelled Flags no longer reported | — |

@@ -60,7 +60,8 @@ import {
   PropertyCodeLensProvider,
   RpcCodeLensProvider,
   TypesXmlCodeLensProvider,
-  validateDocument
+  validateDocument,
+  validateEntitiesXmlDocument
 } from './languageProviders';
 import { PythonClassIndex } from './pythonClassIndex';
 import {
@@ -164,6 +165,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   const isDefDocument = (document: vscode.TextDocument): boolean =>
     document.languageId === 'kbengine-def' || document.fileName.toLowerCase().endsWith('.def');
+  // entities.xml 清单诊断(source-analysis 设计 D3):与 .def 共用同一
+  // 诊断 collection 与文档事件生命周期
+  const isEntitiesXmlDocument = (document: vscode.TextDocument): boolean =>
+    document.fileName.endsWith('entities.xml');
 
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全）
   const completionProvider = vscode.languages.registerCompletionItemProvider(
@@ -274,6 +279,8 @@ export function activate(context: vscode.ExtensionContext) {
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       if (isDefDocument(event.document)) {
         validateDocument(event.document, diagnostics);
+      } else if (isEntitiesXmlDocument(event.document)) {
+        validateEntitiesXmlDocument(event.document, diagnostics);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入
       void pythonClassIndex.onDocumentChanged(event.document);
@@ -284,6 +291,8 @@ export function activate(context: vscode.ExtensionContext) {
     const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {
       if (isDefDocument(document)) {
         validateDocument(document, diagnostics);
+      } else if (isEntitiesXmlDocument(document)) {
+        validateEntitiesXmlDocument(document, diagnostics);
       }
     });
     context.subscriptions.push(openWatcher);
@@ -291,6 +300,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.textDocuments.forEach(document => {
       if (isDefDocument(document)) {
         validateDocument(document, diagnostics);
+      } else if (isEntitiesXmlDocument(document)) {
+        validateEntitiesXmlDocument(document, diagnostics);
       }
     });
   }
@@ -310,6 +321,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.textDocuments.forEach(doc => {
       if (isDefDocument(doc)) {
         validateDocument(doc, diagnostics);
+      } else if (isEntitiesXmlDocument(doc)) {
+        validateEntitiesXmlDocument(doc, diagnostics);
       }
     });
   });

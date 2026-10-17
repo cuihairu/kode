@@ -456,7 +456,12 @@ describe('extension activate 装配', () => {
         fileName: path.join(root, 'notes.txt'),
         languageId: 'plaintext'
       });
-      workspace.textDocuments = [badDef, plainDoc];
+      // 批147:entities.xml 走清单诊断(D3 同名重复),生命周期与 .def 同监听
+      const dupEntitiesDoc = makeTextDocument('<root>\n  <Avatar/>\n  <Avatar/>\n</root>', {
+        fileName: path.join(root, 'scripts', 'entities.xml'),
+        languageId: 'xml'
+      });
+      workspace.textDocuments = [badDef, plainDoc, dupEntitiesDoc];
 
       const context = makeContext();
       activate(context);
@@ -473,6 +478,12 @@ describe('extension activate 装配', () => {
       workspaceEvents.documentChanged.fire({ document: changedDef });
       expect(collection.get(changedDef.uri).length).toBeGreaterThan(0);
 
+      // entities.xml 清单诊断(批147 D3):变更与打开事件均落告警
+      workspaceEvents.documentChanged.fire({ document: dupEntitiesDoc });
+      expect(collection.get(dupEntitiesDoc.uri).length).toBeGreaterThan(0);
+      workspaceEvents.documentOpened.fire(dupEntitiesDoc);
+      expect(collection.get(dupEntitiesDoc.uri)).toHaveLength(1);
+
       // 变更/打开事件的非 def 文档:isDefDocument 假分支,跳过校验
       const plainChanged = makeTextDocument('hello', {
         fileName: path.join(root, 'notes-changed.txt'),
@@ -484,7 +495,7 @@ describe('extension activate 装配', () => {
 
       // 配置变更事件:不影响 kbengine 段时不重扫,影响时重扫 textDocuments
       const lateDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Late.def') });
-      workspace.textDocuments = [badDef, lateDef, plainDoc];
+      workspace.textDocuments = [badDef, lateDef, plainDoc, dupEntitiesDoc];
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
       expect(collection.get(lateDef.uri)).toHaveLength(0);
       workspaceEvents.configurationChanged.fire({

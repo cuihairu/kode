@@ -26,6 +26,7 @@ import {
   EntityMappingManager,
   EntityMethodSection
 } from './entityMapping';
+import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import {
   METHOD_DECLARATION_PATTERN,
   buildRpcCodeLenses,
@@ -590,6 +591,33 @@ export function validateDocument(
   }
 
   diagnostics.set(document.uri, diagnosticsList);
+}
+
+// entities.xml 清单诊断(source-analysis 设计 D3):同名重复条目引擎按首条
+// 静默合并(entitydef.cpp:255-262),这里是文档事件联动的落 collection 面,
+// 开关与 validateDocument 共用 kbengine.enableDiagnostics。
+export function validateEntitiesXmlDocument(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection
+): void {
+  const featureConfig = getLanguageFeatureConfig();
+  if (!featureConfig.enableDiagnostics) {
+    diagnostics.delete(document.uri);
+    return;
+  }
+
+  diagnostics.set(
+    document.uri,
+    analyzeEntitiesXml(document.getText()).map(item => {
+      const start = document.positionAt(item.offset);
+      const end = document.positionAt(item.offset + item.length);
+      return new vscode.Diagnostic(
+        new vscode.Range(start, end),
+        item.message,
+        vscode.DiagnosticSeverity.Warning
+      );
+    })
+  );
 }
 
 type KBEngineSectionName =
@@ -1377,12 +1405,37 @@ function getEntityRegistrationHover(
 
   const defPath = findEntityDefinitionFile(word, document);
   const extraLines = getEntityRuntimeHoverLines(document, word);
+  const utypeLine = getEntityUtypeLine(document, word);
+  if (utypeLine) {
+    extraLines.unshift(utypeLine);
+  }
   return createDefinitionReferenceHover(
     word,
     'Entity registration from `entities.xml`',
     defPath || `${word}.def`,
     extraLines
   );
+}
+
+// 清单序号行(source-analysis 设计 D3):引擎按 entities.xml 子节点顺序
+// 分配 utype(entitydef.cpp:253-265、2382-2396),注册快照保持清单序,
+// 首次出现位置即序号(同名重复引擎按首条合并,重复条目另有诊断提示)。
+function getEntityUtypeLine(
+  document: vscode.TextDocument,
+  entityName: string
+): string | null {
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const entities = getRegisteredEntities(workspaceRoot);
+  const index = entities.findIndex(entity => entity.name === entityName);
+  if (index < 0) {
+    return null;
+  }
+
+  return `**Utype**: \`${index + 1}\`(entities.xml 清单顺序,共 \`${entities.length}\` 个实体)`;
 }
 
 function getRegisteredEntityInfo(
