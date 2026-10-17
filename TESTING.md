@@ -4761,3 +4761,28 @@ CodeLens 注册数 1→2;终配 watcher 断言改记录样式集合(批134 起�
 lines),compile+lint 干净,docs:build 绿,mocha 烟测 11 例绿。
 docs/guide/language.md(Hover 新小节+跳转条目)与 features.md 同步。
 版本仍冻结 0.1.0。
+
+## 批151:mixin 跳转层2 开关 kbengine.python.enableMroJump(2026-10-17)
+
+用户令(2026-10-17):mixin 函数导航要可开关、默认开——上一轮实测跳转
+行为异常时先关掉隔离该层。原并发会话的「整删 PythonClassIndex」方案改为
+备份收起不落地(其工作树基线 928d661 已落后 origin/main 18+ 提交,直接
+删除会误伤其后落地的修复战役:激活修复 29d5f60、扫描收窄 f9f5e3c/5a9f2f3、
+分层收窄 82d46be、跳转日志 84da2b6/0f66a5a)。
+
+实现:languageProviders 模块级开关(setPythonMroJumpEnabled /
+isPythonMroJumpEnabled,与 kbengine.jumpLog 同款接线——extension 激活
+读一次、onDidChangeConfiguration 刷新);关闭时层2 记 skip(detail 注明
+disabled by kbengine.python.enableMroJump),不调 resolveSelfMethodCandidates
+即不触发全仓 .py 扫描,watcher 侧 .py 变更不再投喂索引(层1/层3 照常)。
+package.json 增 kbengine.python.enableMroJump(boolean,默认 true)。
+
+测试:layeredJump 增开关关闭用例(层序 entity-def:miss → python-mro:skip
+→ file-scope:hit,落点仍是同文件 def);extension 装配用例扩配置变更双臂
+(关→投喂跳过、开→恢复)与即时生效断言;配置文档中英总览表 + 逐项小节
+登记(设置覆盖锁双向对账,现状 42 项),logging.md 中英补「关闭时只记
+一行 skip」排障口径,README 中英配置项计数 32→42(旧数漏了批126 起的
+9 项,一并修正)。全套 2355 用例绿(基线 2354+3 跳过,+1 为新开关用例),
+tsc/lint/vitepress/mocha 11 全绿;extension.ts 509/510 语句(languageProviders
+导入绑定 L67 为既有缺口),languageProviders 缺口区域 994–1188 与 HEAD
+基线一致(30≤34,无新增未覆盖语句)。版本仍冻结 0.1.0。

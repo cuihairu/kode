@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
+import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
@@ -504,6 +505,28 @@ describe('extension activate 装配', () => {
       expect(collection.get(lateDef.uri).length).toBeGreaterThan(0);
       // 重扫对非 def 文档跳过校验(isDefDocument 假分支)
       expect(collection.get(plainDoc.uri)).toHaveLength(0);
+
+      // 层2 python-mro(mixin 函数导航)开关:配置变更即时生效;关闭后
+      // .py 变更不再投喂索引(分支双覆盖:关闭走 skip,恢复走投喂)
+      const pyDoc = makeTextDocument('class Gate:\n    pass\n', {
+        fileName: path.join(root, 'scripts', 'gate.py'),
+        languageId: 'python'
+      });
+      configurationOverrides.set('kbengine.python', { enableMroJump: false });
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (section: string) =>
+          section === 'kbengine' || section === 'kbengine.python.enableMroJump'
+      });
+      expect(isPythonMroJumpEnabled()).toBe(false);
+      workspaceEvents.documentChanged.fire({ document: pyDoc });
+      configurationOverrides.set('kbengine.python', { enableMroJump: true });
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (section: string) =>
+          section === 'kbengine' || section === 'kbengine.python.enableMroJump'
+      });
+      expect(isPythonMroJumpEnabled()).toBe(true);
+      workspaceEvents.documentChanged.fire({ document: pyDoc });
+      configurationOverrides.delete('kbengine.python');
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });

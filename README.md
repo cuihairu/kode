@@ -361,4 +361,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.0, not yet published to the Marketplace. 27 features, 30 commands, and 32 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Current version 0.1.0, not yet published to the Marketplace. 27 features, 30 commands, and 42 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.

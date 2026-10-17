@@ -90,6 +90,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把发现的 KBEngine scripts 根写入 `python.analysis.extraPaths` |
 | `kbengine.python.stubExport` | boolean | `true` | 自动导出内置 KBEngine API 索引为 `KBEngine.pyi` 存根 |
 | `kbengine.python.stubDir` | string | `""` | `.pyi` 存根目录(留空 = 默认约定 `.kbengine/stubs`) |
+| `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
 | `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器的输出目录 |
 | `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成器 `.def` 输出目录 |
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成器 Python 输出目录 |
@@ -123,7 +124,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126–143 又新增 9 项,现状 41 项,新设置见上面「kbengine.* 设置项总览」与逐项说明)
+### 全量配置项对照表(批125 盘点 32 项;此后批126 起又新增 10 项,现状 42 项,新设置见上面「kbengine.* 设置项总览」与逐项说明)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 
@@ -162,7 +163,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
 | `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126–143 在此表之外新增 9 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`),均已在总览表与逐项说明登记。
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 10 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`、`kbengine.python.enableMroJump`),均已在总览表与逐项说明登记。
 
 ## 逐项说明
 
@@ -282,6 +283,10 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 `kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
+
+### Python 跳转层2 开关 `kbengine.python.enableMroJump`
+
+`kbengine.python.enableMroJump`(boolean,默认 `true`)管 Python 文件里 `self.<方法>` 跳转的第二层:跨文件 C3-MRO + 组合根解析(mixin/基类提供的方法)。改动即时生效(不重载窗口);关闭后层2 只在跳转轨迹里记 skip、不做全仓 `.py` 扫描,`.py` 变更也不再投喂索引,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域)。逐层轨迹与排障口径见「日志」文档的 `[kode-jump]` 决策路径一节。
 
 ### telnet 探测
 

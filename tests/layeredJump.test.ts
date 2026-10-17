@@ -7,7 +7,7 @@ import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { EntityMappingManager } from '../src/entityMapping';
 import { PythonClassIndex } from '../src/pythonClassIndex';
-import { PythonDefinitionProvider, TracedDefinitionResult } from '../src/languageProviders';
+import { PythonDefinitionProvider, TracedDefinitionResult, setPythonMroJumpEnabled } from '../src/languageProviders';
 
 // 放弃范围逐层收窄(用户 2026-10-16):
 // 层1 entity-def(.def 派生索引,对象级类粒度 → 文件级 owner 归属)
@@ -211,6 +211,45 @@ describe('分层跳转(对象级放弃收窄)', () => {
       stubWorkspace.workspaceFolders = [];
     }
   }, 120_000);
+
+  it('层2 开关关闭(kbengine.python.enableMroJump=false):python-mro 记 skip,同文件定义由层3 接住', async () => {
+    stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(FIXTURE), name: 'demo-assets', index: 0 }];
+    setPythonMroJumpEnabled(false);
+    try {
+      const index = new PythonClassIndex();
+      const manager = new EntityMappingManager({ subscriptions: [] } as never);
+      const provider = new PythonDefinitionProvider(manager, index);
+      // 同文件定义用例:关闭层2 后落点不变(层3 file-scope 兜底),路径少一层
+      const text = [
+        'class Base:',
+        '    def ping(self):',
+        '        pass',
+        '',
+        'class Widget(Base):',
+        '    def go(self):',
+        '        self.ping()',
+        ''
+      ].join('\n');
+      const document = makeTextDocument(text, {
+        fileName: path.join(os.tmpdir(), 'kode_gate_off.py'),
+        languageId: 'python'
+      });
+      const callLine = 6;
+      const char = text.split('\n')[callLine].indexOf('self.ping') + 6;
+      const traced = await provider.provideDefinitionTraced(document, new Position(callLine, char));
+      expect(traced.layers.map(layer => `${layer.layer}:${layer.status}`))
+        .toEqual(['entity-def:miss', 'python-mro:skip', 'file-scope:hit']);
+      expect(traced.layers[1].detail, 'skip 原因写明开关名').toContain('enableMroJump');
+      const loc = traced.location as { range: { start: { line: number } } };
+      expect(loc.range.start.line, '落点仍是同文件的 def ping').toBe(1);
+      manager.dispose();
+    } finally {
+      setPythonMroJumpEnabled(true);
+      stubWorkspace.findFiles = ORIGINAL;
+      stubWorkspace.workspaceFolders = [];
+    }
+  });
 
   it('对象级判定在类粒度:类名直取 .def,文件级对非 owner 文件落空', async () => {
     stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;

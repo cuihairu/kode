@@ -60,6 +60,8 @@ import {
   PropertyCodeLensProvider,
   RpcCodeLensProvider,
   TypesXmlCodeLensProvider,
+  isPythonMroJumpEnabled,
+  setPythonMroJumpEnabled,
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
@@ -125,6 +127,8 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
   // 跳转决策路径日志开关(默认关闭;Settings 搜 kbengine.jumpLog 随时切换)
   setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
+  // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
+  setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
@@ -282,8 +286,11 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isEntitiesXmlDocument(event.document)) {
         validateEntitiesXmlDocument(event.document, diagnostics);
       }
-      // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入
-      void pythonClassIndex.onDocumentChanged(event.document);
+      // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
+      // 层2 关闭时索引不参与跳转,变更喂给索引纯属后台空转,一并跳过
+      if (isPythonMroJumpEnabled()) {
+        void pythonClassIndex.onDocumentChanged(event.document);
+      }
     });
     context.subscriptions.push(watcher);
 
@@ -314,6 +321,11 @@ export function activate(context: vscode.ExtensionContext) {
     // 跳转日志开关变更即时生效(不重载窗口)
     if (event.affectsConfiguration('kbengine.jumpLog')) {
       setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
+    }
+
+    // 层2 python-mro(mixin 函数导航)开关变更即时生效(不重载窗口)
+    if (event.affectsConfiguration('kbengine.python.enableMroJump')) {
+      setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
     }
 
     // binPath/configPath 变更影响数据库连接读值(批131),重算后再扫文档

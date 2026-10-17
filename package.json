@@ -1014,6 +1014,11 @@
           "default": "",
           "description": "`.pyi` 存根目录（留空则用默认约定 .kbengine/stubs，该目录归 kode 自管、内容一致时零写、陈旧才刷新；配了目录则以配置为准并在目录里扫描，已有 .pyi 视为用户资产不覆盖，没有 .pyi 才生成。支持 ${workspaceFolder}/${env:NAME} 等 VS Code 变量；也可用环境变量 KBENGINE_STUB_DIR 指定，设置优先于环境变量）"
         },
+        "kbengine.python.enableMroJump": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 跳转层2（跨文件 C3-MRO + 组合根解析 mixin/基类方法）开关，默认开；跳转行为异常时可关闭以隔离该层——关闭后层2 记 skip、不做全仓扫描，跳转回落层1（.def 派生索引）与层3（当前文件类作用域）"
+        },
         "kbengine.hotReload.enabled": {
           "type": "boolean",
           "default": false,

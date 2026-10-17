@@ -371,4 +371,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前版本 0.1.0，尚未发布到 Marketplace。已落地 27 项功能、30 条命令、32 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前版本 0.1.0，尚未发布到 Marketplace。已落地 27 项功能、30 条命令、42 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。

@@ -2798,6 +2798,22 @@ function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSugges
 }
 
 /**
+ * 层2 python-mro 开关(kbengine.python.enableMroJump,默认开;用户 2026-10-17:
+ * mixin 函数导航要可关——上一轮实测行为异常时,先关掉隔离该层再排查)。
+ * extension 激活时读取、配置变更时刷新(与 kbengine.jumpLog 同款接线);
+ * 关闭时层2 只记 skip,不触发全仓扫描。
+ */
+let pythonMroJumpEnabled = true;
+
+export function setPythonMroJumpEnabled(enabled: boolean): void {
+  pythonMroJumpEnabled = enabled;
+}
+
+export function isPythonMroJumpEnabled(): boolean {
+  return pythonMroJumpEnabled;
+}
+
+/**
  * 跳转分层追踪(用户 2026-10-16「放弃范围必须逐层收窄,对象级不是文件级」):
  * 记录本次跳转查过的每一层与命中/落空原因,全部落空时可据此说明「查过哪些层」。
  */
@@ -3152,7 +3168,10 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     const pyTimer = jumpTimeStart();
 
     // ── 层2 python-mro:跨文件 MRO + 组合根;异常降级为落空,绝不在本层断链 ──
-    if (!this.pythonClassIndex) {
+    if (!isPythonMroJumpEnabled()) {
+      layers.push({ layer: 'python-mro', query: symbol, status: 'skip', detail: 'disabled by kbengine.python.enableMroJump' });
+      jumpLog('info', () => '层2 python-mro 跳过(设置关闭)');
+    } else if (!this.pythonClassIndex) {
       layers.push({ layer: 'python-mro', query: symbol, status: 'skip', detail: 'python class index unavailable' });
       jumpLog('info', () => '层2 python-mro 跳过(索引未注入)');
     } else {

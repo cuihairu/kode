@@ -90,6 +90,7 @@ Two boundaries:
 | `kbengine.python.extraPathsSync` | boolean | `true` | Auto-write the discovered KBEngine scripts root into `python.analysis.extraPaths` |
 | `kbengine.python.stubExport` | boolean | `true` | Auto-export the built-in KBEngine API index as a `KBEngine.pyi` stub |
 | `kbengine.python.stubDir` | string | `""` | `.pyi` stub directory (empty = default convention `.kbengine/stubs`) |
+| `kbengine.python.enableMroJump` | boolean | `true` | Switch for Python jump layer 2 (cross-file C3-MRO + composition roots resolving mixin/base-class methods); when off, layer 2 records a skip and no full-repo scan runs — jumps fall back to layer 1 (the `.def` derived index) and layer 3 (current-file class scopes) |
 | `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | Client entity SDK generator output directory |
 | `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | Generator `.def` output directory |
 | `kbengine.generator.pythonOutputPath` | string | `scripts` | Generator Python output directory |
@@ -123,7 +124,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 
 **Three kinds of purely discovered resources with no settings at all** (since batch 125): `types.xml`, `messages_fixed(_defaults).xml`, and the engine `kbengine_defaults.xml` (when binPath cannot derive it, fall back via the engine source-root anchor, then derive).
 
-### Full Setting Comparison Table (batch-125 inventory of 32 items; 9 more added since by batches 126–143, 41 today — the new ones are in the "Overview of `kbengine.*` Settings" table and the item-by-item notes)
+### Full Setting Comparison Table (batch-125 inventory of 32 items; 10 more added since by batches 126+, 42 today — the new ones are in the "Overview of `kbengine.*` Settings" table and the item-by-item notes)
 
 `How it resolves now` = how the value is actually taken today; `Auto-discoverable` = whether the value can be derived from the workspace/environment; `Disposition` = this round's conclusion and reasoning.
 
@@ -162,7 +163,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | `kbengine.telnet.probeIntervalSeconds` | Value 5 | No | **Keep** (frequency preference) |
 | `kbengine.httpRequests` | Default: one disabled example (`enabled: false`) | No (the user's business endpoints) | **Keep**; the example is disabled by default and has no side effects |
 
-Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Batches 126–143 added 9 more settings beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, and `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`), all registered in the overview table and the item-by-item notes.
+Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 10 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`, and `kbengine.python.enableMroJump`), all registered in the overview table and the item-by-item notes.
 
 ## Item-by-Item Notes
 
@@ -282,6 +283,10 @@ With all three off, `.def` hover keeps only syntax highlighting. If hints feel t
 With `kbengine.python.stubDir` left empty (the default), the directory is kode-managed `.kbengine/stubs`: zero write when content matches disk, stale content (after an index update) is automatically rewritten, manual edits are not kept — ignoring it in `.gitignore` is recommended. **With a directory configured, the directory is user-owned**: kode only scans, never overwrites — any `.pyi` already in the directory is treated as a user asset and left untouched; one is generated only when no `.pyi` exists; an unreadable directory (missing/no permission) is reported honestly, never blindly written.
 
 Boundary: the extraPaths managed segment recognizes only the default convention directory `.kbengine/stubs` (joined when export is on and `KBEngine.pyi` or `kbe_types.py` is on disk; both generated artifacts share the one directory); a user-configured `kbengine.python.stubDir` directory does not join the managed segment — add it to `python.analysis.extraPaths` yourself if needed.
+
+### Python Jump Layer-2 Switch `kbengine.python.enableMroJump`
+
+`kbengine.python.enableMroJump` (boolean, default `true`) controls the second layer of `self.<method>` jumps in Python files: cross-file C3-MRO + composition-root resolution (methods provided by mixins/base classes). Changes take effect immediately (no window reload); when off, layer 2 only records a skip in the jump trace and no full-repo `.py` scan runs, `.py` changes stop being fed to the index, and jumps fall back to layer 1 (the `.def` derived index) and layer 3 (current-file class scopes). For the per-layer trace and troubleshooting, see the `[kode-jump]` decision-path section of the logging guide.
 
 ### telnet Probing
 

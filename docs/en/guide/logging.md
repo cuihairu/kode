@@ -119,6 +119,7 @@ Line by line:
 - `py (1) static-class MRO missed`: layer 2 step 1 — `func` is not in the static class's own inheritance chain;
 - `composition roots derived …` and `py roots containing … [none]`: layer 2 step 2 — which composition roots (entities.xml × `.def` × Python inheritance) contain this class; `Functor` belongs to none;
 - `layer2 python-mro missed (…)`: layer 2 step 3 — neither MRO, composition roots, nor reverse descendants has `func`;
+  - layer 2 has its own switch, `kbengine.python.enableMroJump` (default on): when off, the whole `py query` / `composition roots derived` block above disappears and only one `layer2 python-mro skipped (disabled by setting)` line is recorded, while layer 3 still runs — turn it off first to isolate misbehaving jumps;
 - `layer3 file-scope missed (…)`: last layer — the current file's class scope and file-local MRO don't define it either;
 - `jump gave up: all three layers missed … total …`: the give-up point — null is returned only after all three layers miss. This failure is expected: `func` is an attribute assigned in `__init__`, not a method of any class.
 
