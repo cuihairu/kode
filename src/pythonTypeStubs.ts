@@ -377,3 +377,27 @@ export async function exportPythonTypeStubs(
   }
   return written;
 }
+
+/**
+ * types.xml watcher 自动重生成(def-pyi-stubs §4 二期):保存/新建/删除
+ * types.xml 后静默重导出 kbe_types.py。不设去抖、不加开关——导出函数自带
+ * `kbengine.python.stubExport` 门(关掉即停),内容确定性与零写纪律保证
+ * 重复触发无副作用;快照每次直读磁盘,事件到达即读到新内容,无缓存竞态。
+ * watcher 只盯 types.xml:kbe_types.py 的内容来源仅此一个文件,写自己的
+ * 生成物不会反触发自己。
+ */
+export function setupTypeStubRegeneration(
+  context: vscode.ExtensionContext,
+  deps: StubExportDeps = fileSystemStubExportDeps,
+  listCustomTypes?: (workspaceRoot: string) => CustomTypeInfo[]
+): vscode.FileSystemWatcher {
+  const watcher = vscode.workspace.createFileSystemWatcher('**/types.xml');
+  const regenerate = (): void => {
+    void exportPythonTypeStubs(deps, { silent: true, listCustomTypes });
+  };
+  watcher.onDidChange(regenerate);
+  watcher.onDidCreate(regenerate);
+  watcher.onDidDelete(regenerate);
+  context.subscriptions.push(watcher);
+  return watcher;
+}

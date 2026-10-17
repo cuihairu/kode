@@ -379,7 +379,8 @@ The flow graph panel supports:
   - The built-in type mapping shares the table with the TS generator: integers → `int`, floats → `float`, strings → `str`, vectors → fixed-length `Tuple`, `PY_DICT/PY_TUPLE/PY_LIST` → typing generics, no counterpart → `Any` (lossy but valid)
   - An existing `kbe_types.py` in a configured user directory is treated as a user asset and never overwritten; the default directory `.kbengine/stubs` is kode-managed
   - When a workspace has no custom types, no file is generated and no message disturbs; after a successful export it chains one extraPaths sync
-- Setting `kbengine.python.stubExport: false` turns it all off (shared with the KBEngine.pyi stub export)
+- `types.xml` on disk regenerates automatically: after a save/create/delete the watcher silently re-exports (no debouncing, no extra setting — the zero-write discipline makes repeated triggers side-effect free; with `kbengine.python.stubExport` off it effectively stops)
+  - Setting `kbengine.python.stubExport: false` turns it all off (shared with the KBEngine.pyi stub export)
 
 ## Typical Workflows
 

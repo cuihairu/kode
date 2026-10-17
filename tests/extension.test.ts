@@ -287,6 +287,10 @@ describe('extension activate 装配', () => {
     await commands.executeCommand('kbengine.python.exportStubs');
     expect(messages.info.some(message => message.includes('跳过 KBEngine 存根导出'))).toBe(true);
 
+    // def-pyi-stubs §6 类型桩导出:无工作区时同样如实说明并跳过
+    await commands.executeCommand('kbengine.python.exportTypeStubs');
+    expect(messages.info.some(message => message.includes('跳过 KBEngine 类型桩导出'))).toBe(true);
+
     // 未知实体 → 未找到定义文件 warning
     await commands.executeCommand('kbengine.entity.open', 'Ghost');
     expect(messages.warning.some(message => message.includes('未找到定义文件'))).toBe(true);

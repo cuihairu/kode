@@ -365,6 +365,27 @@ describe('syncPythonExtraPaths(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
+  it('kbe_types.py 单独在盘(类型桩 §6)也并入同一个存根目录,不重复', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const typeStubFile = '/ws/.kbengine/stubs/kbe_types.py';
+    const deps = {
+      exists: (candidate: string): boolean =>
+        ['/ws/scripts', '/ws/assets/scripts', '/ws/server_assets/scripts', typeStubFile].includes(candidate),
+      listSubdirs: (): string[] => []
+    };
+
+    await syncPythonExtraPaths(makeContext(), deps);
+
+    const update = workspaceState.workspaceConfigurationUpdates[0];
+    expect(update.value).toEqual([
+      '/ws/scripts',
+      '/ws/assets/scripts',
+      '/ws/server_assets/scripts',
+      '/ws/.kbengine/stubs'
+    ]);
+    stubWorkspace.workspaceFolders = [];
+  });
+
   it('G2 存根导出关闭时,存根文件在盘也不并入', async () => {
     configurationOverrides.set('kbengine', { 'python.stubExport': false });
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];

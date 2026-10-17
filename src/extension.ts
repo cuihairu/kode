@@ -37,7 +37,7 @@ import { QuickActionManager } from './quickActions';
 import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
-import { exportPythonTypeStubs } from './pythonTypeStubs';
+import { exportPythonTypeStubs, setupTypeStubRegeneration } from './pythonTypeStubs';
 import {
   DEBUG_CONFIG_CHANNEL_NAME,
   ensureDebugConfig,
@@ -822,6 +822,11 @@ export function activate(context: vscode.ExtensionContext) {
       auto ? { preview: true, preserveFocus: true } : undefined
     );
   };
+
+  // types.xml 落盘后自动重生成类型桩(§4 二期):静默、零写纪律兜底,
+  // stubExport 关掉时导出函数自门,watcher 实际停摆。挂在终配 watcher
+  // 之前:activate 期 watcher 创建次序是既有探针测试的隐含契约
+  setupTypeStubRegeneration(context);
 
   const showFinalConfigCommand = vscode.commands.registerCommand(
     'kbengine.config.showFinal',

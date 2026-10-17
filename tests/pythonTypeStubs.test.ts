@@ -6,7 +6,8 @@ import {
   buildPythonTypeStubContent,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
-  kbeTypeStubFilePath
+  kbeTypeStubFilePath,
+  setupTypeStubRegeneration
 } from '../src/pythonTypeStubs';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import {
@@ -538,6 +539,80 @@ describe('exportPythonTypeStubs(装配层)', () => {
     await exportPythonTypeStubs(writing.deps, { silent: true, listCustomTypes: () => SAMPLE_TYPES() });
     expect(writing.writes).toHaveLength(1);
     expect(messages.info).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+});
+
+describe('setupTypeStubRegeneration(types.xml watcher 自动重生成,def-pyi-stubs §4 二期)', () => {
+  beforeEach(() => {
+    messages.info.length = 0;
+    messages.warning.length = 0;
+    messages.error.length = 0;
+    windowState.reset();
+    workspaceState.reset();
+    configurationOverrides.clear();
+  });
+
+  it('types.xml 增/改/删三事件都触发静默重导出,内容一致零写', () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const context = { subscriptions: [] as Array<{ dispose(): void }> };
+    const writes: Array<{ path: string; content: string }> = [];
+    // 有状态 deps:写入回灌 exists/readFile,零写臂才走得到
+    const files = new Map<string, string>();
+    const deps = {
+      exists: (candidate: string): boolean => files.has(candidate),
+      readFile: (path: string): string => files.get(path) ?? '',
+      writeFile: (path: string, content: string): void => {
+        files.set(path, content);
+        writes.push({ path, content });
+      },
+      mkdir: (): void => undefined
+    };
+
+    const watcher = setupTypeStubRegeneration(
+      context as never,
+      deps,
+      () => SAMPLE_TYPES()
+    );
+
+    watcher.fireChange({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
+    expect(writes).toHaveLength(1);
+
+    // 内容一致:重复触发零写,零提示
+    watcher.fireCreate({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
+    expect(writes).toHaveLength(1);
+    expect(messages.info).toHaveLength(0);
+
+    watcher.fireDelete({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
+    expect(writes).toHaveLength(1);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('types.xml 删除后(自定义类型消失)不再重写旧桩', () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const context = { subscriptions: [] as Array<{ dispose(): void }> };
+    let types = SAMPLE_TYPES();
+    const { deps, writes } = makeDeps();
+
+    const watcher = setupTypeStubRegeneration(context as never, deps, () => types);
+
+    watcher.fireChange({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
+    expect(writes).toHaveLength(1);
+
+    types = [];
+    watcher.fireDelete({ fsPath: '/ws/scripts/entity_defs/types.xml' } as never);
+    expect(writes).toHaveLength(1);
+    expect(messages.info).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('watcher 挂进 context.subscriptions 随扩展注销销毁', () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const context = { subscriptions: [] as Array<{ dispose(): void }> };
+
+    const watcher = setupTypeStubRegeneration(context as never, makeDeps().deps, () => SAMPLE_TYPES());
+
+    expect(context.subscriptions).toContain(watcher);
     stubWorkspace.workspaceFolders = [];
   });
 });

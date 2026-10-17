@@ -27,7 +27,10 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   Exported once silently after the KBEngine.pyi export at activation,
   chained with one extraPaths sync (the managed segment now joins when
   either artifact is on disk), with the manual command chaining the sync
-  as well
+  as well. A watcher on `**/types.xml` silently regenerates the stub
+  after every save/create/delete — no debounce and no extra setting:
+  the export's own switch gates it, and deterministic content with the
+  zero-write discipline makes repeated triggers side-effect free
 - `types.xml` type declarations now explain how they land in the database
   and where they are used. Hovering a declaration name appends a storage
   shape section: built-in aliases land as one main-table column (with the
