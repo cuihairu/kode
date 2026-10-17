@@ -638,7 +638,10 @@ export function activate(context: vscode.ExtensionContext) {
         selection: editor ? editor.document.getText(editor.selection) : undefined,
         workspaceRoots: (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)
       };
-    }
+    },
+    // ${module} 包边界探针:目录含 __init__.py 才算包段(base/cell 等
+    // 角色目录无 __init__.py 即不算模块,批153 用户令)
+    isPackageDir: dirPath => fs.existsSync(path.join(dirPath, '__init__.py'))
   });
   const runHttpQuickPickCommand = vscode.commands.registerCommand(
     'kbengine.httpRequests.run',

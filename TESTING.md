@@ -4812,3 +4812,33 @@ package.json 默认值改为真实形态 URL(默认仍停用)。
 上下文用例;service 增官方变量与 moduleBasename 透传用例。httpRequests
 语句/分支/函数 100%(67/29/19,消掉 basename 的 split 空表死臂 ?? ''),
 httpRequestService 56/17/13 全绿。
+
+## 批153:${filename} 正名 + ${file} 归还官方 + ${module} 按 __init__.py 扫包边界(2026-10-17)
+
+背景两条用户令:①「变量至少要符合语义,file 更符合语义的是 filename」
+——批152 的 ${file}=文件名 与官方 ${file}=绝对路径 撞名,属名不副实;
+②「kbengine 脚本基本都在 base/cell 两个目录下,这两个才是父目录,不能把
+这个目录也作为模块,要扫描到 __init__.py 才算模块」——批152 的
+${module}=工作区相对路径转点 会把 base/cell 角色目录错算成模块段。
+
+实现:①文件名占位改名 ${filename}(TemplateVars 字段同步 file→filename),
+${file} 从自定义表移出,交还官方族=绝对路径(批152 的「自定义恒胜出」
+代决被用户令推翻,如实登记);②resolvePythonModulePath 重铸:第二参从
+workspaceRoots 改为 PackageDirProbe(目录是否含 __init__.py 的探针,装配层
+extension.ts 注入 fs.existsSync(path.join(dir,'__init__.py')),测试注入
+脚本化假例),自文件所在目录向上逐级收包段、首个非包目录截断——
+base/cell 无 __init__.py 不算模块段,模块名自然回落文件名去 .py
+(「没有模块就直接文件名」形态天然成立);不特判角色名,规则通用
+(base 若真带 __init__.py 则按 Python 语义照收 scripts.base.X);
+不注入探针按无包边界处理。httpRequestService 增 isPackageDir 依赖透传
+buildTemplateVars。
+
+测试:resolvePythonModulePath 七例(全包/角色目录不算段/半包/截断/角色目录
+带 __init__ 通用规则/无探针/非 .py 与空路径与 win32);buildTemplateVars
+探针透传与 filename 字段;单趟合并 ${file}=绝对路径 ${filename}=文件名
+各归各位;service 增 base 目录 ${module}=FightAI 透传例,首例改 isPackageDir
+装配与 ${filename} 请求头。httpRequests/httpRequestService 覆盖 100%×4。
+装配面:httpRequestWiring 具名运行用例改真实临时包夹具(mkdtemp 造
+entities/、fight/ 两级 __init__.py)令 extension 的真 fs 探针全链路扫出
+entities.fight.FightAI,finally 清盘;文件本体不需存在(探针只查目录)。
+全量 2369+3 绿(+1 装配改写,+1 批153 service 例),mocha 11,lint/tsc/vitepress 绿。

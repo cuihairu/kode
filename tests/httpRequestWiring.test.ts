@@ -1,4 +1,7 @@
 import * as http from 'http';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
@@ -134,28 +137,38 @@ describe('kbengine.httpRequests 命令装配', () => {
       seenUrl = req.url ?? '';
       res.end('done');
     });
-    const context = makeContext();
-    activate(context);
-    setEntries([entry({
-      url: `http://127.0.0.1:${port}/hotfix?module_name=\${module}&line=\${line}&sel=\${sel}`
-    })]);
-    workspace.workspaceFolders = [{ uri: { fsPath: '/ws' } } as never];
-    (fakeWindow as unknown as Record<string, unknown>).activeTextEditor = {
-      document: {
-        uri: { fsPath: '/ws/entities/fight/FightAI.py' },
-        getText: () => 'self.hp'
-      },
-      selection: { active: { line: 9 } }
-    };
+    // 批153:临时工作区造真两级 __init__.py,装配层的真 fs 包探针沿盘扫出
+    // entities.fight.FightAI;文件本体不需要存在(探针只查目录)
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-http-pkg-'));
+    try {
+      fs.mkdirSync(path.join(root, 'entities', 'fight'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'entities', '__init__.py'), '');
+      fs.writeFileSync(path.join(root, 'entities', 'fight', '__init__.py'), '');
+      const context = makeContext();
+      activate(context);
+      setEntries([entry({
+        url: `http://127.0.0.1:${port}/hotfix?module_name=\${module}&file=\${filename}&line=\${line}&sel=\${sel}`
+      })]);
+      workspace.workspaceFolders = [{ uri: { fsPath: root } } as never];
+      (fakeWindow as unknown as Record<string, unknown>).activeTextEditor = {
+        document: {
+          uri: { fsPath: path.join(root, 'entities', 'fight', 'FightAI.py') },
+          getText: () => 'self.hp'
+        },
+        selection: { active: { line: 9 } }
+      };
 
-    await commands.executeCommand('kbengine.httpRequest.run', { name: '热更' });
+      await commands.executeCommand('kbengine.httpRequest.run', { name: '热更' });
 
-    expect(seenUrl).toBe(
-      '/hotfix?module_name=entities.fight.FightAI&line=10&sel=self.hp'
-    );
-    deactivate();
-    for (const disposable of context.subscriptions) {
-      disposable.dispose();
+      expect(seenUrl).toBe(
+        '/hotfix?module_name=entities.fight.FightAI&file=FightAI.py&line=10&sel=self.hp'
+      );
+      deactivate();
+      for (const disposable of context.subscriptions) {
+        disposable.dispose();
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 

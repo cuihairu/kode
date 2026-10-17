@@ -15,6 +15,7 @@ import {
   buildOfficialVariableContext,
   buildTemplateVars,
   HttpRequestEntry,
+  PackageDirProbe,
   TemplateEditorContext
 } from './httpRequests';
 
@@ -130,6 +131,8 @@ export interface HttpRequestServiceDeps {
   notifyError: (message: string) => void;
   /** 模板上下文(活动编辑器)提取 */
   getTemplateContext?: () => TemplateEditorContext;
+  /** Python 包目录探针(含 __init__.py 判定),${module} 包边界扫描用(批153) */
+  isPackageDir?: PackageDirProbe;
   timeoutMs?: number;
 }
 
@@ -158,7 +161,7 @@ export class HttpRequestService {
       return false;
     }
     const editorContext = this.deps.getTemplateContext?.() ?? {};
-    const vars = buildTemplateVars(editorContext);
+    const vars = buildTemplateVars(editorContext, this.deps.isPackageDir);
     // 批152:官方变量族(${workspaceFolder}/${fileBasenameNoExtension}/
     // ${env:NAME} 等)与自定义占位单趟合并插值
     const request = buildHttpRequest(entry, vars, buildOfficialVariableContext(editorContext));

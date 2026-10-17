@@ -168,8 +168,8 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 
 ### HTTP 快捷请求
 - [设置 `kbengine.httpRequests` 列表：名称/URL 模板/method/请求头/请求体/启停/键位展示串，内置示例一条（默认停用），按真实热更新服务形态给出——等价 `curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'`]
-- [自定义模板变量：`${module}`（工作区相对模块路径，`entities/fight/FightAI.py` → `entities.fight.FightAI`，工作区外回落文件名去 .py）、`${moduleBasename}`（末段一层模块名 `FightAI`）、`${file}`（文件名——与官方绝对路径语义不同）、`${line}`、`${sel}`；按字面替换、不做 URL 编码]
-- [官方 VS Code 变量族同样可插（`${workspaceFolder}`/`${fileBasenameNoExtension}`/`${env:NAME}` 等）；两表都不认识的占位原样保留]
+- [自定义模板变量：`${module}`（按 `__init__.py` 包边界扫模块路径，`entities/fight/FightAI.py` → `entities.fight.FightAI`；`base`/`cell` 角色目录无 `__init__.py` 不算模块段，模块名即文件名）、`${moduleBasename}`（末段一层模块名 `FightAI`）、`${filename}`（文件名）、`${line}`、`${sel}`；按字面替换、不做 URL 编码]
+- [官方 VS Code 变量族同样可插（`${file}`=绝对路径、`${workspaceFolder}`/`${fileBasenameNoExtension}`/`${env:NAME}` 等）；两表都不认识的占位原样保留]
 - [触发两路：命令面板 quick pick，或经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发——打开 .py 按快捷键即发热更新]
 - [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」：`▶` 请求行 → `✓` 状态·耗时·回包；失败 `✗` 标记 + 错误弹窗，如实回执不悬挂]
 

@@ -325,13 +325,15 @@ Template variables (shared by URL/body/header values, literal substitution, no U
 
 | Variable | Meaning |
 |------|------|
-| `${module}` | The current file's workspace-relative module path: `entities/fight/FightAI.py` → `entities.fight.FightAI`; outside the workspace, the file name without `.py` (i.e. one level only) |
-| `${moduleBasename}` | Last segment of the module path: `entities.fight.FightAI` → `FightAI`; in the fallback form it matches `${module}` |
-| `${file}` | File name (`FightAI.py`). Note: unlike the official VS Code `${file}` (absolute path), this extension always yields the file name |
+| `${module}` | Module path scanned along `__init__.py` package boundaries: when `entities/` and `fight/` each contain `__init__.py`, `entities/fight/FightAI.py` → `entities.fight.FightAI`; KBEngine scripts live under `base/`/`cell/` role directories which have no `__init__.py`, so those do not count as module segments — the module name is then just the file name without `.py` (the "no module, use the file name" form) |
+| `${moduleBasename}` | Last segment of the module path: `entities.fight.FightAI` → `FightAI`; in the no-package form it matches `${module}` |
+| `${filename}` | File name (`FightAI.py`) |
 | `${line}` | Cursor line (1-based) |
 | `${sel}` | Selected text |
 
-The official VS Code variable family is also supported (`${workspaceFolder}`, `${workspaceFolderBasename}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${env:NAME}`, `${cwd}`, `${userHome}`, `${pathSeparator}`; in multi-root workspaces `${workspaceFolder:Name}` picks a folder by name). Custom variables win over the official table: `${file}` always resolves to the file name; placeholders unknown to both tables are kept as-is (not wiped to an empty string).
+The official VS Code variable family is also supported (`${file}`=absolute path, `${workspaceFolder}`, `${workspaceFolderBasename}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${env:NAME}`, `${cwd}`, `${userHome}`, `${pathSeparator}`; in multi-root workspaces `${workspaceFolder:Name}` picks a folder by name). Placeholders unknown to both tables are kept as-is (not wiped to an empty string).
+
+> History: before batch 152 the file-name placeholder was named `${file}`; since the official variable family landed, `${file}` follows the official absolute-path semantics — use `${filename}` for the file name.
 
 With no active editor, each variable substitutes to the empty string.
 

@@ -6,6 +6,7 @@ import {
   buildHttpRequest,
   buildOfficialVariableContext,
   buildTemplateVars,
+  PackageDirProbe,
   parseHttpRequestEntries,
   resolvePythonModulePath
 } from '../src/httpRequests';
@@ -87,60 +88,82 @@ describe('内置示例与 package.json 默认值同步', () => {
   });
 });
 
-describe('resolvePythonModulePath', () => {
-  const roots = ['/ws'];
+describe('resolvePythonModulePath(批153 __init__.py 包边界)', () => {
+  // 脚本化包探针:路径在集合里即视作含 __init__.py 的包目录
+  const probeFor = (dirs: string[]): PackageDirProbe => {
+    const set = new Set(dirs);
+    return dirPath => set.has(dirPath);
+  };
 
-  it('工作区内相对路径去 .py 转点;根尾斜杠容忍', () => {
-    expect(resolvePythonModulePath('/ws/entities/fight/FightAI.py', roots)).toBe('entities.fight.FightAI');
-    expect(resolvePythonModulePath('/ws/entities/Foo.py', ['/ws/'])).toBe('entities.Foo');
-    // 非 .py 扩展保留全名(模块概念只对 .py 剥壳)
-    expect(resolvePythonModulePath('/ws/docs/x.json', roots)).toBe('docs.x.json');
+  it('真实包结构:各级 __init__.py 齐全才逐段成模块', () => {
+    const probe = probeFor(['/ws/entities', '/ws/entities/fight']);
+    expect(resolvePythonModulePath('/ws/entities/fight/FightAI.py', probe)).toBe('entities.fight.FightAI');
   });
 
-  it('win32 反斜杠路径同样归一', () => {
-    expect(resolvePythonModulePath('C:\\ws\\entities\\A.py', ['C:\\ws'])).toBe('entities.A');
+  it('base/cell 角色目录无 __init__.py:不算模块段,模块名即文件名(用户令核心例)', () => {
+    expect(resolvePythonModulePath('/ws/scripts/base/FightAI.py', probeFor([]))).toBe('FightAI');
+    expect(resolvePythonModulePath('/ws/scripts/cell/Motion.py', probeFor(['/ws/scripts']))).toBe('Motion');
   });
 
-  it('不在任何根下:文件名去 .py,不带目录', () => {
-    expect(resolvePythonModulePath('/tmp/other/Foo.py', roots)).toBe('Foo');
-    expect(resolvePythonModulePath('/tmp/other/Foo.txt', roots)).toBe('Foo.txt');
+  it('半包:只有内层是包则只收内层段', () => {
+    const probe = probeFor(['/ws/entities/fight']);
+    expect(resolvePythonModulePath('/ws/entities/fight/FightAI.py', probe)).toBe('fight.FightAI');
   });
 
-  it('空路径返回空串;路径恰等于根(无尾随分隔)不算在其下', () => {
-    expect(resolvePythonModulePath('', roots)).toBe('');
-    expect(resolvePythonModulePath('/ws', roots)).toBe('ws');
+  it('首个非包目录截断:更上层即使是包也不回捞', () => {
+    const probe = probeFor(['/ws/entities']);
+    expect(resolvePythonModulePath('/ws/entities/fight/FightAI.py', probe)).toBe('FightAI');
+  });
+
+  it('base 自带 __init__.py 时按 Python 语义照收(规则通用,不特判角色名)', () => {
+    const probe = probeFor(['/ws/scripts', '/ws/scripts/base']);
+    expect(resolvePythonModulePath('/ws/scripts/base/FightAI.py', probe)).toBe('scripts.base.FightAI');
+  });
+
+  it('不注入探针:按无包边界处理,模块=文件名去 .py', () => {
+    expect(resolvePythonModulePath('/ws/scripts/base/Foo.py')).toBe('Foo');
+  });
+
+  it('非 .py 扩展保留全名;空路径返回空串;win32 反斜杠归一', () => {
+    expect(resolvePythonModulePath('/ws/docs/x.json', probeFor(['/ws/docs']))).toBe('docs.x.json');
+    expect(resolvePythonModulePath('')).toBe('');
+    expect(resolvePythonModulePath('C:\\ws\\base\\A.py', probeFor(['C:/ws/base']))).toBe('base.A');
   });
 });
 
 describe('buildTemplateVars', () => {
-  it('完整上下文:module/moduleBasename/file/line(0 起转 1 起)/sel', () => {
+  const packaged = (dir: string): boolean =>
+    dir === '/ws/entities' || dir === '/ws/entities/fight';
+
+  it('完整上下文:module/moduleBasename/filename/line(0 起转 1 起)/sel', () => {
     const vars = buildTemplateVars({
       filePath: '/ws/entities/fight/FightAI.py',
       cursorLineZeroBased: 9,
       selection: 'self.hp',
       workspaceRoots: ['/ws']
-    });
+    }, packaged);
     expect(vars).toEqual({
       module: 'entities.fight.FightAI',
       moduleBasename: 'FightAI',
-      file: 'FightAI.py',
+      filename: 'FightAI.py',
       line: '10',
       sel: 'self.hp'
     });
   });
 
   it('无编辑器:各值为空串(如实,不猜)', () => {
-    expect(buildTemplateVars({})).toEqual({ module: '', moduleBasename: '', file: '', line: '', sel: '' });
+    expect(buildTemplateVars({})).toEqual({ module: '', moduleBasename: '', filename: '', line: '', sel: '' });
   });
 
-  it('回落形态(不在根下):module 即文件名去壳,moduleBasename 与之一致', () => {
-    const vars = buildTemplateVars({ filePath: '/tmp/other/Foo.py', workspaceRoots: [] });
+  it('base/cell 无包边界形态:module 即文件名去壳,moduleBasename 与之一致', () => {
+    const vars = buildTemplateVars({ filePath: '/ws/scripts/base/Foo.py', workspaceRoots: ['/ws'] });
     expect(vars.module).toBe('Foo');
     expect(vars.moduleBasename).toBe('Foo');
+    expect(vars.filename).toBe('Foo.py');
   });
 
   it('反斜杠文件名取 basename', () => {
-    expect(buildTemplateVars({ filePath: 'C:\\ws\\a.py' }).file).toBe('a.py');
+    expect(buildTemplateVars({ filePath: 'C:\\ws\\a.py' }).filename).toBe('a.py');
   });
 });
 
@@ -148,13 +171,13 @@ describe('applyTemplate', () => {
   const vars = {
     module: 'entities.fight.FightAI',
     moduleBasename: 'FightAI',
-    file: 'FightAI.py',
+    filename: 'FightAI.py',
     line: '10',
     sel: 'self.hp'
   };
 
   it('五个占位全替换;重复出现全中;未知占位原样保留', () => {
-    expect(applyTemplate('${module}|${moduleBasename}|${file}|${line}|${sel}', vars)).toBe(
+    expect(applyTemplate('${module}|${moduleBasename}|${filename}|${line}|${sel}', vars)).toBe(
       'entities.fight.FightAI|FightAI|FightAI.py|10|self.hp'
     );
     expect(applyTemplate('${module}/${module}', vars)).toBe('entities.fight.FightAI/entities.fight.FightAI');
@@ -162,8 +185,9 @@ describe('applyTemplate', () => {
   });
 
   it('替换值按字面插入,不做 URL 编码;$& 等替换模式不误读', () => {
-    const tricky = { module: 'a&b=c', moduleBasename: 'b$&c', file: 'f$&g', line: '1', sel: '$1' };
-    expect(applyTemplate('?m=${module}&b=${moduleBasename}&s=${sel}', tricky)).toBe('?m=a&b=c&b=b$&c&s=$1');
+    const tricky = { module: 'a&b=c', moduleBasename: 'b$&c', filename: 'f$&g.py', line: '1', sel: '$1' };
+    expect(applyTemplate('?m=${module}&b=${moduleBasename}&f=${filename}&s=${sel}', tricky))
+      .toBe('?m=a&b=c&b=b$&c&f=f$&g.py&s=$1');
   });
 });
 
@@ -188,12 +212,14 @@ describe('buildOfficialVariableContext', () => {
 });
 
 describe('applyTemplateWithContext(批152 单趟合并)', () => {
+  const packaged = (dir: string): boolean =>
+    dir === '/ws/entities' || dir === '/ws/entities/fight';
   const vars = buildTemplateVars({
     filePath: '/ws/entities/fight/FightAI.py',
     cursorLineZeroBased: 9,
     selection: '',
     workspaceRoots: ['/ws']
-  });
+  }, packaged);
   const official = buildOfficialVariableContext({
     filePath: '/ws/entities/fight/FightAI.py',
     workspaceRoots: ['/ws']
@@ -204,8 +230,9 @@ describe('applyTemplateWithContext(批152 单趟合并)', () => {
       .toBe('/ws|FightAI|entities/fight/FightAI.py');
   });
 
-  it('${file} 自定义语义恒胜出(文件名,非官方绝对路径)', () => {
-    expect(applyTemplateWithContext('${file}|${fileBasename}', vars, official)).toBe('FightAI.py|FightAI.py');
+  it('批153:${file} 归还官方语义=绝对路径,${filename}=文件名', () => {
+    expect(applyTemplateWithContext('${file}|${filename}|${fileBasename}', vars, official))
+      .toBe('/ws/entities/fight/FightAI.py|FightAI.py|FightAI.py');
   });
 
   it('${moduleBasename} 一层模块名与官方 ${fileBasenameNoExtension} 并存不互吞', () => {
@@ -232,7 +259,7 @@ describe('buildHttpRequest', () => {
       name: '热更',
       url: 'http://127.0.0.1:8000/api/hotfix?relaod=${module}',
       method: 'PUT',
-      headers: { 'X-File': '${file}', 'X-Line': '${line}' },
+      headers: { 'X-File': '${filename}', 'X-Line': '${line}' },
       body: '{"module":"${module}","sel":"${sel}"}',
       enabled: true,
       keybinding: ''
@@ -240,7 +267,7 @@ describe('buildHttpRequest', () => {
     const request = buildHttpRequest(entry, {
       module: 'entities.fight.FightAI',
       moduleBasename: 'FightAI',
-      file: 'FightAI.py',
+      filename: 'FightAI.py',
       line: '10',
       sel: ''
     });

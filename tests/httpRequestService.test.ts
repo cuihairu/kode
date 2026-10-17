@@ -66,7 +66,7 @@ describe('注入 transport:流水与回执语义', () => {
     const seen: OutgoingHttpRequest[] = [];
     const { service, logs } = makeService([entry({
       url: 'http://127.0.0.1:8090/hotfix?module_name=${module}',
-      headers: { 'X-File': '${file}' }
+      headers: { 'X-File': '${filename}' }
     })], {
       transport: async request => {
         seen.push(request);
@@ -77,7 +77,8 @@ describe('注入 transport:流水与回执语义', () => {
         cursorLineZeroBased: 9,
         selection: '',
         workspaceRoots: ['/ws']
-      })
+      }),
+      isPackageDir: dir => dir === '/ws/entities' || dir === '/ws/entities/fight'
     });
 
     await expect(service.runByName('热更')).resolves.toBe(true);
@@ -88,6 +89,26 @@ describe('注入 transport:流水与回执语义', () => {
     expect(logs[0]).toBe('▶ [热更] GET http://127.0.0.1:8090/hotfix?module_name=entities.fight.FightAI');
     expect(logs[1]).toBe('✓ 200 · 12ms');
     expect(logs[2]).toBe('ok-body');
+  });
+
+  it('批153:base 角色目录无 __init__.py 不算模块段,${module} 即文件名', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    const { service } = makeService([entry({
+      url: 'http://127.0.0.1:8000/api/hotfix?relaod=${module}'
+    })], {
+      transport: async request => {
+        seen.push(request);
+        return { ok: true, status: 200, durationMs: 2, body: '' };
+      },
+      getTemplateContext: () => ({
+        filePath: '/ws/scripts/base/FightAI.py',
+        workspaceRoots: ['/ws']
+      }),
+      isPackageDir: () => false // base/cell 都不带 __init__.py
+    });
+
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(seen[0].url).toBe('http://127.0.0.1:8000/api/hotfix?relaod=FightAI');
   });
 
   it('批152:官方变量族与 ${moduleBasename} 随 runByName 单趟透传', async () => {

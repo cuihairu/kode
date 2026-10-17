@@ -325,13 +325,15 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 | 变量 | 含义 |
 |------|------|
-| `${module}` | 当前文件的工作区相对模块路径:`entities/fight/FightAI.py` → `entities.fight.FightAI`;不在工作区内退文件名去 `.py`(即只剩文件名一层) |
-| `${moduleBasename}` | 末段一层模块名:`entities.fight.FightAI` → `FightAI`;回落形态下与 `${module}` 一致 |
-| `${file}` | 文件名(`FightAI.py`)。注意与 VS Code 官方变量 `${file}`(绝对路径)语义不同,本扩展恒为文件名 |
+| `${module}` | 按 `__init__.py` 包边界扫出的模块路径:`entities/`、`fight/` 各带 `__init__.py` 时 `entities/fight/FightAI.py` → `entities.fight.FightAI`;KBEngine 脚本所在的 `base/`、`cell/` 是引擎角色目录,没有 `__init__.py`,不算模块段——此时模块名就是文件名去 `.py`(即「没有模块就直接文件名」形态) |
+| `${moduleBasename}` | 末段一层模块名:`entities.fight.FightAI` → `FightAI`;无包段形态下与 `${module}` 一致 |
+| `${filename}` | 文件名(`FightAI.py`) |
 | `${line}` | 光标行(1 起) |
 | `${sel}` | 选中文本 |
 
-另支持 VS Code 官方变量族(`${workspaceFolder}`、`${workspaceFolderBasename}`、`${fileBasename}`、`${fileBasenameNoExtension}`、`${fileDirname}`、`${fileExtname}`、`${relativeFile}`、`${relativeFileDirname}`、`${env:NAME}`、`${cwd}`、`${userHome}`、`${pathSeparator}`,多根工作区可用 `${workspaceFolder:Name}` 指名取根)。自定义变量优先于官方表:同名的 `${file}` 恒按文件名解析;两表都不认识的占位原样保留(不替换为空串)。
+另支持 VS Code 官方变量族(`${file}`=绝对路径、`${workspaceFolder}`、`${workspaceFolderBasename}`、`${fileBasename}`、`${fileBasenameNoExtension}`、`${fileDirname}`、`${fileExtname}`、`${relativeFile}`、`${relativeFileDirname}`、`${env:NAME}`、`${cwd}`、`${userHome}`、`${pathSeparator}`,多根工作区可用 `${workspaceFolder:Name}` 指名取根)。两表都不认识的占位原样保留(不替换为空串)。
+
+> 历史:批152 之前文件名占位叫 `${file}`(与本扩展当时未接官方变量族有关);批153 起官方变量族接入,`${file}` 归还官方绝对路径语义,文件名请改用 `${filename}`。
 
 无活动编辑器时各变量替换为空串。
 
