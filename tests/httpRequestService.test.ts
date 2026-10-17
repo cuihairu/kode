@@ -90,6 +90,25 @@ describe('注入 transport:流水与回执语义', () => {
     expect(logs[2]).toBe('ok-body');
   });
 
+  it('批152:官方变量族与 ${moduleBasename} 随 runByName 单趟透传', async () => {
+    const seen: OutgoingHttpRequest[] = [];
+    const { service } = makeService([entry({
+      url: 'http://127.0.0.1:8000/api/hotfix?relaod=${moduleBasename}&ws=${workspaceFolderBasename}'
+    })], {
+      transport: async request => {
+        seen.push(request);
+        return { ok: true, status: 200, durationMs: 3, body: '' };
+      },
+      getTemplateContext: () => ({
+        filePath: '/ws/entities/fight/FightAI.py',
+        workspaceRoots: ['/ws']
+      })
+    });
+
+    await expect(service.runByName('热更')).resolves.toBe(true);
+    expect(seen[0].url).toBe('http://127.0.0.1:8000/api/hotfix?relaod=FightAI&ws=ws');
+  });
+
   it('失败:✗ 标记行 + 错误弹窗,回 false', async () => {
     const { service, logs, errors } = makeService([entry()], {
       transport: async () => ({ ok: false, status: 0, durationMs: 5, body: '', error: 'ECONNREFUSED' })

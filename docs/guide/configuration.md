@@ -303,7 +303,13 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 ### HTTP 快捷请求 `kbengine.httpRequests`
 
-类型:array;默认含一条停用的示例(热更新示例,`enabled: false`)。增删改走设置界面的列表编辑器,启停 = 条目 `enabled` 开关。每条字段:
+类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按本机热更新服务的真实形态给出——等价于命令行:
+
+```bash
+curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
+```
+
+增删改走设置界面的列表编辑器,启停 = 条目 `enabled` 开关。每条字段:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -319,10 +325,13 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 
 | 变量 | 含义 |
 |------|------|
-| `${module}` | 当前文件的工作区相对模块路径:`entities/fight/FightAI.py` → `entities.fight.FightAI`;不在工作区内退文件名去 `.py` |
-| `${file}` | 文件名(`FightAI.py`) |
+| `${module}` | 当前文件的工作区相对模块路径:`entities/fight/FightAI.py` → `entities.fight.FightAI`;不在工作区内退文件名去 `.py`(即只剩文件名一层) |
+| `${moduleBasename}` | 末段一层模块名:`entities.fight.FightAI` → `FightAI`;回落形态下与 `${module}` 一致 |
+| `${file}` | 文件名(`FightAI.py`)。注意与 VS Code 官方变量 `${file}`(绝对路径)语义不同,本扩展恒为文件名 |
 | `${line}` | 光标行(1 起) |
 | `${sel}` | 选中文本 |
+
+另支持 VS Code 官方变量族(`${workspaceFolder}`、`${workspaceFolderBasename}`、`${fileBasename}`、`${fileBasenameNoExtension}`、`${fileDirname}`、`${fileExtname}`、`${relativeFile}`、`${relativeFileDirname}`、`${env:NAME}`、`${cwd}`、`${userHome}`、`${pathSeparator}`,多根工作区可用 `${workspaceFolder:Name}` 指名取根)。自定义变量优先于官方表:同名的 `${file}` 恒按文件名解析;两表都不认识的占位原样保留(不替换为空串)。
 
 无活动编辑器时各变量替换为空串。
 

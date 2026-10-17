@@ -175,3 +175,15 @@ export function substituteVariables(
     return value;
   });
 }
+
+/**
+ * 解析单个变量表达式(批152):给「自定义变量 + 官方变量」单趟合并的调用方用
+ * ——resolve 得到值返回值,官方表不认识返回 undefined,由调用方决定保留原文
+ * 还是落空(HTTP 模板口径:未知占位原样保留,与批105 行为一致)。
+ */
+export function resolveVariableExpression(
+  expression: string,
+  context: VariableContext
+): string | undefined {
+  return resolveExpression(expression, context);
+}

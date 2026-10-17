@@ -4786,3 +4786,29 @@ package.json 增 kbengine.python.enableMroJump(boolean,默认 true)。
 tsc/lint/vitepress/mocha 11 全绿;extension.ts 509/510 语句(languageProviders
 导入绑定 L67 为既有缺口),languageProviders 缺口区域 994–1188 与 HEAD
 基线一致(30≤34,无新增未覆盖语句)。版本仍冻结 0.1.0。
+
+## 批152:HTTP 快捷请求真实示例 + 官方变量族 + ${moduleBasename}(2026-10-17)
+
+背景:用户指出内置示例 URL 是瞎写的,给了真实热更新服务形态
+`http://127.0.0.1:8000/api/hotfix?relaod=xx.yy`(relaod 为其服务的实际
+参数名,非笔误不改);xx.yy 需取当前打开文件的模块名,无模块时直接文件
+名;再令「只需要一层的 module」,增 ${moduleBasename} 一层粒度占位。
+
+实现:httpRequests 增 ${moduleBasename}(末段模块名,buildTemplateVars 由
+module.lastIndexOf('.') 切,回落形态与 ${module} 一致,共五枚自定义占位);
+variableSubstitution 增 resolveVariableExpression 单表达式导出(官方表认识
+返回值、不认识返回 undefined,不动 'empty'/'throw' 两口径);applyTemplateWithContext
+单趟合并——自定义占位优先,${file} 自定义语义恒胜出(本扩展恒为文件名,
+与官方绝对路径不同,决定代用户拍板,可推翻),其次官方变量族,两表都不
+认识的占位原样保留;buildOfficialVariableContext 把 TemplateEditorContext
+转官方 VariableContext(工作区根按 basename 命名,与单根 folder.name 一致);
+httpRequestService.runByName 装配官方上下文随请求同趟插值。内置示例与
+package.json 默认值改为真实形态 URL(默认仍停用)。
+
+测试:httpRequests 锁 URL 新形态;moduleBasename 三形态(全路径/无编辑器/
+回落);buildOfficialVariableContext 根命名与空表两臂;单趟合并五用例
+(官方族插值/${file} 自定义胜出/moduleBasename 与 fileBasenameNoExtension
+并存不互吞/未知占位保留/${env:NAME} 注入表);buildHttpRequest 带官方
+上下文用例;service 增官方变量与 moduleBasename 透传用例。httpRequests
+语句/分支/函数 100%(67/29/19,消掉 basename 的 split 空表死臂 ?? ''),
+httpRequestService 56/17/13 全绿。

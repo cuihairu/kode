@@ -1,12 +1,21 @@
 /**
- * HTTP 快捷请求纯逻辑(批105):
+ * HTTP 快捷请求纯逻辑(批105;批152 增官方变量族与真实形态示例):
  * - 设置项 kbengine.httpRequests 的条目解析与校验(坏条目如实跳过,不猜);
  * - 模板变量 ${module}/${file}/${line}/${sel} 的提取与字面替换
  *   (${module}=工作区相对模块路径 entities/fight/FightAI.py →
- *   entities.fight.FightAI;${file}=文件名;${line}=光标行(1 起);
- *   ${sel}=选中文本。变量按字面替换,不做 URL 编码);
- * - 内置示例一条(默认停用),与 package.json 默认值由测试锁定同步。
+ *   entities.fight.FightAI,不在任何工作区根下回落为文件名去 .py;
+ *   ${file}=文件名;${line}=光标行(1 起);${sel}=选中文本。
+ *   变量按字面替换,不做 URL 编码);
+ * - 批152:提供编辑器上下文时,官方变量族(VS Code 官方变量表,经
+ *   variableSubstitution 单一真源)同样可插——${fileBasename}/
+ *   ${fileBasenameNoExtension}/${fileDirname}/${fileExtname}/${relativeFile}/
+ *   ${relativeFileDirname}/${workspaceFolder}/${workspaceFolderBasename}/
+ *   ${env:NAME} 等;${file} 不入官方口径(本扩展恒为文件名,与官方
+ *   绝对路径语义不同);官方表不认识的占位原样保留。
+ * - 内置示例一条(默认停用,真实服务形态),与 package.json 默认值由测试锁定同步。
  */
+
+import { resolveVariableExpression, type VariableContext } from './variableSubstitution';
 
 export interface HttpRequestEntry {
   /** 展示名(quick pick 与日志前缀) */
@@ -29,10 +38,10 @@ export interface HttpRequestEntry {
   keybinding: string;
 }
 
-/** 内置示例(默认停用):指向本地热更新接口的常规形态 */
+/** 内置示例(默认停用):按用户真实热更新服务形态给出(批152 定型) */
 export const BUILTIN_HTTP_REQUEST_EXAMPLE: Readonly<HttpRequestEntry> = Object.freeze({
   name: '热更新(示例)',
-  url: 'http://127.0.0.1:8090/hotfix?module_name=${module}',
+  url: 'http://127.0.0.1:8000/api/hotfix?relaod=${module}',
   method: 'GET',
   headers: {},
   body: '',
@@ -127,6 +136,8 @@ export interface TemplateEditorContext {
 
 export interface TemplateVars {
   module: string;
+  /** 末段一层模块名(批152,用户令「只需要一层的 module」):FightAI */
+  moduleBasename: string;
   file: string;
   line: string;
   sel: string;
@@ -140,21 +151,67 @@ export function buildTemplateVars(context: TemplateEditorContext): TemplateVars 
   const line = context.cursorLineZeroBased === undefined || context.cursorLineZeroBased === null
     ? ''
     : String(context.cursorLineZeroBased + 1);
+  const module = resolvePythonModulePath(filePath, context.workspaceRoots ?? []);
+  const dot = module.lastIndexOf('.');
   return {
-    module: resolvePythonModulePath(filePath, context.workspaceRoots ?? []),
+    module,
+    moduleBasename: dot === -1 ? module : module.slice(dot + 1),
     file: base,
     line,
     sel: context.selection ?? ''
   };
 }
 
-/** 字面替换四个已知占位;未知占位原样保留;替换值不做 URL 编码 */
+/** 字面替换五个已知占位(批152 起 moduleBasename 一层粒度);未知占位原样保留;替换值不做 URL 编码 */
 export function applyTemplate(text: string, vars: TemplateVars): string {
   return text
     .replace(/\$\{module\}/g, () => vars.module)
+    .replace(/\$\{moduleBasename\}/g, () => vars.moduleBasename)
     .replace(/\$\{file\}/g, () => vars.file)
     .replace(/\$\{line\}/g, () => vars.line)
     .replace(/\$\{sel\}/g, () => vars.sel);
+}
+
+/**
+ * 编辑器上下文 → 官方变量族上下文(批152):工作区根以 basename 命名
+ * (单根形态与 VS Code folder.name 一致),env 不注入走 process.env。
+ */
+export function buildOfficialVariableContext(
+  context: TemplateEditorContext
+): VariableContext {
+  const basename = (value: string): string => {
+    // split 恒返回至少一个元素,末段直接取,无需空表兜底
+    const parts = toPosix(value.replace(/\/+$/, '')).split('/');
+    return parts[parts.length - 1];
+  };
+  return {
+    folders: (context.workspaceRoots ?? []).map(root => ({
+      fsPath: root,
+      name: basename(root)
+    })),
+    filePath: context.filePath
+  };
+}
+
+/**
+ * 单趟合并替换(批152):自定义占位(module/moduleBasename/file/line/sel)优先,
+ * 其次官方变量族
+ * (variableSubstitution 单一真源),都不认识的占位原样保留——官方表里
+ * ${file}=绝对路径 与本扩展 ${file}=文件名 冲突,自定义语义恒胜出。
+ */
+export function applyTemplateWithContext(
+  text: string,
+  vars: TemplateVars,
+  official: VariableContext
+): string {
+  return text.replace(/\$\{([^${}]*)\}/g, (raw, expression: string) => {
+    if (expression === 'module' || expression === 'moduleBasename' || expression === 'file'
+      || expression === 'line' || expression === 'sel') {
+      return applyTemplate(raw, vars);
+    }
+    const value = resolveVariableExpression(expression, official);
+    return value === undefined ? raw : value;
+  });
 }
 
 export interface BuiltHttpRequest {
@@ -164,16 +221,22 @@ export interface BuiltHttpRequest {
   body: string;
 }
 
-/** 对 URL/请求体/请求头值统一做模板替换后的可执行请求 */
-export function buildHttpRequest(entry: HttpRequestEntry, vars: TemplateVars): BuiltHttpRequest {
+/** 对 URL/请求体/请求头值统一做模板替换后的可执行请求;带官方变量上下文时同趟可插(批152) */
+export function buildHttpRequest(
+  entry: HttpRequestEntry,
+  vars: TemplateVars,
+  official?: VariableContext
+): BuiltHttpRequest {
+  const substitute = (text: string): string =>
+    official ? applyTemplateWithContext(text, vars, official) : applyTemplate(text, vars);
   const headers: Record<string, string> = {};
   for (const [key, value] of Object.entries(entry.headers)) {
-    headers[key] = applyTemplate(value, vars);
+    headers[key] = substitute(value);
   }
   return {
-    url: applyTemplate(entry.url, vars),
+    url: substitute(entry.url),
     method: entry.method,
     headers,
-    body: applyTemplate(entry.body, vars)
+    body: substitute(entry.body)
   };
 }

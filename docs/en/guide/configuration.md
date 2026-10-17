@@ -303,7 +303,13 @@ telnet's presentation surface (standalone tree view, status lights, panel) appea
 
 ### HTTP Quick Requests `kbengine.httpRequests`
 
-Type: array; the default contains one disabled example (a hot-reload example, `enabled: false`). Add/remove/edit via the settings UI's list editor; enable/disable = the entry's `enabled` switch. Fields per entry:
+Type: array; the default contains one disabled example (a hot-reload example, `enabled: false`), shaped after a real local hot-reload service — equivalent to:
+
+```bash
+curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
+```
+
+Add/remove/edit via the settings UI's list editor; enable/disable = the entry's `enabled` switch. Fields per entry:
 
 | Field | Type | Notes |
 |------|------|------|
@@ -319,10 +325,13 @@ Template variables (shared by URL/body/header values, literal substitution, no U
 
 | Variable | Meaning |
 |------|------|
-| `${module}` | The current file's workspace-relative module path: `entities/fight/FightAI.py` → `entities.fight.FightAI`; outside the workspace, the file name without `.py` |
-| `${file}` | File name (`FightAI.py`) |
+| `${module}` | The current file's workspace-relative module path: `entities/fight/FightAI.py` → `entities.fight.FightAI`; outside the workspace, the file name without `.py` (i.e. one level only) |
+| `${moduleBasename}` | Last segment of the module path: `entities.fight.FightAI` → `FightAI`; in the fallback form it matches `${module}` |
+| `${file}` | File name (`FightAI.py`). Note: unlike the official VS Code `${file}` (absolute path), this extension always yields the file name |
 | `${line}` | Cursor line (1-based) |
 | `${sel}` | Selected text |
+
+The official VS Code variable family is also supported (`${workspaceFolder}`, `${workspaceFolderBasename}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${env:NAME}`, `${cwd}`, `${userHome}`, `${pathSeparator}`; in multi-root workspaces `${workspaceFolder:Name}` picks a folder by name). Custom variables win over the official table: `${file}` always resolves to the file name; placeholders unknown to both tables are kept as-is (not wiped to an empty string).
 
 With no active editor, each variable substitutes to the empty string.
 

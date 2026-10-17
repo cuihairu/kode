@@ -952,7 +952,7 @@
           "default": [
             {
               "name": "热更新(示例)",
-              "url": "http://127.0.0.1:8090/hotfix?module_name=${module}",
+              "url": "http://127.0.0.1:8000/api/hotfix?relaod=${module}",
               "method": "GET",
               "headers": {},
               "body": "",
@@ -960,7 +960,7 @@
               "keybinding": ""
             }
           ],
-          "description": "HTTP 快捷请求列表（增删改走设置界面列表编辑器，启停=条目 enabled 开关）。模板变量：${module}=当前文件工作区相对模块路径（entities/fight/FightAI.py → entities.fight.FightAI）、${file}=文件名、${line}=光标行（1 起）、${sel}=选中文本；变量按字面替换、不做 URL 编码；无活动编辑器时各变量为空串。实际快捷键经「键盘快捷方式」为命令 kbengine.httpRequest.run 配 args.name 绑定，条目 keybinding 字段仅作展示",
+          "description": "HTTP 快捷请求列表（增删改走设置界面列表编辑器，启停=条目 enabled 开关）。模板变量：${module}=当前文件工作区相对模块路径（entities/fight/FightAI.py → entities.fight.FightAI，不在工作区根下时回落为文件名去 .py）、${moduleBasename}=末段一层模块名（FightAI）、${file}=文件名（注意：与 VS Code 官方绝对路径语义不同，此处恒为文件名）、${line}=光标行（1 起）、${sel}=选中文本；另支持 VS Code 官方变量族（${workspaceFolder}/${workspaceFolderBasename}/${fileBasename}/${fileBasenameNoExtension}/${fileDirname}/${fileExtname}/${relativeFile}/${relativeFileDirname}/${env:NAME}/${cwd}/${userHome}/${pathSeparator}）。变量按字面替换、不做 URL 编码；两表都不认识的占位原样保留；无活动编辑器时各变量为空串。实际快捷键经「键盘快捷方式」为命令 kbengine.httpRequest.run 配 args.name 绑定，条目 keybinding 字段仅作展示",
           "items": {
             "type": "object",
             "required": [

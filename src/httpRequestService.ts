@@ -12,6 +12,7 @@ import * as http from 'http';
 import * as https from 'https';
 import {
   buildHttpRequest,
+  buildOfficialVariableContext,
   buildTemplateVars,
   HttpRequestEntry,
   TemplateEditorContext
@@ -156,8 +157,11 @@ export class HttpRequestService {
       this.deps.notifyError(`HTTP 快捷请求「${name}」不存在或已停用`);
       return false;
     }
-    const vars = buildTemplateVars(this.deps.getTemplateContext?.() ?? {});
-    const request = buildHttpRequest(entry, vars);
+    const editorContext = this.deps.getTemplateContext?.() ?? {};
+    const vars = buildTemplateVars(editorContext);
+    // 批152:官方变量族(${workspaceFolder}/${fileBasenameNoExtension}/
+    // ${env:NAME} 等)与自定义占位单趟合并插值
+    const request = buildHttpRequest(entry, vars, buildOfficialVariableContext(editorContext));
     this.deps.log(`▶ [${entry.name}] ${request.method} ${request.url}`);
 
     const result = await this.transport({
