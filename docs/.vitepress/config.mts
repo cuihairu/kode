@@ -136,7 +136,9 @@ export default defineConfig({
       }
     }
   },
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }]],
   themeConfig: {
+    logo: '/logo.svg',
     socialLinks: [
       { icon: 'github', link: 'https://github.com/cuihairu/kode' }
     ],

@@ -29,16 +29,16 @@ The repository automatically builds from `main` every day and **publishes a roll
 The extension is **still not published to the VS Code Marketplace**; `nightly` is currently the only prebuilt distribution channel. You can also build from source as described in the Installation section below.
 
 
-## 本地测试口径
+## Testing Scope
 
-CI 与本地开发按改动面三路分流——改一行文档不该全量编译。
+CI and local development split into three paths by what changed — editing one line of docs should not trigger a full compile.
 
-1. **文档改动**（`*.md`、`docs/**`、图片）：不编译。主 CI workflow 的
-   `paths-ignore` 已跳过这些路径。
-2. **代码改动**：只跑改动子集，不全量。
-   - `pnpm test -- --testPathPatterns=<改动>`
-3. **全量**（`pnpm test`）：仅以下情形触发——package.json / pnpm-lock.yaml、
-   `.github/**`、Docker/Compose 配置、发布前。
+1. **Docs changes** (`*.md`, `docs/**`, images): no compile. The main CI
+   workflow's `paths-ignore` already skips these paths.
+2. **Code changes**: run only the touched subset, not the whole suite.
+   - `pnpm test -- --testPathPatterns=<changed>`
+3. **Full run** (`pnpm test`): triggered only by package.json / pnpm-lock.yaml,
+   `.github/**`, Docker/Compose config changes, or before a release.
 
 ## Core Features
 

@@ -15,6 +15,8 @@ Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务�
 | 2 元件覆盖 | `kbengine.xml` | `kbengine.assetsRoot` 下的 `kbengine.xml` 与其 `res/server/kbengine.xml` 优先;未设或未命中时发现出的资产根(批128)参与;最后按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
 | 3 最终生效 | (合成,不落盘) | 第 1 层先载,第 2 层同键覆盖 |
 
+层的定位设置 `kbengine.binPath` 与 `kbengine.assetsRoot` 都是支持 VS Code 变量的目录:值先做变量展开(`${workspaceFolder}`/`${env:NAME}` 等),相对路径按工作区根拼接;展开为空串按「未配置」处理,照常走自动发现。
+
 覆盖口径:
 
 - 同名键两边都有:取元件配置的值;

@@ -15,6 +15,8 @@ The engine loads server configuration by this rule: read the engine defaults fir
 | 2 Component override | `kbengine.xml` | The `kbengine.xml` under `kbengine.assetsRoot` and its `res/server/kbengine.xml` take priority; when unset or missed, the discovered assets root (batch 128) participates; finally the workspace root is probed along conventional paths: `kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`, taking the first that exists |
 | 3 Final effective | (composed, never on disk) | Layer 1 loads first, layer 2 overrides by same key |
 
+The locating settings in the table, `kbengine.binPath` and `kbengine.assetsRoot`, are directories that support VS Code variables: values go through variable expansion first (`${workspaceFolder}`/`${env:NAME}` and friends), and relative paths join against the workspace root. A value that expands to an empty string counts as unset and falls through to auto-discovery as usual.
+
 Override rules:
 
 - Same-named key present on both sides: the component config's value wins;
