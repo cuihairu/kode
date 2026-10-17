@@ -8,6 +8,7 @@
 - 标签、值、自定义符号 Hover
 - `entities.xml` 与 `.def` 跳转
 - entities.xml 实体登记悬停带清单序号（批147，`**Utype**` 行：引擎按 entities.xml 清单顺序分配 utype，序号取首次出现位置）
+- def 链合并悬停（批148，source-analysis D5 收口）：`.def` 内悬停根级 `<Parent>` 元素呈现该 def 的继承闭包三面——Parent 链递归、`interfaces/` 平铺、`components/` 挂接，与引擎归并口径一致；父名/接口/组件缺 def 文件如实标注，环被 visited 截断并标注（引擎 loadParentClass 无防环，kode 不照抄）
 - `.def` 内实体引用跳转
 - Python 与 `.def` 双向导航
 - RPC 方法标记（Python 实现脚本里命中 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明）

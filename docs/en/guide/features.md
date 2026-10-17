@@ -8,6 +8,7 @@
 - Hover for tags, values, custom symbols
 - Navigation between `entities.xml` and `.def`
 - Manifest ordinal on `entities.xml` registration hover (batch 147, the `**Utype**` line: the engine assigns utype in `entities.xml` list order, so the ordinal is the first-occurrence position)
+- Merged def-chain hover (batch 148, closing source-analysis D5): hovering the root-level `<Parent>` element in a `.def` presents the def's inheritance closure in three facets — the recursive Parent chain, the flattened `interfaces/` list, and the `components/` hookup — aligned with the engine's merge semantics; missing def files for parents/interfaces/components are stated as such, and cycles are truncated by a visited set and marked (the engine's loadParentClass has no cycle guard; kode does not copy that)
 - Entity reference navigation inside `.def`
 - Bidirectional Python ↔ `.def` navigation
 - RPC method markers (functions in Python implementation scripts that hit def method declarations get a one-line clickable CodeLens jumping back to the def declaration)

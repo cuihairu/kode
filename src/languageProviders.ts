@@ -27,6 +27,7 @@ import {
   EntityMethodSection
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
+import { buildDefChain } from './defChain';
 import {
   METHOD_DECLARATION_PATTERN,
   buildRpcCodeLenses,
@@ -410,6 +411,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const entityRegistrationHover = getEntityRegistrationHover(document, position, word);
     if (entityRegistrationHover) {
       return entityRegistrationHover;
+    }
+
+    const defChainHover = getDefChainHover(document, position);
+    if (defChainHover) {
+      return defChainHover;
     }
 
     if (featureConfig.hoverShowValueDocs) {
@@ -1436,6 +1442,60 @@ function getEntityUtypeLine(
   }
 
   return `**Utype**: \`${index + 1}\`(entities.xml 清单顺序,共 \`${entities.length}\` 个实体)`;
+}
+
+// def 链合并呈现(source-analysis 设计 D5 剩余段):def 文档内悬停根级
+// <Parent> 元素(含其取值文本)时,呈现该 def 的继承闭包三面——Parent 链
+// 递归 + interfaces/ 平铺 + components/ 挂接,与引擎归并口径一致
+// (entitydef.cpp:890-924、551-639、642-771)。引擎 loadParentClass 未见
+// 防环,buildDefChain 带 visited 截断并如实标注。
+function getDefChainHover(
+  document: vscode.TextDocument,
+  position: vscode.Position
+): vscode.Hover | null {
+  const fileName = document.fileName.toLowerCase();
+  if (document.languageId !== 'kbengine-def' && !fileName.endsWith('.def')) {
+    return null;
+  }
+
+  const ast = parseDefAst(document);
+  const root = ast?.root;
+  if (!root) {
+    return null;
+  }
+
+  const offset = document.offsetAt(position);
+  const node = findTextNodeAtOffset(root, offset)?.parent
+    || findDeepestElementAtOffset(root, offset);
+  if (!node || node.parent !== root || node.name !== 'Parent') {
+    return null;
+  }
+
+  const entityName = path.basename(document.fileName, '.def');
+  const info = buildDefChain(document.fileName);
+  const describe = (item: { name: string; defPath: string | null }): string =>
+    `\`${item.name}\`${item.defPath ? '' : '(def 缺失)'}`;
+
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(`**${entityName} 的 def 链**(引擎归并口径)\n\n`);
+  if (info.parentChain.length > 0) {
+    const chainText = info.parentChain.map(describe).join(' → ');
+    const cycleNote = info.cycleTruncated ? ';检测到环,已截断' : '';
+    markdown.appendMarkdown(`- **Parent 链**: ${chainText}(共 ${info.parentChain.length} 层${cycleNote})\n\n`);
+  }
+  if (info.interfaces.length > 0) {
+    const list = info.interfaces.map(describe).join('、');
+    markdown.appendMarkdown(`- **Interfaces 平铺**: ${list}(接口 def 不跟随 Parent)\n\n`);
+  }
+  if (info.components.length > 0) {
+    const list = info.components.map(describe).join('、');
+    markdown.appendMarkdown(`- **Components 挂接**: ${list}\n\n`);
+  }
+  if (info.parentChain.length === 0 && info.interfaces.length === 0 && info.components.length === 0) {
+    markdown.appendMarkdown('无 Parent、接口与组件声明。');
+  }
+
+  return new vscode.Hover(markdown);
 }
 
 function getRegisteredEntityInfo(

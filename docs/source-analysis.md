@@ -254,9 +254,12 @@ client}/<Name>.py` 同名类。
 - D3 已落地(批147):清单顺序索引由现役 getRegisteredEntities 按子节点
   序保真承担,悬停呈现清单序号;同名重复条目诊断(src/
   entitiesXmlAnalysis.ts)随 .def 同一文档事件生命周期落 kbengine
-  collection,共用 kbengine.enableDiagnostics 总开关;仍属后续增量:
-  D2(独立惰性索引与保存失效重建)、D5 的 def 链合并呈现、D9 诊断面;
-  当前导航走现役 layout/清单读取 + 逐文件解析,对账口径见 TESTING.md
-  批108/109 节;
+  collection,共用 kbengine.enableDiagnostics 总开关;
+- D5 的 def 链合并呈现已落地(批148):src/defChain.ts 按「`<Parent>` 递归
+  + interfaces/ 平铺 + components/ 挂接」三面整理继承闭包(引擎归并口径
+  与边解析沿用批 defRenamer 语义),悬停根级 `<Parent>` 元素呈现;visited
+  截断防环并如实标注(引擎 loadParentClass 未见防环,不照抄);仍属后续
+  增量:D2(独立惰性索引与保存失效重建)、D9 诊断面;当前导航走现役
+  layout/清单读取 + 逐文件解析,对账口径见 TESTING.md 批108/109 节;
 - 验收走查记录:tests/batch109NavigationWalkthrough.test.ts(11 步,
   每步断言跳转目标在磁盘真实存在),结果记于 TESTING.md 同节。

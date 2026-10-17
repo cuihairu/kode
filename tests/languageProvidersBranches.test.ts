@@ -94,6 +94,38 @@ beforeAll(() => {
   ].join('\n'));
   write(root, 'scripts/entity_defs/components/Known.def', '<root>\n</root>');
   write(root, 'scripts/entity_defs/interfaces/Iface1.def', '<root>\n</root>');
+  // 批148 def 链悬停(D5 剩余段)闭包树:Parent 递归 + 接口平铺 + 组件挂接
+  write(root, 'scripts/entity_defs/Chained.def', [
+    '<root>',
+    '  <Parent>RichBase</Parent>',
+    '  <Interfaces>',
+    '    <Interface><ICombat/></Interface>',
+    '  </Interfaces>',
+    '  <Components>',
+    '    <inventory>',
+    '      <Type>Inventory</Type>',
+    '    </inventory>',
+    '  </Components>',
+    '</root>'
+  ].join('\n'));
+  write(root, 'scripts/entity_defs/RichBase.def', [
+    '<root>',
+    '  <Parent>TopBase</Parent>',
+    '  <Interfaces>',
+    '    <Interface><ILife/></Interface>',
+    '  </Interfaces>',
+    '</root>'
+  ].join('\n'));
+  write(root, 'scripts/entity_defs/TopBase.def', '<root>\n</root>');
+  write(root, 'scripts/entity_defs/interfaces/ICombat.def', '<root>\n</root>');
+  write(root, 'scripts/entity_defs/interfaces/ILife.def', '<root>\n</root>');
+  write(root, 'scripts/entity_defs/components/Inventory.def', '<root>\n</root>');
+  // 父名缺 def 文件(链停在缺名)
+  write(root, 'scripts/entity_defs/Orphan2.def', '<root>\n  <Parent>Vanished</Parent>\n</root>');
+  // 环:LoopA → LoopB → LoopA
+  write(root, 'scripts/entity_defs/LoopA.def', '<root>\n  <Parent>LoopB</Parent>\n</root>');
+  write(root, 'scripts/entity_defs/LoopB.def', '<root>\n  <Parent>LoopA</Parent>\n</root>');
+
   // 自定义类型 UINT32 与内建同名、Hero 与注册实体同名,服务去重臂
   write(root, 'scripts/entity_defs/types.xml', [
     '<root>',
@@ -376,6 +408,36 @@ describe('entities.xml fallbacks', () => {
     const noDef = docAt(root, '<root>\n  <No|Def/>\n</root>', 'scripts/entities.xml');
     const noDefText = hoverText(hoverProvider.provideHover(noDef.document, noDef.position));
     expect(noDefText).toContain('**Utype**: `2`(entities.xml 清单顺序,共 `2` 个实体)');
+  });
+
+  it('renders the merged def chain hover on the root-level Parent element', () => {
+    // 悬停 Chained.def 的 <Parent> 取值:整链三面 + 缺失父标注
+    const chained = defAt('<root>\n  <Par|ent>RichBase</Parent>\n</root>', 'Chained.def');
+    const chainedText = hoverText(hoverProvider.provideHover(chained.document, chained.position));
+    expect(chainedText).toContain('**Chained 的 def 链**(引擎归并口径)');
+    expect(chainedText).toContain('**Parent 链**: `RichBase` → `TopBase`(共 2 层)');
+    expect(chainedText).toContain('**Interfaces 平铺**: `ICombat`、`ILife`(接口 def 不跟随 Parent)');
+    expect(chainedText).toContain('**Components 挂接**: `Inventory`');
+
+    // 父名缺 def 文件:链停在缺名并如实标注(defPath null)
+    const orphan = defAt('<root>\n  <Par|ent>Vanished</Parent>\n</root>', 'Orphan2.def');
+    const orphanText = hoverText(hoverProvider.provideHover(orphan.document, orphan.position));
+    expect(orphanText).toContain('**Parent 链**: `Vanished`(def 缺失)(共 1 层)');
+
+    // 环被截断并标注
+    const loop = defAt('<root>\n  <Par|ent>LoopB</Parent>\n</root>', 'LoopA.def');
+    const loopText = hoverText(hoverProvider.provideHover(loop.document, loop.position));
+    expect(loopText).toContain('**Parent 链**: `LoopB` → `LoopA`(共 2 层;检测到环,已截断)');
+
+    // 三面皆空(空 Parent 取值)
+    const empty = defAt('<root>\n  <Par|ent></Parent>\n</root>', 'BareChain.def');
+    const emptyText = hoverText(hoverProvider.provideHover(empty.document, empty.position));
+    expect(emptyText).toContain('无 Parent、接口与组件声明。');
+
+    // 非 Parent 元素不出链悬停
+    const elsewhere = defAt('<root>\n  <Par|ent>RichBase</Parent>\n  <Not|e/>\n</root>', 'Chained.def');
+    const elsewhereText = hoverProvider.provideHover(elsewhere.document, elsewhere.position);
+    expect(elsewhereText === null || !hoverText(elsewhereText).includes('def 链')).toBe(true);
   });
 });
 

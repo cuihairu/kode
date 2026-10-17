@@ -278,11 +278,17 @@ same-named classes in `scripts/{base,cell, client}/<Name>.py`.
   getRegisteredEntities, which preserves child-node order, and the hover presents the
   manifest ordinal; same-name duplicate entry diagnostics (src/entitiesXmlAnalysis.ts)
   land in the kbengine collection through the same document-event lifecycle as .def
-  files, sharing the kbengine.enableDiagnostics master switch; still follow-up increments:
-  D2 (an independent lazy index with rebuild-on-save invalidation), the def-chain merged
-  presentation of D5, and the D9 diagnostic surface; navigation currently uses the
-  layout/manifest reading in force plus per-file parsing, with the reconciliation rules
-  recorded in the TESTING.md batch-108/109 sections;
+  files, sharing the kbengine.enableDiagnostics master switch;
+- The def-chain merged presentation of D5 has landed (batch 148): src/defChain.ts
+  organizes the inheritance closure into three facets — `<Parent>` recursion, the
+  flattened `interfaces/` list, and the `components/` hookup (engine merge semantics;
+  edge resolution reuses the established defRenamer semantics), presented when hovering
+  the root-level `<Parent>` element; a visited set truncates cycles and says so (the
+  engine's loadParentClass has no cycle guard; kode does not copy that); still follow-up
+  increments: D2 (an independent lazy index with rebuild-on-save invalidation) and the
+  D9 diagnostic surface; navigation currently uses the layout/manifest reading in force
+  plus per-file parsing, with the reconciliation rules recorded in the TESTING.md
+  batch-108/109 sections;
 - Acceptance walkthrough record: tests/batch109NavigationWalkthrough.test.ts (11 steps, each
   asserting that the jump target really exists on disk), with the outcome recorded in the same
   TESTING.md section.

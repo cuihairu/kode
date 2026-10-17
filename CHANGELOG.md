@@ -11,6 +11,18 @@ Version is frozen at this placeholder on request; it is not a published
 release (no tag, no GitHub Release) — nightly rolling builds continue.
 
 ### Added
+- Merged def-chain hover (source-analysis design point D5): hovering the
+  root-level `<Parent>` element in a `.def` presents the def's inheritance
+  closure in three facets aligned with the engine's merge semantics
+  (entitydef.cpp:890-924、551-639、642-771) — the recursive Parent chain
+  (entity parents resolve in the definition root, component parents inside
+  `components/`, interface defs never follow `<Parent>`), the flattened
+  `interfaces/` list deduplicated across levels in first-seen order, and
+  the `components/` hookup list. Parents, interfaces, or components whose
+  def file is missing are marked as such instead of being invented, and
+  parent chains that form a cycle are truncated by a visited set and
+  marked — the engine's `loadParentClass` has no cycle guard, kode does
+  not copy that.
 - Same-name duplicate entity registrations in `entities.xml` are now
   diagnosed as warnings: the engine silently merges duplicates by reusing
   the first registered module (registerNewScriptDefModule,
