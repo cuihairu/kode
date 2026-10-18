@@ -4,20 +4,46 @@
 // 真编辑器 API 面:executeCompletionItemProvider / executeHoverProvider /
 // executeDefinitionProvider / executeDocumentSymbolProvider / 诊断集合。
 import * as path from 'path';
+import * as fs from 'fs';
+import * as os from 'os';
 import { runTests } from '@vscode/test-electron';
 
 async function main(): Promise<void> {
   // 仓库根 = out/test/electron 上溯三级(与 main 字段同根)
   const extensionDevelopmentPath = path.resolve(__dirname, '../../..');
   const extensionTestsPath = path.resolve(__dirname, 'suite/index.js');
-  const workspacePath = path.resolve(
+  const demoMode = process.argv.includes('--demo');
+  let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
+  if (demoMode) {
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-demo-'));
+    const demoSource = path.resolve(extensionDevelopmentPath, 'tests/fixtures/kbengine-demo-assets');
+    workspacePath = path.join(temporaryRoot, 'kbengine-demo-assets');
+    fs.cpSync(demoSource, workspacePath, { recursive: true });
+    fs.mkdirSync(path.join(workspacePath, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.assetsRoot': '.',
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'demo';
+    process.env.KODE_DEMO_WORKSPACE = workspacePath;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  }
+
+  const cachedVersion = process.env.KODE_VSCODE_VERSION ?? '1.141.0';
+  const executableName = process.platform === 'win32' ? 'Code.exe' : 'code';
+  const cachedExecutable = path.resolve(
     extensionDevelopmentPath,
-    'tests/fixtures/electron-ws'
+    '.vscode-test',
+    `vscode-${process.platform}-${process.arch}-${cachedVersion}`,
+    executableName
   );
 
   await runTests({
     extensionDevelopmentPath,
     extensionTestsPath,
+    ...(fs.existsSync(cachedExecutable) ? { vscodeExecutablePath: cachedExecutable } : {}),
     launchArgs: [
       workspacePath,
       // 无显示环境(headless/CI)必需:xvfb 下禁 GPU 与沙箱

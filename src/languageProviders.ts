@@ -3,6 +3,9 @@ import * as vscode from 'vscode';
 import { getScanRootForFile } from './scanRoots';
 import {
   parsePythonFile,
+  linearizeC3,
+  isPythonCodePosition,
+  getPythonBaseExpressionAtPosition,
   PythonClassIndex,
   PythonClassDef,
   PythonMethodLocation
@@ -2883,7 +2886,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
    * 层1 entity-def:.def 派生索引,先对象级(类粒度)再文件级(owner 归属);
    * 层2 python-mro:PythonClassIndex 跨文件 C3-MRO + 组合根(异常降级落空,不断链);
    * 层3 file-scope:当前文件类作用域 / 本文件 MRO;
-   * 任何一层命中即返回,全部落空才 null —— 前面的层禁止直接放弃;
+   * 属性访问和方法声明优先 .def；方法使用优先 Python 实现，找不到再回 .def；
    * 每层命中/落空/未执行与原因记入 layers,供测试与排障说明「查过哪些层」。
    */
   async provideDefinitionTraced(
@@ -2891,6 +2894,9 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     position: vscode.Position
   ): Promise<TracedDefinitionResult> {
     const line = document.lineAt(position.line);
+    if (!isPythonCodePosition(document.getText(), position.line, position.character)) {
+      return { location: null, layers: [{ layer: 'context', query: '', status: 'skip', detail: 'comment or string literal' }] };
+    }
     jumpLog('info', () =>
       `F12 ${document.fileName}:${position.line + 1}:${position.character + 1} ` +
         `行="${line.text.trim().slice(0, 160)}"`
@@ -2922,6 +2928,9 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     // client}/<Name>.py,与引擎同名类注册口径一致,见 docs/source-analysis.md
     // 第五节 D5/D7)。都未命中则交回下方 self 属性/方法链路与 python 扩展。
     const classBase = getPythonClassBaseAtPosition(line.text, position.character);
+    const pythonBase = getPythonBaseExpressionAtPosition(document.getText(), position.line, position.character);
+    const baseImports = pythonBase ? parsePythonFile(document.getText(), document.fileName).imports : undefined;
+    const explicitlyImportedBase = !!pythonBase && baseImports?.has(pythonBase.split('.')[0]) === true;
     if (classBase) {
       const fromImports = getKbeFromImportedSymbols(document.getText());
       if (fromImports.has(classBase) && getKbeSymbol(classBase)) {
@@ -2936,6 +2945,26 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         };
       }
 
+    }
+
+    // An explicit Python import binds the class name to that module. Resolve it
+    // before KBEngine's basename-based .def/entity fallback, which can otherwise
+    // send an aliased mixin to an unrelated entity with the same name.
+    if (pythonBase && explicitlyImportedBase && this.pythonClassIndex && isPythonMroJumpEnabled()) {
+      try {
+        const base = await this.pythonClassIndex.resolveClassBase(document, pythonBase, position.line);
+        if (base) {
+          return {
+            location: new vscode.Location(vscode.Uri.file(base.filePath), new vscode.Position(base.startLine, 0)),
+            layers: [{ layer: 'class-base', query: pythonBase, status: 'hit', detail: `Python class ${base.qualifiedName ?? base.name}` }]
+          };
+        }
+      } catch (error) {
+        jumpLog('debug', () => `Python base lookup failed: ${layerErrorMessage(error)}`);
+      }
+    }
+
+    if (classBase && !explicitlyImportedBase) {
       const baseDefPath = findEntityDefinitionFile(classBase, document);
       if (baseDefPath) {
         jumpLog('info', () => `前置命中 class-base:${classBase} → 实体 def ${path.basename(baseDefPath)}`);
@@ -2954,6 +2983,20 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           location: new vscode.Location(vscode.Uri.file(baseScriptPath), new vscode.Position(0, 0)),
           layers: [{ layer: 'class-base', query: classBase, status: 'hit', detail: `entity script ${path.basename(baseScriptPath)}` }]
         };
+      }
+    }
+
+    if (pythonBase && !explicitlyImportedBase && this.pythonClassIndex && isPythonMroJumpEnabled()) {
+      try {
+        const base = await this.pythonClassIndex.resolveClassBase(document, pythonBase, position.line);
+        if (base) {
+          return {
+            location: new vscode.Location(vscode.Uri.file(base.filePath), new vscode.Position(base.startLine, 0)),
+            layers: [{ layer: 'class-base', query: pythonBase, status: 'hit', detail: `Python class ${base.qualifiedName ?? base.name}` }]
+          };
+        }
+      } catch (error) {
+        jumpLog('debug', () => `Python base lookup failed: ${layerErrorMessage(error)}`);
       }
     }
 
@@ -3024,9 +3067,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
   }
 
   /**
-   * 层1-3 的顺序解析:任何一层命中即返回;逐层记录;全部落空才 null。
-   * 方法层查询的是**光标所在段**(access.currentSymbol)而非根符号——根对象
-   * 不在 .def 时不再连带断掉其后方法的查找路径。
+   * 属性声明优先；方法使用先尝试 Python 实现，再回退 .def 声明。
+   * 多段访问必须有 receiver 类型证据，不能把 obj.method 当成 self.method。
    */
   private async runDefinitionLayers(
     document: vscode.TextDocument,
@@ -3070,6 +3112,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     // ── 层1 entity-def:对象级(类粒度)→ 文件级(owner 归属);属性子探在前(契约) ──
     const defParts: string[] = [];
     let defLocation: vscode.Location | null = null;
+    let propertyHit = false;
 
     if (access) {
       const propertyProbes: Array<{
@@ -3104,11 +3147,19 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             vscode.Uri.file(hit.defFile),
             new vscode.Position(hit.line - 1, 0)
           );
+          propertyHit = true;
           defParts.push(`property(${access.fullPath}) ${probe.via} hit ${path.basename(hit.defFile)}:${hit.line}`);
           break;
         }
         defParts.push(`property(${access.fullPath}) ${probe.via} miss`);
       }
+    }
+
+    // A member of self.component is not a method on self. Until its receiver
+    // type is known, leave it to the Python language server rather than guessing.
+    if (!defLocation && access && access.currentSymbol !== access.rootSymbol) {
+      return { location: null, layers: [{ layer: 'entity-def', query, status: 'miss',
+        detail: 'nested receiver type is unknown; ' + defParts.join('; ') }] };
     }
 
     if (!defLocation) {
@@ -3146,7 +3197,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       }
     }
 
-    if (defLocation) {
+    const implementationFirst = !!access && !propertyHit;
+    if (defLocation && !implementationFirst) {
       const detail = defParts.join('; ');
       // 闭包内 TS 不收窄 let:命中位置先固化为 const 再进日志闭包
       const hitLocation = defLocation;
@@ -3161,10 +3213,10 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     layers.push({
       layer: 'entity-def',
       query,
-      status: 'miss',
-      detail: defDetail
+      status: defLocation ? 'skip' : 'miss',
+      detail: defLocation ? `deferred method declaration; ${defDetail}` : defDetail
     });
-    jumpLog('info', () => `层1 entity-def 落空(${defDetail.slice(0, 200)}) ${defTimer()}ms`);
+    jumpLog('info', () => `层1 entity-def ${defLocation ? '暂存方法声明，先查实现' : '落空'}(${defDetail.slice(0, 200)}) ${defTimer()}ms`);
     const pyTimer = jumpTimeStart();
 
     // ── 层2 python-mro:跨文件 MRO + 组合根;异常降级为落空,绝不在本层断链 ──
@@ -3176,11 +3228,14 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       jumpLog('info', () => '层2 python-mro 跳过(索引未注入)');
     } else {
       try {
-        const candidates = await this.pythonClassIndex.resolveSelfMethodCandidates(
+        const resolved = await this.pythonClassIndex.resolveSelfMethodCandidates(
           document.fileName,
           position.line,
-          symbol
+          symbol,
+          document
         );
+        const candidates = declaredMethodName ? resolved.filter(candidate =>
+          candidate.filePath !== document.fileName || candidate.line !== position.line) : resolved;
         if (candidates.length === 1) {
           const detail = describeMethodLocation(candidates[0]);
           layers.push({ layer: 'python-mro', query: symbol, status: 'hit', detail });
@@ -3229,7 +3284,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       });
       if (fileScope.location) {
         // 闭包内 TS 不收窄:命中行先固化为 const 再进日志闭包
-        const hitLine = fileScope.location.range.start.line;
+        const hitLine = (Array.isArray(fileScope.location) ? fileScope.location[0] : fileScope.location).range.start.line;
         jumpLog('info', () =>
           `层3 file-scope 命中 → ${document.fileName}:${hitLine + 1}` +
             `(${fileScope.detail.slice(0, 160)}) ${fileScopeTimer()}ms`
@@ -3246,37 +3301,36 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       });
     }
 
+    if (defLocation) {
+      layers.push({ layer: 'entity-def', query, status: 'hit', detail: 'Python implementation unavailable; use declaration' });
+      jumpLog('info', () => `Python 实现未找到，回退 .def 声明(query=${symbol})`);
+      return { location: defLocation, layers };
+    }
     jumpLog('info', () => `跳转放弃: 三层全落空(query=${symbol}) 总耗时 ${totalTimer()}ms`);
     return { location: null, layers };
   }
 
   /**
    * 层3:直接解析当前文档文本(不依赖索引扫描)。顺序:光标所在类自身 →
-   * 同文件内的基类(本文件 MRO)→ 文件内其他类;声明行跳转排除自身行。
+   * 同文件内的基类(本文件 MRO)→ 真实后代的全部候选；排除无关类和声明自身行。
    */
   private resolveFileScope(
     document: vscode.TextDocument,
     line: number,
     symbol: string,
     excludeSelfLine: boolean
-  ): { location: vscode.Location | null; detail: string } {
+  ): { location: vscode.Location | vscode.Location[] | null; detail: string } {
     const parsed = parsePythonFile(document.getText(), document.fileName);
     const enclosing = parsed.classes
       .filter(cls => line >= cls.startLine && line < cls.endLine)
       .sort((left, right) => right.startLine - left.startLine)[0];
     const chain: Array<{ cls: PythonClassDef; how: string }> = [];
     if (enclosing) {
-      chain.push({ cls: enclosing, how: 'same class' });
-      for (const base of enclosing.bases) {
-        const baseClass = parsed.classes.find(cls => cls.name === base);
-        if (baseClass && !chain.some(item => item.cls === baseClass)) {
-          chain.push({ cls: baseClass, how: `file-local base ${base}` });
-        }
-      }
-    }
-    for (const cls of parsed.classes) {
-      if (!chain.some(item => item.cls === cls)) {
-        chain.push({ cls, how: 'file scope' });
+      const mro = linearizeC3(enclosing.qualifiedName ?? enclosing.name, name =>
+        parsed.classes.filter(cls => (cls.qualifiedName ?? cls.name) === name));
+      for (const name of mro) {
+        const cls = parsed.classes.find(item => (item.qualifiedName ?? item.name) === name);
+        if (cls) { chain.push({ cls, how: cls === enclosing ? 'same class' : `file-local base ${name}` }); }
       }
     }
     for (const item of chain) {
@@ -3294,6 +3348,27 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         ),
         detail: `${item.how}: ${item.cls.name}`
       };
+    }
+    if (enclosing) {
+      const locations = new Map<string, vscode.Location>();
+      for (const cls of parsed.classes) {
+        if (cls === enclosing) { continue; }
+        const mro = linearizeC3(cls.qualifiedName ?? cls.name, name =>
+          parsed.classes.filter(item => (item.qualifiedName ?? item.name) === name));
+        if (!mro.includes(enclosing.qualifiedName ?? enclosing.name)) { continue; }
+        for (const name of mro) {
+          const provider = parsed.classes.find(item => (item.qualifiedName ?? item.name) === name);
+          const loc = provider?.methods.get(symbol);
+          if (!loc || (excludeSelfLine && loc.line === line)) { continue; }
+          locations.set(`${loc.line}:${loc.character}`, new vscode.Location(vscode.Uri.file(document.fileName), new vscode.Position(loc.line, loc.character)));
+          break;
+        }
+      }
+      if (locations.size) {
+        const candidates = [...locations.values()];
+        return { location: candidates.length === 1 ? candidates[0] : candidates,
+          detail: `file-local descendants: ${candidates.length} implementation(s)` };
+      }
     }
     return {
       location: null,

@@ -8,7 +8,12 @@ export function run(): Promise<void> {
   const mocha = new Mocha({ ui: 'bdd', color: true, timeout: 30000 });
   const testsRoot = __dirname;
 
-  for (const file of glob.sync('**/*.test.js', { cwd: testsRoot })) {
+  const suite = process.env.KODE_ELECTRON_SUITE;
+  const files = glob.sync('**/*.test.js', { cwd: testsRoot })
+    .filter(file => suite === 'demo'
+      ? file === 'demoNavigation.test.js'
+      : file !== 'demoNavigation.test.js');
+  for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }
 

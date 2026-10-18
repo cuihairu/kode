@@ -18,8 +18,9 @@ import { jumpLog, jumpTimeStart } from './navigationLog';
 /** 一个类的定义(含它自己的 `def` 方法) */
 export interface PythonClassDef {
   name: string;
-  /** 基类名(去点取末段:KBEngine.Entity → Entity;空串表示 object/内置) */
+  /** 基类表达式，保留模块与 import 别名。 */
   bases: string[];
+  qualifiedName?: string;
   filePath: string;
   /** 0-based 起始行(class 语句行) */
   startLine: number;
@@ -33,14 +34,10 @@ export interface PythonClassDef {
 export interface ParsedPythonFile {
   filePath: string;
   classes: PythonClassDef[];
+  imports?: Map<string, { module: string; symbol?: string }>;
   /** 模块级实例赋值 `NAME = CLASS(...)`(types.xml implementedBy 指向实现对象,经此解析 实例→类) */
   instanceAssignments: Array<{ variable: string; className: string; line: number }>;
 }
-
-const CLASS_RE = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)[ \t]*\(([^)]*)\)[ \t]*:/;
-const CLASS_RE_NOBASE = /^([ \t]*)class[ \t]+([A-Za-z_]\w*)[ \t]*:/;
-const DEF_RE = /^([ \t]+)(?:async[ \t]+)?def[ \t]+([A-Za-z_]\w*)[ \t]*\(/;
-const MODULE_ASSIGN_RE = /^([A-Za-z_]\w*)[ \t]*=[ \t]*([A-Za-z_]\w*)[ \t]*\(/;
 
 /**
  * 扫描排除面:官方三件套之外再排引擎构建/依赖/临时树。
@@ -52,87 +49,145 @@ const MODULE_ASSIGN_RE = /^([A-Za-z_]\w*)[ \t]*=[ \t]*([A-Za-z_]\w*)[ \t]*\(/;
 export const PY_SCAN_EXCLUDE =
   '**/{node_modules,third_party,.git,vcpkg,build,dist,out,.tmp,perf,.venv,venv,site-packages,__pycache__}/**';
 
-/** 解析一个 .py 文件里的类与方法(纯函数,便于测试) */
-export function parsePythonFile(content: string, filePath: string): ParsedPythonFile {
-  const lines = content.split(/\r?\n/);
-  const classes: PythonClassDef[] = [];
-  const instanceAssignments: ParsedPythonFile['instanceAssignments'] = [];
-  const stack: { indent: number; cls: PythonClassDef }[] = [];
-
-  const closeTo = (indent: number): void => {
-    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-      const top = stack.pop()!;
-      top.cls.endLine = lines.length;
-    }
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const raw = lines[i];
-    if (!raw.trim() || raw.trimStart().startsWith('#')) {
-      continue;
-    }
-    const indent = raw.match(/^[ \t]*/)![0].replace(/\t/g, '    ').length;
-
-    const classMatch = CLASS_RE.exec(raw) ?? CLASS_RE_NOBASE.exec(raw);
-    if (classMatch) {
-      // 先闭合缩进不小于当前的既有类
-      while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-        const top = stack.pop()!;
-        top.cls.endLine = i;
+/** Mask comments and literals without shifting any source positions. */
+function pythonCodeLines(content: string): string[] {
+  let quote = '';
+  let triple = false;
+  return content.split(/\r?\n/).map(raw => {
+    let masked = '';
+    for (let col = 0; col < raw.length; col += 1) {
+      const ch = raw[col];
+      if (quote) {
+        if (ch === '\\') { masked += '  '; col += 1; continue; }
+        if (triple && raw.slice(col, col + 3) === quote.repeat(3)) {
+          quote = ''; triple = false; masked += '   '; col += 2;
+        } else if (!triple && ch === quote) { quote = ''; masked += ' '; }
+        else { masked += ' '; }
+        continue;
       }
-      const basesRaw = classMatch[3] ?? '';
-      const bases = basesRaw
-        .split(',')
-        .map(part => part.split(':')[0].trim())
-        .map(part => (part.includes('.') ? part.split('.').pop()! : part))
-        .map(part => part.replace(/[()[\]{}'"]/g, ''))
-        .filter(part => part.length > 0 && part !== 'object' && part !== 'enum');
+      if (ch === '#') { masked += ' '.repeat(raw.length - col); break; }
+      if (ch === "'" || ch === '"') {
+        quote = ch;
+        triple = raw.slice(col, col + 3) === ch.repeat(3);
+        masked += triple ? '___' : '_';
+        if (triple) { col += 2; }
+      } else { masked += ch; }
+    }
+    return masked;
+  });
+}
+
+export function isPythonCodePosition(content: string, line: number, character: number): boolean {
+  const raw = content.split(/\r?\n/)[line] ?? '';
+  const col = /\w/.test(raw[character] ?? '') ? character : Math.max(0, character - 1);
+  return /\w/.test(raw[col] ?? '') && pythonCodeLines(content)[line]?.[col] === raw[col];
+}
+
+/** Join bracket/backslash continuations, retaining the first line's coordinates. */
+function pythonStatements(content: string): Array<{ text: string; line: number; endLine: number; indent: number }> {
+  const statements: Array<{ text: string; line: number; endLine: number; indent: number }> = [];
+  let depth = 0;
+  let pending = '';
+  let start = 0;
+  let indent = 0;
+  for (const [line, masked] of pythonCodeLines(content).entries()) {
+    if (!pending && !masked.trim()) { continue; }
+    if (!pending) {
+      start = line;
+      indent = masked.match(/^[ \t]*/)![0].replace(/\t/g, '    ').length;
+    }
+    for (const ch of masked) {
+      if ('([{'.includes(ch)) { depth += 1; }
+      if (')]}'.includes(ch)) { depth = Math.max(0, depth - 1); }
+    }
+    const continued = /\\\s*$/.test(masked);
+    pending += (pending ? ' ' : '') + masked.replace(/\\\s*$/, '');
+    if (depth === 0 && !continued) {
+      statements.push({ text: pending, line: start, endLine: line, indent });
+      pending = '';
+    }
+  }
+  return statements;
+}
+
+/** Base expression under the cursor, including multiline headers and aliases. */
+export function getPythonBaseExpressionAtPosition(content: string, line: number, character: number): string | null {
+  const statement = pythonStatements(content).find(item => item.line <= line && line <= item.endLine && /^\s*class\s/.test(item.text));
+  if (!statement) { return null; }
+  const header = /^\s*class\s+\w+\s*\((.*)\)\s*:/.exec(statement.text);
+  if (!header) { return null; }
+  const bases = header[1].split(',').map(base => base.trim());
+  const raw = pythonCodeLines(content)[line];
+  for (const match of raw.matchAll(/[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*/g)) {
+    if (character >= match.index! && character <= match.index! + match[0].length && bases.includes(match[0])) {
+      // The class name itself is not a base, even if it shadows a parent name.
+      if (line === statement.line && match.index! < raw.indexOf('(')) { return null; }
+      return match[0];
+    }
+  }
+  return null;
+}
+
+/** Parse class/function scopes and import bindings without executing Python. */
+export function parsePythonFile(content: string, filePath: string): ParsedPythonFile {
+  const classes: PythonClassDef[] = [];
+  const imports: NonNullable<ParsedPythonFile['imports']> = new Map();
+  const instanceAssignments: ParsedPythonFile['instanceAssignments'] = [];
+  const stack: Array<{ indent: number; cls?: PythonClassDef; function?: boolean }> = [];
+  const endLine = content.split(/\r?\n/).length;
+  for (const statement of pythonStatements(content)) {
+    const { text, line, indent } = statement;
+    if (!text.trim()) { continue; }
+    while (stack.length && stack[stack.length - 1].indent >= indent) {
+      const closed = stack.pop()!;
+      if (closed.cls) { closed.cls.endLine = line; }
+    }
+    // A class statement nested inside a function creates a local runtime class,
+    // not an importable module/class-suite symbol for workspace-wide navigation.
+    // Keep the enclosing function scope until its indentation closes.
+    if (stack.some(scope => scope.function)) { continue; }
+    const classMatch = /^\s*class\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*:/.exec(text);
+    if (classMatch) {
+      const parent = [...stack].reverse().find(scope => scope.cls)?.cls;
       const cls: PythonClassDef = {
-        name: classMatch[2],
-        bases,
-        filePath,
-        startLine: i,
-        endLine: lines.length,
-        methods: new Map()
+        name: classMatch[1],
+        qualifiedName: parent ? `${parent.qualifiedName ?? parent.name}.${classMatch[1]}` : classMatch[1],
+        bases: (classMatch[2] ?? '').split(',').map(base => base.trim())
+          .filter(base => /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/.test(base) && base !== 'object'),
+        filePath, startLine: line, endLine, methods: new Map()
       };
       classes.push(cls);
       stack.push({ indent, cls });
       continue;
     }
-
-    const assignMatch = MODULE_ASSIGN_RE.exec(raw);
-    if (assignMatch && indent === 0) {
-      // 模块级实例赋值:先闭合缩进不小于 0 的既有类(类体到此结束)
-      while (stack.length > 0) {
-        const top = stack.pop()!;
-        top.cls.endLine = i;
+    const defMatch = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/.exec(text);
+    if (defMatch) {
+      // Only functions directly inside a class suite are methods; closures aren't.
+      const scope = stack[stack.length - 1];
+      if (scope?.cls) {
+        const name = defMatch[1];
+        scope.cls.methods.set(name, { line, character: text.indexOf(name, text.indexOf('def') + 3) });
       }
-      instanceAssignments.push({ variable: assignMatch[1], className: assignMatch[2], line: i });
+      stack.push({ indent, function: true });
       continue;
     }
-
-    const defMatch = DEF_RE.exec(raw);
-    if (defMatch) {
-      // 方法只归属缩进更小的最近类;def 自身缩进必须大于类缩进
-      const defIndent = defMatch[1].replace(/\t/g, '    ').length;
-      while (stack.length > 0 && stack[stack.length - 1].indent >= defIndent) {
-        const top = stack.pop()!;
-        top.cls.endLine = i;
-      }
-      if (stack.length > 0) {
-        const owner = stack[stack.length - 1].cls;
-        const methodName = defMatch[2];
-        if (!owner.methods.has(methodName)) {
-          owner.methods.set(methodName, {
-            line: i,
-            character: raw.indexOf(methodName)
-          });
-        }
+    const from = /^\s*from\s+([.\w]+)\s+import\s+(.+)$/.exec(text);
+    const imported = /^\s*import\s+(.+)$/.exec(text);
+    if (from || imported) {
+      const bindings = (from ? from[2] : imported![1]).replace(/[()]/g, '').split(',');
+      for (const binding of bindings) {
+        const match = /^\s*([\w.]+)(?:\s+as\s+(\w+))?\s*$/.exec(binding);
+        if (!match) { continue; }
+        if (from) { imports.set(match[2] ?? match[1], { module: from[1], symbol: match[1] }); }
+        else { imports.set(match[2] ?? match[1].split('.')[0], { module: match[2] ? match[1] : match[1].split('.')[0] }); }
       }
     }
+    if (indent === 0) {
+      const assign = /^([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\s*\(/.exec(text);
+      if (assign) { instanceAssignments.push({ variable: assign[1], className: assign[2], line }); }
+    }
   }
-  closeTo(0);
-  return { filePath, classes, instanceAssignments };
+  return { filePath, classes, imports, instanceAssignments };
 }
 
 /** C3 线性化(Python3 真实 MRO):l(X) = X + merge(l(B1), l(B2), …, [B1,B2,…]) */
@@ -227,22 +282,189 @@ export interface PythonMethodLocation {
 export class PythonClassIndex {
   private fileCache = new Map<string, { version: number; parsed: ParsedPythonFile }>();
   private byName = new Map<string, PythonClassDef[]>();
-  /** 直接子类:基类名 → 继承它的类(增量维护;主形态反向解析用) */
-  private directSubclasses = new Map<string, PythonClassDef[]>();
   private scanPromise: Promise<void> | null = null;
   /** 组合根派生结果(懒建;实体注册/类型/实体定义变化时置空重派) */
   private rootsMap: CompositionRootMap | null = null;
+  private rootsByScope = new Map<string, CompositionRootMap>();
   private rootsPromise: Promise<void> | null = null;
+  private revisions = new Map<string, number>();
+  private generation = 0;
+  private scanGeneration = 0;
+  private documents = new Map<string, vscode.TextDocument>();
+  private mroCache = new Map<string, PythonClassDef[]>();
+
+  private classKey(cls: PythonClassDef): string {
+    return `${cls.filePath}::${cls.qualifiedName ?? cls.name}::${cls.startLine}`;
+  }
+
+  private compatibleContext(candidate: PythonClassDef, context: PythonClassDef): boolean {
+    const parts = (file: string) => file.replace(/\\/g, '/').match(/^(.*\/scripts)\/([^/]+)\//);
+    const left = parts(candidate.filePath), right = parts(context.filePath);
+    if (left && right) {
+      if (left[1] !== right[1]) { return false; }
+      const roles = new Set(['base', 'cell', 'client', 'bots']);
+      if (roles.has(left[2]) && roles.has(right[2])) { return left[2] === right[2]; }
+    }
+    return true;
+  }
+
+  /** Resolve an import against module paths, never against unrelated class names. */
+  private resolveSymbol(filePath: string, expression: string, seen = new Set<string>(), owner?: PythonClassDef): PythonClassDef | null {
+    const key = `${filePath}::${expression}`;
+    if (seen.has(key)) { return null; }
+    seen.add(key);
+    const importedLookup = seen.size > 1;
+    const parsed = this.fileCache.get(filePath)?.parsed;
+    if (!parsed) { return null; }
+    const scope = owner?.qualifiedName?.split('.').slice(0, -1).join('.');
+    const localNames = scope ? [`${scope}.${expression}`, expression] : [expression];
+    for (const localName of localNames) {
+      const local = parsed.classes.filter(cls => cls !== owner &&
+        (!owner || cls.startLine < owner.startLine) && (cls.qualifiedName ?? cls.name) === localName).pop();
+      if (local) { return local; }
+    }
+    const [head, ...tail] = expression.split('.');
+    const binding = parsed.imports?.get(head);
+    if (binding) {
+      const symbol = [binding.symbol, ...tail].filter(Boolean).join('.');
+      let moduleName = binding.module;
+      const roots: string[] = [];
+      const relative = /^\.+/.exec(moduleName)?.[0].length ?? 0;
+      if (relative) {
+        let root = path.dirname(filePath);
+        for (let i = 1; i < relative; i += 1) { root = path.dirname(root); }
+        roots.push(root);
+        moduleName = moduleName.slice(relative);
+      } else {
+        roots.push(path.dirname(filePath));
+        const scripts = filePath.replace(/\\/g, '/').match(/^(.*\/scripts)(?:\/|$)/)?.[1];
+        if (scripts) {
+          const role = filePath.slice(scripts.length).split(/[\\/]/)[1];
+          roots.push(path.join(scripts, role), path.join(scripts, 'common'), path.join(scripts, 'user_type'), scripts);
+        }
+        for (let root = path.dirname(filePath); ; root = path.dirname(root)) {
+          roots.push(root);
+          if (root === path.dirname(root)) { break; }
+        }
+      }
+      for (const root of [...new Set(roots)]) {
+        const modulePath = path.join(root, ...moduleName.split('.').filter(Boolean));
+        for (const target of [modulePath + '.py', path.join(modulePath, '__init__.py')]) {
+          if (!this.fileCache.has(target)) { continue; }
+          const resolved = this.resolveSymbol(target, symbol, seen);
+          if (resolved) { return resolved; }
+          // Python imports the first matching module; an absent symbol must not
+          // fall through to another role's module with the same basename.
+          return null;
+        }
+      }
+      return null;
+    }
+    // A package may expose a child module without re-exporting its classes:
+    // `import pkg.mix` and `from pkg import mix` both bind a module receiver.
+    if (path.basename(filePath) === '__init__.py' && tail.length) {
+      const child = path.join(path.dirname(filePath), head);
+      for (const target of [child + '.py', path.join(child, '__init__.py')]) {
+        if (this.fileCache.has(target)) { return this.resolveSymbol(target, tail.join('.'), seen); }
+      }
+    }
+    // Compatibility for implicit KBEngine script bindings: only an unambiguous
+    // definition in this runtime context is eligible.
+    if (importedLookup) { return null; }
+    const context = parsed.classes[0];
+    const candidates = (this.byName.get(expression) ?? []).filter(cls => cls !== owner &&
+      (!context || this.compatibleContext(cls, context)));
+    const nearby = candidates.filter(cls => path.dirname(cls.filePath) === path.dirname(filePath));
+    return nearby.length === 1 ? nearby[0] : candidates.length === 1 ? candidates[0] : null;
+  }
+
+  private mroClasses(cls: PythonClassDef): PythonClassDef[] {
+    const cached = this.mroCache.get(this.classKey(cls));
+    if (cached) { return cached; }
+    const graph = new Map<string, PythonClassDef>();
+    const visit = (current: PythonClassDef): void => {
+      const key = this.classKey(current);
+      if (graph.has(key)) { return; }
+      const bases = current.bases.map(base => this.resolveSymbol(current.filePath, base, new Set(), current)).filter((base): base is PythonClassDef => !!base);
+      graph.set(key, { ...current, bases: bases.map(base => this.classKey(base)) });
+      bases.forEach(visit);
+    };
+    visit(cls);
+    const result = linearizeC3(this.classKey(cls), key => graph.has(key) ? [graph.get(key)!] : [])
+      .map(key => graph.get(key)!).filter(Boolean);
+    this.mroCache.set(this.classKey(cls), result);
+    return result;
+  }
+
+  private lookupClass(cls: PythonClassDef, methodName: string): PythonMethodLocation | null {
+    const mro = this.mroClasses(cls);
+    for (const provider of mro) {
+      const loc = provider.methods.get(methodName);
+      if (loc) { return { ...loc, filePath: provider.filePath, className: provider.name,
+        mro: mro.map(item => item.name), anchorClass: cls.name }; }
+    }
+    return null;
+  }
+
+  /** Filesystem/configuration events invalidate the scan; open buffers survive. */
+  invalidate(filePath?: string): void {
+    this.generation += 1;
+    this.rootsMap = null; this.rootsByScope.clear(); this.rootsPromise = null;
+    if (filePath && !filePath.toLowerCase().endsWith('.py')) { return; }
+    this.scanGeneration += 1;
+    this.mroCache.clear();
+    if (filePath) {
+      this.revisions.set(filePath, (this.revisions.get(filePath) ?? 0) + 1);
+      this.unindexFile(filePath);
+      this.fileCache.delete(filePath);
+    } else {
+      for (const file of this.revisions.keys()) {
+        this.revisions.set(file, (this.revisions.get(file) ?? 0) + 1);
+      }
+      this.fileCache.clear(); this.byName.clear();
+    }
+    this.scanPromise = null;
+    this.rootsMap = null; this.rootsByScope.clear(); this.rootsPromise = null;
+  }
+
+  async onFileChanged(filePath: string): Promise<void> {
+    if (!filePath.toLowerCase().endsWith('.py') || !this.fileCache.has(filePath)) {
+      this.invalidate(filePath);
+      return;
+    }
+    this.revisions.set(filePath, (this.revisions.get(filePath) ?? 0) + 1);
+    await this.loadFile(filePath, -1);
+  }
+
+  onDocumentClosed(document: vscode.TextDocument): void {
+    this.documents.delete(document.fileName);
+    this.invalidate(document.fileName);
+  }
+
+  private updateFile(filePath: string, content: string, version: number): void {
+    const previous = this.fileCache.get(filePath)?.parsed;
+    this.generation += 1;
+    this.mroCache.clear();
+    this.unindexFile(filePath);
+    const parsed = parsePythonFile(content, filePath);
+    this.fileCache.set(filePath, { version, parsed });
+    for (const cls of parsed.classes) { this.indexClass(cls); }
+    // Composition roots depend on entities.xml/.def/types.xml and the relatively
+    // rare module-level `instance = Class()` bridge. Ordinary method/class edits
+    // change MRO lookup data but do not require another three workspace-wide
+    // metadata scans. Rebuild roots only when that bridge changes.
+    const assignmentSignature = (items: ParsedPythonFile['instanceAssignments']): string =>
+      JSON.stringify(items.map(item => [item.variable, item.className]));
+    if (!previous || !this.rootsMap ||
+        assignmentSignature(previous.instanceAssignments) !== assignmentSignature(parsed.instanceAssignments)) {
+      this.rootsMap = null; this.rootsByScope.clear(); this.rootsPromise = null;
+    }
+  }
 
   private indexClass(cls: PythonClassDef): void {
     const list = this.byName.get(cls.name) ?? [];
     list.push(cls);
     this.byName.set(cls.name, list);
-    for (const base of cls.bases) {
-      const subs = this.directSubclasses.get(base) ?? [];
-      subs.push(cls);
-      this.directSubclasses.set(base, subs);
-    }
   }
 
   private unindexFile(filePath: string): void {
@@ -257,17 +479,7 @@ export class PythonClassIndex {
         this.byName.set(name, filtered);
       }
     }
-    for (const [base, subs] of [...this.directSubclasses.entries()]) {
-      const filtered = subs.filter(item => item.filePath !== filePath);
-      if (filtered.length === subs.length) {
-        continue;
-      }
-      if (filtered.length === 0) {
-        this.directSubclasses.delete(base);
-      } else {
-        this.directSubclasses.set(base, filtered);
-      }
-    }
+
   }
 
   /** 首次查询时全量扫描(幂等,失败不抛) */
@@ -286,67 +498,76 @@ export class PythonClassIndex {
       const rootsTimer = jumpTimeStart();
       // 先完成 .py 扫描:根名「实现对象 → 类」的桥接要用到文件里的实例赋值表
       await this.ensureScanned();
+      const generation = this.generation;
+      const readText = async (uri: vscode.Uri): Promise<string> => {
+        const document = vscode.workspace.textDocuments?.find(doc => doc.fileName === uri.fsPath) ?? this.documents.get(uri.fsPath);
+        return document ? document.getText() : fs.promises.readFile(uri.fsPath, 'utf8');
+      };
       try {
         const [entityXmlFiles, defFiles, typeXmlFiles] = await Promise.all([
           findFilesAcrossRoots('**/entities.xml', PY_SCAN_EXCLUDE),
           findFilesAcrossRoots('**/*.def', PY_SCAN_EXCLUDE),
           findFilesAcrossRoots('**/types.xml', PY_SCAN_EXCLUDE)
         ]);
-        const readAll = async (files: vscode.Uri[]): Promise<string[]> => {
-          const contents: string[] = [];
-          for (const uri of files) {
-            try {
-              contents.push(await fs.promises.readFile(uri.fsPath, 'utf8'));
-            } catch {
-              // 单文件读不到跳过,不拖垮派生
-            }
-          }
-          return contents;
-        };
-        const entitiesXmlContents = await readAll(entityXmlFiles);
-        const typesXmlContents = await readAll(typeXmlFiles);
-        const entityDefs: Array<{ entity: string; content: string }> = [];
-        for (const uri of defFiles) {
-          const normalized = uri.fsPath.replace(/\\/g, '/').toLowerCase();
-          // 与 entityMapping 同口径:components/、interfaces/ 下的 def 不是实体注册
-          if (normalized.includes('/components/') || normalized.includes('/interfaces/')) {
-            continue;
-          }
-          const base = uri.fsPath.replace(/\\/g, '/').split('/').pop() ?? '';
-          const entity = base.replace(/\.def$/i, '');
+        const scopes = [...new Set(entityXmlFiles.map(uri => path.dirname(uri.fsPath)))];
+        const scopeFor = (file: string): string => scopes
+          .filter(scope => file.startsWith(scope + path.sep))
+          .sort((left, right) => right.length - left.length)[0]
+          ?? file.replace(/\\/g, '/').match(/^(.*?)\/(?:scripts|entity_defs)(?:\/|$)/)?.[1]
+          ?? path.dirname(file);
+        const groups = new Map<string, {
+          entitiesXmlContents: string[]; typesXmlContents: string[];
+          entityDefs: Array<{ entity: string; content: string }>;
+        }>();
+        const readGroup = async (uri: vscode.Uri, kind: 'entities' | 'types' | 'def'): Promise<void> => {
           try {
-            entityDefs.push({ entity, content: await fs.promises.readFile(uri.fsPath, 'utf8') });
-          } catch {
-            // 同上
-          }
-        }
-        const derived = deriveCompositionRoots({ entitiesXmlContents, entityDefs, typesXmlContents });
-        // 实现对象符号 → 类:types.xml 的 implementedBy 指向实例
-        // (如 weapon_skill_slot_list_inst = weapon_skill_slot_list()),组合根
-        // 记类名才能与 Python 类继承表交叉(收录查询/MRO 查找都按类名)。
-        const assignmentClass = new Map<string, string>();
-        for (const { parsed } of this.fileCache.values()) {
-          for (const item of parsed.instanceAssignments) {
-            if (!assignmentClass.has(item.variable)) {
-              assignmentClass.set(item.variable, item.className);
+            const scope = scopeFor(uri.fsPath);
+            const group = groups.get(scope) ?? { entitiesXmlContents: [], typesXmlContents: [], entityDefs: [] };
+            groups.set(scope, group);
+            const content = await readText(uri);
+            if (kind === 'entities') { group.entitiesXmlContents.push(content); }
+            else if (kind === 'types') { group.typesXmlContents.push(content); }
+            else if (!/[\\/](components|interfaces)[\\/]/i.test(uri.fsPath)) {
+              group.entityDefs.push({ entity: path.basename(uri.fsPath, '.def'), content });
             }
+          } catch {
+            // A missing file cannot prevent other asset projects from resolving.
           }
-        }
+        };
+        // Preserve discovery order; derived root order is also candidate order.
+        for (const uri of entityXmlFiles) { await readGroup(uri, 'entities'); }
+        for (const uri of typeXmlFiles) { await readGroup(uri, 'types'); }
+        for (const uri of defFiles) { await readGroup(uri, 'def'); }
+        const scoped = new Map<string, CompositionRootMap>();
         const resolvedRoots: string[] = [];
-        for (const root of derived.roots) {
-          const resolved = this.byName.has(root) ? root : assignmentClass.get(root) ?? root;
-          if (!resolvedRoots.includes(resolved)) {
-            resolvedRoots.push(resolved);
+        const combinedMixins = new Map<string, string[]>();
+        for (const [scope, group] of groups) {
+          const derived = deriveCompositionRoots(group);
+          const assignments = new Map<string, string>();
+          for (const [file, { parsed }] of this.fileCache) {
+            if (scopeFor(file) !== scope) { continue; }
+            for (const item of parsed.instanceAssignments) { assignments.set(item.variable, item.className); }
+          }
+          const roots = [...new Set(derived.roots.map(root => assignments.get(root) ?? root))];
+          scoped.set(scope, { roots, defMixins: derived.defMixins });
+          for (const root of roots) { if (!resolvedRoots.includes(root)) { resolvedRoots.push(root); } }
+          for (const [root, mixins] of derived.defMixins) {
+            combinedMixins.set(root, [...new Set([...(combinedMixins.get(root) ?? []), ...mixins])]);
           }
         }
-        this.rootsMap = { roots: resolvedRoots, defMixins: derived.defMixins };
+        if (generation !== this.generation) { return; }
+        this.rootsByScope = scoped;
+        this.rootsMap = { roots: resolvedRoots, defMixins: combinedMixins };
         jumpLog('info', () =>
           `组合根派生 ${resolvedRoots.length} 根: [${resolvedRoots.join(', ')}] ${rootsTimer()}ms`
         );
       } catch {
         // 派生失败:不当成功缓存,下次跳转重试;已建索引不受影响
-        this.rootsMap = null;
-        this.rootsPromise = null;
+        if (generation === this.generation) {
+          this.rootsMap = null;
+          this.rootsByScope.clear();
+          this.rootsPromise = null;
+        }
       }
     })();
     return this.rootsPromise;
@@ -370,8 +591,9 @@ export class PythonClassIndex {
         continue;
       }
       if (this.byName.has(root)) {
-        const names = linearizeC3(root, name => this.byName.get(name) ?? []);
-        if (names.includes(className)) {
+        const contains = (this.byName.get(root) ?? []).some(cls =>
+          this.mroClasses(cls).some(base => base.name === className));
+        if (contains) {
           hits.push(root);
           continue;
         }
@@ -383,34 +605,11 @@ export class PythonClassIndex {
     return hits;
   }
 
-  /** 按 def 声明的 mixin 类名名单查方法提供者(Parent → 接口 → 组件 序) */
-  private lookupInMixinNames(names: string[], methodName: string): PythonMethodLocation | null {
-    for (const mixinName of names) {
-      const defs = this.byName.get(mixinName);
-      if (!defs) {
-        continue;
-      }
-      for (const def of defs) {
-        const loc = def.methods.get(methodName);
-        if (loc) {
-          return {
-            filePath: def.filePath,
-            line: loc.line,
-            character: loc.character,
-            className: mixinName,
-            mro: linearizeC3(mixinName, name => this.byName.get(name) ?? []),
-            anchorClass: mixinName
-          };
-        }
-      }
-    }
-    return null;
-  }
-
   private async ensureScanned(): Promise<void> {
     if (this.scanPromise) {
       return this.scanPromise;
     }
+    const scanGeneration = this.scanGeneration;
     this.scanPromise = (async () => {
       const scanTimer = jumpTimeStart();
       try {
@@ -419,6 +618,7 @@ export class PythonClassIndex {
         // (排除式漏扫 vcpkg/build 时实测 14,245 文件 × 10.13ms ≈ 144s)
         const CONCURRENCY = 16;
         for (let offset = 0; offset < files.length; offset += CONCURRENCY) {
+          if (scanGeneration !== this.scanGeneration) { return; }
           await Promise.all(
             files.slice(offset, offset + CONCURRENCY).map(uri => this.loadFile(uri.fsPath, -1))
           );
@@ -429,42 +629,51 @@ export class PythonClassIndex {
         // 永久停在「已扫描」态、跨文件类永远补不进来,每次跳转都落 null
         // (与「加载很久后 No definition found」同根)。下次跳转重试;
         // 已解析部分保留在 fileCache/byName 继续可用。
-        this.scanPromise = null;
+        if (scanGeneration === this.scanGeneration) { this.scanPromise = null; }
       }
     })();
     return this.scanPromise;
   }
 
   private async loadFile(filePath: string, version: number): Promise<void> {
-    let content: string;
+    const revision = this.revisions.get(filePath) ?? 0;
+    this.revisions.set(filePath, revision);
     try {
-      // 异步读:同步读会在扫描/变更时阻塞扩展宿主线程
-      content = await fs.promises.readFile(filePath, 'utf8');
+      const open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
+      const content = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
+      if ((this.revisions.get(filePath) ?? 0) !== revision) { return; }
+      this.updateFile(filePath, content, open?.version ?? version);
     } catch {
-      return;
-    }
-    const parsed = parsePythonFile(content, filePath);
-    // 增量:先摘除该文件旧索引条目再重挂,避免重复/陈旧基类关系
-    this.unindexFile(filePath);
-    this.fileCache.set(filePath, { version, parsed });
-    for (const cls of parsed.classes) {
-      this.indexClass(cls);
+      // A removed/unreadable file must not leave navigable stale classes.
+      if ((this.revisions.get(filePath) ?? 0) === revision) {
+        this.unindexFile(filePath); this.fileCache.delete(filePath);
+        this.mroCache.clear();
+        this.generation += 1;
+        this.rootsMap = null; this.rootsByScope.clear(); this.rootsPromise = null;
+      }
     }
   }
 
-  /** 文档变更:只重解析该文件(增量,避免大仓输入卡顿) */
+  /** Use the buffer synchronously so an older disk read cannot overwrite edits. */
   async onDocumentChanged(document: vscode.TextDocument): Promise<void> {
-    const lower = document.fileName.toLowerCase();
-    if (lower.endsWith('.def') || lower.endsWith('.xml')) {
-      // 实体注册/实体定义/类型定义变化 → 组合根派生失效,下次跳转重派
-      this.rootsMap = null;
-      this.rootsPromise = null;
+    if (!/\.(py|def|xml)$/i.test(document.fileName)) { return; }
+    if (this.documents.get(document.fileName) === document &&
+        this.fileCache.get(document.fileName)?.version === document.version) { return; }
+    this.documents.set(document.fileName, document);
+    if (!document.fileName.toLowerCase().endsWith('.py')) {
+      this.generation += 1;
+      this.rootsMap = null; this.rootsByScope.clear(); this.rootsPromise = null;
       return;
     }
-    if (!lower.endsWith('.py')) {
-      return;
-    }
-    await this.loadFile(document.fileName, document.version);
+    this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
+    this.updateFile(document.fileName, document.getText(), document.version);
+  }
+
+  async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number): Promise<PythonClassDef | null> {
+    await this.onDocumentChanged(document);
+    await this.ensureScanned();
+    const owner = line === undefined ? undefined : await this.findEnclosingClass(document.fileName, line) ?? undefined;
+    return this.resolveSymbol(document.fileName, expression, new Set(), owner);
   }
 
   /** 类名 → 定义列表(可能同名多处) */
@@ -495,57 +704,21 @@ export class PythonClassIndex {
   /** 计算某类的 MRO(含自身),跨文件基类解析 */
   async computeMRO(className: string): Promise<string[]> {
     await this.ensureScanned();
-    const resolve = (name: string): PythonClassDef[] => {
-      const found = this.byName.get(name);
-      return found ?? [];
-    };
-    return linearizeC3(className, resolve);
+    const definitions = this.byName.get(className) ?? [];
+    return definitions.length === 1 ? this.mroClasses(definitions[0]).map(cls => cls.name) : [];
   }
 
   /** 类 name 的全部后代(直接子类传递闭包,含环护栏) */
   async descendantsOf(name: string): Promise<PythonClassDef[]> {
     await this.ensureScanned();
+    const seeds = new Set((this.byName.get(name) ?? []).map(cls => this.classKey(cls)));
     const out: PythonClassDef[] = [];
-    const seen = new Set<string>([name]);
-    const queue: string[] = [name];
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      for (const sub of this.directSubclasses.get(current) ?? []) {
-        const key = `${sub.filePath}::${sub.name}`;
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        out.push(sub);
-        queue.push(sub.name);
+    for (const defs of this.byName.values()) {
+      for (const cls of defs) {
+        if (!seeds.has(this.classKey(cls)) && this.mroClasses(cls).some(base => seeds.has(this.classKey(base)))) { out.push(cls); }
       }
     }
     return out;
-  }
-
-  /** 在某类的 MRO 中找 methodName 的提供者(首个命中即运行时调用序) */
-  private lookupInMRO(className: string, methodName: string): PythonMethodLocation | null {
-    const mro = linearizeC3(className, n => this.byName.get(n) ?? []);
-    for (const clsName of mro) {
-      const defs = this.byName.get(clsName);
-      if (!defs) {
-        continue;
-      }
-      for (const def of defs) {
-        const loc = def.methods.get(methodName);
-        if (loc) {
-          return {
-            filePath: def.filePath,
-            line: loc.line,
-            character: loc.character,
-            className: clsName,
-            mro,
-            anchorClass: className
-          };
-        }
-      }
-    }
-    return null;
   }
 
   /**
@@ -558,10 +731,12 @@ export class PythonClassIndex {
   async resolveSelfMethodCandidates(
     filePath: string,
     line: number,
-    methodName: string
+    methodName: string,
+    document?: vscode.TextDocument
   ): Promise<PythonMethodLocation[]> {
     const queryTimer = jumpTimeStart();
     jumpLog('info', () => `py 查询 ${path.basename(filePath)}:${line + 1} 方法=${methodName}`);
+    if (document) { await this.onDocumentChanged(document); }
     await this.ensureScanned();
     const enclosing = await this.findEnclosingClass(filePath, line);
     if (!enclosing) {
@@ -582,49 +757,54 @@ export class PythonClassIndex {
     };
 
     const out: PythonMethodLocation[] = [];
-    // ① 祖先 MRO(静态类自身可解即最直接)
-    push(this.lookupInMRO(enclosing.name, methodName), out);
-    if (out.length > 0) {
-      jumpLog('info', () =>
-        `py 命中(①静态类 MRO) ${out[0].className} → ${path.basename(out[0].filePath)}:${out[0].line + 1} ${queryTimer()}ms`
-      );
-      return out;
-    }
-    jumpLog('debug', () => `py ①静态类 MRO 未命中(enclosing=${enclosing.name})`);
+    // ① 先记录静态类 MRO 命中，但不能在这里提前返回。
+    // 同一个 mixin 可被多个实体组合，且这些实体的 MRO 可能覆盖该方法；
+    // 例如 CombatMixin.self.compute_damage 在 TrainingAvatar、TrainingMonster
+    // 与 EliteMonster 上分别命中 CriticalDamageMixin、DamageMixin、
+    // EliteDamageMixin。只返回静态 MRO 会把运行时有效目标全部漏掉。
+    push(this.lookupClass(enclosing, methodName), out);
+    if (out.length === 0) { jumpLog('debug', () => `py ①静态类 MRO 未命中(enclosing=${enclosing.name})`); }
 
     // ② 组合根(用户 2026-10-16:实体清单里每个实体、其字段对象、组件都是组合根,
     // 不止单一入口类):静态类被哪些组合根收录 → 在每一个组合根的 MRO 里找。
-    // 每根先走 Python 继承(同名多文件合并),再走该根 .def 声明的 mixin
+    // 每根先走精确 Python 类身份，再走当前资产项目的 .def 声明 mixin
     // (Parent → Interfaces → Components);多根/多处命中全部保留(上面 push 去重),
     // 由 provider 出 Location[] 列表,不替用户跳第一个。
-    const rootNames = await this.rootsContaining(enclosing.name);
-    jumpLog('debug', () => `py 组合根收录 ${enclosing.name} → [${rootNames.join(', ') || '无'}]`);
-    if (rootNames.length > 0 && this.rootsMap) {
-      for (const root of rootNames) {
-        const fromPython = this.lookupInMRO(root, methodName);
-        if (fromPython) {
-          push({ ...fromPython, compositionRoot: root }, out);
-        }
-        for (const mixinName of this.rootsMap.defMixins.get(root) ?? []) {
-          const fromMixin = this.lookupInMixinNames([mixinName], methodName);
-          if (fromMixin) {
-            push({ ...fromMixin, compositionRoot: root }, out);
+    await this.ensureCompositionRoots();
+    const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
+      .sort((left, right) => right.length - left.length)[0];
+    const composition = scope ? this.rootsByScope.get(scope) : undefined;
+    const rootNames = composition?.roots ?? [];
+    for (const root of rootNames) {
+      const roots = (this.byName.get(root) ?? []).filter(cls => this.compatibleContext(cls, enclosing));
+      for (const rootClass of roots) {
+        const contains = this.mroClasses(rootClass).some(cls => this.classKey(cls) === this.classKey(enclosing));
+        const declared = composition?.defMixins.get(root) ?? [];
+        if (!contains && !declared.some(name => this.resolveSymbol(rootClass.filePath, name) === enclosing)) { continue; }
+        const implementation = this.lookupClass(rootClass, methodName);
+        if (implementation) { push({ ...implementation, compositionRoot: root }, out); }
+        else {
+          for (const name of declared) {
+            const mixin = this.resolveSymbol(rootClass.filePath, name);
+            if (mixin) {
+              const hit = this.lookupClass(mixin, methodName);
+              if (hit) { push({ ...hit, compositionRoot: root }, out); }
+            }
           }
         }
       }
-      if (out.length > 0) {
-        jumpLog('info', () =>
-          `py 命中(②组合根) root=${out[0].compositionRoot ?? '?'} → ${path.basename(out[0].filePath)}:${out[0].line + 1} ${queryTimer()}ms`
-        );
-        return out;
-      }
     }
+    if (out.length > 0) { return out; }
 
-    // ③ 兜底:静态类与组合根都解不到 → 反向经继承它的类解(非实体代码路径,
-    // 兄弟 mixin/工具类形态;保留既有行为,不因组合根缺失而直接失败)
-    const descendants = await this.descendantsOf(enclosing.name);
-    for (const sub of descendants) {
-      push(this.lookupInMRO(sub.name, methodName), out);
+    // Reverse lookup uses exact class identities as well, so unrelated same-name
+    // classes in another role/package cannot become sibling mixin providers.
+    for (const defs of this.byName.values()) {
+      for (const sub of defs) {
+        if (!this.compatibleContext(sub, enclosing)) { continue; }
+        if (this.mroClasses(sub).some(cls => this.classKey(cls) === this.classKey(enclosing))) {
+          push(this.lookupClass(sub, methodName), out);
+        }
+      }
     }
     if (out.length > 0) {
       jumpLog('info', () =>
@@ -654,24 +834,13 @@ export class PythonClassIndex {
 
   /** 某方法名在 MRO 中由哪些类提供(CodeLens/多实现用) */
   async providersOfMethod(className: string, methodName: string): Promise<PythonMethodLocation[]> {
-    const mro = await this.computeMRO(className);
+    await this.ensureScanned();
     const out: PythonMethodLocation[] = [];
-    for (const clsName of mro) {
-      const defs = this.byName.get(clsName);
-      if (!defs) {
-        continue;
-      }
-      for (const def of defs) {
-        const loc = def.methods.get(methodName);
-        if (loc) {
-          out.push({
-            filePath: def.filePath,
-            line: loc.line,
-            character: loc.character,
-            className: clsName,
-            mro
-          });
-        }
+    for (const definition of this.byName.get(className) ?? []) {
+      const chain = this.mroClasses(definition);
+      for (const cls of chain) {
+        const loc = cls.methods.get(methodName);
+        if (loc) { out.push({ ...loc, filePath: cls.filePath, className: cls.name, mro: chain.map(item => item.name) }); }
       }
     }
     return out;

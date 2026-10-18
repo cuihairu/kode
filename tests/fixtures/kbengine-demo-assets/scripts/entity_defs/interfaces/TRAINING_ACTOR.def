@@ -1,0 +1,15 @@
+<root>
+    <Properties>
+        <hp><Type>UINT16</Type><Flags>CELL_PUBLIC</Flags><Default>80</Default></hp>
+        <maxHp><Type>UINT16</Type><Flags>CELL_PUBLIC</Flags><Default>80</Default></maxHp>
+        <attackPower><Type>UINT16</Type><Flags>CELL_PRIVATE</Flags><Default>8</Default></attackPower>
+        <coins><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags><Default>0</Default></coins>
+        <experience><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags><Default>0</Default></experience>
+        <potions><Type>UINT8</Type><Flags>CELL_PRIVATE</Flags><Default>2</Default></potions>
+        <rewardCoins><Type>UINT16</Type><Flags>CELL_PRIVATE</Flags><Default>5</Default></rewardCoins>
+        <rewardXp><Type>UINT16</Type><Flags>CELL_PRIVATE</Flags><Default>10</Default></rewardXp>
+    </Properties>
+    <CellMethods>
+        <reqHeal><Arg>UINT16</Arg></reqHeal>
+    </CellMethods>
+</root>

@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PythonClassIndex } from '../src/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
@@ -1150,6 +1151,50 @@ describe('激活期 debug.json 缺失自动生成(批142)', () => {
     } finally {
       disposeAll(context);
       fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+
+describe('Python index lifecycle wiring', () => {
+  it('watches external assets, refreshes changed files, and releases closed documents', async () => {
+    const assets = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-external-watch-'));
+    const context = makeContext();
+    const originalCreate = workspace.createFileSystemWatcher;
+    const watches: Array<{ pattern: unknown; watcher: ReturnType<typeof originalCreate> }> = [];
+    const create = vi.spyOn(workspace, 'createFileSystemWatcher').mockImplementation(((pattern: unknown) => {
+      const watcher = originalCreate();
+      watches.push({ pattern, watcher });
+      return watcher;
+    }) as typeof originalCreate);
+    const invalidate = vi.spyOn(PythonClassIndex.prototype, 'invalidate');
+    const changed = vi.spyOn(PythonClassIndex.prototype, 'onFileChanged').mockResolvedValue(undefined);
+    const closed = vi.spyOn(PythonClassIndex.prototype, 'onDocumentClosed');
+    configurationOverrides.set('kbengine', { assetsRoot: assets });
+    try {
+      activate(context);
+      const watch = watches.find(item => (item.pattern as { base?: string })?.base === assets);
+      expect(watch, 'external assetsRoot has a RelativePattern watcher').toBeTruthy();
+      const file = Uri.file(path.join(assets, 'scripts/cell/Avatar.py'));
+      watch!.watcher.fireCreate(file);
+      expect(invalidate).toHaveBeenCalledWith(file.fsPath);
+      watch!.watcher.fireChange(file);
+      expect(changed).toHaveBeenCalledWith(file.fsPath);
+      watch!.watcher.fireDelete(file);
+      expect(invalidate).toHaveBeenLastCalledWith(file.fsPath);
+      const document = makeTextDocument('class Avatar: pass', { fileName: file.fsPath });
+      workspaceEvents.documentClosed.fire(document);
+      expect(closed).toHaveBeenCalledWith(document);
+      workspaceEvents.configurationChanged.fire({ affectsConfiguration: section => section === 'kbengine' || section === 'kbengine.assetsRoot' });
+      const count = invalidate.mock.calls.length;
+      watch!.watcher.fireCreate(file);
+      expect(invalidate.mock.calls.length, 'old watchers are disposed when roots change').toBe(count);
+      expect(watches.filter(item => (item.pattern as { base?: string })?.base === assets)).toHaveLength(2);
+    } finally {
+      disposeAll(context);
+      create.mockRestore(); invalidate.mockRestore(); changed.mockRestore(); closed.mockRestore();
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(assets, { recursive: true, force: true });
     }
   });
 });

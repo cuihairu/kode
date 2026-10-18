@@ -9,4 +9,7 @@
 	<Account hasClient="true"></Account>
 	<Avatar hasBase="true" hasCell="true" hasClient="true"></Avatar>
 	<Monster hasCell="true"></Monster>
+	<TrainingAvatar hasBase="true" hasCell="true" hasClient="true"></TrainingAvatar>
+	<TrainingMonster hasCell="true"></TrainingMonster>
+	<EliteMonster hasCell="true"></EliteMonster>
 </root>

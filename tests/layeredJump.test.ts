@@ -10,7 +10,7 @@ import { PythonClassIndex } from '../src/pythonClassIndex';
 import { PythonDefinitionProvider, TracedDefinitionResult, setPythonMroJumpEnabled } from '../src/languageProviders';
 
 // 放弃范围逐层收窄(用户 2026-10-16):
-// 层1 entity-def(.def 派生索引,对象级类粒度 → 文件级 owner 归属)
+// 层1 entity-def(属性/声明优先，方法使用处暂存声明并继续找实现)
 // 层2 python-mro(PythonClassIndex 跨文件 MRO + 组合根)
 // 层3 file-scope(当前文件类作用域 / 本文件 MRO)
 // 任何一层命中即返回;全部落空才 null,且 layers 说明查过哪些层。
@@ -66,8 +66,8 @@ describe('分层跳转(对象级放弃收窄)', () => {
     callFile: string;
     callNeedle: string;
     method: string;
-    /** 期望首个命中层 */
-    hitLayer: 'entity-def' | 'python-mro';
+    /** 是否有可回退的 .def 方法声明 */
+    hasDeclaration: boolean;
     /** 层1 详情应包含的对象级子探(对象级判定在类粒度的证据) */
     objectProbe: string;
     finalFile: string;
@@ -85,10 +85,10 @@ describe('分层跳转(对象级放弃收窄)', () => {
       callFile: 'scripts/cell/Monster.py',
       callNeedle: 'self.respawn()',
       method: 'respawn',
-      hitLayer: 'entity-def',
+      hasDeclaration: true,
       objectProbe: 'object=Monster',
-      finalFile: 'scripts/entity_defs/Avatar.def',
-      finalNeedle: '<respawn>',
+      finalFile: 'scripts/cell/Avatar.py',
+      finalNeedle: 'def respawn',
       root: 'Monster',
       rootDefFile: 'scripts/cell/Avatar.py',
       rootDefNeedle: 'def respawn'
@@ -99,7 +99,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
       callFile: 'scripts/interfaces/ROLE.py',
       callNeedle: 'self.onAggro(entityId)',
       method: 'onAggro',
-      hitLayer: 'python-mro',
+      hasDeclaration: false,
       objectProbe: 'object=ROLE',
       finalFile: 'scripts/cell/Monster.py',
       finalNeedle: 'def onAggro',
@@ -113,10 +113,10 @@ describe('分层跳转(对象级放弃收窄)', () => {
       callFile: 'scripts/cell/Avatar.py',
       callNeedle: 'self.onMove(None)',
       method: 'onMove',
-      hitLayer: 'entity-def',
+      hasDeclaration: true,
       objectProbe: 'object=Avatar',
-      finalFile: 'scripts/entity_defs/interfaces/ROLE.def',
-      finalNeedle: '<onMove>',
+      finalFile: 'scripts/interfaces/ROLE.py',
+      finalNeedle: 'def onMove',
       root: 'Avatar',
       rootDefFile: 'scripts/interfaces/ROLE.py',
       rootDefNeedle: 'def onMove'
@@ -127,7 +127,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
       callFile: 'scripts/user_type/SKILL_SLOT_DATA.py',
       callNeedle: 'self.reindex()',
       method: 'reindex',
-      hitLayer: 'python-mro',
+      hasDeclaration: false,
       objectProbe: 'object=serializer_base',
       finalFile: 'scripts/user_type/SKILL_SLOT_DATA.py',
       finalNeedle: 'def reindex',
@@ -164,19 +164,15 @@ describe('分层跳转(对象级放弃收窄)', () => {
         // 对象级子探证据:层1 详情带 object=<类名>(类粒度判定,不看文件 owner 匹配)
         expect(first.detail ?? '', `${c.label} 层1 应做对象级子探`).toContain(c.objectProbe);
 
-        if (c.hitLayer === 'entity-def') {
-          // 该类有 .def → 第一层命中即返回,后面层不再执行
-          expect(traced.layers.length, `${c.label} 命中即止`).toBe(1);
-          expect(first.status).toBe('hit');
-        } else {
-          // 该类/文件无可用 .def → 层1 落空记录原因,层2 接住
-          expect(traced.layers.length, `${c.label} 查了 2 层`).toBe(2);
-          expect(first.status).toBe('miss');
-          expect(traced.layers[1]).toMatchObject({ layer: 'python-mro', status: 'hit' });
-        }
+        expect(traced.layers.length, `${c.label} 实现优先`).toBe(2);
+        expect(first.status).toBe(c.hasDeclaration ? 'skip' : 'miss');
+        if (c.hasDeclaration) { expect(first.detail).toContain('deferred method declaration'); }
+        expect(traced.layers[1]).toMatchObject({ layer: 'python-mro', status: 'hit' });
 
         expect(traced.location, `${c.label} 应有落点`).not.toBeNull();
-        const loc = traced.location as { uri: { fsPath: string }; range: { start: { line: number } } };
+        const locations = Array.isArray(traced.location) ? traced.location : [traced.location];
+        const loc = locations.find(location => location?.uri.fsPath.replace(/\\/g, '/').includes(c.finalFile))!;
+        expect(loc, `${c.label} 候选包含对应实现`).toBeTruthy();
         expect(normalize(loc.uri.fsPath), `${c.label} 落点文件`).toContain(c.finalFile);
         expect(loc.range.start.line, `${c.label} 落点行`).toBe(finalLine);
 
@@ -393,7 +389,7 @@ describe('分层跳转(对象级放弃收窄)', () => {
     }
   }, 60_000);
 
-  it('对象不在 .def 不断链:方法层查询光标段(非根符号),层3 接住同文件定义', async () => {
+  it('未知嵌套对象不应误跳到同文件中的无关类', async () => {
     stubWorkspace.findFiles = realFindFiles as unknown as typeof stubWorkspace.findFiles;
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(FIXTURE), name: 'demo-assets', index: 0 }];
     try {
@@ -401,9 +397,8 @@ describe('分层跳转(对象级放弃收窄)', () => {
       const manager = new EntityMappingManager({ subscriptions: [] } as never);
       const provider = new PythonDefinitionProvider(manager, index);
 
-      // self.helper.proc():根对象 helper 不在任何 .def。修复前方法层查询根
-      // 符号 helper → 三层全空 → null(关联查找路径一起断掉);修复后查询
-      // 光标段 proc,层3 同文件 Helper.proc 兜底命中。
+      // No assignment or annotation connects helper to Helper. Name proximity
+      // alone is not evidence of its receiver type.
       const text = [
         'class Helper(object):',
         '\tdef proc(self):',
@@ -425,12 +420,8 @@ describe('分层跳转(对象级放弃收窄)', () => {
       expect(traced.layers[0].layer).toBe('entity-def');
       expect(traced.layers[0].query, '方法层查询光标段而非根符号').toBe('proc');
       expect(traced.layers[0].status).toBe('miss');
-      expect(traced.layers[1].layer).toBe('python-mro');
-      expect(traced.layers[1].status).toBe('miss');
-      expect(traced.layers[2]).toMatchObject({ layer: 'file-scope', status: 'hit' });
-      const loc = traced.location as { uri: { fsPath: string }; range: { start: { line: number } } };
-      expect(normalize(loc.uri.fsPath)).toContain('nested_probe.py');
-      expect(loc.range.start.line, 'Helper.proc 定义行').toBe(1);
+      expect(traced.location).toBeNull();
+      expect(traced.layers[0].detail).toContain('nested receiver type is unknown');
       manager.dispose();
     } finally {
       stubWorkspace.findFiles = ORIGINAL;

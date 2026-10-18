@@ -2,6 +2,10 @@
 // 类/枚举/工厂。状态化的 workspace/window/commands/languages/panel 分层见
 // 同目录各模块;tests/helpers/vscodeStub.ts 是它们的兼容 re-export 薄壳。
 
+export class RelativePattern {
+  constructor(public readonly base: string | Uri, public readonly pattern: string) {}
+}
+
 export class Position {
   constructor(public readonly line: number, public readonly character: number) {}
 }

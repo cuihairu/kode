@@ -53,6 +53,8 @@ export const lastFileSystemWatcher: { current: StubFileSystemWatcher | null } = 
 export const workspaceEvents = {
   documentChanged: new EventEmitter<{ document: unknown }>(),
   documentOpened: new EventEmitter<unknown>(),
+  documentClosed: new EventEmitter<unknown>(),
+  foldersChanged: new EventEmitter<unknown>(),
   configurationChanged: new EventEmitter<{ affectsConfiguration: (section: string) => boolean }>()
 };
 
@@ -128,6 +130,8 @@ export const workspace = {
   },
   onDidChangeTextDocument: workspaceEvents.documentChanged.event,
   onDidOpenTextDocument: workspaceEvents.documentOpened.event,
+  onDidCloseTextDocument: workspaceEvents.documentClosed.event,
+  onDidChangeWorkspaceFolders: workspaceEvents.foldersChanged.event,
   onDidChangeConfiguration: workspaceEvents.configurationChanged.event,
   registerTextDocumentContentProvider: (scheme: string, provider: unknown): { dispose(): void } => {
     textDocumentContentProviders.set(scheme, provider);
@@ -189,6 +193,8 @@ export const workspaceState = {
   reset: (): void => {
     workspaceEvents.documentChanged.dispose();
     workspaceEvents.documentOpened.dispose();
+    workspaceEvents.documentClosed.dispose();
+    workspaceEvents.foldersChanged.dispose();
     workspaceEvents.configurationChanged.dispose();
     workspace.textDocuments = [];
     textDocumentContentProviders.clear();

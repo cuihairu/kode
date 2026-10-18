@@ -1,4 +1,4 @@
-import { findFilesAcrossRoots } from './scanRoots';
+import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache } from './scanRoots';
 import { setJumpLogEnabled } from './navigationLog';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -213,14 +213,38 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(definitionProvider);
 
-  // 注册 Python 文件的定义提供者（Python → .def 跳转;并按 Python 类层级
-  // C3-MRO 兜底,修跨类/mixin 方法唯一实现也跳不到的根因)
+  // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
   const pythonClassIndex = new PythonClassIndex();
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },
     new PythonDefinitionProvider(entityMappingManager, pythonClassIndex)
   );
   context.subscriptions.push(pythonDefinitionProvider);
+  let pythonIndexWatchers: vscode.Disposable[] = [];
+  const watchPythonIndex = () => {
+    pythonIndexWatchers.forEach(watcher => watcher.dispose());
+    pythonIndexWatchers = [];
+    const patterns: vscode.GlobPattern[] = [
+      '**/*.{py,def,xml}',
+      ...getExternalScanRoots().map(root => new vscode.RelativePattern(root, '**/*.{py,def,xml}'))
+    ];
+    for (const pattern of patterns) {
+      const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      const invalidate = (uri: vscode.Uri) => pythonClassIndex.invalidate(uri.fsPath);
+      pythonIndexWatchers.push(watcher, watcher.onDidCreate(invalidate),
+        watcher.onDidChange(uri => { void pythonClassIndex.onFileChanged(uri.fsPath); }), watcher.onDidDelete(invalidate));
+    }
+  };
+  watchPythonIndex();
+  context.subscriptions.push(
+    { dispose: () => pythonIndexWatchers.forEach(watcher => watcher.dispose()) },
+    vscode.workspace.onDidCloseTextDocument(document => pythonClassIndex.onDocumentClosed(document)),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      resetScanRootCache();
+      pythonClassIndex.invalidate();
+      watchPythonIndex();
+    })
+  );
 
   // RPC 方法标记(批126 用户令:Python 侧函数看不出哪些是 def 声明的
   // RPC):在实现脚本里命中 def 方法声明的声明行上方出一行可点 CodeLens
@@ -326,6 +350,13 @@ export function activate(context: vscode.ExtensionContext) {
     // 层2 python-mro(mixin 函数导航)开关变更即时生效(不重载窗口)
     if (event.affectsConfiguration('kbengine.python.enableMroJump')) {
       setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
+    }
+
+    if (event.affectsConfiguration('kbengine.assetsRoot') ||
+        event.affectsConfiguration('kbengine.python.enableMroJump')) {
+      resetScanRootCache();
+      pythonClassIndex.invalidate();
+      watchPythonIndex();
     }
 
     // binPath/configPath 变更影响数据库连接读值(批131),重算后再扫文档

@@ -1,0 +1,512 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "runtime-damage",
+      "source": {
+        "file": "scripts/common/training/mixins/combat.py",
+        "needle": "# nav: runtime-damage",
+        "symbol": "compute_damage"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/critical.py",
+          "needle": "def compute_damage"
+        },
+        {
+          "file": "scripts/common/training/mixins/damage.py",
+          "needle": "def compute_damage"
+        },
+        {
+          "file": "scripts/common/training/mixins/elite.py",
+          "needle": "def compute_damage"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "compute_damage"
+        },
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "compute_damage"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "compute_damage"
+        }
+      ]
+    },
+    {
+      "id": "sibling-history",
+      "source": {
+        "file": "scripts/common/training/mixins/combat.py",
+        "needle": "# nav: sibling-history",
+        "symbol": "record_hit"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/history.py",
+          "needle": "def record_hit"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "record_hit"
+        },
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "record_hit"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "record_hit"
+        }
+      ]
+    },
+    {
+      "id": "sibling-reward",
+      "source": {
+        "file": "scripts/common/training/mixins/combat.py",
+        "needle": "# nav: sibling-reward",
+        "symbol": "collect_reward"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/rewards.py",
+          "needle": "def collect_reward"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "collect_reward"
+        },
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "collect_reward"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "collect_reward"
+        }
+      ]
+    },
+    {
+      "id": "sibling-inventory",
+      "source": {
+        "file": "scripts/common/training/mixins/rewards.py",
+        "needle": "# nav: sibling-inventory",
+        "symbol": "add_coins"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/inventory.py",
+          "needle": "def add_coins"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "add_coins"
+        },
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "add_coins"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "add_coins"
+        }
+      ]
+    },
+    {
+      "id": "same-class-heal",
+      "source": {
+        "file": "scripts/common/training/mixins/health.py",
+        "needle": "# nav: same-class-heal",
+        "symbol": "heal"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/health.py",
+          "needle": "def heal"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "heal"
+        },
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "heal"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "heal"
+        }
+      ]
+    },
+    {
+      "id": "sibling-bounds",
+      "source": {
+        "file": "scripts/common/training/mixins/movement.py",
+        "needle": "# nav: sibling-bounds",
+        "symbol": "can_move"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/movement.py",
+          "needle": "def can_move"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "can_move"
+        }
+      ]
+    },
+    {
+      "id": "inherited-brain",
+      "source": {
+        "file": "scripts/common/training/mixins/brain.py",
+        "needle": "# nav: inherited-brain",
+        "symbol": "choose_target"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/brain.py",
+          "needle": "def choose_target"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "choose_target"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "choose_target"
+        }
+      ]
+    },
+    {
+      "id": "sibling-combat",
+      "source": {
+        "file": "scripts/common/training/mixins/brain.py",
+        "needle": "# nav: sibling-combat",
+        "symbol": "attack"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/combat.py",
+          "needle": "def attack"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "attack"
+        },
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "attack"
+        }
+      ]
+    },
+    {
+      "id": "avatar-attack",
+      "source": {
+        "file": "scripts/cell/TrainingAvatar.py",
+        "needle": "# nav: avatar-attack",
+        "symbol": "attack"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/combat.py",
+          "needle": "def attack"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "attack"
+        }
+      ]
+    },
+    {
+      "id": "implementation-before-def",
+      "source": {
+        "file": "scripts/cell/TrainingAvatar.py",
+        "needle": "# nav: implementation-before-def",
+        "symbol": "reqHeal"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/health.py",
+          "needle": "def reqHeal"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "reqHeal"
+        }
+      ]
+    },
+    {
+      "id": "cell-role",
+      "source": {
+        "file": "scripts/cell/TrainingAvatar.py",
+        "needle": "# nav: cell-role",
+        "symbol": "runtime_role"
+      },
+      "targets": [
+        {
+          "file": "scripts/cell/TrainingAvatar.py",
+          "needle": "def runtime_role"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingAvatar",
+          "method": "runtime_role"
+        }
+      ]
+    },
+    {
+      "id": "base-role",
+      "source": {
+        "file": "scripts/base/TrainingAvatar.py",
+        "needle": "# nav: base-role",
+        "symbol": "runtime_role"
+      },
+      "targets": [
+        {
+          "file": "scripts/base/TrainingAvatar.py",
+          "needle": "def runtime_role"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "base",
+          "entity": "TrainingAvatar",
+          "method": "runtime_role"
+        }
+      ]
+    },
+    {
+      "id": "monster-brain",
+      "source": {
+        "file": "scripts/cell/TrainingMonster.py",
+        "needle": "# nav: monster-brain",
+        "symbol": "brain_turn"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/brain.py",
+          "needle": "def brain_turn"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "TrainingMonster",
+          "method": "brain_turn"
+        }
+      ]
+    },
+    {
+      "id": "elite-inherited-target",
+      "source": {
+        "file": "scripts/cell/EliteMonster.py",
+        "needle": "# nav: elite-inherited-target",
+        "symbol": "choose_target"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/brain.py",
+          "needle": "def choose_target"
+        }
+      ],
+      "runtime": [
+        {
+          "role": "cell",
+          "entity": "EliteMonster",
+          "method": "choose_target"
+        }
+      ]
+    },
+    {
+      "id": "reexported-base",
+      "source": {
+        "file": "scripts/cell/TrainingAvatar.py",
+        "needle": "# nav: reexported-base",
+        "symbol": "Critical"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/critical.py",
+          "needle": "class DamageMixin"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "alias-base-collision",
+      "source": {
+        "file": "scripts/common/training/alias_probe.py",
+        "needle": "# nav: alias-base-collision",
+        "symbol": "Critical"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/critical.py",
+          "needle": "class DamageMixin"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "qualified-base",
+      "source": {
+        "file": "scripts/cell/TrainingAvatar.py",
+        "needle": "# nav: qualified-base",
+        "symbol": "HealthMixin"
+      },
+      "targets": [
+        {
+          "file": "scripts/common/training/mixins/health.py",
+          "needle": "class HealthMixin"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "inherited-property",
+      "source": {
+        "file": "scripts/cell/TrainingAvatar.py",
+        "needle": "# nav: inherited-property",
+        "symbol": "hp"
+      },
+      "targets": [
+        {
+          "file": "scripts/entity_defs/interfaces/TRAINING_ACTOR.def",
+          "needle": "<hp>"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "def-to-cell",
+      "source": {
+        "file": "scripts/entity_defs/TrainingAvatar.def",
+        "needle": "<CellMethods>",
+        "symbol": "reqAttack"
+      },
+      "targets": [
+        {
+          "file": "scripts/cell/TrainingAvatar.py",
+          "needle": "def reqAttack"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "def-to-base",
+      "source": {
+        "file": "scripts/entity_defs/TrainingAvatar.def",
+        "needle": "<BaseMethods>",
+        "symbol": "reqEnterArena"
+      },
+      "targets": [
+        {
+          "file": "scripts/base/TrainingAvatar.py",
+          "needle": "def reqEnterArena"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "def-to-client",
+      "source": {
+        "file": "scripts/entity_defs/TrainingAvatar.def",
+        "needle": "<ClientMethods>",
+        "symbol": "onBattleResult"
+      },
+      "targets": [
+        {
+          "file": "scripts/client/TrainingAvatar.py",
+          "needle": "def onBattleResult"
+        }
+      ],
+      "runtime": []
+    },
+    {
+      "id": "unknown-receiver",
+      "source": {
+        "file": "scripts/common/training/probes.py",
+        "needle": "# nav: unknown-receiver",
+        "symbol": "phantom_hit"
+      },
+      "targets": [],
+      "runtime": []
+    },
+    {
+      "id": "closure-is-not-method",
+      "source": {
+        "file": "scripts/common/training/probes.py",
+        "needle": "# nav: closure-is-not-method",
+        "symbol": "local_only"
+      },
+      "targets": [],
+      "runtime": []
+    },
+    {
+      "id": "ignore-comment",
+      "source": {
+        "file": "scripts/common/training/probes.py",
+        "needle": "# nav: ignore-comment",
+        "symbol": "phantom_hit"
+      },
+      "targets": [],
+      "runtime": []
+    },
+    {
+      "id": "ignore-string",
+      "source": {
+        "file": "scripts/common/training/probes.py",
+        "needle": "# nav: ignore-string",
+        "symbol": "phantom_hit"
+      },
+      "targets": [],
+      "runtime": []
+    }
+  ]
+}

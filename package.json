@@ -1017,7 +1017,7 @@
         "kbengine.python.enableMroJump": {
           "type": "boolean",
           "default": true,
-          "description": "Python 跳转层2（跨文件 C3-MRO + 组合根解析 mixin/基类方法）开关，默认开；跳转行为异常时可关闭以隔离该层——关闭后层2 记 skip、不做全仓扫描，跳转回落层1（.def 派生索引）与层3（当前文件类作用域）"
+          "description": "Python 跨文件 C3-MRO 与 mixin 组合根导航开关，默认开；方法使用处优先寻找 Python 实现，找不到再回退 .def 声明；关闭后不做全仓扫描，保留当前文件继承解析和 .def 导航"
         },
         "kbengine.hotReload.enabled": {
           "type": "boolean",
@@ -1068,6 +1068,10 @@
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:electron": "pnpm run compile && node out/test/electron/runTest.js",
+    "demo:play": "python3 tests/fixtures/kbengine-demo-assets/play_demo.py",
+    "demo:verify": "python3 tests/fixtures/kbengine-demo-assets/play_demo.py --verify",
+    "test:demo": "pnpm demo:verify && vitest run tests/kbengineDemoNavigation.test.ts",
+    "test:demo:editor": "pnpm run compile && tsc -p tsconfig.mocha.json && node out/test/electron/runTest.js --demo",
     "package": "pnpm exec vsce package --no-dependencies",
     "publish": "pnpm exec vsce publish --no-dependencies"
   },
