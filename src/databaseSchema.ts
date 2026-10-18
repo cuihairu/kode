@@ -2003,3 +2003,30 @@ export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, T
 export function findTypeStorageUsages(workspaceRoot: string, typeName: string): TypeStorageUsage[] {
   return buildTypeStorageUsageIndex(workspaceRoot).get(typeName) || [];
 }
+
+/**
+ * Index persisted schema columns by their source line in a file.
+ * This exposes fields contributed by FIXED_DICT keys and ARRAY element aliases
+ * without maintaining a second type-to-column expansion algorithm.
+ */
+export function indexTypeStorageUsagesBySourceLine(
+  workspaceRoot: string,
+  sourceFile: string
+): Map<number, TypeStorageUsage[]> {
+  const sourceKey = normalizePath(path.resolve(sourceFile));
+  const byLine = new Map<number, TypeStorageUsage[]>();
+  const seen = new Set<string>();
+  for (const typeUsages of buildTypeStorageUsageIndex(workspaceRoot).values()) {
+    for (const usage of typeUsages) {
+      const key = `${normalizePath(path.resolve(usage.defFile))}:${usage.line}:${usage.entity}:${usage.table}:${usage.column}`;
+      if (normalizePath(path.resolve(usage.defFile)) !== sourceKey || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const lineUsages = byLine.get(usage.line) || [];
+      lineUsages.push(usage);
+      byLine.set(usage.line, lineUsages);
+    }
+  }
+  return byLine;
+}

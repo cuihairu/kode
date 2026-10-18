@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, rmSync } from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { QuickActionManager } from '../src/quickActions';
@@ -55,6 +58,7 @@ const makeContext = (): vscode.ExtensionContext =>
   }) as unknown as vscode.ExtensionContext;
 
 const scriptRuns: Array<{ script: string; cwd?: string; background: boolean }> = [];
+const scriptEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
 const httpRuns: Array<{ url: string; method: string; body?: string }> = [];
 const commandRuns: Array<{ command: string; args: unknown[] }> = [];
 
@@ -67,6 +71,7 @@ let commandError: Error | null = null;
 const makeDeps = (): QuickActionManagerDeps => ({
   runScript: async options => {
     scriptRuns.push(options);
+    scriptEnvs.push(options.env);
     if (scriptError) {
       throw scriptError;
     }
@@ -132,6 +137,7 @@ beforeEach(() => {
   confirmAnswers.length = 0;
   memento.clear();
   scriptRuns.length = 0;
+  scriptEnvs.length = 0;
   httpRuns.length = 0;
   commandRuns.length = 0;
   scriptResult = { code: 0, stdout: 'server stopped', stderr: '' };
@@ -188,7 +194,7 @@ describe('QuickActionManager.show', () => {
       })
     ]);
     expect(scriptRuns).toEqual([
-      { script: '/ws/start_server.bat', background: false, cwd: undefined }
+      { script: '/ws/start_server.bat', background: false, cwd: '/ws' }
     ]);
     manager.dispose();
   });
@@ -971,6 +977,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
         name: 'build',
         type: 'script',
         script: '${workspaceFolder}/build.ps1',
+        cwd: '${workspaceFolder}',
         background: false,
         confirm: true,
         source: 'scan'
@@ -1002,6 +1009,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
         name: 'start_server',
         type: 'script',
         script: '${workspaceFolder}/start_server.bat',
+        cwd: '${workspaceFolder}',
         background: true,
         confirm: true,
         source: 'scan',
@@ -1011,6 +1019,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
         name: 'convert',
         type: 'script',
         script: '${workspaceFolder}/convert.bat',
+        cwd: '${workspaceFolder}',
         background: false,
         confirm: true,
         source: 'scan',
@@ -1037,6 +1046,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
         name: 'BOOT',
         type: 'script',
         script: '${workspaceFolder}/BOOT.bat',
+        cwd: '${workspaceFolder}',
         background: true,
         confirm: true,
         source: 'scan',
@@ -1044,6 +1054,56 @@ describe('QuickActionManager.offerScanOnActivate', () => {
       }
     ]);
     manager.dispose();
+  });
+});
+
+describe('QuickActionManager.scanScriptsAndRefresh', () => {
+  it('scans the effective config root and assetsRoot, preserves manual actions, and writes to that config root', async () => {
+    memoryFileSystem.set('/repo/server/.kbengine/debug.json', JSON.stringify({
+      version: 1,
+      debug: { defaultTelnetHost: 'localhost' },
+      quickActions: [{ name: 'manual', type: 'command', command: 'kbengine.refreshExplorer' }]
+    }));
+    memoryFileSystem.setDirectory('/repo/server', [['local.bat', 1]]);
+    memoryFileSystem.setDirectory('/outside/assets', [['export_tables.ps1', 1]]);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    manager.setConfigurationRoots('/repo/server', ['/outside/assets']);
+    pickAnswers.push([{ label: 'export_tables.ps1', value: { path: '/outside/assets/export_tables.ps1', category: 'export' } }]);
+
+    await manager.scanScriptsAndRefresh();
+
+    const written = JSON.parse(Buffer.from(
+      memoryFileSystem.files.get('/repo/server/.kbengine/debug.json') ?? ''
+    ).toString('utf8'));
+    expect(written.debug).toEqual({ defaultTelnetHost: 'localhost' });
+    expect(written.quickActions.map((action: { name: string }) => action.name)).toEqual(['manual', 'export_tables']);
+    expect(written.quickActions[1]).toMatchObject({
+      script: '${workspaceFolder}/../../outside/assets/export_tables.ps1',
+      cwd: '${workspaceFolder}/../../outside/assets'
+    });
+    manager.dispose();
+  });
+});
+
+describe('QuickActionManager venv', () => {
+  it('adds the selected virtual environment to the child process environment', async () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kode-venv-'));
+    const venvPath = path.join(tempRoot, '.venv');
+    mkdirSync(path.join(venvPath, 'bin'), { recursive: true });
+    try {
+      const manager = new QuickActionManager(makeContext(), makeDeps());
+      const run = (manager as unknown as { run: (action: unknown) => Promise<boolean> }).run.bind(manager);
+      const ok = await run({
+        name: 'task', type: 'script', script: '${workspaceFolder}/task.bat', cwd: '${workspaceFolder}',
+        background: false, confirm: false, source: 'manual', venv: { enabled: true, path: venvPath }
+      });
+      expect(ok).toBe(true);
+      expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
+      expect(scriptEnvs[0]?.PATH?.split(path.delimiter)[0]).toBe(path.join(venvPath, 'bin'));
+      manager.dispose();
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
 

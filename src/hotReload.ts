@@ -106,6 +106,8 @@ const hotReloadSectionReader = (): ConfigReader => {
 export interface SetupHotReloadOptions {
   /** 注入定时器(测试用);缺省走真 setTimeout */
   readonly timers?: HotReloadTimerDeps;
+  /** 动作自身未收口的同步/异步异常报告口;默认提示 VS Code 用户 */
+  readonly onActionError?: (error: unknown) => void;
 }
 
 /**
@@ -115,20 +117,37 @@ export interface SetupHotReloadOptions {
  */
 export function setupHotReload(
   context: vscode.ExtensionContext,
-  runAction: (actionName: string) => void | Promise<void>,
+  runAction: (actionName: string) => void | Promise<unknown>,
   options: SetupHotReloadOptions = {}
 ): void {
   const timers = options.timers ?? realHotReloadTimerDeps;
+  const reportActionError = (error: unknown): void => {
+    if (options.onActionError) {
+      try {
+        options.onActionError(error);
+      } catch {
+        // 异常报告器也位于 watcher 事件边界内,不能制造新的未处理异常。
+      }
+      return;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      void Promise.resolve(vscode.window.showErrorMessage(`自动热重载动作失败: ${message}`))
+        .catch(() => undefined);
+    } catch {
+      // VS Code 关闭期间提示 API 可能不可用,仍保持 watcher 回调安全。
+    }
+  };
   const trigger = new HotReloadTrigger(() => {
     const settings = readHotReloadSettings(hotReloadSectionReader());
     if (settings.actionName.length === 0) {
       return;
     }
-    // 无人值守通道:同步抛错不外抛(事件回调不能炸)
+    // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
     try {
-      void runAction(settings.actionName);
-    } catch {
-      // 吞掉
+      void Promise.resolve(runAction(settings.actionName)).catch(reportActionError);
+    } catch (error) {
+      reportActionError(error);
     }
   }, timers);
 

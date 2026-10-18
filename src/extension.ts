@@ -1,4 +1,4 @@
-import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache } from './scanRoots';
+import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
 import { setJumpLogEnabled } from './navigationLog';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
@@ -76,6 +76,7 @@ import {
 } from './databaseSchema';
 import {
   checkDatabaseDrift,
+  checkDatabaseDriftForSnapshots,
   createMysqlDriftExecutor,
   DATABASE_DRIFT_CHANNEL_NAME,
   publishDriftReport
@@ -87,7 +88,7 @@ import {
   KBENGINE_DATABASE_SIMULATION_SCHEME,
   KBEngineDatabaseSimulationProvider
 } from './databaseSimulator';
-import { findEntityDefinitionFile, getDefinitionWorkspaceLayout } from './definitionWorkspace';
+import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities } from './definitionWorkspace';
 import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
 import {
@@ -582,6 +583,34 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(checkDatabaseDriftCommand);
 
+  const checkAllDatabaseDriftCommand = vscode.commands.registerCommand(
+    'kbengine.database.checkAllDrift',
+    async () => {
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      const snapshots = folders.flatMap(folder =>
+        getRegisteredEntities(folder.uri.fsPath)
+          .map(entity => getDatabaseSchemaSnapshot(entity.name, folder.uri.fsPath))
+          .filter((snapshot): snapshot is NonNullable<typeof snapshot> => snapshot !== null)
+      );
+      if (snapshots.length === 0) {
+        vscode.window.showInformationMessage('数据库漂移未校验:工作区没有可检查的实体定义');
+        return;
+      }
+      const database = resolveDatabaseInterfaceConfig();
+      if (!database) {
+        vscode.window.showInformationMessage(
+          '数据库漂移未校验:读不到引擎数据库配置(检查 kbengine.binPath / assetsRoot)'
+        );
+        return;
+      }
+      const report = await checkDatabaseDriftForSnapshots(
+        snapshots, database, resolveSchemaTablePrefix(), createMysqlDriftExecutor
+      );
+      publishDriftReport(databaseDriftChannel, vscode.window, report);
+    }
+  );
+  context.subscriptions.push(checkAllDatabaseDriftCommand);
+
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
 
@@ -1013,6 +1042,11 @@ export function activate(context: vscode.ExtensionContext) {
     quickActionManager.show()
   );
   context.subscriptions.push(showQuickActionsCommand);
+  const rescanQuickActionScriptsCommand = vscode.commands.registerCommand(
+    'kbengine.quickActions.scanScripts',
+    () => quickActionManager.scanScriptsAndRefresh()
+  );
+  context.subscriptions.push(rescanQuickActionScriptsCommand);
   const runDefaultQuickActionCommand = vscode.commands.registerCommand(
     'kbengine.quickActions.runDefault',
     () => quickActionManager.runDefault()
@@ -1022,7 +1056,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 自动热重载(盘点 G5):文件保存/监视 → 按名触发 quick action。门控默认关
   // 防误触;无人值守通道跳过确认框,找不到名字只落 OUTPUT 流水不弹窗。
   setupHotReload(context, actionName =>
-    void quickActionManager.runByName(actionName, { suppressConfirm: true })
+    quickActionManager.runByName(actionName, { suppressConfirm: true })
   );
 
   // Python 生态接线(盘点 G1/G2):先导出 .kbengine/stubs/KBEngine.pyi
@@ -1063,14 +1097,23 @@ export function activate(context: vscode.ExtensionContext) {
   // 时,首装扫描不再重复问用户。生效工作目录与来源落 OUTPUT 通道。
   const debugConfigChannel = vscode.window.createOutputChannel(DEBUG_CONFIG_CHANNEL_NAME);
   context.subscriptions.push(debugConfigChannel);
-  ensureDebugConfig(
+  const bootstrap = ensureDebugConfig(
     { ...fileSystemBootstrapDeps, log: (line: string): void => debugConfigChannel.appendLine(line) },
     {
       workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
         name: folder.name,
         fsPath: folder.uri.fsPath
-      }))
+      })),
+      scanRoots: (vscode.workspace.workspaceFolders ?? []).slice(0, 1)
+        .map(folder => resolveAssetsRootForWorkspace(folder.uri.fsPath))
+        .filter((root): root is string => root.length > 0)
     }
+  );
+  const firstWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  const assetsRoot = firstWorkspaceRoot ? resolveAssetsRootForWorkspace(firstWorkspaceRoot) : '';
+  quickActionManager.setConfigurationRoots(
+    bootstrap.workspaceRoot,
+    assetsRoot ? [assetsRoot] : []
   );
   // 首装扫描要读写 workspaceState(取消记忆);宿主没给(嵌入/烟测替身)就不扫
   if (context.workspaceState) {

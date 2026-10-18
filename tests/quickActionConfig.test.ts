@@ -38,6 +38,7 @@ describe('parseQuickActionConfigs', () => {
         name: 'start_server',
         type: 'script',
         script: '${workspaceFolder}/start_server.bat',
+        cwd: '${workspaceFolder}',
         background: false,
         confirm: true,
         source: 'manual'
@@ -210,6 +211,7 @@ describe('buildScannedActions', () => {
         name: 'start_server',
         type: 'script',
         script: '${workspaceFolder}/start_server.bat',
+        cwd: '${workspaceFolder}',
         background: true,
         confirm: true,
         source: 'scan',
@@ -219,6 +221,7 @@ describe('buildScannedActions', () => {
         name: 'stop_server',
         type: 'script',
         script: '${workspaceFolder}/stop_server.bat',
+        cwd: '${workspaceFolder}',
         background: false,
         confirm: true,
         source: 'scan',
@@ -228,6 +231,7 @@ describe('buildScannedActions', () => {
         name: 'EXPORT_TABLES',
         type: 'script',
         script: '${workspaceFolder}/EXPORT_TABLES.bat',
+        cwd: '${workspaceFolder}',
         background: false,
         confirm: true,
         source: 'scan',
@@ -260,14 +264,35 @@ describe('buildScannedActions', () => {
     expect(buildScannedActions([], '/ws')).toEqual([]);
   });
 
-  it('falls back to the file name for a candidate outside the workspace root', () => {
+  it('keeps the relative path and script directory for candidates under assetsRoot', () => {
     const actions = buildScannedActions(
       [{ path: '/other/scripts/boot_cell.bat', category: 'server' }],
       '/ws'
     );
 
-    expect(actions[0].script).toBe('${workspaceFolder}/boot_cell.bat');
+    expect(actions[0].script).toBe('${workspaceFolder}/../other/scripts/boot_cell.bat');
+    expect(actions[0].cwd).toBe('${workspaceFolder}/../other/scripts');
     expect(actions[0].name).toBe('boot_cell');
     expect(actions[0].background).toBe(true);
+  });
+
+  it('sets cwd to the directory containing a scanned nested script', () => {
+    const action = buildScannedActions(
+      [{ path: '/assets/scripts/restart.bat', category: 'server' }], '/workspace'
+    )[0];
+    expect(action.script).toBe('${workspaceFolder}/../assets/scripts/restart.bat');
+    expect(action.cwd).toBe('${workspaceFolder}/../assets/scripts');
+  });
+});
+
+describe('parseQuickActionConfigs venv option', () => {
+  it('accepts optional venv settings for script actions and rejects malformed settings', () => {
+    expect(parseQuickActionConfigs([
+      { name: 'task', type: 'script', script: '${workspaceFolder}/task.bat', venv: { enabled: true, path: '${workspaceFolder}/.venv' } },
+      { name: 'bad', type: 'script', script: 'task.bat', venv: { enabled: 'yes' } }
+    ])).toMatchObject({
+      actions: [{ venv: { enabled: true, path: '${workspaceFolder}/.venv' } }],
+      invalidCount: 1
+    });
   });
 });

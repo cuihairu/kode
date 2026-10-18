@@ -29,6 +29,9 @@ export interface QueryColumnInfo {
   name: string;
   /** MySQL 回报的列型(如 int unsigned / varchar(64) / bigint(20)) */
   type: string;
+  nullable?: boolean;
+  defaultValue?: unknown;
+  key?: string;
 }
 
 export interface QueryResult {
@@ -207,15 +210,17 @@ export const createMysqlDriftExecutor: DriftConnectionFactory = createMysqlDrift
   () => import('mysql2/promise')
 );
 
-/** 列型归一:去显示宽度、去大小写,留 base + unsigned 标记 */
+/** 列型归一:整数显示宽度不影响存储;varchar/decimal 等参数属于真实结构 */
 function normalizeColumnType(type: string): string {
   const lowered = type.toLowerCase().trim();
-  const unsigned = lowered.includes('unsigned');
-  const base = lowered.replace(/\(.*?\)/g, '').replace(/unsigned/g, '').trim();
-  return unsigned ? `${base} unsigned` : base;
+  const match = /^([a-z]+)(\([^)]*\))?(?:\s+(unsigned))?/.exec(lowered);
+  if (!match) return lowered.replace(/\s+/g, ' ');
+  const [, base, parameters = '', unsigned] = match;
+  const integerTypes = new Set(['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint']);
+  return `${base}${integerTypes.has(base) ? '' : parameters}${unsigned ? ' unsigned' : ''}`;
 }
 
-/** 期望型(def 推导的 typeLabel)与真实型是否相容(忽略显示宽度差异) */
+/** 期望型(def 推导的 typeLabel)与真实型是否相容(仅忽略整数显示宽度差异) */
 export function isColumnTypeCompatible(expectedTypeLabel: string, actualType: string): boolean {
   return normalizeColumnType(expectedTypeLabel) === normalizeColumnType(actualType);
 }
@@ -225,7 +230,10 @@ export type DriftFindingKind =
   | 'missing-column'
   | 'extra-column'
   | 'type-mismatch'
-  | 'residual-table';
+  | 'residual-table'
+  | 'nullability-mismatch'
+  | 'default-mismatch'
+  | 'index-mismatch';
 
 export interface DriftFinding {
   kind: DriftFindingKind;
@@ -278,7 +286,19 @@ async function readTableColumns(
       continue;
     }
     const type = row[typeKey];
-    columns.push({ name, type: typeof type === 'string' ? type : '' });
+    const get = (key: string): unknown => {
+      const actualKey = names.find(candidate => candidate.toLowerCase() === key.toLowerCase());
+      return actualKey ? row[actualKey] : undefined;
+    };
+    const nullValue = get('Null');
+    const keyValue = get('Key');
+    columns.push({
+      name,
+      type: typeof type === 'string' ? type : '',
+      nullable: typeof nullValue === 'string' ? nullValue.toUpperCase() === 'YES' : undefined,
+      defaultValue: get('Default'),
+      key: typeof keyValue === 'string' ? keyValue.toUpperCase() : undefined
+    });
   }
   return columns;
 }
@@ -310,6 +330,26 @@ export function compareTableColumns(
         message: `型别不符 ${field.name}:def 推导 ${field.typeLabel},真实 ${actual.type}`
       });
     }
+    const expected = expectedColumnMetadata(field);
+    if (actual.nullable !== undefined && actual.nullable !== expected.nullable) {
+      findings.push({
+        kind: 'nullability-mismatch', tableName: table.name, columnName: field.name,
+        message: `可空性不符 ${field.name}:def 推导 ${expected.nullable ? 'NULL' : 'NOT NULL'},真实 ${actual.nullable ? 'NULL' : 'NOT NULL'}`
+      });
+    }
+    if (actual.defaultValue !== undefined && !sameDefault(actual.defaultValue, expected.defaultValue)) {
+      findings.push({
+        kind: 'default-mismatch', tableName: table.name, columnName: field.name,
+        message: `默认值不符 ${field.name}:def 推导 ${formatDefault(expected.defaultValue)},真实 ${formatDefault(actual.defaultValue)}`
+      });
+    }
+    const expectedKey = expectedColumnKey(field);
+    if (actual.key !== undefined && actual.key !== expectedKey) {
+      findings.push({
+        kind: 'index-mismatch', tableName: table.name, columnName: field.name,
+        message: `索引不符 ${field.name}:def 推导 ${expectedKey || '无索引'},真实 ${actual.key || '无索引'}`
+      });
+    }
   }
 
   const expectedNames = new Set(table.fields.map((field: TableFieldDescriptor) => field.name));
@@ -327,6 +367,30 @@ export function compareTableColumns(
   return findings;
 }
 
+interface ExpectedColumnMetadata { nullable: boolean; defaultValue: unknown }
+function expectedColumnMetadata(field: TableFieldDescriptor): ExpectedColumnMetadata {
+  if (field.name === 'id' || field.name === 'parentID') return { nullable: false, defaultValue: null };
+  if (field.name === 'sm_autoLoad') return { nullable: false, defaultValue: '0' };
+  const label = field.typeLabel.toLowerCase();
+  if (label.includes('blob')) return { nullable: true, defaultValue: null };
+  if (label.startsWith('vector')) return { nullable: false, defaultValue: '0' };
+  if (label === 'varchar' || label === 'char') return { nullable: false, defaultValue: field.defaultValue ?? '' };
+  const raw = field.defaultValue?.trim();
+  const parsed = raw === undefined || raw === '' ? 0 : Number(raw);
+  return { nullable: false, defaultValue: String(Number.isFinite(parsed) ? parsed : 0) };
+}
+function expectedColumnKey(field: TableFieldDescriptor): string {
+  if (field.name === 'id') return 'PRI';
+  if (field.indexType === 'UNIQUE') return 'UNI';
+  if (field.indexType === 'INDEX' || field.name === 'sm_autoLoad' || field.name === 'parentID') return 'MUL';
+  return '';
+}
+function formatDefault(value: unknown): string { return value === null ? 'NULL' : String(value); }
+function sameDefault(actual: unknown, expected: unknown): boolean {
+  if (actual === null || expected === null) return actual === expected;
+  return String(actual) === String(expected);
+}
+
 /**
  * 全量对比:逐表比对 + 残留表扫描。
  * - 虚拟表在库里没有 = 该实体尚未走过建表流程;
@@ -337,11 +401,25 @@ export async function buildDriftReport(
   executor: DriftQueryExecutor,
   tablePrefix: string
 ): Promise<DriftFinding[]> {
+  return buildDriftReportForSnapshots([snapshot], executor, tablePrefix, `${tablePrefix}${snapshot.entityName}`);
+}
+
+/** 单次读取数据库表清单，批量检查多个实体；残留表按所有实体的表并集判断。 */
+export async function buildDriftReportForSnapshots(
+  snapshots: readonly DatabaseSchemaSnapshot[],
+  executor: DriftQueryExecutor,
+  tablePrefix: string,
+  residualTablePrefix = tablePrefix
+): Promise<DriftFinding[]> {
   const findings: DriftFinding[] = [];
   const actualTables = await readTableNames(executor);
   const actualSet = new Set(actualTables);
+  const expectedTables = new Map<string, TableSchemaDescriptor>();
 
-  for (const table of snapshot.tables) {
+  for (const snapshot of snapshots) for (const table of snapshot.tables) {
+    expectedTables.set(table.name, table);
+  }
+  for (const table of expectedTables.values()) {
     if (!actualSet.has(table.name)) {
       findings.push({
         kind: 'missing-table',
@@ -353,9 +431,8 @@ export async function buildDriftReport(
     findings.push(...compareTableColumns(table, await readTableColumns(executor, table.name)));
   }
 
-  const expected = new Set(snapshot.tables.map(table => table.name));
   for (const tableName of actualTables) {
-    if (tableName.startsWith(tablePrefix) && !expected.has(tableName)) {
+    if (tableName.startsWith(residualTablePrefix) && !expectedTables.has(tableName)) {
       findings.push({
         kind: 'residual-table',
         tableName,
@@ -372,7 +449,10 @@ const FINDING_TITLES: Record<DriftFindingKind, string> = {
   'missing-column': '缺列',
   'extra-column': '多列',
   'type-mismatch': '型别不符',
-  'residual-table': '残留表'
+  'residual-table': '残留表',
+  'nullability-mismatch': '可空性不符',
+  'default-mismatch': '默认值不符',
+  'index-mismatch': '索引不符'
 };
 
 /** 报告文本(整段可复制回传;OUTPUT 通道无着色 API,靠前缀标记) */
@@ -470,6 +550,35 @@ export async function checkDatabaseDrift(
 
   try {
     return { ...base, findings: await buildDriftReport(snapshot, executor, tablePrefix) };
+  } catch (error) {
+    return { ...base, checked: false, reason: `读取表结构失败(${describeError(error)})` };
+  } finally {
+    await executor.close();
+  }
+}
+
+export async function checkDatabaseDriftForSnapshots(
+  snapshots: readonly DatabaseSchemaSnapshot[],
+  database: DatabaseInterfaceConfig,
+  tablePrefix: string,
+  createExecutor: DriftConnectionFactory
+): Promise<DriftReport> {
+  const entities = snapshots.map(snapshot => snapshot.entityName);
+  const base: DriftReport = {
+    entityName: `全部实体 (${entities.length})`, databaseName: database.databaseName,
+    checked: true, findings: []
+  };
+  if (snapshots.length === 0) {
+    return { ...base, checked: false, reason: '工作区没有可检查的实体定义' };
+  }
+  let executor: DriftQueryExecutor;
+  try {
+    executor = await createExecutor(database);
+  } catch (error) {
+    return { ...base, checked: false, reason: `连不上数据库(${describeError(error)})` };
+  }
+  try {
+    return { ...base, findings: await buildDriftReportForSnapshots(snapshots, executor, tablePrefix) };
   } catch (error) {
     return { ...base, checked: false, reason: `读取表结构失败(${describeError(error)})` };
   } finally {

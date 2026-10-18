@@ -3,17 +3,16 @@
  * docs/reference-feature-gap.md):VS Code 的 JSON 扩展按
  * `contributes.jsonValidation` 校验该文件,配置写错在编辑器里直接标红。
  *
- * VS Code 的清单贡献只接受清单内联对象或可取回的 URL,无法引用本仓
- * 运行时构建结果,因此 schema 存在两处:本模块的构建产物与
- * `package.json` 的内联对象。tests/debugJsonSchema.test.ts 锁定两者逐字节
- * 一致,且枚举一律取自 quickActionConfig.ts 的解析口径(HTTP_METHODS、
+ * VS Code 的 jsonValidation 通过 url 加载扩展内的 JSON 文件,因此 schema
+ * 存在两处:本模块的构建产物与 schemas/kbengine-debug.schema.json。测试锁定
+ * 两者结构一致,枚举一律取自 quickActionConfig.ts 的解析口径(HTTP_METHODS、
  * QUICK_ACTION_TYPES),避免 schema 与解析器各说各话。
  */
 
 import { HTTP_METHODS, QUICK_ACTION_TYPES } from './quickActionConfig';
 
 /** VS Code jsonValidation 的文件匹配(覆盖工作区根与各级子文件夹) */
-export const KBENGINE_DEBUG_JSON_FILE_MATCHES = ['**/.kbengine/debug.json'];
+export const KBENGINE_DEBUG_JSON_FILE_MATCH = '**/.kbengine/debug.json';
 
 interface JsonSchemaObject {
   $schema?: string;
@@ -83,6 +82,15 @@ const COMMAND_BRANCH = actionBranch(QUICK_ACTION_TYPES[0], {
 const SCRIPT_BRANCH = actionBranch(QUICK_ACTION_TYPES[1], {
   script: text('脚本路径,支持 ${workspaceFolder} 变量'),
   cwd: text('脚本工作目录;可省'),
+  venv: {
+    type: 'object',
+    description: '可选 Python 虚拟环境;启用后将虚拟环境的 bin/Scripts 加入 PATH',
+    required: ['enabled'],
+    properties: {
+      enabled: { type: 'boolean', description: '是否启用 venv;缺省为不启用' },
+      path: text('虚拟环境目录;可用 ${workspaceFolder} 变量,省略时自动查找 .venv/venv')
+    }
+  },
   background: {
     type: 'boolean',
     description: '后台执行不等退出码(启服脚本常用);缺省 false'

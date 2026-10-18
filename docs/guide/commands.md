@@ -67,6 +67,14 @@
   - 命令面板
 - 详见：[数据库漂移校验](database-drift-check.md)
 
+### `kbengine.database.checkAllDrift`
+
+- 标题：`Check All Database Drift`
+- 作用：检查所有工作区实体的真实 MySQL 表结构，一次连接并将全部实体表合并判断残留表
+- 前置条件：同 `kbengine.database.checkDrift`
+- 入口：命令面板
+- 详见：[数据库漂移校验](database-drift-check.md)
+
 ## 服务器控制
 
 ### `kbengine.server.start`
@@ -324,12 +332,13 @@
   - `command`：VS Code 命令 id，`args` 原样透传（字符串项支持变量），复用被调命令自身的报错
   - `script`：执行配置里显式声明的脚本；`background: true` 表示起服类不等退出码（进程活着即报「已启动」）
   - `http`：请求配置里写死的 URL，不接受运行时拼接
-- 变量（执行时替换，作用于配置字面串）：`${workspaceFolder}`（首个工作区根）、`${workspaceFolder:名字}`（按名取根）、`${env:变量名}`。未知变量直接报错中止并指名变量，不做静默空串替换
+- 变量（执行时替换，作用于配置字面串）：`${workspaceFolder}`（生效快速动作配置根，通常是首个工作区根）、`${workspaceFolder:名字}`（按名取根）、`${env:变量名}`。未知变量直接报错中止并指名变量，不做静默空串替换
 - 行为：
   - 动作缺省弹 modal 确认框（`confirm: false` 跳过）；执行流水进 OUTPUT 面板「KBEngine 快速执行动作」，脚本的 stdout/stderr 原样进通道
   - 失败一次性弹窗（动作名 + 退出码 / 状态码 / 原因），脚本 stdout/stderr 同时留在通道
   - 配置条目非法（如白名单外的 `type`、缺必填字段）逐条剔除并计数提示，不整表失败
-  - 首装自动扫一层工作区根的 `.bat` 与 `.ps1`，全部列入多选提示登记（「启停服务器 / 导配置表」词表只定分类）；取消后本工作区不再自动弹
+  - 缺配置时自动扫配置根与 `assetsRoot` 顶层 `.bat` / `.ps1` 并写进新配置；扫描生成的动作以脚本所在目录作为 `cwd`。已有空配置时启动期提供登记选择
+  - `.ps1` 使用 PowerShell 执行；script 可配置 `venv: { enabled: true, path?: "${workspaceFolder}/.venv" }`，启用后把虚拟环境加入子进程 PATH
   - 清单按后端分组：同类型连续段共用一条组名分隔线，不重排配置顺序
 
 ### `kbengine.quickActions.runDefault`
@@ -341,6 +350,13 @@
   - 记忆键 `kbengine.quickActions.lastRun` 存在本工作区的 workspaceState 里；清单中选过的动作立即成为 ▶ 的默认目标，与该次执行成败无关
   - 记忆的动作被删掉/改坏时回落到清单第一条，不报错
   - 执行链与 `kbengine.quickActions.show` 完全一致（变量替换 → 确认 → 分发 → 流水）
+
+### `kbengine.quickActions.scanScripts`
+
+- 标题：`Rescan Scripts for Quick Actions`
+- 作用：重新扫描生效工作目录和 `assetsRoot` 顶层的 `.bat` / `.ps1`，按选择结果刷新扫描生成的动作，保留手工动作与其他调试配置
+- 脚本运行目录：扫描生成的动作以脚本所在目录为 `cwd`
+- 入口：命令面板
 
 ### `kbengine.python.syncExtraPaths`
 

@@ -43,6 +43,7 @@
     "onCommand:kbengine.database.simulate",
     "onCommand:kbengine.database.exportSimulation",
     "onCommand:kbengine.database.checkDrift",
+    "onCommand:kbengine.database.checkAllDrift",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -74,6 +75,7 @@
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
     "onCommand:kbengine.quickActions.show",
+    "onCommand:kbengine.quickActions.scanScripts",
     "onCommand:kbengine.quickActions.runDefault",
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.python.exportStubs",
@@ -83,266 +85,8 @@
   "contributes": {
     "jsonValidation": [
       {
-        "fileMatches": [
-          "**/.kbengine/debug.json"
-        ],
-        "language": "json",
-        "schema": {
-            "$schema": "http://json-schema.org/draft-07/schema#",
-            "type": "object",
-            "description": "kode 的 KBEngine 调试与快速执行动作配置(.kbengine/debug.json)",
-            "required": [
-                  "version",
-                  "debug"
-            ],
-            "properties": {
-                  "version": {
-                        "type": "string",
-                        "description": "配置版本(模板固定写 \"1.0\")"
-                  },
-                  "debug": {
-                        "type": "object",
-                        "description": "调试配置段:Start Debugging 提示语与 launch.json 的 pathMappings 来源",
-                        "required": [
-                              "components"
-                        ],
-                        "properties": {
-                              "defaultTelnetHost": {
-                                    "type": "string",
-                                    "description": "默认 telnet 主机"
-                              },
-                              "defaultTelnetPort": {
-                                    "type": "integer",
-                                    "description": "默认 telnet 端口"
-                              },
-                              "components": {
-                                    "type": "object",
-                                    "description": "按元件名(BotServer / LoginApp / BaseApp / CellApp …)的连接与映射",
-                                    "additionalProperties": {
-                                          "type": "object",
-                                          "properties": {
-                                                "telnetHost": {
-                                                      "type": "string",
-                                                      "description": "元件 telnet 主机"
-                                                },
-                                                "telnetPort": {
-                                                      "type": "integer",
-                                                      "description": "元件 telnet 端口"
-                                                },
-                                                "telnetPassword": {
-                                                      "type": "string",
-                                                      "description": "元件 telnet 密码"
-                                                },
-                                                "telnetDefaultLayer": {
-                                                      "type": "string",
-                                                      "description": "默认层(base/cell/login/account)"
-                                                },
-                                                "telnetEnableCommands": {
-                                                      "type": "array",
-                                                      "items": {
-                                                            "type": "string"
-                                                      },
-                                                      "description": "允许执行的 telnet 命令白名单"
-                                                },
-                                                "pathMappings": {
-                                                      "type": "array",
-                                                      "description": "本地/远程路径映射,launch.json 生成用",
-                                                      "items": {
-                                                            "type": "object",
-                                                            "required": [
-                                                                  "localRoot",
-                                                                  "remoteRoot"
-                                                            ],
-                                                            "properties": {
-                                                                  "localRoot": {
-                                                                        "type": "string",
-                                                                        "description": "本地根路径"
-                                                                  },
-                                                                  "remoteRoot": {
-                                                                        "type": "string",
-                                                                        "description": "远程根路径"
-                                                                  }
-                                                            }
-                                                      }
-                                                }
-                                          }
-                                    }
-                              }
-                        }
-                  },
-                  "quickActions": {
-                        "type": "array",
-                        "description": "快速执行动作清单(kbengine.quickActions.show / runDefault 的数据源)",
-                        "items": {
-                              "anyOf": [
-                                    {
-                                          "type": "object",
-                                          "required": [
-                                                "type",
-                                                "command"
-                                          ],
-                                          "properties": {
-                                                "name": {
-                                                      "type": "string",
-                                                      "description": "动作名(必填,展示在动作清单里)"
-                                                },
-                                                "confirm": {
-                                                      "type": "boolean",
-                                                      "description": "执行前是否弹确认;缺省为 true"
-                                                },
-                                                "source": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "manual",
-                                                            "scan"
-                                                      ],
-                                                      "description": "动作来源;缺省 manual,首装扫描写入的为 scan"
-                                                },
-                                                "category": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "server",
-                                                            "export"
-                                                      ],
-                                                      "description": "动作归类(启停/导表);可省"
-                                                },
-                                                "type": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "command"
-                                                      ],
-                                                      "description": "执行后端"
-                                                },
-                                                "command": {
-                                                      "type": "string",
-                                                      "description": "要执行的 VS Code 命令 id"
-                                                },
-                                                "args": {
-                                                      "type": "array",
-                                                      "items": {
-                                                            "type": "string"
-                                                      },
-                                                      "description": "命令参数;可省(省视为空数组)"
-                                                }
-                                          }
-                                    },
-                                    {
-                                          "type": "object",
-                                          "required": [
-                                                "type",
-                                                "script"
-                                          ],
-                                          "properties": {
-                                                "name": {
-                                                      "type": "string",
-                                                      "description": "动作名(必填,展示在动作清单里)"
-                                                },
-                                                "confirm": {
-                                                      "type": "boolean",
-                                                      "description": "执行前是否弹确认;缺省为 true"
-                                                },
-                                                "source": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "manual",
-                                                            "scan"
-                                                      ],
-                                                      "description": "动作来源;缺省 manual,首装扫描写入的为 scan"
-                                                },
-                                                "category": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "server",
-                                                            "export"
-                                                      ],
-                                                      "description": "动作归类(启停/导表);可省"
-                                                },
-                                                "type": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "script"
-                                                      ],
-                                                      "description": "执行后端"
-                                                },
-                                                "script": {
-                                                      "type": "string",
-                                                      "description": "脚本路径,支持 ${workspaceFolder} 变量"
-                                                },
-                                                "cwd": {
-                                                      "type": "string",
-                                                      "description": "脚本工作目录;可省"
-                                                },
-                                                "background": {
-                                                      "type": "boolean",
-                                                      "description": "后台执行不等退出码(启服脚本常用);缺省 false"
-                                                }
-                                          }
-                                    },
-                                    {
-                                          "type": "object",
-                                          "required": [
-                                                "type",
-                                                "url"
-                                          ],
-                                          "properties": {
-                                                "name": {
-                                                      "type": "string",
-                                                      "description": "动作名(必填,展示在动作清单里)"
-                                                },
-                                                "confirm": {
-                                                      "type": "boolean",
-                                                      "description": "执行前是否弹确认;缺省为 true"
-                                                },
-                                                "source": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "manual",
-                                                            "scan"
-                                                      ],
-                                                      "description": "动作来源;缺省 manual,首装扫描写入的为 scan"
-                                                },
-                                                "category": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "server",
-                                                            "export"
-                                                      ],
-                                                      "description": "动作归类(启停/导表);可省"
-                                                },
-                                                "type": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "http"
-                                                      ],
-                                                      "description": "执行后端"
-                                                },
-                                                "url": {
-                                                      "type": "string",
-                                                      "description": "本地热更新接口地址"
-                                                },
-                                                "method": {
-                                                      "type": "string",
-                                                      "enum": [
-                                                            "GET",
-                                                            "POST",
-                                                            "PUT",
-                                                            "PATCH",
-                                                            "HEAD",
-                                                            "OPTIONS"
-                                                      ],
-                                                      "description": "HTTP 方法(执行时统一按大写匹配);缺省 POST"
-                                                },
-                                                "body": {
-                                                      "type": "string",
-                                                      "description": "请求体;可省"
-                                                }
-                                          }
-                                    }
-                              ]
-                        }
-                  }
-            }
-      }
+        "fileMatch": "**/.kbengine/debug.json",
+        "url": "./schemas/kbengine-debug.schema.json"
       }
     ],
     "languages": [
@@ -460,6 +204,11 @@
         "command": "kbengine.database.checkDrift",
         "title": "Check Database Drift",
         "icon": "$(check)"
+      },
+      {
+        "command": "kbengine.database.checkAllDrift",
+        "title": "Check All Database Drift",
+        "icon": "$(database)"
       },
       {
         "command": "kbengine.server.start",
@@ -609,6 +358,11 @@
         "command": "kbengine.quickActions.show",
         "title": "Run Quick Actions",
         "icon": "$(chevron-down)"
+      },
+      {
+        "command": "kbengine.quickActions.scanScripts",
+        "title": "Rescan Scripts for Quick Actions",
+        "icon": "$(sync)"
       },
       {
         "command": "kbengine.quickActions.runDefault",

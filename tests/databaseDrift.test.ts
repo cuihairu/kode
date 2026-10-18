@@ -5,6 +5,7 @@ import {
   assertReadOnlyStatement,
   buildMysqlConnectionOptions,
   buildDriftReport,
+  buildDriftReportForSnapshots,
   checkDatabaseDrift,
   compareTableColumns,
   createMysqlDriftExecutor,
@@ -185,11 +186,13 @@ describe('buildMysqlConnectionOptions', () => {
 });
 
 describe('isColumnTypeCompatible', () => {
-  it('ignores display width differences', () => {
+  it('ignores integer display width differences but preserves meaningful type parameters', () => {
     expect(isColumnTypeCompatible('int unsigned', 'int unsigned')).toBe(true);
     expect(isColumnTypeCompatible('bigint unsigned', 'bigint(20) unsigned')).toBe(true);
     expect(isColumnTypeCompatible('varchar(64)', 'varchar(64)')).toBe(true);
-    expect(isColumnTypeCompatible('VARCHAR(64)', 'varchar(128)')).toBe(true);
+    expect(isColumnTypeCompatible('VARCHAR(64)', 'varchar(64)')).toBe(true);
+    expect(isColumnTypeCompatible('VARCHAR(64)', 'varchar(128)')).toBe(false);
+    expect(isColumnTypeCompatible('decimal(10,2)', 'decimal(12,2)')).toBe(false);
   });
 
   it('catches real type and signedness differences', () => {
@@ -248,6 +251,18 @@ describe('compareTableColumns', () => {
         message: '缺列 sm_hp(def 推导 int unsigned)'
       }
     ]);
+  });
+
+  it('detects nullable, default and index differences from full MySQL metadata', () => {
+    const findings = compareTableColumns(snapshot.tables[0], [
+      { name: 'id', type: 'bigint unsigned', nullable: false, defaultValue: null, key: 'PRI' },
+      { name: 'sm_autoLoad', type: 'tinyint', nullable: false, defaultValue: '0', key: 'MUL' },
+      { name: 'sm_hp', type: 'int unsigned', nullable: true, defaultValue: '9', key: 'UNI' }
+    ]);
+    expect(findings.map(finding => finding.kind)).toEqual([
+      'nullability-mismatch', 'default-mismatch', 'index-mismatch'
+    ]);
+    expect(findings.map(finding => finding.columnName)).toEqual(['sm_hp', 'sm_hp', 'sm_hp']);
   });
 
   it('skips rows whose field name or type is not text', async () => {
@@ -337,6 +352,26 @@ describe('compareTableColumns', () => {
 });
 
 describe('buildDriftReport', () => {
+  it('reads Null, Default, and Key from SHOW FULL COLUMNS rows', async () => {
+    const executor: DriftQueryExecutor = {
+      runQuery: async (sql: string): Promise<QueryResult> => {
+        if (/^SHOW TABLES/i.test(sql)) {
+          return { columns: [{ name: 'Tables_in_game_db', type: '' }], rows: [{ Tables_in_game_db: 'tbl_Hero' }] };
+        }
+        return {
+          columns: ['Field', 'Type', 'Null', 'Key', 'Default'].map(name => ({ name, type: '' })),
+          rows: [
+            { Field: 'id', Type: 'bigint(20) unsigned', Null: 'NO', Key: 'PRI', Default: null },
+            { Field: 'sm_autoLoad', Type: 'tinyint', Null: 'NO', Key: 'MUL', Default: '0' },
+            { Field: 'sm_hp', Type: 'int unsigned', Null: 'NO', Key: '', Default: '0' }
+          ]
+        };
+      },
+      close: async (): Promise<void> => undefined
+    };
+    expect(await buildDriftReport({ ...snapshot, tables: [snapshot.tables[0]] }, executor, 'tbl_')).toEqual([]);
+  });
+
   it('finds missing tables, residual tables and column drift in one pass', async () => {
     const executor = makeExecutor([
       {
@@ -348,6 +383,7 @@ describe('buildDriftReport', () => {
         ]
       },
       { name: 'tbl_Hero_old', columns: [{ name: 'id', type: 'bigint unsigned' }] },
+      { name: 'tbl_NPC', columns: [{ name: 'id', type: 'bigint unsigned' }] },
       { name: 'unrelated_log', columns: [{ name: 'id', type: 'bigint unsigned' }] }
     ]);
 
@@ -416,6 +452,24 @@ describe('buildDriftReport', () => {
         message: '表中不存在 tbl_Hero_bag(该实体或属性尚未建表)'
       }
     ]);
+  });
+});
+
+describe('buildDriftReportForSnapshots', () => {
+  it('checks all entity tables in one pass and treats their union as expected', async () => {
+    const second = { ...snapshot, entityName: 'NPC', tables: [{
+      ...snapshot.tables[0], name: 'tbl_NPC', title: 'NPC'
+    }] };
+    const executor = makeExecutor([
+      { name: 'tbl_Hero', columns: [] },
+      { name: 'tbl_NPC', columns: [] },
+      { name: 'tbl_Old', columns: [] }
+    ]);
+    const findings = await buildDriftReportForSnapshots([snapshot, second], executor, 'tbl_');
+    expect(executor.sqls[0]).toBe('SHOW TABLES');
+    expect(findings.some(finding => finding.kind === 'residual-table' && finding.tableName === 'tbl_Old')).toBe(true);
+    expect(findings.some(finding => finding.kind === 'residual-table' && finding.tableName === 'tbl_NPC')).toBe(false);
+    expect(findings.some(finding => finding.kind === 'missing-table' && finding.tableName === 'tbl_NPC')).toBe(false);
   });
 });
 

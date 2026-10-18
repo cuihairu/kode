@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'fs';
 import { describe, expect, it } from 'vitest';
-import { scanBatchScripts } from '../src/quickActionScanner';
+import { scanBatchScripts, scanBatchScriptsInRoots } from '../src/quickActionScanner';
 import type { DirectoryEntry } from '../src/quickActionScanner';
 
 // 首装扫描纯层(设计 1.4;2026-10-16 用户令更新):一层 .bat/.ps1 全收,
@@ -69,6 +69,18 @@ describe('scanBatchScripts', () => {
     expect(scanBatchScripts('/ws', () => {
       throw new Error('ENOENT');
     })).toEqual([]);
+  });
+});
+
+describe('scanBatchScriptsInRoots', () => {
+  it('combines workspace and assets roots and de-duplicates overlapping files', () => {
+    const roots = ['/ws', '/assets', '/ws'];
+    const result = scanBatchScriptsInRoots(roots, root =>
+      root === '/ws'
+        ? [{ name: 'start.bat', type: 1 }]
+        : [{ name: 'export.ps1', type: 1 }]
+    );
+    expect(result.map(item => item.path)).toEqual(['/ws/start.bat', '/assets/export.ps1']);
   });
 });
 

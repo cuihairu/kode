@@ -365,6 +365,7 @@ Actions are the **top-level `quickActions` array** (not inside the `debug` secti
 | `args` | command | Argument array; string items go through variable substitution, default `[]` |
 | `script` | script | Script path, required, variables supported |
 | `cwd` | script | Working directory, variables supported, default the workspace root |
+| `venv` | script | Optional `{ "enabled": true, "path": "${workspaceFolder}/.venv" }`; prepends `bin` (`Scripts` on Windows) to the child `PATH` and sets `VIRTUAL_ENV`; without `path`, searches `.venv` / `venv` beside the script and under the config root |
 | `background` | script | `true` means server-start types don't wait for the exit code, default `false` |
 | `url` | http | URL, required, variables supported; only the address hard-coded in the config is requested — no runtime concatenation |
 | `method` | http | `GET` / `POST` / `PUT` / `PATCH` / `HEAD` / `OPTIONS`, default `POST` |
@@ -377,11 +378,13 @@ Variables (substituted at run time, applied to config literal strings only):
 
 | Variable | Meaning |
 |------|------|
-| `${workspaceFolder}` | The first workspace root |
+| `${workspaceFolder}` | The effective quick-action config root (normally the first workspace root) |
 | `${workspaceFolder:Name}` | The workspace root by view name (multi-root projects) |
 | `${env:VAR_NAME}` | A process environment variable |
 
 An unknown variable errors out immediately, naming the variable — a silent empty-string substitution would run the script into a fake success with an "empty path", worse than an error.
+
+The first-install scan checks the effective config root and the top level of `assetsRoot`. Use `Rescan Scripts for Quick Actions` to scan again; generated script paths and `cwd` both point to the script's directory. Venv is off by default. A rescan replaces only `source: "scan"` entries and preserves manual actions and debug settings.
 
 Example:
 

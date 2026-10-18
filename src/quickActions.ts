@@ -13,6 +13,8 @@
 import * as child_process from 'child_process';
 import * as http from 'http';
 import * as https from 'https';
+import * as path from 'path';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
 import {
   baseNameOf,
@@ -25,7 +27,7 @@ import type {
   QuickActionCategory,
   WorkspaceFolderRef
 } from './quickActionConfig';
-import { scanBatchScripts } from './quickActionScanner';
+import { scanBatchScriptsInRoots } from './quickActionScanner';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
 
@@ -54,6 +56,7 @@ export interface ScriptRunOptions {
   script: string;
   background: boolean;
   cwd?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface ScriptRunResult {
@@ -119,9 +122,22 @@ export const spawnScript: ScriptRunner = options =>
   new Promise<ScriptRunResult>((resolve, reject) => {
     // cwd 未给即工作区根(设计 1.8):bat 内部按工程根写的相对路径才成立
     const cwd = options.cwd ?? workspaceFolders()[0]?.fsPath;
-    const child = child_process.spawn(options.script, [], {
+    const extension = path.extname(options.script).toLowerCase();
+    if (extension === '.bat' && process.platform !== 'win32') {
+      reject(new Error('.bat 脚本只能在 Windows 上运行'));
+      return;
+    }
+    const isPowerShell = extension === '.ps1';
+    const executable = isPowerShell
+      ? (process.platform === 'win32' ? 'powershell.exe' : 'pwsh')
+      : options.script;
+    const args = isPowerShell
+      ? ['-NoProfile', ...(process.platform === 'win32' ? ['-ExecutionPolicy', 'Bypass'] : []), '-File', options.script]
+      : [];
+    const child = child_process.spawn(executable, args, {
       cwd,
-      shell: true,
+      shell: !isPowerShell,
+      env: options.env,
       windowsHide: true,
       stdio: options.background ? 'ignore' : ['ignore', 'pipe', 'pipe']
     });
@@ -215,7 +231,13 @@ function resolveAction(action: QuickAction, folders: readonly WorkspaceFolderRef
     return {
       ...action,
       script: resolveActionVariables(action.script, folders),
-      cwd: action.cwd === undefined ? undefined : resolveActionVariables(action.cwd, folders)
+      cwd: action.cwd === undefined ? undefined : resolveActionVariables(action.cwd, folders),
+      ...(action.venv ? {
+        venv: {
+          ...action.venv,
+          path: action.venv.path === undefined ? undefined : resolveActionVariables(action.venv.path, folders)
+        }
+      } : {})
     };
   }
   return {
@@ -254,6 +276,8 @@ export class QuickActionManager {
   private readonly runScript: ScriptRunner;
   private readonly runHttp: HttpRunner;
   private readonly executeCommand: CommandRunner;
+  private configurationRoot: string | null = null;
+  private additionalScanRoots: string[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -266,6 +290,50 @@ export class QuickActionManager {
       deps.executeCommand ?? ((command, args) => vscode.commands.executeCommand(command, ...args));
     // deactivate 走 dispose():通道与本管理器同一条释放链
     this.context.subscriptions.push({ dispose: (): void => this.dispose() });
+  }
+
+  /** 配置、扫描、脚本变量解析统一锚定到启动引导选出的工作目录。 */
+  setConfigurationRoots(configurationRoot: string, scanRoots: readonly string[] = []): void {
+    this.configurationRoot = configurationRoot || null;
+    this.additionalScanRoots = [...scanRoots];
+  }
+
+  /** 显式重新扫描脚本并刷新扫描生成的动作，保留手工动作与 debug 配置。 */
+  async scanScriptsAndRefresh(): Promise<void> {
+    const root = this.getConfigurationRoot();
+    if (!root) {
+      await vscode.window.showInformationMessage('无法扫描快速动作:请先打开工作区');
+      return;
+    }
+    const candidates = await this.scanCandidates();
+    const current = await this.readConfigFile();
+    const existing = parseQuickActionConfigs(current?.quickActions).actions;
+    const manual = existing.filter(action => action.source !== 'scan');
+    if (candidates.length === 0) {
+      const staleCount = existing.length - manual.length;
+      if (staleCount > 0) await this.writeQuickActions(root, manual);
+      await vscode.window.showInformationMessage(
+        staleCount > 0
+          ? `未找到脚本，已清除 ${staleCount} 个过期扫描动作并保留 ${manual.length} 个手工动作`
+          : '未找到可登记的 .bat / .ps1 脚本'
+      );
+      return;
+    }
+    const picked = await vscode.window.showQuickPick<ScanPickItem>(
+      candidates.map(candidate => ({
+        label: baseNameOf(candidate.path),
+        description: candidate.category === null ? '' : CATEGORY_LABELS[candidate.category],
+        detail: candidate.path,
+        value: candidate
+      })),
+      { canPickMany: true, placeHolder: '选择要登记的 .bat / .ps1 脚本；已有手工动作会保留' }
+    );
+    if (!picked) return;
+    const scanned = buildScannedActions(picked.map(item => item.value), root);
+    await this.writeQuickActions(root, [...manual, ...scanned]);
+    await vscode.window.showInformationMessage(
+      `已重新扫描脚本:登记 ${scanned.length} 个动作，保留 ${manual.length} 个手工动作`
+    );
   }
 
   /** 动作清单:读配置 → 无动作指路 → 勾选 → 执行 */
@@ -335,8 +403,8 @@ export class QuickActionManager {
 
   /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */
   async offerScanOnActivate(): Promise<void> {
-    const [folder] = workspaceFolders();
-    if (folder === undefined) {
+    const root = this.getConfigurationRoot();
+    if (!root) {
       return;
     }
     // workspaceState 缺失(极简装配上下文)按「首次运行」处理:首装扫描只是提示,
@@ -350,10 +418,7 @@ export class QuickActionManager {
     }
     let candidates: BatchScriptCandidate[];
     try {
-      const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(folder.fsPath));
-      candidates = scanBatchScripts(folder.fsPath, () =>
-        entries.map(([name, type]): DirectoryEntry => ({ name, type }))
-      );
+      candidates = await this.scanCandidates();
     } catch {
       // 根目录读不到(权限/虚拟文件系统):静默返回,不打扰用户
       return;
@@ -365,6 +430,7 @@ export class QuickActionManager {
       candidates.map(candidate => ({
         label: baseNameOf(candidate.path),
         description: candidate.category === null ? '' : CATEGORY_LABELS[candidate.category],
+        detail: candidate.path,
         value: candidate
       })),
       { canPickMany: true, placeHolder: '勾选要登记为快速执行动作的脚本' }
@@ -374,8 +440,8 @@ export class QuickActionManager {
       await this.context.workspaceState?.update(QUICK_ACTION_SCAN_DISMISS_KEY, true);
       return;
     }
-    const scanned = buildScannedActions(chosen, folder.fsPath);
-    await this.writeQuickActions(folder.fsPath, scanned);
+    const scanned = buildScannedActions(chosen, root);
+    await this.writeQuickActions(root, scanned);
     await vscode.window.showInformationMessage(`已写入 ${scanned.length} 个快速执行动作到 .kbengine/debug.json`);
   }
 
@@ -389,7 +455,7 @@ export class QuickActionManager {
     }
     let resolved: QuickAction;
     try {
-      resolved = resolveAction(action, workspaceFolders());
+      resolved = resolveAction(action, this.actionWorkspaceFolders());
     } catch (error) {
       const message = errorMessage(error);
       this.append(`${action.name} → ✗ ${message}`);
@@ -426,10 +492,12 @@ export class QuickActionManager {
   }
 
   private async runScriptAction(action: Extract<QuickAction, { type: 'script' }>): Promise<boolean> {
+    const env = action.venv?.enabled ? this.resolveVenvEnvironment(action) : undefined;
     const result = await this.runScript({
       script: action.script,
       background: action.background,
-      cwd: action.cwd
+      cwd: action.cwd,
+      ...(env ? { env } : {})
     });
     if (action.background) {
       this.append(`${action.name} → 已启动`);
@@ -477,12 +545,12 @@ export class QuickActionManager {
   }
 
   private async readConfigFile(): Promise<Record<string, unknown> | null> {
-    const [folder] = workspaceFolders();
-    if (folder === undefined) {
+    const root = this.getConfigurationRoot();
+    if (!root) {
       return null;
     }
     try {
-      const data = await vscode.workspace.fs.readFile(this.configUri(folder.fsPath));
+      const data = await vscode.workspace.fs.readFile(this.configUri(root));
       // 批142:骨架按 JSONC 写(带注释),读配置统一剥注释再解析,坏 JSON 按没有
       // 动作处理——用户在文件里写的注释不该让整份配置读不动
       return parseDebugConfigText(Buffer.from(data).toString('utf8'));
@@ -495,7 +563,64 @@ export class QuickActionManager {
   private async writeQuickActions(fsPath: string, actions: QuickAction[]): Promise<void> {
     const existing = (await this.readConfigFile()) ?? {};
     const content = Buffer.from(JSON.stringify({ ...existing, quickActions: actions }, null, 2), 'utf8');
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(vscode.Uri.file(fsPath), '.kbengine'));
     await vscode.workspace.fs.writeFile(this.configUri(fsPath), content);
+  }
+
+  private getConfigurationRoot(): string | null {
+    return this.configurationRoot ?? workspaceFolders()[0]?.fsPath ?? null;
+  }
+
+  private actionWorkspaceFolders(): WorkspaceFolderRef[] {
+    const folders = workspaceFolders();
+    const root = this.getConfigurationRoot();
+    if (!root) return [...folders];
+    const samePath = (left: string, right: string): boolean =>
+      path.resolve(left).replace(/\\/g, '/').toLowerCase() === path.resolve(right).replace(/\\/g, '/').toLowerCase();
+    const primary = folders.find(folder => samePath(folder.fsPath, root));
+    const rootRef = { fsPath: root, name: primary?.name ?? folders[0]?.name ?? path.basename(root) };
+    return [rootRef, ...folders.filter(folder => !samePath(folder.fsPath, root))];
+  }
+
+  private async scanCandidates(): Promise<BatchScriptCandidate[]> {
+    const root = this.getConfigurationRoot();
+    if (!root) return [];
+    const roots = [...new Set([root, ...this.additionalScanRoots].filter(Boolean))];
+    const entriesByRoot = new Map<string, DirectoryEntry[]>();
+    for (const scanRoot of roots) {
+      try {
+        const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(scanRoot));
+        entriesByRoot.set(scanRoot, entries.map(([name, type]) => ({ name, type })));
+      } catch {
+        entriesByRoot.set(scanRoot, []);
+      }
+    }
+    return scanBatchScriptsInRoots(roots, scanRoot => entriesByRoot.get(scanRoot) ?? []);
+  }
+
+  private resolveVenvEnvironment(action: Extract<QuickAction, { type: 'script' }>): NodeJS.ProcessEnv {
+    const root = this.getConfigurationRoot() ?? process.cwd();
+    const actionDirectory = action.cwd ?? path.dirname(action.script);
+    const candidates = action.venv?.path
+      ? [path.isAbsolute(action.venv.path) ? action.venv.path : path.resolve(root, action.venv.path)]
+      : [
+          path.resolve(actionDirectory, '.venv'), path.resolve(actionDirectory, 'venv'),
+          path.resolve(root, '.venv'), path.resolve(root, 'venv')
+        ];
+    const venvPath = candidates.find(candidate => {
+      try { return fs.statSync(candidate).isDirectory(); } catch { return false; }
+    });
+    if (!venvPath) {
+      throw new Error(`动作「${action.name}」启用了 venv，但找不到虚拟环境目录;请设置 venv.path 或创建 .venv/venv`);
+    }
+    const scriptsDirectory = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const binPath = path.join(venvPath, scriptsDirectory);
+    const pathKey = Object.keys(process.env).find(key => key.toLowerCase() === 'path') ?? 'PATH';
+    return {
+      ...process.env,
+      VIRTUAL_ENV: venvPath,
+      [pathKey]: `${binPath}${path.delimiter}${process.env[pathKey] ?? ''}`
+    };
   }
 
   private append(line: string): void {

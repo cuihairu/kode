@@ -66,6 +66,14 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Command palette
 - See also: [Database Drift Check](./database-drift-check.md)
 
+### `kbengine.database.checkAllDrift`
+
+- Title: `Check All Database Drift`
+- Purpose: Check actual MySQL schemas for every workspace entity, reusing one connection and treating all entity tables as expected when finding residual tables
+- Prerequisite: Same as `kbengine.database.checkDrift`
+- Entries: Command palette
+- See also: [Database Drift Check](./database-drift-check.md)
+
 ## Server Control
 
 ### `kbengine.server.start`
@@ -323,12 +331,13 @@ The flow graph panel supports:
   - `command`: a VS Code command id, `args` passed through verbatim (string items support variables), reusing the invoked command's own error reporting
   - `script`: runs a script explicitly declared in the config; `background: true` means server-start types do not wait for the exit code (the process being alive reports 「已启动」 — started)
   - `http`: requests a URL hard-coded in the config; no runtime concatenation
-- Variables (substituted at run time, applied to config literal strings): `${workspaceFolder}` (the first workspace root), `${workspaceFolder:Name}` (root by name), `${env:VAR_NAME}`. An unknown variable errors out immediately, naming the variable — never a silent empty-string substitution
+- Variables (substituted at run time, applied to config literal strings): `${workspaceFolder}` (the effective quick-action config root, normally the first workspace root), `${workspaceFolder:Name}` (root by name), `${env:VAR_NAME}`. An unknown variable errors out immediately, naming the variable — never a silent empty-string substitution
 - Behavior:
   - An action pops a modal confirmation by default (`confirm: false` skips it); the run log goes to the OUTPUT channel 「KBEngine 快速执行动作」 (KBEngine quick actions), and script stdout/stderr flows in verbatim
   - A failure pops once (action name + exit code / status code / reason), with the script's stdout/stderr left in the channel
   - Invalid config entries (e.g. a `type` outside the whitelist, missing required fields) are pruned one by one with a count notice; the whole table never fails
-  - On first install it scans one level of workspace-root `.bat` and `.ps1` files; all of them appear in a multi-select registration prompt (the "start/stop server / import config tables" vocabulary only assigns a category); cancelling stops the auto-prompt for this workspace
+  - When the config is missing, it scans the config root and top-level `assetsRoot` for `.bat` / `.ps1` files and writes them into the new config; scanned actions use the script directory as `cwd`. An existing empty config gets a registration prompt on activation
+  - `.ps1` files run through PowerShell; script actions may set `venv: { enabled: true, path?: "${workspaceFolder}/.venv" }` to add the environment to the child process PATH
   - The list is grouped by backend kind: consecutive same-type runs share one group-name separator line; config order is never reshuffled
 
 ### `kbengine.quickActions.runDefault`
@@ -340,6 +349,13 @@ The flow graph panel supports:
   - The memory key `kbengine.quickActions.lastRun` lives in this workspace's workspaceState; an action picked in the list immediately becomes the ▶ default target, regardless of that run's outcome
   - When the remembered action is deleted or broken it falls back to the first item of the list, without erroring
   - The execution chain is identical to `kbengine.quickActions.show` (variable substitution → confirmation → dispatch → log)
+
+### `kbengine.quickActions.scanScripts`
+
+- Title: `Rescan Scripts for Quick Actions`
+- Purpose: Rescan top-level `.bat` / `.ps1` files in the effective config root and `assetsRoot`; refresh generated actions from the selection while preserving manual actions and other debug settings
+- Script working directory: scanned actions use the script's containing directory as `cwd`
+- Entry point: Command Palette
 
 ### `kbengine.python.syncExtraPaths`
 

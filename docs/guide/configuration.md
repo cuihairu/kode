@@ -365,6 +365,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `args` | command | 参数数组,字符串项走变量替换,缺省 `[]` |
 | `script` | script | 脚本路径,必填,支持变量 |
 | `cwd` | script | 工作目录,支持变量,缺省工作区根 |
+| `venv` | script | 可选 `{ "enabled": true, "path": "${workspaceFolder}/.venv" }`;启用后把环境的 `bin`（Windows 为 `Scripts`）放到子进程 `PATH` 前面并设置 `VIRTUAL_ENV`;省略 `path` 自动查找脚本目录及配置根下的 `.venv` / `venv` |
 | `background` | script | `true` 表示起服类不等退出码,缺省 `false` |
 | `url` | http | URL,必填,支持变量;只发配置里写死的地址,不接受运行时拼接 |
 | `method` | http | `GET` / `POST` / `PUT` / `PATCH` / `HEAD` / `OPTIONS`,缺省 `POST` |
@@ -377,7 +378,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 | 变量 | 含义 |
 |------|------|
-| `${workspaceFolder}` | 首个工作区根 |
+| `${workspaceFolder}` | 快速动作使用生效配置根(通常是首个工作区根) |
 | `${workspaceFolder:名字}` | 按视图名取工作区根(多根工程) |
 | `${env:变量名}` | 进程环境变量 |
 
@@ -401,7 +402,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 }
 ```
 
-首装扫描会在工作区根一层找 `.bat` 与 `.ps1`,**全部列入勾选清单**(2026-10-16 口径:启停 `start` / `stop` / `restart` / `boot` / `server` 与导表 `export` / `convert` / `导表` 词表**只定分类不过滤**——命中分别记 `server` / `export`,词表外不写 `category`),勾选后写成 `${workspaceFolder}/<文件名>` 变量形态(`start` / `boot` 开头的自动 `background: true`),并保留既有 `version` / `debug` 段。
+首次缺配置时扫描生效配置根与 `assetsRoot` 顶层的 `.bat` / `.ps1`;命令 `Rescan Scripts for Quick Actions` 可随时重新扫描。扫描生成的路径与 `cwd` 都指向脚本所在目录；脚本默认不启用 venv，可在对应动作里设置 `"venv": { "enabled": true }`，或指定 `path`。重新扫描只替换 `source: "scan"` 动作，保留手工动作和 `debug` 设置。
 
 ### 自动热重载 `kbengine.hotReload.*`(盘点 G5)
 

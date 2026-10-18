@@ -246,21 +246,43 @@ describe('setupHotReload(装配)', () => {
     expect(runCalls).toEqual([]);
   });
 
-  it('触发期执行抛错:不外抛(事件回调不能炸)', () => {
+  it('触发期同步执行抛错:不外抛并报告错误', () => {
     configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
     const context = makeContext();
     const clock = makeTimers();
+    const errors: unknown[] = [];
 
     setupHotReload(
       context,
       () => {
         throw new Error('boom');
       },
-      { timers: clock.timers }
+      { timers: clock.timers, onActionError: error => errors.push(error) }
     );
 
     lastFileSystemWatcher.current!.fireChange({ fsPath: '/a.py' } as never);
     expect(() => clock.tick()).not.toThrow();
+    expect(errors).toEqual([new Error('boom')]);
+  });
+
+  it('触发期异步执行拒绝:捕获并报告,不产生未处理拒绝', async () => {
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    const context = makeContext();
+    const clock = makeTimers();
+    const errors: unknown[] = [];
+
+    setupHotReload(
+      context,
+      async () => {
+        throw new Error('async boom');
+      },
+      { timers: clock.timers, onActionError: error => errors.push(error) }
+    );
+
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/a.py' } as never);
+    expect(() => clock.tick()).not.toThrow();
+    await Promise.resolve();
+    expect(errors).toEqual([new Error('async boom')]);
   });
 
   it('配置变更联动:关→开建 watcher,开→关拆除(去抖中一并取消)', () => {

@@ -22,6 +22,7 @@ import {
 import {
   FILE_SYSTEM_KIND_FILE,
   scanBatchScripts,
+  scanBatchScriptsInRoots,
   type DirectoryEntry
 } from './quickActionScanner';
 import { SOURCE_DEFAULT_COMPONENTS } from './debugConfig';
@@ -246,6 +247,7 @@ ${componentExampleLines().join('\n')}
 
   // 快速执行动作:实体浏览器 ▶ 与命令面板共用;三种后端任选其一
   //   script:跑本地脚本   { "name": "起服", "type": "script", "script": "\${workspaceFolder}/start_server.bat", "background": true }
+  //   venv:需要 Python 环境时加 "venv": { "enabled": true },自动查找 .venv/venv
   //   command:跑引擎命令 { "name": "导出配置表", "type": "command", "command": "exportTables" }
   //   http:发 HTTP     { "name": "热更接口", "type": "http", "url": "http://127.0.0.1:8080/hotfix", "method": "POST" }
   "quickActions": ${actionJson}
@@ -296,6 +298,8 @@ export interface EnsureDebugConfigOptions {
   workspaceFolders?: readonly WorkspaceFolderLike[];
   /** 覆盖 deps.listDir(测试与虚拟文件系统场景) */
   listDir?: (root: string) => DirectoryEntry[];
+  /** 额外扫描根(如 KBEngine assetsRoot);配置仍写到生效工作目录 */
+  scanRoots?: readonly string[];
 }
 
 export type EnsureDebugConfigStatus =
@@ -344,7 +348,7 @@ export function ensureDebugConfig(
     };
   }
 
-  const candidates = scanCandidates(listDir, resolved.root);
+  const candidates = scanCandidates(listDir, [resolved.root, ...(options.scanRoots ?? [])]);
   const actions = candidates.length > 0 ? buildScannedActions(candidates, resolved.root) : [];
   deps.log(`未找到 .kbengine/debug.json,已生成配置骨架:${target}`);
   deps.log(`  工作目录:${resolved.root}(来源:${WORKSPACE_ROOT_SOURCE_LABELS[resolved.source]})`);
@@ -398,10 +402,10 @@ function readWorkspaceConfig(
 
 function scanCandidates(
   listDir: (root: string) => DirectoryEntry[],
-  root: string
+  roots: readonly string[]
 ): ReturnType<typeof scanBatchScripts> {
   try {
-    return scanBatchScripts(root, () => listDir(root));
+    return scanBatchScriptsInRoots(roots, root => listDir(root));
   } catch {
     // 目录读不到(权限/虚拟文件系统):按无脚本生成空 quickActions,不打断激活
     return [];

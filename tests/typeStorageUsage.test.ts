@@ -240,15 +240,21 @@ describe('buildTypesXmlStorageLensSpecs', () => {
   it('puts one lens per real usage on the declaration name', () => {
     invalidateTypeStorageUsageIndex();
     const specs = buildTypesXmlStorageLensSpecs(typesXmlContent(), root);
-
-    // 镜只挂在 types.xml 声明行上:ITEM_ID 两处 + ITEM_DESC 一处;UINT32
-    // 是内建类型,没有声明节点,它的三处使用不出镜;无引用类型同样不出镜
-    expect(specs).toHaveLength(3);
+    // 原类型引用镜 + FIXED_DICT 键展开列镜;内建类型与无引用类型不出镜。
+    expect(specs).toHaveLength(5);
     const itemIdSpec = specs.find(spec => spec.title === 'Hero.itemId → tbl_Hero.sm_itemId')!;
     expect(itemIdSpec.line).toBe(1);
     expect(itemIdSpec.character).toBe(3);
     expect(itemIdSpec.target).toEqual({ entity: 'Hero', table: 'tbl_Hero', column: 'sm_itemId' });
     expect(specs.find(spec => spec.title === 'Hero.items[] → tbl_Hero_items.sm_value')!.line).toBe(1);
+    expect(specs).toContainEqual(expect.objectContaining({
+      title: '字段 · Hero.skills[].count → tbl_Hero_skills.sm_count',
+      target: { entity: 'Hero', table: 'tbl_Hero_skills', column: 'sm_count' }
+    }));
+    expect(specs).toContainEqual(expect.objectContaining({
+      title: '字段 · Hero.skills[].slot_list[] → tbl_Hero_skills_slot_list.sm_value',
+      target: { entity: 'Hero', table: 'tbl_Hero_skills_slot_list', column: 'sm_value' }
+    }));
   });
 
   it('returns nothing for content without a root element', () => {
@@ -390,6 +396,8 @@ describe('TypesXmlCodeLensProvider', () => {
     expect(itemIdLens.command!.command).toBe('kbengine.database.open');
     expect(itemIdLens.command!.arguments).toEqual(['Hero', 'tbl_Hero', 'sm_itemId']);
     expect(itemIdLens.range.start).toEqual({ line: 1, character: 3 });
+    const expandedFieldLens = lenses.find(lens => lens.command?.title.includes('skills[].count'))!;
+    expect(expandedFieldLens.command!.arguments).toEqual(['Hero', 'tbl_Hero_skills', 'sm_count']);
     provider.dispose();
   });
 

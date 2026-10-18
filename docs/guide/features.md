@@ -79,7 +79,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - Schema 视图（`kbengine.database.open`）：中文标签渲染（批133）。头部给实体名、`存储引擎`、`定义文件` 与 `表: N 张 · 列: M（其中 .def 声明 K）` 概览，配置读得时另给 `数据库: 库名@host:端口`，再附「读图方式」图例（`tbl_` / `sm_` 前缀、引擎列不落 def、`parentID` 关联、flags 含义、SQL 粘贴用法）；每表标 `表类型`（实体表 / 组件表 / 数组子表）、`定义来源`（工作区内相对路径）与 `父表：`，字段分「引擎列（引擎自动建，.def 无需声明）」（`id` / `autoLoad` / `parentID` / 位置朝向六列各带固定语义注解）与「属性列（.def 里声明的）」两组，属性列行尾 `← 文件:行 <属性>` 标 def 落点，只有引擎列的表照实提示 `属性列: 无（本表只有引擎列，没有 .def 声明的数据列）`；每表尾部给三行可粘贴 SQL（全列 SELECT、只含 def 属性列的 `SQL(属性列)`、子表的 `SQL(子表 JOIN)` 按 `parentID` 关联父表，`LEFT JOIN` 保住空元素属性行）；均带库表前缀与反引号转义，库名读不到时退化为表级全名，仍合法
 - 库表前缀可覆盖：设置 `kbengine.db.tablePrefix`（缺省空 = 引擎默认 `tbl_`），表名与三行 SQL 模板同源替换；ARRAY 子表悬停同样给出可粘贴的 JOIN 语句
 - types.xml 类型形态与引用反扫（批134）：类型声明名悬停追加「落库形态」（builtin 落主表单列附列型、FIXED_DICT 平铺成列不成表、ARRAY 成 `tbl_<实体>_<属性>` 子表并递归一层元素落列、未解析明说引擎装载会失败）；声明行上方 CodeLens 逐条反扫真实引用落点（`Hero.itemId → tbl_Hero.sm_itemId`），点击打开该实体 Schema 视图定位到对应列，超 10 处折叠计数镜，`.def`/`types.xml`/`entities.xml` 变更即失效重扫；反扫落点取自 schema 快照（与渲染同一套引擎语义），不另造落库规则
-- 数据库漂移校验（`kbengine.database.checkDrift`）：拿真实表结构反向校验 def 推导的虚拟表结构，报缺表 / 缺列 / 多列 / 型别不符 / 残留表；连接信息读引擎配置（`encrypt=false` 明文密码），只放行 `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN` 且连接以只读会话打开，连不上降级为「未校验」不报错。详见 [数据库漂移校验](./database-drift-check.md)
+- 数据库漂移校验（`kbengine.database.checkDrift` / `checkAllDrift`）：比对缺表 / 缺列 / 多列 / 型别 / 可空性 / 默认值 / 索引与残留表，可检查单实体或全部工作区实体；连接信息读引擎配置（`encrypt=false` 明文密码），查询与会话均只读。详见 [数据库漂移校验](./database-drift-check.md)
 
 ## 数据库模拟
 
@@ -125,6 +125,8 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 三类后端白名单：`command`（VS Code 命令）、`script`（配置里显式声明的脚本）、`http`（配置里写死的本地热更 URL）；不做任意 shell 入口
 - 触发两路：Servers 视图标题栏按钮 + `.def` / Python / XML 编辑器右上角按钮 + 命令面板 `Run Quick Actions`
 - 动作缺省弹 modal 确认框，流水进 OUTPUT 面板「KBEngine 快速执行动作」，失败一次性弹窗并留退出码/状态码
+- 首次创建配置扫描生效配置根与 `assetsRoot` 的 `.bat` / `.ps1`；扫描动作的 `cwd` 指向脚本所在目录。命令面板可用 `Rescan Scripts for Quick Actions` 更新扫描动作且保留手工动作
+- `.ps1` 显式使用 PowerShell 执行；script 动作可选启用 Python venv 并指定目录，或自动查找 `.venv` / `venv`
 - 首装扫一层工作区根的 `.bat` 与 `.ps1`，全部列入多选提示登记（词表只定分类），取消后本工作区不再自动弹
 
 命令细节见 [命令与面板](./commands.md)，配置键与变量表见 [配置说明](./configuration.md)。
@@ -132,7 +134,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 ## 自动热重载（盘点 G5）
 
 - 文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控 `kbengine.hotReload.enabled` **默认关**防误触：开启前不建任何文件监视，激活期行为零变化；开关改动即时生效，不必重启窗口
-- 变更、创建、删除三通道都算保存事件，经去抖合并成一次执行；触发路径跳过执行确认框，动作自身的失败仍照常弹窗报错
+- 变更、创建、删除三通道都算保存事件，经去抖合并成一次执行；触发路径跳过执行确认框，动作失败或异步执行异常会被捕获并报告，不产生未处理 Promise rejection
 - `actionName` 留空或匹配不到任何动作时，事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水，不弹窗、不执行
 
 ## 依赖图能力

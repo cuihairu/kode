@@ -176,6 +176,7 @@ describe('buildDebugConfigSkeleton', () => {
 interface Script {
   existing?: string[];
   entries?: DirectoryEntry[];
+  entriesByRoot?: Record<string, DirectoryEntry[]>;
   writeFails?: boolean;
   readFails?: boolean;
 }
@@ -210,7 +211,7 @@ function makeDeps(script: Script = {}): {
       mkdir: (dir: string): void => {
         mkdirs.push(dir);
       },
-      listDir: (): DirectoryEntry[] => script.entries ?? [],
+      listDir: (root: string): DirectoryEntry[] => script.entriesByRoot?.[root] ?? script.entries ?? [],
       log: (line: string): void => {
         logs.push(line);
       }
@@ -276,6 +277,23 @@ describe('ensureDebugConfig', () => {
     expect(actions[0].script).toBe('${workspaceFolder}/start_server.bat');
     expect(actions[0].category).toBe('server');
     expect(actions[1].category).toBe('export');
+  });
+
+  it('首次生成时同时扫描配置根和 assetsRoot', () => {
+    const { deps, writes } = makeDeps({ entriesByRoot: {
+      '/ws/proj': [{ name: 'start.bat', type: 1 }],
+      '/assets': [{ name: 'export.ps1', type: 1 }]
+    } });
+    const result = ensureDebugConfig(deps, {
+      env: {}, workspaceFolders: FOLDERS, scanRoots: ['/assets']
+    });
+    const actions = parseDebugConfigText(writes[0].content)!.quickActions as QuickAction[];
+    expect(result.scannedActions).toBe(2);
+    expect(actions.map(action => action.script)).toEqual([
+      '${workspaceFolder}/start.bat', '${workspaceFolder}/../../assets/export.ps1'
+    ]);
+    expect((actions[1] as Extract<QuickAction, { type: 'script' }>).cwd)
+      .toBe('${workspaceFolder}/../../assets');
   });
 
   it('目录读不到时按无脚本生成空 quickActions', () => {

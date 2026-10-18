@@ -44,7 +44,7 @@ export function resetScanRootCache(): void {
   discoveryMemo.clear();
 }
 
-function resolveAssetsRoot(workspaceRoot: string): string {
+export function resolveAssetsRootForWorkspace(workspaceRoot: string): string {
   let configured = '';
   try {
     configured = (vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot', '') ?? '').trim();
@@ -101,7 +101,7 @@ export function getIndexScanRoots(): string[] {
   }
   const workspaceRoot = candidates[0] ?? '';
   try {
-    const assetsRoot = resolveAssetsRoot(workspaceRoot);
+    const assetsRoot = resolveAssetsRootForWorkspace(workspaceRoot);
     if (assetsRoot) {
       candidates.push(assetsRoot);
     }

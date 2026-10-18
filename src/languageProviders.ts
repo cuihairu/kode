@@ -52,11 +52,12 @@ import {
   findTypeStorageUsages,
   getDatabaseSchemaSnapshot,
   getTypeStorageShape,
+  indexTypeStorageUsagesBySourceLine,
   invalidateTypeStorageUsageIndex,
   isDatabaseSchemaDocument,
   locateDatabaseSchemaLine
 } from './databaseSchema';
-import type { TypeStorageShape } from './databaseSchema';
+import type { TypeStorageShape, TypeStorageUsage } from './databaseSchema';
 import { buildPropertyDatabaseStorageHover } from './databaseSimulator';
 import {
   findCustomTypeDeclarationInfo,
@@ -3507,31 +3508,56 @@ const TYPE_STORAGE_LENS_LIMIT = 10;
 
 export function buildTypesXmlStorageLensSpecs(
   content: string,
-  workspaceRoot: string
+  workspaceRoot: string,
+  typesXmlPath = getDefinitionWorkspaceLayout(workspaceRoot).typesXmlPath
 ): TypesXmlStorageLensSpec[] {
   const document = parseDefDocument(content);
   if (!document.root) {
     return [];
   }
 
+  const usagesBySourceLine = typesXmlPath
+    ? indexTypeStorageUsagesBySourceLine(workspaceRoot, typesXmlPath)
+    : new Map<number, TypeStorageUsage[]>();
   const specs: TypesXmlStorageLensSpec[] = [];
   for (const node of getDirectChildElements(document.root)) {
     const usages = findTypeStorageUsages(workspaceRoot, node.name);
-    for (const usage of usages.slice(0, TYPE_STORAGE_LENS_LIMIT)) {
+    const firstLine = getLineNumberAt(document, node.tagStart);
+    const lastLine = getLineNumberAt(document, node.closeTagEnd);
+    const expandedUsages: TypeStorageUsage[] = [];
+    for (let line = firstLine; line <= lastLine; line += 1) {
+      expandedUsages.push(...(usagesBySourceLine.get(line) || []));
+    }
+    const seen = new Set<string>();
+    const appendUsage = (title: string, usage: (typeof usages)[number]): void => {
+      const key = `${usage.entity}:${usage.table}:${usage.column}`;
+      if (seen.has(key) || seen.size >= TYPE_STORAGE_LENS_LIMIT) {
+        return;
+      }
+      seen.add(key);
       const position = getLineCharacterAtOffset(content, content.indexOf(node.name, node.tagStart));
       specs.push({
         line: position.line,
         character: position.character,
-        title: `${usage.entity}.${usage.property} → ${usage.table}.${usage.column}`,
+        title,
         target: { entity: usage.entity, table: usage.table, column: usage.column }
       });
+    };
+    for (const usage of usages) {
+      appendUsage(`${usage.entity}.${usage.property} → ${usage.table}.${usage.column}`, usage);
     }
-    if (usages.length > TYPE_STORAGE_LENS_LIMIT) {
+    for (const usage of expandedUsages) {
+      appendUsage(`字段 · ${usage.entity}.${usage.property} → ${usage.table}.${usage.column}`, usage);
+    }
+    const totalUsages = new Set([...usages, ...expandedUsages].map(
+      usage => `${usage.entity}:${usage.table}:${usage.column}`
+    )).size;
+    if (totalUsages > TYPE_STORAGE_LENS_LIMIT) {
       const position = getLineCharacterAtOffset(content, content.indexOf(node.name, node.tagStart));
       specs.push({
         line: position.line,
         character: position.character,
-        title: `+${usages.length - TYPE_STORAGE_LENS_LIMIT} 处落库未列出`,
+        title: `+${totalUsages - TYPE_STORAGE_LENS_LIMIT} 处落库未列出`,
         target: null
       });
     }
@@ -3566,7 +3592,7 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
       return [];
     }
 
-    return buildTypesXmlStorageLensSpecs(document.getText(), workspaceRoot).map(spec =>
+    return buildTypesXmlStorageLensSpecs(document.getText(), workspaceRoot, document.fileName).map(spec =>
       new vscode.CodeLens(
         new vscode.Range(
           new vscode.Position(spec.line, spec.character),

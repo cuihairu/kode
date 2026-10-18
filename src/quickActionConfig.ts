@@ -9,6 +9,7 @@
  */
 
 import type { BatchScriptCandidate } from './quickActionScanner';
+import * as path from 'path';
 import { substituteVariables, type VariableFolderRef } from './variableSubstitution';
 
 export type QuickActionCategory = 'server' | 'export';
@@ -32,6 +33,7 @@ export interface QuickActionScript extends QuickActionShared {
   script: string;
   cwd?: string;
   background: boolean;
+  venv?: { enabled: boolean; path?: string };
 }
 
 export interface QuickActionHttp extends QuickActionShared {
@@ -119,10 +121,22 @@ function parseQuickAction(item: unknown): QuickAction | null {
     if (script === null) {
       return null;
     }
+    const rawVenv = record.venv;
+    let venv: QuickActionScript['venv'];
+    if (rawVenv !== undefined) {
+      if (typeof rawVenv !== 'object' || rawVenv === null || Array.isArray(rawVenv)) return null;
+      const venvRecord = rawVenv as Record<string, unknown>;
+      if (typeof venvRecord.enabled !== 'boolean'
+        || (venvRecord.path !== undefined && typeof venvRecord.path !== 'string')) return null;
+      venv = {
+        enabled: venvRecord.enabled,
+        ...(typeof venvRecord.path === 'string' ? { path: venvRecord.path } : {})
+      };
+    }
     // background/cwd 未给即默认;给了但不是对应类型时回落默认值(不按坏条目剔除)
     const background = typeof record.background === 'boolean' ? (record.background as boolean) : false;
-    const cwd = typeof record.cwd === 'string' ? (record.cwd as string) : undefined;
-    return { ...shared, type, script, background, cwd };
+    const cwd = typeof record.cwd === 'string' ? (record.cwd as string) : WORKSPACE_FOLDER_VAR;
+    return { ...shared, type, script, background, cwd, ...(venv ? { venv } : {}) };
   }
   if (type === 'http') {
     const url = nonEmptyString(record.url);
@@ -190,25 +204,43 @@ export function classifyBatchScript(scriptName: string): QuickActionCategory | n
 }
 
 /**
- * 把扫描候选构造成可写入配置的 script 动作:路径一律转成 ${workspaceFolder}
- * 变量形态(1.3:路径绝不写死),启停类默认后台(起服不等退出码)。
+ * 把扫描候选构造成可写入配置的 script 动作:脚本路径与 cwd 都锚定
+ * ${workspaceFolder},启停类默认后台(起服不等退出码)。
  */
 export function buildScannedActions(
   candidates: readonly BatchScriptCandidate[],
   workspaceRoot: string
 ): QuickActionScript[] {
-  const rootPrefix = `${workspaceRoot.replace(/\/+$/, '')}/`;
+  const nameCounts = new Map<string, number>();
+  for (const candidate of candidates) {
+    const baseName = stripExtension(baseNameOf(candidate.path));
+    nameCounts.set(baseName.toLowerCase(), (nameCounts.get(baseName.toLowerCase()) ?? 0) + 1);
+  }
   return candidates.map(candidate => {
     const fileName = baseNameOf(candidate.path);
-    const relative = candidate.path.startsWith(rootPrefix)
-      ? candidate.path.slice(rootPrefix.length)
-      : fileName;
-    const name = stripExtension(fileName);
+    const relativePath = path.relative(workspaceRoot, candidate.path);
+    const canUseWorkspaceVariable = relativePath !== '' && !path.isAbsolute(relativePath);
+    const relative = canUseWorkspaceVariable
+      ? relativePath.replace(/\\/g, '/')
+      : candidate.path;
+    const baseName = stripExtension(fileName);
+    const parentParts = path.dirname(candidate.path).split(/[\\/]/).filter(Boolean);
+    const name = (nameCounts.get(baseName.toLowerCase()) ?? 0) > 1
+      ? `${baseName} (${parentParts[parentParts.length - 1] ?? 'script'})`
+      : baseName;
     const lowerName = name.toLowerCase();
+    const scriptDirectory = path.dirname(candidate.path);
+    const relativeDirectory = path.relative(workspaceRoot, scriptDirectory);
+    const cwd = relativeDirectory === ''
+      ? WORKSPACE_FOLDER_VAR
+      : path.isAbsolute(relativeDirectory)
+        ? scriptDirectory
+        : `${WORKSPACE_FOLDER_VAR}/${relativeDirectory.replace(/\\/g, '/')}`;
     return {
       name,
       type: 'script',
-      script: `${WORKSPACE_FOLDER_VAR}/${relative}`,
+      script: canUseWorkspaceVariable ? `${WORKSPACE_FOLDER_VAR}/${relative}` : candidate.path,
+      cwd,
       background: lowerName.startsWith('start') || lowerName.startsWith('boot'),
       confirm: true,
       source: 'scan',

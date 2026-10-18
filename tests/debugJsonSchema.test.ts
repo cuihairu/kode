@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import {
-  KBENGINE_DEBUG_JSON_FILE_MATCHES,
+  KBENGINE_DEBUG_JSON_FILE_MATCH,
   buildKbengineDebugJsonSchema,
   kbengineDebugJsonSchema
 } from '../src/debugJsonSchema';
@@ -14,18 +14,18 @@ import {
 
 // 功能差距盘点 G3(docs/reference-feature-gap.md):`.kbengine/debug.json`
 // 交给 VS Code 的 JSON 扩展校验(contributes.jsonValidation),配置错误在
-// 编辑器里直接标红。VS Code 的清单内联 schema 无法从 TS 导出引用,只能双源
-// ——本文件锁死「清单里的 schema 对象 === src/debugJsonSchema.ts 构建产物」,
-// 且构建产物由 quickActionConfig.ts 的解析口径(HTTP_METHODS 等)驱动。
+// 编辑器里直接标红。清单指向扩展包内 schema 文件;本文件锁死「JSON 文件 ===
+// src/debugJsonSchema.ts 构建产物」,且构建产物由 quickActionConfig.ts 的
+// 解析口径(HTTP_METHODS 等)驱动。
 
 const root = join(__dirname, '..');
 
 interface PackageJsonShape {
   contributes: {
     jsonValidation?: Array<{
-      fileMatches?: string[];
-      language?: string;
-      schema?: unknown;
+      fileMatch?: string | string[];
+      fileMatches?: unknown;
+      url?: string;
     }>;
   };
 }
@@ -36,17 +36,15 @@ const validation = pkg.contributes.jsonValidation ?? [];
 describe('清单贡献 contributes.jsonValidation', () => {
   it('只匹配 .kbengine/debug.json(不进 launch.json 等其他 JSON 文件)', () => {
     expect(validation).toHaveLength(1);
-    expect(validation[0].fileMatches).toEqual(KBENGINE_DEBUG_JSON_FILE_MATCHES);
-    expect(validation[0].fileMatches).toEqual(['**/.kbengine/debug.json']);
-    expect(validation[0].language).toBe('json');
+    expect(validation[0].fileMatch).toBe(KBENGINE_DEBUG_JSON_FILE_MATCH);
+    expect(validation[0].fileMatch).toBe('**/.kbengine/debug.json');
+    expect(validation[0].fileMatches).toBeUndefined();
+    expect(validation[0].url).toBe('./schemas/kbengine-debug.schema.json');
   });
 
-  it('清单里的 schema 与 src 构建产物逐字节同源(双源漂移锁)', () => {
-    expect(validation[0].schema).toEqual(kbengineDebugJsonSchema);
-  });
-
-  it('schema 不落独立文件(避免与清单再次漂移)', () => {
-    expect(existsSync(join(root, 'schemas', 'kbengine-debug.json'))).toBe(false);
+  it('清单引用的 schema 文件与 src 构建产物一致(双源漂移锁)', () => {
+    const schemaPath = join(root, validation[0].url!.replace(/^\.\//, ''));
+    expect(JSON.parse(readFileSync(schemaPath, 'utf8'))).toEqual(kbengineDebugJsonSchema);
   });
 });
 
@@ -97,6 +95,9 @@ describe('buildKbengineDebugJsonSchema(结构)', () => {
     expect(byType.command.properties.args.type).toBe('array');
     expect(byType.command.properties.command.type).toBe('string');
     expect(byType.script.properties.script.type).toBe('string');
+    expect(byType.script.properties.venv.type).toBe('object');
+    expect(byType.script.properties.venv.required).toEqual(['enabled']);
+    expect(byType.script.properties.venv.properties.enabled.type).toBe('boolean');
     expect(byType.http.properties.url.type).toBe('string');
     expect(byType.http.properties.method.enum).toEqual(HTTP_METHODS);
   });

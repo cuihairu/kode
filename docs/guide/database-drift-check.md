@@ -3,6 +3,10 @@
 
 命令 `kbengine.database.checkDrift`（`Check Database Drift`）拿真实 MySQL 表结构，反向校验 `.def` 推导出的虚拟表结构。
 
+命令 `kbengine.database.checkAllDrift`（`Check All Database Drift`）会检查所有工作区实体，一次读取表清单，并以所有实体表的并集识别带前缀的残留表。
+
+单实体命令只把当前实体名下的带前缀表视为残留候选，避免把其他实体的正常表误报；全量命令才会检查整个配置前缀下的残留表。
+
 ## 为什么要有它
 
 schema 视图与属性悬停里的表名列型，都是 kode 按引擎装载语义**推导**出来的（`src/databaseSchema.ts`，对齐 `entity_table_mysql.cpp`）。推导链有四段最容易算错：
@@ -18,15 +22,17 @@ schema 视图与属性悬停里的表名列型，都是 kode 按引擎装载语�
 
 ## 校验口径
 
-逐表比对，报四类问题：
+逐表比对，报告表、列型、可空性、默认值和索引差异：
 
 | 标记 | 含义 |
 | --- | --- |
 | `[缺表]` | 虚拟表在库里不存在：该实体或该容器属性尚未走过建表流程 |
 | `[缺列]` | 虚拟表有、真实表没有的列（属性新增后没同步建表） |
 | `[多列]` | 真实表有、def 无对应属性的列 |
-| `[型别不符]` | 同名列的型别与推导不一致（显示宽度差异不算：`bigint unsigned` ≡ `bigint(20) unsigned`） |
+| `[型别不符]` | 同名列的型别与推导不一致（仅忽略整数显示宽度：`bigint unsigned` ≡ `bigint(20) unsigned`；`varchar(64)` 与 `varchar(128)` 会区分） |
 | `[残留表]` | 库里带表前缀的表不在虚拟表结构里：属性删了，表还留着 |
+| `[可空性不符]` / `[默认值不符]` | 真实列约束与引擎从属性类型和 `<Default>` 推导的约束不同 |
+| `[索引不符]` | 主键、`INDEX`、`UNIQUE`、`sm_autoLoad` 或子表 `parentID` 的索引状态不同 |
 
 报告整段写进 OUTPUT 面板「KBEngine 数据库漂移」，可整段复制回传；有问题时弹警告，无漂移弹信息提示。
 
@@ -43,7 +49,7 @@ schema 视图与属性悬停里的表名列型，都是 kode 按引擎装载语�
 1. **语句白名单**：只放行 `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN`。`INSERT` / `UPDATE` / `DELETE` / DDL（`CREATE` / `DROP` / `ALTER` / `TRUNCATE`）/ `GRANT` / 任何多语句一律拒绝，并说明拒绝原因。判定前先剥掉注释与字符串字面量，`SELECT ... FOR UPDATE`、`SELECT ... INTO OUTFILE` 这类藏在查询里的写操作同样被拦。
 2. **只读会话**：建连即执行 `SET SESSION TRANSACTION READ ONLY`，即便将来模板生成出别的东西，数据库层面也写不进去。
 
-实际发出的语句只有两条：`SHOW TABLES` 与 `SHOW FULL COLUMNS FROM <表名>`。
+实际发出的语句只有两种：`SHOW TABLES` 与 `SHOW FULL COLUMNS FROM <表名>`。后者读取 MySQL 返回的 `Null`、`Default`、`Key` 元数据；批量检查复用一次连接，并将全部实体表作为残留表判断依据。
 
 ## 连不上怎么办
 
