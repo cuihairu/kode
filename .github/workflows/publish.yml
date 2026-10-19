@@ -38,8 +38,8 @@ jobs:
       timeout-minutes: 3
       run: |
         publisher=$(node -p "require('./package.json').publisher")
-        if [ "$publisher" != "hairucui" ]; then
-          echo "::error::publisher 必须是 hairucui,当前为 ${publisher},拒绝发布"
+        if [ "$publisher" != "cuihairu" ]; then
+          echo "::error::publisher 必须是 cuihairu,当前为 ${publisher},拒绝发布"
           exit 1
         fi
         pkg_version=$(node -p "require('./package.json').version")
@@ -83,8 +83,8 @@ jobs:
         echo "== package.json publisher=$(node -p "require('./package.json').publisher") name=$(node -p "require('./package.json').name")"
         echo "== 该 PAT 可见的发布者:"
         pnpm exec vsce ls-publishers 2>&1 | tail -20
-        echo "== 公开查询 hairucui.kode:"
-        pnpm exec vsce show hairucui.kode 2>&1 | tail -5
+        echo "== 公开查询 cuihairu.kode-kbengine:"
+        pnpm exec vsce show cuihairu.kode-kbengine 2>&1 | tail -5
         echo "== 鉴权侧说明: 见上方 vsce show 结果;若商店说已存在而 show 说不存在,需人工核对发布者账号"
 
 

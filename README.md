@@ -188,7 +188,7 @@ Runs a static check over all `.def` files in the workspace and reports optimizat
 
 ## Installation
 
-> **Published on the VS Code Marketplace:** [hairucui.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=hairucui.kode-kbengine)
+> **Published on the VS Code Marketplace:** [cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
 > To skip local builds, grab `kode-nightly.vsix` from the [Daily Builds](#daily-builds) section; otherwise build from source and install locally as follows.
 
@@ -364,4 +364,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.0, published to the Marketplace as `hairucui.kode-kbengine`. 27 features, 30 commands, and 42 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Current version 0.1.0, published to the Marketplace as `cuihairu.kode-kbengine`. 27 features, 30 commands, and 42 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.

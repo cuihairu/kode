@@ -44,7 +44,7 @@ async function actualLocations(testCase: NavigationCase): Promise<string[]> {
 
 describe('KBEngine demo navigation through VS Code F12 provider', () => {
   before(async () => {
-    const extension = vscode.extensions.getExtension('hairucui.kode');
+    const extension = vscode.extensions.getExtension('cuihairu.kode-kbengine');
     assert.ok(extension, 'Kode extension is unavailable in the extension host');
     await extension.activate();
     assert.strictEqual(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, DEMO_ROOT);

@@ -69,7 +69,7 @@ async function positionAtWord(
 
 describe('根修令四布局真机 F12:必有落点', () => {
   before(async () => {
-    const extension = vscode.extensions.getExtension('hairucui.kode');
+    const extension = vscode.extensions.getExtension('cuihairu.kode-kbengine');
     assert.ok(extension, '扩展未安装到测试宿主');
     await extension.activate();
     assert.strictEqual(vscode.workspace.workspaceFolders?.length, 1, '工作区未打开');

@@ -26,7 +26,7 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 |------|------|------|
 | `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.50 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
 
-> **已发布到 VSCode Marketplace**：[hairucui.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=hairucui.kode-kbengine)
+> **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
 > 免本地构建也可用[每日构建](#每日构建)的 `kode-nightly.vsix`；或按下文「安装」从源码构建。
 
@@ -195,7 +195,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 
 ## 安装
 
-> **已发布到 VSCode Marketplace**：[hairucui.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=hairucui.kode-kbengine)。免本地构建可直接使用[每日构建](#每日构建)的 `kode-nightly.vsix`;或按下列步骤从源码构建后本地安装。
+> **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)。免本地构建可直接使用[每日构建](#每日构建)的 `kode-nightly.vsix`;或按下列步骤从源码构建后本地安装。
 
 ### 从源码构建并本地安装
 
@@ -374,4 +374,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前版本 0.1.0，已以 `hairucui.kode-kbengine` 发布到 Marketplace。已落地 27 项功能、30 条命令、42 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前版本 0.1.0，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 27 项功能、30 条命令、42 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
