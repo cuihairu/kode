@@ -1438,15 +1438,18 @@ export function inferOwnerKindFromPythonFile(
 export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
   const normalizedPath = normalizeLookupPath(pythonFile);
 
-  if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')) {
+  if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')
+    || normalizedPath.startsWith('base/') || normalizedPath.includes('/base/')) {
     return 'BaseMethods';
   }
 
-  if (normalizedPath.includes('/scripts/cell/') || normalizedPath.includes('/assets/scripts/cell/')) {
+  if (normalizedPath.includes('/scripts/cell/') || normalizedPath.includes('/assets/scripts/cell/')
+    || normalizedPath.startsWith('cell/') || normalizedPath.includes('/cell/')) {
     return 'CellMethods';
   }
 
-  if (normalizedPath.includes('/scripts/client/') || normalizedPath.includes('/assets/scripts/client/')) {
+  if (normalizedPath.includes('/scripts/client/') || normalizedPath.includes('/assets/scripts/client/')
+    || normalizedPath.startsWith('client/') || normalizedPath.includes('/client/')) {
     return 'ClientMethods';
   }
 

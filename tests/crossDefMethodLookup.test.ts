@@ -36,7 +36,7 @@ describe('跨 .def 文件解析 Python 接口方法', () => {
       '  </BaseMethods>',
       '</root>'
     ].join('\n'));
-    put('scripts/base/interfaces/interface_Mysterious.py', [
+    put('base/interfaces/interface_Mysterious.py', [
       'def reqRefreshMysteriousBox(self):',
       '    pass'
     ].join('\n'));
@@ -48,7 +48,7 @@ describe('跨 .def 文件解析 Python 接口方法', () => {
 
     const manager = new EntityMappingManager({ subscriptions: [] });
     managers.push(manager);
-    const pythonFile = path.join(root, 'scripts/base/interfaces/interface_Mysterious.py');
+    const pythonFile = path.join(root, 'base/interfaces/interface_Mysterious.py');
 
     // Regression evidence: before global def fallback, no Mysterious.def owner exists.
     const definition = await manager.resolveMethodDefinition(pythonFile, 'reqRefreshMysteriousBox');
