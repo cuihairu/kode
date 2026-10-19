@@ -34,6 +34,7 @@ import { resolveServerComponent } from './serverCommandTarget';
 import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager } from './quickActions';
+import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
@@ -1033,18 +1034,29 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(showEntityFlowCommand);
 
   // 快速执行动作(批126):动作清单由 .kbengine/debug.json 的 quickActions 驱动,
-  // 按钮挂视图标题栏与编辑器标题栏,命令本体只有一个 show。
+  // 独立树视图逐行执行;Servers 与编辑器标题栏保留清单入口。
   // 首装扫一层 .bat/.ps1 的提示在激活末跑一次(不 await,不挡激活)。
-  // 批136(用户令「学 debugger 那样在 Explorer 顶部放个按钮」):新增
-  // runDefault —— Explorer 顶栏 ▶ 一键跑上次执行的动作,▾ 下拉仍是 show。
+  // 批136:保留 runDefault 命令,供命令面板一键跑上次执行的动作。
   const quickActionManager = new QuickActionManager(context);
+  const quickActionTreeProvider = new QuickActionTreeProvider({
+    getActions: () => quickActionManager.getTreeActions()
+  });
+  context.subscriptions.push(vscode.window.registerTreeDataProvider('kbengine.quickActions', quickActionTreeProvider));
+  const runQuickActionByNameCommand = vscode.commands.registerCommand(
+    'kbengine.quickActions.runByName',
+    (name: string) => quickActionManager.runByName(name)
+  );
+  context.subscriptions.push(runQuickActionByNameCommand);
   const showQuickActionsCommand = vscode.commands.registerCommand('kbengine.quickActions.show', () =>
     quickActionManager.show()
   );
   context.subscriptions.push(showQuickActionsCommand);
   const rescanQuickActionScriptsCommand = vscode.commands.registerCommand(
     'kbengine.quickActions.scanScripts',
-    () => quickActionManager.scanScriptsAndRefresh()
+    async () => {
+      await quickActionManager.scanScriptsAndRefresh();
+      quickActionTreeProvider.refresh();
+    }
   );
   context.subscriptions.push(rescanQuickActionScriptsCommand);
   const runDefaultQuickActionCommand = vscode.commands.registerCommand(

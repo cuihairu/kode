@@ -327,7 +327,7 @@
 
 - 标题：`Run Quick Actions`
 - 作用：弹出「快速执行动作」清单并执行选中的那条。动作清单写在工作区的 `.kbengine/debug.json` 顶层 `quickActions` 数组里，跟着 KBEngine 工程走，不进 VS Code 设置、不进 `launch.json`
-- 入口：Servers 视图标题栏按钮、`.def` / Python / XML 编辑器右上角按钮、命令面板 `Run Quick Actions`
+- 入口：「快速执行」独立视图逐行动作；Servers 视图标题栏按钮、`.def` / Python / XML 编辑器右上角按钮、命令面板 `Run Quick Actions`
 - 三类后端（白名单，不提供任意 shell 入口）：
   - `command`：VS Code 命令 id，`args` 原样透传（字符串项支持变量），复用被调命令自身的报错
   - `script`：执行配置里显式声明的脚本；`background: true` 表示起服类不等退出码（进程活着即报「已启动」）
@@ -345,7 +345,7 @@
 
 - 标题：`Run Default Quick Action`
 - 作用：一键执行「上次实际执行过的动作」；从未执行过就取清单第一条。工作区没有任何可执行动作时提示「未发现可执行脚本」并指路 `.kbengine/debug.json`
-- 入口：KBEngine Explorer 视图标题栏 ▶ 按钮（下拉 ▾ 按钮右侧第一个）
+- 入口：命令面板；ENTITIES 标题栏不再显示快速执行入口
 - 行为：
   - 记忆键 `kbengine.quickActions.lastRun` 存在本工作区的 workspaceState 里；清单中选过的动作立即成为 ▶ 的默认目标，与该次执行成败无关
   - 记忆的动作被删掉/改坏时回落到清单第一条，不报错
@@ -356,7 +356,12 @@
 - 标题：`Rescan Scripts for Quick Actions`
 - 作用：重新扫描生效工作目录和 `assetsRoot` 顶层的 `.bat` / `.ps1`，按选择结果刷新扫描生成的动作，保留手工动作与其他调试配置
 - 脚本运行目录：扫描生成的动作以脚本所在目录为 `cwd`
-- 入口：命令面板
+- 入口：「快速执行」视图标题栏重新扫描按钮、空态行、命令面板
+
+### `kbengine.quickActions.runByName`
+
+- 标题：`执行快速动作`
+- 作用：按动作名执行 `.kbengine/debug.json` 的 `quickActions` 条目，由「快速执行」视图的动作行调用
 
 ### `kbengine.python.syncExtraPaths`
 

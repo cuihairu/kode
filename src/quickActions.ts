@@ -397,6 +397,17 @@ export class QuickActionManager {
     return this.run(action, options);
   }
 
+  /** Tree view rows use the same resolved target and script basename as the picker. */
+  async getTreeActions(): Promise<Array<{ name: string; type: QuickAction['type']; target: string }>> {
+    const { actions } = await this.loadActions();
+    const folders = this.actionWorkspaceFolders();
+    return actions.map(action => ({
+      name: action.name,
+      type: action.type,
+      target: resolvedActionTarget(action, folders)
+    }));
+  }
+
   /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */
   async offerScanOnActivate(): Promise<void> {
     const root = this.getConfigurationRoot();

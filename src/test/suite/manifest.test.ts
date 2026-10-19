@@ -30,4 +30,17 @@ describe('Extension manifest', () => {
     assert.ok(snippets.some(entry => entry.language === 'kbengine-def' && entry.path === './snippets/kbengine.json'));
     assert.ok(snippets.some(entry => entry.language === 'xml' && entry.path === './snippets/kbengine-types-xml.json'));
   });
+
+  it('contributes quick actions as an independent view before Entities', () => {
+    const views = manifest.contributes.views['kbengine-explorer'] as Array<{ id: string; name: string }>;
+    const quickIndex = views.findIndex(view => view.id === 'kbengine.quickActions');
+    const entityIndex = views.findIndex(view => view.id === 'kbengine.entityExplorer');
+    assert.ok(quickIndex >= 0, 'quick actions view missing');
+    assert.ok(entityIndex > quickIndex, 'quick actions should be listed before Entities');
+    assert.strictEqual(views[quickIndex].name, '快速执行');
+
+    const viewTitles = manifest.contributes.menus['view/title'] as Array<{ command: string; when: string }>;
+    assert.ok(viewTitles.some(entry => entry.command === 'kbengine.quickActions.scanScripts' && entry.when === 'view == kbengine.quickActions'));
+    assert.ok(!viewTitles.some(entry => entry.when === 'view == kbengine.entityExplorer' && entry.command.startsWith('kbengine.quickActions.')));
+  });
 });

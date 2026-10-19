@@ -77,6 +77,7 @@
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.scanScripts",
     "onCommand:kbengine.quickActions.runDefault",
+    "onCommand:kbengine.quickActions.runByName",
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs"
@@ -150,6 +151,10 @@
     },
     "views": {
       "kbengine-explorer": [
+        {
+          "id": "kbengine.quickActions",
+          "name": "快速执行"
+        },
         {
           "id": "kbengine.entityExplorer",
           "name": "Entities"
@@ -370,6 +375,10 @@
         "icon": "$(play)"
       },
       {
+        "command": "kbengine.quickActions.runByName",
+        "title": "执行快速动作"
+      },
+      {
         "command": "kbengine.python.syncExtraPaths",
         "title": "Sync Python Extra Paths"
       },
@@ -384,16 +393,6 @@
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "kbengine.quickActions.runDefault",
-          "when": "view == kbengine.entityExplorer",
-          "group": "navigation@1"
-        },
-        {
-          "command": "kbengine.quickActions.show",
-          "when": "view == kbengine.entityExplorer",
-          "group": "navigation@2"
-        },
         {
           "command": "kbengine.refreshExplorer",
           "when": "view == kbengine.entityExplorer",
@@ -412,6 +411,11 @@
         {
           "command": "kbengine.quickActions.show",
           "when": "view == kbengine.serverControl",
+          "group": "navigation"
+        },
+        {
+          "command": "kbengine.quickActions.scanScripts",
+          "when": "view == kbengine.quickActions",
           "group": "navigation"
         }
       ],
