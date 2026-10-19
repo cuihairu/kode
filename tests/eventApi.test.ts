@@ -71,4 +71,79 @@ describe('KBEngine event API parsing', () => {
       vscode.workspace.openTextDocument = originalOpen;
     }
   });
+
+  it.each([
+    ['class attribute', 'class Foo:\n    PLAYER_EVENT = "ready"', 1],
+    ['annotated module assignment', 'PLAYER_EVENT: str = "ready"', 0],
+    ['single-quoted module assignment', "PLAYER_EVENT = 'ready'", 0],
+    ['def entity method declaration', '<root>\n\t<CellMethods>\n\t\t<PLAYER_EVENT>\n\t\t</PLAYER_EVENT>\n\t</CellMethods>\n</root>', 2],
+    ['self assignment in __init__', 'class Foo:\n    def __init__(self):\n        self.PLAYER_EVENT = "ready"', 2],
+  ])('resolves %s', async (_name, content, expectedLine) => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    const originalOpen = vscode.workspace.openTextDocument;
+    const target = vscode.Uri.file('/ws/definitions.' + (content.startsWith('<root>') ? 'def' : 'py'));
+    vscode.workspace.findFiles = async () => [target];
+    vscode.workspace.openTextDocument = async () => makeTextDocument(content, { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument;
+    try {
+      const source = 'self.emitEvent(PLAYER_EVENT)';
+      const doc = makeTextDocument(source, { fileName: '/ws/use.py', languageId: 'python' }) as vscode.TextDocument;
+      const location = await eventDefinitionAt(doc, new vscode.Position(0, source.indexOf('PLAYER_EVENT') + 1));
+      expect(location?.uri.fsPath).toBe(target.fsPath);
+      expect(location?.range.start.line).toBe(expectedLine);
+    } finally {
+      vscode.workspace.findFiles = originalFindFiles;
+      vscode.workspace.openTextDocument = originalOpen;
+    }
+  });
+
+  it('resolves a unique same-file definition at its actual position', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    const originalOpen = vscode.workspace.openTextDocument;
+    const target = vscode.Uri.file('/ws/use.py');
+    const content = 'class Other:\n    OTHER_EVENT = "x"\n\nPLAYER_EVENT: str = "ready"\nself.emitEvent(PLAYER_EVENT)';
+    vscode.workspace.findFiles = async () => [target];
+    vscode.workspace.openTextDocument = async () => makeTextDocument(content, { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument;
+    try {
+      const doc = makeTextDocument(content, { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument;
+      const location = await eventDefinitionAt(doc, new vscode.Position(4, content.split('\n')[4].indexOf('PLAYER_EVENT') + 1));
+      expect(location?.range.start.line).toBe(3);
+    } finally {
+      vscode.workspace.findFiles = originalFindFiles;
+      vscode.workspace.openTextDocument = originalOpen;
+    }
+  });
+
+  it('selects the matching class definition when a file has same-named class constants', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    const originalOpen = vscode.workspace.openTextDocument;
+    const target = vscode.Uri.file('/ws/use.py');
+    const content = 'class First:\n    PLAYER_EVENT = "first"\n\nclass Second:\n    PLAYER_EVENT = "second"\n    def run(self):\n        self.emitEvent(PLAYER_EVENT)';
+    vscode.workspace.findFiles = async () => [target];
+    vscode.workspace.openTextDocument = async () => makeTextDocument(content, { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument;
+    try {
+      const doc = makeTextDocument(content, { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument;
+      const offset = content.lastIndexOf('PLAYER_EVENT');
+      const location = await eventDefinitionAt(doc, doc.positionAt(offset + 1));
+      expect(location?.range.start.line).toBe(4);
+    } finally {
+      vscode.workspace.findFiles = originalFindFiles;
+      vscode.workspace.openTextDocument = originalOpen;
+    }
+  });
+
+  it('skips numeric and other non-string event definitions', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    const originalOpen = vscode.workspace.openTextDocument;
+    const target = vscode.Uri.file('/ws/events.py');
+    vscode.workspace.findFiles = async () => [target];
+    vscode.workspace.openTextDocument = async () => makeTextDocument('PLAYER_EVENT = 42', { fileName: target.fsPath, languageId: 'python' }) as vscode.TextDocument;
+    try {
+      const source = 'self.emitEvent(PLAYER_EVENT)';
+      const doc = makeTextDocument(source, { fileName: '/ws/use.py', languageId: 'python' }) as vscode.TextDocument;
+      expect(await eventDefinitionAt(doc, new vscode.Position(0, source.indexOf('PLAYER_EVENT') + 1))).toBeNull();
+    } finally {
+      vscode.workspace.findFiles = originalFindFiles;
+      vscode.workspace.openTextDocument = originalOpen;
+    }
+  });
 });

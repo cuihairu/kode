@@ -40,17 +40,34 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
   const selected = calls.find(c => offset >= c.eventOffset && offset <= c.eventOffset + c.event.length);
   if (!selected) return null;
   const candidates = await vscode.workspace.findFiles('**/*.{py,def}', '**/{.git,node_modules}/**');
+  const definitions: Array<{ location: vscode.Location; scope?: string }> = [];
+  const sourcePrefix = text.slice(0, selected.eventOffset);
+  const sourceClasses = [...sourcePrefix.matchAll(/^\s*class\s+(\w+)\b/gm)];
+  const sourceScope = sourceClasses.length ? sourceClasses[sourceClasses.length - 1][1] : undefined;
   for (const uri of candidates) {
     const doc = await vscode.workspace.openTextDocument(uri);
     const lines = doc.getText().split(/\r?\n/);
     const escaped = selected.event.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = uri.fsPath.endsWith('.py')
-      ? new RegExp(`^\\s*${escaped}\\s*=\\s*(['"])([^'"]+)\\1\\s*(?:#.*)?$`)
-      : new RegExp(`^\\s*(?:${escaped}\\s*=|<${escaped}\\s*>|${escaped}\\s*:)`);
-    const line = lines.findIndex(value => re.test(value));
-    if (line >= 0) return new vscode.Location(uri, new vscode.Position(line, Math.max(0, lines[line].indexOf(selected.event))));
+    lines.forEach((value, line) => {
+      let match: RegExpMatchArray | null = null;
+      if (uri.fsPath.endsWith('.py')) {
+        // Module/class constants and self constants in __init__; only string literals qualify.
+        match = new RegExp(`^\\s*(?:(?:self\\.)?${escaped})\\s*(?::\\s*str)?\\s*=\\s*(['"])([^'"\\n]*)\\1\\s*(?:#.*)?$`).exec(value);
+      } else if (uri.fsPath.endsWith('.def')) {
+        // KBEngine def files declare entity methods as XML-like nodes, e.g. <CellMethods><onFire>.
+        match = new RegExp(`^\\s*<${escaped}>\\s*$`).exec(value);
+      }
+      if (match) {
+        const priorClasses = uri.fsPath.endsWith('.py') ? [...lines.slice(0, line + 1).join('\n').matchAll(/^\s*class\s+(\w+)\b/gm)] : [];
+        const scope = priorClasses.length ? priorClasses[priorClasses.length - 1][1] : undefined;
+        definitions.push({ location: new vscode.Location(uri, new vscode.Position(line, Math.max(0, value.indexOf(selected.event)))), scope });
+      }
+    });
   }
-  return null;
+  // A same-file duplicate or cross-file duplicate is ambiguous; do not guess.
+  const scoped = sourceScope ? definitions.filter(definition => definition.scope === sourceScope) : [];
+  if (scoped.length === 1) return scoped[0].location;
+  return definitions.length === 1 ? definitions[0].location : null;
 }
 
 export class EventCodeLensProvider implements vscode.CodeLensProvider {
