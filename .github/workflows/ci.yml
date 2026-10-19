@@ -87,14 +87,20 @@ jobs:
 
     - name: 发布到 VSCode Marketplace (Release)
       timeout-minutes: 10
-      if: github.event_name == 'release' && github.event.action == 'created'
+      # release 创建时自动发；也支持手动重触发（Actions → CI/CD → Run workflow）
+      if: >-
+        (github.event_name == 'release' && github.event.action == 'created') ||
+        github.event_name == 'workflow_dispatch'
       run: pnpm run publish
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
     - name: 创建 GitHub Release (Tag Push)
       timeout-minutes: 10
-      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+      # tag push 自动执行；也支持在 tag 上手动重触发（Run workflow 选 tag）
+      if: >-
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
       # 用 gh CLI 而非 softprops/action-gh-release：action 在「既有 release 更新」
       # 路径上反复 403（Resource not accessible by integration），权限声明齐备仍复发
       # —— 与 nightly.yml 采用同一做法（回归见 softprops/action-gh-release#572/#836）。
