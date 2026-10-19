@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { QuickActionManager } from '../src/quickActions';
+import { QuickActionManager, terminalScript } from '../src/quickActions';
 import type {
   HttpRunResult,
   QuickActionManagerDeps,
@@ -1049,6 +1049,32 @@ describe('QuickActionManager.offerScanOnActivate', () => {
 });
 
 describe('QuickActionManager.scanScriptsAndRefresh', () => {
+  it('lists unregistered scan results and runs a clicked script without waiting for registration', async () => {
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    const terminalCalls: unknown[][] = [];
+    const originalCreateTerminal = stubWindow.createTerminal;
+    stubWindow.createTerminal = ((options: unknown) => {
+      terminalCalls.push([options]);
+      return { sendText: (...args: unknown[]) => terminalCalls.push(args) } as never;
+    }) as never;
+    const manager = new QuickActionManager(makeContext(), { runScript: terminalScript });
+    const data = await manager.getTreeData();
+    expect(data.scripts).toEqual([{ name: 'cleanup.bat', type: 'script', target: '/ws/cleanup.bat', runDirect: true }]);
+
+    try {
+      await manager.runScannedScript('/ws/cleanup.bat');
+      expect(terminalCalls).toEqual([
+        [{ name: 'Kode: cleanup · cleanup.bat', cwd: '/ws' }],
+        [expect.stringContaining('即将执行：/ws/cleanup.bat'), true],
+        ['/ws/cleanup.bat', true]
+      ]);
+      expect(messages.info.some(message => String(message).includes('是否登记'))).toBe(true);
+      expect(memoryFileSystem.files.has('/ws/.kbengine/debug.json')).toBe(false);
+    } finally {
+      stubWindow.createTerminal = originalCreateTerminal;
+    }
+  });
+
   it('scans the effective config root and assetsRoot, preserves manual actions, and writes to that config root', async () => {
     memoryFileSystem.set('/repo/server/.kbengine/debug.json', JSON.stringify({
       version: 1,

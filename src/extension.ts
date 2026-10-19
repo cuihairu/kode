@@ -1039,7 +1039,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 批136:保留 runDefault 命令,供命令面板一键跑上次执行的动作。
   const quickActionManager = new QuickActionManager(context);
   const quickActionTreeProvider = new QuickActionTreeProvider({
-    getActions: () => quickActionManager.getTreeActions()
+    getActions: () => quickActionManager.getTreeData()
   });
   context.subscriptions.push(vscode.window.registerTreeDataProvider('kbengine.quickActions', quickActionTreeProvider));
   const runQuickActionByNameCommand = vscode.commands.registerCommand(

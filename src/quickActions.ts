@@ -389,6 +389,7 @@ export class QuickActionManager {
     if (name.length === 0) {
       return false;
     }
+    if (name.startsWith('@script:')) return this.runScannedScript(name.slice('@script:'.length));
     const { actions } = await this.loadActions();
     const action = actions.find(item => item.name === name);
     if (!action) {
@@ -406,6 +407,35 @@ export class QuickActionManager {
       type: action.type,
       target: resolvedActionTarget(action, folders)
     }));
+  }
+
+  /** 未登记脚本直接走既有 resolveAction/run 链；登记询问在执行开始后异步出现。 */
+  async runScannedScript(scriptPath: string): Promise<boolean> {
+    const root = this.getConfigurationRoot();
+    if (!root) return false;
+    const candidate: BatchScriptCandidate = { path: scriptPath, category: null };
+    const [action] = buildScannedActions([candidate], root);
+    if (!action || action.type !== 'script') return false;
+    const direct: QuickAction = { ...action, confirm: false };
+    void vscode.window.showInformationMessage(`是否登记「${baseNameOf(scriptPath)}」为快速执行动作？`, '登记').then(async choice => {
+      if (choice !== '登记') return;
+      const current = await this.readConfigFile();
+      const existing = parseQuickActionConfigs(current?.quickActions).actions;
+      const name = direct.name;
+      if (existing.some(item => item.name === name)) return;
+      await this.writeQuickActions(root, [...existing, action]);
+      await vscode.window.showInformationMessage(`已登记「${baseNameOf(scriptPath)}」`);
+    }, () => undefined);
+    return this.run(direct);
+  }
+
+  async getTreeData(): Promise<{ registered: Array<{ name: string; type: QuickAction['type']; target: string }>; scripts: Array<{ name: string; type: 'script'; target: string; runDirect: true }> }> {
+    const registered = await this.getTreeActions();
+    const registeredPaths = new Set(registered.filter(action => action.type === 'script').map(action => path.resolve(action.target).toLowerCase()));
+    const scripts = (await this.scanCandidates()).filter(candidate => !registeredPaths.has(path.resolve(candidate.path).toLowerCase())).map(candidate => ({
+      name: baseNameOf(candidate.path), type: 'script' as const, target: candidate.path, runDirect: true as const
+    }));
+    return { registered, scripts };
   }
 
   /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */
