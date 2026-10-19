@@ -4,6 +4,61 @@ import { EventCodeLensProvider, eventDefinitionAt, findEventCalls } from '../src
 import { makeTextDocument } from './helpers/vscodeStub';
 
 describe('KBEngine event API parsing', () => {
+  it('shows the event name on a single callback CodeLens', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    vscode.workspace.findFiles = async () => [];
+    try {
+      const doc = makeTextDocument('self.addEvent(PLAYER_EVENT, "on_player")\ndef on_player(self):\n    pass', { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
+      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      expect((lenses[0].command as { title: string }).title).toBe('事件回调 · PLAYER_EVENT');
+    } finally { vscode.workspace.findFiles = originalFindFiles; }
+  });
+
+  it('lists up to three distinct registered events in first-seen order', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    vscode.workspace.findFiles = async () => [];
+    try {
+      const source = 'self.addEvent(A_EVENT, "on_ready")\nself.registerEvent(B_EVENT, "on_ready")\nself.addEvent(A_EVENT, "on_ready")\nself.addEvent(C_EVENT, "on_ready")\ndef on_ready(self):\n    pass';
+      const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
+      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      expect((lenses[0].command as { title: string }).title).toBe('事件回调 · A_EVENT、B_EVENT、C_EVENT');
+    } finally { vscode.workspace.findFiles = originalFindFiles; }
+  });
+
+  it('folds more than three events into the first event and total count', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    vscode.workspace.findFiles = async () => [];
+    try {
+      const source = ['A_EVENT', 'B_EVENT', 'C_EVENT', 'D_EVENT', 'E_EVENT'].map(event => `self.addEvent(${event}, "on_ready")`).join('\n') + '\ndef on_ready(self):\n    pass';
+      const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
+      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      expect((lenses[0].command as { title: string }).title).toBe('事件回调 · A_EVENT 等 5 个');
+    } finally { vscode.workspace.findFiles = originalFindFiles; }
+  });
+
+  it('merges and deduplicates event names across addEvent and registerEvent', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    vscode.workspace.findFiles = async () => [];
+    try {
+      const source = 'self.addEvent(PLAYER_EVENT, "on_ready")\nself.registerEvent(PLAYER_EVENT, "on_ready")\nself.registerEvent(OTHER_EVENT, "on_ready")\ndef on_ready(self):\n    pass';
+      const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
+      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      expect((lenses[0].command as { title: string }).title).toBe('事件回调 · PLAYER_EVENT、OTHER_EVENT');
+    } finally { vscode.workspace.findFiles = originalFindFiles; }
+  });
+
+  it('anchors the callback CodeLens to the def line and emits only one lens for repeated registrations', async () => {
+    const originalFindFiles = vscode.workspace.findFiles;
+    vscode.workspace.findFiles = async () => [];
+    try {
+      const source = 'self.addEvent(FIRST_EVENT, "on_ready")\nself.registerEvent(SECOND_EVENT, "on_ready")\n\ndef on_ready(self):\n    self.work()';
+      const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
+      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      expect(lenses).toHaveLength(1);
+      expect(lenses[0].range.start.line).toBe(3);
+    } finally { vscode.workspace.findFiles = originalFindFiles; }
+  });
+
   it('recognizes literal callbacks from both registration APIs', () => {
     expect(findEventCalls('self.addEvent(PLAYER_EVENT, "on_player")\nself.registerEvent(PLAYER_EVENT, \'on_player\')')
       .filter(call => call.callback).map(call => call.callback)).toEqual(['on_player', 'on_player']);

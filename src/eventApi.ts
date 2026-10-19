@@ -75,14 +75,26 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
     const text = document.getText();
     const calls = findEventCalls(text);
     const all = await scanEventCalls();
-    const methods = [...text.matchAll(/^\s*(?:async\s+)?def\s+(\w+)\s*\(/gm)];
+    const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)];
     const lenses: vscode.CodeLens[] = [];
+    const eventsByCallback = new Map<string, string[]>();
+    for (const call of calls) {
+      if ((call.api !== 'addEvent' && call.api !== 'registerEvent') || !call.callback) continue;
+      const events = eventsByCallback.get(call.callback) ?? [];
+      if (!events.includes(call.event)) events.push(call.event);
+      eventsByCallback.set(call.callback, events);
+    }
     for (const method of methods) {
       const name = method[1];
-      if (!calls.some(c => c.callback === name)) continue;
+      const events = eventsByCallback.get(name);
+      if (!events) continue;
       const line = document.positionAt(method.index || 0).line;
       const target = document.positionAt(method.index || 0);
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, 0, line, 0), { title: '事件回调', command: 'vscode.open', arguments: [document.uri, { selection: new vscode.Range(target, target) }] }));
+      const title = events.length > 3
+        ? `事件回调 · ${events[0]} 等 ${events.length} 个`
+        : `事件回调 · ${events.join('、')}`;
+      const lineStart = new vscode.Position(line, 0);
+      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title, command: 'vscode.open', arguments: [document.uri, { selection: new vscode.Range(target, target) }] }));
     }
     for (const call of calls.filter(c => c.api === 'emitEvent')) {
       const listeners = all.filter(item => (item.call.api === 'addEvent' || item.call.api === 'registerEvent') && item.call.event === call.event);
@@ -91,7 +103,8 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
       const first = listeners[0];
       const targetLine = first.text.slice(0, first.call.eventOffset).split(/\r?\n/).length - 1;
       const target = new vscode.Position(targetLine, 0);
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, 0, line, 0), { title: `${listeners.length} 处监听`, command: 'vscode.open', arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
+      const lineStart = new vscode.Position(line, 0);
+      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title: `${listeners.length} 处监听`, command: 'vscode.open', arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
     }
     return lenses;
   }
