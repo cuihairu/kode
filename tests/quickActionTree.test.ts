@@ -25,7 +25,7 @@ describe('QuickActionTreeProvider', () => {
     expect(allScripts[0].command).toMatchObject({ command: 'kbengine.quickActions.runByName', arguments: ['@script:C:/workspace/tools/cleanup.ps1'] });
     expect(httpRequests[0].label).toBe('GET  127.0.0.1:8080/health');
     expect(httpRequests[0].tooltip).toContain('http://127.0.0.1:8080/health');
-    expect(httpRequests[0].command).toMatchObject({ command: 'kbengine.quickActions.runByName', arguments: ['@http:0'] });
+    expect(httpRequests[0].command).toMatchObject({ command: 'kbengine.quickActions.runByName', arguments: ['@http:debug:0'] });
     expect(httpRequests[1].label).toBe('POST  127.0.0.1:8080/api/login');
   });
 

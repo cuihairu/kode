@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { QuickActionManager, terminalScript } from '../src/quickActions';
+import { QuickActionTreeProvider } from '../src/quickActionTree';
 import type {
   HttpRunResult,
   QuickActionManagerDeps,
@@ -152,6 +153,49 @@ afterEach(() => {
 });
 
 describe('QuickActionManager.show', () => {
+  it('merges debug and settings HTTP rows, hides setting-disabled and gives settings duplicate priority', async () => {
+    setConfig({ httpRequests: [
+      { name: 'debug-only', method: 'POST', url: 'http://debug/only', body: 'd' },
+      { name: 'collision', method: 'GET', url: 'http://debug/collision' }
+    ] });
+    const manager = new QuickActionManager(makeContext(), {
+      ...makeDeps(),
+      getSettingHttpEntries: () => [
+        { name: 'setting-only', method: 'PUT', url: 'http://settings/only', body: 's', headers: {}, enabled: true, keybinding: '' },
+        { name: 'collision', method: 'PATCH', url: 'http://settings/collision', body: '', headers: {}, enabled: true, keybinding: '' },
+        { name: 'off', method: 'GET', url: 'http://settings/off', body: '', headers: {}, enabled: false, keybinding: '' }
+      ]
+    });
+    const rows = (await manager.getTreeData()).httpRequests;
+    expect(rows.map(row => [row.name, row.requestSource, row.requestIndex, row.target])).toEqual([
+      ['debug-only', 'debug', 0, 'http://debug/only'],
+      ['setting-only', 'settings', 0, 'http://settings/only'],
+      ['collision', 'settings', 1, 'http://settings/collision']
+    ]);
+    expect(rows).toHaveLength(3);
+    const provider = new QuickActionTreeProvider({ getActions: async () => ({ registered: [], scripts: [], httpRequests: rows }) });
+    const [group] = await provider.getChildren();
+    expect(group.label).toBe('已登记 0');
+    expect((await provider.getChildren())[2].label).toBe('HTTP 请求 3');
+    const httpRows = await provider.getChildren((await provider.getChildren())[2]);
+    expect(httpRows[0].tooltip).toContain('来源：.kbengine/debug.json');
+    expect(httpRows[1].tooltip).toContain('来源：kbengine.httpRequests 设置');
+  });
+
+  it('routes settings source plus original index to the shared HTTP service entry', async () => {
+    const received: Array<{ name: string; url: string }> = [];
+    const manager = new QuickActionManager(makeContext(), {
+      ...makeDeps(),
+      getSettingHttpEntries: () => [
+        { name: 'first', method: 'GET', url: 'http://settings/first', body: '', headers: {}, enabled: true, keybinding: '' },
+        { name: 'second', method: 'POST', url: 'http://settings/second', body: '{"x":2}', headers: {}, enabled: true, keybinding: '' }
+      ],
+      runHttpEntry: async entry => { received.push({ name: entry.name, url: entry.url }); return true; }
+    });
+    await expect(manager.runByName('@http:settings:1')).resolves.toBe(true);
+    expect(received).toEqual([{ name: 'second', url: 'http://settings/second' }]);
+  });
+
   it('tells the user where to configure when no actions exist', async () => {
     const manager = new QuickActionManager(makeContext(), makeDeps());
 

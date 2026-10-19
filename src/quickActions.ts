@@ -28,6 +28,7 @@ import type {
   QuickActionCategory,
   WorkspaceFolderRef
 } from './quickActionConfig';
+import type { HttpRequestEntry } from './httpRequests';
 import { scanBatchScriptsInRoots } from './quickActionScanner';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
@@ -88,6 +89,9 @@ export interface QuickActionManagerDeps {
   runScript?: ScriptRunner;
   runHttp?: HttpRunner;
   executeCommand?: CommandRunner;
+  /** Shared HTTP service entry point used by both views and command picks. */
+  runHttpEntry?: (entry: HttpRequestEntry, execute?: () => Promise<void>) => Promise<boolean>;
+  getSettingHttpEntries?: () => HttpRequestEntry[];
 }
 
 /** 无人值守通道(自动热重载等)的执行选项 */
@@ -302,6 +306,8 @@ export class QuickActionManager {
   private readonly runScript: ScriptRunner;
   private readonly runHttp: HttpRunner;
   private readonly executeCommand: CommandRunner;
+  private readonly runHttpEntry?: (entry: HttpRequestEntry, execute?: () => Promise<void>) => Promise<boolean>;
+  private readonly getSettingHttpEntries: () => HttpRequestEntry[];
   private configurationRoot: string | null = null;
   private additionalScanRoots: string[] = [];
 
@@ -313,6 +319,8 @@ export class QuickActionManager {
     this.runHttp = deps.runHttp ?? fetchHttp;
     this.executeCommand =
       deps.executeCommand ?? ((command, args) => vscode.commands.executeCommand(command, ...args));
+    this.runHttpEntry = deps.runHttpEntry;
+    this.getSettingHttpEntries = deps.getSettingHttpEntries ?? (() => []);
   }
 
   /** 配置、扫描、脚本变量解析统一锚定到启动引导选出的工作目录。 */
@@ -420,7 +428,10 @@ export class QuickActionManager {
     if (name.length === 0) {
       return false;
     }
-    if (name.startsWith('@http:')) return this.runHttpRequest(Number(name.slice('@http:'.length)));
+    if (name.startsWith('@http:')) {
+      const match = /^@http:(debug|settings):(\d+)$/.exec(name);
+      return match ? this.runHttpRequestFrom(match[1] as 'debug' | 'settings', Number(match[2])) : this.runHttpRequest(Number(name.slice('@http:'.length)));
+    }
     if (name.startsWith('@script:')) return this.runScannedScript(name.slice('@script:'.length));
     const { actions } = await this.loadActions();
     const action = actions.find(item => item.name === name);
@@ -461,34 +472,54 @@ export class QuickActionManager {
     return this.run(direct);
   }
 
-  async getTreeData(): Promise<{ registered: Array<{ name: string; type: QuickAction['type']; target: string }>; scripts: Array<{ name: string; type: 'script'; target: string; runDirect: true }>; httpRequests: Array<{ name: string; type: 'http'; target: string; method: string; runDirect: true }> }> {
+  async getTreeData(): Promise<{ registered: Array<{ name: string; type: QuickAction['type']; target: string }>; scripts: Array<{ name: string; type: 'script'; target: string; runDirect: true }>; httpRequests: Array<{ name: string; type: 'http'; target: string; method: string; runDirect: true; requestSource: 'debug' | 'settings'; requestIndex: number }> }> {
     const registered = await this.getTreeActions();
     const registeredPaths = new Set(registered.filter(action => action.type === 'script').map(action => path.resolve(action.target).toLowerCase()));
     const scripts = (await this.scanCandidates()).filter(candidate => !registeredPaths.has(path.resolve(candidate.path).toLowerCase())).map(candidate => ({
       name: baseNameOf(candidate.path), type: 'script' as const, target: candidate.path, runDirect: true as const
     }));
     const config = await this.readConfigFile();
-    const requests = parseHttpRequestConfigs(config?.httpRequests).requests;
+    const debugRequests = parseHttpRequestConfigs(config?.httpRequests).requests;
+    const settingRequests = this.getSettingHttpEntries();
+    // Conflict policy: settings win for duplicate names, matching the command-panel configuration.
+    const requests = [
+      ...debugRequests.map((request, index) => ({ request, source: 'debug' as const, index }))
+        .filter(item => !settingRequests.some(setting => setting.name === (item.request.name ?? `${item.request.method} ${item.request.url}`))),
+      ...settingRequests.map((request, index) => ({ request, source: 'settings' as const, index }))
+    ];
     const folders = this.actionWorkspaceFolders();
-    const httpRequests = requests.map((request, index) => {
+    const httpRequests = requests.filter(item => !('enabled' in item.request) || item.request.enabled !== false).map(({ request, source, index }) => {
       let target = request.url;
       try { target = resolveActionVariables(request.url, folders); } catch { /* execution reports the invalid variable */ }
       return {
         name: request.name ?? `${request.method} ${request.url}`,
         type: 'http' as const,
         method: request.method,
+        source,
         target,
         runDirect: true as const,
         // Index is stable against the same parsed request ordering at click time.
-        requestIndex: index
+        requestIndex: index,
+        requestSource: source
       };
     });
     return { registered, scripts, httpRequests };
   }
 
   private async runHttpRequest(index: number): Promise<boolean> {
+    // Legacy numeric selectors refer to debug.json entries.
+    return this.runHttpRequestFrom('debug', index);
+  }
+
+  async runHttpRequestFrom(source: 'debug' | 'settings', index: number): Promise<boolean> {
+    if (source === 'settings' && this.runHttpEntry) {
+      const entry = this.getSettingHttpEntries()[index];
+      return entry ? this.runHttpEntry(entry) : false;
+    }
     const config = await this.readConfigFile();
-    const request = parseHttpRequestConfigs(config?.httpRequests).requests[index];
+    const request = source === 'debug'
+      ? parseHttpRequestConfigs(config?.httpRequests).requests[index]
+      : undefined;
     if (!request) return false;
     try {
       const folders = this.actionWorkspaceFolders();
@@ -498,6 +529,12 @@ export class QuickActionManager {
         ...(request.body === undefined ? {} : { body: resolveActionVariables(request.body, folders) }),
         ...(request.headers ? { headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, resolveActionVariables(value, folders)])) } : {})
       };
+      if (this.runHttpEntry) {
+        return await this.runHttpEntry({
+          name: resolved.name ?? `${resolved.method} ${resolved.url}`, url: resolved.url, method: resolved.method,
+          headers: resolved.headers ?? {}, body: resolved.body ?? '', enabled: true, keybinding: ''
+        }, () => terminalHttp(resolved));
+      }
       await terminalHttp(resolved);
       return true;
     } catch (error) {

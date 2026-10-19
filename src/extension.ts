@@ -683,6 +683,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // HTTP 快捷请求(批105):OUTPUT 流水 + 列表 quick pick + 具名运行
   // (实际快捷键经「键盘快捷方式」为本命令配 args.name 绑定)
+  const quickActionManagerRef: { current?: QuickActionManager } = {};
   const httpRequestChannel = vscode.window.createOutputChannel('KBEngine HTTP 快捷请求');
   const httpRequestService = new HttpRequestService({
     getEntries: () =>
@@ -707,24 +708,28 @@ export function activate(context: vscode.ExtensionContext) {
   const runHttpQuickPickCommand = vscode.commands.registerCommand(
     'kbengine.httpRequests.run',
     async () => {
-      const entries = httpRequestService.listEnabled();
+      const combined = quickActionManagerRef.current
+        ? (await quickActionManagerRef.current.getTreeData()).httpRequests
+        : [];
+      const entries = combined;
+      const configuredEntries = parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests'));
       if (entries.length === 0) {
         void vscode.window.showInformationMessage(
-          '没有已启用的 HTTP 快捷请求(在设置 kbengine.httpRequests 里增删改与启停)'
+          '没有已启用的 HTTP 快捷请求(可配置于 .kbengine/debug.json 或设置 kbengine.httpRequests)'
         );
         return;
       }
       const picked = await vscode.window.showQuickPick(
         entries.map(entry => ({
           label: entry.name,
-          description: `${entry.method} ${entry.url}`,
-          detail: entry.keybinding ? `键位: ${entry.keybinding}` : undefined,
+          description: `${entry.method} ${entry.target}`,
+          detail: `${entry.requestSource === 'settings' ? '来源：kbengine.httpRequests 设置' : '来源：.kbengine/debug.json'}${entry.requestSource === 'settings' && configuredEntries[entry.requestIndex]?.keybinding ? ` · 键位: ${configuredEntries[entry.requestIndex].keybinding}` : ''}`,
           entry
         })),
         { placeHolder: '选择要运行的 HTTP 快捷请求' }
       );
       if (picked) {
-        await httpRequestService.runByName(picked.entry.name);
+        await quickActionManagerRef.current?.runByName(`@http:${picked.entry.requestSource}:${picked.entry.requestIndex}`);
       }
     }
   );
@@ -734,11 +739,16 @@ export function activate(context: vscode.ExtensionContext) {
       const name = args?.name;
       if (!name) {
         void vscode.window.showWarningMessage(
-          'kbengine.httpRequest.run 需要 args.name(在键盘快捷方式里以 args 传入);或改用 kbengine.httpRequests.run 从列表选择'
+          'kbengine.httpRequest.run 需要 args.name(在键盘快捷方式里以 args 传入);或改用 kbengine.httpRequests.run 从合并列表选择'
         );
         return;
       }
-      await httpRequestService.runByName(name);
+      const manager = quickActionManagerRef.current;
+      if (manager) {
+        const entry = (await manager.getTreeData()).httpRequests.find(item => item.name === name);
+        if (entry) await manager.runByName(`@http:${entry.requestSource}:${entry.requestIndex}`);
+        else await httpRequestService.runByName(name);
+      }
     }
   );
   context.subscriptions.push(httpRequestChannel, runHttpQuickPickCommand, runNamedHttpCommand);
@@ -1037,7 +1047,11 @@ export function activate(context: vscode.ExtensionContext) {
   // 独立树视图逐行执行;Servers 与编辑器标题栏保留清单入口。
   // 首装扫一层 .bat/.ps1 的提示在激活末跑一次(不 await,不挡激活)。
   // 批136:保留 runDefault 命令,供命令面板一键跑上次执行的动作。
-  const quickActionManager = new QuickActionManager(context);
+  const quickActionManager = new QuickActionManager(context, {
+    getSettingHttpEntries: () => parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
+    runHttpEntry: entry => httpRequestService.runEntry(entry)
+  });
+  quickActionManagerRef.current = quickActionManager;
   const quickActionTreeProvider = new QuickActionTreeProvider({
     getActions: () => quickActionManager.getTreeData()
   });

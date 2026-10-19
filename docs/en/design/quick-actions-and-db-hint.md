@@ -1,5 +1,9 @@
 # kode Quick Actions and Property → Database Design (six items ratified 2026-10-14 · seven decided-on-behalf 2026-10-15)
 
+## Unified HTTP request sources
+
+The HTTP tree and `kbengine.httpRequests.run` picker merge `.kbengine/debug.json` `httpRequests` with the VS Code `kbengine.httpRequests` setting. Rows identify their source and the group count is the combined total. Setting entries with `enabled: false` are hidden and cannot run. When names collide, the setting entry takes precedence and the debug.json duplicate is hidden. Both paths are dispatched by `HttpRequestService`; debug.json keeps its existing curl terminal executor so the real curl command remains visible.
+
 
 > Status: **Quick actions: six items ratified, four decisions decided on the user's behalf (see 1.7); property → database: eight items ratified, 2.4 has three decided-on-behalf items (two SQL template questions + the MySQL access channel)**. The on-behalf decisions follow the user's 2026-10-14 authorization (pending decisions may be taken and marked as decided-on-behalf), all taking this document's "recommended" first option; **the user can overturn and roll back**, and the implementation adjusts to the post-overturn wording. Marketplace publishing is outside the on-behalf scope (red line; wait for the user to explicitly say "release" and give a version number). This document is the authoritative design wording; implementations must match it item by item, reuse this repo's existing vocabulary, and coin no new terms.
 > Source: the user's 2026-10-14 multi-round statements, registered in `todo.md` (with source dates).

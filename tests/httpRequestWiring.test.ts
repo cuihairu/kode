@@ -113,9 +113,9 @@ describe('kbengine.httpRequests 命令装配', () => {
     await commands.executeCommand('kbengine.httpRequests.run');
     expect(quickItems[0].label).toBe('热更');
     expect(quickItems[0].description).toBe(`GET http://127.0.0.1:${port}/hotfix`);
-    expect(quickItems[0].detail).toBe('键位: ctrl+alt+h');
+    expect(quickItems[0].detail).toBe('来源：kbengine.httpRequests 设置 · 键位: ctrl+alt+h');
     expect(quickItems[1].label).toBe('第二条');
-    expect(quickItems[1].detail).toBeUndefined(); // 空键位不出 detail
+    expect(quickItems[1].detail).toBe('来源：kbengine.httpRequests 设置'); // 空键位仍标注来源
     const channel = windowState.channels.find(item => item.name === 'KBEngine HTTP 快捷请求')!;
     expect(channel.lines).toHaveLength(0); // 取消:无请求无流水
 

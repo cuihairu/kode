@@ -160,6 +160,23 @@ export class HttpRequestService {
       this.deps.notifyError(`HTTP 快捷请求「${name}」不存在或已停用`);
       return false;
     }
+    return this.runEntry(entry);
+  }
+
+  /** Execute a caller-selected entry after its source/index identity was resolved. */
+  async runEntry(entry: HttpRequestEntry, execute?: () => Promise<void>): Promise<boolean> {
+    if (!entry.enabled) {
+      this.deps.notifyError(`HTTP 快捷请求「${entry.name}」不存在或已停用`);
+      return false;
+    }
+    if (execute) {
+      try { await execute(); return true; }
+      catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.deps.notifyError(`HTTP 快捷请求「${entry.name}」失败: ${message}`);
+        return false;
+      }
+    }
     const editorContext = this.deps.getTemplateContext?.() ?? {};
     const vars = buildTemplateVars(editorContext, this.deps.isPackageDir);
     // 批152:官方变量族(${workspaceFolder}/${fileBasenameNoExtension}/
