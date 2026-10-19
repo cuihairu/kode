@@ -1,5 +1,5 @@
 {
-  "name": "kode",
+  "name": "kode-kbengine",
   "displayName": "Kode - KBEngine Development Environment",
   "description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
   "version": "0.1.0",
