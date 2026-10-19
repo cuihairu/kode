@@ -767,22 +767,36 @@ export class EntityMappingManager {
     methodName: string
   ): Promise<EntityMethodDefinitionLocation | null> {
     const index = await this.ensureIndexForPythonFile(pythonFile);
-    if (!index) {
-      return null;
-    }
-
     const ownerKind = inferOwnerKindFromPythonFile(pythonFile);
     const ownerName = inferOwnerNameFromPythonFile(pythonFile);
     const section = inferMethodSectionFromPythonFile(pythonFile);
-
-    const located = this.selectMethodDefinition(index.methodDefinitions, {
+    const options = {
       methodName,
       ownerKind,
       ownerName,
       section
-    });
+    };
+
+    // Keep the paired owner index as the preferred scope. Interfaces without a
+    // matching .def (or declarations stored in a shared .def) need a global
+    // fallback across every scanned definition index.
+    const local = index ? this.selectMethodDefinition(index.methodDefinitions, options) : null;
+    // A role-neutral scripts/interfaces module (for example interfaces/ROLE.py)
+    // has no Base/Cell/Client ownership and must not bind to an unrelated entity
+    // declaration. Cross-file fallback is for role-specific interface modules.
+    const allowCrossDefFallback = ownerKind === 'interface' && !!section;
+    if (!local && allowCrossDefFallback) {
+      await this.initialScan;
+    }
+    const global = local || (allowCrossDefFallback
+      ? this.selectMethodDefinition(
+        [...this.mappingIndexes.values()].flatMap(item => item.methodDefinitions),
+        options
+      )
+      : null);
+    const located = global;
     jumpLog('debug', () =>
-      `def 方法[文件级] ${methodName} → ${located ? `${path.basename(located.defFile)}:${located.line}` : 'miss'}`
+      `def 方法[文件级${local ? '' : '+全局回退'}] ${methodName} → ${located ? `${path.basename(located.defFile)}:${located.line}` : 'miss'}`
     );
     return located;
   }
@@ -1100,7 +1114,12 @@ export class EntityMappingManager {
 
     const scored = matches
       .map(item => ({ item, score: this.scoreMethodDefinition(item, options) }))
-      .sort((left, right) => right.score - left.score);
+      .sort((left, right) => right.score - left.score
+        // A single-location API must choose deterministically when equally
+        // relevant declarations exist; owner/section/local scores win first,
+        // then normalized def path and line provide a stable tie-break.
+        || normalizeLookupPath(left.item.defFile).localeCompare(normalizeLookupPath(right.item.defFile))
+        || left.item.line - right.item.line);
 
     // 不可达(批72 定性):matches.length > 0 已由上方早退守卫,map+sort 产出
 // scored 数组长度 ≥1 且每项 item 来自 matches 原元素(非空对象),
