@@ -1,5 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { eventDefinitionAt, EventCodeLensProvider, findEventCalls } from './eventApi';
+export { EventCodeLensProvider } from './eventApi';
 import { getScanRootForFile } from './scanRoots';
 import {
   parsePythonFile,
@@ -397,6 +399,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     const word = document.getText(range);
+    if (document.languageId === 'python') {
+      const calls = findEventCalls(document.getText());
+      const current = calls.find(call => position && document.offsetAt(position) >= call.eventOffset && document.offsetAt(position) <= call.eventOffset + call.event.length);
+      if (current) {
+        const registrations = calls.filter(call => (call.api === 'addEvent' || call.api === 'registerEvent') && call.event === current.event).length;
+        const emits = calls.filter(call => call.api === 'emitEvent' && call.event === current.event).length;
+        return new vscode.Hover(`**${current.event}**\n\n当前文件统计：${registrations} 处注册 · ${emits} 处触发`);
+      }
+    }
     const typeValueHover = getTypeValueHover(document, position, word);
     if (typeValueHover) {
       return typeValueHover;
@@ -2878,6 +2889,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     document: vscode.TextDocument,
     position: vscode.Position
   ): Promise<vscode.Location | vscode.Location[] | null> {
+    const eventLocation = await eventDefinitionAt(document, position, this.entityMappingManager);
+    if (eventLocation) return eventLocation;
     return (await this.provideDefinitionTraced(document, position)).location;
   }
 
@@ -3408,7 +3421,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
       }
     }
 
-    return buildRpcCodeLenses(declarations, methodName => hits.get(methodName)).map(spec =>
+    const rpcLenses = buildRpcCodeLenses(declarations, methodName => hits.get(methodName)).map(spec =>
       new vscode.CodeLens(
         new vscode.Range(
           new vscode.Position(spec.declaration.line, spec.declaration.character),
@@ -3427,6 +3440,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
         }
       )
     );
+    return [...rpcLenses, ...await new EventCodeLensProvider().provideCodeLenses(document)];
   }
 }
 
