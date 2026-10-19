@@ -43,10 +43,13 @@ jobs:
           exit 1
         fi
         pkg_version=$(node -p "require('./package.json').version")
-        if [ "${{ inputs.version }}" != "$pkg_version" ]; then
+        # 容忍 git tag 风格的 v 前缀（v0.1.0 ≡ 0.1.0），但其余必须逐字一致
+        input_version=$(printf '%s' '${{ inputs.version }}' | sed 's/^[vV]//')
+        if [ "$input_version" != "$pkg_version" ]; then
           echo "::error::输入版本号 ${{ inputs.version }} 与 package.json version ${pkg_version} 不一致,先提交目标版本号再触发"
           exit 1
         fi
+        echo "版本校验通过: ${input_version}"
 
     - name: 安装依赖
       timeout-minutes: 5
