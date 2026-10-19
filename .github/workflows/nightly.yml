@@ -148,15 +148,32 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-      - name: List remote tags (exclude nightly)
+      - name: Version tags must correspond to published releases
+        # 2026-10-19 调整：原规则「不许存在任何版本 tag」在用户正式发版 v0.1.0 后永久失败，
+        # 拦掉了每日构建。改为：版本 tag 可以存在，但必须对应一个已发布的 GitHub Release；
+        # 有 tag 无 Release = 疑似误推，仍拦。nightly 滚动 tag 不计。
         run: |
+          set -uo pipefail
           git ls-remote --tags origin | grep -v 'refs/tags/nightly$' || true
-          VERSION_TAGS=$(git ls-remote --tags origin | grep -v 'refs/tags/nightly$' | wc -l)
-          if [ "$VERSION_TAGS" -gt 0 ]; then
-            echo "❌ 发现版本 tag（nightly 除外），违反门禁"
-            exit 1
-          else
-            echo "✅ 仅存在 nightly tag（滚动发布），无版本 tag 泄漏"
+          TAGS=$(git ls-remote --tags origin | grep -v 'refs/tags/nightly$' | awk '{print $2}' | sed 's#refs/tags/##' | grep -v '\^{}' || true)
+          if [ -z "$TAGS" ]; then
+            echo "✅ 仅存在 nightly tag（滚动发布），无版本 tag"
+            exit 0
           fi
+          BAD=""
+          for t in $TAGS; do
+            if gh release view "$t" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "  ✅ $t → 已发布 Release"
+            else
+              echo "  ❌ $t → 无对应 Release（疑似误推）"
+              BAD="$BAD $t"
+            fi
+          done
+          if [ -n "$BAD" ]; then
+            echo "❌ 违反门禁：存在未发布的版本 tag:$BAD"
+            echo "   若确为有意发布的 tag，请先创建对应 GitHub Release；临时放行会破坏每日构建门禁。"
+            exit 1
+          fi
+          echo "✅ 所有版本 tag 均有对应 Release"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
