@@ -84,10 +84,22 @@ jobs:
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
       run: |
-        vsix="kode-${{ inputs.version }}.vsix"
+        # 产物名用 package.json 版本（vsce 产出 kode-0.1.0.vsix），
+        # 输入容错 v 前缀；再用通配兜底，两种命名都能发
+        ver=$(node -p "require('./package.json').version")
+        vsix="kode-${ver}.vsix"
         if [ ! -f "$vsix" ]; then
-          echo "::error::未找到 ${vsix},打包产物异常"
-          ls kode-*.vsix || true
-          exit 1
+          alt="kode-${{ inputs.version }}.vsix"
+          if [ -f "$alt" ]; then vsix="$alt"
+          else
+            glob=$(ls -1 kode-*.vsix 2>/dev/null | head -1)
+            if [ -n "$glob" ]; then vsix="$glob"
+            else
+              echo "::error::未找到 kode-*.vsix,打包产物异常"
+              ls kode-*.vsix || true
+              exit 1
+            fi
+          fi
         fi
+        echo "发布产物: $vsix"
         pnpm exec vsce publish --no-dependencies --packagePath "$vsix"
