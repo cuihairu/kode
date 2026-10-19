@@ -57,11 +57,13 @@ describe('terminalScript', () => {
       const result = await terminalScript({ name: 'Start server', script: 'start.bat', background: true, cwd: '/workspace' });
       await terminalScript({ name: 'Start server', script: 'start.bat', background: true, cwd: '/workspace' });
       expect(calls).toEqual([
-        [{ name: 'Kode: Start server', cwd: '/workspace' }],
+        [{ name: 'Kode: Start server · start.bat', cwd: '/workspace' }],
+        [expect.stringContaining('即将执行：start.bat'), true],
         ['start.bat', true],
+        [expect.stringContaining('即将执行：start.bat'), true],
         ['start.bat', true]
       ]);
-      expect(calls).toHaveLength(3);
+      expect(calls).toHaveLength(5);
       expect(result.code).toBeNull();
     } finally {
       (await import('vscode')).window.createTerminal = original;

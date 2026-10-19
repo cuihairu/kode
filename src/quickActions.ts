@@ -112,7 +112,9 @@ const actionTerminals = new Map<string, vscode.Terminal>();
 /** 默认脚本执行器:每个动作名对应复用的集成终端,输出由终端实时显示。 */
 export const terminalScript: ScriptRunner = options => {
   const cwd = options.cwd ?? workspaceFolders()[0]?.fsPath;
-  const name = `Kode: ${options.name ?? '快速动作'}`;
+  const scriptToken = options.script.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  const scriptName = baseNameOf(scriptToken?.[1] ?? scriptToken?.[2] ?? scriptToken?.[3] ?? options.script);
+  const name = `Kode: ${options.name ?? '快速动作'} · ${scriptName}`;
   let terminal = actionTerminals.get(name);
   if (!terminal || terminal.exitStatus !== undefined) {
     terminal = vscode.window.createTerminal({
@@ -122,6 +124,11 @@ export const terminalScript: ScriptRunner = options => {
     });
     actionTerminals.set(name, terminal);
   }
+  const announcement = `即将执行：${options.script}`;
+  const printCommand = process.platform === 'win32'
+    ? `echo ${announcement.replace(/[&|<>^]/g, '^$&')}`
+    : `printf '%s\\n' '${announcement.replace(/\\/g, '\\\\').replace(/'/g, "'\\''")}'`;
+  terminal.sendText(printCommand, true);
   terminal.sendText(options.script, true);
   return Promise.resolve({ code: null, stdout: '', stderr: '', submitted: true });
 };
@@ -217,13 +224,37 @@ function resolveAction(action: QuickAction, folders: readonly WorkspaceFolderRef
  * 共用一条分隔线(标签=后端名),不重排用户配置顺序;每个组的开头都有一条,
  * 包括第一组——分隔线本身就是组名。
  */
-function buildQuickPickItems(actions: readonly QuickAction[]): vscode.QuickPickItem[] {
+const QUICK_ACTION_TARGET_PREVIEW_LIMIT = 120;
+
+/** 中间省略目标,并确保脚本文件名留在可见尾部。 */
+function previewActionTarget(action: QuickAction, target: string): string {
+  if (target.length <= QUICK_ACTION_TARGET_PREVIEW_LIMIT) return target;
+  const scriptName = action.type === 'script' ? baseNameOf(target) : '';
+  const suffix = scriptName.length > 0 ? scriptName : target.slice(-36);
+  const prefixLength = Math.max(12, QUICK_ACTION_TARGET_PREVIEW_LIMIT - suffix.length - 5);
+  return `${target.slice(0, prefixLength)}...${target.slice(-suffix.length)}`;
+}
+
+function resolvedActionTarget(action: QuickAction, folders: readonly WorkspaceFolderRef[]): string {
+  try {
+    return describeActionTarget(resolveAction(action, folders));
+  } catch {
+    // Invalid variables are reported by the normal execution path after selection.
+    return describeActionTarget(action);
+  }
+}
+
+function buildQuickPickItems(
+  actions: readonly QuickAction[],
+  folders: readonly WorkspaceFolderRef[]
+): vscode.QuickPickItem[] {
   return actions.flatMap((action, index) => {
     const previous = actions[index - 1];
+    const target = resolvedActionTarget(action, folders);
     const item: vscode.QuickPickItem = {
       label: action.name,
       description: action.type,
-      detail: describeActionTarget(action)
+      detail: previewActionTarget(action, target)
     };
     if (previous !== undefined && previous.type === action.type) {
       return [item];
@@ -309,7 +340,7 @@ export class QuickActionManager {
       );
       return;
     }
-    const picked = await vscode.window.showQuickPick(buildQuickPickItems(actions), {
+    const picked = await vscode.window.showQuickPick(buildQuickPickItems(actions, this.actionWorkspaceFolders()), {
       placeHolder: '选择要执行的快速动作'
     });
     if (!picked) {
@@ -341,7 +372,12 @@ export class QuickActionManager {
     }
     const lastRun = this.context.workspaceState?.get<string>(QUICK_ACTION_LAST_RUN_KEY);
     const action = actions.find(item => item.name === lastRun) ?? actions[0];
-    await this.run(action);
+    const folders = this.actionWorkspaceFolders();
+    const picked = await vscode.window.showQuickPick(
+      buildQuickPickItems([action], folders),
+      { placeHolder: `上次命令：${previewActionTarget(action, resolvedActionTarget(action, folders))}` }
+    );
+    if (picked?.label === action.name) await this.run(action);
   }
 
   /**

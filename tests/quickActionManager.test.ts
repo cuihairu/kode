@@ -189,13 +189,32 @@ describe('QuickActionManager.show', () => {
       expect.objectContaining({
         label: 'start_server',
         description: 'script',
-        detail: '${workspaceFolder}/start_server.bat'
+        detail: '/ws/start_server.bat'
       })
     ]);
     expect(scriptRuns).toEqual([
       { name: 'start_server', script: '/ws/start_server.bat', background: false, cwd: '/ws' }
     ]);
 
+  });
+
+  it('shows real commands and middle-truncates long targets while preserving the script name', async () => {
+    const longRoot = '/workspace/'.concat(Array.from({ length: 24 }, (_, index) => `very-long-directory-${index}`).join('/'));
+    const longScript = `${longRoot}/launch_dedicated_server_with_every_option.sh --environment production --port 28015 --region north-america`;
+    setConfig({ quickActions: [
+      { name: '启动服务器', type: 'script', script: 'scripts/start_server.sh --env dev', confirm: false },
+      { name: '启动专服', type: 'script', script: longScript, confirm: false }
+    ] });
+    pickAnswers.push(undefined);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+
+    await manager.show();
+
+    const items = pickCalls[0].items.filter(item => item.kind !== vscode.QuickPickItemKind.Separator);
+    expect(items[0]).toMatchObject({ label: '启动服务器', detail: 'scripts/start_server.sh --env dev' });
+    expect(items[1].detail).toContain('...');
+    expect(items[1].detail).toContain('launch_dedicated_server_with_every_option.sh');
+    expect(items[1].detail).not.toContain('very-long-directory-3/very-long-directory-4');
   });
 
   it('does nothing when the picked label is not in the configured list', async () => {
@@ -360,12 +379,14 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
         { name: 'refresh', type: 'command', command: 'kbengine.refreshExplorer', confirm: false }
       ]
     });
+    pickAnswers.push({ label: 'restart' });
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
     await manager.runDefault();
 
     expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
     expect(memento.get('kbengine.quickActions.lastRun')).toBe('restart');
+    expect(pickCalls[0].options?.placeHolder).toContain('kbengine.server.restart');
 
   });
 
@@ -377,6 +398,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
       ]
     });
     memento.set('kbengine.quickActions.lastRun', 'refresh');
+    pickAnswers.push({ label: 'refresh' });
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
     await manager.runDefault();
@@ -390,6 +412,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
       quickActions: [{ name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false }]
     });
     memento.set('kbengine.quickActions.lastRun', 'removed');
+    pickAnswers.push({ label: 'restart' });
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
     await manager.runDefault();
@@ -403,6 +426,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
     setConfig({
       quickActions: [{ name: 'restart', type: 'command', command: 'kbengine.server.restart', confirm: false }]
     });
+    pickAnswers.push({ label: 'restart' });
     const manager = new QuickActionManager(
       { subscriptions: [] } as unknown as vscode.ExtensionContext,
       makeDeps()
