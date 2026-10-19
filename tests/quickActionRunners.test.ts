@@ -3,7 +3,7 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fetchHttp, RESPONSE_PREVIEW_LIMIT, terminalScript } from '../src/quickActions';
+import { buildCurlCommand, fetchHttp, RESPONSE_PREVIEW_LIMIT, terminalScript } from '../src/quickActions';
 import { workspace as stubWorkspace, Uri } from './helpers/vscodeStub';
 
 // 快速执行动作的两个默认执行器:真实 spawn(跨平台 shell)与真实 localhost TCP。
@@ -68,6 +68,21 @@ describe('terminalScript', () => {
     } finally {
       (await import('vscode')).window.createTerminal = original;
     }
+  });
+});
+
+describe('buildCurlCommand', () => {
+  it('builds method, URL, headers and body with POSIX shell quoting', () => {
+    expect(buildCurlCommand({
+      method: 'POST', url: 'http://127.0.0.1:8080/api/login',
+      headers: { 'Content-Type': 'application/json', Authorization: "Bearer it's" },
+      body: '{"name":"a b","quote":"it\'s"}'
+    }, 'linux')).toBe("curl --silent --show-error --write-out '\\nHTTP_STATUS:%{http_code}\\n' --request 'POST' --header 'Content-Type: application/json' --header 'Authorization: Bearer it'\\''s' --data-binary '{\"name\":\"a b\",\"quote\":\"it'\\''s\"}' 'http://127.0.0.1:8080/api/login'");
+  });
+
+  it('uses curl.exe and PowerShell safe literal arguments on Windows', () => {
+    expect(buildCurlCommand({ method: 'GET', url: 'http://127.0.0.1:8080/health' }, 'win32'))
+      .toContain("curl.exe --silent --show-error");
   });
 });
 

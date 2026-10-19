@@ -3,6 +3,7 @@ import {
   buildScannedActions,
   classifyBatchScript,
   parseQuickActionConfigs,
+  parseHttpRequestConfigs,
   resolveActionVariables
 } from '../src/quickActionConfig';
 import type { BatchScriptCandidate } from '../src/quickActionScanner';
@@ -120,6 +121,20 @@ describe('parseQuickActionConfigs', () => {
   it('accepts an empty and non-array raw shape as an empty action list', () => {
     expect(parseQuickActionConfigs([])).toEqual({ actions: [], invalidCount: 0 });
     expect(parseQuickActionConfigs(undefined as unknown as unknown[])).toEqual({ actions: [], invalidCount: 0 });
+  });
+});
+
+describe('parseHttpRequestConfigs', () => {
+  it('parses headers/body and rejects missing method or url', () => {
+    expect(parseHttpRequestConfigs([
+      { method: 'post', url: '${workspaceFolder}/api/login', headers: { Authorization: 'Bearer ${env:TOKEN}' }, body: '{"ok":true}' },
+      { url: '/missing-method' }, { method: 'GET' }
+    ])).toEqual({
+      requests: [{ method: 'POST', url: '${workspaceFolder}/api/login', headers: { Authorization: 'Bearer ${env:TOKEN}' }, body: '{"ok":true}' }],
+      invalidCount: 2
+    });
+    expect(resolveActionVariables('${workspaceFolder}/api/login', FOLDERS)).toBe('/ws/main/api/login');
+    expect(resolveActionVariables('{"path":"${workspaceFolder}/cfg"}', FOLDERS)).toBe('{"path":"/ws/main/cfg"}');
   });
 });
 

@@ -43,6 +43,15 @@ export interface QuickActionHttp extends QuickActionShared {
   body?: string;
 }
 
+/** 独立「HTTP 请求」视图配置；不混入旧 quickActions 后端清单。 */
+export interface HttpRequestConfig {
+  name?: string;
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
 export type QuickAction = QuickActionCommand | QuickActionScript | QuickActionHttp;
 
 /** 路径变量形态:写配置用字面串,执行时才换成实际工作区根 */
@@ -167,6 +176,40 @@ export function parseQuickActionConfigs(raw: unknown): {
     actions.push(action);
   }
   return { actions, invalidCount };
+}
+
+/** 解析顶层 httpRequests；method/url 缺失或字段类型错误逐条计为无效。 */
+export function parseHttpRequestConfigs(raw: unknown): { requests: HttpRequestConfig[]; invalidCount: number } {
+  if (!Array.isArray(raw)) return { requests: [], invalidCount: 0 };
+  const requests: HttpRequestConfig[] = [];
+  let invalidCount = 0;
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) { invalidCount += 1; continue; }
+    const record = item as Record<string, unknown>;
+    const method = typeof record.method === 'string' ? record.method.trim().toUpperCase() : '';
+    const url = nonEmptyString(record.url);
+    const name = record.name === undefined ? undefined : nonEmptyString(record.name);
+    const body = record.body === undefined ? undefined : typeof record.body === 'string' ? record.body : null;
+    const rawHeaders = record.headers;
+    let headers: Record<string, string> | undefined;
+    let badHeaders = false;
+    if (rawHeaders !== undefined) {
+      if (typeof rawHeaders !== 'object' || rawHeaders === null || Array.isArray(rawHeaders)) badHeaders = true;
+      else {
+        headers = {};
+        for (const [key, value] of Object.entries(rawHeaders)) {
+          if (!key.trim() || typeof value !== 'string') { badHeaders = true; break; }
+          headers[key] = value;
+        }
+      }
+    }
+    if (!/^[A-Z][A-Z0-9-]*$/.test(method) || !url || name === null || body === null || badHeaders) {
+      invalidCount += 1;
+      continue;
+    }
+    requests.push({ method, url, ...(name ? { name } : {}), ...(headers && Object.keys(headers).length ? { headers } : {}), ...(body !== undefined ? { body } : {}) });
+  }
+  return { requests, invalidCount };
 }
 
 /** 变量解析可用的工作区根(由 quickActions 从 vscode.workspace 映射) */

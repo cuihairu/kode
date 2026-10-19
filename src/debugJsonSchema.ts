@@ -107,6 +107,18 @@ const HTTP_BRANCH = actionBranch(QUICK_ACTION_TYPES[2], {
   body: text('请求体;可省')
 });
 
+const HTTP_REQUEST_SCHEMA: JsonSchemaObject = {
+  type: 'object',
+  required: ['method', 'url'],
+  properties: {
+    name: text('显示名称;可省'),
+    method: text('HTTP 方法,如 GET / POST / DELETE'),
+    url: text('请求地址,支持 ${workspaceFolder} 与 ${env:NAME} 变量'),
+    headers: { type: 'object', additionalProperties: { type: 'string' }, description: '请求头;可省' },
+    body: text('请求体;可省')
+  }
+};
+
 /** 构建 schema(构建产物即 package.json 内联对象的唯一真源) */
 export function buildKbengineDebugJsonSchema(): JsonSchemaObject {
   return {
@@ -161,6 +173,11 @@ export function buildKbengineDebugJsonSchema(): JsonSchemaObject {
         items: {
           anyOf: [COMMAND_BRANCH, SCRIPT_BRANCH, HTTP_BRANCH]
         }
+      },
+      httpRequests: {
+        type: 'array',
+        description: '快速执行视图中的 HTTP 请求清单',
+        items: HTTP_REQUEST_SCHEMA
       }
     }
   };

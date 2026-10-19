@@ -19,10 +19,12 @@ import {
   baseNameOf,
   buildScannedActions,
   parseQuickActionConfigs,
+  parseHttpRequestConfigs,
   resolveActionVariables
 } from './quickActionConfig';
 import type {
   QuickAction,
+  HttpRequestConfig,
   QuickActionCategory,
   WorkspaceFolderRef
 } from './quickActionConfig';
@@ -131,6 +133,35 @@ export const terminalScript: ScriptRunner = options => {
   terminal.sendText(printCommand, true);
   terminal.sendText(options.script, true);
   return Promise.resolve({ code: null, stdout: '', stderr: '', submitted: true });
+};
+
+/** 将 curl 命令送入集成终端；Windows 使用系统自带 curl.exe，避免 PowerShell curl 别名。 */
+export function buildCurlCommand(request: HttpRequestConfig, platform: NodeJS.Platform = process.platform): string {
+  const quote = platform === 'win32'
+    ? (value: string) => `'${value.replace(/'/g, "''")}'`
+    : (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+  const args = ['--silent', '--show-error', '--write-out', quote('\\nHTTP_STATUS:%{http_code}\\n'), '--request', quote(request.method)];
+  for (const [name, value] of Object.entries(request.headers ?? {})) args.push('--header', quote(`${name}: ${value}`));
+  if (request.body !== undefined) args.push('--data-binary', quote(request.body));
+  args.push(quote(request.url));
+  return `${platform === 'win32' ? 'curl.exe' : 'curl'} ${args.join(' ')}`;
+}
+
+export const terminalHttp: (request: HttpRequestConfig) => Promise<void> = request => {
+  const name = `Kode: HTTP · ${request.name ?? `${request.method} ${request.url}`}`;
+  let terminal = actionTerminals.get(name);
+  if (!terminal || terminal.exitStatus !== undefined) {
+    terminal = vscode.window.createTerminal({ name });
+    actionTerminals.set(name, terminal);
+  }
+  const command = buildCurlCommand(request);
+  const announcement = `即将发送：${request.method} ${request.url}`;
+  const print = process.platform === 'win32'
+    ? `Write-Output ${`'${announcement.replace(/'/g, "''")}'`}`
+    : `printf '%s\\n' '${announcement.replace(/\\/g, '\\\\').replace(/'/g, "'\\''")}'`;
+  terminal.sendText(print, true);
+  terminal.sendText(command, true);
+  return Promise.resolve();
 };
 
 /**
@@ -389,6 +420,7 @@ export class QuickActionManager {
     if (name.length === 0) {
       return false;
     }
+    if (name.startsWith('@http:')) return this.runHttpRequest(Number(name.slice('@http:'.length)));
     if (name.startsWith('@script:')) return this.runScannedScript(name.slice('@script:'.length));
     const { actions } = await this.loadActions();
     const action = actions.find(item => item.name === name);
@@ -429,13 +461,49 @@ export class QuickActionManager {
     return this.run(direct);
   }
 
-  async getTreeData(): Promise<{ registered: Array<{ name: string; type: QuickAction['type']; target: string }>; scripts: Array<{ name: string; type: 'script'; target: string; runDirect: true }> }> {
+  async getTreeData(): Promise<{ registered: Array<{ name: string; type: QuickAction['type']; target: string }>; scripts: Array<{ name: string; type: 'script'; target: string; runDirect: true }>; httpRequests: Array<{ name: string; type: 'http'; target: string; method: string; runDirect: true }> }> {
     const registered = await this.getTreeActions();
     const registeredPaths = new Set(registered.filter(action => action.type === 'script').map(action => path.resolve(action.target).toLowerCase()));
     const scripts = (await this.scanCandidates()).filter(candidate => !registeredPaths.has(path.resolve(candidate.path).toLowerCase())).map(candidate => ({
       name: baseNameOf(candidate.path), type: 'script' as const, target: candidate.path, runDirect: true as const
     }));
-    return { registered, scripts };
+    const config = await this.readConfigFile();
+    const requests = parseHttpRequestConfigs(config?.httpRequests).requests;
+    const folders = this.actionWorkspaceFolders();
+    const httpRequests = requests.map((request, index) => {
+      let target = request.url;
+      try { target = resolveActionVariables(request.url, folders); } catch { /* execution reports the invalid variable */ }
+      return {
+        name: request.name ?? `${request.method} ${request.url}`,
+        type: 'http' as const,
+        method: request.method,
+        target,
+        runDirect: true as const,
+        // Index is stable against the same parsed request ordering at click time.
+        requestIndex: index
+      };
+    });
+    return { registered, scripts, httpRequests };
+  }
+
+  private async runHttpRequest(index: number): Promise<boolean> {
+    const config = await this.readConfigFile();
+    const request = parseHttpRequestConfigs(config?.httpRequests).requests[index];
+    if (!request) return false;
+    try {
+      const folders = this.actionWorkspaceFolders();
+      const resolved: HttpRequestConfig = {
+        ...request,
+        url: resolveActionVariables(request.url, folders),
+        ...(request.body === undefined ? {} : { body: resolveActionVariables(request.body, folders) }),
+        ...(request.headers ? { headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, resolveActionVariables(value, folders)])) } : {})
+      };
+      await terminalHttp(resolved);
+      return true;
+    } catch (error) {
+      await vscode.window.showErrorMessage(errorMessage(error));
+      return false;
+    }
   }
 
   /** 激活期首装扫描:勾完才写配置,取消后本工作区不再自动弹 */

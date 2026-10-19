@@ -268,6 +268,42 @@
           }
         ]
       }
+    },
+    "httpRequests": {
+      "type": "array",
+      "description": "快速执行视图中的 HTTP 请求清单",
+      "items": {
+        "type": "object",
+        "required": [
+          "method",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "显示名称;可省"
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP 方法,如 GET / POST / DELETE"
+          },
+          "url": {
+            "type": "string",
+            "description": "请求地址,支持 ${workspaceFolder} 与 ${env:NAME} 变量"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "请求头;可省"
+          },
+          "body": {
+            "type": "string",
+            "description": "请求体;可省"
+          }
+        }
+      }
     }
   }
 }
