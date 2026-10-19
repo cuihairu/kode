@@ -27,6 +27,9 @@ on:
     types: [ created ]
   workflow_dispatch:
 
+permissions:
+  contents: write # 创建/更新 Release 与上传 vsix 需要（默认 token 为只读）
+
 jobs:
   build:
     runs-on: ubuntu-latest
