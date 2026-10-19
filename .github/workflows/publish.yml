@@ -71,6 +71,21 @@ jobs:
       timeout-minutes: 15
       run: pnpm run package
 
+    - name: 诊断 PAT 归属
+      timeout-minutes: 5
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      # 判定 VSCE_PAT 属于哪个发布者：'already exists' 报错常因
+      # PAT 发布者 ≠ package.json publisher，公开 API 查不到该记录
+      run: |
+        set -uo pipefail
+        echo "== VSCE_PAT 是否已配置: $([ -n "${VSCE_PAT:-}" ] && echo yes || echo no)"
+        echo "== package.json publisher=$(node -p "require('./package.json').publisher") name=$(node -p "require('./package.json').name")"
+        echo "== 该 PAT 可见的发布者:"
+        pnpm exec vsce ls-publishers 2>&1 | tail -20
+        echo "== 公开查询 hairucui.kode:"
+        pnpm exec vsce show hairucui.kode 2>&1 | tail -5
+
     - name: 上传 VSIX 文件
       timeout-minutes: 3
       uses: actions/upload-artifact@v7
