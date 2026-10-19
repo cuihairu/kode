@@ -85,23 +85,8 @@ jobs:
         pnpm exec vsce ls-publishers 2>&1 | tail -20
         echo "== 公开查询 hairucui.kode:"
         pnpm exec vsce show hairucui.kode 2>&1 | tail -5
-        echo "== 用 PAT 鉴权查询 hairucui.kode（看商店对内说法）:"
-        AUTH=$(printf ':%s' "$VSCE_PAT" | base64 -w0)
-        curl -s -X POST "https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery"           -H "Content-Type: application/json" -H "Accept: application/json;api-version=3.0-preview.1"           -H "Authorization: Basic $AUTH"           -d '{"filters":[{"criteria":[{"filterType":7,"value":"hairucui.kode"},{"filterType":8,"value":"Microsoft.VisualStudio.Code"}]}],"flags":914}'           | python3 -c "
-import sys,json
-try:
-    d=json.load(sys.stdin)
-    e=d.get('results',[{}])[0].get('extensions',[])
-    print('   鉴权查询命中数:', len(e))
-    for x in e:
-        print('   id=', x['publisher']['publisherName']+'.'+x['extensionName'],
-              'ver=', [v['version'] for v in x['versions'][:3]],
-              'flags=', x.get('flags'), 'install=', x.get('installationTargets'))
-except Exception as ex:
-    print('   解析失败:', ex)
-"
-        echo "== PAT 鉴权下的发布者列表(重试,不吞输出):"
-        pnpm exec vsce ls-publishers 2>&1 | tail -30
+        echo "== 鉴权侧说明: 见上方 vsce show 结果;若商店说已存在而 show 说不存在,需人工核对发布者账号"
+
 
     - name: 上传 VSIX 文件
       timeout-minutes: 3
