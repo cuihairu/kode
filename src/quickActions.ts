@@ -1,8 +1,8 @@
 /**
  * 快速执行动作装配层(设计 1.9/1.10):
  * - 动作清单 quick pick(标签/类型/目标三列)与三后端分发(command/script/http);
- * - 默认执行器是真实现(child_process / node http),注入点只给测试与将来换实现;
- * - 破坏性动作默认弹 modal 确认,流水统一进 OUTPUT 专用通道,失败一次性弹窗;
+ * - 默认执行器是真实现(集成终端 / node http),注入点只给测试与将来换实现;
+ * - 破坏性动作默认弹 modal 确认,终端脚本输出实时可见,失败一次性弹窗;
  * - 首装扫一层 .bat/.ps1(词表只定分类不过滤),用户勾选确认后才写回 .kbengine/debug.json。
  *
  * 安全边界(用户 2026-10-15 追加):script/http 只执行配置里显式声明的目标,
@@ -10,7 +10,6 @@
  * 变量替换只作用在配置字面串上,未知变量直接报错中止(1.5 拒绝静默空串)。
  */
 
-import * as child_process from 'child_process';
 import * as http from 'http';
 import * as https from 'https';
 import * as path from 'path';
@@ -31,14 +30,13 @@ import { scanBatchScriptsInRoots } from './quickActionScanner';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
 
-export const QUICK_ACTION_CHANNEL_NAME = 'KBEngine 快速执行动作';
 export const QUICK_ACTION_SCAN_DISMISS_KEY = 'kbengine.quickActions.scanDismissed';
 /** Explorer ▶ 主按钮的默认目标:上次实际执行的动作名(选中即记忆) */
 export const QUICK_ACTION_LAST_RUN_KEY = 'kbengine.quickActions.lastRun';
 export const QUICK_ACTION_CONFIRM_LABEL = '执行';
 /** 本地热更新不该更久(设计 1.6);与 HTTP 快捷请求同量级 */
 export const QUICK_ACTION_TIMEOUT_MS = 10000;
-/** 回包进通道的截顶长度(字符),超出丢弃——热更回包本就很小,
+/** HTTP 回包的截顶长度(字符),超出丢弃——热更回包本就很小,
  *  而本地服务失控时不该让扩展宿主无限攒内存 */
 export const RESPONSE_PREVIEW_LIMIT = 4000;
 
@@ -53,6 +51,7 @@ interface ScanPickItem extends vscode.QuickPickItem {
 }
 
 export interface ScriptRunOptions {
+  name?: string;
   script: string;
   background: boolean;
   cwd?: string;
@@ -60,6 +59,8 @@ export interface ScriptRunOptions {
 }
 
 export interface ScriptRunResult {
+  /** true when submitted to an interactive terminal; terminal exit status is unavailable */
+  submitted?: boolean;
   /** 后台启动与被信号终止时为 null(拿不到退出码) */
   code: number | null;
   stdout: string;
@@ -103,63 +104,27 @@ function workspaceFolders(): readonly WorkspaceFolderRef[] {
   })) ?? [];
 }
 
-function padTwo(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-/** 流水行前缀:本地时区 HH:mm:ss,不依赖 toTimeString 的 GMT/时区尾巴 */
-function timestamp(): string {
-  const now = new Date();
-  return `${padTwo(now.getHours())}:${padTwo(now.getMinutes())}:${padTwo(now.getSeconds())}`;
-}
-
 /**
- * 默认 script 执行器:走 shell 起 bat(Windows .bat 必须经 shell 才能执行)。
- * 前台收 stdout/stderr 原样交流水层;后台不接管道——长跑进程的输出若没人读,
- * 管道写满会把启服脚本挂死,输出归脚本自己的日志。
+ * 脚本送入集成终端运行;终端负责 shell、实时输出与长时间运行进程。
  */
-export const spawnScript: ScriptRunner = options =>
-  new Promise<ScriptRunResult>((resolve, reject) => {
-    // cwd 未给即工作区根(设计 1.8):bat 内部按工程根写的相对路径才成立
-    const cwd = options.cwd ?? workspaceFolders()[0]?.fsPath;
-    const extension = path.extname(options.script).toLowerCase();
-    if (extension === '.bat' && process.platform !== 'win32') {
-      reject(new Error('.bat 脚本只能在 Windows 上运行'));
-      return;
-    }
-    const isPowerShell = extension === '.ps1';
-    const executable = isPowerShell
-      ? (process.platform === 'win32' ? 'powershell.exe' : 'pwsh')
-      : options.script;
-    const args = isPowerShell
-      ? ['-NoProfile', ...(process.platform === 'win32' ? ['-ExecutionPolicy', 'Bypass'] : []), '-File', options.script]
-      : [];
-    const child = child_process.spawn(executable, args, {
-      cwd,
-      shell: !isPowerShell,
-      env: options.env,
-      windowsHide: true,
-      stdio: options.background ? 'ignore' : ['ignore', 'pipe', 'pipe']
+const actionTerminals = new Map<string, vscode.Terminal>();
+
+/** 默认脚本执行器:每个动作名对应复用的集成终端,输出由终端实时显示。 */
+export const terminalScript: ScriptRunner = options => {
+  const cwd = options.cwd ?? workspaceFolders()[0]?.fsPath;
+  const name = `Kode: ${options.name ?? '快速动作'}`;
+  let terminal = actionTerminals.get(name);
+  if (!terminal || terminal.exitStatus !== undefined) {
+    terminal = vscode.window.createTerminal({
+      name,
+      ...(cwd ? { cwd } : {}),
+      ...(options.env ? { env: options.env } : {})
     });
-    if (options.background) {
-      // 起服类不等退出码,但也不能一上来就报「已启动」——'spawn' 才代表进程
-      // 真起来了;起不来走下方 error 分支,失败要如实说。
-      child.once('spawn', () => resolve({ code: null, stdout: '', stderr: '' }));
-    } else {
-      let stdout = '';
-      let stderr = '';
-      child.stdout?.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString('utf8');
-      });
-      child.stderr?.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString('utf8');
-      });
-      child.on('close', (code: number | null) => resolve({ code, stdout, stderr }));
-    }
-    // 启动失败(脚本路径不存在/cwd 无效)只走 error 不走 close;两支都挂了
-    // 这个监听,后台分支才不会因无人接手的 'error' 事件带走扩展宿主。
-    child.on('error', (error: Error) => reject(error));
-  });
+    actionTerminals.set(name, terminal);
+  }
+  terminal.sendText(options.script, true);
+  return Promise.resolve({ code: null, stdout: '', stderr: '', submitted: true });
+};
 
 /**
  * 默认 http 执行器:非 2xx 照实回状态码,由流水层判成败(不抛)。
@@ -272,7 +237,6 @@ function buildQuickPickItems(actions: readonly QuickAction[]): vscode.QuickPickI
 }
 
 export class QuickActionManager {
-  private readonly channel: vscode.OutputChannel;
   private readonly runScript: ScriptRunner;
   private readonly runHttp: HttpRunner;
   private readonly executeCommand: CommandRunner;
@@ -283,13 +247,10 @@ export class QuickActionManager {
     private readonly context: vscode.ExtensionContext,
     deps: QuickActionManagerDeps = {}
   ) {
-    this.channel = vscode.window.createOutputChannel(QUICK_ACTION_CHANNEL_NAME);
-    this.runScript = deps.runScript ?? spawnScript;
+    this.runScript = deps.runScript ?? terminalScript;
     this.runHttp = deps.runHttp ?? fetchHttp;
     this.executeCommand =
       deps.executeCommand ?? ((command, args) => vscode.commands.executeCommand(command, ...args));
-    // deactivate 走 dispose():通道与本管理器同一条释放链
-    this.context.subscriptions.push({ dispose: (): void => this.dispose() });
   }
 
   /** 配置、扫描、脚本变量解析统一锚定到启动引导选出的工作目录。 */
@@ -395,7 +356,6 @@ export class QuickActionManager {
     const { actions } = await this.loadActions();
     const action = actions.find(item => item.name === name);
     if (!action) {
-      this.append(`未找到名为「${name}」的快速动作`);
       return false;
     }
     return this.run(action, options);
@@ -458,7 +418,6 @@ export class QuickActionManager {
       resolved = resolveAction(action, this.actionWorkspaceFolders());
     } catch (error) {
       const message = errorMessage(error);
-      this.append(`${action.name} → ✗ ${message}`);
       await vscode.window.showErrorMessage(message);
       return false;
     }
@@ -475,7 +434,6 @@ export class QuickActionManager {
     try {
       if (resolved.type === 'command') {
         await this.executeCommand(resolved.command, resolved.args);
-        this.append(`${resolved.name} → ✓`);
         return true;
       }
       if (resolved.type === 'script') {
@@ -485,7 +443,6 @@ export class QuickActionManager {
     } catch (error) {
       // 执行器抛错(spawn 失败/请求超时/命令未注册)统一收口
       const message = errorMessage(error);
-      this.append(`${resolved.name} → ✗ ${message}`);
       await vscode.window.showErrorMessage(message);
       return false;
     }
@@ -494,28 +451,21 @@ export class QuickActionManager {
   private async runScriptAction(action: Extract<QuickAction, { type: 'script' }>): Promise<boolean> {
     const env = action.venv?.enabled ? this.resolveVenvEnvironment(action) : undefined;
     const result = await this.runScript({
+      name: action.name,
       script: action.script,
       background: action.background,
       cwd: action.cwd,
       ...(env ? { env } : {})
     });
     if (action.background) {
-      this.append(`${action.name} → 已启动`);
       return true;
     }
-    if (result.stdout.length > 0) {
-      this.append(result.stdout.trimEnd());
-    }
-    if (result.stderr.length > 0) {
-      this.append(result.stderr.trimEnd());
-    }
+    if (result.submitted) return true;
     if (result.code === 0) {
-      this.append(`${action.name} → ✓ exit 0`);
       return true;
     }
     // 被信号终止时拿不到退出码,照实写「未知」而不是编一个码
     const exit = result.code === null ? '未知' : String(result.code);
-    this.append(`${action.name} → ✗ exit ${exit}`);
     await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (exit ${exit})`);
     return false;
   }
@@ -523,7 +473,6 @@ export class QuickActionManager {
   private async runHttpAction(action: Extract<QuickAction, { type: 'http' }>): Promise<boolean> {
     const result = await this.runHttp({ url: action.url, method: action.method, body: action.body });
     const ok = result.status >= 200 && result.status < 300;
-    this.append(`${action.name} → ${ok ? '✓' : '✗'} HTTP ${result.status}`);
     if (!ok) {
       await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (HTTP ${result.status})`);
       return false;
@@ -623,11 +572,4 @@ export class QuickActionManager {
     };
   }
 
-  private append(line: string): void {
-    this.channel.appendLine(`[${timestamp()}] ${line}`);
-  }
-
-  dispose(): void {
-    this.channel.dispose();
-  }
 }

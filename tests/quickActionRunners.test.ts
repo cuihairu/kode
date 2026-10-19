@@ -3,7 +3,7 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fetchHttp, RESPONSE_PREVIEW_LIMIT, spawnScript } from '../src/quickActions';
+import { fetchHttp, RESPONSE_PREVIEW_LIMIT, terminalScript } from '../src/quickActions';
 import { workspace as stubWorkspace, Uri } from './helpers/vscodeStub';
 
 // 快速执行动作的两个默认执行器:真实 spawn(跨平台 shell)与真实 localhost TCP。
@@ -45,82 +45,27 @@ const freePort = (): Promise<number> =>
     return new Promise<number>(resolve => server.close(() => resolve(port)));
   });
 
-describe('spawnScript', () => {
-  it('collects stdout and the exit code of a waiting script', async () => {
-    const result = await spawnScript({
-      script: 'node -e "console.log(\'ok\')"',
-      background: false
-    });
-
-    expect(result.code).toBe(0);
-    expect(result.stdout.trim()).toBe('ok');
-    expect(result.stderr).toBe('');
-  });
-
-  it('collects stderr and a non-zero exit code', async () => {
-    const result = await spawnScript({
-      script: 'node -e "console.error(\'boom\'); process.exit(3)"',
-      background: false
-    });
-
-    expect(result.code).toBe(3);
-    expect(result.stderr.trim()).toBe('boom');
-  });
-
-  it('runs in the given working directory', async () => {
-    const root = makeTempDir();
-
-    const result = await spawnScript({
-      script: 'node -e "console.log(process.cwd())"',
-      background: false,
-      cwd: root
-    });
-
-    expect(fs.realpathSync(result.stdout.trim())).toBe(fs.realpathSync(root));
-  });
-
-  it('defaults the working directory to the workspace root', async () => {
-    const root = makeTempDir();
-    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'root', index: 0 }];
-
-    const result = await spawnScript({
-      script: 'node -e "console.log(process.cwd())"',
-      background: false
-    });
-
-    expect(fs.realpathSync(result.stdout.trim())).toBe(fs.realpathSync(root));
-  });
-
-  it('falls back to the process cwd when no workspace is open', async () => {
-    const result = await spawnScript({
-      script: 'node -e "console.log(\'plain\')"',
-      background: false
-    });
-
-    expect(result.code).toBe(0);
-    expect(result.stdout.trim()).toBe('plain');
-  });
-
-  it('reports a start failure such as an invalid working directory', async () => {
-    const missing = path.join(makeTempDir(), 'not-created');
-
-    await expect(
-      spawnScript({ script: 'node -e "console.log(1)"', background: false, cwd: missing })
-    ).rejects.toThrow(/ENOENT/);
-  });
-
-  it('fails a background script that cannot start instead of reporting it started', async () => {
-    const missing = path.join(makeTempDir(), 'not-created');
-
-    await expect(
-      spawnScript({ script: 'node -e "console.log(1)"', background: true, cwd: missing })
-    ).rejects.toThrow(/ENOENT/);
-  });
-
-  it('starts a background script without waiting for it to exit', async () => {
-    const result = await spawnScript({ script: 'node -e "setTimeout(() => {}, 50)"', background: true });
-
-    expect(result).toEqual({ code: null, stdout: '', stderr: '' });
+describe('terminalScript', () => {
+  it('creates a named terminal with cwd and sends the command', async () => {
+    const calls: unknown[][] = [];
+    const original = (await import('vscode')).window.createTerminal;
+    (await import('vscode')).window.createTerminal = ((options: unknown) => {
+      calls.push([options]);
+      return { sendText: (...args: unknown[]) => calls.push(args) } as never;
+    }) as never;
+    try {
+      const result = await terminalScript({ name: 'Start server', script: 'start.bat', background: true, cwd: '/workspace' });
+      await terminalScript({ name: 'Start server', script: 'start.bat', background: true, cwd: '/workspace' });
+      expect(calls).toEqual([
+        [{ name: 'Kode: Start server', cwd: '/workspace' }],
+        ['start.bat', true],
+        ['start.bat', true]
+      ]);
+      expect(calls).toHaveLength(3);
+      expect(result.code).toBeNull();
+    } finally {
+      (await import('vscode')).window.createTerminal = original;
+    }
   });
 });
 

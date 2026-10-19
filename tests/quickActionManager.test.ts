@@ -57,7 +57,7 @@ const makeContext = (): vscode.ExtensionContext =>
     }
   }) as unknown as vscode.ExtensionContext;
 
-const scriptRuns: Array<{ script: string; cwd?: string; background: boolean }> = [];
+const scriptRuns: Array<{ name?: string; script: string; cwd?: string; background: boolean }> = [];
 const scriptEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
 const httpRuns: Array<{ url: string; method: string; body?: string }> = [];
 const commandRuns: Array<{ command: string; args: unknown[] }> = [];
@@ -93,7 +93,6 @@ const makeDeps = (): QuickActionManagerDeps => ({
   }
 });
 
-const channelLines = (): string => windowState.channels.map(channel => channel.lines.join('')).join('');
 
 const setConfig = (config: unknown): void => {
   memoryFileSystem.set('/ws/.kbengine/debug.json', JSON.stringify(config));
@@ -161,7 +160,7 @@ describe('QuickActionManager.show', () => {
     expect(messages.info[0]).toContain('未配置快速执行动作');
     expect(messages.info[0]).toContain('.kbengine/debug.json');
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('shows the same hint when no workspace folder is open', async () => {
@@ -172,7 +171,7 @@ describe('QuickActionManager.show', () => {
 
     expect(messages.info[0]).toContain('未配置快速执行动作');
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('shows a script action target in the list and runs the picked one', async () => {
@@ -194,9 +193,9 @@ describe('QuickActionManager.show', () => {
       })
     ]);
     expect(scriptRuns).toEqual([
-      { script: '/ws/start_server.bat', background: false, cwd: '/ws' }
+      { name: 'start_server', script: '/ws/start_server.bat', background: false, cwd: '/ws' }
     ]);
-    manager.dispose();
+
   });
 
   it('does nothing when the picked label is not in the configured list', async () => {
@@ -210,7 +209,7 @@ describe('QuickActionManager.show', () => {
 
     expect(commandRuns).toHaveLength(0);
     expect(confirmCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('lists configured actions for picking and does nothing on cancel', async () => {
@@ -234,7 +233,7 @@ describe('QuickActionManager.show', () => {
     ]);
     expect(commandRuns).toHaveLength(0);
     expect(httpRuns).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('runs the picked command action with confirm and resolved args', async () => {
@@ -259,8 +258,7 @@ describe('QuickActionManager.show', () => {
     ]);
     expect(confirmCalls[0].message).toContain('open-conf');
     expect((confirmCalls[0].options as { modal: boolean }).modal).toBe(true);
-    expect(channelLines()).toContain('open-conf → ✓');
-    manager.dispose();
+
   });
 
   it('reports skipped invalid config entries alongside the action list', async () => {
@@ -278,7 +276,7 @@ describe('QuickActionManager.show', () => {
     expect(messages.info[0]).toBe('快速执行动作配置中有 1 条无效，已跳过');
     // 唯一有效动作 + 它前面那条组名分隔线
     expect(pickCalls[0].items).toHaveLength(2);
-    manager.dispose();
+
   });
 
   it('treats an unreadable config file as no actions', async () => {
@@ -289,7 +287,7 @@ describe('QuickActionManager.show', () => {
 
     expect(messages.info[0]).toContain('未配置快速执行动作');
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('treats an editor without any workspace folder as no actions', async () => {
@@ -301,7 +299,7 @@ describe('QuickActionManager.show', () => {
 
     expect(messages.info[0]).toContain('未配置快速执行动作');
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('groups consecutive actions of the same backend under one separator', async () => {
@@ -324,7 +322,7 @@ describe('QuickActionManager.show', () => {
     expect(items[0].kind).toBe(vscode.QuickPickItemKind.Separator);
     expect(items[1].kind).toBeUndefined();
     expect(items[3].kind).toBe(vscode.QuickPickItemKind.Separator);
-    manager.dispose();
+
   });
 
   it('ignores a separator answer without running anything', async () => {
@@ -338,7 +336,7 @@ describe('QuickActionManager.show', () => {
     await manager.show();
 
     expect(commandRuns).toHaveLength(0);
-    manager.dispose();
+
   });
 });
 
@@ -352,7 +350,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
     expect(messages.info[0]).toContain('.kbengine/debug.json');
     expect(commandRuns).toHaveLength(0);
     expect(scriptRuns).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('runs the first action when nothing was run before', async () => {
@@ -368,7 +366,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
 
     expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
     expect(memento.get('kbengine.quickActions.lastRun')).toBe('restart');
-    manager.dispose();
+
   });
 
   it('runs the action remembered from a previous pick', async () => {
@@ -384,7 +382,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
     await manager.runDefault();
 
     expect(commandRuns).toEqual([{ command: 'kbengine.refreshExplorer', args: [] }]);
-    manager.dispose();
+
   });
 
   it('falls back to the first action when the remembered one is gone', async () => {
@@ -397,7 +395,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
     await manager.runDefault();
 
     expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
-    manager.dispose();
+
   });
 
   it('still runs the first action without a workspace state host', async () => {
@@ -413,7 +411,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
     await manager.runDefault();
 
     expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
-    manager.dispose();
+
   });
 
   it('records the picked action as the last run for the default button', async () => {
@@ -427,7 +425,7 @@ describe('QuickActionManager.runDefault(Explorer ▶ 主按钮)', () => {
     await manager.show();
 
     expect(memento.get('kbengine.quickActions.lastRun')).toBe('start_server');
-    manager.dispose();
+
   });
 });
 
@@ -448,11 +446,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(true);
-    expect(scriptRuns).toEqual([{ script: '/ws/stop.bat', background: false, cwd: undefined }]);
-    expect(channelLines()).toContain('stop_all → ✓ exit 0');
-    expect(channelLines()).toContain('server stopped');
+    expect(scriptRuns).toEqual([{ name: 'stop_all', script: '/ws/stop.bat', background: false, cwd: undefined }]);
 
-    manager.dispose();
   });
 
   it('runs a background script without waiting for the exit', async () => {
@@ -469,10 +464,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(true);
-    expect(scriptRuns).toEqual([{ script: '/ws/start.bat', background: true, cwd: undefined }]);
-    expect(channelLines()).toContain('start_server → 已启动');
+    expect(scriptRuns).toEqual([{ name: 'start_server', script: '/ws/start.bat', background: true, cwd: undefined }]);
 
-    manager.dispose();
   });
 
   it('marks a failed script with the exit code, stderr and an error popup', async () => {
@@ -490,11 +483,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(channelLines()).toContain('boot → ✗ exit 3');
-    expect(channelLines()).toContain('port in use');
     expect(messages.error[0]).toBe('执行快速动作失败: boot (exit 3)');
 
-    manager.dispose();
   });
 
   it('reports a script runner exception', async () => {
@@ -512,10 +502,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(channelLines()).toContain('start_server → ✗');
     expect(messages.error[0]).toContain('spawn ENOENT');
 
-    manager.dispose();
   });
 
   it('runs a script in the configured working directory', async () => {
@@ -534,9 +522,9 @@ describe('QuickActionManager.run backends', () => {
 
     expect(ok).toBe(true);
     expect(scriptRuns).toEqual([
-      { script: '/ws/export_tables.bat', background: false, cwd: '/ws/tools' }
+      { name: 'export_tables', script: '/ws/export_tables.bat', background: false, cwd: '/ws/tools' }
     ]);
-    manager.dispose();
+
   });
 
   it('reports a missing exit code as unknown instead of inventing one', async () => {
@@ -554,9 +542,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(channelLines()).toContain('stop_all → ✗ exit 未知');
     expect(messages.error[0]).toBe('执行快速动作失败: stop_all (exit 未知)');
-    manager.dispose();
+
   });
 
   it('reports a non-Error rejection as its string form', async () => {
@@ -574,9 +561,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(channelLines()).toContain('start_server → ✗ spawn threw a string');
     expect(messages.error[0]).toBe('spawn threw a string');
-    manager.dispose();
+
   });
 
   it('runs an http action and reports the status code', async () => {
@@ -597,9 +583,7 @@ describe('QuickActionManager.run backends', () => {
     expect(httpRuns).toEqual([
       { url: 'http://127.0.0.1:9000/reload', method: 'POST', body: '{"scope":"all"}' }
     ]);
-    expect(channelLines()).toContain('hotfix → ✓ HTTP 200');
 
-    manager.dispose();
   });
 
   it('fails loudly on a non-2xx http answer', async () => {
@@ -617,10 +601,8 @@ describe('QuickActionManager.run backends', () => {
     });
 
     expect(ok).toBe(false);
-    expect(channelLines()).toContain('hotfix → ✗ HTTP 500');
     expect(messages.error[0]).toBe('执行快速动作失败: hotfix (HTTP 500)');
 
-    manager.dispose();
   });
 
   it('reports an http runner exception such as a timeout', async () => {
@@ -640,7 +622,6 @@ describe('QuickActionManager.run backends', () => {
     expect(ok).toBe(false);
     expect(messages.error[0]).toContain('abort: timeout');
 
-    manager.dispose();
   });
 
   it('falls back to the vscode command registry when no command runner is injected', async () => {
@@ -666,9 +647,8 @@ describe('QuickActionManager.run backends', () => {
 
     expect(ok).toBe(true);
     expect(received).toEqual([['/ws/Hero.def']]);
-    expect(channelLines()).toContain('open-conf → ✓');
     registration.dispose();
-    manager.dispose();
+
   });
 
   it('reports a failing vscode command backend', async () => {
@@ -689,7 +669,6 @@ describe('QuickActionManager.run backends', () => {
     expect(commandRuns).toHaveLength(1);
     expect(messages.error[0]).toContain('command not registered');
 
-    manager.dispose();
   });
 
   it('dispatches through the real command registry when no runner is injected', async () => {
@@ -712,9 +691,8 @@ describe('QuickActionManager.run backends', () => {
 
     expect(ok).toBe(true);
     expect(seen).toEqual([['baseapp']]);
-    expect(channelLines()).toContain('noop → ✓');
     registration.dispose();
-    manager.dispose();
+
   });
 
   it('aborts with a named-variable error and never touches the runner', async () => {
@@ -734,7 +712,6 @@ describe('QuickActionManager.run backends', () => {
     expect(scriptRuns).toHaveLength(0);
     expect(messages.error[0]).toContain('变量无法解析');
 
-    manager.dispose();
   });
 
   it('asks for confirmation by default and honours confirm:false', async () => {
@@ -766,7 +743,6 @@ describe('QuickActionManager.run backends', () => {
     expect(commandRuns).toHaveLength(1);
     expect(confirmCalls).toHaveLength(1);
 
-    manager.dispose();
   });
 });
 
@@ -792,9 +768,7 @@ describe('QuickActionManager.runByName(自动热重载按名触发)', () => {
     expect(ok).toBe(true);
     expect(confirmCalls).toHaveLength(0);
     expect(commandRuns).toEqual([{ command: 'kbengine.server.restart', args: [] }]);
-    expect(channelLines()).toContain('热更 → ✓');
 
-    manager.dispose();
   });
 
   it('未传 suppressConfirm 时按动作自身的 confirm 弹确认框', async () => {
@@ -809,7 +783,6 @@ describe('QuickActionManager.runByName(自动热重载按名触发)', () => {
     expect(confirmCalls).toHaveLength(1);
     expect(commandRuns).toHaveLength(0);
 
-    manager.dispose();
   });
 
   it('skipLastRun 不写 lastRun 记忆,默认仍写', async () => {
@@ -824,7 +797,6 @@ describe('QuickActionManager.runByName(自动热重载按名触发)', () => {
     await runByName(manager, '热更', { suppressConfirm: true });
     expect(memento.get('kbengine.quickActions.lastRun')).toBe('热更');
 
-    manager.dispose();
   });
 
   it('找不到名字:只记 OUTPUT 流水,不弹窗不打扰', async () => {
@@ -840,9 +812,7 @@ describe('QuickActionManager.runByName(自动热重载按名触发)', () => {
     expect(commandRuns).toHaveLength(0);
     expect(messages.error).toHaveLength(0);
     expect(messages.info).toHaveLength(0);
-    expect(channelLines()).toContain('不存在的热更');
 
-    manager.dispose();
   });
 
   it('空名字直接返回,不读配置也不落流水', async () => {
@@ -853,9 +823,7 @@ describe('QuickActionManager.runByName(自动热重载按名触发)', () => {
     expect(ok).toBe(false);
     expect(commandRuns).toHaveLength(0);
     expect(confirmCalls).toHaveLength(0);
-    expect(channelLines()).toBe('');
 
-    manager.dispose();
   });
 });
 
@@ -867,7 +835,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     await manager.offerScanOnActivate();
 
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('does nothing when actions are already configured', async () => {
@@ -878,7 +846,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     await manager.offerScanOnActivate();
 
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('does nothing when the dismissal was remembered', async () => {
@@ -889,7 +857,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     await manager.offerScanOnActivate();
 
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('does nothing when no bat script matches the word list', async () => {
@@ -900,7 +868,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
 
     expect(pickCalls).toHaveLength(0);
     expect(memento.has('kbengine.quickActions.scanDismissed')).toBe(false);
-    manager.dispose();
+
   });
 
   it('does nothing when the workspace directory cannot be read', async () => {
@@ -909,7 +877,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     await manager.offerScanOnActivate();
 
     expect(pickCalls).toHaveLength(0);
-    manager.dispose();
+
   });
 
   it('treats a context without memento as a first run', async () => {
@@ -923,7 +891,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
 
     expect(pickCalls).toHaveLength(1);
     expect(memento.has('kbengine.quickActions.scanDismissed')).toBe(false);
-    manager.dispose();
+
   });
 
   it('remembers the dismissal when the user cancels the confirmation list', async () => {
@@ -936,7 +904,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     expect(pickCalls[0].options).toMatchObject({ canPickMany: true });
     expect(memento.get('kbengine.quickActions.scanDismissed')).toBe(true);
     expect(memoryFileSystem.files.has('/ws/.kbengine/debug.json')).toBe(false);
-    manager.dispose();
+
   });
 
   it('lists .bat/.ps1 outside the word list when the config has no quickActions', async () => {
@@ -956,7 +924,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     );
     expect(untouched.quickActions).toBeUndefined();
     expect(memento.get('kbengine.quickActions.scanDismissed')).toBe(true);
-    manager.dispose();
+
   });
 
   it('writes a selected .ps1 without a category field', async () => {
@@ -985,7 +953,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     ]);
     expect(written.quickActions[0]).not.toHaveProperty('category');
     expect(messages.info[0]).toBe('已写入 1 个快速执行动作到 .kbengine/debug.json');
-    manager.dispose();
+
   });
 
   it('writes the selected scripts into the config file and keeps the debug section', async () => {
@@ -1028,7 +996,6 @@ describe('QuickActionManager.offerScanOnActivate', () => {
     ]);
     expect(messages.info[0]).toBe('已写入 2 个快速执行动作到 .kbengine/debug.json');
 
-    manager.dispose();
   });
 
   it('writes a fresh config file when none exists yet', async () => {
@@ -1053,7 +1020,7 @@ describe('QuickActionManager.offerScanOnActivate', () => {
         category: 'server'
       }
     ]);
-    manager.dispose();
+
   });
 });
 
@@ -1081,7 +1048,7 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
       script: '${workspaceFolder}/../../outside/assets/export_tables.ps1',
       cwd: '${workspaceFolder}/../../outside/assets'
     });
-    manager.dispose();
+
   });
 });
 
@@ -1100,44 +1067,9 @@ describe('QuickActionManager venv', () => {
       expect(ok).toBe(true);
       expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
       expect(scriptEnvs[0]?.PATH?.split(path.delimiter)[0]).toBe(path.join(venvPath, 'bin'));
-      manager.dispose();
+
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
-  });
-});
-
-describe('QuickActionManager.dispose', () => {
-  it('disposes the output channel', () => {
-    const manager = new QuickActionManager(makeContext(), makeDeps());
-    manager.dispose();
-
-    const channel = windowState.channels.find(entry => entry.name === 'KBEngine 快速执行动作');
-    expect(channel?.disposed).toBe(true);
-  });
-
-  it('closes the channel through the context subscription too', () => {
-    // 扩展卸载时走 subscriptions 链而不是显式 dispose,两条路都得收口
-    const context = makeContext();
-    new QuickActionManager(context, makeDeps());
-
-    for (const subscription of context.subscriptions) {
-      subscription.dispose();
-    }
-
-    const channel = windowState.channels.find(entry => entry.name === 'KBEngine 快速执行动作');
-    expect(channel?.disposed).toBe(true);
-  });
-
-  it('is reached through the extension subscription chain', () => {
-    const context = makeContext();
-    new QuickActionManager(context, makeDeps());
-
-    for (const subscription of context.subscriptions) {
-      subscription.dispose();
-    }
-
-    const channel = windowState.channels.find(entry => entry.name === 'KBEngine 快速执行动作');
-    expect(channel?.disposed).toBe(true);
   });
 });
