@@ -1,5 +1,5 @@
 /**
- * 批142(用户 2026-10-16 单 kode-debug-json.md):`.kbengine/debug.json` 缺失
+ * 批143(用户 2026-10-16 单 kode-debug-json.md):`.kbengine/debug.json` 缺失
  * 即自动生成带注释的空骨架,并按本仓既有扫描逻辑(quickActionScanner)把工作
  * 目录下的启停/导表脚本填进 quickActions;工作目录支持环境变量指定,优先级
  * 环境变量 / 配置文件 / 默认值,冲突如实说明取舍。纯层注入 deps 不碰真 fs。

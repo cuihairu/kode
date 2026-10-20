@@ -25,7 +25,7 @@ export interface DebugConfigFile {
   debug: KBEngineDebugConfig;
 }
 
-/** 元件默认清单:元件名 + telnet 端口(批142 起骨架注释示例复用这份真源) */
+/** 元件默认清单:元件名 + telnet 端口(批143 起骨架注释示例复用这份真源) */
 export const SOURCE_DEFAULT_COMPONENTS: Array<{
   name: string;
   telnetPort: number;
@@ -196,7 +196,7 @@ export class DebugConfigManager {
 
     try {
       const configData = await vscode.workspace.fs.readFile(configPath);
-      // 批142:骨架按 JSONC 写(带注释),读配置统一剥注释再解析
+      // 批143:骨架按 JSONC 写(带注释),读配置统一剥注释再解析
       const configFile = parseDebugConfigText(Buffer.from(configData).toString('utf8')) as DebugConfigFile | null;
       if (configFile === null) {
         return;

@@ -1141,7 +1141,7 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
   }, 8000);
 });
 
-describe('激活期 debug.json 缺失自动生成(批142)', () => {
+describe('激活期 debug.json 缺失自动生成(批143)', () => {
   it('工作区没有配置文件时生成带注释骨架,生效工作目录与来源落输出通道', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-debugcfg-'));
     fs.writeFileSync(path.join(root, 'start_server.bat'), '@echo off\n');

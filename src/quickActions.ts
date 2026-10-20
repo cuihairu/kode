@@ -682,7 +682,7 @@ export class QuickActionManager {
     }
     try {
       const data = await vscode.workspace.fs.readFile(this.configUri(root));
-      // 批142:骨架按 JSONC 写(带注释),读配置统一剥注释再解析,坏 JSON 按没有
+      // 批143:骨架按 JSONC 写(带注释),读配置统一剥注释再解析,坏 JSON 按没有
       // 动作处理——用户在文件里写的注释不该让整份配置读不动
       return parseDebugConfigText(Buffer.from(data).toString('utf8'));
     } catch {

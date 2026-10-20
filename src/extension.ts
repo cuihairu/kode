@@ -1155,7 +1155,7 @@ export function activate(context: vscode.ExtensionContext) {
     await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
     await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
   })();
-  // 批142(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释
+  // 批143(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释
   // 的骨架,并按脚本扫描填 quickActions。放在首装扫描之前——骨架里已经有动作
   // 时,首装扫描不再重复问用户。生效工作目录与来源落 OUTPUT 通道。
   const debugConfigChannel = vscode.window.createOutputChannel(DEBUG_CONFIG_CHANNEL_NAME);
