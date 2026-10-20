@@ -2710,7 +2710,7 @@ function findMethodImplementationLocationInDef(
 
   // 用户令(2026-10-20):identity 未命中/实现未绑定的两个早落分支按
   // **同名优先 → 全项目唯一命中 → 提示+注册回落** 三段解析(实现常在非同名 py 里)。
-  const withGlobalFallback = (): Thenable<vscode.Location> => {
+  const withGlobalFallback = (): vscode.ProviderResult<vscode.Location> => {
     const byConvention = conventionLocation();
     if (byConvention) {
       return byConvention;
