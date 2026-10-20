@@ -136,3 +136,17 @@
 - [ ] T-03：KBEngine.pyi 升级为完整引擎类型定义（扩充 KBE_SYMBOLS 符号/签名/文档/来源；未完备前不得对外宣称“完整引擎 API”）。
 - [ ] T-04：.py 全量 typings——暂缓，先做影响面实验（.pyi 抢占 .py 解析行为逐 IDE 验证）再决定开关，默认关闭。
 - [ ] T-05：统一源码映射与导航（四种体验：F12 定义 / Peek 内联 / CodeLens 来源标注“原始定义: types.xml:8”点击跳转 / 生成文件页头来源声明；禁止用生成行号反推行号）。
+
+#### 后台运行战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-background-process.md）
+
+- [ ] B-01：审计全部命令启动入口，列出创建 Terminal / terminal.show() / 重复创建进程 / 阻塞等待的点位清单（file:line）。
+- [ ] B-02：统一 ProcessManager（方案A）：child_process.spawn + windowsHide，输出直接进日志系统，不经可见 Terminal；各功能不再各自建终端。
+- [ ] B-03：交互式/必须真 Shell 的命令走隐藏 Terminal 通道（createTerminal 不 show，按需 reveal）。
+- [ ] B-04：语义分离「不弹窗」与「关 VS Code 仍运行」：前者由 ProcessManager 承担，后者明确边界（不做或独立守护，评审口径写进设计注记）。
+
+#### 日志中心战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-log-center.md）
+
+- [ ] L-01：统一日志入口（stdout 与文件同源判定去重；一切日志先过单一入口，不各自维护）。
+- [ ] L-02：定义统一 LogEvent 结构（id/timestamp/level/source/component/text…），所有来源转换后进入。
+- [ ] L-03：三模块拆分收拢（WebView / 服务器管理面板 / 文件读取不再各自一套状态）。
+- [ ] L-04：性能红线——批量增量推送（几十毫秒合批）+ 前端显示上限 + 文件增量读取，禁止逐行单消息与全量重传。
