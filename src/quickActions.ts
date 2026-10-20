@@ -137,12 +137,12 @@ export const terminalScript: ScriptRunner = options => {
     let managed: ManagedProcess;
     try {
       managed = defaultProcessManager.start({
-      id: `quick-action:${options.name ?? options.script}`,
-      command: shellFor(options.script),
-      args: shellArgsFor(options.script),
-      cwd,
-      env: options.env,
-      component: options.name ?? 'quick-action'
+        id: `quick-action:${options.name ?? options.script}`,
+        command: shellFor(options.script),
+        args: shellArgsFor(options.script),
+        cwd,
+        env: options.env,
+        component: options.name ?? 'quick-action'
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
