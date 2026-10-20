@@ -36,7 +36,7 @@ pnpm run package
 Most "my change did nothing" reports are stale artifacts, not logic bugs. Check in order:
 
 1. **Installed extension**: `%USERPROFILE%\.vscode\extensions` must contain a
-   `cuihairu.kode-0.1.0` folder; if it is absent, the extension is not installed
+   `cuihairu.kode-kbengine-*` folder (the extension id was renamed from `kode` to `kode-kbengine`, and the last segment follows the version); if it is absent, the extension is not installed
    and you are not testing this code.
    ```powershell
    Get-ChildItem $env:USERPROFILE\.vscode\extensions -Filter '*kode*'
@@ -53,7 +53,7 @@ Most "my change did nothing" reports are stale artifacts, not logic bugs. Check 
    ```bash
    pnpm install
    pnpm run package        # vsce runs vscode:prepublish = compile + bundle
-   code --install-extension kode-0.1.0.vsix
+   code --install-extension kode-kbengine-*.vsix
    ```
    Then run `Developer: Reload Window` before testing.
 4. **Confirm the extension activated**: activation events are only

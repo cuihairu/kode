@@ -9,7 +9,7 @@
 - [推送到 GitHub]
 
 ### 版本信息
-- **版本号**: 0.1.0（版本号冻结，发版由用户手动触发）
+- **版本号**: 0.1.1（版本号由用户给定并手动触发发布）
 - **许可证**: Apache-2.0
 - **发布者**: cuihairu
 
@@ -323,7 +323,7 @@ kode/
 ├── README.md                 # 项目说明
 ├── TESTING.md                # 测试架构与批次台账
 ├── language-configuration.json
-├── package.json              # 扩展配置 (v0.1.0)
+├── package.json              # 扩展配置 (v0.1.1)
 └── tsconfig.json             # TypeScript 配置
 ```
 
@@ -422,6 +422,6 @@ pnpm run publish         # 发布到 Marketplace
 
 **项目地址**: https://github.com/cuihairu/kode
 
-**当前版本**: 0.1.0（版本号冻结，发版由用户手动触发）
+**当前版本**: 0.1.1（版本号由用户给定并手动触发发布）
 
 **许可证**: Apache-2.0

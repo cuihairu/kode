@@ -5,10 +5,66 @@ All notable changes to the Kode extension will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-10-20
+
+Published to the Marketplace as `cuihairu.kode-kbengine` (GitHub Release
+v0.1.1); nightly rolling builds continue on their own track.
+
+### Added
+- Per-feature switches for the language features — 11 toggles, all
+  default on, no master switch: four CodeLens kinds (`codeLens.rpc`,
+  `codeLens.eventCallbacks`, `codeLens.property`, `codeLens.typesXml`)
+  and six hover faces (`hover.typeStorage`, `hover.implementedBy`,
+  `hover.entityRegistration`, `hover.defChain`, `hover.eventStats`,
+  `hover.serverConfig`). The four lens providers fire their own change
+  event, so a toggle applies without reloading the window; inlay hints
+  have no change event and apply on the next render.
+- Inline type hints at `self.<property>` access sites in Python
+  (`kbengine.inlayHints.typeData`), reusing the same resolution index as
+  property F12.
+- Event API navigation: event names on callback `def` lines, the
+  listener count at `emitEvent` call sites, object-bound event calls
+  resolved, wider event-constant resolution, cross-file interface def
+  lookup, and root base path section inference. The event code lens now
+  reuses the cached workspace scan instead of rescanning per file.
+- Quick actions as a first-class surface: a dedicated tree view listing
+  all scripts, command details shown before execution, HTTP requests
+  merged into the same action list with unified request sources, and
+  execution in the integrated terminal.
+- Ten more color themes, plus the Monokai theme rebased on the
+  authentic palette.
+
+### Changed
+- The extension identity moved: publisher `hairucui` → `cuihairu` and id
+  `kode` → `kode-kbengine`. The Marketplace listing, the installed
+  folder (`cuihairu.kode-kbengine-<version>`), and the packaged file
+  name (`kode-kbengine-<version>.vsix`) all follow the new id, so older
+  copies install side by side rather than being replaced.
+- The release pipeline was finished out: the publish workflow resolves
+  the packaged vsix from `package.json`, creates the GitHub Release with
+  the GitHub CLI, accepts a `v` prefix in the version check, allows
+  manual retrigger of individual steps, queries the gallery with a PAT,
+  and logs publisher attribution; the nightly gate accepts released
+  version tags.
+
+### Fixed
+- Def method jumps now fall back to every Python file when no exact
+  candidate is found instead of giving up silently, covering the
+  early-miss branches and the provider return type.
+- Docs: the configuration reference is regrouped into per-feature tables
+  (all 54 settings, one small table per area), Marketplace status and
+  feature counts are synced, the retired shields badge is replaced, and
+  batch labels in code comments are corrected.
+
+### Docs
+- Marketplace badges and links point at the live listing.
+
 ## [0.1.0] - 2026-10-12
 
-Version is frozen at this placeholder on request; it is not a published
-release (no tag, no GitHub Release) — nightly rolling builds continue.
+Frozen at this placeholder on request; it was published later on
+2026-10-19 (tag v0.1.0, GitHub Release, Marketplace listing
+`cuihairu.kode-kbengine`), after the publisher and extension id changed.
+Nightly rolling builds continued throughout.
 
 ### Added
 - Merged def-chain hover (source-analysis design point D5): hovering the
@@ -606,11 +662,13 @@ release (no tag, no GitHub Release) — nightly rolling builds continue.
   (root cause of the "switching to KBEngine Dark kills .py highlighting"
   report; regression-locked by a theme coverage test with a .def golden)
 
-## [0.1.0] - unreleased
+## [0.1.0] - pre-release snapshot (2026-03-25)
 
-Feature state as of 2026-03-25. No git tag has been created for it and the
-extension has not been published to the Marketplace; the release checklist
-lives in PROJECT_SUMMARY.md / COMPLETED_FEATURES.md.
+Feature state as of 2026-03-25, kept as the historical baseline. At that
+point no git tag had been created and the extension had not been published
+to the Marketplace; the same version number was published later — see
+[0.1.0] - 2026-10-12 above. The release checklist lives in
+PROJECT_SUMMARY.md / COMPLETED_FEATURES.md.
 
 ### Added
 - Syntax highlighting for .def files

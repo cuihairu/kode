@@ -36,7 +36,7 @@ pnpm run package
 「改了没生效」绝大多数不是逻辑问题,而是 VS Code 还在跑旧产物。按序排查:
 
 1. **已装扩展**:`%USERPROFILE%\.vscode\extensions` 下应存在
-   `cuihairu.kode-0.1.0` 目录;没有就是没装(你测的不是这份代码)。
+   `cuihairu.kode-kbengine-*` 目录(扩展 id 由 `kode` 改名为 `kode-kbengine`,目录尾段随版本);没有就是没装(你测的不是这份代码)。
    ```powershell
    Get-ChildItem $env:USERPROFILE\.vscode\extensions -Filter '*kode*'
    ```
@@ -51,7 +51,7 @@ pnpm run package
    ```bash
    pnpm install
    pnpm run package        # vsce 自动执行 vscode:prepublish = compile + bundle
-   code --install-extension kode-0.1.0.vsix
+   code --install-extension kode-kbengine-*.vsix
    ```
    装完执行 `Developer: Reload Window` 再测。
 4. **确认扩展已激活**:激活事件只有 `workspaceContains:**/*.def` 与打开 `.def`

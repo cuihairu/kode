@@ -6,7 +6,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
   <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.0-blue" alt="VS Code Marketplace" /></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -211,7 +211,7 @@ pnpm run compile
 pnpm run package
 
 # Install locally
-code --install-extension kode-kbengine-0.1.0.vsix
+code --install-extension kode-kbengine-*.vsix
 ```
 
 ## Documentation
@@ -366,4 +366,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.0, published to the Marketplace as `cuihairu.kode-kbengine`. 33 features, 45 commands, and 54 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Latest release 0.1.1, published to the Marketplace as `cuihairu.kode-kbengine`. 33 features, 45 commands, and 54 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
