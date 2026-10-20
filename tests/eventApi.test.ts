@@ -4,6 +4,52 @@ import { EventCodeLensProvider, eventDefinitionAt, findEventCalls } from '../src
 import { makeTextDocument } from './helpers/vscodeStub';
 
 describe('KBEngine event API parsing', () => {
+
+it('supports object-bound string events with attribute callbacks', () => {
+  const calls = findEventCalls('self.addEvent("ev_ready", self.on_ready)');
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ api: 'addEvent', event: 'ev_ready', callback: 'on_ready' });
+});
+
+it('normalizes dotted event constants and anchors offsets on the final segment', () => {
+  const src = 'self.removeEvent(self.EV_CLEANUP)';
+  const calls = findEventCalls(src);
+  expect(calls).toHaveLength(1);
+  expect(calls[0].event).toBe('EV_CLEANUP');
+  expect(src.slice(calls[0].eventOffset, calls[0].eventOffset + 'EV_CLEANUP'.length)).toBe('EV_CLEANUP');
+});
+
+it('pairs dotted self.addEvent with self.emitEvent for the listener CodeLens', async () => {
+  const originalFindFiles = vscode.workspace.findFiles;
+  const originalOpen = vscode.workspace.openTextDocument;
+  const listener = vscode.Uri.file('/ws/entity.py');
+  vscode.workspace.findFiles = async () => [listener];
+  vscode.workspace.openTextDocument = async () => makeTextDocument(
+    'self.addEvent("ev_ready", self.on_ready)\ndef on_ready(self):\n    pass',
+    { fileName: listener.fsPath, languageId: 'python' }
+  ) as vscode.TextDocument;
+  try {
+    const doc = makeTextDocument('self.emitEvent("ev_ready")', { fileName: '/ws/emit.py', languageId: 'python' }) as vscode.TextDocument;
+    const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+    const titles = lenses.map(lens => (lens.command as { title: string }).title);
+    expect(titles).toContain('1 处监听');
+  } finally {
+    vscode.workspace.findFiles = originalFindFiles;
+    vscode.workspace.openTextDocument = originalOpen;
+  }
+});
+
+it('stays silent when the event name is an expression', () => {
+  expect(findEventCalls('self.addEvent(f"ev_{kind}", self.on_ready)')).toHaveLength(0);
+});
+
+it('keeps the call without callback when the callback is an expression', () => {
+  const calls = findEventCalls('self.addEvent(EV_X, lambda *_args: None)');
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ api: 'addEvent', event: 'EV_X' });
+  expect(calls[0].callback).toBeUndefined();
+});
+
   it('shows the event name on a single callback CodeLens', async () => {
     const originalFindFiles = vscode.workspace.findFiles;
     vscode.workspace.findFiles = async () => [];

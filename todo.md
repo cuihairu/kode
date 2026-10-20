@@ -3,6 +3,8 @@
 > 完成项一行证据（commit + 测试数）；未完成项一句需求。版本号冻结 0.1.0，发版由用户手动触发。
 
 ## 未完成
+- [ ] CodeLens / Hover 配置开关（默认开，**按功能拆分**）——每个 provider 一枚独立 `kode.*.enable`（事件回调 CodeLens、属性标记 CodeLens、types.xml 落库镜链 CodeLens、各类 Hover……），不设总闸一刀切；默认 true；用户 2026-10-20 令「都需要配置开关，默认打开」「hover 也需要配置开关，需要把功能拆分」「优先安排」
+- [ ] types.xml 数据类型 inlay hints（配置开关，默认开）——def 属性/方法使用处对 `<Type>` 定义的数据类型渲染内联类型提示；用户 2026-10-20 令「优先安排」
 
 - [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
 - [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK;来源:盘点 G8;Nex X 走 KBE Nex 3.x 管理协议,本仓面向经典 kbengine 协议可用性未证,不排期直到用户点名）

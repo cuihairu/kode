@@ -1,18 +1,49 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 
-export type EventCall = { api: 'addEvent' | 'registerEvent' | 'emitEvent' | 'removeEvent' | 'deregisterEvent'; event: string; eventOffset: number; callback?: string; callbackOffset?: number };
+export type EventCall = { api: 'addEvent' | 'registerEvent' | 'emitEvent' | 'removeEvent' | 'deregisterEvent'; event: string; eventOffset: number; callback?: string; callbackOffset?: number }
 
-// Parse only bare event constants and literal callback names. Expressions and variables stay silent.
+// 只认三种实参形态：标识符/点名（self.EV_X、on_ready）与字符串字面量；表达式保持沉默。
+const ARG_TOKEN = /(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*|'[^'\n]*'|"[^"\n]*"/;
+type ParsedArg = { value: string; offset: number; end: number; dotted: boolean };
+
+// 解析单个实参：点名取末段（self.EV_X → EV_X，偏移落在末段上，跳转即常量名）。
+function parseArg(text: string, from: number): ParsedArg | null {
+  const ws = /^[ \t]*/.exec(text.slice(from))![0];
+  const start = from + ws.length;
+  const m = ARG_TOKEN.exec(text.slice(start));
+  if (!m || m.index !== 0) return null;
+  const token = m[0];
+  if (token.startsWith("'") || token.startsWith('"')) {
+    return { value: token.slice(1, -1), offset: start + 1, end: start + token.length, dotted: false, quoted: true } as ParsedArg & { quoted: boolean };
+  }
+  const lastDot = token.lastIndexOf('.');
+  return { value: token.slice(lastDot + 1), offset: start + lastDot + 1, end: start + token.length, dotted: lastDot >= 0 };
+}
+
+// 实参后必须紧跟逗号或右括号才算落在真实调用里（防误配相邻表达式）。
+function atCallBoundary(text: string, end: number): boolean {
+  const next = text[end];
+  return next === ',' || next === ')';
+}
+
+// Parse only literal/identifier event names and literal or attribute callbacks.
+// Expressions and variables stay silent.
 export function findEventCalls(text: string): EventCall[] {
   const result: EventCall[] = [];
-  const re = /\b(addEvent|registerEvent|emitEvent|removeEvent|deregisterEvent)\s*\(\s*([A-Za-z_]\w*)(?=\s*[,)])/g;
+  const re = /\b(addEvent|registerEvent|emitEvent|removeEvent|deregisterEvent)\s*\(/g;
   for (const m of text.matchAll(re)) {
     const api = m[1] as EventCall['api'];
-    const start = (m.index || 0) + m[0].indexOf(m[2]);
-    const rest = text.slice((m.index || 0) + m[0].length);
-    const cb = (api === 'addEvent' || api === 'registerEvent') ? /^\s*,\s*(['"])([A-Za-z_]\w*)\1/.exec(rest) : null;
-    result.push({ api, event: m[2], eventOffset: start, ...(cb ? { callback: cb[2], callbackOffset: start + m[2].length + cb[0].indexOf(cb[2]) + 1 } : {}) });
+    const after = (m.index || 0) + m[0].length;
+    const event = parseArg(text, after);
+    if (!event?.value || !atCallBoundary(text, event.end)) continue;
+    let callback: ParsedArg | null = null;
+    if ((api === 'addEvent' || api === 'registerEvent') && text[event.end] === ',') {
+      const candidate = parseArg(text, event.end + 1);
+      // 回调只认点名（self.onFoo）或字符串字面量；裸变量按纪律保持沉默。
+      if (candidate?.value && atCallBoundary(text, candidate.end) && (candidate.dotted || (candidate as ParsedArg & { quoted?: boolean }).quoted)) callback = candidate;
+    }
+    result.push({ api, event: event.value, eventOffset: event.offset, ...(callback ? { callback: callback.value, callbackOffset: callback.offset } : {}) });
   }
   return result;
 }
