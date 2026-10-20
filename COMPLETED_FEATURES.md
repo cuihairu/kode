@@ -7,7 +7,7 @@
 
 ---
 
-## 已完成功能 (27 个)
+## 已完成功能 (31 个)
 
 ### 1. 语法高亮
 - `.def` 整体委托内建 XML 语法 (text.xml) 着色：标签蓝、属性名浅蓝、标点灰、字符串橙，`<` `>` 参与括号配对着色，块注释 `<!-- -->`
@@ -287,12 +287,12 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 47 个（src/，不含 src/test，实测） |
+| TypeScript 文件 | 65 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
-| 文档页数 | 28 个 Markdown（根 9 + docs/ 16 + resources/docs 3） |
-| 总行数 | 28856 行（src/ TypeScript，实测） |
+| 文档页数 | 51 个 Markdown（根 9 + docs/ 39 + resources/docs 3） |
+| 总行数 | 37140 行（src/ TypeScript，实测） |
 | 已完成功能 | 31 个 |
 
 ---

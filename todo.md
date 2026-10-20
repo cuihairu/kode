@@ -4,7 +4,7 @@
 
 ## 未完成
 
-- [ ] 发布到 VSCode Marketplace（仅用户手动执行：先在 package.json 提交目标版本号，再手动触发 Publish to Marketplace 工作流并填同一版本号；不打版本号 tag、不建正式 Release。发布准备已完成，见已完成「Marketplace 发布准备」）
+- [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
 - [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK;来源:盘点 G8;Nex X 走 KBE Nex 3.x 管理协议,本仓面向经典 kbengine 协议可用性未证,不排期直到用户点名）
 - [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9;同 G8 依赖引擎管理协议,监控面板已有 machine 基础状态,逐批点火前先证协议）
 - [ ] 不排期 G10 Robots 管理 / 插件市场 / 工作区初始化（来源:盘点 G10;超出工程内开发工具定位,用户点名再评估）

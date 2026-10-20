@@ -27,7 +27,8 @@ The repository automatically builds from `main` every day and **publishes a roll
 |------|------|------|
 | `kode-nightly.vsix` | Windows / macOS / Linux (universal for VS Code ≥1.50) | Download and run `code --install-extension kode-nightly.vsix` |
 
-The extension is **still not published to the VS Code Marketplace**; `nightly` is currently the only prebuilt distribution channel. You can also build from source as described in the Installation section below.
+> **Published on the VS Code Marketplace:** [cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
+>
 
 
 ## Testing Scope
@@ -365,4 +366,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.0, published to the Marketplace as `cuihairu.kode-kbengine`. 27 features, 30 commands, and 42 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Current version 0.1.0, published to the Marketplace as `cuihairu.kode-kbengine`. 31 features, 45 commands, and 43 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.

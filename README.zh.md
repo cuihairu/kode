@@ -7,7 +7,6 @@
   <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
   <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.0-blue" alt="VS Code Marketplace" /></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.0-blue" alt="VS Code Marketplace" /></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -376,4 +375,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前版本 0.1.0，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 27 项功能、30 条命令、42 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前版本 0.1.0，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 31 项功能、45 条命令、43 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
