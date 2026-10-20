@@ -912,7 +912,88 @@ export class EntityMappingManager {
       return null;
     }
 
-    return this.findMethodImplementationByIdentity(index, identity);
+    const located = this.findMethodImplementationByIdentity(index, identity);
+    if (located) {
+      return located;
+    }
+
+    // 用户令(2026-10-20):.def 方法在同名/绑定文件找不到实现时,放宽到全项目
+    // python:方法名**唯一命中**才跳(实现常落在父类/公共模块的 py 里,
+    // 属主索引 pythonMethods 只收实体属主脚本,覆盖不到),多处命中保持静默
+    // (交给调用方约定链与提示),找不到维持现状不误跳。扫描结果按方法名懒缓存。
+    const globalHits = await this.collectAllPythonMethodHits(identity.symbolName);
+    if (globalHits.length === 1) {
+      const [globalHit] = globalHits;
+      jumpLog('debug', () =>
+        `def 方法[全项目回退] ${identity.symbolName} → ${path.basename(globalHit.filePath)}:${globalHit.line}`
+      );
+      return globalHit;
+    }
+    return null;
+  }
+
+  /** 全项目 python 方法扫描(懒缓存):精确 `def <name>(`,跳过虚目录,多处命中交由调用方判定。 */
+  private readonly allPythonMethodHits = new Map<
+    string,
+    Array<{ filePath: string; line: number; character: number }>
+  >();
+
+  private async collectAllPythonMethodHits(
+    methodName: string
+  ): Promise<Array<{ filePath: string; line: number; character: number }>> {
+    const cached = this.allPythonMethodHits.get(methodName);
+    if (cached) {
+      return cached;
+    }
+    const escaped = methodName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`^\\s*def\\s+${escaped}\\s*\\(`);
+    const skippedDirs = new Set(['node_modules', '.venv', 'venv', '__pycache__', '.git', 'build', 'dist']);
+    const hits: Array<{ filePath: string; line: number; character: number }> = [];
+    const seenPaths = new Set<string>();
+    const walk = (dir: string): void => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          if (!skippedDirs.has(entry.name) && !entry.name.startsWith('.')) {
+            walk(path.join(dir, entry.name));
+          }
+          continue;
+        }
+        if (!entry.name.endsWith('.py')) {
+          continue;
+        }
+        const filePath = path.join(dir, entry.name);
+        const normalized = normalizeLookupPath(filePath);
+        if (seenPaths.has(normalized)) {
+          continue;
+        }
+        seenPaths.add(normalized);
+        let text: string;
+        try {
+          text = fs.readFileSync(filePath, 'utf8');
+        } catch {
+          continue;
+        }
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i += 1) {
+          if (pattern.test(lines[i])) {
+            hits.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
+            break; // 每文件首个同名 def 即落点
+          }
+        }
+      }
+    };
+    for (const root of getIndexScanRoots()) {
+      walk(root);
+    }
+    hits.sort((a, b) => (a.filePath === b.filePath ? a.line - b.line : a.filePath.localeCompare(b.filePath)));
+    this.allPythonMethodHits.set(methodName, hits);
+    return hits;
   }
 
   private async ensureIndexForOwner(
