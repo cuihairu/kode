@@ -120,10 +120,59 @@
     ],
     "themes": [
       {
-        "label": "KBEngine Dark",
+        "label": "KBEngine Theme (Monokai)",
         "uiTheme": "vs-dark",
-        "path": "./syntaxes/kbengine-color-theme.json",
-        "description": "通用深色主题,覆盖常见语言(Python/JS/Go 等)的通用语法着色,.def 与 types.xml 走 XML 语法并叠加引擎语义着色"
+        "path": "./syntaxes/kbengine-color-theme.json"
+      },
+      {
+        "label": "KBEngine (One Dark)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/one-dark.json"
+      },
+      {
+        "label": "KBEngine (Dracula)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/dracula.json"
+      },
+      {
+        "label": "KBEngine (GitHub Light)",
+        "uiTheme": "vs-light",
+        "path": "./syntaxes/themes/github-light.json"
+      },
+      {
+        "label": "KBEngine (Solarized Light)",
+        "uiTheme": "vs-light",
+        "path": "./syntaxes/themes/solarized-light.json"
+      },
+      {
+        "label": "KBEngine (Solarized Dark)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/solarized-dark.json"
+      },
+      {
+        "label": "KBEngine (Nord)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/nord.json"
+      },
+      {
+        "label": "KBEngine (Gruvbox Dark)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/gruvbox-dark.json"
+      },
+      {
+        "label": "KBEngine (Catppuccin Mocha)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/catppuccin.json"
+      },
+      {
+        "label": "KBEngine (Visual Studio Dark+)",
+        "uiTheme": "vs-dark",
+        "path": "./syntaxes/themes/vs-dark-plus.json"
+      },
+      {
+        "label": "KBEngine (Visual Studio Light+)",
+        "uiTheme": "vs-light",
+        "path": "./syntaxes/themes/vs-light-plus.json"
       }
     ],
     "snippets": [

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 // 用户实测装最新 vsix 后 .py 高亮全废。全仓考古结论(git 全历史扫描):
 // - languages/grammars 自 dc75f33(初始提交)起恒等——只注册 kbengine-def
 //   一门语言、source.kbengine-def 一条语法,从未注册过 python/.py/注入;
-// - themes 自 1232d60 起"KBEngine Dark"恒等,2026-03-31(36eca10)后未再动;
+// - themes 自 1232d60 起曾恒等单套;2026-10-20 用户令扩为 11 套(Monokai+10 常见主题)。
 // - extension 无任何可动态关闭语法着色的 API 调用(无 semanticTokens/
 //   decorations/files.associations/settings.json 写入,见 grep 取证)。
 // 即:打包产物不是 .py 高亮回归的成因(.py 由 VS Code 内建 MagicPython
@@ -67,23 +67,33 @@ describe('高亮注册面恒等锁(批103)', () => {
     ]);
   });
 
-  it('themes 锁定:KBEngine Dark(vs-dark)且文件在位可解析', () => {
-    // description 于批107 补入;批110 随 def 走 XML 语法+语义着色改写
-    expect(pkg.contributes.themes).toEqual([
-      {
-        label: 'KBEngine Dark',
-        uiTheme: 'vs-dark',
-        path: './syntaxes/kbengine-color-theme.json',
-        description:
-          '通用深色主题,覆盖常见语言(Python/JS/Go 等)的通用语法着色,.def 与 types.xml 走 XML 语法并叠加引擎语义着色'
-      }
+  it('themes 锁定:11 套(Monokai 主题 + 10 常见主题)且文件在位可解析', () => {
+    // 2026-10-20 用户令:多配几套常见主题可选;锁定标签清单防静默增删。
+    const labels = (pkg.contributes.themes as Array<{ label: string }>).map(t => t.label);
+    expect(labels).toEqual([
+      'KBEngine Theme (Monokai)',
+      'KBEngine (One Dark)',
+      'KBEngine (Dracula)',
+      'KBEngine (GitHub Light)',
+      'KBEngine (Solarized Light)',
+      'KBEngine (Solarized Dark)',
+      'KBEngine (Nord)',
+      'KBEngine (Gruvbox Dark)',
+      'KBEngine (Catppuccin Mocha)',
+      'KBEngine (Visual Studio Dark+)',
+      'KBEngine (Visual Studio Light+)'
     ]);
-    const themePath = path.join(root, 'syntaxes', 'kbengine-color-theme.json');
-    const theme = JSON.parse(fs.readFileSync(themePath, 'utf8')) as {
-      tokenColors: unknown[];
-    };
-    expect(Array.isArray(theme.tokenColors)).toBe(true);
-    expect(theme.tokenColors.length).toBeGreaterThan(0);
+    for (const entry of pkg.contributes.themes as Array<{ path: string; uiTheme: string }>) {
+      expect(entry.uiTheme).toMatch(/^vs-(dark|light)$/);
+      const themeFile = path.join(root, entry.path.replace(/^\.\//, ''));
+      const theme = JSON.parse(fs.readFileSync(themeFile, 'utf8')) as {
+        tokenColors: unknown[];
+        colors: Record<string, string>;
+      };
+      expect(Array.isArray(theme.tokenColors)).toBe(true);
+      expect(theme.tokenColors.length).toBeGreaterThan(20);
+      expect(theme.colors['editor.background']).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
   });
 
   it('零 python 注册不变量:.py 不映射、source.python 不注册(防与内建 MagicPython 冲突)', () => {

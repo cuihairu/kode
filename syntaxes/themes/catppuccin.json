@@ -1,0 +1,299 @@
+{
+  "name": "KBEngine (Catppuccin Mocha)",
+  "semanticHighlighting": false,
+  "colors": {
+    "editor.background": "#1E1E2E",
+    "editor.foreground": "#CDD6F4",
+    "activityBarBadge.background": "#94E2D5",
+    "sideBarTitle.foreground": "#CDD6F4"
+  },
+  "tokenColors": [
+    {
+      "name": "Default Foreground",
+      "scope": [
+        "source",
+        "text.xml"
+      ],
+      "settings": {
+        "foreground": "#CDD6F4"
+      }
+    },
+    {
+      "name": "Comments",
+      "scope": [
+        "comment",
+        "punctuation.definition.comment"
+      ],
+      "settings": {
+        "foreground": "#6C7086",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "Keywords",
+      "scope": [
+        "keyword",
+        "keyword.control",
+        "keyword.operator.new",
+        "keyword.operator.expression"
+      ],
+      "settings": {
+        "foreground": "#F5C2E7"
+      }
+    },
+    {
+      "name": "Storage",
+      "scope": [
+        "storage",
+        "storage.type",
+        "storage.modifier"
+      ],
+      "settings": {
+        "foreground": "#F5C2E7"
+      }
+    },
+    {
+      "name": "Strings",
+      "scope": [
+        "string",
+        "punctuation.definition.string"
+      ],
+      "settings": {
+        "foreground": "#A6E3A1"
+      }
+    },
+    {
+      "name": "String Escapes",
+      "scope": [
+        "constant.character.escape"
+      ],
+      "settings": {
+        "foreground": "#CBA6F7"
+      }
+    },
+    {
+      "name": "Regular Expressions",
+      "scope": [
+        "string.regexp"
+      ],
+      "settings": {
+        "foreground": "#CBA6F7"
+      }
+    },
+    {
+      "name": "Numbers and Constants",
+      "scope": [
+        "constant.numeric",
+        "constant.language"
+      ],
+      "settings": {
+        "foreground": "#CBA6F7"
+      }
+    },
+    {
+      "name": "Function Names",
+      "scope": [
+        "entity.name.function",
+        "meta.function-call entity.name.function",
+        "support.function"
+      ],
+      "settings": {
+        "foreground": "#89B4FA"
+      }
+    },
+    {
+      "name": "Class Names",
+      "scope": [
+        "entity.name.class",
+        "entity.name.type.class",
+        "entity.name.type.module"
+      ],
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "Types",
+      "scope": [
+        "entity.name.type",
+        "support.class",
+        "support.type",
+        "entity.name.namespace"
+      ],
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "Parameters",
+      "scope": [
+        "variable.parameter",
+        "meta.function.parameters variable"
+      ],
+      "settings": {
+        "foreground": "#F9E2AF",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "Decorator and self",
+      "scope": [
+        "variable.language",
+        "entity.name.function.decorator",
+        "punctuation.definition.decorator"
+      ],
+      "settings": {
+        "foreground": "#F5C2E7"
+      }
+    },
+    {
+      "name": "Attribute Names",
+      "scope": "entity.other.attribute-name",
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "XML Tag Punctuation",
+      "scope": [
+        "punctuation.definition.tag.xml",
+        "punctuation.definition.tag.begin.xml",
+        "punctuation.definition.tag.end.xml"
+      ],
+      "settings": {
+        "foreground": "#585B70"
+      }
+    },
+    {
+      "name": "XML Tags",
+      "scope": [
+        "entity.name.tag.xml",
+        "entity.name.tag.localname.xml"
+      ],
+      "settings": {
+        "foreground": "#F5C2E7"
+      }
+    },
+    {
+      "name": "XML Attribute Names",
+      "scope": "entity.other.attribute-name.xml",
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "KBEngine Properties Section",
+      "scope": "entity.name.tag.section.properties.kbengine",
+      "settings": {
+        "foreground": "#F9E2AF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Base Methods Section",
+      "scope": "entity.name.tag.section.base-methods.kbengine",
+      "settings": {
+        "foreground": "#89B4FA",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Cell Methods Section",
+      "scope": "entity.name.tag.section.cell-methods.kbengine",
+      "settings": {
+        "foreground": "#94E2D5",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Client Methods Section",
+      "scope": "entity.name.tag.section.client-methods.kbengine",
+      "settings": {
+        "foreground": "#CBA6F7",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Exposed",
+      "scope": [
+        "entity.name.tag.exposed.kbengine",
+        "constant.language.exposed.kbengine"
+      ],
+      "settings": {
+        "foreground": "#F5C2E7"
+      }
+    },
+    {
+      "name": "KBEngine Persistent",
+      "scope": [
+        "entity.name.tag.persistent.kbengine",
+        "constant.language.persistent.kbengine"
+      ],
+      "settings": {
+        "foreground": "#F9E2AF"
+      }
+    },
+    {
+      "name": "KBEngine Flags",
+      "scope": "constant.language.flag.kbengine",
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "KBEngine Type Aliases",
+      "scope": [
+        "support.class.kbengine",
+        "support.type.kbengine"
+      ],
+      "settings": {
+        "foreground": "#94E2D5",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Builtin Types (types.xml)",
+      "scope": "support.type.kbengine.builtin",
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "KBEngine Custom Types (types.xml)",
+      "scope": "entity.name.type.kbengine.custom",
+      "settings": {
+        "foreground": "#94E2D5"
+      }
+    },
+    {
+      "name": "KBEngine Array Directive (type[])",
+      "scope": "keyword.other.kbengine.array",
+      "settings": {
+        "foreground": "#A6E3A1",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine Fixed Dict Directive (FIXED_DICT)",
+      "scope": "keyword.other.kbengine.fixed-dict",
+      "settings": {
+        "foreground": "#F9E2AF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "KBEngine ImplementedBy (types.xml)",
+      "scope": "variable.other.kbengine.implementedby",
+      "settings": {
+        "foreground": "#CBA6F7"
+      }
+    },
+    {
+      "name": "KBEngine ImplementedBy module path",
+      "scope": "entity.name.namespace.kbengine.implmodule",
+      "settings": {
+        "foreground": "#A6E3A1"
+      }
+    }
+  ]
+}
