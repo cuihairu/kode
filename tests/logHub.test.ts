@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LogHub } from '../src/logHub';
 
 describe('LogHub', () => {
@@ -13,6 +13,24 @@ describe('LogHub', () => {
     expect(hub.getRetained()).toHaveLength(1);
     expect(hub.getRetained()[0].text).toBe('same');
     hub.dispose();
+  });
+
+  it('deduplicates repeated lines only inside the source window and keeps their count', () => {
+    vi.useFakeTimers();
+    const hub = new LogHub({ flushIntervalMs: 5, dedupeWindowMs: 1000 });
+    hub.info({ source: 'stdout', component: 'svc', origin: 'source-a', text: 'ready' });
+    hub.info({ source: 'stdout', component: 'svc', origin: 'source-b', text: 'ready' });
+    hub.info({ source: 'stdout', component: 'svc', origin: 'source-a', text: 'ready' });
+    vi.advanceTimersByTime(1001);
+    hub.info({ source: 'stdout', component: 'svc', origin: 'source-a', text: 'ready' });
+
+    expect(hub.getRetained().map(event => [event.origin, event.duplicateCount])).toEqual([
+      ['source-a', 2],
+      ['source-b', 1],
+      ['source-a', 1]
+    ]);
+    hub.dispose();
+    vi.useRealTimers();
   });
 
   it('batches increments and caps retained memory', async () => {
@@ -37,13 +55,13 @@ describe('LogHub', () => {
     const hub = new LogHub({ flushIntervalMs: 5 });
     writeFileSync(file, 'first\n');
     hub.watchFile('svc', file, 5);
-    await new Promise(resolve => setTimeout(resolve, 15));
+    await new Promise(resolve => setTimeout(resolve, 100));
     writeFileSync(file, 'first\nsecond\n');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 100));
     const lines = hub.getRetained().map(event => event.text);
     expect(lines).toEqual(['first', 'second']);
     writeFileSync(file, 'tiny\n');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 100));
     expect(hub.getRetained().map(event => event.text)).toEqual(['first', 'second', 'tiny']);
     hub.dispose();
     rmSync(directory, { recursive: true, force: true });

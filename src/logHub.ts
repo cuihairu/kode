@@ -21,6 +21,7 @@ export interface LogEvent {
   text: string;
   origin: string;
   line?: number;
+  duplicateCount: number;
 }
 
 export interface LogInput {
@@ -52,11 +53,13 @@ export interface LogHubOptions {
   flushIntervalMs?: number;
   maxListeners?: number;
   maxBatchBytes?: number;
+  dedupeWindowMs?: number;
 }
 
 const DEFAULT_CAPACITY = 10000;
 const DEFAULT_FLUSH_INTERVAL_MS = 40;
 const DEFAULT_MAX_BATCH_BYTES = 128 * 1024;
+const DEFAULT_DEDUPE_WINDOW_MS = 1000;
 
 export function normalizeText(value: string): string {
   return value.replace(/\r\n/g, '\n').replace(/\n$/, '');
@@ -65,12 +68,13 @@ export function normalizeText(value: string): string {
 export class LogHub implements LogHubLike {
   private readonly pending: LogEvent[] = [];
   private readonly retained: LogEvent[] = [];
-  private readonly recentOrigins = new Map<string, string>();
+  private readonly recentOrigins = new Map<string, { timestamp: number; event: LogEvent }>();
   private readonly fileWatchers = new Map<string, { offset: number; timer?: NodeJS.Timeout }>();
   private readonly events = new EventEmitter();
   private readonly capacity: number;
   private readonly flushIntervalMs: number;
   private readonly maxBatchBytes: number;
+  private readonly dedupeWindowMs: number;
   private dropped = 0;
   private flushTimer?: NodeJS.Timeout;
 
@@ -78,6 +82,7 @@ export class LogHub implements LogHubLike {
     this.capacity = options.capacity ?? DEFAULT_CAPACITY;
     this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
     this.maxBatchBytes = options.maxBatchBytes ?? DEFAULT_MAX_BATCH_BYTES;
+    this.dedupeWindowMs = options.dedupeWindowMs ?? DEFAULT_DEDUPE_WINDOW_MS;
     this.events.setMaxListeners(options.maxListeners ?? 64);
   }
 
@@ -91,22 +96,32 @@ export class LogHub implements LogHubLike {
     const text = normalizeText(input.text);
     if (!text) return;
     const origin = input.origin ?? `${input.source}:${input.component}`;
+    const timestamp = Date.now();
     const fingerprint = createHash('sha256').update(`${origin}\0${text}`).digest('hex');
-    if (this.recentOrigins.has(fingerprint)) return;
-    this.recentOrigins.set(fingerprint, fingerprint);
+    const recent = this.recentOrigins.get(fingerprint);
+    const deduped = this.dedupeWindowMs > 0 && recent !== undefined &&
+      timestamp - recent.timestamp < this.dedupeWindowMs;
+    if (deduped && recent) {
+      recent.event.duplicateCount += 1;
+      this.scheduleFlush();
+      return;
+    }
     if (this.recentOrigins.size > this.capacity) {
       this.recentOrigins.delete(this.recentOrigins.keys().next().value as string);
     }
-    this.append({
+    const event: LogEvent = {
       id: randomUUID(),
-      timestamp: Date.now(),
+      timestamp,
       level: input.level ?? fallbackLevel ?? RuntimeLogLevel.INFO,
       source: input.source,
       component: input.component,
       text,
       origin,
-      line: input.line
-    });
+      line: input.line,
+      duplicateCount: 1
+    };
+    this.recentOrigins.set(fingerprint, { timestamp, event });
+    this.append(event);
   }
 
   private append(event: LogEvent): void {
@@ -168,32 +183,49 @@ export class LogHub implements LogHubLike {
       let stat: import('fs').Stats;
       try {
         stat = fs.statSync(filePath);
-      } catch {
+      } catch (error) {
+        this.ingest({
+          source: 'file',
+          component,
+          text: `日志文件监控失败: ${error instanceof Error ? error.message : String(error)}`,
+          origin: `${origin}:error`,
+          level: RuntimeLogLevel.ERROR
+        });
         return;
       }
-      if (stat.size < watcher.offset) watcher.offset = 0;
-      if (stat.size === watcher.offset) return;
-      const length = stat.size - watcher.offset;
-      const buffer = Buffer.alloc(length);
-      const descriptor = fs.openSync(filePath, 'r');
       try {
-        const read = fs.readSync(descriptor, buffer, 0, length, watcher.offset);
-        watcher.offset += read;
-        const chunk = buffer.toString('utf8', 0, read);
-        chunk.split('\n').forEach((line, index) => {
-          if (line.trim()) {
-            this.ingest({
-              source: 'file',
-              component,
-              text: line,
-              origin,
-              level: RuntimeLogLevel.INFO,
-              line: index + 1
-            });
-          }
+        if (stat.size < watcher.offset) watcher.offset = 0;
+        if (stat.size === watcher.offset) return;
+        const length = stat.size - watcher.offset;
+        const buffer = Buffer.alloc(length);
+        const descriptor = fs.openSync(filePath, 'r');
+        try {
+          const read = fs.readSync(descriptor, buffer, 0, length, watcher.offset);
+          watcher.offset += read;
+          const chunk = buffer.toString('utf8', 0, read);
+          chunk.split('\n').forEach((line, index) => {
+            if (line.trim()) {
+              this.ingest({
+                source: 'file',
+                component,
+                text: line,
+                origin,
+                level: RuntimeLogLevel.INFO,
+                line: index + 1
+              });
+            }
+          });
+        } finally {
+          fs.closeSync(descriptor);
+        }
+      } catch (error) {
+        this.ingest({
+          source: 'file',
+          component,
+          text: `日志文件读取失败: ${error instanceof Error ? error.message : String(error)}`,
+          origin: `${origin}:error`,
+          level: RuntimeLogLevel.ERROR
         });
-      } finally {
-        fs.closeSync(descriptor);
       }
     };
     watcher.timer = setInterval(poll, pollIntervalMs);

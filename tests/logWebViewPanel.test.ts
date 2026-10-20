@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineLogCollector } from '../src/logCollector';
+import { LogHub } from '../src/logHub';
 import { LogViewerWebView } from '../src/logWebView';
 import { LogEntry, LogLevel, LogParser, LogType } from '../src/logParser';
 import type * as vscode from 'vscode';
@@ -146,6 +147,20 @@ afterEach(() => {
 });
 
 describe('LogViewerWebView.show', () => {
+  it('renders hub history accumulated before the first open', () => {
+    const webview = makeWebView();
+    const hub = new LogHub({ flushIntervalMs: 0 });
+    webview.subscribeLogHub(hub);
+    hub.info({ source: 'process', component: 'baseapp', text: 'hub history' });
+    hub.flush();
+
+    webview.show();
+
+    expect(webview['currentLogs' as keyof LogViewerWebView]).toHaveLength(1);
+    expect(currentPanel().webview.html).toContain('hub history');
+    hub.dispose();
+  });
+
   it('creates the panel once with initial collector entries rendered', () => {
     fake.setEntries([entry({ id: 7, message: 'boot sequence' })]);
     const panel = show();

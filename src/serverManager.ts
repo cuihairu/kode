@@ -183,6 +183,9 @@ export class KBEngineServerManager {
     logHub?: LogHub
   ) {
     this.logHub = logHub ?? new LogHub({ flushIntervalMs: 25, maxListeners: 256 });
+    // TODO: Watch process-owned log files once the server manager exposes a
+    // component-to-logfile mapping. Registering arbitrary guessed paths would
+    // repeatedly emit fs errors into the runtime log stream.
     this.processManager = new ProcessManager(request => this.processRunner.spawn(request.command, [...(request.args ?? [])], {
       cwd: request.cwd ?? process.cwd(),
       env: request.env ?? process.env,

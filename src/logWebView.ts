@@ -86,8 +86,12 @@ export class LogViewerWebView {
       }
     );
 
-    // 设置初始日志
-    this.currentLogs = this.collector.getLogEntries();
+    // 首开时保留 hub 订阅已积累的历史，并合并 collector 缓存。
+    const collectorLogs = this.collector.getLogEntries();
+    this.currentLogs.push(...collectorLogs);
+    if (this.currentLogs.length > this.displayedLimit) {
+      this.currentLogs.splice(0, this.currentLogs.length - this.displayedLimit);
+    }
 
     // 更新 WebView
     this.updateWebView();
