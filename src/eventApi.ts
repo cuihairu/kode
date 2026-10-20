@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
+import { WorkspaceIndex } from './workspaceIndex';
 
 export type EventCall = { api: 'addEvent' | 'registerEvent' | 'emitEvent' | 'removeEvent' | 'deregisterEvent'; event: string; eventOffset: number; callback?: string; callbackOffset?: number }
 
@@ -102,10 +103,17 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
 }
 
 export class EventCodeLensProvider implements vscode.CodeLensProvider {
+  private ownIndex?: WorkspaceIndex;
+
+  /** index 由扩展宿主注入（共享同一份缓存）；测试不传时自持一份全新实例。 */
+  constructor(private readonly sharedIndex?: WorkspaceIndex) {}
+
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
     const text = document.getText();
     const calls = findEventCalls(text);
-    const all = await scanEventCalls();
+    // 本地索引缓存：不再每次全仓读盘扫描（用户令 2026-10-20，跳转/卡顿同治）。
+    const index = this.sharedIndex ?? (this.ownIndex ??= new WorkspaceIndex());
+    const all = await index.allEventCalls();
     const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)];
     const lenses: vscode.CodeLens[] = [];
     const eventsByCallback = new Map<string, string[]>();
@@ -132,8 +140,7 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
       if (!listeners.length) continue;
       const line = document.positionAt(call.eventOffset).line;
       const first = listeners[0];
-      const targetLine = first.text.slice(0, first.call.eventOffset).split(/\r?\n/).length - 1;
-      const target = new vscode.Position(targetLine, 0);
+      const target = new vscode.Position(first.line, 0);
       const lineStart = new vscode.Position(line, 0);
       lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title: `${listeners.length} 处监听`, command: 'vscode.open', arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
     }
