@@ -157,7 +157,7 @@ export class ProcessManager {
     this.emitState({ id, component: managed.component, state: 'stopping' });
 
     return (async () => {
-      let timer: NodeJS.Timeout | undefined;
+      const timer: NodeJS.Timeout | undefined = undefined;
       const exited = new Promise<void>(resolveExit => {
         if (managed.process.exitCode !== null || managed.process.signalCode !== null) {
           resolveExit();

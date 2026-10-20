@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { createHash, randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 
@@ -159,7 +160,6 @@ export class LogHub implements LogHubLike {
   }
 
   watchFile(component: string, filePath: string, pollIntervalMs = 200): void {
-    const fs = require('fs') as typeof import('fs');
     const origin = `file:${filePath}`;
     if (this.fileWatchers.has(origin)) return;
     const watcher: { offset: number; timer?: NodeJS.Timeout } = { offset: 0 };

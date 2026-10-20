@@ -12,7 +12,6 @@
 
 import * as http from 'http';
 import * as https from 'https';
-import { ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
