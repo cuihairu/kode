@@ -126,3 +126,13 @@
   - [x] SQL 模板覆盖 + 自定义库表前缀 — `29b80fe`（schema 视图每表三行 SQL：全列 SELECT、`SQL(属性列)` 只列 def 属性落成的列剔引擎结构列、子表 `SQL(子表 JOIN)` 按 parentID LEFT JOIN 父表；ARRAY/组件悬停同给 JOIN 语句；新增 `kbengine.db.tablePrefix`（缺省空=引擎默认 `tbl_`）表名与模板同源替换；行号定位改为与渲染同源，不再各写一份；全套 1832 用例绿，coverage 100%×4）
   - 背景与拍板原文见 `docs/design/quick-actions-and-db-hint.md` 第二节
 
+#### 类型系统/typings 战役（2026-10-20 ChatGPT 评审，全文见 docs/review/chatgpt-2026-10-20-kode-typings.md）
+
+> 评审定调：统一「KBEngine 类型分析系统」而非三个孤立生成任务；不建议现在为每个 .py 无条件生成同名 .pyi
+> （.pyi 会抢占 IDE 对 .py 的解析，副作用大）；保留现有 kbe_types.py 生成方案为主线。
+
+- [ ] T-01：types.xml 自定义类型内部引用关系完整保留（FIXED_DICT 属性引用 PLAYER_ID 等嵌套类型，生成侧不得扁平化丢失关系）。
+- [ ] T-02：.def 引用 types.xml 自定义类型 → 生成实体级类型声明（评审点名“接下来最值得做的部分”；Avatar.profile: ITEM_INFO 这类逐实体落地）。
+- [ ] T-03：KBEngine.pyi 升级为完整引擎类型定义（扩充 KBE_SYMBOLS 符号/签名/文档/来源；未完备前不得对外宣称“完整引擎 API”）。
+- [ ] T-04：.py 全量 typings——暂缓，先做影响面实验（.pyi 抢占 .py 解析行为逐 IDE 验证）再决定开关，默认关闭。
+- [ ] T-05：统一源码映射与导航（四种体验：F12 定义 / Peek 内联 / CodeLens 来源标注“原始定义: types.xml:8”点击跳转 / 生成文件页头来源声明；禁止用生成行号反推行号）。
