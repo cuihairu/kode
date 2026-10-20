@@ -53,6 +53,7 @@ import { TelnetWebView } from './telnetWebView';
 import {
   KBEngineCallHierarchyProvider,
   KBEngineCompletionProvider,
+  EventCodeLensProvider,
   KBEngineDefinitionProvider,
   KBEngineHoverProvider,
   KBEngineRenameProvider,
@@ -66,6 +67,7 @@ import {
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
+import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import {
   createDatabaseSchemaUri,
@@ -250,31 +252,56 @@ export function activate(context: vscode.ExtensionContext) {
 
   // RPC 方法标记(批126 用户令:Python 侧函数看不出哪些是 def 声明的
   // RPC):在实现脚本里命中 def 方法声明的声明行上方出一行可点 CodeLens
-  // (区块/Exposed/来源 def,点击回声明),普通函数不出
+  // (区块/Exposed/来源 def,点击回声明),普通函数不出;批154 起配独立
+  // 开关 kbengine.codeLens.rpc,实例留在具名变量供配置监听 fire
+  const rpcCodeLensProviderImpl = new RpcCodeLensProvider(entityMappingManager);
   const rpcCodeLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
-    new RpcCodeLensProvider(entityMappingManager)
+    rpcCodeLensProviderImpl
   );
   context.subscriptions.push(rpcCodeLensProvider);
 
   // 属性访问标记(批135 用户令:types.xml 能跳到代码,代码侧没有等价的反向
   // 标记):self.<属性> 访问处出一行 CodeLens,标 def 声明的类型与可见域,
-  // 点击回 def 声明行;只认 self.<属性> 形态,与属性 F12 同口径
+  // 点击回 def 声明行;只认 self.<属性> 形态,与属性 F12 同口径;批154 起
+  // 配独立开关 kbengine.codeLens.property
+  const propertyCodeLensProviderImpl = new PropertyCodeLensProvider(entityMappingManager);
   const propertyCodeLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
-    new PropertyCodeLensProvider(entityMappingManager)
+    propertyCodeLensProviderImpl
   );
   context.subscriptions.push(propertyCodeLensProvider);
+
+  // 事件回调标记(批154 从 RPC 镜链返回值里拆出独立注册):addEvent/
+  // registerEvent 的回调 def 声明处标「事件回调 · EV_X」、emitEvent 处标
+  // 监听数,独立开关 kbengine.codeLens.eventCallbacks,与 RPC 互不影响
+  const eventCodeLensProviderImpl = new EventCodeLensProvider();
+  const eventCodeLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    eventCodeLensProviderImpl
+  );
+  context.subscriptions.push(eventCodeLensProvider);
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
   // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开
   // schema 文档定位到列;def/types.xml/entities.xml 改动由 provider 内
-  // watcher 失效重扫
+  // watcher 失效重扫;批154 起配独立开关 kbengine.codeLens.typesXml
+  const typesXmlCodeLensProviderImpl = new TypesXmlCodeLensProvider();
   const typesXmlCodeLensProvider = vscode.languages.registerCodeLensProvider(
     [{ language: 'xml', scheme: 'file', pattern: '**/types.xml' }],
-    new TypesXmlCodeLensProvider()
+    typesXmlCodeLensProviderImpl
   );
   context.subscriptions.push(typesXmlCodeLensProvider);
+
+  // types.xml 数据类型 inlay hints(批154 用户令 todo:7):python 侧
+  // self.<属性> 访问处原位渲染 def 声明的 <Type> 取值,与属性 F12 同索引;
+  // 一枚独立开关 kbengine.inlayHints.typeData(默认开),inlay 无变更事件,
+  // provider 现读配置下一次渲染即生效,不需要配置监听 fire
+  const typeInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new PythonTypeInlayHintsProvider(entityMappingManager)
+  );
+  context.subscriptions.push(typeInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [
@@ -352,6 +379,16 @@ export function activate(context: vscode.ExtensionContext) {
     // 层2 python-mro(mixin 函数导航)开关变更即时生效(不重载窗口)
     if (event.affectsConfiguration('kbengine.python.enableMroJump')) {
       setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
+    }
+
+    // CodeLens 各功能开关变更即时生效(批154):四类镜链 provider 每次
+    // 调用现读配置,这里只需各自 fire 让 VS Code 重取;hover 面(含
+    // serverConfig)同样现读,不需要 fire
+    if (event.affectsConfiguration('kbengine.codeLens')) {
+      rpcCodeLensProviderImpl.fireConfigurationChanged();
+      eventCodeLensProviderImpl.fireConfigurationChanged();
+      propertyCodeLensProviderImpl.fireConfigurationChanged();
+      typesXmlCodeLensProviderImpl.fireConfigurationChanged();
     }
 
     if (event.affectsConfiguration('kbengine.assetsRoot') ||

@@ -3,9 +3,6 @@
 > 完成项一行证据（commit + 测试数）；未完成项一句需求。版本号冻结 0.1.0，发版由用户手动触发。
 
 ## 未完成
-- [ ] CodeLens / Hover 配置开关（默认开，**按功能拆分**）——每个 provider 一枚独立 `kode.*.enable`（事件回调 CodeLens、属性标记 CodeLens、types.xml 落库镜链 CodeLens、各类 Hover……），不设总闸一刀切；默认 true；用户 2026-10-20 令「都需要配置开关，默认打开」「hover 也需要配置开关，需要把功能拆分」「优先安排」
-- [ ] types.xml 数据类型 inlay hints（配置开关，默认开）——def 属性/方法使用处对 `<Type>` 定义的数据类型渲染内联类型提示；用户 2026-10-20 令「优先安排」
-
 - [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
 - [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK;来源:盘点 G8;Nex X 走 KBE Nex 3.x 管理协议,本仓面向经典 kbengine 协议可用性未证,不排期直到用户点名）
 - [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9;同 G8 依赖引擎管理协议,监控面板已有 machine 基础状态,逐批点火前先证协议）
@@ -16,6 +13,10 @@
 - [x] 批135 代码侧属性标记反向跳转 — `2a7c78b`（+1 测试文件 16 例 + defAnalyzer 域位 4 例 + manager 解析面 5 例，全套 1972 用例绿，coverage 100%×4（8779 stmts/5293 branches/1499 funcs/8540 lines）；字面需求不可行——Python 脚本无类型名可写，落地为可行等价：`.py` 实体脚本 `self.<属性>` 访问处一行 CodeLens `属性 · <[槽名.]属性> · <Type> · <可见域> · Persistent?`，点击回 def 声明行；`propertyFlagDomainList` 与属性判重同源同表（common.h 旗标真值），域位定序 base → cell → client 不依赖 Set 迭代序；解析走 `resolvePropertyDefinitionInfo`（与属性 F12 同一索引同口径，新增 `PropertyDefinitionInfo` 带 Type 直文本/可见域/持久化，`<Persistent>` 缺省视作非持久），同一属性多处访问按（根段,完整路径）键只解析一次但每处访问都出镜（读者停在任意行都看得到标记）；组件槽属性标 `healthPack.regen` 形态、接口继承属性按 ALL_CLIENTS 出 cell|client、恒等锁 CodeLens 注册 2→3；只认 `self.<属性路径>` 形态与 F12 一致，`self.get('属性')`/`self.set('属性', 值)` 引擎 API 形态不在识别范围（module docstring 明示）；来源:用户「从types.xml 可以跳转到具体的代码，但从代码上没有类似的 type 的标记反向跳转」）
 
 ## 已完成
+
+- [x] 批154 types.xml 数据类型 inlay hints — 新增 `src/typeInlayHints.ts`（+1 测试文件 5 例，coverage 100%×4）：Python 侧 `self.<属性>` 访问处以 InlayHintKind.Type 原位渲染 def 声明的 `<Type>` 取值（如 `: UINT32`），解析与属性 F12 同走 `resolvePropertyDefinitionInfo` 同口径；同一（根段,完整路径）键只解析一次但每处访问都出 hint，视图口（range）外的行不出；开关 `kbengine.inlayHints.typeData` 默认开现读（inlay 无变更事件可 fire，改后下一次渲染生效）；fake-vscode 补 `InlayHint`/`InlayHintKind` 值类与 `languages.registerInlayHintsProvider` 记账；全套 2473+3 绿、mocha 12、lint/tsc/vitepress 绿；来源:巡检单 kode-p1020i todo.md:7 用户令「优先安排」
+
+- [x] 批154 语言功能按功能独立开关 — 每类语言功能各配一枚独立开关、默认全开、不设总闸：`kbengine.codeLens.rpc`/`codeLens.eventCallbacks`/`codeLens.property`/`codeLens.typesXml` 四镜链 + `kbengine.hover.typeStorage`/`hover.implementedBy`/`hover.entityRegistration`/`hover.defChain`/`hover.eventStats`/`hover.serverConfig` 六悬停面（`hover.showTagDocs` 族为既有）；开关均 provider 内现读即时生效——四镜链 provider 各挂 `onDidChangeCodeLenses` emitter + `fireConfigurationChanged()`，扩展配置监听 `affectsConfiguration('kbengine.codeLens')` 逐个 fire（悬停与 inlay 不缓存、无需 fire）；事件回调镜链从 RPC 镜链返回值里拆成独立注册（CodeLens 注册 3→4，配独立开关）；命名代决（FW1016D）：用户写的 `kode.*.enable` 按仓内命名空间统一落 `kbengine.*`，开关键不带 `.enable` 尾缀，与既有 `hover.showTagDocs` 族一致，事后可推翻；+10 开关关断例（正对照→关断后该功能内容消失、其余面不动）；装配面 extension.test 镜链注册 3→4 + inlay 注册 1 + 配置监听 fire 四 provider 计数（含外层 kbengine guard 不 fire 反例）；全套 2473+3 绿、mocha 12、lint/tsc/vitepress 绿；来源:巡检单 kode-p1020i todo.md:6 用户令「优先安排」
 
 - [x] 批149 TESTING.md 批109 范围对账行翻新(docs-only)— D3/D5 落地后 TESTING.md:3520 起的「后续增量」清单未同步(全局对账令:每个可验收增量同步对账文档),改为「D3 批147 落地/D5 def 链批148 落地/D2、D9 仍后续增量」的分期口径;TESTING.md 在仓库根不在 vitepress srcDir,不进站点构建;来源:全局令「每个可验收增量同步对账文档,未实现绝不写成已实现」)
 

@@ -17,6 +17,7 @@ const definitionRegistrations: ProviderRegistration[] = [];
 const callHierarchyRegistrations: ProviderRegistration[] = [];
 const renameRegistrations: ProviderRegistration[] = [];
 const codeLensRegistrations: ProviderRegistration[] = [];
+const inlayHintsRegistrations: ProviderRegistration[] = [];
 const diagnosticCollections: Array<{ name: string; collection: DiagnosticCollection }> = [];
 
 const register = (bucket: ProviderRegistration[]) =>
@@ -42,6 +43,7 @@ export const languages = {
   registerCallHierarchyProvider: register(callHierarchyRegistrations),
   registerRenameProvider: register(renameRegistrations),
   registerCodeLensProvider: register(codeLensRegistrations),
+  registerInlayHintsProvider: register(inlayHintsRegistrations),
   createDiagnosticCollection: (name: string): DiagnosticCollection => {
     const collection = new DiagnosticCollection();
     diagnosticCollections.push({ name, collection });
@@ -56,6 +58,7 @@ export const languagesRegistry = {
   callHierarchyRegistrations,
   renameRegistrations,
   codeLensRegistrations,
+  inlayHintsRegistrations,
   diagnosticCollections,
   reset: (): void => {
     completionRegistrations.length = 0;
@@ -64,6 +67,7 @@ export const languagesRegistry = {
     callHierarchyRegistrations.length = 0;
     renameRegistrations.length = 0;
     codeLensRegistrations.length = 0;
+    inlayHintsRegistrations.length = 0;
     diagnosticCollections.length = 0;
   }
 };

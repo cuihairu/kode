@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { EventCodeLensProvider, eventDefinitionAt, findEventCalls } from '../src/eventApi';
-import { makeTextDocument } from './helpers/vscodeStub';
+import { configurationOverrides, makeTextDocument } from './helpers/vscodeStub';
 
 describe('KBEngine event API parsing', () => {
 
@@ -245,6 +245,27 @@ it('keeps the call without callback when the callback is an expression', () => {
     } finally {
       vscode.workspace.findFiles = originalFindFiles;
       vscode.workspace.openTextDocument = originalOpen;
+    }
+  });
+});
+
+describe('EventCodeLensProvider 独立开关(批154)', () => {
+  it('codeLens.eventCallbacks 关闭时整类不出镜,默认开启不受影响', async () => {
+    const source = "self.addEvent('ev_ready', self.on_ready)\ndef on_ready(self):\n    pass";
+    const document = makeTextDocument(source, {
+      fileName: '/ws/base/Hero.py',
+      languageId: 'python'
+    }) as vscode.TextDocument;
+
+    // 正对照:默认开启时回调声明行出镜
+    const lenses = await new EventCodeLensProvider().provideCodeLenses(document);
+    expect(lenses.length).toBeGreaterThan(0);
+
+    configurationOverrides.set('kbengine', { 'codeLens.eventCallbacks': false });
+    try {
+      expect(await new EventCodeLensProvider().provideCodeLenses(document)).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine');
     }
   });
 });

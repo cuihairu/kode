@@ -4842,3 +4842,40 @@ buildTemplateVars。
 entities/、fight/ 两级 __init__.py)令 extension 的真 fs 探针全链路扫出
 entities.fight.FightAI,finally 清盘;文件本体不需存在(探针只查目录)。
 全量 2369+3 绿(+1 装配改写,+1 批153 service 例),mocha 11,lint/tsc/vitepress 绿。
+
+## 批154:CodeLens/Hover 按功能独立开关 + types.xml 数据类型 inlay hints(2026-10-20)
+
+背景两条用户令(2026-10-20「优先安排」):①「都需要配置开关,默认打开」
+「hover 也需要配置开关,需要把功能拆分」——CodeLens/悬停此前只有 .def
+文档三开关(hover.showTagDocs/showValueDocs/showSymbolDocs)与诊断族,
+事件回调/属性/types.xml 镜链与六类悬停面都没有开关;②todo「types.xml 数据
+类型 inlay hints(def 属性/方法使用处对 <Type> 定义的数据类型渲染内联
+类型提示,配置开关默认开)」。
+
+实现:①getLanguageFeatureConfig 增九键(hover.typeStorage/implementedBy/
+entityRegistration/defChain/eventStats + codeLens.rpc/eventCallbacks/
+property/typesXml,默认全 true);KBEngineHoverProvider.provideHover 六个
+悬停臂各裹独立开关;RpcCodeLensProvider/PropertyCodeLensProvider/
+TypesXmlCodeLensProvider/EventCodeLensProvider 四类镜链 provider 各加
+onDidChangeCodeLenses emitter + fireConfigurationChanged,扩展配置监听
+affectsConfiguration('kbengine.codeLens') 逐个 fire 即时生效(事件回调
+镜链从 RPC 镜链返回值里拆出独立注册,注册面 3→4);serverConfigHover 的
+ServerConfigHoverProvider 读 kbengine.hover.serverConfig 现读即生效;
+命名代决(FW1016D):用户写的 kode.*.enable 按仓内命名空间统一落
+kbengine.*,开关键不带 .enable 尾缀与既有 hover.showTagDocs 族一致。
+②新模块 src/typeInlayHints.ts:PythonTypeInlayHintsProvider 在
+self.<属性> 访问处以 InlayHintKind.Type 渲染 def 声明的 <Type> 取值,
+与属性 F12 同走 resolvePropertyDefinitionInfo(同键只解析一次、每处访问
+都出),视图口外的行不出,kbengine.inlayHints.typeData 现读(inlay 无
+变更事件可 fire,下一次渲染生效)。fake-vscode 补 InlayHint/InlayHintKind
+值类与 languages.registerInlayHintsProvider 记账。
+
+测试:①开关关断例 10 枚(rpc/property/eventApi/typeStorageUsage 四镜链
+provider 各一,serverConfigHover Provider 一,branches 悬停五面走
+gateTest 骄傲对照→关断内容消失);装配面 extension.test 镜链注册 3→4 +
+inlay 注册 1 + 配置监听 fire 四 provider 计数(含外层 kbengine guard
+不 fire 反例);branches 夹具 types.xml 补 Doll 带 implementedBy +
+scripts/user_type/doll_impl.py 落盘。②typeInlayHints 新测试文件 5 例
+(命中形态/同键一次每处一出/视图口外跳过/未解析与未声明 Type 不出/开关
+关断)。全量 2473+3 绿(+1 测试文件,+8 用例净增),typeInlayHints
+coverage 100%×4,mocha 12,lint/tsc/vitepress 绿。

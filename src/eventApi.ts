@@ -108,7 +108,19 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
   /** index 由扩展宿主注入（共享同一份缓存）；测试不传时自持一份全新实例。 */
   constructor(private readonly sharedIndex?: WorkspaceIndex) {}
 
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+
+  // 批154:事件回调镜链拆成独立注册,配一枚独立开关
+  // (kbengine.codeLens.eventCallbacks),不再搭在 RPC 镜链返回值里
+  fireConfigurationChanged(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('codeLens.eventCallbacks', true)) {
+      return [];
+    }
     const text = document.getText();
     const calls = findEventCalls(text);
     // 本地索引缓存：不再每次全仓读盘扫描（用户令 2026-10-20，跳转/卡顿同治）。

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { eventDefinitionAt, EventCodeLensProvider, findEventCalls } from './eventApi';
+import { eventDefinitionAt, findEventCalls } from './eventApi';
 export { EventCodeLensProvider } from './eventApi';
 import { getScanRootForFile } from './scanRoots';
 import {
@@ -128,7 +128,19 @@ function getLanguageFeatureConfig() {
     diagnosticsCheckMissingPropertyFields: config.get<boolean>('diagnostics.checkMissingPropertyFields', true),
     hoverShowTagDocs: config.get<boolean>('hover.showTagDocs', true),
     hoverShowValueDocs: config.get<boolean>('hover.showValueDocs', true),
-    hoverShowSymbolDocs: config.get<boolean>('hover.showSymbolDocs', true)
+    hoverShowSymbolDocs: config.get<boolean>('hover.showSymbolDocs', true),
+    // 批154(用户令「都需要配置开关,默认打开」「hover 也需要配置开关,需要把
+    // 功能拆分」):悬停面按功能各一枚独立开关,不设总闸一刀切
+    hoverTypeStorage: config.get<boolean>('hover.typeStorage', true),
+    hoverImplementedBy: config.get<boolean>('hover.implementedBy', true),
+    hoverEntityRegistration: config.get<boolean>('hover.entityRegistration', true),
+    hoverDefChain: config.get<boolean>('hover.defChain', true),
+    hoverEventStats: config.get<boolean>('hover.eventStats', true),
+    // CodeLens 同批按 provider 各一枚
+    codeLensRpc: config.get<boolean>('codeLens.rpc', true),
+    codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),
+    codeLensProperty: config.get<boolean>('codeLens.property', true),
+    codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true)
   };
 }
 
@@ -399,7 +411,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     const word = document.getText(range);
-    if (document.languageId === 'python') {
+    if (document.languageId === 'python' && featureConfig.hoverEventStats) {
       const calls = findEventCalls(document.getText());
       const current = calls.find(call => position && document.offsetAt(position) >= call.eventOffset && document.offsetAt(position) <= call.eventOffset + call.event.length);
       if (current) {
@@ -408,29 +420,37 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return new vscode.Hover(`**${current.event}**\n\n当前文件统计：${registrations} 处注册 · ${emits} 处触发`);
       }
     }
-    const typeValueHover = getTypeValueHover(document, position, word);
-    if (typeValueHover) {
-      return typeValueHover;
+    if (featureConfig.hoverTypeStorage) {
+      const typeValueHover = getTypeValueHover(document, position, word);
+      if (typeValueHover) {
+        return typeValueHover;
+      }
+
+      const customTypeHover = getCustomTypeHover(document, position, word);
+      if (customTypeHover) {
+        return customTypeHover;
+      }
     }
 
-    const customTypeHover = getCustomTypeHover(document, position, word);
-    if (customTypeHover) {
-      return customTypeHover;
+    if (featureConfig.hoverImplementedBy) {
+      const implementedByReverseHover = getImplementedByReverseHover(document, position, word);
+      if (implementedByReverseHover) {
+        return implementedByReverseHover;
+      }
     }
 
-    const implementedByReverseHover = getImplementedByReverseHover(document, position, word);
-    if (implementedByReverseHover) {
-      return implementedByReverseHover;
+    if (featureConfig.hoverEntityRegistration) {
+      const entityRegistrationHover = getEntityRegistrationHover(document, position, word);
+      if (entityRegistrationHover) {
+        return entityRegistrationHover;
+      }
     }
 
-    const entityRegistrationHover = getEntityRegistrationHover(document, position, word);
-    if (entityRegistrationHover) {
-      return entityRegistrationHover;
-    }
-
-    const defChainHover = getDefChainHover(document, position);
-    if (defChainHover) {
-      return defChainHover;
+    if (featureConfig.hoverDefChain) {
+      const defChainHover = getDefChainHover(document, position);
+      if (defChainHover) {
+        return defChainHover;
+      }
     }
 
     if (featureConfig.hoverShowValueDocs) {
@@ -3394,9 +3414,22 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
 }
 
 export class RpcCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+
   constructor(private entityMappingManager: EntityMappingManager) {}
 
+  // 批154(用户令 CodeLens/Hover「按功能拆分,每枚独立开关」):RPC 镜链
+  // 一枚独立开关(kbengine.codeLens.rpc),关只熄这一类,不牵连事件回调/
+  // 属性/types.xml 各自的镜链;开关变更由 extension 配置监听 fire 即时生效
+  fireConfigurationChanged(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    if (!getLanguageFeatureConfig().codeLensRpc) {
+      return [];
+    }
     const declarations = findPythonMethodDeclarations(document.getText());
 
     // 同名方法只解析一次:闭包脚本里同名方法可能重复出现,而解析结果
@@ -3440,7 +3473,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
         }
       )
     );
-    return [...rpcLenses, ...await new EventCodeLensProvider().provideCodeLenses(document)];
+    return rpcLenses;
   }
 }
 
@@ -3455,9 +3488,20 @@ export function createDefinitionSelection(defLine: number): vscode.Range {
 // (resolvePropertyDefinitionInfo),def 侧信息零重复解析。只认 self.<属性>
 // 形态,与 F12 口径一致。
 export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
+  private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+
   constructor(private entityMappingManager: EntityMappingManager) {}
 
+  // 批154:属性访问镜链一枚独立开关(kbengine.codeLens.property)
+  fireConfigurationChanged(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    if (!getLanguageFeatureConfig().codeLensProperty) {
+      return [];
+    }
     const accesses = findPythonSelfPropertyAccesses(document.getText());
 
     // 同一属性多处访问只解析一次:解析结果按 (根段, 完整路径) 一一对应
@@ -3600,7 +3644,15 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
+  // 批154:types.xml 落库镜链一枚独立开关(kbengine.codeLens.typesXml)
+  fireConfigurationChanged(): void {
+    this.onDidChangeCodeLensesEmitter.fire();
+  }
+
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
+    if (!getLanguageFeatureConfig().codeLensTypesXml) {
+      return [];
+    }
     const workspaceRoot = getWorkspaceRootForDocument(document);
     if (!workspaceRoot) {
       return [];

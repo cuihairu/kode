@@ -126,13 +126,16 @@ beforeAll(() => {
   write(root, 'scripts/entity_defs/LoopA.def', '<root>\n  <Parent>LoopB</Parent>\n</root>');
   write(root, 'scripts/entity_defs/LoopB.def', '<root>\n  <Parent>LoopA</Parent>\n</root>');
 
-  // 自定义类型 UINT32 与内建同名、Hero 与注册实体同名,服务去重臂
+  // 自定义类型 UINT32 与内建同名、Hero 与注册实体同名,服务去重臂;Doll 带
+  // implementedBy 指向 user_type 模块(批154 implementedBy 悬停开关用例)
   write(root, 'scripts/entity_defs/types.xml', [
     '<root>',
     '  <UINT32><Type>UINT8</Type></UINT32>',
     '  <Hero><Type>UINT8</Type></Hero>',
+    '  <Doll><Type>UINT8</Type><implementedBy>doll_impl.build</implementedBy></Doll>',
     '</root>'
   ].join('\n'));
+  write(root, 'scripts/user_type/doll_impl.py', 'def build():\n    return 1\n');
 
   // 文档根即 <implementedBy> 的畸形 types.xml:祖查找拿到无父节点
   write(weird, 'scripts/entity_defs/types.xml', '<implementedBy>item.doll</implementedBy>');
@@ -604,4 +607,65 @@ describe('PythonDefinitionProvider full-miss fallback', () => {
 
     expect(await provider.provideDefinition(document, position)).toBeNull();
   });
+});
+
+describe('hover 按功能开关(批154)', () => {
+  const hoverProvider = new KBEngineHoverProvider();
+
+  // 每枚开关:默认开启时正对照出悬停,关闭后整类熄灭(null),互不影响
+  const gateTest = (label: string, make: () => { document: MinimalTextDocument; position: Position; contains: string }, key: string) => {
+    it(label, () => {
+      const { document, position, contains } = make();
+      expect(hoverText(hoverProvider.provideHover(document, position))).toContain(contains);
+
+      const restore = useConfig({ [key]: false });
+      try {
+        // 关断后该类内容消失(其它面照常,不作整悬停 null 断言)
+        const offHover = hoverProvider.provideHover(document, position);
+        if (offHover) {
+          expect(hoverText(offHover)).not.toContain(contains);
+        }
+      } finally {
+        restore();
+      }
+    });
+  };
+
+  gateTest('hover.typeStorage 关闭时 types.xml 自定义类型悬停熄灭', () => {
+    const at = defAt([
+      '<root>',
+      '  <Properties>',
+      '    <bag>',
+      '      <Type>He|ro</Type>',
+      '    </bag>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'Bag.def');
+    return { ...at, contains: 'Referenced custom type' };
+  }, 'hover.typeStorage');
+
+  gateTest('hover.implementedBy 关闭时 python 侧反链悬停熄灭', () => {
+    const at = docAt(root, 'def bu|ild():\n    return 1\n', 'scripts/user_type/doll_impl.py', 'python');
+    return { ...at, contains: '以 `implementedBy` 引用此符号' };
+  }, 'hover.implementedBy');
+
+  gateTest('hover.entityRegistration 关闭时 entities.xml 注册悬停熄灭', () => {
+    const at = docAt(root, '<root>\n  <He|ro hasBase="true"/>\n</root>', 'scripts/entities.xml');
+    return { ...at, contains: '**Utype**' };
+  }, 'hover.entityRegistration');
+
+  gateTest('hover.defChain 关闭时 def 链悬停熄灭', () => {
+    const at = defAt('<root>\n  <Par|ent>RichBase</Parent>\n</root>', 'Chained.def');
+    return { ...at, contains: '**Parent 链**' };
+  }, 'hover.defChain');
+
+  gateTest('hover.eventStats 关闭时 python 事件统计悬停熄灭', () => {
+    const at = docAt(
+      root,
+      "self.addEvent('|EV_READY', self.on_ready)\ndef on_ready(self):\n    pass\n",
+      'scripts/base/Hero.py',
+      'python'
+    );
+    return { ...at, contains: '**EV_READY**' };
+  }, 'hover.eventStats');
 });

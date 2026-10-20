@@ -366,4 +366,4 @@ If this project helps you, consider giving it a star.
 
 ---
 
-Current version 0.1.0, published to the Marketplace as `cuihairu.kode-kbengine`. 31 features, 45 commands, and 43 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.
+Current version 0.1.0, published to the Marketplace as `cuihairu.kode-kbengine`. 33 features, 45 commands, and 54 configuration settings are in place; see [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) for the feature list and [TESTING.md](./TESTING.md) for the testing record.

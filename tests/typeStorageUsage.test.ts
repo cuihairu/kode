@@ -10,7 +10,7 @@ import {
 } from '../src/databaseSchema';
 import type { TableFieldDescriptor, TypeStorageShape } from '../src/databaseSchema';
 import { TypesXmlCodeLensProvider, buildTypesXmlStorageLensSpecs } from '../src/languageProviders';
-import { Uri, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { Uri, configurationOverrides, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // 批134:types.xml 类型的落库形态与真实使用处反扫。别名解析与列展开全部
@@ -382,6 +382,22 @@ describe('TypesXmlCodeLensProvider', () => {
     expect(watchers.map(watcher => watcher.pattern)).toEqual(['**/*.def', '**/types.xml', '**/entities.xml']);
     provider.dispose();
     expect(watchers.every(watcher => watcher.disposeCalls === 1)).toBe(true);
+  });
+
+  it('codeLens.typesXml 关闭时整类不出镜,默认开启不受影响(批154)', () => {
+    invalidateTypeStorageUsageIndex();
+    const provider = new TypesXmlCodeLensProvider();
+
+    // 正对照:默认开启时声明行出落库镜
+    expect(provider.provideCodeLenses(providerDocument()).length).toBeGreaterThan(0);
+
+    configurationOverrides.set('kbengine', { 'codeLens.typesXml': false });
+    try {
+      expect(provider.provideCodeLenses(providerDocument())).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine');
+      provider.dispose();
+    }
   });
 
   it('attaches a schema open command to every usage lens', () => {

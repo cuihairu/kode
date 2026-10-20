@@ -153,6 +153,10 @@ export class ServerConfigHoverProvider implements vscode.HoverProvider {
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.Hover> {
+    // 批154:kbengine 服务配置悬停一枚独立开关(kbengine.hover.serverConfig)
+    if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.serverConfig', true)) {
+      return null;
+    }
     return provideServerConfigHover(document, position);
   }
 }

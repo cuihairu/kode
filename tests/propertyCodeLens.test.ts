@@ -8,7 +8,7 @@ import {
 } from '../src/propertyCodeLens';
 import { PropertyCodeLensProvider } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
-import { makeTextDocument, Uri } from './helpers/vscodeStub';
+import { configurationOverrides, makeTextDocument, Uri } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // 属性访问标记(批135 用户令:「从 types.xml 可以跳转到具体的代码,但从代码上
@@ -276,6 +276,34 @@ describe('PropertyCodeLensProvider(装配 vscode.CodeLens)', () => {
     expect(lenses[0].command.arguments[1]).toEqual({
       selection: { start: { line: 4, character: 0 }, end: { line: 4, character: 0 } }
     });
+  });
+});
+
+describe('PropertyCodeLensProvider 独立开关(批154)', () => {
+  it('codeLens.property 关闭时整类不出镜,默认开启不受影响', async () => {
+    const document = doc('def tick(self):\n    self.hp = 1\n');
+    const provider = new PropertyCodeLensProvider({
+      resolvePropertyDefinitionInfo: () =>
+        Promise.resolve({
+          defFile: '/tmp/ws/Hero.def',
+          line: 3,
+          identity: { symbolName: 'hp', propertyPath: 'hp' },
+          typeName: 'UINT32',
+          domains: ['base'],
+          persistent: false
+        })
+    } as unknown as EntityMappingManager);
+
+    // 正对照:默认开启时同一解析命中出镜
+    const lenses = (await provider.provideCodeLenses(document)) as unknown as CodeLensLike[];
+    expect(lenses).toHaveLength(1);
+
+    configurationOverrides.set('kbengine', { 'codeLens.property': false });
+    try {
+      expect(await provider.provideCodeLenses(document)).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
   });
 });
 

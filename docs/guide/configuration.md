@@ -76,6 +76,17 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.hover.showTagDocs` | boolean | `true` | 悬停标签显示说明 |
 | `kbengine.hover.showValueDocs` | boolean | `true` | 悬停类型/Flags/等级值显示说明 |
 | `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停属性/方法名显示摘要 |
+| `kbengine.hover.typeStorage` | boolean | `true` | 悬停 types.xml 自定义类型显示存储信息(落库表/列/类型) |
+| `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被引用符号显示 implementedBy 反链 |
+| `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 entities.xml 实体名显示注册信息(Utype/清单位置) |
+| `kbengine.hover.defChain` | boolean | `true` | 悬停 def 的 Parent/Interfaces 显示归并声明链 |
+| `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名显示注册/触发统计 |
+| `kbengine.hover.serverConfig` | boolean | `true` | 悬停 kbengine.xml 服务配置字段显示取值与说明 |
+| `kbengine.codeLens.rpc` | boolean | `true` | Python 实现脚本显示 RPC 方法标记 CodeLens |
+| `kbengine.codeLens.eventCallbacks` | boolean | `true` | Python 脚本显示事件回调标记 CodeLens |
+| `kbengine.codeLens.property` | boolean | `true` | Python 脚本显示 `self.<属性>` 属性标记 CodeLens |
+| `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 声明行显示落库镜链 CodeLens |
+| `kbengine.inlayHints.typeData` | boolean | `true` | Python 脚本 `self.<属性>` 访问处内联显示 def 声明的数据类型 |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录 |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径 |
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录 |
@@ -124,7 +135,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起又新增 10 项,现状 42 项,新设置见上面「kbengine.* 设置项总览」与逐项说明)
+### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 54 项,新设置见上面「kbengine.* 设置项总览」与逐项说明)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 
@@ -190,6 +201,28 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 - `hover.showSymbolDocs`:自定义属性名/方法名悬停显示当前定义的 `Type`、`Flags`、`Arg` 等上下文。
 
 全关后 `.def` 悬停只剩语法高亮。嫌提示多优先关 `showTagDocs`,它出现频率最高。
+
+批154(2026-10-20)起悬停按功能各一枚独立开关,不设总闸一刀切:
+
+- `hover.typeStorage`:`.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态);
+- `hover.implementedBy`:python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链;
+- `hover.entityRegistration`:悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置);
+- `hover.defChain`:悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链;
+- `hover.eventStats`:python 侧悬停事件名时的注册/触发统计;
+- `hover.serverConfig`:悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 面整体关断)。
+
+### CodeLens 与 inlay hints
+
+四类 CodeLens 各一枚独立开关(默认开),变更即时生效,不用重载窗口:
+
+- `codeLens.rpc`:Python 实现脚本里 def 声明方法声明行上方的 RPC 标记(批126);
+- `codeLens.eventCallbacks`:事件回调标记——`addEvent`/`registerEvent` 的回调 def 声明处标事件名,`emitEvent` 处标监听数(批154 起从 RPC 镜链拆出独立注册);
+- `codeLens.property`:`self.<属性>` 访问处的属性标记(批135);
+- `codeLens.typesXml`:types.xml 类型声明行的落库镜链(批134)。
+
+inlay hints 一枚开关:
+
+- `inlayHints.typeData`:python 侧 `self.<属性>` 访问处以内联提示显示 def 声明的 `<Type>` 数据类型(types.xml 自定义别名或内建),与属性 F12 同一解析索引(批154)。inlay 无变更事件,关掉后下一次渲染生效。
 
 ### 路径
 

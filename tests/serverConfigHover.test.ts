@@ -5,7 +5,7 @@ import {
   ServerConfigHoverProvider,
   provideServerConfigHover
 } from '../src/serverConfigHover';
-import { makeTextDocument, Position } from './helpers/vscodeStub';
+import { configurationOverrides, makeTextDocument, Position } from './helpers/vscodeStub';
 
 // 元件 kbengine.xml / 引擎 kbengine_defaults.xml 字段悬浮文档(批112 用户令):
 // 行级标签 + 就近整行 opener 段定位,先查 `段.标签` 再查裸标签。文档内容
@@ -106,5 +106,26 @@ describe('provideServerConfigHover', () => {
     expect(hoverValue(hover as { contents: unknown } | null)).toBe(
       SERVER_CONFIG_FIELD_DOCS.entryScriptFile
     );
+  });
+
+  it('hover.serverConfig 关闭时 Provider 不出悬停(批154)', () => {
+    const provider = new ServerConfigHoverProvider();
+    const at = (): ReturnType<typeof provider.provideHover> =>
+      provider.provideHover(
+        doc as never,
+        new Position(5, doc.lineAt(5).text.indexOf('<entryScriptFile'))
+      );
+
+    // 正对照:默认开启时出悬停
+    expect(hoverValue(at() as { contents: unknown } | null)).toBe(
+      SERVER_CONFIG_FIELD_DOCS.entryScriptFile
+    );
+
+    configurationOverrides.set('kbengine', { 'hover.serverConfig': false });
+    try {
+      expect(at()).toBeNull();
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
   });
 });

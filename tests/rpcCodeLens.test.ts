@@ -7,6 +7,7 @@ import {
 } from '../src/rpcCodeLens';
 import { createDefinitionSelection, RpcCodeLensProvider } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
+import { configurationOverrides } from './helpers/vscodeStub';
 import { makeTextDocument, Uri } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
@@ -237,6 +238,37 @@ describe('createDefinitionSelection(声明行选区)', () => {
   it('reuses the same position for start and end', () => {
     const range = createDefinitionSelection(3);
     expect(range.start).toBe(range.end);
+  });
+});
+
+describe('RpcCodeLensProvider 独立开关(批154)', () => {
+  it('codeLens.rpc 关闭时整类不出镜,默认开启不受影响', async () => {
+    const document = doc(
+      'class Avatar(kbe.KBEntity):\n' +
+        '    def login(self, username):\n' +
+        '        return username\n'
+    );
+    const provider = new RpcCodeLensProvider({
+      resolveMethodDefinition: () =>
+        Promise.resolve({
+          defFile: '/tmp/ws/scripts/entity_defs/Avatar.def',
+          line: 4,
+          section: 'BaseMethods',
+          exposed: false,
+          identity: { symbolName: 'login' }
+        })
+    } as unknown as EntityMappingManager);
+
+    // 正对照:默认开启时同一解析命中出镜
+    const lenses = (await provider.provideCodeLenses(document)) as unknown as CodeLensLike[];
+    expect(lenses).toHaveLength(1);
+
+    configurationOverrides.set('kbengine', { 'codeLens.rpc': false });
+    try {
+      expect(await provider.provideCodeLenses(document)).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
   });
 });
 

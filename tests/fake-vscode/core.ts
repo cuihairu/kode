@@ -21,6 +21,20 @@ export class CodeLens {
   constructor(public readonly range: Range, public readonly command?: unknown) {}
 }
 
+// inlay hints 替身(批154 类型 inlay 用):只保留构造面,断言读字段即可
+export class InlayHint {
+  constructor(
+    public readonly position: Position,
+    public readonly label: unknown,
+    public readonly kind?: unknown
+  ) {}
+}
+
+export enum InlayHintKind {
+  Type = 1,
+  Parameter = 2
+}
+
 const URI_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/?\/?/;
 
 export class Uri {

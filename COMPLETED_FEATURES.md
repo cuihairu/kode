@@ -7,7 +7,7 @@
 
 ---
 
-## 已完成功能 (31 个)
+## 已完成功能 (33 个)
 
 ### 1. 语法高亮
 - `.def` 整体委托内建 XML 语法 (text.xml) 着色：标签蓝、属性名浅蓝、标点灰、字符串橙，`<` `>` 参与括号配对着色，块注释 `<!-- -->`
@@ -215,13 +215,21 @@
 - `kbengine.database.checkDrift` 拿真实 MySQL 表结构反向校验由 `.def` 推导的虚拟表结构——哪些属性进表、类型映射、容器拆子表、列名转换四段映射算错时唯一能暴露的地方。逐表报五类：缺表（该实体或容器属性未走过建表流程）、缺列（属性新增后未同步建表）、多列、型别不符（显示宽度差异不计：`bigint unsigned` ≡ `bigint(20) unsigned`）、残留表（属性删了表还留着）。报告整段写进 OUTPUT 面板「KBEngine 数据库漂移」可整段复制回传，有问题弹警告、无漂移弹信息提示。连接信息直读 KBEngine 引擎配置（合成后的 `<dbmgr><databaseInterfaces><default>`，端口 `0` → 3306），不新增任何设置项；账号密码需明文存放（`<encrypt>false</encrypt>`），引擎默认 RSA 密文读不出明文时如实降级「未校验」而非报错。只读双保险：语句白名单只放行 SELECT/SHOW/DESCRIBE/EXPLAIN（INSERT/UPDATE/DELETE/DDL/GRANT/TRUNCATE/多语句一律拒绝并说明原因）+ 建连即 `SET SESSION TRANSACTION READ ONLY`，即便读到的配置是读写账号也写不进去
 - **源文件**: `src/databaseDrift.ts`
 
+### 32. 语言功能按功能独立开关
+- CodeLens 四类各一枚开关：`kbengine.codeLens.rpc`（批126 RPC 标记）、`codeLens.eventCallbacks`（事件回调标记，批154 起从 RPC 镜链返回值拆出独立注册，`addEvent`/`registerEvent` 回调 def 声明处标事件名、`emitEvent` 处标监听数）、`codeLens.property`（批135 `self.<属性>` 属性标记）、`codeLens.typesXml`（批134 types.xml 落库镜链）；悬停六类各一枚开关：`kbengine.hover.typeStorage`/`implementedBy`/`entityRegistration`/`defChain`/`eventStats`/`serverConfig`。全部默认开、不设总闸一刀切（用户 2026-10-20 令「都需要配置开关，默认打开」「hover 也需要配置开关，需要把功能拆分」）；provider 每次调用现读配置，CodeLens 开关变更由配置监听 fire 各 provider 即时生效（不重载窗口），悬停现读下次悬停即生效
+- **源文件**: `src/languageProviders.ts`、`src/eventApi.ts`、`src/serverConfigHover.ts`
+
+### 33. types.xml 数据类型 inlay hints
+- Python 侧 `self.<属性>` 访问处以内联提示（inlay hint, Type 类）原位显示 def 声明的 `<Type>` 数据类型（types.xml 自定义别名或内建），与属性 F12/属性标记同走 `resolvePropertyDefinitionInfo` 索引零重复解析，同一属性多处访问只解析一次但每处都出提示；`kbengine.inlayHints.typeData` 一枚开关默认开，inlay 无变更事件，provider 现读配置下一次渲染生效
+- **源文件**: `src/typeInlayHints.ts`
+
 ---
 
 ## 项目结构
 
 ```
 kode/
-├── src/                          # 47 个 TypeScript 文件，28856 行
+├── src/                          # 67 个 TypeScript 文件，37445 行
 │   ├── extension.ts              # 扩展入口（命令装配/注册面）
 │   ├── languageProviders.ts      # 补全/悬停/诊断/跳转/重命名 Provider
 │   ├── defParser.ts              # .def 解析与文本定位
@@ -269,6 +277,8 @@ kode/
 │   ├── quickActionScanner.ts     # 快速执行动作首装扫描纯层
 │   ├── quickActions.ts           # 快速执行动作装配层(三后端/扫描写入)
 │   ├── databaseDrift.ts          # 数据库漂移校验(只读白名单/比对报告)
+│   ├── typeInlayHints.ts         # types.xml 数据类型 inlay hints(批154)
+│   ├── workspaceIndex.ts         # 工作区事件扫描缓存索引
 │   └── test/                     # mocha 编译产物烟测 (11 用例)
 ├── syntaxes/
 │   ├── kbengine.tmLanguage.json  # 语法高亮规则
@@ -277,7 +287,7 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11个)
 │   ├── kbengine-python.json      # Python 热更片段 (4个)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2个)
-├── tests/                        # vitest 测试 (120 文件 1872 用例)
+├── tests/                        # vitest 测试 (153 文件 2473+3 用例)
 └── package.json                  # 扩展配置
 ```
 
@@ -287,13 +297,13 @@ kode/
 
 | 指标 | 数量 |
 |------|------|
-| TypeScript 文件 | 65 个（src/，不含 src/test，实测） |
+| TypeScript 文件 | 67 个（src/，不含 src/test，实测） |
 | 钩子数量 | 36 个 |
 | 代码片段 | 11 def + 4 Python + 2 types.xml |
 | 预定义实体模板 | 10 个 |
 | 文档页数 | 51 个 Markdown（根 9 + docs/ 39 + resources/docs 3） |
-| 总行数 | 37140 行（src/ TypeScript，实测） |
-| 已完成功能 | 31 个 |
+| 总行数 | 37445 行（src/ TypeScript，实测） |
+| 已完成功能 | 33 个 |
 
 ---
 

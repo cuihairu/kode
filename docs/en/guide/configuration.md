@@ -76,6 +76,17 @@ Two boundaries:
 | `kbengine.hover.showTagDocs` | boolean | `true` | Show docs on tag hover |
 | `kbengine.hover.showValueDocs` | boolean | `true` | Show docs on type/Flags/level value hover |
 | `kbengine.hover.showSymbolDocs` | boolean | `true` | Show a summary on property/method name hover |
+| `kbengine.hover.typeStorage` | boolean | `true` | Show storage info (table/column/type) when hovering a `types.xml` custom type |
+| `kbengine.hover.implementedBy` | boolean | `true` | Show the `implementedBy` backlink when hovering a referenced symbol in Python |
+| `kbengine.hover.entityRegistration` | boolean | `true` | Show registration info (Utype/list position) when hovering an `entities.xml` entity name |
+| `kbengine.hover.defChain` | boolean | `true` | Show the merged def chain when hovering `Parent`/`Interfaces` declarations |
+| `kbengine.hover.eventStats` | boolean | `true` | Show registration/emit stats when hovering an event name in Python |
+| `kbengine.hover.serverConfig` | boolean | `true` | Show value and docs when hovering a `kbengine.xml` server config field |
+| `kbengine.codeLens.rpc` | boolean | `true` | Show RPC method CodeLens in Python implementation scripts |
+| `kbengine.codeLens.eventCallbacks` | boolean | `true` | Show event callback CodeLens in Python scripts |
+| `kbengine.codeLens.property` | boolean | `true` | Show property CodeLens at `self.<property>` access sites in Python scripts |
+| `kbengine.codeLens.typesXml` | boolean | `true` | Show the storage lens chain on `types.xml` declaration lines |
+| `kbengine.inlayHints.typeData` | boolean | `true` | Inline the declared `types.xml` data type at `self.<property>` access sites in Python |
 | `kbengine.entityDefsPath` | string | `scripts/entity_defs` | Entity definitions directory |
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path |
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | Engine binaries directory |
@@ -124,7 +135,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 
 **Three kinds of purely discovered resources with no settings at all** (since batch 125): `types.xml`, `messages_fixed(_defaults).xml`, and the engine `kbengine_defaults.xml` (when binPath cannot derive it, fall back via the engine source-root anchor, then derive).
 
-### Full Setting Comparison Table (batch-125 inventory of 32 items; 10 more added since by batches 126+, 42 today — the new ones are in the "Overview of `kbengine.*` Settings" table and the item-by-item notes)
+### Full Setting Comparison Table (batch-125 inventory of 32 items; more added continuously since batch 126, 54 today — the new ones are in the "Overview of `kbengine.*` Settings" table and the item-by-item notes)
 
 `How it resolves now` = how the value is actually taken today; `Auto-discoverable` = whether the value can be derived from the workspace/environment; `Disposition` = this round's conclusion and reasoning.
 
@@ -190,6 +201,28 @@ All three are `boolean`, default `true`:
 - `hover.showSymbolDocs`: hovering a custom property/method name shows the current definition's `Type`, `Flags`, `Arg` context.
 
 With all three off, `.def` hover keeps only syntax highlighting. If hints feel too many, turn off `showTagDocs` first — it appears most often.
+
+Since batch 154 (2026-10-20) hover is split into per-feature switches, no master switch:
+
+- `hover.typeStorage`: storage hover (table/column/type and shape) for `types.xml` custom types;
+- `hover.implementedBy`: backlink hover for symbols referenced by a `types.xml` `implementedBy`, on the Python side;
+- `hover.entityRegistration`: entity registration hover (`Utype`/list position) for `entities.xml` entity names;
+- `hover.defChain`: merged def chain hover for `Parent`/`Interfaces` declaration elements;
+- `hover.eventStats`: registration/emit stats hover for event names on the Python side;
+- `hover.serverConfig`: value/docs hover for `kbengine.xml` server config fields (turns off the batch-112 face entirely).
+
+### CodeLens and inlay hints
+
+Four CodeLens kinds each get one switch (all default on, effective immediately without reload):
+
+- `codeLens.rpc`: RPC markers above `def`-declared method lines in Python implementation scripts (batch 126);
+- `codeLens.eventCallbacks`: event callback markers — the event name on callback `def` lines and `N` listeners on `emitEvent` (since batch 154, split out of the RPC lens chain into its own registration);
+- `codeLens.property`: property markers at `self.<property>` access sites (batch 135);
+- `codeLens.typesXml`: storage lens chain on `types.xml` declaration lines (batch 134).
+
+One inlay-hints switch:
+
+- `inlayHints.typeData`: inline the `declared <Type>` data type (types.xml custom alias or built-in) at `self.<property>` access sites in Python, using the same resolution index as property F12 (batch 154). Inlay hints have no change event, so a toggle takes effect on the next render.
 
 ### Paths
 

@@ -547,6 +547,61 @@
           "default": true,
           "description": "悬停时显示自定义属性名和方法名的摘要信息"
         },
+        "kbengine.hover.typeStorage": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示 types.xml 自定义数据类型的存储信息(落库表/列/类型)"
+        },
+        "kbengine.hover.implementedBy": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示 def 方法的脚本实现位置(Implemented-By 反链)"
+        },
+        "kbengine.hover.entityRegistration": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示 entities.xml 实体注册信息(Utype/清单位置)"
+        },
+        "kbengine.hover.defChain": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示 def 属性/方法的声明链(文件与区块来源)"
+        },
+        "kbengine.hover.eventStats": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示事件常量的注册与监听统计(事件回调反链)"
+        },
+        "kbengine.hover.serverConfig": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时显示 kbengine.xml 服务配置项的取值与说明"
+        },
+        "kbengine.codeLens.rpc": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 实现脚本中显示 RPC 方法标记 CodeLens(def 声明方法声明行)"
+        },
+        "kbengine.codeLens.eventCallbacks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 脚本中显示事件回调标记 CodeLens(事件回调/监听数)"
+        },
+        "kbengine.codeLens.property": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 脚本中显示 self.<属性> 访问处的属性标记 CodeLens"
+        },
+        "kbengine.codeLens.typesXml": {
+          "type": "boolean",
+          "default": true,
+          "description": "types.xml 类型声明行显示落库镜链 CodeLens(引用反扫)"
+        },
+        "kbengine.inlayHints.typeData": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 脚本 self.<属性> 访问处以 inlay hint 内联显示 def 声明的 types.xml 数据类型"
+        },
         "kbengine.entityDefsPath": {
           "type": "string",
           "default": "scripts/entity_defs",
