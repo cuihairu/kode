@@ -117,4 +117,12 @@ describe('def 方法全项目回退（用户令 2026-10-20）', () => {
     const result = await manager.resolveMethodImplementationByIdentity(identityFor('missingEverywhere'));
     expect(result).toBeNull();
   });
+
+  it('公开全项目回退口（identity 早落分支复用）：唯一命中/歧义/缺失三态', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const unique = await manager.resolveMethodImplementationGlobally('uniqueInParent');
+    expect(unique && path.basename(unique.filePath)).toBe('AvatarParent.py');
+    expect(await manager.resolveMethodImplementationGlobally('ambiguousInParents')).toBeNull();
+    expect(await manager.resolveMethodImplementationGlobally('missingEverywhere')).toBeNull();
+  });
 });

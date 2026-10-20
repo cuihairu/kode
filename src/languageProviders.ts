@@ -2679,7 +2679,7 @@ function findMethodImplementationLocationInDef(
   // 路径每一臂都留痕,约定链也落空时给「期望位置」提示并落注册声明/def 首行,
   // 不再静默落 def 声明行(光标常已在该行,用户视角等同没跳)。
   const entityName = path.basename(document.fileName, '.def');
-  const conventionFallback = (): vscode.Location => {
+  const conventionLocation = (): vscode.Location | null => {
     const byConvention = findMethodScriptLocationInDef(
       document,
       methodName,
@@ -2687,9 +2687,11 @@ function findMethodImplementationLocationInDef(
     );
     if (byConvention) {
       logNavigation(`方法落点(约定链) ${byConvention.uri.fsPath}:${byConvention.range.start.line}`);
-      return byConvention;
     }
+    return byConvention;
+  };
 
+  const hintRegistryFallback = (): vscode.Location => {
     const methodRole = METHOD_SECTION_SCRIPT_ROLES[section];
     // 不可达(根修令④ 定性):section 已过 METHOD_SECTIONS 过滤,与
     // METHOD_SECTION_SCRIPT_ROLES 键完全重合(口径同 :1556),methodRole 恒真。
@@ -2706,6 +2708,29 @@ function findMethodImplementationLocationInDef(
     return findRegistryFallbackLocation(document, entityName);
   };
 
+  // 用户令(2026-10-20):identity 未命中/实现未绑定的两个早落分支按
+  // **同名优先 → 全项目唯一命中 → 提示+注册回落** 三段解析(实现常在非同名 py 里)。
+  const withGlobalFallback = (): Thenable<vscode.Location> => {
+    const byConvention = conventionLocation();
+    if (byConvention) {
+      return byConvention;
+    }
+    // 特性检测:桩管理器/旧索引可能没有该方法,缺位时维持原提示+注册回落。
+    if (typeof entityMappingManager.resolveMethodImplementationGlobally !== 'function') {
+      return hintRegistryFallback();
+    }
+    return entityMappingManager.resolveMethodImplementationGlobally(methodName).then(glob => {
+      if (glob) {
+        logNavigation(`方法落点(全项目回退) ${glob.filePath}:${glob.line - 1}`);
+        return new vscode.Location(
+          vscode.Uri.file(glob.filePath),
+          new vscode.Position(Math.max(glob.line - 1, 0), glob.character)
+        );
+      }
+      return hintRegistryFallback();
+    });
+  };
+
   return entityMappingManager.resolveDefinitionSymbolAtPosition(
     document.fileName,
     line,
@@ -2715,8 +2740,8 @@ function findMethodImplementationLocationInDef(
     if (!identity) {
       // 根修令①:索引未收录该符号(非标准布局的工程未纳入索引)时先按文件
       // 约定在 def 相对候选链里找实现,找不到才落注册声明/def 首行。
-      logNavigation(`方法索引未收录 ${methodName}(${section}),按约定链回落`);
-      return conventionFallback();
+      logNavigation(`方法索引未收录 ${methodName}(${section}),按全项目回退/约定链回落`);
+      return withGlobalFallback();
     }
 
     return entityMappingManager.resolveMethodImplementationByIdentity(identity).then(reference => {
@@ -2730,8 +2755,8 @@ function findMethodImplementationLocationInDef(
 
       // 根修令①:索引收录了符号但脚本未被索引(嵌套/非标准布局)→
       // 同上,def 相对候选链优先,注册声明/def 首行兜底。
-      logNavigation(`方法索引未绑定实现 ${methodName},按约定链回落`);
-      return conventionFallback();
+      logNavigation(`方法索引未绑定实现 ${methodName},按全项目回退/约定链回落`);
+      return withGlobalFallback();
     });
   }).then(reference => {
     // 不可达(批64 定性,合并扩展批62 区间):内层两臂(identity 缺失 / 实现

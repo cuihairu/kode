@@ -920,12 +920,23 @@ export class EntityMappingManager {
     // 用户令(2026-10-20):.def 方法在同名/绑定文件找不到实现时,放宽到全项目
     // python:方法名**唯一命中**才跳(实现常落在父类/公共模块的 py 里,
     // 属主索引 pythonMethods 只收实体属主脚本,覆盖不到),多处命中保持静默
-    // (交给调用方约定链与提示),找不到维持现状不误跳。扫描结果按方法名懒缓存。
-    const globalHits = await this.collectAllPythonMethodHits(identity.symbolName);
+    // (交给调用方约定链与提示),找不到维持现状不误跳。
+    return this.resolveMethodImplementationGlobally(identity.symbolName);
+  }
+
+  /**
+   * 全项目 python 回退(用户令 2026-10-20):方法名在全项目 py 中唯一命中才返回,
+   * 多处/零处一律 null(静默,不误跳)。给 def 侧 identity 未命中/未绑定实现的
+   * 两个早落分支复用——那两支不经过 resolveMethodImplementationByIdentity。
+   */
+  async resolveMethodImplementationGlobally(
+    methodName: string
+  ): Promise<{ filePath: string; line: number; character: number } | null> {
+    const globalHits = await this.collectAllPythonMethodHits(methodName);
     if (globalHits.length === 1) {
       const [globalHit] = globalHits;
       jumpLog('debug', () =>
-        `def 方法[全项目回退] ${identity.symbolName} → ${path.basename(globalHit.filePath)}:${globalHit.line}`
+        `def 方法[全项目回退] ${methodName} → ${path.basename(globalHit.filePath)}:${globalHit.line}`
       );
       return globalHit;
     }
