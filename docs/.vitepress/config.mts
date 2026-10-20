@@ -1,3 +1,4 @@
+import { withMermaid } from "vitepress-plugin-mermaid";
 import { defineConfig } from 'vitepress';
 
 // 多语言结构（用户 2026-10-16：「vitepress 自带国际化方案」）：
@@ -5,7 +6,7 @@ import { defineConfig } from 'vitepress';
 // （locale `en`，URL `/en/`）。两个 locale 的目录树同名同构，VitePress
 // 内置的语言切换器按「同名相对路径」互跳，无需手写切换链接。
 // 每个 locale 的 label / lang / nav / sidebar 各自独立配置，不共用一份。
-export default defineConfig({
+export default withMermaid(defineConfig({
   title: 'Kode',
   description: 'KBEngine VSCode Extension Documentation',
   base: process.env.GITHUB_ACTIONS ? '/kode/' : '/',
@@ -147,4 +148,4 @@ export default defineConfig({
       copyright: 'Apache-2.0'
     }
   }
-});
+}))
