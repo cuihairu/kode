@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { spawn, ChildProcess } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
+import { LogHub, RuntimeLogLevel } from './logHub';
+import { ProcessManager } from './processManager';
 import { joinWorkspacePath, usesPosixPath } from './workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 
@@ -143,7 +145,11 @@ export interface RunningServer {
  * tests/sim/fakeComponentBin 的假组件二进制组合做真实进程编排。
  */
 export interface ProcessRunner {
-  spawn(command: string, args: string[], options: { cwd: string; env: NodeJS.ProcessEnv }): ChildProcess;
+  spawn(command: string, args: string[], options: {
+    cwd: string;
+    env: NodeJS.ProcessEnv;
+    windowsHide: true;
+  }): ChildProcess;
 }
 
 const defaultProcessRunner: ProcessRunner = {
@@ -163,6 +169,9 @@ function ensureTrailingSeparator(value: string): string {
  */
 export class KBEngineServerManager {
   private runningServers: Map<string, RunningServer> = new Map();
+  readonly logHub: LogHub;
+  readonly processManager: ProcessManager;
+  private readonly logSubscriptions: Array<() => void> = [];
   private _onDidChangeStatus = new vscode.EventEmitter<void>();
   readonly onDidChangeStatus = this._onDidChangeStatus.event;
 
@@ -170,8 +179,40 @@ export class KBEngineServerManager {
 
   constructor(
     private context: vscode.ExtensionContext,
-    private readonly processRunner: ProcessRunner = defaultProcessRunner
-  ) {}
+    private readonly processRunner: ProcessRunner = defaultProcessRunner,
+    logHub?: LogHub
+  ) {
+    this.logHub = logHub ?? new LogHub({ flushIntervalMs: 25, maxListeners: 256 });
+    this.processManager = new ProcessManager(request => this.processRunner.spawn(request.command, [...(request.args ?? [])], {
+      cwd: request.cwd ?? process.cwd(),
+      env: request.env ?? process.env,
+      windowsHide: true
+    }), this.logHub);
+    this.logSubscriptions.push(this.processManager.onState(event => {
+      const server = this.runningServers.get(event.id);
+      if (!server) return;
+      if (event.state === 'starting') server.status = ServerStatus.Starting;
+      if (event.state === 'running') server.status = ServerStatus.Running;
+      if (event.state === 'stopping') server.status = ServerStatus.Stopping;
+      if (event.state === 'error') server.status = ServerStatus.Error;
+      if (event.state === 'running') {
+        vscode.window.showInformationMessage(`${server.component.displayName} 启动成功 (PID: ${server.pid})`);
+      }
+      if (event.state === 'exited' || event.state === 'error') this.runningServers.delete(event.id);
+      this._onDidChangeStatus.fire();
+    }));
+    this.logSubscriptions.push(this.logHub.onBatch(batch => {
+      const current = [...this.runningServers.entries()];
+      current.forEach(([name, server]) => {
+        const events = batch.events.filter(event => event.component === name);
+        if (events.length > 0) server.logs.push(...events.map(event => event.text));
+      });
+      batch.events.forEach(event => {
+        const level = event.level <= RuntimeLogLevel.INFO ? '[INFO]' : event.level === RuntimeLogLevel.WARNING ? '[WARN]' : '[ERROR]';
+        this.outputChannels.get(event.component)?.appendLine(`${level} ${event.text}`);
+      });
+    }));
+  }
 
   /**
    * 获取 KBEngine 二进制路径
@@ -317,6 +358,11 @@ export class KBEngineServerManager {
     return channel;
   }
 
+  private log(component: ServerComponent, level: RuntimeLogLevel, text: string): void {
+    this.getOutputChannel(component).appendLine(`${level === RuntimeLogLevel.WARNING ? '[WARN]' : level === RuntimeLogLevel.ERROR ? '[ERROR]' : '[INFO]'} ${text}`);
+    this.logHub.ingest({ source: 'process', component: component.name, level, text });
+  }
+
   /**
    * 启动单个组件
    */
@@ -362,29 +408,31 @@ export class KBEngineServerManager {
     // 批127:引擎期望的 res/server/kbengine.xml 不在时不拦截启动(引擎可能
     // 有别的取法),但在输出通道留可见警告,用户可把日志贴回来定位
     if (!hasEngineConfigProbe(configPath)) {
-      this.getOutputChannel(component).appendLine(
-        `[WARN] 期望的引擎配置文件不存在：${path.join(configPath, 'res', 'server', 'kbengine.xml')}（启动可能失败）`
-      );
+      this.log(component, RuntimeLogLevel.WARNING,
+        `期望的引擎配置文件不存在：${path.join(configPath, 'res', 'server', 'kbengine.xml')}（启动可能失败）`);
     }
 
-    const outputChannel = this.getOutputChannel(component);
-    outputChannel.show();
-    outputChannel.appendLine(`[INFO] 正在启动 ${component.displayName}...`);
-    outputChannel.appendLine(`[INFO] 可执行文件: ${exePath}`);
-    outputChannel.appendLine(`[INFO] 配置目录: ${configPath}`);
-    outputChannel.appendLine(`[INFO] 启动参数: ${(component.defaultArgs || []).join(' ') || '(none)'}`);
+    this.log(component, RuntimeLogLevel.INFO, `正在启动 ${component.displayName}...`);
+    this.log(component, RuntimeLogLevel.INFO, `可执行文件: ${exePath}`);
+    this.log(component, RuntimeLogLevel.INFO, `配置目录: ${configPath}`);
+    this.log(component, RuntimeLogLevel.INFO, `启动参数: ${(component.defaultArgs || []).join(' ') || '(none)'}`);
 
     try {
-      const childProcess = this.processRunner.spawn(exePath, component.defaultArgs || [], {
+      const managed = this.processManager.start({
+        id: component.name,
+        command: exePath,
+        args: component.defaultArgs || [],
         cwd: configPath,
-        env: this.buildComponentEnvironment(configPath, binPath)
+        env: this.buildComponentEnvironment(configPath, binPath),
+        component: component.name,
+        readyAfterMs: 1000
       });
-      let startupTimer: NodeJS.Timeout | undefined;
+      void managed;
 
       const runningServer: RunningServer = {
         component,
-        process: childProcess,
-        pid: childProcess.pid ?? 0,
+        process: managed.process,
+        pid: managed.pid,
         status: ServerStatus.Starting,
         startTime: new Date(),
         logs: []
@@ -392,54 +440,11 @@ export class KBEngineServerManager {
 
       this.runningServers.set(component.name, runningServer);
 
-      // 监听进程输出
-      childProcess.stdout?.on('data', (data: Buffer) => {
-        const message = data.toString();
-        runningServer.logs.push(message);
-        outputChannel.append(message);
-      });
-
-      childProcess.stderr?.on('data', (data: Buffer) => {
-        const message = data.toString();
-        runningServer.logs.push(message);
-        outputChannel.append(`[ERROR] ${message}`);
-      });
-
-      childProcess.on('error', (error: Error) => {
-        if (startupTimer) {
-          clearTimeout(startupTimer);
-          startupTimer = undefined;
-        }
-        outputChannel.appendLine(`[ERROR] 进程错误: ${error.message}`);
-        runningServer.status = ServerStatus.Error;
-        this.runningServers.delete(component.name);
-        this._onDidChangeStatus.fire();
-      });
-
-      childProcess.on('exit', (code: number | null, signal: string | null) => {
-        if (startupTimer) {
-          clearTimeout(startupTimer);
-          startupTimer = undefined;
-        }
-        outputChannel.appendLine(`[INFO] 进程退出: code=${code}, signal=${signal}`);
-        this.runningServers.delete(component.name);
-        this._onDidChangeStatus.fire();
-      });
-
-      // 延迟标记为运行中
-      startupTimer = setTimeout(() => {
-        if (this.runningServers.has(component.name)) {
-          runningServer.status = ServerStatus.Running;
-          this._onDidChangeStatus.fire();
-          vscode.window.showInformationMessage(`${component.displayName} 启动成功 (PID: ${runningServer.pid})`);
-        }
-      }, 1000);
-
       this._onDidChangeStatus.fire();
       return true;
 
     } catch (error) {
-      outputChannel.appendLine(`[ERROR] 启动失败: ${error}`);
+      this.log(component, RuntimeLogLevel.ERROR, `启动失败: ${String(error)}`);
       return false;
     }
   }
@@ -453,34 +458,15 @@ export class KBEngineServerManager {
       return false;
     }
 
-    const outputChannel = this.getOutputChannel(runningServer.component);
-    outputChannel.show();
-    outputChannel.appendLine(`[INFO] 正在停止 ${runningServer.component.displayName}...`);
+    this.log(runningServer.component, RuntimeLogLevel.INFO, `正在停止 ${runningServer.component.displayName}...`);
 
-    runningServer.status = ServerStatus.Stopping;
-    this._onDidChangeStatus.fire();
-
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        // 强制杀死进程
-        runningServer.process.kill('SIGKILL');
-        this.runningServers.delete(componentName);
-        this._onDidChangeStatus.fire();
-        outputChannel.appendLine(`[INFO] ${runningServer.component.displayName} 已强制停止`);
-        resolve(true);
-      }, 5000);
-
-      runningServer.process.on('exit', () => {
-        clearTimeout(timeout);
-        this.runningServers.delete(componentName);
-        this._onDidChangeStatus.fire();
-        outputChannel.appendLine(`[INFO] ${runningServer.component.displayName} 已停止`);
-        resolve(true);
-      });
-
-      // 尝试正常退出
-      runningServer.process.kill('SIGTERM');
-    });
+    const stopped = await this.processManager.stop(componentName);
+    this.log(
+      runningServer.component,
+      RuntimeLogLevel.INFO,
+      `${runningServer.component.displayName} ${stopped ? '已停止' : '停止失败'}`
+    );
+    return stopped;
   }
 
   /**
@@ -541,6 +527,9 @@ export class KBEngineServerManager {
     }
 
     const outputChannel = this.getOutputChannel(component);
+    this.logHub.getRetained()
+      .filter(event => event.component === componentName)
+      .forEach(event => outputChannel.appendLine(event.text));
     outputChannel.show(true);
     return true;
   }
@@ -571,11 +560,10 @@ export class KBEngineServerManager {
   /**
    * 清理资源
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
+    await this.processManager.dispose();
+    this.logSubscriptions.forEach(dispose => dispose());
     this.outputChannels.forEach(channel => channel.dispose());
-    this.runningServers.forEach(server => {
-      server.process.kill();
-    });
     this.runningServers.clear();
     this._onDidChangeStatus.dispose();
   }

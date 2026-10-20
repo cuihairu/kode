@@ -6,6 +6,7 @@
 import * as vscode from 'vscode';
 import { LogEntry, LogParser, LogLevel } from './logParser';
 import { KBEngineLogCollector } from './logCollector';
+import { LogEvent, LogHub, RuntimeLogLevel } from './logHub';
 
 /**
  * 日志过滤器配置
@@ -22,7 +23,9 @@ export interface LogFilter {
  */
 export class LogViewerWebView {
   private panel: vscode.WebviewPanel | null = null;
-  private currentLogs: LogEntry[] = [];
+  private currentLogs: Array<LogEntry | LogEvent> = [];
+  private logSubscription?: () => void;
+  private readonly displayedLimit = 5000;
   private filter: LogFilter = {
     levels: [],
     components: [],
@@ -40,6 +43,24 @@ export class LogViewerWebView {
       if (this.panel) {
         this.updateWebView();
       }
+    });
+  }
+
+  subscribeLogHub(hub: LogHub): void {
+    this.logSubscription?.();
+    this.logSubscription = hub.onBatch(batch => {
+      batch.events.forEach(event => this.currentLogs.push(toLegacyEntry(event)));
+      if (this.currentLogs.length > this.displayedLimit) {
+        this.currentLogs.splice(0, this.currentLogs.length - this.displayedLimit);
+      }
+      if (!this.panel) return;
+      void this.panel.webview.postMessage({
+        command: 'appendLogs',
+        events: batch.events,
+        dropped: batch.dropped,
+        capacity: batch.capacity,
+        displayLimit: this.displayedLimit
+      });
     });
   }
 
@@ -98,7 +119,7 @@ export class LogViewerWebView {
       return;
     }
 
-    const filteredLogs = this.applyFilter(this.currentLogs);
+    const filteredLogs = this.applyFilter(this.currentLogs.map(toLegacyEntry));
     const html = this.getHtml(filteredLogs);
     this.panel.webview.html = html;
   }
@@ -189,7 +210,7 @@ export class LogViewerWebView {
    * 导出日志
    */
   exportLogs(): void {
-    const filteredLogs = this.applyFilter(this.currentLogs);
+    const filteredLogs = this.applyFilter(this.currentLogs.map(toLegacyEntry));
 
     vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.file('kbengine_logs.txt'),
@@ -451,9 +472,35 @@ export class LogViewerWebView {
       vscode.postMessage({ command: 'disconnect' });
     });
 
+    const container = document.getElementById('logContainer');
+    const levelClasses = ['level-debug', 'level-info', 'level-warning', 'level-error', 'level-critical'];
+    const appendEvent = (event, limit = 5000) => {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry ' + (levelClasses[Number(event.level)] || 'level-info');
+      const timestamp = document.createElement('span');
+      timestamp.className = 'log-timestamp';
+      timestamp.textContent = new Date(event.timestamp).toLocaleTimeString('zh-CN');
+      const component = document.createElement('span');
+      component.className = 'log-component';
+      component.textContent = event.component.toUpperCase();
+      const message = document.createElement('span');
+      message.className = 'log-message';
+      message.textContent = event.text;
+      entry.append(timestamp, component, message);
+      container.appendChild(entry);
+      while (container.querySelectorAll('.log-entry').length > limit) {
+        container.querySelector('.log-entry')?.remove();
+      }
+      container.scrollTop = container.scrollHeight;
+    };
+    window.addEventListener('message', (event) => {
+      const message = event.data;
+      if (message.command === 'appendLogs') {
+        (message.events || []).forEach(event => appendEvent(event, message.displayLimit ?? 5000));
+      }
+    });
+
     // 自动滚动到底部
-    const logContainer = document.getElementById('logContainer');
-    logContainer.scrollTop = logContainer.scrollHeight;
   </script>
 </body>
 </html>`;
@@ -508,9 +555,29 @@ export class LogViewerWebView {
    * 清理资源
    */
   dispose(): void {
+    this.logSubscription?.();
     if (this.panel) {
       this.panel.dispose();
       this.panel = null;
     }
   }
 }
+
+function toLegacyEntry(value: LogEvent | LogEntry): LogEntry {
+  if ('message' in value && 'raw' in value && value.timestamp instanceof Date) {
+    return value;
+  }
+
+  const event = value as LogEvent;
+  return {
+    id: Number.parseInt(event.id.replace(/-/g, '').slice(0, 12), 16),
+    timestamp: new Date(event.timestamp),
+    component: event.component,
+    level: event.level as unknown as LogLevel,
+    type: 0,
+    message: event.text,
+    raw: event.text
+  };
+}
+
+export { RuntimeLogLevel };

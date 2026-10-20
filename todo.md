@@ -139,23 +139,23 @@
 
 #### 后台运行战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-background-process.md）
 
-- [ ] B-01：审计全部命令启动入口，列出创建 Terminal / terminal.show() / 重复创建进程 / 阻塞等待的点位清单（file:line）。
-- [ ] B-02：统一 ProcessManager（方案A）：child_process.spawn + windowsHide，输出直接进日志系统，不经可见 Terminal；各功能不再各自建终端。
-- [ ] B-03：交互式/必须真 Shell 的命令走隐藏 Terminal 通道（createTerminal 不 show，按需 reveal）。
-- [ ] B-04：语义分离「不弹窗」与「关 VS Code 仍运行」：前者由 ProcessManager 承担，后者明确边界（不做或独立守护，评审口径写进设计注记）。
+- [x] B-01：审计全部命令启动入口，列出创建 Terminal / terminal.show() / 重复创建进程 / 阻塞等待的点位清单（file:line）。（入口矩阵与边界见 `docs/review/2026-10-20-runtime-batch-v01-audit.md:3`）
+- [x] B-02：统一 ProcessManager（方案A）：child_process.spawn + windowsHide，输出直接进日志系统，不经可见 Terminal；各功能不再各自建终端。（`src/processManager.ts:47`；共享注入 `src/extension.ts:654`）
+- [x] B-03：交互式/必须真 Shell 的命令走隐藏 Terminal 通道（createTerminal 不 show，按需 reveal）。（`src/quickActions.ts:161`；语义注记 `docs/review/2026-10-20-runtime-batch-v01-audit.md:10`）
+- [x] B-04：语义分离「不弹窗」与「关 VS Code 仍运行」：前者由 ProcessManager 承担，后者明确边界（不做或独立守护，评审口径写进设计注记）。（边界见 `docs/review/2026-10-20-runtime-batch-v01-audit.md:10`）
 
 #### 日志中心战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-log-center.md）
 
-- [ ] L-01：统一日志入口（stdout 与文件同源判定去重；一切日志先过单一入口，不各自维护）。
-- [ ] L-02：定义统一 LogEvent 结构（id/timestamp/level/source/component/text…），所有来源转换后进入。
-- [ ] L-03：三模块拆分收拢（WebView / 服务器管理面板 / 文件读取不再各自一套状态）。
-- [ ] L-04：性能红线——批量增量推送（几十毫秒合批）+ 前端显示上限 + 文件增量读取，禁止逐行单消息与全量重传。
+- [x] L-01：统一日志入口（stdout 与文件同源判定去重；一切日志先过单一入口，不各自维护）。（`src/logHub.ts:73`；共享注入 `src/extension.ts:654`）
+- [x] L-02：定义统一 LogEvent 结构（id/timestamp/level/source/component/text…），所有来源转换后进入。（`src/logHub.ts:16`）
+- [x] L-03：三模块拆分收拢（WebView / 服务器管理面板 / 文件读取不再各自一套状态）。（WebView 订阅 `src/logWebView.ts:51`；服务器投影 `src/serverManager.ts:204`；增量读取 `src/logHub.ts:161`）
+- [x] L-04：性能红线——批量增量推送（几十毫秒合批）+ 前端显示上限 + 文件增量读取，禁止逐行单消息与全量重传。（40ms 合批 `src/logHub.ts:35`；上限 `src/logWebView.ts:28`）
 
 #### 路线图批次（2026-10-20 ChatGPT 总评，docs/review/chatgpt-2026-10-20-kode-roadmap.md；用户令：优先安排实现）
 
 > 排期=评审四批；与既有 T-*/B-*/L-* 批次映射：第一批=B-*/L-*（运行时基础设施），第二批=T-*（统一类型系统）。
 
-- [ ] V-01 第一批·运行时基础设施：ProcessManager + LogHub + 组件就绪检测 + 启停编排（消除重复启动/弹窗/日志割裂）。
+- [x] V-01 第一批·运行时基础设施：ProcessManager + LogHub + 组件就绪检测 + 启停编排（消除重复启动/弹窗/日志割裂）。（证据：见本条提交 hash；unit 2494 passed/2 skipped；compile 0 errors；xvfb demo 25 passed）
 - [ ] V-02 第二批·统一类型系统：Type Registry + SourceMap + Python typings + KBEngine API typings（全部可跳回真实源码）。
 - [ ] V-03 第三批·跨文件语义与诊断：符号引用图 + 跨文件重命名 + Project Doctor。
 - [ ] V-04 第四批·性能与工程化：增量索引 + 启动性能分析 + 多平台真实环境测试 + 版本兼容性检查。

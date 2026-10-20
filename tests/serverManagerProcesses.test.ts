@@ -350,13 +350,15 @@ describe('KBEngineServerManager real process lifecycle', () => {
 
     await manager.startComponent(makeComponent('stubborn'));
     const server = manager.getRunningServers().get('stubborn');
+    const pid = server?.pid;
     expect(server?.pid).toBeGreaterThan(0);
     // 高负载下 SIGTERM 可能抢在 bash 执行 trap 行之前送达并被默认动作
     // 杀死;等到脚本输出 trap 之后的标记,确认忽略已生效再停止
     await until(() => (server?.logs ?? []).join('').includes('trapped'));
 
     expect(await manager.stopComponent('stubborn')).toBe(true);
-    expect(channelText('Stubborn')).toContain('[INFO] Stubborn 已强制停止');
+    expect(channelText('Stubborn')).toContain('[INFO] Stubborn 已停止');
+    expect(channelText('Stubborn')).toContain('[INFO] 进程退出: code=null, signal=SIGKILL');
     await until(() => {
       try {
         process.kill(pid as number, 0);
@@ -437,9 +439,10 @@ describe('KBEngineServerManager batch orchestration', () => {
     const pid = manager.getRunningServers().get('doomed')?.pid;
     expect(pid).toBeGreaterThan(0);
 
-    expect(() => manager.dispose()).not.toThrow();
+    await expect(manager.dispose()).resolves.toBeUndefined();
     expect(manager.getRunningServers().size).toBe(0);
     expect(channels.every(channel => channel.disposed)).toBe(true);
+    expect(manager.getServerStatus('doomed')).toBe(ServerStatus.Stopped);
     await until(() => {
       try {
         process.kill(pid as number, 0);

@@ -266,7 +266,7 @@ describe('KBEngineServerManager startup grace guard (批73)', () => {
     expect(started).toBe(true);
     expect(manager.getServerStatus('machine')).toBe(ServerStatus.Starting);
 
-    manager.dispose();
+    await manager.dispose();
     expect(manager.getRunningServers().size).toBe(0);
 
     // 宽限期(1000ms)过后:守卫判空走假臂,无"启动成功"提示,状态不复活

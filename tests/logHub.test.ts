@@ -1,0 +1,65 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { describe, expect, it } from 'vitest';
+import { LogHub } from '../src/logHub';
+
+describe('LogHub', () => {
+  it('deduplicates stdout and file events from the same source', async () => {
+    const hub = new LogHub({ flushIntervalMs: 5 });
+    hub.stdout({ source: 'stdout', component: 'svc', text: 'same\n', origin: 'shared' });
+    hub.ingest({ source: 'file', component: 'svc', text: 'same', origin: 'shared' });
+    hub.flush();
+    expect(hub.getRetained()).toHaveLength(1);
+    expect(hub.getRetained()[0].text).toBe('same');
+    hub.dispose();
+  });
+
+  it('batches increments and caps retained memory', async () => {
+    const hub = new LogHub({ capacity: 2, flushIntervalMs: 5000 });
+    hub.info({ source: 'process', component: 'a', text: '1' });
+    hub.info({ source: 'process', component: 'a', text: '2' });
+    hub.info({ source: 'process', component: 'a', text: '3' });
+    hub.flush();
+    const batches: number[] = [];
+    const unsubscribe = hub.onBatch(batch => batches.push(batch.events.length));
+    hub.info({ source: 'process', component: 'a', text: '4' });
+    hub.flush();
+    unsubscribe();
+    expect(hub.getRetained().map(event => event.text)).toEqual(['3', '4']);
+    expect(batches).toEqual([1]);
+    hub.dispose();
+  });
+
+  it('reads only file increments including truncation', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kode-loghub-'));
+    const file = join(directory, 'server.log');
+    const hub = new LogHub({ flushIntervalMs: 5 });
+    writeFileSync(file, 'first\n');
+    hub.watchFile('svc', file, 5);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    writeFileSync(file, 'first\nsecond\n');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const lines = hub.getRetained().map(event => event.text);
+    expect(lines).toEqual(['first', 'second']);
+    writeFileSync(file, 'tiny\n');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(hub.getRetained().map(event => event.text)).toEqual(['first', 'second', 'tiny']);
+    hub.dispose();
+    rmSync(directory, { recursive: true, force: true });
+  });
+});
+
+describe('LogHub subscriber contract', () => {
+  it('delivers only new events after subscription', () => {
+    const hub = new LogHub({ flushIntervalMs: 5000 });
+    const batches: string[][] = [];
+    hub.onBatch(batch => batches.push(batch.events.map(event => event.text)));
+    hub.info({ source: 'process', component: 'svc', text: 'first' });
+    hub.flush();
+    hub.info({ source: 'process', component: 'svc', text: 'second' });
+    hub.flush();
+    expect(batches).toEqual([['first'], ['second']]);
+    hub.dispose();
+  });
+});

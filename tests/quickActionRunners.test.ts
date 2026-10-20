@@ -46,7 +46,7 @@ const freePort = (): Promise<number> =>
   });
 
 describe('terminalScript', () => {
-  it('creates a named terminal with cwd and sends the command', async () => {
+  it('creates a hidden interactive terminal and reuses it without auto reveal', async () => {
     const calls: unknown[][] = [];
     const original = (await import('vscode')).window.createTerminal;
     (await import('vscode')).window.createTerminal = ((options: unknown) => {
@@ -54,10 +54,10 @@ describe('terminalScript', () => {
       return { sendText: (...args: unknown[]) => calls.push(args) } as never;
     }) as never;
     try {
-      const result = await terminalScript({ name: 'Start server', script: 'start.bat', background: true, cwd: '/workspace' });
-      await terminalScript({ name: 'Start server', script: 'start.bat', background: true, cwd: '/workspace' });
+      const result = await terminalScript({ name: 'Start server', script: 'start.bat', background: false, cwd: '/workspace' });
+      await terminalScript({ name: 'Start server', script: 'start.bat', background: false, cwd: '/workspace' });
       expect(calls).toEqual([
-        [{ name: 'Kode: Start server · start.bat', cwd: '/workspace' }],
+        [{ name: 'Kode: Start server · start.bat', cwd: '/workspace', hideFromUser: true }],
         [expect.stringContaining('即将执行：start.bat'), true],
         ['start.bat', true],
         [expect.stringContaining('即将执行：start.bat'), true],

@@ -33,7 +33,7 @@ import {
 import { resolveServerComponent } from './serverCommandTarget';
 import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
-import { QuickActionManager } from './quickActions';
+import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
@@ -651,6 +651,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
+  setDefaultScriptRuntime(serverManager.processManager, serverManager.logHub);
 
   // telnet 探测与联动(工单:telnet 探测+联动):目标解析 设置 →
   // kbengine.xml <telnet_service>(未指定路径时按 configPath/约定路径探测)
@@ -836,7 +837,6 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      serverManager.showComponentLogs(component.name);
       logViewer.show();
     }
   );
@@ -863,6 +863,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 初始化日志查看器
   const logViewer = new LogViewerWebView(context, logCollector);
+  const logHub = serverManager.logHub;
+  logViewer.subscribeLogHub(logHub);
 
   // 注册日志相关命令
   const showLogViewerCommand = vscode.commands.registerCommand(
@@ -1508,10 +1510,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 清理资源
   context.subscriptions.push({
-    dispose: () => {
+    dispose: async () => {
       telnetService.dispose();
       telnetWebView.dispose();
       serverManager.dispose();
+      await serverManager.dispose();
+      logHub.dispose();
       logCollector.dispose();
       logViewer.dispose();
       debugConfigManager.dispose();

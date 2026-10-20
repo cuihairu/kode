@@ -1108,7 +1108,7 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     try {
       await manager.runScannedScript('/ws/cleanup.bat');
       expect(terminalCalls).toEqual([
-        [{ name: 'Kode: cleanup · cleanup.bat', cwd: '/ws' }],
+        [{ name: 'Kode: cleanup · cleanup.bat', cwd: '/ws', hideFromUser: true }],
         [expect.stringContaining('即将执行：/ws/cleanup.bat'), true],
         ['/ws/cleanup.bat', true]
       ]);

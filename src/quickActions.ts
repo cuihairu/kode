@@ -12,6 +12,7 @@
 
 import * as http from 'http';
 import * as https from 'https';
+import { ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
@@ -30,6 +31,8 @@ import type {
 } from './quickActionConfig';
 import type { HttpRequestEntry } from './httpRequests';
 import { scanBatchScriptsInRoots } from './quickActionScanner';
+import { LogHubLike } from './logHub';
+import { ProcessManager, type ManagedProcess } from './processManager';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import type { BatchScriptCandidate, DirectoryEntry } from './quickActionScanner';
 
@@ -110,14 +113,46 @@ function workspaceFolders(): readonly WorkspaceFolderRef[] {
   })) ?? [];
 }
 
-/**
- * 脚本送入集成终端运行;终端负责 shell、实时输出与长时间运行进程。
- */
+/** Hidden interactive terminal channel. A terminal is created only when needed and never auto-shown. */
 const actionTerminals = new Map<string, vscode.Terminal>();
 
-/** 默认脚本执行器:每个动作名对应复用的集成终端,输出由终端实时显示。 */
+let defaultProcessManager = new ProcessManager(undefined, undefined);
+let defaultLogHub: LogHubLike | undefined;
+
+export function setDefaultScriptRuntime(processManager: ProcessManager, logHub?: LogHubLike): void {
+  defaultProcessManager = processManager;
+  defaultLogHub = logHub;
+}
+
+const shellFor = (script: string, platform: NodeJS.Platform = process.platform): string =>
+  platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+
+const shellArgsFor = (script: string, platform: NodeJS.Platform = process.platform): string[] =>
+  platform === 'win32' ? ['/d', '/s', '/c', script] : ['-c', script];
+
+/** Non-interactive scripts run in ProcessManager; foreground scripts remain in reusable hidden terminals. */
 export const terminalScript: ScriptRunner = options => {
   const cwd = options.cwd ?? workspaceFolders()[0]?.fsPath;
+  if (options.background) {
+    let managed: ManagedProcess;
+    try {
+      managed = defaultProcessManager.start({
+      id: `quick-action:${options.name ?? options.script}`,
+      command: shellFor(options.script),
+      args: shellArgsFor(options.script),
+      cwd,
+      env: options.env,
+      component: options.name ?? 'quick-action'
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      defaultLogHub?.error({ source: 'process', component: options.name ?? 'quick-action', text: message });
+      return Promise.resolve({ code: null, stdout: '', stderr: message, submitted: false });
+    }
+    void managed;
+    return Promise.resolve({ code: null, stdout: '', stderr: '', submitted: true });
+  }
+
   const scriptToken = options.script.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
   const scriptName = baseNameOf(scriptToken?.[1] ?? scriptToken?.[2] ?? scriptToken?.[3] ?? options.script);
   const name = `Kode: ${options.name ?? '快速动作'} · ${scriptName}`;
@@ -125,6 +160,7 @@ export const terminalScript: ScriptRunner = options => {
   if (!terminal || terminal.exitStatus !== undefined) {
     terminal = vscode.window.createTerminal({
       name,
+      hideFromUser: true,
       ...(cwd ? { cwd } : {}),
       ...(options.env ? { env: options.env } : {})
     });
@@ -151,22 +187,19 @@ export function buildCurlCommand(request: HttpRequestConfig, platform: NodeJS.Pl
   return `${platform === 'win32' ? 'curl.exe' : 'curl'} ${args.join(' ')}`;
 }
 
-export const terminalHttp: (request: HttpRequestConfig) => Promise<void> = request => {
-  const name = `Kode: HTTP · ${request.name ?? `${request.method} ${request.url}`}`;
-  let terminal = actionTerminals.get(name);
-  if (!terminal || terminal.exitStatus !== undefined) {
-    terminal = vscode.window.createTerminal({ name });
-    actionTerminals.set(name, terminal);
-  }
-  const command = buildCurlCommand(request);
-  const announcement = `即将发送：${request.method} ${request.url}`;
-  const print = process.platform === 'win32'
-    ? `Write-Output ${`'${announcement.replace(/'/g, "''")}'`}`
-    : `printf '%s\\n' '${announcement.replace(/\\/g, '\\\\').replace(/'/g, "'\\''")}'`;
-  terminal.sendText(print, true);
-  terminal.sendText(command, true);
-  return Promise.resolve();
-};
+export const terminalHttp: (request: HttpRequestConfig) => Promise<void> = request =>
+  fetchHttp({
+    url: request.url,
+    method: request.method,
+    ...(request.body !== undefined ? { body: request.body } : {})
+  }).then(result => {
+    const level = result.status >= 200 && result.status < 300 ? 'info' : 'error';
+    void defaultLogHub?.[level]({
+      source: 'process',
+      component: `http:${request.name ?? request.url}`,
+      text: `${request.method} ${request.url} → ${result.status}\n${result.body}`
+    });
+  });
 
 /**
  * 默认 http 执行器:非 2xx 照实回状态码,由流水层判成败(不抛)。
