@@ -1,7 +1,7 @@
 # 配置说明
 
 
-Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务端 XML 配置(`kbengine_defaults.xml`、元件 `kbengine.xml`)。本页逐项给出类型、默认值与出处、含义、改动影响和常见误配;服务端配置怎么分层合并、telnet 端口/密码从哪来,先读前两节。
+Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务端 XML 配置(`kbengine_defaults.xml`、元件 `kbengine.xml`)。设置项**按功能分区**介绍(诊断、悬停、CodeLens 与 inlay、跳转、路径、配置视图、服务与日志、远程调试、Python、生成器、telnet、HTTP、热重载、数据库)——每区一张小表给出类型、默认值与说明,表后是该区改动影响与常见误配;服务端配置怎么分层合并、telnet 端口/密码从哪来,先读「服务端配置的三层」。
 
 设置项默认值均取自本扩展 package.json 贡献点,引擎侧取值取自 `kbengine_defaults.xml`;两处都查不到的,标「来源未考」。
 
@@ -61,124 +61,21 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 `.kbengine/debug.json` 与这条链无关,它只服务调试流程(见「调试配置文件」一节)。
 
-## kbengine.* 设置项总览
+## kbengine.* 设置项总览(按功能分区)
 
-| 配置项 | 类型 | 默认值 | 作用 |
+54 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 54 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+
+### 诊断
+
+| 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关（批147 起同管 entities.xml 同名重复登记检查） |
-| `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
-| `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关 |
+| `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关(批147 起同管 entities.xml 同名重复登记检查) |
+| `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关(重复属性/方法、子标签位置、缺字段、字段重复定义) |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
 | `kbengine.diagnostics.checkDuplicateDefinitions` | boolean | `true` | 检查重名属性/方法 |
 | `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | 检查属性缺 `Type`/`Flags` 或字段重复 |
-| `kbengine.hover.showTagDocs` | boolean | `true` | 悬停标签显示说明 |
-| `kbengine.hover.showValueDocs` | boolean | `true` | 悬停类型/Flags/等级值显示说明 |
-| `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停属性/方法名显示摘要 |
-| `kbengine.hover.typeStorage` | boolean | `true` | 悬停 types.xml 自定义类型显示存储信息(落库表/列/类型) |
-| `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被引用符号显示 implementedBy 反链 |
-| `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 entities.xml 实体名显示注册信息(Utype/清单位置) |
-| `kbengine.hover.defChain` | boolean | `true` | 悬停 def 的 Parent/Interfaces 显示归并声明链 |
-| `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名显示注册/触发统计 |
-| `kbengine.hover.serverConfig` | boolean | `true` | 悬停 kbengine.xml 服务配置字段显示取值与说明 |
-| `kbengine.codeLens.rpc` | boolean | `true` | Python 实现脚本显示 RPC 方法标记 CodeLens |
-| `kbengine.codeLens.eventCallbacks` | boolean | `true` | Python 脚本显示事件回调标记 CodeLens |
-| `kbengine.codeLens.property` | boolean | `true` | Python 脚本显示 `self.<属性>` 属性标记 CodeLens |
-| `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 声明行显示落库镜链 CodeLens |
-| `kbengine.inlayHints.typeData` | boolean | `true` | Python 脚本 `self.<属性>` 访问处内联显示 def 声明的数据类型 |
-| `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录 |
-| `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径 |
-| `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录 |
-| `kbengine.assetsRoot` | string | `""` | 资产根目录（其下含 `res/`、`scripts/`），留空自动发现 |
-| `kbengine.showFinalConfigOnOpen` | boolean | `true` | 激活后自动打开最终配置视图 |
-| `kbengine.autoRefreshFinalConfig` | boolean | `true` | 配置文件变更后自动刷新最终配置视图 |
-| `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表 |
-| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | 自动启动的组件 |
-| `kbengine.loggerPort` | number | `20022` | logger 端口 |
-| `kbengine.logAutoConnect` | boolean | `true` | 激活时自动连日志 |
-| `kbengine.maxLogEntries` | number | `10000` | 日志缓存上限(条) |
-| `kbengine.python.extraPathsSync` | boolean | `true` | 自动把发现的 KBEngine scripts 根写入 `python.analysis.extraPaths` |
-| `kbengine.python.stubExport` | boolean | `true` | 自动导出内置 KBEngine API 索引为 `KBEngine.pyi` 存根 |
-| `kbengine.python.stubDir` | string | `""` | `.pyi` 存根目录(留空 = 默认约定 `.kbengine/stubs`) |
-| `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
-| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器的输出目录 |
-| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成器 `.def` 输出目录 |
-| `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成器 Python 输出目录 |
-| `kbengine.generator.generatePython` | boolean | `true` | 生成器是否同时出 Python |
-| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写 `entities.xml` |
-| `kbengine.telnet.host` | string | `127.0.0.1` | telnet 目标主机 |
-| `kbengine.telnet.port` | number | `0` | telnet 端口(0 = 未显式指定) |
-| `kbengine.telnet.password` | string | 空 | telnet 登录密码 |
-| `kbengine.telnet.enableCommands` | string[] | `[]` | telnet 面板命令白名单 |
-| `kbengine.telnet.configXmlPath` | string | 空 | 元件 kbengine.xml 指定路径 |
-| `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒) |
-| `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表 |
-| `kbengine.db.tablePrefix` | string | `""`（空 = 引擎默认 `tbl_`） | 数据库表名前缀，schema 视图与 SQL 模板同源替换 |
-| `kbengine.hotReload.enabled` | boolean | `false` | 文件保存/监视时自动触发指定快速动作（默认关防误触） |
-| `kbengine.hotReload.actionName` | string | 空 | 要触发的 `quickActions` 动作名（留空则事件到来也不触发） |
-| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视的文件匹配模式，每个模式各建一个文件监视 |
-| `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数，连发保存合并成一次触发 |
-
-## 路径类配置的自动发现(批125)
-
-设计约束:**尽量减少配置项,能自动发现的就自动发现**。核心功能(打开 `.def` → 实体浏览器/依赖图/属性面板/数据库 schema/悬停存储信息)在干净工作区零配置即可用——下面五项路径配置全部退化为「可选覆盖」:配置了就照配置,没配就按发现链找。
-
-发现链(按序取第一个命中):
-
-1. **显式配置**:`kbengine.entityDefsPath` / `kbengine.entitiesXmlPath` / `kbengine.binPath` 的设置值(支持 `${workspaceFolder}`);
-2. **约定路径**:引擎/官方资产固定布局,如 `entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`;
-3. **有界深扫描**:约定全 miss 时扫工作区找锚点(目录名 `entity_defs`、文件名 `entities.xml`/`types.xml`/`messages_fixed.xml`/`messages_fixed_defaults.xml`(批129 双名)、引擎源码锚点 `entitydef.cpp`/`entity_table_mysql.cpp`),限深 7 层、限 2 万条目,剪掉 `node_modules`/`.git`/`out`/`dist`/点目录,结果按工作区缓存;
-4. **唯一命中即用,多候选不猜**:同步读路径只认唯一命中——多个候选时宁缺勿猜(猜测会连带改写 interfaces/components/user_type 全套根目录),改由激活期弹**一次** quick pick 让你选,选择按工作区记忆(`workspaceState`),之后不再询问。
-
-能从已存在文件推断的子路径一律不进配置:def 根推出 `interfaces/`、`components/`、`user_type/` 子目录;`types.xml` 优先取 def 根之下;`entities.xml` 优先取 def 根同父;`messages_fixed(_defaults).xml` 批129 起四级优先级对齐引擎装载序(kbemain.h:71-74,defaults 先载打底、用户副本后载覆盖):工作区用户副本 `messages_fixed.xml` → 引擎源码根用户副本 → 工作区 `messages_fixed_defaults.xml` → 引擎源码根缺省;用户副本与缺省各在各的树里(引擎注释 kbemain.h:133-137:defaults 在引擎 res 树、用户副本在资产树),四级独立取用不要求同目录;纯资产工作区两者皆有或皆无为常态,皆无时发现报告标信息性不计问题。
-
-**三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
-
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 54 项,新设置见上面「kbengine.* 设置项总览」与逐项说明)
-
-`现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
-
-| 配置项 | 现在怎么用 | 能否自动发现 | 处置 |
-| --- | --- | --- | --- |
-| `kbengine.entityDefsPath` | 显式配置 → 约定 4 布局 → 深扫描唯一命中 → 多候选 quick pick 记忆 | **能**(约定布局 + 深扫描) | **自动发现**,配置只作覆盖 |
-| `kbengine.entitiesXmlPath` | 同上链;另优先取 def 根同父目录 | **能** | **自动发现**,配置只作覆盖 |
-| `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
-| `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
-| `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
-| `kbengine.assetsRoot` | 显式配置(默认空 = 自动发现);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
-| `kbengine.telnet.port` | 显式 >0 锁定;0 = 按元件段 → 引擎 defaults 链(批112) | **能**(配置链,批112 已做) | **自动取值**,配置只作覆盖 |
-| `kbengine.telnet.password` | 设置 → 元件段 → defaults → 空(批112) | **能**(同上) | **自动取值**,配置只作覆盖 |
-| `kbengine.telnet.configXmlPath` | 空 = 按 3 个约定位置自动找 `kbengine.xml` | **能**(已是覆盖式) | **自动发现**,配置只作覆盖 |
-| `kbengine.enableDiagnostics` | 开关,默认开 | 否(用户偏好,非可发现事实) | **保留**,默认开即零配置可用 |
-| `kbengine.enableStructureDiagnostics` | 同上 | 否 | **保留**,理由同上 |
-| `kbengine.diagnostics.checkUnknownTypes` | 开关,默认开 | 否 | **保留**(偏好开关,5 项诊断细分同理) |
-| `kbengine.diagnostics.checkUnknownFlags` | 同上 | 否 | **保留** |
-| `kbengine.diagnostics.checkUnknownDetailLevels` | 同上 | 否 | **保留** |
-| `kbengine.diagnostics.checkDuplicateDefinitions` | 同上 | 否 | **保留** |
-| `kbengine.diagnostics.checkMissingPropertyFields` | 同上 | 否 | **保留** |
-| `kbengine.hover.showTagDocs` | 开关,默认开 | 否 | **保留**(偏好开关,3 项悬停细分同理) |
-| `kbengine.hover.showValueDocs` | 同上 | 否 | **保留** |
-| `kbengine.hover.showSymbolDocs` | 同上 | 否 | **保留** |
-| `kbengine.showFinalConfigOnOpen` | 开关,默认开;定位不到 defaults 静默跳过 | 否 | **保留**,默认开零打扰 |
-| `kbengine.autoRefreshFinalConfig` | 开关,默认开 | 否 | **保留** |
-| `kbengine.autoStart` | 组件名列表,默认 `["machine","logger","dbmgr"]` | 否(启动策略是决策不是事实) | **保留**,默认即官方最小可跑组合 |
-| `kbengine.loggerPort` | 固定 20022(引擎 logger 监听端口) | 否(运行时网络端口,工作区无痕迹) | **保留**,默认值 = 引擎默认端口 |
-| `kbengine.logAutoConnect` | 开关,默认开 | 否 | **保留** |
-| `kbengine.maxLogEntries` | 数值 10000 | 否 | **保留**(内存/历史的权衡偏好) |
-| `kbengine.debug.remoteTargets` | 空列表;远端机器+端口 | 否(远端基础设施,工作区不存在) | **保留**,默认空 = 功能不用即不配 |
-| `kbengine.generator.generatePython` | 开关,默认开 | 否 | **保留** |
-| `kbengine.generator.registerInEntitiesXml` | 开关,默认开 | 否 | **保留** |
-| `kbengine.telnet.host` | 默认 `127.0.0.1` | 否(远端填 IP 是用户知识) | **保留**,本地默认开箱即用 |
-| `kbengine.telnet.enableCommands` | 空白名单 = 只放行内置只读快捷命令 | 否(安全策略,放行范围是决策) | **保留**,默认全禁是安全底线,不可代猜 |
-| `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
-| `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
-
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 10 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`、`kbengine.python.enableMroJump`),均已在总览表与逐项说明登记。
-
-## 逐项说明
-
-### 诊断
 
 | 配置项 | 关掉会怎样 | 常见误配 |
 | --- | --- | --- |
@@ -194,37 +91,51 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ### 悬停
 
-三项都是 `boolean`,默认 `true`:
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.hover.showTagDocs` | boolean | `true` | `<Type>`、`<Flags>`、`<Properties>` 这类标签的悬停说明(出现频率最高,嫌提示多优先关它) |
+| `kbengine.hover.showValueDocs` | boolean | `true` | `UINT32`、`BASE_AND_CLIENT`、`FAR` 这类值的悬停说明 |
+| `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停自定义属性名/方法名显示当前定义的 `Type`、`Flags`、`Arg` 等上下文 |
+| `kbengine.hover.typeStorage` | boolean | `true` | `.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态) |
+| `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链 |
+| `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
+| `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
+| `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
+| `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |
 
-- `hover.showTagDocs`:`<Type>`、`<Flags>`、`<Properties>` 这类标签的说明;
-- `hover.showValueDocs`:`UINT32`、`BASE_AND_CLIENT`、`FAR` 这类值的说明;
-- `hover.showSymbolDocs`:自定义属性名/方法名悬停显示当前定义的 `Type`、`Flags`、`Arg` 等上下文。
-
-全关后 `.def` 悬停只剩语法高亮。嫌提示多优先关 `showTagDocs`,它出现频率最高。
-
-批154(2026-10-20)起悬停按功能各一枚独立开关,不设总闸一刀切:
-
-- `hover.typeStorage`:`.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态);
-- `hover.implementedBy`:python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链;
-- `hover.entityRegistration`:悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置);
-- `hover.defChain`:悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链;
-- `hover.eventStats`:python 侧悬停事件名时的注册/触发统计;
-- `hover.serverConfig`:悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 面整体关断)。
+前三项全关后 `.def` 悬停只剩语法高亮。批154(2026-10-20)起其余六面按功能各一枚独立开关,不设总闸一刀切——只关吵的那一面,其余照常。
 
 ### CodeLens 与 inlay hints
 
-四类 CodeLens 各一枚独立开关(默认开),变更即时生效,不用重载窗口:
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.codeLens.rpc` | boolean | `true` | Python 实现脚本里 def 声明的方法声明行上方的 RPC 标记(批126) |
+| `kbengine.codeLens.eventCallbacks` | boolean | `true` | 事件回调标记——`addEvent`/`registerEvent` 的回调 def 声明处标事件名,`emitEvent` 处标监听数(批154 起从 RPC 镜链拆出独立注册) |
+| `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
+| `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
+| `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示 def 声明的 `<Type>` 数据类型(types.xml 自定义别名或内建),与属性 F12 同一解析索引(批154) |
 
-- `codeLens.rpc`:Python 实现脚本里 def 声明方法声明行上方的 RPC 标记(批126);
-- `codeLens.eventCallbacks`:事件回调标记——`addEvent`/`registerEvent` 的回调 def 声明处标事件名,`emitEvent` 处标监听数(批154 起从 RPC 镜链拆出独立注册);
-- `codeLens.property`:`self.<属性>` 访问处的属性标记(批135);
-- `codeLens.typesXml`:types.xml 类型声明行的落库镜链(批134)。
+四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
 
-inlay hints 一枚开关:
+### 跳转与导航
 
-- `inlayHints.typeData`:python 侧 `self.<属性>` 访问处以内联提示显示 def 声明的 `<Type>` 数据类型(types.xml 自定义别名或内建),与属性 F12 同一解析索引(批154)。inlay 无变更事件,关掉后下一次渲染生效。
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
+| `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
 
-### 路径
+`kbengine.python.enableMroJump` 改动即时生效(不重载窗口);关闭后层2 只在跳转轨迹里记 skip、不做全仓 `.py` 扫描,`.py` 变更也不再投喂索引。方法使用处优先寻找 Python 实现，`.def` 方法声明会暂存为回退目标；属性访问和方法声明处保持 `.def` 导航。索引区分模块与 base/cell 同名类，并使用未保存的编辑器内容。逐层轨迹与排障口径见「日志」文档的 `[kode-jump]` 决策路径一节。
+
+### 路径与工作区发现
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录(实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出) |
+| `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
+| `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径 |
+| `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
+
+四项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」。逐项细节:
 
 #### `kbengine.entityDefsPath`
 
@@ -266,21 +177,6 @@ inlay hints 一枚开关:
 | `kbengine.showFinalConfigOnOpen` | boolean | `true` | 扩展激活且能定位 defaults 时,自动在后台打开 `kbengine-final.xml`(preview 标签,不抢焦点);定位失败静默跳过,不弹错。关闭后仍可用命令或侧栏 Config 视图的「最终配置」节点手动打开 |
 | `kbengine.autoRefreshFinalConfig` | boolean | `true` | defaults 或元件 `kbengine.xml` 保存、新增、删除后,自动重算已打开的合成文档。关闭后需重开文档或重跑命令 |
 
-### 远程调试目标 `kbengine.debug.remoteTargets`
-
-- 类型:array;默认 `[]`
-- 每个条目:
-
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `name` | string | 是 | 目标显示名(选择器里的标识) |
-| `host` | string | 是 | 远端 IP 或主机名 |
-| `port` | number | 否 | debugpy 监听端口,缺省 `5678` |
-
-- 用途:`Attach to Remote Component` 命令的目标选择;`Update launch.json` 会把这些目标以 debugpy `connect` 形式追加进 `launch.json`
-- 前提:远端组件先经 telnet 发开启调试命令,并起好 debugpy 监听;扩展以 `connect: {host, port}` 附加,不写 `pathMappings`
-- 误配:`host` 填错 → 附加失败走错误通道;`port` 不对 → 连不上 debugpy;`name`/`host` 为空的条目不收录
-
 ### 服务器与日志
 
 | 配置项 | 类型 | 默认值 | 说明 |
@@ -290,22 +186,24 @@ inlay hints 一枚开关:
 | `kbengine.logAutoConnect` | boolean | `true` | 激活即尝试连接一次 logger;失败静默,走重连 |
 | `kbengine.maxLogEntries` | number | `10000` | 日志 WebView 缓存上限(条)。日志量大调低省内存,想留更长历史调高 |
 
-### 代码生成器
+### 远程调试
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成的 `.def` 写到哪;默认值即发现出的 def 根,配置只作覆盖 |
-| `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪;默认值时从发现出的 def 根父目录推导(如 `assets/scripts`),配置只作覆盖 |
-| `kbengine.generator.generatePython` | boolean | `true` | 向导/模板创建实体时是否同时生成 Python 文件 |
-| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(写的是 `entitiesXmlPath` 指向的文件) |
+| `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表,`Attach to Remote Component` 的目标选择源;`Update launch.json` 把它们以 debugpy `connect` 形式追加进 `launch.json` |
 
-### 客户端实体 SDK 输出目录 `kbengine.clientSdk.outputDir`
+每个条目:
 
-- 类型:string;默认 `scripts/client_entities`(相对工作区根)
-- 用途:客户端实体 SDK 生成器(`kbengine.clientSdk.generate`)的输出目录,TypeScript / C# 骨架与伴随文件都写到这里
-- 语言清单与覆盖策略在命令内的 quick pick 里选择,默认不覆盖已存在的文件;详见 [客户端实体 SDK 生成](./client-sdk.md)
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `name` | string | 是 | 目标显示名(选择器里的标识) |
+| `host` | string | 是 | 远端 IP 或主机名 |
+| `port` | number | 否 | debugpy 监听端口,缺省 `5678` |
 
-### Python 接线与存根 `kbengine.python.*`
+- 前提:远端组件先经 telnet 发开启调试命令,并起好 debugpy 监听;扩展以 `connect: {host, port}` 附加,不写 `pathMappings`
+- 误配:`host` 填错 → 附加失败走错误通道;`port` 不对 → 连不上 debugpy;`name`/`host` 为空的条目不收录
+
+### Python 集成
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -317,9 +215,22 @@ inlay hints 一枚开关:
 
 边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
 
-### Python 跳转层2 开关 `kbengine.python.enableMroJump`
+### 代码生成器
 
-`kbengine.python.enableMroJump`(boolean,默认 `true`)管 Python 文件里 `self.<方法>` 跳转的第二层:跨文件 C3-MRO + 组合根解析(mixin/基类提供的方法)。改动即时生效(不重载窗口);关闭后层2 只在跳转轨迹里记 skip、不做全仓 `.py` 扫描,`.py` 变更也不再投喂索引,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域)。方法使用处优先寻找 Python 实现，`.def` 方法声明会暂存为回退目标；属性访问和方法声明处保持 `.def` 导航。索引区分模块与 base/cell 同名类，并使用未保存的编辑器内容。逐层轨迹与排障口径见「日志」文档的 `[kode-jump]` 决策路径一节。
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成的 `.def` 写到哪;默认值即发现出的 def 根,配置只作覆盖 |
+| `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪;默认值时从发现出的 def 根父目录推导(如 `assets/scripts`),配置只作覆盖 |
+| `kbengine.generator.generatePython` | boolean | `true` | 向导/模板创建实体时是否同时生成 Python 文件 |
+| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(写的是 `entitiesXmlPath` 指向的文件) |
+
+#### `kbengine.clientSdk.outputDir`
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器(`kbengine.clientSdk.generate`)的输出目录,TypeScript / C# 骨架与伴随文件都写到这里;相对工作区根 |
+
+语言清单与覆盖策略在命令内的 quick pick 里选择,默认不覆盖已存在的文件;详见 [客户端实体 SDK 生成](./client-sdk.md)。
 
 ### telnet 探测
 
@@ -334,7 +245,11 @@ telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 t
 | `kbengine.telnet.configXmlPath` | string | 空 | 显式指定元件 `kbengine.xml`(支持 `${workspaceFolder}`),优先于自动探测;设置显式端口 >0 时端口以设置为准 |
 | `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒),低于 1 按 1 秒执行 |
 
-### HTTP 快捷请求 `kbengine.httpRequests`
+### HTTP 快捷请求
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表(默认含一条停用示例) |
 
 类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按本机热更新服务的真实形态给出——等价于命令行:
 
@@ -382,9 +297,52 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」:`▶` 请求行 → `✓` 状态码 · 耗时 → 回包(超 4000 字符截断标注全长);失败以 `✗` 标记 + 错误弹窗呈现。
 
-### 快速执行动作(`.kbengine/debug.json` 的 `quickActions` 键)
+### 自动热重载
+
+文件保存/监视 → 按名触发 `quickActions` 动作。门控**默认关**防误触:开启前不建任何文件监视,装配链与激活期行为零变化;`enabled` 改成 `true` 即刻按 `globs` 建监视、改成 `false` 拆除,配置变更即时生效,不必重启窗口。
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.hotReload.enabled` | boolean | `false` | 总开关,开时按 `globs` 各建一个文件监视 |
+| `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在 |
+| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
+| `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
+
+行为口径:
+
+- **三通道都触发**:文件的变更、创建、删除都算保存事件,任一触发都进入去抖。
+- **去抖合并**:一次触发到下一次触发之间的连发事件合并成一次执行;去抖期间关掉开关会取消尚未触发的计时。
+- **无人值守**:触发路径跳过执行确认框(即使动作 `confirm` 为 `true`);动作自身的失败仍照常弹窗报错——那是执行结果,不是交互确认。执行记录照常写入「上次执行」记忆,因此 Explorer 顶栏 ▶ 也指向最近一次触发的动作。
+- **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
+- **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
+
+### 数据库
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.db.tablePrefix` | string | `""`（空 = 引擎默认 `tbl_`） | 数据库表名前缀，schema 视图与 SQL 模板同源替换 |
+
+设成自定义值（如 `kb_`）后，schema 视图里的表名与三行 SQL 模板同源替换：
+
+| 模板 | 用途 |
+| --- | --- |
+| `SQL: SELECT * FROM ...` | 全列（引擎结构列 + 属性列） |
+| `SQL(属性列): SELECT ...` | 只列 def 属性落成的列，剔掉 `id` / `sm_autoLoad` / `parentID` / 位置朝向六列 |
+| `SQL(子表 JOIN): ...` | 仅 ARRAY / 组件子表：按 `parentID` 关联父表，`LEFT JOIN` 保住空元素的属性行 |
+
+子表 JOIN 同样出现在 ARRAY / 组件属性的悬停行里。不改引擎默认前缀的工程留空即可，行为与之前一致。
+
+#### 数据库漂移校验的连接信息
+
+`kbengine.database.checkDrift` 的连接信息**全部来自引擎配置，不新增设置项**：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 `kbengine_defaults.xml` + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306。
+
+账号密码需明文存放（`<encrypt>false</encrypt>`）。引擎默认的 `encrypt=true` 是 RSA 密文，kode 不解读，此时命令如实提示「未校验」——不会为了跑一次校验要求改引擎配置或手填密码。校验口径与只读红线见 [数据库漂移校验](./database-drift-check.md)。
+
+## 调试配置文件(`.kbengine/debug.json`)
 
 这个文件只服务调试流程与快速执行动作。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。
+
+### 快速执行动作(`quickActions` 键)
 
 动作是**顶层 `quickActions` 数组**(不进 `debug` 段:动作不是调试配置),跟着 KBEngine 工程走,不新增 `kbengine.*` 设置项。
 
@@ -437,48 +395,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 首次缺配置时扫描生效配置根与 `assetsRoot` 顶层的 `.bat` / `.ps1`;命令 `Rescan Scripts for Quick Actions` 可随时重新扫描。扫描生成的路径与 `cwd` 都指向脚本所在目录；脚本默认不启用 venv，可在对应动作里设置 `"venv": { "enabled": true }`，或指定 `path`。重新扫描只替换 `source: "scan"` 动作，保留手工动作和 `debug` 设置。
 
-### 自动热重载 `kbengine.hotReload.*`(盘点 G5)
-
-文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控**默认关**防误触:开启前不建任何文件监视,装配链与激活期行为零变化;`enabled` 改成 `true` 即刻按 `globs` 建监视、改成 `false` 拆除,配置变更即时生效,不必重启窗口。
-
-| 设置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `kbengine.hotReload.enabled` | boolean | `false` | 总开关,开时按 `globs` 各建一个文件监视 |
-| `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在 |
-| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
-| `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
-
-行为口径:
-
-- **三通道都触发**:文件的变更、创建、删除都算保存事件,任一触发都进入去抖。
-- **去抖合并**:一次触发到下一次触发之间的连发事件合并成一次执行;去抖期间关掉开关会取消尚未触发的计时。
-- **无人值守**:触发路径跳过执行确认框(即使动作 `confirm` 为 `true`);动作自身的失败仍照常弹窗报错——那是执行结果,不是交互确认。执行记录照常写入「上次执行」记忆,因此 Explorer 顶栏 ▶ 也指向最近一次触发的动作。
-- **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
-- **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
-
-### 数据库表名前缀 `kbengine.db.tablePrefix`
-
-类型:string;缺省空 = 沿用引擎默认 `tbl_`（出处 `entity_table_mysql.cpp` 的表前缀常量）。
-
-设成自定义值（如 `kb_`）后，schema 视图里的表名与三行 SQL 模板同源替换：
-
-| 模板 | 用途 |
-| --- | --- |
-| `SQL: SELECT * FROM ...` | 全列（引擎结构列 + 属性列） |
-| `SQL(属性列): SELECT ...` | 只列 def 属性落成的列，剔掉 `id` / `sm_autoLoad` / `parentID` / 位置朝向六列 |
-| `SQL(子表 JOIN): ...` | 仅 ARRAY / 组件子表：按 `parentID` 关联父表，`LEFT JOIN` 保住空元素的属性行 |
-
-子表 JOIN 同样出现在 ARRAY / 组件属性的悬停行里。不改引擎默认前缀的工程留空即可，行为与之前一致。
-
-### 数据库漂移校验的连接信息
-
-`kbengine.database.checkDrift` 的连接信息**全部来自引擎配置，不新增设置项**：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 `kbengine_defaults.xml` + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306。
-
-账号密码需明文存放（`<encrypt>false</encrypt>`）。引擎默认的 `encrypt=true` 是 RSA 密文，kode 不解读，此时命令如实提示「未校验」——不会为了跑一次校验要求改引擎配置或手填密码。校验口径与只读红线见 [数据库漂移校验](./database-drift-check.md)。
-
-### 调试配置文件(`.kbengine/debug.json`)
-
-这个文件只服务调试流程。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。
+### 调试字段(`debug` 段)
 
 | 字段 | 用途 |
 | --- | --- |
@@ -517,7 +434,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 }
 ```
 
-#### 缺失即自动生成（批142）
+#### 缺失即自动生成（批143）
 
 工作区里找不到 `.kbengine/debug.json` 时,扩展激活期直接生成一份带注释的骨架,不用用户先建文件再猜字段含义:
 
@@ -537,6 +454,62 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | 3 | 默认值 | 首个工作区根 |
 
 取值先过变量替换;替换后为空串视作没写,顺位回落下一档。生效值与来源、被盖掉的来源逐条写进骨架注释和「KBEngine 配置」输出通道,不静默取某一档。
+
+## 路径类配置的自动发现(批125)
+
+设计约束:**尽量减少配置项,能自动发现的就自动发现**。核心功能(打开 `.def` → 实体浏览器/依赖图/属性面板/数据库 schema/悬停存储信息)在干净工作区零配置即可用——下面五项路径配置全部退化为「可选覆盖」:配置了就照配置,没配就按发现链找。
+
+发现链(按序取第一个命中):
+
+1. **显式配置**:`kbengine.entityDefsPath` / `kbengine.entitiesXmlPath` / `kbengine.binPath` 的设置值(支持 `${workspaceFolder}`);
+2. **约定路径**:引擎/官方资产固定布局,如 `entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`;
+3. **有界深扫描**:约定全 miss 时扫工作区找锚点(目录名 `entity_defs`、文件名 `entities.xml`/`types.xml`/`messages_fixed.xml`/`messages_fixed_defaults.xml`(批129 双名)、引擎源码锚点 `entitydef.cpp`/`entity_table_mysql.cpp`),限深 7 层、限 2 万条目,剪掉 `node_modules`/`.git`/`out`/`dist`/点目录,结果按工作区缓存;
+4. **唯一命中即用,多候选不猜**:同步读路径只认唯一命中——多个候选时宁缺勿猜(猜测会连带改写 interfaces/components/user_type 全套根目录),改由激活期弹**一次** quick pick 让你选,选择按工作区记忆(`workspaceState`),之后不再询问。
+
+能从已存在文件推断的子路径一律不进配置:def 根推出 `interfaces/`、`components/`、`user_type/` 子目录;`types.xml` 优先取 def 根之下;`entities.xml` 优先取 def 根同父;`messages_fixed(_defaults).xml` 批129 起四级优先级对齐引擎装载序(kbemain.h:71-74,defaults 先载打底、用户副本后载覆盖):工作区用户副本 `messages_fixed.xml` → 引擎源码根用户副本 → 工作区 `messages_fixed_defaults.xml` → 引擎源码根缺省;用户副本与缺省各在各的树里(引擎注释 kbemain.h:133-137:defaults 在引擎 res 树、用户副本在资产树),四级独立取用不要求同目录;纯资产工作区两者皆有或皆无为常态,皆无时发现报告标信息性不计问题。
+
+**三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
+
+### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 54 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
+
+`现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
+
+| 配置项 | 现在怎么用 | 能否自动发现 | 处置 |
+| --- | --- | --- | --- |
+| `kbengine.entityDefsPath` | 显式配置 → 约定 4 布局 → 深扫描唯一命中 → 多候选 quick pick 记忆 | **能**(约定布局 + 深扫描) | **自动发现**,配置只作覆盖 |
+| `kbengine.entitiesXmlPath` | 同上链;另优先取 def 根同父目录 | **能** | **自动发现**,配置只作覆盖 |
+| `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
+| `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
+| `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
+| `kbengine.assetsRoot` | 显式配置(默认空 = 自动发现);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
+| `kbengine.telnet.port` | 显式 >0 锁定;0 = 按元件段 → 引擎 defaults 链(批112) | **能**(配置链,批112 已做) | **自动取值**,配置只作覆盖 |
+| `kbengine.telnet.password` | 设置 → 元件段 → defaults → 空(批112) | **能**(同上) | **自动取值**,配置只作覆盖 |
+| `kbengine.telnet.configXmlPath` | 空 = 按 3 个约定位置自动找 `kbengine.xml` | **能**(已是覆盖式) | **自动发现**,配置只作覆盖 |
+| `kbengine.enableDiagnostics` | 开关,默认开 | 否(用户偏好,非可发现事实) | **保留**,默认开即零配置可用 |
+| `kbengine.enableStructureDiagnostics` | 同上 | 否 | **保留**,理由同上 |
+| `kbengine.diagnostics.checkUnknownTypes` | 开关,默认开 | 否 | **保留**(偏好开关,5 项诊断细分同理) |
+| `kbengine.diagnostics.checkUnknownFlags` | 同上 | 否 | **保留** |
+| `kbengine.diagnostics.checkUnknownDetailLevels` | 同上 | 否 | **保留** |
+| `kbengine.diagnostics.checkDuplicateDefinitions` | 同上 | 否 | **保留** |
+| `kbengine.diagnostics.checkMissingPropertyFields` | 同上 | 否 | **保留** |
+| `kbengine.hover.showTagDocs` | 开关,默认开 | 否 | **保留**(偏好开关,3 项悬停细分同理) |
+| `kbengine.hover.showValueDocs` | 同上 | 否 | **保留** |
+| `kbengine.hover.showSymbolDocs` | 同上 | 否 | **保留** |
+| `kbengine.showFinalConfigOnOpen` | 开关,默认开;定位不到 defaults 静默跳过 | 否 | **保留**,默认开零打扰 |
+| `kbengine.autoRefreshFinalConfig` | 开关,默认开 | 否 | **保留** |
+| `kbengine.autoStart` | 组件名列表,默认 `["machine","logger","dbmgr"]` | 否(启动策略是决策不是事实) | **保留**,默认即官方最小可跑组合 |
+| `kbengine.loggerPort` | 固定 20022(引擎 logger 监听端口) | 否(运行时网络端口,工作区无痕迹) | **保留**,默认值 = 引擎默认端口 |
+| `kbengine.logAutoConnect` | 开关,默认开 | 否 | **保留** |
+| `kbengine.maxLogEntries` | 数值 10000 | 否 | **保留**(内存/历史的权衡偏好) |
+| `kbengine.debug.remoteTargets` | 空列表;远端机器+端口 | 否(远端基础设施,工作区不存在) | **保留**,默认空 = 功能不用即不配 |
+| `kbengine.generator.generatePython` | 开关,默认开 | 否 | **保留** |
+| `kbengine.generator.registerInEntitiesXml` | 开关,默认开 | 否 | **保留** |
+| `kbengine.telnet.host` | 默认 `127.0.0.1` | 否(远端填 IP 是用户知识) | **保留**,本地默认开箱即用 |
+| `kbengine.telnet.enableCommands` | 空白名单 = 只放行内置只读快捷命令 | 否(安全策略,放行范围是决策) | **保留**,默认全禁是安全底线,不可代猜 |
+| `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
+| `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
+
+计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 10 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`、`kbengine.python.enableMroJump`),均已在总览分区表登记。
 
 ## 常见问题
 

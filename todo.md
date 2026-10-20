@@ -3,8 +3,13 @@
 > 完成项一行证据（commit + 测试数）；未完成项一句需求。版本号冻结 0.1.0，发版由用户手动触发。
 
 ## 未完成
-- [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
+
+- [x] 设置文档按功能分区介绍（来源:用户 2026-10-17 队列令「不许一张大表列到底」；验收口径:`docs/guide/configuration.md` 与其 en 镜像按功能分区列出全部 54 项 `kbengine.*` 设置——每区一张小表 + 该区改动影响与误配说明,不留 54 行的大表;每项仍有类型/默认值/说明;settings 双向对账锁与 vitepress build 绿）
+  - 2026-10-20 落地:两份 configuration.md 改「kbengine.* 设置项总览(按功能分区)」,14 个功能分区各一张小表共 54 项(zh/en 同构),逐项说明并入各区(诊断影响表/悬停开关说明/路径四项 #### 细节/HTTP 变量表/热重载行为/数据库 SQL 模板);`### 快速执行动作`、`### 调试字段` 收进「调试配置文件」h2;zh 批142→批143 修正(git 证据 b9a9596);docsCommands 5 测试全绿(settings 双向对账锁通过分组 h2 下 `###` 不断行收集),vitepress build 绿
+- [ ] MySQL 表结构对比（来源:用户 2026-10-17 队列令；验收口径:读引擎三层 `<database>` 配置连真实库取实际表结构,与代码侧 schema 生成的结构逐表逐列对比,差异红色标注;带开关默认关,关时不连库不报错）
+- [ ] debug.json 快速执行脚本配置自动生成（来源:用户 2026-10-17 队列令；验收口径:缺配置自动生成的骨架里,默认扫工作区根 + assetsRoot 的脚本登记为 `quickActions` 条目,只替换 `source: "scan"` 条目不动手工条目,扫不到留空数组）
 - [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK;来源:盘点 G8;Nex X 走 KBE Nex 3.x 管理协议,本仓面向经典 kbengine 协议可用性未证,不排期直到用户点名）
+- [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
 - [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9;同 G8 依赖引擎管理协议,监控面板已有 machine 基础状态,逐批点火前先证协议）
 - [ ] 不排期 G10 Robots 管理 / 插件市场 / 工作区初始化（来源:盘点 G10;超出工程内开发工具定位,用户点名再评估）
 
