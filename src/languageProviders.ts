@@ -83,6 +83,7 @@ import {
   getRegisteredEntities,
   getScriptsRootForDefFile,
   getWorkspaceRootForDocument,
+  resolveEntityAnnotationType,
   scriptFoldersForRole,
   notifyEntitiesXmlMissingOnce,
   readWorkspaceTextFile,
@@ -102,10 +103,6 @@ import {
   KBENGINE_TYPES
 } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
-import {
-  PYTHON_BUILTIN_TYPE_ANNOTATIONS,
-  PYTHON_TYPE_STUB_FALLBACK
-} from './pythonTypeStubs';
 import {
   formatEntityBuiltinPropertyDetail,
   formatEntityBuiltinPropertyHeadline,
@@ -230,17 +227,26 @@ function createCompletionItems(
 }
 
 /**
- * def 方法签名文本(审计遗留承诺 2026-10-21):def 声明了 <Arg><Type> 的形参
- * 必须带类型注解(arg1: int 形态,内建映射表口径,与 entity_types.pyi 存根同
- * 一张表);def 未声明 <Arg> 的不硬造(只出 self)。声明形参名以 def 为准不可
- * 考,统一 argN 与存根生成器同口径。
+ * def 方法签名文本(审计遗留承诺 2026-10-21;用户令 2026-10-21 统一解析链):
+ * def 声明了 <Arg> 的形参带类型注解(arg1: int 形态),类型走
+ * resolveEntityAnnotationType 同一解析链——内建直查 → types.xml/alias.xml
+ * 自定义类型逐层下钻 → 仍未知落 Any 不硬造;声明面 hover、接收者面 hover 与
+ * 补全方法 detail 三处同源,一面都不得私走单表。def 未声明 <Arg> 的不硬造
+ * (只出 self);<Arg> 在而类型文本空的只出名不造型。声明形参名以 def 为准
+ * 不可考,统一 argN 与存根生成器同口径。
  */
 function formatDefMethodSignature(
+  workspaceRoot: string | undefined,
   methodName: string,
   declaredArgs?: readonly string[]
 ): string {
   const parameters = (declaredArgs ?? []).map((arg, index) => {
-    const annotation = PYTHON_BUILTIN_TYPE_ANNOTATIONS[arg.trim()] ?? PYTHON_TYPE_STUB_FALLBACK;
+    const trimmed = arg.trim();
+    if (!trimmed) {
+      // 有 <Arg> 无 <Type>:只出名不造型
+      return `arg${index + 1}`;
+    }
+    const annotation = resolveEntityAnnotationType(workspaceRoot ?? '', trimmed);
     return `arg${index + 1}: ${annotation}`;
   });
   return `def ${methodName}(self${parameters.length > 0 ? `, ${parameters.join(', ')}` : ''})`;
@@ -652,12 +658,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
     const declaredArgTypes =
       location.declaredArgs && location.declaredArgs.length > 0 ? location.declaredArgs : undefined;
+    // 形参闸与签名同链(用户令 2026-10-21):注解按统一解析链对账,types.xml
+    // 自定义类型断到内建(如 TIMESTAMP→int),与 formatter 输出同源。
+    const workspaceRoot = getWorkspaceRootForDocument(document);
+    const resolveAnnotation = (raw: string): string =>
+      resolveEntityAnnotationType(workspaceRoot ?? '', raw);
     if (
       declaredArgTypes &&
       !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
         declaredArgTypes,
         document.getText().split(/\r?\n/),
-        line
+        line,
+        resolveAnnotation
       )
     ) {
       return null;
@@ -667,7 +679,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
     );
     markdown.appendMarkdown(
-      `签名: \`${formatDefMethodSignature(methodName, location.declaredArgs)}\`\n\n`
+      `签名: \`${formatDefMethodSignature(workspaceRoot ?? undefined, methodName, location.declaredArgs)}\`\n\n`
     );
     markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
     if (location.exposed) {
@@ -702,12 +714,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
     const declaredArgTypes =
       location.declaredArgs && location.declaredArgs.length > 0 ? location.declaredArgs : undefined;
+    // 形参闸与签名同链(用户令 2026-10-21):与声明面共用 resolveEntityAnnotationType
+    const workspaceRoot = getWorkspaceRootForDocument(document);
+    const resolveAnnotation = (raw: string): string =>
+      resolveEntityAnnotationType(workspaceRoot ?? '', raw);
     if (
       declaredArgTypes &&
       !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
         declaredArgTypes,
         document.getText().split(/\r?\n/),
-        line
+        line,
+        resolveAnnotation
       )
     ) {
       return null;
@@ -718,7 +735,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         `(接收者 self.${receiverCall.receiver})\n\n`
     );
     markdown.appendMarkdown(
-      `签名: \`${formatDefMethodSignature(receiverCall.methodName, location.declaredArgs)}\`\n\n`
+      `签名: \`${formatDefMethodSignature(workspaceRoot ?? undefined, receiverCall.methodName, location.declaredArgs)}\`\n\n`
     );
     markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
     if (location.exposed) {
@@ -3945,6 +3962,10 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
     // 不符则该行不出 lens;未声明 <Arg> 维持现状。闸门本体与全项目回退
     // 扫描同源(EntityMappingManager.pythonSignatureMatchesDeclaredArgs)。
     const documentLines = document.getText().split(/\r?\n/);
+    // 形参闸与 hover 同链(用户令 2026-10-21):注解按统一解析链对账
+    const lensWorkspaceRoot = getWorkspaceRootForDocument(document);
+    const resolveAnnotation = (raw: string): string =>
+      resolveEntityAnnotationType(lensWorkspaceRoot ?? '', raw);
     const gatedDeclarations = declarations.filter(declaration => {
       const declaredArgTypes = declaredArgTypesByName.get(declaration.methodName);
       if (!declaredArgTypes) {
@@ -3953,7 +3974,8 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
       return EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
         declaredArgTypes,
         documentLines,
-        declaration.line
+        declaration.line,
+        resolveAnnotation
       );
     });
 
@@ -4503,10 +4525,11 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
 
       const item = new vscode.CompletionItem(methodName, vscode.CompletionItemKind.Method);
       item.detail = primaryDefinition.exposed ? 'Entity Method (Exposed)' : 'Entity Method';
-      // def 方法签名随补全出示(审计遗留承诺):declared <Arg><Type> 的形参带
-      // 内建映射类型注解;未声明 <Arg> 不硬造(只出 self)
+      // def 方法签名随补全出示(审计遗留承诺):declared <Arg> 的形参带类型注解,
+      // 与两处 hover 同走 resolveEntityAnnotationType 解析链(用户令 2026-10-21);
+      // 未声明 <Arg> 不硬造(只出 self)
       item.documentation = new vscode.MarkdownString(
-        `\`${formatDefMethodSignature(methodName, primaryDefinition.declaredArgs)}\`\n\n` +
+        `\`${formatDefMethodSignature(getWorkspaceRootForDocument(document) ?? undefined, methodName, primaryDefinition.declaredArgs)}\`\n\n` +
         `定义于: \`${path.basename(primaryDefinition.defFile)}:${primaryDefinition.line}\`\n\n从 .def 文件自动生成的实体方法。`
       );
       items.push(item);

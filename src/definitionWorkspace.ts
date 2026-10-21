@@ -17,6 +17,9 @@ import {
   getScalarChildValue,
   parseDefDocument
 } from './defParser';
+// 统一注解解析底座(纯逻辑半边)在 pythonTypeStubs;此处只传注册表,调用
+// 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
+import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
@@ -290,6 +293,69 @@ export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
     .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
   const aliases = aliasDiscoveryEnabled ? getAliasXmlCustomTypeInfos(workspaceRoot) : [];
   return [...types, ...aliases].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** 统一解析注册表的按工作区缓存项:指纹+开关都未变即整表复用 */
+interface EntityAnnotationRegistryCacheEntry {
+  fingerprint: string;
+  aliasDiscovery: boolean;
+  customTypes: CustomTypeInfo[];
+}
+
+const entityAnnotationRegistryCaches = new Map<string, EntityAnnotationRegistryCacheEntry>();
+
+/** 定义文件指纹(types.xml + alias.xml 的 mtime+size):变更即缓存失效 */
+function entityAnnotationRegistryFingerprint(workspaceRoot: string): string {
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const candidates = [
+    layout.typesXmlPath,
+    joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'alias.xml')
+  ];
+  const parts: string[] = [];
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    try {
+      const stat = fs.statSync(candidate);
+      parts.push(`${candidate}:${stat.mtimeMs}:${stat.size}`);
+    } catch {
+      // 文件不在场也是指纹的一部分(出现/删除都要触发失效)
+      parts.push(`${candidate}:absent`);
+    }
+  }
+  return parts.join('|');
+}
+
+/**
+ * 统一注解解析(用户令 2026-10-21,一个底座三面复用):raw 类型名 → Python
+ * 注解串。解析链 a) 内建直查 → b) 本工作区 types.xml/alias.xml 自定义类型
+ * 注册表逐层下钻(复用 pythonTypeStubs B 单别名链与环检测,禁第二套)→
+ * c) 链断/成环/仍未知保持 Any 不硬造。注册表按工作区缓存,指纹(定义文件
+ * mtime/size)或 aliasDiscovery 开关变化即失效。
+ */
+export function resolveEntityAnnotationType(workspaceRoot: string, raw: string): string {
+  if (!workspaceRoot) {
+    // 无工作区语境只剩内建直查与引擎别名,自定义类型无从谈起
+    return resolveAnnotationTypeWithRegistry(raw, []);
+  }
+  const aliasDiscoveryEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
+  const fingerprint = entityAnnotationRegistryFingerprint(workspaceRoot);
+  const cached = entityAnnotationRegistryCaches.get(workspaceRoot);
+  let customTypes: CustomTypeInfo[];
+  if (cached && cached.fingerprint === fingerprint && cached.aliasDiscovery === aliasDiscoveryEnabled) {
+    customTypes = cached.customTypes;
+  } else {
+    customTypes = getCustomTypeInfos(workspaceRoot);
+    entityAnnotationRegistryCaches.set(workspaceRoot, {
+      fingerprint,
+      aliasDiscovery: aliasDiscoveryEnabled,
+      customTypes
+    });
+  }
+  return resolveAnnotationTypeWithRegistry(raw, customTypes);
 }
 
 function getTypesXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {

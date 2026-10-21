@@ -1088,14 +1088,17 @@ export class EntityMappingManager {
    * 形参闸门公开口(用户令 2026-10-21:只凭名字标 RPC/标 KBEngine 函数不严谨,
    * CodeLens/Hover 面与全项目回退扫描共用同一把尺):从 lines[index] 的 def 行
    * 起收集签名,与 declaredArgTypes 逐一对账——形参个数(剔除 self/cls)必须
-   * 相等,有注解的形参按引擎内建映射(UINT8→int/STRING→str 等,兼容直写
-   * <Arg> 原文)对上类型,未注明解的只作个数校验;读不出签名/个数或类型
-   * 不符一律 false,declaredArgTypes 为空序列视为未声明 <Arg>,恒真。
+   * 相等,有注解的形参按统一解析链对上类型(缺省内建映射 UINT8→int/STRING→str
+   * 等,兼容直写 <Arg> 原文;hover/CodeLens 面注入 resolveEntityAnnotationType
+   * 同源解析,types.xml 自定义类型也按链断到内建),未注明解的只作个数校验;
+   * 读不出签名/个数或类型不符一律 false,declaredArgTypes 为空序列视为未声明
+   * <Arg>,恒真。
    */
   static pythonSignatureMatchesDeclaredArgs(
     declaredArgTypes: readonly string[],
     lines: string[],
-    index: number
+    index: number,
+    resolveAnnotation?: (raw: string) => string
   ): boolean {
     if (declaredArgTypes.length === 0) {
       return true;
@@ -1113,9 +1116,11 @@ export class EntityMappingManager {
       if (!annotation) {
         continue;
       }
-      const expected =
-        PYTHON_BUILTIN_TYPE_ANNOTATIONS[declaredArgTypes[a]] ?? declaredArgTypes[a];
-      if (annotation !== expected && annotation !== declaredArgTypes[a]) {
+      const raw = declaredArgTypes[a];
+      const expected = resolveAnnotation
+        ? resolveAnnotation(raw)
+        : PYTHON_BUILTIN_TYPE_ANNOTATIONS[raw] ?? raw;
+      if (annotation !== expected && annotation !== raw) {
         return false;
       }
     }

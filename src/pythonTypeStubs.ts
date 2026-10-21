@@ -325,6 +325,32 @@ function propertyAnnotation(property: CustomTypePropertyInfo, context: Resolutio
   }
 }
 
+/**
+ * 统一解析底座(用户令 2026-10-21):单个类型名 → Python 注解,hover 签名、
+ * 补全 detail 与 entity_types.pyi 方法面共用同一条链——a) 内建直查
+ * PYTHON_BUILTIN_TYPE_ANNOTATIONS;b) types.xml/alias.xml 自定义类型注册表
+ * 逐层下钻(复用上方 resolveTypeName/resolveAliasInfo 的别名链与环检测,
+ * 禁第二套);c) 链断/成环/仍未知落 Any,绝不硬造。纯逻辑无缓存:注册表
+ * 由调用方(definitionWorkspace.resolveEntityAnnotationType)按工作区供给。
+ */
+export function resolveAnnotationTypeWithRegistry(
+  raw: string,
+  customTypes: readonly CustomTypeInfo[]
+): string {
+  const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));
+  const context: ResolutionContext = {
+    byName: new Map(sorted.map(info => [info.name, info])),
+    resolving: new Set(),
+    poisoned: new Map()
+  };
+  try {
+    return resolveTypeName(raw.trim(), context);
+  } catch {
+    // 成环/指引为空已按 B 单口径记 poisoned,这里统一回落 Any
+    return PYTHON_TYPE_STUB_FALLBACK;
+  }
+}
+
 export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]): PythonTypeStubPlan {
   const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));
   const context: ResolutionContext = {
