@@ -210,6 +210,16 @@ Fields per entry:
 | `kbengine.python.extraPathsSync` | boolean | `true` | Auto-write the workspace-discovered KBEngine scripts root into `python.analysis.extraPaths` (WorkspaceFolder level; manages only the segment this extension wrote, user-entered paths are never touched; no write when unchanged). When off, the `kbengine.python.syncExtraPaths` command only explains without writing |
 | `kbengine.python.stubExport` | boolean | `true` | Auto-export the built-in KBEngine Python API index (same source as completion/hover/navigation) as a `KBEngine.pyi` stub, and export the types.xml custom types into a `kbe_types.py` type stub module (`FIXED_DICT` → `TypedDict`, aliases → type names), which together with the extraPaths wiring lets Pylance resolve `import KBEngine` / `import kbe_types` (virtual stub documents are invisible to the Python extension). Silent auto-export once on activation; `kbengine.python.exportStubs` / `kbengine.python.exportTypeStubs` are the manual entries |
 | `kbengine.python.stubDir` | string | empty | The `.pyi` stub directory, resolved in three tiers: setting > env var `KBENGINE_STUB_DIR` > default convention `.kbengine/stubs`. VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported; relative paths join against the workspace root, absolute paths are used as-is |
+| `kbengine.python.stubEngineTypings` | boolean | `true` | Prefer concatenating the full API from a local engine typings checkout when exporting `KBEngine.pyi` (default: enabled); when off, fall back to the built-in curated catalog. The master switch is still `kbengine.python.stubExport` |
+| `kbengine.python.entityStubMethods` | boolean | `true` | Include the def method surface (Base/Cell/ClientMethods) in `entity_types.pyi` stubs (default: enabled); when off, keep the properties-only stub surface |
+
+### Entity Script Enhancements (2026-10-21)
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.entity.builtinProperties` | boolean | `true` | Hover annotations and `self.` completion for built-in entity properties (per base/cell/client face; default: enabled); when off, falls back to the plain symbol chain |
+| `kbengine.entity.receiverSections` | boolean | `true` | Filter def candidates by receiver section on `self.cell.`/`self.base.`/`self.client.` calls — hover, F12, RPC lens (default: enabled); when off, falls back to section-unaware resolution while the def signature (arg/type) gate stays on |
+| `kbengine.types.aliasDiscovery` | boolean | `true` | Discover custom types from `scripts/entity_defs/alias.xml` into the type list (default: enabled); when off, falls back to `types.xml` only |
 
 With `kbengine.python.stubDir` left empty (the default), the directory is kode-managed `.kbengine/stubs`: zero write when content matches disk, stale content (after an index update) is automatically rewritten, manual edits are not kept — ignoring it in `.gitignore` is recommended. **With a directory configured, the directory is user-owned**: kode only scans, never overwrites — any `.pyi` already in the directory is treated as a user asset and left untouched; one is generated only when no `.pyi` exists; an unreadable directory (missing/no permission) is reported honestly, never blindly written.
 

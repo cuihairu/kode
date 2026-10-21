@@ -185,6 +185,10 @@ export class CompletionItem {
 }
 
 export class MarkdownString {
+  constructor(initialValue = '') {
+    this.value = initialValue;
+  }
+
   value = '';
   appendMarkdown(value: string): void {
     this.value += value;

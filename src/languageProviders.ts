@@ -103,6 +103,10 @@ import {
 } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
 import {
+  PYTHON_BUILTIN_TYPE_ANNOTATIONS,
+  PYTHON_TYPE_STUB_FALLBACK
+} from './pythonTypeStubs';
+import {
   formatEntityBuiltinPropertyDetail,
   getEntityBuiltinPropertiesForFace,
   resolveEntityBuiltinPropertyHit,
@@ -152,7 +156,12 @@ function getLanguageFeatureConfig() {
     codeLensRpc: config.get<boolean>('codeLens.rpc', true),
     codeLensEventCallbacks: config.get<boolean>('codeLens.eventCallbacks', true),
     codeLensProperty: config.get<boolean>('codeLens.property', true),
-    codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true)
+    codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
+    // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
+    // 默认开)。builtinProperties 管内建属性 hover+self. 补全;receiverSections
+    // 管接收者段过滤(false 回归不感知段的旧解析,形参/类型闸门不受影响)。
+    entityBuiltinProperties: config.get<boolean>('entity.builtinProperties', true),
+    entityReceiverSections: config.get<boolean>('entity.receiverSections', true)
   };
 }
 
@@ -212,6 +221,23 @@ function createCompletionItems(
   kind: vscode.CompletionItemKind
 ): vscode.CompletionItem[] {
   return labels.map(label => new vscode.CompletionItem(label, kind));
+}
+
+/**
+ * def 方法签名文本(审计遗留承诺 2026-10-21):def 声明了 <Arg><Type> 的形参
+ * 必须带类型注解(arg1: int 形态,内建映射表口径,与 entity_types.pyi 存根同
+ * 一张表);def 未声明 <Arg> 的不硬造(只出 self)。声明形参名以 def 为准不可
+ * 考,统一 argN 与存根生成器同口径。
+ */
+function formatDefMethodSignature(
+  methodName: string,
+  declaredArgs?: readonly string[]
+): string {
+  const parameters = (declaredArgs ?? []).map((arg, index) => {
+    const annotation = PYTHON_BUILTIN_TYPE_ANNOTATIONS[arg.trim()] ?? PYTHON_TYPE_STUB_FALLBACK;
+    return `arg${index + 1}: ${annotation}`;
+  });
+  return `def ${methodName}(self${parameters.length > 0 ? `, ${parameters.join(', ')}` : ''})`;
 }
 
 function getTextBeforePosition(
@@ -384,9 +410,14 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       // 内建属性补全(用户令 2026-10-21 内建属性单 ③):实体脚本内 self.<片段>
       // 上下文给所在面的属性项(单段,self.cell.X 等多段访问不接管);
       // 非实体脚本不接管(返回空,不遮蔽既有链)。
+      // kbengine.entity.builtinProperties=false 时整体让位,回落原链路。
       if (document.fileName.endsWith('.py')) {
         const selfContext = getPythonSelfCompletionContext(lineText);
-        if (selfContext && selfContext.parentPath === '') {
+        if (
+          getLanguageFeatureConfig().entityBuiltinProperties &&
+          selfContext &&
+          selfContext.parentPath === ''
+        ) {
           return this.provideBuiltinPropertyCompletions(document);
         }
       }
@@ -502,10 +533,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
       // 的方法名上时,先按段闸解析(仅对应区块的 def 候选通过,段不符不给标注,
       // 落回普通 hover 链);段过滤先行于形参闸(命中后沿用同一把签名对账)。
-      const receiverCall = getPythonReceiverCallAtPosition(
-        document.lineAt(position.line).text,
-        position.character
-      );
+      // kbengine.entity.receiverSections=false 时回归不感知段的旧解析
+      // (直接落 provideKnownHover),形参/类型闸门不受此开关影响。
+      const receiverCall = featureConfig.entityReceiverSections
+        ? getPythonReceiverCallAtPosition(
+            document.lineAt(position.line).text,
+            position.character
+          )
+        : null;
       if (receiverCall) {
         return this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
           .then(annotation =>
@@ -515,11 +550,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       // 内建属性(用户令 2026-10-21 内建属性单 ②):self.<属性> 单段访问
       // (fullPath 无第二段,不与 self.cell.X 接收者调用重叠)命中分面表
       // → 内建属性标注;未命中/非实体脚本落回普通 hover 链。
+      // kbengine.entity.builtinProperties=false 时整体让位,不进异步面。
       const selfAccess = getPythonSelfAccessAtPosition(
         document.lineAt(position.line).text,
         position.character
       );
-      if (selfAccess && !selfAccess.fullPath.includes('.')) {
+      if (
+        featureConfig.entityBuiltinProperties &&
+        selfAccess &&
+        !selfAccess.fullPath.includes('.')
+      ) {
         return this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
           .then(annotation =>
             annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
@@ -565,6 +605,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const markdown = new vscode.MarkdownString();
     markdown.appendMarkdown(
       `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
+    );
+    markdown.appendMarkdown(
+      `签名: \`${formatDefMethodSignature(methodName, location.declaredArgs)}\`\n\n`
     );
     markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
     if (location.exposed) {
@@ -613,6 +656,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     markdown.appendMarkdown(
       `**${receiverCall.methodName}** — 此调用是实体 def 声明的 ${location.section} 方法` +
         `(接收者 self.${receiverCall.receiver})\n\n`
+    );
+    markdown.appendMarkdown(
+      `签名: \`${formatDefMethodSignature(receiverCall.methodName, location.declaredArgs)}\`\n\n`
     );
     markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
     if (location.exposed) {
@@ -3349,9 +3395,12 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
     // 的方法名上时,候选先按段过滤(CellMethods/BaseMethods/ClientMethods),
     // 段不符不跳;链前缀只认 self. 形态,解析自调用行文本。
-    const receiverCall = access
-      ? getPythonReceiverCallAtPosition(line.text, position.character)
-      : null;
+    // kbengine.entity.receiverSections=false → 回归不感知段的旧解析(不传
+    // receiver);形参/类型闸门是纠错不是增强,不随此开关关闭。
+    const receiverCall =
+      access && getLanguageFeatureConfig().entityReceiverSections
+        ? getPythonReceiverCallAtPosition(line.text, position.character)
+        : null;
     if (access) {
       const accessResult = await this.runDefinitionLayers(document, position, access, null, receiverCall ?? undefined);
       if (accessResult.location) {
@@ -3870,8 +3919,11 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
     // 的 RPC 镜。段过滤在解析内先行(resolveMethodDefinition 第三参,只留对应
     // 区块的 def 候选)——段不符解析落空,不出镜;段符合照常出镜、点击跳声明。
     // 形参闸不适用调用行(闸门本体对账的是 def 声明行签名)。
+    // kbengine.entity.receiverSections=false 时不出接收者镜。
     const receiverLenses: vscode.CodeLens[] = [];
-    const receiverCalls = findPythonReceiverCalls(document.getText());
+    const receiverCalls = getLanguageFeatureConfig().entityReceiverSections
+      ? findPythonReceiverCalls(document.getText())
+      : [];
     if (receiverCalls.length > 0) {
       const receiverHits = new Map<string, RpcMethodHit | null>();
       for (const call of receiverCalls) {
@@ -4389,7 +4441,10 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
 
       const item = new vscode.CompletionItem(methodName, vscode.CompletionItemKind.Method);
       item.detail = primaryDefinition.exposed ? 'Entity Method (Exposed)' : 'Entity Method';
+      // def 方法签名随补全出示(审计遗留承诺):declared <Arg><Type> 的形参带
+      // 内建映射类型注解;未声明 <Arg> 不硬造(只出 self)
       item.documentation = new vscode.MarkdownString(
+        `\`${formatDefMethodSignature(methodName, primaryDefinition.declaredArgs)}\`\n\n` +
         `定义于: \`${path.basename(primaryDefinition.defFile)}:${primaryDefinition.line}\`\n\n从 .def 文件自动生成的实体方法。`
       );
       items.push(item);

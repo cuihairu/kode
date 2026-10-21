@@ -420,6 +420,12 @@ export function activate(context: vscode.ExtensionContext) {
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
     }
 
+    // 实体面开关变更即时生效(用户令 2026-10-21):hover/补全/跳转各 provider
+    // 每次调用现读配置,无需 fire;RPC 镜链的接收者段镜是缓存面,重取一次
+    if (event.affectsConfiguration('kbengine.entity')) {
+      rpcCodeLensProviderImpl.fireConfigurationChanged();
+    }
+
     if (event.affectsConfiguration('kbengine.assetsRoot') ||
         event.affectsConfiguration('kbengine.python.enableMroJump')) {
       resetScanRootCache();
@@ -1264,6 +1270,19 @@ export function activate(context: vscode.ExtensionContext) {
       managedDirWatcher.dispose();
       managedDirWatcher = createManagedDirWatcher();
       regenerateManagedDirAssets();
+    })
+  );
+  // 存根内容面开关变更即时重导(用户令 2026-10-21:配置开关变更即时生效):
+  // 关掉引擎 typings 全量/实体方法面后,下次激活前先把已生成的 .pyi 收回
+  // 到关掉后的内容(总闸 kbengine.python.stubExport 关时导出函数自门,零写)
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (
+        event.affectsConfiguration('kbengine.python.stubEngineTypings') ||
+        event.affectsConfiguration('kbengine.python.entityStubMethods')
+      ) {
+        regenerateManagedDirAssets();
+      }
     })
   );
   const firstWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';

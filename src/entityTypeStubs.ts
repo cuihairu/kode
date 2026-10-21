@@ -19,6 +19,8 @@ import {
 import * as vscode from 'vscode';
 
 export const ENTITY_TYPE_STUB_FILE_NAME = 'entity_types.pyi';
+/** 方法面开关默认值(kbengine.python.entityStubMethods,默认开) */
+export const ENTITY_STUB_METHODS_ENABLED_DEFAULT = true;
 
 export interface EntityTypePropertyEntry {
   name: string;
@@ -71,11 +73,17 @@ export async function exportEntityTypeStubs(
   }
   const listMappings = options.listMappings ?? (() => mappingManager.getAllMappings());
   const listCustomTypes = options.listCustomTypes ?? getCustomTypeInfos;
+  // 实体方法面独立开关(用户令 2026-10-21):kbengine.python.entityStubMethods
+  // =false 时实体存根只含属性面,方法面整体让位(总闸 stubExport 依旧先行)。
+  const includeMethods = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('python.entityStubMethods', ENTITY_STUB_METHODS_ENABLED_DEFAULT);
   const written: string[] = [];
   for (const folder of folders) {
     const plan = buildEntityTypeStubPlan(
       listMappings(folder.uri.fsPath),
-      listCustomTypes(folder.uri.fsPath)
+      listCustomTypes(folder.uri.fsPath),
+      { includeMethods }
     );
     if (!plan.content) {
       continue;
@@ -133,11 +141,15 @@ function annotationForDefType(typeName: string | undefined, context: EntityStubC
 
 export function buildEntityTypeStubPlan(
   mappings: readonly EntityMapping[],
-  customTypes: readonly CustomTypeInfo[]
+  customTypes: readonly CustomTypeInfo[],
+  options: { includeMethods?: boolean } = {}
 ): EntityTypeStubPlan {
   const context: EntityStubContext = {
     customTypes: new Map(customTypes.map(info => [info.name, info]))
   };
+  // 方法面开关(用户令 2026-10-21):默认含方法面;includeMethods=false 时
+  // 方法表整体留空,只有方法的实体随之落出存根(属性面不受影响)。
+  const includeMethods = options.includeMethods !== false;
   const entries = [...mappings]
     .sort((left, right) => left.name.localeCompare(right.name))
     .map(mapping => {
@@ -160,7 +172,7 @@ export function buildEntityTypeStubPlan(
             };
           })
           .sort((left, right) => left.name.localeCompare(right.name)),
-        methods: collectEntityTypeMethods(mapping)
+        methods: includeMethods ? collectEntityTypeMethods(mapping) : []
       };
     })
     .filter(entry => entry.properties.length > 0 || entry.methods.length > 0);

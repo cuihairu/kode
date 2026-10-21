@@ -283,7 +283,12 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
 
 export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
   const types = [...getTypesXmlCustomTypeInfos(workspaceRoot)];
-  const aliases = getAliasXmlCustomTypeInfos(workspaceRoot);
+  // alias.xml 类型发现独立开关(用户令 2026-10-21):kbengine.types.aliasDiscovery
+  // =false 时回落只认 types.xml 的旧口径(alias 类型整体让位,不删既有诊断链)。
+  const aliasDiscoveryEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
+  const aliases = aliasDiscoveryEnabled ? getAliasXmlCustomTypeInfos(workspaceRoot) : [];
   return [...types, ...aliases].sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -565,6 +570,8 @@ export function scriptFoldersForRole(role: 'base' | 'cell' | 'client'): string[]
 // 接口脚本目录序列:引擎官方模板是单数 interface/,历史口径与生成器是
 // 复数 interfaces/,两者都认(复数在前保持既有工程行为)。
 const INTERFACE_SCRIPT_FOLDERS = ['interfaces', 'interface'];
+/** alias.xml 类型发现开关默认值(kbengine.types.aliasDiscovery,默认开) */
+export const ALIAS_DISCOVERY_ENABLED_DEFAULT = true;
 
 // 角色目录下的接口脚本嵌套形态(2026-10-12 用户实测:
 // scripts/base/interfaces/、scripts/cell/interfaces/),按角色目录展开。

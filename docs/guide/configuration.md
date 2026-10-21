@@ -210,6 +210,16 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级;只管理本扩展写入的那一段,用户手填路径不动;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
+| `kbengine.python.stubEngineTypings` | boolean | `true` | `KBEngine.pyi` 导出优先拼接本地引擎 checkout 的 typings 全量 API(默认开);关掉回落 kode 自带精选目录。总闸仍是 `kbengine.python.stubExport` |
+| `kbengine.python.entityStubMethods` | boolean | `true` | `entity_types.pyi` 实体存根包含 def 方法面(Base/Cell/ClientMethods,默认开);关掉回落只含属性面 |
+
+### 实体脚本增强(2026-10-21)
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.entity.builtinProperties` | boolean | `true` | 实体脚本 `self.<内建属性>` 的悬停标注与 `self.` 补全(按 base/cell/client 分面);关掉整体让位,回落普通符号链 |
+| `kbengine.entity.receiverSections` | boolean | `true` | `self.cell.`/`self.base.`/`self.client.` 调用按接收者段过滤 def 候选(悬停/F12/RPC 镜链,默认开);关掉回归不感知段的旧解析,def 形参/类型闸门不受影响 |
+| `kbengine.types.aliasDiscovery` | boolean | `true` | 从 `scripts/entity_defs/alias.xml` 发现自定义类型并入类型表(默认开);关掉回落只认 `types.xml` |
 
 `kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
 

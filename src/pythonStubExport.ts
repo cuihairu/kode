@@ -29,6 +29,9 @@ export const PYTHON_STUB_EXPORT_SETTING = 'kbengine.python.stubExport';
 export const PYTHON_STUB_EXPORT_ENABLED_DEFAULT = true;
 export const KBE_STUB_FILE_NAME = 'KBEngine.pyi';
 
+/** 引擎 typings 全量面开关默认值(kbengine.python.stubEngineTypings,默认开) */
+export const PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT = true;
+
 const ENGINE_TYPINGS_MARKER = 'typings/_KBEngine_common.pyi';
 const ENGINE_TYPINGS_MODULE_ORDER = [
   '_KBEngine_common',
@@ -355,7 +358,15 @@ export function buildKbeStubExportContentForWorkspace(
   workspaceRoot: string,
   options: KbeStubEngineOptions = {}
 ): string {
-  const engineTypingsRoot = resolveEngineTypingsRoot(workspaceRoot, options);
+  // 引擎 typings 全量面独立开关(用户令 2026-10-21):总闸 stubExport 旧键
+  // 优先管整个导出;此键只管「本地引擎 checkout 拼全量 API」这层增强,
+  // =false 时回落 kode 自带精选目录(既有内容,不硬造)。
+  const engineTypingsEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('python.stubEngineTypings', PYTHON_STUB_ENGINE_TYPINGS_ENABLED_DEFAULT);
+  const engineTypingsRoot = engineTypingsEnabled
+    ? resolveEngineTypingsRoot(workspaceRoot, options)
+    : null;
   const engineContent = engineTypingsRoot ? buildEngineKbeStubContent(engineTypingsRoot) : null;
   if (engineContent) {
     return engineContent;

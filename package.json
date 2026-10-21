@@ -905,6 +905,31 @@
           "type": "number",
           "default": 500,
           "description": "触发前的去抖毫秒数（连发保存合并成一次触发；0 为不去抖）"
+        },
+        "kbengine.entity.builtinProperties": {
+          "type": "boolean",
+          "default": true,
+          "description": "Entity builtin property hover and self. completion for entity scripts (default: enabled); disabled falls back to the plain symbol chain"
+        },
+        "kbengine.entity.receiverSections": {
+          "type": "boolean",
+          "default": true,
+          "description": "Filter def method candidates by receiver section on self.cell./self.base./self.client. hover, go-to-definition and RPC CodeLens (default: enabled); disabled falls back to section-unaware resolution while the def signature (arg/type) gate stays on"
+        },
+        "kbengine.python.stubEngineTypings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer the full KBEngine.pyi concatenated from a local engine typings checkout over the built-in curated catalog (default: enabled); kbengine.python.stubExport still masters the whole export"
+        },
+        "kbengine.python.entityStubMethods": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include the def method surface (Base/Cell/ClientMethods) in generated entity_types.pyi stubs (default: enabled); disabled keeps the properties-only stub surface"
+        },
+        "kbengine.types.aliasDiscovery": {
+          "type": "boolean",
+          "default": true,
+          "description": "Discover custom types from scripts/entity_defs/alias.xml in addition to types.xml (default: enabled); disabled falls back to types.xml only"
         }
       }
     }
