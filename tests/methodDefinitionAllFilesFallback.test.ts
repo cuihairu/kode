@@ -46,6 +46,10 @@ beforeAll(() => {
     '    <ambiguousInParents/>',
     '    <commonOnly/>',
     '    <baseOnlyMethod/>',
+    '    <signedTwo><Arg>UINT8</Arg><Arg>STRING</Arg></signedTwo>',
+    '    <signedNoMatch><Arg>UINT8</Arg><Arg>STRING</Arg></signedNoMatch>',
+    '    <multiTwo><Arg>UINT8</Arg><Arg>UINT8</Arg></multiTwo>',
+    '    <signedTyped><Arg>UINT8</Arg><Arg>STRING</Arg></signedTyped>',
     '  </BaseMethods>',
     '  <CellMethods>',
     '    <onCellSide/>',
@@ -96,6 +100,36 @@ beforeAll(() => {
     '    return "common"'
   ].join('\n'));
 
+  // 形参闸门(2026-10-21 用户令:名字一样但形参不符不许跳)
+  write(root, 'scripts/base/signedImpl.py', [
+    'def signedTwo(self, a, b):',
+    '    return (a, b)'
+  ].join('\n'));
+  write(root, 'scripts/base/signedWrong.py', [
+    'def signedTwo(self, a, b, c):',
+    '    return (a, b, c)'
+  ].join('\n'));
+  write(root, 'scripts/base/noMatch.py', [
+    'def signedNoMatch(self, x):',
+    '    return x'
+  ].join('\n'));
+  write(root, 'scripts/base/multiLine.py', [
+    'def multiTwo(self,',
+    '              alpha,',
+    '              beta):',
+    '    return (alpha, beta)'
+  ].join('\n'));
+
+  // 类型闸门(2026-10-21 用户令:有注解的形参类型也要对上)
+  write(root, 'scripts/base/typedOk.py', [
+    'def signedTyped(self, hp: int, name: str):',
+    '    return (hp, name)'
+  ].join('\n'));
+  write(root, 'scripts/base/typedWrong.py', [
+    'def signedTyped(self, hp: str, name: str):',
+    '    return (hp, name)'
+  ].join('\n'));
+
   const files = [
     'scripts/entities.xml',
     'scripts/entity_defs/Avatar.def',
@@ -105,7 +139,13 @@ beforeAll(() => {
     'scripts/base/RoleB.py',
     'scripts/base/baseOnly.py',
     'scripts/cell/cellSide.py',
-    'scripts/common/util.py'
+    'scripts/common/util.py',
+    'scripts/base/signedImpl.py',
+    'scripts/base/signedWrong.py',
+    'scripts/base/noMatch.py',
+    'scripts/base/multiLine.py',
+    'scripts/base/typedOk.py',
+    'scripts/base/typedWrong.py'
   ];
   stubWorkspace.findFiles = (async (pattern?: string) => {
     const want = typeof pattern === 'string' && pattern.includes('*.def')
@@ -192,5 +232,63 @@ describe('def 方法域目录层（用户令 2026-10-21：BaseMethods→base/、
     );
     expect(result).not.toBeNull();
     expect(path.basename(result!.filePath)).toBe('util.py');
+  });
+});
+
+describe('def 方法形参闸门（用户令 2026-10-21：名字一样但形参不符不许跳）', () => {
+  const identityInBase = (symbolName: string): DefinitionSymbolIdentity => ({
+    ownerKind: 'entity',
+    ownerName: 'Avatar',
+    sourceKind: 'local',
+    sourceChain: [],
+    section: 'BaseMethods',
+    symbolName
+  });
+
+  it('声明 2 参:base 内同名 3 参实现被剔除,只跳 2 参实现', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(identityInBase('signedTwo'));
+    expect(result).not.toBeNull();
+    expect(path.basename(result!.filePath)).toBe('signedImpl.py');
+  });
+
+  it('声明 2 参:全项目只有 1 参同名实现 → 不跳(null,不拿名字当命中)', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(
+      identityInBase('signedNoMatch')
+    );
+    expect(result).toBeNull();
+  });
+
+  it('多行 def 签名也能数参(2 命中)', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(identityInBase('multiTwo'));
+    expect(result).not.toBeNull();
+    expect(path.basename(result!.filePath)).toBe('multiLine.py');
+  });
+
+  it('不带 arity(未声明 <Arg>)保持旧语义:base 内两处同名 → 歧义静默', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationGlobally('signedTwo', 'BaseMethods');
+    expect(result).toBeNull();
+  });
+
+  it('类型闸门:注解 UINT8→int/STRING→str 对上的实现可跳', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(identityInBase('signedTyped'));
+    expect(result).not.toBeNull();
+    expect(path.basename(result!.filePath)).toBe('typedOk.py');
+  });
+
+  it('类型闸门:同名但注解类型不符(hp: str)不跳', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationGlobally(
+      'signedTyped',
+      'BaseMethods',
+      ['UINT8', 'STRING']
+    );
+    // 域内只有 typedOk 匹配 → 应命中;typedWrong 被类型闸门剔除
+    expect(result).not.toBeNull();
+    expect(path.basename(result!.filePath)).toBe('typedOk.py');
   });
 });

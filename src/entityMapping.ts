@@ -14,6 +14,7 @@ import {
   getScanRootForFile
 } from './scanRoots';
 import { DefMethodSection } from './defParser';
+import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
 import {
@@ -52,6 +53,8 @@ export interface EntityMethodDefinitionLocation {
   section: EntityMethodSection;
   exposed: boolean;
   identity: DefinitionSymbolIdentity;
+  /** def 声明的参数类型序列(<Arg> 直文本,批123 解析);空数组=未声明,不作闸门 */
+  declaredArgs?: string[];
 }
 
 export interface EntityPropertyDefinitionLocation {
@@ -515,6 +518,7 @@ export class EntityMappingManager {
         section: method.section,
         exposed: method.exposed,
         owner: method.owner,
+        declaredArgs: method.args,
         identity: {
           ownerKind: method.owner.kind,
           ownerName: method.owner.name,
@@ -926,15 +930,26 @@ export class EntityMappingManager {
 
     const located = this.findMethodImplementationByIdentity(index, identity);
     if (located) {
+      // 绑定层不做形参拦截(2026-10-21 收窄):实体自身脚本的同名绑定是约定即答案,
+      // 形参闸门只装在「猜外来文件」的域目录层与全项目回退层。
       return located;
     }
+    const definition = index.methodDefinitions.find(item => sameIdentity(item.identity, identity));
+    const declaredArgs = definition?.declaredArgs;
+    const declaredArgTypes = declaredArgs && declaredArgs.length > 0 ? declaredArgs : undefined;
 
     // 用户令(2026-10-20):.def 方法在同名/绑定文件找不到实现时,放宽到全项目
     // python:方法名**唯一命中**才跳(实现常落在父类/公共模块的 py 里,
     // 属主索引 pythonMethods 只收实体属主脚本,覆盖不到),多处命中保持静默
     // (交给调用方约定链与提示),找不到维持现状不误跳。
-    // 2026-10-21:先按方法域走 base//cell/ 目录层(identity.section 在场时)。
-    return this.resolveMethodImplementationGlobally(identity.symbolName, identity.section);
+    // 2026-10-21:先按方法域走 base//cell/ 目录层(identity.section 在场时);
+    // def 声明了 <Arg> 时叠加形参闸门——个数必须相等,有注解的还要按
+    // 引擎内建映射(UINT8→int 等)对得上类型;读不出签名不算候选。
+    return this.resolveMethodImplementationGlobally(
+      identity.symbolName,
+      identity.section,
+      declaredArgTypes
+    );
   }
 
   /**
@@ -948,12 +963,13 @@ export class EntityMappingManager {
    */
   async resolveMethodImplementationGlobally(
     methodName: string,
-    section?: EntityMethodSection
+    section?: EntityMethodSection,
+    declaredArgTypes?: string[]
   ): Promise<{ filePath: string; line: number; character: number } | null> {
     const domainRole =
       section === 'BaseMethods' ? 'base' : section === 'CellMethods' ? 'cell' : null;
     if (domainRole) {
-      const domainHits = await this.collectAllPythonMethodHits(methodName, domainRole);
+      const domainHits = await this.collectAllPythonMethodHits(methodName, domainRole, declaredArgTypes);
       if (domainHits.length === 1) {
         const [domainHit] = domainHits;
         jumpLog('debug', () =>
@@ -962,7 +978,7 @@ export class EntityMappingManager {
         return domainHit;
       }
     }
-    const globalHits = await this.collectAllPythonMethodHits(methodName);
+    const globalHits = await this.collectAllPythonMethodHits(methodName, undefined, declaredArgTypes);
     if (globalHits.length === 1) {
       const [globalHit] = globalHits;
       jumpLog('debug', () =>
@@ -981,9 +997,10 @@ export class EntityMappingManager {
 
   private async collectAllPythonMethodHits(
     methodName: string,
-    domain?: 'base' | 'cell'
+    domain?: 'base' | 'cell',
+    declaredArgTypes?: string[]
   ): Promise<Array<{ filePath: string; line: number; character: number }>> {
-    const cacheKey = `${domain ?? '*'}:${methodName}`;
+    const cacheKey = `${domain ?? '*'}:${methodName}:${declaredArgTypes ? declaredArgTypes.join(',') : '*'}`;
     const cached = this.allPythonMethodHits.get(cacheKey);
     if (cached) {
       return cached;
@@ -1028,6 +1045,36 @@ export class EntityMappingManager {
         const lines = text.split(/\r?\n/);
         for (let i = 0; i < lines.length; i += 1) {
           if (pattern.test(lines[i])) {
+            // 形参闸门(用户令 2026-10-21):def 声明了 <Arg> 时,实现形参个数
+            // (剔除 self/cls)必须相等;有注解的形参还要按引擎内建映射对上类型
+            // (UINT8→int/STRING→str/VECTOR3→Tuple[...]),未注明解的只作个数校验;
+            // 读不出签名/个数或类型不符 → 该文件不算候选。
+            if (declaredArgTypes) {
+              const signature = this.collectSignatureText(lines, i);
+              if (signature === null) {
+                break;
+              }
+              const params = EntityMappingManager.parsePythonParams(signature);
+              if (!params || params.length !== declaredArgTypes.length) {
+                break;
+              }
+              let typeOk = true;
+              for (let a = 0; a < declaredArgTypes.length; a += 1) {
+                const annotation = params[a].annotation;
+                if (!annotation) {
+                  continue;
+                }
+                const expected =
+                  PYTHON_BUILTIN_TYPE_ANNOTATIONS[declaredArgTypes[a]] ?? declaredArgTypes[a];
+                if (annotation !== expected && annotation !== declaredArgTypes[a]) {
+                  typeOk = false;
+                  break;
+                }
+              }
+              if (!typeOk) {
+                break;
+              }
+            }
             hits.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
             break; // 每文件首个同名 def 即落点
           }
@@ -1040,6 +1087,98 @@ export class EntityMappingManager {
     hits.sort((a, b) => (a.filePath === b.filePath ? a.line - b.line : a.filePath.localeCompare(b.filePath)));
     this.allPythonMethodHits.set(cacheKey, hits);
     return hits;
+  }
+
+  /** 从 def 行起收集到括号配平的签名文本(≤8 行跨行容忍);读不出返回 null。 */
+  private collectSignatureText(lines: string[], startIndex: number): string | null {
+    let chunk = '';
+    for (let k = startIndex; k < lines.length && k < startIndex + 8; k += 1) {
+      chunk += (chunk ? ' ' : '') + (lines[k] ?? '');
+      if (!chunk.includes('(')) {
+        continue;
+      }
+      let depth = 0;
+      let closed = false;
+      for (const ch of chunk.slice(chunk.indexOf('('))) {
+        if (ch === '(') {
+          depth += 1;
+        } else if (ch === ')') {
+          depth -= 1;
+          if (depth === 0) {
+            closed = true;
+            break;
+          }
+        }
+      }
+      if (closed) {
+        return chunk;
+      }
+    }
+    return null;
+  }
+
+  /** 签名文本 → 形参序列(名+可选注解;剔除 self/cls,剥默认值,顶层深度感知切分);读不出 null。 */
+  private static parsePythonParams(
+    signature: string
+  ): Array<{ name: string; annotation: string | null }> | null {
+    const open = signature.indexOf('(');
+    if (open < 0) {
+      return null;
+    }
+    let depth = 0;
+    let close = -1;
+    for (let k = open; k < signature.length; k += 1) {
+      const ch = signature[k];
+      if (ch === '(') {
+        depth += 1;
+      } else if (ch === ')') {
+        depth -= 1;
+        if (depth === 0) {
+          close = k;
+          break;
+        }
+      }
+    }
+    if (close < 0) {
+      return null;
+    }
+    // 括号内只有形参列表(返回注解在 ')' 之后,已被 close 截掉),无需再剥注解;
+    // 形参自身的注解冒号由逐段解析处理。
+    const inner = signature.slice(open + 1, close);
+    if (!inner.trim()) {
+      return [];
+    }
+    const parts: string[] = [];
+    let cur = '';
+    let d = 0;
+    for (const ch of inner) {
+      if (ch === '[' || ch === '(' || ch === '{') {
+        d += 1;
+      } else if (ch === ']' || ch === ')' || ch === '}') {
+        d -= 1;
+      }
+      if (ch === ',' && d === 0) {
+        parts.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.trim()) {
+      parts.push(cur);
+    }
+    const params: Array<{ name: string; annotation: string | null }> = [];
+    for (const part of parts) {
+      const head = part.split('=')[0] ?? '';
+      const colon = head.indexOf(':');
+      const name = (colon >= 0 ? head.slice(0, colon) : head).trim();
+      const annotation = colon >= 0 ? head.slice(colon + 1).trim() || null : null;
+      if (!name || name === 'self' || name === 'cls') {
+        continue;
+      }
+      params.push({ name, annotation });
+    }
+    return params;
   }
 
   private async ensureIndexForOwner(
