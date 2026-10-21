@@ -1,15 +1,15 @@
-# 开发与发布
+# Development and Release
 
 
-本页面向维护者，说明如何本地开发、调试、构建文档和控制版本策略。
+This page targets maintainers: how to develop locally, debug, build the docs, and control the versioning policy.
 
-## 环境要求
+## Requirements
 
-- Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
-- pnpm 以 `package.json` 的 `packageManager` 字段为准（当前 pnpm 12.10.1）
-- VSCode 1.50.0 或更高版本
+- Node.js `^20.19.0 || >=22.12.0` (prefer the version pinned in `.nvmrc`)
+- pnpm: defer to the `packageManager` field in `package.json` (currently pnpm 12.10.1)
+- VSCode 1.50.0 or newer
 
-## 本地开发
+## Local Development
 
 ```bash
 pnpm install
@@ -17,9 +17,9 @@ pnpm run watch
 code .
 ```
 
-然后在 VSCode 中按 `F5` 启动扩展开发主机。
+Then press `F5` in VSCode to start the Extension Development Host.
 
-## 常用脚本
+## Common Scripts
 
 ```bash
 pnpm run compile
@@ -31,111 +31,117 @@ pnpm run docs:build
 pnpm run package
 ```
 
-## 改了代码但行为没变？先确认 VS Code 跑的是哪份产物
+## Changed Code Has No Effect? Check Which Build VS Code Runs
 
-「改了没生效」绝大多数不是逻辑问题,而是 VS Code 还在跑旧产物。按序排查:
+Most "my change did nothing" reports are stale artifacts, not logic bugs. Check in order:
 
-1. **已装扩展**:`%USERPROFILE%\.vscode\extensions` 下应存在
-   `cuihairu.kode-kbengine-*` 目录(扩展 id 由 `kode` 改名为 `kode-kbengine`,目录尾段随版本);没有就是没装(你测的不是这份代码)。
+1. **Installed extension**: `%USERPROFILE%\.vscode\extensions` must contain a
+   `cuihairu.kode-kbengine-*` folder (the extension id was renamed from `kode` to `kode-kbengine`, and the last segment follows the version); if it is absent, the extension is not installed
+   and you are not testing this code.
    ```powershell
    Get-ChildItem $env:USERPROFILE\.vscode\extensions -Filter '*kode*'
    ```
-2. **开发主机(F5)的产物**:入口是 `package.json` 的 `main` = `./out/extension.js`。
-   重建后确认新代码真在产物里(以跳转修复的符号为例):
+2. **Extension Development Host (F5) artifact**: the entry point is `main` in
+   `package.json` = `./out/extension.js`. Rebuild, then confirm the new code is
+   actually in the artifact (using the jump-fix symbol as an example):
    ```bash
    pnpm run vscode:prepublish
    pnpm exec node -e "console.log(require('fs').readFileSync('out/extension.js','utf8').includes('resolveSelfMethodCandidates'))"
-   # 必须输出 true;false 说明编译未跑/跑的是旧编译
+   # must print true; false means the compile is stale or was never run
    ```
-3. **重建并安装**(最短步骤;`out/`、`*.vsix` 均已 gitignore):
+3. **Rebuild and install** (shortest path; `out/` and `*.vsix` are gitignored):
    ```bash
    pnpm install
-   pnpm run package        # vsce 自动执行 vscode:prepublish = compile + bundle
+   pnpm run package        # vsce runs vscode:prepublish = compile + bundle
    code --install-extension kode-kbengine-*.vsix
    ```
-   装完执行 `Developer: Reload Window` 再测。
-4. **确认扩展已激活**:激活事件只有 `workspaceContains:**/*.def` 与打开 `.def`
-   文件,**没有 `onLanguage:python`**——只开纯 Python 子目录(全树无 `.def`)时
-   扩展不激活,Python 跳转提供者也就不存在。先打开任意 `.def` 或切到含 `.def`
-   的工作区根再测。
-5. **不需要新增配置**:`contributes.configuration` 41 项里没有任何跳转/mixin/索引
-   开关;Python 定义提供者在 `src/extension.ts:205` 无条件注册。
+   Then run `Developer: Reload Window` before testing.
+4. **Confirm the extension activated**: activation events are only
+   `workspaceContains:**/*.def` and opening a `.def` file — there is no
+   `onLanguage:python`. In a pure-Python folder with no `.def` anywhere the
+   extension never activates, so the Python definition provider does not exist.
+   Open any `.def` file or switch to a workspace root that contains `.def`.
+5. **No new setting is required**: none of the 41 `contributes.configuration`
+   keys is a jump/mixin/index switch, and the Python definition provider is
+   registered unconditionally at `src/extension.ts:205`.
 
-## 测试
+## Testing
 
-测试不依赖真实 KBEngine 环境与 VSCode 下载:vitest(`tests/`)承载全部功能
-测试——纯逻辑、本地仿真器(`tests/sim/`)、fake-vscode 替身(`tests/fake-vscode/`)
-上的装配与面板测试;mocha(`src/test/suite/`)只做编译产物烟测(打包形态的
-`out/extension.js` 激活/命令/补全)。分层与运行方式详见
-[TESTING.md](https://github.com/cuihairu/kode/blob/main/TESTING.md) 与
-[重设计说明](../redesign.md)。
+Tests depend on neither a real KBEngine environment nor a VSCode download:
+vitest (`tests/`) carries all functional tests — pure logic, the local
+simulators (`tests/sim/`), and assembly/panel tests on the fake-vscode stand-in
+(`tests/fake-vscode/`); mocha (`src/test/suite/`) only smoke-tests the compiled
+artifacts (activation/commands/completion of the packaged `out/extension.js`).
+For the layering and how to run, see
+[TESTING.md](https://github.com/cuihairu/kode/blob/main/TESTING.md) and the
+[redesign notes](../redesign.md).
 
-## 文档开发
+## Working on the Docs
 
-VitePress 文档入口在 `docs/`。
+The VitePress docs entry point is `docs/`.
 
-### 本地预览
+### Local Preview
 
 ```bash
 pnpm run docs:dev
 ```
 
-### 构建静态站点
+### Build the Static Site
 
 ```bash
 pnpm run docs:build
 ```
 
-## 发布前检查
+## Pre-Release Checks
 
-建议至少检查以下项目：
+Check at least the following:
 
-1. `README.md`、`docs/`、`CHANGELOG.md` 是否同步
-2. `package.json` 中的命令、配置项、版本号是否正确
-3. `.def` 语言能力是否与文档描述一致
-4. 依赖图、实体浏览器、日志、调试等入口是否可打开
+1. Are `README.md`, `docs/`, and `CHANGELOG.md` in sync
+2. Are the commands, settings, and version in `package.json` correct
+3. Does the `.def` language surface match what the docs describe
+4. Do the dependency graph, entity explorer, logs, and debug entry points open
 
-## 版本策略
+## Version Policy
 
-当前项目仍处于 `0.1.x` 修复与完善阶段。
+The project is still in the `0.1.x` fix-and-refine stage.
 
-### 什么时候继续使用 `0.1.x`
+### When to Stay on `0.1.x`
 
-以下变更默认属于补丁版本：
+These changes default to patch versions:
 
-- 修复 bug
-- 优化文档
-- 完善已有功能
-- 增加配置项但不改变已有默认行为
-- 改进 hover、诊断、高亮、导航体验
+- Bug fixes
+- Documentation improvements
+- Refining existing features
+- Adding settings without changing existing default behavior
+- Improving hover, diagnostics, highlighting, and navigation
 
-### 什么时候考虑 `0.2.0`
+### When to Consider `0.2.0`
 
-只有在出现明显阶段升级时再考虑，例如：
+Only with an obvious stage upgrade, for example:
 
-- 引入大型新模块
-- 大范围调整默认行为
-- 引入需要迁移的配置变化
-- 对外能力边界明显变化
+- Introducing a major new module
+- Broadly changing default behavior
+- Introducing configuration changes that require migration
+- Clearly changing the external capability boundary
 
-## 推荐的发布节奏
+## Recommended Release Cadence
 
-### 日常修复
+### Day-to-Day Fixes
 
-- 版本号：`0.1.x`
-- 更新 `CHANGELOG.md`
-- 提交后推送到 `main`
+- Version: `0.1.x`
+- Update `CHANGELOG.md`
+- Push to `main` after committing
 
-### 阶段发布
+### Stage Releases
 
-1. 汇总文档与功能变更
-2. 确认截图、说明、版本号
-3. 执行 `pnpm run package`
-4. 再决定是否发布到 Marketplace
+1. Summarize doc and feature changes
+2. Confirm screenshots, descriptions, version
+3. Run `pnpm run package`
+4. Then decide whether to publish to the Marketplace
 
-## 当前文档维护原则
+## Current Documentation Maintenance Principles
 
-- `README.md` 负责仓库首页概览
-- `docs/` 负责长期维护的结构化文档
-- `CHANGELOG.md` 负责版本变更记录
-- `resources/docs/` 里的设计文档保留为设计沉淀，不再当作唯一使用文档
+- `README.md` is the repo homepage overview
+- `docs/` holds the long-term maintained structured documentation
+- `CHANGELOG.md` records version changes
+- Design documents under `resources/docs/` are kept as design deposits, no longer the sole usage documentation

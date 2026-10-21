@@ -1,51 +1,51 @@
-# 客户端实体 SDK 生成
+# Client Entity SDK Generation
 
 
-按 `entities.xml` 登记的实体，从 `.def` 生成客户端实体骨架。当前支持 TypeScript 与 C# 两种目标语言，在命令内勾选（可多选）。
+Generates client entity skeletons from `.def` files for the entities registered in `entities.xml`. Currently TypeScript and C# are supported; pick them (multi-select) inside the command.
 
-## 能力概览
+## Overview
 
-- 生成来源：`entities.xml` 登记的实体，缺 `.def` 文件的登记项跳过
-- 属性面：只收 `Flags` 含客户端域（`BASE_AND_CLIENT`/`OWN_CLIENT`/`CELL_PUBLIC_AND_OWN`/`ALL_CLIENTS`/`OTHER_CLIENTS`）的项，成为可写字段
-- 回调面：`ClientMethods` 成为虚位回调，签名与参数类型齐全，方法体留 TODO
-- 请求面：带 `<Exposed>` 的 `BaseMethods`/`CellMethods` 成为包装调用
-- 发送接缝：`onBaseOutgoing`/`onCellOutgoing` 两个空实现，实际发送通道按所用客户端插件自己实现
-- 固定字典：被客户端可见属性引用的 `FIXED_DICT` 类型另出伴随文件
-- 不自动覆盖：默认跳过已存在文件，覆盖策略在命令内选
+- Generation source: entities registered in `entities.xml`; registered entries missing a `.def` file are skipped
+- Property surface: only items whose `Flags` include a client domain (`BASE_AND_CLIENT`/`OWN_CLIENT`/`CELL_PUBLIC_AND_OWN`/`ALL_CLIENTS`/`OTHER_CLIENTS`) become writable fields
+- Callback surface: `ClientMethods` become virtual callback slots with full signatures and parameter types, bodies left as TODO
+- Request surface: `BaseMethods`/`CellMethods` carrying `<Exposed>` become wrapper calls
+- Send seams: `onBaseOutgoing`/`onCellOutgoing` are two empty implementations; the actual send channel is implemented against whichever client plugin you use
+- Fixed dicts: `FIXED_DICT` types referenced by client-visible properties get a companion file
+- No silent overwrite: existing files are skipped by default; the overwrite policy is chosen inside the command
 
-## 相关命令
+## Related Commands
 
 - `kbengine.clientSdk.generate`
 
-命令说明见 [命令与面板](./commands.md)。
+See [Commands and Panels](./commands.md) for command details.
 
-## 相关配置
+## Related Configuration
 
 ### `kbengine.clientSdk.outputDir`
 
-输出目录，相对工作区根，默认 `scripts/client_entities`。语言清单不在此配置，在命令执行时勾选。
+Output directory, relative to the workspace root, default `scripts/client_entities`. The language list is not configured here; it is picked when the command runs.
 
-## 生成内容口径
+## What Gets Generated
 
-### 实体文件
+### Entity Files
 
-每个实体一个文件，文件名为 `<实体名>.ts` / `<实体名>.cs`。类内依次是：实体 id 只读成员、客户端可见属性、构造函数、`ClientMethods` 回调、Exposed 包装调用、两个发送接缝。
+One file per entity, named `<EntityName>.ts` / `<EntityName>.cs`. Inside the class, in order: a read-only entity id member, client-visible properties, the constructor, `ClientMethods` callbacks, Exposed wrapper calls, and the two send seams.
 
-- TypeScript：属性保持 def 原名，回调为具体方法，参数名 `_arg0`/`_arg1`…（def 的 `<Arg>` 只有类型没有名字）
-- C#：命名转 PascalCase（`hp` → `Hp`、`onHPChanged` → `OnHPChanged`），属性为 `get; set;`，回调为 `virtual`，参数写在类型之后，参数名 `arg0`/`arg1`…
+- TypeScript: properties keep their def names, callbacks are concrete methods, parameters named `_arg0`/`_arg1`… (def `<Arg>` carries types only, no names)
+- C#: names are PascalCased (`hp` → `Hp`, `onHPChanged` → `OnHPChanged`), properties are `get; set;`, callbacks are `virtual`, parameters come after the type, named `arg0`/`arg1`…
 
-### 属性
+### Properties
 
-只收客户端可见项，纯服务端属性（`BASE`、`CELL`、`CELL_PRIVATE`）不进客户端面。每个属性上方标注 def 的原始 `Flags`，便于回查引擎语义。
+Only client-visible items are included; server-only properties (`BASE`, `CELL`, `CELL_PRIVATE`) never enter the client surface. Each property is annotated with the def's original `Flags` for tracing engine semantics back.
 
-### 方法
+### Methods
 
-- `ClientMethods` 全部收入，不要求 `<Exposed>`——它们是客户端要实现的回调位
-- `BaseMethods`/`CellMethods` 只收带 `<Exposed>` 的；未 Exposed 的服务端方法客户端不可请求，不生成
+- All of `ClientMethods` is included, `<Exposed>` not required — they are the callback slots the client implements
+- `BaseMethods`/`CellMethods` include only `<Exposed>` ones; unexposed server methods cannot be requested by the client and are not generated
 
-### 发送接缝
+### Send Seams
 
-包装调用的方法体只做一件事：把方法名和参数交给对应接缝。
+A wrapper call's body does exactly one thing: hand the method name and arguments to the matching seam.
 
 ```ts
 public baseCallCreateAvatar(_arg0: number): void {
@@ -53,11 +53,11 @@ public baseCallCreateAvatar(_arg0: number): void {
 }
 ```
 
-接缝本身是空实现。客户端插件各自的 base/cell 调用通道（Unity 插件、js 插件等）由使用者在自己的继承类里实现接缝，生成器不假设任何插件 API。
+The seams themselves are empty. Each client plugin's own base/cell call channel (Unity plugin, js plugin, etc.) is implemented by you in a subclass; the generator assumes no plugin API.
 
-## 类型映射
+## Type Mapping
 
-| def 类型 | TypeScript | C# |
+| def type | TypeScript | C# |
 | --- | --- | --- |
 | `UINT8` / `UINT16` / `UINT32` / `UINT64` | `number` | `byte` / `ushort` / `uint` / `ulong` |
 | `INT8` / `INT16` / `INT32` / `INT64` | `number` | `sbyte` / `short` / `int` / `long` |
@@ -65,34 +65,34 @@ public baseCallCreateAvatar(_arg0: number): void {
 | `STRING` / `UNICODE` | `string` | `string` |
 | `VECTOR2` / `VECTOR3` / `VECTOR4` | `[number, number]` / `[number, number, number]` / `[number, number, number, number]` | `Vector2` / `Vector3` / `Vector4` |
 | `ENTITYCALL` / `PYTHON` / `PY_DICT` / `PY_TUPLE` / `PY_LIST` / `BLOB` | `unknown` | `object` |
-| `ARRAY`（`<of>` 元素类型） | 元素类型 + `[]` | 元素类型 + `[]` |
-| `FIXED_DICT` 别名 | 伴随文件的 `interface` 名 | 伴随文件的 `class` 名 |
-| 未识别 | `unknown` | `object` |
+| `ARRAY` (`<of>` element type) | element type + `[]` | element type + `[]` |
+| `FIXED_DICT` alias | the companion file's `interface` name | the companion file's `class` name |
+| Unrecognized | `unknown` | `object` |
 
-类型表与引擎注册表同源（17 个内置类型）。引擎未注册的 `BOOL` 等幻影类型不给映射，落兜底值，由 def 分析诊断照报。
+The type table shares its source with the engine's registry (17 built-in types). Phantom types the engine never registered, like `BOOL`, get no mapping and fall to the fallback value, while def analysis diagnostics still report them.
 
-C# 向量默认 `Vector2`/`Vector3`/`Vector4` 裸名（Unity 自带）；非 Unity 工程按工程内的向量类型改名。
+C# vectors default to the bare names `Vector2`/`Vector3`/`Vector4` (Unity ships them); non-Unity projects rename to their own vector types.
 
-## 固定字典伴随文件
+## Fixed Dict Companion File
 
-有客户端可见属性引用 `FIXED_DICT` 别名时才出伴随文件，文件名为 `ClientSdkFixedDicts.ts` / `ClientSdkFixedDicts.cs`，只收录被引用到的类型（`types.xml` 里声明了但没被引用的别名不生成）。TypeScript 侧为 `interface` 并由实体文件 `import`，C# 侧为 `class`，与实体文件同命名空间（固定 `KbEngineClient`，改名需改生成器常量 `CLIENT_SDK_CSHARP_NAMESPACE`）。
+A companion file appears only when some client-visible property references a `FIXED_DICT` alias; it is named `ClientSdkFixedDicts.ts` / `ClientSdkFixedDicts.cs` and includes only referenced types (aliases declared in `types.xml` but never referenced are not generated). The TypeScript side is an `interface` imported by the entity files; the C# side is a `class` in the same namespace as the entities (fixed `KbEngineClient`; renaming means changing the generator constant `CLIENT_SDK_CSHARP_NAMESPACE`).
 
-## 典型流程
+## Typical Flow
 
-1. 打开工程，确认 `scripts/entities.xml` 与 `scripts/entity_defs/` 布局正常
-2. 执行 `Generate Client Entity SDK`
-3. 勾选目标语言
-4. 确认输出目录（默认 `scripts/client_entities`）
-5. 选择已存在文件的处理方式（默认跳过）
-6. 在通知里看写入了几个文件
-7. 在自己的继承类里实现 `onBaseOutgoing`/`onCellOutgoing`，接上所用客户端插件的调用通道
+1. Open the project and confirm the `scripts/entities.xml` and `scripts/entity_defs/` layout resolve normally
+2. Run `Generate Client Entity SDK`
+3. Pick the target languages
+4. Confirm the output directory (default `scripts/client_entities`)
+5. Choose how to treat existing files (default skip)
+6. Check the notification for how many files were written
+7. Implement `onBaseOutgoing`/`onCellOutgoing` in your subclass, wiring in your client plugin's call channel
 
-## 当前边界
+## Current Boundaries
 
-还没有做到：
+Not yet done:
 
-- 不生成客户端插件的调用通道实现，`onBaseOutgoing`/`onCellOutgoing` 需要按所用插件自己实现
-- 语言清单首批只有 TypeScript 与 C#；GDScript、C++ 未做
-- 只按 `entities.xml` 登记的实体生成，未登记的 `.def` 不生成
-- 默认不覆盖已存在文件，重复生成同名实体会被跳过
-- 生成文件不自动进入版本控制或构建流程，接入方式由使用者决定
+- No client plugin call channel implementation; `onBaseOutgoing`/`onCellOutgoing` must be implemented per plugin
+- First language batch is TypeScript and C# only; GDScript and C++ are not done
+- Only entities registered in `entities.xml` are generated; unregistered `.def` files are not
+- Existing files are not overwritten by default; regenerating the same entities skips them
+- Generated files do not automatically enter version control or the build flow; integration is up to you

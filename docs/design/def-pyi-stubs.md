@@ -1,48 +1,47 @@
-# .def / 自定义类型 → `.pyi` 类型桩 可行性分析(只分析,不实现)
+# Def / custom type → `.pyi` type stubs: feasibility analysis (analysis only, no implementation)
 
-> 来源:用户 2026-10-16 需求「能支持生成 utype 定义类型的 .pyi 文件吗,自动生成类型提示,现实吗?」。
-> 本轮只落设计与结论,不写实现代码;所有判断给 `file:line`,语料限制如实标注。
-> **2026-10-17 对账更新:类型面已实现**——`kbengine.python.exportTypeStubs` 命令 + 激活期静默自动导出 `kbe_types.py`(真 `.py` 即方案 A,复用 `kbengine.python.stubExport` 开关与 `stubDir` 三级目录,extraPaths 管理段同盘并入);§4 提的 types.xml watcher 自动重生成已实现(2026-10-17 批146:保存/新建/删除静默重导出,不设去抖不加开关,零写纪律兜底);§7 待证清单不变。
-> **2026-10-21 B 单调整:产物改 `.pyi` 分件**——文件名改 `kbe_types.pyi`(纯声明桩),按 types.xml 文件分件,镜像 scripts 树落 `<typings 根>/<scripts 相对目录>/kbe_types.pyi`(照 kbengine 仓 typings/ 分层形态);**T-04 取舍:不做 types.xml 同目录同名 sidecar**(生成物落回工程 scripts 树会混入用户资产树,且同名 `.pyi` 遮蔽红线沿目录扩散),改收 kode 自管独立 typings 根(stubDir 三级解析不变);旧版单文件 `kbe_types.py` 的 extraPaths 并入判定保留(`typeStubArtifactExists`,迁移期)。别名(<Type 别名=底层/>)逐层解析到引擎注册内建再映射,注册面对齐 `kbe/src/lib/entitydef/datatypes.cpp` `DataTypes::initialize`;循环别名整链跳过,发射名必须已解析或已定义。
+> Source: user request on 2026-10-16 — "Can the extension generate `.pyi` files for the utype-defined types, producing type hints automatically; is that realistic?"
+> This round only settles design and conclusions, no implementation code is written; every judgment carries a `file:line`, and corpus limitations are stated as they are.
+> **2026-10-17 reconciliation update: the type surface is now implemented** — the `kbengine.python.exportTypeStubs` command plus a silent auto-export of `kbe_types.py` at activation (a real `.py`, i.e. option A, reusing the `kbengine.python.stubExport` switch and the `stubDir` three-tier directory, with the extraPaths managed segment joining the same directory); the types.xml watcher auto-regeneration mentioned in §4 is implemented (2026-10-17 batch 146: silent re-export on save/create/delete, no debouncing and no extra setting, upheld by the zero-write discipline); the §7 to-verify list is unchanged.
 
-## 0. 结论速览
+## 0. Verdict summary
 
-| # | 问题 | 结论 | 工作量 |
+| # | Question | Verdict | Effort |
 |---|---|---|---|
-| 1 | 现有解析能否读出 utype 定义 | **能,但不在 entityMapping/PythonClassIndex 那套**——定义由 `databaseSchema.parseTypeAliases` 解析(types.xml);`.def`/`PythonClassIndex` 只存引用与 Python 类 | 小(接线) |
-| 2 | utype → Python 注解映射 | **现实**:标量/ARRAY/别名直译,FIXED_DICT → `TypedDict`;复杂嵌套待真实工程验证 | 小-中 |
-| 3 | 生成物 + Pylance 接线 | **有前提才现实**:复用 `stubDir`+`extraPaths` 现成设施;但**纯 `.pyi` 模块运行时不可 import**,须选「真 `.py`(TypedDict)」或 `TYPE_CHECKING` 约定;且**不许**生成同名 `.pyi` 遮蔽项目 `.py` | 中 |
-| 4 | 时机与更新 | **现实**:激活期自动 + 手动命令先例现成,`.def`/types.xml watcher 去抖有先例;默认目录生成物**不提交** | 小-中 |
-| 5 | `self.x` 让 Pylance 静态可知(不改用户代码) | **不现实**(唯一 Pylance 路径是遮蔽项目 `.py`,损实现语义);现状由 kode 自有 provider 补位 | — |
-| — | 总评 | **有前提才现实**:「类型面生成类型模块」= 中等工作量可做;「实体自注解面」= 不现实,须改用户代码或维持 kode provider | 中 |
+| 1 | Can the existing parsers read a utype definition | **Yes, but not in the entityMapping/PythonClassIndex track** — definitions are parsed by `databaseSchema.parseTypeAliases` (types.xml); `.def`/`PythonClassIndex` only store references and Python classes | Small (wiring) |
+| 2 | utype → Python annotation mapping | **Realistic**: scalars/ARRAY/aliases translate directly, FIXED_DICT → `TypedDict`; deep nesting needs a real project to verify | Small–medium |
+| 3 | Generated artifact + Pylance wiring | **Realistic only with a precondition**: reuse the existing `stubDir`+`extraPaths` facilities; but a **pure `.pyi` module cannot be `import`-ed at runtime**, so choose a real `.py` (TypedDict) or a `TYPE_CHECKING` convention; and **never** generate a same-named `.pyi` that shadows a project `.py` | Medium |
+| 4 | Timing and updates | **Realistic**: the auto-export-on-activation + manual command precedents exist, and a debounced `.def`/types.xml watcher has a precedent; default-dir artifacts are **not committed** | Small–medium |
+| 5 | Making `self.x` statically knowable to Pylance (without changing user code) | **Not realistic** (the only Pylance path is shadowing a project `.py`, which breaks implementation semantics); today kode's own providers fill this surface | — |
+| — | Overall | **Realistic with a precondition**: "generate a type module for the type surface" = doable at medium effort; "self-annotation of entities" = not realistic without changing user code or keeping the kode providers | Medium |
 
-## 1. 现状:现有解析覆盖到哪
+## 1. Current state: how far the existing parsers reach
 
-### 1.1 entityMapping / PythonClassIndex 那套**读不出** utype 定义
+### 1.1 The entityMapping / PythonClassIndex track **cannot** read utype definitions
 
-- `src/defParser.ts:58` `parseDefDocument` 是通用 XML 解析(fxp,`parseTagValue:false` 见 `:55`),不带类型语义。
-- `src/entityMapping.ts:152` 索引只从 `findFiles('**/*.def')` 建;索引结构 `:107-123`(`EntityMappingIndex`)只有 `methodDefinitions`、`properties: { [name]: { defFile, line } }` 等——**存的是「引用落点」,Type 串原样透传,不存类型定义**。
-- `src/pythonClassIndex.ts:40` `parsePythonFile` 只解析 `.py` 的类/方法,扫描面 `:247` `findFiles('**/*.py', ...)`——**完全不看 .def**。
+- `src/defParser.ts:58` `parseDefDocument` is a generic XML parser (fxp, `parseTagValue:false` see `:55`), it carries no type semantics.
+- `src/entityMapping.ts:152` builds its index only from `findFiles('**/*.def')`; the index structure `:107-123` (`EntityMappingIndex`) only has `methodDefinitions`, `properties: { [name]: { defFile, line } }` etc. — it stores **reference landing points**, passing the Type string through verbatim, storing no type definitions.
+- `src/pythonClassIndex.ts:40` `parsePythonFile` only parses classes/methods of `.py`, scan surface `:247` `findFiles('**/*.py', ...)` — it **never looks at .def**.
 
-→ 结论:题目点名的两套索引都**不含 utype 定义**;定义在 `entity_defs/types.xml`,由下面另一条线解析。
+→ Conclusion: neither of the two indexes named in the question **contains utype definitions**; the definitions live in `entity_defs/types.xml`, parsed by a different line below.
 
-### 1.2 真正解析类型定义的三处(仓内已有,可复用)
+### 1.2 The three places that actually parse type definitions (already in this repo, reusable)
 
-1. **types.xml 别名定义(= utype 定义本体)**:`src/databaseSchema.ts:724` `parseTypeAliases` → `Map<名, { kind: 'fixedDict'|'array'|'builtin'|'unresolved', ... }>`;注释明确对齐引擎 `DataTypes::loadTypes`(别名=条目标签、`FIXED_DICT`/`ARRAY` 走结构、其余文本按已注册类型复用),见 `:96`、`:742-747`;装配点 `:246`。FIXED_DICT 的键与元素类型保存在 XML `node` 上,可继续走子解析。
-2. **`.def` 里的类型串(含内联 ARRAY)**:
-   - `src/kbengineMetadata.ts:11-12` 注明引擎 `entitydef.cpp` 对属性 `<Type>ARRAY<of>…</of></Type>` 特判,`:41` 落进补全文档;
-   - `src/definitionSemantics.ts:74-88` 结构化 `<Arg>` 序列(ARRAY 走 `<of>` 链、嵌套递归,`:627`、`:693` 注释对齐 `FixedArrayType::initialize`);
-   - `src/clientSdkGenerator.ts:116-118`、`:197` 按引擎口径把 `<Type>` 直文本与 `<of>` 元素类型分两栏读取。
-3. **「utype → 目标语言」的既有先例(最接近本需求的已完成品)**:`src/clientSdkGenerator.ts:152` `aliases: ReadonlyMap<string,string>`;`:272-295`「语言中立类型表:内置表逐语言,别名与 FIXED_DICT 与工程 types.xml 同源」;`:301-321` 解析链**内置 → FIXED_DICT 名字 → 别名递归 → 兜底**;FIXED_DICT 伴随类发射见 `:559`(TS)、`:571`(C#)、`:667`(独立文件)。**同构问题已在 TS/C# 生成器解过一遍**,`.pyi` 是第三种发射目标。
+1. **types.xml alias definitions (= the utype definitions themselves)**: `src/databaseSchema.ts:724` `parseTypeAliases` → `Map<name, { kind: 'fixedDict'|'array'|'builtin'|'unresolved', ... }>`; the comment aligns with the engine's `DataTypes::loadTypes` (alias = entry tag, `FIXED_DICT`/`ARRAY` go structural, the rest reuse registered types as text), see `:96`, `:742-747`; wiring at `:246`. FIXED_DICT keys and element types are kept on the XML `node`, so sub-parsing can continue.
+2. **Type strings in `.def` (including inline ARRAY)**:
+   - `src/kbengineMetadata.ts:11-12` notes the engine's `entitydef.cpp` special case for the property `<Type>ARRAY<of>…</of></Type>` form, `:41` lands it in the completion docs;
+   - `src/definitionSemantics.ts:74-88` structures the `<Arg>` sequence (ARRAY via the `<of>` chain, recursive nesting, `:627`, `:693` comments align with `FixedArrayType::initialize`);
+   - `src/clientSdkGenerator.ts:116-118`, `:197` read the `<Type>` direct text and the `<of>` element type in two columns per the engine convention.
+3. **The existing "utype → target language" precedent (closest finished artifact to this need)**: `src/clientSdkGenerator.ts:152` `aliases: ReadonlyMap<string,string>`; `:272-295` "language-neutral type table: builtin table per language, aliases and FIXED_DICT share the same origin as the project types.xml"; `:301-321` resolution chain **builtin → FIXED_DICT name → alias recursion → fallback**; FIXED_DICT companion classes emitted at `:559` (TS), `:571` (C#), `:667` (separate file). **This isomorphic problem has already been solved once in the TS/C# generator**; `.pyi` is a third emission target.
 
-### 1.3 术语澄清:本仓 "utype" 两层含义(别混)
+### 1.3 Terminology: this repo's "utype" has two layers (don't mix them)
 
-- **消息层 utype = 类型/方法编号**,不是自定义类型:`src/messageTable.ts:127`「本级类型 utype(ARRAY 级 = 内联数组类型自身 utype)」;引擎侧 `kbe/res/sdk_templates/client/ue4/Source/KBEnginePlugins/Engine/Bundle.h:133`(`uint16 utype`)、`EntityCall.cpp:67`(`methodUtype`)。
-- **本需求的「utype」= 自定义类型别名/复合类型**,即 types.xml 别名条目 + `.def` 引用。`.def` 的 `<Aliases>` 节在本仓语料 **0 命中**(`grep '<Aliases>' --include='*.def'` 全仓空),别名定义实际都在 `types.xml`。
+- **Message-layer utype = type/method number**, not a custom type: `src/messageTable.ts:127` "this-level type utype (ARRAY level = the inline array type's own utype)"; engine side `kbe/res/sdk_templates/client/ue4/Source/KBEnginePlugins/Engine/Bundle.h:133` (`uint16 utype`), `EntityCall.cpp:67` (`methodUtype`).
+- **This request's "utype" = custom type alias / composite type**, i.e. types.xml alias entries + `.def` references. The `.def` `<Aliases>` section has **0 hits** in this repo's corpus (`grep '<Aliases>' --include='*.def'` is empty repo-wide); alias definitions actually all live in `types.xml`.
 
-### 1.4 真实样例(语料如实)
+### 1.4 Real samples (corpus stated as is)
 
-**样例 1 — 定义(复合类型)**,`D:\workspaces\kbengine\.tmp\kbengine_typing_fixed_dict_fixture\scripts\entity_defs\types.xml`(全文 13 行):
+**Sample 1 — definition (composite type)**, `D:\workspaces\kbengine\.tmp\kbengine_typing_fixed_dict_fixture\scripts\entity_defs\types.xml` (13 lines total):
 
 ```xml
 2:  <AVATAR_INFO> FIXED_DICT
@@ -54,7 +53,7 @@
 12: <AVATAR_INFO_LIST> ARRAY <of> AVATAR_INFO </of> </AVATAR_INFO_LIST>
 ```
 
-**样例 2 — 引用(`.def` 使用 utype)**,同夹具 `scripts/entity_defs/Avatar.def`:
+**Sample 2 — reference (a `.def` using a utype)**, the same fixture's `scripts/entity_defs/Avatar.def`:
 
 ```xml
 4:      <Type> AVATAR_INFO </Type>          <!-- profile 属性 -->
@@ -63,76 +62,76 @@
 19:     <Arg> AVATAR_INFO_LIST </Arg>       <!-- CellMethods.syncSnapshots -->
 ```
 
-**样例 3 — 内联 ARRAY 形态(引擎特判)**:`src/kbengineMetadata.ts:41` 登记的文档原文「内联写法 `<Type>ARRAY<of>元素类型</of></Type>`,元素类型放在 `<of>` 子节点」,依据 `kbe/src/lib/entitydef/entitydef.cpp` 属性加载特判(`:11-12`)。
+**Sample 3 — inline ARRAY form (engine special case)**: the doc text registered at `src/kbengineMetadata.ts:41` — "inline form `<Type>ARRAY<of>element type</of></Type>`, the element type goes in the `<of>` child node", per the property-loading special case in `kbe/src/lib/entitydef/entitydef.cpp` (`:11-12`).
 
-**语料限制(如实)**:
+**Corpus limits (stated as is)**:
 
-- 非第三方 `.def` 全仓 **18 个**(多为 `.tmp` 类型夹具 + SDK 模板 + BigWorld 示例);可见 `<Type>` 值仅 `STRING`/`INT32`/`INT16`/`INT8` + 上述两个夹具 utype。
-- **SDK 模板的 `types.xml` 是空壳**(2 行),复杂类型分布(多层嵌套、VECTOR3 键、混合 ARRAY)在本仓**取不到真实样本**;真实游戏工程的类型面需拿到后复验(见 §7)。
-- 「utype」一词在本仓真实出现于消息/方法编号语境(§1.3),**不存在**名为 utype 的 `.def` 结构。
+- Non-third-party `.def` files in the whole repo: **18** (mostly `.tmp` type fixtures + SDK templates + BigWorld samples); visible `<Type>` values are only `STRING`/`INT32`/`INT16`/`INT8` plus the two fixture utypes above.
+- **The SDK template `types.xml` is an empty shell** (2 lines); complex type distributions (multi-level nesting, VECTOR3 keys, mixed ARRAY) **have no real samples in this repo**; the type surface of a real game project must be re-verified once available (see §7).
+- The word "utype" actually appears in this repo only in the message/method-number context (§1.3); there is **no** `.def` structure named utype.
 
-## 2. 映射可行性:utype → Python 类型注解
+## 2. Mapping feasibility: utype → Python type annotations
 
-| utype 形态 | 真实例 | 目标注解 | 档位 |
+| utype form | Real example | Target annotation | Tier |
 |---|---|---|---|
-| 标量 | `STRING`/`INT32`(Avatar.def:4 引用面同型) | `str` / `int`;`FLOAT`/`DOUBLE`→`float`;`BOOL`→`bool` | **直译(小)** |
-| `PYTHON` / `PY` / 未识别 | 语料外,引擎语义即任意对象 | `typing.Any`(有损但合法) | 直译(小) |
-| 别名→已注册类型 | types.xml 第三形态(`parseTypeAliases` 'builtin' 臂 `databaseSchema.ts:750`) | `AVATAR_NAME = str`(type alias) | **直译(小)** |
-| ARRAY 元素型 | `AVATAR_INFO_LIST`(types.xml:12) | `list[AVATAR_INFO]`;嵌套 `list[list[T]]`(`definitionSemantics.ts:75` 已有递归链) | **直译(小)** |
-| FIXED_DICT | `AVATAR_INFO`(types.xml:2-11) | `class AVATAR_INFO(TypedDict): name: str; level: int` | **需生成类(小-中)** |
-| FIXED_DICT 嵌套 / 键为向量型 | 本仓无真实样本 | 嵌套 `TypedDict` 递归;键型引用向量类(见 §7 待证) | 中(需真实工程验证) |
-| 固定长数组(FIXEDARRAY) | 引擎 DB 层 `kbe/src/lib/db_interface/entity_table.h:24`、`FixedArrayType`(`entity_table_mysql.cpp:1261`) | **Python 侧就是 list** → 归 ARRAY 直译;是落库结构不是新 Python 形态 | 直译(小) |
-| 消息/方法 utype 编号 | `messageTable.ts:127`、`Bundle.h:133` | **与类型提示无关,不生成** | 排除 |
+| Scalar | `STRING`/`INT32` (Avatar.def:4 same shape on the reference surface) | `str` / `int`; `FLOAT`/`DOUBLE`→`float`; `BOOL`→`bool` | **Direct (small)** |
+| `PYTHON` / `PY` / unrecognized | outside the corpus, engine semantics = arbitrary object | `typing.Any` (lossy but legal) | Direct (small) |
+| Alias → registered type | types.xml third form (`parseTypeAliases` 'builtin' arm `databaseSchema.ts:750`) | `AVATAR_NAME = str` (type alias) | **Direct (small)** |
+| ARRAY element type | `AVATAR_INFO_LIST` (types.xml:12) | `list[AVATAR_INFO]`; nested `list[list[T]]` (recursion chain already in `definitionSemantics.ts:75`) | **Direct (small)** |
+| FIXED_DICT | `AVATAR_INFO` (types.xml:2-11) | `class AVATAR_INFO(TypedDict): name: str; level: int` | **Needs a generated class (small–medium)** |
+| Nested FIXED_DICT / vector keys | no real sample in this repo | nested `TypedDict` recursion; key types reference the vector class (see §7 to verify) | Medium (needs a real project) |
+| Fixed-length array (FIXEDARRAY) | engine DB layer `kbe/src/lib/db_interface/entity_table.h:24`, `FixedArrayType` (`entity_table_mysql.cpp:1261`) | **In Python it is just a list** → folds into the ARRAY direct translation; it is a DB storage structure, not a new Python shape | Direct (small) |
+| Message/method utype number | `messageTable.ts:127`, `Bundle.h:133` | **Unrelated to type hints, not generated** | Excluded |
 
-**判词**:映射面**现实**——三档齐全,且最难的「别名递归 + FIXED_DICT 结构」已有 `clientSdkGenerator.ts:301-321` 验证过的实现路径可抄口径;不确定性集中在真实工程的复合深度(本仓无样本)。
+**Verdict**: the mapping surface is **realistic** — all three tiers are present, and the hardest part ("alias recursion + FIXED_DICT structure") already has an implementation path proven by `clientSdkGenerator.ts:301-321` to copy the convention from; the uncertainty is concentrated in real projects' composite depth (no samples in this repo).
 
-## 3. 生成物形态与 Pylance 接线
+## 3. Artifact form and Pylance wiring
 
-### 3.1 放哪:复用 `stubDir`,不与 .def 同名
+### 3.1 Where it goes: reuse `stubDir`, never same-named with a `.def`
 
-- 目录三级解析现成:**设置 `kbengine.python.stubDir`(`package.json:1001`)> 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`**(`src/pythonStubExport.ts:24/:31/:37-39`,文档 `docs/guide/configuration.md:277`)。
-- `.def` 没有同名 `.py` 模块,「与 .def 同名」无处可挂;建议**单模块集中**:`kbe_types.pyi` 或 `kbe_types.py`(见 3.2),与既有 `KBEngine.pyi`(`pythonStubExport.ts:21`)同居。
+- The three-tier directory resolution already exists: **setting `kbengine.python.stubDir` (`package.json:1001`) > env var `KBENGINE_STUB_DIR` > default convention `.kbengine/stubs`** (`src/pythonStubExport.ts:24/:31/:37-39`, docs `docs/guide/configuration.md:277`).
+- A `.def` has no same-named `.py` module, so "same-named with the .def" has nothing to hang on; suggested **single-module concentration**: `kbe_types.pyi` or `kbe_types.py` (see 3.2), living alongside the existing `KBEngine.pyi` (`pythonStubExport.ts:21`).
 
-### 3.2 让 Pylance 用上(现有接线 + 一个硬前提)
+### 3.2 Getting Pylance to use it (existing wiring + one hard precondition)
 
-- **接线已存在**:`python.analysis.extraPaths` 由 `src/pythonExtraPaths.ts:24` 写入(注释 `:4` 明说 Pylance 靠它解析);默认存根目录在管理段(`:8-9`「设置开且 KBEngine.pyi 在盘才并入」;边界见 `configuration.md:281`)。激活期自动同步 `extension.ts:972-975`,手动命令 `extension.ts:964-971`(`kbengine.python.exportStubs`)。
-- **硬前提(不解决则整条不成立)**:**纯 `.pyi` 模块运行时不可 `import`**——Python 导入器没有 `.pyi` 加载器,用户代码写 `from kbe_types import AVATAR_INFO` 会运行时报 `ModuleNotFoundError`,而只在 `TYPE_CHECKING` 分支用才安全。两条可落地方案:
-  - **方案 A(推荐)**:生成**真 `.py`**(内容是 `TypedDict`/type alias,运行时可用)——Pylance 与运行时都成立;复用 `stubDir` 目录与「内容一致零写」纪律(`pythonStubExport.ts:5-7/:58`)。
-  - **方案 B**:保持纯 `.pyi`,**约定**用户以 `if TYPE_CHECKING: from kbe_types import ...` + 字符串注解书写——零运行时依赖,但要改用户代码并写进文档。
-- **`python.analysis.stubPath`**:Pylance 的另一桩路径,**本仓 0 命中**(未接线),列为待证选项,不作依赖。
-- **红线:不生成与项目 `.py` 同名的 `.pyi`**(实体类桩)。extraPaths/stub 优先级下,同名 `.pyi` 会**遮蔽项目实现文件**,Pylance 从此看不到真实方法体(补全/跳转语义被桩替代),弊大于利 → 明确排除。
+- **The wiring already exists**: `python.analysis.extraPaths` is written by `src/pythonExtraPaths.ts:24` (the comment at `:4` states Pylance resolves through it); the default stub directory sits in the managed segment (`:8-9` "merged only when the setting is on and KBEngine.pyi is on disk"; boundary at `configuration.md:281`). Auto-sync on activation `extension.ts:972-975`, manual command `extension.ts:964-971` (`kbengine.python.exportStubs`).
+- **Hard precondition (the whole line collapses without it)**: **a pure `.pyi` module cannot be `import`-ed at runtime** — Python's importer has no `.pyi` loader, so user code writing `from kbe_types import AVATAR_INFO` fails at runtime with `ModuleNotFoundError`, and is only safe inside a `TYPE_CHECKING` branch. Two viable landing options:
+  - **Option A (recommended)**: generate a **real `.py`** (content = `TypedDict`/type aliases, usable at runtime) — holds for both Pylance and runtime; reuse the `stubDir` directory and the "content-identical zero-write" discipline (`pythonStubExport.ts:5-7/:58`).
+  - **Option B**: keep a pure `.pyi`, **convention**: users write `if TYPE_CHECKING: from kbe_types import ...` plus string annotations — zero runtime dependency, but requires changing user code and writing it into the docs.
+- **`python.analysis.stubPath`**: Pylance's other stub path, **0 hits in this repo** (not wired), listed as a to-verify option, not a dependency.
+- **Red line: never generate a `.pyi` same-named with a project `.py`** (entity-class stubs). Under extraPaths/stub precedence, a same-named `.pyi` **shadows the project implementation file**, and Pylance would stop seeing the real method bodies (completion/navigation semantics replaced by the stub) — more harm than good → explicitly excluded.
 
-### 3.3 与现有跳转索引共存
+### 3.3 Coexisting with the existing navigation index
 
-- 全部**只读**消费 `.def`/`types.xml`;写只落 `stubDir`(默认目录 kode 自管、内容一致零写、建议 gitignore:`configuration.md:279`;`KBEngine.pyi` 头部亦自带该建议 `kbeModuleIndex.ts:513`)。
-- `entityMapping`(`:152`)与 `PythonClassIndex`(`:247`)都不读 `.pyi`,互不影响;kode 自有的 hover/补全/跳转(`languageProviders`,数据源是 `.def`)**不依赖 Pylance**,两者**互补不冲突**:Pylance 拿类型名,kode 拿工程语义(RPC、落库、跳转)。
+- Everything **reads** `.def`/`types.xml` read-only; writes only land in `stubDir` (default dir is kode-managed, content-identical zero-write, suggest gitignore: `configuration.md:279`; the `KBEngine.pyi` header also carries that suggestion itself, `kbeModuleIndex.ts:513`).
+- `entityMapping` (`:152`) and `PythonClassIndex` (`:247`) do not read `.pyi` — mutually unaffected; kode's own hover/completion/navigation (`languageProviders`, data source = `.def`) **does not depend on Pylance** — the two are **complementary, not conflicting**: Pylance gets type names, kode gets project semantics (RPC, DB storage, navigation).
 
-## 4. 时机与更新
+## 4. Timing and updates
 
-- **先例三件套已齐**:激活期自动导出(`extension.ts:972-975`,`{ silent: true }`)+ 手动命令(`:964-971`)+ 内容一致零写/陈旧才重写(`pythonStubExport.ts:5-7/:58`)。
-- **`.def`/types.xml 变更 → 重生成**:去抖 watcher 有现成先例(`src/hotReload.ts:5` 建 watcher 去抖合并连发保存、`:38-44` debounceMs 口径)→ 建议同法;最小起步可**只做手动命令 + 激活期**,watcher 二期(小 → 中)。
-- **产物提交与否**:默认 `.kbengine/stubs` 已定性为「kode 自管、建议 `.gitignore` 忽略,生成物随索引更新」(`configuration.md:279`、`kbeModuleIndex.ts:513`)→ **不提交**;用户自配目录 = 用户资产,kode 只扫描不覆盖(`configuration.md:279`)。
+- **The precedent trio is complete**: auto-export on activation (`extension.ts:972-975`, `{ silent: true }`) + manual command (`:964-971`) + content-identical zero-write / stale-only rewrite (`pythonStubExport.ts:5-7/:58`).
+- **`.def`/types.xml change → regenerate**: a debounced watcher has a ready precedent (`src/hotReload.ts:5` builds a watcher, debounce-merges successive saves, `:38-44` debounceMs convention) → suggested same approach; the minimal start can be **manual command + activation only**, the watcher as phase two (small → medium).
+- **Whether artifacts are committed**: the default `.kbengine/stubs` is already characterized as "kode-managed, suggest `.gitignore`, artifacts follow the index" (`configuration.md:279`, `kbeModuleIndex.ts:513`) → **not committed**; a user-configured directory = user assets, kode only scans, never overwrites (`configuration.md:279`).
 
-## 5. 分条结论与工作量
+## 5. Per-item conclusions and effort
 
-1. **读出 utype 定义 —— 现实(小)**:不新写解析,复用 `parseTypeAliases`(`databaseSchema.ts:724`)+ `clientSdkGenerator` 解析链(`:301-321`);缺口只是把 `.def` 引用面(`entityMapping.ts:107-123` 的 Type 串)与 types.xml 定义**接起来**成一张类型表。
-2. **映射 —— 现实(小-中)**:直译三档 + `FIXED_DICT→TypedDict` 覆盖样例级全部形态;复杂嵌套待真实工程复验(不确定性=中,不是工作量)。
-3. **生成物与接线 —— 有前提才现实(中)**:前提 A 选「真 `.py`(TypedDict)」或前提 B 立 `TYPE_CHECKING` 约定(§3.2);同时守住「不 shadow 项目 `.py`」红线。满足后复用 `stubDir`+`extraPaths`+零写设施,增量主要是**发射器 + 类型表**。
-4. **实体属性 `self.x` 让 Pylance 静态可知 —— 不现实**:桩不改用户 `.py` 就无处挂注解;唯一 Pylance 路径是同名遮蔽(已排除)。该面继续由 kode 自有 provider(`languageProviders` 的 hover/补全/跳转)补位;若未来要真做,属「代码内注解生成」新需求(改用户文件,另立项)。
-5. **自动更新 —— 现实(小-中)**:三件套先例齐,watcher 去抖有 `hotReload` 现成口径。
-6. **总评:有前提才现实(总工作量「中」)**——「类型模块生成」可做且大部分复用既有件;「实体自注解面」不现实,须改用户代码或维持 kode provider 补位。
+1. **Reading a utype definition — realistic (small)**: no new parser; reuse `parseTypeAliases` (`databaseSchema.ts:724`) + the `clientSdkGenerator` resolution chain (`:301-321`); the only gap is **joining** the `.def` reference surface (`entityMapping.ts:107-123` Type strings) with the types.xml definitions into one type table.
+2. **Mapping — realistic (small–medium)**: three direct-translation tiers + `FIXED_DICT→TypedDict` covers every sample-level shape; deep nesting needs re-verification on a real project (uncertainty = medium, not effort).
+3. **Artifact and wiring — realistic only with a precondition (medium)**: precondition A picks "real `.py` (TypedDict)" or precondition B establishes the `TYPE_CHECKING` convention (§3.2); keep the "don't shadow a project `.py`" red line. Once satisfied, reuse `stubDir`+`extraPaths`+the zero-write facility; the incremental work is mostly an **emitter + type table**.
+4. **Making the entity property `self.x` statically knowable to Pylance — not realistic**: a stub cannot hang annotations anywhere without rewriting the user's `.py`; the only Pylance path is same-name shadowing (already excluded). That surface keeps being filled by kode's own providers (`languageProviders` hover/completion/navigation); if it is ever to be truly done, it is a "in-code annotation generation" new requirement (modifies user files, separate ignition).
+5. **Auto-update — realistic (small–medium)**: the precedent trio is complete, the debounced watcher has the `hotReload` convention.
+6. **Overall: realistic with a precondition (total effort "medium")** — "type module generation" is doable and reuses mostly existing pieces; "entity self-annotation surface" is not realistic without changing user code or keeping the kode providers.
 
-## 6. 设计要点(供下一轮立项,非本轮产出)
+## 6. Design points (for the next ignition round, not produced this round)
 
-> 2026-10-17 落地记录:本节推荐项已全取——单独命令、真 `.py`(方案 A)、默认目录自管+用户目录不覆盖、确定性内容零写;watcher 自动重生成同日二期落地(批146,改动即静默重导出)。
+> 2026-10-17 implementation record: every recommended item in this section was taken — a separate command, a real `.py` (option A), the default directory kode-managed with user directories never overwritten, deterministic content for the zero-write discipline; watcher auto-regeneration landed as phase two the same day (batch 146, changes silently re-export).
 
-- 类型表:`types.xml` 别名(`parseTypeAliases`)+ `.def` 引用面(`entityMapping` Type 串)合成 `Map<类型名, 类型描述>`;别名递归防环沿 `clientSdkGenerator.ts:301` 口径。
-- 发射:标量/ARRAY/type alias 三类直译;FIXED_DICT 发 `TypedDict`(键序按 types.xml 文档序,`databaseSchema.ts:724` 的 node 遍历);`from __future__ import annotations` 头,零运行时依赖。
-- 落盘:默认 `.kbengine/stubs/kbe_types.py(±.pyi)`,零写纪律与 `KBEngine.pyi` 同款;头部写「生成物,建议 gitignore」。
-- 接线:文件进 `extraPaths` 管理段(对齐 `pythonExtraPaths.ts:8-9` 的并入条件),命令 `kbengine.python.exportStubs` 面上加一发或另立 `kbengine.python.exportTypeStubs`。
+- Type table: `types.xml` aliases (`parseTypeAliases`) + the `.def` reference surface (`entityMapping` Type strings) compose a `Map<type name, type description>`; alias-recursion cycle protection follows the `clientSdkGenerator.ts:301` convention.
+- Emission: direct translation for the scalar/ARRAY/type-alias three tiers; FIXED_DICT emits a `TypedDict` (key order follows the types.xml document order, `databaseSchema.ts:724` node traversal); a `from __future__ import annotations` header, zero runtime dependency.
+- Landing: default `.kbengine/stubs/kbe_types.py(±.pyi)`, the same zero-write discipline as `KBEngine.pyi`; header states "generated artifact, suggest gitignore".
+- Wiring: the file joins the `extraPaths` managed segment (aligned with the join condition at `pythonExtraPaths.ts:8-9`); either add one more emit on the `kbengine.python.exportStubs` surface or add a separate `kbengine.python.exportTypeStubs`.
 
-## 7. 待证清单(不在本仓可断言的)
+## 7. To-verify list (cannot be asserted within this repo)
 
-1. `python.analysis.stubPath` 相对 `extraPaths` 对 `.pyi` 的命中优先级 —— 本仓未接线(0 命中),实施前实测。
-2. 真实游戏工程的类型分布(多层嵌套 FIXED_DICT、VECTOR3 键、混合 ARRAY) —— 本仓语料只有夹具级样例(§1.4);SDK 模板 `types.xml` 为空壳。
-3. 向量类型(`VECTOR3`)在 `KBEngine.pyi` 中的可用性 —— `src/kbeModuleIndex.ts` 的符号表 `KbeSymbolKind` 只有 `class|function`(`:18`),`VECTOR3`/`vector` 字样 **0 命中** → 生成桩是否已有向量类可引用未证。
+1. `python.analysis.stubPath` hit precedence over `extraPaths` for `.pyi` — not wired in this repo (0 hits), measure before implementing.
+2. Type distribution of a real game project (multi-level nested FIXED_DICT, VECTOR3 keys, mixed ARRAY) — this repo's corpus only has fixture-level samples (§1.4); the SDK template `types.xml` is an empty shell.
+3. Availability of the vector type (`VECTOR3`) inside `KBEngine.pyi` — the symbol table `KbeSymbolKind` in `src/kbeModuleIndex.ts` only has `class|function` (`:18`), and `VECTOR3`/`vector` have **0 hits** → whether the generated stub has a vector class to reference is unproven.

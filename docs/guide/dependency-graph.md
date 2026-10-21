@@ -1,104 +1,104 @@
-# 实体依赖图
+# Entity Dependency Graph
 
 
-Kode 提供实体依赖关系图，用于查看实体继承结构和实体间引用关系。
+Kode provides an entity dependency graph for viewing entity inheritance structures and references between entities.
 
-## 能力概览
+## Overview
 
-- 从 `entities.xml` 加载实体列表
-- 分析实体继承关系
-- 分析 `ENTITYCALL` 及容器中的实体引用
-- Mermaid 可视化展示
-- 图中打开实体定义
-- 导出 SVG
-- 导出 PNG
+- Loads the entity list from `entities.xml`
+- Analyzes entity inheritance
+- Analyzes `ENTITYCALL` and entity references inside containers
+- Mermaid-based visualization
+- Opens entity definitions from the graph
+- Exports SVG
+- Exports PNG
 
-## 相关命令
+## Related Commands
 
 - `kbengine.dependency.show`
 
-## 配置联动
+## Configuration
 
-依赖图会读取这些配置：
+The dependency graph reads these settings:
 
 - `kbengine.entitiesXmlPath`
 - `kbengine.entityDefsPath`
 
-如果你的项目没有把实体文件放在默认的 `scripts/` 目录下，未配置走自动发现（显式约定路径 → 有界深扫描兜底），显式配置只作覆盖；两者都定位不到时如实提示，不静默缺节点。
+If your project does not keep entity files under the default `scripts/` directory: unconfigured paths go through auto-discovery (explicit convention paths → bounded deep-scan fallback), and explicit configuration only overrides; when neither locates them, the failure is reported honestly instead of silently missing nodes.
 
-## 图中展示内容
+## What the Graph Shows
 
-### 节点
+### Nodes
 
-每个节点代表一个实体。
+Each node represents one entity.
 
-节点会标记实体类型：
+Nodes are tagged with the entity's presence flags:
 
 - Base
 - Cell
 - Client
 
-### 边
+### Edges
 
-当前主要包含：
+Currently includes:
 
-- 继承关系
-- `ENTITYCALL` / 实体引用关系
+- Inheritance relations
+- `ENTITYCALL` / entity reference relations
 
-## 面板中的功能
+## Panel Features
 
-### 刷新
+### Refresh
 
-重新读取当前项目结构，更新依赖图。
+Re-reads the current project structure and updates the graph.
 
-适合在这些场景使用：
+Useful in these situations:
 
-- 新增实体
-- 修改继承关系
-- 调整实体引用
+- New entities added
+- Inheritance changed
+- Entity references adjusted
 
-### 打开实体定义
+### Open Entity Definition
 
-从图中点击实体，直接打开对应 `.def` 文件。
+Click an entity in the graph to open its `.def` file directly.
 
-### 导出
+### Export
 
-支持：
+Supported formats:
 
 - SVG
 - PNG
 
-适合：
+Good for:
 
-- 放到设计文档
-- 发给团队讨论
-- 做架构评审材料
+- Design documents
+- Sharing with the team for discussion
+- Architecture review material
 
-## 使用建议
+## Usage Advice
 
-### 看继承深度
+### Reading Inheritance Depth
 
-如果你发现某类实体继承链过深，通常意味着：
+If you find some entity's inheritance chain too deep, it usually means:
 
-- 结构可能过于耦合
-- 行为分层可能不清晰
-- 后续维护成本会上升
+- The structure may be over-coupled
+- Behavior layering may be unclear
+- Maintenance cost will rise over time
 
-### 看引用热点
+### Reading Reference Hotspots
 
-最常被引用的实体通常是系统核心点。它们值得单独审视：
+The most referenced entities are usually the system's core points. They deserve a dedicated look:
 
-- 是否承担了过多职责
-- 是否应该拆分
-- 是否会成为改动风险集中区
+- Do they carry too many responsibilities
+- Should they be split
+- Are they becoming a concentrated risk zone for changes
 
-## 当前边界
+## Current Boundaries
 
-依赖图现在更适合“结构可视化”和“导航”。
+The dependency graph today fits "structure visualization" and "navigation" better.
 
-还没有做到：
+Not yet done:
 
-- 超大项目下的聚类和分层过滤
-- 自定义布局策略
-- 只显示某个子图或某条依赖链
-- 自动优化建议
+- Clustering and hierarchical filtering for very large projects
+- Custom layout strategies
+- Showing only a subgraph or a single dependency chain
+- Automatic optimization suggestions

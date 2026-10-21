@@ -1,97 +1,97 @@
-# 代码生成器
+# Code Generator
 
 
-Kode 内置实体代码生成器，用来快速创建 `.def` 和配套 Python 文件。
+Kode ships a built-in entity code generator for quickly creating `.def` files and companion Python files.
 
-## 能力概览
+## Overview
 
-- 实体创建向导
-- 预置模板
-- 自动生成 `.def`
-- 自动生成 Python 文件
-- 自动注册到 `entities.xml`
-- 可配置输出目录
+- Entity creation wizard
+- Preset templates
+- Automatic `.def` generation
+- Automatic Python file generation
+- Automatic registration into `entities.xml`
+- Configurable output directories
 
-其中：
+In particular:
 
-- 是否生成 Python 取决于 `kbengine.generator.generatePython`
-- 是否写入 `entities.xml` 取决于 `kbengine.generator.registerInEntitiesXml`
-- `entities.xml` 的目标位置会读取 `kbengine.entitiesXmlPath`
+- Whether Python is generated depends on `kbengine.generator.generatePython`
+- Whether `entities.xml` is written depends on `kbengine.generator.registerInEntitiesXml`
+- The target location of `entities.xml` reads `kbengine.entitiesXmlPath`
 
-## 相关命令
+## Related Commands
 
 - `kbengine.generator.wizard`
 - `kbengine.generator.templates`
 
-## 生成方式
+## Generation Modes
 
-### 向导模式
+### Wizard Mode
 
-适合：
+Good for:
 
-- 新建标准实体
-- 逐步填写属性和方法
-- 不想手写初始 XML 结构
+- Creating standard entities
+- Filling in properties and methods step by step
+- Not wanting to hand-write the initial XML structure
 
-### 模板模式
+### Template Mode
 
-适合：
+Good for:
 
-- 快速生成常见实体
-- 团队内部约定的标准起点
+- Quickly generating common entities
+- Standard starting points agreed within a team
 
-## 相关配置
+## Related Configuration
 
 ### `kbengine.generator.defOutputPath`
 
-控制 `.def` 文件输出目录。
+Controls the `.def` file output directory.
 
 ### `kbengine.generator.pythonOutputPath`
 
-控制 Python 文件输出目录。
+Controls the Python file output directory.
 
 ### `kbengine.generator.generatePython`
 
-是否同时生成 Python 文件。
+Whether to also generate Python files.
 
 ### `kbengine.generator.registerInEntitiesXml`
 
-是否在生成后自动写入 `entities.xml`。
+Whether to automatically write into `entities.xml` after generation.
 
-## 典型流程
+## Typical Flow
 
-1. 执行 `Create Entity from Wizard`
-2. 选择实体名称和模板
-3. 配置属性、方法、Base / Cell / Client 结构
-4. 生成 `.def`
-5. 按配置决定是否生成 Python
-6. 按配置决定是否注册到 `entities.xml`
+1. Run `Create Entity from Wizard`
+2. Choose the entity name and template
+3. Configure properties, methods, and the Base / Cell / Client structure
+4. Generate the `.def`
+5. Generate Python or not, per configuration
+6. Register into `entities.xml` or not, per configuration
 
-## 适合的使用场景
+## Fitting Use Cases
 
-### 初始建模
+### Initial Modeling
 
-在项目早期快速搭出实体骨架。
+Quickly lay out entity skeletons early in a project.
 
-### 团队规范
+### Team Conventions
 
-通过统一模板减少：
+Reduce, through unified templates:
 
-- 手写 XML 格式错误
-- 输出目录不一致
-- `entities.xml` 漏注册
+- Hand-written XML format errors
+- Inconsistent output directories
+- Missed `entities.xml` registrations
 
-### 教学和 onboarding
+### Teaching and Onboarding
 
-新成员可以先从生成器出发，再去理解最终产物结构。
+New members can start from the generator, then move on to understanding the final artifact structure.
 
-## 当前边界
+## Current Boundaries
 
-当前生成器适合“快速起步”和“标准模板生成”。
+The current generator fits "quick starts" and "standard template generation".
 
-还没有做到：
+Not yet done:
 
-- 团队级模板库管理
-- 自定义模板编辑器
-- 从现有实体反向提炼模板
-- 更复杂的继承链建模向导
+- Team-level template library management
+- A custom template editor
+- Reverse-extracting templates from existing entities
+- More complex inheritance-chain modeling wizards

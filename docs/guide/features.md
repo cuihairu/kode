@@ -1,180 +1,180 @@
-# 功能概览
+# Feature Overview
 
 
-## 语言能力
+## Language Features
 
-- `.def` 语法高亮（内建 XML 语法委托 + 引擎语义着色）
-- 类型、Flags、DetailLevel 智能提示
-- 标签、值、自定义符号 Hover
-- `entities.xml` 与 `.def` 跳转
-- entities.xml 实体登记悬停带清单序号（批147，`**Utype**` 行：引擎按 entities.xml 清单顺序分配 utype，序号取首次出现位置）
-- def 链合并悬停（批148，source-analysis D5 收口）：`.def` 内悬停根级 `<Parent>` 元素呈现该 def 的继承闭包三面——Parent 链递归、`interfaces/` 平铺、`components/` 挂接，与引擎归并口径一致；父名/接口/组件缺 def 文件如实标注，环被 visited 截断并标注（引擎 loadParentClass 无防环，kode 不照抄）
-- `.def` 内实体引用跳转
-- Python 与 `.def` 双向导航
-- RPC 方法标记（Python 实现脚本里命中 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明）
-- 语言功能按功能可独立开关（批154）：CodeLens 四类（RPC 标记/事件回调/属性标记/types.xml 落库镜链）与悬停六类（自定义类型存储、implementedBy 反链、实体注册、def 链、事件统计、服务配置字段）各一枚 `kbengine.*` 开关，默认全开、不设总闸一刀切；CodeLens 开关变更即时生效
-- Python 属性类型内联提示（批154）：`self.<属性>` 访问处以内联 hint 显示 def 声明的 `types.xml` 数据类型，与属性 F12 同一解析索引，受 `kbengine.inlayHints.typeData` 控制（inlay 无变更事件，下一次渲染生效）
-- `.def` 属性/方法 F2 重命名（同文件声明 + 后代 def 复述，见语言能力页边界说明）
+- `.def` syntax highlighting (built-in XML grammar delegation + engine semantic coloring)
+- Completion for types, Flags, DetailLevel
+- Hover for tags, values, custom symbols
+- Navigation between `entities.xml` and `.def`
+- Manifest ordinal on `entities.xml` registration hover (batch 147, the `**Utype**` line: the engine assigns utype in `entities.xml` list order, so the ordinal is the first-occurrence position)
+- Merged def-chain hover (batch 148, closing source-analysis D5): hovering the root-level `<Parent>` element in a `.def` presents the def's inheritance closure in three facets — the recursive Parent chain, the flattened `interfaces/` list, and the `components/` hookup — aligned with the engine's merge semantics; missing def files for parents/interfaces/components are stated as such, and cycles are truncated by a visited set and marked (the engine's loadParentClass has no cycle guard; kode does not copy that)
+- Entity reference navigation inside `.def`
+- Bidirectional Python ↔ `.def` navigation
+- RPC method markers (functions in Python implementation scripts that hit def method declarations get a one-line clickable CodeLens jumping back to the def declaration)
+- Per-feature switches for language features (batch 154): each of the four CodeLens kinds (RPC markers, event callbacks, property markers, the `types.xml` storage lens chain) and the six hover kinds (custom-type storage, `implementedBy` backlink, entity registration, def chain, event stats, server config fields) gets its own `kbengine.*` switch, all default on with no master switch; CodeLens toggles take effect immediately
+- Python property type inlay hints (batch 154): `self.<property>` access sites inline the `types.xml` data type declared in the def, resolved through the same index as property F12, controlled by `kbengine.inlayHints.typeData` (inlay hints have no change event, so a toggle takes effect on the next render)
+- `.def` property/method F2 rename (same-file declaration + descendant def restatements, see the boundary note on the language page)
 
-## 诊断能力
+## Diagnostics
 
-- 未知类型检查
-- 未知 Flags 检查
-- 未知 DetailLevel 检查
-- 重复定义检查
-- 缺失 `Type` / `Flags` 检查
-- entities.xml 同名重复登记检查（批147）：同名实体条目引擎按首条静默合并、后续条目不生效，kode 在重复条目上给出 warning；受 `kbengine.enableDiagnostics` 总开关控制
+- Unknown type check
+- Unknown Flags check
+- Unknown DetailLevel check
+- Duplicate definition check
+- Missing `Type` / `Flags` check
+- Duplicate entity registration check in `entities.xml` (batch 147): the engine silently merges same-name entries, keeping the first one, so later entries never take effect; kode flags them with a warning, gated by the `kbengine.enableDiagnostics` master switch
 
-## 工具面板
+## Tool Panels
 
-- 实体浏览器
-- 服务器控制面板
-- 日志查看器
-- 监控面板
-- 实体依赖关系图
-- 实体架构流程图
+- Entity explorer
+- Server control panel
+- Log viewer
+- Monitoring panel
+- Entity dependency graph
+- Entity architecture flow diagram
 
-说明：
-日志查看器当前尚未完成官方 logger watcher 协议适配。
-监控面板在 watcher 无响应时只保留 machine 返回的基础状态。
+Notes:
+the log viewer has not completed the official logger watcher protocol adaptation.
+When the watcher does not respond, the monitoring panel keeps only the base status returned by machine.
 
-## 原始日志 ERROR 扫描（盘点 G6）
+## Raw Log ERROR Scan (inventory G6)
 
-- `Scan Raw Log Errors` 命令选原始日志文件或文件夹（文件夹只扫一层 `.log`/`.txt`/`.out`，按名排序、去重），经与日志面板同一个解析器挑出 `ERROR`/`CRITICAL` 行
-- 按「组件 + 归一签名」聚合计数（数字折成 `N`、空白压缩、签名截 160 字符），面板给计数 / 级别 / 组件 / 签名 / 最近时间，点行打开源文件对应行，「重新扫描」按上一批文件重跑
-- 不依赖 logger watcher 协议：logger 通道没连上时这条路径照样能用；单文件 64MB 上限，超限或读失败记 readError，不中断其余文件
+- The `Scan Raw Log Errors` command picks raw log files or a folder (a folder scans one level of `.log`/`.txt`/`.out`, sorted by name and deduped); the same parser the log panel uses picks out the `ERROR`/`CRITICAL` lines
+- Aggregation is by "component + normalized signature" (numbers folded to `N`, whitespace collapsed, signature truncated to 160 characters); the panel shows count / level / component / signature / most recent time, clicking a row opens that line in the source file, and "Rescan" reruns over the same file set
+- Does not depend on the logger watcher protocol: this path keeps working when the logger channel is not connected; 64MB cap per file, and an oversize or unreadable file is recorded as a readError without interrupting the rest
 
-## Telnet 探测与会话联动
+## Telnet Probing and Session Integration
 
-- 配置显式开启 telnet（设置显式端口，或 kbengine.xml 有 `<telnet_service>` 段）才展示 telnet 相关内容；两处都没配时不探测、不展示，状态灯、独立树视图与面板命令入口全部隐藏。引擎 defaults 里虽有 `<telnet_service>` 段，但 defaults 只供数值回落，不单独把 telnet 打开
-- 状态栏与服务器控制面板状态灯：已连接 / 已开启·未配密码 / 密码被拒 / 未开启 / 未配置
-- 目标解析链：kode 设置（`kbengine.telnet.host/port/password`）→ 元件 `kbengine.xml` 的 `<telnet_service>` 段（`kbengine.telnet.configXmlPath` 指定，未指定时 `kbengine.assetsRoot/kbengine.xml` 优先，再按约定路径探测工作区根：`kbengine.xml`、`res/server/kbengine.xml`、`assets/res/server/kbengine.xml`）→ 引擎 `kbengine_defaults.xml`（经 `kbengine.binPath` 推导）。端口与密码都按这个顺序取第一个非空值；`.kbengine/debug.json` 不参与 telnet 探测
-- 探测默认 5 秒一轮，单端口 1.5 秒超时，探完即毁不占连接
-- 端口开启时自动握手登录；密码只经 socket 提交，不进日志
-- 面板命令输入走白名单加内置只读快捷命令，`:quit` 恒被拒绝
-- 断线状态翻转可重连，掉线不崩面板
+- Telnet-related content shows only when telnet is explicitly enabled (an explicit port in the settings, or a `<telnet_service>` section in kbengine.xml); with neither configured there is no probing and no display — the status light, the standalone tree view, and the panel command entries are all hidden. The engine defaults do contain a `<telnet_service>` section, but defaults only provide value fallbacks and do not switch telnet on by themselves
+- Status bar and server control panel status light: connected / enabled·no password / password rejected / not enabled / not configured
+- Target resolution chain: kode settings (`kbengine.telnet.host/port/password`) → the component `kbengine.xml` `<telnet_service>` section (specified via `kbengine.telnet.configXmlPath`; when unspecified, `kbengine.assetsRoot/kbengine.xml` first, then convention paths probed at the workspace root: `kbengine.xml`, `res/server/kbengine.xml`, `assets/res/server/kbengine.xml`) → the engine `kbengine_defaults.xml` (inferred via `kbengine.binPath`). Port and password each take the first non-empty value in this order; `.kbengine/debug.json` does not participate in telnet probing
+- Probing defaults to one round per 5 seconds, 1.5s timeout per port, sockets destroyed after each probe
+- When the port is up, handshake login happens automatically; the password goes over the socket only and never into logs
+- Panel command input goes through a whitelist plus built-in read-only shortcuts; `:quit` is always rejected
+- A disconnected status can flip back and reconnect; a dropped session does not crash the panel
 
-## 调试支持
+## Debugging Support
 
-- 调试配置只读工作区 `.kbengine/debug.json`：`telnetHost`/`telnetPort`/`telnetEnableCommands` 仅服务 `Start Debugging` 的提示语，`pathMappings` 用于生成 launch.json；telnet 探测/面板/状态灯走上面的三层链，不读这个文件
-- 生成的启动配置是 `debugpy` 的 attach 形态；本地附加由扩展列出本机进程（匹配组件名的置顶标 ✓），选中即以 PID 组装配置，不再手输 PID
-- 远程附加（`kbengine.debug.attachRemote`）的目标来自设置 `kbengine.debug.remoteTargets`，以 debugpy `connect` 模式直连远端 debugpy 监听端口
-- 调试模型：先经 telnet 向组件输入开启调试命令，再附加目标进程
-- 编辑期校验（批136 G3）：kode 随包贡献 `.kbengine/debug.json` 的 JSON Schema（`contributes.jsonValidation` 匹配 `**/.kbengine/debug.json`），VS Code 的 JSON 扩展在保存前就把类型写错、`telnetPort` 写成字符串、`pathMappings` 缺 `localRoot`/`remoteRoot`、`method` 不在白名单等问题标红；校验只作提示，解析器逐条剔除与类型回落的规则不变
-- 缺失即自动生成（批143）：工作区里找不到 `.kbengine/debug.json` 时，激活期在生效工作目录建 `.kbengine/` 并写一份带注释的骨架；骨架按 JSONC 写（允许 `//` 与块注释，同 `tsconfig.json` 口径），kode 读配置前统一剥注释，你自己写的注释不会让配置读不动。**已存在的文件绝不覆盖**，目录不可写只往「KBEngine 配置」输出通道如实说明，不影响其余能力
+- The debug config reads only the workspace `.kbengine/debug.json`: `telnetHost`/`telnetPort`/`telnetEnableCommands` serve only the `Start Debugging` prompt wording, `pathMappings` is used to generate launch.json; telnet probing/panel/status light follow the three-layer chain above and do not read this file
+- The generated launch config is a `debugpy` attach form; local attach has the extension list local processes (matches on component names pinned and marked ✓), and selecting one assembles the config by PID — no more hand-typing PIDs
+- Remote attach (`kbengine.debug.attachRemote`) targets come from the setting `kbengine.debug.remoteTargets`, connecting in debugpy `connect` mode straight to the remote debugpy listening port
+- Debug model: first send the enable-debugging command into the component via telnet, then attach to the target process
+- In-editor validation (batch 136 G3): kode ships a JSON Schema for `.kbengine/debug.json` (`contributes.jsonValidation` matching `**/.kbengine/debug.json`), so the VS Code JSON extension flags wrong types, `telnetPort` written as a string, a `pathMappings` entry missing `localRoot`/`remoteRoot`, or a `method` outside the whitelist before you save; validation is a hint only — the parser still drops bad entries and falls back per field as before
+- Scaffolded when missing (batch 143): when `.kbengine/debug.json` is absent from the workspace, activation creates `.kbengine/` in the effective working directory and writes an annotated skeleton; the skeleton is written as JSONC (`//` and block comments allowed, same convention as `tsconfig.json`) and kode strips comments before parsing, so your own comments never break config loading. **An existing file is never overwritten**; if the directory is not writable it only reports that plainly on the "KBEngine 配置" output channel, leaving every other capability intact
 
-说明：
-KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存在「扩展直接启动 Python 脚本」的形态。
+Notes:
+KBEngine components are C++ processes with embedded Python runtimes; debugging is attach-based — there is no "extension launches a Python script" form.
 
-## 最终配置视图
+## Final Config View
 
-- 按引擎装载规则合成最终生效配置：先载引擎默认 `kbengine_defaults.xml`，再以元件 `kbengine.xml` 同键覆盖（子键按名对齐），只读虚拟文档 `kbengine-final.xml`，不落盘
-- 三个入口：侧栏 Config 视图的「最终配置」节点、命令面板 `Show Final Server Config`、激活后自动后台打开（`kbengine.showFinalConfigOnOpen`，默认开）
-- defaults 或元件 `kbengine.xml` 保存后自动重算（`kbengine.autoRefreshFinalConfig`，默认开）；字段悬浮可看作用说明
-- 分层口径与前后对照见 [配置说明](./configuration.md) 的「服务端配置的三层」
+- Synthesizes the final effective configuration per the engine's loading rules: load the engine default `kbengine_defaults.xml` first, then override with the component `kbengine.xml` (child keys aligned by name); a read-only virtual document `kbengine-final.xml`, never written to disk
+- Three entries: the "Final Config" node in the sidebar Config view, the `Show Final Server Config` command, and an automatic background open after activation (`kbengine.showFinalConfigOnOpen`, default on)
+- Auto-recomputed after defaults or the component `kbengine.xml` is saved (`kbengine.autoRefreshFinalConfig`, default on); hovering a field shows what it does
+- Layering rules and a before/after comparison: the "server config three layers" section in the [configuration reference](./configuration.md)
 
-## 属性 → 数据库提示与 Schema 视图
+## Property → Database Hints and the Schema View
 
-- Persistent 属性悬停追加「数据库存储」行：完整 `` `db`.`table`.`column` `` 全名 + 引擎 DDL 片段（列型、`not null`、`DEFAULT`）+ 具体取值约束（整型按 MySQL 区间、varchar 按解析后长度；未写 `<DatabaseLength>` 缺省 255，`entity_table_mysql.cpp:1829-1833`）；同 DDL 多列并作一条（向量三列一条）
-- ARRAY / 组件属性不在主表：悬停说明去往的子表与 `parentID` 关联，F12 落 schema 的子表行（子表带 `父表：` 注记）
-- 连接要素直接读引擎自身配置（不手填）：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 defaults + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306（`db_interface_mysql.cpp:166-167`）；密码仅在 `<encrypt>false</encrypt>`（明文配置）时读出且从不展示，`encrypt=true` 的 RSA 密文不解读。读值按「工作区 + binPath」缓存，`kbengine*.xml` 或配置变更即失效重读
-- Schema 视图（`kbengine.database.open`）：中文标签渲染（批133）。头部给实体名、`存储引擎`、`定义文件` 与 `表: N 张 · 列: M（其中 .def 声明 K）` 概览，配置读得时另给 `数据库: 库名@host:端口`，再附「读图方式」图例（`tbl_` / `sm_` 前缀、引擎列不落 def、`parentID` 关联、flags 含义、SQL 粘贴用法）；每表标 `表类型`（实体表 / 组件表 / 数组子表）、`定义来源`（工作区内相对路径）与 `父表：`，字段分「引擎列（引擎自动建，.def 无需声明）」（`id` / `autoLoad` / `parentID` / 位置朝向六列各带固定语义注解）与「属性列（.def 里声明的）」两组，属性列行尾 `← 文件:行 <属性>` 标 def 落点，只有引擎列的表照实提示 `属性列: 无（本表只有引擎列，没有 .def 声明的数据列）`；每表尾部给三行可粘贴 SQL（全列 SELECT、只含 def 属性列的 `SQL(属性列)`、子表的 `SQL(子表 JOIN)` 按 `parentID` 关联父表，`LEFT JOIN` 保住空元素属性行）；均带库表前缀与反引号转义，库名读不到时退化为表级全名，仍合法
-- 库表前缀可覆盖：设置 `kbengine.db.tablePrefix`（缺省空 = 引擎默认 `tbl_`），表名与三行 SQL 模板同源替换；ARRAY 子表悬停同样给出可粘贴的 JOIN 语句
-- types.xml 类型形态与引用反扫（批134）：类型声明名悬停追加「落库形态」（builtin 落主表单列附列型、FIXED_DICT 平铺成列不成表、ARRAY 成 `tbl_<实体>_<属性>` 子表并递归一层元素落列、未解析明说引擎装载会失败）；声明行上方 CodeLens 逐条反扫真实引用落点（`Hero.itemId → tbl_Hero.sm_itemId`），点击打开该实体 Schema 视图定位到对应列，超 10 处折叠计数镜，`.def`/`types.xml`/`entities.xml` 变更即失效重扫；反扫落点取自 schema 快照（与渲染同一套引擎语义），不另造落库规则
-- 数据库漂移校验（`kbengine.database.checkDrift` / `checkAllDrift`）：比对缺表 / 缺列 / 多列 / 型别 / 可空性 / 默认值 / 索引与残留表，可检查单实体或全部工作区实体；连接信息读引擎配置（`encrypt=false` 明文密码），查询与会话均只读。详见 [数据库漂移校验](./database-drift-check.md)
+- Persistent property hovers append a "database storage" line: the full `` `db`.`table`.`column` `` name + the engine DDL fragment (column type, `not null`, `DEFAULT`) + concrete value constraints (integers per MySQL ranges, varchar per the parsed length; default 255 when `<DatabaseLength>` is absent, `entity_table_mysql.cpp:1829-1833`); same-DDL columns merge into one line (a vector's three columns as one)
+- ARRAY / component properties are not in the main table: the hover explains which child table the data lives in and the `parentID` relation, and F12 lands on the child table row in the schema (child tables carry a `父表：` note)
+- Connection details are read straight from the engine's own config (nothing hand-filled): the synthesized `<dbmgr><databaseInterfaces><default>` (engine defaults + component `kbengine.xml` same-key override), port `0` falls to the MySQL default 3306 (`db_interface_mysql.cpp:166-167`); the password is read only when `<encrypt>false</encrypt>` (plaintext config) and never displayed; `encrypt=true` RSA ciphertext is not deciphered. Read values are cached per "workspace + binPath" and re-read whenever `kbengine*.xml` or the config changes
+- Schema view (`kbengine.database.open`): Chinese-label rendering (batch 133). The header gives the entity name, `存储引擎`, `定义文件`, and a `表: N 张 · 列: M（其中 .def 声明 K）` overview, plus `数据库: 库名@host:端口` when the config is readable, then a "how to read this" legend (`tbl_` / `sm_` prefixes, engine columns not from def, `parentID` relation, flag meanings, SQL paste usage); each table is tagged with `表类型` (entity table / component table / array child table), `定义来源` (workspace-relative path), and `父表：`; fields split into "engine columns (created automatically by the engine, no `.def` declaration needed)" (`id` / `autoLoad` / `parentID` / the six position-and-orientation columns, each with fixed semantic annotations) and "property columns (declared in `.def`)"; property column row ends carry `← 文件:行 <属性>` pointing at the def origin; a table with only engine columns honestly notes `属性列: 无（本表只有引擎列，没有 .def 声明的数据列）`; each table ends with three pasteable SQL lines (full SELECT, a `SQL(属性列)` with only def property columns, and a child table's `SQL(子表 JOIN)` joining the parent via `parentID` with a `LEFT JOIN` preserving empty-element property rows); all carry the database/table prefix and backtick escaping; when the database name is unreadable it degrades to table-level full names, still valid
+- The table prefix is overridable: the setting `kbengine.db.tablePrefix` (default empty = engine default `tbl_`), substituted in the same source for table names and the three SQL templates; ARRAY child table hovers likewise give a pasteable JOIN
+- types.xml type forms and reference back-scan (batch 134): type declaration name hovers append the "database form" (builtin lands as a main-table single column with its type, FIXED_DICT flattens into columns without a table, ARRAY becomes a `tbl_<Entity>_<Property>` child table with one recursive level of element columns, unresolved types state plainly that engine loading will fail); above each declaration line a CodeLens back-scans the real reference sites (`Hero.itemId → tbl_Hero.sm_itemId`), clicking opens that entity's schema view at the matching column, folding into a count lens beyond 10 sites, invalidated and rescanned when `.def`/`types.xml`/`entities.xml` change; back-scan sites come from the schema snapshot (same engine semantics as the rendering), no separate persistence rules invented
+- Database drift check (`kbengine.database.checkDrift` / `checkAllDrift`): compares missing tables / columns, extra columns, type / nullability / default / index differences, and residual tables; checks one or all workspace entities. Connection info comes from engine config (`encrypt=false` plaintext password); queries and sessions remain read-only. See [Database Drift Check](./database-drift-check.md)
 
-## 数据库模拟
+## Database Simulation
 
-- 在数据库 schema 快照之上模拟建表与行数据:`.dbsim` 虚拟文档一体展示 DDL、模拟行 JSON、INSERT 语句与引擎差异清单
-- DDL 逐条对齐引擎 MySQL 落库实现(表前缀 `tbl_`、`parentID` 子表列、`sm_autoLoad`、逐类型列型别、`(@DATALEN@)` 空宽度剥离、`ENGINE=InnoDB`),出处见 [数据库模拟](./database-simulation.md)
-- 行校验走严格引擎语义:任一不过整条拒绝,DELETE 递归级联清子表;UNIQUE 预检是模拟器比引擎多做的事,已如实登记
-- 入口:`Simulate Entity Database`(不传实体名时取活动 `.def` 推断)、`Export Entity Database Simulation`(导出 Markdown)
+- Simulates table creation and row data on top of a database schema snapshot: a `.dbsim` virtual document shows DDL, simulated row JSON, INSERT statements, and the engine difference list together
+- DDL aligns item by item with the engine's MySQL persistence implementation (`tbl_` prefix, `parentID` child column, `sm_autoLoad`, per-type column types, `(@DATALEN@)` empty-width stripping, `ENGINE=InnoDB`); sources in [Database Simulation](./database-simulation.md)
+- Row validation follows strict engine semantics: any failed check rejects the whole statement; DELETE cascades child tables recursively; the UNIQUE pre-check is something the simulator does beyond the engine and is registered honestly
+- Entries: `Simulate Entity Database` (entity inferred from the active `.def` when no name is passed) and `Export Entity Database Simulation` (export as Markdown)
 
-## 配置自动发现
+## Config Auto-Discovery
 
-- 干净工作区零配置可用核心功能(打开 `.def` → 实体浏览器/依赖图/流程图/属性面板/数据库 schema/悬停)
-- 发现链:显式配置 → 约定布局 → 有界深扫描(限深 7 层/2 万条目,剪 node_modules/.git 等)→ 唯一命中即用,多候选激活期弹一次 quick pick 并按工作区记忆
-- 服务器资产根 `kbengine.assetsRoot` 同链发现(批128):原值以引擎装载探针 `res/server/kbengine.xml` 验收,未通过时按约定链(工作区根、assets/、server_assets/)→ 记忆选择 → 深扫描唯一命中兜底,telnet 探测与最终配置视图同步受益
-- 纯发现、无配置项:`types.xml`、`messages_fixed(_defaults).xml`、引擎 defaults 的源码根兜底;def 根推出的子路径(interfaces/components/user_type)不进配置
-- 定位失败不再静默:`kbengine.discovery.report` 命令在 OUTPUT 面板逐键摊开发现结果(最终取用值与来源、显式配置存在性、约定链命中/未命中、深扫描命中、记忆选择、深扫描截断标注),附逐项补救建议,报告可整段复制回传维护者
-- 详见 [配置说明](./configuration.md) 的「路径类配置的自动发现」与全量对照表
+- A clean workspace needs zero configuration for core features (open a `.def` → entity explorer / dependency graph / flow diagram / property panel / database schema / hovers)
+- Discovery chain: explicit config → convention layouts → bounded deep scan (depth 7 / 20k entries, pruning node_modules/.git etc.) → a unique hit is used; multiple candidates pop a quick pick once during activation and remember per workspace
+- The server assets root `kbengine.assetsRoot` follows the same chain (batch 128): the original value is validated with the engine-loading probe `res/server/kbengine.xml`; on failure it goes through the convention chain (workspace root, assets/, server_assets/) → remembered choice → deep-scan unique hit fallback; telnet probing and the final config view benefit in sync
+- Pure discovery, no settings: `types.xml`, `messages_fixed(_defaults).xml`, and the engine defaults' source-root fallback; sub-paths derived from the def root (interfaces/components/user_type) do not enter the settings
+- Location failures are no longer silent: the `kbengine.discovery.report` command lays out the discovery result key by key in the OUTPUT panel (final chosen value and source, explicit-config existence, convention-chain hits/misses, deep-scan hits, remembered choices, deep-scan truncation markers), with per-item remediation advice; the whole report can be copied back to maintainers
+- See the "path-like config auto-discovery" section and the full comparison table in the [configuration reference](./configuration.md)
 
-## Python 生态接线（盘点 G1 / G2）
+## Python Ecosystem Wiring (inventory G1 / G2)
 
-- extraPaths 接线（批136 G1）：把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`（WorkspaceFolder 级），只管理本扩展写入的那一段——用户手填路径永不被动，无变化不写、无可发现根静默；`Sync Python Extra Paths` 命令手动重跑，激活期自动同步一次全程零提示（`kbengine.python.extraPathsSync` 默认开可关）
-- `.pyi` 存根导出（批136 G2）：把内置 KBEngine Python API 符号索引（与补全/悬停/跳转同源）导出为真文件 `KBEngine.pyi`——虚拟桩文档 Python 扩展看不见，真文件配合 extraPaths 接线才解析 `import KBEngine`；内容一致零写、索引更新后陈旧才重写，激活期静默自动一次，`Export KBEngine Python Stubs` 手动入口导出后链一次 extraPaths 同步
-- 存根目录可配（批142）：`kbengine.python.stubDir` 三级解析——设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。默认目录归 kode 自管（按内容比对刷新）；**用户指定的目录只进不出**：目录里已有任何 `.pyi` 一律当用户资产不覆盖，没有才生成一份，目录读不到如实提示不盲写
-- types.xml 类型桩（def-pyi-stubs §6）：把 `entity_defs/types.xml` 自定义类型导出成真 `.py` 模块 `kbe_types.py`（`FIXED_DICT`→`TypedDict`、`ARRAY`→`List[元素]`、别名→类型名，别名按依赖拓扑排序，成环/空指引跳过并说明）——真模块既是 Pylance 类型来源也可被运行时 `import kbe_types`；与 `KBEngine.pyi` 同目录同开关（`kbengine.python.stubExport`），内容确定性保证零写纪律，`Export KBEngine Python Type Stubs` 手动入口导出后链一次 extraPaths 同步，`types.xml` 落盘（保存/新建/删除）后由 watcher 静默自动重生成
+- extraPaths wiring (batch 136 G1): writes the KBEngine scripts roots discovered in the workspace into `python.analysis.extraPaths` (workspace-folder level), managing only the segment this extension wrote — paths you typed yourself are never touched; nothing is written when nothing changed, and a workspace with no discoverable root is skipped silently. The `Sync Python Extra Paths` command reruns it manually; activation syncs once with zero prompts (`kbengine.python.extraPathsSync` on by default, disableable)
+- `.pyi` stub export (batch 136 G2): exports the built-in KBEngine Python API symbol index (same source as completion/hover/navigation) as a real `KBEngine.pyi` file — virtual stub documents are invisible to the Python extension, and only a real file plus the extraPaths wiring resolves `import KBEngine`; identical content is a zero-write, a stale stub is rewritten, activation does it once silently, and the `Export KBEngine Python Stubs` manual entry chains one extraPaths sync after a successful export
+- Configurable stub directory (batch 142): `kbengine.python.stubDir` resolves in three tiers — setting > `KBENGINE_STUB_DIR` environment variable > the default convention `.kbengine/stubs`. The default directory is managed by kode (refreshed by content comparison); **a directory you specify is scan-only**: any `.pyi` already in it counts as your asset and is never overwritten, kode only generates when there is none, and an unreadable directory is reported plainly instead of being written blindly
+- types.xml type stubs (def-pyi-stubs §6): exports the `entity_defs/types.xml` custom types into a real `.py` module `kbe_types.py` (`FIXED_DICT` → `TypedDict`, `ARRAY` → `List[element]`, aliases → type names; aliases in dependency topological order, cycles/empty directives skipped with a stated reason) — a real module is both a Pylance type source and runtime-importable via `import kbe_types`; it shares the directory and switch with `KBEngine.pyi` (`kbengine.python.stubExport`), its deterministic content upholds the zero-write discipline, and the `Export KBEngine Python Type Stubs` manual entry chains one extraPaths sync after a successful export, and after `types.xml` lands on disk (save/create/delete) the watcher silently regenerates it
 
-## 变量替换（批141）
+## Variable Substitution (batch 141)
 
-- 路径类设置、`.kbengine/debug.json` 的 `quickActions` 与 `workspaceRoot`、`kbengine.python.stubDir` 走同一套 VS Code 官方变量替换，不再各处各写一份
-- 支持 `${workspaceFolder}`、`${workspaceFolderBasename}`、`${file}`、`${fileBasename}`、`${fileBasenameNoExtension}`、`${fileDirname}`、`${fileExtname}`、`${relativeFile}`、`${relativeFileDirname}`、`${cwd}`、`${userHome}`、`${pathSeparator}`、`${env:NAME}`
-- 相对路径族只在文件落于某个工作区根之下时给相对写法，区外回退绝对路径；未知变量按语义分两种口径——quick action 执行期报错并指名变量中止（静默空串会把脚本跑成「路径为空」的假成功），路径类设置回落空串沿既有约定
+- Path-like settings, the `quickActions` and `workspaceRoot` of `.kbengine/debug.json`, and `kbengine.python.stubDir` all go through one set of official VS Code variable substitution instead of each writing its own
+- Supported: `${workspaceFolder}`, `${workspaceFolderBasename}`, `${file}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${cwd}`, `${userHome}`, `${pathSeparator}`, `${env:NAME}`
+- The relative-path family only yields the relative form when the file sits under some workspace root, falling back to an absolute path otherwise; unknown variables follow two policies by semantics — quick action execution fails and names the variable (a silent empty string would run the script as a fake success with an empty path), while path-like settings fall back to an empty string per the existing convention
 
-## HTTP 快捷请求
+## HTTP Quick Requests
 
-- 设置 `kbengine.httpRequests` 列表：名称 / URL 模板 / method / 请求头 / 请求体 / 启停 / 键位展示串
-- 模板变量 `${module}` / `${file}` / `${line}` / `${sel}`，按字面替换、不做 URL 编码；`${module}` 取工作区相对模块路径（`entities/fight/FightAI.py` → `entities.fight.FightAI`）
-- 触发两路：命令面板 quick pick；经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发
-- 执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」；失败以 `✗` 标记加错误弹窗呈现
+- The `kbengine.httpRequests` list holds: name / URL template / method / headers / body / enable flag / keybinding display string
+- Template variables `${module}` / `${file}` / `${line}` / `${sel}`, replaced literally without URL encoding; `${module}` is the workspace-relative module path (`entities/fight/FightAI.py` → `entities.fight.FightAI`)
+- Two trigger paths: a command-palette quick pick; a keybinding for `kbengine.httpRequest.run` with `args.name` in keybindings.json fires directly
+- Execution logs go to the OUTPUT panel "KBEngine HTTP 快捷请求"; failures are marked with `✗` plus an error popup
 
-字段与变量表见 [配置说明](./configuration.md)，命令细节见 [命令与面板](./commands.md)。
+Field and variable tables in the [configuration reference](./configuration.md); command details in [Commands and Panels](./commands.md).
 
-## 快速执行动作
+## Quick Actions
 
-- 动作清单写在工作区 `.kbengine/debug.json` 顶层 `quickActions` 数组（跟着 KBEngine 工程走，不进 VS Code 设置、不进 `launch.json`）
-- 三类后端白名单：`command`（VS Code 命令）、`script`（配置里显式声明的脚本）、`http`（配置里写死的本地热更 URL）；不做任意 shell 入口
-- 触发两路：Servers 视图标题栏按钮 + `.def` / Python / XML 编辑器右上角按钮 + 命令面板 `Run Quick Actions`
-- 动作缺省弹 modal 确认框，流水进 OUTPUT 面板「KBEngine 快速执行动作」，失败一次性弹窗并留退出码/状态码
-- 首次创建配置扫描生效配置根与 `assetsRoot` 的 `.bat` / `.ps1`；扫描动作的 `cwd` 指向脚本所在目录。命令面板可用 `Rescan Scripts for Quick Actions` 更新扫描动作且保留手工动作
-- `.ps1` 显式使用 PowerShell 执行；script 动作可选启用 Python venv 并指定目录，或自动查找 `.venv` / `venv`
-- 首装扫一层工作区根的 `.bat` 与 `.ps1`，全部列入多选提示登记（词表只定分类），取消后本工作区不再自动弹
+- The action list lives in the workspace `.kbengine/debug.json` top-level `quickActions` array (travels with the KBEngine project, not in VS Code settings, not in `launch.json`)
+- Three whitelisted backend kinds: `command` (a VS Code command), `script` (a script explicitly declared in the config), `http` (a local hot-update URL written into the config); no arbitrary shell entry
+- Two trigger paths: the Servers view title bar button + top-right buttons in `.def` / Python / XML editors + the command palette `Run Quick Actions`
+- Actions pop a modal confirm by default; logs go to the OUTPUT panel "KBEngine 快速执行动作"; a failure pops once and keeps the exit/status code
+- First-time config creation scans `.bat` / `.ps1` files in the effective config root and `assetsRoot`; scanned actions run with the script's containing directory as `cwd`. `Rescan Scripts for Quick Actions` refreshes scanned entries while preserving manual actions
+- `.ps1` runs through PowerShell; script actions can optionally enable a Python venv and choose its path, or auto-discover `.venv` / `venv`
+- First install scans one level of workspace-root `.bat` and `.ps1` files; all of them appear in a multi-select registration prompt (keyword lists only assign a category); canceling stops the auto-prompt for that workspace
 
-命令细节见 [命令与面板](./commands.md)，配置键与变量表见 [配置说明](./configuration.md)。
+Command details in [Commands and Panels](./commands.md); config keys and variable tables in the [configuration reference](./configuration.md).
 
-## 自动热重载（盘点 G5）
+## Auto Hot Reload (inventory G5)
 
-- 文件保存/监视 → 按名触发上面的 `quickActions` 动作。门控 `kbengine.hotReload.enabled` **默认关**防误触：开启前不建任何文件监视，激活期行为零变化；开关改动即时生效，不必重启窗口
-- 变更、创建、删除三通道都算保存事件，经去抖合并成一次执行；触发路径跳过执行确认框，动作失败或异步执行异常会被捕获并报告，不产生未处理 Promise rejection
-- `actionName` 留空或匹配不到任何动作时，事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水，不弹窗、不执行
+- A file save / watcher event triggers the `quickActions` action named above. The gate `kbengine.hotReload.enabled` is **off by default** to avoid misfires: no file watcher is created before you turn it on, so activation behavior is unchanged; toggling it takes effect immediately, no window restart needed
+- Change, create, and delete all count as save events and are merged into one execution by debounce; the trigger path skips the execution confirm, while action failures and unexpected async errors are caught and reported without an unhandled Promise rejection
+- When `actionName` is empty or matches no action, the event still fires but only writes one line to the OUTPUT channel "KBEngine 快速执行动作" — no popup, no execution
 
-## 依赖图能力
+## Dependency Graph
 
-- Mermaid 可视化
-- 继承与 `ENTITYCALL` 关系展示
-- 图中跳转到实体定义
-- 导出 SVG
-- 导出 PNG
+- Mermaid visualization
+- Inheritance and `ENTITYCALL` relations
+- Click-through to entity definitions from the graph
+- SVG export
+- PNG export
 
-## 流程图能力
+## Flow Diagram
 
-- 客户端到 baseapp/cellapp 的方法调用与属性自动同步关系，Mermaid 可视化
-- 边语义按属性 `Flags` 位标注，逐边列出引擎出处（文件:行号）与成员声明位置
-- 点击成员行回跳 `.def` 声明处
-- 未 Exposed 的 BaseMethods 单列「客户端调不到的方法」
-- 刷新重读磁盘上的 `def`/`entities.xml`
-- 导出 Markdown、SVG、PNG
+- Method calls from the client to baseapp/cellapp and automatic property synchronization, as a Mermaid visualization
+- Edge semantics annotated per property `Flags` bits, each edge listing the engine source (file:line) and the member declaration site
+- Clicking a member row jumps back to its `.def` declaration
+- Unexposed BaseMethods listed separately as "methods the client cannot call"
+- Refresh re-reads the `def`/`entities.xml` on disk
+- Exports Markdown, SVG, PNG
 
-## 代码生成
+## Code Generation
 
-- 实体创建向导
-- 预置模板（10 个：账号、角色、NPC、物品、怪物、场景、公会、队伍、邮件、空实体）
-- 自动生成 `.def`
-- 自动生成 Python
-- 自动注册到 `entities.xml`
-- 客户端实体 SDK 生成（按 `entities.xml` 登记的实体生成客户端骨架，TypeScript / C# 可多选）
-- 定义形态向导（批139，盘点 G7）：实体向导之外一次生成一种形态——代理（`proxy_defs/` 下的 Proxy def，`Parent` 指向同名 Proxy）、空间（`entities.xml` 登记 `hasBase` + `hasCell`）、组件（`components/` 下 def，可选往实体 `<Properties>` 段末挂一条 `COMPONENT` 属性）、固定字典类型（写入 `types.xml`）。已存在的文件默认不覆盖，重复登记与结构异常都如实说明不硬插
+- Entity creation wizard
+- Preset templates (10: account, role, NPC, item, monster, scene, guild, team, mail, empty entity)
+- Automatic `.def` generation
+- Automatic Python generation
+- Automatic registration into `entities.xml`
+- Client entity SDK generation (generates client skeletons for entities registered in `entities.xml`; TypeScript / C# multi-select)
+- Definition form wizard (batch 139, inventory G7): beyond the entity wizard, generates one form per run — proxy (a Proxy def under `proxy_defs/` whose `Parent` points at the same-named Proxy), space (registers `hasBase` + `hasCell` in `entities.xml`), component (a def under `components/`, optionally mounting a `COMPONENT` property at the end of the entity's `<Properties>` block), fixed-dict type (written into `types.xml`). Existing files are not overwritten by default; duplicate registrations and malformed structures are reported plainly rather than force-inserted
 
-说明：
-生成器会受 `kbengine.generator.*` 和 `kbengine.entitiesXmlPath` 配置影响；客户端实体 SDK 受 `kbengine.clientSdk.outputDir` 影响。
+Notes:
+the generator is affected by the `kbengine.generator.*` and `kbengine.entitiesXmlPath` settings; the client entity SDK by `kbengine.clientSdk.outputDir`.
 
-## 性能分析
+## Performance Analysis
 
-- 工作区全量 `.def` 静态检查（`Analyze Def Performance` 命令）
-- 优化建议写入输出面板，并以诊断落入问题列表
+- Full-workspace `.def` static checks (the `Analyze Def Performance` command)
+- Optimization suggestions written to the output panel and dropped into the problems list as diagnostics
 
-## 代码片段生成
+## Snippet Generation
 
-- 选区生成自定义片段（`Generate Snippet from Selection` 命令）
-- 片段语法转义并剥离公共缩进（按编辑器 `tabSize` 列语义，tab/空格混用仍保相对层级），合并写入 `.vscode/kbengine-custom.code-snippets`
+- Generate custom snippets from a selection (the `Generate Snippet from Selection` command)
+- Snippet grammar escaping and common-indent stripping (per the editor's `tabSize` column semantics, mixed tabs/spaces keep relative levels), merged into `.vscode/kbengine-custom.code-snippets`

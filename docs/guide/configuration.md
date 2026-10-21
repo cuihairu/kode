@@ -1,302 +1,302 @@
-# 配置说明
+# Configuration Reference
 
 
-Kode 的配置分两摊:`kbengine.*` 设置项(VSCode `settings.json`)和服务端 XML 配置(`kbengine_defaults.xml`、元件 `kbengine.xml`)。设置项**按功能分区**介绍(诊断、悬停、CodeLens 与 inlay、跳转、路径、配置视图、服务与日志、远程调试、Python、生成器、telnet、HTTP、热重载、数据库)——每区一张小表给出类型、默认值与说明,表后是该区改动影响与常见误配;服务端配置怎么分层合并、telnet 端口/密码从哪来,先读「服务端配置的三层」。
+Kode's configuration falls into two piles: `kbengine.*` settings (VS Code `settings.json`) and the server-side XML configuration (`kbengine_defaults.xml`, the component `kbengine.xml`). Settings are introduced **by feature area** (diagnostics, hover, CodeLens and inlay, jumps, paths, config view, server and logs, remote debugging, Python, generators, telnet, HTTP, hot reload, database) — one small table per area with type, default value, and purpose, followed by that area's impact of changes and common misconfigurations; for how the server configuration layers and merges, and where the telnet port/password come from, read "The Three Layers of Server Configuration" first.
 
-设置项默认值均取自本扩展 package.json 贡献点,引擎侧取值取自 `kbengine_defaults.xml`;两处都查不到的,标「来源未考」。
+Setting default values are all taken from this extension's package.json contributions, and engine-side values from `kbengine_defaults.xml`; entries found in neither place are marked 「来源未考」 (source unverified).
 
-## 服务端配置的三层
+## The Three Layers of Server Configuration
 
-引擎装载服务端配置的规则:先读引擎默认配置,再读元件配置,同键覆盖。Kode 的 telnet 探测和「最终配置」视图都按这个口径取值。
+The engine loads server configuration by this rule: read the engine defaults first, then the component config, same keys overriding. Kode's telnet probing and the "final config" view both take values by this rule.
 
-| 层 | 文件 | 定位方式 |
+| Layer | File | How it is located |
 | --- | --- | --- |
-| 1 引擎默认 | `kbe/res/server/kbengine_defaults.xml` | 由 `kbengine.binPath`(指向 `kbe/bin/server`)向上推导 |
-| 2 元件覆盖 | `kbengine.xml` | `kbengine.assetsRoot` 下的 `kbengine.xml` 与其 `res/server/kbengine.xml` 优先;未设或未命中时发现出的资产根(批128)参与;最后按约定路径探测工作区根:`kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`,取第一个存在的 |
-| 3 最终生效 | (合成,不落盘) | 第 1 层先载,第 2 层同键覆盖 |
+| 1 Engine defaults | `kbe/res/server/kbengine_defaults.xml` | Derived upward from `kbengine.binPath` (which points at `kbe/bin/server`) |
+| 2 Component override | `kbengine.xml` | The `kbengine.xml` under `kbengine.assetsRoot` and its `res/server/kbengine.xml` take priority; when unset or missed, the discovered assets root (batch 128) participates; finally the workspace root is probed along conventional paths: `kbengine.xml` → `res/server/kbengine.xml` → `assets/res/server/kbengine.xml`, taking the first that exists |
+| 3 Final effective | (composed, never on disk) | Layer 1 loads first, layer 2 overrides by same key |
 
-层的定位设置 `kbengine.binPath` 与 `kbengine.assetsRoot` 都是支持 VS Code 变量的目录:值先做变量展开(`${workspaceFolder}`/`${env:NAME}` 等),相对路径按工作区根拼接;展开为空串按「未配置」处理,照常走自动发现。
+The locating settings in the table, `kbengine.binPath` and `kbengine.assetsRoot`, are directories that support VS Code variables: values go through variable expansion first (`${workspaceFolder}`/`${env:NAME}` and friends), and relative paths join against the workspace root. A value that expands to an empty string counts as unset and falls through to auto-discovery as usual.
 
-覆盖口径:
+Override rules:
 
-- 同名键两边都有:取元件配置的值;
-- 只有默认有:保留默认;
-- 只有元件有:新增;
-- 容器段两边都有:递归下钻,子键按名字对齐;
-- 重复名列表(如 `<addresses>` 下多个地址):元件配置整表替换,不与默认表交错。
+- Same-named key present on both sides: the component config's value wins;
+- Only in defaults: the default is kept;
+- Only in the component config: added;
+- Container sections present on both sides: recurse down, sub-keys aligned by name;
+- Repeated-name lists (e.g. multiple addresses under `<addresses>`): the component config replaces the whole list, never interleaved with the default one.
 
-前后对照:
+Before/after comparison:
 
-| 键 | 引擎默认 | 元件 kbengine.xml | 最终生效 |
+| Key | Engine default | Component kbengine.xml | Final effective |
 | --- | --- | --- | --- |
-| `baseapp/telnet_service/port` | 40000 | 41000 | 41000(覆盖) |
-| `baseapp/telnet_service/password` | `pwd123456` | (未写) | `pwd123456`(仅默认有,保留) |
-| `baseapp/archivePeriod` | 300 | 600 | 600(覆盖) |
-| `baseapp/externalAddress` | (未写) | `10.0.0.9` | 10.0.0.9(新增) |
+| `baseapp/telnet_service/port` | 40000 | 41000 | 41000 (overridden) |
+| `baseapp/telnet_service/password` | `pwd123456` | (not written) | `pwd123456` (only in defaults, kept) |
+| `baseapp/archivePeriod` | 300 | 600 | 600 (overridden) |
+| `baseapp/externalAddress` | (not written) | `10.0.0.9` | 10.0.0.9 (added) |
 
-### 查看最终配置
+### Viewing the Final Config
 
-三个入口,内容相同,都是只读虚拟文档 `kbengine-final.xml`,不落盘:
+Three entries, same content — the read-only virtual document `kbengine-final.xml`, never written to disk:
 
-- 侧栏 KBEngine → Config 视图的「最终配置」节点,点击即开;
-- 命令面板 `Show Final Server Config`(`kbengine.config.showFinal`);
-- 扩展激活且能定位 defaults 时自动在后台打开(设置 `kbengine.showFinalConfigOnOpen`,默认开;找不到 defaults 静默跳过)。
+- The 「最终配置」 (final config) node in the sidebar KBEngine → Config view; click to open;
+- Command palette `Show Final Server Config` (`kbengine.config.showFinal`);
+- Auto-opens in the background when the extension activates and defaults can be located (setting `kbengine.showFinalConfigOnOpen`, default on; silently skipped when defaults are not found).
 
-文档头部注释标明 defaults 与元件配置的来源路径。defaults 或元件 `kbengine.xml` 保存、新增、删除后自动重算(`kbengine.autoRefreshFinalConfig`,默认开)。对字段悬浮可看作用说明。
+The document's header comment notes the source paths of defaults and component config. Saving, adding, or deleting defaults or the component `kbengine.xml` triggers recomposition (`kbengine.autoRefreshFinalConfig`, default on). Hover a field to see what it does.
 
-### telnet 端口/密码怎么读
+### How the telnet Port/Password Are Read
 
-telnet 没有独立一套参数,就是上面三层加一个显式设置层,按序取第一个非空值:
+telnet has no parameter set of its own — it is the three layers above plus one explicit-settings layer, taking the first non-empty value in order:
 
-| 参数 | 取值顺序 |
+| Parameter | Order of resolution |
 | --- | --- |
-| 端口 | 设置 `kbengine.telnet.port`(>0)→ 元件 `kbengine.xml` `<telnet_service>` 的 `port` → 引擎 defaults 该组件的端口 |
-| 密码 | 设置 `kbengine.telnet.password` → 元件段 `password` → 引擎 defaults `password` → 空(不自动登录) |
-| 主机 | 设置 `kbengine.telnet.host`,留空用 `127.0.0.1` |
+| Port | Setting `kbengine.telnet.port` (>0) → the component `kbengine.xml` `<telnet_service>`'s `port` → that component's port in engine defaults |
+| Password | Setting `kbengine.telnet.password` → the component section's `password` → engine defaults' `password` → empty (no auto login) |
+| Host | Setting `kbengine.telnet.host`; left empty uses `127.0.0.1` |
 
-两条边界:
+Two boundaries:
 
-- 元件 `kbengine.xml` 没有 `<telnet_service>` 段且设置没给端口 → 不探测,telnet 面板、状态灯、独立树视图都不出现。引擎 defaults 里虽有 `<telnet_service>` 段,但 defaults 只供数值回落,不会单独把 telnet「打开」;
-- 元件段存在但没写端口 → 按引擎默认组件端口表逐组件探测:loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000;defaults 里写了端口的组件以 defaults 为准。
+- When the component `kbengine.xml` has no `<telnet_service>` section and the settings give no port → no probing; the telnet panel, status lights, and the standalone tree view all stay hidden. The engine defaults do contain a `<telnet_service>` section, but defaults only supply value fallbacks and never turn telnet "on" by themselves;
+- When the component section exists but writes no port → probe per component against the engine's default component port table: loginapp 31000 / dbmgr 32000 / interfaces 33000 / logger 34000 / baseapp 40000 / cellapp 50000 / bots 51000; components whose port is written in defaults follow defaults.
 
-`.kbengine/debug.json` 与这条链无关,它只服务调试流程(见「调试配置文件」一节)。
+`.kbengine/debug.json` is unrelated to this chain — it serves only the debugging flow (see the "Debug Configuration File" section).
 
-## kbengine.* 设置项总览(按功能分区)
+## Overview of `kbengine.*` Settings (by Feature Area)
 
-54 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 54 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+The 54 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 54-row table. To find a setting, locate the feature area first, then the row within it.
 
-### 诊断
+### Diagnostics
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关(批147 起同管 entities.xml 同名重复登记检查) |
-| `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关(重复属性/方法、子标签位置、缺字段、字段重复定义) |
-| `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
-| `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
-| `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
-| `kbengine.diagnostics.checkDuplicateDefinitions` | boolean | `true` | 检查重名属性/方法 |
-| `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | 检查属性缺 `Type`/`Flags` 或字段重复 |
+| `kbengine.enableDiagnostics` | boolean | `true` | Master switch for `.def` diagnostics (since batch 147 it also gates the duplicate entity registration check in `entities.xml`) |
+| `kbengine.enableStructureDiagnostics` | boolean | `true` | Switch for structural validation (duplicate properties/methods, child-tag position, missing fields, duplicated field definitions) |
+| `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | Check unknown type names |
+| `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | Check unknown Flags values |
+| `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | Check illegal DetailLevel values |
+| `kbengine.diagnostics.checkDuplicateDefinitions` | boolean | `true` | Check duplicate property/method names |
+| `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | Check properties missing `Type`/`Flags` or duplicated fields |
 
-| 配置项 | 关掉会怎样 | 常见误配 |
+| Setting | What turning it off does | Common misconfiguration |
 | --- | --- | --- |
-| `enableDiagnostics` | `.def` 的类型、Flags、结构问题与 entities.xml 同名重复登记全部不再提示 | 忘了重开,以为代码没写错 |
-| `enableStructureDiagnostics` | 重复属性/方法、子标签位置错、缺 `Type`/`Flags`、字段重复定义都不报 | 与上一项搞混:这项只管结构,类型名拼错归 `checkUnknownTypes` |
-| `diagnostics.checkUnknownTypes` | 类型名拼错不再报 | 自定义类型要能找到才不误报:先查 `entity_defs/types.xml`、`scripts/entity_defs/types.xml`、`assets/scripts/entity_defs/types.xml`,再到 `user_type/<Type>.py`、`scripts/user_type/<Type>.py`、`assets/scripts/user_type/<Type>.py` |
-| `diagnostics.checkUnknownFlags` | Flags 拼错不再报 | — |
-| `diagnostics.checkUnknownDetailLevels` | DetailLevel 非法值不再报 | — |
-| `diagnostics.checkDuplicateDefinitions` | 真重名漏报 | 提示过多的项目可关,代价是漏掉真重名 |
-| `diagnostics.checkMissingPropertyFields` | 缺 `Type`/`Flags` 的属性不报 | — |
+| `enableDiagnostics` | Type, Flags, and structural problems in `.def`, plus duplicate `entities.xml` registrations, are no longer flagged | Forgetting to reopen the file and assuming the code has no errors |
+| `enableStructureDiagnostics` | Duplicate properties/methods, misplaced child tags, missing `Type`/`Flags`, and duplicated field definitions all go unreported | Confusing this with the item above: this one covers structure only; a misspelled type name belongs to `checkUnknownTypes` |
+| `diagnostics.checkUnknownTypes` | Misspelled type names no longer reported | Custom types must be locatable to avoid false positives: check `entity_defs/types.xml`, `scripts/entity_defs/types.xml`, `assets/scripts/entity_defs/types.xml` first, then `user_type/<Type>.py`, `scripts/user_type/<Type>.py`, `assets/scripts/user_type/<Type>.py` |
+| `diagnostics.checkUnknownFlags` | Misspelled Flags no longer reported | — |
+| `diagnostics.checkUnknownDetailLevels` | Illegal DetailLevel values no longer reported | — |
+| `diagnostics.checkDuplicateDefinitions` | Real duplicates go unreported | Projects with too many hints may turn this off, at the cost of missing real duplicates |
+| `diagnostics.checkMissingPropertyFields` | Properties missing `Type`/`Flags` go unreported | — |
 
-诊断只在打开或编辑 `.def` 文件时触发,`kbengine.*` 配置变化后会重扫已打开的 `.def`。
+Diagnostics trigger only when a `.def` file is opened or edited; after `kbengine.*` configuration changes, already-open `.def` files are rescanned.
 
-### 悬停
+### Hover
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.hover.showTagDocs` | boolean | `true` | `<Type>`、`<Flags>`、`<Properties>` 这类标签的悬停说明(出现频率最高,嫌提示多优先关它) |
-| `kbengine.hover.showValueDocs` | boolean | `true` | `UINT32`、`BASE_AND_CLIENT`、`FAR` 这类值的悬停说明 |
-| `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停自定义属性名/方法名显示当前定义的 `Type`、`Flags`、`Arg` 等上下文 |
-| `kbengine.hover.typeStorage` | boolean | `true` | `.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态) |
-| `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链 |
-| `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
-| `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
-| `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
-| `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |
+| `kbengine.hover.showTagDocs` | boolean | `true` | Hover docs for tags like `<Type>`, `<Flags>`, `<Properties>` (the most frequent; turn this one off first if hints feel too many) |
+| `kbengine.hover.showValueDocs` | boolean | `true` | Hover docs for values like `UINT32`, `BASE_AND_CLIENT`, `FAR` |
+| `kbengine.hover.showSymbolDocs` | boolean | `true` | Hovering a custom property/method name shows the current definition's `Type`, `Flags`, `Arg` context |
+| `kbengine.hover.typeStorage` | boolean | `true` | Storage hover (landed table/column/type and shape) for `types.xml` custom types, in `.def`/`types.xml` |
+| `kbengine.hover.implementedBy` | boolean | `true` | Backlink when hovering a Python-side symbol referenced by a `types.xml` `implementedBy` |
+| `kbengine.hover.entityRegistration` | boolean | `true` | Registration info (`Utype`/list position) when hovering an `entities.xml` entity name |
+| `kbengine.hover.defChain` | boolean | `true` | Merged def chain when hovering `Parent`/`Interfaces` declaration elements |
+| `kbengine.hover.eventStats` | boolean | `true` | Registration/emit stats when hovering an event name in Python |
+| `kbengine.hover.serverConfig` | boolean | `true` | Value and docs when hovering a `kbengine.xml` server config field (turns off the batch-112 hover face entirely) |
 
-前三项全关后 `.def` 悬停只剩语法高亮。批154(2026-10-20)起其余六面按功能各一枚独立开关,不设总闸一刀切——只关吵的那一面,其余照常。
+With the first three off, `.def` hover keeps only syntax highlighting. Since batch 154 (2026-10-20) the other six faces each get an independent per-feature switch — no master switch cutting everything off at once; mute only the noisy face and the rest carry on.
 
-### CodeLens 与 inlay hints
+### CodeLens and inlay hints
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.codeLens.rpc` | boolean | `true` | Python 实现脚本里 def 声明的方法声明行上方的 RPC 标记(批126) |
-| `kbengine.codeLens.eventCallbacks` | boolean | `true` | 事件回调标记——`addEvent`/`registerEvent` 的回调 def 声明处标事件名,`emitEvent` 处标监听数(批154 起从 RPC 镜链拆出独立注册) |
-| `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
-| `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
-| `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示 def 声明的 `<Type>` 数据类型(types.xml 自定义别名或内建),与属性 F12 同一解析索引(批154) |
+| `kbengine.codeLens.rpc` | boolean | `true` | RPC markers above `def`-declared method lines in Python implementation scripts (batch 126) |
+| `kbengine.codeLens.eventCallbacks` | boolean | `true` | Event callback markers — the event name on callback `def` lines and the listener count on `emitEvent` (since batch 154, split out of the RPC lens chain into its own registration) |
+| `kbengine.codeLens.property` | boolean | `true` | Property markers at `self.<property>` access sites in Python scripts (batch 135) |
+| `kbengine.codeLens.typesXml` | boolean | `true` | Storage lens chain on `types.xml` declaration lines (batch 134) |
+| `kbengine.inlayHints.typeData` | boolean | `true` | Inline hint showing the `.def`-declared `<Type>` data type (types.xml custom alias or built-in) at `self.<property>` access sites in Python — same resolution index as property F12 (batch 154) |
 
-四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
+The four CodeLens switches take effect on change, no window reload needed; inlay hints have no change event, so turning one off takes effect on the next render.
 
-### 跳转与导航
+### Jumps and Navigation
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
-| `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
+| `kbengine.jumpLog` | boolean | `false` | Jump decision-path logging (Output panel KBEngine Navigation, filter `[kode-jump]`; zero overhead when off) |
+| `kbengine.python.enableMroJump` | boolean | `true` | Switch for Python jump layer 2 (cross-file C3-MRO + composition roots resolving mixin/base-class methods); when off, layer 2 records a skip and no full-repo scan runs — jumps fall back to layer 1 (the `.def` derived index) and layer 3 (current-file class scopes) |
 
-`kbengine.python.enableMroJump` 改动即时生效(不重载窗口);关闭后层2 只在跳转轨迹里记 skip、不做全仓 `.py` 扫描,`.py` 变更也不再投喂索引。方法使用处优先寻找 Python 实现，`.def` 方法声明会暂存为回退目标；属性访问和方法声明处保持 `.def` 导航。索引区分模块与 base/cell 同名类，并使用未保存的编辑器内容。逐层轨迹与排障口径见「日志」文档的 `[kode-jump]` 决策路径一节。
+`kbengine.python.enableMroJump` changes take effect immediately (no window reload); when off, layer 2 only records a skip in the jump trace and no full-repo `.py` scan runs, and `.py` changes stop being fed to the index. Method use sites prefer the Python implementation, with `.def` method declarations staged as fallback targets; `.def` navigation is kept at property accesses and method declarations. The index distinguishes modules from base/cell same-named classes and uses unsaved editor content. For the per-layer trace and troubleshooting, see the `[kode-jump]` decision-path section of the Logging guide.
 
-### 路径与工作区发现
+### Paths and Workspace Discovery
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.entityDefsPath` | string | `scripts/entity_defs` | 实体定义目录(实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出) |
-| `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
-| `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径 |
-| `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
+| `kbengine.entityDefsPath` | string | `scripts/entity_defs` | Entity definitions directory (entity explorer list, `entities.xml` navigation, generator `.def` output) |
+| `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path (dependency graph reads and entity registration) |
+| `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path |
+| `kbengine.assetsRoot` | string | `""` | Assets root (containing `res/`, `scripts/` below); empty = auto-discover |
 
-四项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」。逐项细节:
+All four are "optional overrides": a configured value is honored as-is, an unconfigured one goes through the discovery chain — see "Auto-Discovery of Path Settings" below. Per-key details:
 
 #### `kbengine.entityDefsPath`
 
-- 类型:string;默认 `scripts/entity_defs`(相对工作区根)
-- 用途:实体浏览器列表、`entities.xml` 跳转、生成器 `.def` 输出
-- 批125 起未配置/默认路径不存在时自动发现(约定布局 → 深扫描唯一命中 → 多候选激活期询问一次并记忆),配置只作覆盖
-- 误配:指错目录则实体浏览器为空
+- Type: string; default `scripts/entity_defs` (relative to the workspace root)
+- Used by: the entity explorer list, `entities.xml` navigation, generator `.def` output
+- Since batch 125, when unset or the default path does not exist it auto-discovers (conventional layouts → unique deep-scan hit → multi-candidate asks once during activation and remembers); config serves only as override
+- Misconfiguration: pointing at the wrong directory leaves the entity explorer empty
 
 #### `kbengine.entitiesXmlPath`
 
-- 类型:string;默认 `scripts/entities.xml`
-- 用途:依赖图读取与实体注册。项目把注册文件放在自定义位置时改这项
-- 批125 起约定候选全 miss 时深扫描兜底(优先 def 根同父目录),配置只作覆盖
+- Type: string; default `scripts/entities.xml`
+- Used by: dependency graph reads and entity registration. Change this when the project puts the registry file in a custom location
+- Since batch 125, a deep-scan fallback covers all-missed conventions (preferring the def root's parent); config serves only as override
 
 #### `kbengine.binPath`
 
-- 类型:string;默认 `${workspaceFolder}/../kbe/bin/server`
-- 支持占位符:`${workspaceFolder}`、`${env:VAR}`
-- 用途:① 启动/停止组件进程;② 推导引擎根(`KBE_ROOT`)与引擎默认配置路径——把路径末尾的 `kbe/bin/server` 换成 `kbe/res/server/kbengine_defaults.xml`
-- 批125 起未配置时优先按引擎源码根锚点(`kbe/src/lib/entitydef/entitydef.cpp`、`entity_table_mysql.cpp` 等)推导 `kbe/bin/server`,再退兄弟目录猜测
-- 误配:没指到 `kbe/bin/server` 这一级 → 服务器启动失败,最终配置视图和 defaults 数值回落也不可用;此时 `kbengine.config.showFinal` 会明示报错,激活自动打开则静默跳过
+- Type: string; default `${workspaceFolder}/../kbe/bin/server`
+- Placeholders supported: `${workspaceFolder}`, `${env:VAR}`
+- Used for: ① starting/stopping component processes; ② deriving the engine root (`KBE_ROOT`) and the engine default config path — replacing the trailing `kbe/bin/server` with `kbe/res/server/kbengine_defaults.xml`
+- Since batch 125, when unset it first derives `kbe/bin/server` via engine source-root anchors (`kbe/src/lib/entitydef/entitydef.cpp`, `entity_table_mysql.cpp`, etc.), then falls back to sibling-directory guessing
+- Misconfiguration: not pointing at the `kbe/bin/server` level → server start fails, and the final config view and defaults value fallback become unavailable; `kbengine.config.showFinal` then errors plainly, and the activation auto-open silently skips
 
 #### `kbengine.assetsRoot`
 
-- 类型:string;默认 `""`(留空 = 自动发现)。批131(2026-10-15)自 `kbengine.configPath` 更名:与引擎领域术语对齐(引擎资产树就叫 assets,约定扫描也是 `*_assets`,见 `kbemain.h:133-137` 的 `../../../assets/res/server/`);同时废默认值 `${workspaceFolder}/server`——旧默认形同把未配置伪装成显式配置,空串才让代码里的「未设 → 自动发现」路径真实生效
-- 这是资产根(assets root,引擎资产树根,如 `flyff_assets`),三处生效:
-  1. 组件进程的工作目录(cwd)——引擎按相对路径找资产时以这里为基准;
-  2. 进程环境 `KBE_RES_PATH` 的项目侧条目:完整顺序为 `KBE_ROOT/kbe/res`、资产根、`资产根/res`、`资产根/scripts`;
-  3. 元件 `kbengine.xml` 的首选定位处:`资产根/kbengine.xml`。
-- 批128 起自动发现:原值未过引擎装载探针(其下无 `res/server/kbengine.xml`)时,按 约定链 → 多候选记忆选择 → 深扫描唯一命中 兜底;发现出的根同样供 telnet 探测与最终配置视图取元件 `kbengine.xml`。约定链批129 起含工作区一级 `*_assets` 目录(如 `flyff_assets`)——目录名只是准入,命中仍以探针验收
-- 探针只验用户副本 `kbengine.xml`,不要求 `kbengine_defaults.xml` 在场:引擎对两份配置各在各的树里装载(kbemain.h:71-74 先载 defaults 再载用户副本覆盖;引擎注释 kbemain.h:133-137 示例即 defaults 在引擎 res 树、用户副本在资产树),资产根的锚点就是用户副本——引擎 `getPyUserResPath()` 也以 `matchRes("server/kbengine.xml")` 定位资产树。扩展同口径:defaults 从 binPath/引擎源码根推导(`deriveEngineDefaultsXmlPath`),用户副本从资产根找,两树独立
-- 启动前会校验:发现与显式都落空时空串、目录不存在、路径不是目录都会报错并中止启动;目录在而探针文件缺 → 输出通道留 `[WARN]` 不拦截(批127)
-- 误配:指到仓库根而不是资产目录 → 探针不通过,自动发现接管;发现也落空时引擎在 `res`/`scripts` 子目录下找不到脚本,组件起不来;元件 `kbengine.xml` 定位不到时 telnet 与最终配置退回纯默认
+- Type: string; default `""` (empty = auto-discover). Renamed from `kbengine.configPath` in batch 131 (2026-10-15): aligning with engine-domain terminology (the engine assets tree is literally called assets, and the convention scan is `*_assets`, see `../../../assets/res/server/` at kbemain.h:133-137); the old default `${workspaceFolder}/server` was dropped at the same time — that default disguised "unconfigured" as "explicitly configured", and only the empty string lets the code's "unset → auto-discover" path take real effect
+- This is the assets root (the engine assets tree root, e.g. `flyff_assets`), effective in three places:
+  1. The working directory (cwd) of component processes — the engine resolves asset-relative paths against it;
+  2. The project-side entry of the process env `KBE_RES_PATH`: full order `KBE_ROOT/kbe/res`, the assets root, `assetsRoot/res`, `assetsRoot/scripts`;
+  3. The preferred location of the component `kbengine.xml`: `assetsRoot/kbengine.xml`.
+- Since batch 128, auto-discovery: when the original value fails the engine-loading probe (no `res/server/kbengine.xml` below it), fall back through convention chain → remembered multi-candidate choice → unique deep-scan hit; the discovered root likewise feeds telnet probing and the final config view's component `kbengine.xml`. Since batch 129 the convention chain includes first-level `*_assets` workspace directories (like `flyff_assets`) — the directory name is only admission; a hit is still accepted by probe
+- The probe validates only the user copy `kbengine.xml` and does not require `kbengine_defaults.xml` to be present: the engine loads the two configs each in its own tree (kbemain.h:71-74 loads defaults first, then the user copy overrides; the engine comments at kbemain.h:133-137 exemplify defaults in the engine res tree and the user copy in the assets tree), and the assets root's anchor is exactly the user copy — the engine's `getPyUserResPath()` also locates the assets tree via `matchRes("server/kbengine.xml")`. The extension follows the same rule: defaults are derived from binPath/the engine source root (`deriveEngineDefaultsXmlPath`), the user copy is found from the assets root — the two trees are independent
+- Before starting, it validates: empty string when both discovery and explicit config fail, a nonexistent directory, or a path that is not a directory all error and abort the start; directory present but probe file missing → a `[WARN]` is left in the output channel without blocking (batch 127)
+- Misconfiguration: pointing at the repo root instead of the assets directory → the probe fails and auto-discovery takes over; when discovery also fails, the engine cannot find scripts under `res`/`scripts` subdirectories and components will not start; when the component `kbengine.xml` cannot be located, telnet and the final config fall back to pure defaults
 
-### 最终配置视图
+### Final Config View
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.showFinalConfigOnOpen` | boolean | `true` | 扩展激活且能定位 defaults 时,自动在后台打开 `kbengine-final.xml`(preview 标签,不抢焦点);定位失败静默跳过,不弹错。关闭后仍可用命令或侧栏 Config 视图的「最终配置」节点手动打开 |
-| `kbengine.autoRefreshFinalConfig` | boolean | `true` | defaults 或元件 `kbengine.xml` 保存、新增、删除后,自动重算已打开的合成文档。关闭后需重开文档或重跑命令 |
+| `kbengine.showFinalConfigOnOpen` | boolean | `true` | When the extension activates and defaults can be located, auto-open `kbengine-final.xml` in the background (a preview tab, not stealing focus); on location failure it silently skips without an error popup. When off, it can still be opened manually via the command or the sidebar Config view's 「最终配置」 node |
+| `kbengine.autoRefreshFinalConfig` | boolean | `true` | After defaults or the component `kbengine.xml` is saved, added, or deleted, recompose the open composed document automatically. When off, reopen the document or rerun the command |
 
-### 服务器与日志
+### Server and Logs
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | 不带参数启动时拉起的组件。合法值取自组件注册表(`src/serverManager.ts`):`machine`、`logger`、`interfaces`、`dbmgr`、`baseappmgr`、`cellappmgr`、`loginapp`、`baseapp`、`cellapp`、`bots` |
-| `kbengine.loggerPort` | number | `20022` | 日志收集器连接端口,须与引擎 logger 的监听端口一致;不一致时面板连不上(内部按间隔重连) |
-| `kbengine.logAutoConnect` | boolean | `true` | 激活即尝试连接一次 logger;失败静默,走重连 |
-| `kbengine.maxLogEntries` | number | `10000` | 日志 WebView 缓存上限(条)。日志量大调低省内存,想留更长历史调高 |
+| `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | Components brought up by a start without arguments. Legal values come from the component registry (`src/serverManager.ts`): `machine`, `logger`, `interfaces`, `dbmgr`, `baseappmgr`, `cellappmgr`, `loginapp`, `baseapp`, `cellapp`, `bots` |
+| `kbengine.loggerPort` | number | `20022` | Log collector connection port; must match the engine logger's listen port — a mismatch leaves the panel unconnected (it retries on an interval internally) |
+| `kbengine.logAutoConnect` | boolean | `true` | Try connecting to the logger once on activation; failure is silent and goes through reconnection |
+| `kbengine.maxLogEntries` | number | `10000` | Log WebView cache cap (entries). Lower it to save memory on heavy log volume; raise it to keep longer history |
 
-### 远程调试
+### Remote Debugging
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表,`Attach to Remote Component` 的目标选择源;`Update launch.json` 把它们以 debugpy `connect` 形式追加进 `launch.json` |
+| `kbengine.debug.remoteTargets` | array | `[]` | Remote debug target list — the target source for `Attach to Remote Component`; `Update launch.json` appends them into `launch.json` as debugpy `connect` entries |
 
-每个条目:
+Fields per entry:
 
-| 字段 | 类型 | 必填 | 说明 |
+| Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `name` | string | 是 | 目标显示名(选择器里的标识) |
-| `host` | string | 是 | 远端 IP 或主机名 |
-| `port` | number | 否 | debugpy 监听端口,缺省 `5678` |
+| `name` | string | Yes | Target display name (the identifier in the picker) |
+| `host` | string | Yes | Remote IP or hostname |
+| `port` | number | No | debugpy listen port, default `5678` |
 
-- 前提:远端组件先经 telnet 发开启调试命令,并起好 debugpy 监听;扩展以 `connect: {host, port}` 附加,不写 `pathMappings`
-- 误配:`host` 填错 → 附加失败走错误通道;`port` 不对 → 连不上 debugpy;`name`/`host` 为空的条目不收录
+- Prerequisite: the remote component must first have been sent the enable-debugging command over telnet and have a debugpy listener up; the extension attaches with `connect: {host, port}`, without `pathMappings`
+- Misconfiguration: a wrong `host` → attach fails through the error channel; a wrong `port` → debugpy unreachable; entries with empty `name`/`host` are not collected
 
-### Python 集成
+### Python Integration
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级;只管理本扩展写入的那一段,用户手填路径不动;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
-| `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
-| `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
-| `kbengine.python.stubEngineTypings` | boolean | `true` | `KBEngine.pyi` 导出优先拼接本地引擎 checkout 的 typings 全量 API(默认开);关掉回落 kode 自带精选目录。总闸仍是 `kbengine.python.stubExport` |
-| `kbengine.python.entityStubMethods` | boolean | `true` | `entity_types.pyi` 实体存根包含 def 方法面(Base/Cell/ClientMethods,默认开);关掉回落只含属性面 |
+| `kbengine.python.extraPathsSync` | boolean | `true` | Auto-write the workspace-discovered KBEngine scripts root into `python.analysis.extraPaths` (WorkspaceFolder level; manages only the segment this extension wrote, user-entered paths are never touched; no write when unchanged). When off, the `kbengine.python.syncExtraPaths` command only explains without writing |
+| `kbengine.python.stubExport` | boolean | `true` | Auto-export the built-in KBEngine Python API index (same source as completion/hover/navigation) as a `KBEngine.pyi` stub, and export the types.xml custom types into a `kbe_types.py` type stub module (`FIXED_DICT` → `TypedDict`, aliases → type names), which together with the extraPaths wiring lets Pylance resolve `import KBEngine` / `import kbe_types` (virtual stub documents are invisible to the Python extension). Silent auto-export once on activation; `kbengine.python.exportStubs` / `kbengine.python.exportTypeStubs` are the manual entries |
+| `kbengine.python.stubDir` | string | empty | The `.pyi` stub directory, resolved in three tiers: setting > env var `KBENGINE_STUB_DIR` > default convention `.kbengine/stubs`. VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported; relative paths join against the workspace root, absolute paths are used as-is |
+| `kbengine.python.stubEngineTypings` | boolean | `true` | Prefer concatenating the full API from a local engine typings checkout when exporting `KBEngine.pyi` (default: enabled); when off, fall back to the built-in curated catalog. The master switch is still `kbengine.python.stubExport` |
+| `kbengine.python.entityStubMethods` | boolean | `true` | Include the def method surface (Base/Cell/ClientMethods) in `entity_types.pyi` stubs (default: enabled); when off, keep the properties-only stub surface |
 
-### 实体脚本增强(2026-10-21)
+### Entity Script Enhancements (2026-10-21)
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.entity.builtinProperties` | boolean | `true` | 实体脚本 `self.<内建属性>` 的悬停标注与 `self.` 补全(按 base/cell/client 分面);关掉整体让位,回落普通符号链 |
-| `kbengine.entity.receiverSections` | boolean | `true` | `self.cell.`/`self.base.`/`self.client.` 调用按接收者段过滤 def 候选(悬停/F12/RPC 镜链,默认开);关掉回归不感知段的旧解析,def 形参/类型闸门不受影响 |
-| `kbengine.python.builtinTypeInlayHints` | boolean | `true` | 实体脚本 `self.<内建属性>` 访问处行内 `: <类型>` 提示(与悬停同一命中底座,默认开);受总闸 `kbengine.entity.builtinProperties` 与本键双控,任一关闭都不渲染内建属性 inlay |
-| `kbengine.types.aliasDiscovery` | boolean | `true` | 从 `scripts/entity_defs/alias.xml` 发现自定义类型并入类型表(默认开);关掉回落只认 `types.xml` |
+| `kbengine.entity.builtinProperties` | boolean | `true` | Hover annotations and `self.` completion for built-in entity properties (per base/cell/client face; default: enabled); when off, falls back to the plain symbol chain |
+| `kbengine.entity.receiverSections` | boolean | `true` | Filter def candidates by receiver section on `self.cell.`/`self.base.`/`self.client.` calls — hover, F12, RPC lens (default: enabled); when off, falls back to section-unaware resolution while the def signature (arg/type) gate stays on |
+| `kbengine.python.builtinTypeInlayHints` | boolean | `true` | Inline `: <type>` hints after `self.<builtin property>` accesses in entity scripts (same hit basis as hover; default: enabled); double-gated by `kbengine.entity.builtinProperties` (master switch) and this key — either off renders no builtin-property inlay hints |
+| `kbengine.types.aliasDiscovery` | boolean | `true` | Discover custom types from `scripts/entity_defs/alias.xml` into the type list (default: enabled); when off, falls back to `types.xml` only |
 
-`kbengine.python.stubDir` 留空(默认)时目录是 kode 自管的 `.kbengine/stubs`:内容一致零写、陈旧(索引更新后)自动重写、手改不保留,建议在 `.gitignore` 里忽略。**配了目录则目录归用户所有**:kode 只扫描不覆盖——目录里已有任何 `.pyi` 一律当用户资产不碰,没有 `.pyi` 才生成一份;目录读不到(不存在/无权限)如实提示,不盲写。
+With `kbengine.python.stubDir` left empty (the default), the directory is kode-managed `.kbengine/stubs`: zero write when content matches disk, stale content (after an index update) is automatically rewritten, manual edits are not kept — ignoring it in `.gitignore` is recommended. **With a directory configured, the directory is user-owned**: kode only scans, never overwrites — any `.pyi` already in the directory is treated as a user asset and left untouched; one is generated only when no `.pyi` exists; an unreadable directory (missing/no permission) is reported honestly, never blindly written.
 
-边界:extraPaths 的管理段只认默认约定目录 `.kbengine/stubs`(导出开且 `KBEngine.pyi` 或 `kbe_types.py` 在盘时并入,两份生成物同居一个目录);用户配置的 `kbengine.python.stubDir` 目录不并入管理段,需要时自行加入 `python.analysis.extraPaths`。
+Boundary: the extraPaths managed segment recognizes only the default convention directory `.kbengine/stubs` (joined when export is on and `KBEngine.pyi` or `kbe_types.py` is on disk; both generated artifacts share the one directory); a user-configured `kbengine.python.stubDir` directory does not join the managed segment — add it to `python.analysis.extraPaths` yourself if needed.
 
-### 代码生成器
+### Code Generators
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | 生成的 `.def` 写到哪;默认值即发现出的 def 根,配置只作覆盖 |
-| `kbengine.generator.pythonOutputPath` | string | `scripts` | 生成的 Python 写到哪;默认值时从发现出的 def 根父目录推导(如 `assets/scripts`),配置只作覆盖 |
-| `kbengine.generator.generatePython` | boolean | `true` | 向导/模板创建实体时是否同时生成 Python 文件 |
-| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | 生成后自动写入 `entities.xml`(写的是 `entitiesXmlPath` 指向的文件) |
+| `kbengine.generator.defOutputPath` | string | `scripts/entity_defs` | Where generated `.def` files go; the default value is itself the discovered def root, config serves only as override |
+| `kbengine.generator.pythonOutputPath` | string | `scripts` | Where generated Python goes; with the default value it is derived from the discovered def root's parent (e.g. `assets/scripts`), config serves only as override |
+| `kbengine.generator.generatePython` | boolean | `true` | Whether wizard/template entity creation also generates the Python file |
+| `kbengine.generator.registerInEntitiesXml` | boolean | `true` | Auto-write into `entities.xml` after generation (writing the file pointed to by `entitiesXmlPath`) |
 
 #### `kbengine.clientSdk.outputDir`
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | 客户端实体 SDK 生成器(`kbengine.clientSdk.generate`)的输出目录,TypeScript / C# 骨架与伴随文件都写到这里;相对工作区根 |
+| `kbengine.clientSdk.outputDir` | string | `scripts/client_entities` | Output directory of the client entity SDK generator (`kbengine.clientSdk.generate`) — TypeScript / C# skeletons and companion files all land here; relative to the workspace root |
 
-语言清单与覆盖策略在命令内的 quick pick 里选择,默认不覆盖已存在的文件;详见 [客户端实体 SDK 生成](./client-sdk.md)。
+The language list and overwrite policy are chosen in the command's quick pick; existing files are not overwritten by default — see [Client Entity SDK Generation](./client-sdk.md).
 
-### telnet 探测
+### telnet Probing
 
-telnet 的展示面(独立树视图、状态灯、面板)只在配置显式开 telnet 时出现,取值链见「telnet 端口/密码怎么读」。
+telnet's presentation surface (standalone tree view, status lights, panel) appears only when the configuration explicitly enables telnet; the resolution chain is in "How the telnet Port/Password Are Read".
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.telnet.host` | string | `127.0.0.1` | 探测目标主机。远端机器填其 IP |
-| `kbengine.telnet.port` | number | `0` | 显式端口。>0 时锁定单一目标(不再逐组件探测);0 = 未显式指定,按元件 `kbengine.xml` 段与 defaults 回落 |
-| `kbengine.telnet.password` | string | 空 | 自动握手登录用,只写 socket 不写日志。留空则不自动登录,状态灯停「端口开·未配密码」 |
-| `kbengine.telnet.enableCommands` | string[] | `[]` | telnet 面板可发送的命令白名单(精确匹配或「命令 + 空格 + 参数」前缀匹配)。内置只读快捷命令(实体数量/实体清单/全局数据键/`:help`)默认放行;`:quit` 会关闭服务端进程,配进白名单也恒被拒绝 |
-| `kbengine.telnet.configXmlPath` | string | 空 | 显式指定元件 `kbengine.xml`(支持 `${workspaceFolder}`),优先于自动探测;设置显式端口 >0 时端口以设置为准 |
-| `kbengine.telnet.probeIntervalSeconds` | number | `5` | 探测轮询间隔(秒),低于 1 按 1 秒执行 |
+| `kbengine.telnet.host` | string | `127.0.0.1` | Probe target host. For a remote machine, enter its IP |
+| `kbengine.telnet.port` | number | `0` | Explicit port. >0 locks a single target (no more per-component probing); 0 = not explicitly set, falling back to the component `kbengine.xml` section and defaults |
+| `kbengine.telnet.password` | string | empty | Used by the automatic handshake login; written to the socket only, never to logs. Empty = no auto login; the status light stays at 「端口开·未配密码」 (port open, no password set) |
+| `kbengine.telnet.enableCommands` | string[] | `[]` | The command whitelist the telnet panel may send (exact match, or "command + space + arguments" prefix match). Built-in read-only shortcut commands (entity count/entity list/global data keys/`:help`) are allowed by default; `:quit` shuts the server process down and is always refused even if whitelisted |
+| `kbengine.telnet.configXmlPath` | string | empty | Explicitly specifies the component `kbengine.xml` (`${workspaceFolder}` supported), taking priority over auto-probing; when the setting gives an explicit port >0, the port follows the setting |
+| `kbengine.telnet.probeIntervalSeconds` | number | `5` | Probe polling interval (seconds); values below 1 run at 1 second |
 
-### HTTP 快捷请求
+### HTTP Quick Requests
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.httpRequests` | array | 见下文 | HTTP 快捷请求列表(默认含一条停用示例) |
+| `kbengine.httpRequests` | array | see below | HTTP quick request list (one disabled example by default) |
 
-类型:array;默认含一条停用的示例(热更新示例,`enabled: false`),按本机热更新服务的真实形态给出——等价于命令行:
+Type: array; the default contains one disabled example (a hot-reload example, `enabled: false`), shaped after a real local hot-reload service — equivalent to:
 
 ```bash
 curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 ```
 
-增删改走设置界面的列表编辑器,启停 = 条目 `enabled` 开关。每条字段:
+Add/remove/edit via the settings UI's list editor; enable/disable = the entry's `enabled` switch. Fields per entry:
 
-| 字段 | 类型 | 说明 |
+| Field | Type | Notes |
 |------|------|------|
-| `name` | string | 请求名(quick pick 与日志标识),必填 |
-| `url` | string | URL 模板,可含模板变量,必填 |
-| `method` | string | HTTP 方法,缺省 `GET` |
-| `headers` | object | 请求头(值同样走模板替换) |
-| `body` | string | 请求体(非空才随请求发送,同样走模板替换) |
-| `enabled` | boolean | 启停开关,缺省启用 |
-| `keybinding` | string | 键位展示串(quick pick 详情列显示) |
+| `name` | string | Request name (identifier in the quick pick and logs), required |
+| `url` | string | URL template, may contain template variables, required |
+| `method` | string | HTTP method, default `GET` |
+| `headers` | object | Request headers (values also go through template substitution) |
+| `body` | string | Request body (sent only when non-empty, also through template substitution) |
+| `enabled` | boolean | Enable switch, default enabled |
+| `keybinding` | string | Keybinding display string (shown in the quick pick's detail column) |
 
-模板变量(URL/请求体/请求头值通用,按字面替换、不做 URL 编码):
+Template variables (shared by URL/body/header values, literal substitution, no URL encoding):
 
-| 变量 | 含义 |
+| Variable | Meaning |
 |------|------|
-| `${module}` | 按 `__init__.py` 包边界扫出的模块路径:`entities/`、`fight/` 各带 `__init__.py` 时 `entities/fight/FightAI.py` → `entities.fight.FightAI`;KBEngine 脚本所在的 `base/`、`cell/` 是引擎角色目录,没有 `__init__.py`,不算模块段——此时模块名就是文件名去 `.py`(即「没有模块就直接文件名」形态) |
-| `${moduleBasename}` | 末段一层模块名:`entities.fight.FightAI` → `FightAI`;无包段形态下与 `${module}` 一致 |
-| `${filename}` | 文件名(`FightAI.py`) |
-| `${line}` | 光标行(1 起) |
-| `${sel}` | 选中文本 |
+| `${module}` | Module path scanned along `__init__.py` package boundaries: when `entities/` and `fight/` each contain `__init__.py`, `entities/fight/FightAI.py` → `entities.fight.FightAI`; KBEngine scripts live under `base/`/`cell/` role directories which have no `__init__.py`, so those do not count as module segments — the module name is then just the file name without `.py` (the "no module, use the file name" form) |
+| `${moduleBasename}` | Last segment of the module path: `entities.fight.FightAI` → `FightAI`; in the no-package form it matches `${module}` |
+| `${filename}` | File name (`FightAI.py`) |
+| `${line}` | Cursor line (1-based) |
+| `${sel}` | Selected text |
 
-另支持 VS Code 官方变量族(`${file}`=绝对路径、`${workspaceFolder}`、`${workspaceFolderBasename}`、`${fileBasename}`、`${fileBasenameNoExtension}`、`${fileDirname}`、`${fileExtname}`、`${relativeFile}`、`${relativeFileDirname}`、`${env:NAME}`、`${cwd}`、`${userHome}`、`${pathSeparator}`,多根工作区可用 `${workspaceFolder:Name}` 指名取根)。两表都不认识的占位原样保留(不替换为空串)。
+The official VS Code variable family is also supported (`${file}`=absolute path, `${workspaceFolder}`, `${workspaceFolderBasename}`, `${fileBasename}`, `${fileBasenameNoExtension}`, `${fileDirname}`, `${fileExtname}`, `${relativeFile}`, `${relativeFileDirname}`, `${env:NAME}`, `${cwd}`, `${userHome}`, `${pathSeparator}`; in multi-root workspaces `${workspaceFolder:Name}` picks a folder by name). Placeholders unknown to both tables are kept as-is (not wiped to an empty string).
 
-> 历史:批152 之前文件名占位叫 `${file}`(与本扩展当时未接官方变量族有关);批153 起官方变量族接入,`${file}` 归还官方绝对路径语义,文件名请改用 `${filename}`。
+> History: before batch 152 the file-name placeholder was named `${file}`; since the official variable family landed, `${file}` follows the official absolute-path semantics — use `${filename}` for the file name.
 
-无活动编辑器时各变量替换为空串。
+With no active editor, each variable substitutes to the empty string.
 
-快捷键绑定:VS Code 无运行时注册键位的 API,在「键盘快捷方式」里为 `kbengine.httpRequest.run` 绑定按键并在 `args` 里带请求名:
+Keybinding: VS Code has no API to register keybindings at runtime; bind a key to `kbengine.httpRequest.run` in "Keyboard Shortcuts" and carry the request name in `args`:
 
 ```json
 {
@@ -306,87 +306,87 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 }
 ```
 
-执行流水进 OUTPUT 面板「KBEngine HTTP 快捷请求」:`▶` 请求行 → `✓` 状态码 · 耗时 → 回包(超 4000 字符截断标注全长);失败以 `✗` 标记 + 错误弹窗呈现。
+The run log goes to the OUTPUT channel 「KBEngine HTTP 快捷请求」 (KBEngine HTTP quick requests): `▶` request line → `✓` status code · duration → response body (truncated past 4000 characters, full length noted); failures render as a `✗` mark + an error popup.
 
-### 自动热重载
+### Auto Hot Reload
 
-文件保存/监视 → 按名触发 `quickActions` 动作。门控**默认关**防误触:开启前不建任何文件监视,装配链与激活期行为零变化;`enabled` 改成 `true` 即刻按 `globs` 建监视、改成 `false` 拆除,配置变更即时生效,不必重启窗口。
+File save/watch → trigger the `quickActions` action by name. Gated **off by default** against accidental fires: before enabling, no file watchers are created and the assembly chain and activation behavior are unchanged; switching `enabled` to `true` immediately creates watchers per `globs`, switching to `false` tears them down — config changes take effect immediately, no window restart needed.
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.hotReload.enabled` | boolean | `false` | 总开关,开时按 `globs` 各建一个文件监视 |
-| `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在 |
-| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
-| `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
+| `kbengine.hotReload.enabled` | boolean | `false` | Master switch; when on, one file watcher per `globs` pattern |
+| `kbengine.hotReload.actionName` | string | empty | The action name to trigger; must exist in the `quickActions` array |
+| `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | Watch patterns (VS Code globs); one file watcher per pattern |
+| `kbengine.hotReload.debounceMs` | number | `500` | Debounce milliseconds before triggering; `0` = no debounce |
 
-行为口径:
+Behavior rules:
 
-- **三通道都触发**:文件的变更、创建、删除都算保存事件,任一触发都进入去抖。
-- **去抖合并**:一次触发到下一次触发之间的连发事件合并成一次执行;去抖期间关掉开关会取消尚未触发的计时。
-- **无人值守**:触发路径跳过执行确认框(即使动作 `confirm` 为 `true`);动作自身的失败仍照常弹窗报错——那是执行结果,不是交互确认。执行记录照常写入「上次执行」记忆,因此 Explorer 顶栏 ▶ 也指向最近一次触发的动作。
-- **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
-- **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
+- **All three channels trigger**: a file's change, creation, and deletion all count as save events; any of them enters debounce.
+- **Debounce merges**: bursts of events between one trigger and the next merge into one execution; turning the switch off during debounce cancels the pending timer.
+- **Unattended**: the trigger path skips the execution confirmation box (even if the action's `confirm` is `true`); the action's own failures still pop up their errors as usual — that is an execution result, not an interaction confirmation. Executions are still written into the "last run" memory, so the Explorer's top-bar ▶ also points at the most recently triggered action.
+- **No disturbance on missing names**: when `actionName` is empty or matches no action, the event still fires but only drops one log line into the OUTPUT channel 「KBEngine 快速执行动作」 (KBEngine quick actions) — no popup, no execution.
+- **Config tolerance**: wrong types (`enabled` not a boolean, `globs` not an array, `debounceMs` negative or non-numeric) all fall back to defaults, erroring nothing and interrupting nothing; empty strings and non-string items in `globs` are pruned, and pruning to empty falls back to the default `**/*.py`.
 
-### 数据库
+### Database
 
-| 配置项 | 类型 | 默认值 | 说明 |
+| Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
-| `kbengine.db.tablePrefix` | string | `""`（空 = 引擎默认 `tbl_`） | 数据库表名前缀，schema 视图与 SQL 模板同源替换 |
+| `kbengine.db.tablePrefix` | string | `""` (empty = engine default `tbl_`) | Database table name prefix; replaced in the schema view and SQL templates from the same source |
 
-设成自定义值（如 `kb_`）后，schema 视图里的表名与三行 SQL 模板同源替换：
+With a custom value (e.g. `kb_`), table names in the schema view and the three SQL template lines are replaced from the same source:
 
-| 模板 | 用途 |
+| Template | Purpose |
 | --- | --- |
-| `SQL: SELECT * FROM ...` | 全列（引擎结构列 + 属性列） |
-| `SQL(属性列): SELECT ...` | 只列 def 属性落成的列，剔掉 `id` / `sm_autoLoad` / `parentID` / 位置朝向六列 |
-| `SQL(子表 JOIN): ...` | 仅 ARRAY / 组件子表：按 `parentID` 关联父表，`LEFT JOIN` 保住空元素的属性行 |
+| `SQL: SELECT * FROM ...` | All columns (engine structural columns + property columns) |
+| `SQL(属性列): SELECT ...` | Lists only the columns landed from def properties, dropping `id` / `sm_autoLoad` / `parentID` / the six position-orientation columns |
+| `SQL(子表 JOIN): ...` | ARRAY / component child tables only: joins the parent by `parentID`; `LEFT JOIN` keeps property rows of empty elements |
 
-子表 JOIN 同样出现在 ARRAY / 组件属性的悬停行里。不改引擎默认前缀的工程留空即可，行为与之前一致。
+The child-table JOIN also appears in the hover line of ARRAY / component properties. Projects not changing the engine default prefix can leave it empty — behavior is unchanged.
 
-#### 数据库漂移校验的连接信息
+#### Connection Info of the Database Drift Check
 
-`kbengine.database.checkDrift` 的连接信息**全部来自引擎配置，不新增设置项**：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 `kbengine_defaults.xml` + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306。
+`kbengine.database.checkDrift`'s connection info **all comes from the engine config, with no new settings**: the composed `<dbmgr><databaseInterfaces><default>` (engine `kbengine_defaults.xml` + component `kbengine.xml` same-key override); port `0` lands on the MySQL default 3306.
 
-账号密码需明文存放（`<encrypt>false</encrypt>`）。引擎默认的 `encrypt=true` 是 RSA 密文，kode 不解读，此时命令如实提示「未校验」——不会为了跑一次校验要求改引擎配置或手填密码。校验口径与只读红线见 [数据库漂移校验](./database-drift-check.md)。
+The credentials must be stored in plaintext (`<encrypt>false</encrypt>`). The engine default `encrypt=true` is RSA ciphertext, which kode does not decrypt; the command then honestly reports 「未校验」 (not verified) — it never asks you to change the engine config or type a password just to run one check. The verification rules and the read-only red line: see [Database Drift Check](./database-drift-check.md).
 
-## 调试配置文件(`.kbengine/debug.json`)
+## Debug Configuration File (`.kbengine/debug.json`)
 
-这个文件只服务调试流程与快速执行动作。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。
+This file serves only the debugging flow and quick actions. telnet probing, the telnet panel, status lights, and the telnet tree view never read it.
 
-### 快速执行动作(`quickActions` 键)
+### Quick Actions (the `quickActions` key)
 
-动作是**顶层 `quickActions` 数组**(不进 `debug` 段:动作不是调试配置),跟着 KBEngine 工程走,不新增 `kbengine.*` 设置项。
+Actions are the **top-level `quickActions` array** (not inside the `debug` section: actions are not debug config); they travel with the KBEngine project, with no new `kbengine.*` settings.
 
-**编辑器侧校验**:kode 随包贡献了该文件的 JSON Schema(`.kbengine/debug.json` 一路匹配,含各级子文件夹),VS Code 的 JSON 扩展在编辑时直接标红——后端类型写错、`telnetPort` 写成字符串、`pathMappings` 条目缺 `localRoot`/`remoteRoot`、`method` 不在白名单等,都在保存前暴露,不必等执行才发现。Schema 由解析器口径生成(后端枚举与方法枚举取 `quickActionConfig.ts` 的常量),与 `package.json` 内联对象逐字节同源、由测试锁定防漂移。校验是提示,不是门禁:解析器仍然逐条剔除坏条目、逐字段的类型回落规则不变。
+**Editor-side validation**: kode ships a JSON Schema for this file with the package (matching `.kbengine/debug.json` at any subfolder depth); VS Code's JSON extension flags errors while editing — a wrong backend type, `telnetPort` written as a string, a `pathMappings` entry missing `localRoot`/`remoteRoot`, a `method` outside the whitelist — all surface before saving instead of at run time. The schema is generated from the parser's own definitions (backend and method enums take the constants of `quickActionConfig.ts`), byte-identical with the inline object in `package.json` and locked by tests against drift. Validation is a hint, not a gate: the parser still prunes bad entries one by one, and per-field type fallback rules are unchanged.
 
-| 字段 | 适用类型 | 说明 |
+| Field | Applicable types | Notes |
 |------|------|------|
-| `name` | 全部 | 显示名,必填 |
-| `type` | 全部 | `command` / `script` / `http`,白名单外整条剔除 |
-| `command` | command | VS Code 命令 id,必填 |
-| `args` | command | 参数数组,字符串项走变量替换,缺省 `[]` |
-| `script` | script | 脚本路径,必填,支持变量 |
-| `cwd` | script | 工作目录,支持变量,缺省工作区根 |
-| `venv` | script | 可选 `{ "enabled": true, "path": "${workspaceFolder}/.venv" }`;启用后把环境的 `bin`（Windows 为 `Scripts`）放到子进程 `PATH` 前面并设置 `VIRTUAL_ENV`;省略 `path` 自动查找脚本目录及配置根下的 `.venv` / `venv` |
-| `background` | script | `true` 表示起服类不等退出码,缺省 `false` |
-| `url` | http | URL,必填,支持变量;只发配置里写死的地址,不接受运行时拼接 |
-| `method` | http | `GET` / `POST` / `PUT` / `PATCH` / `HEAD` / `OPTIONS`,缺省 `POST` |
-| `body` | http | 请求体(非空才随请求发送),支持变量 |
-| `confirm` | 全部 | 执行前 modal 确认框,缺省 `true` |
-| `source` | 全部 | `manual` / `scan`,首装扫描生成的条目自动记 `scan` |
-| `category` | 全部 | `server` / `export`,仅扫描生成且命中词表时写(词表外脚本省略该字段) |
+| `name` | all | Display name, required |
+| `type` | all | `command` / `script` / `http`; anything outside the whitelist is pruned whole |
+| `command` | command | VS Code command id, required |
+| `args` | command | Argument array; string items go through variable substitution, default `[]` |
+| `script` | script | Script path, required, variables supported |
+| `cwd` | script | Working directory, variables supported, default the workspace root |
+| `venv` | script | Optional `{ "enabled": true, "path": "${workspaceFolder}/.venv" }`; prepends `bin` (`Scripts` on Windows) to the child `PATH` and sets `VIRTUAL_ENV`; without `path`, searches `.venv` / `venv` beside the script and under the config root |
+| `background` | script | `true` means server-start types don't wait for the exit code, default `false` |
+| `url` | http | URL, required, variables supported; only the address hard-coded in the config is requested — no runtime concatenation |
+| `method` | http | `GET` / `POST` / `PUT` / `PATCH` / `HEAD` / `OPTIONS`, default `POST` |
+| `body` | http | Request body (sent only when non-empty), variables supported |
+| `confirm` | all | Modal confirmation before execution, default `true` |
+| `source` | all | `manual` / `scan`; entries generated by the first-install scan are automatically recorded `scan` |
+| `category` | all | `server` / `export`, written only for scan-generated entries that hit the word list (omitted for word-list outsiders) |
 
-变量(执行时替换,只作用于配置字面串):
+Variables (substituted at run time, applied to config literal strings only):
 
-| 变量 | 含义 |
+| Variable | Meaning |
 |------|------|
-| `${workspaceFolder}` | 快速动作使用生效配置根(通常是首个工作区根) |
-| `${workspaceFolder:名字}` | 按视图名取工作区根(多根工程) |
-| `${env:变量名}` | 进程环境变量 |
+| `${workspaceFolder}` | The effective quick-action config root (normally the first workspace root) |
+| `${workspaceFolder:Name}` | The workspace root by view name (multi-root projects) |
+| `${env:VAR_NAME}` | A process environment variable |
 
-未知变量直接报错中止并指名变量——静默空串替换会把脚本跑成「路径为空」的假成功,比报错更糟。
+An unknown variable errors out immediately, naming the variable — a silent empty-string substitution would run the script into a fake success with an "empty path", worse than an error.
 
-示例:
+Example:
 
 ```json
 {
@@ -404,20 +404,20 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 }
 ```
 
-首次缺配置时扫描生效配置根与 `assetsRoot` 顶层的 `.bat` / `.ps1`;命令 `Rescan Scripts for Quick Actions` 可随时重新扫描。扫描生成的路径与 `cwd` 都指向脚本所在目录；脚本默认不启用 venv，可在对应动作里设置 `"venv": { "enabled": true }`，或指定 `path`。重新扫描只替换 `source: "scan"` 动作，保留手工动作和 `debug` 设置。
+The first-install scan checks the effective config root and the top level of `assetsRoot` for `.bat` / `.ps1`, listing **all of them** for confirmation (the start/stop (`start` / `stop` / `restart` / `boot` / `server`) and table-export (`export` / `convert` / `导表`) vocabulary only **assigns a category** — hits get `server` / `export`, non-hits omit it); after checking, they are written in the `${workspaceFolder}/<filename>` variable form (those starting with `start` / `boot` automatically get `background: true`), preserving existing `version` / `debug` sections. Use `Rescan Scripts for Quick Actions` to scan again at any time. Generated script paths and `cwd` both point to the script's directory; venv is off by default for scanned actions — opt in with `"venv": { "enabled": true }` or specify a `path`. A rescan replaces only `source: "scan"` actions and preserves manual actions and `debug` settings.
 
-### 调试字段(`debug` 段)
+### Debug Fields (the `debug` section)
 
-| 字段 | 用途 |
+| Field | Purpose |
 | --- | --- |
-| `debug.defaultTelnetHost` / `defaultTelnetPort` | `Start Debugging` 提示语里的 telnet 地址(仅提示,不参与实际探测) |
-| `debug.components.<组件>.telnetHost` / `telnetPort` | 同上,按组件覆盖 |
-| `debug.components.<组件>.telnetEnableCommands` | 提示语里列出的「开启调试命令」,提醒你先经 telnet 输入项目实际使用的命令 |
-| `debug.components.<组件>.pathMappings` | `Update launch.json` 生成 attach 配置时写入的路径映射 |
+| `debug.defaultTelnetHost` / `defaultTelnetPort` | The telnet address in `Start Debugging`'s instructions (hint only, not part of actual probing) |
+| `debug.components.<Component>.telnetHost` / `telnetPort` | Same as above, overridden per component |
+| `debug.components.<Component>.telnetEnableCommands` | The "enable-debugging commands" listed in the instructions, reminding you to first send the project's actual command over telnet |
+| `debug.components.<Component>.pathMappings` | The path mappings written when `Update launch.json` generates the attach configuration |
 
-本地 attach 不从这里拿进程号:`Attach to Component` 列出本机进程(匹配组件名的置顶标 ✓),选中即以 PID 组装配置。远程附加的目标来自设置 `kbengine.debug.remoteTargets`,也不读这个文件。
+Local attach does not take the process id from here: `Attach to Component` lists local processes (matches of the component name pinned with ✓), and assembling the configuration from the selected PID. Remote attach targets come from the setting `kbengine.debug.remoteTargets` and never read this file either.
 
-推荐结构:
+Recommended structure:
 
 ```json
 {
@@ -445,92 +445,92 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 }
 ```
 
-#### 缺失即自动生成（批143）
+#### Generated When Missing (batch 143)
 
-工作区里找不到 `.kbengine/debug.json` 时,扩展激活期直接生成一份带注释的骨架,不用用户先建文件再猜字段含义:
+When `.kbengine/debug.json` is absent from the workspace, the extension writes an annotated skeleton at activation — you no longer have to create the file first and guess what each field means:
 
-- 骨架按 **JSONC** 写,允许 `//` 与块注释(同 `tsconfig.json` 口径),每个字段都带一行说明;kode 读配置前会剥注释,所以你自己写的注释不会让配置读不动
-- 路径示例一律 `${workspaceFolder}/...` 形态,打开即可编辑
-- 同时按既有扫描规则(工作目录一层的 `.bat`/`.ps1`,词表只定分类不过滤)把扫到的脚本写进 `quickActions`;一个都没扫到就留空数组
-- **已存在的文件绝不覆盖**:重复激活、用户改过的内容都原样保留;目录不可写时只在「KBEngine 配置」输出通道如实说明,不影响其余能力
+- The skeleton is written as **JSONC**, so `//` and block comments are allowed (same convention as `tsconfig.json`); every field carries a one-line explanation. Kode strips comments before parsing, so comments you write yourself never make the file unreadable.
+- Path examples always use the `${workspaceFolder}/...` form — open and edit.
+- Scripts found by the existing scan rule (one level of `.bat`/`.ps1` under the working directory; the word list only assigns a category) are written into `quickActions`; when nothing matches, the array stays empty.
+- **An existing file is never overwritten**: repeated activations and your edits are preserved as-is. If the directory is not writable, the extension says so in the `KBEngine 配置` output channel and nothing else is affected.
 
-#### 工作目录与环境变量
+#### Working Directory and the Environment Variable
 
-生成位置与 `.pyi` 存根目录取同一个「生效工作目录」,优先级从高到低:
+The scaffold location and the `.pyi` stub directory share one effective working directory, resolved highest priority first:
 
-| 档位 | 来源 | 说明 |
+| Tier | Source | Notes |
 | --- | --- | --- |
-| 1 | 环境变量 `KBENGINE_WORKSPACE` | 支持 VS Code 官方变量替换,如 `${workspaceFolder}/server`;变量名沿用本仓 `KBENGINE_*` 命名风格 |
-| 2 | 配置文件顶层 `workspaceRoot` | 骨架里以注释形态给出,取消注释即可接管 |
-| 3 | 默认值 | 首个工作区根 |
+| 1 | `KBENGINE_WORKSPACE` environment variable | Supports official VS Code variable substitution, e.g. `${workspaceFolder}/server`; the name follows this repo's existing `KBENGINE_*` style |
+| 2 | Top-level `workspaceRoot` in the config file | Shipped commented out in the skeleton — uncomment to take over |
+| 3 | Default | The first workspace folder |
 
-取值先过变量替换;替换后为空串视作没写,顺位回落下一档。生效值与来源、被盖掉的来源逐条写进骨架注释和「KBEngine 配置」输出通道,不静默取某一档。
+Values go through variable substitution first; a value that expands to an empty string counts as unset and falls through to the next tier. The effective value, its source, and every overridden alternative are written into the skeleton comments and the `KBEngine 配置` output channel — no tier is picked silently.
 
-## 路径类配置的自动发现(批125)
+## Auto-Discovery of Path Settings (batch 125)
 
-设计约束:**尽量减少配置项,能自动发现的就自动发现**。核心功能(打开 `.def` → 实体浏览器/依赖图/属性面板/数据库 schema/悬停存储信息)在干净工作区零配置即可用——下面五项路径配置全部退化为「可选覆盖」:配置了就照配置,没配就按发现链找。
+Design constraint: **minimize settings; whatever can be auto-discovered, auto-discover**. The core features (open a `.def` → entity explorer/dependency graph/property panel/database schema/hover storage info) work in a clean workspace with zero configuration — all five path settings below degrade to "optional override": configured values are honored; unconfigured ones go through the discovery chain.
 
-发现链(按序取第一个命中):
+Discovery chain (first hit wins, in order):
 
-1. **显式配置**:`kbengine.entityDefsPath` / `kbengine.entitiesXmlPath` / `kbengine.binPath` 的设置值(支持 `${workspaceFolder}`);
-2. **约定路径**:引擎/官方资产固定布局,如 `entity_defs`、`scripts/entity_defs`、`assets/scripts/entity_defs`、`server_assets/scripts/entity_defs`;
-3. **有界深扫描**:约定全 miss 时扫工作区找锚点(目录名 `entity_defs`、文件名 `entities.xml`/`types.xml`/`messages_fixed.xml`/`messages_fixed_defaults.xml`(批129 双名)、引擎源码锚点 `entitydef.cpp`/`entity_table_mysql.cpp`),限深 7 层、限 2 万条目,剪掉 `node_modules`/`.git`/`out`/`dist`/点目录,结果按工作区缓存;
-4. **唯一命中即用,多候选不猜**:同步读路径只认唯一命中——多个候选时宁缺勿猜(猜测会连带改写 interfaces/components/user_type 全套根目录),改由激活期弹**一次** quick pick 让你选,选择按工作区记忆(`workspaceState`),之后不再询问。
+1. **Explicit config**: the setting values of `kbengine.entityDefsPath` / `kbengine.entitiesXmlPath` / `kbengine.binPath` (`${workspaceFolder}` supported);
+2. **Conventional paths**: fixed engine/official-asset layouts, e.g. `entity_defs`, `scripts/entity_defs`, `assets/scripts/entity_defs`, `server_assets/scripts/entity_defs`;
+3. **Bounded deep scan**: when conventions all miss, scan the workspace for anchors (directory name `entity_defs`, file names `entities.xml`/`types.xml`/`messages_fixed.xml`/`messages_fixed_defaults.xml` (batch 129 dual names), engine source anchors `entitydef.cpp`/`entity_table_mysql.cpp`), bounded to depth 7 and 20k entries, pruning `node_modules`/`.git`/`out`/`dist`/dot-directories; results cached per workspace;
+4. **Unique hit wins; multiple candidates never guessed**: synchronous read paths accept only a unique hit — with multiple candidates, nothing beats a guess (a guess would rewrite the whole set of interfaces/components/user_type root directories); instead, a quick pick pops **once** during activation for you to choose, the choice is remembered per workspace (`workspaceState`), and you are never asked again.
 
-能从已存在文件推断的子路径一律不进配置:def 根推出 `interfaces/`、`components/`、`user_type/` 子目录;`types.xml` 优先取 def 根之下;`entities.xml` 优先取 def 根同父;`messages_fixed(_defaults).xml` 批129 起四级优先级对齐引擎装载序(kbemain.h:71-74,defaults 先载打底、用户副本后载覆盖):工作区用户副本 `messages_fixed.xml` → 引擎源码根用户副本 → 工作区 `messages_fixed_defaults.xml` → 引擎源码根缺省;用户副本与缺省各在各的树里(引擎注释 kbemain.h:133-137:defaults 在引擎 res 树、用户副本在资产树),四级独立取用不要求同目录;纯资产工作区两者皆有或皆无为常态,皆无时发现报告标信息性不计问题。
+Sub-paths inferable from existing files never become settings: the def root derives `interfaces/`, `components/`, `user_type/` subdirectories; `types.xml` is preferred under the def root; `entities.xml` is preferred at the def root's parent; `messages_fixed(_defaults).xml` since batch 129 has four priority levels aligned with the engine loading order (kbemain.h:71-74, defaults load first as the base, the user copy loads after and overrides): workspace user copy `messages_fixed.xml` → engine source-root user copy → workspace `messages_fixed_defaults.xml` → engine source-root default; the user copy and the default each live in their own tree (engine comments kbemain.h:133-137: defaults in the engine res tree, the user copy in the assets tree), the four levels are taken independently with no same-directory requirement; an assets-only workspace having both or neither is normal, and having neither is marked informational in the discovery report, not a problem.
 
-**三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
+**Three kinds of purely discovered resources with no settings at all** (since batch 125): `types.xml`, `messages_fixed(_defaults).xml`, and the engine `kbengine_defaults.xml` (when binPath cannot derive it, fall back via the engine source-root anchor, then derive).
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 54 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
+### Full Setting Comparison Table (batch-125 inventory of 32 items; more added continuously since batch 126, 54 today — the new ones are in the feature-area groups of "Overview of `kbengine.*` Settings (by Feature Area)" above)
 
-`现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
+`How it resolves now` = how the value is actually taken today; `Auto-discoverable` = whether the value can be derived from the workspace/environment; `Disposition` = this round's conclusion and reasoning.
 
-| 配置项 | 现在怎么用 | 能否自动发现 | 处置 |
+| Setting | How it resolves now | Auto-discoverable | Disposition |
 | --- | --- | --- | --- |
-| `kbengine.entityDefsPath` | 显式配置 → 约定 4 布局 → 深扫描唯一命中 → 多候选 quick pick 记忆 | **能**(约定布局 + 深扫描) | **自动发现**,配置只作覆盖 |
-| `kbengine.entitiesXmlPath` | 同上链;另优先取 def 根同父目录 | **能** | **自动发现**,配置只作覆盖 |
-| `kbengine.binPath` | 显式配置 → 引擎源码根锚点推 `kbe/bin/server` → 逐个猜兄弟目录/环境变量 | **能**(源码根锚点 `entitydef.cpp`/`entity_table_mysql.cpp`) | **自动发现**,配置只作覆盖 |
-| `kbengine.generator.defOutputPath` | 默认值即走发现出的 def 根(`resolveDefOutputPath`) | **能**(复用 def 根发现) | **自动发现**,配置只作覆盖 |
-| `kbengine.generator.pythonOutputPath` | 默认值 `scripts` 时从发现出的 def 根父目录推导;推出工作区/空段保持默认 | **能**(def 根父目录) | **自动发现**,配置只作覆盖 |
-| `kbengine.assetsRoot` | 显式配置(默认空 = 自动发现);批128 起原值未过 `res/server/kbengine.xml` 探针时自动发现:约定链(工作区根、`assets/`、`server_assets/`,批129 起含工作区一级 `*_assets` 目录如 `flyff_assets`)→ 记忆选择 → 深扫描唯一命中,多候选激活期询问 | **能**(引擎装载探针验收,批128 已做) | **自动发现**,配置只作覆盖;探针口径 = 引擎真实装载位置,猜错起不来的风险由探针验收消除 |
-| `kbengine.telnet.port` | 显式 >0 锁定;0 = 按元件段 → 引擎 defaults 链(批112) | **能**(配置链,批112 已做) | **自动取值**,配置只作覆盖 |
-| `kbengine.telnet.password` | 设置 → 元件段 → defaults → 空(批112) | **能**(同上) | **自动取值**,配置只作覆盖 |
-| `kbengine.telnet.configXmlPath` | 空 = 按 3 个约定位置自动找 `kbengine.xml` | **能**(已是覆盖式) | **自动发现**,配置只作覆盖 |
-| `kbengine.enableDiagnostics` | 开关,默认开 | 否(用户偏好,非可发现事实) | **保留**,默认开即零配置可用 |
-| `kbengine.enableStructureDiagnostics` | 同上 | 否 | **保留**,理由同上 |
-| `kbengine.diagnostics.checkUnknownTypes` | 开关,默认开 | 否 | **保留**(偏好开关,5 项诊断细分同理) |
-| `kbengine.diagnostics.checkUnknownFlags` | 同上 | 否 | **保留** |
-| `kbengine.diagnostics.checkUnknownDetailLevels` | 同上 | 否 | **保留** |
-| `kbengine.diagnostics.checkDuplicateDefinitions` | 同上 | 否 | **保留** |
-| `kbengine.diagnostics.checkMissingPropertyFields` | 同上 | 否 | **保留** |
-| `kbengine.hover.showTagDocs` | 开关,默认开 | 否 | **保留**(偏好开关,3 项悬停细分同理) |
-| `kbengine.hover.showValueDocs` | 同上 | 否 | **保留** |
-| `kbengine.hover.showSymbolDocs` | 同上 | 否 | **保留** |
-| `kbengine.showFinalConfigOnOpen` | 开关,默认开;定位不到 defaults 静默跳过 | 否 | **保留**,默认开零打扰 |
-| `kbengine.autoRefreshFinalConfig` | 开关,默认开 | 否 | **保留** |
-| `kbengine.autoStart` | 组件名列表,默认 `["machine","logger","dbmgr"]` | 否(启动策略是决策不是事实) | **保留**,默认即官方最小可跑组合 |
-| `kbengine.loggerPort` | 固定 20022(引擎 logger 监听端口) | 否(运行时网络端口,工作区无痕迹) | **保留**,默认值 = 引擎默认端口 |
-| `kbengine.logAutoConnect` | 开关,默认开 | 否 | **保留** |
-| `kbengine.maxLogEntries` | 数值 10000 | 否 | **保留**(内存/历史的权衡偏好) |
-| `kbengine.debug.remoteTargets` | 空列表;远端机器+端口 | 否(远端基础设施,工作区不存在) | **保留**,默认空 = 功能不用即不配 |
-| `kbengine.generator.generatePython` | 开关,默认开 | 否 | **保留** |
-| `kbengine.generator.registerInEntitiesXml` | 开关,默认开 | 否 | **保留** |
-| `kbengine.telnet.host` | 默认 `127.0.0.1` | 否(远端填 IP 是用户知识) | **保留**,本地默认开箱即用 |
-| `kbengine.telnet.enableCommands` | 空白名单 = 只放行内置只读快捷命令 | 否(安全策略,放行范围是决策) | **保留**,默认全禁是安全底线,不可代猜 |
-| `kbengine.telnet.probeIntervalSeconds` | 数值 5 | 否 | **保留**(频率偏好) |
-| `kbengine.httpRequests` | 默认一条停用示例(`enabled: false`) | 否(用户业务接口) | **保留**,示例默认停用不产生副作用 |
+| `kbengine.entityDefsPath` | Explicit config → 4 conventional layouts → unique deep-scan hit → multi-candidate quick pick with memory | **Yes** (conventional layouts + deep scan) | **Auto-discover**; config serves only as override |
+| `kbengine.entitiesXmlPath` | Same chain; additionally prefers the def root's parent directory | **Yes** | **Auto-discover**; config serves only as override |
+| `kbengine.binPath` | Explicit config → engine source-root anchor derives `kbe/bin/server` → sibling-directory/environment-variable guessing | **Yes** (source-root anchors `entitydef.cpp`/`entity_table_mysql.cpp`) | **Auto-discover**; config serves only as override |
+| `kbengine.generator.defOutputPath` | The default value itself uses the discovered def root (`resolveDefOutputPath`) | **Yes** (reuses def-root discovery) | **Auto-discover**; config serves only as override |
+| `kbengine.generator.pythonOutputPath` | When the default `scripts` applies, derived from the discovered def root's parent; derived outside the workspace or empty segments keep the default | **Yes** (def root's parent) | **Auto-discover**; config serves only as override |
+| `kbengine.assetsRoot` | Explicit config (default empty = auto-discover); since batch 128, when the original value fails the `res/server/kbengine.xml` probe it auto-discovers: convention chain (workspace root, `assets/`, `server_assets/`, and since batch 129 first-level `*_assets` directories like `flyff_assets`) → remembered choice → unique deep-scan hit; multi-candidate asks during activation | **Yes** (validated by the engine-loading probe, done in batch 128) | **Auto-discover**; config serves only as override; the probe's criterion = the engine's real loading location, eliminating the risk of a wrong guess failing to start |
+| `kbengine.telnet.port` | Explicit >0 locks it; 0 = per the component section → engine defaults chain (batch 112) | **Yes** (config chain, done in batch 112) | **Auto-resolve**; config serves only as override |
+| `kbengine.telnet.password` | Settings → component section → defaults → empty (batch 112) | **Yes** (same as above) | **Auto-resolve**; config serves only as override |
+| `kbengine.telnet.configXmlPath` | Empty = auto-find `kbengine.xml` at 3 conventional locations | **Yes** (already override-style) | **Auto-discover**; config serves only as override |
+| `kbengine.enableDiagnostics` | Switch, default on | No (user preference, not a discoverable fact) | **Keep**; default-on means zero-config usability |
+| `kbengine.enableStructureDiagnostics` | Same as above | No | **Keep**, same reasoning |
+| `kbengine.diagnostics.checkUnknownTypes` | Switch, default on | No | **Keep** (preference switch; the 5 fine-grained diagnostics likewise) |
+| `kbengine.diagnostics.checkUnknownFlags` | Same as above | No | **Keep** |
+| `kbengine.diagnostics.checkUnknownDetailLevels` | Same as above | No | **Keep** |
+| `kbengine.diagnostics.checkDuplicateDefinitions` | Same as above | No | **Keep** |
+| `kbengine.diagnostics.checkMissingPropertyFields` | Same as above | No | **Keep** |
+| `kbengine.hover.showTagDocs` | Switch, default on | No | **Keep** (preference switch; the 3 fine-grained hovers likewise) |
+| `kbengine.hover.showValueDocs` | Same as above | No | **Keep** |
+| `kbengine.hover.showSymbolDocs` | Same as above | No | **Keep** |
+| `kbengine.showFinalConfigOnOpen` | Switch, default on; silently skipped when defaults cannot be located | No | **Keep**; default-on is zero-disturbance |
+| `kbengine.autoRefreshFinalConfig` | Switch, default on | No | **Keep** |
+| `kbengine.autoStart` | Component name list, default `["machine","logger","dbmgr"]` | No (start strategy is a decision, not a fact) | **Keep**; the default is the official minimal runnable set |
+| `kbengine.loggerPort` | Fixed 20022 (the engine logger listen port) | No (a runtime network port leaves no workspace trace) | **Keep**; the default = the engine default port |
+| `kbengine.logAutoConnect` | Switch, default on | No | **Keep** |
+| `kbengine.maxLogEntries` | Value 10000 | No | **Keep** (a memory/history trade-off preference) |
+| `kbengine.debug.remoteTargets` | Empty list; remote machine + port | No (remote infrastructure does not exist in the workspace) | **Keep**; default empty = don't configure if unused |
+| `kbengine.generator.generatePython` | Switch, default on | No | **Keep** |
+| `kbengine.generator.registerInEntitiesXml` | Switch, default on | No | **Keep** |
+| `kbengine.telnet.host` | Default `127.0.0.1` | No (entering a remote IP is user knowledge) | **Keep**; local default works out of the box |
+| `kbengine.telnet.enableCommands` | Empty whitelist = only built-in read-only shortcuts are allowed | No (a security policy; the allowance scope is a decision) | **Keep**; deny-by-default is the security baseline and must not be guessed on the user's behalf |
+| `kbengine.telnet.probeIntervalSeconds` | Value 5 | No | **Keep** (frequency preference) |
+| `kbengine.httpRequests` | Default: one disabled example (`enabled: false`) | No (the user's business endpoints) | **Keep**; the example is disabled by default and has no side effects |
 
-计数:**32 项全部保留,0 项删除**(删项会破坏既有用户设置,不做);其中 5 项路径配置从「必须配对」降级为「可选覆盖」,3 项 telnet/取值类本就是覆盖式,21 项是偏好/安全/业务开关(默认值即零配置语义)。另新增 3 类**无配置项**的纯发现资源(types.xml、messages_fixed(_defaults).xml、引擎 defaults 的源码根兜底)。批126 起在此表之外新增 10 项设置(`kbengine.db.tablePrefix`、`kbengine.hotReload.*` 4 项、`kbengine.clientSdk.outputDir`、`kbengine.python.extraPathsSync`/`stubExport`/`stubDir`、`kbengine.python.enableMroJump`),均已在总览分区表登记。
+Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 10 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`, and `kbengine.python.enableMroJump`), all registered in the grouped overview tables above.
 
-## 常见问题
+## FAQ
 
-### 为什么设置改了没有立刻生效?
+### Why didn't my settings change take effect immediately?
 
-扩展监听 `kbengine.*` 配置变化,正常即时生效。没刷新时:确认改的是当前工作区或用户设置;确认当前打开的是 `.def` 文件;极端情况关闭再打开文件。
+The extension watches `kbengine.*` configuration changes and normally applies them instantly. If not refreshed: confirm you changed the current workspace's or the user settings; confirm the currently open file is a `.def`; in extreme cases close and reopen the file.
 
-### 哪些配置最值得先调?
+### Which settings are most worth tuning first?
 
-嫌提示多,先关这四项:
+If hints feel too many, turn these four off first:
 
 ```json
 {
@@ -541,21 +541,21 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 }
 ```
 
-## 调试模型说明
+## Debugging Model Notes
 
-KBEngine 组件是 C++ 进程内嵌 Python 运行时,不是扩展直接启动一个 Python 脚本。调试固定两步:
+KBEngine components are C++ processes with an embedded Python runtime — not something the extension launches as a Python script. Debugging is fixed at two steps:
 
-1. 先通过 telnet 向组件输入项目实际使用的开启调试命令(telnet 地址/端口/密码按「telnet 端口/密码怎么读」的三层链确认)
-2. 再附加进程:本地组件用 `Attach to Component`(进程列表,匹配组件名的置顶标 ✓),远程组件用 `Attach to Remote Component`(目标来自 `kbengine.debug.remoteTargets`,debugpy `connect` 模式)
+1. First send the project's actual enable-debugging command to the component over telnet (telnet address/port/password confirmed along the three-layer chain in "How the telnet Port/Password Are Read")
+2. Then attach to the process: local components via `Attach to Component` (process list, matches of the component name pinned with ✓); remote components via `Attach to Remote Component` (targets from `kbengine.debug.remoteTargets`, debugpy `connect` mode)
 
-### Attach 报错排查
+### Attach Error Troubleshooting
 
-按这个顺序查:
+Check in this order:
 
-1. 目标组件是否已经通过 telnet 真正开启调试(telnet 参数按三层链确认,与 `.kbengine/debug.json` 无关)
-2. 进程列表里选的是否就是目标组件本身,而不是 machine/logger 等辅助进程
-3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致(只影响提示语)
-4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前源码目录(远程 connect 模式不写 `pathMappings`)
-5. 本机是否已安装 `ms-python.debugpy`,VS Code 能否正常通过它附加进程
+1. Whether the target component has really enabled debugging over telnet (telnet parameters confirmed along the three-layer chain, unrelated to `.kbengine/debug.json`)
+2. Whether the process picked in the list is the target component itself, not a machine/logger helper process
+3. Whether `telnetEnableCommands` in `.kbengine/debug.json` matches the project's real command (affects the instructions only)
+4. Whether `pathMappings` in `.kbengine/debug.json` maps to the current source directory (the remote connect mode writes no `pathMappings`)
+5. Whether `ms-python.debugpy` is installed on this machine and VS Code can attach through it normally
 
-旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug` 已移除,`kbengine.pythonDefsPath`、`kbengine.enablePythonNavigation` 也已移除(导航走 `.def` 定义体系,见实体浏览器)。
+The old `kbengine.pythonPath`, `kbengine.debugPort`, `kbengine.autoAttachDebug` have been removed; `kbengine.pythonDefsPath`, `kbengine.enablePythonNavigation` have also been removed (navigation goes through the `.def` definition system — see the entity explorer).

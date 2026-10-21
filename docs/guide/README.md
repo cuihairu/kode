@@ -1,47 +1,47 @@
-# 快速开始
+# Quick Start
 
 
-## 安装依赖
+## Install Dependencies
 
 ```bash
 pnpm install
 ```
 
-## 启动扩展开发
+## Start Extension Development
 
 ```bash
 pnpm run watch
 code .
 ```
 
-然后在 VSCode 中按 `F5` 启动 Extension Development Host。
+Then press `F5` in VSCode to start the Extension Development Host.
 
-## 文档站点
+## Documentation Site
 
-本项目使用 VitePress 生成文档站点。
+This project uses VitePress for its documentation site.
 
 ```bash
 pnpm run docs:dev
 ```
 
-构建产物：
+Build the output:
 
 ```bash
 pnpm run docs:build
 ```
 
-## 版本策略
+## Version Policy
 
-当前阶段使用 `0.1.x` 作为持续修复版本线。
+The current stage stays on the `0.1.x` line for continuous fixes.
 
 - `0.1.x`
-  - 用于修复问题、补充文档、增强现有功能、完善交互
+  - For fixing issues, supplementing docs, enhancing existing features, and refining interactions
 - `0.2.0`
-  - 只在出现明确的功能级升级或兼容性边界变化时再考虑
+  - Considered only with a clear feature-level upgrade or a compatibility boundary change
 
-如果你正在参与发布或维护，默认不要因为“继续完善”就直接升级到 `0.2.0`。
+If you are contributing to releases or maintenance, do not upgrade to `0.2.0` just because "it keeps getting better".
 
-## 推荐的 KBEngine 项目结构
+## Recommended KBEngine Project Structure
 
 ```text
 your-project/
@@ -55,28 +55,28 @@ your-project/
 └── kbengine/
 ```
 
-## 扩展能力概览
+## Capability Overview
 
-- `.def` 语法高亮、Hover、诊断、跳转
-- Python 与 `.def` 双向导航
-- 实体浏览器与服务器控制面板
-- Telnet 探测与面板联动（状态灯、自动登录、白名单命令）
-- HTTP 快捷请求（URL 模板变量，快捷键直发热更新）
-- 日志查看、监控面板、依赖图
-- 实体代码生成器
-- 数据库模拟（schema 之上模拟行数据与增改删预览）
-- 路径类配置的自动发现（约定 → 有界深扫描 → 多候选询问记忆）
+- `.def` syntax highlighting, hover, diagnostics, navigation
+- Bidirectional Python ↔ `.def` navigation
+- Entity explorer and server control panel
+- Telnet probing with panel integration (status light, auto login, whitelisted commands)
+- HTTP quick requests (URL template variables, hot-update straight from a keybinding)
+- Log viewer, monitoring panel, dependency graph
+- Entity code generator
+- Database simulation (row data and insert/update/delete previews on top of the schema)
+- Auto-discovery for path-like settings (conventions → bounded deep scan → multi-candidate ask-and-remember)
 
-补充：
-日志查看和监控面板都依赖 KBEngine 运行态协议。
-如果 logger/watcher 响应异常，这两块会退化成部分能力可用，而不是完整遥测。
+Notes:
+both the log viewer and the monitoring panel depend on KBEngine's runtime protocols.
+If the logger/watcher responses misbehave, these two degrade to partial capability instead of full telemetry.
 
-详细能力见 [功能概览](./features.md)。
+For details see [Feature Overview](./features.md).
 
-## 下一步阅读建议
+## Where to Read Next
 
-- 想调行为和路径：看 [配置说明](./configuration.md)
-- 想知道命令入口和面板用途：看 [命令与面板](./commands.md)
-- 想了解 `.def` 的语言能力：看 [语言能力](./language.md)
-- 想看日志、依赖图和生成器：看 [日志查看](./logging.md)、[实体依赖图](./dependency-graph.md)、[代码生成器](./generator.md)
-- 想参与维护和发布：看 [开发与发布](./development.md)
+- To tune behavior and paths: see the [configuration reference](./configuration.md)
+- For command entry points and panel purposes: see [Commands and Panels](./commands.md)
+- For the `.def` language surface: see [Language Features](./language.md)
+- For logs, the dependency graph, and the generator: see [Log Viewer](./logging.md), [Entity Dependency Graph](./dependency-graph.md), [Code Generator](./generator.md)
+- To join maintenance and release work: see [Development and Release](./development.md)

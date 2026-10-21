@@ -1,22 +1,22 @@
-# 日志查看
+# Log Viewer
 
 
-Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查看、过滤和导出日志。
+Kode ships a log viewer WebView for the KBEngine logger, to view, filter, and export logs.
 
-当前 logger 协议适配尚未完成。扩展会明确提示该能力暂不支持，避免把未核实的协议实现当成可用能力。
+The logger protocol adaptation is not finished yet. The extension clearly states this capability is not supported yet, so an unverified protocol implementation is never presented as a working one.
 
-## 能力概览
+## Overview
 
-- 连接 logger 端口
-- 查看连接状态与限制说明
-- 级别过滤
-- 组件过滤
-- 关键词搜索
-- 正则表达式搜索
-- 导出日志
-- 原始日志 ERROR 扫描（离线，不依赖 logger 连接）
+- Connect to the logger port
+- View connection status and limitation notes
+- Level filtering
+- Component filtering
+- Keyword search
+- Regular expression search
+- Log export
+- Raw log ERROR scan (offline, no logger connection needed)
 
-## 相关命令
+## Related Commands
 
 - `kbengine.logs.showViewer`
 - `kbengine.logs.connect`
@@ -25,52 +25,52 @@ Kode 提供了一个面向 KBEngine logger 的日志查看 WebView，用于查�
 - `kbengine.logs.export`
 - `kbengine.logs.scanErrors`
 
-命令说明见 [命令与面板](./commands.md)。
+See [Commands and Panels](./commands.md) for command details.
 
-## 相关配置
+## Related Configuration
 
 ### `kbengine.loggerPort`
 
-控制 logger 连接端口，默认 `20022`。
+The logger connection port, default `20022`.
 
 ### `kbengine.logAutoConnect`
 
-启动服务器时是否自动连接日志端口。
+Whether to auto-connect to the log port when starting the server.
 
 ### `kbengine.maxLogEntries`
 
-控制日志 WebView 最大缓存条数。
+The maximum number of cached entries in the log WebView.
 
-如果你发现：
+If you notice:
 
-- 面板变卡
-- 滚动明显延迟
-- 长时间运行后内存增加
+- The panel getting sluggish
+- Clearly delayed scrolling
+- Memory growing over long runs
 
-可以优先降低这个值。
+lower this value first.
 
-## 跳转决策路径日志
+## Jump Decision-Path Log
 
-F12 跳转落空时,把「查了哪几层、每层命中还是落空、为什么放弃、耗时多少」全部打到输出面板,便于自行判断断在哪一层,也便于把现场直接贴给维护者。
+When an F12 jump finds nothing, the extension can print the whole decision path — how many layers were checked, which one hit or missed, why it gave up, and how long each step took — to an output channel, so you can see exactly which layer broke and paste the captured output to the maintainer.
 
-### 开关
+### Switch
 
-- 配置 key:`kbengine.jumpLog`
-- 类型:boolean,可选值 `true` / `false`,默认 `false`(关闭)
-- 关闭时零开销:日志消息以惰性(`() =>`)形式传入,开关判断在拼字符串之前,关闭时不产生任何字符串构建与输出
-- 该开关是编辑器行为设置,**不挂在 `.kbengine/debug.json`**——那个文件承载的是调试启动动作(commands/scripts/cwd),日志开关走 VS Code 设置体系,改设置即时生效、无需改文件或重载窗口
+- Setting key: `kbengine.jumpLog`
+- Type: boolean, values `true` / `false`, default `false` (off)
+- Zero overhead when off: log messages are passed lazily (`() =>`), and the switch is checked before any string is built — with the switch off there is no string construction and no output at all
+- This is an editor-behavior setting and deliberately **not** part of `.kbengine/debug.json` — that file holds debug launch actions (commands/scripts/cwd). The log switch lives in the VS Code settings system, so toggling takes effect immediately without editing files or reloading the window
 
-开启方式二选一。
+Enable either way.
 
-**方式一:VS Code 设置面板(搜索词 `jumpLog`)**
+**Way 1: VS Code Settings UI (search term `jumpLog`)**
 
-1. `Ctrl+,` 打开 Settings;
-2. 搜索框输入 `jumpLog`,找到 **Kbengine: Jump Log**(描述为「跳转决策路径日志开关」的那一项);
-3. 勾选即开,下一次 F12 生效。
+1. Open Settings with `Ctrl+,`;
+2. Type `jumpLog` and find **Kbengine: Jump Log** (the item described as the jump decision-path logging switch);
+3. Tick it — the next F12 is logged.
 
-**方式二:settings.json 片段**
+**Way 2: settings.json snippet**
 
-用户级或工作区 `.vscode/settings.json`:
+In your user or workspace `.vscode/settings.json`:
 
 ```json
 {
@@ -78,118 +78,117 @@ F12 跳转落空时,把「查了哪几层、每层命中还是落空、为什么
 }
 ```
 
-### 输出位置
+### Where The Logs Go
 
-1. 打开输出面板:`Ctrl+Shift+U`(菜单 视图 → 输出);
-2. 右上角下拉选择通道:**KBEngine Navigation**;
-3. 滤镜框输入过滤词:`[kode-jump]`。
+1. Open the Output panel: `Ctrl+Shift+U` (View → Output);
+2. Pick the **KBEngine Navigation** channel from the dropdown at the top right;
+3. Type the filter `[kode-jump]` in the filter box.
 
-关闭:把设置改回 `false`(或删掉该键),下一次跳转即停止输出,无需重载。
+Disable: set the setting back to `false` (or remove the key) — logging stops on the next jump, no reload needed.
 
-### 一次真实跳转失败的日志样本
+### A Real Failed-Jump Log Sample
 
-来源:真实 KBEngine 工程 `scripts/common/Functor.py:20` 的 `self.func(*(self.args + args))` 按 F12。
+Source: `self.func(*(self.args + args))` at `scripts/common/Functor.py:20` in a real KBEngine project, pressed F12.
 
 ```text
-[kode-jump][info] F12 .../scripts/common/Functor.py:20:11 行="self.func(*(self.args + args))"
-[kode-jump][info] 解析开始 query=func 文件=Functor.py:20 对象类=Functor
-[kode-jump][info] def 全量索引完成 1 个 .def → 实体 1 个,10ms
-[kode-jump][debug] def 索引[对象级] Functor → miss(负缓存)
-[kode-jump][debug] def 索引[文件级] Functor.py → miss(无 owner 归属)
-[kode-jump][info] 层1 entity-def 落空(property(func) object=Functor miss; property(func) file=Functor.py miss; method object=Functor miss; method file=Functor.py miss) 7ms
-[kode-jump][info] py 查询 Functor.py:20 方法=func
-[kode-jump][info] py 全仓索引完成 12 个文件 → 类 3 个,3ms(同会话缓存)
-[kode-jump][debug] py ①静态类 MRO 未命中(enclosing=Functor)
-[kode-jump][info] 组合根派生 1 根: [Account] 6ms
-[kode-jump][debug] py 组合根收录 Functor → [无]
-[kode-jump][info] py 落空: 静态类/组合根/反向后代均无 func(9ms)
-[kode-jump][info] 层2 python-mro 落空(no provider in mro/composition-roots/descendants) 9ms
-[kode-jump][info] 层3 file-scope 落空(class Functor (of 1 classes in file) does not define func) 0ms
-[kode-jump][info] 跳转放弃: 三层全落空(query=func) 总耗时 17ms
+[kode-jump][info] F12 .../scripts/common/Functor.py:20:11 line="self.func(*(self.args + args))"
+[kode-jump][info] resolve start query=func file=Functor.py:20 class=Functor
+[kode-jump][info] def full index done: 1 .def → 1 entity, 10ms
+[kode-jump][debug] def index[object-level] Functor → miss (negative cache)
+[kode-jump][debug] def index[file-level] Functor.py → miss (no owner)
+[kode-jump][info] layer1 entity-def missed (property(func) object=Functor miss; property(func) file=Functor.py miss; method object=Functor miss; method file=Functor.py miss) 7ms
+[kode-jump][info] py query Functor.py:20 method=func
+[kode-jump][info] py full-repo index done: 12 files → 3 classes, 3ms (cached per session)
+[kode-jump][debug] py (1) static-class MRO missed (enclosing=Functor)
+[kode-jump][info] composition roots derived: 1 root: [Account] 6ms
+[kode-jump][debug] py roots containing Functor → [none]
+[kode-jump][info] py missed: none of static class / composition roots / reverse descendants has func (9ms)
+[kode-jump][info] layer2 python-mro missed (no provider in mro/composition-roots/descendants) 9ms
+[kode-jump][info] layer3 file-scope missed (class Functor (of 1 classes in file) does not define func) 0ms
+[kode-jump][info] jump gave up: all three layers missed (query=func) total 17ms
 ```
 
-逐行含义:
+Line by line:
 
-- `F12 …`:入口——文件、行:列、光标所在行文本;
-- `解析开始 … 对象类=Functor`:本次查询的符号(query)与 `self` 所在类;
-- `层1 entity-def 暂存方法声明，先查实现`:方法使用处已有 `.def` 声明，但继续寻找 Python 实现；实现查找失败才记录 `Python 实现未找到，回退 .def 声明`。追踪中的 `skip` 表示声明暂不作为最终落点，并非丢失声明。
-- `def 全量索引完成 …`:层1 所需 `.def` 索引的建立耗时(同会话缓存,只建一次);
-- `def 索引[对象级]/[文件级] …`:层1 的两个子探——按类名直取 `.def`、按文件归属取,双双 miss;
-- `层1 entity-def 落空(…)`:层1 结束,括号里是每个子探的落空原因;
-- `py 查询 …` 与 `py 全仓索引完成 …`:层2 开始;后者是「加载很久」的主要来源(首次全仓 `.py` 扫描,之后缓存);
-- `py ①静态类 MRO 未命中`:层2 第一步——在静态类自身的继承链里找 `func`,没有;
-- `组合根派生 …` 与 `py 组合根收录 … [无]`:层2 第二步——该类被哪些组合根(entities.xml × `.def` × Python 继承)收录;`Functor` 不属于任何组合根;
-- `层2 python-mro 落空(…)`:层2 第三步——MRO、组合根、反向后代都没有 `func`;
-  - 层2 有独立开关 `kbengine.python.enableMroJump`(默认开):关闭时上面这段 `py 查询`/`组合根派生` 日志整体不出现,只记一行 `层2 python-mro 跳过(设置关闭)`,层3 照常执行——跳转异常时先关它隔离变量;
-- `层3 file-scope 落空(…)`:最后一层——当前文件的类作用域与本文件 MRO 也没有;
-- `跳转放弃: 三层全落空 … 总耗时 …`:放弃点——三层全落空才返回 null。此例失败是预期的:`func` 是 `__init__` 里赋的属性,不是任何类的方法。
+- `F12 …`: entry — file, line:column, and the text of the cursor line;
+- `resolve start … class=Functor`: the symbol being resolved (query) and the class `self` sits in;
+- `def full index done …`: cost of building the `.def` index layer 1 needs (cached per session, built once);
+- `def index[object-level]/[file-level] …`: layer 1's two probes — take the `.def` by class name, then by file ownership; both missed;
+- `layer1 entity-def missed (…)`: layer 1 finished; the parentheses carry each probe's miss reason;
+- `py query …` and `py full-repo index done …`: layer 2 starts; the latter is the main source of "takes ages to load" (one-time full `.py` scan, then cached);
+- `py (1) static-class MRO missed`: layer 2 step 1 — `func` is not in the static class's own inheritance chain;
+- `composition roots derived …` and `py roots containing … [none]`: layer 2 step 2 — which composition roots (entities.xml × `.def` × Python inheritance) contain this class; `Functor` belongs to none;
+- `layer2 python-mro missed (…)`: layer 2 step 3 — neither MRO, composition roots, nor reverse descendants has `func`;
+  - layer 2 has its own switch, `kbengine.python.enableMroJump` (default on): when off, the whole `py query` / `composition roots derived` block above disappears and only one `layer2 python-mro skipped (disabled by setting)` line is recorded, while layer 3 still runs — turn it off first to isolate misbehaving jumps;
+- `layer3 file-scope missed (…)`: last layer — the current file's class scope and file-local MRO don't define it either;
+- `jump gave up: all three layers missed … total …`: the give-up point — null is returned only after all three layers miss. This failure is expected: `func` is an attribute assigned in `__init__`, not a method of any class.
 
-跳转命中时,对应层会打出 `层N … 命中 → 文件:行` 并直接跳过去。排查时把这一段面板输出贴出来,就能直接看出断在哪一层。
+When a jump hits, the winning layer prints `layerN … hit → file:line` and the jump lands there. Pasting this panel excerpt to the maintainer pinpoints the failing layer immediately.
 
 
-## 典型流程
+## Typical Flows
 
-### 日常查看
+### Day-to-Day Viewing
 
-1. 启动 KBEngine 组件
-2. 执行 `Show Log Viewer`
-3. 连接 logger
-4. 使用级别和组件过滤查看问题
+1. Start the KBEngine components
+2. Run `Show Log Viewer`
+3. Connect to the logger
+4. Filter by level and component to inspect problems
 
-### 排查问题
+### Investigating Problems
 
-1. 打开日志面板
-2. 用关键词定位实体名、组件名或错误片段
-3. 必要时启用正则搜索
-4. 导出日志用于二次分析
+1. Open the log panel
+2. Locate entity names, component names, or error fragments by keyword
+3. Enable regex search when needed
+4. Export the logs for further analysis
 
-## 导出
+## Export
 
-日志支持导出为：
+Logs can be exported as:
 
 - `txt`
 - `log`
 - `json`
 
-适合：
+Good for:
 
-- 留存问题现场
-- 提交给其他同事排查
-- 结合脚本做离线分析
+- Preserving the scene of a problem
+- Handing to colleagues for investigation
+- Offline analysis with scripts
 
-## 原始日志 ERROR 扫描
+## Raw Log ERROR Scan
 
-`kbengine.logs.scanErrors` 面向磁盘上的原始日志文件做离线扫描，不依赖 logger 端口连接。运行后选择文件或文件夹（文件夹只扫一层 `.log`/`.txt`/`.out`，按文件名排序），扩展把 `ERROR`/`CRITICAL` 行按「组件 + 归一签名」聚合计数，在 WebView 面板展示。
+`kbengine.logs.scanErrors` scans raw log files on disk offline, without a logger port connection. After running it, pick files or folders (folders scan one level of `.log`/`.txt`/`.out`, sorted by filename); the extension aggregates `ERROR`/`CRITICAL` lines by "component + normalized signature" and shows them in the WebView panel.
 
-- 归一签名：把行内数字串折成 `N`、空白压缩、截到 160 字符，同一报错因 id/计数不同不会拆成多行
-- 聚合表：计数（降序）/级别/组件/签名/最近出现时间；时间只取行内自带时间戳的格式，非标准行显示 `—`
-- 点击命中行打开源文件并定位到该签名最早出现的行
-- 「重新扫描」按钮按上一批文件重跑，不重新弹对话框
-- 单文件超 64MB 读取上限、或读取失败时，该文件在扫描文件列表中标注失败原因，不中断其余文件
-- 汇总条给出文件数、总行数、ERROR/CRITICAL 总条数与签名种数
+- Normalized signature: digit runs folded into `N`, whitespace compressed, truncated to 160 characters, so the same error with different ids/counters does not split into multiple rows
+- Aggregate table: count (descending) / level / component / signature / most recent occurrence; time is taken only from timestamps carried in the line, non-standard lines show `—`
+- Clicking a hit row opens the source file and locates the earliest line of that signature
+- The "Rescan" button re-runs on the previous batch of files without re-popping the dialog
+- A single file over the 64MB read limit, or a read failure, is flagged with its failure reason in the scanned-file list without interrupting the rest
+- A summary row gives file count, total lines, total ERROR/CRITICAL entries, and the number of distinct signatures
 
-扫描走与日志面板同一套解析器（logger 线格式 / 标准格式 / 非标准启发式），因此非标准行中含 `error`/`failed` 字样的也会计入。
+The scan uses the same parser family as the log panel (logger line format / standard format / non-standard heuristic), so non-standard lines containing `error`/`failed` wording are also counted.
 
-## 使用建议
+## Usage Advice
 
-### 团队协作
+### Team Collaboration
 
-建议统一 logger 端口配置，避免多人环境里“扩展能开，但日志接不上”。
+Unify the logger port configuration, so "the extension opens but logs won't connect" doesn't happen across people's environments.
 
-### 大日志量环境
+### Heavy Log Environments
 
-建议：
+Recommended:
 
-- 减少 `kbengine.maxLogEntries`
-- 先用组件过滤
-- 再叠加关键词搜索
+- Lower `kbengine.maxLogEntries`
+- Filter by component first
+- Then layer keyword search on top
 
-## 当前边界
+## Current Boundaries
 
-当前日志能力更偏“界面与导出层”，不是已经完成官方 logger 协议适配的稳定收集器。
+The current log capability leans "interface and export layer"; it is not a stable collector with the official logger protocol adaptation completed.
 
-还没有专门做到：
+Deliberately not done:
 
-- 保存过滤器预设
-- 多会话对比
-- 按实体语义自动聚类
+- Saving filter presets
+- Multi-session comparison
+- Automatic clustering by entity semantics

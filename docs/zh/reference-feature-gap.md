@@ -1,0 +1,83 @@
+# 参考插件功能差距盘点
+
+
+> 2026-10-15。用户令:「先不要发了,先把其他参考的插件的功能看下,是否都实现了,没有实现就等全部实现了再说」。
+> 本文只做对比与借鉴登记,不含实现;实现按「实施排序」逐批点火。
+> **对比必须有出处**:所有参考插件的功能均来自其 Marketplace 清单(vsix 内 `package.json`)与 README/USAGE 原文读取(2026-10-15 下载),不凭记忆;安装量取自 Marketplace Gallery API `extensionquery` 统计项。
+> KBEngine Nex X 为**专有软件(保留所有权利)**——只读清单与公开文档,其分发源码一律不读、不抄、不参考实现细节。
+
+## 一、参考插件清单
+
+| 插件 | 版本 | 安装量 | 更新 | 许可 | 链接 |
+| --- | --- | --- | --- | --- | --- |
+| KBEngine Nex X | 2.0.0 | 28 | 2026-08-14 | 专有(保留所有权利) | <https://marketplace.visualstudio.com/items?itemName=KBEngineLab.kbengine-nex-x> |
+| Rojo - Roblox Studio Sync | 2.1.2 | 275,530 | 2022-08-25 | MPL-2.0 | <https://marketplace.visualstudio.com/items?itemName=evaera.vscode-rojo> |
+| Roblox LSP | 1.6.8 | 122,242 | 2024-07-05 | MIT | <https://marketplace.visualstudio.com/items?itemName=Nightrains.robloxlsp> |
+| Godot .NET Tools | 0.5.1 | 27,877 | 2023-11-21 | MIT | <https://marketplace.visualstudio.com/items?itemName=woberg.godot-dotnet-tools> |
+
+选样口径:用户点名 KBEngine Nex X(唯一直接同类);Marketplace `kbengine`/`kbengine3`/`kb3`/`kbe` 标签检索仅命中 Nex X 一件,其余按「游戏引擎工程工具」同类补三件——Rojo(引擎同步/运行集成)、Roblox LSP(引擎脚本语言支持)、Godot .NET Tools(工程文件/调试配置生成)。`neikeq.godot-csharp-vscode`(591,853 安装,Godot C# 调试器)与 `ms-python.python`(241,252,451 安装)作为维度佐证引用,不进主表。
+
+## 二、功能对比表
+
+kode 状态口径:**已实现**给 `file:line` 证据;**未实现**进第三节缺口清单;**本仓更强**如实说明。
+
+| 维度 | kode(本仓) | KBEngine Nex X | Rojo | Roblox LSP | Godot .NET Tools |
+| --- | --- | --- | --- | --- | --- |
+| 语法高亮 | 已实现:`package.json:77-112` 贡献 `kbengine-def` 语言 + 语法 + `text.xml` 注入(types.xml 五类语义着色,批131 implementedBy 分段);主题 `syntaxes/kbengine-color-theme.json` | 无 languages/grammars 贡献(清单证实) | — | Luau 语法(`lua.tmLanguage.json`)+ semanticTokenScopes | — |
+| 补全 | 已实现:`src/languageProviders.ts:275`(.def 实体/属性/方法)、`:3159`(Python `self.<属性>` 按 def 映射 + `kbe.`/`KBEngine.` 模块符号,引擎源码索引) | 靠内置各 app 的 `KBEngine.py` 提示文件(resources/py/tips/*) | — | LSP 全量补全(README 功能表) | — |
+| 悬停 | 已实现:`src/languageProviders.ts:375`(def 属性悬停含库表全名/DDL/数值限制)、`src/serverConfigHover.ts:151`(kbengine*.xml 配置悬停) | 未见独立悬停面(清单无对应注册) | — | LSP hover | — |
+| 跳转定义/引用 | 已实现:`src/languageProviders.ts:506`(def→def)、`:2680`(Python self.属性→def 声明,批135 反向 CodeLens `:2859`)、`:2961`(types.xml 反扫 CodeLens,批134)、implementedBy 双向(批119)、`:3011` Call Hierarchy、`:3097` Rename | def XML 补全与跳转(README) | — | LSP goto definition / find all references / rename | — |
+| 诊断 | 已实现:`src/extension.ts:245-281`(kbengine 诊断集合)+ `kbengine.def.analyze` 静态分析落问题列表 | 未见诊断贡献 | — | LSP diagnostics(工作区/单文件,配置面十级粒度) | — |
+| 调试 | 已实现(Python 附加):`src/debugConfig.ts:307` 写 `.vscode/launch.json`(connect 模式经进程选择器附加,telnet 开调试);`contributes.debuggers` 无(不自带调试器,复用 ms-python) | 无 debuggers 贡献 | — | — | 生成 launch.json 三配置(Launch/Launch Editor/Attach)+ dotnet 构建任务(README) |
+| 命令面板/入口 | 已实现:36 条命令(`package.json` contributes.commands);活动栏容器 4 视图(entityExplorer/serverControl/telnetStatus/config);状态栏;2 组键位 | 17 条命令(清单) | 1 条命令(单一菜单,README 明言 V2 起收拢) | 0 条命令(LSP 无命令面) | 1 条命令 |
+| 代码片段 | 已实现:3 份片段表(kbengine-def/xml/python,`package.json:113-122`)+ `kbengine.snippets.generateFromSelection`(选区生成,批121) | 无 snippets 贡献 | — | — | — |
+| 模板/代码生成 | 已实现:`src/codeGenerator.ts:103` 实体向导(def + 可选 Python + entities.xml 登记) | newEntity/newProxy/newSpace/newComponent/newFixedDict/generateStubs 六条生成命令(清单) | — | — | 生成 launch.json/tasks.json/ruleset.xml 三件套(README) |
+| 实体/DB 工具 | 已实现:实体浏览器(`src/explorerProviders.ts`)、数据库 schema 虚拟文档(`src/databaseSchema.ts:172`,批133 中文图例)、模拟器(`src/databaseSimulator.ts:746`)、漂移校验(`src/databaseDrift.ts`,只读白名单+READ ONLY 双保险)、依赖图/流程图 webview、客户端实体 SDK 生成(`src/clientSdkGenerator.ts`,TS/C# 双语言,批138) | 客户端实体生成、SDK 生成(README) | — | — | — |
+| 日志查看 | 已实现:`src/logCollector.ts:24` + `src/logWebView.ts`(`kbengine.logs.*` 五命令,等级过滤 LogFilter 已有) + 原始日志 ERROR 扫描(`src/logErrorScan.ts`,盘点 G6) | 实时日志 + 等级过滤 + 原始日志 ERROR 扫描(USAGE.md) | — | — | — |
+| 运行/启动集成 | 已实现:serverControl 视图列进程 pid/状态(`src/explorerProviders.ts:1166-1195`)、`kbengine.server.start/stop/restart/showLogs`、快速执行动作三后端 command/script/http + Explorer 顶栏 ▶/▾(批136) | 服务器启停/pkill/热重载(手动 + 文件监视自动)、robots(USAGE.md) | rojo serve 起停 + Studio 实时同步 + 工具链自动安装(Aftman)(README) | — | 生成构建/调试配置间接支撑 |
+| 配置校验/发现 | 已实现:配置自动发现四级优先级(批127/128/129,发现报告命令)+ 最终合并配置视图(`src/serverConfigMerge.ts:351-366`) | 工作区初始化、路径映射(USAGE.md) | `jsonValidation` 校验 `*.project.json`(清单) | — | — |
+| 性能剖析 | **未实现**(缺口 G8) | TICK/CPROFILE/PYPROFILE/EVENT/NETWORK(USAGE.md,KBE Nex 3.x 二进制管理协议) | — | — | — |
+| 热重载(自动) | 已实现(批136 G5,`src/hotReload.ts`:`kbengine.hotReload.{enabled,actionName,globs,debounceMs}`,门控默认关、开后才按 globs 各建一个 watcher、三通道事件去抖合并,配置变更联动拆建;经 `QuickActionManager.runByName` 复用白名单三后端,按名找不到只落 OUTPUT 流水不弹窗) | 文件监视自动热重载(USAGE.md) | 保存即同步(rojo serve 常驻) | — | — |
+| Python extraPaths 接线 | 已实现(批136,`src/pythonExtraPaths.ts`:scripts 根按 entityMapping 同口径 + 一级 `*_assets` 约定发现,写 WorkspaceFolder 级 `python.analysis.extraPaths`,只管理自己那一段,`kbengine.python.syncExtraPaths` 手动重跑 + 激活期自动一次,`kbengine.python.extraPathsSync` 默认开可关;批136 G2 落地后存根目录 `.kbengine/stubs` 在导出开且文件在盘时并入管理段) | 按 base/cell 动态 extraPaths(USAGE.md) | — | — | — |
+| KBEngine API 存根(.pyi) | 已实现(批136 G2,`src/pythonStubExport.ts`:符号索引(与补全/悬停/跳转同源)导出 `KBEngine.pyi` 真文件,内容一致零写、陈旧重写,`kbengine.python.exportStubs` 手动入口 + 激活期自动一次,`kbengine.python.stubExport` 默认开可关;批142 起目录可配 `kbengine.python.stubDir`,三级解析 设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`,用户目录只进不出——已有 `.pyi` 按用户资产不覆盖,没有才生成;虚拟桩文档 Python 扩展看不见,真文件配合 G1 extraPaths 才解析 `import KBEngine`;覆盖为精选引擎符号子集,页头明确不是完整引擎 API,每个符号带原始引擎 typings 锚点) | generateStubs + 内置提示文件 resources/py/tips/*(清单) | — | — | — |
+| 配置文件 Schema 校验 | 已实现(批136 G3,`contributes.jsonValidation` 对 `.kbengine/debug.json`,schema 构建于 `src/debugJsonSchema.ts`) | — | `jsonValidation` 对工程文件 | — | — |
+
+「本仓更强」如实说明:kode 的 def/types.xml 语义面(注入着色、形态悬停、反扫 CodeLens)、数据库工具三件套(schema/模拟/漂移)、静态分析与发现报告,参考四件均无对应面;Rojo 的工具链自动安装与 Roblox LSP 的完整 LSP(独立语言服务器)属其生态定位, kode 不照搬。
+
+## 三、缺口清单(未实现 → todo)
+
+| 编号 | 缺口 | 来源 | 优先级 | 备注 |
+| --- | --- | --- | --- | --- |
+| G1 | `python.analysis.extraPaths` 自动接线(按 `getPythonScriptRoots` 反推的 scripts 根 + 引擎源码根写入 Python 扩展配置) | Nex X | **P1** | **已实现**(批136,`src/pythonExtraPaths.ts`):scripts 根同口径发现 + 一级 `*_assets` 约定,WorkspaceFolder 级写入,只管理自己那一段;G2 完成前 `import KBEngine` 的解析还取决于工程里有无 KBEngine.py |
+| G2 | KBEngine Python API 存根导出(从 `src/kbeModuleIndex.ts` 签名索引导出 `.pyi`,配合 G1) | Nex X(generateStubs + 内置提示文件) | **P1** | **已实现**(批136 G2,`src/pythonStubExport.ts`):符号索引同源导出 `KBEngine.pyi`,与 G1 接线配合解析 `import KBEngine`;批142 起目录可配 `kbengine.python.stubDir`(设置 > `KBENGINE_STUB_DIR` > 默认 `.kbengine/stubs`,用户目录已有 `.pyi` 不覆盖);批145/146 起类型面扩展 `kbe_types.py`(types.xml→TypedDict/别名,`kbengine.python.exportTypeStubs` 命令 + 激活期自动 + `**/types.xml` watcher 静默重生成);自研生成未抄 Nex X 文件 |
+| G3 | `.kbengine/debug.json` JSON Schema 校验(`contributes.jsonValidation`) | Rojo(`*.project.json` 同法) | **P1** | **已实现**(批136 G3,`contributes.jsonValidation` + `src/debugJsonSchema.ts`):整份文件(调试段 + quickActions)编辑器内直接标红;schema 枚举取 `quickActionConfig.ts` 的 `HTTP_METHODS`/`QUICK_ACTION_TYPES`,与清单内联对象由测试锁同源 |
+| G4 | 客户端实体/SDK 多语言生成(C#/TS/C++/GDScript 模板) | Nex X | **P2** | **已实现(批138)**`kbengine.clientSdk.generate`(`src/clientSdkGenerator.ts`):按 `entities.xml` 登记实体生成客户端骨架,首批 TypeScript + C# 两种语言(已代决),属性只收 Flags 含客户端域、ClientMethods 成虚位回调、Exposed 的 Base/Cell 方法成包装调用,发送只落 `onBaseOutgoing`/`onCellOutgoing` 两个接缝不假设插件 API;FIXED_DICT 类型出伴随文件;GDScript/C++ 留后续增量(语言中立模型 + 逐语言发射器已分离) |
+| G5 | 自动热重载(文件保存/监视 → 触发指定 quick action) | Nex X(文件监视自动热更) | **P2** | **已实现**(批136 G5,`src/hotReload.ts` + `QuickActionManager.runByName`):门控默认关防误触,启用后按 globs 各建一个 watcher、三通道事件去抖合并、配置变更联动拆建;按名找不到只落 OUTPUT 流水不弹窗;复用 quickActions 白名单后端 |
+| G6 | 原始日志 ERROR 扫描视图(原始日志文件里的 ERROR 行聚合计数) | Nex X | **P2** | **已实现**(批137,`src/logErrorScan.ts` + `kbengine.logs.scanErrors`):离线扫原始日志文件(文件/文件夹一层 `.log`/`.txt`/`.out`),ERROR/CRITICAL 行按「组件+归一签名」聚合计数,面板可点击定位源文件行、按上一批文件重扫;与日志面板同一套解析器,不依赖 logger 协议 |
+| G7 | 生成器形态扩展(newProxy/newSpace/newComponent/newFixedDict 等向导) | Nex X(六条生成命令) | **P3** | 实体向导已有,其余形态按需 |
+| G8 | 性能剖析(TICK/CPROFILE/PYPROFILE/EVENT/NETWORK) | Nex X | **P3(待证)** | Nex X 走 KBE Nex 3.x 管理协议;本仓面向经典 kbengine,协议可用性未证,不排期直到用户点名 |
+| G9 | Space Viewer / Watcher 查询面板(spaces 与 cell 实体地图) | Nex X | **P3(待证)** | 同上依赖引擎管理协议;监控面板已有 machine 基础状态 |
+| G10 | Robots 管理 / 插件市场 / 工作区初始化 | Nex X | **不排期** | 超出开发工具范围(外置生态/脚手架),kode 定位为工程内工具;如用户点名再评估 |
+
+## 四、实施排序
+
+1. **G1 + G2 + G3(同一批,P1)**:Python 生态接线两件 + 配置校验一件,互相独立但都是小增量、高感知;G1/G2 让「装了 Python 扩展的用户」立即获得 KBEngine API 补全,G3 让 quickActions 配置错误前置暴露。**G1/G2/G3 均已落地(批136)**,P1 清完。
+2. **G5(P2)**:自动热重载,依赖 quickActions 既有白名单,配置门控。**已落地(批136)**,P2 剩 G6 与等点名的 G4。
+3. **G6(P2)**:日志 ERROR 扫描,复用 logWebView。**已落地(批137)**,P2 只剩等点名的 G4。
+4. **G4(P2)**:多语言 SDK 生成。**已落地(批138)**,首批 TS + C#(代决);GDScript/C++ 按增量再排。
+5. **G7/G8/G9(P3)**:形态扩展与协议依赖项,逐批点火前先证协议。
+6. **G10**:不排期。
+
+## 五、已代决记录
+
+巡检推进单 FW1016D 起用户授权代决:卡在待拍板/设计选择/需求取舍/排期的条目按推荐方案直接执行,事后用户可推翻。已落定两条:
+
+1. **G4 语言清单(需求取舍,2026-10-16 批138)**:首批做 **TypeScript + C#**。理由:经典 KBEngine 的两个主流客户端生态是 js 客户端(Web/Cocos 系,TS)与 Unity(C#);C++ 与 GDScript 客户端工程占位小且类型/命名习惯差异大,先做这两个把「语言中立模型 + 逐语言发射器」的分层跑通,后续加语言只补一份映射表加一个发射函数。**边界声明**:生成的是骨架,不实现任何客户端插件的调用通道(不抄 Nex X,也不假设 Unity/js 插件 API),发送通道收敛到两个接缝由使用者自己接。用户可推翻(改语言清单或删该命令),推翻时同步回退 docs/guide/client-sdk.md。
+2. **G7 生成器形态扩展(排期取舍,未开工)**:形态清单仍按「按需」,未收到具体点名不排期;不虚构任务。
+
+## 六、来源与取证方式
+
+- Marketplace Gallery API:`POST https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery`(filterType 8 `Microsoft.VisualStudio.Code` + filterType 10 `Publisher.Name` / filterType 2 Tag),flags 914;安装量取 `statistics[install]`。
+- 各插件 vsix 经 Gallery 资产地址(`{publisher}.gallerycdn.vsassets.io/extensions/{publisher}/{name}/{version}/{timestamp}/Microsoft.VisualStudio.Services.VSIXPackage`)下载,只读 `extension/package.json` 与 README/CHANGELOG/USAGE 文本。
+- KBEngine Nex X 专有许可声明见其 README;本盘点未读其任何分发源码。
+- kode 侧证据均为本仓 `file:line`,以 2026-10-15 main(9a69ab5)为准。

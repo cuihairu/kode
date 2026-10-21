@@ -1,63 +1,63 @@
-# 数据库漂移校验
+# Database Drift Check
 
 
-命令 `kbengine.database.checkDrift`（`Check Database Drift`）拿真实 MySQL 表结构，反向校验 `.def` 推导出的虚拟表结构。
+The command `kbengine.database.checkDrift` (`Check Database Drift`) takes the real MySQL table structures and reverse-checks the virtual table structures derived from `.def` files.
 
-命令 `kbengine.database.checkAllDrift`（`Check All Database Drift`）会检查所有工作区实体，一次读取表清单，并以所有实体表的并集识别带前缀的残留表。
+`kbengine.database.checkAllDrift` (`Check All Database Drift`) checks every entity in the workspace, reads the table list once, and treats the union of entity tables as expected when identifying prefixed residual tables.
 
-单实体命令只把当前实体名下的带前缀表视为残留候选，避免把其他实体的正常表误报；全量命令才会检查整个配置前缀下的残留表。
+The single-entity command only treats prefixed tables under that entity's name as residual candidates, avoiding false positives for other entities. The all-entity command checks residual tables across the configured prefix.
 
-## 为什么要有它
+## Why It Exists
 
-schema 视图与属性悬停里的表名列型，都是 kode 按引擎装载语义**推导**出来的（`src/databaseSchema.ts`，对齐 `entity_table_mysql.cpp`）。推导链有四段最容易算错：
+The table and column names in the schema view and property hovers are **derived** by kode following the engine's loading semantics (`src/databaseSchema.ts`, aligned with `entity_table_mysql.cpp`). Four spots in the derivation chain are the easiest to get wrong:
 
-| 环节 | 算错时的后果 |
+| Step | Consequence when wrong |
 | --- | --- |
-| 哪些属性进表 | 悬停指向一个库里不存在的列 |
-| 类型映射（`UINT8` → `tinyint unsigned` 等） | 拿错列型去写 SQL |
-| 容器拆子表（ARRAY / 组件槽） | 以为数据在主表，实际在子表 |
-| 列名转换（`sm_` 前缀、向量 index 前置、`FIXED_DICT` 键链） | 列名拼不出来 |
+| Which properties enter the table | A hover points to a column that does not exist in the database |
+| Type mapping (`UINT8` → `tinyint unsigned` etc.) | SQL written against the wrong column type |
+| Container splitting into child tables (ARRAY / component slots) | Assuming data is in the main table when it is in a child table |
+| Column name conversion (`sm_` prefix, vector index first, `FIXED_DICT` key chain) | The column name cannot be spelled out |
 
-这些错误在推导侧都自洽，只有拿真实表结构对一遍才会暴露——这就是本命令的用途。
+These errors are all self-consistent on the derivation side; only comparing against the real table structures exposes them — that is this command's purpose.
 
-## 校验口径
+## Check Rules
 
-逐表比对，报告表、列型、可空性、默认值和索引差异：
+Compared table by table, reporting table, column type, nullability, default, and index differences:
 
-| 标记 | 含义 |
+| Marker | Meaning |
 | --- | --- |
-| `[缺表]` | 虚拟表在库里不存在：该实体或该容器属性尚未走过建表流程 |
-| `[缺列]` | 虚拟表有、真实表没有的列（属性新增后没同步建表） |
-| `[多列]` | 真实表有、def 无对应属性的列 |
-| `[型别不符]` | 同名列的型别与推导不一致（仅忽略整数显示宽度：`bigint unsigned` ≡ `bigint(20) unsigned`；`varchar(64)` 与 `varchar(128)` 会区分） |
-| `[残留表]` | 库里带表前缀的表不在虚拟表结构里：属性删了，表还留着 |
-| `[可空性不符]` / `[默认值不符]` | 真实列约束与引擎从属性类型和 `<Default>` 推导的约束不同 |
-| `[索引不符]` | 主键、`INDEX`、`UNIQUE`、`sm_autoLoad` 或子表 `parentID` 的索引状态不同 |
+| `[缺表]` (missing table) | The virtual table does not exist in the database: this entity or container property has not gone through table creation yet |
+| `[缺列]` (missing column) | Columns the virtual table has but the real table does not (property added, table not rebuilt in sync) |
+| `[多列]` (extra column) | Columns the real table has with no corresponding def property |
+| `[型别不符]` (type mismatch) | Same-named column whose type differs from the derivation (only integer display widths are ignored: `bigint unsigned` ≡ `bigint(20) unsigned`; `varchar(64)` differs from `varchar(128)`) |
+| `[残留表]` (leftover table) | Tables in the database carrying the table prefix that are not in the virtual structure: the property was deleted, the table remains |
+| `[可空性不符]` / `[默认值不符]` | Actual column constraints differ from engine rules and the property's `<Default>` |
+| `[索引不符]` | Primary, `INDEX`, `UNIQUE`, `sm_autoLoad`, or child-table `parentID` index state differs |
 
-报告整段写进 OUTPUT 面板「KBEngine 数据库漂移」，可整段复制回传；有问题时弹警告，无漂移弹信息提示。
+The whole report goes to the OUTPUT panel "KBEngine 数据库漂移" and can be copied back in full; a warning pops when there are problems, an info notice when there is no drift.
 
-## 连接信息从哪来
+## Where Connection Info Comes From
 
-直接读 KBEngine 自身的引擎配置，**不新增任何设置项**：合成后的 `<dbmgr><databaseInterfaces><default>`（引擎 `kbengine_defaults.xml` + 元件 `kbengine.xml` 同键覆盖），端口 `0` 落 MySQL 默认 3306。
+Read directly from KBEngine's own engine configuration, **adding no settings of its own**: the synthesized `<dbmgr><databaseInterfaces><default>` (engine `kbengine_defaults.xml` + component `kbengine.xml` same-key override); port `0` falls to the MySQL default 3306.
 
-账号密码需要明文存放（`<encrypt>false</encrypt>`）。引擎默认的 `encrypt=true` 是 RSA 密文，kode 不解读——这种情况下命令如实提示「未校验」，而不是让用户为了跑一次校验去手填密码或改引擎配置。
+The account password must be stored in plaintext (`<encrypt>false</encrypt>`). The engine default `encrypt=true` is RSA ciphertext, which kode does not decipher — in that case the command honestly reports "未校验" (not checked) instead of making the user hand-fill a password or change the engine config just to run one check.
 
-## 只读红线
+## Read-Only Red Line
 
-用户 2026-10-15 明令「只提供查询命令，其他的命令太危险了」，实现上做了双保险：
+The user's 2026-10-15 order (translated): "Only provide query commands; the other commands are too dangerous." The implementation has double protection:
 
-1. **语句白名单**：只放行 `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN`。`INSERT` / `UPDATE` / `DELETE` / DDL（`CREATE` / `DROP` / `ALTER` / `TRUNCATE`）/ `GRANT` / 任何多语句一律拒绝，并说明拒绝原因。判定前先剥掉注释与字符串字面量，`SELECT ... FOR UPDATE`、`SELECT ... INTO OUTFILE` 这类藏在查询里的写操作同样被拦。
-2. **只读会话**：建连即执行 `SET SESSION TRANSACTION READ ONLY`，即便将来模板生成出别的东西，数据库层面也写不进去。
+1. **Statement whitelist**: only `SELECT` / `SHOW` / `DESCRIBE` / `EXPLAIN` pass. `INSERT` / `UPDATE` / `DELETE` / DDL (`CREATE` / `DROP` / `ALTER` / `TRUNCATE`) / `GRANT` / any multi-statement is rejected with the reason stated. Comments and string literals are stripped before the check, so write operations hidden inside queries like `SELECT ... FOR UPDATE` or `SELECT ... INTO OUTFILE` are also blocked.
+2. **Read-only session**: on connect, `SET SESSION TRANSACTION READ ONLY` is executed; even if some future template generated something else, the database layer would refuse writes.
 
-实际发出的语句只有两种：`SHOW TABLES` 与 `SHOW FULL COLUMNS FROM <表名>`。后者读取 MySQL 返回的 `Null`、`Default`、`Key` 元数据；批量检查复用一次连接，并将全部实体表作为残留表判断依据。
+Only two statement forms are issued: `SHOW TABLES` and `SHOW FULL COLUMNS FROM <table>`. The latter reads MySQL's `Null`, `Default`, and `Key` metadata. Batch checks reuse one connection and use all entity tables to identify residual tables.
 
-## 连不上怎么办
+## When the Connection Fails
 
-引擎没起、密码是密文、账号没有 `SELECT` 权限、网络不通——一律降级为**「未校验」**并如实说明原因，不弹错误。漂移校验是增强功能，不该把命令整挂；报告里写的是「未校验：……」而不是「通过」。
+Engine not running, encrypted password, account without `SELECT` privilege, network unreachable — all degrade to **"未校验" (not checked)** with the reason honestly stated, no error popup. Drift checking is an enhancement; it should not take the whole command down; the report says "未校验：……" (not checked: ...) rather than "passed".
 
-## 手动核对
+## Manual Verification
 
-不想连库时，用 schema 视图每表尾部那三行 SQL 也能自己查：
+Without connecting to the database, the three SQL lines at the end of each table in the schema view let you check by hand:
 
 ```sql
 SQL: SELECT * FROM `game_db`.`tbl_Hero` LIMIT 100;
@@ -65,4 +65,4 @@ SQL(属性列): SELECT `sm_hp`, `sm_name` FROM `game_db`.`tbl_Hero` LIMIT 100;
 SQL(子表 JOIN): SELECT p.`id` AS parentID, c.`id`, c.`parentID`, c.`sm_autoLoad`, c.`sm_value` FROM `game_db`.`tbl_Hero` AS p LEFT JOIN `game_db`.`tbl_Hero_bag` AS c ON c.`parentID` = p.`id` LIMIT 100;
 ```
 
-表名前缀可由 `kbengine.db.tablePrefix` 覆盖（缺省空 = 引擎默认 `tbl_`），详见 [配置说明](./configuration.md)。
+The table name prefix can be overridden via `kbengine.db.tablePrefix` (default empty = engine default `tbl_`); see the [configuration reference](./configuration.md).

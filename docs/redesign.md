@@ -1,344 +1,319 @@
-# Kode 重设计：不依赖真实 KBEngine 环境的测试基座
+# Kode Redesign: A Test Bed That Does Not Depend on a Real KBEngine Environment
 
 
-> 状态：已全部完成（阶段 1-4，批52-56，2026-09-26）。基线测量时间：2026-09-25。
-> 配套现状问题清单见本文第 1 节；每阶段完成情况见第 6 节的进度表。
+> Status: all phases complete (phases 1-4, batches 52-56, 2026-09-26). Baseline measurement time: 2026-09-25.
+> The companion list of current-state problems is in section 1; the per-phase completion status is in the progress table in section 6.
 
-## 0. 背景与动机
+## 0. Background and Motivation
 
-Kode 是 KBEngine 的 VSCode 开发插件。功能验证长期面临一个结构性矛盾：
+Kode is the VSCode development extension for KBEngine. Feature verification has long faced one structural contradiction:
 
-- 插件的**语言层**（.def 解析、补全、悬停、诊断、跳转）只需要文件，已经可以在纯逻辑层测；
-- 但插件的**运行时层**（服务器启停、日志收集、监控采集、调试附加）天然面向一个
-  分布式 KBEngine 集群：machine 组件 UDP 广播发现（端口 20086）、每个组件的
-  watcher TCP 端口（msgid 41001-41008）、logger TCP 端口（20022）、真实引擎二进制
-  （`kbe/bin/server`）、真实进程 PID 与 telnet 调试端口（31000-51000）。
+- The extension's **language layer** (.def parsing, completion, hover, diagnostics, go-to-definition) only needs files, so it can already be tested at the pure-logic level;
+- but the extension's **runtime layer** (server start/stop, log collection, monitoring collection, debug attach) inherently targets a distributed KBEngine cluster: UDP broadcast discovery on the machine component (port 20086), a watcher TCP port per component (msgid 41001-41008), the logger TCP port (20022), real engine binaries (`kbe/bin/server`), real process PIDs and telnet debug ports (31000-51000).
 
-目前要端到端验证运行时层，要么有一套真实 KBEngine 检出和运行环境，要么靠测试里
-零散手写的回环 socket/假进程拼凑。结果是：难测、慢测、测不全、CI 上跑不了。
+Today, verifying the runtime layer end to end requires either a real KBEngine checkout and run environment, or hand-written loopback sockets / fake processes scattered across tests. The result: hard to test, slow to test, incomplete coverage, and unrunnable on CI.
 
-本重设计的核心命题：**把"运行时依赖"从"环境里碰巧有什么"变成"测试显式提供什么"**，
-做到没有真实 KBEngine 环境也能全链路验证，同时保持对真实环境的兼容不变。
+The core proposition of this redesign: **turn "what the runtime happens to depend on in the environment" into "what the tests explicitly provide"**, so the whole chain can be verified without a real KBEngine environment while compatibility with the real environment stays unchanged.
 
-## 1. 现状问题清单（摸底结论）
+## 1. Current-State Problem List (Survey Conclusions)
 
-以下每条都有代码证据，按"难在哪"归类。
+Every item below carries code evidence and is grouped by "what makes it hard".
 
-### 1.1 必须依赖真实 KBEngine 环境
+### 1.1 Must Depend on a Real KBEngine Environment
 
-| # | 问题 | 证据 |
-|---|------|------|
-| P1 | 服务器管理直接 spawn 引擎二进制，探测路径写死 `../kbengine/kbe/bin/server` 与 `KBENGINE_HOME` | `src/serverManager.ts:192-195`、`spawn` 调用 `src/serverManager.ts:329` |
-| P2 | machine 发现的 UDP 广播端口 20086 硬编码、不可注入 | `src/kbengineProtocol.ts:45`、`socket.send(frame, MACHINE_BROADCAST_PORT, '127.0.0.1')` `src/kbengineProtocol.ts:430` |
-| P3 | 监控采集依赖真实 machine 应答 + 每组件真实 watcher TCP 服务 | `src/monitoringCollector.ts:187,338`（`discoverLocalComponents`/`queryWatcherPath`） |
-| P4 | 日志收集直连 logger TCP 20022，且协议适配未完成，`connect()` 按现状直接拒绝 | `src/extension.ts:343`、`src/logCollector.ts`（connect 拒绝路径已有测试锁定） |
-| P5 | 调试附加需要真实组件进程 PID、telnet 端口 31000-51000 与 debugpy | `src/debugConfig.ts:30,271` |
-| P6 | 引擎源码逐行校验测试依赖同级 `../kbengine` 检出或 `KBENGINE_ROOT`，缺失即 skip，CI 无引擎时不执行 | `tests/helpers/engineRoot.ts` |
+| # | Problem | Evidence |
+|---|---------|----------|
+| P1 | Server management spawns the engine binary directly, and the probe paths are hard-coded to `../kbengine/kbe/bin/server` and `KBENGINE_HOME` | `src/serverManager.ts:192-195`, the `spawn` call at `src/serverManager.ts:329` |
+| P2 | machine discovery's UDP broadcast port 20086 is hard-coded and not injectable | `src/kbengineProtocol.ts:45`, `socket.send(frame, MACHINE_BROADCAST_PORT, '127.0.0.1')` at `src/kbengineProtocol.ts:430` |
+| P3 | Monitoring collection depends on real machine replies plus a real watcher TCP service per component | `src/monitoringCollector.ts:187,338` (`discoverLocalComponents`/`queryWatcherPath`) |
+| P4 | Log collection connects straight to logger TCP 20022, and the protocol adaptation is unfinished, so `connect()` rejects as things stand | `src/extension.ts:343`, `src/logCollector.ts` (the connect rejection path is already locked by tests) |
+| P5 | Debug attach needs real component process PIDs, telnet ports 31000-51000 and debugpy | `src/debugConfig.ts:30,271` |
+| P6 | The line-by-line engine source verification tests depend on a sibling `../kbengine` checkout or `KBENGINE_ROOT`, skip when missing, and do not run on CI without the engine | `tests/helpers/engineRoot.ts` |
 
-### 1.2 启动与联调慢、调试链路长
+### 1.2 Slow to Start and to Exercise Jointly, Long Debug Chains
 
-| # | 问题 | 证据 |
-|---|------|------|
-| P7 | **从未有过真实 VSCode 验证**：`@vscode/test-electron` 声明为 devDependency 但 `runTest.ts` 从不调用它；mocha 层实际在纯 Node 里以 `module._load` 补丁注入假 vscode 运行。所谓"集成层"与 vitest 层同构，只是又造了一套 fake | `src/test/runTest.ts`（无 runTests 调用）、`src/test/suite/testUtils.ts` `loadModuleWithMocks` |
-| P8 | 全量门槛实测 47s（lint + vitest 701 用例 36s + clean/tsc 全量重编译 + mocha 110 用例）；时长尚可，真正的成本在**双 runner 双 fake 的重复维护**与失败后整轮重跑（无按需分层入口） | `package.json` `test` 脚本；2026-09-25 实测 |
-| P9 | 回环 socket 测试绑定固定端口 20086，迫使 vitest 全局 `fileParallelism: false`，56 个文件串行，拖慢整层 | `vitest.config.ts` 注释与配置、`tests/kbengineProtocolSocket.test.ts` |
-| P10 | 真实进程编排测试对信号时序敏感：SIGKILL 升级用例必须等 bash trap 标记，高负载下偶发翻车（TESTING.md 自述） | `tests/serverManagerProcesses.test.ts`、`TESTING.md` 批24 记录 |
+| # | Problem | Evidence |
+|---|---------|----------|
+| P7 | **There has never been a real VSCode verification**: `@vscode/test-electron` is declared as a devDependency but `runTest.ts` never calls it; the mocha layer actually runs in plain Node with a fake vscode injected through a `module._load` patch. The supposed "integration layer" is isomorphic to the vitest layer, it just builds another set of fakes | `src/test/runTest.ts` (no runTests call), `src/test/suite/testUtils.ts` `loadModuleWithMocks` |
+| P8 | The full gate measures 47s (lint + vitest 701 cases 36s + clean/tsc full recompile + mocha 110 cases); the duration is acceptable, but the real cost is **maintaining two runners and two sets of fakes in parallel** plus re-running the whole round after a failure (no demand-driven layered entry points) | the `test` script in `package.json`; measured 2026-09-25 |
+| P9 | Loopback socket tests bind the fixed port 20086, forcing global `fileParallelism: false` in vitest, serializing 56 files and slowing the whole layer | comments and config in `vitest.config.ts`, `tests/kbengineProtocolSocket.test.ts` |
+| P10 | Real process orchestration tests are sensitive to signal timing: the SIGKILL escalation case has to wait for a bash trap marker and occasionally fails under load (self-reported in TESTING.md) | `tests/serverManagerProcesses.test.ts`, TESTING.md batch 24 record |
 
-### 1.3 缺少统一的 mock / 本地仿真
+### 1.3 No Unified Mock / Local Simulation
 
-| # | 问题 | 证据 |
-|---|------|------|
-| P11 | 没有"假 KBEngine 集群"这类基建：machine 应答器、watcher TCP 服务、logger 服务、假组件二进制，全部散落在各个测试文件里各自手写一份 | `tests/kbengineProtocolSocket.test.ts`、`tests/monitoringCollectorSocket.test.ts`、`tests/serverManagerProcesses.test.ts` 各自内联 |
-| P12 | vscode 替身有两套且已分叉：vitest 层 `tests/helpers/vscodeStub.ts`（416 行）与 mocha 层 `src/test/suite/testUtils.ts` 的 Fake* 类；语义不一致（如 `FakeLocation` 持 `position`，而真实与 stub 的 `Location` 持 `range`）。且 P7 表明 mocha 层并不更"真实"，分叉纯属重复建设 | 两文件对比 |
-| P13 | stub 是"最小满足求值"型，不可编程：workspace 状态、文档集合、配置变更、窗口消息、面板消息都要每个测试自己 monkey-patch，重复且脆弱 | `tests/helpers/vscodeStub.ts` 顶部注释与各测试文件的 patch 块 |
-| P14 | `extension.ts`（532 行装配全部功能）在 vitest 覆盖率里被显式排除，装配逻辑（命令注册、状态栏联动、disposes 链）只有 mocha 层间接覆盖 | `vitest.config.ts` `exclude: ['src/test/**','src/extension.ts']` |
+| # | Problem | Evidence |
+|---|---------|----------|
+| P11 | There is no infrastructure for a "fake KBEngine cluster": the machine responder, watcher TCP service, logger service and fake component binaries are all hand-written separately inside individual test files | inlined separately in `tests/kbengineProtocolSocket.test.ts`, `tests/monitoringCollectorSocket.test.ts`, `tests/serverManagerProcesses.test.ts` |
+| P12 | There are two vscode doubles and they have diverged: the vitest layer's `tests/helpers/vscodeStub.ts` (416 lines) and the mocha layer's Fake* classes in `src/test/suite/testUtils.ts`; semantics differ (e.g. `FakeLocation` holds `position`, while both the real and stub `Location` hold `range`). And P7 shows the mocha layer is not any more "real", so the divergence is pure duplicate effort | comparing the two files |
+| P13 | The stub is "minimum sufficient for evaluation" and therefore not programmable: workspace state, document collections, configuration changes, window messages and panel messages all have to be monkey-patched by each test, repeatedly and fragilely | the header comment in `tests/helpers/vscodeStub.ts` and the patch blocks in each test file |
+| P14 | `extension.ts` (532 lines wiring all features) is explicitly excluded from vitest coverage, so the wiring logic (command registration, status bar coupling, the dispose chain) is only indirectly covered by the mocha layer | `vitest.config.ts` `exclude: ['src/test/**','src/extension.ts']` |
 
-### 1.4 用例难复现、结果难解释
+### 1.4 Cases Are Hard to Reproduce and Results Hard to Interpret
 
-| # | 问题 | 证据 |
-|---|------|------|
-| P15 | 运行时链路故障只能靠"有真环境的人"复现：monitoring 的部分数据、watcher 拒连、广播包异常等分支，在真实环境里凑场景成本极高 | `TESTING.md` 中大量"真实回环零 mock"测试的凑场景成本记录 |
-| P16 | 覆盖率口径分裂：vitest 覆盖率只统计 vitest 加载的 23 个文件，mocha 层的覆盖不合并、extension.ts 不在分母，"98.99% lines"的真实含义依赖口径说明 | `TESTING.md` 说明节、`vitest.config.ts` |
+| # | Problem | Evidence |
+|---|---------|----------|
+| P15 | Runtime chain failures can only be reproduced by "whoever has a real environment": branches like some monitoring data, watcher connection refusal, and malformed broadcast packets cost a great deal to stage in a real environment | the many records in TESTING.md about the cost of staging scenarios for "real loopback, zero mock" tests |
+| P16 | The coverage baseline is split: vitest coverage only counts the 23 files vitest loads, the mocha layer's coverage is not merged, extension.ts is not in the denominator, and the real meaning of "98.99% lines" depends on the baseline note | the notes section in TESTING.md, `vitest.config.ts` |
 
-## 2. 目标与非目标
+## 2. Goals and Non-Goals
 
-### 目标
+### Goals
 
-1. **G1 零环境测试**：在一台只有 Node.js 的机器上（无 KBEngine 检出、无 VSCode 下载、
-   甚至无显示环境），`pnpm test:unit` 可验证全部核心功能，包括运行时链路（发现、
-   监控、日志、进程编排、装配）。
-2. **G2 快反馈**：核心层（含仿真器集成）单轮 <90s；不需要启动真实 VSCode。
-3. **G3 单一替身**：vscode 测试替身只有一套实现、可编程、状态化，vitest 与 mocha
-   共用；消除 Fake 分叉。
-4. **G4 仿真即产品知识**：KBEngine 仿真器把 machine/watcher/logger/组件进程的
-   线上协议行为固化为可执行规格（复用 `kbengineProtocol` 的编解码器），协议回归
-   一处发现。
-5. **G5 真实验证显式化**：现状是"声明了 test-electron 但从未运行"（P7），真实
-   VSCode 行为实际零验证。重设计后：提交门槛（`pnpm test`）不依赖任何真实
-   VSCode/引擎；另立独立的可选烟测脚本（真实 VSCode + 可选真实引擎），供发版前
-   人工触发，不进门槛。引擎源码条件校验保留。
-6. **G6 行为不变**：用户可见功能、公共 API、`package.json` 贡献点不变；重构只动
-   内部结构与测试。
+1. **G1 zero-environment testing**: on a machine that only has Node.js (no KBEngine checkout, no VSCode download, not even a display environment), `pnpm test:unit` can verify all core functionality, including the runtime chains (discovery, monitoring, logs, process orchestration, wiring).
+2. **G2 fast feedback**: the core layers (including simulator integration) run in under 90s per round; no real VSCode startup needed.
+3. **G3 a single double**: there is only one implementation of the vscode test double, it is programmable and stateful, and vitest and mocha share it; the Fake* divergence is removed.
+4. **G4 simulation is product knowledge**: the KBEngine simulator freezes the online protocol behavior of machine/watcher/logger/component processes into an executable specification (reusing the codec in `kbengineProtocol`), so a protocol regression is caught in one place.
+5. **G5 real verification made explicit**: today "test-electron is declared but never run" (P7), and real VSCode behavior has zero verification. After the redesign: the commit gate (`pnpm test`) does not depend on any real VSCode/engine; a separate optional smoke script (real VSCode + optional real engine) is for manual triggering before a release and stays out of the gate. Engine source conditional verification is retained.
+6. **G6 unchanged behavior**: user-visible features, public APIs and `package.json` contribution points are unchanged; the refactor only touches internal structure and tests.
 
-### 非目标
+### Non-Goals
 
-1. 不重新实现 KBEngine 服务器本身；仿真器只覆盖插件实际消费的协议面。
-2. 不引入 Docker/容器化真实集群作为测试依赖（CI 不可达且慢，见备选方案 A）。
-3. 不把真实 VSCode 烟测纳入提交门槛（门槛必须在一台只有 Node 的机器上可达成）；
-   现状未被调用的 `@vscode/test-electron` 依赖转为显式的可选 `test:smoke` 脚本
-   或移除，在阶段 4 决定。不合并两个 runner 的覆盖率数字（口径如实标注）。
-   （阶段 4 定案：依赖已移除——runTest.ts 从未调用它；未来 L4a 真机烟测如需，
-   再显式引入并独立于提交门槛。）
-4. 不改动语言层已有 701 个 vitest 用例的断言语义（它们继续有效）。
+1. Do not reimplement the KBEngine server itself; the simulator only covers the protocol surface the extension actually consumes.
+2. Do not introduce Docker / containerized real clusters as a test dependency (unreachable and slow on CI, see alternative A).
+3. Do not bring a real VSCode smoke test into the commit gate (the gate must be reachable on a machine with only Node); the currently unused `@vscode/test-electron` dependency becomes an explicit optional `test:smoke` script or is removed, decided in phase 4. The two runners' coverage numbers are not merged (the baseline is labeled honestly).
+   (Phase 4 decision: the dependency has been removed — runTest.ts never called it; if a future L4a on-machine smoke test needs it, it is re-introduced explicitly and kept out of the commit gate.)
+4. Do not change the assertion semantics of the 701 existing vitest cases in the language layer (they remain valid).
 
-## 3. 新架构
+## 3. New Architecture
 
-### 3.1 分层与模块划分
+### 3.1 Layering and Module Division
 
-现状是"每个管理器类 = 业务逻辑 + vscode API + Node IO"三合一。重设计按依赖方向
-拆成四层，依赖只能向下：
+The status quo is "every manager class = business logic + vscode API + Node IO" all in one. The redesign splits it into four layers along the dependency direction, and dependencies may only point downward:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ L4 装配层  src/extension.ts                              │
-│    只做构造与接线：new 各管理器、注册命令/提供者/面板      │
+│ L4 wiring layer  src/extension.ts                       │
+│    wiring only: construct managers, register commands / │
+│    providers / panels                                   │
 ├─────────────────────────────────────────────────────────┤
-│ L3 管理器层（现有类保持类名与公共 API）                   │
-│    serverManager / logCollector / monitoringCollector /  │
-│    debugConfig / 各 WebView / explorer / mapping ...     │
-│    变化：vscode 触点收敛到注入的 UiBridge；               │
-│          进程/socket/定时器触点收敛到注入的端口适配器      │
+│ L3 manager layer (existing classes keep their names and │
+│    public API)                                          │
+│    serverManager / logCollector / monitoringCollector / │
+│    debugConfig / the WebViews / explorer / mapping ...  │
+│    change: vscode touchpoints converge on an injected   │
+│            UiBridge;                                    │
+│            process/socket/timer touchpoints funnel to   │
+│            an injected port adapter                     │
 ├─────────────────────────────────────────────────────────┤
-│ L2 端口层（新，src/ports/）依赖倒置接口                   │
-│    ProcessRunner    —— spawn 的可注入抽象（已落地，批53）  │
-│    MachineDiscoveryOptions —— 发现地址/端口/超时注入       │
-│                         （已落地，批52；经参数而非 src/ports/）│
-│    （默认实现 = 真实 child_process/net/dgram，生产行为不变）│
-│    （SocketFactory 未立项，见 3.4 末尾定案）               │
+│ L2 port layer (new, src/ports/) inverted-dependency     │
+│    interfaces                                           │
+│    ProcessRunner    — injectable abstraction of spawn   │
+│                      (landed, batch 53)                 │
+│    MachineDiscoveryOptions — injected discovery         │
+│                      address/port/timeout               │
+│                      (landed, batch 52; via parameters  │
+│                       rather than src/ports/)           │
+│    (default implementation = real child_process / net / │
+│     dgram, production behavior unchanged)               │
+│    (SocketFactory not started, see the 3.4 conclusion)  │
 ├─────────────────────────────────────────────────────────┤
-│ L1 纯域层（现状已基本达成）                               │
-│    defParser / definitionSemantics / definitionWorkspace │
-│    / kbengineMetadata / hooks / logParser / 协议编解码    │
+│ L1 pure domain layer (largely reached already)          │
+│    defParser / definitionSemantics / definitionWorkspace│
+│    / kbengineMetadata / hooks / logParser / protocol    │
+│    codec                                                │
 └─────────────────────────────────────────────────────────┘
 ```
 
-配套两块独立基建（不属于生产代码）：
+Two pieces of supporting infrastructure (not production code):
 
 ```
-tests/sim/            KBEngine 本地仿真器（见 3.2）
-tests/fake-vscode/    可编程 vscode 替身（见 3.3）
+tests/sim/            KBEngine local simulator (see 3.2)
+tests/fake-vscode/    programmable vscode double (see 3.3)
 ```
 
-### 3.2 KBEngine 本地仿真器（`tests/sim/`）
+### 3.2 KBEngine Local Simulator (`tests/sim/`)
 
-一个进程内、可编程、零外部依赖的"假 KBEngine 集群"，把 P11 里散落的手写应答器
-收敛为正式模块：
+An in-process, programmable, zero-external-dependency "fake KBEngine cluster" that converges the hand-written responders scattered around in P11 into a formal module:
 
-- **MachineSimulator**：UDP 应答器。收到 msgid=4 (`MACHINE_MSG_QUERY_ALL_INTERFACES`)
-  请求帧后，按 `kbengineProtocol` 的 29 字段线序回放配置好的组件广播包（组件类型、
-  PID、地址、intaddr/intport swap、cpu、componentID bigint）。**端口全部动态分配**
-  （bind 端口 0，由 OS 指派），把实际端口回报给测试。
-- **WatcherSimulator**：每个组件一个 TCP 服务。实现 msgid 41001-41008 的路径查询，
-  可编程返回值帧（含分片发送、type 0 值帧/type 1 目录帧）、拒连、超时、恶意包。
-- **LoggerSimulator**：TCP 服务承载 logger 端口行为（当前插件侧协议未完成，仿真器
-  为后续协议适配先行提供对端；现阶段用可编程的"接受连接即关闭/固定应答"）。
-  **终验定案：未立项**——`logCollector.connect` 按实现现状拒绝 logger watcher
-  协议（P4），真 TCP 对端没有可验证的行为语义；协议状态机结论已由假 socket
-  用例覆盖（tests/logCollector.test.ts，含 connect 拒绝路径），再加一层真连接
-  对状态机零增益、属死代码。协议适配批次启动时再随消费面一并落地。
-- **FakeComponentBin**：生成假组件可执行文件（跨平台 node/shell 脚本），行为可编程：
-  正常运行并周期输出 stdout/stderr、秒退（指定 exit code）、忽略 SIGTERM 强制走
-  SIGKILL 升级、输出启动标记。供 serverManager 的进程编排测试消费，替代目前
-  测试内联的 bash 脚本拼装。
-- **SimCluster**：门面。一键拉起 N 组件仿真拓扑（machine+watcher+可选 logger），
-  测试结束统一销毁；所有资源（端口、临时目录、子进程）登记造册，防泄漏。
+- **MachineSimulator**: a UDP responder. After receiving a msgid=4 (`MACHINE_MSG_QUERY_ALL_INTERFACES`) request frame, it replays a configured component broadcast frame following `kbengineProtocol`'s 29-field wire order (component type, PID, address, intaddr/intport swap, cpu, componentID bigint). **All ports are dynamically allocated** (bind port 0 so the OS assigns one), and the actual port is reported back to the test.
+- **WatcherSimulator**: one TCP service per component. Implements the path query for msgid 41001-41008, with programmable return frames (including fragmented sends, type 0 value frames / type 1 directory frames), connection refusal, timeouts and malformed packets.
+- **LoggerSimulator**: a TCP service carrying logger port behavior (the extension-side protocol is unfinished, so the simulator provides the peer in advance for later protocol adaptation; for now it is a programmable "accept then close / fixed response"). **Final verification decision: not started** — `logCollector.connect` rejects the logger watcher protocol as implemented (P4), so a real TCP peer has no verifiable behavioral semantics; the protocol state machine conclusions are already covered by fake-socket cases (tests/logCollector.test.ts, including the connect rejection path), and adding a real connection layer would gain the state machine nothing and be dead code. It lands together with the consuming side when the protocol adaptation batch starts.
+- **FakeComponentBin**: generates fake component executables (cross-platform node/shell scripts) with programmable behavior: run normally and periodically emit stdout/stderr, exit immediately with a given exit code, ignore SIGTERM so the SIGKILL escalation is forced, emit a startup marker. Consumed by serverManager's process orchestration tests, replacing the bash script assembly inlined in tests today.
+- **SimCluster**: a facade. Brings up an N-component simulated topology (machine + watcher + optional logger) in one call, destroys everything at the end of the test; all resources (ports, temp dirs, child processes) are registered for leak checks.
 
-协议帧的构造与解析**复用 `src/kbengineProtocol.ts` 的导出函数**——仿真器与插件
-共享同一份协议规格，这是 G4 的落点。
+Construction and parsing of protocol frames **reuse the exported functions in `src/kbengineProtocol.ts`** — the simulator and the extension share one protocol specification, which is where G4 lands.
 
-### 3.3 可编程 vscode 替身（`tests/fake-vscode/`）
+### 3.3 Programmable vscode Double (`tests/fake-vscode/`)
 
-在现有 `vscodeStub` 骨架上升级为状态化、可脚本化的单例环境（不是每测试重新发明）：
+Upgraded from the existing `vscodeStub` skeleton into a stateful, scriptable singleton environment (not reinvented per test):
 
-- **WorkspaceState**：workspaceFolders、内存文件树（升级现有 memoryFileSystem）、
-  文档集合（打开/关闭/变更事件）、配置表（含 `onDidChangeConfiguration` 可触发）、
-  `createFileSystemWatcher` 事件可注入。
-- **WindowState**：消息队列（show*Message 可被断言与编程应答）、QuickPick/InputBox
-  脚本化应答（现有 codeGenerator 测试已局部这样做，收敛为公共件）、TextDocument
-  打开记录与可编程 showTextDocument（含拒开）。
-- **PanelRegistry**：WebviewPanel 工厂可编程（记录创建参数、捕获
-  `onDidReceiveMessage`、可 fire `onDidDispose`），三个 WebView（logViewer/
-  monitoring/entityDependency——`src` 全部 `createWebviewPanel` 消费面）的消息域
-  测试全部消费它（替代目前的 monkey-patch 面板工厂）。
-- **CommandRegistry**：`registerCommand`/`executeCommand` 真记账，使
-  `extension.ts` 的 `activate()` 可以在 vitest 内整体装配并断言注册表、状态栏与
-  dispose 链——补上 P14。
-- **兼容策略**：`tests/helpers/vscodeStub.ts` 保留为 re-export 薄壳（现有 701 用例
-  的 import 路径不破坏），行为源转移到 fake-vscode。mocha 层的 `testUtils.ts`
-  Fake* 类逐步退役，统一 import fake-vscode（消除 P12）。
+- **WorkspaceState**: workspaceFolders, in-memory file tree (upgrading the existing memoryFileSystem), document collections (open/close/change events), the configuration table (with `onDidChangeConfiguration` triggerable), injectable `createFileSystemWatcher` events.
+- **WindowState**: message queues (`show*Message` can be asserted and given scripted answers), scripted QuickPick/InputBox answers (existing codeGenerator tests already do this locally, converged into a shared piece), TextDocument open records and a programmable `showTextDocument` (including refusal to open).
+- **PanelRegistry**: a programmable WebviewPanel factory (records creation arguments, captures `onDidReceiveMessage`, can fire `onDidDispose`); the message-domain tests of all three WebViews (logViewer/monitoring/entityDependency — every `createWebviewPanel` consumer in `src`) consume it, replacing the current monkey-patched panel factory.
+- **CommandRegistry**: `registerCommand`/`executeCommand` really record, so `extension.ts`'s `activate()` can be assembled as a whole inside vitest and its registrations, status bar and dispose chain asserted — closing P14.
+- **Compatibility strategy**: `tests/helpers/vscodeStub.ts` is kept as a thin re-export shell (so the import paths of the existing 701 cases are not broken) and the behavior moves to fake-vscode. The mocha layer's `testUtils.ts` Fake* classes retire step by step and unify on importing fake-vscode (removing P12).
 
-### 3.4 注入点改造（生产代码，最小侵入）
+### 3.4 Injection Point Changes (Production Code, Minimal Intrusion)
 
-| 模块 | 现状触点 | 改造 |
+| Module | Current touchpoint | Change |
 |------|----------|------|
-| `kbengineProtocol.discoverLocalComponents` | 硬编码 127.0.0.1:20086 | 增加可选 `{host, port, timeoutMs}` 参数，默认值不变（P2） |
-| `monitoringCollector` | 直呼 `discoverLocalComponents()` | 构造器接受 `discoveryOptions`（含 machine 端口），透传 |
-| `logCollector` | 直连 `net` | 保持（host/port 本就可配置）；仿真器只提供对端 |
-| `serverManager` | 直 `import { spawn }` | 抽 `ProcessRunner` 端口，默认实现透传 spawn；测试可注入（记录、故障注入），真实进程集成测试继续走真 spawn + FakeComponentBin |
-| `extension.ts` | 532 行直连装配 | 保持结构，仅把可注入点（各管理器构造参数）显式化；activate 本身不改签名 |
+| `kbengineProtocol.discoverLocalComponents` | Hard-coded 127.0.0.1:20086 | Add an optional `{host, port, timeoutMs}` parameter, defaults unchanged (P2) |
+| `monitoringCollector` | Calls `discoverLocalComponents()` directly | The constructor accepts `discoveryOptions` (including the machine port) and passes it through |
+| `logCollector` | Connects to `net` directly | Keep (host/port were already configurable); the simulator only provides the peer |
+| `serverManager` | `import { spawn }` directly | Extract a `ProcessRunner` port whose default implementation passes spawn through; tests can inject (recording, fault injection), while real process integration tests keep using real spawn + FakeComponentBin |
+| `extension.ts` | 532 lines of direct wiring | Keep the structure, only make the injectable points (each manager's constructor arguments) explicit; `activate` itself keeps its signature |
 
-原则：**默认实现即生产行为**，所有新参数可选且缺省与今天完全一致——改造对用户
-零感知（G6）。
+Principle: **the default implementation is the production behavior**, every new parameter is optional and its absence is exactly today's behavior — the change is invisible to users (G6).
 
-终验定案（批57）：L2 架构图初稿列了 `SocketFactory`（TCP/UDP 客户端可注入
-抽象），最终**未立项**——协议客户端的测试性已由两条更小的路径解决：发现地址/
-端口/超时经 `discoverLocalComponents` 可选参数注入（批52），socket 失败路径经
-vitest `vi.mock('dgram'/'net')` 覆盖（tests/kbengineProtocolGaps.test.ts）。
-logCollector 的 host/port 本就可配置（改造表"保持"行）。为没有消费者的抽象建
-接口违背最小侵入原则，待真实故障注入需求出现再引入。同理 `src/ports/` 目录
-不落地——ProcessRunner 落在 `src/serverManager.ts` 内部，够用且可见。
+Final verification decision (batch 57): the L2 architecture sketch listed `SocketFactory` (an injectable abstraction for TCP/UDP clients), and it was ultimately **not started** — testability of the protocol clients was already solved by two smaller paths: the discovery address/port/timeout is injected through `discoverLocalComponents`'s optional parameters (batch 52), and socket failure paths are covered by vitest `vi.mock('dgram'/'net')` (tests/kbengineProtocolGaps.test.ts). logCollector's host/port were already configurable (the "keep" row in the change table). Building an interface with no consumer violates minimal intrusion, so it waits until a real fault-injection need appears. Likewise the `src/ports/` directory does not land — ProcessRunner lives inside `src/serverManager.ts`, which is enough and visible.
 
-## 4. 验证策略：没有真实 KBEngine 环境的测试分层
+## 4. Verification Strategy: Test Layering Without a Real KBEngine Environment
 
 ```
-L1 纯逻辑单测（vitest，现状 701 例继续增长）
-   依赖：无。覆盖 def/元数据/钩子/日志解析/协议编解码/生成器纯函数。
-L2 仿真器集成（vitest，新 tests/sim/*.test.ts + 迁移现有 socket 测试）
-   依赖：Node（回环 socket/真实子进程），无 vscode、无引擎、无固定端口。
-   覆盖：machine 发现全链路、watcher 采集、监控聚合、服务器进程编排
-   （正常/秒退/EACCES/SIGTERM/SIGKILL 升级/startAuto/stopAll/restart）、
-   日志收集状态机与重连。
-L3 FakeVscode 全链路（vitest，扩展现有 *Panel/*Gaps 系列）
-   依赖：fake-vscode + L2 仿真器。覆盖：四个 WebView 的面板生命周期与消息域、
-   诊断联动、entityMapping watcher 联动、extension.ts activate 装配与 dispose 链、
-   服务器状态→状态栏/树视图刷新。
-L4 真实层（显式化、独立于提交门槛）
-   L4a 真实 VSCode 烟测（可选脚本 test:smoke；阶段 4 定案：移除未使用的
-       @vscode/test-electron 依赖，本层暂不落地，如需再显式引入）：扩展激活、
-       命令注册存在、一个补全/hover/诊断在真实 VSCode 里工作。不进 pnpm test。
-   L4b 引擎源码条件校验（保留现有 skipIf 机制）：有引擎检出的机器上跑数据
-       vs 源码逐行校验；无引擎自动 skip，不阻塞门槛。
-验收基线（G1）："只有 Node 的机器"上跑 L1+L2+L3（即 pnpm test:unit），
-   全绿即认为核心功能已验证；L4 是附加保障而非门槛。
+L1 pure logic unit tests (vitest, the existing 701 cases keep growing)
+   depends on: nothing. Covers def / metadata / hooks / log parsing / protocol
+   codec / generator pure functions.
+L2 simulator integration (vitest, new tests/sim/*.test.ts + migrating the
+   existing socket tests)
+   depends on: Node (loopback sockets / real child processes), no vscode, no
+   engine, no fixed ports.
+   covers: the full machine discovery chain, watcher collection, monitoring
+   aggregation, server process orchestration
+   (normal / instant exit / EACCES / SIGTERM / SIGKILL escalation / startAuto /
+   stopAll / restart), log collection state machine and reconnect.
+L3 FakeVscode full chain (vitest, extending the existing *Panel/*Gaps series)
+   depends on: fake-vscode + the L2 simulator. Covers: panel lifecycle and
+   message domains of the four WebViews, diagnostic coupling, entityMapping
+   watcher coupling, extension.ts activate wiring and the dispose chain,
+   server status → status bar / tree view refresh.
+L4 real layer (explicit, independent of the commit gate)
+   L4a real VSCode smoke test (optional script test:smoke; phase 4 decision:
+       remove the unused @vscode/test-electron dependency, this layer does
+       not land for now, re-introduce it explicitly if needed): extension
+       activation, command registration exists, one completion/hover/diagnostic
+       works in real VSCode. Not part of pnpm test.
+   L4b engine source conditional verification (keep the existing skipIf
+       mechanism): on machines with an engine checkout, run the data vs source
+       line-by-line verification; without the engine it skips automatically and
+       does not block the gate.
+Acceptance baseline (G1): on a "machine with only Node", run L1+L2+L3 (that is
+   pnpm test:unit); all green means the core features are verified. L4 is
+   additional assurance, not a gate.
 ```
 
-分层还顺带解决口径问题（P16）：L1-L3 的覆盖率统一在 vitest 一个口径下计算，
-`extension.ts` 纳入分母（activate 被 L3 触达）；L4 不进覆盖率、如实标注。
+The layering also settles the baseline problem (P16): L1-L3 coverage is computed under one vitest baseline, `extension.ts` is in the denominator (activate is reached by L3); L4 stays out of coverage and is labeled honestly.
 
-## 5. 关键取舍与备选方案
+## 5. Key Trade-offs and Alternatives
 
-| 决策 | 选择 | 备选与否决理由 |
+| Decision | Choice | Alternatives and why they were rejected |
 |------|------|----------------|
-| 假集群形态 | 进程内 Node 仿真器（UDP/TCP/脚本二进制） | **A. 真实引擎 docker-compose**：官方无维护镜像，构建链长，CI 不可用，启动分钟级——违背 G1/G2。 |
-| vscode 替身 | 自行开发状态化 Fake（升级现有 stub） | **B. 引入 jest/vscode 测试框架或 sinon 全家桶**：现有 stub 已成型且贴着项目真实用例长出来；框架迁移成本高收益低。保持 vitest 原生 `vi` + 自行开发可编程对象。 |
-| 端口策略 | 动态端口（bind 0）+ 注入 | **C. 继续固定 20086 + 串行**：这是 P9 的根源，测试永远快不起来且并发不可复现。 |
-| 进程测试形态 | 保留真实 spawn + 可编程假二进制 | **D. 全 mock child_process**：spawn 的信号语义、exit 码、流行为 mock 成本高且失真；假二进制是真进程、零失真，只是把拼装收敛进 FakeComponentBin。 |
-| runner 格局 | vitest 承载 L1-L3；mocha 层与 vitest 同构（P7）故逐步并轨；真实 VSCode 验证另立可选 test:smoke | **E. 全部下沉 test-electron**：需要下载与显示环境，门槛不可达成（G1/G2）；**F. 维持现状双 runner**：mocha 层并不更真实（P7），纯粹双份维护成本。 |
-| extension.ts 覆盖 | FakeVscode 下直测 activate | **G. 继续排除出分母**：装配逻辑是回归高发区（命令漏注册/漏 dispose），P14 已证实当前口径失真。 |
+| Fake cluster shape | In-process Node simulator (UDP/TCP/script binaries) | **A. Real engine via docker-compose**: no officially maintained image, long build chain, unusable on CI, minutes-long startup — violates G1/G2. |
+| vscode double | Build our own stateful Fake (upgrading the existing stub) | **B. Bring in jest/vscode test frameworks or the whole sinon toolkit**: the existing stub has already taken shape and grew against the project's real cases; migrating frameworks is expensive for little gain. Keep native vitest `vi` plus our own programmable objects. |
+| Port strategy | Dynamic ports (bind 0) + injection | **C. Keep the fixed 20086 + serial execution**: this is the root of P9; tests can never get fast and concurrency is never reproducible. |
+| Process test shape | Keep real spawn + programmable fake binaries | **D. Fully mock child_process**: spawn's signal semantics, exit codes and stream behavior are expensive to mock and distorted; fake binaries are real processes with zero distortion, they only converge the assembly into FakeComponentBin. |
+| Runner layout | vitest carries L1-L3; the mocha layer is isomorphic to vitest (P7) so it is gradually merged; real VSCode verification becomes an optional separate test:smoke | **E. Push everything into test-electron**: needs downloads and a display environment, so the gate is unreachable (G1/G2); **F. Keep today's two runners**: the mocha layer is not more real (P7), it is purely duplicated maintenance cost. |
+| extension.ts coverage | Test activate directly under FakeVscode | **G. Keep excluding it from the denominator**: wiring logic is a regression hotspot (missing command registration / missing dispose), and P14 has already shown the current baseline is distorted. |
 
-## 6. 分阶段落地计划
+## 6. Phased Rollout Plan
 
-每阶段独立可交付、独立 commit，且完成后全量测试必须绿（见第 8 节门槛）。
+Each phase is independently deliverable and independently committed, and the full test suite must be green afterwards (see the gate in section 8).
 
-### 阶段 1：仿真器基座（`tests/sim/`）+ 动态端口 [批52]
+### Phase 1: Simulator Bed (`tests/sim/`) + Dynamic Ports [batch 52]
 
-- 新建 `tests/sim/`：`MachineSimulator`、`WatcherSimulator`、`SimCluster` 骨架。
-- `discoverLocalComponents` 增加 `{host, port, timeoutMs}` 可选参数（默认不变）。
-  配套：`MonitoringCollector` 构造器接受 `discoveryOptions` 透传；协议模块新增
-  `buildComponentInfo`/`encodeWatcherValue`/`buildWatcherValueFrameBody`/
-  `buildWatcherDirFrameBody` 编码器（parse 系列的对偶，仿真器复用）。
-- 迁移 socket 测试到仿真器 + 动态端口。（kbengineProtocolSocket/
-  kbengineProtocolReaders/kbengineProtocolGaps/monitoringCollectorSocket/
-  monitoringCollectorGaps 五个文件；新增 tests/sim.test.ts 仿真器自测 15 用例）
-- 解除 `fileParallelism: false`。
-- 验收结果：vitest 57 文件 716 用例全绿，文件级并行恢复，全量 36s→约 13s；
-  测试代码不再出现固定端口 20086 绑定（仅引擎源码字面断言保留）。
+- Create `tests/sim/`: the `MachineSimulator`, `WatcherSimulator`, `SimCluster` skeleton.
+- `discoverLocalComponents` gains optional `{host, port, timeoutMs}` parameters (defaults unchanged).
+  Accompaniments: the `MonitoringCollector` constructor accepts `discoveryOptions` and passes them through; the protocol module gains the `buildComponentInfo`/`encodeWatcherValue`/`buildWatcherValueFrameBody`/`buildWatcherDirFrameBody` encoders (the duals of the parse family, reused by the simulator).
+- Migrate the socket tests to the simulator + dynamic ports. (kbengineProtocolSocket/kbengineProtocolReaders/kbengineProtocolGaps/monitoringCollectorSocket/monitoringCollectorGaps, five files; plus new tests/sim.test.ts with 15 self-tests for the simulator)
+- Lift `fileParallelism: false`.
+- Acceptance result: vitest 57 files, 716 cases all green, file-level parallelism restored, full run 36s → about 13s; the fixed port 20086 binding is gone from test code (only the literal engine source assertion remains).
 
-### 阶段 2：进程仿真（`FakeComponentBin`）+ ProcessRunner 端口 [批53]
+### Phase 2: Process Simulation (`FakeComponentBin`) + the ProcessRunner Port [batch 53]
 
-- `tests/sim/fakeComponentBin.ts` 生成可编程假组件二进制。
-  行为：run（标记/cwd/env 回显/stderr）、exit（指定退出码）、
-  ignore-sigterm（先装 SIGTERM 处理器再打标记——结构性消除"信号抢在
-  trap 安装前送达"的竞态，替代原 bash trap 方案）、unexecutable（chmod 000
-  → EACCES）。node shebang 跨平台。
-- `serverManager` 抽 `ProcessRunner` 注入点（默认透传 spawn）。
-  mocha 层经 `module._load` mock `child_process` 的既有用例不受影响。
-- 迁移 `tests/serverManagerProcesses.test.ts` 到 FakeComponentBin。
-  18 用例行为等价（含 SIGKILL 升级），内联 bash 拼装清零；新增
-  tests/serverManagerRunner.test.ts 注入点专项 2 用例（参数透传记录 +
-  同步 throw 走 catch）。
-- 验收：全部通过（见批53 commit）。
+- `tests/sim/fakeComponentBin.ts` generates programmable fake component binaries.
+  Behaviors: run (marker/cwd/env echo/stderr), exit (given exit code),
+  ignore-sigterm (install the SIGTERM handler before printing the marker —
+  structurally eliminating the "signal arrives before the trap is installed"
+  race, replacing the original bash trap approach), unexecutable (chmod 000
+  → EACCES). The node shebang is cross-platform.
+- `serverManager` extracts the `ProcessRunner` injection point (the default passes spawn through).
+  Existing mocha-layer cases that mock `child_process` via `module._load` are unaffected.
+- Migrate `tests/serverManagerProcesses.test.ts` to FakeComponentBin.
+  18 cases behave equivalently (including SIGKILL escalation), inlined bash
+  assembly drops to zero; add tests/serverManagerRunner.test.ts with 2 cases
+  specific to the injection point (parameter pass-through recording + a
+  synchronous throw going through catch).
+- Acceptance: all pass (see the batch 53 commit).
 
-### 阶段 3：FakeVscode 基建 + extension.ts 入测 [批54]
+### Phase 3: FakeVscode Infrastructure + extension.ts Under Test [batch 54]
 
-- `tests/fake-vscode/` 五模块落地。
-  - `core.ts`：值类型（Position/Range/Uri/EventEmitter/TreeItem/Diagnostic
-    系/makeTextDocument 等，自旧 stub 原样迁入）+ 新增 StatusBarAlignment。
-  - `workspaceState.ts`：状态化 workspace——内存 fs、配置覆写、文档集合
-    （textDocuments）、三个可 fire 的工作区事件（documentChanged/
-    documentOpened/configurationChanged）、TextDocumentContentProvider 记账。
-  - `windowState.ts`：消息三通道入账、输出通道/状态栏/树视图登记、
-    showInputBox/showQuickPick/showSaveDialog 默认取消、createWebviewPanel
-    默认走 panelRegistry。
-  - `commandRegistry.ts`：registerCommand 真记账、executeCommand 真分发。
-  - `languages.ts`：四类 provider 注册记账 + DiagnosticCollection 入册。
-  - `panelRegistry.ts`：记录型假 WebviewPanel（捕获 onDidReceiveMessage/
-    onDidDispose、postMessage 入账、可 fire）——阶段 4 WebView 迁移的消费面。
-- `vscodeStub.ts` 改为纯 re-export 薄壳。33 个既有测试文件的 import 路径
-  与 monkey-patch 语义（共享同一可变对象）全部不变，718 用例零改动通过。
-- `extension.ts` 装配测试入测（tests/extension.test.ts，6 用例）。
-  注册面与 package.json 贡献点双向严格一致（21 命令/2 视图/6 语言服务注册/
-  虚拟文档 provider/状态栏参数与隐藏态）、21 条命令经 executeCommand 真分发
-  （含 FakeComponentBin 真实进程的 start/stop/restart/showLogs 全链路与状态栏
-  运行数联动）、dispose 链逐项拆除注册面、工作区分支的初始扫描与三类事件
-  联动、无工作区（workspaceFolders === undefined，空数组是 truthy）分支。
-- 验收达成：extension.ts 进覆盖率分母，99.5% lines / 100% functions
-  （唯一未盖 L234 为 openMethodTarget 永不抛错的防御 catch）；总体覆盖率
-  98.99%→99.01% lines（extension.ts 计入后不降反升）。
-- 顺带修出真实缺陷：`kbengine.entity.method.open` 的空目标守卫位于 label
-  拼接之后——命令面板无参调用会在守卫前抛 TypeError；守卫上移（行为仅在
-  原"抛错"场景变为静默 no-op）。
+- The five `tests/fake-vscode/` modules land.
+  - `core.ts`: value types (Position/Range/Uri/EventEmitter/TreeItem/Diagnostic
+    family/makeTextDocument etc., migrated as-is from the old stub) + a new StatusBarAlignment.
+  - `workspaceState.ts`: a stateful workspace — in-memory fs, configuration
+    overrides, document collections (textDocuments), three fireable workspace
+    events (documentChanged/documentOpened/configurationChanged), TextDocumentContentProvider bookkeeping.
+  - `windowState.ts`: three-channel message bookkeeping, output channel/status
+    bar/tree view registration, showInputBox/showQuickPick/showSaveDialog
+    defaulting to cancel, createWebviewPanel defaulting to panelRegistry.
+  - `commandRegistry.ts`: registerCommand really records, executeCommand really dispatches.
+  - `languages.ts`: bookkeeping for four kinds of provider registration + a DiagnosticCollection registry.
+  - `panelRegistry.ts`: a recording fake WebviewPanel (captures
+    onDidReceiveMessage/onDidDispose, records postMessage, can fire) — the
+    consuming side for the phase 4 WebView migration.
+- `vscodeStub.ts` becomes a pure re-export shell. The import paths and
+  monkey-patch semantics (sharing the same mutable object) of 33 existing test
+  files are all unchanged, and 718 cases pass with zero edits.
+- extension.ts wiring tests land under test (tests/extension.test.ts, 6 cases).
+  The registration surface and package.json contribution points agree strictly
+  in both directions (21 commands / 2 views / 6 language service registrations /
+  virtual document provider / status bar arguments and hidden state), 21
+  commands really dispatch through executeCommand (including FakeComponentBin
+  real processes' full start/stop/restart/showLogs chain and the status bar
+  running-count coupling), the dispose chain tears down the registration surface
+  item by item, the workspace branch's initial scan and three event couplings,
+  and the no-workspace branch (workspaceFolders === undefined; an empty array
+  is truthy).
+- Acceptance reached: extension.ts enters the coverage denominator, 99.5% lines /
+  100% functions (the only uncovered L234 is the defensive catch in
+  openMethodTarget that never throws); overall coverage 98.99% → 99.01% lines
+  (it rises after extension.ts is counted in).
+- A real defect is fixed along the way: the empty-target guard of
+  `kbengine.entity.method.open` sat after the label concatenation — invoking it
+  from the command palette without arguments would throw a TypeError before
+  reaching the guard; the guard is moved up (behavior only changes from "throws"
+  to a silent no-op in the original throwing scenario).
 
-### 阶段 4：WebView/管理器迁移 + mocha 瘦身 + 文档 [批55/56]
+### Phase 4: WebView/Manager Migration + mocha Slimming + Docs [batch 55/56]
 
-- WebView 面板测试迁到 PanelRegistry。（批55；实际消费面为三个 WebView，
-  原文"四个"计数有误：logWebViewPanel/monitoringPanel/entityDependencyPanel
-  51 用例迁到 panelRegistry 默认假面板，断言语义不变，每文件仅剩
-  showSaveDialog 队列与 fs.writeFile 故障注入两类 patch）
-- mocha 层裁到烟测集；`testUtils.ts` Fake* 退役，mocha 复用 fake-vscode。（批56）
-  19 文件 4930 行/110 用例 → 3 文件 10 用例：manifest 贡献点、out/extension.js
-  经 fake-vscode **编译副本**（新增 `tsconfig.mocha.json` 把 tests/fake-vscode +
-  vscodeStub 编译到 `out/tests/`，test 链插入该编译步骤）整体激活/dispose 链、
-  out/languageProviders.js 补全+悬停最小应答。与 vitest 同构的 17 个套件退役
-  （P7 定案：并不更真实，纯双份维护）。`@vscode/test-electron` 依赖移除——
-  runTest.ts 从未调用它；未来 L4a 真机烟测如需，再显式引入并独立于提交门槛。
-- 更新 `TESTING.md`（新分层说明）、`docs/guide/development.md`、`README.md`。（批56）
-- 验收：`pnpm test:unit`（L1-L3）在无引擎、无 VSCode 下载环境下全绿
-  （KBENGINE_ROOT=off 口径 59 文件 724 用例）；`pnpm test` 全量绿
-  （2026-09-26 实测全量门槛 31.6s：vitest 12.7s + 全量编译 + mocha 烟测
-  10 用例，G2 的 90s 目标余量充足）；文档与新架构一致。
+- WebView panel tests migrate to PanelRegistry. (batch 55; the actual consuming
+  surface is three WebViews, the original "four" count was wrong:
+  logWebViewPanel/monitoringPanel/entityDependencyPanel — 51 cases migrated to
+  panelRegistry's default fake panel, assertion semantics unchanged, each file
+  keeps only the showSaveDialog queue and fs.writeFile fault injection patches)
+- The mocha layer is cut down to a smoke set; `testUtils.ts` Fake* retires, and
+  mocha reuses fake-vscode. (batch 56) 19 files 4930 lines / 110 cases → 3
+  files 10 cases: manifest contribution points, out/extension.js activated and
+  disposed end to end through fake-vscode over a **compiled copy** (new
+  `tsconfig.mocha.json` compiles tests/fake-vscode + vscodeStub into
+  `out/tests/`, and the test chain inserts that compile step), and
+  out/languageProviders.js minimal completion + hover responses. The 17 suites
+  isomorphic to vitest retire (P7 decision: they are not more real, purely
+  duplicated maintenance). The `@vscode/test-electron` dependency is removed —
+  runTest.ts never called it; if a future L4a on-machine smoke test needs it, it
+  is re-introduced explicitly and kept out of the commit gate.
+- Update `TESTING.md` (new layering notes), `docs/guide/development.md`, `README.md`. (batch 56)
+- Acceptance: `pnpm test:unit` (L1-L3) is all green with no engine and no
+  VSCode download (KBENGINE_ROOT=off baseline 59 files 724 cases); `pnpm test`
+  is fully green (full gate measured at 31.6s on 2026-09-26: vitest 12.7s + full
+  compile + 10 mocha smoke cases, ample headroom against G2's 90s target); the
+  docs match the new architecture.
 
-### 进度
+### Progress
 
-| 阶段 | 状态 | 里程碑 commit |
+| Phase | Status | Milestone commit |
 |------|------|---------------|
-| 1 | 完成（批52） | 仿真器基座 + 动态端口 + 文件并行恢复 |
-| 2 | 完成（批53） | FakeComponentBin + ProcessRunner 注入 + 进程编排测试迁移 |
-| 3 | 完成（批54） | fake-vscode 五模块 + vscodeStub 兼容壳 + extension.ts 入测(99.5%) |
-| 4 | 完成（批55/56） | WebView 面板测试迁 panelRegistry；mocha 裁为编译产物烟测(10 用例)；Fake* 退役、@vscode/test-electron 移除；文档对齐 |
+| 1 | Done (batch 52) | Simulator bed + dynamic ports + file parallelism restored |
+| 2 | Done (batch 53) | FakeComponentBin + ProcessRunner injection + process orchestration tests migrated |
+| 3 | Done (batch 54) | fake-vscode five modules + vscodeStub compatibility shell + extension.ts under test (99.5%) |
+| 4 | Done (batch 55/56) | WebView panel tests migrated to panelRegistry; mocha cut to compiled-artifact smoke (10 cases); Fake* retired, @vscode/test-electron removed; docs aligned |
 
-## 7. 风险与对策
+## 7. Risks and Countermeasures
 
-- **仿真器漂移**（仿真行为 ≠ 引擎真实行为）：协议帧构造复用 `kbengineProtocol`
-  同一编解码器；L4b 引擎源码校验继续锚定真实线序；仿真器的"规格即文档"注释逐条
-  标注引擎源码依据（沿用现有批注风格）。
-- **注入参数蔓延**：每个新参数必须可选、默认等于现行为；用类型测试锁定默认值
-  （如 `MACHINE_BROADCAST_PORT === 20086`）。
-- **迁移期双轨成本**：阶段 1-3 期间旧写法不立即删除，最后一阶段统一清理；
-  每阶段 commit 独立可回滚。
+- **Simulator drift** (simulated behavior ≠ real engine behavior): protocol frame construction reuses the same codec in `kbengineProtocol`; L4b engine source verification stays anchored to the real wire order; the simulator's "specification is documentation" comments annotate the engine source basis line by line (following the existing batch-note style).
+- **Injection parameter sprawl**: every new parameter must be optional and default to current behavior; type tests lock the defaults (e.g. `MACHINE_BROADCAST_PORT === 20086`).
+- **Dual-track cost during migration**: the old style is not deleted immediately in phases 1-3, the last phase cleans up uniformly; each phase's commit is independently revertible.
 
-## 8. 提交与验证门槛（沿用仓库现行硬约束）
+## 8. Commit and Verification Gate (Existing Hard Repo Constraints)
 
-- 每次 commit / push 前必须全量测试通过（`pnpm lint` + `pnpm test`）；
-  有失败先修复，禁止提交红测试。
-- 禁止 git tag；禁止任何发布/发版动作；push 仅推当前分支远端，不 force。
+- The full test suite must pass before every commit / push (`pnpm lint` + `pnpm test`); fix failures first, committing red tests is forbidden.
+- git tag is forbidden; any release/publish action is forbidden; push only to the current branch's remote, never force.
