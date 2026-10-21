@@ -2720,7 +2720,10 @@ function findMethodImplementationLocationInDef(
     if (typeof entityMappingManager.resolveMethodImplementationGlobally !== 'function') {
       return hintRegistryFallback();
     }
-    return entityMappingManager.resolveMethodImplementationGlobally(methodName, section).then(glob => {
+    // 2026-10-21:KBEngineSectionName 面比 EntityMethodSection 宽,先收敛再进域层。
+    const defSection =
+      section === 'BaseMethods' || section === 'CellMethods' ? section : undefined;
+    return entityMappingManager.resolveMethodImplementationGlobally(methodName, defSection).then(glob => {
       if (glob) {
         logNavigation(`方法落点(全项目回退) ${glob.filePath}:${glob.line - 1}`);
         return new vscode.Location(

@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import type { DefinitionSymbolIdentity } from '../src/entityMapping';
-import { resetScanRootCache, getIndexScanRoots } from '../src/scanRoots';
+import { resetScanRootCache } from '../src/scanRoots';
 import { Uri } from './helpers/vscodeStub';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 
