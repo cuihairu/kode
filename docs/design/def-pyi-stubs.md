@@ -3,6 +3,7 @@
 > 来源:用户 2026-10-16 需求「能支持生成 utype 定义类型的 .pyi 文件吗,自动生成类型提示,现实吗?」。
 > 本轮只落设计与结论,不写实现代码;所有判断给 `file:line`,语料限制如实标注。
 > **2026-10-17 对账更新:类型面已实现**——`kbengine.python.exportTypeStubs` 命令 + 激活期静默自动导出 `kbe_types.py`(真 `.py` 即方案 A,复用 `kbengine.python.stubExport` 开关与 `stubDir` 三级目录,extraPaths 管理段同盘并入);§4 提的 types.xml watcher 自动重生成已实现(2026-10-17 批146:保存/新建/删除静默重导出,不设去抖不加开关,零写纪律兜底);§7 待证清单不变。
+> **2026-10-21 B 单调整:产物改 `.pyi` 分件**——文件名改 `kbe_types.pyi`(纯声明桩),按 types.xml 文件分件,镜像 scripts 树落 `<typings 根>/<scripts 相对目录>/kbe_types.pyi`(照 kbengine 仓 typings/ 分层形态);**T-04 取舍:不做 types.xml 同目录同名 sidecar**(生成物落回工程 scripts 树会混入用户资产树,且同名 `.pyi` 遮蔽红线沿目录扩散),改收 kode 自管独立 typings 根(stubDir 三级解析不变);旧版单文件 `kbe_types.py` 的 extraPaths 并入判定保留(`typeStubArtifactExists`,迁移期)。别名(<Type 别名=底层/>)逐层解析到引擎注册内建再映射,注册面对齐 `kbe/src/lib/entitydef/datatypes.cpp` `DataTypes::initialize`;循环别名整链跳过,发射名必须已解析或已定义。
 
 ## 0. 结论速览
 

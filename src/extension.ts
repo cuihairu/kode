@@ -39,6 +39,7 @@ import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
 import {
+  PYTHON_TYPE_STUB_FILE_NAME,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
   setupTypeStubRegeneration
@@ -303,7 +304,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 生成桩的来源镜(T-05):声明/字段行上方保留原始 types.xml 行,点击
   // 直接跳原始声明;禁止从生成行号反推来源。
   const generatedSourceLensProviderImpl = new GeneratedSourceCodeLensProvider(
-    'kbe_types.py',
+    PYTHON_TYPE_STUB_FILE_NAME,
     buildPythonTypeStubPlan(
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
     ).entries,
@@ -1164,7 +1165,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(exportKbeStubsCommand);
-  // types.xml 自定义类型桩(docs/design/def-pyi-stubs.md §6):kbe_types.py 与
+  // types.xml 自定义类型桩(docs/design/def-pyi-stubs.md §6):kbe_types.pyi 分件与
   // KBEngine.pyi 同开关同目录,命令导出后同样链一次同步让新目录即刻生效
   const exportPythonTypeStubsCommand = vscode.commands.registerCommand(
     'kbengine.python.exportTypeStubs',

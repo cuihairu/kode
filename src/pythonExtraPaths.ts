@@ -20,7 +20,7 @@ import {
   kbeStubDir,
   kbeStubFilePath
 } from './pythonStubExport';
-import { kbeTypeStubFilePath } from './pythonTypeStubs';
+import { typeStubArtifactExists } from './pythonTypeStubs';
 
 export const PYTHON_EXTRA_PATHS_SETTING = 'python.analysis.extraPaths';
 export const PYTHON_EXTRA_PATHS_MANAGED_KEY = 'kbengine.python.extraPaths.managed';
@@ -167,7 +167,8 @@ export async function syncPythonExtraPaths(
   const written: string[] = [];
   // G2 存根目录只在「导出开 + KBEngine.pyi 真的在盘上」时并入管理段
   // (由激活期先导出再同步的顺序保证手动同步也能拾取已有存根);
-  // def-pyi-stubs §6 的 kbe_types.py 同盘也并同一个目录,目录去重交给 plan
+  // def-pyi-stubs §6 的 kbe_types.pyi 分件镜像(含旧版单文件 kbe_types.py
+  // 残留,迁移期不断线)同盘也并同一个目录,目录去重交给 plan
   const stubExportEnabled = vscode.workspace
     .getConfiguration('kbengine')
     .get<boolean>('python.stubExport', PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
@@ -180,7 +181,8 @@ export async function syncPythonExtraPaths(
     const currentPaths = Array.isArray(raw) ? raw : [];
     const extraManaged =
       stubExportEnabled &&
-      (deps.exists(kbeStubFilePath(workspaceRoot)) || deps.exists(kbeTypeStubFilePath(workspaceRoot)))
+      (deps.exists(kbeStubFilePath(workspaceRoot)) ||
+        typeStubArtifactExists(deps, workspaceRoot))
         ? [kbeStubDir(workspaceRoot)]
         : [];
     const plan = planPythonExtraPaths({

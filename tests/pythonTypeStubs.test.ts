@@ -7,7 +7,8 @@ import {
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
   kbeTypeStubFilePath,
-  setupTypeStubRegeneration
+  setupTypeStubRegeneration,
+  typeStubMirrorRelativeDir
 } from '../src/pythonTypeStubs';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
 import {
@@ -20,15 +21,17 @@ import {
 } from './helpers/vscodeStub';
 
 // docs/design/def-pyi-stubs.md §6 立项落地:types.xml 自定义类型(utype)发射成
-// Python 类型桩模块 kbe_types.py(方案 A:真 .py,TypedDict/type alias 运行时
-// 可用),与 KBEngine.pyi 同居 stubDir 三级解析目录,复用 kbengine.python.
-// stubExport 开关与「内容一致零写」纪律;extraPaths 管理段同盘并入。
+// Python 类型桩 kbe_types.pyi(B 单:纯 .pyi 声明桩,按 types.xml 文件分件、
+// 镜像 scripts 树收独立 typings 根,T-04 不做同目录同名 sidecar),与
+// KBEngine.pyi 同居 stubDir 三级解析目录,复用 kbengine.python.stubExport
+// 开关与「内容一致零写」纪律;extraPaths 管理段同盘并入。
 
 interface TypeScript {
   name: string;
   aliasType: string;
   rawValue?: string;
   of?: string;
+  filePath?: string;
   properties?: Array<{ name: string; typeName?: string }>;
 }
 
@@ -45,7 +48,7 @@ const makeType = (script: TypeScript): CustomTypeInfo => {
   };
   return {
     name: script.name,
-    filePath: '/ws/scripts/entity_defs/types.xml',
+    filePath: script.filePath ?? '/ws/scripts/entity_defs/types.xml',
     line: 1,
     implementedByLine: 1,
     startOffset: 0,
@@ -182,6 +185,20 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     });
   });
 
+  it('别名单层解析到底层内建:TIMESTAMP→UINT64 发 int', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({ name: 'TIMESTAMP', aliasType: 'UINT64', rawValue: 'UINT64' })
+    ]);
+
+    expect(plan.entries[0]).toEqual({
+      annotation: 'int',
+      kind: 'alias',
+      name: 'TIMESTAMP',
+      sourceLine: 1
+    });
+    expect(plan.content).toContain('TIMESTAMP = int');
+  });
+
   it('别名到内置类型发赋值语句', () => {
     const plan = buildPythonTypeStubPlan([SAMPLE_TYPES()[2]]);
 
@@ -194,19 +211,54 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(plan.content).toContain('AVATAR_NAME = str');
   });
 
-  it('类在先、别名链拓扑序:A=STRING → B=A → C=B,输入乱序也按依赖序出', () => {
+  it('别名多链逐层解析到底:B→A→STRING 整链都解析成 str,不发射链上裸名', () => {
     const plan = buildPythonTypeStubPlan([
       makeType({ name: 'C', aliasType: 'B', rawValue: 'B' }),
       makeType({ name: 'B', aliasType: 'A', rawValue: 'A' }),
       makeType({ name: 'A', aliasType: 'STRING', rawValue: 'STRING' })
     ]);
 
-    const names = plan.entries.map(entry => entry.name);
-    expect(names.indexOf('A')).toBeLessThan(names.indexOf('B'));
-    expect(names.indexOf('B')).toBeLessThan(names.indexOf('C'));
+    const annotations = Object.fromEntries(
+      plan.entries.map(entry => [entry.name, entry.kind === 'alias' ? entry.annotation : ''])
+    );
+    expect(annotations).toEqual({ A: 'str', B: 'str', C: 'str' });
     expect(plan.content).toContain('A = str');
-    expect(plan.content).toContain('B = A');
-    expect(plan.content).toContain('C = B');
+    expect(plan.content).toContain('B = str');
+    expect(plan.content).toContain('C = str');
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it('别名解析到 FIXED_DICT 引用类名(类已在本文件定义,不算悬挂)', () => {
+    const plan = buildPythonTypeStubPlan([
+      SAMPLE_TYPES()[0],
+      makeType({ name: 'INFO_REF', aliasType: 'AVATAR_INFO', rawValue: 'AVATAR_INFO' })
+    ]);
+
+    const alias = plan.entries.find(entry => entry.name === 'INFO_REF');
+    expect(alias?.kind).toBe('alias');
+    if (!alias || alias.kind !== 'alias') {
+      return;
+    }
+    expect(alias.annotation).toBe('AVATAR_INFO');
+    expect(plan.content).toContain('INFO_REF = AVATAR_INFO');
+  });
+
+  it('FD 属性引用别名时同样解析到底,不发射链上裸名', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({ name: 'TIMESTAMP', aliasType: 'UINT64', rawValue: 'UINT64' }),
+      makeType({
+        name: 'EVENT',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [{ name: 'at', typeName: 'TIMESTAMP' }]
+      })
+    ]);
+
+    const entry = plan.entries.find(candidate => candidate.name === 'EVENT');
+    if (!entry || entry.kind !== 'class') {
+      return;
+    }
+    expect(entry.properties[0].annotation).toBe('int');
   });
 
   it('别名环成环整链跳过,原因写明', () => {
@@ -330,16 +382,16 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     });
   });
 
-  it('名字序在前的别名依赖名字序在后的:多轮迭代也能排完,依赖先出', () => {
+  it('别名赋值按名字序发射(解析后注解只含到底类型,顺序与输入无关)', () => {
     const plan = buildPythonTypeStubPlan([
       makeType({ name: 'ALIAS_B', aliasType: 'ZTARGET', rawValue: 'ZTARGET' }),
       makeType({ name: 'ZTARGET', aliasType: 'STRING', rawValue: 'STRING' })
     ]);
 
     const names = plan.entries.map(entry => entry.name);
-    expect(names).toEqual(['ZTARGET', 'ALIAS_B']);
+    expect(names).toEqual(['ALIAS_B', 'ZTARGET']);
     expect(plan.content).toContain('ZTARGET = str');
-    expect(plan.content).toContain('ALIAS_B = ZTARGET');
+    expect(plan.content).toContain('ALIAS_B = str');
   });
 
   it('零自定义类型/全跳过时 content 为 null(不生成文件)', () => {
@@ -469,10 +521,34 @@ describe('undefined-name regression gate', () => {
   });
 });
 
-describe('kbeTypeStubFilePath', () => {
-  it('默认约定目录下的 kbe_types.py', () => {
-    expect(kbeTypeStubFilePath('/ws')).toBe('/ws/.kbengine/stubs/kbe_types.py');
-    expect(PYTHON_TYPE_STUB_FILE_NAME).toBe('kbe_types.py');
+describe('kbeTypeStubFilePath(产物形态 .pyi,分件镜像路径)', () => {
+  const MIRROR_PATH = '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi';
+
+  it('文件名是 .pyi(纯声明桩)', () => {
+    expect(PYTHON_TYPE_STUB_FILE_NAME).toBe('kbe_types.pyi');
+    expect(kbeTypeStubFilePath('/ws')).toBe('/ws/.kbengine/stubs/kbe_types.pyi');
+  });
+
+  it('分件镜像相对目录:工作区内照相对路径镜像 scripts 树', () => {
+    expect(typeStubMirrorRelativeDir('/ws/scripts/entity_defs/types.xml', '/ws')).toBe(
+      'scripts/entity_defs'
+    );
+    expect(
+      typeStubMirrorRelativeDir('/ws/assets/scripts/cellapp/entity_defs/types.xml', '/ws')
+    ).toBe('assets/scripts/cellapp/entity_defs');
+  });
+
+  it('工作区外但带 /scripts/ 段的从该段起镜像;认不出退回 null(根级单文件)', () => {
+    expect(
+      typeStubMirrorRelativeDir('/other/assets/scripts/entity_defs/types.xml', '/ws')
+    ).toBe('scripts/entity_defs');
+    expect(typeStubMirrorRelativeDir('/elsewhere/types.xml', '/ws')).toBeNull();
+  });
+
+  it('分件落点 = typings 根 + 镜像相对目录 + kbe_types.pyi(不做 types.xml 同目录 sidecar)', () => {
+    const mirrorDir = typeStubMirrorRelativeDir('/ws/scripts/entity_defs/types.xml', '/ws');
+    expect(`${'/ws/.kbengine/stubs'}/${mirrorDir}/kbe_types.pyi`).toBe(MIRROR_PATH);
+    expect(MIRROR_PATH.startsWith('/ws/scripts')).toBe(false);
   });
 });
 
@@ -537,43 +613,75 @@ describe('exportPythonTypeStubs(装配层)', () => {
     expect(messages.warning).toHaveLength(0);
   });
 
-  it('首 导出到默认约定目录:建目录写 kbe_types.py,播报文件夹', async () => {
+  it('首导出到默认约定目录:镜像 scripts 树建目录写分件,播报文件夹', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const { deps, writes, mkdirs } = makeDeps();
 
     const written = await exportPythonTypeStubs(deps, { listCustomTypes: () => SAMPLE_TYPES() });
 
     expect(written).toEqual(['ws']);
-    expect(mkdirs).toEqual(['/ws/.kbengine/stubs']);
+    expect(mkdirs).toEqual(['/ws/.kbengine/stubs/scripts/entity_defs']);
     expect(writes).toHaveLength(1);
-    expect(writes[0].path).toBe('/ws/.kbengine/stubs/kbe_types.py');
+    expect(writes[0].path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
     expect(writes[0].content).toBe(buildPythonTypeStubPlan(SAMPLE_TYPES()).content);
     expect(messages.info[0]).toContain('ws');
-    expect(messages.info[0]).toContain('kbe_types.py');
+    expect(messages.info[0]).toContain('kbe_types.pyi');
+  });
+
+  it('按文件分件:多个 types.xml 各出自镜像路径的独立 .pyi,内容互不混', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const { deps, writes } = makeDeps();
+    const cellTypes = [
+      makeType({
+        name: 'CELL_INFO',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        filePath: '/ws/scripts/cellapp/entity_defs/types.xml',
+        properties: [{ name: 'speed', typeName: 'FLOAT' }]
+      })
+    ];
+    const listCustomTypes = (): CustomTypeInfo[] => [...SAMPLE_TYPES(), ...cellTypes];
+
+    const written = await exportPythonTypeStubs(deps, { listCustomTypes });
+
+    expect(written).toEqual(['ws']);
+    expect(writes).toHaveLength(2);
+    const byPath = new Map(writes.map(write => [write.path, write.content]));
+    expect([...byPath.keys()].sort()).toEqual([
+      '/ws/.kbengine/stubs/scripts/cellapp/entity_defs/kbe_types.pyi',
+      '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi'
+    ]);
+    expect(byPath.get('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi')).toBe(
+      buildPythonTypeStubPlan(SAMPLE_TYPES()).content
+    );
+    expect(byPath.get('/ws/.kbengine/stubs/scripts/cellapp/entity_defs/kbe_types.pyi')).toBe(
+      buildPythonTypeStubPlan(cellTypes).content
+    );
   });
 
   it('内容一致时零写零提示;陈旧时重写;读不到按陈旧重写', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
+    const target = '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi';
     const content = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
 
     const unchanged = makeDeps({
-      existing: [kbeTypeStubFilePath('/ws')],
-      initial: { [kbeTypeStubFilePath('/ws')]: content }
+      existing: [target],
+      initial: { [target]: content }
     });
     await exportPythonTypeStubs(unchanged.deps, { listCustomTypes: () => SAMPLE_TYPES() });
     expect(unchanged.writes).toHaveLength(0);
     expect(messages.info).toHaveLength(0);
 
     const stale = makeDeps({
-      existing: [kbeTypeStubFilePath('/ws')],
-      initial: { [kbeTypeStubFilePath('/ws')]: '# 旧版本' }
+      existing: [target],
+      initial: { [target]: '# 旧版本' }
     });
     await exportPythonTypeStubs(stale.deps, { listCustomTypes: () => SAMPLE_TYPES() });
     expect(stale.writes).toHaveLength(1);
     expect(stale.writes[0].content).toBe(content);
 
     const unreadable = makeDeps({
-      existing: [kbeTypeStubFilePath('/ws')],
+      existing: [target],
       readFails: true
     });
     await exportPythonTypeStubs(unreadable.deps, { listCustomTypes: () => SAMPLE_TYPES() });
@@ -592,10 +700,10 @@ describe('exportPythonTypeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
-  it('用户配置目录:已有 kbe_types.py 按用户资产跳过;没有才生成', async () => {
+  it('用户配置目录:已有分件按用户资产跳过;没有才生成', async () => {
     configurationOverrides.set('kbengine', { 'python.stubDir': '/user-stubs' });
     stubWorkspace.workspaceFolders = [folder('/ws')];
-    const owned = makeDeps({ existing: ['/user-stubs/kbe_types.py'] });
+    const owned = makeDeps({ existing: ['/user-stubs/scripts/entity_defs/kbe_types.pyi'] });
 
     await exportPythonTypeStubs(owned.deps, { listCustomTypes: () => SAMPLE_TYPES() });
 
@@ -605,7 +713,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
     const free = makeDeps();
     await exportPythonTypeStubs(free.deps, { listCustomTypes: () => SAMPLE_TYPES() });
     expect(free.writes).toHaveLength(1);
-    expect(free.writes[0].path).toBe('/user-stubs/kbe_types.py');
+    expect(free.writes[0].path).toBe('/user-stubs/scripts/entity_defs/kbe_types.pyi');
     stubWorkspace.workspaceFolders = [];
   });
 
@@ -639,7 +747,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
 
     expect(written).toEqual(['good']);
     expect(writes).toHaveLength(1);
-    expect(writes[0].path).toBe('/good/.kbengine/stubs/kbe_types.py');
+    expect(writes[0].path).toBe('/good/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
     stubWorkspace.workspaceFolders = [];
   });
 
