@@ -107,11 +107,14 @@ import {
   formatEntityBuiltinPropertyDetail,
   formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace,
+  hasKnownEntityBuiltinPropertyType,
   resolveEntityBuiltinPropertyHit,
   resolveEntityComponentFaceFromPath,
   collectEntityBuiltinPropertyInlayTargets,
   type EntityComponentFace
 } from './entityBuiltinProperties';
+import { resolveLocalVariableReturnType } from './pythonReturnTypeInference';
+import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
 import {
   findPythonReceiverCalls,
   getPythonReceiverCallAtPosition,
@@ -230,10 +233,11 @@ function createCompletionItems(
  * def 方法签名文本(审计遗留承诺 2026-10-21;用户令 2026-10-21 统一解析链):
  * def 声明了 <Arg> 的形参带类型注解(arg1: int 形态),类型走
  * resolveEntityAnnotationType 同一解析链——内建直查 → types.xml/alias.xml
- * 自定义类型逐层下钻 → 仍未知落 Any 不硬造;声明面 hover、接收者面 hover 与
- * 补全方法 detail 三处同源,一面都不得私走单表。def 未声明 <Arg> 的不硬造
- * (只出 self);<Arg> 在而类型文本空的只出名不造型。声明形参名以 def 为准
- * 不可考,统一 argN 与存根生成器同口径。
+ * 自定义类型逐层下钻;声明面 hover、接收者面 hover 与补全方法 detail 三处
+ * 同源,一面都不得私走单表。def 未声明 <Arg> 的不硬造(只出 self);<Arg>
+ * 在而类型文本空的只出名不造型。链断/未知(解析落 Any)按「能推才显」闸
+ * 同规则无提示降级:只出名不带注解(不显 `: Any`)。声明形参名以 def 为
+ * 准不可考,统一 argN 与存根生成器同口径。
  */
 function formatDefMethodSignature(
   workspaceRoot: string | undefined,
@@ -247,6 +251,10 @@ function formatDefMethodSignature(
       return `arg${index + 1}`;
     }
     const annotation = resolveEntityAnnotationType(workspaceRoot ?? '', trimmed);
+    // 解析链断/未知(落 Any)→ 无提示降级,只出名(三提示面不显 Any)
+    if (annotation === PYTHON_TYPE_STUB_FALLBACK) {
+      return `arg${index + 1}`;
+    }
     return `arg${index + 1}: ${annotation}`;
   });
   return `def ${methodName}(self${parameters.length > 0 ? `, ${parameters.join(', ')}` : ''})`;
@@ -502,9 +510,10 @@ function createBuiltinPropertyCompletionItems(
 ): vscode.CompletionItem[] {
   return getEntityBuiltinPropertiesForFace(face).map(property => {
     // label 用 CompletionItemLabel 形态:名称旁右列灰字类型(用户令 2026-10-21
-    // 形态升级单 ②),detail 保留读写/面短句(单一 formatter,与 hover 同源)
+    // 形态升级单 ②),detail 保留读写/面短句(单一 formatter,与 hover 同源);
+    // Any 位按「能推才显」闸不显示类型(右列空,无 Any 降级)
     const item = new vscode.CompletionItem(
-      { label: property.name, description: property.type },
+      { label: property.name, description: hasKnownEntityBuiltinPropertyType(property) ? property.type : undefined },
       vscode.CompletionItemKind.Property
     );
     item.detail = formatEntityBuiltinPropertyDetail(face, property);
@@ -549,7 +558,9 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
     }
     const lines = document.getText().split(/\r?\n/);
     return collectEntityBuiltinPropertyInlayTargets(lines, pathFace, defFaces)
-      // inlay 按可视区要:视图口外的访问行不出 hint(批154 同口径)
+      // inlay 按可视区要:视图口外的访问行不出 hint(批154 同口径);
+      // Any 位(未知)按「能推才显」闸整个不出 hint(无提示降级)
+      .filter(target => hasKnownEntityBuiltinPropertyType(target.property))
       .filter(target => target.line >= range.start.line && target.line <= range.end.line)
       .map(
         target =>
@@ -630,6 +641,26 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           .then(annotation =>
             annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
           );
+      }
+    }
+
+    // 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
+    // → data: JSONDATA」):光标落在变量名上时,按右侧单层调用的被调函数返回
+    // 注解推导(python `def get_data(...) -> X:` 注解先行;.def 方法无返回声明
+    // 语法故该层结构性缺位)。解出才提示并标注来源;解不出不显示任何类型
+    // (不显 Any、不显空类型,落回普通 hover 链)。
+    if (document.languageId === 'python') {
+      const inferred = resolveLocalVariableReturnType(
+        document.getText().split(/\r?\n/),
+        position.line,
+        word,
+        getWorkspaceRootForDocument(document)
+      );
+      if (inferred) {
+        const markdown = new vscode.MarkdownString();
+        markdown.appendMarkdown(`**${inferred.target}: ${inferred.annotation}**\n\n`);
+        markdown.appendMarkdown(`推导自 ${inferred.methodName}() 返回注解`);
+        return new vscode.Hover(markdown);
       }
     }
 

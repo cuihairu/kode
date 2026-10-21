@@ -164,13 +164,25 @@ export function formatEntityBuiltinPropertyDetail(
   return `${faceLabel}面 · ${property.readonly ? '只读' : '可写'}`;
 }
 
-/** 名称+类型一体段(hover 首行):`**self.<name>: <type>** — <面>面 · 只读/可写` */
+/**
+ * 「能推才显」闸(用户令 2026-10-21):类型面 Any 位 = 引擎侧可证类型链断
+ * (allClients/otherClients/controlledBy/volatileInfo/clientapp 等),三提示
+ * 面一律无提示降级(不显 `: Any`、不显空类型);数据表保留 Any 事实位,
+ * pyi 生成物不受此闸(仍按 PYTHON_TYPE_STUB_FALLBACK 出 Any)。
+ */
+export function hasKnownEntityBuiltinPropertyType(property: EntityBuiltinProperty): boolean {
+  return property.type !== '' && property.type !== 'Any';
+}
+
+/** 名称+类型一体段(hover 首行):`**self.<name>: <type>** — <面>面 · 只读/可写`;
+ *  Any 位(未知)不显示类型段:`**self.<name>** — ...`(无提示降级) */
 export function formatEntityBuiltinPropertyHeadline(
   name: string,
   face: EntityComponentFace | null,
   property: EntityBuiltinProperty
 ): string {
-  return `**self.${name}: ${property.type}** — ${formatEntityBuiltinPropertyDetail(face, property)}`;
+  const typeSegment = hasKnownEntityBuiltinPropertyType(property) ? `: ${property.type}` : '';
+  return `**self.${name}${typeSegment}** — ${formatEntityBuiltinPropertyDetail(face, property)}`;
 }
 
 /** 行内 inlay 目标:一行内单段 `self.<内建属性>` 访问(hit 解析结果+区间) */

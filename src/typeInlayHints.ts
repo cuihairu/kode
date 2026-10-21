@@ -37,7 +37,8 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         hits.set(key, location ? location.typeName ?? null : null);
       }
       const typeName = hits.get(key);
-      if (!typeName) {
+      if (!typeName || typeName === 'Any') {
+        // 无 typeName 或解析落 Any(未知)→ 不出提示(能推才显,不显 Any)
         continue;
       }
       hints.push(

@@ -386,7 +386,7 @@ describe('kbengine.types.aliasDiscovery(alias.xml 类型发现)', () => {
 });
 
 describe('def 方法签名文本(审计遗留承诺:声明 <Arg><Type> 必须带类型注解)', () => {
-  it('签名助手口径与存根同表:UINT8→int、未知回落 Any、无 <Arg> 不硬造', async () => {
+  it('签名助手口径与存根同表:UINT8→int、未知不显类型(能推才显)、无 <Arg> 不硬造', async () => {
     // 经补全面验证:PythonCompletionProvider 的实体方法 documentation 首行
     // 出签名;这里用 hover 面已在 receiverSections describe 覆盖 int 口径,
     // 此处补"无 <Arg> 只出 self"与"未知类型不硬造"两臂。
@@ -429,7 +429,9 @@ describe('def 方法签名文本(审计遗留承诺:声明 <Arg><Type> 必须带
       const custom = items.find(item => item.label === 'custom');
       expect(heal?.documentation?.value).toContain('def heal(self)');
       expect(heal?.documentation?.value).not.toContain('arg1');
-      expect(custom?.documentation?.value).toContain('def custom(self, arg1: Any)');
+      // 能推才显(用户令 2026-10-21):未知类型链断不显 Any,只出名不造型
+      expect(custom?.documentation?.value).toContain('def custom(self, arg1)');
+      expect(custom?.documentation?.value).not.toContain('Any');
     } finally {
       managers.splice(0).forEach(manager => manager.dispose());
       fs.rmSync(root, { recursive: true, force: true });
