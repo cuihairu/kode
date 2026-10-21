@@ -103,6 +103,13 @@ import {
 } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
 import {
+  formatEntityBuiltinPropertyDetail,
+  getEntityBuiltinPropertiesForFace,
+  resolveEntityBuiltinPropertyHit,
+  resolveEntityComponentFaceFromPath,
+  type EntityComponentFace
+} from './entityBuiltinProperties';
+import {
   findPythonReceiverCalls,
   getPythonReceiverCallAtPosition,
   type PythonReceiverCall,
@@ -305,6 +312,10 @@ function getDefTagCompletionLabels(
 }
 
 export class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
+  // 内建属性补全(用户令 2026-10-21 内建属性单 ③):self. 上下文需要 def
+  // 归属面兜底,可选注入;缺省时仅目录域判面(既有无参用例口径不变)。
+  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+
   provideCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position
@@ -370,6 +381,16 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
     }
 
     if (document.fileName.endsWith('.py') || document.fileName.endsWith('.def')) {
+      // 内建属性补全(用户令 2026-10-21 内建属性单 ③):实体脚本内 self.<片段>
+      // 上下文给所在面的属性项(单段,self.cell.X 等多段访问不接管);
+      // 非实体脚本不接管(返回空,不遮蔽既有链)。
+      if (document.fileName.endsWith('.py')) {
+        const selfContext = getPythonSelfCompletionContext(lineText);
+        if (selfContext && selfContext.parentPath === '') {
+          return this.provideBuiltinPropertyCompletions(document);
+        }
+      }
+
       if (lineText.match(/KBEngine\.[a-zA-Z]*$/)) {
         KBENGINE_RELOAD_FUNCTIONS
           .filter(fn => fn.name.startsWith('KBEngine.'))
@@ -402,6 +423,46 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
 
     return items;
   }
+
+  /**
+   * self. 上下文的内建属性项(用户令 ③④):目录域判面先行;判不出且注入了
+   * manager 时问 def 归属——唯一面给全量面属性,多面歧义或判为实体但无面
+   * → 只给宏公共 3;非实体(manager 判 null 且无目录域)→ 空表不接管。
+   */
+  private provideBuiltinPropertyCompletions(
+    document: vscode.TextDocument
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+    const pathFace = resolveEntityComponentFaceFromPath(document.fileName);
+    if (pathFace) {
+      return createBuiltinPropertyCompletionItems(pathFace);
+    }
+    const manager = this.entityMappingManager;
+    if (!manager) {
+      return [];
+    }
+    return manager
+      .getEntityComponentFacesForPythonFile(document.fileName)
+      .then(faces => {
+        // null = 无 def 归属(非实体)→ 不接管;空数组/多面 → 只给宏公共 3
+        if (faces === null) {
+          return [];
+        }
+        return createBuiltinPropertyCompletionItems(faces.length === 1 ? faces[0] : null);
+      })
+      .catch(() => []);
+  }
+}
+
+/** 面属性 → 补全项(detail 与 hover 同一句标注,documentation 带引擎注册面取证) */
+function createBuiltinPropertyCompletionItems(
+  face: EntityComponentFace | null
+): vscode.CompletionItem[] {
+  return getEntityBuiltinPropertiesForFace(face).map(property => {
+    const item = new vscode.CompletionItem(property.name, vscode.CompletionItemKind.Property);
+    item.detail = formatEntityBuiltinPropertyDetail(face, property);
+    item.documentation = new vscode.MarkdownString(`引擎注册面: \`${property.source}\``);
+    return item;
+  });
 }
 
 export class KBEngineHoverProvider implements vscode.HoverProvider {
@@ -447,6 +508,19 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       );
       if (receiverCall) {
         return this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
+          .then(annotation =>
+            annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+          );
+      }
+      // 内建属性(用户令 2026-10-21 内建属性单 ②):self.<属性> 单段访问
+      // (fullPath 无第二段,不与 self.cell.X 接收者调用重叠)命中分面表
+      // → 内建属性标注;未命中/非实体脚本落回普通 hover 链。
+      const selfAccess = getPythonSelfAccessAtPosition(
+        document.lineAt(position.line).text,
+        position.character
+      );
+      if (selfAccess && !selfAccess.fullPath.includes('.')) {
+        return this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
           .then(annotation =>
             annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
           );
@@ -544,6 +618,40 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     if (location.exposed) {
       markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
     }
+    return new vscode.Hover(markdown);
+  }
+
+  /**
+   * 内建属性标注(用户令 2026-10-21 内建属性单 ②④):self.<属性> 单段访问
+   * 命中分面属性表 → 「KBEngine 内建属性（<组件>面）·只读/可写 · 类型」。
+   * 组件面判定:目录域(与 collectAllPythonMethodHits 的 base/cell/client
+   * 目录闸同源)先行,判不出再问 def 归属(owner 文件段位);都判不出 =
+   * 非实体脚本 → 不接管;判为实体但 def 面歧义 → 只查宏公共 3。
+   * 面内未命中 → null(不遮蔽 def 属性/普通符号,落回普通 hover 链)。
+   */
+  private async resolveBuiltinPropertyAnnotation(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    attributeName: string
+  ): Promise<vscode.Hover | null> {
+    const pathFace = resolveEntityComponentFaceFromPath(document.fileName);
+    let defFaces: readonly EntityComponentFace[] | null = null;
+    if (!pathFace) {
+      try {
+        defFaces = await manager.getEntityComponentFacesForPythonFile(document.fileName);
+      } catch {
+        defFaces = null;
+      }
+    }
+    const hit = resolveEntityBuiltinPropertyHit(attributeName, pathFace, defFaces);
+    if (!hit) {
+      return null;
+    }
+    const markdown = new vscode.MarkdownString();
+    markdown.appendMarkdown(
+      `**self.${hit.property.name}** — ${formatEntityBuiltinPropertyDetail(hit.face, hit.property)}\n\n`
+    );
+    markdown.appendMarkdown(`引擎注册面: \`${hit.property.source}\``);
     return new vscode.Hover(markdown);
   }
 

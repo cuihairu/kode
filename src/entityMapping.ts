@@ -33,6 +33,7 @@ import {
   scriptFoldersForRole
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
+import type { EntityComponentFace } from './entityBuiltinProperties';
 
 export type EntityMethodSection = DefMethodSection;
 
@@ -1275,6 +1276,40 @@ export class EntityMappingManager {
       && line <= method.endLine
       && (line !== method.line || character >= method.character)
     ) || null;
+  }
+
+  /**
+   * 实体脚本的 def 归属面(用户令 2026-10-21 内建属性单 ④):owner 文件
+   * 段位映射 BaseMethods→baseapp / CellMethods→cellapp / ClientMethods→client,
+   * 去重返回。非实体脚本(无 .def 归属)→ null;面歧义由调用方
+   * (entityBuiltinProperties.resolveEntityBuiltinPropertyHit)降级为宏公共 3。
+   */
+  async getEntityComponentFacesForPythonFile(
+    pythonFile: string
+  ): Promise<EntityComponentFace[] | null> {
+    const index = await this.ensureIndexForPythonFile(pythonFile);
+    if (!index) {
+      return null;
+    }
+    const normalized = normalizeLookupPath(pythonFile);
+    const faces = new Set<EntityComponentFace>();
+    for (const owner of index.pythonOwnerFiles) {
+      if (normalizeLookupPath(owner.filePath) !== normalized) {
+        continue;
+      }
+      const face =
+        owner.section === 'BaseMethods'
+          ? 'baseapp'
+          : owner.section === 'CellMethods'
+            ? 'cellapp'
+            : owner.section === 'ClientMethods'
+              ? 'client'
+              : null;
+      if (face) {
+        faces.add(face);
+      }
+    }
+    return [...faces];
   }
 
   async getOutgoingPythonMethodCalls(

@@ -186,19 +186,20 @@ export function activate(context: vscode.ExtensionContext) {
   const isEntitiesXmlDocument = (document: vscode.TextDocument): boolean =>
     document.fileName.endsWith('entities.xml');
 
+  // 初始化实体映射管理器(用户令 2026-10-21 内建属性单:补全的 def 归属面
+  // 兜底也走 manager,故提到补全注册之前)
+  const entityMappingManager = new EntityMappingManager(context);
+
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全）
   const completionProvider = vscode.languages.registerCompletionItemProvider(
     [
       ...defDocumentSelector,
       ...pythonDocumentSelector
     ],
-    new KBEngineCompletionProvider(),
+    new KBEngineCompletionProvider(entityMappingManager),
     '<', ' ', '\t', '>', '/', ':', '.'
   );
   context.subscriptions.push(completionProvider);
-
-  // 初始化实体映射管理器
-  const entityMappingManager = new EntityMappingManager(context);
 
   // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档;
   // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
