@@ -63,6 +63,11 @@ describe('高亮注册面恒等锁(批103)', () => {
         scopeName: 'text.kbengine-types',
         path: './syntaxes/kbengine-types-injection.json',
         injectTo: ['text.xml']
+      },
+      {
+        scopeName: 'text.python-constants',
+        path: './syntaxes/python-constants-injection.json',
+        injectTo: ['source.python']
       }
     ]);
   });
@@ -108,11 +113,18 @@ describe('高亮注册面恒等锁(批103)', () => {
     for (const grammar of pkg.contributes.grammars) {
       expect(String(grammar.scopeName)).not.toBe('source.python');
       expect(String(grammar.scopeName)).not.toContain('injection');
-      // 注入仅限 text.xml(types.xml 语义着色,批130);注入任何其它
-      // 宿主(尤其 source.python)都会改变他人文件的着色行为——锁死
+      // 注入宿主白名单(2026-10-21 用户令演进): types.xml 语义着色(批130)
+      // 仅入 text.xml; 全局常量色(text.python-constants, 只发射
+      // variable.other.constant.python 标准 scope) 仅入 source.python——
+      // 除此二者外注入任何宿主仍锁死; 不得注册 source.python 重复语法、
+      // 不得映射 .py 语言(上两条保持不变)
       const injectTo = grammar.injectTo as string[] | undefined;
       if (injectTo !== undefined) {
-        expect(injectTo).toEqual(['text.xml']);
+        const allowed =
+          grammar.scopeName === 'text.python-constants'
+            ? ['source.python']
+            : ['text.xml'];
+        expect(injectTo).toEqual(allowed);
       }
     }
   });

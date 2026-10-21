@@ -84,7 +84,8 @@
       "name": "Numbers and Constants",
       "scope": [
         "constant.numeric",
-        "constant.language"
+        "constant.language",
+        "variable.other.constant"
       ],
       "settings": {
         "foreground": "#B5CEA8"

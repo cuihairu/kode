@@ -116,6 +116,13 @@
         "injectTo": [
           "text.xml"
         ]
+      },
+      {
+        "scopeName": "text.python-constants",
+        "path": "./syntaxes/python-constants-injection.json",
+        "injectTo": [
+          "source.python"
+        ]
       }
     ],
     "themes": [
