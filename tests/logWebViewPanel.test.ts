@@ -408,3 +408,38 @@ describe('LogViewerWebView exportLogs', () => {
     expect(messages.info).toEqual([]);
   });
 });
+
+describe('LogViewerWebView webview console messages', () => {
+  it('ingests leveled page messages through LogHub and streams them to the panel', () => {
+    const hub = new LogHub({ flushIntervalMs: 0 });
+    const webview = new LogViewerWebView(
+      { extensionUri: Uri.file('/ext/root') } as unknown as vscode.ExtensionContext,
+      fake.collector,
+      hub
+    );
+    webview.subscribeLogHub(hub);
+    webview.show();
+    const livePanel = currentPanel();
+
+    panelRegistry.fireMessage(livePanel, { command: 'webviewLog', level: 'debug', timestamp: 1, origin: 'page-a', text: 'page debug' });
+    panelRegistry.fireMessage(livePanel, { command: 'webviewLog', level: 'error', timestamp: 2, origin: 'page-a', text: 'page error' });
+    hub.flush();
+
+    expect(hub.getRetained().map(event => [event.source, event.component, event.level, event.origin])).toEqual([
+      ['webview', 'webview', 0, 'page-a'],
+      ['webview', 'webview', 3, 'page-a']
+    ]);
+    const appendedMessages = panelRegistry.panels.map(panel => panel.webview.postedMessages)
+      .flat()
+      .map(record => record.message)
+      .filter(message => (message as { command?: string }).command === 'appendLogs') as
+      Array<{ events: Array<{ text: string }> }>;
+    expect(appendedMessages.flatMap(message => message.events.map(event => event.text)))
+      .toEqual(['page debug', 'page error']);
+    hub.dispose();
+    webview.dispose();
+    panelRegistry.fireDispose(livePanel);
+    const switchedPanel = show();
+    expect(switchedPanel.webview.html).not.toContain('page error');
+  });
+});

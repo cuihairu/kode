@@ -10,7 +10,7 @@ export enum RuntimeLogLevel {
   CRITICAL = 4
 }
 
-export type LogSource = 'stdout' | 'stderr' | 'file' | 'process' | 'collector';
+export type LogSource = 'stdout' | 'stderr' | 'file' | 'process' | 'collector' | 'webview';
 
 export interface LogEvent {
   id: string;
@@ -31,6 +31,7 @@ export interface LogInput {
   level?: RuntimeLogLevel;
   origin?: string;
   line?: number;
+  timestamp?: number;
 }
 
 export interface LogBatch {
@@ -96,7 +97,7 @@ export class LogHub implements LogHubLike {
     const text = normalizeText(input.text);
     if (!text) return;
     const origin = input.origin ?? `${input.source}:${input.component}`;
-    const timestamp = Date.now();
+    const timestamp = input.timestamp ?? Date.now();
     const fingerprint = createHash('sha256').update(`${origin}\0${text}`).digest('hex');
     const recent = this.recentOrigins.get(fingerprint);
     const deduped = this.dedupeWindowMs > 0 && recent !== undefined &&

@@ -184,6 +184,7 @@ All four are "optional overrides": a configured value is honored as-is, an uncon
 | `kbengine.autoStart` | string[] | `["machine","logger","dbmgr"]` | Components brought up by a start without arguments. Legal values come from the component registry (`src/serverManager.ts`): `machine`, `logger`, `interfaces`, `dbmgr`, `baseappmgr`, `cellappmgr`, `loginapp`, `baseapp`, `cellapp`, `bots` |
 | `kbengine.loggerPort` | number | `20022` | Log collector connection port; must match the engine logger's listen port — a mismatch leaves the panel unconnected (it retries on an interval internally) |
 | `kbengine.logAutoConnect` | boolean | `true` | Try connecting to the logger once on activation; failure is silent and goes through reconnection |
+| `kbengine.webviewConsoleLogs` | boolean | `true` | Collect the log panel page's `console` output and uncaught exceptions into the same log stream |
 | `kbengine.maxLogEntries` | number | `10000` | Log WebView cache cap (entries). Lower it to save memory on heavy log volume; raise it to keep longer history |
 
 ### Remote Debugging
@@ -511,6 +512,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | `kbengine.autoStart` | Component name list, default `["machine","logger","dbmgr"]` | No (start strategy is a decision, not a fact) | **Keep**; the default is the official minimal runnable set |
 | `kbengine.loggerPort` | Fixed 20022 (the engine logger listen port) | No (a runtime network port leaves no workspace trace) | **Keep**; the default = the engine default port |
 | `kbengine.logAutoConnect` | Switch, default on | No | **Keep** |
+| `kbengine.webviewConsoleLogs` | Switch, default on | No | **Keep** (page diagnostics should arrive without an extra step) |
 | `kbengine.maxLogEntries` | Value 10000 | No | **Keep** (a memory/history trade-off preference) |
 | `kbengine.debug.remoteTargets` | Empty list; remote machine + port | No (remote infrastructure does not exist in the workspace) | **Keep**; default empty = don't configure if unused |
 | `kbengine.generator.generatePython` | Switch, default on | No | **Keep** |

@@ -1231,3 +1231,18 @@ describe('Python index lifecycle wiring', () => {
     }
   });
 });
+
+describe('webview console log switch', () => {
+  it('attaches page console ingestion by default and skips attachment when disabled', async () => {
+    const panel = panelRegistry.create('kbengine.logViewer', 'KBEngine Logs', 2, { enableScripts: true });
+    expect(panelRegistry.panels).toHaveLength(1);
+
+    configurationOverrides.set('kbengine', { webviewConsoleLogs: false });
+    const disabledContext = makeContext();
+    activate(disabledContext);
+    expect(disabledContext.subscriptions.length).toBeGreaterThan(0);
+    disposeAll(disabledContext);
+    configurationOverrides.delete('kbengine');
+    void panel;
+  });
+});

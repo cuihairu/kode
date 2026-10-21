@@ -753,6 +753,11 @@
           "default": true,
           "description": "启动服务器时自动连接日志收集器"
         },
+        "kbengine.webviewConsoleLogs": {
+          "type": "boolean",
+          "default": true,
+          "description": "采集日志面板页面 console 与未捕获异常并写入日志面板"
+        },
         "kbengine.maxLogEntries": {
           "type": "number",
           "default": 10000,

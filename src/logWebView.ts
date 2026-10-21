@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { LogEntry, LogParser, LogLevel } from './logParser';
 import { KBEngineLogCollector } from './logCollector';
 import { LogEvent, LogHub, RuntimeLogLevel } from './logHub';
+import { getWebviewConsoleScript, WEBVIEW_LOG_COMMAND, WebviewLogMessage } from './webviewConsoleBridge';
 
 /**
  * 日志过滤器配置
@@ -25,6 +26,7 @@ export class LogViewerWebView {
   private panel: vscode.WebviewPanel | null = null;
   private currentLogs: Array<LogEntry | LogEvent> = [];
   private logSubscription?: () => void;
+  private logHub?: LogHub;
   private readonly displayedLimit = 5000;
   private filter: LogFilter = {
     levels: [],
@@ -35,8 +37,10 @@ export class LogViewerWebView {
 
   constructor(
     private context: vscode.ExtensionContext,
-    private collector: KBEngineLogCollector
+    private collector: KBEngineLogCollector,
+    logHub?: LogHub
   ) {
+    this.logHub = logHub;
     // 监听日志事件
     collector.onLogEntry(entry => {
       this.currentLogs.push(entry);
@@ -62,6 +66,10 @@ export class LogViewerWebView {
         displayLimit: this.displayedLimit
       });
     });
+  }
+
+  attachLogHub(hub: LogHub): void {
+    this.logHub = hub;
   }
 
   /**
@@ -189,6 +197,9 @@ export class LogViewerWebView {
       case 'disconnect':
         this.collector.disconnect();
         break;
+      case WEBVIEW_LOG_COMMAND:
+        this.logWebviewMessage(message as WebviewLogMessage);
+        break;
     }
   }
 
@@ -199,6 +210,27 @@ export class LogViewerWebView {
       const message = error instanceof Error ? error.message : String(error);
       vscode.window.showErrorMessage(`日志连接不可用: ${message}`);
     }
+  }
+
+  private logWebviewMessage(message: WebviewLogMessage): void {
+    const text = typeof message.text === 'string' ? message.text : String(message.text);
+    if (!text.trim()) return;
+    const timestamp = Number.isFinite(message.timestamp) ? message.timestamp : Date.now();
+    const origin = typeof message.origin === 'string' && message.origin ? message.origin : 'webview:page';
+    const levelByMessage: Record<WebviewLogMessage['level'], RuntimeLogLevel> = {
+      debug: RuntimeLogLevel.DEBUG,
+      info: RuntimeLogLevel.INFO,
+      warning: RuntimeLogLevel.WARNING,
+      error: RuntimeLogLevel.ERROR
+    };
+    this.logHub?.ingest({
+      source: 'webview',
+      component: 'webview',
+      text,
+      level: levelByMessage[message.level] ?? RuntimeLogLevel.INFO,
+      origin,
+      timestamp
+    });
   }
 
   /**
@@ -418,6 +450,7 @@ export class LogViewerWebView {
 
   <script>
     const vscode = acquireVsCodeApi();
+    ${getWebviewConsoleScript({ throttle: true })}
 
     // 搜索
     document.getElementById('search').addEventListener('input', (e) => {

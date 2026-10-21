@@ -912,6 +912,11 @@ export function activate(context: vscode.ExtensionContext) {
   const logHub = serverManager.logHub;
   logViewer.subscribeLogHub(logHub);
 
+  const enableWebviewConsoleLogs = kbengineConfig.get<boolean>('webviewConsoleLogs', true);
+  if (enableWebviewConsoleLogs) {
+    logViewer.attachLogHub(logHub);
+  }
+
   // 注册日志相关命令
   const showLogViewerCommand = vscode.commands.registerCommand(
     'kbengine.logs.showViewer',

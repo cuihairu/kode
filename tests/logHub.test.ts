@@ -81,3 +81,21 @@ describe('LogHub subscriber contract', () => {
     hub.dispose();
   });
 });
+
+describe('LogHub webview source', () => {
+  it('deduplicates webview events by origin and preserves the client timestamp', () => {
+    const hub = new LogHub({ flushIntervalMs: 5, dedupeWindowMs: 1000 });
+    const timestamp = Date.parse('2026-10-22T00:00:00Z');
+    const input = { source: 'webview' as const, component: 'webview', origin: 'page-a', text: 'same', timestamp };
+    hub.ingest(input);
+    hub.ingest(input);
+    hub.ingest({ ...input, origin: 'page-b' });
+    hub.flush();
+
+    expect(hub.getRetained()).toEqual([
+      expect.objectContaining({ source: 'webview', origin: 'page-a', duplicateCount: 2, timestamp }),
+      expect.objectContaining({ source: 'webview', origin: 'page-b', duplicateCount: 1, timestamp })
+    ]);
+    hub.dispose();
+  });
+});
