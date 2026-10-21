@@ -58,8 +58,16 @@ const flagAlternationOf = (): string[] => {
 
 describe('kbengine.tmLanguage 资产自洽', () => {
   it('package.json 贡献与语法文件一一对应且配置文件存在', () => {
-    // 两条:def 主语法(批103 前唯一)+ types.xml 注入语法(批130 起)
-    expect(pkg.contributes.grammars).toHaveLength(2);
+    // 三条:def 主语法(批103 前唯一)+ types.xml 注入语法(批130 起)+
+    // 全局常量注入(2026-10-21 用户令, text.python-constants -> source.python)
+    expect(pkg.contributes.grammars).toHaveLength(3);
+    const constEntry = pkg.contributes.grammars[2];
+    expect(constEntry.language).toBeUndefined();
+    expect(constEntry.scopeName).toBe('text.python-constants');
+    expect(constEntry.injectTo).toEqual(['source.python']);
+    const constPath = path.join(root, constEntry.path.replace(/^\.\//, ''));
+    expect(constPath).toBe(path.join(root, 'syntaxes', 'python-constants-injection.json'));
+    expect(() => JSON.parse(fs.readFileSync(constPath, 'utf8'))).not.toThrow();
     const entry = pkg.contributes.grammars[0];
     expect(entry.language).toBe('kbengine-def');
     expect(entry.scopeName).toBe(grammarJson.scopeName);
