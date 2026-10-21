@@ -108,9 +108,11 @@ import {
 } from './pythonTypeStubs';
 import {
   formatEntityBuiltinPropertyDetail,
+  formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace,
   resolveEntityBuiltinPropertyHit,
   resolveEntityComponentFaceFromPath,
+  collectEntityBuiltinPropertyInlayTargets,
   type EntityComponentFace
 } from './entityBuiltinProperties';
 import {
@@ -158,10 +160,14 @@ function getLanguageFeatureConfig() {
     codeLensProperty: config.get<boolean>('codeLens.property', true),
     codeLensTypesXml: config.get<boolean>('codeLens.typesXml', true),
     // 实体脚本新功能各一枚独立开关(用户令 2026-10-21:新功能都要配置开关,
-    // 默认开)。builtinProperties 管内建属性 hover+self. 补全;receiverSections
-    // 管接收者段过滤(false 回归不感知段的旧解析,形参/类型闸门不受影响)。
+    // 默认开)。builtinProperties 管内建属性 hover+self. 补全(内建属性相关
+    // 面的总闸,行内 inlay 也先过它);receiverSections 管接收者段过滤
+    // (false 回归不感知段的旧解析,形参/类型闸门不受影响);
+    // python.builtinTypeInlayHints 管内建属性行内 `: <type>` inlay(总闸与
+    // 本键双控,false 即不给提示;provider 每次现读,下一次渲染即生效)。
     entityBuiltinProperties: config.get<boolean>('entity.builtinProperties', true),
-    entityReceiverSections: config.get<boolean>('entity.receiverSections', true)
+    entityReceiverSections: config.get<boolean>('entity.receiverSections', true),
+    entityBuiltinTypeInlayHints: config.get<boolean>('python.builtinTypeInlayHints', true)
   };
 }
 
@@ -484,16 +490,70 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
   }
 }
 
-/** 面属性 → 补全项(detail 与 hover 同一句标注,documentation 带引擎注册面取证) */
+/** 面属性 → 补全项(label 右列灰字类型(Pylance 同款),detail 面与读写短句,documentation 带引擎注册面取证) */
 function createBuiltinPropertyCompletionItems(
   face: EntityComponentFace | null
 ): vscode.CompletionItem[] {
   return getEntityBuiltinPropertiesForFace(face).map(property => {
-    const item = new vscode.CompletionItem(property.name, vscode.CompletionItemKind.Property);
+    // label 用 CompletionItemLabel 形态:名称旁右列灰字类型(用户令 2026-10-21
+    // 形态升级单 ②),detail 保留读写/面短句(单一 formatter,与 hover 同源)
+    const item = new vscode.CompletionItem(
+      { label: property.name, description: property.type },
+      vscode.CompletionItemKind.Property
+    );
     item.detail = formatEntityBuiltinPropertyDetail(face, property);
     item.documentation = new vscode.MarkdownString(`引擎注册面: \`${property.source}\``);
     return item;
   });
+}
+
+/**
+ * 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):实体脚本内单段
+ * `self.<内建属性>` 访问处在其 range 之后渲染 `: <type>` 右对齐提示
+ * (kind=Type);面判定与命中集合和 hover 同一底座
+ * (resolveEntityComponentFaceFromPath / getEntityComponentFacesForPythonFile /
+ * resolveEntityBuiltinPropertyHit)。开关 kbengine.python.builtinTypeInlayHints
+ * (默认开)且受总闸 kbengine.entity.builtinProperties 双控,false 即不给
+ * 提示;provider 每次现读配置,下一次渲染即生效(inlay 无变更事件可 fire)。
+ */
+export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsProvider {
+  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+
+  async provideInlayHints(
+    document: vscode.TextDocument,
+    range: vscode.Range
+  ): Promise<vscode.InlayHint[]> {
+    const featureConfig = getLanguageFeatureConfig();
+    if (!featureConfig.entityBuiltinProperties || !featureConfig.entityBuiltinTypeInlayHints) {
+      return [];
+    }
+    const pathFace = resolveEntityComponentFaceFromPath(document.fileName);
+    let defFaces: readonly EntityComponentFace[] | null = null;
+    if (!pathFace) {
+      if (!this.entityMappingManager) {
+        return [];
+      }
+      try {
+        defFaces = await this.entityMappingManager.getEntityComponentFacesForPythonFile(
+          document.fileName
+        );
+      } catch {
+        defFaces = null;
+      }
+    }
+    const lines = document.getText().split(/\r?\n/);
+    return collectEntityBuiltinPropertyInlayTargets(lines, pathFace, defFaces)
+      // inlay 按可视区要:视图口外的访问行不出 hint(批154 同口径)
+      .filter(target => target.line >= range.start.line && target.line <= range.end.line)
+      .map(
+        target =>
+          new vscode.InlayHint(
+            new vscode.Position(target.line, target.endCharacter),
+            `: ${target.property.type}`,
+            vscode.InlayHintKind.Type
+          )
+      );
+  }
 }
 
 export class KBEngineHoverProvider implements vscode.HoverProvider {
@@ -694,8 +754,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       return null;
     }
     const markdown = new vscode.MarkdownString();
+    // 首行紧凑形态(用户令 2026-10-21 形态升级单 ①):类型紧跟属性名冒号后
+    // (**self.databaseID: int** — baseapp面 · 只读),详情段走单一 formatter
     markdown.appendMarkdown(
-      `**self.${hit.property.name}** — ${formatEntityBuiltinPropertyDetail(hit.face, hit.property)}\n\n`
+      `${formatEntityBuiltinPropertyHeadline(hit.property.name, hit.face, hit.property)}\n\n`
     );
     markdown.appendMarkdown(`引擎注册面: \`${hit.property.source}\``);
     return new vscode.Hover(markdown);

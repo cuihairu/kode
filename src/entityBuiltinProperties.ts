@@ -151,11 +151,71 @@ export function resolveEntityBuiltinPropertyHit(
   return property ? { face, property } : null;
 }
 
-/** 悬停/补全共用的单行标注:「KBEngine 内建属性（<组件>面）·只读/可写 · 类型」 */
+/**
+ * 单一详情 formatter(用户令 2026-10-21 形态升级单 ①):hover 首行与补全
+ * detail 共用同一段「面 · 读写」短句,避免两处口径漂移;类型段由调用方按
+ * 用途取用(hover 拼进 `**self.<名>: <type>**`,补全放 label 右列 description)。
+ */
 export function formatEntityBuiltinPropertyDetail(
   face: EntityComponentFace | null,
   property: EntityBuiltinProperty
 ): string {
   const faceLabel = face ?? '公共';
-  return `KBEngine 内建属性（${faceLabel}面）·${property.readonly ? '只读' : '可写'} · ${property.type}`;
+  return `${faceLabel}面 · ${property.readonly ? '只读' : '可写'}`;
+}
+
+/** 名称+类型一体段(hover 首行):`**self.<name>: <type>** — <面>面 · 只读/可写` */
+export function formatEntityBuiltinPropertyHeadline(
+  name: string,
+  face: EntityComponentFace | null,
+  property: EntityBuiltinProperty
+): string {
+  return `**self.${name}: ${property.type}** — ${formatEntityBuiltinPropertyDetail(face, property)}`;
+}
+
+/** 行内 inlay 目标:一行内单段 `self.<内建属性>` 访问(hit 解析结果+区间) */
+export interface EntityBuiltinPropertyInlayTarget {
+  /** 行号(0 基) */
+  line: number;
+  /** 属性名段起点(0 基) */
+  character: number;
+  /** 属性名段终点(0 基,exclusive;inlay 挂其后) */
+  endCharacter: number;
+  /** 生效面(null = 宏公共 3 域) */
+  face: EntityComponentFace | null;
+  property: EntityBuiltinProperty;
+}
+
+/**
+ * 内联类型提示目标收集(形态升级单 ③):逐行扫单段 `self.<属性>`(与 hover
+ * 同闸:fullPath 无第二段,`self.cell.X` 等多段不接管),命中集合与 hover
+ * 同源(resolveEntityBuiltinPropertyHit)。
+ */
+export function collectEntityBuiltinPropertyInlayTargets(
+  lines: readonly string[],
+  pathFace: EntityComponentFace | null,
+  defFaces: readonly EntityComponentFace[] | null
+): EntityBuiltinPropertyInlayTarget[] {
+  const targets: EntityBuiltinPropertyInlayTarget[] = [];
+  const pattern = /\bself\.(\w+)(?![\w.])/g;
+  for (let line = 0; line < lines.length; line += 1) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(lines[line])) !== null) {
+      const attributeName = match[1];
+      const hit = resolveEntityBuiltinPropertyHit(attributeName, pathFace, defFaces);
+      if (!hit) {
+        continue;
+      }
+      const nameStart = match.index + match[0].length - attributeName.length;
+      targets.push({
+        line,
+        character: nameStart,
+        endCharacter: nameStart + attributeName.length,
+        face: hit.face,
+        property: hit.property
+      });
+    }
+  }
+  return targets;
 }

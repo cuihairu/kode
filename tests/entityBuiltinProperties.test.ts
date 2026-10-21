@@ -3,15 +3,31 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
-import { KBEngineCompletionProvider, KBEngineHoverProvider } from '../src/languageProviders';
+import {
+  KBEngineBuiltinTypeInlayHintsProvider,
+  KBEngineCompletionProvider,
+  KBEngineHoverProvider
+} from '../src/languageProviders';
 import {
   ENTITY_BUILTIN_COMMON_PROPERTIES,
+  collectEntityBuiltinPropertyInlayTargets,
   formatEntityBuiltinPropertyDetail,
+  formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace,
   resolveEntityBuiltinPropertyHit,
   resolveEntityComponentFaceFromPath
 } from '../src/entityBuiltinProperties';
-import { CompletionItemKind, Position, Uri, makeTextDocument, workspace } from './helpers/vscodeStub';
+import {
+  CompletionItemKind,
+  InlayHint,
+  InlayHintKind,
+  Position,
+  Range,
+  Uri,
+  configurationOverrides,
+  makeTextDocument,
+  workspace
+} from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // Entity 内建属性提示(用户令 2026-10-21,报告 §4):三面分册属性表 +
@@ -130,22 +146,35 @@ describe('分册属性表(纯逻辑)', () => {
     expect(resolveEntityBuiltinPropertyHit('position', null, ['baseapp', 'cellapp'])).toBeNull();
   });
 
-  it('标注格式:「KBEngine 内建属性（<组件>面）·只读/可写 · 类型」;判不出面标公共面', () => {
+  it('详情段单一 formatter:「<组件>面 · 只读/可写」;判不出面标公共面', () => {
     expect(
       formatEntityBuiltinPropertyDetail('cellapp', {
         name: 'position', readonly: false, type: 'Vector3Like', source: 'x'
       })
-    ).toBe('KBEngine 内建属性（cellapp面）·可写 · Vector3Like');
+    ).toBe('cellapp面 · 可写');
     expect(
       formatEntityBuiltinPropertyDetail('baseapp', {
         name: 'databaseID', readonly: true, type: 'int', source: 'x'
       })
-    ).toBe('KBEngine 内建属性（baseapp面）·只读 · int');
+    ).toBe('baseapp面 · 只读');
     expect(
       formatEntityBuiltinPropertyDetail(null, {
         name: 'id', readonly: true, type: 'int', source: 'x'
       })
-    ).toBe('KBEngine 内建属性（公共面）·只读 · int');
+    ).toBe('公共面 · 只读');
+  });
+
+  it('首行紧凑形态:「**self.<名>: <type>** — <面>面 · 只读/可写」(详情段同源)', () => {
+    expect(
+      formatEntityBuiltinPropertyHeadline('databaseID', 'baseapp', {
+        name: 'databaseID', readonly: true, type: 'int', source: 'x'
+      })
+    ).toBe('**self.databaseID: int** — baseapp面 · 只读');
+    expect(
+      formatEntityBuiltinPropertyHeadline('position', 'cellapp', {
+        name: 'position', readonly: false, type: 'Vector3Like', source: 'x'
+      })
+    ).toBe('**self.position: Vector3Like** — cellapp面 · 可写');
   });
 });
 
@@ -216,8 +245,7 @@ describe('Hover 接线(目录域判面)', () => {
     const text = hoverText(
       await Promise.resolve(provider.provideHover(doc, new Position(2, '        self.'.length)))
     );
-    expect(text).toContain('self.position');
-    expect(text).toContain('KBEngine 内建属性（cellapp面）·可写 · Vector3Like');
+    expect(text).toContain('**self.position: Vector3Like** — cellapp面 · 可写');
     expect(text).toContain('server/cellapp/entity.cpp:83');
   });
 
@@ -240,7 +268,7 @@ describe('Hover 接线(目录域判面)', () => {
     const text = hoverText(
       await Promise.resolve(provider.provideHover(doc, new Position(2, '        print(self.'.length)))
     );
-    expect(text).toContain('KBEngine 内建属性（baseapp面）·只读 · int');
+    expect(text).toContain('**self.databaseID: int** — baseapp面 · 只读');
   });
 
   it('多段访问 self.cell.X → 走接收者链,不落内建属性标注', async () => {
@@ -268,20 +296,22 @@ describe('Hover 接线(目录域判面)', () => {
 describe('补全接线', () => {
   const provider = new KBEngineCompletionProvider(makeManager());
 
-  it('cell 脚本 self. → cellapp 面属性;无 databaseID;detail 带面与读写', () => {
+  it('cell 脚本 self. → cellapp 面属性;无 databaseID;label 右列类型 + detail 面读写', () => {
     const doc = pyDoc(
       'class Avatar:\n    def tick(self):\n        self.\n',
       '/proj/scripts/cell/Avatar.py'
     );
     const items = provider.provideCompletionItems(doc, new Position(2, '        self.'.length));
     expect(Array.isArray(items)).toBe(true);
-    const list = items as Array<{ label: string; detail?: string; kind?: number }>;
-    const labels = list.map(item => item.label);
+    const list = items as Array<{ label: { label: string; description?: string }; detail?: string; kind?: number }>;
+    const labels = list.map(item => item.label.label);
     expect(labels).toContain('position');
     expect(labels).toContain('volatileInfo');
     expect(labels).not.toContain('databaseID');
-    const position = list.find(item => item.label === 'position');
-    expect(position?.detail).toBe('KBEngine 内建属性（cellapp面）·可写 · Vector3Like');
+    const position = list.find(item => item.label.label === 'position');
+    // Pylance 同款:名称旁右列灰字类型(label.description)
+    expect(position?.label.description).toBe('Vector3Like');
+    expect(position?.detail).toBe('cellapp面 · 可写');
     expect(position?.kind).toBe(CompletionItemKind.Property);
   });
 
@@ -291,7 +321,7 @@ describe('补全接线', () => {
       '/proj/scripts/cell/Avatar.py'
     );
     const items = provider.provideCompletionItems(doc, new Position(2, '        self.pos'.length));
-    const labels = (items as Array<{ label: string }>).map(item => item.label);
+    const labels = (items as Array<{ label: { label: string } }>).map(item => item.label.label);
     expect(labels).toContain('position');
   });
 
@@ -313,5 +343,140 @@ describe('补全接线', () => {
     expect(
       bare.provideCompletionItems(doc, new Position(2, '        self.'.length))
     ).toEqual([]);
+  });
+});
+
+describe('行内类型提示(内建属性 inlay)', () => {
+  interface HintLike {
+    position: { line: number; character: number };
+    label: unknown;
+    kind?: unknown;
+  }
+
+  const lineRange = (startLine: number, endLine: number): Range =>
+    new Range(new Position(startLine, 0), new Position(endLine, 0));
+
+  const hintsOf = async (
+    provider: KBEngineBuiltinTypeInlayHintsProvider,
+    text: string,
+    fileName: string,
+    range = lineRange(0, 99)
+  ): Promise<HintLike[]> =>
+    (await provider.provideInlayHints(pyDoc(text, fileName) as never, range)) as unknown as HintLike[];
+
+  it('命中:base 脚本 self.databaseID → 行尾 `: int`(kind=Type)', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(makeManager());
+    const hints = await hintsOf(
+      provider,
+      'class Avatar:\n    def tick(self):\n        print(self.databaseID)\n',
+      '/proj/scripts/base/Avatar.py'
+    );
+    expect(hints).toHaveLength(1);
+    // `        print(self.` 14 字符 + `self.` 5 = 属性段起点 19,终点 19+10
+    expect(hints[0].position).toEqual({ line: 2, character: 29 });
+    expect(hints[0].label).toBe(': int');
+    expect(hints[0].kind).toBe(InlayHintKind.Type);
+    expect(hints[0]).toBeInstanceOf(InlayHint);
+  });
+
+  it('未命中:非实体脚本不接管(无 manager 且无目录域 → 空表)', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider();
+    const hints = await hintsOf(
+      provider,
+      'class Helper:\n    def run(self):\n        self.position = None\n',
+      '/proj/scripts/helper.py'
+    );
+    expect(hints).toEqual([]);
+  });
+
+  it('面外:cell 脚本 self.databaseID 不在 cellapp 面 → 不给提示', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(makeManager());
+    const hints = await hintsOf(
+      provider,
+      'class Avatar:\n    def tick(self):\n        self.databaseID = 1\n',
+      '/proj/scripts/cell/Avatar.py'
+    );
+    expect(hints).toEqual([]);
+  });
+
+  it('多段访问 self.cell.reborn → 不给提示(与 hover 同闸,只认单段)', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(makeManager());
+    const hints = await hintsOf(
+      provider,
+      'class Avatar:\n    def tick(self):\n        self.cell.reborn(1)\n',
+      '/proj/scripts/cell/Avatar.py'
+    );
+    expect(hints).toEqual([]);
+  });
+
+  it('视图口外(range 外)的访问行不出提示', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(makeManager());
+    const hints = await hintsOf(
+      provider,
+      'class Avatar:\n    def a(self):\n        self.databaseID = 1\n\n    def b(self):\n        self.id = 2\n',
+      '/proj/scripts/base/Avatar.py',
+      lineRange(4, 5)
+    );
+    expect(hints.map(hint => hint.position.line)).toEqual([5]);
+  });
+
+  it('目录域判不出的脚本走 def 归属(manager 假例注入单面)', async () => {
+    const manager = {
+      getEntityComponentFacesForPythonFile: (file: string) => {
+        expect(file).toBe('/proj/scripts/flat/Avatar.py');
+        return Promise.resolve(['baseapp']);
+      }
+    } as unknown as EntityMappingManager;
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(manager);
+    const hints = await hintsOf(
+      provider,
+      'class Avatar:\n    def tick(self):\n        self.databaseID = 1\n',
+      '/proj/scripts/flat/Avatar.py'
+    );
+    expect(hints).toHaveLength(1);
+    expect(hints[0].label).toBe(': int');
+  });
+
+  it('开关双控:python.builtinTypeInlayHints=false 或总闸 false → 都不给提示', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(makeManager());
+    const text = 'class Avatar:\n    def tick(self):\n        self.databaseID = 1\n';
+    const fileName = '/proj/scripts/base/Avatar.py';
+    // 正对照:默认(双开)出提示
+    expect(await hintsOf(provider, text, fileName)).toHaveLength(1);
+
+    configurationOverrides.set('kbengine', { 'python.builtinTypeInlayHints': false });
+    try {
+      expect(await hintsOf(provider, text, fileName)).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
+    configurationOverrides.set('kbengine', { 'entity.builtinProperties': false });
+    try {
+      expect(await hintsOf(provider, text, fileName)).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
+  });
+
+  it('纯收集器:单段命中集合与 hover 同源,多段/面外不进目标', () => {
+    const lines = [
+      'class Avatar:',
+      '    def tick(self):',
+      '        self.position = (1, 2, 3)',
+      '        self.cell.reborn(1)',
+      '        self.databaseID = 1',
+      '        print(self.id)'
+    ].join('\n').split('\n');
+    const targets = collectEntityBuiltinPropertyInlayTargets(lines, 'cellapp', null);
+    expect(targets.map(target => target.property.name)).toEqual(['position', 'id']);
+    expect(targets[0]).toMatchObject({
+      line: 2,
+      character: 13,
+      endCharacter: 13 + 'position'.length,
+      face: 'cellapp'
+    });
+    // 面歧义(null 面)只查宏公共 3:id 命中,position 不命中
+    const common = collectEntityBuiltinPropertyInlayTargets(lines, null, ['baseapp', 'cellapp']);
+    expect(common.map(target => target.property.name)).toEqual(['id']);
   });
 });

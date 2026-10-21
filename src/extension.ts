@@ -67,6 +67,7 @@ import {
   EventCodeLensProvider,
   KBEngineDefinitionProvider,
   KBEngineHoverProvider,
+  KBEngineBuiltinTypeInlayHintsProvider,
   KBEngineRenameProvider,
   PythonCompletionProvider,
   PythonDefinitionProvider,
@@ -331,6 +332,16 @@ export function activate(context: vscode.ExtensionContext) {
     new PythonTypeInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(typeInlayHintsProvider);
+
+  // 内建属性行内类型提示(用户令 2026-10-21 形态升级单 ③):self.<内建属性>
+  // 访问处 `: <type>` inlay,与 hover 同一命中底座;独立开关
+  // kbengine.python.builtinTypeInlayHints(默认开)且受总闸
+  // kbengine.entity.builtinProperties 双控,provider 现读配置下一次渲染即生效
+  const builtinTypeInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new KBEngineBuiltinTypeInlayHintsProvider(entityMappingManager)
+  );
+  context.subscriptions.push(builtinTypeInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [

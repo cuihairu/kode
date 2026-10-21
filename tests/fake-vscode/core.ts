@@ -178,10 +178,18 @@ export enum CompletionItemKind {
   Constant = 20
 }
 
+export interface CompletionItemLabel {
+  label: string;
+  description?: string;
+  detail?: string;
+}
+
 export class CompletionItem {
   detail?: string;
   documentation?: string | MarkdownString;
-  constructor(public label: string, public kind?: CompletionItemKind) {}
+  // 真实 vscode API 第二参兼收 string | CompletionItemLabel(批形升级单:
+  // 内建属性补全 label 右列灰字类型传对象形态)
+  constructor(public label: string | CompletionItemLabel, public kind?: CompletionItemKind) {}
 }
 
 export class MarkdownString {

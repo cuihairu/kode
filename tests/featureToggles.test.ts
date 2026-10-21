@@ -45,10 +45,11 @@ describe('package.json 开关注册(默认值断言)', () => {
     'kbengine.entity.receiverSections',
     'kbengine.python.stubEngineTypings',
     'kbengine.python.entityStubMethods',
+    'kbengine.python.builtinTypeInlayHints',
     'kbengine.types.aliasDiscovery'
   ];
 
-  it('五枚键逐项注册:boolean、default true、description 标明默认开', () => {
+  it('六枚键逐项注册:boolean、default true、description 标明默认开', () => {
     for (const key of expectedKeys) {
       const entry = properties[key];
       expect(entry, key).toBeDefined();
@@ -84,8 +85,8 @@ describe('kbengine.entity.builtinProperties(内建属性 hover+self. 补全)', (
     const items = completion.provideCompletionItems(
       completionDoc,
       new Position(2, '        self.'.length)
-    ) as Array<{ label: string }>;
-    expect(items.map(item => item.label)).toContain('position');
+    ) as Array<{ label: { label: string } }>;
+    expect(items.map(item => item.label.label)).toContain('position');
 
     const hoverDoc = pyDoc(
       'class Avatar:\n    def tick(self):\n        self.position = (1, 2, 3)\n',
@@ -94,7 +95,7 @@ describe('kbengine.entity.builtinProperties(内建属性 hover+self. 补全)', (
     const text = hoverText(
       await Promise.resolve(hover.provideHover(hoverDoc, new Position(2, '        self.'.length)))
     );
-    expect(text).toContain('内建属性');
+    expect(text).toContain('**self.position: Vector3Like** — cellapp面 · 可写');
   });
 
   it('false:补全空表不接管、hover 落回普通链(无内建属性标注)', async () => {
@@ -115,7 +116,7 @@ describe('kbengine.entity.builtinProperties(内建属性 hover+self. 补全)', (
     const text = hoverText(
       await Promise.resolve(hover.provideHover(hoverDoc, new Position(2, '        self.'.length)))
     );
-    expect(text).not.toContain('内建属性');
+    expect(text).not.toContain('**self.position: Vector3Like**');
   });
 });
 

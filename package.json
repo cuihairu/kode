@@ -926,6 +926,11 @@
           "default": true,
           "description": "Include the def method surface (Base/Cell/ClientMethods) in generated entity_types.pyi stubs (default: enabled); disabled keeps the properties-only stub surface"
         },
+        "kbengine.python.builtinTypeInlayHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Inline `: <type>` hints after `self.<builtin property>` accesses in entity scripts (default: enabled); double-gated by kbengine.entity.builtinProperties (master switch) and this key, disabled renders no builtin-property inlay hints"
+        },
         "kbengine.types.aliasDiscovery": {
           "type": "boolean",
           "default": true,
