@@ -537,3 +537,11 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
 
   return results.sort((left, right) => left.filePath.localeCompare(right.filePath));
 }
+
+export function getTagNameRangeForGraph(
+  text: string,
+  element: DefElementNode,
+  part: 'open' | 'close'
+): { start: number; end: number } | null {
+  return getTagNameRange(text, element, part);
+}
