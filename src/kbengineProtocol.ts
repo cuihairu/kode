@@ -52,6 +52,9 @@ export const MACHINE_MSG_QUERY_ALL_INTERFACES = 4;
 // 引擎侧依据:CONSOLE_WATCHERCB_MSGID = 65502(kbe/src/lib/helper/console_helper.h);
 // KBE_MACHINE_BROADCAST_SEND_PORT = KBE_PORT_START + 86(kbe/src/lib/network/common.h)。
 export const CONSOLE_WATCHER_CB_MSG_ID = 65502;
+export const CONSOLE_PROFILE_CB_MSG_ID = 65503;
+// kbe/res/server/messages_fixed_defaults.xml:<Cellappmgr::querySpaces><id>50003</id>
+export const CELLAPPMGR_QUERY_SPACES_MSG_ID = 50003;
 export const MACHINE_BROADCAST_PORT = 20086;
 
 // 与引擎 COMPONENT_TYPE 枚举(kbe/src/lib/common/common.h)逐值对齐:
@@ -84,6 +87,87 @@ const WATCHER_QUERY_MSG_IDS: Record<number, number> = {
   10: 41008,
   13: 41007
 };
+
+const PROFILE_REQUEST_MSG_IDS: Record<number, number> = {
+  1: 51001,
+  2: 51004,
+  3: 51001,
+  4: 51003,
+  5: 51002,
+  6: 51001,
+  7: 51005,
+  8: 51006,
+  10: 51008,
+  11: 51007,
+  12: 51009
+};
+
+export type ProfileResultKind = 'pyprofile' | 'cprofile' | 'eventprofile' | 'networkprofile';
+
+export interface CProfileRow {
+  name: string;
+  count: number;
+  lastTime: number;
+  totalTime: number;
+  lastInclusiveTime: number;
+  totalInclusiveTime: number;
+}
+
+export interface NetworkProfileRow {
+  name: string;
+  sendCount: number;
+  sendSize: number;
+  sendAverageSize: number;
+  totalSendCount: number;
+  totalSendSize: number;
+  recvCount: number;
+  recvSize: number;
+  recvAverageSize: number;
+  totalRecvCount: number;
+  totalRecvSize: number;
+}
+
+export interface EventProfileGroup {
+  typeName: string;
+  events: Array<{ name: string; count: number; size: number }>;
+}
+
+export interface ProfileQueryResult {
+  kind: ProfileResultKind;
+  componentType: number;
+  componentID: bigint;
+  timingLength: number;
+  text?: string;
+  rows?: CProfileRow[] | NetworkProfileRow[];
+  events?: EventProfileGroup[];
+}
+
+export interface SpaceCell {
+  cellappID: bigint;
+  cellID: number;
+}
+
+export interface SpaceSnapshot {
+  componentType: number;
+  componentID: bigint;
+  cellappID: bigint;
+  spaceID: number;
+  geomappingPath: string;
+  scriptModuleName: string;
+  cells: number[];
+}
+
+export interface SpaceQueryResult {
+  componentType: number;
+  componentID: bigint;
+  spaces: SpaceSnapshot[];
+}
+
+export interface ProfileStartOptions {
+  profileName: string;
+  kind: ProfileResultKind;
+  timingLengthSeconds: number;
+}
 
 const WATCHER_VALUE_TYPE_UINT8 = 1;
 const WATCHER_VALUE_TYPE_UINT16 = 2;
@@ -503,6 +587,113 @@ export function buildWatcherDirFrameBody(rootPath: string, keys: string[]): Buff
   return Buffer.concat([Buffer.from([1]), buildCString(rootPath), ...keys.map(key => buildCString(key))]);
 }
 
+export function buildProfileRequestBody(options: ProfileStartOptions): Buffer {
+  const profileKind = { pyprofile: 0, cprofile: 1, eventprofile: 2, networkprofile: 3 }[options.kind];
+  const timingLength = Buffer.alloc(4);
+  timingLength.writeUInt32LE(options.timingLengthSeconds, 0);
+  return Buffer.concat([buildCString(options.profileName), Buffer.from([profileKind]), timingLength]);
+}
+
+export function parseProfileFrame(body: Buffer, component: KBEngineComponentInfo): ProfileQueryResult {
+  const reader = new BufferCursor(body);
+  const resultKind = reader.readInt8();
+  let timingLength = 0;
+  const base = {
+    componentType: component.componentType,
+    componentID: component.componentID
+  };
+
+  if (resultKind === 0) {
+    timingLength = reader.readUInt32();
+    return { ...base, kind: 'pyprofile', timingLength, text: reader.readCString() };
+  }
+  if (resultKind === 2) {
+    timingLength = reader.readUInt32();
+    const groups: EventProfileGroup[] = [];
+    const count = reader.readUInt32();
+    for (let groupIndex = 0; groupIndex < count && !reader.eof(); groupIndex += 1) {
+      const typeName = reader.readCString();
+      const eventCount = reader.readUInt32();
+      const events: EventProfileGroup['events'] = [];
+      for (let eventIndex = 0; eventIndex < eventCount && !reader.eof(); eventIndex += 1) {
+        events.push({
+          name: reader.readCString(),
+          count: reader.readUInt32(),
+          size: reader.readUInt32()
+        });
+      }
+      groups.push({ typeName, events });
+    }
+    return { ...base, kind: 'eventprofile', timingLength, events: groups };
+  }
+  if (resultKind === 3) {
+    timingLength = reader.readUInt32();
+    const rows: NetworkProfileRow[] = [];
+    const count = reader.readUInt32();
+    for (let index = 0; index < count && !reader.eof(); index += 1) {
+      rows.push({
+        name: reader.readCString(),
+        sendCount: reader.readUInt32(),
+        sendSize: reader.readUInt32(),
+        sendAverageSize: reader.readUInt32(),
+        totalSendCount: reader.readUInt32(),
+        totalSendSize: reader.readUInt32(),
+        recvCount: reader.readUInt32(),
+        recvSize: reader.readUInt32(),
+        recvAverageSize: reader.readUInt32(),
+        totalRecvCount: reader.readUInt32(),
+        totalRecvSize: reader.readUInt32()
+      });
+    }
+    return { ...base, kind: 'networkprofile', timingLength, rows };
+  }
+
+  const rows: CProfileRow[] = [];
+  const count = reader.readUInt32();
+  for (let index =0; index < count && !reader.eof(); index += 1) {
+    rows.push({
+      name: reader.readCString(),
+      count: reader.readUInt32(),
+      lastTime: reader.readFloat(),
+      totalTime: reader.readFloat(),
+      lastInclusiveTime: reader.readFloat(),
+      totalInclusiveTime: reader.readFloat()
+    });
+  }
+  return { ...base, kind: 'cprofile', timingLength, rows };
+}
+
+export function parseSpaceFrame(body: Buffer): SpaceQueryResult {
+  const reader = new BufferCursor(body);
+  const componentType = reader.readInt32();
+  const componentID = reader.readUInt64();
+  const spaces: SpaceSnapshot[] = [];
+  while (!reader.eof()) {
+    const cellappID = reader.readUInt64();
+    const spaceCount = reader.readUInt32();
+    for (let index = 0; index < spaceCount && !reader.eof(); index += 1) {
+      const spaceID = reader.readUInt32();
+      const geomappingPath = reader.readCString();
+      const scriptModuleName = reader.readCString();
+      const cellCount = reader.readUInt32();
+      const cells: number[] = [];
+      for (let cellIndex = 0; cellIndex < cellCount && !reader.eof(); cellIndex += 1) {
+        cells.push(reader.readUInt32());
+      }
+      spaces.push({
+        componentType,
+        componentID,
+        cellappID,
+        spaceID,
+        geomappingPath,
+        scriptModuleName,
+        cells
+      });
+    }
+  }
+  return { componentType, componentID, spaces };
+}
+
 export async function discoverLocalComponents(
   options: MachineDiscoveryOptions = {}
 ): Promise<KBEngineComponentInfo[]> {
@@ -667,4 +858,99 @@ export async function queryWatcherPath(
 
     socket.connect(component.intport, component.intaddr);
   });
+}
+
+async function queryConsoleFrames<T>(
+  component: KBEngineComponentInfo,
+  requestBody: Buffer | null,
+  messageId: number | null,
+  callbackId: number,
+  parseFrame: (body: Buffer) => T,
+  timeoutMs: number
+): Promise<T[]> {
+  if (!messageId) return [];
+  return await new Promise<T[]>((resolve, reject) => {
+    const socket = new net.Socket();
+    let receiveBuffer = Buffer.alloc(0);
+    const results: T[] = [];
+    let timeout: NodeJS.Timeout | null = null;
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      socket.destroy();
+      resolve(results);
+    };
+    const resetTimeout = () => {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(finish, timeoutMs);
+    };
+
+    socket.once('connect', () => {
+      socket.write(buildFrame(messageId, requestBody ?? Buffer.alloc(0)));
+      resetTimeout();
+    });
+    socket.on('data', data => {
+      receiveBuffer = Buffer.concat([receiveBuffer, data]);
+      while (receiveBuffer.length >= 4) {
+        const frameMessageId = receiveBuffer.readUInt16LE(0);
+        const frameLength = receiveBuffer.readUInt16LE(2);
+        const totalLength = 4 + frameLength;
+        if (receiveBuffer.length < totalLength) break;
+        const body = receiveBuffer.subarray(4, totalLength);
+        receiveBuffer = receiveBuffer.subarray(totalLength);
+        if (frameMessageId === callbackId) results.push(parseFrame(body));
+      }
+      if (results.length > 0) {
+        finish();
+        return;
+      }
+      resetTimeout();
+    });
+    socket.on('error', error => {
+      if (settled) return;
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      socket.destroy();
+      reject(error);
+    });
+    socket.connect(component.intport, component.intaddr);
+  });
+}
+
+export async function startProfileQuery(
+  component: KBEngineComponentInfo,
+  options: ProfileStartOptions,
+  timeoutMs = 12000
+): Promise<ProfileQueryResult[]> {
+  const messageId = PROFILE_REQUEST_MSG_IDS[component.componentType];
+  if (!messageId) return [];
+  return await queryConsoleFrames(
+    component,
+    buildProfileRequestBody(options),
+    messageId,
+    CONSOLE_PROFILE_CB_MSG_ID,
+    body => parseProfileFrame(body, component),
+    timeoutMs
+  );
+}
+
+export async function querySpaces(component: KBEngineComponentInfo, timeoutMs = 800): Promise<SpaceQueryResult> {
+  const empty: SpaceQueryResult = {
+    componentType: component.componentType,
+    componentID: component.componentID,
+    spaces: []
+  };
+  if (component.componentType !== 4) return empty;
+  const results = await queryConsoleFrames<SpaceQueryResult>(
+    component,
+    null,
+    CELLAPPMGR_QUERY_SPACES_MSG_ID,
+    CONSOLE_PROFILE_CB_MSG_ID,
+    parseSpaceFrame,
+    timeoutMs
+  );
+  return results[0] ?? empty;
 }
