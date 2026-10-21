@@ -70,6 +70,7 @@
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.project.doctor",
     "onCommand:kbengine.profile.start",
+    "onCommand:kbengine.runtimeQuery.show",
     "onCommand:kbengine.spaces.query",
     "onCommand:kbengine.compatibility.check",
     "onCommand:kbengine.workbench.show",
@@ -402,6 +403,10 @@
         "command": "kbengine.profile.start",
         "title": "Start Runtime Profile"
       },
+    {
+      "command": "kbengine.runtimeQuery.show",
+      "title": "Show Runtime Query Panel"
+    },
       {
         "command": "kbengine.spaces.query",
         "title": "Query Spaces"

@@ -33,6 +33,7 @@ describe('kbengine.workbench.show', () => {
         'kbengine.project.doctor',
         'kbengine.monitoring.show',
         'kbengine.profile.start',
+        'kbengine.runtimeQuery.show',
         'kbengine.spaces.query',
         'kbengine.database.open',
         'kbengine.database.checkAllDrift',

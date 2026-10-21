@@ -262,6 +262,11 @@ The flow graph panel supports:
 - Title: `Query Spaces`
 - Purpose: query the local cellappmgr for current space records
 
+### `kbengine.runtimeQuery.show`
+
+- Title: `Show Runtime Query Panel`
+- Purpose: discover running components, query cellappmgr spaces, and query watcher values from one panel
+
 ### `kbengine.compatibility.check`
 
 - Title: `Check Engine Compatibility`
@@ -270,7 +275,7 @@ The flow graph panel supports:
 ### `kbengine.workbench.show`
 
 - Title: `Show KBEngine Workbench`
-- Purpose: show a command launcher for discovery, runtime, schema, SDK, and compatibility tools
+- Purpose: show a command launcher for discovery, runtime queries, schema, SDK, and compatibility tools
 
 ## Performance Analysis
 

@@ -21,6 +21,7 @@ import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
+import { RuntimeQueryWebView } from './runtimeQueryWebView';
 import {
   checkExtensionCompatibility,
   findEngineRoot,
@@ -1160,6 +1161,13 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(startRuntimeProfileCommand, querySpacesCommand, runtimeOutputChannel);
 
+  const runtimeQueryWebView = new RuntimeQueryWebView(context);
+  const showRuntimeQueryCommand = vscode.commands.registerCommand(
+    'kbengine.runtimeQuery.show',
+    () => runtimeQueryWebView.show()
+  );
+  context.subscriptions.push(showRuntimeQueryCommand);
+
   const compatibilityChannel = vscode.window.createOutputChannel('KBEngine Compatibility');
   const compatibilityTarget: ExtensionCompatibilityTarget = {
     displayName: 'Kode KBEngine',
@@ -1192,6 +1200,7 @@ export function activate(context: vscode.ExtensionContext) {
       { label: '$(checklist) Project Doctor', command: 'kbengine.project.doctor' },
       { label: '$(graph) Monitoring', command: 'kbengine.monitoring.show' },
       { label: '$(pulse) Runtime Profile', command: 'kbengine.profile.start' },
+      { label: '$(search) Runtime Queries', command: 'kbengine.runtimeQuery.show' },
       { label: '$(map) Spaces', command: 'kbengine.spaces.query' },
       { label: '$(database) Database Schema', command: 'kbengine.database.open' },
       { label: '$(database) Database Drift', command: 'kbengine.database.checkAllDrift' },
