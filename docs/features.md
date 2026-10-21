@@ -105,9 +105,9 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hover.serverConfig` | `true` | Show kbengine.xml server config values and explanations on hover |
 | `kbengine.codeLens.rpc` | `true` | RPC method CodeLens at def-declared methods in Python implementation scripts |
 | `kbengine.codeLens.eventCallbacks` | `true` | Event callback/subscription CodeLens in Python scripts |
-| `kbengine.codeLens.property` | `true` | Property CodeLens at self.<property> access sites (reverse jump to def) |
+| `kbengine.codeLens.property` | `true` | Property CodeLens at `self.<property>` access sites (reverse jump to def) |
 | `kbengine.codeLens.typesXml` | `true` | Database storage lens chain on types.xml type declaration lines (reference back-scan) |
-| `kbengine.inlayHints.typeData` | `true` | Inline def-declared types.xml data types at self.<property> sites |
+| `kbengine.inlayHints.typeData` | `true` | Inline def-declared types.xml data types at `self.<property>` sites |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | Default path for entity definition files |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | Default path for entities.xml |
 | `kbengine.binPath` | `"${workspaceFolder}/../kbe/bin/server"` | KBEngine server binaries path; supports ${workspaceFolder} and ${env:VAR} |
@@ -126,7 +126,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.generator.registerInEntitiesXml` | `true` | Code generator: whether to register generated entities in entities.xml |
 | `kbengine.clientSdk.outputDir` | `"scripts/client_entities"` | Client entity SDK output directory (relative to workspace root; language chosen in-command; no overwrite by default) |
 | `kbengine.telnet.host` | `"127.0.0.1"` | Telnet probe target host |
-| `kbengine.telnet.port` | `0` | Telnet probe port (0 = fall back to component kbengine.xml <telnet_service>; nothing shown when telnet is off in both) |
+| `kbengine.telnet.port` | `0` | Telnet probe port (0 = fall back to component kbengine.xml `<telnet_service>`; nothing shown when telnet is off in both) |
 | `kbengine.telnet.password` | `""` | Telnet login password (handshake only, never logged; falls back to component/engine defaults; absent = status stays 'port open, no password') |
 | `kbengine.telnet.enableCommands` | `[]` | Whitelist of sendable telnet commands (exact or prefix match; :quit always refused) |
 | `kbengine.telnet.configXmlPath` | `""` | Optional component kbengine.xml path for telnet port/password fallback (supports ${workspaceFolder}) |
