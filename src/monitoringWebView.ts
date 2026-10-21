@@ -72,6 +72,15 @@ export class MonitoringWebView {
       this.context.subscriptions
     );
 
+    void this.panel.webview.postMessage({
+      command: 'protocolCapabilities',
+      capabilities: {
+        profile: true,
+        spaces: true,
+        watcher: true
+      }
+    });
+
     // 关闭时清理
     this.panel.onDidDispose(
       () => {
@@ -144,6 +153,12 @@ export class MonitoringWebView {
         break;
       case 'exportMetrics':
         this.exportMetrics();
+        break;
+      case 'startProfile':
+        vscode.commands.executeCommand('kbengine.profile.start', message.componentType, message.kind);
+        break;
+      case 'querySpaces':
+        vscode.commands.executeCommand('kbengine.spaces.query');
         break;
     }
   }

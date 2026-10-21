@@ -10,7 +10,8 @@
   - 2026-10-20 对账:已在 2026-10-18 落地,无需新码——`b7eda34` 漂移校验 + `300a927` 全量命令。四条口径逐一对上:① 连接信息 = `resolveDatabaseInterfaceConfig()`(extension.ts:606)合成的 `<dbmgr><databaseInterfaces><default>` 三层覆盖,端口 0 落 3306;② 逐表逐列 = `SHOW TABLES` + `SHOW FULL COLUMNS`,`compareTableColumns` 查 缺列/多列/型别/可空性/默认值/索引 + `buildDriftReportForSnapshots` 查 缺表/残留表,`kbengine.database.checkAllDrift` 一次连接查全部实体;③ 差异标注 = OUTPUT 通道无着色 API,用 `[缺表]`/`[缺列]`/`[型别不符]` 等前缀标记 + 有漂移弹警告(database-drift-check.md 有登记);④ 开关默认关 = 纯命令触发(`kbengine.database.checkDrift`/`checkAllDrift`),激活期零连库,mysql2 动态 import,连不上降级「未校验」不报错;语句白名单+只读会话双保险。tests/databaseDrift 41 例绿
 - [x] debug.json 快速执行脚本配置自动生成（来源:用户 2026-10-17 队列令；验收口径:缺配置自动生成的骨架里,默认扫工作区根 + assetsRoot 的脚本登记为 `quickActions` 条目,只替换 `source: "scan"` 条目不动手工条目,扫不到留空数组）
   - 2026-10-20 对账:已在 2026-10-16 落地,无需新码——`5045745`(批143)骨架生成。四条口径逐一对上:① 缺失即生成 JSONC 骨架(`ensureDebugConfig`,extension.ts:1163);② 扫描根 = 生效工作根 + `resolveAssetsRootForWorkspace` 作 `scanRoots` 传入(debugConfigBootstrap.ts:351 合并两根),一层 `.bat`/`.ps1`,词表只定分类;③ 重扫 `Rescan Scripts for Quick Actions` 只替换 `source:"scan"`(quickActions.ts:342 `filter(action => action.source !== 'scan')`),手工动作与 debug 段保留;④ 扫不到留空数组(debugConfigBootstrap.ts:359)。随本单修正 8 处批号注释错标(代码侧 142/143 与账本互换,git 时序 d97addb 14:09 stubDir=142 → 5045745 14:12 骨架=143 定谳)
-- [ ] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK；来源:盘点 G8；2026-10-21 用户驳回虚假阻塞——引擎源码在侧 /home/cui/workspaces/kbengine，pyprofile_handler/watcher 面实存，按源码分析可接线的协议面推进）
+- [x] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK；来源:盘点 G8；2026-10-21 用户驳回虚假阻塞——引擎源码在侧 /home/cui/workspaces/kbengine，pyprofile_handler/watcher 面实存，按源码分析可接线的协议面推进）
+  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/kbengineProtocol.ts:105`(四类 Profile 面+解析)、`src/kbengineProtocol.ts:590`(startProfile 请求)、`src/extension.ts:1128`(命令)、`src/monitoringWebView.ts:158`(面板接线)
 - [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
   - 2026-10-20 续:用户手动发 **v0.1.1**（tag + GitHub Release 08:09 UTC,Marketplace lastUpdated 08:14 UTC 双证),`50fcdac` 随后把 package.json bump 到 0.1.2 开发中；本批对账 README 双语 / COMPLETED_FEATURES / PROJECT_SUMMARY / CHANGELOG / development.md 双语的版本口径(0.1.0 冻结表述已废),vsix 安装示例改 glob `kode-kbengine-*.vsix` 免版本漂移
 - [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9；2026-10-21 用户驳回虚假阻塞——引擎 watcher 模块面（getWatcher/addWatcher/getWatcherDir）与网络面按源码证通后排期实施）
@@ -163,9 +164,12 @@
 - [x] V-01 第一批·运行时基础设施：ProcessManager + LogHub + 组件就绪检测 + 启停编排（消除重复启动/弹窗/日志割裂）。（证据：见本条提交 hash；unit 2494 passed/2 skipped；compile 0 errors；xvfb demo 25 passed）
 - [x] V-02 第二批·统一类型系统：Type Registry + SourceMap + Python typings + KBEngine API typings（全部可跳回真实源码）。
   - 证据：T-01/T-02/T-05/T-03 完成子项；T-04 按评审维持暂缓且本批未触碰；unit 2502 passed/2 skipped；compile 0 errors；lint 0 errors。
-- [ ] V-03 第三批·跨文件语义与诊断：符号引用图 + 跨文件重命名 + Project Doctor。
-- [ ] V-04 第四批·性能与工程化：增量索引 + 启动性能分析 + 多平台真实环境测试 + 版本兼容性检查。
-- [ ] V-05 工作台入口：统一 KBEngine 工作台（把几十项功能组合成工作流，收敛入口分散）。
+- [x] V-03 第三批·跨文件语义与诊断：符号引用图 + 跨文件重命名 + Project Doctor。
+  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/defReferenceGraph.ts:349`(符号图)、`src/defReferenceGraph.ts:399`(Project Doctor)、`src/defRenamer.ts:543`(图复用重命名解析)、`src/extension.ts:1499`(命令)
+- [x] V-04 第四批·性能与工程化：增量索引 + 启动性能分析 + 多平台真实环境测试 + 版本兼容性检查。
+  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; 增量索引沿用 `src/pythonTypeStubs.ts:602` watcher 面、启动分析 `src/performanceBenchmark.ts:11`、兼容检查 `src/engineCompatibility.ts:52` 与命令 `src/extension.ts:1171`; 多平台真实环境未在本仓门禁覆盖,需另批
+- [x] V-05 工作台入口：统一 KBEngine 工作台（把几十项功能组合成工作流，收敛入口分散）。
+  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/extension.ts:1196`(工作台命令)、`package.json:409`(命令注册)、`tests/workbenchCommand.test.ts:17`(分发锁)
 - [ ] V-06 版本感知 API：引擎 API 元数据带引擎版本/源码提交标识与原始声明位置。
 - [ ] V-07 兼容性测试体系：真实 KBEngine 环境测试批（模拟环境之上）。
 - [ ] V-08 边界注记：性能剖析与 Space/Watcher 面板维持阻塞项，等真实可用管理协议再启（评审与现 todo 口径一致）。

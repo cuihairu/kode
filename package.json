@@ -68,6 +68,11 @@
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
+    "onCommand:kbengine.project.doctor",
+    "onCommand:kbengine.profile.start",
+    "onCommand:kbengine.spaces.query",
+    "onCommand:kbengine.compatibility.check",
+    "onCommand:kbengine.workbench.show",
     "onCommand:kbengine.snippets.generateFromSelection",
     "onCommand:kbengine.telnet.showPanel",
     "onCommand:kbengine.telnet.disconnect",
@@ -389,6 +394,28 @@
         "title": "Analyze Def Performance"
       },
       {
+        "command": "kbengine.project.doctor",
+        "title": "Run Project Doctor",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "kbengine.profile.start",
+        "title": "Start Runtime Profile"
+      },
+      {
+        "command": "kbengine.spaces.query",
+        "title": "Query Spaces"
+      },
+      {
+        "command": "kbengine.compatibility.check",
+        "title": "Check Engine Compatibility"
+      },
+      {
+        "command": "kbengine.workbench.show",
+        "title": "Show KBEngine Workbench",
+        "icon": "$(layout)"
+      },
+      {
         "command": "kbengine.snippets.generateFromSelection",
         "title": "Generate Snippet from Selection",
         "icon": "$(symbol-snippet)"
@@ -485,6 +512,10 @@
           "command": "kbengine.quickActions.show",
           "when": "editorLangId == python || editorLangId == xml",
           "group": "navigation"
+        },
+        {
+          "command": "kbengine.workbench.show",
+          "group": "navigation@900"
         }
       ],
       "view/item/context": [

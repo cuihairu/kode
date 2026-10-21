@@ -213,6 +213,11 @@ The flow graph panel supports:
 - Export Markdown (written directly to a file)
 - Export SVG/PNG (rendered via webview, then exported)
 
+### `kbengine.quickActions.runByName`
+
+- Title: `Run Quick Action By Name`
+- Purpose: execute the quick action identified by the supplied name from the `.kbengine/debug.json` action list
+
 ## Code Generators
 
 ### `kbengine.generator.wizard`
@@ -241,6 +246,31 @@ The flow graph panel supports:
 
 - Title: `Generate Client Entity SDK`
 - Purpose: generate client entity skeletons from the entities registered in `entities.xml`; languages are checked inside the command (TypeScript / C#, multi-select) — see [Client Entity SDK Generation](./client-sdk.md)
+
+### `kbengine.project.doctor`
+
+- Title: `Run Project Doctor`
+- Purpose: audit the def reference graph and report structural issues
+
+### `kbengine.profile.start`
+
+- Title: `Start Runtime Profile`
+- Purpose: query a running KBEngine component's profile data and show the response
+
+### `kbengine.spaces.query`
+
+- Title: `Query Spaces`
+- Purpose: query the local cellappmgr for current space records
+
+### `kbengine.compatibility.check`
+
+- Title: `Check Engine Compatibility`
+- Purpose: compare the extension's expected engine surface with the located engine checkout
+
+### `kbengine.workbench.show`
+
+- Title: `Show KBEngine Workbench`
+- Purpose: show a command launcher for discovery, runtime, schema, SDK, and compatibility tools
 
 ## Performance Analysis
 

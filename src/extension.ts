@@ -7,6 +7,11 @@ import { KBEngineServerManager, SERVER_COMPONENTS } from './serverManager';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
 import {
+  buildDefReferenceGraphFromFile,
+  buildProjectDoctorReport,
+  formatProjectDoctorReport
+} from './defReferenceGraph';
+import {
   LogErrorScanView,
   realLogErrorScanDeps,
   runLogErrorScanCommand,
@@ -15,6 +20,13 @@ import {
 import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
+import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
+import {
+  checkExtensionCompatibility,
+  findEngineRoot,
+  formatEngineCompatibilityReport,
+  type ExtensionCompatibilityTarget
+} from './engineCompatibility';
 import {
   DefinitionSymbolIdentity,
   EntityMappingManager,
@@ -133,7 +145,6 @@ import {
   runWorkspaceDiscovery
 } from './workspaceDiscovery';
 import { TelnetTreeProvider } from './telnetTree';
-
 /**
  * Kode - KBEngine Development Environment
  * KBEngine VSCode 扩展主入口
@@ -1113,6 +1124,89 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(showMonitoringCommand);
 
+  // Classic runtime observability: these commands use the guiconsole-compatible
+  // fixed IDs already parsed in kbengineProtocol and degrade to a clear warning
+  // when machine discovery finds no running components.
+  const runtimeOutputChannel = vscode.window.createOutputChannel('KBEngine Runtime');
+  const startRuntimeProfileCommand = vscode.commands.registerCommand(
+    'kbengine.profile.start',
+    async (componentName = 'cellapp', kind = 'pyprofile') => {
+      const components = await discoverLocalComponents();
+      const selected = components.find(component => component.componentName === componentName);
+      if (!selected) {
+        vscode.window.showWarningMessage('未发现可查询的 KBEngine 组件');
+        return;
+      }
+      const results = await startProfileQuery(selected, {
+        profileName: 'kode-runtime',
+        kind: kind === 'cprofile' ? 'cprofile' : kind === 'eventprofile' ? 'eventprofile' : kind === 'networkprofile' ? 'networkprofile' : 'pyprofile',
+        timingLengthSeconds: 5
+      });
+      runtimeOutputChannel.clear();
+      if (results.length === 0) {
+        runtimeOutputChannel.appendLine('No profile response received.');
+      } else {
+        runtimeOutputChannel.appendLine(JSON.stringify(results, null, 2));
+      }
+      runtimeOutputChannel.show(true);
+    }
+  );
+  const querySpacesCommand = vscode.commands.registerCommand('kbengine.spaces.query', async () => {
+    const components = await discoverLocalComponents();
+    const manager = components.find(component => component.componentType === 4);
+    if (!manager) {
+      vscode.window.showWarningMessage('未发现可查询的 KBEngine 组件');
+      return;
+    }
+    const result = await querySpaces(manager);
+    runtimeOutputChannel.clear();
+    runtimeOutputChannel.appendLine(JSON.stringify(result, null, 2));
+    runtimeOutputChannel.show(true);
+  });
+  context.subscriptions.push(startRuntimeProfileCommand, querySpacesCommand, runtimeOutputChannel);
+
+  const compatibilityChannel = vscode.window.createOutputChannel('KBEngine Compatibility');
+  const compatibilityTarget: ExtensionCompatibilityTarget = {
+    displayName: 'Kode KBEngine',
+    engines: '^1.84.0',
+    vscodeEngine: '^1.84.0',
+    files: [{ relativePath: 'out/extension.js', exported: true }]
+  };
+  const checkCompatibilityCommand = vscode.commands.registerCommand('kbengine.compatibility.check', async () => {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      vscode.window.showWarningMessage('未打开工作区,无法检查引擎兼容性');
+      return;
+    }
+    const engineRoot = findEngineRoot(root, vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '') || undefined);
+    const report = checkExtensionCompatibility(context.extensionUri.fsPath, engineRoot, compatibilityTarget);
+    compatibilityChannel.clear();
+    compatibilityChannel.appendLine(formatEngineCompatibilityReport(report));
+    compatibilityChannel.show(true);
+    if (report.checks.some(check => check.status === 'error')) {
+      vscode.window.showWarningMessage('兼容性检查存在错误,详见输出面板');
+    } else {
+      vscode.window.showInformationMessage('兼容性检查完成');
+    }
+  });
+  context.subscriptions.push(checkCompatibilityCommand, compatibilityChannel);
+
+  const workbenchCommand = vscode.commands.registerCommand('kbengine.workbench.show', async () => {
+    const selection = await vscode.window.showQuickPick([
+      { label: '$(search) Discovery & Positioning', command: 'kbengine.discovery.report' },
+      { label: '$(checklist) Project Doctor', command: 'kbengine.project.doctor' },
+      { label: '$(graph) Monitoring', command: 'kbengine.monitoring.show' },
+      { label: '$(pulse) Runtime Profile', command: 'kbengine.profile.start' },
+      { label: '$(map) Spaces', command: 'kbengine.spaces.query' },
+      { label: '$(database) Database Schema', command: 'kbengine.database.open' },
+      { label: '$(database) Database Drift', command: 'kbengine.database.checkAllDrift' },
+      { label: '$(file-binary) Client SDK', command: 'kbengine.clientSdk.generate' },
+      { label: '$(shield) Compatibility', command: 'kbengine.compatibility.check' }
+    ], { placeHolder: 'KBEngine Workbench', ignoreFocusOut: true });
+    if (selection) await vscode.commands.executeCommand(selection.command);
+  });
+  context.subscriptions.push(workbenchCommand);
+
   // 初始化实体依赖关系图
   const outputChannel = vscode.window.createOutputChannel('KBEngine Dependency');
   const dependencyWebView = new EntityDependencyWebView(context, outputChannel);
@@ -1406,6 +1500,42 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(analyzeDefCommand);
+
+  // Cross-file semantic doctor: reuses the same rename parser and engine
+  // alignment as F2 so diagnostics and refactor decisions cannot diverge.
+  const projectDoctorChannel = vscode.window.createOutputChannel('KBEngine Project Doctor');
+  const projectDoctorCommand = vscode.commands.registerCommand(
+    'kbengine.project.doctor',
+    async () => {
+      const targetUri = vscode.window.activeTextEditor?.document.uri;
+      const candidateUri = targetUri?.fsPath.endsWith('.def')
+        ? targetUri
+        : (await findFilesAcrossRoots('**/*.def'))[0];
+      if (!candidateUri) {
+        vscode.window.showInformationMessage('未找到 .def 文件,无法运行 Project Doctor');
+        return;
+      }
+
+      const graph = buildDefReferenceGraphFromFile(candidateUri.fsPath);
+      if (!graph) {
+        vscode.window.showWarningMessage('未找到 entity_defs 定义根,Project Doctor 仅支持标准定义布局');
+        return;
+      }
+
+      const report = buildProjectDoctorReport(graph);
+      projectDoctorChannel.clear();
+      projectDoctorChannel.appendLine(formatProjectDoctorReport(report));
+      projectDoctorChannel.show(true);
+      if (report.errors.length > 0) {
+        vscode.window.showWarningMessage(`Project Doctor 发现 ${report.errors.length} 项错误,详见输出面板`);
+      } else if (report.warnings.length > 0) {
+        vscode.window.showInformationMessage(`Project Doctor 完成:${report.warnings.length} 项警告`);
+      } else {
+        vscode.window.showInformationMessage('Project Doctor 完成:跨文件语义无错误');
+      }
+    }
+  );
+  context.subscriptions.push(projectDoctorCommand, projectDoctorChannel);
   context.subscriptions.push(defAnalysisOutputChannel);
   context.subscriptions.push(defAnalysisDiagnostics);
 
