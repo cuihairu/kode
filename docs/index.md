@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 首次访问按浏览器语言选择文档语言（vitepress 无此能力，GitHub Pages 不支持 _redirects）
-// 优先级：localStorage 手动选择 > navigator.language > 保持当前 locale
+// 语言选择只认用户手动切换（2026-10-21 用户令：根 locale 恒为英文，不再按浏览器语言自动跳转）
+// 优先级：localStorage 手动选择 > 保持当前 locale
 import { onBeforeMount } from 'vue'
 const KEY = 'kode-lang-auto-picked'
 const BASE = '/kode/'
@@ -12,8 +13,6 @@ onBeforeMount(() => {{
   if (p !== ROOT_PATH && p !== ROOT_PATH.slice(0, -1)) return
   const picked = localStorage.getItem(KEY)
   if (picked) {{ if (picked !== p) window.location.replace(picked); return }}
-  const langs = (navigator.languages?.length ? navigator.languages : [navigator.language]).map(l => l.toLowerCase())
-  if (langs.some(l => l.startsWith('zh'))) window.location.replace(ZH_PATH)
 }})
 if (typeof window !== 'undefined') {{
   window.addEventListener('click', (e) => {{
