@@ -933,17 +933,35 @@ export class EntityMappingManager {
     // python:方法名**唯一命中**才跳(实现常落在父类/公共模块的 py 里,
     // 属主索引 pythonMethods 只收实体属主脚本,覆盖不到),多处命中保持静默
     // (交给调用方约定链与提示),找不到维持现状不误跳。
-    return this.resolveMethodImplementationGlobally(identity.symbolName);
+    // 2026-10-21:先按方法域走 base//cell/ 目录层(identity.section 在场时)。
+    return this.resolveMethodImplementationGlobally(identity.symbolName, identity.section);
   }
 
   /**
    * 全项目 python 回退(用户令 2026-10-20):方法名在全项目 py 中唯一命中才返回,
    * 多处/零处一律 null(静默,不误跳)。给 def 侧 identity 未命中/未绑定实现的
    * 两个早落分支复用——那两支不经过 resolveMethodImplementationByIdentity。
+   *
+   * 域目录层(用户令 2026-10-21,报错 onClientEnabled 错跳):BaseMethods 定义的方法
+   * 先只在 base/ 目录下找、CellMethods 只在 cell/ 下找;域内唯一命中即返回,
+   * 域内无果或歧义才进入全项目回退(唯一命中才跳的既有语义不变)。
    */
   async resolveMethodImplementationGlobally(
-    methodName: string
+    methodName: string,
+    section?: EntityMethodSection
   ): Promise<{ filePath: string; line: number; character: number } | null> {
+    const domainRole =
+      section === 'BaseMethods' ? 'base' : section === 'CellMethods' ? 'cell' : null;
+    if (domainRole) {
+      const domainHits = await this.collectAllPythonMethodHits(methodName, domainRole);
+      if (domainHits.length === 1) {
+        const [domainHit] = domainHits;
+        jumpLog('debug', () =>
+          `def 方法[域内目录 ${domainRole}] ${methodName} → ${path.basename(domainHit.filePath)}:${domainHit.line}`
+        );
+        return domainHit;
+      }
+    }
     const globalHits = await this.collectAllPythonMethodHits(methodName);
     if (globalHits.length === 1) {
       const [globalHit] = globalHits;
@@ -955,16 +973,18 @@ export class EntityMappingManager {
     return null;
   }
 
-  /** 全项目 python 方法扫描(懒缓存):精确 `def <name>(`,跳过虚目录,多处命中交由调用方判定。 */
+  /** 全项目 python 方法扫描(懒缓存):精确 `def <name>(`,跳过虚目录,多处命中交由调用方判定。domain 在场时只收路径含该目录段(base/cell)的文件。 */
   private readonly allPythonMethodHits = new Map<
     string,
     Array<{ filePath: string; line: number; character: number }>
   >();
 
   private async collectAllPythonMethodHits(
-    methodName: string
+    methodName: string,
+    domain?: 'base' | 'cell'
   ): Promise<Array<{ filePath: string; line: number; character: number }>> {
-    const cached = this.allPythonMethodHits.get(methodName);
+    const cacheKey = `${domain ?? '*'}:${methodName}`;
+    const cached = this.allPythonMethodHits.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -991,6 +1011,9 @@ export class EntityMappingManager {
           continue;
         }
         const filePath = path.join(dir, entry.name);
+        if (domain && !filePath.split(path.sep).includes(domain)) {
+          continue;
+        }
         const normalized = normalizeLookupPath(filePath);
         if (seenPaths.has(normalized)) {
           continue;
@@ -1015,7 +1038,7 @@ export class EntityMappingManager {
       walk(root);
     }
     hits.sort((a, b) => (a.filePath === b.filePath ? a.line - b.line : a.filePath.localeCompare(b.filePath)));
-    this.allPythonMethodHits.set(methodName, hits);
+    this.allPythonMethodHits.set(cacheKey, hits);
     return hits;
   }
 

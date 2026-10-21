@@ -44,7 +44,12 @@ beforeAll(() => {
     '  <BaseMethods>',
     '    <uniqueInParent/>',
     '    <ambiguousInParents/>',
+    '    <commonOnly/>',
+    '    <baseOnlyMethod/>',
     '  </BaseMethods>',
+    '  <CellMethods>',
+    '    <onCellSide/>',
+    '  </CellMethods>',
     '</root>'
   ].join('\n'));
 
@@ -74,13 +79,33 @@ beforeAll(() => {
     '        return 2'
   ].join('\n'));
 
+  // 域目录层(2026-10-21 用户令):CellMethods 的方法 base 里有同名函数不得错跳
+  write(root, 'scripts/base/baseOnly.py', [
+    'def baseOnlyMethod():',
+    '    return "base"'
+  ].join('\n'));
+  write(root, 'scripts/cell/cellSide.py', [
+    'def baseOnlyMethod():',
+    '    return "cell-同名"',
+    '',
+    'def onCellSide():',
+    '    return "cell"'
+  ].join('\n'));
+  write(root, 'scripts/common/util.py', [
+    'def commonOnly():',
+    '    return "common"'
+  ].join('\n'));
+
   const files = [
     'scripts/entities.xml',
     'scripts/entity_defs/Avatar.def',
     'scripts/base/Avatar.py',
     'scripts/base/AvatarParent.py',
     'scripts/base/RoleA.py',
-    'scripts/base/RoleB.py'
+    'scripts/base/RoleB.py',
+    'scripts/base/baseOnly.py',
+    'scripts/cell/cellSide.py',
+    'scripts/common/util.py'
   ];
   stubWorkspace.findFiles = (async (pattern?: string) => {
     const want = typeof pattern === 'string' && pattern.includes('*.def')
@@ -124,5 +149,48 @@ describe('def 方法全项目回退（用户令 2026-10-20）', () => {
     expect(unique && path.basename(unique.filePath)).toBe('AvatarParent.py');
     expect(await manager.resolveMethodImplementationGlobally('ambiguousInParents')).toBeNull();
     expect(await manager.resolveMethodImplementationGlobally('missingEverywhere')).toBeNull();
+  });
+});
+
+describe('def 方法域目录层（用户令 2026-10-21：BaseMethods→base/、CellMethods→cell/）', () => {
+  const identityInSection = (
+    symbolName: string,
+    section: 'BaseMethods' | 'CellMethods'
+  ): DefinitionSymbolIdentity => ({
+    ownerKind: 'entity',
+    ownerName: 'Avatar',
+    sourceKind: 'declared',
+    sourceChain: ['Avatar'],
+    section,
+    symbolName
+  });
+
+  it('CellMethods：base 有同名函数也必须跳 cell 内实现（onClientEnabled 同型）', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(
+      identityInSection('onCellSide', 'CellMethods')
+    );
+    expect(result).not.toBeNull();
+    expect(result!.filePath.replace(/\\/g, '/')).toContain('/cell/');
+    expect(path.basename(result!.filePath)).toBe('cellSide.py');
+  });
+
+  it('BaseMethods：cell 有同名函数也必须跳 base 内实现', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(
+      identityInSection('baseOnlyMethod', 'BaseMethods')
+    );
+    expect(result).not.toBeNull();
+    expect(result!.filePath.replace(/\\/g, '/')).toContain('/base/');
+    expect(path.basename(result!.filePath)).toBe('baseOnly.py');
+  });
+
+  it('域内无果 → 仍走全项目唯一命中（common/ 目录兜底不倒退）', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const result = await manager.resolveMethodImplementationByIdentity(
+      identityInSection('commonOnly', 'BaseMethods')
+    );
+    expect(result).not.toBeNull();
+    expect(path.basename(result!.filePath)).toBe('util.py');
   });
 });

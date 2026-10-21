@@ -2720,7 +2720,7 @@ function findMethodImplementationLocationInDef(
     if (typeof entityMappingManager.resolveMethodImplementationGlobally !== 'function') {
       return hintRegistryFallback();
     }
-    return entityMappingManager.resolveMethodImplementationGlobally(methodName).then(glob => {
+    return entityMappingManager.resolveMethodImplementationGlobally(methodName, section).then(glob => {
       if (glob) {
         logNavigation(`方法落点(全项目回退) ${glob.filePath}:${glob.line - 1}`);
         return new vscode.Location(
