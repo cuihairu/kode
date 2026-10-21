@@ -155,7 +155,7 @@
 - [x] L-02：定义统一 LogEvent 结构（id/timestamp/level/source/component/text…），所有来源转换后进入。（`src/logHub.ts:16`）
 - [x] L-03：三模块拆分收拢（WebView / 服务器管理面板 / 文件读取不再各自一套状态）。（WebView 订阅 `src/logWebView.ts:51`；服务器投影 `src/serverManager.ts:204`；增量读取 `src/logHub.ts:161`）
 - [x] L-04：性能红线——批量增量推送（几十毫秒合批）+ 前端显示上限 + 文件增量读取，禁止逐行单消息与全量重传。（40ms 合批 `src/logHub.ts:35`；上限 `src/logWebView.ts:28`）
-- [x] L-05：webview 页面 console 日志接入——页面 console.{log,warn,error,debug}/window.onerror/unhandledrejection 经既有 `webviewLog` 消息回传，`source:"webview"` 入 LogHub（按 origin+text 去重），开关 `kbengine.webviewConsoleLogs` 默认开、关时不接管；正反例/节流/宿主失败静默/面板流/开关覆盖齐。（`src/webviewConsoleBridge.ts:45`、`src/logWebView.ts:215`、`src/extension.ts:915`、`package.json:756`；目标 commit <HASH>，定向 59 例绿；来源:用户令「日志还是没有支持」）
+- [x] L-05：webview 页面 console 日志接入——页面 console.{log,warn,error,debug}/window.onerror/unhandledrejection 经既有 `webviewLog` 消息回传，`source:"webview"` 入 LogHub（按 origin+text 去重），开关 `kbengine.webviewConsoleLogs` 默认开、关时不接管；正反例/节流/宿主失败静默/面板流/开关覆盖齐。（`src/webviewConsoleBridge.ts:45`、`src/logWebView.ts:215`、`src/extension.ts:915`、`package.json:756`；commit be8b0de，定向 59 例绿；来源:用户令「日志还是没有支持」）
 
 #### 路线图批次（2026-10-20 ChatGPT 总评，docs/review/chatgpt-2026-10-20-kode-roadmap.md；用户令：优先安排实现）
 
