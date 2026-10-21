@@ -22,6 +22,10 @@ export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 export interface CustomTypePropertyInfo {
   name: string;
   typeName?: string;
+  /** 属性标签所在行(1 起);T-05 原始定义导航不得反推生成行号 */
+  line: number;
+  /** <Type> 标签所在行;内联类型从此处独立回跳 types.xml */
+  typeLine?: number;
 }
 
 export interface CustomTypeStructureChild {
@@ -33,6 +37,8 @@ export interface CustomTypeStructureNode {
   name: string;
   rawValue: string;
   children: CustomTypeStructureChild[];
+  /** 节点在原始 XML 的行(1 起);合成节点为 null */
+  line: number | null;
 }
 
 export interface CustomTypeInfo {
@@ -1061,6 +1067,8 @@ function buildCustomTypeInfo(
   const rawValue = extractCustomTypeRawValue(typeNode);
   const implementedBy = getScalarChildValue(typeNode, 'implementedBy');
   const implementedByNode = getDirectChildElement(typeNode, 'implementedBy');
+  const structure = parseCustomTypeStructure(rawValue);
+  attachStructureSourceLines(typeNode, structure);
 
   return {
     name: typeNode.name,
@@ -1076,24 +1084,34 @@ function buildCustomTypeInfo(
     endOffset: typeNode.closeTagEnd,
     aliasType: extractCustomTypeAliasType(rawValue),
     rawValue,
-    structure: parseCustomTypeStructure(rawValue),
+    structure,
     implementedBy,
-    properties: parseCustomTypeProperties(typeNode),
+    properties: parseCustomTypeProperties(document, typeNode),
     pythonFilePath: findCustomTypePythonFileByImplementation(layout, typeNode.name, implementedBy)
   };
 }
 
-function parseCustomTypeProperties(typeNode: DefElementNode): CustomTypePropertyInfo[] {
+function parseCustomTypeProperties(
+  document: DefDocument,
+  typeNode: DefElementNode
+): CustomTypePropertyInfo[] {
   const propertiesNode = getDirectChildElement(typeNode, 'Properties');
   if (!propertiesNode) {
     return [];
   }
 
   return getDirectChildElements(propertiesNode)
-    .map(property => ({
-      name: property.name,
-      typeName: getScalarChildValue(property, 'Type')
-    }))
+    .map(property => {
+      const typeNode = getDirectChildElement(property, 'Type');
+      return {
+        name: property.name,
+        typeName: getScalarChildValue(property, 'Type'),
+        line: getLineNumberAt(document, property.tagStart),
+        typeLine: typeNode
+          ? getLineNumberAt(document, typeNode.tagStart)
+          : undefined
+      };
+    })
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -1132,6 +1150,7 @@ function parseCustomTypeStructure(rawValue: string): CustomTypeStructureNode {
   return {
     name: extractCustomTypeAliasType(normalizedRawValue),
     rawValue: normalizedRawValue,
+    line: null,
     children: root
       ? getDirectChildElements(root).map(node => ({
           tag: node.name,
@@ -1139,6 +1158,28 @@ function parseCustomTypeStructure(rawValue: string): CustomTypeStructureNode {
         }))
       : []
   };
+}
+
+function attachStructureSourceLines(node: DefElementNode, target: CustomTypeStructureNode): void {
+  target.rawValue = normalizeXmlText(getInnerXml(node)) || target.rawValue;
+  target.line = getLineNumberAt(node.document, node.tagStart);
+  const childElements = getDirectChildElements(node);
+  for (let index = 0; index < target.children.length; index += 1) {
+    const childElement = childElements[index];
+    const child = target.children[index];
+    if (!childElement) {
+      continue;
+    }
+    child.value.line = getLineNumberAt(node.document, childElement.tagStart);
+    const grandchildElements = getDirectChildElements(childElement);
+    for (let nestedIndex = 0; nestedIndex < child.value.children.length; nestedIndex += 1) {
+      const grandchild = grandchildElements[nestedIndex];
+      const nested = child.value.children[nestedIndex];
+      if (grandchild) {
+        attachStructureSourceLines(grandchild, nested.value);
+      }
+    }
+  }
 }
 
 function renderStructureNode(node: DefElementNode): string {

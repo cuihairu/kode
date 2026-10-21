@@ -140,11 +140,15 @@ export interface ClientSdkEntity {
 export interface ClientSdkFixedDictProperty {
   readonly name: string;
   readonly typeName: string | null;
+  /** 属性标签在 types.xml 的声明行(1 起);合成模型为 null */
+  readonly sourceLine: number | null;
 }
 
 export interface ClientSdkFixedDictType {
   readonly name: string;
   readonly properties: ReadonlyArray<ClientSdkFixedDictProperty>;
+  /** 类型节点在 types.xml 的声明行(1 起);合成模型为 null */
+  readonly sourceLine: number | null;
 }
 
 export interface ClientSdkTypeMap {
@@ -282,9 +286,11 @@ export function buildClientSdkTypeMap(
     if (customType.properties.length > 0) {
       fixedDicts.set(customType.name, {
         name: customType.name,
+        sourceLine: customType.line,
         properties: customType.properties.map(property => ({
           name: property.name,
-          typeName: property.typeName ?? null
+          typeName: property.typeName ?? null,
+          sourceLine: property.typeLine ?? property.line
         }))
       });
     }
@@ -556,9 +562,11 @@ export function generateClientSdkFixedDictsFile(
 
   if (language === 'typescript') {
     for (const type of used) {
+      lines.push(`/** source: types.xml:${type.sourceLine ?? 'unknown'} */`);
       lines.push(`/** ${type.name} FIXED_DICT 别名 */`);
       lines.push(`export interface ${type.name} {`);
       for (const property of type.properties) {
+        lines.push(`  /** source: types.xml:${property.sourceLine ?? 'unknown'} */`);
         lines.push(`  ${property.name}: ${property.typeName ? resolveArgType(typeMap, property.typeName) : 'unknown'};`);
       }
       lines.push('}');
@@ -568,10 +576,12 @@ export function generateClientSdkFixedDictsFile(
     lines.push(`namespace ${CLIENT_SDK_CSHARP_NAMESPACE}`);
     lines.push('{');
     for (const type of used) {
+      lines.push(`  // source: types.xml:${type.sourceLine ?? 'unknown'}`);
       lines.push(`  /// <summary>${type.name} FIXED_DICT 别名</summary>`);
       lines.push(`  public class ${type.name}`);
       lines.push(`  {`);
       for (const property of type.properties) {
+        lines.push(`    // source: types.xml:${property.sourceLine ?? 'unknown'}`);
         lines.push(`    public ${property.typeName ? resolveArgType(typeMap, property.typeName) : 'object'} ${toPascalCase(property.name)} { get; set; }`);
       }
       lines.push(`  }`);

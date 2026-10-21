@@ -111,7 +111,7 @@ interface IndexedPythonMethodLocation extends PythonMethodLocation {
   binding?: PythonMethodBinding;
 }
 
-interface EntityMappingIndex {
+export interface EntityMappingIndex {
   rootName: string;
   rootCategory: DefinitionSemanticCategory;
   rootDefFile: string;
@@ -712,6 +712,18 @@ export class EntityMappingManager {
   getMappingForPythonFile(pythonFile: string): EntityMapping | undefined {
     const index = this.findIndexForPythonFile(pythonFile);
     return index ? this.toLegacyMapping(index) : undefined;
+  }
+
+  getIndexForPythonFile(pythonFile: string): EntityMappingIndex | undefined {
+    return this.findIndexForPythonFile(pythonFile);
+  }
+
+  async waitForInitialScan(): Promise<void> {
+    await this.initialScan;
+  }
+
+  getIndex(entityName: string): EntityMappingIndex | undefined {
+    return this.mappingIndexes.get(entityName);
   }
 
   getAllMappings(): EntityMapping[] {

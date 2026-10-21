@@ -38,7 +38,14 @@ import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
-import { exportPythonTypeStubs, setupTypeStubRegeneration } from './pythonTypeStubs';
+import {
+  buildPythonTypeStubPlan,
+  exportPythonTypeStubs,
+  setupTypeStubRegeneration
+} from './pythonTypeStubs';
+import { GeneratedSourceCodeLensProvider } from './generatedSourceLenses';
+import { buildEntityTypeStubPlan, exportEntityTypeStubs } from './entityTypeStubs';
+import { getCustomTypeInfos } from './definitionWorkspace';
 import {
   DEBUG_CONFIG_CHANNEL_NAME,
   ensureDebugConfig,
@@ -292,6 +299,21 @@ export function activate(context: vscode.ExtensionContext) {
     typesXmlCodeLensProviderImpl
   );
   context.subscriptions.push(typesXmlCodeLensProvider);
+
+  // 生成桩的来源镜(T-05):声明/字段行上方保留原始 types.xml 行,点击
+  // 直接跳原始声明;禁止从生成行号反推来源。
+  const generatedSourceLensProviderImpl = new GeneratedSourceCodeLensProvider(
+    'kbe_types.py',
+    buildPythonTypeStubPlan(
+      getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+    ).entries,
+    []
+  );
+  const generatedSourceLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    generatedSourceLensProviderImpl
+  );
+  context.subscriptions.push(generatedSourceLensProvider);
 
   // types.xml 数据类型 inlay hints(批154 用户令 todo:7):python 侧
   // self.<属性> 访问处原位渲染 def 声明的 <Type> 取值,与属性 F12 同索引;
@@ -1152,9 +1174,20 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(exportPythonTypeStubsCommand);
+  const generatedEntitySourceLensProviderImpl = new GeneratedSourceCodeLensProvider(
+    'entity_types.pyi',
+    [],
+    buildEntityTypeStubPlan(entityMappingManager.getAllMappings(), []).entries
+  );
+  const generatedEntitySourceLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    generatedEntitySourceLensProviderImpl
+  );
+  context.subscriptions.push(generatedEntitySourceLensProvider);
   void (async () => {
     await exportKbeStubs(fileSystemStubExportDeps, { silent: true });
     await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
+    await exportEntityTypeStubs(entityMappingManager);
     await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
   })();
   // 批143(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释

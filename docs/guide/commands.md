@@ -379,6 +379,7 @@
 
 - 标题：`Export KBEngine Python Stubs`
 - 作用：把内置 KBEngine Python API 符号索引（与 kode 的补全/悬停/跳转同源）导出为真实 `.pyi` 文件，配合 extraPaths 接线让 Pylance 解析 `import KBEngine`（虚拟桩文档 Python 扩展看不见）
+- 覆盖口径：`KBEngine.pyi` 是精选引擎符号子集，不是完整引擎 API；页头逐批声明覆盖状态，每个符号保留引擎 typings 的原始 `file:line` 锚点
 - 存根目录三级解析（批142）：`kbengine.python.stubDir` 设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `<工作区>/.kbengine/stubs`；支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量
 - 入口：命令面板 `Export KBEngine Python Stubs`；扩展激活时也会自动导出一次（`kbengine.python.stubExport` 默认开，激活期全程静默）
 - 行为：
@@ -394,6 +395,8 @@
 - 标题：`Export KBEngine Python Type Stubs`
 - 作用：把 `entity_defs/types.xml` 里的自定义类型（utype）导出成 Python 类型桩模块 `kbe_types.py`——`FIXED_DICT` → `TypedDict` 类、`ARRAY` → `List[元素]`、别名 → 目标类型名，配合 extraPaths 接线让实体脚本与工具脚本获得 `import kbe_types` 的真实类型来源（立项分析见 [def-pyi-stubs 可行性](../design/def-pyi-stubs.md)）
 - 选择真 `.py` 而非 `.pyi`：纯 `.pyi` 没有运行时形态，Python 侧 `import kbe_types` 拿不到值；真模块既能当 Pylance 的类型来源也能被运行时导入
+- 引用关系与来源：`FIXED_DICT` 属性可引用其他自定义类型（如 `PLAYER_ID`），生成器保留名字引用且逐类/逐属性写入 `# source: types.xml:<line>`；禁止用生成行号反推原始行号
+- 实体级类型：`.def` 属性引用 `types.xml` 自定义类型时，激活期同时生成 `entity_types.pyi`，逐实体落成 `Avatar.profile: ITEM_INFO` 这类声明；来源注释保留 `.def` 与 `types.xml` 双原始行
 - 目录与开关与 `kbengine.python.exportStubs` 同一套：`kbengine.python.stubDir` 三级解析、共用 `kbengine.python.stubExport` 开关；扩展激活时在 KBEngine.pyi 之后自动导出一次（静默）
 - 行为：
   - 内容确定：同输入生成逐字节一致的内容（头部无时间戳），与 KBEngine.pyi 同一套「内容一致零写、陈旧重写」纪律

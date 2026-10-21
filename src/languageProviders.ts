@@ -29,7 +29,8 @@ import {
 } from './defParser';
 import {
   EntityMappingManager,
-  EntityMethodSection
+  EntityMethodSection,
+  type EntityMappingIndex
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import { buildDefChain } from './defChain';
@@ -3172,6 +3173,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     const defParts: string[] = [];
     let defLocation: vscode.Location | null = null;
     let propertyHit = false;
+    let propertyTypeLocation: vscode.Location | null = null;
 
     if (access) {
       const propertyProbes: Array<{
@@ -3206,6 +3208,31 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             vscode.Uri.file(hit.defFile),
             new vscode.Position(hit.line - 1, 0)
           );
+          const workspaceRoot = getWorkspaceRootForDocument(document)
+            || getScanRootForFile(document.fileName);
+          const managerWithScan = manager as EntityMappingManager & { waitForInitialScan?: () => Promise<void> };
+          if (managerWithScan.waitForInitialScan) {
+            await managerWithScan.waitForInitialScan();
+          }
+          const indexAccessor = manager as EntityMappingManager & {
+            getIndex?: (entityName: string) => EntityMappingIndex | undefined;
+            getIndexForPythonFile?: (pythonFile: string) => EntityMappingIndex | undefined;
+          };
+          const mapping = enclosingName
+            ? indexAccessor.getIndex?.(enclosingName) || indexAccessor.getIndexForPythonFile?.(document.fileName)
+            : indexAccessor.getIndexForPythonFile?.(document.fileName);
+          const typeName = Object.values(mapping?.propertyDefinitions ?? [])
+            .find(definition => definition.identity.symbolName === access.currentSymbol)
+            ?.typeName;
+          if (typeName && workspaceRoot) {
+            const typeDeclaration = findCustomTypeDeclarationInfo(typeName, workspaceRoot);
+            if (typeDeclaration) {
+              propertyTypeLocation = new vscode.Location(
+                vscode.Uri.file(typeDeclaration.filePath),
+                new vscode.Position(typeDeclaration.line - 1, 0)
+              );
+            }
+          }
           propertyHit = true;
           defParts.push(`property(${access.fullPath}) ${probe.via} hit ${path.basename(hit.defFile)}:${hit.line}`);
           break;
@@ -3266,7 +3293,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         `层1 entity-def 命中 → ${hitLocation.uri.fsPath}:${hitLocation.range.start.line + 1}` +
           `(${detail.slice(0, 200)}) ${defTimer()}ms`
       );
-      return { location: defLocation, layers };
+      return { location: propertyTypeLocation ?? defLocation, layers };
     }
     const defDetail = defParts.join('; ') || enclosingNote || 'no .def index';
     layers.push({

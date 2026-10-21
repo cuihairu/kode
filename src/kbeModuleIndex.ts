@@ -307,6 +307,10 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
   }
 ];
 
+export const KBE_SYMBOL_CATALOG = 'partial';
+export const KBE_SYMBOL_CATALOG_NOTE =
+  'KBE_SYMBOLS is a curated engine subset, not a complete engine API catalog.';
+
 const KBE_SYMBOL_BY_NAME = new Map(KBE_SYMBOLS.map(entry => [entry.name, entry]));
 
 export function getKbeSymbol(name: string): KbeSymbolEntry | null {
@@ -489,6 +493,12 @@ function emitKbeStubBody(lines: string[]): Record<string, number> {
   return symbolLines;
 }
 
+function appendCatalogFootnote(lines: string[]): void {
+  lines.push('');
+  lines.push(`# Coverage: ${KBE_SYMBOL_CATALOG_NOTE}`);
+  lines.push(`# Engine typings anchors: ${KBE_SYMBOLS.length} curated symbols.`);
+}
+
 /** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
 export function buildKbeStubDocument(): KbeStubDocument {
   const lines: string[] = [
@@ -497,9 +507,11 @@ export function buildKbeStubDocument(): KbeStubDocument {
     '# 跳转目标为本桩文档;各符号下方标注引擎源码 typings 锚点',
     '# (sourceFile:sourceLine,逐条可回验)。',
     '# KBEntity 为 kode 内置别名(= Entity),对齐项目侧 kbe.KBEntity 基类习惯。',
+    `# Coverage: ${KBE_SYMBOL_CATALOG_NOTE}`,
     ''
   ];
   const symbolLines = emitKbeStubBody(lines);
+  appendCatalogFootnote(lines);
   return { content: lines.join('\n'), symbolLines };
 }
 
@@ -508,12 +520,14 @@ export function buildKbeStubExportContent(): string {
   const lines: string[] = [
     '# KBEngine.pyi — kode 自动生成的 KBEngine Python API 存根',
     '#',
-    '# 内容源自 kode 内置符号索引(src/kbeModuleIndex.ts),与 kode 的补全/',
-    '# 悬停/跳转同源;重新导出会覆盖本文件,手改不保留。',
+    '# Content source: src/kbeModuleIndex.ts. This generated stub is incomplete;',
+    `# ${KBE_SYMBOL_CATALOG_NOTE}`,
+    '# Completion/hover/navigation share this index. Regeneration overwrites edits.',
     '# 建议在 .gitignore 里忽略 .kbengine/stubs/(生成物,随索引更新)。',
     ''
   ];
   emitKbeStubBody(lines);
+  appendCatalogFootnote(lines);
   return lines.join('\n');
 }
 

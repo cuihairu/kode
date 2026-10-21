@@ -115,7 +115,7 @@ describe('extension activate 装配', () => {
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关)
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(4);
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(6);
     // 批154:python 侧 types.xml 数据类型 inlay hints 一份注册
     expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(1);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存
@@ -538,17 +538,17 @@ describe('extension activate 装配', () => {
       const lensFires = languagesRegistry.codeLensRegistrations.map(registration => {
         let count = 0;
         (registration.provider as { onDidChangeCodeLenses: (listener: () => void) => unknown })
-          .onDidChangeCodeLenses(() => { count += 1; });
+      .onDidChangeCodeLenses?.(() => { count += 1; });
         return () => count;
       });
       workspaceEvents.configurationChanged.fire({
         affectsConfiguration: (section: string) =>
           section === 'kbengine' || section === 'kbengine.codeLens'
       });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 0, 0]);
       // 外层 guard:不影响 kbengine 段时不 fire(计数不动)
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 0, 0]);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });

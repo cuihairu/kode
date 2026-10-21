@@ -15,7 +15,12 @@
  */
 
 import * as vscode from 'vscode';
-import { getCustomTypeInfos, type CustomTypeInfo, type CustomTypeStructureNode } from './definitionWorkspace';
+import {
+  getCustomTypeInfos,
+  type CustomTypeInfo,
+  type CustomTypePropertyInfo,
+  type CustomTypeStructureNode
+} from './definitionWorkspace';
 import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   fileSystemStubExportDeps,
@@ -65,12 +70,18 @@ export interface PythonTypeStubClassEntry {
   kind: 'class';
   name: string;
   properties: Array<{ name: string; annotation: string }>;
+  /** FIXED_DICT 类型节点声明行(1 起);测试注入缺源时为 null */
+  sourceLine?: number | null;
+  /** 属性名 → 属性行或内联 <Type> 行(1 起) */
+  propertySourceLines?: Record<string, number | null>;
 }
 
 export interface PythonTypeStubAliasEntry {
   kind: 'alias';
   name: string;
   annotation: string;
+  /** ARRAY/别名节点声明行(1 起);测试注入缺源时为 null */
+  sourceLine?: number | null;
 }
 
 export type PythonTypeStubEntry = PythonTypeStubClassEntry | PythonTypeStubAliasEntry;
@@ -101,6 +112,17 @@ interface AnnotationContext {
   names: ReadonlySet<string>;
   /** 其中的别名(模块级赋值,拓扑序约束只作用于它们) */
   aliasNames: ReadonlySet<string>;
+}
+
+function propertyAnnotation(
+  property: CustomTypePropertyInfo,
+  context: AnnotationContext
+): string {
+  const typeName = property.typeName?.trim();
+  if (typeName === 'ARRAY') {
+    return `List[${PYTHON_TYPE_STUB_FALLBACK}]`;
+  }
+  return annotationForType(typeName ?? '', context);
 }
 
 function escapeRegExp(value: string): string {
@@ -159,6 +181,7 @@ export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]):
     names,
     aliasNames: new Set([...names].filter(name => !classNames.has(name)))
   };
+  const typeByName = new Map(sorted.map(info => [info.name, info]));
 
   const classes: PythonTypeStubClassEntry[] = [];
   // 别名与其注解;null = 指引为空/成环等被跳过,不发射
@@ -170,7 +193,12 @@ export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]):
         name: info.name,
         properties: info.properties.map(property => ({
           name: property.name,
-          annotation: annotationForType(property.typeName ?? '', context)
+          annotation: propertyAnnotation(property, context)
+        })),
+        sourceLine: info.line,
+        propertySourceLines: Object.fromEntries(info.properties.map(property => {
+          const sourceLine = property.typeLine ?? property.line;
+          return [property.name, sourceLine === undefined ? null : sourceLine];
         }))
       });
       continue;
@@ -234,7 +262,12 @@ export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]):
         continue;
       }
       if (work.refs.every(ref => emitted.has(ref))) {
-        orderedEntries.push({ kind: 'alias', name, annotation: work.annotation });
+        orderedEntries.push({
+          kind: 'alias',
+          name,
+          annotation: work.annotation,
+          sourceLine: typeByName.get(name)?.line ?? null
+        });
         emitted.add(name);
         progressing = true;
       }
@@ -270,17 +303,21 @@ export function buildPythonTypeStubContent(entries: readonly PythonTypeStubEntry
   for (const entry of entries) {
     lines.push('', '');
     if (entry.kind === 'class') {
+      lines.push(`# source: types.xml:${entry.sourceLine ?? 'unknown'}`);
       lines.push(`class ${entry.name}(TypedDict):`);
       if (entry.properties.length === 0) {
         lines.push('    pass');
       } else {
         for (const property of entry.properties) {
+          const sourceLine = entry.propertySourceLines?.[property.name];
+          lines.push(`    # source: types.xml:${sourceLine ?? 'unknown'}`);
           lines.push(`    ${property.name}: ${property.annotation}`);
         }
       }
     } else {
+      lines.push(`# source: types.xml:${entry.sourceLine ?? 'unknown'}`);
       lines.push(`${entry.name} = ${entry.annotation}`);
-    }
+      }
   }
   lines.push('');
   return lines.join('\n');

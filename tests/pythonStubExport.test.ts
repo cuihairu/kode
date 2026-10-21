@@ -81,7 +81,8 @@ describe('buildKbeStubExportContent(与符号索引同源)', () => {
 
   it('头部明示 kode 自动生成、重导出覆盖', () => {
     expect(content).toContain('kode 自动生成');
-    expect(content).toContain('重新导出会覆盖');
+    expect(content).toContain('Regeneration overwrites edits');
+    expect(content).toContain('not a complete engine API catalog');
   });
 
   it('不带虚拟桩文档措辞(导出的是真文件,不是只读桩)', () => {

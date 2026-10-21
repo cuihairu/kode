@@ -1,0 +1,180 @@
+import type { EntityMapping } from './entityMapping';
+import {
+  getCustomTypeInfos,
+  type CustomTypeInfo
+} from './definitionWorkspace';
+import { EntityMappingManager } from './entityMapping';
+import {
+  PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
+  fileSystemStubExportDeps,
+  kbeStubDir,
+  type StubExportDeps
+} from './pythonStubExport';
+import {
+  PYTHON_BUILTIN_TYPE_ANNOTATIONS,
+  PYTHON_TYPE_STUB_FALLBACK
+} from './pythonTypeStubs';
+import * as vscode from 'vscode';
+
+export const ENTITY_TYPE_STUB_FILE_NAME = 'entity_types.pyi';
+
+export interface EntityTypePropertyEntry {
+  name: string;
+  annotation: string;
+  /** 属性 .def 声明行(1 起);统一源码映射禁止反推生成行号 */
+  sourceLine: number;
+  /** 引用 types.xml 自定义类型时的类型节点行(1 起) */
+  customTypeLine?: number;
+}
+
+export interface EntityTypeStubEntry {
+  entity: string;
+  properties: EntityTypePropertyEntry[];
+}
+
+export interface EntityTypeStubPlan {
+  content: string | null;
+  entries: EntityTypeStubEntry[];
+}
+
+export interface EntityTypeStubExportOptions {
+  listMappings?: (workspaceRoot: string) => EntityMapping[];
+  listCustomTypes?: (workspaceRoot: string) => CustomTypeInfo[];
+  silent?: boolean;
+}
+
+export async function exportEntityTypeStubs(
+  mappingManager: EntityMappingManager,
+  deps: StubExportDeps = fileSystemStubExportDeps,
+  options: EntityTypeStubExportOptions = {}
+): Promise<string[]> {
+  const enabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('python.stubExport', PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
+  if (!enabled) {
+    return [];
+  }
+  const folders = vscode.workspace.workspaceFolders ?? [];
+  if (folders.length === 0) {
+    return [];
+  }
+  const listMappings = options.listMappings ?? (() => mappingManager.getAllMappings());
+  const listCustomTypes = options.listCustomTypes ?? getCustomTypeInfos;
+  const written: string[] = [];
+  for (const folder of folders) {
+    const plan = buildEntityTypeStubPlan(
+      listMappings(folder.uri.fsPath),
+      listCustomTypes(folder.uri.fsPath)
+    );
+    if (!plan.content) {
+      continue;
+    }
+    const stubDir = kbeStubDir(folder.uri.fsPath);
+    const target = `${stubDir}/${ENTITY_TYPE_STUB_FILE_NAME}`;
+    let unchanged = false;
+    try {
+      unchanged = deps.exists(target) && deps.readFile(target) === plan.content;
+    } catch {
+      unchanged = false;
+    }
+    if (unchanged) {
+      continue;
+    }
+    try {
+      deps.mkdir(stubDir);
+      deps.writeFile(target, plan.content);
+      written.push(folder.name);
+    } catch {
+      if (!options.silent) {
+        await vscode.window.showWarningMessage(`实体类型桩导出失败: ${folder.name}`);
+      }
+    }
+  }
+  return written;
+}
+
+interface EntityStubContext {
+  customTypes: ReadonlyMap<string, CustomTypeInfo>;
+}
+
+function annotationForDefType(typeName: string | undefined, context: EntityStubContext): {
+  annotation: string;
+  customTypeLine?: number;
+} {
+  const trimmed = typeName?.trim();
+  if (!trimmed || trimmed === 'ALIAS') {
+    return { annotation: PYTHON_TYPE_STUB_FALLBACK };
+  }
+  const customType = context.customTypes.get(trimmed);
+  if (customType) {
+    return { annotation: trimmed, customTypeLine: customType.line };
+  }
+  if (trimmed === 'ARRAY') {
+    return { annotation: `list[${PYTHON_TYPE_STUB_FALLBACK}]` };
+  }
+  return {
+    annotation: PYTHON_BUILTIN_TYPE_ANNOTATIONS[trimmed] ?? PYTHON_TYPE_STUB_FALLBACK
+  };
+}
+
+export function buildEntityTypeStubPlan(
+  mappings: readonly EntityMapping[],
+  customTypes: readonly CustomTypeInfo[]
+): EntityTypeStubPlan {
+  const context: EntityStubContext = {
+    customTypes: new Map(customTypes.map(info => [info.name, info]))
+  };
+  const entries = [...mappings]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map(mapping => ({
+      entity: mapping.name,
+      properties: Object.entries(mapping.properties)
+        .map(([name, location]) => {
+          const withDefinitions = mapping as EntityMapping & {
+            propertyDefinitions?: Array<{ identity: { symbolName: string }; typeName?: string }>
+          };
+          const propertyInfo = withDefinitions.propertyDefinitions?.find(
+            definition => definition.identity.symbolName === name
+          );
+          const resolved = annotationForDefType(propertyInfo?.typeName, context);
+          return {
+            name,
+            annotation: resolved.annotation,
+            customTypeLine: resolved.customTypeLine,
+            sourceLine: location.line
+          };
+        })
+        .sort((left, right) => left.name.localeCompare(right.name))
+    }))
+    .filter(entry => entry.properties.length > 0);
+  return {
+    content: entries.length === 0 ? null : buildEntityTypeStubContent(entries),
+    entries
+  };
+}
+
+export function buildEntityTypeStubContent(entries: readonly EntityTypeStubEntry[]): string {
+  const lines = [
+    '# Entity property stubs generated by kode from *.def and types.xml.',
+    '# Manual edits are overwritten. Source comments preserve original lines;',
+    '# generated line numbers must never be used to infer source locations.',
+    'from typing import Any'
+  ];
+  for (const entry of entries) {
+    lines.push('', `class ${entry.entity}:`);
+    if (entry.properties.length === 0) {
+      lines.push('    pass');
+      continue;
+    }
+    for (const property of entry.properties) {
+      const sourceParts = [`.def:${property.sourceLine}`];
+      if (property.customTypeLine !== undefined) {
+        sourceParts.push(`types.xml:${property.customTypeLine}`);
+      }
+      lines.push(`    # source: ${sourceParts.join(' -> ')}`);
+      lines.push(`    ${property.name}: ${property.annotation}`);
+    }
+  }
+  lines.push('');
+  return lines.join('\n');
+}

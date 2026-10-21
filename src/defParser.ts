@@ -29,6 +29,8 @@ export interface DefElementNode {
   closeTagStart: number;
   closeTagEnd: number;
   selfClosing: boolean;
+  /** 所属解析文档,供结构节点保留原始 file:line 映射 */
+  document: DefDocument;
 }
 
 export interface DefTextNode {
@@ -65,6 +67,13 @@ export function parseDefDocument(text: string): DefDocument {
     tokenIndex: 0
   };
 
+  const document: DefDocument = {
+    text,
+    lineStarts,
+    root: null,
+    nodes
+  };
+  setElementDocuments(nodes, document);
   assignNodePositions(text, nodes, tokens, state);
 
   return {
@@ -73,6 +82,16 @@ export function parseDefDocument(text: string): DefDocument {
     root: findFirstElement(nodes),
     nodes
   };
+}
+
+function setElementDocuments(nodes: DefNode[], document: DefDocument): void {
+  for (const node of nodes) {
+    if (node.kind !== 'element') {
+      continue;
+    }
+    node.document = document;
+    setElementDocuments(node.children, document);
+  }
 }
 
 export function isElementNode(node: DefNode | null | undefined): node is DefElementNode {
@@ -316,7 +335,8 @@ function normalizePreserveOrderNodes(
         contentEnd: -1,
         closeTagStart: -1,
         closeTagEnd: -1,
-        selfClosing: false
+        selfClosing: false,
+        document: null as unknown as DefDocument
       };
 
       // 不可达(批63 定性):preserveOrder 输出的元素值恒为子节点数组 —— 空元素给

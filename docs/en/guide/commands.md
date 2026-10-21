@@ -373,6 +373,7 @@ The flow graph panel supports:
 
 - Title: `Export KBEngine Python Stubs`
 - Purpose: export the built-in KBEngine Python API symbol index (the same source as kode's completion/hover/navigation) as a real `.pyi` file, which together with the extraPaths wiring lets Pylance resolve `import KBEngine` (virtual stub documents are invisible to the Python extension)
+- Coverage: `KBEngine.pyi` is a curated subset of engine symbols, not a complete engine API; the header states the coverage, and every symbol keeps an original engine typings `file:line` anchor
 - Stub directory resolved in three tiers (batch 142): `kbengine.python.stubDir` setting > env var `KBENGINE_STUB_DIR` > default convention `<workspace>/.kbengine/stubs`; VS Code variables like `${workspaceFolder}`/`${env:NAME}` are supported
 - Entries: command palette `Export KBEngine Python Stubs`; also exported once automatically at activation (`kbengine.python.stubExport` default on, fully silent during activation)
 - Behavior:
@@ -388,6 +389,8 @@ The flow graph panel supports:
 - Title: `Export KBEngine Python Type Stubs`
 - Purpose: export the custom types (utype) in `entity_defs/types.xml` into a Python type stub module `kbe_types.py` — `FIXED_DICT` → `TypedDict` classes, `ARRAY` → `List[element]`, aliases → target type names — which together with the extraPaths wiring gives entity and tool scripts a real type source for `import kbe_types` (feasibility analysis: [Def/utype to .pyi stubs](../design/def-pyi-stubs.md))
 - A real `.py` rather than a `.pyi`: a pure `.pyi` has no runtime form, so `import kbe_types` on the Python side gets no value; a real module serves both as a Pylance type source and as a runtime import
+- References and sources: a `FIXED_DICT` property may reference another custom type (such as `PLAYER_ID`); the generator preserves that name reference and emits `# source: types.xml:<line>` per class/property. Generated line numbers must not be used to infer source lines
+- Entity-level types: when a `.def` property references a `types.xml` custom type, activation also generates `entity_types.pyi`, materializing per-entity declarations such as `Avatar.profile: ITEM_INFO`; source comments keep both original `.def` and `types.xml` lines
 - Same directory and switch as `kbengine.python.exportStubs`: the `kbengine.python.stubDir` three-tier resolution, sharing the `kbengine.python.stubExport` switch; exported once automatically at activation, after KBEngine.pyi (silently)
 - Behavior:
   - Deterministic content: the same input produces byte-identical content (no timestamp in the header), following the same zero-write-when-unchanged, rewrite-when-stale discipline as KBEngine.pyi

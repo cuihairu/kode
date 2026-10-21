@@ -157,7 +157,12 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       properties: [
         { name: 'name', annotation: 'str' },
         { name: 'level', annotation: 'int' }
-      ]
+      ],
+      propertySourceLines: {
+        level: null,
+        name: null
+      },
+      sourceLine: 1
     });
     expect(plan.skipped).toEqual([]);
     expect(plan.content).toContain('class AVATAR_INFO(TypedDict):');
@@ -169,13 +174,23 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     const plan = buildPythonTypeStubPlan([SAMPLE_TYPES()[0], SAMPLE_TYPES()[1]]);
 
     const alias = plan.entries.find(entry => entry.kind === 'alias');
-    expect(alias).toEqual({ kind: 'alias', name: 'AVATAR_INFO_LIST', annotation: 'List[AVATAR_INFO]' });
+    expect(alias).toEqual({
+      annotation: 'List[AVATAR_INFO]',
+      kind: 'alias',
+      name: 'AVATAR_INFO_LIST',
+      sourceLine: 1
+    });
   });
 
   it('别名到内置类型发赋值语句', () => {
     const plan = buildPythonTypeStubPlan([SAMPLE_TYPES()[2]]);
 
-    expect(plan.entries[0]).toEqual({ kind: 'alias', name: 'AVATAR_NAME', annotation: 'str' });
+    expect(plan.entries[0]).toEqual({
+      annotation: 'str',
+      kind: 'alias',
+      name: 'AVATAR_NAME',
+      sourceLine: 1
+    });
     expect(plan.content).toContain('AVATAR_NAME = str');
   });
 
@@ -236,15 +251,22 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
           value: {
             name: 'ARRAY',
             rawValue: 'ARRAY <of> INT32 </of>',
-            children: [{ tag: 'of', value: { name: 'INT32', rawValue: 'INT32', children: [] } }]
+            line: null,
+            children: [{ tag: 'of', value: { name: 'INT32', rawValue: 'INT32', children: [], line: null } }]
           }
         }
-      ]
-    };
+      ],
+      line: null
+      };
 
     const plan = buildPythonTypeStubPlan([nested]);
 
-    expect(plan.entries[0]).toEqual({ kind: 'alias', name: 'NESTED', annotation: 'List[List[int]]' });
+    expect(plan.entries[0]).toEqual({
+      annotation: 'List[List[int]]',
+      kind: 'alias',
+      name: 'NESTED',
+      sourceLine: 1
+    });
   });
 
   it('FD 属性引用自定义类型名出名字注解;未知类型落 Any;内联 ARRAY 落 List[Any]', () => {
@@ -287,7 +309,12 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       makeType({ name: 'BARE_ARRAY', aliasType: 'ARRAY', rawValue: 'ARRAY' })
     ]);
 
-    expect(plan.entries[0]).toEqual({ kind: 'alias', name: 'BARE_ARRAY', annotation: 'List[Any]' });
+    expect(plan.entries[0]).toEqual({
+      annotation: 'List[Any]',
+      kind: 'alias',
+      name: 'BARE_ARRAY',
+      sourceLine: 1
+    });
   });
 
   it('数组元素指引为 ALIAS 占位时也落 List[Any],不把占位符当类型名发射', () => {
@@ -295,7 +322,12 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
 
     const plan = buildPythonTypeStubPlan([ghostElement]);
 
-    expect(plan.entries[0]).toEqual({ kind: 'alias', name: 'GHOST_ARRAY', annotation: 'List[Any]' });
+    expect(plan.entries[0]).toEqual({
+      annotation: 'List[Any]',
+      kind: 'alias',
+      name: 'GHOST_ARRAY',
+      sourceLine: 1
+    });
   });
 
   it('名字序在前的别名依赖名字序在后的:多轮迭代也能排完,依赖先出', () => {
