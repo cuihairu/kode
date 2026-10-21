@@ -7,9 +7,12 @@
  * 未在 def 声明的普通函数不出 lens——这就是"哪些是 RPC"的视觉分界。
  * 解析回包与 lens 规格交 languageProviders 装配成 vscode.CodeLens。
  *
- * 已知边界:同名命中不分实现归属。闭包脚本(父类/接口实现)里恰好与某实体
- * def 声明同名的辅助函数也会出 lens;解析器只回答"该名字是不是 def 声明的
- * 方法",不回答"这一行是不是它的实现"。
+ * 已知边界(收窄后口径):同名命中不分实现归属的历史问题,已由形参闸门
+ * 兜住主要误标面——def 声明了 <Arg> 时,被标 lens 的 python def 行必须与
+ * 声明形参个数相等、有注解的类型对得上(闸门本体
+ * EntityMappingManager.pythonSignatureMatchesDeclaredArgs,与全项目回退
+ * 扫描同源),不符则该行不出 lens;闭包脚本里与某实体 def 声明同名且恰好
+ * 同签名的辅助函数仍会出 lens(未声明 <Arg> 的方法维持按名命中现状)。
  */
 
 import { DefMethodSection } from './defParser';

@@ -401,6 +401,10 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
 }
 
 export class KBEngineHoverProvider implements vscode.HoverProvider {
+  // 实体 def 方法标注面(用户令:只凭名字标 KBEngine 函数不严谨)需要 def
+  // 索引,按 RpcCodeLensProvider 同款注入;可选参数保持既有无参用例口径。
+  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+
   provideHover(
     document: vscode.TextDocument,
     position: vscode.Position
@@ -412,6 +416,79 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     const word = document.getText(range);
+
+    // 实体 def 方法声明标注(用户令:Python 实现里看不出哪些函数是 def 声明
+    // 的方法):光标落在 python def 声明行方法名上时,先问 def 索引是否命中;
+    // 命中后过与 RPC CodeLens/全项目回退同一把形参闸门(def 声明了 <Arg> 时
+    // 个数/注解类型必须对上),不符不给该标注。未命中或未注入 manager 时落
+    // 回普通 hover 链,既有同步行为不变(未注入即不进异步面)。
+    const manager = this.entityMappingManager;
+    if (manager && document.languageId === 'python') {
+      const methodName = getPythonMethodDeclarationAtPosition(
+        document.lineAt(position.line).text,
+        position.character
+      );
+      if (methodName) {
+        return this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
+          .then(annotation =>
+            annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+          );
+      }
+    }
+
+    return this.provideKnownHover(document, position, featureConfig, range, word);
+  }
+
+  /**
+   * 「此函数是实体 def 声明的 X 方法」标注(形参闸门同源):resolveMethodDefinition
+   * 命中才标;def 声明了 <Arg> 时本行签名须过 pythonSignatureMatchesDeclaredArgs,
+   * 不符返回 null(调用方落回普通 hover)。
+   */
+  private async resolveDefMethodAnnotation(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    line: number,
+    methodName: string
+  ): Promise<vscode.Hover | null> {
+    let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
+    try {
+      location = await manager.resolveMethodDefinition(document.fileName, methodName);
+    } catch {
+      return null;
+    }
+    if (!location) {
+      return null;
+    }
+    const declaredArgTypes =
+      location.declaredArgs && location.declaredArgs.length > 0 ? location.declaredArgs : undefined;
+    if (
+      declaredArgTypes &&
+      !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
+        declaredArgTypes,
+        document.getText().split(/\r?\n/),
+        line
+      )
+    ) {
+      return null;
+    }
+    const markdown = new vscode.MarkdownString();
+    markdown.appendMarkdown(
+      `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
+    );
+    markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
+    if (location.exposed) {
+      markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
+    }
+    return new vscode.Hover(markdown);
+  }
+
+  private provideKnownHover(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    featureConfig: ReturnType<typeof getLanguageFeatureConfig>,
+    range: vscode.Range,
+    word: string
+  ): vscode.Hover | null {
     if (document.languageId === 'python' && featureConfig.hoverEventStats) {
       const calls = findEventCalls(document.getText());
       const current = calls.find(call => position && document.offsetAt(position) >= call.eventOffset && document.offsetAt(position) <= call.eventOffset + call.event.length);
@@ -3490,6 +3567,8 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
     // 同名方法只解析一次:闭包脚本里同名方法可能重复出现,而解析结果
     // (是否 def 声明 + 声明位置)与方法名一一对应,按名缓存无歧义
     const hits = new Map<string, RpcMethodHit>();
+    // def 声明的 <Arg> 类型序列(按方法名;未声明为 undefined,不作闸门)
+    const declaredArgTypesByName = new Map<string, string[]>();
     for (const declaration of declarations) {
       if (hits.has(declaration.methodName)) {
         continue;
@@ -3506,10 +3585,30 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
           defLine: location.line,
           exposed: location.exposed
         });
+        if (location.declaredArgs && location.declaredArgs.length > 0) {
+          declaredArgTypesByName.set(declaration.methodName, location.declaredArgs);
+        }
       }
     }
 
-    const rpcLenses = buildRpcCodeLenses(declarations, methodName => hits.get(methodName)).map(spec =>
+    // 形参闸门(用户令:只凭名字标 RPC 不严谨):def 声明了 <Arg> 时,被标
+    // lens 的 python def 行形参个数必须相等、有注解的按内建映射对上类型,
+    // 不符则该行不出 lens;未声明 <Arg> 维持现状。闸门本体与全项目回退
+    // 扫描同源(EntityMappingManager.pythonSignatureMatchesDeclaredArgs)。
+    const documentLines = document.getText().split(/\r?\n/);
+    const gatedDeclarations = declarations.filter(declaration => {
+      const declaredArgTypes = declaredArgTypesByName.get(declaration.methodName);
+      if (!declaredArgTypes) {
+        return true;
+      }
+      return EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
+        declaredArgTypes,
+        documentLines,
+        declaration.line
+      );
+    });
+
+    const rpcLenses = buildRpcCodeLenses(gatedDeclarations, methodName => hits.get(methodName)).map(spec =>
       new vscode.CodeLens(
         new vscode.Range(
           new vscode.Position(spec.declaration.line, spec.declaration.character),

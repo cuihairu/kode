@@ -1048,32 +1048,11 @@ export class EntityMappingManager {
             // 形参闸门(用户令 2026-10-21):def 声明了 <Arg> 时,实现形参个数
             // (剔除 self/cls)必须相等;有注解的形参还要按引擎内建映射对上类型
             // (UINT8→int/STRING→str/VECTOR3→Tuple[...]),未注明解的只作个数校验;
-            // 读不出签名/个数或类型不符 → 该文件不算候选。
-            if (declaredArgTypes) {
-              const signature = this.collectSignatureText(lines, i);
-              if (signature === null) {
-                break;
-              }
-              const params = EntityMappingManager.parsePythonParams(signature);
-              if (!params || params.length !== declaredArgTypes.length) {
-                break;
-              }
-              let typeOk = true;
-              for (let a = 0; a < declaredArgTypes.length; a += 1) {
-                const annotation = params[a].annotation;
-                if (!annotation) {
-                  continue;
-                }
-                const expected =
-                  PYTHON_BUILTIN_TYPE_ANNOTATIONS[declaredArgTypes[a]] ?? declaredArgTypes[a];
-                if (annotation !== expected && annotation !== declaredArgTypes[a]) {
-                  typeOk = false;
-                  break;
-                }
-              }
-              if (!typeOk) {
-                break;
-              }
+            // 读不出签名/个数或类型不符 → 该文件不算候选。闸门本体已提炼为
+            // 公开静态 pythonSignatureMatchesDeclaredArgs,CodeLens/Hover 面同源复用。
+            if (declaredArgTypes &&
+              !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(declaredArgTypes, lines, i)) {
+              break;
             }
             hits.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
             break; // 每文件首个同名 def 即落点
@@ -1089,8 +1068,46 @@ export class EntityMappingManager {
     return hits;
   }
 
+  /**
+   * 形参闸门公开口(用户令 2026-10-21:只凭名字标 RPC/标 KBEngine 函数不严谨,
+   * CodeLens/Hover 面与全项目回退扫描共用同一把尺):从 lines[index] 的 def 行
+   * 起收集签名,与 declaredArgTypes 逐一对账——形参个数(剔除 self/cls)必须
+   * 相等,有注解的形参按引擎内建映射(UINT8→int/STRING→str 等,兼容直写
+   * <Arg> 原文)对上类型,未注明解的只作个数校验;读不出签名/个数或类型
+   * 不符一律 false,declaredArgTypes 为空序列视为未声明 <Arg>,恒真。
+   */
+  static pythonSignatureMatchesDeclaredArgs(
+    declaredArgTypes: readonly string[],
+    lines: string[],
+    index: number
+  ): boolean {
+    if (declaredArgTypes.length === 0) {
+      return true;
+    }
+    const signature = EntityMappingManager.collectSignatureText(lines, index);
+    if (signature === null) {
+      return false;
+    }
+    const params = EntityMappingManager.parsePythonParams(signature);
+    if (!params || params.length !== declaredArgTypes.length) {
+      return false;
+    }
+    for (let a = 0; a < declaredArgTypes.length; a += 1) {
+      const annotation = params[a].annotation;
+      if (!annotation) {
+        continue;
+      }
+      const expected =
+        PYTHON_BUILTIN_TYPE_ANNOTATIONS[declaredArgTypes[a]] ?? declaredArgTypes[a];
+      if (annotation !== expected && annotation !== declaredArgTypes[a]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** 从 def 行起收集到括号配平的签名文本(≤8 行跨行容忍);读不出返回 null。 */
-  private collectSignatureText(lines: string[], startIndex: number): string | null {
+  private static collectSignatureText(lines: string[], startIndex: number): string | null {
     let chunk = '';
     for (let k = startIndex; k < lines.length && k < startIndex + 8; k += 1) {
       chunk += (chunk ? ' ' : '') + (lines[k] ?? '');

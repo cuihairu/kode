@@ -197,13 +197,18 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(completionProvider);
 
-  // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档）
+  // 初始化实体映射管理器
+  const entityMappingManager = new EntityMappingManager(context);
+
+  // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档;
+  // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
+  // 标注走与 RPC CodeLens 同一把形参闸门）
   const hoverProvider = vscode.languages.registerHoverProvider(
     [
       ...definitionNavigationSelector,
       ...pythonDocumentSelector
     ],
-    new KBEngineHoverProvider()
+    new KBEngineHoverProvider(entityMappingManager)
   );
   context.subscriptions.push(hoverProvider);
 
@@ -214,9 +219,6 @@ export function activate(context: vscode.ExtensionContext) {
     new ServerConfigHoverProvider()
   );
   context.subscriptions.push(serverConfigHoverProvider);
-
-  // 初始化实体映射管理器
-  const entityMappingManager = new EntityMappingManager(context);
 
   // 注册定义跳转提供者（.def 文件）
   const definitionProvider = vscode.languages.registerDefinitionProvider(
