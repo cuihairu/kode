@@ -45,7 +45,10 @@ import {
   setupTypeStubRegeneration
 } from './pythonTypeStubs';
 import { GeneratedSourceCodeLensProvider } from './generatedSourceLenses';
-import { buildEntityTypeStubPlan, exportEntityTypeStubs } from './entityTypeStubs';
+import {
+  buildEntityTypeStubPlan,
+  exportEntityTypeStubs
+} from './entityTypeStubs';
 import { getCustomTypeInfos } from './definitionWorkspace';
 import {
   DEBUG_CONFIG_CHANNEL_NAME,
@@ -1181,7 +1184,10 @@ export function activate(context: vscode.ExtensionContext) {
   const generatedEntitySourceLensProviderImpl = new GeneratedSourceCodeLensProvider(
     'entity_types.pyi',
     [],
-    buildEntityTypeStubPlan(entityMappingManager.getAllMappings(), []).entries
+    buildEntityTypeStubPlan(
+      entityMappingManager.getAllMappings(),
+      getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+    ).entries
   );
   const generatedEntitySourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,

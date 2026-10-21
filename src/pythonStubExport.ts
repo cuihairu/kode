@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { buildKbeStubExportContent } from './kbeModuleIndex';
 import {
@@ -27,6 +28,26 @@ export const PYTHON_STUB_EXPORT_SETTING = 'kbengine.python.stubExport';
 /** 导出开关(kbengine.python.stubExport,默认开) */
 export const PYTHON_STUB_EXPORT_ENABLED_DEFAULT = true;
 export const KBE_STUB_FILE_NAME = 'KBEngine.pyi';
+
+const ENGINE_TYPINGS_MARKER = 'typings/_KBEngine_common.pyi';
+const ENGINE_TYPINGS_MODULE_ORDER = [
+  '_KBEngine_common',
+  '_KBEngine_baseapp',
+  '_KBEngine_bots',
+  '_KBEngine_cellapp',
+  '_KBEngine_dbmgr',
+  '_KBEngine_hooks',
+  '_KBEngine_interfaces',
+  '_KBEngine_logger',
+  '_KBEngine_loginapp',
+  '_KBEngine_pythonapp',
+  '_KBEngine_server_errors'
+] as const;
+
+export interface KbeStubEngineOptions {
+  engineRoot?: string | null;
+  engineRootEnv?: Record<string, string | undefined>;
+}
 
 /** 存根目录设置键(kbengine.python.stubDir,默认空串=走默认约定;旧键不废) */
 export const PYTHON_STUB_DIR_SETTING = 'python.stubDir';
@@ -277,9 +298,76 @@ export const fileSystemStubExportDeps: StubExportDeps = {
   listDir: (dir: string): string[] => fs.readdirSync(dir)
 };
 
+function resolveEngineTypingsRoot(
+  workspaceRoot: string,
+  options: KbeStubEngineOptions
+): string | null {
+  if (options.engineRoot === null) {
+    return null;
+  }
+  const env = options.engineRootEnv ?? process.env;
+  const candidates = [
+    options.engineRoot,
+    env.KBENGINE_ROOT,
+    path.resolve(workspaceRoot, '..', 'kbengine')
+  ];
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(path.join(candidate, ENGINE_TYPINGS_MARKER))) {
+      return path.join(candidate, 'typings');
+    }
+  }
+  return null;
+}
+
+function buildEngineKbeStubContent(typingsRoot: string): string | null {
+  const modules: Array<{ name: string; lines: string[] }> = [];
+  for (const moduleName of ENGINE_TYPINGS_MODULE_ORDER) {
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(typingsRoot, `${moduleName}.pyi`), 'utf8');
+    } catch {
+      return null;
+    }
+    const rewritten = content.replace(/\r\n/g, '\n').replace(/\s+$/, '').replace(
+      /^(\s*from\s+)_KBEngine_([^.\s]+)(\s+import\s+)/gm,
+      '$1KBEngine$3'
+    );
+    modules.push({ name: moduleName, lines: rewritten.split('\n') });
+  }
+  const lines = [
+    '# KBEngine.pyi — kode generated from the local KBEngine typings checkout.',
+    '# Engine typings are concatenated so Python tools can resolve the full API;',
+    '# if no engine checkout is detected, kode falls back to its curated catalog.',
+    '# Completion/hover/navigation inside kode still use the curated catalog.'
+  ];
+  for (const module of modules) {
+    lines.push('', `# --- ${module.name}.pyi (${typingsRoot}) ---`, ...module.lines);
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * Engine checkouts provide the authoritative full API; concatenate them in a
+ * stable order. Workspaces without an engine retain the curated catalog.
+ */
+export function buildKbeStubExportContentForWorkspace(
+  workspaceRoot: string,
+  options: KbeStubEngineOptions = {}
+): string {
+  const engineTypingsRoot = resolveEngineTypingsRoot(workspaceRoot, options);
+  const engineContent = engineTypingsRoot ? buildEngineKbeStubContent(engineTypingsRoot) : null;
+  if (engineContent) {
+    return engineContent;
+  }
+  return buildKbeStubExportContent();
+}
+
 export interface StubExportOptions {
   /** 激活期自动导出传 true:全程零提示;命令面板手动导出保持播报 */
   silent?: boolean;
+  engineRoot?: string | null;
+  engineRootEnv?: Record<string, string | undefined>;
 }
 
 /**
@@ -290,7 +378,7 @@ export interface StubExportOptions {
  */
 export async function exportKbeStubs(
   deps: StubExportDeps = fileSystemStubExportDeps,
-  options: StubExportOptions = {}
+  options: StubExportOptions & KbeStubEngineOptions = {}
 ): Promise<string[]> {
   const enabled = vscode.workspace
     .getConfiguration('kbengine')
@@ -310,11 +398,11 @@ export async function exportKbeStubs(
     }
     return [];
   }
-  const desired = buildKbeStubExportContent();
   const written: string[] = [];
   const failed: string[] = [];
   const skipped: string[] = [];
   for (const folder of folders) {
+    const desired = buildKbeStubExportContentForWorkspace(folder.uri.fsPath, options);
     // 批142 用户令:目录以配置为准(设置 > 环境变量 > 默认约定),来源随值
     // 一起带出,供播报与「配置来源」视图说明当前生效值来自哪里
     const resolved = resolveStubDir(folder.uri.fsPath, {

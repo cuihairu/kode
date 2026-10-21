@@ -135,3 +135,34 @@ describe('getCustomTypeInfos 名序锁定', () => {
     expect(docOrder).not.toEqual([...docOrder].sort((left, right) => left.localeCompare(right)));
   });
 });
+
+describe('getCustomTypeInfos alias.xml compatibility', () => {
+  it('imports old-style aliases as recursive custom type definitions', () => {
+    const aliasRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-alias-'));
+    try {
+      write(aliasRoot, 'scripts/entity_defs/alias.xml', [
+        '<root>',
+        '  <DIRECT>UINT8</DIRECT>',
+        '  <WRAPPED><Type>STRING</Type></WRAPPED>',
+        '  <LIST>',
+        '    <Type>',
+        '      ARRAY',
+        '      <of>DIRECT</of>',
+        '    </Type>',
+        '  </LIST>',
+        '  <EMPTY></EMPTY>',
+        '</root>'
+      ].join('\n'));
+
+      const infos = getCustomTypeInfos(aliasRoot);
+      expect(infos.map(info => info.name)).toEqual(['DIRECT', 'LIST', 'WRAPPED']);
+      expect(infos.find(info => info.name === 'DIRECT')?.aliasType).toBe('UINT8');
+      expect(infos.find(info => info.name === 'WRAPPED')?.aliasType).toBe('STRING');
+      expect(infos.find(info => info.name === 'LIST')?.aliasType).toBe('ARRAY');
+      expect(infos.find(info => info.name === 'LIST')?.structure.children[0]?.tag).toBe('of');
+      expect(infos.find(info => info.name === 'DIRECT')?.structure.name).toBe('UINT8');
+    } finally {
+      fs.rmSync(aliasRoot, { recursive: true, force: true });
+    }
+  });
+});

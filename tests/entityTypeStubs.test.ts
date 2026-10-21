@@ -35,6 +35,23 @@ const avatarMapping = {
   }]
 } as unknown as EntityMapping;
 
+const guardMapping = {
+  name: 'Guard',
+  defFile: '/ws/scripts/entity_defs/Guard.def',
+  pythonFile: '/ws/scripts/cell/Guard.py',
+  pythonFiles: ['/ws/scripts/cell/Guard.py'],
+  properties: {},
+  methods: {
+    respawn: [{
+      defFile: '/ws/scripts/entity_defs/Guard.def',
+      line: 17,
+      section: 'CellMethods',
+      exposed: true,
+      declaredArgs: ['UINT32']
+    }]
+  }
+} as unknown as EntityMapping;
+
 describe('buildEntityTypeStubPlan', () => {
   it('creates per-entity declarations for custom .def property types', () => {
     const plan = buildEntityTypeStubPlan([avatarMapping], [customType]);
@@ -45,14 +62,33 @@ describe('buildEntityTypeStubPlan', () => {
         annotation: 'ITEM_INFO',
         customTypeLine: 8,
         sourceLine: 24
-      }]
+      }],
+      methods: []
     }]);
     expect(plan.content).toContain('class Avatar:');
     expect(plan.content).toContain('# source: .def:24 -> types.xml:8');
     expect(plan.content).toContain('    profile: ITEM_INFO');
   });
 
-  it('returns no content when no properties are declared', () => {
+  it('adds per-section methods and built-in argument annotations', () => {
+    const plan = buildEntityTypeStubPlan([guardMapping], []);
+    expect(plan.entries).toEqual([{
+      entity: 'Guard',
+      properties: [],
+      methods: [{
+        name: 'respawn',
+        args: ['UINT32'],
+        section: 'CellMethods',
+        exposed: true,
+        sourceLine: 17
+      }]
+    }]);
+    expect(plan.content).toContain('class Guard:');
+    expect(plan.content).toContain('# source: .def:17 (CellMethods)');
+    expect(plan.content).toContain('def respawn(arg1: int) -> None: ...');
+  });
+
+  it('returns no content when neither properties nor methods are declared', () => {
     expect(buildEntityTypeStubPlan([], [customType]).content).toBeNull();
   });
 });

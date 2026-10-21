@@ -13,6 +13,7 @@ import {
   getDirectChildElement,
   getDirectChildElements,
   getLineNumberAt,
+  getDirectTextNodes,
   getScalarChildValue,
   parseDefDocument
 } from './defParser';
@@ -281,14 +282,95 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
 }
 
 export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
+  const types = [...getTypesXmlCustomTypeInfos(workspaceRoot)];
+  const aliases = getAliasXmlCustomTypeInfos(workspaceRoot);
+  return [...types, ...aliases].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function getTypesXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
   const snapshot = getTypesXmlSnapshot(workspaceRoot);
   if (!snapshot) {
     return [];
   }
 
   return snapshot.typeNodes
-    .map(typeNode => buildCustomTypeInfo(snapshot.document, snapshot.layout, typeNode))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .map(typeNode => buildCustomTypeInfo(snapshot.document, snapshot.layout, typeNode));
+}
+
+/**
+ * BigWorld/old-style alias discovery. The engine reads
+ * scripts/entity_defs/alias.xml in DataType::initAliases (data_type.cpp:336)
+ * and resolves each child's textual target through DataType::buildDataType
+ * (data_type.cpp:247-261). Reusing CustomTypeInfo lets alias.xml share the
+ * existing recursive and cycle-safe Python annotation resolver.
+ */
+function getAliasXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
+  const aliasPath = joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'alias.xml');
+  const content = readAliasXml(aliasPath);
+  if (!content) {
+    return [];
+  }
+  const document = parseXmlDocument(content);
+  if (!document?.root) {
+    return [];
+  }
+  return getDirectChildElements(document.root)
+    .map(node => buildAliasXmlCustomTypeInfo(document, aliasPath, node))
+    .filter((info): info is CustomTypeInfo => info !== null);
+}
+
+function readAliasXml(aliasPath: string): string | null {
+  try {
+    const value = fs.readFileSync(aliasPath, 'utf8');
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+function buildAliasXmlCustomTypeInfo(
+  document: DefDocument,
+  filePath: string,
+  aliasNode: DefElementNode
+): CustomTypeInfo | null {
+  const typeNode = getDirectChildElement(aliasNode, 'Type');
+  const childNode = typeNode ?? getDirectChildElements(aliasNode).find(node => node.name !== 'Type');
+  if (!childNode && getDirectTextNodes(aliasNode).every(node => node.text.trim().length === 0)) {
+    return null;
+  }
+  const aliasType = childNode
+    ? (childNode.name === 'Type'
+      ? (getDirectTextNodes(childNode).map(node => node.text.trim()).find(Boolean) || 'ALIAS')
+      : childNode.name)
+    : (getDirectTextNodes(aliasNode).map(node => node.text.trim()).find(Boolean) || 'ALIAS');
+  const structureNode = childNode?.name === 'Type' ? childNode : aliasNode;
+  return {
+    name: aliasNode.name,
+    filePath,
+    line: getLineNumberAt(document, aliasNode.tagStart),
+    implementedByLine: getLineNumberAt(document, aliasNode.tagStart),
+    startOffset: aliasNode.tagStart,
+    endOffset: aliasNode.closeTagEnd,
+    aliasType,
+    rawValue: `<Type>${aliasType}</Type>`,
+    structure: parseAliasXmlStructure(structureNode),
+    properties: [],
+    pythonFilePath: undefined
+  };
+}
+
+function parseAliasXmlStructure(node: DefElementNode): CustomTypeStructureNode {
+  const normalizedRawValue = normalizeXmlText(getInnerXml(node));
+  const directText = getDirectTextNodes(node).map(text => text.text.trim()).find(Boolean);
+  return {
+    name: node.name !== 'Type' && directText ? directText : node.name,
+    rawValue: normalizedRawValue || 'ALIAS',
+    line: getLineNumberAt(node.document, node.tagStart),
+    children: getDirectChildElements(node).map(child => ({
+      tag: child.name,
+      value: parseAliasXmlStructure(child)
+    }))
+  };
 }
 
 export function getRegisteredCustomTypes(workspaceRoot: string): Set<string> {

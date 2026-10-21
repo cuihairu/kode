@@ -1,10 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'fs';
+import * as os from 'os';
 import { join } from 'path';
+import { writeFileSync } from 'fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import {
   KBE_STUB_FILE_NAME,
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   buildKbeStubExportContent,
+  buildKbeStubExportContentForWorkspace,
   exportKbeStubs,
   kbeStubDir,
   kbeStubFilePath
@@ -95,6 +99,51 @@ describe('buildKbeStubExportContent(与符号索引同源)', () => {
     for (const entry of KBE_SYMBOLS) {
       expect(content).toContain(`${entry.signature}:`);
       expect(stub.content).toContain(`${entry.signature}:`);
+    }
+  });
+});
+
+describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
+  it('falls back to the curated catalog when engine detection is disabled', () => {
+    const previous = process.env.KBENGINE_ROOT;
+    process.env.KBENGINE_ROOT = '/definitely/missing';
+    try {
+      expect(buildKbeStubExportContentForWorkspace('/ws', { engineRoot: null }))
+        .toBe(buildKbeStubExportContent());
+    } finally {
+      if (previous === undefined) {
+        delete process.env.KBENGINE_ROOT;
+      } else {
+        process.env.KBENGINE_ROOT = previous;
+      }
+    }
+  });
+
+  it('concatenates an explicit engine checkout and rewrites private imports', () => {
+    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-'));
+    mkdirSync(join(engineRoot, 'typings'), { recursive: true });
+    writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'from _KBEngine_server_errors import *\n\nclass Entity:\n    id: int\n');
+    writeFileSync(join(engineRoot, 'typings', '_KBEngine_baseapp.pyi'), 'from _KBEngine_common import Entity\n\ndef address() -> int: ...\n');
+    for (const moduleName of [
+      '_KBEngine_bots', '_KBEngine_cellapp', '_KBEngine_dbmgr', '_KBEngine_hooks',
+      '_KBEngine_interfaces', '_KBEngine_logger', '_KBEngine_loginapp',
+      '_KBEngine_pythonapp', '_KBEngine_server_errors'
+    ]) {
+      writeFileSync(join(engineRoot, 'typings', `${moduleName}.pyi`), '# fixture\n');
+    }
+    const content = buildKbeStubExportContentForWorkspace('/ws', {
+      engineRoot,
+      engineRootEnv: {}
+    });
+    try {
+      expect(content).toContain('generated from the local KBEngine typings checkout');
+      expect(content).toContain('from KBEngine import');
+      expect(content).not.toContain('from _KBEngine_common import');
+      expect(content).not.toContain('from _KBEngine_server_errors import');
+      expect(content).toContain('class Entity:');
+      expect(content).toContain('def address() -> int: ...');
+    } finally {
+      rmSync(engineRoot, { recursive: true, force: true });
     }
   });
 });

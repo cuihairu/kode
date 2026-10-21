@@ -1700,6 +1700,7 @@ export class EntityMappingManager {
         line: method.line,
         section: method.section,
         exposed: method.exposed,
+        declaredArgs: method.declaredArgs,
         identity: method.identity
       });
       methods[method.identity.symbolName] = list;
