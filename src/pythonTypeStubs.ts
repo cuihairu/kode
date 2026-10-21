@@ -33,6 +33,13 @@ import {
 export const PYTHON_TYPE_STUB_FILE_NAME = 'kbe_types.py';
 
 /**
+ * KBEngine API 桩里的引擎级类型别名(docs/design/def-pyi-stubs.md 与引擎
+ * typings 同源)。types.xml 属性引用它们时按名透传,并在头部从 KBEngine 导入;
+ * 其余未知名字仍兜底成 Any,避免发射无出处的引用。
+ */
+const KBENGINE_TYPE_ALIASES = new Set(['Address', 'WatcherValue']);
+
+/**
  * KBEngine 内置类型 → Python 注解。与 clientSdkGenerator 的 TS_BUILTIN_TYPES
  * 同一张语义表的 Python 面整型归 int、浮点归 float、字符串归 str;
  * PY_DICT/PY_TUPLE/PY_LIST 用 typing 泛型(py3.7 安全,future-annotations
@@ -157,6 +164,9 @@ function annotationForType(typeName: string, context: AnnotationContext): string
     return builtin;
   }
   if (context.names.has(trimmed)) {
+    return trimmed;
+  }
+  if (KBENGINE_TYPE_ALIASES.has(trimmed)) {
     return trimmed;
   }
   return PYTHON_TYPE_STUB_FALLBACK;
@@ -298,8 +308,30 @@ export function buildPythonTypeStubContent(entries: readonly PythonTypeStubEntry
     '# .gitignore(生成物不入库)。用户自配目录里的同名文件按用户资产不动。',
     'from __future__ import annotations',
     '',
-    'from typing import Any, Dict, List, Tuple, TypedDict'
+    'from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union'
   ];
+  lines.push('import KBEngine');
+  lines.push('from KBEngine import Entity');
+  const referencedEngineAliases = new Set<string>();
+  const collectEngineAliases = (annotation: string): void => {
+    for (const alias of KBENGINE_TYPE_ALIASES) {
+      if (new RegExp(`\\b${escapeRegExp(alias)}\\b`).test(annotation)) {
+        referencedEngineAliases.add(alias);
+      }
+    }
+  };
+  for (const entry of entries) {
+    if (entry.kind === 'class') {
+      for (const property of entry.properties) {
+        collectEngineAliases(property.annotation);
+      }
+    } else {
+      collectEngineAliases(entry.annotation);
+    }
+  }
+  if (referencedEngineAliases.size > 0) {
+    lines.push(`from KBEngine import ${[...referencedEngineAliases].sort().join(', ')}`);
+  }
   for (const entry of entries) {
     lines.push('', '');
     if (entry.kind === 'class') {

@@ -357,15 +357,115 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     const content = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
 
     expect(content).toContain('from __future__ import annotations');
-    expect(content).toContain('from typing import Any, Dict, List, Tuple, TypedDict');
+    expect(content).toContain('import KBEngine');
+    expect(content).toContain('from KBEngine import Entity');
+    expect(content).toContain('from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union');
     expect(content).toContain('.gitignore');
     expect(content).toContain('.kbengine/stubs');
+  });
+
+  it('引用引擎类型时同文件给出 KBEngine 出处,未引用则不导入', () => {
+    const unqualified = buildPythonTypeStubPlan([
+      makeType({
+        name: 'MONITORED',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          { name: 'address', typeName: 'Address' },
+          { name: 'value', typeName: 'WatcherValue' }
+        ]
+      })
+    ]).content ?? '';
+    expect(unqualified).toContain('from KBEngine import Address, WatcherValue');
+    expect(unqualified).toContain('    address: Address');
+    expect(unqualified).toContain('    value: WatcherValue');
+
+    const qualified = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
+    expect(qualified).not.toContain('from KBEngine import Address');
+    expect(qualified).not.toContain('from KBEngine import WatcherValue');
+  });
+
+  it('生成桩中每类外部注解名都有导入着落', () => {
+    const content = buildPythonTypeStubPlan([
+      makeType({
+        name: 'EXTERNAL_REFS',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          { name: 'address', typeName: 'Address' },
+          { name: 'callback', typeName: 'Callable' },
+          { name: 'value', typeName: 'WatcherValue' }
+        ]
+      })
+    ]).content ?? '';
+
+    const importedNames = new Set(
+      content
+        .split('\n')
+        .filter(line => /^(?:from [.\w]+ import|import )/.test(line))
+        .flatMap(line => line.replace(/^.*\bimport\s*/, '').split(','))
+        .map(name => name.trim().split(/\s+as\s+/).pop() ?? '')
+    );
+    for (const name of ['Address', 'Callable', 'Entity', 'WatcherValue']) {
+      expect(importedNames.has(name), name).toBe(true);
+    }
+  });
+
+  it('头部 typing 导入中的 Union 也保留着落', () => {
+    const content = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
+    expect(content).toContain('from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union');
   });
 });
 
 describe('buildPythonTypeStubContent(空表)', () => {
   it('空条目直接 null', () => {
     expect(buildPythonTypeStubContent([])).toBeNull();
+  });
+});
+
+describe('undefined-name regression gate', () => {
+  it('engine names referenced by plan entries are emitted with imports', () => {
+    const entries = buildPythonTypeStubPlan([
+      makeType({
+        name: 'MONITORED',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          { name: 'address', typeName: 'Address' },
+          { name: 'value', typeName: 'WatcherValue' }
+        ]
+      })
+    ]).entries;
+
+    const content = buildPythonTypeStubContent(entries) ?? '';
+    expect(content).toContain('from KBEngine import Address, WatcherValue');
+    for (const name of ['Address', 'WatcherValue']) {
+      expect(content, name).toMatch(new RegExp(`from KBEngine import [^\\n]*\\b${name}\\b`));
+      expect(content, name).toMatch(new RegExp(`\\b${name}\\b`));
+    }
+  });
+
+  it('typing names referenced by plan entries are emitted with imports', () => {
+    const entries = buildPythonTypeStubPlan([
+      makeType({
+        name: 'TYPED_CALLBACKS',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          { name: 'callback', typeName: 'Callable' },
+          { name: 'choice', typeName: 'Union' }
+        ]
+      })
+    ]).entries;
+
+    const content = buildPythonTypeStubContent(entries) ?? '';
+    expect(content).toContain(
+      'from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union'
+    );
+    for (const name of ['Callable', 'Union']) {
+      expect(content, name).toMatch(new RegExp(`from typing import [^\\n]*\\b${name}\\b`));
+      expect(content, name).toMatch(new RegExp(`\\b${name}\\b`));
+    }
   });
 });
 
@@ -524,7 +624,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/bad'), folder('/good')];
     const writes: Array<{ path: string; content: string }> = [];
     const deps = {
-      exists: (candidate: string): boolean => false,
+      exists: (_candidate: string): boolean => false,
       readFile: (): string => '',
       writeFile: (path: string, content: string): void => {
         if (path.startsWith('/bad')) {
