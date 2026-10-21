@@ -44,7 +44,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
       'kode 内置别名:对齐项目侧 `kbe.KBEntity` 基类习惯,实体指向引擎 Entity 基类(非引擎原生符号)。' +
       '实体脚本继承它即可获得 id/className/cell/base 等实体属性与生命周期钩子。',
     sourceFile: COMMON_STUB,
-    sourceLine: 52,
+    sourceLine: 67,
     aliasOf: 'Entity'
   },
   {
@@ -55,7 +55,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
       '引擎实体基类(baseapp/cellapp 侧实体脚本基类):id/className/client/cell/base/databaseID 属性与 ' +
       'addTimer/destroy 等实体方法,以及 onDestroy 等生命周期钩子。',
     sourceFile: COMMON_STUB,
-    sourceLine: 52
+    sourceLine: 67
   },
   {
     name: 'Proxy',
@@ -63,7 +63,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class Proxy(Entity)',
     summary: '账号代理实体基类,携带 __ACCOUNT_NAME__/__ACCOUNT_PASSWORD__ 协议字段。',
     sourceFile: COMMON_STUB,
-    sourceLine: 119
+    sourceLine: 204
   },
   {
     name: 'Space',
@@ -71,7 +71,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class Space(Entity)',
     summary: '空间实体基类。',
     sourceFile: COMMON_STUB,
-    sourceLine: 139
+    sourceLine: 224
   },
   {
     name: 'EntityComponent',
@@ -79,7 +79,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class EntityComponent',
     summary: '实体组件基类:client/cell/base EntityCall 引用与实体生命周期钩子。',
     sourceFile: COMMON_STUB,
-    sourceLine: 142
+    sourceLine: 227
   },
   {
     name: 'Entities',
@@ -87,7 +87,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class Entities(Dict[int, Entity])',
     summary: '实体表:entityID → Entity 映射。',
     sourceFile: COMMON_STUB,
-    sourceLine: 155
+    sourceLine: 240
   },
   {
     name: 'EntityCall',
@@ -95,39 +95,18 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class EntityCall',
     summary: '实体远程调用句柄基类:getComponent 取组件 EntityCall。',
     sourceFile: COMMON_STUB,
-    sourceLine: 27
+    sourceLine: 32
   },
-  {
-    name: 'BaseEntityCall',
-    kind: 'class',
-    signature: 'class BaseEntityCall(EntityCall)',
-    summary: 'baseapp 侧实体远程调用句柄。',
-    sourceFile: COMMON_STUB,
-    sourceLine: 38
-  },
-  {
-    name: 'CellEntityCall',
-    kind: 'class',
-    signature: 'class CellEntityCall(EntityCall)',
-    summary: 'cellapp 侧实体远程调用句柄。',
-    sourceFile: COMMON_STUB,
-    sourceLine: 39
-  },
-  {
-    name: 'ClientEntityCall',
-    kind: 'class',
-    signature: 'class ClientEntityCall(EntityCall)',
-    summary: '客户端实体远程调用句柄。',
-    sourceFile: COMMON_STUB,
-    sourceLine: 40
-  },
+
+
+
   {
     name: 'EntityComponentCall',
     kind: 'class',
     signature: 'class EntityComponentCall(EntityCall)',
     summary: '实体组件远程调用句柄。',
     sourceFile: COMMON_STUB,
-    sourceLine: 41
+    sourceLine: 43
   },
   {
     name: 'MemoryStream',
@@ -135,7 +114,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'class MemoryStream',
     summary: '二进制流:append/pop 按 dataType 读写,常用于自定义协议打包。',
     sourceFile: COMMON_STUB,
-    sourceLine: 43
+    sourceLine: 45
   },
   {
     name: 'address',
@@ -143,7 +122,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def address() -> Address',
     summary: '当前组件进程的监听地址。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 18
+    sourceLine: 21
   },
   {
     name: 'time',
@@ -151,7 +130,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def time() -> int',
     summary: '引擎游戏时间(秒,游戏节拍)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 19
+    sourceLine: 22
   },
   {
     name: 'isShuttingDown',
@@ -159,7 +138,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def isShuttingDown() -> bool',
     summary: '进程是否正在关闭。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 20
+    sourceLine: 23
   },
   {
     name: 'getWatcher',
@@ -167,7 +146,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def getWatcher(path: str) -> WatcherValue',
     summary: '读取 watcher 指标值(监控面板数据源同款)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 21
+    sourceLine: 24
   },
   {
     name: 'getWatcherDir',
@@ -175,7 +154,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def getWatcherDir(path: str) -> Tuple[str, ...]',
     summary: '列出 watcher 目录下的组件/路径。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 22
+    sourceLine: 25
   },
   {
     name: 'addWatcher',
@@ -183,7 +162,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def addWatcher(path: str, dataType: str, getFunction: Callable[[], WatcherValue]) -> None',
     summary: '注册自定义 watcher 指标。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 23
+    sourceLine: 26
   },
   {
     name: 'delWatcher',
@@ -191,7 +170,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def delWatcher(path: str) -> None',
     summary: '注销自定义 watcher 指标。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 28
+    sourceLine: 31
   },
   {
     name: 'setAppFlags',
@@ -199,7 +178,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def setAppFlags(flags: int) -> None',
     summary: '设置进程 flags 位。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 29
+    sourceLine: 32
   },
   {
     name: 'getAppFlags',
@@ -207,7 +186,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def getAppFlags() -> int',
     summary: '读取进程 flags 位。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 30
+    sourceLine: 33
   },
   {
     name: 'reloadScript',
@@ -215,7 +194,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def reloadScript(fullReload: bool = False) -> None',
     summary: '热更脚本(与 kode 热更新支持面板同一入口)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 31
+    sourceLine: 34
   },
   {
     name: 'quantumPassedPercent',
@@ -223,7 +202,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def quantumPassedPercent() -> int',
     summary: '当前时间片推进百分比。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 32
+    sourceLine: 35
   },
   {
     name: 'createEntity',
@@ -231,7 +210,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def createEntity(entityType: str, params: Union[Dict[str, Any], None] = None) -> Union[Entity, None]',
     summary: '本地创建实体(同步返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 33
+    sourceLine: 36
   },
   {
     name: 'createEntityLocally',
@@ -239,7 +218,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def createEntityLocally(entityType: str, params: Union[Dict[str, Any], None] = None) -> Union[Entity, None]',
     summary: '在本进程创建实体(同步返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 37
+    sourceLine: 40
   },
   {
     name: 'createEntityAnywhere',
@@ -247,15 +226,15 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def createEntityAnywhere(entityType: str, params: Union[Dict[str, Any], None] = None, callback: Union[Callback, None] = None) -> None',
     summary: '在任意合适进程创建实体(回调返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 41
+    sourceLine: 44
   },
   {
     name: 'createEntityRemotely',
     kind: 'function',
-    signature: 'def createEntityRemotely(entityType: str, baseMB: BaseEntityCall, params: Union[Dict[str, Any], None] = None, callback: Union[Callback, None] = None) -> None',
+    signature: 'def createEntityRemotely(entityType: str, baseMB: EntityCall, params: Union[Dict[str, Any], None] = None, callback: Union[Callback, None] = None) -> None',
     summary: '在指定 base 实体所在进程创建实体(回调返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 46
+    sourceLine: 49
   },
   {
     name: 'createEntityFromDBID',
@@ -263,7 +242,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def createEntityFromDBID(entityType: str, dbID: int, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 创建实体(回调返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 52
+    sourceLine: 55
   },
   {
     name: 'createEntityAnywhereFromDBID',
@@ -271,15 +250,15 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def createEntityAnywhereFromDBID(entityType: str, dbID: int, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 在任意进程创建实体(回调返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 58
+    sourceLine: 61
   },
   {
     name: 'createEntityRemotelyFromDBID',
     kind: 'function',
-    signature: 'def createEntityRemotelyFromDBID(entityType: str, dbID: int, baseMB: BaseEntityCall, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
+    signature: 'def createEntityRemotelyFromDBID(entityType: str, dbID: int, baseMB: EntityCall, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 在指定 base 实体所在进程创建实体(回调返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 64
+    sourceLine: 67
   },
   {
     name: 'charge',
@@ -287,7 +266,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def charge(ordersID: str, dbID: int, byteDatas: bytes, pycallback: Union[Callback, None] = None) -> None',
     summary: '提交计费订单(回调返回计费结果)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 71
+    sourceLine: 75
   },
   {
     name: 'deleteEntityByDBID',
@@ -295,7 +274,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def deleteEntityByDBID(entityType: str, dbID: int, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 删除实体(回调返回)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 77
+    sourceLine: 81
   },
   {
     name: 'lookUpEntityByDBID',
@@ -303,7 +282,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     signature: 'def lookUpEntityByDBID(entityType: str, dbID: int, callback: Callback, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 查找已存在实体(回调返回 EntityCall)。',
     sourceFile: BASEAPP_STUB,
-    sourceLine: 83
+    sourceLine: 87
   }
 ];
 

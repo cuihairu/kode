@@ -255,7 +255,7 @@ describe('kbe 模块符号索引(批108)', () => {
       const lines = stub.content.split('\n');
       const body = lines.slice(kbLine, kbLine + 6).join('\n');
       expect(body).toContain('Entity');
-      expect(body).toContain('typings/_KBEngine_common.pyi:52');
+      expect(body).toContain('typings/_KBEngine_common.pyi:67');
     });
   });
 });
