@@ -141,4 +141,9 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hotReload.globs` | `["**/*.py"]` | File glob patterns to watch (one watcher per pattern) |
 | `kbengine.hotReload.debounceMs` | `500` | Debounce milliseconds before triggering (0 = no debounce) |
 | `kbengine.managedDir` | `` `.kbengine` `` | Name of the kode-managed directory hosting debug.json and stubs (runtime-read key, not in contributes; auto-rebuild on rename) |
+| `kbengine.entity.builtinProperties` | `true` | Builtin entity property hover + `self.` completion (faces) — `src/languageProviders.ts:400,561` |
+| `kbengine.entity.receiverSections` | `true` | Receiver-aware def-section gating on hover/F12/RPC lens — `src/languageProviders.ts:515,3374,3897` |
+| `kbengine.python.stubEngineTypings` | `true` | Full engine-typings export into `KBEngine.pyi` — `src/pythonStubExport.ts:360` |
+| `kbengine.python.entityStubMethods` | `true` | Entity stub method surface in `entity_types.pyi` — `src/entityTypeStubs.ts:74,139` |
+| `kbengine.types.aliasDiscovery` | `true` | `alias.xml` custom-type discovery — `src/definitionWorkspace.ts:285` |
 

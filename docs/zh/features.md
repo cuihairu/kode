@@ -139,3 +139,8 @@
 | `kbengine.hotReload.globs` | `["**/*.py"]` | 监视的文件匹配模式（每模式一个 watcher） |
 | `kbengine.hotReload.debounceMs` | `500` | 触发前去抖毫秒数（0 = 不去抖） |
 | `kbengine.managedDir` | `` `.kbengine` `` | kode 托管目录名（运行时读取键，不在 contributes 中；改名后自动重建） |
+| `kbengine.entity.builtinProperties` | `true` | 内建属性 hover + `self.` 补全（分面）— `src/languageProviders.ts:400,561` |
+| `kbengine.entity.receiverSections` | `true` | hover/F12/RPC 镜的接收者段过滤 — `src/languageProviders.ts:515,3374,3897` |
+| `kbengine.python.stubEngineTypings` | `true` | KBEngine.pyi 并入引擎 typings 全量 — `src/pythonStubExport.ts:360` |
+| `kbengine.python.entityStubMethods` | `true` | entity_types.pyi 方法面 — `src/entityTypeStubs.ts:74,139` |
+| `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
