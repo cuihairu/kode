@@ -780,7 +780,8 @@ export class EntityMappingManager {
 
   async resolveMethodDefinition(
     pythonFile: string,
-    methodName: string
+    methodName: string,
+    receiverSection?: EntityMethodSection
   ): Promise<EntityMethodDefinitionLocation | null> {
     const index = await this.ensureIndexForPythonFile(pythonFile);
     const ownerKind = inferOwnerKindFromPythonFile(pythonFile);
@@ -796,7 +797,14 @@ export class EntityMappingManager {
     // Keep the paired owner index as the preferred scope. Interfaces without a
     // matching .def (or declarations stored in a shared .def) need a global
     // fallback across every scanned definition index.
-    const local = index ? this.selectMethodDefinition(index.methodDefinitions, options) : null;
+    // 接收者段闸(用户令 2026-10-21):receiverSection 在场时先按段过滤候选
+    // (段不符的 def 声明一律不进打分,更不进任何后续闸)。
+    const local = index
+      ? this.selectMethodDefinition(
+        filterMethodDefinitionsBySection(index.methodDefinitions, receiverSection),
+        options
+      )
+      : null;
     // A role-neutral scripts/interfaces module (for example interfaces/ROLE.py)
     // has no Base/Cell/Client ownership and must not bind to an unrelated entity
     // declaration. Cross-file fallback is for role-specific interface modules.
@@ -806,13 +814,16 @@ export class EntityMappingManager {
     }
     const global = local || (allowCrossDefFallback
       ? this.selectMethodDefinition(
-        [...this.mappingIndexes.values()].flatMap(item => item.methodDefinitions),
+        filterMethodDefinitionsBySection(
+          [...this.mappingIndexes.values()].flatMap(item => item.methodDefinitions),
+          receiverSection
+        ),
         options
       )
       : null);
     const located = global;
     jumpLog('debug', () =>
-      `def 方法[文件级${local ? '' : '+全局回退'}] ${methodName} → ${located ? `${path.basename(located.defFile)}:${located.line}` : 'miss'}`
+      `def 方法[文件级${local ? '' : '+全局回退'}]${receiverSection ? `[段闸 ${receiverSection}]` : ''} ${methodName} → ${located ? `${path.basename(located.defFile)}:${located.line}` : 'miss'}`
     );
     return located;
   }
@@ -825,16 +836,20 @@ export class EntityMappingManager {
    */
   async resolveMethodDefinitionForClass(
     className: string,
-    methodName: string
+    methodName: string,
+    receiverSection?: EntityMethodSection
   ): Promise<EntityMethodDefinitionLocation | null> {
     const index = await this.ensureIndexForClass(className);
     if (!index) {
       return null;
     }
-    return this.selectMethodDefinition(index.methodDefinitions, {
-      methodName,
-      ownerName: className
-    });
+    return this.selectMethodDefinition(
+      filterMethodDefinitionsBySection(index.methodDefinitions, receiverSection),
+      {
+        methodName,
+        ownerName: className
+      }
+    );
   }
 
   /** 对象级属性解析:取索引口径同 resolveMethodDefinitionForClass,查 <Properties> */
@@ -1671,6 +1686,22 @@ export class EntityMappingManager {
 function buildFallbackPythonPath(entityName: string): string {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
   return joinWorkspacePath(workspaceRoot, 'scripts/base', `${entityName}.py`);
+}
+
+/**
+ * 接收者段过滤(用户令 2026-10-21):self.cell./self.base./self.client. 调用的
+ * 候选闸——receiverSection 在场时只留段相符的 def 声明(段不符一律剔除,不是
+ * 降权),过滤发生在形参闸与打分之前;无前缀(section 缺省)原样通过。
+ */
+export function filterMethodDefinitionsBySection<
+  T extends { section: EntityMethodSection }
+>(
+  definitions: readonly T[],
+  receiverSection?: EntityMethodSection
+): T[] {
+  return receiverSection
+    ? definitions.filter(item => item.section === receiverSection)
+    : [...definitions];
 }
 
 export function buildMethodOwnerBindingKey(identity: {

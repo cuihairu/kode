@@ -18,7 +18,9 @@ import * as vscode from 'vscode';
 import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   kbeStubDir,
-  kbeStubFilePath
+  kbeStubFilePath,
+  readManagedDirSetting,
+  resolveManagedDirName
 } from './pythonStubExport';
 import { typeStubArtifactExists } from './pythonTypeStubs';
 
@@ -172,6 +174,8 @@ export async function syncPythonExtraPaths(
   const stubExportEnabled = vscode.workspace
     .getConfiguration('kbengine')
     .get<boolean>('python.stubExport', PYTHON_STUB_EXPORT_ENABLED_DEFAULT);
+  // 托管目录名(任务 B):管理段目录随 kbengine.managedDir 解析,与导出链同源
+  const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
   for (const folder of folders) {
     const workspaceRoot = folder.uri.fsPath;
     const managedKey = `${PYTHON_EXTRA_PATHS_MANAGED_KEY}:${workspaceRoot}`;
@@ -182,8 +186,8 @@ export async function syncPythonExtraPaths(
     const extraManaged =
       stubExportEnabled &&
       (deps.exists(kbeStubFilePath(workspaceRoot)) ||
-        typeStubArtifactExists(deps, workspaceRoot))
-        ? [kbeStubDir(workspaceRoot)]
+        typeStubArtifactExists(deps, workspaceRoot, managedDirName))
+        ? [kbeStubDir(workspaceRoot, managedDirName)]
         : [];
     const plan = planPythonExtraPaths({
       workspaceRoot,

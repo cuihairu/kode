@@ -33,7 +33,10 @@ import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   fileSystemStubExportDeps,
   kbeStubDir,
+  MANAGED_DIR_DEFAULT,
+  readManagedDirSetting,
   readStubDirSetting,
+  resolveManagedDirName,
   resolveStubDir,
   type StubExportDeps
 } from './pythonStubExport';
@@ -122,30 +125,38 @@ function joinPath(...segments: string[]): string {
 }
 
 /** 类型桩约定路径:typings 根(kode 自管默认目录)下的根级分件(fallback 布局) */
-export function kbeTypeStubFilePath(workspaceRoot: string): string {
-  return joinPath(kbeStubDir(workspaceRoot), PYTHON_TYPE_STUB_FILE_NAME);
+export function kbeTypeStubFilePath(
+  workspaceRoot: string,
+  managedDirName: string = MANAGED_DIR_DEFAULT
+): string {
+  return joinPath(kbeStubDir(workspaceRoot, managedDirName), PYTHON_TYPE_STUB_FILE_NAME);
 }
 
 /**
  * 默认布局(scripts/entity_defs/types.xml)下分件镜像的约定落点;extraPaths
  * 接线用它探测「类型桩分件已在盘」。
  */
-function kbeTypeStubMirrorFilePath(workspaceRoot: string): string {
-  return joinPath(kbeStubDir(workspaceRoot), 'scripts', 'entity_defs', PYTHON_TYPE_STUB_FILE_NAME);
+function kbeTypeStubMirrorFilePath(
+  workspaceRoot: string,
+  managedDirName: string = MANAGED_DIR_DEFAULT
+): string {
+  return joinPath(kbeStubDir(workspaceRoot, managedDirName), 'scripts', 'entity_defs', PYTHON_TYPE_STUB_FILE_NAME);
 }
 
 /**
  * types.xml 是否已有类型桩产物在盘(新旧两种落点都认)。extraPaths 接线的
  * 「目录并入」判定用:旧版单文件 kbe_types.py 残留同样算数,迁移期不断线。
+ * managedDirName 缺省走默认 .kbengine;装配层传配置值(kbengine.managedDir)。
  */
 export function typeStubArtifactExists(
   deps: Pick<StubExportDeps, 'exists'>,
-  workspaceRoot: string
+  workspaceRoot: string,
+  managedDirName: string = MANAGED_DIR_DEFAULT
 ): boolean {
   return (
-    deps.exists(kbeTypeStubFilePath(workspaceRoot)) ||
-    deps.exists(kbeTypeStubMirrorFilePath(workspaceRoot)) ||
-    deps.exists(joinPath(kbeStubDir(workspaceRoot), PYTHON_TYPE_STUB_LEGACY_FILE_NAME))
+    deps.exists(kbeTypeStubFilePath(workspaceRoot, managedDirName)) ||
+    deps.exists(kbeTypeStubMirrorFilePath(workspaceRoot, managedDirName)) ||
+    deps.exists(joinPath(kbeStubDir(workspaceRoot, managedDirName), PYTHON_TYPE_STUB_LEGACY_FILE_NAME))
   );
 }
 
@@ -484,6 +495,7 @@ export async function exportPythonTypeStubs(
     }
     const resolved = resolveStubDir(folder.uri.fsPath, {
       setting: readStubDirSetting(),
+      managedDir: resolveManagedDirName(readManagedDirSetting()).name,
       folders: [{ fsPath: folder.uri.fsPath, name: folder.name }],
       filePath: vscode.window.activeTextEditor?.document.fileName
     });

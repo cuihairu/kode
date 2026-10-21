@@ -37,6 +37,7 @@ import { buildDefChain } from './defChain';
 import {
   METHOD_DECLARATION_PATTERN,
   buildRpcCodeLenses,
+  defaultRpcCodeLensTitle,
   findPythonMethodDeclarations,
   RpcMethodHit
 } from './rpcCodeLens';
@@ -102,6 +103,9 @@ import {
 } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
 import {
+  findPythonReceiverCalls,
+  getPythonReceiverCallAtPosition,
+  type PythonReceiverCall,
   getPythonSelfAccessAtPosition,
   getPythonSelfCompletionContext
 } from './pythonLanguageUtils';
@@ -434,6 +438,19 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
             annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
           );
       }
+      // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
+      // 的方法名上时,先按段闸解析(仅对应区块的 def 候选通过,段不符不给标注,
+      // 落回普通 hover 链);段过滤先行于形参闸(命中后沿用同一把签名对账)。
+      const receiverCall = getPythonReceiverCallAtPosition(
+        document.lineAt(position.line).text,
+        position.character
+      );
+      if (receiverCall) {
+        return this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
+          .then(annotation =>
+            annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+          );
+      }
     }
 
     return this.provideKnownHover(document, position, featureConfig, range, word);
@@ -474,6 +491,54 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const markdown = new vscode.MarkdownString();
     markdown.appendMarkdown(
       `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
+    );
+    markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
+    if (location.exposed) {
+      markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
+    }
+    return new vscode.Hover(markdown);
+  }
+
+  /**
+   * 接收者调用标注(用户令 2026-10-21):self.cell./self.base./self.client. 调用
+   * 的方法名上,按段闸解析(resolveMethodDefinition 第三参,段不符即 null);
+   * 命中后与声明面共用形参闸(def 声明了 <Arg> 时对账,不符不标注)。
+   */
+  private async resolveReceiverCallAnnotation(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    line: number,
+    receiverCall: PythonReceiverCall
+  ): Promise<vscode.Hover | null> {
+    let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
+    try {
+      location = await manager.resolveMethodDefinition(
+        document.fileName,
+        receiverCall.methodName,
+        receiverCall.section
+      );
+    } catch {
+      return null;
+    }
+    if (!location) {
+      return null;
+    }
+    const declaredArgTypes =
+      location.declaredArgs && location.declaredArgs.length > 0 ? location.declaredArgs : undefined;
+    if (
+      declaredArgTypes &&
+      !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
+        declaredArgTypes,
+        document.getText().split(/\r?\n/),
+        line
+      )
+    ) {
+      return null;
+    }
+    const markdown = new vscode.MarkdownString();
+    markdown.appendMarkdown(
+      `**${receiverCall.methodName}** — 此调用是实体 def 声明的 ${location.section} 方法` +
+        `(接收者 self.${receiverCall.receiver})\n\n`
     );
     markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
     if (location.exposed) {
@@ -3173,8 +3238,14 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
 
     const access = getPythonSelfAccessAtPosition(line.text, position.character);
     const declaredMethodName = getPythonMethodDeclarationAtPosition(line.text, position.character);
+    // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
+    // 的方法名上时,候选先按段过滤(CellMethods/BaseMethods/ClientMethods),
+    // 段不符不跳;链前缀只认 self. 形态,解析自调用行文本。
+    const receiverCall = access
+      ? getPythonReceiverCallAtPosition(line.text, position.character)
+      : null;
     if (access) {
-      const accessResult = await this.runDefinitionLayers(document, position, access, null);
+      const accessResult = await this.runDefinitionLayers(document, position, access, null, receiverCall ?? undefined);
       if (accessResult.location) {
         return accessResult;
       }
@@ -3214,7 +3285,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     document: vscode.TextDocument,
     position: vscode.Position,
     access: { rootSymbol: string; currentSymbol: string; fullPath: string } | null,
-    declaredMethodName: string | null
+    declaredMethodName: string | null,
+    receiver?: PythonReceiverCall
   ): Promise<TracedDefinitionResult> {
     const manager = this.entityMappingManager;
     // 查询符号 = 光标所在段(方法层不再查根符号——根对象不在 .def 时不连带断链);
@@ -3248,6 +3320,64 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         `对象类=${enclosingName ?? `(无:${enclosingNote})`}`
     );
     const defTimer = jumpTimeStart();
+
+    // ── 层0 接收者段闸(用户令 2026-10-21):self.cell./self.base./self.client.
+    // 调用的候选只认对应区块(CellMethods/BaseMethods/ClientMethods)的 def 声明,
+    // 段不符不跳;属性子探不做(接收者段不是属性),段过滤先行于一切后续闸。
+    // 实现层(python-mro/file-scope)不感知段,命中段内声明后直接落 def 声明行。
+    if (receiver) {
+      const receiverParts: string[] = [`receiver=self.${receiver.receiver} → ${receiver.section}`];
+      const receiverProbes: Array<{
+        via: string;
+        run: () => Promise<{ defFile: string; line: number } | null>;
+      }> = [];
+      if (enclosingName) {
+        receiverProbes.push({
+          via: `object=${enclosingName}`,
+          run: () =>
+            manager.resolveMethodDefinitionForClass(
+              enclosingName as string,
+              symbol,
+              receiver.section
+            )
+        });
+      }
+      receiverProbes.push({
+        via: `file=${basename}`,
+        run: () => manager.resolveMethodDefinition(document.fileName, symbol, receiver.section)
+      });
+      for (const probe of receiverProbes) {
+        let hit: { defFile: string; line: number } | null;
+        try {
+          hit = await probe.run();
+        } catch (error) {
+          receiverParts.push(`method ${probe.via} error=${layerErrorMessage(error)}`);
+          continue;
+        }
+        if (hit) {
+          const hitLocation = new vscode.Location(
+            vscode.Uri.file(hit.defFile),
+            new vscode.Position(hit.line - 1, 0)
+          );
+          receiverParts.push(`method ${probe.via} hit ${path.basename(hit.defFile)}:${hit.line}`);
+          jumpLog('info', () =>
+            `层0 接收者段闸命中(${receiver.section}) → ${hitLocation.uri.fsPath}:${hitLocation.range.start.line + 1} ${defTimer()}ms`
+          );
+          return {
+            location: hitLocation,
+            layers: [{ layer: 'entity-def', query, status: 'hit', detail: receiverParts.join('; ') }]
+          };
+        }
+        receiverParts.push(`method ${probe.via} miss`);
+      }
+      jumpLog('info', () =>
+        `层0 接收者段闸落空(${receiver.section} 无候选) ${defTimer()}ms`
+      );
+      return {
+        location: null,
+        layers: [{ layer: 'entity-def', query, status: 'miss', detail: receiverParts.join('; ') }]
+      };
+    }
 
     // ── 层1 entity-def:对象级(类粒度)→ 文件级(owner 归属);属性子探在前(契约) ──
     const defParts: string[] = [];
@@ -3627,7 +3757,66 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
         }
       )
     );
-    return rpcLenses;
+
+    // 接收者感知(用户令 2026-10-21):self.cell./self.base./self.client. 调用行
+    // 的 RPC 镜。段过滤在解析内先行(resolveMethodDefinition 第三参,只留对应
+    // 区块的 def 候选)——段不符解析落空,不出镜;段符合照常出镜、点击跳声明。
+    // 形参闸不适用调用行(闸门本体对账的是 def 声明行签名)。
+    const receiverLenses: vscode.CodeLens[] = [];
+    const receiverCalls = findPythonReceiverCalls(document.getText());
+    if (receiverCalls.length > 0) {
+      const receiverHits = new Map<string, RpcMethodHit | null>();
+      for (const call of receiverCalls) {
+        const key = `${call.section}::${call.methodName}`;
+        if (receiverHits.has(key)) {
+          continue;
+        }
+        let hit: RpcMethodHit | null = null;
+        try {
+          const location = await this.entityMappingManager.resolveMethodDefinition(
+            document.fileName,
+            call.methodName,
+            call.section
+          );
+          if (location) {
+            hit = {
+              methodName: call.methodName,
+              section: location.section,
+              defFile: location.defFile,
+              defLine: location.line,
+              exposed: location.exposed
+            };
+          }
+        } catch {
+          hit = null;
+        }
+        receiverHits.set(key, hit);
+      }
+      for (const call of receiverCalls) {
+        const hit = receiverHits.get(`${call.section}::${call.methodName}`);
+        if (!hit) {
+          continue;
+        }
+        receiverLenses.push(
+          new vscode.CodeLens(
+            new vscode.Range(
+              new vscode.Position(call.line, call.character),
+              new vscode.Position(call.line, call.character + call.methodName.length)
+            ),
+            {
+              title: defaultRpcCodeLensTitle(hit),
+              command: 'vscode.open',
+              arguments: [
+                vscode.Uri.file(hit.defFile),
+                { selection: createDefinitionSelection(hit.defLine) }
+              ]
+            }
+          )
+        );
+      }
+    }
+
+    return [...rpcLenses, ...receiverLenses];
   }
 }
 

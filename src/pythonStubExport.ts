@@ -10,7 +10,15 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { buildKbeStubExportContent } from './kbeModuleIndex';
+import {
+  MANAGED_DIR_DEFAULT,
+  MANAGED_DIR_SETTING_KEY,
+  resolveManagedDirName
+} from './managedDir';
 import { substituteVariables, type VariableFolderRef } from './variableSubstitution';
+
+// 托管目录解析面一并从这里出(单一进口处,调用方不必再引 managedDir)
+export { MANAGED_DIR_DEFAULT, resolveManagedDirName } from './managedDir';
 
 // Python 生态面的内容入口一并从这里出(单一进口处,调用方不必再引 kbeModuleIndex)
 export { buildKbeStubExportContent } from './kbeModuleIndex';
@@ -20,7 +28,7 @@ export const PYTHON_STUB_EXPORT_SETTING = 'kbengine.python.stubExport';
 export const PYTHON_STUB_EXPORT_ENABLED_DEFAULT = true;
 export const KBE_STUB_FILE_NAME = 'KBEngine.pyi';
 
-/** 存根目录设置键(kbengine.python.stubDir,默认空串=走默认约定) */
+/** 存根目录设置键(kbengine.python.stubDir,默认空串=走默认约定;旧键不废) */
 export const PYTHON_STUB_DIR_SETTING = 'python.stubDir';
 /**
  * 存根目录环境变量名(批142,任务单 kode-pyi.md):与本仓既有 `KBENGINE_*`
@@ -30,13 +38,28 @@ export const PYTHON_STUB_DIR_ENV = 'KBENGINE_STUB_DIR';
 /** 默认约定的目录名(相对工作区根),来源标注里显示它表示「未配置」 */
 export const PYTHON_STUB_DIR_DEFAULT = '.kbengine/stubs';
 
+/** 路径拼接(正斜杠归一),托管目录与存根路径共用 */
 function joinPath(...segments: string[]): string {
   return segments.join('/').replace(/\\/g, '/');
 }
 
-/** 存根目录约定:.kbengine/stubs(kode 管理目录,与 debug.json 同居) */
-export function kbeStubDir(workspaceRoot: string): string {
-  return joinPath(workspaceRoot, PYTHON_STUB_DIR_DEFAULT);
+/**
+ * 托管目录设置读取口(装配层):`kbengine.managedDir`,默认 `.kbengine`。
+ * 托管目录收拢 debug.json 与 stubs/ 全部分件(任务 B,用户令);旧键
+ * kbengine.python.stubDir / KBENGINE_STUB_DIR 语义原样保留且优先。
+ */
+export function readManagedDirSetting(): unknown {
+  return vscode.workspace.getConfiguration('kbengine').get(MANAGED_DIR_SETTING_KEY, MANAGED_DIR_DEFAULT);
+}
+
+/** 托管目录绝对路径:`<工作区根>/<managedDir>`(managedDirName 缺省走默认) */
+export function managedDirPath(workspaceRoot: string, managedDirName: string = MANAGED_DIR_DEFAULT): string {
+  return joinPath(workspaceRoot, resolveManagedDirName(managedDirName).name);
+}
+
+/** 存根目录约定:`<managedDir>/stubs`(kode 管理目录,与 debug.json 同居) */
+export function kbeStubDir(workspaceRoot: string, managedDirName: string = MANAGED_DIR_DEFAULT): string {
+  return joinPath(managedDirPath(workspaceRoot, managedDirName), 'stubs');
 }
 
 export function kbeStubFilePath(workspaceRoot: string): string {
@@ -70,6 +93,11 @@ export interface StubDirReading {
   folders?: readonly VariableFolderRef[];
   /** 变量替换用的当前文件 */
   filePath?: string;
+  /**
+   * 托管目录名(任务 B):默认约定目录随 kbengine.managedDir 同迁;设置/环境
+   * 变量来源的存根目录(旧键)不受影响。缺省 = 默认 .kbengine。
+   */
+  managedDir?: string;
 }
 
 /** 路径形态判定:盘符绝对 / UNC / posix 绝对一律不与工作区根拼接 */
@@ -112,11 +140,14 @@ export function resolveStubDir(
     source = 'env';
     origin = PYTHON_STUB_DIR_ENV;
   } else {
+    // 默认约定:托管目录(stubs)三级收拢(任务 B)——未配置 managedDir 时
+    // 即既有 .kbengine/stubs,来源标注不变;配置后随新目录同迁。
+    const managed = resolveManagedDirName(reading.managedDir);
     return {
-      dir: kbeStubDir(workspaceRoot),
+      dir: kbeStubDir(workspaceRoot, managed.name),
       raw: null,
       source: 'default',
-      origin: PYTHON_STUB_DIR_DEFAULT,
+      origin: `${managed.name}/stubs`,
       userOwned: false
     };
   }
@@ -288,6 +319,7 @@ export async function exportKbeStubs(
     // 一起带出,供播报与「配置来源」视图说明当前生效值来自哪里
     const resolved = resolveStubDir(folder.uri.fsPath, {
       setting: readStubDirSetting(),
+      managedDir: resolveManagedDirName(readManagedDirSetting()).name,
       folders: [{ fsPath: folder.uri.fsPath, name: folder.name }],
       filePath: vscode.window.activeTextEditor?.document.fileName
     });

@@ -25,14 +25,34 @@ import {
   scanBatchScriptsInRoots,
   type DirectoryEntry
 } from './quickActionScanner';
+import {
+  MANAGED_DIR_DEFAULT,
+  MANAGED_DIR_DEBUG_CONFIG_FILE,
+  resolveManagedDirName
+} from './managedDir';
 import { SOURCE_DEFAULT_COMPONENTS } from './debugConfig';
 
 /** 生效工作目录与取舍说明落这个 OUTPUT 通道 */
 export const DEBUG_CONFIG_CHANNEL_NAME = 'KBEngine 配置';
 /** 工作目录环境变量名:与本仓 KBENGINE_* 既有命名风格一致 */
 export const DEBUG_WORKSPACE_ENV_VAR = 'KBENGINE_WORKSPACE';
-/** 配置文件相对工作目录的固定位置(.kbengine 管理目录,与存根导出同居) */
-export const DEBUG_CONFIG_RELATIVE_SEGMENTS = ['.kbengine', 'debug.json'] as const;
+/**
+ * 配置文件相对工作目录的固定位置(.kbengine 管理目录,与存根导出同居)。
+ * 任务 B(用户令 2026-10-21):固定段改走托管目录统一解析——目录名可配置
+ * (kbengine.managedDir,默认仍是 .kbengine),本常量保留为默认段的登记,
+ * 生效段一律经 debugConfigRelativeSegments(managedDirName) 取。
+ */
+export const DEBUG_CONFIG_RELATIVE_SEGMENTS = [
+  MANAGED_DIR_DEFAULT,
+  MANAGED_DIR_DEBUG_CONFIG_FILE
+] as const;
+
+/** 配置文件相对段(任务 B):`<managedDir>/debug.json`,managedDirName 缺省走默认 */
+export function debugConfigRelativeSegments(
+  managedDirName: string = MANAGED_DIR_DEFAULT
+): string[] {
+  return [resolveManagedDirName(managedDirName).name, MANAGED_DIR_DEBUG_CONFIG_FILE];
+}
 
 export type WorkspaceRootSource = 'env' | 'config' | 'default';
 
@@ -58,8 +78,11 @@ function joinPath(...segments: string[]): string {
   return segments.join('/').replace(/\/{2,}/g, '/').replace(/\\/g, '/');
 }
 
-export function debugConfigPath(workspaceRoot: string): string {
-  return joinPath(workspaceRoot, ...DEBUG_CONFIG_RELATIVE_SEGMENTS);
+export function debugConfigPath(
+  workspaceRoot: string,
+  managedDirName: string = MANAGED_DIR_DEFAULT
+): string {
+  return joinPath(workspaceRoot, ...debugConfigRelativeSegments(managedDirName));
 }
 
 /**
@@ -300,6 +323,8 @@ export interface EnsureDebugConfigOptions {
   listDir?: (root: string) => DirectoryEntry[];
   /** 额外扫描根(如 KBEngine assetsRoot);配置仍写到生效工作目录 */
   scanRoots?: readonly string[];
+  /** 托管目录名(任务 B,kbengine.managedDir 生效值);缺省走默认 .kbengine */
+  managedDirName?: string;
 }
 
 export type EnsureDebugConfigStatus =
@@ -328,17 +353,19 @@ export function ensureDebugConfig(
   const env = options.env ?? process.env;
   const folders = options.workspaceFolders ?? [];
   const listDir = options.listDir ?? deps.listDir;
+  // 托管目录名(任务 B):debug.json 与存根导出同走一套默认/配置解析
+  const managedDirName = resolveManagedDirName(options.managedDirName).name;
 
   const resolved = resolveDebugWorkspaceRoot({
     env,
-    fileConfig: readWorkspaceConfig(deps, folders[0]?.fsPath ?? ''),
+    fileConfig: readWorkspaceConfig(deps, folders[0]?.fsPath ?? '', managedDirName),
     workspaceFolders: folders
   });
   if (resolved === null) {
     return { status: 'no-workspace', workspaceRoot: '', workspaceSource: null, scannedActions: 0 };
   }
 
-  const target = debugConfigPath(resolved.root);
+  const target = debugConfigPath(resolved.root, managedDirName);
   if (deps.exists(target)) {
     return {
       status: 'exists',
@@ -361,7 +388,7 @@ export function ensureDebugConfig(
     deps.log(`  按脚本扫描写入 ${actions.length} 条快速执行动作:${actions.map(action => action.name).join('、')}`);
   }
   try {
-    deps.mkdir(joinPath(resolved.root, '.kbengine'));
+    deps.mkdir(joinPath(resolved.root, managedDirName));
     deps.writeFile(target, buildDebugConfigSkeleton({ workspace: resolved, actions }));
   } catch {
     deps.log(`  写入失败(${target}):目录不可写?已如实回报,其余能力不受影响`);
@@ -382,12 +409,13 @@ export function ensureDebugConfig(
 
 function readWorkspaceConfig(
   deps: DebugConfigBootstrapDeps,
-  root: string
+  root: string,
+  managedDirName: string = MANAGED_DIR_DEFAULT
 ): Record<string, unknown> | null {
   if (root === '') {
     return null;
   }
-  const target = debugConfigPath(root);
+  const target = debugConfigPath(root, managedDirName);
   if (!deps.exists(target)) {
     return null;
   }

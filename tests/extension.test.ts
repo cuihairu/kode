@@ -923,6 +923,15 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
 
   it('手动命令聚焦打开;联动 watcher 三臂刷新合成内容', async () => {
     const root = makeEngineTree();
+    // 任务 B 起激活期还会挂托管目录 watcher(**/.kbengine*),不能再用
+    // lastFileSystemWatcher 当终配 watcher;记录 (pattern, watcher) 按挑选。
+    const createdWatchers: Array<{ pattern: string; watcher: { fireChange(u: Uri): void; fireCreate(u: Uri): void; fireDelete(u: Uri): void } }> = [];
+    const originalCreate = workspace.createFileSystemWatcher;
+    (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = (pattern: unknown) => {
+      const watcher = originalCreate.call(workspace, pattern as never);
+      createdWatchers.push({ pattern: String(pattern), watcher });
+      return watcher;
+    };
     try {
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
       configurationOverrides.set('kbengine', { binPath: '${workspaceFolder}/kbe/bin/server' });
@@ -939,9 +948,12 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       };
       expect(manual.options).toBeUndefined();
 
-      // 变更联动:watcher change/create/delete 三臂都触发内容提供者重算
-      const watcher = lastFileSystemWatcher.current;
-      expect(watcher).not.toBeNull();
+      // 变更联动:watcher change/create/delete 三臂都触发内容提供者重算。
+      // 按上面记录的 (pattern, watcher) 挑出 kbengine*.xml 那枚。
+      const watcher = createdWatchers.find(record =>
+        record.pattern.includes('kbengine*.xml')
+      )?.watcher;
+      expect(watcher).toBeDefined();
       const provider = workspaceState.contentProviders.get('kbengine-config') as {
         onDidChange(listener: (uri: unknown) => void): { dispose(): void };
         provideTextDocumentContent(uri: unknown): string;
@@ -957,6 +969,7 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
       // autoRefreshFinalConfig=false 时 watcher 不存在,联动自然关闭
       disposeAll(context);
     } finally {
+      (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = originalCreate;
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 8000);

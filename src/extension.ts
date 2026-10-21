@@ -37,7 +37,7 @@ import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
-import { exportKbeStubs, fileSystemStubExportDeps } from './pythonStubExport';
+import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
   PYTHON_TYPE_STUB_FILE_NAME,
   buildPythonTypeStubPlan,
@@ -1207,8 +1207,57 @@ export function activate(context: vscode.ExtensionContext) {
       })),
       scanRoots: (vscode.workspace.workspaceFolders ?? []).slice(0, 1)
         .map(folder => resolveAssetsRootForWorkspace(folder.uri.fsPath))
-        .filter((root): root is string => root.length > 0)
+        .filter((root): root is string => root.length > 0),
+      managedDirName: resolveManagedDirName(readManagedDirSetting()).name
     }
+  );
+  // 托管目录自动重建(任务 B,用户令 2026-10-21):.kbengine(kbengine.managedDir
+  // 可配)目录被删后不需重载窗口,下一次相关事件即重建全链——KBEngine.pyi /
+  // kbe_types.pyi / entity_types.pyi / debug.json 全部内容比对零写或缺失即生成,
+  // 重复触发无副作用。watcher 盯托管目录自身与其内部,删除目录也能收到事件。
+  const bootstrapOptions = () => ({
+    workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(folder => ({
+      name: folder.name,
+      fsPath: folder.uri.fsPath
+    })),
+    scanRoots: (vscode.workspace.workspaceFolders ?? []).slice(0, 1)
+      .map(folder => resolveAssetsRootForWorkspace(folder.uri.fsPath))
+      .filter((root): root is string => root.length > 0),
+    managedDirName: resolveManagedDirName(readManagedDirSetting()).name
+  });
+  const regenerateManagedDirAssets = (): void => {
+    void exportKbeStubs(fileSystemStubExportDeps, { silent: true });
+    void exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
+    void exportEntityTypeStubs(entityMappingManager);
+    ensureDebugConfig(
+      { ...fileSystemBootstrapDeps, log: (line: string): void => debugConfigChannel.appendLine(line) },
+      bootstrapOptions()
+    );
+  };
+  const createManagedDirWatcher = (): vscode.FileSystemWatcher => {
+    const name = resolveManagedDirName(readManagedDirSetting()).name;
+    // `**/<dir>`(目录本体被删)+ `**/<dir>/**`(内部文件增删改)两个 pattern 都盯
+    const watchers = [`**/${name}`, `**/${name}/**`].map(pattern =>
+      vscode.workspace.createFileSystemWatcher(pattern)
+    );
+    for (const watcher of watchers) {
+      watcher.onDidChange(regenerateManagedDirAssets);
+      watcher.onDidCreate(regenerateManagedDirAssets);
+      watcher.onDidDelete(regenerateManagedDirAssets);
+      context.subscriptions.push(watcher);
+    }
+    return { dispose: (): void => watchers.forEach(watcher => watcher.dispose()) } as vscode.FileSystemWatcher;
+  };
+  let managedDirWatcher = createManagedDirWatcher();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (!event.affectsConfiguration('kbengine.managedDir')) {
+        return;
+      }
+      managedDirWatcher.dispose();
+      managedDirWatcher = createManagedDirWatcher();
+      regenerateManagedDirAssets();
+    })
   );
   const firstWorkspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
   const assetsRoot = firstWorkspaceRoot ? resolveAssetsRootForWorkspace(firstWorkspaceRoot) : '';

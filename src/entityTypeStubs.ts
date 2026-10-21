@@ -8,6 +8,8 @@ import {
   PYTHON_STUB_EXPORT_ENABLED_DEFAULT,
   fileSystemStubExportDeps,
   kbeStubDir,
+  readManagedDirSetting,
+  resolveManagedDirName,
   type StubExportDeps
 } from './pythonStubExport';
 import {
@@ -69,7 +71,10 @@ export async function exportEntityTypeStubs(
     if (!plan.content) {
       continue;
     }
-    const stubDir = kbeStubDir(folder.uri.fsPath);
+    // 托管目录可配置(任务 B):entity_types.pyi 与 KBEngine.pyi/kbe_types.pyi
+    // 同居 <managedDir>/stubs,随 kbengine.managedDir 同迁(旧键 stubDir 不经此处)
+    const managedDirName = resolveManagedDirName(readManagedDirSetting()).name;
+    const stubDir = kbeStubDir(folder.uri.fsPath, managedDirName);
     const target = `${stubDir}/${ENTITY_TYPE_STUB_FILE_NAME}`;
     let unchanged = false;
     try {
