@@ -132,15 +132,15 @@
 > （.pyi 会抢占 IDE 对 .py 的解析，副作用大）；保留现有 kbe_types.py 生成方案为主线。
 
 - [x] T-01：types.xml 自定义类型内部引用关系完整保留（FIXED_DICT 属性引用 PLAYER_ID 等嵌套类型，生成侧不得扁平化丢失关系）。
-  - 证据：commit `47e0a57`；unit 2502 passed/2 skipped；`src/definitionWorkspace.ts:22`（属性行/内联 Type 行）、`src/pythonTypeStubs.ts:74`（类/别名来源）、`src/pythonTypeStubs.ts:121`（属性注解）、`src/pythonTypeStubs.ts:306`（逐声明 source 注释）。
+  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/definitionWorkspace.ts:22`（属性行/内联 Type 行）、`src/pythonTypeStubs.ts:74`（类/别名来源）、`src/pythonTypeStubs.ts:121`（属性注解）、`src/pythonTypeStubs.ts:306`（逐声明 source 注释）。
 - [x] T-02：.def 引用 types.xml 自定义类型 → 生成实体级类型声明（评审点名“接下来最值得做的部分”；Avatar.profile: ITEM_INFO 这类逐实体落地）。
-  - 证据：commit `47e0a57`；unit 2502 passed/2 skipped；`src/entityTypeStubs.ts:25`（.def+types.xml 双源条目）、`src/entityTypeStubs.ts:46`（实体桩导出）、`src/extension.ts:1190`（激活导出）、`tests/entityTypeStubs.test.ts:44`（Avatar.profile→ITEM_INFO）。
+  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/entityTypeStubs.ts:25`（.def+types.xml 双源条目）、`src/entityTypeStubs.ts:46`（实体桩导出）、`src/extension.ts:1190`（激活导出）、`tests/entityTypeStubs.test.ts:44`（Avatar.profile→ITEM_INFO）。
 - [x] T-03：KBEngine.pyi 符号/签名/文档/来源与覆盖口径增强（当前仍为精选引擎子集，未完备前页头明确“not a complete engine API”，不宣称完整）。
-  - 证据：commit `47e0a57`；unit 2502 passed/2 skipped；`src/kbeModuleIndex.ts:310`（精选子集声明）、`src/kbeModuleIndex.ts:510`（桩页头覆盖声明）、`src/kbeModuleIndex.ts:524`（导出页头覆盖声明）、`tests/pythonStubExport.test.ts:85`（禁止宣称完整）。
+  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/kbeModuleIndex.ts:310`（精选子集声明）、`src/kbeModuleIndex.ts:510`（桩页头覆盖声明）、`src/kbeModuleIndex.ts:524`（导出页头覆盖声明）、`tests/pythonStubExport.test.ts:85`（禁止宣称完整）。
 - [ ] T-04：.py 全量 typings——暂缓，先做影响面实验（.pyi 抢占 .py 解析行为逐 IDE 验证）再决定开关，默认关闭。
   - 当前状态：本批未实施、未改动 .py 全量生成或默认解析策略；仅完成 types/.def/KBEngine 桩与来源映射。
 - [x] T-05：统一源码映射与导航（四种体验：F12 定义 / Peek 内联 / CodeLens 来源标注“原始定义: types.xml:8”点击跳转 / 生成文件页头来源声明；禁止用生成行号反推行号）。
-  - 证据：commit `47e0a57`；unit 2502 passed/2 skipped；`src/generatedSourceMap.ts:7`（原始位置表）、`src/generatedSourceLenses.ts:36`（原始定义 CodeLens）、`src/languageProviders.ts:3228`（self 属性→types.xml 原始行）、`src/pythonTypeStubs.ts:306`（生成页/内联来源声明）。
+  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/generatedSourceMap.ts:7`（原始位置表）、`src/generatedSourceLenses.ts:36`（原始定义 CodeLens）、`src/languageProviders.ts:3228`（self 属性→types.xml 原始行）、`src/pythonTypeStubs.ts:306`（生成页/内联来源声明）。
 
 #### 后台运行战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-background-process.md）
 
