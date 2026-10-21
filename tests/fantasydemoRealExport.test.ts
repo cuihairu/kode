@@ -6,7 +6,6 @@ import { EntityMappingManager } from '../src/entityMapping';
 import { buildEntityTypeStubPlan, exportEntityTypeStubs } from '../src/entityTypeStubs';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
 import {
-  buildKbeStubExportContentForWorkspace,
   exportKbeStubs
 } from '../src/pythonStubExport';
 import { exportPythonTypeStubs } from '../src/pythonTypeStubs';
@@ -27,7 +26,8 @@ const realDeps = {
   mkdir: (candidate: string): void => mkdirSync(candidate, { recursive: true })
 };
 
-describe('fantasydemo real export', () => {
+// CI 无本机 BigWorld/kbengine 检出：按 engineRoot 同款口径缺席即整组跳过（675e805 CI 红根治）
+describe.skipIf(!existsSync(FANTASY_ROOT) || !existsSync(ENGINE_ROOT))('fantasydemo real export', () => {
   const root = '/tmp/kode-fantasydemo-real-export';
   const stubDir = join(root, '.kbengine/stubs');
 
