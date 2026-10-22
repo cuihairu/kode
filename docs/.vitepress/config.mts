@@ -140,7 +140,7 @@ export default withMermaid(defineConfig({
       }
     }
   },
-  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }]],
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/kode/logo.svg' }]],
   themeConfig: {
     logo: '/logo.svg',
     socialLinks: [
