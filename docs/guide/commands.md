@@ -350,6 +350,13 @@ The flow graph panel supports:
   - When the remembered action is deleted or broken it falls back to the first item of the list, without erroring
   - The execution chain is identical to `kbengine.quickActions.show` (variable substitution → confirmation → dispatch → log)
 
+### `kbengine.quickActions.runByName`
+
+- Title: `执行快速动作`
+- Purpose: run one quick action by its exact name; the name arrives as the command argument (Command Palette "Run Selected Command", a keybinding, or a programmatic `commands.executeCommand`). Names registered by HTTP capture resolve through the HTTP request service first, then the regular quick-action list
+- Entry points: Command Palette with argument; internal callers (e.g. the HTTP captured-action re-run path)
+- Behavior: identical execution chain to `kbengine.quickActions.show` (variable substitution → confirmation → dispatch → log); when no action matches the given name it reports the same missing-script error style
+
 ### `kbengine.quickActions.scanScripts`
 
 - Title: `Rescan Scripts for Quick Actions`

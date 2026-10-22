@@ -351,6 +351,13 @@
   - 记忆的动作被删掉/改坏时回落到清单第一条，不报错
   - 执行链与 `kbengine.quickActions.show` 完全一致（变量替换 → 确认 → 分发 → 流水）
 
+### `kbengine.quickActions.runByName`
+
+- 标题：`执行快速动作`
+- 作用：按名字精确执行某条快速动作；名字以命令参数形式传入（命令面板「运行选定命令」、键绑定或程序化 `commands.executeCommand`）。HTTP 抓取登记过的名字先经 HTTP 请求服务解析，再回落到常规快速动作清单
+- 入口：带参数的命令面板；内部调用方（如 HTTP 抓取动作的再执行路径）
+- 行为：执行链与 `kbengine.quickActions.show` 完全一致（变量替换 → 确认 → 派发 → 日志）；给定名字匹配不到任何动作时以同样的缺脚本风格报错
+
 ### `kbengine.quickActions.scanScripts`
 
 - 标题：`Rescan Scripts for Quick Actions`

@@ -205,7 +205,11 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
     for (const asset of CRITICAL_ASSETS) {
       const hit = effectiveExclusion(asset);
       expect(hit, `${asset} 不得被 .vscodeignore 最终排除,命中: ${hit ?? ''}`).toBeNull();
-      expect(fs.existsSync(path.join(root, asset)), `${asset} 应在仓库在位`).toBe(true);
+      // out/ 是构建产物(仓库不跟踪): 存在性断言只对入库资产生效,
+      // 编译前跑测试的顺序(如 nightly 全量门禁)不误伤;忽略命中判定仍全量执行
+      if (!asset.startsWith('out/')) {
+        expect(fs.existsSync(path.join(root, asset)), `${asset} 应在仓库在位`).toBe(true);
+      }
     }
   });
 
