@@ -20,16 +20,16 @@ jobs:
     steps:
     - name: Checkout 代码
       timeout-minutes: 3
-      uses: actions/checkout@v7
+      uses: actions/checkout@v7.0.1
 
     - name: 安装 pnpm
       timeout-minutes: 10
-      uses: pnpm/action-setup@v6
+      uses: pnpm/action-setup@v6.1.0
       # 以 package.json 的 packageManager 为单一来源,与 ci.yml 口径一致
 
     - name: 设置 Node.js 24
       timeout-minutes: 5
-      uses: actions/setup-node@v7
+      uses: actions/setup-node@v7.1.0
       with:
         node-version: 24
         cache: 'pnpm'
@@ -90,7 +90,7 @@ jobs:
 
     - name: 上传 VSIX 文件
       timeout-minutes: 3
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v7.0.2
       with:
         name: kode-publish-${{ inputs.version }}-${{ github.sha }}
         path: "kode-*.vsix"

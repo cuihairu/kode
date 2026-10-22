@@ -20,7 +20,7 @@ jobs:
       github.repository == 'cuihairu/kode'
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0 # 需要完整历史做 48h 判断与 commit 信息
 
@@ -49,12 +49,12 @@ jobs:
 
       - name: 安装 pnpm
         timeout-minutes: 10
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.0
         # 2026-10-10:不写 version,统一由 package.json packageManager 决定
         # (v6 见两处版本并存会直接报 Multiple versions of pnpm specified)
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
@@ -145,7 +145,7 @@ jobs:
     if: always() && needs.build-and-release.result == 'success'
     steps:
       - name: Checkout (shallow)
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 1
       - name: Version tags must correspond to published releases

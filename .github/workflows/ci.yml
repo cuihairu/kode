@@ -43,17 +43,17 @@ jobs:
     steps:
     - name: Checkout 代码
       timeout-minutes: 3
-      uses: actions/checkout@v7
+      uses: actions/checkout@v7.0.1
 
     - name: 安装 pnpm
       timeout-minutes: 10
-      uses: pnpm/action-setup@v6
+      uses: pnpm/action-setup@v6.1.0
       # 2026-10-10:不再在此写 version,统一以 package.json 的 packageManager 为单一来源
       # (v6 会因两处版本并存直接报错:Multiple versions of pnpm specified)
 
     - name: 设置 Node.js ${{ matrix.node-version }}
       timeout-minutes: 5
-      uses: actions/setup-node@v7
+      uses: actions/setup-node@v7.1.0
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'pnpm'
@@ -72,7 +72,7 @@ jobs:
 
     - name: 上传覆盖率到 Codecov（OIDC 免 token）
       timeout-minutes: 5
-      uses: codecov/codecov-action@v7
+      uses: codecov/codecov-action@v7.1.1
       with:
         use_oidc: true
         files: ./coverage/lcov.info
@@ -89,7 +89,7 @@ jobs:
 
     - name: 上传 VSIX 文件
       timeout-minutes: 3
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v7.0.2
       with:
         name: kode-vsix-${{ github.ref_name }}-${{ github.sha }}
         path: "kode-*.vsix"
