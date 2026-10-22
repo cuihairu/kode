@@ -8,10 +8,42 @@ import {
 } from './defCallChain';
 import type { DefCallChain } from './defCallChain';
 import { findPythonMethodDeclarations } from './rpcCodeLens';
+import { withInitialScanTimeout } from './hoverBudget';
+import {
+  CALL_CHAIN_TAB_STATE_KEY,
+  normalizeCallChainTab,
+  resolveInitialCallChainTab
+} from './defCallChainViewLogic';
 
 export interface CallChainPickItem extends vscode.QuickPickItem {
   line: number;
   methodName: string;
+}
+
+/** 装配面注入(extension.ts 传真实 context;测试传替身/缺省) */
+export interface CallChainControllerContext {
+  extensionUri?: vscode.Uri;
+  workspaceState?: vscode.Memento;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function toEmbeddableJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+}
+
+function randomNonce(): string {
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export class CallChainController {
@@ -21,7 +53,10 @@ export class CallChainController {
   private panelSubscriptions: Array<{ dispose(): void }> = [];
   private commandQueue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly entityMappingManager: EntityMappingManager) {}
+  constructor(
+    private readonly entityMappingManager: EntityMappingManager,
+    private readonly context: CallChainControllerContext = {}
+  ) {}
 
   dispose(): void {
     this.panelSubscriptions.splice(0).forEach(subscription => subscription.dispose());
@@ -37,6 +72,16 @@ export class CallChainController {
   private enabled(): boolean {
     return vscode.workspace.getConfiguration('kbengine.python')
       .get<boolean>('callChainHints', true);
+  }
+
+  /** kbengine.python.callChainView:graph(默认)|text */
+  private configuredView(): string {
+    return vscode.workspace.getConfiguration('kbengine.python')
+      .get<string>('callChainView', 'graph');
+  }
+
+  private storedTab(): unknown {
+    return this.context.workspaceState?.get<unknown>(CALL_CHAIN_TAB_STATE_KEY) ?? null;
   }
 
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
@@ -103,7 +148,8 @@ export class CallChainController {
 
     let index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
     if (!index) {
-      await this.entityMappingManager.waitForInitialScan();
+      // 首扫超时闸(用户令 2026-10-22):大树首扫可秒级+,不拖死命令应答
+      await withInitialScanTimeout(this.entityMappingManager.waitForInitialScan());
       index = this.entityMappingManager.getIndexForPythonFile(uri!.fsPath);
     }
     if (!index) {
@@ -158,6 +204,16 @@ export class CallChainController {
     }) as CallChainPickItem | undefined;
   }
 
+  /** tab 选择持久到工作区状态(webview 消息驱动;无 workspaceState 时不记忆) */
+  private handleWebviewMessage(message: unknown): void {
+    const tab = normalizeCallChainTab(
+      (message as { type?: string; tab?: unknown } | null)?.tab
+    );
+    if ((message as { type?: string } | null)?.type === 'callChainTab' && tab) {
+      void this.context.workspaceState?.update(CALL_CHAIN_TAB_STATE_KEY, tab);
+    }
+  }
+
   private showPreview(chain: DefCallChain): void {
     const mermaid = renderDefCallChainMermaid(chain);
     if (this.panel) {
@@ -170,9 +226,13 @@ export class CallChainController {
       'kbengine.defCallChain',
       'KBEngine Def Call Chain',
       vscode.ViewColumn.Beside,
-      { enableScripts: false }
+      this.panelOptions()
     );
-    panel.webview.html = this.html(chain, mermaid);
+    this.panel = panel;
+    this.panel.webview.html = this.html(chain, mermaid);
+    this.panelSubscriptions.push(panel.webview.onDidReceiveMessage(message =>
+      this.handleWebviewMessage(message)
+    ));
     this.panelSubscriptions.push(panel.onDidDispose(() => {
       if (this.panel === panel) {
         this.panel = null;
@@ -181,15 +241,66 @@ export class CallChainController {
     this.panel = panel;
   }
 
-  private html(chain: DefCallChain, mermaid: string): string {
-    const fallback = [
+  private panelOptions(): vscode.WebviewPanelOptions & vscode.WebviewOptions {
+    if (this.context.extensionUri) {
+      // webview 脚本(media/defCallChainViewer.js,mermaid 已打包)只从扩展自带媒体目录加载
+      return {
+        enableScripts: true,
+        localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'media')]
+      };
+    }
+    return { enableScripts: true };
+  }
+
+  /** 文本链(兜底视图/无脚本宿主可见) */
+  private chainText(chain: DefCallChain): string {
+    return [
       chain.root.signature,
       ...chain.edges.map(edge => {
         const target = chain.nodes.find(node => node.id === edge.to);
         return `${edge.from} --${edge.receiver}--> ${target?.signature ?? edge.to}`;
       })
     ].join('\n');
-    return `<!DOCTYPE html><html><body><pre data-mermaid="${encodeURIComponent(mermaid)}">${fallback
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre></body></html>`;
+  }
+
+  private html(chain: DefCallChain, mermaid: string): string {
+    const nonce = randomNonce();
+    const webview = this.panel?.webview;
+    const cspSource = webview?.cspSource ?? 'vscode-webview:';
+    const scriptUri = webview && typeof webview.asWebviewUri === 'function' && this.context.extensionUri
+      ? String(webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', 'defCallChainViewer.js')))
+      : 'media/defCallChainViewer.js';
+    const initialTab = resolveInitialCallChainTab(this.configuredView(), this.storedTab());
+    const payload = toEmbeddableJson({
+      mermaid,
+      text: this.chainText(chain),
+      configView: this.configuredView(),
+      storedTab: initialTab
+    });
+
+    return [
+      '<!DOCTYPE html>',
+      '<html>',
+      '<head>',
+      '<meta charset="utf-8">',
+      // CSP:脚本只认扩展自带 bundle(nonce),不加载任何外部/CDN 资源
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${cspSource}; style-src 'unsafe-inline'; script-src ${cspSource} 'nonce-${nonce}';">`,
+      '<title>KBEngine Def Call Chain</title>',
+      '</head>',
+      '<body>',
+      '<header>',
+      '<div role="tablist" id="call-chain-tabs">',
+      `<button type="button" role="tab" id="call-chain-tab-graph" data-call-chain-tab="graph" aria-selected="${initialTab === 'graph' ? 'true' : 'false'}">Graph</button>`,
+      `<button type="button" role="tab" id="call-chain-tab-text" data-call-chain-tab="text" aria-selected="${initialTab === 'text' ? 'true' : 'false'}">Text</button>`,
+      '</div>',
+      '<div id="call-chain-notice" role="status" hidden></div>',
+      '</header>',
+      `<main><div data-call-chain-pane="graph" data-mermaid="${encodeURIComponent(mermaid)}"${initialTab === 'graph' ? '' : ' hidden'}></div>`,
+      `<pre data-call-chain-pane="text"${initialTab === 'text' ? '' : ' hidden'}>${escapeHtml(this.chainText(chain))}</pre></main>`,
+      `<script type="application/json" id="call-chain-payload" nonce="${nonce}">${payload}</script>`,
+      `<script nonce="${nonce}" src="${scriptUri}"></script>`,
+      '</body>',
+      '</html>'
+    ].join('');
   }
 }

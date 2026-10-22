@@ -125,6 +125,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
 | `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
 | `kbengine.python.callChainHints` | boolean | `true` | Python 实体方法 Call Chain 镜链与 `Show Call Chain` 命令;关闭后不显示链入口,命令也不生成预览 |
+| `kbengine.python.callChainView` | string | `graph` | `Show Call Chain` 面板初始视图:`graph`(面板内嵌 mermaid,npm 依赖打包,离线可用)或 `text`(文本链兜底);面板内 Tab 选择持久到工作区状态且优先于本配置;graph 渲染失败自动回落 text 并在面板头说明 |
 | `kbengine.python.apiMetadata` | boolean | `true` | KBEngine API 引擎版本/源码提交标识与原始声明位置;取不到源码标识显示 `unknown`,不硬造 |
 
 `kbengine.python.enableMroJump` 改动即时生效(不重载窗口);关闭后层2 只在跳转轨迹里记 skip、不做全仓 `.py` 扫描,`.py` 变更也不再投喂索引。方法使用处优先寻找 Python 实现，`.def` 方法声明会暂存为回退目标；属性访问和方法声明处保持 `.def` 导航。索引区分模块与 base/cell 同名类，并使用未保存的编辑器内容。逐层轨迹与排障口径见「日志」文档的 `[kode-jump]` 决策路径一节。引擎源码配置同时服务 `kbengine.python.apiMetadata`;元数据在激活期派生,不把本机路径写进代码。

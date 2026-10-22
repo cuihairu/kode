@@ -319,7 +319,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(rpcCodeLensProvider);
 
-  const callChainController = new CallChainController(entityMappingManager);
+  const callChainController = new CallChainController(entityMappingManager, context);
   const callChainLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
     callChainController

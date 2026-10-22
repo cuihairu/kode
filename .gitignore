@@ -3,6 +3,7 @@
 *.js.map
 *.d.ts
 !src/**/*.ts
+!media/**/*.js
 
 # Build output
 out/

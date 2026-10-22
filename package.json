@@ -138,13 +138,6 @@
         "injectTo": [
           "source.python"
         ]
-      },
-      {
-        "scopeName": "text.python-function-calls",
-        "path": "./syntaxes/python-function-calls-injection.json",
-        "injectTo": [
-          "source.python"
-        ]
       }
     ],
     "themes": [
@@ -965,6 +958,16 @@
           "default": true,
           "description": "Python 实体方法 Call Chain 提示与命令开关，默认开；关闭后不显示链入口，Show Call Chain 也不会生成预览"
         },
+        "kbengine.python.callChainView": {
+          "type": "string",
+          "enum": ["graph", "text"],
+          "default": "graph",
+          "enumDescriptions": [
+            "Graph：面板内嵌 mermaid(npm 打包,离线可用)渲染真图",
+            "Text：文本链(兜底视图)"
+          ],
+          "description": "Show Call Chain 面板初始视图，默认 graph；面板内可切 Tab，选择持久到工作区状态并优先于本配置"
+        },
         "kbengine.python.apiMetadata": {
           "type": "boolean",
           "default": true,
@@ -1040,7 +1043,8 @@
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
-    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 && pnpm bundle:webview",
+    "bundle:webview": "esbuild src/webview/defCallChainViewer.ts --bundle --outfile=media/defCallChainViewer.js --format=iife --platform=browser --target=es2020 --minify",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
