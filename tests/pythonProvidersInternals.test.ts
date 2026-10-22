@@ -9,6 +9,7 @@ import {
   PythonDefinitionProvider
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
+import { buildEngineApiCatalog } from '../src/engineApiMetadata';
 import { KBE_SYMBOLS } from '../src/kbeModuleIndex';
 import {
   CompletionItemKind,
@@ -407,6 +408,23 @@ describe('KBEngineCallHierarchyProvider', () => {
 });
 
 describe('PythonCompletionProvider', () => {
+  it('shows engine identity and original declaration in KBEngine API completions', async () => {
+    const provider = new PythonCompletionProvider(
+      {} as EntityMappingManager,
+      buildEngineApiCatalog('/ws', { engineRoot: null })
+    );
+    const { document, position } = pyDoc('import KBEngine\nKBEngine.a|');
+    const items = await provider.provideCompletionItems(document, position) as Array<{
+      label: string;
+      detail?: string;
+      documentation?: { value: string };
+    }>;
+    const address = items.find(item => item.label === 'address');
+    expect(address?.detail).toContain('def address');
+    expect(address?.documentation.value)
+      .toContain('原始声明: `typings/_KBEngine_baseapp.pyi:21`');
+  });
+
   const makeMapping = (overrides?: {
     properties?: Record<string, { defFile: string; line: number }>;
     methods?: Record<string, Array<{ defFile: string; line: number; section: string; exposed: boolean; identity: object }>>;

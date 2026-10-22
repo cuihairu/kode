@@ -133,6 +133,7 @@ import {
   getPythonClassBaseAtPosition,
   resolveKbeAccessAtPosition
 } from './kbeModuleIndex';
+import type { EngineApiCatalog } from './engineApiMetadata';
 
 function getLanguageFeatureConfig() {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -4450,7 +4451,10 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
 }
 
 export class PythonCompletionProvider implements vscode.CompletionItemProvider {
-  constructor(private entityMappingManager: EntityMappingManager) {}
+  constructor(
+    private entityMappingManager: EntityMappingManager,
+    private engineApiCatalog: EngineApiCatalog | null = null
+  ) {}
 
   provideCompletionItems(
     document: vscode.TextDocument,
@@ -4464,14 +4468,15 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     const kbeAliases = getKbeAliases(document.getText());
     const kbeContext = getKbeCompletionContext(linePrefix, kbeAliases);
     if (kbeContext) {
-      return filterKbeSymbols(kbeContext.partialSymbol).map(entry => {
+      const entries = filterKbeSymbols(kbeContext.partialSymbol);
+      return entries.map(entry => {
         const item = new vscode.CompletionItem(
           entry.name,
           entry.kind === 'class' ? vscode.CompletionItemKind.Class : vscode.CompletionItemKind.Function
         );
         item.detail = entry.signature;
         item.documentation = new vscode.MarkdownString(
-          `${entry.summary}\n\n源码: \`${entry.sourceFile}:${entry.sourceLine}\``
+          `${entry.summary}\n\n原始声明: \`${entry.sourceFile}:${entry.sourceLine}\``
         );
         return item;
       });

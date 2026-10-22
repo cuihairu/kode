@@ -944,6 +944,11 @@
           "default": true,
           "description": "Python 实体方法 Call Chain 提示与命令开关，默认开；关闭后不显示链入口，Show Call Chain 也不会生成预览"
         },
+        "kbengine.python.apiMetadata": {
+          "type": "boolean",
+          "default": true,
+          "description": "Engine-aware KBEngine API metadata (version, source commit/description and original declaration locations; default enabled). Missing source identity shows unknown instead of invented values"
+        },
         "kbengine.hotReload.enabled": {
           "type": "boolean",
           "default": false,

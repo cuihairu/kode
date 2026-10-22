@@ -478,6 +478,21 @@ function appendCatalogFootnote(lines: string[]): void {
   lines.push(`# Engine typings anchors: ${KBE_SYMBOLS.length} curated symbols.`);
 }
 
+/** Append engine identity when a source checkout is available; `unknown` stays explicit. */
+export function appendEngineApiMetadata(
+  content: string,
+  metadata: { version: string; commit: string; describe: string }
+): string {
+  const header = [
+    `# Engine version: ${metadata.version}`,
+    `# Source commit: ${metadata.commit}`,
+    `# Source describe: ${metadata.describe}`,
+    ''
+  ].join('\n');
+  const [firstLine, ...rest] = content.split('\n');
+  return [firstLine, ...header.split('\n'), ...rest].join('\n');
+}
+
 /** 生成只读桩文档:逐符号 class/def + docstring + 引擎 typings 锚点 */
 export function buildKbeStubDocument(): KbeStubDocument {
   const lines: string[] = [

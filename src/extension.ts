@@ -127,7 +127,8 @@ import {
   selectionToSnippetBody
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
-import { KBE_SCHEME, buildKbeStubDocument } from './kbeModuleIndex';
+import { buildEngineApiCatalog } from './engineApiMetadata';
+import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
   ServerConfigHoverProvider
@@ -155,6 +156,27 @@ import { TelnetTreeProvider } from './telnetTree';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
+  const engineApiEnabled = vscode.workspace.getConfiguration('kbengine')
+    .get<boolean>('python.apiMetadata', true);
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+  let engineApiCatalog: Awaited<ReturnType<typeof buildEngineApiCatalog>> | null = null;
+  if (engineApiEnabled) {
+    const catalogPromise = buildEngineApiCatalog(workspaceRoot).then(catalog => {
+      engineApiCatalog = catalog;
+      return catalog;
+    }).catch(() => null);
+    void catalogPromise;
+  }
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
+      provideTextDocumentContent(): string {
+        const stub = buildKbeStubDocument();
+        return engineApiCatalog
+          ? appendEngineApiMetadata(stub.content, engineApiCatalog.metadata)
+          : stub.content;
+      }
+    })
+  );
   // 跳转决策路径日志开关(默认关闭;Settings 搜 kbengine.jumpLog 随时切换)
   setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
   // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
@@ -176,7 +198,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(KBE_SCHEME, {
       provideTextDocumentContent(): string {
-        return buildKbeStubDocument().content;
+        const stub = buildKbeStubDocument();
+        return engineApiCatalog
+          ? appendEngineApiMetadata(stub.content, engineApiCatalog.metadata)
+          : stub.content;
       }
     })
   );
@@ -389,7 +414,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 注册 Python 文件的智能提示提供者（提供来自 .def 的属性和方法）
   const pythonCompletionProvider = vscode.languages.registerCompletionItemProvider(
     { language: 'python', scheme: 'file' },
-    new PythonCompletionProvider(entityMappingManager),
+    new PythonCompletionProvider(entityMappingManager, engineApiCatalog),
     '.' // 输入 . 时触发
   );
   context.subscriptions.push(pythonCompletionProvider);
