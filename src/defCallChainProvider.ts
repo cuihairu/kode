@@ -17,8 +17,18 @@ export interface CallChainPickItem extends vscode.QuickPickItem {
 export class CallChainController {
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
+  private panel: vscode.WebviewPanel | null = null;
+  private panelSubscriptions: Array<{ dispose(): void }> = [];
+  private commandQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly entityMappingManager: EntityMappingManager) {}
+
+  dispose(): void {
+    this.panelSubscriptions.splice(0).forEach(subscription => subscription.dispose());
+    this.panel?.dispose();
+    this.panel = null;
+    this.onDidChangeCodeLensesEmitter.dispose();
+  }
 
   fireConfigurationChanged(): void {
     this.onDidChangeCodeLensesEmitter.fire();
@@ -57,6 +67,18 @@ export class CallChainController {
   }
 
   async showForActiveEditor(
+    uri?: vscode.Uri,
+    line?: number,
+    methodName?: string
+  ): Promise<void> {
+    const operation = this.commandQueue.then(() =>
+      this.showForActiveEditorInternal(uri, line, methodName)
+    );
+    this.commandQueue = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async showForActiveEditorInternal(
     uri?: vscode.Uri,
     line?: number,
     methodName?: string
@@ -137,14 +159,26 @@ export class CallChainController {
   }
 
   private showPreview(chain: DefCallChain): void {
+    const mermaid = renderDefCallChainMermaid(chain);
+    if (this.panel) {
+      this.panel.webview.html = this.html(chain, mermaid);
+      this.panel.reveal();
+      return;
+    }
+
     const panel = vscode.window.createWebviewPanel(
       'kbengine.defCallChain',
       'KBEngine Def Call Chain',
       vscode.ViewColumn.Beside,
       { enableScripts: false }
     );
-    const mermaid = renderDefCallChainMermaid(chain);
     panel.webview.html = this.html(chain, mermaid);
+    this.panelSubscriptions.push(panel.onDidDispose(() => {
+      if (this.panel === panel) {
+        this.panel = null;
+      }
+    }));
+    this.panel = panel;
   }
 
   private html(chain: DefCallChain, mermaid: string): string {

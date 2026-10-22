@@ -327,6 +327,7 @@ export function activate(context: vscode.ExtensionContext) {
       callChainController.showForActiveEditor(uri, line, methodName)
   );
   context.subscriptions.push(showCallChainCommand);
+  context.subscriptions.push(callChainController);
 
   // 属性访问标记(批135 用户令:types.xml 能跳到代码,代码侧没有等价的反向
   // 标记):self.<属性> 访问处出一行 CodeLens,标 def 声明的类型与可见域,

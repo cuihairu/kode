@@ -1647,6 +1647,8 @@ export class EntityMappingManager {
     const normalized = normalizeLookupPath(pythonFile);
     return [...this.mappingIndexes.values()].find(index =>
       index.pythonOwnerFiles.some(item => normalizeLookupPath(item.filePath) === normalized)
+    ) ?? [...this.mappingIndexes.values()].find(index =>
+      index.rootName === path.basename(pythonFile, '.py')
     );
   }
 
