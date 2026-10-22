@@ -252,6 +252,11 @@ The flow graph panel supports:
 - Title: `Run Project Doctor`
 - Purpose: audit the def reference graph and report structural issues
 
+### `kbengine.symbolReferences.show`
+
+- Title: `Show Symbol References Graph`
+- Purpose: show the def symbol reference graph as Mermaid and plain-text previews
+
 ### `kbengine.profile.start`
 
 - Title: `Start Runtime Profile`
@@ -262,6 +267,16 @@ The flow graph panel supports:
 - Title: `Query Spaces`
 - Purpose: query the local cellappmgr for current space records
 
+### `kbengine.runtimeQuery.show`
+
+- Title: `Show Runtime Query Panel`
+- Purpose: discover running components, query cellappmgr spaces, and query watcher values from one panel
+
+### `kbengine.python.showCallChain`
+
+- Title: `Show Call Chain`
+- Purpose: generate the configured Python call chain preview for the selected method
+
 ### `kbengine.compatibility.check`
 
 - Title: `Check Engine Compatibility`
@@ -270,7 +285,7 @@ The flow graph panel supports:
 ### `kbengine.workbench.show`
 
 - Title: `Show KBEngine Workbench`
-- Purpose: show a command launcher for discovery, runtime, schema, SDK, and compatibility tools
+- Purpose: show a command launcher for discovery, runtime queries, schema, SDK, and compatibility tools
 
 ## Performance Analysis
 

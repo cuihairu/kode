@@ -9,6 +9,7 @@ import { LogViewerWebView } from './logWebView';
 import {
   buildDefReferenceGraphFromFile,
   buildProjectDoctorReport,
+  formatDefReferenceGraphPreview,
   formatProjectDoctorReport
 } from './defReferenceGraph';
 import {
@@ -21,6 +22,8 @@ import { DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
+import { RuntimeQueryWebView } from './runtimeQueryWebView';
+import { CallChainController } from './defCallChainProvider';
 import {
   checkExtensionCompatibility,
   findEngineRoot,
@@ -287,6 +290,19 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(rpcCodeLensProvider);
 
+  const callChainController = new CallChainController(entityMappingManager);
+  const callChainLensProvider = vscode.languages.registerCodeLensProvider(
+    pythonDocumentSelector,
+    callChainController
+  );
+  context.subscriptions.push(callChainLensProvider);
+  const showCallChainCommand = vscode.commands.registerCommand(
+    'kbengine.python.showCallChain',
+    (uri?: vscode.Uri, line?: number, methodName?: string) =>
+      callChainController.showForActiveEditor(uri, line, methodName)
+  );
+  context.subscriptions.push(showCallChainCommand);
+
   // 属性访问标记(批135 用户令:types.xml 能跳到代码,代码侧没有等价的反向
   // 标记):self.<属性> 访问处出一行 CodeLens,标 def 声明的类型与可见域,
   // 点击回 def 声明行;只认 self.<属性> 形态,与属性 F12 同口径;批154 起
@@ -437,6 +453,7 @@ export function activate(context: vscode.ExtensionContext) {
     // serverConfig)同样现读,不需要 fire
     if (event.affectsConfiguration('kbengine.codeLens')) {
       rpcCodeLensProviderImpl.fireConfigurationChanged();
+      callChainController.fireConfigurationChanged();
       eventCodeLensProviderImpl.fireConfigurationChanged();
       propertyCodeLensProviderImpl.fireConfigurationChanged();
       typesXmlCodeLensProviderImpl.fireConfigurationChanged();
@@ -446,6 +463,10 @@ export function activate(context: vscode.ExtensionContext) {
     // 每次调用现读配置,无需 fire;RPC 镜链的接收者段镜是缓存面,重取一次
     if (event.affectsConfiguration('kbengine.entity')) {
       rpcCodeLensProviderImpl.fireConfigurationChanged();
+    }
+
+    if (event.affectsConfiguration('kbengine.python.callChainHints')) {
+      callChainController.fireConfigurationChanged();
     }
 
     if (event.affectsConfiguration('kbengine.assetsRoot') ||
@@ -1165,6 +1186,13 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(startRuntimeProfileCommand, querySpacesCommand, runtimeOutputChannel);
 
+  const runtimeQueryWebView = new RuntimeQueryWebView(context);
+  const showRuntimeQueryCommand = vscode.commands.registerCommand(
+    'kbengine.runtimeQuery.show',
+    () => runtimeQueryWebView.show()
+  );
+  context.subscriptions.push(showRuntimeQueryCommand);
+
   const compatibilityChannel = vscode.window.createOutputChannel('KBEngine Compatibility');
   const compatibilityTarget: ExtensionCompatibilityTarget = {
     displayName: 'Kode KBEngine',
@@ -1195,8 +1223,10 @@ export function activate(context: vscode.ExtensionContext) {
     const selection = await vscode.window.showQuickPick([
       { label: '$(search) Discovery & Positioning', command: 'kbengine.discovery.report' },
       { label: '$(checklist) Project Doctor', command: 'kbengine.project.doctor' },
+      { label: '$(graph) Symbol References', command: 'kbengine.symbolReferences.show' },
       { label: '$(graph) Monitoring', command: 'kbengine.monitoring.show' },
       { label: '$(pulse) Runtime Profile', command: 'kbengine.profile.start' },
+      { label: '$(search) Runtime Queries', command: 'kbengine.runtimeQuery.show' },
       { label: '$(map) Spaces', command: 'kbengine.spaces.query' },
       { label: '$(database) Database Schema', command: 'kbengine.database.open' },
       { label: '$(database) Database Drift', command: 'kbengine.database.checkAllDrift' },
@@ -1536,6 +1566,36 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(projectDoctorCommand, projectDoctorChannel);
+
+  const symbolReferencesChannel = vscode.window.createOutputChannel('KBEngine Symbol References');
+  const symbolReferencesCommand = vscode.commands.registerCommand(
+    'kbengine.symbolReferences.show',
+    async () => {
+      const targetUri = vscode.window.activeTextEditor?.document.uri;
+      const candidateUri = targetUri?.fsPath.endsWith('.def')
+        ? targetUri
+        : (await findFilesAcrossRoots('**/*.def'))[0];
+      if (!candidateUri) {
+        vscode.window.showInformationMessage('未找到 .def 文件,无法生成符号引用图');
+        return;
+      }
+
+      const graph = buildDefReferenceGraphFromFile(candidateUri.fsPath);
+      if (!graph) {
+        vscode.window.showWarningMessage('未找到 entity_defs 定义根,符号引用图仅支持标准定义布局');
+        return;
+      }
+
+      const preview = formatDefReferenceGraphPreview(graph);
+      symbolReferencesChannel.clear();
+      symbolReferencesChannel.appendLine('Mermaid');
+      symbolReferencesChannel.appendLine(preview.mermaid);
+      symbolReferencesChannel.appendLine('\nText');
+      symbolReferencesChannel.appendLine(preview.text);
+      symbolReferencesChannel.show(true);
+    }
+  );
+  context.subscriptions.push(symbolReferencesCommand, symbolReferencesChannel);
   context.subscriptions.push(defAnalysisOutputChannel);
   context.subscriptions.push(defAnalysisDiagnostics);
 

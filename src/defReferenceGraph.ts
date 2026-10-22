@@ -431,3 +431,61 @@ export function formatProjectDoctorReport(report: ProjectDoctorReport): string {
   }
   return lines.join('\n');
 }
+
+export interface DefReferenceGraphPreview {
+  readonly mermaid: string;
+  readonly text: string;
+}
+
+export function formatDefReferenceGraphPreview(graph: DefReferenceGraph): DefReferenceGraphPreview {
+  const files = [
+    ...new Set([
+      ...graph.definitions.map(definition => definition.filePath),
+      ...graph.issues
+        .filter(issue => issue.severity === 'error')
+        .map(issue => issue.filePath)
+    ])
+  ].sort();
+  const fileIds = new Map(files.map((filePath, index) => [filePath, `F${index}`]));
+  const symbolsByFile = new Map<string, string[]>();
+  for (const definition of graph.definitions) {
+    const symbols = symbolsByFile.get(definition.filePath) ?? [];
+    symbols.push(`${definition.kind} ${definition.name}`);
+    symbolsByFile.set(definition.filePath, symbols);
+  }
+
+  const mermaidLines = ['graph LR'];
+  for (const filePath of files) {
+    const label = `${path.basename(filePath)}\\n${(symbolsByFile.get(filePath) ?? []).join('\\n')}`;
+    mermaidLines.push(`  ${fileIds.get(filePath)}["${label}"]`);
+  }
+  for (const edge of graph.edges) {
+    const names = [...new Set(edge.references.map(reference => reference.name))].join(', ');
+    mermaidLines.push(
+      `  ${fileIds.get(edge.source)} -->|${edge.relation}${names ? `: ${names}` : ''}| ${fileIds.get(edge.target)}`
+    );
+  }
+  for (const issue of graph.issues.filter(candidate => candidate.severity === 'error')) {
+    const targetId = `U${fileIds.size + mermaidLines.length}`;
+    mermaidLines.push(
+      `  ${fileIds.get(issue.filePath)} -.${issue.code}.-> ${targetId}["Unresolved ${issue.name}"]`
+    );
+  }
+
+  const textLines: string[] = [];
+  for (const filePath of files) {
+    textLines.push(`${path.basename(filePath)}`);
+    for (const symbol of symbolsByFile.get(filePath) ?? []) textLines.push(`  ${symbol}`);
+  }
+  for (const edge of graph.edges) {
+    const names = [...new Set(edge.references.map(reference => reference.name))].join(', ');
+    textLines.push(
+      `${path.basename(edge.source)} -> ${path.basename(edge.target)} (${edge.relation})${names ? `: ${names}` : ''}`
+    );
+  }
+  for (const issue of graph.issues.filter(candidate => candidate.severity === 'error')) {
+    textLines.push(`${path.basename(issue.filePath)} -> Unresolved ${issue.name} (${issue.code})`);
+  }
+
+  return { mermaid: mermaidLines.join('\n'), text: textLines.join('\n') };
+}
