@@ -65,8 +65,8 @@
 - [x] B-1 hover 永转+2分钟：入口 2.5s 总预算 race+waitForInitialScan 5s 超时+LogHub 超时层名（9c8daf7@分支；**真凶=normalizeLookupPath 小写化致定向解析死代码**，修后冷悬停 12-14ms/热 8-10ms，1501-def 树实测；kbengine.hover.asyncBudgetMs；test 2712/0）
 - [x] B-2 函数着色 白→浅蓝：variable.function.call.python=#8BD5FF（11 主题），before/after scope 实证（179a290@分支；探针实测 get_color 白→#8BD5FF、关键字/def 不吃）
 - [x] B-3 RPC 形参 inlay：调用点 `形参名: 类型`（kbengine.inlayHints.typeData 开关；fa13ef9 已在 main；+6 测试）
-- [ ] B-4 调用链图形化双 Tab：Graph(默认,打包 mermaid 离线)+Text，kbengine.python.callChainView（在途续命单）
-- [ ] B-5 上述分支成果收敛 main：单实例面板(f3ff6fc)已在 main，核对无重复提交后 merge/rebase 收口
+- [x] B-4 调用链图形化双 Tab：Graph(默认,esbuild 打包 mermaid@12 离线 5MB 入库)+Text 兜底，kbengine.python.callChainView，渲染失败回落（d5cff3d；16 例测试；CSP 零 CDN）
+- [x] B-5 分支成果收敛 main：179a290/9c8daf7/d5cff3d 三 commit squash 为 5071dde 已推 main（本地 main 旧指针 27199f8 经 patch-id 证与 origin c057bb3 重复后重置，零内容丢失）
 
 ## C. 功能项（拆细推进）
 - [ ] C-1 G9 Space Viewer/Watcher 面板·第一步：引擎 watcher 协议取证（kbengine 源码树 getWatcher/addWatcher 消息面，file:line 摘录落 docs/design）
