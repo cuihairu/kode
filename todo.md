@@ -62,9 +62,9 @@
 - [ ] A7-4 未解决问题清单与下一轮建议
 
 ## B. 在途/止血项（结构性治理并行的即时修复，落地即勾）
-- [ ] B-1 hover 永转+2分钟：入口 2.5s 总预算 race+waitForInitialScan 5s 超时+LogHub 超时层名（在途子代理，落地报 commit）
-- [ ] B-2 函数着色 白→浅蓝：variable.function.call.python=#8BD5FF（11 主题），before/after scope 实证（分支 fa13ef9..179a290 待合 main）
-- [ ] B-3 RPC 形参 inlay：调用点 `形参名: 类型`（kbengine.inlayHints.typeData 开关；分支 fa13ef9 待合 main）
+- [x] B-1 hover 永转+2分钟：入口 2.5s 总预算 race+waitForInitialScan 5s 超时+LogHub 超时层名（9c8daf7@分支；**真凶=normalizeLookupPath 小写化致定向解析死代码**，修后冷悬停 12-14ms/热 8-10ms，1501-def 树实测；kbengine.hover.asyncBudgetMs；test 2712/0）
+- [x] B-2 函数着色 白→浅蓝：variable.function.call.python=#8BD5FF（11 主题），before/after scope 实证（179a290@分支；探针实测 get_color 白→#8BD5FF、关键字/def 不吃）
+- [x] B-3 RPC 形参 inlay：调用点 `形参名: 类型`（kbengine.inlayHints.typeData 开关；fa13ef9 已在 main；+6 测试）
 - [ ] B-4 调用链图形化双 Tab：Graph(默认,打包 mermaid 离线)+Text，kbengine.python.callChainView（在途续命单）
 - [ ] B-5 上述分支成果收敛 main：单实例面板(f3ff6fc)已在 main，核对无重复提交后 merge/rebase 收口
 
