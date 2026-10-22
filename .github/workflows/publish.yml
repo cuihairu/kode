@@ -23,7 +23,7 @@ jobs:
       uses: actions/checkout@v7
 
     - name: 安装 pnpm
-      timeout-minutes: 3
+      timeout-minutes: 10
       uses: pnpm/action-setup@v6
       # 以 package.json 的 packageManager 为单一来源,与 ci.yml 口径一致
 
