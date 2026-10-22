@@ -30,8 +30,8 @@ const contributedSettingKeys = (): string[] => {
   return Object.keys(properties);
 };
 
-const zhConfigurationMd = readFileSync(join(root, 'docs', 'guide', 'configuration.md'), 'utf8');
-const enConfigurationMd = readFileSync(join(root, 'docs', 'en', 'guide', 'configuration.md'), 'utf8');
+const zhConfigurationMd = readFileSync(join(root, 'docs', 'zh', 'guide', 'configuration.md'), 'utf8');
+const enConfigurationMd = readFileSync(join(root, 'docs', 'guide', 'configuration.md'), 'utf8');
 
 const documentedCommands = (): string[] => {
   const pattern = /^### `(kbengine\.[^\s`]+)`$/gm;
