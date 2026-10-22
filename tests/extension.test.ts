@@ -1238,6 +1238,39 @@ describe('Python index lifecycle wiring', () => {
   });
 });
 
+describe('Python index edit coalescing', () => {
+  it('reindexes one burst once after typing settles', async () => {
+    vi.useFakeTimers();
+    workspace.workspaceFolders = [{ uri: Uri.file('/workspace'), name: 'ws', index: 0 }];
+    const context = makeContext();
+    const changed = vi.spyOn(PythonClassIndex.prototype, 'onDocumentChanged')
+      .mockResolvedValue(undefined);
+    const document = makeTextDocument('class Avatar: pass', {
+      fileName: '/workspace/avatar.py',
+      languageId: 'python'
+    }) as never;
+    try {
+      activate(context);
+      for (let index = 0; index < 10; index += 1) {
+        workspaceEvents.documentChanged.fire({
+          document,
+          contentChanges: [{ range: undefined, rangeOffset: 0, rangeLength: 0, text: 'x' }],
+          reason: undefined
+        });
+      }
+      expect(changed).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(changed).toHaveBeenCalledTimes(1);
+      expect(changed).toHaveBeenCalledWith(document);
+    } finally {
+      vi.useRealTimers();
+      disposeAll(context);
+      changed.mockRestore();
+      workspace.workspaceFolders = [];
+    }
+  });
+});
+
 describe('webview console log switch', () => {
   it('attaches page console ingestion by default and skips attachment when disabled', async () => {
     const panel = panelRegistry.create('kbengine.logViewer', 'KBEngine Logs', 2, { enableScripts: true });

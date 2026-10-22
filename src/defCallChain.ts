@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { findPythonReceiverCalls } from './pythonLanguageUtils';
 import type { PythonReceiverSection } from './pythonLanguageUtils';
 import {
@@ -189,13 +190,7 @@ export function buildDefCallChain(
 
       const receiverCalls = receiverCallsInMethod(
         boundMethod,
-        options.readPythonFile ?? (filePath => {
-          try {
-            return fs.readFileSync(filePath, 'utf8');
-          } catch {
-            return null;
-          }
-        })
+        options.readPythonFile ?? readPythonFileWithMtimeCache
       );
       for (const call of receiverCalls) {
         const targets = index.methodDefinitions.filter(candidate =>
@@ -226,4 +221,34 @@ export function buildDefCallChain(
     nodes: [...nodes.values()],
     edges: [...edges.values()]
   };
+}
+
+interface PythonFileCacheEntry {
+  mtimeMs: number;
+  size: number;
+  content: string | null;
+}
+
+const pythonFileCache = new Map<string, PythonFileCacheEntry>();
+
+export function clearDefCallChainFileCache(): void {
+  pythonFileCache.clear();
+}
+
+function readPythonFileWithMtimeCache(filePath: string): string | null {
+  try {
+    const stat = fs.statSync(filePath);
+    const cacheKey = path.normalize(filePath);
+    const cached = pythonFileCache.get(cacheKey);
+    if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      return cached.content;
+    }
+
+    const content = fs.readFileSync(filePath, 'utf8');
+    pythonFileCache.set(cacheKey, { mtimeMs: stat.mtimeMs, size: stat.size, content });
+    return content;
+  } catch {
+    pythonFileCache.delete(path.normalize(filePath));
+    return null;
+  }
 }

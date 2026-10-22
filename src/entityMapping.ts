@@ -14,6 +14,7 @@ import {
   getScanRootForFile
 } from './scanRoots';
 import { DefMethodSection } from './defParser';
+import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
@@ -138,6 +139,7 @@ export interface EntityMapping {
 export class EntityMappingManager {
   private mappingIndexes = new Map<string, EntityMappingIndex>();
   private mappingIndexesByRoot = new Map<string, EntityMappingIndex>();
+  private scanningEntityMappings: Promise<void> | null = null;
   private pythonWatcher: vscode.FileSystemWatcher | null = null;
   private defWatcher: vscode.FileSystemWatcher | null = null;
   /**
@@ -164,6 +166,17 @@ export class EntityMappingManager {
   }
 
   private async scanEntityMappings(): Promise<void> {
+    if (this.scanningEntityMappings) {
+      return this.scanningEntityMappings;
+    }
+    const scan = this.performScanEntityMappings().finally(() => {
+      this.scanningEntityMappings = null;
+    });
+    this.scanningEntityMappings = scan;
+    return scan;
+  }
+
+  private async performScanEntityMappings(): Promise<void> {
     // 扫描根 = workspace 顶层 ∪ assetsRoot(2026-10-16):loader 按全部根逐个
     // 解析 def(外部资产根下的 entities/接口/父链同样找得到)。空根集合(无
     // 工作区且无 assetsRoot)= 原空工作区早退,不失败。
@@ -701,6 +714,8 @@ export class EntityMappingManager {
   }
 
   private handlePythonFileChanged(pythonPath: string): void {
+    clearDefCallChainFileCache();
+    this.allPythonMethodHits.clear();
     for (const [entityName, mapping] of this.mappingIndexes) {
       if (mapping.pythonOwnerFiles.some(item => normalizeLookupPath(item.filePath) === normalizeLookupPath(pythonPath))) {
         void this.parseDefFile(entityName, mapping.rootDefFile);

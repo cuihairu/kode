@@ -278,6 +278,9 @@ export function activate(context: vscode.ExtensionContext) {
     new PythonDefinitionProvider(entityMappingManager, pythonClassIndex)
   );
   context.subscriptions.push(pythonDefinitionProvider);
+  const pythonIndexEditEvents = new Map<vscode.TextDocument, number>();
+  let pythonIndexEditFlushTimer: NodeJS.Timeout | undefined;
+  let pendingPythonIndexEditCount = 0;
   let pythonIndexWatchers: vscode.Disposable[] = [];
   const watchPythonIndex = () => {
     pythonIndexWatchers.forEach(watcher => watcher.dispose());
@@ -434,11 +437,31 @@ export function activate(context: vscode.ExtensionContext) {
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
       // 层2 关闭时索引不参与跳转,变更喂给索引纯属后台空转,一并跳过
-      if (isPythonMroJumpEnabled()) {
-        void pythonClassIndex.onDocumentChanged(event.document);
+      if (isPythonMroJumpEnabled() && event.document.languageId === 'python' &&
+          (event.contentChanges?.length ?? 0) > 0) {
+        pendingPythonIndexEditCount += 1;
+        pythonIndexEditEvents.set(event.document, pendingPythonIndexEditCount);
+        if (!pythonIndexEditFlushTimer) {
+          pythonIndexEditFlushTimer = setTimeout(() => {
+            pythonIndexEditFlushTimer = undefined;
+            const documents = [...pythonIndexEditEvents.keys()];
+            pythonIndexEditEvents.clear();
+            pendingPythonIndexEditCount = 0;
+            for (const document of documents) {
+              void pythonClassIndex.onDocumentChanged(document);
+            }
+          }, 100);
+        }
       }
     });
     context.subscriptions.push(watcher);
+  context.subscriptions.push({
+    dispose: () => {
+      if (pythonIndexEditFlushTimer) {
+        clearTimeout(pythonIndexEditFlushTimer);
+      }
+    }
+  });
 
     // 初始检查所有 .def 文件
     const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {

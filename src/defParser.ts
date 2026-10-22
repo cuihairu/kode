@@ -16,6 +16,14 @@ export interface DefDocument {
   nodes: DefNode[];
 }
 
+interface ParsedDocumentCacheEntry {
+  document: DefDocument;
+  usedAtMs: number;
+}
+
+const MAX_PARSED_DOCUMENT_CACHE_ENTRIES = 8;
+const parsedDocumentCache = new Map<string, ParsedDocumentCacheEntry>();
+
 export interface DefElementNode {
   kind: 'element';
   name: string;
@@ -58,6 +66,15 @@ const preserveOrderParser = new XMLParser({
 });
 
 export function parseDefDocument(text: string): DefDocument {
+  const cachedDocument = parsedDocumentCache.get(text)?.document;
+  if (cachedDocument) {
+    parsedDocumentCache.set(text, {
+      document: cachedDocument,
+      usedAtMs: performance.now()
+    });
+    return cachedDocument;
+  }
+
   const parsed = preserveOrderParser.parse(text) as unknown[];
   const lineStarts = computeLineStarts(text);
   const nodes = normalizePreserveOrderNodes(parsed, null);
@@ -70,18 +87,27 @@ export function parseDefDocument(text: string): DefDocument {
   const document: DefDocument = {
     text,
     lineStarts,
-    root: null,
+    root: findFirstElement(nodes),
     nodes
   };
   setElementDocuments(nodes, document);
   assignNodePositions(text, nodes, tokens, state);
 
-  return {
-    text,
-    lineStarts,
-    root: findFirstElement(nodes),
-    nodes
-  };
+  parsedDocumentCache.set(text, { document, usedAtMs: performance.now() });
+  if (parsedDocumentCache.size > MAX_PARSED_DOCUMENT_CACHE_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldestUsedAtMs = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of parsedDocumentCache) {
+      if (entry.usedAtMs < oldestUsedAtMs) {
+        oldestKey = key;
+        oldestUsedAtMs = entry.usedAtMs;
+      }
+    }
+    if (oldestKey) {
+      parsedDocumentCache.delete(oldestKey);
+    }
+  }
+  return document;
 }
 
 function setElementDocuments(nodes: DefNode[], document: DefDocument): void {
