@@ -134,6 +134,11 @@ import {
   resolveKbeAccessAtPosition
 } from './kbeModuleIndex';
 import type { EngineApiCatalog } from './engineApiMetadata';
+import {
+  HOVER_ASYNC_BUDGET_MS_DEFAULT,
+  raceWithBudget,
+  withInitialScanTimeout
+} from './hoverBudget';
 
 function getLanguageFeatureConfig() {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -168,7 +173,11 @@ function getLanguageFeatureConfig() {
     // 本键双控,false 即不给提示;provider 每次现读,下一次渲染即生效)。
     entityBuiltinProperties: config.get<boolean>('entity.builtinProperties', true),
     entityReceiverSections: config.get<boolean>('entity.receiverSections', true),
-    entityBuiltinTypeInlayHints: config.get<boolean>('python.builtinTypeInlayHints', true)
+    entityBuiltinTypeInlayHints: config.get<boolean>('python.builtinTypeInlayHints', true),
+    // 悬停异步链总预算(用户令 2026-10-22「hover 永转 loading」):>0 时 def
+    // 方法/接收者/内建属性三条异步链各套总预算 race,超时返回空悬停并记
+    // LogHub(层名+耗时);<=0 关闭预算闸(既有行为)。
+    hoverAsyncBudgetMs: config.get<number>('hover.asyncBudgetMs', HOVER_ASYNC_BUDGET_MS_DEFAULT)
   };
 }
 
@@ -603,10 +612,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         position.character
       );
       if (methodName) {
-        return this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
-          .then(annotation =>
-            annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-          );
+        // 异步链总预算闸(用户令 2026-10-22):底层索引慢(首扫秒级+)时不再
+        // 永转 loading,超预算返回空悬停并记 LogHub(层名+耗时)。
+        return raceWithBudget(
+          'hover:def-method',
+          this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
+            .then(annotation =>
+              annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+            ),
+          featureConfig.hoverAsyncBudgetMs
+        );
       }
       // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
       // 的方法名上时,先按段闸解析(仅对应区块的 def 候选通过,段不符不给标注,
@@ -620,10 +635,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           )
         : null;
       if (receiverCall) {
-        return this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
-          .then(annotation =>
-            annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-          );
+        return raceWithBudget(
+          'hover:receiver-call',
+          this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
+            .then(annotation =>
+              annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+            ),
+          featureConfig.hoverAsyncBudgetMs
+        );
       }
       // 内建属性(用户令 2026-10-21 内建属性单 ②):self.<属性> 单段访问
       // (fullPath 无第二段,不与 self.cell.X 接收者调用重叠)命中分面表
@@ -638,10 +657,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         selfAccess &&
         !selfAccess.fullPath.includes('.')
       ) {
-        return this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
-          .then(annotation =>
-            annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-          );
+        return raceWithBudget(
+          'hover:builtin-property',
+          this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
+            .then(annotation =>
+              annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+            ),
+          featureConfig.hoverAsyncBudgetMs
+        );
       }
     }
 
@@ -3690,7 +3713,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             || getScanRootForFile(document.fileName);
           const managerWithScan = manager as EntityMappingManager & { waitForInitialScan?: () => Promise<void> };
           if (managerWithScan.waitForInitialScan) {
-            await managerWithScan.waitForInitialScan();
+            // 首扫超时闸(用户令 2026-10-22):大树首扫可秒级+,不拖死跳转层
+            await withInitialScanTimeout(managerWithScan.waitForInitialScan());
           }
           const indexAccessor = manager as EntityMappingManager & {
             getIndex?: (entityName: string) => EntityMappingIndex | undefined;

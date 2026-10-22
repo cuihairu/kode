@@ -192,8 +192,13 @@ describe('EntityMappingManager 无工作区根的回落', () => {
 });
 
 describe('EntityMappingManager 私有工具的直接驱动', () => {
-  it('buildIndex 空 def 路径返回 null', async () => {
-    expect(await internals(manager as EntityMappingManager).buildIndex('Hero', '')).toBeNull();
+  it('buildIndex 空 def 路径经扫描根 loader 回退仍可解析,未知实体才 null', async () => {
+    // 2026-10-22 loader 回退链(以扫描根为根,不再拿 defPath 目录当根):
+    // 空 defPath 不再必然 null——Hero 经扫描根约定布局解析命中;
+    // 不存在的实体 loadResolved 落空,仍返回 null(原 null 语义由它锁定)。
+    const resolved = await internals(manager as EntityMappingManager).buildIndex('Hero', '');
+    expect(resolved).not.toBeNull();
+    expect(await internals(manager as EntityMappingManager).buildIndex('Nowhere', '')).toBeNull();
   });
 
   it('collectPythonMethods 跳过不存在的 owner 文件', () => {

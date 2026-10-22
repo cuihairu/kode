@@ -102,6 +102,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.hover.defChain` | boolean | `true` | 悬停 `Parent`/`Interfaces` 等声明元素时的归并 def 链 |
 | `kbengine.hover.eventStats` | boolean | `true` | python 侧悬停事件名时的注册/触发统计 |
 | `kbengine.hover.serverConfig` | boolean | `true` | 悬停 `kbengine.xml` 服务配置字段时的取值与说明(批112 悬停面整体关断) |
+| `kbengine.hover.asyncBudgetMs` | number | `2500` | 悬停 def 方法/接收者调用/内建属性三条异步链的总预算(毫秒):超预算即截断该层并记 LogHub(过滤 `[kode-hover][timeout]`),不再永转 loading;`<= 0` 关闭预算闸(旧的无限等待) |
 
 前三项全关后 `.def` 悬停只剩语法高亮。批154(2026-10-20)起其余六面按功能各一枚独立开关,不设总闸一刀切——只关吵的那一面,其余照常。
 

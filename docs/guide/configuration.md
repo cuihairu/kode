@@ -102,6 +102,7 @@ Diagnostics trigger only when a `.def` file is opened or edited; after `kbengine
 | `kbengine.hover.defChain` | boolean | `true` | Merged def chain when hovering `Parent`/`Interfaces` declaration elements |
 | `kbengine.hover.eventStats` | boolean | `true` | Registration/emit stats when hovering an event name in Python |
 | `kbengine.hover.serverConfig` | boolean | `true` | Value and docs when hovering a `kbengine.xml` server config field (turns off the batch-112 hover face entirely) |
+| `kbengine.hover.asyncBudgetMs` | number | `2500` | Total budget (ms) for the hover def-method / receiver-call / builtin-property async chains; past the budget the layer is cut short and a timeout line is logged to LogHub (filter `[kode-hover][timeout]`) instead of spinning forever; `<= 0` disables the gate (legacy unbounded wait) |
 
 With the first three off, `.def` hover keeps only syntax highlighting. Since batch 154 (2026-10-20) the other six faces each get an independent per-feature switch — no master switch cutting everything off at once; mute only the noisy face and the rest carry on.
 

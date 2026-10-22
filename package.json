@@ -138,6 +138,13 @@
         "injectTo": [
           "source.python"
         ]
+      },
+      {
+        "scopeName": "text.python-function-calls",
+        "path": "./syntaxes/python-function-calls-injection.json",
+        "injectTo": [
+          "source.python"
+        ]
       }
     ],
     "themes": [
@@ -686,6 +693,12 @@
           "type": "boolean",
           "default": true,
           "description": "悬停时显示 kbengine.xml 服务配置项的取值与说明"
+        },
+        "kbengine.hover.asyncBudgetMs": {
+          "type": "number",
+          "default": 2500,
+          "minimum": 0,
+          "description": "悬停异步链总预算(毫秒):def 方法/接收者/内建属性标注链超预算即截断返回,不再永转 loading,超时层记 LogHub(过滤 [kode-hover][timeout])。≤0 关闭预算闸(旧行为)。"
         },
         "kbengine.codeLens.rpc": {
           "type": "boolean",

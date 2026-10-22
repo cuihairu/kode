@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { jumpLog, jumpTimeStart } from './navigationLog';
+import { logLayerTiming } from './hoverBudget';
 import {
   findFilesAcrossRoots,
   getExternalScanRoots,
@@ -153,11 +154,31 @@ export class EntityMappingManager {
   private missingClassNames = new Set<string>();
   /** 构造期全量 .def 扫描句柄(对象级探等待它,避免同一次跳转内重复全量 walk) */
   private initialScan: Promise<void> = Promise.resolve();
+  /**
+   * 按 mtime 的 .def 解析缓存(2026-10-22 用户令「hover 永转 loading 根治」):
+   * 键 = 规范化 .def 路径,值 = 解析产物 + 采集时 mtime/size。重扫(负缓存
+   * 失效、watcher 整表失效后的再扫)对未变更文件直接复用索引对象,不再逐个
+   * loadResolved 重解析——此前每次整表失效都是全量重解析,真实大树秒级+/次。
+   * python 文件变更路径必须 force 重解析(py 内容不在 .def mtime 里)。
+   */
+  private defParseCache = new Map<
+    string,
+    { mtimeMs: number; size: number; index: EntityMappingIndex }
+  >();
+  private defParseCacheHits = 0;
+  private defParseCacheMisses = 0;
 
   constructor(private context: vscode.ExtensionContext) {
     // 构造期全量 .def 扫描留句柄:对象级(类粒度)解析只等这一遍,不另起
-    // 全量 walk(真实 kbengine 树每遍 walk 秒级,多一走即压穿调用方超时预算)
-    this.initialScan = this.scanEntityMappings().catch(() => undefined);
+    // 全量 walk(真实 kbengine 树每遍 walk 秒级,多一走即压穿调用方超时预算)。
+    // 启动推迟一个宏任务(2026-10-22 用户令「hover 永转根治」):构造方在
+    // 同一同步块里发起的首个悬停/跳转先跑完自己的定向解析,首扫不与前台
+    // 第一答抢事件循环。
+    this.initialScan = new Promise<void>(resolve => {
+      setImmediate(() => {
+        void this.scanEntityMappings().catch(() => undefined).then(() => resolve());
+      });
+    });
     // 创建顺序有意为之:def watcher 先建、python watcher 后建——外部与既有
     // 用例把「最后创建的 watcher」当作 python watcher 语义使用(变更只重解析
     // 归属实体),两 watcher 各自独立,先 def 后 py 保持该约定不破。
@@ -194,7 +215,10 @@ export class EntityMappingManager {
     /* istanbul ignore stop */
 
     const indexTimer = jumpTimeStart();
+    const scanStartedAt = Date.now();
     const defFiles = await findFilesAcrossRoots('**/*.def', null);
+    let parsedSinceYield = 0;
+    let yieldChunkStartedAt = Date.now();
     for (const defFile of defFiles) {
       const normalizedPath = normalizeLookupPath(defFile.fsPath);
       if (normalizedPath.includes('/interfaces/') || normalizedPath.includes('/components/')) {
@@ -203,18 +227,66 @@ export class EntityMappingManager {
 
       const entityName = path.basename(defFile.fsPath, '.def');
       await this.parseDefFile(entityName, defFile.fsPath, loader);
+      // 协作式让路(2026-10-22 用户令「hover 永转根治」):parseDefFile 内部是
+      // 同步 fs+XML 解析,1500+ 文件大树一次循环把事件循环钉死秒级+,构造期
+      // 后台首扫会把定向首解析的快路径活活饿死(实测冷悬停 814ms ≈ 全扫
+      // 1159ms)。每 25 个文件 setImmediate 让一次宏任务队列,悬停/跳转的
+      // 快路径得以插队,后台扫不再拖垮前台应答。
+      parsedSinceYield += 1;
+      // 计数+计时双闸:慢盘上单文件可能远超 0.6ms,25 个文件未必到 16ms;
+      // 快盘上 25 个文件又不足挂一次宏任务。任一触发即让路。
+      if (parsedSinceYield >= 25 || Date.now() - yieldChunkStartedAt >= 16) {
+        parsedSinceYield = 0;
+        yieldChunkStartedAt = Date.now();
+        await new Promise<void>(resolve => setImmediate(resolve));
+      }
     }
     jumpLog('info', () => `def 全量索引完成 ${defFiles.length} 个 .def → 实体 ${this.mappingIndexes.size} 个,${indexTimer()}ms`);
+    // 扫描总耗时进 LogHub(用户令「加计时日志实测,别猜」):独立计时
+    // (jumpTimeStart 关开关时恒 0,不做闸),便于真机定位首扫占比
+    logLayerTiming('initial-scan', Date.now() - scanStartedAt, `defs=${defFiles.length} entities=${this.mappingIndexes.size}`);
   }
 
   private async parseDefFile(
     entityName: string,
     defPath: string,
     loader?: ReturnType<typeof createDefinitionSemanticsLoader>,
-    rootCategory: DefinitionSemanticCategory = 'entity'
+    rootCategory: DefinitionSemanticCategory = 'entity',
+    forceReparse = false
   ): Promise<void> {
     try {
+      // mtime 缓存复用(2026-10-22):未变更 .def 重扫不再重解析;python 变更
+      // 路径(forceReparse)绕过缓存——py 内容不进 .def mtime 键。
+      const cached = forceReparse ? undefined : this.defParseCache.get(normalizeLookupPath(defPath));
+      let stat: fs.Stats | null = null;
+      try {
+        stat = fs.statSync(defPath);
+      } catch {
+        stat = null;
+      }
+      if (cached && stat && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        this.defParseCacheHits += 1;
+        this.storeIndex(cached.index);
+        return;
+      }
+      const parseStartedAt = Date.now();
       const mapping = await this.buildIndex(entityName, defPath, loader, rootCategory);
+      const elapsedMs = Date.now() - parseStartedAt;
+      if (elapsedMs >= 200) {
+        // 慢解析记账(用户令「加计时日志实测,别猜」):>200ms 的单文件进日志
+        jumpLog('info', () => `def 解析慢文件 ${path.basename(defPath)} ${elapsedMs}ms`);
+        logLayerTiming('def-parse', elapsedMs, `file=${path.basename(defPath)}`);
+      }
+      if (mapping && stat) {
+        this.defParseCacheMisses += 1;
+        this.defParseCache.set(normalizeLookupPath(defPath), {
+          mtimeMs: stat.mtimeMs,
+          size: stat.size,
+          index: mapping
+        });
+      } else if (!mapping) {
+        this.defParseCache.delete(normalizeLookupPath(defPath));
+      }
       if (mapping) {
         this.storeIndex(mapping);
       }
@@ -229,7 +301,12 @@ export class EntityMappingManager {
     providedLoader?: ReturnType<typeof createDefinitionSemanticsLoader>,
     rootCategory: DefinitionSemanticCategory = 'entity'
   ): Promise<EntityMappingIndex | null> {
-    const loader = providedLoader || createDefinitionSemanticsLoader(defPath);
+    // loader 回退链(2026-10-22):默认 loader 以 .def 所在目录当根,而
+    // findEntityDefinitionFile 需要目录布局(以文件当根恒 null,单文件重解析
+    // 一直静默失败)。按扫描根(与全量扫描同源)优先,退到 .def 所在目录。
+    const loader = providedLoader
+      || createDefinitionSemanticsLoader(getIndexScanRoots())
+      || createDefinitionSemanticsLoader(path.dirname(defPath));
     if (!loader) {
       return null;
     }
@@ -718,7 +795,8 @@ export class EntityMappingManager {
     this.allPythonMethodHits.clear();
     for (const [entityName, mapping] of this.mappingIndexes) {
       if (mapping.pythonOwnerFiles.some(item => normalizeLookupPath(item.filePath) === normalizeLookupPath(pythonPath))) {
-        void this.parseDefFile(entityName, mapping.rootDefFile);
+        // force 重解析:py 变更不进 .def mtime 键,缓存会让绑定滞留旧内容
+        void this.parseDefFile(entityName, mapping.rootDefFile, undefined, 'entity', true);
         break;
       }
     }
@@ -740,6 +818,15 @@ export class EntityMappingManager {
 
   async waitForInitialScan(): Promise<void> {
     await this.initialScan;
+  }
+
+  /** 解析缓存命中记账(测试/取证用):验证重扫确实复用未变更 .def */
+  getDefParseCacheStats(): { entries: number; hits: number; misses: number } {
+    return {
+      entries: this.defParseCache.size,
+      hits: this.defParseCacheHits,
+      misses: this.defParseCacheMisses
+    };
   }
 
   getIndex(entityName: string): EntityMappingIndex | undefined {
@@ -1589,10 +1676,51 @@ export class EntityMappingManager {
   private async ensureIndex(entityName: string): Promise<EntityMappingIndex | undefined> {
     let index = this.mappingIndexes.get(entityName);
     if (!index) {
+      // 定向首解析(2026-10-22):同名 .def 单文件解析毫秒级,命中即不等全量扫描
+      index = await this.ensureIndexTargeted(entityName);
+    }
+    if (!index) {
       await this.scanEntityMappings();
       index = this.mappingIndexes.get(entityName);
     }
     return index;
+  }
+
+  /**
+   * 定向首解析(2026-10-22 用户令「hover 永转 loading 根治」):约定
+   * 实体名 = .def 文件名,按名 glob 单个 .def 直接解析,毫秒级应答;
+   * 命中即不再等全量首扫(首扫在构造期后台继续补全其余实体)。找不到
+   * 同名 .def 返回 undefined,调用方落回全量扫描原口径(语义不变)。
+   */
+  private async ensureIndexTargeted(entityName: string): Promise<EntityMappingIndex | undefined> {
+    const direct = this.mappingIndexes.get(entityName);
+    if (direct) {
+      return direct;
+    }
+    const defFiles = await findFilesAcrossRoots(`**/${entityName}.def`, null);
+    const defFileName = `${entityName}.def`;
+    const defFile = defFiles.find(uri => {
+      // 文件名必须原样比对(2026-10-22 修正):normalizeLookupPath 会整体小写,
+      // 拿它取 basename 去对 PascalCase 实体名(Hero.def vs hero.def)恒 false,
+      // 定向快路径成了死代码,悬停全部静默落回全量扫(永转根因之一)。
+      // 目录排除仍用 normalized(大小写不敏感排除 interfaces/components)。
+      if (path.basename(uri.fsPath) !== defFileName) {
+        return false;
+      }
+      const normalized = normalizeLookupPath(uri.fsPath);
+      return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
+    });
+    if (!defFile) {
+      return undefined;
+    }
+    const targetedStartedAt = Date.now();
+    await this.parseDefFile(entityName, defFile.fsPath);
+    const elapsedMs = Date.now() - targetedStartedAt;
+    jumpLog('debug', () =>
+      `def 定向解析 ${entityName} → ${this.mappingIndexes.has(entityName) ? 'hit' : 'miss'} ${elapsedMs}ms`
+    );
+    logLayerTiming('targeted-parse', elapsedMs, `entity=${entityName}`);
+    return this.mappingIndexes.get(entityName);
   }
 
   private async ensureIndexByDefFile(defFile: string): Promise<EntityMappingIndex | undefined> {
@@ -1615,6 +1743,11 @@ export class EntityMappingManager {
       return undefined;
     }
     let index = this.findIndexForPythonFile(pythonFile);
+    if (!index) {
+      // 定向首解析(2026-10-22):hover 链走这里,同名 .def 单文件解析毫秒级,
+      // 命中即应答,不再阻塞等全量首扫(此前大树首扫分钟级,hover 一直转圈)
+      index = await this.ensureIndexTargeted(path.basename(pythonFile, '.py'));
+    }
     if (!index) {
       await this.scanEntityMappings();
       index = this.findIndexForPythonFile(pythonFile);
@@ -1643,11 +1776,16 @@ export class EntityMappingManager {
     if (this.missingClassNames.has(className)) {
       return undefined;
     }
-    if (this.mappingIndexes.size === 0) {
+    let index = this.lookupIndexByClass(className);
+    if (!index) {
+      // 定向首解析(2026-10-22):同名 .def 单文件解析毫秒级,不再阻塞等全量首扫
+      index = await this.ensureIndexTargeted(className);
+    }
+    if (!index && this.mappingIndexes.size === 0) {
       // 只等构造期扫描(不新起全量 walk):文件级子探/失败重试仍按原口径自扫
       await this.initialScan;
     }
-    const index = this.lookupIndexByClass(className);
+    index = index ?? this.lookupIndexByClass(className);
     if (!index && this.mappingIndexes.size > 0) {
       // 索引表已有数据仍未命中才负缓存(空表=尚无数据,不落死)
       this.missingClassNames.add(className);
