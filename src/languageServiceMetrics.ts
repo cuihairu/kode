@@ -60,6 +60,9 @@ export interface OperationSummary {
   avgMs: number;
   totalMs: number;
   cacheHitRate: number;
+  /** 原始命中/未命中计数(PR2 起导出,报告直接引用,不再由命中率反推) */
+  cacheHits: number;
+  cacheMisses: number;
   waitedForInitCount: number;
   fileDiscoveryCount: number;
   fileReadCount: number;
@@ -177,6 +180,8 @@ function createSummary(name: LanguageServiceEventName, entry: ReturnType<typeof 
     avgMs: sorted.length ? round1(totalMs / sorted.length) : 0,
     totalMs: round1(totalMs),
     cacheHitRate: cacheTotal ? round1((entry.cacheHits / cacheTotal) * 100) : 0,
+    cacheHits: entry.cacheHits,
+    cacheMisses: entry.cacheMisses,
     waitedForInitCount: entry.waitedForInitCount,
     fileDiscoveryCount: entry.fileDiscoveryCount,
     fileReadCount: entry.fileReadCount,

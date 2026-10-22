@@ -1,0 +1,11 @@
+PR2-ENV node=v24.21.0 platform=linux cpus=14
+PR2-METRIC hoverLinePrep.before.getTextSplit n=50 p50=1.66ms p95=4.77ms p99=6.78ms avg=2.09ms
+PR2-METRIC hoverLinePrep.after.snapshotRebuildOnEdit n=20 p50=7.28ms p95=12.56ms p99=14.45ms avg=8.61ms
+PR2-METRIC hoverLinePrep.after.getDocumentLines n=50 p50=0ms p95=0.01ms p99=0.14ms avg=0.01ms
+PR2-METRIC defAst.before.parseEachTime n=50 p50=0ms p95=0.01ms p99=4.52ms avg=0.09ms
+PR2-METRIC defAst.after.getCached n=50 p50=0.01ms p95=0.05ms p99=0.51ms avg=0.03ms
+PR2-METRIC defAst.after.reparseOnEdit n=1 p50=0.1ms p95=0.1ms p99=0.1ms avg=0.1ms
+PR2-METRIC documentParse.summary count=51 cacheHits=49 cacheMisses=2 hitRate=96.1% p50=0ms p95=0ms
+PR2-METRIC defAstBig.before.parseEachTime n=30 p50=0ms p95=0.02ms p99=38.64ms avg=1.29ms
+PR2-METRIC defAstBig.after.getCached n=30 p50=0.01ms p95=0.06ms p99=3.38ms avg=0.13ms
+PR2-METRIC defAstBig.after.reparseOnEdit n=1 p50=1.01ms p95=1.01ms p99=1.01ms avg=1.01ms

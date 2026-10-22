@@ -33,6 +33,7 @@ import {
   type EntityMappingIndex
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
+import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
 import { buildDefChain } from './defChain';
 import {
   METHOD_DECLARATION_PATTERN,
@@ -569,7 +570,8 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
         defFaces = null;
       }
     }
-    const lines = document.getText().split(/\r?\n/);
+    // PR2 快照接入:行数组走 documentStore(同版本复用,不再逐次全文拆行)
+    const lines = getDocumentLines(document);
     return collectEntityBuiltinPropertyInlayTargets(lines, pathFace, defFaces)
       // inlay 按可视区要:视图口外的访问行不出 hint(批154 同口径);
       // Any 位(未知)按「能推才显」闸整个不出 hint(无提示降级)
@@ -677,8 +679,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 语法故该层结构性缺位)。解出才提示并标注来源;解不出不显示任何类型
     // (不显 Any、不显空类型,落回普通 hover 链)。
     if (document.languageId === 'python') {
+      // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
       const inferred = resolveLocalVariableReturnType(
-        document.getText().split(/\r?\n/),
+        getDocumentLines(document),
         position.line,
         word,
         getWorkspaceRootForDocument(document)
@@ -725,7 +728,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       declaredArgTypes &&
       !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
         declaredArgTypes,
-        document.getText().split(/\r?\n/),
+        [...getDocumentLines(document)],
         line,
         resolveAnnotation
       )
@@ -780,7 +783,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       declaredArgTypes &&
       !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
         declaredArgTypes,
-        document.getText().split(/\r?\n/),
+        [...getDocumentLines(document)],
         line,
         resolveAnnotation
       )
@@ -2059,8 +2062,15 @@ function parseDefAst(document: vscode.TextDocument): DefDocument | null {
     return null;
   }
 
+  // PR2 快照接入:同版本只解析一次(documentStore 版本化缓存,命名空间
+  // 'def-ast');诊断/hover/definition 等调用面共用同一份结果。无版本替身
+  // (部分测试)不缓存,行为与此前逐次解析一致。
   try {
-    return parseDefDocument(document.getText());
+    return getOrParseDocumentSync(
+      document,
+      text => parseDefDocument(text),
+      'def-ast'
+    ).result;
   } catch {
     return null;
   }

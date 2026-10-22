@@ -8,6 +8,11 @@ import {
   startLanguageServiceOperation
 } from './languageServiceMetrics';
 import type { OperationStatus } from './languageServiceMetrics';
+import {
+  releaseAllDocumentSnapshots,
+  releaseDocument,
+  updateDocumentSnapshot
+} from './documentStore';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -578,7 +583,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 监听文档变化，实时检查
   if (vscode.workspace.workspaceFolders) {
+    // PR2 快照接入:文档开/改先喂 documentStore(内存优先,快照与缓冲区同版本);
+    // 关文档释放快照(内存不泄漏)。磁盘旧内容没有路径能进快照。
+    context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
+      updateDocumentSnapshot(document);
+    }));
+    const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
+      releaseDocument(document);
+    });
+    context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
+      updateDocumentSnapshot(event.document);
       if (isDefDocument(event.document)) {
         validateDocumentTimed(event.document, diagnostics);
       } else if (isEntitiesXmlDocument(event.document)) {
@@ -2062,5 +2077,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+  // PR2:停用即释放全部文档快照(进程回收前不留缓冲区副本)
+  releaseAllDocumentSnapshots();
   console.log('KBEngine Language Extension is now deactivated!');
 }
