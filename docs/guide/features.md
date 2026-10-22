@@ -13,7 +13,7 @@
 - Bidirectional Python ↔ `.def` navigation
 - RPC method markers (functions in Python implementation scripts that hit def method declarations get a one-line clickable CodeLens jumping back to the def declaration)
 - Per-feature switches for language features (batch 154): each of the four CodeLens kinds (RPC markers, event callbacks, property markers, the `types.xml` storage lens chain) and the six hover kinds (custom-type storage, `implementedBy` backlink, entity registration, def chain, event stats, server config fields) gets its own `kbengine.*` switch, all default on with no master switch; CodeLens toggles take effect immediately
-- Python property type inlay hints (batch 154): `self.<property>` access sites inline the `types.xml` data type declared in the def, resolved through the same index as property F12, controlled by `kbengine.inlayHints.typeData` (inlay hints have no change event, so a toggle takes effect on the next render)
+- Python property type inlay hints (batch 154): `self.<property>` access sites inline the `types.xml` data type declared in the def, resolved through the same index as property F12; `self.base/cell/client` RPC call sites inline the declared parameter types (`argN: type`, declared args only, section-gated), controlled by `kbengine.inlayHints.typeData` (inlay hints have no change event, so a toggle takes effect on the next render)
 - `.def` property/method F2 rename (same-file declaration + descendant def restatements, see the boundary note on the language page)
 
 ## Diagnostics

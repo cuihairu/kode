@@ -24,7 +24,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **CodeLens: event callbacks** — event callback/subscription markers in Python scripts — (evidence: package.json#configuration `kbengine.codeLens.eventCallbacks`; todo.md:27; src/eventApi.ts)
 - **CodeLens: property access reverse jump** — `self.<property>` access lines link back to the def declaration with type/visibility/persistent info — (evidence: package.json#configuration `kbengine.codeLens.property`; todo.md:21; src/propertyCodeLens.ts)
 - **CodeLens: types.xml storage lens** — per-type "lands in table X" lens chain with reference back-scan, folded beyond 10 usages — (evidence: package.json#configuration `kbengine.codeLens.typesXml`; todo.md:20; src/languageProviders.ts `TypesXmlCodeLensProvider`)
-- **Inlay hints: def-declared data types** — `self.<property>` access sites show the types.xml data type inline — (evidence: package.json#configuration `kbengine.inlayHints.typeData`; todo.md:25; src/typeInlayHints.ts)
+- **Inlay hints: def-declared data types** — `self.<property>` access sites show the types.xml data type inline; `self.base/cell/client` RPC call sites show the declared parameter types (`argN: type`) after each argument — (evidence: package.json#configuration `kbengine.inlayHints.typeData`; todo.md:25; src/typeInlayHints.ts)
 - **entities.xml validation** — duplicate entity names get a warning (engine silently merges) plus a Utype list-order hover — (evidence: todo.md:33; src/entitiesXmlAnalysis.ts)
 - **Cross-file inheritance checks** — same-name checks across the inheritance chain; Interfaces loading semantics aligned to the engine — (evidence: todo.md:65, todo.md:66; src/defAnalyzer.ts `collectInheritedNames`)
 - **Python navigation (F12 / rename / call hierarchy)** — owner-aware navigation with C3-MRO and mixin composition-root resolution, `kbengine.python.enableMroJump` toggle — (evidence: package.json#configuration `kbengine.python.enableMroJump`; src/languageProviders.ts, src/pythonClassIndex.ts, src/entityMapping.ts)
@@ -107,7 +107,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.codeLens.eventCallbacks` | `true` | Event callback/subscription CodeLens in Python scripts |
 | `kbengine.codeLens.property` | `true` | Property CodeLens at `self.<property>` access sites (reverse jump to def) |
 | `kbengine.codeLens.typesXml` | `true` | Database storage lens chain on types.xml type declaration lines (reference back-scan) |
-| `kbengine.inlayHints.typeData` | `true` | Inline def-declared types.xml data types at `self.<property>` sites |
+| `kbengine.inlayHints.typeData` | `true` | Inline def-declared types.xml data types at `self.<property>` sites; declared parameter types at `self.base/cell/client` RPC call sites |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | Default path for entity definition files |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | Default path for entities.xml |
 | `kbengine.binPath` | `"${workspaceFolder}/../kbe/bin/server"` | KBEngine server binaries path; supports ${workspaceFolder} and ${env:VAR} |

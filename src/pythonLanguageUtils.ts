@@ -133,6 +133,135 @@ export function findPythonReceiverCalls(text: string): PythonReceiverCall[] {
   return calls;
 }
 
+export interface PythonReceiverCallArgumentSpan {
+  /** 实参首字符列(0 起,已跳过前导空白) */
+  start: number;
+  /** 实参尾后一列(已剔除尾随空白;inlay hint 锚点) */
+  end: number;
+  /** 实参去空白直文本(不做任何推导,只作数量对齐用) */
+  text: string;
+}
+
+export interface PythonReceiverCallWithArguments extends PythonReceiverCall {
+  /**
+   * 单行口径顶层逗号切分的实参区间;跨行调用/括号不闭合 → 空数组(inlay
+   * 不给该调用出提示)。只做机械切分,零语义推导。
+   */
+  arguments: PythonReceiverCallArgumentSpan[];
+}
+
+const CALL_ARGUMENT_OPENERS = new Set(['(', '[', '{']);
+const CALL_ARGUMENT_CLOSERS = new Set([')', ']', '}']);
+const CALL_ARGUMENT_CLOSER_FOR: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+
+/**
+ * 从方法名结束处向后取同行实参:首个 '(' 起到深度 0 的 ')' 止,内容按顶层
+ * 逗号切分(深度计 ()[]{},字符串 ' " 内的逗号/括号不算)。同行找不到闭合
+ * ')' → null(跨行调用不出实参表)。
+ */
+function parseSingleLineCallArguments(
+  lineText: string,
+  scanFrom: number
+): PythonReceiverCallArgumentSpan[] | null {
+  let openParen = -1;
+  for (let index = scanFrom; index < lineText.length; index += 1) {
+    if (lineText[index] === '(') {
+      openParen = index;
+      break;
+    }
+    if (!/\s/.test(lineText[index])) {
+      // 方法名与 '(' 之间出现其他 token(如换行前的运算符尾)→ 不认
+      return null;
+    }
+  }
+  if (openParen === -1) {
+    return null;
+  }
+
+  const spans: PythonReceiverCallArgumentSpan[] = [];
+  const depth: string[] = [];
+  let inString: string | null = null;
+  let currentStart = -1;
+
+  for (let index = openParen + 1; index < lineText.length; index += 1) {
+    const ch = lineText[index];
+    if (inString) {
+      if (ch === '\\') {
+        index += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === '\'' || ch === '"') {
+      inString = ch;
+      if (depth.length === 0 && currentStart === -1) {
+        currentStart = index;
+      }
+      continue;
+    }
+    if (depth.length === 0 && ch === ')') {
+      if (currentStart !== -1) {
+        spans.push(finishArgumentSpan(lineText, currentStart, index));
+      }
+      return spans;
+    }
+    if (depth.length === 0 && ch === ',') {
+      if (currentStart !== -1) {
+        spans.push(finishArgumentSpan(lineText, currentStart, index));
+        currentStart = -1;
+      }
+      continue;
+    }
+    if (CALL_ARGUMENT_OPENERS.has(ch)) {
+      if (depth.length === 0 && currentStart === -1) {
+        currentStart = index;
+      }
+      depth.push(CALL_ARGUMENT_CLOSER_FOR[ch]);
+      continue;
+    }
+    if (CALL_ARGUMENT_CLOSERS.has(ch) && depth.length > 0 && ch === depth[depth.length - 1]) {
+      depth.pop();
+    }
+    if (depth.length === 0 && currentStart === -1 && !/\s/.test(ch)) {
+      currentStart = index;
+    }
+  }
+
+  // 同行括号不闭合(跨行调用)→ 整体不出实参表
+  return null;
+}
+
+function finishArgumentSpan(
+  lineText: string,
+  start: number,
+  end: number
+): PythonReceiverCallArgumentSpan {
+  let lo = start;
+  let hi = end;
+  while (lo < hi && /\s/.test(lineText[lo])) {
+    lo += 1;
+  }
+  while (hi > lo && /\s/.test(lineText[hi - 1])) {
+    hi -= 1;
+  }
+  return { start: lo, end: hi, text: lineText.slice(lo, hi) };
+}
+
+/** 全文档接收者调用实参扫描(inlay 形参提示面):调用 + 同行实参区间 */
+export function findPythonReceiverCallArguments(
+  text: string
+): PythonReceiverCallWithArguments[] {
+  return findPythonReceiverCalls(text).map(call => {
+    const lineText = text.split(/\r?\n/)[call.line] ?? '';
+    const nameEnd = call.character + call.methodName.length;
+    const arguments_ = parseSingleLineCallArguments(lineText, nameEnd);
+    return { ...call, arguments: arguments_ ?? [] };
+  });
+}
+
 export function getPythonSelfSymbolAtPosition(lineText: string, character: number): string | null {
   const access = getPythonSelfAccessAtPosition(lineText, character);
   return access ? access.rootSymbol : null;

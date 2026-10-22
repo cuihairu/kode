@@ -113,7 +113,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.codeLens.eventCallbacks` | boolean | `true` | 事件回调标记——`addEvent`/`registerEvent` 的回调 def 声明处标事件名,`emitEvent` 处标监听数(批154 起从 RPC 镜链拆出独立注册) |
 | `kbengine.codeLens.property` | boolean | `true` | Python 脚本 `self.<属性>` 访问处的属性标记(批135) |
 | `kbengine.codeLens.typesXml` | boolean | `true` | types.xml 类型声明行的落库镜链(批134) |
-| `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示 def 声明的 `<Type>` 数据类型(types.xml 自定义别名或内建),与属性 F12 同一解析索引(批154) |
+| `kbengine.inlayHints.typeData` | boolean | `true` | python 侧 `self.<属性>` 访问处以内联提示显示 def 声明的 `<Type>` 数据类型(types.xml 自定义别名或内建);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`argN: 类型`,只做已声明的,过段闸),与属性 F12 同一解析索引(批154) |
 
 四类 CodeLens 开关变更即时生效,不用重载窗口;inlay 无变更事件,关掉后下一次渲染生效。
 
