@@ -1,179 +1,93 @@
-# TODO
+# Kode TODO（细粒度账本，2026-10-22 重拆）
 
-> 完成项一行证据（commit + 测试数）；未完成项一句需求。版本号由用户给定并手动触发发布（2026-10-20 已发 v0.1.1，Marketplace live；package.json 现为 0.1.2 开发中）——agent 一律不动任何 version 字段。
+<!--
+本文件只放**未完成**任务；完成即勾并补证据（commit hash+测试数+file:line）。
+历史勾账与设计出处见 git log 与 docs/review/（含 2026-10-22 统一语义索引重构计划）。
+拆分原则: 单项 ≤ 半天可落、可独立验收、带证据口径。
+-->
 
-## 未完成
+## A. 语言服务性能治理（结构重构，源自 docs/review/2026-10-22-unified-semantic-index-refactor.md，PR1→PR7 顺序推进）
 
-- [x] 设置文档按功能分区介绍（来源:用户 2026-10-17 队列令「不许一张大表列到底」；验收口径:`docs/guide/configuration.md` 与其 en 镜像按功能分区列出全部 54 项 `kbengine.*` 设置——每区一张小表 + 该区改动影响与误配说明,不留 54 行的大表;每项仍有类型/默认值/说明;settings 双向对账锁与 vitepress build 绿）
-  - 2026-10-20 落地:两份 configuration.md 改「kbengine.* 设置项总览(按功能分区)」,14 个功能分区各一张小表共 54 项(zh/en 同构),逐项说明并入各区(诊断影响表/悬停开关说明/路径四项 #### 细节/HTTP 变量表/热重载行为/数据库 SQL 模板);`### 快速执行动作`、`### 调试字段` 收进「调试配置文件」h2;zh 批142→批143 修正(git 证据 b9a9596);docsCommands 5 测试全绿(settings 双向对账锁通过分组 h2 下 `###` 不断行收集),vitepress build 绿
-- [x] MySQL 表结构对比（来源:用户 2026-10-17 队列令；验收口径:读引擎三层 `<database>` 配置连真实库取实际表结构,与代码侧 schema 生成的结构逐表逐列对比,差异红色标注;带开关默认关,关时不连库不报错）
-  - 2026-10-20 对账:已在 2026-10-18 落地,无需新码——`b7eda34` 漂移校验 + `300a927` 全量命令。四条口径逐一对上:① 连接信息 = `resolveDatabaseInterfaceConfig()`(extension.ts:606)合成的 `<dbmgr><databaseInterfaces><default>` 三层覆盖,端口 0 落 3306;② 逐表逐列 = `SHOW TABLES` + `SHOW FULL COLUMNS`,`compareTableColumns` 查 缺列/多列/型别/可空性/默认值/索引 + `buildDriftReportForSnapshots` 查 缺表/残留表,`kbengine.database.checkAllDrift` 一次连接查全部实体;③ 差异标注 = OUTPUT 通道无着色 API,用 `[缺表]`/`[缺列]`/`[型别不符]` 等前缀标记 + 有漂移弹警告(database-drift-check.md 有登记);④ 开关默认关 = 纯命令触发(`kbengine.database.checkDrift`/`checkAllDrift`),激活期零连库,mysql2 动态 import,连不上降级「未校验」不报错;语句白名单+只读会话双保险。tests/databaseDrift 41 例绿
-- [x] debug.json 快速执行脚本配置自动生成（来源:用户 2026-10-17 队列令；验收口径:缺配置自动生成的骨架里,默认扫工作区根 + assetsRoot 的脚本登记为 `quickActions` 条目,只替换 `source: "scan"` 条目不动手工条目,扫不到留空数组）
-  - 2026-10-20 对账:已在 2026-10-16 落地,无需新码——`5045745`(批143)骨架生成。四条口径逐一对上:① 缺失即生成 JSONC 骨架(`ensureDebugConfig`,extension.ts:1163);② 扫描根 = 生效工作根 + `resolveAssetsRootForWorkspace` 作 `scanRoots` 传入(debugConfigBootstrap.ts:351 合并两根),一层 `.bat`/`.ps1`,词表只定分类;③ 重扫 `Rescan Scripts for Quick Actions` 只替换 `source:"scan"`(quickActions.ts:342 `filter(action => action.source !== 'scan')`),手工动作与 debug 段保留;④ 扫不到留空数组(debugConfigBootstrap.ts:359)。随本单修正 8 处批号注释错标(代码侧 142/143 与账本互换,git 时序 d97addb 14:09 stubDir=142 → 5045745 14:12 骨架=143 定谳)
-- [x] P3 G8 性能剖析（TICK/CPROFILE/PYPROFILE/EVENT/NETWORK；来源:盘点 G8；2026-10-21 用户驳回虚假阻塞——引擎源码在侧 /home/cui/workspaces/kbengine，pyprofile_handler/watcher 面实存，按源码分析可接线的协议面推进）
-  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/kbengineProtocol.ts:105`(四类 Profile 面+解析)、`src/kbengineProtocol.ts:590`(startProfile 请求)、`src/extension.ts:1128`(命令)、`src/monitoringWebView.ts:158`(面板接线)
-- [x] 发布到 VSCode Marketplace — 用户手动完成（2026-10-19）：listing `cuihairu.kode-kbengine` v0.1.0 已上架（巡检 2026-10-20 实核 live，lastUpdated 2026-10-19 04:43 GMT，与 package.json 冻结版本一致；未打版本号 tag、未建正式 Release，红线口径未破）；README 双语 badge 已挂，英文 README 残留的「未发布」旧句与本批计数漂移（27/30/42 → 31/45/43）已对账
-  - 2026-10-20 续:用户手动发 **v0.1.1**（tag + GitHub Release 08:09 UTC,Marketplace lastUpdated 08:14 UTC 双证),`50fcdac` 随后把 package.json bump 到 0.1.2 开发中；本批对账 README 双语 / COMPLETED_FEATURES / PROJECT_SUMMARY / CHANGELOG / development.md 双语的版本口径(0.1.0 冻结表述已废),vsix 安装示例改 glob `kode-kbengine-*.vsix` 免版本漂移
-- [ ] P3 G9 Space Viewer / Watcher 查询面板（来源:盘点 G9；2026-10-21 用户驳回虚假阻塞——引擎 watcher 模块面（getWatcher/addWatcher/getWatcherDir）与网络面按源码证通后排期实施）
+### A1 PR1 · 性能观测与基线（不改任何行为结果）
+- [ ] A1-1 新建 src/languageServiceMetrics.ts：单调时钟、请求ID、事件枚举（hover/definition/completion/diagnostics/python-index-scan/entity-mapping-scan/type-registry-query/file-discovery/document-parse 等 11 类），默认关闭详细记录
+- [ ] A1-2 记录字段齐备：总耗时+子阶段耗时、文件发现/读取/解析/缓存命中计数、是否等待初始化、索引 generation、文档 version、结果状态（成功/未命中/取消/异常）
+- [ ] A1-3 汇总出口：请求数、P50/P95/P99、最大值、命中率（命令面板「Show Language Service Metrics」）
+- [ ] A1-4 埋点接线：KBEngineHoverProvider/PythonCompletionProvider/KBEngineDefinitionProvider/PythonDefinitionProvider/诊断入口全部打点（只加观测不改逻辑）
+- [ ] A1-5 测试资产集生成器：小项目/数万文件模拟/≥3 资产根含同名实体与同名 Python 类/大 Python 文件/大量 def+xml/含 .git 与 node_modules 的项目（脚本化可复现）
+- [ ] A1-6 基线报告落 docs/perf/2026-baseline.md：机器与版本信息、冷启动/热缓存、七场景（首索引/重复查询/未索引文件首查/编辑后/改 def 后/删文件后/并发）实测数字，未测项标「待测」
+- [ ] A1-7 主要调用链图（Mermaid）落同报告：hover/definition/completion/diagnostics 四条链的真实调用路径与等待点标注
 
-> 2026-10-16 巡检复核（PATROL1016）:六项 open 中 G7 已按授权代决落地,其余全部为「触发条件未到 / 已裁决搁置 / 外部阻塞」,逐条复核解锁条件均仍成立,无重开项。①Marketplace:publish.yml 完好（仅 workflow_dispatch、版本号输入须与 package.json 一致、publisher=hairucui 校验）,version 仍冻结 0.1.0,解锁=用户给版本号并手动触发。②G4:等用户点名 SDK 语言清单,未收到点名。③G7:已代决按骨架生成 + 引擎装载口径附带改写,落地代理 / 空间 / 组件 / 固定字典四种形态（批139）。④G8:经典 kbengine 引擎仓（只读）核对仅见进程内 pyprofile handler（kbe/src/lib/pyscript/pyprofile_handler.cpp）与内部定时器枚举,无 TICK/EVENT/NETWORK 网络管理协议面,Nex X 的 KBE Nex 3.x 协议对经典引擎不可用,「不排期直到用户点名」维持。⑤G9:同 G8,协议前置未变。⑥G10:超出工程内开发工具定位的裁决维持,等用户点名再评估。同日补扫:docs/ 下无 todo/roadmap 开口,KBENGINE_SOURCE_AUDIT_PLAN.md 19 块全部已完成（剩余遗留登记均已收口或定案「登记不写码」）,仓内账本面已无未登记可开工项。同日巡检 FW1016D 起用户授权代决（待拍板/设计选择/需求取舍/排期按推荐方案执行,事后可推翻）,按该授权重审六项:①G4 语言清单属需求取舍,已代决首批 TypeScript + C#（经典 KBEngine 两个主流客户端生态:js/Web/Cocos 系 TS + Unity C#）并落地批138,理由与边界记入 `docs/reference-feature-gap.md`「已代决记录」,GDScript/C++ 留后续增量。②G7 形态扩展已代决按推荐方案落地,代理 / 空间 / 组件 / 固定字典一次一种生成,不虚构未点名引擎能力。③Marketplace 发布仍需用户给版本号并手动触发（版本红线,不改任何 version 字段）。④G8/G9 第三方接口阻塞未变:经典 kbengine 引擎仓（只读）无 TICK/EVENT/NETWORK 网络管理协议面,Nex X 的 KBE Nex 3.x 协议不可用。⑤G10 超范围裁决维持。
-- [x] 批134 types.xml 表结构形态悬停 + 类型引用反扫 CodeLens — `3f02b50`（+2 测试文件 31 例（10 索引/形态契约 + 9 悬停 + 12 镜链），全套 1945 用例绿，coverage 100%×4（8732 stmts/5273 branches/1485 funcs/8496 lines）；`declaredType` 从属性/FD 键/数组元素三个解析点把原始 `<Type>` 文本带到列上，反扫落点直接取 schema 快照单一实现；`getTypeStorageShape` 形态数据 + `describeTypeStorageShape` 措辞（builtin 主表单列附列型、FIXED_DICT 平铺、ARRAY 子表递归一层、未解析明说装载失败、别名环 seen 短路）；悬停 `getCustomTypeHover` 声明行追加落库形态段（implementedBy 值除外）；`TypesXmlCodeLensProvider` 一条使用一枚镜（`Hero.itemId → tbl_Hero.sm_itemId`）点击走 `kbengine.database.open` 定位列，超 10 折叠 `+N 处落库未列出` 计数镜，无引用不出镜，watcher 挂 `**/*.def`/`**/types.xml`/`**/entities.xml` 失效重扫；**批133 遗遗留关闭**：引擎源码坐实 `xml.cpp:121-128` getValStr 只认文本、`datatype.cpp:1658-1712` of 取文本、`datatypes.cpp:105-169` 条目指引读首子文本，demo fixture 三处 `<of>` 写法不合引擎语义是 fixture 错不是解析器错，已修为规范形态并补 sm_value 元素列/skillSlots 子表断言；**fixture 打包修复**：components/.gitignore、interfaces/.gitignore、user_type/.gitignore 三个空目录占位模板把 Inventory.def、ROLE.def、SKILL_SLOT_DATA.py、POSITION_DATA.py 排除在版本库外（65 vs 台账 76 文件，fresh checkout 测试必挂），删占位并补录；extension.test CodeLens 注册 1→2、终配 watcher 探针改样式集合记录；来源:用户「那么能不能在type.xml 中展示表结构呢?」+ 拍板「形态 + 引用反扫 CodeLens（推荐）」）
-- [x] 批135 代码侧属性标记反向跳转 — `2a7c78b`（+1 测试文件 16 例 + defAnalyzer 域位 4 例 + manager 解析面 5 例，全套 1972 用例绿，coverage 100%×4（8779 stmts/5293 branches/1499 funcs/8540 lines）；字面需求不可行——Python 脚本无类型名可写，落地为可行等价：`.py` 实体脚本 `self.<属性>` 访问处一行 CodeLens `属性 · <[槽名.]属性> · <Type> · <可见域> · Persistent?`，点击回 def 声明行；`propertyFlagDomainList` 与属性判重同源同表（common.h 旗标真值），域位定序 base → cell → client 不依赖 Set 迭代序；解析走 `resolvePropertyDefinitionInfo`（与属性 F12 同一索引同口径，新增 `PropertyDefinitionInfo` 带 Type 直文本/可见域/持久化，`<Persistent>` 缺省视作非持久），同一属性多处访问按（根段,完整路径）键只解析一次但每处访问都出镜（读者停在任意行都看得到标记）；组件槽属性标 `healthPack.regen` 形态、接口继承属性按 ALL_CLIENTS 出 cell|client、恒等锁 CodeLens 注册 2→3；只认 `self.<属性路径>` 形态与 F12 一致，`self.get('属性')`/`self.set('属性', 值)` 引擎 API 形态不在识别范围（module docstring 明示）；来源:用户「从types.xml 可以跳转到具体的代码，但从代码上没有类似的 type 的标记反向跳转」）
+### A2 PR2 · 文档快照与解析缓存（documentStore）
+- [ ] A2-1 新建 src/documentStore.ts：URI 规范化+版本号+文本+行索引+解析态（Python/def/XML）+最近成功解析版本
+- [ ] A2-2 内存优先规则：打开文档以 VS Code 缓冲区为准；磁盘旧内容不得覆盖编辑中内容（测试锁定）
+- [ ] A2-3 同版本只解析一次；解析中再编辑→旧结果不覆盖新版本（并发测试）
+- [ ] A2-4 Hover 接入：provideHover 与局部变量推导改走快照行数据（废除逐次 getText().split 全文拆行）
+- [ ] A2-5 Diagnostics 接入：validateDocument 复用同版本 parseDefAst 快照
+- [ ] A2-6 快照 LRU/释放策略（关闭文档后内存不泄漏，测试）
 
-## 已完成
+### A3 PR3 · 统一索引调度（indexScheduler）
+- [ ] A3-1 新建 src/indexScheduler.ts：任务生命周期（首扫/增量/受影响依赖更新/删除清理）+状态查询
+- [ ] A3-2 任务合并：同文件同版本任务去重；过期任务取消丢弃（测试）
+- [ ] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析（测试顺序断言）
+- [ ] A3-4 失败恢复：扫描中途失败后后续请求可恢复，不出现永久 pending（测试：杀掉首轮扫描模拟）
+- [ ] A3-5 EntityMappingManager 首扫迁入调度器（initialScan 走 scheduler，行为等价测试）
+- [ ] A3-6 后台限流与取消（编辑高峰期不抢主线程，指标验证）
 
-- [x] 批154 types.xml 数据类型 inlay hints — 新增 `src/typeInlayHints.ts`（+1 测试文件 5 例，coverage 100%×4）：Python 侧 `self.<属性>` 访问处以 InlayHintKind.Type 原位渲染 def 声明的 `<Type>` 取值（如 `: UINT32`），解析与属性 F12 同走 `resolvePropertyDefinitionInfo` 同口径；同一（根段,完整路径）键只解析一次但每处访问都出 hint，视图口（range）外的行不出；开关 `kbengine.inlayHints.typeData` 默认开现读（inlay 无变更事件可 fire，改后下一次渲染生效）；fake-vscode 补 `InlayHint`/`InlayHintKind` 值类与 `languages.registerInlayHintsProvider` 记账；全套 2473+3 绿、mocha 12、lint/tsc/vitepress 绿；来源:巡检单 kode-p1020i todo.md:7 用户令「优先安排」
+### A4 PR4 · 统一语义查询（semanticIndex + dependencyGraph）
+- [ ] A4-1 新建 src/semanticIndex.ts：实体-分面方法/属性-Python类-注册关系-类型映射-根作用域 统一承载（查询 API 不暴露内部遍历）
+- [ ] A4-2 新建 src/dependencyGraph.ts：entities.xml/def/types.xml/alias.xml/Python 声明 的真实依赖失效（禁「任何变更=全仓重建」，测试单文件变更失效范围）
+- [ ] A4-3 类型注册表迁移：resolveEntityAnnotationType 改查快照（废除逐次 statSync 指纹，保留更新事件驱动重建，definitionWorkspace.ts:308/320/345）
+- [ ] A4-4 实体映射查询迁移：getMappingForPythonFile 系改走 semanticIndex（旧 API 行为兼容层，原测试全过）
+- [ ] A4-5 多资产根模型：规范化根路径+rootID+文件映射+查找顺序显式策略（禁 Map 插入序依赖；同名实体/类冲突测试）
+- [ ] A4-6 现有查找顺序取证：从测试提取当前命中顺序→固化为显式策略文档+测试（不改行为先锁）
 
-- [x] 批154 语言功能按功能独立开关 — 每类语言功能各配一枚独立开关、默认全开、不设总闸：`kbengine.codeLens.rpc`/`codeLens.eventCallbacks`/`codeLens.property`/`codeLens.typesXml` 四镜链 + `kbengine.hover.typeStorage`/`hover.implementedBy`/`hover.entityRegistration`/`hover.defChain`/`hover.eventStats`/`hover.serverConfig` 六悬停面（`hover.showTagDocs` 族为既有）；开关均 provider 内现读即时生效——四镜链 provider 各挂 `onDidChangeCodeLenses` emitter + `fireConfigurationChanged()`，扩展配置监听 `affectsConfiguration('kbengine.codeLens')` 逐个 fire（悬停与 inlay 不缓存、无需 fire）；事件回调镜链从 RPC 镜链返回值里拆成独立注册（CodeLens 注册 3→4，配独立开关）；命名代决（FW1016D）：用户写的 `kode.*.enable` 按仓内命名空间统一落 `kbengine.*`，开关键不带 `.enable` 尾缀，与既有 `hover.showTagDocs` 族一致，事后可推翻；+10 开关关断例（正对照→关断后该功能内容消失、其余面不动）；装配面 extension.test 镜链注册 3→4 + inlay 注册 1 + 配置监听 fire 四 provider 计数（含外层 kbengine guard 不 fire 反例）；全套 2473+3 绿、mocha 12、lint/tsc/vitepress 绿；来源:巡检单 kode-p1020i todo.md:6 用户令「优先安排」
+### A5 PR5 · Python Definition 去全仓阻塞
+- [ ] A5-1 ensureScanned/ensureCompositionRoots 调用关系重构：Definition 先查快照+已建索引，按需单文件解析，后台补全量
+- [ ] A5-2 组合根构建缓存：同批 XML/def 只读一次（不同入口不重复发现，指标断言）
+- [ ] A5-3 PythonClassIndex 版本与失效：类/基类/方法/MRO/组合根显式版本+失效条件
+- [ ] A5-4 删除/重命名/基类变更后旧索引项移除（跳转不到已不存在位置，测试）
+- [ ] A5-5 冷启动 Definition 首查耗时入报告（不再等待全仓，数字说话）
 
-- [x] 批149 TESTING.md 批109 范围对账行翻新(docs-only)— D3/D5 落地后 TESTING.md:3520 起的「后续增量」清单未同步(全局对账令:每个可验收增量同步对账文档),改为「D3 批147 落地/D5 def 链批148 落地/D2、D9 仍后续增量」的分期口径;TESTING.md 在仓库根不在 vitepress srcDir,不进站点构建;来源:全局令「每个可验收增量同步对账文档,未实现绝不写成已实现」)
+### A6 PR6 · 诊断与一致性收口
+- [ ] A6-1 诊断任务版本化：连续编辑合并过期任务，只发布匹配当前版本结果（测试）
+- [ ] A6-2 轻量本地诊断与索引语义诊断分层；无关文件变更不重算全部打开文档（指标断言）
+- [ ] A6-3 entities.xml 诊断入口同版本失效约束
+- [ ] A6-4 配置切换（诊断开关）正确清理/重算（测试）
+- [ ] A6-5 同名符号跨根稳定性测试集补齐
 
-- [x] 批148 def 链合并悬停 — source-analysis D5 收口（新增 `src/defChain.ts` +1 测试文件 12 例,coverage 100%×4;`buildDefChain` 按三面整理继承闭包——**Parent 链递归**(实体父在定义根、组件父在 components/ 内解析、接口 def 不跟随 Parent,边解析口径与 defRenamer resolveLinkPaths 同注引)、**interfaces/ 平铺**(闭包内各级 `<Interfaces>` 去重首见保序,wrapper 形态 `<Interface><名/></Interface>` 走 parseDefFileSemantics 既有口径)、**components/ 挂接**(槽 `<Type>` 值去重首见保序);父名/接口/组件缺 def 文件 defPath 如实 null 不虚构,环 visited 截断并标注(引擎 loadParentClass 未见防环,D5 明文不照抄);languageProviders 增 `getDefChainHover` 挂在实体登记悬停之后、符号悬停之前(后者会把 Parent 取值当普通符号吃掉),悬停根级 `<Parent>` 元素(含取值文本)呈现整链;+branches 悬停 1 例 5 断言(整链三面/缺父标注/环截断/空链兜底行/非 Parent 元素不出链);vitest 2354 绿,extension.ts 仍仅余 316 行既有缺口,mocha 11 绿,`tsc --noEmit` 0 错,eslint(src)绿,vitepress 绿;zh/en features.md 语言能力行+source-analysis.md 实施边界(D2/D9 仍后续增量)+CHANGELOG 同步;来源:用户 2026-10-17「继续啊,为啥必须我催着才继续」令,接 source-analysis 实施边界 D5 立项,呈现形态走 FW1016D 代决授权(悬停呈现,不做 CodeLens/命令）
+### A7 PR7 · 复测回归与交付
+- [ ] A7-1 同环境同资产复测，报告 vs PR1 基线对比（无数据不进报告）
+- [ ] A7-2 验收表逐项标 通过/未通过/未测量（Hover P95≤30ms 等目标以基线评审定案）
+- [ ] A7-3 新架构图+索引数据模型/作用域/失效/调度说明文档
+- [ ] A7-4 未解决问题清单与下一轮建议
 
-- [x] 批147 entities.xml 同名重复诊断 + 清单序号悬停 — source-analysis D3 收口（新增 `src/entitiesXmlAnalysis.ts` +1 测试文件 7 例，languageProviders 增 `validateEntitiesXmlDocument` + 悬停 `**Utype**` 序号行，extension 四处文档事件门各加 entities.xml 分支；同名重复条目引擎按已有模块复用静默合并（registerNewScriptDefModule，entitydef.cpp:255-262），后续条目及其 hasBase/hasCell/hasClient 断言不生效，kode 在重复条目开标签上落 warning，随 .def 同一文档事件生命周期进 kbengine collection，共用 `kbengine.enableDiagnostics` 总开关（关断臂与 .def validateDocument 同款先删陈旧）；清单序号 = getRegisteredEntities 保序快照中首次出现位置（引擎按清单序发 utype，entitydef.cpp:253-265；首取即合并口径），悬停行 `**Utype**: \`N\`(entities.xml 清单顺序,共 \`M\` 个实体)`，未注册实体/无工作区根不出行；解析失败活编辑器静默空结果不虚构发现；+languageProviders 3 例（诊断面 2 + 关断臂 1）+branches 悬停 3 断言 +extension 生命周期 3 断言，全套 2341 用例绿，`entitiesXmlAnalysis.ts` coverage 100%×4，extension.ts 覆盖恢复仅余 316 行既有缺口（jumpLog，随本批行移），mocha 11 例绿，`tsc --noEmit` 0 错，eslint 绿；zh/en features.md 诊断+悬停两行、configuration.md enableDiagnostics 两行、source-analysis.md 实施边界 D3 落地注记（D2/D5 def 链/D9 仍后续增量）、CHANGELOG 同步；来源:用户 2026-10-17「继续啊,为啥必须我催着才继续」令,接 source-analysis 实施边界 D3 立项,清单序号呈现与诊断面走 FW1016D 代决授权）
+## B. 在途/止血项（结构性治理并行的即时修复，落地即勾）
+- [ ] B-1 hover 永转+2分钟：入口 2.5s 总预算 race+waitForInitialScan 5s 超时+LogHub 超时层名（在途子代理，落地报 commit）
+- [ ] B-2 函数着色 白→浅蓝：variable.function.call.python=#8BD5FF（11 主题），before/after scope 实证（分支 fa13ef9..179a290 待合 main）
+- [ ] B-3 RPC 形参 inlay：调用点 `形参名: 类型`（kbengine.inlayHints.typeData 开关；分支 fa13ef9 待合 main）
+- [ ] B-4 调用链图形化双 Tab：Graph(默认,打包 mermaid 离线)+Text，kbengine.python.callChainView（在途续命单）
+- [ ] B-5 上述分支成果收敛 main：单实例面板(f3ff6fc)已在 main，核对无重复提交后 merge/rebase 收口
 
-- [x] 批146 types.xml watcher 自动重生成类型桩 — def-pyi-stubs §4 二期（`src/pythonTypeStubs.ts` 增 `setupTypeStubRegeneration` +1 测试文件 3 例，extension 装配 1 行；`**/types.xml` didChange/didCreate/didDelete 三事件→静默重导出 `kbe_types.py`；**不设去抖、不加开关**——导出函数自带 `kbengine.python.stubExport` 门（关掉即停），内容确定性与零写纪律保证重复触发无副作用；快照每次直读磁盘（`getTypesXmlSnapshot` 无缓存）,事件到达即读到新内容,无缓存竞态;watcher 只盯 types.xml——kbe_types.py 内容来源仅此一个文件,写生成物不会反触发自己;并补回批145 漏提交的两件装配测试(批145 staging 清单漏列 tests/extension.test.ts 与 tests/pythonExtraPaths.test.ts,origin 上命令回调与存根目录并入用例曾缺位,本批补回后 extension.ts 覆盖恢复仅余 305 行既有缺口);zh/en commands.md 行为行+features.md 特性行+def-pyi-stubs 对账注记翻新+CHANGELOG 同步;来源:用户 2026-10-17「继续啊,为啥必须我催着才继续」令,接批145 留的二期）
+## C. 功能项（拆细推进）
+- [ ] C-1 G9 Space Viewer/Watcher 面板·第一步：引擎 watcher 协议取证（kbengine 源码树 getWatcher/addWatcher 消息面，file:line 摘录落 docs/design）
+- [ ] C-2 G9·第二步：最小查询面板（单 watcher 查询+结果表格，走真实协议，mock 测试）
+- [ ] C-3 G9·第三步：面板操作面（增删 watcher、结果订阅流），开关默认关
+- [ ] C-4 T-04 .pyi 抢占实验结论落地（实验文档已在，产出「开关建议档」待用户拍板行）
+- [ ] C-5 V-06 版本感知 API·a：引擎版本/源码提交探测模块（git describe 取不到→unknown，禁硬造）
+- [ ] C-6 V-06·b：API 元数据挂接（声明位置+版本标识进 API 浏览面）
+- [ ] C-7 V-06·c：配置开关+features 清单行+测试
+- [ ] C-8 V-07 兼容性测试·a：KBENGINE_ROOT 探测+无树 skipIf（CI 无树自动跳，skip 原因可见）
+- [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
+- [ ] C-10 V-07·c：CI 接线（有树环境真跑，集成 tag）
+- [ ] C-11 V-08 边界注记：等真实管理协议（外部条件，触发条件=管理协议可用性，届时重开 C-1/C-2）
+- [ ] C-12 chatgpt 归并书遗留核对（roadmap/log-center/background-process/typings 四份→todo/需求归并后原文已删，核引用余数=0）
 
-- [x] 批145 types.xml 自定义类型 → Python 类型桩 `kbe_types.py` — 落地 `docs/design/def-pyi-stubs.md` §6 立项要点（新增 `src/pythonTypeStubs.ts` +1 测试文件 30 例 + extension 装配 1 例 + extraPaths 同盘并入 1 例，`kbengine.python.exportTypeStubs` 命令 + 激活期在 KBEngine.pyi 之后静默自动导出一次；**方案 A 真 `.py`** 而非 `.pyi`——纯 `.pyi` 运行时不可 import,真模块既是 Pylance 类型来源也可 `import kbe_types`;`FIXED_DICT`→`TypedDict` 类(属性文档序,零属性 `pass` 体)、`ARRAY`→`List[元素]`(of 套 of 递归,缺 of 落 `List[Any]`)、别名→类型名赋值,**别名按依赖拓扑序发射**(Kahn 同层名字序),别名环/指引为空跳过并连带跳过下游,绝不生成引用未定义名字的赋值;内置类型表与 TS 生成器同语义的 Python 面(整型→`int`、浮点→`float`、`str`、`bool`、向量定长 `Tuple`、`PY_DICT/PY_TUPLE/PY_LIST` typing 泛型、无对应物→`Any`);**内容确定性**(头部无时间戳,同输入逐字节同输出)撑起与 KBEngine.pyi 同一套「内容一致零写、陈旧重写」;共用 `kbengine.python.stubExport` 开关与 `stubDir` 三级目录,用户目录已有同名 `kbe_types.py` 按用户资产不覆盖(文件级判定,不做 `.pyi` 目录扫描);extraPaths 管理段并入条件扩为 `KBEngine.pyi` 或 `kbe_types.py` 任一在盘;无自定义类型不生成不弹窗;§4 的 types.xml watcher 自动重生成留二期,§7 待证清单不变;zh/en commands.md 新节+configuration.md 语义行+features.md 特性行+def-pyi-stubs 对账注记+CHANGELOG 同步;来源:用户 2026-10-17「继续」令,按 def-pyi-stubs.md「供下一轮立项」推进,设计取舍走 FW1016D 代决授权）
+## D. 维护与质量
+- [ ] D-1 每日 CI 日巡（cron e4bddc0a5a17）首跑复核（明早09:00）+异常闭环
+- [ ] D-2 docsCommands 测试口径随新配置键滚动补齐（callChainView/typeData/budget 等键的文档行核对）
+- [ ] D-3 发布铁律执行核对：publish 仅 workflow_dispatch（185f027 已落，季度复核无自动腿回潮）
+- [ ] D-4 功能清单 features.md 随 B/C 项落地同步（每项带证据口径不吹）
 
-- [x] 批141 VS Code 官方变量替换统一真源 — `5d3c1d3`（新增 `src/variableSubstitution.ts` +1 测试文件 41 例，`workspacePath`/`quickActionConfig` 两处旧实现改为委派，全套 2196 用例绿，`tsc -p ./ --noEmit` 0 错；按官方变量表实现 `${workspaceFolder}` / `${workspaceFolderBasename}` / `${file}` / `${fileBasename}` / `${fileBasenameNoExtension}` / `${fileDirname}` / `${fileExtname}` / `${relativeFile}` / `${relativeFileDirname}` / `${cwd}` / `${userHome}` / `${pathSeparator}` / `${env:NAME}`；两套旧口径（路径类静默空串 vs quick action 抛错）保留为 `empty` / `throw` 两种 policy，各调用方按语义选，替换逻辑不再各写一份；`${env:NAME}` 与 `${workspaceFolder}` 同一套机制不另造；相对族只在文件落于某个工作区根之下时给相对写法，区外回退绝对路径；`${pathSeparator}` 走 `path.sep` 而非 `process.platform` 三元，避免另一侧分支永远走不到的假缺口；来源:用户 2026-10-16 更正单 kode-varfix.md「是 VS Code 的变量替换语法」）
-- [x] 批143 `.kbengine/debug.json` 缺失即自动生成 — `5045745`（新增 `src/debugConfigBootstrap.ts` +1 测试文件 22 例 + extension 装配 1 例，全套 2254 用例绿，`tsc -p ./ --noEmit` 0 错；用户单 kode-debug-json.md 三件事同一套机制：① 缺失即在生效工作目录建 `.kbengine/` 并写带注释骨架，**JSONC 口径**（允许 `//` 与块注释，同 `tsconfig.json`），读配置前统一 `stripJsonComments` 再解析，用户自己写的注释不致让配置读不动（`quickActions.readConfigFile` 与 `DebugConfigManager.loadConfig` 两处 `JSON.parse` 同改）；骨架路径示例一律 `${workspaceFolder}/...`（批141 用户令），元件端口示例取 `debugConfig.ts` 的 `SOURCE_DEFAULT_COMPONENTS` 同一份真源；② 无配置时按既有 `quickActionScanner` 的一层 `.bat` + 启停/导表词表扫描填 `quickActions`，**不另起识别规则**，扫不到留空数组，目录读不到按无脚本处理；③ 工作目录环境变量 `KBENGINE_WORKSPACE`（与本仓 `KBENGINE_*` 命名风格一致），优先级 **环境变量 > 配置文件顶层 `workspaceRoot` > 首个工作区根**，取值先过批141 官方变量替换、展开为空视作没写顺位回落，生效值与来源、被盖掉的来源逐条落骨架注释与「KBEngine 配置」OUTPUT 通道（`WORKSPACE_ROOT_SOURCE_LABELS` 三档标签）；**已有配置绝不覆盖**，目录不可写只如实回报不影响其余能力；激活期挂在首装脚本扫描之前，骨架已有动作时不再重复弹窗；来源:用户 2026-10-16 执行单 kode-debug-json.md。**文档段待补**：`docs/guide/configuration.md`「缺失即自动生成 / 工作目录与环境变量」两节已写入工作树但尚未提交——同仓另一会话正在把英文文档迁到 `docs/en/` 并同时改这份文件（中英配对被拆成 `docs/guide/configuration.md` 中文 ↔ `docs/en/guide/configuration.md` 英文），改动会在那次迁移提交里一并落地，不重复提交冲突）
-- [x] 批142 `.pyi` 存根目录用户可配 — `d97addb`（新增 `kbengine.python.stubDir` 设置 + `KBENGINE_STUB_DIR` 环境变量，+1 测试文件 35 例，`src/pythonStubExport.ts` 语句/分支/函数/行 100%；用户令「.pyi 目录也应该用户配置吧，不配置才默认生成，配置了就扫描，没有 pyi 文件才生成」三级来源 **设置 > 环境变量 > 默认约定 `.kbengine/stubs`**，取到的 `source`/`origin` 随值一起返回，供播报与配置来源视图显示「当前生效值来自哪里」；路径类配置走批141 的官方变量替换（`${workspaceFolder}`/`${env:NAME}` 同一套机制，不另造），展开后为空也不偷偷回落默认目录；用户指定目录先 `scanStubDir` 扫一遍，**已有 `.pyi` 视为用户资产不覆盖**，目录读不到或 deps 未注入扫描能力都不盲写；默认约定目录归 kode 自管，刻意保留批139 起 G2 的「内容一致零写、陈旧才刷新」语义，不因存在 `.pyi` 就停更；`StubExportDeps.listDir` 可选注入，既有 14 例导出测试不受影响；来源:用户 2026-10-16 执行单 kode-pyi.md）
-- [x] 批144 文档站接 VitePress 原生 locales — `164b630`（`docs/.vitepress/config.mts` 配 `locales`：`root` 简体中文 `lang: zh-CN` + `en` English `lang: en-US`，37 文件重排；用户 2026-10-16「vitepress 自带国际化方案，你瞎搞啥」；**两个 locale 的 `label`/`lang`/`nav`/`sidebar`/`editLink`/界面文案各自独立配置，不共用一份**，侧栏各放自己语言的文档路径（顺带把 redesign/source-analysis/reference-feature-gap/审计/quick-actions 五篇此前无入口的顶层文档补进侧栏，不再孤儿页）；目录树改为「中文留 srcDir 根（`/`）+ 英文整体收 `docs/en/`（`/en/`）」两棵同名同构子树，18 篇英文从 `*.en.md` 迁入 `docs/en/`（`README.md`→`en/index.md`、`guide/README.en.md`→`en/guide/README.md`），中文首页 `README.zh.md`→`index.md`；**36 处手写互链切换行全部删除**，改由 VitePress 内置切换器按同名相对路径自动互跳（删前核实：全仓 `.en.md` 内链只出现在这些切换行，无其他交叉引用；`en/guide/development.md` 的 `../redesign.md` 与中文版同深度同目标，迁移后仍成立）；`rewrites` 同步补 `en/guide/README.md → en/guide/index.md`；**与执行单的字面差异**：单子写「根语言 `/` 与中文 `/zh/`」，实际落地为「中文 `/` + 英文 `/en/`」——仓内约 2300 行中文正文才是 canonical 主体、英文为译本，且 GitHub Pages 项目站首页应直接是中文，不必再加一层 `/`→`/zh/` 跳转；门禁 `./node_modules/.bin/vitepress build docs` 通过，产物 36 页（18×2+404），脚本校验**36 页语言切换器目标全部命中已构建页面、0 死链**，`vitest` 全套 2254 用例绿（含只读中文 `docs/guide/commands.md` 的批95 双向锁，不受英文迁址影响）；来源:用户 2026-10-16 执行单 kode-i18n.md）
-- [x] 设置项文档对账(2026-10-16,docs-only) — package.json 配置贡献实测 41 项,`docs/guide/configuration.md` 漏登 4 项已补齐:`kbengine.clientSdk.outputDir`(批138 G4)/`kbengine.python.extraPathsSync`(批136 G1)/`kbengine.python.stubExport`(批136 G2)/`kbengine.python.stubDir`(批142);总览表加 4 行,逐项说明新增「客户端实体 SDK 输出目录」「Python 接线与存根 `kbengine.python.*`」两节(stubDir 三级解析 设置>环境变量 `KBENGINE_STUB_DIR`>默认 `.kbengine/stubs`、用户目录只进不出、extraPaths 管理段只认默认目录的边界);「全量配置项对照表(32 项)」标题与计数段标注批125 快照口径+批126–143 新增 9 项现状 41 项。commands.md 的 `exportStubs`/`syncExtraPaths` 两节补 stubDir 用户目录语义(已有 .pyi 按用户资产不覆盖,没有才生成,读不到不盲写);reference-feature-gap.md G1/G2 面 2 行补批142 可配目录。中英同步(docs/guide + docs/en/guide + reference-feature-gap 双份)。门禁 `npx vitest run tests/docsCommands.test.ts` 5 例绿 + `vitepress build docs` 绿(36 页)。来源:R1020 巡检推进单第 2 条自定位(台账 4 项全外部门控,按最近 git log 对账批136–143 的文档缺口)
-- [x] P3 G7 生成器形态扩展 — 批139（新增 `kbengine.generator.formWizard`，一次生成代理 / 空间 / 组件 / 固定字典骨架；代理 `proxy_defs` + Parent 同名 Proxy，空间 `entities.xml` 登记 hasBase+hasCell，组件可选挂载 COMPONENT 属性，固定字典写入 `types.xml`；重复登记 / 已存在默认跳过、结构异常如实说明不硬插；+2 测试文件 47 例 + 装配 1 例 + 命令文档双向锁，受影响路径 51 例绿）
-
-- [x] docs 根目录中英配对（5 篇文档 / 10 个文件,全量真实翻译,0 篇走「暂无译版」） — 来源:用户 2026-10-16 双语执行单。判据:实质文档中↔英成对,两份顶部首 3 行内语言切换器,排除 CHANGELOG/CONTRIBUTING/LICENSE/CODE_OF_CONDUCT/SECURITY 与 node_modules/dist/build/target/coverage/vendor。落地:`docs/README.md`(改正文纯英文,中文正文移入新 `README.zh.md`)+ `docs/reference-feature-gap.md`↔`.en.md` + `docs/redesign.md`↔`.en.md` + `docs/source-analysis.md`↔`.en.md` + `docs/审计-文档一致性.md`↔`.en.md`。最长的 `redesign.md` 345 行 < 1000 行红线,故无一篇用「暂无译版」例外;翻译保真按结构对账:标题数 25/25、7/7、14/14、5/5 对齐,审计表 D01-D23 共 23/23 行、核对面 11/11 条、修复清单 18/18 条;命令、路径、`file:line`、`D01`/`Exposed` 等专有名词与被审计的原文串(如 `"截图素材尚未整理完成"`、`"未找到 entities.xml"`)原样不译。门禁 `./node_modules/.bin/vitepress build docs` 通过(踩并修一处真缺陷:译稿把 `<名>.py` 译成 ASCII `<name>.py` 且行尾折行切断了行内代码,`<name>` 被 Vue SFC 编译器当未闭合 HTML 标签,构建报错 Element is missing end tag,已把代码段收回单行)。README.md 正文零中文(仅切换器行的「中文」二字)。子目录 13 篇登记进「未完成」,下一轮做
-
-- [x] docs 子目录中英配对（13 篇文档 / 26 个文件,全量真实翻译,0 篇「暂无译版」） — 来源:用户 2026-10-16 双语执行单(子目录轮)。落地:`docs/design/quick-actions-and-db-hint.md`↔`.en.md` + `docs/guide/` 下 12 篇各自↔`.en.md`(README/client-sdk/commands/configuration/database-drift-check/database-simulation/dependency-graph/development/features/generator/language/logging,合计约 2296 行中文正文)。最长 `configuration.md` 481 行 < 1000 行红线,无一篇用「暂无译版」例外;两份顶部第 3 行互链切换器。保真口径:命令 id/配置键/路径/代码块/file:line(`kbemain.h:71-74` 等)/JSON 代码块原样不译,产品面中文字面量(OUTPUT 通道名「KBEngine 数据库漂移」「KBEngine 快速执行动作」、报表标记 `[缺表]`、状态串「未校验」「端口开·未配密码」、`父表：`、`SQL(属性列)`/`SQL(子表 JOIN)` 等)原样保留加英译注,批N → batch N。`commands.md` 双向锁测试不受影响:测试只读中文版,切换器行不在断言面。门禁 `npx vitest run tests/docsCommands.test.ts` 3 例绿 + `./node_modules/.bin/vitepress build docs` 通过(再踩批140同型缺陷一处并修:`quick-actions-and-db-hint.en.md` 把原文 `<名称>` 注译成 ASCII `<name>`/`<target>` 裸文本,被 Vue SFC 编译器当未闭合 HTML 标签报 Element is missing end tag,已去尖括号改写后绿)。docs 双语账面全清:根目录 5 篇(批140)+ 子目录 13 篇(本批),无剩余缺口
-
-- [x] P2 G4 客户端实体/SDK 生成（TS + C#,语言清单已代决） — 批138 `8ccc46f` + `a42e510`（`src/clientSdkGenerator.ts` + `kbengine.clientSdk.generate` + 1 测试文件 35 例（解析与畸形兜底 5 + 可见性 1 + 类型表与解析 6 + TS/C# 发射 4 + 伴随文件 4 + 收集 3 + 落盘/覆盖/工作区根 6 + 命令 6）+ extension 装配 1 例，全套 2106 用例绿，coverage 100%×4，mocha 11 绿；`entities.xml` 登记序收集、缺 def 跳过,只收 Flags 含客户端域的属性,ClientMethods 成虚位回调,Exposed 的 Base/Cell 方法成包装调用,发送只落 `onBaseOutgoing`/`onCellOutgoing` 两个接缝（不假设任何客户端插件 API）;FIXED_DICT 别名出伴随文件 `ClientSdkFixedDicts.*`,只收被客户端可见属性引用到的类型;类型表与引擎注册表同源 17 个内置类型,幻影类型落兜底交 defAnalyzer 诊断;语言中立模型 + 逐语言发射器分离,GDScript/C++ 留后续增量;代决理由与边界见 `docs/reference-feature-gap.md`「已代决记录」;来源:盘点 G4 + 巡检推进单 FW1016D 代决授权）
-- [x] P2 G6 原始日志 ERROR 扫描视图 — 批137（`src/logErrorScan.ts` +1 测试文件 21 例（签名归一 2 + 可扫名 1 + 单文件聚合 2 + 目标收集 3 + 整批扫描 2 + real deps 1 + 面板 7 + 命令 3）+ extension 装配 1 例，全套 2070 用例绿，coverage 100%×4，mocha 11 绿；`kbengine.logs.scanErrors` 选文件/文件夹（一层 `.log`/`.txt`/`.out`，按名排序、fsPath 去重），行过 LogParser 后 ERROR/CRITICAL 按「组件+归一签名」（数字折 N/空白压缩/截 160）聚合计数，面板给计数/级别/组件/签名/最近时间，点击行开源文件定位首见行，「重新扫描」按上一批文件重跑；时间只认行内带时间戳的格式，非标准行记 null 显示 `—`；单文件 64MB 上限与读取失败记 readError 不中断其余；与日志面板同解析器，不依赖 logger 协议；来源:盘点 G6 + 巡检推进单 R1016D）
-- [x] P2 G5 自动热重载 — 批136 G5（`src/hotReload.ts` +1 测试文件 15 例（默认值与畸形回落 4 + 去抖触发器 5 + 装配 6）+ quickActionManager runByName 5 例 + extension 装配 1 例，全套 2048 用例绿，coverage 100%×4（9015 stmts/5406 branches/1559 funcs/8769 lines），mocha 11 绿；`kbengine.hotReload.{enabled=false,actionName,globs,debounceMs}` 门控默认关防误触，开启才按 globs 各建一个 watcher（@types/vscode 只收单个 GlobPattern）、变更/创建/删除三通道事件经注入计时器去抖合并，配置变更监听联动拆建、subscriptions 只挂一条复合 disposable 随激活拆除；触发经 `QuickActionManager.runByName` 复用白名单三后端，跳过确认框、按名找不到只落 OUTPUT 通道流水不弹窗、空名字直接返回，执行照常写「上次执行」记忆供 Explorer ▶ 指向；配置容忍式读取（类型错/负去抖/剔空 globs 一律回落默认，不中断装配）；来源:盘点 G5 + 巡检推进单 R1016A）
-- [x] P1 G3 `.kbengine/debug.json` JSON Schema 校验 — 批136 G3（`src/debugJsonSchema.ts` 构建 schema + `package.json` 新增 `contributes.jsonValidation`（fileMatches `**/.kbengine/debug.json`，264 行内联对象）+1 测试文件 9 例（清单贡献 3 + 结构 4 + 解析器对拍 2），全套 2027 用例绿，coverage 100%×4（8937 stmts/5367 branches/1535 funcs/8693 lines），mocha 11 绿；整份文件编辑器内直接标红（调试段 defaultTelnetHost/telnetPort 默认、元件段 telnet* + telnetEnableCommands 数组 + pathMappings localRoot/remoteRoot 必填、顶层 version+debug 必填、quickActions 三后端 anyOf 各自必填），VS Code JSON 扩展承担校验零运行时代码；`quickActionConfig.ts` 导出 `HTTP_METHODS`/`QUICK_ACTION_TYPES` 作 schema 枚举真源，清单内联对象与 TS 构建产物由测试深等锁定防漂移，且锁死 schema 不落独立文件；校验只作提示，解析器逐条剔除与类型回落规则不变；来源:盘点 G3 + 巡检持续推进单）
-- [x] P1 G2 KBEngine Python API 存根导出 — 批136 G2（`src/pythonStubExport.ts` +1 测试文件 14 例：路径/同源内容 5 + 装配 9，+pythonExtraPaths 4 例（extraManaged 计划 1 + stub 目录并入 3），全套 2018 用例绿，coverage 100%×4（8924 stmts/5367 branches/1531 funcs/8682 lines），mocha 11 绿；`kbeModuleIndex` 抽共享发射器 `emitKbeStubBody`（虚拟桩文档字节不变），`buildKbeStubExportContent` 头部生成物口径（自动生成/重导出覆盖/建议 gitignore）；导出 `.kbengine/stubs/KBEngine.pyi`：内容一致零写、陈旧或读不到重写、目录不可写告警续行、`kbengine.python.stubExport` 默认开可关、激活期静默自动一次、`kbengine.python.exportStubs` 手动入口导出后链同步；G1 接线扩 extraManaged：导出开且文件在盘才并入存根目录；来源:盘点 G2 + 巡检持续推进单）
-- [x] P1 G1 Python 生态 extraPaths 接线 — 批136（`src/pythonExtraPaths.ts` +1 测试文件 20 例：规范化/根发现/差量计划 14 + 装配 6，全套 2000 用例绿，coverage 100%×4（8867 stmts/5337 branches/1519 funcs/8625 lines），mocha 11 绿；scripts 根按 entityMapping 同口径三条前缀 + 批129 一级 `*_assets` 约定发现，只收磁盘存在项；WorkspaceFolder 级写 `python.analysis.extraPaths`，只管理自己那一段——上次写入集记 workspaceState、再同步先剔除，用户手填路径永不被动；无变化不写、无可发现根静默；激活期自动同步一次全程零提示，`kbengine.python.syncExtraPaths` 手动重跑播报结果，`kbengine.python.extraPathsSync` 默认开可关；激活期提示污染装配测试两例暴露设计缺陷→改静默约定，来源:盘点 G1 + 巡检推进单）
-- [x] Marketplace 发布准备 — esbuild 单文件 bundle 打包链（mysql2/vendor 内联进 out/extension.js，vsce 锁 3.9.1 + `--no-dependencies` 绕开 pnpm 布局 ELSPROBLEMS，`.vscodeignore` 重写收紧）+ galleryBanner（logo 实取色：`#1296DB`、主题 dark）+ `publish.yml` 手动发版工作流（仅 workflow_dispatch 带版本号输入，输入须与 package.json 一致，publisher 非 `hairucui` 直接失败，compile/test/lint 门禁红则不发，凭据仅 `VSCE_PAT` secret 无明文）— 本地打包 15 文件 626.03 KB（`vsce ls` 审计恰 13 项载荷），vitest 1945 + mocha 11 绿，coverage 100%×4
-- [x] CI 修复（run 38695297696 ENOENT demo fixtures）— 根因非 Node 24 亦非竞态：CI 跑在 `5c3a383`，该树没有 Inventory.def/ROLE.def/SKILL_SLOT_DATA.py/POSITION_DATA.py（components/、interfaces/、user_type/ 三个占位 `.gitignore` 把夹具排除在版本库外），补录已随批134 `3f02b50` 落地；本单叠加夹具目录改 `fs.mkdtempSync` 独立临时目录（`tests/kbengineDemoAssets.test.ts` beforeAll）防固定路径互抢 — 本地 v24.21.0 连跑 2 次 vitest 1945 + mocha 11 全绿 0 skip，coverage 100%×4
-- [x] CI 修复（run 38705702432 / 38708536666 安装步失败）— `ERR_PNPM_IGNORED_BUILDS`：新增 `@vscode/vsce` 带进 keytar（原生凭据库）与 @vscode/vsce-sign（签名器），pnpm 12 对未放行安装脚本直接报错，CI 在 `安装依赖` 步即红（本地 `pnpm add` 只告警故未暴露）；`pnpm-workspace.yaml` 的 `allowBuilds` 补放行两包，vsix 签名与发布凭据链可用
-- [x] logo 换新（用户直接提供素材）— `resources/logo.svg` 用户矢量源落仓（蓝底 K 镂空 `#1296DB`），PNG 按同一素材栅格化 512×512 换入 resources/logo.png；vsce 禁 SVG 作 icon（`SVGs can't be used as icons`）故 PNG 走清单图标、SVG 留源；package.json 图标/活动栏接线不动；galleryBanner 配色改 `#1296DB`（logo 取色口径）；icon.test.ts 补矢量源在位/品牌色/banner 取色三锁，打包防漏锁 CRITICAL_ASSETS 补 logo.svg — vsix 16 文件 633.88 KB
-- [x] 批124 def 图形化架构流程图 — `1e93f24`（+2 测试文件 62 例，全套 1743 用例绿，coverage 100%×4；webview 内 client→base/cell 方法调用与属性自动同步，边语义按 Flags 位带引擎出处与成员声明回跳，未 Exposed 方法单列，导出 Markdown/SVG/PNG）
-
-- [x] Marketplace 截图准备 — 6 张实机截图落 `docs/screenshots/`，README 双语引用 — commit `8c3ffec`（截图批）/ `b683108`（README 引用）
-- [x] KBENGINE_SOURCE_AUDIT_PLAN 13 个功能块逐块复核 — 块4 检查项 9 项补记 `8252760`；块8 文本形态 Parent 收口 `f76bdca`（纯函数 8 例 + 锁定用例）；块12 日志定案 b 不支持（计划文档块 12 已记）；其余 10 块已对照无漂移
-- [x] 导航与配置在途派单 4 条 — 默认开启 `dbd65c5`、逐字段重写与 telnet 纠错 `00f2cf3`、导航四档收口 `3b45b67`
-- [x] 批116 继承链跨文件同名检查 — `8252760`（+7 用例）
-- [x] 批117 Interfaces 装载语义对齐 — `c1d8ba4`
-- [x] 批118 导航布局补齐（bots/单数 interface/平铺/角色目录嵌套）— `353b837`、`8fa4b07`
-- [x] 批119 依赖图继承边认文本形态 Parent — `f76bdca`（纯函数 8 例 + 锁定用例）
-- [x] 批120 Persistent 属性悬停展示数据库落点 — `e96a586`
-- [x] 批121 片段生成去公共缩进改 tabSize 列语义 — `6a89ecc`（+6 用例）
-- [x] 批122 数据库模拟 — `b683108`（+2 测试文件，全套 1517 用例绿，coverage 100%×4）
-- [x] 批123 网络包结构生成 — `e428848`（+1 测试文件 65 例，全套 1632 用例绿，coverage 100%×4；全仿真装配:属性/方法/组件槽/aliasID/types.xml 五路占号与冲突文案逐条对齐引擎，机读 JSON + 人读 Markdown 双产出）
-- [x] 批125 配置自动发现与精简 — `b683108`（+1 测试文件，配置对照表入 configuration.md，干净工作区零配置可用核心功能）
-- [x] 批126 RPC 方法标记 CodeLens — `b683108`（+1 测试文件 28 例，全套 1517 用例绿，coverage 100%×4）
-- [x] 文档-源码一致性审计 23 项修复 — 见 `docs/审计-文档一致性.md`（超前 5 / 滞后 7 / 不符 11）
-- [x] 批127 发现与定位失败可见 — `3f36eae`（+1 测试文件 24 例，全套 1548 用例绿，coverage 100%×4；`Show Discovery Report` 命令 + 激活自动报告，报告整段可复制回传）
-- [x] 批128 `kbengine.configPath` 补约定发现 — `9ef2c58`（探针验收 + 约定/记忆/深扫描兜底，telnet 与最终配置视图同步受益；全套 1566 用例绿，coverage 100%×4）
-- [x] 批129 发现与定位:引擎消息表双名与资产根 *_assets 约定 — `5f240f6`（+13 用例，全套 1885 用例绿，coverage 100%×4；深扫描收 `messages_fixed_defaults.xml`、四级优先级对齐引擎装载序 kbemain.h:71-74（工作区用户副本→源码根用户副本→工作区缺省→源码根缺省，两树独立不要求同目录）、纯资产工作区两份皆无标 informational 不计问题（仅源码根在而两份皆缺才报）、资产根约定链收一级 `*_assets` 目录如 flyff_assets（探针验收不变）；来源:用户报告纯资产工程 3 项问题误报 + messages_fixed_defaults 不被识别 + assets/xxx_assets 应进自动扫描）
-
-- [x] 批131 assetsRoot 改名与 implementedBy 分段着色 — `2a4ab88`、`e9326cd`（+2 用例，全套 1887 用例绿，coverage 100%×4；`kbengine.configPath`→`kbengine.assetsRoot`（键/读取/测试 mock/报告标签与补救/三份指南+设计稿全量同步，默认 `${workspaceFolder}/server`→`""` 让未配置不再被伪装成显式配置，已配用户需重填）；implementedBy 值分段着色（点号前逐段=模块段 namespace scope 紫 #C678DD，紧贴闭标签段=符号段 variable.other 蓝 #61AFEF，裸值整段落符号段，分段对齐引擎 datatype.cpp loadImplModule 模块路径.实现对象 装载语义；来源:用户「3 都执行」+ 定名勘误 assetsRoot 复数）
-
-- [x] 批132 官方模板测试验证工程 + 嵌套资产根脚本候选修复 — `6100888`（+1 测试文件 23 例 + 2 例分支直测 + 1 例无参入口，全套 1912 用例绿，coverage 100%×4（8584 stmts/5184 branches/1458 funcs/8356 lines，47 源文件全覆盖）；`tests/fixtures/kbengine-demo-assets` = 官方 SDK Python 模板逐字快照 63 文件 + 其上补 Avatar/Monster def、interfaces/ROLE.def、components/Inventory.def、含 implementedBy 的 types.xml、user_type 实现模块与各角色脚本，共 76 文件；`tests/kbengineDemoAssets.test.ts` 在「打开资产根上层」的工作区形态下一次走穿发现→13 例定义导航→implementedBy 双向→RPC CodeLens 接口混入→数据库 schema（实体表/组件表/数组子表）→配置合并→静默红线；产品修复：getPythonCandidates 只拼三条工作区相对脚本根，嵌套资产根（`<repo>/<xxx>_assets`，官方模板形态）全 miss 致 pythonOwnerFiles 恒空、RPC CodeLens 与 Python→def 反向跳转整链静默失效，新增 getPythonScriptRoots 以 owner def 位置反推 scripts 根追加在既有候选之后（扁平布局顺序不变，嵌套只增补）；来源:用户「最好创建一个相对完整的测试验证的模板项目,kbengine 的模板里有的」）
-- [x] 批132 补 数据库表结构入口不静默 — `6100888`（同上 commit；`kbengine.database.open` 命令面板无参直开经 resolveActiveDefEntityName 取活动 .def 推断实体、与 simulate 同口径，无活动 .def 弹「请先打开一个实体 .def 文件」而非命令体直接 return；唯一 UI 入口实为活动栏 KBEngine Explorer → Entities → 展开实体 → Database 分组，包级 menus 未给四条 database 命令任何挂点；入口说明补进 docs/guide/commands.md；来源:用户「我根本不知道哪里开启 数据库表功能没有」）
-- [x] 批133 数据库表结构文档友好化 — `cdf302e`（+契约化 locate 断言与引擎列注解/兜底注解/路径显示/字段行识别四组用例，全套 1916 用例绿，coverage 100%×4（8638 stmts/5210 branches/1469 funcs/8403 lines）；中文标签渲染：头部概览+「读图方式」图例、每表 `表类型`/`定义来源`/`父表：`、字段分引擎列（固定语义逐列注解）/属性列两组、属性列行尾 `← 文件:行 <属性>` 标 def 落点、空属性列表照实提示；`locateDatabaseSchemaLine` 弃手写行数镜像改解析渲染文本（TABLE 锚点+字段行识别导出为 `databaseSchemaFieldLineName`，与 `findDatabaseSchemaFieldAtPosition` 同源），TABLE 行与三行 SQL 逐字不动（F12 与粘贴依赖）；TESTING.md 批133 段登记遗留：ARRAY 标量元素 `sm_value` 列是否落库未从引擎源码坐实（`<of><Type> X </Type></of>` 规范写法经 `getScalarChildValue` 取不到，后续批定案）；来源:用户「看到database了，但这展示能在友好点吗，这都是啥啊」）
-
-- [x] 快速执行动作（顶部按钮 / 配置驱动）——`bbf2cf9`（+4 测试文件 80 例，全套 1823 用例绿，coverage 100%×4；配置落 `.kbengine/debug.json` 顶层 `quickActions`，三类后端 `command`/`script`/`http` 白名单，路径走 `${workspaceFolder}`/`${env:}` 变量且未知变量报错中止，按钮挂 Servers 视图标题栏 + def/Python/XML 编辑器标题栏，首装扫一层 `.bat` 只收启停与导表两类多选登记并记忆取消）
-  - 巡检复查修补 `c2a0c1a`（+1 用例，全套 1872 用例绿，coverage 100%×4）：后台脚本改等 `spawn` 事件再报「已启动」（起不来如实报错，不谎报）、回包恢复 4000 字符截顶、极简装配上下文缺 `workspaceState` 时首装扫描按首次运行处理
-  - 动机：像 VSCode debug 界面那样，顶部能一键执行常用动作
-  - 已点名的三类动作：① KBEngine 自带热更新 ② **自研的 HTTP 本地版本热更新** ③ 本地开服的 bat 脚本
-  - 验收（本阶段）：需求边界先分析清楚并落档——动作种类清单、配置归属、按钮位置、变量替换与作用域、错误处理与日志去向；经用户拍板后再进实现
-  - **用户 2026-10-14 已拍的五点**：
-    1. **配置驱动动作注册**（方案 A）——动作由配置定义，不硬编码进 `contributes.commands`，加新动作不改代码、不重打包
-    2. **配置跟 KBEngine 工程走**，不跟编辑器走——动作是 KBEngine 工程属性（换人/换机随工程携带），落点复用既有 `kbengine_debug.json` 那套配置
-    3. **路径绝不写死**——每人打开的目录不同，必须支持变量替换（`${workspaceFolder}` / `${env:XXX}` 等）
-    4. **按钮要能出现在面板上**——侧边栏 view 标题栏与编辑器右上角两处都要能挂
-    5. **首次安装自动扫描 `.bat` 自动生成配置**——装完即有用，不要求用户手写配置
-    6. **本地脚本范围已明确**（用户 2026-10-14）：基本就是**启停服务器**与**导配置表**两类，扫描与配置模型按这两类设计，不做泛化
-  - 待补需求（原「未拍」）→ **四项已代决（巡检，2026-10-15，依用户 2026-10-14 授权；用户可推翻后回滚）**：扫描按建议（一层 .bat+词表+路径类别去重+仅无动作时提示确认+取消记忆）；确认后写入（quick pick 多选）；破坏性动作默认弹确认；失败输出走 OUTPUT 通道+弹窗不落文件
-  - 实现方案已落档（待用户确认后开工）：数据结构/接口/目录结构/执行流程/测试计划见 `docs/design/quick-actions-and-db-hint.md` 1.8-1.11，批次 B/C 简案见 4.1-4.2；**用户 2026-10-15 已拍板开工**，追加安全边界：script 只执行配置里显式声明的脚本、http 只发配置里写死的 URL，执行期不拼接运行时参数
-  - 现状核对：已是 VSCode 扩展；已注册 32 个命令（含 `kbengine.quickActions.show`、`kbengine.server.start/stop/restart/showLogs`、`database.simulate` 等）；已有 `src/debugConfig.ts`（`KBEngineDebugConfig`/`ComponentDebugConfig`/`DebugConfigFile`）；已有 1 个侧边栏 view + `view/title` 菜单 4 项
-
-- [x] 需求：types.xml 着色增强（来源：用户 2026-10-14）— `8201a1c`（+1 测试文件 8 例，全套 1664 用例绿，coverage 100%×4；结论：types.xml 无独立 grammar、默认由 XML 插件接管 → 注入语法路线：package.json 贡献点 `injectTo:["text.xml"]` + 语法文件自带 `injectionSelector: "L:text.xml - (comment, string)"`（与 VS Code 自带 markdown-math/jsdoc 注入同机制），语义色不进注释与属性值、不抢类型定义标签；五 scope：内置 `support.type.kbengine.builtin` / 自定义引用 `entity.name.type.kbengine.custom` / ARRAY `keyword.other.kbengine.array` / FIXED_DICT `keyword.other.kbengine.fixed-dict` / implementedBy `variable.other.kbengine.implementedby`；KBEngine Dark 主题新增 5 条 tokenColors，五类两两可区分（真实 Registry+主题 tokenizeLine2 实测），Dark+/Light+ 下内置与自定义折叠为该主题标准类型色、两指令折叠为标准关键字色——scope 语义仍在，如实报告；验证为临时工作区 fixture 走查，真实 types.xml 在用户本机待实测）
-  - 前提：types.xml **默认由 XML 插件接管**着色
-  - 要求：在 XML 基础之上叠加 **KBEngine 语义着色**——
-    1. **KBEngine 自带类型**着色（内置类型有别于普通 XML 文本）
-    2. **用户自定义类型**也着色（能与内置类型区分开）
-    3. **特殊指令 `ARRAY` 与 `FIXED_DICT` 需要特殊颜色**（显著区别于其它 token）
-  - 实现提示：本仓已有 `grammars` 贡献点与自定义主题，先核对 types.xml 当前是**走 XML 语法还是已有独立 grammar**；若已有独立 grammar 则在其中加 token 与 scope，若依赖 XML 插件则用**注入语法（injection grammar）**叠加，避免与 XML 插件冲突
-  - 验收：内置类型 / 自定义类型 / ARRAY / FIXED_DICT 四类在真实 types.xml 中颜色可区分；主题切换后仍可区分（用语义 scope 而非硬编码色值）
-
-- [x] 缺陷：types.xml 跨文件引用跳转不精确 + 无反向跳转（来源：用户 2026-10-14）— `ed3cd2f`（+1 测试文件 14 例，全套 1656 用例绿，coverage 100%×4；正向 implementedBy 值落符号定义行（class/def/赋值三形态，引擎 datatype.cpp loadImplModule L2331-2357 两段语义），符号解析不到才回落首行；反向 Python 符号（定义名或任意引用处）跳回 types.xml 的 implementedBy 行 + 悬停提示引用方与落点；验证为临时工作区 fixture 走查，真实 types.xml 在用户本机待实测）
-  - 现象一：`implementedBy` 引用形如 **`SKILL_SLOT_DATA.weapon_skill_slot_list_inst`**，其中 **`SKILL_SLOT_DATA` 是文件名或模块名**——**现在没有正确跳到具体的行**（只落到页面/文件，没落到那一行）
-  - 现象二：**跳转只有正向没有反向**——跳过去之后回不来
-  - 验收：`MODULE.symbol` 形式的引用要能解析并**跳到定义所在的具体行**；**支持反向跳转**（如转到定义 / 转到引用），**采用与既有方案一致的「提示 + 点击跳转」形态**，不另起一套交互
-  - 提示：本仓已有跨文件跳转能力，先核对**符号解析是在哪一层做的**（是否只按文件名匹配而没解析模块内符号），复用既有跳转与提示机制
-
-- [x] 缺陷：telnet 连接后窗口无法输入（来源：用户 2026-10-14）— `b2394ba`（+3 测试文件 10 例，全套 1642 用例绿，coverage 100%×4；根因两处：① 密码流握手后引擎五条 IAC 协商命令的字面 '\0' 终止字节缀在提示符后（telnet_handler.cpp L884-900），`looksLikePrompt` 匹配不到结尾 → 状态卡 awaiting-password → sendCommand 全拒；python 层提示符 `[x@python ~] >>> ` 空格形态此前只靠宽松备选兜底；② UI 侧每次下行输出整页重建 webview，输入框焦点+草稿全丢——已改 postMessage 增量渲染 + Ctrl+]/Ctrl+D 断开 + telnet 树标题栏断开按钮；真 TCP 引擎忠实协议验证 5/5：密码上行、命令上行、回显/响应下行、:quit 恒拒）
-  - 现象：通过 telnet 连上（KBEngine 侧）后，**窗口无法输入**
-  - 验收：先复现并给出根因 file:line（重点怀疑：终端/输入焦点未落到连接后的会话、输入框被禁用或未绑定到该会话、PTY/流未接管输入、连接成功后 UI 状态机没切到"已连接"分支）；修复后在真实连接下验证可正常输入命令并收到回显
-  - 提示：本仓已有 logs 那组命令（`kbengine.logs.connect/disconnect/clear`），若 telnet 走的是同一套会话/终端组件，先核对**连接成功后输入通道是否被接管**，别另起一套终端实现
-  - **配套需求：telnet 退出快捷键**（用户 2026-10-14）：支持 **`Ctrl+]`**（telnet 标准转义符）与 **`Ctrl+D`** 退出 telnet，并**在顶部同时给出对应入口**（快捷键 + 顶部菜单/按钮），不要只靠快捷键——用户需要在顶部能看到并点击
-
-- [x] 属性 → 虚拟数据库表设计跳转与 SQL 生成（来源：用户 2026-10-14）
-  - [x] 提示批（拍板 1-8 中的实现面）— `745d254`（悬停完整 `` `db`.`tbl`.`col` `` 全名 + 引擎 DDL 片段 + 具体限制数值：整数 MySQL 区间/varchar 缺省 255（entity_table_mysql.cpp:1829-1833）；连接要素读引擎配置 `<dbmgr><databaseInterfaces><default>`（端口 0→3306，db_interface_mysql.cpp:166-167；密码不读，encrypt=true 为 RSA 密文；按工作区+binPath 缓存，kbengine*.xml/配置变更失效）；schema 视图加 `Database:` 行 + 每表一行带库表前缀反引号转义的可粘贴 SELECT；ARRAY 悬停说明子表去向与 parentID 关联、跳转落子表行；修 locateDatabaseSchemaLine 子表字段行差一行（parent 注记未计入）；全套 1681 用例绿，coverage 100%×4）
-  - [x] 真实表结构反向校验（漂移对比）— `b7eda34`（用户 2026-10-15 拍板走 mysql2 npm 依赖；新增 `src/databaseDrift.ts` + 命令 `kbengine.database.checkDrift`：报缺表/缺列/多列/型别不符/残留表，报告进 OUTPUT「KBEngine 数据库漂移」；连接要素读引擎配置不新增设置项（`<encrypt>false</encrypt>` 明文密码才读，密文不解读）；只读双保险=语句白名单 SELECT/SHOW/DESCRIBE/EXPLAIN（拒写语句/多语句/注释伪装）+ 建连即 `SET SESSION TRANSACTION READ ONLY`；连不上/读表失败一律降级「未校验」不报错；+2 测试文件 38 例，全套 1871 用例绿，coverage 100%×4）
-  - [x] SQL 模板覆盖 + 自定义库表前缀 — `29b80fe`（schema 视图每表三行 SQL：全列 SELECT、`SQL(属性列)` 只列 def 属性落成的列剔引擎结构列、子表 `SQL(子表 JOIN)` 按 parentID LEFT JOIN 父表；ARRAY/组件悬停同给 JOIN 语句；新增 `kbengine.db.tablePrefix`（缺省空=引擎默认 `tbl_`）表名与模板同源替换；行号定位改为与渲染同源，不再各写一份；全套 1832 用例绿，coverage 100%×4）
-  - 背景与拍板原文见 `docs/design/quick-actions-and-db-hint.md` 第二节
-
-#### 类型系统/typings 战役（2026-10-20 ChatGPT 评审，全文见 docs/review/chatgpt-2026-10-20-kode-typings.md）
-
-> 评审定调：统一「KBEngine 类型分析系统」而非三个孤立生成任务；不建议现在为每个 .py 无条件生成同名 .pyi
-> （.pyi 会抢占 IDE 对 .py 的解析，副作用大）；保留现有 kbe_types.py 生成方案为主线。
-
-- [x] T-01：types.xml 自定义类型内部引用关系完整保留（FIXED_DICT 属性引用 PLAYER_ID 等嵌套类型，生成侧不得扁平化丢失关系）。
-  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/definitionWorkspace.ts:22`（属性行/内联 Type 行）、`src/pythonTypeStubs.ts:74`（类/别名来源）、`src/pythonTypeStubs.ts:121`（属性注解）、`src/pythonTypeStubs.ts:306`（逐声明 source 注释）。
-- [x] T-02：.def 引用 types.xml 自定义类型 → 生成实体级类型声明（评审点名“接下来最值得做的部分”；Avatar.profile: ITEM_INFO 这类逐实体落地）。
-  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/entityTypeStubs.ts:25`（.def+types.xml 双源条目）、`src/entityTypeStubs.ts:46`（实体桩导出）、`src/extension.ts:1190`（激活导出）、`tests/entityTypeStubs.test.ts:44`（Avatar.profile→ITEM_INFO）。
-- [x] T-03：KBEngine.pyi 符号/签名/文档/来源与覆盖口径增强（当前仍为精选引擎子集，未完备前页头明确“not a complete engine API”，不宣称完整）。
-  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/kbeModuleIndex.ts:310`（精选子集声明）、`src/kbeModuleIndex.ts:510`（桩页头覆盖声明）、`src/kbeModuleIndex.ts:524`（导出页头覆盖声明）、`tests/pythonStubExport.test.ts:85`（禁止宣称完整）。
-- [ ] T-04：.py 全量 typings——暂缓，先做影响面实验（.pyi 抢占 .py 解析行为逐 IDE 验证）再决定开关，默认关闭。
-  - 当前状态：本批未实施、未改动 .py 全量生成或默认解析策略；仅完成 types/.def/KBEngine 桩与来源映射。
-- [x] T-05：统一源码映射与导航（四种体验：F12 定义 / Peek 内联 / CodeLens 来源标注“原始定义: types.xml:8”点击跳转 / 生成文件页头来源声明；禁止用生成行号反推行号）。
-  - 证据：commit `122a7c9`；unit 2502 passed/2 skipped；`src/generatedSourceMap.ts:7`（原始位置表）、`src/generatedSourceLenses.ts:36`（原始定义 CodeLens）、`src/languageProviders.ts:3228`（self 属性→types.xml 原始行）、`src/pythonTypeStubs.ts:306`（生成页/内联来源声明）。
-
-#### 后台运行战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-background-process.md）
-
-- [x] B-01：审计全部命令启动入口，列出创建 Terminal / terminal.show() / 重复创建进程 / 阻塞等待的点位清单（file:line）。（入口矩阵与边界见 `docs/review/2026-10-20-runtime-batch-v01-audit.md:3`）
-- [x] B-02：统一 ProcessManager（方案A）：child_process.spawn + windowsHide，输出直接进日志系统，不经可见 Terminal；各功能不再各自建终端。（`src/processManager.ts:47`；共享注入 `src/extension.ts:654`）
-- [x] B-03：交互式/必须真 Shell 的命令走隐藏 Terminal 通道（createTerminal 不 show，按需 reveal）。（`src/quickActions.ts:161`；语义注记 `docs/review/2026-10-20-runtime-batch-v01-audit.md:10`）
-- [x] B-04：语义分离「不弹窗」与「关 VS Code 仍运行」：前者由 ProcessManager 承担，后者明确边界（不做或独立守护，评审口径写进设计注记）。（边界见 `docs/review/2026-10-20-runtime-batch-v01-audit.md:10`）
-
-#### 日志中心战役（2026-10-20 ChatGPT 评审，docs/review/chatgpt-2026-10-20-kode-log-center.md）
-
-- [x] L-01：统一日志入口（stdout 与文件同源判定去重；一切日志先过单一入口，不各自维护）。（`src/logHub.ts:73`；共享注入 `src/extension.ts:654`）
-- [x] L-02：定义统一 LogEvent 结构（id/timestamp/level/source/component/text…），所有来源转换后进入。（`src/logHub.ts:16`）
-- [x] L-03：三模块拆分收拢（WebView / 服务器管理面板 / 文件读取不再各自一套状态）。（WebView 订阅 `src/logWebView.ts:51`；服务器投影 `src/serverManager.ts:204`；增量读取 `src/logHub.ts:161`）
-- [x] L-04：性能红线——批量增量推送（几十毫秒合批）+ 前端显示上限 + 文件增量读取，禁止逐行单消息与全量重传。（40ms 合批 `src/logHub.ts:35`；上限 `src/logWebView.ts:28`）
-- [x] L-05：webview 页面 console 日志接入——页面 console.{log,warn,error,debug}/window.onerror/unhandledrejection 经既有 `webviewLog` 消息回传，`source:"webview"` 入 LogHub（按 origin+text 去重），开关 `kbengine.webviewConsoleLogs` 默认开、关时不接管；正反例/节流/宿主失败静默/面板流/开关覆盖齐。（`src/webviewConsoleBridge.ts:45`、`src/logWebView.ts:215`、`src/extension.ts:915`、`package.json:756`；commit be8b0de，定向 59 例绿；来源:用户令「日志还是没有支持」）
-
-#### 路线图批次（2026-10-20 ChatGPT 总评，docs/review/chatgpt-2026-10-20-kode-roadmap.md；用户令：优先安排实现）
-
-> 排期=评审四批；与既有 T-*/B-*/L-* 批次映射：第一批=B-*/L-*（运行时基础设施），第二批=T-*（统一类型系统）。
-
-- [x] V-01 第一批·运行时基础设施：ProcessManager + LogHub + 组件就绪检测 + 启停编排（消除重复启动/弹窗/日志割裂）。（证据：见本条提交 hash；unit 2494 passed/2 skipped；compile 0 errors；xvfb demo 25 passed）
-- [x] V-02 第二批·统一类型系统：Type Registry + SourceMap + Python typings + KBEngine API typings（全部可跳回真实源码）。
-  - 证据：T-01/T-02/T-05/T-03 完成子项；T-04 按评审维持暂缓且本批未触碰；unit 2502 passed/2 skipped；compile 0 errors；lint 0 errors。
-- [x] V-03 第三批·跨文件语义与诊断：符号引用图 + 跨文件重命名 + Project Doctor。
-  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/defReferenceGraph.ts:349`(符号图)、`src/defReferenceGraph.ts:399`(Project Doctor)、`src/defRenamer.ts:543`(图复用重命名解析)、`src/extension.ts:1499`(命令)
-- [x] V-04 第四批·性能与工程化：增量索引 + 启动性能分析 + 多平台真实环境测试 + 版本兼容性检查。
-  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; 增量索引沿用 `src/pythonTypeStubs.ts:602` watcher 面、启动分析 `src/performanceBenchmark.ts:11`、兼容检查 `src/engineCompatibility.ts:52` 与命令 `src/extension.ts:1171`; 多平台真实环境未在本仓门禁覆盖,需另批
-- [x] V-05 工作台入口：统一 KBEngine 工作台（把几十项功能组合成工作流，收敛入口分散）。
-  - 证据: commit `576bd7a`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/extension.ts:1196`(工作台命令)、`package.json:409`(命令注册)、`tests/workbenchCommand.test.ts:17`(分发锁)
-- [ ] V-06 版本感知 API：引擎 API 元数据带引擎版本/源码提交标识与原始声明位置。
-- [ ] V-07 兼容性测试体系：真实 KBEngine 环境测试批（模拟环境之上）。
-- [ ] V-08 边界注记：性能剖析与 Space/Watcher 面板维持阻塞项，等真实可用管理协议再启（评审与现 todo 口径一致）。
-
-#### 重构计划：统一语义索引与语言服务性能治理（2026-10-22 外部评审整理）
-
-来源与全文见 `docs/review/2026-10-22-unified-semantic-index-refactor.md`（含源码核验结论表与 PR1→PR7 落地跟踪）。阶段口径：**先 PR1 基线与调用链审计（不改行为），再逐 PR 推进**；性能目标（Hover P95≤30ms 等）为验收建议值，以实测基线评审后定案。与在途 hover 超时闸/缓存修复并行不冲突：在途修复作为止血，本计划为结构性治理。
+<!--
+完成口径示例: [x] A2-4 Hover 接入快照（1a2b3c4；test:unit 2690/2sk；src/documentStore.ts:42、languageProviders.ts:582）
+-->
