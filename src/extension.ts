@@ -1,5 +1,6 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
 import { setJumpLogEnabled } from './navigationLog';
+import { setHoverBudgetLogHub } from './hoverBudget';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -318,7 +319,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(rpcCodeLensProvider);
 
-  const callChainController = new CallChainController(entityMappingManager);
+  const callChainController = new CallChainController(entityMappingManager, context);
   const callChainLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
     callChainController
@@ -991,6 +992,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 初始化日志查看器
   const logViewer = new LogViewerWebView(context, logCollector);
   const logHub = serverManager.logHub;
+  // 悬停/异步层预算闸的 LogHub 接线(2026-10-22):超时与耗时记账走同一
+  // LogHub,真机在日志查看器过滤 [kode-hover] 即可定位慢层/超时层
+  setHoverBudgetLogHub(logHub);
   logViewer.subscribeLogHub(logHub);
 
   const enableWebviewConsoleLogs = kbengineConfig.get<boolean>('webviewConsoleLogs', true);

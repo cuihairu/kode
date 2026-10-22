@@ -58,9 +58,10 @@ const flagAlternationOf = (): string[] => {
 
 describe('kbengine.tmLanguage 资产自洽', () => {
   it('package.json 贡献与语法文件一一对应且配置文件存在', () => {
-    // 三条:def 主语法(批103 前唯一)+ types.xml 注入语法(批130 起)+
+    // 四条:def 主语法(批103 前唯一)+ types.xml 注入语法(批130 起)+
     // 全局常量注入(2026-10-21 用户令, text.python-constants -> source.python)
-    expect(pkg.contributes.grammars).toHaveLength(3);
+    // + 函数调用注入(2026-10-22 用户令, text.python-function-calls -> source.python)
+    expect(pkg.contributes.grammars).toHaveLength(4);
     const constEntry = pkg.contributes.grammars[2];
     expect(constEntry.language).toBeUndefined();
     expect(constEntry.scopeName).toBe('text.python-constants');
@@ -68,6 +69,14 @@ describe('kbengine.tmLanguage 资产自洽', () => {
     const constPath = path.join(root, constEntry.path.replace(/^\.\//, ''));
     expect(constPath).toBe(path.join(root, 'syntaxes', 'python-constants-injection.json'));
     expect(() => JSON.parse(fs.readFileSync(constPath, 'utf8'))).not.toThrow();
+
+    const funcCallEntry = pkg.contributes.grammars[3];
+    expect(funcCallEntry.language).toBeUndefined();
+    expect(funcCallEntry.scopeName).toBe('text.python-function-calls');
+    expect(funcCallEntry.injectTo).toEqual(['source.python']);
+    const funcCallPath = path.join(root, funcCallEntry.path.replace(/^\.\//, ''));
+    expect(funcCallPath).toBe(path.join(root, 'syntaxes', 'python-function-calls-injection.json'));
+    expect(() => JSON.parse(fs.readFileSync(funcCallPath, 'utf8'))).not.toThrow();
     const entry = pkg.contributes.grammars[0];
     expect(entry.language).toBe('kbengine-def');
     expect(entry.scopeName).toBe(grammarJson.scopeName);

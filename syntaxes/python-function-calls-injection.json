@@ -1,0 +1,16 @@
+{
+  "scopeName": "text.python-function-calls",
+  "injectionSelector": "L:source.python - (comment, string)",
+  "patterns": [
+    {
+      "comment": "成员调用 obj.method():method 落函数 scope;obj 不在 match 内,保持宿主变量分词。点号前视保证只吃属性位置(1.5 这类小数不命中)。",
+      "match": "(?<=\\.)[A-Za-z_]\\w*(?=\\s*\\()",
+      "name": "variable.function.call.python"
+    },
+    {
+      "comment": "裸调用 foo():排除全部关键字/软关键字(if(x)、while(x)、not(x)、match(x) 等不吃色)、def/class 定义处(lookbehind)与装饰器 @name(保宿主装饰器色)。print/len 等内建本就是调用,一并落函数色。",
+      "match": "(?<![\\w.@])(?<!\\bdef\\s)(?<!\\bclass\\s)(?!if\\b|elif\\b|else\\b|while\\b|for\\b|in\\b|is\\b|and\\b|or\\b|not\\b|return\\b|yield\\b|assert\\b|del\\b|lambda\\b|with\\b|as\\b|import\\b|from\\b|raise\\b|except\\b|finally\\b|try\\b|pass\\b|break\\b|continue\\b|global\\b|nonlocal\\b|async\\b|await\\b|match\\b|case\\b)[A-Za-z_]\\w*(?=\\s*\\()",
+      "name": "variable.function.call.python"
+    }
+  ]
+}

@@ -68,6 +68,11 @@ describe('高亮注册面恒等锁(批103)', () => {
         scopeName: 'text.python-constants',
         path: './syntaxes/python-constants-injection.json',
         injectTo: ['source.python']
+      },
+      {
+        scopeName: 'text.python-function-calls',
+        path: './syntaxes/python-function-calls-injection.json',
+        injectTo: ['source.python']
       }
     ]);
   });
@@ -115,13 +120,16 @@ describe('高亮注册面恒等锁(批103)', () => {
       expect(String(grammar.scopeName)).not.toContain('injection');
       // 注入宿主白名单(2026-10-21 用户令演进): types.xml 语义着色(批130)
       // 仅入 text.xml; 全局常量色(text.python-constants, 只发射
-      // variable.other.constant.python 标准 scope) 仅入 source.python——
-      // 除此二者外注入任何宿主仍锁死; 不得注册 source.python 重复语法、
+      // variable.other.constant.python 标准 scope) 与函数调用色
+      // (text.python-function-calls, 只发射 variable.function.call.python
+      // 标准 scope) 仅入 source.python——
+      // 除此三者外注入任何宿主仍锁死; 不得注册 source.python 重复语法、
       // 不得映射 .py 语言(上两条保持不变)
       const injectTo = grammar.injectTo as string[] | undefined;
       if (injectTo !== undefined) {
         const allowed =
-          grammar.scopeName === 'text.python-constants'
+          grammar.scopeName === 'text.python-constants' ||
+          grammar.scopeName === 'text.python-function-calls'
             ? ['source.python']
             : ['text.xml'];
         expect(injectTo).toEqual(allowed);
@@ -147,6 +155,8 @@ describe('高亮注册面恒等锁(批103)', () => {
 const CRITICAL_ASSETS = [
   'syntaxes/kbengine.tmLanguage.json',
   'syntaxes/kbengine-types-injection.json',
+  'syntaxes/python-constants-injection.json',
+  'syntaxes/python-function-calls-injection.json',
   'syntaxes/kbengine-color-theme.json',
   'language-configuration.json',
   'snippets/kbengine.json',

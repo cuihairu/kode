@@ -23,6 +23,7 @@
     "node_modules",
     ".vscode-test",
     "tests",
+    "src/webview",
     "vitest.config.ts",
     "vitest.bench.config.ts"
   ]
