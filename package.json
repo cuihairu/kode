@@ -87,7 +87,8 @@
     "onCommand:kbengine.quickActions.runByName",
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.python.exportStubs",
-    "onCommand:kbengine.python.exportTypeStubs"
+    "onCommand:kbengine.python.exportTypeStubs",
+    "onCommand:kbengine.python.showCallChain"
   ],
   "main": "./out/extension.js",
   "contributes": {
