@@ -109,6 +109,7 @@ import {
 } from './languageProviders';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
+import { IndexScheduler } from './indexScheduler';
 import {
   createDatabaseSchemaUri,
   getDatabaseSchemaSnapshot,
@@ -289,7 +290,11 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 初始化实体映射管理器(用户令 2026-10-21 内建属性单:补全的 def 归属面
   // 兜底也走 manager,故提到补全注册之前)
-  const entityMappingManager = new EntityMappingManager(context);
+  // PR3:统一索引调度器实例化一次共享(PythonClassIndex 增量迁入留 PR5);
+  // EntityMappingManager 首扫经它入队,后台任务受交互限流。
+  const indexScheduler = new IndexScheduler();
+  context.subscriptions.push({ dispose: () => indexScheduler.dispose() });
+  const entityMappingManager = new EntityMappingManager(context, indexScheduler);
 
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
   const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);

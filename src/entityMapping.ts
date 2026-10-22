@@ -36,6 +36,7 @@ import {
   scriptFoldersForRole
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
+import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import type { EntityComponentFace } from './entityBuiltinProperties';
 
 export type EntityMethodSection = DefMethodSection;
@@ -155,6 +156,8 @@ export class EntityMappingManager {
   private missingClassNames = new Set<string>();
   /** 构造期全量 .def 扫描句柄(对象级探等待它,避免同一次跳转内重复全量 walk) */
   private initialScan: Promise<void> = Promise.resolve();
+  /** PR3:首扫统一走索引调度器(扩展注入共享实例,独立构造自建一份) */
+  private readonly scheduler: IndexScheduler;
   /**
    * 按 mtime 的 .def 解析缓存(2026-10-22 用户令「hover 永转 loading 根治」):
    * 键 = 规范化 .def 路径,值 = 解析产物 + 采集时 mtime/size。重扫(负缓存
@@ -169,15 +172,27 @@ export class EntityMappingManager {
   private defParseCacheHits = 0;
   private defParseCacheMisses = 0;
 
-  constructor(private context: vscode.ExtensionContext) {
+  constructor(private context: vscode.ExtensionContext, scheduler?: IndexScheduler) {
+    this.scheduler = scheduler ?? new IndexScheduler();
     // 构造期全量 .def 扫描留句柄:对象级(类粒度)解析只等这一遍,不另起
     // 全量 walk(真实 kbengine 树每遍 walk 秒级,多一走即压穿调用方超时预算)。
     // 启动推迟一个宏任务(2026-10-22 用户令「hover 永转根治」):构造方在
     // 同一同步块里发起的首个悬停/跳转先跑完自己的定向解析,首扫不与前台
     // 第一答抢事件循环。
+    // PR3 迁入统一索引调度器(行为等价):推迟一个宏任务的语义原样保留,
+    // 扫描本体以 initial-scan/后台全量优先级入队——单并发不与其他索引任务
+    // 抢主线程,失败经调度器 keyed 恢复面可重跑(不永久 pending);
+    // `await this.initialScan` 的既有等待链不变。
     this.initialScan = new Promise<void>(resolve => {
       setImmediate(() => {
-        void this.scanEntityMappings().catch(() => undefined).then(() => resolve());
+        void this.scheduler
+          .ensureTask('entity-mapping-initial-scan', () => ({
+            kind: 'initial-scan',
+            priority: IndexTaskPriority.BackgroundFull,
+            run: () => this.scanEntityMappings()
+          }))
+          .catch(() => undefined)
+          .then(() => resolve());
       });
     });
     // 创建顺序有意为之:def watcher 先建、python watcher 后建——外部与既有
@@ -1544,6 +1559,7 @@ export class EntityMappingManager {
   dispose(): void {
     this.pythonWatcher?.dispose();
     this.defWatcher?.dispose();
+    this.scheduler.dispose();
   }
 
   private selectMethodDefinition(

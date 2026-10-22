@@ -17,7 +17,8 @@ export type LanguageServiceEventName =
   | 'semantic-query'
   | 'type-registry-query'
   | 'file-discovery'
-  | 'document-parse';
+  | 'document-parse'
+  | 'index-scheduler';
 
 export type OperationStatus = 'ok' | 'miss' | 'cancelled' | 'error';
 
