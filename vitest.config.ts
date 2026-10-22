@@ -21,6 +21,9 @@ export default defineConfig({
       provider: 'v8',
       // 覆盖率如实统计全部 src 源码:重设计阶段 3 起 extension.ts 的
       // activate/deactivate 由 fake-vscode 装配测试驱动,进分母(P14/P16)。
+      // all=true: 未被测试触达的源文件也进分母,codecov 徽章数字才是全树真值
+      // (默认只统计被加载文件,会虚高到 ~100%,2026-10-22 修正)。
+      all: true,
       include: ['src/**/*.ts'],
       exclude: ['src/test/**'],
       reporter: ['text', 'json-summary', 'lcov'],
