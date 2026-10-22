@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   resolveEntityAnnotationType
 } from '../src/definitionWorkspace';
+import { getSemanticIndex } from '../src/semanticIndex';
 import {
   EntityMappingManager
 } from '../src/entityMapping';
@@ -122,15 +123,15 @@ describe('resolveEntityAnnotationType(统一解析链,单表收口)', () => {
     expect(resolveEntityAnnotationType(ws, 'FOO')).toBe('Any');
   });
 
-  it('注册表按工作区缓存:types.xml 变更后结果随指纹失效', () => {
+  it('注册表按工作区快照缓存:types.xml 变更经更新事件驱动重建(PR4 A4-3)', () => {
     const ws = makeTypeRoot('<root>\n  <TIMESTAMP> UINT64 </TIMESTAMP>\n</root>');
     expect(resolveEntityAnnotationType(ws, 'TIMESTAMP')).toBe('int');
-    // 同长度内容且 mtime 未跨 tick 也不该误读:改成不同长度强制指纹变化
-    fs.writeFileSync(
-      path.join(ws, 'scripts', 'entity_defs', 'types.xml'),
-      '<root>\n  <TIMESTAMP> STRING </TIMESTAMP>\n</root>',
-      'utf8'
-    );
+    // 查询路径纯内存(无逐次 statSync 指纹):改文件后不通知,快照保持旧值
+    const typesXmlPath = path.join(ws, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesXmlPath, '<root>\n  <TIMESTAMP> STRING </TIMESTAMP>\n</root>', 'utf8');
+    expect(resolveEntityAnnotationType(ws, 'TIMESTAMP')).toBe('int');
+    // 更新事件(watcher → notifySemanticFilesChanged)精确作废依赖快照后重建
+    getSemanticIndex().notifySemanticFilesChanged([typesXmlPath]);
     expect(resolveEntityAnnotationType(ws, 'TIMESTAMP')).toBe('str');
   });
 

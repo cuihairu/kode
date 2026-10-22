@@ -37,6 +37,8 @@ import {
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
+import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
+import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
 import type { EntityComponentFace } from './entityBuiltinProperties';
 
 export type EntityMethodSection = DefMethodSection;
@@ -142,6 +144,15 @@ export interface EntityMapping {
 export class EntityMappingManager {
   private mappingIndexes = new Map<string, EntityMappingIndex>();
   private mappingIndexesByRoot = new Map<string, EntityMappingIndex>();
+  /**
+   * 统一语义查询层(PR4 A4-1/A4-4):实体名/Python 文件/类名 → 实体的全部
+   * 查询改走 SemanticIndex(显式根序+注册序,不暴露内部遍历);本类保留
+   * 索引对象存储与旧 API 形状(行为兼容层)。依赖失效(PR4 A4-2)走
+   * SemanticDependencyGraph:def 变更只失效该文件及其记录在案的依赖者,
+   * 禁「任何变更=整表清空」的旧口径。
+   */
+  private readonly semanticIndex = new SemanticIndex();
+  private readonly dependencyGraph = new SemanticDependencyGraph();
   private scanningEntityMappings: Promise<void> | null = null;
   private pythonWatcher: vscode.FileSystemWatcher | null = null;
   private defWatcher: vscode.FileSystemWatcher | null = null;
@@ -195,9 +206,12 @@ export class EntityMappingManager {
           .then(() => resolve());
       });
     });
-    // 创建顺序有意为之:def watcher 先建、python watcher 后建——外部与既有
-    // 用例把「最后创建的 watcher」当作 python watcher 语义使用(变更只重解析
-    // 归属实体),两 watcher 各自独立,先 def 后 py 保持该约定不破。
+    // 创建顺序有意为之:类型注册表 watcher 最先、def watcher 次之、python
+    // watcher 最后——外部与既有用例把「最后创建的 watcher」当作 python
+    // watcher 语义使用(变更只重解析归属实体);PR4 在 def 前新增
+    // types.xml/alias.xml watcher(只作废类型注册表快照,不碰实体索引),
+    // def→python 的既有相对顺序保持不破。
+    this.watchTypeRegistryFiles();
     this.watchDefFiles();
     this.watchPythonFiles();
   }
@@ -220,6 +234,11 @@ export class EntityMappingManager {
     const scanRoots = getIndexScanRoots();
     if (scanRoots.length === 0) {
       return;
+    }
+    // PR4 A4-5:扫描根显式登记语义索引(规范化路径+稳定 rootId+显式序),
+    // 查询按该序裁断,不再依赖 Map 插入序。
+    for (const scanRoot of scanRoots) {
+      this.semanticIndex.registerRoot(scanRoot);
     }
 
     // 不可达(批62 定性):工厂只在根为空时返回 null,上方已对空集合早退。
@@ -346,6 +365,27 @@ export class EntityMappingManager {
     const methodDefinitions = this.collectMethodDefinitions(semantics);
     this.bindPythonMethods(methodDefinitions, pythonMethods);
 
+    // PR4 A4-2:真实依赖边入库——本 .def 的解析读过的父链/接口/组件 .def
+    // (owner filePath 集合)。父 .def 变更经依赖图反向闭包只失效这些子
+    // .def,不波及全仓。
+    const ownerDefFiles = new Set<string>();
+    ownerDefFiles.add(semantics.owner.filePath);
+    for (const property of semantics.effectiveProperties) {
+      ownerDefFiles.add(property.owner.filePath);
+    }
+    for (const section of ['BaseMethods', 'CellMethods', 'ClientMethods'] as EntityMethodSection[]) {
+      for (const method of semantics.effectiveMethodsBySection[section]) {
+        ownerDefFiles.add(method.owner.filePath);
+      }
+    }
+    for (const component of semantics.components) {
+      if (component.resolved) {
+        ownerDefFiles.add(component.resolved.owner.filePath);
+      }
+    }
+    ownerDefFiles.delete(defPath);
+    this.dependencyGraph.recordDependencies(defPath, ownerDefFiles);
+
     return {
       rootName: entityName,
       rootCategory,
@@ -360,7 +400,26 @@ export class EntityMappingManager {
 
   private storeIndex(index: EntityMappingIndex): void {
     this.mappingIndexes.set(index.rootName, index);
-    this.mappingIndexesByRoot.set(normalizeLookupPath(index.rootDefFile), index);
+    const normalizedDefFile = normalizeLookupPath(index.rootDefFile);
+    this.mappingIndexesByRoot.set(normalizedDefFile, index);
+    // PR4 A4-1/A4-5:实体语义投影登记进统一语义索引(同名覆盖=既有 Map.set
+    // 口径;py owner/类名先到先得=既有插入序扫描口径)。根未显式登记时
+    // (定向单文件解析早于全量扫描)rootId 置空串,只影响取证字段不影响
+    // 查询路径。
+    const owners: Array<{ kind: string; name: string }> = [];
+    for (const ownerFile of index.pythonOwnerFiles) {
+      if (ownerFile.ownerName && !owners.some(owner =>
+        owner.kind === ownerFile.ownerKind && owner.name === ownerFile.ownerName)) {
+        owners.push({ kind: ownerFile.ownerKind, name: ownerFile.ownerName });
+      }
+    }
+    this.semanticIndex.registerEntity({
+      rootId: this.semanticIndex.resolveRootIdForPath(index.rootDefFile) ?? '',
+      entityName: index.rootName,
+      defFile: normalizedDefFile,
+      pythonFiles: uniqueFilePaths(index.pythonOwnerFiles.map(item => item.filePath)),
+      owners
+    });
   }
 
   private collectPythonOwnerFiles(semantics: ResolvedDefinitionSemantics): PythonOwnerFile[] {
@@ -779,17 +838,50 @@ export class EntityMappingManager {
   }
 
   /**
-   * `.def` 增删改 → 整表失效:索引与「无归属」负缓存都清,下次跳转重扫。
-   * (此前 .def 变更只可能被「恰有文件 miss」的重扫顺带带出,归属变化会滞留。)
+   * types.xml/alias.xml 变更(PR4 A4-3):只作废共享类型注册表快照仓中依赖
+   * 该文件的快照(事件驱动重建),实体索引不动——def 解析产物不内嵌已解析
+   * 注解,类型查询在应答时经快照解析。
+   */
+  private watchTypeRegistryFiles(): void {
+    const patterns: string[] = [];
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (workspaceFolder) {
+      patterns.push(vscode.Uri.joinPath(workspaceFolder.uri, '**/{types,alias}.xml').toString());
+    }
+    for (const root of getExternalScanRoots()) {
+      patterns.push(vscode.Uri.joinPath(vscode.Uri.file(root), '**/{types,alias}.xml').toString());
+    }
+    if (patterns.length === 0) {
+      return;
+    }
+
+    const watchers = patterns.map(pattern =>
+      vscode.workspace.createFileSystemWatcher(pattern)
+    );
+    const notify = (uri: vscode.Uri): void => {
+      if (isTypeRegistryFile(uri.fsPath)) {
+        getSemanticIndex().notifySemanticFilesChanged([uri.fsPath]);
+      }
+    };
+    for (const watcher of watchers) {
+      watcher.onDidChange(notify);
+      watcher.onDidCreate(notify);
+      watcher.onDidDelete(notify);
+      this.context.subscriptions.push(watcher);
+    }
+  }
+
+  /**
+   * `.def` 增删改 → 定向失效(PR4 A4-2,依赖图裁断):只失效该 .def 自身
+   * 及其记录在案的依赖者(父链子 .def 等),禁「任何变更=整表清空」。
+   * 「无归属」负缓存仍整体让位(新 .def 可能补上此前 miss,集合很小);
+   * 变更/新建文件定向重解析,依赖者留待下次查询按需重建。
    */
   private watchDefFiles(): void {
-    const invalidate = (): void => {
-      this.mappingIndexes.clear();
-      this.mappingIndexesByRoot.clear();
-      this.missingOwnerPaths.clear();
-      this.missingClassNames.clear();
+    const invalidate = (uri: vscode.Uri, changeKind: SemanticChangeKind): void => {
+      this.handleDefFileChanged(uri.fsPath, changeKind);
     };
-    // workspace 首根 + workspace 外 assetsRoot(外部资产根的 .def 增删改同样失效整表)
+    // workspace 首根 + workspace 外 assetsRoot(外部资产根的 .def 增删改同样失效)
     const patterns: string[] = [];
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (workspaceFolder) {
@@ -807,20 +899,44 @@ export class EntityMappingManager {
     );
     this.defWatcher = watchers[0];
     for (const watcher of watchers) {
-      watcher.onDidChange(invalidate);
-      watcher.onDidCreate(invalidate);
-      watcher.onDidDelete(invalidate);
+      watcher.onDidChange(uri => invalidate(uri, 'change'));
+      watcher.onDidCreate(uri => invalidate(uri, 'create'));
+      watcher.onDidDelete(uri => invalidate(uri, 'delete'));
       this.context.subscriptions.push(watcher);
+    }
+  }
+
+  /** def 变更定向失效:依赖图出计划 → 精确摘除索引/解析缓存/依赖边 */
+  private handleDefFileChanged(defPath: string, changeKind: SemanticChangeKind): void {
+    const plan = this.dependencyGraph.planInvalidation(defPath, changeKind);
+    for (const file of plan.invalidateFiles) {
+      const normalized = normalizeLookupPath(file);
+      const index = this.mappingIndexesByRoot.get(normalized);
+      if (index) {
+        this.mappingIndexes.delete(index.rootName);
+        this.mappingIndexesByRoot.delete(normalized);
+        this.semanticIndex.removeEntityByDefFile(normalized);
+      }
+      this.defParseCache.delete(normalized);
+      this.dependencyGraph.removeFile(normalized);
+    }
+    this.missingOwnerPaths.clear();
+    this.missingClassNames.clear();
+    if (changeKind !== 'delete') {
+      // 定向重解析变更文件自身(缓存已摘除,必然真解析)
+      void this.parseDefFile(path.basename(defPath, '.def'), defPath);
     }
   }
 
   private handlePythonFileChanged(pythonPath: string): void {
     clearDefCallChainFileCache();
     this.allPythonMethodHits.clear();
-    for (const [entityName, mapping] of this.mappingIndexes) {
-      if (mapping.pythonOwnerFiles.some(item => normalizeLookupPath(item.filePath) === normalizeLookupPath(pythonPath))) {
+    // PR4 A4-4:owner 归属反查改走语义索引(不再线性扫描 mappingIndexes)。
+    for (const entry of this.semanticIndex.findEntitiesByPythonOwner(pythonPath)) {
+      const mapping = this.mappingIndexesByRoot.get(entry.defFile);
+      if (mapping) {
         // force 重解析:py 变更不进 .def mtime 键,缓存会让绑定滞留旧内容
-        void this.parseDefFile(entityName, mapping.rootDefFile, undefined, 'entity', true);
+        void this.parseDefFile(entry.entityName, mapping.rootDefFile, undefined, 'entity', true);
         break;
       }
     }
@@ -851,6 +967,16 @@ export class EntityMappingManager {
       hits: this.defParseCacheHits,
       misses: this.defParseCacheMisses
     };
+  }
+
+  /** PR4 取证/测试面:语义索引查询视图(只暴露查询 API,不暴露内部遍历) */
+  getSemanticIndex(): SemanticIndex {
+    return this.semanticIndex;
+  }
+
+  /** PR4 取证/测试面:依赖失效图(单文件变更失效范围测试用) */
+  getDependencyGraph(): SemanticDependencyGraph {
+    return this.dependencyGraph;
   }
 
   getIndex(entityName: string): EntityMappingIndex | undefined {
@@ -1348,26 +1474,34 @@ export class EntityMappingManager {
   private async ensureIndexForOwner(
     identity: DefinitionSymbolIdentity
   ): Promise<EntityMappingIndex | undefined> {
-    const direct = this.mappingIndexes.get(identity.ownerName);
+    // PR4 A4-4:owner 回溯改走语义索引(直查=同名单一胜者;回溯=kind+名
+    // 归属注册序首中),不再线性扫描 mappingIndexes。
+    const directDefFile = this.semanticIndex.getEntityDefFile(identity.ownerName);
+    const direct = directDefFile ? this.mappingIndexesByRoot.get(directDefFile) : undefined;
     if (direct) {
       return direct;
     }
 
-    // 接口/组件符号不单独建索引,需要回溯到引用它的实体索引
-    const findByOwner = (): EntityMappingIndex | undefined =>
-      [...this.mappingIndexes.values()].find(index =>
-        index.pythonOwnerFiles.some(item =>
-          item.ownerKind === identity.ownerKind && item.ownerName === identity.ownerName
-        )
-      );
-
-    const ownerIndex = findByOwner();
+    const ownerIndex = this.findOwnerIndexByIdentity(identity);
     if (ownerIndex) {
       return ownerIndex;
     }
 
     await this.scanEntityMappings();
-    return this.mappingIndexes.get(identity.ownerName) || findByOwner();
+    const retried = this.semanticIndex.getEntityDefFile(identity.ownerName);
+    return (retried ? this.mappingIndexesByRoot.get(retried) : undefined)
+      || this.findOwnerIndexByIdentity(identity);
+  }
+
+  /** owner(kind+名)归属索引:语义索引 owner 文件投影的注册序首中 */
+  private findOwnerIndexByIdentity(identity: DefinitionSymbolIdentity): EntityMappingIndex | undefined {
+    for (const entry of this.semanticIndex.findEntitiesByOwner(identity.ownerKind, identity.ownerName)) {
+      const index = this.mappingIndexesByRoot.get(entry.defFile);
+      if (index) {
+        return index;
+      }
+    }
+    return undefined;
   }
 
   async resolveMethodImplementation(
@@ -1749,9 +1883,8 @@ export class EntityMappingManager {
   }
 
   private async ensureIndexByDefFile(defFile: string): Promise<EntityMappingIndex | undefined> {
-    let index = [...this.mappingIndexes.values()].find(item =>
-      normalizeLookupPath(item.rootDefFile) === normalizeLookupPath(defFile)
-    );
+    // PR4 A4-4:def 路径反查改走语义索引投影(mappingIndexesByRoot 同键直取)
+    let index = this.mappingIndexesByRoot.get(normalizeLookupPath(defFile));
     if (!index) {
       const entityName = path.basename(defFile, '.def');
       index = await this.ensureIndex(entityName);
@@ -1786,15 +1919,18 @@ export class EntityMappingManager {
     return index;
   }
 
-  /** 对象级取索引:类名直接命中;接口/组件类不单独建索引,经 ownerName 回溯 */
+  /**
+   * 对象级取索引:类名直接命中;接口/组件类不单独建索引,经 ownerName 回溯。
+   * PR4 A4-4:两段都改走语义索引(直查=同名单一胜者,回溯=类名注册序
+   * 首中),不再线性扫描 mappingIndexes。
+   */
   private lookupIndexByClass(className: string): EntityMappingIndex | undefined {
-    const direct = this.mappingIndexes.get(className);
-    if (direct) {
-      return direct;
+    const directDefFile = this.semanticIndex.getEntityDefFile(className);
+    if (directDefFile) {
+      return this.mappingIndexesByRoot.get(directDefFile);
     }
-    return [...this.mappingIndexes.values()].find(index =>
-      index.pythonOwnerFiles.some(item => item.ownerName === className)
-    );
+    const ownerEntry = this.semanticIndex.findEntityByClassName(className);
+    return ownerEntry ? this.mappingIndexesByRoot.get(ownerEntry.defFile) : undefined;
   }
 
   private async ensureIndexForClass(className: string): Promise<EntityMappingIndex | undefined> {
@@ -1821,13 +1957,14 @@ export class EntityMappingManager {
     return index;
   }
 
+  /**
+   * PR4 A4-4:Python 文件 → 实体索引改走语义索引(旧行为兼容层)。
+   * 既有两段式命中顺序在 SemanticIndex 内以显式策略承载:owner 归属文件
+   * 精确匹配优先,未命中再按 basename(去 .py)对实体名回落。
+   */
   private findIndexForPythonFile(pythonFile: string): EntityMappingIndex | undefined {
-    const normalized = normalizeLookupPath(pythonFile);
-    return [...this.mappingIndexes.values()].find(index =>
-      index.pythonOwnerFiles.some(item => normalizeLookupPath(item.filePath) === normalized)
-    ) ?? [...this.mappingIndexes.values()].find(index =>
-      index.rootName === path.basename(pythonFile, '.py')
-    );
+    const entry = this.semanticIndex.findEntityByPythonFile(pythonFile);
+    return entry ? this.mappingIndexesByRoot.get(entry.defFile) : undefined;
   }
 
   private getWorkspaceRoot(filePath: string): string | null {

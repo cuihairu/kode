@@ -21,6 +21,7 @@ import {
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
 import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { getSemanticIndex } from './semanticIndex';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
@@ -296,49 +297,17 @@ export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
   return [...types, ...aliases].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-/** 统一解析注册表的按工作区缓存项:指纹+开关都未变即整表复用 */
-interface EntityAnnotationRegistryCacheEntry {
-  fingerprint: string;
-  aliasDiscovery: boolean;
-  customTypes: CustomTypeInfo[];
-}
-
-const entityAnnotationRegistryCaches = new Map<string, EntityAnnotationRegistryCacheEntry>();
-
-/** 定义文件指纹(types.xml + alias.xml 的 mtime+size):变更即缓存失效 */
-function entityAnnotationRegistryFingerprint(workspaceRoot: string): string {
-  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
-  const candidates = [
-    layout.typesXmlPath,
-    joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'alias.xml')
-  ];
-  const parts: string[] = [];
-  for (const candidate of candidates) {
-    if (!candidate) {
-      continue;
-    }
-    try {
-      const stat = fs.statSync(candidate);
-      parts.push(`${candidate}:${stat.mtimeMs}:${stat.size}`);
-    } catch {
-      // 文件不在场也是指纹的一部分(出现/删除都要触发失效)
-      parts.push(`${candidate}:absent`);
-    }
-  }
-  return parts.join('|');
-}
-
 /**
- * 统一注解解析(用户令 2026-10-21,一个底座三面复用):raw 类型名 → Python
- * 注解串。解析链 a) 内建直查 → b) 本工作区 types.xml/alias.xml 自定义类型
- * 注册表逐层下钻(复用 pythonTypeStubs B 单别名链与环检测,禁第二套)→
- * c) 链断/成环/仍未知保持 Any 不硬造。注册表按工作区缓存,指纹(定义文件
- * mtime/size)或 aliasDiscovery 开关变化即失效。
+ * 类型注册表快照(PR4 A4-3,语义索引统一承载):构建产物存
+ * semanticIndex 快照仓(键 = 规范化根路径 + aliasDiscovery 开关),查询
+ * 纯内存——逐次 statSync 指纹已废除。重建只由更新事件驱动:
+ * EntityMappingManager 的 types.xml/alias.xml watcher 收到变更后调
+ * notifySemanticFilesChanged 精确作废依赖该文件的快照;快照 miss(首次/
+ * 被事件作废)时才读盘重建一次。
  */
 export function resolveEntityAnnotationType(workspaceRoot: string, raw: string): string {
-  // PR1 打点:type-registry-query(高频类型注解查询)。子阶段拆
-  // fingerprint(statSync 元数据检查)与 registry-build(重建注册表),
-  // 命中/未命中记缓存口径;解析链与返回值保持原样。
+  // PR1 打点:type-registry-query(高频类型注解查询)。PR4 起无 fingerprint
+  // 子阶段;registry-build 只在快照 miss(首次/事件作废后)发生。
   const metrics = startLanguageServiceOperation('type-registry-query', { fileKind: 'types' });
   try {
     if (!workspaceRoot) {
@@ -351,32 +320,40 @@ export function resolveEntityAnnotationType(workspaceRoot: string, raw: string):
     const aliasDiscoveryEnabled = vscode.workspace
       .getConfiguration('kbengine')
       .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
-    const stopFingerprint = metrics.startSubPhase('fingerprint');
-    const fingerprint = entityAnnotationRegistryFingerprint(workspaceRoot);
-    stopFingerprint();
-    const cached = entityAnnotationRegistryCaches.get(workspaceRoot);
-    let customTypes: CustomTypeInfo[];
-    if (cached && cached.fingerprint === fingerprint && cached.aliasDiscovery === aliasDiscoveryEnabled) {
-      metrics.countCacheHit();
-      customTypes = cached.customTypes;
-    } else {
+    let snapshot = getSemanticIndex()
+      .getTypeRegistrySnapshot<CustomTypeInfo>(workspaceRoot, aliasDiscoveryEnabled);
+    if (!snapshot) {
       metrics.countCacheMiss();
       const stopRegistryBuild = metrics.startSubPhase('registry-build');
-      customTypes = getCustomTypeInfos(workspaceRoot);
+      const customTypes = getCustomTypeInfos(workspaceRoot);
       stopRegistryBuild();
-      entityAnnotationRegistryCaches.set(workspaceRoot, {
-        fingerprint,
-        aliasDiscovery: aliasDiscoveryEnabled,
-        customTypes
-      });
+      snapshot = getSemanticIndex().storeTypeRegistrySnapshot(
+        workspaceRoot,
+        aliasDiscoveryEnabled,
+        customTypes,
+        getTypeRegistryDependencyPaths(workspaceRoot)
+      );
+    } else {
+      metrics.countCacheHit();
     }
-    const resolved = resolveAnnotationTypeWithRegistry(raw, customTypes);
+    const resolved = resolveAnnotationTypeWithRegistry(raw, snapshot.entries);
     metrics.end('ok');
     return resolved;
   } catch (error) {
     metrics.end('error');
     throw error;
   }
+}
+
+/** 快照依赖文件(types.xml + alias.xml 实际路径;失效通知按此精确裁断) */
+function getTypeRegistryDependencyPaths(workspaceRoot: string): string[] {
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const dependencies = new Set<string>();
+  if (layout.typesXmlPath) {
+    dependencies.add(layout.typesXmlPath);
+  }
+  dependencies.add(joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'alias.xml'));
+  return [...dependencies];
 }
 
 function getTypesXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
