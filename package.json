@@ -131,6 +131,13 @@
         "injectTo": [
           "source.python"
         ]
+      },
+      {
+        "scopeName": "text.python-function-calls",
+        "path": "./syntaxes/python-function-calls-injection.json",
+        "injectTo": [
+          "source.python"
+        ]
       }
     ],
     "themes": [

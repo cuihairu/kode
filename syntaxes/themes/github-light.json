@@ -103,6 +103,15 @@
       }
     },
     {
+      "name": "Function Calls",
+      "scope": [
+        "variable.function.call"
+      ],
+      "settings": {
+        "foreground": "#0969DA"
+      }
+    },
+    {
       "name": "Class Names",
       "scope": [
         "entity.name.class",

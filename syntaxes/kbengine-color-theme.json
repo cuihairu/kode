@@ -17,9 +17,10 @@
     { "name": "Strings", "scope": ["string", "punctuation.definition.string"], "settings": { "foreground": "#E6DB74" } },
     { "name": "String Escapes", "scope": ["constant.character.escape"], "settings": { "foreground": "#AE81FF" } },
     { "name": "Regular Expressions", "scope": ["string.regexp"], "settings": { "foreground": "#AE81FF" } },
-    { "name": "Numbers and Constants", "scope": ["constant.numeric", "constant.language"], "settings": { "foreground": "#AE81FF" } },
+    { "name": "Numbers and Constants", "scope": ["constant.numeric", "constant.language", "variable.other.constant"], "settings": { "foreground": "#AE81FF" } },
 
     { "name": "Function Names", "scope": ["entity.name.function", "meta.function-call entity.name.function", "support.function"], "settings": { "foreground": "#A6E22E" } },
+    { "name": "Function Calls", "scope": ["variable.function.call"], "settings": { "foreground": "#8BD5FF" } },
     { "name": "Class Names", "scope": ["entity.name.class", "entity.name.type.class", "entity.name.type.module"], "settings": { "foreground": "#A6E22E" } },
     { "name": "Types", "scope": ["entity.name.type", "support.class", "support.type", "entity.name.namespace"], "settings": { "foreground": "#66D9EF" } },
 
