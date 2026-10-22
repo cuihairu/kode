@@ -523,7 +523,7 @@ Code Agent 完成后必须提交：
 ## 落地跟踪（勾一项补一个 commit hash）
 
 - [x] PR1 性能观测与基线（记录器 + 测试资产集 + 基线报告）— 89e8783（docs/perf/2026-baseline.md）
-- [ ] PR2 文档快照与解析缓存（documentStore，先接 Hover/Diagnostics）
+- [x] PR2 文档快照与解析缓存（documentStore，先接 Hover/Diagnostics）— 7d8736b（docs/perf/2026-pr2-documentstore.md；hover 行准备 P50 1.66ms→<0.01ms，def-ast 同版本命中率 96.1%，unit 2740 通过）
 - [ ] PR3 统一索引调度（indexScheduler 接 EntityMappingManager/PythonClassIndex/WorkspaceIndex）
 - [ ] PR4 统一语义查询（semanticIndex + dependencyGraph，先类型注册表与实体映射）
 - [ ] PR5 消除 Python Definition 首次全仓阻塞（ensureScanned/ensureCompositionRoots 调用关系重构）
