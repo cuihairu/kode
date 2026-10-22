@@ -69,7 +69,9 @@
     "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
     "onCommand:kbengine.project.doctor",
+    "onCommand:kbengine.symbolReferences.show",
     "onCommand:kbengine.profile.start",
+    "onCommand:kbengine.runtimeQuery.show",
     "onCommand:kbengine.spaces.query",
     "onCommand:kbengine.compatibility.check",
     "onCommand:kbengine.workbench.show",
@@ -399,9 +401,22 @@
         "icon": "$(checklist)"
       },
       {
+        "command": "kbengine.symbolReferences.show",
+        "title": "Show Symbol References Graph",
+        "icon": "$(graph)"
+      },
+      {
         "command": "kbengine.profile.start",
         "title": "Start Runtime Profile"
       },
+    {
+      "command": "kbengine.python.showCallChain",
+      "title": "Show Call Chain"
+    },
+    {
+      "command": "kbengine.runtimeQuery.show",
+      "title": "Show Runtime Query Panel"
+    },
       {
         "command": "kbengine.spaces.query",
         "title": "Query Spaces"
@@ -918,6 +933,11 @@
           "type": "boolean",
           "default": true,
           "description": "Python 跨文件 C3-MRO 与 mixin 组合根导航开关，默认开；方法使用处优先寻找 Python 实现，找不到再回退 .def 声明；关闭后不做全仓扫描，保留当前文件继承解析和 .def 导航"
+        },
+        "kbengine.python.callChainHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 实体方法 Call Chain 提示与命令开关，默认开；关闭后不显示链入口，Show Call Chain 也不会生成预览"
         },
         "kbengine.hotReload.enabled": {
           "type": "boolean",

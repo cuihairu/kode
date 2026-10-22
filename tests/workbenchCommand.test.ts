@@ -31,8 +31,10 @@ describe('kbengine.workbench.show', () => {
       expect(list.map(item => item.command)).toEqual([
         'kbengine.discovery.report',
         'kbengine.project.doctor',
+        'kbengine.symbolReferences.show',
         'kbengine.monitoring.show',
         'kbengine.profile.start',
+        'kbengine.runtimeQuery.show',
         'kbengine.spaces.query',
         'kbengine.database.open',
         'kbengine.database.checkAllDrift',

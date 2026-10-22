@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   buildDefReferenceGraphFromFile,
   buildProjectDoctorReport,
+  formatDefReferenceGraphPreview,
   formatProjectDoctorReport
 } from '../src/defReferenceGraph';
 
@@ -98,5 +99,16 @@ describe('def reference graph', () => {
     expect(report.errors.map(issue => issue.code)).toContain('dangling-parent');
     expect(report.warnings.map(issue => issue.code)).toContain('duplicate-symbol');
     expect(formatProjectDoctorReport(report)).toMatch(/^Project Doctor:/);
+  });
+
+  it('renders graph symbols, edges and unresolved targets in both forms', () => {
+    const graph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Boss.def'))!;
+    const preview = formatDefReferenceGraphPreview(graph);
+
+    expect(preview.mermaid).toContain('Hero.def\\nmethod move\\nproperty hp');
+    expect(preview.mermaid).toMatch(/F\d+\ -->\|inherit: hp, move\| F\d+/);
+    expect(preview.mermaid).toMatch(/F\d+ -\.dangling-parent\.-> U\d+\["Unresolved Missing"\]/);
+    expect(preview.text).toContain('Monster.def -> Hero.def (inherit): hp, move');
+    expect(preview.text).toContain('Orphan.def -> Unresolved Missing (dangling-parent)');
   });
 });
