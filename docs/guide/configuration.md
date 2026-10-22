@@ -123,6 +123,7 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | Jump decision-path logging (Output panel KBEngine Navigation, filter `[kode-jump]`; zero overhead when off) |
 | `kbengine.python.enableMroJump` | boolean | `true` | Switch for Python jump layer 2 (cross-file C3-MRO + composition roots resolving mixin/base-class methods); when off, layer 2 records a skip and no full-repo scan runs — jumps fall back to layer 1 (the `.def` derived index) and layer 3 (current-file class scopes) |
+| `kbengine.python.callChainHints` | boolean | `true` | Switch for Python entity-method call chain hints and the `Show Call Chain` command; when off, no chain entry is shown and the command does not generate a preview |
 
 `kbengine.python.enableMroJump` changes take effect immediately (no window reload); when off, layer 2 only records a skip in the jump trace and no full-repo `.py` scan runs, and `.py` changes stop being fed to the index. Method use sites prefer the Python implementation, with `.def` method declarations staged as fallback targets; `.def` navigation is kept at property accesses and method declarations. The index distinguishes modules from base/cell same-named classes and uses unsaved editor content. For the per-layer trace and troubleshooting, see the `[kode-jump]` decision-path section of the Logging guide.
 
