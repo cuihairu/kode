@@ -93,7 +93,7 @@ export interface PythonMethodCallReference {
 
 type IndexedPropertyDefinition = PropertyDefinitionInfo;
 
-interface IndexedMethodDefinition extends EntityMethodDefinitionLocation {
+export interface IndexedMethodDefinition extends EntityMethodDefinitionLocation {
   owner: DefinitionOwnerRef;
 }
 
@@ -109,7 +109,7 @@ interface PythonMethodBinding {
   pythonFile: string;
 }
 
-interface IndexedPythonMethodLocation extends PythonMethodLocation {
+export interface IndexedPythonMethodLocation extends PythonMethodLocation {
   endLine: number;
   calls: Array<{ methodName: string; line: number; character: number; filePath: string }>;
   binding?: PythonMethodBinding;
