@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: write # 创建/更新 Release 与上传 vsix 需要（默认 token 为只读）
+  id-token: write # codecov OIDC 免 token 上传覆盖率（2026-10-22）
 
 jobs:
   build:
@@ -65,9 +66,18 @@ jobs:
       timeout-minutes: 15
       run: pnpm run compile
 
-    - name: 运行测试
-      timeout-minutes: 10
-      run: pnpm test
+    - name: 运行测试（带覆盖率）
+      timeout-minutes: 12
+      run: pnpm exec vitest run --coverage
+
+    - name: 上传覆盖率到 Codecov（OIDC 免 token）
+      timeout-minutes: 5
+      uses: codecov/codecov-action@v7
+      with:
+        use_oidc: true
+        files: ./coverage/lcov.info
+        disable_search: true
+        fail_ci_if_error: false
 
     - name: 运行代码检查
       timeout-minutes: 5

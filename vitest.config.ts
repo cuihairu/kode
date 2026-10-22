@@ -23,7 +23,7 @@ export default defineConfig({
       // activate/deactivate 由 fake-vscode 装配测试驱动,进分母(P14/P16)。
       include: ['src/**/*.ts'],
       exclude: ['src/test/**'],
-      reporter: ['text', 'json-summary'],
+      reporter: ['text', 'json-summary', 'lcov'],
       reportsDirectory: 'coverage'
     }
   }
