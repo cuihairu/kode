@@ -166,7 +166,7 @@
 - [x] V-02 第二批·统一类型系统：Type Registry + SourceMap + Python typings + KBEngine API typings（全部可跳回真实源码）。
   - 证据：T-01/T-02/T-05/T-03 完成子项；T-04 按评审维持暂缓且本批未触碰；unit 2502 passed/2 skipped；compile 0 errors；lint 0 errors。
 - [x] V-03 第三批·跨文件语义与诊断：符号引用图 + 跨文件重命名 + Project Doctor。
-  - 证据: commit `28e0c02`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; `src/defReferenceGraph.ts:349`(符号图)、`src/defReferenceGraph.ts:399`(Project Doctor)、`src/defRenamer.ts:543`(图复用重命名解析)、`src/extension.ts:1499`(命令)
+  - 证据: commit `1e4ea42`; unit 2655 passed/2 skipped; tsc 0 errors; `src/defReferenceGraph.ts:361`(符号图)、`src/defReferenceGraph.ts:440`(Mermaid/文本预览)、`src/defReferenceGraph.ts:498`(Project Doctor)、`src/defRenamer.ts:543`(图复用重命名解析)、`src/extension.ts:1567`(预览命令)
 - [x] V-04 第四批·性能与工程化：增量索引 + 启动性能分析 + 多平台真实环境测试 + 版本兼容性检查。
   - 证据: commit `28e0c02`; unit 2639 passed/2 skipped; lint/compile/bundle 绿; 增量索引沿用 `src/pythonTypeStubs.ts:602` watcher 面、启动分析 `src/performanceBenchmark.ts:11`、兼容检查 `src/engineCompatibility.ts:52` 与命令 `src/extension.ts:1171`; 多平台真实环境未在本仓门禁覆盖,需另批
 - [x] V-05 工作台入口：统一 KBEngine 工作台（把几十项功能组合成工作流，收敛入口分散）。
