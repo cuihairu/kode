@@ -52,4 +52,7 @@ coverage/
 
 # Scratch (vitest TMPDIR, downloaded engine samples)
 .vtmp/
+
+# PR1 perf asset generator output (regenerate via scripts/generate-perf-assets.mjs)
+.perf-assets/
 .vdefaults.xml

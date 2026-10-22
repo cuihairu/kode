@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { resolveDiscoveredConfigRoot } from './workspaceDiscovery';
 
 /** 比较用规范化:绝对化、正斜杠;Windows 盘符路径小写化以稳定去重 */
@@ -221,8 +222,13 @@ export async function findFilesAcrossRoots(
   glob: string,
   exclude?: vscode.GlobPattern | null
 ): Promise<vscode.Uri[]> {
+  // PR1 性能打点:发现耗时拆 workspace glob 与外部根遍历两段,只记计数/耗时,
+  // 不改发现口径与去重行为。
+  const discovery = startLanguageServiceOperation('file-discovery');
   const merged = new Map<string, vscode.Uri>();
+  const stopWorkspaceGlob = discovery.startSubPhase('workspace-glob');
   const base = await vscode.workspace.findFiles(glob, exclude);
+  stopWorkspaceGlob();
   for (const uri of base) {
     merged.set(normalizeForCompare(uri.fsPath), uri);
   }
@@ -230,12 +236,16 @@ export async function findFilesAcrossRoots(
     const match = matcherForGlob(glob);
     if (match) {
       const skipDirs = excludeDirNames(exclude);
+      const stopExternalWalk = discovery.startSubPhase('external-walk');
       for (const root of getExternalScanRoots()) {
         walkExternalRoot(root, match, skipDirs, merged);
       }
+      stopExternalWalk();
     }
   } catch {
     // workspace 外根遍历失败不拖垮 workspace 结果(扫描按可得范围降级)
   }
+  discovery.countFileDiscovery(merged.size);
+  discovery.end('ok');
   return [...merged.values()];
 }

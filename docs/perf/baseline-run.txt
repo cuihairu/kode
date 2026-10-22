@@ -1,0 +1,22 @@
+BASELINE-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=30000 assets=/home/cui/.hermes/cache/scratch/kode-perf-baseline-assets
+BASELINE-METRIC S1.large.coldFindClassesByName n=1 elapsed=107737.52ms
+BASELINE-METRIC S1.large.pyFilesDiscovered n=1 elapsed=30001ms
+BASELINE-METRIC S2.large.warmFindClassesByName n=200 p50=0.01ms p95=0.02ms p99=0.04ms max=0.052746000001206994ms avg=0.01ms
+BASELINE-METRIC S2.large.warmComputeMRO n=40 p50=0.01ms p95=0.04ms p99=1.33ms max=1.3305120000004536ms avg=0.05ms
+BASELINE-METRIC S1.defHeavy.entityMappingColdScan n=1 elapsed=652.41ms
+BASELINE-METRIC S5.defHeavy.entityMappingWarmRescan n=1 elapsed=17.08ms
+BASELINE-METRIC S3.bigPy.firstQueryNewFile n=1 elapsed=0.75ms
+BASELINE-METRIC S4.bigPy.queryAfterDocumentEdit n=20 p50=0.04ms p95=0.14ms p99=79.93ms max=79.92525300000852ms avg=4.04ms
+BASELINE-METRIC S6.large.fileDeleteInvalidation n=1 elapsed=6.71ms
+BASELINE-METRIC S6.large.deletedClassHits n=1 elapsed=0ms
+BASELINE-METRIC S7.multiRoot.concurrent60FindInventory.wall n=1 elapsed=0.34ms
+BASELINE-METRIC S7.multiRoot.concurrent60FindInventory.totalHits n=1 elapsed=360ms
+BASELINE-METRIC S7.multiRoot.rootsContaining n=20 p50=0ms p95=0.01ms p99=4.58ms max=4.578435000003083ms avg=0.23ms
+BASELINE-METRIC S8.noise.coldScanWithExcludes n=1 elapsed=1.64ms
+BASELINE-METRIC S8.noise.excludedDirClassHits n=1 elapsed=0ms
+BASELINE-METRICS-REPORT
+Kode language service metrics (monotonic clock, elapsed in ms)
+file-discovery            count=     1  p50=      1.3ms  p95=      1.3ms  p99=      1.3ms  max=      1.3ms  hit=    0%  waitInit=    0  discover=1 read=0 parse=0  ok=1 miss=0 cancel=0 error=0
+document-parse            count=     1  p50=      0.1ms  p95=      0.1ms  p99=      0.1ms  max=      0.1ms  hit=    0%  waitInit=    0  discover=0 read=0 parse=1  ok=1 miss=0 cancel=0 error=0
+python-index-scan         count=     2  p50=      0.1ms  p95=      1.6ms  p99=      1.6ms  max=      1.6ms  hit=    0%  waitInit=    1  discover=1 read=1 parse=1  ok=2 miss=0 cancel=0 error=0
+

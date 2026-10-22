@@ -20,6 +20,7 @@ import {
 // 统一注解解析底座(纯逻辑半边)在 pythonTypeStubs;此处只传注册表,调用
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
 import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
+import { startLanguageServiceOperation } from './languageServiceMetrics';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
@@ -335,27 +336,47 @@ function entityAnnotationRegistryFingerprint(workspaceRoot: string): string {
  * mtime/size)或 aliasDiscovery 开关变化即失效。
  */
 export function resolveEntityAnnotationType(workspaceRoot: string, raw: string): string {
-  if (!workspaceRoot) {
-    // 无工作区语境只剩内建直查与引擎别名,自定义类型无从谈起
-    return resolveAnnotationTypeWithRegistry(raw, []);
+  // PR1 打点:type-registry-query(高频类型注解查询)。子阶段拆
+  // fingerprint(statSync 元数据检查)与 registry-build(重建注册表),
+  // 命中/未命中记缓存口径;解析链与返回值保持原样。
+  const metrics = startLanguageServiceOperation('type-registry-query', { fileKind: 'types' });
+  try {
+    if (!workspaceRoot) {
+      // 无工作区语境只剩内建直查与引擎别名,自定义类型无从谈起
+      const builtinResolved = resolveAnnotationTypeWithRegistry(raw, []);
+      metrics.countCacheHit();
+      metrics.end('ok');
+      return builtinResolved;
+    }
+    const aliasDiscoveryEnabled = vscode.workspace
+      .getConfiguration('kbengine')
+      .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
+    const stopFingerprint = metrics.startSubPhase('fingerprint');
+    const fingerprint = entityAnnotationRegistryFingerprint(workspaceRoot);
+    stopFingerprint();
+    const cached = entityAnnotationRegistryCaches.get(workspaceRoot);
+    let customTypes: CustomTypeInfo[];
+    if (cached && cached.fingerprint === fingerprint && cached.aliasDiscovery === aliasDiscoveryEnabled) {
+      metrics.countCacheHit();
+      customTypes = cached.customTypes;
+    } else {
+      metrics.countCacheMiss();
+      const stopRegistryBuild = metrics.startSubPhase('registry-build');
+      customTypes = getCustomTypeInfos(workspaceRoot);
+      stopRegistryBuild();
+      entityAnnotationRegistryCaches.set(workspaceRoot, {
+        fingerprint,
+        aliasDiscovery: aliasDiscoveryEnabled,
+        customTypes
+      });
+    }
+    const resolved = resolveAnnotationTypeWithRegistry(raw, customTypes);
+    metrics.end('ok');
+    return resolved;
+  } catch (error) {
+    metrics.end('error');
+    throw error;
   }
-  const aliasDiscoveryEnabled = vscode.workspace
-    .getConfiguration('kbengine')
-    .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
-  const fingerprint = entityAnnotationRegistryFingerprint(workspaceRoot);
-  const cached = entityAnnotationRegistryCaches.get(workspaceRoot);
-  let customTypes: CustomTypeInfo[];
-  if (cached && cached.fingerprint === fingerprint && cached.aliasDiscovery === aliasDiscoveryEnabled) {
-    customTypes = cached.customTypes;
-  } else {
-    customTypes = getCustomTypeInfos(workspaceRoot);
-    entityAnnotationRegistryCaches.set(workspaceRoot, {
-      fingerprint,
-      aliasDiscovery: aliasDiscoveryEnabled,
-      customTypes
-    });
-  }
-  return resolveAnnotationTypeWithRegistry(raw, customTypes);
 }
 
 function getTypesXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {

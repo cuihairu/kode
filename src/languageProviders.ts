@@ -114,6 +114,9 @@ import {
   type EntityComponentFace
 } from './entityBuiltinProperties';
 import { resolveLocalVariableReturnType } from './pythonReturnTypeInference';
+import {
+  startLanguageServiceOperation
+} from './languageServiceMetrics';
 import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
 import {
   findPythonReceiverCalls,
@@ -3383,6 +3386,27 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
    * 每层命中/落空/未执行与原因记入 layers,供测试与排障说明「查过哪些层」。
    */
   async provideDefinitionTraced(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): Promise<TracedDefinitionResult> {
+    // PR1 打点:semantic-query = 分层语义解析全链路耗时(层序实现见
+    // provideDefinitionTracedImpl),location 命中 → ok,落空 → miss;
+    // 打点不改任何查找顺序与返回值。
+    const metrics = startLanguageServiceOperation('semantic-query', {
+      fileKind: 'python',
+      documentVersion: document.version
+    });
+    try {
+      const traced = await this.provideDefinitionTracedImpl(document, position);
+      metrics.end(traced.location ? 'ok' : 'miss');
+      return traced;
+    } catch (error) {
+      metrics.end('error');
+      throw error;
+    }
+  }
+
+  private async provideDefinitionTracedImpl(
     document: vscode.TextDocument,
     position: vscode.Position
   ): Promise<TracedDefinitionResult> {

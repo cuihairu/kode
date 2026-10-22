@@ -1,6 +1,13 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
 import { setJumpLogEnabled } from './navigationLog';
 import { setHoverBudgetLogHub } from './hoverBudget';
+import {
+  getLanguageServiceSummaryReport,
+  setDetailedRecordingEnabled,
+  setLanguageServiceMetricsLogHub,
+  startLanguageServiceOperation
+} from './languageServiceMetrics';
+import type { OperationStatus } from './languageServiceMetrics';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -230,30 +237,116 @@ export function activate(context: vscode.ExtensionContext) {
   const isEntitiesXmlDocument = (document: vscode.TextDocument): boolean =>
     document.fileName.endsWith('entities.xml');
 
+  // PR1 性能观测:请求级打点只看「结果是否为空」定 ok/miss(vscode Hover /
+  // Location / CompletionItem[] 约定),结果对象原样透传,不改任何语义。
+  const emptyResultStatus = (result: unknown): OperationStatus => {
+    if (result === null || result === undefined) {
+      return 'miss';
+    }
+    if (Array.isArray(result)) {
+      return result.length === 0 ? 'miss' : 'ok';
+    }
+    if (typeof result === 'object') {
+      const contents = (result as { contents?: unknown[] }).contents;
+      return Array.isArray(contents) && contents.length === 0 ? 'miss' : 'ok';
+    }
+    return 'ok';
+  };
+
+  // PR1 打点:diagnostics = validateDocument/validateEntitiesXmlDocument 的
+  // 同步耗时(保持同步调用,不改发布时序)。
+  const validateDocumentTimed = (document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void => {
+    const operation = startLanguageServiceOperation('diagnostics', {
+      fileKind: 'def',
+      documentVersion: document.version
+    });
+    try {
+      validateDocument(document, collection);
+      operation.end('ok');
+    } catch (error) {
+      operation.end('error');
+      throw error;
+    }
+  };
+  const validateEntitiesXmlDocumentTimed = (document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void => {
+    const operation = startLanguageServiceOperation('diagnostics', {
+      fileKind: 'entities',
+      documentVersion: document.version
+    });
+    try {
+      validateEntitiesXmlDocument(document, collection);
+      operation.end('ok');
+    } catch (error) {
+      operation.end('error');
+      throw error;
+    }
+  };
+
   // 初始化实体映射管理器(用户令 2026-10-21 内建属性单:补全的 def 归属面
   // 兜底也走 manager,故提到补全注册之前)
   const entityMappingManager = new EntityMappingManager(context);
 
-  // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全）
+  // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
+  const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);
   const completionProvider = vscode.languages.registerCompletionItemProvider(
     [
       ...defDocumentSelector,
       ...pythonDocumentSelector
     ],
-    new KBEngineCompletionProvider(entityMappingManager),
+    {
+      async provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        _token: vscode.CancellationToken,
+        _context: vscode.CompletionContext
+      ) {
+        const operation = startLanguageServiceOperation('completion', {
+          fileKind: document.languageId,
+          documentVersion: document.version
+        });
+        try {
+          const result = await kbengineCompletionImpl.provideCompletionItems(document, position);
+          operation.end(emptyResultStatus(result));
+          return result;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    },
     '<', ' ', '\t', '>', '/', ':', '.'
   );
   context.subscriptions.push(completionProvider);
 
   // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档;
   // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
-  // 标注走与 RPC CodeLens 同一把形参闸门）
+  // 标注走与 RPC CodeLens 同一把形参闸门;PR1 起带 hover 打点）
+  const kbengineHoverImpl = new KBEngineHoverProvider(entityMappingManager);
   const hoverProvider = vscode.languages.registerHoverProvider(
     [
       ...definitionNavigationSelector,
       ...pythonDocumentSelector
     ],
-    new KBEngineHoverProvider(entityMappingManager)
+    {
+      async provideHover(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        _token: vscode.CancellationToken
+      ) {
+        const operation = startLanguageServiceOperation('hover', {
+          fileKind: document.languageId,
+          documentVersion: document.version
+        });
+        try {
+          const result = await kbengineHoverImpl.provideHover(document, position);
+          operation.end(emptyResultStatus(result));
+          return result;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    }
   );
   context.subscriptions.push(hoverProvider);
 
@@ -266,17 +359,50 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(serverConfigHoverProvider);
 
   // 注册定义跳转提供者（.def 文件）
+  // PR1 打点:definition(.def 导航面)。结果原样透传。
+  const kbengineDefinitionImpl = new KBEngineDefinitionProvider(entityMappingManager);
   const definitionProvider = vscode.languages.registerDefinitionProvider(
     definitionNavigationSelector,
-    new KBEngineDefinitionProvider(entityMappingManager)
+    {
+      async provideDefinition(document: vscode.TextDocument, position: vscode.Position) {
+        const operation = startLanguageServiceOperation('definition', {
+          fileKind: document.languageId,
+          documentVersion: document.version
+        });
+        try {
+          const result = await kbengineDefinitionImpl.provideDefinition(document, position);
+          operation.end(emptyResultStatus(result));
+          return result;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    }
   );
   context.subscriptions.push(definitionProvider);
 
   // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
   const pythonClassIndex = new PythonClassIndex();
+  const pythonDefinitionImpl = new PythonDefinitionProvider(entityMappingManager, pythonClassIndex);
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },
-    new PythonDefinitionProvider(entityMappingManager, pythonClassIndex)
+    {
+      async provideDefinition(document: vscode.TextDocument, position: vscode.Position) {
+        const operation = startLanguageServiceOperation('definition', {
+          fileKind: 'python',
+          documentVersion: document.version
+        });
+        try {
+          const result = await pythonDefinitionImpl.provideDefinition(document, position);
+          operation.end(emptyResultStatus(result));
+          return result;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    }
   );
   context.subscriptions.push(pythonDefinitionProvider);
   const pythonIndexEditEvents = new Map<vscode.TextDocument, number>();
@@ -417,9 +543,31 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(renameProvider);
 
   // 注册 Python 文件的智能提示提供者（提供来自 .def 的属性和方法）
+  // PR1 打点:completion(python 面)。
+  const pythonCompletionImpl = new PythonCompletionProvider(entityMappingManager, engineApiCatalog);
   const pythonCompletionProvider = vscode.languages.registerCompletionItemProvider(
     { language: 'python', scheme: 'file' },
-    new PythonCompletionProvider(entityMappingManager, engineApiCatalog),
+    {
+      async provideCompletionItems(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        _token: vscode.CancellationToken,
+        _context: vscode.CompletionContext
+      ) {
+        const operation = startLanguageServiceOperation('completion', {
+          fileKind: 'python',
+          documentVersion: document.version
+        });
+        try {
+          const result = await pythonCompletionImpl.provideCompletionItems(document, position);
+          operation.end(emptyResultStatus(result));
+          return result;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    },
     '.' // 输入 . 时触发
   );
   context.subscriptions.push(pythonCompletionProvider);
@@ -432,9 +580,9 @@ export function activate(context: vscode.ExtensionContext) {
   if (vscode.workspace.workspaceFolders) {
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       if (isDefDocument(event.document)) {
-        validateDocument(event.document, diagnostics);
+        validateDocumentTimed(event.document, diagnostics);
       } else if (isEntitiesXmlDocument(event.document)) {
-        validateEntitiesXmlDocument(event.document, diagnostics);
+        validateEntitiesXmlDocumentTimed(event.document, diagnostics);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
       // 层2 关闭时索引不参与跳转,变更喂给索引纯属后台空转,一并跳过
@@ -467,18 +615,18 @@ export function activate(context: vscode.ExtensionContext) {
     // 初始检查所有 .def 文件
     const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {
       if (isDefDocument(document)) {
-        validateDocument(document, diagnostics);
+        validateDocumentTimed(document, diagnostics);
       } else if (isEntitiesXmlDocument(document)) {
-        validateEntitiesXmlDocument(document, diagnostics);
+        validateEntitiesXmlDocumentTimed(document, diagnostics);
       }
     });
     context.subscriptions.push(openWatcher);
 
     vscode.workspace.textDocuments.forEach(document => {
       if (isDefDocument(document)) {
-        validateDocument(document, diagnostics);
+        validateDocumentTimed(document, diagnostics);
       } else if (isEntitiesXmlDocument(document)) {
-        validateEntitiesXmlDocument(document, diagnostics);
+        validateEntitiesXmlDocumentTimed(document, diagnostics);
       }
     });
   }
@@ -530,9 +678,9 @@ export function activate(context: vscode.ExtensionContext) {
     resetDatabaseInterfaceConfigCache();
     vscode.workspace.textDocuments.forEach(doc => {
       if (isDefDocument(doc)) {
-        validateDocument(doc, diagnostics);
+        validateDocumentTimed(doc, diagnostics);
       } else if (isEntitiesXmlDocument(doc)) {
-        validateEntitiesXmlDocument(doc, diagnostics);
+        validateEntitiesXmlDocumentTimed(doc, diagnostics);
       }
     });
   });
@@ -995,6 +1143,19 @@ export function activate(context: vscode.ExtensionContext) {
   // 悬停/异步层预算闸的 LogHub 接线(2026-10-22):超时与耗时记账走同一
   // LogHub,真机在日志查看器过滤 [kode-hover] 即可定位慢层/超时层
   setHoverBudgetLogHub(logHub);
+
+  // PR1:语言服务指标接线——LogHub 时间线(详细记录开启时逐样本 [kode-lsm]),
+  // 详细开关默认关(kbengine.metrics.detailed);命令面板 kbengine.metrics.showSummary
+  // 输出聚合汇总(P50/P95/P99/命中率/计数)。
+  setLanguageServiceMetricsLogHub(logHub);
+  setDetailedRecordingEnabled(kbengineConfig.get<boolean>('metrics.detailed', false));
+  const metricsChannel = vscode.window.createOutputChannel('Kode Language Service Metrics');
+  context.subscriptions.push(metricsChannel);
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.showSummary', () => {
+    metricsChannel.clear();
+    metricsChannel.append(getLanguageServiceSummaryReport());
+    metricsChannel.show();
+  }));
   logViewer.subscribeLogHub(logHub);
 
   const enableWebviewConsoleLogs = kbengineConfig.get<boolean>('webviewConsoleLogs', true);

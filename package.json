@@ -59,6 +59,7 @@
     "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
+    "onCommand:kbengine.metrics.showSummary",
     "onCommand:kbengine.debug.createConfig",
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
@@ -358,6 +359,11 @@
         "command": "kbengine.debug.updateLaunchJson",
         "title": "Update launch.json",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.metrics.showSummary",
+        "title": "Show Language Service Metrics Summary",
+        "category": "KBEngine"
       },
       {
         "command": "kbengine.debug.createConfig",

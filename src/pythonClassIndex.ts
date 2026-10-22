@@ -1,9 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from './compositionRoots';
 import { findFilesAcrossRoots } from './scanRoots';
 import { jumpLog, jumpTimeStart } from './navigationLog';
+import {
+  recordLanguageServiceOperation,
+  startLanguageServiceOperation
+} from './languageServiceMetrics';
 
 /**
  * Python 类层级索引(mixin/跨类跳转根因修复)。
@@ -446,7 +451,15 @@ export class PythonClassIndex {
     this.generation += 1;
     this.mroCache.clear();
     this.unindexFile(filePath);
+    // PR1 打点:单文件解析耗时(document-parse),版本号随样本记录,
+    // 解析结果与顺序保持原样(只观测,不改行为)。
+    const parseStartedAt = performance.now();
     const parsed = parsePythonFile(content, filePath);
+    recordLanguageServiceOperation('document-parse', performance.now() - parseStartedAt, {
+      fileKind: 'python',
+      documentVersion: version,
+      fileParseCount: 1
+    });
     this.fileCache.set(filePath, { version, parsed });
     for (const cls of parsed.classes) { this.indexClass(cls); }
     // Composition roots depend on entities.xml/.def/types.xml and the relatively
@@ -492,10 +505,24 @@ export class PythonClassIndex {
       return;
     }
     if (this.rootsPromise) {
+      // PR1 打点:并入进行中的组合根派生 = 本次请求在等索引初始化
+      const joinWait = startLanguageServiceOperation('python-composition-roots', {
+        waitedForInit: true,
+        indexGeneration: this.generation
+      });
+      try {
+        await this.rootsPromise;
+        joinWait.end('ok');
+      } catch {
+        joinWait.end('error');
+      }
       return this.rootsPromise;
     }
     this.rootsPromise = (async () => {
       const rootsTimer = jumpTimeStart();
+      const compositionMetrics = startLanguageServiceOperation('python-composition-roots', {
+        indexGeneration: this.generation
+      });
       // 先完成 .py 扫描:根名「实现对象 → 类」的桥接要用到文件里的实例赋值表
       await this.ensureScanned();
       const generation = this.generation;
@@ -509,6 +536,7 @@ export class PythonClassIndex {
           findFilesAcrossRoots('**/*.def', PY_SCAN_EXCLUDE),
           findFilesAcrossRoots('**/types.xml', PY_SCAN_EXCLUDE)
         ]);
+        compositionMetrics.countFileDiscovery(entityXmlFiles.length + defFiles.length + typeXmlFiles.length);
         const scopes = [...new Set(entityXmlFiles.map(uri => path.dirname(uri.fsPath)))];
         const scopeFor = (file: string): string => scopes
           .filter(scope => file.startsWith(scope + path.sep))
@@ -525,6 +553,8 @@ export class PythonClassIndex {
             const group = groups.get(scope) ?? { entitiesXmlContents: [], typesXmlContents: [], entityDefs: [] };
             groups.set(scope, group);
             const content = await readText(uri);
+            compositionMetrics.countFileRead(1);
+            compositionMetrics.countFileParse(1);
             if (kind === 'entities') { group.entitiesXmlContents.push(content); }
             else if (kind === 'types') { group.typesXmlContents.push(content); }
             else if (!/[\\/](components|interfaces)[\\/]/i.test(uri.fsPath)) {
@@ -558,10 +588,12 @@ export class PythonClassIndex {
         if (generation !== this.generation) { return; }
         this.rootsByScope = scoped;
         this.rootsMap = { roots: resolvedRoots, defMixins: combinedMixins };
+        compositionMetrics.end('ok');
         jumpLog('info', () =>
           `组合根派生 ${resolvedRoots.length} 根: [${resolvedRoots.join(', ')}] ${rootsTimer()}ms`
         );
       } catch {
+        compositionMetrics.end('error');
         // 派生失败:不当成功缓存,下次跳转重试;已建索引不受影响
         if (generation === this.generation) {
           this.rootsMap = null;
@@ -607,13 +639,32 @@ export class PythonClassIndex {
 
   private async ensureScanned(): Promise<void> {
     if (this.scanPromise) {
+      // PR1 打点:并入进行中的扫描 = 本次请求在等索引初始化(耗时即等待时长)
+      const joinWait = startLanguageServiceOperation('python-index-scan', {
+        waitedForInit: true,
+        indexGeneration: this.generation
+      });
+      try {
+        await this.scanPromise;
+        joinWait.end('ok');
+      } catch {
+        joinWait.end('error');
+      }
       return this.scanPromise;
     }
     const scanGeneration = this.scanGeneration;
+    const scanMetrics = startLanguageServiceOperation('python-index-scan', {
+      indexGeneration: this.generation
+    });
     this.scanPromise = (async () => {
       const scanTimer = jumpTimeStart();
       try {
         const files = await findFilesAcrossRoots('**/*.py', PY_SCAN_EXCLUDE);
+        // 读取/解析计数按「尝试处理的文件数」口径:loadFile 内部有打开缓冲复用
+        // 与读失败回退,精确的读/解析分布由 document-parse 事件单独承载。
+        scanMetrics.countFileDiscovery(files.length);
+        scanMetrics.countFileRead(files.length);
+        scanMetrics.countFileParse(files.length);
         // 分块并行读:顺序同步读在大仓是「跳转前加载很久」的主来源
         // (排除式漏扫 vcpkg/build 时实测 14,245 文件 × 10.13ms ≈ 144s)
         const CONCURRENCY = 16;
@@ -624,7 +675,9 @@ export class PythonClassIndex {
           );
         }
         jumpLog('info', () => `py 全仓索引完成 ${files.length} 个文件 → 类 ${this.byName.size} 个,${scanTimer()}ms(同会话缓存)`);
+        scanMetrics.end('ok');
       } catch {
+        scanMetrics.end('error');
         // 扫描失败不阻断跳转,但必须清掉缓存的失败结果——否则 scanPromise
         // 永久停在「已扫描」态、跨文件类永远补不进来,每次跳转都落 null
         // (与「加载很久后 No definition found」同根)。下次跳转重试;

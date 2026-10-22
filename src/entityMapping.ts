@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { jumpLog, jumpTimeStart } from './navigationLog';
 import { logLayerTiming } from './hoverBudget';
+import { startLanguageServiceOperation } from './languageServiceMetrics';
 import {
   findFilesAcrossRoots,
   getExternalScanRoots,
@@ -216,7 +217,12 @@ export class EntityMappingManager {
 
     const indexTimer = jumpTimeStart();
     const scanStartedAt = Date.now();
+    // PR1 打点:entity-mapping-scan = .def 全量发现+逐文件解析的整段耗时,
+    // 计数口径:发现=候选 .def 总数;读取/解析=实际走进 parseDefFile 的次数
+    // (mtime 命中复用由 type-registry/缓存命中另行统计,这里如实记尝试数)。
+    const scanMetrics = startLanguageServiceOperation('entity-mapping-scan');
     const defFiles = await findFilesAcrossRoots('**/*.def', null);
+    scanMetrics.countFileDiscovery(defFiles.length);
     let parsedSinceYield = 0;
     let yieldChunkStartedAt = Date.now();
     for (const defFile of defFiles) {
@@ -227,6 +233,8 @@ export class EntityMappingManager {
 
       const entityName = path.basename(defFile.fsPath, '.def');
       await this.parseDefFile(entityName, defFile.fsPath, loader);
+      scanMetrics.countFileRead(1);
+      scanMetrics.countFileParse(1);
       // 协作式让路(2026-10-22 用户令「hover 永转根治」):parseDefFile 内部是
       // 同步 fs+XML 解析,1500+ 文件大树一次循环把事件循环钉死秒级+,构造期
       // 后台首扫会把定向首解析的快路径活活饿死(实测冷悬停 814ms ≈ 全扫
@@ -245,6 +253,7 @@ export class EntityMappingManager {
     // 扫描总耗时进 LogHub(用户令「加计时日志实测,别猜」):独立计时
     // (jumpTimeStart 关开关时恒 0,不做闸),便于真机定位首扫占比
     logLayerTiming('initial-scan', Date.now() - scanStartedAt, `defs=${defFiles.length} entities=${this.mappingIndexes.size}`);
+    scanMetrics.end('ok');
   }
 
   private async parseDefFile(

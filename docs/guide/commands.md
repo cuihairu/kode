@@ -179,6 +179,15 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - When defaults cannot be located it errors plainly; by default (`kbengine.showFinalConfigOnOpen`, with refresh linked to `kbengine.autoRefreshFinalConfig`) it auto-opens in the background after activation
   - Service parameters such as telnet port/password are read from the same composed source
 
+### `kbengine.metrics.showSummary`
+
+- Title: `Show Language Service Metrics Summary`
+- Purpose: open the "Kode Language Service Metrics" output channel with the aggregated performance recorder report (PR1 observation layer, no behavior change)
+- Behavior:
+  - One line per event family (`hover`, `definition`, `completion`, `diagnostics`, `python-index-scan`, `python-composition-roots`, `entity-mapping-scan`, `semantic-query`, `type-registry-query`, `file-discovery`, `document-parse`)
+  - Each line reports request count, P50/P95/P99/max/avg elapsed (monotonic clock, ms), cache hit rate, waited-for-init count, file discovery/read/parse totals and status counts
+  - Per-request detailed samples are off by default; enable `kbengine.metrics.detailed` to also stream `[kode-lsm]` samples into the log timeline
+
 ## Visualization Panels
 
 ### `kbengine.monitoring.show`
