@@ -1,0 +1,12 @@
+[package]
+name = "kode-vfs"
+description = "kode2 virtual file system: canonical URIs, document snapshots/overlay, line index, coordinate conversion, disk fingerprints, parse cache (book §5 VFS-001..013)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

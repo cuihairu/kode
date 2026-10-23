@@ -21,9 +21,14 @@ name = "kode-server"
 version = "0.2.0"
 dependencies = [
  "kode-protocol",
+ "kode-vfs",
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "kode-vfs"
+version = "0.2.0"
 
 [[package]]
 name = "memchr"
