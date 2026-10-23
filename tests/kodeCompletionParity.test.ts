@@ -79,7 +79,8 @@ const sectionEntries = (root: DefElementNode, canon: string): DefElementNode[] =
 };
 
 const typeKindOf = (item: DefElementNode): 'fixedDict' | 'array' | 'builtin' => {
-  const directive = firstTextToken(item);
+  // 属性式回落 `type` 属性(与 Rust parse_types/type_kind 同口径;PR-012 门 §1.3-①)。
+  const directive = firstTextToken(item) ?? (item.attributes['type'] ?? '').trim();
   return directive === 'FIXED_DICT' ? 'fixedDict' : directive === 'ARRAY' ? 'array' : 'builtin';
 };
 
@@ -216,7 +217,8 @@ const buildCorpusMaps = (corpus: CorpusFile[]): CorpusMaps => {
       const document = parseDefDocument(text);
       if (document.root) {
         for (const item of getDirectChildElements(document.root)) {
-          if (!firstTextToken(item)) {
+          // 属性式回落 `type` 属性(与 Rust parse_types 同口径;PR-012 门 §1.3-①)。
+          if (!(firstTextToken(item) ?? (item.attributes['type'] ?? '').trim())) {
             continue; // 空条目不产出(与 parseTypesXml 同口径)
           }
           if (!seenTypes.has(item.name)) {

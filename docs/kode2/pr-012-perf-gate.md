@@ -112,3 +112,37 @@ diff 首分歧样本(原文见 run 文件 #1–#5):hover 全部 diff 在 `$.cont
 - TS 门禁:`pnpm test:unit`(TMPDIR=/tmp)2938 passed(≥2938 基线不回归;bench 不进门禁),`tsc -p ./` 零错,`pnpm lint` 零错。
 - cargo 门禁:`cargo test --workspace --exclude kode-scheduler` 全绿(189,无 Rust 改动),`cargo clippy --workspace --exclude kode-scheduler` clean。
 - 复跑方式:`TMPDIR=/tmp KODE_PERF_LARGE_FILES=30000 npx vitest run --config vitest.bench.config.ts tests/perf/shadowGate.bench.ts`(先 `cargo build -p kode-server --release`)。
+
+## 8. G-C 差异关闭复测(2026-10-23,§6 前四项关闭单)
+
+修复面(单 commit,§1.3 差异逐条对应):
+
+1. **别名补全面补齐(G-C,§1.3-②)**:TS provider 补全面接 alias.xml 指向面 —— `getRegisteredAliasTypes`(src/definitionWorkspace.ts,`getAliasXmlCustomTypeInfos` 同底座,属性式不产出与 Rust parse_alias/buildAliasXmlCustomTypeInfo 同口径,`kbengine.types.aliasDiscovery` 同闸)→ `getKnownTypeSuggestions`(src/languageProviders.ts)别名条目 detail=指向目标(与 Rust alias 面 detail 同值)、kind=Class(与 Rust alias→LSP 7 同值)。
+2. **属性式 types.xml(G-C 关联,§1.3-①)**:Rust `parse_types`(crates/kode-parser/src/model.rs)无文本指引时回落 `type` 属性、属性式 ARRAY 元素类型回落 `of` 属性;TS `parseTypesXml`(src/compositionRoots.ts)同口径。五张 parity golden(parser/symbol/type/completion/hover)重生成,TS 四个复算面(kodeParserParity/kodeTypesParity/kodeHoverParity/kodeCompletionParity)+kodeIndexParity 符号面同步属性式口径 —— 属性式注册面从此双侧同识别,真实生成语料不再需要文本式替身才可比。
+3. **hover 渲染统一(§1.3-③)**:Rust `render_markdown`(crates/kode-server/src/hover.rs)属性/方法面与 TS getSymbolHover 逐字节同文案(段名中文区块:属性区块/方法区块/组件区块)同尾随空白(**Args** 行不带尾随空行、由 Exposed 前导空行衔接,TS 从不 trim)。真实对齐,非改对拍标准:compare 通道与 LSP 严格比较口径未动。
+4. **.py 面(§1.3-④)**:如实划归非本阶段 —— Rust 悬停不支持 .py 面(PR-010 基础版已知边界),扩面属 PH1 垂直切片,维持单侧命中归因。
+
+复测(`docs/kode2/pr-012-gate3-run.txt` 正本,同参 30k/808 采样):
+
+| 指标 | gate2(61fe132) | gate3(本单) | 判定 |
+|---|---|---|---|
+| **G-C compDiverge(Rust-only 标签集非空的采样数)** | 201 | **0** | **PASS** |
+| G-C compRustSubsetOfTs | 0 | 201 | 类型面 Rust ⊆ TS 全成立 |
+| G-C compRustNullJudge(根级标签面) | 201 | 201 | 覆盖差(设计边界,Rust 顶层故意不接管,不变) |
+| compRustTopLabels | SHADOW_GATE_ALIAS×201 | (无 rust-only;ts-only=内建类型表+实体名,设计口径差) | Rust-only 集=空 |
+| ShadowDiffLog(S1 末) | match 0 / diff ≥808 | **match 248 / diff 252**(环形 500 窗) | 402 个 .def 悬停全 match |
+| 悬停语义 | 404/404 身份一致 | 404/404 不变;402 .def 渲染逐字节一致(GATE2-HOVERFACE 样本头尾同文) | ✓ |
+| S2 双轨 | P95 hover 0.15/0.30ms,comp 0.65/0.46ms | hover 0.15/0.39ms,comp 0.73/0.38ms(ratio 0.52x) | 均 <1ms 级,无回归 |
+| S3 压力 | burst 0 错;RSS 4.95MB | burst 0 错;RSS 4.97MB;日志有界 500 | ✓ |
+
+复测后 G-C:**PASS(Rust 补全结果 ⊆ TS 面,rust-only 标签集为空)**。§4 五门按本表回填:G-A/G-B/G-D/G-E 维持 PASS,G-C 由 FAIL → PASS。
+
+### 剩余差异声明(如实,均非 G-C 阻塞)
+
+1. **types.xml/entities.xml/alias.xml 悬停渲染措辞**:TS 走 Custom type/Entity registration 专属面(含落库形态段),Rust 走 Types/Entities/Aliases 结构面 —— 严格 compare 仍 diff,语义身份一致(types/entities 双侧同词;alias 单侧 TS null 为覆盖差)。措辞统一属 provider 专属面收口单,非本单范围。
+2. **补全类型面标注差**:detail TS「Custom type/8 位无符号整数」vs Rust「builtin」,及 TS-only 项(内建类型表 23 + 实体名)—— 设计口径差(Rust 面按语料),严格 compare diff,标签序列子集关系已证。
+3. **根级 `<` 标签面**:Rust 判面不接管 → null(compRustNullJudge 201,不变,设计边界)。
+4. **.py 悬停面**:Rust 恒 null(PH1 扩面,见上 4)。
+5. **TS 属性悬停专属字段**:Default/DatabaseLength/Identifier/数据库存储段 Rust 无此面(corpus 未触,真实持久属性场景仍单侧)。
+
+门 3 状态:🟡 → 🟡(G-C 已关闭,但「正式对拍须去 transport」「≥1 周真实使用」等前置条件仍未满足,切流前置清单不变;§5 各条目状态不变)。

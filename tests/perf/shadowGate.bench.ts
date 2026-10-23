@@ -252,10 +252,12 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
       path.join(ASSETS_OUT, 'def-heavy'),
       path.join(ASSETS_OUT, 'large')
     ]);
-    // 语料格式补齐:生成器 types.xml/alias.xml 是属性式(JSONDATA type="UINT32"),
-    // Rust parse_types/parse_alias 对拍面只吃文本式(<NAME> UINT32 </NAME>)——
-    // 本单先如实测出该格式覆盖差,再以两实现 golden 门禁都接受的文本式追加
-    // 确定性条目(SHADOW_GATE_*),让类型/别名面真正可比(两侧同读此文件)。
+    // 语料补齐:生成器 types.xml/alias.xml 是属性式(JSONDATA type="UINT32"),
+    // 属性式经 parse_types/parseTypesXml 属性式口径两侧同识别(G-C 关闭单 ②);
+    // 再追加两实现 golden 门都接受的文本式确定性条目(SHADOW_GATE_*),让类型/
+    // 别名面在真实属性式语料之外仍有文本式可比样本(两侧同读此文件)。
+    // 注意:alias.xml 的属性式 BOOL_LIST 两侧同不产出别名面条目(parse_alias/
+    // buildAliasXmlCustomTypeInfo 同口径),别名面对拍样本由文本式条目承担。
     for (const scenario of ['def-heavy', 'large']) {
       const typesXml = path.join(ASSETS_OUT, scenario, 'scripts', 'types.xml');
       const aliasXml = path.join(ASSETS_OUT, scenario, 'scripts', 'entity_defs', 'alias.xml');

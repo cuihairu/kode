@@ -97,6 +97,23 @@ describe('组合根派生(纯函数)', () => {
     expect(resolveFieldClassSymbols(['STRING', 'UINT32', 'ITEM_ID'], types)).toEqual([]);
   });
 
+  it('属性式条目回落 type 属性(<JSONDATA type="UINT32"/>;PR-012 门 §1.3-①)', () => {
+    const types = parseTypesXml(
+      [
+        '<root>',
+        '  <JSONDATA type="UINT32"/>',
+        '  <PARITY_IDS type="ARRAY" of="ITEM_ID"/>',
+        '</root>'
+      ].join('\n')
+    );
+    expect(types.get('JSONDATA')).toEqual({
+      kind: 'builtin', implementedBySymbol: null, fieldRefs: [], elementRef: null
+    });
+    expect(types.get('PARITY_IDS')).toEqual({
+      kind: 'array', implementedBySymbol: null, fieldRefs: [], elementRef: 'ITEM_ID'
+    });
+  });
+
   it('deriveCompositionRoots:根 = 实体 → 字段对象 → 组件;def mixin 归实体根', () => {
     const map = deriveCompositionRoots({
       entitiesXmlContents: ['<root><Account/><Avatar/></root>'],

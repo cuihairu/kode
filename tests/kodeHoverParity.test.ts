@@ -326,7 +326,8 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
     } else if (kind === 'types') {
       if (root) {
         for (const item of getDirectChildElements(root)) {
-          const directive = firstTextToken(item);
+          // 属性式回落 `type` 属性(与 Rust parse_types 同口径;PR-012 门 §1.3-①)。
+          const directive = firstTextToken(item) ?? ((item.attributes['type'] ?? '').trim() || undefined);
           if (!directive) {
             continue; // 空条目不产声明(与 parseTypesXml 同口径)
           }

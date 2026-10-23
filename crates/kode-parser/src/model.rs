@@ -501,7 +501,19 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
     };
     for child in doc.child_elements(root) {
         let e = doc.element(child);
-        let directive = e.first_text_token(doc).unwrap_or_default();
+        let text_directive = e.first_text_token(doc).unwrap_or_default();
+        // 属性式条目(`<JSONDATA type="UINT32"/>`):无文本指引时回落 `type`
+        // 属性值(PR-012 门 §1.3-① 口径关闭:此前属性式被跳过,与 TS provider/
+        // parseTypesXml 的注册面不一致;属性式 ARRAY 的元素类型回落 `of` 属性)。
+        let directive = if text_directive.is_empty() {
+            e.attributes
+                .iter()
+                .find(|a| a.name == "type")
+                .map(|a| a.value.trim().to_string())
+                .unwrap_or_default()
+        } else {
+            text_directive
+        };
         let kind = match directive.as_str() {
             "FIXED_DICT" => TypeKind::FixedDict,
             "ARRAY" => TypeKind::Array,
@@ -535,7 +547,15 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
                 let element_ref = doc
                     .child_element(child, "of")
                     .map(|of| doc.element(of).text(doc).trim().to_string())
-                    .filter(|s| !s.is_empty());
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| {
+                        // 属性式:`<X type="ARRAY" of="UINT32"/>` 的元素类型。
+                        e.attributes
+                            .iter()
+                            .find(|a| a.name == "of")
+                            .map(|a| a.value.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                    });
                 (None, Vec::new(), element_ref)
             }
             TypeKind::Builtin => (None, Vec::new(), None),

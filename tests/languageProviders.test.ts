@@ -314,6 +314,36 @@ describe('def tag completion', () => {
     expect(items.every(item => item.kind === CompletionItemKind.Class)).toBe(true);
   });
 
+  it('completes alias.xml pointers into the type face(别名指向面,PR-012 门 G-C 关闭单)', () => {
+    const aliasPath = p(langRoot(), 'scripts', 'entity_defs', 'alias.xml');
+    fs.writeFileSync(aliasPath, [
+      '<root>',
+      '  <SHADOW_GATE_ALIAS> UINT32 </SHADOW_GATE_ALIAS>',
+      '  <ATTR_ALIAS type="UINT32"/>',
+      '</root>'
+    ].join('\n'), 'utf8');
+    try {
+      const items = complete([
+        '<root>',
+        '  <Properties>',
+        '    <hp>',
+        '      <Type>|',
+        '    </hp>',
+        '  </Properties>',
+        '</root>'
+      ].join('\n'));
+      const alias = items.find(item => item.label === 'SHADOW_GATE_ALIAS');
+      // 文本式别名产出条目,detail = 指向目标(与 Rust completion alias 面同值)。
+      expect(alias).toBeDefined();
+      expect(alias?.detail).toBe('UINT32');
+      expect(alias?.kind).toBe(CompletionItemKind.Class);
+      // 属性式别名两侧同不产出(parse_alias/buildAliasXmlCustomTypeInfo 同口径)。
+      expect(labelsOf(items)).not.toContain('ATTR_ALIAS');
+    } finally {
+      fs.rmSync(aliasPath, { force: true });
+    }
+  });
+
   it('lists every flag without prefix filtering', () => {
     const items = complete([
       '<root>',
