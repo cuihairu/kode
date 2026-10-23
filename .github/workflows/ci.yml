@@ -85,7 +85,10 @@ jobs:
 
     - name: 打包 VSIX 扩展
       timeout-minutes: 15
-      run: pnpm run package
+      # 先清 codecov-action 落在工作区的上传器（vscodeignore 已兜底，双保险）
+      run: |
+        rm -f codecov codecov.SHA256SUM codecov.SHA256SUM.sig
+        pnpm run package
 
     - name: 上传 VSIX 文件
       timeout-minutes: 3

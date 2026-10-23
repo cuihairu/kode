@@ -12,6 +12,10 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 docs/
 resources/docs/
+# codecov 上传器三件套（CI codecov-action 落进工作区，2026-10-23 曾混入 12M 包）
+codecov*
+# 工作区游离脚本
+translate_pages.py
 src/
 tests/
 build/
