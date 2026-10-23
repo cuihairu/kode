@@ -84,7 +84,12 @@ diff 首分歧样本(原文见 run 文件 #1–#5):hover 全部 diff 在 `$.cont
 | G-D 双轨性能 | 双轨 P95 <30ms 且无错误声明(early-signal 口径) | 最大 P95 8.73ms(burst Rust);S2 双轨全部 <1ms 级 | **PASS** |
 | G-E 压力与资源 | burst 0 错;风暴后状态正确;日志 ≤500 有界;内存有界 | 全部满足 | **PASS** |
 
-### 总判定:**FAIL(未过)——G-C 补全面标签序列不一致,按 PR-012 原文「不通过禁止继续扩大迁移」,维持禁止扩大迁移。**
+### 总判定:**PASS（gate3 复判，2026-10-23）——G-C 已修复复测归零，五门全绿，按 PR-012 原文「不通过禁止继续扩大迁移」的反面成立：扩大迁移的本单验收门解除禁止；切流仍受 §4 前置条件清单约束（本表保留 gate2 历史，复判正本 docs/kode2/pr-012-gate3-run.txt）。**
+
+- **gate3 复判（同参 30k/808）**: G-A PASS · G-B PASS（404/404 不变）· **G-C PASS（compDiverge 201→0，Rust 补全 ⊆ TS 面；rust-only 标签集空）** · G-D PASS（S2 双轨 P95 均 <1ms，comp ratio 0.52×）· G-E PASS（burst 0 错/RSS 4.97MB/日志有界）；ShadowDiffLog match 248（402 .def 悬停全 match）；剩余差异按 §8 声明为设计边界非阻塞（.py 面归 PH1 扩面）。
+- gate2 历史（保留不改）: 当时 G-C FAIL（provider 缺别名面 201×1）→ 修复 5db0a33（别名补全面+属性式 types.xml 双侧+hover 逐字节对齐，真对齐非改阈值）。
+- 门 3 状态: 🟡 → 🟢（kill-switch/回退三件套在 30k 实战数据下经受 gate2+gate3 两轮执行）；门 1: 🟢（Rust 双轨对拍基准以 gate2 §2+gate3 复测补齐）。
+- `serveFromRust()` 维持恒 false 直至 §4 清单勾满——PASS 解除的是「扩大迁移（继续做双轨面）」禁止，不是直接切流。
 
 - `serveFromRust()` 维持恒 false;`kbengine.core.backend` 非法值回落 ts 的 kill-switch 语义不变。
 - 如实记录:G-A/G-B/G-D/G-E 四门全绿,shadow 通道、差异日志、回退开关在 30k 真实资产集上经受了实战执行(门 3 的「实战演练待执行」缺口由此补上执行数据);**唯一 FAIL 是补全面 parity(G-C)**,且已逐条归因(§1.3),修复路径明确,不构成数据/索引错误。
