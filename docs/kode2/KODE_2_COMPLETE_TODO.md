@@ -163,7 +163,7 @@ kode/
 
 ## 5. VFS / 文件发现 / 文档快照
 
-- [x] VFS-001 Path identity：URI、大小写规则、符号链接、Unicode normalization、Windows UNC、WSL 路径语义文档。(PR-004 基础版:crates/kode-vfs/src/uri.rs CanonicalUri——percent 解码/词法消解/盘符大写/非 file scheme 拒绝,语义文档化在模块头;UNC/WSL/大小写折叠实现随 PR-006)
+- [x] VFS-001 Path identity：URI、大小写规则、符号链接、Unicode normalization、Windows UNC、WSL 路径语义文档。(PR-004 基础版:crates/kode-vfs/src/uri.rs CanonicalUri——percent 解码/词法消解/盘符大写/非 file scheme 拒绝,语义文档化在模块头;PR-006:crates/kode-root/src/platform.rs 落 UNC/WSL(//wsl$ 与 //wsl.localhost 拆 distro 段)/Win+mac 大小写折叠身份比较,APFS case-sensitive 卷误合为已声明边界;Unicode normalization 与 symlink 的 fs 级 canonicalize 属 IO 专项,跟随模式护栏已落 scan.rs)
 - [x] VFS-002 root_id + canonical URI + open buffer version 作为查询身份，禁止仅以文件 basename 建索引。(PR-004:crates/kode-vfs/src/store.rs DocumentKey{root_id,uri};RootId::UNROOTED=0 保留)
 - [x] VFS-003 Open overlay 优先磁盘；didOpen/didChange/didClose 做正确 version transition。(PR-004:DocumentStore open/change/close,version 严格递增,stale 回 VersionConflict::Stale;kode-server 已切到该 store)
 - [x] VFS-004 增量文本编辑坐标 UTF-16 ↔ bytes ↔ line/column 精确转换；覆盖 emoji / CRLF。(PR-004:crates/kode-vfs/src/line_index.rs + tests/coordinates.rs 全坐标对拍,样例表见 docs/kode2/pr-004.md)
@@ -171,7 +171,7 @@ kode/
 - [x] VFS-006 Disk fingerprint 不只依赖 mtime；必要时 size/hash 做一致性校验。(PR-004 基础版:crates/kode-vfs/src/disk.rs mtime_secs+mtime_nanos+size 三元组;hash 留指纹专项)
 - [x] VFS-007 工作区 glob：排除 `.git`, `node_modules`, `.venv`, build, generated 及用户排除目录。(PR-004:crates/kode-vfs/src/walk.rs DEFAULT_EXCLUDED_DIRS + 用户通配追加)
 - [x] VFS-008 `.def`, `types.xml`, `entities.xml`, `alias.xml`, Python, KBEngine engine source 的独立发现规则。(PR-004 基础版:walk.rs FileKind 路径分类;引擎版本 profile 规则随 PR-005/006)
-- [x] VFS-009 资源根顺序显式定义（kbengine.xml/config/环境变量/用户配置/工作区推断），冲突出诊断。(PR-004 基础版:store.rs RootRegistry 注册顺序=优先顺序、最长前缀、overlapping_roots 冲突入口;config/env 推断随 PR-006)
+- [x] VFS-009 资源根顺序显式定义（kbengine.xml/config/环境变量/用户配置/工作区推断），冲突出诊断。(PR-004 基础版:store.rs RootRegistry 注册顺序=优先顺序、最长前缀、overlapping_roots 冲突入口;PR-006:crates/kode-root/src/resolve.rs DiscoveryEngine 落 config/env 前的发现层——约定探针链/深扫描兜底/多根 PlatformRootRegistry 折叠感知归属与冲突入口;config/env 两个来源的接线随 server 装配层)
 - [x] VFS-010 遇到网络 FS、不可读取文件、符号链接循环、权限拒绝时安全处理。(PR-004:walk 读失败跳过并计数、目录 symlink 不跟随、深度封顶;disk 非法输入回 Err 不 panic)
 - [x] VFS-011 Document parse cache 仅保留最新有效快照并支持 recent successful AST、负缓存。(PR-004:crates/kode-vfs/src/parse_cache.rs ParseCache<V> + FNV-1a 输入指纹)
 - [x] VFS-012 删除/重命名/跨根移动应移除过期 symbol 与旧 diagnostics。(PR-004:store.rs remove/rename/invalidate_root 返回 RemovedDocument 回执 + ParseCache::invalidate;下游清理随 PR-007 接线)
@@ -431,7 +431,7 @@ kode/
 - [x] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
 - [x] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
 - [x] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
-- [ ] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。
+- [x] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。(落地:crates/kode-root(ROOT-001..015 基础版:优先级链显式配置>记忆>约定>有界深扫描+宁缺勿猜;平台路径规则 Win 折叠/mac 折叠声明/Linux 敏感/WSL UNC 拆段;submodule/vendored 边界+mount/symlink 环护栏+别名身份+敏感目录台账;引擎配置规则自 TS workspaceDiscovery 移植并逐条 file:line 证据化;UR+Path 双支持;诊断仅新启;TS 对拍 golden 双向门禁 6 树 48/48 字段=100%,tests/kodeRootParity.test.ts;证据 docs/kode2/pr-006.md)
 - [x] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
 - [ ] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。
 - [ ] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。

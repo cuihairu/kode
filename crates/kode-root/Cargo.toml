@@ -1,0 +1,15 @@
+# kode2 PR-006 (书 §5/§17 PR-006, PH1-05): KBE 根发现。
+# 铁律: 零第三方依赖(仅 workspace 内 kode-vfs);规则移植自 TS discovery 并逐条证据化。
+[package]
+name = "kode-root"
+description = "kode2 root discovery: engine root/assets root anchor discovery with priority chain, platform path rules (Win/mac/Linux/WSL), bounded scan, symlink/mount-cycle immunity, TS parity (book §5 VFS-009/§17 PR-006)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-vfs = { path = "../kode-vfs" }
+
+[lints]
+workspace = true

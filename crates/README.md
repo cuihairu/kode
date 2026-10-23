@@ -9,7 +9,7 @@
 | kode-server | §4 | ✅ PR-003(stdio 状态机;PR-004 文档同步切到 kode-vfs) |
 | kode-vfs | §5 | ✅ PR-004(VFS-001..013 基础版,证据 docs/kode2/pr-004.md) |
 | kode-parser(任务书命名;书 §3 目标树记 kode-syntax) | §6.1 | ✅ PR-005(字节级 XML 状态机 + .def/entities/types/alias 模型 + 增量注册表,证据 docs/kode2/pr-005.md) |
-| kode-project | §5/§10(root discovery) | PR-006 |
+| kode-root(任务书命名;书 §3 目标树记 kode-project) | §5/§10(root discovery) | ✅ PR-006(ROOT-001..015 基础版:约定链/探针/有界深扫描对齐 TS discovery,平台路径规则 Win/mac/Linux/WSL,submodule/vendored/循环/别名/敏感目录判定,TS 对拍 golden 双向门禁,证据 docs/kode2/pr-006.md) |
 | kode-index | §7 | ✅ PR-007(六类符号索引:名称倒排+文件级增量+原子 generation,IDX-001..007+013/014/015 基础版,证据 docs/kode2/pr-007.md;type-graph 语义面随 PR-008,invalidation 调度随 PR-009) |
 | kode-semantic | §6.2 | PR-008 |
 | (invalidation/scheduler 并入 kode-index 或独立) | §7 | PR-009 |

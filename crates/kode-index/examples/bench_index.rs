@@ -20,7 +20,7 @@ fn key_in(root: RootId, path: &str) -> DocumentKey {
 }
 
 fn def_text(entity: &str, prop_count: usize, method_count: usize) -> String {
-    let mut s = format!("<root>\n  <Properties>\n");
+    let mut s = String::from("<root>\n  <Properties>\n");
     for i in 0..prop_count {
         s.push_str(&format!(
             "    <prop{i}>\n      <Type>UINT32</Type>\n      <Flags>BASE</Flags>\n    </prop{i}>\n"
@@ -41,7 +41,10 @@ fn main() {
     let mut index = SymbolIndex::new();
     let mut files: Vec<(DocumentKey, String)> = Vec::new();
     for i in 0..140 {
-        files.push((key(&format!("/proj/entities/E{i}.def")), def_text("E", 4, 3)));
+        files.push((
+            key(&format!("/proj/entities/E{i}.def")),
+            def_text("E", 4, 3),
+        ));
     }
     for i in 0..20 {
         files.push((
@@ -72,7 +75,9 @@ fn main() {
     let again = index.update_batch(&files);
     println!(
         "全量二扫(同内容): rebuilds={} cache_hits={} generation={}",
-        again.rebuilds, index.stats.cache_hits, index.generation()
+        again.rebuilds,
+        index.stats.cache_hits,
+        index.generation()
     );
 
     let report = index.update(
@@ -85,7 +90,7 @@ fn main() {
     );
 
     let mut batch = files.clone();
-    for (k, text) in batch.iter_mut().skip(0).take(10) {
+    for (k, text) in batch.iter_mut().take(10) {
         if k.uri.as_path().ends_with(".def") {
             *text = def_text("E", 6, 3);
         }

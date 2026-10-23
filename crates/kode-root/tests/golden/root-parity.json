@@ -1,0 +1,72 @@
+{
+  "generator": "cargo run -p kode-root --bin dump-golden -- <repo-root>",
+  "fixturesDir": "crates/kode-root/tests/fixtures",
+  "trees": [
+    {
+      "name": "linux_assets",
+      "entityDefs": ["assets/scripts/entity_defs"],
+      "entitiesXml": ["assets/scripts/entities.xml"],
+      "typesXml": ["assets/scripts/entity_defs/types.xml"],
+      "kbeSourceRoots": [],
+      "messagesXml": [],
+      "configRoots": ["assets"],
+      "scanVisited": 11,
+      "scanTruncated": false
+    },
+    {
+      "name": "engine_repo",
+      "entityDefs": ["scripts/entity_defs"],
+      "entitiesXml": [],
+      "typesXml": [],
+      "kbeSourceRoots": ["kbe"],
+      "messagesXml": ["kbe/res/server/messages_fixed_defaults.xml", "res/server/messages_fixed.xml"],
+      "configRoots": [""],
+      "scanVisited": 17,
+      "scanTruncated": false
+    },
+    {
+      "name": "multi_ambiguous",
+      "entityDefs": ["entity_defs", "scripts/entity_defs"],
+      "entitiesXml": ["entities.xml", "scripts/entities.xml"],
+      "typesXml": ["entity_defs/types.xml", "scripts/types.xml"],
+      "kbeSourceRoots": [],
+      "messagesXml": [],
+      "configRoots": [],
+      "scanVisited": 9,
+      "scanTruncated": false
+    },
+    {
+      "name": "submodule_vendor",
+      "entityDefs": ["entity_defs", "sub/entity_defs", "vendor/engine_clone/entity_defs"],
+      "entitiesXml": ["scripts/entities.xml"],
+      "typesXml": [],
+      "kbeSourceRoots": ["vendor/engine_clone/kbe"],
+      "messagesXml": [],
+      "configRoots": ["sub"],
+      "scanVisited": 20,
+      "scanTruncated": false
+    },
+    {
+      "name": "sensitive_dirs",
+      "entityDefs": ["entity_defs"],
+      "entitiesXml": [],
+      "typesXml": [],
+      "kbeSourceRoots": [],
+      "messagesXml": [],
+      "configRoots": [],
+      "scanVisited": 6,
+      "scanTruncated": false
+    },
+    {
+      "name": "deep_nest",
+      "entityDefs": ["d1/d2/d3/d4/d5/d6/entity_defs", "demo/assets/scripts/entity_defs"],
+      "entitiesXml": ["demo/assets/scripts/entities.xml"],
+      "typesXml": [],
+      "kbeSourceRoots": [],
+      "messagesXml": [],
+      "configRoots": ["d1/d2/d3", "demo"],
+      "scanVisited": 22,
+      "scanTruncated": true
+    }
+  ]
+}
