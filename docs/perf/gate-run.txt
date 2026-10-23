@@ -1,0 +1,54 @@
+GATE-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=30000 assets=/home/cui/.hermes/cache/scratch/kode-perf-gate-assets
+GATE-METRIC G0.process.rssAtPhaseStartMb n=1 83 MB
+GATE-METRIC G1.activation.coldHover n=10 p50=0.19ms p95=116.01ms p99=116.01ms max=116.01ms
+GATE-METRIC G1.activation.coldHoverFirstHits n=1 1 hit
+GATE-METRIC G1.activation.coldCompletionPy n=10 p50=0.09ms p95=1.34ms p99=1.34ms max=1.34ms
+GATE-METRIC G1.activation.coldCompletionPyItems n=1 5 items
+GATE-METRIC G1.activation.coldDiagnosticsDef n=1 2.49ms
+GATE-METRIC G1.activation.coldDiagnosticsDefItems n=1 0 items
+GATE-METRIC G1.activation.coldDiagnosticsDefDefect n=1 6.71ms
+GATE-METRIC G1.activation.coldDiagnosticsDefDefectItems n=1 4 items
+GATE-METRIC G2.activation.initialScanCompletion n=1 219.79ms
+GATE-METRIC G2.activation.warmHoverHits n=1 1 hit
+GATE-METRIC G2.activation.warmCompletionPyItems n=1 5 items
+GATE-METRIC G2.activation.warmCompletionDefItems n=1 25 items
+GATE-METRIC G3.warmHover.all n=100 p50=0.05ms p95=0.09ms p99=0.14ms max=0.31ms
+GATE-ROUNDS G3.warmHover rounds=5 r0Median=0.06ms r1Median=0.04ms r2Median=0.03ms r3Median=0.05ms r4Median=0.04ms roundMedian=0.04ms
+GATE-METRIC G4.warmCompletionPy.all n=100 p50=0.04ms p95=0.08ms p99=0.11ms max=0.13ms
+GATE-ROUNDS G4.warmCompletionPy rounds=5 r0Median=0.04ms r1Median=0.03ms r2Median=0.03ms r3Median=0.04ms r4Median=0.04ms roundMedian=0.04ms
+GATE-METRIC G4.warmCompletionDef.all n=100 p50=0.5ms p95=0.74ms p99=0.77ms max=0.91ms
+GATE-ROUNDS G4.warmCompletionDef rounds=5 r0Median=0.63ms r1Median=0.51ms r2Median=0.46ms r3Median=0.46ms r4Median=0.48ms roundMedian=0.48ms
+GATE-METRIC G4.warmCompletionDefTag n=1 0.9ms
+GATE-METRIC G4.warmCompletionDefTagItems n=1 9 items
+GATE-METRIC G5.warmDiagnosticsDef.all n=100 p50=0.27ms p95=0.57ms p99=1.24ms max=1.49ms
+GATE-ROUNDS G5.warmDiagnosticsDef rounds=5 r0Median=0.41ms r1Median=0.35ms r2Median=0.27ms r3Median=0.22ms r4Median=0.19ms roundMedian=0.27ms
+GATE-METRIC G5.warmDiagnosticsDefItems n=1 0 items
+GATE-METRIC G5.warmDiagnosticsDefDefect.all n=100 p50=0.58ms p95=0.79ms p99=0.95ms max=1.42ms
+GATE-ROUNDS G5.warmDiagnosticsDefDefect rounds=5 r0Median=0.65ms r1Median=0.62ms r2Median=0.54ms r3Median=0.59ms r4Median=0.47ms roundMedian=0.59ms
+GATE-METRIC G5.warmDiagnosticsDefDefectItems n=1 4 items
+GATE-METRIC G5.warmDiagnosticsEntitiesXml.all n=100 p50=0.02ms p95=0.05ms p99=0.07ms max=0.59ms
+GATE-ROUNDS G5.warmDiagnosticsEntitiesXml rounds=5 r0Median=0.02ms r1Median=0.02ms r2Median=0.02ms r3Median=0.01ms r4Median=0.02ms roundMedian=0.02ms
+GATE-METRIC G5.warmDiagnosticsEntitiesXmlItems n=1 0 items
+GATE-METRIC G6.defInvalidation.mappingRecovery n=1 1.85ms
+GATE-METRIC G6.defInvalidation.firstHoverRequery n=1 0.29ms
+GATE-METRIC G6.defInvalidation.firstHoverRequeryHits n=1 1 hit
+GATE-METRIC G6.defInvalidation.secondHoverRequery n=1 0.26ms
+GATE-METRIC G6.pyInvalidation.firstHoverRequery n=1 0.3ms
+GATE-METRIC G6.pyInvalidation.firstHoverRequeryHits n=1 1 hit
+GATE-METRIC G8.activation.peakRssMb n=1 115.4 MB
+GATE-METRIC G8.activation.peakRssDeltaMb n=1 32.4 MB
+GATE-METRIC G0.process.rssAtScanPhaseStartMb n=1 115.55 MB
+GATE-METRIC G7.fullScan.round0 n=1 126426.23ms
+GATE-METRIC G7.fullScan.round0.hits n=1 1 hits
+GATE-METRIC G7.fullScan.round1 n=1 151459.11ms
+GATE-METRIC G7.fullScan.round1.hits n=1 1 hits
+GATE-METRIC G7.fullScan.round2 n=1 165981.44ms
+GATE-METRIC G7.fullScan.round2.hits n=1 1 hits
+GATE-ROUNDS G7.fullScan rounds=3 r0=126.4s r1=151.5s r2=166s roundMedian=151.5s
+GATE-METRIC G8.deleteInvalidation.wall n=1 28.04ms
+GATE-METRIC G8.deleteInvalidation.firstRequery n=1 0.56ms
+GATE-METRIC G8.deleteInvalidation.firstRequeryHits n=1 0 hits
+GATE-METRIC G8.deleteInvalidation.positiveRequeryHits n=1 1 hits
+GATE-METRIC G8.scanPhase.peakRssMb n=1 687.19 MB
+GATE-METRIC G8.scanPhase.peakRssDeltaMb n=1 571.64 MB
+GATE-METRIC G8.scanPhase.roundPeaksMb n=3 488.63/653.26/661.83
