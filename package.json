@@ -1053,7 +1053,7 @@
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
     "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 && pnpm bundle:webview",
-    "bundle:webview": "esbuild src/webview/defCallChainViewer.ts --bundle --outfile=media/defCallChainViewer.js --format=iife --platform=browser --target=es2020 --minify",
+    "bundle:webview": "node scripts/build-call-chain-viewer.mjs --entry=src/webview/defCallChainViewer.ts --outfile=media/defCallChainViewer.js",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

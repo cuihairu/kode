@@ -67,7 +67,9 @@ async function activate(): Promise<void> {
 
   const graphPane = document.querySelector<HTMLElement>('[data-call-chain-pane="graph"]');
   try {
-    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark' });
+    // mermaid@12 全局默认 layout 是 "elk"(elk.js 已从离线包裁剪),显式钉在
+    // dagre 上走经典流程图布局;若未来显式请求 elk 会抛 stub 诊断错误并回落 Text
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'dark', layout: 'dagre' });
     const { svg } = await mermaid.render('kbengine-call-chain-graph', payload.mermaid);
     if (graphPane) {
       graphPane.innerHTML = svg;
