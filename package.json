@@ -1052,7 +1052,7 @@
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "compile": "tsc -p ./",
-    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 && pnpm bundle:webview",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify && pnpm bundle:webview",
     "bundle:webview": "node scripts/build-call-chain-viewer.mjs --entry=src/webview/defCallChainViewer.ts --outfile=media/defCallChainViewer.js",
     "watch": "tsc -watch -p ./",
     "docs:dev": "vitepress dev docs",
