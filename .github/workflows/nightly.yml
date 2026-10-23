@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-and-release:
     name: Build & Rolling Release
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write # 创建/更新 Release 需要(job 级再声明一次,不依赖默认)
     if: |
@@ -140,7 +140,7 @@ jobs:
   # 校验作业：确保无版本 tag 泄漏
   verify-no-version-tags:
     name: Verify no version tags
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     needs: build-and-release
     if: always() && needs.build-and-release.result == 'success'
     steps:

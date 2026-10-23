@@ -14,7 +14,7 @@ on:
 jobs:
   publish:
     name: 门禁通过后发布
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 40
 
     steps:
