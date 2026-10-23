@@ -261,11 +261,15 @@ pub struct HoverEngine {
     def_files: BTreeMap<String, DefFile>,
     /// 实体名(file stem)→ 首见路径(entities.xml 注册项的 defFile 面;
     /// 与 TS 语料序首见一致)。
-    def_by_name: BTreeMap<String, String>,
+    pub(crate) def_by_name: BTreeMap<String, String>,
     /// 已入库 def 文件路径(存在性判定,对应 TS 的 fs.existsSync 面)。
     corpus_defs: BTreeSet<String>,
     /// entities.xml 所在目录(defsRoot 向上探测用)。
     entities_dirs: BTreeSet<String>,
+    /// types.xml 语料视图(PR-011 补全类型面:按路径键,跨语料同名不串扰)。
+    pub(crate) types_files: BTreeMap<String, kode_parser::model::TypesFile>,
+    /// alias.xml 语料视图(PR-011 补全别名面)。
+    pub(crate) alias_files: BTreeMap<String, kode_parser::model::AliasFile>,
 }
 
 impl Default for HoverEngine {
@@ -282,6 +286,8 @@ impl HoverEngine {
             def_by_name: BTreeMap::new(),
             corpus_defs: BTreeSet::new(),
             entities_dirs: BTreeSet::new(),
+            types_files: BTreeMap::new(),
+            alias_files: BTreeMap::new(),
         }
     }
 
@@ -302,6 +308,12 @@ impl HoverEngine {
                     self.entities_dirs.insert(dir.to_string());
                 }
             }
+            FileKind::Types => {
+                self.types_files.insert(path, parse_types(text));
+            }
+            FileKind::Alias => {
+                self.alias_files.insert(path, parse_alias(text));
+            }
             _ => {}
         }
     }
@@ -312,6 +324,8 @@ impl HoverEngine {
         let path = key.uri.as_path().to_string();
         self.corpus_defs.remove(&path);
         self.def_files.remove(&path);
+        self.types_files.remove(&path);
+        self.alias_files.remove(&path);
         self.def_by_name.retain(|_, p| p != &path);
         removed
     }
@@ -525,7 +539,8 @@ impl HoverEngine {
     /// def 链面:与 TS buildDefChain 同算法(def 视图替代 fs 读),含成员展开。
     /// 入口语义面取**悬停文件自身**的解析结果(`entry`),不做按名全局查——
     /// 多语料同名实体的视图互不串扰(父/接口/组件按路径在语料内求存在性)。
-    fn chain_face(&self, path: &str, entry: &DefFile) -> InheritedChain {
+    /// PR-011 起供 completion 继承成员面复用(crate 内)。
+    pub(crate) fn chain_face(&self, path: &str, entry: &DefFile) -> InheritedChain {
         let mut face = InheritedChain {
             parent_chain: Vec::new(),
             interfaces: Vec::new(),
