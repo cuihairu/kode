@@ -90,6 +90,7 @@ interface Engine {
   corpusDefs: Set<string>;
   defByName: Map<string, string>;
   entitiesDirs: Set<string>;
+  entitiesByPath: Map<string, EntityProbe[]>;
   typesDecls: Map<string, { name: string; line1: number }[]>;
 }
 
@@ -108,6 +109,7 @@ const buildEngine = (corpus: CorpusFile[]): Engine => {
     corpusDefs: new Set(),
     defByName: new Map(),
     entitiesDirs: new Set(),
+    entitiesByPath: new Map(),
     typesDecls: new Map()
   };
   for (const file of corpus) {
@@ -123,6 +125,7 @@ const buildEngine = (corpus: CorpusFile[]): Engine => {
       if (dir) {
         engine.entitiesDirs.add(dir);
       }
+      engine.entitiesByPath.set(file.file, entitiesEntriesOf(file));
     }
     if (file.kind === 'types') {
       engine.typesDecls.set(file.file, typesDeclsOf(file));
@@ -212,12 +215,6 @@ const lineStartLocation = (uri: string, line1: number): LocationFace => ({
   }
 });
 
-const nameSpanLocation = (text: string, filePath: string, node: DefElementNode): LocationFace => {
-  const start = offsetToPos(text, node.tagStart + 1);
-  const end = offsetToPos(text, node.tagStart + 1 + node.name.length);
-  return { uri: filePath, range: { start, end } };
-};
-
 const defsRootFor = (engine: Engine, filePath: string): string | null => {
   let dir = dirOf(filePath);
   while (dir) {
@@ -263,6 +260,30 @@ const parentNameOf = (root: DefElementNode): string => {
   return parent ? getElementText(parent).trim() : '';
 };
 
+// Rust `registry_landing`:Properties/三方法段声明词 → entities.xml 声明行
+// (先 `<scripts>/entities.xml`,再 `<defs>/entities.xml`),缺注册 → def 首行。
+// 与 TS F12 的注册回落层同口径;TS 上的 Python 脚本层/DB schema 层是 Rust
+// 无此能力的面,按边界跳过直接落下一层。
+const registryLanding = (engine: Engine, filePath: string): LocationFace => {
+  const entity = stemOf(filePath);
+  const defsRoot = defsRootFor(engine, filePath);
+  if (defsRoot) {
+    const candidates: string[] = [];
+    const scriptsRoot = dirOf(defsRoot);
+    if (scriptsRoot) {
+      candidates.push(`${scriptsRoot}/entities.xml`);
+    }
+    candidates.push(`${defsRoot}/entities.xml`);
+    for (const candidate of candidates) {
+      const entry = engine.entitiesByPath.get(candidate)?.find(e => e.name === entity);
+      if (entry) {
+        return lineStartLocation(candidate, entry.line1);
+      }
+    }
+  }
+  return headLocation(filePath);
+};
+
 const sectionsOf = (root: DefElementNode): DefElementNode[] => getDirectChildElements(root);
 
 const sectionSymbols = (section: DefElementNode): DefElementNode[] =>
@@ -291,7 +312,12 @@ const recomputeFile = (engine: Engine, file: CorpusFile): ExpectedDefinition[] =
         for (const symbol of sectionSymbols(section)) {
           const line = line1Of(file.text, symbol.tagStart + 1);
           if (line === line1 && symbol.name === word) {
-            return nameSpanLocation(file.text, file.file, symbol);
+            // Properties/三方法段:TS F12 落注册(entities.xml 行)而非声明 span;
+            // 组件段落 TS provider 链末尾返 null(languageProviders.ts:2344)。
+            if (['Properties', 'BaseMethods', 'CellMethods', 'ClientMethods'].includes(section.name)) {
+              return registryLanding(engine, file.file);
+            }
+            return null;
           }
         }
       }
@@ -397,13 +423,18 @@ describe('kode2 Phase2 definition 对拍(Rust golden ↔ TS 复算)', () => {
     expect(compared).toBe(golden.definitionCount);
   });
 
-  it('面定义护栏:内建类型引用不落点,注册类型落 types.xml 行首', () => {
+  it('面定义护栏:内建类型引用不落点,声明词落注册行/声明行,URI 不出语料', () => {
     expect(BUILTIN_TYPES.has('UINT32')).toBe(true);
     // 护栏断言放在真实语料上:golden 里所有落点 uri 必在语料内或等于宿主文件。
     for (const file of golden.files) {
       for (const definition of file.definitions ?? []) {
         const uri = definition.definition.uri as string;
-        expect(uri === file.file || engine.corpusDefs.has(uri) || engine.typesDecls.has(uri)).toBe(true);
+        expect(
+          uri === file.file ||
+            engine.corpusDefs.has(uri) ||
+            engine.typesDecls.has(uri) ||
+            engine.entitiesByPath.has(uri)
+        ).toBe(true);
       }
     }
   });

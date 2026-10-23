@@ -8,7 +8,8 @@
 //! - 定位:UTF-16 position → 词 → 本文件声明符号(六类,PR-007 同面);
 //!   `.def` 的 `<Parent>` 标签/取值词触发继承链面;
 //! - 文档:符号种类 + 所属段(与 TS getSectionLabel 同源的面)+ 来源文件;
-//! - 签名:属性(Type/Flags/DetailLevel/Persistent)、方法(facet/Arg/Exposed)、
+//! - 签名:属性(Type/Flags/Default/DetailLevel/DatabaseLength/Identifier/
+//!   Persistent)、方法(facet/Arg/Exposed)、
 //!   组件(Type/Persistent)、类型声明(kind/重定向目标)、别名(Type 目标)、
 //!   实体注册(def 存在性)、def 实体本体(Parent);
 //! - 继承成员:def 链(parent 递归 + interfaces 平铺 + components 挂接,与 TS
@@ -66,8 +67,14 @@ pub struct HoverSignature {
     pub r#type: Option<String>,
     /// 属性:`<Flags>` 原文(trim)。
     pub flags: Option<String>,
+    /// 属性:`<Default>` 原文(trim)。
+    pub default_value: Option<String>,
     /// 属性:`<DetailLevel>`(遗留拼写同识别)。
     pub detail_level: Option<String>,
+    /// 属性:`<DatabaseLength>` 原文(trim)。
+    pub database_length: Option<String>,
+    /// 属性:`<Identifier>` 原文(trim)。
+    pub identifier: Option<String>,
     /// 属性/组件:`<Persistent>` truthy;无标签为 null。
     pub persistent: Option<bool>,
     /// 方法:Arg 个数。
@@ -164,19 +171,26 @@ pub fn render_markdown(response: &HoverResponse) -> String {
     let kind = response.symbol.kind.as_str();
     if kind == "property" {
         // 属性面:字段序/措辞/尾随空白与 TS getSymbolHover 属性区块逐字节同
-        // (TS 的 Default/DatabaseLength/Identifier/数据库存储段 Rust 无此面,
-        // 见报告剩余差异声明;持久属性 corpus 未触,维持 **Persistent** 行)。
+        // (languageProviders.ts:1623-1649:Type→Flags→Default→DetailLevel→
+        // DatabaseLength→Identifier)。TS 属性面不渲染 **Persistent**,Rust 同脸
+        // 不再单侧输出;数据库存储段需 DB 快照(FS/DB 面),划归边界。
         if let Some(t) = &s.r#type {
             md.push_str(&format!("**Type**: `{t}`\n\n"));
         }
         if let Some(f) = &s.flags {
             md.push_str(&format!("**Flags**: `{f}`\n\n"));
         }
+        if let Some(d) = &s.default_value {
+            md.push_str(&format!("**Default**: `{d}`\n\n"));
+        }
         if let Some(d) = &s.detail_level {
             md.push_str(&format!("**DetailLevel**: `{d}`\n\n"));
         }
-        if let Some(true) = s.persistent {
-            md.push_str("**Persistent**: `true`\n\n");
+        if let Some(l) = &s.database_length {
+            md.push_str(&format!("**DatabaseLength**: `{l}`\n\n"));
+        }
+        if let Some(i) = &s.identifier {
+            md.push_str(&format!("**Identifier**: `{i}`\n\n"));
         }
         return md;
     }
@@ -318,7 +332,7 @@ pub struct HoverEngine {
     /// entities.xml 所在目录(defsRoot 向上探测用)。
     entities_dirs: BTreeSet<String>,
     /// entities.xml 语料视图(Phase2 诊断/定义面:按路径键)。
-    entities_files: BTreeMap<String, kode_parser::model::EntitiesFile>,
+    pub(crate) entities_files: BTreeMap<String, kode_parser::model::EntitiesFile>,
     /// types.xml 语料视图(PR-011 补全类型面:按路径键,跨语料同名不串扰)。
     pub(crate) types_files: BTreeMap<String, kode_parser::model::TypesFile>,
     /// alias.xml 语料视图(PR-011 补全别名面)。
@@ -458,7 +472,10 @@ impl HoverEngine {
                             signature: HoverSignature {
                                 r#type: prop.type_name.clone(),
                                 flags: prop.flags_raw.clone(),
+                                default_value: prop.default_value.clone(),
                                 detail_level: prop.detail_level.clone(),
+                                database_length: prop.database_length.clone(),
+                                identifier: prop.identifier.clone(),
                                 persistent: prop.persistent,
                                 ..HoverSignature::default()
                             },
@@ -791,7 +808,7 @@ fn hover_symbol(record: &kode_index::symbol::SymbolRecord, section: &'static str
 }
 
 /// 父目录(路径用 `/`;无父返回 None)。
-fn parent_dir(path: &str) -> Option<&str> {
+pub(crate) fn parent_dir(path: &str) -> Option<&str> {
     path.rsplit_once('/').map(|(dir, _)| dir)
 }
 

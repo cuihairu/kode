@@ -1,0 +1,83 @@
+GATE2-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=30000 assets=/tmp/kode-shadow-gate-assets server=/home/cui/workspaces/kode-v02/target/release/kode-server
+GATE2-METRIC S0.tsInitialScanMs 701
+GATE2-METRIC S0.rustServer 0.2.0@pid3541028
+GATE2-METRIC S0.gateState {"mode":"shadow","servingMode":"shadow","rustServingGated":false,"serverPath":"/home/cui/workspaces/kode-v02/target/release/kode-server","clientAlive":false,"notices":[]}
+GATE2-HOVERFACE #0 tsId={"hit":true,"name":"hp"} rustId={"hit":true,"name":"hp"} tsValueHead="**hp**\n\n属性区块中的自定义定义。\n\n" rustValueHead="**hp**\n\n属性区块中的自定义定义。\n\n"
+GATE2-HOVERFACE #1 tsId={"hit":true,"name":"onRpc0"} rustId={"hit":true,"name":"onRpc0"} tsValueHead="**onRpc0**\n\n方法区块中的自定义定义。\n\n**参数个数**: 0\n\n" rustValueHead="**onRpc0**\n\n方法区块中的自定义定义。\n\n**参数个数**: 0\n\n"
+GATE2-DEFFACE #1 probe=2:6 word=hp ts={"uri":"/tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit0.def","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}} rust={"range":{"end":{"character":0,"line":0},"start":{"character":0,"line":0}},"uri":"/tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit0.def"}
+GATE2-DEFFACE #2 probe=5:6 word=onRpc0 ts={"uri":"/tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit0.def","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}} rust={"range":{"end":{"character":0,"line":0},"start":{"character":0,"line":0}},"uri":"/tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit0.def"}
+GATE2-DIAGFACE #2 ts=[{"range":{"start":{"line":2,"character":4},"end":{"line":2,"character":36}},"severity":1,"message":"属性 hp 缺少 <Type> 定义"},{"range":{"start":{"line":2,"character rust=[{"message":"属性 hp 缺少 <Type> 定义","range":{"end":{"character":36,"line":2},"start":{"character":4,"line":2}},"severity":1},{"message":"属性 hp 缺少 <Flags> 定义","rang
+GATE2-DEFFACE-DIFF #1 file=/tmp/kode-shadow-gate-assets/large/scripts/entity_defs/Avatar.def probe=2:6 word=hp ts={"uri":"/tmp/kode-shadow-gate-assets/large/scripts/base/Avatar.py","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}} rust={"range":{"end":{"character":0,"line":1},"start":{"character":0,"line":1}},"uri":"/tmp/kode-shadow-gate-assets/large/scripts/entities.xml"}
+GATE2-REGFACE types.xml ts={"uri":"/tmp/kode-shadow-gate-assets/large/scripts/types.xml","range":{"start":{"line":2,"character":0},"end":{"line":2,"character":0}}} rust={"range":{"end":{"character":0,"line":2},"start":{"character":0,"line":2}},"uri":"/tmp/kode-shadow-gate-assets/large/scripts/types.xml"}
+GATE2-XMLFACE types.xml ts=SHADOW_GATE_TYPE rust=SHADOW_GATE_TYPE
+GATE2-REGFACE entities.xml ts={"uri":"/tmp/kode-shadow-gate-assets/large/scripts/entity_defs/Avatar.def","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}} rust={"range":{"end":{"character":0,"line":0},"start":{"character":0,"line":0}},"uri":"/tmp/kode-shadow-gate-assets/large/scripts/entity_defs/Avatar.def"}
+GATE2-XMLFACE entities.xml ts=Avatar rust=Avatar
+GATE2-REGFACE alias.xml ts=null rust={"range":{"end":{"character":0,"line":2},"start":{"character":0,"line":2}},"uri":"/tmp/kode-shadow-gate-assets/large/scripts/entity_defs/alias.xml"}
+GATE2-XMLFACE alias.xml ts=null rust=SHADOW_GATE_ALIAS
+GATE2-METRIC S1.samplesTotal 1009
+GATE2-METRIC S1.shadowLog {"total":500,"match":297,"diff":203,"failure":0}
+GATE2-METRIC S1.hoverBothHit 404
+GATE2-METRIC S1.hoverNameAgree 404
+GATE2-METRIC S1.hoverNameDisagree 0
+GATE2-METRIC S1.hoverTsOnlyHit 1
+GATE2-METRIC S1.hoverRustOnlyHit 1
+GATE2-METRIC S1.hoverBothMiss 0
+GATE2-METRIC S1.compExactSequence 0
+GATE2-METRIC S1.compRustSubsetOfTs 201
+GATE2-METRIC S1.compDiverge 0
+GATE2-METRIC S1.compRustNullJudge 201
+GATE2-METRIC S1.defDeclExact 401
+GATE2-METRIC S1.defDeclDiverge 1
+GATE2-METRIC S1.defDeclTsOnly 0
+GATE2-METRIC S1.defDeclRustOnly 0
+GATE2-METRIC S1.defDeclBothMiss 0
+GATE2-METRIC S1.defRegistryExact 2
+GATE2-METRIC S1.defRegistryDiverge 1
+GATE2-METRIC S1.diagBothEmpty 0
+GATE2-METRIC S1.diagMatch 201
+GATE2-METRIC S1.diagDiverge 0
+GATE2-METRIC S1.rustOnlyTopLabels ts-only:UINT8x201,ts-only:UINT16x201,ts-only:UINT32x201,ts-only:UINT64x201,ts-only:INT8x201,ts-only:INT16x201,ts-only:INT32x201,ts-only:INT64x201
+GATE2-DIFFSAMPLE #4 diff textDocument/completion file:///tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit0.def :: $.items.length(27≠3) ts={"isIncomplete":false,"items":[{"label":"UINT8","kind":7,"detail":"8 位无符号整数"},{"… rust={"isIncomplete":false,"items":[{"detail":"builtin","kind":7,"label":"JSONDATA"},…
+GATE2-DIFFSAMPLE #5 diff textDocument/completion file:///tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit0.def :: $ ts={"isIncomplete":false,"items":[{"label":"Parent","kind":10},{"label":"Interfaces… rust=null
+GATE2-DIFFSAMPLE #9 diff textDocument/completion file:///tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit6.def :: $.items.length(27≠3) ts={"isIncomplete":false,"items":[{"label":"UINT8","kind":7,"detail":"8 位无符号整数"},{"… rust={"isIncomplete":false,"items":[{"detail":"builtin","kind":7,"label":"JSONDATA"},…
+GATE2-DIFFSAMPLE #10 diff textDocument/completion file:///tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit6.def :: $ ts={"isIncomplete":false,"items":[{"label":"Parent","kind":10},{"label":"Interfaces… rust=null
+GATE2-DIFFSAMPLE #14 diff textDocument/completion file:///tmp/kode-shadow-gate-assets/def-heavy/scripts/entity_defs/Unit12.def :: $.items.length(27≠3) ts={"isIncomplete":false,"items":[{"label":"UINT8","kind":7,"detail":"8 位无符号整数"},{"… rust={"isIncomplete":false,"items":[{"detail":"builtin","kind":7,"label":"JSONDATA"},…
+GATE2-METRIC S1.gateState {"mode":"shadow","servingMode":"shadow","rustServingGated":false,"serverPath":"/home/cui/workspaces/kode-v02/target/release/kode-server","clientAlive":true,"notices":[]}
+GATE2-METRIC S2.hoverDefMethod.ts.all n=100 p50=0.05ms p95=0.11ms p99=0.14ms max=0.21ms
+GATE2-ROUNDS S2.hoverDefMethod.ts rounds=5 r0Median=0.05ms r1Median=0.05ms r2Median=0.05ms r3Median=0.05ms r4Median=0.09ms roundMedian=0.05ms
+GATE2-METRIC S2.hoverDefMethod.rust.all n=100 p50=0.16ms p95=0.24ms p99=0.25ms max=0.26ms
+GATE2-ROUNDS S2.hoverDefMethod.rust rounds=5 r0Median=0.14ms r1Median=0.12ms r2Median=0.15ms r3Median=0.16ms r4Median=0.19ms roundMedian=0.15ms
+GATE2-METRIC S2.hoverDefMethod.ratioRustOverTsP95 2.18x
+GATE2-METRIC S2.completionDefType.ts.all n=100 p50=0.33ms p95=0.46ms p99=0.49ms max=0.6ms
+GATE2-ROUNDS S2.completionDefType.ts rounds=5 r0Median=0.33ms r1Median=0.33ms r2Median=0.34ms r3Median=0.35ms r4Median=0.31ms roundMedian=0.33ms
+GATE2-METRIC S2.completionDefType.rust.all n=100 p50=0.16ms p95=0.23ms p99=0.3ms max=0.31ms
+GATE2-ROUNDS S2.completionDefType.rust rounds=5 r0Median=0.16ms r1Median=0.18ms r2Median=0.15ms r3Median=0.16ms r4Median=0.14ms roundMedian=0.16ms
+GATE2-METRIC S2.completionDefType.ratioRustOverTsP95 0.5x
+GATE2-METRIC S2.definitionDefProp.ts.all n=100 p50=1.82ms p95=2.33ms p99=3.32ms max=3.69ms
+GATE2-ROUNDS S2.definitionDefProp.ts rounds=5 r0Median=1.78ms r1Median=1.91ms r2Median=1.84ms r3Median=1.78ms r4Median=1.74ms roundMedian=1.78ms
+GATE2-METRIC S2.definitionDefProp.rust.all n=100 p50=0.26ms p95=0.39ms p99=0.9ms max=1.21ms
+GATE2-ROUNDS S2.definitionDefProp.rust rounds=5 r0Median=0.24ms r1Median=0.24ms r2Median=0.26ms r3Median=0.27ms r4Median=0.25ms roundMedian=0.25ms
+GATE2-METRIC S2.definitionDefProp.ratioRustOverTsP95 0.17x
+GATE2-METRIC S2.diagnosticsDef.ts.all n=100 p50=0.32ms p95=0.53ms p99=0.56ms max=0.56ms
+GATE2-ROUNDS S2.diagnosticsDef.ts rounds=5 r0Median=0.3ms r1Median=0.28ms r2Median=0.3ms r3Median=0.47ms r4Median=0.47ms roundMedian=0.3ms
+GATE2-METRIC S2.diagnosticsDef.rust.all n=100 p50=0.18ms p95=0.25ms p99=0.31ms max=0.33ms
+GATE2-ROUNDS S2.diagnosticsDef.rust rounds=5 r0Median=0.16ms r1Median=0.15ms r2Median=0.18ms r3Median=0.23ms r4Median=0.21ms roundMedian=0.18ms
+GATE2-METRIC S2.diagnosticsDef.ratioRustOverTsP95 0.47x
+GATE2-METRIC S2.compareChannel.completionDefType.all n=100 p50=0.35ms p95=0.48ms p99=0.57ms max=0.61ms
+GATE2-ROUNDS S2.compareChannel.completionDefType rounds=5 r0Median=0.35ms r1Median=0.35ms r2Median=0.34ms r3Median=0.35ms r4Median=0.35ms roundMedian=0.35ms
+GATE2-METRIC S3.burstErrors 0
+GATE2-METRIC S3.burstRustCompletion n=200 p50=0.95ms p95=1.72ms p99=1.83ms max=1.89ms
+GATE2-METRIC S3.burstErrors 0
+GATE2-METRIC S3.burstTsCompletion n=200 p50=9.3ms p95=20.77ms p99=24.05ms max=25.05ms
+GATE2-METRIC S3.burstErrors 0
+GATE2-METRIC S3.burstShadowCompare n=200 p50=3.24ms p95=4.11ms p99=4.23ms max=4.25ms
+GATE2-METRIC S3.editStormRound n=150 p50=0.22ms p95=0.33ms p99=0.64ms max=0.79ms
+GATE2-METRIC S3.stormFinalRustHasStormProp149 1
+GATE2-METRIC S3.stormFinalTsHasStormProp149 0
+GATE2-METRIC S3.stormFinalRustLabelCount 2
+GATE2-METRIC S3.stormFinalTsLabelCount 0
+GATE2-METRIC S3.soakServerRss.peakRssMb 5.04 MB
+GATE2-METRIC S3.soakSelfPeakRssMb 184.22 MB
+GATE2-METRIC S3.soakSelfPeakDeltaMb 3.25 MB
+GATE2-METRIC S3.diffLogAfterSoak {"total":500,"match":0,"diff":500,"failure":0}
+GATE2-METRIC S3.diffLogBounded500 1
