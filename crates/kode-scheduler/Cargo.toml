@@ -1,0 +1,18 @@
+# kode2 PR-009 (书 §4 CORE-005..008/017 + §7 IDX-003/013/015 调度面 + §17 PR-009):
+# 失效调度器 crate —— 失效图 + 分批重建 + 风暴合并 + 优先级 + 取消 + 有界队列 +
+# 暂停恢复 + 崩溃恢复 + 指标。调度面行为与 TS src/indexScheduler.ts 对拍(fixture 驱动)。
+# 铁律: 零第三方依赖(仅 workspace 内 kode-index/kode-vfs),与 PR-005/007 同规。
+[package]
+name = "kode-scheduler"
+description = "kode2 invalidation scheduler: reverse-DAG invalidation graph, batched rebuild planning, storm coalescing, priorities, cancellation, bounded queue, pause/resume, crash-recovery journal, metrics (book §4/§7/§17 PR-009)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-index = { path = "../kode-index" }
+kode-vfs = { path = "../kode-vfs" }
+
+[lints]
+workspace = true

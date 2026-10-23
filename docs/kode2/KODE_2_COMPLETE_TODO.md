@@ -146,10 +146,10 @@ kode/
 - [x] CORE-002 `initialize` 协商 capabilities、project roots、server version、extension capabilities。(PR-003:kode-server initialize 幂等协商,initializationOptions.restartGeneration 对账)
 - [x] CORE-003 所有请求 request_id/span_id；日志与 tracing 可串联扩展↔Core↔后台任务。(PR-003 最小版:request_id 数字/字符串保真贯穿响应/取消/日志(stderr 对账),span/tracing 体系留后续)
 - [ ] CORE-004 单实例一个 workspace session；多个 root 配隔离 root_id 与受控共享缓存。
-- [ ] CORE-005 工作优先级：打开文档小范围交互 > 直接语义查询 > 局部依赖刷新 > 后台首扫 > 大图/SDK/报表。
-- [ ] CORE-006 队列具备公平性和抗饥饿机制；不可永久推迟后台 indexing。
-- [ ] CORE-007 按 request/document/root 级 cancel token，传播至文件读取、解析、计算、响应封装。
-- [ ] CORE-008 去重同文件同版本工作；singleflight 共享解析结果；异步结果晚到必须 version check。
+- [ ] CORE-005 工作优先级：打开文档小范围交互 > 直接语义查询 > 局部依赖刷新 > 后台首扫 > 大图/SDK/报表。(PR-009 基础版:crates/kode-scheduler 五级优先级+seq 公平序+交互冷却限流,与 TS indexScheduler 对拍;server 装配接线随 provider 单)
+- [ ] CORE-006 队列具备公平性和抗饥饿机制；不可永久推迟后台 indexing。(PR-009 基础版:kode-scheduler 同优 FIFO+有界队列淘汰+后台饥饿上限绕过冷却晋升;server 接线随装配单)
+- [ ] CORE-007 按 request/document/root 级 cancel token，传播至文件读取、解析、计算、响应封装。(PR-009 基础版:kode-scheduler CancelToken+句柄/批量取消,运行中不中断;向 IO/解析/响应的传播随 server 装配)
+- [ ] CORE-008 去重同文件同版本工作；singleflight 共享解析结果；异步结果晚到必须 version check。(PR-009 基础版:kode-scheduler 同文件同版本合并+过期版本丢弃/取消让位+keyed 单例;singleflight 随 provider 接线)
 - [ ] CORE-009 首扫后台完成，同时允许 on-demand target parse；冷请求绝不无期限等待全仓。
 - [ ] CORE-010 CPU pool 对交互请求预留容量；后台 worker 并发有硬上限，避免把 CPU 全核占满。
 - [ ] CORE-011 IO task 与 CPU task 分离，禁止锁跨 await，审计 contention/priority inversion。
@@ -158,7 +158,7 @@ kode/
 - [ ] CORE-014 读写索引时使用一致快照，避免定义和引用来自不同 generation。
 - [ ] CORE-015 Core crash/restart 自动恢复，服务不可用时最小语法功能继续使用。(PR-003 已落最小版:TS client 崩溃检测+自动 respawn+重握手(10s 窗口 3 次);「最小语法功能兜底」留 Provider 接线时实现)
 - [ ] CORE-016 启动探针、健康状态、索引进度、可观察恢复原因。(PR-003 已落 `$/kode/health` 探针(status/pid/uptime/文档摘要/restartGeneration)+ stderr 诊断留痕;索引进度随索引模块)
-- [ ] CORE-017 文件通知合并 debounce + max latency；原子替换/rename、delete/create 合并处理。
+- [ ] CORE-017 文件通知合并 debounce + max latency；原子替换/rename、delete/create 合并处理。(PR-009 调度决策面:kode-scheduler StormBuffer 风暴合并(同文件并一/最新版本胜出/超限强制落批);didChange 接线与 debounce 参数随 server 单)
 - [ ] CORE-018 建立 long-running fuzz/load/stress CI，检测死锁、永久 pending 和取消泄漏。
 
 ## 5. VFS / 文件发现 / 文档快照
@@ -434,7 +434,7 @@ kode/
 - [x] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。(落地:crates/kode-root(ROOT-001..015 基础版:优先级链显式配置>记忆>约定>有界深扫描+宁缺勿猜;平台路径规则 Win 折叠/mac 折叠声明/Linux 敏感/WSL UNC 拆段;submodule/vendored 边界+mount/symlink 环护栏+别名身份+敏感目录台账;引擎配置规则自 TS workspaceDiscovery 移植并逐条 file:line 证据化;UR+Path 双支持;诊断仅新启;TS 对拍 golden 双向门禁 6 树 48/48 字段=100%,tests/kodeRootParity.test.ts;证据 docs/kode2/pr-006.md)
 - [x] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
 - [x] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。(落地:crates/kode-types(书命名 kode-semantic;SEM-002/004/005/007/013 基础版:类型图 IR+六种边+别名链/继承链/全图三色 DFS 环检测,有限步显式诊断)+ 类型面对拍 golden 双向门禁(文件面 28/28+图级 37/37=100%,TS 用现有 defParser/compositionRoots 复算;按 ARCH-012 不做性能对比);证据 docs/kode2/pr-008.md)
-- [ ] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。
+- [x] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。(落地:crates/kode-scheduler(SCHED-001..021 内部清单=§4 CORE-005..008/017+§7 IDX-003/013/015 调度面基础版,书无 SCHED 编号已如实映射;失效图文件→声明名→反向受影响集+分批重建+风暴合并+五级优先级+取消+有界队列+暂停恢复+崩溃恢复台账+指标)+ 调度面对拍 golden 双向门禁(10 场景,TS 真实 IndexScheduler 复算 148 字段=100%,tests/kodeSchedulerParity.test.ts);证据 docs/kode2/pr-009.md)
 - [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。
 - [ ] PR-011 `lsp/completion-diagnostics`：版本化发布与可取消查询。
 - [ ] PR-012 `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。
