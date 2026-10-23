@@ -323,6 +323,10 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在 |
 | `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
+| `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | 临时编辑热更新命令总开关(默认关,与 `hotReload.enabled` 同口径) |
+| `kbengine.hotReload.tempEdit.actionName` | string | 空 | 第 3 步 reloadScript 按名触发的 quick action(HTTP/终端均可);留空按配置错误中止 |
+| `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | 发送 reloadScript 前自动还原原始内容;还原失败即中止请求 |
+| `kbengine.hotReload.tempEdit.scriptRoot` | string | 空 | 双名称解析的脚本资源根(fullModule/requestModule);留空回显模块名未解析,不猜 |
 
 行为口径:
 

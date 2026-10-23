@@ -64,6 +64,11 @@ import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
+import {
+  readTempEditReloadSettings,
+  runTempEditReload,
+  tempEditSectionReader
+} from './hotReloadTempEdit';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
@@ -1650,6 +1655,76 @@ export function activate(context: vscode.ExtensionContext) {
   setupHotReload(context, actionName =>
     quickActionManager.runByName(actionName, { suppressConfirm: true })
   );
+
+  // 临时编辑热重载 quick action(书 §19 HR-PR-02):先临时编辑 → 可选自动
+  // 还原 → reloadScript → 结果回显。开关默认关(与 kbengine.hotReload.enabled
+  // 同口径);reloadScript 不另起第二套 HTTP,复用既有 quick action 通道
+  // (HTTP 与终端两条腿都从 quickActionManager.runByName 走);回显走
+  // 「KBEngine HTTP 快捷请求」OUTPUT 通道 + 独立问题通道(诊断集,成功清除)。
+  // 铁律:accepted≠applied——通道回执再好也只报「已发送(未确认)」,
+  // 绝不显示「已热更新」。
+  const tempEditDiagnostics = vscode.languages.createDiagnosticCollection(
+    'KBEngine 临时编辑热更新'
+  );
+  context.subscriptions.push(tempEditDiagnostics);
+  const runTempEditReloadCommand = vscode.commands.registerCommand(
+    'kbengine.hotReload.tempEdit.run',
+    async () => {
+      const settings = readTempEditReloadSettings(
+        tempEditSectionReader(
+          vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined)
+        )
+      );
+      if (!settings.enabled) {
+        void vscode.window.showWarningMessage(
+          '临时编辑热更新已停用(默认关);确认风险后在设置 kbengine.hotReload.tempEdit.enabled 开启'
+        );
+        return;
+      }
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        void vscode.window.showInformationMessage('临时编辑热更新需要活动编辑器中的文件');
+        return;
+      }
+      const targetDoc = { fsPath: editor.document.uri.fsPath, label: path.basename(editor.document.uri.fsPath) };
+      const decoder = new TextDecoder();
+      const result = await runTempEditReload(targetDoc, settings, {
+        readFile: async doc =>
+          decoder.decode(await vscode.workspace.fs.readFile(vscode.Uri.file(doc.fsPath))),
+        writeFile: async (doc, content) => {
+          await vscode.workspace.fs.writeFile(
+            vscode.Uri.file(doc.fsPath),
+            new TextEncoder().encode(content)
+          );
+        },
+        // 无人值守口径:跳过确认框,也不污染「上次执行」记忆
+        runReloadAction: name =>
+          quickActionManager.runByName(name, { suppressConfirm: true, skipLastRun: true }),
+        log: line => httpRequestChannel.appendLine(`[临时编辑热更新] ${line}`),
+        reportProblem: (doc, message) => {
+          if (message === null) {
+            tempEditDiagnostics.delete(editor.document.uri);
+            return;
+          }
+          tempEditDiagnostics.set(editor.document.uri, [
+            new vscode.Diagnostic(
+              new vscode.Range(0, 0, 0, 1),
+              `临时编辑热更新: ${message}`,
+              vscode.DiagnosticSeverity.Error
+            )
+          ]);
+        }
+      });
+      if (result.phase === 'sent-unverified') {
+        void vscode.window.showInformationMessage(
+          `临时编辑热更新:已发送(未确认)。引擎是否 applied 未知,详见输出通道「KBEngine HTTP 快捷请求」。`
+        );
+      } else if (result.phase !== 'missing-action') {
+        void vscode.window.showErrorMessage(`临时编辑热更新失败: ${result.detail}`);
+      }
+    }
+  );
+  context.subscriptions.push(runTempEditReloadCommand);
 
   // Python 生态接线(盘点 G1/G2):先导出 .kbengine/stubs/KBEngine.pyi
   // (符号索引发射,盘点 G2),再同步 python.analysis.extraPaths(scripts 根
