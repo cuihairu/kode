@@ -472,6 +472,10 @@
         "title": "Temp-Edit Hot Reload (Active File)"
       },
       {
+        "command": "kbengine.core.showShadowDiffLog",
+        "title": "Kode Core Shadow: Show Diff Log"
+      },
+      {
         "command": "kbengine.discovery.report",
         "title": "Show Discovery Report"
       },
@@ -1030,6 +1034,28 @@
           "type": "string",
           "default": "",
           "description": "脚本资源根（双名称解析起点：fullModule=根相对全部目录段+短名，requestModule=直接父目录+短名）；留空则回显模块名未解析，不猜测"
+        },
+        "kbengine.core.backend": {
+          "type": "string",
+          "enum": ["ts", "rust", "shadow"],
+          "enumDescriptions": [
+            "TS 单轨（默认）：现状真相，Rust 路径完全不参与",
+            "保留值：切流前置条件未全绿前被 serving 门禁拒绝，生效轨道仍是 ts（见 docs/kode2/pr-012.md）",
+            "影子比对：TS 照常服务，同参请求镜像给 kode-server 只记差异日志，Rust 结果不影响任何用户可见行为"
+          ],
+          "default": "ts",
+          "description": "双轨后端开关（kill-switch）：默认 ts。任何非 shadow/rust 值（含拼错）一律回落 ts；改回 ts 立即停用 Rust 进程，用户无感回退。"
+        },
+        "kbengine.core.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "kode-server 二进制路径（cargo build -p kode-server 产物）。仅在 backend=shadow 时使用；留空则影子比对记 rust-unavailable，不启动进程"
+        },
+        "kbengine.core.shadow.timeoutMs": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 0,
+          "description": "影子比对镜像请求超时（毫秒）：超时只记差异日志 rust-timeout，不影响 TS 服务路径"
         },
         "kbengine.entity.builtinProperties": {
           "type": "boolean",

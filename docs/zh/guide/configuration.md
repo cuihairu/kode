@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-54 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 54 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+57 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 57 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 ### 诊断
 
@@ -336,6 +336,16 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 - **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
 - **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
 
+### 双轨后端门（kode2 Rust Core）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.core.backend` | string | `"ts"` | 双轨后端开关（kill-switch）：`ts` 单轨（现状真相）；`rust` 为保留值，切流前置条件未全绿前被 serving 门禁拒绝，生效轨道仍是 `ts`；`shadow` 影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志。任何非法值一律回落 `ts`；改回 `ts` 立即停用 Rust 进程，用户无感回退 |
+| `kbengine.core.serverPath` | string | 空 | kode-server 二进制路径；仅在 `backend=shadow` 时使用，留空则影子比对记 `rust-unavailable`，不启动进程 |
+| `kbengine.core.shadow.timeoutMs` | number | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 `rust-timeout`，不影响 TS 服务路径 |
+
+铁律：默认 `ts` 下 Rust 路径完全不参与，用户可见行为与纯 TS 单轨一致；`shadow` 模式 Rust 结果只进输出通道「KBEngine Core Shadow」的差异日志（命令 `kbengine.core.showShadowDiffLog` 查看），永不影响任何用户可见结果。
+
 ### 数据库
 
 | 配置项 | 类型 | 默认值 | 说明 |
@@ -490,7 +500,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 54 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
+### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 57 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 

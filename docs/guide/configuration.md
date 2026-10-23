@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 54 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 54-row table. To find a setting, locate the feature area first, then the row within it.
+The 57 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 57-row table. To find a setting, locate the feature area first, then the row within it.
 
 ### Diagnostics
 
@@ -336,6 +336,16 @@ Behavior rules:
 - **No disturbance on missing names**: when `actionName` is empty or matches no action, the event still fires but only drops one log line into the OUTPUT channel 「KBEngine 快速执行动作」 (KBEngine quick actions) — no popup, no execution.
 - **Config tolerance**: wrong types (`enabled` not a boolean, `globs` not an array, `debounceMs` negative or non-numeric) all fall back to defaults, erroring nothing and interrupting nothing; empty strings and non-string items in `globs` are pruned, and pruning to empty falls back to the default `**/*.py`.
 
+### Dual-Track Backend Gate (kode2 Rust Core)
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.core.backend` | string | `"ts"` | Dual-track backend switch (kill-switch): `ts` = single track (current truth); `rust` is a reserved value — refused by the serving gate until cutover preconditions are all green, the effective track stays `ts`; `shadow` = shadow comparison — TS keeps serving while same-parameter requests are mirrored to kode-server and only diff-logged. Any invalid value falls back to `ts`; switching back to `ts` stops the Rust process immediately for a user-invisible rollback |
+| `kbengine.core.serverPath` | string | empty | kode-server binary path; only used when `backend=shadow`. When empty, shadow comparison logs `rust-unavailable` and spawns nothing |
+| `kbengine.core.shadow.timeoutMs` | number | `2000` | Mirror-request timeout (ms) for shadow comparison; timeouts only log `rust-timeout` and never affect the TS serving path |
+
+Iron rule: with the default `ts`, the Rust path is not involved at all and user-visible behavior matches the pure-TS single track; in `shadow` mode Rust results go only into the diff log of the 「KBEngine Core Shadow」 output channel (inspect via `kbengine.core.showShadowDiffLog`) and never affect any user-visible result.
+
 ### Database
 
 | Setting | Type | Default | Purpose |
@@ -490,7 +500,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 
 **Three kinds of purely discovered resources with no settings at all** (since batch 125): `types.xml`, `messages_fixed(_defaults).xml`, and the engine `kbengine_defaults.xml` (when binPath cannot derive it, fall back via the engine source-root anchor, then derive).
 
-### Full Setting Comparison Table (batch-125 inventory of 32 items; more added continuously since batch 126, 54 today — the new ones are in the feature-area groups of "Overview of `kbengine.*` Settings (by Feature Area)" above)
+### Full Setting Comparison Table (batch-125 inventory of 32 items; more added continuously since batch 126, 57 today — the new ones are in the feature-area groups of "Overview of `kbengine.*` Settings (by Feature Area)" above)
 
 `How it resolves now` = how the value is actually taken today; `Auto-discoverable` = whether the value can be derived from the workspace/environment; `Disposition` = this round's conclusion and reasoning.
 

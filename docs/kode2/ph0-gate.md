@@ -10,7 +10,7 @@
 |---|---|---|
 | 门 1 基准(bench) | 🟡 | TS 侧基准正本已立(PR1/PR7);**Hover/Completion 端到端、内存、多轮中位已实测关闭(2026-gate-baseline.md);余:调用链图 Mermaid、Rust 双轨对拍定义、VS Code UI 层端口径** |
 | 门 2 正确性 fixture(parity) | 🟢(最小集) | 四主请求 golden 已锁定(11 请求,本 commit);**golden 扩面与 Rust 对拍执行未开始** |
-| 门 3 回退方案(rollback) | ⬜ | 双轨未存在,回退=维持 TS 单轨(自然成立);**kill-switch 配置与回退演练未落** |
+| 门 3 回退方案(rollback) | 🟡 | kill-switch 配置键+shadow 模式+差异日志+演练判据已落(PR-012,`kbengine.core.backend` 默认 ts 不切流);**provider 逐面接入 compare 后的首次实战回退演练未执行** |
 
 **当前判定:三门未全绿 → 禁止进入 Phase 2「Rust 替换/双轨切换」;不阻塞 Phase 1 骨架(PR-003..007),但 Phase 1 的垂直切片对拍必须以门 2 fixture 为口径。**
 
@@ -51,17 +51,18 @@
 
 ## 门 3 回退方案(书 §16.3/PH7-02:双轨 parity 与回退措施成熟前不删旧实现)
 
-### 现状
+### 已就绪(PR-012,2026-10-23)
 
 - [x] 回退底线自然成立:Rust 路径尚不存在,TS 单轨为唯一提供者;本 commit 未改任何运行时行为(仅新增 fixture/测试/文档,`pnpm test:unit` 门禁不受影响)。
 - [x] 迁移铁律已有依据:书 PH7-02(仅双轨 parity 和回退成熟后删旧 TS 全仓解析)、§16.8(correctness regress 的 PR 不能合并)。
+- [x] 双轨 kill-switch 配置键已设计+实现:`kbengine.core.backend: ts|rust|shadow`(默认 ts;`rust` 为保留值,serving 门禁拒绝,生效轨道仍 ts;非法值一律回落 ts)——src/kodeCoreGate.ts `resolveBackendMode`/`serveFromRust`(恒 false,唯一放行点)+ kodeCoreGateWiring 装配(默认 ts 下零用户可见变化,装配测锁死);设计正本 docs/kode2/pr-012.md §1。
+- [x] shadow 模式(双跑比对、Rust 结果仅记录不发布)+差异日志已实现:backend=shadow 时 TS 照常服务,同参请求镜像 kode-server,五种 verdict 入有界环形 ShadowDiffLog(500 条)并接输出通道「KBEngine Core Shadow」,命令 `kbengine.core.showShadowDiffLog` 查看;采集器就位,provider 逐面接线属 parity 扩面后续单。
+- [x] 回退演练脚本与判据已立(pr-012.md §2.3):四步演练 + 四判据(结果逐字节一致/failure 全归因 rust 侧/kill-switch 后 clientAlive=false/全程用户无感);可执行实战演练待 provider 接线后做首次并记录。
 
-### 关门缺口(Phase 1/2 落地项,提前立此存照)
+### 关门缺口(收尾)
 
-- [ ] 双轨 kill-switch 配置键(如 `kbengine.core.backend: ts|rust|shadow`)未设计;PR-003/PR-010 必须携带。
-- [ ] shadow 模式(双跑比对、Rust 结果仅记录不发布)未设计——这是 parity 扩面的采集器。
-- [ ] 回退演练脚本与判据(Rust 路径异常时一键回 TS,用户无感)未存在。
-- [ ] 旧 TS 实现的退役条件清单(PH7-02)未从书条款细化为可执行 checklist。
+- [ ] provider 逐面接入 `gate.compare()` 后的首次实战回退演练与记录(pr-012.md §2.3 判据打勾)。
+- [x] 旧 TS 实现的退役条件清单已从书条款细化为可执行 checklist(pr-012.md §6);其逐条执行属 PH7 阶段。
 
 ## 与书条目的勾稽
 

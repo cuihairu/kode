@@ -64,6 +64,7 @@ import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
+import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
   readTempEditReloadSettings,
   runTempEditReload,
@@ -203,6 +204,9 @@ export function activate(context: vscode.ExtensionContext) {
   setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
   // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
   setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
+  // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
+  // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)
+  setupKodeCoreGate(context);
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
