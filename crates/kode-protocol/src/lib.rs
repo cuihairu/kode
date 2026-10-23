@@ -171,11 +171,14 @@ pub struct InitializeResult {
     pub server_info: ServerInfo,
 }
 
-/// 服务器 capabilities(最小集:full 文本同步)。
+/// 服务器 capabilities(最小集:full 文本同步 + hover)。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
     pub text_document_sync: TextDocumentSyncOptions,
+    /// LSP-003 / PH1-03(PR-010):hover provider 能力声明。
+    #[serde(default)]
+    pub hover_provider: bool,
 }
 
 /// 全量同步(openClose + change=1)。
@@ -262,6 +265,24 @@ pub struct DidCloseParams {
 #[serde(rename_all = "camelCase")]
 pub struct DidCloseTextDocumentIdentifier {
     pub uri: String,
+}
+
+// ---------------------------------------------------------------------------
+// textDocument/hover DTO(PR-010:HOVER-001 请求入口)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextDocumentIdentifier {
+    pub uri: String,
+}
+
+/// hover 请求参数:文档身份 + UTF-16 位置(语义同 Position)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
 }
 
 // ---------------------------------------------------------------------------

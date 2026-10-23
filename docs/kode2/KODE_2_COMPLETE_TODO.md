@@ -227,7 +227,7 @@ kode/
 
 - [ ] LSP-001 Completion（声明、类型、实体属性/方法、RPC 参数、组件、内建 API）共享语义查询。
 - [ ] LSP-002 Completion 支持 resolve 延迟补详情，snippet、sortText、filterText、文档与来源。
-- [ ] LSP-003 Hover 展示完整类型、来源、可用分面、版本与注释，严禁阻塞等待全局索引。
+- [ ] LSP-003 Hover 展示完整类型、来源、可用分面、版本与注释，严禁阻塞等待全局索引。(基础版:PR-010 kode-server hover 响应链(定位/签名/继承链+成员展开,def 视图零 IO 应答;分面可见性/版本/注释随语义面扩展;证据 docs/kode2/pr-010.md)
 - [ ] LSP-004 Definition / Declaration / TypeDefinition：`.def` ↔ `types.xml` ↔ `.py` ↔ 引擎源码。
 - [ ] LSP-005 References：跨 root 实体/方法/组件/类型，区分语法同名和真实语义引用。
 - [ ] LSP-006 DocumentSymbol / WorkspaceSymbol 提供快速搜索与稳定排序。
@@ -373,7 +373,7 @@ kode/
 ### Phase 1 — Core 骨架（最小垂直切片）
 - [ ] PH1-01 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007)
 - [x] PH1-02 Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。(PR-003:tests/kodeCoreE2E.test.ts 真实 kode-server 二进制,4 用例)
-- [ ] PH1-03 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(进行中:PR-004 已落 VFS-001..013 基础版+kode-server 文档同步对接,证据 docs/kode2/pr-004.md;Hover/Definition 垂直切片随 PR-010)
+- [ ] PH1-03 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(进行中:PR-004 已落 VFS-001..013 基础版+kode-server 文档同步对接,证据 docs/kode2/pr-004.md;PR-010 已落 Hover 垂直切片(响应链+TS 面对拍 100%),Definition 随后续单)
 - [ ] PH1-GATE Rust 与旧实现同场景一致；无长任务阻塞 VS Code；跨平台可启动。
 
 ### Phase 2 — 解析与索引（最大性能收益路径）
@@ -435,7 +435,7 @@ kode/
 - [x] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
 - [x] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。(落地:crates/kode-types(书命名 kode-semantic;SEM-002/004/005/007/013 基础版:类型图 IR+六种边+别名链/继承链/全图三色 DFS 环检测,有限步显式诊断)+ 类型面对拍 golden 双向门禁(文件面 28/28+图级 37/37=100%,TS 用现有 defParser/compositionRoots 复算;按 ARCH-012 不做性能对比);证据 docs/kode2/pr-008.md)
 - [x] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。(落地:crates/kode-scheduler(SCHED-001..021 内部清单=§4 CORE-005..008/017+§7 IDX-003/013/015 调度面基础版,书无 SCHED 编号已如实映射;失效图文件→声明名→反向受影响集+分批重建+风暴合并+五级优先级+取消+有界队列+暂停恢复+崩溃恢复台账+指标)+ 调度面对拍 golden 双向门禁(10 场景,TS 真实 IndexScheduler 复算 148 字段=100%,tests/kodeSchedulerParity.test.ts);证据 docs/kode2/pr-009.md)
-- [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。
+- [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。(基础版落地:kode-server hover 响应链(定位→文档→签名→继承成员,textDocument/hover+hoverProvider capability+didOpen/Change/Close 语料视图联动)+对拍 golden 双向门禁(TS defParser/compositionRoots/defChain 复算:文件面 28/28+悬停面 90/90=100%)+环截断/缺父/UTF-16 词提取单测;Provider 切流随后续单;证据 docs/kode2/pr-010.md)
 - [ ] PR-011 `lsp/completion-diagnostics`：版本化发布与可取消查询。
 - [ ] PR-012 `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。
 
