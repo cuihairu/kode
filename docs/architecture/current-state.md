@@ -131,7 +131,7 @@
   4. Hash:全缺——HR-HASH 全量待建;
   5. 记录唯一化:无 targetId+rootId+URI 记录模型;
   6. 安全:无 workspace 白名单/endpoint 批准/默认关的 per-target 开关(hotReload 默认关可复用)。
-- 【事实】逐项实现路径落点:本文件即差异清单指针;书 HR-AUDIT-012 要求的 docs/hotreload/current-implementation.md 不在本 PR 三文件范围内——待建(建时应以本节 + httpRequests.ts/httpRequestService.ts/hotReload.ts 为源)。
+- 【事实】逐项实现路径落点:本文件即差异清单指针;HR-AUDIT-012 的 docs/hotreload/current-implementation.md 已由并行 HR-PR-01 落库(commit 1e30ff8,与本审计同一基点 SHA 36052c4),HR 差异清单以该文件为准。
 
 ## PERF-002/003/004 fixtures 规格(现状与差距)
 
