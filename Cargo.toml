@@ -6,7 +6,7 @@
 # 按书 PR-008..009 逐个落地后再加进 members。
 [workspace]
 resolver = "2"
-members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-index"]
+members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-root", "crates/kode-index"]
 
 [workspace.package]
 version = "0.2.0"

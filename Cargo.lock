@@ -32,6 +32,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kode-root"
+version = "0.2.0"
+dependencies = [
+ "kode-vfs",
+]
+
+[[package]]
 name = "kode-server"
 version = "0.2.0"
 dependencies = [
