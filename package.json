@@ -468,6 +468,10 @@
         "title": "Run Named HTTP Quick Request"
       },
       {
+        "command": "kbengine.hotReload.tempEdit.run",
+        "title": "Temp-Edit Hot Reload (Active File)"
+      },
+      {
         "command": "kbengine.discovery.report",
         "title": "Show Discovery Report"
       },
@@ -1006,6 +1010,26 @@
           "type": "number",
           "default": 500,
           "description": "触发前的去抖毫秒数（连发保存合并成一次触发；0 为不去抖）"
+        },
+        "kbengine.hotReload.tempEdit.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "临时编辑热更新 quick action 总开关（默认关防误触，与 hotReload.enabled 同口径）。开启后命令 kbengine.hotReload.tempEdit.run 才会执行：写入临时编辑 → 按 autoRestore 决定是否还原 → 经既有 quick action 通道（HTTP/终端）发 reloadScript → 结果回显输出/问题通道"
+        },
+        "kbengine.hotReload.tempEdit.actionName": {
+          "type": "string",
+          "default": "",
+          "description": "第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可；留空视为配置错误中止，不编辑不发请求）"
+        },
+        "kbengine.hotReload.tempEdit.autoRestore": {
+          "type": "boolean",
+          "default": true,
+          "description": "发送 reloadScript 前是否自动还原原始内容；还原失败会中止请求并在问题通道报错（文件停留在临时编辑态需手工处理）"
+        },
+        "kbengine.hotReload.tempEdit.scriptRoot": {
+          "type": "string",
+          "default": "",
+          "description": "脚本资源根（双名称解析起点：fullModule=根相对全部目录段+短名，requestModule=直接父目录+短名）；留空则回显模块名未解析，不猜测"
         },
         "kbengine.entity.builtinProperties": {
           "type": "boolean",

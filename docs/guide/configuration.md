@@ -323,6 +323,10 @@ File save/watch → trigger the `quickActions` action by name. Gated **off by de
 | `kbengine.hotReload.actionName` | string | empty | The action name to trigger; must exist in the `quickActions` array |
 | `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | Watch patterns (VS Code globs); one file watcher per pattern |
 | `kbengine.hotReload.debounceMs` | number | `500` | Debounce milliseconds before triggering; `0` = no debounce |
+| `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | Master switch for the temp-edit hot reload command (default off, same gate style as `hotReload.enabled`) |
+| `kbengine.hotReload.tempEdit.actionName` | string | empty | Quick action fired for the reload step (HTTP or terminal); empty aborts with a config error |
+| `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | Restore the original content before sending the reload request; a failed restore aborts the request |
+| `kbengine.hotReload.tempEdit.scriptRoot` | string | empty | Script resource root for dual-name resolution (fullModule / requestModule); empty echoes the module name as unresolved, no guessing |
 
 Behavior rules:
 
