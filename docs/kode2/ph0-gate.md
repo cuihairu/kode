@@ -1,0 +1,68 @@
+# PH0 Release Gate — 进入 Rust 阶段的准入清单(PH0-02)
+
+- 日期:2026-10-23 · 分支 v0.2 · 依据:docs/kode2/KODE_2_COMPLETE_TODO.md §15 Phase 0
+- 铁律(书 §15):「PH0-GATE 无完整基准和正确性 fixture **禁止进入 Rust 替换阶段**」;本文件是该门禁的执行清单与当前状态正本。
+- 状态记号:🟢 就绪 · 🟡 部分就绪(缺口已列) · ⬜ 未开始
+
+## 总判定
+
+| 门 | 状态 | 一句话 |
+|---|---|---|
+| 门 1 基准(bench) | 🟡 | TS 侧基准正本已立(PR1/PR7);**Hover/Completion 端到端、内存、多轮中位三缺口未关** |
+| 门 2 正确性 fixture(parity) | 🟢(最小集) | 四主请求 golden 已锁定(11 请求,本 commit);**golden 扩面与 Rust 对拍执行未开始** |
+| 门 3 回退方案(rollback) | ⬜ | 双轨未存在,回退=维持 TS 单轨(自然成立);**kill-switch 配置与回退演练未落** |
+
+**当前判定:三门未全绿 → 禁止进入 Phase 2「Rust 替换/双轨切换」;不阻塞 Phase 1 骨架(PR-003..007),但 Phase 1 的垂直切片对拍必须以门 2 fixture 为口径。**
+
+## 门 1 基准(无基准不得声称 Rust 更快 — 书 ARCH-012/PERF-011/015)
+
+### 已就绪
+
+- [x] 基准报告正本:docs/perf/2026-baseline.md(PR1,89e8783)+ docs/perf/2026-final-report.md(PR7 复测,e6e8bc7),同机(i9-10880H/Linux/Node v24.21.0)同资产集(`scripts/generate-perf-assets.mjs`,六场景)。
+- [x] 七场景 PR1→PR7 对照数字 + 原始输出落盘(docs/perf/*-run.txt);验收表通过 6/未通过 0/未测量 2,不硬凑。
+- [x] 硬件与环境记录:docs/perf/hardware.md(PERF-001,AUDIT 7bd2c4d)。
+- [x] bench 可复现命令:`KODE_PERF_LARGE_FILES=30000 npx vitest run --config vitest.bench.config.ts tests/perf/*.bench.ts`。
+
+### 关门缺口(进入 Rust 替换前必须关闭)
+
+- [ ] Hover 端到端 P95 大型集未测量(final 报告 §9.2 #1,现仅组件级代理证据)。
+- [ ] Completion 端到端 P95 未测量(§9.2 #2,无 bench 场景)。
+- [ ] 冷启动内存占用未记录(§9.2 #8 内存子项;RSS 峰值口径)。
+- [ ] bench 单轮抖动(机械盘)无中位/置信区间(§5.1;需 `--repeat N` 多轮化)。
+- [ ] A1-7 调用链图(Mermaid)未落(对账:legacy-todo-audit.md A1 行)。
+- [ ] **Rust 双轨对拍基准定义**:以上每一指标在 Rust 路径上的同 fixture 同口径复测方案(PR-012 输入)未立项。
+
+## 门 2 正确性 fixture(同输入旧行为比对 — 书 PH1-GATE/PH2-GATE)
+
+### 已就绪(本 commit)
+
+- [x] parity 项目:`tests/fixtures/parity-project/`(实体继承 Monster→Avatar、组件 Inventory、Base/Cell 分面、Exposed、<Arg> 形参闸、types.xml/alias.xml 自定义类型),由 `scripts/generate-parity-fixtures.mjs` 确定性生成(`--check` 防漂移)。
+- [x] golden 输入输出:`tests/fixtures/parity/golden.json`,11 请求锁 hover(3)/definition(4)/completion(2)/diagnostics(2);对拍测试 `tests/parityGolden.test.ts`(默认对拍,`KODE_PARITY_UPDATE=1` 重录;两次重录 sha256 一致,确定性已验证)。
+- [x] 永转/超时回归锁(hoverBudget/documentStore/indexScheduler 三类测试)在 AUDIT-014 映射中列为迁移期禁删项(legacy-todo-audit.md 末节)。
+
+### 关门缺口
+
+- [ ] golden 扩面:references、rename、signature help、多根同名符号命中顺序(docs/review/2026-10-23-pr4-lookup-order-forensics.md 的显式策略)尚未入 golden。
+- [ ] 规模轴 parity:golden 现为 small 口径;S/M/L 规模下的行为等价抽查(perf 资产复用)未定义。
+- [ ] Rust 侧对拍执行器:同 fixture 喂 Rust server、与 golden.json diff 的 harness 未存在(Phase 1 PH1-02 握手 e2e 时建立)。
+- [ ] VS Code 真实 UI 层(electron 端到端)不在 golden 口径,基线 §5 待测项仍开放。
+
+## 门 3 回退方案(书 §16.3/PH7-02:双轨 parity 与回退措施成熟前不删旧实现)
+
+### 现状
+
+- [x] 回退底线自然成立:Rust 路径尚不存在,TS 单轨为唯一提供者;本 commit 未改任何运行时行为(仅新增 fixture/测试/文档,`pnpm test:unit` 门禁不受影响)。
+- [x] 迁移铁律已有依据:书 PH7-02(仅双轨 parity 和回退成熟后删旧 TS 全仓解析)、§16.8(correctness regress 的 PR 不能合并)。
+
+### 关门缺口(Phase 1/2 落地项,提前立此存照)
+
+- [ ] 双轨 kill-switch 配置键(如 `kbengine.core.backend: ts|rust|shadow`)未设计;PR-003/PR-010 必须携带。
+- [ ] shadow 模式(双跑比对、Rust 结果仅记录不发布)未设计——这是 parity 扩面的采集器。
+- [ ] 回退演练脚本与判据(Rust 路径异常时一键回 TS,用户无感)未存在。
+- [ ] 旧 TS 实现的退役条件清单(PH7-02)未从书条款细化为可执行 checklist。
+
+## 与书条目的勾稽
+
+- 本文件兑现 §15 PH0-02 后半句「输出 release gate」;PH0-02 前半句(锁定 parity fixture 与旧 TODO 完成状态)分别由 `tests/fixtures/parity/`+`tests/parityGolden.test.ts` 与 `docs/kode2/legacy-todo-audit.md`(60 行对账)兑现。
+- AUDIT-014(旧 A1-A7 映射正式勾账)落 legacy-todo-audit.md 末两节;书文件按其页眉协议保持原文逐字,不就地勾选。
+- PH0-GATE 判定在书 §15 为复选框;勾选条件=门 1 缺口关闭 + 门 2 扩面与对拍执行器就绪 + 门 3 kill-switch 设计落库。在此之前,任何「进入 Rust 替换阶段」的 PR 一律以本表判红。

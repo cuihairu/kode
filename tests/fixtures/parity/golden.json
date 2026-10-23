@@ -1,0 +1,495 @@
+{
+  "fixture": "tests/fixtures/parity-project",
+  "generator": "scripts/generate-parity-fixtures.mjs",
+  "requestCount": 11,
+  "requests": [
+    {
+      "id": "hover.def-method-onRpc",
+      "kind": "hover",
+      "input": {
+        "file": "scripts/base/Avatar.py",
+        "marker": "def onRpc(self",
+        "symbol": "onRpc"
+      },
+      "response": {
+        "contents": {
+          "value": "**onRpc** — 此函数是实体 def 声明的 BaseMethods 方法\n\n签名: `def onRpc(self, arg1: int)`\n\n声明: `Avatar.def:22`\n\n**Exposed**: 该方法可被客户端远程调用。"
+        }
+      }
+    },
+    {
+      "id": "hover.builtin-property-databaseID",
+      "kind": "hover",
+      "input": {
+        "file": "scripts/base/Avatar.py",
+        "marker": "print(self.databaseID)",
+        "at": "after self."
+      },
+      "response": {
+        "contents": {
+          "value": "**self.databaseID: int** — baseapp面 · 只读\n\n引擎注册面: `server/baseapp/entity.cpp:38`"
+        }
+      }
+    },
+    {
+      "id": "hover.receiver-base-onRpc",
+      "kind": "hover",
+      "input": {
+        "file": "scripts/base/Avatar.py",
+        "marker": "self.base.onRpc(argOne)",
+        "symbol": "onRpc"
+      },
+      "response": {
+        "contents": {
+          "value": "**onRpc** — 此调用是实体 def 声明的 BaseMethods 方法(接收者 self.base)\n\n签名: `def onRpc(self, arg1: int)`\n\n声明: `Avatar.def:22`\n\n**Exposed**: 该方法可被客户端远程调用。"
+        }
+      }
+    },
+    {
+      "id": "definition.method-to-def-onRpc",
+      "kind": "definition",
+      "input": {
+        "file": "scripts/base/Avatar.py",
+        "marker": "def onRpc(self",
+        "symbol": "onRpc"
+      },
+      "response": {
+        "uri": "<ROOT>/scripts/entity_defs/Avatar.def",
+        "range": {
+          "start": {
+            "line": 21,
+            "character": 0
+          },
+          "end": {
+            "line": 21,
+            "character": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "definition.baseclass-to-python-Avatar",
+      "kind": "definition",
+      "input": {
+        "file": "scripts/cell/Monster.py",
+        "marker": "class Monster(Avatar)",
+        "symbol": "Avatar)"
+      },
+      "response": {
+        "uri": "<ROOT>/scripts/base/Avatar.py",
+        "range": {
+          "start": {
+            "line": 3,
+            "character": 0
+          },
+          "end": {
+            "line": 3,
+            "character": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "definition.component-facet-add",
+      "kind": "definition",
+      "input": {
+        "file": "scripts/base/Avatar.py",
+        "marker": "self.inventory.add(itemId)",
+        "symbol": "add"
+      },
+      "response": {
+        "uri": "<ROOT>/scripts/entity_defs/components/Inventory.def",
+        "range": {
+          "start": {
+            "line": 2,
+            "character": 0
+          },
+          "end": {
+            "line": 2,
+            "character": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "definition.def-to-python-onRpc",
+      "kind": "definition",
+      "input": {
+        "file": "scripts/entity_defs/Avatar.def",
+        "marker": "<onRpc>",
+        "symbol": "onRpc"
+      },
+      "response": {
+        "uri": "<ROOT>/scripts/base/Avatar.py",
+        "range": {
+          "start": {
+            "line": 10,
+            "character": 8
+          },
+          "end": {
+            "line": 10,
+            "character": 8
+          }
+        }
+      }
+    },
+    {
+      "id": "completion.python-self",
+      "kind": "completion",
+      "input": {
+        "file": "scripts/base/Avatar.py",
+        "marker": "self. (行尾)",
+        "at": "eol"
+      },
+      "response": [
+        {
+          "label": "add",
+          "kind": 1,
+          "detail": "Entity Method",
+          "documentation": {
+            "value": "`def add(self, arg1: int)`\n\n定义于: `Inventory.def:9`\n\n从 .def 文件自动生成的实体方法。"
+          }
+        },
+        {
+          "label": "bag",
+          "kind": 9,
+          "detail": "Entity Property",
+          "documentation": {
+            "value": "定义于: `Avatar.def:13`\n\n从 .def 文件自动生成的实体属性。"
+          }
+        },
+        {
+          "label": "bag[]",
+          "kind": 9,
+          "detail": "Entity Property",
+          "documentation": {
+            "value": "定义于: `Avatar.def:13`\n\n从 .def 文件自动生成的实体属性。"
+          }
+        },
+        {
+          "label": "doAttack",
+          "kind": 1,
+          "detail": "Entity Method",
+          "documentation": {
+            "value": "`def doAttack(self, arg1: int)`\n\n定义于: `Avatar.def:26`\n\n从 .def 文件自动生成的实体方法。"
+          }
+        },
+        {
+          "label": "hp",
+          "kind": 9,
+          "detail": "Entity Property",
+          "documentation": {
+            "value": "定义于: `Avatar.def:8`\n\n从 .def 文件自动生成的实体属性。"
+          }
+        },
+        {
+          "label": "inventory",
+          "kind": 9,
+          "detail": "Entity Property",
+          "documentation": {
+            "value": "定义于: `Inventory.def:3`\n\n从 .def 文件自动生成的实体属性。"
+          }
+        },
+        {
+          "label": "onCellRpc",
+          "kind": 1,
+          "detail": "Entity Method (Exposed)",
+          "documentation": {
+            "value": "`def onCellRpc(self, arg1: int)`\n\n定义于: `Avatar.def:31`\n\n从 .def 文件自动生成的实体方法。"
+          }
+        },
+        {
+          "label": "onRpc",
+          "kind": 1,
+          "detail": "Entity Method (Exposed)",
+          "documentation": {
+            "value": "`def onRpc(self, arg1: int)`\n\n定义于: `Avatar.def:22`\n\n从 .def 文件自动生成的实体方法。"
+          }
+        },
+        {
+          "label": "onSlotsChanged",
+          "kind": 1,
+          "detail": "Entity Method (Exposed)",
+          "documentation": {
+            "value": "`def onSlotsChanged(self)`\n\n定义于: `Inventory.def:12`\n\n从 .def 文件自动生成的实体方法。"
+          }
+        }
+      ]
+    },
+    {
+      "id": "completion.def-type-known-types",
+      "kind": "completion",
+      "input": {
+        "file": "(inline) scripts/entity_defs/CompletionProbe.def",
+        "marker": "<Type>PAR",
+        "at": "end"
+      },
+      "response": [
+        {
+          "label": "ARRAY",
+          "kind": 6,
+          "detail": "数组容器",
+          "documentation": {
+            "value": "内联写法 <Type>ARRAY<of>元素类型</of></Type>,元素类型放在 <of> 子节点。"
+          }
+        },
+        {
+          "label": "Avatar",
+          "kind": 6,
+          "detail": "Entity type",
+          "documentation": {
+            "value": "来自 entities.xml 的实体类型引用。"
+          }
+        },
+        {
+          "label": "BLOB",
+          "kind": 6,
+          "detail": "二进制流",
+          "documentation": {
+            "value": "字节流类型，常用于原始二进制数据。"
+          }
+        },
+        {
+          "label": "DOUBLE",
+          "kind": 6,
+          "detail": "双精度浮点数",
+          "documentation": {
+            "value": "64 位 IEEE 754 浮点数。"
+          }
+        },
+        {
+          "label": "ENTITYCALL",
+          "kind": 6,
+          "detail": "实体引用",
+          "documentation": {
+            "value": "实体调用或实体引用类型。"
+          }
+        },
+        {
+          "label": "FIXED_DICT",
+          "kind": 6,
+          "detail": "固定字典容器",
+          "documentation": {
+            "value": "在 scripts/entity_defs/types.xml 中以别名声明,需 <Properties> 子节点;.def 属性通过别名名引用。"
+          }
+        },
+        {
+          "label": "FLOAT",
+          "kind": 6,
+          "detail": "单精度浮点数",
+          "documentation": {
+            "value": "32 位 IEEE 754 浮点数。"
+          }
+        },
+        {
+          "label": "INT16",
+          "kind": 6,
+          "detail": "16 位有符号整数",
+          "documentation": {
+            "value": "范围 -32768-32767。"
+          }
+        },
+        {
+          "label": "INT32",
+          "kind": 6,
+          "detail": "32 位有符号整数",
+          "documentation": {
+            "value": "范围 -2147483648-2147483647。"
+          }
+        },
+        {
+          "label": "INT64",
+          "kind": 6,
+          "detail": "64 位有符号整数",
+          "documentation": {
+            "value": "范围 -9223372036854775808-9223372036854775807。"
+          }
+        },
+        {
+          "label": "INT8",
+          "kind": 6,
+          "detail": "8 位有符号整数",
+          "documentation": {
+            "value": "范围 -128-127。"
+          }
+        },
+        {
+          "label": "JSONDATA",
+          "kind": 6,
+          "detail": "Custom type",
+          "documentation": {
+            "value": "来自 types.xml 的自定义类型。"
+          }
+        },
+        {
+          "label": "Monster",
+          "kind": 6,
+          "detail": "Entity type",
+          "documentation": {
+            "value": "来自 entities.xml 的实体类型引用。"
+          }
+        },
+        {
+          "label": "PARITY_ID",
+          "kind": 6,
+          "detail": "Custom type",
+          "documentation": {
+            "value": "来自 types.xml 的自定义类型。"
+          }
+        },
+        {
+          "label": "PY_DICT",
+          "kind": 6,
+          "detail": "Python 字典对象",
+          "documentation": {
+            "value": "由 KBEngine 序列化的 Python dict。"
+          }
+        },
+        {
+          "label": "PY_LIST",
+          "kind": 6,
+          "detail": "Python 列表对象",
+          "documentation": {
+            "value": "由 KBEngine 序列化的 Python list。"
+          }
+        },
+        {
+          "label": "PY_TUPLE",
+          "kind": 6,
+          "detail": "Python 元组对象",
+          "documentation": {
+            "value": "由 KBEngine 序列化的 Python tuple。"
+          }
+        },
+        {
+          "label": "PYTHON",
+          "kind": 6,
+          "detail": "Python 对象",
+          "documentation": {
+            "value": "由 KBEngine 序列化的 Python 对象。"
+          }
+        },
+        {
+          "label": "STRING",
+          "kind": 6,
+          "detail": "字符串",
+          "documentation": {
+            "value": "变长字符串类型。"
+          }
+        },
+        {
+          "label": "UINT16",
+          "kind": 6,
+          "detail": "16 位无符号整数",
+          "documentation": {
+            "value": "范围 0-65535。"
+          }
+        },
+        {
+          "label": "UINT32",
+          "kind": 6,
+          "detail": "32 位无符号整数",
+          "documentation": {
+            "value": "范围 0-4294967295。"
+          }
+        },
+        {
+          "label": "UINT64",
+          "kind": 6,
+          "detail": "64 位无符号整数",
+          "documentation": {
+            "value": "范围 0-18446744073709551615。"
+          }
+        },
+        {
+          "label": "UINT8",
+          "kind": 6,
+          "detail": "8 位无符号整数",
+          "documentation": {
+            "value": "范围 0-255。"
+          }
+        },
+        {
+          "label": "UNICODE",
+          "kind": 6,
+          "detail": "Unicode 字符串",
+          "documentation": {
+            "value": "Unicode 字符串类型。"
+          }
+        },
+        {
+          "label": "VECTOR2",
+          "kind": 6,
+          "detail": "二维向量",
+          "documentation": {
+            "value": "包含 x、y 两个分量。"
+          }
+        },
+        {
+          "label": "VECTOR3",
+          "kind": 6,
+          "detail": "三维向量",
+          "documentation": {
+            "value": "包含 x、y、z 三个分量。"
+          }
+        },
+        {
+          "label": "VECTOR4",
+          "kind": 6,
+          "detail": "四维向量",
+          "documentation": {
+            "value": "包含 x、y、z、w 四个分量。"
+          }
+        }
+      ]
+    },
+    {
+      "id": "diagnostics.def-unknown-flag",
+      "kind": "diagnostics",
+      "input": {
+        "file": "(inline) scripts/entity_defs/DiagProbe.def",
+        "marker": "<Flags>NOT_A_PARITY_FLAG"
+      },
+      "response": [
+        {
+          "range": {
+            "start": {
+              "line": 4,
+              "character": 13
+            },
+            "end": {
+              "line": 4,
+              "character": 30
+            }
+          },
+          "message": "未知的 KBEngine Flags 值: NOT_A_PARITY_FLAG。KBEngine 源码按单个映射值解析 <Flags>，不支持此写法。",
+          "severity": 0
+        }
+      ]
+    },
+    {
+      "id": "diagnostics.entities-duplicate-entry",
+      "kind": "diagnostics",
+      "input": {
+        "file": "(inline) scripts/entities.xml",
+        "marker": "duplicate <Avatar/>"
+      },
+      "response": [
+        {
+          "range": {
+            "start": {
+              "line": 2,
+              "character": 2
+            },
+            "end": {
+              "line": 2,
+              "character": 45
+            }
+          },
+          "message": "entities.xml 中实体 <Avatar> 重复登记:引擎按首条静默合并,本条目及其属性断言不会生效",
+          "severity": 1
+        }
+      ]
+    }
+  ]
+}
