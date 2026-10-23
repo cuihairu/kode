@@ -180,7 +180,7 @@ kode/
 ## 6. KBEngine 专业语法与语义模型
 
 ### 6.1 语法数据结构
-- [ ] SYNTAX-001 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(进行中:PR-005 已落 invalid fixtures/盲样变异,grammar spec 文档化随 PR-008 语义模型定型)
+- [ ] SYNTAX-001 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(进行中:PR-005 已落 invalid fixtures/盲样变异;PR-008 pr-008.md 已定型四类文件的语义面口径(decls/aliases/composition/entities 抽取规则+对拍 golden),正式 grammar spec 文档仍待专单)
 - [x] SYNTAX-002 明确 XML 解析保持节点/属性/文本精确 Span：不可以只做值解析丢定位。(PR-005:crates/kode-parser/src/xml.rs 开/闭/内容/名称/属性字节 span,伪注释掩码字节长度不变;证据 docs/kode2/pr-005.md)
 - [x] SYNTAX-003 CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。(PR-005 基础版:截断/坏标签/未闭合结构化诊断 13 码,树前缀不丢,逐字节截断扫描测试;CST 级增量重解析随 PR-007)
 - [ ] SYNTAX-004 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(PR-005 已裁决 ADR-102:自研零依赖状态机,quick-xml/rowan 未引入;若增量基准证明成瓶颈按 ADR-002 重评)
@@ -189,18 +189,18 @@ kode/
 
 ### 6.2 类型与实体语义
 - [ ] SEM-001 定义稳定 `SymbolId`、`TypeId`、`EntityId`、`RootId`、`Location`、`Origin`。
-- [ ] SEM-002 类型 IR：Builtin、Alias、Array、FixedDict、UserType、EntityRef、Component、Optional/Unknown/Error（以真实 KBEngine 支持语义落地）。
+- [x] SEM-002 类型 IR：Builtin、Alias、Array、FixedDict、UserType、EntityRef、Component、Optional/Unknown/Error（以真实 KBEngine 支持语义落地）。(基础版:PR-008 crates/kode-types TypeNode 四类节点+六种边;Builtin=21 项引用终点清单,EntityRef/Component 以边种表达,Optional 随 LSP 面)
 - [ ] SEM-003 每个类型记录 deklaration/definition/reference/source span、原始 root/version、生成映射。
-- [ ] SEM-004 解析引擎内建类型与 `types.xml` 自定义类型；alias 链与循环诊断。
-- [ ] SEM-005 容器嵌套、数组元素、FixedDict 字段、模块注册、自定义扩展类型解析。
+- [x] SEM-004 解析引擎内建类型与 `types.xml` 自定义类型；alias 链与循环诊断。(PR-008:types.xml 重定向条目(alias 注册)与 alias.xml 条目成 Alias 节点;resolve_alias_chain 环截断 Cycle/终点未注册 Unknown 显式诊断)
+- [ ] SEM-005 容器嵌套、数组元素、FixedDict 字段、模块注册、自定义扩展类型解析。(进行中:PR-008 已落数组元素/FixedDict 字段/嵌套 ARRAY of 容器边;模块注册与自定义扩展类型解析随 SEM-008/PY 面)
 - [ ] SEM-006 `.def` 方法参数、返回类型、Cell/Base/Client methods、Property flags 与调用权限元数据。
-- [ ] SEM-007 组件、组件属性、实体继承、分面语义与方法可见性统一定义。
+- [ ] SEM-007 组件、组件属性、实体继承、分面语义与方法可见性统一定义。(进行中:PR-008 已落实体继承链(环/未注册父显式诊断)与组件/属性类型引用边;分面语义与方法可见性随 LSP 面)
 - [ ] SEM-008 `entities.xml` 注册映射 → `.def` → Python 实现，跨语言可逆导航。
 - [ ] SEM-009 支持多个 root 的同名实体/组件/类型，显式查找顺序和歧义 diagnostics。
 - [ ] SEM-010 Python base/cell/client 文件与实体 `.def`、组件绑定区分、重复定义检测。
 - [ ] SEM-011 引擎关键 API、回调、内建对象、常量作为版本化 metadata layer，外部版本可覆盖。
 - [ ] SEM-012 symbol 名称重命名策略：用户代码可改，内建和生成代码不可直接改；冲突预检查。
-- [ ] SEM-013 类型解析错误使用 Unknown/Error 并保留理由，不借用任意类型掩盖缺失。
+- [x] SEM-013 类型解析错误使用 Unknown/Error 并保留理由，不借用任意类型掩盖缺失。(PR-008:TypeClass::Unknown + ChainStatus::Unknown/Missing 均以终端名/该级名为理由,不冒充内建)
 - [ ] SEM-014 建立语义 fixture 金标数据，跨 Rust/TS 老逻辑差异必须人工分类审查。
 - [ ] SEM-015 引擎版本差异经 capability profile 决定，不用 `if version` 散落调用方。
 
@@ -433,7 +433,7 @@ kode/
 - [x] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
 - [x] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。(落地:crates/kode-root(ROOT-001..015 基础版:优先级链显式配置>记忆>约定>有界深扫描+宁缺勿猜;平台路径规则 Win 折叠/mac 折叠声明/Linux 敏感/WSL UNC 拆段;submodule/vendored 边界+mount/symlink 环护栏+别名身份+敏感目录台账;引擎配置规则自 TS workspaceDiscovery 移植并逐条 file:line 证据化;UR+Path 双支持;诊断仅新启;TS 对拍 golden 双向门禁 6 树 48/48 字段=100%,tests/kodeRootParity.test.ts;证据 docs/kode2/pr-006.md)
 - [x] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
-- [ ] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。
+- [x] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。(落地:crates/kode-types(书命名 kode-semantic;SEM-002/004/005/007/013 基础版:类型图 IR+六种边+别名链/继承链/全图三色 DFS 环检测,有限步显式诊断)+ 类型面对拍 golden 双向门禁(文件面 28/28+图级 37/37=100%,TS 用现有 defParser/compositionRoots 复算;按 ARCH-012 不做性能对比);证据 docs/kode2/pr-008.md)
 - [ ] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。
 - [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。
 - [ ] PR-011 `lsp/completion-diagnostics`：版本化发布与可取消查询。

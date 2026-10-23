@@ -1,0 +1,16 @@
+# kode2 PR-008 (书 §6.2 SEM-002/004/005/013 + §17 PR-008): 类型图 crate ——
+# 类型 IR + 引用/容器/别名/继承边 + 环检测。
+# 铁律: 零第三方依赖(仅 workspace 内 kode-parser),与 PR-005/007 同规。
+[package]
+name = "kode-types"
+description = "kode2 type graph: builtin/alias/array/fixed-dict/user-type IR, alias chains, inheritance chains, cycle diagnostics (book §6.2 SEM/§17 PR-008)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-parser = { path = "../kode-parser" }
+
+[lints]
+workspace = true

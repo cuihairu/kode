@@ -466,6 +466,9 @@ pub struct TypeDecl {
     pub name_span: Span,
     pub line: usize,
     pub kind: TypeKind,
+    /// 指引文本首 token(FIXED_DICT/ARRAY 或重定向目标;PR-008 类型图
+    /// 别名节点消费;不进 parser golden)。
+    pub directive: Option<String>,
     /// FIXED_DICT implementedBy 的末段符号(MODULE.Symbol → Symbol)。
     pub implemented_by_symbol: Option<String>,
     /// FIXED_DICT 键字段类型引用(逐属性 Type 收集)。
@@ -542,6 +545,11 @@ pub fn extract_types(doc: &Document, raw_text: &str) -> TypesFile {
             name_span: e.name_span,
             line: lines.line_of(e.name_span.start),
             kind,
+            directive: if directive.is_empty() {
+                None
+            } else {
+                Some(directive)
+            },
             implemented_by_symbol,
             field_refs,
             element_ref,
