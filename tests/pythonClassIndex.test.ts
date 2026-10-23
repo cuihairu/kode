@@ -351,6 +351,12 @@ describe('扫描面收窄与失败重试', () => {
 
   it('findFiles 收窄为 PY_SCAN_EXCLUDE(含 vcpkg/build),失败后下次重试并命中', async () => {
     const { dir, cleanup } = makeTmp();
+    // PR5 后:跨目录场景——staging(同目录/import/同名文件)覆盖不到的
+    // 引用仍依赖全量扫描,用它守住「扫描失败不得永久缓存」的回归;
+    // 同目录命中不再依赖扫描(Definition 去全仓阻塞)由下一用例锁定。
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.renameSync(path.join(dir, 'b.py'), path.join(dir, 'sub', 'b.py'));
+    const queryFile = path.join(dir, 'sub', 'b.py');
     const original = stubWorkspace.findFiles;
     const seen: Array<{ pattern?: string; exclude?: unknown }> = [];
     let attempt = 0;
@@ -361,32 +367,68 @@ describe('扫描面收窄与失败重试', () => {
       if (failing) {
         throw new Error('search service unavailable');
       }
-      return ['a.py', 'b.py'].map(name => Uri.file(path.join(dir, name)));
+      return ['a.py', 'sub/b.py'].map(name => Uri.file(path.join(dir, name)));
     }) as typeof stubWorkspace.findFiles;
 
     try {
       const index = new PythonClassIndex();
-      // 持续失败期间:当次降级(跨文件类未入索引)→ 解析不到
-      const first = await index.resolveSelfMethod(path.join(dir, 'b.py'), 2, 'meth');
+      // 持续失败期间:staging 覆盖不到的跨目录类 → 当次落空,且不等全量扫描
+      const first = await index.resolveSelfMethod(queryFile, 2, 'meth');
       expect(first, '持续扫描失败当次降级为 null').toBeNull();
       const attemptsWhileFailing = attempt;
       expect(attemptsWhileFailing, '失败期间确有扫描尝试').toBeGreaterThan(0);
 
-      // 恢复后必须重新发起 findFiles(修复前 catch 吞掉后 scanPromise 永久停在
-      // 「已扫描」态 → 不再尝试、永远 null),且跨文件命中
+      // 恢复后必须重新发起 findFiles(修复前 catch 吞掉后 scan 永久停在
+      // 「已扫描」态 → 不再尝试、永远 null)。调度器排队使失败扫描可能晚于
+      // 上一查询返回:第一发吸收在途失败,失败不缓存 → 紧接的全量口径调用
+      // 必须重新发现并命中。
       failing = false;
-      const second = await index.resolveSelfMethod(path.join(dir, 'b.py'), 2, 'meth');
+      await index.findClassesByName('Alpha');
+      const classes = await index.findClassesByName('Alpha');
       expect(attempt, '恢复后必须重试 findFiles').toBeGreaterThan(attemptsWhileFailing);
-      expect(second, '恢复后应跨文件命中').not.toBeNull();
+      expect(classes.length, '恢复后全量扫描应命中').toBeGreaterThan(0);
+      const second = await index.resolveSelfMethod(queryFile, 2, 'meth');
+      expect(second, '恢复后应跨目录命中').not.toBeNull();
       expect(second!.filePath).toBe(path.join(dir, 'a.py'));
       expect(second!.className).toBe('Alpha');
 
       // 排除面:pattern 为 **/*.py 且排除列表 = 收窄后的 PY_SCAN_EXCLUDE
-      expect(seen[0].pattern).toBe('**/*.py');
-      expect(seen[0].exclude).toBe(PY_SCAN_EXCLUDE);
+      // (PR5 起组合根元数据发现也会复用同一 stub,这里按 pattern 过滤取证)
+      const pyScan = seen.find(item => item.pattern === '**/*.py');
+      expect(pyScan, '应有 **/*.py 全量发现尝试').toBeDefined();
+      expect(pyScan!.exclude).toBe(PY_SCAN_EXCLUDE);
       expect(String(seen[0].exclude)).toContain('vcpkg');
       expect(String(seen[0].exclude)).toContain('build');
       expect(PY_SCAN_EXCLUDE).toContain('.tmp');
+    } finally {
+      stubWorkspace.findFiles = original;
+      cleanup();
+    }
+  });
+
+  // PR5 ②:冷启动首查不等全量扫描——发现面只报 b.py(模拟搜索索引未收录
+  // a.py),全量扫描永远看不到 Alpha 定义文件;首查依靠快照 + 按需单文件解析
+  // (同目录兄弟)照常命中,不依赖全量扫描结果。
+  it('冷启动 Definition 首查不阻塞在全量扫描上(发现面未收录仍命中)', async () => {
+    const { dir, cleanup } = makeTmp();
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && !pattern.includes('*.py')
+        ? [] // entities.xml/.def/types.xml 元数据发现直接空
+        : [Uri.file(path.join(dir, 'b.py'))]) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      const started = performance.now();
+      const loc = await index.resolveSelfMethod(path.join(dir, 'b.py'), 2, 'meth');
+      const elapsed = performance.now() - started;
+      expect(loc, '发现面未收录的文件仍按需命中').not.toBeNull();
+      expect(loc!.filePath).toBe(path.join(dir, 'a.py'));
+      expect(loc!.className).toBe('Alpha');
+      expect(elapsed, `首查应远快于全量解析(实测 ${Math.round(elapsed)}ms)`).toBeLessThan(2000);
+      // 全量口径收尾:后台扫描按发现面口径工作(a.py 不在其发现面);
+      // 按需入索引的 a.py 保留在会话缓存里,Alpha 仍可解析(快照口径)
+      expect(await index.findClassesByName('Beta').then(list => list.length)).toBe(1);
+      expect((await index.findClassesByName('Alpha')).map(cls => cls.filePath)).toEqual([path.join(dir, 'a.py')]);
     } finally {
       stubWorkspace.findFiles = original;
       cleanup();

@@ -290,8 +290,8 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 初始化实体映射管理器(用户令 2026-10-21 内建属性单:补全的 def 归属面
   // 兜底也走 manager,故提到补全注册之前)
-  // PR3:统一索引调度器实例化一次共享(PythonClassIndex 增量迁入留 PR5);
-  // EntityMappingManager 首扫经它入队,后台任务受交互限流。
+  // PR3/PR5:统一索引调度器实例化一次共享——EntityMappingManager 首扫与
+  // PythonClassIndex 文件发现/分块解析都经它入队,后台任务受交互限流。
   const indexScheduler = new IndexScheduler();
   context.subscriptions.push({ dispose: () => indexScheduler.dispose() });
   const entityMappingManager = new EntityMappingManager(context, indexScheduler);
@@ -393,7 +393,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(definitionProvider);
 
   // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
-  const pythonClassIndex = new PythonClassIndex();
+  // PR5:共享调度器注入 + 首扫后台化(激活即排程,Definition 首查不等全量)。
+  const pythonClassIndex = new PythonClassIndex(indexScheduler);
+  pythonClassIndex.scheduleBackgroundScan();
   const pythonDefinitionImpl = new PythonDefinitionProvider(entityMappingManager, pythonClassIndex);
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },

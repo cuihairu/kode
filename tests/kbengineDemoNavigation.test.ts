@@ -50,7 +50,7 @@ describe('KBEngine demo navigation acceptance manifest', () => {
   let pythonProvider: PythonDefinitionProvider;
   let defProvider: KBEngineDefinitionProvider;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     workspace.workspaceFolders = [{ uri: Uri.file(DEMO), name: 'kbengine-demo-assets', index: 0 }];
     workspace.findFiles = async (glob: string) => walkFiles().filter(uri => {
       const name = path.basename(uri.fsPath);
@@ -60,8 +60,12 @@ describe('KBEngine demo navigation acceptance manifest', () => {
             : name.endsWith('.py');
     });
     const manager = new EntityMappingManager({ subscriptions: [] });
-    pythonProvider = new PythonDefinitionProvider(manager, new PythonClassIndex());
+    // PR5:验收清单要求全量候选集(多 mixin 命中),先等全量扫描就绪再跑用例;
+    // 生产 Definition 首查不等全量(冷启动首查耗时见 docs/perf/2026-pr5 报告)。
+    const pythonClassIndex = new PythonClassIndex();
+    pythonProvider = new PythonDefinitionProvider(manager, pythonClassIndex);
     defProvider = new KBEngineDefinitionProvider(manager);
+    await pythonClassIndex.waitForInitialScan();
   });
 
   afterAll(() => {

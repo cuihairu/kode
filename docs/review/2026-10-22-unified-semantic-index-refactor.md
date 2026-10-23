@@ -525,8 +525,8 @@ Code Agent 完成后必须提交：
 - [x] PR1 性能观测与基线（记录器 + 测试资产集 + 基线报告）— 89e8783（docs/perf/2026-baseline.md）
 - [x] PR2 文档快照与解析缓存（documentStore，先接 Hover/Diagnostics）— 7d8736b（docs/perf/2026-pr2-documentstore.md；hover 行准备 P50 1.66ms→<0.01ms，def-ast 同版本命中率 96.1%，unit 2740 通过）
 - [x] PR3 统一索引调度（indexScheduler 接 EntityMappingManager；PythonClassIndex 增量迁移留 PR5）— 2aca694（docs/perf/2026-pr3-indexscheduler.md；首扫入调度器单并发+交互限流，失败可恢复不永久 pending，unit 2756 通过）
-- [ ] PR4 统一语义查询（semanticIndex + dependencyGraph，先类型注册表与实体映射）
-- [ ] PR5 消除 Python Definition 首次全仓阻塞（ensureScanned/ensureCompositionRoots 调用关系重构）
+- [x] PR4 统一语义查询（semanticIndex + dependencyGraph，先类型注册表与实体映射）— 2aca694 系（PR4 查找顺序取证 docs/review/2026-10-23-pr4-lookup-order-forensics.md）
+- [x] PR5 消除 Python Definition 首次全仓阻塞（ensureScanned/ensureCompositionRoots 调度器迁移 + 按需单文件解析 + 组合根缓存/版本轴/依赖图失效）— 见 docs/perf/2026-pr5-unblocked-definition.md（冷启动 Definition 首查 107,737ms → 468.69ms，unit 2784 通过）
 - [ ] PR6 诊断与多资产根一致性（版本化快照/依赖失效/根级隔离/冲突测试）
 - [ ] PR7 性能复测与回归（同环境同资产对比 PR1 基线，无可复现数据不进报告）
 
