@@ -167,8 +167,9 @@ const symbolsOfTypes = (text: string): SymbolRecord[] => {
   const out: SymbolRecord[] = [];
   if (root) {
     for (const item of getDirectChildElements(root)) {
-      // 属性式/空条目无直接文本 directive → 不产符号(与 Rust parse_types 同口径)。
-      const directive = firstTextToken(item);
+      // 属性式条目回落 `type` 属性(与 Rust parse_types 同口径;PR-012 门 §1.3-①);
+      // 纯空条目仍不产符号。
+      const directive = firstTextToken(item) ?? ((item.attributes['type'] ?? '').trim() || undefined);
       if (!directive) {
         continue;
       }

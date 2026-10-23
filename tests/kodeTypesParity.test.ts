@@ -219,9 +219,10 @@ const computeTypeSurface = (): ComputedSurface => {
       const document = parseDefDocument(text);
       if (document.root) {
         for (const item of getDirectChildElements(document.root)) {
-          const directive = firstTextToken(item);
+          // 属性式回落 `type` 属性(与 Rust parse_types 同口径;PR-012 门 §1.3-①)。
+          const directive = firstTextToken(item) ?? ((item.attributes['type'] ?? '').trim() || undefined);
           if (!directive) {
-            continue; // 空条目/属性式不产声明(与 parseTypesXml 同口径)
+            continue; // 空条目不产声明(与 parseTypesXml 同口径)
           }
           if (directive === 'FIXED_DICT') {
             const decl = table.get(item.name);

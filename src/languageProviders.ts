@@ -81,6 +81,7 @@ import {
   getDefinitionWorkspaceLayout,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
+  getRegisteredAliasTypes,
   getRegisteredEntities,
   getScriptsRootForDefFile,
   getWorkspaceRootForDocument,
@@ -3297,6 +3298,21 @@ function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSugges
         detail: 'Custom type',
         documentation: '来自 types.xml 的自定义类型。'
       });
+    }
+  }
+
+  // 别名指向面(alias.xml;PR-012 门 G-C 关闭单):parity 复算面含别名而
+  // provider 缺,致 Rust-only 差异;此处补面后 Rust 补全 ⊆ TS 面。
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (workspaceRoot) {
+    for (const [aliasName, aliasType] of [...getRegisteredAliasTypes(workspaceRoot)].sort((a, b) => a[0].localeCompare(b[0]))) {
+      if (!suggestions.has(aliasName)) {
+        suggestions.set(aliasName, {
+          name: aliasName,
+          detail: aliasType,
+          documentation: '来自 alias.xml 的别名指向。'
+        });
+      }
     }
   }
 

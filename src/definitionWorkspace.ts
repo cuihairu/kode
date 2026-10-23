@@ -456,6 +456,28 @@ export function getRegisteredCustomTypes(workspaceRoot: string): Set<string> {
   return typeNames;
 }
 
+/**
+ * alias.xml 别名指向面(名称 → 指向目标,同名首见;PR-012 门 G-C 关闭单:
+ * parity 复算面含别名面而 provider 补全面缺,导致 Rust-only 差异 ×201)。
+ * 属性式条目不产出(与 Rust parse_alias/TS buildAliasXmlCustomTypeInfo 同口径);
+ * kbengine.types.aliasDiscovery=false 时整体让位(与 getCustomTypeInfos 同闸)。
+ */
+export function getRegisteredAliasTypes(workspaceRoot: string): Map<string, string> {
+  const aliasTypes = new Map<string, string>();
+  const aliasDiscoveryEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
+  if (!aliasDiscoveryEnabled) {
+    return aliasTypes;
+  }
+  for (const info of getAliasXmlCustomTypeInfos(workspaceRoot)) {
+    if (!aliasTypes.has(info.name)) {
+      aliasTypes.set(info.name, info.aliasType);
+    }
+  }
+  return aliasTypes;
+}
+
 export function findCustomTypePythonFile(
   workspaceRoot: string,
   typeName: string

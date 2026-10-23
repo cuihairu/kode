@@ -137,12 +137,63 @@ pub struct InheritedChain {
     pub members: Vec<MemberSummary>,
 }
 
-/// LSP contents 用 markdown 渲染(文案与 TS hover 同风格;非对拍面)。
+/// 段名 → TS getSectionLabel 同款中文区块措辞(PR-012 门 §1.3-③ 渲染面对齐;
+/// 未映射段保留原文,TS 侧该段走另一悬停面,不在此对齐范围)。
+fn section_label(section: &str) -> &str {
+    match section {
+        "Properties" => "属性区块",
+        "BaseMethods" | "CellMethods" | "ClientMethods" => "方法区块",
+        "Components" => "组件区块",
+        "Parent" => "父类区块",
+        "Interfaces" => "接口区块",
+        "Volatile" => "易变同步区块",
+        other => other,
+    }
+}
+
+/// LSP contents 用 markdown 渲染(属性/方法面与 TS getSymbolHover 逐字节同
+/// 文案同尾随空白,PR-012 门 §1.3-③;其余面为 Rust 侧措辞,非对拍面)。
 pub fn render_markdown(response: &HoverResponse) -> String {
     let mut md = String::new();
     md.push_str(&format!("**{}**\n\n", response.symbol.name));
-    md.push_str(&format!("{}中的自定义定义。\n\n", response.symbol.section));
+    md.push_str(&format!(
+        "{}中的自定义定义。\n\n",
+        section_label(response.symbol.section)
+    ));
     let s = &response.signature;
+    let kind = response.symbol.kind.as_str();
+    if kind == "property" {
+        // 属性面:字段序/措辞/尾随空白与 TS getSymbolHover 属性区块逐字节同
+        // (TS 的 Default/DatabaseLength/Identifier/数据库存储段 Rust 无此面,
+        // 见报告剩余差异声明;持久属性 corpus 未触,维持 **Persistent** 行)。
+        if let Some(t) = &s.r#type {
+            md.push_str(&format!("**Type**: `{t}`\n\n"));
+        }
+        if let Some(f) = &s.flags {
+            md.push_str(&format!("**Flags**: `{f}`\n\n"));
+        }
+        if let Some(d) = &s.detail_level {
+            md.push_str(&format!("**DetailLevel**: `{d}`\n\n"));
+        }
+        if let Some(true) = s.persistent {
+            md.push_str("**Persistent**: `true`\n\n");
+        }
+        return md;
+    }
+    if kind == "method" {
+        // 方法面:与 TS 同构 —— **Args** 行不带尾随空行(由 Exposed 段的
+        // 前导空行衔接);无 Args 时以 **参数个数** 行的尾随空行收尾。
+        md.push_str(&format!("**参数个数**: {}\n\n", s.arg_count.unwrap_or(0)));
+        if let Some(args) = &s.args {
+            if !args.is_empty() {
+                md.push_str(&format!("**Args**: `{}`", args.join(", ")));
+            }
+        }
+        if let Some(true) = s.exposed {
+            md.push_str("\n\n**Exposed**: `true`\n\n该方法可被客户端远程调用。");
+        }
+        return md;
+    }
     if let Some(t) = &s.r#type {
         md.push_str(&format!("**Type**: `{t}`\n\n"));
     }

@@ -264,7 +264,8 @@ const extractTypes = (text: string): GoldenRecord => {
   const types: GoldenRecord[] = [];
   if (root) {
     for (const item of getDirectChildElements(root)) {
-      const directive = firstTextToken(item);
+      // 属性式回落 `type` 属性(与 Rust parse_types 同口径;PR-012 门 §1.3-①)。
+      const directive = firstTextToken(item) ?? ((item.attributes['type'] ?? '').trim() || undefined);
       if (!directive) {
         continue;
       }
@@ -295,7 +296,9 @@ const extractTypes = (text: string): GoldenRecord => {
           kind: 'array',
           implementedBySymbol: null,
           fieldRefs: [],
-          elementRef: ofNode ? getElementText(ofNode).trim() || null : null,
+          // 属性式 ARRAY 元素类型回落 `of` 属性(与 Rust parse_types 同口径)。
+          elementRef: (ofNode ? getElementText(ofNode).trim() || null : null)
+            ?? ((item.attributes['of'] ?? '').trim() || null),
           line: getLineNumberAt(document, item.tagStart)
         });
       } else {
