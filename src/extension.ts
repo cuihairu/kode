@@ -110,6 +110,7 @@ import {
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler } from './indexScheduler';
+import { getDiagnosticScheduler } from './diagnosticScheduler';
 import {
   createDatabaseSchemaUri,
   getDatabaseSchemaSnapshot,
@@ -285,6 +286,64 @@ export function activate(context: vscode.ExtensionContext) {
     } catch (error) {
       operation.end('error');
       throw error;
+    }
+  };
+
+  // PR6 A6-1/A6-2:诊断任务统一走 DiagnosticScheduler —— 版本令牌守卫只发布
+  // 匹配当前版本的结果;连续编辑经排队通道合并过期任务;同版本+同诊断输入代
+  // 已发布的请求零重算(skippedCurrentVersion,指标可断言)。
+  const diagnosticScheduler = getDiagnosticScheduler();
+  let diagnosticFlushTimer: ReturnType<typeof setTimeout> | undefined;
+  context.subscriptions.push({
+    dispose: () => {
+      if (diagnosticFlushTimer !== undefined) {
+        clearTimeout(diagnosticFlushTimer);
+        diagnosticFlushTimer = undefined;
+      }
+    }
+  });
+  const scheduleDefDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    const options = {
+      layer: 'local' as const,
+      compute: () => {
+        const list: vscode.Diagnostic[] = [];
+        // 复用既有计时面:计算本体仍走 validateDocumentTimed(内部含 PR1 打点)
+        validateDocumentTimed(document, diagnostics);
+        // validateDocument 同步写 collection;这里经 publish 面回填.scheduler 统计
+        return list;
+      },
+      publish: () => {
+        /* validateDocument 直接写 collection,无独立发布面 */
+      }
+    };
+    if (channel === 'queued') {
+      diagnosticScheduler.requestQueued(document, options);
+    } else {
+      diagnosticScheduler.request(document, options);
+    }
+  };
+  const scheduleEntitiesDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    const options = {
+      layer: 'local' as const,
+      compute: () => {
+        const list: vscode.Diagnostic[] = [];
+        validateEntitiesXmlDocumentTimed(document, diagnostics);
+        return list;
+      },
+      publish: () => {
+        /* validateEntitiesXmlDocument 直接写 collection,无独立发布面 */
+      }
+    };
+    if (channel === 'queued') {
+      diagnosticScheduler.requestQueued(document, options);
+    } else {
+      diagnosticScheduler.request(document, options);
     }
   };
 
@@ -597,14 +656,25 @@ export function activate(context: vscode.ExtensionContext) {
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
+      diagnosticScheduler.releaseDocument(document);
     });
     context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       updateDocumentSnapshot(event.document);
+      // PR6 A6-1:连续编辑走排队通道——同 URI 只保留最新版本任务,旧版本
+      // 任务出队合并(coalescedStale),宏任务边界冲刷时发布前复核版本令牌,
+      // 过期结果绝不落 collection。首次发布语义不变(计算面仍是同步
+      // validateDocument/validateEntitiesXmlDocument,仅发布时点推迟一拍)。
       if (isDefDocument(event.document)) {
-        validateDocumentTimed(event.document, diagnostics);
+        scheduleDefDiagnostics(event.document, 'queued');
       } else if (isEntitiesXmlDocument(event.document)) {
-        validateEntitiesXmlDocumentTimed(event.document, diagnostics);
+        scheduleEntitiesDiagnostics(event.document, 'queued');
+      }
+      if (diagnosticFlushTimer === undefined) {
+        diagnosticFlushTimer = setTimeout(() => {
+          diagnosticFlushTimer = undefined;
+          diagnosticScheduler.flushQueued();
+        }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
       // 层2 关闭时索引不参与跳转,变更喂给索引纯属后台空转,一并跳过
@@ -634,21 +704,21 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-    // 初始检查所有 .def 文件
+    // 初始检查所有 .def 文件(立即通道:开档/激活期发布保持同步时点)
     const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {
       if (isDefDocument(document)) {
-        validateDocumentTimed(document, diagnostics);
+        scheduleDefDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
-        validateEntitiesXmlDocumentTimed(document, diagnostics);
+        scheduleEntitiesDiagnostics(document, 'immediate');
       }
     });
     context.subscriptions.push(openWatcher);
 
     vscode.workspace.textDocuments.forEach(document => {
       if (isDefDocument(document)) {
-        validateDocumentTimed(document, diagnostics);
+        scheduleDefDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
-        validateEntitiesXmlDocumentTimed(document, diagnostics);
+        scheduleEntitiesDiagnostics(document, 'immediate');
       }
     });
   }
@@ -696,15 +766,35 @@ export function activate(context: vscode.ExtensionContext) {
       watchPythonIndex();
     }
 
-    // binPath/configPath 变更影响数据库连接读值(批131),重算后再扫文档
+    // binPath/configPath 变更影响数据库连接读值(批131):只失效缓存本体;
+    // 诊断面是否重算由下方诊断相关配置裁断决定(A6-2 收口:任意 kbengine.*
+    // 变更都全量重扫旧行为废除,无关配置变更零重算)
     resetDatabaseInterfaceConfigCache();
-    vscode.workspace.textDocuments.forEach(doc => {
-      if (isDefDocument(doc)) {
-        validateDocumentTimed(doc, diagnostics);
-      } else if (isEntitiesXmlDocument(doc)) {
-        validateEntitiesXmlDocumentTimed(doc, diagnostics);
+
+    // PR6 A6-4:诊断开关切换正确清理/重算 —— 关闭即清空 collection 并停算,
+    // 重开迫使全部已发布文档重算;子开关/结构开关变更使已发布标记失效后重算。
+    if (event.affectsConfiguration('kbengine.enableDiagnostics')) {
+      const enabled = vscode.workspace.getConfiguration('kbengine')
+        .get<boolean>('enableDiagnostics', true);
+      diagnosticScheduler.setEnabled(enabled, () => diagnostics.clear());
+    }
+    const diagnosticsInputsChanged =
+      event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
+      event.affectsConfiguration('kbengine.diagnostics') ||
+      event.affectsConfiguration('kbengine.enableDiagnostics');
+    if (diagnosticsInputsChanged && diagnosticScheduler.isEnabled()) {
+      if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
+          event.affectsConfiguration('kbengine.diagnostics')) {
+        diagnosticScheduler.invalidateAll();
       }
-    });
+      vscode.workspace.textDocuments.forEach(doc => {
+        if (isDefDocument(doc)) {
+          scheduleDefDiagnostics(doc, 'immediate');
+        } else if (isEntitiesXmlDocument(doc)) {
+          scheduleEntitiesDiagnostics(doc, 'immediate');
+        }
+      });
+    }
   });
   context.subscriptions.push(configWatcher);
 

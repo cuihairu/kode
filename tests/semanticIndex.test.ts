@@ -400,3 +400,125 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
     }
   });
 });
+
+// PR6 A6-5:同名符号跨根稳定性测试集(接 PR5 版本轴)。策略①后注册覆盖
+// 既是既有口径也是跨根同名符号的唯一裁决面 —— 本组锁定:注册/摘除/重注册
+// 循环(版本轴上的反复重派生)下胜者与冲突清单零漂移,失效传播按根隔离。
+describe('同名符号跨根稳定性(A6-5,接 PR5 版本轴)', () => {
+  const register = (
+    index: SemanticIndex,
+    rootId: string,
+    entityName: string,
+    defFile: string
+  ): void => {
+    index.registerEntity({
+      rootId,
+      entityName,
+      defFile,
+      pythonFiles: [defFile.replace(/\.def$/, '.py')],
+      owners: [{ kind: 'entity', name: entityName }]
+    });
+  };
+
+  it('注册→摘除→重注册循环 50 轮:胜者与冲突清单逐轮稳定(无 Map 序漂移)', () => {
+    const index = new SemanticIndex();
+    index.registerRoot('/stable/rootA');
+    index.registerRoot('/stable/rootB');
+    const defA = '/stable/roota/scripts/entity_defs/hero.def';
+    const defB = '/stable/rootb/scripts/entity_defs/hero.def';
+    let firstWinner: string | null = null;
+    let firstConflicts: readonly string[] | null = null;
+    for (let round = 0; round < 50; round += 1) {
+      register(index, '/stable/roota', 'Hero', defA);
+      register(index, '/stable/rootb', 'Hero', defB);
+      const winner = index.getEntityDefFile('Hero');
+      const conflicts = index.findEntityConflicts('Hero').map(entry => entry.defFile);
+      if (firstWinner === null) {
+        firstWinner = winner;
+        firstConflicts = conflicts;
+      }
+      // 每一轮结果与第一轮逐字节一致(版本轴重派生不引入漂移)
+      expect(winner).toBe(firstWinner);
+      expect(conflicts).toEqual(firstConflicts);
+      expect(conflicts).toEqual([defB, defA]);
+      // 摘除本轮胜者:实体名映射不自动回退(与既有 mappingIndexes.delete 同口径,
+      // 补建靠重扫),同名清单只剩 rootA 的 def 条目;下一轮重注册即恢复
+      expect(index.removeEntityByDefFile(defB)?.rootId).toBe('/stable/rootb');
+      expect(index.getEntityDefFile('Hero')).toBeNull();
+      expect(index.findEntityConflicts('Hero')).toHaveLength(1);
+    }
+  });
+
+  it('冲突清单排序对注册节奏稳定:先A后B与先B后A的胜者切换都是确定性的', () => {
+    const build = (order: 'AB' | 'BA'): { winner: string; conflicts: string[] } => {
+      const index = new SemanticIndex();
+      index.registerRoot('/ord/rootA');
+      index.registerRoot('/ord/rootB');
+      const sequence = order === 'AB'
+        ? [['/ord/roota', '/ord/roota/scripts/entity_defs/mage.def'],
+           ['/ord/rootb', '/ord/rootb/scripts/entity_defs/mage.def']]
+        : [['/ord/rootb', '/ord/rootb/scripts/entity_defs/mage.def'],
+           ['/ord/roota', '/ord/roota/scripts/entity_defs/mage.def']];
+      for (const [rootId, defFile] of sequence) {
+        register(index, rootId, 'Mage', defFile);
+      }
+      return {
+        winner: index.getEntityDefFile('Mage') ?? '',
+        conflicts: index.findEntityConflicts('Mage').map(entry => entry.defFile)
+      };
+    };
+    const ab = build('AB');
+    const ba = build('BA');
+    expect(ab.winner).toBe('/ord/rootb/scripts/entity_defs/mage.def');
+    expect(ba.winner).toBe('/ord/roota/scripts/entity_defs/mage.def');
+    expect(ab.conflicts).toEqual(['/ord/rootb/scripts/entity_defs/mage.def', '/ord/roota/scripts/entity_defs/mage.def']);
+    expect(ba.conflicts).toEqual(['/ord/roota/scripts/entity_defs/mage.def', '/ord/rootb/scripts/entity_defs/mage.def']);
+  });
+
+  it('失效按根隔离:rootB 类型源变更不作废 rootA 的类型注册表快照', () => {
+    const index = new SemanticIndex();
+    const rootA = index.registerRoot('/iso/rootA');
+    const rootB = index.registerRoot('/iso/rootB');
+    const typesA = '/iso/roota/scripts/types.xml';
+    const typesB = '/iso/rootb/scripts/types.xml';
+    index.storeTypeRegistrySnapshot('/iso/rootA', false, ['A-entry'], [typesA]);
+    index.storeTypeRegistrySnapshot('/iso/rootB', false, ['B-entry'], [typesB]);
+    expect(index.getTypeRegistrySnapshotCount()).toBe(2);
+    // rootB 的 types.xml 变更:只作废 rootB 快照
+    expect(index.notifySemanticFilesChanged([typesB])).toBe(1);
+    expect(index.getTypeRegistrySnapshot(rootA, false)).toBeDefined();
+    expect(index.getTypeRegistrySnapshot(rootB, false)).toBeUndefined();
+    // 代际只随存快照前进(两次 store = 2):失效本身不推进,非全仓重建
+    expect(index.getTypeRegistryGeneration()).toBe(2);
+  });
+
+  it('同名 def 文件跨根:documentStore 版本轴互不串位(快照按路径隔离)', async () => {
+    const { updateDocumentSnapshot, peekDocumentSnapshot, releaseAllDocumentSnapshots }
+      = await import('../src/documentStore');
+    try {
+      const docA = {
+        uri: { toString: () => 'file:///ver/rootA/scripts/entity_defs/Hero.def', fsPath: '/ver/rootA/scripts/entity_defs/Hero.def' },
+        version: 3,
+        getText: () => '<root><Properties><fromRootA/></Properties></root>'
+      };
+      const docB = {
+        uri: { toString: () => 'file:///ver/rootB/scripts/entity_defs/Hero.def', fsPath: '/ver/rootB/scripts/entity_defs/Hero.def' },
+        version: 7,
+        getText: () => '<root><Properties><fromRootB/></Properties></root>'
+      };
+      updateDocumentSnapshot(docA);
+      updateDocumentSnapshot(docB);
+      // 同名文件两根各自快照,版本与文本互不覆盖
+      expect(peekDocumentSnapshot(docA)?.version).toBe(3);
+      expect(peekDocumentSnapshot(docB)?.version).toBe(7);
+      expect(peekDocumentSnapshot(docA)?.text).toContain('fromRootA');
+      expect(peekDocumentSnapshot(docB)?.text).toContain('fromRootB');
+      // rootA 版本轴前进不影响 rootB 快照
+      updateDocumentSnapshot({ ...docA, version: 4 });
+      expect(peekDocumentSnapshot(docB)?.version).toBe(7);
+      expect(peekDocumentSnapshot(docA)?.version).toBe(4);
+    } finally {
+      releaseAllDocumentSnapshots();
+    }
+  });
+});

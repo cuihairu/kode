@@ -483,16 +483,17 @@ describe('extension activate 装配', () => {
       expect(collection.get(badDef.uri).length).toBeGreaterThan(0);
       expect(collection.get(plainDoc.uri)).toHaveLength(0);
 
-      // 文档变更事件:def 触发重校验
+      // 文档变更事件:def 触发重校验(PR6 A6-1 起经排队通道合并,发布在
+      // 宏任务边界,这里等一拍冲刷)
       const changedDef = makeTextDocument(BAD_DEF, {
         fileName: path.join(root, 'scripts', 'entity_defs', 'Monster.def')
       });
       workspaceEvents.documentChanged.fire({ document: changedDef });
-      expect(collection.get(changedDef.uri).length).toBeGreaterThan(0);
+      await until(() => collection.get(changedDef.uri).length > 0);
 
       // entities.xml 清单诊断(批147 D3):变更与打开事件均落告警
       workspaceEvents.documentChanged.fire({ document: dupEntitiesDoc });
-      expect(collection.get(dupEntitiesDoc.uri).length).toBeGreaterThan(0);
+      await until(() => collection.get(dupEntitiesDoc.uri).length > 0);
       workspaceEvents.documentOpened.fire(dupEntitiesDoc);
       expect(collection.get(dupEntitiesDoc.uri)).toHaveLength(1);
 
@@ -506,12 +507,21 @@ describe('extension activate 装配', () => {
       expect(collection.get(plainChanged.uri)).toHaveLength(0);
 
       // 配置变更事件:不影响 kbengine 段时不重扫,影响时重扫 textDocuments
+      // (PR6 A6-2/A6-4 收口:诊断面重算只由诊断相关配置节驱动;任意
+      // kbengine.* 变更都全量重扫的旧行为废除)
       const lateDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Late.def') });
       workspace.textDocuments = [badDef, lateDef, plainDoc, dupEntitiesDoc];
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
       expect(collection.get(lateDef.uri)).toHaveLength(0);
       workspaceEvents.configurationChanged.fire({
         affectsConfiguration: (section: string) => section === 'kbengine'
+      });
+      // 无关 kbengine.* 配置(hover/jumpLog 等落在 'kbengine' 段):不重扫
+      expect(collection.get(lateDef.uri)).toHaveLength(0);
+      // 诊断相关配置:重扫
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (section: string) =>
+          section === 'kbengine' || section === 'kbengine.diagnostics'
       });
       expect(collection.get(lateDef.uri).length).toBeGreaterThan(0);
       // 重扫对非 def 文档跳过校验(isDefDocument 假分支)

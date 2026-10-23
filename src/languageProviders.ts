@@ -1074,6 +1074,9 @@ export function validateDocument(
 // entities.xml 清单诊断(source-analysis 设计 D3):同名重复条目引擎按首条
 // 静默合并(entitydef.cpp:255-262),这里是文档事件联动的落 collection 面,
 // 开关与 validateDocument 共用 kbengine.enableDiagnostics。
+// PR6 A6-3:分析结果经 documentStore 同步解析缓存命名空间化版本化 ——
+// 同版本重复校验直接命中缓存(不重跑 analyzeEntitiesXml),版本前进由
+// 快照机制整体作废旧槽位;无版本替身每次现算(与旧行为同价)。
 export function validateEntitiesXmlDocument(
   document: vscode.TextDocument,
   diagnostics: vscode.DiagnosticCollection
@@ -1084,9 +1087,15 @@ export function validateEntitiesXmlDocument(
     return;
   }
 
+  const { result: findings } = getOrParseDocumentSync(
+    document,
+    text => analyzeEntitiesXml(text),
+    'entities-analysis'
+  );
+
   diagnostics.set(
     document.uri,
-    analyzeEntitiesXml(document.getText()).map(item => {
+    findings.map(item => {
       const start = document.positionAt(item.offset);
       const end = document.positionAt(item.offset + item.length);
       return new vscode.Diagnostic(
