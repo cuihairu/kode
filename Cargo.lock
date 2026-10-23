@@ -39,9 +39,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "kode-scheduler"
+version = "0.2.0"
+dependencies = [
+ "kode-index",
+ "kode-vfs",
+]
+
+[[package]]
 name = "kode-server"
 version = "0.2.0"
 dependencies = [
+ "kode-index",
+ "kode-parser",
  "kode-protocol",
  "kode-vfs",
  "serde",
