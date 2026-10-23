@@ -1,0 +1,16 @@
+<root>
+  <Properties>
+    <slots>
+      <Type>UINT16</Type>
+      <Flags>BASE</Flags>
+    </slots>
+  </Properties>
+  <BaseMethods>
+    <add>
+      <Arg>UINT32</Arg>
+    </add>
+    <onSlotsChanged>
+      <Exposed/>
+    </onSlotsChanged>
+  </BaseMethods>
+</root>

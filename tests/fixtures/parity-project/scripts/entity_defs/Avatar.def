@@ -1,0 +1,36 @@
+<root>
+  <Components>
+    <inventory>
+      <Type>Inventory</Type>
+    </inventory>
+  </Components>
+  <Properties>
+    <hp>
+      <Type>UINT32</Type>
+      <Flags>BASE_AND_CLIENT</Flags>
+      <Default>100</Default>
+    </hp>
+    <bag>
+      <Type>
+        ARRAY
+        <of>UINT32</of>
+      </Type>
+      <Flags>CELL_PUBLIC</Flags>
+    </bag>
+  </Properties>
+  <BaseMethods>
+    <onRpc>
+      <Arg>UINT32</Arg>
+      <Exposed/>
+    </onRpc>
+    <doAttack>
+      <Arg>UINT32</Arg>
+    </doAttack>
+  </BaseMethods>
+  <CellMethods>
+    <onCellRpc>
+      <Arg>UINT32</Arg>
+      <Exposed/>
+    </onCellRpc>
+  </CellMethods>
+</root>

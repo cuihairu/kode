@@ -1,0 +1,4 @@
+<root>
+  <Avatar config="kbengine_avatar_defaults"/>
+  <Monster config="kbengine_monster_defaults"/>
+</root>

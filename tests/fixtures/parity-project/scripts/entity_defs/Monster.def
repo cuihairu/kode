@@ -1,0 +1,14 @@
+<root>
+  <Parent>Avatar</Parent>
+  <Properties>
+    <ferocity>
+      <Type>UINT32</Type>
+      <Flags>BASE</Flags>
+    </ferocity>
+  </Properties>
+  <BaseMethods>
+    <onSpawned>
+      <Arg>UINT32</Arg>
+    </onSpawned>
+  </BaseMethods>
+</root>
