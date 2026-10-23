@@ -7,8 +7,10 @@
 //   S1 真实大规模 shadow 正确性对拍:30k 资产集上走真实 backend=shadow 门
 //      (KodeCoreGate.compare → KodeCoreClient → release kode-server),
 //      收集 ShadowDiffLog verdict 统计 + firstDiffPath 样本 + 语义面分解
-//      (补全标签序列/悬停命中与符号身份)。文档同步腿(didOpen/didChange)
-//      由本 bench 显式驱动 —— provider 逐面接线属后续单,这里只测对拍本体。
+//      (补全标签序列/悬停命中与符号身份)。Phase2 首片扩面:definition
+//      (声明词探针 + entities/types 注册面对齐样本)与 diagnostics
+//      (validateDocument 语料子集面)。文档同步腿(didOpen/didChange)
+//      由本 bench 显式驱动。
 //   S2 TS vs Rust 双轨同参数计时(ARCH-012 解禁:本单就是对比验收单):
 //      同 URI 同 position,TS provider 直调 vs Rust 协议往返(含 transport,
 //      early signal 口径,pr-012.md §5 注意条款),5 轮×20,分位口径同门 1。
@@ -25,11 +27,13 @@ import { performance } from 'perf_hooks';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { Position, Uri, makeTextDocument } from '../fake-vscode/core';
 import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
-import { KBEngineCompletionProvider, KBEngineHoverProvider } from '../../src/languageProviders';
+import { KBEngineCompletionProvider, KBEngineDefinitionProvider, KBEngineHoverProvider, validateDocument } from '../../src/languageProviders';
 import { EntityMappingManager } from '../../src/entityMapping';
 import { resetScanRootCache } from '../../src/scanRoots';
-import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog } from '../../src/kodeCoreGate';
+import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog, firstDiffPath } from '../../src/kodeCoreGate';
 import { KodeCoreClient } from '../../src/kodeCoreClient';
+import { diagnosticsToLspFace, locationToLspFace } from '../../src/kodeCoreShadowFaces';
+import { DiagnosticCollection } from '../fake-vscode/core';
 
 const ASSETS_OUT = path.join(os.tmpdir(), 'kode-shadow-gate-assets');
 const LARGE_FILES = Number(process.env.KODE_PERF_LARGE_FILES ?? '30000');
@@ -171,9 +175,11 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
   let manager: EntityMappingManager;
   let hoverProvider: KBEngineHoverProvider;
   let defCompletion: KBEngineCompletionProvider;
+  let defDefinition: KBEngineDefinitionProvider;
   const diffLog = new ShadowDiffLog();
   const diffSamples: ShadowDiffEntry[] = [];
   diffLog.subscribe(entry => diffSamples.push(entry));
+  let defDeclSamples = 0;
 
   const pointWorkspaceAt = (roots: string[]): void => {
     resetScanRootCache();
@@ -279,6 +285,7 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
     manager = new EntityMappingManager({ subscriptions: [] } as never);
     hoverProvider = new KBEngineHoverProvider(manager);
     defCompletion = new KBEngineCompletionProvider(manager);
+    defDefinition = new KBEngineDefinitionProvider(manager);
     client = new KodeCoreClient({
       binaryPath: SERVER_BIN,
       initializeParams: { processId: process.pid, rootUri: `file://${ASSETS_OUT}`, capabilities: {} }
@@ -328,7 +335,12 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
       hoverBothHit: 0, hoverTsOnly: 0, hoverRustOnly: 0, hoverBothMiss: 0,
       hoverNameAgree: 0, hoverNameDisagree: 0,
       compExact: 0, compRustSubset: 0, compDiverge: 0, compRustNull: 0,
-      rustOnlyLabels: new Map<string, number>()
+      rustOnlyLabels: new Map<string, number>(),
+      // Phase2 首片:definition 声明词探针(F12 provider 脸 vs Rust 语料面,
+      // 划归边界如实分解)+ 注册面对齐样本 + diagnostics 面
+      defDeclExact: 0, defDeclDiverge: 0, defDeclTsOnly: 0, defDeclRustOnly: 0, defDeclBothMiss: 0,
+      defRegistryExact: 0, defRegistryDiverge: 0,
+      diagBothEmpty: 0, diagMatch: 0, diagDiverge: 0
     };
     let sampleIndex = 0;
 
@@ -390,6 +402,88 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
         sampleIndex += 1;
       }
 
+      // ---- Phase2 首片:definition 声明词探针(划归边界如实分解) ----------
+      // F12 provider 脸(属性/方法词优先 Python 脚本/注册回落)与 Rust 语料
+      // 声明面不同构:这里只做直接对拍分解统计,不进 diffLog(注册面对齐
+      // 样本才进 compare verdict)。
+      for (const probe of [{ line: propLine, col: 6 }, { line: methodLine, col: 6 }]) {
+        if (probe.line < 0) {
+          continue;
+        }
+        const tsDoc = makeTextDocument(def.text, {
+          fileName: def.file, languageId: 'kbengine-def', uri: Uri.file(def.file)
+        });
+        const tsLocation = await defDefinition.provideDefinition(tsDoc, new Position(probe.line, probe.col));
+        const tsFace = locationToLspFace(tsLocation);
+        const params = hoverParams(uri, probe.line, probe.col);
+        const rustRaw = await client.request('textDocument/definition', params, { timeoutMs: 5000 }) as {
+          uri?: string;
+          range?: unknown;
+        } | null;
+        const identity = (face: unknown): string => JSON.stringify(face ?? null);
+        if (defDeclSamples < 2) {
+          defDeclSamples += 1;
+          emit(
+            `GATE2-DEFFACE #${defDeclSamples} probe=${probe.line}:${probe.col} word=${baseLines[probe.line]?.trim().slice(0, 30)} ts=${identity(tsFace)} rust=${identity(rustRaw)}`
+          );
+        }
+        // 同一性按 compare 同口径(canonical,屏蔽 serde_json 键序差异)。
+        if (tsFace && rustRaw?.uri) {
+          if (firstDiffPath(tsFace, rustRaw) === null) {
+            stats.defDeclExact += 1;
+          } else {
+            stats.defDeclDiverge += 1;
+          }
+        } else if (tsFace) {
+          stats.defDeclTsOnly += 1;
+        } else if (rustRaw?.uri) {
+          stats.defDeclRustOnly += 1;
+        } else {
+          stats.defDeclBothMiss += 1;
+        }
+      }
+
+      // ---- Phase2 首片:diagnostics 面(validateDocument 语料子集)---------
+      {
+        const diagDoc = makeTextDocument(def.text, {
+          fileName: def.file, languageId: 'kbengine-def', uri: Uri.file(def.file)
+        });
+        const collection = new DiagnosticCollection();
+        const captured: unknown[] = [];
+        const originalSet = collection.set.bind(collection);
+        // fake DiagnosticCollection 按 Uri 对象身份存取,改为 set 面捕获。
+        collection.set = (uri: never, diags: never) => {
+          captured.push(...(diags as unknown[]));
+          originalSet(uri, diags);
+        };
+        validateDocument(diagDoc as never, collection as never);
+        const tsDiagFace = diagnosticsToLspFace(captured as never);
+        const diagParams = { textDocument: { uri } };
+        const rustDiagRaw = await client.request('textDocument/diagnostic', diagParams, { timeoutMs: 5000 }) as {
+          kind?: string;
+          items?: unknown[];
+        } | null;
+        await gate.compare('textDocument/diagnostic', diagParams, tsDiagFace, uri);
+        const tsItems = JSON.stringify(tsDiagFace.items);
+        const rustItems = JSON.stringify(rustDiagRaw?.items ?? null);
+        if (sampleIndex < 3) {
+          emit(
+            `GATE2-DIAGFACE #${sampleIndex} ts=${tsItems.slice(0, 160)} rust=${rustItems?.slice(0, 160)}`
+          );
+        }
+        // 语义同一性按 compare 同口径(canonical,屏蔽 serde_json 键序差异)。
+        if (firstDiffPath(tsDiagFace.items, rustDiagRaw?.items ?? null) === null) {
+          if (tsItems === '[]') {
+            stats.diagBothEmpty += 1;
+          } else {
+            stats.diagMatch += 1;
+          }
+        } else {
+          stats.diagDiverge += 1;
+        }
+        sampleIndex += 1;
+      }
+
       for (const face of compFaces) {
         client.changeDocument(uri, face.version, face.text);
         const tsDoc = makeTextDocument(face.text, {
@@ -440,6 +534,23 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
       const tsDoc = makeTextDocument(text, {
         fileName: face.file, languageId: 'xml', uri: Uri.file(face.file)
       });
+      // Phase2 首片:注册面 definition(entities.xml/types.xml 声明词 →
+      // def/本文件落点,provider 脸与 Rust 语料面同构,进 compare verdict)。
+      {
+        const tsLocation = await defDefinition.provideDefinition(tsDoc, new Position(face.wordLine, face.col));
+        const tsFace = locationToLspFace(tsLocation);
+        const params = hoverParams(uri, face.wordLine, face.col);
+        const rustRaw = await client.request('textDocument/definition', params, { timeoutMs: 5000 }) as unknown;
+        await gate.compare('textDocument/definition', params, tsFace, uri);
+        emit(
+          `GATE2-REGFACE ${path.basename(face.file)} ts=${JSON.stringify(tsFace)} rust=${JSON.stringify(rustRaw)}`
+        );
+        if (firstDiffPath(tsFace, rustRaw) === null) {
+          stats.defRegistryExact += 1;
+        } else {
+          stats.defRegistryDiverge += 1;
+        }
+      }
       const tsHover = await hoverProvider.provideHover(tsDoc, new Position(face.wordLine, face.col));
       const tsFace = tsHoverToLsp(tsHover);
       const params = hoverParams(uri, face.wordLine, face.col);
@@ -500,6 +611,16 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
     once('S1.compRustSubsetOfTs', stats.compRustSubset);
     once('S1.compDiverge', stats.compDiverge);
     once('S1.compRustNullJudge', stats.compRustNull);
+    once('S1.defDeclExact', stats.defDeclExact);
+    once('S1.defDeclDiverge', stats.defDeclDiverge);
+    once('S1.defDeclTsOnly', stats.defDeclTsOnly);
+    once('S1.defDeclRustOnly', stats.defDeclRustOnly);
+    once('S1.defDeclBothMiss', stats.defDeclBothMiss);
+    once('S1.defRegistryExact', stats.defRegistryExact);
+    once('S1.defRegistryDiverge', stats.defRegistryDiverge);
+    once('S1.diagBothEmpty', stats.diagBothEmpty);
+    once('S1.diagMatch', stats.diagMatch);
+    once('S1.diagDiverge', stats.diagDiverge);
     const topRustOnly = [...stats.rustOnlyLabels.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
     once('S1.rustOnlyTopLabels', topRustOnly.map(([k, v]) => `${k}x${v}`).join(',') || '(none)');
     // 首分歧样本(前 5 条 diff/rust 侧失败)
@@ -561,6 +682,24 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
       'S2.completionDefType',
       () => defCompletion.provideCompletionItems(tsCompDoc, new Position(compLine, compCol)),
       () => client.request('textDocument/completion', completionParams(uri, compLine, compCol))
+    );
+
+    // Phase2 首片:definition(声明词探针,定义落点解析)双轨计时。
+    const propLine = baseText.split('\n').findIndex(l => l.includes('<hp '));
+    await bench(
+      'S2.definitionDefProp',
+      async () => defDefinition.provideDefinition(tsHoverDoc, new Position(propLine, 6)),
+      () => client.request('textDocument/definition', hoverParams(uri, propLine, 6))
+    );
+    // Phase2 首片:diagnostics(validateDocument 语料子集)双轨计时。
+    await bench(
+      'S2.diagnosticsDef',
+      async () => {
+        const collection = new DiagnosticCollection();
+        validateDocument(tsHoverDoc as never, collection as never);
+        return collection.get(Uri.file(def)).length;
+      },
+      () => client.request('textDocument/diagnostic', { textDocument: { uri } })
     );
 
     // compare() 通道总开销(TS 直调 + Rust 镜像 + 规范比较;切流前接线成本参考)
