@@ -1,0 +1,181 @@
+# parser Rust<->TS head2head raw harness output
+# date: 2026-10-23  host: see docs/perf/hardware.md  commit: 14a0fae+worktree
+# rust: ./target/release/examples/head2head <corpus...>   ts: node --expose-gc /tmp/kode-h2h-ts.cjs <corpus...>
+# corpora: T1=tests/fixtures/{kbengine-demo-assets,parity-project,electron-ws,kbengine-tpl-scripts}
+#          T2u=/tmp/kode-h2h/assets30k-uniq (unique-commented copy)  T3=/tmp/kode-h2h/synth
+# fields: FULL median over 18 measured rounds (2 warmup); SINGLE n=files*27 (3 warmup); INCR 5 repeats
+
+=== T1 run1 rust ===
+H2H files=28 bytes=9270 corpora=tests/fixtures/kbengine-demo-assets,tests/fixtures/parity-project,tests/fixtures/electron-ws,tests/fixtures/kbengine-tpl-scripts
+FULL rounds=18 median_ms=0.395 min_ms=0.365 max_ms=0.461 throughput_MBps=22.37
+SURFACE props=29 methods=23
+SINGLE n=756 P50_us=6 P95_us=58 P99_us=83 max_us=149
+SLOWEST min_us=63 file=kbengine-demo-assets/scripts/entity_defs/Avatar.def
+SLOWEST min_us=39 file=kbengine-demo-assets/scripts/entity_defs/interfaces/TRAINING_ACTOR.def
+SLOWEST min_us=30 file=parity-project/scripts/entity_defs/Avatar.def
+INCR repeats=5 scan1_rebuilds=28 scan2_rebuilds=0 scan2_cache_hits=28 scan1_ms=0.507 scan2_ms=0.019 fp_only_ms=0.015
+MEM vmhwm_kib=2964
+bench ok
+
+=== T1 run2 rust ===
+H2H files=28 bytes=9270 corpora=tests/fixtures/kbengine-demo-assets,tests/fixtures/parity-project,tests/fixtures/electron-ws,tests/fixtures/kbengine-tpl-scripts
+FULL rounds=18 median_ms=0.500 min_ms=0.336 max_ms=0.690 throughput_MBps=17.67
+SURFACE props=29 methods=23
+SINGLE n=756 P50_us=6 P95_us=51 P99_us=80 max_us=139
+SLOWEST min_us=58 file=kbengine-demo-assets/scripts/entity_defs/Avatar.def
+SLOWEST min_us=36 file=kbengine-demo-assets/scripts/entity_defs/interfaces/TRAINING_ACTOR.def
+SLOWEST min_us=27 file=parity-project/scripts/entity_defs/Avatar.def
+INCR repeats=5 scan1_rebuilds=28 scan2_rebuilds=0 scan2_cache_hits=28 scan1_ms=0.522 scan2_ms=0.018 fp_only_ms=0.016
+MEM vmhwm_kib=2972
+bench ok
+
+=== T1 run1 ts ===
+H2H files=28 bytes=9270 corpora=tests/fixtures/kbengine-demo-assets,tests/fixtures/parity-project,tests/fixtures/electron-ws,tests/fixtures/kbengine-tpl-scripts
+FULL mode=parse-only rounds=18 median_ms=4.664 min_ms=4.246 max_ms=5.446 throughput_MBps=1.90
+FULL mode=parse+extract rounds=18 median_ms=5.013 min_ms=4.220 max_ms=7.834 throughput_MBps=1.76
+SINGLE mode=parse-only n=756 P50_us=86.4 P95_us=538.3 P99_us=707.5 max_us=1495.8
+SLOWEST mode=parse-only min_us=560.2 file=kbengine-demo-assets/scripts/entity_defs/Avatar.def
+SLOWEST mode=parse-only min_us=385.7 file=kbengine-demo-assets/scripts/entities.xml
+SLOWEST mode=parse-only min_us=269.6 file=kbengine-demo-assets/scripts/entity_defs/interfaces/TRAINING_ACTOR.def
+SINGLE mode=parse+extract n=756 P50_us=106.3 P95_us=556.5 P99_us=814.6 max_us=1133.5
+SLOWEST mode=parse+extract min_us=553.4 file=kbengine-demo-assets/scripts/entity_defs/Avatar.def
+SLOWEST mode=parse+extract min_us=293.0 file=kbengine-demo-assets/scripts/entity_defs/interfaces/TRAINING_ACTOR.def
+SLOWEST mode=parse+extract min_us=292.5 file=kbengine-demo-assets/scripts/entities.xml
+SURFACE mode=parse+extract props=29 methods=23
+INCR repeats=5 scan1_rebuilds=28 scan2_rebuilds=0 scan2_cache_hits=28 scan1_ms=6.242 scan2_ms=1.845 fp_only_ms=1.805
+MEM vmhwm_kib=72904
+bench ok
+
+=== T1 run2 ts ===
+H2H files=28 bytes=9270 corpora=tests/fixtures/kbengine-demo-assets,tests/fixtures/parity-project,tests/fixtures/electron-ws,tests/fixtures/kbengine-tpl-scripts
+FULL mode=parse-only rounds=18 median_ms=5.388 min_ms=4.030 max_ms=6.651 throughput_MBps=1.64
+FULL mode=parse+extract rounds=18 median_ms=5.621 min_ms=4.534 max_ms=9.526 throughput_MBps=1.57
+SINGLE mode=parse-only n=756 P50_us=105.5 P95_us=606.5 P99_us=821.6 max_us=1256.2
+SLOWEST mode=parse-only min_us=496.9 file=kbengine-demo-assets/scripts/entity_defs/Avatar.def
+SLOWEST mode=parse-only min_us=304.9 file=kbengine-demo-assets/scripts/entities.xml
+SLOWEST mode=parse-only min_us=286.5 file=kbengine-demo-assets/scripts/entity_defs/interfaces/TRAINING_ACTOR.def
+SINGLE mode=parse+extract n=756 P50_us=104.3 P95_us=536.0 P99_us=739.9 max_us=1152.5
+SLOWEST mode=parse+extract min_us=449.9 file=kbengine-demo-assets/scripts/entity_defs/Avatar.def
+SLOWEST mode=parse+extract min_us=373.1 file=kbengine-demo-assets/scripts/entities.xml
+SLOWEST mode=parse+extract min_us=281.2 file=kbengine-demo-assets/scripts/entity_defs/interfaces/TRAINING_ACTOR.def
+SURFACE mode=parse+extract props=29 methods=23
+INCR repeats=5 scan1_rebuilds=28 scan2_rebuilds=0 scan2_cache_hits=28 scan1_ms=4.528 scan2_ms=1.402 fp_only_ms=1.461
+MEM vmhwm_kib=72156
+bench ok
+
+=== T2 run1 rust ===
+H2H files=1352 bytes=417448 corpora=/tmp/kode-h2h/assets30k-uniq
+FULL rounds=18 median_ms=11.369 min_ms=9.222 max_ms=17.319 throughput_MBps=35.02
+SURFACE props=1208 methods=7225
+SINGLE n=36504 P50_us=7 P95_us=13 P99_us=29 max_us=115
+SLOWEST min_us=7 file=assets30k-uniq/big-py/scripts/entity_defs/BigEntity.def
+SLOWEST min_us=6 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit985.def
+SLOWEST min_us=6 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit984.def
+INCR repeats=5 scan1_rebuilds=1352 scan2_rebuilds=0 scan2_cache_hits=1352 scan1_ms=13.985 scan2_ms=0.816 fp_only_ms=0.668
+MEM vmhwm_kib=6960
+bench ok
+
+=== T2 run2 rust ===
+H2H files=1352 bytes=417448 corpora=/tmp/kode-h2h/assets30k-uniq
+FULL rounds=18 median_ms=10.237 min_ms=9.228 max_ms=11.666 throughput_MBps=38.89
+SURFACE props=1208 methods=7225
+SINGLE n=36504 P50_us=7 P95_us=17 P99_us=28 max_us=77
+SLOWEST min_us=7 file=assets30k-uniq/big-py/scripts/entity_defs/BigEntity.def
+SLOWEST min_us=6 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit999.def
+SLOWEST min_us=6 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit998.def
+INCR repeats=5 scan1_rebuilds=1352 scan2_rebuilds=0 scan2_cache_hits=1352 scan1_ms=14.020 scan2_ms=0.998 fp_only_ms=0.710
+MEM vmhwm_kib=6956
+bench ok
+
+=== T2 run1 ts ===
+H2H files=1352 bytes=417448 corpora=/tmp/kode-h2h/assets30k-uniq
+FULL mode=parse-only rounds=18 median_ms=110.194 min_ms=101.671 max_ms=130.210 throughput_MBps=3.61
+FULL mode=parse+extract rounds=18 median_ms=120.061 min_ms=101.338 max_ms=141.039 throughput_MBps=3.32
+SINGLE mode=parse-only n=36504 P50_us=73.4 P95_us=156.6 P99_us=224.1 max_us=5745.1
+SLOWEST mode=parse-only min_us=286.8 file=assets30k-uniq/big-py/scripts/entity_defs/BigEntity.def
+SLOWEST mode=parse-only min_us=119.1 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit1003.def
+SLOWEST mode=parse-only min_us=115.0 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit1001.def
+SINGLE mode=parse+extract n=36504 P50_us=75.5 P95_us=162.3 P99_us=229.5 max_us=5826.8
+SLOWEST mode=parse+extract min_us=368.9 file=assets30k-uniq/big-py/scripts/entity_defs/BigEntity.def
+SLOWEST mode=parse+extract min_us=142.9 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit1.def
+SLOWEST mode=parse+extract min_us=129.1 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit10.def
+SURFACE mode=parse+extract props=1208 methods=7225
+INCR repeats=5 scan1_rebuilds=1352 scan2_rebuilds=0 scan2_cache_hits=1352 scan1_ms=117.581 scan2_ms=38.727 fp_only_ms=42.934
+MEM vmhwm_kib=236376
+bench ok
+
+=== T2 run2 ts ===
+H2H files=1352 bytes=417448 corpora=/tmp/kode-h2h/assets30k-uniq
+FULL mode=parse-only rounds=18 median_ms=116.339 min_ms=101.918 max_ms=164.056 throughput_MBps=3.42
+FULL mode=parse+extract rounds=18 median_ms=117.379 min_ms=105.206 max_ms=148.651 throughput_MBps=3.39
+SINGLE mode=parse-only n=36504 P50_us=74.6 P95_us=151.8 P99_us=232.2 max_us=4850.8
+SLOWEST mode=parse-only min_us=543.5 file=assets30k-uniq/big-py/scripts/entity_defs/BigEntity.def
+SLOWEST mode=parse-only min_us=130.5 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit0.def
+SLOWEST mode=parse-only min_us=129.6 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit100.def
+SINGLE mode=parse+extract n=36504 P50_us=80.6 P95_us=161.8 P99_us=235.0 max_us=4893.5
+SLOWEST mode=parse+extract min_us=544.5 file=assets30k-uniq/big-py/scripts/entity_defs/BigEntity.def
+SLOWEST mode=parse+extract min_us=216.9 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit1.def
+SLOWEST mode=parse+extract min_us=195.8 file=assets30k-uniq/def-heavy/scripts/entity_defs/Unit0.def
+SURFACE mode=parse+extract props=1208 methods=7225
+INCR repeats=5 scan1_rebuilds=1352 scan2_rebuilds=0 scan2_cache_hits=1352 scan1_ms=138.647 scan2_ms=44.441 fp_only_ms=48.396
+MEM vmhwm_kib=233872
+bench ok
+
+=== T3 run1 rust ===
+H2H files=2001 bytes=10538731 corpora=/tmp/kode-h2h/synth
+FULL rounds=18 median_ms=509.220 min_ms=470.436 max_ms=589.069 throughput_MBps=19.74
+SURFACE props=148000 methods=0
+SINGLE n=54027 P50_us=211 P95_us=301 P99_us=384 max_us=120284
+SLOWEST min_us=82641 file=synth/MEGA.def
+SLOWEST min_us=1373 file=synth/Def0000.def
+SLOWEST min_us=188 file=synth/Def0512.def
+INCR repeats=5 scan1_rebuilds=2001 scan2_rebuilds=0 scan2_cache_hits=2001 scan1_ms=619.620 scan2_ms=15.704 fp_only_ms=16.891
+MEM vmhwm_kib=127048
+bench ok
+
+=== T3 run2 rust ===
+H2H files=2001 bytes=10538731 corpora=/tmp/kode-h2h/synth
+FULL rounds=18 median_ms=541.948 min_ms=452.315 max_ms=578.116 throughput_MBps=18.55
+SURFACE props=148000 methods=0
+SINGLE n=54027 P50_us=212 P95_us=333 P99_us=413 max_us=115721
+SLOWEST min_us=83126 file=synth/MEGA.def
+SLOWEST min_us=1468 file=synth/Def0000.def
+SLOWEST min_us=186 file=synth/Def0799.def
+INCR repeats=5 scan1_rebuilds=2001 scan2_rebuilds=0 scan2_cache_hits=2001 scan1_ms=658.181 scan2_ms=17.196 fp_only_ms=16.331
+MEM vmhwm_kib=127048
+bench ok
+
+=== T3 run1 ts ===
+H2H files=2001 bytes=10538731 corpora=/tmp/kode-h2h/synth
+FULL mode=parse-only rounds=18 median_ms=3324.184 min_ms=3232.782 max_ms=3480.548 throughput_MBps=3.02
+FULL mode=parse+extract rounds=18 median_ms=3555.682 min_ms=3055.132 max_ms=3723.034 throughput_MBps=2.83
+SINGLE mode=parse-only n=54027 P50_us=883.3 P95_us=1423.4 P99_us=5131.9 max_us=1400107.0
+SLOWEST mode=parse-only min_us=1127337.1 file=synth/MEGA.def
+SLOWEST mode=parse-only min_us=2797.4 file=synth/Def0000.def
+SLOWEST mode=parse-only min_us=2337.4 file=synth/Def0001.def
+SINGLE mode=parse+extract n=54027 P50_us=918.0 P95_us=1492.8 P99_us=4732.8 max_us=1400509.8
+SLOWEST mode=parse+extract min_us=1168397.6 file=synth/MEGA.def
+SLOWEST mode=parse+extract min_us=2601.0 file=synth/Def0000.def
+SLOWEST mode=parse+extract min_us=2389.0 file=synth/Def0001.def
+SURFACE mode=parse+extract props=148000 methods=0
+INCR repeats=5 scan1_rebuilds=2001 scan2_rebuilds=0 scan2_cache_hits=2001 scan1_ms=4596.377 scan2_ms=1054.769 fp_only_ms=1097.988
+MEM vmhwm_kib=1145336
+bench ok
+
+=== T3 run2 ts ===
+H2H files=2001 bytes=10538731 corpora=/tmp/kode-h2h/synth
+FULL mode=parse-only rounds=18 median_ms=3322.246 min_ms=2991.989 max_ms=3431.170 throughput_MBps=3.03
+FULL mode=parse+extract rounds=18 median_ms=3503.895 min_ms=3249.765 max_ms=3674.910 throughput_MBps=2.87
+SINGLE mode=parse-only n=54027 P50_us=897.0 P95_us=1382.7 P99_us=5281.2 max_us=1530356.0
+SLOWEST mode=parse-only min_us=1288347.7 file=synth/MEGA.def
+SLOWEST mode=parse-only min_us=2804.0 file=synth/Def0000.def
+SLOWEST mode=parse-only min_us=2024.9 file=synth/Def0001.def
+SINGLE mode=parse+extract n=54027 P50_us=975.5 P95_us=1585.4 P99_us=5050.4 max_us=1410592.3
+SLOWEST mode=parse+extract min_us=1261525.4 file=synth/MEGA.def
+SLOWEST mode=parse+extract min_us=2842.4 file=synth/Def0000.def
+SLOWEST mode=parse+extract min_us=2311.9 file=synth/Def0001.def
+SURFACE mode=parse+extract props=148000 methods=0
+INCR repeats=5 scan1_rebuilds=2001 scan2_rebuilds=0 scan2_cache_hits=2001 scan1_ms=4418.021 scan2_ms=1097.330 fp_only_ms=1037.695
+MEM vmhwm_kib=1218468
+bench ok
+
