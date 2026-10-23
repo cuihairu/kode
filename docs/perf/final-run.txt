@@ -1,0 +1,23 @@
+BASELINE-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=30000 assets=/home/cui/.hermes/cache/scratch/kode-perf-baseline-assets
+BASELINE-METRIC S1.large.coldFindClassesByName n=1 elapsed=100492.95ms
+BASELINE-METRIC S1.large.pyFilesDiscovered n=1 elapsed=30001ms
+BASELINE-METRIC S2.large.warmFindClassesByName n=200 p50=0ms p95=0ms p99=0.02ms max=0.05039299999771174ms avg=0ms
+BASELINE-METRIC S2.large.warmComputeMRO n=40 p50=0ms p95=0.02ms p99=0.78ms max=0.7836440000100993ms avg=0.02ms
+BASELINE-METRIC S1.defHeavy.entityMappingColdScan n=1 elapsed=736.5ms
+BASELINE-METRIC S5.defHeavy.entityMappingWarmRescan n=1 elapsed=18.73ms
+BASELINE-METRIC S3.bigPy.firstQueryNewFile n=1 elapsed=0.94ms
+BASELINE-METRIC S4.bigPy.queryAfterDocumentEdit n=20 p50=0.17ms p95=0.36ms p99=89.89ms max=89.88872999999148ms avg=4.66ms
+BASELINE-METRIC S6.large.fileDeleteInvalidation n=1 elapsed=11.3ms
+BASELINE-METRIC S6.large.deletedClassHits n=1 elapsed=0ms
+BASELINE-METRIC S7.multiRoot.concurrent60FindInventory.wall n=1 elapsed=0.09ms
+BASELINE-METRIC S7.multiRoot.concurrent60FindInventory.totalHits n=1 elapsed=360ms
+BASELINE-METRIC S7.multiRoot.rootsContaining n=20 p50=0ms p95=0.01ms p99=7.49ms max=7.4886889999907ms avg=0.38ms
+BASELINE-METRIC S8.noise.coldScanWithExcludes n=1 elapsed=2.21ms
+BASELINE-METRIC S8.noise.excludedDirClassHits n=1 elapsed=0ms
+BASELINE-METRICS-REPORT
+Kode language service metrics (monotonic clock, elapsed in ms)
+file-discovery            count=     1  p50=      1.6ms  p95=      1.6ms  p99=      1.6ms  max=      1.6ms  hit=    0%  waitInit=    0  discover=1 read=0 parse=0  ok=1 miss=0 cancel=0 error=0
+index-scheduler           count=     2  p50=      0.4ms  p95=      1.7ms  p99=      1.7ms  max=      1.7ms  hit=    0%  waitInit=    0  discover=0 read=0 parse=0  ok=2 miss=0 cancel=0 error=0
+document-parse            count=     1  p50=      0.1ms  p95=      0.1ms  p99=      0.1ms  max=      0.1ms  hit=    0%  waitInit=    0  discover=0 read=0 parse=1  ok=1 miss=0 cancel=0 error=0
+python-index-scan         count=     1  p50=      2.2ms  p95=      2.2ms  p99=      2.2ms  max=      2.2ms  hit=    0%  waitInit=    0  discover=1 read=1 parse=1  ok=1 miss=0 cancel=0 error=0
+

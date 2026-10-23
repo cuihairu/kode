@@ -1,0 +1,7 @@
+UNBLOCKED-ENV node=v24.21.0 cpus=14 largeFiles=30000
+UNBLOCKED-METRIC U1.large.coldDefinitionFirstQuery n=1 475.34ms
+UNBLOCKED-METRIC U1.large.coldDefinitionFirstQueryHits n=1 1ms
+UNBLOCKED-METRIC U2.large.backgroundScanCompletion n=1 106631.86ms
+UNBLOCKED-METRIC U3.large.warmDefinitionQuery n=40 p50=16ms p95=22.1ms p99=23.6ms max=23.604896000004373ms
+UNBLOCKED-METRIC U4.large.coldFindClassesByName n=1 89878.77ms
+UNBLOCKED-METRIC U4.large.coldFindClassesByNameHits n=1 1ms
