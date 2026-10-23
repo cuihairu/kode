@@ -245,6 +245,11 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         'pnpm-workspace.yaml',
         'docs/',
         'resources/docs/',
+        // 2026-10-23 打包防污染: codecov-action 会把上传器二进制落在
+        // 工作区(codecov/codecov.SHA256SUM/codecov.SHA256SUM.sig,9.9MB)
+        // 曾混入 v0.1.3 市售包;translate_pages.py 为工作区游离脚本。
+        'codecov*',
+        'translate_pages.py',
         'src/',
         'tests/',
         'build/',
