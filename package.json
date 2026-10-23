@@ -2,7 +2,7 @@
   "name": "kode-kbengine",
   "displayName": "Kode - KBEngine Development Environment",
   "description": "Complete language support for KBEngine game server framework with syntax highlighting, IntelliSense, and more",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "cuihairu",
   "author": {
     "name": "cuihairu",
@@ -423,14 +423,14 @@
         "command": "kbengine.profile.start",
         "title": "Start Runtime Profile"
       },
-    {
-      "command": "kbengine.python.showCallChain",
-      "title": "Show Call Chain"
-    },
-    {
-      "command": "kbengine.runtimeQuery.show",
-      "title": "Show Runtime Query Panel"
-    },
+      {
+        "command": "kbengine.python.showCallChain",
+        "title": "Show Call Chain"
+      },
+      {
+        "command": "kbengine.runtimeQuery.show",
+        "title": "Show Runtime Query Panel"
+      },
       {
         "command": "kbengine.spaces.query",
         "title": "Query Spaces"
@@ -966,7 +966,10 @@
         },
         "kbengine.python.callChainView": {
           "type": "string",
-          "enum": ["graph", "text"],
+          "enum": [
+            "graph",
+            "text"
+          ],
           "default": "graph",
           "enumDescriptions": [
             "Graph：面板内嵌 mermaid(npm 打包,离线可用)渲染真图",
