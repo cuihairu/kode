@@ -1,0 +1,393 @@
+import { KodeCoreClient, KodeCoreTransportError } from './kodeCoreClient';
+
+// kode2 PR-012:双轨切流门(kill-switch / shadow / 差异日志)。
+// 书 §16.3/PH7-02 与 docs/kode2/ph0-gate.md 门 3:双轨 parity 与回退措施
+// 成熟前不删旧 TS 实现,Rust 结果不得直接服务用户。本模块只做三件事:
+//   1. 解析 kbengine.core.backend 开关(ts|rust|shadow,默认 ts;非法值
+//      一律回落 ts —— kill-switch 永远收得回来);
+//   2. rust 字面量在本 PR 只保留占位:serving 门禁拒绝(切流前置条件未
+//      全绿),生效轨道仍是 ts,并留下一次 notice 存照;
+//   3. shadow 模式下 compare() 把同参请求镜像给 Rust server 做短超时
+//      对比,任何 Rust 侧失败只记差异日志,compare 恒返回 TS 结果
+//      原样 —— 用户可见行为与 ts 模式逐字节一致(铁律:不切流)。
+
+export type KodeBackendMode = 'ts' | 'rust' | 'shadow';
+
+/** shadow 对比结论:match/diff 之外的三种失败都归属 rust 侧,不改服务 */
+export type ShadowVerdict = 'match' | 'diff' | 'rust-error' | 'rust-timeout' | 'rust-unavailable';
+
+/** 差异日志单条:seq 单调递增,verdict 汇总口径见 ShadowVerdict */
+export interface ShadowDiffEntry {
+  seq: number;
+  timestamp: string;
+  method: string;
+  uri?: string;
+  verdict: ShadowVerdict;
+  /** diff 时为首个分歧路径与双方截断值;失败时为错误摘要 */
+  detail?: string;
+}
+
+export interface KodeCoreGateConfig {
+  /** kbengine.core.backend 原始字符串(可能非法) */
+  backend: string;
+  /** kode-server 二进制路径;空 = rust 不可用 */
+  serverPath: string;
+  /** shadow 镜像请求超时毫秒(默认 2000) */
+  shadowTimeoutMs: number;
+}
+
+export const DEFAULT_CORE_GATE_CONFIG: KodeCoreGateConfig = {
+  backend: 'ts',
+  serverPath: '',
+  shadowTimeoutMs: 2000,
+};
+
+/** spawn 失败后的重试冷却(毫秒):防 provider 高频查询把失败刷成风暴 */
+const SPAWN_COOLDOWN_MS = 30_000;
+
+/**
+ * kill-switch 解析:仅 'shadow' 与 'rust' 两个字面量改变模式,其余(含
+ * undefined/空串/拼错)一律回落 'ts' —— 开关异常时安全侧是 TS 真相。
+ * 'rust' 额外置 rustServingGated=true:切流前置条件未全绿前,serving
+ * 门禁拒绝该字面量(ph0-gate 门 3 设计稿键值,生效语义见本文件头注)。
+ */
+export function resolveBackendMode(rawBackend: string | undefined): {
+  mode: KodeBackendMode;
+  rustServingGated: boolean;
+} {
+  if (rawBackend === 'shadow') {
+    return { mode: 'shadow', rustServingGated: false };
+  }
+  if (rawBackend === 'rust') {
+    return { mode: 'rust', rustServingGated: true };
+  }
+  return { mode: 'ts', rustServingGated: false };
+}
+
+/** 规范化:对象按键名排序后比较(数组保序),屏蔽序列化键序差异 */
+export function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0
+    );
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of entries) {
+      out[key] = canonicalize(item);
+    }
+    return out;
+  }
+  return value;
+}
+
+function truncate(text: string, max = 80): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
+function preview(value: unknown): string {
+  try {
+    return truncate(JSON.stringify(value) ?? String(value));
+  } catch {
+    return truncate(String(value));
+  }
+}
+
+/** 首个分歧路径('$' 为根;对象取键,数组取下标);一致返回 null */
+export function firstDiffPath(tsValue: unknown, rustValue: unknown, path = '$'): string | null {
+  const canonicalTs = canonicalize(tsValue);
+  const canonicalRust = canonicalize(rustValue);
+  if (canonicalTs === canonicalRust) {
+    return null;
+  }
+  const walk = (a: unknown, b: unknown, p: string): string | null => {
+    if (a === b) {
+      return null;
+    }
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) {
+        return `${p}.length(${a.length}≠${b.length})`;
+      }
+      for (let i = 0; i < a.length; i += 1) {
+        const found = walk(a[i], b[i], `${p}[${i}]`);
+        if (found) {
+          return found;
+        }
+      }
+      return null;
+    }
+    if (a !== null && b !== null && typeof a === 'object' && typeof b === 'object') {
+      const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+      for (const key of keys) {
+        const found = walk(
+          (a as Record<string, unknown>)[key],
+          (b as Record<string, unknown>)[key],
+          `${p}.${key}`
+        );
+        if (found) {
+          return found;
+        }
+      }
+      return null;
+    }
+    return p;
+  };
+  return walk(canonicalTs, canonicalRust, path);
+}
+
+/** 差异日志:有界环形(默认 500 条),可订阅(输出通道消费) */
+export class ShadowDiffLog {
+  private seq = 0;
+  private readonly items: ShadowDiffEntry[] = [];
+  private readonly listeners = new Set<(entry: ShadowDiffEntry) => void>();
+
+  constructor(private readonly limit = 500) {}
+
+  record(entry: Omit<ShadowDiffEntry, 'seq' | 'timestamp'>, now = new Date()): ShadowDiffEntry {
+    this.seq += 1;
+    const full: ShadowDiffEntry = { ...entry, seq: this.seq, timestamp: now.toISOString() };
+    this.items.push(full);
+    if (this.items.length > this.limit) {
+      this.items.splice(0, this.items.length - this.limit);
+    }
+    for (const listener of this.listeners) {
+      listener(full);
+    }
+    return full;
+  }
+
+  entries(): readonly ShadowDiffEntry[] {
+    return this.items;
+  }
+
+  summary(): { total: number; match: number; diff: number; failure: number } {
+    let match = 0;
+    let diff = 0;
+    let failure = 0;
+    for (const item of this.items) {
+      if (item.verdict === 'match') {
+        match += 1;
+      } else if (item.verdict === 'diff') {
+        diff += 1;
+      } else {
+        failure += 1;
+      }
+    }
+    return { total: this.items.length, match, diff, failure };
+  }
+
+  clear(): void {
+    this.items.length = 0;
+  }
+
+  subscribe(listener: (entry: ShadowDiffEntry) => void): { dispose(): void } {
+    this.listeners.add(listener);
+    return {
+      dispose: () => {
+        this.listeners.delete(listener);
+      },
+    };
+  }
+}
+
+/** compare() 所需的 client 面(KodeCoreClient 子集,测试可注入替身) */
+export interface ShadowClientLike {
+  start(): Promise<unknown>;
+  request(
+    method: string,
+    params?: unknown,
+    opts?: { timeoutMs?: number }
+  ): Promise<unknown>;
+  dispose(): Promise<void>;
+}
+
+export interface KodeCoreGateOptions {
+  /** 默认 new KodeCoreClient({ binaryPath: serverPath }) */
+  clientFactory?: (serverPath: string) => ShadowClientLike;
+  diffLog?: ShadowDiffLog;
+  now?: () => number;
+}
+
+/** 门状态快照(可观测/回退演练判据读取) */
+export interface KodeCoreGateState {
+  mode: KodeBackendMode;
+  /** 生效轨道:rust 被 serving 门禁拒绝时为 'ts' */
+  servingMode: 'ts' | 'shadow';
+  rustServingGated: boolean;
+  serverPath: string;
+  clientAlive: boolean;
+  notices: readonly string[];
+}
+
+export class KodeCoreGate {
+  readonly diffLog: ShadowDiffLog;
+  private config: KodeCoreGateConfig = { ...DEFAULT_CORE_GATE_CONFIG };
+  private client: ShadowClientLike | null = null;
+  private clientServerPath = '';
+  private nextAttemptAt = 0;
+  private readonly notices: string[] = [];
+  private readonly now: () => number;
+  private readonly options: KodeCoreGateOptions;
+
+  constructor(options: KodeCoreGateOptions = {}) {
+    this.diffLog = options.diffLog ?? new ShadowDiffLog();
+    this.options = options;
+    this.now = options.now ?? Date.now;
+  }
+
+  /** 应用新配置;离开 shadow 或换二进制即停 Rust 进程(kill-switch 生效点) */
+  setConfig(config: KodeCoreGateConfig): void {
+    const previous = this.config;
+    this.config = { ...config };
+    const resolved = resolveBackendMode(config.backend);
+    if (resolved.mode !== 'shadow' || previous.serverPath !== config.serverPath) {
+      this.stopClient();
+    }
+    if (resolved.mode === 'rust') {
+      this.noticeOnce(
+        'kbengine.core.backend=rust 被 serving 门禁拒绝:切流前置条件未全绿(docs/kode2/pr-012.md),生效轨道仍为 ts'
+      );
+    }
+  }
+
+  /** 解析后的模式(rust 字面量保留原值供观测) */
+  get mode(): KodeBackendMode {
+    return resolveBackendMode(this.config.backend).mode;
+  }
+
+  /** 生效服务轨道:rust 门禁拒绝后恒 ts;shadow 时 TS 仍为唯一服务方 */
+  get servingMode(): 'ts' | 'shadow' {
+    return this.mode === 'shadow' ? 'shadow' : 'ts';
+  }
+
+  get rustServingGated(): boolean {
+    return resolveBackendMode(this.config.backend).rustServingGated;
+  }
+
+  get state(): KodeCoreGateState {
+    return {
+      mode: this.mode,
+      servingMode: this.servingMode,
+      rustServingGated: this.rustServingGated,
+      serverPath: this.config.serverPath,
+      clientAlive: this.client !== null,
+      notices: [...this.notices],
+    };
+  }
+
+  /**
+   * serving 门禁:Rust 路径在本 PR 一律不服务(切流前置条件未全绿)。
+   * 未来切流 PR 的唯一放行点 —— 这里翻 true 之前必须先过 pr-012.md 前置
+   * 条件清单并完成回退演练。
+   */
+  serveFromRust(): boolean {
+    return false;
+  }
+
+  private noticeOnce(text: string): void {
+    if (!this.notices.includes(text)) {
+      this.notices.push(text);
+      if (this.notices.length > 20) {
+        this.notices.shift();
+      }
+    }
+  }
+
+  private ensureClient(): ShadowClientLike | null {
+    if (this.client && this.clientServerPath === this.config.serverPath) {
+      return this.client;
+    }
+    this.stopClient();
+    try {
+      this.client =
+        this.options.clientFactory?.(this.config.serverPath) ??
+        new KodeCoreClient({ binaryPath: this.config.serverPath });
+      this.clientServerPath = this.config.serverPath;
+      return this.client;
+    } catch (error) {
+      this.client = null;
+      this.clientServerPath = '';
+      this.noticeOnce(`shadow client 创建失败: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /** kill-switch/换二进制:停 Rust 进程并清冷却(异步,不阻塞配置路径) */
+  private stopClient(): void {
+    const client = this.client;
+    this.client = null;
+    this.clientServerPath = '';
+    if (client) {
+      void client.dispose().catch(() => undefined);
+    }
+  }
+
+  /**
+   * shadow 镜像对比:恒返回 tsResult 原样,永不抛错。Rust 结果只进差异
+   * 日志;任何 Rust 侧失败(start/请求/超时/不可用)只记 verdict 不上浮。
+   * 非 shadow 模式零开销直通(不建进程、不记日志)。
+   */
+  async compare<T>(method: string, params: unknown, tsResult: T, uri?: string): Promise<T> {
+    if (this.servingMode !== 'shadow') {
+      return tsResult;
+    }
+    const fail = (verdict: ShadowVerdict, detail?: string): void => {
+      this.diffLog.record({ method, uri, verdict, detail });
+    };
+    if (!this.config.serverPath) {
+      fail('rust-unavailable', 'kbengine.core.serverPath 未配置,影子比对不可用');
+      return tsResult;
+    }
+    if (this.now() < this.nextAttemptAt) {
+      fail('rust-unavailable', 'spawn 冷却中(上次启动失败 30s 内不重试)');
+      return tsResult;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      this.nextAttemptAt = this.now() + SPAWN_COOLDOWN_MS;
+      fail('rust-unavailable', 'shadow client 创建失败');
+      return tsResult;
+    }
+    try {
+      await client.start();
+    } catch (error) {
+      this.nextAttemptAt = this.now() + SPAWN_COOLDOWN_MS;
+      fail('rust-unavailable', `rust server 启动失败: ${truncate((error as Error).message, 120)}`);
+      return tsResult;
+    }
+    try {
+      const rustResult = await client.request(method, params, {
+        timeoutMs: this.config.shadowTimeoutMs,
+      });
+      const diffAt = firstDiffPath(tsResult, rustResult);
+      if (diffAt === null) {
+        this.diffLog.record({ method, uri, verdict: 'match' });
+      } else {
+        this.diffLog.record({
+          method,
+          uri,
+          verdict: 'diff',
+          detail: `${diffAt} ts=${preview(tsResult)} rust=${preview(rustResult)}`,
+        });
+      }
+    } catch (error) {
+      if (
+        error instanceof KodeCoreTransportError &&
+        (error.code === 'TIMEOUT' || error.code === 'REQUEST_CANCELLED')
+      ) {
+        // TIMEOUT=硬超时兜底;REQUEST_CANCELLED=超时闸先发的 $/cancelRequest
+        // 回 -32800 —— 两者都是影子超时,归 rust 侧
+        fail('rust-timeout', `${method} 超时(${this.config.shadowTimeoutMs}ms)`);
+      } else {
+        fail('rust-error', truncate((error as Error).message, 160));
+      }
+    }
+    return tsResult;
+  }
+
+  /** 停 Rust 进程;差异日志保留(回退演练要读) */
+  async dispose(): Promise<void> {
+    this.stopClient();
+  }
+}

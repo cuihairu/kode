@@ -437,7 +437,7 @@ kode/
 - [x] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。(落地:crates/kode-scheduler(SCHED-001..021 内部清单=§4 CORE-005..008/017+§7 IDX-003/013/015 调度面基础版,书无 SCHED 编号已如实映射;失效图文件→声明名→反向受影响集+分批重建+风暴合并+五级优先级+取消+有界队列+暂停恢复+崩溃恢复台账+指标)+ 调度面对拍 golden 双向门禁(10 场景,TS 真实 IndexScheduler 复算 148 字段=100%,tests/kodeSchedulerParity.test.ts);证据 docs/kode2/pr-009.md)
 - [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。(基础版落地:kode-server hover 响应链(定位→文档→签名→继承成员,textDocument/hover+hoverProvider capability+didOpen/Change/Close 语料视图联动)+对拍 golden 双向门禁(TS defParser/compositionRoots/defChain 复算:文件面 28/28+悬停面 90/90=100%)+环截断/缺父/UTF-16 词提取单测;Provider 切流随后续单;证据 docs/kode2/pr-010.md)
 - [x] PR-011 `lsp/completion-diagnostics`：版本化发布与可取消查询。(基础版落地:kode-server textDocument/completion 请求链(URI→position→上下文→条目集:实体/属性/方法分面/类型/别名/继承成员)+completionProvider capability+可取消(-32800)+版本化应答(overlay 严格 version 转移)+对拍 golden 双向门禁(TS defParser/defChain 复算:文件面 28/28+场景面 205/205=100%,671 条目/继承 13)+环截断/UTF-16/遮蔽单测;TS provider 零改动不切流,切流属 PR-012;证据 docs/kode2/pr-011.md)
-- [ ] PR-012 `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。
+- [ ] PR-012 `perf/gate-phase2`：真实大型数据压力测试和性能/正确性验收，不通过禁止继续扩大迁移。(基础版落地=双轨门禁+回退方案,2026-10-23:①切流开关 kbengine.core.backend: ts|rust|shadow 默认 ts 不切流,rust 保留值被 serving 门禁拒绝(serveFromRust 恒 false),shadow 影子比对(Rust 仅记录不服务,compare 恒返回 TS 结果原引用)+差异日志(有界环形 ShadowDiffLog 500 条→输出通道「KBEngine Core Shadow」,命令 kbengine.core.showShadowDiffLog)+kill-switch 一键回 TS(改回 ts 即停 Rust 进程,非法值一律回落 ts);②回退演练脚本与判据+TS 退役条件清单(PH7-02 细化)+切流前置条件清单落 docs/kode2/pr-012.md;③ph0-gate 门 3 ⬜→🟡(实战演练待 provider 逐面接入 compare);22 新单测(fake stdio 全链路+装配),test:unit 2938 passed,tsc/eslint 零错,cargo 189+clippy clean;真实大型数据压力测试与 Rust 对拍执行仍开放,门禁维持禁切流)
 
 ## 18. 关键架构决策待验证清单（不提前拍脑袋）
 
