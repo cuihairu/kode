@@ -49,6 +49,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kode-types"
+version = "0.2.0"
+dependencies = [
+ "kode-parser",
+]
+
+[[package]]
 name = "kode-vfs"
 version = "0.2.0"
 
