@@ -528,5 +528,5 @@ Code Agent 完成后必须提交：
 - [x] PR4 统一语义查询（semanticIndex + dependencyGraph，先类型注册表与实体映射）— 2aca694 系（PR4 查找顺序取证 docs/review/2026-10-23-pr4-lookup-order-forensics.md）
 - [x] PR5 消除 Python Definition 首次全仓阻塞（ensureScanned/ensureCompositionRoots 调度器迁移 + 按需单文件解析 + 组合根缓存/版本轴/依赖图失效）— 见 docs/perf/2026-pr5-unblocked-definition.md（冷启动 Definition 首查 107,737ms → 468.69ms，unit 2784 通过）
 - [x] PR6 诊断与多资产根一致性（版本化快照/依赖失效/根级隔离/冲突测试）— ae4256d（docs/perf/2026-pr6-diagnostics-consistency.md；诊断重算 19→7 次/同脚本，unit 2799 通过）
-- [ ] PR7 性能复测与回归（同环境同资产对比 PR1 基线，无可复现数据不进报告）
+- [x] PR7 性能复测与回归（同环境同资产对比 PR1 基线，无可复现数据不进报告）— a6a676f（docs/perf/2026-final-report.md：七场景复测 + U1 首查 475.34ms vs 基线 107,737ms；验收表通过 6/未通过 0/未测量 2；架构 docs/architecture/semantic-index.md；unit 2799 通过/tsc/eslint 零错）
 
