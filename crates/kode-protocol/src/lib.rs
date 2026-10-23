@@ -179,6 +179,9 @@ pub struct ServerCapabilities {
     /// LSP-003 / PH1-03(PR-010):hover provider 能力声明。
     #[serde(default)]
     pub hover_provider: bool,
+    /// Phase2 首片:textDocument/definition 能力声明(语料声明落点面)。
+    #[serde(default)]
+    pub definition_provider: bool,
     /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
@@ -306,6 +309,25 @@ pub struct CompletionParams {
 #[serde(rename_all = "camelCase")]
 pub struct CompletionOptions {
     pub trigger_characters: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// textDocument/definition DTO(Phase2 首片:定义落点请求链路)
+// ---------------------------------------------------------------------------
+
+/// definition 请求参数:文档身份 + UTF-16 位置(与 hover 同一定位基建)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+/// definition 请求的文档身份(与 hover 同形,单独类型保 LSP 语义清晰)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentDiagnosticParams {
+    pub text_document: TextDocumentIdentifier,
 }
 
 // ---------------------------------------------------------------------------

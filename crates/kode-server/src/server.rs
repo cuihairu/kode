@@ -15,14 +15,16 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kode_protocol::{
-    error_codes, CompletionParams, ContentChangeEvent, DidChangeParams, DidCloseParams,
-    DidOpenParams, DocumentSummary, HealthReport, HoverParams, IncomingMessage, InitializeParams,
-    InitializeResult, Notification, Request, RequestId, Response, ServerCapabilities, ServerInfo,
-    ServerNotification, TextDocumentSyncOptions, PROTOCOL_VERSION,
+    error_codes, CompletionParams, ContentChangeEvent, DefinitionParams, DidChangeParams,
+    DidCloseParams, DidOpenParams, DocumentDiagnosticParams, DocumentSummary, HealthReport,
+    HoverParams, IncomingMessage, InitializeParams, InitializeResult, Notification, Request,
+    RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
+    TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, RootRegistry, TextChange};
 
 use crate::completion::to_lsp_items;
+use crate::diagnostics::DiagnosticFace;
 use crate::hover::HoverEngine;
 
 /// 服务器名(TS 侧握手校验用)。
@@ -184,6 +186,8 @@ fn handle_request(
         "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll))],
         "textDocument/hover" => vec![Outgoing::Response(handle_hover(state, request))],
         "textDocument/completion" => vec![Outgoing::Response(handle_completion(state, request))],
+        "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
+        "textDocument/diagnostic" => vec![Outgoing::Response(handle_diagnostic(state, request))],
         _ => vec![Outgoing::Response(Response::error(
             Some(request.id),
             error_codes::METHOD_NOT_FOUND,
@@ -218,6 +222,8 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
                 change: 1,
             },
             hover_provider: true,
+            // Phase2 首片:textDocument/definition(语料声明落点面)。
+            definition_provider: true,
             // PR-011:completion 触发字符 `<`(def 标签位)。
             completion_provider: Some(kode_protocol::CompletionOptions {
                 trigger_characters: vec!["<".to_string()],
@@ -407,6 +413,81 @@ fn handle_completion(state: &mut ServerState, request: Request) -> Response {
         Some(response) => Response::success(request.id, to_lsp_items(&response)),
         None => Response::success(request.id, serde_json::Value::Null),
     }
+}
+
+/// textDocument/definition(Phase2 首片):文档须已打开;未打开/未知词/
+/// 语料无落点一律回 null 结果(LSP 允许),不报错不阻塞。面 = 语料声明
+/// 落点(docs/kode2/phase2-slice-a.md §面定义;Python/schema/stub 落点
+/// 不在本面,Rust 恒 null 划归边界)。
+fn handle_definition(state: &mut ServerState, request: Request) -> Response {
+    let params: DefinitionParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/definition params",
+            )
+        }
+    };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.roots.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    let definition =
+        state
+            .hover
+            .definition(&key, &text, params.position.line, params.position.character);
+    match definition {
+        Some(location) => Response::success(
+            request.id,
+            serde_json::to_value(location).expect("serialize location"),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// textDocument/diagnostic(Phase2 首片,LSP pull 诊断 full 报告形):
+/// `{kind:"full", items:[DiagnosticFace...]}`。文档须已打开;未打开回
+/// 空 items(不报错不阻塞)。面 = TS validateDocument 语料子集。
+fn handle_diagnostic(state: &mut ServerState, request: Request) -> Response {
+    let params: DocumentDiagnosticParams =
+        match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+            Some(params) => params,
+            None => {
+                return Response::error(
+                    Some(request.id),
+                    error_codes::INVALID_PARAMS,
+                    "invalid textDocument/diagnostic params",
+                )
+            }
+        };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(
+            request.id,
+            serde_json::json!({ "kind": "full", "items": [] }),
+        );
+    };
+    let root = state.roots.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+        return Response::success(
+            request.id,
+            serde_json::json!({ "kind": "full", "items": [] }),
+        );
+    };
+    let text = buffer.text().to_string();
+    let items: Vec<DiagnosticFace> = state.hover.diagnostics(key.uri.as_path(), &text);
+    Response::success(
+        request.id,
+        serde_json::json!({ "kind": "full", "items": items }),
+    )
 }
 
 /// didOpen → kode-vfs overlay(VFS-003)。root 按 initialize 注册的根

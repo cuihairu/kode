@@ -314,9 +314,11 @@ pub struct HoverEngine {
     /// 与 TS 语料序首见一致)。
     pub(crate) def_by_name: BTreeMap<String, String>,
     /// 已入库 def 文件路径(存在性判定,对应 TS 的 fs.existsSync 面)。
-    corpus_defs: BTreeSet<String>,
+    pub(crate) corpus_defs: BTreeSet<String>,
     /// entities.xml 所在目录(defsRoot 向上探测用)。
     entities_dirs: BTreeSet<String>,
+    /// entities.xml 语料视图(Phase2 诊断/定义面:按路径键)。
+    entities_files: BTreeMap<String, kode_parser::model::EntitiesFile>,
     /// types.xml 语料视图(PR-011 补全类型面:按路径键,跨语料同名不串扰)。
     pub(crate) types_files: BTreeMap<String, kode_parser::model::TypesFile>,
     /// alias.xml 语料视图(PR-011 补全别名面)。
@@ -337,6 +339,7 @@ impl HoverEngine {
             def_by_name: BTreeMap::new(),
             corpus_defs: BTreeSet::new(),
             entities_dirs: BTreeSet::new(),
+            entities_files: BTreeMap::new(),
             types_files: BTreeMap::new(),
             alias_files: BTreeMap::new(),
         }
@@ -358,6 +361,7 @@ impl HoverEngine {
                 if let Some(dir) = parent_dir(&path) {
                     self.entities_dirs.insert(dir.to_string());
                 }
+                self.entities_files.insert(path, parse_entities(text));
             }
             FileKind::Types => {
                 self.types_files.insert(path, parse_types(text));
@@ -375,6 +379,7 @@ impl HoverEngine {
         let path = key.uri.as_path().to_string();
         self.corpus_defs.remove(&path);
         self.def_files.remove(&path);
+        self.entities_files.remove(&path);
         self.types_files.remove(&path);
         self.alias_files.remove(&path);
         self.def_by_name.retain(|_, p| p != &path);
@@ -705,9 +710,14 @@ impl HoverEngine {
         face
     }
 
+    /// entities.xml 语料视图(Phase2 诊断/定义面只读)。
+    pub(crate) fn entities_files(&self) -> &BTreeMap<String, kode_parser::model::EntitiesFile> {
+        &self.entities_files
+    }
+
     /// defsRoot 探测(TS findEntityDefsRootFromFile 同规则):向上找含
     /// entities.xml 的目录;文件在 `entity_defs/` 内时根取该子目录。
-    fn defs_root(&self, path: &str) -> Option<String> {
+    pub(crate) fn defs_root(&self, path: &str) -> Option<String> {
         let mut dir = parent_dir(path)?;
         loop {
             if self.entities_dirs.contains(dir) {
@@ -723,7 +733,7 @@ impl HoverEngine {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Category {
+pub(crate) enum Category {
     Entity,
     Interface,
     Component,
@@ -731,7 +741,7 @@ enum Category {
 
 /// 文件在 defsRoot 下的类别(TS categoryOf 同规则:相对段含 interfaces/
 /// components 判定)。
-fn category_of(defs_root: &str, path: &str) -> Category {
+pub(crate) fn category_of(defs_root: &str, path: &str) -> Category {
     if !path.starts_with(&format!("{defs_root}/")) {
         return Category::Entity;
     }

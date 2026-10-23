@@ -34,6 +34,7 @@ import {
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
+import { shadowCompareDefinition, shadowObserveDefDocument } from './kodeCoreShadowFaces';
 import { buildDefChain } from './defChain';
 import {
   METHOD_DECLARATION_PATTERN,
@@ -997,6 +998,16 @@ export class KBEngineDefinitionProvider implements vscode.DefinitionProvider {
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.Location> {
+    const location = this.provideDefinitionImpl(document, position);
+    // Phase2 首片:shadow 双轨对拍(定义面)。fire-and-forget,不改返回值。
+    shadowCompareDefinition(document, position, location);
+    return location;
+  }
+
+  private provideDefinitionImpl(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): vscode.ProviderResult<vscode.Location> {
     if (isDatabaseSchemaDocument(document)) {
       return findDatabaseSchemaDefinition(document, position);
     }
@@ -1070,6 +1081,9 @@ export function validateDocument(
   }
 
   diagnostics.set(document.uri, diagnosticsList);
+  // Phase2 首片:shadow 双轨对拍(诊断面)+ 语料镜像腿。fire-and-forget,
+  // 只读 diagnosticsList 的可比面,不改 collection 内容。
+  shadowObserveDefDocument(document, diagnosticsList);
 }
 
 // entities.xml 清单诊断(source-analysis 设计 D3):同名重复条目引擎按首条

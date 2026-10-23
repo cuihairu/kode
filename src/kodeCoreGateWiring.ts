@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { KodeCoreGate, type KodeCoreGateConfig, ShadowDiffEntry } from './kodeCoreGate';
+import { setKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 // kode2 PR-012:双轨切流门的扩展装配(设置项默认关,装配零行为差异)。
 // 职责:读 kbengine.core.* 配置 → 门状态同步;shadow 时建输出通道接差异
@@ -84,5 +85,13 @@ export function setupKodeCoreGate(context: vscode.ExtensionContext): KodeCoreGat
     showDiffLogCommand,
     unsubscribe
   );
+  // Phase2 首片:把门交给定义/诊断 provider 的影子对拍入口(默认 ts 下
+  // 全部入口零开销直通;gate dispose 时撤引用)。
+  setKodeCoreShadowGate(gate);
+  const originalDispose = gate.dispose.bind(gate);
+  gate.dispose = async () => {
+    setKodeCoreShadowGate(null);
+    await originalDispose();
+  };
   return gate;
 }

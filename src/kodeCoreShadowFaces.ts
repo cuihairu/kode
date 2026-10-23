@@ -1,0 +1,173 @@
+import type { KodeCoreGate } from './kodeCoreGate';
+
+// kode2 Phase2 首片:definition + diagnostics 双轨面对拍接线(书 §17
+// PH7-02 / docs/kode2/phase2-slice-a.md)。职责边界:
+//   1. 持有 KodeCoreGate 引用(setupKodeCoreGate 装配时注入;默认 null =
+//      全部入口零开销直通,与 PR-012 默认 ts 零可见变化同款);
+//   2. 把 TS 面(vscode.Location / vscode.Diagnostic[])适配成与 kode-server
+//      响应同形的 LSP 面,经 gate.compare() 影子对拍 —— 恒返回/不影响 TS
+//      结果,Rust 结果只进差异日志(不切流铁律同 PR-012);
+//   3. shadow 会话内把 .def 文档 open/change 镜像给 Rust(语料同步腿,
+//      best-effort:失败静默,verdict 口径归 compare 自己的失败分类)。
+// 结构化适配全部走形状类型,不 import vscode(单测用 fake-vscode 同形)。
+
+let shadowGate: KodeCoreGate | null = null;
+
+/** 装配点注入(传 null 即拆除;扩展停用时调用) */
+export function setKodeCoreShadowGate(gate: KodeCoreGate | null): void {
+  shadowGate = gate;
+}
+
+/** 测试/诊断读取当前门(不建进程) */
+export function getKodeCoreShadowGate(): KodeCoreGate | null {
+  return shadowGate;
+}
+
+// ---- 形状类型(vscode.Location / vscode.Diagnostic 的结构子集) ------------
+
+interface PositionLike {
+  line: number;
+  character: number;
+}
+
+interface RangeLike {
+  start: PositionLike;
+  end: PositionLike;
+}
+
+interface LocationLike {
+  uri: { fsPath: string };
+  range: RangeLike;
+}
+
+interface DiagnosticLike {
+  range: RangeLike;
+  /** vscode.DiagnosticSeverity:Error=0/Warning=1/Information=2/Hint=3 */
+  severity: number;
+  message: string;
+}
+
+interface DocumentLike {
+  uri: { fsPath: string };
+  languageId: string;
+  version: number;
+  getText(): string;
+}
+
+// ---- LSP 面(与 kode-server 响应同形;对拍面见 phase2-slice-a.md) --------
+
+export interface LspLocationFace {
+  uri: string;
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+}
+
+export interface LspDiagnosticReportFace {
+  kind: 'full';
+  items: { range: RangeLike; severity: number; message: string }[];
+}
+
+/** vscode.Location(单/数组)→ LSP Location 面;null/落空 → null */
+export function locationToLspFace(location: unknown): LspLocationFace | null {
+  const first = Array.isArray(location) ? location[0] : location;
+  if (!first || typeof first !== 'object') {
+    return null;
+  }
+  const candidate = first as Partial<LocationLike>;
+  if (!candidate.uri || typeof candidate.uri.fsPath !== 'string' || !candidate.range) {
+    return null;
+  }
+  const { start, end } = candidate.range;
+  if (
+    typeof start?.line !== 'number' ||
+    typeof start?.character !== 'number' ||
+    typeof end?.line !== 'number' ||
+    typeof end?.character !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    uri: candidate.uri.fsPath,
+    range: {
+      start: { line: start.line, character: start.character },
+      end: { line: end.line, character: end.character },
+    },
+  };
+}
+
+/** vscode.DiagnosticSeverity → LSP 严重级(+1;Error 0→1 …) */
+const toLspSeverity = (severity: number): number => {
+  if (typeof severity !== 'number' || severity < 0 || severity > 3) {
+    return 1;
+  }
+  return severity + 1;
+};
+
+/** vscode.Diagnostic[] → LSP pull 报告面(kode-server 同形 {kind, items}) */
+export function diagnosticsToLspFace(diagnostics: readonly DiagnosticLike[]): LspDiagnosticReportFace {
+  return {
+    kind: 'full',
+    items: (diagnostics ?? []).map(diagnostic => ({
+      range: diagnostic.range,
+      severity: toLspSeverity(diagnostic.severity),
+      message: diagnostic.message
+    }))
+  };
+}
+
+// ---- 入口(provider/validate 面调用;非 shadow 或未装配时零开销) ----------
+
+const isDefDocument = (document: DocumentLike): boolean =>
+  document.languageId === 'kbengine-def' ||
+  document.uri.fsPath.toLowerCase().endsWith('.def');
+
+/**
+ * .def 定义跳转影子对拍:适配 TS Location 面后镜像给 gate。fire-and-forget,
+ * 不改 provider 返回值(铁律:Rust 结果只进差异日志)。
+ */
+export function shadowCompareDefinition(
+  document: DocumentLike,
+  position: PositionLike,
+  tsLocation: unknown
+): void {
+  const gate = shadowGate;
+  if (!gate) {
+    return;
+  }
+  const uri = document.uri.fsPath;
+  const params = {
+    textDocument: { uri },
+    position: { line: position.line, character: position.character }
+  };
+  void gate
+    .compare('textDocument/definition', params, locationToLspFace(tsLocation), uri)
+    .catch(() => undefined);
+}
+
+/**
+ * .def 诊断影子对拍 + 语料镜像腿:validateDocument 算完诊断后调用。
+ * 先镜像文档(open/change 按 version 单调;best-effort),再把 TS 诊断面
+ * 镜像给 gate.compare('textDocument/diagnostic')。fire-and-forget。
+ */
+export function shadowObserveDefDocument(
+  document: DocumentLike,
+  diagnostics: readonly DiagnosticLike[]
+): void {
+  const gate = shadowGate;
+  if (!gate) {
+    return;
+  }
+  if (!isDefDocument(document)) {
+    return;
+  }
+  const uri = document.uri.fsPath;
+  void gate
+    .mirrorDocument(uri, document.languageId, document.version, document.getText())
+    .catch(() => undefined);
+  const params = { textDocument: { uri } };
+  void gate
+    .compare('textDocument/diagnostic', params, diagnosticsToLspFace(diagnostics), uri)
+    .catch(() => undefined);
+}

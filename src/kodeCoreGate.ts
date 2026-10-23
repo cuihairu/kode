@@ -200,6 +200,10 @@ export interface ShadowClientLike {
     opts?: { timeoutMs?: number }
   ): Promise<unknown>;
   dispose(): Promise<void>;
+  /** 语料镜像腿(Phase2 首片):文档 open/change/close,notify 语义不回包 */
+  openDocument?(uri: string, languageId: string, version: number, text: string): void;
+  changeDocument?(uri: string, version: number, text: string): void;
+  closeDocument?(uri: string): void;
 }
 
 export interface KodeCoreGateOptions {
@@ -226,6 +230,8 @@ export class KodeCoreGate {
   private client: ShadowClientLike | null = null;
   private clientServerPath = '';
   private nextAttemptAt = 0;
+  /** 语料镜像账:uri → 已镜像版本(shadow 会话内;kill-switch 清空) */
+  private mirroredVersions = new Map<string, number>();
   private readonly notices: string[] = [];
   private readonly now: () => number;
   private readonly options: KodeCoreGateOptions;
@@ -313,14 +319,48 @@ export class KodeCoreGate {
     }
   }
 
-  /** kill-switch/换二进制:停 Rust 进程并清冷却(异步,不阻塞配置路径) */
+  /** kill-switch/换二进制:停 Rust 进程并清冷却与镜像账(异步,不阻塞配置路径) */
   private stopClient(): void {
     const client = this.client;
     this.client = null;
     this.clientServerPath = '';
+    this.mirroredVersions.clear();
     if (client) {
       void client.dispose().catch(() => undefined);
     }
+  }
+
+  /**
+   * 语料镜像腿(Phase2 首片):把文档 open/change 同步给 Rust server,
+   * definition/diagnostics 影子对拍才有同输入。尽力而为:任何失败静默
+   * (verdict 口径归 compare 自己的失败分类,镜像不刷差异日志);非 shadow
+   * 或未配 serverPath 零开销直通。版本账在会话内单调:前进走 didChange,
+   * 回退(重开)走 close+open,不虚构版本。
+   */
+  async mirrorDocument(
+    uri: string,
+    languageId: string,
+    version: number,
+    text: string
+  ): Promise<void> {
+    if (this.servingMode !== 'shadow' || !this.config.serverPath) {
+      return;
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return;
+    }
+    await client.start();
+    const mirrored = this.mirroredVersions.get(uri);
+    if (mirrored === undefined) {
+      client.openDocument?.(uri, languageId, version, text);
+    } else if (version > mirrored) {
+      client.changeDocument?.(uri, version, text);
+    } else {
+      client.closeDocument?.(uri);
+      client.openDocument?.(uri, languageId, version, text);
+    }
+    this.mirroredVersions.set(uri, version);
   }
 
   /**
