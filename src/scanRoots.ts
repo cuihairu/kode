@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
-import { resolveDiscoveredConfigRoot } from './workspaceDiscovery';
+import { resetDiscoveryMemo, resolveDiscoveredConfigRoot } from './workspaceDiscovery';
 
 /** 比较用规范化:绝对化、正斜杠;Windows 盘符路径小写化以稳定去重 */
 function normalizeForCompare(p: string): string {
@@ -43,6 +43,8 @@ const discoveryMemo = new Map<string, string | null>();
 /** 测试用:清 discovery 记忆(不同用例换工作区根时不残留) */
 export function resetScanRootCache(): void {
   discoveryMemo.clear();
+  // 书 PR-002 ③:workspaceDiscovery 交互路径 Top3 memo 同级失效
+  resetDiscoveryMemo();
 }
 
 export function resolveAssetsRootForWorkspace(workspaceRoot: string): string {
