@@ -180,12 +180,12 @@ kode/
 ## 6. KBEngine 专业语法与语义模型
 
 ### 6.1 语法数据结构
-- [ ] SYNTAX-001 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。
-- [ ] SYNTAX-002 明确 XML 解析保持节点/属性/文本精确 Span：不可以只做值解析丢定位。
-- [ ] SYNTAX-003 CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。
-- [ ] SYNTAX-004 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。
-- [ ] SYNTAX-005 AST 对未知字段保留以适应引擎分支/扩展，不因未知标签完全失败。
-- [ ] SYNTAX-006 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。
+- [ ] SYNTAX-001 对 `.def`、`types.xml`、`entities.xml`、`alias.xml` 分别建立 grammar spec 和 invalid fixtures。(进行中:PR-005 已落 invalid fixtures/盲样变异,grammar spec 文档化随 PR-008 语义模型定型)
+- [x] SYNTAX-002 明确 XML 解析保持节点/属性/文本精确 Span：不可以只做值解析丢定位。(PR-005:crates/kode-parser/src/xml.rs 开/闭/内容/名称/属性字节 span,伪注释掩码字节长度不变;证据 docs/kode2/pr-005.md)
+- [x] SYNTAX-003 CST/AST 支持容错解析（缺闭合标签/临时不完整编辑），诊断精确位置。(PR-005 基础版:截断/坏标签/未闭合结构化诊断 13 码,树前缀不丢,逐字节截断扫描测试;CST 级增量重解析随 PR-007)
+- [ ] SYNTAX-004 验证 quick-xml + 自定义位置层 vs rowan CST 的成本与热更新性能；ADR 选型。(PR-005 已裁决 ADR-102:自研零依赖状态机,quick-xml/rowan 未引入;若增量基准证明成瓶颈按 ADR-002 重评)
+- [x] SYNTAX-005 AST 对未知字段保留以适应引擎分支/扩展，不因未知标签完全失败。(PR-005:extra_tags/extra_sections 保留 + 遗留拼写容忍)
+- [ ] SYNTAX-006 大文件解析/增量与缓存基准，禁止任何 debug build 性能结论代替 release。(进行中:PR-005 release bench 基线已立(P50 6µs/大样本 19.9MB/s/增量二扫零重建),热更新性能与增量 rope 基准随 PR-007/009)
 
 ### 6.2 类型与实体语义
 - [ ] SEM-001 定义稳定 `SymbolId`、`TypeId`、`EntityId`、`RootId`、`Location`、`Origin`。
@@ -430,7 +430,7 @@ kode/
 - [ ] PR-002 `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。
 - [x] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
 - [x] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
-- [ ] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。
+- [x] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
 - [ ] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。
 - [ ] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。
 - [ ] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。

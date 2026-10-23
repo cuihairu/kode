@@ -8,7 +8,7 @@
 | kode-protocol | §4 | ✅ PR-003(帧编解码 + 协议 DTO;PR-004 增补 Position/Range) |
 | kode-server | §4 | ✅ PR-003(stdio 状态机;PR-004 文档同步切到 kode-vfs) |
 | kode-vfs | §5 | ✅ PR-004(VFS-001..013 基础版,证据 docs/kode2/pr-004.md) |
-| kode-syntax | §6.1 | PR-005 |
+| kode-parser(任务书命名;书 §3 目标树记 kode-syntax) | §6.1 | ✅ PR-005(字节级 XML 状态机 + .def/entities/types/alias 模型 + 增量注册表,证据 docs/kode2/pr-005.md) |
 | kode-project | §5/§10(root discovery) | PR-006 |
 | kode-index | §7 | PR-007/008 |
 | kode-semantic | §6.2 | PR-008 |

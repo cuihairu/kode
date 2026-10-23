@@ -1,0 +1,15 @@
+# kode2 PR-005 (书 §6.1/§17 PR-005): .def / XML 逐字节解析器。
+# 铁律: 密码学以外零第三方依赖(无新依赖,无需 ADR)。
+[package]
+name = "kode-parser"
+description = "kode2 byte-exact .def/XML parser: spans, error recovery, pseudo-comments, def/entities/types/alias models, incremental registry (book §6 SYNTAX/§17 PR-005)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-vfs = { path = "../kode-vfs" }
+
+[lints]
+workspace = true
