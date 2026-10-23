@@ -3,6 +3,6 @@
 pub mod server;
 
 pub use server::{
-    cancel_target, handle_message, handle_message_with_poll, CancelRegistry, Document, Outgoing,
-    ServerState, SERVER_NAME,
+    cancel_target, handle_message, handle_message_with_poll, CancelRegistry, Outgoing, ServerState,
+    SERVER_NAME,
 };

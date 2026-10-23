@@ -1,11 +1,13 @@
-# kode2 crate 占位说明(书 §3 目标树)
+# kode2 crate 落地状态(书 §3 目标树)
 
-PR-003 只落地最小集 `kode-protocol` + `kode-server`(书 §17 PR-003 范围)。
+已落地:`kode-protocol` + `kode-server`(PR-003)、`kode-vfs`(PR-004,基础版)。
 以下 crate 按书的 PR 顺序逐个落地,落地一个加一个,不建空壳假装存在:
 
-| crate | 书章节 | 计划 PR |
+| crate | 书章节 | 状态 |
 |---|---|---|
-| kode-vfs | §5 | PR-004 |
+| kode-protocol | §4 | ✅ PR-003(帧编解码 + 协议 DTO;PR-004 增补 Position/Range) |
+| kode-server | §4 | ✅ PR-003(stdio 状态机;PR-004 文档同步切到 kode-vfs) |
+| kode-vfs | §5 | ✅ PR-004(VFS-001..013 基础版,证据 docs/kode2/pr-004.md) |
 | kode-syntax | §6.1 | PR-005 |
 | kode-project | §5/§10(root discovery) | PR-006 |
 | kode-index | §7 | PR-007/008 |

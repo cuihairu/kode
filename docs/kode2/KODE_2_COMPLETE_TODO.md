@@ -163,19 +163,19 @@ kode/
 
 ## 5. VFS / 文件发现 / 文档快照
 
-- [ ] VFS-001 Path identity：URI、大小写规则、符号链接、Unicode normalization、Windows UNC、WSL 路径语义文档。
-- [ ] VFS-002 root_id + canonical URI + open buffer version 作为查询身份，禁止仅以文件 basename 建索引。
-- [ ] VFS-003 Open overlay 优先磁盘；didOpen/didChange/didClose 做正确 version transition。
-- [ ] VFS-004 增量文本编辑坐标 UTF-16 ↔ bytes ↔ line/column 精确转换；覆盖 emoji / CRLF。
-- [ ] VFS-005 文档 rope/line index，避免每个 hover 全文 split 与复制。
-- [ ] VFS-006 Disk fingerprint 不只依赖 mtime；必要时 size/hash 做一致性校验。
-- [ ] VFS-007 工作区 glob：排除 `.git`, `node_modules`, `.venv`, build, generated 及用户排除目录。
-- [ ] VFS-008 `.def`, `types.xml`, `entities.xml`, `alias.xml`, Python, KBEngine engine source 的独立发现规则。
-- [ ] VFS-009 资源根顺序显式定义（kbengine.xml/config/环境变量/用户配置/工作区推断），冲突出诊断。
-- [ ] VFS-010 遇到网络 FS、不可读取文件、符号链接循环、权限拒绝时安全处理。
-- [ ] VFS-011 Document parse cache 仅保留最新有效快照并支持 recent successful AST、负缓存。
-- [ ] VFS-012 删除/重命名/跨根移动应移除过期 symbol 与旧 diagnostics。
-- [ ] VFS-013 测试 100 次编辑、保存竞态、重命名过程、未保存变更、工作区根切换。
+- [x] VFS-001 Path identity：URI、大小写规则、符号链接、Unicode normalization、Windows UNC、WSL 路径语义文档。(PR-004 基础版:crates/kode-vfs/src/uri.rs CanonicalUri——percent 解码/词法消解/盘符大写/非 file scheme 拒绝,语义文档化在模块头;UNC/WSL/大小写折叠实现随 PR-006)
+- [x] VFS-002 root_id + canonical URI + open buffer version 作为查询身份，禁止仅以文件 basename 建索引。(PR-004:crates/kode-vfs/src/store.rs DocumentKey{root_id,uri};RootId::UNROOTED=0 保留)
+- [x] VFS-003 Open overlay 优先磁盘；didOpen/didChange/didClose 做正确 version transition。(PR-004:DocumentStore open/change/close,version 严格递增,stale 回 VersionConflict::Stale;kode-server 已切到该 store)
+- [x] VFS-004 增量文本编辑坐标 UTF-16 ↔ bytes ↔ line/column 精确转换；覆盖 emoji / CRLF。(PR-004:crates/kode-vfs/src/line_index.rs + tests/coordinates.rs 全坐标对拍,样例表见 docs/kode2/pr-004.md)
+- [x] VFS-005 文档 rope/line index，避免每个 hover 全文 split 与复制。(PR-004 基础版:LineIndex 行起点表+二分,查询零 split;编辑整段重建,增量 rope 待基准数据)
+- [x] VFS-006 Disk fingerprint 不只依赖 mtime；必要时 size/hash 做一致性校验。(PR-004 基础版:crates/kode-vfs/src/disk.rs mtime_secs+mtime_nanos+size 三元组;hash 留指纹专项)
+- [x] VFS-007 工作区 glob：排除 `.git`, `node_modules`, `.venv`, build, generated 及用户排除目录。(PR-004:crates/kode-vfs/src/walk.rs DEFAULT_EXCLUDED_DIRS + 用户通配追加)
+- [x] VFS-008 `.def`, `types.xml`, `entities.xml`, `alias.xml`, Python, KBEngine engine source 的独立发现规则。(PR-004 基础版:walk.rs FileKind 路径分类;引擎版本 profile 规则随 PR-005/006)
+- [x] VFS-009 资源根顺序显式定义（kbengine.xml/config/环境变量/用户配置/工作区推断），冲突出诊断。(PR-004 基础版:store.rs RootRegistry 注册顺序=优先顺序、最长前缀、overlapping_roots 冲突入口;config/env 推断随 PR-006)
+- [x] VFS-010 遇到网络 FS、不可读取文件、符号链接循环、权限拒绝时安全处理。(PR-004:walk 读失败跳过并计数、目录 symlink 不跟随、深度封顶;disk 非法输入回 Err 不 panic)
+- [x] VFS-011 Document parse cache 仅保留最新有效快照并支持 recent successful AST、负缓存。(PR-004:crates/kode-vfs/src/parse_cache.rs ParseCache<V> + FNV-1a 输入指纹)
+- [x] VFS-012 删除/重命名/跨根移动应移除过期 symbol 与旧 diagnostics。(PR-004:store.rs remove/rename/invalidate_root 返回 RemovedDocument 回执 + ParseCache::invalidate;下游清理随 PR-007 接线)
+- [x] VFS-013 测试 100 次编辑、保存竞态、重命名过程、未保存变更、工作区根切换。(PR-004:crates/kode-vfs/tests/vfs.rs 五场景;cargo test --workspace 76 passed)
 
 ## 6. KBEngine 专业语法与语义模型
 
@@ -373,7 +373,7 @@ kode/
 ### Phase 1 — Core 骨架（最小垂直切片）
 - [ ] PH1-01 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007)
 - [x] PH1-02 Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。(PR-003:tests/kodeCoreE2E.test.ts 真实 kode-server 二进制,4 用例)
-- [ ] PH1-03 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。
+- [ ] PH1-03 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。(进行中:PR-004 已落 VFS-001..013 基础版+kode-server 文档同步对接,证据 docs/kode2/pr-004.md;Hover/Definition 垂直切片随 PR-010)
 - [ ] PH1-GATE Rust 与旧实现同场景一致；无长任务阻塞 VS Code；跨平台可启动。
 
 ### Phase 2 — 解析与索引（最大性能收益路径）
@@ -429,7 +429,7 @@ kode/
 - [ ] PR-001 `audit/perf-baseline`：现有入口/四主请求调用链、profile、fixtures、基线报告；不改行为。
 - [ ] PR-002 `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。
 - [x] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
-- [ ] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。
+- [x] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
 - [ ] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。
 - [ ] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。
 - [ ] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。

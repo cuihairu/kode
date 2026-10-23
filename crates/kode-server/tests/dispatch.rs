@@ -252,5 +252,134 @@ fn notifications_before_initialize_are_dropped() {
         ),
     );
     assert!(out.is_empty());
-    assert!(state.documents.is_empty());
+    assert_eq!(state.store.open_count(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// PR-004(VFS):kode-server 文档同步对接 kode-vfs 后的新语义
+// ---------------------------------------------------------------------------
+
+/// VFS-003:version 未递增的 didChange 被拒——文本与版本都不回退。
+#[test]
+fn stale_did_change_is_rejected_and_text_preserved() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let uri = "file:///w/Monster.def";
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "kbengine-def", "version": 3, "text": "v3"}}),
+        ),
+    );
+    // 旧 version(2 < 3)的重放必须被忽略。
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didChange",
+            json!({"textDocument": {"uri": uri, "version": 2},
+                   "contentChanges": [{"text": "stale"}]}),
+        ),
+    );
+    let out = handle_message(&mut state, request(2, "$/kode/health", json!({})));
+    let docs = response_of(&out)["documents"].as_array().unwrap();
+    assert_eq!(docs[0]["version"], json!(3));
+    let (version, buffer) = state
+        .store
+        .open_buffer(&kode_vfs::DocumentKey::new(
+            kode_vfs::RootId::UNROOTED,
+            kode_vfs::CanonicalUri::parse(uri).unwrap(),
+        ))
+        .unwrap();
+    assert_eq!(version, 3);
+    assert_eq!(buffer.text(), "v3");
+}
+
+/// VFS-004:增量(ranged)didChange 穿过 server 后按精确坐标生效(emoji 样例)。
+#[test]
+fn ranged_did_change_applies_utf16_precise_edit() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let uri = "file:///w/emoji.def";
+    // 行 1 内容 "ab🎯c";把 "🎯"(character 2..4,UTF-16 代理对)换成 "🔥"。
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "kbengine-def", "version": 1,
+                   "text": "标题\r\nab🎯c"}}),
+        ),
+    );
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didChange",
+            json!({"textDocument": {"uri": uri, "version": 2},
+                   "contentChanges": [{
+                       "range": {"start": {"line": 1, "character": 2},
+                                 "end": {"line": 1, "character": 4}},
+                       "text": "🔥"}]}),
+        ),
+    );
+    let key = kode_vfs::DocumentKey::new(
+        kode_vfs::RootId::UNROOTED,
+        kode_vfs::CanonicalUri::parse(uri).unwrap(),
+    );
+    let (_, buffer) = state.store.open_buffer(&key).unwrap();
+    assert_eq!(buffer.text(), "标题\r\nab🔥c");
+}
+
+/// VFS-002/009:initialize.rootUri 注册资源根;文档按最长前缀归属该根。
+#[test]
+fn initialize_root_uri_registers_root_and_documents_attach_to_it() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let root_id = state
+        .roots
+        .root_for(&kode_vfs::CanonicalUri::from_path("/workspace/demo"));
+    assert_ne!(root_id, kode_vfs::RootId::UNROOTED);
+    let uri = "file:///workspace/demo/entities/Monster.def";
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": uri, "languageId": "kbengine-def", "version": 1, "text": "<Entity/>"}}),
+        ),
+    );
+    let key = kode_vfs::DocumentKey::new(root_id, kode_vfs::CanonicalUri::parse(uri).unwrap());
+    assert!(state.store.is_open(&key));
+    // 根外的文档落到 UNROOTED,不与根内同名文件混淆身份。
+    let outside = "file:///elsewhere/Monster.def";
+    handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({"textDocument": {"uri": outside, "languageId": "kbengine-def", "version": 1, "text": "x"}}),
+        ),
+    );
+    assert!(state.store.is_open(&kode_vfs::DocumentKey::new(
+        kode_vfs::RootId::UNROOTED,
+        kode_vfs::CanonicalUri::parse(outside).unwrap()
+    )));
+}
+
+/// VFS-003:didOpen 旧 version 重放被忽略(防御性;较新 buffer 不被覆盖)。
+#[test]
+fn stale_did_open_is_ignored() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    let uri = json!({"textDocument": {"uri": "file:///w/a.def", "languageId": "x", "version": 5, "text": "newest"}});
+    handle_message(
+        &mut state,
+        notification("textDocument/didOpen", uri.clone()),
+    );
+    let stale = json!({"textDocument": {"uri": "file:///w/a.def", "languageId": "x", "version": 4, "text": "old"}});
+    handle_message(&mut state, notification("textDocument/didOpen", stale));
+    let key = kode_vfs::DocumentKey::new(
+        kode_vfs::RootId::UNROOTED,
+        kode_vfs::CanonicalUri::parse("file:///w/a.def").unwrap(),
+    );
+    let (version, buffer) = state.store.open_buffer(&key).unwrap();
+    assert_eq!(version, 5);
+    assert_eq!(buffer.text(), "newest");
 }

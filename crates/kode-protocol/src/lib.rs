@@ -228,12 +228,27 @@ pub struct VersionedTextDocumentIdentifier {
     pub version: i64,
 }
 
+/// LSP 位置(character 按 UTF-16 code unit 计数;语义见 kode-vfs VFS-004)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Position {
+    pub line: u32,
+    pub character: u32,
+}
+
+/// LSP 区间。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Range {
+    pub start: Position,
+    pub end: Position,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentChangeEvent {
-    /// Full sync 下恒为 None;保留字段位便于 PR-004 增量同步扩展。
+    /// Full sync(change=1)下恒为 None;增量同步(change=2)带 range,
+    /// 由 kode-vfs 做精确坐标转换(VFS-004)。
     #[serde(default)]
-    pub range: Option<serde_json::Value>,
+    pub range: Option<Range>,
     pub text: String,
 }
 
