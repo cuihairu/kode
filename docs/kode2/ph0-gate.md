@@ -38,7 +38,7 @@
 
 ### 已就绪(本 commit)
 
-- [x] parity 项目:`tests/fixtures/parity-project/`(实体继承 Monster→Avatar、组件 Inventory、Base/Cell 分面、Exposed、<Arg> 形参闸、types.xml/alias.xml 自定义类型),由 `scripts/generate-parity-fixtures.mjs` 确定性生成(`--check` 防漂移)。
+- [x] parity 项目:`tests/fixtures/parity-project/`(实体继承 Monster→Avatar、组件 Inventory、Base/Cell 分面、Exposed、`<Arg>` 形参闸、types.xml/alias.xml 自定义类型),由 `scripts/generate-parity-fixtures.mjs` 确定性生成(`--check` 防漂移)。
 - [x] golden 输入输出:`tests/fixtures/parity/golden.json`,11 请求锁 hover(3)/definition(4)/completion(2)/diagnostics(2);对拍测试 `tests/parityGolden.test.ts`(默认对拍,`KODE_PARITY_UPDATE=1` 重录;两次重录 sha256 一致,确定性已验证)。
 - [x] 永转/超时回归锁(hoverBudget/documentStore/indexScheduler 三类测试)在 AUDIT-014 映射中列为迁移期禁删项(legacy-todo-audit.md 末节)。
 
