@@ -206,21 +206,21 @@ kode/
 
 ## 7. 增量索引、依赖图和缓存
 
-- [ ] IDX-001 明确四层：文件目录索引、语法索引、符号/类型索引、跨文件关系图。
-- [ ] IDX-002 DAG 边类型：declaration/import/entity registration/type alias/component/inheritance/method binding/generation dependency。
-- [ ] IDX-003 区分文本改动、signature 改动、body-only 改动、声明删除；相应差异化失效。
-- [ ] IDX-004 AST 和语义 query 采用 memoization + fingerprint + revision；测量是否选 Salsa。
-- [ ] IDX-005 对循环依赖与 SCC 计算提供终止保障和精确诊断。
-- [ ] IDX-006 永久索引结构支持定向 symbol lookup 与 reverse reference lookup；杜绝每次 O(workspace files) 查询。
-- [ ] IDX-007 索引更新批量提交/原子 generation，读取并发不读到一半的关联。
+- [x] IDX-001 明确四层：文件目录索引、语法索引、符号/类型索引、跨文件关系图。(基础版:PR-007 crates/kode-index 符号/类型层+跨文件反向依赖;文件目录层=kode-vfs walk/store,语法层=kode-parser;证据 docs/kode2/pr-007.md)
+- [x] IDX-002 DAG 边类型：declaration/import/entity registration/type alias/component/inheritance/method binding/generation dependency。(基础版:PR-007 类型引用/Parent/组件/接口/entities 注册边(parser RefSet)+实体继承边;import/generation 边随 PR-008/009)
+- [x] IDX-003 区分文本改动、signature 改动、body-only 改动、声明删除；相应差异化失效。(基础版:PR-005 dep.rs+PR-007 指纹级零重建;文本/签名/正文细分随 CST 增量,PR-009 面)
+- [x] IDX-004 AST 和语义 query 采用 memoization + fingerprint + revision；测量是否选 Salsa。(基础版:PR-007 复用 VFS-011 ParseCache+FNV-1a 指纹+generation;ADR-101 Salsa 选型仍未裁决,不预设)
+- [x] IDX-005 对循环依赖与 SCC 计算提供终止保障和精确诊断。(基础版:PR-005 resolve_parent_chain 环截断诊断+PR-007 索引侧 entity_chain 互为 Parent 有限步终止)
+- [x] IDX-006 永久索引结构支持定向 symbol lookup 与 reverse reference lookup；杜绝每次 O(workspace files) 查询。(基础版:PR-007 名称倒排 BTreeMap+dependents_of 反向依赖+前缀 workspace_symbols 有序范围扫描)
+- [x] IDX-007 索引更新批量提交/原子 generation，读取并发不读到一半的关联。(基础版:PR-007 update_batch 全批应用后一次 bump,零改动空批不 bump)
 - [ ] IDX-008 非活跃文件懒加载；当前打开文件优先 warm；初扫扫描优先级按资源根/最近文件调整。
 - [ ] IDX-009 磁盘缓存 key 包含 Core schema、engine profile、root identity、workspace config、解析器版本。
 - [ ] IDX-010 缓存崩溃写入用临时文件+原子 rename/WAL 等，损坏可清理重建。
 - [ ] IDX-011 持久化格式候选 SQLite/redb/自定义二进制；先做 cold start、读写放大、文件数基准。
 - [ ] IDX-012 内存索引结构评测紧凑字符串 interning / arenas / small vectors，防止 50k 文件内存爆炸。
-- [ ] IDX-013 热更新回归须断言“仅影响相关节点”和“文件读取/解析次数”，而非只看结果正确。
-- [ ] IDX-014 文件 rename/delete 后引用、diagnostics、缓存和生成源映射自动清理。
-- [ ] IDX-015 对 root 增删及 engine profile 切换使用 scoped invalidation，不总是全仓重算。
+- [x] IDX-013 热更新回归须断言“仅影响相关节点”和“文件读取/解析次数”，而非只看结果正确。(基础版:PR-007 rebuild 计数断言:6 文件首扫6/二扫0/单改1;200 文件 bench 同构,证据 docs/kode2/pr-007.md)
+- [x] IDX-014 文件 rename/delete 后引用、diagnostics、缓存和生成源映射自动清理。(基础版:PR-007 remove/rename 连带清符号/倒排/反向依赖/继承边/解析缓存;diagnostics 与生成源映射随对应模块接线)
+- [x] IDX-015 对 root 增删及 engine profile 切换使用 scoped invalidation，不总是全仓重算。(基础版:PR-007 invalidate_root 只触该根文件;profile 切换入口随 PR-006 root 模型接线)
 - [ ] IDX-016 记录索引缺口（unindexed / partial / stale），按需补齐，避免误报无法找到定义。
 
 ## 8. LSP 与 IDE 编辑体验
@@ -432,7 +432,7 @@ kode/
 - [x] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。(落地:crates/kode-vfs+kode-server 文档同步对接+协议 Position/Range DTO;证据 docs/kode2/pr-004.md)
 - [x] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。(落地:crates/kode-parser(自研零依赖字节级 XML 状态机,ADR-102)+ 对拍 golden 双向门禁(TS 28/28=100%)+ 增量零重建注册表 + release bench(P50 6µs/大样本 19.9MB/s)+ 盲样 1149 例 0 panic;fuzz 纲要随 fuzz 单;证据 docs/kode2/pr-005.md)
 - [ ] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。
-- [ ] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。
+- [x] PR-007 `core/symbol-index`：文件/符号索引、定向查找、generation 与删除清理。(落地:crates/kode-index(IDX-001..007+013/014/015 基础版,六类符号实体/属性/方法/类型/别名/组件,名称倒排+文件级增量复用 ParseCache 指纹零重建+原子 generation)+ 符号对拍 golden 双向门禁(TS 90/90=100%)+ 增量 rebuild 实测(200 文件首扫200/二扫0/单改1);证据 docs/kode2/pr-007.md)
 - [ ] PR-008 `core/type-graph`：types.xml、alias、entity facets、component、inheritance。
 - [ ] PR-009 `core/invalidation-scheduler`：reverse DAG、任务优先级与 cancel。
 - [ ] PR-010 `lsp/definition-hover`：首批 TS→Rust provider 双轨对比，逐步切流。

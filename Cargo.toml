@@ -1,10 +1,12 @@
 # kode2 PR-003 (PH1-01): Cargo workspace 最小集 — kode-server/kode-protocol 先行。
 # PR-004 (PH1-03 VFS 基础) 加入 kode-vfs(书 §5)。
-# PR-005 (书 §6 语法) 加入 kode-parser;其余 crate 见 crates/README.md,
-# 按书 PR-006..009 逐个落地后再加进 members。
+# PR-005 (书 §6 语法) 加入 kode-parser。
+# PR-006 (PH1-05 根发现) 加入 kode-root(书 §5 VFS-009 完整版)。
+# PR-007 (书 §7 符号索引) 加入 kode-index;其余 crate 见 crates/README.md,
+# 按书 PR-008..009 逐个落地后再加进 members。
 [workspace]
 resolver = "2"
-members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser"]
+members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-index"]
 
 [workspace.package]
 version = "0.2.0"
