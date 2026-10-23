@@ -16,11 +16,13 @@ use std::time::{Duration, Instant};
 
 use kode_protocol::{
     error_codes, ContentChangeEvent, DidChangeParams, DidCloseParams, DidOpenParams,
-    DocumentSummary, HealthReport, IncomingMessage, InitializeParams, InitializeResult,
-    Notification, Request, RequestId, Response, ServerCapabilities, ServerInfo, ServerNotification,
-    TextDocumentSyncOptions, PROTOCOL_VERSION,
+    DocumentSummary, HealthReport, HoverParams, IncomingMessage, InitializeParams,
+    InitializeResult, Notification, Request, RequestId, Response, ServerCapabilities, ServerInfo,
+    ServerNotification, TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, RootRegistry, TextChange};
+
+use crate::hover::HoverEngine;
 
 /// 服务器名(TS 侧握手校验用)。
 pub const SERVER_NAME: &str = "kode-server";
@@ -87,6 +89,8 @@ pub struct ServerState {
     pub store: DocumentStore,
     /// 资源根注册(VFS-009 基础版):initialize.rootUri 起注册,最长前缀归属。
     pub roots: RootRegistry,
+    /// hover 响应链(PR-010/LSP-003):符号索引 + def 语料视图,纯内存应答。
+    pub hover: HoverEngine,
     pub cancels: Arc<CancelRegistry>,
 }
 
@@ -100,6 +104,7 @@ impl ServerState {
             started_at: Instant::now(),
             store: DocumentStore::new(),
             roots: RootRegistry::new(),
+            hover: HoverEngine::new(),
             cancels: Arc::new(CancelRegistry::default()),
         }
     }
@@ -176,6 +181,7 @@ fn handle_request(
             ))]
         }
         "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll))],
+        "textDocument/hover" => vec![Outgoing::Response(handle_hover(state, request))],
         _ => vec![Outgoing::Response(Response::error(
             Some(request.id),
             error_codes::METHOD_NOT_FOUND,
@@ -209,6 +215,7 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
                 open_close: true,
                 change: 1,
             },
+            hover_provider: true,
         },
         server_info: ServerInfo {
             name: SERVER_NAME.to_string(),
@@ -308,6 +315,47 @@ fn handle_notification(state: &mut ServerState, notification: Notification) -> V
     }
 }
 
+/// textDocument/hover(PR-010/LSP-003):文档须已打开(open overlay 优先,
+/// VFS-003);未打开/未知词一律回 null 结果(LSP 允许),不报错不阻塞。
+/// 响应结构:contents.markdown(LSP 兼容)+ 结构化链面在 kode-server 侧
+/// 单测/对拍 golden 中锁定(本切片不外泄扩展字段)。
+fn handle_hover(state: &mut ServerState, request: Request) -> Response {
+    let params: HoverParams = match request.params.and_then(|p| serde_json::from_value(p).ok()) {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/hover params",
+            )
+        }
+    };
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.roots.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    let hover = state
+        .hover
+        .hover(&key, &text, params.position.line, params.position.character);
+    match hover {
+        Some(response) => Response::success(
+            request.id,
+            serde_json::json!({
+                "contents": {
+                    "kind": "markdown",
+                    "value": crate::hover::render_markdown(&response),
+                }
+            }),
+        ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
 /// didOpen → kode-vfs overlay(VFS-003)。root 按 initialize 注册的根
 /// 最长前缀归属(VFS-009);旧 version 重放被拒且静默忽略(防御)。
 fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
@@ -318,11 +366,19 @@ fn handle_did_open(state: &mut ServerState, params: Option<serde_json::Value>) {
         return;
     };
     let root = state.roots.root_for(&uri);
-    let _ = state.store.open(
-        DocumentKey::new(root, uri),
-        params.text_document.version,
-        params.text_document.text,
-    );
+    let key = DocumentKey::new(root, uri.clone());
+    if state
+        .store
+        .open(
+            key.clone(),
+            params.text_document.version,
+            params.text_document.text.clone(),
+        )
+        .is_ok()
+    {
+        // hover 语料视图同步入库(PR-010:链面需要 def 视图)。
+        state.hover.update(key, &params.text_document.text);
+    }
 }
 
 /// didChange → kode-vfs version 转移(VFS-003):
@@ -357,6 +413,11 @@ fn handle_did_change(state: &mut ServerState, params: Option<serde_json::Value>)
     let _ = state
         .store
         .change(&key, params.text_document.version, changes);
+    // hover 语料视图跟随 overlay 最新文本(PR-010;VFS-003 open 优先)。
+    if let Some((_, buffer)) = state.store.open_buffer(&key) {
+        let text = buffer.text().to_string();
+        state.hover.update(key, &text);
+    }
 }
 
 /// didClose → 移除 overlay,文档回落磁盘真相(VFS-003 close 转移)。
@@ -368,7 +429,10 @@ fn handle_did_close(state: &mut ServerState, params: Option<serde_json::Value>) 
         return;
     };
     let root = state.roots.root_for(&uri);
-    state.store.close(&DocumentKey::new(root, uri));
+    let key = DocumentKey::new(root, uri);
+    state.store.close(&key);
+    // VFS-012 下游清理:符号与 def 语料视图连带移除(PR-010)。
+    state.hover.remove(&key);
 }
 
 /// CORE-016 健康报告:status/pid/版本/uptime/文档摘要,按 uri 排序保证确定性。
