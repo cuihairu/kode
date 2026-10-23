@@ -1,0 +1,16 @@
+# kode2 PR-007 (书 §7/§17 PR-007): 符号索引 crate —— 名称倒排 + 文件级增量。
+# 铁律: 零第三方依赖(仅 workspace 内 kode-parser/kode-vfs),与 PR-005 同规。
+[package]
+name = "kode-index"
+description = "kode2 symbol index: entity/property/method/type/alias/component symbols, inverted name lookup, file-level incremental updates, atomic generation (book §7 IDX/§17 PR-007)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-parser = { path = "../kode-parser" }
+kode-vfs = { path = "../kode-vfs" }
+
+[lints]
+workspace = true
