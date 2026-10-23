@@ -123,11 +123,11 @@ kode/
   scripts/                   # builds, package, codegen, verification
 ```
 
-- [ ] BUILD-001 决策记录 ADR-001：LSP stdio 为默认常驻本地/远端通信；扩展协议只处理非标准能力。
-- [ ] BUILD-002 ADR-002：Rust 解析器/查询核心 vs 现有 TS，先用基准决定是否逐模块替换。
-- [ ] BUILD-003 建 Cargo workspace，pin toolchain 与依赖，定义 MSRV；启用 cargo fmt/clippy/test。
+- [x] BUILD-001 决策记录 ADR-001：LSP stdio 为默认常驻本地/远端通信；扩展协议只处理非标准能力。(PR-003,docs/kode2/adr/ADR-001-stdio-default-transport.md)
+- [x] BUILD-002 ADR-002：Rust 解析器/查询核心 vs 现有 TS，先用基准决定是否逐模块替换。(PR-003,docs/kode2/adr/ADR-002-benchmark-first-rust-migration.md)
+- [x] BUILD-003 建 Cargo workspace，pin toolchain 与依赖，定义 MSRV；启用 cargo fmt/clippy/test。(PR-003:Cargo.toml+rust-toolchain.toml pin 1.99.0/MSRV 1.82,`cargo clippy --workspace --all-targets -- -D warnings` 过)
 - [ ] BUILD-004 Cargo features 分割 optional engines/runtime/plugin host，减小基础包和启动成本。
-- [ ] BUILD-005 TS client 统一 transport / reconnection / cancellation / diagnostics 管理。
+- [ ] BUILD-005 TS client 统一 transport / reconnection / cancellation / diagnostics 管理。(PR-003 已落最小版 spawn/握手/取消/崩溃重启:src/kodeCoreClient.ts;Provider 接线与 diagnostics 管理留 PR-010)
 - [ ] BUILD-006 固定生成的协议 schema；Rust/TS types 从同一规范生成，CI 测兼容。
 - [ ] BUILD-007 对多平台目标构建 x64/arm64；单独核查 Windows path/casing 和 macOS 签名/隔离。
 - [ ] BUILD-008 VSIX 拆分 target-specific 原生包与统一扩展包的策略，明确 platform fallback。
@@ -142,9 +142,9 @@ kode/
 
 ## 4. Rust Core 运行时、请求调度与资源控制
 
-- [ ] CORE-001 stdio LSP framed JSON-RPC：Content-Length 正确处理短读/分包/非法帧。
-- [ ] CORE-002 `initialize` 协商 capabilities、project roots、server version、extension capabilities。
-- [ ] CORE-003 所有请求 request_id/span_id；日志与 tracing 可串联扩展↔Core↔后台任务。
+- [x] CORE-001 stdio LSP framed JSON-RPC：Content-Length 正确处理短读/分包/非法帧。(PR-003:crates/kode-protocol FrameDecoder,11 帧Codec单测)
+- [x] CORE-002 `initialize` 协商 capabilities、project roots、server version、extension capabilities。(PR-003:kode-server initialize 幂等协商,initializationOptions.restartGeneration 对账)
+- [x] CORE-003 所有请求 request_id/span_id；日志与 tracing 可串联扩展↔Core↔后台任务。(PR-003 最小版:request_id 数字/字符串保真贯穿响应/取消/日志(stderr 对账),span/tracing 体系留后续)
 - [ ] CORE-004 单实例一个 workspace session；多个 root 配隔离 root_id 与受控共享缓存。
 - [ ] CORE-005 工作优先级：打开文档小范围交互 > 直接语义查询 > 局部依赖刷新 > 后台首扫 > 大图/SDK/报表。
 - [ ] CORE-006 队列具备公平性和抗饥饿机制；不可永久推迟后台 indexing。
@@ -156,8 +156,8 @@ kode/
 - [ ] CORE-012 大结果限流、分页、stream chunk + cancel；限制 JSON payload 体积。
 - [ ] CORE-013 缓存预算配置（resident bytes、LRU、idle aging）与内存压力下主动回收。
 - [ ] CORE-014 读写索引时使用一致快照，避免定义和引用来自不同 generation。
-- [ ] CORE-015 Core crash/restart 自动恢复，服务不可用时最小语法功能继续使用。
-- [ ] CORE-016 启动探针、健康状态、索引进度、可观察恢复原因。
+- [ ] CORE-015 Core crash/restart 自动恢复，服务不可用时最小语法功能继续使用。(PR-003 已落最小版:TS client 崩溃检测+自动 respawn+重握手(10s 窗口 3 次);「最小语法功能兜底」留 Provider 接线时实现)
+- [ ] CORE-016 启动探针、健康状态、索引进度、可观察恢复原因。(PR-003 已落 `$/kode/health` 探针(status/pid/uptime/文档摘要/restartGeneration)+ stderr 诊断留痕;索引进度随索引模块)
 - [ ] CORE-017 文件通知合并 debounce + max latency；原子替换/rename、delete/create 合并处理。
 - [ ] CORE-018 建立 long-running fuzz/load/stress CI，检测死锁、永久 pending 和取消泄漏。
 
@@ -371,8 +371,8 @@ kode/
 - [ ] PH0-GATE 无完整基准和正确性 fixture **禁止进入 Rust 替换阶段**。
 
 ### Phase 1 — Core 骨架（最小垂直切片）
-- [ ] PH1-01 实现 BUILD-001..016、CORE-001..004、CORE-015..016。
-- [ ] PH1-02 Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。
+- [ ] PH1-01 实现 BUILD-001..016、CORE-001..004、CORE-015..016。(进行中:PR-003 已落 BUILD-001/002/003、CORE-001/002/003、CORE-015/016 最小版,证据见 docs/kode2/pr-003.md;余项随 PR-004..007)
+- [x] PH1-02 Rust 服务与 TS client 握手、打开/编辑/关闭文件、cancel、健康状态 e2e。(PR-003:tests/kodeCoreE2E.test.ts 真实 kode-server 二进制,4 用例)
 - [ ] PH1-03 实现 VFS 基础；以单文件 `.def` Hover 或 Definition 做真实垂直切片。
 - [ ] PH1-GATE Rust 与旧实现同场景一致；无长任务阻塞 VS Code；跨平台可启动。
 
@@ -428,7 +428,7 @@ kode/
 
 - [ ] PR-001 `audit/perf-baseline`：现有入口/四主请求调用链、profile、fixtures、基线报告；不改行为。
 - [ ] PR-002 `fix/ts-hotpath`：将旧 TODO A2/A3 已识别的明显阻塞路径止血并提供测量证据。
-- [ ] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。
+- [x] PR-003 `infra/rust-workspace`：Cargo workspace + binary packaging + protocol handshake + e2e。(落地:crates/kode-{protocol,server}+rust-toolchain pin+ADR-001/002+src/kodeCoreClient.ts;证据 docs/kode2/pr-003.md)
 - [ ] PR-004 `core/vfs-snapshot`：overlay + incremental edit + canonical paths + version tests。
 - [ ] PR-005 `core/def-xml-parser`：精确源位置与错误恢复 + fuzz + parser benchmarks。
 - [ ] PR-006 `core/root-discovery`：多 resource root / engine profile / URI scopes。
