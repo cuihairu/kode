@@ -171,7 +171,7 @@ pub struct InitializeResult {
     pub server_info: ServerInfo,
 }
 
-/// 服务器 capabilities(最小集:full 文本同步 + hover)。
+/// 服务器 capabilities(最小集:full 文本同步 + hover + completion)。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
@@ -179,6 +179,9 @@ pub struct ServerCapabilities {
     /// LSP-003 / PH1-03(PR-010):hover provider 能力声明。
     #[serde(default)]
     pub hover_provider: bool,
+    /// LSP-005 / PR-011:completion provider 能力声明(触发字符 `<`)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_provider: Option<CompletionOptions>,
 }
 
 /// 全量同步(openClose + change=1)。
@@ -283,6 +286,26 @@ pub struct TextDocumentIdentifier {
 pub struct HoverParams {
     pub text_document: TextDocumentIdentifier,
     pub position: Position,
+}
+
+// ---------------------------------------------------------------------------
+// textDocument/completion DTO(PR-011:补全请求链路基础版)
+// ---------------------------------------------------------------------------
+
+/// completion 请求参数:文档身份 + UTF-16 位置(触发上下文由服务端从
+/// 光标前文本推导,与 TS 行前缀判面同口径)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+/// completion 能力声明(triggerCharacters 供客户端决定何时发请求)。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionOptions {
+    pub trigger_characters: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

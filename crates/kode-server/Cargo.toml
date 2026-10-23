@@ -10,6 +10,14 @@ license.workspace = true
 name = "kode-server"
 path = "src/main.rs"
 
+[[bin]]
+name = "dump-hover-golden"
+path = "src/bin/dump-hover-golden.rs"
+
+[[bin]]
+name = "dump-completion-golden"
+path = "src/bin/dump-completion-golden.rs"
+
 [lib]
 name = "kode_server"
 path = "src/lib.rs"

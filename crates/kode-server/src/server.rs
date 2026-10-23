@@ -15,13 +15,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kode_protocol::{
-    error_codes, ContentChangeEvent, DidChangeParams, DidCloseParams, DidOpenParams,
-    DocumentSummary, HealthReport, HoverParams, IncomingMessage, InitializeParams,
+    error_codes, CompletionParams, ContentChangeEvent, DidChangeParams, DidCloseParams,
+    DidOpenParams, DocumentSummary, HealthReport, HoverParams, IncomingMessage, InitializeParams,
     InitializeResult, Notification, Request, RequestId, Response, ServerCapabilities, ServerInfo,
     ServerNotification, TextDocumentSyncOptions, PROTOCOL_VERSION,
 };
 use kode_vfs::{CanonicalUri, DocumentKey, DocumentStore, RootRegistry, TextChange};
 
+use crate::completion::to_lsp_items;
 use crate::hover::HoverEngine;
 
 /// 服务器名(TS 侧握手校验用)。
@@ -182,6 +183,7 @@ fn handle_request(
         }
         "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll))],
         "textDocument/hover" => vec![Outgoing::Response(handle_hover(state, request))],
+        "textDocument/completion" => vec![Outgoing::Response(handle_completion(state, request))],
         _ => vec![Outgoing::Response(Response::error(
             Some(request.id),
             error_codes::METHOD_NOT_FOUND,
@@ -216,6 +218,10 @@ fn handle_initialize(state: &mut ServerState, request: Request) -> Response {
                 change: 1,
             },
             hover_provider: true,
+            // PR-011:completion 触发字符 `<`(def 标签位)。
+            completion_provider: Some(kode_protocol::CompletionOptions {
+                trigger_characters: vec!["<".to_string()],
+            }),
         },
         server_info: ServerInfo {
             name: SERVER_NAME.to_string(),
@@ -352,6 +358,53 @@ fn handle_hover(state: &mut ServerState, request: Request) -> Response {
                 }
             }),
         ),
+        None => Response::success(request.id, serde_json::Value::Null),
+    }
+}
+
+/// textDocument/completion(PR-011/LSP-005):文档须已打开(open overlay 优先,
+/// VFS-003);未打开/未判定上下文一律回 null 结果(LSP 允许),不报错不阻塞。
+/// 可取消查询(CORE-007 同通道):先到取消通知或取消标志置位 → -32800;
+/// 计算本身纯内存,取消检查在入口判定(不为纯同步计算开轮询间隙)。
+/// 版本化:应答只基于 DocumentStore 严格 version 转移后的 overlay 真相
+/// (VFS-003/004;过期版本改动被拒,请求永不见旧文本)。
+fn handle_completion(state: &mut ServerState, request: Request) -> Response {
+    let params: CompletionParams = match request.params.and_then(|p| serde_json::from_value(p).ok())
+    {
+        Some(params) => params,
+        None => {
+            return Response::error(
+                Some(request.id),
+                error_codes::INVALID_PARAMS,
+                "invalid textDocument/completion params",
+            )
+        }
+    };
+    let (flag, cancelled_early) = state.cancels.begin_cancellable(&request.id);
+    let cancelled = cancelled_early || flag.load(Ordering::SeqCst);
+    state.cancels.end_cancellable(&request.id);
+    if cancelled {
+        return Response::error(
+            Some(request.id),
+            error_codes::REQUEST_CANCELLED,
+            "request cancelled via $/cancelRequest",
+        );
+    }
+    let Ok(uri) = CanonicalUri::parse(&params.text_document.uri) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let root = state.roots.root_for(&uri);
+    let key = DocumentKey::new(root, uri);
+    let Some((_, buffer)) = state.store.open_buffer(&key) else {
+        return Response::success(request.id, serde_json::Value::Null);
+    };
+    let text = buffer.text().to_string();
+    let completion =
+        state
+            .hover
+            .completion(&key, &text, params.position.line, params.position.character);
+    match completion {
+        Some(response) => Response::success(request.id, to_lsp_items(&response)),
         None => Response::success(request.id, serde_json::Value::Null),
     }
 }
