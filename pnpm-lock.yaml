@@ -194,6 +194,9 @@ importers:
 
   .:
     devDependencies:
+      '@mermaid-js/tiny':
+        specifier: ^12.2.0
+        version: 12.2.0
       '@shikijs/langs':
         specifier: ^4.5.0
         version: 4.5.0
@@ -589,6 +592,10 @@ packages:
 
   '@mermaid-js/parser@2.0.1':
     resolution: {integrity: sha512-j37dj/h6p6pots1L7pLPPNuABEEu9WP4OYg9pW1g+nYG331j0+3canE9OagtYdytYvdSAMG+2fKU5cxep6LgjA==}
+    engines: {node: '>=22.12.0'}
+
+  '@mermaid-js/tiny@12.2.0':
+    resolution: {integrity: sha512-9bEE+R974NTh1YJlfc6ztgwhy6+9sE+wAFiFrqvSdtlJHdxGfLytQmHYHNpFKmj94+Z+uMicYrQeGXnTTjILAQ==}
     engines: {node: '>=22.12.0'}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
@@ -3551,6 +3558,8 @@ snapshots:
   '@mermaid-js/parser@2.0.1':
     dependencies:
       '@chevrotain/types': 13.2.0
+
+  '@mermaid-js/tiny@12.2.0': {}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true

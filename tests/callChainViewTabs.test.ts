@@ -235,7 +235,11 @@ describe('call chain webview asset lock (bundled mermaid, no CDN)', () => {
   it('viewer source routes failures through the shared render-failure logic', () => {
     const viewer = readFileSync(join(repoRoot, 'src', 'webview', 'defCallChainViewer.ts'), 'utf8');
     expect(viewer).toContain('handleCallChainGraphRenderFailure');
-    expect(viewer).toContain("import mermaid from 'mermaid'");
+    // mermaid 采用官方 @mermaid-js/tiny IIFE(构建脚本原样前置,普通 <script> 语义,
+    // 赋 globalThis.mermaid);入口只允许 import type,不得在运行时 import mermaid
+    expect(viewer).toContain("import type mermaidType from 'mermaid'");
+    expect(viewer).toContain('globalThis');
+    expect(viewer).not.toMatch(/^import (?!type).*mermaid/m);
     // 禁 CDN:不得出现任何运行时远程脚本注入
     expect(viewer).not.toMatch(/createElement\('script'\)/);
   });

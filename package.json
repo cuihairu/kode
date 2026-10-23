@@ -1070,6 +1070,7 @@
     "publish": "pnpm exec vsce publish --no-dependencies"
   },
   "devDependencies": {
+    "@mermaid-js/tiny": "^12.2.0",
     "@shikijs/langs": "^4.5.0",
     "@types/mocha": "^8.2.2",
     "@types/node": "~20.19.37",
