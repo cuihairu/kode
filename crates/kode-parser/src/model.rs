@@ -63,8 +63,14 @@ pub struct PropertyDef {
     pub flags_raw: Option<String>,
     /// 旗标 token 规范化结果(顺序保留)。
     pub flags: Vec<String>,
+    /// `<Default>` 原文(trim;TS symbolInfo.defaultValue 同口径)。
+    pub default_value: Option<String>,
     /// `<DetailLevel>`(遗留拼写 `Detaillevel` 等同识别)。
     pub detail_level: Option<String>,
+    /// `<DatabaseLength>` 原文(trim;TS symbolInfo.database 同口径)。
+    pub database_length: Option<String>,
+    /// `<Identifier>` 原文(trim;TS symbolInfo.identifier 同口径)。
+    pub identifier: Option<String>,
     /// `<Persistent>`(truthy 语义同 TS hasTruthyChildTag)。
     pub persistent: Option<bool>,
     /// `<Sensitive>` / `<ClientFlags>` 遗留标签存在且 truthy。
@@ -201,7 +207,10 @@ fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef 
         type_refs: Vec::new(),
         flags_raw: None,
         flags: Vec::new(),
+        default_value: None,
         detail_level: None,
+        database_length: None,
+        identifier: None,
         persistent: None,
         sensitive: false,
         extra_tags: Vec::new(),
@@ -231,10 +240,28 @@ fn extract_property(doc: &Document, idx: usize, lines: &LineMap) -> PropertyDef 
                     prop.flags_raw = Some(raw_full);
                 }
             }
+            "default" => {
+                let t = ce.text(doc).trim().to_string();
+                if !t.is_empty() {
+                    prop.default_value = Some(t);
+                }
+            }
             "detaillevel" => {
                 let t = ce.text(doc).trim().to_string();
                 if !t.is_empty() {
                     prop.detail_level = Some(t);
+                }
+            }
+            "databaselength" => {
+                let t = ce.text(doc).trim().to_string();
+                if !t.is_empty() {
+                    prop.database_length = Some(t);
+                }
+            }
+            "identifier" => {
+                let t = ce.text(doc).trim().to_string();
+                if !t.is_empty() {
+                    prop.identifier = Some(t);
                 }
             }
             "persistent" => prop.persistent = Some(doc.truthy_child(idx, &ce.name)),

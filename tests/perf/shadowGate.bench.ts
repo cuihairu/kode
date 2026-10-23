@@ -27,7 +27,14 @@ import { performance } from 'perf_hooks';
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import { Position, Uri, makeTextDocument } from '../fake-vscode/core';
 import { workspace as stubWorkspace } from '../fake-vscode/workspaceState';
-import { KBEngineCompletionProvider, KBEngineDefinitionProvider, KBEngineHoverProvider, validateDocument } from '../../src/languageProviders';
+import {
+  KBEngineCompletionProvider,
+  KBEngineDefinitionProvider,
+  KBEngineHoverProvider,
+  PythonDefinitionProvider,
+  validateDocument
+} from '../../src/languageProviders';
+import { PythonClassIndex } from '../../src/pythonClassIndex';
 import { EntityMappingManager } from '../../src/entityMapping';
 import { resetScanRootCache } from '../../src/scanRoots';
 import { KodeCoreGate, ShadowDiffEntry, ShadowDiffLog, firstDiffPath } from '../../src/kodeCoreGate';
@@ -343,6 +350,9 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
       diagBothEmpty: 0, diagMatch: 0, diagDiverge: 0
     };
     let sampleIndex = 0;
+    // 剩余分歧逐条留痕(有界 3):402 探针门禁里唯一未对齐样本必须可直接读出
+    // 文件/词/双侧落点,而不是只给一个计数。
+    let defDeclDiffSamples = 0;
 
     for (const def of defs) {
       const uri = `file://${def.file}`;
@@ -423,8 +433,9 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
         const identity = (face: unknown): string => JSON.stringify(face ?? null);
         if (defDeclSamples < 2) {
           defDeclSamples += 1;
+          const probeWord = (baseLines[probe.line] ?? '').match(/<\s*([A-Za-z_]\w*)/)?.[1] ?? '';
           emit(
-            `GATE2-DEFFACE #${defDeclSamples} probe=${probe.line}:${probe.col} word=${baseLines[probe.line]?.trim().slice(0, 30)} ts=${identity(tsFace)} rust=${identity(rustRaw)}`
+            `GATE2-DEFFACE #${defDeclSamples} probe=${probe.line}:${probe.col} word=${probeWord} ts=${identity(tsFace)} rust=${identity(rustRaw)}`
           );
         }
         // 同一性按 compare 同口径(canonical,屏蔽 serde_json 键序差异)。
@@ -433,6 +444,14 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
             stats.defDeclExact += 1;
           } else {
             stats.defDeclDiverge += 1;
+            if (defDeclDiffSamples < 3) {
+              defDeclDiffSamples += 1;
+              const diffWord = (baseLines[probe.line] ?? '').match(/<\s*([A-Za-z_]\w*)/)?.[1] ?? '';
+              emit(
+                `GATE2-DEFFACE-DIFF #${defDeclDiffSamples} file=${def.file} probe=${probe.line}:${probe.col} ` +
+                `word=${diffWord} ts=${identity(tsFace)} rust=${identity(rustRaw)}`
+              );
+            }
           }
         } else if (tsFace) {
           stats.defDeclTsOnly += 1;
@@ -597,6 +616,79 @@ describe('PR-012 phase2 门:shadow 大规模对拍 + 双轨计时 + 压力(30k)'
     stats.hoverBothMiss += !pyHover && rustPyRaw === null ? 1 : 0;
     stats.hoverRustOnly += !pyHover && rustPyRaw !== null ? 1 : 0;
     sampleIndex += 1;
+
+    // ---- .py 面缺口量化(默认关闭;KODE_PYFACE_PROBE=1 时采样一次) --------
+    // 30k 资产集本身就是 .py 语料:量化 TS provider 面与 Rust 语料面在同一批
+    // .py 探针上的命中数。TS PythonClassIndex 首查会付一次全量扫描(~110s @30k),
+    // 故不并入默认门禁;方案见 docs/kode2/phase2-py-face-gap.md。
+    if (process.env.KODE_PYFACE_PROBE === '1') {
+    const countPy = (dir: string): number => {
+      let total = 0;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const child = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          total += countPy(child);
+        } else if (entry.name.endsWith('.py')) {
+          total += 1;
+        }
+      }
+      return total;
+    };
+    const pyRoot = path.join(ASSETS_OUT, 'large');
+    const pyFilesLarge = countPy(pyRoot);
+    const pyGenFiles: string[] = [];
+    const collectPy = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const child = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          collectPy(child);
+        } else if (entry.name.endsWith('.py') && /^Gen\d+\.py$/.test(entry.name)) {
+          pyGenFiles.push(child);
+        }
+      }
+    };
+    collectPy(path.join(pyRoot, 'scripts', 'base', 'gen'));
+    // 抽样 3 个文件即可:TS PythonClassIndex 首查会付一次全量扫描(与探针数
+    // 无关),多抽只加 transport 噪声不加信息。
+    const pySample = [avatarPy, ...pyGenFiles.slice(0, 2)];
+    const pyDefProvider = new PythonDefinitionProvider(manager, new PythonClassIndex());
+    const pyFaces = { files: 0, probes: 0, hoverTsHit: 0, hoverRustHit: 0, defTsHit: 0, defRustHit: 0 };
+    for (const pyFile of pySample) {
+      if (!fs.existsSync(pyFile)) {
+        continue;
+      }
+      pyFaces.files += 1;
+      const text = fs.readFileSync(pyFile, 'utf8');
+      const uri = `file://${pyFile}`;
+      client.openDocument(uri, 'python', 1, text);
+      const doc = makeTextDocument(text, { fileName: pyFile, languageId: 'python', uri: Uri.file(pyFile) });
+      const lines = text.split('\n');
+      const probes: { line: number; col: number }[] = [];
+      for (let i = 0; i < lines.length && probes.length < 2; i += 1) {
+        const at = lines[i].indexOf('def ');
+        if (at >= 0) {
+          probes.push({ line: i, col: at + 4 });
+        }
+      }
+      for (const probe of probes) {
+        pyFaces.probes += 1;
+        const position = new Position(probe.line, probe.col);
+        const tsHover = await hoverProvider.provideHover(doc, position);
+        const tsDef = await pyDefProvider.provideDefinition(doc, position);
+        const params = hoverParams(uri, probe.line, probe.col);
+        const rustHover = await client.request('textDocument/hover', params, { timeoutMs: 5000 });
+        const rustDef = await client.request('textDocument/definition', params, { timeoutMs: 5000 }) as {
+          uri?: string;
+        } | null;
+        pyFaces.hoverTsHit += tsHover ? 1 : 0;
+        pyFaces.hoverRustHit += rustHover ? 1 : 0;
+        pyFaces.defTsHit += tsDef ? 1 : 0;
+        pyFaces.defRustHit += rustDef?.uri ? 1 : 0;
+      }
+    }
+    once('S1.pyFaceFilesLarge', pyFilesLarge);
+    once('S1.pyFaceSample', JSON.stringify(pyFaces));
+    }
 
     const summary = gate.diffLog.summary();
     once('S1.samplesTotal', sampleIndex);

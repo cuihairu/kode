@@ -120,11 +120,51 @@ fn definition_on_open_document_returns_location() {
         ),
     );
     let result = response_of(&out);
+    // 属性/方法声明词按 TS F12 落**注册面**:本语料未打开 entities.xml(无
+    // defsRoot 探测依据)→ 回落到 def 首行(TS findRegistryFallbackLocation
+    // 同一兜底),不再是声明名字 span。
     assert_eq!(
         result["uri"],
         json!("/workspace/demo/scripts/entity_defs/Avatar.def")
     );
-    assert_eq!(result["range"]["start"]["line"], json!(2));
+    assert_eq!(result["range"]["start"]["line"], json!(0));
+}
+
+#[test]
+fn definition_property_word_lands_on_entities_registration_line() {
+    let mut state = ServerState::new();
+    handle_message(&mut state, initialize_message(1));
+    open_avatar(&mut state);
+    // 注册表:第 2 行(0 基 1)`<Avatar ...>`。
+    let entities = "<root>\n  <Avatar/>\n  <Monster/>\n</root>\n";
+    let _ = handle_message(
+        &mut state,
+        notification(
+            "textDocument/didOpen",
+            json!({
+                "textDocument": {
+                    "uri": "file:///workspace/demo/scripts/entities.xml",
+                    "languageId": "xml",
+                    "version": 1,
+                    "text": entities
+                }
+            }),
+        ),
+    );
+    let out = handle_message(
+        &mut state,
+        request(
+            10,
+            "textDocument/definition",
+            json!({
+                "textDocument": { "uri": "file:///workspace/demo/scripts/entity_defs/Avatar.def" },
+                "position": { "line": 2, "character": 3 }
+            }),
+        ),
+    );
+    let result = response_of(&out);
+    assert_eq!(result["uri"], json!("/workspace/demo/scripts/entities.xml"));
+    assert_eq!(result["range"]["start"]["line"], json!(1));
 }
 
 #[test]

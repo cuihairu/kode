@@ -150,7 +150,10 @@ interface ExpectedHover {
 const emptySignature = (): Record<string, unknown> => ({
   type: null,
   flags: null,
+  defaultValue: null,
   detailLevel: null,
+  databaseLength: null,
+  identifier: null,
   persistent: null,
   argCount: null,
   args: null,
@@ -246,7 +249,10 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
                 ...emptySignature(),
                 type: typeNode ? firstTextToken(typeNode) ?? null : null,
                 flags: flagsRawOf(prop),
+                defaultValue: rawChildByCanon(prop, 'default'),
                 detailLevel: rawChildByCanon(prop, 'detaillevel'),
+                databaseLength: rawChildByCanon(prop, 'databaselength'),
+                identifier: rawChildByCanon(prop, 'identifier'),
                 persistent: persistentOptOf(prop, 'Persistent')
               }
             }

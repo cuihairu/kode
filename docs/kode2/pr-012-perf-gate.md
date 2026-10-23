@@ -151,3 +151,23 @@ diff 首分歧样本(原文见 run 文件 #1–#5):hover 全部 diff 在 `$.cont
 5. **TS 属性悬停专属字段**:Default/DatabaseLength/Identifier/数据库存储段 Rust 无此面(corpus 未触,真实持久属性场景仍单侧)。
 
 门 3 状态:🟡 → 🟡(G-C 已关闭,但「正式对拍须去 transport」「≥1 周真实使用」等前置条件仍未满足,切流前置清单不变;§5 各条目状态不变)。
+
+### 8.1 剩余边界逐项定案(2026-10-23,Phase2 首片)
+
+对 §8「剩余差异声明」逐项定案。定案只决定「本阶段收不收」,不改 compare 口径:
+strict compare 下这些面仍是 diff,禁止用 skip/归一化把它们刷成 match。
+
+| # | 边界 | 实测现象 | 定案 | 依据(file:line) | 归属 |
+|---|------|----------|------|------------------|------|
+| 1 | types.xml/entities.xml/alias.xml 悬停措辞 | TS 走 provider 专属面(`Custom type from types.xml` + **落库形态**段;`Entity registration from entities.xml` + utype/运行时行),Rust 走 `Types`/`Entities`/`Aliases` 结构面;身份词一致,全文恒 diff | **维持边界**(本阶段不收敛) | TS `src/languageProviders.ts:1719-1726`、`:1908-1920`;落库形态 `src/databaseSchema.ts:1879+`;Rust 结构面 `crates/kode-server/src/hover.rs:578` | provider 专属面收口单(需 DB/运行时元数据层,与语料面正交) |
+| 2 | 补全类型面 detail | TS:自定义类型 `Custom type`、内建 `8 位无符号整数` 等 + 内建类型表 23 条 + 实体名(TS-only);Rust:`fixedDict/array/builtin` + corpus 标签。已证 Rust 标签集 ⊆ TS(`compRustSubsetOfTs 201/201`,`compDiverge 0`) | **维持边界**,但 detail 字面量登记为「一次性对齐」项 | TS `src/languageProviders.ts:3312`;Rust `crates/kode-server/src/completion.rs:371`、`type_kind_str` `:406` | 补全面收口单;TS-only 23 条无 corpus 对应物,单改 detail 不可能清零 diff |
+| 3 | TS 属性悬停专属字段 | Default/DetailLevel/DatabaseLength/Identifier **已对齐**(本片,字段序同 TS);残余只有「数据库存储」段(`persistent` → 库表/列名) | **前半关闭 / 后半维持边界** | Rust `crates/kode-server/src/hover.rs:170-197`;TS `src/languageProviders.ts:1623-1652`、存储段 `:1653-1660` + `:1671-1679` | DB 快照面(`describePropertyDatabaseStorage`),非语料面 |
+| 4 | .py 悬停/定义面 | 404 悬停中 TS-only 1(hoverBothHit 404/nameAgree 404);402 声明词探针 401 命中、1 条落 `.py` 脚本层 | **量化后归 PH1 扩面** | `docs/kode2/phase2-py-face-gap.md`(缺口/分层/门禁);正本 `docs/kode2/phase2-py-face-probe.txt` | PH1 垂直切片;P1 落点层落地即闭合 402/402 |
+
+定案后的 §8 条目状态:1/2 维持(转收口单),3 部分关闭(4 字段已闭,存储段维持),
+4 转为可执行扩面清单(见 `phase2-py-face-gap.md`),原第 5 项并入本表第 3 行
+(原表述「corpus 未触」按 golden 实测修正:92 条悬停中 8 条 `persistent` 非空,
+TS 无 DB 快照时不输出存储段,故本片 92/92 仍全等)。
+
+门 3 状态不变:🟡(G-C 已关闭;「正式对拍须去 transport」「≥1 周真实使用」未满足,
+切流前置清单不变)。

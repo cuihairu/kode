@@ -3,28 +3,33 @@
 //! 面 = **语料声明落点**:UTF-16 position → 词 → 声明处的 LSP Location。
 //! 复用 hover 的定位基建(word_at)与 HoverEngine 语料视图(纯内存、零 IO,
 //! ARCH-012 红线同 hover)。四类文档的落点口径:
-//! - `.def`:声明符号词 → 本文件声明行(名字 span);`<Parent>` 取值词 →
-//!   语料内父/接口/组件 def 文件首行(缺失即 null,绝不虚构);
-//!   `<Type>`/`<of>` 取值词 → 语料内 types.xml 声明行(内建类型无定义文件,
-//!   null;语料未声明 null);
+//! - `.def`:按 TS F12 provider 链的**落点语义**逐层同构 —
+//!   ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行;
+//!   ②`Properties` 段声明词 → 注册回落(entities.xml 声明行,缺则本文件首行);
+//!   ③三方法段声明词 → 注册回落(同上);④`<Parent>` 取值词 → 语料内父/
+//!   接口/组件 def 文件首行(缺失即 null,绝不虚构);⑤`<Type>`/`<of>` 取值词
+//!   → 语料内 types.xml 声明行(内建类型无定义文件,null);⑥`Components`
+//!   段声明词 → null(TS provider 链末尾同 null,不做单侧增强)。
+//!   ②③ 的 Python 脚本层与数据库 schema 层是 Rust 无此能力的面(.py 面 /
+//!   DB 快照),按能力边界跳过并直接落 TS 的下一层,不虚构落点。
 //! - `entities.xml`:注册项词 → 语料内同名 def 文件首行(TS
 //!   findEntityDefinitionFile 同口径);
 //! - `types.xml`/`alias.xml`:声明词 → 本文件声明行(TS
 //!   findCustomTypeDefinition 同口径,落点=行首)。
 //!
 //! 剩余差异如实划归(Phase2 首片边界,docs/kode2/phase2-slice-a.md §面定义):
-//! TS F12 全脸中的 Python 脚本落点、数据库 schema 虚拟文档、kbe 桩、
-//! DetailLevel 档位行与 entities.xml 注册行回落,Rust 语料面一律 null
-//! (与 .py 面 hover 恒 null 同判例,PH1 边界不变)。
+//! TS F12 全脸中的 Python 脚本落点(402 声明词探针实测 401 命中 / 1 条分歧 =
+//! 属性链真实存在的 `scripts/base/Avatar.py` 脚本层,见 §1 表)、
+//! 数据库 schema 虚拟文档、kbe 桩;Rust 语料面一律 null/直接落下一层。
 
-use kode_index::symbol::{extract_records, MethodFacet, SymbolKind};
+use kode_index::symbol::{def_entity_name, extract_records, SymbolKind};
 use kode_parser::dep::{file_kind_of_uri, FileKind, ParsedUnit};
 use kode_parser::diag::LineMap;
 use kode_parser::model::{parse_alias, parse_def, parse_entities, parse_types};
 use kode_parser::xml;
 use kode_vfs::store::{DocumentKey, RootId};
 
-use crate::hover::{category_of, word_at, Category, HoverEngine};
+use crate::hover::{category_of, parent_dir, word_at, Category, HoverEngine};
 
 // ---------------------------------------------------------------------------
 // 响应模型(LSP Location 同形;serde camelCase 与 TS 对拍面同键)
@@ -86,17 +91,6 @@ fn line_start_location(uri: &str, line1: usize) -> DefinitionLocation {
     }
 }
 
-/// 名字 span → 精确区间落点。
-fn span_location(text: &str, uri: &str, span: kode_parser::diag::Span) -> DefinitionLocation {
-    DefinitionLocation {
-        uri: uri.to_string(),
-        range: LspRange {
-            start: byte_offset_to_position(text, span.start),
-            end: byte_offset_to_position(text, span.end),
-        },
-    }
-}
-
 /// 文件首行落点(TS `Location(uri, Position(0, 0))` 同形)。
 fn file_head_location(uri: &str) -> DefinitionLocation {
     line_start_location(uri, 1)
@@ -151,45 +145,30 @@ impl HoverEngine {
         match file_kind_of_uri(&key.uri) {
             FileKind::Def => {
                 let def = parse_def(text);
-                // `<Parent>` 取值词 → 语料内父 def 首行(接口/组件目录规则
+                // ①`<DetailLevel>` 取值词 → 本文件 `<DetailLevels>` 档位声明行
+                // (TS findDetailLevelDefinitionInDef 同口径)。
+                if let Some(pos) = self.detail_level_landing(text, path, line0, character) {
+                    return Some(pos);
+                }
+                // ②`<Parent>` 取值词 → 语料内父 def 首行(接口/组件目录规则
                 // 与 chain_face 同源;语料缺失即 null)。
                 if let Some(parent) = def.parent.as_deref().filter(|p| !p.is_empty()) {
                     if word == parent {
                         return self.parent_landing(path, word);
                     }
                 }
-                // `<Type>`/`<of>` 取值词 → 语料内 types 声明行(内建 null)。
+                // ③`<Type>`/`<of>` 取值词 → 语料内 types 声明行(内建 null)。
                 if let Some(pos) = self.type_value_landing(text, line0, character, word) {
                     return Some(pos);
                 }
-                // 本文件声明符号:声明即落点(名字 span)。
+                // ④段内声明词:Properties/三方法段按 TS F12 落**注册**而非
+                // 声明 span(声明 span 见 hover 面);组件段落 TS provider 链
+                // 末尾返 null,不产出落点(不单侧增强)。
                 let (records, _) = extract_records(key, &ParsedUnit::Def(parse_def(text)));
                 let record = records.iter().find(|r| r.name == word && r.line == line1)?;
                 match record.kind {
-                    SymbolKind::Property => {
-                        let prop = def
-                            .properties
-                            .iter()
-                            .find(|p| p.name == word && p.line == line1)?;
-                        Some(span_location(text, path, prop.name_span))
-                    }
-                    SymbolKind::Method => {
-                        let methods = match record.facet {
-                            Some(MethodFacet::Base) => &def.base_methods,
-                            Some(MethodFacet::Cell) => &def.cell_methods,
-                            Some(MethodFacet::Client) | None => &def.client_methods,
-                        };
-                        let method = methods.iter().find(|m| m.name == word && m.line == line1)?;
-                        Some(span_location(text, path, method.name_span))
-                    }
-                    SymbolKind::Component => {
-                        let comp = def
-                            .components
-                            .iter()
-                            .find(|c| c.name == word && c.line == line1)?;
-                        Some(span_location(text, path, comp.name_span))
-                    }
-                    // 实体本体/类型/别名在 .def 无名字 span 声明位。
+                    SymbolKind::Property | SymbolKind::Method => Some(self.registry_landing(path)),
+                    // 实体本体/组件/类型/别名在 .def 无 F12 落点(TS 同)。
                     _ => None,
                 }
             }
@@ -220,6 +199,64 @@ impl HoverEngine {
             }
             FileKind::Other => None,
         }
+    }
+
+    /// `<DetailLevel>` 取值内且词命中本文件 `<DetailLevels>` 档位名 →
+    /// 档位声明行行首(TS findDetailLevelDefinitionInDef 同口径)。
+    fn detail_level_landing(
+        &self,
+        text: &str,
+        path: &str,
+        line0: u32,
+        character: u32,
+    ) -> Option<DefinitionLocation> {
+        let doc = xml::parse(text, false);
+        let root = doc.root()?;
+        let offset = position_to_byte_offset(text, line0, character);
+        let node = deepest_element_at(&doc, root, offset)?;
+        if !doc.element(node).name.eq_ignore_ascii_case("DetailLevel") {
+            return None;
+        }
+        let levels = doc
+            .child_elements(root)
+            .into_iter()
+            .find(|&c| doc.element(c).name.eq_ignore_ascii_case("DetailLevels"))?;
+        let lines = LineMap::new(text);
+        let word = word_at(text, line0, character).unwrap_or_default();
+        for child in doc.child_elements(levels) {
+            let el = doc.element(child);
+            // 档位内文本只在词命中时才落点(与 TS 的 word 相等判定同口径)。
+            if el.name == word {
+                return Some(line_start_location(
+                    path,
+                    lines.line_of(el.name_span.start) + 1,
+                ));
+            }
+        }
+        None
+    }
+
+    /// `Properties`/三方法段的注册落点(TS F12 第一层之后的语料层):
+    /// entities.xml 同名实体声明行;缺注册 → 本文件首行。Python 脚本层与
+    /// 数据库 schema 层是无此能力的面,跳过(见模块注释)。
+    fn registry_landing(&self, path: &str) -> DefinitionLocation {
+        if let Some(entity) = def_entity_name(path) {
+            if let Some(defs_root) = self.defs_root(path) {
+                let mut candidates = Vec::new();
+                if let Some(scripts_root) = parent_dir(&defs_root) {
+                    candidates.push(format!("{scripts_root}/entities.xml"));
+                }
+                candidates.push(format!("{defs_root}/entities.xml"));
+                for cand in candidates {
+                    if let Some(file) = self.entities_files.get(&cand) {
+                        if let Some(entry) = file.entities.iter().find(|e| e.name == entity) {
+                            return line_start_location(&cand, entry.line);
+                        }
+                    }
+                }
+            }
+        }
+        file_head_location(path)
     }
 
     /// `<Parent>` 取值 → 语料内父 def 首行。目录规则与 chain_face 同源:

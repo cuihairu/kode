@@ -39,24 +39,48 @@ fn engine_with(defs: &[(&str, &str)]) -> HoverEngine {
 }
 
 #[test]
-fn def_declaration_word_lands_on_own_name_span() {
-    let engine = engine_with(&[("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF)]);
+fn def_declaration_word_lands_on_entities_registration_line() {
+    let engine = engine_with(&[
+        ("/w/scripts/entities.xml", ENTITIES_XML),
+        ("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF),
+    ]);
     let key = key_of("/w/scripts/entity_defs/Avatar.def");
-    // hp 在第 4 行(1 起),列 3(0 起 UTF-16):`\t\t<hp>` 的名字 span = 3..5。
+    // hp 在第 4 行(1 起),列 3(0 起 UTF-16):按 TS F12 的注册回落,
+    // 落 `<Avatar/>` 的注册行(0 基 1)而非本文件声明名字 span。
     let location = engine
         .definition(&key, AVATAR_DEF, 3, 3)
         .expect("hp 声明应有落点");
-    assert_eq!(location.uri, "/w/scripts/entity_defs/Avatar.def");
-    assert_eq!(location.range.start.line, 3);
-    assert_eq!(location.range.start.character, 3);
-    assert_eq!(location.range.end.character, 5);
-    // 方法声明同口径:`\t\t<onKill>` 名字 span = 3..9(0 基行 9)。
+    assert_eq!(location.uri, "/w/scripts/entities.xml");
+    assert_eq!(location.range.start.line, 1);
+    assert_eq!(location.range.start.character, 0);
+    // 方法声明同口径:`\t\t<onKill>` 也落同一注册行。
     let location = engine
         .definition(&key, AVATAR_DEF, 9, 3)
         .expect("onKill 落点");
-    assert_eq!(location.range.start.line, 9);
-    assert_eq!(location.range.start.character, 3);
-    assert_eq!(location.range.end.character, 9);
+    assert_eq!(location.uri, "/w/scripts/entities.xml");
+    assert_eq!(location.range.start.line, 1);
+    assert_eq!(location.range.start.character, 0);
+}
+
+#[test]
+fn def_declaration_word_without_registry_falls_back_to_def_head() {
+    let engine = engine_with(&[("/w/scripts/entity_defs/Avatar.def", AVATAR_DEF)]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    let location = engine
+        .definition(&key, AVATAR_DEF, 3, 3)
+        .expect("无注册表时仍有兜底落点");
+    assert_eq!(location.uri, "/w/scripts/entity_defs/Avatar.def");
+    assert_eq!(location.range.start.line, 0);
+}
+
+#[test]
+fn def_component_word_returns_none_like_ts_provider() {
+    // TS provider 链末尾对组件声明词返 null(languageProviders.ts:2344);
+    // Rust 不做单侧增强,同 null。
+    let text = "<root>\n\t<Components>\n\t\t<Move/>\n\t</Components>\n</root>\n";
+    let engine = engine_with(&[("/w/scripts/entity_defs/Avatar.def", text)]);
+    let key = key_of("/w/scripts/entity_defs/Avatar.def");
+    assert!(engine.definition(&key, text, 2, 4).is_none());
 }
 
 #[test]
