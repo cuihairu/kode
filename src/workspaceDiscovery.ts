@@ -49,9 +49,20 @@ export const DISCOVERY_CONVENTIONS = {
 /**
  * 资产根验收谓词:引擎以该目录为 cwd 启动并从 <根>/res/server/kbengine.xml
  * 读元件配置,探针文件不在 = 起不来。发现、报告与 serverManager 共用此口径。
+ * 书 PR-002 ③(交互路径 Top3 之探针链):existsSync 结果按目录 memo——
+ * 交互路径(扫描根发现/布局解析)每次调用都会重探约定链,巨仓上逐次 stat
+ * 纯属重复;失效口径与 scanCache 同级(resetDiscoveryState/resetDiscoveryMemo)。
  */
+const engineProbeMemo = new Map<string, boolean>();
+
 export function hasEngineConfigProbe(configPath: string): boolean {
-  return fs.existsSync(path.join(configPath, 'res', 'server', 'kbengine.xml'));
+  const cached = engineProbeMemo.get(configPath);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const result = fs.existsSync(path.join(configPath, 'res', 'server', 'kbengine.xml'));
+  engineProbeMemo.set(configPath, result);
+  return result;
 }
 
 /**
@@ -63,6 +74,12 @@ export function hasEngineConfigProbe(configPath: string): boolean {
  * 动态段只读一级(readdir 一次),深层与异形布局仍交深扫描。
  */
 export function conventionalConfigRoots(workspaceRoot: string): string[] {
+  // 书 PR-002 ③(交互路径 Top3 之约定 readdir):一级目录枚举按根 memo,
+  // 失效口径与 scanCache 同级;命中验收仍是探针谓词,目录名只是准入。
+  const cached = conventionalRootsMemo.get(workspaceRoot);
+  if (cached) {
+    return cached;
+  }
   const statics = DISCOVERY_CONVENTIONS.configRoots.map(relative =>
     path.join(workspaceRoot, relative)
   );
@@ -75,7 +92,9 @@ export function conventionalConfigRoots(workspaceRoot: string): string[] {
   const dynamics = entries
     .filter(entry => entry.isDirectory() && entry.name.endsWith('_assets'))
     .map(entry => path.join(workspaceRoot, entry.name));
-  return [...new Set([...statics, ...dynamics])];
+  const merged = [...new Set([...statics, ...dynamics])];
+  conventionalRootsMemo.set(workspaceRoot, merged);
+  return merged;
 }
 
 const SKIP_DIRECTORY_NAMES = new Set(['node_modules', '.git', '.vscode', 'out', 'dist']);
@@ -204,6 +223,9 @@ function findKbeRootAnchor(filePath: string): string | null {
 // ---- 会话内缓存与多候选记忆 ----
 
 const scanCache = new Map<string, DiscoveredCandidateSet>();
+// 书 PR-002 ③(交互路径 Top3 memo):约定根枚举与引擎探针的按目录缓存,
+// 与 scanCache 同级失效——交互路径每查询重复 readdir/stat 属纯重复。
+const conventionalRootsMemo = new Map<string, string[]>();
 
 export type DiscoveryKey = 'entityDefs' | 'entitiesXml' | 'typesXml' | 'configRoot';
 
@@ -234,7 +256,24 @@ export function getDiscoveryChoice(workspaceRoot: string, key: DiscoveryKey): st
 
 export function resetDiscoveryState(): void {
   scanCache.clear();
+  resetDiscoveryMemo();
   rememberedChoices.clear();
+}
+
+/** 书 PR-002 ③:Top3 memo(约定根枚举 + 引擎探针)与 scanCache 同级失效 */
+export function resetDiscoveryMemo(): void {
+  conventionalRootsMemo.clear();
+  engineProbeMemo.clear();
+}
+
+/**
+ * 书 PR-002 ③(交互路径 Top3 之冷 walk):激活期(门控放行的 KBEngine
+ * 工作区)预热深扫描缓存——首查交互(hover/definition 布局解析)不再在
+ * 请求路径上付 20000 条目有界 walk(巨仓实测 40.5ms/次);结果与冷触发
+ * 完全同源(scanCache),只挪时机不挪语义。
+ */
+export function preheatDiscoveryScan(workspaceRoot: string): void {
+  cachedScan(workspaceRoot);
 }
 
 function cachedScan(workspaceRoot: string, options?: ScanOptions): DiscoveredCandidateSet {

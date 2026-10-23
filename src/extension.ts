@@ -110,6 +110,8 @@ import {
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler } from './indexScheduler';
+import { shouldStartKbEngineIndexing } from './workspaceGate';
+import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { getDiagnosticScheduler } from './diagnosticScheduler';
 import {
   createDatabaseSchemaUri,
@@ -353,7 +355,14 @@ export function activate(context: vscode.ExtensionContext) {
   // PythonClassIndex 文件发现/分块解析都经它入队,后台任务受交互限流。
   const indexScheduler = new IndexScheduler();
   context.subscriptions.push({ dispose: () => indexScheduler.dispose() });
-  const entityMappingManager = new EntityMappingManager(context, indexScheduler);
+  // 书 PR-002 工作区门控:deferStartup=true → 构造零副作用(不建 watcher、
+  // 不入队全量首扫)。是否启动由 shouldStartKbEngineIndexing() 的特征探测决定:
+  // 有 .def/entities.xml/types.xml/alias.xml/kbengine*.xml 之一即启动(与门控前
+  // 逐行为一致);无特征的纯 Python 工作区零后台扫描零 watcher,查询入口的
+  // ensureStartup() 幂等兜底保证结果口径不变(fail-open:探测异常按放行处理)。
+  const entityMappingManager = new EntityMappingManager(context, indexScheduler, {
+    deferStartup: true
+  });
 
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
   const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);
@@ -454,7 +463,24 @@ export function activate(context: vscode.ExtensionContext) {
   // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
   // PR5:共享调度器注入 + 首扫后台化(激活即排程,Definition 首查不等全量)。
   const pythonClassIndex = new PythonClassIndex(indexScheduler);
-  pythonClassIndex.scheduleBackgroundScan();
+  // 书 PR-002 门控启动面:特征确认后 entityMapping 首扫 + python 后台全量扫描
+  // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
+  const startKbEngineIndexing = (): void => {
+    entityMappingManager.ensureStartup();
+    pythonClassIndex.scheduleBackgroundScan();
+    // 书 PR-002 ③:深扫描缓存激活期预热——首查交互不再付 20000 条目有界
+    // walk(巨仓实测 40.5ms/次);结果同源 scanCache,只挪时机不挪语义。
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      if (folder?.uri?.fsPath) {
+        preheatDiscoveryScan(folder.uri.fsPath);
+      }
+    }
+  };
+  void shouldStartKbEngineIndexing().then(gated => {
+    if (gated) {
+      startKbEngineIndexing();
+    }
+  });
   const pythonDefinitionImpl = new PythonDefinitionProvider(entityMappingManager, pythonClassIndex);
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },

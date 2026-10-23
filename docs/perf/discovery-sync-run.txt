@@ -1,0 +1,14 @@
+DISCOVERY-ENV node=v24.21.0 cpus=14
+DISCOVERY-METRIC D1.def-heavy.coldAnchorWalk n=1 12.62ms
+DISCOVERY-METRIC D1.def-heavy.coldAnchorWalkVisited n=1 1405 entries
+DISCOVERY-METRIC D1.def-heavy.uncachedWalkRepeat n=1 4.26ms/call
+DISCOVERY-METRIC D1.def-heavy.interactiveResolveAfterPreheat n=1 0ms/call
+DISCOVERY-METRIC D2.def-heavy.conventionalConfigRoots n=1 0ms/call
+DISCOVERY-METRIC D1.large.coldAnchorWalk n=1 39.97ms
+DISCOVERY-METRIC D1.large.coldAnchorWalkVisited n=1 20000 entries
+DISCOVERY-METRIC D1.large.uncachedWalkRepeat n=1 39.82ms/call
+DISCOVERY-METRIC D1.large.interactiveResolveAfterPreheat n=1 0ms/call
+DISCOVERY-METRIC D2.large.conventionalConfigRoots n=1 0ms/call
+DISCOVERY-METRIC D3.defheavy.configRootProbeChain n=1 0.02ms/call
+DISCOVERY-METRIC D4.defheavy.discoveryChoiceExistsSync n=1 0ms/call
+DISCOVERY-METRIC D5.defheavy.resolvedTripleWarm n=1 0ms/call

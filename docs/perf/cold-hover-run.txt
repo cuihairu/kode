@@ -1,0 +1,9 @@
+HOVER-ENV node=v24.21.0 cpus=14 largeFiles=30000
+HOVER-METRIC H1.large.coldHoverFirstAnnotationHits n=1 1 hit
+HOVER-METRIC H1.large.coldHoverDuringInitialScan n=5 p50=0.16ms p95=81.47ms p99=81.47ms max=81.47251899999992ms
+HOVER-METRIC H2.large.initialScanCompletion n=1 219.13ms
+HOVER-METRIC H3.large.hoverAfterInitialScan n=1 0.37ms
+HOVER-METRIC H3.large.hoverAfterInitialScanHits n=1 1 hit
+HOVER-METRIC H4.large.warmHover n=40 p50=0.03ms p95=0.17ms p99=0.33ms max=0.32565900000008696ms
+HOVER-METRIC H5.large.coldHoverAfterPreheat n=1 59.74ms
+HOVER-METRIC H5.large.coldHoverAfterPreheatHits n=1 1 hit
