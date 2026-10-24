@@ -18,6 +18,7 @@
 - **悬停：事件统计** —— 事件常量的注册/监听计数（事件回调反链）——（证据：package.json#configuration `kbengine.hover.eventStats`；src/eventApi.ts）
 - **悬停：服务配置取值** —— kbengine.xml 服务配置项的取值与说明 ——（证据：package.json#configuration `kbengine.hover.serverConfig`；src/serverConfigHover.ts）
 - **悬停：持久化属性数据库落点** —— 持久化属性显示完整 `` `db`.`tbl`.`col` `` 全名、引擎 DDL 片段与具体限制数值 ——（证据：todo.md:69、todo.md:124；src/databaseSchema.ts `describePropertyDatabaseStorage`）
+- **悬停：def 方法 / 接收者调用 / 内建属性标注（Python）** —— 光标落在 Python 实现脚本里 .def 声明过的方法名上时显示 def 声明标注，过与 RPC 镜同一把形参个数 / 注解类型闸门；`self.<段>.<方法>` 调用按段解析 def 候选，段不符不给标注；单段 `self.<属性>` 访问显示内建属性分面标注；每条异步分支受悬停总预算闸约束不再永转，超时层写 LogHub ——（证据：package.json#configuration `kbengine.entity.receiverSections`、`kbengine.entity.builtinProperties`、`kbengine.hover.asyncBudgetMs`；src/languageProviders.ts `provideHover` def-method / receiver-call / builtin-property 分支；src/hoverBudget.ts `raceWithBudget`）
 - **CodeLens：RPC 方法标记** —— def 声明的 Exposed 方法在 Python 实现行出镜 ——（证据：package.json#configuration `kbengine.codeLens.rpc`；todo.md:74；src/rpcCodeLens.ts）
 - **CodeLens：事件回调标记** —— Python 脚本中事件回调/订阅数标记 ——（证据：package.json#configuration `kbengine.codeLens.eventCallbacks`；todo.md:27；src/eventApi.ts）
 - **CodeLens：属性访问反向跳转** —— `self.<属性>` 访问行回链 def 声明，附类型/可见域/持久化信息 ——（证据：package.json#configuration `kbengine.codeLens.property`；todo.md:21；src/propertyCodeLens.ts）
@@ -26,6 +27,7 @@
 - **entities.xml 校验** —— 同名重复实体落 warning（引擎按已有模块静默合并）+ Utype 清单序号悬停 ——（证据：todo.md:33；src/entitiesXmlAnalysis.ts）
 - **跨文件继承检查** —— 继承链跨文件同名检查；Interfaces 装载语义对齐引擎 ——（证据：todo.md:65、todo.md:66；src/defAnalyzer.ts `collectInheritedNames`）
 - **Python 导航（F12 / 重命名 / 调用层级）** —— owner-aware 导航，C3-MRO 与 mixin 组合根解析，`kbengine.python.enableMroJump` 开关 ——（证据：package.json#configuration `kbengine.python.enableMroJump`；src/languageProviders.ts、src/pythonClassIndex.ts、src/entityMapping.ts）
+- **调用链（Show Call Chain）** —— 从 .def/Python 实体方法出发沿 def 索引展开向外出调，默认深度 3，沿 `self.base/cell/client.<方法>()` 接收者调用跳到其他 def 声明方法，解析不到的目标画成开口节点；渲染为打包内嵌的离线 mermaid 图（默认 `graph`，无 CDN）或纯文本回落，面板内 tab 选择持久化到工作区状态并优先于设置项，图渲染失败自动回落文本并在面板头说明 ——（证据：package.json#contributes.commands `kbengine.python.showCallChain`；package.json#configuration `kbengine.python.callChainHints|callChainView`；src/defCallChain.ts `buildDefCallChain`/`renderDefCallChainMermaid`、src/defCallChainProvider.ts、src/defCallChainViewLogic.ts）
 - **数据库表结构视图** —— 由 def 分析渲染实体/组件/ARRAY 子表结构的只读视图，支持属性→表跳转与 F12 ——（证据：package.json#contributes.commands `kbengine.database.open`；todo.md:124、todo.md:133；src/databaseSchema.ts）
 - **SQL 模板** —— 每表全列 SELECT、属性列 SELECT 与子表 JOIN 语句，遵循可配置表名前缀 ——（证据：todo.md:126；package.json#configuration `kbengine.db.tablePrefix`；src/databaseSchema.ts `renderTableSqlLines`）
 - **MySQL 漂移对比（只读）** —— 代码侧 schema 与真实库逐表逐列对比；报缺表/缺列/多列/型别不符，语句白名单 + 会话只读双保险 ——（证据：package.json#contributes.commands `kbengine.database.checkDrift|checkAllDrift`；todo.md:125；src/databaseDrift.ts）
@@ -101,6 +103,7 @@
 | `kbengine.hover.defChain` | `true` | 悬停显示 def 属性/方法声明链（文件与区块来源） |
 | `kbengine.hover.eventStats` | `true` | 悬停显示事件常量注册/监听统计 |
 | `kbengine.hover.serverConfig` | `true` | 悬停显示 kbengine.xml 服务配置取值与说明 |
+| `kbengine.hover.asyncBudgetMs` | `2500` | 悬停 def 方法 / 接收者调用 / 内建属性三条异步链的总预算（毫秒）；超预算截断该层不再永转，超时行写 LogHub（`[kode-hover][timeout]`）；`<= 0` 关闸（src/hoverBudget.ts、src/languageProviders.ts） |
 | `kbengine.codeLens.rpc` | `true` | Python 实现脚本中 def 声明方法的 RPC 标记 CodeLens |
 | `kbengine.codeLens.eventCallbacks` | `true` | Python 脚本中事件回调/订阅 CodeLens |
 | `kbengine.codeLens.property` | `true` | `self.<属性>` 访问处属性 CodeLens（回跳 def） |
@@ -118,6 +121,7 @@
 | `kbengine.loggerPort` | `20022` | KBEngine Logger 端口（默认 20022） |
 | `kbengine.logAutoConnect` | `true` | 启动服务器时自动连接日志收集器 |
 | `kbengine.maxLogEntries` | `10000` | 最大日志条目数 |
+| `kbengine.webviewConsoleLogs` | `true` | 把 Logs 面板页面的 console 输出与未捕获异常收进 LogHub（src/webviewConsoleBridge.ts） |
 | `kbengine.generator.defOutputPath` | `"scripts/entity_defs"` | 代码生成器：.def 输出目录 |
 | `kbengine.generator.pythonOutputPath` | `"scripts"` | 代码生成器：Python 输出目录 |
 | `kbengine.generator.generatePython` | `true` | 代码生成器：是否同时生成 Python 文件 |
@@ -134,6 +138,9 @@
 | `kbengine.python.stubExport` | `true` | 自动把内置 KBEngine Python API 索引导出为 KBEngine.pyi 存根 |
 | `kbengine.python.stubDir` | `""` | `.pyi` 存根目录（空 = 自管默认 `.kbengine/stubs`；配置目录则扫描、用户 .pyi 不覆盖；支持 VS Code 变量） |
 | `kbengine.python.enableMroJump` | `true` | Python 跨文件 C3-MRO 与 mixin 组合根导航开关（关 = 仅当前文件继承解析 + .def 回退） |
+| `kbengine.python.apiMetadata` | `true` | 引擎感知的 KBEngine API 元数据——版本、源码 commit/describe 与原始声明位置——写进导出存根头部；取不到源码身份时显示 `unknown`，绝不编造（src/engineApiMetadata.ts、src/kbeModuleIndex.ts） |
+| `kbengine.python.callChainHints` | `true` | Python 实体方法调用链提示与命令；关则隐藏入口，Show Call Chain 不再生成预览（src/defCallChainProvider.ts） |
+| `kbengine.python.callChainView` | `"graph"` | Show Call Chain 面板初始视图：`graph`（打包内嵌 mermaid，离线）或 `text`；面板内 tab 选择持久化到工作区状态并优先于本设置（src/defCallChainViewLogic.ts） |
 | `kbengine.hotReload.enabled` | `false` | 文件变更自动触发快速动作（默认关防误触） |
 | `kbengine.hotReload.actionName` | `""` | 要触发的快速动作名（须存在于 .kbengine/debug.json quickActions） |
 | `kbengine.hotReload.globs` | `["**/*.py"]` | 监视的文件匹配模式（每模式一个 watcher） |
@@ -141,6 +148,7 @@
 | `kbengine.managedDir` | `` `.kbengine` `` | kode 托管目录名（运行时读取键，不在 contributes 中；改名后自动重建） |
 | `kbengine.entity.builtinProperties` | `true` | 内建属性 hover + `self.` 补全（分面）— `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | hover/F12/RPC 镜的接收者段过滤 — `src/languageProviders.ts:515,3374,3897` |
+| `kbengine.python.builtinTypeInlayHints` | `true` | `self.<内建属性>` 访问后内联 `: <类型>` 提示 — `src/languageProviders.ts`（`KBEngineBuiltinTypeInlayHintsProvider`），受 `kbengine.entity.builtinProperties` 总闸控制 |
 | `kbengine.python.stubEngineTypings` | `true` | KBEngine.pyi 并入引擎 typings 全量 — `src/pythonStubExport.ts:360` |
 | `kbengine.python.entityStubMethods` | `true` | entity_types.pyi 方法面 — `src/entityTypeStubs.ts:74,139` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |

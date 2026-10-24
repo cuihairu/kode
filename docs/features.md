@@ -20,6 +20,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **Hover: event stats** — registration/listening counts for event constants (event callback reverse links) — (evidence: package.json#configuration `kbengine.hover.eventStats`; src/eventApi.ts)
 - **Hover: server config values** — kbengine.xml server config entries with value and explanation — (evidence: package.json#configuration `kbengine.hover.serverConfig`; src/serverConfigHover.ts)
 - **Hover: persistent property DB location** — persistent properties show full `db`.`tbl`.`col` name plus engine DDL fragment and limits — (evidence: todo.md:69, todo.md:124; src/databaseSchema.ts `describePropertyDatabaseStorage`)
+- **Hover: def-method / receiver-call / builtin-property annotations (Python)** — hovering a `def`-declared method name in a Python implementation script shows the def-declared method annotation under the same parameter-count / annotation-type gate as the RPC lens; `self.<section>.<method>` calls resolve per-section def candidates, and a section mismatch gives no annotation; single-segment `self.<property>` access shows the builtin-property facet annotation; each async branch is bounded by the hover total budget instead of spinning, with the timed-out layer logged — (evidence: package.json#configuration `kbengine.entity.receiverSections`, `kbengine.entity.builtinProperties`, `kbengine.hover.asyncBudgetMs`; src/languageProviders.ts `provideHover` def-method / receiver-call / builtin-property branches; src/hoverBudget.ts `raceWithBudget`)
 - **CodeLens: RPC methods** — def-declared Exposed methods marked at their Python implementation lines — (evidence: package.json#configuration `kbengine.codeLens.rpc`; todo.md:74; src/rpcCodeLens.ts)
 - **CodeLens: event callbacks** — event callback/subscription markers in Python scripts — (evidence: package.json#configuration `kbengine.codeLens.eventCallbacks`; todo.md:27; src/eventApi.ts)
 - **CodeLens: property access reverse jump** — `self.<property>` access lines link back to the def declaration with type/visibility/persistent info — (evidence: package.json#configuration `kbengine.codeLens.property`; todo.md:21; src/propertyCodeLens.ts)
@@ -28,6 +29,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **entities.xml validation** — duplicate entity names get a warning (engine silently merges) plus a Utype list-order hover — (evidence: todo.md:33; src/entitiesXmlAnalysis.ts)
 - **Cross-file inheritance checks** — same-name checks across the inheritance chain; Interfaces loading semantics aligned to the engine — (evidence: todo.md:65, todo.md:66; src/defAnalyzer.ts `collectInheritedNames`)
 - **Python navigation (F12 / rename / call hierarchy)** — owner-aware navigation with C3-MRO and mixin composition-root resolution, `kbengine.python.enableMroJump` toggle — (evidence: package.json#configuration `kbengine.python.enableMroJump`; src/languageProviders.ts, src/pythonClassIndex.ts, src/entityMapping.ts)
+- **Call chain (Show Call Chain)** — expands the outgoing calls of a def/Python entity method through the def index: depth 3 by default, following `self.base/cell/client.<method>()` receiver calls to other def-declared methods, unresolved targets drawn as open-ended nodes; rendered as a bundled offline mermaid graph (default `graph`, CSP-free, no CDN) or a plain text fallback, with the in-panel tab choice persisted to workspace state and taking precedence over the setting, and a graph render failure falling back to text with a header notice — (evidence: package.json#contributes.commands `kbengine.python.showCallChain`; package.json#configuration `kbengine.python.callChainHints|callChainView`; src/defCallChain.ts `buildDefCallChain`/`renderDefCallChainMermaid`, src/defCallChainProvider.ts, src/defCallChainViewLogic.ts)
 - **Database schema view** — entity/component/ARRAY child-table schemas rendered read-only from def analysis, with property→table jump and F12 support — (evidence: package.json#contributes.commands `kbengine.database.open`; todo.md:124, todo.md:133; src/databaseSchema.ts)
 - **SQL templates** — per-table full SELECT, property-column SELECT and child-table JOIN statements, honoring a configurable table prefix — (evidence: todo.md:126; package.json#configuration `kbengine.db.tablePrefix`; src/databaseSchema.ts `renderTableSqlLines`)
 - **MySQL drift check (read-only)** — compares code-side schema against the real database; missing/extra/type-mismatched columns reported, SELECT-only whitelist plus session read-only — (evidence: package.json#contributes.commands `kbengine.database.checkDrift|checkAllDrift`; todo.md:125; src/databaseDrift.ts)
@@ -103,6 +105,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hover.defChain` | `true` | Show def property/method declaration chain (file & section origins) on hover |
 | `kbengine.hover.eventStats` | `true` | Show event constant registration/listening stats on hover |
 | `kbengine.hover.serverConfig` | `true` | Show kbengine.xml server config values and explanations on hover |
+| `kbengine.hover.asyncBudgetMs` | `2500` | Total budget (ms) for the hover def-method / receiver-call / builtin-property async chains; past the budget the layer is cut short instead of spinning forever and a timeout line lands in LogHub (`[kode-hover][timeout]`); `<= 0` disables the gate (src/hoverBudget.ts, src/languageProviders.ts) |
 | `kbengine.codeLens.rpc` | `true` | RPC method CodeLens at def-declared methods in Python implementation scripts |
 | `kbengine.codeLens.eventCallbacks` | `true` | Event callback/subscription CodeLens in Python scripts |
 | `kbengine.codeLens.property` | `true` | Property CodeLens at `self.<property>` access sites (reverse jump to def) |
@@ -120,6 +123,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.loggerPort` | `20022` | KBEngine Logger port (default 20022) |
 | `kbengine.logAutoConnect` | `true` | Auto-connect the log collector when starting the server |
 | `kbengine.maxLogEntries` | `10000` | Maximum number of log entries kept |
+| `kbengine.webviewConsoleLogs` | `true` | Capture the Logs panel page console output and uncaught exceptions into LogHub (src/webviewConsoleBridge.ts) |
 | `kbengine.generator.defOutputPath` | `"scripts/entity_defs"` | Code generator: output directory for .def files |
 | `kbengine.generator.pythonOutputPath` | `"scripts"` | Code generator: output directory for Python files |
 | `kbengine.generator.generatePython` | `true` | Code generator: whether to also emit Python files |
@@ -136,6 +140,9 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.python.stubExport` | `true` | Auto-export the built-in KBEngine Python API index as a KBEngine.pyi stub |
 | `kbengine.python.stubDir` | `""` | .pyi stub directory (empty = managed default .kbengine/stubs; configured dir scanned, user .pyi never overwritten; supports VS Code variables) |
 | `kbengine.python.enableMroJump` | `true` | Cross-file C3-MRO and mixin composition-root navigation for Python (off = current-file inheritance + def fallback only) |
+| `kbengine.python.apiMetadata` | `true` | Engine-aware KBEngine API metadata — version, source commit/describe and original declaration locations — written into the exported stub header; a missing source identity shows `unknown` and is never invented (src/engineApiMetadata.ts, src/kbeModuleIndex.ts) |
+| `kbengine.python.callChainHints` | `true` | Python entity-method call chain hints and command; off hides the entry and Show Call Chain stops generating previews (src/defCallChainProvider.ts) |
+| `kbengine.python.callChainView` | `"graph"` | Show Call Chain panel initial view: `graph` (bundled mermaid, offline) or `text`; the in-panel tab choice persists to workspace state and takes precedence over this setting (src/defCallChainViewLogic.ts) |
 | `kbengine.hotReload.enabled` | `false` | Auto-trigger a quick action on file changes (default off to prevent accidents) |
 | `kbengine.hotReload.actionName` | `""` | Quick action name to trigger (must exist in .kbengine/debug.json quickActions) |
 | `kbengine.hotReload.globs` | `["**/*.py"]` | File glob patterns to watch (one watcher per pattern) |
