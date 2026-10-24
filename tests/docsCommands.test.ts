@@ -117,3 +117,93 @@ describe('docs 命令覆盖与失实表述锁', () => {
     expect(unknown, `总览表记载了不存在的设置项: ${[...new Set(unknown)].join(', ')}`).toEqual([]);
   });
 });
+
+// D-2(2026-10-24):设置项文档对账扩展到 features.md 的 Settings 表 ——
+// configuration.md 总览表锁(上方)落地后仍有 5 个新键漏进 features.md
+// (hover.asyncBudgetMs / python.apiMetadata / python.callChainHints /
+// python.callChainView / webviewConsoleLogs)。此锁与总览表锁同形状:
+// 双向对账键覆盖(中英 features.md 同锁,防只补一边);另对标量(字符串/
+// 数字/布尔)默认值逐键核对 —— 文档行写错默认值(如改了 package.json
+// 忘了文档)是本锁要堵的另一类漂移。
+// 数组/对象默认(httpRequests 等)在 features.md 是截断展示,只查行存在
+// 不比内容;callChainView/typeData/asyncBudgetMs 等键由此锁自动滚动覆盖,
+// 不再逐键补断言。
+const featuresMd = readFileSync(join(root, 'docs', 'features.md'), 'utf8');
+const zhFeaturesMd = readFileSync(join(root, 'docs', 'zh', 'features.md'), 'utf8');
+
+const contributedSettings = (): Record<string, { type?: string; default?: unknown }> => {
+  const configuration = pkg.contributes.configuration;
+  return Array.isArray(configuration)
+    ? Object.assign({}, ...configuration.map(section => section.properties))
+    : configuration.properties;
+};
+
+const featuresSettingRows = (text: string): Map<string, string> => {
+  const rows = new Map<string, string>();
+  for (const line of text.split('\n')) {
+    const match = line.match(/^\| `(kbengine\.[A-Za-z][A-Za-z0-9_.]*)` \| (.+?) \|/);
+    if (match) {
+      rows.set(match[1], match[2].trim());
+    }
+  }
+  return rows;
+};
+
+/** 非贡献键但属扩展真实读取的运行时键(features.md 白名单,见 src/managedDir.ts) */
+const FEATURES_RUNTIME_KEYS = new Set(['kbengine.managedDir']);
+
+describe('features.md Settings 表与 package.json 对账', () => {
+  const featureDocs: Array<[string, string]> = [
+    ['docs/features.md', featuresMd],
+    ['docs/zh/features.md', zhFeaturesMd]
+  ];
+
+  it('package.json 每条贡献设置项都见于 features.md Settings 表', () => {
+    const missing: string[] = [];
+    for (const [label, text] of featureDocs) {
+      const rows = featuresSettingRows(text);
+      for (const key of contributedSettingKeys()) {
+        if (!rows.has(key)) {
+          missing.push(`${label}: ${key}`);
+        }
+      }
+    }
+    expect(missing, `features.md Settings 表缺设置项: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('features.md Settings 表不记载未贡献的键(运行时键白名单除外)', () => {
+    const keys = new Set(contributedSettingKeys());
+    const unknown: string[] = [];
+    for (const [label, text] of featureDocs) {
+      for (const key of featuresSettingRows(text).keys()) {
+        if (!keys.has(key) && !FEATURES_RUNTIME_KEYS.has(key)) {
+          unknown.push(`${label}: ${key}`);
+        }
+      }
+    }
+    expect(unknown, `features.md 记载了未贡献的设置项: ${unknown.join(', ')}`).toEqual([]);
+  });
+
+  it('标量默认值与 package.json 一致(数组/对象只查行不比内容)', () => {
+    const scalar = (value: unknown): value is string | number | boolean =>
+      typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+    const mismatches: string[] = [];
+    for (const [label, text] of featureDocs) {
+      const rows = featuresSettingRows(text);
+      for (const [key, property] of Object.entries(contributedSettings())) {
+        if (!scalar(property.default)) {
+          continue;
+        }
+        const documented = rows.get(key);
+        if (documented === undefined) {
+          continue; // 行缺失由第一条用例负责
+        }
+        const normalized = documented.replace(/^`/, '').replace(/`$/, '');
+        if (normalized !== JSON.stringify(property.default)) {
+          mismatches.push(`${label} ${key}: 文档 ${documented} ≠ package.json ${JSON.stringify(property.default)}`);
+        }
+      }
+    }
+    expect(mismatches, `默认值漂移: ${mismatches.join('; ')}`).toEqual([]);
+  });
+});
