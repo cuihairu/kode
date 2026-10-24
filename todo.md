@@ -80,7 +80,9 @@
 - [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
 - [ ] C-10 V-07·c：CI 接线（有树环境真跑，集成 tag）
 - [ ] C-11 V-08 边界注记：等真实管理协议（外部条件，触发条件=管理协议可用性，届时重开 C-1/C-2）
-- [x] C-12 chatgpt 归并书遗留核对：四份原文（docs/review/chatgpt-2026-10-20-kode-{roadmap,log-center,background-process,typings}.md）已从 docs/review 删除；全仓核对引用余数=0（文件名/chatgpt-2026-10-20/log-center/background-process 各 pattern 在 docs/src/tests/scripts/package.json 均 0 命中；docs/review/ 现存同批文档仅 2026-10-21-kbengine-typings-validation.md，非归并书本体）（0a4fdcc 对账口径；核对日 2026-10-24）
+- [ ] C-12 chatgpt 归并书遗留核对（**核对结果：引用余数=0，但原文未删，见下方证据**）
+  - 引用余数核对通过：文件名 `chatgpt-2026-10-20-kode-*`、`log-center`、`background-process`、`chatgpt.*roadmap`、`chatgpt.*typings` 各 pattern 在 docs/src/tests/scripts/package.json 全部 0 命中（排除归并书本体与 docs/.vitepress/dist 构建产物）
+  - **未达项**：四份原文仍在 docs/review/ 且为 git 跟踪文件（chatgpt-2026-10-20-kode-{roadmap,log-center,background-process,typings}.md，10-21 09:52 落盘，从未有删除提交）——是否随归并完成归档删除，**待用户定夺**（属删档动作，agent 不自行执行）
 
 ## D. 维护与质量
 - [x] D-1 每日 CI 日巡异常闭环：cron e4bddc0a5a17 **已不在调度器**（CronList 空、无 .claude/scheduled_tasks.json —— 会话级 cron 不跨会话持久，首跑复核无对象，如实记录）；异常侧已闭环：最近唯一失败为 nightly workflow_dispatch 2026-10-23T07:21Z，根因 npm registry TLS handshake EOF（pnpm install 取 vsce-sign/levn 抖动，非代码），下一轮 schedule 2026-10-23T10:58Z 成功自愈，无需动作。**待用户定夺**：是否重建为 durable 日巡（durable 会话常驻任务须用户明确同意，不自建）
