@@ -14,11 +14,17 @@
 
 | 线 | 请求消息族 | 回执 | 语义 |
 |---|---|---|---|
-| Watcher | `41001`–`41010`（按进程类型分号） | `65503` | 树状 watcher 值读取（`KBEngine.addWatcher` 注册的路径） |
+| Watcher | `41001`–`41008`（按进程类型分号，共 8 个） | `65502` | 树状 watcher 值读取（`KBEngine.addWatcher` 注册的路径） |
 | SpaceViewer | `50001`–`50005` | `65503` | Space/Cell 拓扑与实体分布快照 |
 
-两条线共用同一个回执消息号 `CONSOLE_PROFILECB_MSGID = 65503`，
-由请求方按「当前只发一种请求」的时序区分（webconsole 侧同样如此假设）。
+两条线**回执消息号不同**：watcher 线走 `CONSOLE_WATCHERCB_MSGID = 65502`
+（`kbe/src/lib/helper/console_helper.h:11`、`Watcher.py:10`，服务端回执
+`console_helper.h:175`），SpaceViewer / 组件负载线走
+`CONSOLE_PROFILECB_MSGID = 65503`（`console_helper.h:12`、`:227`/`:249`/`:271`）。
+客户端侧对应地各自注册：`Watcher.py:60` 注册 `65502`，
+`SpaceViews.py:56`/`:128`/`:186` 与 `Component_Status.py:42` 注册 `65503`。
+面板侧若同时收两条线，必须**两个回执都注册**——只注册 `65503` 会静默丢掉
+watcher 回执，这是本表最早一版误记为「两条线共用 65503」的根因。
 
 ## 2. 消息号表（真实来源：`kbe/tools/server/pycommon/`）
 
@@ -57,8 +63,18 @@ SpaceViewer / 组件负载请求号：
 - `kbe/src/server/cellapp/cellapp_interface.h:165` `setSpaceViewer` 消息声明
 - `kbe/src/server/cellapp/cellapp_interface.h:135` `queryWatcher` 消息声明
 
-回执号：`CONSOLE_PROFILECB_MSGID = 65503`
-（`SpaceViews.py:13`、`Component_Status.py:13`、`Watcher.py:11` 三处一致）。
+回执号分两号（见 §1）：
+- watcher 线 `CONSOLE_WATCHERCB_MSGID = 65502`——`Watcher.py:10`，
+  服务端消息头 `kbe/src/lib/helper/console_helper.h:11`（客户端处理器
+  `ConsoleWatcherCBMessageHandler`，消息名 `"console::queryWatcher"`，
+  `console_helper.h:175` 强制 `msgID = CONSOLE_WATCHERCB_MSGID`）。
+- SpaceViewer / 负载线 `CONSOLE_PROFILECB_MSGID = 65503`——`SpaceViews.py:13`、
+  `Component_Status.py:13`、`Watcher.py:11` 三处同值定义，
+  服务端 `console_helper.h:12`、`:227`/`:249`/`:271`。
+
+注意 `Watcher.py` **两个常量都定义了**（`:10` 是 65502、`:11` 是 65503），
+但实际注册回执的是 `:60` 的 65502；早先按「同一文件里两个常量都存在」
+误记成回执为 65503。
 
 ## 3. 控制台连接时序
 
@@ -66,7 +82,8 @@ SpaceViewer / 组件负载请求号：
 
 1. **建连**：从 `Machines.ComponentInfo.{intaddr,intport}` 取目标进程地址，
    `ServerApp.connect(host, port)` 直连该进程（`SpaceViews.py:44-46` 用法样例注释）。
-2. **注册回执**：`registerMsg(65503, onXxxMsg)`（`SpaceViews.py:56`）。
+2. **注册回执**：`registerMsg(65503, onXxxMsg)`（`SpaceViews.py:56`）；
+   watcher 线对应注册 `registerMsg(65502, onWatcherMsg)`（`Watcher.py:60`）。
 3. **发请求**：`MessageStreamWriter(<请求号>)` 后 `self.send(msg)`
    （`SpaceViews.py:66-70`；SpaceViewer 请求体为空，只带消息号）。
 4. **收回执**：流式读取，见 §4；读到 EOF 结束一轮。
@@ -139,3 +156,41 @@ while not streamReader.EOF():
   C-3「面板操作面（增删 watcher）」开工前需补 `pywatcher` 侧读写配对。
 - 本取证不涉及 `guiconsole`（MFC 桌面端）的实现细节，其
   `guiconsoleDlg.cpp:1206-1210` 只作为「同一消息族可被 C++ 客户端复用」的旁证。
+
+## 8. V-08 边界注记：真实管理协议（外部条件）
+
+C-2 / C-3 在仓库内的可验收面是 **mock 测试**，端到端真跑被一条外部条件卡住：
+本文取证的 `41001`–`41008` / `50001`–`50005` / `65502` / `65503` 全部属于
+引擎**运行期控制台观测协议**，只对正在运行的 KBEngine 服务端可达——
+没有 `loginserver` / `cellappmgr` 进程实际监听在 `intaddr:intport` 上，
+任何一帧都发不出去。仓库与 CI 不保证有这样一个实例，因此端到端断言进不了
+门禁。这是外部条件，不是工程缺口，**不硬造实现**。
+
+**重开触发条件**（三条同时满足才把 C-2 / C-3 从 mock 面推进到真协议面）：
+
+1. **可达实例**：存在一个已知 `host:intport` 的在跑引擎（或容器化 fixture），
+   且 `Machines.ComponentInfo` 里能读到 cellappmgr 条目。在此之前面板侧只能
+   对连接层做 mock 测试。
+2. **消息号表对账通过**：目标引擎版本的 `Watcher.py` / `SpaceViews.py` /
+   `console_helper.h` 与本表逐条一致。这些号是引擎**内部常量、不是公开 ABI**，
+   版本漂移直接打断解析，换引擎版本必须重跑一次取证核对而不是沿用。
+3. **版本可判定**：`src/engineApiMetadata.ts` 能报出真实版本而不是 `unknown`。
+   在 C-14 落地前本机树上它恒报 `unknown`，面板缺「版本不匹配就拒连」的依据，
+   贸然连错版本的引擎只会解出乱帧。
+
+**已经留好的钩子**（不需要外部条件，现状即可用）：
+
+- 消息号走常量表而非写死在收发函数里：`src/kbengineProtocol.ts:54-58`
+  （`CONSOLE_WATCHER_CB_MSG_ID` / `CONSOLE_PROFILE_CB_MSG_ID` /
+  `CELLAPPMGR_QUERY_SPACES_MSG_ID` / `MACHINE_BROADCAST_PORT`）、
+  `src/kbengineProtocol.ts:80-89` `WATCHER_QUERY_MSG_IDS`
+  （按引擎进程类型映射 8 个 watcher 请求号，与 `Watcher.py:33-40` 逐条对应）。
+  对账失败（条件 2）时可整表停用，不必逐处改。
+- 组帧集中在 `src/kbengineProtocol.ts:283` `buildFrame`，
+  连接层与业务解码分离：连接可 mock，业务解码按 §4 字段顺序逐字段断言。
+- 面板开关默认关是 C-3 的任务口径；条件 1/2/3 未同时满足前，
+  不得让面板随扩展启动自动建连。
+
+C-1 完成的是**源码取证**，不是**协议可用性**；本节把这两者的边界画清。
+`src/kbengineProtocol.ts` 的传输面（组帧 / 解帧 / UDP 发现）已按上述常量实现，
+缺的是上面三条外部条件，不是代码。
