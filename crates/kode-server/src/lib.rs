@@ -15,7 +15,7 @@ pub use definition::{dump_definition_golden, DefinitionLocation, LspPosition, Ls
 pub use diagnostics::{
     dump_diagnostics_golden, DiagnosticFace, SEVERITY_ERROR, SEVERITY_INFORMATION, SEVERITY_WARNING,
 };
-pub use hover::{dump_hover_golden, render_markdown, HoverEngine, HoverResponse};
+pub use hover::{dump_hover_golden, render_markdown, HoverEngine, HoverFace, HoverResponse};
 pub use server::{
     cancel_target, handle_message, handle_message_with_poll, CancelRegistry, Outgoing, ServerState,
     SERVER_NAME,

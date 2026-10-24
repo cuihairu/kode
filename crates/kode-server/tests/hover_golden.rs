@@ -93,3 +93,43 @@ fn hover_golden_structure_is_complete() {
     });
     assert!(nonempty_chain, "语料缺少非空 parent 链");
 }
+
+#[test]
+fn each_hover_has_one_face_and_xml_face_matches_source() {
+    let committed = std::fs::read_to_string(repo_root().join(kode_server::hover::GOLDEN_REL_PATH))
+        .expect("golden");
+    let value: Dump =
+        serde_json::from_str(committed.trim_end_matches('\n')).expect("golden JSON 合法");
+    let known = [
+        "defEntity",
+        "defProperty",
+        "defMethod",
+        "defComponent",
+        "entitiesXml",
+        "typesXml",
+        "aliasXml",
+    ];
+    let mut faced = 0usize;
+    for file in &value.files {
+        for hover in &file.hovers {
+            let face = hover["hover"]["face"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{} 的 hover 缺唯一 face", file.file));
+            assert!(known.contains(&face), "未知 face: {face}");
+            let expected = match file.file.as_str() {
+                path if path.ends_with("types.xml") => Some("typesXml"),
+                path if path.ends_with("entities.xml") => Some("entitiesXml"),
+                path if path.ends_with("alias.xml") => Some("aliasXml"),
+                _ => None,
+            };
+            if let Some(expected) = expected {
+                assert_eq!(face, expected, "XML face 与来源不一致: {}", file.file);
+            }
+            faced += 1;
+        }
+    }
+    assert_eq!(
+        faced, value.hover_count,
+        "per-request face 数应等于 hover 数"
+    );
+}

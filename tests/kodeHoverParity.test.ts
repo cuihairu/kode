@@ -136,6 +136,7 @@ interface InheritedFace {
 }
 
 interface HoverFace {
+  face: string;
   symbol: { name: string; kind: string; facet: string | null; section: string };
   signature: Record<string, unknown>;
   inherited?: InheritedFace;
@@ -233,6 +234,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
           line: 1,
           word: defEntityName(file),
           hover: {
+            face: 'defEntity',
             symbol: { name: defEntityName(file), kind: 'entity', facet: null, section: 'Entity' },
             signature: { ...emptySignature(), parent: parentName },
             inherited: inheritedFaceOf(path.join(REPO_ROOT, file))
@@ -244,6 +246,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
             line: getLineNumberAt(document, prop.tagStart),
             word: prop.name,
             hover: {
+              face: 'defProperty',
               symbol: { name: prop.name, kind: 'property', facet: null, section: 'Properties' },
               signature: {
                 ...emptySignature(),
@@ -263,6 +266,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
             line: getLineNumberAt(document, comp.tagStart),
             word: comp.name,
             hover: {
+              face: 'defComponent',
               symbol: { name: comp.name, kind: 'component', facet: null, section: 'Components' },
               signature: {
                 ...emptySignature(),
@@ -296,6 +300,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
               line: getLineNumberAt(document, method.tagStart),
               word: method.name,
               hover: {
+                face: 'defMethod',
                 symbol: { name: method.name, kind: 'method', facet, section },
                 signature: {
                   ...emptySignature(),
@@ -319,6 +324,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
             line: getLineNumberAt(document, node.tagStart),
             word: node.name,
             hover: {
+              face: 'entitiesXml',
               symbol: { name: node.name, kind: 'entity', facet: null, section: 'Entities' },
               signature: {
                 ...emptySignature(),
@@ -343,6 +349,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
             line: getLineNumberAt(document, item.tagStart),
             word: item.name,
             hover: {
+              face: 'typesXml',
               symbol: { name: item.name, kind: 'type', facet: null, section: 'Types' },
               signature: { ...emptySignature(), typeKind, aliasTarget }
             }
@@ -371,6 +378,7 @@ const computeHovers = (corpus: CorpusFile[], defsByStem: Map<string, string>): E
             line: getLineNumberAt(document, node.tagStart),
             word: node.name,
             hover: {
+              face: 'aliasXml',
               symbol: { name: node.name, kind: 'alias', facet: null, section: 'Aliases' },
               signature: { ...emptySignature(), aliasType }
             }

@@ -40,11 +40,27 @@ use kode_vfs::store::{DocumentKey, RootId};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HoverResponse {
+    /// 单请求唯一 face。shadow 对拍先比 face,face 不同即 diff,绝不跨 face
+    /// 归一化;同 face 才进入正文严格比较。
+    pub face: HoverFace,
     pub symbol: HoverSymbol,
     pub signature: HoverSignature,
     /// def 实体悬停与 `<Parent>` 悬停时的继承闭包面;其余为 None。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inherited: Option<InheritedChain>,
+}
+
+/// hover provider face(每请求恰一个)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HoverFace {
+    DefEntity,
+    DefProperty,
+    DefMethod,
+    DefComponent,
+    EntitiesXml,
+    TypesXml,
+    AliasXml,
 }
 
 /// 符号身份(定位结果)。`kind`/`facet` 与 PR-007 符号面同一字面量。
@@ -446,6 +462,7 @@ impl HoverEngine {
                 // 无 Parent 也给链面,如实呈现"无声明")。
                 if word == "Parent" || Some(word) == def.parent.as_deref() {
                     return Some(HoverResponse {
+                        face: HoverFace::DefEntity,
                         symbol: HoverSymbol {
                             name: entity.clone(),
                             kind: "entity".into(),
@@ -468,6 +485,7 @@ impl HoverEngine {
                             .iter()
                             .find(|p| p.name == word && p.line == line1)?;
                         Some(HoverResponse {
+                            face: HoverFace::DefProperty,
                             symbol: hover_symbol(record, "Properties"),
                             signature: HoverSignature {
                                 r#type: prop.type_name.clone(),
@@ -490,6 +508,7 @@ impl HoverEngine {
                         };
                         let method = methods.iter().find(|m| m.name == word && m.line == line1)?;
                         Some(HoverResponse {
+                            face: HoverFace::DefMethod,
                             symbol: hover_symbol(record, facet_section(facet_str)),
                             signature: HoverSignature {
                                 arg_count: Some(method.args.len()),
@@ -506,6 +525,7 @@ impl HoverEngine {
                             .iter()
                             .find(|c| c.name == word && c.line == line1)?;
                         Some(HoverResponse {
+                            face: HoverFace::DefComponent,
                             symbol: hover_symbol(record, "Components"),
                             signature: HoverSignature {
                                 component_type: comp.component_type.clone(),
@@ -516,6 +536,7 @@ impl HoverEngine {
                         })
                     }
                     SymbolKind::Entity => Some(HoverResponse {
+                        face: HoverFace::DefEntity,
                         symbol: HoverSymbol {
                             name: entity.clone(),
                             kind: "entity".into(),
@@ -540,6 +561,7 @@ impl HoverEngine {
                     .find(|e| e.name == word && e.line == line1)?;
                 let def_path = self.def_by_name.get(word);
                 Some(HoverResponse {
+                    face: HoverFace::EntitiesXml,
                     symbol: HoverSymbol {
                         name: word.to_string(),
                         kind: "entity".into(),
@@ -571,6 +593,7 @@ impl HoverEngine {
                     _ => None,
                 };
                 Some(HoverResponse {
+                    face: HoverFace::TypesXml,
                     symbol: HoverSymbol {
                         name: word.to_string(),
                         kind: "type".into(),
@@ -592,6 +615,7 @@ impl HoverEngine {
                     .iter()
                     .find(|a| a.name == word && a.line == line1)?;
                 Some(HoverResponse {
+                    face: HoverFace::AliasXml,
                     symbol: HoverSymbol {
                         name: word.to_string(),
                         kind: "alias".into(),

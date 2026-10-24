@@ -3,7 +3,7 @@
 //! 覆盖面:word_at 坐标(UTF-16/emoji/CRLF)、六类符号签名面、`<Parent>`
 //! 继承链面(链/接口/组件平铺/环截断/缺父)、成员展开、engine.remove 清理。
 
-use kode_server::hover::{word_at, HoverEngine, HoverResponse};
+use kode_server::hover::{word_at, HoverEngine, HoverFace, HoverResponse};
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
 
@@ -138,6 +138,7 @@ fn property_hover_carries_type_flags_detaillevel_persistent() {
     let engine = workspace();
     let doc_key = key("/proj/scripts/entity_defs/Avatar.def");
     let hover = hover_on(&engine, &doc_key, AVATAR_DEF, "hp").expect("property hover");
+    assert_eq!(hover.face, HoverFace::DefProperty);
     assert_eq!(hover.symbol.kind, "property");
     assert_eq!(hover.symbol.section, "Properties");
     assert_eq!(hover.signature.r#type.as_deref(), Some("UINT32"));
@@ -152,6 +153,7 @@ fn method_hover_carries_facet_args_exposed() {
     let engine = workspace();
     let doc_key = key("/proj/scripts/entity_defs/Avatar.def");
     let hover = hover_on(&engine, &doc_key, AVATAR_DEF, "onRpc").expect("method hover");
+    assert_eq!(hover.face, HoverFace::DefMethod);
     assert_eq!(hover.symbol.section, "BaseMethods");
     assert_eq!(hover.symbol.facet.as_deref(), Some("base"));
     assert_eq!(hover.signature.arg_count, Some(2));
@@ -171,6 +173,7 @@ fn component_hover_carries_component_type_and_persistent() {
     let engine = workspace();
     let doc_key = key("/proj/scripts/entity_defs/Avatar.def");
     let hover = hover_on(&engine, &doc_key, AVATAR_DEF, "inventory").expect("component hover");
+    assert_eq!(hover.face, HoverFace::DefComponent);
     assert_eq!(hover.symbol.section, "Components");
     assert_eq!(hover.signature.component_type.as_deref(), Some("Inventory"));
     assert_eq!(hover.signature.persistent, Some(true));
@@ -194,6 +197,7 @@ fn types_and_alias_hover_carry_kind_and_alias_targets() {
     );
     let doc_key = key("/proj/scripts/types.xml");
     let fixed_dict = hover_on(&engine, &doc_key, types_text, "PY_LIST").expect("type hover");
+    assert_eq!(fixed_dict.face, HoverFace::TypesXml);
     assert_eq!(fixed_dict.signature.type_kind.as_deref(), Some("fixedDict"));
     assert_eq!(fixed_dict.signature.alias_target, None);
 
@@ -207,6 +211,7 @@ fn types_and_alias_hover_carry_kind_and_alias_targets() {
     let alias_key = key("/proj/scripts/alias.xml");
     let alias_text = "<root>\n\t<HP_ALIAS>\n\t\t<Type> HP </Type>\n\t</HP_ALIAS>\n</root>\n";
     let alias = hover_on(&engine, &alias_key, alias_text, "HP_ALIAS").expect("alias hover");
+    assert_eq!(alias.face, HoverFace::AliasXml);
     assert_eq!(alias.symbol.kind, "alias");
     assert_eq!(alias.signature.alias_type.as_deref(), Some("HP"));
 }
@@ -217,6 +222,7 @@ fn entities_registration_hover_reports_def_existence() {
     let entities_text = "<root>\n\t<Avatar/>\n\t<Missing/>\n</root>\n";
     let doc_key = key("/proj/scripts/entities.xml");
     let hover = hover_on(&engine, &doc_key, entities_text, "Avatar").expect("entity hover");
+    assert_eq!(hover.face, HoverFace::EntitiesXml);
     assert_eq!(hover.symbol.section, "Entities");
     assert_eq!(hover.signature.def_exists, Some(true));
     assert!(hover
@@ -248,6 +254,7 @@ fn def_entity_hover_carries_chain_and_members() {
     let hover = engine
         .hover_at_line(&doc_key, text, 1, "EliteMonster")
         .expect("entity hover");
+    assert_eq!(hover.face, HoverFace::DefEntity);
     let chain = hover.inherited.as_ref().expect("chain face");
     let names: Vec<&str> = chain.parent_chain.iter().map(|n| n.name.as_str()).collect();
     assert_eq!(names, vec!["Monster", "Avatar"]);
