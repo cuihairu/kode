@@ -117,9 +117,12 @@ GATE2-DEFFACE #1 probe=2:6 word=hp  ts=(脚本层) rust=(注册行)  # 唯一分
 
 - `KodeCoreGate.compare` 新增 `textDocument/definition`、`textDocument/diagnostic`
   两个 verdict 方法(五 verdict 口径不变,canonicalize/firstDiffPath 复用)。
-- `KodeCoreGate.mirrorDocument`(语料镜像腿):shadow 会话内把 .def 文档
-  open/change 同步给 Rust(版本账单调,回退走 close+open,不虚构版本;
-  失败静默,verdict 归 compare 自身失败分类);kill-switch 即清账停进程。
+- `KodeCoreGate.mirrorDocument`(语料镜像腿):shadow 会话内把语料文档
+  (.def + types.xml/entities.xml/alias.xml)的 open/change 同步给 Rust
+  (版本账单调,回退走 close+open,同版本重入不重发,不虚构版本;失败静默,
+  verdict 归 compare 自身失败分类);关文档走 `closeMirroredDocument` 撤镜像,
+  自动重启走代数对账重置账本并重放快照,kill-switch 即清账停进程
+  (E 组补记见 §7)。
 - provider 接线点(`src/languageProviders.ts`,fire-and-forget,不改返回值):
   - `KBEngineDefinitionProvider.provideDefinition` → 适配 LSP 面
     → `compare('textDocument/definition')`;
@@ -165,3 +168,26 @@ TMPDIR=/tmp KODE_PERF_LARGE_FILES=30000 KODE_PYFACE_PROBE=1 \
 - PR-012 §8 剩余边界(三面)的逐项定案见 `docs/kode2/pr-012-perf-gate.md` §8.1。
 - bench S3 `stormFinalTsHasStormProp149=0` 与 gate2/gate3 基线口径一致
   (TS 触发面判定差异,既有记录),非本片回归。
+
+## 7. E 组审查修复补记(2026-10-24)
+
+`todo.md` E 组 4 项(P1 优先)已落地;切片范围仍不切流(`serveFromRust()` 恒 false)。
+
+- **E-1 语料镜像补全 + 与诊断开关解耦**:`shadowMirrorCorpusDocument` 覆盖
+  .def/types.xml/entities.xml/alias.xml,由文档快照更新驱动(open/change/激活期
+  初始扫描),不再只挂在 `validateDocument` 后 —— 诊断开关关闭时语料同步不受影响;
+  同版本重入不重发(gate 账本 no-op)。真实进程验收(e2e):只镜像 .def 时
+  `PARITY_POINT` 被误报未注册,补齐三类 XML 后同一 .def 误报消失。
+- **E-2 自动重启对账**:`KodeCoreClient.getRestartGeneration` 暴露代数;gate 在每次
+  握手后对账,代数变化即清版本账、按最近快照全量重放 didOpen,后续编辑以
+  didChange 打到新进程(不再因文档未打开被忽略)。真实进程验收:e2e SIGKILL →
+  自动重启 → 继续编辑,`health.documents` 版本正确。
+- **E-3 定义对拍结算异步结果**:`shadowCompareDefinition` 先结算 ProviderResult
+  (Promise/Thenable 解析完成后才适配 LSP 面,不再把 thenable 适配成 null;拒绝路径
+  不产出对拍也不产生未处理拒绝),provider 返回语义不变。
+- **E-4 关文档清理**:`closeMirroredDocument` + `shadowReleaseCorpusDocument` 撤版本
+  账/快照并发 didClose(幂等,不反向拉起进程),extension 关档监听接线。真实进程
+  验收:关闭后 `health.documents` 为空,连续开合不积累,重开低版本走 didOpen 正常。
+
+验证:`test:unit`(TMPDIR=/tmp)**2975 passed / 7 skipped**;`tsc -p ./` 零错;
+eslint 改动文件零错;`tests/kodeCoreE2E.test.ts` 由 4 例扩到 7 例(真实二进制)。

@@ -65,7 +65,10 @@ import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
-import { shadowMirrorCorpusDocument } from './kodeCoreShadowFaces';
+import {
+  shadowMirrorCorpusDocument,
+  shadowReleaseCorpusDocument
+} from './kodeCoreShadowFaces';
 import {
   readTempEditReloadSettings,
   runTempEditReload,
@@ -695,6 +698,8 @@ export function activate(context: vscode.ExtensionContext) {
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
       diagnosticScheduler.releaseDocument(document);
+      // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
+      shadowReleaseCorpusDocument(document);
     });
     context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {

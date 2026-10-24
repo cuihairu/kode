@@ -13,6 +13,7 @@ import {
   shadowCompareDefinition,
   shadowMirrorCorpusDocument,
   shadowObserveDefDocument,
+  shadowReleaseCorpusDocument,
 } from '../src/kodeCoreShadowFaces';
 
 // kode2 Phase2 首片:definition/diagnostics 影子对拍接线单测。
@@ -410,5 +411,36 @@ describe('shadowMirrorCorpusDocument 语料镜像腿(E-1)', () => {
     });
     expect(client.calls.some(call => call.method === 'closeDocument')).toBe(false);
     expect(client.calls.some(call => call.method === 'changeDocument')).toBe(false);
+  });
+});
+
+describe('shadowReleaseCorpusDocument 关文档清理腿(E-4)', () => {
+  it('语料文档关闭:发一次 didClose 且账本清空,重开走 didOpen;未镜像/非语料零调用', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    const document = makeDocument();
+    shadowMirrorCorpusDocument(document as never);
+    // 镜像落账是异步的:等 didOpen 落地后再关文档(生产里 open/close 也是两个事件)
+    await vi.waitFor(() => {
+      expect(client.calls.some(call => call.method === 'openDocument')).toBe(true);
+    });
+    shadowReleaseCorpusDocument(document as never);
+    // 未镜像过的语料文档关闭 = 零调用;非语料文档零调用
+    shadowReleaseCorpusDocument(
+      makeDocument({ uri: { fsPath: '/w/demo/scripts/entity_defs/types.xml' }, languageId: 'xml' }) as never
+    );
+    shadowReleaseCorpusDocument(
+      makeDocument({ uri: { fsPath: '/w/demo/scripts/Avatar.py' }, languageId: 'python' }) as never
+    );
+    await vi.waitFor(() => {
+      expect(client.calls.some(call => call.method === 'closeDocument')).toBe(true);
+    });
+    expect(client.calls.filter(call => call.method === 'closeDocument').length).toBe(1);
+    // 账本已清:重开同 uri 走 didOpen(同版本也不再是 no-op)
+    shadowMirrorCorpusDocument(document as never);
+    await vi.waitFor(() => {
+      expect(client.calls.filter(call => call.method === 'openDocument').length).toBe(2);
+    });
   });
 });

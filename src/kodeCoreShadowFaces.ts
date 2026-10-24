@@ -8,8 +8,8 @@ import type { KodeCoreGate } from './kodeCoreGate';
 //      响应同形的 LSP 面,经 gate.compare() 影子对拍 —— 恒返回/不影响 TS
 //      结果,Rust 结果只进差异日志(不切流铁律同 PR-012);
 //   3. shadow 会话内把语料文档(.def + types/entities/alias.xml)的
-//      open/change 镜像给 Rust(语料同步腿,失败静默,verdict 口径归
-//      compare 自己的失败分类)。
+//      open/change 镜像给 Rust,关闭时撤镜像(语料同步腿;失败静默,verdict
+//      口径归 compare 自己的失败分类)。
 // 结构化适配全部走形状类型,不 import vscode(单测用 fake-vscode 同形)。
 
 let shadowGate: KodeCoreGate | null = null;
@@ -204,6 +204,18 @@ export function shadowMirrorCorpusDocument(document: DocumentLike): void {
   void gate
     .mirrorDocument(uri, document.languageId, document.version, document.getText())
     .catch(() => undefined);
+}
+
+/**
+ * 关文档清理腿(E-4):与镜像腿对称 —— 文档关闭/丢弃未保存修订后撤 Rust 侧
+ * overlay 与版本账,连续开合不积累已关闭的文档。非 shadow/未装配门零开销。
+ */
+export function shadowReleaseCorpusDocument(document: DocumentLike): void {
+  const gate = shadowGate;
+  if (!gate || !isCorpusDocument(document)) {
+    return;
+  }
+  gate.closeMirroredDocument(document.uri.fsPath);
 }
 
 /**

@@ -246,4 +246,26 @@ suite('kode core e2e(真实 kode-server 二进制)', () => {
     },
     40_000
   );
+
+  it('E-4 关文档清理:Rust 侧不留残留 overlay,连续开合不积累,重开低版本正常', async () => {
+    const client = makeClient();
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'shadow', serverPath: binaryPath, shadowTimeoutMs: 5000 });
+
+    await gate.mirrorDocument(URI, 'kbengine-def', 5, '<Entity/>');
+    expect((await client.health()).documents).toEqual([{ uri: URI, version: 5 }]);
+
+    // 缺陷面:只释放 TS 侧时 Rust 仍持有旧 overlay,连续开合逐次积累
+    gate.closeMirroredDocument(URI);
+    expect((await client.health()).documents).toEqual([]);
+
+    await gate.mirrorDocument(URI, 'kbengine-def', 6, '<Entity/>');
+    gate.closeMirroredDocument(URI);
+    expect((await client.health()).documents).toEqual([]);
+
+    // 重开低版本:账本已清,走 didOpen 而不是被 didChange 忽略
+    await gate.mirrorDocument(URI, 'kbengine-def', 1, '<Entity/>');
+    expect((await client.health()).documents).toEqual([{ uri: URI, version: 1 }]);
+    await client.dispose();
+  }, 20_000);
 });

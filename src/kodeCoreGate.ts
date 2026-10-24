@@ -406,6 +406,24 @@ export class KodeCoreGate {
   }
 
   /**
+   * 关文档清理(E-4):撤版本账与快照,并通知 Rust didClose —— 关闭/丢弃未保存
+   * 修订后 Rust 侧不再持有旧 overlay(内存不涨),重开低版本文档走 didOpen
+   * 正常路径。不反向拉起进程:只处理已存在的 client(非 shadow 或未装配时
+   * 仅清账);幂等,重复关闭不再发通知。
+   */
+  closeMirroredDocument(uri: string): void {
+    const hadSnapshot = this.mirrorSnapshots.delete(uri);
+    this.mirroredVersions.delete(uri);
+    if (!hadSnapshot) {
+      return;
+    }
+    if (this.servingMode !== 'shadow') {
+      return;
+    }
+    this.client?.closeDocument?.(uri);
+  }
+
+  /**
    * shadow 镜像对比:恒返回 tsResult 原样,永不抛错。Rust 结果只进差异
    * 日志;任何 Rust 侧失败(start/请求/超时/不可用)只记 verdict 不上浮。
    * 非 shadow 模式零开销直通(不建进程、不记日志)。
