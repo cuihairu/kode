@@ -80,8 +80,12 @@
 - [x] C-7 V-06·c：配置开关+features 清单行+测试（package.json#configuration `kbengine.python.apiMetadata` 默认 true，src/extension.ts:175 读取并 gate `buildEngineApiCatalog`；features.md 中英 Settings 表行已补 31147ec；测试侧 tests/engineApiMetadata.test.ts:55 unknown 兜底断言 + D-2 锁滚动覆盖其默认值口径）
 - [x] C-8 V-07 兼容性测试·a：KBENGINE_ROOT 探测+无树 skipIf（tests/helpers/engineTree.ts；探测口径与产品侧 engineApiMetadata.findEngineRoot 同源——marker `kbe/src/lib/common/version.h`、`KBENGINE_ROOT=off` 显式关、环境变量优先、`../kbengine` 兄弟目录兜底，**测试跳过条件与产品报 unknown 的条件同源**；describeWithEngineTree 无树整套 skip 且原因写进套件标题；fixture+注入 6 例常驻门禁，真树断言挂载点留 C-9）
   - 证据：tests/engineTreeProbe.test.ts 无树 6 passed|1 skipped、有树 fixture 7 passed 双配置实测；skip 行内可见 `↓ ... engine tree sanity (real tree) — skipped: no engine tree: set KBENGINE_ROOT or place kbengine next to the repo (no ../kbengine sibling found)`；全量 test:unit 2805 passed|8 skipped（基线 2799/7，+6）
-- [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
+- [x] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
+  - 证据：新增 tests/fantasydemoDefAnalysis.test.ts 7 例（真脚本根 /home/cui/workspaces/BigWorld/programming/fantasydemo/res，无本机 BigWorld 检出即整组跳过，口径同 tests/fantasydemoRealExport.test.ts:30）：entity_defs 5 个真实 .def 与 entities.xml 注册面双向对账（:59）、五 def 解析不抛 + 三方法节齐全 + Volatile 段（:84）、方法-节归属（:103，Avatar logOff→BaseMethods 且带 `<Exposed/>`、fromCell/cellTick→ClientMethods 且 `<Arg>STRING</Arg>`、Guard 三节全空）、属性面（:122，Avatar 四属性类型/域位/Identifier、Account character→BASE、Space 空 Properties 段零属性）、correctness 类检查零误报（:138，invalid-identifier/duplicate-type-tag/engine-limited-name/missing-type/inherited-name-collision 全零；建议类 3 条如实允许并进 CI 日志）、继承闭包空 + def 链单节点无祖先（:163）、entities.xml 零发现 + 注入重复条目的 offset/length 定位锁（:177）
+  - 本批发现并修复：`analyzeEntitiesXml` 原只认平铺格式（`<root><Entity/>`，引擎自带 sdk 模板格式），现行引擎 schema 的分节格式 `<root><ClientServerEntities><Avatar/></ClientServerEntities><ServerOnlyEntities>…` 会整体漏检重复条目——现透明下钻已知分节名一层（src/entitiesXmlAnalysis.ts:40 ENTITIES_XML_SECTIONS、:42 collectEntityEntries、:70 接入查重循环），tests/entitiesXmlAnalysis.test.ts:95/:115/:123 补 3 例（分节内重复、跨分节重复、分节容器本身不计入清单且容器内实体子标签不误报）
+  - 未做并另挂账 C-13：`getRegisteredEntities` 仍只走平铺口径，分节格式脚本的实体清单装配缺失；分节→hasBase/hasCell/hasClient 域位映射属引擎 schema 语义决定，本批不擅自发明
 - [ ] C-10 V-07·c：CI 接线（有树环境真跑，集成 tag）
+- [ ] C-13 V-07·d：entities.xml 分节格式注册面（`getRegisteredEntities` 只认平铺 `<root><Entity hasBase/>`，分节 `<ClientServerEntities>/<ServerOnlyEntities>` 内的条目不进清单；需按引擎 schema 定分节→hasBase/hasCell/hasClient 映射口径后落实现+测试）
 - [ ] C-11 V-08 边界注记：等真实管理协议（外部条件，触发条件=管理协议可用性，届时重开 C-1/C-2）
 - [x] C-12 chatgpt 归并书遗留核对（引用余数=0 且四份原文已随归并完成归档删除，见下方证据）
   - 引用余数核对通过：文件名 `chatgpt-2026-10-20-kode-*`、`log-center`、`background-process`、`chatgpt.*roadmap`、`chatgpt.*typings` 各 pattern 在 docs/src/tests/scripts/package.json 全部 0 命中（排除归并书本体与 docs/.vitepress/dist 构建产物）

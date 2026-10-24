@@ -2,6 +2,7 @@ import {
   getDirectChildElements,
   parseDefDocument
 } from './defParser';
+import type { DefElementNode } from './defParser';
 
 // entities.xml 清单静态分析(source-analysis 设计 D3)。引擎按清单顺序
 // 给实体分配 utype(entitydef.cpp:253-265、2382-2396),同名重复条目则
@@ -25,6 +26,31 @@ export interface EntitiesXmlFinding {
   message: string;
 }
 
+// entities.xml 两种真实在野格式:
+// ① 平铺(引擎自带 sdk 模板 kbe/res/sdk_templates/server/python_assets/scripts/entities.xml
+//    与老脚本):`<root><Avatar hasBase="true"/></root>`,条目即 root 直接子节点;
+// ② 分节(现行引擎 schema 及 BigWorld/programming/fantasydemo 生成物):
+//    `<root><ClientServerEntities><Avatar/></ClientServerEntities>
+//    <ServerOnlyEntities><Guard/></ServerOnlyEntities></root>`,条目在分节容器内一层。
+// 只认平铺会让分节脚本整体漏检重复条目,故已知分节名透明下钻一层;
+// 未识别的 root 直接子节点仍按条目处理(保持平铺口径向后兼容)。
+// 注:分节容器内条目的 hasBase/hasCell/hasClient 由分节语义推导,
+// getRegisteredEntities 目前只走平铺口径——分节脚本的实体清单装配缺口另挂账,
+// 此处不改,避免在分析器里发明引擎的分节→域位映射。
+const ENTITIES_XML_SECTIONS = new Set(['ClientServerEntities', 'ServerOnlyEntities']);
+
+function collectEntityEntries(root: DefElementNode): DefElementNode[] {
+  const entries: DefElementNode[] = [];
+  for (const child of getDirectChildElements(root)) {
+    if (ENTITIES_XML_SECTIONS.has(child.name)) {
+      entries.push(...getDirectChildElements(child));
+      continue;
+    }
+    entries.push(child);
+  }
+  return entries;
+}
+
 export function analyzeEntitiesXml(text: string): EntitiesXmlFinding[] {
   // 活编辑器文本可能中途不完整:解析失败静默空结果,不虚构发现
   // (与 parseDefAst 的守卫口径一致)
@@ -41,7 +67,7 @@ export function analyzeEntitiesXml(text: string): EntitiesXmlFinding[] {
 
   const findings: EntitiesXmlFinding[] = [];
   const seen = new Set<string>();
-  for (const entityNode of getDirectChildElements(root)) {
+  for (const entityNode of collectEntityEntries(root)) {
     const name = entityNode.name;
     // 与 getRegisteredEntities 同口径:root 伪条目不参与实体清单
     if (name === 'root') {

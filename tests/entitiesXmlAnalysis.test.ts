@@ -91,4 +91,46 @@ describe('analyzeEntitiesXml', () => {
     expect(analyzeEntitiesXml('<not-closed')).toEqual([]);
     expect(analyzeEntitiesXml('')).toEqual([]);
   });
+
+  it('分节格式(ClientServerEntities/ServerOnlyEntities)条目同样参与查重', () => {
+    const text = [
+      '<root>',
+      '  <ClientServerEntities>',
+      '    <Account hasBase="true"/>',
+      '    <Avatar/>',
+      '    <Avatar/>',
+      '  </ClientServerEntities>',
+      '  <ServerOnlyEntities/>',
+      '</root>'
+    ].join('\n');
+    const findings = analyzeEntitiesXml(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].name).toBe('Avatar');
+    const firstAvatar = text.indexOf('<Avatar/>');
+    const expectedOffset = text.indexOf('<Avatar/>', firstAvatar + '<Avatar/>'.length);
+    expect(findings[0].offset).toBe(expectedOffset);
+    expect(text.slice(findings[0].offset, findings[0].offset + findings[0].length)).toBe('<Avatar/>');
+  });
+
+  it('同名实体跨分节容器重复登记同样命中', () => {
+    const text = '<root><ClientServerEntities><Guard/></ClientServerEntities>'
+      + '<ServerOnlyEntities><Guard/></ServerOnlyEntities></root>';
+    const findings = analyzeEntitiesXml(text);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].name).toBe('Guard');
+  });
+
+  it('分节容器本身不计入实体清单,容器内实体的同名子标签不误报', () => {
+    const text = [
+      '<root>',
+      '  <ClientServerEntities>',
+      '    <Avatar>',
+      '      <hasClient/>',
+      '      <hasClient/>',
+      '    </Avatar>',
+      '  </ClientServerEntities>',
+      '</root>'
+    ].join('\n');
+    expect(analyzeEntitiesXml(text)).toEqual([]);
+  });
 });
