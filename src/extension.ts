@@ -65,6 +65,7 @@ import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
+import { shadowMirrorCorpusDocument } from './kodeCoreShadowFaces';
 import {
   readTempEditReloadSettings,
   runTempEditReload,
@@ -688,6 +689,8 @@ export function activate(context: vscode.ExtensionContext) {
     // 关文档释放快照(内存不泄漏)。磁盘旧内容没有路径能进快照。
     context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
       updateDocumentSnapshot(document);
+      // E-1:语料镜像腿独立于诊断开关(不走 validateDocument 的提前返回)
+      shadowMirrorCorpusDocument(document);
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -696,6 +699,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       updateDocumentSnapshot(event.document);
+      shadowMirrorCorpusDocument(event.document);
       // PR6 A6-1:连续编辑走排队通道——同 URI 只保留最新版本任务,旧版本
       // 任务出队合并(coalescedStale),宏任务边界冲刷时发布前复核版本令牌,
       // 过期结果绝不落 collection。首次发布语义不变(计算面仍是同步
@@ -750,6 +754,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(openWatcher);
 
     vscode.workspace.textDocuments.forEach(document => {
+      shadowMirrorCorpusDocument(document);
       if (isDefDocument(document)) {
         scheduleDefDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {

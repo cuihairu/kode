@@ -11,6 +11,7 @@ import {
   locationToLspFace,
   setKodeCoreShadowGate,
   shadowCompareDefinition,
+  shadowMirrorCorpusDocument,
   shadowObserveDefDocument,
 } from '../src/kodeCoreShadowFaces';
 
@@ -273,5 +274,53 @@ describe('shadowObserveDefDocument 诊断面 + 语料镜像腿', () => {
     setKodeCoreShadowGate(gate);
     expect(() => shadowObserveDefDocument(makeDocument() as never, [])).not.toThrow();
     await new Promise(resolve => setTimeout(resolve, 20));
+  });
+});
+
+describe('shadowMirrorCorpusDocument 语料镜像腿(E-1)', () => {
+  it('types.xml / entities.xml / alias.xml + .def 都进 shadow;非语料文档零镜像', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    const corpusUris = [
+      '/w/demo/scripts/entity_defs/types.xml',
+      '/w/demo/scripts/entity_defs/entities.xml',
+      '/w/demo/scripts/entity_defs/alias.xml',
+      DEF_URI
+    ];
+    for (const uri of corpusUris) {
+      shadowMirrorCorpusDocument(
+        makeDocument({ uri: { fsPath: uri }, languageId: uri.endsWith('.def') ? 'kbengine-def' : 'xml' }) as never
+      );
+    }
+    // 非语料文档(python / 其他 xml)不镜像
+    shadowMirrorCorpusDocument(
+      makeDocument({ uri: { fsPath: '/w/demo/scripts/Avatar.py' }, languageId: 'python' }) as never
+    );
+    shadowMirrorCorpusDocument(
+      makeDocument({ uri: { fsPath: '/w/other/config.xml' }, languageId: 'xml' }) as never
+    );
+    await vi.waitFor(() => {
+      expect(client.calls.filter(call => call.method === 'openDocument').length).toBe(4);
+    });
+    const opened = client.calls
+      .filter(call => call.method === 'openDocument')
+      .map(call => (call.params as { uri: string }).uri);
+    expect(opened).toEqual(corpusUris);
+  });
+
+  it('同版本重入不重发:不开 didOpen、不走 close+open、不发 didChange', async () => {
+    const { client } = makeStubClient();
+    const { gate } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    const document = makeDocument();
+    shadowMirrorCorpusDocument(document as never);
+    // 诊断面刷新腿重入同版本(两条镜像腿共用账本)
+    shadowObserveDefDocument(document as never, []);
+    await vi.waitFor(() => {
+      expect(client.calls.filter(call => call.method === 'openDocument').length).toBe(1);
+    });
+    expect(client.calls.some(call => call.method === 'closeDocument')).toBe(false);
+    expect(client.calls.some(call => call.method === 'changeDocument')).toBe(false);
   });
 });

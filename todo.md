@@ -125,3 +125,12 @@
 #### 提案挂账：Rust Core 常驻语言服务（2026-10-23 外部提案整理）
 
 来源与全文见 `docs/review/2026-10-23-rust-core-lsp-proposal.md`（含与 PR1-7 实况的对照表）。口径：**不插队**——PR7 复测收官后按跟踪清单 R1（数据审计）→R2（原型对拍）过闸再议 R3；终端/脚本启动慢按 R4 独立立项。已代决：采纳「先数据后迁移」的闸门顺序，拒绝直接开写 Rust。
+
+## E. kode2 Phase2 slice-a 实现审查待修（2026-10-23）
+
+审查基线：`71961d1`；范围为 definition / diagnostics / shadow 接入。Rust 尚未切流，以下问题主要影响对拍可信度和后台状态；修复期间保持 `serveFromRust=false`。现有相关 TS 19 例、Rust 33 例通过，但未覆盖以下完整生命周期；预载语料的 golden 一致率不能替代生产接线验收。
+
+- [x] E-1 **P1 · 补齐 shadow 语料同步，并与诊断开关解耦**：当前 `src/kodeCoreShadowFaces.ts:162` 只镜像 `.def`，未同步 types.xml / entities.xml / alias.xml 与未打开的依赖文件；`src/languageProviders.ts:1067` 关闭诊断时提前返回，definition 所需同步也停止。真实 kode-server 已复现：引用 MY_INT 被误报未注册，手动补入 types.xml 后诊断消失。验收：通过生产接线验证注册类型诊断、跨文件定义跳转；关闭诊断后 definition 仍使用最新文档与依赖语料，无需测试手动预载。
+- [ ] E-2 **P1 · Rust 重启后重置版本账并重放快照**：`src/kodeCoreGate.ts:353` 的 mirroredVersions 未随 `src/kodeCoreClient.ts:358` 自动重启失效，新进程收到 didChange 时因文档未打开而忽略。真实 kode-server 已复现：重启后镜像 version 2，health.documents 仍为空、诊断返回空数组。验收：杀进程并等待自动重启，恢复当前文档及依赖快照；继续编辑后 health 版本、definition 和 diagnostics 均正确，旧进程的异步任务不得污染新会话账本。
+- [ ] E-3 **P2 · definition 对拍等待异步结果解析**：`src/languageProviders.ts:1001` 将 ProviderResult 直接传入 shadow，映射管理器的方法跳转返回 Promise，而 `src/kodeCoreShadowFaces.ts:73` 将其转换为 null。验收：同步 Location、Promise/Thenable<Location>、空结果及拒绝路径均覆盖；对拍使用解析后的真实落点，保持原 provider 返回语义，失败不产生未处理拒绝。
+- [ ] E-4 **P2 · 关闭文档清理 Rust 镜像与版本账**：`src/extension.ts:692` 仅释放 TS 快照和诊断任务，没有向 Rust 发送 didClose，也未删除 mirroredVersions。验收：关闭/丢弃未保存修改后 Rust 不再持有旧 overlay，依赖查询按磁盘语料策略更新；重开低版本文档正常，连续打开关闭文件不积累已关闭的文档与版本账。

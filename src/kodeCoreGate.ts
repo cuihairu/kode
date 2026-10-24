@@ -356,9 +356,12 @@ export class KodeCoreGate {
       client.openDocument?.(uri, languageId, version, text);
     } else if (version > mirrored) {
       client.changeDocument?.(uri, version, text);
-    } else {
+    } else if (version < mirrored) {
       client.closeDocument?.(uri);
       client.openDocument?.(uri, languageId, version, text);
+    } else {
+      // 同版本 = 同内容(VS Code 每次内容变更版本必增):镜像腿重入不重发。
+      return;
     }
     this.mirroredVersions.set(uri, version);
   }

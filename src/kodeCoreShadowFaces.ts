@@ -7,8 +7,9 @@ import type { KodeCoreGate } from './kodeCoreGate';
 //   2. 把 TS 面(vscode.Location / vscode.Diagnostic[])适配成与 kode-server
 //      响应同形的 LSP 面,经 gate.compare() 影子对拍 —— 恒返回/不影响 TS
 //      结果,Rust 结果只进差异日志(不切流铁律同 PR-012);
-//   3. shadow 会话内把 .def 文档 open/change 镜像给 Rust(语料同步腿,
-//      best-effort:失败静默,verdict 口径归 compare 自己的失败分类)。
+//   3. shadow 会话内把语料文档(.def + types/entities/alias.xml)的
+//      open/change 镜像给 Rust(语料同步腿,失败静默,verdict 口径归
+//      compare 自己的失败分类)。
 // 结构化适配全部走形状类型,不 import vscode(单测用 fake-vscode 同形)。
 
 let shadowGate: KodeCoreGate | null = null;
@@ -123,6 +124,18 @@ const isDefDocument = (document: DocumentLike): boolean =>
   document.languageId === 'kbengine-def' ||
   document.uri.fsPath.toLowerCase().endsWith('.def');
 
+/** 语料 XML 后缀(与 kode-server file_kind_of_uri 口径同源,决定 Rust 解析视图) */
+const CORPUS_XML_SUFFIXES = ['entities.xml', 'types.xml', 'alias.xml'];
+
+/**
+ * 语料文档(.def + 三类 XML):Rust 侧类型环境(custom types / 注册项)只由
+ * 这些文档的 didOpen/didChange 入库,缺一类就会出现「已注册却报未注册」
+ * 的假诊断。
+ */
+const isCorpusDocument = (document: DocumentLike): boolean =>
+  isDefDocument(document) ||
+  CORPUS_XML_SUFFIXES.some(suffix => document.uri.fsPath.endsWith(suffix));
+
 /**
  * .def 定义跳转影子对拍:适配 TS Location 面后镜像给 gate。fire-and-forget,
  * 不改 provider 返回值(铁律:Rust 结果只进差异日志)。
@@ -147,9 +160,27 @@ export function shadowCompareDefinition(
 }
 
 /**
- * .def 诊断影子对拍 + 语料镜像腿:validateDocument 算完诊断后调用。
- * 先镜像文档(open/change 按 version 单调;best-effort),再把 TS 诊断面
- * 镜像给 gate.compare('textDocument/diagnostic')。fire-and-forget。
+ * 语料镜像腿(E-1):.def/types.xml/entities.xml/alias.xml 的 open/change 同步
+ * 给 Rust server。由文档快照更新驱动(开档/改动即镜像),不经
+ * validateDocument —— 诊断开关关闭时语料同步不受影响,definition 与
+ * 注册类型诊断才有同输入。best-effort:非 shadow/未配 serverPath 零开销。
+ */
+export function shadowMirrorCorpusDocument(document: DocumentLike): void {
+  const gate = shadowGate;
+  if (!gate || !isCorpusDocument(document)) {
+    return;
+  }
+  const uri = document.uri.fsPath;
+  void gate
+    .mirrorDocument(uri, document.languageId, document.version, document.getText())
+    .catch(() => undefined);
+}
+
+/**
+ * .def 诊断影子对拍:validateDocument 算完诊断后调用。先镜像文档
+ * (诊断面刷新腿,与 shadowMirrorCorpusDocument 同账本;同版本重入不重发),
+ * 再把 TS 诊断面镜像给 gate.compare('textDocument/diagnostic')。
+ * fire-and-forget。
  */
 export function shadowObserveDefDocument(
   document: DocumentLike,
