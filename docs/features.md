@@ -147,6 +147,13 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hotReload.actionName` | `""` | Quick action name to trigger (must exist in .kbengine/debug.json quickActions) |
 | `kbengine.hotReload.globs` | `["**/*.py"]` | File glob patterns to watch (one watcher per pattern) |
 | `kbengine.hotReload.debounceMs` | `500` | Debounce milliseconds before triggering (0 = no debounce) |
+| `kbengine.hotReload.tempEdit.enabled` | `false` | Master switch for the temporary-edit hot reload quick action (default off against accidents, same gate as `kbengine.hotReload.enabled`); only when on does `kbengine.hotReload.tempEdit.run` write the temp edit, reload and restore (src/hotReloadTempEdit.ts) |
+| `kbengine.hotReload.tempEdit.actionName` | `""` | Quick action name the reloadScript step triggers (HTTP or terminal action); empty aborts as a configuration error without editing or sending a request |
+| `kbengine.hotReload.tempEdit.autoRestore` | `true` | Restore the original content before sending reloadScript; a failed restore aborts the request and reports to the problems panel, leaving the file in the temporary-edit state |
+| `kbengine.hotReload.tempEdit.scriptRoot` | `""` | Script resource root for dual-name resolution (fullModule = all root-relative segments + short name, requestModule = direct parent + short name); empty leaves the module name unresolved rather than guessing |
+| `kbengine.core.backend` | `"ts"` | Dual-track backend kill switch: default `ts`; any value other than `shadow`/`rust` (including typos) falls back to `ts`; switching back to `ts` stops the Rust process and the user sees no change (src/kodeCoreGate.ts) |
+| `kbengine.core.serverPath` | `""` | kode-server binary path (cargo build -p kode-server output); used only when backend=shadow; empty records rust-unavailable without starting a process |
+| `kbengine.core.shadow.timeoutMs` | `2000` | Shadow compare mirror-request timeout in milliseconds; a timeout only logs rust-timeout and never affects the TS serving path |
 | `kbengine.managedDir` | `` `.kbengine` `` | Name of the kode-managed directory hosting debug.json and stubs (runtime-read key, not in contributes; auto-rebuild on rename) |
 | `kbengine.entity.builtinProperties` | `true` | Builtin entity property hover + `self.` completion (faces) — `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | Receiver-aware def-section gating on hover/F12/RPC lens — `src/languageProviders.ts:515,3374,3897` |

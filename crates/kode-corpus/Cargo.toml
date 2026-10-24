@@ -1,0 +1,17 @@
+# kode2 Phase2 P0 (docs/kode2/phase2-py-face-gap.md §4): Python 语料层。
+# 边界: 只做枚举/编码探测/词法符号抽取四表 + 增量索引;不产出 definition/hover,
+# 不改 kode-parser 的 FileKind,不接 serveFromRust。
+# 铁律: 零第三方依赖(仅 workspace 内 kode-vfs)。
+[package]
+name = "kode-corpus"
+description = "kode2 Python corpus layer: deterministic .py enumeration, PEP 263 encoding detection, lexical class/method/attribute/import tables, incremental fingerprints (Phase2 P0)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+kode-vfs = { path = "../kode-vfs" }
+
+[lints]
+workspace = true

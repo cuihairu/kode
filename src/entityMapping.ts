@@ -182,9 +182,39 @@ export class EntityMappingManager {
   >();
   private defParseCacheHits = 0;
   private defParseCacheMisses = 0;
+  /** 工作区门控(书 PR-002):deferStartup=true 时构造零副作用,待 ensureStartup */
+  private startupStarted = false;
+  /** deferStartup 模式下首扫完成句柄的resolve(ensureStartup 时接线) */
+  private deferredInitialScanResolve: (() => void) | null = null;
 
-  constructor(private context: vscode.ExtensionContext, scheduler?: IndexScheduler) {
+  constructor(
+    private context: vscode.ExtensionContext,
+    scheduler?: IndexScheduler,
+    options: { deferStartup?: boolean } = {}
+  ) {
     this.scheduler = scheduler ?? new IndexScheduler();
+    if (options.deferStartup) {
+      // 门控激活:构造零副作用——不建 watcher、不入队首扫。initialScan 挂起,
+      // ensureStartup() 幂等接线(幂等同键 ensureTask 去重)。await this.initialScan
+      // 的既有等待链不变;查询入口先 ensureStartup 再等待,永不悬死。
+      this.initialScan = new Promise<void>(resolve => {
+        this.deferredInitialScanResolve = resolve;
+      });
+      return;
+    }
+    this.ensureStartup();
+  }
+
+  /**
+   * 幂等启动:watcher 三件套(类型注册表→def→python,既有次序契约)+ 构造期
+   * 全量 .def 首扫。直接激活路径构造即调(与门控前逐行为一致);门控激活路径
+   * 在特征确认或首个查询入口调用。
+   */
+  ensureStartup(): void {
+    if (this.startupStarted) {
+      return;
+    }
+    this.startupStarted = true;
     // 构造期全量 .def 扫描留句柄:对象级(类粒度)解析只等这一遍,不另起
     // 全量 walk(真实 kbengine 树每遍 walk 秒级,多一走即压穿调用方超时预算)。
     // 启动推迟一个宏任务(2026-10-22 用户令「hover 永转根治」):构造方在
@@ -194,7 +224,7 @@ export class EntityMappingManager {
     // 扫描本体以 initial-scan/后台全量优先级入队——单并发不与其他索引任务
     // 抢主线程,失败经调度器 keyed 恢复面可重跑(不永久 pending);
     // `await this.initialScan` 的既有等待链不变。
-    this.initialScan = new Promise<void>(resolve => {
+    const scanPromise = new Promise<void>(resolve => {
       setImmediate(() => {
         void this.scheduler
           .ensureTask('entity-mapping-initial-scan', () => ({
@@ -206,6 +236,12 @@ export class EntityMappingManager {
           .then(() => resolve());
       });
     });
+    if (this.deferredInitialScanResolve) {
+      const resolveDeferred = this.deferredInitialScanResolve;
+      void scanPromise.then(() => resolveDeferred());
+    } else {
+      this.initialScan = scanPromise;
+    }
     // 创建顺序有意为之:类型注册表 watcher 最先、def watcher 次之、python
     // watcher 最后——外部与既有用例把「最后创建的 watcher」当作 python
     // watcher 语义使用(变更只重解析归属实体);PR4 在 def 前新增
@@ -957,6 +993,8 @@ export class EntityMappingManager {
   }
 
   async waitForInitialScan(): Promise<void> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     await this.initialScan;
   }
 
@@ -983,6 +1021,10 @@ export class EntityMappingManager {
     return this.mappingIndexes.get(entityName);
   }
 
+  // 同步状态读取不触发门控启动(书 PR-002):激活期装配(如 CodeLens 初始
+  // entries)会读当前映射状态,门控前它读到的也是「首扫未完成」的近空集,
+  // 门控后读空集同口径;启动面只在异步查询/等待入口,避免激活期读状态把
+  // 负案例工作区悄悄拉回全量启动。
   getAllMappings(): EntityMapping[] {
     return [...this.mappingIndexes.values()].map(index => this.toLegacyMapping(index));
   }
@@ -992,6 +1034,8 @@ export class EntityMappingManager {
     fullPath: string,
     rootSymbol?: string
   ): Promise<EntityPropertyDefinitionLocation | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     return this.findIndexedProperty(pythonFile, fullPath, rootSymbol);
   }
 
@@ -1001,6 +1045,8 @@ export class EntityMappingManager {
     fullPath: string,
     rootSymbol?: string
   ): Promise<PropertyDefinitionInfo | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     return this.findIndexedProperty(pythonFile, fullPath, rootSymbol);
   }
 
@@ -1036,6 +1082,8 @@ export class EntityMappingManager {
     methodName: string,
     receiverSection?: EntityMethodSection
   ): Promise<EntityMethodDefinitionLocation | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
     const ownerKind = inferOwnerKindFromPythonFile(pythonFile);
     const ownerName = inferOwnerNameFromPythonFile(pythonFile);
@@ -1092,6 +1140,8 @@ export class EntityMappingManager {
     methodName: string,
     receiverSection?: EntityMethodSection
   ): Promise<EntityMethodDefinitionLocation | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForClass(className);
     if (!index) {
       return null;
@@ -1111,6 +1161,8 @@ export class EntityMappingManager {
     fullPath: string,
     rootSymbol?: string
   ): Promise<EntityPropertyDefinitionLocation | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForClass(className);
     if (!index) {
       return null;
@@ -1125,6 +1177,8 @@ export class EntityMappingManager {
     section?: EntityMethodSection,
     propertyPath?: string
   ): Promise<DefinitionSymbolIdentity | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexByDefFile(defFile);
     if (!index) {
       return null;
@@ -1157,6 +1211,8 @@ export class EntityMappingManager {
     methodName?: string,
     section?: EntityMethodSection
   ): Promise<boolean> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const identity = typeof identityOrEntityName === 'string'
       ? this.createLegacyIdentity(identityOrEntityName, methodName, section)
       : identityOrEntityName;
@@ -1191,6 +1247,8 @@ export class EntityMappingManager {
   async resolveMethodImplementationByIdentity(
     identity: DefinitionSymbolIdentity
   ): Promise<{ filePath: string; line: number; character: number } | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForOwner(identity);
     if (!index) {
       return null;
@@ -1234,6 +1292,8 @@ export class EntityMappingManager {
     section?: EntityMethodSection,
     declaredArgTypes?: string[]
   ): Promise<{ filePath: string; line: number; character: number } | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const domainRole =
       section === 'BaseMethods' ? 'base' : section === 'CellMethods' ? 'cell' : null;
     if (domainRole) {
@@ -1509,6 +1569,8 @@ export class EntityMappingManager {
     methodName: string,
     section: EntityMethodSection
   ): Promise<{ filePath: string; line: number; character: number } | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndex(entityName);
     if (!index) {
       return null;
@@ -1529,6 +1591,8 @@ export class EntityMappingManager {
     line: number,
     character: number
   ): Promise<PythonMethodLocation | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
     if (!index) {
       return null;
@@ -1552,6 +1616,8 @@ export class EntityMappingManager {
   async getEntityComponentFacesForPythonFile(
     pythonFile: string
   ): Promise<EntityComponentFace[] | null> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
     if (!index) {
       return null;
@@ -1581,6 +1647,8 @@ export class EntityMappingManager {
     pythonFile: string,
     methodName: string
   ): Promise<PythonMethodCallReference[]> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
     if (!index) {
       return [];
@@ -1629,6 +1697,8 @@ export class EntityMappingManager {
     pythonFile: string,
     methodName: string
   ): Promise<Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }>> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
     if (!index) {
       return [];
@@ -1672,6 +1742,8 @@ export class EntityMappingManager {
     symbol: string,
     type: 'property' | 'method'
   ): Promise<boolean> {
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
+    this.ensureStartup();
     const location = type === 'property'
       ? await this.resolvePropertyDefinition(pythonFile, symbol, symbol)
       : await this.resolveMethodDefinition(pythonFile, symbol);

@@ -1,0 +1,25 @@
+# kode2 PR-003 (PH1-01): Cargo workspace 最小集 — kode-server/kode-protocol 先行。
+# PR-004 (PH1-03 VFS 基础) 加入 kode-vfs(书 §5)。
+# PR-005 (书 §6 语法) 加入 kode-parser。
+# PR-006 (PH1-05 根发现) 加入 kode-root(书 §5 VFS-009 完整版)。
+# PR-007 (书 §7 符号索引) 加入 kode-index;其余 crate 见 crates/README.md,
+# 按书 PR-008..009 逐个落地后再加进 members。
+[workspace]
+resolver = "2"
+members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-root", "crates/kode-index", "crates/kode-scheduler", "crates/kode-types", "crates/kode-corpus"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+# MSRV:本仓库 Rust 代码承诺的最低编译版本;依赖升级不得悄悄抬高它。
+# (BUILD-003;当前工具链 pin 见 rust-toolchain.toml)
+rust-version = "1.82"
+license = "Apache-2.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# CI/本地门禁:cargo clippy --workspace --all-targets -- -D warnings

@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 54 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 54-row table. To find a setting, locate the feature area first, then the row within it.
+The 74 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 74-row table. To find a setting, locate the feature area first, then the row within it.
 
 ### Diagnostics
 
@@ -323,6 +323,10 @@ File save/watch → trigger the `quickActions` action by name. Gated **off by de
 | `kbengine.hotReload.actionName` | string | empty | The action name to trigger; must exist in the `quickActions` array |
 | `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | Watch patterns (VS Code globs); one file watcher per pattern |
 | `kbengine.hotReload.debounceMs` | number | `500` | Debounce milliseconds before triggering; `0` = no debounce |
+| `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | Master switch for the temp-edit hot reload command (default off, same gate style as `hotReload.enabled`) |
+| `kbengine.hotReload.tempEdit.actionName` | string | empty | Quick action fired for the reload step (HTTP or terminal); empty aborts with a config error |
+| `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | Restore the original content before sending the reload request; a failed restore aborts the request |
+| `kbengine.hotReload.tempEdit.scriptRoot` | string | empty | Script resource root for dual-name resolution (fullModule / requestModule); empty echoes the module name as unresolved, no guessing |
 
 Behavior rules:
 
@@ -350,6 +354,16 @@ Behavior rules:
 - **The stream stops with the panel**: closing the webview tears the interval down; rounds that resolve after the panel closed are dropped instead of posted back.
 
 Boundary: these are engine *runtime* console-observation protocol messages, only reachable against a running KBEngine server. End-to-end assertions cannot run in-repo or in CI — see `docs/design/space-viewer-watcher.md` §8 for the conditions under which a real end-to-end run would be worth reopening.
+
+### Dual-Track Backend Gate (kode2 Rust Core)
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.core.backend` | string | `"ts"` | Dual-track backend switch (kill-switch): `ts` = single track (current truth); `rust` is a reserved value — refused by the serving gate until cutover preconditions are all green, the effective track stays `ts`; `shadow` = shadow comparison — TS keeps serving while same-parameter requests are mirrored to kode-server and only diff-logged. Any invalid value falls back to `ts`; switching back to `ts` stops the Rust process immediately for a user-invisible rollback |
+| `kbengine.core.serverPath` | string | empty | kode-server binary path; only used when `backend=shadow`. When empty, shadow comparison logs `rust-unavailable` and spawns nothing |
+| `kbengine.core.shadow.timeoutMs` | number | `2000` | Mirror-request timeout (ms) for shadow comparison; timeouts only log `rust-timeout` and never affect the TS serving path |
+
+Iron rule: with the default `ts`, the Rust path is not involved at all and user-visible behavior matches the pure-TS single track; in `shadow` mode Rust results go only into the diff log of the 「KBEngine Core Shadow」 output channel (inspect via `kbengine.core.showShadowDiffLog`) and never affect any user-visible result.
 
 ### Database
 
@@ -505,7 +519,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 
 **Three kinds of purely discovered resources with no settings at all** (since batch 125): `types.xml`, `messages_fixed(_defaults).xml`, and the engine `kbengine_defaults.xml` (when binPath cannot derive it, fall back via the engine source-root anchor, then derive).
 
-### Full Setting Comparison Table (batch-125 inventory of 32 items; more added continuously since batch 126, 54 today — the new ones are in the feature-area groups of "Overview of `kbengine.*` Settings (by Feature Area)" above)
+### Full Setting Comparison Table (batch-125 inventory of 32 items; more added continuously since batch 126, 74 today — the new ones are in the feature-area groups of "Overview of `kbengine.*` Settings (by Feature Area)" above)
 
 `How it resolves now` = how the value is actually taken today; `Auto-discoverable` = whether the value can be derived from the workspace/environment; `Disposition` = this round's conclusion and reasoning.
 

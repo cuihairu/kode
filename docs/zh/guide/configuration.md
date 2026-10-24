@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-54 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 54 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+74 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 74 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 ### 诊断
 
@@ -323,6 +323,10 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `kbengine.hotReload.actionName` | string | 空 | 要触发的动作名,须在 `quickActions` 数组里存在 |
 | `kbengine.hotReload.globs` | string[] | `["**/*.py"]` | 监视模式(VS Code glob),每个模式各建一个文件监视 |
 | `kbengine.hotReload.debounceMs` | number | `500` | 触发前去抖毫秒数,`0` 为不去抖 |
+| `kbengine.hotReload.tempEdit.enabled` | boolean | `false` | 临时编辑热更新命令总开关(默认关,与 `hotReload.enabled` 同口径) |
+| `kbengine.hotReload.tempEdit.actionName` | string | 空 | 第 3 步 reloadScript 按名触发的 quick action(HTTP/终端均可);留空按配置错误中止 |
+| `kbengine.hotReload.tempEdit.autoRestore` | boolean | `true` | 发送 reloadScript 前自动还原原始内容;还原失败即中止请求 |
+| `kbengine.hotReload.tempEdit.scriptRoot` | string | 空 | 双名称解析的脚本资源根(fullModule/requestModule);留空回显模块名未解析,不猜 |
 
 行为口径:
 
@@ -350,6 +354,16 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 - **流随面板关闭而停**：关闭 webview 即销毁定时器；面板关闭后才 resolve 的轮次直接丢弃，不回灌。
 
 边界：这些是引擎**运行期**控制台观测协议消息，只对正在运行的 KBEngine 服务端可达。端到端断言无法在仓库内或 CI 中跑——重开条件见 `docs/design/space-viewer-watcher.md` §8。
+
+### 双轨后端门（kode2 Rust Core）
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.core.backend` | string | `"ts"` | 双轨后端开关（kill-switch）：`ts` 单轨（现状真相）；`rust` 为保留值，切流前置条件未全绿前被 serving 门禁拒绝，生效轨道仍是 `ts`；`shadow` 影子比对——TS 照常服务，同参请求镜像给 kode-server 只记差异日志。任何非法值一律回落 `ts`；改回 `ts` 立即停用 Rust 进程，用户无感回退 |
+| `kbengine.core.serverPath` | string | 空 | kode-server 二进制路径；仅在 `backend=shadow` 时使用，留空则影子比对记 `rust-unavailable`，不启动进程 |
+| `kbengine.core.shadow.timeoutMs` | number | `2000` | 影子比对镜像请求超时（毫秒）；超时只记差异日志 `rust-timeout`，不影响 TS 服务路径 |
+
+铁律：默认 `ts` 下 Rust 路径完全不参与，用户可见行为与纯 TS 单轨一致；`shadow` 模式 Rust 结果只进输出通道「KBEngine Core Shadow」的差异日志（命令 `kbengine.core.showShadowDiffLog` 查看），永不影响任何用户可见结果。
 
 ### 数据库
 
@@ -505,7 +519,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 54 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
+### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 74 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 

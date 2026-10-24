@@ -1,0 +1,6 @@
+# BUILD-003: toolchain pin — 所有机器/CI 用同一 rustc,避免"我本地能编译"。
+# rustup 会自动安装该精确版本;升级需改这里并过全量门禁。
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

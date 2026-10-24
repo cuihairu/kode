@@ -362,6 +362,26 @@ The flow graph panel supports:
   - `${sel}`: the selected text
   - With no active editor, each variable substitutes to the empty string
 
+### `kbengine.hotReload.tempEdit.run`
+
+- Title: `Temp-Edit Hot Reload (Active File)`
+- Purpose: temp-edit hot reload on the active file — write a temporary edit (one trailing marker comment line) → optionally restore the original content → fire the configured reload quick action by name → echo the outcome
+- Behavior:
+  - Gated **off by default** (`kbengine.hotReload.tempEdit.enabled`); the command honestly refuses while disabled
+  - The reload step reuses the existing quick-action channel (HTTP and terminal actions alike) — no second HTTP implementation
+  - Echo goes to the OUTPUT channel 「KBEngine HTTP 快捷请求」 plus the Problems panel (a diagnostic on the file; cleared on success)
+  - Success semantics stay honest: a usable transport receipt is only 「已发送(未确认)」 (sent, unverified) — without a trusted applied receipt the UI never claims the module was hot-updated (accepted ≠ applied)
+  - If auto-restore fails the reload is aborted (the marker-edited content is never sent) and the file is reported as left in the temp-edit state
+
+### `kbengine.core.showShadowDiffLog`
+
+- Title: `Kode Core Shadow: Show Diff Log`
+- Purpose: open the 「KBEngine Core Shadow」 OUTPUT channel holding the dual-track shadow diff log (kode2 PR-012). Entries only exist in `kbengine.core.backend=shadow` mode: TS keeps serving while same-parameter requests are mirrored to kode-server and the outcome (match / diff / rust-error / rust-timeout / rust-unavailable) is logged per request
+- Behavior:
+  - In `shadow` mode: shows the channel (creating it on first shadow entry); with no entries yet it reports the summary honestly instead
+  - In `ts`/`rust` mode: no channel exists — an info notice states the current `backend` value and that the log is empty; nothing is created
+  - Rust results never affect any user-visible behavior in any mode; the log is diagnostic evidence for parity expansion and the rollback drill, not a serving path
+
 ### `kbengine.discovery.report`
 
 - Title: `Show Discovery Report`

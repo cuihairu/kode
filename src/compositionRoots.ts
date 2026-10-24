@@ -140,7 +140,10 @@ export function parseTypesXml(content: string): Map<string, TypeDeclaration> {
     return table;
   }
   for (const item of getDirectChildElements(document.root)) {
-    const directive = getElementText(item).trim().split(/\s+/)[0] ?? '';
+    const textDirective = getElementText(item).trim().split(/\s+/)[0] ?? '';
+    // 属性式条目(`<JSONDATA type="UINT32"/>`):无文本指引时回落 `type` 属性值
+    // (与 Rust parse_types 同口径;PR-012 门 §1.3-① 属性式注册面关闭)。
+    const directive = textDirective || (item.attributes['type'] ?? '').trim();
     if (directive === 'FIXED_DICT') {
       const implementedBy = getScalarChildValue(item, 'implementedBy');
       const symbol = implementedBy
@@ -159,11 +162,13 @@ export function parseTypesXml(content: string): Map<string, TypeDeclaration> {
       table.set(item.name, { kind: 'fixedDict', implementedBySymbol: symbol, fieldRefs, elementRef: null });
     } else if (directive === 'ARRAY') {
       const ofNode = getDirectChildElement(item, 'of');
+      const ofText = ofNode ? getElementText(ofNode).trim() || null : null;
       table.set(item.name, {
         kind: 'array',
         implementedBySymbol: null,
         fieldRefs: [],
-        elementRef: ofNode ? getElementText(ofNode).trim() || null : null
+        // 属性式 ARRAY 的元素类型回落 `of` 属性(与 Rust parse_types 同口径)。
+        elementRef: ofText ?? ((item.attributes['of'] ?? '').trim() || null)
       });
     } else if (directive) {
       table.set(item.name, { kind: 'builtin', implementedBySymbol: null, fieldRefs: [], elementRef: null });

@@ -64,6 +64,16 @@ import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
+import { setupKodeCoreGate } from './kodeCoreGateWiring';
+import {
+  shadowMirrorCorpusDocument,
+  shadowReleaseCorpusDocument
+} from './kodeCoreShadowFaces';
+import {
+  readTempEditReloadSettings,
+  runTempEditReload,
+  tempEditSectionReader
+} from './hotReloadTempEdit';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
@@ -110,6 +120,8 @@ import {
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler } from './indexScheduler';
+import { shouldStartKbEngineIndexing } from './workspaceGate';
+import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { getDiagnosticScheduler } from './diagnosticScheduler';
 import {
   createDatabaseSchemaUri,
@@ -196,6 +208,9 @@ export function activate(context: vscode.ExtensionContext) {
   setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
   // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
   setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
+  // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
+  // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)
+  setupKodeCoreGate(context);
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
@@ -353,7 +368,14 @@ export function activate(context: vscode.ExtensionContext) {
   // PythonClassIndex 文件发现/分块解析都经它入队,后台任务受交互限流。
   const indexScheduler = new IndexScheduler();
   context.subscriptions.push({ dispose: () => indexScheduler.dispose() });
-  const entityMappingManager = new EntityMappingManager(context, indexScheduler);
+  // 书 PR-002 工作区门控:deferStartup=true → 构造零副作用(不建 watcher、
+  // 不入队全量首扫)。是否启动由 shouldStartKbEngineIndexing() 的特征探测决定:
+  // 有 .def/entities.xml/types.xml/alias.xml/kbengine*.xml 之一即启动(与门控前
+  // 逐行为一致);无特征的纯 Python 工作区零后台扫描零 watcher,查询入口的
+  // ensureStartup() 幂等兜底保证结果口径不变(fail-open:探测异常按放行处理)。
+  const entityMappingManager = new EntityMappingManager(context, indexScheduler, {
+    deferStartup: true
+  });
 
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
   const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);
@@ -454,7 +476,24 @@ export function activate(context: vscode.ExtensionContext) {
   // Python 方法使用优先跳实现；属性、声明与实现缺失时保留 .def 导航。
   // PR5:共享调度器注入 + 首扫后台化(激活即排程,Definition 首查不等全量)。
   const pythonClassIndex = new PythonClassIndex(indexScheduler);
-  pythonClassIndex.scheduleBackgroundScan();
+  // 书 PR-002 门控启动面:特征确认后 entityMapping 首扫 + python 后台全量扫描
+  // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
+  const startKbEngineIndexing = (): void => {
+    entityMappingManager.ensureStartup();
+    pythonClassIndex.scheduleBackgroundScan();
+    // 书 PR-002 ③:深扫描缓存激活期预热——首查交互不再付 20000 条目有界
+    // walk(巨仓实测 40.5ms/次);结果同源 scanCache,只挪时机不挪语义。
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      if (folder?.uri?.fsPath) {
+        preheatDiscoveryScan(folder.uri.fsPath);
+      }
+    }
+  };
+  void shouldStartKbEngineIndexing().then(gated => {
+    if (gated) {
+      startKbEngineIndexing();
+    }
+  });
   const pythonDefinitionImpl = new PythonDefinitionProvider(entityMappingManager, pythonClassIndex);
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },
@@ -653,14 +692,19 @@ export function activate(context: vscode.ExtensionContext) {
     // 关文档释放快照(内存不泄漏)。磁盘旧内容没有路径能进快照。
     context.subscriptions.push(vscode.workspace.onDidOpenTextDocument(document => {
       updateDocumentSnapshot(document);
+      // E-1:语料镜像腿独立于诊断开关(不走 validateDocument 的提前返回)
+      shadowMirrorCorpusDocument(document);
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
       diagnosticScheduler.releaseDocument(document);
+      // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
+      shadowReleaseCorpusDocument(document);
     });
     context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       updateDocumentSnapshot(event.document);
+      shadowMirrorCorpusDocument(event.document);
       // PR6 A6-1:连续编辑走排队通道——同 URI 只保留最新版本任务,旧版本
       // 任务出队合并(coalescedStale),宏任务边界冲刷时发布前复核版本令牌,
       // 过期结果绝不落 collection。首次发布语义不变(计算面仍是同步
@@ -715,6 +759,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(openWatcher);
 
     vscode.workspace.textDocuments.forEach(document => {
+      shadowMirrorCorpusDocument(document);
       if (isDefDocument(document)) {
         scheduleDefDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
@@ -1624,6 +1669,76 @@ export function activate(context: vscode.ExtensionContext) {
   setupHotReload(context, actionName =>
     quickActionManager.runByName(actionName, { suppressConfirm: true })
   );
+
+  // 临时编辑热重载 quick action(书 §19 HR-PR-02):先临时编辑 → 可选自动
+  // 还原 → reloadScript → 结果回显。开关默认关(与 kbengine.hotReload.enabled
+  // 同口径);reloadScript 不另起第二套 HTTP,复用既有 quick action 通道
+  // (HTTP 与终端两条腿都从 quickActionManager.runByName 走);回显走
+  // 「KBEngine HTTP 快捷请求」OUTPUT 通道 + 独立问题通道(诊断集,成功清除)。
+  // 铁律:accepted≠applied——通道回执再好也只报「已发送(未确认)」,
+  // 绝不显示「已热更新」。
+  const tempEditDiagnostics = vscode.languages.createDiagnosticCollection(
+    'KBEngine 临时编辑热更新'
+  );
+  context.subscriptions.push(tempEditDiagnostics);
+  const runTempEditReloadCommand = vscode.commands.registerCommand(
+    'kbengine.hotReload.tempEdit.run',
+    async () => {
+      const settings = readTempEditReloadSettings(
+        tempEditSectionReader(
+          vscode.workspace.getConfiguration('kbengine').get<unknown>('hotReload', undefined)
+        )
+      );
+      if (!settings.enabled) {
+        void vscode.window.showWarningMessage(
+          '临时编辑热更新已停用(默认关);确认风险后在设置 kbengine.hotReload.tempEdit.enabled 开启'
+        );
+        return;
+      }
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        void vscode.window.showInformationMessage('临时编辑热更新需要活动编辑器中的文件');
+        return;
+      }
+      const targetDoc = { fsPath: editor.document.uri.fsPath, label: path.basename(editor.document.uri.fsPath) };
+      const decoder = new TextDecoder();
+      const result = await runTempEditReload(targetDoc, settings, {
+        readFile: async doc =>
+          decoder.decode(await vscode.workspace.fs.readFile(vscode.Uri.file(doc.fsPath))),
+        writeFile: async (doc, content) => {
+          await vscode.workspace.fs.writeFile(
+            vscode.Uri.file(doc.fsPath),
+            new TextEncoder().encode(content)
+          );
+        },
+        // 无人值守口径:跳过确认框,也不污染「上次执行」记忆
+        runReloadAction: name =>
+          quickActionManager.runByName(name, { suppressConfirm: true, skipLastRun: true }),
+        log: line => httpRequestChannel.appendLine(`[临时编辑热更新] ${line}`),
+        reportProblem: (doc, message) => {
+          if (message === null) {
+            tempEditDiagnostics.delete(editor.document.uri);
+            return;
+          }
+          tempEditDiagnostics.set(editor.document.uri, [
+            new vscode.Diagnostic(
+              new vscode.Range(0, 0, 0, 1),
+              `临时编辑热更新: ${message}`,
+              vscode.DiagnosticSeverity.Error
+            )
+          ]);
+        }
+      });
+      if (result.phase === 'sent-unverified') {
+        void vscode.window.showInformationMessage(
+          `临时编辑热更新:已发送(未确认)。引擎是否 applied 未知,详见输出通道「KBEngine HTTP 快捷请求」。`
+        );
+      } else if (result.phase !== 'missing-action') {
+        void vscode.window.showErrorMessage(`临时编辑热更新失败: ${result.detail}`);
+      }
+    }
+  );
+  context.subscriptions.push(runTempEditReloadCommand);
 
   // Python 生态接线(盘点 G1/G2):先导出 .kbengine/stubs/KBEngine.pyi
   // (符号索引发射,盘点 G2),再同步 python.analysis.extraPaths(scripts 根
