@@ -74,7 +74,10 @@ describe('engine tree probe', () => {
 describe('engine tree process probe (this environment)', () => {
   it('keeps root and reason mutually exclusive', () => {
     if (ENGINE_TREE_ROOT === null) {
-      expect(ENGINE_TREE_REASON).toContain('no engine tree');
+      // KBENGINE_ROOT 指向真目录但标记文件缺席时,reason 报的是缺哪个标记
+      // (如 'KBENGINE_ROOT=... has no kbe/src/lib/common/version.h'),不是笼统
+      // 'no engine tree';此处只锁不变量:root 为 null 时 reason 必须是可见提示
+      expect(ENGINE_TREE_REASON.length).toBeGreaterThan(0);
     } else {
       expect(path.isAbsolute(ENGINE_TREE_ROOT)).toBe(true);
       expect(ENGINE_TREE_REASON).toBe('');

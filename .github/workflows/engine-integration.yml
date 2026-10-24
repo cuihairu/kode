@@ -1,0 +1,58 @@
+name: Engine Integration
+
+on:
+  # 只手动 + 周巡:集成套件依赖真引擎源码树检出,通用 runner 上没有。
+  # 因此不接 push/pull_request——接了也只是每次全量 skip,既不能出真结果,
+  # 也只会拖慢主门禁。树的来源由触发人给(C-10:有树环境真跑)。
+  workflow_dispatch:
+    inputs:
+      kbengine_root:
+        description: 'KBEngine 源码树根路径(留空则套件按缺席 skip,不红)'
+        required: false
+        default: ''
+  schedule:
+    # 离峰非整点:周一 04:19 UTC
+    - cron: '19 4 * * 1'
+
+permissions:
+  contents: read # 只跑测试:不发包、不打 tag(发版走 ci.yml / publish.yml)
+
+jobs:
+  engine-integration:
+    name: Integration suites (tree-dependent)
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    # 定时只在本仓库跑;fork 上的手动触发放行
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'cuihairu/kode'
+    env:
+      # realEngineIntegration 认此探针;kode 产品侧探针见 src/engineApiMetadata.ts
+      KBENGINE_ROOT: ${{ inputs.kbengine_root }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: 安装 pnpm
+        timeout-minutes: 10
+        uses: pnpm/action-setup@v6.1.0
+        # 与 ci.yml 同口径:不写 version,统一由 package.json 的 packageManager 决定
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Show tree probe
+        run: |
+          if [ -n "${KBENGINE_ROOT:-}" ] && [ -d "$KBENGINE_ROOT" ]; then
+            echo "engine root = $KBENGINE_ROOT"
+            ls "$KBENGINE_ROOT/kbe/src/lib" 2>/dev/null | head -20
+          else
+            echo "no engine root: suites will skip visibly (job stays green)"
+          fi
+
+      - name: Run integration suites
+        run: npx vitest run --config vitest.integration.config.ts --reporter verbose
