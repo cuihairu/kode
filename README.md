@@ -3,11 +3,7 @@
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
-  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a>
-  <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -23,7 +19,6 @@ KBEngine is an open-source MMO game server framework built on a distributed arch
 ## Daily Builds
 
 The repository automatically builds from `main` every day and **publishes a rolling release** to [the `nightly` tag on Releases](https://github.com/cuihairu/kode/releases/tag/nightly): each build replaces the previous release's assets and notes (including build time, commit, and an asset table). The tag stays `nightly` and the repository carries no version tags. The scheduled build skips automatically for that day when the default branch has no new commits within 48 hours. The build pipeline lives in [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml).
-
 | Asset | Platform | Install |
 |------|------|------|
 | `kode-nightly.vsix` | Windows / macOS / Linux (universal for VS Code ≥1.50) | Download and run `code --install-extension kode-nightly.vsix` |

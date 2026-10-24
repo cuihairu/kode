@@ -3,11 +3,7 @@
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
-  <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a>
-  <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.50.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -23,7 +19,6 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 ## 每日构建
 
 仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`，仓库不带版本 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
-
 | 资产 | 平台 | 安装 |
 |------|------|------|
 | `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.50 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
