@@ -6,7 +6,7 @@
 
 | 侧 | 解析入口 | 驱动 |
 |---|---|---|
-| Rust | `kode_parser::model::{parse_def, parse_entities, parse_types, parse_alias}` | [crates/kode-parser/examples/head2head.rs](../../crates/kode-parser/examples/head2head.rs) |
+| Rust | `kode_parser::model::{parse_def, parse_entities, parse_types, parse_alias}` | [crates/kode-parser/examples/head2head.rs](https://github.com/cuihairu/kode/blob/main/crates/kode-parser/examples/head2head.rs) |
 | TS | `src/defParser.parseDefDocument` + `src/compositionRoots.{parseEntityNames, parseTypesXml}` | [scripts/parser-head2head-ts.mjs](../../scripts/parser-head2head-ts.mjs)(esbuild 打包为 CJS,`node --expose-gc` 纯进程,不含 vitest / fake-vscode 桩开销) |
 
 - 原始输出:[2026-parser-head2head-run.txt](2026-parser-head2head-run.txt)(两侧 × 三档语料 × 两轮的完整 harness 输出)
