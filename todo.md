@@ -9,29 +9,29 @@
 ## A. 语言服务性能治理（结构重构，源自 docs/review/2026-10-22-unified-semantic-index-refactor.md，PR1→PR7 顺序推进）
 
 ### A1 PR1 · 性能观测与基线（不改任何行为结果）
-- [ ] A1-1 新建 src/languageServiceMetrics.ts：单调时钟、请求ID、事件枚举（hover/definition/completion/diagnostics/python-index-scan/entity-mapping-scan/type-registry-query/file-discovery/document-parse 等 11 类），默认关闭详细记录
-- [ ] A1-2 记录字段齐备：总耗时+子阶段耗时、文件发现/读取/解析/缓存命中计数、是否等待初始化、索引 generation、文档 version、结果状态（成功/未命中/取消/异常）
-- [ ] A1-3 汇总出口：请求数、P50/P95/P99、最大值、命中率（命令面板「Show Language Service Metrics」）
-- [ ] A1-4 埋点接线：KBEngineHoverProvider/PythonCompletionProvider/KBEngineDefinitionProvider/PythonDefinitionProvider/诊断入口全部打点（只加观测不改逻辑）
-- [ ] A1-5 测试资产集生成器：小项目/数万文件模拟/≥3 资产根含同名实体与同名 Python 类/大 Python 文件/大量 def+xml/含 .git 与 node_modules 的项目（脚本化可复现）
-- [ ] A1-6 基线报告落 docs/perf/2026-baseline.md：机器与版本信息、冷启动/热缓存、七场景（首索引/重复查询/未索引文件首查/编辑后/改 def 后/删文件后/并发）实测数字，未测项标「待测」
-- [ ] A1-7 主要调用链图（Mermaid）落同报告：hover/definition/completion/diagnostics 四条链的真实调用路径与等待点标注
+- [x] A1-1 新建 src/languageServiceMetrics.ts：单调时钟(perf_hooks)、请求 ID、11 类事件枚举、详细记录默认关闭(kbengine.metrics.detailed)（89e8783；src/languageServiceMetrics.ts:9-23、:110、:121）
+- [x] A1-2 记录字段齐备：总耗时+子阶段、发现/读取/解析计数、缓存命中率、是否等初始化、generation、文档 version、状态 ok/miss/cancelled/error（89e8783；src/languageServiceMetrics.ts:26-52、docs/perf/2026-baseline.md §6）
+- [x] A1-3 汇总出口：请求数/P50/P95/P99/最大值/命中率，命令面板 KBEngine: Show Language Service Metrics Summary（89e8783；package.json:365、src/extension.ts:1266-1269、getLanguageServiceSummaryReport）
+- [x] A1-4 埋点接线：hover/definition×2/completion×2/诊断×2 走 extension.ts 适配层，索引侧 semantic-query/type-registry-query/python-index-scan/python-composition-roots/file-discovery/document-parse（89e8783；src/extension.ts:266,279,372,405,437,463,628、languageProviders.ts:3414、definitionWorkspace.ts:311、pythonClassIndex.ts:569,685,894、scanRoots.ts:227、documentStore.ts:211）
+- [x] A1-5 测试资产集生成器：small/large 30000/multi-root 三根含同名实体 Avatar 与同名类 Inventory/big-py/def-heavy/noise 六件套，确定性可复现（89e8783；scripts/generate-perf-assets.mjs:8-13）
+- [x] A1-6 基线报告：环境+资产集+七场景实测数字+待测项如实标注（89e8783；docs/perf/2026-baseline.md §1-§5、原始输出 baseline-run.txt）
+- [x] A1-7 四条调用链 Mermaid 图落同报告，等待点虚线标注 A-F（hover 2.5s 预算闸/definition 首扫 5s 闸+组合根 joinWait+pass2 全量/completion 无显式闸/diagnostics 排队合并）；四块均经 mermaid.parse 验证为 flowchart-v2（2e9bdc7；docs/perf/2026-baseline.md §7.1-§7.4）
 
 ### A2 PR2 · 文档快照与解析缓存（documentStore）
-- [ ] A2-1 新建 src/documentStore.ts：URI 规范化+版本号+文本+行索引+解析态（Python/def/XML）+最近成功解析版本
-- [ ] A2-2 内存优先规则：打开文档以 VS Code 缓冲区为准；磁盘旧内容不得覆盖编辑中内容（测试锁定）
-- [ ] A2-3 同版本只解析一次；解析中再编辑→旧结果不覆盖新版本（并发测试）
-- [ ] A2-4 Hover 接入：provideHover 与局部变量推导改走快照行数据（废除逐次 getText().split 全文拆行）
-- [ ] A2-5 Diagnostics 接入：validateDocument 复用同版本 parseDefAst 快照
-- [ ] A2-6 快照 LRU/释放策略（关闭文档后内存不泄漏，测试）
+- [x] A2-1 新建 src/documentStore.ts：URI 规范化+版本号+文本+行索引+解析态+最近成功解析版本（7d8736b；src/documentStore.ts:24-40、:102-110）
+- [x] A2-2 内存优先规则：打开文档以 VS Code 缓冲区为准，磁盘旧内容不得覆盖编辑中内容（7d8736b；tests/documentStore.test.ts:21、:150 锁定）
+- [x] A2-3 同版本只解析一次；解析中再编辑→旧结果不覆盖新版本（7d8736b；tests/documentStore.test.ts:211 并发用例、:188 parseSlot 命名空间化）
+- [x] A2-4 Hover 接入：provideHover 行数据走 getDocumentLines 快照，废逐次 getText().split 全文拆行（7d8736b；src/languageProviders.ts:573、文档同批 hover 行准备 P50 1.66ms→<0.01ms）
+- [x] A2-5 Diagnostics 接入：parseDefAst 走 documentStore 'def-ast' 命名空间版本化缓存，标量+结构共用同份结果（7d8736b；src/languageProviders.ts:2074-2082、文档同批 def-ast 同版本命中率 96.1%）
+- [x] A2-6 快照释放策略：关闭文档后行索引/解析缓存整体释放，不泄漏（7d8736b；tests/documentStore.test.ts:292、:305 同键不同拼写释放同一份）
 
 ### A3 PR3 · 统一索引调度（indexScheduler）
-- [ ] A3-1 新建 src/indexScheduler.ts：任务生命周期（首扫/增量/受影响依赖更新/删除清理）+状态查询
-- [ ] A3-2 任务合并：同文件同版本任务去重；过期任务取消丢弃（测试）
-- [ ] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析（测试顺序断言）
-- [ ] A3-4 失败恢复：扫描中途失败后后续请求可恢复，不出现永久 pending（测试：杀掉首轮扫描模拟）
-- [ ] A3-5 EntityMappingManager 首扫迁入调度器（initialScan 走 scheduler，行为等价测试）
-- [ ] A3-6 后台限流与取消（编辑高峰期不抢主线程，指标验证）
+- [x] A3-1 新建 src/indexScheduler.ts：任务生命周期（queued/running/completed/failed/cancelled）+状态查询（2aca694；src/indexScheduler.ts:59、:129、:103）
+- [x] A3-2 任务合并：同文件同版本去重（低优先级让位高优先级），过期任务取消丢弃（2aca694；src/indexScheduler.ts:178、tests/indexScheduler.test.ts 合并用例）
+- [x] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析，顺序断言（2aca694；IndexTaskPriority、isInteractivePriority:42）
+- [x] A3-4 失败恢复：首扫被杀后再次请求可重新入队并完成，不永久 pending（2aca694；tests/indexScheduler.test.ts:252-262 杀掉首轮扫描模拟、:97 recoveries 计数）
+- [x] A3-5 EntityMappingManager 首扫迁入调度器：initialScan 走 scheduler，行为等价（2aca694；src/entityMapping.ts:186-199 scheduler 注入、entity-mapping-scan 打点）
+- [x] A3-6 后台限流与取消：交互任务单并发+后台让路，不抢主线程（2aca694；src/indexScheduler.ts:42、:149 throttleTimer；docs/perf/2026-pr3-indexscheduler.md）
 
 ### A4 PR4 · 统一语义查询（semanticIndex + dependencyGraph）
 - [x] A4-1 新建 src/semanticIndex.ts：实体-分面方法/属性-Python类-注册关系-类型映射-根作用域 统一承载（查询 API 不暴露内部遍历）
@@ -42,11 +42,11 @@
 - [x] A4-6 现有查找顺序取证：从测试提取当前命中顺序→固化为显式策略文档+测试（不改行为先锁）
 
 ### A5 PR5 · Python Definition 去全仓阻塞
-- [ ] A5-1 ensureScanned/ensureCompositionRoots 调用关系重构：Definition 先查快照+已建索引，按需单文件解析，后台补全量
-- [ ] A5-2 组合根构建缓存：同批 XML/def 只读一次（不同入口不重复发现，指标断言）
-- [ ] A5-3 PythonClassIndex 版本与失效：类/基类/方法/MRO/组合根显式版本+失效条件
-- [ ] A5-4 删除/重命名/基类变更后旧索引项移除（跳转不到已不存在位置，测试）
-- [ ] A5-5 冷启动 Definition 首查耗时入报告（不再等待全仓，数字说话）
+- [x] A5-1 ensureScanned/ensureCompositionRoots 调用关系重构：Definition 先查快照+已建索引，按需单文件解析(stageRequestFiles)，后台补全量（d4fd634；src/pythonClassIndex.ts:1193-1250 两段查询、:1114 单文件入队）
+- [x] A5-2 组合根构建缓存：同批 XML/def 只读一次，mtime+size 指纹重派生零重读（d4fd634；src/pythonClassIndex.ts:685-700 python-composition-roots 打点；docs/perf/2026-final-report.md 验收#6）
+- [x] A5-3 PythonClassIndex 版本与失效：类/基类/方法/MRO/组合根显式版本+依赖图裁断失效，比较走稳定 classKey 非对象引用（d4fd634；SemanticDependencyGraph 接入、fullRebuild 恒 false；docs/perf/2026-pr5-unblocked-definition.md §4）
+- [x] A5-4 删除/重命名/基类变更后旧索引项移除，跳转不到已不存在位置（d4fd634；tests/pythonIndexPr5.test.ts:203-244；docs/perf/2026-final-report.md 场景6 旧项 0 命中）
+- [x] A5-5 冷启动 Definition 首查耗时入报告：107,737ms → 468.69ms（PR7 复测 475.34ms），不再等待全仓（d4fd634；docs/perf/2026-pr5-unblocked-definition.md §2 U1、docs/perf/2026-final-report.md §3 场景1）
 
 ### A6 PR6 · 诊断与一致性收口
 - [x] A6-1 诊断任务版本化：连续编辑合并过期任务，只发布匹配当前版本结果（测试）
@@ -56,10 +56,10 @@
 - [x] A6-5 同名符号跨根稳定性测试集补齐
 
 ### A7 PR7 · 复测回归与交付
-- [ ] A7-1 同环境同资产复测，报告 vs PR1 基线对比（无数据不进报告）
-- [ ] A7-2 验收表逐项标 通过/未通过/未测量（Hover P95≤30ms 等目标以基线评审定案）
-- [ ] A7-3 新架构图+索引数据模型/作用域/失效/调度说明文档
-- [ ] A7-4 未解决问题清单与下一轮建议
+- [x] A7-1 同环境同资产复测，七场景 vs PR1 基线逐项对比，无可复现数据不进报告（e6e8bc7；docs/perf/2026-final-report.md §1-§3、原始输出 final-run.txt / final-unblocked-run.txt / final-pr2-run.txt）
+- [x] A7-2 验收表逐项标 通过/未通过/未测量：通过 6 / 未通过 0 / 未测量 2（Hover、Completion 端到端 P95 未量测，如实标）（e6e8bc7；docs/perf/2026-final-report.md §4）
+- [x] A7-3 新架构图+索引数据模型/作用域/失效/调度说明（e6e8bc7；docs/architecture/semantic-index.md）
+- [x] A7-4 未解决问题清单与下一轮建议：5 项未解决 + 6 项下一轮建议（e6e8bc7；docs/perf/2026-final-report.md §5-§6）
 
 ## B. 在途/止血项（结构性治理并行的即时修复，落地即勾）
 - [x] B-1 hover 永转+2分钟：入口 2.5s 总预算 race+waitForInitialScan 5s 超时+LogHub 超时层名（9c8daf7@分支；**真凶=normalizeLookupPath 小写化致定向解析死代码**，修后冷悬停 12-14ms/热 8-10ms，1501-def 树实测；kbengine.hover.asyncBudgetMs；test 2712/0）
