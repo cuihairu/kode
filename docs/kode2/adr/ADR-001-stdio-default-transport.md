@@ -3,6 +3,15 @@
 - 状态:已接受(2026-10-23,PR-003)
 - 关联:书 BUILD-001、CORE-001、PH1-01;备选方案:自定义 socket RPC、HTTP、内嵌 FFI
 
+## 术语
+
+| 术语 | 本 ADR 中的含义 | 术语表 |
+|---|---|---|
+| 常驻 Core | 与扩展宿主分离、随会话存活的 `kode-server` 进程。 | [2.1](../glossary.md#terms-architecture) |
+| 传输层 | 扩展宿主与 Core 之间的消息通道;本 ADR 决定只有 stdio 一种常驻实现。 | [2.1](../glossary.md#terms-architecture) |
+| LSP stdio | 以 `Content-Length` 分帧的 JSON-RPC 标准输入/输出通道。 | [2.1](../glossary.md#terms-architecture) |
+| 扩展协议 | 仅使用 `$/kode/*` 命名空间的非标准方法,不新增传输层。 | [2.1](../glossary.md#terms-architecture) |
+
 ## 背景
 
 kode 2.0 的 Rust Core 要与 VS Code 扩展(以及潜在的远端/CLI 宿主)通信。

@@ -1,7 +1,18 @@
 # ADR-002 — Rust 核心替换以基准驱动,逐模块双轨切换
 
 - 状态:已接受(2026-10-23,PR-003)
-- 关联:书 BUILD-002、PH0-GATE、ARCH-012(无数据不吹 Rust 快)、PH2-03、PR-010..012;上游证据:docs/perf/2026-baseline.md、docs/perf/2026-final-report.md、docs/kode2/ph0-gate.md
+- 关联:书 BUILD-002、PH0-GATE、ARCH-012(无数据不吹 Rust 快)、PH2-03、PR-010..012;上游证据:docs/perf/2026-baseline.md、docs/perf/baseline.md、docs/perf/2026-final-report.md、docs/kode2/ph0-gate.md
+
+## 术语
+
+| 术语 | 本 ADR 中的含义 | 术语表 |
+|---|---|---|
+| 基准驱动 | 每个模块进入 Rust 替换前,先有 TS 基线、Rust 同口径复测与 parity 证据。 | [2.3](../glossary.md#terms-performance) |
+| 双轨 | TS 与 Rust 接收同参请求并比较正确性/延迟;TS 为现行服务真相。 | [2.1](../glossary.md#terms-architecture) |
+| 切流 | 把服务路径从 TS 切到 Rust;必须先通过 PR-012 的切流前置条件清单。 | [2.1](../glossary.md#terms-architecture) |
+| 影子模式 | Rust 只接收镜像请求并记录差异,不发布结果。 | [2.1](../glossary.md#terms-architecture) |
+| 对拍 / parity | 同一输入下逐字段比较 TS 与 Rust 的可观察输出。 | [2.2](../glossary.md#terms-parser) |
+| ARCH-012 | 没有同机同口径实测数据不得声称 Rust 更快。 | [2.3](../glossary.md#terms-performance) |
 
 ## 背景
 
@@ -12,7 +23,7 @@
 
 1. **不整体重写**。Rust Core 按模块(§3 目标树 crate 边界)逐个引入;
 2. 每个候选模块进入 Rust 替换前,必须有:
-   - 同机同 fixture 的 TS 基线数字(正本:docs/perf/);
+   - 同机同 fixture 的 TS 基线数字(正本:docs/perf/baseline.md 与 docs/perf/);
    - Rust 实现的同口径复测(P95/中位/内存,release build,禁用 debug 数据 — SYNTAX-006);
    - 正确性 parity:PH0-02 golden fixture(`tests/fixtures/parity/golden.json`)对拍通过后才切流;
 3. 切换采用**双轨模式**(PR-010 起):请求按比例分流 TS↔Rust,差异记录 latency 与 correctness,可一键回退 TS;

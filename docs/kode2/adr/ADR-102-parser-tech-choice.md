@@ -3,6 +3,16 @@
 - 状态:已接受(2026-10-23,PR-005;即书 §18 ADR-102 的裁决)
 - 关联:书 SYNTAX-004、§18 ADR-102、BUILD-003、§0.2 铁律;实现:crates/kode-parser/src/xml.rs;证据:docs/kode2/pr-005.md
 
+## 术语
+
+| 术语 | 本 ADR 中的含义 | 术语表 |
+|---|---|---|
+| 字节级状态机 | 直接扫描原始字节、不引入第三方 XML 库的解析实现。 | [2.2](../glossary.md#terms-parser) |
+| 源区间 / span | 节点在原始文件中的字节起止;伪注释掩码后仍与原文逐字节对应。 | [2.2](../glossary.md#terms-parser) |
+| 伪注释 | `.def` 中以 `#` 开头的行;按等长空格掩码,不改变 span。 | [2.2](../glossary.md#terms-parser) |
+| 错误恢复 | 记录结构化诊断并局部跳过,不丢弃已解析树前缀。 | [2.2](../glossary.md#terms-parser) |
+| 增量扫描 | 以内容指纹与解析缓存支持局部重建;零重建由 `rebuilds == 0` 断言。 | [2.2](../glossary.md#terms-parser) |
+
 ## 背景
 
 书 SYNTAX-004/ADR-102 要求评测 quick-xml + 位置层 vs rowan CST,再选型。
