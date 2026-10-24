@@ -74,8 +74,9 @@ function makeVersionedDocument(
   return document;
 }
 
-const HERO_DEF = ['<root>', '  <Properties>', '    <hp>', '      <Type>MY_INT</Type>', '    </hp>', '  </Properties>', '</root>'].join('\n');
-const TYPES_XML = ['<types>', '  <type>', '    <name>MY_INT</name>', '    <Type>INT</Type>', '  </type>', '</types>'].join('\n');
+const HERO_DEF = ['<root>', '  <Properties>', '    <hp>', '      <Type>PARITY_POINT</Type>', '      <Flags>CELL_PUBLIC</Flags>', '    </hp>', '  </Properties>', '</root>'].join('\n');
+// 真实 KBEngine 形态(与 tests/fixtures/parity-project 一致)
+const TYPES_XML = ['<root>', '  <PARITY_POINT type="UINT32"/>', '</root>'].join('\n');
 
 afterEach(() => {
   setKodeCoreShadowGate(null);

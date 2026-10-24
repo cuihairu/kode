@@ -204,6 +204,8 @@ export interface ShadowClientLike {
   openDocument?(uri: string, languageId: string, version: number, text: string): void;
   changeDocument?(uri: string, version: number, text: string): void;
   closeDocument?(uri: string): void;
+  /** 重启代数读口(E-2;可选):自动重启后 gate 重置镜像账并重放快照 */
+  getRestartGeneration?(): number;
 }
 
 export interface KodeCoreGateOptions {
@@ -232,6 +234,13 @@ export class KodeCoreGate {
   private nextAttemptAt = 0;
   /** 语料镜像账:uri → 已镜像版本(shadow 会话内;kill-switch 清空) */
   private mirroredVersions = new Map<string, number>();
+  /** 语料快照:uri → 最近镜像内容(重启重放依据;关文档即撤,kill-switch 清空) */
+  private mirrorSnapshots = new Map<
+    string,
+    { languageId: string; version: number; text: string }
+  >();
+  /** 上次见到的重启代数(null = 尚未对账;变化即判定自动重启) */
+  private lastRestartGeneration: number | null = null;
   private readonly notices: string[] = [];
   private readonly now: () => number;
   private readonly options: KodeCoreGateOptions;
@@ -319,14 +328,42 @@ export class KodeCoreGate {
     }
   }
 
-  /** kill-switch/换二进制:停 Rust 进程并清冷却与镜像账(异步,不阻塞配置路径) */
+  /** kill-switch/换二进制:停 Rust 进程并清冷却、镜像账与快照(异步,不阻塞配置路径) */
   private stopClient(): void {
     const client = this.client;
     this.client = null;
     this.clientServerPath = '';
     this.mirroredVersions.clear();
+    this.mirrorSnapshots.clear();
+    this.lastRestartGeneration = null;
     if (client) {
       void client.dispose().catch(() => undefined);
+    }
+  }
+
+  /**
+   * 重启对账(E-2):client 自动重启后新进程是空库,旧版本账必须失效 ——
+   * 版本账清零,快照全量重放为 didOpen(新账随重放重建),否则 didChange 会
+   * 因文档未打开被新进程忽略。调用点:每次 start() 握手之后(mirrorDocument
+   * 与 compare 同一入口,谁先到谁重放)。
+   */
+  private syncRestartGeneration(client: ShadowClientLike): void {
+    const generation = client.getRestartGeneration?.();
+    if (typeof generation !== 'number') {
+      return;
+    }
+    if (this.lastRestartGeneration === null) {
+      this.lastRestartGeneration = generation;
+      return;
+    }
+    if (generation === this.lastRestartGeneration) {
+      return;
+    }
+    this.lastRestartGeneration = generation;
+    this.mirroredVersions.clear();
+    for (const [uri, snapshot] of this.mirrorSnapshots) {
+      client.openDocument?.(uri, snapshot.languageId, snapshot.version, snapshot.text);
+      this.mirroredVersions.set(uri, snapshot.version);
     }
   }
 
@@ -335,7 +372,7 @@ export class KodeCoreGate {
    * definition/diagnostics 影子对拍才有同输入。尽力而为:任何失败静默
    * (verdict 口径归 compare 自己的失败分类,镜像不刷差异日志);非 shadow
    * 或未配 serverPath 零开销直通。版本账在会话内单调:前进走 didChange,
-   * 回退(重开)走 close+open,不虚构版本。
+   * 回退(重开)走 close+open,不虚构版本;自动重启后账本重置并重放快照。
    */
   async mirrorDocument(
     uri: string,
@@ -351,6 +388,7 @@ export class KodeCoreGate {
       return;
     }
     await client.start();
+    this.syncRestartGeneration(client);
     const mirrored = this.mirroredVersions.get(uri);
     if (mirrored === undefined) {
       client.openDocument?.(uri, languageId, version, text);
@@ -364,6 +402,7 @@ export class KodeCoreGate {
       return;
     }
     this.mirroredVersions.set(uri, version);
+    this.mirrorSnapshots.set(uri, { languageId, version, text });
   }
 
   /**
@@ -399,6 +438,8 @@ export class KodeCoreGate {
       fail('rust-unavailable', `rust server 启动失败: ${truncate((error as Error).message, 120)}`);
       return tsResult;
     }
+    // 自动重启后先重放语料快照,否则本次对拍打在空库上(E-2)
+    this.syncRestartGeneration(client);
     try {
       const rustResult = await client.request(method, params, {
         timeoutMs: this.config.shadowTimeoutMs,

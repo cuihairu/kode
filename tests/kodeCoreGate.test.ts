@@ -45,6 +45,101 @@ function makeFakeClientFactory() {
   };
 }
 
+describe('语料镜像账与自动重启对账(E-2)', () => {
+  interface MirrorCall {
+    method: string;
+    params?: { uri: string; version: number };
+  }
+
+  /** 带重启代数的镜像替身:generation 由用例推进,模拟 CORE-015 自动重启 */
+  function makeRestartableStubClient() {
+    const calls: MirrorCall[] = [];
+    let generation = 0;
+    const client = {
+      calls,
+      start: vi.fn(async () => {
+        calls.push({ method: 'start' });
+        return {};
+      }),
+      request: vi.fn(async (method: string) => {
+        calls.push({ method: `request:${method}` });
+        return {};
+      }),
+      dispose: vi.fn(async () => undefined),
+      openDocument: vi.fn((uri: string, _languageId: string, version: number, _text: string) => {
+        calls.push({ method: 'openDocument', params: { uri, version } });
+      }),
+      changeDocument: vi.fn((uri: string, version: number, _text: string) => {
+        calls.push({ method: 'changeDocument', params: { uri, version } });
+      }),
+      closeDocument: vi.fn((uri: string) => {
+        calls.push({ method: 'closeDocument', params: { uri, version: 0 } });
+      }),
+      getRestartGeneration: () => generation,
+      setGeneration: (next: number): void => {
+        generation = next;
+      }
+    };
+    return client as ShadowClientLike & typeof client;
+  }
+
+  const makeRestartGate = (client: ReturnType<typeof makeRestartableStubClient>): KodeCoreGate => {
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'shadow', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    return gate;
+  };
+
+  it('自动重启:版本账重置并重放快照,继续编辑以 didChange 打到新进程', async () => {
+    const client = makeRestartableStubClient();
+    const gate = makeRestartGate(client);
+    await gate.mirrorDocument(URI, 'kbengine-def', 1, '<Entity/>');
+    await gate.mirrorDocument(URI, 'kbengine-def', 2, '<Entity/>');
+    expect(client.calls.map(call => call.method)).toEqual([
+      'start',
+      'openDocument',
+      'start',
+      'changeDocument'
+    ]);
+
+    // 新进程是空库:账本必须失效,下一次镜像先重放快照再发 didChange
+    client.setGeneration(1);
+    await gate.mirrorDocument(URI, 'kbengine-def', 3, '<Entity/>');
+    const mirrored = client.calls.filter(call => call.method !== 'start');
+    expect(mirrored.map(call => [call.method, call.params?.version])).toEqual([
+      ['openDocument', 1],
+      ['changeDocument', 2],
+      ['openDocument', 2], // 重放:按最近快照版本重开(不是旧账的 didChange)
+      ['changeDocument', 3]
+    ]);
+  });
+
+  it('compare 同样先对账:重启后首次对拍先重放快照再发请求', async () => {
+    const client = makeRestartableStubClient();
+    const gate = makeRestartGate(client);
+    await gate.mirrorDocument(URI, 'kbengine-def', 1, '<Entity/>');
+    client.setGeneration(1);
+    await gate.compare('textDocument/diagnostic', { textDocument: { uri: URI } }, { kind: 'full', items: [] });
+    const order = client.calls.map(call => call.method);
+    const replayIndex = order.lastIndexOf('openDocument');
+    const requestIndex = order.lastIndexOf('request:textDocument/diagnostic');
+    expect(requestIndex).toBeGreaterThan(replayIndex);
+  });
+
+  it('kill-switch 离开后重进 shadow:账与快照都清,重开走 didOpen 而不是 didChange', async () => {
+    const client = makeRestartableStubClient();
+    const gate = makeRestartGate(client);
+    await gate.mirrorDocument(URI, 'kbengine-def', 5, '<Entity/>');
+    client.setGeneration(1); // 会话期间发生过自动重启(旧账已随之失效)
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    gate.setConfig({ backend: 'shadow', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    await gate.mirrorDocument(URI, 'kbengine-def', 5, '<Entity/>');
+    expect(client.calls.filter(call => call.method !== 'start').map(call => call.method)).toEqual([
+      'openDocument',
+      'openDocument'
+    ]);
+  });
+});
+
 describe('resolveBackendMode kill-switch 解析', () => {
   it('默认/undefined/空串/拼错一律回落 ts(安全侧是 TS 真相)', () => {
     for (const raw of [undefined, 'ts', '', 'TS', 'shaddow', 'rustt']) {

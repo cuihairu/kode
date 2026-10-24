@@ -114,6 +114,14 @@ export class KodeCoreClient {
     return this.child;
   }
 
+  /**
+   * 重启代数读口(E-2):下游账本(如切流门的语料镜像账)据此感知自动重启,
+   * 新进程是空库,旧账本必须随重启失效。
+   */
+  getRestartGeneration(): number {
+    return this.restartGeneration;
+  }
+
   /** 最近 stderr 行(崩溃诊断留痕,最多 50 行) */
   get recentStderr(): readonly string[] {
     return this.stderrTail;
