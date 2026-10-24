@@ -72,7 +72,7 @@
 - [ ] C-1 G9 Space Viewer/Watcher 面板·第一步：引擎 watcher 协议取证（kbengine 源码树 getWatcher/addWatcher 消息面，file:line 摘录落 docs/design）
 - [ ] C-2 G9·第二步：最小查询面板（单 watcher 查询+结果表格，走真实协议，mock 测试）
 - [ ] C-3 G9·第三步：面板操作面（增删 watcher、结果订阅流），开关默认关
-- [ ] C-4 T-04 .pyi 抢占实验结论落地（实验文档已在，产出「开关建议档」待用户拍板行）
+- [x] C-4 T-04 .pyi 抢占实验结论落地：开关建议档已落实验文档「Switch recommendation (awaiting user ratification)」——A `stubExport`(默认 true,KBEngine.pyi 无本地运行时文件,无遮蔽)维持开；B `entityStubMethods`(默认 true,产物名 kbe_types.pyi/entity_types.pyi 不与用户模块同名)维持开+仅落自管根；C 全量 `.py` 同树生成(T-04)维持不做,若做须显式 opt-in 默认关。**三个拍板点(A/B/C 默认不动、stubDir 不指脚本树规则、同名遮蔽永久禁)待用户逐条定**；pyright 1.1.414 单点证据,Pylance/Cursor/PyCharm 未验
 - [ ] C-5 V-06 版本感知 API·a：引擎版本/源码提交探测模块（git describe 取不到→unknown，禁硬造）
 - [ ] C-6 V-06·b：API 元数据挂接（声明位置+版本标识进 API 浏览面）
 - [ ] C-7 V-06·c：配置开关+features 清单行+测试
