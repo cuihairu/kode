@@ -154,4 +154,6 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.python.stubEngineTypings` | `true` | Full engine-typings export into `KBEngine.pyi` — `src/pythonStubExport.ts:360` |
 | `kbengine.python.entityStubMethods` | `true` | Entity stub method surface in `entity_types.pyi` — `src/entityTypeStubs.ts:74,139` |
 | `kbengine.types.aliasDiscovery` | `true` | `alias.xml` custom-type discovery — `src/definitionWorkspace.ts:285` |
+| `kbengine.runtimeQuery.enabled` | `false` | Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default off keeps the panel to single manual queries) — `src/runtimeQueryWebView.ts` |
+| `kbengine.runtimeQuery.pollIntervalMs` | `2000` | Result subscription stream interval in ms for the Runtime Queries panel (floor 500; applies only when `kbengine.runtimeQuery.enabled` is on) — `src/runtimeQueryWebView.ts` |
 

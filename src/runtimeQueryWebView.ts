@@ -107,8 +107,30 @@ export const defaultRuntimeQueryProtocol: RuntimeQueryProtocol = {
   queryWatcherPath
 };
 
+/**
+ * 操作面开关读取器(C-3)。默认直接读 `kbengine.runtimeQuery.*` 配置;测试注入
+ * 固定值,不依赖假 vscode 的配置段覆写。
+ */
+export interface RuntimeQueryOptions {
+  enabled?: () => boolean;
+  pollIntervalMs?: () => number;
+}
+
+export const defaultRuntimeQueryOptions: RuntimeQueryOptions = {
+  enabled: () =>
+    vscode.workspace.getConfiguration('kbengine').get<boolean>(
+      'runtimeQuery.enabled',
+      false
+    ),
+  pollIntervalMs: () =>
+    vscode.workspace.getConfiguration('kbengine').get<number>(
+      'runtimeQuery.pollIntervalMs',
+      2000
+    )
+};
+
 interface RuntimeQueryMessage {
-  command: 'refresh' | 'querySpaces' | 'queryWatcher';
+  command: 'refresh' | 'querySpaces' | 'queryWatcher' | 'addWatcher' | 'removeWatcher' | 'toggleStream';
   componentKey?: unknown;
   path?: unknown;
 }
@@ -116,16 +138,22 @@ interface RuntimeQueryMessage {
 type RuntimeQueryError =
   | { kind: 'discovery'; message: string }
   | { kind: 'spaces'; componentKey: string; message: string }
-  | { kind: 'watcher'; componentKey: string; message: string };
+  | { kind: 'watcher'; componentKey: string; message: string }
+  | { kind: 'watchList'; message: string };
 
 export class RuntimeQueryWebView {
   private panel: vscode.WebviewPanel | null = null;
   private components: KBEngineComponentInfo[] = [];
   private error: RuntimeQueryError | null = null;
+  private watchPaths: string[] = [];
+  private streaming = false;
+  private streamTimer: NodeJS.Timeout | null = null;
+  private streamComponent: KBEngineComponentInfo | null = null;
 
   constructor(
     private context: vscode.ExtensionContext,
-    private protocol: RuntimeQueryProtocol = defaultRuntimeQueryProtocol
+    private protocol: RuntimeQueryProtocol = defaultRuntimeQueryProtocol,
+    private options: RuntimeQueryOptions = defaultRuntimeQueryOptions
   ) {}
 
   show(): void {
@@ -148,6 +176,7 @@ export class RuntimeQueryWebView {
     );
     this.panel.onDidDispose(
       () => {
+        this.stopStream();
         this.panel = null;
       },
       undefined,
@@ -159,6 +188,36 @@ export class RuntimeQueryWebView {
   private async handleMessage(message: RuntimeQueryMessage): Promise<void> {
     if (message.command === 'refresh') {
       await this.refresh();
+      return;
+    }
+
+    // 增删 watcher 是面板侧的查询目标清单管理——引擎的 addWatcher/delWatcher
+    // 是进程内脚本 API(pywatcher.cpp),不在控制台协议上,面板无法远程增删引擎
+    // watcher(见设计文档 §5/§8);因此这两个操作不依赖已选组件
+    if (message.command === 'removeWatcher') {
+      this.watchPaths = this.watchPaths.filter(
+        existing => existing !== (typeof message.path === 'string' ? message.path.trim() : '')
+      );
+      this.error = null;
+      this.postState();
+      return;
+    }
+
+    if (message.command === 'addWatcher') {
+      const path = typeof message.path === 'string' ? message.path.trim() : '';
+      if (!path) {
+        this.error = { kind: 'watchList', message: 'Enter a watcher path to add.' };
+        this.postState();
+        return;
+      }
+      if (this.watchPaths.includes(path)) {
+        this.error = { kind: 'watchList', message: `Watcher path already on the list: ${path}` };
+        this.postState();
+        return;
+      }
+      this.watchPaths = [...this.watchPaths, path];
+      this.error = null;
+      this.postState();
       return;
     }
 
@@ -185,6 +244,26 @@ export class RuntimeQueryWebView {
       return;
     }
 
+    if (message.command === 'toggleStream') {
+      if (this.streaming) {
+        this.stopStream();
+        this.postState();
+        return;
+      }
+      if (!this.options.enabled?.()) {
+        this.error = {
+          kind: 'watchList',
+          message: 'Result stream is off by default; enable kbengine.runtimeQuery.enabled.'
+        };
+        this.postState();
+        return;
+      }
+      this.startStream(component);
+      // 先回灌一次 streaming 状态,轮询轮次稍后才带结果回来
+      this.postState();
+      return;
+    }
+
     const path = typeof message.path === 'string' ? message.path.trim() : '';
     if (!path) {
       this.error = { kind: 'watcher', componentKey, message: 'Enter a watcher path.' };
@@ -194,9 +273,46 @@ export class RuntimeQueryWebView {
 
     try {
       const watchers = await this.protocol.queryWatcherPath(component, path, 1200);
-      this.postState({ watchers });
+      this.postState({ watcherRows: watcherResultRows(watchers) });
     } catch (error) {
       this.error = { kind: 'watcher', componentKey, message: errorMessage(error) };
+      this.postState();
+    }
+  }
+
+  private startStream(component: KBEngineComponentInfo): void {
+    this.streamComponent = component;
+    this.streaming = true;
+    this.error = null;
+    const intervalMs = Math.max(500, this.options.pollIntervalMs?.() ?? 2000);
+    this.streamTimer = setInterval(() => void this.runStreamRound(), intervalMs);
+    void this.runStreamRound();
+  }
+
+  private stopStream(): void {
+    if (this.streamTimer !== null) {
+      clearInterval(this.streamTimer);
+      this.streamTimer = null;
+    }
+    this.streaming = false;
+    this.streamComponent = null;
+  }
+
+  private async runStreamRound(): Promise<void> {
+    const component = this.streamComponent;
+    if (!component || !this.streaming) return;
+    const paths = [...this.watchPaths];
+    if (paths.length === 0) return;
+    try {
+      const frames = await Promise.all(
+        paths.map(path => this.protocol.queryWatcherPath(component, path, 1200))
+      );
+      if (!this.streaming) return; // 面板已关/已停则不回灌过期状态
+      this.error = null;
+      this.postState({ watcherRows: watcherResultRows(frames.flat()) });
+    } catch (error) {
+      if (!this.streaming) return;
+      this.error = { kind: 'watchList', message: errorMessage(error) };
       this.postState();
     }
   }
@@ -226,7 +342,7 @@ export class RuntimeQueryWebView {
   }
 
   private postState(
-    result: { spaces?: SpaceQueryResult[]; watchers?: WatcherQueryResult[] } = {}
+    result: { spaces?: SpaceQueryResult[]; watcherRows?: WatcherResultRow[] } = {}
   ): void {
     if (!this.panel) return;
     void this.panel.webview.postMessage({
@@ -238,9 +354,11 @@ export class RuntimeQueryWebView {
         address: `${component.intaddr}:${component.intport}`
       })),
       error: this.error,
+      watchPaths: [...this.watchPaths],
+      streaming: this.streaming,
       result: {
         spaces: toSpaceView(result.spaces),
-        watcherRows: watcherResultRows(result.watchers)
+        watcherRows: result.watcherRows ?? []
       }
     });
   }
@@ -262,6 +380,11 @@ export class RuntimeQueryWebView {
       <input id="path" type="text" value="/" spellcheck="false">
       <button id="watcher" type="button">Query watcher</button>
     </section>
+    <section>
+      <button id="add-watcher" type="button">Add to watch list</button>
+      <button id="stream" type="button" disabled>Start stream</button>
+    </section>
+    <ul id="watch-list"></ul>
     <output id="message" aria-live="polite"></output>
     <table id="watcher-result" hidden>
       <caption>Watcher query results</caption>
@@ -287,9 +410,14 @@ export class RuntimeQueryWebView {
     const watcherTable = document.getElementById('watcher-result');
     const watcherBody = document.getElementById('watcher-result').querySelector('tbody');
     const empty = document.getElementById('empty');
+    const addWatcher = document.getElementById('add-watcher');
+    const stream = document.getElementById('stream');
+    const watchList = document.getElementById('watch-list');
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
     document.getElementById('spaces').addEventListener('click', () => vscode.postMessage({ command: 'querySpaces', componentKey: component.value }));
     document.getElementById('watcher').addEventListener('click', () => vscode.postMessage({ command: 'queryWatcher', componentKey: component.value, path: path.value }));
+    addWatcher.addEventListener('click', () => vscode.postMessage({ command: 'addWatcher', path: path.value }));
+    stream.addEventListener('click', () => vscode.postMessage({ command: 'toggleStream', componentKey: component.value }));
     const renderWatchers = (rows) => {
       watcherBody.replaceChildren(...rows.map(row => {
         const tr = document.createElement('tr');
@@ -323,6 +451,20 @@ export class RuntimeQueryWebView {
       const error = state.error ? state.error.kind + ': ' + state.error.message : '';
       message.textContent = error;
       renderWatchers(state.result ? state.result.watcherRows || [] : []);
+      const watchPaths = state.watchPaths || [];
+      watchList.replaceChildren(...watchPaths.map(item => {
+        const li = document.createElement('li');
+        const label = document.createElement('span');
+        label.textContent = item;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Remove';
+        remove.addEventListener('click', () => vscode.postMessage({ command: 'removeWatcher', path: item }));
+        li.append(label, remove);
+        return li;
+      }));
+      stream.textContent = state.streaming ? 'Stop stream' : 'Start stream';
+      stream.disabled = !state.streaming && watchPaths.length === 0;
       const spaces = state.result ? state.result.spaces || [] : [];
       result.textContent = spaces.length ? JSON.stringify(spaces, null, 2) : '';
       result.hidden = spaces.length === 0;

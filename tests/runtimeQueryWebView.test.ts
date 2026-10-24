@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   RuntimeQueryWebView,
   joinWatcherPath,
@@ -12,6 +14,7 @@ import type {
 } from '../src/kbengineProtocol';
 import { Uri, type ExtensionContext } from './fake-vscode/core';
 import { panelRegistry } from './fake-vscode/panelRegistry';
+import { configurationOverrides } from './fake-vscode/workspaceState';
 
 const component: KBEngineComponentInfo = {
   uid: 1000,
@@ -77,6 +80,11 @@ const postState = (panelIndex = 0) => {
 
 beforeEach(() => {
   panelRegistry.reset();
+  configurationOverrides.clear();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('RuntimeQueryWebView', () => {
@@ -236,6 +244,199 @@ describe('toSpaceView(webview 边界 bigint 转字符串)', () => {
   });
 });
 
+// C-3 操作面:增删 watcher(面板侧查询目标清单——引擎的 addWatcher/delWatcher 是
+// 进程内脚本 API,面板无法远程增删引擎 watcher,见设计文档 §5/§8)、结果订阅流
+// (按轮询间隔重查清单),开关默认关。
+describe('RuntimeQueryWebView 操作面(增删 watcher、结果订阅流)', () => {
+  const flush = async (): Promise<void> => {
+    // handleMessage 与轮询轮次都是浅层 await,固定微任务轮数即可确定性排空
+    for (let tick = 0; tick < 20; tick += 1) {
+      await Promise.resolve();
+    }
+  };
+
+  const openPanel = async (webview: RuntimeQueryWebView) => {
+    webview.show();
+    await flush();
+    return panelRegistry.panels[0];
+  };
+
+  const countedProtocol = (): { protocol: typeof protocol; calls: () => number } => {
+    let count = 0;
+    return {
+      protocol: {
+        ...protocol,
+        queryWatcherPath: async (): Promise<WatcherQueryResult[]> => {
+          count += 1;
+          return [watcher];
+        }
+      },
+      calls: () => count
+    };
+  };
+
+  it('增删 watcher:入列去空白,重复/空路径给 watchList 错误且清单不变', async () => {
+    const webview = new RuntimeQueryWebView(context, protocol, { enabled: () => false });
+    const panel = await openPanel(webview);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: ' /cellapp/uptime ' });
+    await flush();
+    expect(postState().watchPaths).toEqual(['/cellapp/uptime']);
+    expect(postState().streaming).toBe(false);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '/cellapp/uptime' });
+    await flush();
+    expect(postState().error).toEqual({
+      kind: 'watchList',
+      message: 'Watcher path already on the list: /cellapp/uptime'
+    });
+    expect(postState().watchPaths).toEqual(['/cellapp/uptime']);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '   ' });
+    await flush();
+    expect(postState().error).toEqual({ kind: 'watchList', message: 'Enter a watcher path to add.' });
+
+    panelRegistry.fireMessage(panel, { command: 'removeWatcher', path: '/cellapp/uptime' });
+    await flush();
+    expect(postState().watchPaths).toEqual([]);
+    expect(postState().error).toBeNull();
+  });
+
+  it('订阅流默认关:配置缺省时拒绝启动,不发起任何查询', async () => {
+    const { protocol: counted, calls } = countedProtocol();
+    const webview = new RuntimeQueryWebView(context, counted); // 默认 options 读配置,假 vscode 无覆写即 false
+    const panel = await openPanel(webview);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '/cellapp/uptime' });
+    await flush();
+    panelRegistry.fireMessage(panel, { command: 'toggleStream', componentKey: '5:9001' });
+    await flush();
+
+    expect(postState().error).toEqual({
+      kind: 'watchList',
+      message: 'Result stream is off by default; enable kbengine.runtimeQuery.enabled.'
+    });
+    expect(postState().streaming).toBe(false);
+    expect(calls()).toBe(0);
+  });
+
+  it('订阅流开关:打开后按轮询间隔重查清单并回灌表格行,关闭即停', async () => {
+    vi.useFakeTimers();
+    configurationOverrides.set('kbengine', {
+      'runtimeQuery.enabled': true,
+      'runtimeQuery.pollIntervalMs': 600
+    });
+    const { protocol: counted, calls } = countedProtocol();
+    const webview = new RuntimeQueryWebView(context, counted);
+    const panel = await openPanel(webview);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '/cellapp/uptime' });
+    await flush();
+    panelRegistry.fireMessage(panel, { command: 'toggleStream', componentKey: '5:9001' });
+    await flush();
+
+    expect(postState().streaming).toBe(true);
+    expect(postState().result).toEqual({
+      spaces: [],
+      watcherRows: [{ path: '/cellapp/uptime', kind: 'value', value: '42' }]
+    });
+    expect(calls()).toBe(1);
+
+    vi.advanceTimersByTime(600);
+    await flush();
+    vi.advanceTimersByTime(600);
+    await flush();
+    expect(calls()).toBe(3);
+
+    panelRegistry.fireMessage(panel, { command: 'toggleStream', componentKey: '5:9001' });
+    await flush();
+    expect(postState().streaming).toBe(false);
+    vi.advanceTimersByTime(3600);
+    await flush();
+    expect(calls()).toBe(3);
+  });
+
+  it('订阅流清单为空时不发起查询,表格不被空轮清掉', async () => {
+    vi.useFakeTimers();
+    configurationOverrides.set('kbengine', {
+      'runtimeQuery.enabled': true,
+      'runtimeQuery.pollIntervalMs': 600
+    });
+    const { protocol: counted, calls } = countedProtocol();
+    const webview = new RuntimeQueryWebView(context, counted);
+    const panel = await openPanel(webview);
+
+    panelRegistry.fireMessage(panel, { command: 'toggleStream', componentKey: '5:9001' });
+    await flush();
+    expect(postState().streaming).toBe(true);
+
+    vi.advanceTimersByTime(3600);
+    await flush();
+    expect(calls()).toBe(0);
+    expect(postState().result.watcherRows).toEqual([]);
+  });
+
+  it('轮询间隔下限 500ms:配置低于下限时按下限生效', async () => {
+    vi.useFakeTimers();
+    configurationOverrides.set('kbengine', {
+      'runtimeQuery.enabled': true,
+      'runtimeQuery.pollIntervalMs': 50
+    });
+    const { protocol: counted, calls } = countedProtocol();
+    const webview = new RuntimeQueryWebView(context, counted);
+    const panel = await openPanel(webview);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '/cellapp/uptime' });
+    await flush();
+    panelRegistry.fireMessage(panel, { command: 'toggleStream', componentKey: '5:9001' });
+    await flush();
+    expect(calls()).toBe(1);
+
+    vi.advanceTimersByTime(499);
+    await flush();
+    expect(calls()).toBe(1);
+    vi.advanceTimersByTime(1);
+    await flush();
+    expect(calls()).toBe(2);
+  });
+
+  it('面板销毁即停止订阅流定时器', async () => {
+    vi.useFakeTimers();
+    configurationOverrides.set('kbengine', {
+      'runtimeQuery.enabled': true,
+      'runtimeQuery.pollIntervalMs': 600
+    });
+    const { protocol: counted, calls } = countedProtocol();
+    const webview = new RuntimeQueryWebView(context, counted);
+    const panel = await openPanel(webview);
+
+    panelRegistry.fireMessage(panel, { command: 'addWatcher', path: '/cellapp/uptime' });
+    await flush();
+    panelRegistry.fireMessage(panel, { command: 'toggleStream', componentKey: '5:9001' });
+    await flush();
+    expect(calls()).toBe(1);
+
+    panelRegistry.fireDispose(panel);
+    vi.advanceTimersByTime(3600);
+    await flush();
+    expect(calls()).toBe(1);
+  });
+});
+
+describe('kbengine.runtimeQuery.* 配置项', () => {
+  it('操作面开关默认关,轮询间隔默认 2000ms 且声明下限 500', () => {
+    const props = (JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as {
+      contributes: { configuration: { properties: Record<string, Record<string, unknown>> } };
+    }).contributes.configuration.properties;
+    expect(props['kbengine.runtimeQuery.enabled']).toMatchObject({ type: 'boolean', default: false });
+    expect(props['kbengine.runtimeQuery.pollIntervalMs']).toMatchObject({
+      type: 'number',
+      default: 2000,
+      minimum: 500
+    });
+  });
+});
+
 // C-2 结果表格的行投影口径。引擎侧依据 `Watcher.py:73-137`:type 0 是叶子读数段
 // (父路径 + values 叶子名),type≠0 是目录清单段(keys 直接是子路径全名)。
 describe('watcherResultRows / joinWatcherPath', () => {
@@ -291,7 +492,9 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
     listeners: Record<string, () => void>;
     textContent: string;
     value: string;
+    type: string;
     hidden: boolean;
+    disabled: boolean;
     scope?: string;
     append: (...nodes: FakeElement[]) => void;
     replaceChildren: (...nodes: FakeElement[]) => void;
@@ -306,7 +509,9 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
       listeners: {} as Record<string, () => void>,
       textContent: '',
       value: '',
+      type: '',
       hidden: false,
+      disabled: false,
       append: (...nodes: FakeElement[]): void => {
         element.children.push(...nodes);
       },
@@ -334,7 +539,19 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
 
     const elements = new Map<string, FakeElement>();
     const tbody = makeElement('tbody');
-    for (const id of ['component', 'path', 'message', 'result', 'empty', 'refresh', 'spaces', 'watcher']) {
+    for (const id of [
+      'component',
+      'path',
+      'message',
+      'result',
+      'empty',
+      'refresh',
+      'spaces',
+      'watcher',
+      'add-watcher',
+      'stream',
+      'watch-list'
+    ]) {
       elements.set(id, makeElement(id === 'component' ? 'select' : id === 'path' ? 'input' : 'div'));
     }
     const watcherTable = makeElement('table');
@@ -421,5 +638,43 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
     const result = elements.get('result');
     expect(result?.hidden).toBe(false);
     expect(result?.textContent).toContain('"componentType": 4');
+  });
+
+  it('watch list 渲染为可移除条目,流按钮标签随 streaming 切换、空清单禁用', () => {
+    const { elements, dispatch } = runWebviewScript(htmlOf());
+    const list = elements.get('watch-list') as FakeElement;
+    const stream = elements.get('stream') as FakeElement;
+
+    dispatch({
+      command: 'state',
+      components: [],
+      error: null,
+      watchPaths: ['/cellapp/uptime', '/cellapp/load'],
+      streaming: true,
+      result: { spaces: [], watcherRows: [] }
+    });
+
+    expect(list.children).toHaveLength(2);
+    const [first, second] = list.children;
+    expect(first.tag).toBe('li');
+    expect(first.children.map(cell => `${cell.tag}:${cell.textContent}`)).toEqual([
+      'span:/cellapp/uptime',
+      'button:Remove'
+    ]);
+    expect(second.children[0].textContent).toBe('/cellapp/load');
+    expect(stream.textContent).toBe('Stop stream');
+    expect(stream.disabled).toBe(false);
+
+    dispatch({
+      command: 'state',
+      components: [],
+      error: null,
+      watchPaths: [],
+      streaming: false,
+      result: { spaces: [], watcherRows: [] }
+    });
+    expect(list.children).toHaveLength(0);
+    expect(stream.textContent).toBe('Start stream');
+    expect(stream.disabled).toBe(true);
   });
 });

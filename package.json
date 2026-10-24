@@ -1036,6 +1036,17 @@
           "type": "boolean",
           "default": true,
           "description": "Discover custom types from scripts/entity_defs/alias.xml in addition to types.xml (default: enabled); disabled falls back to types.xml only"
+        },
+        "kbengine.runtimeQuery.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default: disabled). Off keeps the panel to single manual queries"
+        },
+        "kbengine.runtimeQuery.pollIntervalMs": {
+          "type": "number",
+          "minimum": 500,
+          "default": 2000,
+          "description": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on"
         }
       }
     }

@@ -332,6 +332,25 @@ Behavior rules:
 - **No disturbance on missing names**: when `actionName` is empty or matches no action, the event still fires but only drops one log line into the OUTPUT channel 「KBEngine 快速执行动作」 (KBEngine quick actions) — no popup, no execution.
 - **Config tolerance**: wrong types (`enabled` not a boolean, `globs` not an array, `debounceMs` negative or non-numeric) all fall back to defaults, erroring nothing and interrupting nothing; empty strings and non-string items in `globs` are pruned, and pruning to empty falls back to the default `**/*.py`.
 
+### Runtime Queries
+
+The Runtime Queries panel (`kbengine.runtimeQuery.show`) queries a running KBEngine over the engine's console protocol: component discovery, a single watcher path query rendered as a table, and space snapshots. Its operation surface — the watcher watch-list (add/remove) and the result subscription stream — is gated **off by default** against accidental polling against a live server.
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.runtimeQuery.enabled` | boolean | `false` | Master switch for the operation surface (watch-list add/remove and the result stream); off keeps the panel to single manual queries |
+| `kbengine.runtimeQuery.pollIntervalMs` | number | `2000` | Result stream interval in milliseconds; applies only when `kbengine.runtimeQuery.enabled` is on |
+
+Behavior rules:
+
+- **Default off is enforced at the boundary**: with `kbengine.runtimeQuery.enabled` unset or false, starting the stream reports `watchList: Result stream is off by default; enable kbengine.runtimeQuery.enabled.` and issues no query at all — the panel stays on single manual queries.
+- **Watch-list entries are query targets, not engine watchers**: `KBEngine.addWatcher` / `delWatcher` are in-process script APIs (`kbe/src/lib/pyscript/pywatcher.cpp`), not console-protocol messages, so the panel cannot add or remove watchers inside the engine. Adding a path only registers it for the panel's own queries.
+- **Interval floor**: values below `500` are clamped to `500` at run time (the schema also declares `minimum: 500`), so a mis-typed `50` polls at 500 ms, not 50 ms.
+- **Empty list is a no-op round**: with no watch-list entries a stream round issues no request and does not clear the existing table rows.
+- **The stream stops with the panel**: closing the webview tears the interval down; rounds that resolve after the panel closed are dropped instead of posted back.
+
+Boundary: these are engine *runtime* console-observation protocol messages, only reachable against a running KBEngine server. End-to-end assertions cannot run in-repo or in CI — see `docs/design/space-viewer-watcher.md` §8 for the conditions under which a real end-to-end run would be worth reopening.
+
 ### Database
 
 | Setting | Type | Default | Purpose |

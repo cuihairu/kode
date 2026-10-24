@@ -332,6 +332,25 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 - **找不到名字不打扰**:`actionName` 留空,或匹配不到任何动作时,事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水,不弹窗、不执行。
 - **配置容错**:类型写错(`enabled` 不是布尔、`globs` 不是数组、`debounceMs` 是负数或非数字)一律回落默认,不报错不中断装配;`globs` 里的空串与非字符串项被剔除,剔空则回落默认 `**/*.py`。
 
+### 运行时查询
+
+运行时查询面板（`kbengine.runtimeQuery.show`）走引擎控制台协议查询在跑的 KBEngine：组件发现、单条 watcher 路径查询（结果渲染成表格）、Space 快照。其操作面——watcher 观察清单（增删）与结果订阅流——**默认关**，避免对线上服务端误轮询。
+
+| 设置项 | 类型 | 默认值 | 用途 |
+| --- | --- | --- | --- |
+| `kbengine.runtimeQuery.enabled` | boolean | `false` | 操作面总开关（观察清单增删与结果订阅流）；关闭时面板只剩单次手动查询 |
+| `kbengine.runtimeQuery.pollIntervalMs` | number | `2000` | 结果订阅流轮询间隔毫秒数；仅在 `kbengine.runtimeQuery.enabled` 开启时生效 |
+
+行为规则：
+
+- **默认关在边界处强制**：`kbengine.runtimeQuery.enabled` 未设置或为 false 时，启动订阅流会给出 `watchList: Result stream is off by default; enable kbengine.runtimeQuery.enabled.`，且不发起任何查询——面板停留在单次手动查询。
+- **观察清单条目是查询目标，不是引擎 watcher**：`KBEngine.addWatcher` / `delWatcher` 是进程内脚本 API（`kbe/src/lib/pyscript/pywatcher.cpp`），不是控制台协议消息，面板无法远程增删引擎内部的 watcher。加入路径只是把它登记为面板自身的查询目标。
+- **间隔下限**：低于 `500` 的值运行时按 `500` 生效（schema 亦声明 `minimum: 500`），误填 `50` 会按 500ms 轮询而不是 50ms。
+- **空清单是空转轮次**：观察清单为空时轮次不发起请求，也不清空表格已有行。
+- **流随面板关闭而停**：关闭 webview 即销毁定时器；面板关闭后才 resolve 的轮次直接丢弃，不回灌。
+
+边界：这些是引擎**运行期**控制台观测协议消息，只对正在运行的 KBEngine 服务端可达。端到端断言无法在仓库内或 CI 中跑——重开条件见 `docs/design/space-viewer-watcher.md` §8。
+
 ### 数据库
 
 | 配置项 | 类型 | 默认值 | 说明 |
