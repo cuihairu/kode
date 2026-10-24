@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 
@@ -38,6 +38,23 @@ describe('集成 tag 接线', () => {
     // 集成配置必须是显式清单,不得退回主门禁的全量通配(否则失去「集成 tag」意义)
     expect(integrationConfig).not.toContain("'tests/**/*.test.ts'");
     expect(ciYml).not.toContain('vitest.integration.config.ts');
+  });
+
+  it('根目录 vitest 配置都在 tsconfig.exclude 内(否则 tsc -p ./ 报 TS6059)', () => {
+    // C-10 加 vitest.integration.config.ts 时踩过:该文件在 rootDir(src)之外,
+    // 未进 exclude 就让 vscode:prepublish 的 tsc -p ./ 直接失败
+    const tsconfig = JSON.parse(readFileSync(join(root, 'tsconfig.json'), 'utf8')) as {
+      compilerOptions: { rootDir: string };
+      exclude: string[];
+    };
+    expect(tsconfig.compilerOptions.rootDir).toBe('src');
+    const rootConfigs = readdirSync(root).filter(name => /^vitest.*config\.ts$/.test(name));
+    expect(rootConfigs).toEqual(
+      expect.arrayContaining(['vitest.config.ts', 'vitest.integration.config.ts'])
+    );
+    for (const config of rootConfigs) {
+      expect(tsconfig.exclude, `${config} 不在 tsconfig.exclude,tsc -p ./ 会报 TS6059`).toContain(config);
+    }
   });
 
   it('集成 workflow 只手动/定时触发,不含发包或发 tag 步骤', () => {

@@ -25,6 +25,7 @@
     "tests",
     "src/webview",
     "vitest.config.ts",
-    "vitest.bench.config.ts"
+    "vitest.bench.config.ts",
+    "vitest.integration.config.ts"
   ]
 }
