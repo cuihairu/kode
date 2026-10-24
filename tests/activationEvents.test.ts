@@ -21,4 +21,8 @@ describe('activationEvents 激活门', () => {
     expect(pkg.activationEvents).toContain('onLanguage:kbengine-def');
     expect(pkg.activationEvents).toContain('workspaceContains:**/*.def');
   });
+
+  it('declares Python call-chain command activation', () => {
+    expect(pkg.activationEvents).toContain('onCommand:kbengine.python.showCallChain');
+  });
 });
