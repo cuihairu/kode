@@ -23,8 +23,6 @@ on:
       - '.gitignore'
       - '*.svg'
       - '.editorconfig'
-  release:
-    types: [ created ]
   workflow_dispatch:
 
 permissions:
@@ -98,19 +96,12 @@ jobs:
         path: "kode-*.vsix"
         retention-days: 30
 
-    - name: 发布到 VSCode Marketplace (Release)
-      timeout-minutes: 10
-      # release 创建时自动发；也支持手动重触发（Actions → CI/CD → Run workflow）
-      if: >-
-        (github.event_name == 'release' && github.event.action == 'created') ||
-        github.event_name == 'workflow_dispatch'
-      run: pnpm run publish
-      env:
-        VSCE_PAT: ${{ secrets.VSCE_PAT }}
-
     - name: 创建 GitHub Release (Tag Push)
       timeout-minutes: 10
       # tag push 自动执行；也支持在 tag 上手动重触发（Run workflow 选 tag）
+      # Marketplace 发布只有一条正道:publish.yml workflow_dispatch(版本一致性闸)。
+      # 此前这里的 release:created 自动发 Marketplace 与 workflow_dispatch 裸发布
+      # 两条腿均绕过该闸,已拆除(2026-10-24 季度复核,版本发布红线)。
       if: >-
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
         (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))
