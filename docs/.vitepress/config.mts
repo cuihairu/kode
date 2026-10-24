@@ -60,7 +60,8 @@ export default withMermaid(defineConfig({
                 { text: 'Reference plugin feature gap', link: '/reference-feature-gap' },
                 { text: 'Doc consistency audit', link: '/审计-文档一致性' },
                 { text: 'Quick actions and db hint design', link: '/design/quick-actions-and-db-hint' },
-                { text: 'Def/utype to .pyi stubs feasibility', link: '/design/def-pyi-stubs' }
+                { text: 'Def/utype to .pyi stubs feasibility', link: '/design/def-pyi-stubs' },
+                { text: 'Space Viewer / Watcher protocol forensics', link: '/design/space-viewer-watcher' }
               ]
             }
           ]
@@ -120,7 +121,8 @@ export default withMermaid(defineConfig({
                 { text: '参考插件功能差距', link: '/zh/reference-feature-gap' },
                 { text: '文档一致性审计', link: '/zh/审计-文档一致性' },
                 { text: '快捷动作与数据库提示设计', link: '/zh/design/quick-actions-and-db-hint' },
-                { text: '.pyi 类型桩可行性分析', link: '/zh/design/def-pyi-stubs' }
+                { text: '.pyi 类型桩可行性分析', link: '/zh/design/def-pyi-stubs' },
+                { text: 'Space Viewer/Watcher 协议取证', link: '/zh/design/space-viewer-watcher' }
               ]
             }
           ]

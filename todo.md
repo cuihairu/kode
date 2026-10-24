@@ -69,7 +69,8 @@
 - [x] B-5 分支成果收敛 main：179a290/9c8daf7/d5cff3d 三 commit squash 为 5071dde 已推 main（本地 main 旧指针 27199f8 经 patch-id 证与 origin c057bb3 重复后重置，零内容丢失）
 
 ## C. 功能项（拆细推进）
-- [ ] C-1 G9 Space Viewer/Watcher 面板·第一步：引擎 watcher 协议取证（kbengine 源码树 getWatcher/addWatcher 消息面，file:line 摘录落 docs/design）
+- [x] C-1 G9 Space Viewer/Watcher 面板·第一步：引擎 watcher 协议取证（kbengine 源码树 getWatcher/addWatcher 消息面，file:line 摘录落 docs/design）
+  - 证据：新增 docs/design/space-viewer-watcher.md（zh 镜像 docs/zh/design/space-viewer-watcher.md，vitepress 侧栏双语入口已加 docs/.vitepress/config.mts:63/:123）。取证树 = `../kbengine`（与 tests/helpers/engineTree.ts 兜底口径同源）。关键摘录：回执消息号 `CONSOLE_PROFILECB_MSGID=65503`（kbe/tools/server/pycommon/SpaceViews.py:13、Component_Status.py:13、Watcher.py:11 三处一致）；Watcher 请求号 41001-41010 按进程类型分（Watcher.py:32-40）；SpaceViewer 请求号 50001/50002/50003/50004/50005（Component_Status.py:33-34、SpaceViews.py:33-37 与 :142），服务侧实现 cellappmgr.cpp:559 `querySpaces`、cellapp.cpp:2259 `setSpaceViewer`、cellappmgr_interface.h:91/94、cellapp_interface.h:135/165、baseappmgr_interface.h:116；回执流解码顺序（进程头 int32+int64 → 逐 cellapp uint64+uint32 → 逐 Space uint32+string+string+uint32 → 逐 Cell uint32）见 SpaceViews.py:73-113；脚本侧 addWatcher 两形态与 deftype 白名单见 kbe/src/lib/network/pywatcher.cpp:28-137（delWatcher :149-165，模块注册 :184），watcher 定义本体 helper/watcher.h:227/260/294。未取证项如实标注（queryAppsLoads 回执字段、queryWatcher 请求体字段）→ C-3 前补。门禁：docs:build ✓（44.29s）、test:unit 2808 passed | 8 skipped（基线不变）；tsc/oxlint 未涉（纯 docs+config.mts 改动）。
 - [ ] C-2 G9·第二步：最小查询面板（单 watcher 查询+结果表格，走真实协议，mock 测试）
 - [ ] C-3 G9·第三步：面板操作面（增删 watcher、结果订阅流），开关默认关
 - [x] C-4 T-04 .pyi 抢占实验结论落地：开关建议档已落实验文档「Switch recommendation (awaiting user ratification)」——A `stubExport`(默认 true,KBEngine.pyi 无本地运行时文件,无遮蔽)维持开；B `entityStubMethods`(默认 true,产物名 kbe_types.pyi/entity_types.pyi 不与用户模块同名)维持开+仅落自管根；C 全量 `.py` 同树生成(T-04)维持不做,若做须显式 opt-in 默认关。**三个拍板点(A/B/C 默认不动、stubDir 不指脚本树规则、同名遮蔽永久禁)待用户逐条定**；pyright 1.1.414 单点证据,Pylance/Cursor/PyCharm 未验
