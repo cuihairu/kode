@@ -136,9 +136,34 @@ const isCorpusDocument = (document: DocumentLike): boolean =>
   isDefDocument(document) ||
   CORPUS_XML_SUFFIXES.some(suffix => document.uri.fsPath.endsWith(suffix));
 
+/** ProviderResult 是否 thenable(映射管理器方法跳转返回 Promise 的路径) */
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return value !== null && typeof value === 'object' && typeof (value as { then?: unknown }).then === 'function';
+}
+
 /**
- * .def 定义跳转影子对拍:适配 TS Location 面后镜像给 gate。fire-and-forget,
- * 不改 provider 返回值(铁律:Rust 结果只进差异日志)。
+ * ProviderResult 结算(E-3):同步 Location/Location[] 原样返回;thenable 解析
+ * 完成才产出对拍面(未解析时直接适配会得到 null,把异步落点误记成分歧)。
+ * 拒绝路径返回 unsettled —— 无 TS 真相可对拍,不产出对拍也不产生未处理拒绝
+ * (provider 的返回语义由调用方原样透传,这里只读不接管)。
+ */
+async function settleProviderResult(
+  result: unknown
+): Promise<{ settled: true; value: unknown } | { settled: false }> {
+  if (!isThenable(result)) {
+    return { settled: true, value: result };
+  }
+  try {
+    return { settled: true, value: await result };
+  } catch {
+    return { settled: false };
+  }
+}
+
+/**
+ * .def 定义跳转影子对拍:结算 ProviderResult(可能是 thenable)后适配成
+ * TS Location 面再镜像给 gate。fire-and-forget,不改 provider 返回值
+ * (铁律:Rust 结果只进差异日志)。
  */
 export function shadowCompareDefinition(
   document: DocumentLike,
@@ -154,8 +179,13 @@ export function shadowCompareDefinition(
     textDocument: { uri },
     position: { line: position.line, character: position.character }
   };
-  void gate
-    .compare('textDocument/definition', params, locationToLspFace(tsLocation), uri)
+  void settleProviderResult(tsLocation)
+    .then(settled => {
+      if (!settled.settled) {
+        return undefined;
+      }
+      return gate.compare('textDocument/definition', params, locationToLspFace(settled.value), uri);
+    })
     .catch(() => undefined);
 }
 

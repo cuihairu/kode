@@ -202,6 +202,94 @@ describe('shadowCompareDefinition 门控与记账', () => {
     });
     expect(diffLog.entries()[0].verdict).toBe('rust-error');
   });
+
+  it('E-3 异步结果:Promise<Location> 解析完成后才对拍,对拍面是解析落点而非 null', async () => {
+    const { client, responses } = makeStubClient();
+    const { gate, diffLog } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    responses.set('textDocument/definition', {
+      uri: '/w/OTHER.def',
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+    });
+    shadowCompareDefinition(
+      makeDocument() as never,
+      { line: 1, character: 2 },
+      Promise.resolve({
+        uri: { fsPath: '/w/Mob.def' },
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+      })
+    );
+    await vi.waitFor(() => {
+      expect(diffLog.summary().diff).toBe(1);
+    });
+    const detail = diffLog.entries()[0].detail ?? '';
+    expect(detail).toContain('/w/Mob.def'); // 对拍用的是解析后的真实落点
+    expect(detail).not.toContain('ts=null'); // 未解析即对拍时会得到 null 面
+  });
+
+  it('E-3 异步结果:非 Promise 的 thenable 同样解析后再对拍', async () => {
+    const { client, responses } = makeStubClient();
+    const { gate, diffLog } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    responses.set('textDocument/definition', {
+      uri: '/w/Mob.def',
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+    });
+    const thenable = {
+      then: (resolve: (value: unknown) => void) =>
+        resolve({
+          uri: { fsPath: '/w/Mob.def' },
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+        })
+    };
+    shadowCompareDefinition(makeDocument() as never, { line: 1, character: 2 }, thenable);
+    await vi.waitFor(() => {
+      expect(diffLog.summary().match).toBe(1);
+    });
+  });
+
+  it('E-3 拒绝路径:不产出对拍,也不产生未处理拒绝', async () => {
+    const { client, responses } = makeStubClient();
+    const { gate, diffLog } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    responses.set('textDocument/definition', {
+      uri: '/w/Mob.def',
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+    });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      shadowCompareDefinition(
+        makeDocument() as never,
+        { line: 1, character: 2 },
+        Promise.reject(new Error('mapping failed'))
+      );
+      await new Promise(resolve => setTimeout(resolve, 20));
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(diffLog.summary().total).toBe(0);
+    expect(unhandled).toHaveLength(0);
+  });
+
+  it('E-3 空结果:同步 null/undefined 仍对拍(null 面),不跳过', async () => {
+    const { client, responses } = makeStubClient();
+    const { gate, diffLog } = makeGate(client);
+    setKodeCoreShadowGate(gate);
+    responses.set('textDocument/definition', {
+      uri: '/w/Mob.def',
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+    });
+    shadowCompareDefinition(makeDocument() as never, { line: 1, character: 2 }, null);
+    shadowCompareDefinition(makeDocument() as never, { line: 1, character: 2 }, undefined);
+    await vi.waitFor(() => {
+      expect(diffLog.summary().total).toBe(2);
+    });
+    expect(diffLog.entries().map(entry => entry.verdict)).toEqual(['diff', 'diff']);
+  });
 });
 
 describe('shadowObserveDefDocument 诊断面 + 语料镜像腿', () => {
