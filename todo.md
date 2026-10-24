@@ -76,7 +76,8 @@
 - [ ] C-5 V-06 版本感知 API·a：引擎版本/源码提交探测模块（git describe 取不到→unknown，禁硬造）
 - [ ] C-6 V-06·b：API 元数据挂接（声明位置+版本标识进 API 浏览面）
 - [ ] C-7 V-06·c：配置开关+features 清单行+测试
-- [ ] C-8 V-07 兼容性测试·a：KBENGINE_ROOT 探测+无树 skipIf（CI 无树自动跳，skip 原因可见）
+- [x] C-8 V-07 兼容性测试·a：KBENGINE_ROOT 探测+无树 skipIf（tests/helpers/engineTree.ts；探测口径与产品侧 engineApiMetadata.findEngineRoot 同源——marker `kbe/src/lib/common/version.h`、`KBENGINE_ROOT=off` 显式关、环境变量优先、`../kbengine` 兄弟目录兜底，**测试跳过条件与产品报 unknown 的条件同源**；describeWithEngineTree 无树整套 skip 且原因写进套件标题；fixture+注入 6 例常驻门禁，真树断言挂载点留 C-9）
+  - 证据：tests/engineTreeProbe.test.ts 无树 6 passed|1 skipped、有树 fixture 7 passed 双配置实测；skip 行内可见 `↓ ... engine tree sanity (real tree) — skipped: no engine tree: set KBENGINE_ROOT or place kbengine next to the repo (no ../kbengine sibling found)`；全量 test:unit 2805 passed|8 skipped（基线 2799/7，+6）
 - [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
 - [ ] C-10 V-07·c：CI 接线（有树环境真跑，集成 tag）
 - [ ] C-11 V-08 边界注记：等真实管理协议（外部条件，触发条件=管理协议可用性，届时重开 C-1/C-2）
