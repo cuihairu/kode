@@ -73,9 +73,10 @@
 - [ ] C-2 G9·第二步：最小查询面板（单 watcher 查询+结果表格，走真实协议，mock 测试）
 - [ ] C-3 G9·第三步：面板操作面（增删 watcher、结果订阅流），开关默认关
 - [x] C-4 T-04 .pyi 抢占实验结论落地：开关建议档已落实验文档「Switch recommendation (awaiting user ratification)」——A `stubExport`(默认 true,KBEngine.pyi 无本地运行时文件,无遮蔽)维持开；B `entityStubMethods`(默认 true,产物名 kbe_types.pyi/entity_types.pyi 不与用户模块同名)维持开+仅落自管根；C 全量 `.py` 同树生成(T-04)维持不做,若做须显式 opt-in 默认关。**三个拍板点(A/B/C 默认不动、stubDir 不指脚本树规则、同名遮蔽永久禁)待用户逐条定**；pyright 1.1.414 单点证据,Pylance/Cursor/PyCharm 未验
-- [ ] C-5 V-06 版本感知 API·a：引擎版本/源码提交探测模块（git describe 取不到→unknown，禁硬造）
-- [ ] C-6 V-06·b：API 元数据挂接（声明位置+版本标识进 API 浏览面）
-- [ ] C-7 V-06·c：配置开关+features 清单行+测试
+- [x] C-5 V-06 版本感知 API·a：引擎版本/源码提交探测模块（src/engineApiMetadata.ts:58 `readEngineApiMetadata` 探测入口；:32 `findEngineRoot` 同源口径取 marker `kbe/src/lib/common/version.h` 的 `#define KBE_VERSION` 宏、git 取 commit/describe；取不到一律 unknown 禁硬造——:51 `UNKNOWN_ENGINE_VALUE='unknown'`、:65/:70 两道守卫、:124 `unknownMetadata` 兜底）
+  - 证据：tests/engineApiMetadata.test.ts:55「shows unknown rather than inventing values when source or git is unavailable」常驻门禁；src/engineCompatibility.ts:22 `findEngineRoot(startDirectory, explicitRoot)` 引擎树发现同源；C-8 的 tests/helpers/engineTree.ts 测试侧探测与产品侧同 marker，跳过条件与产品报 unknown 的条件同源
+- [x] C-6 V-06·b：API 元数据挂接（src/kbeModuleIndex.ts:480 `appendEngineApiMetadata` 把 `# Engine version:` / `# Source commit:` / `# Source describe:` 三行注释注入 KBEngine.pyi 存根首行之后；src/extension.ts:190 与 :218 两处存根生成路径按开关挂接）
+- [x] C-7 V-06·c：配置开关+features 清单行+测试（package.json#configuration `kbengine.python.apiMetadata` 默认 true，src/extension.ts:175 读取并 gate `buildEngineApiCatalog`；features.md 中英 Settings 表行已补 31147ec；测试侧 tests/engineApiMetadata.test.ts:55 unknown 兜底断言 + D-2 锁滚动覆盖其默认值口径）
 - [x] C-8 V-07 兼容性测试·a：KBENGINE_ROOT 探测+无树 skipIf（tests/helpers/engineTree.ts；探测口径与产品侧 engineApiMetadata.findEngineRoot 同源——marker `kbe/src/lib/common/version.h`、`KBENGINE_ROOT=off` 显式关、环境变量优先、`../kbengine` 兄弟目录兜底，**测试跳过条件与产品报 unknown 的条件同源**；describeWithEngineTree 无树整套 skip 且原因写进套件标题；fixture+注入 6 例常驻门禁，真树断言挂载点留 C-9）
   - 证据：tests/engineTreeProbe.test.ts 无树 6 passed|1 skipped、有树 fixture 7 passed 双配置实测；skip 行内可见 `↓ ... engine tree sanity (real tree) — skipped: no engine tree: set KBENGINE_ROOT or place kbengine next to the repo (no ../kbengine sibling found)`；全量 test:unit 2805 passed|8 skipped（基线 2799/7，+6）
 - [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
@@ -87,9 +88,11 @@
 
 ## D. 维护与质量
 - [x] D-1 每日 CI 日巡异常闭环：cron e4bddc0a5a17 **已不在调度器**（CronList 空、无 .claude/scheduled_tasks.json —— 会话级 cron 不跨会话持久，首跑复核无对象，如实记录）；异常侧已闭环：最近唯一失败为 nightly workflow_dispatch 2026-10-23T07:21Z，根因 npm registry TLS handshake EOF（pnpm install 取 vsce-sign/levn 抖动，非代码），下一轮 schedule 2026-10-23T10:58Z 成功自愈，无需动作。**待用户定夺**：是否重建为 durable 日巡（durable 会话常驻任务须用户明确同意，不自建）
-- [ ] D-2 docsCommands 测试口径随新配置键滚动补齐（callChainView/typeData/budget 等键的文档行核对）
+- [x] D-2 docsCommands 测试口径随新配置键滚动补齐（tests/docsCommands.test.ts 新增「features.md Settings 表与 package.json 对账」三例：① package.json 每条贡献键都见于 features.md Settings 表（**中英同锁**，防只补一边）② 反向：除运行时键白名单 `kbengine.managedDir` 外不得记载未贡献的键 ③ 标量（字符串/数字/布尔）默认值逐键与 `JSON.stringify` 口径核对，数组/对象只查行不比内容——`callChainView`/`typeData`/`asyncBudgetMs`/`apiMetadata` 等键由此锁自动滚动覆盖，不再逐键补断言）
+  - 证据：2a32be3 test: lock features settings table against drift；该锁落地即揪出中英漂移各一处（EN 缺 5 键 hover.asyncBudgetMs/webviewConsoleLogs/python.apiMetadata/python.callChainHints/python.callChainView、zh 缺 `kbengine.python.builtinTypeInlayHints`），已一并补齐 31147ec；test:unit 2808 passed|8 skipped（基线 2799/7，+6 为 C-8 探测用例、+3 为本锁）
 - [x] D-3 发布铁律季度复核：**查出回潮并已拆**——ci.yml 原有两条绕过版本闸的自动发布腿：① `on: release: created` → `pnpm run publish`（发 GitHub Release 即自动上 Marketplace）；② 任何手动 `workflow_dispatch` 跑 CI/CD 即裸发 Marketplace（无版本一致性校验）。两条均拆除，Marketplace 发布唯一正道=publish.yml workflow_dispatch（含 package.json version 逐字一致性闸 + 全量测试 + lint）；tag push 建 GitHub Release 腿保留（用户手动推 tag 即版本决定，且不触 Marketplace）（e38bdf9；.github/workflows/ci.yml:on 与 build steps）
-- [ ] D-4 功能清单 features.md 随 B/C 项落地同步（每项带证据口径不吹）
+- [x] D-4 功能清单 features.md 随 B/C 项落地同步（EN+zh 各补 2 条功能条目：**悬停 def 方法 / 接收者调用 / 内建属性标注（Python）**——B-1 三条异步标注面，证据 src/languageProviders.ts `provideHover` 三分支 + src/hoverBudget.ts `raceWithBudget` + 三开关 `kbengine.entity.receiverSections|builtinProperties`、`kbengine.hover.asyncBudgetMs`；**调用链 Show Call Chain**——B-4 深度 3 向外出调沿 `self.base/cell/client.<方法>()` 接收者调用、打包离线 mermaid graph（默认）或纯文本回落、面板 tab 持久化优先于设置、图渲染失败回落文本带面板头说明，证据 `kbengine.python.showCallChain` 命令 + `callChainHints|callChainView` 开关 + src/defCallChain.ts/defCallChainProvider.ts/defCallChainViewLogic.ts；另补 Settings 表行 EN 5 行 + zh 6 行）
+  - 证据：31147ec docs: sync features settings table and add feature entries（2 files，15 insertions，EN+zh 功能条目与设置行同批对齐）；每条带 package.json#contributes|configuration 与 src 文件指针，mermaid 渲染四链已过 parse 校验（docs/perf/2026-baseline.md §7）；D-2 锁同批落地防回潮 2a32be3
 
 <!--
 完成口径示例: [x] A2-4 Hover 接入快照（1a2b3c4；test:unit 2690/2sk；src/documentStore.ts:42、languageProviders.ts:582）
