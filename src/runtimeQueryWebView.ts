@@ -18,6 +18,89 @@ export interface RuntimeQueryProtocol {
   ): Promise<WatcherQueryResult[]>;
 }
 
+/**
+ * 空间查询结果过 webview 边界前的 JSON 安全形态。`SpaceQueryResult` 里有三处
+ * bigint(componentID / snapshot.componentID / cellappID),而 `postMessage`
+ * 与 webview 侧 `JSON.stringify` 都吃不下 bigint——不转换的话整个 state 消息
+ * 直接抛 "Do not know how to serialize a BigInt",面板静默空掉。
+ */
+export interface SpaceSnapshotView {
+  componentType: number;
+  componentID: string;
+  cellappID: string;
+  spaceID: number;
+  geomappingPath: string;
+  scriptModuleName: string;
+  cells: number[];
+}
+
+export interface SpaceQueryView {
+  componentType: number;
+  componentID: string;
+  spaces: SpaceSnapshotView[];
+}
+
+export function toSpaceView(spaces: SpaceQueryResult[] = []): SpaceQueryView[] {
+  return spaces.map(space => ({
+    componentType: space.componentType,
+    componentID: space.componentID.toString(),
+    spaces: space.spaces.map(snapshot => ({
+      componentType: snapshot.componentType,
+      componentID: snapshot.componentID.toString(),
+      cellappID: snapshot.cellappID.toString(),
+      spaceID: snapshot.spaceID,
+      geomappingPath: snapshot.geomappingPath,
+      scriptModuleName: snapshot.scriptModuleName,
+      cells: snapshot.cells
+    }))
+  }));
+}
+
+/**
+ * watcher 结果表格的一行(C-2)。两种来源对应引擎 `Watcher.py:73-137` 的两种
+ * 回执形态:
+ * - `type === 0` 是叶子读数段,给出的是父路径 + `values` 里的叶子名,
+ *   全路径按引擎 `Watcher.py:82` 的 fullpath 口径拼(`path + '/' + name`,
+ *   父路径为空时只有 name);
+ * - `type !== 0` 是目录清单段,`keys` 里直接是子路径全名。
+ * 值统一转字符串:解析层已经按线型解出 number/boolean/string,表格不再区分类型列。
+ */
+export interface WatcherResultRow {
+  path: string;
+  kind: 'value' | 'child';
+  value: string;
+}
+
+/** 引擎 `Watcher.py:82` 的 fullpath 口径:父路径非空才补斜杠 */
+export function joinWatcherPath(parent: string, name: string): string {
+  return parent ? `${parent}/${name}` : name;
+}
+
+/**
+ * watcher 查询结果 → 表格行。纯函数、保序(不重排引擎给出的线序),
+ * 空输入返回空数组而不是伪造占位行。抽成导出函数是为了让表格口径有
+ * 单测执行面——webview 内联脚本只是一层渲染,不再自己推导行。
+ */
+export function watcherResultRows(watchers: WatcherQueryResult[] = []): WatcherResultRow[] {
+  const rows: WatcherResultRow[] = [];
+  for (const item of watchers) {
+    if (item.type === 0) {
+      for (const name of Object.keys(item.values)) {
+        rows.push({
+          path: joinWatcherPath(item.path, name),
+          kind: 'value',
+          value: String(item.values[name])
+        });
+      }
+      continue;
+    }
+    for (const key of item.keys) {
+      rows.push({ path: key, kind: 'child', value: '' });
+    }
+  }
+  return rows;
+}
+
 export const defaultRuntimeQueryProtocol: RuntimeQueryProtocol = {
   discoverComponents: (timeoutMs?: number) => discoverLocalComponents({ timeoutMs }),
   querySpaces,
@@ -155,7 +238,10 @@ export class RuntimeQueryWebView {
         address: `${component.intaddr}:${component.intport}`
       })),
       error: this.error,
-      result
+      result: {
+        spaces: toSpaceView(result.spaces),
+        watcherRows: watcherResultRows(result.watchers)
+      }
     });
   }
 
@@ -177,7 +263,20 @@ export class RuntimeQueryWebView {
       <button id="watcher" type="button">Query watcher</button>
     </section>
     <output id="message" aria-live="polite"></output>
-    <pre id="result"></pre>
+    <table id="watcher-result" hidden>
+      <caption>Watcher query results</caption>
+      <thead>
+        <tr>
+          <th scope="col">Path</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Value</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p id="empty" hidden>No watcher results yet.</p>
+    <p><strong>Spaces</strong></p>
+    <pre id="result" hidden></pre>
   </main>
   <script>
     const vscode = acquireVsCodeApi();
@@ -185,9 +284,31 @@ export class RuntimeQueryWebView {
     const path = document.getElementById('path');
     const message = document.getElementById('message');
     const result = document.getElementById('result');
+    const watcherTable = document.getElementById('watcher-result');
+    const watcherBody = document.getElementById('watcher-result').querySelector('tbody');
+    const empty = document.getElementById('empty');
     document.getElementById('refresh').addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
     document.getElementById('spaces').addEventListener('click', () => vscode.postMessage({ command: 'querySpaces', componentKey: component.value }));
     document.getElementById('watcher').addEventListener('click', () => vscode.postMessage({ command: 'queryWatcher', componentKey: component.value, path: path.value }));
+    const renderWatchers = (rows) => {
+      watcherBody.replaceChildren(...rows.map(row => {
+        const tr = document.createElement('tr');
+        const cells = [
+          { tag: 'th', scope: 'row', text: row.path },
+          { tag: 'td', text: row.kind },
+          { tag: 'td', text: row.value }
+        ];
+        for (const cell of cells) {
+          const element = document.createElement(cell.tag);
+          if (cell.scope) element.scope = cell.scope;
+          element.textContent = cell.text;
+          tr.append(element);
+        }
+        return tr;
+      }));
+      watcherTable.hidden = rows.length === 0;
+      empty.hidden = rows.length !== 0;
+    };
     window.addEventListener('message', event => {
       const state = event.data;
       if (state.command !== 'state') return;
@@ -201,7 +322,10 @@ export class RuntimeQueryWebView {
       if (state.components.some(item => item.key === selected)) component.value = selected;
       const error = state.error ? state.error.kind + ': ' + state.error.message : '';
       message.textContent = error;
-      result.textContent = JSON.stringify(state.result, null, 2);
+      renderWatchers(state.result ? state.result.watcherRows || [] : []);
+      const spaces = state.result ? state.result.spaces || [] : [];
+      result.textContent = spaces.length ? JSON.stringify(spaces, null, 2) : '';
+      result.hidden = spaces.length === 0;
     });
     vscode.postMessage({ command: 'refresh' });
   </script>
