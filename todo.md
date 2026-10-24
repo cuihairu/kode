@@ -83,9 +83,9 @@
 - [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
 - [ ] C-10 V-07·c：CI 接线（有树环境真跑，集成 tag）
 - [ ] C-11 V-08 边界注记：等真实管理协议（外部条件，触发条件=管理协议可用性，届时重开 C-1/C-2）
-- [ ] C-12 chatgpt 归并书遗留核对（**核对结果：引用余数=0，但原文未删，见下方证据**）
+- [x] C-12 chatgpt 归并书遗留核对（引用余数=0 且四份原文已随归并完成归档删除，见下方证据）
   - 引用余数核对通过：文件名 `chatgpt-2026-10-20-kode-*`、`log-center`、`background-process`、`chatgpt.*roadmap`、`chatgpt.*typings` 各 pattern 在 docs/src/tests/scripts/package.json 全部 0 命中（排除归并书本体与 docs/.vitepress/dist 构建产物）
-  - **未达项**：四份原文仍在 docs/review/ 且为 git 跟踪文件（chatgpt-2026-10-20-kode-{roadmap,log-center,background-process,typings}.md，10-21 09:52 落盘，从未有删除提交）——是否随归并完成归档删除，**待用户定夺**（属删档动作，agent 不自行执行）
+  - 遗留项已清（2026-10-24 本批）：四份原文 `chatgpt-2026-10-20-kode-{roadmap,log-center,background-process,typings}.md` （10-21 09:52 落盘，合计 68441 字节，从未有删除提交）已从 docs/review/ 删除——内容此前已被蒸馏为决策注记（各份转录头自述采纳落点：roadmap → todo.md「路线图批次」；typings → 类型系统/typings 批次注记；log-center → todo.md「日志中心战役」；background-process → todo.md「后台运行战役」），原文正文在 git 历史中永久可溯，删除不丢证据。同批另有两份 ChatGPT 转录按归并体例落成 docs/review/2026-10-22-unified-semantic-index-refactor.md 与 docs/review/2026-10-23-rust-core-lsp-proposal.md（各带分享链来源行）。删除前复跑引用余数：五个 pattern 在 docs/src/tests/scripts/package.json 全部 0 命中（排除 docs/.vitepress/dist 构建产物）。
 
 ## D. 维护与质量
 - [x] D-1 每日 CI 日巡异常闭环：cron e4bddc0a5a17 **已不在调度器**（CronList 空、无 .claude/scheduled_tasks.json —— 会话级 cron 不跨会话持久，首跑复核无对象，如实记录）；异常侧已闭环：最近唯一失败为 nightly workflow_dispatch 2026-10-23T07:21Z，根因 npm registry TLS handshake EOF（pnpm install 取 vsce-sign/levn 抖动，非代码），下一轮 schedule 2026-10-23T10:58Z 成功自愈，无需动作。**待用户定夺**：是否重建为 durable 日巡（durable 会话常驻任务须用户明确同意，不自建）
