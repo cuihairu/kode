@@ -121,12 +121,12 @@ while not streamReader.EOF():
 ## 5. Watcher 注册面（面板「增删 watcher」C-3 的引擎侧依据）
 
 脚本侧 API：`kbe/src/server/tools/guiconsole` 引用的 `KBEngine.addWatcher`
-由 `kbe/src/lib/network/pywatcher.cpp` 实现：
+由 `kbe/src/lib/pyscript/pywatcher.cpp` 实现：
 
 - `pywatcher.cpp:28` `addWatcher(PyObject*, PyObject*)`：两形态
   `addWatcher(watcherName, deftype, pyCallable)` 与 `addWatcher(watcherPath, deftype, pyCallable)`；
   deftype 只认 `UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|CHAR|STRING`，
-  传错即 `PyErr_Format`（`pywatcher.cpp:33,45,53,66,73,83`）。
+  传错即 `PyErr_Format`（`pywatcher.cpp:32,44,52,60,73,83`）。
 - `pywatcher.cpp:93-137` 按 deftype 分派 `_addWatcher<T>`；
   `pywatcher.cpp:149-165` `delWatcher`；`pywatcher.cpp:184` 模块方法注册。
 - 值对象与路径表：`pywatcher.h` / `pywatcher.inl`（`pywatcher.cpp:4-7` include）；
@@ -152,8 +152,12 @@ while not streamReader.EOF():
 
 - `queryAppsLoads`（50001/50002）回执字段构成未逐字段展开，只确认
   客户端入口在 `Component_Status.py:54`；C-2 若顺带做负载列需另取证。
-- watcher 线的 `queryWatcher` 请求体字段（路径、深度等）未取证；
-  C-3「面板操作面（增删 watcher）」开工前需补 `pywatcher` 侧读写配对。
+- watcher 线的 `queryWatcher` 请求体已取证：`Watcher.py:70-76`
+  `requireQueryWatcher` 只写一个字符串 `msg.writeString(path)`（`:75`），
+  没有深度字段；回执走 `65502` 由 `Watcher.py:78` `onWatcherMsg` 解码。
+  C-3 面板的 watch-list 因此只是查询目标登记，不涉及引擎侧 watcher 增删
+  （见 §5，`KBEngine.addWatcher` / `delWatcher` 是进程内脚本 API，
+  没有控制台协议消息）。
 - 本取证不涉及 `guiconsole`（MFC 桌面端）的实现细节，其
   `guiconsoleDlg.cpp:1206-1210` 只作为「同一消息族可被 C++ 客户端复用」的旁证。
 
