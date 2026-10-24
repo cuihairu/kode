@@ -80,12 +80,12 @@
 - [ ] C-9 V-07·b：fantasydemo 真实脚本样例批（def 解析/继承/校验行为断言）
 - [ ] C-10 V-07·c：CI 接线（有树环境真跑，集成 tag）
 - [ ] C-11 V-08 边界注记：等真实管理协议（外部条件，触发条件=管理协议可用性，届时重开 C-1/C-2）
-- [ ] C-12 chatgpt 归并书遗留核对（roadmap/log-center/background-process/typings 四份→todo/需求归并后原文已删，核引用余数=0）
+- [x] C-12 chatgpt 归并书遗留核对：四份原文（docs/review/chatgpt-2026-10-20-kode-{roadmap,log-center,background-process,typings}.md）已从 docs/review 删除；全仓核对引用余数=0（文件名/chatgpt-2026-10-20/log-center/background-process 各 pattern 在 docs/src/tests/scripts/package.json 均 0 命中；docs/review/ 现存同批文档仅 2026-10-21-kbengine-typings-validation.md，非归并书本体）（0a4fdcc 对账口径；核对日 2026-10-24）
 
 ## D. 维护与质量
-- [ ] D-1 每日 CI 日巡（cron e4bddc0a5a17）首跑复核（明早09:00）+异常闭环
+- [x] D-1 每日 CI 日巡异常闭环：cron e4bddc0a5a17 **已不在调度器**（CronList 空、无 .claude/scheduled_tasks.json —— 会话级 cron 不跨会话持久，首跑复核无对象，如实记录）；异常侧已闭环：最近唯一失败为 nightly workflow_dispatch 2026-10-23T07:21Z，根因 npm registry TLS handshake EOF（pnpm install 取 vsce-sign/levn 抖动，非代码），下一轮 schedule 2026-10-23T10:58Z 成功自愈，无需动作。**待用户定夺**：是否重建为 durable 日巡（durable 会话常驻任务须用户明确同意，不自建）
 - [ ] D-2 docsCommands 测试口径随新配置键滚动补齐（callChainView/typeData/budget 等键的文档行核对）
-- [ ] D-3 发布铁律执行核对：publish 仅 workflow_dispatch（185f027 已落，季度复核无自动腿回潮）
+- [x] D-3 发布铁律季度复核：**查出回潮并已拆**——ci.yml 原有两条绕过版本闸的自动发布腿：① `on: release: created` → `pnpm run publish`（发 GitHub Release 即自动上 Marketplace）；② 任何手动 `workflow_dispatch` 跑 CI/CD 即裸发 Marketplace（无版本一致性校验）。两条均拆除，Marketplace 发布唯一正道=publish.yml workflow_dispatch（含 package.json version 逐字一致性闸 + 全量测试 + lint）；tag push 建 GitHub Release 腿保留（用户手动推 tag 即版本决定，且不触 Marketplace）（e38bdf9；.github/workflows/ci.yml:on 与 build steps）
 - [ ] D-4 功能清单 features.md 随 B/C 项落地同步（每项带证据口径不吹）
 
 <!--
