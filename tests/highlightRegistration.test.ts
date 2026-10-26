@@ -282,6 +282,11 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         'todo.md',
         'CHANGELOG.zh.md',
         'out/**',
+        // 2026-10-26 打包瘦身: Rust 构建树与 pdb 调试符号不进 vsix(nightly 85MB 膨胀)
+        'cargo-home/',
+        'target/',
+        '**/target/',
+        '*.pdb',
         '!out/extension.js'
       ])
     );
