@@ -34,6 +34,10 @@
 - [x] A3-4 失败恢复：首扫被杀后再次请求可重新入队并完成，不永久 pending（2aca694；tests/indexScheduler.test.ts:252-262 杀掉首轮扫描模拟、:97 recoveries 计数）
 - [x] A3-5 EntityMappingManager 首扫迁入调度器：initialScan 走 scheduler，行为等价（2aca694；src/entityMapping.ts:186-199 scheduler 注入、entity-mapping-scan 打点）
 - [x] A3-6 后台限流与取消：交互任务单并发+后台让路，不抢主线程（2aca694；src/indexScheduler.ts:42、:149 throttleTimer；docs/perf/2026-pr3-indexscheduler.md）
+<!-- A3 六项对账复核 2026-10-27(全量 test:unit 3019 passed|8 skipped):上表证据口径经逐条对现源
+核实——IndexTaskKind 六类在 src/indexScheduler.ts:14-20、同文件同版本合并 :170-183、过期双向丢弃
+:184-199、五级优先级 :26-37、keyed 失败恢复 :229-231/:373-379、交互冷却 :401-413;tests/indexScheduler.test.ts
+16 例全绿;A3-5 行为等价由 tests/entityMappingDeferredStartup.test.ts:99-114(2ed63d8)承载。 -->
 
 ### A4 PR4 · 统一语义查询（semanticIndex + dependencyGraph）
 - [x] A4-1 新建 src/semanticIndex.ts：实体-分面方法/属性-Python类-注册关系-类型映射-根作用域 统一承载（查询 API 不暴露内部遍历）
