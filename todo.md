@@ -34,8 +34,8 @@
 - [x] A3-4 失败恢复：首扫被杀后再次请求可重新入队并完成，不永久 pending（2aca694；tests/indexScheduler.test.ts:252-262 杀掉首轮扫描模拟、:97 recoveries 计数）
 - [x] A3-5 EntityMappingManager 首扫迁入调度器：initialScan 走 scheduler，行为等价（2aca694；src/entityMapping.ts:186-199 scheduler 注入、entity-mapping-scan 打点）
 - [x] A3-6 后台限流与取消：交互任务单并发+后台让路，不抢主线程（2aca694；src/indexScheduler.ts:42、:149 throttleTimer；docs/perf/2026-pr3-indexscheduler.md）
-<!-- A3 六项对账复核 2026-10-27(全量 test:unit 3019 passed|8 skipped):上表证据口径经逐条对现源
-核实——IndexTaskKind 六类在 src/indexScheduler.ts:14-20、同文件同版本合并 :170-183、过期双向丢弃
+<!-- A3 六项对账复核 2026-10-27(全量 test:unit 3019 passed|8 skipped):上表证据口径经本会话逐条对
+现源核实——IndexTaskKind 六类在 src/indexScheduler.ts:14-20、同文件同版本合并 :170-183、过期双向丢弃
 :184-199、五级优先级 :26-37、keyed 失败恢复 :229-231/:373-379、交互冷却 :401-413;tests/indexScheduler.test.ts
 16 例全绿;A3-5 行为等价由 tests/entityMappingDeferredStartup.test.ts:99-114(2ed63d8)承载。 -->
 
@@ -48,7 +48,7 @@
 - [x] A4-6 现有查找顺序取证：从测试提取当前命中顺序→固化为显式策略文档+测试（不改行为先锁）
 
 ### A5 PR5 · Python Definition 去全仓阻塞
-- [x] A5-1 ensureScanned/ensureCompositionRoots 调用关系重构：Definition 先查快照+已建索引，按需单文件解析(stageRequestFiles)，后台补全量（d4fd634；src/pythonClassIndex.ts:1193-1250 两段查询、:1114 单文件入队）
+- [x] A5-1 ensureScanned/ensureCompositionRoots 调用关系重构：Definition 先查快照+已建索引，按需单文件解析(stageRequestFiles)，后台补全量（d4fd634；src/pythonClassIndex.ts:1193-1250 两段查询、:1114 单文件入队；行为断言 tests/pythonIndexPr5.test.ts「PR5 ② Definition 首查不阻塞全仓」三例：①命中——GatedBackgroundScheduler 扣住全部 full-reindex 分块时 resolveSelfMethodCandidates 照常命中同目录 base.py 的 Alpha.meth 且 noise/ 子目录零读(single-file-update≥2 已执行)；②未命中——resolveClassBase 落空后定点 glob 只补载 pkg/Beta.py 即命中,executedFullReindex=0 不升级为全仓；③后台补全量可观测——release 后分块真执行、findClassesByName('Noise0') 经全量补齐可查、executionOrder 断言按需单文件先于 full-reindex)
 - [x] A5-2 组合根构建缓存：同批 XML/def 只读一次，mtime+size 指纹重派生零重读（d4fd634；src/pythonClassIndex.ts:685-700 python-composition-roots 打点；docs/perf/2026-final-report.md 验收#6）
 - [x] A5-3 PythonClassIndex 版本与失效：类/基类/方法/MRO/组合根显式版本+依赖图裁断失效，比较走稳定 classKey 非对象引用（d4fd634；SemanticDependencyGraph 接入、fullRebuild 恒 false；docs/perf/2026-pr5-unblocked-definition.md §4）
 - [x] A5-4 删除/重命名/基类变更后旧索引项移除，跳转不到已不存在位置（d4fd634；tests/pythonIndexPr5.test.ts:203-244；docs/perf/2026-final-report.md 场景6 旧项 0 命中）

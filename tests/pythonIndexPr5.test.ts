@@ -3,6 +3,7 @@
 // ④ 显式版本轴 + PR4 依赖图裁断失效(类/基类/方法/MRO/组合根);
 // ⑤ 删除/重命名/基类变更后旧索引项移除(跳转不到已不存在位置);
 // ① 首扫接管面:发现任务经 IndexScheduler keyed 单例,分块后台解析。
+// ② Definition 首查不阻塞全仓:命中走快照+按需单文件解析,后台补全量可观测。
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -13,7 +14,13 @@ import {
   COMPOSITION_ROOTS_NODE,
   PythonClassIndex
 } from '../src/pythonClassIndex';
-import { IndexScheduler } from '../src/indexScheduler';
+import {
+  IndexScheduler,
+  IndexTaskHandle,
+  IndexTaskKind,
+  IndexTaskSpec,
+  IndexTaskState
+} from '../src/indexScheduler';
 import {
   getOperationSummary,
   resetLanguageServiceMetrics
@@ -288,6 +295,205 @@ describe('PR5 ① 首扫接管面(调度器 keyed 发现 + 分块后台解析)',
     }
   });
 });
+
+describe('PR5 ② Definition 首查不阻塞全仓(快照命中/按需单文件/后台补全量)', () => {
+  afterEach(() => {
+    stubWorkspace.findFiles = undefined as unknown as typeof stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('命中走快照+已建索引:全量分块被扣住时首查照常返回,噪声文件零读', async () => {
+    const { dir, paths, cleanup } = makeRoot(UNBLOCK_FILES);
+    pointWorkspaceAt(dir);
+    routeWorkspacePy(Object.values(paths).filter(target => target.endsWith('.py')));
+    const noisePaths = Object.keys(paths).filter(name => name.startsWith('noise/')).map(name => paths[name]);
+    const realRead = fs.promises.readFile.bind(fs.promises);
+    const pyReads: string[] = [];
+    fs.promises.readFile = (async (file: Parameters<typeof realRead>[0], ...rest: unknown[]) => {
+      const target = String(file);
+      if (target.endsWith('.py')) { pyReads.push(target); }
+      return (realRead as (f: Parameters<typeof realRead>[0], ...r: unknown[]) => Promise<string>)(file, ...rest);
+    }) as typeof fs.promises.readFile;
+
+    const scheduler = new GatedBackgroundScheduler();
+    const index = new PythonClassIndex(scheduler);
+    try {
+      const hits = await index.resolveSelfMethodCandidates(paths['query.py'], 1, 'meth');
+      expect(hits, '① 静态类 MRO 命中必须回答').toHaveLength(1);
+      expect(hits[0].filePath).toBe(paths['base.py']);
+      expect(hits[0].className).toBe('Alpha');
+      // 关键断言:全量分块全部被扣住,一个都没有真正执行
+      expect(scheduler.gatedCount, '全量分块已入队(后台在推进)').toBeGreaterThan(0);
+      expect(scheduler.executedFullReindex, '首查不得执行全量分块').toBe(0);
+      const noiseReads = pyReads.filter(target => noisePaths.includes(target));
+      expect(noiseReads, '全仓噪声文件不得被读取(全仓扫描未跑)').toHaveLength(0);
+      expect(scheduler.executedByKind.get('single-file-update'), '按需单文件任务已执行')
+        .toBeGreaterThanOrEqual(2);
+    } finally {
+      scheduler.release();
+      await index.waitForInitialScan().catch(() => undefined);
+      fs.promises.readFile = realRead;
+      cleanup();
+    }
+  });
+
+  it('未命中:定点 glob 补载请求所需文件,仍不等全仓', async () => {
+    const { dir, paths, cleanup } = makeRoot(UNBLOCK_FILES);
+    pointWorkspaceAt(dir);
+    routeWorkspacePy(Object.values(paths).filter(target => target.endsWith('.py')));
+    const noisePaths = Object.keys(paths).filter(name => name.startsWith('noise/')).map(name => paths[name]);
+    const realRead = fs.promises.readFile.bind(fs.promises);
+    const pyReads: string[] = [];
+    fs.promises.readFile = (async (file: Parameters<typeof realRead>[0], ...rest: unknown[]) => {
+      const target = String(file);
+      if (target.endsWith('.py')) { pyReads.push(target); }
+      return (realRead as (f: Parameters<typeof realRead>[0], ...r: unknown[]) => Promise<string>)(file, ...rest);
+    }) as typeof fs.promises.readFile;
+
+    const scheduler = new GatedBackgroundScheduler();
+    const index = new PythonClassIndex(scheduler);
+    try {
+      const document = makeTextDocument('x = Beta()\n', {
+        fileName: paths['call.py'],
+        languageId: 'python'
+      }) as unknown as Parameters<PythonClassIndex['resolveClassBase']>[0];
+      const resolved = await index.resolveClassBase(document, 'Beta');
+      expect(resolved, '落空后经定点补载必须命中').not.toBeNull();
+      expect(resolved!.filePath).toBe(paths['pkg/Beta.py']);
+      expect(scheduler.executedFullReindex, '定点补载不得升级为全仓扫描').toBe(0);
+      expect(pyReads, '被补载的是请求所需的那个文件').toContain(paths['pkg/Beta.py']);
+      const noiseReads = pyReads.filter(target => noisePaths.includes(target));
+      expect(noiseReads, '未命中的全仓噪声文件不得被读取').toHaveLength(0);
+    } finally {
+      scheduler.release();
+      await index.waitForInitialScan().catch(() => undefined);
+      fs.promises.readFile = realRead;
+      cleanup();
+    }
+  });
+
+  it('后台补全量可观测:释放后分块真执行、噪声类可查、按需单文件先于后台全量', async () => {
+    const { dir, paths, cleanup } = makeRoot(UNBLOCK_FILES);
+    pointWorkspaceAt(dir);
+    routeWorkspacePy(Object.values(paths).filter(target => target.endsWith('.py')));
+
+    try {
+      const scheduler = new GatedBackgroundScheduler();
+      scheduler.release();
+      const index = new PythonClassIndex(scheduler);
+      const hits = await index.resolveSelfMethodCandidates(paths['query.py'], 1, 'meth');
+      expect(hits[0].filePath).toBe(paths['base.py']);
+      await index.waitForInitialScan();
+      expect(scheduler.executedFullReindex, '后台补全量真实执行').toBeGreaterThan(0);
+      expect(scheduler.getStatus().failed, '后台分块无失败').toBe(0);
+      expect(await index.findClassesByName('Noise0'), '全量补齐后噪声类可查').toHaveLength(1);
+      const firstSingle = scheduler.executionOrder.indexOf('single-file-update');
+      const firstFull = scheduler.executionOrder.indexOf('full-reindex');
+      expect(firstSingle).toBeGreaterThanOrEqual(0);
+      expect(firstFull).toBeGreaterThan(-1);
+      expect(firstSingle, '按需单文件必须先于后台全量分块执行').toBeLessThan(firstFull);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+/**
+ * PR5 ② 观测面:放行/扣住后台全量分块的调度器。发现任务(initial-scan)与按需
+ * 单文件任务(single-file-update)原样透传;full-reindex 分块在 release() 之前
+ * 只记数不执行——用于断言「首查不依赖全仓扫描」与「后台补全量可观测」。
+ */
+class GatedBackgroundScheduler extends IndexScheduler {
+  /** 各类任务真实执行计数(执行时点,非入队时点) */
+  readonly executedByKind = new Map<IndexTaskKind, number>();
+  /** 真实执行顺序(断言交互单文件先于后台全量) */
+  readonly executionOrder: IndexTaskKind[] = [];
+  /** 已扣住尚未执行的 full-reindex 分块数 */
+  private gatedQueued = 0;
+  private releaseGate: (() => void) | null = null;
+  private readonly released = new Promise<void>(resolve => {
+    this.releaseGate = resolve;
+  });
+
+  release(): void {
+    this.releaseGate?.();
+  }
+
+  override enqueue(spec: IndexTaskSpec): IndexTaskHandle {
+    if (spec.kind !== 'full-reindex') {
+      return super.enqueue({
+        ...spec,
+        run: async () => {
+          this.record(spec.kind);
+          await spec.run();
+        }
+      });
+    }
+    this.gatedQueued += 1;
+    const wait = this.released
+      .then(() => super.enqueue({
+        ...spec,
+        run: async () => {
+          this.record('full-reindex');
+          await spec.run();
+        }
+      }))
+      .then(handle => handle.wait);
+    wait.catch(() => undefined);
+    return { id: -1, wait, cancel: () => undefined, state: () => 'queued' as IndexTaskState };
+  }
+
+  get gatedCount(): number {
+    return this.gatedQueued;
+  }
+
+  get executedFullReindex(): number {
+    return this.executedByKind.get('full-reindex') ?? 0;
+  }
+
+  private record(kind: IndexTaskKind): void {
+    this.executionOrder.push(kind);
+    this.executedByKind.set(kind, (this.executedByKind.get(kind) ?? 0) + 1);
+  }
+}
+
+/**
+ * PR5 ② 资产:query.py 的内联调用经同目录 base.py 的基类回答(命中路径);
+ * call.py 的 Beta 定义在子目录 pkg/ 下(未命中路径,靠定点 glob 补载);
+ * noise/ 子目录是全仓噪声——不在查询文件同目录,staging 不会读,只有全量
+ * 扫描会读,所以它是「全仓扫描是否真跑了」的探针。
+ */
+const UNBLOCK_FILES: Record<string, string> = {
+  'query.py': 'class Avatar(Alpha):\n\tdef tick(self):\n\t\tself.meth()\n',
+  'base.py': 'class Alpha:\n\tdef meth(self):\n\t\treturn 1\n',
+  'call.py': 'x = Beta()\n',
+  'pkg/Beta.py': 'class Beta:\n\tpass\n',
+  ...Object.fromEntries(
+    Array.from({ length: 6 }, (_, offset) => {
+      const label = String(offset).padStart(2, '0');
+      return [`noise/n${label}.py`, `class Noise${offset}:\n\tpass\n`];
+    })
+  )
+};
+
+/**
+ * workspace 文件发现路由:按 glob 形状区分全量与定点——递归通配全部 py 的
+ * glob 返回整批(含噪声子目录);定点 glob(双星加固定类名)只返回同名文件。
+ * 定点 glob 若被喂整批,「按需单文件解析」的断言就失去意义。
+ */
+const routeWorkspacePy = (allPyPaths: string[]): void => {
+  stubFindFiles(pattern => {
+    const patternText = String(pattern ?? '');
+    if (!patternText.endsWith('.py')) {
+      return [];
+    }
+    const baseName = patternText.replace(/\*\*\/(.+)$/, '$1');
+    if (baseName === '*.py') {
+      return allPyPaths;
+    }
+    return allPyPaths.filter(target => path.basename(target) === baseName);
+  });
+};
 
 function paths0(dir: string, name: string): string {
   return path.join(dir, name);
