@@ -306,3 +306,55 @@ export function getPythonSelfCompletionContext(lineText: string): PythonSelfComp
     partialSymbol
   };
 }
+
+export interface PythonMemberAccess {
+  /** 接收者名(非 self:avatar/monster 等对象名) */
+  receiverName: string;
+  /** 光标所在成员名(方法名段) */
+  memberName: string;
+  /** 完整访问路径 接收者.成员 */
+  fullPath: string;
+}
+
+/**
+ * 光标处成员访问解析(批158,用户令 2026-10-26):非 self 接收者的调用形态
+ * avatar.SendErrorInfo("err", 1)。只认「调用形」——成员名后(允许空白)必须是
+ * '(';属性访问/传方法引用不走此层。self.* 有专属管线
+ * (getPythonSelfAccessAtPosition),此处跳过避免双管线。光标必须落在成员名
+ * 段(与接收者调用同口径:按后缀算术取起点,不用 indexOf——成员名与接收者
+ * 同形子串会错位);落在接收者段不认(接收者词由其它面负责)。
+ */
+export function getPythonMemberAccessAtPosition(
+  lineText: string,
+  character: number
+): PythonMemberAccess | null {
+  const regex = /\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(lineText)) !== null) {
+    const receiverName = match[1];
+    const memberName = match[2];
+    if (receiverName === 'self') {
+      continue;
+    }
+    const nameStart = match.index + match[0].length - memberName.length;
+    const nameEnd = nameStart + memberName.length;
+    if (character < nameStart || character > nameEnd) {
+      continue;
+    }
+    let scan = nameEnd;
+    while (scan < lineText.length && /\s/.test(lineText[scan])) {
+      scan += 1;
+    }
+    if (lineText[scan] !== '(') {
+      continue;
+    }
+    return {
+      receiverName,
+      memberName,
+      fullPath: `${receiverName}.${memberName}`
+    };
+  }
+
+  return null;
+}

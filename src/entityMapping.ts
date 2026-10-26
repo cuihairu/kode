@@ -967,6 +967,8 @@ export class EntityMappingManager {
   private handlePythonFileChanged(pythonPath: string): void {
     clearDefCallChainFileCache();
     this.allPythonMethodHits.clear();
+    // 批158:共享倒排索引同阈失效(下次查询重建,口径同 allPythonMethodHits)
+    this.pythonDefIndexBuild = null;
     // PR4 A4-4:owner 归属反查改走语义索引(不再线性扫描 mappingIndexes)。
     for (const entry of this.semanticIndex.findEntitiesByPythonOwner(pythonPath)) {
       const mapping = this.mappingIndexesByRoot.get(entry.defFile);
@@ -1323,22 +1325,54 @@ export class EntityMappingManager {
     Array<{ filePath: string; line: number; character: number }>
   >();
 
-  private async collectAllPythonMethodHits(
-    methodName: string,
-    domain?: 'base' | 'cell',
-    declaredArgTypes?: string[]
-  ): Promise<Array<{ filePath: string; line: number; character: number }>> {
-    const cacheKey = `${domain ?? '*'}:${methodName}:${declaredArgTypes ? declaredArgTypes.join(',') : '*'}`;
-    const cached = this.allPythonMethodHits.get(cacheKey);
-    if (cached) {
-      return cached;
+  /**
+   * 全项目 python def 倒排索引(批158,用户令 2026-10-26):「方法名 → 首个声明
+   * 命中」一次 walk 建成,所有方法名查询共享。替换旧的每方法名一次同步全树
+   * 遍历——引擎内建名(SendErrorInfo 等)零命中也会每次重走全盘,Windows +
+   * Defender 实扫放大后单次数分钟且钉死插件宿主(1200 处引用逐名重付全款)。
+   * 失效:python 文件变更事件置空 promise,下次查询重建(与 allPythonMethodHits
+   * 同阈,见 handlePythonFileChanged);构建期协作式让路(16ms/25 文件
+   * setImmediate,口径同 2026-10-22 首扫让路),巨仓不再钉死插件宿主。
+   */
+  private pythonDefIndexBuild: Promise<
+    Map<string, Array<{ filePath: string; line: number; character: number }>>
+  > | null = null;
+
+  private buildPythonDefIndex(): Promise<
+    Map<string, Array<{ filePath: string; line: number; character: number }>>
+  > {
+    if (this.pythonDefIndexBuild) {
+      return this.pythonDefIndexBuild;
     }
-    const escaped = methodName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = new RegExp(`^\\s*def\\s+${escaped}\\s*\\(`);
-    const skippedDirs = new Set(['node_modules', '.venv', 'venv', '__pycache__', '.git', 'build', 'dist']);
-    const hits: Array<{ filePath: string; line: number; character: number }> = [];
+    this.pythonDefIndexBuild = this.performBuildPythonDefIndex().catch(error => {
+      jumpLog(
+        'debug',
+        () => `python def 索引构建失败: ${error instanceof Error ? error.message : String(error)}`
+      );
+      this.pythonDefIndexBuild = null;
+      return new Map<string, Array<{ filePath: string; line: number; character: number }>>();
+    });
+    return this.pythonDefIndexBuild;
+  }
+
+  private async performBuildPythonDefIndex(): Promise<
+    Map<string, Array<{ filePath: string; line: number; character: number }>>
+  > {
+    const index = new Map<string, Array<{ filePath: string; line: number; character: number }>>();
+    const defPattern = /^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
+    const skippedDirs = new Set([
+      'node_modules',
+      '.venv',
+      'venv',
+      '__pycache__',
+      '.git',
+      'build',
+      'dist'
+    ]);
     const seenPaths = new Set<string>();
-    const walk = (dir: string): void => {
+    let filesSinceYield = 0;
+    let chunkStartedAt = Date.now();
+    const walk = async (dir: string): Promise<void> => {
       let entries: fs.Dirent[];
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -1348,7 +1382,7 @@ export class EntityMappingManager {
       for (const entry of entries) {
         if (entry.isDirectory()) {
           if (!skippedDirs.has(entry.name) && !entry.name.startsWith('.')) {
-            walk(path.join(dir, entry.name));
+            await walk(path.join(dir, entry.name));
           }
           continue;
         }
@@ -1356,9 +1390,6 @@ export class EntityMappingManager {
           continue;
         }
         const filePath = path.join(dir, entry.name);
-        if (domain && !filePath.split(path.sep).includes(domain)) {
-          continue;
-        }
         const normalized = normalizeLookupPath(filePath);
         if (seenPaths.has(normalized)) {
           continue;
@@ -1371,25 +1402,71 @@ export class EntityMappingManager {
           continue;
         }
         const lines = text.split(/\r?\n/);
+        // 每文件每方法名只收首个声明(旧 walk「首个同名 def 即落点」口径的索引形态)
+        const seenInFile = new Set<string>();
         for (let i = 0; i < lines.length; i += 1) {
-          if (pattern.test(lines[i])) {
-            // 形参闸门(用户令 2026-10-21):def 声明了 <Arg> 时,实现形参个数
-            // (剔除 self/cls)必须相等;有注解的形参还要按引擎内建映射对上类型
-            // (UINT8→int/STRING→str/VECTOR3→Tuple[...]),未注明解的只作个数校验;
-            // 读不出签名/个数或类型不符 → 该文件不算候选。闸门本体已提炼为
-            // 公开静态 pythonSignatureMatchesDeclaredArgs,CodeLens/Hover 面同源复用。
-            if (declaredArgTypes &&
-              !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(declaredArgTypes, lines, i)) {
-              break;
+          const match = defPattern.exec(lines[i]);
+          if (match && !seenInFile.has(match[1])) {
+            seenInFile.add(match[1]);
+            let bucket = index.get(match[1]);
+            if (!bucket) {
+              bucket = [];
+              index.set(match[1], bucket);
             }
-            hits.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
-            break; // 每文件首个同名 def 即落点
+            bucket.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
           }
+        }
+        // 协作式让路:巨仓 walk 不再钉死插件宿主(口径同首扫让路)
+        if (++filesSinceYield >= 25 || Date.now() - chunkStartedAt >= 16) {
+          filesSinceYield = 0;
+          chunkStartedAt = Date.now();
+          await new Promise<void>(resolve => setImmediate(resolve));
         }
       }
     };
     for (const root of getIndexScanRoots()) {
-      walk(root);
+      await walk(root);
+    }
+    return index;
+  }
+
+  private async collectAllPythonMethodHits(
+    methodName: string,
+    domain?: 'base' | 'cell',
+    declaredArgTypes?: string[]
+  ): Promise<Array<{ filePath: string; line: number; character: number }>> {
+    const cacheKey = `${domain ?? '*'}:${methodName}:${declaredArgTypes ? declaredArgTypes.join(',') : '*'}`;
+    const cached = this.allPythonMethodHits.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+    // 批158:全树 walk 改共享倒排索引(一次 walk 服务所有方法名,协作式让路);
+    // 形参闸门仍在此处逐桶筛选——索引只收名字,不收签名。
+    const index = await this.buildPythonDefIndex();
+    const candidates = index.get(methodName) ?? [];
+    const domainFiltered = domain
+      ? candidates.filter(hit => hit.filePath.split(path.sep).includes(domain))
+      : candidates;
+    const hits: Array<{ filePath: string; line: number; character: number }> = [];
+    for (const candidate of domainFiltered) {
+      if (!declaredArgTypes) {
+        hits.push(candidate);
+        continue;
+      }
+      let text: string;
+      try {
+        text = fs.readFileSync(candidate.filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      const lines = text.split(/\r?\n/);
+      const lineIndex = candidate.line - 1;
+      // 形参闸门(用户令 2026-10-21,口径不变):def 声明了 <Arg> 时,实现形参
+      // 个数(剔除 self/cls)必须相等;有注解的形参按引擎内建映射对上类型
+      // (UINT8→int/STRING→str/VECTOR3→Tuple[...]);读不出签名/不符 → 不算候选。
+      if (EntityMappingManager.pythonSignatureMatchesDeclaredArgs(declaredArgTypes, lines, lineIndex)) {
+        hits.push(candidate);
+      }
     }
     hits.sort((a, b) => (a.filePath === b.filePath ? a.line - b.line : a.filePath.localeCompare(b.filePath)));
     this.allPythonMethodHits.set(cacheKey, hits);

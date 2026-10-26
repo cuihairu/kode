@@ -126,7 +126,9 @@ import {
   getPythonReceiverCallAtPosition,
   type PythonReceiverCall,
   getPythonSelfAccessAtPosition,
-  getPythonSelfCompletionContext
+  getPythonSelfCompletionContext,
+  getPythonMemberAccessAtPosition,
+  type PythonMemberAccess
 } from './pythonLanguageUtils';
 import {
   buildKbeStubDocument,
@@ -3369,7 +3371,8 @@ export interface JumpLayerTrace {
    * python-mro = PythonClassIndex 跨文件 C3-MRO + 组合根;
    * file-scope = 当前文件类作用域 / 本文件 MRO;
    * kbe-stub / class-base / types-reverse = 前置契约分支(命中即终点);
-   * context = 入参形态判定(既非 self 访问也非方法声明)。
+   * member-access = 非 self 接收者成员调用(avatar.SendErrorInfo,批158);
+   * context = 入参形态判定(既非 self 访问/成员调用也非方法声明)。
    */
   layer:
     | 'kbe-stub'
@@ -3378,6 +3381,7 @@ export interface JumpLayerTrace {
     | 'entity-def'
     | 'python-mro'
     | 'file-scope'
+    | 'member-access'
     | 'context';
   /** 本层查询的符号(方法层为光标所在段/声明名,非根符号) */
   query: string;
@@ -3626,7 +3630,15 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     if (declaredMethodName) {
       return this.runDefinitionLayers(document, position, null, declaredMethodName);
     }
-    jumpLog('info', () => '跳转放弃: 光标既非 self 访问也非方法声明(context)');
+    // 批158(用户令 2026-10-26):非 self 接收者的成员调用 avatar.SendErrorInfo(...)
+    // 不再直接放弃。旧口径在 context 层返回 null(用户实测「精确跳转不行」的根因);
+    // 新增 member-access 层:接收者名 → 全项目唯一同名 .def 实体 → 方法声明行;
+    // 无同名实体时不误跳,维持 null(仅层记录不同)。
+    const memberAccess = getPythonMemberAccessAtPosition(line.text, position.character);
+    if (memberAccess) {
+      return this.resolveMemberAccess(document, memberAccess);
+    }
+    jumpLog('info', () => '跳转放弃: 光标既非 self 访问/成员调用也非方法声明(context)');
     const wordRange = document.getWordRangeAtPosition(position, /\w+/);
     return {
       location: null,
@@ -3636,6 +3648,116 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           query: wordRange ? document.getText(wordRange) : '',
           status: 'miss',
           detail: 'position is neither self access nor method declaration'
+        }
+      ]
+    };
+  }
+
+  /**
+   * 批158 member-access 层:非 self 接收者成员调用的定义解析
+   * (avatar.SendErrorInfo)。接收者名在 KBEngine 语义里即实体名(实体变量命名
+   * 惯例与实体同名,如 avatar: Avatar);解析链:
+   * ①全项目唯一同名 .def 实体(Avatar.def)→ 该 def 内方法声明行(段不过滤,
+   *   方法在 Base/Cell/Client 任一段都算命中);
+   * ②接收者名同时是当前文件内可见的 Python 类名(同文件/import)且该类有同名
+   *   方法 → 类声明处。
+   * 找不到同名实体/类时不误跳(返回 null + 层记录),绝不静默落别的实体。
+   */
+  private async resolveMemberAccess(
+    document: vscode.TextDocument,
+    access: PythonMemberAccess
+  ): Promise<TracedDefinitionResult> {
+    const query = access.memberName;
+    jumpLog('info', () => `member-access 层: ${access.fullPath}(接收者=${access.receiverName})`);
+
+    // ① 接收者名 → 同名实体 def 的方法声明(对象级,复用类粒度 API)。
+    // KBEngine 变量命名惯例:实体变量小驼峰(avatar)与实体名帕斯卡(Avatar)
+    // 同形,精确名未命中时按首字母大写变体再试一次;两者都不中不误跳。
+    const entityCandidates = [access.receiverName];
+    const capitalized = access.receiverName.charAt(0).toUpperCase() + access.receiverName.slice(1);
+    if (capitalized !== access.receiverName) {
+      entityCandidates.push(capitalized);
+    }
+    let defHit: { defFile: string; line: number } | null = null;
+    let matchedEntity = access.receiverName;
+    for (const candidate of entityCandidates) {
+      const hit = await this.entityMappingManager.resolveMethodDefinitionForClass(
+        candidate,
+        query
+      );
+      if (hit) {
+        defHit = hit;
+        matchedEntity = candidate;
+        break;
+      }
+    }
+    if (defHit) {
+      const hitFile = defHit.defFile;
+      const hitLine = defHit.line;
+      jumpLog('info', () =>
+        `member-access 命中 def: ${path.basename(hitFile)}:${hitLine}`
+      );
+      return {
+        location: new vscode.Location(
+          vscode.Uri.file(hitFile),
+          new vscode.Position(Math.max(hitLine - 1, 0), 0)
+        ),
+        layers: [
+          {
+            layer: 'member-access',
+            query,
+            status: 'hit',
+            detail: `entity=${matchedEntity} def=${path.basename(hitFile)}:${hitLine}`
+          }
+        ]
+      };
+    }
+
+    // ② 接收者名 = 当前文件内可见类名 → 同名方法声明(本文件作用域)
+    if (this.pythonClassIndex) {
+      try {
+        const classes = await this.pythonClassIndex.findClassesByName(access.receiverName);
+        const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase();
+        const sameFile = classes.filter(cls => norm(cls.filePath) === norm(document.fileName));
+        const target = sameFile[0];
+        if (target) {
+          const parsed = parsePythonFile(document.getText(), document.fileName);
+          const cls = parsed.classes.find(item => item.name === target.name);
+          const method = cls?.methods.get(query);
+          if (method) {
+            jumpLog('info', () =>
+              `member-access 命中类: ${target.name}.${query} @ ${path.basename(document.fileName)}:${method.line + 1}`
+            );
+            return {
+              location: new vscode.Location(
+                vscode.Uri.file(document.fileName),
+                new vscode.Position(method.line, method.character)
+              ),
+              layers: [
+                {
+                  layer: 'member-access',
+                  query,
+                  status: 'hit',
+                  detail: `class=${target.name}.${query}`
+                }
+              ]
+            };
+          }
+        }
+      } catch (error) {
+        jumpLog('debug', () => `member-access 类回退失败: ${layerErrorMessage(error)}`);
+      }
+    }
+
+    jumpLog('info', () => `member-access 落空: ${access.fullPath}(无同名实体/类方法)`);
+    return {
+      location: null,
+      layers: [
+        {
+          layer: 'member-access',
+          query,
+          status: 'miss',
+          detail: `receiver=${access.receiverName} has no matching entity def or class method`
         }
       ]
     };
