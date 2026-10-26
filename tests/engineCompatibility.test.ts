@@ -44,6 +44,31 @@ describe('engine compatibility check', () => {
     expect(formatEngineCompatibilityReport(report)).toContain('OK engine-version');
   });
 
+  it('accepts a 2.5.10+ tree with only kbeversion.h and reads the synthesized version (C-14)', () => {
+    const kbeversionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-engine-kbeversion-'));
+    try {
+      fs.mkdirSync(path.join(kbeversionRoot, 'kbe/src/lib/common'), { recursive: true });
+      fs.writeFileSync(
+        path.join(kbeversionRoot, 'kbe/src/lib/common/kbeversion.h'),
+        '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n'
+      );
+      expect(findEngineRoot(root, kbeversionRoot)).toBe(kbeversionRoot);
+      const report = checkExtensionCompatibility(path.join(root, 'package.json'), kbeversionRoot, {
+        displayName: 'Kode KBEngine',
+        engines: '^1.84.0',
+        vscodeEngine: '^1.84.0',
+        files: [{ relativePath: 'out/extension.js', exported: true }]
+      });
+      expect(report.checks).toContainEqual(expect.objectContaining({
+        name: 'engine-version',
+        status: 'ok',
+        detail: expect.stringContaining('Engine 2.5.10')
+      }));
+    } finally {
+      fs.rmSync(kbeversionRoot, { recursive: true, force: true });
+    }
+  });
+
   it('does not invent an engine root when source is absent', () => {
     expect(findEngineRoot(root)).toBeNull();
     const report = checkExtensionCompatibility(path.join(root, 'package.json'), null, {

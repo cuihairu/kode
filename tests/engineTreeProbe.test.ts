@@ -3,12 +3,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  ENGINE_TREE_MARKER,
+  ENGINE_TREE_MARKERS,
   ENGINE_TREE_REASON,
   ENGINE_TREE_ROOT,
   detectEngineTree,
   describeWithEngineTree
 } from './helpers/engineTree';
+import { readEngineVersionMarker } from '../src/engineApiMetadata';
 
 // V-07·a(C-8):探测与 skipIf 机制本身不依赖真树,全部走 fixture + 注入,
 // 所以这两组用例会常驻门禁;真树断言挂在 describeWithEngineTree 下,
@@ -33,13 +34,32 @@ describe('engine tree probe', () => {
     expect(probe.reason).toBe('');
   });
 
+  it('accepts a 2.5.10+ tree that only ships kbeversion.h (C-14)', () => {
+    const kbeversionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-enginetree-kbeversion-'));
+    try {
+      fs.mkdirSync(path.join(kbeversionRoot, 'kbe/src/lib/common'), { recursive: true });
+      fs.writeFileSync(
+        path.join(kbeversionRoot, 'kbe/src/lib/common/kbeversion.h'),
+        '#define KBE_VERSION_MAJOR 2\n#define KBE_VERSION_MINOR 5\n#define KBE_VERSION_PATCH 10\n'
+      );
+      const probe = detectEngineTree({ env: { KBENGINE_ROOT: kbeversionRoot } });
+      expect(probe.root).toBe(kbeversionRoot);
+      expect(probe.reason).toBe('');
+    } finally {
+      fs.rmSync(kbeversionRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a KBENGINE_ROOT without the marker and names the bad path', () => {
     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-enginetree-empty-'));
     try {
       const probe = detectEngineTree({ env: { KBENGINE_ROOT: emptyDir } });
       expect(probe.root).toBeNull();
       expect(probe.reason).toContain(`KBENGINE_ROOT=${emptyDir}`);
-      expect(probe.reason).toContain(ENGINE_TREE_MARKER);
+      // C-14: 缺任一标记都要点名(旧 version.h 与新 kbeversion.h)
+      for (const marker of ENGINE_TREE_MARKERS) {
+        expect(probe.reason).toContain(marker);
+      }
     } finally {
       fs.rmSync(emptyDir, { recursive: true, force: true });
     }
@@ -86,10 +106,11 @@ describe('engine tree process probe (this environment)', () => {
 });
 
 describeWithEngineTree('engine tree sanity (real tree)', () => {
-  it('reads the version macro from the marker file, no fabrication', () => {
+  it('reads the version from whichever marker the real tree ships, no fabrication (C-14)', () => {
     const root = ENGINE_TREE_ROOT as string;
-    const source = fs.readFileSync(path.join(root, 'kbe/src/lib/common/version.h'), 'utf8');
-    const match = source.match(/^#define\s+KBE_VERSION\s+"([^"]+)"/m);
-    expect(match?.[1]).toEqual(expect.any(String));
+    const version = readEngineVersionMarker(root, candidate => fs.readFileSync(candidate, 'utf8'));
+    // 真树 2.5.10 只有 kbeversion.h 三宏;双标记口径下版本必须解析为 semver
+    // 形状——任一宏残缺时 readEngineVersionMarker 返回 null,不伪造。
+    expect(version).toEqual(expect.stringMatching(/^\d+\.\d+\.\d+$/));
   });
 });

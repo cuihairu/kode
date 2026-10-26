@@ -22,6 +22,10 @@ import {
 import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { getSemanticIndex } from './semanticIndex';
+import {
+  ENTITIES_XML_SECTION_CLIENT_SERVER,
+  ENTITIES_XML_SECTION_SERVER_ONLY
+} from './entitiesXmlAnalysis';
 
 export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 
@@ -265,22 +269,50 @@ export function getRegisteredEntities(workspaceRoot: string): RegisteredEntityIn
   const entities: RegisteredEntityInfo[] = [];
   const seenNames = new Set<string>();
 
-  for (const entityNode of getDirectChildElements(document.root)) {
-    const name = entityNode.name;
+  // C-13 (V-07·d): 平铺 + 分节双口径注册面。分节是 BigWorld entities.xml 语义
+  // (取证:fork cuihairu/kbengine 2.5.10 引擎源码 kbe/src 全树无分节名——引擎
+  // 会把分节容器当实体名打开 <名字>.def 失败;映射依据 fork 学习笔记
+  // docs/zh/study/05-entitydef-and-entity-definition.md:183-192):
+  // ClientServerEntities → hasClient=true;ServerOnlyEntities → hasClient=false
+  // (分组即最终判定);hasBase/hasCell 分节格式不声明,仍按「属性缺失=false」
+  // 上报,真实域位由 cell/、base/ 脚本目录判定,此处不伪造真值。
+  // 同名重复与引擎 registerNewScriptDefModule 同口径:按文档序保留首条。
+  const pushEntry = (entryNode: DefElementNode, sectionClient: boolean | null) => {
+    const name = entryNode.name;
     if (name === 'root' || seenNames.has(name)) {
-      continue;
+      return;
     }
-
+    const attributes = entryNode.attributes;
+    const sectionDeclaresClient = sectionClient !== null;
     entities.push({
       name,
-      hasBaseDeclared: Object.prototype.hasOwnProperty.call(entityNode.attributes, 'hasBase'),
-      hasCellDeclared: Object.prototype.hasOwnProperty.call(entityNode.attributes, 'hasCell'),
-      hasClientDeclared: Object.prototype.hasOwnProperty.call(entityNode.attributes, 'hasClient'),
-      hasBase: isTrueAttributeValue(entityNode.attributes.hasBase),
-      hasCell: isTrueAttributeValue(entityNode.attributes.hasCell),
-      hasClient: isTrueAttributeValue(entityNode.attributes.hasClient)
+      hasBaseDeclared: Object.prototype.hasOwnProperty.call(attributes, 'hasBase'),
+      hasCellDeclared: Object.prototype.hasOwnProperty.call(attributes, 'hasCell'),
+      hasClientDeclared: sectionDeclaresClient
+        || Object.prototype.hasOwnProperty.call(attributes, 'hasClient'),
+      hasBase: isTrueAttributeValue(attributes.hasBase),
+      hasCell: isTrueAttributeValue(attributes.hasCell),
+      hasClient: sectionDeclaresClient
+        ? sectionClient
+        : isTrueAttributeValue(attributes.hasClient)
     });
     seenNames.add(name);
+  };
+
+  for (const childNode of getDirectChildElements(document.root)) {
+    if (childNode.name === ENTITIES_XML_SECTION_CLIENT_SERVER) {
+      for (const entryNode of getDirectChildElements(childNode)) {
+        pushEntry(entryNode, true);
+      }
+      continue;
+    }
+    if (childNode.name === ENTITIES_XML_SECTION_SERVER_ONLY) {
+      for (const entryNode of getDirectChildElements(childNode)) {
+        pushEntry(entryNode, false);
+      }
+      continue;
+    }
+    pushEntry(childNode, null);
   }
 
   return entities;

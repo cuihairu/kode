@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { hasEngineTreeMarker, readEngineVersionMarker } from './engineApiMetadata';
+
 export interface EngineVersionCheck {
   readonly name: string;
   readonly status: 'ok' | 'warning' | 'error';
@@ -20,26 +22,23 @@ export interface ExtensionCompatibilityTarget {
 }
 
 export function findEngineRoot(startDirectory: string, explicitRoot?: string): string | null {
+  // C-14: dual marker probe (version.h legacy | kbeversion.h 2.5.10+), same
+  // acceptance as src/engineApiMetadata.ts findEngineRoot.
   if (explicitRoot) {
-    return fs.existsSync(path.join(explicitRoot, 'kbe', 'src', 'lib', 'common', 'version.h')) ? explicitRoot : null;
+    return hasEngineTreeMarker(explicitRoot, probe => fs.existsSync(probe)) ? explicitRoot : null;
   }
   const find = (current: string): string | null => {
-    const candidate = path.join(current, 'kbe', 'src', 'lib', 'common', 'version.h');
+    if (hasEngineTreeMarker(current, probe => fs.existsSync(probe))) return current;
     const parent = path.dirname(current);
-    if (fs.existsSync(candidate)) return current;
     return parent === current ? null : find(parent);
   };
   return find(path.resolve(startDirectory));
 }
 
 function readVersionMacro(engineRoot: string): string | null {
-  try {
-    const source = fs.readFileSync(path.join(engineRoot, 'kbe', 'src', 'lib', 'common', 'version.h'), 'utf8');
-    const match = source.match(/^#define\s+KBE_VERSION\s+"([^"]+)"/m);
-    return match?.[1] ?? null;
-  } catch {
-    return null;
-  }
+  // C-14: legacy single-macro file first, then the 2.5.10+ three-macro file
+  // synthesized as major.minor.patch (unknown fallback inside).
+  return readEngineVersionMarker(engineRoot, probe => fs.readFileSync(probe, 'utf8'));
 }
 
 function parseRange(version: string): [number, number, number] {

@@ -2,15 +2,26 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { describe } from 'vitest';
 
+import {
+  ENGINE_MARKER_KBEVERSION,
+  ENGINE_MARKER_LEGACY,
+  hasEngineTreeMarker
+} from '../../src/engineApiMetadata';
+
 // V-07·a(C-8):真引擎源码树探测 + 无树 skipIf。
 // 探测口径与产品侧 src/engineApiMetadata.ts 的 findEngineRoot 保持一致
-// (标记文件 kbe/src/lib/common/version.h;KBENGINE_ROOT=off 显式关;
+// (双标记 version.h | kbeversion.h,C-14;KBENGINE_ROOT=off 显式关;
 // 环境变量优先,其次 <起始目录>/../kbengine 兄弟目录)——测试跳过的条件
 // 与产品报 unknown 的条件同源,不会出现「产品找得到、测试却跳过」的错位。
 // C-9 的 fantasydemo 真实样例批挂在 describeWithEngineTree 之下。
 
-/** 引擎源码树标记文件(与 src/engineApiMetadata.ts 同一 marker) */
-export const ENGINE_TREE_MARKER = path.join('kbe', 'src', 'lib', 'common', 'version.h');
+/** 旧口径标记(version.h 单宏树);C-14 起与 kbeversion.h 双标记并存 */
+export const ENGINE_TREE_MARKER = path.join(...ENGINE_MARKER_LEGACY);
+/** C-14: 真树双标记(2.5.10+ 真树只有 kbeversion.h,version.h 从未存在) */
+export const ENGINE_TREE_MARKERS = [
+  path.join(...ENGINE_MARKER_LEGACY),
+  path.join(...ENGINE_MARKER_KBEVERSION)
+];
 
 export interface EngineTreeProbe {
   root: string | null;
@@ -33,13 +44,16 @@ export function detectEngineTree(options: EngineTreeProbeOptions = {}): EngineTr
     return { root: null, reason: 'KBENGINE_ROOT=off explicitly disables the engine tree' };
   }
   if (env.KBENGINE_ROOT) {
-    if (exists(path.join(env.KBENGINE_ROOT, ENGINE_TREE_MARKER))) {
+    if (hasEngineTreeMarker(env.KBENGINE_ROOT, exists)) {
       return { root: env.KBENGINE_ROOT, reason: '' };
     }
-    return { root: null, reason: `KBENGINE_ROOT=${env.KBENGINE_ROOT} has no ${ENGINE_TREE_MARKER}` };
+    return {
+      root: null,
+      reason: `KBENGINE_ROOT=${env.KBENGINE_ROOT} has none of the engine tree markers: ${ENGINE_TREE_MARKERS.join(' | ')}`
+    };
   }
   const sibling = path.resolve(startDirectory, '..', 'kbengine');
-  if (exists(path.join(sibling, ENGINE_TREE_MARKER))) {
+  if (hasEngineTreeMarker(sibling, exists)) {
     return { root: sibling, reason: '' };
   }
   return {

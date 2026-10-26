@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, existsSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,19 @@ function makeEngineTree(): string {
   const root = mkdtempSync(join(tmpdir(), 'kode-api-metadata-'));
   mkdirSync(join(root, 'kbe/src/lib/common'), { recursive: true });
   writeFileSync(join(root, 'kbe/src/lib/common/version.h'), '#define KBE_VERSION "9.9.9"\n');
+  return root;
+}
+
+/** C-14: 2.5.10+ 真树形状——只有 kbeversion.h 三宏，无 version.h */
+function makeKbeversionTree(options: { patch?: boolean }): string {
+  const root = mkdtempSync(join(tmpdir(), 'kode-api-metadata-kbeversion-'));
+  mkdirSync(join(root, 'kbe/src/lib/common'), { recursive: true });
+  const macros = [
+    '#define KBE_VERSION_MAJOR 2',
+    '#define KBE_VERSION_MINOR 5',
+    ...(options.patch ? ['#define KBE_VERSION_PATCH 10'] : [])
+  ];
+  writeFileSync(join(root, 'kbe/src/lib/common/kbeversion.h'), macros.join('\n') + '\n');
   return root;
 }
 
@@ -47,6 +60,35 @@ describe('engine API metadata', () => {
         commit: 'abc123def',
         describe: 'abc123def'
       });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts a 2.5.10+ tree with only kbeversion.h and synthesizes the version (C-14)', async () => {
+    const root = makeKbeversionTree({ patch: true });
+    try {
+      expect(existsSync(join(root, 'kbe/src/lib/common/version.h'))).toBe(false);
+      const metadata = await readEngineApiMetadata('/ws', {
+        engineRoot: root,
+        git: gitSuccess('abc123def')
+      });
+      expect(metadata.version).toBe('2.5.10');
+      expect(metadata.commit).toBe('abc123def');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports unknown version when kbeversion.h macros are incomplete, never fabricates (C-14)', async () => {
+    const root = makeKbeversionTree({ patch: false });
+    try {
+      const metadata = await readEngineApiMetadata('/ws', {
+        engineRoot: root,
+        git: gitSuccess('abc123def')
+      });
+      expect(metadata.version).toBe(UNKNOWN_ENGINE_VALUE);
+      expect(metadata.commit).toBe('abc123def');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

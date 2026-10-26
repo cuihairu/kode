@@ -150,6 +150,64 @@ describe('getRegisteredEntities', () => {
   });
 });
 
+describe('getRegisteredEntities sectioned entities.xml (C-13)', () => {
+  it('registers sectioned entries with the section-implied client facet, first entry wins', () => {
+    const sectionedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-defws-sectioned-'));
+    try {
+      fs.mkdirSync(path.join(sectionedRoot, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(sectionedRoot, 'scripts', 'entities.xml'), [
+        '<root>',
+        '  <ClientServerEntities>',
+        '    <Account hasCell="true"/>',
+        '    <Avatar/>',
+        '    <Account hasClient="false"/>',
+        '  </ClientServerEntities>',
+        '  <ServerOnlyEntities>',
+        '    <Guard/>',
+        '  </ServerOnlyEntities>',
+        '  <ServerOnlyEntities/>',
+        '</root>'
+      ].join('\n'), 'utf8');
+
+      const entities = getRegisteredEntities(sectionedRoot);
+      expect(entities.map(entity => entity.name)).toEqual(['Account', 'Avatar', 'Guard']);
+
+      // ClientServerEntities:分节即 hasClient=true(分组即最终判定);
+      // hasCell 属性仍按属性存在性上报;hasBase 无属性=未声明=false
+      expect(entities[0]).toEqual({
+        name: 'Account',
+        hasBaseDeclared: false,
+        hasCellDeclared: true,
+        hasClientDeclared: true,
+        hasBase: false,
+        hasCell: true,
+        hasClient: true
+      });
+      expect(entities[1]).toEqual({
+        name: 'Avatar',
+        hasBaseDeclared: false,
+        hasCellDeclared: false,
+        hasClientDeclared: true,
+        hasBase: false,
+        hasCell: false,
+        hasClient: true
+      });
+      // ServerOnlyEntities:hasClient=false 且视为已声明(分节显式排除客户端)
+      expect(entities[2]).toEqual({
+        name: 'Guard',
+        hasBaseDeclared: false,
+        hasCellDeclared: false,
+        hasClientDeclared: true,
+        hasBase: false,
+        hasCell: false,
+        hasClient: false
+      });
+    } finally {
+      fs.rmSync(sectionedRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('getEntityRuntimeProfile', () => {
   it('marks declared facets as declared and keeps missing scripts unverified', () => {
     const profile = getEntityRuntimeProfile('Hero', root);
