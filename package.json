@@ -89,7 +89,9 @@
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
-    "onCommand:kbengine.python.showCallChain"
+    "onCommand:kbengine.python.showCallChain",
+    "onCommand:kbengine.hotReload.tempEdit.run",
+    "onCommand:kbengine.core.showShadowDiffLog"
   ],
   "main": "./out/extension.js",
   "contributes": {
