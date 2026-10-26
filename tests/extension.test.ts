@@ -134,12 +134,15 @@ describe('extension activate 装配', () => {
       provideTextDocumentContent(): string;
     };
     expect(kbeStubProvider.provideTextDocumentContent()).toBe(buildKbeStubDocument().content);
-    const stubWithMetadata = await new Promise<string>(resolve => setTimeout(
-      () => resolve(kbeStubProvider.provideTextDocumentContent()),
-      0
-    ));
-    expect(stubWithMetadata).toContain('# Engine version: unknown');
-    expect(stubWithMetadata).toContain('# Source commit: unknown');
+    // 元数据注入是异步的:探测到本机 ../kbengine 真树时要跑 git 子进程(~10ms 级),
+    // 固定 setTimeout(0) 会抢跑在注入之前。等头部出现再断言——有树与无树两种
+    // 口径都必须显式给出元数据头(unknown 兜底口径由 engineApiMetadata.test.ts 锁)。
+    await until(() =>
+      kbeStubProvider.provideTextDocumentContent().includes('# Engine version:'), 3000);
+    const stubWithMetadata = kbeStubProvider.provideTextDocumentContent();
+    expect(stubWithMetadata).toMatch(/# Engine version: .+/);
+    expect(stubWithMetadata).toContain('# Source commit:');
+    expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
     // 状态栏两条:server 灯(右对齐/优先级 100/命令指向扩展视图)与
