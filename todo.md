@@ -30,12 +30,16 @@ A1-7 调用链图此前缺失,48b3bb2 补上并加 tests/perfCallChainDoc.test.t
 
 
 ### A3 PR3 · 统一索引调度（indexScheduler）
-- [ ] A3-1 新建 src/indexScheduler.ts：任务生命周期（首扫/增量/受影响依赖更新/删除清理）+状态查询
-- [ ] A3-2 任务合并：同文件同版本任务去重；过期任务取消丢弃（测试）
-- [ ] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析（测试顺序断言）
-- [ ] A3-4 失败恢复：扫描中途失败后后续请求可恢复，不出现永久 pending（测试：杀掉首轮扫描模拟）
-- [ ] A3-5 EntityMappingManager 首扫迁入调度器（initialScan 走 scheduler，行为等价测试）
-- [ ] A3-6 后台限流与取消（编辑高峰期不抢主线程，指标验证）
+- [x] A3-1 新建 src/indexScheduler.ts：任务生命周期（首扫/增量/受影响依赖更新/删除清理）+状态查询（2aca694；src/indexScheduler.ts:14-20 IndexTaskKind 六类含 initial-scan/single-file-update/dependency-update/delete-cleanup/full-reindex/non-interactive、:157 enqueue、:224 ensureTask keyed 单例、:254-278 getStatus 排队/运行/终态/keyed/指标全可查；tests/indexScheduler.test.ts:20-86 三例生命周期）
+- [x] A3-2 任务合并：同文件同版本任务去重；过期任务取消丢弃（测试）（2aca694；src/indexScheduler.ts:170-183 同文件同版本合并为一条且优先级取更高者、:184-199 比队列任务更旧的直接丢弃+队列内同文件旧版本 cancelQueued('stale-version')，metrics.mergedTasks/staleDropped 计数；tests/indexScheduler.test.ts:87-193 四例含合并保优先级与双向过期）
+- [x] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析（测试顺序断言）（2aca694；src/indexScheduler.ts:26-37 五级常量 CurrentFileLight0→NonInteractive4、:390-413 pickNext 优先级+seq 稳定排序、:346-353 pump 推迟到微任务使同批入队先聚齐再排序；tests/indexScheduler.test.ts:194-251 三例顺序断言+FIFO+交互边界）
+- [x] A3-4 失败恢复：扫描中途失败后后续请求可恢复，不出现永久 pending（测试：杀掉首轮扫描模拟）（2aca694；src/indexScheduler.ts:229-231 上次 failed/cancelled 的 keyed 任务再次 ensureTask 重新入队并计 recoveries、:373-379 任务失败回落 failed 不缓存「已扫描」假象；tests/indexScheduler.test.ts:252-320 三例含首扫被杀重跑、进行中复用不重复入队、普通任务失败不楔死队列）
+- [x] A3-5 EntityMappingManager 首扫迁入调度器（initialScan 走 scheduler，行为等价测试）（2aca694；src/entityMapping.ts:229-243 initialScan 改走 scheduler.ensureTask('entity-mapping-initial-scan')、src/extension.ts:369 注入共享调度器实例；行为等价见 tests/entityMappingDeferredStartup.test.ts:99-114 ensureStartup 幂等三件套只建一次+同键首扫走同一 keyed 任务，2ed63d8）
+- [x] A3-6 后台限流与取消（编辑高峰期不抢主线程，指标验证）（2aca694；src/indexScheduler.ts:401-413 后台任务在交互冷却窗口(默认 50ms 可配)内不启动并 scheduleThrottledPump 延迟重排、:415-421 延迟泵、:280-288 cancelQueuedTasks/:322-324 handle.cancel 批量与逐条取消、:87-98 metrics postponedBackground/backgroundDelayMs 指标承载；tests/indexScheduler.test.ts:321-391 三例编辑高峰让路+空闲不额外等待+index-scheduler 打点入聚合）
+<!-- A3 六项对账 2026-10-27(全量 test:unit 3019 passed|8 skipped):A3-1~A3-4 与 A3-6 由
+2aca694 一次落地(PR3,tests/indexScheduler.test.ts 16 例,docs/perf/2026-pr3-indexscheduler.md),
+A3-5 首扫迁入在 2aca694、行为等价门控测试由 2ed63d8 补齐;评审账本
+docs/review/2026-10-22-unified-semantic-index-refactor.md:527 早已勾选,本批仅补 todo.md 证据口径。 -->
 
 ### A4 PR4 · 统一语义查询（semanticIndex + dependencyGraph）
 - [x] A4-1 新建 src/semanticIndex.ts：实体-分面方法/属性-Python类-注册关系-类型映射-根作用域 统一承载（查询 API 不暴露内部遍历）
