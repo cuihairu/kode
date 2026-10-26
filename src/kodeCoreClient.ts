@@ -142,6 +142,12 @@ export class KodeCoreClient {
     });
     this.child.stdout!.on('data', (chunk: Buffer) => this.consumeStdout(chunk));
     this.child.stderr!.on('data', (chunk: Buffer) => this.recordStderr(chunk));
+    // stdin EPIPE (errno -32): SIGKILL 生效到 exit 事件到达之间存在窗口，
+    // 此时 stdin.writable 仍为 true，sendRaw 往死管道 write 会以未处理
+    // 'error' 事件炸掉整个测试进程（CI #418 实录）。这里必须吞掉：
+    // in-flight 请求由 exit 事件的 rejectAll(EXITED) 统一拒绝，waitFor
+    // 探针自然重试，CORE-015/016 重启语义不变。
+    this.child.stdin!.on('error', () => undefined);
     this.child.on('error', error => this.rejectAll(new KodeCoreTransportError(`spawn failed: ${error.message}`, 'EXITED')));
     this.child.on('exit', (_code, signal) => this.handleExit(_code, signal));
   }
@@ -285,7 +291,13 @@ export class KodeCoreClient {
       return;
     }
     const body = Buffer.from(JSON.stringify(payload), 'utf8');
-    stdin.write(Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]));
+    try {
+      stdin.write(
+        Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body])
+      );
+    } catch {
+      // exit 竞态窗口的同步写失败同上吞掉：响应已不可能，拒绝走 exit 路径
+    }
   }
 
   private consumeStdout(chunk: Buffer): void {
