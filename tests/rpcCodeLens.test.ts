@@ -182,7 +182,7 @@ describe('RpcCodeLensProvider(装配 vscode.CodeLens)', () => {
     expect(lenses).toHaveLength(1);
     expect(lenses[0].range.start).toEqual({ line: 1, character: 8 });
     expect(lenses[0].range.end).toEqual({ line: 1, character: 13 });
-    expect(lenses[0].command.command).toBe('vscode.open');
+    expect(lenses[0].command.command).toBe('kbengine.source.reveal');
     expect((lenses[0].command.arguments[0] as { fsPath: string }).fsPath).toBe(
       '/tmp/ws/scripts/entity_defs/Avatar.def'
     );

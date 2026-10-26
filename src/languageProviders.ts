@@ -128,7 +128,9 @@ import {
   getPythonSelfAccessAtPosition,
   getPythonSelfCompletionContext,
   getPythonMemberAccessAtPosition,
-  type PythonMemberAccess
+  type PythonMemberAccess,
+  getPythonCallAtPosition,
+  type PythonCallAtPosition
 } from './pythonLanguageUtils';
 import {
   buildKbeStubDocument,
@@ -147,6 +149,71 @@ import {
   raceWithBudget,
   withInitialScanTimeout
 } from './hoverBudget';
+
+/**
+ * 批159(用户令 2026-10-26「点击 codelens 跳 def 后 alt+← 后退,再点没反应」):
+ * 镜链不再用内置 vscode.open —— 它对「已打开且已定位」的目标常跳过 reveal,
+ * 退回原文件后再点就毫无反应。自建打开链:showTextDocument 带 selection 后,
+ * 再对活动编辑器显式 revealRange(若命中),后退后再点也强制滚回。
+ * 命令参数与旧 arguments 完全同形(uri, { selection }),测试/调用点零迁移成本。
+ */
+export const KBENGINE_SOURCE_REVEAL_COMMAND = 'kbengine.source.reveal';
+
+export interface KbengineSourceRevealArgs {
+  uri: vscode.Uri;
+  options?: { selection?: vscode.Range };
+}
+
+export async function revealSourceCommand(
+  uriArg?: vscode.Uri,
+  options?: { selection?: vscode.Range }
+): Promise<void> {
+  if (!uriArg) {
+    return;
+  }
+  const document = await vscode.workspace.openTextDocument(uriArg);
+  const selection = options?.selection;
+  const editor = await vscode.window.showTextDocument(document, selection ? { selection } : undefined);
+  if (selection && editor && typeof (editor as vscode.TextEditor).revealRange === 'function') {
+    // TextEditorRevealType 缺失(fake 环境/枚举未就绪)时退 0(Default),不炸
+    const revealDefault =
+      (vscode as unknown as { TextEditorRevealType?: { Default?: number } }).TextEditorRevealType?.Default ?? 0;
+    (editor as vscode.TextEditor).revealRange(selection, revealDefault);
+  }
+}
+
+/**
+ * 批159(用户令「hover 还是需要 loading 很久」):同点位并发 hover 各自重跑
+ * 整条异步解析链。按(文件+版本+行+列)做在途去重:第二个并发 hover 直接
+ * 共享第一个的在途 Promise。只在途、不缓存落定结果 —— 暖路径加速由
+ * manager 自身的 mtime/解析缓存承担(hoverBudget 契约:重复 hover 必须仍
+ * 走 def 解析缓存、可数命中);若缓存完结结果,会在 TTL 窗口内冻结标注
+ * 错过索引更新,且让缓存命中计数失明。文档编辑(版本变)天然失效;存
+ * provider 实例上:生产单实例语义不变,测试逐用例新建 provider 天然隔离。
+ */
+const HOVER_MEMO_LIMIT = 256;
+
+interface HoverMemoEntry {
+  documentVersion: number;
+  promise: Promise<vscode.Hover | null>;
+}
+
+function hoverMemoKey(document: vscode.TextDocument, position: vscode.Position): string {
+  return `${document.fileName}#${document.version}#${position.line}#${position.character}`;
+}
+
+/** 开档预热(批159):开 Python 档即触发对应实体 .def 的定向首解析,首次
+ * hover/CodeLens 不再吃冷启动等待。索引未就绪时后台补,失败静默(预热是
+ * 优化不是功能,不准失败上浮)。 */
+export function prewarmKbengineIndex(
+  manager: EntityMappingManager,
+  document: vscode.TextDocument
+): void {
+  if (document.languageId !== 'python') {
+    return;
+  }
+  void manager.resolveMethodDefinition(document.fileName, '__prewarm__').catch(() => undefined);
+}
 
 function getLanguageFeatureConfig() {
   const config = vscode.workspace.getConfiguration('kbengine');
@@ -257,24 +324,32 @@ function createCompletionItems(
  * 同规则无提示降级:只出名不带注解(不显 `: Any`)。声明形参名以 def 为
  * 准不可考,统一 argN 与存根生成器同口径。
  */
+function formatDefMethodParameter(
+  workspaceRoot: string | undefined,
+  arg: string,
+  index: number
+): string {
+  const trimmed = arg.trim();
+  if (!trimmed) {
+    // 有 <Arg> 无 <Type>:只出名不造型
+    return `arg${index + 1}`;
+  }
+  const annotation = resolveEntityAnnotationType(workspaceRoot ?? '', trimmed);
+  // 解析链断/未知(落 Any)→ 无提示降级,只出名(三提示面不显 Any)
+  if (annotation === PYTHON_TYPE_STUB_FALLBACK) {
+    return `arg${index + 1}`;
+  }
+  return `arg${index + 1}: ${annotation}`;
+}
+
 function formatDefMethodSignature(
   workspaceRoot: string | undefined,
   methodName: string,
   declaredArgs?: readonly string[]
 ): string {
-  const parameters = (declaredArgs ?? []).map((arg, index) => {
-    const trimmed = arg.trim();
-    if (!trimmed) {
-      // 有 <Arg> 无 <Type>:只出名不造型
-      return `arg${index + 1}`;
-    }
-    const annotation = resolveEntityAnnotationType(workspaceRoot ?? '', trimmed);
-    // 解析链断/未知(落 Any)→ 无提示降级,只出名(三提示面不显 Any)
-    if (annotation === PYTHON_TYPE_STUB_FALLBACK) {
-      return `arg${index + 1}`;
-    }
-    return `arg${index + 1}: ${annotation}`;
-  });
+  const parameters = (declaredArgs ?? []).map((arg, index) =>
+    formatDefMethodParameter(workspaceRoot, arg, index)
+  );
   return `def ${methodName}(self${parameters.length > 0 ? `, ${parameters.join(', ')}` : ''})`;
 }
 
@@ -597,6 +672,39 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
   // 索引,按 RpcCodeLensProvider 同款注入;可选参数保持既有无参用例口径。
   constructor(private readonly entityMappingManager?: EntityMappingManager) {}
 
+  // 批159:同点位在途 hover 去重(provider 实例级,生产单实例语义不变,
+  // 测试逐用例新建 provider 天然隔离)。
+  private readonly hoverMemo = new Map<string, HoverMemoEntry>();
+
+  /** 在途共享:同 key 同版本的并发 hover 复用同一 Promise;落定条目即刻出册 */
+  private memoizedHover(
+    key: string,
+    documentVersion: number,
+    run: () => Promise<vscode.Hover | null>
+  ): Promise<vscode.Hover | null> {
+    const inflight = this.hoverMemo.get(key);
+    if (inflight && inflight.documentVersion === documentVersion) {
+      return inflight.promise;
+    }
+    const promise = run();
+    this.hoverMemo.set(key, { documentVersion, promise });
+    if (this.hoverMemo.size > HOVER_MEMO_LIMIT) {
+      const oldest = this.hoverMemo.keys().next().value;
+      if (oldest !== undefined) {
+        this.hoverMemo.delete(oldest);
+      }
+    }
+    // 落定即出册(成败同):完结结果不复用,后续 hover 重走 manager 暖缓存
+    const drop = () => {
+      const entry = this.hoverMemo.get(key);
+      if (entry && entry.promise === promise) {
+        this.hoverMemo.delete(key);
+      }
+    };
+    promise.then(drop, drop);
+    return promise;
+  }
+
   provideHover(
     document: vscode.TextDocument,
     position: vscode.Position
@@ -616,6 +724,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 回普通 hover 链,既有同步行为不变(未注入即不进异步面)。
     const manager = this.entityMappingManager;
     if (manager && document.languageId === 'python') {
+      // 批159:同点位并发 hover 在途去重(共享同一 Promise);命中任一异步面
+      // 才进 memo,未命中落回下方同步链(局部变量返回类型推导等),与批159
+      // 前贯穿语义一致。
+      const memoKey = hoverMemoKey(document, position);
       const methodName = getPythonMethodDeclarationAtPosition(
         document.lineAt(position.line).text,
         position.character
@@ -623,13 +735,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       if (methodName) {
         // 异步链总预算闸(用户令 2026-10-22):底层索引慢(首扫秒级+)时不再
         // 永转 loading,超预算返回空悬停并记 LogHub(层名+耗时)。
-        return raceWithBudget(
-          'hover:def-method',
-          this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
-            .then(annotation =>
-              annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-            ),
-          featureConfig.hoverAsyncBudgetMs
+        return this.memoizedHover(memoKey, document.version, () =>
+          raceWithBudget(
+            'hover:def-method',
+            this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
+              .then(annotation =>
+                annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+              ),
+            featureConfig.hoverAsyncBudgetMs
+          )
         );
       }
       // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
@@ -644,13 +758,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           )
         : null;
       if (receiverCall) {
-        return raceWithBudget(
-          'hover:receiver-call',
-          this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
-            .then(annotation =>
-              annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-            ),
-          featureConfig.hoverAsyncBudgetMs
+        return this.memoizedHover(memoKey, document.version, () =>
+          raceWithBudget(
+            'hover:receiver-call',
+            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
+              .then(annotation =>
+                annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+              ),
+            featureConfig.hoverAsyncBudgetMs
+          )
         );
       }
       // 内建属性(用户令 2026-10-21 内建属性单 ②):self.<属性> 单段访问
@@ -666,15 +782,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         selfAccess &&
         !selfAccess.fullPath.includes('.')
       ) {
-        return raceWithBudget(
-          'hover:builtin-property',
-          this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
-            .then(annotation =>
-              annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-            ),
-          featureConfig.hoverAsyncBudgetMs
+        return this.memoizedHover(memoKey, document.version, () =>
+          raceWithBudget(
+            'hover:builtin-property',
+            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
+              .then(annotation =>
+                annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
+              ),
+            featureConfig.hoverAsyncBudgetMs
+          )
         );
       }
+      // 三个异步面都未命中:落回下方同步链(批159 前语义,不进 memo)
     }
 
     // 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
@@ -976,6 +1095,88 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     return null;
+  }
+}
+
+/**
+ * 签名帮助(批159):光标落在 self.base/cell/client.X(...) 或对象 avatar.X(...)
+ * 的方法名/实参表内时,按与 hover 同一条解析链(resolveMethodDefinition + 形参
+ * 闸)出 def 签名;活动形参按调用点顶层逗号序号标亮(括号/逗号触发)。解析
+ * 走预算闸(复用 hoverAsyncBudgetMs),超时不阻塞输入;形参名 argN 与存根
+ * 生成器同口径,类型注解与声明面 hover 同源(formatDefMethodParameter)。
+ */
+export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvider {
+  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+
+  async provideSignatureHelp(
+    document: vscode.TextDocument,
+    position: vscode.Position
+  ): Promise<vscode.SignatureHelp | null> {
+    if (document.languageId !== 'python' || !this.entityMappingManager) {
+      return null;
+    }
+    const call = getPythonCallAtPosition(
+      document.lineAt(position.line).text,
+      position.character
+    );
+    if (!call) {
+      return null;
+    }
+    const featureConfig = getLanguageFeatureConfig();
+    return raceWithBudget(
+      'signatureHelp:def-method',
+      this.resolveSignatureHelp(this.entityMappingManager, document, call),
+      featureConfig.hoverAsyncBudgetMs
+    );
+  }
+
+  private async resolveSignatureHelp(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    call: PythonCallAtPosition
+  ): Promise<vscode.SignatureHelp | null> {
+    let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
+    try {
+      location = await manager.resolveMethodDefinition(
+        document.fileName,
+        call.methodName,
+        call.section
+      );
+    } catch {
+      return null;
+    }
+    if (!location) {
+      return null;
+    }
+    // 形参闸不适用调用行(仓内 CodeLens 调用行先例):闸门对账的是 def 声明行
+    // 签名;签名帮助恰是「调用写错时照着修」的提示面,闸掉本末倒置。
+    const workspaceRoot = getWorkspaceRootForDocument(document);
+    const parameterLabels = (location.declaredArgs ?? []).map((arg, index) =>
+      formatDefMethodParameter(workspaceRoot ?? undefined, arg, index)
+    );
+    const signature = new vscode.SignatureInformation(
+      formatDefMethodSignature(workspaceRoot ?? undefined, call.methodName, location.declaredArgs)
+    );
+    signature.parameters = parameterLabels.map(
+      parameterLabel => new vscode.ParameterInformation(parameterLabel)
+    );
+    const documentation = new vscode.MarkdownString();
+    documentation.appendMarkdown(`此调用是实体 def 声明的 ${location.section} 方法`);
+    if (call.section) {
+      documentation.appendMarkdown(`(接收者 self.${call.section})`);
+    }
+    if (location.exposed) {
+      documentation.appendMarkdown(' · **Exposed**: 可被客户端远程调用');
+    }
+    signature.documentation = documentation;
+    const help = new vscode.SignatureHelp();
+    help.signatures = [signature];
+    help.activeSignature = 0;
+    help.activeParameter =
+      parameterLabels.length > 0
+        ? Math.min(call.activeArgument, parameterLabels.length - 1)
+        : 0;
+    return help;
   }
 }
 
@@ -4241,7 +4442,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
         ),
         {
           title: spec.title,
-          command: 'vscode.open',
+          command: KBENGINE_SOURCE_REVEAL_COMMAND,
           arguments: [
             vscode.Uri.file(spec.hit.defFile),
             { selection: createDefinitionSelection(spec.hit.defLine) }
@@ -4300,7 +4501,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
             ),
             {
               title: defaultRpcCodeLensTitle(hit),
-              command: 'vscode.open',
+              command: KBENGINE_SOURCE_REVEAL_COMMAND,
               arguments: [
                 vscode.Uri.file(hit.defFile),
                 { selection: createDefinitionSelection(hit.defLine) }
@@ -4379,7 +4580,7 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
           ),
           {
             title: spec.title,
-            command: 'vscode.open',
+            command: KBENGINE_SOURCE_REVEAL_COMMAND,
             arguments: [
               vscode.Uri.file(spec.hit.defFile),
               { selection: createDefinitionSelection(spec.hit.defLine) }

@@ -10,6 +10,7 @@ export type LanguageServiceEventName =
   | 'hover'
   | 'definition'
   | 'completion'
+  | 'signature-help'
   | 'diagnostics'
   | 'python-index-scan'
   | 'python-composition-roots'

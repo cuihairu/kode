@@ -91,7 +91,8 @@
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.hotReload.tempEdit.run",
-    "onCommand:kbengine.core.showShadowDiffLog"
+    "onCommand:kbengine.core.showShadowDiffLog",
+    "onCommand:kbengine.source.reveal"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -511,6 +512,10 @@
       {
         "command": "kbengine.python.exportTypeStubs",
         "title": "Export KBEngine Python Type Stubs"
+      },
+      {
+        "command": "kbengine.source.reveal",
+        "title": "Reveal Source Location"
       }
     ],
     "menus": {

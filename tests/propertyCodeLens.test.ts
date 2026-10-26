@@ -208,7 +208,7 @@ describe('PropertyCodeLensProvider(装配 vscode.CodeLens)', () => {
     expect(lenses).toHaveLength(2);
     expect(lenses[0].range.start).toEqual({ line: 2, character: 13 });
     expect(lenses[0].range.end).toEqual({ line: 2, character: 15 });
-    expect(lenses[0].command.command).toBe('vscode.open');
+    expect(lenses[0].command.command).toBe('kbengine.source.reveal');
     expect((lenses[0].command.arguments[0] as { fsPath: string }).fsPath).toBe('/tmp/ws/Hero.def');
     expect(lenses[0].command.arguments[1]).toEqual({
       selection: { start: { line: 2, character: 0 }, end: { line: 2, character: 0 } }

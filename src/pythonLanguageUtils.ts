@@ -358,3 +358,91 @@ export function getPythonMemberAccessAtPosition(
 
   return null;
 }
+
+export interface PythonCallAtPosition {
+  /** 接收者:'self' 或对象变量名(avatar 等) */
+  receiverName: string;
+  /** 被调方法名 */
+  methodName: string;
+  /** 接收者段对应的 def 方法区块(与 PythonReceiverCall.section 同口径,
+   *  段闸依据);无段(undefined) */
+  section?: PythonReceiverSection;
+  /** 光标所在实参序号(顶层逗号切分,0 起) */
+  activeArgument: number;
+}
+
+/**
+ * 光标处调用解析(批159 签名帮助面):覆盖 self.base/cell/client.X(...) 与
+ * 对象调用 avatar.X(...) 两形态;光标须落在「方法名→'(' 之间或实参表内」
+ * (实参表按字符串感知深度计顶层逗号,与 inlay 实参切分同源口径)。属性
+ * 读取(名字后非 '(')不认;不在任何调用实参表内不认。
+ */
+export function getPythonCallAtPosition(
+  lineText: string,
+  character: number
+): PythonCallAtPosition | null {
+  const regex = /\b(self\.(?:base|cell|client)|[A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(/g;
+  const candidates: Array<PythonCallAtPosition & { callOpen: number }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(lineText)) !== null) {
+    const receiverToken = match[1];
+    const methodName = match[2];
+    const callOpen = match.index + match[0].length - 1; // '(' 列
+    // 光标须落在 '(' 及其实参表范围内;方法名上不算(签名帮助不在此触发)
+    if (character < callOpen) {
+      continue;
+    }
+    // 实参表字符串感知深度扫描:顶层逗号定活动实参,顺带找闭合
+    let depth = 0;
+    let inString: string | null = null;
+    let activeArgument = 0;
+    let closed = false;
+    let closeIndex = -1;
+    for (let i = callOpen; i < lineText.length; i += 1) {
+      const ch = lineText[i];
+      if (inString) {
+        if (ch === '\\') {
+          i += 1;
+        } else if (ch === inString) {
+          inString = null;
+        }
+        continue;
+      }
+      if (ch === '\'' || ch === '"') {
+        inString = ch;
+        continue;
+      }
+      if (ch === '(' || ch === '[' || ch === '{') {
+        depth += 1;
+      } else if (ch === ')' || ch === ']' || ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          closed = true;
+          closeIndex = i;
+          break;
+        }
+      } else if (ch === ',' && depth === 1 && i < character) {
+        activeArgument += 1;
+      }
+    }
+    // 归属判定:闭合调用要求光标不越过闭括号(一行多调用互不吞);
+    // 未闭合(边打边求助的进行时)视为延伸到行尾,光标在其后即认。
+    if (closed && closeIndex < character) {
+      continue;
+    }
+    const isReceiver = receiverToken.startsWith('self.');
+    candidates.push({
+      receiverName: isReceiver ? 'self' : receiverToken,
+      methodName,
+      section: isReceiver
+        ? PYTHON_RECEIVER_SECTIONS[receiverToken.split('.')[1] as PythonReceiverCall['receiver']]
+        : undefined,
+      activeArgument,
+      callOpen
+    });
+  }
+
+  // 嵌套/相邻时取起点最靠后者(最紧包含光标的调用;匹配序即 callOpen 升序)
+  return candidates.length > 0 ? candidates[candidates.length - 1] : null;
+}

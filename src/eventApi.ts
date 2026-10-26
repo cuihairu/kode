@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 import { WorkspaceIndex } from './workspaceIndex';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from './languageProviders';
 
 export type EventCall = { api: 'addEvent' | 'registerEvent' | 'emitEvent' | 'removeEvent' | 'deregisterEvent'; event: string; eventOffset: number; callback?: string; callbackOffset?: number }
 
@@ -145,7 +146,7 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
         ? `事件回调 · ${events[0]} 等 ${events.length} 个`
         : `事件回调 · ${events.join('、')}`;
       const lineStart = new vscode.Position(line, 0);
-      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title, command: 'vscode.open', arguments: [document.uri, { selection: new vscode.Range(target, target) }] }));
+      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title, command: KBENGINE_SOURCE_REVEAL_COMMAND, arguments: [document.uri, { selection: new vscode.Range(target, target) }] }));
     }
     for (const call of calls.filter(c => c.api === 'emitEvent')) {
       const listeners = all.filter(item => (item.call.api === 'addEvent' || item.call.api === 'registerEvent') && item.call.event === call.event);
@@ -154,7 +155,7 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
       const first = listeners[0];
       const target = new vscode.Position(first.line, 0);
       const lineStart = new vscode.Position(line, 0);
-      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title: `${listeners.length} 处监听`, command: 'vscode.open', arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
+      lenses.push(new vscode.CodeLens(new vscode.Range(lineStart, lineStart), { title: `${listeners.length} 处监听`, command: KBENGINE_SOURCE_REVEAL_COMMAND, arguments: [vscode.Uri.file(first.file), { selection: new vscode.Range(target, target) }] }));
     }
     return lenses;
   }

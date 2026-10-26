@@ -482,6 +482,15 @@ The flow graph panel supports:
 - `types.xml` on disk regenerates automatically: after a save/create/delete the watcher silently re-exports (no debouncing, no extra setting — the zero-write discipline makes repeated triggers side-effect free; with `kbengine.python.stubExport` off it effectively stops)
   - Setting `kbengine.python.stubExport: false` turns it all off (shared with the KBEngine.pyi stub export)
 
+### `kbengine.source.reveal`
+
+- Title: `Reveal Source Location`
+- Purpose: internal navigation helper that forces an editor reveal for a definition-jump target. When a definition provider opens a document with `vscode.open` while that document is already the active editor, VS Code skips the reveal — observed as "clicking the same def link again after going back does nothing"; this command opens the document and forwards the selection so the target line is always revealed (batch 159 def-chain mirror links)
+- Behavior:
+  - Takes `{ selection: vscode.Range }` as the second argument and applies it via `showTextDocument(uri, { selection })`
+  - No-op when invoked without a URI
+  - Exists for definition providers, not as a user-facing entry point: it is registered like every contributed command (with its `onCommand:` activation event) so the palette stays empty while programmatic jumps can rely on it
+
 ## Typical Workflows
 
 ### Creating an entity

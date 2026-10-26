@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from './languageProviders';
 import {
   resolveEntityTypeStubSource,
   resolvePythonTypeStubSource
@@ -36,7 +37,7 @@ export class GeneratedSourceCodeLensProvider implements vscode.CodeLensProvider 
       const label = `原始定义: ${source.origin} types.xml:${source.line}`;
       lenses.push(new vscode.CodeLens(new vscode.Range(line, 0, line, 0), {
         title: label,
-        command: 'vscode.open',
+        command: KBENGINE_SOURCE_REVEAL_COMMAND,
         arguments: [
           vscode.Uri.file(typesXmlPath),
           { selection: new vscode.Range(source.line - 1, 0, source.line - 1, 0) }

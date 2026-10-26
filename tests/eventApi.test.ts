@@ -138,7 +138,7 @@ it('keeps the call without callback when the callback is an expression', () => {
       const doc = makeTextDocument('self.emitEvent(EVT)', { fileName: '/ws/emit.py', languageId: 'python' }) as vscode.TextDocument;
       const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
       expect(lenses.map(lens => (lens.command as { title: string }).title)).toContain('2 处监听');
-      expect((lenses.find(lens => (lens.command as { title: string }).title === '2 处监听')?.command as { command: string }).command).toBe('vscode.open');
+      expect((lenses.find(lens => (lens.command as { title: string }).title === '2 处监听')?.command as { command: string }).command).toBe('kbengine.source.reveal');
     } finally {
       vscode.workspace.findFiles = originalFindFiles;
       vscode.workspace.openTextDocument = originalOpen;

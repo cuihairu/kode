@@ -206,6 +206,30 @@ export class MarkdownString {
   }
 }
 
+export class ParameterInformation {
+  constructor(public label: string) {}
+}
+
+export class SignatureInformation {
+  label: string;
+  parameters: ParameterInformation[] = [];
+
+  constructor(label: string) {
+    this.label = label;
+  }
+
+  pushParameter(label: string): this {
+    this.parameters.push(new ParameterInformation(label));
+    return this;
+  }
+}
+
+export class SignatureHelp {
+  signatures: SignatureInformation[] = [];
+  activeSignature = 0;
+  activeParameter = 0;
+}
+
 export class Hover {
   constructor(public contents: MarkdownString | MarkdownString[]) {}
 }

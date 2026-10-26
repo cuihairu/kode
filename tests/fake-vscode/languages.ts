@@ -16,6 +16,7 @@ const hoverRegistrations: ProviderRegistration[] = [];
 const definitionRegistrations: ProviderRegistration[] = [];
 const callHierarchyRegistrations: ProviderRegistration[] = [];
 const renameRegistrations: ProviderRegistration[] = [];
+const signatureHelpRegistrations: ProviderRegistration[] = [];
 const codeLensRegistrations: ProviderRegistration[] = [];
 const inlayHintsRegistrations: ProviderRegistration[] = [];
 const diagnosticCollections: Array<{ name: string; collection: DiagnosticCollection }> = [];
@@ -42,6 +43,7 @@ export const languages = {
   registerDefinitionProvider: register(definitionRegistrations),
   registerCallHierarchyProvider: register(callHierarchyRegistrations),
   registerRenameProvider: register(renameRegistrations),
+  registerSignatureHelpProvider: register(signatureHelpRegistrations),
   registerCodeLensProvider: register(codeLensRegistrations),
   registerInlayHintsProvider: register(inlayHintsRegistrations),
   createDiagnosticCollection: (name: string): DiagnosticCollection => {
@@ -57,6 +59,7 @@ export const languagesRegistry = {
   definitionRegistrations,
   callHierarchyRegistrations,
   renameRegistrations,
+  signatureHelpRegistrations,
   codeLensRegistrations,
   inlayHintsRegistrations,
   diagnosticCollections,
@@ -66,6 +69,7 @@ export const languagesRegistry = {
     definitionRegistrations.length = 0;
     callHierarchyRegistrations.length = 0;
     renameRegistrations.length = 0;
+    signatureHelpRegistrations.length = 0;
     codeLensRegistrations.length = 0;
     inlayHintsRegistrations.length = 0;
     diagnosticCollections.length = 0;

@@ -107,6 +107,10 @@ import {
   KBEngineHoverProvider,
   KBEngineBuiltinTypeInlayHintsProvider,
   KBEngineRenameProvider,
+  KBEngineSignatureHelpProvider,
+  KBENGINE_SOURCE_REVEAL_COMMAND,
+  prewarmKbengineIndex,
+  revealSourceCommand,
   PythonCompletionProvider,
   PythonDefinitionProvider,
   PropertyCodeLensProvider,
@@ -408,6 +412,44 @@ export function activate(context: vscode.ExtensionContext) {
     '<', ' ', '\t', '>', '/', ':', '.'
   );
   context.subscriptions.push(completionProvider);
+
+  // 批159:镜链跳转统一走自建 reveal 命令(不用 vscode.open):showTextDocument
+  // 带 selection 后再显式 revealRange,已打开已定位的目标也强制滚回 ——
+  // 「跳 def → 后退 → 再点没反应」的根因即 vscode.open 对此类目标跳过 reveal。
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      KBENGINE_SOURCE_REVEAL_COMMAND,
+      revealSourceCommand
+    )
+  );
+
+  // 批159:签名帮助(def 声明方法,括号/逗号触发,预算闸内解析)。
+  const kbengineSignatureHelpImpl = new KBEngineSignatureHelpProvider(entityMappingManager);
+  const signatureHelpProvider = vscode.languages.registerSignatureHelpProvider(
+    pythonDocumentSelector,
+    {
+      async provideSignatureHelp(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        _token: vscode.CancellationToken
+      ) {
+        const operation = startLanguageServiceOperation('signature-help', {
+          fileKind: document.languageId,
+          documentVersion: document.version
+        });
+        try {
+          const result = await kbengineSignatureHelpImpl.provideSignatureHelp(document, position);
+          operation.end(emptyResultStatus(result));
+          return result;
+        } catch (error) {
+          operation.end('error');
+          throw error;
+        }
+      }
+    },
+    '(', ',',
+  );
+  context.subscriptions.push(signatureHelpProvider);
 
   // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档;
   // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
@@ -755,6 +797,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
       }
+      // 批159:开 Python 档即预热实体 def 定向首解析,首次 hover/CodeLens/
+      // 签名帮助不再吃冷启动等待(失败静默,预热是优化不是功能)。
+      prewarmKbengineIndex(entityMappingManager, document);
     });
     context.subscriptions.push(openWatcher);
 
