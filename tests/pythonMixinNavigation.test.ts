@@ -244,6 +244,9 @@ describe('incremental indexing and local candidates', () => {
     const find = vi.fn(workspace.findFiles);
     workspace.findFiles = find;
     expect(await index.resolveSelfMethod(files['avatar.py'], 3, 'tick')).toBeTruthy();
+    // 等首扫链(发现+分块解析)彻底落地再记数:否则慢机上第二查撞上未完成
+    // 的首扫会再排一次发现任务,findFiles 多一次与本断言(增量不重扫)无关
+    await index.waitForInitialScan();
     const searches = find.mock.calls.length;
     fs.writeFileSync(files['mix.py'], 'class RunMixin:\n    def fresh(self): pass\n');
     await index.onFileChanged(files['mix.py']);
