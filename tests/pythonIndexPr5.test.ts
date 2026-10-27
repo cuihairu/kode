@@ -321,7 +321,10 @@ describe('PR5 ② Definition 首查不阻塞全仓(快照命中/按需单文件/
       expect(hits, '① 静态类 MRO 命中必须回答').toHaveLength(1);
       expect(hits[0].filePath).toBe(paths['base.py']);
       expect(hits[0].className).toBe('Alpha');
-      // 关键断言:全量分块全部被扣住,一个都没有真正执行
+      // 关键断言:全量分块全部被扣住,一个都没有真正执行。
+      // 首查返回不表示发现已完成——后台发现异步,分块在发现完成后才入队,
+      // 必须锚在真实入队时点再断言 gatedCount(否则抢在发现前,恒为 0)。
+      await scheduler.chunksEnqueued;
       expect(scheduler.gatedCount, '全量分块已入队(后台在推进)').toBeGreaterThan(0);
       expect(scheduler.executedFullReindex, '首查不得执行全量分块').toBe(0);
       const noiseReads = pyReads.filter(target => noisePaths.includes(target));
@@ -409,7 +412,23 @@ class GatedBackgroundScheduler extends IndexScheduler {
   readonly executionOrder: IndexTaskKind[] = [];
   /** 已扣住尚未执行的 full-reindex 分块数 */
   private gatedQueued = 0;
+  private chunksEnqueuedHandle: Promise<void> | null = null;
+  private resolveChunksEnqueued: (() => void) | null = null;
   private releaseGate: (() => void) | null = null;
+
+  /**
+   * 首个分块入队即 resolve。断言「后台在推进」必须锚在真实入队时点——
+   * 首查经 scheduleBackgroundScan 拉起的是后台发现(异步),分块要在发现
+   * 完成后才入队;首查返回就断言 gatedCount 会抢到发现前面(0 而非 >0)。
+   */
+  get chunksEnqueued(): Promise<void> {
+    if (!this.chunksEnqueuedHandle) {
+      this.chunksEnqueuedHandle = new Promise<void>(resolve => {
+        this.resolveChunksEnqueued = resolve;
+      });
+    }
+    return this.chunksEnqueuedHandle;
+  }
   private readonly released = new Promise<void>(resolve => {
     this.releaseGate = resolve;
   });
@@ -429,6 +448,7 @@ class GatedBackgroundScheduler extends IndexScheduler {
       });
     }
     this.gatedQueued += 1;
+    this.resolveChunksEnqueued?.();
     const wait = this.released
       .then(() => super.enqueue({
         ...spec,
