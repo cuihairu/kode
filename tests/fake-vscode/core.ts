@@ -370,6 +370,8 @@ export interface MinimalTextDocument {
   uri: Uri;
   fileName: string;
   languageId: string;
+  /** 文档版本(真 TextDocument 同名面);缺省 undefined=版本不可知替身(documentStore 按每次都可能变处理) */
+  version: number | undefined;
   getText(range?: Range): string;
   positionAt(offset: number): Position;
   offsetAt(position: Position): number;
@@ -379,7 +381,7 @@ export interface MinimalTextDocument {
 
 export function makeTextDocument(
   text: string,
-  options?: { fileName?: string; languageId?: string; uri?: Uri }
+  options?: { fileName?: string; languageId?: string; uri?: Uri; version?: number }
 ): MinimalTextDocument {
   const fileName = options?.fileName ?? '/tmp/Anonymous.def';
   const languageId = options?.languageId ?? 'kbengine-def';
@@ -400,6 +402,7 @@ export function makeTextDocument(
     uri,
     fileName,
     languageId,
+    version: options?.version,
     getText(range?: Range): string {
       if (!range) {
         return text;

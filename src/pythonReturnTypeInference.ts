@@ -190,9 +190,15 @@ export async function collectProjectPythonFilesAsync(
 /** 方法名 → 返回注解(同名多定义时取扫描序里第一个有注解的;缺注解不入表) */
 export type PythonReturnAnnotationIndex = Map<string, string>;
 
-/** 一次按行遍历源码，提取每个函数首次定义的返回注解。 */
-export function extractFileReturnAnnotations(source: string): PythonReturnAnnotationIndex {
-  const result: PythonReturnAnnotationIndex = new Map();
+/**
+ * 一次按行遍历提取「每个方法首次定义」的注解事实(IDE-HOV-002/003 同口径):
+ * record(name, annotation) 在签名收口处触发;def 在而 `->` 缺 → annotation=null
+ * (文档桶据此遮蔽磁盘同名的旧注解);截断/被后续定义顶替的签名不记事实。
+ */
+function collectFileAnnotationFacts(
+  source: string,
+  record: (name: string, annotation: string | null) => void
+): void {
   const seen = new Set<string>();
   const defHead = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
   let current: { name: string; signature: string; depth: number; sawParens: boolean; lines: number } | undefined;
@@ -215,7 +221,7 @@ export function extractFileReturnAnnotations(source: string): PythonReturnAnnota
       else if (ch === ':' && current.sawParens && current.depth === 0) {
         const arrow = current.signature.indexOf('->');
         const annotation = arrow < 0 ? '' : current.signature.slice(arrow + 2).trim();
-        if (annotation) { result.set(current.name, annotation); }
+        record(current.name, annotation.length > 0 ? annotation : null);
         current = undefined;
         break;
       }
@@ -223,6 +229,14 @@ export function extractFileReturnAnnotations(source: string): PythonReturnAnnota
     }
     if (current && current.lines >= 64) { current = undefined; }
   }
+}
+
+/** 一次按行遍历源码，提取每个函数首次定义的返回注解。 */
+export function extractFileReturnAnnotations(source: string): PythonReturnAnnotationIndex {
+  const result: PythonReturnAnnotationIndex = new Map();
+  collectFileAnnotationFacts(source, (name, annotation) => {
+    if (annotation !== null) { result.set(name, annotation); }
+  });
   return result;
 }
 
@@ -325,6 +339,82 @@ const annotationBuilds = new Map<string, AnnotationBuild>();
 export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();
   annotationBuilds.clear();
+  documentAnnotationBuckets.clear();
+}
+
+/**
+ * IDE-HOV-011 按文档版本更新的当前文件注解桶:打开文档未保存的返回注解
+ * 变化按版本立即生效(同文件优先于磁盘索引;「def 在而注解缺」遮蔽磁盘
+ * 同名旧注解,不借旧值)。桶只由文档版本驱动:版本前进才重提取,旧版本/
+ * 同版本不得覆盖新版本;关闭文档弃桶回到磁盘口径(未保存修改随关闭消失)。
+ */
+export interface DocumentAnnotationBucket {
+  version: number;
+  annotations: PythonReturnAnnotationIndex;
+  /** def 存在但无返回注解的方法名:遮蔽磁盘索引同名的旧注解 */
+  unannotatedNames: Set<string>;
+}
+
+const documentAnnotationBuckets = new Map<string, Map<string, DocumentAnnotationBucket>>();
+
+export interface DocumentAnnotationContext {
+  /** 文档身份(URI 串):hover/保存/关闭事件共用同一键 */
+  fileKey: string;
+  /** 文档版本:递增才重提取;旧版本不得覆盖新版本 */
+  version: number;
+  /** 惰性取文档全文:仅在版本前进需要重提取时调用一次 */
+  source: () => string;
+}
+
+/** 按文档版本更新该文件桶;同版本幂等,旧版本不覆盖新版本。 */
+export function updateDocumentReturnAnnotations(
+  workspaceRoot: string | null,
+  context: DocumentAnnotationContext
+): void {
+  if (!workspaceRoot) { return; }
+  let rootBuckets = documentAnnotationBuckets.get(workspaceRoot);
+  if (!rootBuckets) {
+    rootBuckets = new Map();
+    documentAnnotationBuckets.set(workspaceRoot, rootBuckets);
+  }
+  const existing = rootBuckets.get(context.fileKey);
+  if (existing && context.version <= existing.version) { return; }
+  const annotations: PythonReturnAnnotationIndex = new Map();
+  const unannotatedNames = new Set<string>();
+  collectFileAnnotationFacts(context.source(), (name, annotation) => {
+    if (annotation === null) { unannotatedNames.add(name); }
+    else { annotations.set(name, annotation); }
+  });
+  rootBuckets.set(context.fileKey, { version: context.version, annotations, unannotatedNames });
+}
+
+/** 关闭文档弃桶:未保存修改不再遮蔽磁盘口径。 */
+export function releaseDocumentReturnAnnotations(workspaceRoot: string | null, fileKey: string): void {
+  if (!workspaceRoot) { return; }
+  documentAnnotationBuckets.get(workspaceRoot)?.delete(fileKey);
+}
+
+/** 悬停文档自己的桶(最优先)之外,其余打开文档的桶按 fileKey 序合并(先见优先)。 */
+function mergedOtherDocumentAnnotations(
+  workspaceRoot: string,
+  hoveredFileKey: string | null
+): { annotations: PythonReturnAnnotationIndex; shadowedNames: Set<string> } {
+  const annotations: PythonReturnAnnotationIndex = new Map();
+  const shadowedNames = new Set<string>();
+  const rootBuckets = documentAnnotationBuckets.get(workspaceRoot);
+  if (!rootBuckets) { return { annotations, shadowedNames }; }
+  for (const fileKey of [...rootBuckets.keys()].sort()) {
+    const bucket = rootBuckets.get(fileKey)!;
+    if (fileKey === hoveredFileKey) {
+      for (const name of bucket.unannotatedNames) { shadowedNames.add(name); }
+      continue;
+    }
+    for (const [name, annotation] of bucket.annotations) {
+      if (!annotations.has(name)) { annotations.set(name, annotation); }
+    }
+    for (const name of bucket.unannotatedNames) { shadowedNames.add(name); }
+  }
+  return { annotations, shadowedNames };
 }
 
 async function getReturnAnnotationIndex(workspaceRoot: string, token?: AnnotationCancellation): Promise<PythonReturnAnnotationIndex> {
@@ -410,18 +500,45 @@ function resolveFromAnnotationIndex(candidates: readonly LocalAssignmentCall[], 
   return null;
 }
 
-/** 交互查询只读已发布快照；冷查询和过期快照触发后台重建。 */
+/** 交互查询只读已发布快照；冷查询和过期快照触发后台重建。文档桶(IDE-HOV-011)
+ * 先于磁盘索引:悬停文档自己的桶最优先,其余打开文档的桶次之,被「注解已删」
+ * 遮蔽的名字不再从磁盘旧值借。 */
 export function resolveLocalVariableReturnTypeFromSnapshot(
-  lines: readonly string[], hoverLine: number, word: string, workspaceRoot: string | null
+  lines: readonly string[],
+  hoverLine: number,
+  word: string,
+  workspaceRoot: string | null,
+  documentContext?: DocumentAnnotationContext
 ): LocalVariableReturnType | null {
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) return null;
+  if (documentContext) {
+    updateDocumentReturnAnnotations(workspaceRoot, documentContext);
+  }
   const candidates = matchingAssignments(lines, hoverLine, word);
   if (candidates.length === 0) return null;
+  const hoveredBucket = documentContext
+    ? documentAnnotationBuckets.get(workspaceRoot)?.get(documentContext.fileKey)
+    : undefined;
+  if (hoveredBucket) {
+    const fromHovered = resolveFromAnnotationIndex(candidates, word, hoveredBucket.annotations);
+    if (fromHovered) { return fromHovered; }
+  }
+  const { annotations: otherAnnotations, shadowedNames } = mergedOtherDocumentAnnotations(
+    workspaceRoot,
+    hoveredBucket ? documentContext!.fileKey : null
+  );
+  const fromOthers = resolveFromAnnotationIndex(candidates, word, otherAnnotations);
+  if (fromOthers) { return fromOthers; }
   const cached = returnAnnotationCaches.get(workspaceRoot);
   if (!cached || Date.now() - cached.builtAtMs >= INDEX_TTL_MS) {
     void getReturnAnnotationIndex(workspaceRoot).catch(() => {});
   }
-  return cached ? resolveFromAnnotationIndex(candidates, word, cached.index) : null;
+  if (!cached) { return null; }
+  // 遮蔽名(某打开文档该 def 已无注解)不借磁盘旧值
+  const unshadowed = shadowedNames.size === 0
+    ? candidates
+    : candidates.filter(assignment => !shadowedNames.has(assignment.methodName));
+  return resolveFromAnnotationIndex(unshadowed, word, cached.index);
 }
 
 /**

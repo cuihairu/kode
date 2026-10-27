@@ -96,7 +96,11 @@ import {
   buildEntityTypeStubPlan,
   exportEntityTypeStubs
 } from './entityTypeStubs';
-import { getCustomTypeInfos } from './definitionWorkspace';
+import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWorkspace';
+import {
+  releaseDocumentReturnAnnotations,
+  updateDocumentReturnAnnotations
+} from './pythonReturnTypeInference';
 import {
   DEBUG_CONFIG_CHANNEL_NAME,
   ensureDebugConfig,
@@ -826,11 +830,26 @@ export function activate(context: vscode.ExtensionContext) {
       diagnosticScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
+      // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
+      if (isPythonDocument(document)) {
+        releaseDocumentReturnAnnotations(
+          getWorkspaceRootForDocument(document),
+          document.uri.toString()
+        );
+      }
     });
     context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       updateDocumentSnapshot(event.document);
       shadowMirrorCorpusDocument(event.document);
+      // IDE-HOV-011:未保存的返回注解变化按文档版本立即进入该文件桶
+      if (isPythonDocument(event.document)) {
+        updateDocumentReturnAnnotations(getWorkspaceRootForDocument(event.document), {
+          fileKey: event.document.uri.toString(),
+          version: event.document.version,
+          source: () => event.document.getText()
+        });
+      }
       // PR6 A6-1:连续编辑走排队通道——同 URI 只保留最新版本任务,旧版本
       // 任务出队合并(coalescedStale),宏任务边界冲刷时发布前复核版本令牌,
       // 过期结果绝不落 collection。首次发布语义不变(计算面仍是同步

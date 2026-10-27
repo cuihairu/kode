@@ -808,12 +808,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 语法故该层结构性缺位)。解出才提示并标注来源;解不出不显示任何类型
     // (不显 Any、不显空类型,落回普通 hover 链)。
     if (document.languageId === 'python' && vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.returnTypeInference', true)) {
-      // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
+      // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆);
+      // IDE-HOV-011:按文档版本喂当前文件注解桶(未保存变化立即生效)
       const inferred = resolveLocalVariableReturnTypeFromSnapshot(
         getDocumentLines(document),
         position.line,
         word,
-        getWorkspaceRootForDocument(document)
+        getWorkspaceRootForDocument(document),
+        {
+          fileKey: document.uri.toString(),
+          version: document.version,
+          source: () => document.getText()
+        }
       );
       if (inferred) {
         const markdown = new vscode.MarkdownString();

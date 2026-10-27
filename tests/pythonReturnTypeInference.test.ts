@@ -12,8 +12,11 @@ import {
   buildReturnAnnotationIndex,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
+  releaseDocumentReturnAnnotations,
   resetPythonReturnAnnotationCache,
-  resolveLocalVariableReturnType
+  resolveLocalVariableReturnType,
+  resolveLocalVariableReturnTypeFromSnapshot,
+  updateDocumentReturnAnnotations
 } from '../src/pythonReturnTypeInference';
 import {
   formatEntityBuiltinPropertyHeadline,
@@ -260,5 +263,98 @@ describe('三提示面无 Any(能推才显闸)', () => {
     );
     // 未知类型不接管 def 声明标注时落回普通链,也不得出现 Any
     expect(text).not.toContain('Any');
+  });
+});
+
+describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
+  it('未保存的注解变化立即进入当前文件桶:同文件 hover 即见新值,不等磁盘与 TTL', async () => {
+    const { root, put } = setupWorkspace();
+    // 磁盘仍是旧值 JSONDATA;文档未保存改为 OTHERDATA
+    put('main.py', 'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n');
+    const provider = new KBEngineHoverProvider(makeManager());
+    const docV1 = makeTextDocument(
+      'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const v1 = hoverText(await Promise.resolve(provider.provideHover(docV1, new Position(3, 1))));
+    expect(v1).toContain('**data: JSONDATA**');
+    const docV2 = makeTextDocument(
+      'def get_data() -> OTHERDATA:\n    pass\n\ndata = get_data()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
+    );
+    const v2 = hoverText(await Promise.resolve(provider.provideHover(docV2, new Position(3, 1))));
+    expect(v2).toContain('**data: OTHERDATA**');
+  });
+
+  it('旧版本/同版本不得覆盖新版本,且仅在版本前进时读取全文', () => {
+    const { root } = setupWorkspace();
+    // 无工作区根(未归属任何 folder 的文档)不建桶也不抛
+    updateDocumentReturnAnnotations(null, { fileKey: 'file:///orphan.py', version: 1, source: () => '' });
+    releaseDocumentReturnAnnotations(null, 'file:///orphan.py');
+    const sourceV1 = vi.fn(() => 'def get_data() -> ONE:\n    pass\n');
+    updateDocumentReturnAnnotations(root, { fileKey: 'file:///a.py', version: 1, source: sourceV1 });
+    expect(sourceV1).toHaveBeenCalledTimes(1);
+    const sourceV3 = vi.fn(() => 'def get_data() -> THREE:\n    pass\n');
+    updateDocumentReturnAnnotations(root, { fileKey: 'file:///a.py', version: 3, source: sourceV3 });
+    expect(sourceV3).toHaveBeenCalledTimes(1);
+    // 旧版本(2<3)与同版本(3=3)都不重提取、不覆盖
+    const sourceStale = vi.fn(() => 'def get_data() -> STALE:\n    pass\n');
+    updateDocumentReturnAnnotations(root, { fileKey: 'file:///a.py', version: 2, source: sourceStale });
+    expect(sourceStale).not.toHaveBeenCalled();
+    const sourceSame = vi.fn(() => 'def get_data() -> SAME:\n    pass\n');
+    updateDocumentReturnAnnotations(root, { fileKey: 'file:///a.py', version: 3, source: sourceSame });
+    expect(sourceSame).not.toHaveBeenCalled();
+    const resolved = resolveLocalVariableReturnTypeFromSnapshot(
+      ['data = get_data()'], 0, 'data', root,
+      { fileKey: 'file:///a.py', version: 3, source: () => '' }
+    );
+    expect(resolved).toMatchObject({ annotation: 'THREE' });
+  });
+
+  it('删除注解(def 在而注解缺)立即遮蔽磁盘旧注解,不借旧值', async () => {
+    const { root, put } = setupWorkspace();
+    put('main.py', 'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n');
+    // 磁盘索引就绪(旧值 JSONDATA 已可解析)
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    // 正例前置:注解在时(同文件 v1)确实显示——证明删除后的「不显」是遮蔽生效而非链路断
+    const docV1 = makeTextDocument(
+      'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const v1 = hoverText(await Promise.resolve(provider.provideHover(docV1, new Position(3, 1))));
+    expect(v1).toContain('**data: JSONDATA**');
+    const docV2 = makeTextDocument(
+      'def get_data():\n    pass\n\ndata = get_data()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(docV2, new Position(3, 1))));
+    expect(text).not.toContain('JSONDATA');
+    expect(text).not.toContain('推导自');
+  });
+
+  it('其他打开文档的未保存注解同样遮蔽磁盘旧值', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///svc.py', version: 2,
+      source: () => 'def get_data() -> OTHER:\n    pass\n'
+    });
+    const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
+    expect(resolved).toMatchObject({ annotation: 'OTHER' });
+  });
+
+  it('关闭文档弃桶:回到磁盘口径(未保存修改随关闭消失)', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///svc.py', version: 2,
+      source: () => 'def get_data() -> OTHER:\n    pass\n'
+    });
+    releaseDocumentReturnAnnotations(root, 'file:///svc.py');
+    const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
+    expect(resolved).toMatchObject({ annotation: 'JSONDATA' });
   });
 });
