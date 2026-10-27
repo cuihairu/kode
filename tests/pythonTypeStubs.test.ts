@@ -147,6 +147,29 @@ describe('PYTHON_BUILTIN_TYPE_ANNOTATIONS(内置类型 → Python 注解)', () =
   it('兜底注解是 Any(有损但合法,分析 §2 口径)', () => {
     expect(PYTHON_TYPE_STUB_FALLBACK).toBe('Any');
   });
+
+  it('注册面锁:引擎 addDataType 全部内建名都在表内,一个不漏(2026-10-27 pyi ④)', () => {
+    // 出处:kbe/src/lib/entitydef/datatypes.cpp DataTypes::initialize 的
+    // addDataType 注册面(56-79 行,21 个;本地检出 /home/cui/workspaces/kbengine
+    // 与上游 master 同面核对过)。仓里没有默认 types.xml——内建全走 C++ 注册,
+    // types.xml 只装用户自定义类型,「对照 types.xml」即对照这条注册面。
+    const registered = [
+      'UINT8', 'UINT16', 'UINT32', 'UINT64',
+      'INT8', 'INT16', 'INT32', 'INT64',
+      'STRING', 'UNICODE', 'FLOAT', 'DOUBLE',
+      'PYTHON', 'PY_DICT', 'PY_TUPLE', 'PY_LIST',
+      'ENTITYCALL', 'BLOB',
+      'VECTOR2', 'VECTOR3', 'VECTOR4'
+    ];
+    for (const name of registered) {
+      expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS[name], `缺注册面内建 ${name}`).toBeDefined();
+    }
+    // 表里除注册面外只许 BOOL 一条礼貌容错(BigWorld 迁移遗产;def 层仍按
+    // 幻影类型诊断,见 defAnalyzer PHANTOM_TYPE_NAMES),不得自创其他条目
+    const extras = Object.keys(PYTHON_BUILTIN_TYPE_ANNOTATIONS)
+      .filter(name => !registered.includes(name) && name !== 'BOOL');
+    expect(extras).toEqual([]);
+  });
 });
 
 describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
@@ -165,6 +188,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
         level: null,
         name: null
       },
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
     expect(plan.skipped).toEqual([]);
@@ -181,6 +205,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       annotation: 'List[AVATAR_INFO]',
       kind: 'alias',
       name: 'AVATAR_INFO_LIST',
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
   });
@@ -194,6 +219,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       annotation: 'int',
       kind: 'alias',
       name: 'TIMESTAMP',
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
     expect(plan.content).toContain('TIMESTAMP = int');
@@ -206,6 +232,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       annotation: 'str',
       kind: 'alias',
       name: 'AVATAR_NAME',
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
     expect(plan.content).toContain('AVATAR_NAME = str');
@@ -317,6 +344,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       annotation: 'List[List[int]]',
       kind: 'alias',
       name: 'NESTED',
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
   });
@@ -365,6 +393,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       annotation: 'List[Any]',
       kind: 'alias',
       name: 'BARE_ARRAY',
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
   });
@@ -378,8 +407,70 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       annotation: 'List[Any]',
       kind: 'alias',
       name: 'GHOST_ARRAY',
+      sourceFile: 'types.xml',
       sourceLine: 1
     });
+  });
+
+  it('同镜像目录合并解析:types.xml 引 alias.xml 的名字真实可解析,不落 Any(2026-10-27 pyi ④)', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({
+        name: 'AVATAR_INFO',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          { name: 'name', typeName: 'UNICODE' },
+          { name: 'skillFlags', typeName: 'SKILL_FLAGS' }
+        ]
+      }),
+      makeType({
+        name: 'SKILL_FLAGS',
+        aliasType: 'ARRAY',
+        rawValue: 'ARRAY <of> UINT32 </of>',
+        of: 'UINT32',
+        filePath: '/ws/scripts/entity_defs/alias.xml'
+      })
+    ]);
+
+    const avatar = plan.entries.find(entry => entry.name === 'AVATAR_INFO');
+    expect(avatar?.kind === 'class' && avatar.properties.find(property => property.name === 'skillFlags')?.annotation)
+      .toBe('List[int]');
+    expect(plan.content).toContain('SKILL_FLAGS = List[int]');
+    // 合并分件逐条可辨来源:alias.xml 条目不再冒名 types.xml
+    expect(plan.content).toContain('# source: alias.xml:1');
+    expect(plan.content).toContain('# source: types.xml:1');
+  });
+
+  it('同名去重:引擎 addDataType 拒重复注册,types.xml 先见保留、alias.xml 后到作废', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({ name: 'DUP', aliasType: 'STRING', rawValue: 'STRING' }),
+      makeType({ name: 'DUP', aliasType: 'UINT8', rawValue: 'UINT8', filePath: '/ws/scripts/entity_defs/alias.xml' })
+    ]);
+
+    expect(plan.entries.filter(entry => entry.name === 'DUP')).toHaveLength(1);
+    expect(plan.content).toContain('DUP = str');
+    expect(plan.content).not.toContain('DUP = int');
+    const skipped = plan.skipped.find(item => item.name === 'DUP');
+    expect(skipped?.reason).toContain('addDataType');
+    expect(skipped?.reason).toContain('types.xml');
+  });
+
+  it('跨模块引用面:别的 kbe_types 分件已发射的名字按名引用,不落 Any(诚实 Any 边界收口)', () => {
+    const external = new Map([['AVATAR_INFO', 'scripts.entity_defs.kbe_types']]);
+    const plan = buildPythonTypeStubPlan(
+      [makeType({
+        name: 'REMOTE_LIST',
+        aliasType: 'ARRAY',
+        rawValue: 'ARRAY <of> AVATAR_INFO </of>',
+        of: 'AVATAR_INFO',
+        filePath: '/ws/scripts/cellapp/entity_defs/types.xml'
+      })],
+      { externalModules: external }
+    );
+
+    expect(plan.entries[0]?.kind === 'alias' && plan.entries[0].annotation).toBe('List[AVATAR_INFO]');
+    expect(plan.content).toContain('REMOTE_LIST = List[AVATAR_INFO]');
+    expect(plan.content).toContain('from scripts.entity_defs.kbe_types import AVATAR_INFO');
   });
 
   it('别名赋值按名字序发射(解析后注解只含到底类型,顺序与输入无关)', () => {
@@ -657,6 +748,54 @@ describe('exportPythonTypeStubs(装配层)', () => {
     expect(byPath.get('/ws/.kbengine/stubs/scripts/cellapp/entity_defs/kbe_types.pyi')).toBe(
       buildPythonTypeStubPlan(cellTypes).content
     );
+  });
+
+  it('同镜像目录合并写一份:types.xml+alias.xml 只出一支 kbe_types.pyi,不再互相覆盖(2026-10-27 pyi ④)', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const { deps, writes } = makeDeps();
+    const aliases = [
+      makeType({
+        name: 'SKILL_FLAGS',
+        aliasType: 'ARRAY',
+        rawValue: 'ARRAY <of> UINT32 </of>',
+        of: 'UINT32',
+        filePath: '/ws/scripts/entity_defs/alias.xml'
+      }),
+      makeType({ name: 'LEVEL_ALIAS', aliasType: 'UINT8', rawValue: 'UINT8', filePath: '/ws/scripts/entity_defs/alias.xml' })
+    ];
+
+    const written = await exportPythonTypeStubs(deps, { listCustomTypes: () => [...SAMPLE_TYPES(), ...aliases] });
+
+    expect(written).toEqual(['ws']);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
+    // 一份文件里两源齐在,跨文件引用解析到底
+    expect(writes[0]?.content).toContain('class AVATAR_INFO(TypedDict):');
+    expect(writes[0]?.content).toContain('SKILL_FLAGS = List[int]');
+    expect(writes[0]?.content).toContain('LEVEL_ALIAS = int');
+  });
+
+  it('跨模块引用:另一镜像分件的名字在导出件里给出处 import', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const { deps, writes } = makeDeps();
+    const remote = [
+      makeType({
+        name: 'REMOTE_LIST',
+        aliasType: 'ARRAY',
+        rawValue: 'ARRAY <of> AVATAR_INFO </of>',
+        of: 'AVATAR_INFO',
+        filePath: '/ws/scripts/cellapp/entity_defs/types.xml'
+      })
+    ];
+
+    await exportPythonTypeStubs(deps, { listCustomTypes: () => [...SAMPLE_TYPES(), ...remote] });
+
+    expect(writes).toHaveLength(2);
+    const cellapp = writes.find(write => write.path.endsWith('cellapp/entity_defs/kbe_types.pyi'))?.content ?? '';
+    expect(cellapp).toContain('REMOTE_LIST = List[AVATAR_INFO]');
+    expect(cellapp).toContain('from scripts.entity_defs.kbe_types import AVATAR_INFO');
+    const main = writes.find(write => write.path === '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi')?.content ?? '';
+    expect(main).not.toContain('from scripts.entity_defs.kbe_types import');
   });
 
   it('内容一致时零写零提示;陈旧时重写;读不到按陈旧重写', async () => {

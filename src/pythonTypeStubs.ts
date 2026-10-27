@@ -94,6 +94,8 @@ export interface PythonTypeStubClassEntry {
   properties: Array<{ name: string; annotation: string }>;
   /** FIXED_DICT 类型节点声明行(1 起);测试注入缺源时为 null */
   sourceLine?: number | null;
+  /** 源文件标签(types.xml / alias.xml);合并分件逐条可分 */
+  sourceFile?: string;
   /** 属性名 → 属性行或内联 <Type> 行(1 起) */
   propertySourceLines?: Record<string, number | null>;
 }
@@ -104,6 +106,8 @@ export interface PythonTypeStubAliasEntry {
   annotation: string;
   /** 别名节点声明行(1 起);测试注入缺源时为 null */
   sourceLine?: number | null;
+  /** 源文件标签(types.xml / alias.xml);合并分件逐条可分 */
+  sourceFile?: string;
 }
 
 export type PythonTypeStubEntry = PythonTypeStubClassEntry | PythonTypeStubAliasEntry;
@@ -185,13 +189,21 @@ export function typeStubMirrorRelativeDir(
   return null;
 }
 
-/** 按来源 types.xml 分件(键统一正斜杠;Map 保序,写盘顺序随输入,确定性) */
-export function groupCustomTypesByFile(
-  customTypes: readonly CustomTypeInfo[]
+/**
+ * 按分件镜像目录分组(= kbe_types.pyi 模块身份,用户令 2026-10-27 pyi ④):
+ * 同目录的 types.xml 与 alias.xml 落同一个镜像 kbe_types.pyi——按源文件各写
+ * 一份会互相覆盖(落点相同),且互相引用的名字各查各表解析不到。键为镜像
+ * 相对目录('' = 根级);Map 保序,顺序随输入,确定性。
+ */
+export function groupCustomTypesByModule(
+  customTypes: readonly CustomTypeInfo[],
+  workspaceRoot: string | undefined
 ): Map<string, CustomTypeInfo[]> {
   const groups = new Map<string, CustomTypeInfo[]>();
   for (const info of customTypes) {
-    const key = info.filePath.replace(/\\/g, '/');
+    const key = workspaceRoot
+      ? typeStubMirrorRelativeDir(info.filePath, workspaceRoot) ?? ''
+      : '';
     const group = groups.get(key);
     if (group) {
       group.push(info);
@@ -200,6 +212,18 @@ export function groupCustomTypesByFile(
     }
   }
   return groups;
+}
+
+/** 镜像目录键 → 点分模块路径('' → 根级 kbe_types),与 entity 侧导入口径同源 */
+export function kbeTypesModuleOfKey(moduleKey: string): string {
+  return moduleKey === '' ? 'kbe_types' : `${moduleKey.replace(/\//g, '.')}.kbe_types`;
+}
+
+/** 源文件标签(types.xml / alias.xml):合并分件里两种来源逐条可分 */
+function sourceLabelOf(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  const base = normalized.slice(normalized.lastIndexOf('/') + 1);
+  return base === '' ? 'types.xml' : base;
 }
 
 /** 别名解析失败(指引为空/成环/上游被跳过)的内部信号,reason 可直接入 skipped */
@@ -222,6 +246,10 @@ interface ResolutionContext {
   resolving: Set<string>;
   /** 被跳过的名字 → 原因(下游级联与类体兜底都读它) */
   poisoned: Map<string, string>;
+  /** 跨模块引用面:其他 kbe_types 模块已发射的名字 → 模块路径 */
+  externalModules?: ReadonlyMap<string, string>;
+  /** 本次解析实际引用到的跨模块名(名 → 模块路径),头部导入面 */
+  referencedExternals: Map<string, string>;
 }
 
 /**
@@ -248,6 +276,13 @@ function resolveTypeName(typeName: string, context: ResolutionContext): string {
     return resolveAliasInfo(info, context);
   }
   if (KBENGINE_TYPE_ALIASES.has(trimmed)) {
+    return trimmed;
+  }
+  const external = context.externalModules?.get(trimmed);
+  if (external !== undefined) {
+    // 跨模块引用(pyi ④):别的 kbe_types 分件已发射这个名字——按名引用,
+    // 头部补 import,绝不因「不在本文件」就落 Any
+    context.referencedExternals.set(trimmed, external);
     return trimmed;
   }
   return PYTHON_TYPE_STUB_FALLBACK;
@@ -341,7 +376,8 @@ export function resolveAnnotationTypeWithRegistry(
   const context: ResolutionContext = {
     byName: new Map(sorted.map(info => [info.name, info])),
     resolving: new Set(),
-    poisoned: new Map()
+    poisoned: new Map(),
+    referencedExternals: new Map()
   };
   try {
     return resolveTypeName(raw.trim(), context);
@@ -351,12 +387,43 @@ export function resolveAnnotationTypeWithRegistry(
   }
 }
 
-export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]): PythonTypeStubPlan {
-  const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));
+export interface PythonTypeStubPlanOptions {
+  /** 其他 kbe_types 分件已发射的名字 → 模块路径(跨模块引用面) */
+  externalModules?: ReadonlyMap<string, string>;
+}
+
+export function buildPythonTypeStubPlan(
+  customTypes: readonly CustomTypeInfo[],
+  options: PythonTypeStubPlanOptions = {}
+): PythonTypeStubPlan {
+  // 同名去重(引擎口径,datatypes.cpp addDataType 对重复名报错并拒注册):
+  // types.xml 先注册、alias.xml 后到,同名后到整条作废;两类之内先见优先。
+  const ordered = [...customTypes].sort((left, right) => {
+    const leftAlias = left.filePath.endsWith('alias.xml') ? 1 : 0;
+    const rightAlias = right.filePath.endsWith('alias.xml') ? 1 : 0;
+    return leftAlias - rightAlias || left.name.localeCompare(right.name);
+  });
+  const kept = new Map<string, CustomTypeInfo>();
+  const duplicateSkipped: PythonTypeStubSkipped[] = [];
+  for (const info of ordered) {
+    const winner = kept.get(info.name);
+    if (winner === undefined) {
+      kept.set(info.name, info);
+      continue;
+    }
+    duplicateSkipped.push({
+      name: info.name,
+      reason: `与 ${sourceLabelOf(winner.filePath)}:${winner.line} 同名,引擎 addDataType 拒绝重复注册,后到不发射`
+    });
+  }
+  const sorted = ordered.filter(info => kept.get(info.name) === info)
+    .sort((left, right) => left.name.localeCompare(right.name));
   const context: ResolutionContext = {
-    byName: new Map(sorted.map(info => [info.name, info])),
+    byName: kept,
     resolving: new Set(),
-    poisoned: new Map()
+    poisoned: new Map(),
+    externalModules: options.externalModules,
+    referencedExternals: new Map()
   };
 
   // 先解析别名条目:poison 表记全(成环/指引为空/级联),类体随后引用兜底。
@@ -372,7 +439,8 @@ export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]):
         kind: 'alias',
         name: info.name,
         annotation: resolveAliasInfo(info, context),
-        sourceLine: info.line
+        sourceLine: info.line,
+        sourceFile: sourceLabelOf(info.filePath)
       });
     } catch {
       // 失败已记入 poisoned,不发射该条
@@ -393,6 +461,7 @@ export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]):
         annotation: propertyAnnotation(property, context)
       })),
       sourceLine: info.line,
+      sourceFile: sourceLabelOf(info.filePath),
       propertySourceLines: Object.fromEntries(info.properties.map(property => {
         const sourceLine = property.typeLine ?? property.line;
         return [property.name, sourceLine === undefined ? null : sourceLine];
@@ -401,17 +470,25 @@ export function buildPythonTypeStubPlan(customTypes: readonly CustomTypeInfo[]):
   }
 
   const entries: PythonTypeStubEntry[] = [...classes, ...aliases];
-  const skipped: PythonTypeStubSkipped[] = [...context.poisoned.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([name, reason]) => ({ name, reason }));
-  return { content: buildPythonTypeStubContent(entries), entries, skipped };
+  const skipped: PythonTypeStubSkipped[] = [
+    ...[...duplicateSkipped].map(item => ({ ...item })),
+    ...[...context.poisoned.entries()].map(([name, reason]) => ({ name, reason }))
+  ].sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    content: buildPythonTypeStubContent(entries, context.referencedExternals),
+    entries,
+    skipped
+  };
 }
 
 /**
  * 模块全文:头部声明生成物身份与 gitignore 建议(确定性,无时间戳),
  * 类体在先、别名赋值随后(已全部解析到底,按名字序)。零条目返回 null。
  */
-export function buildPythonTypeStubContent(entries: readonly PythonTypeStubEntry[]): string | null {
+export function buildPythonTypeStubContent(
+  entries: readonly PythonTypeStubEntry[],
+  externalImports: ReadonlyMap<string, string> = new Map()
+): string | null {
   if (entries.length === 0) {
     return null;
   }
@@ -446,22 +523,36 @@ export function buildPythonTypeStubContent(entries: readonly PythonTypeStubEntry
   if (referencedEngineAliases.size > 0) {
     lines.push(`from KBEngine import ${[...referencedEngineAliases].sort().join(', ')}`);
   }
+  // 跨模块引用面(pyi ④):注解引用了别的 kbe_types 分件发射的名字时按
+  // 模块逐组导入,同目录合并件(types.xml+alias.xml)不在此列——同件引用。
+  if (externalImports.size > 0) {
+    const byModule = new Map<string, string[]>();
+    for (const [name, modulePath] of externalImports) {
+      const list = byModule.get(modulePath) ?? [];
+      list.push(name);
+      byModule.set(modulePath, list);
+    }
+    for (const [modulePath, names] of [...byModule.entries()]
+      .sort((left, right) => left[0].localeCompare(right[0]))) {
+      lines.push(`from ${modulePath} import ${[...names].sort().join(', ')}`);
+    }
+  }
   for (const entry of entries) {
     lines.push('', '');
     if (entry.kind === 'class') {
-      lines.push(`# source: types.xml:${entry.sourceLine ?? 'unknown'}`);
+      lines.push(`# source: ${entry.sourceFile ?? 'types.xml'}:${entry.sourceLine ?? 'unknown'}`);
       lines.push(`class ${entry.name}(TypedDict):`);
       if (entry.properties.length === 0) {
         lines.push('    pass');
       } else {
         for (const property of entry.properties) {
           const sourceLine = entry.propertySourceLines?.[property.name];
-          lines.push(`    # source: types.xml:${sourceLine ?? 'unknown'}`);
+          lines.push(`    # source: ${entry.sourceFile ?? 'types.xml'}:${sourceLine ?? 'unknown'}`);
           lines.push(`    ${property.name}: ${property.annotation}`);
         }
       }
     } else {
-      lines.push(`# source: types.xml:${entry.sourceLine ?? 'unknown'}`);
+      lines.push(`# source: ${entry.sourceFile ?? 'types.xml'}:${entry.sourceLine ?? 'unknown'}`);
       lines.push(`${entry.name} = ${entry.annotation}`);
       }
   }
@@ -481,11 +572,12 @@ export interface PythonTypeStubExportOptions {
 }
 
 /**
- * 逐工作区把 types.xml 自定义类型导出为 kbe_types.pyi(B 单:按文件分件,
- * 镜像 scripts 树收独立 typings 根,T-04 不做同目录 sidecar),与 exportKbeStubs
- * 同一套纪律:共用 kbengine.python.stubExport 开关;无自定义类型不生成;
- * 用户配置目录已有同名文件按用户资产跳过;默认目录内容一致零写、陈旧重写;
- * 目录不可写告警并继续其余文件夹。返回实际写入的文件夹名列表。
+ * 逐工作区把 types.xml 自定义类型导出为 kbe_types.pyi(B 单:按镜像目录
+ * 分件,同目录 types.xml/alias.xml 合并成同一模块,镜像 scripts 树收独立
+ * typings 根,T-04 不做同目录 sidecar),与 exportKbeStubs 同一套纪律:共用
+ * kbengine.python.stubExport 开关;无自定义类型不生成;用户配置目录已有同名
+ * 文件按用户资产跳过;默认目录内容一致零写、陈旧重写;目录不可写告警并继续
+ * 其余文件夹。返回实际写入的文件夹名列表。
  */
 export async function exportPythonTypeStubs(
   deps: StubExportDeps = fileSystemStubExportDeps,
@@ -527,17 +619,40 @@ export async function exportPythonTypeStubs(
     });
     let folderWritten = false;
     let folderFailed = false;
-    for (const [typesXmlPath, group] of groupCustomTypesByFile(customTypes)) {
-      const plan = buildPythonTypeStubPlan(group);
-      // 该文件全被跳过(成环/指引为空)不落文件
+    // 两遍解析(pyi ④):先按镜像目录分组建各模块计划拿发射名,再把「别的
+    // 模块已发射的名字」配成跨模块引用面重解析——引用只改头部导入,不改
+    // 条目面,两遍 entries 恒一致。
+    const moduleGroups = groupCustomTypesByModule(customTypes, folder.uri.fsPath);
+    const firstPass = new Map<string, PythonTypeStubPlan>();
+    for (const [moduleKey, group] of moduleGroups) {
+      firstPass.set(moduleKey, buildPythonTypeStubPlan(group));
+    }
+    const emittedOwner = new Map<string, string>();
+    for (const [moduleKey, plan] of firstPass) {
+      for (const entry of plan.entries) {
+        if (!emittedOwner.has(entry.name)) {
+          emittedOwner.set(entry.name, moduleKey);
+        }
+      }
+    }
+    for (const [moduleKey, basePlan] of firstPass) {
+      const externalModules = new Map<string, string>();
+      for (const [name, ownerKey] of emittedOwner) {
+        if (ownerKey !== moduleKey) {
+          externalModules.set(name, kbeTypesModuleOfKey(ownerKey));
+        }
+      }
+      const plan = externalModules.size > 0
+        ? buildPythonTypeStubPlan(moduleGroups.get(moduleKey)!, { externalModules })
+        : basePlan;
+      // 该模块全被跳过(成环/指引为空)不落文件
       if (plan.content === null) {
         continue;
       }
-      const mirrorDir = typeStubMirrorRelativeDir(typesXmlPath, folder.uri.fsPath);
       const target =
-        mirrorDir === null
+        moduleKey === ''
           ? joinPath(resolved.dir, PYTHON_TYPE_STUB_FILE_NAME)
-          : joinPath(resolved.dir, mirrorDir, PYTHON_TYPE_STUB_FILE_NAME);
+          : joinPath(resolved.dir, moduleKey, PYTHON_TYPE_STUB_FILE_NAME);
       // 用户指定目录是用户资产:目标文件已在就不碰;默认目录归 kode 自管,
       // 走内容比对。
       if (resolved.userOwned && deps.exists(target)) {
@@ -555,7 +670,7 @@ export async function exportPythonTypeStubs(
         continue;
       }
       try {
-        deps.mkdir(mirrorDir === null ? resolved.dir : joinPath(resolved.dir, mirrorDir));
+        deps.mkdir(moduleKey === '' ? resolved.dir : joinPath(resolved.dir, moduleKey));
         deps.writeFile(target, plan.content);
         folderWritten = true;
       } catch {
@@ -580,7 +695,7 @@ export async function exportPythonTypeStubs(
   }
   if (written.length > 0 && !options.silent) {
     await vscode.window.showInformationMessage(
-      `已为 ${written.join('、')} 导出 kbe_types.pyi 类型桩(按 types.xml 分件镜像 scripts 树收独立 typings 根,FIXED_DICT→TypedDict、别名解析到内建再映射,配合 extraPaths 接线供 Python 扩展解析)`
+      `已为 ${written.join('、')} 导出 kbe_types.pyi 类型桩(按镜像目录分件,同目录 types.xml/alias.xml 合并,FIXED_DICT→TypedDict、别名解析到内建再映射,配合 extraPaths 接线供 Python 扩展解析)`
     );
   }
   return written;

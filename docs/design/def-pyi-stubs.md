@@ -135,3 +135,48 @@
 1. `python.analysis.stubPath` hit precedence over `extraPaths` for `.pyi` — not wired in this repo (0 hits), measure before implementing.
 2. Type distribution of a real game project (multi-level nested FIXED_DICT, VECTOR3 keys, mixed ARRAY) — this repo's corpus only has fixture-level samples (§1.4); the SDK template `types.xml` is an empty shell.
 3. Availability of the vector type (`VECTOR3`) inside `KBEngine.pyi` — the symbol table `KbeSymbolKind` in `src/kbeModuleIndex.ts` only has `class|function` (`:18`), and `VECTOR3`/`vector` have **0 hits** → whether the generated stub has a vector class to reference is unproven.
+
+## 8. 增补:2026-10-27 pyi ④(Any 消灭与分件合并)
+
+> 任务书 kode-pyi-stubs.md 任务2。本节只记真实落地的取舍;每条都有 vitest 锁。
+
+### 8.1 分件单位从「源文件」改成「镜像目录」(合并 types.xml + alias.xml)
+
+- **病根**:`scripts/entity_defs/` 下的 `types.xml` 与 `alias.xml` 镜像落点相同
+  (`<stubs>/scripts/entity_defs/kbe_types.pyi`)。按源文件各写一份时,后写组
+  覆盖先写组——谁存活取决于组内首个类型名的字典序,纯内容运气;且两组各查
+  各的类型表,`types.xml` 引用 `alias.xml` 的名字(如 FIXED_DICT 属性引
+  `SKILL_FLAGS`)一律解析不到落 `Any`。
+- **取舍**:模块身份 = 镜像目录,不是源文件。同目录两源合并成一个
+  `kbe_types.pyi`(`groupCustomTypesByModule`),互相引用自然同表可解析;
+  逐条 `# source:` 注释带源文件标签(`types.xml`/`alias.xml`)区分来源。
+- **同名两源都在**:引擎口径 `addDataType` 对重复名报错并拒注册
+  (`datatypes.cpp:198-203`,types.xml 先注册、alias.xml 后到)——存根同样
+  types.xml 先见保留、alias.xml 后到作废,作废条目进 plan.skipped 写明缘由,
+  绝不双发射。
+- **跨镜像目录引用**(两个不同 types.xml 树):本模块查不到的名字若在别的
+  kbe_types 分件已发射,按名引用并在头部补 `from <模块> import <名字>`;
+  类型桩不执行,模块间循环引用对 Pylance 无害。跨模块同名各自本地优先,
+  实体桩导入面按镜像序先见——真实项目罕见,如实记边界不硬造。
+
+### 8.2 内建表注册面核对(补全缺项的结论:不缺)
+
+- 对照面是 C++ 注册面,不是 types.xml——kbengine 仓里**没有**默认
+  `kbe/res/server/types.xml`(该路径只有 kbengine_defaults.xml 等四个文件),
+  内建类型全部在 `kbe/src/lib/entitydef/datatypes.cpp` `DataTypes::initialize`
+  (56-79 行)注册,共 21 个:`UINT8..64/INT8..64/STRING/UNICODE/FLOAT/DOUBLE/
+  PYTHON/PY_DICT/PY_TUPLE/PY_LIST/ENTITYCALL/BLOB/VECTOR2/3/4`。本地检出
+  `/home/cui/workspaces/kbengine` 与上游 master 逐名核对,`PYTHON_BUILTIN_TYPE_ANNOTATIONS`
+  21 个全在,**无缺项**;表内唯一注册面之外的条目是 `BOOL`(BigWorld 迁移
+  遗产的礼貌容错,def 层仍按幻影类型诊断),无自创条目。vitest 注册面锁
+  (21 名单列 + 只许 BOOL 一条例外)防未来漂移。
+
+### 8.3 诚实 Any 的最终边界(消灭后剩下的都有名有据)
+
+- 裸 ARRAY(def 直接写 `ARRAY` 无自定义类型、types.xml `<Type>ARRAY</Type>`
+  缺 `<of>`)→ `List[Any]`;`PYTHON`/`ENTITYCALL` → `Any`(引擎侧任意可
+  pickle 对象);`PY_DICT/PY_TUPLE/PY_LIST` 泛型参数 → Any 族;ALIAS 占位/
+  指引为空/成环 → poisoned 不发射,引用处 Any;BigWorld 专有类型名(kbengine
+  注册面外)→ Any。以上全部保留,不属于「可避免 Any」。
+- 元素型 ARRAY 的消灭(`ARRAY <of> X` → `List[X]`,of 套 of 递归)在 B 单
+  已落地(pythonTypeStubs.test.ts 嵌套/缺 of/ALIAS 占位三例),本次未改。

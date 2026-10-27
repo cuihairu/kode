@@ -16,9 +16,9 @@ import {
   PYTHON_BUILTIN_TYPE_ANNOTATIONS,
   PYTHON_TYPE_STUB_FALLBACK,
   buildPythonTypeStubPlan,
-  groupCustomTypesByFile,
-  resolveAnnotationTypeWithRegistry,
-  typeStubMirrorRelativeDir
+  groupCustomTypesByModule,
+  kbeTypesModuleOfKey,
+  resolveAnnotationTypeWithRegistry
 } from './pythonTypeStubs';
 import * as vscode from 'vscode';
 
@@ -153,28 +153,19 @@ function annotationForDefType(typeName: string | undefined, context: EntityStubC
 }
 
 /**
- * types.xml 分件 → kbe_types.pyi 模块路径:镜像目录(stubs/scripts/
- * entity_defs/kbe_types.pyi)按 extraPaths 根(stubs)打成点分模块
- * `scripts.entity_defs.kbe_types`;无镜像(根级单文件)即 `kbe_types`。
- * 与 exportPythonTypeStubs 的落点约定同源。
+ * 只收 kbe_types.pyi 实际发射的名字(类 + 别名)→ 其镜像模块路径:
+ * stubs/scripts/entity_defs/kbe_types.pyi 按 extraPaths 根打成点分模块
+ * `scripts.entity_defs.kbe_types`,根级单文件即 `kbe_types`(2026-10-27
+ * pyi ④ 起按镜像目录分模块,同目录 types.xml/alias.xml 合并,同名后到按
+ * addDataType 口径作废不发射——poisoned 与作废名都不进)。
  */
-function kbeTypesModulePath(typesXmlPath: string, workspaceRoot: string | undefined): string {
-  const mirror = workspaceRoot
-    ? typeStubMirrorRelativeDir(typesXmlPath, workspaceRoot)
-    : null;
-  return mirror === null
-    ? 'kbe_types'
-    : `${mirror.replace(/\//g, '.')}.kbe_types`;
-}
-
-/** 只收 kbe_types.pyi 实际发射的名字(类 + 别名),poisoned 不进 */
 function collectCustomTypeModules(
   customTypes: readonly CustomTypeInfo[],
   workspaceRoot: string | undefined
 ): Map<string, string> {
   const modules = new Map<string, string>();
-  for (const [typesXmlPath, group] of groupCustomTypesByFile(customTypes)) {
-    const modulePath = kbeTypesModulePath(typesXmlPath, workspaceRoot);
+  for (const [moduleKey, group] of groupCustomTypesByModule(customTypes, workspaceRoot)) {
+    const modulePath = kbeTypesModuleOfKey(moduleKey);
     for (const entry of buildPythonTypeStubPlan(group).entries) {
       modules.set(entry.name, modulePath);
     }
