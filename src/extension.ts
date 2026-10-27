@@ -1224,10 +1224,21 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         const uri = createDatabaseSchemaUri(resolvedEntityName);
         const document = await vscode.workspace.openTextDocument(uri);
-        const snapshot = getDatabaseSchemaSnapshot(resolvedEntityName);
-        const line = snapshot
-          ? locateDatabaseSchemaLine(snapshot, tableName || resolveEntityTableName(resolvedEntityName, snapshot), fieldName)
-          : 1;
+        // IDE-SCH-010:优先用「屏上这一代」渲染定位(展示与跳转同源,await 期间
+        // def/配置变更不撕裂行号);未发布过才退独立快照口径
+        const publishedSnapshot = databaseSchemaProvider.getPublishedSnapshot(uri);
+        const line = publishedSnapshot !== undefined
+          ? databaseSchemaProvider.locateInPublishedContent(
+              uri,
+              tableName || resolveEntityTableName(resolvedEntityName, publishedSnapshot),
+              fieldName
+            ) ?? 1
+          : (() => {
+              const snapshot = getDatabaseSchemaSnapshot(resolvedEntityName);
+              return snapshot
+                ? locateDatabaseSchemaLine(snapshot, tableName || resolveEntityTableName(resolvedEntityName, snapshot), fieldName)
+                : 1;
+            })();
         const position = new vscode.Position(Math.max(line - 1, 0), 0);
         const selection = new vscode.Range(position, position);
         await vscode.window.showTextDocument(document, { selection });

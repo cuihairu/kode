@@ -221,11 +221,31 @@ const BUILTIN_DB_TYPE_NAMES = new Set([
 export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentContentProvider {
   private readonly onDidChangeEmitter = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this.onDidChangeEmitter.event;
+  // IDE-SCH-010:每个 uri 记「屏上这一代」渲染(快照+行),反向跳转定位
+  // 只对已发布代取行号——展示与跳转同源,中途 def/配置变更不撕裂
+  private readonly publishedRenders = new Map<string, { snapshot: DatabaseSchemaSnapshot | null; lines: string[] }>();
 
   provideTextDocumentContent(uri: vscode.Uri): string {
     const entityName = decodeURIComponent(uri.path.replace(/^\/+/, '').replace(/\.schema$/, ''));
     const snapshot = getDatabaseSchemaSnapshot(entityName);
-    return renderDatabaseSchema(snapshot);
+    const lines = renderDatabaseSchema(snapshot).split('\n');
+    this.publishedRenders.set(uri.toString(), { snapshot, lines });
+    return lines.join('\n');
+  }
+
+  /** IDE-SCH-010:对已发布的渲染定位表/字段行;未发布过(尚未展示)返回 null,
+   * 调用侧退回独立快照口径(locateDatabaseSchemaLine) */
+  locateInPublishedContent(uri: vscode.Uri, tableName: string, fieldName?: string): number | null {
+    const published = this.publishedRenders.get(uri.toString());
+    if (!published) {
+      return null;
+    }
+    return locateDatabaseSchemaLineInLines(published.lines, tableName, fieldName);
+  }
+
+  /** IDE-SCH-010:已发布代的快照(表名缺省解析用),与屏上文本同代 */
+  getPublishedSnapshot(uri: vscode.Uri): DatabaseSchemaSnapshot | null | undefined {
+    return this.publishedRenders.get(uri.toString())?.snapshot;
   }
 
   refresh(entityName?: string): void {
@@ -820,7 +840,16 @@ export function locateDatabaseSchemaLine(
 ): number {
   // 定位从渲染文本里找锚点,不再手写镜像版式行数(批133 用户令:友好版式改版后
   // 原 `line = 6` / `+= 5` / `+= 2` 的镜像计数全部失效)
-  const lines = renderDatabaseSchema(snapshot).split('\n');
+  return locateDatabaseSchemaLineInLines(renderDatabaseSchema(snapshot).split('\n'), tableName, fieldName);
+}
+
+/** IDE-SCH-010:定位的纯文本面——对「已发布的那一代」渲染行直接找锚点,
+ * 展示与跳转同源,不另起快照重渲染 */
+export function locateDatabaseSchemaLineInLines(
+  lines: string[],
+  tableName: string,
+  fieldName?: string
+): number {
   const tableStart = lines.findIndex(line => {
     const match = DATABASE_SCHEMA_TABLE_ANCHOR.exec(line);
     return match !== null && match[1] === tableName;
