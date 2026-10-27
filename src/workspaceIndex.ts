@@ -51,6 +51,12 @@ export class WorkspaceIndex {
     watcher.onDidChange(uri => { void this.indexFile(uri); });
     watcher.onDidDelete(uri => { this.cache.delete(uri.fsPath); });
     this.watchers.push(watcher);
+    this.watchers.push(vscode.workspace.onDidChangeTextDocument(event => {
+      this.noteSaved(event.document);
+    }));
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.isDirty) this.noteSaved(document);
+    }
     this.started = true;
   }
 

@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 import { EventCodeLensProvider } from '../src/eventApi';
-import { makeTextDocument } from './helpers/vscodeStub';
+import { makeTextDocument, workspaceEvents } from './helpers/vscodeStub';
 
 it('事件首扫后台读取文件，不打开其他文档并保留行号', async () => {
   const originalFind = vscode.workspace.findFiles;
@@ -22,6 +22,25 @@ it('事件首扫后台读取文件，不打开其他文档并保留行号', asyn
     vscode.workspace.findFiles = originalFind;
     vscode.workspace.fs.readFile = originalRead;
     vscode.workspace.openTextDocument = originalOpen;
+  }
+});
+
+it('编辑缓冲区增删事件后查询立即看到新版本', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  vscode.workspace.findFiles = async () => [];
+  const index = new WorkspaceIndex();
+  try {
+    await index.allEventCalls();
+    const fileName = '/ws/listener.py';
+    const added = makeTextDocument('self.addEvent(EV, self.on_ev)', { fileName, languageId: 'python' });
+    workspaceEvents.documentChanged.fire({ document: added });
+    expect(await index.allEventCalls()).toMatchObject([{ file: fileName, call: { event: 'EV' } }]);
+    const removed = makeTextDocument('pass', { fileName, languageId: 'python' });
+    workspaceEvents.documentChanged.fire({ document: removed });
+    expect(await index.allEventCalls()).toEqual([]);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
   }
 });
 
