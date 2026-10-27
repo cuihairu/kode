@@ -346,7 +346,8 @@ function mergeAnnotationBuckets(
  * IDE-HOV-012:保存文件时只替换该文件注解桶——提取已保存文本(调用方给
  * document.getText(),零文件读取),内存合并出新视图,其他文件桶不动、不重读。
  * 删除的返回注解随换桶不再可查。冷缓存(尚无全量索引)为 no-op:下一次查询
- * 按磁盘真值全量建,不虚建部分索引。
+ * 按磁盘真值全量建,不虚建部分索引;首扫在途(2026-10-28 审核整改)记入
+ * 待重放事件,发布前换桶,扫描期旧读不吞新注解。
  */
 export function applySavedFileAnnotations(
   workspaceRoot: string | null,
@@ -355,7 +356,10 @@ export function applySavedFileAnnotations(
 ): void {
   if (!workspaceRoot) { return; }
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  if (!cached) { return; }
+  if (!cached) {
+    annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'save', filePath, source });
+    return;
+  }
   cached.fileBuckets.set(filePath, extractFileReturnAnnotations(source));
   cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
@@ -363,7 +367,8 @@ export function applySavedFileAnnotations(
 /**
  * IDE-HOV-014:删除文件时移除该文件注解桶——弃桶后纯内存重合并,该来源
  * 注解不再可查,其他文件同名方法来源仍按原次序兜底。冷缓存与不在册路径
- * 均为 no-op:下一次查询按磁盘真值全量建,不虚建部分索引。
+ * 均为 no-op:下一次查询按磁盘真值全量建,不虚建部分索引;首扫在途
+ * (2026-10-28 审核整改)记入待重放事件,发布前弃桶,已删文件注解不驻留。
  */
 export function removeSavedFileAnnotations(
   workspaceRoot: string | null,
@@ -371,7 +376,10 @@ export function removeSavedFileAnnotations(
 ): void {
   if (!workspaceRoot) { return; }
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  if (!cached) { return; }
+  if (!cached) {
+    annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'delete', filePath });
+    return;
+  }
   if (!cached.fileBuckets.delete(filePath)) { return; }
   cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
@@ -379,7 +387,8 @@ export function removeSavedFileAnnotations(
 /**
  * IDE-HOV-015:重命名文件时迁移注解来源——旧键桶原位换新键(保插入序,
  * 先见优先语义不因重命名洗牌),内容承接不丢、不留下双份。冷缓存与不在册
- * 路径均为 no-op:下一次查询按磁盘真值全量建。
+ * 路径均为 no-op:下一次查询按磁盘真值全量建;首扫在途(2026-10-28 审核
+ * 整改)记入待重放事件,发布时对扫描收集的桶迁键,import 绑定按新模块命中。
  */
 export function renameSavedFileAnnotations(
   workspaceRoot: string | null,
@@ -388,7 +397,11 @@ export function renameSavedFileAnnotations(
 ): void {
   if (!workspaceRoot) { return; }
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  if (!cached || !cached.fileBuckets.has(oldFilePath)) { return; }
+  if (!cached) {
+    annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'rename', oldFilePath, newFilePath });
+    return;
+  }
+  if (!cached.fileBuckets.has(oldFilePath)) { return; }
   const renamed = new Map<string, PythonReturnAnnotationIndex>();
   for (const [key, bucket] of cached.fileBuckets) {
     renamed.set(key === oldFilePath ? newFilePath : key, bucket);
@@ -399,9 +412,16 @@ export function renameSavedFileAnnotations(
 
 const returnAnnotationCaches = new Map<string, ReturnAnnotationCacheEntry>();
 type AnnotationCancellation = { readonly isCancellationRequested: boolean };
+/** 首扫在途窗口内到达的文件事件(2026-10-28 审核整改):发布前重放,
+ * 扫描期读到的旧内容不再吞掉窗口内的保存/删除/重命名。 */
+type PendingFileEvent =
+  | { kind: 'save'; filePath: string; source: string }
+  | { kind: 'delete'; filePath: string }
+  | { kind: 'rename'; oldFilePath: string; newFilePath: string };
 interface AnnotationBuild {
   waiters: Set<{ token?: AnnotationCancellation }>;
   promise: Promise<PythonReturnAnnotationIndex>;
+  pendingFileEvents: PendingFileEvent[];
 }
 const annotationBuilds = new Map<string, AnnotationBuild>();
 
@@ -501,7 +521,8 @@ async function getReturnAnnotationIndex(workspaceRoot: string, token?: Annotatio
     } };
     const entry: AnnotationBuild = {
       waiters,
-      promise: Promise.resolve().then(() => buildReturnAnnotationIndexForRoot(workspaceRoot, sharedToken, entry))
+      promise: Promise.resolve().then(() => buildReturnAnnotationIndexForRoot(workspaceRoot, sharedToken, entry)),
+      pendingFileEvents: []
     };
     annotationBuilds.set(workspaceRoot, entry);
     build = entry;
@@ -533,10 +554,25 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
   };
   await Promise.all(Array.from({ length: Math.min(ANNOTATION_READ_CONCURRENCY, files.length) }, readWorker));
   if (token.isCancellationRequested) return new Map();
-  const fileBuckets = new Map<string, PythonReturnAnnotationIndex>();
+  let fileBuckets = new Map<string, PythonReturnAnnotationIndex>();
   for (let i = 0; i < files.length; i += 1) {
     if (token.isCancellationRequested) return new Map();
     fileBuckets.set(files[i], await extractFileReturnAnnotationsAsync(sources[i]));
+  }
+  // 2026-10-28 审核整改:首扫在途窗口内的文件事件在发布前按到达序重放
+  // (保存换桶/删除弃桶/重命名迁键),扫描期旧读不吞掉窗口内的新状态。
+  for (const event of build.pendingFileEvents) {
+    if (event.kind === 'save') {
+      fileBuckets.set(event.filePath, extractFileReturnAnnotations(event.source));
+    } else if (event.kind === 'delete') {
+      fileBuckets.delete(event.filePath);
+    } else if (fileBuckets.has(event.oldFilePath)) {
+      const renamed = new Map<string, PythonReturnAnnotationIndex>();
+      for (const [key, bucket] of fileBuckets) {
+        renamed.set(key === event.oldFilePath ? event.newFilePath : key, bucket);
+      }
+      fileBuckets = renamed;
+    }
   }
   const index = mergeAnnotationBuckets(fileBuckets);
   if (annotationBuilds.get(workspaceRoot) === build) {
@@ -657,14 +693,17 @@ export function resolveLocalVariableReturnTypeFromSnapshot(
     hoveredBucket ? documentContext!.fileKey : null
   );
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  // 三段级联(单名):悬停文档桶 → 其余打开文档桶 → 磁盘已发布索引(遮蔽名不借)
+  // 2026-10-28 审核整改:TTL 过期检查必须在命中之前——过期索引不再答磁盘
+  // 旧注解(原检查放在级联命中返回之后,过期旧值可无限命中)。
+  const diskIndexFresh = cached !== undefined && Date.now() - cached.builtAtMs < INDEX_TTL_MS;
+  // 三段级联(单名):悬停文档桶 → 其余打开文档桶 → 磁盘已发布索引(仅新鲜;遮蔽名不借)
   const cascadeAnnotation = (methodName: string): string | null => {
     const fromHovered = hoveredBucket?.annotations.get(methodName);
     if (fromHovered && fromHovered !== 'Any') { return fromHovered; }
     const fromOthers = otherAnnotations.get(methodName);
     if (fromOthers && fromOthers !== 'Any') { return fromOthers; }
     if (shadowedNames.has(methodName)) { return null; }
-    const fromDisk = cached?.index.get(methodName);
+    const fromDisk = diskIndexFresh ? cached!.index.get(methodName) : undefined;
     return fromDisk && fromDisk !== 'Any' ? fromDisk : null;
   };
   // IDE-HOV-017:显式 import 绑定的候选只解析到对应模块的文件桶;
@@ -675,7 +714,7 @@ export function resolveLocalVariableReturnTypeFromSnapshot(
       ? bindings.receivers.get(assignment.receiver)
       : bindings.names.get(assignment.methodName);
     if (module !== undefined) {
-      const bucket = cached ? locateModuleBucket(cached.fileBuckets, module) : null;
+      const bucket = diskIndexFresh ? locateModuleBucket(cached!.fileBuckets, module) : null;
       const annotation = bucket?.get(assignment.methodName);
       if (annotation && annotation !== 'Any') {
         return { target: word, annotation, methodName: assignment.methodName };

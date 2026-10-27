@@ -612,3 +612,82 @@ describe('IDE-HOV-017 按显式 import 限定返回注解候选', () => {
     expect(text).not.toContain('推导自');
   });
 });
+
+// 2026-10-28 审核整改(HOV-012/014/015 竞态 + TTL 次序):三个文件事件面在
+// 「首扫在途、缓存未发布」时直接 return,窗口内的保存/删除/重命名被丢弃,
+// 发布用的是扫描期读到的旧内容 → 陈旧注解驻留;快照面 TTL 过期检查又在
+// 命中返回之后,过期旧值可无限命中。门住首个目录枚举制造确定性在途窗口。
+describe('2026-10-28 审核整改:首扫在途窗口内的文件事件不被丢弃', () => {
+  /** 门住首扫的第一次 readdir,返回放行(并还原 spy)函数 */
+  const gateFirstScan = (): (() => void) => {
+    const realReaddir = fs.promises.readdir.bind(fs.promises);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let gating = true;
+    const spy = vi.spyOn(fs.promises, 'readdir').mockImplementation(
+      (async (...args: unknown[]) => {
+        if (gating) { gating = false; await gate; }
+        return await realReaddir(...(args as Parameters<typeof fs.promises.readdir>));
+      }) as unknown as typeof fs.promises.readdir
+    );
+    return () => {
+      release();
+      spy.mockRestore();
+    };
+  };
+
+  it('保存(HOV-012):首扫在途的换桶在发布时生效,扫描期旧读不吞新注解', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> OLD:\n    pass\n');
+    const release = gateFirstScan();
+    const pending = resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> FRESH:\n    pass\n');
+    release();
+    const resolved = await pending;
+    expect(resolved).toMatchObject({ annotation: 'FRESH' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      .toMatchObject({ annotation: 'FRESH' });
+  });
+
+  it('删除(HOV-014):首扫在途的弃桶在发布时生效,已删文件注解不再可查', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def only_svc() -> PAYLOAD:\n    pass\n');
+    const release = gateFirstScan();
+    const pending = resolveLocalVariableReturnType(['y = only_svc()'], 0, 'y', root);
+    removeSavedFileAnnotations(root, path.join(root, 'svc.py'));
+    release();
+    expect(await pending).toBeNull();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+  });
+
+  it('重命名(HOV-015):首扫在途的迁键在发布时生效,import 绑定按新模块命中', async () => {
+    const { root, put } = setupWorkspace();
+    put('a.py', 'def get_data() -> FROM_A:\n    pass\n');
+    const release = gateFirstScan();
+    const lines = ['from b import get_data', 'data = get_data()'];
+    const pending = resolveLocalVariableReturnType(lines, 1, 'data', root);
+    renameSavedFileAnnotations(root, path.join(root, 'a.py'), path.join(root, 'b.py'));
+    release();
+    await pending; // 发布完成后再断言
+    // 迁键被吞时桶仍挂旧键 a.py:绑定模块 b 找不到桶 → 不回退全局 → null
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root))
+      .toMatchObject({ annotation: 'FROM_A' });
+  });
+});
+
+describe('2026-10-28 审核整改:过期磁盘索引不得继续答', () => {
+  it('TTL 过期后快照面不再从磁盘旧注解答', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> OLD:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
+    const now = vi.spyOn(Date, 'now').mockReturnValue(advanced);
+    try {
+      // 命中前先过期:磁盘 OLD 不得再答(原 TTL 检查在命中返回之后)
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+        .toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+});
