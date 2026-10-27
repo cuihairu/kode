@@ -204,3 +204,348 @@
 - [x] 审核发现：大文件 worker 路径及 worker 崩溃、停用、旧 revision 回包均没有直接测试，现有解析测试只覆盖同步 parsePythonFile（8c105e0；tests/pythonParserWorkerHost.test.ts 新增 8 例直接覆盖(纯测试项,不改实现):超阈值内容走线程(请求入线程+回包 resolve+revision 透传)/旧 revision 回包原样上抛锁「host 不代吞、调用方比对丢弃」契约/worker 崩溃 failPending 在途全拒+后续重建新线程/exit code 等同崩溃/dispose 在途拒绝+terminate+不复用旧实例/回包 error 与空结果拒绝/未知 id 回包忽略不伤在途/阈值以下与产物缺失回退同步解析不建线程;FakeWorker 经 vi.mock('worker_threads') 工厂注入+fs.existsSync 探针放行 worker 分支(vitest 下 __dirname 无编译产物,与 CI 打包后同口径),vi.resetModules 隔离模块单例态;未删用例未松断言）
 - [x] 新任务1（来源=用户 2026-10-27 令,排在审核发现之后实现）：receiver 可能为 None 的诊断告警——self.client/self.cell/self.base 的成员调用/属性访问,当前作用域无 `is not None`/`if x:`/早退/hasattr guard 时报 Warning「receiver may be None when player offline」(附引擎源码引用:server/baseapp/entity.cpp:800 pyGetClientEntityCall、:750 pyGetCellEntityCall、cellapp/entity.cpp:74);guard 分析用 in-tree pythonParser,接收者提取复用 getPythonReceiverCallAtPosition;段错配同源可报(经 self.cell 调 ClientMethods 声明的方法);配置开关默认开可关,severity=Warning;vitest 用例覆盖 guard/无 guard/段错配/开关关（7dff720；src/receiverNoneDiagnostics.ts 新模块:computeReceiverNoneFindings 纯函数(guard 分析用 in-tree pythonParser 定方法界+行文本形态判定,接收者提取复用 pythonLanguageUtils.findPythonReceiverCalls 同口径)+receiverNoneDiagnosticItems 纯数据项(测试免 vscode 依赖);guard 认四种形态:正向 if/if x is not None(块体包含,缩进更深且无去缩进)/早退 if not x、if x is None(块内 use 行之前有 return/raise,ifIndent<=useIndent——修复实现缺口:早退后同缩进续行原判 < 会漏)/别名 x=self.<role>/hasattr(self,"cell");段错配:方法在 .def 有声明但无一处落接收者对应 section 才报(无声明不作闸);消息附引擎源码(baseapp/entity.cpp:800/750、cellapp/entity.cpp:74);extension.ts 接线:didChange queued/didOpen immediate/初始 forEach immediate/configWatcher 变更即重算,共用 kbengine collection;package.json kbengine.receiverNoneDiagnostics 默认 true(featureToggles 第七键断言);tests/receiverNoneDiagnostics.test.ts 四例:guard 四形态不报/无 guard 报 Warning+引擎源码+range 锚方法名 token/段错配(含对齐不错配、无声明不错配反例)/开关关零产出;prove-red 四路:恢复早退旧条件红、guard 恒 true 红、段错配恒 undefined 红、开关口短路删除红;docs 对账:features.md 中英 feature 条+Settings 表行、guide/configuration.md 中英总览行+关掉会怎样行+触发范围句+74→75;perf §7 extension.ts 锚点随插入重校(470→523 等 9 处)+doc 出处同步;未删用例未松断言）
 - [x] 新任务2（来源=用户 2026-10-27 令,排在审核发现之后实现）：def 函数形参 inlay(定义点)——entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 `def foo(self, a, b):` 每个未手写标注的形参后渲染 `a: <Type>`,类型按「区块+方法名」反查 .def <Arg> 声明(resolveEntityAnnotationType/formatDefMethodSignature 同链,方向反转);口径:def 未声明 <Arg> 不出/形参已有标注不覆盖/区块外普通方法不出(不做推导)/<ReturnType> 存在时顺带 -> 提示/跨行 def 与现有 inlay 同规则;独立开关 kbengine.inlayHints.defParams 默认开;vitest 用例覆盖四边界（b0732e8；src/defParamInlayHints.ts 新模块:findDefParamSites 纯函数(inferMethodSectionFromPythonFile 按文件判段,区块外零产出;in-tree pythonParser 类方法点位,单行括号闭合才出——跨行与调用点 inlay 同规则;self/cls 剔除,形参名 token 定位支持默认值/*args/**kwargs)+buildDefParamInlayItems 纯函数(min(声明数,形参数) 逐位配对,def 未声明 <Arg> 不出/已手写标注不覆盖(名字 token 后首个顶层分隔符是 : 才算,字典字面量里的 : 不算)/*args 位不出/类型走 resolveEntityAnnotationType 同链落 Any 不出;<ReturnType> 闭括号后 -> 提示);ReturnType 管道:definitionSemantics DefinitionMethod 增 returnType(<ReturnType> 直文本,getScalarChildValue),entityMapping EntityMethodDefinitionLocation 增 declaredReturnType 并在 pushMethod/toLegacyMapping 两处透传;extension.ts 注册 DefParamInlayHintsProvider(python selector,resolveMethodDefinition 段闸按 (section,methodName) 记忆化);package.json kbengine.inlayHints.defParams 默认 true(featureToggles 第八键);tests/defParamInlayHints.test.ts 7 例:纯层四边界(区块外/未声明/已标注/ReturnType 与跨行)+默认值与 *args 锚位+真实索引装配端到端(真 .def 走 parse→pushMethod→resolveMethodDefinition 全链,开关关零产出);prove-red 四路:区块裁断拆掉红/已标注不覆盖拆掉红/Any 兜底拆掉红/ReturnType 解析置 null 红;extension.test.ts inlay 注册数 2→3;perf §7 extension.ts 锚点随注册插入重校(9 处)+doc 出处同步;docs 对账:features.md 中英 feature 条+Settings 表行、guide/configuration.md 中英总览行+计数 75→76;未删用例未松断言）
+
+
+## IDE 原子任务清单（2026-10-27 架构审计拆分）
+
+来源：[架构/性能/IDE 能力审计](docs/review/2026-10-27-kbengine-ide-architecture-audit.md)、[Rust 收编范围评审](docs/review/2026-10-27-rust-scope-review.md)。基线 `b24925f`，只登记尚需交付的行为；已修复的 Docs CI 死链不重新挂开放任务。
+
+本次拆分：**222 项 / 23 组**，其中 P0 39 项、P1 114 项、P2 69 项。当前执行项：无；本轮交付为任务清单。
+
+执行约定：
+
+- **一次只执行一个 `IDE-分组-编号` 复选框。** 完成该项并记录证据后再选下一项；不能因同组部分通过就整组打勾。
+- 每项只交付所写的一个行为，验收就是勾选条件；若实现时仍需同时改变多个独立行为，先把该项继续拆开，再开始实现。
+- 完成后在原行追加 `commit + 文件定位 + 该项验证结果`。业务行为需有对应的反例/正例证据；纯文档项核对事实和链接即可，不用为勾账编造测试。
+- `前置` 引用的是必须先完成的细项；没有前置的任务也要遵守优先级。建议首项：`IDE-HOV-001`，随后 `IDE-HOV-002`；`IDE-EVT-001` 也是独立止血项。
+- 为解锁 P0，可以先完成它明确引用的 P1 前置；后续 IDE 新能力按依赖推进，不以整组完工作为单次执行目标。
+- 旧 `P0-4b/c/d`、`A3-6`、`A5-1`、`B-1` 保留历史与汇总含义；本节细项是后续执行粒度。旧项是否关闭按覆盖范围核对，不因历史勾选推断新反例已经修复。
+- `MET/ACC` 细化现场采集与验收，已有并行实现满足条件时补证据，不重写；`HOT` 对应既有 HR backlog 的小切片，不重复计作两次交付。
+- 功能扩展在性能与索引基础稳定后推进。Rust R2.5/R2b 各项先形成独立取舍结论；完成“评估”不等于已经完成迁移。
+
+| 旧汇总/审计面 | 本节执行入口 |
+| --- | --- |
+| PERF-01 / B-1 普通 hover 卡顿 | HOV、BUD |
+| PERF-03 / IDX-05 事件索引 | EVT |
+| IDX-01..04、06、08、09 | IDX |
+| IDX-07 / 多份事实源 | SNP |
+| PERF-04 / PERF-05 / PERF-06 | SCH / DIA / RES |
+| P0-4b / P0-4c / P0-4d | MET / ACC / RST-001 |
+| 原生引用、符号、重命名、调用层次 | NAV |
+| IDE 项目、生成、运行、调试、测试 | GEN / PRJ / RUN / DBG / TSK |
+| 热更新、观测、数据库、SDK、发布 | HOT / LIV / DB / SDK / REL |
+| 模块职责 / Rust 范围 | ARC / RST |
+
+### IDE-HOV · 普通 Python hover 与返回注解索引（P0）
+
+来源：PERF-01；src/pythonReturnTypeInference.ts、src/languageProviders.ts。
+- [ ] IDE-HOV-001 [P0] 无调用赋值时跳过返回注解索引；验收：悬停普通变量且上方无对应调用赋值时，目录枚举与项目文件读取计数均为 0；前置：无。
+- [ ] IDE-HOV-002 [P0] 用单次遍历提取文件返回注解；验收：同一文件的方法增多时字符访问次数保持线性；无注解方法不反复扫描全文；前置：无。
+- [ ] IDE-HOV-003 [P0] 保留多行函数签名的返回注解；验收：多行形参后的 -> 注解仍被提取；截断签名不产生虚构注解；前置：IDE-HOV-002。
+- [ ] IDE-HOV-004 [P0] 让返回注解索引消费单次提取结果；验收：buildReturnAnnotationIndex 不再逐方法调用全文 extract；既有输出不变；前置：IDE-HOV-002, IDE-HOV-003。
+- [ ] IDE-HOV-005 [P0] 从构建完成时计算缓存有效期；验收：构建耗时超过 3 秒后，紧邻第二次查询不再次读完整项目；前置：无。
+- [ ] IDE-HOV-006 [P0] 合并同根进行中的注解构建；验收：两个并发请求共享一次构建；失败后下一次可以重新构建；前置：无。
+- [ ] IDE-HOV-007 [P0] 将注解文件发现改为异步遍历；验收：慢目录枚举期间事件循环可推进，取消后不进入下一个目录；前置：无。
+- [ ] IDE-HOV-008 [P0] 为注解源码读取设置并发上限；验收：项目文件异步读取的峰值不超过设定并发数，单文件失败不阻断其他文件；前置：IDE-HOV-007。
+- [ ] IDE-HOV-009 [P0] 为注解构建增加按字节让路点；验收：单个大文件处理也能让出宿主，不能只在文件之间让路；前置：IDE-HOV-004。
+- [ ] IDE-HOV-010 [P0] 让普通 hover 只查询已发布注解快照；验收：冷查询可触发受控后台构建，但返回前不等待全项目发现或读取；前置：IDE-HOV-006, IDE-HOV-008, IDE-HOV-009。
+- [ ] IDE-HOV-011 [P0] 按文档版本更新当前文件注解；验收：未保存的返回注解变化立即进入该文件桶，旧版本结果不能覆盖新版本；前置：IDE-HOV-004。
+- [ ] IDE-HOV-012 [P0] 保存文件时只替换该文件注解桶；验收：修改一个文件不重读其他文件，删除的返回注解不再可查；前置：IDE-HOV-011。
+- [ ] IDE-HOV-013 [P0] 新建文件时新增注解桶；验收：新文件保存后可查询其注解，目录发现不重新全跑；前置：IDE-HOV-012。
+- [ ] IDE-HOV-014 [P0] 删除文件时移除注解桶；验收：文件删除后该来源的注解消失，其他同名方法来源仍存在；前置：IDE-HOV-012。
+- [ ] IDE-HOV-015 [P0] 重命名文件时迁移注解来源；验收：旧 URI 查询落空，新 URI 可查，不留下双份结果；前置：IDE-HOV-013, IDE-HOV-014。
+- [ ] IDE-HOV-016 [P0] 按当前文件限定返回注解候选；验收：同文件明确声明优先于项目中无关同名方法，不跨作用域借用赋值；前置：IDE-HOV-011。
+- [ ] IDE-HOV-017 [P0] 按显式 import 限定返回注解候选；验收：导入绑定只解析到对应模块；同名多个候选无法确定时返回未知；前置：IDE-HOV-016。
+- [ ] IDE-HOV-018 [P0] 增加返回推导独立开关；验收：关闭后 provider 不启动注解构建；package 配置与中英说明一致；前置：IDE-HOV-010。
+
+### IDE-EVT · 事件 CodeLens 与 WorkspaceIndex（P0）
+
+来源：PERF-03、IDX-05；src/eventApi.ts、src/workspaceIndex.ts。
+- [ ] IDE-EVT-001 [P0] 无事件语法时提前返回 CodeLens；验收：100 个普通文件的探针返回 0 lens 且不打开其他文档；前置：无。
+- [ ] IDE-EVT-002 [P0] 共享事件索引首扫 Promise；验收：首扫被扣住时第二个调用者等待同一 Promise，不提前拿到空表；前置：无。
+- [ ] IDE-EVT-003 [P0] 允许事件索引启动失败后重试；验收：首次 discovery 抛错后，下一次查询能重新完成初始化；前置：IDE-EVT-002。
+- [ ] IDE-EVT-004 [P0] 用后台文件读取替代全仓 openTextDocument；验收：首次事件索引不触发其他文件的 onDidOpenTextDocument 事件；前置：无。
+- [ ] IDE-EVT-005 [P0] 限制事件索引首扫并发；验收：大仓索引同时处理文件数有上限，取消后不继续启动下一批；前置：IDE-EVT-004。
+- [ ] IDE-EVT-006 [P0] 统一事件索引扫描根与排除表；验收：外部 assetsRoot 被收录，venv/site-packages/third_party 等按共用规则排除；前置：IDE-EVT-004。
+- [ ] IDE-EVT-007 [P0] 用未保存缓冲区刷新事件记录；验收：当前文档新增或移除监听后，查询看到同版本事件，不等磁盘 watcher；前置：IDE-EVT-004。
+- [ ] IDE-EVT-008 [P0] 处理事件索引构建期间的文件更新；验收：延迟的旧磁盘读不能覆盖较新的编辑结果；前置：IDE-EVT-007。
+- [ ] IDE-EVT-009 [P0] 删除文件时清除事件反向记录；验收：删除监听文件后监听计数和跳转目标同时消失；前置：IDE-EVT-007。
+- [ ] IDE-EVT-010 [P0] 重命名文件时更新事件 URI；验收：监听跳转只指向新路径，不保留旧路径；前置：IDE-EVT-009。
+- [ ] IDE-EVT-011 [P0] 释放事件 provider 的索引和 watcher；验收：provider 销毁后 watcher 为 0，在途读取不得重新发布缓存；前置：IDE-EVT-002。
+- [ ] IDE-EVT-012 [P0] 让事件 CodeLens 读取共享文件索引；验收：事件记录来源复用统一索引，移除该 provider 的独立全仓扫描入口；前置：IDE-EVT-006, IDE-SNP-001。
+
+### IDE-IDX · 根身份、实体归属与增量正确性（P1）
+
+来源：IDX-01..09；src/semanticIndex.ts、src/entityMapping.ts、src/definitionSemantics.ts。
+- [ ] IDE-IDX-001 [P1] 让语义 loader 按精确 def 路径加载入口；验收：双根同名 Hero 请求 B 时，semantics.owner.filePath 确实为 B；前置：无。
+- [ ] IDE-IDX-002 [P1] 让 loader 缓存按根和文件身份分区；验收：A/B 同名定义分别命中自己的缓存，切换查询顺序不改变结果；前置：IDE-IDX-001。
+- [ ] IDE-IDX-003 [P1] 让实体名查询携带调用文档根；验收：A/B 同名实体由调用文件根决定，不能依靠最后注册者覆盖；前置：IDE-IDX-002。
+- [ ] IDE-IDX-004 [P1] 把 Python owner 反查改为多对多；验收：A/B 共用 Shared.py 时反查返回两个实体并保持稳定顺序；前置：无。
+- [ ] IDE-IDX-005 [P1] 保存共享脚本时刷新全部依赖实体；验收：修改 Shared.py 后 A/B 的方法行号与绑定均更新，未依赖实体不刷新；前置：IDE-IDX-004。
+- [ ] IDE-IDX-006 [P1] 替换注册前移除旧的 owner 记录；验收：Old.py 改为 New.py 后，Old.py 不再映射到该实体；前置：无。
+- [ ] IDE-IDX-007 [P1] 删除实体时清理所有反向记录；验收：替换后再删除实体，旧 owner、新 owner、类名和 ownerRef 均查不到它；前置：IDE-IDX-006。
+- [ ] IDE-IDX-008 [P1] 删除同名胜者后保留其他根实体；验收：移除 B 的 Hero 后 A 的 Hero 仍能按 A 根查询，不被一并删除；前置：IDE-IDX-003, IDE-IDX-007。
+- [ ] IDE-IDX-009 [P1] 保留 POSIX 路径大小写；验收：Linux 的 /project/A 与 /project/a 形成两个独立 root/def 键；前置：无。
+- [ ] IDE-IDX-010 [P1] 统一 Windows 路径比较规则；验收：同一盘符路径的大小写与斜杠变体合并，跨盘路径仍分离；前置：IDE-IDX-009。
+- [ ] IDE-IDX-011 [P1] 统一 documentStore 与语义索引路径键；验收：同一 URI 在两层得到一致身份，POSIX 大小写差异不串缓存；前置：IDE-IDX-009, IDE-IDX-010。
+- [ ] IDE-IDX-012 [P1] 为全部工作区根建立 def watcher；验收：修改第二根的 def 后，实体映射与依赖失效均可观察；前置：无。
+- [ ] IDE-IDX-013 [P1] 为全部工作区根建立类型 watcher；验收：第二根 types.xml/alias.xml 更新后，类型快照失效且下次得到新值；前置：无。
+- [ ] IDE-IDX-014 [P1] 切换 assetsRoot 时重建实体 watcher；验收：旧外部根 watcher 被释放，新根更新能触发维护；前置：IDE-IDX-012, IDE-IDX-013。
+- [ ] IDE-IDX-015 [P1] 移除根时摘除该根全部索引记录；验收：工作区移除 B 后 B 的实体、owner 和类型都不可查，A 保留；前置：IDE-IDX-003。
+- [ ] IDE-IDX-016 [P1] 让旧根在途任务无法回写；验收：扫描 B 未结束时移除 B，晚到结果不能重新登记该根；前置：IDE-IDX-015。
+- [ ] IDE-IDX-017 [P1] 同文件成员跳转只查当前文件快照；验收：全仓扫描挂起时，同文件 Class.method 仍能跳转且不调用 ensureScanned；前置：无。
+- [ ] IDE-IDX-018 [P1] 区分部分候选与完整候选状态；验收：预算到期只拿到静态目标时，内部结果标记 partial，不发布完整枚举的负缓存；前置：无。
+
+### IDE-SNP · 共享快照与派生输入（P1）
+
+来源：架构事实源、IDX-07；src/documentStore.ts、src/definitionSemantics.ts、src/databaseSchema.ts。
+- [ ] IDE-SNP-001 [P1] 定义共享文件快照读取接口；验收：接口明确 rootId/URI/version/content，打开文档优先且不要求打开其他文档；前置：无。
+- [ ] IDE-SNP-002 [P1] 让语义 loader 读取共享快照；验收：未保存 def 的属性和方法声明可见，未打开文件仍可从磁盘补载；前置：IDE-SNP-001。
+- [ ] IDE-SNP-003 [P1] 让数据库 schema 读取共享快照；验收：同一未保存 Persistent/Type 修改在 schema 与 def hover 中一致；前置：IDE-SNP-001。
+- [ ] IDE-SNP-004 [P1] 让类型注册表接收脏 types.xml 更新；验收：未保存别名修改只使依赖该类型的结果失效；前置：IDE-SNP-001。
+- [ ] IDE-SNP-005 [P1] 关闭脏文档后恢复磁盘版本；验收：丢弃未保存修改并关闭后，下一次查询不再使用脏快照；前置：IDE-SNP-002, IDE-SNP-003。
+- [ ] IDE-SNP-006 [P1] 为派生结果记录输入版本清单；验收：结果能列出所消费文件版本，任一依赖变更后可判定过期；前置：IDE-SNP-001。
+- [ ] IDE-SNP-007 [P1] 给 XML 解析缓存增加字节预算；验收：超预算旧条目被淘汰，单份巨型文档不能让 8 条目缓存无限保留；前置：无。
+- [ ] IDE-SNP-008 [P1] 让共享文件事件按 URI 合并；验收：同一保存产生重复通知时，每个消费索引只应用一次对应版本更新；前置：IDE-SNP-001。
+- [ ] IDE-SNP-009 [P1] 增加统一移除根通知；验收：各消费索引收到同一根移除事件，不依靠各自 TTL 自愈；前置：IDE-IDX-015。
+- [ ] IDE-SNP-010 [P1] 将根配置 generation 纳入快照身份；验收：assetsRoot 或运行域配置改变后，旧输入结果不得被误复用；前置：IDE-SNP-006, IDE-SNP-009。
+
+### IDE-BUD · 交互请求预算与取消（P0）
+
+来源：PERF-02、IDX-06；src/extension.ts、src/hoverBudget.ts、src/languageProviders.ts。
+- [ ] IDE-BUD-001 [P0] 统一 hover 请求的截止时间上下文；验收：所有 hover 分支收到同一 deadline/token；同步路径不得因此被宣称已可抢占；前置：无。
+- [ ] IDE-BUD-002 [P0] 让 hover 取消传播到请求独占任务；验收：取消后停止该请求新增读取，共享首扫继续推进；前置：IDE-BUD-001。
+- [ ] IDE-BUD-003 [P0] 透传 def 补全的 CancellationToken；验收：取消后的类型查找不继续安排请求独占工作；前置：无。
+- [ ] IDE-BUD-004 [P0] 透传 Python 补全的 CancellationToken；验收：旧请求取消后不得返回覆盖新前缀的过时结果；前置：无。
+- [ ] IDE-BUD-005 [P0] 丢弃过期文档版本的签名帮助；验收：请求过程中编辑参数列表，旧版本签名结果不发布；前置：无。
+- [ ] IDE-BUD-006 [P0] 取消 CodeLens 后停止后续批次；验收：文档关闭或 token 取消后，不继续给该文档解析新的属性或 RPC 点位；前置：无。
+- [ ] IDE-BUD-007 [P0] 取消 Call Hierarchy 的后续扫描；验收：取消 incoming/outgoing 查询后，该请求的队列不继续增长；前置：无。
+- [ ] IDE-BUD-008 [P0] 隔离同点 hover 合并请求的取消；验收：取消一个等待者不取消另一个等待者需要的共享计算；前置：IDE-BUD-002。
+- [ ] IDE-BUD-009 [P0] 为未知文件 def 归属查询去掉全扫等待；验收：冷 miss 只读快照和定向依赖；scanEntityMappings 挂起时仍有界返回；前置：无。
+
+### IDE-SCH · 数据库派生计算退出交互重算（P1）
+
+来源：PERF-04；src/databaseSchema.ts、src/databaseSimulator.ts、src/languageProviders.ts。
+- [ ] IDE-SCH-001 [P1] 拆出不访问 VS Code 的 schema 推导函数；验收：相同显式输入产生相同表/列结果，函数内部不读配置或文件；前置：无。
+- [ ] IDE-SCH-002 [P1] 为 schema 缓存加入实体与根身份；验收：A/B 同名实体得到各自表结构，不共用单例快照；前置：IDE-SCH-001, IDE-IDX-003。
+- [ ] IDE-SCH-003 [P1] 按 def 依赖版本失效 schema；验收：修改一个 def 仅重建它及其依赖实体的 schema；前置：IDE-SCH-002, IDE-SNP-006。
+- [ ] IDE-SCH-004 [P1] 按 types.xml 依赖版本失效 schema；验收：修改引用类型后相关列更新，无关实体缓存保持命中；前置：IDE-SCH-003, IDE-SNP-004。
+- [ ] IDE-SCH-005 [P1] 按表名前缀配置失效 schema；验收：切换 tablePrefix 后所有相关展示使用新表名，不等文件保存；前置：IDE-SCH-002。
+- [ ] IDE-SCH-006 [P1] 把 schema 重建放入后台任务；验收：冷 schema 计算期间宿主可响应取消和其他交互；前置：IDE-SCH-001。
+- [ ] IDE-SCH-007 [P1] 让属性 hover 查询已发布字段结果；验收：连续悬停同实体不同属性不重复构建完整 schema；前置：IDE-SCH-003, IDE-SCH-006。
+- [ ] IDE-SCH-008 [P1] 按实体增量维护类型落库反查；验收：修改一个实体只替换它贡献的 usage 记录，不全仓重建；前置：IDE-SCH-004。
+- [ ] IDE-SCH-009 [P1] 让 types.xml CodeLens 只读反查快照；验收：读取 CodeLens 不再遍历所有实体构建 schema；前置：IDE-SCH-008。
+- [ ] IDE-SCH-010 [P1] 让 schema 导航复用同一代派生结果；验收：虚拟文档展示与字段反向跳转的表名/行号来自同一快照；前置：IDE-SCH-007, IDE-SCH-009。
+
+### IDE-DIA · 同步诊断与编辑响应（P1）
+
+来源：PERF-05；src/receiverNoneDiagnostics.ts、src/diagnosticScheduler.ts。
+- [ ] IDE-DIA-001 [P1] 无 receiver 使用点时跳过诊断解析；验收：不包含 self.base/cell/client 使用的文件不调用完整 Python parser；前置：无。
+- [ ] IDE-DIA-002 [P1] 一次建立 Python 方法区间表；验收：处理多个调用点不再为每个点重新收集排序全部方法；前置：无。
+- [ ] IDE-DIA-003 [P1] 诊断复用同版本 Python 解析结果；验收：类索引与 receiver 诊断消费同版本缓存，不各自完整解析一次；前置：IDE-SNP-001, IDE-DIA-002。
+- [ ] IDE-DIA-004 [P1] 按方法复用 receiver guard 分析；验收：同方法多处调用不重复遍历相同 guard 前缀，既有告警语义保持；前置：IDE-DIA-002。
+- [ ] IDE-DIA-005 [P1] 将大文件 receiver 诊断移出同步入口；验收：8,000 调用样本计算期间宿主仍可响应请求，旧版本回包丢弃；前置：IDE-DIA-003, IDE-DIA-004。
+- [ ] IDE-DIA-006 [P1] 为诊断队列增加单轮时间片；验收：多个文档待诊断时，一轮 flush 不连续占满宿主处理全部文档；前置：无。
+- [ ] IDE-DIA-007 [P1] 切换 receiver 开关时失效版本标记；验收：文档未编辑也能立即清除或重新发布 receiver 告警；前置：无。
+- [ ] IDE-DIA-008 [P1] 关闭文档时撤销待发布诊断；验收：文档关闭后晚到的 worker 结果不重新写入 DiagnosticCollection；前置：IDE-DIA-005。
+
+### IDE-RES · 队列、缓存和日志资源边界（P2）
+
+来源：PERF-06；src/pythonParserWorkerHost.ts、src/languageServiceMetrics.ts、src/logHub.ts。
+- [ ] IDE-RES-001 [P2] 合并 worker 中同文件未开始的旧任务；验收：快速提交 v1/v2/v3 时未运行的旧版本不逐份解析；前置：无。
+- [ ] IDE-RES-002 [P2] 限制 Python worker 待处理字节量；验收：积压达到上限时不继续无限保留源码字符串，交互任务有可解释结果；前置：IDE-RES-001。
+- [ ] IDE-RES-003 [P2] 在 worker dispose 时结清全部等待者；验收：全部在途 Promise 都结算，旧 worker 回包不能污染新实例；前置：IDE-RES-001。
+- [ ] IDE-RES-004 [P2] 给聚合耗时样本设置容量上限；验收：大量操作后 elapsed 数组不无限增长，摘要仍标明采样窗口；前置：无。
+- [ ] IDE-RES-005 [P2] 限制日志文件单轮读取字节数；验收：日志突增时分批读取，不一次分配等于全部增量的大 Buffer；前置：无。
+- [ ] IDE-RES-006 [P2] 限制日志到 webview 的发送积压；验收：页面暂停消费时队列有界，丢弃量可观测且宿主保持响应；前置：无。
+- [ ] IDE-RES-007 [P2] 隐藏监控面板时停止非必要刷新；验收：隐藏后不继续发送完整图表快照，恢复后显示最新状态；前置：无。
+- [ ] IDE-RES-008 [P2] 根移除时释放派生内容缓存；验收：移除资产根后其源码/AST/schema 不再被长会话缓存持有；前置：IDE-SNP-009。
+
+### IDE-MET · 现场取证与版本可辨识性（P1）
+
+来源：审计 §5/§8；细化 P0-4b，已有并行采集实现可按证据认领。
+- [ ] IDE-MET-001 [P1] 导出活动扩展 ID 与版本；验收：报告区分安装目录存在和当前窗口已激活，并列出远程或本地宿主位置；前置：无。
+- [ ] IDE-MET-002 [P1] 在扩展产物中写入构建提交；验收：运行中的诊断报告能追溯准确源码 SHA，不仅显示 package version；前置：无。
+- [ ] IDE-MET-003 [P1] 为 hover 增加分支级耗时记录；验收：能区分注解查询、def 映射、schema、渲染和总耗时；前置：无。
+- [ ] IDE-MET-004 [P1] 记录文件读取量与读取字节数；验收：一次普通 hover 可核对实际读盘范围，关闭详细日志时开销有界；前置：IDE-MET-003。
+- [ ] IDE-MET-005 [P1] 采集事件循环延迟并统一为毫秒；验收：输出包含原始单位说明与采样窗口，不把纳秒写成毫秒；前置：无。
+- [ ] IDE-MET-006 [P1] 采集同一进程窗口内 CPU 与 RSS；验收：CPU 增量正确换算微秒，区分采样峰值和进程历史高水位；前置：无。
+- [ ] IDE-MET-007 [P1] 提供扩展宿主 CPU profile 采集入口；验收：从卡顿触发到 profile 落盘的步骤可复现，结果可关联请求窗口；前置：无。
+- [ ] IDE-MET-008 [P1] 导出待处理与取消后残留任务数；验收：请求取消前后能比较活动任务，不用空返回值推断工作已停止；前置：IDE-BUD-002, IDE-RES-001。
+
+### IDE-NAV · 基础语言功能逐项补齐（P1）
+
+来源：审计 §4；src/languageProviders.ts、src/defReferenceGraph.ts、src/defRenamer.ts。
+- [ ] IDE-NAV-001 [P1] 注册 def 原生引用查询入口；验收：Shift+F12 可访问已有 def 引用结果，结果复用统一符号身份；前置：IDE-IDX-003。
+- [ ] IDE-NAV-002 [P1] 为属性引用收录 Python self 访问；验收：已确定实体归属的 self.hp 纳入 hp 引用，无关实体同名属性不纳入；前置：IDE-NAV-001, IDE-IDX-004。
+- [ ] IDE-NAV-003 [P1] 为方法引用收录 receiver RPC 调用；验收：Base/Cell/Client 同名方法按 receiver 段分开统计；前置：IDE-NAV-001。
+- [ ] IDE-NAV-004 [P1] 让引用结果使用未保存文档；验收：新增或删除未保存调用点后，引用列表跟随当前版本；前置：IDE-NAV-002, IDE-NAV-003, IDE-SNP-001。
+- [ ] IDE-NAV-005 [P1] 注册 def 文档符号；验收：Outline 按 Properties/三方法段展示声明与精确范围；前置：无。
+- [ ] IDE-NAV-006 [P1] 注册根范围工作区符号查询；验收：按名称前缀查询已索引符号，返回 root/文件信息且不触发全仓扫描；前置：IDE-NAV-005, IDE-IDX-003。
+- [ ] IDE-NAV-007 [P1] 注册 def 方法到 Python 的实现查询；验收：Go to Implementations 按精确声明身份返回实现列表；前置：IDE-IDX-003, IDE-IDX-004。
+- [ ] IDE-NAV-008 [P1] 重命名前检查目标名冲突；验收：同段方法或属性/组件冲突时拒绝编辑并说明冲突位置；前置：无。
+- [ ] IDE-NAV-009 [P1] 重命名计算读取其他脏 def 缓冲区；验收：跨文件编辑范围按各文件当前文本计算，不使用过期磁盘偏移；前置：IDE-SNP-002。
+- [ ] IDE-NAV-010 [P1] 重命名应用前校验输入版本；验收：预览期间文档变化时重新计算或拒绝，不能套用旧范围；前置：IDE-NAV-009。
+- [ ] IDE-NAV-011 [P1] 让属性重命名更新确定的 Python 引用；验收：预览列出 def 与已解析 self 访问；有歧义的引用不猜测改写；前置：IDE-NAV-002, IDE-NAV-008, IDE-NAV-010。
+- [ ] IDE-NAV-012 [P1] 让方法重命名更新确定的 RPC 引用；验收：调用端 receiver 段与被重命名声明一致时才改写；前置：IDE-NAV-003, IDE-NAV-008, IDE-NAV-010。
+- [ ] IDE-NAV-013 [P1] 为未知类型诊断提供修正候选；验收：Code Action 仅提供已注册类型的可核对替换，不自动创建声明；前置：无。
+- [ ] IDE-NAV-014 [P1] 为缺少实现的方法生成单个空方法；验收：Code Action 展示目标文件与插入点，已有同名实现时不重复生成；前置：IDE-NAV-007。
+- [ ] IDE-NAV-015 [P1] 统一调用层次与 Definition 的符号身份；验收：相同 RPC/mixin 方法在两种入口中的 owner 与目标集合一致；前置：IDE-IDX-003, IDE-IDX-004。
+- [ ] IDE-NAV-016 [P1] 为冷补全提供可刷新状态；验收：索引未就绪时不记录永久 miss，索引更新后同前缀可得到成员补全；前置：IDE-SNP-006, IDE-BUD-004。
+
+### IDE-GEN · 生成器写入保护（P1）
+
+来源：审计 §6；src/codeGenerator.ts、src/generatorForms.ts。
+- [ ] IDE-GEN-001 [P1] 阻止实体向导覆盖已有 def；验收：同名 def 已存在时保留原字节并给出冲突信息；前置：无。
+- [ ] IDE-GEN-002 [P1] 阻止实体向导覆盖已有 Python 文件；验收：同名实现存在时保留原代码，不能因生成 def 顺带覆盖；前置：无。
+- [ ] IDE-GEN-003 [P1] 生成前检查全部目标路径；验收：任一目标冲突时不先写出其他半套文件；前置：IDE-GEN-001, IDE-GEN-002。
+- [ ] IDE-GEN-004 [P1] 为单次生成提供变更预览；验收：确认前可查看将新增的 def/Python/注册项与准确路径；前置：IDE-GEN-003。
+- [ ] IDE-GEN-005 [P1] 对单文件生成使用原子替换；验收：写入中断时旧文件保持完整，不留下半截文本；前置：IDE-GEN-003。
+- [ ] IDE-GEN-006 [P1] 多文件生成失败时撤回本次新增项；验收：模拟第二份文件写入失败后，第一份新增文件与本次注册项被回收；前置：IDE-GEN-005。
+- [ ] IDE-GEN-007 [P1] 注册 entities.xml 时保留脏缓冲区；验收：写入基于当前文档，不覆盖用户尚未保存的其他注册修改；前置：IDE-SNP-001。
+- [ ] IDE-GEN-008 [P1] 统一两个生成入口的冲突策略；验收：实体向导与表单向导遵守相同的拒绝覆盖、预览和失败处理规则；前置：IDE-GEN-004, IDE-GEN-006, IDE-GEN-007。
+
+### IDE-PRJ · KBEngine 项目模型与导入（P2）
+
+来源：审计 §6；src/workspaceDiscovery.ts、src/pythonExtraPaths.ts、src/engineApiMetadata.ts。
+- [ ] IDE-PRJ-001 [P2] 建立项目 profile 的稳定 ID；验收：同工作区两套 assets/engine 组合能分别保存身份，不用显示名当主键；前置：无。
+- [ ] IDE-PRJ-002 [P2] 按 profile 保存根与引擎路径；验收：两个 profile 分别读回各自 assets/engine 路径，重启后记录仍独立；前置：IDE-PRJ-001。
+- [ ] IDE-PRJ-003 [P2] 提供现有 KBEngine 项目导入命令；验收：选择资产根后能预览 entities/defs/scripts/engine 的识别结果；前置：IDE-PRJ-001。
+- [ ] IDE-PRJ-004 [P2] 记录 Python 解释器来源；验收：profile 明确使用哪一个解释器，找不到时显示缺失状态；前置：IDE-PRJ-001。
+- [ ] IDE-PRJ-005 [P2] 检查 Python 语言服务是否可用；验收：分别显示未安装、未启用和已激活状态，不把 extraPaths 写入等同可用；前置：无。
+- [ ] IDE-PRJ-006 [P2] 按 base/cell 角色隔离 Python 分析根；验收：同名模块不会因合并 extraPaths 顺序而被跨角色误解析；前置：IDE-PRJ-002, IDE-PRJ-004。
+- [ ] IDE-PRJ-007 [P2] 建立最小项目创建模板清单；验收：清单明确新增目录和文件，可预览且已有目标冲突时拒绝；前置：无。
+- [ ] IDE-PRJ-008 [P2] 接入最小项目创建命令；验收：一次生成可被导入的空项目，创建过程遵守生成器保护；前置：IDE-PRJ-003, IDE-PRJ-007, IDE-GEN-008。
+- [ ] IDE-PRJ-009 [P2] 把 profile 健康状态汇总到工作台；验收：缺引擎、缺解释器、缺语言服务和根歧义各有具体定位入口；前置：IDE-PRJ-002, IDE-PRJ-004, IDE-PRJ-005, IDE-PRJ-010。
+- [ ] IDE-PRJ-010 [P2] 增加活动 profile 选择入口；验收：选择后持久化稳定 ID 并发出一次切换事件，显示名变化不丢选择；前置：IDE-PRJ-002。
+- [ ] IDE-PRJ-011 [P2] 让语言索引响应 profile 切换；验收：索引输入切换到选定根，旧 profile 晚到结果不写入当前快照；前置：IDE-PRJ-010, IDE-SNP-010。
+- [ ] IDE-PRJ-012 [P2] 让启动命令响应 profile 切换；验收：下一次启动使用所选 profile 的引擎和环境，不改变已经运行实例的身份；前置：IDE-PRJ-010, IDE-RUN-001。
+- [ ] IDE-PRJ-013 [P2] 让生成向导响应 profile 切换；验收：预览及写入路径都来自所选 profile，已打开旧预览在切换后要求重算；前置：IDE-PRJ-010, IDE-GEN-004。
+
+### IDE-RUN · 进程目标与启动编排（P1）
+
+来源：审计 §6；src/processManager.ts、src/serverManager.ts。
+- [ ] IDE-RUN-001 [P1] 用 targetId 区分同组件多实例；验收：两个 cellapp 能分别登记和停止，不能相互覆盖进程记录；前置：IDE-PRJ-001。
+- [ ] IDE-RUN-002 [P1] 按 targetId 维护运行状态；验收：进程退出只更新对应实例，其他同类型实例状态不变；前置：IDE-RUN-001。
+- [ ] IDE-RUN-003 [P1] 用真实探针确认进程 ready；验收：固定 1 秒经过但服务不可用时仍为 starting，探针成功才 ready；前置：IDE-RUN-002。
+- [ ] IDE-RUN-004 [P1] 让启动等待支持超时和取消；验收：超时或用户取消后停止等待并报告对应 target，不误标 running；前置：IDE-RUN-003。
+- [ ] IDE-RUN-005 [P1] 为启动项声明直接依赖；验收：依赖图可检测循环，尚未就绪依赖不会被当作成功；前置：IDE-RUN-003。
+- [ ] IDE-RUN-006 [P1] 按依赖就绪顺序启动一组目标；验收：前置进程失败时依赖它的后续启动不继续；前置：IDE-RUN-005。
+- [ ] IDE-RUN-007 [P1] 停止进程时清理所属子进程；验收：组件派生子进程不会在停止后残留，处理策略有平台区分；前置：IDE-RUN-001。
+- [ ] IDE-RUN-008 [P1] 为启动失败提供单目标重试；验收：重试只作用失败 target，不重复启动已就绪的其他实例；前置：IDE-RUN-004, IDE-RUN-006。
+
+### IDE-DBG · 调试闭环（P1）
+
+来源：审计 §6；src/debugConfig.ts、src/autoDebugpy.ts。
+- [ ] IDE-DBG-001 [P1] 按 targetId 分配 debugpy 端口；验收：同类型多实例使用不同端口，attach 配置能指向指定实例；前置：IDE-RUN-001。
+- [ ] IDE-DBG-002 [P1] 为远程目标配置路径映射；验收：remoteRoot/localRoot 从目标配置生成，不再始终省略 pathMappings；前置：IDE-PRJ-001。
+- [ ] IDE-DBG-003 [P1] 调试前检查所选解释器的 debugpy；验收：缺依赖时给出可操作状态，不到注入阶段才报未知失败；前置：IDE-PRJ-004。
+- [ ] IDE-DBG-004 [P1] 支持启动前等待调试器连接；验收：明确 opt-in 后可在用户入口脚本早期断点前暂停，不依赖启动后 telnet 注入；前置：IDE-DBG-001, IDE-DBG-003。
+- [ ] IDE-DBG-005 [P1] 把调试会话关联到运行目标；验收：能区分两个 cellapp 的调试会话与进程状态；前置：IDE-DBG-001, IDE-RUN-002。
+- [ ] IDE-DBG-006 [P1] 让断开调试只影响指定目标；验收：结束会话不终止其他实例，detach/stop 行为有明确配置；前置：IDE-DBG-005。
+- [ ] IDE-DBG-007 [P1] 为调试连接设置取消与超时；验收：无法连接的端口不会让调试入口永久等待，取消后不继续重试；前置：IDE-DBG-005。
+- [ ] IDE-DBG-008 [P1] 在工作台显示目标调试状态；验收：区分未注入、监听、已附加、失败，点击能定位对应会话；前置：IDE-DBG-005, IDE-DBG-007。
+
+### IDE-TSK · 构建与项目测试工作流（P2）
+
+来源：审计 §6；复用 quick actions 与 VS Code Tasks/Test API。
+- [ ] IDE-TSK-001 [P2] 定义 profile 的构建任务描述；验收：明确 command/args/cwd/env，允许预览准确执行内容；前置：IDE-PRJ-001。
+- [ ] IDE-TSK-002 [P2] 注册 KBEngine 构建 TaskProvider；验收：任务列表可选择目标 profile 的构建项，取消能终止对应执行；前置：IDE-TSK-001。
+- [ ] IDE-TSK-003 [P2] 把构建错误定位到源码；验收：已支持的编译/脚本错误经 problem matcher 跳到正确文件行；前置：IDE-TSK-002。
+- [ ] IDE-TSK-004 [P2] 发现项目声明的 Python 测试；验收：只扫描所选 profile 的测试范围，不把依赖库测试混入；前置：IDE-PRJ-004。
+- [ ] IDE-TSK-005 [P2] 在测试面板运行单个测试；验收：单测试输出、通过失败与源码位置对应，取消不继续执行下一测试；前置：IDE-TSK-004。
+- [ ] IDE-TSK-006 [P2] 保存可重复运行的任务上下文；验收：重跑使用同一 profile/解释器/环境，不能悄然换到另一个根；前置：IDE-TSK-002, IDE-TSK-005。
+
+### IDE-HOT · 热更新可验证状态（P2）
+
+来源：审计 §6；细化现有 HR-STATE/HR-HTTP/HR-UI 需求，旧条目作为汇总不双算。
+- [ ] IDE-HOT-001 [P2] 按 rootId 与 targetId 隔离热更新状态；验收：同文件发给不同实例分别保存结果，不复用上一目标绿色状态；前置：IDE-RUN-001。
+- [ ] IDE-HOT-002 [P2] 将 HTTP 发送成功记为未确认；验收：只有 2xx 且无可信应用证据时显示 sent_unverified；前置：IDE-HOT-001。
+- [ ] IDE-HOT-003 [P2] 解析单目标 accepted 回执；验收：只在符合已记录协议的回执上进入 accepted，未知结构保留未确认；前置：IDE-HOT-002。
+- [ ] IDE-HOT-004 [P2] 核验单目标 applied 状态；验收：仅可信 revision/digest 或已验证回执可标 applied，超时仍未确认；前置：IDE-HOT-003。
+- [ ] IDE-HOT-005 [P2] 将结构性 def 变更标记需重启；验收：影响序列化或 RPC 参数的变化不作为普通 Python reload 自动发送；前置：IDE-SNP-006。
+- [ ] IDE-HOT-006 [P2] 按目标聚合部分成功结果；验收：两个目标一成一败时显示 partial，并能查看各自原因；前置：IDE-HOT-004。
+- [ ] IDE-HOT-007 [P2] 只重试失败目标的热更新；验收：重试不重复发送已确认成功目标，取消后停止后续发送；前置：IDE-HOT-006。
+- [ ] IDE-HOT-008 [P2] 显示运行时 revision 的证据来源；验收：本地 fileHash、semanticHash、engineDigest 标签明确，不相互冒充；前置：IDE-HOT-004。
+
+### IDE-LIV · 运行观测与真实协议验证（P2）
+
+来源：审计 §6；src/kbengineProtocol.ts、src/runtimeQueryWebView.ts。
+- [ ] IDE-LIV-001 [P2] 登记真实引擎联验所需输入；验收：记录目标版本、组件地址和启动条件，缺实例时明确未测；前置：无。
+- [ ] IDE-LIV-002 [P2] 核对一个目标版本的 watcher 协议号；验收：请求与回包号可逐条指向该版本源码，不沿用未验证常量；前置：IDE-LIV-001。
+- [ ] IDE-LIV-003 [P2] 完成一次真实 watcher 路径查询；验收：面板结果与引擎控制台同路径值一致，保留原始联验证据；前置：IDE-LIV-002。
+- [ ] IDE-LIV-004 [P2] 完成一次真实空间列表查询；验收：空间与组件身份可与运行引擎对账，缺失字段明确标未知；前置：IDE-LIV-001。
+- [ ] IDE-LIV-005 [P2] 用稳定目标身份关联观测结果；验收：相同组件类型的两个实例不会混合数值或曲线；前置：IDE-RUN-001, IDE-LIV-003。
+- [ ] IDE-LIV-006 [P2] 为观测断连提供恢复状态；验收：断连后旧值标记过期，重连成功才恢复实时标记；前置：IDE-LIV-005。
+- [ ] IDE-LIV-007 [P2] 把运行异常关联到源码定位；验收：带可解析文件行的异常可跳转，无源码时保留原始信息；前置：IDE-LIV-005。
+
+### IDE-DB · 只读数据库工作流（P2）
+
+来源：审计 §6；src/databaseDrift.ts、src/databaseSchema.ts。
+- [ ] IDE-DB-001 [P2] 按 profile 选择只读数据库连接；验收：切换项目不复用另一 profile 的连接配置或结果缓存；前置：IDE-PRJ-001。
+- [ ] IDE-DB-002 [P2] 提供单表只读数据预览；验收：只执行现有白名单允许的查询，默认结果有条数上限；前置：IDE-DB-001。
+- [ ] IDE-DB-003 [P2] 为只读查询增加取消与超时；验收：慢查询结束等待并释放连接，不滞留后台轮询；前置：IDE-DB-002。
+- [ ] IDE-DB-004 [P2] 将结果列关联回 def/type 声明；验收：点击已推导列能定位正确来源；未知引擎列说明为合成列；前置：IDE-SCH-010, IDE-DB-002。
+- [ ] IDE-DB-005 [P2] 提供单实体结构变更影响预览；验收：列出新增/移除/类型变化，不执行 DDL 或写库；前置：IDE-SCH-003。
+- [ ] IDE-DB-006 [P2] 按引擎版本保存 drift 联验证据；验收：报告能区分实际查询结果和模拟 schema，版本未知时不宣称兼容；前置：IDE-DB-001。
+
+### IDE-SDK · 客户端 SDK 与消息表入口（P2）
+
+来源：审计 §6；src/clientSdkGenerator.ts、src/messageTable.ts。
+- [ ] IDE-SDK-001 [P2] 增加单实体 messageTable 预览命令；验收：选择实体后可查看现有计算结果，缺声明时明确提示；前置：IDE-IDX-003。
+- [ ] IDE-SDK-002 [P2] 提供消息表 JSON 导出；验收：输出保留方法段、utype、alias 配置与问题清单，取消不创建文件；前置：IDE-SDK-001。
+- [ ] IDE-SDK-003 [P2] 把 SDK 生成绑定到目标 profile；验收：实体注册顺序与类型数据来自所选根，不能跨根同名覆盖；前置：IDE-PRJ-010, IDE-IDX-003。
+- [ ] IDE-SDK-004 [P2] 为 SDK 输出记录引擎版本与提交；验收：生成物可追溯输入版本，探测不到时写 unknown；前置：IDE-SDK-003。
+- [ ] IDE-SDK-005 [P2] 对拍一个真实引擎版本的消息编号；验收：以真实装载序核对 SDK/消息表差异，未支持组件编号边界如实保留；前置：IDE-SDK-001, IDE-SDK-004, IDE-LIV-001。
+
+### IDE-REL · 扩展发布与旧版共存（P1）
+
+来源：审计 §5/§6；package.json 与构建发布流程。
+- [ ] IDE-REL-001 [P1] 检测两个 Kode ID 是否同时激活；验收：只有实际共激活才提示冲突，不把已安装但禁用当作冲突；前置：IDE-MET-001。
+- [ ] IDE-REL-002 [P1] 记录旧扩展 ID 的迁移说明；验收：文档给出旧 ID、新 ID 和保留用户设置的迁移步骤；前置：IDE-REL-001。
+- [ ] IDE-REL-003 [P1] 核验 VSIX 包含 parser worker 产物；验收：打包后可直接找到 worker 文件并从包内路径启动；前置：无。
+- [ ] IDE-REL-004 [P1] 在 VSIX 中暴露构建身份；验收：安装产物报告的提交与构建输入一致，源码目录版本不冒充已安装版本；前置：IDE-MET-002。
+- [ ] IDE-REL-005 [P1] 确定最低 VS Code 运行时矩阵；验收：按使用的 Node/API 核对最低支持版本，记录验证而不是只沿用 engines.vscode；前置：无。
+- [ ] IDE-REL-006 [P1] 增加安装后单次 hover/跳转烟测；验收：使用打包产物执行有命中断言的请求，覆盖 worker 路径和源定位；前置：IDE-REL-003, IDE-REL-004。
+- [ ] IDE-REL-007 [P1] 从诊断报告导出复现配置摘要；验收：导出活动版本、根、角色、开关与队列数据，敏感连接信息被遮蔽；前置：IDE-MET-001, IDE-MET-008。
+
+### IDE-ARC · 模块职责收敛（P2）
+
+来源：审计 §2；逐个抽离，不合成一次大重构。
+- [ ] IDE-ARC-001 [P2] 抽离源码 reveal 命令常量；验收：eventApi 等消费者不再为取常量反向依赖整个 languageProviders；前置：无。
+- [ ] IDE-ARC-002 [P2] 抽离事件索引的纯数据类型；验收：WorkspaceIndex 与事件语法分析通过小接口互用，不依赖 provider 实现；前置：IDE-ARC-001。
+- [ ] IDE-ARC-003 [P2] 抽离 hover Markdown 格式化函数；验收：纯格式化模块不读取文件或配置，既有 hover 文本保持一致；前置：无。
+- [ ] IDE-ARC-004 [P2] 抽离 schema 的 VS Code 文档适配层；验收：纯 schema 推导不 import vscode，虚拟文档 provider 只装配展示；前置：IDE-SCH-001。
+- [ ] IDE-ARC-005 [P2] 为共享索引明确唯一生命周期所有者；验收：watcher、worker、缓存由装配层统一释放，provider 不私建第二套全仓服务；前置：IDE-EVT-012, IDE-SNP-001。
+- [ ] IDE-ARC-006 [P2] 更新实际查询依赖图；验收：文档列出每个 provider 的数据源与允许副作用，未完成迁移明确标注；前置：IDE-ARC-005。
+
+### IDE-RST · Rust 范围与迁移决策（P2）
+
+来源：Rust 范围评审；R1/R2 已完成状态保留，R2.5/R2b 为按证据作出的条件决策。
+- [ ] IDE-RST-001 [P2] 修正 R1 的 Python 泛化结论；验收：保留 4.88 秒冷扫事实，并补普通变量 hover 的 51.27 秒反例和范围说明；前置：无。
+- [ ] IDE-RST-002 [P2] 拆开 Rust 骨架和正式 serving 状态；验收：提案逐项记录已存在的 server/shadow、未开放能力和切流门；前置：无。
+- [ ] IDE-RST-003 [P2] 列出 R2 索引已经提供的字段；验收：分别列 AST、语义模型、公开索引接口，缺失字段不标现成输入；前置：无。
+- [ ] IDE-RST-004 [P2] 为 defAnalyzer 单独记录迁移取舍；验收：给出输入缺口、当前耗时、位置对拍范围和采纳/暂缓结论；前置：IDE-RST-003。
+- [ ] IDE-RST-005 [P2] 为 messageTable 单独记录迁移取舍；验收：计入产品调用频率、types.xml/alias 配置和装配语义成本；前置：IDE-SDK-001, IDE-RST-003。
+- [ ] IDE-RST-006 [P2] 为数据库纯推导记录迁移取舍；验收：同 URI/版本比较 TS 与 Rust 含 IPC 的总耗时，不以行数代替收益；前置：IDE-SCH-001, IDE-SCH-007, IDE-RST-003。
+- [ ] IDE-RST-007 [P2] 为 defChain 单独记录迁移取舍；验收：对拍接口/组件/缺失文件/环语义，并量测 Parent hover 的 IPC 成本；前置：IDE-RST-003。
+- [ ] IDE-RST-008 [P2] 为遗漏图派生候选建立范围表；验收：分别记录 defReferenceGraph、entityDependency、compositionRoots、entityFlowGraph 的输入与交互入口；前置：IDE-RST-003。
+- [ ] IDE-RST-009 [P2] 拆分 Python 编辑查询的耗时阶段；验收：分别输出解析、提交、MRO、查询耗时，覆盖普通变量 hover 的注解路径；前置：IDE-MET-003, IDE-HOV-010。
+- [ ] IDE-RST-010 [P2] 形成 Python R2b 的继续或暂缓结论；验收：仅在修复后数据仍证明解析为主要成本时推进原型，否则记录暂缓依据；前置：IDE-RST-009, IDE-ACC-001, IDE-ACC-002。
+
+### IDE-ACC · 真实编辑器逐场景验收（P1）
+
+来源：细化现有 P0-4b/P0-4c/P0-4d；任何一场通过不替代其他场。
+- [ ] IDE-ACC-001 [P1] 验收普通变量冷 hover；验收：真实编辑器覆盖大文件无注解场景，记录命中与空结果耗时及读盘量；前置：IDE-HOV-010, IDE-MET-003, IDE-REL-006。
+- [ ] IDE-ACC-002 [P1] 验收注解缓存过期后的重复 hover；验收：超过原 TTL 再悬停，确认不重扫全仓并记录事件循环延迟；前置：IDE-HOV-012, IDE-ACC-001。
+- [ ] IDE-ACC-003 [P1] 验收首次事件 CodeLens 的大仓行为；验收：冷启动普通文件不打开全仓文档，事件文件结果有真实命中断言；前置：IDE-EVT-012, IDE-MET-004。
+- [ ] IDE-ACC-004 [P1] 验收多根同名实体跳转；验收：真实编辑器分别从 A/B 根跳转，目标、签名与 hover 都属于正确根；前置：IDE-IDX-003, IDE-IDX-012, IDE-IDX-013。
+- [ ] IDE-ACC-005 [P1] 验收新增文件后的首次导航；验收：真实编辑器中新建实现文件后首次跳转命中，不依靠重载窗口；前置：IDE-IDX-007, IDE-SNP-005。
+- [ ] IDE-ACC-006 [P1] 验收连续输入后的补全与诊断；验收：输入风暴结束后只显示最新版本结果，宿主延迟和待处理量回落；前置：IDE-DIA-005, IDE-DIA-006, IDE-NAV-016。
+- [ ] IDE-ACC-007 [P1] 验收 hover/导航取消后的收敛；验收：实际取消后记录残留任务数与新增 IO，共享扫描继续且请求独占任务停止；前置：IDE-MET-008, IDE-BUD-008。
+- [ ] IDE-ACC-008 [P1] 验收与 Python 语言服务共同启用；验收：同机同项目比较启用/禁用与单一 Kode ID，分别归因两套服务成本；前置：IDE-PRJ-005, IDE-REL-001。
+- [ ] IDE-ACC-009 [P1] 验收长会话资源边界；验收：固定编辑/打开关闭序列记录 RSS、worker 队列和缓存容量，不只看一次热查询；前置：IDE-RES-002, IDE-RES-004, IDE-RES-008。
+- [ ] IDE-ACC-010 [P1] 按场景纠正最终完成标记；验收：逐项列通过/失败/未测；热态 Hover P95≤30ms、Definition P95≤50ms 分别判定，现场未复现事项保留开放；前置：IDE-ACC-001, IDE-ACC-002, IDE-ACC-003, IDE-ACC-004, IDE-ACC-005, IDE-ACC-006, IDE-ACC-007, IDE-ACC-008, IDE-ACC-009, IDE-ACC-011, IDE-ACC-012, IDE-ACC-013。
+- [ ] IDE-ACC-011 [P1] 验收删除文件后的导航清理；验收：真实编辑器删除实现文件后，定义与实现列表均不再返回旧路径；前置：IDE-IDX-007, IDE-SNP-005。
+- [ ] IDE-ACC-012 [P1] 验收文件重命名后的目标迁移；验收：真实编辑器重命名后只返回新 URI，引用列表不存在重复新旧目标；前置：IDE-IDX-007, IDE-SNP-005。
+- [ ] IDE-ACC-013 [P1] 验收未保存编辑与放弃编辑的导航；验收：编辑时跳到脏缓冲区位置，放弃修改并关闭后恢复磁盘位置；前置：IDE-SNP-005。
