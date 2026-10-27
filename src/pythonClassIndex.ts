@@ -408,6 +408,60 @@ export class PythonClassIndex {
     this.resetRoots();
   }
 
+  /**
+   * IDE-SNP-009:统一移除根通知的消费面——定向摘除该根下全部记录,其余根
+   * 原样保留(区别于整库 invalidate+重扫自愈)。返回摘除的 py 文件数;未知
+   * 根是空操作,不虚进任何版本。
+   */
+  removeRoot(rootPath: string): number {
+    if (!rootPath) { return 0; }
+    // 前缀判定带分隔符:/ws 不误伤 /wsX;两种分隔符都认(键可能是任意拼写)
+    const underRoot = (filePath: string): boolean =>
+      filePath === rootPath ||
+      filePath.startsWith(rootPath + '/') ||
+      filePath.startsWith(rootPath + '\\');
+    const removedFiles: string[] = [];
+    for (const filePath of this.fileCache.keys()) {
+      if (underRoot(filePath)) { removedFiles.push(filePath); }
+    }
+    let removedContentKeys = 0;
+    for (const key of this.rootsContentCache.keys()) {
+      if (underRoot(key)) { removedContentKeys += 1; }
+    }
+    if (removedFiles.length === 0 && removedContentKeys === 0) {
+      return 0;
+    }
+    for (const filePath of removedFiles) {
+      this.unindexFile(filePath);
+      this.fileCache.delete(filePath);
+      this.fileOrder.delete(filePath);
+      this.revisions.delete(filePath);
+      this.documents.delete(filePath);
+      this.dependencyGraph.removeFile(filePath);
+    }
+    for (const key of [...this.rootsContentCache.keys()]) {
+      if (underRoot(key)) { this.rootsContentCache.delete(key); }
+    }
+    for (const key of [...this.stagedRequests.keys()]) {
+      if (underRoot(key)) { this.stagedRequests.delete(key); }
+    }
+    for (const key of [...this.pendingScanRetries.keys()]) {
+      if (underRoot(key)) { this.pendingScanRetries.delete(key); }
+    }
+    // 摘除是显式版本事件(消费端可判定过期),非 TTL 静默过期;扫描换代让
+    // 在途扫描/发现缓存(discoveredGeneration 口径)自然作废
+    this.generation += 1;
+    this.scanGeneration += 1;
+    this.mroCache.clear();
+    this.indexVersions.classes += 1;
+    this.indexVersions.bases += 1;
+    this.indexVersions.methods += 1;
+    this.indexVersions.mro += 1;
+    this.scanPromise = null;
+    this.resetRoots();
+    return removedFiles.length;
+  }
+
   /** 组合根派生状态复位 + 显式版本递增(所有复位路径统一走这里,便于断言) */
   private resetRoots(): void {
     this.rootsEpoch += 1;

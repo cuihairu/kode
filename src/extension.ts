@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
+import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { setJumpLogEnabled } from './navigationLog';
@@ -668,18 +669,29 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
   watchPythonIndex();
+  // IDE-SNP-009:统一移除根通知——根移除事件一次广播,各消费索引订阅后
+  // 定向摘除(实体/语义走 removeRoot(IDX-015 路径),Python 索引走 removeRoot
+  // 定向摘文件),不再整库失效等重扫自愈
+  const rootRemovals = createRootRemovalNotifier();
   context.subscriptions.push(
+    { dispose: () => rootRemovals.dispose() },
+    { dispose: rootRemovals.subscribe(event => { entityMappingManager.removeRoot(event.rootPath); }) },
+    { dispose: rootRemovals.subscribe(event => { pythonClassIndex.removeRoot(event.rootPath); }) },
     { dispose: () => pythonIndexWatchers.forEach(watcher => watcher.dispose()) },
     vscode.workspace.onDidCloseTextDocument(document => pythonClassIndex.onDocumentClosed(document)),
     vscode.workspace.onDidChangeWorkspaceFolders(event => {
       resetScanRootCache();
-      pythonClassIndex.invalidate();
-      watchPythonIndex();
-      // IDE-IDX-015:移除的工作区根整根摘除实体索引记录(留存根原样保留)
+      // IDE-IDX-015/IDE-SNP-009:移除的根经统一通知整根摘除各索引记录(留存根原样保留)
       const removedFolders = (event as { removed?: ReadonlyArray<{ uri: { fsPath: string } }> }).removed ?? [];
       for (const folder of removedFolders) {
-        entityMappingManager.removeRoot(folder.uri.fsPath);
+        rootRemovals.emit(folder.uri.fsPath);
       }
+      // 新增根保持既有发现面:全量失效触发增量发现;纯移除事件不再整库失效
+      const addedFolders = (event as { added?: ReadonlyArray<{ uri: { fsPath: string } }> }).added ?? [];
+      if (addedFolders.length > 0) {
+        pythonClassIndex.invalidate();
+      }
+      watchPythonIndex();
     })
   );
 

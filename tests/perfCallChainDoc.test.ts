@@ -29,15 +29,15 @@ const sourceLines = (relative: string): string[] =>
 
 /** §7 四条链的承重锚点:行号 → 该行必须仍含所引符号(迁移即红) */
 const ANCHORS: Array<[string, number, string]> = [
-  ['src/extension.ts', 540, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 572, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 618, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 465, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 819, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 308, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 321, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 869, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 894, 'flushQueued()'],
+  ['src/extension.ts', 541, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 573, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 619, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 466, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 831, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 309, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 322, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 881, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 906, 'flushQueued()'],
   ['src/languageProviders.ts', 655, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 710, 'provideHover('],
   ['src/languageProviders.ts', 1222, 'shadowCompareDefinition'],
@@ -52,9 +52,9 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/diagnosticScheduler.ts', 181, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 154, 'getDocumentLines'],
-  ['src/pythonClassIndex.ts', 570, 'ensureCompositionRoots'],
-  ['src/pythonClassIndex.ts', 1092, 'resolveClassBase'],
-  ['src/pythonClassIndex.ts', 1204, '①② 两段查询']
+  ['src/pythonClassIndex.ts', 624, 'ensureCompositionRoots'],
+  ['src/pythonClassIndex.ts', 1146, 'resolveClassBase'],
+  ['src/pythonClassIndex.ts', 1258, '①② 两段查询']
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {
