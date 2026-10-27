@@ -69,6 +69,32 @@ describe('terminalScript', () => {
       (await import('vscode')).window.createTerminal = original;
     }
   });
+
+  it('background:true 不建任何终端,走 ProcessManager 隐藏 spawn(2026-10-27 ①)', async () => {
+    // 实测定性锁:background 布尔真值只进 ProcessManager(spawn windowsHide),
+    // createTerminal 一次都不许碰——用户侧「写了 true 仍弹终端」若复现,
+    // 嫌疑只剩配置写法(字符串回落,解析层告警)或脚本自身 start 开窗
+    const createCalls: unknown[][] = [];
+    const vscode = await import('vscode');
+    const original = vscode.window.createTerminal;
+    vscode.window.createTerminal = ((options: unknown) => {
+      createCalls.push([options]);
+      return { sendText: () => undefined } as never;
+    }) as never;
+    const { ProcessManager } = await import('../src/processManager');
+    const { setDefaultScriptRuntime } = await import('../src/quickActions');
+    setDefaultScriptRuntime(new ProcessManager(undefined, undefined));
+    try {
+      const cwd = makeTempDir();
+      const result = await terminalScript({ name: 'bg-lock', script: 'true', background: true, cwd });
+
+      expect(result.submitted).toBe(true);
+      expect(createCalls).toEqual([]);
+    } finally {
+      vscode.window.createTerminal = original;
+      setDefaultScriptRuntime(new ProcessManager(undefined, undefined));
+    }
+  });
 });
 
 describe('buildCurlCommand', () => {

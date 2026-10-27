@@ -218,6 +218,21 @@ describe('QuickActionManager.show', () => {
 
   });
 
+  it('background 非布尔:show() 播报告警且动作保留清单照常(2026-10-27 ①)', async () => {
+    setConfig({ quickActions: [
+      { name: '起服', type: 'script', script: 'start_server.bat', background: 'true' }
+    ] });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    pickAnswers.push(undefined);
+
+    await manager.show();
+
+    expect(messages.warning[0]).toContain('「起服」');
+    expect(messages.warning[0]).toContain('不带引号');
+    // 条目保留:清单照常给出(取消不执行),工作流不断
+    expect(pickCalls).toHaveLength(1);
+  });
+
   it('shows a script action target in the list and runs the picked one', async () => {
     setConfig({
       quickActions: [{ name: 'start_server', type: 'script', script: '${workspaceFolder}/start_server.bat' }]

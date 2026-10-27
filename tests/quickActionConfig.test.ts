@@ -119,8 +119,37 @@ describe('parseQuickActionConfigs', () => {
   });
 
   it('accepts an empty and non-array raw shape as an empty action list', () => {
-    expect(parseQuickActionConfigs([])).toEqual({ actions: [], invalidCount: 0 });
-    expect(parseQuickActionConfigs(undefined as unknown as unknown[])).toEqual({ actions: [], invalidCount: 0 });
+    expect(parseQuickActionConfigs([])).toEqual({ actions: [], invalidCount: 0, warnings: [] });
+    expect(parseQuickActionConfigs(undefined as unknown as unknown[])).toEqual({ actions: [], invalidCount: 0, warnings: [] });
+  });
+
+  it('background 非布尔不再静默:条目保留按前台执行,告警说清写法(2026-10-27 ①)', () => {
+    // 用户 JSON5 习惯写 "background": "true" 此前无声回落 false 走前台,
+    // 「写了 true 还是弹终端」查无实据;现在逐条告警,动作仍执行不断工作流
+    const { actions, invalidCount, warnings } = parseQuickActionConfigs([
+      { name: '起服', type: 'script', script: 'start_server.bat', background: 'true' },
+      { name: '导表', type: 'script', script: 'export.bat', background: 1 }
+    ]);
+
+    expect(actions).toHaveLength(2);
+    expect(actions[0]).toMatchObject({ name: '起服', background: false });
+    expect(actions[1]).toMatchObject({ name: '导表', background: false });
+    expect(invalidCount).toBe(0);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain('「起服」');
+    expect(warnings[0]).toContain('"true"');
+    expect(warnings[0]).toContain('不带引号');
+    expect(warnings[1]).toContain('1');
+  });
+
+  it('background 布尔与缺省零告警(写法正确不该被打扰)', () => {
+    const { actions, warnings } = parseQuickActionConfigs([
+      { name: 'a', type: 'script', script: 'a.bat', background: true },
+      { name: 'b', type: 'script', script: 'b.bat' }
+    ]);
+
+    expect(actions.map(action => action.background)).toEqual([true, false]);
+    expect(warnings).toEqual([]);
   });
 });
 

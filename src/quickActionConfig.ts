@@ -105,7 +105,22 @@ function parseSharedFields(record: Record<string, unknown>, name: string): Quick
   return { name, confirm, source, category };
 }
 
-function parseQuickAction(item: unknown): QuickAction | null {
+interface ParsedQuickAction {
+  action: QuickAction;
+  /** 非致命告警(如 background 非布尔按前台执行):条目照收,提醒必须发 */
+  warning?: string;
+}
+
+/** 告警里展示用户原值的预览(JSON 优先,BigInt/循环等 stringify 不了退 String) */
+function previewConfigValue(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseQuickAction(item: unknown): ParsedQuickAction | null {
   if (typeof item !== 'object' || item === null) {
     return null;
   }
@@ -123,7 +138,9 @@ function parseQuickAction(item: unknown): QuickAction | null {
   if (type === 'command') {
     const command = nonEmptyString(record.command);
     const args = parseCommandArgs(record.args);
-    return command === null || args === null ? null : { ...shared, type, command, args };
+    return command === null || args === null
+      ? null
+      : { action: { ...shared, type, command, args } };
   }
   if (type === 'script') {
     const script = nonEmptyString(record.script);
@@ -142,10 +159,20 @@ function parseQuickAction(item: unknown): QuickAction | null {
         ...(typeof venvRecord.path === 'string' ? { path: venvRecord.path } : {})
       };
     }
-    // background/cwd 未给即默认;给了但不是对应类型时回落默认值(不按坏条目剔除)
-    const background = typeof record.background === 'boolean' ? (record.background as boolean) : false;
+    // background 非布尔(用户令 2026-10-27 ①实测定性):不再静默回落——
+    // "background": "true" 这类 JSON5 习惯写法此前无声变前台,「写了 true
+    // 还是弹终端」无迹可查。条目保留按前台执行,但逐条告警说清写法。
+    let background = false;
+    let warning: string | undefined;
+    if (typeof record.background === 'boolean') {
+      background = record.background;
+    } else if (record.background !== undefined) {
+      warning = `快速动作「${name}」的 background 不是布尔(收到 ${previewConfigValue(record.background)}),已按前台执行;请写 true 或 false(不带引号)`;
+    }
+    // cwd 未给即默认;给了但不是字符串时回落默认值(不按坏条目剔除)
     const cwd = typeof record.cwd === 'string' ? (record.cwd as string) : WORKSPACE_FOLDER_VAR;
-    return { ...shared, type, script, background, cwd, ...(venv ? { venv } : {}) };
+    const action: QuickAction = { ...shared, type, script, background, cwd, ...(venv ? { venv } : {}) };
+    return warning === undefined ? { action } : { action, warning };
   }
   if (type === 'http') {
     const url = nonEmptyString(record.url);
@@ -153,7 +180,7 @@ function parseQuickAction(item: unknown): QuickAction | null {
     const body = typeof record.body === 'string' ? (record.body as string) : undefined;
     return url === null || !HTTP_METHODS.includes(method)
       ? null
-      : { ...shared, type, url, method, body };
+      : { action: { ...shared, type, url, method, body } };
   }
   return null;
 }
@@ -161,21 +188,27 @@ function parseQuickAction(item: unknown): QuickAction | null {
 export function parseQuickActionConfigs(raw: unknown): {
   actions: QuickAction[];
   invalidCount: number;
+  /** 非致命告警(条目已收,写法有问题):装配层逐条播报,不静默 */
+  warnings: string[];
 } {
   if (!Array.isArray(raw)) {
-    return { actions: [], invalidCount: 0 };
+    return { actions: [], invalidCount: 0, warnings: [] };
   }
   const actions: QuickAction[] = [];
+  const warnings: string[] = [];
   let invalidCount = 0;
   for (const item of raw) {
-    const action = parseQuickAction(item);
-    if (action === null) {
+    const parsed = parseQuickAction(item);
+    if (parsed === null) {
       invalidCount += 1;
       continue;
     }
-    actions.push(action);
+    actions.push(parsed.action);
+    if (parsed.warning !== undefined) {
+      warnings.push(parsed.warning);
+    }
   }
-  return { actions, invalidCount };
+  return { actions, invalidCount, warnings };
 }
 
 /** 解析顶层 httpRequests；method/url 缺失或字段类型错误逐条计为无效。 */

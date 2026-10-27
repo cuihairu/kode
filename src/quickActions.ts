@@ -401,9 +401,14 @@ export class QuickActionManager {
 
   /** 动作清单:读配置 → 无动作指路 → 勾选 → 执行 */
   async show(): Promise<void> {
-    const { actions, invalidCount } = await this.loadActions();
+    const { actions, invalidCount, warnings } = await this.loadActions();
     if (invalidCount > 0) {
       await vscode.window.showInformationMessage(`快速执行动作配置中有 ${invalidCount} 条无效，已跳过`);
+    }
+    // background 非布尔等写法问题(2026-10-27 ①):条目保留按前台执行,但
+    // 告警逐条播报——静默回落会让「写了 true 还是弹终端」查无实据
+    if (warnings.length > 0) {
+      await vscode.window.showWarningMessage(warnings.join('；'));
     }
     if (actions.length === 0) {
       await vscode.window.showInformationMessage(
@@ -699,10 +704,14 @@ export class QuickActionManager {
   }
 
   /** 读动作配置;文件缺失/坏 JSON 一律当没有动作(不打断用户) */
-  private async loadActions(): Promise<{ actions: QuickAction[]; invalidCount: number }> {
+  private async loadActions(): Promise<{
+    actions: QuickAction[];
+    invalidCount: number;
+    warnings: string[];
+  }> {
     const config = await this.readConfigFile();
     if (config === null) {
-      return { actions: [], invalidCount: 0 };
+      return { actions: [], invalidCount: 0, warnings: [] };
     }
     return parseQuickActionConfigs(config.quickActions);
   }
