@@ -34,6 +34,8 @@
 复现:`KODE_PERF_LARGE_FILES=30000 npx vitest run --config vitest.bench.config.ts tests/perf/baseline.bench.ts`
 原始输出:`docs/perf/baseline-run.txt`
 
+> 时点注意:本表数字为 PR1 时点(提交 89e8783,P0 修复前)。P0 修复系列(492fc40..b9c8acb)后同 bench 复测见 `docs/perf/baseline-run-post-p0.txt`(S1 冷扫 107,737ms→4,880ms),对账与取舍分析见 [docs/review/2026-10-27-r1-migration-data-audit.md](../review/2026-10-27-r1-migration-data-audit.md)。
+
 | # | 场景 | 指标 | 实测 |
 |---|---|---|---|
 | 1 | 冷启动首次索引(large,30,001 个 .py) | 首次类名查询总耗时 | **107,737 ms(≈107.7s,≈3.6ms/文件)** |

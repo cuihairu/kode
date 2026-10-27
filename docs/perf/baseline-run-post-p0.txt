@@ -1,0 +1,23 @@
+BASELINE-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=30000 assets=/tmp/kode-perf-baseline-assets
+BASELINE-METRIC S1.large.coldFindClassesByName n=1 elapsed=4880.28ms
+BASELINE-METRIC S1.large.pyFilesDiscovered n=1 elapsed=30001ms
+BASELINE-METRIC S2.large.warmFindClassesByName n=200 p50=0ms p95=0ms p99=0.01ms max=0.15225499999996828ms avg=0ms
+BASELINE-METRIC S2.large.warmComputeMRO n=40 p50=0ms p95=0.02ms p99=1.18ms max=1.1829799999995885ms avg=0.04ms
+BASELINE-METRIC S1.defHeavy.entityMappingColdScan n=1 elapsed=1010.58ms
+BASELINE-METRIC S5.defHeavy.entityMappingWarmRescan n=1 elapsed=31.34ms
+BASELINE-METRIC S3.bigPy.firstQueryNewFile n=1 elapsed=0.76ms
+BASELINE-METRIC S4.bigPy.queryAfterDocumentEdit n=20 p50=0.35ms p95=1.59ms p99=147.13ms max=147.13351499999953ms avg=7.78ms
+BASELINE-METRIC S6.large.fileDeleteInvalidation n=1 elapsed=4.28ms
+BASELINE-METRIC S6.large.deletedClassHits n=1 elapsed=0ms
+BASELINE-METRIC S7.multiRoot.concurrent60FindInventory.wall n=1 elapsed=0.18ms
+BASELINE-METRIC S7.multiRoot.concurrent60FindInventory.totalHits n=1 elapsed=360ms
+BASELINE-METRIC S7.multiRoot.rootsContaining n=20 p50=0ms p95=0.01ms p99=13.13ms max=13.13257700000031ms avg=0.66ms
+BASELINE-METRIC S8.noise.coldScanWithExcludes n=1 elapsed=1.68ms
+BASELINE-METRIC S8.noise.excludedDirClassHits n=1 elapsed=0ms
+BASELINE-METRICS-REPORT
+Kode language service metrics (monotonic clock, elapsed in ms)
+file-discovery            count=     1  p50=      1.1ms  p95=      1.1ms  p99=      1.1ms  max=      1.1ms  hit=    0%  waitInit=    0  discover=1 read=0 parse=0  ok=1 miss=0 cancel=0 error=0
+index-scheduler           count=     2  p50=      0.5ms  p95=      1.1ms  p99=      1.1ms  max=      1.1ms  hit=    0%  waitInit=    0  discover=0 read=0 parse=0  ok=2 miss=0 cancel=0 error=0
+document-parse            count=     1  p50=      0.1ms  p95=      0.1ms  p99=      0.1ms  max=      0.1ms  hit=    0%  waitInit=    0  discover=0 read=0 parse=1  ok=1 miss=0 cancel=0 error=0
+python-index-scan         count=     1  p50=      1.7ms  p95=      1.7ms  p99=      1.7ms  max=      1.7ms  hit=    0%  waitInit=    0  discover=1 read=1 parse=1  ok=1 miss=0 cancel=0 error=0
+
