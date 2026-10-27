@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { normalizeFileIdentity } from './pathIdentity';
 import {
   DefDocument,
   DefElementNode,
@@ -909,8 +910,5 @@ function extractSourceChain(
 }
 
 export function normalizeLookupPath(targetPath: string): string {
-  const normalized = targetPath.replace(/\\/g, '/');
-  return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')
-    ? normalized.toLowerCase()
-    : normalized;
+  return normalizeFileIdentity(targetPath);
 }

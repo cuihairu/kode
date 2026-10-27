@@ -287,7 +287,7 @@
 - [ ] IDE-IDX-008 [P1] 删除同名胜者后保留其他根实体；验收：移除 B 的 Hero 后 A 的 Hero 仍能按 A 根查询，不被一并删除；前置：IDE-IDX-003, IDE-IDX-007。
 - [x] IDE-IDX-009 [P1] 保留 POSIX 路径大小写；验收：Linux 的 /project/A 与 /project/a 形成两个独立 root/def 键；前置：无。
 - [x] IDE-IDX-010 [P1] 统一 Windows 路径比较规则；验收：同一盘符路径的大小写与斜杠变体合并，跨盘路径仍分离；前置：IDE-IDX-009。
-- [ ] IDE-IDX-011 [P1] 统一 documentStore 与语义索引路径键；验收：同一 URI 在两层得到一致身份，POSIX 大小写差异不串缓存；前置：IDE-IDX-009, IDE-IDX-010。
+- [x] IDE-IDX-011 [P1] 统一 documentStore 与语义索引路径键；验收：同一 URI 在两层得到一致身份，POSIX 大小写差异不串缓存；前置：IDE-IDX-009, IDE-IDX-010。
 - [ ] IDE-IDX-012 [P1] 为全部工作区根建立 def watcher；验收：修改第二根的 def 后，实体映射与依赖失效均可观察；前置：无。
 - [ ] IDE-IDX-013 [P1] 为全部工作区根建立类型 watcher；验收：第二根 types.xml/alias.xml 更新后，类型快照失效且下次得到新值；前置：无。
 - [ ] IDE-IDX-014 [P1] 切换 assetsRoot 时重建实体 watcher；验收：旧外部根 watcher 被释放，新根更新能触发维护；前置：IDE-IDX-012, IDE-IDX-013。

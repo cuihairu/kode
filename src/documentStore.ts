@@ -16,6 +16,7 @@
 // 打点:document-parse 事件走 PR1 埋点(命中/未命中/耗时/版本),不记用户文本。
 
 import { recordLanguageServiceOperation } from './languageServiceMetrics';
+import { normalizeFileIdentity } from './pathIdentity';
 
 /** 快照输入面:vscode.TextDocument 与测试替身的公共子集(不 import vscode) */
 export interface DocumentStoreDocument {
@@ -56,23 +57,9 @@ export function normalizeDocumentKey(uri: { toString(): string; fsPath: string }
   const schemeMatch = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(uri.toString());
   const scheme = schemeMatch?.[1]?.toLowerCase() ?? '';
   if (scheme === 'file' || scheme === '') {
-    return path_posix_normalize(uri.fsPath);
+    return normalizeFileIdentity(uri.fsPath);
   }
   return uri.toString();
-}
-
-/** 仅做分隔符与冗余段归一并,不改大小写(路径大小写在 POSIX 上是语义) */
-function path_posix_normalize(fsPath: string): string {
-  const normalized = fsPath.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
-  const parts: string[] = [];
-  for (const segment of normalized.split('/')) {
-    if (segment === '.' || segment === '') {
-      continue;
-    }
-    parts.push(segment);
-  }
-  const prefix = normalized.startsWith('/') ? '/' : '';
-  return prefix + parts.join('/');
 }
 
 const entries = new Map<string, StoreEntry>();

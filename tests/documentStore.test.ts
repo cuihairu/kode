@@ -69,6 +69,17 @@ describe('documentStore URI 规范化', () => {
     expect(normalizeDocumentKey(Uri.file('/a/B/c.py'))).not.toBe(normalizeDocumentKey(Uri.file('/a/b/c.py')));
   });
 
+  it('文件快照与语义索引使用相同路径身份', async () => {
+    const { normalizeLookupPath } = await import('../src/definitionSemantics');
+    for (const fsPath of ['/project/A/Hero.def', '/project/a/Hero.def', 'C:\\Work\\Hero.py', 'c:/WORK/./hero.py']) {
+      expect(normalizeDocumentKey(uriOf('file:///source', fsPath))).toBe(normalizeLookupPath(fsPath));
+    }
+    expect(normalizeDocumentKey(uriOf('file:///a', '/project/A/Hero.def')))
+      .not.toBe(normalizeDocumentKey(uriOf('file:///b', '/project/a/Hero.def')));
+    expect(normalizeDocumentKey(uriOf('file:///a', 'C:\\Work\\Hero.py')))
+      .toBe(normalizeDocumentKey(uriOf('file:///b', 'c:/work/hero.py')));
+  });
+
   it('非 file scheme 按原样记账(schema 隔离)', () => {
     const virtual = normalizeDocumentKey(uriOf('kbengine-db-schema:/Hero.schema', '/Hero.schema'));
     expect(virtual).toBe('kbengine-db-schema:/Hero.schema');
