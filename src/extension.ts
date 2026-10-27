@@ -171,6 +171,7 @@ import {
   KBEngineDatabaseSimulationProvider
 } from './databaseSimulator';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities } from './definitionWorkspace';
+import { scheduleBackgroundSchemaWarmup } from './schemaWarmup';
 import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
 import {
@@ -605,6 +606,19 @@ export function activate(context: vscode.ExtensionContext) {
         preheatDiscoveryScan(folder.uri.fsPath);
       }
     }
+    // IDE-SCH-006:schema 快照后台预热——首扫完成后逐实体以非交互优先级入队,
+    // 冷 schema 计算不再发生在首次悬停/打开;交互任务优先(编辑高峰让路),
+    // 逐实体一条任务天然分块,dispose 即取消。
+    void entityMappingManager.waitForInitialScan().then(() => {
+      for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        const rootPath = folder?.uri?.fsPath;
+        if (!rootPath) { continue; }
+        const entityNames = getRegisteredEntities(rootPath).map(entry => entry.name);
+        if (entityNames.length === 0) { continue; }
+        const warmup = scheduleBackgroundSchemaWarmup(indexScheduler, rootPath, entityNames);
+        context.subscriptions.push({ dispose: () => warmup.cancel('extension-dispose') });
+      }
+    }).catch(() => undefined);
   };
   void shouldStartKbEngineIndexing().then(gated => {
     if (gated) {
