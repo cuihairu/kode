@@ -233,7 +233,7 @@ function getReturnAnnotationIndex(workspaceRoot: string): PythonReturnAnnotation
       }
     })
   );
-  returnAnnotationCaches.set(workspaceRoot, { builtAtMs: now, index });
+  returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index });
   return index;
 }
 
