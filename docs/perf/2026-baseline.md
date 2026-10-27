@@ -34,7 +34,7 @@
 复现:`KODE_PERF_LARGE_FILES=30000 npx vitest run --config vitest.bench.config.ts tests/perf/baseline.bench.ts`
 原始输出:`docs/perf/baseline-run.txt`
 
-> 时点注意:本表数字为 PR1 时点(提交 89e8783,P0 修复前)。P0 修复系列(492fc40..b9c8acb)后同 bench 复测见 `docs/perf/baseline-run-post-p0.txt`(S1 冷扫 107,737ms→4,880ms),对账与取舍分析见 [docs/review/2026-10-27-r1-migration-data-audit.md](../review/2026-10-27-r1-migration-data-audit.md)。
+> 时点注意:本表数字为 PR1 时点(提交 89e8783,P0 修复前)。P0 修复系列(492fc40..b9c8acb)后同 bench 复测见 `docs/perf/baseline-run-post-p0.txt`(S1 冷扫 107,737ms→4,880ms),对账与取舍分析见 [docs/review/2026-10-27-r1-migration-data-audit.md](https://github.com/cuihairu/kode/blob/main/docs/review/2026-10-27-r1-migration-data-audit.md)。
 
 | # | 场景 | 指标 | 实测 |
 |---|---|---|---|
