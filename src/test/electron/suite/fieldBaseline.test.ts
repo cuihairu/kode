@@ -12,7 +12,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { performance } from 'perf_hooks';
+import { monitorEventLoopDelay, performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import {
   getOperationSummary,
@@ -89,7 +89,7 @@ describe('P0-4b 现场基线采集(真 VS Code 扩展宿主)', function () {
   this.timeout(120_000);
 
   let pos: vscode.Position;
-  let delay: ReturnType<typeof import('perf_hooks').monitorEventLoopDelay> | null = null;
+  let delay: ReturnType<typeof monitorEventLoopDelay> | null = null;
   let cpuSamples = 0;
   let cpuUserNs = 0;
   let cpuSysNs = 0;
@@ -114,7 +114,6 @@ describe('P0-4b 现场基线采集(真 VS Code 扩展宿主)', function () {
     const assetsRoot = vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot');
     once('env.assetsRoot', assetsRoot ?? '(unset)', '');
     // 事件循环延迟监控:整场采样,结束时取分位(Histogram 以纳秒计,取分位后 /1e6 转 ms)
-    const { monitorEventLoopDelay } = require('perf_hooks') as typeof import('perf_hooks');
     delay = monitorEventLoopDelay({ resolution: 20 });
     delay.enable();
     // CPU/RSS 增量采样:500ms 一格,差分累积 user/sys 纳秒,RSS 峰值
