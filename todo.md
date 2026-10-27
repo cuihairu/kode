@@ -326,7 +326,7 @@
 ### IDE-SCH · 数据库派生计算退出交互重算（P1）
 
 来源：PERF-04；src/databaseSchema.ts、src/databaseSimulator.ts、src/languageProviders.ts。
-- [ ] IDE-SCH-001 [P1] 拆出不访问 VS Code 的 schema 推导函数；验收：相同显式输入产生相同表/列结果，函数内部不读配置或文件；前置：无。
+- [x] IDE-SCH-001 [P1] 拆出不访问 VS Code 的 schema 推导函数；验收：相同显式输入产生相同表/列结果，函数内部不读配置或文件；前置：无。(3873e32;databaseSchema 导出 deriveDatabaseTables(DatabaseSchemaDerivationInput{entityName,defFilePath,properties,hasCellContent,tablePrefix} → {tables,tableIndex}):纯推导面——内部只走 buildMysqlTableSchemas+索引构建,不读配置/文件/工作区,数据库连接要素(database)是配置面留在快照面;getDatabaseSchemaSnapshot 尾段改喂 deriveDatabaseTables(输入收集:布局/def 发现/共享快照/hasCell/前缀配置仍归快照面),行为不变(schema 既有 38 例全绿);buildMysqlTableSchemas 形参收 mutable 数组(推导面入口展开一次);tests/schemaDerivation.test.ts 5 例(同输入恒同表列 deep-equal+hasCell 六列/前缀/属性集变化即结果变化/配置覆盖不影响(只认显式输入)/两次调用间磁盘+配置全变同输入结果不变/快照面接线主表名列序一致);3317|7)
 - [ ] IDE-SCH-002 [P1] 为 schema 缓存加入实体与根身份；验收：A/B 同名实体得到各自表结构，不共用单例快照；前置：IDE-SCH-001, IDE-IDX-003。
 - [ ] IDE-SCH-003 [P1] 按 def 依赖版本失效 schema；验收：修改一个 def 仅重建它及其依赖实体的 schema；前置：IDE-SCH-002, IDE-SNP-006。
 - [ ] IDE-SCH-004 [P1] 按 types.xml 依赖版本失效 schema；验收：修改引用类型后相关列更新，无关实体缓存保持命中；前置：IDE-SCH-003, IDE-SNP-004。
