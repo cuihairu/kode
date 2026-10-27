@@ -6,6 +6,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { execFileSync } from 'child_process';
 import { runTests } from '@vscode/test-electron';
 
 async function main(): Promise<void> {
@@ -13,6 +14,8 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(__dirname, '../../..');
   const extensionTestsPath = path.resolve(__dirname, 'suite/index.js');
   const demoMode = process.argv.includes('--demo');
+  const fieldMode = process.argv.includes('--field');
+  let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-demo-'));
@@ -29,6 +32,42 @@ async function main(): Promise<void> {
     process.env.KODE_ELECTRON_SUITE = 'demo';
     process.env.KODE_DEMO_WORKSPACE = workspacePath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (fieldMode) {
+    // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
+    // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
+    const demoSource = path.resolve(extensionDevelopmentPath, 'tests/fixtures/kbengine-demo-assets');
+    workspacePath = path.join(temporaryRoot, 'kbengine-demo-assets');
+    fs.cpSync(demoSource, workspacePath, { recursive: true });
+    const perfOut = path.join(temporaryRoot, 'perf-assets');
+    execFileSync(process.execPath, [
+      path.resolve(extensionDevelopmentPath, 'scripts/generate-perf-assets.mjs'),
+      '--out', perfOut,
+      '--large-files', '5000'
+    ], { stdio: 'inherit' });
+    const externalRoot = path.join(perfOut, 'large');
+    fs.mkdirSync(path.join(workspacePath, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.assetsRoot': externalRoot,
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'field';
+    process.env.KODE_FIELD_WORKSPACE = workspacePath;
+    process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
+    process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
+      ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-10-27-field-baseline-run.txt');
+    // 禁用对照=VS Code 裸面:开发扩展经 extensionDevelopmentPath 强制加载且激活由
+    // workspaceContains/onLanguage 自动触发,--disable-extension 对开发扩展无效,
+    // 故禁用模式把 extensionDevelopmentPath 指向空目录——扩展完全不加载,suite 仍经
+    // extensionTestsPath 在宿主内运行(裸面:无 provider,指标摘要全空)。
+    const disabled = process.env.KODE_FIELD_MODE === 'disabled';
+    if (disabled) {
+      devPath = path.join(temporaryRoot, 'empty-dev');
+      fs.mkdirSync(devPath, { recursive: true });
+    }
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   }
 
   const cachedVersion = process.env.KODE_VSCODE_VERSION ?? '1.141.0';
@@ -41,7 +80,7 @@ async function main(): Promise<void> {
   );
 
   await runTests({
-    extensionDevelopmentPath,
+    extensionDevelopmentPath: devPath,
     extensionTestsPath,
     ...(fs.existsSync(cachedExecutable) ? { vscodeExecutablePath: cachedExecutable } : {}),
     launchArgs: [

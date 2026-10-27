@@ -12,7 +12,9 @@ export function run(): Promise<void> {
   const files = glob.sync('**/*.test.js', { cwd: testsRoot })
     .filter(file => suite === 'demo'
       ? file === 'demoNavigation.test.js'
-      : file !== 'demoNavigation.test.js');
+      : suite === 'field'
+        ? file === 'fieldBaseline.test.js'
+        : file !== 'demoNavigation.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }

@@ -1173,6 +1173,7 @@
     "demo:verify": "python3 tests/fixtures/kbengine-demo-assets/play_demo.py --verify",
     "test:demo": "pnpm demo:verify && vitest run tests/kbengineDemoNavigation.test.ts",
     "test:demo:editor": "pnpm run compile && tsc -p tsconfig.mocha.json && node out/test/electron/runTest.js --demo",
+    "test:demo:field": "pnpm run compile && tsc -p tsconfig.mocha.json && node out/test/electron/runTest.js --field",
     "package": "pnpm exec vsce package --no-dependencies",
     "publish": "pnpm exec vsce publish --no-dependencies"
   },

@@ -1,0 +1,29 @@
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 disabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-aYWVbf/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-aYWVbf/perf-assets/large
+FIELD-METRIC cold.firstDefinitionMs n=1 33ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 0
+FIELD-METRIC hot.hoverMs n=50 p50=1.56ms p95=15.31ms p99=36.78ms max=36.78ms avg=3.27ms
+FIELD-METRIC hot.definitionMs n=50 p50=1.35ms p95=3.95ms p99=28.68ms max=28.68ms avg=2.3ms
+FIELD-METRIC miss.hoverMs n=20 p50=3.8ms p95=41.91ms p99=65.61ms max=65.61ms avg=11.09ms
+FIELD-METRIC miss.definitionMs n=20 p50=1.47ms p95=25.44ms p99=38.88ms max=38.88ms avg=6.48ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 11.92ms
+FIELD-METRIC burst.20wallMs n=1 21.85ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 33.19ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 33.19ms
+FIELD-METRIC host.vmHwmMiB n=1 177
+FIELD-METRIC host.peakRssMiB n=1 176
+FIELD-METRIC host.cpuUserSec n=1 1.58
+FIELD-METRIC host.cpuSysSec n=1 0.4
+FIELD-METRIC host.cpuSampleCount n=1 5
+FIELD-METRIC eventloop.p50Ms n=1 20.2
+FIELD-METRIC eventloop.p95Ms n=1 21.22
+FIELD-METRIC eventloop.p99Ms n=1 33.19
+FIELD-METRIC eventloop.maxMs n=1 47.35
+FIELD-METRIC eventloop.meanMs n=1 20.59
+FIELD-SUMMARY sessionEnd 2026-10-27T15:06:28.851Z
