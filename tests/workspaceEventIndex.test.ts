@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 import { EventCodeLensProvider } from '../src/eventApi';
-import { makeTextDocument, workspaceEvents } from './helpers/vscodeStub';
+import { lastFileSystemWatcher, makeTextDocument, workspaceEvents } from './helpers/vscodeStub';
 
 it('事件首扫后台读取文件，不打开其他文档并保留行号', async () => {
   const originalFind = vscode.workspace.findFiles;
@@ -60,6 +60,29 @@ it('首扫旧磁盘读取结束时不能覆盖期间的编辑', async () => {
     workspaceEvents.documentChanged.fire({ document: edited });
     release(Buffer.from('self.addEvent(OLD, self.on_ev)'));
     expect(await pending).toMatchObject([{ call: { event: 'NEW' } }]);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
+it('删除监听文件后事件记录消失', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const uri = vscode.Uri.file('/ws/listener.py');
+  vscode.workspace.findFiles = async () => [uri];
+  vscode.workspace.fs.readFile = async () => Buffer.from('self.addEvent(EV, self.on_ev)');
+  const index = new WorkspaceIndex();
+  try {
+    expect(await index.allEventCalls()).toHaveLength(1);
+    const provider = new EventCodeLensProvider(index);
+    const emitter = makeTextDocument('self.emitEvent(EV)', { fileName: '/ws/emitter.py', languageId: 'python' }) as vscode.TextDocument;
+    expect(await provider.provideCodeLenses(emitter)).toHaveLength(1);
+    lastFileSystemWatcher.current!.fireDelete(uri);
+    expect(await index.allEventCalls()).toEqual([]);
+    expect(await provider.provideCodeLenses(emitter)).toEqual([]);
+    provider.dispose();
   } finally {
     index.dispose();
     vscode.workspace.findFiles = originalFind;

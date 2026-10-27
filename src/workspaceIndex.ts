@@ -57,7 +57,10 @@ export class WorkspaceIndex {
     const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
     watcher.onDidCreate(uri => { void this.indexFile(uri); });
     watcher.onDidChange(uri => { void this.indexFile(uri); });
-    watcher.onDidDelete(uri => { this.cache.delete(uri.fsPath); });
+    watcher.onDidDelete(uri => {
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+      this.cache.delete(uri.fsPath);
+    });
     this.watchers.push(watcher);
     this.started = true;
   }
