@@ -299,7 +299,7 @@
 ### IDE-SNP · 共享快照与派生输入（P1）
 
 来源：架构事实源、IDX-07；src/documentStore.ts、src/definitionSemantics.ts、src/databaseSchema.ts。
-- [ ] IDE-SNP-001 [P1] 定义共享文件快照读取接口；验收：接口明确 rootId/URI/version/content，打开文档优先且不要求打开其他文档；前置：无。
+- [x] IDE-SNP-001 [P1] 定义共享文件快照读取接口；验收：接口明确 rootId/URI/version/content，打开文档优先且不要求打开其他文档；前置：无。(125bc28;src/sharedFileSnapshot.ts readSharedFileSnapshot→SharedFileSnapshot{rootId,uri,fsPath,version,content,source},打开文档=缓冲区全文+编辑序号且绝不读盘,未打开=utf8 磁盘补载+mtimeMs,无 openTextDocument 依赖面,rootId 默认走 SemanticIndex.resolveRootIdForPath;tests/sharedFileSnapshot.test.ts 6 例含生产默认依赖集成,3258|7)
 - [ ] IDE-SNP-002 [P1] 让语义 loader 读取共享快照；验收：未保存 def 的属性和方法声明可见，未打开文件仍可从磁盘补载；前置：IDE-SNP-001。
 - [ ] IDE-SNP-003 [P1] 让数据库 schema 读取共享快照；验收：同一未保存 Persistent/Type 修改在 schema 与 def hover 中一致；前置：IDE-SNP-001。
 - [ ] IDE-SNP-004 [P1] 让类型注册表接收脏 types.xml 更新；验收：未保存别名修改只使依赖该类型的结果失效；前置：IDE-SNP-001。
