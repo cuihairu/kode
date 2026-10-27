@@ -57,6 +57,12 @@ export interface SemanticTypeRegistrySnapshot<T = unknown> {
   readonly dependencies: readonly string[];
   /** 注册表条目(结构由调用方持有,如 CustomTypeInfo[]) */
   readonly entries: readonly T[];
+  /**
+   * IDE-SNP-004:构建时各依赖文件的来源版本(依赖路径 → 打开文档的编辑
+   * 序号;构建时未打开为 undefined 或缺键)。脏 types.xml 版本前进即过期,
+   * 消费端按此判定——不逐次 stat 磁盘(重建只由事件/版本前进驱动)。
+   */
+  readonly sourceVersions?: Readonly<Record<string, number | undefined>>;
 }
 
 interface EntityRecord {
@@ -283,7 +289,8 @@ export class SemanticIndex {
     rootPath: string,
     aliasDiscovery: boolean,
     entries: readonly T[],
-    dependencies: readonly string[]
+    dependencies: readonly string[],
+    sourceVersions?: Readonly<Record<string, number | undefined>>
   ): SemanticTypeRegistrySnapshot<T> {
     this.typeRegistryGeneration += 1;
     const snapshot: SemanticTypeRegistrySnapshot<T> = {
@@ -291,7 +298,8 @@ export class SemanticIndex {
       aliasDiscovery,
       generation: this.typeRegistryGeneration,
       dependencies: dependencies.map(normalizeLookupPath),
-      entries: [...entries]
+      entries: [...entries],
+      ...(sourceVersions ? { sourceVersions } : {})
     };
     this.typeRegistry.set(this.typeRegistryKey(rootPath, aliasDiscovery), { snapshot });
     return snapshot;

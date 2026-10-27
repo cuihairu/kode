@@ -22,6 +22,8 @@ import {
 import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { getSemanticIndex } from './semanticIndex';
+import { normalizeFileIdentity } from './pathIdentity';
+import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   ENTITIES_XML_SECTION_CLIENT_SERVER,
   ENTITIES_XML_SECTION_SERVER_ONLY
@@ -354,6 +356,14 @@ export function resolveEntityAnnotationType(workspaceRoot: string, raw: string):
       .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
     let snapshot = getSemanticIndex()
       .getTypeRegistrySnapshot<CustomTypeInfo>(workspaceRoot, aliasDiscoveryEnabled);
+    // IDE-SNP-004:打开的脏 types.xml 版本前进 → 旧快照过期,只重建本根注册表
+    // (其他根/其他依赖的快照不动);未打开文件的失效仍由 watcher 事件驱动,
+    // 查询路径不逐次 stat 磁盘。
+    const dependencies = getTypeRegistryDependencyPaths(workspaceRoot);
+    const openVersions = collectOpenDocumentVersions(dependencies);
+    if (snapshot && registrySnapshotStale(snapshot, openVersions)) {
+      snapshot = undefined;
+    }
     if (!snapshot) {
       metrics.countCacheMiss();
       const stopRegistryBuild = metrics.startSubPhase('registry-build');
@@ -363,7 +373,8 @@ export function resolveEntityAnnotationType(workspaceRoot: string, raw: string):
         workspaceRoot,
         aliasDiscoveryEnabled,
         customTypes,
-        getTypeRegistryDependencyPaths(workspaceRoot)
+        dependencies,
+        openVersions
       );
     } else {
       metrics.countCacheHit();
@@ -386,6 +397,46 @@ function getTypeRegistryDependencyPaths(workspaceRoot: string): string[] {
   }
   dependencies.add(joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'alias.xml'));
   return [...dependencies];
+}
+
+/** IDE-SNP-004:依赖文件中当前有打开文档者 → 其编辑序号(其余缺键) */
+function collectOpenDocumentVersions(
+  dependencies: readonly string[]
+): Record<string, number | undefined> {
+  const wanted = new Map(dependencies.map(dep => [normalizeFileIdentity(dep), dep]));
+  const versions: Record<string, number | undefined> = {};
+  for (const document of vscode.workspace.textDocuments) {
+    const identity = normalizeFileIdentity(document.uri.fsPath);
+    const dep = wanted.get(identity);
+    if (dep !== undefined) {
+      versions[dep] = typeof document.version === 'number' && Number.isFinite(document.version)
+        ? document.version
+        : undefined;
+    }
+  }
+  return versions;
+}
+
+/**
+ * IDE-SNP-004:快照过期判定——依赖「现在打开的版本」与「构建时记录的版本」
+ * 任一不一致即过期:打开且版本前进(脏编辑)、构建时打开现已关闭(脏构建,
+ * 缓冲区已不可见)都需重建。依赖两边都未打开(缺键)不看,交由 watcher 事件。
+ */
+function registrySnapshotStale(
+  snapshot: { dependencies: readonly string[]; sourceVersions?: Readonly<Record<string, number | undefined>> },
+  openVersions: Readonly<Record<string, number | undefined>>
+): boolean {
+  if (!snapshot.sourceVersions) {
+    // 旧快照未记版本:依赖有打开文档就视为过期(构建时可能读的是磁盘)
+    return Object.keys(openVersions).length > 0;
+  }
+  const deps = new Set([...Object.keys(openVersions), ...Object.keys(snapshot.sourceVersions)]);
+  for (const dep of deps) {
+    if (snapshot.sourceVersions[dep] !== openVersions[dep]) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function getTypesXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
@@ -1248,7 +1299,9 @@ function getTypesXmlSnapshot(workspaceRoot: string): {
   typeNodes: DefElementNode[];
 } | null {
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
-  const content = layout.typesXmlPath ? readTextFile(layout.typesXmlPath) : null;
+  // IDE-SNP-004:types.xml 文本走共享快照——打开的脏缓冲优先(未保存别名
+  // 修改即时进注册表),未打开文件照旧磁盘补载。
+  const content = layout.typesXmlPath ? readSharedFileSnapshot(layout.typesXmlPath)?.content ?? null : null;
 
   if (!content || !layout.typesXmlPath) {
     return null;
