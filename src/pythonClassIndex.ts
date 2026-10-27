@@ -1094,7 +1094,9 @@ export class PythonClassIndex {
     line: number,
     methodName: string,
     document?: vscode.TextDocument,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
+    /** 组合根/全量就绪的预算(ms);测试注入小预算以确定性复现超时路径 */
+    budgetMs: number = INTERACTIVE_INDEX_WAIT_MS
   ): Promise<PythonMethodLocation[]> {
     if (token?.isCancellationRequested) { return []; }
     const queryTimer = jumpTimeStart();
@@ -1143,8 +1145,17 @@ export class PythonClassIndex {
     // (Parent → Interfaces → Components);多根/多处命中全部保留(上面 push 去重),
     // 由 provider 出 Location[] 列表,不替用户跳第一个。
     const rootsReady = await raceWithBudget('definition:composition-roots',
-      this.ensureCompositionRoots().then(() => true), INTERACTIVE_INDEX_WAIT_MS, token);
-    if (!rootsReady) { return []; }
+      this.ensureCompositionRoots().then(() => true), budgetMs, token);
+    if (!rootsReady) {
+      // 组合根派生超预算:已命中的 ① 静态 MRO 目标必须照常返回,不能因等待
+      // 超时把有效目标也一起丢弃(否则 self 跳转在冷/慢资产上整条落空)。
+      // 组合根侧本次不补;下次查询时派生结果已就绪/继续等待,自然补齐。
+      if (out.length > 0) {
+        jumpLog('info', () =>
+          `py 组合根等待超时(${budgetMs}ms),先返回已命中 ${out.length} 个静态目标 ${queryTimer()}ms`);
+      }
+      return out;
+    }
     const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
       .sort((left, right) => right.length - left.length)[0];
     const composition = scope ? this.rootsByScope.get(scope) : undefined;
@@ -1178,7 +1189,7 @@ export class PythonClassIndex {
     if (out.length > 0 || pass === 1) { break; }
     // ①② 均落空:等后台全量收敛后重查一遍(失败/慢扫描在 ensureScanned 内部消化)
     const scanReady = await raceWithBudget('definition:python-index',
-      this.ensureScanned().then(() => true), INTERACTIVE_INDEX_WAIT_MS, token);
+      this.ensureScanned().then(() => true), budgetMs, token);
     if (!scanReady) { return []; }
     }
     if (out.length > 0) { return out; }

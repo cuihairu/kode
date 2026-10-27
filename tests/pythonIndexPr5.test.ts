@@ -426,6 +426,35 @@ describe('PR5 ② Definition 首查不阻塞全仓(快照命中/按需单文件/
       cleanup();
     }
   });
+
+  it('组合根派生超时:已命中静态 MRO 的目标仍返回,不因等待超时整条丢弃', async () => {
+    const { dir, paths, cleanup } = makeRoot(MIXIN_FILES);
+    pointWorkspaceAt(dir);
+    // 组合根三 glob(entities.xml/*.def/types.xml)挂起 → 派生永不收敛,逼出
+    // 预算超时路径(而非派生成功路径);.py 发现/按需正常路由(静态 MRO 命中所需)。
+    const never = new Promise<Uri[]>(() => undefined);
+    stubWorkspace.findFiles = (async (pattern?: string) => {
+      const p = String(pattern ?? '');
+      if (!p.endsWith('.py')) { return never; }
+      const baseName = p.replace(/\*\*\/(.+)$/, '$1');
+      const all = [paths['a.py'], paths['b.py']];
+      return (baseName === '*.py' ? all : all.filter(t => path.basename(t) === baseName))
+        .map(file => Uri.file(file));
+    }) as typeof stubWorkspace.findFiles;
+
+    try {
+      const index = new PythonClassIndex();
+      // 预算 20ms:组合根派生必然超时(挂起),此时 ① 静态 MRO 已命中 Alpha.meth;
+      // 修复前 `if (!rootsReady) { return []; }` 把已命中目标一起丢弃。
+      const hits = await index.resolveSelfMethodCandidates(
+        paths['b.py'], 1, 'meth', undefined, undefined, 20);
+      expect(hits, '组合根超时不得丢弃已命中的静态 MRO 目标').toHaveLength(1);
+      expect(hits[0].filePath).toBe(paths['a.py']);
+      expect(hits[0].className).toBe('Alpha');
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 /**
