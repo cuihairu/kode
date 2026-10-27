@@ -945,26 +945,36 @@ export class PythonClassIndex {
     if (!cached) {
       return; // 文件不可读:后续解析按落空降级
     }
-    const targets = new Set<string>();
+    // 审核发现(:183):import 派生的候选是真实依赖,不得按序截 64——截断会把
+    // 导入较多文件里靠后的真实依赖静默跳过,首查跳转落空。import 候选全量补载;
+    // 兄弟目录候选保留上限(防大目录全读,显式口径而非静默丢依赖)。
+    const importTargets: string[] = [];
+    const seenTargets = new Set<string>();
     for (const binding of cached.parsed.imports?.values() ?? []) {
       for (const target of this.importModuleCandidates(filePath, binding.module)) {
-        targets.add(target);
+        if (seenTargets.has(target)) { continue; }
+        seenTargets.add(target);
+        importTargets.push(target);
       }
+    }
+    const missingImports = importTargets.filter(target => !this.fileCache.has(target));
+    for (let offset = 0; offset < missingImports.length; offset += 8) {
+      if (token?.isCancellationRequested) { return; }
+      await Promise.all(missingImports.slice(offset, offset + 8).map(target => this.loadFileOnDemand(target)));
     }
     try {
       const dir = path.dirname(filePath);
       const siblings = (await fs.promises.readdir(dir))
         .filter(name => name.toLowerCase().endsWith('.py')).sort();
-      for (const sibling of siblings.slice(0, 64)) {
-        targets.add(path.join(dir, sibling));
+      const missingSiblings = siblings.slice(0, 64)
+        .map(sibling => path.join(dir, sibling))
+        .filter(target => !this.fileCache.has(target) && !seenTargets.has(target));
+      for (let offset = 0; offset < missingSiblings.length; offset += 8) {
+        if (token?.isCancellationRequested) { return; }
+        await Promise.all(missingSiblings.slice(offset, offset + 8).map(target => this.loadFileOnDemand(target)));
       }
     } catch {
       // 目录不可列(已删除/无权限):按落空降级
-    }
-    const missing = [...targets].filter(target => !this.fileCache.has(target)).slice(0, 64);
-    for (let offset = 0; offset < missing.length; offset += 8) {
-      if (token?.isCancellationRequested) { return; }
-      await Promise.all(missing.slice(offset, offset + 8).map(target => this.loadFileOnDemand(target)));
     }
   }
 

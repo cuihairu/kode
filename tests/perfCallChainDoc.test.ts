@@ -53,8 +53,8 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 167, 'getDocumentLines'],
   ['src/pythonClassIndex.ts', 560, 'ensureCompositionRoots'],
-  ['src/pythonClassIndex.ts', 1072, 'resolveClassBase'],
-  ['src/pythonClassIndex.ts', 1182, '①② 两段查询']
+  ['src/pythonClassIndex.ts', 1082, 'resolveClassBase'],
+  ['src/pythonClassIndex.ts', 1192, '①② 两段查询']
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {
