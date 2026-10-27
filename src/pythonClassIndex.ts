@@ -125,6 +125,16 @@ export interface PythonMethodLocation {
 }
 
 /**
+ * IDE-IDX-018:self 方法解析结果。partial=true 表示预算到期/取消,枚举不完整
+ * (仅 ① 静态 MRO 目标或空集,② 组合根与 ③ 反向后代未查全)——消费端不得
+ * 据此发布「完整枚举无命中」的权威负结论;partial=false 才是查全口径。
+ */
+export interface SelfMethodResolution {
+  readonly candidates: PythonMethodLocation[];
+  readonly partial: boolean;
+}
+
+/**
  * 工作区 Python 类索引:按需扫描 *.py 建 className → 定义列表,
  * 变更时按文件失效。所有查询走缓存,不在热点路径重复解析。
  *
@@ -1150,8 +1160,10 @@ export class PythonClassIndex {
    * ② 静态类 MRO 无果 → 反向找**继承静态类的类**(兄弟 mixin 经共同子类,
    *    如 MixinB.self.x() 需经 Avatar = (MixinA, MixinB) 的 MRO 才落到 MixinA)。
    * 去重后按 祖先优先 → 后代声明序 返回全部候选(供 Location[] 列表选择)。
+   * IDE-IDX-018:返回带 partial 标记——预算到期/取消时枚举不完整,消费端
+   * 不得把空集当作完整枚举的权威负结论。
    */
-  async resolveSelfMethodCandidates(
+  async resolveSelfMethodResolution(
     filePath: string,
     line: number,
     methodName: string,
@@ -1159,8 +1171,8 @@ export class PythonClassIndex {
     token?: vscode.CancellationToken,
     /** 组合根/全量就绪的预算(ms);测试注入小预算以确定性复现超时路径 */
     budgetMs: number = INTERACTIVE_INDEX_WAIT_MS
-  ): Promise<PythonMethodLocation[]> {
-    if (token?.isCancellationRequested) { return []; }
+  ): Promise<SelfMethodResolution> {
+    if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
     const queryTimer = jumpTimeStart();
     jumpLog('info', () => `py 查询 ${path.basename(filePath)}:${line + 1} 方法=${methodName}`);
     if (document) { await this.onDocumentChanged(document); }
@@ -1168,13 +1180,13 @@ export class PythonClassIndex {
     // (查询文件/同目录/import 候选)按需单文件解析,全量后台补。
     this.scheduleBackgroundScan();
     const enclosing = await this.findEnclosingClass(filePath, line);
-    if (token?.isCancellationRequested) { return []; }
+    if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
     if (!enclosing) {
       jumpLog('info', () => 'py 查询落空: 光标不在任何类内(或文件未入索引)');
-      return [];
+      return { candidates: [], partial: false };
     }
     await this.stageRequestFiles(filePath, token);
-    if (token?.isCancellationRequested) { return []; }
+    if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
     const seen = new Set<string>();
     const push = (loc: PythonMethodLocation | null, out: PythonMethodLocation[]): void => {
       if (!loc) {
@@ -1215,15 +1227,19 @@ export class PythonClassIndex {
       if (out.length > 0) {
         jumpLog('info', () =>
           `py 组合根等待超时(${budgetMs}ms),先返回已命中 ${out.length} 个静态目标 ${queryTimer()}ms`);
+      } else {
+        jumpLog('info', () => `py 组合根等待超时(${budgetMs}ms),无静态目标,返回空集(partial) ${queryTimer()}ms`);
       }
-      return out;
+      // IDE-IDX-018:②③ 未查全,结果必须标记 partial——消费端不得把这枚
+      // 空集/静态子集发布成完整枚举的权威负结论。
+      return { candidates: out, partial: true };
     }
     const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
       .sort((left, right) => right.length - left.length)[0];
     const composition = scope ? this.rootsByScope.get(scope) : undefined;
     const rootNames = composition?.roots ?? [];
     for (const root of rootNames) {
-      if (token?.isCancellationRequested) { return []; }
+      if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
       const roots = (this.byName.get(root) ?? []).filter(cls => this.compatibleContext(cls, enclosing));
       for (const rootClass of roots) {
         const contains = this.mroClasses(rootClass).some(cls => this.classKey(cls) === this.classKey(enclosing));
@@ -1252,15 +1268,16 @@ export class PythonClassIndex {
     // ①② 均落空:等后台全量收敛后重查一遍(失败/慢扫描在 ensureScanned 内部消化)
     const scanReady = await raceWithBudget('definition:python-index',
       this.ensureScanned().then(() => true), budgetMs, token);
-    if (!scanReady) { return []; }
+    // 全量扫描超预算:①② 首查空且二遍查询未及执行——枚举不完整,同样标 partial。
+    if (!scanReady) { return { candidates: [], partial: true }; }
     }
-    if (out.length > 0) { return out; }
+    if (out.length > 0) { return { candidates: out, partial: false }; }
 
     // Reverse lookup uses exact class identities as well, so unrelated same-name
     // classes in another role/package cannot become sibling mixin providers.
     const descendants: Array<{ order: number; sub: PythonClassDef }> = [];
     for (const defs of this.byName.values()) {
-      if (token?.isCancellationRequested) { return []; }
+      if (token?.isCancellationRequested) { return { candidates: [], partial: true }; }
       for (const sub of defs) {
         if (!this.compatibleContext(sub, enclosing)) { continue; }
         if (this.mroClasses(sub).some(cls => this.classKey(cls) === this.classKey(enclosing))) {
@@ -1282,7 +1299,21 @@ export class PythonClassIndex {
     } else {
       jumpLog('info', () => `py 落空: 静态类/组合根/反向后代均无 ${methodName}(${queryTimer()}ms)`);
     }
-    return out;
+    return { candidates: out, partial: false };
+  }
+
+  /** 兼容入口:仅候选数组(测试/旧调用面);需要 partial 状态用 resolveSelfMethodResolution */
+  async resolveSelfMethodCandidates(
+    filePath: string,
+    line: number,
+    methodName: string,
+    document?: vscode.TextDocument,
+    token?: vscode.CancellationToken,
+    budgetMs: number = INTERACTIVE_INDEX_WAIT_MS
+  ): Promise<PythonMethodLocation[]> {
+    const { candidates } = await this.resolveSelfMethodResolution(
+      filePath, line, methodName, document, token, budgetMs);
+    return candidates;
   }
 
   /** 兼容入口:首个候选(唯一实现场景即唯一解) */

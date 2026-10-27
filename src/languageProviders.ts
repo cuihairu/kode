@@ -3603,7 +3603,8 @@ export interface JumpLayerTrace {
     | 'context';
   /** 本层查询的符号(方法层为光标所在段/声明名,非根符号) */
   query: string;
-  status: 'hit' | 'miss' | 'skip';
+  /** partial = 预算到期枚举不完整(IDE-IDX-018,python-mro 层),非权威 miss */
+  status: 'hit' | 'miss' | 'skip' | 'partial';
   /** 命中落点或落空原因(object=<类名>/file=<文件名> 子探结果、异常等) */
   detail?: string;
 }
@@ -4253,17 +4254,21 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       jumpLog('info', () => '层2 python-mro 跳过(索引未注入)');
     } else {
       try {
-        const resolved = await this.pythonClassIndex.resolveSelfMethodCandidates(
+        // IDE-IDX-018:取带 partial 标记的完整结果——预算到期只拿到静态目标时
+        // 不得把这枚(可能是空的)候选集发布成完整枚举的权威负结论。
+        const resolution = await this.pythonClassIndex.resolveSelfMethodResolution(
           document.fileName,
           position.line,
           symbol,
           document,
           token
         );
+        const resolved = resolution.candidates;
+        const partialNote = resolution.partial ? ' (partial: budget expired)' : '';
         const candidates = declaredMethodName ? resolved.filter(candidate =>
           candidate.filePath !== document.fileName || candidate.line !== position.line) : resolved;
         if (candidates.length === 1) {
-          const detail = describeMethodLocation(candidates[0]);
+          const detail = describeMethodLocation(candidates[0]) + partialNote;
           layers.push({ layer: 'python-mro', query: symbol, status: 'hit', detail });
           jumpLog('info', () =>
             `层2 python-mro 命中 → ${candidates[0].filePath}:${candidates[0].line + 1}` +
@@ -4276,7 +4281,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             layer: 'python-mro',
             query: symbol,
             status: 'hit',
-            detail: `${candidates.length} candidates: ${candidates.map(describeMethodLocation).join(', ')}`
+            detail: `${candidates.length} candidates: ${candidates.map(describeMethodLocation).join(', ')}${partialNote}`
           });
           jumpLog('info', () =>
             `层2 python-mro 命中 ${candidates.length} 候选 → [${candidates
@@ -4286,11 +4291,23 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           );
           return { location: candidates.map(toDefinitionLocation), layers };
         }
-        const missDetail = enclosingName
-          ? 'no provider in mro/composition-roots/descendants'
-          : enclosingNote || 'no enclosing class';
-        layers.push({ layer: 'python-mro', query: symbol, status: 'miss', detail: missDetail });
-        jumpLog('info', () => `层2 python-mro 落空(${missDetail}) ${pyTimer()}ms`);
+        if (resolution.partial) {
+          // IDE-IDX-018:预算到期枚举不完整——落空不是权威负结论,记 partial,
+          // 继续走后续层兜底;下次查询预算/索引就绪后自然补齐。
+          layers.push({
+            layer: 'python-mro',
+            query: symbol,
+            status: 'partial',
+            detail: 'budget expired before full enumeration'
+          });
+          jumpLog('info', () => `层2 python-mro 预算到期,记 partial 不作权威落空 ${pyTimer()}ms`);
+        } else {
+          const missDetail = enclosingName
+            ? 'no provider in mro/composition-roots/descendants'
+            : enclosingNote || 'no enclosing class';
+          layers.push({ layer: 'python-mro', query: symbol, status: 'miss', detail: missDetail });
+          jumpLog('info', () => `层2 python-mro 落空(${missDetail}) ${pyTimer()}ms`);
+        }
       } catch (error) {
         const missDetail = `error: ${layerErrorMessage(error)}`;
         layers.push({ layer: 'python-mro', query: symbol, status: 'miss', detail: missDetail });

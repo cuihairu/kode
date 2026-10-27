@@ -44,17 +44,17 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/languageProviders.ts', 1281, 'export function validateDocument('],
   ['src/languageProviders.ts', 1305, 'shadowObserveDefDocument'],
   ['src/languageProviders.ts', 1314, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 3693, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 4046, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 4152, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 4933, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 3694, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 4047, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 4153, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 4950, 'provideCompletionItems('],
   ['src/diagnosticScheduler.ts', 157, 'requestQueued'],
   ['src/diagnosticScheduler.ts', 181, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 154, 'getDocumentLines'],
-  ['src/pythonClassIndex.ts', 560, 'ensureCompositionRoots'],
-  ['src/pythonClassIndex.ts', 1082, 'resolveClassBase'],
-  ['src/pythonClassIndex.ts', 1192, '①② 两段查询']
+  ['src/pythonClassIndex.ts', 570, 'ensureCompositionRoots'],
+  ['src/pythonClassIndex.ts', 1092, 'resolveClassBase'],
+  ['src/pythonClassIndex.ts', 1204, '①② 两段查询']
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {

@@ -286,3 +286,50 @@ describe('multiple asset projects', () => {
     ]);
   });
 });
+
+describe('IDE-IDX-018:部分候选与完整候选状态区分', () => {
+  it('完整枚举 partial=false;组合根超预算时静态目标照常返回且 partial=true', async () => {
+    const source = 'from mix import RunMixin\nclass Avatar(RunMixin):\n    def run(self):\n        self.tick()\n        self.remote()\n';
+    const { files, index } = fixture({ 'mix.py': tick, 'avatar.py': source });
+
+    // 完整收敛路径:①②③ 全查完无命中 → 空集 + partial=false(可发布权威负结论)。
+    const complete = await index.resolveSelfMethodResolution(files['avatar.py'], 3, 'remote');
+    expect(complete.partial).toBe(false);
+    expect(complete.candidates).toHaveLength(0);
+    const completeHit = await index.resolveSelfMethodResolution(files['avatar.py'], 3, 'tick');
+    expect(completeHit.partial).toBe(false);
+    expect(completeHit.candidates).toMatchObject([{ filePath: files['mix.py'] }]);
+
+    // 组合根派生挂起 + 注入小预算:超时路径返回的静态目标必须带 partial=true
+    // (②组合根与③反向后代未查全,空集同理——不得当作完整枚举的负结论)。
+    (index as unknown as { ensureCompositionRoots: () => Promise<void> })
+      .ensureCompositionRoots = () => new Promise<void>(() => undefined);
+    const partialHit = await index.resolveSelfMethodResolution(files['avatar.py'], 3, 'tick', undefined, undefined, 5);
+    expect(partialHit.partial).toBe(true);
+    expect(partialHit.candidates).toMatchObject([{ filePath: files['mix.py'] }]);
+    const partialMiss = await index.resolveSelfMethodResolution(files['avatar.py'], 3, 'remote', undefined, undefined, 5);
+    expect(partialMiss.partial).toBe(true);
+    expect(partialMiss.candidates).toHaveLength(0);
+  });
+
+  it('provider 层:partial 空集不发布完整枚举负结论,python-mro 记 partial 而非 miss', async () => {
+    const source = 'from mix import RunMixin\nclass Avatar(RunMixin):\n    def run(self):\n        self.remote()\n';
+    const { files, index } = fixture({ 'mix.py': tick, 'avatar.py': source });
+    (index as unknown as { ensureCompositionRoots: () => Promise<void> })
+      .ensureCompositionRoots = () => new Promise<void>(() => undefined);
+    const manager = {
+      resolvePropertyDefinitionForClass: async () => null, resolvePropertyDefinition: async () => null,
+      resolveMethodDefinitionForClass: async () => null, resolveMethodDefinition: async () => null
+    };
+    const provider = new PythonDefinitionProvider(manager as never, index);
+    const document = makeTextDocument(source, { fileName: files['avatar.py'], languageId: 'python' });
+    const traced = await provider.provideDefinitionTraced(document, new Position(3, 15));
+    const mroLayer = traced.layers.find(layer => layer.layer === 'python-mro');
+    expect(mroLayer?.status).toBe('partial');
+    // 同场景完整收敛(不挂起)仍是权威 miss:partial 只标记预算到期,不改判 miss 语义。
+    const freshIndex = new PythonClassIndex();
+    const freshProvider = new PythonDefinitionProvider(manager as never, freshIndex);
+    const freshTraced = await freshProvider.provideDefinitionTraced(document, new Position(3, 15));
+    expect(freshTraced.layers.find(layer => layer.layer === 'python-mro')?.status).toBe('miss');
+  }, 20000);
+});
