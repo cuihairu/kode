@@ -1065,6 +1065,10 @@ export function activate(context: vscode.ExtensionContext) {
         event.affectsConfiguration('kbengine.binPath') ||
         event.affectsConfiguration('kbengine.configPath')) {
       bumpRootConfigGeneration('db-config');
+      // IDE-SCH-005:表前缀/连接配置切换 → 打开中的 schema 预览与模拟文档
+      // 立即重取(新表名不等文件保存;快照面由 tablePrefix/generation 轴判过期)
+      databaseSchemaProvider.refresh();
+      databaseSimulationProvider.refresh();
     }
 
     // binPath/configPath 变更影响数据库连接读值(批131):只失效缓存本体;

@@ -751,6 +751,15 @@ export class KBEngineDatabaseSimulationProvider implements vscode.TextDocumentCo
     return buildDatabaseSimulationText(getSimulationEntityName(uri));
   }
 
+  /** IDE-SCH-005:全部打开中的 .dbsim 文档重取(表前缀切换即刻换新表名) */
+  refresh(): void {
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.uri.scheme === KBENGINE_DATABASE_SIMULATION_SCHEME) {
+        this.onDidChangeEmitter.fire(document.uri);
+      }
+    }
+  }
+
   dispose(): void {
     this.onDidChangeEmitter.dispose();
   }

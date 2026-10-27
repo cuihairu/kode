@@ -229,11 +229,17 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
   }
 
   refresh(entityName?: string): void {
-    if (!entityName) {
+    if (entityName) {
+      this.onDidChangeEmitter.fire(createDatabaseSchemaUri(entityName));
       return;
     }
-
-    this.onDidChangeEmitter.fire(createDatabaseSchemaUri(entityName));
+    // IDE-SCH-005:无参 = 全部打开中的 .schema 文档重取(表前缀/连接配置切换
+    // 即刻换新表名,不等文件保存;快照面由 tablePrefix/generation 轴判过期)
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.uri.scheme === KBENGINE_DATABASE_SCHEMA_SCHEME) {
+        this.onDidChangeEmitter.fire(document.uri);
+      }
+    }
   }
 
   dispose(): void {
