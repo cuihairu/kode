@@ -189,25 +189,32 @@ function excludeDirNames(exclude: vscode.GlobPattern | null | undefined): Set<st
   return names;
 }
 
-function walkExternalRoot(
+async function walkExternalRoot(
   root: string,
   match: (name: string) => boolean,
   skipDirs: Set<string>,
-  merged: Map<string, vscode.Uri>
-): void {
+  merged: Map<string, vscode.Uri>,
+  token?: vscode.CancellationToken
+): Promise<void> {
+  if (token?.isCancellationRequested) { return; }
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
+    entries = await fs.promises.readdir(root, { withFileTypes: true });
   } catch {
     return;
   }
+  let visited = 0;
   for (const entry of entries) {
+    if (++visited % 256 === 0) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+    if (token?.isCancellationRequested) { return; }
     const full = path.join(root, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === '.git' || skipDirs.has(entry.name)) {
         continue;
       }
-      walkExternalRoot(full, match, skipDirs, merged);
+      await walkExternalRoot(full, match, skipDirs, merged, token);
       continue;
     }
     if (entry.isFile() && match(entry.name)) {
@@ -222,14 +229,15 @@ function walkExternalRoot(
  */
 export async function findFilesAcrossRoots(
   glob: string,
-  exclude?: vscode.GlobPattern | null
+  exclude?: vscode.GlobPattern | null,
+  token?: vscode.CancellationToken
 ): Promise<vscode.Uri[]> {
   // PR1 性能打点:发现耗时拆 workspace glob 与外部根遍历两段,只记计数/耗时,
   // 不改发现口径与去重行为。
   const discovery = startLanguageServiceOperation('file-discovery');
   const merged = new Map<string, vscode.Uri>();
   const stopWorkspaceGlob = discovery.startSubPhase('workspace-glob');
-  const base = await vscode.workspace.findFiles(glob, exclude);
+  const base = await vscode.workspace.findFiles(glob, exclude, undefined, token);
   stopWorkspaceGlob();
   for (const uri of base) {
     merged.set(normalizeForCompare(uri.fsPath), uri);
@@ -240,7 +248,8 @@ export async function findFilesAcrossRoots(
       const skipDirs = excludeDirNames(exclude);
       const stopExternalWalk = discovery.startSubPhase('external-walk');
       for (const root of getExternalScanRoots()) {
-        walkExternalRoot(root, match, skipDirs, merged);
+        if (token?.isCancellationRequested) { break; }
+        await walkExternalRoot(root, match, skipDirs, merged, token);
       }
       stopExternalWalk();
     }

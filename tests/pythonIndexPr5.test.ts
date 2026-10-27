@@ -260,9 +260,8 @@ describe('PR5 ⑤ 删除/重命名/基类变更后旧索引项移除', () => {
       fs.writeFileSync(paths['b.py'], 'class Beta(Gamma):\n\tdef run(self):\n\t\tself.meth()\n', 'utf8');
       fs.writeFileSync(path.join(dir, 'g.py'), 'class Gamma:\n\tdef meth(self):\n\t\treturn 1\n', 'utf8');
       routePy([paths['b.py'], path.join(dir, 'g.py')]);
-      // 新文件落盘走 create 失效(真实 watcher onDidCreate 同路径):换代后全量
-      // 口径 API 重新发现;onFileChanged 只重读被编辑的 b.py 本身
-      index.invalidate(path.join(dir, 'g.py'), 'create');
+      // 新文件由 watcher 定点读入，无需使全仓扫描换代。
+      await index.onFileChanged(path.join(dir, 'g.py'));
       await index.onFileChanged(paths['b.py']);
       expect((await index.computeMRO('Beta'))).toContain('Gamma');
       expect((await index.computeMRO('Beta'))).not.toContain('Alpha');

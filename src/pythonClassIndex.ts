@@ -4,8 +4,13 @@ import { performance } from 'perf_hooks';
 import * as vscode from 'vscode';
 import { deriveCompositionRoots, type CompositionRootMap } from './compositionRoots';
 import { findFilesAcrossRoots } from './scanRoots';
+import { PY_SCAN_EXCLUDE, PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
+import { parsePythonFile } from './pythonParser';
+import type { PythonClassDef, ParsedPythonFile } from './pythonParser';
+import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { SemanticDependencyGraph } from './dependencyGraph';
+import { INTERACTIVE_INDEX_WAIT_MS, raceWithBudget } from './hoverBudget';
 import { jumpLog, jumpTimeStart } from './navigationLog';
 import {
   recordLanguageServiceOperation,
@@ -22,30 +27,6 @@ import {
  * `self.<method>` 的真实实现位置**。跳转与 CodeLens 共用本索引。
  */
 
-/** 一个类的定义(含它自己的 `def` 方法) */
-export interface PythonClassDef {
-  name: string;
-  /** 基类表达式，保留模块与 import 别名。 */
-  bases: string[];
-  qualifiedName?: string;
-  filePath: string;
-  /** 0-based 起始行(class 语句行) */
-  startLine: number;
-  /** 0-based 结束行(不含) */
-  endLine: number;
-  /** 方法名 → 定义位置(0-based 行/列) */
-  methods: Map<string, { line: number; character: number }>;
-}
-
-/** 解析结果:类按文件聚合 + 全局 className → 定义 多映射(同名类可能多处) */
-export interface ParsedPythonFile {
-  filePath: string;
-  classes: PythonClassDef[];
-  imports?: Map<string, { module: string; symbol?: string }>;
-  /** 模块级实例赋值 `NAME = CLASS(...)`(types.xml implementedBy 指向实现对象,经此解析 实例→类) */
-  instanceAssignments: Array<{ variable: string; className: string; line: number }>;
-}
-
 /**
  * 扫描排除面:官方三件套之外再排引擎构建/依赖/临时树。
  * 依据(2026-10-16 本机实测,D:\workspaces\kbengine):只排 node_modules/
@@ -53,149 +34,10 @@ export interface ParsedPythonFile {
  * 平均 10.13ms/文件的顺序读 ≈ 144 秒——即用户实测的「跳转前加载很久」;
  * 收窄后同仓 117 个文件 ≈ 1.2 秒。业务脚本(scripts/tools 等)不受影响。
  */
-export const PY_SCAN_EXCLUDE =
-  '**/{node_modules,third_party,.git,vcpkg,build,dist,out,.tmp,perf,.venv,venv,site-packages,__pycache__}/**';
+export { PY_SCAN_EXCLUDE } from './pythonScanRules';
 
-/** Mask comments and literals without shifting any source positions. */
-function pythonCodeLines(content: string): string[] {
-  let quote = '';
-  let triple = false;
-  return content.split(/\r?\n/).map(raw => {
-    let masked = '';
-    for (let col = 0; col < raw.length; col += 1) {
-      const ch = raw[col];
-      if (quote) {
-        if (ch === '\\') { masked += '  '; col += 1; continue; }
-        if (triple && raw.slice(col, col + 3) === quote.repeat(3)) {
-          quote = ''; triple = false; masked += '   '; col += 2;
-        } else if (!triple && ch === quote) { quote = ''; masked += ' '; }
-        else { masked += ' '; }
-        continue;
-      }
-      if (ch === '#') { masked += ' '.repeat(raw.length - col); break; }
-      if (ch === "'" || ch === '"') {
-        quote = ch;
-        triple = raw.slice(col, col + 3) === ch.repeat(3);
-        masked += triple ? '___' : '_';
-        if (triple) { col += 2; }
-      } else { masked += ch; }
-    }
-    return masked;
-  });
-}
-
-export function isPythonCodePosition(content: string, line: number, character: number): boolean {
-  const raw = content.split(/\r?\n/)[line] ?? '';
-  const col = /\w/.test(raw[character] ?? '') ? character : Math.max(0, character - 1);
-  return /\w/.test(raw[col] ?? '') && pythonCodeLines(content)[line]?.[col] === raw[col];
-}
-
-/** Join bracket/backslash continuations, retaining the first line's coordinates. */
-function pythonStatements(content: string): Array<{ text: string; line: number; endLine: number; indent: number }> {
-  const statements: Array<{ text: string; line: number; endLine: number; indent: number }> = [];
-  let depth = 0;
-  let pending = '';
-  let start = 0;
-  let indent = 0;
-  for (const [line, masked] of pythonCodeLines(content).entries()) {
-    if (!pending && !masked.trim()) { continue; }
-    if (!pending) {
-      start = line;
-      indent = masked.match(/^[ \t]*/)![0].replace(/\t/g, '    ').length;
-    }
-    for (const ch of masked) {
-      if ('([{'.includes(ch)) { depth += 1; }
-      if (')]}'.includes(ch)) { depth = Math.max(0, depth - 1); }
-    }
-    const continued = /\\\s*$/.test(masked);
-    pending += (pending ? ' ' : '') + masked.replace(/\\\s*$/, '');
-    if (depth === 0 && !continued) {
-      statements.push({ text: pending, line: start, endLine: line, indent });
-      pending = '';
-    }
-  }
-  return statements;
-}
-
-/** Base expression under the cursor, including multiline headers and aliases. */
-export function getPythonBaseExpressionAtPosition(content: string, line: number, character: number): string | null {
-  const statement = pythonStatements(content).find(item => item.line <= line && line <= item.endLine && /^\s*class\s/.test(item.text));
-  if (!statement) { return null; }
-  const header = /^\s*class\s+\w+\s*\((.*)\)\s*:/.exec(statement.text);
-  if (!header) { return null; }
-  const bases = header[1].split(',').map(base => base.trim());
-  const raw = pythonCodeLines(content)[line];
-  for (const match of raw.matchAll(/[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*/g)) {
-    if (character >= match.index! && character <= match.index! + match[0].length && bases.includes(match[0])) {
-      // The class name itself is not a base, even if it shadows a parent name.
-      if (line === statement.line && match.index! < raw.indexOf('(')) { return null; }
-      return match[0];
-    }
-  }
-  return null;
-}
-
-/** Parse class/function scopes and import bindings without executing Python. */
-export function parsePythonFile(content: string, filePath: string): ParsedPythonFile {
-  const classes: PythonClassDef[] = [];
-  const imports: NonNullable<ParsedPythonFile['imports']> = new Map();
-  const instanceAssignments: ParsedPythonFile['instanceAssignments'] = [];
-  const stack: Array<{ indent: number; cls?: PythonClassDef; function?: boolean }> = [];
-  const endLine = content.split(/\r?\n/).length;
-  for (const statement of pythonStatements(content)) {
-    const { text, line, indent } = statement;
-    if (!text.trim()) { continue; }
-    while (stack.length && stack[stack.length - 1].indent >= indent) {
-      const closed = stack.pop()!;
-      if (closed.cls) { closed.cls.endLine = line; }
-    }
-    // A class statement nested inside a function creates a local runtime class,
-    // not an importable module/class-suite symbol for workspace-wide navigation.
-    // Keep the enclosing function scope until its indentation closes.
-    if (stack.some(scope => scope.function)) { continue; }
-    const classMatch = /^\s*class\s+([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*:/.exec(text);
-    if (classMatch) {
-      const parent = [...stack].reverse().find(scope => scope.cls)?.cls;
-      const cls: PythonClassDef = {
-        name: classMatch[1],
-        qualifiedName: parent ? `${parent.qualifiedName ?? parent.name}.${classMatch[1]}` : classMatch[1],
-        bases: (classMatch[2] ?? '').split(',').map(base => base.trim())
-          .filter(base => /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$/.test(base) && base !== 'object'),
-        filePath, startLine: line, endLine, methods: new Map()
-      };
-      classes.push(cls);
-      stack.push({ indent, cls });
-      continue;
-    }
-    const defMatch = /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/.exec(text);
-    if (defMatch) {
-      // Only functions directly inside a class suite are methods; closures aren't.
-      const scope = stack[stack.length - 1];
-      if (scope?.cls) {
-        const name = defMatch[1];
-        scope.cls.methods.set(name, { line, character: text.indexOf(name, text.indexOf('def') + 3) });
-      }
-      stack.push({ indent, function: true });
-      continue;
-    }
-    const from = /^\s*from\s+([.\w]+)\s+import\s+(.+)$/.exec(text);
-    const imported = /^\s*import\s+(.+)$/.exec(text);
-    if (from || imported) {
-      const bindings = (from ? from[2] : imported![1]).replace(/[()]/g, '').split(',');
-      for (const binding of bindings) {
-        const match = /^\s*([\w.]+)(?:\s+as\s+(\w+))?\s*$/.exec(binding);
-        if (!match) { continue; }
-        if (from) { imports.set(match[2] ?? match[1], { module: from[1], symbol: match[1] }); }
-        else { imports.set(match[2] ?? match[1].split('.')[0], { module: match[2] ? match[1] : match[1].split('.')[0] }); }
-      }
-    }
-    if (indent === 0) {
-      const assign = /^([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)\s*\(/.exec(text);
-      if (assign) { instanceAssignments.push({ variable: assign[1], className: assign[2], line }); }
-    }
-  }
-  return { filePath, classes, imports, instanceAssignments };
-}
+export { parsePythonFile, isPythonCodePosition, getPythonBaseExpressionAtPosition } from './pythonParser';
+export type { PythonClassDef, ParsedPythonFile } from './pythonParser';
 
 /** C3 线性化(Python3 真实 MRO):l(X) = X + merge(l(B1), l(B2), …, [B1,B2,…]) */
 export function linearizeC3(name: string, resolve: (base: string) => PythonClassDef[]): string[] {
@@ -494,6 +336,9 @@ export class PythonClassIndex {
 
   /** Filesystem/configuration events invalidate the scan; open buffers survive. */
   invalidate(filePath?: string, changeKind: 'change' | 'create' | 'delete' = 'change'): void {
+    // An unindexed Python file has no class/MRO entry to remove. In particular,
+    // create/change notifications during discovery must not restart the scan.
+    if (filePath?.toLowerCase().endsWith('.py') && !this.fileCache.has(filePath)) { return; }
     this.generation += 1;
     if (!filePath) {
       // 全量失效(工作区根切换/关停面):五轴全部递增
@@ -544,10 +389,12 @@ export class PythonClassIndex {
   }
 
   async onFileChanged(filePath: string): Promise<void> {
-    if (!filePath.toLowerCase().endsWith('.py') || !this.fileCache.has(filePath)) {
+    if (!filePath.toLowerCase().endsWith('.py')) {
       this.invalidate(filePath);
       return;
     }
+    if (!this.fileCache.has(filePath) &&
+        filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part))) { return; }
     this.revisions.set(filePath, (this.revisions.get(filePath) ?? 0) + 1);
     await this.loadFile(filePath, -1);
   }
@@ -558,15 +405,28 @@ export class PythonClassIndex {
   }
 
   private updateFile(filePath: string, content: string, version: number): void {
+    const parseStartedAt = performance.now();
+    const parsed = parsePythonFile(content, filePath);
+    this.commitParsedFile(filePath, parsed, version, performance.now() - parseStartedAt);
+  }
+
+  private async updateFileResponsive(filePath: string, content: string, version: number,
+    revision: number): Promise<void> {
+    const parseStartedAt = performance.now();
+    const result = await parsePythonFileResponsive(content, filePath, revision);
+    if (result.revision !== (this.revisions.get(filePath) ?? 0)) { return; }
+    this.commitParsedFile(filePath, result.parsed, version, performance.now() - parseStartedAt);
+  }
+
+  private commitParsedFile(filePath: string, parsed: ParsedPythonFile, version: number,
+    parseMs: number): void {
     const previous = this.fileCache.get(filePath)?.parsed;
     this.generation += 1;
     this.mroCache.clear();
     this.unindexFile(filePath);
     // PR1 打点:单文件解析耗时(document-parse),版本号随样本记录,
     // 解析结果与顺序保持原样(只观测,不改行为)。
-    const parseStartedAt = performance.now();
-    const parsed = parsePythonFile(content, filePath);
-    recordLanguageServiceOperation('document-parse', performance.now() - parseStartedAt, {
+    recordLanguageServiceOperation('document-parse', parseMs, {
       fileKind: 'python',
       documentVersion: version,
       fileParseCount: 1
@@ -643,18 +503,18 @@ export class PythonClassIndex {
   }
 
   private unindexFile(filePath: string): void {
-    for (const [name, list] of [...this.byName.entries()]) {
+    const previous = this.fileCache.get(filePath)?.parsed;
+    if (!previous) { return; }
+    for (const name of new Set(previous.classes.map(cls => cls.name))) {
+      const list = this.byName.get(name);
+      if (!list) { continue; }
       const filtered = list.filter(item => item.filePath !== filePath);
-      if (filtered.length === list.length) {
-        continue;
-      }
       if (filtered.length === 0) {
         this.byName.delete(name);
       } else {
         this.byName.set(name, filtered);
       }
     }
-
   }
 
   /** 首次查询时全量扫描(幂等,失败不抛) */
@@ -937,10 +797,8 @@ export class PythonClassIndex {
   }
 
   /**
-   * 文件发现(keyed 单例):后台首扫与按需 staging 共用同一份结果与顺序——
-   * staging 按 discovery 序补文件,保证 byName 插入序与全量扫描口径一致
-   * (候选顺序依赖类首建序)。同代缓存直接复用(ensureTask 完成态重入会
-   * 重新执行任务,这里显式拦住);换代/失败经 keyed 恢复面重跑。
+   * 文件发现(keyed 单例)只供后台全扫；请求所需的已知文件按路径定向补载。
+   * 同代缓存直接复用，换代或失败后可重新发现。
    */
   private async ensureDiscovered(scanGeneration: number): Promise<vscode.Uri[]> {
     if (this.discoveredFiles && this.discoveredGeneration === scanGeneration) {
@@ -987,13 +845,15 @@ export class PythonClassIndex {
    * Definition 请求前置(②):把解析该请求可能需要的文件补进索引——
    * ① 查询文件自身;② 其 import 的模块候选路径(与 resolveSymbol 同一口径);
    * ③ 同目录兄弟 .py(隐式就近引用;上限防大目录全读)。
-   * 补载顺序 = 工作区 discovery 序(与全量扫描同一插入口径,稳定候选顺序);
-   * 全部走 RequestLocal 单文件任务,不触发全仓解析等待。
+   * 候选按 import 搜索顺序、再按同目录文件名顺序补载；全程只需已知路径。
+   * 全部走 RequestLocal 单文件任务，不等待全仓 discovery。
    */
-  private async stageRequestFiles(filePath: string): Promise<void> {
+  private async stageRequestFiles(filePath: string, token?: vscode.CancellationToken): Promise<void> {
+    if (token?.isCancellationRequested) { return; }
     if (!this.fileCache.has(filePath)) {
       await this.loadFileOnDemand(filePath);
     }
+    if (token?.isCancellationRequested) { return; }
     const cached = this.fileCache.get(filePath);
     if (!cached) {
       return; // 文件不可读:后续解析按落空降级
@@ -1006,27 +866,19 @@ export class PythonClassIndex {
     }
     try {
       const dir = path.dirname(filePath);
-      const siblings = fs.readdirSync(dir).filter(name => name.toLowerCase().endsWith('.py'));
+      const siblings = (await fs.promises.readdir(dir))
+        .filter(name => name.toLowerCase().endsWith('.py')).sort();
       for (const sibling of siblings.slice(0, 64)) {
         targets.add(path.join(dir, sibling));
       }
     } catch {
       // 目录不可列(已删除/无权限):按落空降级
     }
-    // discovery 序补载:keyed 发现任务通常已在推进(激活即排程/入口已排),
-    // 这里等待它(单次 glob,廉价)以拿到全仓清单顺序;发现失败按原序降级。
-    let ordered = [...targets];
-    try {
-      const discovered = await this.ensureDiscovered(this.scanGeneration);
-      const rank = new Map(discovered.map((uri, index) => [uri.fsPath.toLowerCase(), index]));
-      ordered = ordered.sort((left, right) =>
-        (rank.get(left.toLowerCase()) ?? Number.MAX_SAFE_INTEGER) -
-        (rank.get(right.toLowerCase()) ?? Number.MAX_SAFE_INTEGER));
-    } catch {
-      // 发现失败:按原序(staging 本身仍可用)
+    const missing = [...targets].filter(target => !this.fileCache.has(target)).slice(0, 64);
+    for (let offset = 0; offset < missing.length; offset += 8) {
+      if (token?.isCancellationRequested) { return; }
+      await Promise.all(missing.slice(offset, offset + 8).map(target => this.loadFileOnDemand(target)));
     }
-    const missing = ordered.filter(target => !this.fileCache.has(target)).slice(0, 64);
-    await Promise.all(missing.map(target => this.loadFileOnDemand(target)));
   }
 
   /**
@@ -1034,18 +886,23 @@ export class PythonClassIndex {
    * 类名同名 glob(星号星号斜杠 &lt;ClassName&gt;.py)补入候选文件后重试一次
    * ——代价是一次定点发现,不是全仓扫描。
    */
-  private async stageClassNameFiles(names: string[]): Promise<void> {
+  private async stageClassNameFiles(names: string[], token?: vscode.CancellationToken): Promise<void> {
+    if (token?.isCancellationRequested) { return; }
     const unique = [...new Set(names.filter(name => /^[A-Za-z_]\w*$/.test(name)))].slice(0, 8);
     const discovered = await Promise.all(unique.map(async name => {
       try {
-        return await findFilesAcrossRoots(`**/${name}.py`, PY_SCAN_EXCLUDE);
+        return await findFilesAcrossRoots(`**/${name}.py`, PY_SCAN_EXCLUDE, token);
       } catch {
         return [];
       }
     }));
+    if (token?.isCancellationRequested) { return; }
     const missing = discovered.flat().map(uri => uri.fsPath)
       .filter(target => !this.fileCache.has(target)).slice(0, 16);
-    await Promise.all(missing.map(target => this.loadFileOnDemand(target)));
+    for (let offset = 0; offset < missing.length; offset += 8) {
+      if (token?.isCancellationRequested) { return; }
+      await Promise.all(missing.slice(offset, offset + 8).map(target => this.loadFileOnDemand(target)));
+    }
   }
 
   private async loadFile(filePath: string, version: number): Promise<void> {
@@ -1055,7 +912,7 @@ export class PythonClassIndex {
       const open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
       const content = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
       if ((this.revisions.get(filePath) ?? 0) !== revision) { return; }
-      this.updateFile(filePath, content, open?.version ?? version);
+      await this.updateFileResponsive(filePath, content, open?.version ?? version, revision);
     } catch {
       // A removed/unreadable file must not leave navigable stale classes.
       // PR5:从未入索引的文件(staging 探测的候选路径不存在等)只记录版本,
@@ -1090,22 +947,27 @@ export class PythonClassIndex {
       return;
     }
     this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
-    this.updateFile(document.fileName, document.getText(), document.version);
+    await this.updateFileResponsive(document.fileName, document.getText(), document.version,
+      this.revisions.get(document.fileName)!);
   }
 
-  async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number): Promise<PythonClassDef | null> {
+  async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number,
+    token?: vscode.CancellationToken): Promise<PythonClassDef | null> {
+    if (token?.isCancellationRequested) { return null; }
     await this.onDocumentChanged(document);
     // ② PR5:先查快照+已建索引,请求所需文件按需单文件解析;全量扫描后台补,
     // 不再让基类跳转等 107s 级冷启动扫描。
     this.scheduleBackgroundScan();
     const owner = line === undefined ? undefined : await this.findEnclosingClass(document.fileName, line) ?? undefined;
-    await this.stageRequestFiles(document.fileName);
+    await this.stageRequestFiles(document.fileName, token);
+    if (token?.isCancellationRequested) { return null; }
     const resolved = this.resolveSymbol(document.fileName, expression, new Set(), owner);
     if (resolved) {
       return resolved;
     }
     // 定点兜底:一类一文件布局下按类名补 `**/<Name>.py` 后重试一次
-    await this.stageClassNameFiles([expression.split('.')[0]]);
+    await this.stageClassNameFiles([expression.split('.')[0]], token);
+    if (token?.isCancellationRequested) { return null; }
     return this.resolveSymbol(document.fileName, expression, new Set(), owner);
   }
 
@@ -1165,8 +1027,10 @@ export class PythonClassIndex {
     filePath: string,
     line: number,
     methodName: string,
-    document?: vscode.TextDocument
+    document?: vscode.TextDocument,
+    token?: vscode.CancellationToken
   ): Promise<PythonMethodLocation[]> {
+    if (token?.isCancellationRequested) { return []; }
     const queryTimer = jumpTimeStart();
     jumpLog('info', () => `py 查询 ${path.basename(filePath)}:${line + 1} 方法=${methodName}`);
     if (document) { await this.onDocumentChanged(document); }
@@ -1174,11 +1038,13 @@ export class PythonClassIndex {
     // (查询文件/同目录/import 候选)按需单文件解析,全量后台补。
     this.scheduleBackgroundScan();
     const enclosing = await this.findEnclosingClass(filePath, line);
+    if (token?.isCancellationRequested) { return []; }
     if (!enclosing) {
       jumpLog('info', () => 'py 查询落空: 光标不在任何类内(或文件未入索引)');
       return [];
     }
-    await this.stageRequestFiles(filePath);
+    await this.stageRequestFiles(filePath, token);
+    if (token?.isCancellationRequested) { return []; }
     const seen = new Set<string>();
     const push = (loc: PythonMethodLocation | null, out: PythonMethodLocation[]): void => {
       if (!loc) {
@@ -1210,12 +1076,15 @@ export class PythonClassIndex {
     // 每根先走精确 Python 类身份，再走当前资产项目的 .def 声明 mixin
     // (Parent → Interfaces → Components);多根/多处命中全部保留(上面 push 去重),
     // 由 provider 出 Location[] 列表,不替用户跳第一个。
-    await this.ensureCompositionRoots();
+    const rootsReady = await raceWithBudget('definition:composition-roots',
+      this.ensureCompositionRoots().then(() => true), INTERACTIVE_INDEX_WAIT_MS, token);
+    if (!rootsReady) { return []; }
     const scope = [...this.rootsByScope.keys()].filter(root => filePath.startsWith(root + path.sep))
       .sort((left, right) => right.length - left.length)[0];
     const composition = scope ? this.rootsByScope.get(scope) : undefined;
     const rootNames = composition?.roots ?? [];
     for (const root of rootNames) {
+      if (token?.isCancellationRequested) { return []; }
       const roots = (this.byName.get(root) ?? []).filter(cls => this.compatibleContext(cls, enclosing));
       for (const rootClass of roots) {
         const contains = this.mroClasses(rootClass).some(cls => this.classKey(cls) === this.classKey(enclosing));
@@ -1242,13 +1111,16 @@ export class PythonClassIndex {
     }
     if (out.length > 0 || pass === 1) { break; }
     // ①② 均落空:等后台全量收敛后重查一遍(失败/慢扫描在 ensureScanned 内部消化)
-    await this.ensureScanned();
+    const scanReady = await raceWithBudget('definition:python-index',
+      this.ensureScanned().then(() => true), INTERACTIVE_INDEX_WAIT_MS, token);
+    if (!scanReady) { return []; }
     }
     if (out.length > 0) { return out; }
 
     // Reverse lookup uses exact class identities as well, so unrelated same-name
     // classes in another role/package cannot become sibling mixin providers.
     for (const defs of this.byName.values()) {
+      if (token?.isCancellationRequested) { return []; }
       for (const sub of defs) {
         if (!this.compatibleContext(sub, enclosing)) { continue; }
         if (this.mroClasses(sub).some(cls => this.classKey(cls) === this.classKey(enclosing))) {

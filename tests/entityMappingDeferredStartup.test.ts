@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { IndexScheduler } from '../src/indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from '../src/indexScheduler';
 import { EntityMappingManager } from '../src/entityMapping';
 import { workspace as stubWorkspace } from './helpers/vscodeStub';
 
@@ -144,6 +144,43 @@ describe('EntityMappingManager deferStartup(书 PR-002 工作区门控)', () => 
       expect(scheduler.getStatus().completed).toBeGreaterThanOrEqual(1);
     } finally {
       manager.dispose();
+    }
+  });
+
+  it('后台首扫尚未结束时 RequestLocal 可在两个批次之间执行', async () => {
+    const previous = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async () => Array.from({ length: 24 }, (_, i) => ({
+      fsPath: path.join(root, 'scripts', 'entity_defs', `Batch${i}.def`)
+    }))) as unknown as typeof stubWorkspace.findFiles;
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 0 });
+    const manager = new EntityMappingManager({ subscriptions: [] } as never, scheduler, { deferStartup: true });
+    let firstStarted!: () => void;
+    const started = new Promise<void>(resolve => { firstStarted = resolve; });
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let parsed = 0;
+    (manager as unknown as { parseDefFile: () => Promise<void> }).parseDefFile = async () => {
+      parsed += 1;
+      if (parsed === 1) { firstStarted(); await firstGate; }
+    };
+    try {
+      manager.ensureStartup();
+      await started;
+      let ranAt = -1;
+      const request = scheduler.enqueue({
+        kind: 'single-file-update',
+        priority: IndexTaskPriority.RequestLocal,
+        run: async () => { ranAt = parsed; }
+      });
+      releaseFirst();
+      await request.wait;
+      expect(ranAt).toBe(8);
+      await manager.waitForInitialScan();
+      expect(parsed).toBe(24);
+    } finally {
+      releaseFirst();
+      manager.dispose();
+      stubWorkspace.findFiles = previous;
     }
   });
 });

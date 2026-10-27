@@ -1,6 +1,7 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
+import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { setJumpLogEnabled } from './navigationLog';
-import { setHoverBudgetLogHub } from './hoverBudget';
+import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getLanguageServiceSummaryReport,
   setDetailedRecordingEnabled,
@@ -431,14 +432,14 @@ export function activate(context: vscode.ExtensionContext) {
       async provideSignatureHelp(
         document: vscode.TextDocument,
         position: vscode.Position,
-        _token: vscode.CancellationToken
+        token: vscode.CancellationToken
       ) {
         const operation = startLanguageServiceOperation('signature-help', {
           fileKind: document.languageId,
           documentVersion: document.version
         });
         try {
-          const result = await kbengineSignatureHelpImpl.provideSignatureHelp(document, position);
+          const result = await kbengineSignatureHelpImpl.provideSignatureHelp(document, position, token);
           operation.end(emptyResultStatus(result));
           return result;
         } catch (error) {
@@ -464,14 +465,14 @@ export function activate(context: vscode.ExtensionContext) {
       async provideHover(
         document: vscode.TextDocument,
         position: vscode.Position,
-        _token: vscode.CancellationToken
+        token: vscode.CancellationToken
       ) {
         const operation = startLanguageServiceOperation('hover', {
           fileKind: document.languageId,
           documentVersion: document.version
         });
         try {
-          const result = await kbengineHoverImpl.provideHover(document, position);
+          const result = await kbengineHoverImpl.provideHover(document, position, token);
           operation.end(emptyResultStatus(result));
           return result;
         } catch (error) {
@@ -522,7 +523,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 一起放行(与门控前激活期行为一致);负案例(无特征)两者都不启动。
   const startKbEngineIndexing = (): void => {
     entityMappingManager.ensureStartup();
-    pythonClassIndex.scheduleBackgroundScan();
+    if (vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true)) {
+      pythonClassIndex.scheduleBackgroundScan();
+    }
     // 书 PR-002 ③:深扫描缓存激活期预热——首查交互不再付 20000 条目有界
     // walk(巨仓实测 40.5ms/次);结果同源 scanCache,只挪时机不挪语义。
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
@@ -540,18 +543,23 @@ export function activate(context: vscode.ExtensionContext) {
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },
     {
-      async provideDefinition(document: vscode.TextDocument, position: vscode.Position) {
+      async provideDefinition(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken) {
+        const requestCancellation = createLinkedCancellationToken(token);
         const operation = startLanguageServiceOperation('definition', {
           fileKind: 'python',
           documentVersion: document.version
         });
         try {
-          const result = await pythonDefinitionImpl.provideDefinition(document, position);
-          operation.end(emptyResultStatus(result));
+          const result = await raceWithBudget('definition:request',
+            pythonDefinitionImpl.provideDefinition(document, position, requestCancellation.token),
+            HOVER_ASYNC_BUDGET_MS_DEFAULT, token, requestCancellation.cancel);
+          operation.end(requestCancellation.token.isCancellationRequested ? 'cancelled' : emptyResultStatus(result));
           return result;
         } catch (error) {
           operation.end('error');
           throw error;
+        } finally {
+          requestCancellation.dispose();
         }
       }
     }
@@ -571,7 +579,7 @@ export function activate(context: vscode.ExtensionContext) {
     for (const pattern of patterns) {
       const watcher = vscode.workspace.createFileSystemWatcher(pattern);
       const invalidate = (uri: vscode.Uri) => pythonClassIndex.invalidate(uri.fsPath);
-      pythonIndexWatchers.push(watcher, watcher.onDidCreate(invalidate),
+      pythonIndexWatchers.push(watcher, watcher.onDidCreate(uri => { void pythonClassIndex.onFileChanged(uri.fsPath); }),
         watcher.onDidChange(uri => { void pythonClassIndex.onFileChanged(uri.fsPath); }), watcher.onDidDelete(invalidate));
     }
   };
@@ -825,7 +833,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 层2 python-mro(mixin 函数导航)开关变更即时生效(不重载窗口)
     if (event.affectsConfiguration('kbengine.python.enableMroJump')) {
-      setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
+      const enabled = vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true);
+      setPythonMroJumpEnabled(enabled);
     }
 
     // CodeLens 各功能开关变更即时生效(批154):四类镜链 provider 每次
@@ -854,6 +863,7 @@ export function activate(context: vscode.ExtensionContext) {
       resetScanRootCache();
       pythonClassIndex.invalidate();
       watchPythonIndex();
+      if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
     }
 
     // binPath/configPath 变更影响数据库连接读值(批131):只失效缓存本体;
@@ -2334,6 +2344,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
+  disposePythonParserWorker();
   // PR2:停用即释放全部文档快照(进程回收前不留缓冲区副本)
   releaseAllDocumentSnapshots();
   console.log('KBEngine Language Extension is now deactivated!');

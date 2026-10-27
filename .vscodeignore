@@ -52,6 +52,7 @@ CHANGELOG.zh.md
 # tsc 的逐模块 js/.map/.d.ts 与 out/test 是开发/测试面,一律不进包)
 out/**
 !out/extension.js
+!out/pythonParserWorker.js
 # e2e 用的 Rust 构建产物绝不进包（kodeCoreE2E 现场构建 target/debug/kode-server，
 # 若构建发生在打包前会被 vsce 整目录吞进 vsix——nightly 85MB 事故根因）
 target/

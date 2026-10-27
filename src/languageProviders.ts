@@ -707,8 +707,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
 
   provideHover(
     document: vscode.TextDocument,
-    position: vscode.Position
+    position: vscode.Position,
+    token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
+    if (token?.isCancellationRequested) { return null; }
+    const respond = (work: Promise<vscode.Hover | null>): Promise<vscode.Hover | null> =>
+      raceWithBudget('hover:cancel', work, 0, token);
     const featureConfig = getLanguageFeatureConfig();
     const range = document.getWordRangeAtPosition(position, /\w+/);
     if (!range) {
@@ -735,7 +739,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       if (methodName) {
         // 异步链总预算闸(用户令 2026-10-22):底层索引慢(首扫秒级+)时不再
         // 永转 loading,超预算返回空悬停并记 LogHub(层名+耗时)。
-        return this.memoizedHover(memoKey, document.version, () =>
+        return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:def-method',
             this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
@@ -744,7 +748,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               ),
             featureConfig.hoverAsyncBudgetMs
           )
-        );
+        ));
       }
       // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
       // 的方法名上时,先按段闸解析(仅对应区块的 def 候选通过,段不符不给标注,
@@ -758,7 +762,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           )
         : null;
       if (receiverCall) {
-        return this.memoizedHover(memoKey, document.version, () =>
+        return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:receiver-call',
             this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
@@ -767,7 +771,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               ),
             featureConfig.hoverAsyncBudgetMs
           )
-        );
+        ));
       }
       // 内建属性(用户令 2026-10-21 内建属性单 ②):self.<属性> 单段访问
       // (fullPath 无第二段,不与 self.cell.X 接收者调用重叠)命中分面表
@@ -782,7 +786,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         selfAccess &&
         !selfAccess.fullPath.includes('.')
       ) {
-        return this.memoizedHover(memoKey, document.version, () =>
+        return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:builtin-property',
             this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
@@ -791,7 +795,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               ),
             featureConfig.hoverAsyncBudgetMs
           )
-        );
+        ));
       }
       // 三个异步面都未命中:落回下方同步链(批159 前语义,不进 memo)
     }
@@ -1110,7 +1114,8 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
 
   async provideSignatureHelp(
     document: vscode.TextDocument,
-    position: vscode.Position
+    position: vscode.Position,
+    token?: vscode.CancellationToken
   ): Promise<vscode.SignatureHelp | null> {
     if (document.languageId !== 'python' || !this.entityMappingManager) {
       return null;
@@ -1126,7 +1131,8 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
     return raceWithBudget(
       'signatureHelp:def-method',
       this.resolveSignatureHelp(this.entityMappingManager, document, call),
-      featureConfig.hoverAsyncBudgetMs
+      featureConfig.hoverAsyncBudgetMs,
+      token
     );
   }
 
@@ -3596,6 +3602,11 @@ export interface TracedDefinitionResult {
   layers: JumpLayerTrace[];
 }
 
+const cancelledDefinitionResult = (): TracedDefinitionResult => ({
+  location: null,
+  layers: [{ layer: 'context', query: '', status: 'skip', detail: 'cancelled' }]
+});
+
 const layerErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
@@ -3623,11 +3634,14 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
    */
   async provideDefinition(
     document: vscode.TextDocument,
-    position: vscode.Position
+    position: vscode.Position,
+    token?: vscode.CancellationToken
   ): Promise<vscode.Location | vscode.Location[] | null> {
+    if (token?.isCancellationRequested) { return null; }
     const eventLocation = await eventDefinitionAt(document, position, this.entityMappingManager);
+    if (token?.isCancellationRequested) { return null; }
     if (eventLocation) return eventLocation;
-    return (await this.provideDefinitionTraced(document, position)).location;
+    return (await this.provideDefinitionTraced(document, position, token)).location;
   }
 
   /**
@@ -3641,7 +3655,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
    */
   async provideDefinitionTraced(
     document: vscode.TextDocument,
-    position: vscode.Position
+    position: vscode.Position,
+    token?: vscode.CancellationToken
   ): Promise<TracedDefinitionResult> {
     // PR1 打点:semantic-query = 分层语义解析全链路耗时(层序实现见
     // provideDefinitionTracedImpl),location 命中 → ok,落空 → miss;
@@ -3651,7 +3666,11 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       documentVersion: document.version
     });
     try {
-      const traced = await this.provideDefinitionTracedImpl(document, position);
+      const traced = await this.provideDefinitionTracedImpl(document, position, token);
+      if (token?.isCancellationRequested) {
+        metrics.end('cancelled');
+        return cancelledDefinitionResult();
+      }
       metrics.end(traced.location ? 'ok' : 'miss');
       return traced;
     } catch (error) {
@@ -3662,8 +3681,12 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
 
   private async provideDefinitionTracedImpl(
     document: vscode.TextDocument,
-    position: vscode.Position
+    position: vscode.Position,
+    token?: vscode.CancellationToken
   ): Promise<TracedDefinitionResult> {
+    if (token?.isCancellationRequested) {
+      return cancelledDefinitionResult();
+    }
     const line = document.lineAt(position.line);
     if (!isPythonCodePosition(document.getText(), position.line, position.character)) {
       return { location: null, layers: [{ layer: 'context', query: '', status: 'skip', detail: 'comment or string literal' }] };
@@ -3723,7 +3746,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     // send an aliased mixin to an unrelated entity with the same name.
     if (pythonBase && explicitlyImportedBase && this.pythonClassIndex && isPythonMroJumpEnabled()) {
       try {
-        const base = await this.pythonClassIndex.resolveClassBase(document, pythonBase, position.line);
+        const base = await this.pythonClassIndex.resolveClassBase(document, pythonBase, position.line, token);
         if (base) {
           return {
             location: new vscode.Location(vscode.Uri.file(base.filePath), new vscode.Position(base.startLine, 0)),
@@ -3759,7 +3782,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
 
     if (pythonBase && !explicitlyImportedBase && this.pythonClassIndex && isPythonMroJumpEnabled()) {
       try {
-        const base = await this.pythonClassIndex.resolveClassBase(document, pythonBase, position.line);
+        const base = await this.pythonClassIndex.resolveClassBase(document, pythonBase, position.line, token);
         if (base) {
           return {
             location: new vscode.Location(vscode.Uri.file(base.filePath), new vscode.Position(base.startLine, 0)),
@@ -3814,13 +3837,13 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         ? getPythonReceiverCallAtPosition(line.text, position.character)
         : null;
     if (access) {
-      const accessResult = await this.runDefinitionLayers(document, position, access, null, receiverCall ?? undefined);
+      const accessResult = await this.runDefinitionLayers(document, position, access, null, receiverCall ?? undefined, token);
       if (accessResult.location) {
         return accessResult;
       }
       // 光标行同时是方法声明的交叠形态:再走声明层序,层记录合并
       if (declaredMethodName) {
-        const declaredResult = await this.runDefinitionLayers(document, position, null, declaredMethodName);
+        const declaredResult = await this.runDefinitionLayers(document, position, null, declaredMethodName, undefined, token);
         return {
           location: declaredResult.location,
           layers: [...accessResult.layers, ...declaredResult.layers]
@@ -3829,7 +3852,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       return accessResult;
     }
     if (declaredMethodName) {
-      return this.runDefinitionLayers(document, position, null, declaredMethodName);
+      return this.runDefinitionLayers(document, position, null, declaredMethodName, undefined, token);
     }
     // 批158(用户令 2026-10-26):非 self 接收者的成员调用 avatar.SendErrorInfo(...)
     // 不再直接放弃。旧口径在 context 层返回 null(用户实测「精确跳转不行」的根因);
@@ -3973,8 +3996,10 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     position: vscode.Position,
     access: { rootSymbol: string; currentSymbol: string; fullPath: string } | null,
     declaredMethodName: string | null,
-    receiver?: PythonReceiverCall
+    receiver?: PythonReceiverCall,
+    token?: vscode.CancellationToken
   ): Promise<TracedDefinitionResult> {
+    if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
     const manager = this.entityMappingManager;
     // 查询符号 = 光标所在段(方法层不再查根符号——根对象不在 .def 时不连带断链);
     // 属性子探的完整访问路径(可能多段)记入 detail。
@@ -4041,6 +4066,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           receiverParts.push(`method ${probe.via} error=${layerErrorMessage(error)}`);
           continue;
         }
+        if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
         if (hit) {
           const hitLocation = new vscode.Location(
             vscode.Uri.file(hit.defFile),
@@ -4100,6 +4126,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           defParts.push(`property(${access.fullPath}) ${probe.via} error=${layerErrorMessage(error)}`);
           continue;
         }
+        if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
         if (hit) {
           defLocation = new vscode.Location(
             vscode.Uri.file(hit.defFile),
@@ -4110,7 +4137,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           const managerWithScan = manager as EntityMappingManager & { waitForInitialScan?: () => Promise<void> };
           if (managerWithScan.waitForInitialScan) {
             // 首扫超时闸(用户令 2026-10-22):大树首扫可秒级+,不拖死跳转层
-            await withInitialScanTimeout(managerWithScan.waitForInitialScan());
+            await withInitialScanTimeout(managerWithScan.waitForInitialScan(), undefined, token);
+            if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
           }
           const indexAccessor = manager as EntityMappingManager & {
             getIndex?: (entityName: string) => EntityMappingIndex | undefined;
@@ -4169,6 +4197,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           defParts.push(`method ${probe.via} error=${layerErrorMessage(error)}`);
           continue;
         }
+        if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
         if (hit) {
           defLocation = new vscode.Location(
             vscode.Uri.file(hit.defFile),
@@ -4216,7 +4245,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           document.fileName,
           position.line,
           symbol,
-          document
+          document,
+          token
         );
         const candidates = declaredMethodName ? resolved.filter(candidate =>
           candidate.filePath !== document.fileName || candidate.line !== position.line) : resolved;

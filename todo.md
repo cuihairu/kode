@@ -8,6 +8,40 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## P0. 启用插件后卡死：重新打开性能治理（2026-10-26，优先处理）
+
+用户现场反馈：hover loading 约半小时才出现、Python 索引与跳转卡死，禁用插件恢复、启用再次卡顿。**问题未解决，不得沿用此前“性能已验收”的结论。** 当前源码基线 `550d824`；证据与复现范围见 [卡顿分析报告](docs/perf/2026-10-26-stall-analysis.md)。本地探针已确认算法与调度缺陷，但尚未取得用户现场 CPU profile、安装版本及运行日志，不能把“半小时”精确归因到单一函数。以下任务均未完成。
+
+### P0-1 索引维护与扫描范围
+
+- [ ] P0-1a 修复 Python 索引平方级维护：`pythonClassIndex.ts:564/645` 的 `updateFile → unindexFile` 每次遍历全部类，首次入库也如此。改为仅删除该文件的旧类记录；验收首次入库不遍历其他文件类，修改/删除不误删跨文件同名类，用操作计数锁定线性增长。本地基线：8,000 个单类小文件产生 31,996,000 次桶遍历，纯内存维护 3,607.42ms（单轮，非现场耗时）。
+- [ ] P0-1b 统一两份 Python 索引的扫描根与排除规则：`entityMapping.ts:1365` 的方法索引漏排 `vcpkg/third_party/out/site-packages` 等目录，与 `PY_SCAN_EXCLUDE` 不一致。验收工作区与外部 assetsRoot 使用一致规则，依赖树文件不被读取/解析，业务脚本仍可导航。
+- [ ] P0-1c 方法倒排索引改为单文件增量：`entityMapping.ts:967` 任意 Python change 清空整份索引，下次查询重新全扫。处理修改/新增/删除；验收保存单文件只更新对应方法桶，不触发全树重建，多目标结果保持正确。
+- [ ] P0-1d 收敛构建失效与并发：方法索引旧构建失效后仍继续，PythonClassIndex 对未缓存 py 的事件会增加扫描代数。补构建代校验、取消与事件合并；验收连续保存/新建/删除时旧结果不回写，重复全扫和排队任务不持续增长。
+
+### P0-2 前台请求与后台索引解耦
+
+- [ ] P0-2a 消除共享调度器队首阻塞（重开 A3-6）：实体首扫整轮占用一个后台任务，`indexScheduler.ts:357` 的 runningId 阻止高优请求执行。首扫拆成有界任务并释放调度席位；验收首扫尚未完成时 RequestLocal 已执行，而非仅验证排队优先级或 setImmediate 让路。
+- [ ] P0-2b 移除定向文件加载对全仓 discovery 的等待：`pythonClassIndex.ts:1020` 为候选排序等待整个文件发现。改用已知路径与稳定候选策略；验收 discovery 挂起/慢速时，已知局部依赖仍可解析，并保持跨根同名符号选择语义。
+- [ ] P0-2c 清理交互未命中分支的全量等待（重开 A5-1）：审计 `ensureScanned/ensureCompositionRoots/initialScan`，重点 `pythonClassIndex.ts:1245`、`entityMapping.ts:1116`。前台使用快照与定向依赖，后台补齐；验收冷启动、未知方法、组合根未就绪均无无限等待，同时保留 mixin、多实现与跨根导航语义，不以返回不完整单目标冒充修复。
+
+### P0-3 扩展宿主响应与取消
+
+- [ ] P0-3a 外部根扫描改异步有界遍历：移除 `scanRoots.ts:192` 递归 `readdirSync`；验收慢目录、只有目录/非 Python 文件的树也能让出事件循环，并支持取消。
+- [ ] P0-3b 方法索引移除同步枚举/读取：处理 `entityMapping.ts:1378/1400`，让路不能只在成功读取 Python 文件后检查；验收读取失败、非 Python 树与慢文件不会形成长同步阻塞。
+- [ ] P0-3c 大文件解析隔离：确认重 CPU 解析路径，将大文件解析放入 worker/server，并明确结果版本与生命周期；验收解析期间扩展宿主仍可处理交互，旧版本结果不覆盖新缓冲区。现有 Rust shadow/保留配置值不算已完成服务切换。
+- [ ] P0-3d 接通请求取消与预算（重开 B-1）：`extension.ts` 的 token 传入 provider、扫描与解析；`hoverBudget.ts` 超时后取消或停止该请求独占的工作，避免误取消共享索引。验收取消/超时后工作量收敛、无重复后台任务堆积；不能仅断言 Promise.race 返回 null。本地反例：10ms 定时预算遇到 150ms 同步阻塞，实际 150.34ms 才返回。
+- [ ] P0-3e 修复 MRO 开关启动行为：`extension.ts:525` 在项目门控通过后无条件启动 Python 全扫，与 `enableMroJump=false` 的“不做全仓扫描”说明矛盾。统一配置契约与启动路径，覆盖激活、开关切换；未经验证不得把该开关作为止血方案。
+
+### P0-4 真实环境验收与历史结论纠正
+
+- [ ] P0-4a 固化可复跑诊断：将本轮临时探针整理为仓库内复现/回归用例，记录源码版本、输入规模、操作计数与执行命令；覆盖平方级遍历、运行中后台任务挡住交互、同步阻塞导致超时延后。
+- [ ] P0-4b 获取现场基线：记录已安装插件版本、操作系统、工作区/外部资产根、Python 语言服务及设置；采集启用/禁用对照、扩展宿主 CPU profile、event-loop delay、请求端到端耗时、扫描文件数、内存与取消后残留任务，区分 Kode 索引与 Python 语言服务索引。
+- [ ] P0-4c 真实 VS Code 联合验收：Kode 与 Python 语言服务同时启用，覆盖冷启动、大仓依赖树、外部根、未知符号、连续保存、首次跳转、hover 取消及长会话；逐场景记录修复前后 P50/P95/P99/最大耗时、事件循环延迟与资源变化。沿用既定热态 Hover P95 ≤30ms、Definition P95 ≤50ms 目标；冷启动与未命中单独报告，不以热缓存数据替代。
+- [ ] P0-4d 重新审计性能报告与完成标记：保留历史量测事实，纠正“后台不抢主线程”“请求不等全仓”“超时已根治”的泛化结论；补端到端 hover 与长会话证据。P0-4c 现场验收未完成前，本节保持未完成，不以单元测试通过、局部 benchmark 或新增超时关闭问题。
+
+执行顺序：先 P0-1a/1b 与可复跑基线，再处理增量失效、队首阻塞和交互全量等待；随后收口 IO/解析隔离、取消与配置契约，最后完成真实编辑器验收。P0-4b 可提前取证。
+
 ## A. 语言服务性能治理（结构重构，源自 docs/review/2026-10-22-unified-semantic-index-refactor.md，PR1→PR7 顺序推进）
 
 ### A1 PR1 · 性能观测与基线（不改任何行为结果）
@@ -33,11 +67,7 @@
 - [x] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析，顺序断言（2aca694；IndexTaskPriority、isInteractivePriority:42）
 - [x] A3-4 失败恢复：首扫被杀后再次请求可重新入队并完成，不永久 pending（2aca694；tests/indexScheduler.test.ts:252-262 杀掉首轮扫描模拟、:97 recoveries 计数）
 - [x] A3-5 EntityMappingManager 首扫迁入调度器：initialScan 走 scheduler，行为等价（2aca694；src/entityMapping.ts:186-199 scheduler 注入、entity-mapping-scan 打点）
-- [x] A3-6 后台限流与取消：交互任务单并发+后台让路，不抢主线程（2aca694；src/indexScheduler.ts:42、:149 throttleTimer；docs/perf/2026-pr3-indexscheduler.md）
-<!-- A3 六项对账复核 2026-10-27(全量 test:unit 3019 passed|8 skipped):上表证据口径经本会话逐条对
-现源核实——IndexTaskKind 六类在 src/indexScheduler.ts:14-20、同文件同版本合并 :170-183、过期双向丢弃
-:184-199、五级优先级 :26-37、keyed 失败恢复 :229-231/:373-379、交互冷却 :401-413;tests/indexScheduler.test.ts
-16 例全绿;A3-5 行为等价由 tests/entityMappingDeferredStartup.test.ts:99-114(2ed63d8)承载。 -->
+- [ ] A3-6 **2026-10-26 重开，见 P0-2a/P0-3**：历史提交 2aca694 实现优先队列与冷却窗口，但运行中的整轮首扫仍阻塞交互任务，同步扫描仍占用宿主；“后台让路、不抢主线程”尚未成立（原证据：docs/perf/2026-pr3-indexscheduler.md）。
 
 ### A4 PR4 · 统一语义查询（semanticIndex + dependencyGraph）
 - [x] A4-1 新建 src/semanticIndex.ts：实体-分面方法/属性-Python类-注册关系-类型映射-根作用域 统一承载（查询 API 不暴露内部遍历）
@@ -48,11 +78,11 @@
 - [x] A4-6 现有查找顺序取证：从测试提取当前命中顺序→固化为显式策略文档+测试（不改行为先锁）
 
 ### A5 PR5 · Python Definition 去全仓阻塞
-- [x] A5-1 ensureScanned/ensureCompositionRoots 调用关系重构：Definition 先查快照+已建索引，按需单文件解析(stageRequestFiles)，后台补全量（d4fd634；src/pythonClassIndex.ts:1193-1250 两段查询、:1114 单文件入队；行为断言 tests/pythonIndexPr5.test.ts「PR5 ② Definition 首查不阻塞全仓」三例：①命中——GatedBackgroundScheduler 扣住全部 full-reindex 分块时 resolveSelfMethodCandidates 照常命中同目录 base.py 的 Alpha.meth 且 noise/ 子目录零读(single-file-update≥2 已执行)；②未命中——resolveClassBase 落空后定点 glob 只补载 pkg/Beta.py 即命中,executedFullReindex=0 不升级为全仓；③后台补全量可观测——release 后分块真执行、findClassesByName('Noise0') 经全量补齐可查、executionOrder 断言按需单文件先于 full-reindex)
+- [ ] A5-1 **2026-10-26 重开，见 P0-2b/2c**：d4fd634 已实现快照与定向加载，但 staging 仍等待全仓发现，未命中分支仍等待全量扫描；需覆盖全部交互等待路径后重新验收。
 - [x] A5-2 组合根构建缓存：同批 XML/def 只读一次，mtime+size 指纹重派生零重读（d4fd634；src/pythonClassIndex.ts:685-700 python-composition-roots 打点；docs/perf/2026-final-report.md 验收#6）
 - [x] A5-3 PythonClassIndex 版本与失效：类/基类/方法/MRO/组合根显式版本+依赖图裁断失效，比较走稳定 classKey 非对象引用（d4fd634；SemanticDependencyGraph 接入、fullRebuild 恒 false；docs/perf/2026-pr5-unblocked-definition.md §4）
 - [x] A5-4 删除/重命名/基类变更后旧索引项移除，跳转不到已不存在位置（d4fd634；tests/pythonIndexPr5.test.ts:203-244；docs/perf/2026-final-report.md 场景6 旧项 0 命中）
-- [x] A5-5 冷启动 Definition 首查耗时入报告：107,737ms → 468.69ms（PR7 复测 475.34ms），不再等待全仓（d4fd634；docs/perf/2026-pr5-unblocked-definition.md §2 U1、docs/perf/2026-final-report.md §3 场景1）
+- [x] A5-5 冷启动 Definition 特定命中路径耗时入报告：107,737ms → 468.69ms（PR7 复测 475.34ms）（d4fd634；docs/perf/2026-pr5-unblocked-definition.md §2 U1、docs/perf/2026-final-report.md §3 场景1）。**2026-10-26 纠正口径：仅保留该场景量测，不代表所有跳转不等全仓；未命中与慢发现待 P0-2/P0-4 验收。**
 
 ### A6 PR6 · 诊断与一致性收口
 - [x] A6-1 诊断任务版本化：连续编辑合并过期任务，只发布匹配当前版本结果（测试）
@@ -68,7 +98,7 @@
 - [x] A7-4 未解决问题清单与下一轮建议：5 项未解决 + 6 项下一轮建议（e6e8bc7；docs/perf/2026-final-report.md §5-§6）
 
 ## B. 在途/止血项（结构性治理并行的即时修复，落地即勾）
-- [x] B-1 hover 永转+2分钟：入口 2.5s 总预算 race+waitForInitialScan 5s 超时+LogHub 超时层名（9c8daf7@分支；**真凶=normalizeLookupPath 小写化致定向解析死代码**，修后冷悬停 12-14ms/热 8-10ms，1501-def 树实测；kbengine.hover.asyncBudgetMs；test 2712/0）
+- [ ] B-1 **2026-10-26 重开，见 P0-3/P0-4**：用户仍报 hover loading 约半小时。历史 9c8daf7 修正路径大小写并添加 2.5s race/5s 首扫预算，1501-def 测试曾得冷 12–14ms/热 8–10ms；这些局部结果不能证明整体根治。同步阻塞会推迟定时器，超时也未取消底层工作，需真实编辑器重新验收。
 - [x] B-2 函数着色 白→浅蓝：variable.function.call.python=#8BD5FF（11 主题），before/after scope 实证（179a290@分支；探针实测 get_color 白→#8BD5FF、关键字/def 不吃）
 - [x] B-3 RPC 形参 inlay：调用点 `形参名: 类型`（kbengine.inlayHints.typeData 开关；fa13ef9 已在 main；+6 测试）
 - [x] B-4 调用链图形化双 Tab：Graph(默认,esbuild 打包 mermaid@12 离线 5MB 入库)+Text 兜底，kbengine.python.callChainView，渲染失败回落（d5cff3d；16 例测试；CSP 零 CDN）

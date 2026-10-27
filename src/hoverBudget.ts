@@ -1,4 +1,5 @@
 import type { LogHubLike } from './logHub';
+import type * as vscode from 'vscode';
 
 // 悬停/异步层预算闸(2026-10-22 用户令「hover 永转 loading 不出结果」):
 // 异步链套总预算 race,超时 resolve null(不无限转圈),超时路径记
@@ -9,6 +10,9 @@ export const HOVER_ASYNC_BUDGET_MS_DEFAULT = 2500;
 
 /** waitForInitialScan 调用点统一超时(ms),大树首扫可秒级+,不能拖死调用面 */
 export const INITIAL_SCAN_TIMEOUT_MS = 5000;
+
+/** Cold navigation may wait briefly for shared indexes; later requests reuse them. */
+export const INTERACTIVE_INDEX_WAIT_MS = 1000;
 
 export interface HoverTimeoutRecord {
   layer: string;
@@ -55,33 +59,74 @@ function reportTimeout(layer: string, elapsedMs: number, budgetMs: number): void
 export function raceWithBudget<T>(
   layer: string,
   work: Promise<T>,
-  budgetMs: number
+  budgetMs: number,
+  token?: vscode.CancellationToken,
+  onStop?: () => void
 ): Promise<T | null> {
-  if (budgetMs <= 0) {
+  if (token?.isCancellationRequested) {
+    onStop?.();
+    void work.catch(() => undefined);
+    return Promise.resolve(null);
+  }
+  if (budgetMs <= 0 && !token) {
     return work;
   }
   const startedAt = Date.now();
   let timer: NodeJS.Timeout | undefined;
-  const budget = new Promise<null>(resolve => {
-    timer = setTimeout(() => {
-      reportTimeout(layer, Date.now() - startedAt, budgetMs);
-      resolve(null);
-    }, budgetMs);
+  let cancellationListener: vscode.Disposable | undefined;
+  const stopped = new Promise<null>(resolve => {
+    if (budgetMs > 0) {
+      timer = setTimeout(() => {
+        reportTimeout(layer, Date.now() - startedAt, budgetMs);
+        onStop?.();
+        resolve(null);
+      }, budgetMs);
+    }
+    cancellationListener = token?.onCancellationRequested?.(() => { onStop?.(); resolve(null); });
+    if (token?.isCancellationRequested) { onStop?.(); resolve(null); }
   });
-  return Promise.race([work, budget]).finally(() => {
+  return Promise.race([work, stopped]).finally(() => {
     if (timer) {
       clearTimeout(timer);
     }
+    cancellationListener?.dispose();
     void work.catch(() => undefined);
   });
+}
+
+/** A request-owned token that also stops when its local budget expires. */
+export function createLinkedCancellationToken(parent: vscode.CancellationToken): {
+  token: vscode.CancellationToken;
+  cancel: () => void;
+  dispose: () => void;
+} {
+  let cancelled = parent.isCancellationRequested;
+  const listeners = new Set<(event: unknown) => unknown>();
+  const cancel = (): void => {
+    if (cancelled) { return; }
+    cancelled = true;
+    for (const listener of listeners) { listener(undefined); }
+    listeners.clear();
+  };
+  const parentListener = parent.onCancellationRequested?.(cancel);
+  const token: vscode.CancellationToken = {
+    get isCancellationRequested() { return cancelled; },
+    onCancellationRequested(listener) {
+      if (cancelled) { listener(undefined); return { dispose: () => undefined }; }
+      listeners.add(listener);
+      return { dispose: () => { listeners.delete(listener); } };
+    }
+  };
+  return { token, cancel, dispose: () => { parentListener?.dispose(); listeners.clear(); } };
 }
 
 /** waitForInitialScan 调用点统一包装:5s(默认)超时,超时放行(null)并记 LogHub */
 export async function withInitialScanTimeout(
   scan: Promise<void>,
-  timeoutMs: number = INITIAL_SCAN_TIMEOUT_MS
+  timeoutMs: number = INITIAL_SCAN_TIMEOUT_MS,
+  token?: vscode.CancellationToken
 ): Promise<void> {
-  await raceWithBudget('initial-scan', scan, timeoutMs);
+  await raceWithBudget('initial-scan', scan, timeoutMs, token);
 }
 
 /** 各层耗时记账(LogHub info):与超时记录同通道,真机对时间线定位慢层 */

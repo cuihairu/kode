@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { jumpLog, jumpTimeStart } from './navigationLog';
-import { logLayerTiming } from './hoverBudget';
+import { INTERACTIVE_INDEX_WAIT_MS, logLayerTiming, raceWithBudget } from './hoverBudget';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import {
   findFilesAcrossRoots,
@@ -37,6 +37,7 @@ import {
 } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
+import { PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
 import type { EntityComponentFace } from './entityBuiltinProperties';
@@ -220,20 +221,20 @@ export class EntityMappingManager {
     // 启动推迟一个宏任务(2026-10-22 用户令「hover 永转根治」):构造方在
     // 同一同步块里发起的首个悬停/跳转先跑完自己的定向解析,首扫不与前台
     // 第一答抢事件循环。
-    // PR3 迁入统一索引调度器(行为等价):推迟一个宏任务的语义原样保留,
-    // 扫描本体以 initial-scan/后台全量优先级入队——单并发不与其他索引任务
-    // 抢主线程,失败经调度器 keyed 恢复面可重跑(不永久 pending);
-    // `await this.initialScan` 的既有等待链不变。
+    // The keyed task starts discovery and returns its scheduler slot. Parsing
+    // then runs as bounded background tasks so RequestLocal can run between them.
     const scanPromise = new Promise<void>(resolve => {
       setImmediate(() => {
+        let work: Promise<void> | null = null;
         void this.scheduler
           .ensureTask('entity-mapping-initial-scan', () => ({
             kind: 'initial-scan',
             priority: IndexTaskPriority.BackgroundFull,
-            run: () => this.scanEntityMappings()
+            run: async () => { work = this.scanEntityMappings(); }
           }))
           .catch(() => undefined)
-          .then(() => resolve());
+          .then(async () => { await work; })
+          .then(() => resolve(), () => resolve());
       });
     });
     if (this.deferredInitialScanResolve) {
@@ -293,32 +294,26 @@ export class EntityMappingManager {
     const scanMetrics = startLanguageServiceOperation('entity-mapping-scan');
     const defFiles = await findFilesAcrossRoots('**/*.def', null);
     scanMetrics.countFileDiscovery(defFiles.length);
-    let parsedSinceYield = 0;
-    let yieldChunkStartedAt = Date.now();
-    for (const defFile of defFiles) {
-      const normalizedPath = normalizeLookupPath(defFile.fsPath);
-      if (normalizedPath.includes('/interfaces/') || normalizedPath.includes('/components/')) {
-        continue;
-      }
-
-      const entityName = path.basename(defFile.fsPath, '.def');
-      await this.parseDefFile(entityName, defFile.fsPath, loader);
-      scanMetrics.countFileRead(1);
-      scanMetrics.countFileParse(1);
-      // 协作式让路(2026-10-22 用户令「hover 永转根治」):parseDefFile 内部是
-      // 同步 fs+XML 解析,1500+ 文件大树一次循环把事件循环钉死秒级+,构造期
-      // 后台首扫会把定向首解析的快路径活活饿死(实测冷悬停 814ms ≈ 全扫
-      // 1159ms)。每 25 个文件 setImmediate 让一次宏任务队列,悬停/跳转的
-      // 快路径得以插队,后台扫不再拖垮前台应答。
-      parsedSinceYield += 1;
-      // 计数+计时双闸:慢盘上单文件可能远超 0.6ms,25 个文件未必到 16ms;
-      // 快盘上 25 个文件又不足挂一次宏任务。任一触发即让路。
-      if (parsedSinceYield >= 25 || Date.now() - yieldChunkStartedAt >= 16) {
-        parsedSinceYield = 0;
-        yieldChunkStartedAt = Date.now();
-        await new Promise<void>(resolve => setImmediate(resolve));
-      }
+    const entities = defFiles.filter(defFile => {
+      const normalized = normalizeLookupPath(defFile.fsPath);
+      return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
+    });
+    const handles = [];
+    for (let offset = 0; offset < entities.length; offset += 8) {
+      const batch = entities.slice(offset, offset + 8);
+      handles.push(this.scheduler.enqueue({
+        kind: 'full-reindex',
+        priority: IndexTaskPriority.BackgroundFull,
+        run: async () => {
+          for (const defFile of batch) {
+            await this.parseDefFile(path.basename(defFile.fsPath, '.def'), defFile.fsPath, loader);
+            scanMetrics.countFileRead(1);
+            scanMetrics.countFileParse(1);
+          }
+        }
+      }));
     }
+    await Promise.all(handles.map(handle => handle.wait));
     jumpLog('info', () => `def 全量索引完成 ${defFiles.length} 个 .def → 实体 ${this.mappingIndexes.size} 个,${indexTimer()}ms`);
     // 扫描总耗时进 LogHub(用户令「加计时日志实测,别猜」):独立计时
     // (jumpTimeStart 关开关时恒 0,不做闸),便于真机定位首扫占比
@@ -850,9 +845,8 @@ export class EntityMappingManager {
     // workspace 首根 + workspace 外 assetsRoot:外部资产根的脚本变更同样要
     // 触发 owner 重解析(否则外部资产改脚本索引不动)
     const patterns: string[] = [];
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (workspaceFolder) {
-      patterns.push(vscode.Uri.joinPath(workspaceFolder.uri, '**/*.py').toString());
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      patterns.push(vscode.Uri.joinPath(folder.uri, '**/*.py').toString());
     }
     for (const root of getExternalScanRoots()) {
       patterns.push(vscode.Uri.joinPath(vscode.Uri.file(root), '**/*.py').toString());
@@ -867,6 +861,12 @@ export class EntityMappingManager {
     this.pythonWatcher = watchers[0];
     for (const watcher of watchers) {
       watcher.onDidChange(uri => {
+        this.handlePythonFileChanged(uri.fsPath);
+      });
+      watcher.onDidCreate(uri => {
+        this.handlePythonFileChanged(uri.fsPath);
+      });
+      watcher.onDidDelete(uri => {
         this.handlePythonFileChanged(uri.fsPath);
       });
       this.context.subscriptions.push(watcher);
@@ -967,8 +967,14 @@ export class EntityMappingManager {
   private handlePythonFileChanged(pythonPath: string): void {
     clearDefCallChainFileCache();
     this.allPythonMethodHits.clear();
-    // 批158:共享倒排索引同阈失效(下次查询重建,口径同 allPythonMethodHits)
-    this.pythonDefIndexBuild = null;
+    // Reconcile only this file after any in-flight initial build. Queries made
+    // after the event await the replacement promise, so they see the new file.
+    if (this.pythonDefIndexBuild) {
+      this.pythonDefIndexBuild = this.pythonDefIndexBuild.then(async index => {
+        await this.refreshPythonDefFile(index, pythonPath);
+        return index;
+      });
+    }
     // PR4 A4-4:owner 归属反查改走语义索引(不再线性扫描 mappingIndexes)。
     for (const entry of this.semanticIndex.findEntitiesByPythonOwner(pythonPath)) {
       const mapping = this.mappingIndexesByRoot.get(entry.defFile);
@@ -1113,7 +1119,9 @@ export class EntityMappingManager {
     // declaration. Cross-file fallback is for role-specific interface modules.
     const allowCrossDefFallback = ownerKind === 'interface' && !!section;
     if (!local && allowCrossDefFallback) {
-      await this.initialScan;
+      const ready = await raceWithBudget('definition:cross-def-index',
+        this.initialScan.then(() => true), INTERACTIVE_INDEX_WAIT_MS);
+      if (!ready) { return null; }
     }
     const global = local || (allowCrossDefFallback
       ? this.selectMethodDefinition(
@@ -1326,17 +1334,63 @@ export class EntityMappingManager {
   >();
 
   /**
-   * 全项目 python def 倒排索引(批158,用户令 2026-10-26):「方法名 → 首个声明
-   * 命中」一次 walk 建成,所有方法名查询共享。替换旧的每方法名一次同步全树
-   * 遍历——引擎内建名(SendErrorInfo 等)零命中也会每次重走全盘,Windows +
-   * Defender 实扫放大后单次数分钟且钉死插件宿主(1200 处引用逐名重付全款)。
-   * 失效:python 文件变更事件置空 promise,下次查询重建(与 allPythonMethodHits
-   * 同阈,见 handlePythonFileChanged);构建期协作式让路(16ms/25 文件
-   * setImmediate,口径同 2026-10-22 首扫让路),巨仓不再钉死插件宿主。
+   * 方法名倒排索引：首次查询扫描一次；之后的 Python 文件事件只替换该文件
+   * 的桶记录。构建与增量读取均用异步 IO，目录及文件循环定期让出事件循环。
    */
   private pythonDefIndexBuild: Promise<
     Map<string, Array<{ filePath: string; line: number; character: number }>>
   > | null = null;
+  private readonly pythonDefIndexFiles = new Map<string, Set<string>>();
+  private readonly pythonDefFileOrder = new Map<string, number>();
+  private nextPythonDefFileOrder = 0;
+
+  private addPythonDefFile(
+    index: Map<string, Array<{ filePath: string; line: number; character: number }>>,
+    filePath: string,
+    text: string
+  ): void {
+    const names = new Set<string>();
+    const lines = text.split(/\r?\n/);
+    const defPattern = /^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
+    for (let i = 0; i < lines.length; i += 1) {
+      const match = defPattern.exec(lines[i]);
+      if (!match || names.has(match[1])) { continue; }
+      names.add(match[1]);
+      const bucket = index.get(match[1]) ?? [];
+      bucket.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
+      index.set(match[1], bucket);
+    }
+    this.pythonDefIndexFiles.set(filePath, names);
+  }
+
+  private async refreshPythonDefFile(
+    index: Map<string, Array<{ filePath: string; line: number; character: number }>>,
+    filePath: string
+  ): Promise<void> {
+    for (const name of this.pythonDefIndexFiles.get(filePath) ?? []) {
+      const remaining = (index.get(name) ?? []).filter(hit => hit.filePath !== filePath);
+      if (remaining.length) { index.set(name, remaining); }
+      else { index.delete(name); }
+    }
+    this.pythonDefIndexFiles.delete(filePath);
+    if (!filePath.toLowerCase().endsWith('.py') ||
+        filePath.split(/[\\/]/).some(part => PY_SCAN_EXCLUDED_DIRS.has(part))) { return; }
+    let text: string;
+    try { text = await fs.promises.readFile(filePath, 'utf8'); }
+    catch {
+      this.pythonDefFileOrder.delete(filePath);
+      return; // deletion or unreadable file: its old hits are already gone
+    }
+    if (!this.pythonDefFileOrder.has(filePath)) {
+      this.pythonDefFileOrder.set(filePath, this.nextPythonDefFileOrder++);
+    }
+    this.addPythonDefFile(index, filePath, text);
+    for (const name of this.pythonDefIndexFiles.get(filePath) ?? []) {
+      index.get(name)?.sort((left, right) =>
+        (this.pythonDefFileOrder.get(left.filePath) ?? Number.MAX_SAFE_INTEGER) -
+        (this.pythonDefFileOrder.get(right.filePath) ?? Number.MAX_SAFE_INTEGER));
+    }
+  }
 
   private buildPythonDefIndex(): Promise<
     Map<string, Array<{ filePath: string; line: number; character: number }>>
@@ -1344,14 +1398,16 @@ export class EntityMappingManager {
     if (this.pythonDefIndexBuild) {
       return this.pythonDefIndexBuild;
     }
-    this.pythonDefIndexBuild = this.performBuildPythonDefIndex().catch(error => {
+    const build = this.performBuildPythonDefIndex();
+    const recovered = build.catch(error => {
       jumpLog(
         'debug',
         () => `python def 索引构建失败: ${error instanceof Error ? error.message : String(error)}`
       );
-      this.pythonDefIndexBuild = null;
+      if (this.pythonDefIndexBuild === recovered) { this.pythonDefIndexBuild = null; }
       return new Map<string, Array<{ filePath: string; line: number; character: number }>>();
     });
+    this.pythonDefIndexBuild = recovered;
     return this.pythonDefIndexBuild;
   }
 
@@ -1359,29 +1415,25 @@ export class EntityMappingManager {
     Map<string, Array<{ filePath: string; line: number; character: number }>>
   > {
     const index = new Map<string, Array<{ filePath: string; line: number; character: number }>>();
-    const defPattern = /^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
-    const skippedDirs = new Set([
-      'node_modules',
-      '.venv',
-      'venv',
-      '__pycache__',
-      '.git',
-      'build',
-      'dist'
-    ]);
+    const skippedDirs = PY_SCAN_EXCLUDED_DIRS;
     const seenPaths = new Set<string>();
     let filesSinceYield = 0;
     let chunkStartedAt = Date.now();
     const walk = async (dir: string): Promise<void> => {
       let entries: fs.Dirent[];
       try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
       } catch {
         return;
       }
       for (const entry of entries) {
+        if (Date.now() - chunkStartedAt >= 16) {
+          filesSinceYield = 0;
+          chunkStartedAt = Date.now();
+          await new Promise<void>(resolve => setImmediate(resolve));
+        }
         if (entry.isDirectory()) {
-          if (!skippedDirs.has(entry.name) && !entry.name.startsWith('.')) {
+          if (!skippedDirs.has(entry.name)) {
             await walk(path.join(dir, entry.name));
           }
           continue;
@@ -1397,25 +1449,14 @@ export class EntityMappingManager {
         seenPaths.add(normalized);
         let text: string;
         try {
-          text = fs.readFileSync(filePath, 'utf8');
+          text = await fs.promises.readFile(filePath, 'utf8');
         } catch {
           continue;
         }
-        const lines = text.split(/\r?\n/);
-        // 每文件每方法名只收首个声明(旧 walk「首个同名 def 即落点」口径的索引形态)
-        const seenInFile = new Set<string>();
-        for (let i = 0; i < lines.length; i += 1) {
-          const match = defPattern.exec(lines[i]);
-          if (match && !seenInFile.has(match[1])) {
-            seenInFile.add(match[1]);
-            let bucket = index.get(match[1]);
-            if (!bucket) {
-              bucket = [];
-              index.set(match[1], bucket);
-            }
-            bucket.push({ filePath, line: i + 1, character: lines[i].search(/\S/) });
-          }
+        if (!this.pythonDefFileOrder.has(filePath)) {
+          this.pythonDefFileOrder.set(filePath, this.nextPythonDefFileOrder++);
         }
+        this.addPythonDefFile(index, filePath, text);
         // 协作式让路:巨仓 walk 不再钉死插件宿主(口径同首扫让路)
         if (++filesSinceYield >= 25 || Date.now() - chunkStartedAt >= 16) {
           filesSinceYield = 0;
@@ -2092,8 +2133,11 @@ export class EntityMappingManager {
       index = await this.ensureIndexTargeted(className);
     }
     if (!index && this.mappingIndexes.size === 0) {
-      // 只等构造期扫描(不新起全量 walk):文件级子探/失败重试仍按原口径自扫
-      await this.initialScan;
+      // Cold misses wait briefly for the shared scan. A timed-out query must
+      // not publish a negative cache entry from a partial index snapshot.
+      const ready = await raceWithBudget('definition:class-index',
+        this.initialScan.then(() => true), INTERACTIVE_INDEX_WAIT_MS);
+      if (!ready) { return undefined; }
     }
     index = index ?? this.lookupIndexByClass(className);
     if (!index && this.mappingIndexes.size > 0) {

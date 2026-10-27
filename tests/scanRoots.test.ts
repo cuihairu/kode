@@ -166,4 +166,41 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
       expect(py.map(u => u.fsPath)).toEqual([path.join(assets, 'scripts', 'base', 'Account.py')]);
     }
   });
+
+  it('外部根目录读取挂起期间可取消，取消后不继续遍历子目录', async () => {
+    const ws = makeTmpDir('cancel-ws');
+    const assets = makeTmpDir('cancel-assets');
+    fs.mkdirSync(path.join(assets, 'nested'));
+    fs.writeFileSync(path.join(assets, 'nested', 'Late.py'), 'class Late: pass\n');
+    const originalFind = stubWorkspace.findFiles;
+    const originalReaddir = fs.promises.readdir;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    stubWorkspace.findFiles = (async () => []) as typeof stubWorkspace.findFiles;
+    setAssetsRoot(assets);
+    let entered!: () => void;
+    let release!: () => void;
+    const reading = new Promise<void>(resolve => { entered = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let childReads = 0;
+    fs.promises.readdir = (async (...args: Parameters<typeof originalReaddir>) => {
+      if (String(args[0]) === assets) { entered(); await gate; }
+      if (String(args[0]) === path.join(assets, 'nested')) { childReads += 1; }
+      return originalReaddir(...args);
+    }) as typeof fs.promises.readdir;
+    const token = { isCancellationRequested: false } as { isCancellationRequested: boolean };
+    try {
+      const result = findFilesAcrossRoots('**/*.py', null, token as never);
+      await reading;
+      token.isCancellationRequested = true;
+      release();
+      expect(await result).toEqual([]);
+      expect(childReads).toBe(0);
+    } finally {
+      release();
+      fs.promises.readdir = originalReaddir;
+      stubWorkspace.findFiles = originalFind;
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
 });

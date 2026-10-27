@@ -7,6 +7,7 @@ import { EntityMappingManager } from '../src/entityMapping';
 import { resetScanRootCache } from '../src/scanRoots';
 import {
   clearRecentHoverTimeouts,
+  createLinkedCancellationToken,
   getRecentHoverTimeouts,
   raceWithBudget,
   setHoverBudgetLogHub,
@@ -102,6 +103,46 @@ describe('raceWithBudget', () => {
     slow.resolve('late-value');
     expect(await raced).toBe('late-value');
     expect(getRecentHoverTimeouts()).toEqual([]);
+  });
+
+  it('cancels one waiter promptly without cancelling shared work', async () => {
+    const shared = deferred<string>();
+    let cancel!: () => void;
+    let listener: (() => void) | undefined;
+    const token = {
+      isCancellationRequested: false,
+      onCancellationRequested(callback: () => void) {
+        listener = callback;
+        return { dispose: () => { listener = undefined; } };
+      }
+    };
+    cancel = () => { token.isCancellationRequested = true; listener?.(); };
+    const first = raceWithBudget('hover:cancel', shared.promise, 0, token as never);
+    const second = raceWithBudget('hover:shared', shared.promise, 0);
+    cancel();
+    expect(await first).toBeNull();
+    shared.resolve('ready');
+    expect(await second).toBe('ready');
+    expect(listener).toBeUndefined();
+    expect(getRecentHoverTimeouts()).toEqual([]);
+  });
+
+  it('a request budget cancels request-owned follow-up work while a shared scan continues', async () => {
+    const shared = deferred<void>();
+    const parent = {
+      isCancellationRequested: false,
+      onCancellationRequested: () => ({ dispose: () => undefined })
+    } as never;
+    const linked = createLinkedCancellationToken(parent);
+    let stopped = false;
+    linked.token.onCancellationRequested(() => { stopped = true; });
+    const result = await raceWithBudget('definition:test', shared.promise.then(() => 'ready'),
+      20, parent, linked.cancel);
+    expect(result).toBeNull();
+    expect(linked.token.isCancellationRequested).toBe(true);
+    expect(stopped).toBe(true);
+    shared.resolve();
+    linked.dispose();
   });
 });
 
