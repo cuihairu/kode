@@ -108,9 +108,9 @@ afterAll(() => {
 });
 
 describe('normalizeLookupPath', () => {
-  it('normalizes separators and case for cache keys', () => {
+  it('normalizes Windows paths while preserving POSIX case', () => {
     expect(normalizeLookupPath('C:\\Work\\Hero.Def')).toBe('c:/work/hero.def');
-    expect(normalizeLookupPath('/tmp/X.def')).toBe('/tmp/x.def');
+    expect(normalizeLookupPath('/tmp/X.def')).toBe('/tmp/X.def');
   });
 });
 

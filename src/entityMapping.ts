@@ -2126,7 +2126,7 @@ export class EntityMappingManager {
     if (token?.isCancellationRequested) return undefined;
     const defFileName = `${entityName}.def`;
     const defFile = defFiles.find(uri => {
-      // 文件名必须原样比对(2026-10-22 修正):normalizeLookupPath 会整体小写,
+      // 文件名必须原样比对(2026-10-22 修正):Windows 路径键会小写化，
       // 拿它取 basename 去对 PascalCase 实体名(Hero.def vs hero.def)恒 false,
       // 定向快路径成了死代码,悬停全部静默落回全量扫(永转根因之一)。
       // 目录排除仍用 normalized(大小写不敏感排除 interfaces/components)。
@@ -2371,7 +2371,7 @@ function inferOwnerNameFromPythonFile(pythonFile: string): string {
 export function inferOwnerKindFromPythonFile(
   pythonFile: string
 ): DefinitionSemanticCategory | undefined {
-  const normalizedPath = normalizeLookupPath(pythonFile);
+  const normalizedPath = normalizeLookupPath(pythonFile).toLowerCase();
   if (normalizedPath.includes('/components/')) {
     return 'component';
   }
@@ -2385,7 +2385,7 @@ export function inferOwnerKindFromPythonFile(
 }
 
 export function inferMethodSectionFromPythonFile(pythonFile: string): EntityMethodSection | undefined {
-  const normalizedPath = normalizeLookupPath(pythonFile);
+  const normalizedPath = normalizeLookupPath(pythonFile).toLowerCase();
 
   if (normalizedPath.includes('/scripts/base/') || normalizedPath.includes('/assets/scripts/base/')
     || normalizedPath.startsWith('base/') || normalizedPath.includes('/base/')) {

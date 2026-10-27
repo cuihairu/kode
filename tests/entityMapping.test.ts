@@ -130,7 +130,7 @@ describe('uniqueFilePaths', () => {
       '/work/Hero.py',
       '/WORK/hero.PY',
       '/work/Hero.py'
-    ])).toEqual(['/work/Hero.py']);
+    ])).toEqual(['/work/Hero.py', '/WORK/hero.PY']);
   });
 
   it('treats windows separators as equivalent', () => {

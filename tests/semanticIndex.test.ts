@@ -38,11 +38,25 @@ const makeTempRoot = (): string => {
 };
 
 describe('SemanticIndex 根模型(A4-5:规范化路径+rootID+显式序)', () => {
+  it('POSIX 大小写不同的根与 def 文件保持独立', () => {
+    const index = new SemanticIndex();
+    const upper = index.registerRoot('/project/A');
+    const lower = index.registerRoot('/project/a');
+    expect(upper).not.toBe(lower);
+    for (const rootId of [upper, lower]) {
+      index.registerEntity({ rootId, entityName: 'Hero', defFile: `${rootId}/Hero.def`, pythonFiles: [], owners: [] });
+    }
+    expect(index.getRoots()).toHaveLength(2);
+    expect(index.findEntityConflicts('Hero').map(item => item.defFile).sort())
+      .toEqual(['/project/A/Hero.def', '/project/a/Hero.def']);
+    expect(index.resolveRootIdForPath('/project/A/Hero.def')).toBe(upper);
+    expect(index.resolveRootIdForPath('/project/a/Hero.def')).toBe(lower);
+  });
   it('registerRoot 幂等:同一路径(不同写法/分隔符)返回同一稳定 rootId', () => {
     const index = new SemanticIndex();
     const rootId = index.registerRoot('/tmp/Proj_A');
-    expect(rootId).toBe('/tmp/proj_a');
-    expect(index.registerRoot('\\tmp\\proj_A')).toBe(rootId);
+    expect(rootId).toBe('/tmp/Proj_A');
+    expect(index.registerRoot('\\tmp\\Proj_A')).toBe(rootId);
     expect(index.getRoots()).toHaveLength(1);
     expect(index.getRoots()[0].order).toBe(0);
   });
@@ -90,7 +104,7 @@ describe('同名实体冲突与查找顺序取证(A4-5/A4-6,先锁不改)', () =
     register(index, '/roota', 'Hero', '/rootA/scripts/entity_defs/Hero.def');
     register(index, '/rootb', 'Hero', '/rootB/scripts/entity_defs/Hero.def');
     // 单一胜者 = 后注册者(与既有 mappingIndexes.set 覆盖一致)
-    expect(index.getEntityDefFile('Hero')).toBe('/rootb/scripts/entity_defs/hero.def');
+    expect(index.getEntityDefFile('Hero')).toBe('/rootB/scripts/entity_defs/Hero.def');
     // 冲突取证:全根清单两根都在,胜者排首
     const conflicts = index.findEntityConflicts('Hero');
     expect(conflicts).toHaveLength(2);
@@ -177,7 +191,8 @@ describe('类型注册表快照(A4-3:查询纯内存,更新事件驱动重建)',
     expect(index.getTypeRegistrySnapshot('/ws', true)).toBeUndefined();
     const stored = index.storeTypeRegistrySnapshot('/WS', true, [{ name: 'A' }], ['/WS/scripts/entity_defs/types.xml']);
     expect(stored.generation).toBe(1);
-    expect(index.getTypeRegistrySnapshot('/ws', true)?.entries).toEqual([{ name: 'A' }]);
+    expect(index.getTypeRegistrySnapshot('/WS', true)?.entries).toEqual([{ name: 'A' }]);
+    expect(index.getTypeRegistrySnapshot('/ws', true)).toBeUndefined();
     // 开关是键的一部分:关闸读不到同一份
     expect(index.getTypeRegistrySnapshot('/ws', false)).toBeUndefined();
   });
@@ -189,7 +204,8 @@ describe('类型注册表快照(A4-3:查询纯内存,更新事件驱动重建)',
     expect(index.notifySemanticFilesChanged(['/ws/scripts/base/Hero.py'])).toBe(0);
     expect(index.getTypeRegistrySnapshot('/ws', true)).toBeDefined();
     // 依赖文件变更:精确作废
-    expect(index.notifySemanticFilesChanged(['/WS/SCRIPTS/Entity_Defs/types.xml'])).toBe(1);
+    expect(index.notifySemanticFilesChanged(['/WS/SCRIPTS/Entity_Defs/types.xml'])).toBe(0);
+    expect(index.notifySemanticFilesChanged(['/ws/scripts/entity_defs/types.xml'])).toBe(1);
     expect(index.getTypeRegistrySnapshot('/ws', true)).toBeUndefined();
   });
 
@@ -240,7 +256,7 @@ describe('依赖失效图(A4-2:禁全仓重建,单文件变更精确裁断)', ()
   it('单 .def 变更只失效自身(无依赖者时不波及他文件;恒不全仓重建)', () => {
     const graph = makeGraph();
     const plan = graph.planInvalidation('/ws/scripts/entity_defs/Avatar.def', 'change');
-    expect(plan.invalidateFiles).toEqual(['/ws/scripts/entity_defs/avatar.def']);
+    expect(plan.invalidateFiles).toEqual(['/ws/scripts/entity_defs/Avatar.def']);
     expect(plan.fullRebuild).toBe(false);
     expect(plan.typeRegistryInvalidation).toBe(false);
   });
@@ -248,7 +264,7 @@ describe('依赖失效图(A4-2:禁全仓重建,单文件变更精确裁断)', ()
   it('父链 .def 变更沿依赖闭包只带出子 .def,不带出无关实体', () => {
     const graph = makeGraph();
     const plan = graph.planInvalidation('/ws/scripts/entity_defs/Parent.def', 'change');
-    expect(plan.invalidateFiles).toEqual(['/ws/scripts/entity_defs/hero.def', '/ws/scripts/entity_defs/parent.def']);
+    expect(plan.invalidateFiles).toEqual(['/ws/scripts/entity_defs/Hero.def', '/ws/scripts/entity_defs/Parent.def']);
     expect(plan.fullRebuild).toBe(false);
   });
 
@@ -257,7 +273,7 @@ describe('依赖失效图(A4-2:禁全仓重建,单文件变更精确裁断)', ()
     const plan = graph.planInvalidation('/ws/scripts/entity_defs/types.xml', 'change');
     expect(plan.typeRegistryInvalidation).toBe(true);
     expect(plan.invalidateFiles).toEqual([
-      '/ws/scripts/entity_defs/hero.def',
+      '/ws/scripts/entity_defs/Hero.def',
       '/ws/scripts/entity_defs/types.xml'
     ]);
     expect(plan.fullRebuild).toBe(false);
@@ -266,27 +282,27 @@ describe('依赖失效图(A4-2:禁全仓重建,单文件变更精确裁断)', ()
   it('Python 变更只失效该文件;create 无派生物记录只失效自身', () => {
     const graph = makeGraph();
     expect(graph.planInvalidation('/ws/scripts/base/Hero.py', 'change').invalidateFiles)
-      .toEqual(['/ws/scripts/base/hero.py']);
+      .toEqual(['/ws/scripts/base/Hero.py']);
     expect(graph.planInvalidation('/ws/scripts/entity_defs/New.def', 'create').invalidateFiles)
-      .toEqual(['/ws/scripts/entity_defs/new.def']);
+      .toEqual(['/ws/scripts/entity_defs/New.def']);
   });
 
   it('removeFile 摘边:子 .def 离场后父变更不再带出它', () => {
     const graph = makeGraph();
     graph.removeFile('/ws/scripts/entity_defs/Hero.def');
     expect(graph.planInvalidation('/ws/scripts/entity_defs/Parent.def', 'change').invalidateFiles)
-      .toEqual(['/ws/scripts/entity_defs/parent.def']);
+      .toEqual(['/ws/scripts/entity_defs/Parent.def']);
   });
 
   it('recordDependencies 幂等替换出边:旧边摘除、新边生效', () => {
     const graph = makeGraph();
     graph.recordDependencies('/ws/scripts/entity_defs/Hero.def', ['/ws/scripts/entity_defs/Other.def']);
     expect(graph.getDependencies('/ws/scripts/entity_defs/Hero.def'))
-      .toEqual(['/ws/scripts/entity_defs/other.def']);
+      .toEqual(['/ws/scripts/entity_defs/Other.def']);
     expect(graph.planInvalidation('/ws/scripts/entity_defs/Parent.def', 'change').invalidateFiles)
-      .toEqual(['/ws/scripts/entity_defs/parent.def']);
+      .toEqual(['/ws/scripts/entity_defs/Parent.def']);
     expect(graph.planInvalidation('/ws/scripts/entity_defs/Other.def', 'change').invalidateFiles)
-      .toContain('/ws/scripts/entity_defs/hero.def');
+      .toContain('/ws/scripts/entity_defs/Hero.def');
   });
 });
 
@@ -327,14 +343,14 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
       // 实体名回落:无 owner 归属的同名脚本文件
       const fallbackHit = manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'Avatar.py'));
       expect(fallbackHit?.name).toBe('Avatar');
-      // owner 匹配大小写不敏感(既有 normalizeLookupPath 双侧口径)
-      expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'HERO.py'))?.name).toBe('Hero');
+      // POSIX owner 路径保留大小写，不将不同文件归为同一 owner。
+      expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'base', 'HERO.py'))).toBeUndefined();
       // 无 owner 归属 + 实体名大小写不符仍 miss(既有大小写敏感回落口径)
       expect(manager.getMappingForPythonFile(path.join(root, 'scripts', 'cell', 'hero.py'))).toBeUndefined();
       // 语义索引取证:根显式登记,实体条目挂扫描根 rootId
       const semantic = manager.getSemanticIndex();
-      expect(semantic.getRoots().map(item => item.rootId)).toContain(root.toLowerCase().replace(/\\/g, '/'));
-      expect(semantic.findEntityByName('Hero')?.defFile).toContain('hero.def');
+      expect(semantic.getRoots().map(item => item.rootId)).toContain(root.replace(/\\/g, '/'));
+      expect(semantic.findEntityByName('Hero')?.defFile).toContain('Hero.def');
     } finally {
       manager.dispose();
     }
@@ -388,7 +404,7 @@ describe('EntityMappingManager 兼容层(A4-4:getMappingForPythonFile 系改走�
       // 依赖图取证:两条 def 依赖边均在,变更计划只含自身
       const graph = manager.getDependencyGraph();
       expect(graph.planInvalidation(heroDef, 'change').invalidateFiles)
-        .toEqual([path.join(root, 'scripts/entity_defs/Hero.def').replace(/\\/g, '/').toLowerCase()]);
+        .toEqual([path.join(root, 'scripts/entity_defs/Hero.def').replace(/\\/g, '/')]);
       // 删除:仅该实体离场
       defWatcher.fireDelete(Uri.file(heroDef));
       await new Promise(resolve => setImmediate(resolve));
@@ -424,8 +440,8 @@ describe('同名符号跨根稳定性(A6-5,接 PR5 版本轴)', () => {
     const index = new SemanticIndex();
     index.registerRoot('/stable/rootA');
     index.registerRoot('/stable/rootB');
-    const defA = '/stable/roota/scripts/entity_defs/hero.def';
-    const defB = '/stable/rootb/scripts/entity_defs/hero.def';
+    const defA = '/stable/roota/scripts/entity_defs/Hero.def';
+    const defB = '/stable/rootb/scripts/entity_defs/Hero.def';
     let firstWinner: string | null = null;
     let firstConflicts: readonly string[] | null = null;
     for (let round = 0; round < 50; round += 1) {

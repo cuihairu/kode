@@ -909,5 +909,8 @@ function extractSourceChain(
 }
 
 export function normalizeLookupPath(targetPath: string): string {
-  return targetPath.replace(/\\/g, '/').toLowerCase();
+  const normalized = targetPath.replace(/\\/g, '/');
+  return /^[A-Za-z]:\//.test(normalized) || normalized.startsWith('//')
+    ? normalized.toLowerCase()
+    : normalized;
 }
