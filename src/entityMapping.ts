@@ -2165,9 +2165,8 @@ export class EntityMappingManager {
       index = await this.ensureIndexTargeted(path.basename(pythonFile, '.py'));
     }
     if (!index) {
-      await this.scanEntityMappings();
       index = this.findIndexForPythonFile(pythonFile);
-      if (!index) {
+      if (!index && this.initialScanCompleted) {
         this.missingOwnerPaths.add(normalized);
       }
     }

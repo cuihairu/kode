@@ -321,7 +321,7 @@
 - [x] IDE-BUD-006 [P0] 取消 CodeLens 后停止后续批次；验收：文档关闭或 token 取消后，不继续给该文档解析新的属性或 RPC 点位；前置：无。
 - [ ] IDE-BUD-007 [P0] 取消 Call Hierarchy 的后续扫描；验收：取消 incoming/outgoing 查询后，该请求的队列不继续增长；前置：无。
 - [ ] IDE-BUD-008 [P0] 隔离同点 hover 合并请求的取消；验收：取消一个等待者不取消另一个等待者需要的共享计算；前置：IDE-BUD-002。
-- [ ] IDE-BUD-009 [P0] 为未知文件 def 归属查询去掉全扫等待；验收：冷 miss 只读快照和定向依赖；scanEntityMappings 挂起时仍有界返回；前置：无。
+- [x] IDE-BUD-009 [P0] 为未知文件 def 归属查询去掉全扫等待；验收：冷 miss 只读快照和定向依赖；scanEntityMappings 挂起时仍有界返回；前置：无。
 
 ### IDE-SCH · 数据库派生计算退出交互重算（P1）
 
