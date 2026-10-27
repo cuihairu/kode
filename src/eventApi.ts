@@ -124,6 +124,7 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
     }
     const text = document.getText();
     const calls = findEventCalls(text);
+    if (calls.length === 0) return [];
     // 本地索引缓存：不再每次全仓读盘扫描（用户令 2026-10-20，跳转/卡顿同治）。
     const index = this.sharedIndex ?? (this.ownIndex ??= new WorkspaceIndex());
     const all = await index.allEventCalls();

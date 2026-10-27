@@ -261,7 +261,7 @@
 ### IDE-EVT · 事件 CodeLens 与 WorkspaceIndex（P0）
 
 来源：PERF-03、IDX-05；src/eventApi.ts、src/workspaceIndex.ts。
-- [ ] IDE-EVT-001 [P0] 无事件语法时提前返回 CodeLens；验收：100 个普通文件的探针返回 0 lens 且不打开其他文档；前置：无。
+- [x] IDE-EVT-001 [P0] 无事件语法时提前返回 CodeLens；验收：100 个普通文件的探针返回 0 lens 且不打开其他文档；前置：无。
 - [ ] IDE-EVT-002 [P0] 共享事件索引首扫 Promise；验收：首扫被扣住时第二个调用者等待同一 Promise，不提前拿到空表；前置：无。
 - [ ] IDE-EVT-003 [P0] 允许事件索引启动失败后重试；验收：首次 discovery 抛错后，下一次查询能重新完成初始化；前置：IDE-EVT-002。
 - [ ] IDE-EVT-004 [P0] 用后台文件读取替代全仓 openTextDocument；验收：首次事件索引不触发其他文件的 onDidOpenTextDocument 事件；前置：无。

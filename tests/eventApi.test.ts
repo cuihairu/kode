@@ -5,6 +5,27 @@ import { configurationOverrides, makeTextDocument } from './helpers/vscodeStub';
 
 describe('KBEngine event API parsing', () => {
 
+it('does not scan the workspace for ordinary files without event calls', async () => {
+  const originalFindFiles = vscode.workspace.findFiles;
+  const originalOpen = vscode.workspace.openTextDocument;
+  let searches = 0;
+  let opens = 0;
+  vscode.workspace.findFiles = async () => { searches += 1; return []; };
+  vscode.workspace.openTextDocument = async (...args) => { opens += 1; return originalOpen(...args); };
+  try {
+    const provider = new EventCodeLensProvider();
+    for (let i = 0; i < 100; i += 1) {
+      const doc = makeTextDocument('def ordinary():\n    return 42', { fileName: `/ws/${i}.py`, languageId: 'python' }) as vscode.TextDocument;
+      expect(await provider.provideCodeLenses(doc)).toEqual([]);
+    }
+    expect(searches).toBe(0);
+    expect(opens).toBe(0);
+  } finally {
+    vscode.workspace.findFiles = originalFindFiles;
+    vscode.workspace.openTextDocument = originalOpen;
+  }
+});
+
 it('supports object-bound string events with attribute callbacks', () => {
   const calls = findEventCalls('self.addEvent("ev_ready", self.on_ready)');
   expect(calls).toHaveLength(1);
