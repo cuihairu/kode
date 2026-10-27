@@ -44,6 +44,9 @@ import type { EntityComponentFace } from './entityBuiltinProperties';
 
 export type EntityMethodSection = DefMethodSection;
 
+/** 首扫尝试上限(首次+重触发;真实扫描失败经冷查询有界重试,树真坏不无限打转) */
+const MAX_INITIAL_SCAN_ATTEMPTS = 3;
+
 export interface DefinitionSymbolIdentity {
   ownerKind: DefinitionSemanticCategory;
   ownerName: string;
@@ -175,6 +178,16 @@ export class EntityMappingManager {
    * 变更时清理,不会自愈)。
    */
   private initialScanCompleted = false;
+  /**
+   * 首扫真实扫描是否失败(审核发现 :182):keyed 任务受单槽调度器约束只负责
+   * 启动扫描即让出席位(运行中任务不可抢占,首扫分块才能插队执行),真实扫描
+   * 的失败因此无法经 keyed 失败态自动重排——由冷查询入口在此标记后重触发,
+   * 语义与调度器对 failed keyed 条目的下次调用重排(A3-4)对齐,但记账在
+   * 管理器侧。重触发有界,树真坏时不无限打转。
+   */
+  private initialScanFailed = false;
+  /** 首扫尝试次数(含首次;重触发上限见 MAX_INITIAL_SCAN_ATTEMPTS) */
+  private initialScanAttempts = 0;
   /** PR3:首扫统一走索引调度器(扩展注入共享实例,独立构造自建一份) */
   private readonly scheduler: IndexScheduler;
   /**
@@ -232,19 +245,16 @@ export class EntityMappingManager {
     // then runs as bounded background tasks so RequestLocal can run between them.
     const scanPromise = new Promise<void>(resolve => {
       setImmediate(() => {
-        let work: Promise<void> | null = null;
-        void this.scheduler
-          .ensureTask('entity-mapping-initial-scan', () => ({
-            kind: 'initial-scan',
-            priority: IndexTaskPriority.BackgroundFull,
-            run: async () => { work = this.scanEntityMappings(); }
-          }))
-          .catch(() => undefined)
-          .then(async () => { await work; })
-          .then(
-            () => { this.initialScanCompleted = true; resolve(); },
-            () => resolve() // 真实扫描失败:不置完成位,负缓存不得基于残缺快照发布
-          );
+        void this.launchInitialScanViaScheduler().then(
+          () => { this.initialScanCompleted = true; resolve(); },
+          () => {
+            // 真实扫描失败:不置完成位(负缓存不得基于残缺快照发布),也不再
+            // 静默转成「成功的 initialScan」——失败态记账,后续冷查询重触发
+            // (有界),等待者照常放行(部分索引可用)。
+            this.initialScanFailed = true;
+            resolve();
+          }
+        );
       });
     });
     if (this.deferredInitialScanResolve) {
@@ -261,6 +271,48 @@ export class EntityMappingManager {
     this.watchTypeRegistryFiles();
     this.watchDefFiles();
     this.watchPythonFiles();
+  }
+
+  /**
+   * 经 keyed 任务启动首扫并等真实扫描终态(ensureStartup 与失败重触发共用)。
+   * keyed 任务本体只启动扫描即返回(让出单槽调度席位,首扫分块才能作为独立
+   * 后台任务插队执行——运行中任务不可抢占,若 keyed 任务整轮占位会饿死自家
+   * 分块);真实扫描的终态由本方法返回的 promise 承载。
+   */
+  private launchInitialScanViaScheduler(): Promise<void> {
+    this.initialScanAttempts += 1;
+    let work: Promise<void> | null = null;
+    return this.scheduler
+      .ensureTask('entity-mapping-initial-scan', () => ({
+        kind: 'initial-scan',
+        priority: IndexTaskPriority.BackgroundFull,
+        run: async () => { work = this.scanEntityMappings(); }
+      }))
+      .catch(() => undefined)
+      .then(async () => { await work; });
+  }
+
+  /**
+   * 首扫失败后的有界重触发(审核发现 :182):冷查询入口在等待 initialScan 前
+   * 调用——失败态在此重排同一 keyed 任务(与调度器对 failed keyed 条目的下次
+   * 调用重排语义对齐),成功则补置完成位(负缓存闸放开),再失败则重新记账。
+   * 有界 MAX_INITIAL_SCAN_ATTEMPTS 次;当前查询不等待重试结果(部分索引即可
+   * 应答,负缓存闸保证不落死),后续查询自然拿到重试后的完整口径。
+   */
+  private retryInitialScanAfterFailure(): void {
+    if (!this.initialScanFailed || this.initialScanCompleted) { return; }
+    if (this.initialScanAttempts >= MAX_INITIAL_SCAN_ATTEMPTS) { return; }
+    this.initialScanFailed = false; // 重触发在途:防同一查询风暴内重复重排
+    jumpLog('info', () =>
+      `def 首扫失败,冷查询重触发(第 ${this.initialScanAttempts + 1}/${MAX_INITIAL_SCAN_ATTEMPTS} 次尝试)`);
+    void this.launchInitialScanViaScheduler().then(
+      () => { this.initialScanCompleted = true; },
+      () => {
+        if (this.initialScanAttempts < MAX_INITIAL_SCAN_ATTEMPTS) {
+          this.initialScanFailed = true;
+        }
+      }
+    );
   }
 
   private async scanEntityMappings(): Promise<void> {
@@ -1129,6 +1181,9 @@ export class EntityMappingManager {
     // declaration. Cross-file fallback is for role-specific interface modules.
     const allowCrossDefFallback = ownerKind === 'interface' && !!section;
     if (!local && allowCrossDefFallback) {
+      // 首扫曾失败:先重触发(有界)再等——失败被静默转成功的话,这里等的
+      // 永远是已 resolve 的残缺快照,重试语义到不了实体扫描(审核发现 :182)
+      this.retryInitialScanAfterFailure();
       const ready = await raceWithBudget('definition:cross-def-index',
         this.initialScan.then(() => true), INTERACTIVE_INDEX_WAIT_MS);
       if (!ready) { return null; }
@@ -2137,6 +2192,9 @@ export class EntityMappingManager {
     if (this.missingClassNames.has(className)) {
       return undefined;
     }
+    // 首扫曾失败(哪怕映射表已并入部分分块):先重触发(有界)再查——失败被
+    // 静默转成功的话,后续分块里的类从此缺席且无任何重试路径(审核发现 :182)。
+    this.retryInitialScanAfterFailure();
     let index = this.lookupIndexByClass(className);
     if (!index) {
       // 定向首解析(2026-10-22):同名 .def 单文件解析毫秒级,不再阻塞等全量首扫
