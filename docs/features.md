@@ -11,6 +11,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **kbengine-def language & grammar** — `.def` files get a dedicated language id, bracket rules and a TextMate grammar — (evidence: package.json#contributes.languages, package.json#contributes.grammars)
 - **Real-time .def diagnostics** — unknown types / Flags / DetailLevel values, duplicate property & method definitions, missing Type/Flags fields, with a master switch — (evidence: package.json#configuration `kbengine.diagnostics.*`, `kbengine.enableDiagnostics`; src/defAnalyzer.ts)
 - **Structured .def validation** — duplicate definitions, tag placement and missing-field checks behind `kbengine.enableStructureDiagnostics` — (evidence: package.json#configuration `kbengine.enableStructureDiagnostics`; src/defAnalyzer.ts)
+- **Python receiver-None diagnostics** — `self.cell`/`self.base`/`self.client` member use without a null guard (positive `if`, early exit, alias, `hasattr`) flags a Warning citing the engine getter source; calling a `.def` method via a receiver whose section does not declare it flags a section mismatch — (evidence: package.json#configuration `kbengine.receiverNoneDiagnostics`; src/receiverNoneDiagnostics.ts)
 - **Receiver-aware def section gating** — property Flags resolved into base/cell/client visibility domains that gate sections and ordering — (evidence: src/defAnalyzer.ts `propertyFlagDomainList`; commit c69517e)
 - **Hover: tag / value / symbol docs** — .def tag explanations, type-Flags-DetailLevel value docs and custom property/method summaries — (evidence: package.json#configuration `kbengine.hover.showTagDocs|showValueDocs|showSymbolDocs`; src/languageProviders.ts)
 - **Hover: types.xml storage shape** — where a custom type lands in the database (builtin column, FIXED_DICT flatten, ARRAY child table recursion) — (evidence: todo.md:20; package.json#configuration `kbengine.hover.typeStorage`; src/languageProviders.ts `describeTypeStorageShape`)
@@ -91,6 +92,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.db.tablePrefix` | `""` | Database table name prefix (empty = engine default tbl_); schema view and SQL templates substitute from the same source |
 | `kbengine.enableDiagnostics` | `true` | Master switch for real-time KBEngine diagnostics |
 | `kbengine.enableStructureDiagnostics` | `true` | Structured .def validation (duplicates, tag placement, missing fields) |
+| `kbengine.receiverNoneDiagnostics` | `true` | Python-side Warning for unguarded `self.cell`/`self.base`/`self.client` use and `.def` section mismatches |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | Diagnose unknown KBEngine types |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | Diagnose unknown Flags values |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | Diagnose unknown DetailLevel values |

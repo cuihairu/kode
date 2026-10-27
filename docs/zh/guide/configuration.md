@@ -63,7 +63,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 ## kbengine.* 设置项总览(按功能分区)
 
-74 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 74 行的大表。找一个设置,先按功能定位分区,再在区内对行。
+75 项设置按功能分区,每区一张小表(配置项/类型/默认值/说明),表后紧接该区的改动影响与常见误配——不再是一张 75 行的大表。找一个设置,先按功能定位分区,再在区内对行。
 
 ### 诊断
 
@@ -71,6 +71,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | --- | --- | --- | --- |
 | `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关(批147 起同管 entities.xml 同名重复登记检查) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关(重复属性/方法、子标签位置、缺字段、字段重复定义) |
+| `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python 侧诊断:`self.client`/`self.cell`/`self.base` 成员引用无判空 guard(正向 if、早退、别名、hasattr)报 Warning 并附引擎源码;同时检查 `.def` 段错配(经接收者调用其对应 section 未声明的方法) |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
@@ -81,13 +82,14 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | --- | --- | --- |
 | `enableDiagnostics` | `.def` 的类型、Flags、结构问题与 entities.xml 同名重复登记全部不再提示 | 忘了重开,以为代码没写错 |
 | `enableStructureDiagnostics` | 重复属性/方法、子标签位置错、缺 `Type`/`Flags`、字段重复定义都不报 | 与上一项搞混:这项只管结构,类型名拼错归 `checkUnknownTypes` |
+| `receiverNoneDiagnostics` | Python 脚本里无判空的 `self.cell`/`self.base`/`self.client` 引用与 `.def` 段错配不再提示 | 接收者在对端不在时(玩家离线、丢 cell)就是 None;关掉只是不告警,调用并不会因此安全 |
 | `diagnostics.checkUnknownTypes` | 类型名拼错不再报 | 自定义类型要能找到才不误报:先查 `entity_defs/types.xml`、`scripts/entity_defs/types.xml`、`assets/scripts/entity_defs/types.xml`,再到 `user_type/<Type>.py`、`scripts/user_type/<Type>.py`、`assets/scripts/user_type/<Type>.py` |
 | `diagnostics.checkUnknownFlags` | Flags 拼错不再报 | — |
 | `diagnostics.checkUnknownDetailLevels` | DetailLevel 非法值不再报 | — |
 | `diagnostics.checkDuplicateDefinitions` | 真重名漏报 | 提示过多的项目可关,代价是漏掉真重名 |
 | `diagnostics.checkMissingPropertyFields` | 缺 `Type`/`Flags` 的属性不报 | — |
 
-诊断只在打开或编辑 `.def` 文件时触发,`kbengine.*` 配置变化后会重扫已打开的 `.def`。
+诊断只在打开或编辑 `.def` 文件时触发;`kbengine.receiverNoneDiagnostics` 另在打开或编辑 Python 实体脚本时触发。`kbengine.*` 配置变化后会重扫已打开文档。
 
 ### 悬停
 
@@ -519,7 +521,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 
 **三类完全无配置项、纯自动发现的资源**(自批125 起):`types.xml`、`messages_fixed(_defaults).xml`、引擎 `kbengine_defaults.xml`(binPath 推导不出时经引擎源码根锚点兜底再推)。
 
-### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 74 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
+### 全量配置项对照表(批125 盘点 32 项;此后批126 起持续新增,现状 75 项,新设置见上面「kbengine.* 设置项总览(按功能分区)」各分区)
 
 `现在怎么用` = 当前实际取值方式;`能否自动发现` = 该值是否可以从工作区/环境推导;`处置` = 本轮落地的结论与理由。
 

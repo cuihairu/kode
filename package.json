@@ -638,6 +638,11 @@
           "default": true,
           "description": "启用 .def 结构化校验（重复定义、标签位置、缺失字段等）"
         },
+        "kbengine.receiverNoneDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出"
+        },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,

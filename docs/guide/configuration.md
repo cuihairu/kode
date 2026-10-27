@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 74 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 74-row table. To find a setting, locate the feature area first, then the row within it.
+The 75 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 75-row table. To find a setting, locate the feature area first, then the row within it.
 
 ### Diagnostics
 
@@ -71,6 +71,7 @@ The 74 settings are grouped by feature — one small table per area (Setting/Typ
 | --- | --- | --- | --- |
 | `kbengine.enableDiagnostics` | boolean | `true` | Master switch for `.def` diagnostics (since batch 147 it also gates the duplicate entity registration check in `entities.xml`) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | Switch for structural validation (duplicate properties/methods, child-tag position, missing fields, duplicated field definitions) |
+| `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python-side diagnostics: `self.client`/`self.cell`/`self.base` member use without a null guard (positive `if`, early exit, alias, `hasattr`) is flagged as a Warning with the engine source cited; also flags `.def` section mismatches (calling a method via a receiver whose section does not declare it) |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | Check unknown type names |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | Check unknown Flags values |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | Check illegal DetailLevel values |
@@ -81,13 +82,14 @@ The 74 settings are grouped by feature — one small table per area (Setting/Typ
 | --- | --- | --- |
 | `enableDiagnostics` | Type, Flags, and structural problems in `.def`, plus duplicate `entities.xml` registrations, are no longer flagged | Forgetting to reopen the file and assuming the code has no errors |
 | `enableStructureDiagnostics` | Duplicate properties/methods, misplaced child tags, missing `Type`/`Flags`, and duplicated field definitions all go unreported | Confusing this with the item above: this one covers structure only; a misspelled type name belongs to `checkUnknownTypes` |
+| `receiverNoneDiagnostics` | Unguarded `self.cell`/`self.base`/`self.client` uses and `.def` section mismatches in Python scripts are no longer flagged | The receiver is `None` whenever the peer side is gone (player offline, lost cell); disabling only silences the warning, it does not make the call safe |
 | `diagnostics.checkUnknownTypes` | Misspelled type names no longer reported | Custom types must be locatable to avoid false positives: check `entity_defs/types.xml`, `scripts/entity_defs/types.xml`, `assets/scripts/entity_defs/types.xml` first, then `user_type/<Type>.py`, `scripts/user_type/<Type>.py`, `assets/scripts/user_type/<Type>.py` |
 | `diagnostics.checkUnknownFlags` | Misspelled Flags no longer reported | — |
 | `diagnostics.checkUnknownDetailLevels` | Illegal DetailLevel values no longer reported | — |
 | `diagnostics.checkDuplicateDefinitions` | Real duplicates go unreported | Projects with too many hints may turn this off, at the cost of missing real duplicates |
 | `diagnostics.checkMissingPropertyFields` | Properties missing `Type`/`Flags` go unreported | — |
 
-Diagnostics trigger only when a `.def` file is opened or edited; after `kbengine.*` configuration changes, already-open `.def` files are rescanned.
+Diagnostics trigger only when a `.def` file is opened or edited; `kbengine.receiverNoneDiagnostics` additionally triggers on Python entity scripts opened or edited. After `kbengine.*` configuration changes, already-open documents are rescanned.
 
 ### Hover
 

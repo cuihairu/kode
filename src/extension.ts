@@ -1,6 +1,11 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { setJumpLogEnabled } from './navigationLog';
+import {
+  RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT,
+  receiverNoneDiagnosticItems,
+  type ReceiverDiagnosticItem
+} from './receiverNoneDiagnostics';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getLanguageServiceSummaryReport,
@@ -263,6 +268,10 @@ export function activate(context: vscode.ExtensionContext) {
   // 诊断 collection 与文档事件生命周期
   const isEntitiesXmlDocument = (document: vscode.TextDocument): boolean =>
     document.fileName.endsWith('entities.xml');
+  // Python 侧诊断(receiver 可能为 None + 段错配,用户令 2026-10-27):与
+  // .def/entities.xml 共用诊断 collection 与文档事件生命周期
+  const isPythonDocument = (document: vscode.TextDocument): boolean =>
+    document.languageId === 'python';
 
   // PR1 性能观测:请求级打点只看「结果是否为空」定 ok/miss(vscode Hover /
   // Location / CompletionItem[] 约定),结果对象原样透传,不改任何语义。
@@ -381,6 +390,50 @@ export function activate(context: vscode.ExtensionContext) {
   const entityMappingManager = new EntityMappingManager(context, indexScheduler, {
     deferStartup: true
   });
+
+  // Python 侧诊断(receiver 可能为 None + .def 段错配,用户令 2026-10-27 任务1):
+  // compute 同步(guard 分析走 in-tree pythonParser;映射经 getMappingForPythonFile
+  // 纯内存快照),severity=Warning,kbengine.receiverNoneDiagnostics 开关默认开,
+  // 与 .def/entities.xml 共用诊断 collection 与文档事件生命周期。
+  const scheduleReceiverNoneDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    const options = {
+      layer: 'local' as const,
+      compute: () => {
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('receiverNoneDiagnostics', RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT);
+        return receiverNoneDiagnosticItems(
+          document.getText(),
+          document.uri.fsPath,
+          isPythonDocument(document)
+            ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
+            : undefined,
+          enabled
+        );
+      },
+      publish: (items: readonly ReceiverDiagnosticItem[]) => {
+        diagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      diagnosticScheduler.requestQueued(document, options);
+    } else {
+      diagnosticScheduler.request(document, options);
+    }
+  };
 
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
   const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);
@@ -763,6 +816,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleDefDiagnostics(event.document, 'queued');
       } else if (isEntitiesXmlDocument(event.document)) {
         scheduleEntitiesDiagnostics(event.document, 'queued');
+      } else if (isPythonDocument(event.document)) {
+        scheduleReceiverNoneDiagnostics(event.document, 'queued');
       }
       if (diagnosticFlushTimer === undefined) {
         diagnosticFlushTimer = setTimeout(() => {
@@ -804,6 +859,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleDefDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
+      } else if (isPythonDocument(document)) {
+        scheduleReceiverNoneDiagnostics(document, 'immediate');
       }
       // 批159:开 Python 档即预热实体 def 定向首解析,首次 hover/CodeLens/
       // 签名帮助不再吃冷启动等待(失败静默,预热是优化不是功能)。
@@ -817,6 +874,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleDefDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
+      } else if (isPythonDocument(document)) {
+        scheduleReceiverNoneDiagnostics(document, 'immediate');
       }
     });
   }
@@ -881,17 +940,22 @@ export function activate(context: vscode.ExtensionContext) {
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
       event.affectsConfiguration('kbengine.diagnostics') ||
-      event.affectsConfiguration('kbengine.enableDiagnostics');
+      event.affectsConfiguration('kbengine.enableDiagnostics') ||
+      event.affectsConfiguration('kbengine.receiverNoneDiagnostics');
     if (diagnosticsInputsChanged && diagnosticScheduler.isEnabled()) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
           event.affectsConfiguration('kbengine.diagnostics')) {
         diagnosticScheduler.invalidateAll();
       }
+      // receiverNoneDiagnostics 开关切换即重算(任务1,用户令 2026-10-27):
+      // compute 每次现读配置,这里只需对已开文档重调调度
       vscode.workspace.textDocuments.forEach(doc => {
         if (isDefDocument(doc)) {
           scheduleDefDiagnostics(doc, 'immediate');
         } else if (isEntitiesXmlDocument(doc)) {
           scheduleEntitiesDiagnostics(doc, 'immediate');
+        } else if (isPythonDocument(doc)) {
+          scheduleReceiverNoneDiagnostics(doc, 'immediate');
         }
       });
     }

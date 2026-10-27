@@ -9,6 +9,7 @@
 - **kbengine-def 语言与语法** —— `.def` 文件注册专属语言 id、括号规则与 TextMate 语法 ——（证据：package.json#contributes.languages、package.json#contributes.grammars）
 - **.def 实时诊断** —— 未知类型 / Flags / DetailLevel 取值、属性与方法重复定义、缺 Type/Flags 字段，带总开关 ——（证据：package.json#configuration `kbengine.diagnostics.*`、`kbengine.enableDiagnostics`；src/defAnalyzer.ts）
 - **.def 结构化校验** —— 重复定义、标签位置与缺失字段检查，挂 `kbengine.enableStructureDiagnostics` 开关 ——（证据：package.json#configuration `kbengine.enableStructureDiagnostics`；src/defAnalyzer.ts）
+- **Python 接收者判空诊断** —— `self.cell`/`self.base`/`self.client` 成员引用无判空 guard（正向 if、早退、别名、hasattr）报 Warning 并附引擎 getter 源码；经接收者调用其对应 section 未声明的 `.def` 方法报段错配 ——（证据：package.json#configuration `kbengine.receiverNoneDiagnostics`；src/receiverNoneDiagnostics.ts）
 - **接收者感知的 def 段位判定** —— 属性 Flags 解析为 base/cell/client 可见域，用于段判定与排序 ——（证据：src/defAnalyzer.ts `propertyFlagDomainList`；commit c69517e）
 - **悬停：标签 / 取值 / 符号文档** —— .def 标签说明、类型-Flags-DetailLevel 取值说明与自定义属性/方法名摘要 ——（证据：package.json#configuration `kbengine.hover.showTagDocs|showValueDocs|showSymbolDocs`；src/languageProviders.ts）
 - **悬停：types.xml 落库形态** —— 自定义类型在数据库的落点（builtin 主表单列附列型、FIXED_DICT 平铺、ARRAY 子表递归）——（证据：todo.md:20；package.json#configuration `kbengine.hover.typeStorage`；src/languageProviders.ts `describeTypeStorageShape`）
@@ -89,6 +90,7 @@
 | `kbengine.db.tablePrefix` | `""` | 数据库表名前缀（空 = 引擎默认 tbl_）；schema 视图与 SQL 模板同源替换 |
 | `kbengine.enableDiagnostics` | `true` | KBEngine 实时诊断总开关 |
 | `kbengine.enableStructureDiagnostics` | `true` | 结构化 .def 校验（重复定义、标签位置、缺失字段） |
+| `kbengine.receiverNoneDiagnostics` | `true` | Python 侧 Warning：无判空的 `self.cell`/`self.base`/`self.client` 引用与 `.def` 段错配 |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | 诊断未知 KBEngine 类型 |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | 诊断未知 Flags 取值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | 诊断未知 DetailLevel 取值 |
