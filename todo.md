@@ -290,7 +290,7 @@
 - [x] IDE-IDX-011 [P1] 统一 documentStore 与语义索引路径键；验收：同一 URI 在两层得到一致身份，POSIX 大小写差异不串缓存；前置：IDE-IDX-009, IDE-IDX-010。
 - [x] IDE-IDX-012 [P1] 为全部工作区根建立 def watcher；验收：修改第二根的 def 后，实体映射与依赖失效均可观察；前置：无。（9a06dce;实现=entityMapping.watchDefFiles 从只挂首根改为遍历全部 workspaceFolders 建 watcher(与 watchPythonFiles 同口径,外部资产根不变);测试=tests/entityMappingManager.test.ts IDE-IDX-012(双 workspace 根,第二根按 pattern 有独立 def watcher,父 def 变更后自身重解析见新方法/子实体依赖失效按需重建继承新方法,第一根索引原引用不动);测试绿 3245|7）
 - [x] IDE-IDX-013 [P1] 为全部工作区根建立类型 watcher；验收：第二根 types.xml/alias.xml 更新后，类型快照失效且下次得到新值；前置：无。（31dcce5;实现=entityMapping.watchTypeRegistryFiles 从只挂首根改为遍历全部 workspaceFolders 建 watcher(外部资产根不变,notify→notifySemanticFilesChanged 精确作废链路原样);测试=tests/entityMappingManager.test.ts IDE-IDX-013(双根,第二根按 pattern 有独立 types watcher,B 根 UINT16→STRING 后快照失效重查得 str,A 根不受影响);测试绿 3246|7）
-- [ ] IDE-IDX-014 [P1] 切换 assetsRoot 时重建实体 watcher；验收：旧外部根 watcher 被释放，新根更新能触发维护；前置：IDE-IDX-012, IDE-IDX-013。
+- [x] IDE-IDX-014 [P1] 切换 assetsRoot 时重建实体 watcher；验收：旧外部根 watcher 被释放，新根更新能触发维护；前置：IDE-IDX-012, IDE-IDX-013。（db603b9;实现=entityMapping 三类 watcher 拆出 attachPythonWatcher/attachTypeRegistryWatcher/attachDefWatcher 单 pattern 挂载+refreshExternalRootWatchers() 外部根三件套整组重建(旧 watcher dispose,新根按当前 getExternalScanRoots 重挂,dispose 面同清)+extension.ts assetsRoot 配置变更分支接线;测试=tests/entityMappingManager.test.ts IDE-IDX-014(extA→extB 切换后旧 watcher fire 不再触达维护/新根三件套挂上且 def 变更建出映射);测试绿 3247|7）
 - [ ] IDE-IDX-015 [P1] 移除根时摘除该根全部索引记录；验收：工作区移除 B 后 B 的实体、owner 和类型都不可查，A 保留；前置：IDE-IDX-003。
 - [ ] IDE-IDX-016 [P1] 让旧根在途任务无法回写；验收：扫描 B 未结束时移除 B，晚到结果不能重新登记该根；前置：IDE-IDX-015。
 - [ ] IDE-IDX-017 [P1] 同文件成员跳转只查当前文件快照；验收：全仓扫描挂起时，同文件 Class.method 仍能跳转且不调用 ensureScanned；前置：无。
