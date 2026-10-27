@@ -1042,9 +1042,17 @@ export class EntityMappingManager {
       const normalized = normalizeLookupPath(file);
       const index = this.mappingIndexesByRoot.get(normalized);
       if (index) {
-        this.mappingIndexes.delete(index.rootName);
         this.mappingIndexesByRoot.delete(normalized);
-        this.semanticIndex.removeEntityByDefFile(normalized);
+        // IDE-IDX-008:同名实体共用名字槽,删 B 不能连坐 A——摘除后由语义
+        // 索引重选的同名胜者(仍存在的另一根)接管名字槽,无胜者才真删。
+        const removed = this.semanticIndex.removeEntityByDefFile(normalized);
+        const successorEntry = removed ? this.semanticIndex.findEntityByName(removed.entityName) : null;
+        const successor = successorEntry ? this.mappingIndexesByRoot.get(successorEntry.defFile) : undefined;
+        if (successor) {
+          this.mappingIndexes.set(index.rootName, successor);
+        } else {
+          this.mappingIndexes.delete(index.rootName);
+        }
       }
       this.defParseCache.delete(normalized);
       this.dependencyGraph.removeFile(normalized);

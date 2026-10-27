@@ -732,3 +732,69 @@ describe('IDE-IDX-005 保存共享脚本刷新全部依赖实体', () => {
     }
   }, 20000);
 });
+
+describe('IDE-IDX-008 删除同名胜者保留其他根实体', () => {
+  it('移除 B 的 Hero 后 A 的 Hero 按名字/按 A 根均可查,不被连坐', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mapping-winner-'));
+    try {
+      for (const [project, marker] of [['a', 'on_a'], ['b', 'on_b']] as Array<[string, string]>) {
+        write(root, `${project}/scripts/entities.xml`, '<root>\n  <Hero hasBase="true"/>\n</root>');
+        write(root, `${project}/scripts/entity_defs/Hero.def`,
+          `<root>\n  <BaseMethods>\n    <${marker}/>\n  </BaseMethods>\n</root>`);
+        write(root, `${project}/scripts/base/Hero.py`,
+          `class Hero(object):\n    def ${marker}(self):\n        pass\n`);
+      }
+      const aDef = p(root, 'a', 'scripts', 'entity_defs', 'Hero.def');
+      const bDef = p(root, 'b', 'scripts', 'entity_defs', 'Hero.def');
+      const aHeroPy = p(root, 'a', 'scripts', 'base', 'Hero.py');
+      const bHeroPy = p(root, 'b', 'scripts', 'base', 'Hero.py');
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'winner', index: 0 }];
+      stubWorkspace.findFiles = async () => {
+        const results: Uri[] = [];
+        const walk = (dir: string) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = p(dir, entry.name);
+            if (entry.isDirectory()) { walk(full); }
+            else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+          }
+        };
+        walk(root);
+        return results;
+      };
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        const rootIndexes = (): Map<string, unknown> =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
+        await until(() => rootIndexes().size >= 2, 'dual-root scan');
+        const fromA = await manager.resolveMethodDefinitionForClass('Hero', 'on_a', undefined, aHeroPy);
+        expect(fromA).toMatchObject({ defFile: aDef });
+
+        // 删 B 的 Hero.def:磁盘移除 + def watcher delete 事件
+        fs.rmSync(bDef);
+        (manager as unknown as { defWatcher: { fireDelete: (uri: Uri) => void } })
+          .defWatcher.fireDelete(Uri.file(bDef));
+        await until(() => rootIndexes().size === 1, 'B def removal');
+
+        // A 根查询不受连坐
+        const fromAAfter = await manager.resolveMethodDefinitionForClass('Hero', 'on_a', undefined, aHeroPy);
+        expect(fromAAfter).toMatchObject({ defFile: aDef });
+        // 名字维度:同名胜者重选到 A,名字槽不空
+        expect(manager.getMapping('Hero')).toMatchObject({ defFile: aDef });
+        expect(
+          (manager as unknown as { semanticIndex: { getEntityDefFile: (name: string) => string | null } })
+            .semanticIndex.getEntityDefFile('Hero')
+        ).toBe(aDef);
+        // B 真删干净:B 根查 B 独有方法 → null
+        expect(await manager.resolveMethodDefinitionForClass('Hero', 'on_b', undefined, bHeroPy)).toBeNull();
+      } finally {
+        manager.dispose();
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 20000);
+});

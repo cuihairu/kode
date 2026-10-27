@@ -178,6 +178,20 @@ export class SemanticIndex {
       }
     }
     this.entitiesByDefFile.delete(normalized);
+    // IDE-IDX-008:被删者是同名胜者时,从剩余同名条目重选胜者(最后注册者
+    // 胜,与注册覆盖口径一致)——删 B 的 Hero 不连坐 A 的 Hero,名字槽
+    // 始终指向仍存在的实体。
+    if (!this.entitiesByName.has(record.entry.entityName)) {
+      let successor: EntityRecord | undefined;
+      for (const candidate of this.entitiesByDefFile.values()) {
+        if (candidate.entry.entityName === record.entry.entityName) {
+          successor = candidate;
+        }
+      }
+      if (successor) {
+        this.entitiesByName.set(record.entry.entityName, successor);
+      }
+    }
     return record.entry;
   }
 

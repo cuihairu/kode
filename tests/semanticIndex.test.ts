@@ -224,11 +224,14 @@ describe('同名实体冲突与查找顺序取证(A4-5/A4-6,先锁不改)', () =
       '/rootB/scripts/base/Hero.py'
     ]);
     expect(index.removeEntityByDefFile('/rootB/scripts/entity_defs/Hero.def')?.entityName).toBe('Hero');
-    // 胜者被摘,同名清单只剩 rootA(实体名映射不自动回退——保持与既有
-    // mappingIndexes.delete 同口径,补建靠重扫)
-    expect(index.getEntityDefFile('Hero')).toBeNull();
+    // 胜者被摘:名字槽重选到剩余同名的 rootA(IDE-IDX-008,不连坐其他根),
+    // 同名清单只剩 rootA
+    expect(index.getEntityDefFile('Hero')).toBe('/rootA/scripts/entity_defs/Hero.def');
     expect(index.findEntityConflicts('Hero')).toHaveLength(1);
-    expect(index.findEntityByPythonFile('/rootB/scripts/base/Hero.py')).toBeNull();
+    // rootB 的 Hero.py owner 记录已清;basename 回落(策略②)命中重选后的
+    // 同名胜者 rootA——与既有 findIndexForPythonFile 两段式口径一致
+    expect(index.findEntityByPythonFile('/rootB/scripts/base/Hero.py')?.defFile)
+      .toBe('/rootA/scripts/entity_defs/Hero.def');
     expect(index.findEntityByPythonFile('/rootA/scripts/base/Hero.py')?.entityName).toBe('Hero');
   });
 });
@@ -505,10 +508,10 @@ describe('同名符号跨根稳定性(A6-5,接 PR5 版本轴)', () => {
       expect(winner).toBe(firstWinner);
       expect(conflicts).toEqual(firstConflicts);
       expect(conflicts).toEqual([defB, defA]);
-      // 摘除本轮胜者:实体名映射不自动回退(与既有 mappingIndexes.delete 同口径,
-      // 补建靠重扫),同名清单只剩 rootA 的 def 条目;下一轮重注册即恢复
+      // 摘除本轮胜者:名字槽重选到剩余的 rootA(IDE-IDX-008,不连坐),
+      // 同名清单只剩 rootA 的 def 条目;下一轮重注册即恢复胜者 defB
       expect(index.removeEntityByDefFile(defB)?.rootId).toBe('/stable/rootb');
-      expect(index.getEntityDefFile('Hero')).toBeNull();
+      expect(index.getEntityDefFile('Hero')).toBe(defA);
       expect(index.findEntityConflicts('Hero')).toHaveLength(1);
     }
   });
