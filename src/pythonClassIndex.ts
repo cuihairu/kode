@@ -765,23 +765,32 @@ export class PythonClassIndex {
   }
 
   /**
-   * 分块取消/失败遗留文件的定向补解析:单个后台小块,只跑未入索引的文件。
-   * 重试有界(MAX_SCAN_RETRY_ATTEMPTS 次),永久不可读的文件不无限重试;
+   * 分块取消/失败遗留文件与解析失败(旧索引保留)文件的定向补解析:单个
+   * 后台小块,逐文件重跑 loadFile,以其实际提交结果(false=本次未提交)推进
+   * 有界重试(MAX_SCAN_RETRY_ATTEMPTS 次),永久不可读的文件不无限重试;
    * 整块再被取消则保持登记,下一次查询再试。
    */
   private schedulePendingScanRetry(): void {
     if (this.scanRetryInFlight || this.pendingScanRetries.size === 0) { return; }
-    const files = [...this.pendingScanRetries.keys()].filter(file => !this.fileCache.has(file));
+    const files = [...this.pendingScanRetries.keys()];
     if (files.length === 0) { return; }
     this.scanRetryInFlight = true;
+    // 逐文件收 loadFile 的提交结果:登记表里既有从未入索引的分块遗留文件,
+    // 也有解析失败但旧索引仍在的文件——后者 fileCache 恒有值,不能拿
+    // 「表里有」当成功信号,必须看本次重试是否真的提交了内容。
+    const committed = new Map<string, boolean>();
     this.scheduler.enqueue({
       kind: 'full-reindex',
       priority: IndexTaskPriority.BackgroundFull,
-      run: async () => { await Promise.all(files.map(file => this.loadFile(file, -1))); }
+      run: async () => {
+        for (const file of files) {
+          committed.set(file, await this.loadFile(file, -1));
+        }
+      }
     }).wait.then(
       () => {
         for (const file of files) {
-          if (this.fileCache.has(file)) {
+          if (committed.get(file) === true) {
             this.pendingScanRetries.delete(file);
             continue;
           }
@@ -898,7 +907,7 @@ export class PythonClassIndex {
       priority: IndexTaskPriority.RequestLocal,
       filePath,
       version: this.revisions.get(filePath) ?? 0,
-      run: () => this.loadFile(filePath, -1)
+      run: async () => { await this.loadFile(filePath, -1); }
     });
     const done = task.wait
       .catch(() => undefined)
@@ -971,14 +980,18 @@ export class PythonClassIndex {
     }
   }
 
-  private async loadFile(filePath: string, version: number): Promise<void> {
+  private async loadFile(filePath: string, version: number): Promise<boolean> {
     const revision = this.revisions.get(filePath) ?? 0;
     this.revisions.set(filePath, revision);
+    // 读失败与解析失败分流(审核发现:两者原共用一个 catch,解析线程崩溃会
+    // 把仍存在文件的旧类索引一并删掉)。读失败=文件被删/不可读,撤索引正确;
+    // 解析失败=内容已读到、文件仍在盘,必须保留旧索引并登记待补重试。
+    // 返回值:false=本次尝试未提交内容(待补重试,有界);true=已提交或无害早退。
+    let open: vscode.TextDocument | undefined;
+    let content: string;
     try {
-      const open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
-      const content = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
-      if ((this.revisions.get(filePath) ?? 0) !== revision) { return; }
-      await this.updateFileResponsive(filePath, content, open?.version ?? version, revision);
+      open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
+      content = open ? open.getText() : await fs.promises.readFile(filePath, 'utf8');
     } catch {
       // A removed/unreadable file must not leave navigable stale classes.
       // PR5:从未入索引的文件(staging 探测的候选路径不存在等)只记录版本,
@@ -995,6 +1008,24 @@ export class PythonClassIndex {
           this.resetRoots();
         }
       }
+      return false;
+    }
+    try {
+      if ((this.revisions.get(filePath) ?? 0) !== revision) { return true; }
+      await this.updateFileResponsive(filePath, content, open?.version ?? version, revision);
+      return true;
+    } catch {
+      // 解析失败(解析线程崩溃/被停用/postMessage 异常):文件仍在盘,旧类
+      // 索引保留——删掉会让悬停/跳转在 worker 恢复前整段落空,且下次成功解析
+      // 前该文件凭空缺席。登记待补重试(与分块失败同渠道,有界
+      // MAX_SCAN_RETRY_ATTEMPTS,已有计数不重置防反复崩溃绕过上限),
+      // 后续查询经 schedulePendingScanRetry 定向补解析。
+      this.stagedRequests.delete(filePath);
+      if (!this.pendingScanRetries.has(filePath)) {
+        this.pendingScanRetries.set(filePath, 1);
+      }
+      jumpLog('info', () => `py 解析失败(保留旧索引,已登记待补重试): ${filePath}`);
+      return false;
     }
   }
 
