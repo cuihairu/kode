@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
+import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
 import {
   Position,
   Range,
@@ -881,6 +882,74 @@ describe('IDE-IDX-012 全部工作区根 def watcher', () => {
         expect(childNew).not.toBeNull();
         // 第一根不动:索引对象原引用保留
         expect(rootIndexes().get(aKey)).toBe(aIndexBefore);
+      } finally {
+        manager.dispose();
+        stubWorkspace.createFileSystemWatcher = originalWatcher;
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+      }
+    } finally {
+      fs.rmSync(wsA, { recursive: true, force: true });
+      fs.rmSync(wsB, { recursive: true, force: true });
+    }
+  }, 20000);
+});
+
+describe('IDE-IDX-013 全部工作区根类型 watcher', () => {
+  it('第二根 types.xml 更新后快照失效,下次查询得新值', async () => {
+    const wsA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-type-a-'));
+    const wsB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-type-b-'));
+    try {
+      write(wsA, 'scripts/entity_defs/types.xml', '<root>\n  <A_ITEM>UINT8</A_ITEM>\n</root>');
+      write(wsB, 'scripts/entity_defs/types.xml', '<root>\n  <B_ITEM>UINT16</B_ITEM>\n</root>');
+      const bTypesXml = p(wsB, 'scripts', 'entity_defs', 'types.xml');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      const originalWatcher = stubWorkspace.createFileSystemWatcher;
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(wsA), name: 'wsA', index: 0 },
+        { uri: Uri.file(wsB), name: 'wsB', index: 1 }
+      ];
+      stubWorkspace.findFiles = (async () => []) as typeof stubWorkspace.findFiles;
+      interface StubWatcher { fireChange(uri: Uri): void; fireCreate(uri: Uri): void; fireDelete(uri: Uri): void }
+      const watchersByPattern = new Map<string, StubWatcher>();
+      stubWorkspace.createFileSystemWatcher = ((pattern: string) => {
+        const change: Array<(uri: Uri) => void> = [];
+        const create: Array<(uri: Uri) => void> = [];
+        const remove: Array<(uri: Uri) => void> = [];
+        const watcher: StubWatcher = {
+          fireChange: (uri: Uri) => change.forEach(fn => fn(uri)),
+          fireCreate: (uri: Uri) => create.forEach(fn => fn(uri)),
+          fireDelete: (uri: Uri) => remove.forEach(fn => fn(uri))
+        };
+        watchersByPattern.set(String(pattern), watcher);
+        return {
+          onDidChange(listener: (uri: Uri) => void) { change.push(listener); return { dispose: () => void 0 }; },
+          onDidCreate(listener: (uri: Uri) => void) { create.push(listener); return { dispose: () => void 0 }; },
+          onDidDelete(listener: (uri: Uri) => void) { remove.push(listener); return { dispose: () => void 0 }; },
+          dispose: () => void 0
+        } as never;
+      }) as never;
+
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        await manager.waitForInitialScan();
+        // 基线:两根自定义类型各按各自 types.xml 解析(快照建好)
+        expect(resolveEntityAnnotationType(wsA, 'A_ITEM')).toBe('int');
+        expect(resolveEntityAnnotationType(wsB, 'B_ITEM')).toBe('int');
+
+        // 第二根 types.xml 更新为 STRING
+        write(wsB, 'scripts/entity_defs/types.xml', '<root>\n  <B_ITEM>STRING</B_ITEM>\n</root>');
+        const wsBTypesPattern = Uri.joinPath(Uri.file(wsB), '**/{types,alias}.xml').toString();
+        const wsBTypesWatcher = watchersByPattern.get(wsBTypesPattern);
+        // 红点:当前类型 watcher 只挂首根,第二根无 watcher 可触发
+        expect(wsBTypesWatcher).toBeDefined();
+        wsBTypesWatcher!.fireChange(Uri.file(bTypesXml));
+
+        // 快照失效:下次查询读盘重建,B 根得新值,A 根不受影响
+        expect(resolveEntityAnnotationType(wsB, 'B_ITEM')).toBe('str');
+        expect(resolveEntityAnnotationType(wsA, 'A_ITEM')).toBe('int');
       } finally {
         manager.dispose();
         stubWorkspace.createFileSystemWatcher = originalWatcher;

@@ -972,10 +972,11 @@ export class EntityMappingManager {
    * 注解,类型查询在应答时经快照解析。
    */
   private watchTypeRegistryFiles(): void {
+    // IDE-IDX-013:workspace 全部根(多根工作区第二根的 types/alias 变更
+    // 同样要作废快照)+ workspace 外 assetsRoot
     const patterns: string[] = [];
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (workspaceFolder) {
-      patterns.push(vscode.Uri.joinPath(workspaceFolder.uri, '**/{types,alias}.xml').toString());
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      patterns.push(vscode.Uri.joinPath(folder.uri, '**/{types,alias}.xml').toString());
     }
     for (const root of getExternalScanRoots()) {
       patterns.push(vscode.Uri.joinPath(vscode.Uri.file(root), '**/{types,alias}.xml').toString());
