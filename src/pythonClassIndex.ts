@@ -182,6 +182,13 @@ export class PythonClassIndex {
   /** discoveredFiles 所属扫描代(换代后强制重新发现) */
   private discoveredGeneration = -1;
   /**
+   * 文件发现序(装载入口同步记号):③ 反向候选的跨文件排序用。分块装载是
+   * Promise.all 并发(:837),完成序随 IO 时序翻动——不记号的话候选顺序
+   * 不确定(CI 40470720225 红例:同两候选仅顺序翻)。按发现序定死。
+   */
+  private readonly fileOrder = new Map<string, number>();
+  private nextFileOrder = 0;
+  /**
    * 全扫中被取消/失败的分块遗留文件 → 已尝试次数。分块失败不再静默吞掉后
    * 照旧标记扫描代完成(那会让这批文件从未解析就永久缺席且无后续重试);
    * 后续查询按此表定向补解析,只重跑这几个文件,不全仓重扫。
@@ -379,12 +386,13 @@ export class PythonClassIndex {
       this.revisions.set(filePath, (this.revisions.get(filePath) ?? 0) + 1);
       this.unindexFile(filePath);
       this.fileCache.delete(filePath);
+      this.fileOrder.delete(filePath);
       this.indexVersions.classes += 1;
     } else {
       for (const file of this.revisions.keys()) {
         this.revisions.set(file, (this.revisions.get(file) ?? 0) + 1);
       }
-      this.fileCache.clear(); this.byName.clear();
+      this.fileCache.clear(); this.byName.clear(); this.fileOrder.clear(); this.nextFileOrder = 0;
     }
     this.scanPromise = null;
     this.resetRoots();
@@ -821,6 +829,10 @@ export class PythonClassIndex {
       scanMetrics.countFileDiscovery(files.length);
       scanMetrics.countFileRead(files.length);
       scanMetrics.countFileParse(files.length);
+      // ③ 反向候选的跨文件排序基线:发现序在此落号(首见不重排)。分块装载
+      // 是 Promise.all 并发,完成序随 IO 时序翻动;按需预载又是 readdir 序,
+      // 只有发现序才是候选顺序的稳定口径(CI 40470720225 红例根因)。
+      for (const uri of files) { this.noteFileOrder(uri.fsPath); }
       // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
       // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
       const batches: string[][] = [];
@@ -980,6 +992,14 @@ export class PythonClassIndex {
     }
   }
 
+  /** 文件发现序记号:只在全扫发现清单落地时同步调用(保持首见序不重排)——
+   * 装载入口不能记:按需预载(stageRequestFiles)用 readdir 序,会污染发现序。 */
+  private noteFileOrder(filePath: string): void {
+    if (!this.fileOrder.has(filePath)) {
+      this.fileOrder.set(filePath, this.nextFileOrder++);
+    }
+  }
+
   private async loadFile(filePath: string, version: number): Promise<boolean> {
     const revision = this.revisions.get(filePath) ?? 0;
     this.revisions.set(filePath, revision);
@@ -1001,6 +1021,7 @@ export class PythonClassIndex {
         this.stagedRequests.delete(filePath);
         if (wasIndexed) {
           this.unindexFile(filePath); this.fileCache.delete(filePath);
+          this.fileOrder.delete(filePath);
           this.mroCache.clear();
           this.generation += 1;
           this.indexVersions.classes += 1;
@@ -1227,14 +1248,22 @@ export class PythonClassIndex {
 
     // Reverse lookup uses exact class identities as well, so unrelated same-name
     // classes in another role/package cannot become sibling mixin providers.
+    const descendants: Array<{ order: number; sub: PythonClassDef }> = [];
     for (const defs of this.byName.values()) {
       if (token?.isCancellationRequested) { return []; }
       for (const sub of defs) {
         if (!this.compatibleContext(sub, enclosing)) { continue; }
         if (this.mroClasses(sub).some(cls => this.classKey(cls) === this.classKey(enclosing))) {
-          push(this.lookupClass(sub, methodName), out);
+          descendants.push({ order: this.fileOrder.get(sub.filePath) ?? Number.MAX_SAFE_INTEGER, sub });
         }
       }
+    }
+    // 候选顺序按文件发现序定死:分块 Promise.all 并发装载的完成序随 IO 时序
+    // 翻动(并发完成序 ≠ 发现序),不排序的话同两候选仅顺序翻(CI 40470720225
+    // 红例)。稳定排序:同文件多后代保持索引出现序;未见序号的排最后。
+    descendants.sort((left, right) => left.order - right.order);
+    for (const { sub } of descendants) {
+      push(this.lookupClass(sub, methodName), out);
     }
     if (out.length > 0) {
       jumpLog('info', () =>
