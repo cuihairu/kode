@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { workspace } from './fake-vscode/workspaceState';
 import {
   createDefinitionSemanticsLoader,
   normalizeLookupPath,
@@ -619,5 +620,95 @@ describe('IDE-IDX-002 loader 缓存按根与文件身份分区', () => {
       fs.rmSync(rootA, { recursive: true, force: true });
       fs.rmSync(rootB, { recursive: true, force: true });
     }
+  });
+});
+
+describe('IDE-SNP-002:语义 loader 读取共享快照', () => {
+  const DISK_DEF = [
+    '<root>',
+    '  <Properties>',
+    '    <level>',
+    '      <Type>UINT32</Type>',
+    '    </level>',
+    '  </Properties>',
+    '  <BaseMethods>',
+    '    <ping>',
+    '      <Arg>UINT8</Arg>',
+    '    </ping>',
+    '  </BaseMethods>',
+    '</root>'
+  ].join('\n');
+  const UNSAVED_DEF = [
+    '<root>',
+    '  <Properties>',
+    '    <unsavedLevel>',
+    '      <Type>UINT32</Type>',
+    '    </unsavedLevel>',
+    '  </Properties>',
+    '  <BaseMethods>',
+    '    <freshPing>',
+    '      <Arg>UINT8</Arg>',
+    '    </freshPing>',
+    '  </BaseMethods>',
+    '</root>'
+  ].join('\n');
+
+  let snapRoot: string;
+  let defPath: string;
+
+  beforeEach(() => {
+    snapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-snp2-'));
+    fs.mkdirSync(path.join(snapRoot, 'scripts/entity_defs'), { recursive: true });
+    defPath = path.join(snapRoot, 'scripts/entity_defs/Avatar.def');
+    fs.writeFileSync(defPath, DISK_DEF, 'utf8');
+  });
+  afterEach(() => {
+    workspace.textDocuments = [];
+    fs.rmSync(snapRoot, { recursive: true, force: true });
+  });
+
+  function openDirtyDef(): void {
+    workspace.textDocuments = [{
+      uri: { toString: () => `file://${defPath}`, fsPath: defPath },
+      version: 4,
+      getText: () => UNSAVED_DEF
+    }];
+  }
+
+  it('未保存 def 的属性与方法声明可见(loadLocal/loadResolved/loadResolvedAt 三入口)', () => {
+    openDirtyDef();
+    const loader = createDefinitionSemanticsLoader(snapRoot)!;
+
+    const local = loader.loadLocal('Avatar', 'entity');
+    expect(local?.properties.map(property => property.name)).toEqual(['unsavedLevel']);
+    expect(local?.methodsBySection.BaseMethods.map(method => method.name)).toEqual(['freshPing']);
+
+    const resolved = loader.loadResolved('Avatar', 'entity');
+    expect(resolved?.effectiveProperties.map(property => property.name)).toEqual(['unsavedLevel']);
+    expect(resolved?.effectiveMethodsBySection.BaseMethods.map(method => method.name)).toEqual(['freshPing']);
+
+    const at = loader.loadResolvedAt(defPath, 'Avatar', 'entity');
+    expect(at?.local.properties.map(property => property.name)).toEqual(['unsavedLevel']);
+  });
+
+  it('未打开文件仍从磁盘补载;关闭脏文档后下一次查询恢复磁盘版本', () => {
+    // 未打开:磁盘补载
+    const diskLoader = createDefinitionSemanticsLoader(snapRoot)!;
+    expect(diskLoader.loadLocal('Avatar', 'entity')?.properties.map(property => property.name))
+      .toEqual(['level']);
+
+    // 打开脏文档 → 缓冲区优先;关闭后新 loader → 磁盘版本
+    openDirtyDef();
+    const dirtyLoader = createDefinitionSemanticsLoader(snapRoot)!;
+    expect(dirtyLoader.loadLocal('Avatar', 'entity')?.properties[0].name).toBe('unsavedLevel');
+    workspace.textDocuments = [];
+    const restored = createDefinitionSemanticsLoader(snapRoot)!;
+    expect(restored.loadLocal('Avatar', 'entity')?.properties.map(property => property.name))
+      .toEqual(['level']);
+  });
+
+  it('既未打开也不在磁盘 → null(缺失口径不变)', () => {
+    const loader = createDefinitionSemanticsLoader(path.join(snapRoot, 'nowhere'))!;
+    expect(loader.loadLocal('Missing', 'entity')).toBeNull();
   });
 });

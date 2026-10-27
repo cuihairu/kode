@@ -1,5 +1,5 @@
-import * as fs from 'fs';
 import { normalizeFileIdentity } from './pathIdentity';
+import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   DefDocument,
   DefElementNode,
@@ -171,7 +171,9 @@ export class DefinitionSemanticsLoader {
       return null;
     }
 
-    const content = readTextFile(filePath);
+    // IDE-SNP-002:文本事实源走共享快照——打开的 def 以编辑器缓冲区优先
+    // (未保存的属性/方法声明可见),未打开文件照旧磁盘补载。
+    const content = readSharedFileSnapshot(filePath)?.content ?? null;
     if (!content) {
       this.localCache.set(cacheKey, null);
       return null;
@@ -231,7 +233,8 @@ export class DefinitionSemanticsLoader {
     category: DefinitionSemanticCategory,
     allowComponents: boolean
   ): ResolvedDefinitionSemantics | null {
-    const content = readTextFile(defPath);
+    // IDE-SNP-002:精确路径入口同样走共享快照(打开文档缓冲区优先)。
+    const content = readSharedFileSnapshot(defPath)?.content ?? null;
     if (!content) {
       return null;
     }
@@ -863,14 +866,6 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
 
 function buildCacheKey(category: DefinitionSemanticCategory, name: string): string {
   return `${category}:${name}`;
-}
-
-function readTextFile(filePath: string): string | null {
-  try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
 }
 
 function createSource(
