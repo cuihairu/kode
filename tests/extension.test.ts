@@ -7,6 +7,10 @@ import { PythonClassIndex } from '../src/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import {
+  resolveLocalVariableReturnType,
+  resolveLocalVariableReturnTypeFromSnapshot
+} from '../src/pythonReturnTypeInference';
+import {
   getOperationSummary,
   resetLanguageServiceMetrics
 } from '../src/languageServiceMetrics';
@@ -592,6 +596,26 @@ describe('extension activate 装配', () => {
       expect(isPythonMroJumpEnabled()).toBe(true);
       workspaceEvents.documentChanged.fire({ document: pyDoc });
       configurationOverrides.delete('kbengine.python');
+
+      // IDE-HOV-012:保存事件只换该文件注解桶(python 分支换桶;非 python 跳过)
+      fs.writeFileSync(
+        path.join(root, 'svc_saved.py'),
+        'def get_data() -> JSONDATA:\n    pass\n',
+        'utf8'
+      );
+      await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+      const savedPy = makeTextDocument('def get_data() -> SAVED:\n    pass\n', {
+        fileName: path.join(root, 'svc_saved.py'),
+        languageId: 'python'
+      });
+      workspaceEvents.documentSaved.fire(savedPy);
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+        .toMatchObject({ annotation: 'SAVED' });
+      const savedPlain = makeTextDocument('hello', {
+        fileName: path.join(root, 'notes-saved.txt'),
+        languageId: 'plaintext'
+      });
+      workspaceEvents.documentSaved.fire(savedPlain);
 
       // 批154:CodeLens 四类功能开关变更即时 fire 各 provider(emitter
       // 挂在 provider 实例上,注册后即可订阅);事件须同时含 'kbengine'

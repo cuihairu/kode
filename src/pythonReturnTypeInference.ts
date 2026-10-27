@@ -325,6 +325,39 @@ export function buildReturnAnnotationIndex(sources: readonly string[]): PythonRe
 interface ReturnAnnotationCacheEntry {
   builtAtMs: number;
   index: PythonReturnAnnotationIndex;
+  /** 磁盘面按文件桶(IDE-HOV-012):保存只替换该文件桶,合并视图纯内存重算,不重读其他文件 */
+  fileBuckets: Map<string, PythonReturnAnnotationIndex>;
+}
+
+/** 按插入序合并文件桶(先见优先,与全量扫描合并语义一致;Map.set 换桶不换位,序稳定)。 */
+function mergeAnnotationBuckets(
+  fileBuckets: Map<string, PythonReturnAnnotationIndex>
+): PythonReturnAnnotationIndex {
+  const index: PythonReturnAnnotationIndex = new Map();
+  for (const bucket of fileBuckets.values()) {
+    for (const [name, annotation] of bucket) {
+      if (!index.has(name)) { index.set(name, annotation); }
+    }
+  }
+  return index;
+}
+
+/**
+ * IDE-HOV-012:保存文件时只替换该文件注解桶——提取已保存文本(调用方给
+ * document.getText(),零文件读取),内存合并出新视图,其他文件桶不动、不重读。
+ * 删除的返回注解随换桶不再可查。冷缓存(尚无全量索引)为 no-op:下一次查询
+ * 按磁盘真值全量建,不虚建部分索引。
+ */
+export function applySavedFileAnnotations(
+  workspaceRoot: string | null,
+  filePath: string,
+  source: string
+): void {
+  if (!workspaceRoot) { return; }
+  const cached = returnAnnotationCaches.get(workspaceRoot);
+  if (!cached) { return; }
+  cached.fileBuckets.set(filePath, extractFileReturnAnnotations(source));
+  cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
 
 const returnAnnotationCaches = new Map<string, ReturnAnnotationCacheEntry>();
@@ -463,15 +496,14 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
   };
   await Promise.all(Array.from({ length: Math.min(ANNOTATION_READ_CONCURRENCY, files.length) }, readWorker));
   if (token.isCancellationRequested) return new Map();
-  const index: PythonReturnAnnotationIndex = new Map();
-  for (const source of sources) {
+  const fileBuckets = new Map<string, PythonReturnAnnotationIndex>();
+  for (let i = 0; i < files.length; i += 1) {
     if (token.isCancellationRequested) return new Map();
-    for (const [name, annotation] of await extractFileReturnAnnotationsAsync(source)) {
-      if (!index.has(name)) index.set(name, annotation);
-    }
+    fileBuckets.set(files[i], await extractFileReturnAnnotationsAsync(sources[i]));
   }
+  const index = mergeAnnotationBuckets(fileBuckets);
   if (annotationBuilds.get(workspaceRoot) === build) {
-    returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index });
+    returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index, fileBuckets });
   }
   return index;
 }

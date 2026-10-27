@@ -52,6 +52,7 @@ export const lastFileSystemWatcher: { current: StubFileSystemWatcher | null } = 
 // (事件对象由测试构造,如 { affectsConfiguration: s => s === 'kbengine' })。
 export const workspaceEvents = {
   documentChanged: new EventEmitter<{ document: unknown }>(),
+  documentSaved: new EventEmitter<unknown>(),
   documentOpened: new EventEmitter<unknown>(),
   documentClosed: new EventEmitter<unknown>(),
   filesRenamed: new EventEmitter<{ files: Array<{ oldUri: Uri; newUri: Uri }> }>(),
@@ -130,6 +131,7 @@ export const workspace = {
     return { uri: Uri.file('') };
   },
   onDidChangeTextDocument: workspaceEvents.documentChanged.event,
+  onDidSaveTextDocument: workspaceEvents.documentSaved.event,
   onDidOpenTextDocument: workspaceEvents.documentOpened.event,
   onDidCloseTextDocument: workspaceEvents.documentClosed.event,
   onDidRenameFiles: workspaceEvents.filesRenamed.event,
@@ -194,6 +196,7 @@ export const workspaceState = {
    *  workspaceFolders 由测试自行管理,不在此清空。 */
   reset: (): void => {
     workspaceEvents.documentChanged.dispose();
+    workspaceEvents.documentSaved.dispose();
     workspaceEvents.documentOpened.dispose();
     workspaceEvents.documentClosed.dispose();
     workspaceEvents.filesRenamed.dispose();

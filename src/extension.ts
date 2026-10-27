@@ -98,6 +98,7 @@ import {
 } from './entityTypeStubs';
 import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWorkspace';
 import {
+  applySavedFileAnnotations,
   releaseDocumentReturnAnnotations,
   updateDocumentReturnAnnotations
 } from './pythonReturnTypeInference';
@@ -887,6 +888,17 @@ export function activate(context: vscode.ExtensionContext) {
       }
     });
     context.subscriptions.push(watcher);
+    // IDE-HOV-012:保存只替换该文件注解桶(取文档文本纯内存换桶,不重读其他文件)
+    const annotationSaveWatcher = vscode.workspace.onDidSaveTextDocument(document => {
+      if (isPythonDocument(document)) {
+        applySavedFileAnnotations(
+          getWorkspaceRootForDocument(document),
+          document.fileName,
+          document.getText()
+        );
+      }
+    });
+    context.subscriptions.push(annotationSaveWatcher);
   context.subscriptions.push({
     dispose: () => {
       if (pythonIndexEditFlushTimer) {

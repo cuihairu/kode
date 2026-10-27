@@ -9,6 +9,7 @@ import {
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
+  applySavedFileAnnotations,
   buildReturnAnnotationIndex,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
@@ -356,5 +357,40 @@ describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
     releaseDocumentReturnAnnotations(root, 'file:///svc.py');
     const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
     expect(resolved).toMatchObject({ annotation: 'JSONDATA' });
+  });
+});
+
+describe('IDE-HOV-012 保存文件时只替换该文件注解桶', () => {
+  it('保存删除注解后不再可查,且不重读任何文件(纯内存换桶)', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    put('other.py', 'def load_all() -> PAYLOAD:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const read = vi.spyOn(fs.promises, 'readFile');
+    applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data():\n    pass\n');
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
+    // 其他文件桶未动:load_all 仍可查
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
+      .toMatchObject({ annotation: 'PAYLOAD' });
+  });
+
+  it('保存新注解即时并入合并视图(换桶后取新值)', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data():\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
+    applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> FRESH:\n    pass\n');
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      .toMatchObject({ annotation: 'FRESH' });
+  });
+
+  it('冷缓存无桶可换为 no-op:不虚建部分索引', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> STALE:\n    pass\n');
+    const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    expect(built).toMatchObject({ annotation: 'JSONDATA' });
   });
 });
