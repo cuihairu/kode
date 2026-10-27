@@ -180,6 +180,18 @@
   - 定位不到 defaults 时明示报错；默认（`kbengine.showFinalConfigOnOpen`，可用 `kbengine.autoRefreshFinalConfig` 关联动）激活后自动在后台打开
   - telnet 端口/密码等服务参数与该合成口径同源读取
 
+### `kbengine.jsoncAssociation.off`
+
+- 标题：`Turn Off debug.json JSONC Association`
+- 作用：关掉 debug.json 的 JSONC 接线并回收本扩展写入的条目——`.kbengine/debug.json` 是 JSONC（带注释，解析端 `stripJsonComments`），按 json 处理注释会划红线
+- 入口：命令面板 `Turn Off debug.json JSONC Association`
+- 行为：
+  - 把 `kbengine.jsoncAssociation` 在用户级（Global）翻成 `false`，之后激活不再接线
+  - 逐工作区只回收 kode 自己写进 `files.associations` 的那个 glob 键（workspaceState 记账）；你后来改过值的键、或你手填的键，原样保留；其他关联键一个不动
+  - 没找到 kode 写过的条目时如实说明，开关照翻（现有值一律未动）
+  - 重新启用：把 `kbengine.jsoncAssociation` 设回 `true` 并重载窗口
+- 边界：关联只改变编辑器对该文件的处理（jsonc 着色、容忍注释）；解析端接受面不变——单引号/无引号键/尾逗号（JSON5 习惯）依旧按坏配置处理
+
 ## 可视化面板
 
 ### `kbengine.monitoring.show`

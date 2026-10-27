@@ -81,6 +81,7 @@ import {
   tempEditSectionReader
 } from './hotReloadTempEdit';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
+import { disableJsoncAssociation, syncJsoncAssociation } from './jsoncAssociation';
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
   PYTHON_TYPE_STUB_FILE_NAME,
@@ -1880,6 +1881,13 @@ export function activate(context: vscode.ExtensionContext) {
     () => syncPythonExtraPaths(context)
   );
   context.subscriptions.push(syncPythonExtraPathsCommand);
+  // debug.json 的 jsonc 关联(用户令 2026-10-27 ②):激活期静默接线一次,
+  // 命令面板只留关闭入口(回收托管键 + 翻开关;重新启用=设回 true 重载)
+  const jsoncAssociationOffCommand = vscode.commands.registerCommand(
+    'kbengine.jsoncAssociation.off',
+    () => disableJsoncAssociation(context)
+  );
+  context.subscriptions.push(jsoncAssociationOffCommand);
   const exportKbeStubsCommand = vscode.commands.registerCommand(
     'kbengine.python.exportStubs',
     async () => {
@@ -1916,6 +1924,7 @@ export function activate(context: vscode.ExtensionContext) {
     await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });
     await exportEntityTypeStubs(entityMappingManager);
     await syncPythonExtraPaths(context, fileSystemScriptRootDeps, { silent: true });
+    await syncJsoncAssociation(context, { silent: true });
   })();
   // 批143(用户单 kode-debug-json.md):`.kbengine/debug.json` 缺失即生成带注释
   // 的骨架,并按脚本扫描填 quickActions。放在首装扫描之前——骨架里已经有动作

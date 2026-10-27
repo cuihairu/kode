@@ -199,6 +199,7 @@ All four are "optional overrides": a configured value is honored as-is, an uncon
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.debug.remoteTargets` | array | `[]` | Remote debug target list — the target source for `Attach to Remote Component`; `Update launch.json` appends them into `launch.json` as debugpy `connect` entries |
+| `kbengine.jsoncAssociation` | boolean | `true` | Auto-write the debug.json glob key as `jsonc` into the workspace `.vscode/settings.json` `files.associations` (WorkspaceFolder level) — debug.json is JSONC (comments), stock json mode draws red squiggles on them. Own key only: an existing value (user-entered json/json5/anything) is never overwritten; when off, activation explains without writing. The `kbengine.jsoncAssociation.off` command flips the switch to false and reclaims only the key kode wrote (a key whose value you later changed is left as is) |
 
 Fields per entry:
 
@@ -393,6 +394,8 @@ The credentials must be stored in plaintext (`<encrypt>false</encrypt>`). The en
 ## Debug Configuration File (`.kbengine/debug.json`)
 
 This file serves only the debugging flow and quick actions. telnet probing, the telnet panel, status lights, and the telnet tree view never read it.
+
+The file is **JSONC, not JSON5**: comments are legal (the parser strips them with `stripJsonComments`), but single quotes, unquoted keys, and trailing commas are not — writing them leaves the entry silently treated as a bad config, same as before. So that comments do not draw red squiggles in stock json mode, kode wires the file into `files.associations` as `jsonc` on activation (`kbengine.jsoncAssociation`, default on, WorkspaceFolder-level `.vscode/settings.json`): only its own glob key is written, an existing value is never overwritten, and the `kbengine.jsoncAssociation.off` command reclaims exactly the key kode wrote.
 
 ### Quick Actions (the `quickActions` key)
 

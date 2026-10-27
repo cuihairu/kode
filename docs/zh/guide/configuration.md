@@ -199,6 +199,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表,`Attach to Remote Component` 的目标选择源;`Update launch.json` 把它们以 debugpy `connect` 形式追加进 `launch.json` |
+| `kbengine.jsoncAssociation` | boolean | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `.vscode/settings.json` 的 `files.associations`(WorkspaceFolder 级)——debug.json 是 JSONC(带注释),按 json 处理注释会划红线。只动自己那一个键:已有值(用户手填 json/json5/任何值)永不覆盖;关闭时激活只说明不动手。`kbengine.jsoncAssociation.off` 命令把开关翻成 false 并只回收本扩展写入的键(你后来改过值的键原样保留) |
 
 每个条目:
 
@@ -393,6 +394,8 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 ## 调试配置文件(`.kbengine/debug.json`)
 
 这个文件只服务调试流程与快速执行动作。telnet 探测、telnet 面板、状态灯、telnet 树视图都不读它。
+
+文件是 **JSONC,不是 JSON5**:注释合法(解析端用 `stripJsonComments` 剥掉),单引号/无引号键/尾逗号不认——写了会静默当坏配置处理,和以前一样。为让注释不在 json 模式下划红线,kode 激活时把该文件接进 `files.associations` 标成 `jsonc`(`kbengine.jsoncAssociation`,默认开,WorkspaceFolder 级 `.vscode/settings.json`):只写自己那一个 glob 键、已有值永不覆盖,`kbengine.jsoncAssociation.off` 命令只回收本扩展写入的键。
 
 ### 快速执行动作(`quickActions` 键)
 

@@ -188,6 +188,18 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Each line reports request count, P50/P95/P99/max/avg elapsed (monotonic clock, ms), cache hit rate, waited-for-init count, file discovery/read/parse totals and status counts
   - Per-request detailed samples are off by default; enable `kbengine.metrics.detailed` to also stream `[kode-lsm]` samples into the log timeline
 
+### `kbengine.jsoncAssociation.off`
+
+- Title: `Turn Off debug.json JSONC Association`
+- Purpose: turn off the debug.json JSONC wiring and reclaim what kode wrote — `.kbengine/debug.json` is JSONC (comments; parsed with `stripJsonComments`), and stock json mode draws red squiggles on its comments
+- Entries: command palette `Turn Off debug.json JSONC Association`
+- Behavior:
+  - Flips `kbengine.jsoncAssociation` to `false` at the user (Global) level, so later activations stop wiring
+  - Reclaims, per workspace folder, only the `files.associations` glob key kode itself wrote (remembered in workspaceState); a key whose value you later changed, or one you filled by hand, is left exactly as is; your other association keys are never touched
+  - When nothing kode wrote is found, it says so and still flips the switch (existing values untouched)
+  - To re-enable: set `kbengine.jsoncAssociation` back to `true` and reload the window
+- Boundary: the association changes only how the editor treats the file (jsonc coloring, comment tolerance); the parser's acceptance does not change — single quotes, unquoted keys, and trailing commas (JSON5 habits) are still treated as a bad config
+
 ## Visualization Panels
 
 ### `kbengine.monitoring.show`

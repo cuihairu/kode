@@ -87,6 +87,7 @@
     "onCommand:kbengine.quickActions.runDefault",
     "onCommand:kbengine.quickActions.runByName",
     "onCommand:kbengine.python.syncExtraPaths",
+    "onCommand:kbengine.jsoncAssociation.off",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
@@ -506,6 +507,10 @@
         "title": "Sync Python Extra Paths"
       },
       {
+        "command": "kbengine.jsoncAssociation.off",
+        "title": "Turn Off debug.json JSONC Association"
+      },
+      {
         "command": "kbengine.python.exportStubs",
         "title": "Export KBEngine Python Stubs"
       },
@@ -809,6 +814,11 @@
               }
             }
           }
+        },
+        "kbengine.jsoncAssociation": {
+          "type": "boolean",
+          "default": true,
+          "description": "自动把 \"**/.kbengine/debug.json\": \"jsonc\" 写进工作区 .vscode/settings.json 的 files.associations（debug.json 是带注释的 JSONC，按 json 处理会划红线；WorkspaceFolder 级，只写自己这一个键、已有值不覆盖；kbengine.jsoncAssociation.off 命令可关闭并回收本扩展写入的条目）"
         },
         "kbengine.autoStart": {
           "type": "array",

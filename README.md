@@ -117,6 +117,7 @@ The logger protocol adaptation is not finished yet; the extension states clearly
 
 ### Embedded Python Debugging
 - [Custom debug configuration (.kbengine/debug.json)]
+- [debug.json treated as JSONC: `files.associations` wired automatically (own key only, never overwrites; `kbengine.jsoncAssociation`)]
 - [Per-component debug settings]
 - [Automatic launch.json generation]
 - [Guided debug enablement via telnet prompts]

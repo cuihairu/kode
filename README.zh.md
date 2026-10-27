@@ -117,6 +117,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 
 ### 嵌入式 Python 调试支持
 - [自定义调试配置（.kbengine/debug.json）]
+- [debug.json 按 JSONC 处理：自动接线 files.associations（只动自己键、已有值不覆盖；`kbengine.jsoncAssociation`）]
 - [组件特定调试设置]
 - [自动生成 launch.json]
 - [通过 telnet 提示引导开启调试]
