@@ -320,7 +320,7 @@
 - [x] IDE-BUD-005 [P0] 丢弃过期文档版本的签名帮助；验收：请求过程中编辑参数列表，旧版本签名结果不发布；前置：无。
 - [x] IDE-BUD-006 [P0] 取消 CodeLens 后停止后续批次；验收：文档关闭或 token 取消后，不继续给该文档解析新的属性或 RPC 点位；前置：无。
 - [x] IDE-BUD-007 [P0] 取消 Call Hierarchy 的后续扫描；验收：取消 incoming/outgoing 查询后，该请求的队列不继续增长；前置：无。
-- [ ] IDE-BUD-008 [P0] 隔离同点 hover 合并请求的取消；验收：取消一个等待者不取消另一个等待者需要的共享计算；前置：IDE-BUD-002。
+- [x] IDE-BUD-008 [P0] 隔离同点 hover 合并请求的取消；验收：取消一个等待者不取消另一个等待者需要的共享计算；前置：IDE-BUD-002。(881e508;hoverBudget 增 createWaiterUnionToken:共享 token=全部在册等待者并集(人人取消才取消),注销后的等待者取消不波及联合,零在册不取消(创建/登记窗口安全);languageProviders memoizedHover 重构:HoverMemoEntry 增 addWaiter,工厂改收 sharedToken(union),创建者与合并者都 addWaiter(deadline.token),落定统一 unregister+union.dispose;三异步分支内层 raceWithBudget 改用 sharedToken(共享计算一份预算=创建者 deadline 剩余量),等待者各自的取消/截止在 respond 层生效(单方取消只 null 自己,BUD-002 闸吃到 union token:共享计算只在人人取消时停);tests/hoverWaiterIsolation.test.ts 5 例(单方取消不取消联合/双取消才取消/注销者不撑住/零在册安全/provider 面同点合并:A 取消共享照常完成 B 拿结果+全取消共享即停无孤儿);锚点对账 languageProviders 659/730/1265/1324/1348/1357/3737/4090/4196/4993;3312|7)
 - [x] IDE-BUD-009 [P0] 为未知文件 def 归属查询去掉全扫等待；验收：冷 miss 只读快照和定向依赖；scanEntityMappings 挂起时仍有界返回；前置：无。
 
 ### IDE-SCH · 数据库派生计算退出交互重算（P1）
