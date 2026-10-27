@@ -21,6 +21,7 @@ import {
 } from '../src/entityBuiltinProperties';
 import {
   CompletionItemKind,
+  configurationOverrides,
   InlayHintKind,
   Position,
   Range,
@@ -79,6 +80,19 @@ const setupWorkspace = (): TempWorkspace => {
 };
 
 describe('返回类型推导(局部变量 hover)', () => {
+  it('关闭返回推导后 hover 不启动注解目录发现', async () => {
+    const { root } = setupWorkspace();
+    const read = vi.spyOn(fs.promises, 'readdir');
+    configurationOverrides.set('kbengine', { 'hover.returnTypeInference': false });
+    try {
+      const doc = pyDoc('data = get_data()\n', path.join(root, 'source.py'));
+      await Promise.resolve(new KBEngineHoverProvider().provideHover(doc, new Position(0, 1)));
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      read.mockRestore();
+      configurationOverrides.delete('kbengine');
+    }
+  });
   it('单个大文件解析在处理长行时让出事件循环且结果与同步提取一致', async () => {
     const source = `def long_method(value: ${'A'.repeat(150000)}) -> Result:\n    pass\n`;
     let yielded = false;

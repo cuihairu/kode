@@ -805,7 +805,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 注解推导(python `def get_data(...) -> X:` 注解先行;.def 方法无返回声明
     // 语法故该层结构性缺位)。解出才提示并标注来源;解不出不显示任何类型
     // (不显 Any、不显空类型,落回普通 hover 链)。
-    if (document.languageId === 'python') {
+    if (document.languageId === 'python' && vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.returnTypeInference', true)) {
       // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
       const inferred = resolveLocalVariableReturnTypeFromSnapshot(
         getDocumentLines(document),

@@ -256,7 +256,7 @@
 - [ ] IDE-HOV-015 [P0] 重命名文件时迁移注解来源；验收：旧 URI 查询落空，新 URI 可查，不留下双份结果；前置：IDE-HOV-013, IDE-HOV-014。
 - [ ] IDE-HOV-016 [P0] 按当前文件限定返回注解候选；验收：同文件明确声明优先于项目中无关同名方法，不跨作用域借用赋值；前置：IDE-HOV-011。
 - [ ] IDE-HOV-017 [P0] 按显式 import 限定返回注解候选；验收：导入绑定只解析到对应模块；同名多个候选无法确定时返回未知；前置：IDE-HOV-016。
-- [ ] IDE-HOV-018 [P0] 增加返回推导独立开关；验收：关闭后 provider 不启动注解构建；package 配置与中英说明一致；前置：IDE-HOV-010。
+- [x] IDE-HOV-018 [P0] 增加返回推导独立开关；验收：关闭后 provider 不启动注解构建；package 配置与中英说明一致；前置：IDE-HOV-010。
 
 ### IDE-EVT · 事件 CodeLens 与 WorkspaceIndex（P0）
 

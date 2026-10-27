@@ -98,6 +98,7 @@ Diagnostics trigger only when a `.def` file is opened or edited; `kbengine.recei
 | `kbengine.hover.showTagDocs` | boolean | `true` | Hover docs for tags like `<Type>`, `<Flags>`, `<Properties>` (the most frequent; turn this one off first if hints feel too many) |
 | `kbengine.hover.showValueDocs` | boolean | `true` | Hover docs for values like `UINT32`, `BASE_AND_CLIENT`, `FAR` |
 | `kbengine.hover.showSymbolDocs` | boolean | `true` | Hovering a custom property/method name shows the current definition's `Type`, `Flags`, `Arg` context |
+| `kbengine.hover.returnTypeInference` | boolean | `true` | Infer local variable types from Python return annotations on hover; disabling it stops annotation index builds initiated by hover |
 | `kbengine.hover.typeStorage` | boolean | `true` | Storage hover (landed table/column/type and shape) for `types.xml` custom types, in `.def`/`types.xml` |
 | `kbengine.hover.implementedBy` | boolean | `true` | Backlink when hovering a Python-side symbol referenced by a `types.xml` `implementedBy` |
 | `kbengine.hover.entityRegistration` | boolean | `true` | Registration info (`Utype`/list position) when hovering an `entities.xml` entity name |

@@ -702,6 +702,11 @@
           "default": true,
           "description": "悬停时显示自定义属性名和方法名的摘要信息"
         },
+        "kbengine.hover.returnTypeInference": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停时根据 Python 函数返回注解推导局部变量类型"
+        },
         "kbengine.hover.typeStorage": {
           "type": "boolean",
           "default": true,

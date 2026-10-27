@@ -98,6 +98,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.hover.showTagDocs` | boolean | `true` | `<Type>`、`<Flags>`、`<Properties>` 这类标签的悬停说明(出现频率最高,嫌提示多优先关它) |
 | `kbengine.hover.showValueDocs` | boolean | `true` | `UINT32`、`BASE_AND_CLIENT`、`FAR` 这类值的悬停说明 |
 | `kbengine.hover.showSymbolDocs` | boolean | `true` | 悬停自定义属性名/方法名显示当前定义的 `Type`、`Flags`、`Arg` 等上下文 |
+| `kbengine.hover.returnTypeInference` | boolean | `true` | 悬停时根据 Python 返回注解推导局部变量类型；关闭后悬停不会启动注解索引构建 |
 | `kbengine.hover.typeStorage` | boolean | `true` | `.def`/`types.xml` 里 types.xml 自定义类型的存储悬停(落库表/列/类型与形态) |
 | `kbengine.hover.implementedBy` | boolean | `true` | python 侧悬停被 types.xml `implementedBy` 引用的符号时的反链 |
 | `kbengine.hover.entityRegistration` | boolean | `true` | 悬停 `entities.xml` 实体名时的注册信息(`Utype`/清单位置) |
