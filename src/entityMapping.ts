@@ -1273,11 +1273,16 @@ export class EntityMappingManager {
   async resolveMethodDefinition(
     pythonFile: string,
     methodName: string,
-    receiverSection?: EntityMethodSection
+    receiverSection?: EntityMethodSection,
+    token?: vscode.CancellationToken
   ): Promise<EntityMethodDefinitionLocation | null> {
+    // IDE-BUD-002:hover 取消传播到请求独占任务——取消后本请求不再发起新读取
+    // (两道闸:入口/索引等待后);共享首扫只被等待,永不被取消。
+    if (token?.isCancellationRequested) { return null; }
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
+    if (token?.isCancellationRequested) { return null; }
     const ownerKind = inferOwnerKindFromPythonFile(pythonFile);
     const ownerName = inferOwnerNameFromPythonFile(pythonFile);
     const section = inferMethodSectionFromPythonFile(pythonFile);
@@ -1308,7 +1313,7 @@ export class EntityMappingManager {
       // 永远是已 resolve 的残缺快照,重试语义到不了实体扫描(审核发现 :182)
       this.retryInitialScanAfterFailure();
       const ready = await raceWithBudget('definition:cross-def-index',
-        this.initialScan.then(() => true), INTERACTIVE_INDEX_WAIT_MS);
+        this.initialScan.then(() => true), INTERACTIVE_INDEX_WAIT_MS, token);
       if (!ready) { return null; }
     }
     const global = local || (allowCrossDefFallback
@@ -1922,12 +1927,15 @@ export class EntityMappingManager {
    * (entityBuiltinProperties.resolveEntityBuiltinPropertyHit)降级为宏公共 3。
    */
   async getEntityComponentFacesForPythonFile(
-    pythonFile: string
+    pythonFile: string,
+    token?: vscode.CancellationToken
   ): Promise<EntityComponentFace[] | null> {
+    // IDE-BUD-002:取消传播同 resolveMethodDefinition(取消后不发起新读取)
+    if (token?.isCancellationRequested) { return null; }
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile);
-    if (!index) {
+    if (token?.isCancellationRequested || !index) {
       return null;
     }
     const normalized = normalizeLookupPath(pythonFile);

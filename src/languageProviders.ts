@@ -752,7 +752,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:def-method',
-            this.resolveDefMethodAnnotation(manager, document, position.line, methodName)
+            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, deadline.token)
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
@@ -776,7 +776,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:receiver-call',
-            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall)
+            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall, deadline.token)
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
@@ -801,7 +801,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:builtin-property',
-            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol)
+            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, deadline.token)
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
@@ -861,11 +861,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     manager: EntityMappingManager,
     document: vscode.TextDocument,
     line: number,
-    methodName: string
+    methodName: string,
+    token?: vscode.CancellationToken
   ): Promise<vscode.Hover | null> {
     let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
     try {
-      location = await manager.resolveMethodDefinition(document.fileName, methodName);
+      location = await manager.resolveMethodDefinition(document.fileName, methodName, undefined, token);
     } catch {
       return null;
     }
@@ -913,14 +914,16 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     manager: EntityMappingManager,
     document: vscode.TextDocument,
     line: number,
-    receiverCall: PythonReceiverCall
+    receiverCall: PythonReceiverCall,
+    token?: vscode.CancellationToken
   ): Promise<vscode.Hover | null> {
     let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
     try {
       location = await manager.resolveMethodDefinition(
         document.fileName,
         receiverCall.methodName,
-        receiverCall.section
+        receiverCall.section,
+        token
       );
     } catch {
       return null;
@@ -971,13 +974,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
   private async resolveBuiltinPropertyAnnotation(
     manager: EntityMappingManager,
     document: vscode.TextDocument,
-    attributeName: string
+    attributeName: string,
+    token?: vscode.CancellationToken
   ): Promise<vscode.Hover | null> {
     const pathFace = resolveEntityComponentFaceFromPath(document.fileName);
     let defFaces: readonly EntityComponentFace[] | null = null;
     if (!pathFace) {
       try {
-        defFaces = await manager.getEntityComponentFacesForPythonFile(document.fileName);
+        defFaces = await manager.getEntityComponentFacesForPythonFile(document.fileName, token);
       } catch {
         defFaces = null;
       }
