@@ -174,7 +174,7 @@
 #### 提案挂账：Rust Core 常驻语言服务（2026-10-23 外部提案整理）
 
 来源与全文见 `docs/review/2026-10-23-rust-core-lsp-proposal.md`（含与 PR1-7 实况的对照表）。口径：**不插队**——PR7 复测收官后按跟踪清单 R1（数据审计）→R2（原型对拍）过闸再议 R3；终端/脚本启动慢按 R4 独立立项。已代决：采纳「先数据后迁移」的闸门顺序，拒绝直接开写 Rust。
-- [ ] 审核发现：Python 全扫把失败分块的 wait 拒绝逐一吞掉后仍标记该扫描代完成，失败文件永久缺席且后续查询不重试（src/pythonClassIndex.ts:782）
+- [x] 审核发现：Python 全扫把失败分块的 wait 拒绝逐一吞掉后仍标记该扫描代完成，失败文件永久缺席且后续查询不重试（967084d；src/pythonClassIndex.ts 逐分块收终态(completed/failed),失败分块的文件登记 pendingScanRetries(file→尝试次数),不再吞掉后照旧标记该代完成;后续查询经 ensureScanned 短路分支触发 schedulePendingScanRetry 定向补解析——只重跑待补文件,不全仓重扫;重试有界 MAX_SCAN_RETRY_ATTEMPTS=3,永久不可读文件不无限重试;tests/pythonIndexPr5.test.ts 新增 FailNextChunkScheduler+「分块失败不被吞掉」用例,断言注入失败后全量口径查不到、待补重试后补齐且重试分块不再失败,未删用例未松断言;perf 锚点随行号重校(552/1020/1128),未删断言）
 - [ ] 审核发现：self 方法解析已命中静态 MRO 时，组合根派生超过 1 秒仍直接返回空列表，丢弃已找到的有效目标（src/pythonClassIndex.ts:1081）
 - [ ] 审核发现：对象级负缓存只凭映射表非空就记录 miss，首扫尚未完成时可把后续分块里的接口或组件类永久误判为不存在（src/entityMapping.ts:2143）
 - [ ] 审核发现：worker 解析失败与文件读取失败共用 catch，解析线程崩溃时会删除仍存在文件的旧类索引而非保留并重试（src/pythonClassIndex.ts:916）
