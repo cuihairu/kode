@@ -253,7 +253,7 @@
 - [x] IDE-HOV-012 [P0] 保存文件时只替换该文件注解桶；验收：修改一个文件不重读其他文件，删除的返回注解不再可查；前置：IDE-HOV-011。（96e127b;实现=src/pythonReturnTypeInference.ts applySavedFileAnnotations 换桶+mergeAnnotationBuckets 合并,extension.ts 保存事件接线;测试=tests/pythonReturnTypeInference.test.ts IDE-HOV-012 三例(fs.promises.readFile 未调用=零重读)+extension.test.ts 保存事件接线;测试绿 3223|7）
 - [x] IDE-HOV-013 [P0] 新建文件时新增注解桶；验收：新文件保存后可查询其注解，目录发现不重新全跑；前置：IDE-HOV-012。（e84b7ab;实现=IDE-HOV-012 的 applySavedFileAnnotations 对新键 set 即增桶,零新码;验收锁=tests/pythonReturnTypeInference.test.ts 新文件保存测试(readFile/readdir 均未调用=目录发现不重跑,PAYLOAD 可查);测试绿 3224|7）
 - [x] IDE-HOV-014 [P0] 删除文件时移除注解桶；验收：文件删除后该来源的注解消失，其他同名方法来源仍存在；前置：IDE-HOV-012。（cb3f74d;实现=src/pythonReturnTypeInference.ts removeSavedFileAnnotations 弃桶+重合并,extension.ts onDidDeleteFiles 接线(.py 过滤);测试=tests/pythonReturnTypeInference.test.ts IDE-HOV-014 三例(纯内存零读取/冷缓存 no-op/不在册 no-op)+extension.test.ts 删除事件接线;测试绿 3227|7）
-- [ ] IDE-HOV-015 [P0] 重命名文件时迁移注解来源；验收：旧 URI 查询落空，新 URI 可查，不留下双份结果；前置：IDE-HOV-013, IDE-HOV-014。
+- [x] IDE-HOV-015 [P0] 重命名文件时迁移注解来源；验收：旧 URI 查询落空，新 URI 可查，不留下双份结果；前置：IDE-HOV-013, IDE-HOV-014。（7396cdf;实现=src/pythonReturnTypeInference.ts renameSavedFileAnnotations 旧键原位换新键(保插入序),extension.ts onDidRenameFiles 接线(.py→.py 迁移,.py→非.py 移除);测试=tests/pythonReturnTypeInference.test.ts IDE-HOV-015 三例(次序不变/新 URI 活桶/冷缓存 no-op)+extension.test.ts 重命名事件接线;测试绿 3230|7）
 - [ ] IDE-HOV-016 [P0] 按当前文件限定返回注解候选；验收：同文件明确声明优先于项目中无关同名方法，不跨作用域借用赋值；前置：IDE-HOV-011。
 - [ ] IDE-HOV-017 [P0] 按显式 import 限定返回注解候选；验收：导入绑定只解析到对应模块；同名多个候选无法确定时返回未知；前置：IDE-HOV-016。
 - [x] IDE-HOV-018 [P0] 增加返回推导独立开关；验收：关闭后 provider 不启动注解构建；package 配置与中英说明一致；前置：IDE-HOV-010。
