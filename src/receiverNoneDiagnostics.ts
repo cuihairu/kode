@@ -99,44 +99,93 @@ function enclosingMethodSpan(classes: readonly ClassMethodSpans[], line: number)
  *    且 use 行在其块体内(缩进更深且之间无同级去缩进);
  * b) 早退 if(`if not self.cell:`/`if self.cell is None:`)块体内含 return/raise;
  * c) use 行同行的单行 if guard(`if self.cell: self.cell.x()`)/三元前置判空。
+ *
+ * IDE-DIA-004:guard 前缀扫描按(方法,接收者)一次完成(scanGuardCandidates
+ * 单趟收集候选行+别名),同方法同接收者的多处调用共享同一份候选,逐调用
+ * 只做位置闸判定,不再每个调用点从头遍历方法体。
  */
-function hasReceiverGuard(
+interface GuardCandidate {
+  line: number;
+  indent: number;
+  kind: 'positive' | 'early-exit';
+}
+
+interface MethodGuardScan {
+  receiver: PythonReceiverCall['receiver'];
+  candidates: GuardCandidate[];
+  /** 别名赋值行与名(`x = self.<role>`),同行闸判定按 use 之前的过滤 */
+  aliases: Array<{ line: number; name: string }>;
+}
+
+let guardPrefixScanCount = 0;
+
+/** 测试面:guard 前缀扫描计数(按方法×接收者记账) */
+export function getGuardPrefixScanCountForTests(): number {
+  return guardPrefixScanCount;
+}
+
+export function resetGuardPrefixScanCountForTests(): void {
+  guardPrefixScanCount = 0;
+}
+
+/** 单趟扫方法体:维持存活 subject 集(self.<role> 起步,遇别名赋值追加),
+ * 命中正向/早退 guard 形态的行记为候选 */
+function scanGuardCandidates(
   lines: readonly string[],
   span: MethodSpan,
-  useLine: number,
   receiver: PythonReceiverCall['receiver']
+): MethodGuardScan {
+  guardPrefixScanCount += 1;
+  const candidates: GuardCandidate[] = [];
+  const aliases: Array<{ line: number; name: string }> = [];
+  const subjects = new Set([escapeSubject(`self.${receiver}`)]);
+  for (let j = span.startLine; j <= span.endLine; j += 1) {
+    const text = lines[j];
+    if (COMMENT_ONLY.test(text)) { continue; }
+    const assigned = aliasAssignment.exec(text);
+    if (assigned && assigned[2] === receiver) {
+      subjects.add(escapeSubject(assigned[1]));
+      aliases.push({ line: j, name: assigned[1] });
+      continue; // 别名赋值行本身不是 guard 行
+    }
+    let matched = false;
+    for (const subject of subjects) {
+      if (positiveGuard(subject).test(text) || hasattrGuard.test(text)) {
+        candidates.push({ line: j, indent: indentOf(text), kind: 'positive' });
+        matched = true;
+        break;
+      }
+      if (earlyExitGuard(subject).test(text)) {
+        candidates.push({ line: j, indent: indentOf(text), kind: 'early-exit' });
+        matched = true;
+        break;
+      }
+    }
+    if (matched) { continue; }
+  }
+  return { receiver, candidates, aliases };
+}
+
+/** 候选过闸:与逐点遍历同谓词(位置/缩进/块体),只对已收集候选判定 */
+function hasReceiverGuardFromScan(
+  lines: readonly string[],
+  scan: MethodGuardScan,
+  useLine: number
 ): boolean {
   const useIndent = indentOf(lines[useLine]);
-  const subjects = [escapeSubject(`self.${receiver}`)];
-  // 别名:方法体内 use 之前的 `x = self.<role>`
-  for (let j = span.startLine; j < useLine; j += 1) {
-    const assigned = aliasAssignment.exec(lines[j]);
-    if (assigned && assigned[2] === receiver) {
-      subjects.push(escapeSubject(assigned[1]));
+  for (const candidate of scan.candidates) {
+    if (candidate.line >= useLine) { continue; }
+    if (candidate.kind === 'positive') {
+      if (candidate.indent < useIndent && blockContains(lines, candidate.line, useLine, candidate.indent)) {
+        return true;
+      }
+    } else if (candidate.indent <= useIndent && blockExits(lines, candidate.line, useLine, candidate.indent)) {
+      return true;
     }
   }
-  for (const subject of subjects) {
-    const positive = positiveGuard(subject);
-    const earlyExit = earlyExitGuard(subject);
-    for (let j = span.startLine; j < useLine; j += 1) {
-      const text = lines[j];
-      if (COMMENT_ONLY.test(text)) { continue; }
-      const ifIndent = indentOf(text);
-      if (positive.test(text) || hasattrGuard.test(text)) {
-        if (ifIndent < useIndent && blockContains(lines, j, useLine, ifIndent)) {
-          return true;
-        }
-      }
-      if (earlyExit.test(text)) {
-        // 早退 guard 保护其后同缩进(或更深)的 use 行:块体内 use 之前
-        // 有 return/raise 即达可达性裁断(use 不会执行)
-        if (ifIndent <= useIndent && blockExits(lines, j, useLine, ifIndent)) {
-          return true;
-        }
-      }
-    }
-    // 同行 guard:`if self.cell: self.cell.send(...)` / `self.cell.x() if self.cell else ...`
-    const useText = lines[useLine];
+  // 同行 guard:`if self.cell: self.cell.send(...)` / `self.cell.x() if self.cell else ...`
+  const useText = lines[useLine];
+  for (const subject of scanSubjectsUpTo(scan, useLine)) {
     const sameLineIf = new RegExp(`^\\s*if\\s+${subject}\\b[^:]*:\\s*\\S`);
     const sameLineTernary = new RegExp(`\\bif\\s+${subject}\\s*(is\\s+not\\s+None)?\\s+else\\b`);
     if (sameLineIf.test(useText) || sameLineTernary.test(useText)) {
@@ -144,6 +193,15 @@ function hasReceiverGuard(
     }
   }
   return false;
+}
+
+/** 同行闸的 subject 集:接收者本体 + use 之前赋值的别名 */
+function scanSubjectsUpTo(scan: MethodGuardScan, useLine: number): string[] {
+  const subjects = [escapeSubject(`self.${scan.receiver}`)];
+  for (const alias of scan.aliases) {
+    if (alias.line < useLine) { subjects.push(escapeSubject(alias.name)); }
+  }
+  return subjects;
 }
 
 /** use 行是否仍在 if 块体内:j+1..useLine 之间无非空非注释行缩进 <= ifIndent */
@@ -217,9 +275,25 @@ export function computeReceiverNoneFindings(
     : preparsed ?? parsePythonFile(text, filePath);
   const methodSpans = buildMethodSpans(parsed);
   const lines = text.split(/\r?\n/);
+  // IDE-DIA-004:guard 前缀扫描按(方法区间, 接收者)一_methodMemo 一次,
+  // 同方法同接收者的多处调用共享同一份候选
+  const guardScans = new Map<MethodSpan, Map<PythonReceiverCall['receiver'], MethodGuardScan>>();
+  const scanFor = (span: MethodSpan, receiver: PythonReceiverCall['receiver']): MethodGuardScan => {
+    let byReceiver = guardScans.get(span);
+    if (!byReceiver) {
+      byReceiver = new Map();
+      guardScans.set(span, byReceiver);
+    }
+    let scan = byReceiver.get(receiver);
+    if (!scan) {
+      scan = scanGuardCandidates(lines, span, receiver);
+      byReceiver.set(receiver, scan);
+    }
+    return scan;
+  };
   for (const call of calls) {
     const span = enclosingMethodSpan(methodSpans, call.line);
-    if (span && !hasReceiverGuard(lines, span, call.line, call.receiver)) {
+    if (span && !hasReceiverGuardFromScan(lines, scanFor(span, call.receiver), call.line)) {
       findings.push({
         line: call.line,
         character: call.character,
