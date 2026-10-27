@@ -376,6 +376,27 @@ export function removeSavedFileAnnotations(
   cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
 
+/**
+ * IDE-HOV-015:重命名文件时迁移注解来源——旧键桶原位换新键(保插入序,
+ * 先见优先语义不因重命名洗牌),内容承接不丢、不留下双份。冷缓存与不在册
+ * 路径均为 no-op:下一次查询按磁盘真值全量建。
+ */
+export function renameSavedFileAnnotations(
+  workspaceRoot: string | null,
+  oldFilePath: string,
+  newFilePath: string
+): void {
+  if (!workspaceRoot) { return; }
+  const cached = returnAnnotationCaches.get(workspaceRoot);
+  if (!cached || !cached.fileBuckets.has(oldFilePath)) { return; }
+  const renamed = new Map<string, PythonReturnAnnotationIndex>();
+  for (const [key, bucket] of cached.fileBuckets) {
+    renamed.set(key === oldFilePath ? newFilePath : key, bucket);
+  }
+  cached.fileBuckets = renamed;
+  cached.index = mergeAnnotationBuckets(renamed);
+}
+
 const returnAnnotationCaches = new Map<string, ReturnAnnotationCacheEntry>();
 type AnnotationCancellation = { readonly isCancellationRequested: boolean };
 interface AnnotationBuild {

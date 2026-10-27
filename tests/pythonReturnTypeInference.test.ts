@@ -15,6 +15,7 @@ import {
   extractFileReturnAnnotationsAsync,
   releaseDocumentReturnAnnotations,
   removeSavedFileAnnotations,
+  renameSavedFileAnnotations,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot,
@@ -448,6 +449,55 @@ describe('IDE-HOV-014 删除文件时移除注解桶', () => {
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
     await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
     removeSavedFileAnnotations(root, path.join(root, 'never_scanned.py'));
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      .toMatchObject({ annotation: 'JSONDATA' });
+  });
+});
+
+describe('IDE-HOV-015 重命名文件时迁移注解来源', () => {
+  it('迁移保内容保次序:新 URI 承接桶,旧 URI 不留双份', async () => {
+    const { root, put } = setupWorkspace();
+    put('a.py', 'def dup() -> FROM_A:\n    pass\n\ndef a_only() -> A:\n    pass\n');
+    put('svc.py', 'def dup() -> FROM_SVC:\n    pass\n\ndef only_svc() -> SVCONLY:\n    pass\n');
+    await resolveLocalVariableReturnType(['x = dup()'], 0, 'x', root);
+    const before = resolveLocalVariableReturnTypeFromSnapshot(['x = dup()'], 0, 'x', root)!;
+    expect(before).toMatchObject({ target: 'x', methodName: 'dup' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
+      .toMatchObject({ annotation: 'SVCONLY' });
+    const read = vi.spyOn(fs.promises, 'readFile');
+    renameSavedFileAnnotations(root, path.join(root, 'svc.py'), path.join(root, 'svc2.py'));
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+    // 迁移后:合并次序不变(dup 仍解析同源)、独有注解仍可查(承接不丢)
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = dup()'], 0, 'x', root))
+      .toMatchObject({ annotation: before.annotation });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
+      .toMatchObject({ annotation: 'SVCONLY' });
+    // 弃新桶后 dup 只剩 a.py 来源、独有注解落空——证明旧 svc.py 桶未残留双份
+    removeSavedFileAnnotations(root, path.join(root, 'svc2.py'));
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = dup()'], 0, 'x', root))
+      .toMatchObject({ annotation: 'FROM_A' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+  });
+
+  it('保存改写走新 URI:旧 URI 不再是活桶', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    renameSavedFileAnnotations(root, path.join(root, 'svc.py'), path.join(root, 'svc2.py'));
+    applySavedFileAnnotations(root, path.join(root, 'svc2.py'), 'def get_data() -> FRESH:\n    pass\n');
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      .toMatchObject({ annotation: 'FRESH' });
+  });
+
+  it('冷缓存与不在册路径均为 no-op', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    renameSavedFileAnnotations(null, '/x/old.py', '/x/new.py');
+    renameSavedFileAnnotations(root, path.join(root, 'svc.py'), path.join(root, 'svc2.py'));
+    const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    expect(built).toMatchObject({ annotation: 'JSONDATA' });
+    renameSavedFileAnnotations(root, path.join(root, 'ghost.py'), path.join(root, 'ghost2.py'));
     expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
       .toMatchObject({ annotation: 'JSONDATA' });
   });

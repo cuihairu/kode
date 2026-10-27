@@ -100,6 +100,7 @@ import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWor
 import {
   applySavedFileAnnotations,
   removeSavedFileAnnotations,
+  renameSavedFileAnnotations,
   releaseDocumentReturnAnnotations,
   updateDocumentReturnAnnotations
 } from './pythonReturnTypeInference';
@@ -909,6 +910,23 @@ export function activate(context: vscode.ExtensionContext) {
       }
     });
     context.subscriptions.push(annotationDeleteWatcher);
+    // IDE-HOV-015:重命名迁移注解来源(旧键原位换新键;.py 改非 .py 视为移除)
+    const annotationRenameWatcher = vscode.workspace.onDidRenameFiles(event => {
+      for (const { oldUri, newUri } of event.files) {
+        const wasPython = oldUri.fsPath.endsWith('.py');
+        if (!wasPython) { continue; }
+        if (newUri.fsPath.endsWith('.py')) {
+          renameSavedFileAnnotations(
+            getWorkspaceRootForDocument({ fileName: oldUri.fsPath }),
+            oldUri.fsPath,
+            newUri.fsPath
+          );
+        } else {
+          removeSavedFileAnnotations(getWorkspaceRootForDocument({ fileName: oldUri.fsPath }), oldUri.fsPath);
+        }
+      }
+    });
+    context.subscriptions.push(annotationRenameWatcher);
   context.subscriptions.push({
     dispose: () => {
       if (pythonIndexEditFlushTimer) {

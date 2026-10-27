@@ -630,6 +630,24 @@ describe('extension activate 装配', () => {
       expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
       workspaceEvents.filesDeleted.fire({ files: [Uri.file(path.join(root, 'notes.txt'))] });
 
+      // IDE-HOV-015:重命名迁移注解来源(python→python 承接;python→非 python 移除)
+      applySavedFileAnnotations(
+        root,
+        path.join(root, 'svc_ren.py'),
+        'def only_ren() -> RENONLY:\n    pass\n'
+      );
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['z = only_ren()'], 0, 'z', root))
+        .toMatchObject({ annotation: 'RENONLY' });
+      workspaceEvents.filesRenamed.fire({
+        files: [{ oldUri: Uri.file(path.join(root, 'svc_ren.py')), newUri: Uri.file(path.join(root, 'svc_ren2.py')) }]
+      });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['z = only_ren()'], 0, 'z', root))
+        .toMatchObject({ annotation: 'RENONLY' });
+      workspaceEvents.filesRenamed.fire({
+        files: [{ oldUri: Uri.file(path.join(root, 'svc_ren2.py')), newUri: Uri.file(path.join(root, 'svc_ren2.txt')) }]
+      });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['z = only_ren()'], 0, 'z', root)).toBeNull();
+
       // 批154:CodeLens 四类功能开关变更即时 fire 各 provider(emitter
       // 挂在 provider 实例上,注册后即可订阅);事件须同时含 'kbengine'
       // (外层 guard 短路口径与 python-mro 分支一致)
