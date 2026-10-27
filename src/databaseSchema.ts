@@ -2287,46 +2287,114 @@ function typeShapeOf(typeName: string, context: BuildContext, seen: Set<string>)
   return { kind: 'unresolved', rawType: typeName };
 }
 
-let typeStorageUsageIndex: { key: string; index: Map<string, TypeStorageUsage[]> } | null = null;
-
-export function invalidateTypeStorageUsageIndex(): void {
-  typeStorageUsageIndex = null;
+// IDE-SCH-008:按实体增量维护——usage 记录按实体存放,快照对象身份一致则复用
+// 该实体的记录(修改一个实体只重建它自己,无关实体记录对象原样保留),
+// 聚合索引由记录懒聚合,记录未变时聚合也复用。
+interface TypeStorageUsageEntityRecord {
+  snapshot: DatabaseSchemaSnapshot | null;
+  usages: Array<{ typeName: string; usage: TypeStorageUsage }>;
 }
 
-export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, TypeStorageUsage[]> {
-  if (typeStorageUsageIndex && typeStorageUsageIndex.key === workspaceRoot) {
-    return typeStorageUsageIndex.index;
-  }
+let typeStorageUsageState: {
+  key: string;
+  entityRecords: Map<string, TypeStorageUsageEntityRecord>;
+  index: Map<string, TypeStorageUsage[]> | null;
+} | null = null;
 
-  const index = new Map<string, TypeStorageUsage[]>();
-  for (const entry of getDefinitionEntries(workspaceRoot, 'entity')) {
-    if (!entry.exists) {
-      continue;
-    }
-    const snapshot = getDatabaseSchemaSnapshot(entry.name, workspaceRoot);
-    if (!snapshot) {
-      continue;
-    }
-    for (const table of snapshot.tables) {
-      for (const field of table.fields) {
-        if (field.synthetic || !field.declaredType) {
-          continue;
-        }
-        const usages = index.get(field.declaredType) || [];
-        usages.push({
+function collectTypeStorageUsagesForSnapshot(snapshot: DatabaseSchemaSnapshot | null): Array<{ typeName: string; usage: TypeStorageUsage }> {
+  const usages: Array<{ typeName: string; usage: TypeStorageUsage }> = [];
+  if (!snapshot) {
+    return usages;
+  }
+  for (const table of snapshot.tables) {
+    for (const field of table.fields) {
+      if (field.synthetic || !field.declaredType) {
+        continue;
+      }
+      usages.push({
+        typeName: field.declaredType,
+        usage: {
           entity: snapshot.entityName,
           property: field.sourcePath,
           table: table.name,
           column: field.name,
           defFile: field.source.filePath,
           line: field.source.line
-        });
-        index.set(field.declaredType, usages);
-      }
+        }
+      });
+    }
+  }
+  return usages;
+}
+
+function refreshTypeStorageUsageRecord(workspaceRoot: string, entityName: string): boolean {
+  const state = typeStorageUsageState;
+  if (!state) {
+    return false;
+  }
+  const snapshot = getDatabaseSchemaSnapshot(entityName, workspaceRoot);
+  const existing = state.entityRecords.get(entityName);
+  if (existing && existing.snapshot === snapshot) {
+    return false; // 快照对象未变:该实体贡献的记录原样复用
+  }
+  state.entityRecords.set(entityName, {
+    snapshot,
+    usages: collectTypeStorageUsagesForSnapshot(snapshot)
+  });
+  return true;
+}
+
+export function invalidateTypeStorageUsageIndex(): void {
+  typeStorageUsageState = null;
+}
+
+/**
+ * IDE-SCH-008 事件面:实体 def 变更后只替换该实体贡献的 usage 记录,
+ * 其余实体的记录对象保持不变,聚合索引按需重聚(不全仓重建)。
+ */
+export function replaceTypeStorageUsageForEntity(workspaceRoot: string, entityName: string): void {
+  if (!typeStorageUsageState || typeStorageUsageState.key !== workspaceRoot) {
+    return; // 尚无索引:下一次查询本身就是全新构建
+  }
+  if (refreshTypeStorageUsageRecord(workspaceRoot, entityName)) {
+    typeStorageUsageState.index = null;
+  }
+}
+
+export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, TypeStorageUsage[]> {
+  if (!typeStorageUsageState || typeStorageUsageState.key !== workspaceRoot) {
+    typeStorageUsageState = { key: workspaceRoot, entityRecords: new Map(), index: null };
+  }
+  const state = typeStorageUsageState;
+
+  // 逐实体按快照身份自愈:无关实体零成本复用,变更实体仅重建自身
+  const entries = getDefinitionEntries(workspaceRoot, 'entity').filter(entry => entry.exists);
+  let changed = false;
+  const liveEntities = new Set(entries.map(entry => entry.name));
+  for (const entry of entries) {
+    if (refreshTypeStorageUsageRecord(workspaceRoot, entry.name)) {
+      changed = true;
+    }
+  }
+  for (const name of [...state.entityRecords.keys()]) {
+    if (!liveEntities.has(name)) { // 实体已不在定义清单:清掉亡灵记录
+      state.entityRecords.delete(name);
+      changed = true;
     }
   }
 
-  typeStorageUsageIndex = { key: workspaceRoot, index };
+  if (!changed && state.index) {
+    return state.index;
+  }
+  const index = new Map<string, TypeStorageUsage[]>();
+  for (const record of state.entityRecords.values()) {
+    for (const { typeName, usage } of record.usages) {
+      const usages = index.get(typeName) || [];
+      usages.push(usage);
+      index.set(typeName, usages);
+    }
+  }
+  state.index = index;
   return index;
 }
 

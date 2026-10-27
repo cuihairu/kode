@@ -186,9 +186,13 @@ export const workspace = {
       }
     };
     lastFileSystemWatcher.current = watcher;
+    allFileSystemWatchers.push(watcher);
     return watcher;
   }
 };
+
+/** 供测试按创建顺序取 watcher(lastFileSystemWatcher 只留最后一个) */
+export const allFileSystemWatchers: StubFileSystemWatcher[] = [];
 
 export const workspaceState = {
   openTextDocumentCalls,
@@ -210,6 +214,7 @@ export const workspaceState = {
     openTextDocumentCalls.length = 0;
     workspaceConfigurationUpdates.length = 0;
     lastFileSystemWatcher.current = null;
+    allFileSystemWatchers.length = 0;
     memoryFileSystem.reset();
     configurationOverrides.clear();
   }

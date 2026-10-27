@@ -61,7 +61,8 @@ import {
   indexTypeStorageUsagesBySourceLine,
   invalidateTypeStorageUsageIndex,
   isDatabaseSchemaDocument,
-  locateDatabaseSchemaLine
+  locateDatabaseSchemaLine,
+  replaceTypeStorageUsageForEntity
 } from './databaseSchema';
 import type { TypeStorageShape, TypeStorageUsage } from './databaseSchema';
 import { buildPropertyDatabaseStorageHover } from './databaseSimulator';
@@ -4772,8 +4773,10 @@ export function buildTypesXmlStorageLensSpecs(
   return specs;
 }
 
-// def/types.xml/entities.xml 任一改动都会改变引用与落点:索引置空并
-// 触发重取;dispose 随扩展注销拆掉 watcher
+// def/types.xml/entities.xml 任一改动都会改变引用与落点并触发重取;dispose
+// 随扩展注销拆掉 watcher。def 变更走 IDE-SCH-008 按实体增量替换(只重建
+// 该实体贡献的 usage 记录),types.xml/entities.xml 仍整表置空(别名与实体
+// 清单影响全体消费方)
 export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
@@ -4786,9 +4789,32 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
         invalidateTypeStorageUsageIndex();
         this.onDidChangeCodeLensesEmitter.fire();
       };
-      watcher.onDidChange(invalidate);
-      watcher.onDidCreate(invalidate);
-      watcher.onDidDelete(invalidate);
+      const replaceEntity = (uri?: vscode.Uri): void => {
+        if (!uri) {
+          invalidate(); // 无 uri 的事件面兜底:退回整表置空
+          return;
+        }
+        const folder = vscode.workspace.workspaceFolders?.find(item =>
+          uri.fsPath === item.uri.fsPath
+          || uri.fsPath.startsWith(`${item.uri.fsPath}/`)
+          || uri.fsPath.startsWith(`${item.uri.fsPath}${path.sep}`));
+        const root = folder?.uri.fsPath || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (!root) {
+          invalidate();
+          return;
+        }
+        replaceTypeStorageUsageForEntity(root, path.basename(uri.fsPath, path.extname(uri.fsPath)));
+        this.onDidChangeCodeLensesEmitter.fire();
+      };
+      if (pattern === '**/*.def') {
+        watcher.onDidChange(replaceEntity);
+        watcher.onDidCreate(replaceEntity);
+        watcher.onDidDelete(replaceEntity);
+      } else {
+        watcher.onDidChange(invalidate);
+        watcher.onDidCreate(invalidate);
+        watcher.onDidDelete(invalidate);
+      }
       this.watchers.push(watcher);
     }
   }
