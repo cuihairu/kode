@@ -272,7 +272,7 @@
 - [x] IDE-EVT-009 [P0] 删除文件时清除事件反向记录；验收：删除监听文件后监听计数和跳转目标同时消失；前置：IDE-EVT-007。
 - [x] IDE-EVT-010 [P0] 重命名文件时更新事件 URI；验收：监听跳转只指向新路径，不保留旧路径；前置：IDE-EVT-009。
 - [x] IDE-EVT-011 [P0] 释放事件 provider 的索引和 watcher；验收：provider 销毁后 watcher 为 0，在途读取不得重新发布缓存；前置：IDE-EVT-002。
-- [ ] IDE-EVT-012 [P0] 让事件 CodeLens 读取共享文件索引；验收：事件记录来源复用统一索引，移除该 provider 的独立全仓扫描入口；前置：IDE-EVT-006, IDE-SNP-001。
+- [x] IDE-EVT-012 [P0] 让事件 CodeLens 读取共享文件索引；验收：事件记录来源复用统一索引，移除该 provider 的独立全仓扫描入口；前置：IDE-EVT-006, IDE-SNP-001。（74b2d9a;实现=src/eventApi.ts 构造必注入共享 WorkspaceIndex(删 ownIndex 自持回退),删零调用方 scanEventCalls 独立全仓扫描入口;extension.ts 统一持一份 sharedWorkspaceIndex 注入并随 context 释放;测试=tests/workspaceEventIndex.test.ts 共享索引单扫锁(两 provider 三次调用 findFiles 恰 1 次)+全量 11 处构造改注入;前置 IDE-SNP-001 快照接口为 SNP 线另一接口面,本验收以统一 WorkspaceIndex 满足;测试绿 3237|7）
 
 ### IDE-IDX · 根身份、实体归属与增量正确性（P1）
 
