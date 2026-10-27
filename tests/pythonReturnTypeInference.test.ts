@@ -11,6 +11,7 @@ import { EntityMappingManager } from '../src/entityMapping';
 import {
   buildReturnAnnotationIndex,
   extractFileReturnAnnotations,
+  extractFileReturnAnnotationsAsync,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType
 } from '../src/pythonReturnTypeInference';
@@ -78,6 +79,15 @@ const setupWorkspace = (): TempWorkspace => {
 };
 
 describe('返回类型推导(局部变量 hover)', () => {
+  it('单个大文件解析在处理长行时让出事件循环且结果与同步提取一致', async () => {
+    const source = `def long_method(value: ${'A'.repeat(150000)}) -> Result:\n    pass\n`;
+    let yielded = false;
+    const pending = extractFileReturnAnnotationsAsync(source);
+    setImmediate(() => { yielded = true; });
+    const actual = await pending;
+    expect(yielded).toBe(true);
+    expect([...actual]).toEqual([...extractFileReturnAnnotations(source)]);
+  });
   it('单次遍历提取各方法注解，无注解的方法不会引起全文重扫', () => {
     const source = Array.from({ length: 1000 }, (_, i) =>
       `def method_${i}():\n    pass\n`

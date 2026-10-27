@@ -226,6 +226,78 @@ export function extractFileReturnAnnotations(source: string): PythonReturnAnnota
   return result;
 }
 
+const ANNOTATION_YIELD_INTERVAL = 16 * 1024;
+type YieldBudget = { remaining: number };
+
+async function maskCodeLineCooperatively(raw: string, budget: YieldBudget): Promise<string> {
+  let quote = '';
+  let triple = false;
+  let masked = '';
+  for (let col = 0; col < raw.length; col += 1) {
+    if (--budget.remaining <= 0) {
+      budget.remaining = ANNOTATION_YIELD_INTERVAL;
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+    const ch = raw[col];
+    if (quote) {
+      if (ch === '\\') { masked += '  '; col += 1; continue; }
+      if (triple && raw.slice(col, col + 3) === quote.repeat(3)) {
+        quote = ''; triple = false; masked += '   '; col += 2;
+      } else if (!triple && ch === quote) { quote = ''; masked += ' '; }
+      else { masked += ' '; }
+      continue;
+    }
+    if (ch === '#') { masked += ' '.repeat(raw.length - col); break; }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      triple = raw.slice(col, col + 3) === ch.repeat(3);
+      masked += triple ? '___' : '_';
+      if (triple) col += 2;
+      continue;
+    }
+    masked += ch;
+  }
+  return masked;
+}
+
+/** 与同步提取器同口径；大文件和单个长签名均按字符预算让出事件循环。 */
+export async function extractFileReturnAnnotationsAsync(source: string): Promise<PythonReturnAnnotationIndex> {
+  const result: PythonReturnAnnotationIndex = new Map();
+  const seen = new Set<string>();
+  const defHead = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
+  const budget: YieldBudget = { remaining: ANNOTATION_YIELD_INTERVAL };
+  let current: { name: string; signature: string; depth: number; sawParens: boolean; lines: number } | undefined;
+  for (const rawLine of source.split(/\r?\n/)) {
+    const masked = await maskCodeLineCooperatively(rawLine, budget);
+    const nextDef = defHead.exec(masked)?.[1];
+    if (current && nextDef) current = undefined;
+    if (!current) {
+      if (!nextDef || seen.has(nextDef)) continue;
+      seen.add(nextDef);
+      current = { name: nextDef, signature: '', depth: 0, sawParens: false, lines: 0 };
+    }
+    current.lines += 1;
+    for (const ch of masked) {
+      if (--budget.remaining <= 0) {
+        budget.remaining = ANNOTATION_YIELD_INTERVAL;
+        await new Promise<void>(resolve => setImmediate(resolve));
+      }
+      if (ch === '(') { current.depth += 1; current.sawParens = true; }
+      else if (ch === ')') { current.depth = Math.max(0, current.depth - 1); }
+      else if (ch === ':' && current.sawParens && current.depth === 0) {
+        const arrow = current.signature.indexOf('->');
+        const annotation = arrow < 0 ? '' : current.signature.slice(arrow + 2).trim();
+        if (annotation) result.set(current.name, annotation);
+        current = undefined;
+        break;
+      }
+      current.signature += ch;
+    }
+    if (current && current.lines >= 64) current = undefined;
+  }
+  return result;
+}
+
 export function buildReturnAnnotationIndex(sources: readonly string[]): PythonReturnAnnotationIndex {
   const index: PythonReturnAnnotationIndex = new Map();
   for (const source of sources) {
@@ -301,7 +373,13 @@ async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: A
   };
   await Promise.all(Array.from({ length: Math.min(ANNOTATION_READ_CONCURRENCY, files.length) }, readWorker));
   if (token.isCancellationRequested) return new Map();
-  const index = buildReturnAnnotationIndex(sources);
+  const index: PythonReturnAnnotationIndex = new Map();
+  for (const source of sources) {
+    if (token.isCancellationRequested) return new Map();
+    for (const [name, annotation] of await extractFileReturnAnnotationsAsync(source)) {
+      if (!index.has(name)) index.set(name, annotation);
+    }
+  }
   if (annotationBuilds.get(workspaceRoot) === build) {
     returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index });
   }
