@@ -1127,8 +1127,12 @@ export class PythonClassIndex {
   /** Use the buffer synchronously so an older disk read cannot overwrite edits. */
   async onDocumentChanged(document: vscode.TextDocument): Promise<void> {
     if (!/\.(py|def|xml)$/i.test(document.fileName)) { return; }
-    if (this.documents.get(document.fileName) === document &&
-        this.fileCache.get(document.fileName)?.version === document.version) { return; }
+    // IDE-DIA-003:同版本已入缓存即零成本跳过(诊断 syncDocumentParse 先解析
+    // 入缓存后,此处防抖补喂命中,不再各自完整解析一次);只认版本号——
+    // 缓存里那份就是该版本缓冲的解析,与文档对象身份无关;版本不可知
+    // (undefined)永不判同(空缓存 vacuous 命中会吞掉首解析)
+    const cachedVersion = this.fileCache.get(document.fileName)?.version;
+    if (cachedVersion !== undefined && cachedVersion === document.version) { return; }
     this.documents.set(document.fileName, document);
     if (!document.fileName.toLowerCase().endsWith('.py')) {
       this.generation += 1;
@@ -1141,6 +1145,25 @@ export class PythonClassIndex {
     this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
     await this.updateFileResponsive(document.fileName, document.getText(), document.version,
       this.revisions.get(document.fileName)!);
+  }
+
+  /** 版本键只读面:缓存命中且版本一致才给解析结果,否则 null(不把旧代
+   * 当现版本用;version 不可知(undefined)同样不给) */
+  getParsedForVersion(filePath: string, version: number | undefined): ParsedPythonFile | null {
+    if (version === undefined) { return null; }
+    const cached = this.fileCache.get(filePath);
+    return cached && cached.version === version ? cached.parsed : null;
+  }
+
+  /** IDE-DIA-003 共享解析面:同版本命中直接返回缓存对象(零解析);未命中
+   * 同步解析并按版本入缓存——receiver 诊断与类索引消费同一份解析,
+   * 后续 onDocumentChanged 同版本去重不再各自完整解析一次 */
+  syncDocumentParse(document: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>): ParsedPythonFile {
+    const hit = this.getParsedForVersion(document.fileName, document.version);
+    if (hit) { return hit; }
+    const parsed = parsePythonFile(document.getText(), document.fileName);
+    this.commitParsedFile(document.fileName, parsed, document.version ?? -1, 0);
+    return parsed;
   }
 
   async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number,

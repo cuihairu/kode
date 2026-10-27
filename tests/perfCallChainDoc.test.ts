@@ -29,15 +29,15 @@ const sourceLines = (relative: string): string[] =>
 
 /** §7 四条链的承重锚点:行号 → 该行必须仍含所引符号(迁移即红) */
 const ANCHORS: Array<[string, number, string]> = [
-  ['src/extension.ts', 543, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 575, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 634, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 468, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 850, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 551, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 583, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 642, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 476, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 858, "startLanguageServiceOperation('completion'"],
   ['src/extension.ts', 311, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 324, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 900, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 925, 'flushQueued()'],
+  ['src/extension.ts', 908, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 933, 'flushQueued()'],
   ['src/languageProviders.ts', 660, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 731, 'provideHover('],
   ['src/languageProviders.ts', 1266, 'shadowCompareDefinition'],
@@ -53,8 +53,8 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 154, 'getDocumentLines'],
   ['src/pythonClassIndex.ts', 624, 'ensureCompositionRoots'],
-  ['src/pythonClassIndex.ts', 1146, 'resolveClassBase'],
-  ['src/pythonClassIndex.ts', 1258, '①② 两段查询']
+  ['src/pythonClassIndex.ts', 1169, 'resolveClassBase'],
+  ['src/pythonClassIndex.ts', 1281, '①② 两段查询']
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {

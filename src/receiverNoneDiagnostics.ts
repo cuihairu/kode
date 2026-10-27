@@ -197,16 +197,24 @@ function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): stri
 /**
  * 全量计算:无判空 guard 的接收者引用(Warning)+ .def 段错配(Warning)。
  * 纯函数(文本 + 内存映射快照),供诊断调度器同步 compute 面调用。
+ * preparsed(IDE-DIA-003):同版本共享解析——直接给对象或给惰性提供器
+ * (仅当确有 receiver 使用点过闸后才调用,IDE-DIA-001 零使用点不解析
+ * 语义保持);给了就不各自完整解析一次。
  */
+export type PreparsedPythonProvider = ReturnType<typeof parsePythonFile> | (() => ReturnType<typeof parsePythonFile>);
+
 export function computeReceiverNoneFindings(
   text: string,
   filePath: string,
-  mapping?: EntityMapping
+  mapping?: EntityMapping,
+  preparsed?: PreparsedPythonProvider
 ): ReceiverNoneFinding[] {
   const calls = findPythonReceiverCalls(text);
   if (calls.length === 0) return [];
   const findings: ReceiverNoneFinding[] = [];
-  const parsed = parsePythonFile(text, filePath);
+  const parsed = typeof preparsed === 'function'
+    ? preparsed()
+    : preparsed ?? parsePythonFile(text, filePath);
   const methodSpans = buildMethodSpans(parsed);
   const lines = text.split(/\r?\n/);
   for (const call of calls) {
@@ -255,12 +263,13 @@ export function receiverNoneDiagnosticItems(
   text: string,
   filePath: string,
   mapping: EntityMapping | undefined,
-  enabled: boolean
+  enabled: boolean,
+  preparsed?: PreparsedPythonProvider
 ): ReceiverDiagnosticItem[] {
   if (!enabled) {
     return [];
   }
-  return computeReceiverNoneFindings(text, filePath, mapping).map(finding => ({
+  return computeReceiverNoneFindings(text, filePath, mapping, preparsed).map(finding => ({
     range: {
       start: { line: finding.line, character: finding.character },
       end: { line: finding.line, character: finding.character + finding.methodName.length }

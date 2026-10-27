@@ -420,13 +420,21 @@ export function activate(context: vscode.ExtensionContext) {
       compute: () => {
         const enabled = vscode.workspace.getConfiguration('kbengine')
           .get<boolean>('receiverNoneDiagnostics', RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT);
+        // IDE-DIA-003:与类索引消费同一份版本键解析(惰性提供器——仅当确有
+        // receiver 使用点过闸后才取解析,DIA-001 零使用点不解析语义保持;
+        // syncDocumentParse 命中即零解析,未命中解析一次入缓存供索引同版本
+        // 去重);层2 关闭时索引不参与跳转,不喂索引,诊断自解析(口径不变)
+        const preparsed = isPythonMroJumpEnabled() && isPythonDocument(document)
+          ? () => pythonClassIndex.syncDocumentParse(document)
+          : undefined;
         return receiverNoneDiagnosticItems(
           document.getText(),
           document.uri.fsPath,
           isPythonDocument(document)
             ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
             : undefined,
-          enabled
+          enabled,
+          preparsed
         );
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {
