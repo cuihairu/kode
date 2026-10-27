@@ -4,7 +4,7 @@ import * as path from 'path';
 /**
  * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
  * → data: JSONDATA」):`<名> = <右值>` 的 hover 面按右值被调函数的返回注解
- * 推导变量类型。纯逻辑 + 同步 fs 扫描,不 import vscode。
+ * 推导变量类型。目录异步发现，源码仍同步读取，不 import vscode。
  *
  * 解析优先级(用户令原话):python 实现的 `def get_data(...) -> X:` 返回注解
  * (按方法名在项目 python 文件内定位定义,单层调用 + 属性直调 a.b() 一层即
@@ -157,6 +157,35 @@ export function collectProjectPythonFiles(workspaceRoot: string, limit = 20000):
   return files.sort();
 }
 
+/** 异步目录发现；取消后不再访问后续目录。 */
+export async function collectProjectPythonFilesAsync(
+  workspaceRoot: string,
+  limit = 20000,
+  token?: { readonly isCancellationRequested: boolean }
+): Promise<string[]> {
+  const files: string[] = [];
+  const visit = async (dir: string): Promise<void> => {
+    if (token?.isCancellationRequested || files.length >= limit) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (token?.isCancellationRequested || files.length >= limit) return;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!SCAN_EXCLUDED_DIRS.has(entry.name)) await visit(full);
+      } else if (entry.isFile() && entry.name.endsWith('.py')) {
+        files.push(full);
+      }
+    }
+  };
+  await visit(workspaceRoot);
+  return files.sort();
+}
+
 /** 方法名 → 返回注解(同名多定义时取扫描序里第一个有注解的;缺注解不入表) */
 export type PythonReturnAnnotationIndex = Map<string, string>;
 
@@ -218,14 +247,16 @@ export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();
 }
 
-function getReturnAnnotationIndex(workspaceRoot: string): PythonReturnAnnotationIndex {
+async function getReturnAnnotationIndex(workspaceRoot: string, token?: { readonly isCancellationRequested: boolean }): Promise<PythonReturnAnnotationIndex> {
   const now = Date.now();
   const cached = returnAnnotationCaches.get(workspaceRoot);
   if (cached && now - cached.builtAtMs < INDEX_TTL_MS) {
     return cached.index;
   }
+  const files = await collectProjectPythonFilesAsync(workspaceRoot, 20000, token);
+  if (token?.isCancellationRequested) return new Map();
   const index = buildReturnAnnotationIndex(
-    collectProjectPythonFiles(workspaceRoot).map(file => {
+    files.map(file => {
       try {
         return fs.readFileSync(file, 'utf8');
       } catch {
@@ -253,23 +284,30 @@ export function resolveLocalVariableReturnType(
   lines: readonly string[],
   hoverLine: number,
   word: string,
-  workspaceRoot: string | null
-): LocalVariableReturnType | null {
+  workspaceRoot: string | null,
+  token?: { readonly isCancellationRequested: boolean }
+): Promise<LocalVariableReturnType | null> | null {
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) {
     return null;
   }
-  let index: PythonReturnAnnotationIndex | undefined;
+  const candidates: LocalAssignmentCall[] = [];
   for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
     const assignment = parseLocalAssignmentCall(lines[line] ?? '');
     if (!assignment || assignment.target !== word) {
       continue;
     }
-    index ??= getReturnAnnotationIndex(workspaceRoot);
-    const annotation = index.get(assignment.methodName);
-    if (annotation && annotation !== 'Any') {
-      return { target: word, annotation, methodName: assignment.methodName };
-    }
+    candidates.push(assignment);
     // 右值是赋值但解不出注解:继续向上找更早的可解析赋值(取最后一次可解析值)
   }
-  return null;
+  if (candidates.length === 0) return null;
+  return getReturnAnnotationIndex(workspaceRoot, token).then(index => {
+    if (token?.isCancellationRequested) return null;
+    for (const assignment of candidates) {
+      const annotation = index.get(assignment.methodName);
+      if (annotation && annotation !== 'Any') {
+        return { target: word, annotation, methodName: assignment.methodName };
+      }
+    }
+    return null;
+  });
 }

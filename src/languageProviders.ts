@@ -811,13 +811,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         getDocumentLines(document),
         position.line,
         word,
-        getWorkspaceRootForDocument(document)
+        getWorkspaceRootForDocument(document),
+        token
       );
       if (inferred) {
-        const markdown = new vscode.MarkdownString();
-        markdown.appendMarkdown(`**${inferred.target}: ${inferred.annotation}**\n\n`);
-        markdown.appendMarkdown(`推导自 ${inferred.methodName}() 返回注解`);
-        return new vscode.Hover(markdown);
+        return respond(inferred.then(result => {
+          if (!result) return this.provideKnownHover(document, position, featureConfig, range, word);
+          const markdown = new vscode.MarkdownString();
+          markdown.appendMarkdown(`**${result.target}: ${result.annotation}**\n\n`);
+          markdown.appendMarkdown(`推导自 ${result.methodName}() 返回注解`);
+          return new vscode.Hover(markdown);
+        }));
       }
     }
 

@@ -103,7 +103,7 @@ describe('provider hotspots', () => {
       const lines = document.getText().split(/\r?\n/);
       await manager.resolveMethodDefinition('/project/scripts/base/Avatar.py', 'run');
       await manager.getEntityComponentFacesForPythonFile('/project/scripts/base/Avatar.py');
-      resolveLocalVariableReturnType(lines, 2, 'data', root);
+      await resolveLocalVariableReturnType(lines, 2, 'data', root);
     });
 
     await measure('project method fallback', () =>

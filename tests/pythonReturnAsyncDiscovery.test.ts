@@ -1,0 +1,43 @@
+import { expect, it, vi } from 'vitest';
+import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType } from '../src/pythonReturnTypeInference';
+
+const { readdir, readFileSync } = vi.hoisted(() => ({ readdir: vi.fn(), readFileSync: vi.fn() }));
+vi.mock('fs', () => ({ promises: { readdir }, readFileSync }));
+
+it('慢目录发现期间事件循环可推进，取消后不进入下一目录', async () => {
+  readdir.mockReset();
+  let release!: (entries: unknown[]) => void;
+  readdir.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const token = { isCancellationRequested: false };
+  const pending = collectProjectPythonFilesAsync('/project', 20000, token);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(readdir).toHaveBeenCalledTimes(1);
+  token.isCancellationRequested = true;
+  release([{ name: 'nested', isDirectory: () => true, isFile: () => false }]);
+  expect(await pending).toEqual([]);
+  expect(readdir).toHaveBeenCalledTimes(1);
+});
+
+it('实际返回类型查询将取消传递到目录发现，且取消后不读源码', async () => {
+  readdir.mockReset();
+  readFileSync.mockReset();
+  resetPythonReturnAnnotationCache();
+  let release!: (entries: unknown[]) => void;
+  readdir.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const token = { isCancellationRequested: false };
+  const pending = resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', '/project', token);
+  token.isCancellationRequested = true;
+  release([{ name: 'source.py', isDirectory: () => false, isFile: () => true }]);
+  expect(await pending).toBeNull();
+  expect(readFileSync).not.toHaveBeenCalled();
+});
+
+it('排除无关目录并对 Python 文件排序', async () => {
+  readdir.mockReset();
+  const file = (name: string) => ({ name, isDirectory: () => false, isFile: () => true });
+  const dir = (name: string) => ({ name, isDirectory: () => true, isFile: () => false });
+  readdir.mockResolvedValueOnce([file('z.py'), dir('venv'), dir('src'), file('ignored.txt')]);
+  readdir.mockResolvedValueOnce([file('a.py')]);
+  expect(await collectProjectPythonFilesAsync('/project')).toEqual(['/project/src/a.py', '/project/z.py']);
+  expect(readdir).toHaveBeenCalledTimes(2);
+});

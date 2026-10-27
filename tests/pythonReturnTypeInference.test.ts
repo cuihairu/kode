@@ -161,7 +161,7 @@ describe('返回类型推导(局部变量 hover)', () => {
       path.join(workspace.workspaceFolders![0].uri.fsPath, 'scripts/base/Avatar.py')
     );
     // 纯逻辑直接验:自 hover 行向上,末条赋值 load() 无注解 → 回退取 get_data()
-    const annotation = resolveLocalVariableReturnType(
+    const annotation = await resolveLocalVariableReturnType(
       doc.getText().split(/\r?\n/),
       4,
       'data',
