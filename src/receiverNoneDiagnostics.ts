@@ -194,10 +194,12 @@ export function computeReceiverNoneFindings(
   filePath: string,
   mapping?: EntityMapping
 ): ReceiverNoneFinding[] {
+  const calls = findPythonReceiverCalls(text);
+  if (calls.length === 0) return [];
   const findings: ReceiverNoneFinding[] = [];
   const parsed = parsePythonFile(text, filePath);
   const lines = text.split(/\r?\n/);
-  for (const call of findPythonReceiverCalls(text)) {
+  for (const call of calls) {
     const span = enclosingMethodSpan(parsed, call.line);
     if (span && !hasReceiverGuard(lines, span, call.line, call.receiver)) {
       findings.push({

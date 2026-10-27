@@ -340,7 +340,7 @@
 ### IDE-DIA · 同步诊断与编辑响应（P1）
 
 来源：PERF-05；src/receiverNoneDiagnostics.ts、src/diagnosticScheduler.ts。
-- [ ] IDE-DIA-001 [P1] 无 receiver 使用点时跳过诊断解析；验收：不包含 self.base/cell/client 使用的文件不调用完整 Python parser；前置：无。
+- [x] IDE-DIA-001 [P1] 无 receiver 使用点时跳过诊断解析；验收：不包含 self.base/cell/client 使用的文件不调用完整 Python parser；前置：无。
 - [ ] IDE-DIA-002 [P1] 一次建立 Python 方法区间表；验收：处理多个调用点不再为每个点重新收集排序全部方法；前置：无。
 - [ ] IDE-DIA-003 [P1] 诊断复用同版本 Python 解析结果；验收：类索引与 receiver 诊断消费同版本缓存，不各自完整解析一次；前置：IDE-SNP-001, IDE-DIA-002。
 - [ ] IDE-DIA-004 [P1] 按方法复用 receiver guard 分析；验收：同方法多处调用不重复遍历相同 guard 前缀，既有告警语义保持；前置：IDE-DIA-002。
