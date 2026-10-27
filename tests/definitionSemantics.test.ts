@@ -518,3 +518,39 @@ describe('definition semantics corner cases and clone propagation', () => {
     }
   });
 });
+
+describe('IDE-IDX-001 语义 loader 按精确 def 路径加载', () => {
+  it('双根同名 Hero:按 B 的精确路径请求,owner.filePath 为 B 且成员来自 B', () => {
+    const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-idx-a-'));
+    const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-idx-b-'));
+    try {
+      const defA = ['<root>', '  <Properties>', '    <hp_from_a>', '      <Type>UINT32</Type>', '    </hp_from_a>', '  </Properties>', '</root>'].join('\n');
+      const defB = ['<root>', '  <Properties>', '    <hp_from_b>', '      <Type>UINT32</Type>', '    </hp_from_b>', '  </Properties>', '</root>'].join('\n');
+      for (const [root, content] of [[rootA, defA], [rootB, defB]] as Array<[string, string]>) {
+        const file = path.join(root, 'scripts/entity_defs/Hero.def');
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, content, 'utf8');
+      }
+      const loader = createDefinitionSemanticsLoader([rootA, rootB])!;
+      // 名字解析保持首根优先(既有口径不回退)
+      const byName = loader.loadResolved('Hero', 'entity')!;
+      expect(normalizeLookupPath(byName.owner.filePath))
+        .toBe(normalizeLookupPath(path.join(rootA, 'scripts/entity_defs/Hero.def')));
+      // 精确路径解析:owner 落 B,成员来自 B,不串 A
+      const heroB = path.join(rootB, 'scripts/entity_defs/Hero.def');
+      const atB = loader.loadResolvedAt(heroB, 'Hero', 'entity')!;
+      expect(normalizeLookupPath(atB.owner.filePath)).toBe(normalizeLookupPath(heroB));
+      const names = atB.effectiveProperties.map(prop => prop.fullPath);
+      expect(names).toContain('hp_from_b');
+      expect(names).not.toContain('hp_from_a');
+    } finally {
+      fs.rmSync(rootA, { recursive: true, force: true });
+      fs.rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  it('精确路径不可读回 null,不虚建语义', () => {
+    const loader = createDefinitionSemanticsLoader('/never')!;
+    expect(loader.loadResolvedAt(path.join('/never', 'scripts/entity_defs/Ghost.def'), 'Ghost', 'entity')).toBeNull();
+  });
+});

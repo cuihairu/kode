@@ -202,6 +202,44 @@ export class DefinitionSemanticsLoader {
     return resolved;
   }
 
+  /**
+   * IDE-IDX-001:按精确 def 路径加载入口——绕过名字解析的逐根首命中,
+   * 直接解析指定文件(双根同名时调用方指 B 就拿 B)。缓存按路径分区,
+   * 与名字缓存互不串扰;文件不可读/解析失败回 null,不虚建语义。
+   */
+  loadResolvedAt(
+    defPath: string,
+    name: string,
+    category: DefinitionSemanticCategory,
+    allowComponents = true
+  ): ResolvedDefinitionSemantics | null {
+    const cacheKey = `at:${normalizeLookupPath(defPath)}::${buildCacheKey(category, name)}::${allowComponents ? 'components' : 'plain'}`;
+    if (this.resolvedCache.has(cacheKey)) {
+      return this.resolvedCache.get(cacheKey) || null;
+    }
+    const resolved = this.loadResolvedAtInternal(defPath, name, category, allowComponents);
+    this.resolvedCache.set(cacheKey, resolved);
+    return resolved;
+  }
+
+  private loadResolvedAtInternal(
+    defPath: string,
+    name: string,
+    category: DefinitionSemanticCategory,
+    allowComponents: boolean
+  ): ResolvedDefinitionSemantics | null {
+    const content = readTextFile(defPath);
+    if (!content) {
+      return null;
+    }
+    try {
+      const local = parseLocalDefinition(content, category, name, defPath);
+      return this.resolveSemanticsFromLocal(local, { allowComponents, visited: new Set<string>() });
+    } catch {
+      return null;
+    }
+  }
+
   private loadResolvedInternal(
     name: string,
     category: DefinitionSemanticCategory,
@@ -211,7 +249,18 @@ export class DefinitionSemanticsLoader {
     if (!local) {
       return null;
     }
+    return this.resolveSemanticsFromLocal(local, context);
+  }
 
+  /**
+   * IDE-IDX-001:从已定位的本地语义出发解析(名字入口与精确路径入口共用);
+   * visited 按 owner 文件路径去重,离开即回退。
+   */
+  private resolveSemanticsFromLocal(
+    local: LocalDefinitionSemantics,
+    context: ResolutionContext
+  ): ResolvedDefinitionSemantics | null {
+    const category = local.owner.kind;
     const visitKey = normalizeLookupPath(local.owner.filePath);
     if (context.visited.has(visitKey)) {
       return null;

@@ -442,14 +442,19 @@ export class EntityMappingManager {
     // loader 回退链(2026-10-22):默认 loader 以 .def 所在目录当根,而
     // findEntityDefinitionFile 需要目录布局(以文件当根恒 null,单文件重解析
     // 一直静默失败)。按扫描根(与全量扫描同源)优先,退到 .def 所在目录。
-    const loader = providedLoader
-      || createDefinitionSemanticsLoader(getIndexScanRoots())
-      || createDefinitionSemanticsLoader(path.dirname(defPath));
+    // IDE-IDX-001:精确路径解析只信扫描根 loader(providedLoader 或扫描根链);
+    // dirname 兜底 loader 保持原「名字解析静默失败」口径——无工作区的孤儿
+    // manager 不得因精确路径绕过布局发现而意外建出索引。
+    const scanLoader = providedLoader ?? createDefinitionSemanticsLoader(getIndexScanRoots());
+    const loader = scanLoader ?? createDefinitionSemanticsLoader(path.dirname(defPath));
     if (!loader) {
       return null;
     }
 
-    const semantics = loader.loadResolved(entityName, rootCategory, true);
+    const semantics = (scanLoader
+      ? scanLoader.loadResolvedAt(defPath, entityName, rootCategory, true)
+      : null)
+      ?? loader.loadResolved(entityName, rootCategory, true);
     if (!semantics) {
       return null;
     }
