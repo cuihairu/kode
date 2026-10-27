@@ -450,7 +450,7 @@ export function activate(context: vscode.ExtensionContext) {
       async provideCompletionItems(
         document: vscode.TextDocument,
         position: vscode.Position,
-        _token: vscode.CancellationToken,
+        token: vscode.CancellationToken,
         _context: vscode.CompletionContext
       ) {
         const operation = startLanguageServiceOperation('completion', {
@@ -458,7 +458,11 @@ export function activate(context: vscode.ExtensionContext) {
           documentVersion: document.version
         });
         try {
-          const result = await kbengineCompletionImpl.provideCompletionItems(document, position);
+          const result = await kbengineCompletionImpl.provideCompletionItems(document, position, token);
+          if (token.isCancellationRequested) {
+            operation.end('cancelled');
+            return null;
+          }
           operation.end(emptyResultStatus(result));
           return result;
         } catch (error) {

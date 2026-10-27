@@ -457,20 +457,22 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
 
   provideCompletionItems(
     document: vscode.TextDocument,
-    position: vscode.Position
+    position: vscode.Position,
+    token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
+    if (token?.isCancellationRequested) return null;
     const line = document.lineAt(position.line);
     const lineText = line.text.substring(0, position.character);
     const items: vscode.CompletionItem[] = [];
 
     if (lineText.match(/<(Type|Arg|of)>\s*\w*$/)) {
-      getKnownTypeSuggestions(document).forEach(type => {
+      getKnownTypeSuggestions(document, token).forEach(type => {
         const item = new vscode.CompletionItem(type.name, vscode.CompletionItemKind.Class);
         item.detail = type.detail;
         item.documentation = new vscode.MarkdownString(type.documentation);
         items.push(item);
       });
-      return items;
+      return token?.isCancellationRequested ? null : items;
     }
 
     if (lineText.match(/<Flags>\s*\w*$/)) {
@@ -3485,7 +3487,7 @@ interface KnownTypeSuggestion {
   documentation: string;
 }
 
-function getKnownTypeContext(document: vscode.TextDocument): KnownTypeContext {
+function getKnownTypeContext(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeContext {
   const builtins = new Set(KBENGINE_TYPES.map(type => type.name));
   const workspaceRoot = getWorkspaceRootForDocument(document);
 
@@ -3499,12 +3501,12 @@ function getKnownTypeContext(document: vscode.TextDocument): KnownTypeContext {
 
   return {
     builtins,
-    customTypes: getRegisteredCustomTypes(workspaceRoot),
-    entityTypes: new Set(getRegisteredEntities(workspaceRoot).map(entity => entity.name))
+    customTypes: token?.isCancellationRequested ? new Set<string>() : getRegisteredCustomTypes(workspaceRoot),
+    entityTypes: token?.isCancellationRequested ? new Set<string>() : new Set(getRegisteredEntities(workspaceRoot).map(entity => entity.name))
   };
 }
 
-function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSuggestion[] {
+function getKnownTypeSuggestions(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeSuggestion[] {
   const suggestions = new Map<string, KnownTypeSuggestion>();
 
   for (const type of KBENGINE_TYPES) {
@@ -3515,7 +3517,8 @@ function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSugges
     });
   }
 
-  const knownTypeContext = getKnownTypeContext(document);
+  const knownTypeContext = getKnownTypeContext(document, token);
+  if (token?.isCancellationRequested) return [];
   for (const typeName of [...knownTypeContext.customTypes].sort()) {
     if (!suggestions.has(typeName)) {
       suggestions.set(typeName, {
@@ -3529,7 +3532,7 @@ function getKnownTypeSuggestions(document: vscode.TextDocument): KnownTypeSugges
   // 别名指向面(alias.xml;PR-012 门 G-C 关闭单):parity 复算面含别名而
   // provider 缺,致 Rust-only 差异;此处补面后 Rust 补全 ⊆ TS 面。
   const workspaceRoot = getWorkspaceRootForDocument(document);
-  if (workspaceRoot) {
+  if (workspaceRoot && !token?.isCancellationRequested) {
     for (const [aliasName, aliasType] of [...getRegisteredAliasTypes(workspaceRoot)].sort((a, b) => a[0].localeCompare(b[0]))) {
       if (!suggestions.has(aliasName)) {
         suggestions.set(aliasName, {
