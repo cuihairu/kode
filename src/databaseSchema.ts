@@ -21,6 +21,7 @@ import {
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
 import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './serverConfigMerge';
+import { readSharedFileSnapshot } from './sharedFileSnapshot';
 
 export const KBENGINE_DATABASE_SCHEMA_SCHEME = 'kbengine-db-schema';
 const DB_TABLE_PREFIX = 'tbl_';
@@ -226,7 +227,8 @@ export function getDatabaseSchemaSnapshot(
     return null;
   }
 
-  const entityContent = readTextDocument(defFilePath);
+  // IDE-SNP-003:def 文本走共享快照——打开的脏缓冲优先,未打开磁盘补载
+  const entityContent = readSharedFileSnapshot(defFilePath)?.content ?? null;
   if (!entityContent) {
     return null;
   }
@@ -727,7 +729,8 @@ function parseTypeAliases(typesXmlPath: string | null): Map<string, TypeAliasEnt
     return aliases;
   }
 
-  const content = readTextDocument(typesXmlPath);
+  // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema)
+  const content = readSharedFileSnapshot(typesXmlPath)?.content ?? null;
   if (!content) {
     return aliases;
   }
@@ -811,7 +814,7 @@ function collectPersistentPropertiesForDefinition(
   }
   context.visitedDefinitions.add(normalizedPath);
 
-  const content = readTextDocument(filePath);
+  const content = readSharedFileSnapshot(filePath)?.content ?? null;
   if (!content) {
     return [];
   }
@@ -1347,7 +1350,7 @@ function collectDefinitionHasFlags(
   }
   visitedScopes.add(normalizedPath);
 
-  const content = readTextDocument(filePath);
+  const content = readSharedFileSnapshot(filePath)?.content ?? null;
   if (!content) {
     return;
   }
@@ -1784,14 +1787,6 @@ function clonePersistentProperty(property: PersistentPropertyDescriptor): Persis
     children: property.children ? clonePersistentProperties(property.children) : undefined,
     arrayElement: property.arrayElement ? clonePersistentProperty(property.arrayElement) : undefined
   };
-}
-
-function readTextDocument(filePath: string): string | null {
-  try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
 }
 
 // Properties 段:引擎默认非持久,仅文本(忽略大小写)"true" 持久

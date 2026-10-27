@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
   KBEngineDatabaseSchemaProvider,
@@ -14,6 +14,8 @@ import {
 } from '../src/databaseSchema';
 import type { DatabaseSchemaSnapshot, DefSourceRef, TableSchemaDescriptor } from '../src/databaseSchema';
 import { Position, makeTextDocument } from './helpers/vscodeStub';
+import { workspace } from './fake-vscode/workspaceState';
+import { createDefinitionSemanticsLoader } from '../src/definitionSemantics';
 
 // databaseSchema 的深层分支:Provider 生命周期、渲染文本上的字段定位、
 // source 定位与反查、dedupe,以及临时真实 def 树上的继承/接口/组件/
@@ -487,5 +489,101 @@ describe('renderDatabaseSchema parent line', () => {
 
     expect(text).toContain('TABLE tbl_Hero_bag');
     expect(text).toContain('父表: tbl_Hero');
+  });
+});
+
+describe('IDE-SNP-003:数据库 schema 读取共享快照', () => {
+  let snapRoot = '';
+  let goldDefPath = '';
+  let typesXmlPath = '';
+
+  beforeEach(() => {
+    snapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-snp3-'));
+    const write = (relative: string, text: string): void => {
+      const target = path.join(snapRoot, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, text, 'utf8');
+    };
+    write('scripts/entities.xml', '<root>\n  <Gold hasBase="true"/>\n</root>\n');
+    write('scripts/entity_defs/types.xml', '<root>\n</root>\n');
+    goldDefPath = path.join(snapRoot, 'scripts/entity_defs/Gold.def');
+    write('scripts/entity_defs/Gold.def', [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+    typesXmlPath = path.join(snapRoot, 'scripts/entity_defs/types.xml');
+  });
+  afterEach(() => {
+    workspace.textDocuments = [];
+    fs.rmSync(snapRoot, { recursive: true, force: true });
+  });
+
+  const openDirty = (fsPath: string, text: string): void => {
+    workspace.textDocuments = [{
+      uri: { toString: () => `file://${fsPath}`, fsPath },
+      version: 5,
+      getText: () => text
+    }];
+  };
+  const entityTableFields = (snapshot: DatabaseSchemaSnapshot | null): string[] =>
+    (snapshot?.tables.find(table => table.kind === 'entity')?.fields ?? []).map(field => field.name);
+
+  it('同一未保存 Persistent 修改在 schema 与 def 语义一致,关闭后两边回落磁盘', () => {
+    // 磁盘版无 gold;脏缓冲新增持久属性 gold
+    openDirty(goldDefPath, [
+      '<root>',
+      '  <Properties>',
+      '    <hp>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </hp>',
+      '    <gold>',
+      '      <Type>UINT32</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </gold>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'));
+
+    const snapshot = getDatabaseSchemaSnapshot('Gold', snapRoot);
+    expect(entityTableFields(snapshot)).toContain('sm_gold');
+    // def hover 源(语义 loader,SNP-002)读同一共享快照 → 属性集一致
+    const local = createDefinitionSemanticsLoader(snapRoot)!.loadLocal('Gold', 'entity');
+    expect(local?.properties.map(property => property.name)).toEqual(['hp', 'gold']);
+
+    // 关闭脏文档:下一次查询两边一致回落磁盘版本(无 gold)
+    workspace.textDocuments = [];
+    const diskSnapshot = getDatabaseSchemaSnapshot('Gold', snapRoot);
+    expect(entityTableFields(diskSnapshot)).not.toContain('sm_gold');
+    const diskLocal = createDefinitionSemanticsLoader(snapRoot)!.loadLocal('Gold', 'entity');
+    expect(diskLocal?.properties.map(property => property.name)).toEqual(['hp']);
+  });
+
+  it('未保存 types.xml 别名修改同样进 schema(ARRAY 别名 → 子表)', () => {
+    // def 磁盘版:wallet 持久属性引用别名 GOLDCOIN;types.xml 磁盘版无别名
+    fs.writeFileSync(goldDefPath, [
+      '<root>',
+      '  <Properties>',
+      '    <wallet>',
+      '      <Type>GOLDCOIN</Type>',
+      '      <Persistent>true</Persistent>',
+      '    </wallet>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), 'utf8');
+    const diskSnapshot = getDatabaseSchemaSnapshot('Gold', snapRoot);
+    expect(diskSnapshot?.tables.some(table => table.propertyPath === 'wallet')).toBe(false);
+
+    // 脏 types.xml 定义 GOLDCOIN = ARRAY of UINT8 → wallet 升格子表
+    openDirty(typesXmlPath, '<root>\n  <GOLDCOIN>ARRAY<of>UINT8</of></GOLDCOIN>\n</root>\n');
+    const snapshot = getDatabaseSchemaSnapshot('Gold', snapRoot);
+    const walletTable = snapshot?.tables.find(table => table.propertyPath === 'wallet');
+    expect(walletTable?.kind).toBe('array');
   });
 });
