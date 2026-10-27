@@ -178,7 +178,7 @@
 - [ ] 审核发现：self 方法解析已命中静态 MRO 时，组合根派生超过 1 秒仍直接返回空列表，丢弃已找到的有效目标（src/pythonClassIndex.ts:1081）
 - [ ] 审核发现：对象级负缓存只凭映射表非空就记录 miss，首扫尚未完成时可把后续分块里的接口或组件类永久误判为不存在（src/entityMapping.ts:2143）
 - [ ] 审核发现：worker 解析失败与文件读取失败共用 catch，解析线程崩溃时会删除仍存在文件的旧类索引而非保留并重试（src/pythonClassIndex.ts:916）
-- [ ] 审核发现：调度器将所有已完成、失败及取消任务永久留在 tasks Map，长会话持续保存会累积任务闭包和批量文件路径（src/indexScheduler.ts:214）
+- [x] 审核发现：调度器将所有已完成、失败及取消任务永久留在 tasks Map，长会话持续保存会累积任务闭包和批量文件路径（d8c3c35；src/indexScheduler.ts pump 终态块与 cancelQueued 各补 `this.tasks.delete(id)`——句柄经 settleListeners/自身闭包保留状态,不依赖 Map,queued/running 查询只看 queueOrder 与 runningId,出表安全;tests/indexScheduler.test.ts 新增「终态任务出表」用例,以运行态快照只读探针断言 completed/failed/cancelled 后 Map 空且计数不回归,未删用例未松断言）
 - [ ] 审核发现：实体首扫 keyed 任务只启动真实扫描便宣告完成，真实扫描失败又被转成成功的 initialScan；A3-4 的失败重试语义未接到实体扫描（src/entityMapping.ts:233）
 - [ ] 审核发现：按需加载先按 import 候选顺序截取 64 个缺失路径，导入较多时后面的真实依赖被静默跳过并导致跳转落空（src/pythonClassIndex.ts:877）
 - [x] 审核发现：PR5 首查测试在异步文件发现尚未入队分块时断言 gatedCount>0，当前连续两次单独运行均失败，未正确锁住“后台推进”行为（1f77df8；tests/pythonIndexPr5.test.ts:325 前加 `await scheduler.chunksEnqueued`——GatedBackgroundScheduler 在首个 full-reindex 分块入队即 resolve，把断言锚在真实入队时点而非首查返回时点；`scheduleBackgroundScan`(:1039) 是 fire-and-forget，分块在发现完成后才入队，原断言抢到发现前面恒为 0。未删用例未松断言，gatedCount/executedFullReindex/噪声零读/单文件计数四条断言原样保留）
