@@ -110,6 +110,14 @@ describe('同名实体冲突与查找顺序取证(A4-5/A4-6,先锁不改)', () =
     });
   };
 
+  it('替换同一 def 注册时移除旧 Python owner', () => {
+    const index = new SemanticIndex();
+    register(index, '/ws', 'Hero', '/ws/Hero.def', ['/ws/Old.py']);
+    register(index, '/ws', 'Hero', '/ws/Hero.def', ['/ws/New.py']);
+    expect(index.findEntityByPythonFile('/ws/Old.py')).toBeNull();
+    expect(index.findEntityByPythonFile('/ws/New.py')?.entityName).toBe('Hero');
+  });
+
   it('取证①:同名实体后注册者覆盖(既有 Map.set 口径),冲突清单保全双根条目', () => {
     const index = new SemanticIndex();
     index.registerRoot('/rootA');

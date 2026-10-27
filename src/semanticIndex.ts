@@ -131,6 +131,7 @@ export class SemanticIndex {
       pythonFiles: registration.pythonFiles.map(normalizeLookupPath),
       owners: [...registration.owners]
     };
+    this.removeEntityByDefFile(entry.defFile);
     const record: EntityRecord = { entry };
     this.entitiesByName.set(entry.entityName, record);
     this.entitiesByDefFile.set(entry.defFile, record);
