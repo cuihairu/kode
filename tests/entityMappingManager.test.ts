@@ -12,6 +12,8 @@ import {
   workspace as stubWorkspace,
   window as stubWindow
 } from './helpers/vscodeStub';
+import { configurationOverrides } from './fake-vscode/workspaceState';
+import { resetScanRootCache } from '../src/scanRoots';
 
 // EntityMappingManager 类本体:构造即扫描 scripts/entity_defs 并挂 python
 // watcher。测试用真实临时文件树 + stub findFiles 枚举,走 buildIndex →
@@ -959,6 +961,109 @@ describe('IDE-IDX-013 全部工作区根类型 watcher', () => {
     } finally {
       fs.rmSync(wsA, { recursive: true, force: true });
       fs.rmSync(wsB, { recursive: true, force: true });
+    }
+  }, 20000);
+});
+
+describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
+  it('旧外部根 watcher 释放,新根更新能触发维护', async () => {
+    const wsA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-extws-'));
+    const extA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-exta-'));
+    const extB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-extb-'));
+    try {
+      write(wsA, 'scripts/entity_defs/HeroA.def',
+        '<root>\n  <BaseMethods>\n    <onA/>\n  </BaseMethods>\n</root>');
+      write(extA, 'scripts/entity_defs/HeroExtA.def',
+        '<root>\n  <BaseMethods>\n    <onX/>\n  </BaseMethods>\n</root>');
+      write(extB, 'scripts/entity_defs/HeroExtB.def',
+        '<root>\n  <BaseMethods>\n    <onY/>\n  </BaseMethods>\n</root>');
+      const aDef = p(wsA, 'scripts', 'entity_defs', 'HeroA.def');
+      const bDef = p(extB, 'scripts', 'entity_defs', 'HeroExtB.def');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      const originalWatcher = stubWorkspace.createFileSystemWatcher;
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
+      stubWorkspace.findFiles = async () => {
+        const results: Uri[] = [];
+        const walk = (dir: string) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = p(dir, entry.name);
+            if (entry.isDirectory()) { walk(full); }
+            else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+          }
+        };
+        walk(wsA);
+        return results;
+      };
+      interface StubWatcher { fireChange(uri: Uri): void; fireCreate(uri: Uri): void; fireDelete(uri: Uri): void }
+      const watchersByPattern = new Map<string, StubWatcher>();
+      stubWorkspace.createFileSystemWatcher = ((pattern: string) => {
+        const change: Array<(uri: Uri) => void> = [];
+        const create: Array<(uri: Uri) => void> = [];
+        const remove: Array<(uri: Uri) => void> = [];
+        watchersByPattern.set(String(pattern), {
+          fireChange: (uri: Uri) => change.forEach(fn => fn(uri)),
+          fireCreate: (uri: Uri) => create.forEach(fn => fn(uri)),
+          fireDelete: (uri: Uri) => remove.forEach(fn => fn(uri))
+        });
+        return {
+          onDidChange(listener: (uri: Uri) => void) { change.push(listener); return { dispose: () => void 0 }; },
+          onDidCreate(listener: (uri: Uri) => void) { create.push(listener); return { dispose: () => void 0 }; },
+          onDidDelete(listener: (uri: Uri) => void) { remove.push(listener); return { dispose: () => void 0 }; },
+          dispose: () => { change.length = 0; create.length = 0; remove.length = 0; }
+        } as never;
+      }) as never;
+      configurationOverrides.set('kbengine', { assetsRoot: extA });
+
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        await manager.waitForInitialScan();
+        const rootIndexes = (): Map<string, unknown> =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
+        const aKey = [...rootIndexes().keys()].find(key => key.endsWith('HeroA.def')) as string;
+        const aIndexBefore = rootIndexes().get(aKey);
+        expect(aIndexBefore).toBeDefined();
+
+        // 启动时外部根 extA 三件套已挂
+        const extADefPattern = Uri.joinPath(Uri.file(extA), '**/*.def').toString();
+        const oldExtADef = watchersByPattern.get(extADefPattern);
+        expect(oldExtADef).toBeDefined();
+
+        // 切换 assetsRoot → extB 后重建外部 watcher(红点:方法缺失)
+        configurationOverrides.set('kbengine', { assetsRoot: extB });
+        resetScanRootCache();
+        const refresh = (manager as unknown as { refreshExternalRootWatchers?: () => void })
+          .refreshExternalRootWatchers;
+        expect(typeof refresh).toBe('function');
+        refresh!.call(manager);
+
+        // 新根三件套已挂(新对象,不是旧 watcher 复用)
+        const extBDefWatcher = watchersByPattern.get(Uri.joinPath(Uri.file(extB), '**/*.def').toString());
+        expect(extBDefWatcher).toBeDefined();
+        expect(watchersByPattern.get(Uri.joinPath(Uri.file(extB), '**/*.py').toString())).toBeDefined();
+        expect(watchersByPattern.get(Uri.joinPath(Uri.file(extB), '**/{types,alias}.xml').toString())).toBeDefined();
+
+        // 旧外部根 watcher 已释放:fire 事件不再触达维护(工作区实体不动)
+        oldExtADef!.fireDelete(Uri.file(aDef));
+        await new Promise(resolve => setImmediate(resolve));
+        expect(rootIndexes().get(aKey)).toBe(aIndexBefore);
+
+        // 新根更新能触发维护:extB 的 def 变更建出映射
+        extBDefWatcher!.fireChange(Uri.file(bDef));
+        await until(() => !!manager.getMapping('HeroExtB'), 'external root B def maintenance');
+      } finally {
+        manager.dispose();
+        stubWorkspace.createFileSystemWatcher = originalWatcher;
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+        configurationOverrides.delete('kbengine');
+        resetScanRootCache();
+      }
+    } finally {
+      fs.rmSync(wsA, { recursive: true, force: true });
+      fs.rmSync(extA, { recursive: true, force: true });
+      fs.rmSync(extB, { recursive: true, force: true });
     }
   }, 20000);
 });

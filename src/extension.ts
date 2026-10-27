@@ -1008,6 +1008,8 @@ export function activate(context: vscode.ExtensionContext) {
       resetScanRootCache();
       pythonClassIndex.invalidate();
       watchPythonIndex();
+      // IDE-IDX-014:实体面外部根 watcher 三件套整组重建(旧根释放,新根挂上)
+      entityMappingManager.refreshExternalRootWatchers();
       if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
     }
 
