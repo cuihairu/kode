@@ -342,7 +342,7 @@
 来源：PERF-05；src/receiverNoneDiagnostics.ts、src/diagnosticScheduler.ts。
 - [x] IDE-DIA-001 [P1] 无 receiver 使用点时跳过诊断解析；验收：不包含 self.base/cell/client 使用的文件不调用完整 Python parser；前置：无。
 - [x] IDE-DIA-002 [P1] 一次建立 Python 方法区间表；验收：处理多个调用点不再为每个点重新收集排序全部方法；前置：无。
-- [ ] IDE-DIA-003 [P1] 诊断复用同版本 Python 解析结果；验收：类索引与 receiver 诊断消费同版本缓存，不各自完整解析一次；前置：IDE-SNP-001, IDE-DIA-002。
+- [x] IDE-DIA-003 [P1] 诊断复用同版本 Python 解析结果；验收：类索引与 receiver 诊断消费同版本缓存，不各自完整解析一次；前置：IDE-SNP-001, IDE-DIA-002。(a3fff02;PythonClassIndex 增版本键共享解析面:getParsedForVersion(file, version) 只读——缓存命中且版本一致才给(undefined 永不给,不把旧代当现版本),syncDocumentParse(doc) 写通——命中返回缓存对象零解析,未命中同步解析一次 commitParsedFile 入缓存(索引三层同步更新);onDocumentChanged 去重改纯版本键(原文档对象身份与版本双条件;两版本皆定且相等才跳过,空缓存+undefined 不再 vacuous 命中)——诊断先解析入缓存后 100ms 防抖补喂命中,一个版本全链路只解析一次;receiverNoneDiagnostics 增 preparsed 参数(对象或惰性提供器,提供器仅在 findPythonReceiverCalls 过闸后调用——DIA-001 零使用点不解析语义保持,prove: 零使用点文件传 throw 提供器不触发);extension.ts 诊断 compute 闭包接线:层2 开且 python 文档传 () => syncDocumentParse(doc),层2 关不喂索引自解析口径不变;tests/receiverDiagnosticsSharedParse.test.ts 2 例(同版本二次取同对象零重解+onDocumentChanged 补喂零解析+诊断吃共享解析产出与自解析完全一致+数据面深等/版本前进换新解析 guard 源不再报+版本不匹配读取面 null);extension.ts 锚点 468..925→476..933+pythonClassIndex 1146/1258→1169/1281 对账;3350|7)
 - [ ] IDE-DIA-004 [P1] 按方法复用 receiver guard 分析；验收：同方法多处调用不重复遍历相同 guard 前缀，既有告警语义保持；前置：IDE-DIA-002。
 - [ ] IDE-DIA-005 [P1] 将大文件 receiver 诊断移出同步入口；验收：8,000 调用样本计算期间宿主仍可响应请求，旧版本回包丢弃；前置：IDE-DIA-003, IDE-DIA-004。
 - [ ] IDE-DIA-006 [P1] 为诊断队列增加单轮时间片；验收：多个文档待诊断时，一轮 flush 不连续占满宿主处理全部文档；前置：无。
