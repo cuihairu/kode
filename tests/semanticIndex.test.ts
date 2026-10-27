@@ -52,6 +52,19 @@ describe('SemanticIndex 根模型(A4-5:规范化路径+rootID+显式序)', () =>
     expect(index.resolveRootIdForPath('/project/A/Hero.def')).toBe(upper);
     expect(index.resolveRootIdForPath('/project/a/Hero.def')).toBe(lower);
   });
+  it('Windows 路径大小写与分隔符变体合并，跨盘保持隔离', () => {
+    const index = new SemanticIndex();
+    const first = index.registerRoot('C:\\Project');
+    expect(index.registerRoot('c:/PROJECT')).toBe(first);
+    const second = index.registerRoot('D:\\Project');
+    expect(second).not.toBe(first);
+    index.registerEntity({ rootId: first, entityName: 'Hero', defFile: 'C:\\Project\\Hero.def', pythonFiles: [], owners: [] });
+    index.registerEntity({ rootId: second, entityName: 'Hero', defFile: 'D:\\Project\\Hero.def', pythonFiles: [], owners: [] });
+    expect(index.findEntityConflicts('Hero').map(item => item.defFile).sort())
+      .toEqual(['c:/project/hero.def', 'd:/project/hero.def']);
+    expect(index.resolveRootIdForPath('c:/PROJECT/HERO.def')).toBe(first);
+    expect(index.resolveRootIdForPath('d:\\project\\HERO.def')).toBe(second);
+  });
   it('registerRoot 幂等:同一路径(不同写法/分隔符)返回同一稳定 rootId', () => {
     const index = new SemanticIndex();
     const rootId = index.registerRoot('/tmp/Proj_A');
