@@ -86,3 +86,31 @@
    符号、外部根、含依赖树的大仓、连续保存、取消 hover、首次跳转。
    记录扩展宿主 event-loop delay / CPU profile、请求端到端耗时、扫描计数、
    取消后残留工作量与内存变化。上述现场验收完成前，不标“卡死已解决”。
+
+## P0-4a 固化诊断（2026-10-27 落账）
+
+本轮临时探针已固化为仓库内可复跑用例，三场景对应关系与执行方式：
+
+| 场景 | 固化位置 | 类型 | 输入规模 / 操作计数 |
+| --- | --- | --- | --- |
+| 平方级遍历 | `tests/pythonIndexMaintenance.test.ts:19` | 门禁单测（`npm run test:unit`） | 2,000 类场景锁 `bucketReads === 2,000`（线性），含跨文件同名类存活与删除 |
+| 后台任务挡住交互 | `tests/entityMappingDeferredStartup.test.ts:150` | 门禁单测（`npm run test:unit`） | 24 个 .def 分批首扫未结束时 RequestLocal 在批次间执行 |
+| 同步阻塞延后定时器 | `tests/perf/timerDelay.bench.ts` | 诊断 bench（不进门禁） | 10ms 预算 × 150ms 同步阻塞 × 1,000 批 × 1,000 ops |
+
+场景③复跑命令与最新量测（`docs/perf/timer-delay-run.txt`）：
+
+```
+npx vitest run --config vitest.bench.config.ts tests/perf/timerDelay.bench.ts
+
+TIMER-METRIC sync-block-delay n=1 budget=10ms block=150ms returnedAt=150.76ms timerDelay=140.76ms
+TIMER-METRIC budget-cancel-convergence n=1 budget=10ms block=150ms requestOps=1000 stoppedAtBatch=1 maxPossible=1000000 elapsed=150.96ms result=null
+TIMER-METRIC control-full-run n=1 requestOps=1000000 maxPossible=1000000
+```
+
+读法：T1 复现 §4 现象——定时预算在同步阻塞期间无法触发，实际 150.76ms 才
+返回（对照基线 550d824 探针的 150.34ms）；T2 说明修法不靠定时器精度——
+请求独占工作持 linked token 在批间检查取消，阻塞结束后首个检查点即停
+（1,000/1,000,000 ops），race 返回仍被阻塞拖到 150.96ms 属事件循环本性；
+C1 为无预算对照组（跑满 1,000,000 ops）。取消收敛与共享扫描不误伤的行为
+契约由门禁单测 `tests/hoverBudget.test.ts:130` 锁定，bench 只作诊断量化。
+源码版本以本文件所在提交为准；bench 输出每次运行覆写 timer-delay-run.txt。

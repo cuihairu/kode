@@ -6,6 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PythonClassIndex } from '../src/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
+import {
+  getOperationSummary,
+  resetLanguageServiceMetrics
+} from '../src/languageServiceMetrics';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
@@ -1032,6 +1036,55 @@ describe('extension activate 自动热重载装配(盘点 G5)', () => {
     registration.dispose();
     disposeAll(context);
   }, 8000);
+});
+
+describe('extension activate MRO 启动门控(P0-3e)', () => {
+  it('enableMroJump=false:激活不启动 Python 后台全扫(def 首扫照常);拨回 true 配置路径即启动', async () => {
+    // P0-3e 验收臂:启动路径与开关切换同口径。门控放行证明用 def 首扫
+    // (startKbEngineIndexing 同一同步块里两者一起放行——def 扫已启动而
+    // python-index-scan 零记录,才证明 python 被开关拦下,不是门控未放行)。
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mro-gate-'));
+    fs.mkdirSync(path.join(root, 'entities'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'entities', 'Avatar.def'), '<root>\n</root>\n');
+    fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'base', 'Avatar.py'), 'class Avatar:\n    pass\n');
+    const oldFolders = workspace.workspaceFolders;
+    const oldFindFiles = workspace.findFiles;
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    const defUri = Uri.file(path.join(root, 'entities', 'Avatar.def'));
+    const pyUri = Uri.file(path.join(root, 'scripts', 'base', 'Avatar.py'));
+    workspace.findFiles = (async (include: string) => {
+      if (include.includes('*.def')) { return [defUri]; }
+      if (include.includes('*.py')) { return [pyUri]; }
+      return [];
+    }) as typeof workspace.findFiles;
+    resetLanguageServiceMetrics();
+    configurationOverrides.set('kbengine.python', { enableMroJump: false });
+    const context = makeContext();
+    try {
+      activate(context);
+      // 门控确实放行(特征探测命中 .def):def 首扫记账出现
+      await until(() => getOperationSummary('entity-mapping-scan') !== null, 4000);
+      // 宽限窗内 Python 后台全扫零记账(未被门控放行的空转对照)
+      await new Promise(resolve => setTimeout(resolve, 250));
+      expect(getOperationSummary('python-index-scan')).toBeNull();
+      // 拨回 true:配置变更路径(extension.ts enableMroJump 分支)调度后台全扫
+      configurationOverrides.set('kbengine.python', { enableMroJump: true });
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (section: string) =>
+          section === 'kbengine' || section === 'kbengine.python.enableMroJump'
+      });
+      await until(() => getOperationSummary('python-index-scan') !== null, 4000);
+      expect(getOperationSummary('python-index-scan')?.fileParseCount ?? 0).toBeGreaterThanOrEqual(1);
+      disposeAll(context);
+    } finally {
+      workspace.workspaceFolders = oldFolders;
+      workspace.findFiles = oldFindFiles;
+      configurationOverrides.delete('kbengine.python');
+      resetLanguageServiceMetrics();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 10000);
 });
 
 describe('extension activate 原始日志 ERROR 扫描装配(盘点 G6)', () => {
