@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import {
   DefDocument,
   DefElementNode,
+  DefNode,
   getDirectChildElement,
   getDirectChildElements,
   getElementText,
@@ -111,6 +112,14 @@ export interface DatabaseSchemaSnapshot {
    * 缺失视为不过期(防御面)。
    */
   tablePrefix?: string;
+  /**
+   * IDE-SCH-004:构建时消费的类型注册表文件(types.xml)。该文件在
+   * inputVersions 清单里的版本漂移不直接判过期——退到 consumedTypeAliases
+   * 摘要比对:没消费任何被改别名的实体保持命中;缺失视为不过期(防御面)。
+   */
+  typeRegistryPath?: string;
+  /** IDE-SCH-004:消费的别名 → 构建期解析摘要(b:内建/d:字典/a:数组/u:未解析) */
+  consumedTypeAliases?: Readonly<Record<string, string>>;
 }
 
 // types.xml 别名条目(批98 对齐 DataTypes::loadTypes):根节点直接子元素的标签名
@@ -139,6 +148,10 @@ interface BuildContext {
   entityHasCell: boolean;
   /** IDE-SNP-006:构建期消费的共享快照输入(fsPath → 来源域+版本),随快照发出 */
   inputVersions: Map<string, SharedFileVersionRef>;
+  /** IDE-SCH-004:本次构建消费的类型注册表文件(types.xml 路径,无则 null) */
+  typeRegistryPath: string | null;
+  /** IDE-SCH-004:消费的别名 → 构建期解析摘要(随快照发出,注册表变更按消费比对) */
+  typeRegistryConsumed: Map<string, string>;
 }
 
 /**
@@ -282,6 +295,36 @@ export function invalidateDatabaseSchemaCacheForFiles(filePaths: readonly string
   return dropped;
 }
 
+/** IDE-SCH-004:按 types.xml 依赖失效——注册表文件变更事件到达时,对当前
+ * 内容解析一遍别名表,只摘除「消费了被改别名」的条目(相关列下次查询重
+ * 建),没消费该别名的实体条目原样保留继续命中。注册表读不到(删除)时
+ * 该注册表下所有带消费记录的条目全部摘除。返回摘除条目数。 */
+export function invalidateDatabaseSchemaCacheForTypeRegistry(typesXmlPath: string): number {
+  if (databaseSchemaCache.size === 0) { return 0; }
+  const targetIdentity = normalizePath(typesXmlPath);
+  const freshSnapshot = readSharedFileSnapshot(typesXmlPath);
+  const freshAliases = freshSnapshot
+    ? parseTypeAliasesFromContent(freshSnapshot.content, typesXmlPath)
+    : null;
+  let dropped = 0;
+  for (const [key, snapshot] of [...databaseSchemaCache.entries()]) {
+    if (!snapshot.typeRegistryPath
+        || normalizePath(snapshot.typeRegistryPath) !== targetIdentity
+        || !snapshot.consumedTypeAliases) {
+      continue;
+    }
+    const consumed = Object.entries(snapshot.consumedTypeAliases);
+    const changed = freshAliases === null
+      ? consumed.some(([, digest]) => digest !== 'u') // 注册表没了:消费过已解析别名者过期
+      : consumed.some(([aliasName, digest]) => aliasDigestInMap(aliasName, freshAliases) !== digest);
+    if (changed) {
+      databaseSchemaCache.delete(key);
+      dropped += 1;
+    }
+  }
+  return dropped;
+}
+
 export function getDatabaseSchemaSnapshot(
   entityName: string,
   target?: string | Pick<vscode.TextDocument, 'fileName'>
@@ -352,7 +395,9 @@ export function getDatabaseSchemaSnapshot(
     entityHasCell: resolveEntityHasCell(entityName, workspaceRoot, layout),
     inputVersions: new Map<string, SharedFileVersionRef>([
       [defFilePath, { source: entityInput.source, version: entityInput.version }]
-    ])
+    ]),
+    typeRegistryPath: layout.typesXmlPath,
+    typeRegistryConsumed: new Map<string, string>()
   };
   buildContext.typeAliases = parseTypeAliases(layout.typesXmlPath, buildContext.inputVersions);
   const entitySource: DefSourceRef = {
@@ -393,6 +438,14 @@ export function getDatabaseSchemaSnapshot(
     rootConfigGeneration: getRootConfigGeneration(),
     // IDE-SCH-002:表前缀记入身份(配置面输入,缓存判过期直接比对)
     tablePrefix: effectiveTablePrefix,
+    // IDE-SCH-004:类型注册表身份——消费的别名与解析摘要;注册表文件版本
+    // 漂移时按摘要比对,未消费的实体不受别的别名变更牵连
+    ...(buildContext.typeRegistryPath
+      ? {
+          typeRegistryPath: buildContext.typeRegistryPath,
+          consumedTypeAliases: Object.fromEntries(buildContext.typeRegistryConsumed)
+        }
+      : {}),
     ...(buildContext.inputVersions.size > 0
       ? { inputVersions: Object.fromEntries(buildContext.inputVersions) }
       : {})
@@ -463,9 +516,30 @@ export function isDatabaseSchemaSnapshotStale(snapshot: DatabaseSchemaSnapshot):
   if (!snapshot.inputVersions) {
     return false;
   }
+  const registryIdentity = snapshot.typeRegistryPath ? normalizePath(snapshot.typeRegistryPath) : null;
   for (const [filePath, recorded] of Object.entries(snapshot.inputVersions)) {
     const current = readSharedFileSnapshot(filePath);
     if (!current || current.source !== recorded.source || current.version !== recorded.version) {
+      // IDE-SCH-004:类型注册表文件漂移不整判过期——退到消费别名摘要比对,
+      // 没消费任何被改别名的实体保持新鲜(改 SCORE 不牵连只用 ITEM_ID 的)
+      if (registryIdentity !== null && normalizePath(filePath) === registryIdentity
+          && snapshot.consumedTypeAliases) {
+        if (!current) {
+          // 注册表整个没了:只有消费过已解析别名(非 'u')的实体才过期
+          const consumedResolved = Object.values(snapshot.consumedTypeAliases)
+            .some(digest => digest !== 'u');
+          if (!consumedResolved) {
+            continue;
+          }
+        } else {
+          const freshAliases = parseTypeAliasesFromContent(current.content, filePath);
+          const stillConsumesSame = Object.entries(snapshot.consumedTypeAliases)
+            .every(([aliasName, digest]) => aliasDigestInMap(aliasName, freshAliases) === digest);
+          if (stillConsumesSame) {
+            continue;
+          }
+        }
+      }
       return true;
     }
   }
@@ -917,21 +991,25 @@ function parseTypeAliases(
   typesXmlPath: string | null,
   inputVersions?: Map<string, SharedFileVersionRef>
 ): Map<string, TypeAliasEntry> {
-  const aliases = new Map<string, TypeAliasEntry>();
   if (!typesXmlPath) {
-    return aliases;
+    return new Map<string, TypeAliasEntry>();
   }
 
   // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema)
   const snapshot = readSharedFileSnapshot(typesXmlPath);
   if (!snapshot) {
-    return aliases;
+    return new Map<string, TypeAliasEntry>();
   }
   if (inputVersions) {
     inputVersions.set(typesXmlPath, { source: snapshot.source, version: snapshot.version });
   }
-  const content = snapshot.content;
+  return parseTypeAliasesFromContent(snapshot.content, typesXmlPath);
+}
 
+/** IDE-SCH-004:内容面解析(注册表失效比对重用——事件时对当前内容解析一遍,
+ * 与构建期同一分类规则,不落盘不记清单) */
+function parseTypeAliasesFromContent(content: string, filePath: string): Map<string, TypeAliasEntry> {
+  const aliases = new Map<string, TypeAliasEntry>();
   const document = parseDefDocument(content);
   if (!document.root) {
     return aliases;
@@ -943,9 +1021,9 @@ function parseTypeAliases(
     // 已注册类型(内置或更早的别名)复用同一实例。
     const directive = getElementText(item).trim();
     if (directive === 'FIXED_DICT') {
-      aliases.set(item.name, { kind: 'fixedDict', node: item, document, filePath: typesXmlPath });
+      aliases.set(item.name, { kind: 'fixedDict', node: item, document, filePath });
     } else if (directive === 'ARRAY') {
-      aliases.set(item.name, { kind: 'array', node: item, document, filePath: typesXmlPath });
+      aliases.set(item.name, { kind: 'array', node: item, document, filePath });
     } else if (directive) {
       aliases.set(item.name, { kind: 'builtin', target: directive });
     } else {
@@ -956,6 +1034,47 @@ function parseTypeAliases(
   return aliases;
 }
 
+/** IDE-SCH-004:结构别名的稳定摘要——元素名+排序属性+子树(纯空白文本节点
+ * 跳过,重排版不误判);字典/数组别名的字段集或元素类型变了摘要就变。 */
+function defNodeDigest(node: DefNode): string {
+  if (node.kind !== 'element') {
+    const text = node.text.trim();
+    return text ? `t:${text}` : '';
+  }
+  const attributes = Object.keys(node.attributes).sort()
+    .map(key => `${key}=${node.attributes[key]}`)
+    .join(',');
+  const children = node.children
+    .map(child => defNodeDigest(child))
+    .filter(digest => digest !== '')
+    .join('|');
+  return `<${node.name} ${attributes}>${children}`;
+}
+
+/** IDE-SCH-004:别名在给定别名表下的解析摘要(别名变更比对的唯一权威):
+ * b:内建名 / d:字典结构摘要 / a:数组结构摘要 / u:未解析;别名链取链尾结果,
+ * 上游别名改指向,下游消费者的摘要同样漂移。 */
+function aliasDigestInMap(aliasName: string, aliases: Map<string, TypeAliasEntry>, seen = new Set<string>()): string {
+  const entry = aliases.get(aliasName);
+  if (!entry || entry.kind === 'unresolved') {
+    return 'u';
+  }
+  if (entry.kind === 'fixedDict') {
+    return `d:${defNodeDigest(entry.node)}`;
+  }
+  if (entry.kind === 'array') {
+    return `a:${defNodeDigest(entry.node)}`;
+  }
+  if (BUILTIN_DB_TYPE_NAMES.has(entry.target)) {
+    return `b:${entry.target}`;
+  }
+  if (seen.has(entry.target)) {
+    return 'u';
+  }
+  seen.add(aliasName);
+  return aliasDigestInMap(entry.target, aliases, seen);
+}
+
 function resolveAliasType(typeName: string, context: BuildContext, seen = new Set<string>()): ResolvedAliasType {
   if (typeName === 'ARRAY' || typeName === 'FIXED_DICT') {
     return { kind: 'builtin', typeName };
@@ -963,8 +1082,17 @@ function resolveAliasType(typeName: string, context: BuildContext, seen = new Se
 
   const entry = context.typeAliases.get(typeName);
   if (!entry || entry.kind === 'unresolved') {
+    // IDE-SCH-004:未解析的名字也记 'u' 摘要——它后来在 types.xml 里出现
+    // (或别名被删)时,消费方摘要漂移,照常失效(SNP-003 脏缓冲加别名口径)
+    if (context.typeRegistryPath) {
+      context.typeRegistryConsumed.set(typeName, 'u');
+    }
     return { kind: 'unresolved' };
   }
+
+  // IDE-SCH-004:消费面记账——命中的别名记下解析摘要(链尾结果),快照带
+  // 出去作注册表变更的比对轴;同别名重复命中记同值,幂等
+  context.typeRegistryConsumed.set(typeName, aliasDigestInMap(typeName, context.typeAliases));
 
   if (entry.kind === 'fixedDict' || entry.kind === 'array') {
     return entry;
@@ -2109,7 +2237,10 @@ export function getTypeStorageShape(typesXmlPath: string | null, typeName: strin
     componentScopesCache: new Map(),
     typeAliases: parseTypeAliases(typesXmlPath),
     entityHasCell: false,
-    inputVersions: new Map()
+    inputVersions: new Map(),
+    // IDE-SCH-004:形态查询不产快照,消费记账落空 Map(占位,不入缓存)
+    typeRegistryPath: null,
+    typeRegistryConsumed: new Map<string, string>()
   };
   return typeShapeOf(typeName, context, new Set());
 }

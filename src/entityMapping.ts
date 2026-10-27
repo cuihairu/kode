@@ -42,7 +42,7 @@ import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticI
 import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
 import type { EntityComponentFace } from './entityBuiltinProperties';
-import { invalidateDatabaseSchemaCacheForFiles } from './databaseSchema';
+import { invalidateDatabaseSchemaCacheForFiles, invalidateDatabaseSchemaCacheForTypeRegistry } from './databaseSchema';
 
 export type EntityMethodSection = DefMethodSection;
 
@@ -1027,6 +1027,9 @@ export class EntityMappingManager {
    */
   private handleSharedFileEvent(event: SharedFileEvent): void {
     if (isTypeRegistryFile(event.fsPath)) {
+      // IDE-SCH-004:types.xml 变更按消费别名摘除 schema 缓存(没消费被改
+      // 别名的实体继续命中),注册表快照照旧作废
+      invalidateDatabaseSchemaCacheForTypeRegistry(event.fsPath);
       getSemanticIndex().notifySemanticFilesChanged([event.fsPath]);
       return;
     }
