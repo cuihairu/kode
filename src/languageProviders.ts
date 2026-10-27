@@ -146,6 +146,7 @@ import {
 import type { EngineApiCatalog } from './engineApiMetadata';
 import {
   createHoverRequestDeadline,
+  createWaiterUnionToken,
   HOVER_ASYNC_BUDGET_MS_DEFAULT,
   raceWithBudget,
   withInitialScanTimeout
@@ -197,6 +198,8 @@ const HOVER_MEMO_LIMIT = 256;
 interface HoverMemoEntry {
   documentVersion: number;
   promise: Promise<vscode.Hover | null>;
+  /** IDE-BUD-008:合并请求登记在册等待者(人人取消才取消共享计算) */
+  addWaiter(waiterToken: vscode.CancellationToken | undefined): () => void;
 }
 
 function hoverMemoKey(document: vscode.TextDocument, position: vscode.Position): string {
@@ -679,18 +682,32 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
   // 测试逐用例新建 provider 天然隔离)。
   private readonly hoverMemo = new Map<string, HoverMemoEntry>();
 
-  /** 在途共享:同 key 同版本的并发 hover 复用同一 Promise;落定条目即刻出册 */
+  /**
+   * 在途共享:同 key 同版本的并发 hover 复用同一 Promise;落定条目即刻出册。
+   * IDE-BUD-008:共享计算的 token = 全部在册等待者的并集(人人取消才取消),
+   * 单个等待者取消只影响自己的 respond,不斩断别人还在等的计算;等待者的
+   * 注销函数在各自 respond 落定时调用。
+   */
   private memoizedHover(
     key: string,
     documentVersion: number,
-    run: () => Promise<vscode.Hover | null>
+    run: (sharedToken: vscode.CancellationToken) => Promise<vscode.Hover | null>,
+    waiterToken?: vscode.CancellationToken
   ): Promise<vscode.Hover | null> {
     const inflight = this.hoverMemo.get(key);
     if (inflight && inflight.documentVersion === documentVersion) {
+      inflight.addWaiter(waiterToken); // 注销随共享 promise 落定统一清理
       return inflight.promise;
     }
-    const promise = run();
-    this.hoverMemo.set(key, { documentVersion, promise });
+    const union = createWaiterUnionToken();
+    const unregister = union.addWaiter(waiterToken);
+    const promise = run(union.token);
+    const entry: HoverMemoEntry = {
+      documentVersion,
+      promise,
+      addWaiter: nextToken => union.addWaiter(nextToken)
+    };
+    this.hoverMemo.set(key, entry);
     if (this.hoverMemo.size > HOVER_MEMO_LIMIT) {
       const oldest = this.hoverMemo.keys().next().value;
       if (oldest !== undefined) {
@@ -699,10 +716,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
     // 落定即出册(成败同):完结结果不复用,后续 hover 重走 manager 暖缓存
     const drop = () => {
-      const entry = this.hoverMemo.get(key);
-      if (entry && entry.promise === promise) {
+      const memoEntry = this.hoverMemo.get(key);
+      if (memoEntry && memoEntry.promise === promise) {
         this.hoverMemo.delete(key);
       }
+      unregister();
+      union.dispose();
     };
     promise.then(drop, drop);
     return promise;
@@ -749,17 +768,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         // 异步链总预算闸(用户令 2026-10-22):底层索引慢(首扫秒级+)时不再
         // 永转 loading,超预算返回空悬停并记 LogHub(层名+耗时)。
         // IDE-BUD-001:预算 = 共享 deadline 的剩余量,不再各起满额窗。
-        return respond(this.memoizedHover(memoKey, document.version, () =>
+        return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:def-method',
-            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, deadline.token)
+            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, sharedToken)
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
             deadline.remainingMs(),
-            deadline.token
+            sharedToken
           )
-        ));
+        , deadline.token));
       }
       // 接收者感知(用户令 2026-10-21):光标落在 self.cell./self.base./self.client.
       // 的方法名上时,先按段闸解析(仅对应区块的 def 候选通过,段不符不给标注,
@@ -773,17 +792,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
           )
         : null;
       if (receiverCall) {
-        return respond(this.memoizedHover(memoKey, document.version, () =>
+        return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:receiver-call',
-            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall, deadline.token)
+            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall, sharedToken)
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
             deadline.remainingMs(),
-            deadline.token
+            sharedToken
           )
-        ));
+        , deadline.token));
       }
       // 内建属性(用户令 2026-10-21 内建属性单 ②):self.<属性> 单段访问
       // (fullPath 无第二段,不与 self.cell.X 接收者调用重叠)命中分面表
@@ -798,17 +817,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         selfAccess &&
         !selfAccess.fullPath.includes('.')
       ) {
-        return respond(this.memoizedHover(memoKey, document.version, () =>
+        return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:builtin-property',
-            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, deadline.token)
+            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, sharedToken)
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
             deadline.remainingMs(),
-            deadline.token
+            sharedToken
           )
-        ));
+        , deadline.token));
       }
       // 三个异步面都未命中:落回下方同步链(批159 前语义,不进 memo)
       // IDE-BUD-001:同步段不可抢占——只在段口协作检查 deadline(父已取消/

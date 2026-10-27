@@ -137,6 +137,65 @@ export function createHoverRequestDeadline(
   };
 }
 
+/**
+ * IDE-BUD-008:等待者并集 token——同点合并请求(共享计算)的取消隔离。
+ * 共享 token 只在「全部在册等待者都已取消」时取消:取消一个等待者不取消
+ * 别人还在等的共享计算;注销(拿到结果离开)后的等待者取消不波及联合。
+ * 零在册等待者不取消(计算创建与登记之间的窗口安全)。
+ */
+export interface WaiterUnionToken {
+  readonly token: vscode.CancellationToken;
+  /** 登记一个等待者(返回注销函数);全部在册等待者取消 → 联合 token 取消 */
+  addWaiter(waiterToken: vscode.CancellationToken | undefined): () => void;
+  dispose(): void;
+}
+
+export function createWaiterUnionToken(): WaiterUnionToken {
+  const waiters = new Map<{ isCancellationRequested: boolean }, { cancelled: boolean }>();
+  let disposed = false;
+  let fired = false;
+  const listeners = new Set<(event: unknown) => unknown>();
+  const reevaluate = (): void => {
+    if (fired || waiters.size === 0) { return; }
+    for (const state of waiters.values()) {
+      if (!state.cancelled) { return; }
+    }
+    fired = true;
+    for (const listener of [...listeners]) { listener(undefined); }
+    listeners.clear();
+  };
+  const token: vscode.CancellationToken = {
+    get isCancellationRequested() { return fired; },
+    onCancellationRequested(listener) {
+      if (fired) { listener(undefined); return { dispose: () => undefined }; }
+      listeners.add(listener);
+      return { dispose: () => { listeners.delete(listener); } };
+    }
+  };
+  return {
+    token,
+    addWaiter(waiterToken) {
+      if (!waiterToken || disposed) { return () => undefined; }
+      const state = { cancelled: waiterToken.isCancellationRequested };
+      waiters.set(waiterToken, state);
+      const detach = waiterToken.onCancellationRequested?.(() => {
+        state.cancelled = true;
+        reevaluate();
+      });
+      reevaluate();
+      return () => {
+        waiters.delete(waiterToken);
+        detach?.dispose();
+      };
+    },
+    dispose() {
+      disposed = true;
+      waiters.clear();
+      listeners.clear();
+    }
+  };
+}
+
 /** A request-owned token that also stops when its local budget expires. */
 export function createLinkedCancellationToken(parent: vscode.CancellationToken | undefined): {
   token: vscode.CancellationToken;
