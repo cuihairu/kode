@@ -4831,9 +4831,11 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
   }
 
   async provideCallHierarchyIncomingCalls(
-    item: vscode.CallHierarchyItem
+    item: vscode.CallHierarchyItem, token?: vscode.CancellationToken
   ): Promise<vscode.CallHierarchyIncomingCall[]> {
-    const calls = await this.entityMappingManager.getIncomingPythonMethodCalls(item.uri.fsPath, item.name);
+    if (token?.isCancellationRequested) return [];
+    const calls = await this.entityMappingManager.getIncomingPythonMethodCalls(item.uri.fsPath, item.name, token);
+    if (token?.isCancellationRequested) return [];
     return calls.map(call => new vscode.CallHierarchyIncomingCall(
       createPythonCallHierarchyItem(call.caller),
       [createSelectionRange(call.callLine, call.callCharacter, item.name)]
@@ -4841,9 +4843,11 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
   }
 
   async provideCallHierarchyOutgoingCalls(
-    item: vscode.CallHierarchyItem
+    item: vscode.CallHierarchyItem, token?: vscode.CancellationToken
   ): Promise<vscode.CallHierarchyOutgoingCall[]> {
-    const calls = await this.entityMappingManager.getOutgoingPythonMethodCalls(item.uri.fsPath, item.name);
+    if (token?.isCancellationRequested) return [];
+    const calls = await this.entityMappingManager.getOutgoingPythonMethodCalls(item.uri.fsPath, item.name, token);
+    if (token?.isCancellationRequested) return [];
     return calls.map(call => new vscode.CallHierarchyOutgoingCall(
       createPythonCallHierarchyItem(call),
       [createSelectionRange(call.line, call.character, call.methodName)]

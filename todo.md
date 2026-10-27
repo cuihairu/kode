@@ -319,7 +319,7 @@
 - [x] IDE-BUD-004 [P0] 透传 Python 补全的 CancellationToken；验收：旧请求取消后不得返回覆盖新前缀的过时结果；前置：无。
 - [x] IDE-BUD-005 [P0] 丢弃过期文档版本的签名帮助；验收：请求过程中编辑参数列表，旧版本签名结果不发布；前置：无。
 - [x] IDE-BUD-006 [P0] 取消 CodeLens 后停止后续批次；验收：文档关闭或 token 取消后，不继续给该文档解析新的属性或 RPC 点位；前置：无。
-- [ ] IDE-BUD-007 [P0] 取消 Call Hierarchy 的后续扫描；验收：取消 incoming/outgoing 查询后，该请求的队列不继续增长；前置：无。
+- [x] IDE-BUD-007 [P0] 取消 Call Hierarchy 的后续扫描；验收：取消 incoming/outgoing 查询后，该请求的队列不继续增长；前置：无。
 - [ ] IDE-BUD-008 [P0] 隔离同点 hover 合并请求的取消；验收：取消一个等待者不取消另一个等待者需要的共享计算；前置：IDE-BUD-002。
 - [x] IDE-BUD-009 [P0] 为未知文件 def 归属查询去掉全扫等待；验收：冷 miss 只读快照和定向依赖；scanEntityMappings 挂起时仍有界返回；前置：无。
 

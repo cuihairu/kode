@@ -1831,12 +1831,14 @@ export class EntityMappingManager {
 
   async getOutgoingPythonMethodCalls(
     pythonFile: string,
-    methodName: string
+    methodName: string,
+    token?: vscode.CancellationToken
   ): Promise<PythonMethodCallReference[]> {
+    if (token?.isCancellationRequested) return [];
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
-    const index = await this.ensureIndexForPythonFile(pythonFile);
-    if (!index) {
+    const index = await this.ensureIndexForPythonFile(pythonFile, token);
+    if (!index || token?.isCancellationRequested) {
       return [];
     }
 
@@ -1851,6 +1853,7 @@ export class EntityMappingManager {
     const references: PythonMethodCallReference[] = [];
     const seen = new Set<string>();
     for (const reference of targetMethod.calls) {
+      if (token?.isCancellationRequested) return [];
       const binding = index.pythonMethods.find(candidate =>
         normalizeLookupPath(candidate.filePath) === normalizeLookupPath(reference.filePath)
         && candidate.methodName === reference.methodName
@@ -1881,12 +1884,14 @@ export class EntityMappingManager {
 
   async getIncomingPythonMethodCalls(
     pythonFile: string,
-    methodName: string
+    methodName: string,
+    token?: vscode.CancellationToken
   ): Promise<Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }>> {
+    if (token?.isCancellationRequested) return [];
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
-    const index = await this.ensureIndexForPythonFile(pythonFile);
-    if (!index) {
+    const index = await this.ensureIndexForPythonFile(pythonFile, token);
+    if (!index || token?.isCancellationRequested) {
       return [];
     }
 
@@ -1894,7 +1899,9 @@ export class EntityMappingManager {
     const normalizedTarget = normalizeLookupPath(pythonFile);
 
     for (const method of index.pythonMethods) {
+      if (token?.isCancellationRequested) return [];
       for (const call of method.calls) {
+        if (token?.isCancellationRequested) return [];
         if (call.methodName !== methodName) {
           continue;
         }
@@ -2109,12 +2116,14 @@ export class EntityMappingManager {
    * 命中即不再等全量首扫(首扫在构造期后台继续补全其余实体)。找不到
    * 同名 .def 返回 undefined,调用方落回全量扫描原口径(语义不变)。
    */
-  private async ensureIndexTargeted(entityName: string): Promise<EntityMappingIndex | undefined> {
+  private async ensureIndexTargeted(entityName: string, token?: vscode.CancellationToken): Promise<EntityMappingIndex | undefined> {
+    if (token?.isCancellationRequested) return undefined;
     const direct = this.mappingIndexes.get(entityName);
     if (direct) {
       return direct;
     }
-    const defFiles = await findFilesAcrossRoots(`**/${entityName}.def`, null);
+    const defFiles = await findFilesAcrossRoots(`**/${entityName}.def`, null, token);
+    if (token?.isCancellationRequested) return undefined;
     const defFileName = `${entityName}.def`;
     const defFile = defFiles.find(uri => {
       // 文件名必须原样比对(2026-10-22 修正):normalizeLookupPath 会整体小写,
@@ -2150,7 +2159,8 @@ export class EntityMappingManager {
     return index;
   }
 
-  private async ensureIndexForPythonFile(pythonFile: string): Promise<EntityMappingIndex | undefined> {
+  private async ensureIndexForPythonFile(pythonFile: string, token?: vscode.CancellationToken): Promise<EntityMappingIndex | undefined> {
+    if (token?.isCancellationRequested) return undefined;
     const normalized = normalizeLookupPath(pythonFile);
     // 负缓存命中:该文件已确认无 .def 归属,直接走 null → 上层 PythonClassIndex
     // 兜底,不再每次重扫(修复前每次跳转两轮全量 .def 重扫)
@@ -2162,7 +2172,8 @@ export class EntityMappingManager {
     if (!index) {
       // 定向首解析(2026-10-22):hover 链走这里,同名 .def 单文件解析毫秒级,
       // 命中即应答,不再阻塞等全量首扫(此前大树首扫分钟级,hover 一直转圈)
-      index = await this.ensureIndexTargeted(path.basename(pythonFile, '.py'));
+      index = await this.ensureIndexTargeted(path.basename(pythonFile, '.py'), token);
+      if (token?.isCancellationRequested) return undefined;
     }
     if (!index) {
       index = this.findIndexForPythonFile(pythonFile);
