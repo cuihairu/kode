@@ -6,7 +6,7 @@ import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { setJumpLogEnabled } from './navigationLog';
 import {
   RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT,
-  receiverNoneDiagnosticItems,
+  receiverNoneDiagnosticItemsAsync,
   type ReceiverDiagnosticItem
 } from './receiverNoneDiagnostics';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
@@ -415,9 +415,13 @@ export function activate(context: vscode.ExtensionContext) {
     document: vscode.TextDocument,
     channel: 'immediate' | 'queued'
   ): void => {
+    // IDE-DIA-005:大文件 receiver 诊断走异步分片面(片间让出宿主),计算
+    // 期间版本前进即中止返回 null(旧版本回包丢弃),调度器完成后复核版本
+    // 才发布;版本令牌以受理时为准,shouldContinue 与之同源
+    const capturedVersion = document.version;
     const options = {
       layer: 'local' as const,
-      compute: () => {
+      computeAsync: async (): Promise<readonly ReceiverDiagnosticItem[] | null> => {
         const enabled = vscode.workspace.getConfiguration('kbengine')
           .get<boolean>('receiverNoneDiagnostics', RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT);
         // IDE-DIA-003:与类索引消费同一份版本键解析(惰性提供器——仅当确有
@@ -427,14 +431,18 @@ export function activate(context: vscode.ExtensionContext) {
         const preparsed = isPythonMroJumpEnabled() && isPythonDocument(document)
           ? () => pythonClassIndex.syncDocumentParse(document)
           : undefined;
-        return receiverNoneDiagnosticItems(
+        return receiverNoneDiagnosticItemsAsync(
           document.getText(),
           document.uri.fsPath,
           isPythonDocument(document)
             ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
             : undefined,
           enabled,
-          preparsed
+          preparsed,
+          {
+            shouldContinue: () =>
+              capturedVersion === undefined || document.version === capturedVersion
+          }
         );
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {

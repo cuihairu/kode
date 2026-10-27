@@ -261,36 +261,15 @@ function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): stri
  */
 export type PreparsedPythonProvider = ReturnType<typeof parsePythonFile> | (() => ReturnType<typeof parsePythonFile>);
 
-export function computeReceiverNoneFindings(
-  text: string,
-  filePath: string,
-  mapping?: EntityMapping,
-  preparsed?: PreparsedPythonProvider
-): ReceiverNoneFinding[] {
-  const calls = findPythonReceiverCalls(text);
-  if (calls.length === 0) return [];
-  const findings: ReceiverNoneFinding[] = [];
-  const parsed = typeof preparsed === 'function'
-    ? preparsed()
-    : preparsed ?? parsePythonFile(text, filePath);
-  const methodSpans = buildMethodSpans(parsed);
-  const lines = text.split(/\r?\n/);
-  // IDE-DIA-004:guard 前缀扫描按(方法区间, 接收者)一_methodMemo 一次,
-  // 同方法同接收者的多处调用共享同一份候选
-  const guardScans = new Map<MethodSpan, Map<PythonReceiverCall['receiver'], MethodGuardScan>>();
-  const scanFor = (span: MethodSpan, receiver: PythonReceiverCall['receiver']): MethodGuardScan => {
-    let byReceiver = guardScans.get(span);
-    if (!byReceiver) {
-      byReceiver = new Map();
-      guardScans.set(span, byReceiver);
-    }
-    let scan = byReceiver.get(receiver);
-    if (!scan) {
-      scan = scanGuardCandidates(lines, span, receiver);
-      byReceiver.set(receiver, scan);
-    }
-    return scan;
-  };
+/** 逐调用求值(同步/异步面共用):guard 过闸判定 + 段错配,结果入 findings */
+function appendCallFindings(
+  calls: readonly PythonReceiverCall[],
+  lines: readonly string[],
+  methodSpans: readonly ClassMethodSpans[],
+  scanFor: (span: MethodSpan, receiver: PythonReceiverCall['receiver']) => MethodGuardScan,
+  mapping: EntityMapping | undefined,
+  findings: ReceiverNoneFinding[]
+): void {
   for (const call of calls) {
     const span = enclosingMethodSpan(methodSpans, call.line);
     if (span && !hasReceiverGuardFromScan(lines, scanFor(span, call.receiver), call.line)) {
@@ -318,6 +297,103 @@ export function computeReceiverNoneFindings(
       }
     }
   }
+}
+
+/** 一次解析的求值上下文(同步/异步面共用构建) */
+interface ReceiverEvalContext {
+  lines: string[];
+  methodSpans: ClassMethodSpans[];
+  scanFor: (span: MethodSpan, receiver: PythonReceiverCall['receiver']) => MethodGuardScan;
+}
+
+function buildEvalContext(
+  text: string,
+  preparsed: PreparsedPythonProvider | undefined,
+  filePath: string
+): ReceiverEvalContext {
+  const parsed = typeof preparsed === 'function'
+    ? preparsed()
+    : preparsed ?? parsePythonFile(text, filePath);
+  const methodSpans = buildMethodSpans(parsed);
+  const lines = text.split(/\r?\n/);
+  // IDE-DIA-004:guard 前缀扫描按(方法区间, 接收者)一次,同方法同接收者的
+  // 多处调用共享同一份候选
+  const guardScans = new Map<MethodSpan, Map<PythonReceiverCall['receiver'], MethodGuardScan>>();
+  const scanFor = (span: MethodSpan, receiver: PythonReceiverCall['receiver']): MethodGuardScan => {
+    let byReceiver = guardScans.get(span);
+    if (!byReceiver) {
+      byReceiver = new Map();
+      guardScans.set(span, byReceiver);
+    }
+    let scan = byReceiver.get(receiver);
+    if (!scan) {
+      scan = scanGuardCandidates(lines, span, receiver);
+      byReceiver.set(receiver, scan);
+    }
+    return scan;
+  };
+  return { lines, methodSpans, scanFor };
+}
+
+export function computeReceiverNoneFindings(
+  text: string,
+  filePath: string,
+  mapping?: EntityMapping,
+  preparsed?: PreparsedPythonProvider
+): ReceiverNoneFinding[] {
+  const calls = findPythonReceiverCalls(text);
+  if (calls.length === 0) return [];
+  const context = buildEvalContext(text, preparsed, filePath);
+  const findings: ReceiverNoneFinding[] = [];
+  appendCallFindings(calls, context.lines, context.methodSpans, context.scanFor, mapping, findings);
+  return findings;
+}
+
+/** IDE-DIA-005 异步分片面:大文件计算移出同步入口 */
+export interface ReceiverNoneAsyncDeps {
+  /** 每片处理的调用数(默认 200) */
+  chunkSize?: number;
+  /** 片间让出宿主(默认 setTimeout 0;测试可替换) */
+  yieldToHost?: () => Promise<void>;
+  /** 片间检查:返回 false 即中止(版本已前进,旧版本回包丢弃)→ 整体返回 null */
+  shouldContinue?: () => boolean;
+}
+
+const RECEIVER_NONE_CHUNK_SIZE = 200;
+
+const yieldToHostDefault = (): Promise<void> =>
+  new Promise(resolve => { setTimeout(resolve, 0); });
+
+/**
+ * computeReceiverNoneFindings 的分片异步面:调用点按 chunkSize 分片,
+ * 片间让出宿主(计算期间宿主仍可响应定时器/请求);shouldContinue 为假
+ * (版本已前进)中止并返回 null——调用方丢弃,绝不产出部分结果被当全量。
+ * 产出与同步面逐项一致(同解析/同 guard 候选记忆化)。
+ */
+export async function computeReceiverNoneFindingsAsync(
+  text: string,
+  filePath: string,
+  mapping?: EntityMapping,
+  preparsed?: PreparsedPythonProvider,
+  deps: ReceiverNoneAsyncDeps = {}
+): Promise<ReceiverNoneFinding[] | null> {
+  const chunkSize = deps.chunkSize ?? RECEIVER_NONE_CHUNK_SIZE;
+  const yieldToHost = deps.yieldToHost ?? yieldToHostDefault;
+  const calls = findPythonReceiverCalls(text);
+  if (calls.length === 0) { return []; }
+  const context = buildEvalContext(text, preparsed, filePath);
+  const findings: ReceiverNoneFinding[] = [];
+  for (let start = 0; start < calls.length; start += chunkSize) {
+    if (start > 0) {
+      await yieldToHost();
+      if (deps.shouldContinue && !deps.shouldContinue()) {
+        return null; // 版本已前进:中止,旧版本回包由调用方丢弃
+      }
+    }
+    const end = Math.min(start + chunkSize, calls.length);
+    appendCallFindings(calls.slice(start, end), context.lines, context.methodSpans,
+      context.scanFor, mapping, findings);
+  }
   return findings;
 }
 
@@ -332,6 +408,16 @@ export interface ReceiverDiagnosticItem {
   source: 'kbengine';
 }
 
+const findingToDiagnosticItem = (finding: ReceiverNoneFinding): ReceiverDiagnosticItem => ({
+  range: {
+    start: { line: finding.line, character: finding.character },
+    end: { line: finding.line, character: finding.character + finding.methodName.length }
+  },
+  message: finding.message,
+  severity: 'Warning' as const,
+  source: 'kbengine' as const
+});
+
 /** 开关口:enabled=false 零产出(用户令:配置开关默认开可关,severity=Warning) */
 export function receiverNoneDiagnosticItems(
   text: string,
@@ -343,13 +429,21 @@ export function receiverNoneDiagnosticItems(
   if (!enabled) {
     return [];
   }
-  return computeReceiverNoneFindings(text, filePath, mapping, preparsed).map(finding => ({
-    range: {
-      start: { line: finding.line, character: finding.character },
-      end: { line: finding.line, character: finding.character + finding.methodName.length }
-    },
-    message: finding.message,
-    severity: 'Warning' as const,
-    source: 'kbengine' as const
-  }));
+  return computeReceiverNoneFindings(text, filePath, mapping, preparsed).map(findingToDiagnosticItem);
+}
+
+/** IDE-DIA-005 异步面:分片计算 + 中止返回 null(旧版本回包丢弃) */
+export async function receiverNoneDiagnosticItemsAsync(
+  text: string,
+  filePath: string,
+  mapping: EntityMapping | undefined,
+  enabled: boolean,
+  preparsed?: PreparsedPythonProvider,
+  deps: ReceiverNoneAsyncDeps = {}
+): Promise<ReceiverDiagnosticItem[] | null> {
+  if (!enabled) {
+    return [];
+  }
+  const findings = await computeReceiverNoneFindingsAsync(text, filePath, mapping, preparsed, deps);
+  return findings === null ? null : findings.map(findingToDiagnosticItem);
 }

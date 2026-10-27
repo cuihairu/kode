@@ -16,6 +16,7 @@ import {
   resetLanguageServiceMetrics
 } from '../src/languageServiceMetrics';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
+import { getDiagnosticScheduler } from '../src/diagnosticScheduler';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
 import packageJson from '../package.json';
@@ -98,7 +99,7 @@ beforeEach(() => {
 });
 
 describe('extension activate 装配', () => {
-  it('切换 receiver 诊断开关时重新计算未编辑文档', () => {
+  it('切换 receiver 诊断开关时重新计算未编辑文档', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-receiver-toggle-'));
     const document = makeTextDocument('class Avatar:\n    def tick(self):\n        self.cell.tick()\n', {
       fileName: path.join(root, 'Avatar.py'), languageId: 'python'
@@ -108,6 +109,8 @@ describe('extension activate 装配', () => {
     const context = makeContext();
     try {
       activate(context);
+      // IDE-DIA-005:receiver 诊断走异步分片面,发布落宏任务后——等在途算完
+      await getDiagnosticScheduler().pendingComputations();
       const collection = languagesRegistry.diagnosticCollections[0].collection;
       expect(collection.get(document.uri)).toHaveLength(1);
       const change = () => workspaceEvents.configurationChanged.fire({
@@ -115,9 +118,11 @@ describe('extension activate 装配', () => {
       });
       configurationOverrides.set('kbengine', { receiverNoneDiagnostics: false });
       change();
+      await getDiagnosticScheduler().pendingComputations(); // 关闭:异步面发布空集即清
       expect(collection.get(document.uri)).toHaveLength(0);
       configurationOverrides.set('kbengine', { receiverNoneDiagnostics: true });
       change();
+      await getDiagnosticScheduler().pendingComputations();
       expect(collection.get(document.uri)).toHaveLength(1);
     } finally {
       disposeAll(context);

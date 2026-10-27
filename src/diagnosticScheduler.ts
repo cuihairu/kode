@@ -32,7 +32,10 @@ export interface DiagnosticTaskDocument {
 export interface DiagnosticTaskOptions<T> {
   layer: DiagnosticLayer;
   /** 产出诊断项(同步;validateDocument/validateEntitiesXmlDocument 的计算面) */
-  compute: () => readonly T[];
+  compute?: () => readonly T[];
+  /** IDE-DIA-005 异步分片面:大文件计算移出同步入口;给了优先于 compute。
+   *  返回 null = 中止(版本已前进等),记过期不发布;完成后的发布同样复核版本。 */
+  computeAsync?: () => Promise<readonly T[] | null>;
   /** 发布面:diagnostics.set(uri, items) 或测试收集器 */
   publish: (items: readonly T[]) => void;
 }
@@ -83,6 +86,8 @@ export class DiagnosticScheduler {
   private generation = 0;
   private enabled = true;
   private readonly states = new Map<string, UriState>();
+  /** IDE-DIA-005:在途异步计算(完成/失败均自摘) */
+  private readonly pending = new Set<Promise<unknown>>();
   private readonly stats: DiagnosticSchedulerStats = {
     requested: 0,
     computed: 0,
@@ -215,6 +220,18 @@ export class DiagnosticScheduler {
     return false;
   }
 
+  /** IDE-DIA-005:是否有异步计算在途 */
+  hasPendingComputations(): boolean {
+    return this.pending.size > 0;
+  }
+
+  /** IDE-DIA-005:等全部在途异步计算落定(测试与停用面) */
+  async pendingComputations(): Promise<void> {
+    while (this.pending.size > 0) {
+      await Promise.all([...this.pending]);
+    }
+  }
+
   /** 文档关闭:释放版本标记与残留排队任务(下次打开全量重算) */
   releaseDocument(document: DiagnosticTaskDocument): void {
     const key = document.uri.toString();
@@ -262,8 +279,48 @@ export class DiagnosticScheduler {
     version: number | undefined,
     options: DiagnosticTaskOptions<unknown>
   ): void {
+    if (options.computeAsync) {
+      // IDE-DIA-005:异步分片面——大文件计算移出同步入口,完成后复核版本
+      // 才发布;null(中止)/版本前进均记过期不发布
+      const computation = options.computeAsync().then(items => {
+        this.pending.delete(computation);
+        this.stats.computed += 1;
+        const startedAt = performance.now();
+        if (items === null) {
+          this.stats.staleDropped += 1;
+          return;
+        }
+        // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
+        if (version !== undefined && versionOf(document) !== version) {
+          this.stats.staleDropped += 1;
+          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+            status: 'ok',
+            fileKind: 'def',
+            documentVersion: version,
+            cacheMisses: 1
+          });
+          return;
+        }
+        options.publish(items);
+        const state = this.stateFor(key);
+        state.publishedVersion = version;
+        state.publishedGeneration = this.generation;
+        this.stats.published += 1;
+        recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+          status: 'ok',
+          fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
+          documentVersion: version,
+          cacheMisses: 1
+        });
+      }, error => {
+        this.pending.delete(computation);
+        throw error;
+      });
+      this.pending.add(computation);
+      return;
+    }
     const startedAt = performance.now();
-    const items = options.compute();
+    const items = options.compute!();
     this.stats.computed += 1;
     // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
     if (version !== undefined && versionOf(document) !== version) {
