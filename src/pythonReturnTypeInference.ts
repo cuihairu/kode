@@ -160,6 +160,39 @@ export function collectProjectPythonFiles(workspaceRoot: string, limit = 20000):
 /** 方法名 → 返回注解(同名多定义时取扫描序里第一个有注解的;缺注解不入表) */
 export type PythonReturnAnnotationIndex = Map<string, string>;
 
+/** 一次按行遍历源码，提取每个函数首次定义的返回注解。 */
+export function extractFileReturnAnnotations(source: string): PythonReturnAnnotationIndex {
+  const result: PythonReturnAnnotationIndex = new Map();
+  const seen = new Set<string>();
+  const defHead = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
+  let current: { name: string; signature: string; depth: number; sawParens: boolean; lines: number } | undefined;
+
+  for (const rawLine of source.split(/\r?\n/)) {
+    const masked = maskCodeLine(rawLine);
+    if (!current) {
+      const name = defHead.exec(masked)?.[1];
+      if (!name || seen.has(name)) { continue; }
+      seen.add(name);
+      current = { name, signature: '', depth: 0, sawParens: false, lines: 0 };
+    }
+    current.lines += 1;
+    for (const ch of masked) {
+      if (ch === '(') { current.depth += 1; current.sawParens = true; }
+      else if (ch === ')') { current.depth = Math.max(0, current.depth - 1); }
+      else if (ch === ':' && current.sawParens && current.depth === 0) {
+        const arrow = current.signature.indexOf('->');
+        const annotation = arrow < 0 ? '' : current.signature.slice(arrow + 2).trim();
+        if (annotation) { result.set(current.name, annotation); }
+        current = undefined;
+        break;
+      }
+      current.signature += ch;
+    }
+    if (current && current.lines >= 64) { current = undefined; }
+  }
+  return result;
+}
+
 export function buildReturnAnnotationIndex(sources: readonly string[]): PythonReturnAnnotationIndex {
   const index: PythonReturnAnnotationIndex = new Map();
   const defHead = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
@@ -233,12 +266,13 @@ export function resolveLocalVariableReturnType(
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) {
     return null;
   }
-  const index = getReturnAnnotationIndex(workspaceRoot);
+  let index: PythonReturnAnnotationIndex | undefined;
   for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
     const assignment = parseLocalAssignmentCall(lines[line] ?? '');
     if (!assignment || assignment.target !== word) {
       continue;
     }
+    index ??= getReturnAnnotationIndex(workspaceRoot);
     const annotation = index.get(assignment.methodName);
     if (annotation && annotation !== 'Any') {
       return { target: word, annotation, methodName: assignment.methodName };

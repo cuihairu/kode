@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   KBEngineBuiltinTypeInlayHintsProvider,
   KBEngineCompletionProvider,
@@ -9,6 +9,7 @@ import {
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
+  extractFileReturnAnnotations,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType
 } from '../src/pythonReturnTypeInference';
@@ -76,6 +77,25 @@ const setupWorkspace = (): TempWorkspace => {
 };
 
 describe('返回类型推导(局部变量 hover)', () => {
+  it('单次遍历提取各方法注解，无注解的方法不会引起全文重扫', () => {
+    const source = Array.from({ length: 1000 }, (_, i) =>
+      `def method_${i}():\n    pass\n`
+    ).join('') + 'def annotated() -> Result:\n    pass\n';
+    const exec = vi.spyOn(RegExp.prototype, 'exec');
+    let matches: number;
+    let annotations: Map<string, string>;
+    try {
+      annotations = extractFileReturnAnnotations(source);
+      matches = exec.mock.contexts.filter(context =>
+        context instanceof RegExp && context.source === '^\\s*def\\s+([A-Za-z_]\\w*)\\s*\\('
+      ).length;
+    } finally {
+      exec.mockRestore();
+    }
+    expect([...annotations]).toEqual([['annotated', 'Result']]);
+    expect(matches).toBeLessThanOrEqual(source.split('\n').length + 5);
+  });
+
   it('JSONDATA 正例:data = activity_data.get_data() → data: JSONDATA,标注来源', async () => {
     const { put } = setupWorkspace();
     put(
