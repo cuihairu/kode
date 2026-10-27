@@ -1,0 +1,74 @@
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 enabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-ocKDLc/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-ocKDLc/perf-assets/large
+FIELD-METRIC env.pylanceActive n=1 true
+FIELD-METRIC env.pylanceVersion n=1 2026.4.1
+FIELD-METRIC env.pythonExtActive n=1 false
+FIELD-METRIC cold.firstDefinitionMs n=1 1189.08ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 3
+FIELD-METRIC hot.hoverMs n=50 p50=6.4ms p95=71.29ms p99=170.38ms max=170.38ms avg=16.86ms
+FIELD-METRIC hot.definitionMs n=50 p50=5.37ms p95=29.89ms p99=135.43ms max=135.43ms avg=11.07ms
+FIELD-METRIC miss.hoverMs n=20 p50=1.94ms p95=4.43ms p99=4.47ms max=4.47ms avg=2.43ms
+FIELD-METRIC miss.definitionMs n=20 p50=2.22ms p95=13.54ms p99=14.39ms max=14.39ms avg=3.46ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 5.05ms
+FIELD-METRIC burst.20wallMs n=1 13.57ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 162ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 162ms
+FIELD-METRIC joint.burstHover.20wallMs n=1 23.05ms
+FIELD-METRIC joint.burstHover.20hostP99BeforeMs n=1 162ms
+FIELD-METRIC joint.burstHover.20hostP99AfterMs n=1 162ms
+FIELD-METRIC session.r1.hoverMs n=20 p50=2.59ms p95=13.86ms p99=47.31ms max=47.31ms avg=5.77ms
+FIELD-METRIC session.r1.definitionMs n=20 p50=1.67ms p95=20.04ms p99=40.62ms max=40.62ms avg=5.2ms
+FIELD-METRIC session.r1.rssMiB n=1 303
+FIELD-METRIC session.r2.hoverMs n=20 p50=3.62ms p95=6.57ms p99=317.93ms max=317.93ms avg=19.59ms
+FIELD-METRIC session.r2.definitionMs n=20 p50=3.1ms p95=5.62ms p99=18.17ms max=18.17ms avg=4.12ms
+FIELD-METRIC session.r2.rssMiB n=1 304
+FIELD-METRIC session.r3.hoverMs n=20 p50=2.83ms p95=3.29ms p99=5.57ms max=5.57ms avg=2.94ms
+FIELD-METRIC session.r3.definitionMs n=20 p50=2.41ms p95=4.1ms p99=7.5ms max=7.5ms avg=2.77ms
+FIELD-METRIC session.r3.rssMiB n=1 304
+FIELD-METRIC session.r4.hoverMs n=20 p50=2.84ms p95=3.3ms p99=6.24ms max=6.24ms avg=2.97ms
+FIELD-METRIC session.r4.definitionMs n=20 p50=2.34ms p95=2.81ms p99=3.64ms max=3.64ms avg=2.49ms
+FIELD-METRIC session.r4.rssMiB n=1 304
+FIELD-METRIC session.r5.hoverMs n=20 p50=2.42ms p95=3.05ms p99=53.89ms max=53.89ms avg=5.04ms
+FIELD-METRIC session.r5.definitionMs n=20 p50=1.88ms p95=2.85ms p99=3.14ms max=3.14ms avg=2.08ms
+FIELD-METRIC session.r5.rssMiB n=1 234
+FIELD-METRIC session.r6.hoverMs n=20 p50=3.13ms p95=5.05ms p99=5.81ms max=5.81ms avg=3.41ms
+FIELD-METRIC session.r6.definitionMs n=20 p50=2.29ms p95=3.36ms p99=5.56ms max=5.56ms avg=2.65ms
+FIELD-METRIC session.r6.rssMiB n=1 236
+FIELD-METRIC session.r7.hoverMs n=20 p50=2.85ms p95=3.88ms p99=5.39ms max=5.39ms avg=3.09ms
+FIELD-METRIC session.r7.definitionMs n=20 p50=2.31ms p95=3.91ms p99=4.01ms max=4.01ms avg=2.5ms
+FIELD-METRIC session.r7.rssMiB n=1 236
+FIELD-METRIC session.r8.hoverMs n=20 p50=3.19ms p95=4.04ms p99=5.46ms max=5.46ms avg=3.25ms
+FIELD-METRIC session.r8.definitionMs n=20 p50=2.48ms p95=3.08ms p99=3.11ms max=3.11ms avg=2.5ms
+FIELD-METRIC session.r8.rssMiB n=1 237
+FIELD-METRIC session.r9.hoverMs n=20 p50=3.09ms p95=4.76ms p99=5.1ms max=5.1ms avg=3.38ms
+FIELD-METRIC session.r9.definitionMs n=20 p50=2.62ms p95=3.23ms p99=3.95ms max=3.95ms avg=2.71ms
+FIELD-METRIC session.r9.rssMiB n=1 237
+FIELD-METRIC session.r10.hoverMs n=20 p50=2.49ms p95=3.93ms p99=4.98ms max=4.98ms avg=2.76ms
+FIELD-METRIC session.r10.definitionMs n=20 p50=2.08ms p95=2.86ms p99=4.52ms max=4.52ms avg=2.3ms
+FIELD-METRIC session.r10.rssMiB n=1 237
+FIELD-METRIC host.vmHwmMiB n=1 305
+FIELD-METRIC host.peakRssMiB n=1 305
+FIELD-METRIC host.cpuUserSec n=1 7.44
+FIELD-METRIC host.cpuSysSec n=1 1.78
+FIELD-METRIC host.cpuSampleCount n=1 111
+FIELD-METRIC eventloop.p50Ms n=1 20.2
+FIELD-METRIC eventloop.p95Ms n=1 20.82
+FIELD-METRIC eventloop.p99Ms n=1 26.54
+FIELD-METRIC eventloop.maxMs n=1 815.27
+FIELD-METRIC eventloop.meanMs n=1 20.89
+FIELD-SUMMARY hover count=290 p50=0.9 p95=1.5 p99=1.9 max=5.8 hit=0 miss=0 discover=0 read=0 parse=0 ok=0 missStatus=290 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY definition count=292 p50=0.2 p95=2.6 p99=6 max=1155 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=241 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY diagnostics count=21 p50=0.3 p95=0.4 p99=1.3 max=1.3 hit=0 miss=21 discover=0 read=0 parse=0 ok=21 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-index-scan count=1 p50=2364.8 p95=2364.8 p99=2364.8 max=2364.8 hit=0 miss=0 discover=5044 read=5044 parse=5044 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-composition-roots count=1 p50=150 p95=150 p99=150 max=150 hit=0 miss=0 discover=15 read=15 parse=15 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY entity-mapping-scan count=1 p50=996.7 p95=996.7 p99=996.7 max=996.7 hit=0 miss=0 discover=11 read=8 parse=8 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY semantic-query count=292 p50=0 p95=2.3 p99=5.8 max=1152.8 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=241 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY file-discovery count=8 p50=105.5 p95=1386.1 p99=1386.1 max=1386.1 hit=0 miss=0 discover=5070 read=0 parse=0 ok=8 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY document-parse count=5060 p50=0 p95=0.1 p99=0.1 max=2.4 hit=0 miss=0 discover=0 read=0 parse=5060 ok=5060 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY sessionEnd 2026-10-27T16:52:19.146Z

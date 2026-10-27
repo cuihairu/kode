@@ -23,6 +23,9 @@ import {
 const WORKSPACE = process.env.KODE_FIELD_WORKSPACE;
 assert.ok(WORKSPACE, 'runTest.js --field must set KODE_FIELD_WORKSPACE');
 const MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
+// P0-4c 联合验收面:KODE_FIELD_JOINT=1 时断言 Python 语言服务(Pylance)同场激活,
+// 追加 hover 突发与长会话轮次(轮间保存+定距间隔),指标行前缀 session.r<N>。
+const JOINT = process.env.KODE_FIELD_JOINT === '1';
 const OUT_FILE = process.env.KODE_FIELD_OUT
   ?? path.resolve(__dirname, '../../../../docs/perf/2026-10-27-field-baseline-run.txt');
 
@@ -129,6 +132,19 @@ describe('P0-4b 现场基线采集(真 VS Code 扩展宿主)', function () {
     }, 500);
     resetLanguageServiceMetrics();
     pos = await symbolPosition();
+    if (JOINT) {
+      // 联合验收前置:打开 .py 文档已触发 onLanguage:python,等 Pylance 激活到位
+      const pylance = vscode.extensions.getExtension('ms-python.vscode-pylance');
+      assert.ok(pylance, 'Pylance 未安装于 harness VS Code(先 --install-extension)');
+      const deadline = Date.now() + 90_000;
+      while (!pylance.isActive && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      once('env.pylanceActive', String(pylance.isActive), '');
+      once('env.pylanceVersion', pylance.packageJSON.version ?? '(unknown)', '');
+      const pythonExt = vscode.extensions.getExtension('ms-python.python');
+      once('env.pythonExtActive', String(pythonExt?.isActive ?? false), '');
+    }
   });
 
   after(async function () {
@@ -246,4 +262,47 @@ describe('P0-4b 现场基线采集(真 VS Code 扩展宿主)', function () {
     once('burst.20hostP99BeforeMs', Math.round(beforeP99 / 1e6 * 100) / 100);
     once('burst.20hostP99AfterMs', Math.round(afterP99 / 1e6 * 100) / 100);
   });
+
+  it('P0-4c 联合验收:hover 面向', async function () {
+    if (!JOINT) { this.skip(); }
+    // 与 definition 突发同口径的 hover 突发(请求级取消 token 不经公开命令面暴露,
+    // 取消语义以突发响应性+摘要 cancelled 计数近似,如实标注)
+    const beforeP99 = delay ? delay.percentile(99) : 0;
+    const startedAt = performance.now();
+    await Promise.all(Array.from({ length: 20 }, () => hoverAt(pos)));
+    const wall = performance.now() - startedAt;
+    const afterP99 = delay ? delay.percentile(99) : 0;
+    once('joint.burstHover.20wallMs', Math.round(wall * 100) / 100);
+    once('joint.burstHover.20hostP99BeforeMs', Math.round(beforeP99 / 1e6 * 100) / 100);
+    once('joint.burstHover.20hostP99AfterMs', Math.round(afterP99 / 1e6 * 100) / 100);
+  });
+
+  // P0-4c 长会话:10 轮热态场景,轮间保存+5s 定距(背景索引持续在场),
+  // 逐轮记录 hover/def 分位与宿主 RSS,观察指标不随会话时长劣化。
+  for (let round = 1; round <= 10; round += 1) {
+    it(`P0-4c 长会话第 ${round} 轮`, async function () {
+      if (!JOINT) { this.skip(); }
+      const hoverSamples: number[] = [];
+      const defSamples: number[] = [];
+      for (let i = 0; i < 20; i += 1) {
+        const h0 = performance.now();
+        await hoverAt(pos);
+        hoverSamples.push(performance.now() - h0);
+        const d0 = performance.now();
+        await definitionAt(pos);
+        defSamples.push(performance.now() - d0);
+      }
+      metric(`session.r${round}.hoverMs`, hoverSamples);
+      metric(`session.r${round}.definitionMs`, defSamples);
+      // 轮间保存(增量索引压力)+ 定距间隔(让背景索引/LS 持续工作)
+      const uri = vscode.Uri.file(path.join(WORKSPACE!, SYMBOL_FILE));
+      const document = await vscode.workspace.openTextDocument(uri);
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(uri, new vscode.Position(0, 0), `# joint-session ${round}\n`);
+      await vscode.workspace.applyEdit(edit);
+      await document.save();
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      once(`session.r${round}.rssMiB`, Math.round(process.memoryUsage().rss / 1024 / 1024), '');
+    });
+  }
 });

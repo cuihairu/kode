@@ -1,0 +1,65 @@
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 disabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-W2dhqz/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-W2dhqz/perf-assets/large
+FIELD-METRIC env.pylanceActive n=1 true
+FIELD-METRIC env.pylanceVersion n=1 2026.4.1
+FIELD-METRIC env.pythonExtActive n=1 false
+FIELD-METRIC cold.firstDefinitionMs n=1 127.94ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 0
+FIELD-METRIC hot.hoverMs n=50 p50=7.25ms p95=60.67ms p99=83.78ms max=83.78ms avg=16.4ms
+FIELD-METRIC hot.definitionMs n=50 p50=1.38ms p95=7.49ms p99=8.4ms max=8.4ms avg=3.1ms
+FIELD-METRIC miss.hoverMs n=20 p50=1.32ms p95=4.8ms p99=9.03ms max=9.03ms avg=2.36ms
+FIELD-METRIC miss.definitionMs n=20 p50=1.35ms p95=5.67ms p99=15.9ms max=15.9ms avg=2.79ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 35.69ms
+FIELD-METRIC burst.20wallMs n=1 22.34ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 112.26ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 112.26ms
+FIELD-METRIC joint.burstHover.20wallMs n=1 15.24ms
+FIELD-METRIC joint.burstHover.20hostP99BeforeMs n=1 112.26ms
+FIELD-METRIC joint.burstHover.20hostP99AfterMs n=1 112.26ms
+FIELD-METRIC session.r1.hoverMs n=20 p50=9.55ms p95=24.45ms p99=91.86ms max=91.86ms avg=14.01ms
+FIELD-METRIC session.r1.definitionMs n=20 p50=6.3ms p95=11.83ms p99=44.16ms max=44.16ms avg=8.23ms
+FIELD-METRIC session.r1.rssMiB n=1 285
+FIELD-METRIC session.r2.hoverMs n=20 p50=5.27ms p95=7.67ms p99=21.95ms max=21.95ms avg=6.05ms
+FIELD-METRIC session.r2.definitionMs n=20 p50=5.48ms p95=14.27ms p99=14.92ms max=14.92ms avg=6.35ms
+FIELD-METRIC session.r2.rssMiB n=1 286
+FIELD-METRIC session.r3.hoverMs n=20 p50=2.24ms p95=2.96ms p99=3.18ms max=3.18ms avg=2.35ms
+FIELD-METRIC session.r3.definitionMs n=20 p50=2.36ms p95=3.19ms p99=10.96ms max=10.96ms avg=2.79ms
+FIELD-METRIC session.r3.rssMiB n=1 287
+FIELD-METRIC session.r4.hoverMs n=20 p50=2.8ms p95=4.26ms p99=4.85ms max=4.85ms avg=3.04ms
+FIELD-METRIC session.r4.definitionMs n=20 p50=2.86ms p95=4.13ms p99=4.9ms max=4.9ms avg=3.1ms
+FIELD-METRIC session.r4.rssMiB n=1 288
+FIELD-METRIC session.r5.hoverMs n=20 p50=3.22ms p95=4.86ms p99=5.45ms max=5.45ms avg=3.5ms
+FIELD-METRIC session.r5.definitionMs n=20 p50=3.55ms p95=6.6ms p99=22.31ms max=22.31ms avg=4.54ms
+FIELD-METRIC session.r5.rssMiB n=1 279
+FIELD-METRIC session.r6.hoverMs n=20 p50=2.83ms p95=3.3ms p99=4.03ms max=4.03ms avg=2.89ms
+FIELD-METRIC session.r6.definitionMs n=20 p50=2.67ms p95=3.31ms p99=3.35ms max=3.35ms avg=2.76ms
+FIELD-METRIC session.r6.rssMiB n=1 222
+FIELD-METRIC session.r7.hoverMs n=20 p50=2.07ms p95=2.44ms p99=3.7ms max=3.7ms avg=2.15ms
+FIELD-METRIC session.r7.definitionMs n=20 p50=2.06ms p95=2.48ms p99=2.55ms max=2.55ms avg=2.1ms
+FIELD-METRIC session.r7.rssMiB n=1 221
+FIELD-METRIC session.r8.hoverMs n=20 p50=2.39ms p95=2.78ms p99=3.14ms max=3.14ms avg=2.46ms
+FIELD-METRIC session.r8.definitionMs n=20 p50=2.38ms p95=3.09ms p99=3.18ms max=3.18ms avg=2.44ms
+FIELD-METRIC session.r8.rssMiB n=1 223
+FIELD-METRIC session.r9.hoverMs n=20 p50=2.08ms p95=2.63ms p99=4.3ms max=4.3ms avg=2.25ms
+FIELD-METRIC session.r9.definitionMs n=20 p50=2.1ms p95=2.45ms p99=3.26ms max=3.26ms avg=2.17ms
+FIELD-METRIC session.r9.rssMiB n=1 223
+FIELD-METRIC session.r10.hoverMs n=20 p50=2.37ms p95=3.37ms p99=4.27ms max=4.27ms avg=2.5ms
+FIELD-METRIC session.r10.definitionMs n=20 p50=2.36ms p95=2.73ms p99=2.9ms max=2.9ms avg=2.35ms
+FIELD-METRIC session.r10.rssMiB n=1 223
+FIELD-METRIC host.vmHwmMiB n=1 290
+FIELD-METRIC host.peakRssMiB n=1 288
+FIELD-METRIC host.cpuUserSec n=1 6.2
+FIELD-METRIC host.cpuSysSec n=1 1.32
+FIELD-METRIC host.cpuSampleCount n=1 113
+FIELD-METRIC eventloop.p50Ms n=1 20.2
+FIELD-METRIC eventloop.p95Ms n=1 20.81
+FIELD-METRIC eventloop.p99Ms n=1 29.69
+FIELD-METRIC eventloop.maxMs n=1 617.61
+FIELD-METRIC eventloop.meanMs n=1 20.84
+FIELD-SUMMARY sessionEnd 2026-10-27T16:53:50.075Z
