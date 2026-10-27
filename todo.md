@@ -174,3 +174,12 @@
 #### 提案挂账：Rust Core 常驻语言服务（2026-10-23 外部提案整理）
 
 来源与全文见 `docs/review/2026-10-23-rust-core-lsp-proposal.md`（含与 PR1-7 实况的对照表）。口径：**不插队**——PR7 复测收官后按跟踪清单 R1（数据审计）→R2（原型对拍）过闸再议 R3；终端/脚本启动慢按 R4 独立立项。已代决：采纳「先数据后迁移」的闸门顺序，拒绝直接开写 Rust。
+- [ ] 审核发现：Python 全扫把失败分块的 wait 拒绝逐一吞掉后仍标记该扫描代完成，失败文件永久缺席且后续查询不重试（src/pythonClassIndex.ts:782）
+- [ ] 审核发现：self 方法解析已命中静态 MRO 时，组合根派生超过 1 秒仍直接返回空列表，丢弃已找到的有效目标（src/pythonClassIndex.ts:1081）
+- [ ] 审核发现：对象级负缓存只凭映射表非空就记录 miss，首扫尚未完成时可把后续分块里的接口或组件类永久误判为不存在（src/entityMapping.ts:2143）
+- [ ] 审核发现：worker 解析失败与文件读取失败共用 catch，解析线程崩溃时会删除仍存在文件的旧类索引而非保留并重试（src/pythonClassIndex.ts:916）
+- [ ] 审核发现：调度器将所有已完成、失败及取消任务永久留在 tasks Map，长会话持续保存会累积任务闭包和批量文件路径（src/indexScheduler.ts:214）
+- [ ] 审核发现：实体首扫 keyed 任务只启动真实扫描便宣告完成，真实扫描失败又被转成成功的 initialScan；A3-4 的失败重试语义未接到实体扫描（src/entityMapping.ts:233）
+- [ ] 审核发现：按需加载先按 import 候选顺序截取 64 个缺失路径，导入较多时后面的真实依赖被静默跳过并导致跳转落空（src/pythonClassIndex.ts:877）
+- [x] 审核发现：PR5 首查测试在异步文件发现尚未入队分块时断言 gatedCount>0，当前连续两次单独运行均失败，未正确锁住“后台推进”行为（1f77df8；tests/pythonIndexPr5.test.ts:325 前加 `await scheduler.chunksEnqueued`——GatedBackgroundScheduler 在首个 full-reindex 分块入队即 resolve，把断言锚在真实入队时点而非首查返回时点；`scheduleBackgroundScan`(:1039) 是 fire-and-forget，分块在发现完成后才入队，原断言抢到发现前面恒为 0。未删用例未松断言，gatedCount/executedFullReindex/噪声零读/单文件计数四条断言原样保留）
+- [ ] 审核发现：大文件 worker 路径及 worker 崩溃、停用、旧 revision 回包均没有直接测试，现有解析测试只覆盖同步 parsePythonFile（src/pythonParserWorkerHost.ts:52）
