@@ -88,6 +88,56 @@ describe('buildEntityTypeStubPlan', () => {
     expect(plan.content).toContain('def respawn(arg1: int) -> None: ...');
   });
 
+  it('imports referenced custom types from their kbe_types mirror module (pyi ③)', () => {
+    // 跨文件可解析验收:profile 注解裸引用 ITEM_INFO,头部必须按分件镜像
+    // 模块路径导入(types.xml 在 /ws/scripts/entity_defs → stubs 树镜像
+    // scripts/entity_defs → 模块 scripts.entity_defs.kbe_types)。
+    const plan = buildEntityTypeStubPlan([avatarMapping], [customType], { workspaceRoot: '/ws' });
+    expect(plan.content).toContain('    profile: ITEM_INFO');
+    expect(plan.content).toContain('from scripts.entity_defs.kbe_types import ITEM_INFO');
+    // 无工作区语境退根级模块名,仍可解析(与 kbe_types 根级单文件落点对齐)
+    const rootless = buildEntityTypeStubPlan([avatarMapping], [customType]);
+    expect(rootless.content).toContain('from kbe_types import ITEM_INFO');
+  });
+
+  it('poisoned custom types fall back to Any and are never imported (pyi ③)', () => {
+    // 成环别名(CY_A→CY_B→CY_A)在 kbe_types.pyi 整链不发射:entity_types
+    // 不得裸挂该名字,也不得导入——诚实落 Any。
+    const cyclicA: CustomTypeInfo = {
+      ...customType,
+      name: 'CY_A',
+      aliasType: 'CY_B',
+      rawValue: 'CY_B',
+      structure: { name: 'CY_B', rawValue: 'CY_B', children: [], line: 1 },
+      properties: []
+    };
+    const cyclicB: CustomTypeInfo = {
+      ...customType,
+      name: 'CY_B',
+      aliasType: 'CY_A',
+      rawValue: 'CY_A',
+      structure: { name: 'CY_A', rawValue: 'CY_A', children: [], line: 2 },
+      properties: []
+    };
+    const trapMapping = {
+      ...avatarMapping,
+      name: 'Trap',
+      properties: { profile: avatarMapping.properties.profile },
+      propertyDefinitions: [{
+        defFile: '/ws/scripts/entity_defs/Avatar.def',
+        line: 24,
+        identity: { symbolName: 'profile' },
+        domains: [],
+        persistent: false,
+        typeName: 'CY_A'
+      }]
+    } as unknown as EntityMapping;
+    const plan = buildEntityTypeStubPlan([trapMapping], [cyclicA, cyclicB], { workspaceRoot: '/ws' });
+    expect(plan.content).toContain('    profile: Any');
+    expect(plan.content).not.toContain('CY_A');
+    expect(plan.content).not.toContain('import CY');
+  });
+
   it('returns no content when neither properties nor methods are declared', () => {
     expect(buildEntityTypeStubPlan([], [customType]).content).toBeNull();
   });
