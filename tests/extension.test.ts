@@ -1231,7 +1231,10 @@ describe('Python index lifecycle wiring', () => {
       expect(watch, 'external assetsRoot has a RelativePattern watcher').toBeTruthy();
       const file = Uri.file(path.join(assets, 'scripts/cell/Avatar.py'));
       watch!.watcher.fireCreate(file);
-      expect(invalidate).toHaveBeenCalledWith(file.fsPath);
+      // 新建文件走 onFileChanged 直接装载进索引;invalidate 对未索引文件是
+      // 刻意空转(不得重启扫描),故 create 必须不触发 invalidate
+      expect(changed).toHaveBeenCalledWith(file.fsPath);
+      expect(invalidate, 'unindexed create must not restart the scan').not.toHaveBeenCalled();
       watch!.watcher.fireChange(file);
       expect(changed).toHaveBeenCalledWith(file.fsPath);
       watch!.watcher.fireDelete(file);
