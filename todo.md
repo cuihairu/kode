@@ -294,7 +294,7 @@
 - [x] IDE-IDX-015 [P1] 移除根时摘除该根全部索引记录；验收：工作区移除 B 后 B 的实体、owner 和类型都不可查，A 保留；前置：IDE-IDX-003。（78133ff;实现=entityMapping.removeRoot(该根下全部 def 走 removeIndexByDefFile 统一摘除路径——从 handleDefFileChanged 抽出,名字槽同 IDX-008 接管口径)+semanticIndex.removeRoot(该根类型注册表快照全删+根描述符注销,#分隔键前缀不误伤)+extension.ts onDidChangeWorkspaceFolders removed 接线;测试=tests/entityMappingManager.test.ts IDE-IDX-015(B 实体/owner/类查询/类型快照全断,A 全保留);测试绿 3248|7）
 - [x] IDE-IDX-016 [P1] 让旧根在途任务无法回写；验收：扫描 B 未结束时移除 B，晚到结果不能重新登记该根；前置：IDE-IDX-015。（754b5e8;实现=entityMapping.removeRoot 记 removedRootKeys+isUnderRemovedRoot 回写闸,buildIndex 入口对已移除根下 def 早退 null(索引/解析缓存/依赖图/语义投影全部不落);测试=tests/entityMappingManager.test.ts IDE-IDX-016(发现快照含 B+批执行窗口闸门,移除 B 后晚到批不回写 HeroB,A 照常);测试绿 3249|7）
 - [x] IDE-IDX-017 [P1] 同文件成员跳转只查当前文件快照；验收：全仓扫描挂起时，同文件 Class.method 仍能跳转且不调用 ensureScanned；前置：无。（878c324;实现=languageProviders member-access ② 块撤掉 findClassesByName(内含 await ensureScanned) 索引中转,直接 parsePythonFile 当前文档找 receiverName 类与同名方法(旧路径答案本就只来自当前文档,索引同文件类必被重解析复核);测试=tests/memberAccessNavigation.test.ts IDE-IDX-017(ensureScanned 拒绝挂起模型下 SameFile.helper 仍跳同文件声明行且 ensureScanned 调用数为 0);测试绿 3250|7）
-- [ ] IDE-IDX-018 [P1] 区分部分候选与完整候选状态；验收：预算到期只拿到静态目标时，内部结果标记 partial，不发布完整枚举的负缓存；前置：无。
+- [x] IDE-IDX-018 [P1] 区分部分候选与完整候选状态；验收：预算到期只拿到静态目标时，内部结果标记 partial，不发布完整枚举的负缓存；前置：无。(683596c)
 
 ### IDE-SNP · 共享快照与派生输入（P1）
 
