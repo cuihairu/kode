@@ -55,10 +55,10 @@ import {
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
   findDatabaseSchemaTargetsForSource,
-  findTypeStorageUsages,
   getDatabaseSchemaSnapshot,
   getTypeStorageShape,
-  indexTypeStorageUsagesBySourceLine,
+  getTypeStorageUsageIndexReadOnly,
+  indexTypeStorageUsageEntries,
   invalidateTypeStorageUsageIndex,
   isDatabaseSchemaDocument,
   locateDatabaseSchemaLine,
@@ -4724,12 +4724,15 @@ export function buildTypesXmlStorageLensSpecs(
     return [];
   }
 
+  // IDE-SCH-009:渲染只读已发布聚合(暖渲染零快照探测),新鲜度由
+  // watcher 事件面承担;无状态时只读面自行冷构建一次
+  const usageIndex = getTypeStorageUsageIndexReadOnly(workspaceRoot);
   const usagesBySourceLine = typesXmlPath
-    ? indexTypeStorageUsagesBySourceLine(workspaceRoot, typesXmlPath)
+    ? indexTypeStorageUsageEntries(usageIndex, typesXmlPath)
     : new Map<number, TypeStorageUsage[]>();
   const specs: TypesXmlStorageLensSpec[] = [];
   for (const node of getDirectChildElements(document.root)) {
-    const usages = findTypeStorageUsages(workspaceRoot, node.name);
+    const usages = usageIndex.get(node.name) || [];
     const firstLine = getLineNumberAt(document, node.tagStart);
     const lastLine = getLineNumberAt(document, node.closeTagEnd);
     const expandedUsages: TypeStorageUsage[] = [];

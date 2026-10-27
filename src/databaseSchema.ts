@@ -2348,6 +2348,32 @@ export function invalidateTypeStorageUsageIndex(): void {
   typeStorageUsageState = null;
 }
 
+function rebuildTypeStorageUsageAggregate(state: NonNullable<typeof typeStorageUsageState>): Map<string, TypeStorageUsage[]> {
+  const index = new Map<string, TypeStorageUsage[]>();
+  for (const record of state.entityRecords.values()) {
+    for (const { typeName, usage } of record.usages) {
+      const usages = index.get(typeName) || [];
+      usages.push(usage);
+      index.set(typeName, usages);
+    }
+  }
+  state.index = index;
+  return index;
+}
+
+/** IDE-SCH-009 只读反查面:聚合已发布则纯读返回——零快照探测,新鲜度由
+ * 事件面(watcher→按实体替换/整表置空)承担;无状态才退一次冷构建。 */
+export function getTypeStorageUsageIndexReadOnly(workspaceRoot: string): Map<string, TypeStorageUsage[]> {
+  if (typeStorageUsageState && typeStorageUsageState.key === workspaceRoot) {
+    return typeStorageUsageState.index || rebuildTypeStorageUsageAggregate(typeStorageUsageState);
+  }
+  return buildTypeStorageUsageIndex(workspaceRoot);
+}
+
+export function findTypeStorageUsagesReadOnly(workspaceRoot: string, typeName: string): TypeStorageUsage[] {
+  return getTypeStorageUsageIndexReadOnly(workspaceRoot).get(typeName) || [];
+}
+
 /**
  * IDE-SCH-008 事件面:实体 def 变更后只替换该实体贡献的 usage 记录,
  * 其余实体的记录对象保持不变,聚合索引按需重聚(不全仓重建)。
@@ -2357,7 +2383,7 @@ export function replaceTypeStorageUsageForEntity(workspaceRoot: string, entityNa
     return; // 尚无索引:下一次查询本身就是全新构建
   }
   if (refreshTypeStorageUsageRecord(workspaceRoot, entityName)) {
-    typeStorageUsageState.index = null;
+    rebuildTypeStorageUsageAggregate(typeStorageUsageState); // 只重聚既有记录,不逐实体探快照
   }
 }
 
@@ -2386,16 +2412,7 @@ export function buildTypeStorageUsageIndex(workspaceRoot: string): Map<string, T
   if (!changed && state.index) {
     return state.index;
   }
-  const index = new Map<string, TypeStorageUsage[]>();
-  for (const record of state.entityRecords.values()) {
-    for (const { typeName, usage } of record.usages) {
-      const usages = index.get(typeName) || [];
-      usages.push(usage);
-      index.set(typeName, usages);
-    }
-  }
-  state.index = index;
-  return index;
+  return rebuildTypeStorageUsageAggregate(state);
 }
 
 export function findTypeStorageUsages(workspaceRoot: string, typeName: string): TypeStorageUsage[] {
@@ -2411,10 +2428,18 @@ export function indexTypeStorageUsagesBySourceLine(
   workspaceRoot: string,
   sourceFile: string
 ): Map<number, TypeStorageUsage[]> {
+  return indexTypeStorageUsageEntries(buildTypeStorageUsageIndex(workspaceRoot), sourceFile);
+}
+
+/** IDE-SCH-009:从已取到的聚合(通常只读面)按源码行编组,不触发任何构建 */
+export function indexTypeStorageUsageEntries(
+  index: Map<string, TypeStorageUsage[]>,
+  sourceFile: string
+): Map<number, TypeStorageUsage[]> {
   const sourceKey = normalizePath(path.resolve(sourceFile));
   const byLine = new Map<number, TypeStorageUsage[]>();
   const seen = new Set<string>();
-  for (const typeUsages of buildTypeStorageUsageIndex(workspaceRoot).values()) {
+  for (const typeUsages of index.values()) {
     for (const usage of typeUsages) {
       const key = `${normalizePath(path.resolve(usage.defFile))}:${usage.line}:${usage.entity}:${usage.table}:${usage.column}`;
       if (normalizePath(path.resolve(usage.defFile)) !== sourceKey || seen.has(key)) {
