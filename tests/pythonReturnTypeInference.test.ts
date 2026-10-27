@@ -386,6 +386,25 @@ describe('IDE-HOV-012 保存文件时只替换该文件注解桶', () => {
       .toMatchObject({ annotation: 'FRESH' });
   });
 
+  it('新文件保存后新增注解桶:可查其注解,目录发现不重跑', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    // 索引就绪时 extra.py 尚不存在(不在任何桶里)
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const read = vi.spyOn(fs.promises, 'readFile');
+    const readdir = vi.spyOn(fs.promises, 'readdir');
+    applySavedFileAnnotations(root, path.join(root, 'extra.py'), 'def load_all() -> PAYLOAD:\n    pass\n');
+    expect(read).not.toHaveBeenCalled();
+    expect(readdir).not.toHaveBeenCalled();
+    read.mockRestore();
+    readdir.mockRestore();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
+      .toMatchObject({ annotation: 'PAYLOAD' });
+    // 既有桶不受新桶影响
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      .toMatchObject({ annotation: 'JSONDATA' });
+  });
+
   it('冷缓存无桶可换为 no-op:不虚建部分索引', async () => {
     const { root, put } = setupWorkspace();
     put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
