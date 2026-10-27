@@ -502,3 +502,43 @@ describe('IDE-HOV-015 重命名文件时迁移注解来源', () => {
       .toMatchObject({ annotation: 'JSONDATA' });
   });
 });
+
+describe('IDE-HOV-016 按当前文件限定返回注解候选', () => {
+  it('同文件明确声明优先于项目无关同名方法', async () => {
+    const { root, put } = setupWorkspace();
+    put('main.py', 'def get_data() -> LOCAL:\n    pass\n\ndata = get_data()\n');
+    put('other.py', 'def get_data() -> REMOTE:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'def get_data() -> LOCAL:\n    pass\n\ndata = get_data()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(3, 1))));
+    expect(text).toContain('**data: LOCAL**');
+    expect(text).not.toContain('REMOTE');
+  });
+
+  it('不跨作用域借用赋值:兄弟方法内的同名赋值不接管', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'class Avatar:\n'
+      + '    def a(self):\n'
+      + '        data = get_data()\n'
+      + '\n'
+      + '    def b(self):\n'
+      + '        return data\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    // 正例前置:a() 内同作用域赋值可推,证明链路通(否则下面的「不显」是链路断)
+    const inA = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 9))));
+    expect(inA).toContain('**data: JSONDATA**');
+    // 兄弟方法 b() 内不借 a() 的赋值:不显示任何推导类型
+    const inB = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(5, 16))));
+    expect(inB).not.toContain('JSONDATA');
+    expect(inB).not.toContain('推导自');
+  });
+});

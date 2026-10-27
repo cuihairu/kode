@@ -552,11 +552,26 @@ export interface LocalVariableReturnType {
   methodName: string;
 }
 
+/**
+ * IDE-HOV-016:自 hover 行向上找赋值,只在未跨出作用域前有效——上行路上
+ * 每跨过一条 `def`/`class` 头(缩进 i),其上缩进 ≥ i+1 的赋值即属别的
+ * 作用域(兄弟方法/被嵌套函数),不再借用;模块级(缩进 0)赋值不受限
+ * (Python 全局读语义)。作用域内的同名重赋值仍按原次序全量收集。
+ */
 function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
   const candidates: LocalAssignmentCall[] = [];
+  let scopeIndentLimit = Number.POSITIVE_INFINITY;
   for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
-    const assignment = parseLocalAssignmentCall(lines[line] ?? '');
-    if (assignment?.target === word) candidates.push(assignment);
+    const text = lines[line] ?? '';
+    const indent = text.length - text.trimStart().length;
+    if (indent < scopeIndentLimit) {
+      const assignment = parseLocalAssignmentCall(text);
+      if (assignment?.target === word) candidates.push(assignment);
+    }
+    const scopeHeader = /^\s*(?:async\s+def|def|class)\s/.exec(text);
+    if (scopeHeader) {
+      scopeIndentLimit = Math.min(scopeIndentLimit, indent + 1);
+    }
   }
   return candidates;
 }
