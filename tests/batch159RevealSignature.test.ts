@@ -102,6 +102,21 @@ describe('KBEngineSignatureHelpProvider(def 签名帮助)', () => {
       }
     }) as unknown as EntityMappingManager;
 
+  it('丢弃查询期间文档版本发生变化的签名结果', async () => {
+    let release!: (value: unknown) => void;
+    const lookup = new Promise(resolve => { release = resolve; });
+    const provider = new KBEngineSignatureHelpProvider({
+      resolveMethodDefinition: () => lookup
+    } as unknown as EntityMappingManager);
+    const doc = pyDoc('self.cell.setHP(1)\n');
+    let version = 1;
+    Object.defineProperty(doc, 'version', { get: () => version });
+    const pending = provider.provideSignatureHelp(doc, new Position(0, 16));
+    version += 1;
+    release({ defFile: '/tmp/ws/Avatar.def', line: 1, section: 'CellMethods', declaredArgs: ['UINT32'] });
+    expect(await pending).toBeNull();
+  });
+
   it('shows the def signature with the active argument highlighted', async () => {
     const calls: Array<{ file: string; method: string; section?: string }> = [];
     const provider = new KBEngineSignatureHelpProvider(

@@ -1128,12 +1128,14 @@ export class KBEngineSignatureHelpProvider implements vscode.SignatureHelpProvid
       return null;
     }
     const featureConfig = getLanguageFeatureConfig();
-    return raceWithBudget(
+    const version = document.version;
+    const result = await raceWithBudget(
       'signatureHelp:def-method',
       this.resolveSignatureHelp(this.entityMappingManager, document, call),
       featureConfig.hoverAsyncBudgetMs,
       token
     );
+    return document.version === version ? result : null;
   }
 
   private async resolveSignatureHelp(
