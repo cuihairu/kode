@@ -695,7 +695,7 @@ export function activate(context: vscode.ExtensionContext) {
     pythonDocumentSelector,
     eventCodeLensProviderImpl
   );
-  context.subscriptions.push(eventCodeLensProvider);
+  context.subscriptions.push(eventCodeLensProvider, eventCodeLensProviderImpl);
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
   // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开

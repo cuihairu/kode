@@ -105,6 +105,7 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
 
 export class EventCodeLensProvider implements vscode.CodeLensProvider {
   private ownIndex?: WorkspaceIndex;
+  private disposed = false;
 
   /** index 由扩展宿主注入（共享同一份缓存）；测试不传时自持一份全新实例。 */
   constructor(private readonly sharedIndex?: WorkspaceIndex) {}
@@ -118,8 +119,14 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
     this.onDidChangeCodeLensesEmitter.fire();
   }
 
+  dispose(): void {
+    this.disposed = true;
+    this.ownIndex?.dispose();
+    this.onDidChangeCodeLensesEmitter.dispose();
+  }
+
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
-    if (!vscode.workspace.getConfiguration('kbengine').get<boolean>('codeLens.eventCallbacks', true)) {
+    if (this.disposed || !vscode.workspace.getConfiguration('kbengine').get<boolean>('codeLens.eventCallbacks', true)) {
       return [];
     }
     const text = document.getText();
@@ -128,6 +135,7 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
     // 本地索引缓存：不再每次全仓读盘扫描（用户令 2026-10-20，跳转/卡顿同治）。
     const index = this.sharedIndex ?? (this.ownIndex ??= new WorkspaceIndex());
     const all = await index.allEventCalls();
+    if (this.disposed) return [];
     const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)];
     const lenses: vscode.CodeLens[] = [];
     const eventsByCallback = new Map<string, string[]>();

@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { WorkspaceIndex } from '../src/workspaceIndex';
+import { EventCodeLensProvider } from '../src/eventApi';
 import { makeTextDocument } from './helpers/vscodeStub';
 
 it('并发事件查询等待同一次首扫完成', async () => {
@@ -47,5 +48,55 @@ it('首扫发现失败后，下次事件查询可重新初始化', async () => {
   } finally {
     index.dispose();
     vscode.workspace.findFiles = originalFind;
+  }
+});
+
+it('销毁后在途文件读取不能重新发布事件索引或创建 watcher', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalOpen = vscode.workspace.openTextDocument;
+  const uri = vscode.Uri.file('/ws/listener.py');
+  let release!: (doc: vscode.TextDocument) => void;
+  const reading = new Promise<vscode.TextDocument>(resolve => { release = resolve; });
+  vscode.workspace.findFiles = async () => [uri];
+  vscode.workspace.openTextDocument = () => reading;
+  const watcher = vi.spyOn(vscode.workspace, 'createFileSystemWatcher');
+  const index = new WorkspaceIndex();
+  try {
+    const query = index.allEventCalls();
+    await Promise.resolve();
+    index.dispose();
+    release(makeTextDocument('self.addEvent(EV, self.on_ev)', {
+      fileName: uri.fsPath, languageId: 'python'
+    }) as vscode.TextDocument);
+    expect(await query).toEqual([]);
+    expect(await index.allEventCalls()).toEqual([]);
+    expect(watcher).not.toHaveBeenCalled();
+  } finally {
+    index.dispose();
+    watcher.mockRestore();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.openTextDocument = originalOpen;
+  }
+});
+
+it('事件 provider 销毁时释放自己的 watcher', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalWatcher = vscode.workspace.createFileSystemWatcher;
+  const dispose = vi.fn();
+  const listen = () => ({ dispose: () => {} });
+  vscode.workspace.findFiles = async () => [];
+  vscode.workspace.createFileSystemWatcher = () => ({
+    onDidCreate: listen, onDidChange: listen, onDidDelete: listen, dispose
+  }) as unknown as vscode.FileSystemWatcher;
+  const provider = new EventCodeLensProvider();
+  try {
+    const doc = makeTextDocument('self.emitEvent(EV)', { fileName: '/ws/a.py', languageId: 'python' }) as vscode.TextDocument;
+    await provider.provideCodeLenses(doc);
+    provider.dispose();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(await provider.provideCodeLenses(doc)).toEqual([]);
+  } finally {
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.createFileSystemWatcher = originalWatcher;
   }
 });

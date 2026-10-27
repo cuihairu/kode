@@ -25,12 +25,13 @@ export class WorkspaceIndex {
   private watchers: vscode.Disposable[] = [];
   private started = false;
   private starting?: Promise<void>;
+  private disposed = false;
 
   constructor(private readonly pyGlob = '**/*.py') {}
 
   /** 首次使用时建全量索引并挂 watcher（幂等）。 */
   async ensureStarted(): Promise<void> {
-    if (this.started) return;
+    if (this.started || this.disposed) return;
     const starting = this.starting ??= this.startIndex();
     try {
       await starting;
@@ -42,7 +43,9 @@ export class WorkspaceIndex {
 
   private async startIndex(): Promise<void> {
     const files = await vscode.workspace.findFiles(this.pyGlob, '**/{.git,node_modules}/**');
+    if (this.disposed) return;
     await Promise.all(files.map(uri => this.indexFile(uri)));
+    if (this.disposed) return;
     const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
     watcher.onDidCreate(uri => { void this.indexFile(uri); });
     watcher.onDidChange(uri => { void this.indexFile(uri); });
@@ -52,6 +55,7 @@ export class WorkspaceIndex {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const w of this.watchers) w.dispose();
     this.watchers = [];
     this.cache.clear();
@@ -59,11 +63,13 @@ export class WorkspaceIndex {
 
   /** 单文件建/重建索引；并发去重（同一文件不重复读）。 */
   private indexFile(uri: vscode.Uri): Promise<IndexedFile | null> {
+    if (this.disposed) return Promise.resolve(null);
     const inflight = this.building.get(uri.fsPath);
     if (inflight) return inflight;
     const task = (async () => {
       try {
         const doc = await vscode.workspace.openTextDocument(uri);
+        if (this.disposed) return null;
         const text = doc.getText();
         const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)].map(m => ({
           name: m[1],
@@ -85,6 +91,7 @@ export class WorkspaceIndex {
 
   /** 保存时由编辑器路径直接刷新（免读盘）。 */
   noteSaved(document: vscode.TextDocument): void {
+    if (this.disposed) return;
     if (!document.uri.fsPath.endsWith('.py')) return;
     const text = document.getText();
     const calls = findEventCalls(text);
