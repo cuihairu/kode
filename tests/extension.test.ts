@@ -117,8 +117,9 @@ describe('extension activate 装配', () => {
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关)
     expect(languagesRegistry.codeLensRegistrations).toHaveLength(7);
     // 批154:python 侧 types.xml 数据类型 inlay hints 一份注册;内建属性行内
-    // `: <type>` inlay 另一份独立注册(2026-10-21 形态升级单,独立开关)
-    expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(2);
+    // `: <type>` inlay 另一份独立注册(2026-10-21 形态升级单,独立开关);
+    // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册
+    expect(languagesRegistry.inlayHintsRegistrations).toHaveLength(3);
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存;
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([

@@ -25,6 +25,7 @@
 - **CodeLens：属性访问反向跳转** —— `self.<属性>` 访问行回链 def 声明，附类型/可见域/持久化信息 ——（证据：package.json#configuration `kbengine.codeLens.property`；todo.md:21；src/propertyCodeLens.ts）
 - **CodeLens：types.xml 落库镜链** —— 类型声明行「落库到表 X」镜链带引用反扫，超 10 处折叠为计数镜 ——（证据：package.json#configuration `kbengine.codeLens.typesXml`；todo.md:20；src/languageProviders.ts `TypesXmlCodeLensProvider`）
 - **Inlay hint：def 声明数据类型** —— `self.<属性>` 访问处内联显示 types.xml 数据类型;`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`argN: 类型`)——（证据：package.json#configuration `kbengine.inlayHints.typeData`；todo.md:25；src/typeInlayHints.ts）
+- **Inlay hint：def 形参类型(定义点)** —— entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 的未标注形参后内联 def 声明的 `<Arg>` 类型,声明 `<ReturnType>` 时闭括号后内联 `-> 类型` ——（证据：package.json#configuration `kbengine.inlayHints.defParams`；src/defParamInlayHints.ts）
 - **entities.xml 校验** —— 同名重复实体落 warning（引擎按已有模块静默合并）+ Utype 清单序号悬停 ——（证据：todo.md:33；src/entitiesXmlAnalysis.ts）
 - **跨文件继承检查** —— 继承链跨文件同名检查；Interfaces 装载语义对齐引擎 ——（证据：todo.md:65、todo.md:66；src/defAnalyzer.ts `collectInheritedNames`）
 - **Python 导航（F12 / 重命名 / 调用层级）** —— owner-aware 导航，C3-MRO 与 mixin 组合根解析，`kbengine.python.enableMroJump` 开关 ——（证据：package.json#configuration `kbengine.python.enableMroJump`；src/languageProviders.ts、src/pythonClassIndex.ts、src/entityMapping.ts）
@@ -111,6 +112,7 @@
 | `kbengine.codeLens.property` | `true` | `self.<属性>` 访问处属性 CodeLens（回跳 def） |
 | `kbengine.codeLens.typesXml` | `true` | types.xml 类型声明行落库镜链 CodeLens（引用反扫） |
 | `kbengine.inlayHints.typeData` | `true` | `self.<属性>` 访问处内联显示 def 声明的 types.xml 数据类型;`self.base/cell/client` RPC 调用点内联显示 def 已声明的形参类型 |
+| `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | entities.xml 默认路径 |
 | `kbengine.binPath` | `"${workspaceFolder}/../kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR} |

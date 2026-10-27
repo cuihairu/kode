@@ -47,10 +47,11 @@ describe('package.json 开关注册(默认值断言)', () => {
     'kbengine.python.entityStubMethods',
     'kbengine.python.builtinTypeInlayHints',
     'kbengine.types.aliasDiscovery',
-    'kbengine.receiverNoneDiagnostics'
+    'kbengine.receiverNoneDiagnostics',
+    'kbengine.inlayHints.defParams'
   ];
 
-  it('七枚键逐项注册:boolean、default true、description 标明默认开', () => {
+  it('八枚键逐项注册:boolean、default true、description 标明默认开', () => {
     for (const key of expectedKeys) {
       const entry = properties[key];
       expect(entry, key).toBeDefined();

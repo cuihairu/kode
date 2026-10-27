@@ -66,6 +66,8 @@ export interface EntityMethodDefinitionLocation {
   identity: DefinitionSymbolIdentity;
   /** def 声明的参数类型序列(<Arg> 直文本,批123 解析);空数组=未声明,不作闸门 */
   declaredArgs?: string[];
+  /** def 声明的 <ReturnType> 直文本(任务2 2026-10-27:定义点 -> inlay);null/缺 = 未声明 */
+  declaredReturnType?: string | null;
 }
 
 export interface EntityPropertyDefinitionLocation {
@@ -786,6 +788,7 @@ export class EntityMappingManager {
         exposed: method.exposed,
         owner: method.owner,
         declaredArgs: method.args,
+        declaredReturnType: method.returnType,
         identity: {
           ownerKind: method.owner.kind,
           ownerName: method.owner.name,
@@ -2286,6 +2289,7 @@ export class EntityMappingManager {
         section: method.section,
         exposed: method.exposed,
         declaredArgs: method.declaredArgs,
+        declaredReturnType: method.declaredReturnType,
         identity: method.identity
       });
       methods[method.identity.symbolName] = list;

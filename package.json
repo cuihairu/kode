@@ -744,6 +744,11 @@
           "default": true,
           "description": "Python 脚本 self.<属性> 访问处以 inlay hint 内联显示 def 声明的 types.xml 数据类型;self.base/cell/client RPC 调用点每实参后内联显示 def 已声明的形参类型(argN: 类型)"
         },
+        "kbengine.inlayHints.defParams": {
+          "type": "boolean",
+          "default": true,
+          "description": "Entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 定义点,未手写标注的形参后内联显示 def 声明的 <Arg> 类型,声明 <ReturnType> 时闭括号后内联 -> 提示(default: enabled);关闭后定义点零 inlay"
+        },
         "kbengine.entityDefsPath": {
           "type": "string",
           "default": "scripts/entity_defs",

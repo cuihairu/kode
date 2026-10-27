@@ -90,6 +90,8 @@ export interface DefinitionMethod {
   exposed: boolean;
   /** <Utype> 子值(批123);null = 未声明。引擎口径:≤0 视同未设置,>65535 溢出报错 */
   utype: number | null;
+  /** <ReturnType> 子值直文本(用户令 2026-10-27 任务2:定义点 inlay 的 -> 提示);null = 未声明 */
+  returnType: string | null;
   owner: DefinitionOwnerRef;
   source: DefinitionMemberSource;
 }
@@ -688,6 +690,7 @@ function parseMethods(
       }
 
       const utypeText = getScalarChildValue(methodNode, 'Utype');
+      const returnTypeText = getScalarChildValue(methodNode, 'ReturnType');
       methods.push({
         name: methodNode.name,
         line: getLineNumberAt(document, methodNode.tagStart),
@@ -696,6 +699,7 @@ function parseMethods(
         argTypes,
         exposed: hasTruthyChildTag(methodNode, 'Exposed'),
         utype: parseUtypeValue(utypeText),
+        returnType: returnTypeText ? returnTypeText.trim() || null : null,
         owner,
         source: createSource('local')
       });

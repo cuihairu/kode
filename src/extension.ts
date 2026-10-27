@@ -128,6 +128,7 @@ import {
   validateEntitiesXmlDocument
 } from './languageProviders';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
+import { DefParamInlayHintsProvider } from './defParamInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
@@ -738,6 +739,16 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineBuiltinTypeInlayHintsProvider(entityMappingManager)
   );
   context.subscriptions.push(builtinTypeInlayHintsProvider);
+
+  // def 函数形参 inlay(定义点,用户令 2026-10-27 任务2):entity 脚本区块内
+  // `def foo(self, a, b):` 未标注形参后渲染 def <Arg> 类型,方向反转到定义点;
+  // 独立开关 kbengine.inlayHints.defParams(默认开),provider 现读配置
+  // 下一次渲染即生效,不需要配置监听 fire
+  const defParamInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
+    pythonDocumentSelector,
+    new DefParamInlayHintsProvider(entityMappingManager)
+  );
+  context.subscriptions.push(defParamInlayHintsProvider);
 
   const callHierarchyProvider = vscode.languages.registerCallHierarchyProvider(
     [
