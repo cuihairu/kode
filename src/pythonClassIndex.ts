@@ -150,6 +150,11 @@ export type PythonIndexVersions = Record<PythonIndexVersionKey, number>;
 /** 组合根派生物在依赖图里的节点键(PR4 SemanticDependencyGraph) */
 export const COMPOSITION_ROOTS_NODE = 'python:composition-roots';
 
+/** 全扫分块大小(对齐 PR1 基线的 16 路并发读;机械盘更高并发反而增加寻道) */
+const SCAN_CHUNK_SIZE = 16;
+/** 分块失败遗留文件的待补解析重试上限(永久不可读文件不无限重试) */
+const MAX_SCAN_RETRY_ATTEMPTS = 3;
+
 export class PythonClassIndex {
   private fileCache = new Map<string, { version: number; parsed: ParsedPythonFile }>();
   private byName = new Map<string, PythonClassDef[]>();
@@ -176,6 +181,14 @@ export class PythonClassIndex {
   private discoveredFiles: vscode.Uri[] | null = null;
   /** discoveredFiles 所属扫描代(换代后强制重新发现) */
   private discoveredGeneration = -1;
+  /**
+   * 全扫中被取消/失败的分块遗留文件 → 已尝试次数。分块失败不再静默吞掉后
+   * 照旧标记扫描代完成(那会让这批文件从未解析就永久缺席且无后续重试);
+   * 后续查询按此表定向补解析,只重跑这几个文件,不全仓重扫。
+   */
+  private pendingScanRetries = new Map<string, number>();
+  /** 待补重试是否已有分块在队列里(防每次查询重复入队) */
+  private scanRetryInFlight = false;
   /** 组合根来源内容缓存(mtime+size 指纹;未变更文件重派生不再重读) */
   private rootsContentCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
   /** 显式派生版本轴(④):断言「哪类变更动了哪层」 */
@@ -730,6 +743,8 @@ export class PythonClassIndex {
 
   private ensureScanned(): Promise<void> {
     if (this.scanCompletedGeneration === this.scanGeneration) {
+      // 扫描代已完成,但可能存在失败分块遗留的待补文件:定向重试(不全仓重扫)
+      this.schedulePendingScanRetry();
       return Promise.resolve();
     }
     if (!this.scanPromise) {
@@ -749,6 +764,41 @@ export class PythonClassIndex {
     return this.scanPromise;
   }
 
+  /**
+   * 分块取消/失败遗留文件的定向补解析:单个后台小块,只跑未入索引的文件。
+   * 重试有界(MAX_SCAN_RETRY_ATTEMPTS 次),永久不可读的文件不无限重试;
+   * 整块再被取消则保持登记,下一次查询再试。
+   */
+  private schedulePendingScanRetry(): void {
+    if (this.scanRetryInFlight || this.pendingScanRetries.size === 0) { return; }
+    const files = [...this.pendingScanRetries.keys()].filter(file => !this.fileCache.has(file));
+    if (files.length === 0) { return; }
+    this.scanRetryInFlight = true;
+    this.scheduler.enqueue({
+      kind: 'full-reindex',
+      priority: IndexTaskPriority.BackgroundFull,
+      run: async () => { await Promise.all(files.map(file => this.loadFile(file, -1))); }
+    }).wait.then(
+      () => {
+        for (const file of files) {
+          if (this.fileCache.has(file)) {
+            this.pendingScanRetries.delete(file);
+            continue;
+          }
+          const attempts = (this.pendingScanRetries.get(file) ?? 1) + 1;
+          if (attempts >= MAX_SCAN_RETRY_ATTEMPTS) {
+            this.pendingScanRetries.delete(file);
+            jumpLog('info', () =>
+              `py 待补解析重试 ${MAX_SCAN_RETRY_ATTEMPTS} 次仍未成功,放弃: ${file}`);
+          } else {
+            this.pendingScanRetries.set(file, attempts);
+          }
+        }
+      },
+      () => undefined // 整块被取消:文件从未解析,保持登记,下一次查询再试
+    ).finally(() => { this.scanRetryInFlight = false; });
+  }
+
   /** 首扫协调:调度器 keyed 发现任务 → 分块后台解析任务(任务间可插队交互任务) */
   private async runScheduledScan(scanGeneration: number): Promise<void> {
     const scanMetrics = startLanguageServiceOperation('python-index-scan', {
@@ -764,11 +814,11 @@ export class PythonClassIndex {
       scanMetrics.countFileParse(files.length);
       // 分块入队:每块一个后台任务,块与块之间调度器可插队交互任务
       // (RequestLocal 单文件解析/当前文件更新),全量扫描不再独占主线程。
-      // 块大小对齐 PR1 基线的 16 路并发读(机械盘上更高并发反而增加寻道)。
-      const CHUNK = 16;
+      const batches: string[][] = [];
       const handles = [];
-      for (let offset = 0; offset < files.length; offset += CHUNK) {
-        const batch = files.slice(offset, offset + CHUNK).map(uri => uri.fsPath);
+      for (let offset = 0; offset < files.length; offset += SCAN_CHUNK_SIZE) {
+        const batch = files.slice(offset, offset + SCAN_CHUNK_SIZE).map(uri => uri.fsPath);
+        batches.push(batch);
         handles.push(this.scheduler.enqueue({
           kind: 'full-reindex',
           priority: IndexTaskPriority.BackgroundFull,
@@ -779,10 +829,26 @@ export class PythonClassIndex {
           }
         }));
       }
-      await Promise.all(handles.map(handle => handle.wait.catch(() => undefined)));
+      // 逐分块收终态:取消/失败的分块不再把拒绝逐一吞掉后照旧标记该代完成
+      // ——那会让这批文件(每块最多 SCAN_CHUNK_SIZE 个)从未解析就永久缺席且无后续重试。
+      const outcomes = await Promise.all(
+        handles.map(handle => handle.wait.then(() => 'completed', () => 'failed' as const))
+      );
       if (scanGeneration !== this.scanGeneration) {
         scanMetrics.end('cancelled');
         return;
+      }
+      const failedFiles = batches.flatMap((batch, index) =>
+        outcomes[index] === 'completed' ? [] : batch);
+      if (failedFiles.length > 0) {
+        for (const file of failedFiles) {
+          if (!this.fileCache.has(file)) { this.pendingScanRetries.set(file, 1); }
+        }
+        jumpLog('info', () =>
+          `py 全扫有 ${failedFiles.length} 个文件未随分块解析,已登记待补(后续查询定向重试)`);
+      } else {
+        // 本轮无失败分块:上一代遗留的待补文件已被本轮全量覆盖,清表
+        this.pendingScanRetries.clear();
       }
       jumpLog('info', () =>
         `py 全仓索引完成 ${files.length} 个文件 → 类 ${this.byName.size} 个,${scanTimer()}ms(调度器分块后台执行)`);

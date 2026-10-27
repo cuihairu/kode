@@ -276,6 +276,11 @@ describe('PR5 ⑤ 删除/重命名/基类变更后旧索引项移除', () => {
 });
 
 describe('PR5 ① 首扫接管面(调度器 keyed 发现 + 分块后台解析)', () => {
+  afterEach(() => {
+    stubWorkspace.findFiles = undefined as unknown as typeof stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [];
+  });
+
   it('注入共享调度器:发现任务 keyed 完成,分块任务计入 completed', async () => {
     const { dir, paths, cleanup } = makeRoot(MIXIN_FILES);
     pointWorkspaceAt(dir);
@@ -289,6 +294,29 @@ describe('PR5 ① 首扫接管面(调度器 keyed 发现 + 分块后台解析)',
         .toBe('completed');
       expect(status.completed, '分块解析任务计入调度器完成数').toBeGreaterThan(0);
       expect(status.failed).toBe(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('分块失败不被吞掉:失败文件登记待补,后续查询定向重试补齐(不永久缺席)', async () => {
+    const { dir, paths, cleanup } = makeRoot(MIXIN_FILES);
+    pointWorkspaceAt(dir);
+    routePy([paths['a.py'], paths['b.py']]);
+    try {
+      const scheduler = new FailNextChunkScheduler();
+      scheduler.failNextChunk();
+      const index = new PythonClassIndex(scheduler);
+      await index.waitForInitialScan();
+      expect(scheduler.failedChunks, '首个分块按注入失败').toBe(1);
+      // 修复前:分块拒绝被逐一吞掉仍标记该代完成,失败文件永久缺席且无重试
+      expect(await index.findClassesByName('Beta'), '失败分块的文件此刻尚未入索引')
+        .toHaveLength(0);
+      // 上一行查询已触发定向补解析;等重试分块真实执行完毕
+      await scheduler.waitForIdle();
+      expect(await index.findClassesByName('Beta'), '后续查询经待补重试补齐失败分块')
+        .toHaveLength(1);
+      expect(scheduler.failedChunks, '重试分块不再失败').toBe(1);
     } finally {
       cleanup();
     }
@@ -473,6 +501,46 @@ class GatedBackgroundScheduler extends IndexScheduler {
   private record(kind: IndexTaskKind): void {
     this.executionOrder.push(kind);
     this.executedByKind.set(kind, (this.executedByKind.get(kind) ?? 0) + 1);
+  }
+}
+
+/**
+ * 观测面:让下一个 full-reindex 分块按注入失败(run 抛错),其余任务原样透传。
+ * 用于锁定「分块拒绝不再被逐一吞掉后照旧标记扫描代完成」——失败分块的文件
+ * 必须由后续查询定向补解析,而不是从未解析就永久缺席。
+ */
+class FailNextChunkScheduler extends IndexScheduler {
+  private failNext = false;
+  /** 已按注入失败执行的 full-reindex 分块数 */
+  failedChunks = 0;
+
+  failNextChunk(): void {
+    this.failNext = true;
+  }
+
+  override enqueue(spec: IndexTaskSpec): IndexTaskHandle {
+    if (spec.kind !== 'full-reindex' || !this.failNext) {
+      return super.enqueue(spec);
+    }
+    this.failNext = false;
+    this.failedChunks += 1;
+    return super.enqueue({
+      ...spec,
+      run: async () => { throw new Error('injected chunk crash'); }
+    });
+  }
+
+  /** 等队列排空(重试分块真实执行完);不轮询则断言会抢在补解析前面 */
+  async waitForIdle(timeoutMs = 2000): Promise<void> {
+    const start = Date.now();
+    for (;;) {
+      const status = this.getStatus();
+      if (status.queued === 0 && status.running === null) { return; }
+      if (Date.now() - start > timeoutMs) {
+        throw new Error('scheduler did not go idle');
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
   }
 }
 

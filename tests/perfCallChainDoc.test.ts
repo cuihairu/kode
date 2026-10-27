@@ -52,9 +52,9 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/diagnosticScheduler.ts', 181, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 167, 'getDocumentLines'],
-  ['src/pythonClassIndex.ts', 539, 'ensureCompositionRoots'],
-  ['src/pythonClassIndex.ts', 954, 'resolveClassBase'],
-  ['src/pythonClassIndex.ts', 1062, '①② 两段查询']
+  ['src/pythonClassIndex.ts', 552, 'ensureCompositionRoots'],
+  ['src/pythonClassIndex.ts', 1020, 'resolveClassBase'],
+  ['src/pythonClassIndex.ts', 1128, '①② 两段查询']
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {
