@@ -39,6 +39,7 @@ import { joinWorkspacePath } from './workspacePath';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { PY_SCAN_EXCLUDED_DIRS } from './pythonScanRules';
 import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticIndex';
+import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
 import type { EntityComponentFace } from './entityBuiltinProperties';
 
@@ -232,6 +233,12 @@ export class EntityMappingManager {
   >();
   private defParseCacheHits = 0;
   private defParseCacheMisses = 0;
+  /**
+   * IDE-SNP-008:共享文件事件合并器(实例自持,消费索引间互不串线)。
+   * watcher 三件套的原始通知先入此合并,同 URI 同 kind 的重复通知(同一
+   * 保存多 watcher/多段通知)只应用一次;窗口内 kind 变化补投终态。
+   */
+  private readonly fileEventMerger = createSharedFileEventMerger();
   /** 工作区门控(书 PR-002):deferStartup=true 时构造零副作用,待 ensureStartup */
   private startupStarted = false;
   /** deferStartup 模式下首扫完成句柄的resolve(ensureStartup 时接线) */
@@ -303,6 +310,11 @@ export class EntityMappingManager {
     // 外部资产根三件套(IDE-IDX-014):随工作区 watcher 之后挂,创建序仍以
     // python watcher 收尾(外部根存在时最后一个是外部 python watcher)
     this.refreshExternalRootWatchers();
+    // IDE-SNP-008:合并器订阅一次性接线(watcher 组重建/外部根切换不重复
+    // 订阅);dispose 时随合并器一并退订。
+    this.context.subscriptions.push({ dispose: this.fileEventMerger.subscribe(event => {
+      this.handleSharedFileEvent(event);
+    }) });
   }
 
   /**
@@ -957,17 +969,17 @@ export class EntityMappingManager {
     }
   }
 
-  /** 挂单个 python watcher(工作区根与外部资产根共用) */
+  /** 挂单个 python watcher(工作区根与外部资产根共用;事件经合并器去重) */
   private attachPythonWatcher(pattern: string): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     watcher.onDidChange(uri => {
-      this.handlePythonFileChanged(uri.fsPath);
+      this.fileEventMerger.emit(uri.fsPath, 'change');
     });
     watcher.onDidCreate(uri => {
-      this.handlePythonFileChanged(uri.fsPath);
+      this.fileEventMerger.emit(uri.fsPath, 'create');
     });
     watcher.onDidDelete(uri => {
-      this.handlePythonFileChanged(uri.fsPath);
+      this.fileEventMerger.emit(uri.fsPath, 'delete');
     });
     this.context.subscriptions.push(watcher);
     return watcher;
@@ -980,14 +992,14 @@ export class EntityMappingManager {
    */
   private attachTypeRegistryWatcher(pattern: string): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    const notify = (uri: vscode.Uri): void => {
+    const notify = (uri: vscode.Uri, kind: 'create' | 'change' | 'delete'): void => {
       if (isTypeRegistryFile(uri.fsPath)) {
-        getSemanticIndex().notifySemanticFilesChanged([uri.fsPath]);
+        this.fileEventMerger.emit(uri.fsPath, kind);
       }
     };
-    watcher.onDidChange(notify);
-    watcher.onDidCreate(notify);
-    watcher.onDidDelete(notify);
+    watcher.onDidChange(uri => { notify(uri, 'change'); });
+    watcher.onDidCreate(uri => { notify(uri, 'create'); });
+    watcher.onDidDelete(uri => { notify(uri, 'delete'); });
     this.context.subscriptions.push(watcher);
     return watcher;
   }
@@ -1000,11 +1012,28 @@ export class EntityMappingManager {
    */
   private attachDefWatcher(pattern: string): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    watcher.onDidChange(uri => this.handleDefFileChanged(uri.fsPath, 'change'));
-    watcher.onDidCreate(uri => this.handleDefFileChanged(uri.fsPath, 'create'));
-    watcher.onDidDelete(uri => this.handleDefFileChanged(uri.fsPath, 'delete'));
+    watcher.onDidChange(uri => this.fileEventMerger.emit(uri.fsPath, 'change'));
+    watcher.onDidCreate(uri => this.fileEventMerger.emit(uri.fsPath, 'create'));
+    watcher.onDidDelete(uri => this.fileEventMerger.emit(uri.fsPath, 'delete'));
     this.context.subscriptions.push(watcher);
     return watcher;
+  }
+
+  /**
+   * IDE-SNP-008:合并后事件的路由——按文件类别分派到原有三处理面
+   * (types/alias → 注册表作废;.def → 定向失效;.py → 归属实体重扫),
+   * 与直连 watcher 时的行为一致,只是同 URI 重复通知只到达一次。
+   */
+  private handleSharedFileEvent(event: SharedFileEvent): void {
+    if (isTypeRegistryFile(event.fsPath)) {
+      getSemanticIndex().notifySemanticFilesChanged([event.fsPath]);
+      return;
+    }
+    if (event.fsPath.toLowerCase().endsWith('.def')) {
+      this.handleDefFileChanged(event.fsPath, event.kind);
+      return;
+    }
+    this.handlePythonFileChanged(event.fsPath);
   }
 
   private watchPythonFiles(): void {
@@ -2055,6 +2084,7 @@ export class EntityMappingManager {
       watcher.dispose();
     }
     this.externalRootWatchers = [];
+    this.fileEventMerger.dispose();
     this.scheduler.dispose();
   }
 

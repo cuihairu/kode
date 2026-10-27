@@ -20,7 +20,7 @@ const mermaidBlocks: string[] = [...report.matchAll(/```mermaid\n([\s\S]*?)```/g
   match => match[1].trim()
 );
 
-const NODE_LINE = /^([A-Za-z][A-Za-z0-9_]*)([\[{(])(".+?)([\]})])\s*$/;
+const NODE_LINE = /^([A-Za-z][A-Za-z0-9_]*)([[{(])(".+?)([\]})])\s*$/;
 const EDGE_OPERATORS = ['-->', '-.->'];
 const CITATION = /([A-Za-z][A-Za-z0-9_.-]*\.ts):(\d{1,5})\b/g;
 
@@ -29,15 +29,15 @@ const sourceLines = (relative: string): string[] =>
 
 /** §7 四条链的承重锚点:行号 → 该行必须仍含所引符号(迁移即红) */
 const ANCHORS: Array<[string, number, string]> = [
-  ['src/extension.ts', 539, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 571, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 617, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 464, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 804, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 307, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 320, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 854, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 879, 'flushQueued()'],
+  ['src/extension.ts', 540, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 572, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 618, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 465, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 819, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 308, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 321, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 869, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 894, 'flushQueued()'],
   ['src/languageProviders.ts', 655, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 710, 'provideHover('],
   ['src/languageProviders.ts', 1222, 'shadowCompareDefinition'],

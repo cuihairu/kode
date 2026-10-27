@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
+import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { setJumpLogEnabled } from './navigationLog';
 import {
@@ -638,6 +639,19 @@ export function activate(context: vscode.ExtensionContext) {
   let pythonIndexEditFlushTimer: NodeJS.Timeout | undefined;
   let pendingPythonIndexEditCount = 0;
   let pythonIndexWatchers: vscode.Disposable[] = [];
+  // IDE-SNP-008:watcher 原始通知先入本索引的合并器(同 URI 同 kind 的重复
+  // 通知只应用一次;窗口内 kind 变化补投终态),pythonClassIndex 经订阅收单。
+  const pythonIndexFileEvents = createSharedFileEventMerger();
+  context.subscriptions.push(
+    { dispose: () => pythonIndexFileEvents.dispose() },
+    { dispose: pythonIndexFileEvents.subscribe(event => {
+      if (event.kind === 'delete') {
+        pythonClassIndex.invalidate(event.fsPath);
+        return;
+      }
+      void pythonClassIndex.onFileChanged(event.fsPath);
+    }) }
+  );
   const watchPythonIndex = () => {
     pythonIndexWatchers.forEach(watcher => watcher.dispose());
     pythonIndexWatchers = [];
@@ -647,9 +661,10 @@ export function activate(context: vscode.ExtensionContext) {
     ];
     for (const pattern of patterns) {
       const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-      const invalidate = (uri: vscode.Uri) => pythonClassIndex.invalidate(uri.fsPath);
-      pythonIndexWatchers.push(watcher, watcher.onDidCreate(uri => { void pythonClassIndex.onFileChanged(uri.fsPath); }),
-        watcher.onDidChange(uri => { void pythonClassIndex.onFileChanged(uri.fsPath); }), watcher.onDidDelete(invalidate));
+      pythonIndexWatchers.push(watcher,
+        watcher.onDidCreate(uri => { pythonIndexFileEvents.emit(uri.fsPath, 'create'); }),
+        watcher.onDidChange(uri => { pythonIndexFileEvents.emit(uri.fsPath, 'change'); }),
+        watcher.onDidDelete(uri => { pythonIndexFileEvents.emit(uri.fsPath, 'delete'); }));
     }
   };
   watchPythonIndex();
