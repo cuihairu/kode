@@ -67,7 +67,7 @@
 - [x] A3-3 优先级队列：当前文件轻量解析 > 请求所需局部索引 > 依赖更新 > 后台全量 > 非交互分析，顺序断言（2aca694；IndexTaskPriority、isInteractivePriority:42）
 - [x] A3-4 失败恢复：首扫被杀后再次请求可重新入队并完成，不永久 pending（2aca694；tests/indexScheduler.test.ts:252-262 杀掉首轮扫描模拟、:97 recoveries 计数）
 - [x] A3-5 EntityMappingManager 首扫迁入调度器：initialScan 走 scheduler，行为等价（2aca694；src/entityMapping.ts:186-199 scheduler 注入、entity-mapping-scan 打点）
-- [ ] A3-6 **2026-10-26 重开，见 P0-2a/P0-3**：历史提交 2aca694 实现优先队列与冷却窗口，但运行中的整轮首扫仍阻塞交互任务，同步扫描仍占用宿主；“后台让路、不抢主线程”尚未成立（原证据：docs/perf/2026-pr3-indexscheduler.md）。
+- [x] A3-6 **2026-10-26 重开，见 P0-2a/P0-3**：历史提交 2aca694 实现优先队列与冷却窗口，但运行中的整轮首扫仍阻塞交互任务，同步扫描仍占用宿主；“后台让路、不抢主线程”尚未成立（原证据：docs/perf/2026-pr3-indexscheduler.md）。（271327c 重验收关闭;重开三因逐一对照=①整轮首扫阻塞交互→P0-1b/2a 分块调度+批间 RequestLocal,门禁 tests/entityMappingDeferredStartup.test.ts:150(首扫批次间 RequestLocal 可执行)②同步扫描占宿主→P0-1a/3 同步遍历废除,门禁 tests/pythonIndexMaintenance.test.ts:19(bucketReads===2,000 线性锁)③超时被阻塞推迟→P0-4a 契约+门禁 tests/hoverBudget.test.ts:130;现场复核=事件循环 P99 裸面 33.2/Kode-only 31.1/联合 26.5ms 无抬高,突发 20 路墙钟 13.57ms 宿主 P99 无堆积,保存风暴后首跳 5.05ms;口径按 P0-4d 限定:契约+门禁锁定而非无条件宣称,单发尖峰 815ms 归因 Pylance 冷索引非 Kode）
 
 ### A4 PR4 · 统一语义查询（semanticIndex + dependencyGraph）
 - [x] A4-1 新建 src/semanticIndex.ts：实体-分面方法/属性-Python类-注册关系-类型映射-根作用域 统一承载（查询 API 不暴露内部遍历）
@@ -78,7 +78,7 @@
 - [x] A4-6 现有查找顺序取证：从测试提取当前命中顺序→固化为显式策略文档+测试（不改行为先锁）
 
 ### A5 PR5 · Python Definition 去全仓阻塞
-- [ ] A5-1 **2026-10-26 重开，见 P0-2b/2c**：d4fd634 已实现快照与定向加载，但 staging 仍等待全仓发现，未命中分支仍等待全量扫描；需覆盖全部交互等待路径后重新验收。
+- [x] A5-1 **2026-10-26 重开，见 P0-2b/2c**：d4fd634 已实现快照与定向加载，但 staging 仍等待全仓发现，未命中分支仍等待全量扫描；需覆盖全部交互等待路径后重新验收。（271327c 重验收关闭;重开两因=①staging 等全仓 discovery→P0-2b 492fc40 定向加载改已知路径+稳定候选,tests/pythonIndexMaintenance.test.ts:39 锁定 discovery 挂起时局部 import 仍解析②未命中分支等全量→P0-2c d4fd634 ensureScanned/ensureCompositionRoots/initialScan 有界预算放行,tests/entityMappingDeferredStartup.test.ts 锁定冷启动/未就绪分支;现场复核=未命中 hover/def P95 4.43/13.54ms(廉价,未等全量),冷首查 1189ms 有界非无限等待;口径按 P0-4d:服务层不等全量收尾成立,冷窗结果到达≈首扫时长如实单列,不以「不等」泛化）
 - [x] A5-2 组合根构建缓存：同批 XML/def 只读一次，mtime+size 指纹重派生零重读（d4fd634；src/pythonClassIndex.ts:685-700 python-composition-roots 打点；docs/perf/2026-final-report.md 验收#6）
 - [x] A5-3 PythonClassIndex 版本与失效：类/基类/方法/MRO/组合根显式版本+依赖图裁断失效，比较走稳定 classKey 非对象引用（d4fd634；SemanticDependencyGraph 接入、fullRebuild 恒 false；docs/perf/2026-pr5-unblocked-definition.md §4）
 - [x] A5-4 删除/重命名/基类变更后旧索引项移除，跳转不到已不存在位置（d4fd634；tests/pythonIndexPr5.test.ts:203-244；docs/perf/2026-final-report.md 场景6 旧项 0 命中）
@@ -98,7 +98,7 @@
 - [x] A7-4 未解决问题清单与下一轮建议：5 项未解决 + 6 项下一轮建议（e6e8bc7；docs/perf/2026-final-report.md §5-§6）
 
 ## B. 在途/止血项（结构性治理并行的即时修复，落地即勾）
-- [ ] B-1 **2026-10-26 重开，见 P0-3/P0-4**：用户仍报 hover loading 约半小时。历史 9c8daf7 修正路径大小写并添加 2.5s race/5s 首扫预算，1501-def 测试曾得冷 12–14ms/热 8–10ms；这些局部结果不能证明整体根治。同步阻塞会推迟定时器，超时也未取消底层工作，需真实编辑器重新验收。
+- [x] B-1 **2026-10-26 重开，见 P0-3/P0-4**：用户仍报 hover loading 约半小时。历史 9c8daf7 修正路径大小写并添加 2.5s race/5s 首扫预算，1501-def 测试曾得冷 12–14ms/热 8–10ms；这些局部结果不能证明整体根治。同步阻塞会推迟定时器，超时也未取消底层工作，需真实编辑器重新验收。（6ed81d7 真实编辑器验收关闭;hover 半小时挂起条件现场不复现=联合场稳态 P95 ≤5.05ms(目标 30 ✓)/暖机窗 71.29ms 单列且 Pylance-only 同窗 60.67ms 证主体非 Kode/突发 20 路 hover 墙钟 23.05ms 宿主 P99 无堆积/长会话 10 轮无劣化;同步阻塞推迟定时器→P0-4a timerDelay 契约+tests/hoverBudget.test.ts:130 门禁锁定;请求级取消公开命令面不可达以突发响应性+cancelled=0 近似如实标注;残留如实=暖机窗尾部与 Pylance 冷索引尖峰(815ms,非本仓可控)留账,错峰属新优化项;docs/perf/2026-10-28-p0-4c-joint-acceptance.md §3/§5/§6）
 - [x] B-2 函数着色 白→浅蓝：variable.function.call.python=#8BD5FF（11 主题），before/after scope 实证（179a290@分支；探针实测 get_color 白→#8BD5FF、关键字/def 不吃）
 - [x] B-3 RPC 形参 inlay：调用点 `形参名: 类型`（kbengine.inlayHints.typeData 开关；fa13ef9 已在 main；+6 测试）
 - [x] B-4 调用链图形化双 Tab：Graph(默认,esbuild 打包 mermaid@12 离线 5MB 入库)+Text 兜底，kbengine.python.callChainView，渲染失败回落（d5cff3d；16 例测试；CSP 零 CDN）
