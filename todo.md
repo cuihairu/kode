@@ -301,7 +301,7 @@
 来源：架构事实源、IDX-07；src/documentStore.ts、src/definitionSemantics.ts、src/databaseSchema.ts。
 - [x] IDE-SNP-001 [P1] 定义共享文件快照读取接口；验收：接口明确 rootId/URI/version/content，打开文档优先且不要求打开其他文档；前置：无。(125bc28;src/sharedFileSnapshot.ts readSharedFileSnapshot→SharedFileSnapshot{rootId,uri,fsPath,version,content,source},打开文档=缓冲区全文+编辑序号且绝不读盘,未打开=utf8 磁盘补载+mtimeMs,无 openTextDocument 依赖面,rootId 默认走 SemanticIndex.resolveRootIdForPath;tests/sharedFileSnapshot.test.ts 6 例含生产默认依赖集成,3258|7)
 - [x] IDE-SNP-002 [P1] 让语义 loader 读取共享快照；验收：未保存 def 的属性和方法声明可见，未打开文件仍可从磁盘补载；前置：IDE-SNP-001。(3618551;definitionSemantics loadLocal/loadResolvedAtInternal 两读点改 readSharedFileSnapshot,删 readTextFile+fs 导入;未保存 def 的属性/方法声明经缓冲区可见(三入口 loadLocal/loadResolved/loadResolvedAt),未打开磁盘补载/关闭脏文档恢复磁盘版本/缺失 null 口径不变;loader 生产面全部操作期新建无跨编辑缓存风险;3261|7)
-- [ ] IDE-SNP-003 [P1] 让数据库 schema 读取共享快照；验收：同一未保存 Persistent/Type 修改在 schema 与 def hover 中一致；前置：IDE-SNP-001。
+- [x] IDE-SNP-003 [P1] 让数据库 schema 读取共享快照；验收：同一未保存 Persistent/Type 修改在 schema 与 def hover 中一致；前置：IDE-SNP-001。(0551a13;databaseSchema 四读点(def 入口/types.xml 别名/两处继承遍历)改 readSharedFileSnapshot,删 readTextDocument;脏 def 的 Persistent 属性与脏 types.xml 的 ARRAY 别名均进 schema,与 SNP-002 语义 loader 同一快照口径,关闭脏文档两边一致回落磁盘;3263|7)
 - [ ] IDE-SNP-004 [P1] 让类型注册表接收脏 types.xml 更新；验收：未保存别名修改只使依赖该类型的结果失效；前置：IDE-SNP-001。
 - [ ] IDE-SNP-005 [P1] 关闭脏文档后恢复磁盘版本；验收：丢弃未保存修改并关闭后，下一次查询不再使用脏快照；前置：IDE-SNP-002, IDE-SNP-003。
 - [ ] IDE-SNP-006 [P1] 为派生结果记录输入版本清单；验收：结果能列出所消费文件版本，任一依赖变更后可判定过期；前置：IDE-SNP-001。
