@@ -393,6 +393,37 @@ export interface LocalVariableReturnType {
   methodName: string;
 }
 
+function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
+  const candidates: LocalAssignmentCall[] = [];
+  for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
+    const assignment = parseLocalAssignmentCall(lines[line] ?? '');
+    if (assignment?.target === word) candidates.push(assignment);
+  }
+  return candidates;
+}
+
+function resolveFromAnnotationIndex(candidates: readonly LocalAssignmentCall[], word: string, index: PythonReturnAnnotationIndex): LocalVariableReturnType | null {
+  for (const assignment of candidates) {
+    const annotation = index.get(assignment.methodName);
+    if (annotation && annotation !== 'Any') return { target: word, annotation, methodName: assignment.methodName };
+  }
+  return null;
+}
+
+/** 交互查询只读已发布快照；冷查询和过期快照触发后台重建。 */
+export function resolveLocalVariableReturnTypeFromSnapshot(
+  lines: readonly string[], hoverLine: number, word: string, workspaceRoot: string | null
+): LocalVariableReturnType | null {
+  if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) return null;
+  const candidates = matchingAssignments(lines, hoverLine, word);
+  if (candidates.length === 0) return null;
+  const cached = returnAnnotationCaches.get(workspaceRoot);
+  if (!cached || Date.now() - cached.builtAtMs >= INDEX_TTL_MS) {
+    void getReturnAnnotationIndex(workspaceRoot).catch(() => {});
+  }
+  return cached ? resolveFromAnnotationIndex(candidates, word, cached.index) : null;
+}
+
 /**
  * hover 求值:光标落在 `word` 上时,在 [0, hoverLine] 内找 `word = <单层调用>`
  * 的赋值,**自 hover 行向上取最后一条可解析的**(同名重赋值取最后一次可解析
@@ -408,24 +439,10 @@ export function resolveLocalVariableReturnType(
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) {
     return null;
   }
-  const candidates: LocalAssignmentCall[] = [];
-  for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
-    const assignment = parseLocalAssignmentCall(lines[line] ?? '');
-    if (!assignment || assignment.target !== word) {
-      continue;
-    }
-    candidates.push(assignment);
-    // 右值是赋值但解不出注解:继续向上找更早的可解析赋值(取最后一次可解析值)
-  }
+  const candidates = matchingAssignments(lines, hoverLine, word);
   if (candidates.length === 0) return null;
   return getReturnAnnotationIndex(workspaceRoot, token).then(index => {
     if (token?.isCancellationRequested) return null;
-    for (const assignment of candidates) {
-      const annotation = index.get(assignment.methodName);
-      if (annotation && annotation !== 'Any') {
-        return { target: word, annotation, methodName: assignment.methodName };
-      }
-    }
-    return null;
+    return resolveFromAnnotationIndex(candidates, word, index);
   });
 }

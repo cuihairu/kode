@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType } from '../src/pythonReturnTypeInference';
+import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType, resolveLocalVariableReturnTypeFromSnapshot } from '../src/pythonReturnTypeInference';
 
 const { readdir, readFile } = vi.hoisted(() => ({ readdir: vi.fn(), readFile: vi.fn() }));
 vi.mock('fs', () => ({ promises: { readdir, readFile } }));
@@ -50,6 +50,25 @@ it('同根并发请求共享构建，一个请求取消不影响另一个', asyn
   expect(await first).toBeNull();
   expect(await second).toMatchObject({ annotation: 'JSONDATA' });
   expect(readFile).toHaveBeenCalledTimes(1);
+});
+
+it('冷 hover 只读快照，不等待挂起的项目发现', async () => {
+  readdir.mockReset();
+  readFile.mockReset();
+  resetPythonReturnAnnotationCache();
+  let release!: (entries: unknown[]) => void;
+  readdir.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  readFile.mockResolvedValue('def get_data() -> JSONDATA:\n    pass\n');
+  const lines = ['data = get_data()'];
+  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 0, 'data', '/project')).toBeNull();
+  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 0, 'data', '/project')).toBeNull();
+  await Promise.resolve();
+  expect(readdir).toHaveBeenCalledTimes(1);
+  const built = resolveLocalVariableReturnType(lines, 0, 'data', '/project');
+  release([{ name: 'source.py', isDirectory: () => false, isFile: () => true }]);
+  await built;
+  expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 0, 'data', '/project'))
+    .toMatchObject({ annotation: 'JSONDATA' });
 });
 
 it('构建失败后下一次请求重新构建', async () => {

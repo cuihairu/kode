@@ -137,6 +137,7 @@ describe('返回类型推导(局部变量 hover)', () => {
       'class Avatar:\n    def tick(self):\n        data = activity_data.get_data()\n        return data\n',
       path.join(workspace.workspaceFolders![0].uri.fsPath, 'scripts/base/Avatar.py')
     );
+    await resolveLocalVariableReturnType(doc.getText().split(/\r?\n/), 2, 'data', workspace.workspaceFolders![0].uri.fsPath);
     const text = hoverText(
       await Promise.resolve(provider.provideHover(doc, new Position(2, 8))) // 光标在 data 上
     );

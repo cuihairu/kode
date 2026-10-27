@@ -116,7 +116,7 @@ import {
   collectEntityBuiltinPropertyInlayTargets,
   type EntityComponentFace
 } from './entityBuiltinProperties';
-import { resolveLocalVariableReturnType } from './pythonReturnTypeInference';
+import { resolveLocalVariableReturnTypeFromSnapshot } from './pythonReturnTypeInference';
 import {
   startLanguageServiceOperation
 } from './languageServiceMetrics';
@@ -807,21 +807,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // (不显 Any、不显空类型,落回普通 hover 链)。
     if (document.languageId === 'python') {
       // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆)
-      const inferred = resolveLocalVariableReturnType(
+      const inferred = resolveLocalVariableReturnTypeFromSnapshot(
         getDocumentLines(document),
         position.line,
         word,
-        getWorkspaceRootForDocument(document),
-        token
+        getWorkspaceRootForDocument(document)
       );
       if (inferred) {
-        return respond(inferred.then(result => {
-          if (!result) return this.provideKnownHover(document, position, featureConfig, range, word);
-          const markdown = new vscode.MarkdownString();
-          markdown.appendMarkdown(`**${result.target}: ${result.annotation}**\n\n`);
-          markdown.appendMarkdown(`推导自 ${result.methodName}() 返回注解`);
-          return new vscode.Hover(markdown);
-        }));
+        const markdown = new vscode.MarkdownString();
+        markdown.appendMarkdown(`**${inferred.target}: ${inferred.annotation}**\n\n`);
+        markdown.appendMarkdown(`推导自 ${inferred.methodName}() 返回注解`);
+        return new vscode.Hover(markdown);
       }
     }
 
