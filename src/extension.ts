@@ -958,11 +958,12 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.receiverNoneDiagnostics');
     if (diagnosticsInputsChanged && diagnosticScheduler.isEnabled()) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
-          event.affectsConfiguration('kbengine.diagnostics')) {
+          event.affectsConfiguration('kbengine.diagnostics') ||
+          event.affectsConfiguration('kbengine.receiverNoneDiagnostics')) {
         diagnosticScheduler.invalidateAll();
       }
       // receiverNoneDiagnostics 开关切换即重算(任务1,用户令 2026-10-27):
-      // compute 每次现读配置,这里只需对已开文档重调调度
+      // compute 每次现读配置，失效版本标记后重调已开文档。
       vscode.workspace.textDocuments.forEach(doc => {
         if (isDefDocument(doc)) {
           scheduleDefDiagnostics(doc, 'immediate');

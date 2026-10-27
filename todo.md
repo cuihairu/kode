@@ -346,7 +346,7 @@
 - [ ] IDE-DIA-004 [P1] 按方法复用 receiver guard 分析；验收：同方法多处调用不重复遍历相同 guard 前缀，既有告警语义保持；前置：IDE-DIA-002。
 - [ ] IDE-DIA-005 [P1] 将大文件 receiver 诊断移出同步入口；验收：8,000 调用样本计算期间宿主仍可响应请求，旧版本回包丢弃；前置：IDE-DIA-003, IDE-DIA-004。
 - [ ] IDE-DIA-006 [P1] 为诊断队列增加单轮时间片；验收：多个文档待诊断时，一轮 flush 不连续占满宿主处理全部文档；前置：无。
-- [ ] IDE-DIA-007 [P1] 切换 receiver 开关时失效版本标记；验收：文档未编辑也能立即清除或重新发布 receiver 告警；前置：无。
+- [x] IDE-DIA-007 [P1] 切换 receiver 开关时失效版本标记；验收：文档未编辑也能立即清除或重新发布 receiver 告警；前置：无。
 - [ ] IDE-DIA-008 [P1] 关闭文档时撤销待发布诊断；验收：文档关闭后晚到的 worker 结果不重新写入 DiagnosticCollection；前置：IDE-DIA-005。
 
 ### IDE-RES · 队列、缓存和日志资源边界（P2）

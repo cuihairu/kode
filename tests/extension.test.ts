@@ -93,6 +93,33 @@ beforeEach(() => {
 });
 
 describe('extension activate 装配', () => {
+  it('切换 receiver 诊断开关时重新计算未编辑文档', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-receiver-toggle-'));
+    const document = makeTextDocument('class Avatar:\n    def tick(self):\n        self.cell.tick()\n', {
+      fileName: path.join(root, 'Avatar.py'), languageId: 'python'
+    });
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    workspace.textDocuments = [document];
+    const context = makeContext();
+    try {
+      activate(context);
+      const collection = languagesRegistry.diagnosticCollections[0].collection;
+      expect(collection.get(document.uri)).toHaveLength(1);
+      const change = () => workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: section => section === 'kbengine' || section === 'kbengine.receiverNoneDiagnostics'
+      });
+      configurationOverrides.set('kbengine', { receiverNoneDiagnostics: false });
+      change();
+      expect(collection.get(document.uri)).toHaveLength(0);
+      configurationOverrides.set('kbengine', { receiverNoneDiagnostics: true });
+      change();
+      expect(collection.get(document.uri)).toHaveLength(1);
+    } finally {
+      disposeAll(context);
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
   it('注册面与 package.json 贡献点一致', async () => {
     const context = makeContext();
     activate(context);
