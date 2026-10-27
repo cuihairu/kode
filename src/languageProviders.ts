@@ -4408,8 +4408,9 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
     this.onDidChangeCodeLensesEmitter.fire();
   }
 
-  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
-    if (!getLanguageFeatureConfig().codeLensRpc) {
+  async provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
+    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
+    if (cancelled() || !getLanguageFeatureConfig().codeLensRpc) {
       return [];
     }
     const declarations = findPythonMethodDeclarations(document.getText());
@@ -4420,6 +4421,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
     // def 声明的 <Arg> 类型序列(按方法名;未声明为 undefined,不作闸门)
     const declaredArgTypesByName = new Map<string, string[]>();
     for (const declaration of declarations) {
+      if (cancelled()) return [];
       if (hits.has(declaration.methodName)) {
         continue;
       }
@@ -4427,6 +4429,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
         document.fileName,
         declaration.methodName
       );
+      if (cancelled()) return [];
       if (location) {
         hits.set(declaration.methodName, {
           methodName: declaration.methodName,
@@ -4495,6 +4498,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
     if (receiverCalls.length > 0) {
       const receiverHits = new Map<string, RpcMethodHit | null>();
       for (const call of receiverCalls) {
+        if (cancelled()) return [];
         const key = `${call.section}::${call.methodName}`;
         if (receiverHits.has(key)) {
           continue;
@@ -4518,6 +4522,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
         } catch {
           hit = null;
         }
+        if (cancelled()) return [];
         receiverHits.set(key, hit);
       }
       for (const call of receiverCalls) {
@@ -4544,7 +4549,7 @@ export class RpcCodeLensProvider implements vscode.CodeLensProvider {
       }
     }
 
-    return [...rpcLenses, ...receiverLenses];
+    return cancelled() ? [] : [...rpcLenses, ...receiverLenses];
   }
 }
 
@@ -4569,8 +4574,9 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
     this.onDidChangeCodeLensesEmitter.fire();
   }
 
-  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
-    if (!getLanguageFeatureConfig().codeLensProperty) {
+  async provideCodeLenses(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
+    const cancelled = () => !!token?.isCancellationRequested || document.isClosed;
+    if (cancelled() || !getLanguageFeatureConfig().codeLensProperty) {
       return [];
     }
     const accesses = findPythonSelfPropertyAccesses(document.getText());
@@ -4578,6 +4584,7 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
     // 同一属性多处访问只解析一次:解析结果按 (根段, 完整路径) 一一对应
     const hits = new Map<string, PropertyCodeLensHit | null>();
     for (const access of accesses) {
+      if (cancelled()) return [];
       const key = propertyAccessKey(access);
       if (hits.has(key)) {
         continue;
@@ -4587,6 +4594,7 @@ export class PropertyCodeLensProvider implements vscode.CodeLensProvider {
         access.fullPath,
         access.rootSymbol
       );
+      if (cancelled()) return [];
       hits.set(key, location
         ? {
             propertyName: location.identity.symbolName,
