@@ -105,6 +105,12 @@ export interface DatabaseSchemaSnapshot {
    * 也判过期;缺失视为不过期(身份面新增,旧结果防御,与 inputVersions 同口径)。
    */
   rootConfigGeneration?: number;
+  /**
+   * IDE-SCH-002:构建时的表前缀(运行域配置面)。缓存判过期时与当前配置值
+   * 比对——配置变更无需依赖扩展层 watcher 的 generation bump 即刻失效;
+   * 缺失视为不过期(防御面)。
+   */
+  tablePrefix?: string;
 }
 
 // types.xml 别名条目(批98 对齐 DataTypes::loadTypes):根节点直接子元素的标签名
@@ -230,6 +236,34 @@ export function isDatabaseSchemaDocument(document: Pick<vscode.TextDocument, 'ur
   return document.uri.scheme === KBENGINE_DATABASE_SCHEMA_SCHEME;
 }
 
+// IDE-SCH-002:schema 快照缓存(键=规范化根+实体名,LRU 有界)
+const DATABASE_SCHEMA_CACHE_LIMIT = 32;
+const databaseSchemaCache = new Map<string, DatabaseSchemaSnapshot>();
+let databaseSchemaCacheHits = 0;
+let databaseSchemaCacheMisses = 0;
+
+/** 测试面:清缓存与计数 */
+export function clearDatabaseSchemaCacheForTests(): void {
+  databaseSchemaCache.clear();
+  databaseSchemaCacheHits = 0;
+  databaseSchemaCacheMisses = 0;
+}
+
+/** 测试/观测面:缓存命中/未命中/在册条目数/容量 */
+export function getDatabaseSchemaCacheStatsForTests(): {
+  hits: number;
+  misses: number;
+  size: number;
+  capacity: number;
+} {
+  return {
+    hits: databaseSchemaCacheHits,
+    misses: databaseSchemaCacheMisses,
+    size: databaseSchemaCache.size,
+    capacity: DATABASE_SCHEMA_CACHE_LIMIT
+  };
+}
+
 export function getDatabaseSchemaSnapshot(
   entityName: string,
   target?: string | Pick<vscode.TextDocument, 'fileName'>
@@ -237,6 +271,26 @@ export function getDatabaseSchemaSnapshot(
   const workspaceRoot = typeof target === 'string'
     ? target
     : getWorkspaceRootForDocument(target);
+
+  // IDE-SCH-002:schema 缓存带实体与根身份——键 = 规范化根 + 实体名,A/B 两
+  // 个根的同名实体各自一份,不共用单例;条目按 SNP-006/010 双轴判过期
+  // (inputVersions/rootConfigGeneration),文件或根配置变了重建,不喂旧表。
+  // null 结果不入缓存(缺 def 是可变状态,watcher/磁盘演进即刻可见)。
+  const cacheKey = workspaceRoot ? `${normalizePath(workspaceRoot)}\u0000${entityName}` : '';
+  if (cacheKey) {
+    const cached = databaseSchemaCache.get(cacheKey);
+    if (cached && !isDatabaseSchemaSnapshotStale(cached)) {
+      // LRU 触碰:重插到队尾
+      databaseSchemaCache.delete(cacheKey);
+      databaseSchemaCache.set(cacheKey, cached);
+      databaseSchemaCacheHits += 1;
+      return cached;
+    }
+    if (cached) {
+      databaseSchemaCache.delete(cacheKey);
+    }
+  }
+  databaseSchemaCacheMisses += 1;
 
   if (!workspaceRoot) {
     return null;
@@ -297,17 +351,18 @@ export function getDatabaseSchemaSnapshot(
   );
   // IDE-SCH-001:表/列推导走纯函数面——输入收集(文件/配置/布局)留在本快照
   // 面,推导本身不读配置不读文件(可缓存/可离线,SCH-002 的缓存前置)
+  const effectiveTablePrefix = resolveSchemaTablePrefix();
   const derived = deriveDatabaseTables({
     entityName,
     defFilePath,
     properties,
     hasCellContent: buildContext.entityHasCell,
-    tablePrefix: resolveSchemaTablePrefix()
+    tablePrefix: effectiveTablePrefix
   });
   // 批131 用户令:连接信息直接读 KBEngine 自身配置,SQL 与悬停带真实库表名
   const database = resolveDatabaseInterfaceConfig() ?? undefined;
 
-  return {
+  const snapshot: DatabaseSchemaSnapshot = {
     backend: 'mysql',
     entityName,
     entitySource,
@@ -318,10 +373,23 @@ export function getDatabaseSchemaSnapshot(
     // IDE-SNP-010:根配置 generation 记入快照身份(assetsRoot/运行域配置
     // 变化后旧结果判过期,与文件版本清单双轴并行)
     rootConfigGeneration: getRootConfigGeneration(),
+    // IDE-SCH-002:表前缀记入身份(配置面输入,缓存判过期直接比对)
+    tablePrefix: effectiveTablePrefix,
     ...(buildContext.inputVersions.size > 0
       ? { inputVersions: Object.fromEntries(buildContext.inputVersions) }
       : {})
   };
+  // IDE-SCH-002:入缓存必须有输入清单(否则过期判定永假,会喂旧表)
+  if (cacheKey && snapshot.inputVersions) {
+    databaseSchemaCache.set(cacheKey, snapshot);
+    if (databaseSchemaCache.size > DATABASE_SCHEMA_CACHE_LIMIT) {
+      const oldest = databaseSchemaCache.keys().next().value;
+      if (oldest !== undefined) {
+        databaseSchemaCache.delete(oldest);
+      }
+    }
+  }
+  return snapshot;
 }
 
 /** IDE-SCH-001:纯推导输入——收集面读好的显式输入(不缺省、不读环境) */
@@ -367,6 +435,11 @@ export function deriveDatabaseTables(
 export function isDatabaseSchemaSnapshotStale(snapshot: DatabaseSchemaSnapshot): boolean {
   if (snapshot.rootConfigGeneration !== undefined &&
       snapshot.rootConfigGeneration !== getRootConfigGeneration()) {
+    return true;
+  }
+  // IDE-SCH-002:表前缀是运行域配置输入,构建值与当前值不符即过期(缓存面
+  // 不依赖扩展层 watcher 的 generation bump,单测/离线口径同样成立)
+  if (snapshot.tablePrefix !== undefined && snapshot.tablePrefix !== resolveSchemaTablePrefix()) {
     return true;
   }
   if (!snapshot.inputVersions) {
