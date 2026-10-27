@@ -42,13 +42,10 @@ it('normalizes dotted event constants and anchors offsets on the final segment',
 
 it('pairs dotted self.addEvent with self.emitEvent for the listener CodeLens', async () => {
   const originalFindFiles = vscode.workspace.findFiles;
-  const originalOpen = vscode.workspace.openTextDocument;
+  const originalRead = vscode.workspace.fs.readFile;
   const listener = vscode.Uri.file('/ws/entity.py');
   vscode.workspace.findFiles = async () => [listener];
-  vscode.workspace.openTextDocument = async () => makeTextDocument(
-    'self.addEvent("ev_ready", self.on_ready)\ndef on_ready(self):\n    pass',
-    { fileName: listener.fsPath, languageId: 'python' }
-  ) as vscode.TextDocument;
+  vscode.workspace.fs.readFile = async () => Buffer.from('self.addEvent("ev_ready", self.on_ready)\ndef on_ready(self):\n    pass');
   try {
     const doc = makeTextDocument('self.emitEvent("ev_ready")', { fileName: '/ws/emit.py', languageId: 'python' }) as vscode.TextDocument;
     const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
@@ -56,7 +53,7 @@ it('pairs dotted self.addEvent with self.emitEvent for the listener CodeLens', a
     expect(titles).toContain('1 处监听');
   } finally {
     vscode.workspace.findFiles = originalFindFiles;
-    vscode.workspace.openTextDocument = originalOpen;
+    vscode.workspace.fs.readFile = originalRead;
   }
 });
 
@@ -147,14 +144,13 @@ it('keeps the call without callback when the callback is an expression', () => {
 
   it('shows one merged, clickable listener count on emitEvent', async () => {
     const originalFindFiles = vscode.workspace.findFiles;
-    const originalOpen = vscode.workspace.openTextDocument;
+    const originalRead = vscode.workspace.fs.readFile;
     const listenerA = vscode.Uri.file('/ws/a.py');
     const listenerB = vscode.Uri.file('/ws/b.py');
     vscode.workspace.findFiles = async () => [listenerA, listenerB];
-    vscode.workspace.openTextDocument = async (uri: vscode.Uri) => makeTextDocument(
-      uri.fsPath === listenerA.fsPath ? 'self.addEvent(EVT, "one")' : 'self.registerEvent(EVT, "two")',
-      { fileName: uri.fsPath, languageId: 'python' }
-    ) as vscode.TextDocument;
+    vscode.workspace.fs.readFile = async (uri: vscode.Uri) => Buffer.from(
+      uri.fsPath === listenerA.fsPath ? 'self.addEvent(EVT, "one")' : 'self.registerEvent(EVT, "two")'
+    );
     try {
       const doc = makeTextDocument('self.emitEvent(EVT)', { fileName: '/ws/emit.py', languageId: 'python' }) as vscode.TextDocument;
       const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
@@ -162,7 +158,7 @@ it('keeps the call without callback when the callback is an expression', () => {
       expect((lenses.find(lens => (lens.command as { title: string }).title === '2 处监听')?.command as { command: string }).command).toBe('kbengine.source.reveal');
     } finally {
       vscode.workspace.findFiles = originalFindFiles;
-      vscode.workspace.openTextDocument = originalOpen;
+      vscode.workspace.fs.readFile = originalRead;
     }
   });
 

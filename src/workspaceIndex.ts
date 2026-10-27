@@ -68,14 +68,29 @@ export class WorkspaceIndex {
     if (inflight) return inflight;
     const task = (async () => {
       try {
-        const doc = await vscode.workspace.openTextDocument(uri);
+        const bytes = await vscode.workspace.fs.readFile(uri);
         if (this.disposed) return null;
-        const text = doc.getText();
+        const text = Buffer.from(bytes).toString('utf8');
+        const lineStarts = [0];
+        for (let i = 0; i < text.length; i += 1) {
+          if (text[i] === '\n') lineStarts.push(i + 1);
+        }
+        const lineAt = (offset: number): number => {
+          let low = 0;
+          let high = lineStarts.length;
+          while (low + 1 < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (lineStarts[mid] <= offset) low = mid;
+            else high = mid;
+          }
+          return low;
+        };
         const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)].map(m => ({
           name: m[1],
-          line: doc.positionAt(m.index || 0).line,
+          line: lineAt(m.index || 0),
         }));
-        const indexed: IndexedFile = { version: doc.version, methods, eventCalls: findEventCalls(text), eventLines: findEventCalls(text).map(c => doc.positionAt(c.eventOffset).line) };
+        const eventCalls = findEventCalls(text);
+        const indexed: IndexedFile = { version: 0, methods, eventCalls, eventLines: eventCalls.map(c => lineAt(c.eventOffset)) };
         this.cache.set(uri.fsPath, indexed);
         return indexed;
       } catch {

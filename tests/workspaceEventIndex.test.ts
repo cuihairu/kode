@@ -4,17 +4,36 @@ import { WorkspaceIndex } from '../src/workspaceIndex';
 import { EventCodeLensProvider } from '../src/eventApi';
 import { makeTextDocument } from './helpers/vscodeStub';
 
+it('事件首扫后台读取文件，不打开其他文档并保留行号', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const originalOpen = vscode.workspace.openTextDocument;
+  const uri = vscode.Uri.file('/ws/listener.py');
+  const open = vi.fn(originalOpen);
+  vscode.workspace.findFiles = async () => [uri];
+  vscode.workspace.fs.readFile = async () => Buffer.from('# heading\r\nself.addEvent(EV, self.on_ev)');
+  vscode.workspace.openTextDocument = open;
+  const index = new WorkspaceIndex();
+  try {
+    expect(await index.allEventCalls()).toMatchObject([{ file: uri.fsPath, line: 1 }]);
+    expect(open).not.toHaveBeenCalled();
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+    vscode.workspace.openTextDocument = originalOpen;
+  }
+});
+
 it('并发事件查询等待同一次首扫完成', async () => {
   const originalFind = vscode.workspace.findFiles;
-  const originalOpen = vscode.workspace.openTextDocument;
+  const originalRead = vscode.workspace.fs.readFile;
   const uri = vscode.Uri.file('/ws/listener.py');
   let release!: (files: vscode.Uri[]) => void;
   const discovery = new Promise<vscode.Uri[]>(resolve => { release = resolve; });
   const find = vi.fn(() => discovery);
   vscode.workspace.findFiles = find;
-  vscode.workspace.openTextDocument = async () => makeTextDocument('self.addEvent(EV, self.on_ev)', {
-    fileName: uri.fsPath, languageId: 'python'
-  }) as vscode.TextDocument;
+  vscode.workspace.fs.readFile = async () => Buffer.from('self.addEvent(EV, self.on_ev)');
   const index = new WorkspaceIndex();
   try {
     const first = index.allEventCalls();
@@ -30,7 +49,7 @@ it('并发事件查询等待同一次首扫完成', async () => {
   } finally {
     index.dispose();
     vscode.workspace.findFiles = originalFind;
-    vscode.workspace.openTextDocument = originalOpen;
+    vscode.workspace.fs.readFile = originalRead;
   }
 });
 
@@ -53,21 +72,19 @@ it('首扫发现失败后，下次事件查询可重新初始化', async () => {
 
 it('销毁后在途文件读取不能重新发布事件索引或创建 watcher', async () => {
   const originalFind = vscode.workspace.findFiles;
-  const originalOpen = vscode.workspace.openTextDocument;
+  const originalRead = vscode.workspace.fs.readFile;
   const uri = vscode.Uri.file('/ws/listener.py');
-  let release!: (doc: vscode.TextDocument) => void;
-  const reading = new Promise<vscode.TextDocument>(resolve => { release = resolve; });
+  let release!: (bytes: Uint8Array) => void;
+  const reading = new Promise<Uint8Array>(resolve => { release = resolve; });
   vscode.workspace.findFiles = async () => [uri];
-  vscode.workspace.openTextDocument = () => reading;
+  vscode.workspace.fs.readFile = () => reading;
   const watcher = vi.spyOn(vscode.workspace, 'createFileSystemWatcher');
   const index = new WorkspaceIndex();
   try {
     const query = index.allEventCalls();
     await Promise.resolve();
     index.dispose();
-    release(makeTextDocument('self.addEvent(EV, self.on_ev)', {
-      fileName: uri.fsPath, languageId: 'python'
-    }) as vscode.TextDocument);
+    release(Buffer.from('self.addEvent(EV, self.on_ev)'));
     expect(await query).toEqual([]);
     expect(await index.allEventCalls()).toEqual([]);
     expect(watcher).not.toHaveBeenCalled();
@@ -75,7 +92,7 @@ it('销毁后在途文件读取不能重新发布事件索引或创建 watcher',
     index.dispose();
     watcher.mockRestore();
     vscode.workspace.findFiles = originalFind;
-    vscode.workspace.openTextDocument = originalOpen;
+    vscode.workspace.fs.readFile = originalRead;
   }
 });
 

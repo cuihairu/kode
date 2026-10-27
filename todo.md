@@ -264,7 +264,7 @@
 - [x] IDE-EVT-001 [P0] 无事件语法时提前返回 CodeLens；验收：100 个普通文件的探针返回 0 lens 且不打开其他文档；前置：无。
 - [x] IDE-EVT-002 [P0] 共享事件索引首扫 Promise；验收：首扫被扣住时第二个调用者等待同一 Promise，不提前拿到空表；前置：无。
 - [x] IDE-EVT-003 [P0] 允许事件索引启动失败后重试；验收：首次 discovery 抛错后，下一次查询能重新完成初始化；前置：IDE-EVT-002。
-- [ ] IDE-EVT-004 [P0] 用后台文件读取替代全仓 openTextDocument；验收：首次事件索引不触发其他文件的 onDidOpenTextDocument 事件；前置：无。
+- [x] IDE-EVT-004 [P0] 用后台文件读取替代全仓 openTextDocument；验收：首次事件索引不触发其他文件的 onDidOpenTextDocument 事件；前置：无。
 - [ ] IDE-EVT-005 [P0] 限制事件索引首扫并发；验收：大仓索引同时处理文件数有上限，取消后不继续启动下一批；前置：IDE-EVT-004。
 - [ ] IDE-EVT-006 [P0] 统一事件索引扫描根与排除表；验收：外部 assetsRoot 被收录，venv/site-packages/third_party 等按共用规则排除；前置：IDE-EVT-004。
 - [ ] IDE-EVT-007 [P0] 用未保存缓冲区刷新事件记录；验收：当前文档新增或移除监听后，查询看到同版本事件，不等磁盘 watcher；前置：IDE-EVT-004。
