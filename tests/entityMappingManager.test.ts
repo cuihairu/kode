@@ -14,6 +14,7 @@ import {
 } from './helpers/vscodeStub';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 import { resetScanRootCache } from '../src/scanRoots';
+import { getSemanticIndex } from '../src/semanticIndex';
 
 // EntityMappingManager 类本体:构造即扫描 scripts/entity_defs 并挂 python
 // watcher。测试用真实临时文件树 + stub findFiles 枚举,走 buildIndex →
@@ -1064,6 +1065,102 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
       fs.rmSync(wsA, { recursive: true, force: true });
       fs.rmSync(extA, { recursive: true, force: true });
       fs.rmSync(extB, { recursive: true, force: true });
+    }
+  }, 20000);
+});
+
+describe('IDE-IDX-015 移除根摘除该根全部索引记录', () => {
+  it('移除 B 根后 B 的实体/owner/类型不可查,A 保留', async () => {
+    const wsA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rm-a-'));
+    const wsB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rm-b-'));
+    try {
+      write(wsA, 'scripts/entity_defs/HeroA.def',
+        '<root>\n  <BaseMethods>\n    <onA/>\n  </BaseMethods>\n</root>');
+      write(wsA, 'scripts/base/HeroA.py', 'class HeroA(object):\n    def onA(self):\n        pass\n');
+      write(wsA, 'scripts/entity_defs/types.xml', '<root>\n  <A_ITEM>UINT8</A_ITEM>\n</root>');
+      write(wsB, 'scripts/entity_defs/HeroB.def',
+        '<root>\n  <BaseMethods>\n    <onB/>\n  </BaseMethods>\n</root>');
+      write(wsB, 'scripts/base/HeroB.py', 'class HeroB(object):\n    def onB(self):\n        pass\n');
+      write(wsB, 'scripts/entity_defs/types.xml', '<root>\n  <B_ITEM>UINT16</B_ITEM>\n</root>');
+      const aDef = p(wsA, 'scripts', 'entity_defs', 'HeroA.def');
+      const aHeroPy = p(wsA, 'scripts', 'base', 'HeroA.py');
+      const bHeroPy = p(wsB, 'scripts', 'base', 'HeroB.py');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(wsA), name: 'wsA', index: 0 },
+        { uri: Uri.file(wsB), name: 'wsB', index: 1 }
+      ];
+      stubWorkspace.findFiles = async () => {
+        const results: Uri[] = [];
+        for (const base of [wsA, wsB]) {
+          const walk = (dir: string) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = p(dir, entry.name);
+              if (entry.isDirectory()) { walk(full); }
+              else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+            }
+          };
+          walk(base);
+        }
+        return results;
+      };
+
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        const rootIndexes = (): Map<string, unknown> =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
+        await until(() => rootIndexes().size >= 2, 'two-folder scan');
+        // 类型快照:两根各建一份
+        const countBefore = getSemanticIndex().getTypeRegistrySnapshotCount();
+        expect(resolveEntityAnnotationType(wsA, 'A_ITEM')).toBe('int');
+        expect(resolveEntityAnnotationType(wsB, 'B_ITEM')).toBe('int');
+        expect(getSemanticIndex().getTypeRegistrySnapshotCount()).toBe(countBefore + 2);
+
+        // 工作区移除 B 根:文件夹列表与 findFiles 可见面同步收窄(与生产
+        // 语义一致——VS Code findFiles 只见现存根)(红点:removeRoot 方法缺失)
+        stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
+        stubWorkspace.findFiles = async () => {
+          const results: Uri[] = [];
+          const walk = (dir: string) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = p(dir, entry.name);
+              if (entry.isDirectory()) { walk(full); }
+              else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+            }
+          };
+          walk(wsA);
+          return results;
+        };
+        resetScanRootCache();
+        const removeRoot = (manager as unknown as { removeRoot?: (root: string) => void }).removeRoot;
+        expect(typeof removeRoot).toBe('function');
+        removeRoot!.call(manager, wsB);
+
+        // B 实体不可查(名字槽/byRoot 全摘)
+        expect(manager.getMapping('HeroB')).toBeUndefined();
+        // B owner 不可查(owner 反查与实体名回落都断)
+        expect(manager.getMappingForPythonFile(bHeroPy)).toBeUndefined();
+        // B 类查询不可查(按 B 根调用)
+        expect(await manager.resolveMethodDefinitionForClass('HeroB', 'onB', undefined, bHeroPy)).toBeNull();
+        // B 类型快照已摘除(计数回落,只剩 A 一份)
+        expect(getSemanticIndex().getTypeRegistrySnapshotCount()).toBe(countBefore + 1);
+        // A 全保留
+        expect(manager.getMapping('HeroA')).toBeDefined();
+        expect(manager.getMappingForPythonFile(aHeroPy)).toBeDefined();
+        expect(await manager.resolveMethodDefinitionForClass('HeroA', 'onA', undefined, aHeroPy))
+          .toMatchObject({ defFile: aDef });
+        expect(resolveEntityAnnotationType(wsA, 'A_ITEM')).toBe('int');
+      } finally {
+        manager.dispose();
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+        resetScanRootCache();
+      }
+    } finally {
+      fs.rmSync(wsA, { recursive: true, force: true });
+      fs.rmSync(wsB, { recursive: true, force: true });
     }
   }, 20000);
 });

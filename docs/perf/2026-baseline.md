@@ -184,7 +184,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["extension.ts:464 打点 startLanguageServiceOperation('completion')<br/>(另一语境 :799)"]
+  M3["extension.ts:464 打点 startLanguageServiceOperation('completion')<br/>(另一语境 :804)"]
   CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:4936"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
@@ -214,10 +214,10 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:849 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:854 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>diagnosticScheduler.ts:157"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(宏任务边界)<br/>extension.ts:874 → diagnosticScheduler.ts:181"]
+  FL["flushQueued(宏任务边界)<br/>extension.ts:879 → diagnosticScheduler.ts:181"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}

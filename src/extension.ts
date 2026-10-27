@@ -656,10 +656,15 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     { dispose: () => pythonIndexWatchers.forEach(watcher => watcher.dispose()) },
     vscode.workspace.onDidCloseTextDocument(document => pythonClassIndex.onDocumentClosed(document)),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    vscode.workspace.onDidChangeWorkspaceFolders(event => {
       resetScanRootCache();
       pythonClassIndex.invalidate();
       watchPythonIndex();
+      // IDE-IDX-015:移除的工作区根整根摘除实体索引记录(留存根原样保留)
+      const removedFolders = (event as { removed?: ReadonlyArray<{ uri: { fsPath: string } }> }).removed ?? [];
+      for (const folder of removedFolders) {
+        entityMappingManager.removeRoot(folder.uri.fsPath);
+      }
     })
   );
 

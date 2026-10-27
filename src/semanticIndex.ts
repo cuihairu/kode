@@ -320,6 +320,23 @@ export class SemanticIndex {
     return this.typeRegistry.size;
   }
 
+  /**
+   * IDE-IDX-015:整根摘除——该根下的类型注册表快照全删,根描述符注销。
+   * 键含 `#` 分隔符,前缀比对不会误伤同前缀的其他根(/ws/a vs /ws/ab)。
+   */
+  removeRoot(rootPath: string): number {
+    const normalizedRoot = normalizeLookupPath(rootPath);
+    let removed = 0;
+    for (const key of [...this.typeRegistry.keys()]) {
+      if (key.startsWith(`${normalizedRoot}#`)) {
+        this.typeRegistry.delete(key);
+        removed += 1;
+      }
+    }
+    this.roots.delete(normalizedRoot);
+    return removed;
+  }
+
   getTypeRegistryGeneration(): number {
     return this.typeRegistryGeneration;
   }

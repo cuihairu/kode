@@ -1049,23 +1049,7 @@ export class EntityMappingManager {
   private handleDefFileChanged(defPath: string, changeKind: SemanticChangeKind): void {
     const plan = this.dependencyGraph.planInvalidation(defPath, changeKind);
     for (const file of plan.invalidateFiles) {
-      const normalized = normalizeLookupPath(file);
-      const index = this.mappingIndexesByRoot.get(normalized);
-      if (index) {
-        this.mappingIndexesByRoot.delete(normalized);
-        // IDE-IDX-008:同名实体共用名字槽,删 B 不能连坐 A——摘除后由语义
-        // 索引重选的同名胜者(仍存在的另一根)接管名字槽,无胜者才真删。
-        const removed = this.semanticIndex.removeEntityByDefFile(normalized);
-        const successorEntry = removed ? this.semanticIndex.findEntityByName(removed.entityName) : null;
-        const successor = successorEntry ? this.mappingIndexesByRoot.get(successorEntry.defFile) : undefined;
-        if (successor) {
-          this.mappingIndexes.set(index.rootName, successor);
-        } else {
-          this.mappingIndexes.delete(index.rootName);
-        }
-      }
-      this.defParseCache.delete(normalized);
-      this.dependencyGraph.removeFile(normalized);
+      this.removeIndexByDefFile(normalizeLookupPath(file));
     }
     this.missingOwnerPaths.clear();
     this.missingClassNames.clear();
@@ -1073,6 +1057,47 @@ export class EntityMappingManager {
       // 定向重解析变更文件自身(缓存已摘除,必然真解析)
       void this.parseDefFile(path.basename(defPath, '.def'), defPath);
     }
+  }
+
+  /**
+   * 摘除单个 def 的索引记录:语义投影/解析缓存/依赖边;同名实体共用名字槽,
+   * 删 B 不连坐 A——摘除后由语义索引重选的同名胜者(仍存在的另一根)接管
+   * 名字槽,无胜者才真删(IDE-IDX-008 口径)。
+   */
+  private removeIndexByDefFile(normalizedDefFile: string): void {
+    const index = this.mappingIndexesByRoot.get(normalizedDefFile);
+    if (index) {
+      this.mappingIndexesByRoot.delete(normalizedDefFile);
+      const removed = this.semanticIndex.removeEntityByDefFile(normalizedDefFile);
+      const successorEntry = removed ? this.semanticIndex.findEntityByName(removed.entityName) : null;
+      const successor = successorEntry ? this.mappingIndexesByRoot.get(successorEntry.defFile) : undefined;
+      if (successor) {
+        this.mappingIndexes.set(index.rootName, successor);
+      } else {
+        this.mappingIndexes.delete(index.rootName);
+      }
+    } else {
+      this.semanticIndex.removeEntityByDefFile(normalizedDefFile);
+    }
+    this.defParseCache.delete(normalizedDefFile);
+    this.dependencyGraph.removeFile(normalizedDefFile);
+  }
+
+  /**
+   * IDE-IDX-015:工作区移除根时摘除该根全部索引记录——该根下所有实体索引
+   * (名字槽由剩余同名接管,IDE-IDX-008 口径)、owner 反查、类型注册表快照
+   * 全部清出;其他根的记录原样保留。
+   */
+  removeRoot(rootPath: string): void {
+    const normalizedRoot = normalizeLookupPath(rootPath);
+    for (const defFile of [...this.mappingIndexesByRoot.keys()]) {
+      if (defFile.startsWith(`${normalizedRoot}/`)) {
+        this.removeIndexByDefFile(defFile);
+      }
+    }
+    this.missingOwnerPaths.clear();
+    this.missingClassNames.clear();
+    getSemanticIndex().removeRoot(rootPath);
   }
 
   private handlePythonFileChanged(pythonPath: string): void {
