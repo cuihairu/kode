@@ -105,6 +105,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.hover.showTagDocs` | `true` | Show .def tag documentation on hover |
 | `kbengine.hover.showValueDocs` | `true` | Show docs for type/Flags/DetailLevel values on hover |
 | `kbengine.hover.showSymbolDocs` | `true` | Show summaries for custom property/method names on hover |
+| `kbengine.hover.returnTypeInference` | `true` | Infer local variable types from Python return annotations on hover |
 | `kbengine.hover.typeStorage` | `true` | Show database storage info of types.xml custom types on hover |
 | `kbengine.hover.implementedBy` | `true` | Show script implementation location (Implemented-By) on def method hover |
 | `kbengine.hover.entityRegistration` | `true` | Show entities.xml registration info (Utype/list position) on hover |
