@@ -4918,6 +4918,17 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
 
   provideCompletionItems(
     document: vscode.TextDocument,
+    position: vscode.Position,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+    if (token?.isCancellationRequested) return null;
+    const version = document.version;
+    const result = this.computeCompletionItems(document, position);
+    return token?.isCancellationRequested || document.version !== version ? null : result;
+  }
+
+  private computeCompletionItems(
+    document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<vscode.CompletionItem[]> {
     const line = document.lineAt(position.line);

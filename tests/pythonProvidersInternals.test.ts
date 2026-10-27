@@ -408,6 +408,20 @@ describe('KBEngineCallHierarchyProvider', () => {
 });
 
 describe('PythonCompletionProvider', () => {
+  it.each(['cancel', 'version'] as const)('%s 时不发布旧前缀补全', cause => {
+    const { document, position } = pyDoc('self.h|');
+    let version = 1;
+    Object.defineProperty(document, 'version', { get: () => version });
+    const token = { isCancellationRequested: false };
+    const provider = new PythonCompletionProvider({
+      getMappingForPythonFile: () => {
+        if (cause === 'cancel') token.isCancellationRequested = true;
+        else version += 1;
+        return { properties: { hp: { defFile: 'Hero.def', line: 1 } }, methods: {} };
+      }
+    } as unknown as EntityMappingManager);
+    expect(provider.provideCompletionItems(document, position, token as never)).toBeNull();
+  });
   it('shows engine identity and original declaration in KBEngine API completions', async () => {
     const provider = new PythonCompletionProvider(
       {} as EntityMappingManager,

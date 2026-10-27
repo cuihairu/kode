@@ -316,7 +316,7 @@
 - [ ] IDE-BUD-001 [P0] 统一 hover 请求的截止时间上下文；验收：所有 hover 分支收到同一 deadline/token；同步路径不得因此被宣称已可抢占；前置：无。
 - [ ] IDE-BUD-002 [P0] 让 hover 取消传播到请求独占任务；验收：取消后停止该请求新增读取，共享首扫继续推进；前置：IDE-BUD-001。
 - [ ] IDE-BUD-003 [P0] 透传 def 补全的 CancellationToken；验收：取消后的类型查找不继续安排请求独占工作；前置：无。
-- [ ] IDE-BUD-004 [P0] 透传 Python 补全的 CancellationToken；验收：旧请求取消后不得返回覆盖新前缀的过时结果；前置：无。
+- [x] IDE-BUD-004 [P0] 透传 Python 补全的 CancellationToken；验收：旧请求取消后不得返回覆盖新前缀的过时结果；前置：无。
 - [x] IDE-BUD-005 [P0] 丢弃过期文档版本的签名帮助；验收：请求过程中编辑参数列表，旧版本签名结果不发布；前置：无。
 - [x] IDE-BUD-006 [P0] 取消 CodeLens 后停止后续批次；验收：文档关闭或 token 取消后，不继续给该文档解析新的属性或 RPC 点位；前置：无。
 - [ ] IDE-BUD-007 [P0] 取消 Call Hierarchy 的后续扫描；验收：取消 incoming/outgoing 查询后，该请求的队列不继续增长；前置：无。
