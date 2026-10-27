@@ -3918,7 +3918,9 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     for (const candidate of entityCandidates) {
       const hit = await this.entityMappingManager.resolveMethodDefinitionForClass(
         candidate,
-        query
+        query,
+        undefined,
+        document.fileName
       );
       if (hit) {
         defHit = hit;
@@ -4061,7 +4063,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             manager.resolveMethodDefinitionForClass(
               enclosingName as string,
               symbol,
-              receiver.section
+              receiver.section,
+              document.fileName
             )
         });
       }
@@ -4121,7 +4124,8 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             manager.resolvePropertyDefinitionForClass(
               enclosingName as string,
               access.fullPath,
-              access.rootSymbol
+              access.rootSymbol,
+              document.fileName
             )
         });
       }
@@ -4193,7 +4197,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       if (enclosingName) {
         methodProbes.push({
           via: `object=${enclosingName}`,
-          run: () => manager.resolveMethodDefinitionForClass(enclosingName as string, symbol)
+          run: () => manager.resolveMethodDefinitionForClass(enclosingName as string, symbol, undefined, document.fileName)
         });
       }
       methodProbes.push({

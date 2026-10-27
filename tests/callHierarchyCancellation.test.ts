@@ -34,7 +34,7 @@ it('取消时定向归属查询不继续回查或记录负缓存', async () => {
   }) as EntityMappingManager;
   const token = { isCancellationRequested: false };
   const pending = manager.getIncomingPythonMethodCalls('/ws/a.py', 'method', token as never);
-  expect(findTargeted).toHaveBeenCalledWith('a', token);
+  expect(findTargeted).toHaveBeenCalledWith('a', token, '/ws/a.py');
   token.isCancellationRequested = true;
   release(undefined);
   expect(await pending).toEqual([]);

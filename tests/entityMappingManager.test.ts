@@ -574,3 +574,60 @@ describe('getPythonScriptRoots', () => {
     ]);
   });
 });
+
+describe('IDE-IDX-003 实体名查询携带调用文档根', () => {
+  it('A/B 同名实体由调用文件根决定,不靠最后注册者覆盖', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mapping-dual-'));
+    try {
+      for (const [project, marker] of [['a', 'on_a'], ['b', 'on_b']] as Array<[string, string]>) {
+        write(root, `${project}/scripts/entities.xml`, '<root>\n  <Hero hasBase="true"/>\n</root>');
+        write(root, `${project}/scripts/entity_defs/Hero.def`,
+          `<root>\n  <BaseMethods>\n    <${marker}/>\n  </BaseMethods>\n</root>`);
+        write(root, `${project}/scripts/base/Hero.py`,
+          `class Hero(object):\n    def ${marker}(self):\n        pass\n`);
+      }
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'dual', index: 0 }];
+      stubWorkspace.findFiles = async () => {
+        const results: Uri[] = [];
+        const walk = (dir: string) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = p(dir, entry.name);
+            if (entry.isDirectory()) { walk(full); }
+            else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+          }
+        };
+        walk(root);
+        return results;
+      };
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        // 同名实体在名字槽位只占一格,按 def 文件粒度等两份都建好
+        const indexCount = (): number =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot.size;
+        await until(() => indexCount() >= 2, 'dual-root scan');
+        // 类查询显式携带调用文件根:A 根调用拿 A 的 def,B 根调用拿 B 的 def
+        const fromA = await manager.resolveMethodDefinitionForClass(
+          'Hero', 'on_a', undefined, p(root, 'a', 'scripts', 'base', 'Hero.py')
+        );
+        expect(fromA).toMatchObject({ defFile: p(root, 'a', 'scripts', 'entity_defs', 'Hero.def') });
+        const fromB = await manager.resolveMethodDefinitionForClass(
+          'Hero', 'on_b', undefined, p(root, 'b', 'scripts', 'base', 'Hero.py')
+        );
+        expect(fromB).toMatchObject({ defFile: p(root, 'b', 'scripts', 'entity_defs', 'Hero.def') });
+        // 反向不串根:A 根查 B 独有方法 → null
+        const wrongFromA = await manager.resolveMethodDefinitionForClass(
+          'Hero', 'on_b', undefined, p(root, 'a', 'scripts', 'base', 'Hero.py')
+        );
+        expect(wrongFromA).toBeNull();
+      } finally {
+        manager.dispose();
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

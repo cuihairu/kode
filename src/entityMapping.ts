@@ -147,6 +147,29 @@ export interface EntityMapping {
   methods: { [methodName: string]: EntityMethodDefinitionLocation[] };
 }
 
+/** IDE-IDX-003:python/def 文件 → 所属 assets 根(scripts/entity_defs 布局);非该布局 → null。 */
+const assetsRootOfPythonFile = (file: string): string | null => {
+  const normalized = normalizeLookupPath(file);
+  const marker = normalized.indexOf('/scripts/');
+  return marker > 0 ? normalized.slice(0, marker) : null;
+};
+
+const assetsRootOfDefFile = (file: string): string | null => {
+  const normalized = normalizeLookupPath(file);
+  const marker = normalized.indexOf('/entity_defs/');
+  if (marker <= 0) { return null; }
+  // KBEngine 布局 entity_defs 挂在 scripts 下(a/scripts/entity_defs),python 侧
+  // 定根在 a(截于 /scripts/)——剥掉尾部 scripts 使两侧同根。
+  const root = normalized.slice(0, marker);
+  return root.endsWith('/scripts') ? root.slice(0, -'/scripts'.length) : root;
+};
+
+/** def 与 python 调用文件是否同一 assets 根(双方都能定根且相等)。 */
+const sharesAssetsRoot = (defFile: string, pythonFile: string): boolean => {
+  const pythonRoot = assetsRootOfPythonFile(pythonFile);
+  return pythonRoot !== null && assetsRootOfDefFile(defFile) === pythonRoot;
+};
+
 export class EntityMappingManager {
   private mappingIndexes = new Map<string, EntityMappingIndex>();
   private mappingIndexesByRoot = new Map<string, EntityMappingIndex>();
@@ -1221,11 +1244,12 @@ export class EntityMappingManager {
   async resolveMethodDefinitionForClass(
     className: string,
     methodName: string,
-    receiverSection?: EntityMethodSection
+    receiverSection?: EntityMethodSection,
+    callerFile?: string
   ): Promise<EntityMethodDefinitionLocation | null> {
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
-    const index = await this.ensureIndexForClass(className);
+    const index = await this.ensureIndexForClass(className, callerFile);
     if (!index) {
       return null;
     }
@@ -1242,11 +1266,12 @@ export class EntityMappingManager {
   async resolvePropertyDefinitionForClass(
     className: string,
     fullPath: string,
-    rootSymbol?: string
+    rootSymbol?: string,
+    callerFile?: string
   ): Promise<EntityPropertyDefinitionLocation | null> {
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
-    const index = await this.ensureIndexForClass(className);
+    const index = await this.ensureIndexForClass(className, callerFile);
     if (!index) {
       return null;
     }
@@ -2121,7 +2146,7 @@ export class EntityMappingManager {
    * 命中即不再等全量首扫(首扫在构造期后台继续补全其余实体)。找不到
    * 同名 .def 返回 undefined,调用方落回全量扫描原口径(语义不变)。
    */
-  private async ensureIndexTargeted(entityName: string, token?: vscode.CancellationToken): Promise<EntityMappingIndex | undefined> {
+  private async ensureIndexTargeted(entityName: string, token?: vscode.CancellationToken, callerPythonFile?: string): Promise<EntityMappingIndex | undefined> {
     if (token?.isCancellationRequested) return undefined;
     const direct = this.mappingIndexes.get(entityName);
     if (direct) {
@@ -2130,7 +2155,7 @@ export class EntityMappingManager {
     const defFiles = await findFilesAcrossRoots(`**/${entityName}.def`, null, token);
     if (token?.isCancellationRequested) return undefined;
     const defFileName = `${entityName}.def`;
-    const defFile = defFiles.find(uri => {
+    const matchesDefShape = (uri: vscode.Uri): boolean => {
       // 文件名必须原样比对(2026-10-22 修正):Windows 路径键会小写化，
       // 拿它取 basename 去对 PascalCase 实体名(Hero.def vs hero.def)恒 false,
       // 定向快路径成了死代码,悬停全部静默落回全量扫(永转根因之一)。
@@ -2140,7 +2165,12 @@ export class EntityMappingManager {
       }
       const normalized = normalizeLookupPath(uri.fsPath);
       return !normalized.includes('/interfaces/') && !normalized.includes('/components/');
-    });
+    };
+    // IDE-IDX-003:带调用文件根时优先解析同根 assets 目录下的同名 .def
+    const defFile = (callerPythonFile
+      ? defFiles.find(uri => matchesDefShape(uri) && sharesAssetsRoot(uri.fsPath, callerPythonFile))
+      : undefined)
+      ?? defFiles.find(matchesDefShape);
     if (!defFile) {
       return undefined;
     }
@@ -2177,7 +2207,7 @@ export class EntityMappingManager {
     if (!index) {
       // 定向首解析(2026-10-22):hover 链走这里,同名 .def 单文件解析毫秒级,
       // 命中即应答,不再阻塞等全量首扫(此前大树首扫分钟级,hover 一直转圈)
-      index = await this.ensureIndexTargeted(path.basename(pythonFile, '.py'), token);
+      index = await this.ensureIndexTargeted(path.basename(pythonFile, '.py'), token, pythonFile);
       if (token?.isCancellationRequested) return undefined;
     }
     if (!index) {
@@ -2197,7 +2227,17 @@ export class EntityMappingManager {
    * PR4 A4-4:两段都改走语义索引(直查=同名单一胜者,回溯=类名注册序
    * 首中),不再线性扫描 mappingIndexes。
    */
-  private lookupIndexByClass(className: string): EntityMappingIndex | undefined {
+  private lookupIndexByClass(className: string, callerFile?: string): EntityMappingIndex | undefined {
+    // IDE-IDX-003:类查询带调用文件根时,同名实体按调用根的 assets 目录挑
+    // def(不靠最后注册者覆盖);无调用根或根内无匹配时维持既有单一胜者口径。
+    if (callerFile) {
+      for (const defFile of this.semanticIndex.getEntityDefFilesByName(className)) {
+        if (sharesAssetsRoot(defFile, callerFile)) {
+          const hit = this.mappingIndexesByRoot.get(defFile);
+          if (hit) { return hit; }
+        }
+      }
+    }
     const directDefFile = this.semanticIndex.getEntityDefFile(className);
     if (directDefFile) {
       return this.mappingIndexesByRoot.get(directDefFile);
@@ -2206,17 +2246,17 @@ export class EntityMappingManager {
     return ownerEntry ? this.mappingIndexesByRoot.get(ownerEntry.defFile) : undefined;
   }
 
-  private async ensureIndexForClass(className: string): Promise<EntityMappingIndex | undefined> {
+  private async ensureIndexForClass(className: string, callerFile?: string): Promise<EntityMappingIndex | undefined> {
     if (this.missingClassNames.has(className)) {
       return undefined;
     }
     // 首扫曾失败(哪怕映射表已并入部分分块):先重触发(有界)再查——失败被
     // 静默转成功的话,后续分块里的类从此缺席且无任何重试路径(审核发现 :182)。
     this.retryInitialScanAfterFailure();
-    let index = this.lookupIndexByClass(className);
+    let index = this.lookupIndexByClass(className, callerFile);
     if (!index) {
       // 定向首解析(2026-10-22):同名 .def 单文件解析毫秒级,不再阻塞等全量首扫
-      index = await this.ensureIndexTargeted(className);
+      index = await this.ensureIndexTargeted(className, undefined, callerFile);
     }
     if (!index && this.mappingIndexes.size === 0) {
       // Cold misses wait briefly for the shared scan. A timed-out query must
@@ -2225,7 +2265,7 @@ export class EntityMappingManager {
         this.initialScan.then(() => true), INTERACTIVE_INDEX_WAIT_MS);
       if (!ready) { return undefined; }
     }
-    index = index ?? this.lookupIndexByClass(className);
+    index = index ?? this.lookupIndexByClass(className, callerFile);
     if (!index && this.initialScanCompleted) {
       // 首扫已成功落地仍未命中才负缓存:首扫进行中(哪怕索引表已并入部分
       // 分块)不能凭「表非空」判类不存在——后续分块里的接口/组件类会经

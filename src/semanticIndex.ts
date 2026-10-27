@@ -198,6 +198,15 @@ export class SemanticIndex {
     return this.entitiesByName.get(entityName)?.entry.defFile ?? null;
   }
 
+  /** 实体名 → 全部 def 文件(IDE-IDX-003:同名实体按调用根挑选,不做单一胜者) */
+  getEntityDefFilesByName(entityName: string): string[] {
+    const out: string[] = [];
+    for (const [defFile, record] of this.entitiesByDefFile) {
+      if (record.entry.entityName === entityName) { out.push(defFile); }
+    }
+    return out;
+  }
+
   /** 实体名 → 条目拷贝 */
   findEntityByName(entityName: string): SemanticEntityEntry | null {
     return this.entitiesByName.get(entityName)?.entry ?? null;
