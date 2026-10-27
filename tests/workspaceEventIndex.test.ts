@@ -44,6 +44,29 @@ it('编辑缓冲区增删事件后查询立即看到新版本', async () => {
   }
 });
 
+it('首扫旧磁盘读取结束时不能覆盖期间的编辑', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const uri = vscode.Uri.file('/ws/listener.py');
+  let release!: (bytes: Uint8Array) => void;
+  const reading = new Promise<Uint8Array>(resolve => { release = resolve; });
+  vscode.workspace.findFiles = async () => [uri];
+  vscode.workspace.fs.readFile = () => reading;
+  const index = new WorkspaceIndex();
+  try {
+    const pending = index.allEventCalls();
+    await Promise.resolve();
+    const edited = makeTextDocument('self.addEvent(NEW, self.on_ev)', { fileName: uri.fsPath, languageId: 'python' });
+    workspaceEvents.documentChanged.fire({ document: edited });
+    release(Buffer.from('self.addEvent(OLD, self.on_ev)'));
+    expect(await pending).toMatchObject([{ call: { event: 'NEW' } }]);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
 it('并发事件查询等待同一次首扫完成', async () => {
   const originalFind = vscode.workspace.findFiles;
   const originalRead = vscode.workspace.fs.readFile;

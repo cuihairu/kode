@@ -26,6 +26,8 @@ export class WorkspaceIndex {
   private started = false;
   private starting?: Promise<void>;
   private disposed = false;
+  private documentListener?: vscode.Disposable;
+  private readonly revisions = new Map<string, number>();
 
   constructor(private readonly pyGlob = '**/*.py') {}
 
@@ -42,6 +44,12 @@ export class WorkspaceIndex {
   }
 
   private async startIndex(): Promise<void> {
+    this.documentListener ??= vscode.workspace.onDidChangeTextDocument(event => {
+      this.noteSaved(event.document);
+    });
+    for (const document of vscode.workspace.textDocuments) {
+      if (document.isDirty) this.noteSaved(document);
+    }
     const files = await vscode.workspace.findFiles(this.pyGlob, '**/{.git,node_modules}/**');
     if (this.disposed) return;
     await Promise.all(files.map(uri => this.indexFile(uri)));
@@ -51,20 +59,17 @@ export class WorkspaceIndex {
     watcher.onDidChange(uri => { void this.indexFile(uri); });
     watcher.onDidDelete(uri => { this.cache.delete(uri.fsPath); });
     this.watchers.push(watcher);
-    this.watchers.push(vscode.workspace.onDidChangeTextDocument(event => {
-      this.noteSaved(event.document);
-    }));
-    for (const document of vscode.workspace.textDocuments) {
-      if (document.isDirty) this.noteSaved(document);
-    }
     this.started = true;
   }
 
   dispose(): void {
     this.disposed = true;
+    this.documentListener?.dispose();
+    this.documentListener = undefined;
     for (const w of this.watchers) w.dispose();
     this.watchers = [];
     this.cache.clear();
+    this.revisions.clear();
   }
 
   /** 单文件建/重建索引；并发去重（同一文件不重复读）。 */
@@ -72,10 +77,17 @@ export class WorkspaceIndex {
     if (this.disposed) return Promise.resolve(null);
     const inflight = this.building.get(uri.fsPath);
     if (inflight) return inflight;
+    const revision = this.revisions.get(uri.fsPath) ?? 0;
     const task = (async () => {
       try {
         const bytes = await vscode.workspace.fs.readFile(uri);
         if (this.disposed) return null;
+        if ((this.revisions.get(uri.fsPath) ?? 0) !== revision) return this.cache.get(uri.fsPath) ?? null;
+        const dirty = vscode.workspace.textDocuments.find(document => document.uri.fsPath === uri.fsPath && document.isDirty);
+        if (dirty) {
+          this.noteSaved(dirty);
+          return this.cache.get(uri.fsPath) ?? null;
+        }
         const text = Buffer.from(bytes).toString('utf8');
         const lineStarts = [0];
         for (let i = 0; i < text.length; i += 1) {
@@ -100,7 +112,7 @@ export class WorkspaceIndex {
         this.cache.set(uri.fsPath, indexed);
         return indexed;
       } catch {
-        this.cache.delete(uri.fsPath);
+        if ((this.revisions.get(uri.fsPath) ?? 0) === revision) this.cache.delete(uri.fsPath);
         return null;
       } finally {
         this.building.delete(uri.fsPath);
@@ -114,6 +126,7 @@ export class WorkspaceIndex {
   noteSaved(document: vscode.TextDocument): void {
     if (this.disposed) return;
     if (!document.uri.fsPath.endsWith('.py')) return;
+    this.revisions.set(document.uri.fsPath, (this.revisions.get(document.uri.fsPath) ?? 0) + 1);
     const text = document.getText();
     const calls = findEventCalls(text);
     this.cache.set(document.uri.fsPath, {
