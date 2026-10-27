@@ -173,7 +173,7 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'rpc-inlay', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return basePy;
   };
 

@@ -12,16 +12,18 @@ import { Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 const originalFindFiles = stubWorkspace.findFiles;
 
 describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
-  it('repeated misses for the same file stop rescanning; other files still scan once', async () => {
+  it('重复 miss 复用负缓存，新文件定向发现但不重扫全仓', async () => {
     // 扫描根按"目录真实存在"过滤 getIndexScanRoots,占位路径 /ws 在任何
     // 平台上都不落盘 → 根集合为空、构造期扫描早退,负缓存断言无从谈起。
     const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-negcache-'));
     stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsRoot), name: 'ws', index: 0 }];
     let defScans = 0;
+    const targeted: string[] = [];
     stubWorkspace.findFiles = (async (pattern?: string) => {
       if (pattern && pattern.includes('*.def')) {
         defScans += 1;
       }
+      if (pattern && pattern.endsWith('.def') && !pattern.includes('*.def')) targeted.push(pattern);
       return [];
     }) as typeof stubWorkspace.findFiles;
 
@@ -32,6 +34,7 @@ describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
         await new Promise(resolve => setTimeout(resolve, 5));
       }
       expect(defScans).toBeGreaterThanOrEqual(1);
+      await manager.waitForInitialScan();
 
       // 第一次:miss → 触发一次重扫 → 记入负缓存
       expect(await manager.resolveMethodDefinition('/nowhere/Foo.py', 'run')).toBeNull();
@@ -43,9 +46,10 @@ describe('EntityMappingManager 负缓存(无归属文件不再重扫)', () => {
       expect(await manager.resolvePropertyDefinition('/nowhere/Foo.py', 'hp')).toBeNull();
       expect(defScans, '同文件重复 miss 不得再重扫').toBe(afterFirst);
 
-      // 另一个未见过的文件仍要走一次真实扫描(负缓存按文件粒度,不误伤)
+      // 另一个未见过的文件做定向发现，不重新全仓扫描。
       expect(await manager.resolveMethodDefinition('/nowhere/Other.py', 'run')).toBeNull();
-      expect(defScans, '新文件首次 miss 仍应扫描').toBeGreaterThan(afterFirst);
+      expect(defScans).toBe(afterFirst);
+      expect(targeted).toContain('**/Other.def');
 
       manager.dispose();
     } finally {

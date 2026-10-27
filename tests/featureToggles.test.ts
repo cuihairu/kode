@@ -152,7 +152,7 @@ describe('kbengine.entity.receiverSections(接收者段过滤)', () => {
     ].join('\n'));
     const cellPy = put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'receiver', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return { root, defFile, cellPy };
   };
 
@@ -424,7 +424,7 @@ describe('def 方法签名文本(审计遗留承诺:声明 <Arg><Type> 必须带
       ].join('\n'));
       const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
       workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'sig', index: 0 }];
-      workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+      workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
 
       const manager = new EntityMappingManager({ subscriptions: [] } as never);
       managers.push(manager);

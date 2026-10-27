@@ -207,7 +207,7 @@ describe('def 归属面解析(EntityMappingManager)', () => {
     const flatPy = put('scripts/Avatar.py', 'class Avatar:\n    pass\n');
     put('scripts/helper.py', 'import os\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'builtin', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return { root, basePy, flatPy };
   };
 

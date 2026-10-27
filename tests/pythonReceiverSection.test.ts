@@ -126,7 +126,7 @@ describe('接收者段闸三面(真实索引装配)', () => {
     const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'receiver', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return { root, defFile, basePy };
   };
 

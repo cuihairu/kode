@@ -184,7 +184,7 @@ describe('DefParamInlayHintsProvider(真实索引装配)', () => {
       ''
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'defparam-inlay', index: 0 }];
-    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' ? [Uri.file(defFile)] : []);
+    workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return cellPy;
   };
 
