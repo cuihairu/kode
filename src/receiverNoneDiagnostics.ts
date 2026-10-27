@@ -61,23 +61,32 @@ interface MethodSpan {
   endLine: number;
 }
 
-/** 方法体界(0 起行,含尾):同文件内逐类找包含行,方法取前一定义到下一方法/类尾 */
-function enclosingMethodSpan(parsed: ReturnType<typeof parsePythonFile>, line: number): MethodSpan | undefined {
-  for (const cls of parsed.classes) {
-    if (line < cls.startLine || line >= cls.endLine) { continue; }
+interface ClassMethodSpans {
+  startLine: number;
+  endLine: number;
+  methods: MethodSpan[];
+}
+
+function buildMethodSpans(parsed: ReturnType<typeof parsePythonFile>): ClassMethodSpans[] {
+  return parsed.classes.map(cls => {
     const starts = [...cls.methods.values()].map(loc => loc.line).sort((left, right) => left - right);
-    let start = -1;
-    let end = cls.endLine - 1;
-    for (const candidate of starts) {
-      if (candidate <= line) {
-        start = candidate;
-      } else {
-        end = candidate - 1;
-        break;
-      }
-    }
-    if (start >= 0) {
-      return { startLine: start, endLine: end };
+    return {
+      startLine: cls.startLine,
+      endLine: cls.endLine,
+      methods: starts.map((startLine, i) => ({
+        startLine,
+        endLine: i + 1 < starts.length ? starts[i + 1] - 1 : cls.endLine - 1
+      }))
+    };
+  });
+}
+
+/** 方法体界(0 起行,含尾):保留原有类顺序，复用预先排序的方法区间。 */
+function enclosingMethodSpan(classes: readonly ClassMethodSpans[], line: number): MethodSpan | undefined {
+  for (const cls of classes) {
+    if (line < cls.startLine || line >= cls.endLine) { continue; }
+    for (let i = cls.methods.length - 1; i >= 0; i -= 1) {
+      if (cls.methods[i].startLine <= line) return cls.methods[i];
     }
     return undefined;
   }
@@ -198,9 +207,10 @@ export function computeReceiverNoneFindings(
   if (calls.length === 0) return [];
   const findings: ReceiverNoneFinding[] = [];
   const parsed = parsePythonFile(text, filePath);
+  const methodSpans = buildMethodSpans(parsed);
   const lines = text.split(/\r?\n/);
   for (const call of calls) {
-    const span = enclosingMethodSpan(parsed, call.line);
+    const span = enclosingMethodSpan(methodSpans, call.line);
     if (span && !hasReceiverGuard(lines, span, call.line, call.receiver)) {
       findings.push({
         line: call.line,

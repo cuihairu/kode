@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   computeReceiverNoneFindings,
@@ -37,6 +37,16 @@ const mappingWithMethods = (
 }) as unknown as EntityMapping;
 
 describe('receiver 可能为 None 诊断(用户令 2026-10-27 任务1)', () => {
+  it('多个调用点共享一次方法区间排序', () => {
+    const source = py(['class Avatar:', '    def tick(self):', ...Array(30).fill('        self.cell.tick()')]);
+    const sort = vi.spyOn(Array.prototype, 'sort');
+    try {
+      expect(computeReceiverNoneFindings(source, '/avatar.py')).toHaveLength(30);
+      expect(sort).toHaveBeenCalledTimes(1);
+    } finally {
+      sort.mockRestore();
+    }
+  });
   it('有判空 guard(正向 if / is not None / 早退 / 别名)不报', () => {
     const guarded = py([
       'class Avatar:',
