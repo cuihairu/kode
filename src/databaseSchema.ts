@@ -295,14 +295,15 @@ export function getDatabaseSchemaSnapshot(
     'entity',
     buildContext
   );
-  const tables = buildMysqlTableSchemas(
+  // IDE-SCH-001:表/列推导走纯函数面——输入收集(文件/配置/布局)留在本快照
+  // 面,推导本身不读配置不读文件(可缓存/可离线,SCH-002 的缓存前置)
+  const derived = deriveDatabaseTables({
     entityName,
-    entitySource,
+    defFilePath,
     properties,
-    buildContext.entityHasCell,
-    resolveSchemaTablePrefix()
-  );
-  const tableIndex = new Map<string, TableSchemaDescriptor>(tables.map(table => [table.name, table]));
+    hasCellContent: buildContext.entityHasCell,
+    tablePrefix: resolveSchemaTablePrefix()
+  });
   // 批131 用户令:连接信息直接读 KBEngine 自身配置,SQL 与悬停带真实库表名
   const database = resolveDatabaseInterfaceConfig() ?? undefined;
 
@@ -311,8 +312,8 @@ export function getDatabaseSchemaSnapshot(
     entityName,
     entitySource,
     defFilePath,
-    tables,
-    tableIndex,
+    tables: derived.tables,
+    tableIndex: derived.tableIndex,
     database,
     // IDE-SNP-010:根配置 generation 记入快照身份(assetsRoot/运行域配置
     // 变化后旧结果判过期,与文件版本清单双轴并行)
@@ -321,6 +322,40 @@ export function getDatabaseSchemaSnapshot(
       ? { inputVersions: Object.fromEntries(buildContext.inputVersions) }
       : {})
   };
+}
+
+/** IDE-SCH-001:纯推导输入——收集面读好的显式输入(不缺省、不读环境) */
+export interface DatabaseSchemaDerivationInput {
+  readonly entityName: string;
+  readonly defFilePath: string;
+  readonly properties: readonly PersistentPropertyDescriptor[];
+  readonly hasCellContent: boolean;
+  readonly tablePrefix: string;
+}
+
+export interface DatabaseSchemaDerivationResult {
+  readonly tables: TableSchemaDescriptor[];
+  readonly tableIndex: Map<string, TableSchemaDescriptor>;
+}
+
+/**
+ * IDE-SCH-001:不访问 VS Code 的 schema 推导函数——相同显式输入恒同表/列;
+ * 内部不读配置/文件/工作区(输入收集是快照面的职责)。数据库连接要素
+ * (database)是配置面,不属于表/列推导,留在快照面。
+ */
+export function deriveDatabaseTables(
+  input: DatabaseSchemaDerivationInput
+): DatabaseSchemaDerivationResult {
+  const { entityName, defFilePath, properties, hasCellContent, tablePrefix } = input;
+  const entitySource: DefSourceRef = {
+    filePath: defFilePath,
+    line: 1,
+    path: entityName,
+    category: 'entity'
+  };
+  const tables = buildMysqlTableSchemas(entityName, entitySource, [...properties], hasCellContent, tablePrefix);
+  const tableIndex = new Map<string, TableSchemaDescriptor>(tables.map(table => [table.name, table]));
+  return { tables, tableIndex };
 }
 
 /**
