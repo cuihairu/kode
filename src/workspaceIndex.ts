@@ -19,6 +19,8 @@ interface IndexedFile {
   eventLines: number[];
 }
 
+const INITIAL_SCAN_CONCURRENCY = 8;
+
 export class WorkspaceIndex {
   private readonly cache = new Map<string, IndexedFile>();
   private readonly building = new Map<string, Promise<IndexedFile | null>>();
@@ -68,7 +70,14 @@ export class WorkspaceIndex {
     }
     const files = await vscode.workspace.findFiles(this.pyGlob, '**/{.git,node_modules}/**');
     if (this.disposed) return;
-    await Promise.all(files.map(uri => this.indexFile(uri)));
+    let nextFile = 0;
+    const scanWorker = async (): Promise<void> => {
+      while (!this.disposed && nextFile < files.length) {
+        const uri = files[nextFile++];
+        await this.indexFile(uri);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, files.length) }, scanWorker));
     if (this.disposed) return;
     const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
     watcher.onDidCreate(uri => { void this.indexFile(uri); });

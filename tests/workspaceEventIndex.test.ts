@@ -25,6 +25,65 @@ it('事件首扫后台读取文件，不打开其他文档并保留行号', asyn
   }
 });
 
+it('事件首扫限制并发并在索引取消后停止启动读取', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const files = Array.from({ length: 24 }, (_, i) => vscode.Uri.file(`/ws/${i}.py`));
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let active = 0;
+  let peak = 0;
+  const read = vi.fn(async () => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await gate;
+    active -= 1;
+    return Buffer.from('pass');
+  });
+  vscode.workspace.findFiles = async () => files;
+  vscode.workspace.fs.readFile = read;
+  const index = new WorkspaceIndex();
+  try {
+    const pending = index.allEventCalls();
+    await Promise.resolve();
+    expect(read).toHaveBeenCalledTimes(8);
+    expect(peak).toBe(8);
+    index.dispose();
+    release();
+    await pending;
+    expect(read).toHaveBeenCalledTimes(8);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
+it('事件首扫在并发上限下处理所有文件', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const files = Array.from({ length: 20 }, (_, i) => vscode.Uri.file(`/ws/${i}.py`));
+  let active = 0;
+  let peak = 0;
+  vscode.workspace.findFiles = async () => files;
+  vscode.workspace.fs.readFile = async () => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await Promise.resolve();
+    active -= 1;
+    return Buffer.from('self.addEvent(EV, self.on_ev)');
+  };
+  const index = new WorkspaceIndex();
+  try {
+    expect(await index.allEventCalls()).toHaveLength(files.length);
+    expect(peak).toBeLessThanOrEqual(8);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
 it('编辑缓冲区增删事件后查询立即看到新版本', async () => {
   const originalFind = vscode.workspace.findFiles;
   vscode.workspace.findFiles = async () => [];
