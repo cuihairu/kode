@@ -55,6 +55,15 @@ export interface SharedFileSnapshot {
   readonly source: 'document' | 'disk';
 }
 
+/**
+ * IDE-SNP-006:快照输入版本引用(来源域+版本对)——派生结果记录所消费
+ * 文件的 {source, version},消费端再读同文件比对,任一漂移即可判过期。
+ */
+export interface SharedFileVersionRef {
+  readonly source: 'document' | 'disk';
+  readonly version: number | undefined;
+}
+
 const defaultDeps: SharedFileSnapshotDeps = {
   listOpenDocuments: () => vscode.workspace.textDocuments,
   readDiskFile: fsPath => {

@@ -22,6 +22,7 @@ import {
 } from './definitionWorkspace';
 import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './serverConfigMerge';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
+import type { SharedFileVersionRef } from './sharedFileSnapshot';
 
 export const KBENGINE_DATABASE_SCHEMA_SCHEME = 'kbengine-db-schema';
 const DB_TABLE_PREFIX = 'tbl_';
@@ -91,6 +92,12 @@ export interface DatabaseSchemaSnapshot {
   tableIndex: Map<string, TableSchemaDescriptor>;
   /** 引擎配置 <dbmgr><databaseInterfaces><default> 读得的连接要素(未读得为 undefined) */
   database?: DatabaseInterfaceConfig;
+  /**
+   * IDE-SNP-006:构建时消费的共享快照输入清单(fsPath → 来源域+版本)。
+   * 消费端持旧结果时对任一条目再读比对,source/version 漂移即判过期
+   * (isDatabaseSchemaSnapshotStale);缺失视为不过期(清单面新增,旧结果防御)。
+   */
+  inputVersions?: Readonly<Record<string, SharedFileVersionRef>>;
 }
 
 // types.xml 别名条目(批98 对齐 DataTypes::loadTypes):根节点直接子元素的标签名
@@ -117,6 +124,21 @@ interface BuildContext {
   componentScopesCache: Map<string, RuntimeScope[]>;
   typeAliases: Map<string, TypeAliasEntry>;
   entityHasCell: boolean;
+  /** IDE-SNP-006:构建期消费的共享快照输入(fsPath → 来源域+版本),随快照发出 */
+  inputVersions: Map<string, SharedFileVersionRef>;
+}
+
+/**
+ * IDE-SNP-006:经共享快照读构建输入并记录版本引用(清单数据面);
+ * 读失败不记条目——文件出现/消失由 watcher 事件面裁断,清单只锁版本漂移。
+ */
+function readSchemaInputFile(filePath: string, context: BuildContext): string | null {
+  const snapshot = readSharedFileSnapshot(filePath);
+  if (!snapshot) {
+    return null;
+  }
+  context.inputVersions.set(filePath, { source: snapshot.source, version: snapshot.version });
+  return snapshot.content;
 }
 
 // 旗标 → 运行域成员映射,成员集对齐引擎 common.h 的三个域掩码
@@ -228,10 +250,12 @@ export function getDatabaseSchemaSnapshot(
   }
 
   // IDE-SNP-003:def 文本走共享快照——打开的脏缓冲优先,未打开磁盘补载
-  const entityContent = readSharedFileSnapshot(defFilePath)?.content ?? null;
-  if (!entityContent) {
+  // IDE-SNP-006:入口读得的来源域+版本进清单(后续遍历读点由 context 记录)
+  const entityInput = readSharedFileSnapshot(defFilePath);
+  if (!entityInput) {
     return null;
   }
+  const entityContent = entityInput.content;
 
   const entityDocument = parseDefDocument(entityContent);
   if (!entityDocument.root) {
@@ -245,9 +269,13 @@ export function getDatabaseSchemaSnapshot(
     visitedDefinitions: new Set<string>(),
     componentCache: new Map<string, PersistentPropertyDescriptor[]>(),
     componentScopesCache: new Map<string, RuntimeScope[]>(),
-    typeAliases: parseTypeAliases(layout.typesXmlPath),
-    entityHasCell: resolveEntityHasCell(entityName, workspaceRoot, layout)
+    typeAliases: new Map<string, TypeAliasEntry>(),
+    entityHasCell: resolveEntityHasCell(entityName, workspaceRoot, layout),
+    inputVersions: new Map<string, SharedFileVersionRef>([
+      [defFilePath, { source: entityInput.source, version: entityInput.version }]
+    ])
   };
+  buildContext.typeAliases = parseTypeAliases(layout.typesXmlPath, buildContext.inputVersions);
   const entitySource: DefSourceRef = {
     filePath: defFilePath,
     line: 1,
@@ -278,8 +306,28 @@ export function getDatabaseSchemaSnapshot(
     defFilePath,
     tables,
     tableIndex,
-    database
+    database,
+    ...(buildContext.inputVersions.size > 0
+      ? { inputVersions: Object.fromEntries(buildContext.inputVersions) }
+      : {})
   };
+}
+
+/**
+ * IDE-SNP-006:按清单判 schema 快照是否过期——任一记录条目再读后消失、
+ * 或来源域/版本漂移即过期;无清单的旧快照视为不过期(防御面)。
+ */
+export function isDatabaseSchemaSnapshotStale(snapshot: DatabaseSchemaSnapshot): boolean {
+  if (!snapshot.inputVersions) {
+    return false;
+  }
+  for (const [filePath, recorded] of Object.entries(snapshot.inputVersions)) {
+    const current = readSharedFileSnapshot(filePath);
+    if (!current || current.source !== recorded.source || current.version !== recorded.version) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // 渲染版式锚点(TABLE 行 / 字段行)与 renderDatabaseSchema 同源:定位跳转与
@@ -723,17 +771,24 @@ function syntheticColumnNote(field: TableFieldDescriptor): string {
   return field.sourcePath ? `引擎列（${field.sourcePath}）` : '引擎列';
 }
 
-function parseTypeAliases(typesXmlPath: string | null): Map<string, TypeAliasEntry> {
+function parseTypeAliases(
+  typesXmlPath: string | null,
+  inputVersions?: Map<string, SharedFileVersionRef>
+): Map<string, TypeAliasEntry> {
   const aliases = new Map<string, TypeAliasEntry>();
   if (!typesXmlPath) {
     return aliases;
   }
 
   // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema)
-  const content = readSharedFileSnapshot(typesXmlPath)?.content ?? null;
-  if (!content) {
+  const snapshot = readSharedFileSnapshot(typesXmlPath);
+  if (!snapshot) {
     return aliases;
   }
+  if (inputVersions) {
+    inputVersions.set(typesXmlPath, { source: snapshot.source, version: snapshot.version });
+  }
+  const content = snapshot.content;
 
   const document = parseDefDocument(content);
   if (!document.root) {
@@ -814,7 +869,7 @@ function collectPersistentPropertiesForDefinition(
   }
   context.visitedDefinitions.add(normalizedPath);
 
-  const content = readSharedFileSnapshot(filePath)?.content ?? null;
+  const content = readSchemaInputFile(filePath, context);
   if (!content) {
     return [];
   }
@@ -1350,7 +1405,7 @@ function collectDefinitionHasFlags(
   }
   visitedScopes.add(normalizedPath);
 
-  const content = readSharedFileSnapshot(filePath)?.content ?? null;
+  const content = readSchemaInputFile(filePath, context);
   if (!content) {
     return;
   }
@@ -1911,7 +1966,8 @@ export function getTypeStorageShape(typesXmlPath: string | null, typeName: strin
     componentCache: new Map(),
     componentScopesCache: new Map(),
     typeAliases: parseTypeAliases(typesXmlPath),
-    entityHasCell: false
+    entityHasCell: false,
+    inputVersions: new Map()
   };
   return typeShapeOf(typeName, context, new Set());
 }
