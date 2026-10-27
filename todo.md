@@ -280,7 +280,7 @@
 - [ ] IDE-IDX-001 [P1] 让语义 loader 按精确 def 路径加载入口；验收：双根同名 Hero 请求 B 时，semantics.owner.filePath 确实为 B；前置：无。
 - [ ] IDE-IDX-002 [P1] 让 loader 缓存按根和文件身份分区；验收：A/B 同名定义分别命中自己的缓存，切换查询顺序不改变结果；前置：IDE-IDX-001。
 - [ ] IDE-IDX-003 [P1] 让实体名查询携带调用文档根；验收：A/B 同名实体由调用文件根决定，不能依靠最后注册者覆盖；前置：IDE-IDX-002。
-- [ ] IDE-IDX-004 [P1] 把 Python owner 反查改为多对多；验收：A/B 共用 Shared.py 时反查返回两个实体并保持稳定顺序；前置：无。
+- [x] IDE-IDX-004 [P1] 把 Python owner 反查改为多对多；验收：A/B 共用 Shared.py 时反查返回两个实体并保持稳定顺序；前置：无。
 - [ ] IDE-IDX-005 [P1] 保存共享脚本时刷新全部依赖实体；验收：修改 Shared.py 后 A/B 的方法行号与绑定均更新，未依赖实体不刷新；前置：IDE-IDX-004。
 - [x] IDE-IDX-006 [P1] 替换注册前移除旧的 owner 记录；验收：Old.py 改为 New.py 后，Old.py 不再映射到该实体；前置：无。
 - [x] IDE-IDX-007 [P1] 删除实体时清理所有反向记录；验收：替换后再删除实体，旧 owner、新 owner、类名和 ownerRef 均查不到它；前置：IDE-IDX-006。

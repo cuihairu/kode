@@ -74,8 +74,8 @@ export class SemanticIndex {
   private readonly entitiesByName = new Map<string, EntityRecord>();
   /** 全根实体清单(同名冲突取证):规范化 def 路径 → 条目 */
   private readonly entitiesByDefFile = new Map<string, EntityRecord>();
-  /** owner 归属文件 → 实体(先到先得,策略②;规范化路径) */
-  private readonly entitiesByPythonOwner = new Map<string, EntityRecord>();
+  /** owner 归属文件 → 实体列表(注册顺序,规范化路径) */
+  private readonly entitiesByPythonOwner = new Map<string, EntityRecord[]>();
   /** Python 类名 → 实体(先到先得,与既有 ownerName 扫描序一致) */
   private readonly entitiesByClassName = new Map<string, EntityRecord>();
   /** kind:name → 实体(先到先得,接口/组件符号回溯用) */
@@ -136,9 +136,9 @@ export class SemanticIndex {
     this.entitiesByName.set(entry.entityName, record);
     this.entitiesByDefFile.set(entry.defFile, record);
     for (const pythonFile of entry.pythonFiles) {
-      if (!this.entitiesByPythonOwner.has(pythonFile)) {
-        this.entitiesByPythonOwner.set(pythonFile, record);
-      }
+      const owners = this.entitiesByPythonOwner.get(pythonFile) ?? [];
+      if (!owners.includes(record)) owners.push(record);
+      this.entitiesByPythonOwner.set(pythonFile, owners);
     }
     for (const owner of entry.owners) {
       if (owner.name && !this.entitiesByClassName.has(owner.name)) {
@@ -162,10 +162,10 @@ export class SemanticIndex {
     if (this.entitiesByName.get(record.entry.entityName) === record) {
       this.entitiesByName.delete(record.entry.entityName);
     }
-    for (const [pythonFile, owner] of this.entitiesByPythonOwner) {
-      if (owner === record) {
-        this.entitiesByPythonOwner.delete(pythonFile);
-      }
+    for (const [pythonFile, owners] of this.entitiesByPythonOwner) {
+      const remaining = owners.filter(owner => owner !== record);
+      if (remaining.length) this.entitiesByPythonOwner.set(pythonFile, remaining);
+      else this.entitiesByPythonOwner.delete(pythonFile);
     }
     for (const [className, owner] of this.entitiesByClassName) {
       if (owner === record) {
@@ -217,7 +217,7 @@ export class SemanticIndex {
   /** Python 文件 → 实体:owner 精确匹配优先,实体名回落(策略②) */
   findEntityByPythonFile(pythonFile: string): SemanticEntityEntry | null {
     const normalized = normalizeLookupPath(pythonFile);
-    const ownerRecord = this.entitiesByPythonOwner.get(normalized);
+    const ownerRecord = this.entitiesByPythonOwner.get(normalized)?.[0];
     if (ownerRecord) {
       return ownerRecord.entry;
     }
@@ -229,8 +229,8 @@ export class SemanticIndex {
 
   /** Python 文件 → owner 归属实体(不做实体名回落;变更裁断用) */
   findEntitiesByPythonOwner(pythonFile: string): readonly SemanticEntityEntry[] {
-    const record = this.entitiesByPythonOwner.get(normalizeLookupPath(pythonFile));
-    return record ? [record.entry] : [];
+    const records = this.entitiesByPythonOwner.get(normalizeLookupPath(pythonFile)) ?? [];
+    return records.map(record => record.entry);
   }
 
   /** Python 类名 → owner 实体(既有 ownerName 回溯口径) */

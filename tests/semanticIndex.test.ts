@@ -118,6 +118,16 @@ describe('同名实体冲突与查找顺序取证(A4-5/A4-6,先锁不改)', () =
     expect(index.findEntityByPythonFile('/ws/New.py')?.entityName).toBe('Hero');
   });
 
+  it('共享 Python owner 反查返回全部实体，移除一个不影响另一个', () => {
+    const index = new SemanticIndex();
+    register(index, '/ws', 'A', '/ws/A.def', ['/ws/Shared.py']);
+    register(index, '/ws', 'B', '/ws/B.def', ['/ws/Shared.py']);
+    expect(index.findEntitiesByPythonOwner('/ws/Shared.py').map(entry => entry.entityName)).toEqual(['A', 'B']);
+    expect(index.findEntityByPythonFile('/ws/Shared.py')?.entityName).toBe('A');
+    index.removeEntityByDefFile('/ws/A.def');
+    expect(index.findEntitiesByPythonOwner('/ws/Shared.py').map(entry => entry.entityName)).toEqual(['B']);
+  });
+
   it('替换后删除实体会清理旧、新 owner 和所有反向记录', () => {
     const index = new SemanticIndex();
     const registerOwner = (file: string, owner: string) => index.registerEntity({
