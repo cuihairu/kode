@@ -1,4 +1,5 @@
 import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
+import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
@@ -691,6 +692,10 @@ export function activate(context: vscode.ExtensionContext) {
       if (addedFolders.length > 0) {
         pythonClassIndex.invalidate();
       }
+      // IDE-SNP-010:根集变化是快照隐性输入,generation 前进使持旧快照的消费端判过期
+      if (removedFolders.length > 0 || addedFolders.length > 0) {
+        bumpRootConfigGeneration('workspace-folders');
+      }
       watchPythonIndex();
     })
   );
@@ -1037,12 +1042,29 @@ export function activate(context: vscode.ExtensionContext) {
 
     if (event.affectsConfiguration('kbengine.assetsRoot') ||
         event.affectsConfiguration('kbengine.python.enableMroJump')) {
+      // IDE-SNP-010:assetsRoot 切换 = 根集输入变化——旧外部根记录先定向摘除
+      // (实体/语义面不残留旧根可查结果,SNP-009 路径),generation 前进使持旧
+      // 快照的消费端判过期;enableMroJump 只是开关,无根集变化,不 bump 不摘根
+      if (event.affectsConfiguration('kbengine.assetsRoot')) {
+        for (const oldRoot of getExternalScanRoots()) {
+          entityMappingManager.removeRoot(oldRoot);
+        }
+        bumpRootConfigGeneration('assetsRoot');
+      }
       resetScanRootCache();
       pythonClassIndex.invalidate();
       watchPythonIndex();
       // IDE-IDX-014:实体面外部根 watcher 三件套整组重建(旧根释放,新根挂上)
       entityMappingManager.refreshExternalRootWatchers();
       if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
+    }
+
+    // IDE-SNP-010:运行域配置(表前缀/数据库连接)变化 → 根配置 generation 前进,
+    // 持旧快照的消费端判过期(重读值本身由下方 resetDatabaseInterfaceConfigCache 失效)
+    if (event.affectsConfiguration('kbengine.db') ||
+        event.affectsConfiguration('kbengine.binPath') ||
+        event.affectsConfiguration('kbengine.configPath')) {
+      bumpRootConfigGeneration('db-config');
     }
 
     // binPath/configPath 变更影响数据库连接读值(批131):只失效缓存本体;

@@ -21,6 +21,7 @@ import {
   getWorkspaceRootForDocument
 } from './definitionWorkspace';
 import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './serverConfigMerge';
+import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import type { SharedFileVersionRef } from './sharedFileSnapshot';
 
@@ -98,6 +99,12 @@ export interface DatabaseSchemaSnapshot {
    * (isDatabaseSchemaSnapshotStale);缺失视为不过期(清单面新增,旧结果防御)。
    */
   inputVersions?: Readonly<Record<string, SharedFileVersionRef>>;
+  /**
+   * IDE-SNP-010:构建时的根配置 generation(扫描根集/运行域配置的代号)。
+   * assetsRoot 或运行域配置变化后 generation 前进,旧快照即使文件一字未动
+   * 也判过期;缺失视为不过期(身份面新增,旧结果防御,与 inputVersions 同口径)。
+   */
+  rootConfigGeneration?: number;
 }
 
 // types.xml 别名条目(批98 对齐 DataTypes::loadTypes):根节点直接子元素的标签名
@@ -307,6 +314,9 @@ export function getDatabaseSchemaSnapshot(
     tables,
     tableIndex,
     database,
+    // IDE-SNP-010:根配置 generation 记入快照身份(assetsRoot/运行域配置
+    // 变化后旧结果判过期,与文件版本清单双轴并行)
+    rootConfigGeneration: getRootConfigGeneration(),
     ...(buildContext.inputVersions.size > 0
       ? { inputVersions: Object.fromEntries(buildContext.inputVersions) }
       : {})
@@ -316,8 +326,14 @@ export function getDatabaseSchemaSnapshot(
 /**
  * IDE-SNP-006:按清单判 schema 快照是否过期——任一记录条目再读后消失、
  * 或来源域/版本漂移即过期;无清单的旧快照视为不过期(防御面)。
+ * IDE-SNP-010:根配置 generation 双轴——当前值与快照记录值不一致即过期
+ * (assetsRoot/运行域配置变了,文件一字未动也过期);缺字段的旧快照防御不过期。
  */
 export function isDatabaseSchemaSnapshotStale(snapshot: DatabaseSchemaSnapshot): boolean {
+  if (snapshot.rootConfigGeneration !== undefined &&
+      snapshot.rootConfigGeneration !== getRootConfigGeneration()) {
+    return true;
+  }
   if (!snapshot.inputVersions) {
     return false;
   }
