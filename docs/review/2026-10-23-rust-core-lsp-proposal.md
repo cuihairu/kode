@@ -204,7 +204,7 @@ types.xml · entities.xml · \*.def · \*.py · 引擎定义
 ## 落地跟踪（下一弧线，PR7 收官后评估，勾一项补 commit）
 
 - [x] R1 Rust Core 前置审计: 用 PR1-7 指标定位 TS 残余成本 top3（冷启动 468ms 构成拆解/补全 P95/内存），产出「迁移值得/不值得」数据结论（完成见 docs/review/2026-10-27-r1-migration-data-audit.md:P0 后复测 S1 冷扫 107.7s→4.88s(22×,TS 修法拿满);残余 top3=内存峰值(9.3×–33.8×,真数量级)/def 大文件超线性(6.7×–11.9×,MEGA 14.6×)/增量指纹(BigInt FNV,TS 换实现即可修,非迁移理由);分面结论=P0-1a 维护面不值得(两面同 O(自身类),只剩常数)、P0-3c def/types.xml 面值得(内存数量级+解析近一阶,即 R2 范围);R2 放行,R3 继续双闸）
-- [ ] R2 最小原型对拍: Rust .def+types.xml 解析器（quick-xml 带位置）+实体索引，与 TS 实现同语料 diff 结果一致
+- [x] R2 最小原型对拍: Rust .def+types.xml 解析器（quick-xml 带位置）+实体索引，与 TS 实现同语料 diff 结果一致（phase2-slice-a 已交付,2026-10-27 核验补勾:kode-parser 逐字节 span 状态机(quick-xml 未用,仓库零第三方依赖铁律,span 粒度到字节强于提案设想)+kode-index 实体索引(继承链/反查/generation);五张 parity golden 双侧同语料复算含 line 位置比对(TS 侧 tests/kodeIndexParity.test.ts:278,门禁绿);增量零重建金丝雀 cargo tests/incremental.rs+index_units.rs 全绿(1 rebuild/99 hit,二扫 rebuilds==0 不 bump generation);证据 be4d3d8/f8b37b7/8cd4b4b）
 - [ ] R3 （仅当 R1/R2 过闸）tower-lsp-server 骨架: definition/hover 两能力走 LSP，TS 侧保留对照
 - [ ] R4 终端/脚本执行会话池（独立问题，与 Rust 无关，另单）
 
