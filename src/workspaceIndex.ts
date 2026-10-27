@@ -24,13 +24,18 @@ export class WorkspaceIndex {
   private readonly building = new Map<string, Promise<IndexedFile | null>>();
   private watchers: vscode.Disposable[] = [];
   private started = false;
+  private starting?: Promise<void>;
 
   constructor(private readonly pyGlob = '**/*.py') {}
 
   /** 首次使用时建全量索引并挂 watcher（幂等）。 */
   async ensureStarted(): Promise<void> {
     if (this.started) return;
-    this.started = true;
+    this.starting ??= this.startIndex();
+    await this.starting;
+  }
+
+  private async startIndex(): Promise<void> {
     const files = await vscode.workspace.findFiles(this.pyGlob, '**/{.git,node_modules}/**');
     await Promise.all(files.map(uri => this.indexFile(uri)));
     const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
@@ -38,6 +43,7 @@ export class WorkspaceIndex {
     watcher.onDidChange(uri => { void this.indexFile(uri); });
     watcher.onDidDelete(uri => { this.cache.delete(uri.fsPath); });
     this.watchers.push(watcher);
+    this.started = true;
   }
 
   dispose(): void {
