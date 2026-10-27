@@ -73,7 +73,7 @@
 
 ## 7. 主要调用链图(真实路径取证,Mermaid)
 
-> 口径说明:§3 的数字是 PR1 时点(提交 89e8783)实测;本节四条链是 **main 当前代码**的真实调用路径(file:line 以落稿时该分支 HEAD 492fc40 为准,含 PR2 快照/PR3 调度器/PR5 去阻塞/PR6 诊断版本守卫,以及 kode2 phase2-slice-a 双轨 shadow 对拍面)。等待点(可能阻塞请求返回的位置)统一用虚线框标出;shadow 对拍腿均为 fire-and-forget,不阻塞返回,不标等待点。
+> 口径说明:§3 的数字是 PR1 时点(提交 89e8783)实测;本节四条链是 **main 当前代码**的真实调用路径(file:line 以落稿时该分支 HEAD 967084d 为准,含 PR2 快照/PR3 调度器/PR5 去阻塞/PR6 诊断版本守卫,以及 kode2 phase2-slice-a 双轨 shadow 对拍面)。等待点(可能阻塞请求返回的位置)统一用虚线框标出;shadow 对拍腿均为 fire-and-forget,不阻塞返回,不标等待点。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
