@@ -32,3 +32,20 @@ it('并发事件查询等待同一次首扫完成', async () => {
     vscode.workspace.openTextDocument = originalOpen;
   }
 });
+
+it('首扫发现失败后，下次事件查询可重新初始化', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const find = vi.fn()
+    .mockRejectedValueOnce(new Error('discovery failed'))
+    .mockResolvedValueOnce([]);
+  vscode.workspace.findFiles = find;
+  const index = new WorkspaceIndex();
+  try {
+    await expect(index.allEventCalls()).rejects.toThrow('discovery failed');
+    await expect(index.allEventCalls()).resolves.toEqual([]);
+    expect(find).toHaveBeenCalledTimes(2);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+  }
+});

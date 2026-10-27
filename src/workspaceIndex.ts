@@ -31,8 +31,13 @@ export class WorkspaceIndex {
   /** 首次使用时建全量索引并挂 watcher（幂等）。 */
   async ensureStarted(): Promise<void> {
     if (this.started) return;
-    this.starting ??= this.startIndex();
-    await this.starting;
+    const starting = this.starting ??= this.startIndex();
+    try {
+      await starting;
+    } catch (error) {
+      if (this.starting === starting) this.starting = undefined;
+      throw error;
+    }
   }
 
   private async startIndex(): Promise<void> {
