@@ -283,7 +283,7 @@
 - [ ] IDE-IDX-004 [P1] 把 Python owner 反查改为多对多；验收：A/B 共用 Shared.py 时反查返回两个实体并保持稳定顺序；前置：无。
 - [ ] IDE-IDX-005 [P1] 保存共享脚本时刷新全部依赖实体；验收：修改 Shared.py 后 A/B 的方法行号与绑定均更新，未依赖实体不刷新；前置：IDE-IDX-004。
 - [x] IDE-IDX-006 [P1] 替换注册前移除旧的 owner 记录；验收：Old.py 改为 New.py 后，Old.py 不再映射到该实体；前置：无。
-- [ ] IDE-IDX-007 [P1] 删除实体时清理所有反向记录；验收：替换后再删除实体，旧 owner、新 owner、类名和 ownerRef 均查不到它；前置：IDE-IDX-006。
+- [x] IDE-IDX-007 [P1] 删除实体时清理所有反向记录；验收：替换后再删除实体，旧 owner、新 owner、类名和 ownerRef 均查不到它；前置：IDE-IDX-006。
 - [ ] IDE-IDX-008 [P1] 删除同名胜者后保留其他根实体；验收：移除 B 的 Hero 后 A 的 Hero 仍能按 A 根查询，不被一并删除；前置：IDE-IDX-003, IDE-IDX-007。
 - [x] IDE-IDX-009 [P1] 保留 POSIX 路径大小写；验收：Linux 的 /project/A 与 /project/a 形成两个独立 root/def 键；前置：无。
 - [x] IDE-IDX-010 [P1] 统一 Windows 路径比较规则；验收：同一盘符路径的大小写与斜杠变体合并，跨盘路径仍分离；前置：IDE-IDX-009。

@@ -118,6 +118,23 @@ describe('同名实体冲突与查找顺序取证(A4-5/A4-6,先锁不改)', () =
     expect(index.findEntityByPythonFile('/ws/New.py')?.entityName).toBe('Hero');
   });
 
+  it('替换后删除实体会清理旧、新 owner 和所有反向记录', () => {
+    const index = new SemanticIndex();
+    const registerOwner = (file: string, owner: string) => index.registerEntity({
+      rootId: '/ws', entityName: 'Hero', defFile: '/ws/Hero.def', pythonFiles: [file],
+      owners: [{ kind: 'interface', name: owner }]
+    });
+    registerOwner('/ws/Old.py', 'OldOwner');
+    registerOwner('/ws/New.py', 'NewOwner');
+    index.removeEntityByDefFile('/ws/Hero.def');
+    expect(index.findEntityByPythonFile('/ws/Old.py')).toBeNull();
+    expect(index.findEntityByPythonFile('/ws/New.py')).toBeNull();
+    expect(index.findEntityByClassName('OldOwner')).toBeNull();
+    expect(index.findEntityByClassName('NewOwner')).toBeNull();
+    expect(index.findEntitiesByOwner('interface', 'OldOwner')).toEqual([]);
+    expect(index.findEntitiesByOwner('interface', 'NewOwner')).toEqual([]);
+  });
+
   it('取证①:同名实体后注册者覆盖(既有 Map.set 口径),冲突清单保全双根条目', () => {
     const index = new SemanticIndex();
     index.registerRoot('/rootA');
