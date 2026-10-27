@@ -50,15 +50,6 @@ export function findEventCalls(text: string): EventCall[] {
   return result;
 }
 
-export async function scanEventCalls(): Promise<Array<{ file: string; call: EventCall; text: string }>> {
-  const files = await vscode.workspace.findFiles('**/*.py', '**/{.git,node_modules}/**');
-  const result: Array<{ file: string; call: EventCall; text: string }> = [];
-  for (const uri of files) {
-    try { const text = (await vscode.workspace.openTextDocument(uri)).getText(); for (const call of findEventCalls(text)) result.push({ file: uri.fsPath, call, text }); } catch { /* unreadable files are ignored */ }
-  }
-  return result;
-}
-
 export async function eventDefinitionAt(document: vscode.TextDocument, position: vscode.Position, manager?: EntityMappingManager): Promise<vscode.Location | null> {
   const text = document.getText();
   const calls = findEventCalls(text);
@@ -104,11 +95,11 @@ export async function eventDefinitionAt(document: vscode.TextDocument, position:
 }
 
 export class EventCodeLensProvider implements vscode.CodeLensProvider {
-  private ownIndex?: WorkspaceIndex;
   private disposed = false;
 
-  /** index 由扩展宿主注入（共享同一份缓存）；测试不传时自持一份全新实例。 */
-  constructor(private readonly sharedIndex?: WorkspaceIndex) {}
+  /** IDE-EVT-012:索引由扩展宿主统一持有一份并注入(共享缓存);provider
+   * 不再自持实例,全仓扫描入口只有共享索引一个。索引生命周期归注入方。 */
+  constructor(private readonly sharedIndex: WorkspaceIndex) {}
 
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
@@ -121,7 +112,6 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
 
   dispose(): void {
     this.disposed = true;
-    this.ownIndex?.dispose();
     this.onDidChangeCodeLensesEmitter.dispose();
   }
 
@@ -132,9 +122,8 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
     const text = document.getText();
     const calls = findEventCalls(text);
     if (calls.length === 0) return [];
-    // 本地索引缓存：不再每次全仓读盘扫描（用户令 2026-10-20，跳转/卡顿同治）。
-    const index = this.sharedIndex ?? (this.ownIndex ??= new WorkspaceIndex());
-    const all = await index.allEventCalls();
+    // IDE-EVT-012:事件记录来源只走注入的共享索引(不每次全仓读盘)。
+    const all = await this.sharedIndex.allEventCalls();
     if (this.disposed) return [];
     const methods = [...text.matchAll(/^[ \t]*(?:async[ \t]+)?def[ \t]+(\w+)[ \t]*\(/gm)];
     const lenses: vscode.CodeLens[] = [];

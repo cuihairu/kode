@@ -316,15 +316,42 @@ it('事件 provider 销毁时释放自己的 watcher', async () => {
   vscode.workspace.createFileSystemWatcher = () => ({
     onDidCreate: listen, onDidChange: listen, onDidDelete: listen, dispose
   }) as unknown as vscode.FileSystemWatcher;
-  const provider = new EventCodeLensProvider();
+  const providerIndex = new WorkspaceIndex();
+  const provider = new EventCodeLensProvider(providerIndex);
   try {
     const doc = makeTextDocument('self.emitEvent(EV)', { fileName: '/ws/a.py', languageId: 'python' }) as vscode.TextDocument;
     await provider.provideCodeLenses(doc);
     provider.dispose();
+    providerIndex.dispose();
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(await provider.provideCodeLenses(doc)).toEqual([]);
   } finally {
     vscode.workspace.findFiles = originalFind;
     vscode.workspace.createFileSystemWatcher = originalWatcher;
+  }
+});
+
+it('共享同一索引的多个 provider 只扫一次仓(统一索引复用)', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const uri = vscode.Uri.file('/ws/listener.py');
+  const findFiles = vi.fn(async () => [uri]);
+  vscode.workspace.findFiles = findFiles as unknown as typeof originalFind;
+  vscode.workspace.fs.readFile = async () => Buffer.from('self.addEvent(EV, self.on_ev)');
+  const shared = new WorkspaceIndex();
+  try {
+    const a = new EventCodeLensProvider(shared);
+    const b = new EventCodeLensProvider(shared);
+    const docA = makeTextDocument('self.emitEvent(EV)\n', { fileName: '/ws/a.py', languageId: 'python' }) as vscode.TextDocument;
+    const docB = makeTextDocument('self.emitEvent(EV)\n', { fileName: '/ws/b.py', languageId: 'python' }) as vscode.TextDocument;
+    await a.provideCodeLenses(docA);
+    await b.provideCodeLenses(docB);
+    await a.provideCodeLenses(docA);
+    // 全仓扫描入口只有共享索引一个:多 provider/多次调用不再触发第二次首扫
+    expect(findFiles).toHaveBeenCalledTimes(1);
+  } finally {
+    shared.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
   }
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { EventCodeLensProvider, eventDefinitionAt, findEventCalls } from '../src/eventApi';
+import { WorkspaceIndex } from '../src/workspaceIndex';
 import { configurationOverrides, makeTextDocument } from './helpers/vscodeStub';
 
 describe('KBEngine event API parsing', () => {
@@ -13,7 +14,7 @@ it('does not scan the workspace for ordinary files without event calls', async (
   vscode.workspace.findFiles = async () => { searches += 1; return []; };
   vscode.workspace.openTextDocument = async (...args) => { opens += 1; return originalOpen(...args); };
   try {
-    const provider = new EventCodeLensProvider();
+    const provider = new EventCodeLensProvider(new WorkspaceIndex());
     for (let i = 0; i < 100; i += 1) {
       const doc = makeTextDocument('def ordinary():\n    return 42', { fileName: `/ws/${i}.py`, languageId: 'python' }) as vscode.TextDocument;
       expect(await provider.provideCodeLenses(doc)).toEqual([]);
@@ -48,7 +49,7 @@ it('pairs dotted self.addEvent with self.emitEvent for the listener CodeLens', a
   vscode.workspace.fs.readFile = async () => Buffer.from('self.addEvent("ev_ready", self.on_ready)\ndef on_ready(self):\n    pass');
   try {
     const doc = makeTextDocument('self.emitEvent("ev_ready")', { fileName: '/ws/emit.py', languageId: 'python' }) as vscode.TextDocument;
-    const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+    const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
     const titles = lenses.map(lens => (lens.command as { title: string }).title);
     expect(titles).toContain('1 处监听');
   } finally {
@@ -73,7 +74,7 @@ it('keeps the call without callback when the callback is an expression', () => {
     vscode.workspace.findFiles = async () => [];
     try {
       const doc = makeTextDocument('self.addEvent(PLAYER_EVENT, "on_player")\ndef on_player(self):\n    pass', { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
-      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
       expect((lenses[0].command as { title: string }).title).toBe('事件回调 · PLAYER_EVENT');
     } finally { vscode.workspace.findFiles = originalFindFiles; }
   });
@@ -84,7 +85,7 @@ it('keeps the call without callback when the callback is an expression', () => {
     try {
       const source = 'self.addEvent(A_EVENT, "on_ready")\nself.registerEvent(B_EVENT, "on_ready")\nself.addEvent(A_EVENT, "on_ready")\nself.addEvent(C_EVENT, "on_ready")\ndef on_ready(self):\n    pass';
       const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
-      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
       expect((lenses[0].command as { title: string }).title).toBe('事件回调 · A_EVENT、B_EVENT、C_EVENT');
     } finally { vscode.workspace.findFiles = originalFindFiles; }
   });
@@ -95,7 +96,7 @@ it('keeps the call without callback when the callback is an expression', () => {
     try {
       const source = ['A_EVENT', 'B_EVENT', 'C_EVENT', 'D_EVENT', 'E_EVENT'].map(event => `self.addEvent(${event}, "on_ready")`).join('\n') + '\ndef on_ready(self):\n    pass';
       const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
-      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
       expect((lenses[0].command as { title: string }).title).toBe('事件回调 · A_EVENT 等 5 个');
     } finally { vscode.workspace.findFiles = originalFindFiles; }
   });
@@ -106,7 +107,7 @@ it('keeps the call without callback when the callback is an expression', () => {
     try {
       const source = 'self.addEvent(PLAYER_EVENT, "on_ready")\nself.registerEvent(PLAYER_EVENT, "on_ready")\nself.registerEvent(OTHER_EVENT, "on_ready")\ndef on_ready(self):\n    pass';
       const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
-      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
       expect((lenses[0].command as { title: string }).title).toBe('事件回调 · PLAYER_EVENT、OTHER_EVENT');
     } finally { vscode.workspace.findFiles = originalFindFiles; }
   });
@@ -117,7 +118,7 @@ it('keeps the call without callback when the callback is an expression', () => {
     try {
       const source = 'self.addEvent(FIRST_EVENT, "on_ready")\nself.registerEvent(SECOND_EVENT, "on_ready")\n\ndef on_ready(self):\n    self.work()';
       const doc = makeTextDocument(source, { fileName: '/ws/entity.py', languageId: 'python' }) as vscode.TextDocument;
-      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
       expect(lenses).toHaveLength(1);
       expect(lenses[0].range.start.line).toBe(3);
     } finally { vscode.workspace.findFiles = originalFindFiles; }
@@ -153,7 +154,7 @@ it('keeps the call without callback when the callback is an expression', () => {
     );
     try {
       const doc = makeTextDocument('self.emitEvent(EVT)', { fileName: '/ws/emit.py', languageId: 'python' }) as vscode.TextDocument;
-      const lenses = await new EventCodeLensProvider().provideCodeLenses(doc);
+      const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(doc);
       expect(lenses.map(lens => (lens.command as { title: string }).title)).toContain('2 处监听');
       expect((lenses.find(lens => (lens.command as { title: string }).title === '2 处监听')?.command as { command: string }).command).toBe('kbengine.source.reveal');
     } finally {
@@ -275,12 +276,12 @@ describe('EventCodeLensProvider 独立开关(批154)', () => {
     }) as vscode.TextDocument;
 
     // 正对照:默认开启时回调声明行出镜
-    const lenses = await new EventCodeLensProvider().provideCodeLenses(document);
+    const lenses = await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(document);
     expect(lenses.length).toBeGreaterThan(0);
 
     configurationOverrides.set('kbengine', { 'codeLens.eventCallbacks': false });
     try {
-      expect(await new EventCodeLensProvider().provideCodeLenses(document)).toEqual([]);
+      expect(await new EventCodeLensProvider(new WorkspaceIndex()).provideCodeLenses(document)).toEqual([]);
     } finally {
       configurationOverrides.delete('kbengine');
     }

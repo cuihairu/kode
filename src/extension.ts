@@ -137,6 +137,7 @@ import {
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
+import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
@@ -701,12 +702,15 @@ export function activate(context: vscode.ExtensionContext) {
   // 事件回调标记(批154 从 RPC 镜链返回值里拆出独立注册):addEvent/
   // registerEvent 的回调 def 声明处标「事件回调 · EV_X」、emitEvent 处标
   // 监听数,独立开关 kbengine.codeLens.eventCallbacks,与 RPC 互不影响
-  const eventCodeLensProviderImpl = new EventCodeLensProvider();
+  // IDE-EVT-012:事件 CodeLens 复用统一文件索引(全仓扫描入口只此一份)
+  const sharedWorkspaceIndex = new WorkspaceIndex();
+  const eventCodeLensProviderImpl = new EventCodeLensProvider(sharedWorkspaceIndex);
   const eventCodeLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
     eventCodeLensProviderImpl
   );
   context.subscriptions.push(eventCodeLensProvider, eventCodeLensProviderImpl);
+  context.subscriptions.push(sharedWorkspaceIndex);
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
   // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开
