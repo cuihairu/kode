@@ -65,9 +65,13 @@ describe('buildEntityTypeStubPlan', () => {
       }],
       methods: []
     }]);
-    expect(plan.content).toContain('class Avatar:');
+    expect(plan.content).toContain('class Avatar(Entity):');
     expect(plan.content).toContain('# source: .def:24 -> types.xml:8');
     expect(plan.content).toContain('    profile: ITEM_INFO');
+    // 继承面(pyi ④ 任务1):基类来自 KBEngine 存根;纯属性实体不带
+    // EntityCall(只导注解面真实引用到的名字)
+    expect(plan.content).toContain('from KBEngine import Entity');
+    expect(plan.content).not.toContain('EntityCall');
   });
 
   it('adds per-section methods and built-in argument annotations', () => {
@@ -83,9 +87,16 @@ describe('buildEntityTypeStubPlan', () => {
         sourceLine: 17
       }]
     }]);
-    expect(plan.content).toContain('class Guard:');
+    expect(plan.content).toContain('class Guard(Entity):');
     expect(plan.content).toContain('# source: .def:17 (CellMethods)');
     expect(plan.content).toContain('def respawn(arg1: int) -> None: ...');
+    // mailbox 面(pyi ④ 任务1):方法面实体配 <Entity>MB(EntityCall) 句柄,
+    // 实体类 base/cell/client 按本实体 MB 收窄,KBEngine 导入带 EntityCall
+    expect(plan.content).toContain('class GuardMB(EntityCall):');
+    expect(plan.content).toContain('    base: Union[GuardMB, None]');
+    expect(plan.content).toContain('    cell: Union[GuardMB, None]');
+    expect(plan.content).toContain('    client: Union[GuardMB, None]');
+    expect(plan.content).toContain('from KBEngine import Entity, EntityCall');
   });
 
   it('imports referenced custom types from their kbe_types mirror module (pyi ③)', () => {
@@ -98,6 +109,26 @@ describe('buildEntityTypeStubPlan', () => {
     // 无工作区语境退根级模块名,仍可解析(与 kbe_types 根级单文件落点对齐)
     const rootless = buildEntityTypeStubPlan([avatarMapping], [customType]);
     expect(rootless.content).toContain('from kbe_types import ITEM_INFO');
+  });
+
+  it('method argument annotations referencing custom types get imported too (pyi ④)', () => {
+    // 方法面形参注解引用自定义类型名(respawn(arg1: ITEM_INFO)):实体
+    // 方法面与 mailbox 面共用同一注解链,导入面漏扫方法形参即悬挂裸名。
+    const guardArgMapping = {
+      ...guardMapping,
+      methods: {
+        respawn: [{
+          defFile: '/ws/scripts/entity_defs/Guard.def',
+          line: 17,
+          section: 'CellMethods',
+          exposed: true,
+          declaredArgs: ['ITEM_INFO']
+        }]
+      }
+    } as unknown as EntityMapping;
+    const plan = buildEntityTypeStubPlan([guardArgMapping], [customType], { workspaceRoot: '/ws' });
+    expect(plan.content).toContain('def respawn(arg1: ITEM_INFO) -> None: ...');
+    expect(plan.content).toContain('from scripts.entity_defs.kbe_types import ITEM_INFO');
   });
 
   it('poisoned custom types fall back to Any and are never imported (pyi ③)', () => {

@@ -180,3 +180,27 @@
   注册面外)→ Any。以上全部保留,不属于「可避免 Any」。
 - 元素型 ARRAY 的消灭(`ARRAY <of> X` → `List[X]`,of 套 of 递归)在 B 单
   已落地(pythonTypeStubs.test.ts 嵌套/缺 of/ALIAS 占位三例),本次未改。
+
+### 8.4 实体存根继承与 mailbox 面(任务1,最小可用取舍)
+
+- **继承**:`entity_types.pyi` 每个实体类从 `class Avatar:` 升为
+  `class Avatar(Entity):`,头部 `from KBEngine import Entity`(生成桩
+  KBEngine.pyi 的符号目录本来就有 Entity)。继承属类身份,不属方法面:
+  `kbengine.python.entityStubMethods=false` 时方法面让位,继承头仍在。
+- **mailbox**:有方法面的实体配一个 `<Entity>MB(EntityCall)` 句柄类,
+  方法签名与实体类方法面**同链同源**(methodArgAnnotation → 注册表解析),
+  `.def` 三段(Base/Cell/Client)方法全部合并其上,逐条带 `# source:`
+  注释。实体类上 `base/cell/client: Union[<Entity>MB, None]` 三条收窄——
+  引擎语义上三属性恒存在(无远端时 None),收窄只认类型不断言存在性。
+- **为什么不在 KBEngine.pyi 的 Entity 基类上标 MB 类型**:KBEngine.pyi 是
+  全局静态符号目录,逐实体的 MB 类型只存在于本工作区的 entity_types.pyi,
+  静态基类引用不到——所以收窄放实体类属性覆写(基类对这三属性本无声明,
+  覆写不冲突)。这是一期取舍;若未来 KBEngine.pyi 走生成式合并可再议。
+- **开关与边界**:mailbox 面整体随 `kbengine.python.entityStubMethods`
+  让位(=false 时无 MB 类、无 EntityCall 导入、无三条覆写);纯属性实体
+  不配 MB(无方法面可装,实体属性继承基类语义)。MB 类名 `<Entity>MB`
+  与他实体撞名的场景(实体本名就叫 `XMB`)未做防御,真实项目罕见,如实
+  记边界。
+- **方法形参导入面修复**:头部 kbe_types 导入扫描此前只扫属性注解,方法
+  形参注解引用自定义类型名(如 `respawn(arg1: ITEM_INFO)`)会悬挂裸名——
+  本批补扫方法形参(MB 面与实体方法面共用同一批注解,一处补扫两处受益)。

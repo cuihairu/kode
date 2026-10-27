@@ -304,12 +304,20 @@ describe('kbengine.python.entityStubMethods(entity_types.pyi 方法面)', () => 
     const plan = buildEntityTypeStubPlan([baseMapping], []);
     expect(plan.entries[0]?.methods.map(method => method.name)).toEqual(['cellTick']);
     expect(plan.content).toContain('def cellTick(arg1: int) -> None: ...');
+    // mailbox 面(pyi ④ 任务1)随方法面:MB 句柄类 + base/cell/client 收窄
+    expect(plan.content).toContain('class AvatarMB(EntityCall):');
+    expect(plan.content).toContain('from KBEngine import Entity, EntityCall');
   });
 
   it('includeMethods=false:方法面让位,只有方法的实体落出存根', () => {
     const plan = buildEntityTypeStubPlan([baseMapping], [], { includeMethods: false });
     expect(plan.entries[0]?.methods).toEqual([]);
     expect(plan.content).not.toContain('def cellTick');
+    // mailbox 面整体随方法面让位:无 MB 类、无 EntityCall 导入,继承头仍在
+    expect(plan.content).not.toContain('AvatarMB');
+    expect(plan.content).not.toContain('EntityCall');
+    expect(plan.content).toContain('class Avatar(Entity):');
+    expect(plan.content).toContain('from KBEngine import Entity');
   });
 
   it('false(配置读取处):exportEntityTypeStubs 落盘属性面存根', async () => {
