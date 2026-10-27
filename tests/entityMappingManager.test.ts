@@ -798,3 +798,98 @@ describe('IDE-IDX-008 删除同名胜者保留其他根实体', () => {
     }
   }, 20000);
 });
+
+describe('IDE-IDX-012 全部工作区根 def watcher', () => {
+  it('第二根 def 变更:实体映射与依赖失效均可观察,第一根不动', async () => {
+    const wsA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ws-a-'));
+    const wsB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ws-b-'));
+    try {
+      write(wsA, 'scripts/entity_defs/HeroA.def',
+        '<root>\n  <BaseMethods>\n    <onA/>\n  </BaseMethods>\n</root>');
+      write(wsB, 'scripts/entity_defs/HeroB.def',
+        '<root>\n  <BaseMethods>\n    <onB/>\n  </BaseMethods>\n</root>');
+      // B 根内的父子依赖:父 def 变更要连坐失效子实体(依赖失效可观察)
+      write(wsB, 'scripts/entity_defs/MonsterB.def',
+        '<root>\n  <Parent>HeroB</Parent>\n  <BaseMethods>\n    <roar/>\n  </BaseMethods>\n</root>');
+      const heroBDef = p(wsB, 'scripts', 'entity_defs', 'HeroB.def');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      const originalWatcher = stubWorkspace.createFileSystemWatcher;
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(wsA), name: 'wsA', index: 0 },
+        { uri: Uri.file(wsB), name: 'wsB', index: 1 }
+      ];
+      stubWorkspace.findFiles = async () => {
+        const results: Uri[] = [];
+        for (const base of [wsA, wsB]) {
+          const walk = (dir: string) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = p(dir, entry.name);
+              if (entry.isDirectory()) { walk(full); }
+              else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+            }
+          };
+          walk(base);
+        }
+        return results;
+      };
+      // 记 pattern → watcher:按 pattern 断言第二根有自己的 def watcher
+      interface StubWatcher { fireChange(uri: Uri): void; fireCreate(uri: Uri): void; fireDelete(uri: Uri): void }
+      const watchersByPattern = new Map<string, StubWatcher>();
+      stubWorkspace.createFileSystemWatcher = ((pattern: string) => {
+        const change: Array<(uri: Uri) => void> = [];
+        const create: Array<(uri: Uri) => void> = [];
+        const remove: Array<(uri: Uri) => void> = [];
+        const watcher: StubWatcher = {
+          fireChange: (uri: Uri) => change.forEach(fn => fn(uri)),
+          fireCreate: (uri: Uri) => create.forEach(fn => fn(uri)),
+          fireDelete: (uri: Uri) => remove.forEach(fn => fn(uri))
+        };
+        watchersByPattern.set(String(pattern), watcher);
+        return {
+          onDidChange(listener: (uri: Uri) => void) { change.push(listener); return { dispose: () => void 0 }; },
+          onDidCreate(listener: (uri: Uri) => void) { create.push(listener); return { dispose: () => void 0 }; },
+          onDidDelete(listener: (uri: Uri) => void) { remove.push(listener); return { dispose: () => void 0 }; },
+          dispose: () => void 0
+        } as never;
+      }) as never;
+
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        const rootIndexes = (): Map<string, unknown> =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
+        await until(() => rootIndexes().size >= 3, 'two-folder scan');
+        const aKey = [...rootIndexes().keys()].find(key => key.endsWith('HeroA.def')) as string;
+        const aIndexBefore = rootIndexes().get(aKey);
+
+        // 第二根必须有自己的 def watcher(红点:当前只挂第一根)
+        const wsBDefPattern = Uri.joinPath(Uri.file(wsB), '**/*.def').toString();
+        const wsBDefWatcher = watchersByPattern.get(wsBDefPattern);
+        expect(wsBDefWatcher).toBeDefined();
+
+        // 父 def 变更:新增 onNew 方法
+        write(wsB, 'scripts/entity_defs/HeroB.def',
+          '<root>\n  <BaseMethods>\n    <onB/>\n    <onNew/>\n  </BaseMethods>\n</root>');
+        wsBDefWatcher!.fireChange(Uri.file(heroBDef));
+
+        // 实体映射失效可观察:父自身定向重解析拿到新方法
+        await until(async () => !!(await manager.resolveMethodDefinitionForClass('HeroB', 'onNew')),
+          'parent reparse with onNew');
+        // 依赖失效可观察:子实体按需重建后继承父新增方法
+        const childNew = await manager.resolveMethodDefinitionForClass('MonsterB', 'onNew');
+        expect(childNew).not.toBeNull();
+        // 第一根不动:索引对象原引用保留
+        expect(rootIndexes().get(aKey)).toBe(aIndexBefore);
+      } finally {
+        manager.dispose();
+        stubWorkspace.createFileSystemWatcher = originalWatcher;
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+      }
+    } finally {
+      fs.rmSync(wsA, { recursive: true, force: true });
+      fs.rmSync(wsB, { recursive: true, force: true });
+    }
+  }, 20000);
+});

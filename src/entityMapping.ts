@@ -1010,11 +1010,11 @@ export class EntityMappingManager {
     const invalidate = (uri: vscode.Uri, changeKind: SemanticChangeKind): void => {
       this.handleDefFileChanged(uri.fsPath, changeKind);
     };
-    // workspace 首根 + workspace 外 assetsRoot(外部资产根的 .def 增删改同样失效)
+    // IDE-IDX-012:workspace 全部根(多根工作区的第二根 .def 变更同样要
+    // 定向失效)+ workspace 外 assetsRoot(外部资产根的 .def 增删改同样失效)
     const patterns: string[] = [];
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-    if (workspaceFolder) {
-      patterns.push(vscode.Uri.joinPath(workspaceFolder.uri, '**/*.def').toString());
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      patterns.push(vscode.Uri.joinPath(folder.uri, '**/*.def').toString());
     }
     for (const root of getExternalScanRoots()) {
       patterns.push(vscode.Uri.joinPath(vscode.Uri.file(root), '**/*.def').toString());
