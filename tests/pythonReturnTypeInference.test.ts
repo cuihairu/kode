@@ -96,6 +96,17 @@ describe('返回类型推导(局部变量 hover)', () => {
     expect(matches).toBeLessThanOrEqual(source.split('\n').length + 5);
   });
 
+  it('提取多行签名，截断签名不借用后续定义的注解', () => {
+    const source = [
+      'def multiline(', '    value: int,', '    other: str,', ') -> Result:', '    pass',
+      'def broken(', '    value: int,', 'def next_method() -> Next:', '    pass',
+      'def incomplete() -> Missing'
+    ].join('\n');
+    expect([...extractFileReturnAnnotations(source)]).toEqual([
+      ['multiline', 'Result'], ['next_method', 'Next']
+    ]);
+  });
+
   it('JSONDATA 正例:data = activity_data.get_data() → data: JSONDATA,标注来源', async () => {
     const { put } = setupWorkspace();
     put(

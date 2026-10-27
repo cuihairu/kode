@@ -169,8 +169,11 @@ export function extractFileReturnAnnotations(source: string): PythonReturnAnnota
 
   for (const rawLine of source.split(/\r?\n/)) {
     const masked = maskCodeLine(rawLine);
+    const nextDef = defHead.exec(masked)?.[1];
+    // 不完整的签名不能吞掉后续定义，也不能借用后续定义的冒号或注解。
+    if (current && nextDef) { current = undefined; }
     if (!current) {
-      const name = defHead.exec(masked)?.[1];
+      const name = nextDef;
       if (!name || seen.has(name)) { continue; }
       seen.add(name);
       current = { name, signature: '', depth: 0, sawParens: false, lines: 0 };
