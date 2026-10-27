@@ -94,13 +94,56 @@ export function raceWithBudget<T>(
   });
 }
 
+/**
+ * IDE-BUD-001:hover 请求统一截止时间上下文。一次请求一个 deadline:绝对
+ * 时刻 + 链接 token(父取消即取消),全分支共享——各层用 remainingMs() 作
+ * 本层预算(而非各起满额预算窗),deadline 语义唯一;预算由层闸强制(层
+ * 计时器到点记账),本体不自动取消 token(取消传播进请求独占工作是
+ * IDE-BUD-002 的面)。同步路径只在段口协作检查(isExpired/token),不得被
+ * 宣称已可抢占。
+ */
+export interface HoverRequestDeadline {
+  /** 链接 token:父 token 取消即取消(预算到期不自动取消,见上) */
+  readonly token: vscode.CancellationToken;
+  readonly startedAt: number;
+  readonly budgetMs: number;
+  /** 剩余预算(ms);budgetMs<=0(关闸)恒 0,与 raceWithBudget 不设闸口径一致 */
+  remainingMs(): number;
+  /** 是否已到期;budgetMs<=0(关闸)恒 false */
+  isExpired(): boolean;
+  /** 请求落定即释放:清父监听(不取消 token 本身) */
+  dispose(): void;
+}
+
+export function createHoverRequestDeadline(
+  parentToken: vscode.CancellationToken | undefined,
+  budgetMs: number
+): HoverRequestDeadline {
+  const startedAt = Date.now();
+  const linked = createLinkedCancellationToken(parentToken);
+  return {
+    token: linked.token,
+    startedAt,
+    budgetMs,
+    remainingMs(): number {
+      return budgetMs > 0 ? budgetMs - (Date.now() - startedAt) : 0;
+    },
+    isExpired(): boolean {
+      return budgetMs > 0 && this.remainingMs() <= 0;
+    },
+    dispose(): void {
+      linked.dispose();
+    }
+  };
+}
+
 /** A request-owned token that also stops when its local budget expires. */
-export function createLinkedCancellationToken(parent: vscode.CancellationToken): {
+export function createLinkedCancellationToken(parent: vscode.CancellationToken | undefined): {
   token: vscode.CancellationToken;
   cancel: () => void;
   dispose: () => void;
 } {
-  let cancelled = parent.isCancellationRequested;
+  let cancelled = parent?.isCancellationRequested ?? false;
   const listeners = new Set<(event: unknown) => unknown>();
   const cancel = (): void => {
     if (cancelled) { return; }
@@ -108,7 +151,7 @@ export function createLinkedCancellationToken(parent: vscode.CancellationToken):
     for (const listener of listeners) { listener(undefined); }
     listeners.clear();
   };
-  const parentListener = parent.onCancellationRequested?.(cancel);
+  const parentListener = parent?.onCancellationRequested?.(cancel);
   const token: vscode.CancellationToken = {
     get isCancellationRequested() { return cancelled; },
     onCancellationRequested(listener) {

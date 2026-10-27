@@ -145,6 +145,7 @@ import {
 } from './kbeModuleIndex';
 import type { EngineApiCatalog } from './engineApiMetadata';
 import {
+  createHoverRequestDeadline,
   HOVER_ASYNC_BUDGET_MS_DEFAULT,
   raceWithBudget,
   withInitialScanTimeout
@@ -713,11 +714,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
     if (token?.isCancellationRequested) { return null; }
-    const respond = (work: Promise<vscode.Hover | null>): Promise<vscode.Hover | null> =>
-      raceWithBudget('hover:cancel', work, 0, token);
     const featureConfig = getLanguageFeatureConfig();
+    // IDE-BUD-001:一次请求一个截止时间上下文——绝对 deadline + 链接 token
+    // 全分支共享:各层 raceWithBudget 用 remainingMs() 而非各起满额预算窗;
+    // 父取消或预算到期即取消链接 token,异步层与取消闸同刻观测。
+    const deadline = createHoverRequestDeadline(token, featureConfig.hoverAsyncBudgetMs);
+    const respond = (work: Promise<vscode.Hover | null>): Promise<vscode.Hover | null> =>
+      raceWithBudget('hover:cancel', work, 0, deadline.token)
+        .finally(() => deadline.dispose());
     const range = document.getWordRangeAtPosition(position, /\w+/);
     if (!range) {
+      deadline.dispose();
       return null;
     }
 
@@ -741,6 +748,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       if (methodName) {
         // 异步链总预算闸(用户令 2026-10-22):底层索引慢(首扫秒级+)时不再
         // 永转 loading,超预算返回空悬停并记 LogHub(层名+耗时)。
+        // IDE-BUD-001:预算 = 共享 deadline 的剩余量,不再各起满额窗。
         return respond(this.memoizedHover(memoKey, document.version, () =>
           raceWithBudget(
             'hover:def-method',
@@ -748,7 +756,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
-            featureConfig.hoverAsyncBudgetMs
+            deadline.remainingMs(),
+            deadline.token
           )
         ));
       }
@@ -771,7 +780,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
-            featureConfig.hoverAsyncBudgetMs
+            deadline.remainingMs(),
+            deadline.token
           )
         ));
       }
@@ -795,11 +805,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
               .then(annotation =>
                 annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
               ),
-            featureConfig.hoverAsyncBudgetMs
+            deadline.remainingMs(),
+            deadline.token
           )
         ));
       }
       // 三个异步面都未命中:落回下方同步链(批159 前语义,不进 memo)
+      // IDE-BUD-001:同步段不可抢占——只在段口协作检查 deadline(父已取消/
+      // 预算已耗尽就不进同步链),不得宣称同步路径因此可被抢占。
+      if (deadline.token.isCancellationRequested || deadline.isExpired()) {
+        deadline.dispose();
+        return null;
+      }
     }
 
     // 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
@@ -825,11 +842,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         const markdown = new vscode.MarkdownString();
         markdown.appendMarkdown(`**${inferred.target}: ${inferred.annotation}**\n\n`);
         markdown.appendMarkdown(`推导自 ${inferred.methodName}() 返回注解`);
+        deadline.dispose();
         return new vscode.Hover(markdown);
       }
     }
 
-    return this.provideKnownHover(document, position, featureConfig, range, word);
+    const known = this.provideKnownHover(document, position, featureConfig, range, word);
+    deadline.dispose();
+    return known;
   }
 
   /**
