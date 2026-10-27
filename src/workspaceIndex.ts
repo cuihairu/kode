@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { findEventCalls, type EventCall } from './eventApi';
+import { findFilesAcrossRoots } from './scanRoots';
+import { PY_SCAN_EXCLUDE } from './pythonScanRules';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
 // 一次性建索引 + watcher 增量失效；实例由 provider 持有（测试各自全新实例，互不污染）。
@@ -68,12 +70,14 @@ export class WorkspaceIndex {
     for (const document of vscode.workspace.textDocuments) {
       if (document.isDirty) this.noteSaved(document);
     }
-    const files = await vscode.workspace.findFiles(this.pyGlob, '**/{.git,node_modules}/**');
+    const initialRevisions = new Map(this.revisions);
+    const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
     if (this.disposed) return;
     let nextFile = 0;
     const scanWorker = async (): Promise<void> => {
       while (!this.disposed && nextFile < files.length) {
         const uri = files[nextFile++];
+        if ((this.revisions.get(uri.fsPath) ?? 0) !== (initialRevisions.get(uri.fsPath) ?? 0)) continue;
         await this.indexFile(uri);
       }
     };

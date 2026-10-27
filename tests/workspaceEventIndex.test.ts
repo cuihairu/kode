@@ -1,8 +1,12 @@
 import { expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 import { EventCodeLensProvider } from '../src/eventApi';
-import { lastFileSystemWatcher, makeTextDocument, workspaceEvents } from './helpers/vscodeStub';
+import { configurationOverrides, lastFileSystemWatcher, makeTextDocument, workspaceEvents } from './helpers/vscodeStub';
+import { resetScanRootCache } from '../src/scanRoots';
 
 it('事件首扫后台读取文件，不打开其他文档并保留行号', async () => {
   const originalFind = vscode.workspace.findFiles;
@@ -22,6 +26,40 @@ it('事件首扫后台读取文件，不打开其他文档并保留行号', asyn
     vscode.workspace.findFiles = originalFind;
     vscode.workspace.fs.readFile = originalRead;
     vscode.workspace.openTextDocument = originalOpen;
+  }
+});
+
+it('事件首扫包含外部 assetsRoot 并排除共享规则中的目录', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-events-roots-'));
+  const workspaceRoot = path.join(root, 'workspace');
+  const assetsRoot = path.join(root, 'assets');
+  fs.mkdirSync(workspaceRoot);
+  fs.mkdirSync(path.join(assetsRoot, 'venv'), { recursive: true });
+  fs.mkdirSync(path.join(assetsRoot, 'third_party'));
+  fs.writeFileSync(path.join(assetsRoot, 'listener.py'), 'self.addEvent(EV, self.on_ev)');
+  fs.writeFileSync(path.join(assetsRoot, 'venv', 'excluded.py'), 'self.addEvent(BAD, self.on_ev)');
+  fs.writeFileSync(path.join(assetsRoot, 'third_party', 'excluded.py'), 'self.addEvent(BAD, self.on_ev)');
+  const originalFolders = vscode.workspace.workspaceFolders;
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file(workspaceRoot), name: 'ws', index: 0 }];
+  configurationOverrides.set('kbengine', { assetsRoot });
+  vscode.workspace.findFiles = async () => [];
+  vscode.workspace.fs.readFile = async uri => fs.promises.readFile(uri.fsPath);
+  resetScanRootCache();
+  const index = new WorkspaceIndex();
+  try {
+    const calls = await index.allEventCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ file: path.join(assetsRoot, 'listener.py'), call: { event: 'EV' } });
+  } finally {
+    index.dispose();
+    vscode.workspace.workspaceFolders = originalFolders;
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+    configurationOverrides.delete('kbengine');
+    resetScanRootCache();
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -45,8 +83,7 @@ it('事件首扫限制并发并在索引取消后停止启动读取', async () =
   const index = new WorkspaceIndex();
   try {
     const pending = index.allEventCalls();
-    await Promise.resolve();
-    expect(read).toHaveBeenCalledTimes(8);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(8));
     expect(peak).toBe(8);
     index.dispose();
     release();
@@ -108,17 +145,42 @@ it('首扫旧磁盘读取结束时不能覆盖期间的编辑', async () => {
   const originalRead = vscode.workspace.fs.readFile;
   const uri = vscode.Uri.file('/ws/listener.py');
   let release!: (bytes: Uint8Array) => void;
+  let start!: () => void;
+  const started = new Promise<void>(resolve => { start = resolve; });
   const reading = new Promise<Uint8Array>(resolve => { release = resolve; });
   vscode.workspace.findFiles = async () => [uri];
-  vscode.workspace.fs.readFile = () => reading;
+  vscode.workspace.fs.readFile = () => { start(); return reading; };
   const index = new WorkspaceIndex();
   try {
     const pending = index.allEventCalls();
-    await Promise.resolve();
+    await started;
     const edited = makeTextDocument('self.addEvent(NEW, self.on_ev)', { fileName: uri.fsPath, languageId: 'python' });
     workspaceEvents.documentChanged.fire({ document: edited });
     release(Buffer.from('self.addEvent(OLD, self.on_ev)'));
     expect(await pending).toMatchObject([{ call: { event: 'NEW' } }]);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
+it('首扫发现文件期间发生的编辑不会被后续磁盘读取覆盖', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const uri = vscode.Uri.file('/ws/listener.py');
+  let release!: (files: vscode.Uri[]) => void;
+  vscode.workspace.findFiles = () => new Promise(resolve => { release = resolve; });
+  const read = vi.fn(async () => Buffer.from('self.addEvent(OLD, self.on_ev)'));
+  vscode.workspace.fs.readFile = read;
+  const index = new WorkspaceIndex();
+  try {
+    const pending = index.allEventCalls();
+    const edited = makeTextDocument('self.addEvent(NEW, self.on_ev)', { fileName: uri.fsPath, languageId: 'python' });
+    workspaceEvents.documentChanged.fire({ document: edited });
+    release([uri]);
+    expect(await pending).toMatchObject([{ call: { event: 'NEW' } }]);
+    expect(read).not.toHaveBeenCalled();
   } finally {
     index.dispose();
     vscode.workspace.findFiles = originalFind;
