@@ -168,6 +168,13 @@ export class EntityMappingManager {
   private missingClassNames = new Set<string>();
   /** 构造期全量 .def 扫描句柄(对象级探等待它,避免同一次跳转内重复全量 walk) */
   private initialScan: Promise<void> = Promise.resolve();
+  /**
+   * 首扫是否成功落地。对象级负缓存(类名 miss)只在它置位后发布——首扫进行
+   * 中哪怕映射表已并入部分分块,后续分块里的接口/组件类仍可能经 ownerName
+   * 回溯命中,凭「表非空」记 miss 会把它们永久误判为不存在(负缓存只在 .def
+   * 变更时清理,不会自愈)。
+   */
+  private initialScanCompleted = false;
   /** PR3:首扫统一走索引调度器(扩展注入共享实例,独立构造自建一份) */
   private readonly scheduler: IndexScheduler;
   /**
@@ -234,7 +241,10 @@ export class EntityMappingManager {
           }))
           .catch(() => undefined)
           .then(async () => { await work; })
-          .then(() => resolve(), () => resolve());
+          .then(
+            () => { this.initialScanCompleted = true; resolve(); },
+            () => resolve() // 真实扫描失败:不置完成位,负缓存不得基于残缺快照发布
+          );
       });
     });
     if (this.deferredInitialScanResolve) {
@@ -2140,8 +2150,10 @@ export class EntityMappingManager {
       if (!ready) { return undefined; }
     }
     index = index ?? this.lookupIndexByClass(className);
-    if (!index && this.mappingIndexes.size > 0) {
-      // 索引表已有数据仍未命中才负缓存(空表=尚无数据,不落死)
+    if (!index && this.initialScanCompleted) {
+      // 首扫已成功落地仍未命中才负缓存:首扫进行中(哪怕索引表已并入部分
+      // 分块)不能凭「表非空」判类不存在——后续分块里的接口/组件类会经
+      // ownerName 回溯命中,提前记 miss 会被永久误判(负缓存不自动自愈)。
       this.missingClassNames.add(className);
     }
     jumpLog('debug', () =>
