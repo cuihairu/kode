@@ -3950,36 +3950,33 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       };
     }
 
-    // ② 接收者名 = 当前文件内可见类名 → 同名方法声明(本文件作用域)
+    // ② 接收者名 = 当前文件内可见类名 → 同名方法声明(本文件作用域)。
+    // IDE-IDX-017:答案本就只来自当前文档(旧路径取索引同文件类后仍重解析
+    // 现文档复核),改为直查当前文件快照——不经 findClassesByName 的
+    // ensureScanned,全仓扫描挂起时同文件 Class.method 跳转不受拖累。
     if (this.pythonClassIndex) {
       try {
-        const classes = await this.pythonClassIndex.findClassesByName(access.receiverName);
-        const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase();
-        const sameFile = classes.filter(cls => norm(cls.filePath) === norm(document.fileName));
-        const target = sameFile[0];
-        if (target) {
-          const parsed = parsePythonFile(document.getText(), document.fileName);
-          const cls = parsed.classes.find(item => item.name === target.name);
-          const method = cls?.methods.get(query);
-          if (method) {
-            jumpLog('info', () =>
-              `member-access 命中类: ${target.name}.${query} @ ${path.basename(document.fileName)}:${method.line + 1}`
-            );
-            return {
-              location: new vscode.Location(
-                vscode.Uri.file(document.fileName),
-                new vscode.Position(method.line, method.character)
-              ),
-              layers: [
-                {
-                  layer: 'member-access',
-                  query,
-                  status: 'hit',
-                  detail: `class=${target.name}.${query}`
-                }
-              ]
-            };
-          }
+        const parsed = parsePythonFile(document.getText(), document.fileName);
+        const cls = parsed.classes.find(item => item.name === access.receiverName);
+        const method = cls?.methods.get(query);
+        if (method) {
+          jumpLog('info', () =>
+            `member-access 命中类: ${access.receiverName}.${query} @ ${path.basename(document.fileName)}:${method.line + 1}`
+          );
+          return {
+            location: new vscode.Location(
+              vscode.Uri.file(document.fileName),
+              new vscode.Position(method.line, method.character)
+            ),
+            layers: [
+              {
+                layer: 'member-access',
+                query,
+                status: 'hit',
+                detail: `class=${access.receiverName}.${query}`
+              }
+            ]
+          };
         }
       } catch (error) {
         jumpLog('debug', () => `member-access 类回退失败: ${layerErrorMessage(error)}`);

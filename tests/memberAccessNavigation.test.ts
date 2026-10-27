@@ -8,6 +8,7 @@ import {
   PythonDefinitionProvider,
   setPythonMroJumpEnabled
 } from '../src/languageProviders';
+import { PythonClassIndex } from '../src/pythonClassIndex';
 import { getPythonMemberAccessAtPosition } from '../src/pythonLanguageUtils';
 import { makeTextDocument } from './helpers/vscodeStub';
 import { resetScanRootCache } from '../src/scanRoots';
@@ -191,4 +192,37 @@ describe('批158 共享倒排索引(每方法名首声明口径)', () => {
     expect(hit).not.toBeNull();
     expect(hit!.filePath.replace(/\\/g, '/')).toContain('Avatar.py');
   });
+});
+
+describe('IDE-IDX-017 同文件成员跳转只查当前文件快照', () => {
+  it('全仓扫描挂起时 SameFile.helper 仍能跳转且不触发 ensureScanned', async () => {
+    const manager = new EntityMappingManager({ subscriptions: [] } as never);
+    const index = new PythonClassIndex();
+    // 全仓扫描挂起模型:ensureScanned 永远失败并记账(证明同文件路径不再依赖它)
+    let ensureScannedCalls = 0;
+    (index as unknown as { ensureScanned: () => Promise<void> }).ensureScanned = () => {
+      ensureScannedCalls += 1;
+      return Promise.reject(new Error('workspace scan held'));
+    };
+    const provider = new PythonDefinitionProvider(manager, index);
+    const file = p(root, 'scripts/cell/SameFile.py');
+    const text = [
+      'class SameFile:',
+      '    def helper(self):',
+      '        pass',
+      '',
+      '    def caller(self):',
+      '        SameFile.helper()'
+    ].join('\n');
+    const document = makeTextDocument(text, { fileName: file, languageId: 'python' });
+    const line = text.split('\n').findIndex(l => l.includes('SameFile.helper()'));
+    const character = charOf(text.split('\n')[line], 'helper');
+
+    const traced = await provider.provideDefinitionTraced(document, new Position(line, character));
+    expect(traced.location).not.toBeNull();
+    const location = Array.isArray(traced.location) ? traced.location[0]! : traced.location;
+    expect(location.uri.fsPath.replace(/\\/g, '/')).toContain('SameFile.py');
+    expect(location.range.start.line).toBe(1);
+    expect(ensureScannedCalls).toBe(0);
+  }, 10000);
 });
