@@ -335,6 +335,8 @@ export class IndexScheduler {
     this.cancelled += 1;
     this.metrics.staleDropped += reason === 'stale-version' ? 1 : 0;
     for (const listener of task.settleListeners.splice(0)) { listener(); }
+    // 取消即终态:同样出表,避免过期版本任务(快速连续保存)在表里积压
+    this.tasks.delete(task.id);
   }
 
   /**
@@ -383,6 +385,10 @@ export class IndexScheduler {
           this.lastInteractiveEndAt = performance.now();
         }
         for (const listener of next.settleListeners.splice(0)) { listener(); }
+        // 终态任务出表:run 闭包持有整批文件路径与错误对象,长会话保存/扫描
+        // 会让 tasks Map 无限增长。句柄经 settleListeners 与自身闭包保留状态,
+        // 不依赖 Map;queued/running 查询也只看 queueOrder 与 runningId。
+        this.tasks.delete(next.id);
         this.pump();
       });
   }

@@ -52,6 +52,42 @@ describe('indexScheduler 任务生命周期与状态查询', () => {
     scheduler.dispose();
   });
 
+  it('终态任务出表:completed/failed/cancelled 后 tasks Map 不再滞留(不泄漏)', async () => {
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    // tasks 是私有生命周期表;经运行态快照只读探针取证(Map 大小即滞留数)
+    const mapSize = (): number =>
+      (scheduler as unknown as { tasks: Map<number, unknown> }).tasks.size;
+    const done = scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/a.py',
+      version: 1,
+      run: async () => undefined
+    });
+    const failing = scheduler.enqueue({
+      kind: 'single-file-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      filePath: '/b.py',
+      version: 1,
+      run: async () => { throw new Error('boom'); }
+    });
+    const cancelled = scheduler.enqueue({
+      kind: 'dependency-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      run: async () => undefined
+    });
+    cancelled.cancel('test');
+    // 入队后立即取消的也曾在表里(取消即出表)
+    await expect(done.wait).resolves.toBeUndefined();
+    await expect(failing.wait).rejects.toThrow('boom');
+    await flush();
+    expect(mapSize()).toBe(0);
+    expect(scheduler.getStatus().completed).toBe(1);
+    expect(scheduler.getStatus().failed).toBe(1);
+    expect(scheduler.getStatus().cancelled).toBe(1);
+    scheduler.dispose();
+  });
+
   it('delete-cleanup 任务带 targetPath 全生命周期可查', async () => {
     const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
     const handle = scheduler.enqueue({
