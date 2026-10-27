@@ -22,7 +22,56 @@ interface ParsedDocumentCacheEntry {
 }
 
 const MAX_PARSED_DOCUMENT_CACHE_ENTRIES = 8;
+/**
+ * IDE-SNP-007:缓存字节预算(utf8)。不变式 = 条目 ≤ 8 且 总字节 ≤ 预算,
+ * 二者越线都按 LRU 淘汰;唯一例外是「单份文档自身超预算」——保留为独占
+ * 一条(8 条目缓存不被任意大的文本无限占住,超大文档退化为逐次重解析)。
+ */
+const MAX_PARSED_DOCUMENT_CACHE_BYTES = 8 * 1024 * 1024;
+let parsedDocumentCacheByteBudget = MAX_PARSED_DOCUMENT_CACHE_BYTES;
 const parsedDocumentCache = new Map<string, ParsedDocumentCacheEntry>();
+
+function parsedDocumentCacheBytes(): number {
+  let bytes = 0;
+  for (const text of parsedDocumentCache.keys()) {
+    bytes += Buffer.byteLength(text, 'utf8');
+  }
+  return bytes;
+}
+
+function evictParsedDocumentCacheOverflow(): void {
+  while (parsedDocumentCache.size > 1
+    && (parsedDocumentCache.size > MAX_PARSED_DOCUMENT_CACHE_ENTRIES
+      || parsedDocumentCacheBytes() > parsedDocumentCacheByteBudget)) {
+    let oldestKey: string | null = null;
+    let oldestUsedAtMs = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of parsedDocumentCache) {
+      if (entry.usedAtMs < oldestUsedAtMs) {
+        oldestKey = key;
+        oldestUsedAtMs = entry.usedAtMs;
+      }
+    }
+    if (!oldestKey) {
+      break;
+    }
+    parsedDocumentCache.delete(oldestKey);
+  }
+}
+
+/** 测试面:注入字节预算(默认 8MiB) */
+export function setParsedDocumentCacheByteBudgetForTests(bytes: number): void {
+  parsedDocumentCacheByteBudget = bytes;
+}
+
+/** 测试面:清空解析缓存 */
+export function clearParsedDocumentCacheForTests(): void {
+  parsedDocumentCache.clear();
+}
+
+/** 观测面:当前缓存条目数与总字节 */
+export function getParsedDocumentCacheStats(): { entries: number; bytes: number } {
+  return { entries: parsedDocumentCache.size, bytes: parsedDocumentCacheBytes() };
+}
 
 export interface DefElementNode {
   kind: 'element';
@@ -94,19 +143,7 @@ export function parseDefDocument(text: string): DefDocument {
   assignNodePositions(text, nodes, tokens, state);
 
   parsedDocumentCache.set(text, { document, usedAtMs: performance.now() });
-  if (parsedDocumentCache.size > MAX_PARSED_DOCUMENT_CACHE_ENTRIES) {
-    let oldestKey: string | null = null;
-    let oldestUsedAtMs = Number.POSITIVE_INFINITY;
-    for (const [key, entry] of parsedDocumentCache) {
-      if (entry.usedAtMs < oldestUsedAtMs) {
-        oldestKey = key;
-        oldestUsedAtMs = entry.usedAtMs;
-      }
-    }
-    if (oldestKey) {
-      parsedDocumentCache.delete(oldestKey);
-    }
-  }
+  evictParsedDocumentCacheOverflow();
   return document;
 }
 
