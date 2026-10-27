@@ -6,6 +6,13 @@
 // - kind 变化(change→delete 等)是不同版本语义,立即投递,不延迟;
 // - 归一键 = normalizeFileIdentity(斜杠/点段归一;Linux 不折叠大小写——
 //   不同大小写在真实文件系统是不同文件)。
+//
+// 2026-10-28 审核整改(第二次真实写入不再丢失):窗口内同 kind 吞并不能
+// 区分「同一版本的重复通知」与「两次真实写入」。交付时记下盘上版本
+// (mtimeMs:size),窗口到期核对:版本已前进则补投一条同 kind 尾随事件
+// ——第二次更新最多延迟一个窗口到达,绝不永久丢失。delete 是终态(缺file
+// 即目标态)不补投;盘上版本不可得(路径不存在/stat 失败)无法核对,不补投。
+import * as fs from 'fs';
 import { normalizeFileIdentity } from './pathIdentity';
 
 export type SharedFileEventKind = 'create' | 'change' | 'delete';
@@ -23,9 +30,23 @@ export type SharedFileEventHandler = (event: SharedFileEvent) => void;
 const DEFAULT_MERGE_WINDOW_MS = 30;
 
 interface UriMergeState {
+  /** 交付时上报的原样路径(尾随补投沿用) */
+  fsPath: string;
   deliveredKind: SharedFileEventKind;
+  /** 交付时的盘上版本(mtimeMs:size);stat 不可得为 undefined */
+  deliveredVersion: string | undefined;
   timer: NodeJS.Timeout;
 }
+
+/** 盘上版本 token:两次 stat 相同 = 同一版本(纯重复);不同 = 有真实写入 */
+const fileVersionToken = (fsPath: string): string | undefined => {
+  try {
+    const stats = fs.statSync(fsPath);
+    return `${stats.mtimeMs}:${stats.size}`;
+  } catch {
+    return undefined;
+  }
+};
 
 export interface SharedFileEventMerger {
   /** 上报一条原始文件事件(经合并后投递给本合并器的全部订阅者) */
@@ -51,6 +72,26 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
     }
   };
 
+  /** 窗口到期:核对盘上版本,已前进则补投同 kind 尾随事件 */
+  const endWindow = (identity: string): void => {
+    const state = mergeByUri.get(identity);
+    if (!state) {
+      return;
+    }
+    mergeByUri.delete(identity);
+    if (state.deliveredKind === 'delete' || state.deliveredVersion === undefined) {
+      return; // 终态或版本不可知:无尾随核对
+    }
+    const current = fileVersionToken(state.fsPath);
+    if (current !== undefined && current !== state.deliveredVersion) {
+      deliver(state.fsPath, identity, state.deliveredKind);
+    }
+  };
+
+  const armWindow = (state: UriMergeState, identity: string): void => {
+    state.timer = setTimeout(() => { endWindow(identity); }, windowMs);
+  };
+
   return {
     emit(fsPath: string, kind: SharedFileEventKind): void {
       if (disposed) {
@@ -60,18 +101,23 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
       const existing = mergeByUri.get(identity);
       if (existing) {
         clearTimeout(existing.timer);
-        existing.timer = setTimeout(() => { mergeByUri.delete(identity); }, windowMs);
+        armWindow(existing, identity);
         if (existing.deliveredKind === kind) {
-          return; // 窗口内同 kind 纯重复:吞掉,只续窗
+          return; // 窗口内同 kind 上报:立即仍吞,窗口到期按盘上版本决定是否补投
         }
+        existing.fsPath = fsPath;
         existing.deliveredKind = kind;
+        existing.deliveredVersion = fileVersionToken(fsPath);
         deliver(fsPath, identity, kind);
         return;
       }
-      mergeByUri.set(identity, {
+      const state: UriMergeState = {
+        fsPath,
         deliveredKind: kind,
-        timer: setTimeout(() => { mergeByUri.delete(identity); }, windowMs)
-      });
+        deliveredVersion: fileVersionToken(fsPath),
+        timer: setTimeout(() => { endWindow(identity); }, windowMs)
+      };
+      mergeByUri.set(identity, state);
       deliver(fsPath, identity, kind);
     },
     subscribe(handler: SharedFileEventHandler): () => void {
@@ -79,9 +125,12 @@ export function createSharedFileEventMerger(windowMs: number = DEFAULT_MERGE_WIN
       return () => { subscribers.delete(handler); };
     },
     flushForTests(): void {
-      for (const [identity, state] of [...mergeByUri.entries()]) {
-        clearTimeout(state.timer);
-        mergeByUri.delete(identity);
+      for (const identity of [...mergeByUri.keys()]) {
+        const state = mergeByUri.get(identity);
+        if (state) {
+          clearTimeout(state.timer);
+        }
+        endWindow(identity);
       }
     },
     dispose(): void {
