@@ -249,7 +249,7 @@
 - [x] IDE-HOV-008 [P0] 为注解源码读取设置并发上限；验收：项目文件异步读取的峰值不超过设定并发数，单文件失败不阻断其他文件；前置：IDE-HOV-007。
 - [x] IDE-HOV-009 [P0] 为注解构建增加按字节让路点；验收：单个大文件处理也能让出宿主，不能只在文件之间让路；前置：IDE-HOV-004。
 - [x] IDE-HOV-010 [P0] 让普通 hover 只查询已发布注解快照；验收：冷查询可触发受控后台构建，但返回前不等待全项目发现或读取；前置：IDE-HOV-006, IDE-HOV-008, IDE-HOV-009。
-- [ ] IDE-HOV-011 [P0] 按文档版本更新当前文件注解；验收：未保存的返回注解变化立即进入该文件桶，旧版本结果不能覆盖新版本；前置：IDE-HOV-004。
+- [x] IDE-HOV-011 [P0] 按文档版本更新当前文件注解；验收：未保存的返回注解变化立即进入该文件桶，旧版本结果不能覆盖新版本；前置：IDE-HOV-004。（137df41;实现=src/pythonReturnTypeInference.ts 文档注解桶:updateDocumentReturnAnnotations(root,{fileKey,version,source}) 版本前进才重提取(惰性 source),同版本幂等、旧版本/同版本不覆盖新版本;单次遍历核 collectFileAnnotationFacts 同时记「有注解」与「def 在而注解缺」(墓碑,遮蔽磁盘同名旧注解不借旧值),extractFileReturnAnnotations 输出字节不变(HOV-004 契约);解析序=悬停文档桶→其余打开文档桶(fileKey 序合并)→磁盘已发布快照(被墓碑遮蔽的名字不借磁盘旧值);接线=languageProviders hover 传文档上下文(同版本不重提取)+extension.ts onDidChangeTextDocument(python 文档喂桶)/onDidCloseTextDocument(弃桶回磁盘口径,未保存修改随关闭消失);tests/pythonReturnTypeInference.test.ts 新 describe 5 例(同文件未保存变化即见新值/版本守卫+惰性 source/墓碑遮蔽含正例前置防空洞通过/跨文档桶遮蔽/弃桶回磁盘)+fake TextDocument 补可选 version(缺省 undefined=版本不可知替身语义不变,diagnosticScheduler 锚定例保持绿);锚点对账=perfCallChainDoc ANCHORS 17 项+2026-baseline.md mermaid 引用(含先前已漂的裸形次引用 :602/:781/:309 归位 567/792/316);门禁=eslint+tsc rc=0+test:unit 3220|7+xvfb demo RC=0(25 passing),新增代码全覆盖(extension.ts 824-875 零未盖)）
 - [ ] IDE-HOV-012 [P0] 保存文件时只替换该文件注解桶；验收：修改一个文件不重读其他文件，删除的返回注解不再可查；前置：IDE-HOV-011。
 - [ ] IDE-HOV-013 [P0] 新建文件时新增注解桶；验收：新文件保存后可查询其注解，目录发现不重新全跑；前置：IDE-HOV-012。
 - [ ] IDE-HOV-014 [P0] 删除文件时移除注解桶；验收：文件删除后该来源的注解消失，其他同名方法来源仍存在；前置：IDE-HOV-012。
