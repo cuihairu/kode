@@ -303,7 +303,7 @@
 - [x] IDE-SNP-002 [P1] 让语义 loader 读取共享快照；验收：未保存 def 的属性和方法声明可见，未打开文件仍可从磁盘补载；前置：IDE-SNP-001。(3618551;definitionSemantics loadLocal/loadResolvedAtInternal 两读点改 readSharedFileSnapshot,删 readTextFile+fs 导入;未保存 def 的属性/方法声明经缓冲区可见(三入口 loadLocal/loadResolved/loadResolvedAt),未打开磁盘补载/关闭脏文档恢复磁盘版本/缺失 null 口径不变;loader 生产面全部操作期新建无跨编辑缓存风险;3261|7)
 - [x] IDE-SNP-003 [P1] 让数据库 schema 读取共享快照；验收：同一未保存 Persistent/Type 修改在 schema 与 def hover 中一致；前置：IDE-SNP-001。(0551a13;databaseSchema 四读点(def 入口/types.xml 别名/两处继承遍历)改 readSharedFileSnapshot,删 readTextDocument;脏 def 的 Persistent 属性与脏 types.xml 的 ARRAY 别名均进 schema,与 SNP-002 语义 loader 同一快照口径,关闭脏文档两边一致回落磁盘;3263|7)
 - [x] IDE-SNP-004 [P1] 让类型注册表接收脏 types.xml 更新；验收：未保存别名修改只使依赖该类型的结果失效；前置：IDE-SNP-001。(695fc59;getTypesXmlSnapshot 读共享快照(脏缓冲优先)+快照记 sourceVersions(打开文档编辑序号),resolveEntityAnnotationType 查询前按「现在打开版本 vs 构建记录版本」双向判定过期(打开且前进/构建时打开现关闭都重建),未打开文件仍走 watcher 事件不逐次 stat;脏别名进注册表/关闭恢复磁盘/他根快照对象原样保留三例锁;3266|7)
-- [ ] IDE-SNP-005 [P1] 关闭脏文档后恢复磁盘版本；验收：丢弃未保存修改并关闭后，下一次查询不再使用脏快照；前置：IDE-SNP-002, IDE-SNP-003。
+- [x] IDE-SNP-005 [P1] 关闭脏文档后恢复磁盘版本；验收：丢弃未保存修改并关闭后，下一次查询不再使用脏快照；前置：IDE-SNP-002, IDE-SNP-003。(6196f61;行为本体由 SNP-002/003/004 各面交付(共享快照活询 textDocuments,关闭即回落磁盘),本批补跨面一致锁:tests/snapshotCloseRestore.test.ts 同一流程脏窗口(def+types.xml 双开)三面(loader/schema/注册表)读脏→丢弃关闭三面齐回磁盘;documentStore 关闭即释放(updateDocumentSnapshot→releaseDocument 计数回基线,生产 onDidClose→releaseDocument 接线);红证=回滚 89bfcc7 前源码脏窗口段即红;3268|7)
 - [ ] IDE-SNP-006 [P1] 为派生结果记录输入版本清单；验收：结果能列出所消费文件版本，任一依赖变更后可判定过期；前置：IDE-SNP-001。
 - [ ] IDE-SNP-007 [P1] 给 XML 解析缓存增加字节预算；验收：超预算旧条目被淘汰，单份巨型文档不能让 8 条目缓存无限保留；前置：无。
 - [ ] IDE-SNP-008 [P1] 让共享文件事件按 URI 合并；验收：同一保存产生重复通知时，每个消费索引只应用一次对应版本更新；前置：IDE-SNP-001。
