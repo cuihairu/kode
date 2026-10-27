@@ -242,24 +242,55 @@ interface ReturnAnnotationCacheEntry {
 }
 
 const returnAnnotationCaches = new Map<string, ReturnAnnotationCacheEntry>();
+type AnnotationCancellation = { readonly isCancellationRequested: boolean };
+interface AnnotationBuild {
+  waiters: Set<{ token?: AnnotationCancellation }>;
+  promise: Promise<PythonReturnAnnotationIndex>;
+}
+const annotationBuilds = new Map<string, AnnotationBuild>();
 
 /** 测试用:清全部工作区缓存(换临时根/改文件后立即生效) */
 export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();
+  annotationBuilds.clear();
 }
 
-async function getReturnAnnotationIndex(workspaceRoot: string, token?: { readonly isCancellationRequested: boolean }): Promise<PythonReturnAnnotationIndex> {
+async function getReturnAnnotationIndex(workspaceRoot: string, token?: AnnotationCancellation): Promise<PythonReturnAnnotationIndex> {
   const now = Date.now();
   const cached = returnAnnotationCaches.get(workspaceRoot);
   if (cached && now - cached.builtAtMs < INDEX_TTL_MS) {
     return cached.index;
   }
+  let build = annotationBuilds.get(workspaceRoot);
+  if (!build) {
+    const waiters = new Set<{ token?: AnnotationCancellation }>();
+    const sharedToken = { get isCancellationRequested() {
+      return waiters.size === 0 || [...waiters].every(waiter => waiter.token?.isCancellationRequested === true);
+    } };
+    const entry: AnnotationBuild = {
+      waiters,
+      promise: Promise.resolve().then(() => buildReturnAnnotationIndexForRoot(workspaceRoot, sharedToken, entry))
+    };
+    annotationBuilds.set(workspaceRoot, entry);
+    build = entry;
+  }
+  const waiter = { token };
+  build.waiters.add(waiter);
+  try {
+    return await build.promise;
+  } finally {
+    build.waiters.delete(waiter);
+    if (annotationBuilds.get(workspaceRoot) === build) annotationBuilds.delete(workspaceRoot);
+  }
+}
+
+async function buildReturnAnnotationIndexForRoot(workspaceRoot: string, token: AnnotationCancellation, build: AnnotationBuild): Promise<PythonReturnAnnotationIndex> {
   const files = await collectProjectPythonFilesAsync(workspaceRoot, 20000, token);
-  if (token?.isCancellationRequested) return new Map();
+  if (token.isCancellationRequested) return new Map();
   const sources = new Array<string>(files.length).fill('');
   let nextFile = 0;
   const readWorker = async (): Promise<void> => {
-    while (!token?.isCancellationRequested && nextFile < files.length) {
+    while (!token.isCancellationRequested && nextFile < files.length) {
       const i = nextFile++;
       try {
         sources[i] = await fs.promises.readFile(files[i], 'utf8');
@@ -269,9 +300,11 @@ async function getReturnAnnotationIndex(workspaceRoot: string, token?: { readonl
     }
   };
   await Promise.all(Array.from({ length: Math.min(ANNOTATION_READ_CONCURRENCY, files.length) }, readWorker));
-  if (token?.isCancellationRequested) return new Map();
+  if (token.isCancellationRequested) return new Map();
   const index = buildReturnAnnotationIndex(sources);
-  returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index });
+  if (annotationBuilds.get(workspaceRoot) === build) {
+    returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index });
+  }
   return index;
 }
 
