@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { clearRecentJumpLogs, getRecentJumpLogs } from '../../../navigationLog';
 
 interface NavigationCase {
   id: string;
@@ -25,6 +26,16 @@ function expectedLocations(testCase: NavigationCase): string[] {
   }).sort();
 }
 
+// kode 的定义落点全部是零宽 Range(Location(uri, Position) 构造);VS Code 内建
+// 词基定义回退会追加「词宽」同文件落点(异步词表,时有时无),按零宽过滤只保留
+// 本扩展的结果——断言仍然严格:多一个文件行、少一个文件行都会红。
+function kodeLocations(raw: unknown): vscode.Location[] {
+  const locations = Array.isArray(raw) ? raw as vscode.Location[] : raw ? [raw as vscode.Location] : [];
+  return locations.filter(location =>
+    location.range.start.line === location.range.end.line &&
+    location.range.start.character === location.range.end.character);
+}
+
 async function actualLocations(testCase: NavigationCase): Promise<string[]> {
   const filePath = path.join(DEMO_ROOT!, testCase.source.file);
   const uri = vscode.Uri.file(filePath);
@@ -38,8 +49,7 @@ async function actualLocations(testCase: NavigationCase): Promise<string[]> {
     'vscode.executeDefinitionProvider', uri,
     new vscode.Position(line, character + Math.floor(testCase.source.symbol.length / 2))
   );
-  const locations = Array.isArray(raw) ? raw as vscode.Location[] : raw ? [raw as vscode.Location] : [];
-  return locations.map(location => `${location.uri.fsPath}:${location.range.start.line}`).sort();
+  return kodeLocations(raw).map(location => `${location.uri.fsPath}:${location.range.start.line}`).sort();
 }
 
 describe('KBEngine demo navigation through VS Code F12 provider', () => {
@@ -48,11 +58,29 @@ describe('KBEngine demo navigation through VS Code F12 provider', () => {
     assert.ok(extension, 'Kode extension is unavailable in the extension host');
     await extension.activate();
     assert.strictEqual(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, DEMO_ROOT);
+    // 冷启动预热(真机层时序):首查不等全量扫描(PR5 语义),冷态下组合根
+    // 派生/全仓扫描可能超出请求预算(2500ms)→ 首例空结果,属设计内收敛行为。
+    // 本套断言的是稳态精确目标集,故先轮询「多根最难例」到非空再开测(有界)。
+    const probe = manifest.cases.find(item => item.targets.length >= 3) ?? manifest.cases[0];
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      clearRecentJumpLogs();
+      if ((await actualLocations(probe)).length > 0) { return; }
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    for (const line of getRecentJumpLogs()) { console.log(`[jumpline] ${line}`); }
+    assert.fail(`warmup timed out: probe case "${probe.id}" never returned a definition`);
   });
 
   for (const testCase of manifest.cases) {
     it(`${testCase.id} returns its exact target set`, async () => {
-      assert.deepStrictEqual(await actualLocations(testCase), expectedLocations(testCase));
+      clearRecentJumpLogs();
+      try {
+        assert.deepStrictEqual(await actualLocations(testCase), expectedLocations(testCase));
+      } catch (error) {
+        for (const line of getRecentJumpLogs()) { console.log(`[jumpline] ${line}`); }
+        throw error;
+      }
     });
   }
 });

@@ -27,7 +27,8 @@ async function main(): Promise<void> {
       'kbengine.assetsRoot': '.',
       'kbengine.showFinalConfigOnOpen': false,
       'kbengine.python.stubExport': false,
-      'kbengine.python.extraPathsSync': false
+      'kbengine.python.extraPathsSync': false,
+      'kbengine.jumpLog': true
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'demo';
     process.env.KODE_DEMO_WORKSPACE = workspacePath;
