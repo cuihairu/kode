@@ -54,6 +54,7 @@ export const workspaceEvents = {
   documentChanged: new EventEmitter<{ document: unknown }>(),
   documentOpened: new EventEmitter<unknown>(),
   documentClosed: new EventEmitter<unknown>(),
+  filesRenamed: new EventEmitter<{ files: Array<{ oldUri: Uri; newUri: Uri }> }>(),
   foldersChanged: new EventEmitter<unknown>(),
   configurationChanged: new EventEmitter<{ affectsConfiguration: (section: string) => boolean }>()
 };
@@ -131,6 +132,7 @@ export const workspace = {
   onDidChangeTextDocument: workspaceEvents.documentChanged.event,
   onDidOpenTextDocument: workspaceEvents.documentOpened.event,
   onDidCloseTextDocument: workspaceEvents.documentClosed.event,
+  onDidRenameFiles: workspaceEvents.filesRenamed.event,
   onDidChangeWorkspaceFolders: workspaceEvents.foldersChanged.event,
   onDidChangeConfiguration: workspaceEvents.configurationChanged.event,
   registerTextDocumentContentProvider: (scheme: string, provider: unknown): { dispose(): void } => {
@@ -194,6 +196,7 @@ export const workspaceState = {
     workspaceEvents.documentChanged.dispose();
     workspaceEvents.documentOpened.dispose();
     workspaceEvents.documentClosed.dispose();
+    workspaceEvents.filesRenamed.dispose();
     workspaceEvents.foldersChanged.dispose();
     workspaceEvents.configurationChanged.dispose();
     workspace.textDocuments = [];

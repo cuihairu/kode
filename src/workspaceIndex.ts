@@ -27,6 +27,7 @@ export class WorkspaceIndex {
   private starting?: Promise<void>;
   private disposed = false;
   private documentListener?: vscode.Disposable;
+  private renameListener?: vscode.Disposable;
   private readonly revisions = new Map<string, number>();
 
   constructor(private readonly pyGlob = '**/*.py') {}
@@ -46,6 +47,21 @@ export class WorkspaceIndex {
   private async startIndex(): Promise<void> {
     this.documentListener ??= vscode.workspace.onDidChangeTextDocument(event => {
       this.noteSaved(event.document);
+    });
+    this.renameListener ??= vscode.workspace.onDidRenameFiles(event => {
+      for (const { oldUri, newUri } of event.files) {
+        const oldPath = oldUri.fsPath;
+        const newPath = newUri.fsPath;
+        const entry = this.cache.get(oldPath);
+        this.revisions.set(oldPath, (this.revisions.get(oldPath) ?? 0) + 1);
+        this.revisions.set(newPath, (this.revisions.get(newPath) ?? 0) + 1);
+        this.cache.delete(oldPath);
+        this.cache.delete(newPath);
+        if (newPath.endsWith('.py')) {
+          if (entry) this.cache.set(newPath, entry);
+          else void this.indexFile(newUri);
+        }
+      }
     });
     for (const document of vscode.workspace.textDocuments) {
       if (document.isDirty) this.noteSaved(document);
@@ -69,6 +85,8 @@ export class WorkspaceIndex {
     this.disposed = true;
     this.documentListener?.dispose();
     this.documentListener = undefined;
+    this.renameListener?.dispose();
+    this.renameListener = undefined;
     for (const w of this.watchers) w.dispose();
     this.watchers = [];
     this.cache.clear();

@@ -90,6 +90,31 @@ it('删除监听文件后事件记录消失', async () => {
   }
 });
 
+it('重命名监听文件后只跳转新路径', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const oldUri = vscode.Uri.file('/ws/old.py');
+  const newUri = vscode.Uri.file('/ws/new.py');
+  vscode.workspace.findFiles = async () => [oldUri];
+  vscode.workspace.fs.readFile = async () => Buffer.from('self.addEvent(EV, self.on_ev)');
+  const index = new WorkspaceIndex();
+  const provider = new EventCodeLensProvider(index);
+  try {
+    await index.allEventCalls();
+    workspaceEvents.filesRenamed.fire({ files: [{ oldUri, newUri }] });
+    expect(await index.allEventCalls()).toMatchObject([{ file: newUri.fsPath }]);
+    const emitter = makeTextDocument('self.emitEvent(EV)', { fileName: '/ws/emitter.py', languageId: 'python' }) as vscode.TextDocument;
+    const lenses = await provider.provideCodeLenses(emitter);
+    expect(lenses).toHaveLength(1);
+    expect(lenses[0].command?.arguments?.[0]).toMatchObject({ fsPath: newUri.fsPath });
+  } finally {
+    provider.dispose();
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
 it('并发事件查询等待同一次首扫完成', async () => {
   const originalFind = vscode.workspace.findFiles;
   const originalRead = vscode.workspace.fs.readFile;
