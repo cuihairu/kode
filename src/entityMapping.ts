@@ -187,6 +187,8 @@ export class EntityMappingManager {
   private defWatcher: vscode.FileSystemWatcher | null = null;
   /** 外部资产根 watcher 三件套(assetsRoot 切换时整组重建,IDE-IDX-014) */
   private externalRootWatchers: vscode.FileSystemWatcher[] = [];
+  /** 已移除根(IDE-IDX-016):在途解析结果落在这些根下时不回写任何登记面 */
+  private readonly removedRootKeys = new Set<string>();
   /**
    * 负缓存:已确认「不在任何 .def 的 pythonOwnerFiles 里」的文件。
    * 没有它,非 owner 的 .py 每次跳转都会在 property/method 两处各触发一次
@@ -413,6 +415,17 @@ export class EntityMappingManager {
     scanMetrics.end('ok');
   }
 
+  /** IDE-IDX-016:def 路径是否落在已移除根下(在途结果回写闸) */
+  private isUnderRemovedRoot(defPath: string): boolean {
+    const normalized = normalizeLookupPath(defPath);
+    for (const root of this.removedRootKeys) {
+      if (normalized.startsWith(`${root}/`)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private async parseDefFile(
     entityName: string,
     defPath: string,
@@ -467,6 +480,11 @@ export class EntityMappingManager {
     providedLoader?: ReturnType<typeof createDefinitionSemanticsLoader>,
     rootCategory: DefinitionSemanticCategory = 'entity'
   ): Promise<EntityMappingIndex | null> {
+    // IDE-IDX-016:根已移除的在途解析不产出——晚到结果不回写索引/缓存/
+    // 依赖图/语义投影任何登记面(扫描清单在移除前已取走,B 的批照跑)。
+    if (this.isUnderRemovedRoot(defPath)) {
+      return null;
+    }
     // loader 回退链(2026-10-22):默认 loader 以 .def 所在目录当根,而
     // findEntityDefinitionFile 需要目录布局(以文件当根恒 null,单文件重解析
     // 一直静默失败)。按扫描根(与全量扫描同源)优先,退到 .def 所在目录。
@@ -1090,6 +1108,7 @@ export class EntityMappingManager {
    */
   removeRoot(rootPath: string): void {
     const normalizedRoot = normalizeLookupPath(rootPath);
+    this.removedRootKeys.add(normalizedRoot);
     for (const defFile of [...this.mappingIndexesByRoot.keys()]) {
       if (defFile.startsWith(`${normalizedRoot}/`)) {
         this.removeIndexByDefFile(defFile);

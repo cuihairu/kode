@@ -1164,3 +1164,77 @@ describe('IDE-IDX-015 移除根摘除该根全部索引记录', () => {
     }
   }, 20000);
 });
+
+describe('IDE-IDX-016 旧根在途任务无法回写', () => {
+  it('扫描在途时移除 B,晚到结果不重新登记该根', async () => {
+    const wsA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-inflight-a-'));
+    const wsB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-inflight-b-'));
+    try {
+      write(wsA, 'scripts/entity_defs/HeroA.def',
+        '<root>\n  <BaseMethods>\n    <onA/>\n  </BaseMethods>\n</root>');
+      write(wsA, 'scripts/base/HeroA.py', 'class HeroA(object):\n    def onA(self):\n        pass\n');
+      write(wsB, 'scripts/entity_defs/HeroB.def',
+        '<root>\n  <BaseMethods>\n    <onB/>\n  </BaseMethods>\n</root>');
+      write(wsB, 'scripts/base/HeroB.py', 'class HeroB(object):\n    def onB(self):\n        pass\n');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(wsA), name: 'wsA', index: 0 },
+        { uri: Uri.file(wsB), name: 'wsB', index: 1 }
+      ];
+      const walkBoth = (): Uri[] => {
+        const results: Uri[] = [];
+        for (const base of [wsA, wsB]) {
+          const walk = (dir: string) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = p(dir, entry.name);
+              if (entry.isDirectory()) { walk(full); }
+              else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+            }
+          };
+          walk(base);
+        }
+        return results;
+      };
+      // 发现快照在进闸门前取好(模型:清单已交给扫描,批执行窗口用闸门卡住)
+      let releaseDiscovery!: () => void;
+      const discoveryGate = new Promise<void>(resolve => { releaseDiscovery = resolve; });
+      let discoveryEntered = false;
+      stubWorkspace.findFiles = (async () => {
+        const snapshot = walkBoth();
+        discoveryEntered = true;
+        await discoveryGate;
+        return snapshot;
+      }) as typeof stubWorkspace.findFiles;
+
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        await until(() => discoveryEntered, 'discovery snapshot taken');
+        // 扫描在途(B 的 def 已进扫描清单):移除 B 根
+        stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
+        resetScanRootCache();
+        manager.removeRoot(wsB);
+        releaseDiscovery();
+        await manager.waitForInitialScan();
+        await new Promise(resolve => setImmediate(resolve));
+
+        // 晚到的 B 解析结果不得回写:名字槽与 byRoot 都不见 HeroB
+        expect(manager.getMapping('HeroB')).toBeUndefined();
+        const rootIndexes = (): Map<string, unknown> =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
+        expect([...rootIndexes().keys()].some(key => key.endsWith('HeroB.def'))).toBe(false);
+        // A 照常建好
+        expect(manager.getMapping('HeroA')).toBeDefined();
+      } finally {
+        manager.dispose();
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+        resetScanRootCache();
+      }
+    } finally {
+      fs.rmSync(wsA, { recursive: true, force: true });
+      fs.rmSync(wsB, { recursive: true, force: true });
+    }
+  }, 20000);
+});
