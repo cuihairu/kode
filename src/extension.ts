@@ -23,6 +23,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS } from './serverManager';
+import { injectDebugpyAfterStart, syncDebugpyPackage } from './autoDebugpy';
+import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
 import {
@@ -1255,9 +1257,36 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(telnetTreeRegistration);
 
   // 服务器状态变化时刷新视图
+  // 调试启动即 attach(2026-10-27 ③b):kbengine.debug.autoDebugpy 开时,
+  // 组件进 Running 即联动注入(injectDebugpyAfterStart 自带开关闸/等 telnet
+  // 就绪轮询/单组件失败只记日志);注入用短命客户端,不碰面板持久会话。
+  // 已注入集合随组件退出清位,重启组件可再注入。
+  const debugpyInjected = new Set<string>();
   const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
     serverControlProvider.refresh();
     updateStatusBar(serverManager);
+    const running = new Set(serverManager.getRunningServers().keys());
+    for (const gone of [...debugpyInjected]) {
+      if (!running.has(gone)) {
+        debugpyInjected.delete(gone);
+      }
+    }
+    for (const component of running) {
+      if (debugpyInjected.has(component)) {
+        continue;
+      }
+      debugpyInjected.add(component);
+      void injectDebugpyAfterStart([component], () => telnetService.getTargets(), {
+        log: (componentName, level, text) => {
+          serverManager.logHub.ingest({
+            source: 'process',
+            component: componentName,
+            level: level === 'error' ? RuntimeLogLevel.ERROR : level === 'warning' ? RuntimeLogLevel.WARNING : RuntimeLogLevel.INFO,
+            text
+          });
+        }
+      });
+    }
   });
   context.subscriptions.push(serverStatusSubscription);
 
@@ -1516,6 +1545,22 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(updateLaunchJsonCommand);
+
+  // (a)三件套之一:系统 debugpy 复制进 <assets>/scripts/common/debugpy
+  // (2026-10-27 ③;版本闸/不覆盖用户手放目录的口径见 src/autoDebugpy.ts)
+  const debugpySyncCommand = vscode.commands.registerCommand(
+    'kbengine.python.debugpySync',
+    async () => {
+      const assetsRoot = serverManager.getConfigPath();
+      const result = await syncDebugpyPackage(context, assetsRoot);
+      if (result.status === 'error') {
+        void vscode.window.showErrorMessage(`debugpy 同步失败: ${result.message}`);
+      } else {
+        void vscode.window.showInformationMessage(`debugpy 同步: ${result.message}`);
+      }
+    }
+  );
+  context.subscriptions.push(debugpySyncCommand);
 
   // 最终服务端配置合成(批112 用户令:defaults 先载、元件 kbengine.xml 覆盖)。
   // 默认开启令:激活即出(后台预览不抢焦点)、侧栏常驻节点、文件保存联动刷新,

@@ -121,6 +121,7 @@ The logger protocol adaptation is not finished yet; the extension states clearly
 - [Per-component debug settings]
 - [Automatic launch.json generation]
 - [Guided debug enablement via telnet prompts]
+- [Start-time debugpy injection (`kbengine.debug.autoDebugpy`, default off): telnet `:python` layer, per-component ports 5678-5682; `kbengine.python.debugpySync` places the package in `<assets>/scripts/common/debugpy`]
 - [Attach to KBEngine component processes by PID]
 - [Path mapping configuration]
 

@@ -1,5 +1,6 @@
 import * as child_process from 'child_process';
 import * as vscode from 'vscode';
+import { DEBUGPY_PORT_TABLE } from './autoDebugpy';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 
 export interface ComponentDebugConfig {
@@ -305,6 +306,33 @@ export class DebugConfigManager {
           order: 2
         }
       });
+    }
+
+    // 调试启动即 attach(2026-10-27 ③c):kbengine.debug.autoDebugpy 开时,
+    // 按端口分配表逐组件追加 debugpy connect 附加配置(localRoot=
+    // workspaceFolder,与本地 attach 同映射口径);注入由启动联动负责,
+    // 这里只负责把「组件→端口」面写进 launch.json。默认关=零追加。
+    if (vscode.workspace.getConfiguration('kbengine').get<boolean>('debug.autoDebugpy', false)) {
+      for (const { component, port } of DEBUGPY_PORT_TABLE) {
+        configurations.push({
+          name: `KBEngine: Python attach to ${component} (debugpy ${port})`,
+          type: this.getDebuggerType(),
+          request: 'attach',
+          connect: {
+            host: '127.0.0.1',
+            port
+          },
+          justMyCode: false,
+          pathMappings: [{
+            localRoot: workspaceFolder,
+            remoteRoot: workspaceFolder
+          }],
+          presentation: {
+            group: 'KBEngine',
+            order: 3
+          }
+        });
+      }
     }
 
     return configurations;

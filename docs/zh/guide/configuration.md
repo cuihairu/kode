@@ -200,6 +200,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | --- | --- | --- | --- |
 | `kbengine.debug.remoteTargets` | array | `[]` | 远程调试目标列表,`Attach to Remote Component` 的目标选择源;`Update launch.json` 把它们以 debugpy `connect` 形式追加进 `launch.json` |
 | `kbengine.jsoncAssociation` | boolean | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `.vscode/settings.json` 的 `files.associations`(WorkspaceFolder 级)——debug.json 是 JSONC(带注释),按 json 处理注释会划红线。只动自己那一个键:已有值(用户手填 json/json5/任何值)永不覆盖;关闭时激活只说明不动手。`kbengine.jsoncAssociation.off` 命令把开关翻成 false 并只回收本扩展写入的键(你后来改过值的键原样保留) |
+| `kbengine.debug.autoDebugpy` | boolean | `false` | 组件启动成功后,kode 经该组件 telnet 的 `:python` 层注入 `debugpy.listen`(自建短命客户端;逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682,只绑 127.0.0.1,避开 31000-51000 telnet 段)。单组件失败只记日志,绝不阻塞启动。要求组件已开 telnet;端口表外组件(machine/interfaces/bots)跳过。开启后 `Update launch.json` 会为每组件生成一条 debugpy `connect` 附加配置(localRoot=工作区根)。首次使用先跑 `kbengine.python.debugpySync` 把系统 debugpy 复制进 `<assets>/scripts/common/debugpy`(引擎模块搜索路径第一位,python_app.cpp:167)。局限如实写明:注入走 telnet,entitydef 装载与早期 config 阶段已过——进程级第一行断点属二期(script.cpp 早期注入,待本功能验收后另立项) |
 
 每个条目:
 

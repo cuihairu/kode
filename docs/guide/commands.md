@@ -188,6 +188,18 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Each line reports request count, P50/P95/P99/max/avg elapsed (monotonic clock, ms), cache hit rate, waited-for-init count, file discovery/read/parse totals and status counts
   - Per-request detailed samples are off by default; enable `kbengine.metrics.detailed` to also stream `[kode-lsm]` samples into the log timeline
 
+### `kbengine.python.debugpySync`
+
+- Title: `Copy System debugpy into Assets`
+- Purpose: one-time wiring for `kbengine.debug.autoDebugpy` — copy the system pip `debugpy` package into `<assets>/scripts/common/debugpy` so that `import debugpy` resolves inside engine components (that directory is the first entry of the engine's module search path, `python_app.cpp:167`; `site_import=0` does not affect it)
+- Entries: command palette `Copy System debugpy into Assets`
+- Behavior:
+  - Locates the system debugpy by running `python3` (falling back to `python`) `-c "import debugpy"`; a missing package or unreadable install directory is reported honestly, nothing is copied
+  - Version gate: the embedded engine Python is 3.12.13 and debugpy supports 3.12 from 1.8.0 on — older system versions are rejected with the reason (`pip install -U debugpy`), never copied blind
+  - Own-key discipline: a target directory kode did not write (no workspaceState ledger entry) is treated as user-placed and never touched, whatever its version; the same version already in place is a zero-write skip; kode's own older copy is upgraded
+  - Never throws — the outcome (synced / skipped / upgraded / error, with the reason) is surfaced as the command result message
+- Boundary: this command only places the package; starting the listener is the job of the `kbengine.debug.autoDebugpy` start-time injection, and attaching is the job of the generated launch.json entries
+
 ### `kbengine.jsoncAssociation.off`
 
 - Title: `Turn Off debug.json JSONC Association`

@@ -54,6 +54,7 @@
 - **debug.json JSONC 关联** —— 文件是 JSONC（带注释，解析走 stripJsonComments），kode 自动把 `files.associations` 接成 `jsonc`，注释不再按 json 划红线；WorkspaceFolder 级只动自己键、已有值不覆盖，`kbengine.jsoncAssociation.off` 命令只回收本扩展写入的条目 ——（证据：package.json#configuration `kbengine.jsoncAssociation`；package.json#contributes.commands `kbengine.jsoncAssociation.off`；src/jsoncAssociation.ts）
 - **自动热重载** —— 文件监视触发指定快速动作、带去抖，默认关 ——（证据：package.json#configuration `kbengine.hotReload.*`；todo.md:52；src/hotReload.ts）
 - **调试/启动配置** —— 启动调试、本地/远程附加（debugpy connect）、生成/更新 launch.json ——（证据：package.json#contributes.commands `kbengine.debug.start|attach|attachRemote|createConfig|updateLaunchJson`；package.json#configuration `kbengine.debug.remoteTargets`；src/debugConfig.ts）
+- **启动即 attach（autoDebugpy）** —— `kbengine.debug.autoDebugpy` 开时，启动成功且开了 telnet 的组件经其 `:python` 层注入 `debugpy.listen`（自建短命客户端，逐组件端口 5678-5682，单组件失败只记日志）；`kbengine.python.debugpySync` 把系统 debugpy（≥1.8.0 版本闸对内嵌 Python 3.12.13）复制进 `<assets>/scripts/common/debugpy`（引擎模块搜索路径第一位），`Update launch.json` 为每组件生成一条 attach 配置 ——（证据：package.json#configuration `kbengine.debug.autoDebugpy`；package.json#contributes.commands `kbengine.python.debugpySync`；src/autoDebugpy.ts、src/debugConfig.ts）
 - **服务生命周期** —— 按自动启动列表（默认 machine/logger/dbmgr）启停组件，统一走 ProcessManager ——（证据：package.json#contributes.commands `kbengine.server.start|stop|restart`；package.json#configuration `kbengine.autoStart`；todo.md:148；src/processManager.ts、src/serverManager.ts）
 - **Telnet 面板** —— 元件 telnet 探测、密码握手、增量输出 webview、命令白名单（`:quit` 恒拒）、断开快捷键 ——（证据：package.json#contributes.commands `kbengine.telnet.*`；package.json#contributes.keybindings；package.json#configuration `kbengine.telnet.*`；todo.md:117；src/telnetService.ts、src/telnetClient.ts）
 - **HTTP 快捷请求** —— 可配置请求列表，`${module}` 模板变量按 `__init__.py` 包边界解析 ——（证据：package.json#contributes.commands `kbengine.httpRequest.run|httpRequests.run`；package.json#configuration `kbengine.httpRequests`；src/httpRequests.ts、src/httpRequestService.ts）
@@ -123,6 +124,7 @@
 | `kbengine.autoRefreshFinalConfig` | `true` | 引擎/元件 kbengine.xml 变更后自动重算并刷新已打开的最终配置视图 |
 | `kbengine.debug.remoteTargets` | `[]` | 「Attach to Remote Component」的远程调试目标列表（debugpy connect，不写 pathMappings） |
 | `kbengine.jsoncAssociation` | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `files.associations`（WorkspaceFolder 级；只动自己键、已有值不覆盖；`kbengine.jsoncAssociation.off` 回收本扩展写入的条目） |
+| `kbengine.debug.autoDebugpy` | `false` | 组件启动后经其 telnet `:python` 层注入 `debugpy.listen`（端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只绑 127.0.0.1；单组件失败只记日志不阻塞启动；注入走 telnet，早期 config 阶段断点属二期） |
 | `kbengine.autoStart` | `["machine","logger","dbmgr"]` | 自动启动的组件列表 |
 | `kbengine.loggerPort` | `20022` | KBEngine Logger 端口（默认 20022） |
 | `kbengine.logAutoConnect` | `true` | 启动服务器时自动连接日志收集器 |

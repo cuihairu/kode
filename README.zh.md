@@ -121,6 +121,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 - [组件特定调试设置]
 - [自动生成 launch.json]
 - [通过 telnet 提示引导开启调试]
+- [启动即 attach（`kbengine.debug.autoDebugpy`，默认关）：telnet `:python` 层注入、逐组件端口 5678-5682；`kbengine.python.debugpySync` 把包装进 `<assets>/scripts/common/debugpy`]
 - [按 PID 附加到 KBEngine 组件进程]
 - [路径映射配置]
 
