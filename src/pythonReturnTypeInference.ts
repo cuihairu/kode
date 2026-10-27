@@ -360,6 +360,22 @@ export function applySavedFileAnnotations(
   cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
 
+/**
+ * IDE-HOV-014:删除文件时移除该文件注解桶——弃桶后纯内存重合并,该来源
+ * 注解不再可查,其他文件同名方法来源仍按原次序兜底。冷缓存与不在册路径
+ * 均为 no-op:下一次查询按磁盘真值全量建,不虚建部分索引。
+ */
+export function removeSavedFileAnnotations(
+  workspaceRoot: string | null,
+  filePath: string
+): void {
+  if (!workspaceRoot) { return; }
+  const cached = returnAnnotationCaches.get(workspaceRoot);
+  if (!cached) { return; }
+  if (!cached.fileBuckets.delete(filePath)) { return; }
+  cached.index = mergeAnnotationBuckets(cached.fileBuckets);
+}
+
 const returnAnnotationCaches = new Map<string, ReturnAnnotationCacheEntry>();
 type AnnotationCancellation = { readonly isCancellationRequested: boolean };
 interface AnnotationBuild {

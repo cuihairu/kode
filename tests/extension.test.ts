@@ -7,6 +7,7 @@ import { PythonClassIndex } from '../src/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import {
+  applySavedFileAnnotations,
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot
 } from '../src/pythonReturnTypeInference';
@@ -616,6 +617,18 @@ describe('extension activate 装配', () => {
         languageId: 'plaintext'
       });
       workspaceEvents.documentSaved.fire(savedPlain);
+
+      // IDE-HOV-014:删除文件移除该文件注解桶(python 分支弃桶;非 python 跳过)
+      applySavedFileAnnotations(
+        root,
+        path.join(root, 'svc_gone.py'),
+        'def only_svc() -> SVCONLY:\n    pass\n'
+      );
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
+        .toMatchObject({ annotation: 'SVCONLY' });
+      workspaceEvents.filesDeleted.fire({ files: [Uri.file(path.join(root, 'svc_gone.py'))] });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+      workspaceEvents.filesDeleted.fire({ files: [Uri.file(path.join(root, 'notes.txt'))] });
 
       // 批154:CodeLens 四类功能开关变更即时 fire 各 provider(emitter
       // 挂在 provider 实例上,注册后即可订阅);事件须同时含 'kbengine'

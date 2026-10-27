@@ -14,6 +14,7 @@ import {
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
   releaseDocumentReturnAnnotations,
+  removeSavedFileAnnotations,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot,
@@ -411,5 +412,43 @@ describe('IDE-HOV-012 保存文件时只替换该文件注解桶', () => {
     applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> STALE:\n    pass\n');
     const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
     expect(built).toMatchObject({ annotation: 'JSONDATA' });
+  });
+});
+
+describe('IDE-HOV-014 删除文件时移除注解桶', () => {
+  it('删除后该来源注解消失,其他同名方法来源仍存在(纯内存,零文件读取)', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def load_all() -> SVC:\n    pass\n\ndef only_svc() -> SVCONLY:\n    pass\n');
+    put('other.py', 'def load_all() -> PAYLOAD:\n    pass\n');
+    await resolveLocalVariableReturnType(['x = load_all()'], 0, 'x', root);
+    // 正例前置:两来源在册(目录扫描次序不保证,load_all 命中其一即可)
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
+      .toMatchObject({ target: 'x', methodName: 'load_all' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root))
+      .toMatchObject({ annotation: 'SVCONLY' });
+    const read = vi.spyOn(fs.promises, 'readFile');
+    removeSavedFileAnnotations(root, path.join(root, 'svc.py'));
+    expect(read).not.toHaveBeenCalled();
+    read.mockRestore();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['x = load_all()'], 0, 'x', root))
+      .toMatchObject({ annotation: 'PAYLOAD' });
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['y = only_svc()'], 0, 'y', root)).toBeNull();
+  });
+
+  it('冷缓存删除为 no-op:不虚建索引,下一次查询按磁盘真量全量建', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    removeSavedFileAnnotations(root, path.join(root, 'svc.py'));
+    const built = await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    expect(built).toMatchObject({ annotation: 'JSONDATA' });
+  });
+
+  it('删不在册的文件路径为 no-op:不抛不动', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    removeSavedFileAnnotations(root, path.join(root, 'never_scanned.py'));
+    expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+      .toMatchObject({ annotation: 'JSONDATA' });
   });
 });

@@ -99,6 +99,7 @@ import {
 import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWorkspace';
 import {
   applySavedFileAnnotations,
+  removeSavedFileAnnotations,
   releaseDocumentReturnAnnotations,
   updateDocumentReturnAnnotations
 } from './pythonReturnTypeInference';
@@ -899,6 +900,15 @@ export function activate(context: vscode.ExtensionContext) {
       }
     });
     context.subscriptions.push(annotationSaveWatcher);
+    // IDE-HOV-014:删除文件移除该文件注解桶(纯内存弃桶+重合并,零文件读取)
+    const annotationDeleteWatcher = vscode.workspace.onDidDeleteFiles(event => {
+      for (const uri of event.files) {
+        if (uri.fsPath.endsWith('.py')) {
+          removeSavedFileAnnotations(getWorkspaceRootForDocument({ fileName: uri.fsPath }), uri.fsPath);
+        }
+      }
+    });
+    context.subscriptions.push(annotationDeleteWatcher);
   context.subscriptions.push({
     dispose: () => {
       if (pythonIndexEditFlushTimer) {
