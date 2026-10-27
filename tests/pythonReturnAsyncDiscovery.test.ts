@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
 import { collectProjectPythonFilesAsync, resetPythonReturnAnnotationCache, resolveLocalVariableReturnType } from '../src/pythonReturnTypeInference';
 
-const { readdir, readFileSync } = vi.hoisted(() => ({ readdir: vi.fn(), readFileSync: vi.fn() }));
-vi.mock('fs', () => ({ promises: { readdir }, readFileSync }));
+const { readdir, readFile } = vi.hoisted(() => ({ readdir: vi.fn(), readFile: vi.fn() }));
+vi.mock('fs', () => ({ promises: { readdir, readFile } }));
 
 it('慢目录发现期间事件循环可推进，取消后不进入下一目录', async () => {
   readdir.mockReset();
@@ -20,7 +20,7 @@ it('慢目录发现期间事件循环可推进，取消后不进入下一目录'
 
 it('实际返回类型查询将取消传递到目录发现，且取消后不读源码', async () => {
   readdir.mockReset();
-  readFileSync.mockReset();
+  readFile.mockReset();
   resetPythonReturnAnnotationCache();
   let release!: (entries: unknown[]) => void;
   readdir.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
@@ -29,7 +29,31 @@ it('实际返回类型查询将取消传递到目录发现，且取消后不读�
   token.isCancellationRequested = true;
   release([{ name: 'source.py', isDirectory: () => false, isFile: () => true }]);
   expect(await pending).toBeNull();
-  expect(readFileSync).not.toHaveBeenCalled();
+  expect(readFile).not.toHaveBeenCalled();
+});
+
+it('源码读取并发有上限，单文件失败不阻断其他结果', async () => {
+  readdir.mockReset();
+  readFile.mockReset();
+  resetPythonReturnAnnotationCache();
+  readdir.mockResolvedValueOnce(Array.from({ length: 20 }, (_, i) => ({
+    name: `${i}.py`, isDirectory: () => false, isFile: () => true
+  })));
+  let active = 0;
+  let peak = 0;
+  readFile.mockImplementation(async (file: string) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await Promise.resolve();
+    active -= 1;
+    if (file.endsWith('/0.py')) throw new Error('unreadable');
+    return 'def get_data() -> JSONDATA:\n    pass\n';
+  });
+  expect(await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', '/project'))
+    .toMatchObject({ annotation: 'JSONDATA' });
+  expect(readFile).toHaveBeenCalledTimes(20);
+  expect(peak).toBeLessThanOrEqual(8);
+  expect(peak).toBeGreaterThan(1);
 });
 
 it('排除无关目录并对 Python 文件排序', async () => {

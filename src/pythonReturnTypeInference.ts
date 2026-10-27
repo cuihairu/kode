@@ -4,7 +4,7 @@ import * as path from 'path';
 /**
  * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
  * → data: JSONDATA」):`<名> = <右值>` 的 hover 面按右值被调函数的返回注解
- * 推导变量类型。目录异步发现，源码仍同步读取，不 import vscode。
+ * 推导变量类型。目录发现和源码读取均异步执行，不 import vscode。
  *
  * 解析优先级(用户令原话):python 实现的 `def get_data(...) -> X:` 返回注解
  * (按方法名在项目 python 文件内定位定义,单层调用 + 属性直调 a.b() 一层即
@@ -24,6 +24,7 @@ const SCAN_EXCLUDED_DIRS = new Set([
 ]);
 
 const INDEX_TTL_MS = 3000;
+const ANNOTATION_READ_CONCURRENCY = 8;
 
 /** 一条 `名 = 右值` 赋值里的单层调用(简单调用 f() 或属性直调 a.b()) */
 export interface LocalAssignmentCall {
@@ -255,15 +256,21 @@ async function getReturnAnnotationIndex(workspaceRoot: string, token?: { readonl
   }
   const files = await collectProjectPythonFilesAsync(workspaceRoot, 20000, token);
   if (token?.isCancellationRequested) return new Map();
-  const index = buildReturnAnnotationIndex(
-    files.map(file => {
+  const sources = new Array<string>(files.length).fill('');
+  let nextFile = 0;
+  const readWorker = async (): Promise<void> => {
+    while (!token?.isCancellationRequested && nextFile < files.length) {
+      const i = nextFile++;
       try {
-        return fs.readFileSync(file, 'utf8');
+        sources[i] = await fs.promises.readFile(files[i], 'utf8');
       } catch {
-        return '';
+        // 单个不可读文件不影响其他文件。
       }
-    })
-  );
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(ANNOTATION_READ_CONCURRENCY, files.length) }, readWorker));
+  if (token?.isCancellationRequested) return new Map();
+  const index = buildReturnAnnotationIndex(sources);
   returnAnnotationCaches.set(workspaceRoot, { builtAtMs: Date.now(), index });
   return index;
 }

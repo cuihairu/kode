@@ -4,7 +4,10 @@ import { resetPythonReturnAnnotationCache, resolveLocalVariableReturnType } from
 
 vi.mock('fs', () => ({
   readdirSync: vi.fn(() => [{ name: 'source.py', isDirectory: () => false, isFile: () => true }]),
-  promises: { readdir: vi.fn(async () => [{ name: 'source.py', isDirectory: () => false, isFile: () => true }]) },
+  promises: {
+    readdir: vi.fn(async () => [{ name: 'source.py', isDirectory: () => false, isFile: () => true }]),
+    readFile: vi.fn(async () => 'def get_data() -> JSONDATA:\n    pass\n')
+  },
   readFileSync: vi.fn(() => 'def get_data() -> JSONDATA:\n    pass\n')
 }));
 
@@ -19,11 +22,12 @@ it('只在目标变量存在调用赋值时枚举和读取项目文件', async (
   )).toBeNull();
   expect(fs.readdirSync).not.toHaveBeenCalled();
   expect(fs.promises.readdir).not.toHaveBeenCalled();
+  expect(fs.promises.readFile).not.toHaveBeenCalled();
   expect(fs.readFileSync).not.toHaveBeenCalled();
   expect(await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', '/project'))
     .toMatchObject({ annotation: 'JSONDATA' });
   expect(fs.promises.readdir).toHaveBeenCalledTimes(1);
-  expect(fs.readFileSync).toHaveBeenCalledTimes(1);
+  expect(fs.promises.readFile).toHaveBeenCalledTimes(1);
 });
 
 it('缓存有效期从慢构建完成时开始', async () => {
@@ -36,7 +40,7 @@ it('缓存有效期从慢构建完成时开始', async () => {
     expect((await query())?.annotation).toBe('JSONDATA');
     expect((await query())?.annotation).toBe('JSONDATA');
     expect(fs.promises.readdir).toHaveBeenCalledTimes(1);
-    expect(fs.readFileSync).toHaveBeenCalledTimes(1);
+    expect(fs.promises.readFile).toHaveBeenCalledTimes(1);
   } finally {
     now.mockRestore();
   }
