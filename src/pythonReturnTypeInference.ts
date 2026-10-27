@@ -597,7 +597,10 @@ interface FileImportBindings {
 }
 
 const FROM_IMPORT_PATTERN = /^\s*from\s+([.\w]+)\s+import\s+([^#]*?)(?:#.*)?$/;
-const BARE_IMPORT_PATTERN = /^\s*import\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?\s*(?:#.*)?$/;
+/** `import X` / `import pkg.good as g`:模块可点分(2026-10-28 审核整改,
+ * 子模块别名也是合法绑定,漏认会回退全局同名方法给出错误注解)。 */
+const BARE_IMPORT_PATTERN =
+  /^\s*import\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)(?:\s+as\s+([A-Za-z_]\w*))?\s*(?:#.*)?$/;
 const IMPORT_ALIAS_PATTERN = /^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$/;
 
 function extractFileImports(lines: readonly string[]): FileImportBindings {
@@ -616,7 +619,15 @@ function extractFileImports(lines: readonly string[]): FileImportBindings {
       continue;
     }
     const bare = BARE_IMPORT_PATTERN.exec(line);
-    if (bare) { receivers.set(bare[2] ?? bare[1], bare[1]); }
+    if (bare) {
+      // Python 绑定名=别名(有则)否则首段;别名绑到完整子模块路径
+      // (pkg.good → pkg/good),无别名时维持单段 `import pkg` 语义。
+      const dotted = bare[1];
+      const firstSegment = dotted.split('.')[0];
+      const boundName = bare[2] ?? firstSegment;
+      const module = bare[2] !== undefined ? dotted.replace(/\./g, '/') : firstSegment;
+      receivers.set(boundName, module);
+    }
   }
   return { names, receivers };
 }

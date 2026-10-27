@@ -691,3 +691,28 @@ describe('2026-10-28 审核整改:过期磁盘索引不得继续答', () => {
     }
   });
 });
+
+// 2026-10-28 审核整改(HOV-017 补漏):`import pkg.good as g` 是合法 Python
+// (子模块带别名),原 BARE_IMPORT_PATTERN 只认单段模块名,该行不匹配 → g
+// 未入 receivers → `g.get_data()` 落回全局同名方法,可能给出错误注解。
+describe('2026-10-28 审核整改:import 子模块别名绑定不回退全局', () => {
+  it('import pkg.good as g:g.get_data() 只解析到 pkg/good.py,不借全局同名', async () => {
+    const { root, put } = setupWorkspace();
+    // 全局序 other.py 在前:全局 get_data=NOISE(绑定失效时的错误回退值)
+    put('other.py', 'def get_data() -> NOISE:\n    pass\n');
+    put('pkg/good.py', 'def get_data() -> FROM_SUB:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const lines = ['import pkg.good as g', 'data = g.get_data()'];
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root))
+      .toMatchObject({ annotation: 'FROM_SUB' });
+  });
+
+  it('绑定模块无该方法时不回退全局:未知即未知', async () => {
+    const { root, put } = setupWorkspace();
+    put('other.py', 'def load_all() -> NOISE:\n    pass\n');
+    put('pkg/good.py', 'def other_fn() -> FROM_SUB:\n    pass\n');
+    await resolveLocalVariableReturnType(['x = load_all()'], 0, 'x', root);
+    const lines = ['import pkg.good as g', 'x = g.load_all()'];
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'x', root)).toBeNull();
+  });
+});
