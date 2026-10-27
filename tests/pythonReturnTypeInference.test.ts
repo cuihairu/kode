@@ -9,6 +9,7 @@ import {
 } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
+  buildReturnAnnotationIndex,
   extractFileReturnAnnotations,
   resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType
@@ -105,6 +106,14 @@ describe('返回类型推导(局部变量 hover)', () => {
     expect([...extractFileReturnAnnotations(source)]).toEqual([
       ['multiline', 'Result'], ['next_method', 'Next']
     ]);
+  });
+
+  it('项目索引保留文件顺序和文件内首次定义规则', () => {
+    const index = buildReturnAnnotationIndex([
+      'def missing():\n    pass\ndef missing() -> Ignored:\n    pass\ndef value() -> First:\n    pass\n',
+      'def missing(\n    arg: int,\n) -> Found:\n    pass\ndef value() -> Second:\n    pass\n'
+    ]);
+    expect([...index]).toEqual([['value', 'First'], ['missing', 'Found']]);
   });
 
   it('JSONDATA 正例:data = activity_data.get_data() → data: JSONDATA,标注来源', async () => {

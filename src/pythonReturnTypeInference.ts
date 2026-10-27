@@ -198,20 +198,9 @@ export function extractFileReturnAnnotations(source: string): PythonReturnAnnota
 
 export function buildReturnAnnotationIndex(sources: readonly string[]): PythonReturnAnnotationIndex {
   const index: PythonReturnAnnotationIndex = new Map();
-  const defHead = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
   for (const source of sources) {
-    const seen = new Set<string>();
-    for (const rawLine of source.split(/\r?\n/)) {
-      const match = defHead.exec(maskCodeLine(rawLine));
-      const name = match?.[1];
-      if (!name || seen.has(name) || index.has(name)) {
-        continue;
-      }
-      seen.add(name);
-      const annotation = extractDefReturnAnnotation(source, name);
-      if (annotation) {
-        index.set(name, annotation);
-      }
+    for (const [name, annotation] of extractFileReturnAnnotations(source)) {
+      if (!index.has(name)) { index.set(name, annotation); }
     }
   }
   return index;
