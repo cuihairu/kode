@@ -23,7 +23,7 @@
 
 - 【事实】activationEvents(package.json):`onLanguage:kbengine-def`、`onLanguage:python`、`workspaceContains:**/*.def`、54 个 onCommand。
 - 【事实】`activate()` 无「是否 KBEngine 工作区」前置门:一旦激活即(a)按 `kbengine.python.apiMetadata`(默认 true)异步 buildEngineApiCatalog;(b)实例化 IndexScheduler + EntityMappingManager;(c)注册全部 Provider;(d)PythonClassIndex.scheduleBackgroundScan()(extension.ts:172-660)。
-- 【事实】PR5 后首扫已后台化:Definition 首查不等全仓扫描(U1 首查 475.34ms,d4fd634,docs/perf/2026-final-report.md §3)。
+- 【事实】PR5 后首扫已后台化:Definition 首查不等全仓扫描(U1 首查 475.34ms,d4fd634,docs/perf/2026-final-report.md §3)。 **2026-10-28 现场复核注(P0-4d)**:服务层口径成立(不等全量收尾);现场口径冷首查 1189ms 仍含 ~1.05s 首扫等待、结果晚到——「不等」限定为不阻塞等收尾,见 docs/review/2026-10-28-p0-4d-report-audit.md §1.1。
 - 【结论(事实+推断)】onLanguage:python 确会在任意 Python 工作区拉起全套 KBEngine 机械(索引调度、后台扫描、EntityMappingManager);因首扫后台化+交互限流,不再阻塞首请求,但内存/事件循环占用在非 KBEngine 工作区是纯开销。**无 KBEngine 工作区负案例:未实现、未测——待测**(书第 3 章 PR-006 root-discovery 范围)。
 
 ## AUDIT-004 四类 XML 的解析器与调用方
