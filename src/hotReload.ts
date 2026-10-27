@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
+import { HotReloadStatusController } from './hotReloadStatus';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
 // 建 watcher,事件去抖合并连发保存,配置变更联动拆建 watcher。
+// 状态栏反馈(HR-UI-001):装配内建状态机控制器,Watch Off/Ready/Sending/
+// Sent(未确认)/Failed 上屏;动作完成且无错只记未确认,不校验业务回执。
 
 export const HOT_RELOAD_DEFAULT_GLOBS = ['**/*.py'] as const;
 export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
@@ -108,12 +111,16 @@ export interface SetupHotReloadOptions {
   readonly timers?: HotReloadTimerDeps;
   /** 动作自身未收口的同步/异步异常报告口;默认提示 VS Code 用户 */
   readonly onActionError?: (error: unknown) => void;
+  /** 状态机控制器注入(测试用);缺省建真实状态栏项+专用 OUTPUT 通道 */
+  readonly status?: HotReloadStatusController;
 }
 
 /**
  * 装配自动热重载。context.subscriptions 只挂一条复合 disposable:
- * 配置变更监听与 watcher 拆建随其一并释放。默认关时不建任何 watcher
- * (激活与既有装配断言不受影响),把配置改成开才按 globs 各建一个 watcher。
+ * 配置变更监听、watcher 拆建与状态栏项随其一并释放。默认关时不建任何
+ * watcher(激活与既有装配断言不受影响),把配置改成开才按 globs 各建一个
+ * watcher。状态栏节流走真 setTimeout(与注入的测试计时器隔离,不污染
+ * 去抖 pending 计数);点击状态栏项开「KBEngine 热更」日志通道。
  */
 export function setupHotReload(
   context: vscode.ExtensionContext,
@@ -121,6 +128,16 @@ export function setupHotReload(
   options: SetupHotReloadOptions = {}
 ): void {
   const timers = options.timers ?? realHotReloadTimerDeps;
+  const status =
+    options.status ??
+    new HotReloadStatusController({
+      createStatusBarItem: (alignment, priority) =>
+        vscode.window.createStatusBarItem(alignment, priority),
+      createOutputChannel: name => vscode.window.createOutputChannel(name),
+      registerCommand: (command, handler) =>
+        vscode.commands.registerCommand(command, handler),
+      timers: realHotReloadTimerDeps
+    });
   const reportActionError = (error: unknown): void => {
     if (options.onActionError) {
       try {
@@ -138,16 +155,31 @@ export function setupHotReload(
       // VS Code 关闭期间提示 API 可能不可用,仍保持 watcher 回调安全。
     }
   };
+  // 去抖期间攒到的触发文件:fire 时一次性结账进状态与日志(连发保存合并)
+  const pendingTriggers = new Set<string>();
   const trigger = new HotReloadTrigger(() => {
     const settings = readHotReloadSettings(hotReloadSectionReader());
+    const triggers = [...pendingTriggers];
+    pendingTriggers.clear();
     if (settings.actionName.length === 0) {
+      // 到点但无动作名:状态回落就绪,跳过仍记日志,不能悬在 Sending
+      status.setSkippedNoAction(triggers);
       return;
     }
+    status.setSending(triggers, settings.debounceMs);
+    const fail = (error: unknown): void => {
+      status.setFailed(error instanceof Error ? error.message : String(error));
+      reportActionError(error);
+    };
     // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
     try {
-      void Promise.resolve(runAction(settings.actionName)).catch(reportActionError);
+      void Promise.resolve(runAction(settings.actionName)).then(
+        // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项)
+        () => status.setSentUnverified(),
+        fail
+      );
     } catch (error) {
-      reportActionError(error);
+      fail(error);
     }
   }, timers);
 
@@ -162,19 +194,27 @@ export function setupHotReload(
   const apply = (): void => {
     disposeWatchers();
     trigger.cancel();
+    pendingTriggers.clear();
     const settings = readHotReloadSettings(hotReloadSectionReader());
     if (!settings.enabled || settings.globs.length === 0) {
+      status.setWatchOff();
       return;
     }
     // @types/vscode 只接受单个 GlobPattern,每个模式各建一个 watcher
     for (const glob of settings.globs) {
       const watcher = vscode.workspace.createFileSystemWatcher(glob);
-      const schedule = (): void => trigger.schedule(settings.debounceMs);
+      const schedule = (uri?: vscode.Uri): void => {
+        if (uri) {
+          pendingTriggers.add(uri.fsPath);
+        }
+        trigger.schedule(settings.debounceMs);
+      };
       watcher.onDidChange(schedule);
       watcher.onDidCreate(schedule);
       watcher.onDidDelete(schedule);
       watchers.push(watcher);
     }
+    status.setReady(settings.globs.length, settings.debounceMs);
   };
 
   const subscription = vscode.workspace.onDidChangeConfiguration(event => {
@@ -187,6 +227,7 @@ export function setupHotReload(
       subscription.dispose();
       trigger.dispose();
       disposeWatchers();
+      status.dispose();
     }
   });
   apply();

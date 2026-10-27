@@ -146,10 +146,12 @@ describe('extension activate 装配', () => {
     expect(stubWithMetadata).toContain('# Source describe:');
     expect(workspaceState.contentProviders.has('kbengine-config')).toBe(true);
 
-    // 状态栏两条:server 灯(右对齐/优先级 100/命令指向扩展视图)与
-    // telnet 灯(优先级 99/命令指向 telnet 面板);无运行组件时 server 灯隐藏。
-    // 批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,context key 落 false
-    expect(windowState.statusBars).toHaveLength(2);
+    // 状态栏三条:server 灯(右对齐/优先级 100/命令指向扩展视图)、
+    // telnet 灯(优先级 99/命令指向 telnet 面板)与热更状态灯(HR-UI-001,
+    // 优先级 98/命令指向热更日志,默认 Watch Off 常显);无运行组件时
+    // server 灯隐藏。批111 用户令:配置未开 telnet 时 telnet 灯同样隐藏,
+    // context key 落 false
+    expect(windowState.statusBars).toHaveLength(3);
     const bar = windowState.statusBars.find(item => item.priority === 100)!;
     expect(bar.alignment).toBe(StatusBarAlignment.Right);
     expect(bar.command).toBe('workbench.view.extension.kbengine-explorer');
@@ -157,6 +159,11 @@ describe('extension activate 装配', () => {
     const telnetBar = windowState.statusBars.find(item => item.priority === 99)!;
     expect(telnetBar.alignment).toBe(StatusBarAlignment.Right);
     expect(telnetBar.visible).toBe(false);
+    const hotReloadBar = windowState.statusBars.find(item => item.priority === 98)!;
+    expect(hotReloadBar.alignment).toBe(StatusBarAlignment.Right);
+    expect(hotReloadBar.command).toBe('kbengine.hotReload.showLog');
+    expect(hotReloadBar.text).toBe('$(eye-closed) 热更: 关');
+    expect(hotReloadBar.visible).toBe(true);
     expect(commandRegistry.contexts.get('kbengine.telnetConfigured')).toBe(false);
 
     // 所有 subscription 都可 dispose

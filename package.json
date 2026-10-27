@@ -89,6 +89,7 @@
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.jsoncAssociation.off",
     "onCommand:kbengine.python.debugpySync",
+    "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
@@ -526,6 +527,10 @@
       {
         "command": "kbengine.source.reveal",
         "title": "Reveal Source Location"
+      },
+      {
+        "command": "kbengine.hotReload.showLog",
+        "title": "Show Hot Reload Log"
       }
     ],
     "menus": {
@@ -605,6 +610,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "kbengine.hotReload.showLog",
+          "when": "false"
+        },
         {
           "command": "kbengine.telnet.showPanel",
           "when": "kbengine.telnetConfigured"

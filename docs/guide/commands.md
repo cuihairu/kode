@@ -397,6 +397,16 @@ The flow graph panel supports:
   - Success semantics stay honest: a usable transport receipt is only 「已发送(未确认)」 (sent, unverified) — without a trusted applied receipt the UI never claims the module was hot-updated (accepted ≠ applied)
   - If auto-restore fails the reload is aborted (the marker-edited content is never sent) and the file is reported as left in the temp-edit state
 
+### `kbengine.hotReload.showLog`
+
+- Title: `Show Hot Reload Log`
+- Purpose: open the 「KBEngine 热更」 OUTPUT channel — the audit log behind the hot-reload status bar item (HR-UI-001)
+- Behavior:
+  - The status bar item `$(eye…) 热更: …` reflects the watch state machine: Watch Off (`kbengine.hotReload.enabled=false` or empty globs) → Ready (watchers built) → Sending (debounce elapsed, quick action fired) → Sent(unverified) → Failed; clicking the item runs this command
+  - Honest semantics: a completed action without errors is only 「已发送(未确认)」 (sent, unverified) — no business receipt is verified, so the UI never claims the module was applied (receipt verification belongs to the HR-STATE series)
+  - Each trigger logs time / trigger files (merged by debounce) / the debounce value, plus the outcome line (sent-unverified / failed / skipped-no-action-name); log lines are appended immediately and are not subject to the status-bar throttle
+  - Hidden from the command palette (`when: false`) — the status bar item is the intended entry
+
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`

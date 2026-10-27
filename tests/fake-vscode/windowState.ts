@@ -22,7 +22,8 @@ export interface RecordedOutputChannel {
   disposed: boolean;
 }
 
-const channels: RecordedOutputChannel[] = [];
+/** 已建通道登记(断言默认构造走真工厂的用例读尾部条目) */
+export const channels: RecordedOutputChannel[] = [];
 
 /** createStatusBarItem 的入账 */
 export interface RecordedStatusBarItem {
@@ -37,7 +38,8 @@ export interface RecordedStatusBarItem {
   dispose(): void;
 }
 
-const statusBars: RecordedStatusBarItem[] = [];
+/** 已建状态栏项登记(同上,尾部条目断言用) */
+export const statusBars: RecordedStatusBarItem[] = [];
 
 /** registerTreeDataProvider 的入账(viewId → provider) */
 export const treeRegistrations: Array<{ viewId: string; provider: unknown }> = [];

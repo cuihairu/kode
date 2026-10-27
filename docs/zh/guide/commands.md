@@ -333,6 +333,16 @@
   - `${sel}`：选中文本
   - 无活动编辑器时各变量替换为空串
 
+### `kbengine.hotReload.showLog`
+
+- 标题：`Show Hot Reload Log`
+- 作用：打开「KBEngine 热更」OUTPUT 通道——热更状态栏项(HR-UI-001)背后的审计日志
+- 行为：
+  - 状态栏项 `$(eye…) 热更: …` 即监视状态机:关(`kbengine.hotReload.enabled=false` 或 globs 为空)→ 就绪(watcher 建好)→ 发送中(去抖到点、动作已触发)→ 已发送(未确认)→ 失败;点击状态栏项即执行本命令
+  - 诚实口径:动作完成且无错只记「已发送(未确认)」——不校验业务回执,界面绝不声称模块已生效(回执校验属 HR-STATE 系列,另立项)
+  - 每次触发记 time/触发文件(去抖合并到的)/去抖值,外加结果行(已发送未确认/失败/未配动作名跳过);日志行即时落账,不随状态栏节流合并
+  - 不进命令面板(`when: false`)——状态栏项才是正入口
+
 ### `kbengine.discovery.report`
 
 - 标题：`Show Discovery Report`

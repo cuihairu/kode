@@ -96,6 +96,7 @@ CI and local development split into three paths by what changed — editing one 
 - [KBEngine.reloadScript() suggestions]
 - [importlib.reload() hot reload in Python scripts]
 - [Reload-related hover documentation and usage examples]
+- [Hot-reload status bar: Off → Ready → Sending → Sent(unverified) → Failed; a clean completion is only "sent, unverified" (no receipt check); click the item to open the hot-reload audit log]
 
 ### Server Management
 - [Start/stop control for 10 components]
