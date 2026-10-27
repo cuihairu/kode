@@ -552,6 +552,55 @@ export interface LocalVariableReturnType {
   methodName: string;
 }
 
+/** IDE-HOV-017:文件级显式 import 绑定——`from X import n [as a]` 绑定名 n/a
+ * 到模块 X;`import X [as Y]` 绑定接收者 Y/X 到模块 X(供 `X.fn()` 用)。
+ * 通配 `import *` 非显式绑定,不参与;相对导入的前导点按后缀匹配近似。 */
+interface FileImportBindings {
+  names: Map<string, string>;
+  receivers: Map<string, string>;
+}
+
+const FROM_IMPORT_PATTERN = /^\s*from\s+([.\w]+)\s+import\s+([^#]*?)(?:#.*)?$/;
+const BARE_IMPORT_PATTERN = /^\s*import\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?\s*(?:#.*)?$/;
+const IMPORT_ALIAS_PATTERN = /^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$/;
+
+function extractFileImports(lines: readonly string[]): FileImportBindings {
+  const names = new Map<string, string>();
+  const receivers = new Map<string, string>();
+  for (const raw of lines) {
+    const line = raw ?? '';
+    const from = FROM_IMPORT_PATTERN.exec(line);
+    if (from) {
+      const module = from[1].replace(/^[.]+/, '').replace(/\./g, '/');
+      if (!module || from[2].includes('*')) { continue; }
+      for (const part of from[2].split(',')) {
+        const alias = IMPORT_ALIAS_PATTERN.exec(part.trim());
+        if (alias) { names.set(alias[2] ?? alias[1], module); }
+      }
+      continue;
+    }
+    const bare = BARE_IMPORT_PATTERN.exec(line);
+    if (bare) { receivers.set(bare[2] ?? bare[1], bare[1]); }
+  }
+  return { names, receivers };
+}
+
+/** 模块 → 唯一匹配的文件桶;找不到或多处同名模块均为 null(无法确定 → 未知)。 */
+function locateModuleBucket(
+  fileBuckets: Map<string, PythonReturnAnnotationIndex>,
+  module: string
+): PythonReturnAnnotationIndex | null {
+  const suffix = `${module}.py`;
+  let found: PythonReturnAnnotationIndex | null = null;
+  for (const [filePath, bucket] of fileBuckets) {
+    const normalized = filePath.replace(/\\/g, '/');
+    if (normalized !== suffix && !normalized.endsWith(`/${suffix}`)) { continue; }
+    if (found) { return null; }
+    found = bucket;
+  }
+  return found;
+}
+
 /**
  * IDE-HOV-016:自 hover 行向上找赋值,只在未跨出作用域前有效——上行路上
  * 每跨过一条 `def`/`class` 头(缩进 i),其上缩进 ≥ i+1 的赋值即属别的
@@ -603,26 +652,43 @@ export function resolveLocalVariableReturnTypeFromSnapshot(
   const hoveredBucket = documentContext
     ? documentAnnotationBuckets.get(workspaceRoot)?.get(documentContext.fileKey)
     : undefined;
-  if (hoveredBucket) {
-    const fromHovered = resolveFromAnnotationIndex(candidates, word, hoveredBucket.annotations);
-    if (fromHovered) { return fromHovered; }
-  }
   const { annotations: otherAnnotations, shadowedNames } = mergedOtherDocumentAnnotations(
     workspaceRoot,
     hoveredBucket ? documentContext!.fileKey : null
   );
-  const fromOthers = resolveFromAnnotationIndex(candidates, word, otherAnnotations);
-  if (fromOthers) { return fromOthers; }
   const cached = returnAnnotationCaches.get(workspaceRoot);
+  // 三段级联(单名):悬停文档桶 → 其余打开文档桶 → 磁盘已发布索引(遮蔽名不借)
+  const cascadeAnnotation = (methodName: string): string | null => {
+    const fromHovered = hoveredBucket?.annotations.get(methodName);
+    if (fromHovered && fromHovered !== 'Any') { return fromHovered; }
+    const fromOthers = otherAnnotations.get(methodName);
+    if (fromOthers && fromOthers !== 'Any') { return fromOthers; }
+    if (shadowedNames.has(methodName)) { return null; }
+    const fromDisk = cached?.index.get(methodName);
+    return fromDisk && fromDisk !== 'Any' ? fromDisk : null;
+  };
+  // IDE-HOV-017:显式 import 绑定的候选只解析到对应模块的文件桶;
+  // 绑定模块无注解、模块文件找不到或多处同名(无法确定)都不回退全局。
+  const bindings = extractFileImports(lines);
+  for (const assignment of candidates) {
+    const module = assignment.receiver
+      ? bindings.receivers.get(assignment.receiver)
+      : bindings.names.get(assignment.methodName);
+    if (module !== undefined) {
+      const bucket = cached ? locateModuleBucket(cached.fileBuckets, module) : null;
+      const annotation = bucket?.get(assignment.methodName);
+      if (annotation && annotation !== 'Any') {
+        return { target: word, annotation, methodName: assignment.methodName };
+      }
+      continue;
+    }
+    const annotation = cascadeAnnotation(assignment.methodName);
+    if (annotation) { return { target: word, annotation, methodName: assignment.methodName }; }
+  }
   if (!cached || Date.now() - cached.builtAtMs >= INDEX_TTL_MS) {
     void getReturnAnnotationIndex(workspaceRoot).catch(() => {});
   }
-  if (!cached) { return null; }
-  // 遮蔽名(某打开文档该 def 已无注解)不借磁盘旧值
-  const unshadowed = shadowedNames.size === 0
-    ? candidates
-    : candidates.filter(assignment => !shadowedNames.has(assignment.methodName));
-  return resolveFromAnnotationIndex(unshadowed, word, cached.index);
+  return null;
 }
 
 /**

@@ -542,3 +542,73 @@ describe('IDE-HOV-016 按当前文件限定返回注解候选', () => {
     expect(inB).not.toContain('推导自');
   });
 });
+
+describe('IDE-HOV-017 按显式 import 限定返回注解候选', () => {
+  it('from 导入绑定只解析到对应模块,不借项目无关同名方法', async () => {
+    const { root, put } = setupWorkspace();
+    put('helpers.py', 'def load_all() -> FROM_HELPERS:\n    pass\n');
+    put('unrelated.py', 'def load_all() -> FROM_UNRELATED:\n    pass\n');
+    put('main.py', 'from helpers import load_all\n\ndata = load_all()\n');
+    await resolveLocalVariableReturnType(['data = load_all()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'from helpers import load_all\n\ndata = load_all()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 1))));
+    expect(text).toContain('**data: FROM_HELPERS**');
+    expect(text).not.toContain('FROM_UNRELATED');
+  });
+
+  it('绑定模块内无注解不回退全局:同名无关方法不顶替', async () => {
+    const { root, put } = setupWorkspace();
+    put('helpers.py', 'def load_all():\n    pass\n');
+    put('unrelated.py', 'def load_all() -> FROM_UNRELATED:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = load_all()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'from helpers import load_all\n\ndata = load_all()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 1))));
+    expect(text).not.toContain('FROM_UNRELATED');
+    expect(text).not.toContain('推导自');
+  });
+
+  it('import 接收者绑定:X.fn() 只查 X 模块;X 未定义该方法则不显', async () => {
+    const { root, put } = setupWorkspace();
+    put('helpers.py', 'def get_all() -> HELP:\n    pass\n');
+    put('unrelated.py', 'def get_all() -> NOISE:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = helpers.get_all()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const bound = makeTextDocument(
+      'import helpers\n\ndata = helpers.get_all()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(bound, new Position(2, 1))));
+    expect(text).toContain('**data: HELP**');
+    expect(text).not.toContain('NOISE');
+    const missing = makeTextDocument(
+      'import helpers\n\ndata = helpers.absent_all()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
+    );
+    const textMissing = hoverText(await Promise.resolve(provider.provideHover(missing, new Position(2, 1))));
+    expect(textMissing).not.toContain('NOISE');
+    expect(textMissing).not.toContain('推导自');
+  });
+
+  it('同名模块多处无法确定时返回未知:不显任何类型', async () => {
+    const { root, put } = setupWorkspace();
+    put('a/helpers.py', 'def load_all() -> AMBIG_A:\n    pass\n');
+    put('b/helpers.py', 'def load_all() -> AMBIG_B:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = load_all()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'from helpers import load_all\n\ndata = load_all()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 1))));
+    expect(text).not.toContain('AMBIG');
+    expect(text).not.toContain('推导自');
+  });
+});
