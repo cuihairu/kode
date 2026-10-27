@@ -140,6 +140,8 @@ export interface ResolvedDefinitionSemantics {
 interface ResolutionContext {
   allowComponents: boolean;
   visited: Set<string>;
+  /** IDE-IDX-002:解析起点根(精确路径入口带):父/接口按名回解先本根,缓存按根分区 */
+  originRoot?: string;
 }
 
 export class DefinitionSemanticsLoader {
@@ -155,14 +157,15 @@ export class DefinitionSemanticsLoader {
 
   loadLocal(
     name: string,
-    category: DefinitionSemanticCategory
+    category: DefinitionSemanticCategory,
+    originRoot?: string
   ): LocalDefinitionSemantics | null {
-    const cacheKey = buildCacheKey(category, name);
+    const cacheKey = this.partitionedCacheKey(buildCacheKey(category, name), originRoot);
     if (this.localCache.has(cacheKey)) {
       return this.localCache.get(cacheKey) || null;
     }
 
-    const filePath = this.resolveDefinitionFile(name, category);
+    const filePath = this.resolveDefinitionFile(name, category, originRoot);
     if (!filePath) {
       this.localCache.set(cacheKey, null);
       return null;
@@ -234,7 +237,11 @@ export class DefinitionSemanticsLoader {
     }
     try {
       const local = parseLocalDefinition(content, category, name, defPath);
-      return this.resolveSemanticsFromLocal(local, { allowComponents, visited: new Set<string>() });
+      return this.resolveSemanticsFromLocal(local, {
+        allowComponents,
+        visited: new Set<string>(),
+        originRoot: this.originRootOf(defPath)
+      });
     } catch {
       return null;
     }
@@ -245,7 +252,7 @@ export class DefinitionSemanticsLoader {
     category: DefinitionSemanticCategory,
     context: ResolutionContext
   ): ResolvedDefinitionSemantics | null {
-    const local = this.loadLocal(name, category);
+    const local = this.loadLocal(name, category, context.originRoot);
     if (!local) {
       return null;
     }
@@ -303,7 +310,8 @@ export class DefinitionSemanticsLoader {
             owner: component.owner,
             resolved: this.loadResolvedInternal(component.typeName, 'component', {
               allowComponents: false,
-              visited: context.visited
+              visited: context.visited,
+              originRoot: context.originRoot
             }),
             source: createSource('local')
           });
@@ -314,7 +322,8 @@ export class DefinitionSemanticsLoader {
       for (const interfaceRef of local.interfaces) {
         const interfaceResolved = this.loadResolvedInternal(interfaceRef.name, 'interface', {
           allowComponents: interfaceAllowComponents,
-          visited: context.visited
+          visited: context.visited,
+          originRoot: context.originRoot
         });
         if (!interfaceResolved) {
           continue;
@@ -395,7 +404,8 @@ export class DefinitionSemanticsLoader {
         const parentCategory = category === 'component' ? 'component' : 'entity';
         const parentResolved = this.loadResolvedInternal(local.parentName, parentCategory, {
           allowComponents: context.allowComponents,
-          visited: context.visited
+          visited: context.visited,
+          originRoot: context.originRoot
         });
 
         if (parentResolved) {
@@ -487,13 +497,28 @@ export class DefinitionSemanticsLoader {
     }
   }
 
+  /** IDE-IDX-002:名字缓存键按根分区(有起点根时打标),A/B 同名互不串扰。 */
+  private partitionedCacheKey(base: string, originRoot?: string): string {
+    return originRoot ? `${base}@${normalizeLookupPath(originRoot)}` : base;
+  }
+
+  /** 精确 def 路径所属的根(不在任何根下 → undefined,回退不分端口径)。 */
+  private originRootOf(defPath: string): string | undefined {
+    const normalized = normalizeLookupPath(defPath);
+    return this.workspaceRoots.find(
+      root => normalized.startsWith(`${normalizeLookupPath(root)}/`)
+    );
+  }
+
   private resolveDefinitionFile(
     name: string,
-    category: DefinitionSemanticCategory
+    category: DefinitionSemanticCategory,
+    originRoot?: string
   ): string | null {
     // 逐根解析:workspace 顶层与 assetsRoot 各自按约定布局找,先命中先用
-    // (多根工程里 def 与脚本可能分属两个根)
-    for (const root of this.workspaceRoots) {
+    // (多根工程里 def 与脚本可能分属两个根);IDE-IDX-002 起有解析起点根时
+    // 起点根优先(同名父/接口先回本根),其余根仍按原次序兜底。
+    for (const root of this.orderedRoots(originRoot)) {
       const found = category === 'entity'
         ? findEntityDefinitionFile(name, root)
         : findDefinitionFileByCategory(name, category, root);
@@ -502,6 +527,14 @@ export class DefinitionSemanticsLoader {
       }
     }
     return null;
+  }
+
+  /** 起点根置前(其余根保持原次序;未知起点根原样返回)。 */
+  private orderedRoots(originRoot?: string): string[] {
+    if (!originRoot || !this.workspaceRoots.includes(originRoot)) {
+      return this.workspaceRoots;
+    }
+    return [originRoot, ...this.workspaceRoots.filter(root => root !== originRoot)];
   }
 }
 

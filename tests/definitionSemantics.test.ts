@@ -554,3 +554,70 @@ describe('IDE-IDX-001 语义 loader 按精确 def 路径加载', () => {
     expect(loader.loadResolvedAt(path.join('/never', 'scripts/entity_defs/Ghost.def'), 'Ghost', 'entity')).toBeNull();
   });
 });
+
+describe('IDE-IDX-002 loader 缓存按根与文件身份分区', () => {
+  const buildDualRoots = (): { rootA: string; rootB: string } => {
+    const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-idx2-a-'));
+    const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-idx2-b-'));
+    const heroOf = (marker: string): string => [
+      '<root>', `  <Parent>Shared</Parent>`, '  <Properties>',
+      `    <hp_${marker}>`, '      <Type>UINT32</Type>', `    </hp_${marker}>`,
+      '  </Properties>', '</root>'
+    ].join('\\n');
+    const sharedOf = (marker: string): string => [
+      '<root>', '  <Properties>',
+      `    <shared_${marker}>`, '      <Type>UINT32</Type>', `    </shared_${marker}>`,
+      '  </Properties>', '</root>'
+    ].join('\\n');
+    for (const [root, marker] of [[rootA, 'a'], [rootB, 'b']] as Array<[string, string]>) {
+      for (const [file, content] of [
+        ['scripts/entity_defs/Hero.def', heroOf(marker)],
+        ['scripts/entity_defs/Shared.def', sharedOf(marker)]
+      ] as Array<[string, string]>) {
+        const absolute = path.join(root, file);
+        fs.mkdirSync(path.dirname(absolute), { recursive: true });
+        fs.writeFileSync(absolute, content, 'utf8');
+      }
+    }
+    return { rootA, rootB };
+  };
+
+  it('A/B 同名定义(含同名父)各命中自己的缓存,切换查询顺序结果不变', () => {
+    const { rootA, rootB } = buildDualRoots();
+    try {
+      const heroA = path.join(rootA, 'scripts/entity_defs/Hero.def');
+      const heroB = path.join(rootB, 'scripts/entity_defs/Hero.def');
+      // 先 A 后 B
+      const ab = createDefinitionSemanticsLoader([rootA, rootB])!;
+      const first = ab.loadResolvedAt(heroA, 'Hero', 'entity')!;
+      expect(first.effectiveProperties.map(prop => prop.fullPath)).toContain('shared_a');
+      const second = ab.loadResolvedAt(heroB, 'Hero', 'entity')!;
+      expect(second.effectiveProperties.map(prop => prop.fullPath)).toContain('shared_b');
+      expect(second.effectiveProperties.map(prop => prop.fullPath)).not.toContain('shared_a');
+      // 先 B 后 A(新实例):结果一致,顺序不改变答案
+      const ba = createDefinitionSemanticsLoader([rootA, rootB])!;
+      const bFirst = ba.loadResolvedAt(heroB, 'Hero', 'entity')!;
+      expect(bFirst.effectiveProperties.map(prop => prop.fullPath)).toContain('shared_b');
+      const aSecond = ba.loadResolvedAt(heroA, 'Hero', 'entity')!;
+      expect(aSecond.effectiveProperties.map(prop => prop.fullPath)).toContain('shared_a');
+      expect(aSecond.effectiveProperties.map(prop => prop.fullPath)).not.toContain('shared_b');
+    } finally {
+      fs.rmSync(rootA, { recursive: true, force: true });
+      fs.rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+
+  it('名字入口保持首根优先:路径查询不污染名字缓存', () => {
+    const { rootA, rootB } = buildDualRoots();
+    try {
+      const loader = createDefinitionSemanticsLoader([rootA, rootB])!;
+      loader.loadResolvedAt(path.join(rootB, 'scripts/entity_defs/Hero.def'), 'Hero', 'entity');
+      const byName = loader.loadResolved('Hero', 'entity')!;
+      expect(normalizeLookupPath(byName.owner.filePath))
+        .toBe(normalizeLookupPath(path.join(rootA, 'scripts/entity_defs/Hero.def')));
+    } finally {
+      fs.rmSync(rootA, { recursive: true, force: true });
+      fs.rmSync(rootB, { recursive: true, force: true });
+    }
+  });
+});
