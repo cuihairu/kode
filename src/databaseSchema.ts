@@ -264,6 +264,24 @@ export function getDatabaseSchemaCacheStatsForTests(): {
   };
 }
 
+/** IDE-SCH-003:按 def 依赖失效——文件变更事件到达时,只摘除输入清单里消费过
+ * 该文件的缓存条目(它及其依赖实体在下次查询时重建),无关实体的条目原样
+ * 保留继续命中(同一对象),不清整缓存。返回摘除条目数。懒过期(逐条目
+ * 比对清单版本)仍是安全网;本面把失效从查询时提前到事件时。 */
+export function invalidateDatabaseSchemaCacheForFiles(filePaths: readonly string[]): number {
+  if (filePaths.length === 0 || databaseSchemaCache.size === 0) { return 0; }
+  const targets = new Set(filePaths.map(filePath => normalizePath(filePath)));
+  let dropped = 0;
+  for (const [key, snapshot] of [...databaseSchemaCache.entries()]) {
+    const manifestPaths = Object.keys(snapshot.inputVersions ?? {});
+    if (manifestPaths.some(manifestPath => targets.has(normalizePath(manifestPath)))) {
+      databaseSchemaCache.delete(key);
+      dropped += 1;
+    }
+  }
+  return dropped;
+}
+
 export function getDatabaseSchemaSnapshot(
   entityName: string,
   target?: string | Pick<vscode.TextDocument, 'fileName'>

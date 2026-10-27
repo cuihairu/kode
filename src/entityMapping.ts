@@ -42,6 +42,7 @@ import { SemanticIndex, getSemanticIndex, isTypeRegistryFile } from './semanticI
 import { createSharedFileEventMerger, type SharedFileEvent } from './sharedFileEvents';
 import { SemanticDependencyGraph, type SemanticChangeKind } from './dependencyGraph';
 import type { EntityComponentFace } from './entityBuiltinProperties';
+import { invalidateDatabaseSchemaCacheForFiles } from './databaseSchema';
 
 export type EntityMethodSection = DefMethodSection;
 
@@ -1098,6 +1099,9 @@ export class EntityMappingManager {
     for (const file of plan.invalidateFiles) {
       this.removeIndexByDefFile(normalizeLookupPath(file));
     }
+    // IDE-SCH-003:变更面文件同步送 schema 缓存按清单摘除——只重建它及其
+    // 依赖实体的快照,无关实体条目保留命中(懒过期之外的事件时失效)。
+    invalidateDatabaseSchemaCacheForFiles(plan.invalidateFiles);
     this.missingOwnerPaths.clear();
     this.missingClassNames.clear();
     if (changeKind !== 'delete') {
