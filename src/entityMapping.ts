@@ -1069,12 +1069,13 @@ export class EntityMappingManager {
       });
     }
     // PR4 A4-4:owner 归属反查改走语义索引(不再线性扫描 mappingIndexes)。
+    // IDE-IDX-005:共享脚本(owner 归属多实体)保存时逐个 force 重解析全部
+    // 依赖实体——只刷第一家会让其余实体的方法行号/绑定滞留旧脚本内容。
     for (const entry of this.semanticIndex.findEntitiesByPythonOwner(pythonPath)) {
       const mapping = this.mappingIndexesByRoot.get(entry.defFile);
       if (mapping) {
         // force 重解析:py 变更不进 .def mtime 键,缓存会让绑定滞留旧内容
         void this.parseDefFile(entry.entityName, mapping.rootDefFile, undefined, 'entity', true);
-        break;
       }
     }
   }

@@ -631,3 +631,104 @@ describe('IDE-IDX-003 实体名查询携带调用文档根', () => {
     }
   });
 });
+
+describe('IDE-IDX-005 保存共享脚本刷新全部依赖实体', () => {
+  it('Shared.py 变更后 A/B 行号与绑定均更新,未依赖实体 C 不刷新', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mapping-shared-'));
+    try {
+      write(root, 'scripts/entities.xml',
+        '<root>\n  <A hasBase="true"/>\n  <B hasBase="true"/>\n  <C hasBase="true"/>\n</root>');
+      // A/B 同引接口 Shared(共享 owner 脚本);C 不引用
+      for (const entity of ['A', 'B']) {
+        write(root, `scripts/entity_defs/${entity}.def`, [
+          '<root>',
+          '  <Interfaces>',
+          '    <interface>Shared</interface>',
+          '  </Interfaces>',
+          '  <BaseMethods>',
+          `    <on${entity}/>`,
+          '  </BaseMethods>',
+          '</root>'
+        ].join('\n'));
+        write(root, `scripts/base/${entity}.py`,
+          `class ${entity}(object):\n    def on${entity}(self):\n        pass\n`);
+      }
+      write(root, 'scripts/entity_defs/C.def',
+        '<root>\n  <BaseMethods>\n    <onC/>\n  </BaseMethods>\n</root>');
+      write(root, 'scripts/base/C.py', 'class C(object):\n    def onC(self):\n        pass\n');
+      write(root, 'scripts/entity_defs/interfaces/Shared.def',
+        '<root>\n  <BaseMethods>\n    <onShared/>\n    <onExtra/>\n  </BaseMethods>\n</root>');
+      // base/interfaces 形态:inferMethodSection 推得 BaseMethods,接口绑定键可命中
+      const sharedPy = p(root, 'scripts', 'base', 'interfaces', 'Shared.py');
+      write(root, 'scripts/base/interfaces/Shared.py',
+        'class Shared(object):\n    def onShared(self):\n        pass\n');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'shared', index: 0 }];
+      stubWorkspace.findFiles = async () => {
+        const results: Uri[] = [];
+        const walk = (dir: string) => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = p(dir, entry.name);
+            if (entry.isDirectory()) { walk(full); }
+            else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+          }
+        };
+        walk(root);
+        return results;
+      };
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        interface MethodEntry { methodName: string; filePath: string; line: number; binding?: unknown }
+        const indexes = (): Map<string, { pythonMethods: MethodEntry[] }> =>
+          (manager as unknown as { mappingIndexes: Map<string, { pythonMethods: MethodEntry[] }> }).mappingIndexes;
+        await until(() => indexes().size >= 3, 'shared-fixture scan');
+        const sharedMethod = (entity: string, name: string): MethodEntry | undefined =>
+          indexes().get(entity)?.pythonMethods.find(method =>
+            method.methodName === name && method.filePath === sharedPy);
+
+        // 基线:onShared 行 2 且已绑定;onExtra 尚无实现(v1 无该方法)
+        expect(sharedMethod('A', 'onShared')).toMatchObject({ line: 2, binding: expect.anything() });
+        expect(sharedMethod('B', 'onShared')).toMatchObject({ line: 2, binding: expect.anything() });
+        expect(sharedMethod('A', 'onExtra')).toBeUndefined();
+        const cIndexBefore = indexes().get('C');
+        const missesBefore = manager.getDefParseCacheStats().misses;
+
+        // 保存 Shared.py:头部垫三行(onShared 2→6)并补 onExtra 实现
+        write(root, 'scripts/base/interfaces/Shared.py', [
+          '# pad 1',
+          '# pad 2',
+          '# pad 3',
+          '',
+          'class Shared(object):',
+          '    def onShared(self):',
+          '        pass',
+          '',
+          '    def onExtra(self):',
+          '        pass',
+          ''
+        ].join('\n'));
+        (manager as unknown as { handlePythonFileChanged(file: string): void })
+          .handlePythonFileChanged(sharedPy);
+
+        // A/B 都要翻新:等最后注册的 B 也拿到新行号
+        await until(() => sharedMethod('B', 'onShared')?.line === 6, 'B shared reparse');
+        expect(sharedMethod('A', 'onShared')).toMatchObject({ line: 6, binding: expect.anything() });
+        expect(sharedMethod('B', 'onShared')).toMatchObject({ line: 6, binding: expect.anything() });
+        // 绑定表同步翻新:v2 新增的 onExtra 实现两实体都挂上绑定
+        expect(sharedMethod('A', 'onExtra')).toMatchObject({ line: 9, binding: expect.anything() });
+        expect(sharedMethod('B', 'onExtra')).toMatchObject({ line: 9, binding: expect.anything() });
+        // 未依赖实体不刷新:索引对象原引用保留,且只发生 A/B 两次重解析
+        expect(indexes().get('C')).toBe(cIndexBefore);
+        expect(manager.getDefParseCacheStats().misses).toBe(missesBefore + 2);
+      } finally {
+        manager.dispose();
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+      }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 20000);
+});
