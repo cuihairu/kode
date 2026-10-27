@@ -73,14 +73,14 @@
 
 ## 7. 主要调用链图(真实路径取证,Mermaid)
 
-> 口径说明:§3 的数字是 PR1 时点(提交 89e8783)实测;本节四条链是 **main 当前代码**的真实调用路径(file:line 以落稿时该分支 HEAD 27705df 为准,含 PR2 快照/PR3 调度器/PR5 去阻塞/PR6 诊断版本守卫,以及 kode2 phase2-slice-a 双轨 shadow 对拍面)。等待点(可能阻塞请求返回的位置)统一用虚线框标出;shadow 对拍腿均为 fire-and-forget,不阻塞返回,不标等待点。
+> 口径说明:§3 的数字是 PR1 时点(提交 89e8783)实测;本节四条链是 **main 当前代码**的真实调用路径(file:line 以落稿时该分支 HEAD 7dff720 为准,含 PR2 快照/PR3 调度器/PR5 去阻塞/PR6 诊断版本守卫,以及 kode2 phase2-slice-a 双轨 shadow 对拍面)。等待点(可能阻塞请求返回的位置)统一用虚线框标出;shadow 对拍腿均为 fire-and-forget,不阻塞返回,不标等待点。
 
 ### 7.1 Hover(Python → 实体标注 → 同步回退)
 
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["extension.ts:470 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  M1["extension.ts:523 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
   HP["KBEngineHoverProvider.provideHover<br/>languageProviders.ts:708"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
@@ -128,7 +128,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["extension.ts:502 打点 startLanguageServiceOperation('definition')<br/>(.def 侧另有 :548 一路)"]
+  M2["extension.ts:555 打点 startLanguageServiceOperation('definition')<br/>(.def 侧另有 :601 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:3635"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :3664 / Impl :3682"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -182,7 +182,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["extension.ts:399 打点 startLanguageServiceOperation('completion')<br/>(另一语境 :717)"]
+  M3["extension.ts:452 打点 startLanguageServiceOperation('completion')<br/>(另一语境 :770)"]
   CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:4909"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
@@ -212,15 +212,15 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:755 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:808 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>diagnosticScheduler.ts:157"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(宏任务边界)<br/>extension.ts:762 → diagnosticScheduler.ts:181"]
+  FL["flushQueued(宏任务边界)<br/>extension.ts:825 → diagnosticScheduler.ts:181"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 extension.ts:286 / entities 侧 :299"]
+  CALC["computeAndPublish<br/>def 侧打点 extension.ts:295 / entities 侧 :308"]
   VD["validateDocument(languageProviders.ts:1271)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders.ts:1286,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders.ts:1304)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders.ts:1317,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1295,fire-and-forget)"]
