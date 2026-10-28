@@ -5329,6 +5329,12 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
   private lastRenameInputs: RenameInputVersionRef[] = [];
   private lastTargetVersion: number | undefined;
 
+  /**
+   * IDE-NAV-011:属性重命名要改写已解析的 python self 访问,需注入
+   * EntityMappingManager(owner 注册面判定归属);缺省 null 时只出 def 编辑。
+   */
+  constructor(private entityMappingManager: EntityMappingManager | null = null) {}
+
   prepareRename(
     document: vscode.TextDocument,
     position: vscode.Position
@@ -5413,6 +5419,31 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
           newName
         );
       }));
+    }
+    // IDE-NAV-011:属性重命名改写已解析的 python self 访问——归属由 owner
+    // 注册面决定(NAV-002 同款),无关实体同名(歧义)不在结果里,不猜测;
+    // 方法重命名不走此路径(方法→python 是 NAV-012)。访问行列已按快照
+    // 当前文本(打开文档缓冲区优先)计算,每次调用重查,不套旧范围。
+    if (symbol.kind === 'property' && this.entityMappingManager) {
+      const accesses = await this.entityMappingManager.getIncomingPythonPropertyAccesses(
+        document.fileName,
+        symbol.name
+      );
+      const pythonEditsByFile = new Map<string, vscode.TextEdit[]>();
+      for (const access of accesses) {
+        const list = pythonEditsByFile.get(access.filePath) ?? [];
+        list.push(new vscode.TextEdit(
+          new vscode.Range(
+            new vscode.Position(access.line - 1, access.character),
+            new vscode.Position(access.line - 1, access.character + symbol.name.length)
+          ),
+          newName
+        ));
+        pythonEditsByFile.set(access.filePath, list);
+      }
+      for (const [filePath, edits] of pythonEditsByFile) {
+        workspaceEdit.set(vscode.Uri.file(filePath), edits);
+      }
     }
     return workspaceEdit;
   }

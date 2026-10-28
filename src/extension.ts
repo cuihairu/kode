@@ -939,9 +939,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(implementationProvider);
 
   // 注册重命名提供者(.def 属性/方法 F2 重命名,引用面见 defRenamer 头注)
+  // IDE-NAV-011:属性重命名改写已解析 python self 访问,注入 manager
   const renameProvider = vscode.languages.registerRenameProvider(
     defDocumentSelector,
-    new KBEngineRenameProvider()
+    new KBEngineRenameProvider(entityMappingManager)
   );
   context.subscriptions.push(renameProvider);
 
