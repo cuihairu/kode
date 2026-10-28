@@ -371,6 +371,13 @@ export class KBEngineCodeGenerator {
       this.config.pythonOutputPath,
       `${entity.config.name}.py`
     );
+
+    // IDE-GEN-002:同名实现已存在时拒绝覆盖——保留使用者代码,
+    // 不能因生成 def 顺带覆盖实现文件;两个生成入口同守
+    if (fs.existsSync(pythonFilePath)) {
+      throw new Error(`Python 文件已存在，保留原代码未覆盖: ${pythonFilePath}`);
+    }
+
     const content = this.generatePythonContent(entity);
 
     // 确保目录存在

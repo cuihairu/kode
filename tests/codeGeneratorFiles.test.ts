@@ -469,6 +469,57 @@ describe('KBEngineCodeGenerator overwrite guard (IDE-GEN-001)', () => {
   });
 });
 
+describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
+  const pySentinel = 'class MonsterBase():\n    def __init__(self):\n        self.custom = 1\n';
+
+  it('rejects python generation onto an existing file and keeps the original code', async () => {
+    fs.writeFileSync(path.join(root, 'scripts', 'Monster.py'), pySentinel, 'utf8');
+    const monster = sampleEntity();
+    monster.config.name = 'Monster';
+
+    await expect(makeGenerator().generatePythonFile(monster)).rejects.toThrow('已存在');
+    await expect(makeGenerator().generatePythonFile(monster)).rejects.toThrow(
+      path.join(root, 'scripts', 'Monster.py')
+    );
+    expect(fs.readFileSync(path.join(root, 'scripts', 'Monster.py'), 'utf8')).toBe(pySentinel);
+  });
+
+  it('wizard keeps the existing implementation and skips registration when python conflicts', async () => {
+    // Hero.def 不在盘上(def 面可生成),Hero.py 已有使用者实现
+    const heroPySentinel = 'class HeroBase():\n    def custom(self):\n        pass\n';
+    fs.writeFileSync(path.join(root, 'scripts', 'Hero.py'), heroPySentinel, 'utf8');
+    const entitiesXmlBefore = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
+    ui.inputs.push('Hero');
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+
+    await makeGenerator().showWizard();
+
+    // def 照常生成并报成功(GEN-003 再收紧前置检查),python 冲突抛出
+    expect(ui.info).toHaveLength(1);
+    expect(ui.info[0]).toContain('Hero.def');
+    expect(ui.error).toHaveLength(1);
+    expect(ui.error[0]).toContain('已存在');
+    expect(ui.error[0]).toContain('Hero.py');
+    expect(fs.readFileSync(path.join(root, 'scripts', 'Hero.py'), 'utf8')).toBe(heroPySentinel);
+    // 注册不会因 def 已写出而顺带发生
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
+  });
+
+  it('template flow keeps the existing implementation on python conflict', async () => {
+    const accountPySentinel = 'class MyAccountBase():\n    def custom(self):\n        pass\n';
+    fs.writeFileSync(path.join(root, 'scripts', 'MyAccount.py'), accountPySentinel, 'utf8');
+    ui.picks.push(pickIndex(0));
+    ui.inputs.push('MyAccount');
+
+    await makeGenerator().showTemplates();
+
+    expect(ui.error).toHaveLength(1);
+    expect(ui.error[0]).toContain('已存在');
+    expect(fs.readFileSync(path.join(root, 'scripts', 'MyAccount.py'), 'utf8')).toBe(accountPySentinel);
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'MyAccount.def'))).toBe(true);
+  });
+});
+
 describe('KBEngineCodeGenerator config and lookups', () => {
   it('falls back to defaults without a workspace folder', () => {
     stubWorkspace.workspaceFolders = [];
