@@ -266,7 +266,11 @@ export class DebugConfigManager {
     return existingInputs.filter(item => item.id !== 'kbengineProcessId');
   }
 
-  generateLaunchConfigurations(): any[] {
+  /**
+   * 运行中的命名实例(DBG-001):启动联动按组件实例窗口分配了独立口,
+   * attach 据此逐实例生成条目,指向指定实例而不是只指默认口。
+   */
+  generateLaunchConfigurations(runningInstances: ReadonlyArray<{ component: string; targetId: string; port: number }> = []): any[] {
     const configurations: any[] = [];
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
 
@@ -312,6 +316,10 @@ export class DebugConfigManager {
     // 按端口分配表逐组件追加 debugpy connect 附加配置(localRoot=
     // workspaceFolder,与本地 attach 同映射口径);注入由启动联动负责,
     // 这里只负责把「组件→端口」面写进 launch.json。默认关=零追加。
+    // DBG-001 命名实例面:同组件多实例各持独立口(启动联动按组件窗口
+    // 分配),逐实例追加一条 connect 附加——条目名带
+    // `component#targetId` 指明归属实例;默认实例不进此列表(上方表配置
+    // 已覆盖)。与表条目同映射口径(localRoot=workspaceFolder)。
     if (vscode.workspace.getConfiguration('kbengine').get<boolean>('debug.autoDebugpy', false)) {
       for (const { component, port } of DEBUGPY_PORT_TABLE) {
         configurations.push({
@@ -333,12 +341,33 @@ export class DebugConfigManager {
           }
         });
       }
+
+      for (const instance of runningInstances) {
+        configurations.push({
+          name: `KBEngine: Python attach to ${instance.component}#${instance.targetId} (debugpy ${instance.port})`,
+          type: this.getDebuggerType(),
+          request: 'attach',
+          connect: {
+            host: '127.0.0.1',
+            port: instance.port
+          },
+          justMyCode: false,
+          pathMappings: [{
+            localRoot: workspaceFolder,
+            remoteRoot: workspaceFolder
+          }],
+          presentation: {
+            group: 'KBEngine',
+            order: 4
+          }
+        });
+      }
     }
 
     return configurations;
   }
 
-  async updateLaunchJson(): Promise<boolean> {
+  async updateLaunchJson(runningInstances: ReadonlyArray<{ component: string; targetId: string; port: number }> = []): Promise<boolean> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       vscode.window.showErrorMessage('没有打开的工作区');
@@ -359,7 +388,7 @@ export class DebugConfigManager {
         existingConfig = { configurations: [], inputs: [] };
       }
 
-      const newConfigurations = this.generateLaunchConfigurations();
+      const newConfigurations = this.generateLaunchConfigurations(runningInstances);
       const kbConfigs = newConfigurations.filter(item => item.name?.startsWith('KBEngine:'));
       const userConfigs = (existingConfig.configurations || []).filter(
         (item: any) => !item.name?.startsWith('KBEngine:')

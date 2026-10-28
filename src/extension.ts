@@ -37,8 +37,8 @@ import {
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey } from './serverManager';
-import { injectDebugpyAfterStart, syncDebugpyPackage } from './autoDebugpy';
+import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey, DEFAULT_TARGET_ID } from './serverManager';
+import { injectDebugpyAfterStart, syncDebugpyPackage, allocateDebugpyInstancePort } from './autoDebugpy';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1560,6 +1560,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 就绪轮询/单组件失败只记日志);注入用短命客户端,不碰面板持久会话。
   // 已注入集合随组件退出清位,重启组件可再注入。
   const debugpyInjected = new Set<string>();
+  // DBG-001:命名实例 → 窗口分配的 debugpy 口;随实例退出清位,空出的口
+  // 可被后续实例复用。默认实例不进 Map(走端口分配表)。
+  const debugpyPortByServerKey = new Map<string, number>();
   const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
     serverControlProvider.refresh();
     updateStatusBar(serverManager);
@@ -1567,6 +1570,7 @@ export function activate(context: vscode.ExtensionContext) {
     for (const gone of [...debugpyInjected]) {
       if (!running.has(gone)) {
         debugpyInjected.delete(gone);
+        debugpyPortByServerKey.delete(gone);
       }
     }
     for (const component of running) {
@@ -1574,10 +1578,35 @@ export function activate(context: vscode.ExtensionContext) {
         continue;
       }
       debugpyInjected.add(component);
-      // RUN-001:登记键可带 #targetId 后缀(同组件多实例),telnet 目标与
-      // 调试端口仍按纯组件名分配,注入前剥回组件名
-      const { componentName: targetName } = parseServerKey(component);
-      void injectDebugpyAfterStart([targetName], () => telnetService.getTargets(), {
+      // RUN-001:登记键可带 #targetId 后缀(同组件多实例);默认实例 telnet
+      // 目标与调试端口按纯组件名(分配表);DBG-001 命名实例按组件窗口分
+      // 配独立口——同类型多实例各持一口,attach 可指向指定实例。
+      const { componentName: targetName, targetId } = parseServerKey(component);
+      if (targetId === DEFAULT_TARGET_ID) {
+        void injectDebugpyAfterStart([targetName], () => telnetService.getTargets(), {
+          log: (componentName, level, text) => {
+            serverManager.logHub.ingest({
+              source: 'process',
+              component: componentName,
+              level: level === 'error' ? RuntimeLogLevel.ERROR : level === 'warning' ? RuntimeLogLevel.WARNING : RuntimeLogLevel.INFO,
+              text
+            });
+          }
+        });
+        continue;
+      }
+      const port = allocateDebugpyInstancePort(targetName, debugpyPortByServerKey.values());
+      if (port === undefined) {
+        serverManager.logHub.ingest({
+          source: 'process',
+          component: targetName,
+          level: RuntimeLogLevel.WARNING,
+          text: `autoDebugpy:实例 ${targetId} 组件端口窗口已耗尽(${targetName} 同组件命名实例超过 8 个),跳过注入`
+        });
+        continue;
+      }
+      debugpyPortByServerKey.set(component, port);
+      void injectDebugpyAfterStart([{ component: targetName, targetId, port }], () => telnetService.getTargets(), {
         log: (componentName, level, text) => {
           serverManager.logHub.ingest({
             source: 'process',
@@ -1880,11 +1909,19 @@ export function activate(context: vscode.ExtensionContext) {
   // 初始化调试配置管理器
   const debugConfigManager = new DebugConfigManager(context);
 
-  // 注册调试相关命令
+  // 注册调试相关命令(DBG-001:运行中的命名实例逐条透传,launch.json 里
+  // 各得一条指向自己分配口的 attach 条目)
   const updateLaunchJsonCommand = vscode.commands.registerCommand(
     'kbengine.debug.updateLaunchJson',
     async () => {
-      await debugConfigManager.updateLaunchJson();
+      const runningInstances = [...serverManager.getRunningServers().keys()]
+        .map(serverKey => {
+          const { componentName, targetId } = parseServerKey(serverKey);
+          const port = debugpyPortByServerKey.get(serverKey);
+          return port === undefined ? null : { component: componentName, targetId, port };
+        })
+        .filter((instance): instance is { component: string; targetId: string; port: number } => instance !== null);
+      await debugConfigManager.updateLaunchJson(runningInstances);
     }
   );
   context.subscriptions.push(updateLaunchJsonCommand);

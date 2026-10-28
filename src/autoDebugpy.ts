@@ -43,6 +43,40 @@ export function debugpyPortFor(component: string): number | undefined {
   return DEBUGPY_PORT_TABLE.find(entry => entry.component === component)?.port;
 }
 
+/**
+ * 命名实例端口窗口(DBG-001):同组件多实例各自持口。每组件 8 槽,5700 起
+ * ——避开 5678-5682 分配表与 31000-51000 引擎 telnet 段;默认实例仍用
+ * 分配表口,不进窗口。
+ */
+export const DEBUGPY_INSTANCE_WINDOW_SIZE = 8;
+export const DEBUGPY_INSTANCE_PORT_WINDOWS: ReadonlyArray<{ component: string; start: number }> = [
+  { component: 'baseapp', start: 5700 },
+  { component: 'cellapp', start: 5708 },
+  { component: 'loginapp', start: 5716 },
+  { component: 'dbmgr', start: 5724 },
+  { component: 'logger', start: 5732 }
+];
+
+/**
+ * 命名实例端口分配(DBG-001):组件窗口内取首个不在 taken 的口——同类型
+ * 在册实例端口互不相同;窗口耗尽(同组件 8 个命名实例)如实 undefined,
+ * 调用方记日志不注入;表外组件无窗口(undefined)。
+ */
+export function allocateDebugpyInstancePort(component: string, taken: Iterable<number>): number | undefined {
+  const window = DEBUGPY_INSTANCE_PORT_WINDOWS.find(entry => entry.component === component);
+  if (!window) {
+    return undefined;
+  }
+  const takenSet = new Set(taken);
+  for (let offset = 0; offset < DEBUGPY_INSTANCE_WINDOW_SIZE; offset += 1) {
+    const port = window.start + offset;
+    if (!takenSet.has(port)) {
+      return port;
+    }
+  }
+  return undefined;
+}
+
 /** 引擎内嵌 Python 版本(kbengine 编译期捆绑,调研结论 3.12.13) */
 export const EMBEDDED_PYTHON_VERSION = '3.12.13';
 /**
@@ -365,11 +399,23 @@ export function autoDebugpyEnabled(): boolean {
 }
 
 /**
+ * 注入目标(DBG-001):字符串=组件默认实例(端口查分配表);对象=显式命名
+ * 实例,port 是启动联动按组件实例窗口分配的结果。对象形的 telnet 端点
+ * 查找仍按组件名(引擎 telnet 目标按组件配置,无逐实例端点),日志带
+ * `实例 <targetId>` 标签区分归属。
+ */
+export type DebugpyInjectTarget = string | {
+  component: string;
+  targetId: string;
+  port: number;
+};
+
+/**
  * 组件启动成功后的联动入口:targets 里找不到该组件(配置未开 telnet)如实
  * 记日志跳过;端口表没有该组件(machine/interfaces/bots)同样跳过。
  */
 export async function injectDebugpyAfterStart(
-  components: readonly string[],
+  targets: readonly DebugpyInjectTarget[],
   getTargets: () => readonly TelnetTarget[],
   options: DebugpyAutoInjectOptions
 ): Promise<void> {
@@ -384,15 +430,19 @@ export async function injectDebugpyAfterStart(
   const pollIntervalMs = options.pollIntervalMs ?? 1000;
   const readyTimeoutMs = options.readyTimeoutMs ?? 60000;
   const schedule = options.schedule ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)));
-  await Promise.all(components.map(async component => {
-    const listenPort = debugpyPortFor(component);
+  await Promise.all(targets.map(async injectTarget => {
+    const isInstance = typeof injectTarget !== 'string';
+    const component = isInstance ? injectTarget.component : injectTarget;
+    // 命名实例的口在装配层按窗口分配后传入;默认实例查分配表
+    const listenPort = isInstance ? injectTarget.port : debugpyPortFor(component);
+    const label = isInstance ? `实例 ${injectTarget.targetId} ` : '';
     if (listenPort === undefined) {
-      options.log(component, 'info', `autoDebugpy:组件不在端口分配表,跳过(machine/interfaces/bots 无 Python 调试面)`);
+      options.log(component, 'info', `autoDebugpy:${label}组件不在端口分配表,跳过(machine/interfaces/bots 无 Python 调试面)`);
       return;
     }
     const target = getTargets().find(item => item.component === component);
     if (!target) {
-      options.log(component, 'warning', 'autoDebugpy:配置未开该组件 telnet(缺 <telnet_service>),无法注入 debugpy');
+      options.log(component, 'warning', `autoDebugpy:${label}配置未开该组件 telnet(缺 <telnet_service>),无法注入 debugpy`);
       return;
     }
     // 注入时机=组件 telnet 就绪即刻:轮询端口直至就绪或超时(引擎组件
@@ -404,14 +454,14 @@ export async function injectDebugpyAfterStart(
       open = await probe(target.host, target.port);
     }
     if (!open) {
-      options.log(component, 'error', `autoDebugpy:telnet ${target.host}:${target.port} ${readyTimeoutMs}ms 内未就绪,放弃注入`);
+      options.log(component, 'error', `autoDebugpy:${label}telnet ${target.host}:${target.port} ${readyTimeoutMs}ms 内未就绪,放弃注入`);
       return;
     }
     const result = await injectDebugpyListen(target, listenPort, options.deps ?? {});
     if (result.status === 'injected') {
-      options.log(component, 'info', `autoDebugpy:${result.detail}`);
+      options.log(component, 'info', `autoDebugpy:${label}${result.detail}`);
     } else {
-      options.log(component, 'error', `autoDebugpy:注入失败——${result.detail}`);
+      options.log(component, 'error', `autoDebugpy:${label}注入失败——${result.detail}`);
     }
   }));
 }
