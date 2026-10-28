@@ -104,8 +104,8 @@ import {
   applySavedFileAnnotations,
   removeSavedFileAnnotations,
   renameSavedFileAnnotations,
-  releaseDocumentReturnAnnotations,
-  updateDocumentReturnAnnotations
+  queueDocumentReturnAnnotations,
+  releaseDocumentReturnAnnotations
 } from './pythonReturnTypeInference';
 import {
   DEBUG_CONFIG_CHANNEL_NAME,
@@ -916,9 +916,11 @@ export function activate(context: vscode.ExtensionContext) {
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
       updateDocumentSnapshot(event.document);
       shadowMirrorCorpusDocument(event.document);
-      // IDE-HOV-011:未保存的返回注解变化按文档版本立即进入该文件桶
+      // IDE-HOV-011:未保存的返回注解变化按文档版本进入该文件桶。
+      // 2026-10-28 审核整改:整文件注解提取移出编辑同步路径(同文件合并到
+      // 最新版本,宏任务冲刷时让出式异步提取,不再在编辑事件里同步 120ms)。
       if (isPythonDocument(event.document)) {
-        updateDocumentReturnAnnotations(getWorkspaceRootForDocument(event.document), {
+        queueDocumentReturnAnnotations(getWorkspaceRootForDocument(event.document), {
           fileKey: event.document.uri.toString(),
           version: event.document.version,
           source: () => event.document.getText()

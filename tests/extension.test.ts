@@ -8,6 +8,8 @@ import { activate, deactivate } from '../src/extension';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import {
   applySavedFileAnnotations,
+  flushPendingDocumentReturnAnnotationsForTests,
+  resetPythonReturnAnnotationCache,
   resolveLocalVariableReturnType,
   resolveLocalVariableReturnTypeFromSnapshot
 } from '../src/pythonReturnTypeInference';
@@ -942,6 +944,34 @@ describe('extension activate 装配', () => {
 
     disposeAll(context);
   });
+
+  it('python 编辑注解桶走队列:不占编辑同步路径,冲刷后入桶(IDE-HOV-011 整改)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-hov011-'));
+    const originalFolders = workspace.workspaceFolders;
+    const context = makeContext();
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      resetPythonReturnAnnotationCache();
+      activate(context);
+      const doc = makeTextDocument('def get_data() -> NEW:\n    pass\n', {
+        fileName: path.join(root, 'main.py'),
+        languageId: 'python',
+        version: 1
+      });
+      // 编辑事件只排队:桶未同步可见(此前每个编辑事件同步整文件提取 120ms)
+      workspaceEvents.documentChanged.fire({ document: doc });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root)).toBeNull();
+      // 冲刷队列:让出式异步提取完成后桶才可查
+      await flushPendingDocumentReturnAnnotationsForTests();
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+        .toMatchObject({ annotation: 'NEW' });
+    } finally {
+      disposeAll(context);
+      workspace.workspaceFolders = originalFolders;
+      resetPythonReturnAnnotationCache();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 15000);
 });
 
 describe('最终配置默认开启(批112 默认开启令)', () => {

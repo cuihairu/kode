@@ -274,9 +274,12 @@ async function maskCodeLineCooperatively(raw: string, budget: YieldBudget): Prom
   return masked;
 }
 
-/** 与同步提取器同口径；大文件和单个长签名均按字符预算让出事件循环。 */
-export async function extractFileReturnAnnotationsAsync(source: string): Promise<PythonReturnAnnotationIndex> {
-  const result: PythonReturnAnnotationIndex = new Map();
+/** 让出式逐行收集:与同步 collectFileAnnotationFacts 同口径(截断签名
+ * 不借后续定义、同名首个定义),按字符预算 setImmediate 让出事件循环。 */
+async function collectFileAnnotationFactsAsync(
+  source: string,
+  record: (name: string, annotation: string | null) => void
+): Promise<void> {
   const seen = new Set<string>();
   const defHead = /^\s*def\s+([A-Za-z_]\w*)\s*\(/;
   const budget: YieldBudget = { remaining: ANNOTATION_YIELD_INTERVAL };
@@ -286,9 +289,10 @@ export async function extractFileReturnAnnotationsAsync(source: string): Promise
     const nextDef = defHead.exec(masked)?.[1];
     if (current && nextDef) current = undefined;
     if (!current) {
-      if (!nextDef || seen.has(nextDef)) continue;
-      seen.add(nextDef);
-      current = { name: nextDef, signature: '', depth: 0, sawParens: false, lines: 0 };
+      const name = nextDef;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      current = { name, signature: '', depth: 0, sawParens: false, lines: 0 };
     }
     current.lines += 1;
     for (const ch of masked) {
@@ -301,7 +305,7 @@ export async function extractFileReturnAnnotationsAsync(source: string): Promise
       else if (ch === ':' && current.sawParens && current.depth === 0) {
         const arrow = current.signature.indexOf('->');
         const annotation = arrow < 0 ? '' : current.signature.slice(arrow + 2).trim();
-        if (annotation) result.set(current.name, annotation);
+        record(current.name, annotation.length > 0 ? annotation : null);
         current = undefined;
         break;
       }
@@ -309,6 +313,14 @@ export async function extractFileReturnAnnotationsAsync(source: string): Promise
     }
     if (current && current.lines >= 64) current = undefined;
   }
+}
+
+/** 与同步提取器同口径；大文件和单个长签名均按字符预算让出事件循环。 */
+export async function extractFileReturnAnnotationsAsync(source: string): Promise<PythonReturnAnnotationIndex> {
+  const result: PythonReturnAnnotationIndex = new Map();
+  await collectFileAnnotationFactsAsync(source, (name, annotation) => {
+    if (annotation !== null) { result.set(name, annotation); }
+  });
   return result;
 }
 
@@ -430,6 +442,12 @@ export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();
   annotationBuilds.clear();
   documentAnnotationBuckets.clear();
+  for (const pending of pendingDocumentUpdates.values()) {
+    clearTimeout(pending.timer);
+  }
+  pendingDocumentUpdates.clear();
+  inflightDocumentUpdates.clear();
+  documentBucketGenerations.clear();
 }
 
 /**
@@ -478,10 +496,108 @@ export function updateDocumentReturnAnnotations(
   rootBuckets.set(context.fileKey, { version: context.version, annotations, unannotatedNames });
 }
 
-/** 关闭文档弃桶:未保存修改不再遮蔽磁盘口径。 */
+/**
+ * 关闭文档弃桶:未保存修改不再遮蔽磁盘口径。2026-10-28 审核整改:同时
+ * 取消该文件的在途/待冲刷注解更新(否则关闭后异步提取落桶,复活已弃桶)。
+ */
 export function releaseDocumentReturnAnnotations(workspaceRoot: string | null, fileKey: string): void {
   if (!workspaceRoot) { return; }
+  documentBucketGenerations.set(fileKey, (documentBucketGenerations.get(fileKey) ?? 0) + 1);
+  const pending = pendingDocumentUpdates.get(fileKey);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingDocumentUpdates.delete(fileKey);
+  }
   documentAnnotationBuckets.get(workspaceRoot)?.delete(fileKey);
+}
+
+// ====== 2026-10-28 审核整改(HOV-011):编辑事件注解提取移出同步路径 ======
+// 每个 onDidChangeTextDocument 事件此前同步整文件提取(889KB ≈ 120ms 阻塞
+// 事件循环)。改为:同文件按最新版本合并(旧版本事件覆盖不提取),宏任务
+// 冲刷时用让出式异步提取(collectFileAnnotationFactsAsync,按字符预算
+// setImmediate 让出),版本/关闭竞态由版本闸+文档代际守卫兜住。
+const pendingDocumentUpdates = new Map<string, {
+  workspaceRoot: string;
+  version: number;
+  source: () => string;
+  timer: NodeJS.Timeout;
+}>();
+const inflightDocumentUpdates = new Map<string, Promise<void>>();
+const documentBucketGenerations = new Map<string, number>();
+
+/** 编辑面入口:排队(同文件合并到最新版本),宏任务后异步提取,不阻塞编辑同步路径 */
+export function queueDocumentReturnAnnotations(
+  workspaceRoot: string | null,
+  context: DocumentAnnotationContext
+): void {
+  if (!workspaceRoot) { return; }
+  const key = context.fileKey;
+  const pending = pendingDocumentUpdates.get(key);
+  if (pending) {
+    pending.version = context.version;
+    pending.source = context.source;
+    return; // 已有定时器在途:合并到最新版本,不重复提取旧版本
+  }
+  const entry = {
+    workspaceRoot,
+    version: context.version,
+    source: context.source,
+    timer: undefined as unknown as NodeJS.Timeout
+  };
+  entry.timer = setTimeout(() => {
+    pendingDocumentUpdates.delete(key);
+    scheduleInflight(entry.workspaceRoot, key, entry.version, entry.source);
+  }, 0);
+  pendingDocumentUpdates.set(key, entry);
+}
+
+function scheduleInflight(
+  workspaceRoot: string,
+  fileKey: string,
+  version: number,
+  source: () => string
+): void {
+  const extraction = updateDocumentReturnAnnotationsAsync(workspaceRoot, { fileKey, version, source }).catch(() => {});
+  inflightDocumentUpdates.set(fileKey, extraction);
+  void extraction.finally(() => { inflightDocumentUpdates.delete(fileKey); });
+}
+
+/** 让出式异步提取:按字符预算让出事件循环(大文件不再整段阻塞宿主) */
+export async function updateDocumentReturnAnnotationsAsync(
+  workspaceRoot: string | null,
+  context: DocumentAnnotationContext
+): Promise<void> {
+  if (!workspaceRoot) { return; }
+  const generation = documentBucketGenerations.get(context.fileKey) ?? 0;
+  const existing = documentAnnotationBuckets.get(workspaceRoot)?.get(context.fileKey);
+  if (existing && context.version <= existing.version) { return; }
+  const annotations: PythonReturnAnnotationIndex = new Map();
+  const unannotatedNames = new Set<string>();
+  await collectFileAnnotationFactsAsync(context.source(), (name, annotation) => {
+    if (annotation === null) { unannotatedNames.add(name); }
+    else { annotations.set(name, annotation); }
+  });
+  if ((documentBucketGenerations.get(context.fileKey) ?? 0) !== generation) {
+    return; // 提取期间文档已关:弃桶不复活
+  }
+  let rootBuckets = documentAnnotationBuckets.get(workspaceRoot);
+  if (!rootBuckets) {
+    rootBuckets = new Map();
+    documentAnnotationBuckets.set(workspaceRoot, rootBuckets);
+  }
+  const after = rootBuckets.get(context.fileKey);
+  if (after && context.version <= after.version) { return; } // 期间已入更新版本
+  rootBuckets.set(context.fileKey, { version: context.version, annotations, unannotatedNames });
+}
+
+/** 测试面:冲刷全部待更新并等异步提取完成(同步断言口径) */
+export async function flushPendingDocumentReturnAnnotationsForTests(): Promise<void> {
+  for (const [key, entry] of [...pendingDocumentUpdates.entries()]) {
+    pendingDocumentUpdates.delete(key);
+    clearTimeout(entry.timer);
+    scheduleInflight(entry.workspaceRoot, key, entry.version, entry.source);
+  }
+  await Promise.all([...inflightDocumentUpdates.values()]);
 }
 
 /** 悬停文档自己的桶(最优先)之外,其余打开文档的桶按 fileKey 序合并(先见优先)。 */
@@ -691,11 +807,13 @@ export function resolveLocalVariableReturnTypeFromSnapshot(
   documentContext?: DocumentAnnotationContext
 ): LocalVariableReturnType | null {
   if (!workspaceRoot || !word || /^[A-Z_][A-Z0-9_]*$/.test(word)) return null;
+  const candidates = matchingAssignments(lines, hoverLine, word);
+  if (candidates.length === 0) return null;
+  // 2026-10-28 审核整改(HOV-009):先查赋值候选——无候选的 hover 不做全文
+  // 注解提取(此前先更新桶再查候选,无赋值词的 hover 也白做全文件提取)。
   if (documentContext) {
     updateDocumentReturnAnnotations(workspaceRoot, documentContext);
   }
-  const candidates = matchingAssignments(lines, hoverLine, word);
-  if (candidates.length === 0) return null;
   const hoveredBucket = documentContext
     ? documentAnnotationBuckets.get(workspaceRoot)?.get(documentContext.fileKey)
     : undefined;

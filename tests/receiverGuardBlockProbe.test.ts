@@ -55,16 +55,21 @@ describe('2026-10-28 审核整改:guard 块界预计算,逐调用零文本重扫
     expect(reported).toEqual(['b']); // a 在块内不报;b 前有去缩进行,块已闭 → 报
   });
 
-  it('规模比近线性:同 guard 下 4k 调用 < 8×1k 耗时', () => {
+  it('规模比近线性:同 guard 下 4k 调用 < 10×1k 耗时(中位数×3,负载鲁棒)', () => {
     const timed = (callCount: number): number => {
       const source = guardedCallsSource(callCount);
       const start = process.hrtime.bigint();
       computeReceiverNoneFindings(source, FILE);
       return Number(process.hrtime.bigint() - start) / 1e6;
     };
-    timed(200); // 预热(JIT/缓存)
-    const t1k = timed(1000);
-    const t4k = timed(4000);
-    expect(t4k).toBeLessThan(t1k * 8);
+    const medianOf = (callCount: number): number => {
+      const samples = [timed(callCount), timed(callCount), timed(callCount)].sort((a, b) => a - b);
+      return samples[1];
+    };
+    medianOf(200); // 预热(JIT/缓存)
+    const t1k = medianOf(1000);
+    const t4k = medianOf(4000);
+    // 整改前同口径 ≈ 15×;近线性约 4~5×;10× 为负载抖动留裕度
+    expect(t4k).toBeLessThan(t1k * 10);
   });
 });

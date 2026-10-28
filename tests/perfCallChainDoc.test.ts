@@ -37,7 +37,7 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/extension.ts', 311, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 324, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 916, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 941, 'flushQueued()'],
+  ['src/extension.ts', 943, 'flushQueued()'],
   ['src/languageProviders.ts', 660, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 731, 'provideHover('],
   ['src/languageProviders.ts', 1266, 'shadowCompareDefinition'],
