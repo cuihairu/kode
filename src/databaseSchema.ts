@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { normalizeFileIdentity } from './pathIdentity';
 import {
   DefDocument,
   DefElementNode,
@@ -2209,7 +2210,10 @@ function normalizeFlag(flags: string | undefined): string | undefined {
 }
 
 function normalizePath(filePath: string): string {
-  return filePath.replace(/\\/g, '/').toLowerCase();
+  // 2026-10-28 审核整改(SCH-002):不再一律 toLowerCase——POSIX 上仅大小写
+  // 不同的路径是不同文件/不同根,一律折叠会让两根共用同一缓存键串缓存。
+  // 走项目标准身份归一:POSIX 保留大小写;Windows 盘符/UNC 仍折叠。
+  return normalizeFileIdentity(filePath);
 }
 
 function dedupeSchemaTargets<T extends { tableName: string; fieldName?: string }>(

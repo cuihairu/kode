@@ -418,7 +418,7 @@ const snapshotWithIndex = (): DatabaseSchemaSnapshot => {
     name: 'tbl_Hero',
     kind: 'entity',
     title: 'Hero',
-    source: src('/Proj/Hero.def', 'meta'),
+    source: src('/proj/hero.def', 'meta'),
     fields: [fieldOf('sm_weight', 'meta.weight')]
   };
   const bagTable: TableSchemaDescriptor = {
@@ -458,8 +458,9 @@ describe('findDatabaseSchemaTargetsForSource', () => {
   it('matches tables and fields with normalized paths and prefix rules', () => {
     const snapshot = snapshotWithIndex();
 
-    // filePath 大小写混合经 normalizePath 归一;表 path 精确匹配,字段路径前缀匹配
-    expect(findDatabaseSchemaTargetsForSource(snapshot, '/proj/HERO.def', 'meta')).toEqual([
+    // POSIX 大小写精确(2026-10-28 审核整改,SCH-002:/proj/HERO.def 与
+    // /proj/hero.def 是不同文件,不再折叠互认);表 path 精确匹配,字段路径前缀匹配
+    expect(findDatabaseSchemaTargetsForSource(snapshot, '/proj/hero.def', 'meta')).toEqual([
       { tableName: 'tbl_Hero' },
       { tableName: 'tbl_Hero', fieldName: 'sm_weight' }
     ]);
@@ -470,6 +471,17 @@ describe('findDatabaseSchemaTargetsForSource', () => {
     ]);
 
     expect(findDatabaseSchemaTargetsForSource(snapshot, '/other/file.def', 'meta')).toEqual([]);
+  });
+
+  it('windows 盘符路径仍折叠大小写归一', () => {
+    const snapshot = snapshotWithIndex();
+    // bag 表源挂 Windows 盘符路径:大小写与分隔符差异在盘符域内归一
+    const bagTable = snapshot.tableIndex.get('tbl_Hero_bag')!;
+    bagTable.source = src('C:\\Proj\\Hero.def', 'bag');
+
+    expect(findDatabaseSchemaTargetsForSource(snapshot, 'c:/proj/hero.def', 'bag')).toEqual([
+      { tableName: 'tbl_Hero_bag' }
+    ]);
   });
 
   it('dedupes identical table+field targets', () => {
