@@ -349,6 +349,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | 设置项 | 类型 | 默认值 | 用途 |
 | --- | --- | --- | --- |
 | `kbengine.runtimeQuery.enabled` | boolean | `false` | 操作面总开关（观察清单增删与结果订阅流）；关闭时面板只剩单次手动查询 |
+| `kbengine.metrics.fileReadDetail` | boolean | `false` | 记录文件读取明细（路径+字节数，环形缓冲 256 条，经 `kbengine.metrics.showSummary` 查看）；关闭时只保留累计读取次数与字节数（开销有界） |
 | `kbengine.runtimeQuery.pollIntervalMs` | number | `2000` | 结果订阅流轮询间隔毫秒数；仅在 `kbengine.runtimeQuery.enabled` 开启时生效 |
 
 行为规则：

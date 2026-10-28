@@ -207,6 +207,7 @@ import {
 } from './workspaceDiscovery';
 import { renderExtensionIdentityReport } from './extensionIdentity';
 import { readBuildCommit } from './buildCommit';
+import { setFileReadVerbose } from './fileReadMetrics';
 import { TelnetTreeProvider } from './telnetTree';
 /**
  * Kode - KBEngine Development Environment
@@ -1701,6 +1702,8 @@ export function activate(context: vscode.ExtensionContext) {
     metricsChannel.append(getLanguageServiceSummaryReport());
     metricsChannel.show();
   }));
+  // IDE-MET-004:读盘明细开关(默认关=只累计计数,明细环形缓冲不启用)
+  setFileReadVerbose(kbengineConfig.get<boolean>('metrics.fileReadDetail', false));
   logViewer.subscribeLogHub(logHub);
 
   const enableWebviewConsoleLogs = kbengineConfig.get<boolean>('webviewConsoleLogs', true);

@@ -5,6 +5,12 @@
 // (只留聚合分位数);不记录任何用户代码文本,仅记路径类别/计数/耗时。
 
 import { performance } from 'perf_hooks';
+import {
+  FILE_READ_RING_LIMIT,
+  getFileReadTotals,
+  getRecentFileReads,
+  isFileReadVerbose
+} from './fileReadMetrics';
 
 export type LanguageServiceEventName =
   | 'hover'
@@ -220,8 +226,13 @@ const NAME_WIDTH = Math.max(...(['hover', 'definition', 'completion', 'diagnosti
 /** 命令面板汇总文本:每个事件一行,分位数/命中率/计数同口径(无用户文本) */
 export function getLanguageServiceSummaryReport(): string {
   const all = getAllOperationSummaries();
+  const readTotals = getFileReadTotals();
+  const fileReadLine =
+    `file reads: ${readTotals.reads} total / ${readTotals.bytes} bytes ` +
+    `(detail ring ${getRecentFileReads().length}/${FILE_READ_RING_LIMIT}, ` +
+    `verbose ${isFileReadVerbose() ? 'on' : 'off'})`;
   if (all.length === 0) {
-    return 'No language service metrics recorded yet.\n';
+    return `No language service metrics recorded yet.\n${fileReadLine}\n`;
   }
   const lines = all.map(summary =>
     `${summary.name.padEnd(NAME_WIDTH)}  count=${String(summary.count).padStart(6)}` +
@@ -237,6 +248,7 @@ export function getLanguageServiceSummaryReport(): string {
     `Kode language service metrics (monotonic clock, elapsed in ms;`,
     `p50/p95/p99/max/avg over recent window when samples were dropped, counts cumulative)`,
     ...lines,
+    fileReadLine,
     ''
   ].join('\n');
 }

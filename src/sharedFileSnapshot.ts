@@ -18,6 +18,7 @@
 
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { normalizeDocumentKey } from './documentStore';
 import { normalizeFileIdentity } from './pathIdentity';
 import { getSemanticIndex } from './semanticIndex';
@@ -66,9 +67,11 @@ export interface SharedFileVersionRef {
 
 const defaultDeps: SharedFileSnapshotDeps = {
   listOpenDocuments: () => vscode.workspace.textDocuments,
+  // IDE-MET-004:共享快照层是语义输入(types.xml/alias.xml/loader/schema)
+  // 的统一磁盘补载口,读盘在此记账;失败(null)不记账。
   readDiskFile: fsPath => {
     try {
-      return fs.readFileSync(fsPath, 'utf8');
+      return readFileSyncUtf8Recorded(fsPath);
     } catch {
       return null;
     }

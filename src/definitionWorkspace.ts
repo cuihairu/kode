@@ -21,6 +21,7 @@ import {
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
 import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { getSemanticIndex } from './semanticIndex';
 import { normalizeFileIdentity } from './pathIdentity';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
@@ -473,7 +474,7 @@ function getAliasXmlCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
 
 function readAliasXml(aliasPath: string): string | null {
   try {
-    const value = fs.readFileSync(aliasPath, 'utf8');
+    const value = readFileSyncUtf8Recorded(aliasPath);
     return value;
   } catch {
     return null;
@@ -1276,7 +1277,7 @@ function uniquePaths(candidates: string[]): string[] {
 function readTextFile(filePath: string): string | null {
   for (const lookupPath of getPathLookupCandidates(filePath)) {
     try {
-      return fs.readFileSync(lookupPath, 'utf8');
+      return readFileSyncUtf8Recorded(lookupPath);
     } catch {
       continue;
     }

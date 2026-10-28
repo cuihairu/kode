@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { jumpLog, jumpTimeStart } from './navigationLog';
 import { INTERACTIVE_INDEX_WAIT_MS, logLayerTiming, raceWithBudget } from './hoverBudget';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './fileReadMetrics';
 import {
   findFilesAcrossRoots,
   getExternalScanRoots,
@@ -909,7 +910,7 @@ export class EntityMappingManager {
         continue;
       }
 
-      const content = fs.readFileSync(ownerFile.filePath, 'utf8');
+      const content = readFileSyncUtf8Recorded(ownerFile.filePath);
       const parsedMethods = parsePythonMethodBlocks(content, ownerFile.filePath);
       for (const method of parsedMethods) {
         methods.push({
@@ -1651,7 +1652,7 @@ export class EntityMappingManager {
         seenPaths.add(normalized);
         let text: string;
         try {
-          text = await fs.promises.readFile(filePath, 'utf8');
+          text = await readFileUtf8Recorded(filePath);
         } catch {
           continue;
         }
@@ -1698,7 +1699,7 @@ export class EntityMappingManager {
       }
       let text: string;
       try {
-        text = fs.readFileSync(candidate.filePath, 'utf8');
+        text = readFileSyncUtf8Recorded(candidate.filePath);
       } catch {
         continue;
       }
@@ -2214,7 +2215,7 @@ export class EntityMappingManager {
     }
 
     try {
-      const content = fs.readFileSync(pythonFile, 'utf8');
+      const content = readFileSyncUtf8Recorded(pythonFile);
       const regex = new RegExp(`^(\\s*)(?:async\\s+)?def\\s+(${escapeRegExp(methodName)})\\s*\\(`, 'm');
       const match = regex.exec(content);
       if (!match) {

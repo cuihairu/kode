@@ -349,6 +349,7 @@ The Runtime Queries panel (`kbengine.runtimeQuery.show`) queries a running KBEng
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.runtimeQuery.enabled` | boolean | `false` | Master switch for the operation surface (watch-list add/remove and the result stream); off keeps the panel to single manual queries |
+| `kbengine.metrics.fileReadDetail` | boolean | `false` | Record file-read audit detail (path + bytes into a 256-entry ring, viewable via `kbengine.metrics.showSummary`); off keeps only cumulative read/byte counters (bounded overhead) |
 | `kbengine.runtimeQuery.pollIntervalMs` | number | `2000` | Result stream interval in milliseconds; applies only when `kbengine.runtimeQuery.enabled` is on |
 
 Behavior rules:

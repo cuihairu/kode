@@ -647,6 +647,11 @@
     "configuration": {
       "title": "KBEngine",
       "properties": {
+        "kbengine.metrics.fileReadDetail": {
+          "type": "boolean",
+          "default": false,
+          "description": "记录文件读取明细(路径+字节数,环形缓冲 256 条,kbengine.metrics.showSummary 可查);关闭时仅累计计数,开销有界"
+        },
         "kbengine.db.tablePrefix": {
           "type": "string",
           "default": "",
