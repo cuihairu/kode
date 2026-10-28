@@ -492,7 +492,7 @@
 ### IDE-SDK · 客户端 SDK 与消息表入口（P2）
 
 来源：审计 §6；src/clientSdkGenerator.ts、src/messageTable.ts。
-- [ ] IDE-SDK-001 [P2] 增加单实体 messageTable 预览命令；验收：选择实体后可查看现有计算结果，缺声明时明确提示；前置：IDE-IDX-003。
+- [x] IDE-SDK-001 [P2] 增加单实体 messageTable 预览命令；验收：选择实体后可查看现有计算结果，缺声明时明确提示；前置：IDE-IDX-003。（98f4a06;kbengine.messagetable.preview:src/messageTablePreview.ts 命令体纯逻辑(VSCode 面全注入),清单空如实提示/字典序 QuickPick/Esc 静默/构建 null=缺声明明确警告不展示空预览;extension.ts 接线 def 取源=与索引同一 getIndexScanRoots+createDefinitionSemanticsLoader 公式,实体清单=EntityMappingManager.getAllMappings(),waitForInitialScan 后再选;package.json 命令+activationEvent;import +4 行九锚 382..1103→386..1107(+4)与 2026-baseline 引证同笔迁移(引证格式 extension.ts:N/:N 一路两种),perfCallChainDoc 4/4 绿;extension.test.ts 命令装配面 +1 用例(无工作区→warning 未发现实体);docsCommands 锁=guide/commands.md+zh 新小节(行为/缺声明/边界=SDK-002 导出另案);prove-red=Cannot find module 整文件红 5 例;门禁=eslint 0/tsc 0/unit 3899|7(341)/demo 25 RC=0/docs build 绿;docs/features.md+zh SDK-001 条目）
 - [ ] IDE-SDK-002 [P2] 提供消息表 JSON 导出；验收：输出保留方法段、utype、alias 配置与问题清单，取消不创建文件；前置：IDE-SDK-001。
 - [ ] IDE-SDK-003 [P2] 把 SDK 生成绑定到目标 profile；验收：实体注册顺序与类型数据来自所选根，不能跨根同名覆盖；前置：IDE-PRJ-010, IDE-IDX-003。
 - [ ] IDE-SDK-004 [P2] 为 SDK 输出记录引擎版本与提交；验收：生成物可追溯输入版本，探测不到时写 unknown；前置：IDE-SDK-003。
