@@ -6,6 +6,7 @@ import { LogHub, RuntimeLogLevel } from './logHub';
 import { ProcessManager } from './processManager';
 import { joinWorkspacePath, usesPosixPath } from './workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
+import { makeProbeOne, readTelnetTargetsFromSettings, type TelnetTarget } from './telnetService';
 
 /**
  * KBEngine 服务器组件信息
@@ -161,6 +162,28 @@ export function parseServerKey(key: string): { componentName: string; targetId: 
     return { componentName: key, targetId: DEFAULT_TARGET_ID };
   }
   return { componentName: key.slice(0, hashIndex), targetId: key.slice(hashIndex + 1) };
+}
+
+const READINESS_PROBE_TIMEOUT_MS = 1000;
+const READINESS_PROBE_INTERVAL_MS = 250;
+
+/**
+ * 组件就绪探针(RUN-003):配置开了 telnet 的组件用其目标端口做真实 TCP
+ * 连通探针(makeProbeOne 真套接字),探针通过才推进 Running;无匹配目标
+ * (未开 telnet/端口无效)不猜端口,返回 undefined 回落固定宽限期。
+ * getTargets 可注入(测试)。
+ */
+export function createComponentReadinessProbe(
+  componentName: string,
+  deps: { getTargets?: () => TelnetTarget[] } = {}
+): (() => Promise<boolean>) | undefined {
+  const target = (deps.getTargets ?? readTelnetTargetsFromSettings)()
+    .find(item => item.component === componentName);
+  if (!target || !(target.port > 0)) {
+    return undefined;
+  }
+  const probeOne = makeProbeOne(READINESS_PROBE_TIMEOUT_MS);
+  return () => probeOne(target.host, target.port);
 }
 
 /**
@@ -391,11 +414,18 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 启动单个组件;options.targetId 指定实例(默认实例键=纯组件名)
+   * 启动单个组件;options.targetId 指定实例(默认实例键=纯组件名),
+   * options.readinessProbe 覆盖默认探针(null 显式关闭,回落宽限期)
    */
-  async startComponent(component: ServerComponent, options?: { targetId?: string }): Promise<boolean> {
+  async startComponent(
+    component: ServerComponent,
+    options?: { targetId?: string; readinessProbe?: (() => Promise<boolean>) | null }
+  ): Promise<boolean> {
     const targetId = options?.targetId ?? DEFAULT_TARGET_ID;
     const serverKey = buildServerKey(component.name, targetId);
+    const readinessProbe = options?.readinessProbe !== undefined
+      ? options.readinessProbe
+      : createComponentReadinessProbe(component.name);
     // 检查是否已运行(同组件不同 targetId 的实例互不拦截)
     if (this.runningServers.has(serverKey)) {
       vscode.window.showWarningMessage(
@@ -458,7 +488,10 @@ export class KBEngineServerManager {
         cwd: configPath,
         env: this.buildComponentEnvironment(configPath, binPath),
         component: component.name,
-        readyAfterMs: 1000
+        readyAfterMs: 1000,
+        readiness: readinessProbe
+          ? { probe: readinessProbe, intervalMs: READINESS_PROBE_INTERVAL_MS }
+          : undefined
       });
       void managed;
 

@@ -11,6 +11,18 @@ export interface ProcessSpawnRequest {
   env?: NodeJS.ProcessEnv;
   component?: string;
   readyAfterMs?: number;
+  /** IDE-RUN-003 就绪探针:给出即取代固定宽限期,探针通过才推进 running */
+  readiness?: ProcessReadiness;
+}
+
+/**
+ * 就绪探针(RUN-003):probe 返回 true 才把状态推进 running;返回 false 或
+ * 抛异常都视为未就绪,继续轮询(RUN-004 再补超时/取消)。进程退出即停轮询。
+ */
+export interface ProcessReadiness {
+  probe: () => Promise<boolean> | boolean;
+  /** 轮询间隔,默认 250ms */
+  intervalMs?: number;
 }
 
 export interface ManagedProcess {
@@ -125,14 +137,54 @@ export class ProcessManager {
       }
       this.logHub?.flush?.();
     });
-    const readinessTimer = setTimeout(() => {
-      if (this.processes.get(request.id)?.process === child && !child.killed) {
-        this.states.set(request.id, 'running');
-        this.emitState({ id: request.id, component, state: 'running' });
-      }
-    }, request.readyAfterMs ?? 0);
-    readinessTimer.unref?.();
+    if (request.readiness) {
+      this.scheduleReadinessProbe(request, component, child);
+    } else {
+      const readinessTimer = setTimeout(() => {
+        if (this.processes.get(request.id)?.process === child && !child.killed) {
+          this.states.set(request.id, 'running');
+          this.emitState({ id: request.id, component, state: 'running' });
+        }
+      }, request.readyAfterMs ?? 0);
+      readinessTimer.unref?.();
+    }
     return managed;
+  }
+
+  /**
+   * 就绪探针轮询(RUN-003):进程仍在册且未退出才继续;探针通过恰一次推进
+   * running。探针异常吞作未就绪——探针后端自身抖动不该误判进程状态。
+   */
+  private scheduleReadinessProbe(
+    request: ProcessSpawnRequest,
+    component: string,
+    child: ChildProcess
+  ): void {
+    const readiness = request.readiness as ProcessReadiness;
+    const intervalMs = readiness.intervalMs ?? 250;
+    const poll = async (): Promise<void> => {
+      if (this.processes.get(request.id)?.process !== child) return;
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      let ready = false;
+      try {
+        ready = await readiness.probe();
+      } catch {
+        ready = false;
+      }
+      if (this.processes.get(request.id)?.process !== child) return;
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      if (ready && !child.killed) {
+        this.states.set(request.id, 'running');
+        this.logHub?.info({ source: 'process', component, text: 'readiness probe passed' });
+        this.emitState({ id: request.id, component, state: 'running' });
+        return;
+      }
+      const timer = setTimeout(() => {
+        void poll();
+      }, intervalMs);
+      timer.unref?.();
+    };
+    void poll();
   }
 
   get(id: string): ManagedProcess | undefined {

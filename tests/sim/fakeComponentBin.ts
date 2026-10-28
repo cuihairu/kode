@@ -35,6 +35,7 @@ export type FakeComponentBehavior =
     }
   | { kind: 'exit'; code: number }
   | { kind: 'ignore-sigterm'; marker?: string }
+  | { kind: 'listen'; port: number; delayMs?: number }
   | { kind: 'unexecutable' };
 
 const KEEPALIVE = 'setInterval(function () {}, 3600000);';
@@ -64,6 +65,21 @@ const scriptBody = (behavior: FakeComponentBehavior): { shebang: string; body: s
       return process.platform === 'win32'
         ? { shebang: '#!/usr/bin/env node', body: `process.exit(${behavior.code});` }
         : { shebang: '#!/bin/sh', body: `exit ${behavior.code};` };
+    case 'listen':
+      // RUN-003 就绪探针面:延迟后在 127.0.0.1 开 TCP 监听(打印 listening
+      // 标记),模拟"进程活着但服务尚未就绪 → 就绪"的真实时序
+      return {
+        shebang: '#!/usr/bin/env node',
+        body: [
+          'setTimeout(function () {',
+          '  const net = require("net");',
+          `  net.createServer(function () {}).listen(${behavior.port}, "127.0.0.1", function () {`,
+          '    process.stdout.write("listening\\n");',
+          '  });',
+          `}, ${behavior.delayMs ?? 0});`,
+          KEEPALIVE
+        ].join('\n')
+      };
     case 'ignore-sigterm':
       return {
         shebang: '#!/usr/bin/env node',
