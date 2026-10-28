@@ -20,8 +20,8 @@ export function buildHotReloadTargetKeyId(key: HotReloadTargetKey): string {
   return `${key.rootId}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${key.targetId}`;
 }
 
-/** 三态:发出未确认(绿但未证实)/回执 accepted(HOT-003)/失败 */
-export type HotReloadDeliveryOutcome = 'sent-unverified' | 'accepted' | 'failed';
+/** 四态:发出未确认(绿但未证实)/回执 accepted(HOT-003)/applied 已核验(HOT-004)/失败 */
+export type HotReloadDeliveryOutcome = 'sent-unverified' | 'accepted' | 'applied' | 'failed';
 
 export interface HotReloadDeliveryRecord {
   rootId: string;
