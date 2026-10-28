@@ -54,7 +54,10 @@ export interface MetricsSample {
 
 export interface OperationSummary {
   name: LanguageServiceEventName;
+  /** elapsed 分位数采样窗口内的样本数;statusCounts/缓存/文件计数不受窗口影响,仍全程累计 */
   count: number;
+  /** 采样窗口外被丢弃的 elapsed 样本数(全程累计);count+elapsedDropped=该事件全程观测数 */
+  elapsedDropped: number;
   p50Ms: number;
   p95Ms: number;
   p99Ms: number;
@@ -87,8 +90,14 @@ export interface LanguageServiceOperation extends OperationMeta {
 
 const DETAILED_LIMIT = 500;
 
+/** 聚合 elapsed 分位数的采样窗口(IDE-RES-004):每事件名只保留最近样本,
+ *  超过 2×上限时一次性丢回上限(分块截断,摊销 O(1),不做逐条 shift);
+ *  计数字段(statusCounts/缓存/文件计数)不进窗口,仍全程累计。 */
+const ELAPSED_SAMPLE_LIMIT = 2000;
+
 const summaries = new Map<LanguageServiceEventName, {
   elapsed: number[];
+  elapsedDropped: number;
   cacheHits: number;
   cacheMisses: number;
   waitedForInitCount: number;
@@ -143,6 +152,7 @@ function summaryFor(name: LanguageServiceEventName) {
   if (!entry) {
     entry = {
       elapsed: [],
+      elapsedDropped: 0,
       cacheHits: 0,
       cacheMisses: 0,
       waitedForInitCount: 0,
@@ -175,6 +185,7 @@ function createSummary(name: LanguageServiceEventName, entry: ReturnType<typeof 
   const result: OperationSummary = {
     name,
     count: sorted.length,
+    elapsedDropped: entry.elapsedDropped,
     p50Ms: round1(nearestRank(sorted, 0.5)),
     p95Ms: round1(nearestRank(sorted, 0.95)),
     p99Ms: round1(nearestRank(sorted, 0.99)),
@@ -213,7 +224,8 @@ export function getLanguageServiceSummaryReport(): string {
     return 'No language service metrics recorded yet.\n';
   }
   const lines = all.map(summary =>
-    `${summary.name.padEnd(NAME_WIDTH)}  count=${String(summary.count).padStart(6)}  ` +
+    `${summary.name.padEnd(NAME_WIDTH)}  count=${String(summary.count).padStart(6)}` +
+    (summary.elapsedDropped > 0 ? `(+${summary.elapsedDropped} dropped)` : '') + '  ' +
     `p50=${String(summary.p50Ms).padStart(9)}ms  p95=${String(summary.p95Ms).padStart(9)}ms  ` +
     `p99=${String(summary.p99Ms).padStart(9)}ms  max=${String(summary.maxMs).padStart(9)}ms  ` +
     `hit=${String(summary.cacheHitRate).padStart(5)}%  waitInit=${String(summary.waitedForInitCount).padStart(5)}  ` +
@@ -221,12 +233,23 @@ export function getLanguageServiceSummaryReport(): string {
     `ok=${summary.statusCounts.ok} miss=${summary.statusCounts.miss} ` +
     `cancel=${summary.statusCounts.cancelled} error=${summary.statusCounts.error}`
   );
-  return [`Kode language service metrics (monotonic clock, elapsed in ms)`, ...lines, ''].join('\n');
+  return [
+    `Kode language service metrics (monotonic clock, elapsed in ms;`,
+    `p50/p95/p99/max/avg over recent window when samples were dropped, counts cumulative)`,
+    ...lines,
+    ''
+  ].join('\n');
 }
 
 function commitSample(sample: MetricsSample): void {
   const entry = summaryFor(sample.name);
   entry.elapsed.push(sample.elapsedMs);
+  // 采样窗口:满 2×上限才一次性丢回上限(分块截断摊销 O(1)),丢弃量累计可对账
+  if (entry.elapsed.length >= ELAPSED_SAMPLE_LIMIT * 2) {
+    const dropped = entry.elapsed.length - ELAPSED_SAMPLE_LIMIT;
+    entry.elapsed.splice(0, dropped);
+    entry.elapsedDropped += dropped;
+  }
   entry.cacheHits += sample.cacheHits;
   entry.cacheMisses += sample.cacheMisses;
   if (sample.waitedForInit) {

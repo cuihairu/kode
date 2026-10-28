@@ -113,6 +113,34 @@ describe('languageServiceMetrics 汇总报告', () => {
     expect(report).toContain('p50=      3.5ms');
     expect(getAllOperationSummaries()).toHaveLength(1);
   });
+
+  it('聚合样本有容量上限:大量操作后 elapsed 不无限增长,分位数来自最近窗口(IDE-RES-004)', () => {
+    for (let elapsed = 1; elapsed <= 5000; elapsed += 1) {
+      recordLanguageServiceOperation('hover', elapsed);
+    }
+    const summary = getOperationSummary('hover');
+    // 窗口截断生效:count 不再等于 5000,分块窗口落在 [上限, 2×上限) 内
+    expect(summary?.count).toBeLessThan(5000);
+    expect(summary?.count).toBeGreaterThanOrEqual(2000);
+    expect(summary?.count).toBeLessThanOrEqual(4000);
+    // 计数字段仍全程累计(与 elapsed 窗口口径分离):5000 条 ok 不截断
+    expect(summary?.statusCounts.ok).toBe(5000);
+    // 窗口可对账:全程观测 = 窗口内 + 被丢弃
+    expect((summary?.count ?? 0) + (summary?.elapsedDropped ?? 0)).toBe(5000);
+    // 分位数/max 基于最近窗口(丢掉的是最旧 2000 条,窗口覆盖 2001..5000)
+    expect(summary?.p50Ms).toBeGreaterThan(2000);
+    expect(summary?.maxMs).toBe(5000);
+  });
+
+  it('摘要标明采样窗口:有丢弃时 count 行内明示丢弃量,读者不把窗口分位数当全程分布', () => {
+    for (let elapsed = 1; elapsed <= 4500; elapsed += 1) {
+      recordLanguageServiceOperation('document-parse', elapsed);
+    }
+    const report = getLanguageServiceSummaryReport();
+    expect(report).toMatch(/count=\s*\d+\(\+\d+ dropped\)/);
+    // 窗口头注:报告明说 elapsed 分位数是最近窗口口径
+    expect(report).toContain('recent window');
+  });
 });
 
 describe('languageServiceMetrics 详细记录默认关闭', () => {
