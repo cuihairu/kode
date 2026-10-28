@@ -97,6 +97,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 ## Project Model
 
 - **Project profile identity store** — each KBEngine assets/engine combination is saved as its own profile with a persistent stable ID (assigned once at creation, stored per workspace in `workspaceState` and read back after restart); the display name is only a mutable field — renaming a profile or having two same-named profiles never merges or loses identity; roots are saved per profile (`saveRoots` touches only the target record's path fields, so re-saving one profile's assets/engine roots never bleeds into another and both read back independently after restart) — (evidence: src/projectProfiles.ts `ProjectProfileStore`)
+- **Existing project import** — pick the assets root and the four faces (entities/defs/scripts/engine) are identified via the shared convention chain, with any face not found previewed honestly as 未识别 (not identified); the preview lists all four results and only picking 导入 creates the profile — Esc or dismissing any step writes nothing, and a folder with no KBEngine structure at all is rejected without a preview — (evidence: package.json#contributes.commands `kbengine.project.import`; src/projectImport.ts `identifyProjectLayout`/`importExistingProject`)
 
 ## Settings
 

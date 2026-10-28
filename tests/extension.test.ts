@@ -1369,6 +1369,57 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
   }, 8000);
 });
 
+describe('激活期项目导入命令装配(IDE-PRJ-003)', () => {
+  it('project.import 命令:选资产根 + 确认导入后建立 profile', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalOpenDialog = windowish.showOpenDialog;
+    const originalQuickPick = windowish.showQuickPick;
+    const originalInfoCount = messages.info.length;
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-import-'));
+    const assetsRoot = path.join(base, 'proj');
+    fs.mkdirSync(path.join(assetsRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.writeFileSync(path.join(assetsRoot, 'scripts', 'entities.xml'), '<root>\n</root>\n', 'utf8');
+    const persisted: Array<[string, unknown]> = [];
+    const context: ExtensionContext = {
+      ...makeContext(),
+      workspaceState: {
+        get: <T,>(_key: string, defaultValue?: T): T | undefined => defaultValue,
+        update: (key: string, value: unknown): Promise<void> => {
+          persisted.push([key, value]);
+          return Promise.resolve();
+        }
+      }
+    };
+    workspace.workspaceFolders = [{ uri: Uri.file(base), name: 'ws', index: 0 }];
+    try {
+      activate(context);
+
+      windowish.showOpenDialog = async () => [Uri.file(assetsRoot)];
+      windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+        const resolved = (await items) as Array<{ label: string }>;
+        return resolved.find(item => item.label === '导入');
+      };
+
+      await commands.executeCommand('kbengine.project.import');
+
+      // 命令接线到位:确认导入后 profile 落进 workspaceState 持久层
+      // (激活期还有别的键写 workspaceState,只看 profile 键)
+      const profileWrites = persisted.filter(([key]) => key === 'kbengine.projectProfiles.v1');
+      expect(profileWrites).toHaveLength(1);
+      const profiles = profileWrites[0][1] as Array<Record<string, string>>;
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]).toMatchObject({ displayName: 'proj', assetsRoot, engineRoot: '' });
+      expect(messages.info.some(info => info.includes('已导入项目 profile'))).toBe(true);
+    } finally {
+      windowish.showOpenDialog = originalOpenDialog;
+      windowish.showQuickPick = originalQuickPick;
+      messages.info.length = originalInfoCount;
+      disposeAll(context);
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }, 8000);
+});
+
 describe('激活期 debug.json 缺失自动生成(批143)', () => {
   it('工作区没有配置文件时生成带注释骨架,生效工作目录与来源落输出通道', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-debugcfg-'));

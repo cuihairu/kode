@@ -3,6 +3,7 @@ import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
+import { importExistingProject } from './projectImport';
 import { setJumpLogEnabled } from './navigationLog';
 import {
   RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT,
@@ -2418,6 +2419,14 @@ export function activate(context: vscode.ExtensionContext) {
     () => runGeneratorFormWizard()
   );
   context.subscriptions.push(showGeneratorFormWizardCommand);
+
+  // 现有 KBEngine 项目导入(IDE-PRJ-003):选资产根→按约定链识别
+  // entities/defs/scripts/engine 四面→预览确认→建立项目 profile(稳定身份存储)
+  const importProjectCommand = vscode.commands.registerCommand(
+    'kbengine.project.import',
+    () => importExistingProject(context)
+  );
+  context.subscriptions.push(importProjectCommand);
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
   // 语言清单在命令内选(已代决首批 TS + C#)

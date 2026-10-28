@@ -95,6 +95,7 @@
 ## 项目模型
 
 - **项目 profile 身份存储** —— 同一工作区里每套 assets/engine 组合保存为独立 profile，持有持久稳定 ID（创建时一次分配，按工作区存于 `workspaceState`，重启后照旧读回）；显示名只是可变字段——改名或两条同名互不吞并、不丢身份；根路径按 profile 保存（`saveRoots` 只动目标记录的路径字段，重存一条 profile 的 assets/engine 根不会串写另一条，重启后两条各自独立读回）——（证据：src/projectProfiles.ts `ProjectProfileStore`）
+- **现有项目导入** —— 选择资产根后按同一约定链识别 entities/defs/scripts/engine 四面（未命中的面如实预览「未识别」），预览清单逐面列出识别结果，选「导入」确认才建立 profile；任一步取消零写入，四面全空的目录直接拒绝不出预览 ——（证据：package.json#contributes.commands `kbengine.project.import`；src/projectImport.ts `identifyProjectLayout`/`importExistingProject`）
 
 ## 设置项
 

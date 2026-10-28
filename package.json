@@ -69,6 +69,7 @@
     "onCommand:kbengine.flow.show",
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.formWizard",
+    "onCommand:kbengine.project.import",
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
     "onCommand:kbengine.def.analyze",
@@ -416,6 +417,10 @@
         "command": "kbengine.generator.formWizard",
         "title": "Create Def Form from Wizard",
         "icon": "$(symbol-structure)"
+      },
+      {
+        "command": "kbengine.project.import",
+        "title": "Import Existing KBEngine Project"
       },
       {
         "command": "kbengine.generator.templates",

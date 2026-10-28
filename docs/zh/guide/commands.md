@@ -357,6 +357,16 @@
   - 存在问题时弹警告指路 OUTPUT 面板；全部正常时信息提示
   - 激活期自动发现完成后也会静默落一份报告到同一通道（有问题时才弹提示）
 
+### `kbengine.project.import`
+
+- 标题：`Import Existing KBEngine Project`
+- 用途：把现有 KBEngine 项目导入扩展的项目 profile：选择资产根、核对识别结果、确认后建立带持久稳定 ID 的 profile
+- 识别口径（只做存在性探测，不写盘）：`entities`（entities.xml）、`defs`（entity_defs）、`scripts` 三面走与发现报告同一份约定链；`scripts` 取 entities.xml 所在目录（entities.xml 在根上时即根本身）；`engine` 面探测资产根/父目录/祖父目录下的 `kbe/` 源码锚点（引擎仓通常是资产根的兄弟）
+- 预览：QuickPick 逐面列出识别结果与准确路径；未命中的面如实显示「未识别」
+- 行为：
+  - 选「导入」建立 profile（显示名取资产根目录名）并报出其 ID；任一步取消（Esc/关闭对话框）零写入
+  - entities/defs/scripts 全空的目录在预览前就被拒绝并给出警告（不产生垃圾 profile）
+
 ### `kbengine.quickActions.show`
 
 - 标题：`Run Quick Actions`
