@@ -60,6 +60,7 @@ import {
   getTypeStorageUsageIndexReadOnly,
   indexTypeStorageUsageEntries,
   invalidateTypeStorageUsageIndex,
+  onTypeStorageUsageIndexPublished,
   isDatabaseSchemaDocument,
   locateDatabaseSchemaLine,
   replaceTypeStorageUsageForEntity
@@ -4784,8 +4785,13 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
   private readonly watchers: vscode.FileSystemWatcher[] = [];
+  private readonly unsubscribeIndexPublished: () => void;
 
   constructor() {
+    // 2026-10-28 审核整改:冷渲染拿空表(构建在后台),构建完成后通知重渲染
+    this.unsubscribeIndexPublished = onTypeStorageUsageIndexPublished(() => {
+      this.onDidChangeCodeLensesEmitter.fire();
+    });
     for (const pattern of ['**/*.def', '**/types.xml', '**/entities.xml']) {
       const watcher = vscode.workspace.createFileSystemWatcher(pattern);
       const invalidate = (): void => {
@@ -4854,6 +4860,7 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   dispose(): void {
+    this.unsubscribeIndexPublished();
     for (const watcher of this.watchers) {
       watcher.dispose();
     }

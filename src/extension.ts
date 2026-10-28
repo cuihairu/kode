@@ -144,7 +144,7 @@ import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
 import { PythonClassIndex } from './pythonClassIndex';
-import { IndexScheduler } from './indexScheduler';
+import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { getDiagnosticScheduler } from './diagnosticScheduler';
@@ -154,7 +154,8 @@ import {
   KBEngineDatabaseSchemaProvider,
   locateDatabaseSchemaLine,
   resolveEntityTableName,
-  resolveSchemaTablePrefix
+  resolveSchemaTablePrefix,
+  setTypeStorageUsageBackgroundDispatcher
 } from './databaseSchema';
 import {
   checkDatabaseDrift,
@@ -398,6 +399,17 @@ export function activate(context: vscode.ExtensionContext) {
   // PythonClassIndex 文件发现/分块解析都经它入队,后台任务受交互限流。
   const indexScheduler = new IndexScheduler();
   context.subscriptions.push({ dispose: () => indexScheduler.dispose() });
+  // SCH-009 冷路径退交互线程:types.xml 用法索引的冷构建(整仓读)派发到
+  // 统一调度器 non-interactive 队列——交互线程冷读只回空表并登记后台构建,
+  // CodeLens 由 onTypeStorageUsageIndexPublished 回调失效重算,不再首击
+  // 同步整仓扫描。
+  setTypeStorageUsageBackgroundDispatcher(run =>
+    indexScheduler.enqueue({
+      kind: 'non-interactive',
+      priority: IndexTaskPriority.NonInteractive,
+      run
+    }).wait
+  );
   // 书 PR-002 工作区门控:deferStartup=true → 构造零副作用(不建 watcher、
   // 不入队全量首扫)。是否启动由 shouldStartKbEngineIndexing() 的特征探测决定:
   // 有 .def/entities.xml/types.xml/alias.xml/kbengine*.xml 之一即启动(与门控前

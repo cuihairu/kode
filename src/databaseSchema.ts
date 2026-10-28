@@ -2473,13 +2473,68 @@ function rebuildTypeStorageUsageAggregate(state: NonNullable<typeof typeStorageU
   return index;
 }
 
+/** 后台任务派发器:渲染面不建索引,交后台线程外排队(extension 注册调度器) */
+export type BackgroundSchemaTaskDispatcher = (run: () => Promise<void>) => Promise<void>;
+let typeStorageUsageBackgroundDispatcher: BackgroundSchemaTaskDispatcher | null = null;
+
+export function setTypeStorageUsageBackgroundDispatcher(dispatcher: BackgroundSchemaTaskDispatcher | null): void {
+  typeStorageUsageBackgroundDispatcher = dispatcher;
+}
+
+const pendingTypeStorageColdBuildRoots = new Set<string>();
+let typeStorageColdBuildChain: Promise<void> = Promise.resolve();
+const typeStorageUsageIndexListeners = new Set<() => void>();
+
+/** 冷构建完成(发布)监听:渲染面据此刷新(types.xml CodeLens 重渲染) */
+export function onTypeStorageUsageIndexPublished(listener: () => void): () => void {
+  typeStorageUsageIndexListeners.add(listener);
+  return () => { typeStorageUsageIndexListeners.delete(listener); };
+}
+
+/** 测试面:等在途冷构建链排干 */
+export async function flushTypeStorageUsageColdBuildForTests(): Promise<void> {
+  while (pendingTypeStorageColdBuildRoots.size > 0) {
+    await typeStorageColdBuildChain;
+  }
+}
+
+const defaultBackgroundDispatch: BackgroundSchemaTaskDispatcher = run =>
+  new Promise<void>(resolve => {
+    setImmediate(() => { void run().then(resolve, resolve); });
+  });
+
 /** IDE-SCH-009 只读反查面:聚合已发布则纯读返回——零快照探测,新鲜度由
- * 事件面(watcher→按实体替换/整表置空)承担;无状态才退一次冷构建。 */
+ * 事件面(watcher→按实体替换/整表置空)承担。2026-10-28 审核整改:冷路径
+ * (无状态)不再在交互线程整表构建——派发后台一次构建,本次渲染拿空表,
+ * 构建完成后经 onTypeStorageUsageIndexPublished 通知渲染面刷新。 */
 export function getTypeStorageUsageIndexReadOnly(workspaceRoot: string): Map<string, TypeStorageUsage[]> {
   if (typeStorageUsageState && typeStorageUsageState.key === workspaceRoot) {
     return typeStorageUsageState.index || rebuildTypeStorageUsageAggregate(typeStorageUsageState);
   }
-  return buildTypeStorageUsageIndex(workspaceRoot);
+  scheduleTypeStorageUsageColdBuild(workspaceRoot);
+  return new Map();
+}
+
+function scheduleTypeStorageUsageColdBuild(workspaceRoot: string): void {
+  if (pendingTypeStorageColdBuildRoots.has(workspaceRoot)) {
+    return; // 同根冷构建在途:去重
+  }
+  pendingTypeStorageColdBuildRoots.add(workspaceRoot);
+  const dispatch = typeStorageUsageBackgroundDispatcher ?? defaultBackgroundDispatch;
+  typeStorageColdBuildChain = typeStorageColdBuildChain
+    .then(() => dispatch(async () => {
+      try {
+        buildTypeStorageUsageIndex(workspaceRoot);
+      } finally {
+        pendingTypeStorageColdBuildRoots.delete(workspaceRoot);
+      }
+    }))
+    .catch(() => {});
+  void typeStorageColdBuildChain.then(() => {
+    for (const listener of [...typeStorageUsageIndexListeners]) {
+      listener();
+    }
+  });
 }
 
 export function findTypeStorageUsagesReadOnly(workspaceRoot: string, typeName: string): TypeStorageUsage[] {

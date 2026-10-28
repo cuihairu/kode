@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   findTypeStorageUsages,
+  flushTypeStorageUsageColdBuildForTests,
   getDatabaseSchemaSnapshot,
   getTypeStorageShape,
   invalidateTypeStorageUsageIndex
@@ -237,8 +238,11 @@ const typesXmlContent = (): string =>
   fs.readFileSync(path.join(root, 'scripts/entity_defs/types.xml'), 'utf8');
 
 describe('buildTypesXmlStorageLensSpecs', () => {
-  it('puts one lens per real usage on the declaration name', () => {
+  it('puts one lens per real usage on the declaration name', async () => {
     invalidateTypeStorageUsageIndex();
+    // 2026-10-28 整改后冷读回空并派发后台构建:先排干再断言内容
+    buildTypesXmlStorageLensSpecs(typesXmlContent(), root);
+    await flushTypeStorageUsageColdBuildForTests();
     const specs = buildTypesXmlStorageLensSpecs(typesXmlContent(), root);
     // 原类型引用镜 + FIXED_DICT 键展开列镜;内建类型与无引用类型不出镜。
     expect(specs).toHaveLength(5);
@@ -261,7 +265,7 @@ describe('buildTypesXmlStorageLensSpecs', () => {
     expect(buildTypesXmlStorageLensSpecs('plain text', root)).toEqual([]);
   });
 
-  it('folds usages beyond the limit into a count lens', () => {
+  it('folds usages beyond the limit into a count lens', async () => {
     // 11 个同类型属性把 ITEM_ID 的使用从 2 处抬到 13 处
     const properties: string[] = [];
     for (let index = 0; index < 11; index += 1) {
@@ -288,6 +292,9 @@ describe('buildTypesXmlStorageLensSpecs', () => {
     ].join('\n'), 'utf8');
 
     invalidateTypeStorageUsageIndex();
+    // 同上:冷构建在后台,排干后再断言内容
+    buildTypesXmlStorageLensSpecs(typesXmlContent(), root);
+    await flushTypeStorageUsageColdBuildForTests();
     const specs = buildTypesXmlStorageLensSpecs(typesXmlContent(), root);
     const itemSpecs = specs.filter(spec => spec.target && (spec.title.includes('Hero.itemId')
       || spec.title.includes('Hero.items[]') || spec.title.includes('Villain.slot')));
@@ -384,11 +391,13 @@ describe('TypesXmlCodeLensProvider', () => {
     expect(watchers.every(watcher => watcher.disposeCalls === 1)).toBe(true);
   });
 
-  it('codeLens.typesXml 关闭时整类不出镜,默认开启不受影响(批154)', () => {
+  it('codeLens.typesXml 关闭时整类不出镜,默认开启不受影响(批154)', async () => {
     invalidateTypeStorageUsageIndex();
     const provider = new TypesXmlCodeLensProvider();
 
-    // 正对照:默认开启时声明行出落库镜
+    // 正对照:默认开启时声明行出落库镜(冷构建后台排干后可见)
+    provider.provideCodeLenses(providerDocument());
+    await flushTypeStorageUsageColdBuildForTests();
     expect(provider.provideCodeLenses(providerDocument()).length).toBeGreaterThan(0);
 
     configurationOverrides.set('kbengine', { 'codeLens.typesXml': false });
@@ -400,9 +409,11 @@ describe('TypesXmlCodeLensProvider', () => {
     }
   });
 
-  it('attaches a schema open command to every usage lens', () => {
+  it('attaches a schema open command to every usage lens', async () => {
     invalidateTypeStorageUsageIndex();
     const provider = new TypesXmlCodeLensProvider();
+    provider.provideCodeLenses(providerDocument());
+    await flushTypeStorageUsageColdBuildForTests();
     const lenses = provider.provideCodeLenses(providerDocument()) as Array<{
       range: { start: { line: number; character: number } };
       command?: { command: string; arguments: unknown[] };
@@ -417,11 +428,13 @@ describe('TypesXmlCodeLensProvider', () => {
     provider.dispose();
   });
 
-  it('renders the overflow count lens without a command', () => {
+  it('renders the overflow count lens without a command', async () => {
     // Villain.def(11 个 ITEM_ID 属性)由 builder 溢出用例写入,这里沿用;
     // 计数镜是无命令的惰性镜,标题断言在 builder 用例里
     invalidateTypeStorageUsageIndex();
     const provider = new TypesXmlCodeLensProvider();
+    provider.provideCodeLenses(providerDocument());
+    await flushTypeStorageUsageColdBuildForTests();
     const lenses = provider.provideCodeLenses(providerDocument()) as Array<{
       command?: { title: string };
     }>;

@@ -5,6 +5,7 @@ import * as path from 'path';
 import { TypesXmlCodeLensProvider } from '../src/languageProviders';
 import {
   clearDatabaseSchemaCacheForTests,
+  flushTypeStorageUsageColdBuildForTests,
   getDatabaseSchemaCacheStatsForTests,
   invalidateTypeStorageUsageIndex
 } from '../src/databaseSchema';
@@ -20,9 +21,10 @@ import type { MinimalTextDocument } from './helpers/vscodeStub';
 const temporaryDirectories: string[] = [];
 const originalFolders = workspace.workspaceFolders;
 
-afterEach(() => {
+afterEach(async () => {
   workspace.workspaceFolders = originalFolders;
   workspace.textDocuments = [];
+  await flushTypeStorageUsageColdBuildForTests();
   invalidateTypeStorageUsageIndex();
   clearDatabaseSchemaCacheForTests();
   workspaceState.reset();
@@ -59,7 +61,7 @@ const lensTitles = (provider: TypesXmlCodeLensProvider, doc: MinimalTextDocument
     .map(lens => lens.command?.title ?? '');
 
 describe('IDE-SCH-009:types.xml CodeLens 只读反查快照', () => {
-  it('暖渲染零快照探测,新鲜度走事件面', () => {
+  it('暖渲染零快照探测,新鲜度走事件面', async () => {
     const { root, goldDef, typesXml } = makeWorkspace();
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     invalidateTypeStorageUsageIndex();
@@ -72,9 +74,18 @@ describe('IDE-SCH-009:types.xml CodeLens 只读反查快照', () => {
         { fileName: typesXml, languageId: 'xml' }
       );
 
-      // 冷渲染:一次构建并发布聚合
+      // 冷渲染:不整仓构建——空镜返回,交互线程零快照探测(2026-10-28 整改:
+      // 冷构建派发后台,完成后经 onTypeStorageUsageIndexPublished 重渲染)
+      const baseline = getDatabaseSchemaCacheStatsForTests();
       const cold = lensTitles(provider, doc());
-      expect(cold.some(title => title.includes('Gold.coin'))).toBe(true);
+      expect(cold.some(title => title.includes('Gold.coin'))).toBe(false);
+      const statsAfterColdRender = getDatabaseSchemaCacheStatsForTests();
+      expect(statsAfterColdRender.misses).toBe(baseline.misses);
+
+      // 后台构建排干后重渲染:内容到位
+      await flushTypeStorageUsageColdBuildForTests();
+      const built = lensTitles(provider, doc());
+      expect(built.some(title => title.includes('Gold.coin'))).toBe(true);
       const statsAfterCold = getDatabaseSchemaCacheStatsForTests();
 
       // 暖渲染:改 Gold.def 但不发事件 → 纯读,零快照探测(hits/misses 双零增长)
