@@ -16,6 +16,7 @@ const hoverRegistrations: ProviderRegistration[] = [];
 const definitionRegistrations: ProviderRegistration[] = [];
 const referenceRegistrations: ProviderRegistration[] = [];
 const documentSymbolRegistrations: ProviderRegistration[] = [];
+const workspaceSymbolRegistrations: ProviderRegistration[] = [];
 const callHierarchyRegistrations: ProviderRegistration[] = [];
 const renameRegistrations: ProviderRegistration[] = [];
 const signatureHelpRegistrations: ProviderRegistration[] = [];
@@ -45,6 +46,7 @@ export const languages = {
   registerDefinitionProvider: register(definitionRegistrations),
   registerReferenceProvider: register(referenceRegistrations),
   registerDocumentSymbolProvider: register(documentSymbolRegistrations),
+  registerWorkspaceSymbolProvider: register(workspaceSymbolRegistrations),
   registerCallHierarchyProvider: register(callHierarchyRegistrations),
   registerRenameProvider: register(renameRegistrations),
   registerSignatureHelpProvider: register(signatureHelpRegistrations),
@@ -63,6 +65,7 @@ export const languagesRegistry = {
   definitionRegistrations,
   referenceRegistrations,
   documentSymbolRegistrations,
+  workspaceSymbolRegistrations,
   callHierarchyRegistrations,
   renameRegistrations,
   signatureHelpRegistrations,
@@ -75,6 +78,7 @@ export const languagesRegistry = {
     definitionRegistrations.length = 0;
     referenceRegistrations.length = 0;
     documentSymbolRegistrations.length = 0;
+    workspaceSymbolRegistrations.length = 0;
     callHierarchyRegistrations.length = 0;
     renameRegistrations.length = 0;
     signatureHelpRegistrations.length = 0;

@@ -142,6 +142,17 @@ export interface EntityMappingIndex {
   pythonMethods: IndexedPythonMethodLocation[];
 }
 
+/** IDE-NAV-006:工作区符号命中(已索引 def 符号前缀查询的返回面) */
+export interface WorkspaceDefSymbolHit {
+  symbolName: string;
+  kind: 'property' | 'method';
+  section?: EntityMethodSection;
+  rootName: string;
+  rootDefFile: string;
+  defFile: string;
+  line: number;
+}
+
 export interface EntityMapping {
   name: string;
   defFile: string;
@@ -2181,6 +2192,51 @@ export class EntityMappingManager {
     }
 
     return incoming;
+  }
+
+  /**
+   * IDE-NAV-006:已索引 def 符号前缀查询(工作区符号 Ctrl+T)。只读内存
+   * 索引(mappingIndexesByRoot),不触发首扫/全仓扫描(查询面零 IO);前缀
+   * 大小写不敏感;序=rootName → symbolName → line,跨 root 同名不覆盖。
+   */
+  searchDefSymbolsByPrefix(prefix: string, token?: vscode.CancellationToken): WorkspaceDefSymbolHit[] {
+    const needle = prefix.trim().toLowerCase();
+    const hits: WorkspaceDefSymbolHit[] = [];
+    for (const index of this.mappingIndexesByRoot.values()) {
+      if (token?.isCancellationRequested) { return hits; }
+      for (const property of index.propertyDefinitions) {
+        if (!property.identity.symbolName.toLowerCase().startsWith(needle)) {
+          continue;
+        }
+        hits.push({
+          symbolName: property.identity.symbolName,
+          kind: 'property',
+          rootName: index.rootName,
+          rootDefFile: index.rootDefFile,
+          defFile: property.defFile,
+          line: property.line
+        });
+      }
+      for (const method of index.methodDefinitions) {
+        if (!method.identity.symbolName.toLowerCase().startsWith(needle)) {
+          continue;
+        }
+        hits.push({
+          symbolName: method.identity.symbolName,
+          kind: 'method',
+          section: method.section,
+          rootName: index.rootName,
+          rootDefFile: index.rootDefFile,
+          defFile: method.defFile,
+          line: method.line
+        });
+      }
+    }
+    hits.sort((a, b) =>
+      a.rootName.localeCompare(b.rootName)
+      || a.symbolName.localeCompare(b.symbolName)
+      || a.line - b.line);
+    return hits;
   }
 
   async jumpToDef(

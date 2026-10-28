@@ -5228,6 +5228,38 @@ function elementTagRange(document: vscode.TextDocument, node: DefElementNode): v
   );
 }
 
+/**
+ * IDE-NAV-006:根范围工作区符号查询(Ctrl+T)——已索引 def 符号按名称前缀
+ * 查询,manager.searchDefSymbolsByPrefix 只读内存索引,查询面不触发全仓
+ * 扫描;containerName 带 root/段信息(方法=`root · 段`,属性=root),
+ * location 指向 def 声明行。
+ */
+export class KBEngineWorkspaceSymbolProvider implements vscode.WorkspaceSymbolProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async provideWorkspaceSymbols(
+    query: string,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.SymbolInformation[] | null> {
+    if (token?.isCancellationRequested) {
+      return null;
+    }
+    const hits = this.entityMappingManager.searchDefSymbolsByPrefix(query, token);
+    if (token?.isCancellationRequested) {
+      return null;
+    }
+    return hits.map(hit => new vscode.SymbolInformation(
+      hit.symbolName,
+      hit.kind === 'property' ? vscode.SymbolKind.Field : vscode.SymbolKind.Method,
+      hit.section ? `${hit.rootName} · ${hit.section}` : hit.rootName,
+      new vscode.Location(
+        vscode.Uri.file(hit.defFile),
+        new vscode.Position(Math.max(0, hit.line - 1), 0)
+      )
+    ));
+  }
+}
+
 export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer

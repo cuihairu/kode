@@ -190,6 +190,16 @@ export class DocumentSymbol {
   ) {}
 }
 
+// IDE-NAV-006:工作区符号(Ctrl+T)用(4 参构造与真实 vscode 对齐)
+export class SymbolInformation {
+  constructor(
+    public name: string,
+    public kind: SymbolKind,
+    public containerName: string,
+    public location: unknown
+  ) {}
+}
+
 export interface CompletionItemLabel {
   label: string;
   description?: string;

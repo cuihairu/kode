@@ -126,6 +126,7 @@ import {
   KBEngineCallHierarchyProvider,
   KBEngineReferencesProvider,
   KBEngineDocumentSymbolProvider,
+  KBEngineWorkspaceSymbolProvider,
   KBEngineCompletionProvider,
   EventCodeLensProvider,
   KBEngineDefinitionProvider,
@@ -922,6 +923,12 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineDocumentSymbolProvider()
   );
   context.subscriptions.push(documentSymbolProvider);
+
+  // IDE-NAV-006:工作区符号(Ctrl+T)——已索引 def 符号前缀查询,零全仓扫描
+  const workspaceSymbolProvider = vscode.languages.registerWorkspaceSymbolProvider(
+    new KBEngineWorkspaceSymbolProvider(entityMappingManager)
+  );
+  context.subscriptions.push(workspaceSymbolProvider);
 
   // 注册重命名提供者(.def 属性/方法 F2 重命名,引用面见 defRenamer 头注)
   const renameProvider = vscode.languages.registerRenameProvider(
