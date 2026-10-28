@@ -2020,12 +2020,55 @@ export class EntityMappingManager {
     return references;
   }
 
+  /**
+   * IDE-NAV-002:def 属性的 python self 访问引用。归属由 owner 注册面决定:
+   * 只扫该 def 索引的 pythonOwnerFiles(已确定实体归属),无关实体同名
+   * 属性不进来;self.<name>( 带调用括号的是方法调用(NAV-003 面),不收。
+   */
+  async getIncomingPythonPropertyAccesses(
+    defFile: string,
+    propertyName: string,
+    token?: vscode.CancellationToken
+  ): Promise<Array<{ filePath: string; line: number; character: number }>> {
+    if (token?.isCancellationRequested) { return []; }
+    // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动
+    this.ensureStartup();
+    const index = this.mappingIndexesByRoot.get(normalizeLookupPath(defFile));
+    if (!index) {
+      return [];
+    }
+    const accesses: Array<{ filePath: string; line: number; character: number }> = [];
+    const accessRegex = new RegExp(
+      `\\bself\\.${escapeRegExp(propertyName)}\\b(?!\\s*\\()`,
+      'g'
+    );
+    for (const owner of index.pythonOwnerFiles) {
+      if (token?.isCancellationRequested) { return accesses; }
+      if (!fs.existsSync(owner.filePath)) {
+        continue;
+      }
+      const content = readFileSyncUtf8Recorded(owner.filePath);
+      const lines = content.split('\n');
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        accessRegex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = accessRegex.exec(lines[lineIndex])) !== null) {
+          accesses.push({
+            filePath: owner.filePath,
+            line: lineIndex + 1,
+            character: match.index + 'self.'.length
+          });
+        }
+      }
+    }
+    return accesses;
+  }
+
   async getIncomingPythonMethodCalls(
     pythonFile: string,
     methodName: string,
     token?: vscode.CancellationToken
-  ): Promise<Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }>> {
-    if (token?.isCancellationRequested) return [];
+  ): Promise<Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }>> {    if (token?.isCancellationRequested) return [];
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
     const index = await this.ensureIndexForPythonFile(pythonFile, token);

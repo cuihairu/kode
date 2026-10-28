@@ -5077,7 +5077,28 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     }
     const word = document.getText(range);
     const symbolInfo = findDefSymbolInfo(document, position, word);
-    if (!symbolInfo || !METHOD_SECTIONS.has(symbolInfo.section)) {
+    if (!symbolInfo) {
+      return null;
+    }
+    // IDE-NAV-002:属性段 self 访问——归属由 owner 注册面决定
+    // (getIncomingPythonPropertyAccesses 只扫本 def 的 owner 文件),
+    // 无关实体同名属性不进来;方法调用不带括号断言,不混入。
+    if (symbolInfo.section === 'Properties') {
+      const accesses = await this.entityMappingManager.getIncomingPythonPropertyAccesses(
+        document.fileName,
+        symbolInfo.symbolNode.name,
+        token
+      );
+      if (token?.isCancellationRequested) {
+        return null;
+      }
+      return accesses.map(access =>
+        new vscode.Location(
+          vscode.Uri.file(access.filePath),
+          createSelectionRange(access.line, access.character, symbolInfo.symbolNode.name)
+        ));
+    }
+    if (!METHOD_SECTIONS.has(symbolInfo.section)) {
       return null;
     }
     const ast = parseDefAst(document);

@@ -54,7 +54,8 @@ const managerStub = (impl: { filePath: string; line: number; character: number }
           callCharacter: 4
         }
       ]);
-    }
+    },
+    getIncomingPythonPropertyAccesses: () => Promise.resolve([])
   };
   return { manager: manager as unknown as EntityMappingManager, calls };
 };
@@ -94,14 +95,14 @@ describe('def 引用查询入口(IDE-NAV-001)', () => {
   it('属性段不出方法引用(NAV-002 前如实空),非 def 文档与取消位同理 null', async () => {
     const { manager } = managerStub({ filePath: '/tmp/ws/scripts/base/Avatar.py', line: 2, character: 4 });
     const provider = new KBEngineReferencesProvider(manager);
-    // Properties 段 hp 位:方法段引用面不接管
+    // Properties 段 hp 位:属性 self 访问面接管(NAV-002),桩空引用如实空
     const propertyResult = await provider.provideReferences(
       defDoc(),
       new Position(2, 6),
       { includeDeclaration: false },
       undefined
     );
-    expect(propertyResult).toBeNull();
+    expect(propertyResult).toEqual([]);
 
     const pyDoc = makeTextDocument('def reqPos(self):\n    pass\n', {
       fileName: '/tmp/ws/scripts/base/Avatar.py', languageId: 'python'
