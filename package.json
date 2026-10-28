@@ -1260,7 +1260,36 @@
           "description": "Result subscription stream interval in milliseconds for the Runtime Queries panel (default: 2000); applies only when kbengine.runtimeQuery.enabled is on"
         }
       }
-    }
+    },
+    "problemMatchers": [
+      {
+        "name": "kbengine-compileall",
+        "owner": "kbengine-scripts",
+        "fileLocation": "absolute",
+        "pattern": [
+          {
+            "regexp": "^\\*\\*\\* ((?:\\w+Error|\\w+Warning|\\w+Exception): .+) in file (.+) on line (\\d+)",
+            "message": 1,
+            "file": 2,
+            "line": 3
+          },
+          {
+            "regexp": "^\\*\\*\\* Error compiling '(.+)'",
+            "file": 1
+          },
+          {
+            "regexp": "^  File \"(.+)\", line (\\d+)",
+            "file": 1,
+            "line": 2
+          },
+          {
+            "regexp": "^((?:\\w+Error|\\w+Warning|\\w+Exception))\\b",
+            "message": 1,
+            "severity": "error"
+          }
+        ]
+      }
+    ]
   },
   "repository": {
     "type": "git",

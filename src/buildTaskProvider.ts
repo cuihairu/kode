@@ -10,6 +10,7 @@
  */
 
 import * as vscode from 'vscode';
+import { KBE_COMPILEALL_MATCHER_NAME } from './buildProblemMatcher';
 import {
   buildScriptCheckTaskSpec,
   type BuildTaskSpec,
@@ -30,8 +31,9 @@ export function buildTaskFromSpec(spec: BuildTaskSpec): vscode.Task {
     vscode.TaskScope.Workspace,
     spec.name,
     BUILD_TASK_SOURCE,
-    execution
-    // problem matcher 留给 TSK-003(compileall 错误行→源码定位)
+    execution,
+    // TSK-003:compileall 错误行(两种 Python 格式)→ 源码文件+行
+    [`$${KBE_COMPILEALL_MATCHER_NAME}`]
   );
 }
 
