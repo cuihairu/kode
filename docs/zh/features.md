@@ -9,6 +9,7 @@
 - **kbengine-def 语言与语法** —— `.def` 文件注册专属语言 id、括号规则与 TextMate 语法 ——（证据：package.json#contributes.languages、package.json#contributes.grammars）
 - **.def 实时诊断** —— 未知类型 / Flags / DetailLevel 取值、属性与方法重复定义、缺 Type/Flags 字段，带总开关 ——（证据：package.json#configuration `kbengine.diagnostics.*`、`kbengine.enableDiagnostics`；src/defAnalyzer.ts）
 - **.def 结构化校验** —— 重复定义、标签位置与缺失字段检查，挂 `kbengine.enableStructureDiagnostics` 开关 ——（证据：package.json#configuration `kbengine.enableStructureDiagnostics`；src/defAnalyzer.ts）
+- **Quick Fix：未知类型修正候选** —— 未注册类型诊断（稳定 code `kbengine.unknownType`）出 QuickFix 替换候选，只取已注册类型（内建 + types.xml + 实体），大小写归一编辑距离 ≤2，按距排序截 5；编辑只触碰当前文档，不代建声明 ——（证据：src/languageProviders.ts `KBEngineTypeCodeActionProvider`、`UNKNOWN_TYPE_DIAGNOSTIC_CODE`）
 - **Python 接收者判空诊断** —— `self.cell`/`self.base`/`self.client` 成员引用无判空 guard（正向 if、早退、别名、hasattr）报 Warning 并附引擎 getter 源码；经接收者调用其对应 section 未声明的 `.def` 方法报段错配 ——（证据：package.json#configuration `kbengine.receiverNoneDiagnostics`；src/receiverNoneDiagnostics.ts）
 - **接收者感知的 def 段位判定** —— 属性 Flags 解析为 base/cell/client 可见域，用于段判定与排序 ——（证据：src/defAnalyzer.ts `propertyFlagDomainList`；commit c69517e）
 - **悬停：标签 / 取值 / 符号文档** —— .def 标签说明、类型-Flags-DetailLevel 取值说明与自定义属性/方法名摘要 ——（证据：package.json#configuration `kbengine.hover.showTagDocs|showValueDocs|showSymbolDocs`；src/languageProviders.ts）

@@ -313,6 +313,29 @@ export class Diagnostic {
   ) {}
 }
 
+// IDE-NAV-013:Code Action 面值类型(kind 分级与动作壳;context/provider
+// 为纯类型面由 @types/vscode 提供,替身只补运行时值)
+export class CodeActionKind {
+  static readonly QuickFix = new CodeActionKind('quickfix');
+  static readonly Refactor = new CodeActionKind('refactor');
+  static readonly Source = new CodeActionKind('source');
+  constructor(public readonly value: string) {}
+  append(parts: string): CodeActionKind {
+    return new CodeActionKind(`${this.value}.${parts}`);
+  }
+}
+
+export class CodeAction {
+  diagnostics?: Diagnostic[];
+  edit?: WorkspaceEdit;
+  command?: unknown;
+  isPreferred?: boolean;
+  constructor(
+    public title: string,
+    public kind?: CodeActionKind
+  ) {}
+}
+
 // 仅支持 validateDocument 使用的 set/delete 面。
 export class DiagnosticCollection {
   private entries = new Map<Uri, Diagnostic[]>();

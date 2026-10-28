@@ -82,7 +82,7 @@
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["extension.ts:592 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  M1["extension.ts:593 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
   HP["KBEngineHoverProvider.provideHover<br/>languageProviders.ts:742"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
@@ -130,8 +130,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["extension.ts:628 打点 startLanguageServiceOperation('definition')<br/>(.def 侧另有 :684 一路)"]
-  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:3786"]
+  M2["extension.ts:629 打点 startLanguageServiceOperation('definition')<br/>(.def 侧另有 :688 一路)"]
+  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:3846"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :3664 / Impl :3682"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
   KBE{"kbe/KBEngine 模块符号?"}
@@ -141,7 +141,7 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1175<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders.ts:4186)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders.ts:4246)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
@@ -167,7 +167,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4292,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4352,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:624,打点 :576)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
@@ -184,8 +184,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["extension.ts:517 打点 startLanguageServiceOperation('completion')<br/>(另一语境 :937)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:5496"]
+  M3["extension.ts:518 打点 startLanguageServiceOperation('completion')<br/>(另一语境 :962)"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:5608"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}
@@ -214,15 +214,15 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:1011 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:1019 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>diagnosticScheduler.ts:211"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:1040 → diagnosticScheduler.ts:241"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:1048 → diagnosticScheduler.ts:241"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 extension.ts:333 / entities 侧 :343"]
+  CALC["computeAndPublish<br/>def 侧打点 extension.ts:334 / entities 侧 :347"]
   VD["validateDocument(languageProviders.ts:1420)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders.ts:1435,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders.ts:1453)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders.ts:1466,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1295,fire-and-forget)"]

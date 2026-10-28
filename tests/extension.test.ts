@@ -163,6 +163,8 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.implementationRegistrations).toHaveLength(1);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
+    // IDE-NAV-013:未知类型诊断 QuickFix 候选(def 面单注册)
+    expect(languagesRegistry.codeActionsRegistrations).toHaveLength(1);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
     // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关)

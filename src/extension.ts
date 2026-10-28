@@ -135,6 +135,7 @@ import {
   KBEngineBuiltinTypeInlayHintsProvider,
   KBEngineRenameProvider,
   KBEngineSignatureHelpProvider,
+  KBEngineTypeCodeActionProvider,
   KBENGINE_SOURCE_REVEAL_COMMAND,
   prewarmKbengineIndex,
   revealSourceCommand,
@@ -984,6 +985,13 @@ export function activate(context: vscode.ExtensionContext) {
   // 注册诊断检查器
   const diagnostics = vscode.languages.createDiagnosticCollection('kbengine');
   context.subscriptions.push(diagnostics);
+
+  // IDE-NAV-013:未知类型诊断的 QuickFix 替换候选(只出已注册类型的近似替换)
+  const typeCodeActionProvider = vscode.languages.registerCodeActionsProvider(
+    defDocumentSelector,
+    new KBEngineTypeCodeActionProvider()
+  );
+  context.subscriptions.push(typeCodeActionProvider);
 
   // 监听文档变化，实时检查
   if (vscode.workspace.workspaceFolders) {

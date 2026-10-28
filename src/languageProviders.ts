@@ -1699,6 +1699,10 @@ function validateDefStructure(
   }
 }
 
+// IDE-NAV-013:未注册类型诊断的稳定 code——Code Action 侧据此对账候选,
+// 不靠 message 字串匹配(文案演进不动契约)。
+export const UNKNOWN_TYPE_DIAGNOSTIC_CODE = 'kbengine.unknownType';
+
 function validateTypeNode(
   document: vscode.TextDocument,
   diagnosticsList: vscode.Diagnostic[],
@@ -1750,7 +1754,8 @@ function validateTypeNode(
         typeNode,
         candidate,
         `自定义类型 ${candidate} 未在 types.xml 中注册，请先在 types.xml 注册后再引用`,
-        vscode.DiagnosticSeverity.Error
+        vscode.DiagnosticSeverity.Error,
+        UNKNOWN_TYPE_DIAGNOSTIC_CODE
       );
     }
   }
@@ -1913,7 +1918,8 @@ function pushDiagnosticForNodeValue(
   node: DefElementNode,
   value: string,
   message: string,
-  severity: vscode.DiagnosticSeverity
+  severity: vscode.DiagnosticSeverity,
+  code?: string | number
 ): void {
   const offset = document.getText().indexOf(value, node.contentStart);
   const range = offset >= 0 && offset <= node.contentEnd
@@ -1923,7 +1929,11 @@ function pushDiagnosticForNodeValue(
       )
     : createNodeValueRange(document, node);
 
-  diagnosticsList.push(new vscode.Diagnostic(range, message, severity));
+  const diagnostic = new vscode.Diagnostic(range, message, severity);
+  if (code !== undefined) {
+    diagnostic.code = code;
+  }
+  diagnosticsList.push(diagnostic);
 }
 
 function createNodeRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
@@ -3651,6 +3661,56 @@ function getKnownTypeContext(document: vscode.TextDocument, token?: vscode.Cance
   };
 }
 
+// IDE-NAV-013:未知类型的修正候选——只从已注册集合取近拼(大小写归一后
+// 编辑距离≤2),按距稳定排序截 5;候选与未知名同名(已注册时)不入选,
+// 无近似不猜。不自动创建 types.xml 声明是硬边界(候选只是替换)。
+const TYPE_SUGGESTION_MAX_DISTANCE = 2;
+const TYPE_SUGGESTION_LIMIT = 5;
+
+function boundedEditDistance(left: string, right: string, max: number): number | null {
+  if (Math.abs(left.length - right.length) > max) {
+    return null;
+  }
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    let rowMin = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitution = previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1);
+      const cost = Math.min(substitution, previous[column] + 1, current[column - 1] + 1);
+      current.push(cost);
+      rowMin = Math.min(rowMin, cost);
+    }
+    if (rowMin > max) {
+      return null;
+    }
+    previous = current;
+  }
+  const distance = previous[right.length];
+  return distance > max ? null : distance;
+}
+
+export function findRegisteredTypeSuggestions(
+  unknownName: string,
+  registered: Iterable<string>
+): string[] {
+  const target = unknownName.toLowerCase();
+  const hits: Array<{ name: string; distance: number }> = [];
+  for (const candidate of registered) {
+    if (candidate === unknownName) {
+      continue;
+    }
+    const distance = boundedEditDistance(target, candidate.toLowerCase(), TYPE_SUGGESTION_MAX_DISTANCE);
+    if (distance === null) {
+      continue;
+    }
+    hits.push({ name: candidate, distance });
+  }
+  hits.sort((left, right) =>
+    left.distance - right.distance || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  return hits.slice(0, TYPE_SUGGESTION_LIMIT).map(hit => hit.name);
+}
+
 function getKnownTypeSuggestions(document: vscode.TextDocument, token?: vscode.CancellationToken): KnownTypeSuggestion[] {
   const suggestions = new Map<string, KnownTypeSuggestion>();
 
@@ -5316,6 +5376,58 @@ export class KBEngineImplementationProvider implements vscode.ImplementationProv
       new vscode.Position(Math.max(0, implementation.line - 1), implementation.character)
     ));
   }
+}
+
+export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider {
+  /**
+   * IDE-NAV-013:未注册类型诊断的修正候选——仅提供已注册类型(内建+
+   * types.xml 自定义+实体)的近拼替换编辑(QuickFix),候选与诊断同 code
+   * 对账;不自动创建 types.xml 声明(硬边界,没有任何命令型/跨文件动作)。
+   */
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    context: vscode.CodeActionContext,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CodeAction[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    const known = getKnownTypeContext(document);
+    const registered = [...known.builtins, ...known.customTypes, ...known.entityTypes];
+    const actions: vscode.CodeAction[] = [];
+    for (const diagnostic of context.diagnostics) {
+      if (diagnostic.code !== UNKNOWN_TYPE_DIAGNOSTIC_CODE) {
+        continue;
+      }
+      if (!diagnosticRangeIntersects(diagnostic.range, range)) {
+        continue;
+      }
+      const unknownName = document.getText(diagnostic.range).trim();
+      if (!unknownName) {
+        continue;
+      }
+      for (const candidate of findRegisteredTypeSuggestions(unknownName, registered)) {
+        const edit = new vscode.WorkspaceEdit();
+        edit.set(document.uri, [new vscode.TextEdit(diagnostic.range, candidate)]);
+        const action = new vscode.CodeAction(
+          `替换为已注册类型 ${candidate}`,
+          vscode.CodeActionKind.QuickFix
+        );
+        action.diagnostics = [diagnostic];
+        action.edit = edit;
+        actions.push(action);
+      }
+    }
+    return actions;
+  }
+}
+
+/** 诊断区间与请求区间相交(行/列直比,替身 Range 无 intersection 面) */
+function diagnosticRangeIntersects(left: vscode.Range, right: vscode.Range): boolean {
+  const positionValue = (position: vscode.Position): number => position.line * 1_000_000 + position.character;
+  return positionValue(left.start) <= positionValue(right.end)
+    && positionValue(right.start) <= positionValue(left.end);
 }
 
 export class KBEngineRenameProvider implements vscode.RenameProvider {
