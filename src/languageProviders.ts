@@ -5047,6 +5047,73 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
   }
 }
 
+/**
+ * IDE-NAV-001:def 原生引用查询入口(Shift+F12)。引用结果复用统一符号
+ * 身份——与调用层级 prepare 完全同链(findDefSymbolInfo →
+ * resolveDefinitionSymbolAtPosition → resolveMethodImplementationByIdentity),
+ * 解析到 python 实现后经 getIncomingPythonMethodCalls 出调用点,不另起
+ * 名字搜索。本批收方法段;属性 self 访问(NAV-002)与 receiver RPC
+ * (NAV-003)在引用收录面上后续批扩展。
+ */
+export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async provideReferences(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    _context: vscode.ReferenceContext,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.Location[] | null> {
+    if (token?.isCancellationRequested) { return null; }
+    if (
+      document.languageId !== 'kbengine-def' &&
+      !document.fileName.toLowerCase().endsWith('.def')
+    ) {
+      return null;
+    }
+    const range = document.getWordRangeAtPosition(position, /\w+/);
+    if (!range) {
+      return null;
+    }
+    const word = document.getText(range);
+    const symbolInfo = findDefSymbolInfo(document, position, word);
+    if (!symbolInfo || !METHOD_SECTIONS.has(symbolInfo.section)) {
+      return null;
+    }
+    const ast = parseDefAst(document);
+    if (!ast) {
+      return null;
+    }
+    const identity = await this.entityMappingManager.resolveDefinitionSymbolAtPosition(
+      document.fileName,
+      getLineNumberAt(ast, symbolInfo.symbolNode.tagStart),
+      symbolInfo.symbolNode.name,
+      symbolInfo.section as EntityMethodSection
+    );
+    if (!identity || token?.isCancellationRequested) {
+      return null;
+    }
+    const implementation =
+      await this.entityMappingManager.resolveMethodImplementationByIdentity(identity);
+    if (!implementation || token?.isCancellationRequested) {
+      return null;
+    }
+    const calls = await this.entityMappingManager.getIncomingPythonMethodCalls(
+      implementation.filePath,
+      symbolInfo.symbolNode.name,
+      token
+    );
+    if (token?.isCancellationRequested) {
+      return null;
+    }
+    return calls.map(call =>
+      new vscode.Location(
+        vscode.Uri.file(call.caller.filePath),
+        createSelectionRange(call.callLine, call.callCharacter, symbolInfo.symbolNode.name)
+      ));
+  }
+}
+
 export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer

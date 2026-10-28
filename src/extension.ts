@@ -124,6 +124,7 @@ import {
 import { TelnetWebView } from './telnetWebView';
 import {
   KBEngineCallHierarchyProvider,
+  KBEngineReferencesProvider,
   KBEngineCompletionProvider,
   EventCodeLensProvider,
   KBEngineDefinitionProvider,
@@ -905,6 +906,14 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineCallHierarchyProvider(entityMappingManager)
   );
   context.subscriptions.push(callHierarchyProvider);
+
+  // IDE-NAV-001:def 原生引用查询(Shift+F12)——统一符号身份链复用,
+  // 引用位=python 调用点(getIncomingPythonMethodCalls 既有面)
+  const referencesProvider = vscode.languages.registerReferenceProvider(
+    defDocumentSelector,
+    new KBEngineReferencesProvider(entityMappingManager)
+  );
+  context.subscriptions.push(referencesProvider);
 
   // 注册重命名提供者(.def 属性/方法 F2 重命名,引用面见 defRenamer 头注)
   const renameProvider = vscode.languages.registerRenameProvider(

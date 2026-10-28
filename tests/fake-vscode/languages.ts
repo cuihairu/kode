@@ -14,6 +14,7 @@ interface ProviderRegistration {
 const completionRegistrations: ProviderRegistration[] = [];
 const hoverRegistrations: ProviderRegistration[] = [];
 const definitionRegistrations: ProviderRegistration[] = [];
+const referenceRegistrations: ProviderRegistration[] = [];
 const callHierarchyRegistrations: ProviderRegistration[] = [];
 const renameRegistrations: ProviderRegistration[] = [];
 const signatureHelpRegistrations: ProviderRegistration[] = [];
@@ -41,6 +42,7 @@ export const languages = {
   registerCompletionItemProvider: register(completionRegistrations),
   registerHoverProvider: register(hoverRegistrations),
   registerDefinitionProvider: register(definitionRegistrations),
+  registerReferenceProvider: register(referenceRegistrations),
   registerCallHierarchyProvider: register(callHierarchyRegistrations),
   registerRenameProvider: register(renameRegistrations),
   registerSignatureHelpProvider: register(signatureHelpRegistrations),
@@ -57,6 +59,7 @@ export const languagesRegistry = {
   completionRegistrations,
   hoverRegistrations,
   definitionRegistrations,
+  referenceRegistrations,
   callHierarchyRegistrations,
   renameRegistrations,
   signatureHelpRegistrations,
@@ -67,6 +70,7 @@ export const languagesRegistry = {
     completionRegistrations.length = 0;
     hoverRegistrations.length = 0;
     definitionRegistrations.length = 0;
+    referenceRegistrations.length = 0;
     callHierarchyRegistrations.length = 0;
     renameRegistrations.length = 0;
     signatureHelpRegistrations.length = 0;

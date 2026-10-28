@@ -153,6 +153,8 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.completionRegistrations).toHaveLength(2);
     expect(languagesRegistry.hoverRegistrations).toHaveLength(2);
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
+    // IDE-NAV-001:def 文档选择器上的引用提供者(Shift+F12)一份
+    expect(languagesRegistry.referenceRegistrations).toHaveLength(1);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
