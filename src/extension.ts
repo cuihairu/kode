@@ -68,6 +68,7 @@ import {
 import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
 import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
+import { showPythonTestList } from './pythonTestDiscovery';
 import { ProjectProfileStore } from './projectProfiles';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
@@ -1830,6 +1831,37 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.tasks.registerTaskProvider(BUILD_TASK_TYPE, buildTaskProvider)
   );
+
+  // IDE-TSK-004 发现项目声明的 Python 测试:只扫所选 profile 的 scripts
+  // 根(test_*.py / *_test.py 递归),工作区里其他资产根与引擎仓(依赖
+  // 库)结构性不进清单;QuickPick 列文件,选中打开源文件
+  const listPythonTestsCommand = vscode.commands.registerCommand(
+    'kbengine.tests.list',
+    () => {
+      const profile = resolveActiveProfile(context.workspaceState);
+      if (!profile) {
+        void vscode.window.showInformationMessage(
+          '尚未选择活动 profile:先在 Profiles 里选一套 assets/engine 组合,再列出 Python 测试'
+        );
+        return;
+      }
+      showPythonTestList(profile, {
+        pick: items =>
+          Promise.resolve(
+            vscode.window.showQuickPick(items, {
+              placeHolder: `${items.length} 个测试文件(范围:所选 profile 的 scripts 根)`
+            })
+          ),
+        open: absolutePath => {
+          void vscode.window.showTextDocument(vscode.Uri.file(absolutePath));
+        },
+        notify: message => {
+          void vscode.window.showInformationMessage(message);
+        }
+      });
+    }
+  );
+  context.subscriptions.push(listPythonTestsCommand);
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);

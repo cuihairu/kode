@@ -634,3 +634,16 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 预览对话框展示任务类型、名称、`cd` 行、完整命令行（含空格路径按 shell 拆词规则加引号）、env 逐条、解释器来源行
   - 无活动 profile：如实提示先去选一套
 - 边界：本命令只预览不执行；执行面是 TSK-002 的任务注册，编译错误定位到源码是 TSK-003 的 problem matcher
+
+### `kbengine.tests.list`
+
+- 标题：`Tests: List Project Python Tests`
+- 作用：发现项目声明的 Python 测试（IDE-TSK-004）——QuickPick 列出发现的测试文件，范围严格限定在所选 profile
+- 入口：命令面板
+- 行为：
+  - 解析活动 profile，只扫它的 scripts 根（`<assets>/scripts`，递归）收 `test_*.py` / `*_test.py`——pytest/unittest 通用命名约定；工作区里其他 `*_assets` 根与引擎仓是依赖库，结构性不进清单（发现只从 profile 的 scripts 根起步，不接收别的入口）
+  - 隐藏目录与 `__pycache__` 跳过；文件内静态可见的用例（`def test_*` 函数与 `class Test*` 方法，带行号列号）解析成条目的用例数与用例名
+  - 选中文件即在编辑器打开；Esc 不打开
+  - 一无所获：一条如实提示点名 scripts 根与命名约定——不弹空列表
+  - 无活动 profile：如实提示先去选一套
+- 边界：本命令只发现与列出；测试面板跑单个测试是 TSK-005

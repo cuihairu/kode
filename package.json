@@ -102,6 +102,7 @@
     "onCommand:kbengine.debug.waitAtStartup.off",
     "onCommand:kbengine.debug.focusTarget",
     "onCommand:kbengine.build.previewTask",
+    "onCommand:kbengine.tests.list",
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -600,6 +601,10 @@
       {
         "command": "kbengine.build.previewTask",
         "title": "Build: Preview Task Description"
+      },
+      {
+        "command": "kbengine.tests.list",
+        "title": "Tests: List Project Python Tests"
       }
     ],
     "menus": {

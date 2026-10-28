@@ -747,3 +747,16 @@ If `Attach to Component` fails, check these first:
   - the preview dialog shows the task type, name, `cd` line, full command line (paths with spaces quoted per shell word-splitting), each env entry, and the interpreter-provenance line
   - no active profile: an honest message points at picking one first
 - Boundary: this command only previews; executing the build is TSK-002's task registration, and mapping compile errors to source locations is TSK-003's problem matcher
+
+### `kbengine.tests.list`
+
+- Title: `Tests: List Project Python Tests`
+- Purpose: discover the Python tests the project declares (IDE-TSK-004) — a QuickPick of the test files found, scoped strictly to the selected profile
+- Entries: command palette
+- Behavior:
+  - resolves the active profile and scans only its scripts root (`<assets>/scripts`, recursively) for `test_*.py` / `*_test.py` — pytest/unittest's common naming convention; other `*_assets` roots and the engine checkout in the workspace are dependency libraries and structurally never enter the list (discovery starts from the profile's scripts root and takes no other entry)
+  - hidden directories and `__pycache__` are skipped; within each file, statically visible cases are parsed (`def test_*` functions and `class Test*` methods) with line and column, shown as the item's case count and names
+  - picking a file opens it in the editor; Esc opens nothing
+  - nothing found: one honest message names the scripts root and the naming convention — no empty list
+  - no active profile: an honest message points at picking one first
+- Boundary: this command discovers and lists; running individual tests in the Testing panel is TSK-005
