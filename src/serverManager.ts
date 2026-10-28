@@ -140,6 +140,10 @@ export interface RunningServer {
   status: ServerStatus;
   startTime: Date;
   logs: string[];
+  /** 就绪等待放弃原因(RUN-004):超时/取消后等待终止,状态保持 Starting,绝不误标 Running */
+  readinessGivenUp?: 'timeout' | 'cancelled';
+  /** 就绪等待取消柄(RUN-004):stopComponent 置位,等待轮询即终止 */
+  readinessCancel?: { aborted: boolean };
 }
 
 /**
@@ -166,6 +170,8 @@ export function parseServerKey(key: string): { componentName: string; targetId: 
 
 const READINESS_PROBE_TIMEOUT_MS = 1000;
 const READINESS_PROBE_INTERVAL_MS = 250;
+/** 就绪等待默认上限(RUN-004):到期放弃等待并报告 target;null 可显式关闭 */
+const READINESS_WAIT_TIMEOUT_MS = 60000;
 
 /**
  * 组件就绪探针(RUN-003):配置开了 telnet 的组件用其目标端口做真实 TCP
@@ -415,17 +421,28 @@ export class KBEngineServerManager {
 
   /**
    * 启动单个组件;options.targetId 指定实例(默认实例键=纯组件名),
-   * options.readinessProbe 覆盖默认探针(null 显式关闭,回落宽限期)
+   * options.readinessProbe 覆盖默认探针(null 显式关闭,回落宽限期),
+   * options.readinessTimeoutMs 等待上限(null 显式关闭,默认 60s),
+   * options.cancel 取消柄(置位即放弃等待,stopComponent 亦会置位)
    */
   async startComponent(
     component: ServerComponent,
-    options?: { targetId?: string; readinessProbe?: (() => Promise<boolean>) | null }
+    options?: {
+      targetId?: string;
+      readinessProbe?: (() => Promise<boolean>) | null;
+      readinessTimeoutMs?: number | null;
+      cancel?: { aborted: boolean };
+    }
   ): Promise<boolean> {
     const targetId = options?.targetId ?? DEFAULT_TARGET_ID;
     const serverKey = buildServerKey(component.name, targetId);
     const readinessProbe = options?.readinessProbe !== undefined
       ? options.readinessProbe
       : createComponentReadinessProbe(component.name);
+    const readinessTimeoutMs = options?.readinessTimeoutMs !== undefined
+      ? options.readinessTimeoutMs
+      : READINESS_WAIT_TIMEOUT_MS;
+    const readinessCancel = options?.cancel ?? { aborted: false };
     // 检查是否已运行(同组件不同 targetId 的实例互不拦截)
     if (this.runningServers.has(serverKey)) {
       vscode.window.showWarningMessage(
@@ -490,7 +507,13 @@ export class KBEngineServerManager {
         component: component.name,
         readyAfterMs: 1000,
         readiness: readinessProbe
-          ? { probe: readinessProbe, intervalMs: READINESS_PROBE_INTERVAL_MS }
+          ? {
+            probe: readinessProbe,
+            intervalMs: READINESS_PROBE_INTERVAL_MS,
+            timeoutMs: readinessTimeoutMs === null ? undefined : readinessTimeoutMs,
+            cancelHandle: readinessCancel,
+            onGiveUp: reason => this.handleReadinessGiveUp(serverKey, component, targetId, readinessTimeoutMs, reason)
+          }
           : undefined
       });
       void managed;
@@ -502,7 +525,8 @@ export class KBEngineServerManager {
         pid: managed.pid,
         status: ServerStatus.Starting,
         startTime: new Date(),
-        logs: []
+        logs: [],
+        readinessCancel
       };
 
       this.runningServers.set(serverKey, runningServer);
@@ -517,6 +541,32 @@ export class KBEngineServerManager {
   }
 
   /**
+   * 就绪等待放弃(RUN-004):报告对应 target 后等待终止,状态保持 Starting,
+   * 绝不误标 Running;取消类只记日志(用户发起,不再弹窗惊扰)
+   */
+  private handleReadinessGiveUp(
+    serverKey: string,
+    component: ServerComponent,
+    targetId: string,
+    timeoutMs: number | null | undefined,
+    reason: 'timeout' | 'cancelled'
+  ): void {
+    const runningServer = this.runningServers.get(serverKey);
+    if (runningServer) {
+      runningServer.readinessGivenUp = reason;
+    }
+    const targetLabel = targetId === DEFAULT_TARGET_ID ? component.displayName : `${component.displayName} 实例 ${targetId}`;
+    if (reason === 'timeout') {
+      this.log(component, RuntimeLogLevel.WARNING,
+        `${targetLabel} 就绪等待超时(${timeoutMs ?? '∞'}ms)，停止等待（仍为 Starting，未误标 Running）`);
+      vscode.window.showWarningMessage(`${targetLabel} 就绪等待超时，停止等待（仍为 Starting）`);
+    } else {
+      this.log(component, RuntimeLogLevel.INFO, `${targetLabel} 就绪等待已取消`);
+    }
+    this._onDidChangeStatus.fire();
+  }
+
+  /**
    * 停止单个组件;targetId 指定实例(省略时 componentName 即登记键,
    * stopAll 传入的复合键原样命中)
    */
@@ -525,6 +575,10 @@ export class KBEngineServerManager {
     const runningServer = this.runningServers.get(serverKey);
     if (!runningServer) {
       return false;
+    }
+    // RUN-004:停止即取消就绪等待,先翻柄再发信号(等待轮询即刻终止)
+    if (runningServer.readinessCancel) {
+      runningServer.readinessCancel.aborted = true;
     }
 
     this.log(runningServer.component, RuntimeLogLevel.INFO, `正在停止 ${runningServer.component.displayName}...`);

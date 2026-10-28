@@ -50,6 +50,18 @@ const until = async (predicate: () => boolean, timeoutMs = 5000): Promise<void> 
 const cellapp = SERVER_COMPONENTS.find(component => component.name === 'cellapp') as ServerComponent;
 expect(cellapp, 'SERVER_COMPONENTS 里应有 cellapp').toBeTruthy();
 
+const pidAlive = (pid: number | undefined): boolean => {
+  if (!pid || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const makeManager = (): KBEngineServerManager => {
   const manager = new KBEngineServerManager({} as unknown as vscode.ExtensionContext);
   currentManager = manager;
@@ -272,4 +284,120 @@ describe('KBEngineServerManager readiness probes', () => {
 
     await manager.stopComponent('cellapp');
   }, 8000);
+});
+
+describe('KBEngineServerManager readiness wait timeout and cancel', () => {
+  const closedPortProbe = () => createComponentReadinessProbe('cellapp', {
+    getTargets: () => [{
+      key: `127.0.0.1:${probePort}`, label: 'cellapp', component: 'cellapp',
+      host: '127.0.0.1', port: probePort, password: '', enableCommands: []
+    }]
+  }) as () => Promise<boolean>;
+
+  it('gives up the wait on timeout, reports the target, and never marks running', async () => {
+    // 进程常驻但从不监听:探针一直失败
+    bin.write('cellapp', { kind: 'run' });
+    const manager = makeManager();
+
+    expect(await manager.startComponent(cellapp, {
+      targetId: 'a',
+      readinessProbe: closedPortProbe(),
+      readinessTimeoutMs: 1500
+    })).toBe(true);
+
+    await until(() => manager.getRunningServers().get('cellapp#a')?.readinessGivenUp === 'timeout', 4000);
+
+    // 停止等待 ≠ 进程死了:仍在册、仍 Starting、绝不误标 Running
+    const server = manager.getRunningServers().get('cellapp#a');
+    expect(server?.status).toBe(ServerStatus.Starting);
+    expect(manager.getServerStatus('cellapp', 'a')).toBe(ServerStatus.Starting);
+    // 报告对应 target:实例 a 点名
+    expect(messages.warning.some(text => text.includes('CellApp') && text.includes('a'))).toBe(true);
+    const channelText = channels.map(channel => channel.lines.join('')).join('');
+    expect(channelText).toContain('就绪等待超时');
+
+    // 等待已放弃是终态:此后服务真的开起来也不再推进 Running
+    const net = await import('net');
+    const server2 = net.createServer();
+    await new Promise<void>(resolve => server2.listen(probePort, '127.0.0.1', resolve));
+    try {
+      await new Promise(resolve => setTimeout(resolve, 900));
+      expect(manager.getServerStatus('cellapp', 'a')).toBe(ServerStatus.Starting);
+    } finally {
+      server2.close();
+    }
+
+    await manager.stopComponent('cellapp', 'a');
+  }, 12000);
+
+  it('cancels the wait through the cancel handle and keeps the process untouched', async () => {
+    bin.write('cellapp', { kind: 'run' });
+    const manager = makeManager();
+    const cancel = { aborted: false };
+
+    expect(await manager.startComponent(cellapp, {
+      targetId: 'a',
+      readinessProbe: closedPortProbe(),
+      readinessTimeoutMs: 60_000,
+      cancel
+    })).toBe(true);
+
+    // 取消前一直在等
+    await new Promise(resolve => setTimeout(resolve, 600));
+    expect(manager.getRunningServers().get('cellapp#a')?.readinessGivenUp).toBeUndefined();
+
+    cancel.aborted = true;
+    await until(() => manager.getRunningServers().get('cellapp#a')?.readinessGivenUp === 'cancelled', 3000);
+
+    // 取消只停等待:进程本体还活着,状态保持 Starting
+    const pid = manager.getRunningServers().get('cellapp#a')?.pid;
+    expect(manager.getServerStatus('cellapp', 'a')).toBe(ServerStatus.Starting);
+    expect(pidAlive(pid)).toBe(true);
+
+    await manager.stopComponent('cellapp', 'a');
+  }, 12000);
+
+  it('cancels the readiness wait when the component is stopped', async () => {
+    // ignore-sigterm:SIGTERM 杀不死,取消与进程死亡解耦,可观察到取消先行
+    bin.write('cellapp', { kind: 'ignore-sigterm', marker: 'trapped' });
+    const manager = makeManager();
+
+    expect(await manager.startComponent(cellapp, {
+      readinessProbe: closedPortProbe(),
+      readinessTimeoutMs: 60_000
+    })).toBe(true);
+    const server = manager.getRunningServers().get('cellapp');
+    await until(() => (server?.logs ?? []).join('').includes('trapped'));
+
+    // 停组件即取消就绪等待:进程还活着(SIGTERM 被忽略),等待已放弃
+    void manager.stopComponent('cellapp');
+    await until(() => manager.getRunningServers().get('cellapp')?.readinessGivenUp === 'cancelled', 3000);
+    expect(manager.getRunningServers().has('cellapp')).toBe(true);
+
+    // 清理:绕过优雅停止直接击杀
+    manager.getRunningServers().get('cellapp')?.process.kill('SIGKILL');
+    await until(() => manager.getRunningServers().size === 0);
+  }, 12000);
+
+  it('keeps polling without a timeout when readinessTimeoutMs is null', async () => {
+    bin.write('cellapp', { kind: 'run' });
+    const manager = makeManager();
+    let calls = 0;
+    const probe = async (): Promise<boolean> => {
+      calls += 1;
+      return false;
+    };
+
+    expect(await manager.startComponent(cellapp, {
+      readinessProbe: probe,
+      readinessTimeoutMs: null
+    })).toBe(true);
+
+    // 1.5s(≈6 个轮询周期)后仍在轮询、未放弃
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    expect(calls).toBeGreaterThanOrEqual(4);
+    expect(manager.getRunningServers().get('cellapp')?.readinessGivenUp).toBeUndefined();
+
+    await manager.stopComponent('cellapp');
+  }, 10000);
 });
