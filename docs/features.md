@@ -96,7 +96,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 
 ## Project Model
 
-- **Project profile identity store** — each KBEngine assets/engine combination is saved as its own profile with a persistent stable ID (assigned once at creation, stored per workspace in `workspaceState` and read back after restart); the display name is only a mutable field — renaming a profile or having two same-named profiles never merges or loses identity — (evidence: src/projectProfiles.ts `ProjectProfileStore`)
+- **Project profile identity store** — each KBEngine assets/engine combination is saved as its own profile with a persistent stable ID (assigned once at creation, stored per workspace in `workspaceState` and read back after restart); the display name is only a mutable field — renaming a profile or having two same-named profiles never merges or loses identity; roots are saved per profile (`saveRoots` touches only the target record's path fields, so re-saving one profile's assets/engine roots never bleeds into another and both read back independently after restart) — (evidence: src/projectProfiles.ts `ProjectProfileStore`)
 
 ## Settings
 

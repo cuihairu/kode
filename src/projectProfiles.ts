@@ -88,6 +88,16 @@ export class ProjectProfileStore {
     return { ...updated };
   }
 
+  /**
+   * 按 profile 保存根与引擎路径(IDE-PRJ-002):只动目标记录的路径字段,
+   * 身份与其余字段不动;整表落盘保证其他 profile 记录字节原样——两个
+   * profile 的根路径在重启(新 store 同一 memento)后仍各自独立可读回。
+   * 未知 ID 返回 null,绝不静默新建。
+   */
+  async saveRoots(id: string, roots: { assetsRoot?: string; engineRoot?: string }): Promise<ProjectProfile | null> {
+    return this.update(id, roots);
+  }
+
   /** 按 ID 删除:返回是否真删了一条 */
   async remove(id: string): Promise<boolean> {
     const profiles = readProfiles(this.memento, this.sessionProfiles);

@@ -123,3 +123,41 @@ describe('project profile stable identity (IDE-PRJ-001)', () => {
     expect(store.get('p1')).toMatchObject({ id: 'p1', displayName: '幸存' });
   });
 });
+
+describe('per-profile root persistence (IDE-PRJ-002)', () => {
+  it('re-saves roots on one profile without bleeding into the other, across restarts', async () => {
+    const memento = new MemoryMemento();
+    const first = new ProjectProfileStore(memento);
+    const a = await first.create(comboA);
+    const b = await first.create(comboB);
+
+    // 重启(新 store 同 memento)后按 profile 重存 A 的两个根
+    const reopened = new ProjectProfileStore(memento);
+    const resaved = await reopened.saveRoots(a.id, { assetsRoot: '/ws/assets-moved', engineRoot: '/ws/engine-moved' });
+    expect(resaved).toMatchObject({ id: a.id, assetsRoot: '/ws/assets-moved', engineRoot: '/ws/engine-moved' });
+
+    // 再一次重启:两条各自独立——A 是新根,B 原根原样,互不串写
+    const second = new ProjectProfileStore(memento);
+    expect(second.get(a.id)).toMatchObject({ id: a.id, assetsRoot: '/ws/assets-moved', engineRoot: '/ws/engine-moved', displayName: comboA.displayName });
+    expect(second.get(b.id)).toMatchObject({ id: b.id, ...comboB });
+  });
+
+  it('saves a single root field, keeping the other untouched', async () => {
+    const store = new ProjectProfileStore(new MemoryMemento());
+    const a = await store.create(comboA);
+
+    // 只换 engine 根:assets 根与显示名不动
+    expect(await store.saveRoots(a.id, { engineRoot: '/ws/engine-alt' })).toMatchObject({
+      id: a.id,
+      displayName: comboA.displayName,
+      assetsRoot: comboA.assetsRoot,
+      engineRoot: '/ws/engine-alt'
+    });
+  });
+
+  it('returns null for unknown ids (no silent create)', async () => {
+    const store = new ProjectProfileStore(new MemoryMemento());
+    expect(await store.saveRoots('missing', { assetsRoot: '/ws/x' })).toBeNull();
+    expect(store.list()).toHaveLength(0);
+  });
+});
