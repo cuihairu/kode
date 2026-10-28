@@ -72,6 +72,38 @@ export interface DefRenameOptions {
   readCrossFileContent?: (filePath: string) => string | null;
 }
 
+/**
+ * IDE-NAV-010:重命名计算所消费输入文件的版本引用——目标文档为
+ * {source:'document',version:文档版本},跨文件为快照 {source,version}
+ * (document=编辑序号,disk=mtimeMs)。重名手势内逐次计算据此判漂移。
+ */
+export interface RenameInputVersionRef {
+  filePath: string;
+  source: 'document' | 'disk';
+  version: number | undefined;
+}
+
+/**
+ * IDE-NAV-010:两次输入版本集合按文件比对 {source,version}——任一文件
+ * 来源/版本漂移、或文件集不同(长度/条目缺失)即 true,否则 false。
+ */
+export function renameInputsDrifted(
+  previous: readonly RenameInputVersionRef[],
+  current: readonly RenameInputVersionRef[]
+): boolean {
+  if (previous.length !== current.length) {
+    return true;
+  }
+  const prevByPath = new Map(previous.map(ref => [ref.filePath, ref] as const));
+  for (const ref of current) {
+    const before = prevByPath.get(ref.filePath);
+    if (!before || before.source !== ref.source || before.version !== ref.version) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** def 属性/方法名的合法形态(C 风格标识符;实体名的首字母大写约束不适用于成员) */
 export const DEF_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 

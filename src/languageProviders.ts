@@ -99,8 +99,10 @@ import {
   findDefRenameConflict,
   getLineCharacterAtOffset,
   parseDefFileSemantics,
+  renameInputsDrifted,
   resolveRenameSymbolAtOffset
 } from './defRenamer';
+import type { DefRenameFileEdits, RenameInputVersionRef } from './defRenamer';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
 import {
@@ -5320,11 +5322,21 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer
    * 纯模块,这里只做 vscode 值类型的装配。作用域与边界见 defRenamer 头注。
+   * IDE-NAV-010:一次重命名手势(输入框从打开到确认)内逐次计算记录输入版本
+   * 集合,目标文档版本漂移→拒绝;prepareRename 是手势起点,在此重置记录。
    */
+  private lastRenameGestureKey: string | null = null;
+  private lastRenameInputs: RenameInputVersionRef[] = [];
+  private lastTargetVersion: number | undefined;
+
   prepareRename(
     document: vscode.TextDocument,
     position: vscode.Position
   ): vscode.ProviderResult<{ range: vscode.Range; placeholder: string }> {
+    // 新手势起点:清掉上一手势的输入版本记录
+    this.lastRenameGestureKey = null;
+    this.lastRenameInputs = [];
+    this.lastTargetVersion = undefined;
     const symbol = resolveRenameSymbolAtOffset(document.getText(), document.offsetAt(position));
     if (!symbol) {
       return null;
@@ -5367,6 +5379,23 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
     if (fileEdits.length === 0) {
       return null;
     }
+    // IDE-NAV-010:同手势内输入漂移——目标文档版本变→拒绝(符号可能已不在
+    // 原位,套旧范围会错改);跨文件缓冲区漂移→已按当前文本重算,照常返回
+    const gestureKey = `${document.fileName}:${symbol.name}:${symbol.wordStart}`;
+    const inputs = this.collectRenameInputs(document, fileEdits);
+    if (this.lastRenameGestureKey === gestureKey && renameInputsDrifted(this.lastRenameInputs, inputs)) {
+      const targetDrifted = this.lastRenameInputs.length > 0
+        && inputs[0].version !== this.lastRenameInputs[0].version;
+      if (targetDrifted) {
+        throw new Error(
+          'cannot apply rename: target document was modified; rename again to recompute'
+        );
+      }
+      // 跨文件漂移:重算已完成,更新输入记录
+    }
+    this.lastRenameGestureKey = gestureKey;
+    this.lastRenameInputs = inputs;
+    this.lastTargetVersion = document.version;
     const workspaceEdit = new vscode.WorkspaceEdit();
     for (const fileEdit of fileEdits) {
       const uri = path.resolve(fileEdit.filePath) === path.resolve(document.fileName)
@@ -5386,6 +5415,35 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
       }));
     }
     return workspaceEdit;
+  }
+
+  /**
+   * IDE-NAV-010:本次计算消费的输入版本引用——目标文档(首条)为文档版本,
+   * 各跨文件编辑文件为快照 {source,version}(document=编辑序号,disk=mtimeMs)。
+   */
+  private collectRenameInputs(
+    document: vscode.TextDocument,
+    fileEdits: DefRenameFileEdits[]
+  ): RenameInputVersionRef[] {
+    const refs: RenameInputVersionRef[] = [
+      {
+        filePath: path.resolve(document.fileName),
+        source: 'document',
+        version: typeof document.version === 'number' ? document.version : undefined
+      }
+    ];
+    for (const fileEdit of fileEdits) {
+      if (path.resolve(fileEdit.filePath) === path.resolve(document.fileName)) {
+        continue;
+      }
+      const snapshot = readSharedFileSnapshot(fileEdit.filePath);
+      refs.push({
+        filePath: path.resolve(fileEdit.filePath),
+        source: snapshot?.source ?? 'disk',
+        version: snapshot?.version
+      });
+    }
+    return refs;
   }
 }
 
