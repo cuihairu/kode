@@ -1420,6 +1420,54 @@ describe('激活期项目导入命令装配(IDE-PRJ-003)', () => {
   }, 8000);
 });
 
+describe('激活期最小项目创建命令装配(IDE-PRJ-008)', () => {
+  it('project.create 命令:选目标根 + 确认生成后落盘并建档', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalOpenDialog = windowish.showOpenDialog;
+    const originalQuickPick = windowish.showQuickPick;
+    const originalInfoCount = messages.info.length;
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-create-'));
+    const targetRoot = path.join(base, 'fresh');
+    const persisted: Array<[string, unknown]> = [];
+    const context: ExtensionContext = {
+      ...makeContext(),
+      workspaceState: {
+        get: <T,>(_key: string, defaultValue?: T): T | undefined => defaultValue,
+        update: (key: string, value: unknown): Promise<void> => {
+          persisted.push([key, value]);
+          return Promise.resolve();
+        }
+      }
+    };
+    workspace.workspaceFolders = [{ uri: Uri.file(base), name: 'ws', index: 0 }];
+    try {
+      activate(context);
+
+      windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
+      windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+        const resolved = (await items) as Array<{ label: string }>;
+        return resolved.find(item => item.label === '确认生成');
+      };
+
+      await commands.executeCommand('kbengine.project.create');
+
+      // 模板落盘 + 命令接线建档(只看 profile 键,激活期别的键不入账)
+      expect(fs.existsSync(path.join(targetRoot, 'scripts', 'entities.xml'))).toBe(true);
+      const profileWrites = persisted.filter(([key]) => key === 'kbengine.projectProfiles.v1');
+      expect(profileWrites).toHaveLength(1);
+      const profiles = profileWrites[0][1] as Array<Record<string, string>>;
+      expect(profiles[0]).toMatchObject({ displayName: 'fresh', assetsRoot: targetRoot });
+      expect(messages.info.some(entry => entry.includes('已创建最小项目 profile'))).toBe(true);
+    } finally {
+      windowish.showOpenDialog = originalOpenDialog;
+      windowish.showQuickPick = originalQuickPick;
+      messages.info.length = originalInfoCount;
+      disposeAll(context);
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }, 8000);
+});
+
 describe('激活期 debug.json 缺失自动生成(批143)', () => {
   it('工作区没有配置文件时生成带注释骨架,生效工作目录与来源落输出通道', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-debugcfg-'));

@@ -471,7 +471,18 @@ The flow graph panel supports:
 - Preview: a QuickPick lists all four identification results with exact paths; a face that is not found is shown honestly as 「未识别」 (not identified)
 - Behavior:
   - Picking 「导入」 (import) creates the profile (display name = assets root folder name) and reports its ID plus the Python interpreter state (setting if it exists → PATH → explicitly missing); Esc or dismissing any step writes nothing
-  - A folder where all of entities/defs/scripts are missing is rejected with a warning before any preview (no junk profiles)
+  - A folder where all of entities/defs/script are missing is rejected with a warning before any preview (no junk profiles)
+
+### `kbengine.project.create`
+
+- Title: `Create Minimal KBEngine Project`
+- Purpose: generate an importable empty KBEngine project from the minimal template manifest and register it as a project profile in one command
+- Template manifest: a fixed list of directories and files (scripts layout aligned with the shared discovery conventions — scripts/entities.xml, scripts/entity_defs/types.xml, plus the scripts/base and scripts/cell server role dirs); the engine repo is not part of the template, so `engineRoot` is recorded honestly as empty
+- Generator protections, all inherited:
+  - Refuse on conflict: before any preview, every target path is probed; any existing target (file or directory) is reported with its exact path and the creation is aborted without writing anything
+  - Preview: the shared generator QuickPick lists one row per manifest entry (新增目录/新增文件 with the exact absolute path); only picking 「确认生成」 proceeds, Esc writes nothing
+  - Atomic writes and rollback: files land via atomic write (temp file + rename); if any step fails, everything created this run is rolled back (files first, then directories in reverse order, plus the implicitly created target root when it did not exist before) and the failure is reported
+- Behavior: after a successful creation the profile is built through the same identification chain and identity store as the import command (display name = target folder name), and the message reports the profile ID plus the Python interpreter state (setting if it exists → PATH → explicitly missing)
 
 ### `kbengine.extension.identity`
 

@@ -70,6 +70,7 @@
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.formWizard",
     "onCommand:kbengine.project.import",
+    "onCommand:kbengine.project.create",
     "onCommand:kbengine.python.serviceStatus",
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
@@ -422,6 +423,10 @@
       {
         "command": "kbengine.project.import",
         "title": "Import Existing KBEngine Project"
+      },
+      {
+        "command": "kbengine.project.create",
+        "title": "Create Minimal KBEngine Project"
       },
       {
         "command": "kbengine.python.serviceStatus",

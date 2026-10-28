@@ -4,6 +4,7 @@ import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { importExistingProject } from './projectImport';
+import { createMinimalProject } from './projectCreate';
 import {
   classifyPythonService,
   PYLANCE_EXTENSION_ID,
@@ -2434,6 +2435,14 @@ export function activate(context: vscode.ExtensionContext) {
     () => importExistingProject(context)
   );
   context.subscriptions.push(importProjectCommand);
+
+  // 最小项目创建(IDE-PRJ-008):模板清单落盘建空项目,冲突拒绝/预览确认/
+  // 失败回收全程走生成器保护,成功后与导入同链建档
+  const createProjectCommand = vscode.commands.registerCommand(
+    'kbengine.project.create',
+    () => createMinimalProject(context)
+  );
+  context.subscriptions.push(createProjectCommand);
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
   // 语言清单在命令内选(已代决首批 TS + C#)

@@ -374,6 +374,17 @@
   - 选「导入」建立 profile（显示名取资产根目录名）并报出其 ID 与 Python 解释器状态（设置存在才采用 → PATH → 如实缺失）；任一步取消（Esc/关闭对话框）零写入
   - entities/defs/scripts 全空的目录在预览前就被拒绝并给出警告（不产生垃圾 profile）
 
+### `kbengine.project.create`
+
+- 标题：`Create Minimal KBEngine Project`
+- 用途：按最小模板清单一次生成可被导入的 KBEngine 空项目，并直接建立项目 profile
+- 模板清单：固定目录与文件清单（scripts 布局与共享发现约定对齐——scripts/entities.xml、scripts/entity_defs/types.xml，另有 scripts/base、scripts/cell 两个服务端角色目录）；引擎仓不属模板，engineRoot 如实记空
+- 生成器保护，全部继承：
+  - 冲突拒绝：任何预览之前逐条探测目标路径；任一目标已存在（文件或目录）即按准确路径上报并整体中止，一个文件都不写
+  - 预览：与生成器共用的 QuickPick 确认面逐条列出清单项（新增目录/新增文件 + 准确绝对路径）；只有选「确认生成」才落盘，Esc 零写入
+  - 原子写与回收：文件走原子写（临时文件 + rename）；任一步失败即回收本次新增的全部内容（先逆序删文件，再逆序删目录，目标根本身是本次隐式建出且此前不存在时一并回收）并报出失败
+- 行为：创建成功后走与导入命令同一识别链和身份存储建立 profile（显示名取目标目录名），消息报出 profile ID 与 Python 解释器状态（设置存在才采用 → PATH → 如实缺失）
+
 ### `kbengine.quickActions.show`
 
 - 标题：`Run Quick Actions`
