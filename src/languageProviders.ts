@@ -5420,15 +5420,24 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
         );
       }));
     }
-    // IDE-NAV-011:属性重命名改写已解析的 python self 访问——归属由 owner
-    // 注册面决定(NAV-002 同款),无关实体同名(歧义)不在结果里,不猜测;
-    // 方法重命名不走此路径(方法→python 是 NAV-012)。访问行列已按快照
-    // 当前文本(打开文档缓冲区优先)计算,每次调用重查,不套旧范围。
-    if (symbol.kind === 'property' && this.entityMappingManager) {
-      const accesses = await this.entityMappingManager.getIncomingPythonPropertyAccesses(
-        document.fileName,
-        symbol.name
-      );
+    // IDE-NAV-011/012:重命名改写已解析的 python 引用——归属由 owner 注册面
+    // 决定,无关实体同名(歧义)不在结果里,不猜测;行列已按快照当前文本
+    // (打开文档缓冲区优先)计算,每次调用重查,不套旧范围。属性面=NAV-002
+    // self 访问;方法面=NAV-003 receiver 调用,调用端 receiver 段与声明段
+    // 一致才收(PYTHON_RECEIVER_BY_SECTION),跨段同名不串改。
+    if (this.entityMappingManager) {
+      const accesses = symbol.kind === 'property'
+        ? await this.entityMappingManager.getIncomingPythonPropertyAccesses(
+          document.fileName,
+          symbol.name
+        )
+        : symbol.section && PYTHON_RECEIVER_BY_SECTION[symbol.section]
+          ? await this.entityMappingManager.getIncomingPythonReceiverCalls(
+            document.fileName,
+            symbol.name,
+            PYTHON_RECEIVER_BY_SECTION[symbol.section]
+          )
+          : [];
       const pythonEditsByFile = new Map<string, vscode.TextEdit[]>();
       for (const access of accesses) {
         const list = pythonEditsByFile.get(access.filePath) ?? [];
