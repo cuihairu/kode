@@ -103,6 +103,7 @@
     "onCommand:kbengine.debug.focusTarget",
     "onCommand:kbengine.build.previewTask",
     "onCommand:kbengine.tests.list",
+    "onCommand:kbengine.messagetable.preview",
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -605,6 +606,10 @@
       {
         "command": "kbengine.tests.list",
         "title": "Tests: List Project Python Tests"
+      },
+      {
+        "command": "kbengine.messagetable.preview",
+        "title": "MessageTable: Preview Entity Message Table"
       }
     ],
     "menus": {

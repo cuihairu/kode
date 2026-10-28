@@ -760,3 +760,15 @@ If `Attach to Component` fails, check these first:
   - nothing found: one honest message names the scripts root and the naming convention — no empty list
   - no active profile: an honest message points at picking one first
 - Boundary: this command discovers and lists; running individual tests in the Testing panel is TSK-005
+
+### `kbengine.messagetable.preview`
+
+- Title: `MessageTable: Preview Entity Message Table`
+- Purpose: preview a single entity's message table (IDE-SDK-001) — pick an entity and view the existing computed result (methods by section, utypes, alias config, issue list) as markdown
+- Entries: command palette
+- Behavior:
+  - waits for the entity index's initial scan, then offers the indexed entity names in a sorted QuickPick
+  - picking an entity builds the table from the same scan-roots/def-loader formula the index uses and shows the rendered markdown in a preview document
+  - missing declaration (the entity's def cannot be loaded — not registered or the `.def` file is absent): one honest warning naming the entity and the cause — no empty preview, no guessing
+  - no entities indexed at all: an honest warning says so; Esc quietly exits
+- Boundary: preview only; JSON export is SDK-002

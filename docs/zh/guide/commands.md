@@ -647,3 +647,15 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 一无所获：一条如实提示点名 scripts 根与命名约定——不弹空列表
   - 无活动 profile：如实提示先去选一套
 - 边界：本命令只发现与列出；测试面板跑单个测试是 TSK-005
+
+### `kbengine.messagetable.preview`
+
+- 标题：`MessageTable: Preview Entity Message Table`
+- 作用：预览单个实体的消息表（IDE-SDK-001）——选实体查看现有计算结果（各方法段、utype、alias 配置、问题清单）的 markdown
+- 入口：命令面板
+- 行为：
+  - 等实体索引首扫完成后，按字典序列出已索引实体名供 QuickPick 选择
+  - 选中后用与索引同一套 scan-roots/def-loader 公式构建消息表，渲染 markdown 在预览文档展示
+  - 缺声明（该实体的 def 取不到——未登记或 `.def` 文件缺失）：一条如实警告点名实体与原因——不展示空预览、不猜
+  - 一个实体都没索引到：如实提示；Esc 静默退出
+- 边界：只做预览；JSON 导出是 SDK-002
