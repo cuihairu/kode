@@ -149,6 +149,54 @@ export enum ConfigurationTarget {
   WorkspaceFolder = 3
 }
 
+// ---- IDE-TSK-002 构建任务面(vscode 真实构造签名/真值对齐) ----
+
+export enum TaskScope {
+  Global = 1,
+  Workspace = 2
+}
+
+// 构造参数即断言面(provideTasks 测试读 process/args/options)。
+export class ProcessExecution {
+  constructor(
+    public process: string,
+    public args: string[] = [],
+    public options?: { cwd?: string; env?: Record<string, string> }
+  ) {}
+}
+
+export class Task {
+  constructor(
+    public definition: { type: string; [key: string]: unknown },
+    public scope: TaskScope,
+    public name: string,
+    public source: string,
+    public execution?: unknown,
+    public problemMatchers?: string[]
+  ) {}
+}
+
+// tasks 命名空间面:registerTaskProvider 登记/回收(extension 激活链用;
+// 断言读 taskProviders 尾条)。
+export const tasks = {
+  taskProviders: [] as Array<{ type: string; provider: unknown }>,
+  registerTaskProvider(
+    type: string,
+    provider: unknown
+  ): { dispose(): void } {
+    const entry = { type, provider };
+    this.taskProviders.push(entry);
+    return {
+      dispose: (): void => {
+        const index = this.taskProviders.indexOf(entry);
+        if (index >= 0) {
+          this.taskProviders.splice(index, 1);
+        }
+      }
+    };
+  }
+};
+
 // debugConfig 的 attachToComponent 经 vscode.debug.startDebugging 启动
 // 调试会话;对象成员可变,测试按用例 monkey-patch startDebugging。
 // 会话生命周期事件(DBG-005 注册表接线):默认零订阅者,测试可回放会话。

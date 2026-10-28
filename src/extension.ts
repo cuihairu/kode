@@ -66,7 +66,9 @@ import {
   type DebugInjectionEntry
 } from './debugStatusBoard';
 import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
-import { buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
+import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
+import { KbengineBuildTaskProvider } from './buildTaskProvider';
+import { ProjectProfileStore } from './projectProfiles';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1818,6 +1820,16 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(previewBuildTaskCommand);
+
+  // IDE-TSK-002 构建 TaskProvider:任务列表(Run Task → kode 源)逐
+  // profile 出构建项,resolveTask 反解 tasks.json 手写条目;执行走
+  // ProcessExecution——取消/终止由 VS Code 任务系统原生杀进程树
+  const buildTaskProvider = new KbengineBuildTaskProvider({
+    getProfiles: () => new ProjectProfileStore(context.workspaceState).list()
+  });
+  context.subscriptions.push(
+    vscode.tasks.registerTaskProvider(BUILD_TASK_TYPE, buildTaskProvider)
+  );
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);
