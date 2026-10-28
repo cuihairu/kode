@@ -70,6 +70,12 @@ import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } fro
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
 import { discoverProjectPythonTests, showPythonTestList } from './pythonTestDiscovery';
 import { runPythonTests, spawnTestProcess } from './pythonTestRunner';
+import {
+  captureTaskRunContext,
+  prepareTestRun,
+  taskContextScriptsRoot,
+  TEST_TASK_CONTEXT_STORAGE_KEY
+} from './taskContext';
 import { ProjectProfileStore } from './projectProfiles';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
@@ -1882,6 +1888,8 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     const result = discoverProjectPythonTests(profile);
+    // TSK-006:发现面同时重新捕获任务上下文(换根唯一显式入口)
+    void context.workspaceState.update(TEST_TASK_CONTEXT_STORAGE_KEY, JSON.stringify(captureTaskRunContext(profile)));
     for (const file of result.files) {
       const absolutePath = path.join(result.scriptsRoot, file.relativePath);
       const fileItem = testController.createTestItem(
@@ -1914,13 +1922,25 @@ export function activate(context: vscode.ExtensionContext) {
     '运行',
     vscode.TestRunProfileKind.Run,
     async (request, token) => {
-      const profile = resolveActiveProfile(context.workspaceState);
-      if (!profile) {
-        void vscode.window.showInformationMessage(
-          '尚未选择活动 profile:先在 Profiles 里选一套 assets/engine 组合,再运行测试'
-        );
+      // TSK-006:重跑钉住 workspaceState 里保存的任务上下文(首跑捕获,
+      // kbengine.tests.list 重新捕获);活动 profile 漂移只提示不换根
+      const pinnedJson = context.workspaceState.get<string>(TEST_TASK_CONTEXT_STORAGE_KEY);
+      const prepared = prepareTestRun(resolveActiveProfile(context.workspaceState), pinnedJson, {
+        exists: candidate => fs.existsSync(candidate)
+      });
+      if (prepared.outcome === 'refuse') {
+        void vscode.window.showWarningMessage(prepared.message);
         return;
       }
+      const runContext = prepared.context;
+      if (pinnedJson === undefined) {
+        // 首跑:把捕获的上下文存下,之后的重跑都钉住它
+        void context.workspaceState.update(TEST_TASK_CONTEXT_STORAGE_KEY, JSON.stringify(runContext));
+      }
+      if (prepared.notes.length > 0) {
+        void vscode.window.showInformationMessage(prepared.notes.join(';'));
+      }
+      const interpreterPath = runContext.interpreterPath ?? 'python3';
       // 请求条目:include 空=全部;文件条目展开成逐用例(单测试执行语义)
       const targets: Array<{ id: string; file: string; caseName?: string }> = [];
       const pushTarget = (item: vscode.TestItem): void => {
@@ -1945,8 +1965,8 @@ export function activate(context: vscode.ExtensionContext) {
       });
       const entries = await runPythonTests(
         {
-          interpreterPath: profile.interpreterPath ?? 'python3',
-          cwd: path.join(profile.assetsRoot, 'scripts'),
+          interpreterPath,
+          cwd: taskContextScriptsRoot(runContext),
           items: targets
         },
         { exec: spawnTestProcess, isCancelled: () => cancelled }
