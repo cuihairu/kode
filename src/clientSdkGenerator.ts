@@ -50,6 +50,12 @@ export const CLIENT_SDK_OUTPUT_DIR_KEY = 'clientSdk.outputDir';
 export const CLIENT_SDK_DEFAULT_OUTPUT_DIR = 'scripts/client_entities';
 /** C# 输出命名空间，Unity 客户端工程可自行改 */
 export const CLIENT_SDK_CSHARP_NAMESPACE = 'KbEngineClient';
+
+/** SDK 内置类型映射覆盖的名字集(TS/C# 键并集,IDE-SDK-005 对拍面) */
+export function listClientSdkBuiltinTypeNames(): string[] {
+  return [...new Set([...Object.keys(TS_BUILTIN_TYPES), ...Object.keys(CS_BUILTIN_TYPES)])]
+    .sort((left, right) => left.localeCompare(right));
+}
 /** FIXED_DICT 伴随文件基名（无扩展名） */
 export const CLIENT_SDK_FIXED_DICTS_BASENAME = 'ClientSdkFixedDicts';
 
