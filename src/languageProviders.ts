@@ -30,6 +30,7 @@ import {
 import {
   EntityMappingManager,
   EntityMethodSection,
+  type DefinitionSymbolIdentity,
   type EntityMappingIndex
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
@@ -3480,6 +3481,54 @@ function findDetailLevelDefinitionInDef(
   return null;
 }
 
+/**
+ * IDE-NAV-015:def 方法 → python 实现目标的统一解析链,F12(findEntity
+ * DefinitionInDef)与调用层次(prepareCallHierarchy)同链:identity 绑定/
+ * 属主命中(含全项目唯一名回退)→ def 相对约定链。两臂皆空返回 null——
+ * F12 的提示+注册回落是展示兜底(落 def/entities.xml,不是 python 目标),
+ * 不进本链;调用层次拿不到 python 方法如实 null。
+ */
+async function resolveDefMethodPythonTarget(
+  document: vscode.TextDocument,
+  methodName: string,
+  section: EntityMethodSection,
+  manager: EntityMappingManager,
+  identity: DefinitionSymbolIdentity | null
+): Promise<{ filePath: string; line: number; character: number } | null> {
+  if (identity) {
+    const bound = await manager.resolveMethodImplementationByIdentity(identity);
+    if (bound) {
+      logNavigation(`方法落点(索引) ${bound.filePath}:${bound.line - 1}`);
+      return bound;
+    }
+  }
+
+  // 约定链:def 相对候选脚本直读(不依赖索引,identity 缺失/未绑定同臂)
+  const byConvention = findMethodScriptLocationInDef(document, methodName, section);
+  if (byConvention) {
+    logNavigation(`方法落点(约定链) ${byConvention.uri.fsPath}:${byConvention.range.start.line}`);
+    return {
+      filePath: byConvention.uri.fsPath,
+      line: byConvention.range.start.line + 1,
+      character: byConvention.range.start.character
+    };
+  }
+
+  // 索引外全局唯一名回退(与 F12 同臂:域目录层在 resolveMethodImplementation
+  // Globally 内部;这里只兜 identity 缺失/未绑定的残余)
+  if (typeof manager.resolveMethodImplementationGlobally !== 'function') {
+    return null;
+  }
+  const defSection =
+    section === 'BaseMethods' || section === 'CellMethods' ? section : undefined;
+  const glob = await manager.resolveMethodImplementationGlobally(methodName, defSection);
+  if (glob) {
+    logNavigation(`方法落点(全项目回退) ${glob.filePath}:${glob.line - 1}`);
+    return glob;
+  }
+  return null;
+}
+
 function findMethodImplementationLocationInDef(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -3515,18 +3564,6 @@ function findMethodImplementationLocationInDef(
   // 路径每一臂都留痕,约定链也落空时给「期望位置」提示并落注册声明/def 首行,
   // 不再静默落 def 声明行(光标常已在该行,用户视角等同没跳)。
   const entityName = path.basename(document.fileName, '.def');
-  const conventionLocation = (): vscode.Location | null => {
-    const byConvention = findMethodScriptLocationInDef(
-      document,
-      methodName,
-      section as EntityMethodSection
-    );
-    if (byConvention) {
-      logNavigation(`方法落点(约定链) ${byConvention.uri.fsPath}:${byConvention.range.start.line}`);
-    }
-    return byConvention;
-  };
-
   const hintRegistryFallback = (): vscode.Location => {
     const methodRole = METHOD_SECTION_SCRIPT_ROLES[section];
     // 不可达(根修令④ 定性):section 已过 METHOD_SECTIONS 过滤,与
@@ -3544,74 +3581,31 @@ function findMethodImplementationLocationInDef(
     return findRegistryFallbackLocation(document, entityName);
   };
 
-  // 用户令(2026-10-20):identity 未命中/实现未绑定的两个早落分支按
-  // **同名优先 → 全项目唯一命中 → 提示+注册回落** 三段解析(实现常在非同名 py 里)。
-  const withGlobalFallback = (): vscode.ProviderResult<vscode.Location> => {
-    const byConvention = conventionLocation();
-    if (byConvention) {
-      return byConvention;
-    }
-    // 特性检测:桩管理器/旧索引可能没有该方法,缺位时维持原提示+注册回落。
-    if (typeof entityMappingManager.resolveMethodImplementationGlobally !== 'function') {
-      return hintRegistryFallback();
-    }
-    // 2026-10-21:KBEngineSectionName 面比 EntityMethodSection 宽,先收敛再进域层。
-    const defSection =
-      section === 'BaseMethods' || section === 'CellMethods' ? section : undefined;
-    return entityMappingManager.resolveMethodImplementationGlobally(methodName, defSection).then(glob => {
-      if (glob) {
-        logNavigation(`方法落点(全项目回退) ${glob.filePath}:${glob.line - 1}`);
-        return new vscode.Location(
-          vscode.Uri.file(glob.filePath),
-          new vscode.Position(Math.max(glob.line - 1, 0), glob.character)
-        );
-      }
-      return hintRegistryFallback();
-    });
-  };
-
+  // IDE-NAV-015:统一链(identity 绑定/属主 → 约定链 → 全项目唯一,与调用
+  // 层次 prepare 同链)收敛在 resolveDefMethodPythonTarget;空臂回落展示
+  // 兜底(提示+注册声明/def 首行——根修令①/用户令 2026-10-20 口径不变)。
   return entityMappingManager.resolveDefinitionSymbolAtPosition(
     document.fileName,
     line,
     methodName,
     section as EntityMethodSection
-  ).then(identity => {
-    if (!identity) {
-      // 根修令①:索引未收录该符号(非标准布局的工程未纳入索引)时先按文件
-      // 约定在 def 相对候选链里找实现,找不到才落注册声明/def 首行。
-      logNavigation(`方法索引未收录 ${methodName}(${section}),按全项目回退/约定链回落`);
-      return withGlobalFallback();
+  ).then(identity =>
+    resolveDefMethodPythonTarget(
+      document,
+      methodName,
+      section as EntityMethodSection,
+      entityMappingManager,
+      identity
+    )
+  ).then(target => {
+    if (target) {
+      return new vscode.Location(
+        vscode.Uri.file(target.filePath),
+        new vscode.Position(Math.max(target.line - 1, 0), target.character)
+      );
     }
-
-    return entityMappingManager.resolveMethodImplementationByIdentity(identity).then(reference => {
-      if (reference) {
-        logNavigation(`方法落点(索引) ${reference.filePath}:${reference.line - 1}`);
-        return new vscode.Location(
-          vscode.Uri.file(reference.filePath),
-          new vscode.Position(reference.line - 1, reference.character)
-        );
-      }
-
-      // 根修令①:索引收录了符号但脚本未被索引(嵌套/非标准布局)→
-      // 同上,def 相对候选链优先,注册声明/def 首行兜底。
-      logNavigation(`方法索引未绑定实现 ${methodName},按全项目回退/约定链回落`);
-      return withGlobalFallback();
-    });
-  }).then(reference => {
-    // 不可达(批64 定性,合并扩展批62 区间):内层两臂(identity 缺失 / 实现
-    // 未解析)都恒返回 Location,外层 then 收到的 reference 恒真——
-    // `if (reference)` 的假臂与兜底 return 均无触发路径。被覆盖的
-    // `return reference;` 亦随区间离开语句/行分母(TESTING.md 分母口径据实登记)。
-    /* istanbul ignore start */
-    if (reference) {
-      return reference;
-    }
-
-    return new vscode.Location(
-      document.uri,
-      new vscode.Position(Math.max(line - 1, 0), 0)
-    );
-    /* istanbul ignore stop */
+    logNavigation(`方法未落 python 实现 ${methodName}(${section}),回落注册声明/def 首行`);
+    return hintRegistryFallback();
   });
 }
 
@@ -5067,20 +5061,26 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
         symbolInfo.symbolNode.name,
         symbolInfo.section as EntityMethodSection
       );
-      if (!identity) {
-        return null;
-      }
 
-      const implementation = await this.entityMappingManager.resolveMethodImplementationByIdentity(identity);
-      if (!implementation) {
+      // IDE-NAV-015:与 F12 同链(resolveDefMethodPythonTarget:identity
+      // 绑定/属主+全局唯一 → 约定链),相同 RPC/mixin 方法两入口同目标;
+      // 空臂如实 null(F12 的提示+注册回落不是 python 目标,层次不借)。
+      const target = await resolveDefMethodPythonTarget(
+        document,
+        symbolInfo.symbolNode.name,
+        symbolInfo.section as EntityMethodSection,
+        this.entityMappingManager,
+        identity
+      );
+      if (!target) {
         return null;
       }
 
       return createPythonCallHierarchyItem({
-        filePath: implementation.filePath,
+        filePath: target.filePath,
         methodName: symbolInfo.symbolNode.name,
-        line: implementation.line,
-        character: implementation.character
+        line: target.line,
+        character: target.character
       });
     }
 

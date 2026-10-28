@@ -131,7 +131,7 @@ flowchart TD
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
   M2["extension.ts:630 打点 startLanguageServiceOperation('definition')<br/>(.def 侧另有 :689 一路)"]
-  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:3846"]
+  AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:3840"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :3664 / Impl :3682"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
   KBE{"kbe/KBEngine 模块符号?"}
@@ -141,7 +141,7 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1175<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders.ts:4246)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders.ts:4240)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
@@ -167,7 +167,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4352,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4346,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:624,打点 :576)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
@@ -223,8 +223,8 @@ flowchart TD
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
   CALC["computeAndPublish<br/>def 侧打点 extension.ts:335 / entities 侧 :348"]
-  VD["validateDocument(languageProviders.ts:1420)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders.ts:1435,批92)"]
-  VEX["validateEntitiesXmlDocument(languageProviders.ts:1453)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders.ts:1466,A6-3)"]
+  VD["validateDocument(languageProviders.ts:1421)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders.ts:1436,批92)"]
+  VEX["validateEntitiesXmlDocument(languageProviders.ts:1454)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders.ts:1467,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1295,fire-and-forget)"]
   DS["文档解析(document-parse 打点)<br/>documentStore 同版本只解析一次(PR2)"]
   PUB["diagnostics.set(uri, items) 发布"]
