@@ -5430,6 +5430,140 @@ function diagnosticRangeIntersects(left: vscode.Range, right: vscode.Range): boo
     && positionValue(right.start) <= positionValue(left.end);
 }
 
+/**
+ * IDE-NAV-014:python 类块插入点。类头(`class <名>` 顶格)之后到首个
+ * 缩进 <4 的非空行为类体;插入点=类体末非空行下一行(空体=类头下一行,
+ * 不加空行前缀,非空体加一空行分隔)。类块找不到返回 null——不猜。
+ */
+function findPythonClassInsertionPoint(
+  content: string,
+  className: string
+): { line: number; blankPrefix: boolean } | null {
+  const lines = content.split('\n');
+  const classRegex = new RegExp(`^class\\s+${className}(\\s|\\(|:|$)`);
+  let classLine = -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (classRegex.test(lines[index])) {
+      classLine = index;
+      break;
+    }
+  }
+  if (classLine < 0) {
+    return null;
+  }
+
+  let lastBodyLine = classLine;
+  for (let index = classLine + 1; index < lines.length; index += 1) {
+    const text = lines[index];
+    if (!text.trim()) {
+      continue;
+    }
+    const indent = text.match(/^\s*/)?.[0].length ?? 0;
+    if (indent < 4) {
+      break;
+    }
+    lastBodyLine = index;
+  }
+  return { line: lastBodyLine + 1, blankPrefix: lastBodyLine > classLine };
+}
+
+/** 空方法骨架:def 名(self, arg0..argN-1) + pass(<Arg> 声明数=形参个数) */
+function buildPythonMethodSkeleton(methodName: string, argCount: number): string {
+  const args = Array.from({ length: argCount }, (_, index) => `arg${index}`);
+  return `    def ${methodName}(self${args.length ? `, ${args.join(', ')}` : ''}):\n        pass\n`;
+}
+
+export class KBEngineMethodImplementationCodeActionProvider implements vscode.CodeActionProvider {
+  /**
+   * IDE-NAV-014:缺实现 def 方法的空方法生成。验收口径:已有同名实现
+   * (Go to Implementations 同一查询面)不重复生成;动作展示目标文件与
+   * 插入点;插入点按目标文件当前文本(打开缓冲区优先)计算;编辑只是
+   * 目标脚本内的插入,不建文件、不碰 def;属性段/非 def/取消位空。
+   */
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    _context: vscode.CodeActionContext,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CodeAction[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    if (
+      document.languageId !== 'kbengine-def' &&
+      !document.fileName.toLowerCase().endsWith('.def')
+    ) {
+      return [];
+    }
+    const wordRange = document.getWordRangeAtPosition(range.start, /\w+/);
+    if (!wordRange) {
+      return [];
+    }
+    const symbolInfo = findDefSymbolInfo(document, range.start, document.getText(wordRange));
+    if (!symbolInfo || !METHOD_SECTIONS.has(symbolInfo.section)) {
+      return [];
+    }
+    const ast = parseDefAst(document);
+    if (!ast) {
+      return [];
+    }
+    const identity = await this.entityMappingManager.resolveDefinitionSymbolAtPosition(
+      document.fileName,
+      getLineNumberAt(ast, symbolInfo.symbolNode.tagStart),
+      symbolInfo.symbolNode.name,
+      symbolInfo.section as EntityMethodSection
+    );
+    if (!identity || token?.isCancellationRequested) {
+      return [];
+    }
+
+    // 已有同名实现:不重复生成(与 Go to Implementations 同一实现查询面)
+    const implementations =
+      await this.entityMappingManager.listMethodImplementationsByIdentity(identity, token);
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    if (implementations.length > 0) {
+      return [];
+    }
+
+    const ownerFiles =
+      await this.entityMappingManager.listOwnerScriptFilesForIdentity(identity, token);
+    if (token?.isCancellationRequested || ownerFiles.length === 0) {
+      return [];
+    }
+    const targetFile = ownerFiles[0];
+
+    const snapshot = readSharedFileSnapshot(targetFile);
+    if (!snapshot) {
+      return [];
+    }
+    const insertion = findPythonClassInsertionPoint(snapshot.content, identity.ownerName);
+    if (!insertion) {
+      return [];
+    }
+
+    const argCount = getDirectChildElements(symbolInfo.symbolNode)
+      .filter(node => node.name === 'Arg').length;
+    const skeleton = buildPythonMethodSkeleton(symbolInfo.symbolNode.name, argCount);
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(
+      vscode.Uri.file(targetFile),
+      new vscode.Position(insertion.line, 0),
+      insertion.blankPrefix ? `\n${skeleton}` : skeleton
+    );
+    const action = new vscode.CodeAction(
+      `生成空实现 ${symbolInfo.symbolNode.name} → ${targetFile}:${insertion.line + 1}`,
+      vscode.CodeActionKind.Refactor
+    );
+    action.edit = edit;
+    return [action];
+  }
+}
+
 export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer

@@ -1560,6 +1560,31 @@ export class EntityMappingManager {
   }
 
   /**
+   * IDE-NAV-014:身份对应段的属主脚本清单(盘上已存在的,按候选生成序)。
+   * 空方法生成 Code Action 用首个条目作目标文件;实现判存用
+   * listMethodImplementationsByIdentity(同一 owner 注册面),两者不混。
+   */
+  async listOwnerScriptFilesForIdentity(
+    identity: DefinitionSymbolIdentity,
+    token?: vscode.CancellationToken
+  ): Promise<string[]> {
+    this.ensureStartup();
+    const index = await this.ensureIndexForOwner(identity);
+    if (!index || token?.isCancellationRequested) {
+      return [];
+    }
+
+    const section = identity.section;
+    const candidates = index.pythonOwnerFiles
+      .filter(item =>
+        item.ownerName === identity.ownerName
+        && item.ownerKind === identity.ownerKind
+        && (!section || item.section === section))
+      .map(item => item.filePath);
+    return uniqueFilePaths(candidates);
+  }
+
+  /**
    * 全项目 python 回退(用户令 2026-10-20):方法名在全项目 py 中唯一命中才返回,
    * 多处/零处一律 null(静默,不误跳)。给 def 侧 identity 未命中/未绑定实现的
    * 两个早落分支复用——那两支不经过 resolveMethodImplementationByIdentity。

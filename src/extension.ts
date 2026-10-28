@@ -136,6 +136,7 @@ import {
   KBEngineRenameProvider,
   KBEngineSignatureHelpProvider,
   KBEngineTypeCodeActionProvider,
+  KBEngineMethodImplementationCodeActionProvider,
   KBENGINE_SOURCE_REVEAL_COMMAND,
   prewarmKbengineIndex,
   revealSourceCommand,
@@ -992,6 +993,13 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineTypeCodeActionProvider()
   );
   context.subscriptions.push(typeCodeActionProvider);
+
+  // IDE-NAV-014:缺实现 def 方法生成空方法(目标属主脚本内插入,已有实现不重复)
+  const methodImplementationCodeActionProvider = vscode.languages.registerCodeActionsProvider(
+    defDocumentSelector,
+    new KBEngineMethodImplementationCodeActionProvider(entityMappingManager)
+  );
+  context.subscriptions.push(methodImplementationCodeActionProvider);
 
   // 监听文档变化，实时检查
   if (vscode.workspace.workspaceFolders) {
