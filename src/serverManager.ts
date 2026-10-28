@@ -202,8 +202,8 @@ export interface GroupTargetRequest {
   readinessProbe?: (() => Promise<boolean>) | null;
 }
 
-/** 组启动单目标结局 */
-export type TargetOutcomeKind = 'started' | 'dependency-failed' | 'dependency-timeout' | 'spawn-failed' | 'not-found';
+/** 组启动单目标结局(already-running=目标已在册,不重启如实上报) */
+export type TargetOutcomeKind = 'started' | 'already-running' | 'dependency-failed' | 'dependency-timeout' | 'spawn-failed' | 'not-found';
 
 export interface TargetOutcome {
   key: string;
@@ -786,6 +786,12 @@ export class KBEngineServerManager {
     const outcomes: TargetOutcome[] = [];
     for (const key of order.order) {
       const target = byKey.get(key) as typeof resolved[number];
+      // 在册目标不重启(RUN-008 单目标重试口径):如实报 already-running,
+      // 已就绪实例的进程记录与 pid 保持不变
+      if (this.runningServers.has(key)) {
+        outcomes.push({ key, component: target.componentName, targetId: target.targetId, outcome: 'already-running' });
+        continue;
+      }
       const wait = await this.waitForTargetDependencies(target.dependsOn, failedKeys, {
         timeoutMs: options?.dependencyTimeoutMs ?? READINESS_WAIT_TIMEOUT_MS
       });
@@ -810,6 +816,19 @@ export class KBEngineServerManager {
       outcomes.push({ key, component: target.componentName, targetId: target.targetId, outcome: 'started' });
     }
     return { order: order.order, outcomes };
+  }
+
+  /**
+   * 单目标重试(RUN-008):只作用失败 target(spawn-failed/dependency-failed/
+   * dependency-timeout),在册目标如实报 already-running 不重启,已就绪的
+   * 其他实例不在重试面内、pid 与记录保持不变。
+   */
+  async retryTarget(
+    request: GroupTargetRequest,
+    options?: { dependencyTimeoutMs?: number | null; readinessTimeoutMs?: number | null }
+  ): Promise<TargetOutcome> {
+    const report = await this.startTargetGroup([request], options);
+    return report.outcomes[0];
   }
 
   /**

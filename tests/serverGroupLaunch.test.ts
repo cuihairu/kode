@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { KBEngineServerManager, type GroupTargetRequest } from '../src/serverManager';
+import { KBEngineServerManager, SERVER_COMPONENTS, type GroupTargetRequest } from '../src/serverManager';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
@@ -221,4 +221,67 @@ describe('KBEngineServerManager.startTargetGroup', () => {
     const ghost = report.outcomes.find(outcome => outcome.key === 'ghost');
     expect(ghost?.outcome).toBe('not-found');
   }, 8000);
+});
+
+describe('KBEngineServerManager.retryTarget', () => {
+  it('retries only the failed target and leaves ready instances untouched', async () => {
+    // dbmgr 可执行文件先缺失 → spawn-failed;补上后单目标重试成功
+    bin.write('machine', { kind: 'run' });
+    const manager = makeManager();
+
+    const first = await manager.startTargetGroup([{ component: 'machine' }, { component: 'dbmgr' }]);
+    expect(first.outcomes.find(outcome => outcome.key === 'machine')?.outcome).toBe('started');
+    expect(first.outcomes.find(outcome => outcome.key === 'dbmgr')?.outcome).toBe('spawn-failed');
+    const machinePid = manager.getRunningServers().get('machine')?.pid;
+
+    bin.write('dbmgr', { kind: 'run' });
+    const retried = await manager.retryTarget({ component: 'dbmgr' });
+
+    expect(retried.outcome).toBe('started');
+    // 已就绪的 machine 未被重复启动:记录连续、pid 不变
+    expect(manager.getRunningServers().get('machine')?.pid).toBe(machinePid);
+    expect(manager.getServerStatus('machine')).toBe('running');
+    expect(manager.getRunningServers().size).toBe(2);
+  }, 15000);
+
+  it('reports already-running instead of restarting a registered target', async () => {
+    bin.write('machine', { kind: 'run' });
+    const manager = makeManager();
+
+    await manager.startTargetGroup([{ component: 'machine' }]);
+    const machinePid = manager.getRunningServers().get('machine')?.pid;
+    expect(machinePid).toBeGreaterThan(0);
+
+    // 对在册目标发起单目标重试:如实报 already-running,不杀不重启
+    const retried = await manager.retryTarget({ component: 'machine' });
+    expect(retried.outcome).toBe('already-running');
+    expect(manager.getRunningServers().get('machine')?.pid).toBe(machinePid);
+    await until(() => manager.getServerStatus('machine') === 'running');
+  }, 10000);
+
+  it('retries a dependency-failed target after its prerequisite is started separately', async () => {
+    // machine 起即退 → dbmgr dependency-failed;修好 machine 单独启动后,
+    // 只重试 dbmgr:machine 不在重试面内(仍只启动过一次)
+    bin.write('machine', { kind: 'exit', code: 3 });
+    bin.write('dbmgr', { kind: 'run' });
+    const manager = makeManager();
+
+    const first = await manager.startTargetGroup([{ component: 'machine' }, { component: 'dbmgr' }]);
+    expect(first.outcomes.find(outcome => outcome.key === 'dbmgr')?.outcome).toBe('dependency-failed');
+
+    bin.write('machine', { kind: 'run' });
+    expect(await manager.startComponent(
+      SERVER_COMPONENTS.find(component => component.name === 'machine') as never
+    )).toBe(true);
+    const machinePid = manager.getRunningServers().get('machine')?.pid;
+
+    const retried = await manager.retryTarget(
+      { component: 'dbmgr' },
+      { dependencyTimeoutMs: 8000 }
+    );
+    expect(retried.outcome).toBe('started');
+    // machine 只被重试路径之外的那一次启动占用:pid 未变
+    expect(manager.getRunningServers().get('machine')?.pid).toBe(machinePid);
+    expect(manager.getRunningServers().size).toBe(2);
+  }, 20000);
 });
