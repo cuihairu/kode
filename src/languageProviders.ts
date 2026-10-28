@@ -96,6 +96,7 @@ import {
 } from './definitionWorkspace';
 import {
   computeDefRenameEdits,
+  findDefRenameConflict,
   getLineCharacterAtOffset,
   parseDefFileSemantics,
   resolveRenameSymbolAtOffset
@@ -5344,6 +5345,15 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
     const symbol = resolveRenameSymbolAtOffset(document.getText(), document.offsetAt(position));
     if (!symbol) {
       return null;
+    }
+    // IDE-NAV-008:目标名冲突先拒——同段方法/属性·组件占名时抛错说明冲突面
+    // 与行号(rename 输入框直接展示),不进入编辑计算
+    const conflict = findDefRenameConflict(document.getText(), symbol, newName);
+    if (conflict) {
+      throw new Error(
+        `cannot rename to "${newName}": already declared in ${conflict.surface} `
+        + `at line ${conflict.line} of ${path.basename(document.fileName)}`
+      );
     }
     const fileEdits = computeDefRenameEdits({
       targetFilePath: document.fileName,

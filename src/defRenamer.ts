@@ -216,6 +216,71 @@ export function resolveRenameSymbolAtOffset(text: string, offset: number): DefRe
   return null;
 }
 
+export interface DefRenameConflict {
+  /** 冲突面:同段方法(段名)/属性段/组件段 */
+  surface: DefMethodSection | 'Properties' | 'Components';
+  name: string;
+  /** 冲突声明行(1 基) */
+  line: number;
+}
+
+const offsetToLine = (text: string, offset: number): number =>
+  text.slice(0, offset).split('\n').length;
+
+/**
+ * IDE-NAV-008:重命名目标名冲突检查。方法重名只查本段(跨段同名合法,
+ * reqPos 三段并存是引擎常态);属性与组件同属实体成员命名面,任一占名
+ * 即冲突。返回冲突声明位(面+1 基行号)供调用方拒绝编辑并说明位置,
+ * 无冲突/名字非法/改名即本名 → null。只查声明所在的目标 def 文件。
+ */
+export function findDefRenameConflict(
+  text: string,
+  symbol: DefRenameSymbol,
+  newName: string
+): DefRenameConflict | null {
+  if (!DEF_IDENTIFIER_PATTERN.test(newName) || newName === symbol.name) {
+    return null;
+  }
+  const document = parseDefText(text);
+  if (!document?.root) {
+    return null;
+  }
+
+  if (symbol.kind === 'method') {
+    for (const section of getDirectChildElements(document.root)) {
+      if (section.name !== symbol.section) {
+        continue;
+      }
+      for (const child of getDirectChildElements(section)) {
+        if (child.name === newName) {
+          return {
+            surface: section.name as DefMethodSection,
+            name: newName,
+            line: offsetToLine(text, child.tagStart)
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  for (const section of getDirectChildElements(document.root)) {
+    if (section.name !== 'Properties' && section.name !== 'Components') {
+      continue;
+    }
+    for (const child of getDirectChildElements(section)) {
+      if (child.name === newName) {
+        return {
+          surface: section.name as 'Properties' | 'Components',
+          name: newName,
+          line: offsetToLine(text, child.tagStart)
+        };
+      }
+    }
+  }
+  return null;
+}
+
 /** 收集一份 def 文本里符号的全部名字区间(开标签 + 非自闭合的闭标签) */
 export function collectRenameEditsInText(text: string, symbol: DefRenameSymbol): DefRenameEditRange[] {
   const document = parseDefText(text);
