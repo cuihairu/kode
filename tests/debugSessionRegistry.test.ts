@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DebugSessionRegistry,
   parseDebugSessionName,
-  buildDebugTargetBoard
+  buildDebugTargetBoard,
+  applySessionEndBehavior
 } from '../src/debugSessionRegistry';
 import { DEFAULT_TARGET_ID } from '../src/serverManager';
 
@@ -101,6 +102,72 @@ describe('DebugSessionRegistry(会话挂目标)', () => {
     harness.start({ id: 's2', name: 'KBEngine: Python attach to cellapp#a (debugpy 5708)' });
 
     expect(registry.linksFor('cellapp#a')).toHaveLength(2);
+  });
+});
+
+describe('onLinkTerminated(会话结束事件,DBG-006)', () => {
+  it('结束哪个会话就带哪个目标的链;订阅可释放', () => {
+    const harness = makeEvents();
+    const registry = new DebugSessionRegistry(harness.events);
+    const ended: string[] = [];
+    const subscription = registry.onLinkTerminated(link => ended.push(link.serverKey));
+
+    const def = { id: 's1', name: 'KBEngine: Python attach to cellapp (debugpy 5679)' };
+    const named = { id: 's2', name: 'KBEngine: Python attach to cellapp#a (debugpy 5708)' };
+    const unrelated = { id: 's3', name: '无关会话' };
+    harness.start(def);
+    harness.start(named);
+    harness.start(unrelated);
+
+    harness.terminate(named);
+    expect(ended).toEqual(['cellapp#a']);
+    harness.terminate(def);
+    expect(ended).toEqual(['cellapp#a', 'cellapp']);
+    // 无关会话终止不产生链事件(从未登记)
+    harness.terminate(unrelated);
+    expect(ended).toEqual(['cellapp#a', 'cellapp']);
+
+    subscription.dispose();
+    harness.terminate({ id: 's1', name: 'KBEngine: Python attach to cellapp (debugpy 5679)' });
+    expect(ended).toEqual(['cellapp#a', 'cellapp']);
+  });
+});
+
+describe('applySessionEndBehavior(断开只影响指定目标,DBG-006)', () => {
+  const link = {
+    session: { id: 's1', name: 'KBEngine: Python attach to cellapp#a (debugpy 5708)' },
+    component: 'cellapp',
+    targetId: 'a',
+    port: 5708,
+    serverKey: 'cellapp#a'
+  };
+
+  it('detach(默认):会话结束零停止——进程与其他实例一律不动', () => {
+    const stopped: Array<[string, string | undefined]> = [];
+    applySessionEndBehavior('detach', link, (component, targetId) => {
+      stopped.push([component, targetId]);
+    });
+    expect(stopped).toEqual([]);
+  });
+
+  it('stop-process:只停该会话的目标(组件名+targetId 精确到实例)', () => {
+    const stopped: Array<[string, string | undefined]> = [];
+    applySessionEndBehavior('stop-process', link, (component, targetId) => {
+      stopped.push([component, targetId]);
+    });
+    expect(stopped).toEqual([['cellapp', 'a']]);
+  });
+
+  it('默认实例的链 targetId=default,停止调用按同键传递', () => {
+    const stopped: Array<[string, string | undefined]> = [];
+    applySessionEndBehavior(
+      'stop-process',
+      { ...link, targetId: DEFAULT_TARGET_ID, serverKey: 'cellapp' },
+      (component, targetId) => {
+        stopped.push([component, targetId]);
+      }
+    );
+    expect(stopped).toEqual([['cellapp', DEFAULT_TARGET_ID]]);
   });
 });
 

@@ -62,10 +62,12 @@ export class DebugSessionRegistry {
   private readonly links = new Map<string, DebugSessionLink>();
   private readonly subscriptions: Array<{ dispose(): void }>;
 
+  private readonly linkTerminatedListeners = new Set<(link: DebugSessionLink) => void>();
+
   constructor(events: DebugSessionEvents) {
     this.subscriptions = [
       events.onStart(session => this.register(session)),
-      events.onTerminate(session => this.links.delete(session.id))
+      events.onTerminate(session => this.unregister(session))
     ];
   }
 
@@ -91,6 +93,30 @@ export class DebugSessionRegistry {
   /** 全部在挂链(面板/合板消费) */
   all(): DebugSessionLink[] {
     return [...this.links.values()];
+  }
+
+  /**
+   * 订阅「链随会话结束摘除」事件(DBG-006):只对挂过链的会话触发
+   * (无关会话终止不产生事件);先回调再删链。可释放。
+   */
+  onLinkTerminated(listener: (link: DebugSessionLink) => void): { dispose(): void } {
+    this.linkTerminatedListeners.add(listener);
+    return {
+      dispose: () => {
+        this.linkTerminatedListeners.delete(listener);
+      }
+    };
+  }
+
+  private unregister(session: DebugSessionLike): void {
+    const link = this.links.get(session.id);
+    if (!link) {
+      return;
+    }
+    this.links.delete(session.id);
+    for (const listener of [...this.linkTerminatedListeners]) {
+      listener(link);
+    }
   }
 
   dispose(): void {
@@ -130,4 +156,26 @@ export function buildDebugTargetBoard(
     processStatus: target.status,
     attachedSessions: registry.linksFor(serverKey).length
   }));
+}
+
+/** 会话结束行为(DBG-006):detach=会话结束进程照跑;stop-process=停该目标进程 */
+export type DebugSessionEndBehavior = 'detach' | 'stop-process';
+
+/** 默认行为:detach(会话结束进程照跑,其他实例一律不动) */
+export const SESSION_END_BEHAVIOR_DEFAULT: DebugSessionEndBehavior = 'detach';
+
+/**
+ * 断开只影响指定目标(DBG-006):按配置决定会话结束时是否停进程。
+ * detach(默认)零停止——其他实例与未关联进程一律不动;stop-process 只对
+ * 该会话自己的目标发起 stopTarget(component, targetId),同一组件的
+ * 其他实例不受牵连。纯函数:进程控制面由调用方注入。
+ */
+export function applySessionEndBehavior(
+  behavior: DebugSessionEndBehavior,
+  link: DebugSessionLink,
+  stopTarget: (component: string, targetId: string) => void
+): void {
+  if (behavior === 'stop-process') {
+    stopTarget(link.component, link.targetId);
+  }
 }

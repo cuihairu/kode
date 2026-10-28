@@ -912,6 +912,15 @@
           "default": false,
           "description": "启动前等待调试器连接（显式 opt-in，默认关）。开启命令会在入口脚本 scripts/kbengine.py 顶部插入带标记的引导块：组件启动最早期 import debugpy 并 listen + wait_for_client，停在用户入口脚本早期断点之前，不依赖启动后 telnet 注入；组件将停住直到 VS Code 附加对应的 debugpy attach 配置。引导块读环境变量 KODE_DEBUGPY_WAIT_PORT（端口同逐组件分配表，默认实例口径；命名实例暂不覆盖仍走 telnet 注入），无该变量或没有 debugpy 包时静默放行不阻塞启动。关闭命令删除引导块逐字节还原"
         },
+        "kbengine.debug.sessionEndBehavior": {
+          "type": "string",
+          "enum": [
+            "detach",
+            "stop-process"
+          ],
+          "default": "detach",
+          "description": "调试会话结束时对目标进程的行为。detach（默认）：断开调试器，进程照跑，其他实例与未关联进程一律不动。stop-process：只停止该会话附加的那个目标进程（按组件+实例精确定位，同一组件的其他实例不受牵连）；仅对扩展生成的 attach 配置（条目名带目标身份）生效，用户自建调试会话不受影响"
+        },
         "kbengine.jsoncAssociation": {
           "type": "boolean",
           "default": true,

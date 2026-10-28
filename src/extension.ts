@@ -53,7 +53,13 @@ import {
   removeWaitBootstrap,
   debugpyWaitAtStartupEnabled
 } from './debugpyWaitAtStartup';
-import { DebugSessionRegistry, type DebugSessionLike } from './debugSessionRegistry';
+import {
+  DebugSessionRegistry,
+  applySessionEndBehavior,
+  SESSION_END_BEHAVIOR_DEFAULT,
+  type DebugSessionEndBehavior,
+  type DebugSessionLike
+} from './debugSessionRegistry';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1663,6 +1669,23 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.debug.onDidTerminateDebugSession(session => listener(session as unknown as DebugSessionLike))
   });
   context.subscriptions.push(debugSessionRegistry);
+
+  // DBG-006 断开只影响指定目标:会话结束按 kbengine.debug.sessionEndBehavior
+  // 决定是否停进程——detach(默认)零停止;stop-process 只停该会话自己的
+  // 目标(serverKey 精确到实例,同组件其他实例不受牵连)。
+  context.subscriptions.push(
+    debugSessionRegistry.onLinkTerminated(link => {
+      const behavior = vscode.workspace
+        .getConfiguration('kbengine')
+        .get<DebugSessionEndBehavior>('debug.sessionEndBehavior', SESSION_END_BEHAVIOR_DEFAULT);
+      applySessionEndBehavior(behavior, link, (component, targetId) => {
+        void serverManager.stopComponent(
+          component,
+          targetId === DEFAULT_TARGET_ID ? undefined : targetId
+        );
+      });
+    })
+  );
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);
