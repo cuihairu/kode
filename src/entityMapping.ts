@@ -2064,6 +2064,49 @@ export class EntityMappingManager {
     return accesses;
   }
 
+  /**
+   * IDE-NAV-003:receiver RPC 调用收录(self.cell.X( / self.base.X( / self.client.X()。
+   * 归属与 NAV-002 属性访问同面——只扫本 def 的 owner 文件;同名方法按
+   * receiver 段分开统计(调用方查哪段就配哪个 receiver),带调用括号断言,
+   * 非调用形态(self.cell.X 不带括号作回调引用)不收。
+   */
+  async getIncomingPythonReceiverCalls(
+    defFile: string,
+    methodName: string,
+    receiver: 'cell' | 'base' | 'client',
+    token?: vscode.CancellationToken
+  ): Promise<Array<{ filePath: string; line: number; character: number }>> {
+    if (token?.isCancellationRequested) return [];
+    this.ensureStartup();
+    const index = this.mappingIndexesByRoot.get(normalizeLookupPath(defFile));
+    if (!index) return [];
+    const callRegex = new RegExp(
+      `\\bself\\.${receiver}\\.${escapeRegExp(methodName)}\\b(?=\\s*\\()`,
+      'g'
+    );
+    const calls: Array<{ filePath: string; line: number; character: number }> = [];
+    for (const owner of index.pythonOwnerFiles) {
+      if (token?.isCancellationRequested) return calls;
+      if (!fs.existsSync(owner.filePath)) {
+        continue;
+      }
+      const content = readFileSyncUtf8Recorded(owner.filePath);
+      const lines = content.split('\n');
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        callRegex.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = callRegex.exec(lines[lineIndex])) !== null) {
+          calls.push({
+            filePath: owner.filePath,
+            line: lineIndex + 1,
+            character: match.index + `self.${receiver}.`.length
+          });
+        }
+      }
+    }
+    return calls;
+  }
+
   async getIncomingPythonMethodCalls(
     pythonFile: string,
     methodName: string,

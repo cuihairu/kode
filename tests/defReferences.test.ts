@@ -31,11 +31,15 @@ const DEF_TEXT = [
 interface StubCalls {
   identityArgs: unknown[][];
   implementationArgs: unknown[];
-  incomingArgs: unknown[];
+  incomingArgs: unknown[][];
+  receiverArgs: unknown[][];
 }
 
-const managerStub = (impl: { filePath: string; line: number; character: number } | null) => {
-  const calls: StubCalls = { identityArgs: [], implementationArgs: [], incomingArgs: [] };
+const managerStub = (
+  impl: { filePath: string; line: number; character: number } | null,
+  receiverSites: Array<{ filePath: string; line: number; character: number }> = []
+) => {
+  const calls: StubCalls = { identityArgs: [], implementationArgs: [], incomingArgs: [], receiverArgs: [] };
   const manager = {
     resolveDefinitionSymbolAtPosition: (...args: unknown[]) => {
       calls.identityArgs.push(args);
@@ -55,7 +59,12 @@ const managerStub = (impl: { filePath: string; line: number; character: number }
         }
       ]);
     },
-    getIncomingPythonPropertyAccesses: () => Promise.resolve([])
+    getIncomingPythonPropertyAccesses: () => Promise.resolve([]),
+    // IDE-NAV-003:receiver RPC 桩——记录段参,供"按段分开"断言
+    getIncomingPythonReceiverCalls: (...args: unknown[]) => {
+      calls.receiverArgs.push(args);
+      return Promise.resolve(receiverSites);
+    }
   };
   return { manager: manager as unknown as EntityMappingManager, calls };
 };
@@ -90,6 +99,10 @@ describe('def 引用查询入口(IDE-NAV-001)', () => {
     expect(calls.implementationArgs).toHaveLength(1);
     expect(calls.incomingArgs[0][0]).toBe('/tmp/ws/scripts/base/Avatar.py');
     expect(calls.incomingArgs[0][1]).toBe('reqPos');
+    // IDE-NAV-003:BaseMethods 段配 receiver 'base'(段→receiver 反查表),不猜段
+    expect(calls.receiverArgs[0][0]).toBe('/tmp/ws/scripts/entity_defs/Avatar.def');
+    expect(calls.receiverArgs[0][1]).toBe('reqPos');
+    expect(calls.receiverArgs[0][2]).toBe('base');
   });
 
   it('属性段不出方法引用(NAV-002 前如实空),非 def 文档与取消位同理 null', async () => {
@@ -117,13 +130,27 @@ describe('def 引用查询入口(IDE-NAV-001)', () => {
     )).toBeNull();
   });
 
-  it('实现未解析(纯声明方法)→ null,不发引用查询', async () => {
-    const { manager, calls } = managerStub(null);
-    const provider = new KBEngineReferencesProvider(manager);
-    expect(await provider.provideReferences(
+  it('实现未解析:无 receiver 调用 → null;有 receiver 调用 → 只出 receiver 位(NAV-003)', async () => {
+    const empty = managerStub(null);
+    const emptyProvider = new KBEngineReferencesProvider(empty.manager);
+    expect(await emptyProvider.provideReferences(
       defDoc(), methodPosition(), { includeDeclaration: false }, undefined
     )).toBeNull();
-    expect(calls.incomingArgs, '无实现即无引用面,不猜').toHaveLength(0);
+    expect(empty.calls.incomingArgs, '无实现即无实现链查询,不猜').toHaveLength(0);
+
+    // 纯声明方法(ClientMethods 常态)也有 receiver RPC 引用面
+    const { manager, calls } = managerStub(null, [
+      { filePath: '/tmp/ws/scripts/base/Gate.py', line: 20, character: 8 }
+    ]);
+    const provider = new KBEngineReferencesProvider(manager);
+    const result = await provider.provideReferences(
+      defDoc(), methodPosition(), { includeDeclaration: false }, undefined
+    );
+    expect(result).not.toBeNull();
+    expect(result!).toHaveLength(1);
+    expect(result![0].uri.fsPath).toBe('/tmp/ws/scripts/base/Gate.py');
+    expect(result![0].range.start.line).toBe(19);
+    expect(calls.incomingArgs, 'receiver-only 路径不走实现链').toHaveLength(0);
   });
 
   it('注册面:def 文档选择器上注册引用提供者(Shift+F12 入口)', async () => {

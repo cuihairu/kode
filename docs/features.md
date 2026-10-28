@@ -86,6 +86,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **Form wizard** — one-shot generation of proxy/space/component/fixed-dict skeletons — (evidence: package.json#contributes.commands `kbengine.generator.formWizard`; todo.md:44)
 - **Def renaming** — rename provider resolving link paths across def files — (evidence: src/defRenamer.ts; src/languageProviders.ts `KBEngineRenameProvider`)
 - **Call hierarchy** — prepare/callers/callees for def and Python symbols — (evidence: src/languageProviders.ts `KBEngineCallHierarchyProvider`)
+- **Def references (Shift+F12)** — def property/method references over owner-registered Python surfaces: property `self` accesses, method calls via the unified symbol identity chain, and receiver RPC calls (`self.cell.X` / `self.base.X` / `self.client.X`) counted per section — (evidence: src/languageProviders.ts `KBEngineReferencesProvider`)
 
 ## Settings
 

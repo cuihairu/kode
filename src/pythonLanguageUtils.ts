@@ -72,6 +72,16 @@ export const PYTHON_RECEIVER_SECTIONS: Record<
   client: 'ClientMethods'
 };
 
+/** def 方法区块 → 接收者段(引用收录面 IDE-NAV-003:CellMethods→cell 等,反查表) */
+export const PYTHON_RECEIVER_BY_SECTION: Record<
+  PythonReceiverSection,
+  PythonReceiverCall['receiver']
+> = {
+  CellMethods: 'cell',
+  BaseMethods: 'base',
+  ClientMethods: 'client'
+};
+
 /** 只认 self.<role>.<name> 形态;entity.cell.X 等局部接收者不识别(用户令) */
 const PYTHON_RECEIVER_CALL_PATTERN =
   /\bself\.(cell|base|client)\.([A-Za-z_][A-Za-z0-9_]*)/g;

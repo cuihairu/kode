@@ -84,6 +84,7 @@
 - **形态向导** —— 一次生成代理/空间/组件/固定字典骨架 ——（证据：package.json#contributes.commands `kbengine.generator.formWizard`；todo.md:44）
 - **def 重命名** —— 重命名 provider 跨 def 文件解析链接路径 ——（证据：src/defRenamer.ts；src/languageProviders.ts `KBEngineRenameProvider`）
 - **调用层级** —— def 与 Python 符号的 prepare/callers/callees ——（证据：src/languageProviders.ts `KBEngineCallHierarchyProvider`）
+- **def 引用查询（Shift+F12）** —— def 属性/方法引用按 owner 注册面归属：属性 `self` 访问、方法调用经统一符号身份链、receiver RPC 调用（`self.cell.X` / `self.base.X` / `self.client.X`）按段分开统计 ——（证据：src/languageProviders.ts `KBEngineReferencesProvider`）
 
 ## 设置项
 

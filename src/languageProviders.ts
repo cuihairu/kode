@@ -126,6 +126,7 @@ import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
 import {
   findPythonReceiverCalls,
   getPythonReceiverCallAtPosition,
+  PYTHON_RECEIVER_BY_SECTION,
   type PythonReceiverCall,
   getPythonSelfAccessAtPosition,
   getPythonSelfCompletionContext,
@@ -5116,8 +5117,32 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     }
     const implementation =
       await this.entityMappingManager.resolveMethodImplementationByIdentity(identity);
-    if (!implementation || token?.isCancellationRequested) {
+    if (token?.isCancellationRequested) {
       return null;
+    }
+    // IDE-NAV-003:receiver RPC 调用按段收录——CellMethods 配 self.cell.X(、
+    // BaseMethods 配 self.base.X(、ClientMethods 配 self.client.X(,同名方法
+    // 跨段互不串账;纯声明方法(无 python 实现)也有 receiver 引用面。
+    const receiver =
+      PYTHON_RECEIVER_BY_SECTION[symbolInfo.section as EntityMethodSection];
+    const receiverCalls = receiver
+      ? await this.entityMappingManager.getIncomingPythonReceiverCalls(
+          document.fileName,
+          symbolInfo.symbolNode.name,
+          receiver,
+          token
+        )
+      : [];
+    if (token?.isCancellationRequested) {
+      return null;
+    }
+    const receiverLocations = receiverCalls.map(call =>
+      new vscode.Location(
+        vscode.Uri.file(call.filePath),
+        createSelectionRange(call.line, call.character, symbolInfo.symbolNode.name)
+      ));
+    if (!implementation) {
+      return receiverLocations.length > 0 ? receiverLocations : null;
     }
     const calls = await this.entityMappingManager.getIncomingPythonMethodCalls(
       implementation.filePath,
@@ -5127,11 +5152,14 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     if (token?.isCancellationRequested) {
       return null;
     }
-    return calls.map(call =>
-      new vscode.Location(
-        vscode.Uri.file(call.caller.filePath),
-        createSelectionRange(call.callLine, call.callCharacter, symbolInfo.symbolNode.name)
-      ));
+    return [
+      ...calls.map(call =>
+        new vscode.Location(
+          vscode.Uri.file(call.caller.filePath),
+          createSelectionRange(call.callLine, call.callCharacter, symbolInfo.symbolNode.name)
+        )),
+      ...receiverLocations
+    ];
   }
 }
 
