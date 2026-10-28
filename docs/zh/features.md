@@ -38,6 +38,7 @@
 - **MySQL 漂移对比（只读）** —— 代码侧 schema 与真实库逐表逐列对比；报缺表/缺列/多列/型别不符，语句白名单 + 会话只读双保险 ——（证据：package.json#contributes.commands `kbengine.database.checkDrift|checkAllDrift`；todo.md:125；src/databaseDrift.ts）
 - **按 profile 选择只读数据库连接（DB-001）** —— 连接配置与查询结果缓存都以 profileId 为主键隔离：切换项目读新 profile 自己的配置，绝不复用另一 profile 的连接（未选择过的 profile 如实 null 不回退邻居；配置解析失败记该 profile 无配置）；结果缓存同 SQL 各 profile 各存各的，TTL 过期与 clearProfile 只影响目标 profile；配置经注入 load/save 持久化（workspaceState 形）重启按 profile 独立读回，缓存为会话级不落盘——陈旧结果不冒充新查询 ——（证据：src/databaseConnectionRegistry.ts）
 - **单表只读数据预览（DB-002）** —— 预览语句固定 `SELECT * FROM \`表\` LIMIT N` 形状，执行前再过 databaseDrift 现有 assertReadOnlyStatement 自证（双保险）；默认条数上限 100，显式上限不许超硬顶 1000；runner 无视 LIMIT 多回行时结果面裁到上限并标 truncated；表名只收标识符字符——反引号/空白/分号一律拒绝不拼进语句 ——（证据：src/databaseTablePreview.ts、src/databaseDrift.ts）
+- **只读查询取消与超时（DB-003）** —— 慢查询到点立即返回 timeout/cancelled 态（不干等），连接释放等底层结算后 close 恰一次——慢查询结束等待并释放连接；轮询循环在结算/取消/超时任一成立即退，不滞留后台轮询；底层失败如实 failed 态带原错误、释放路径不跳过；close 失败经 released 暴露，不影响已定终态；时钟/打盹/取消探针全注入——快查询在一个宏任务边界内结算则零打盹 ——（证据：src/databaseQueryLifecycle.ts）
 - **数据库模拟与导出** —— 模拟表结构可导出 JSON/Markdown ——（证据：package.json#contributes.commands `kbengine.database.simulate|exportSimulation`；todo.md:71；src/databaseSimulator.ts）
 
 ## 类型桩与托管目录
