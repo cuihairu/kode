@@ -16,7 +16,8 @@
  *   「未校验」而不是报错:校验是增强功能,不该把命令整挂。
  */
 
-import type { DatabaseSchemaSnapshot, TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchema';
+import type { DatabaseSchemaSnapshot } from './databaseSchema';
+import type { TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchemaCore';
 import type { DatabaseInterfaceConfig } from './serverConfigMerge';
 
 /** OUTPUT 通道名(报告整段可复制回传) */

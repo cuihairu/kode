@@ -20,9 +20,9 @@ import {
   getDatabaseSchemaSnapshot,
   renderChildTableJoinSelectFor,
   type DatabaseSchemaSnapshot,
-  type PropertyDatabaseStorageInfo,
-  type TableFieldDescriptor
+  type PropertyDatabaseStorageInfo
 } from './databaseSchema';
+import type { TableFieldDescriptor } from './databaseSchemaCore';
 
 export interface SimulatedRow {
   id: number;

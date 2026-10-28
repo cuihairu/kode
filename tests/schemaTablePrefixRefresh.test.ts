@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import {
-  KBEngineDatabaseSchemaProvider,
-  createDatabaseSchemaUri,
-  getDatabaseSchemaSnapshot
-} from '../src/databaseSchema';
+import { getDatabaseSchemaSnapshot } from '../src/databaseSchema';
+import { KBEngineDatabaseSchemaProvider, createDatabaseSchemaUri } from '../src/databaseSchemaPresentation';
 import {
   KBEngineDatabaseSimulationProvider,
   buildDatabaseSimulationText,

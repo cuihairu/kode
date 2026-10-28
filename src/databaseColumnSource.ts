@@ -7,7 +7,7 @@
  * 方从 snapshot.tableIndex 取对表,本模块拿到什么表就只认该表字段。
  */
 
-import type { TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchema';
+import type { TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchemaCore';
 
 export type ColumnSourceLink =
   | {

@@ -4,7 +4,6 @@ import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type * as vscode from 'vscode';
 import {
-  KBEngineDatabaseSchemaProvider,
   databaseSchemaFieldLineName,
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
@@ -12,6 +11,7 @@ import {
   getDatabaseSchemaSnapshot,
   renderDatabaseSchema
 } from '../src/databaseSchema';
+import { KBEngineDatabaseSchemaProvider } from '../src/databaseSchemaPresentation';
 import type { DatabaseSchemaSnapshot, DefSourceRef, TableSchemaDescriptor } from '../src/databaseSchema';
 import { Position, makeTextDocument } from './helpers/vscodeStub';
 import { workspace } from './fake-vscode/workspaceState';

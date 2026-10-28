@@ -2,11 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import {
-  KBEngineDatabaseSchemaProvider,
-  clearDatabaseSchemaCacheForTests,
-  createDatabaseSchemaUri
-} from '../src/databaseSchema';
+import { clearDatabaseSchemaCacheForTests } from '../src/databaseSchema';
+import { KBEngineDatabaseSchemaProvider, createDatabaseSchemaUri } from '../src/databaseSchemaPresentation';
 import { workspace } from './fake-vscode/workspaceState';
 import { Uri } from './fake-vscode/core';
 

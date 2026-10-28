@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { getDatabaseSchemaSnapshot } from '../src/databaseSchema';
 import {
   deriveDatabaseTables,
-  getDatabaseSchemaSnapshot,
-  type DatabaseSchemaDerivationInput
-} from '../src/databaseSchema';
-import type { PersistentPropertyDescriptor } from '../src/databaseSchema';
+  type DatabaseSchemaDerivationInput,
+  type PersistentPropertyDescriptor
+} from '../src/databaseSchemaCore';
 import { configurationOverrides } from './fake-vscode/workspaceState';
 
 // IDE-SCH-001:拆出不访问 VS Code 的 schema 推导函数——deriveDatabaseTables

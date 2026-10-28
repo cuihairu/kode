@@ -10,7 +10,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
-import { resolveEntityHasCell } from './databaseSchema';
+import { resolveEntityHasCell } from './databaseSchemaCore';
 import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import {
   buildEntityFlowGraph,

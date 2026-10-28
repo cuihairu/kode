@@ -3,13 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  KBENGINE_DATABASE_SCHEMA_SCHEME,
-  buildMysqlTableSchemas,
-  createDatabaseSchemaUri,
   describePropertyDatabaseStorage,
-  expandColumnNames,
   getDatabaseSchemaSnapshot,
-  isDatabaseSchemaDocument,
   locateDatabaseSchemaLine,
   renderChildTableJoinSelect,
   renderDatabaseSchema,
@@ -18,12 +13,15 @@ import {
   resolveEntityTableName,
   resolveSchemaTablePrefix
 } from '../src/databaseSchema';
+import { buildMysqlTableSchemas, expandColumnNames } from '../src/databaseSchemaCore';
+import {
+  KBENGINE_DATABASE_SCHEMA_SCHEME,
+  createDatabaseSchemaUri,
+  isDatabaseSchemaDocument
+} from '../src/databaseSchemaPresentation';
 import { Uri, configurationOverrides, workspace as stubWorkspace } from './helpers/vscodeStub';
-import type {
-  DatabaseSchemaSnapshot,
-  DefSourceRef,
-  PersistentPropertyDescriptor
-} from '../src/databaseSchema';
+import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';
+import type { DefSourceRef, PersistentPropertyDescriptor } from '../src/databaseSchemaCore';
 
 // databaseSchema 的导出函数段:Uri/文档识别、schema 文本渲染、行定位、
 // mysql 表生成与列展开,均不触 vscode 运行时(vscodeStub 兜住 Uri)。

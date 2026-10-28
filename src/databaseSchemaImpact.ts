@@ -7,7 +7,7 @@
  * 列)。
  */
 
-import type { TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchema';
+import type { TableFieldDescriptor, TableSchemaDescriptor } from './databaseSchemaCore';
 
 export type SchemaImpactChange = 'added' | 'removed' | 'type-changed';
 

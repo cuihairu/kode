@@ -51,7 +51,6 @@ import {
   PropertyCodeLensHit
 } from './propertyCodeLens';
 import {
-  createDatabaseSchemaUri,
   describePropertyDatabaseStorage,
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
@@ -62,10 +61,10 @@ import {
   indexTypeStorageUsageEntries,
   invalidateTypeStorageUsageIndex,
   onTypeStorageUsageIndexPublished,
-  isDatabaseSchemaDocument,
   locateDatabaseSchemaLine,
   replaceTypeStorageUsageForEntity
 } from './databaseSchema';
+import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from './databaseSchemaPresentation';
 import type { TypeStorageShape, TypeStorageUsage } from './databaseSchema';
 import { buildPropertyDatabaseStorageHover } from './databaseSimulator';
 import {

@@ -212,15 +212,17 @@ import { shouldStartKbEngineIndexing } from './workspaceGate';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { getDiagnosticScheduler } from './diagnosticScheduler';
 import {
-  createDatabaseSchemaUri,
   getDatabaseSchemaSnapshot,
-  KBEngineDatabaseSchemaProvider,
   locateDatabaseSchemaLine,
   resolveEntityTableName,
   resolveSchemaTablePrefix,
   getPendingTypeStorageColdBuildCount,
   setTypeStorageUsageBackgroundDispatcher
 } from './databaseSchema';
+import {
+  createDatabaseSchemaUri,
+  KBEngineDatabaseSchemaProvider
+} from './databaseSchemaPresentation';
 import {
   checkDatabaseDrift,
   checkDatabaseDriftForSnapshots,
