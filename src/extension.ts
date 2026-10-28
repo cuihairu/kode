@@ -208,6 +208,11 @@ import {
 import { renderExtensionIdentityReport } from './extensionIdentity';
 import { readBuildCommit } from './buildCommit';
 import { setFileReadVerbose } from './fileReadMetrics';
+import {
+  getEventLoopDelayReport,
+  startEventLoopDelayMonitor,
+  stopEventLoopDelayMonitor
+} from './hostVitals';
 import { TelnetTreeProvider } from './telnetTree';
 /**
  * Kode - KBEngine Development Environment
@@ -1700,8 +1705,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.showSummary', () => {
     metricsChannel.clear();
     metricsChannel.append(getLanguageServiceSummaryReport());
+    metricsChannel.append(getEventLoopDelayReport());
     metricsChannel.show();
   }));
+  // IDE-MET-005:宿主事件循环延迟自激活即开始采样(报告经 showSummary 面)
+  startEventLoopDelayMonitor();
+  context.subscriptions.push({ dispose: () => stopEventLoopDelayMonitor() });
   // IDE-MET-004:读盘明细开关(默认关=只累计计数,明细环形缓冲不启用)
   setFileReadVerbose(kbengineConfig.get<boolean>('metrics.fileReadDetail', false));
   logViewer.subscribeLogHub(logHub);
