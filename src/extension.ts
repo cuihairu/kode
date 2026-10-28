@@ -53,6 +53,7 @@ import {
   removeWaitBootstrap,
   debugpyWaitAtStartupEnabled
 } from './debugpyWaitAtStartup';
+import { DebugSessionRegistry, type DebugSessionLike } from './debugSessionRegistry';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1649,6 +1650,19 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
   context.subscriptions.push(serverStatusSubscription);
+
+  // DBG-005 调试会话注册表:按生成条目名(表条目=默认实例,`#` 条目=命名
+  // 实例)把 VS Code 调试会话挂回运行目标——两个 cellapp 的会话与进程
+  // 状态各自可辨;工作台消费面在 DBG-008。
+  const debugSessionRegistry = new DebugSessionRegistry({
+    // vscode.DebugSession 是识别面的超集(configuration 索引签名),按
+    // 注册表的最小面收窄
+    onStart: listener =>
+      vscode.debug.onDidStartDebugSession(session => listener(session as unknown as DebugSessionLike)),
+    onTerminate: listener =>
+      vscode.debug.onDidTerminateDebugSession(session => listener(session as unknown as DebugSessionLike))
+  });
+  context.subscriptions.push(debugSessionRegistry);
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);

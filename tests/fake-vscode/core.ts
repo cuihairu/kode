@@ -144,8 +144,11 @@ export enum ConfigurationTarget {
 
 // debugConfig 的 attachToComponent 经 vscode.debug.startDebugging 启动
 // 调试会话;对象成员可变,测试按用例 monkey-patch startDebugging。
+// 会话生命周期事件(DBG-005 注册表接线):默认零订阅者,测试可回放会话。
 export const debug = {
-  startDebugging: async (_folder: unknown, _config: unknown): Promise<boolean> => false
+  startDebugging: async (_folder: unknown, _config: unknown): Promise<boolean> => false,
+  onDidStartDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined }),
+  onDidTerminateDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined })
 };
 
 export class ThemeIcon {
