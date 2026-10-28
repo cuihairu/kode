@@ -396,7 +396,7 @@
 ### IDE-GEN · 生成器写入保护（P1）
 
 来源：审计 §6；src/codeGenerator.ts、src/generatorForms.ts。
-- [ ] IDE-GEN-001 [P1] 阻止实体向导覆盖已有 def；验收：同名 def 已存在时保留原字节并给出冲突信息；前置：无。
+- [x] IDE-GEN-001 [P1] 阻止实体向导覆盖已有 def；验收：同名 def 已存在时保留原字节并给出冲突信息；前置：无。(18f097e;codeGenerator.generateDefFile 落盘前 fs.existsSync(defFilePath) 守卫→throw `def 文件已存在，保留原文件未覆盖: <目标路径>`,原字节零接触;两个生成入口(showWizard/generateFromTemplate)都先经 generateDefFile 同守,冲突即抛=后续 python 生成与 entities.xml 注册都不会发生;prove-red codeGeneratorFiles 新 describe 3 例先红(现状静默覆盖:无 error 通道消息/哨兵字节被生成内容替换);test1 直调 generateDefFile 同名 Monster 拒绝+报路径+哨兵字节原样,test2 向导面 Monster 冲突→error 单条含路径、Monster.py 未创建、entities.xml 逐字节未动、info 空,test3 模板流(空模板改名 Monster)同样拒绝且字节原样;回归 codeGenerator 系 7 文件 100 例绿;门禁 eslint 0/tsc 0/unit 3488|7(292)/demo 25 RC0;锚点 codeGenerator 不在 baseline 引用面无漂移;features.md+zh 生成器条目补拒绝覆盖口径)
 - [ ] IDE-GEN-002 [P1] 阻止实体向导覆盖已有 Python 文件；验收：同名实现存在时保留原代码，不能因生成 def 顺带覆盖；前置：无。
 - [ ] IDE-GEN-003 [P1] 生成前检查全部目标路径；验收：任一目标冲突时不先写出其他半套文件；前置：IDE-GEN-001, IDE-GEN-002。
 - [ ] IDE-GEN-004 [P1] 为单次生成提供变更预览；验收：确认前可查看将新增的 def/Python/注册项与准确路径；前置：IDE-GEN-003。
