@@ -1342,13 +1342,17 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
       windowish.showQuickPick = async (items: unknown[]): Promise<unknown> => {
         const resolved = await items;
         pickCalls += 1;
-        return resolved.find(item => (item as { label: string }).label.startsWith('空间实体'));
+        // 第一次选空间形态,第二次(IDE-GEN-008 计划确认)选确认生成
+        if (pickCalls === 1) {
+          return resolved.find(item => (item as { label: string }).label.startsWith('空间实体'));
+        }
+        return resolved.find(item => (item as { label: string }).label === '确认生成');
       };
       windowish.showInputBox = async (): Promise<string | undefined> => 'MySpace';
 
       await commands.executeCommand('kbengine.generator.formWizard');
 
-      expect(pickCalls).toBe(1);
+      expect(pickCalls).toBe(2);
       const defPath = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
       expect(fs.readFileSync(defPath, 'utf8')).toContain('<Space/>');
       expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toContain(

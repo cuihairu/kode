@@ -11,6 +11,7 @@ import { findEntitiesXmlFile, findEntityDefinitionsRoot, getDefinitionWorkspaceL
 import { joinWorkspacePath } from './workspacePath';
 import { writeFileAtomic } from './atomicFileWrite';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
+import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';
 
 /**
  * 实体类型配置
@@ -284,7 +285,7 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const planItems: Array<{ label: string; description: string }> = [
+    const planItems: GenerationPlanItem[] = [
       {
         label: '新增 .def',
         description: joinWorkspacePath(
@@ -312,12 +313,8 @@ export class KBEngineCodeGenerator {
       });
     }
 
-    const picked = await vscode.window.showQuickPick(
-      [{ label: '确认生成', description: '按清单落盘' }, ...planItems],
-      { placeHolder: '核对将生成的文件（选择"确认生成"继续，Esc 取消）' }
-    );
-
-    return picked?.label === '确认生成';
+    // IDE-GEN-008:与表单向导共用同一确认面
+    return confirmGenerationPlanItems(planItems);
   }
 
   /**

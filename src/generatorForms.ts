@@ -31,6 +31,7 @@ import {
 } from './defParser';
 import { joinWorkspacePath } from './workspacePath';
 import { writeFileAtomic } from './atomicFileWrite';
+import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';
 
 export const GENERATOR_FORM_KINDS = ['proxy', 'space', 'component', 'fixedDict'] as const;
 export type GeneratorFormKind = (typeof GENERATOR_FORM_KINDS)[number];
@@ -418,6 +419,48 @@ export interface GeneratorFormOutcome {
   notes: string[];
   /** 被改写的已有文件(entities.xml / types.xml / 实体 def) */
   touchedFiles: string[];
+  /** IDE-GEN-008:目标冲突整体未写(def 已存在/类型重名) */
+  conflict?: boolean;
+}
+
+/**
+ * 主产物冲突判定(IDE-GEN-008):def 类形态看目标文件,fixedDict 看
+ * types.xml 里是否已有同名类型;与实体向导同规则——冲突即整体不写
+ */
+export function hasGeneratorFormConflict(input: GeneratorFormInput, filePath: string): boolean {
+  if (input.kind === 'fixedDict') {
+    if (!fs.existsSync(filePath)) {
+      return false;
+    }
+    return new RegExp(`<${input.value.name}(?=[\\s>/])`, 'i').test(fs.readFileSync(filePath, 'utf8'));
+  }
+  return fs.existsSync(filePath);
+}
+
+/**
+ * 回收本次新增与改写(IDE-GEN-008 与实体向导同规则):先还原被改写文件,
+ * 再按写入逆序删除本次新增;单项回收失败不掩盖原始错误
+ */
+function rollbackFormWrites(
+  createdFiles: string[],
+  overwrittenFiles: Array<{ filePath: string; previous: string }>
+): void {
+  for (const item of [...overwrittenFiles].reverse()) {
+    try {
+      writeFileAtomic(item.filePath, item.previous);
+    } catch {
+      // 回收失败不掩盖原始错误
+    }
+  }
+  for (const filePath of [...createdFiles].reverse()) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    } catch {
+      // 回收失败不掩盖原始错误
+    }
+  }
 }
 
 function writeOrSkip(filePath: string, content: string, overwrite: boolean): boolean {
@@ -555,38 +598,84 @@ export function generateGeneratorForm(
   }
 
   const filePath = target.filePath;
-  let written = false;
 
-  if (input.kind === 'fixedDict') {
-    // 固定字典入库即主产物:重名/结构异常时只有说明,不算已生成
-    written = registerFixedDictType(
-      input.value.name,
-      contentOf(input, generatedAt),
-      filePath,
-      generatedAt,
-      notes,
-      touchedFiles
+  // IDE-GEN-008:主产物冲突即整体不写——不先落 def 也不做附带改写
+  // (entities.xml 登记/组件挂载),与实体向导的预检规则同源
+  if (!overwrite && hasGeneratorFormConflict(input, filePath)) {
+    notes.push(
+      input.kind === 'fixedDict'
+        ? `types.xml 中已有同名类型 ${input.value.name},未写入`
+        : `${filePath} 已存在,未覆盖(需要覆盖请重新执行并选择覆盖)`
     );
-  } else {
-    const skipNote = `${filePath} 已存在,未覆盖(需要覆盖请重新执行并选择覆盖)`;
-    written = writeOrSkip(filePath, contentOf(input, generatedAt), overwrite);
-    if (!written) {
-      notes.push(skipNote);
+    return { kind: input.kind, filePath, written: false, notes, touchedFiles, conflict: true };
+  }
+
+  const createdFiles: string[] = [];
+  const overwrittenFiles: Array<{ filePath: string; previous: string }> = [];
+
+  try {
+    let written = false;
+
+    if (input.kind === 'fixedDict') {
+      // 固定字典入库即主产物:新文件记新增,改写记原内容供回收
+      if (fs.existsSync(filePath)) {
+        overwrittenFiles.push({ filePath, previous: fs.readFileSync(filePath, 'utf8') });
+      } else {
+        createdFiles.push(filePath);
+      }
+      // 重名/结构异常时只有说明,不算已生成(重名已被上面的冲突闸拦下,
+      // 这里剩缺 </root> 的结构异常面)
+      written = registerFixedDictType(
+        input.value.name,
+        contentOf(input, generatedAt),
+        filePath,
+        generatedAt,
+        notes,
+        touchedFiles
+      );
+    } else {
+      // 冲突闸已拦下「存在且不覆盖」;到达此处要么新建(记新增)要么
+      // overwrite=true 改写既有文件(记原内容供回收)
+      const existed = fs.existsSync(filePath);
+      if (existed) {
+        overwrittenFiles.push({ filePath, previous: fs.readFileSync(filePath, 'utf8') });
+      }
+      writeOrSkip(filePath, contentOf(input, generatedAt), overwrite);
+      written = true;
+      if (!existed) {
+        createdFiles.push(filePath);
+      }
     }
-  }
 
-  if (input.kind === 'space') {
-    registerSpaceEntity(input.value.name, layout, notes, touchedFiles);
-  }
-
-  if (input.kind === 'component') {
-    const attachTo = options.attachTo ?? null;
-    if (attachTo) {
-      attachComponentToEntity(input.value.name, attachTo, layout, notes, touchedFiles);
+    if (input.kind === 'space') {
+      const entitiesXmlPath = layout.entitiesXmlPath;
+      if (entitiesXmlPath && fs.existsSync(entitiesXmlPath)) {
+        overwrittenFiles.push({ filePath: entitiesXmlPath, previous: fs.readFileSync(entitiesXmlPath, 'utf8') });
+      }
+      registerSpaceEntity(input.value.name, layout, notes, touchedFiles);
     }
-  }
 
-  return { kind: input.kind, filePath, written, notes, touchedFiles };
+    if (input.kind === 'component') {
+      const attachTo = options.attachTo ?? null;
+      if (attachTo) {
+        // 备份只在能定位到实体 def 时记;挂载本身的各未做面说明
+        // 仍由 attachComponentToEntity 如实给出
+        if (layout.entityDefsRoot) {
+          const entityDefPath = joinWorkspacePath(layout.entityDefsRoot, `${attachTo}.def`);
+          if (fs.existsSync(entityDefPath)) {
+            overwrittenFiles.push({ filePath: entityDefPath, previous: fs.readFileSync(entityDefPath, 'utf8') });
+          }
+        }
+        attachComponentToEntity(input.value.name, attachTo, layout, notes, touchedFiles);
+      }
+    }
+
+    return { kind: input.kind, filePath, written, notes, touchedFiles };
+  } catch (error) {
+    // IDE-GEN-008:任一步失败回收本次新增与改写,不留半套
+    rollbackFormWrites(createdFiles, overwrittenFiles);
+    throw error;
+  }
 }
 
 async function askName(prompt: string, placeholder: string): Promise<string | undefined> {
@@ -692,6 +781,36 @@ async function askSpaceInput(): Promise<SpaceFormInput | null> {
   return { name, description: `自动生成的 ${name} 空间实体` };
 }
 
+/** 表单生成的计划项(IDE-GEN-008):主产物准确路径 + 附带改写目标 */
+function buildFormPlanItems(
+  input: GeneratorFormInput,
+  layout: DefinitionWorkspaceLayout,
+  filePath: string,
+  attachTo: string | null
+): GenerationPlanItem[] {
+  if (input.kind === 'fixedDict') {
+    return [{ label: '注册 types.xml', description: `${filePath}: <${input.value.name}>` }];
+  }
+
+  const items: GenerationPlanItem[] = [{ label: '新增 .def', description: filePath }];
+
+  if (input.kind === 'space' && layout.entitiesXmlPath) {
+    items.push({
+      label: '注册 entities.xml',
+      description: `${layout.entitiesXmlPath}: ${buildSpaceRegistrationLine(input.value.name).trim()}`
+    });
+  }
+
+  if (input.kind === 'component' && attachTo && layout.entityDefsRoot) {
+    items.push({
+      label: '挂载组件属性',
+      description: joinWorkspacePath(layout.entityDefsRoot, `${attachTo}.def`)
+    });
+  }
+
+  return items;
+}
+
 /** 命令入口:勾形态 → 填参数 → 落盘 + 附带改写 → 逐条播报说明 */
 export async function runGeneratorFormWizard(): Promise<void> {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -730,7 +849,20 @@ export async function runGeneratorFormWizard(): Promise<void> {
   }
 
   try {
-    const outcome = generateGeneratorForm(input, workspaceRoot, { attachTo });
+    // IDE-GEN-008:与实体向导同规则——冲突不进预览直接交落盘层播报,
+    // 无冲突先出计划确认(准确路径+附带改写项),确认后才写
+    const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+    const target = resolveGeneratorFormTarget(input, layout);
+    if (target.filePath !== null && !hasGeneratorFormConflict(input, target.filePath)) {
+      const confirmed = await confirmGenerationPlanItems(
+        buildFormPlanItems(input, layout, target.filePath, attachTo)
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    const outcome = generateGeneratorForm(input, workspaceRoot, { attachTo, layout });
     for (const note of outcome.notes) {
       vscode.window.showWarningMessage(note);
     }
