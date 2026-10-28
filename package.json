@@ -104,6 +104,7 @@
     "onCommand:kbengine.build.previewTask",
     "onCommand:kbengine.tests.list",
     "onCommand:kbengine.messagetable.preview",
+    "onCommand:kbengine.messagetable.export",
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -610,6 +611,10 @@
       {
         "command": "kbengine.messagetable.preview",
         "title": "MessageTable: Preview Entity Message Table"
+      },
+      {
+        "command": "kbengine.messagetable.export",
+        "title": "MessageTable: Export Entity Message Table JSON"
       }
     ],
     "menus": {

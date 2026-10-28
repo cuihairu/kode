@@ -772,3 +772,15 @@ If `Attach to Component` fails, check these first:
   - missing declaration (the entity's def cannot be loaded — not registered or the `.def` file is absent): one honest warning naming the entity and the cause — no empty preview, no guessing
   - no entities indexed at all: an honest warning says so; Esc quietly exits
 - Boundary: preview only; JSON export is SDK-002
+
+### `kbengine.messagetable.export`
+
+- Title: `MessageTable: Export Entity Message Table JSON`
+- Purpose: export a single entity's message table as JSON (IDE-SDK-002) — the output preserves the method sections, utypes, alias configuration, and the issue list (renderMessageTableJson's existing face)
+- Entries: command palette
+- Behavior:
+  - same entity QuickPick and the same shared build face as the preview command
+  - a save dialog proposes `<entity>.messagetable.json`; cancelling it creates no file (nothing is written)
+  - a missing declaration gets the same honest warning as preview — no file is proposed
+  - a write failure is reported verbatim with the cause; success names the written path
+- Boundary: export only; the preview command is SDK-001

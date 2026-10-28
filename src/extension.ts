@@ -77,7 +77,8 @@ import {
   TEST_TASK_CONTEXT_STORAGE_KEY
 } from './taskContext';
 import { showEntityMessageTablePreview } from './messageTablePreview';
-import { buildMessageTable, renderMessageTableMarkdown, type DefTreeSource } from './messageTable';
+import { exportEntityMessageTable } from './messageTableExport';
+import { buildMessageTable, renderMessageTableJson, renderMessageTableMarkdown, type DefTreeSource } from './messageTable';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
 import { getIndexScanRoots } from './scanRoots';
 import { ProjectProfileStore } from './projectProfiles';
@@ -1877,50 +1878,85 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(listPythonTestsCommand);
 
-  // IDE-SDK-001 单实体 messageTable 预览:选实体 → 现有计算结果
-  // (buildMessageTable→markdown)可查看;缺声明(构建 null)明确提示,
-  // 不展示空预览;def 取源与索引扫描同一 scanRoots/loader 公式
+  // IDE-SDK-001/002 单实体 messageTable:预览(markdown 查看)与 JSON 导
+  // 出共用同一构建面——def 取源与索引扫描同一 scanRoots/loader 公式;
+  // 缺声明(构建 null)两条命令同样明确提示,不展示空预览不写空文件
+  const buildEntityMessageTable = (entityName: string) => {
+    const loader = createDefinitionSemanticsLoader(getIndexScanRoots());
+    if (!loader) {
+      return null;
+    }
+    const source: DefTreeSource = {
+      loadDef: (name, kind) => loader.loadLocal(name, kind)
+    };
+    return buildMessageTable(entityName, source);
+  };
+  const entityMessageTableDeps = {
+    listEntityNames: () => entityMappingManager.getAllMappings().map(mapping => mapping.name),
+    pick: (items: string[]) =>
+      Promise.resolve(
+        vscode.window.showQuickPick(items, {
+          placeHolder: `${items.length} 个实体(选择实体的 messageTable)`
+        })
+      ),
+    notifyWarning: (message: string) => {
+      void vscode.window.showWarningMessage(message);
+    },
+    notifyInformation: (message: string) => {
+      void vscode.window.showInformationMessage(message);
+    }
+  };
   const previewMessageTableCommand = vscode.commands.registerCommand(
     'kbengine.messagetable.preview',
     async () => {
       await entityMappingManager.waitForInitialScan();
       await showEntityMessageTablePreview({
-        listEntityNames: () =>
-          entityMappingManager.getAllMappings().map(mapping => mapping.name),
+        ...entityMessageTableDeps,
         buildTableMarkdown: entityName => {
-          const loader = createDefinitionSemanticsLoader(getIndexScanRoots());
-          if (!loader) {
-            return null;
-          }
-          const source: DefTreeSource = {
-            loadDef: (name, kind) => loader.loadLocal(name, kind)
-          };
-          const table = buildMessageTable(entityName, source);
+          const table = buildEntityMessageTable(entityName);
           return table === null ? null : renderMessageTableMarkdown(table);
         },
-        pick: items =>
-          Promise.resolve(
-            vscode.window.showQuickPick(items, {
-              placeHolder: `${items.length} 个实体(选择要预览 messageTable 的实体)`
-            })
-          ),
         show: async markdown => {
           const document = await vscode.workspace.openTextDocument({
             content: markdown,
             language: 'markdown'
           });
           await vscode.window.showTextDocument(document, { preview: true });
-        },
-        notifyWarning: message => {
-          void vscode.window.showWarningMessage(message);
-        },
-        notifyInformation: message => {
-          void vscode.window.showInformationMessage(message);
         }
       });
     }
   );
   context.subscriptions.push(previewMessageTableCommand);
+
+  // IDE-SDK-002 消息表 JSON 导出:renderMessageTableJson 现有面(保留
+  // 方法段/utype/alias 配置/问题清单);保存对话框取消不创建文件
+  const exportMessageTableCommand = vscode.commands.registerCommand(
+    'kbengine.messagetable.export',
+    async () => {
+      await entityMappingManager.waitForInitialScan();
+      await exportEntityMessageTable({
+        ...entityMessageTableDeps,
+        buildTableJson: entityName => {
+          const table = buildEntityMessageTable(entityName);
+          return table === null ? null : renderMessageTableJson(table);
+        },
+        chooseSavePath: defaultFileName =>
+          Promise.resolve(
+            vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(defaultFileName),
+              filters: { JSON: ['json'] }
+            })
+          ).then(uri => uri?.fsPath),
+        writeFile: async (savePath, content) => {
+          await vscode.workspace.fs.writeFile(
+            vscode.Uri.file(savePath),
+            new TextEncoder().encode(content)
+          );
+        }
+      });
+    }
+  );
+  context.subscriptions.push(exportMessageTableCommand);
 
   // IDE-TSK-005 测试面板:TSK-004 发现面落成 TestController 树(文件→
   // 用例,用例条目 range=发现时的行号列号——通过失败即与源码位置对应);

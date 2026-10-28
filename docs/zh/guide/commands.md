@@ -659,3 +659,15 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 缺声明（该实体的 def 取不到——未登记或 `.def` 文件缺失）：一条如实警告点名实体与原因——不展示空预览、不猜
   - 一个实体都没索引到：如实提示；Esc 静默退出
 - 边界：只做预览；JSON 导出是 SDK-002
+
+### `kbengine.messagetable.export`
+
+- 标题：`MessageTable: Export Entity Message Table JSON`
+- 作用：导出单个实体的消息表 JSON（IDE-SDK-002）——输出保留方法段、utype、alias 配置与问题清单（renderMessageTableJson 现有面）
+- 入口：命令面板
+- 行为：
+  - 与预览命令同一实体 QuickPick、同一共享构建面
+  - 保存对话框默认名 `<实体>.messagetable.json`；取消不创建文件（零写入）
+  - 缺声明与预览同样如实警告——不弹保存
+  - 写失败如实带原因呈现；成功提示点名写入路径
+- 边界：只做导出；预览命令是 SDK-001
