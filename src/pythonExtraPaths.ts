@@ -23,6 +23,11 @@ import {
   resolveManagedDirName
 } from './pythonStubExport';
 import { typeStubArtifactExists } from './pythonTypeStubs';
+import {
+  enforceRoleIsolation,
+  findCrossRoleModuleCollisions,
+  resolveRoleAnalysisRoots
+} from './pythonRoleRoots';
 
 export const PYTHON_EXTRA_PATHS_SETTING = 'python.analysis.extraPaths';
 export const PYTHON_EXTRA_PATHS_MANAGED_KEY = 'kbengine.python.extraPaths.managed';
@@ -34,6 +39,8 @@ export interface PythonScriptRootDeps {
   exists: (path: string) => boolean;
   /** 列目录一级子目录名(测试注入,装配层为 fs.readdirSync 包装) */
   listSubdirs: (dir: string) => string[];
+  /** 列目录下 .py 文件名(IDE-PRJ-006 跨角色同名播报用;缺省不播报) */
+  listPyFiles?: (dir: string) => string[];
 }
 
 export interface PythonExtraPathsPlanInput {
@@ -52,6 +59,8 @@ export interface PythonExtraPathsPlan {
   managedPaths: string[];
   /** 与现值(规范化口径)不同才需要写 */
   changed: boolean;
+  /** 管理段被角色隔离闸剥掉的条目(IDE-PRJ-006;常规为空,守未来段扩员) */
+  isolatedRoleRoots: string[];
 }
 
 /** extraPaths 条目规范化:空串丢弃标记;只剥尾部分隔符,盘符根剥到 `C:` */
@@ -106,14 +115,23 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
   const current = uniquePaths(input.currentPaths.map(normalizeExtraPath));
   const managedBefore = uniquePaths((input.previouslyManaged ?? []).map(normalizeExtraPath));
   const userPaths = current.filter(candidate => !managedBefore.includes(candidate));
-  const managedPaths = uniquePaths([
+  // IDE-PRJ-006 角色隔离闸:管理段经每个发现的 scripts 根逐个过闸,角色
+  // 目录(base/cell)剥出合并列表——scripts/base 与 scripts/cell 的同名模块
+  // 不会因 extraPaths 顺序跨角色误解析;用户手填段不经闸(只管自己那段)。
+  let managedPaths = uniquePaths([
     ...pythonScriptRootCandidates(input.workspaceRoot, input.deps),
     ...(input.extraManaged ?? [])
   ]);
+  const isolatedRoleRoots: string[] = [];
+  for (const scriptsRoot of pythonScriptRootCandidates(input.workspaceRoot, input.deps)) {
+    const { kept, removedRoleRoots } = enforceRoleIsolation(managedPaths, resolveRoleAnalysisRoots(scriptsRoot, input.deps));
+    managedPaths = kept;
+    isolatedRoleRoots.push(...removedRoleRoots);
+  }
   const nextPaths = uniquePaths([...userPaths, ...managedPaths]);
   const sameLength = nextPaths.length === current.length;
   const changed = !sameLength || nextPaths.some((candidate, index) => candidate !== current[index]);
-  return { nextPaths, managedPaths, changed };
+  return { nextPaths, managedPaths, changed, isolatedRoleRoots };
 }
 
 /** 装配层默认注入:真 fs 存在性判定与一级子目录列举 */
@@ -127,6 +145,16 @@ export const fileSystemScriptRootDeps: PythonScriptRootDeps = {
         .map(entry => entry.name);
     } catch {
       // 工作区根读不到(权限/虚拟文件系统):当没有嵌套资产根处理
+      return [];
+    }
+  },
+  listPyFiles: (dir: string): string[] => {
+    try {
+      return fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter(entry => entry.isFile() && entry.name.endsWith('.py'))
+        .map(entry => entry.name);
+    } catch {
       return [];
     }
   }
@@ -167,6 +195,10 @@ export async function syncPythonExtraPaths(
     return;
   }
   const written: string[] = [];
+  // IDE-PRJ-006:跨角色同名模块播报(非静默模式);隔离闸在 plan 内,
+  // 这里只负责把「同名集合」如实告诉用户——合并列表不含角色目录,
+  // 顺序不会决定 Avatar 解析到 base 还是 cell
+  const collisionModules = new Set<string>();
   // G2 存根目录只在「导出开 + KBEngine.pyi 真的在盘上」时并入管理段
   // (由激活期先导出再同步的顺序保证手动同步也能拾取已有存根);
   // def-pyi-stubs §6 的 kbe_types.pyi 分件镜像(含旧版单文件 kbe_types.py
@@ -196,6 +228,16 @@ export async function syncPythonExtraPaths(
       deps,
       extraManaged
     });
+    if (deps.listPyFiles) {
+      for (const scriptsRoot of pythonScriptRootCandidates(workspaceRoot, deps)) {
+        for (const moduleName of findCrossRoleModuleCollisions(
+          resolveRoleAnalysisRoots(scriptsRoot, deps),
+          { listPyFiles: deps.listPyFiles }
+        )) {
+          collisionModules.add(moduleName);
+        }
+      }
+    }
     if (plan.managedPaths.length === 0) {
       continue;
     }
@@ -215,6 +257,12 @@ export async function syncPythonExtraPaths(
   if (written.length > 0 && !options.silent) {
     await vscode.window.showInformationMessage(
       `已为 ${written.join('、')} 写入 python.analysis.extraPaths(scripts 根接线,Python 扩展可解析 import KBEngine)`
+    );
+  }
+  if (collisionModules.size > 0 && !options.silent) {
+    const names = [...collisionModules].sort().join('、');
+    await vscode.window.showInformationMessage(
+      `base/cell 存在同名模块: ${names}——分析根已按角色隔离(extraPaths 不含角色目录,不会因顺序跨角色误解析)`
     );
   }
 }

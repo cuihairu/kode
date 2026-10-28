@@ -45,7 +45,7 @@
 - **types.xml 变更自动重生成桩** —— didChange/didCreate/didDelete 三事件静默重导出类型桩 ——（证据：todo.md:35；src/pythonTypeStubs.ts `setupTypeStubRegeneration`）
 - **entity_types.pyi 实体桩** —— def 引用自定义类型的实体级类型声明，挂激活期与实体映射刷新 ——（证据：todo.md:136；src/entityTypeStubs.ts）
 - **存根目录可配置** —— `kbengine.python.stubDir` 设置 > `KBENGINE_STUB_DIR` 环境变量 > 默认 `.kbengine/stubs`；用户已写的 `.pyi` 视为用户资产不覆盖 ——（证据：package.json#configuration `kbengine.python.stubDir`；todo.md:42；src/pythonStubExport.ts）
-- **python.analysis.extraPaths 接线** —— 发现的 KBEngine scripts 根按 WorkspaceFolder 级写入；只管理自己那段，用户手填路径不动 ——（证据：package.json#configuration `kbengine.python.extraPathsSync`；package.json#contributes.commands `kbengine.python.syncExtraPaths`；todo.md:55；src/pythonExtraPaths.ts）
+- **python.analysis.extraPaths 接线** —— 发现的 KBEngine scripts 根按 WorkspaceFolder 级写入；只管理自己那段，用户手填路径不动；管理段经 base/cell 角色隔离闸（角色目录永不进合并列表，base/Avatar.py 与 cell/Avatar.py 这类同名模块不会因 extraPaths 顺序跨角色误解析），手动同步时如实播报跨角色同名模块集合 ——（证据：package.json#configuration `kbengine.python.extraPathsSync`；package.json#contributes.commands `kbengine.python.syncExtraPaths`；src/pythonExtraPaths.ts `planPythonExtraPaths`；src/pythonRoleRoots.ts `enforceRoleIsolation`）
 - **托管目录可配置** —— kode 自管目录（默认 `.kbengine`，容纳 debug.json 与存根）可经 `kbengine.managedDir` 改名，改名后自动重建 ——（证据：src/managedDir.ts；commit c69517e；src/extension.ts watcher）
 
 ## 调试与运行

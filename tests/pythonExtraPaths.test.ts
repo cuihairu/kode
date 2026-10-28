@@ -226,6 +226,27 @@ describe('syncPythonExtraPaths(装配层)', () => {
     expect(messages.info[0]).toContain('未打开工作区');
   });
 
+  it('同名跨角色模块如实播报且合并列表不含角色目录(IDE-PRJ-006)', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    await syncPythonExtraPaths(makeContext(), {
+      exists: (candidate: string): boolean =>
+        ['/ws/scripts', '/ws/scripts/base', '/ws/scripts/cell'].includes(candidate),
+      listSubdirs: (): string[] => [],
+      listPyFiles: (dir: string): string[] =>
+        dir === '/ws/scripts/base' ? ['Avatar.py'] : dir === '/ws/scripts/cell' ? ['Avatar.py', 'Monster.py'] : []
+    });
+
+    // 写入的合并列表只有 scripts 根,base/cell 角色目录不在其中
+    const written = workspaceState.workspaceConfigurationUpdates.find(
+      entry => entry.key === PYTHON_EXTRA_PATHS_SETTING
+    );
+    expect(written?.value).toEqual(['/ws/scripts']);
+    // 播报点名同名模块与隔离口径
+    const collisionMessage = messages.info.find(message => message.includes('同名模块'));
+    expect(collisionMessage).toContain('Avatar');
+    expect(collisionMessage).toContain('不会因顺序跨角色误解析');
+  });
+
   it('写 WorkspaceFolder 级配置并记忆管理段,第二次同步零写入', async () => {
     stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
     const deps = { exists: (): boolean => true, listSubdirs: (): string[] => [] };
