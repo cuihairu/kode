@@ -100,6 +100,7 @@ Check at least the following:
 2. Are the commands, settings, and version in `package.json` correct
 3. Does the `.def` language surface match what the docs describe
 4. Do the dependency graph, entity explorer, logs, and debug entry points open
+5. Does the packaged VSIX contain the parser worker — after `vsce package`, unzip the artifact and confirm `extension/out/pythonParserWorker.js` is present, then start it from the unpacked path with `node` (`new Worker(<unpacked>/extension/out/pythonParserWorker.js)`) and check a parse request gets its `id`/`revision`/`parsed` reply. Structure guards for this live in `tests/vsixPackaging.test.ts`: `.vscodeignore` must exclude `out/**` before keeping `!out/pythonParserWorker.js`, the `bundle` script must keep the worker esbuild entry, and the worker/parser sources must not import `vscode` (the worker starts from the package path without the extension host). Verified 2026-10-29 on a locally packaged artifact (REL-003).
 
 ## Version Policy
 
