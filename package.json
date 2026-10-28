@@ -62,6 +62,7 @@
     "onCommand:kbengine.metrics.showSummary",
     "onCommand:kbengine.metrics.startCpuProfile",
     "onCommand:kbengine.metrics.stopCpuProfile",
+    "onCommand:kbengine.metrics.showActiveTasks",
     "onCommand:kbengine.debug.createConfig",
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
@@ -381,6 +382,10 @@
         {
           "command": "kbengine.metrics.stopCpuProfile",
           "title": "Kode: Stop Extension Host CPU Profile"
+        },
+        {
+          "command": "kbengine.metrics.showActiveTasks",
+          "title": "Kode: Show Active Language Service Tasks"
         },
       {
         "command": "kbengine.debug.createConfig",

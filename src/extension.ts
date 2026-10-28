@@ -11,7 +11,9 @@ import {
 } from './receiverNoneDiagnostics';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
+  getActiveOperationCounts,
   getLanguageServiceSummaryReport,
+  renderActiveTasksReport,
   setDetailedRecordingEnabled,
   setLanguageServiceMetricsLogHub,
   startLanguageServiceOperation
@@ -1732,6 +1734,15 @@ export function activate(context: vscode.ExtensionContext) {
     } else {
       vscode.window.showWarningMessage('Kode: no CPU profile is running');
     }
+  }));
+  // IDE-MET-008:取消前后活动任务从账面对账,不拿空返回值推断工作已停止
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.showActiveTasks', () => {
+    metricsChannel.clear();
+    metricsChannel.append(renderActiveTasksReport({
+      operationCounts: getActiveOperationCounts(),
+      scheduler: getDiagnosticScheduler().pendingWorkload()
+    }));
+    metricsChannel.show();
   }));
   // IDE-MET-005/006:宿主事件循环延迟与 CPU/RSS 自激活即采样(showSummary 面)
   startEventLoopDelayMonitor();

@@ -151,6 +151,7 @@ export function getRecentDetailedSamples(): readonly MetricsSample[] {
 export function resetLanguageServiceMetrics(): void {
   summaries.clear();
   detailedSamples.length = 0;
+  activeByName.clear();
 }
 
 function summaryFor(name: LanguageServiceEventName) {
@@ -287,6 +288,33 @@ function commitSample(sample: MetricsSample): void {
 }
 
 /** 开始一次操作计时;end() 落样本。忘记 end 的样本不进聚合(避免半程数据污染分位数) */
+/**
+ * IDE-MET-008:在册活动任务台账——start 入册/end 出册(含 cancelled 终态)。
+ * 取消后残留任务从账上读,不从 provider 空返回值推断。
+ */
+const activeByName = new Map<string, number>();
+
+/** 各操作族当前在册数(拷贝快照;空对象=零在册) */
+export function getActiveOperationCounts(): Record<string, number> {
+  return Object.fromEntries(activeByName);
+}
+
+/** 渲染活动任务报告:操作族在册数 + 诊断调度器排队/在途(DIA-006 诚实面) */
+export function renderActiveTasksReport(input: {
+  operationCounts: Record<string, number>;
+  scheduler: { queued: number; inFlight: number };
+}): string {
+  const families = Object.keys(input.operationCounts).sort();
+  const total = families.reduce((sum, name) => sum + input.operationCounts[name], 0);
+  const lines = [
+    'active tasks (in-flight operations started..ended; do not infer stopped work from empty return values):',
+    ...families.map(name => `  ${name}: ${input.operationCounts[name]}`),
+    `  diagnostics scheduler: queued=${input.scheduler.queued} inFlight=${input.scheduler.inFlight}`,
+    `  total: ${total}`
+  ];
+  return `${lines.join('\n')}\n`;
+}
+
 export function startLanguageServiceOperation(
   name: LanguageServiceEventName,
   meta: OperationMeta = {}
@@ -301,6 +329,7 @@ export function startLanguageServiceOperation(
   let cacheMisses = 0;
   const pending: OperationMeta = { ...meta };
   let ended = false;
+  activeByName.set(name, (activeByName.get(name) ?? 0) + 1);
 
   const operation = {
     requestId,
@@ -325,6 +354,12 @@ export function startLanguageServiceOperation(
         return;
       }
       ended = true;
+      const remaining = (activeByName.get(name) ?? 1) - 1;
+      if (remaining > 0) {
+        activeByName.set(name, remaining);
+      } else {
+        activeByName.delete(name);
+      }
       commitSample({
         name,
         requestId,

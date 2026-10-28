@@ -205,6 +205,15 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - The `.window.txt` sidecar records window start/end ISO timestamps, duration, the language service metrics summary and the event loop delay report, correlating the profile with the request window
 
 
+### `kbengine.metrics.showActiveTasks`
+
+- Title: `Kode: Show Active Language Service Tasks`
+- Purpose: export pending and post-cancel residual task counts (IDE-MET-008)
+- Behavior:
+  - Lists in-flight language service operations per family (started..ended ledger; cancelled ends also leave the ledger) plus the diagnostics scheduler queued/inFlight workload
+  - Read this ledger to compare active tasks before and after cancelling a request; do not infer that work stopped from an empty provider return value
+
+
 ### `kbengine.python.debugpySync`
 
 - Title: `Copy System debugpy into Assets`
