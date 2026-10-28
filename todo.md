@@ -482,7 +482,7 @@
 ### IDE-DB · 只读数据库工作流（P2）
 
 来源：审计 §6；src/databaseDrift.ts、src/databaseSchema.ts。
-- [ ] IDE-DB-001 [P2] 按 profile 选择只读数据库连接；验收：切换项目不复用另一 profile 的连接配置或结果缓存；前置：IDE-PRJ-001。
+- [x] IDE-DB-001 [P2] 按 profile 选择只读数据库连接；验收：切换项目不复用另一 profile 的连接配置或结果缓存；前置：IDE-PRJ-001。（7c3e3cc;src/databaseConnectionRegistry.ts 双隔离=DatabaseConnectionRegistry(profileId→配置快照,select 以 resolveConfig 结果为该 profile 当前配置/重复选择覆盖引擎配置变更生效/解析失败记无配置不回退邻居/未选过 null)+DatabaseQueryResultCache(profileId→SQL→结果,TTL 默认 30s 过期不命中,clearProfile 只清目标);配置经注入 load/save 持久化重启按 profile 独立读回,损坏载荷静默空表不炸;缓存会话级不落盘(持久化载荷不含 rows,陈旧结果不冒充新查询);实际建连与只读白名单走 databaseDrift 既有面本模块只管隔离;TTL 坑=set options 必填导致不传即 NaN 永不命中,改默认 30_000;prove-red=Cannot find module 整文件红 11 例;门禁=eslint 0/tsc 0/unit 3852|7(335)/demo 25 RC=0/docs build 绿;docs/features.md+zh DB-001 条目）
 - [ ] IDE-DB-002 [P2] 提供单表只读数据预览；验收：只执行现有白名单允许的查询，默认结果有条数上限；前置：IDE-DB-001。
 - [ ] IDE-DB-003 [P2] 为只读查询增加取消与超时；验收：慢查询结束等待并释放连接，不滞留后台轮询；前置：IDE-DB-002。
 - [ ] IDE-DB-004 [P2] 将结果列关联回 def/type 声明；验收：点击已推导列能定位正确来源；未知引擎列说明为合成列；前置：IDE-SCH-010, IDE-DB-002。
