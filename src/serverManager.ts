@@ -7,6 +7,12 @@ import { ProcessManager } from './processManager';
 import { joinWorkspacePath, usesPosixPath } from './workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 import { makeProbeOne, readTelnetTargetsFromSettings, type TelnetTarget } from './telnetService';
+import {
+  isDependencySatisfied,
+  resolveLaunchOrder,
+  type DependencyReadyState,
+  type LaunchTargetSpec
+} from './launchDependencies';
 
 /**
  * KBEngine 服务器组件信息
@@ -184,6 +190,36 @@ const READINESS_PROBE_TIMEOUT_MS = 1000;
 const READINESS_PROBE_INTERVAL_MS = 250;
 /** 就绪等待默认上限(RUN-004):到期放弃等待并报告 target;null 可显式关闭 */
 const READINESS_WAIT_TIMEOUT_MS = 60000;
+
+/**
+ * 组启动请求(RUN-006):component=组件名,targetId=实例(dependsOn 缺省取
+ * 组件声明链,可显式覆盖;readinessProbe 透传 startComponent 注入口)
+ */
+export interface GroupTargetRequest {
+  component: string;
+  targetId?: string;
+  dependsOn?: readonly string[];
+  readinessProbe?: (() => Promise<boolean>) | null;
+}
+
+/** 组启动单目标结局 */
+export type TargetOutcomeKind = 'started' | 'dependency-failed' | 'dependency-timeout' | 'spawn-failed' | 'not-found';
+
+export interface TargetOutcome {
+  key: string;
+  component: string;
+  targetId: string;
+  outcome: TargetOutcomeKind;
+  /** 未启动时的责任依赖键 */
+  dependency?: string;
+}
+
+/** 组启动报告:环时零启动只报环路径 */
+export interface TargetGroupReport {
+  order?: string[];
+  cycle?: string[];
+  outcomes: TargetOutcome[];
+}
 
 /**
  * 组件就绪探针(RUN-003):配置开了 telnet 的组件用其目标端口做真实 TCP
@@ -621,6 +657,155 @@ export class KBEngineServerManager {
       // 等待一段时间再启动下一个
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
+  }
+
+  /**
+   * 就绪视图:把登记表压成依赖就绪判定所需的最小面(RUN-005/006)
+   */
+  private dependencyReadyView(): Map<string, DependencyReadyState> {
+    const view = new Map<string, DependencyReadyState>();
+    this.runningServers.forEach((server, key) => {
+      view.set(key, { status: server.status, readinessGivenUp: server.readinessGivenUp });
+    });
+    return view;
+  }
+
+  /**
+   * 等一组直接依赖全部「在册且 Running」(RUN-006)。失败即返回:
+   * - 依赖被组内判定失败/跳过(failedKeys)
+   * - 依赖启动过又退出(在册→不在册)
+   * - 依赖放弃就绪等待(RUN-004,停在 Starting)
+   * 组外依赖若始终未就绪,等到 timeoutMs 上限(缺省 60s,null 关闭)。
+   */
+  private async waitForTargetDependencies(
+    deps: readonly string[],
+    failedKeys: ReadonlySet<string>,
+    options: { intervalMs?: number; timeoutMs?: number | null }
+  ): Promise<{ ok: true } | { ok: false; reason: 'dependency-failed' | 'dependency-timeout'; dependency: string }> {
+    if (deps.length === 0) {
+      return { ok: true };
+    }
+    const intervalMs = options.intervalMs ?? 250;
+    const deadline = options.timeoutMs === null || options.timeoutMs === undefined
+      ? Number.POSITIVE_INFINITY
+      : Date.now() + options.timeoutMs;
+    const seenPresent = new Set<string>();
+    // 轮询起点先登记一遍当前在册依赖:组外早已 Running 的依赖不在"曾在册
+    // 又消失"的失败观测范围内,直接按就绪判定处理
+    const initial = this.dependencyReadyView();
+    for (const dep of deps) {
+      if (initial.get(dep) || (dep.indexOf('#') < 0 && [...initial.keys()].some(key => key === dep || key.startsWith(`${dep}#`)))) {
+        seenPresent.add(dep);
+      }
+    }
+    for (;;) {
+      const view = this.dependencyReadyView();
+      for (const dep of deps) {
+        if (failedKeys.has(dep)) {
+          return { ok: false, reason: 'dependency-failed', dependency: dep };
+        }
+        const entry = view.get(dep)
+          ?? (dep.indexOf('#') < 0
+            ? [...view.entries()].find(([key]) => key === dep || key.startsWith(`${dep}#`))?.[1]
+            : undefined);
+        if (entry && entry.readinessGivenUp) {
+          return { ok: false, reason: 'dependency-failed', dependency: dep };
+        }
+        if (entry) {
+          seenPresent.add(dep);
+        } else if (seenPresent.has(dep)) {
+          // 曾在册又不在册:依赖进程已退出
+          return { ok: false, reason: 'dependency-failed', dependency: dep };
+        }
+      }
+      if (deps.every(dep => isDependencySatisfied(dep, view))) {
+        return { ok: true };
+      }
+      if (Date.now() >= deadline) {
+        return { ok: false, reason: 'dependency-timeout', dependency: deps.find(dep => !isDependencySatisfied(dep, view)) ?? deps[0] };
+      }
+      await new Promise(resolve => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  /**
+   * 按依赖就绪顺序启动一组目标(RUN-006):先拓扑定序(环→零启动+环报告);
+   * 逐目标等全部直接依赖「在册且 Running」才启动,前置失败(退出/放弃就绪
+   * 等待/启动失败/组内跳过)时依赖它的后续启动不继续,失败沿组传染。
+   * dependsOn 缺省取组件声明的标准链,可显式覆盖(自定义启动图/测试)。
+   */
+  async startTargetGroup(
+    requests: readonly GroupTargetRequest[],
+    options?: { dependencyTimeoutMs?: number | null; readinessTimeoutMs?: number | null }
+  ): Promise<TargetGroupReport> {
+    const resolved: Array<{
+      key: string;
+      componentName: string;
+      targetId: string;
+      component: ServerComponent;
+      dependsOn: readonly string[];
+      readinessProbe?: (() => Promise<boolean>) | null;
+    }> = [];
+    const unknown: Array<{ key: string; componentName: string; targetId: string }> = [];
+    for (const request of requests) {
+      const targetId = request.targetId ?? DEFAULT_TARGET_ID;
+      const component = SERVER_COMPONENTS.find(item => item.name === request.component);
+      if (!component) {
+        unknown.push({ key: buildServerKey(request.component, targetId), componentName: request.component, targetId });
+        continue;
+      }
+      resolved.push({
+        key: buildServerKey(component.name, targetId),
+        componentName: component.name,
+        targetId,
+        component,
+        dependsOn: request.dependsOn ?? component.dependsOn ?? [],
+        readinessProbe: request.readinessProbe
+      });
+    }
+    if (unknown.length > 0) {
+      return {
+        outcomes: unknown.map(item => ({
+          key: item.key, component: item.componentName, targetId: item.targetId, outcome: 'not-found' as const
+        }))
+      };
+    }
+
+    const specs: LaunchTargetSpec[] = resolved.map(target => ({ key: target.key, dependsOn: target.dependsOn }));
+    const order = resolveLaunchOrder(specs);
+    if (!order.ok) {
+      return { cycle: order.cycle, outcomes: [] };
+    }
+
+    const byKey = new Map(resolved.map(target => [target.key, target]));
+    const failedKeys = new Set<string>();
+    const outcomes: TargetOutcome[] = [];
+    for (const key of order.order) {
+      const target = byKey.get(key) as typeof resolved[number];
+      const wait = await this.waitForTargetDependencies(target.dependsOn, failedKeys, {
+        timeoutMs: options?.dependencyTimeoutMs ?? READINESS_WAIT_TIMEOUT_MS
+      });
+      if (!wait.ok) {
+        failedKeys.add(key);
+        outcomes.push({
+          key, component: target.componentName, targetId: target.targetId,
+          outcome: wait.reason, dependency: wait.dependency
+        });
+        continue;
+      }
+      const started = await this.startComponent(target.component, {
+        targetId: target.targetId,
+        readinessTimeoutMs: options?.readinessTimeoutMs,
+        readinessProbe: target.readinessProbe
+      });
+      if (!started) {
+        failedKeys.add(key);
+        outcomes.push({ key, component: target.componentName, targetId: target.targetId, outcome: 'spawn-failed' });
+        continue;
+      }
+      outcomes.push({ key, component: target.componentName, targetId: target.targetId, outcome: 'started' });
+    }
+    return { order: order.order, outcomes };
   }
 
   /**
