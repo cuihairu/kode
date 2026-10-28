@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest';
 import * as vscode from 'vscode';
-import { WorkspaceIndex } from '../src/workspaceIndex';
+import {
+  getWorkspaceIndexYieldCountForTests,
+  resetWorkspaceIndexYieldClockForTests,
+  WorkspaceIndex
+} from '../src/workspaceIndex';
 
 // 2026-10-28 审核整改(EVT-012 冷路径):共享索引首扫的逐文件解析让出宿主
 // (每趟扫描间 setImmediate)——冷扫不再以整批同步块占住事件循环;微任务
@@ -36,6 +40,30 @@ it('冷首扫逐文件让出宿主,扫描期间事件循环仍有定时器心跳
   // 让出面:扫描横跨多个宏任务边界,1ms 定时器至少心跳一次
   // (旧码:整趟首扫单宏任务,定时器饿死恒 0)
   expect(ticks).toBeGreaterThan(0);
+});
+
+it('时间片让出(EVT-012 修订):小批文件不足一个切片不让出,冷窗不再逐文件跳宏任务', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  // 40 个 5 行小文件:整趟解析远小于一个 25ms 切片——时间片口径下让出
+  // 应≤2 次(首让+至多再一片);逐文件双让出的旧码是 2×40=80 次,
+  // 5000 文件冷扫即上万次宏任务跳转,把共享事件循环上的 python 首扫
+  // /发现拖长一个数量级(2026-10-28 现场联合重验实测)。
+  const files = Array.from({ length: 40 }, (_, i) => vscode.Uri.file(`/ws/tiny${i}.py`));
+  const body = Buffer.from('value = 1\nvalue = 2\nvalue = 3\nvalue = 4\nvalue = 5\n');
+  vscode.workspace.findFiles = async () => files;
+  vscode.workspace.fs.readFile = async () => body;
+  resetWorkspaceIndexYieldClockForTests();
+  const index = new WorkspaceIndex();
+  try {
+    const calls = await index.allEventCalls();
+    expect(calls).toHaveLength(0);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+  expect(getWorkspaceIndexYieldCountForTests()).toBeLessThanOrEqual(2);
 });
 
 it('让出边界不改口径:稀疏事件行号仍按建索引时算好', async () => {

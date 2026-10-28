@@ -784,6 +784,8 @@ export function activate(context: vscode.ExtensionContext) {
   // registerEvent 的回调 def 声明处标「事件回调 · EV_X」、emitEvent 处标
   // 监听数,独立开关 kbengine.codeLens.eventCallbacks,与 RPC 互不影响
   // IDE-EVT-012:事件 CodeLens 复用统一文件索引(全仓扫描入口只此一份)
+  // 预启动错峰窗:激活后等冷窗(首查/首扫/Pylance 初始化)过去再入队全量扫描
+  const WORKSPACE_PRESTART_GRACE_MS = 8_000;
   const sharedWorkspaceIndex = new WorkspaceIndex();
   const eventCodeLensProviderImpl = new EventCodeLensProvider(sharedWorkspaceIndex);
   const eventCodeLensProvider = vscode.languages.registerCodeLensProvider(
@@ -792,23 +794,28 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(eventCodeLensProvider, eventCodeLensProviderImpl);
   context.subscriptions.push(sharedWorkspaceIndex);
-  // EVT-012 冷路径(2026-10-28 审核整改):共享索引首扫提前到启动期后台
-  // 队列(KBEngine 特征门控与首扫口径一致),首次交互 CodeLens 不再是
-  // 全仓扫描的触发点;扫描本身逐文件让出宿主(见 workspaceIndex)。
-  // 门控外工作区保持懒启动:无事件调用的纯 Python 仓零后台扫描。
+  // EVT-012 冷路径(2026-10-28 审核整改;同日现场联合重验修订):共享索引
+  // 首扫提前到启动期后台队列(KBEngine 特征门控与首扫口径一致),首次交互
+  // CodeLens 不再是全仓扫描的触发点。激活瞬间入队会让该任务与 python 首扫
+  // /文件发现在同一冷窗互踩(现场联合重验:冷首查 1189ms→2526ms 且预算内
+  // 0 目标),故延迟 8s 错峰——首用交互扫描(RequestLocal)先行,预启动只
+  // 在冷窗之后补位。门控外工作区保持懒启动:无事件调用的纯 Python 仓零后台扫描。
   void shouldStartKbEngineIndexing().then(gated => {
     if (!gated) { return; }
-    void indexScheduler.enqueue({
-      kind: 'non-interactive',
-      priority: IndexTaskPriority.NonInteractive,
-      run: async () => {
-        try {
-          await sharedWorkspaceIndex.ensureStarted();
-        } catch {
-          // 首扫失败不拖垮启动:交互侧首用时仍可按需重扫(幂等)
+    const grace = setTimeout(() => {
+      void indexScheduler.enqueue({
+        kind: 'non-interactive',
+        priority: IndexTaskPriority.NonInteractive,
+        run: async () => {
+          try {
+            await sharedWorkspaceIndex.ensureStarted();
+          } catch {
+            // 首扫失败不拖垮启动:交互侧首用时仍可按需重扫(幂等)
+          }
         }
-      }
-    }).wait;
+      }).wait.catch(() => undefined);
+    }, WORKSPACE_PRESTART_GRACE_MS);
+    context.subscriptions.push({ dispose: (): void => clearTimeout(grace) });
   });
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫

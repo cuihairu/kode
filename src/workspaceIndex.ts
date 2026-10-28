@@ -25,7 +25,35 @@ const INITIAL_SCAN_CONCURRENCY = 8;
 
 /** EVT-012 冷路径(2026-10-28 审核整改):首扫逐文件解析按趟让出宿主,
  * 冷扫不再以整批同步块占住交互线程(setImmediate 宏任务边界)。 */
-const yieldToHost = (): Promise<void> => new Promise(resolve => { setImmediate(resolve); });
+// 让出节拍观测(测试面):实际让出宿主的次数;prove-red 用——时间片让出
+// (EVT-012 修订)下小批文件让出应是个位数,逐文件让出的旧码是 2×文件数。
+let yieldToHostCount = 0;
+export function getWorkspaceIndexYieldCountForTests(): number {
+  return yieldToHostCount;
+}
+export function resetWorkspaceIndexYieldClockForTests(): void {
+  yieldToHostCount = 0;
+}
+
+const yieldToHost = (): Promise<void> => {
+  yieldToHostCount += 1;
+  return new Promise(resolve => { setImmediate(resolve); });
+};
+
+// EVT-012 修订(2026-10-28 现场联合重验):逐文件双让出在 5000 文件冷扫中
+// 产生上万次宏任务跳转,把共享事件循环上的 python 首扫/文件发现拖长一个
+// 数量级(冷首查 1189ms→2526ms 且预算内 0 目标)。改为按耗时切片:距上次
+// 让出不足 YIELD_SLICE_MS 不让;让出后照旧重验 disposed/revision。宿主单次
+// 连续同步段上界=切片+单文件解析,仍受 timerDelay 契约约束,不再逐文件付费。
+const YIELD_SLICE_MS = 25;
+let lastYieldAt = 0;
+const yieldToHostIfDue = async (): Promise<void> => {
+  if (Date.now() - lastYieldAt < YIELD_SLICE_MS) { return; }
+  // 同步先落时间戳再挂起:并发 worker 在首个 setImmediate 解析前都会过
+  // 切片检查,迟落会把整批 worker 同时放进让出(实测 8 并发=8 连让)。
+  lastYieldAt = Date.now();
+  await yieldToHost();
+};
 
 export class WorkspaceIndex {
   private readonly cache = new Map<string, IndexedFile>();
@@ -128,8 +156,8 @@ export class WorkspaceIndex {
         }
         const text = Buffer.from(bytes).toString('utf8');
         // 让出边界后重验:让出窗口内的保存/销毁按既有口径处置(弃旧解析,
-        // 不覆盖新数据),窗口本身不引入行为差。
-        await yieldToHost();
+        // 不覆盖新数据),窗口本身不引入行为差。让出按时间切片节流。
+        await yieldToHostIfDue();
         if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
           return this.cache.get(uri.fsPath) ?? null;
         }
@@ -151,7 +179,7 @@ export class WorkspaceIndex {
           name: m[1],
           line: lineAt(m.index || 0),
         }));
-        await yieldToHost();
+        await yieldToHostIfDue();
         if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
           return this.cache.get(uri.fsPath) ?? null;
         }

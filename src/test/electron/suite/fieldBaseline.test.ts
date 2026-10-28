@@ -78,6 +78,8 @@ interface CpuProfileNode {
   hitCount: number;
   callFrame: { functionName: string; url: string };
 }
+/** 采样距:自耗时 ≈ hitCount × 该值(ms) */
+const CPU_SAMPLING_INTERVAL_MS = 5;
 interface CpuProfile {
   nodes: CpuProfileNode[];
 }
@@ -185,11 +187,12 @@ describe('P0-4b 现场基线采集(真 VS Code 扩展宿主)', function () {
       assert.ok(extension, 'Kode extension is unavailable in the extension host');
       kodeApi = await extension.activate() as KodeFieldProbeApi | undefined;
     }
-    // CPU profile(2026-10-28 审核重开):整场 1ms 采样,after() 写 <OUT>.cpuprofile
+    // CPU profile(2026-10-28 审核重开):整场 5ms 采样(1ms 对冷窗观察税过重,
+    // 自耗时按采样距折算),after() 写 <OUT>.cpuprofile
     profiler = new Session();
     profiler.connect();
     await inspectorPost(profiler, 'Profiler.enable');
-    await inspectorPost(profiler, 'Profiler.setSamplingInterval', { interval: 1000 });
+    await inspectorPost(profiler, 'Profiler.setSamplingInterval', { interval: CPU_SAMPLING_INTERVAL_MS * 1000 });
     await inspectorPost(profiler, 'Profiler.start');
     // 环境记录(现场口径:本机真 VS Code + 已装扩展)
     once('env.fieldRounds', ROUNDS, '');
@@ -250,7 +253,7 @@ describe('P0-4b 现场基线采集(真 VS Code 扩展宿主)', function () {
           const where = (node.callFrame.url || '').split('/').pop() ?? '';
           once(
             `host.cpuProfile.selfTop${i + 1}`,
-            `${node.hitCount}ms ${node.callFrame.functionName || '(anonymous)'} ${where}`,
+            `${node.hitCount * CPU_SAMPLING_INTERVAL_MS}ms ${node.callFrame.functionName || '(anonymous)'} ${where}`,
             ''
           );
         });
