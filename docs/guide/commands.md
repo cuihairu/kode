@@ -494,6 +494,20 @@ The flow graph panel supports:
   - An unknown ID is refused (nothing persisted, nothing fired); a selection whose profile record was later removed resolves honestly to null instead of pretending to be valid
   - With no profiles at all the command says so and never opens the picker
 
+### `kbengine.profile.health`
+
+- Title: `Show Active Profile Health`
+- Purpose: summarize the active profile's health to the workbench, one issue kind per row with a concrete navigation entry; the active profile is resolved through the stable-ID selection (see `kbengine.project.selectActive`)
+- Issue kinds and entries (each issue carries its own entry):
+  - 根歧义 (roots ambiguous — the profile's assets root no longer exists on disk) → re-run `kbengine.project.import`
+  - 缺引擎 (engine missing — engine root not recorded, or no longer on disk) → re-run `kbengine.project.import`
+  - 缺解释器 (interpreter missing — not recorded, or no longer on disk) → open the `kbengine.python.interpreterPath` setting
+  - 缺语言服务 (language service unavailable — the PRJ-005 three-state check reports anything other than 已激活) → run `kbengine.python.serviceStatus`
+- Behavior:
+  - No active profile → an honest message pointing at the selection command, no picker
+  - All healthy → a single health message, no warnings, no picker
+  - Issues → a warning with the count, then a QuickPick listing each issue (label = kind, description = the deciding fact, detail = the navigation entry); picking a row navigates to its entry (command or settings), Esc leaves the list without navigating
+
 ### `kbengine.extension.identity`
 
 - Title: `Show Extension Identity Report`

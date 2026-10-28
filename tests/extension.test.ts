@@ -1495,6 +1495,33 @@ describe('激活期活动 profile 选择命令装配(IDE-PRJ-010)', () => {
   }, 8000);
 });
 
+describe('激活期 profile 健康汇总命令装配(IDE-PRJ-009)', () => {
+  it('profile.health 命令:无活动 profile 时如实说明', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalPick = windowish.showQuickPick;
+    let pickCalls = 0;
+    const originalInfoCount = messages.info.length;
+    const context = makeContext();
+    try {
+      activate(context);
+
+      windowish.showQuickPick = async (): Promise<unknown> => {
+        pickCalls += 1;
+        return undefined;
+      };
+
+      await commands.executeCommand('kbengine.profile.health');
+
+      expect(pickCalls).toBe(0);
+      expect(messages.info.slice(originalInfoCount).some(entry => entry.includes('未选择活动 project profile'))).toBe(true);
+    } finally {
+      windowish.showQuickPick = originalPick;
+      messages.info.length = originalInfoCount;
+      disposeAll(context);
+    }
+  }, 8000);
+});
+
 describe('激活期 debug.json 缺失自动生成(批143)', () => {
   it('工作区没有配置文件时生成带注释骨架,生效工作目录与来源落输出通道', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-debugcfg-'));

@@ -395,6 +395,20 @@
   - 未知 ID 拒绝（不落盘不发事件）；选择对应的记录后来被删除时如实解析为 null，不伪装有效
   - 完全没有 profile 时如实说明，不打开选择器
 
+### `kbengine.profile.health`
+
+- 标题：`Show Active Profile Health`
+- 用途：把活动 profile 的健康状态汇总到工作台，逐类问题一行并带具体定位入口；活动 profile 经稳定 ID 选择解析（见 `kbengine.project.selectActive`）
+- 问题类别与入口（每类问题各带自己的入口）：
+  - 根歧义（profile 的资产根已不在盘上）→ 重跑 `kbengine.project.import`
+  - 缺引擎（引擎根未记录，或已不在盘上）→ 重跑 `kbengine.project.import`
+  - 缺解释器（未记录，或已不在盘上）→ 打开 `kbengine.python.interpreterPath` 设置
+  - 缺语言服务（PRJ-005 三态判定非已激活）→ 运行 `kbengine.python.serviceStatus`
+- 行为：
+  - 无活动 profile → 如实说明并指向选择命令，不开选择器
+  - 全部健康 → 一条健康消息，无警告无选择器
+  - 有问题 → 警告报出问题数，QuickPick 逐条列出（标签=类别，description=判定事实，detail=定位入口）；选中一行跳到对应入口（命令或设置），Esc 只看不跳
+
 ### `kbengine.quickActions.show`
 
 - 标题：`Run Quick Actions`

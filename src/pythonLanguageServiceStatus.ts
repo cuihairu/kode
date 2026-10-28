@@ -4,10 +4,14 @@
  * 目录(磁盘证据,被禁用的扩展不进 extensions.all,靠目录探测兜住);
  * extraPaths 是否写入永不参与可用判定,只在显示面附警示
  * (python.analysis.extraPaths 写了不等于 Pylance 在跑)。
- * 本模块是纯判定+渲染面;采集在 extension.ts 命令接线处。
+ * 判定与渲染是纯面;事实采集 collectPythonServiceFacts 供状态命令与
+ * profile 健康汇总(IDE-PRJ-009)共用同一份输入。
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import * as vscode from 'vscode';
 
 /** 语言服务扩展(Pylance):python.analysis.* 设置的属主 */
 export const PYLANCE_EXTENSION_ID = 'ms-python.vscode-pylance';
@@ -83,4 +87,28 @@ export function pylanceInstallExists(extensionsDir: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * 事实采集(自 extension.ts 状态命令抽取,单一来源):注册与激活读
+ * vscode.extensions.all,磁盘证据探 ~/.vscode/extensions,extraPaths 是否
+ * 已写入只作警示输入。状态命令与 profile 健康汇总共用。
+ */
+export function collectPythonServiceFacts(): PythonServiceFacts {
+  const pylance = vscode.extensions.all.filter(extension => extension.id === PYLANCE_EXTENSION_ID);
+  let extraPathsWritten = false;
+  try {
+    const extraPaths = vscode.workspace
+      .getConfiguration('python.analysis')
+      .get<unknown>('extraPaths', []);
+    extraPathsWritten = Array.isArray(extraPaths) && extraPaths.length > 0;
+  } catch {
+    extraPathsWritten = false;
+  }
+  return {
+    registered: pylance.length > 0,
+    isActive: pylance.some(extension => extension.isActive),
+    installDirExists: pylanceInstallExists(path.join(os.homedir(), '.vscode', 'extensions')),
+    extraPathsWritten
+  };
 }

@@ -6,10 +6,10 @@ import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { importExistingProject } from './projectImport';
 import { createMinimalProject } from './projectCreate';
 import { selectActiveProfile } from './activeProfile';
+import { showProfileHealthSummary } from './profileHealth';
 import {
   classifyPythonService,
-  PYLANCE_EXTENSION_ID,
-  pylanceInstallExists,
+  collectPythonServiceFacts,
   renderPythonServiceMessage
 } from './pythonLanguageServiceStatus';
 import { setJumpLogEnabled } from './navigationLog';
@@ -36,7 +36,6 @@ import {
 } from './documentStore';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS } from './serverManager';
 import { injectDebugpyAfterStart, syncDebugpyPackage } from './autoDebugpy';
@@ -2812,29 +2811,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(identityCommand, identityChannel);
 
   // Python 语言服务三态检查(IDE-PRJ-005):未安装/未启用/已激活,判定只看
-  // 扩展事实;extraPaths 写入只是配置面,附警示不参与可用判定
+  // 扩展事实(采集 collectPythonServiceFacts 与 profile 健康汇总同源);
+  // extraPaths 写入只是配置面,附警示不参与可用判定
   const pythonServiceStatusCommand = vscode.commands.registerCommand('kbengine.python.serviceStatus', () => {
-    const pylance = vscode.extensions.all.filter(extension => extension.id === PYLANCE_EXTENSION_ID);
-    let extraPathsWritten = false;
-    try {
-      const extraPaths = vscode.workspace
-        .getConfiguration('python.analysis')
-        .get<unknown>('extraPaths', []);
-      extraPathsWritten = Array.isArray(extraPaths) && extraPaths.length > 0;
-    } catch {
-      extraPathsWritten = false;
-    }
-    const facts = {
-      registered: pylance.length > 0,
-      isActive: pylance.some(extension => extension.isActive),
-      installDirExists: pylanceInstallExists(path.join(os.homedir(), '.vscode', 'extensions')),
-      extraPathsWritten
-    };
+    const facts = collectPythonServiceFacts();
     vscode.window.showInformationMessage(
       renderPythonServiceMessage(classifyPythonService(facts), facts)
     );
   });
   context.subscriptions.push(pythonServiceStatusCommand);
+
+  // profile 健康状态汇总(IDE-PRJ-009):缺引擎/缺解释器/缺语言服务/根歧义
+  // 各带定位入口,活动 profile 经稳定 ID 解析(IDE-PRJ-010)
+  const profileHealthCommand = vscode.commands.registerCommand(
+    'kbengine.profile.health',
+    () => showProfileHealthSummary(context)
+  );
+  context.subscriptions.push(profileHealthCommand);
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传
   const discoveryRoot = primaryWorkspaceRoot;

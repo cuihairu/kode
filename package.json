@@ -72,6 +72,7 @@
     "onCommand:kbengine.project.import",
     "onCommand:kbengine.project.create",
     "onCommand:kbengine.project.selectActive",
+    "onCommand:kbengine.profile.health",
     "onCommand:kbengine.python.serviceStatus",
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
@@ -432,6 +433,10 @@
       {
         "command": "kbengine.project.selectActive",
         "title": "Select Active Project Profile"
+      },
+      {
+        "command": "kbengine.profile.health",
+        "title": "Show Active Profile Health"
       },
       {
         "command": "kbengine.python.serviceStatus",
