@@ -535,3 +535,137 @@ describe('DebugConfigManager.attachRemote + readRemoteTargets (批112 远程调�
     configurationOverrides.clear();
   });
 });
+
+describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
+  const debugish = stubDebug as unknown as Record<string, unknown>;
+  let hung = false;
+  const stopCalls: unknown[][] = [];
+  const warnings: string[] = [];
+  let fireCancel: (() => void) | undefined;
+  let cancelDisposals = 0;
+  let originalStart: unknown;
+  let originalStop: unknown;
+  let originalWithProgress: unknown;
+  let originalWarn: unknown;
+
+  beforeAll(() => {
+    originalStart = debugish.startDebugging;
+    originalStop = debugish.stopDebugging;
+    originalWithProgress = windowish.withProgress;
+    originalWarn = windowish.showWarningMessage;
+    windowish.showWarningMessage = async (message: string) => {
+      warnings.push(message);
+      return undefined;
+    };
+    // 挂起面:hung=true 时 startDebugging 永不落定(模拟无人监听端口)
+    debugish.startDebugging = async (
+      folder: unknown,
+      config: Record<string, unknown>
+    ) => {
+      debugCalls.push({ folder, config, result: true, throws: null });
+      if (hung) {
+        return new Promise<boolean>(() => undefined);
+      }
+      return true;
+    };
+    debugish.stopDebugging = async (...args: unknown[]) => {
+      stopCalls.push(args);
+    };
+    // 可控取消面:捕获 token 的取消订阅
+    windowish.withProgress = async (
+      _options: unknown,
+      task: (progress: unknown, token: unknown) => Promise<unknown>
+    ) =>
+      task(undefined, {
+        isCancellationRequested: false,
+        onCancellationRequested: (listener: () => void) => {
+          fireCancel = listener;
+          return {
+            dispose: () => {
+              cancelDisposals += 1;
+            }
+          };
+        }
+      });
+  });
+  afterAll(() => {
+    debugish.startDebugging = originalStart;
+    debugish.stopDebugging = originalStop;
+    windowish.withProgress = originalWithProgress;
+    windowish.showWarningMessage = originalWarn;
+  });
+  beforeEach(() => {
+    hung = false;
+    stopCalls.length = 0;
+    warnings.length = 0;
+    cancelDisposals = 0;
+    fireCancel = undefined;
+  });
+
+  it('按期完成:withProgress 包裹,返回 true,零停止零警告,取消订阅已释放', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    expect(stopCalls).toHaveLength(0);
+    expect(warnings).toHaveLength(0);
+    expect(cancelDisposals).toBe(1);
+  });
+
+  it('不可达端口到点:停掉卡住的会话+超时提示,false 且不重试(仅一次 startDebugging)', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    configurationOverrides.set('kbengine', { 'debug.attachTimeoutMs': 5 });
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    hung = true;
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(1);
+    expect(stopCalls).toHaveLength(1);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('超时');
+    expect(warnings[0]).toContain('不再重试');
+    configurationOverrides.clear();
+  }, 10_000);
+
+  it('进度通知上取消:同一停止路径,取消提示,false', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    hung = true;
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    const attaching = manager.attachToComponent('baseapp');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    fireCancel?.();
+    expect(await attaching).toBe(false);
+
+    expect(stopCalls).toHaveLength(1);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('已取消');
+  });
+
+  it('attachRemote 同一闸:不可达远端到点停止,false', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    configurationOverrides.set('kbengine', {
+      'debug.remoteTargets': [{ name: '外网', host: '10.0.0.8' }],
+      'debug.attachTimeoutMs': 5
+    });
+    pickQueue.push({ label: '外网', description: '10.0.0.8:5678' });
+    infoQueue.push('开始附加');
+    hung = true;
+    const manager = makeManager();
+    await flushAsync();
+
+    expect(await manager.attachRemote()).toBe(false);
+
+    expect(stopCalls).toHaveLength(1);
+    expect(warnings[0]).toContain('超时');
+    configurationOverrides.clear();
+  }, 10_000);
+});

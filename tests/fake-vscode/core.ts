@@ -122,6 +122,13 @@ export enum ViewColumn {
   Two = 4
 }
 
+// DBG-007 attachWithDeadline 的取消面走 withProgress 通知位;真值对齐。
+export enum ProgressLocation {
+  SourceControl = 1,
+  Window = 10,
+  Notification = 15
+}
+
 // extension.ts 的状态栏经 vscode.window.createStatusBarItem(Alignment, priority)。
 export enum StatusBarAlignment {
   Left = 1,
@@ -145,8 +152,11 @@ export enum ConfigurationTarget {
 // debugConfig 的 attachToComponent 经 vscode.debug.startDebugging 启动
 // 调试会话;对象成员可变,测试按用例 monkey-patch startDebugging。
 // 会话生命周期事件(DBG-005 注册表接线):默认零订阅者,测试可回放会话。
+// stopDebugging(DBG-007 截止闸,@types 1.50 面无 stopSession):默认零
+// 动作,测试按用例 monkey-patch 记录。
 export const debug = {
   startDebugging: async (_folder: unknown, _config: unknown): Promise<boolean> => false,
+  stopDebugging: async (_session?: unknown): Promise<void> => undefined,
   onDidStartDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined }),
   onDidTerminateDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined })
 };

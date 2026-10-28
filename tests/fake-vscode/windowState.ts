@@ -129,7 +129,19 @@ export const window = {
     title: string,
     showOptions: unknown,
     options: unknown
-  ): FakeWebviewPanel => panelRegistry.create(viewType, title, showOptions, options)
+  ): FakeWebviewPanel => panelRegistry.create(viewType, title, showOptions, options),
+  // DBG-007 attachWithDeadline 的取消面:默认立即执行任务体并给一个
+  // 永不取消的 token(零订阅);测试 monkey-patch 捕获 token 回放取消。
+  withProgress: async <R>(
+    _options: unknown,
+    task: (progress: unknown, token: unknown) => Promise<R>
+  ): Promise<R> =>
+    task(undefined, {
+      isCancellationRequested: false,
+      onCancellationRequested: (_listener: () => void): { dispose(): void } => ({
+        dispose: () => undefined
+      })
+    })
 };
 
 export const windowState = {

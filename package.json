@@ -921,6 +921,11 @@
           "default": "detach",
           "description": "调试会话结束时对目标进程的行为。detach（默认）：断开调试器，进程照跑，其他实例与未关联进程一律不动。stop-process：只停止该会话附加的那个目标进程（按组件+实例精确定位，同一组件的其他实例不受牵连）；仅对扩展生成的 attach 配置（条目名带目标身份）生效，用户自建调试会话不受影响"
         },
+        "kbengine.debug.attachTimeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "附加调试的截止毫秒数（Attach to Component / Attach to Remote Component）。附加期间显示可取消的进度通知：无人监听的端口到点即停掉卡住的调试会话并提示，入口不会永久等待，本次不再重试；进度通知上取消走同一停止路径。0 或负值不限时（等到底，仍可手动取消）"
+        },
         "kbengine.jsoncAssociation": {
           "type": "boolean",
           "default": true,

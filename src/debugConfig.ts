@@ -1,6 +1,11 @@
 import * as child_process from 'child_process';
 import * as vscode from 'vscode';
 import { DEBUGPY_PORT_TABLE } from './autoDebugpy';
+import {
+  DEBUG_ATTACH_TIMEOUT_DEFAULT_MS,
+  attachWithDeadline,
+  type AttachGuardOutcome
+} from './debugAttachGuard';
 import { parseDebugConfigText } from './debugConfigBootstrap';
 
 export interface ComponentDebugConfig {
@@ -609,8 +614,13 @@ export class DebugConfigManager {
     };
 
     try {
-      const success = await vscode.debug.startDebugging(undefined, attachConfig);
-      return success === true;
+      const outcome = await this.startAttachGuarded(
+        `${componentName} (pid ${processId})`,
+        // Thenable 适配:startDebugging 返回 Thenable<boolean>,截止闸
+        // 的竞速面要真 Promise(Promise.resolve 包装零开销)
+        () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig))
+      );
+      return outcome.status === 'completed' && outcome.success;
     } catch (error) {
       vscode.window.showErrorMessage(`附加调试失败: ${error}`);
       return false;
@@ -667,12 +677,45 @@ export class DebugConfigManager {
       pathMappings: remoteTargetPathMappings(target)
     };
     try {
-      const success = await vscode.debug.startDebugging(undefined, attachConfig);
-      return success === true;
+      const outcome = await this.startAttachGuarded(
+        `${target.name} ${target.host}:${target.port}`,
+        () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig))
+      );
+      return outcome.status === 'completed' && outcome.success;
     } catch (error) {
       vscode.window.showErrorMessage(`附加远程调试失败: ${error}`);
       return false;
     }
+  }
+
+  /**
+   * DBG-007 带截止与取消的附加入口:进度通知可取消(取消=停掉卡住的
+   * 会话,不再重试),kbengine.debug.attachTimeoutMs 到点同路径停止——
+   * 无人监听的端口不会让入口永久等待;<=0 不限时。条期完成/错误语义
+   * 与裸 startDebugging 一致(错误原样抛给调用方既有 catch)。
+   */
+  private async startAttachGuarded(
+    label: string,
+    start: () => Promise<boolean>
+  ): Promise<AttachGuardOutcome> {
+    return vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `附加调试 ${label}(等待连接,可取消)`,
+        cancellable: true
+      },
+      (_progress, token) =>
+        attachWithDeadline({
+          label,
+          timeoutMs: vscode.workspace
+            .getConfiguration('kbengine')
+            .get<number>('debug.attachTimeoutMs', DEBUG_ATTACH_TIMEOUT_DEFAULT_MS),
+          start,
+          stop: () => void vscode.debug.stopDebugging(),
+          notify: message => void vscode.window.showWarningMessage(message),
+          onCancel: listener => token.onCancellationRequested(() => listener())
+        })
+    );
   }
 
   getConfig(): KBEngineDebugConfig {
