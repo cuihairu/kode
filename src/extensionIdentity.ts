@@ -29,7 +29,7 @@ export function hostLabel(host: ExtensionHostContext): string {
   return host.remoteName ? `remote(${host.remoteName})` : 'local';
 }
 
-function sideLabel(extensionKind: string): string {
+export function sideLabel(extensionKind: string): string {
   if (extensionKind === 'workspace') { return 'workspace host'; }
   if (extensionKind === 'ui') { return 'ui host'; }
   return extensionKind;

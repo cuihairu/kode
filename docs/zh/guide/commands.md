@@ -673,3 +673,17 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
   - 缺声明与预览同样如实警告——不弹保存
   - 写失败如实带原因呈现；成功提示点名写入路径
 - 边界：只做导出；预览命令是 SDK-001
+
+### `kbengine.diagnostics.exportReproSummary`
+
+- 标题：`Export reproduction config summary`
+- 作用：导出一页「环境长什么样」的复现配置摘要（IDE-REL-007），随诊断报告一起回传即可复现环境
+- 入口：命令面板
+- 行为（输出通道「Kode 复现配置摘要」，整页可复制）：
+  - 宿主角色：`local` 或 `remote(<名>)` + 当前窗口的扩展宿主侧（workspace host | ui host）
+  - 活动版本：每个 `cuihairu.` 名下扩展 `id@version active=yes|no side=…`，另列本安装的构建提交（`out/buildCommit.json`，读不到如实 `unknown`）
+  - 根：workspace 目录、索引扫描根、活动 profile（显示名 + 资产根 + 引擎根；未选择 profile 如实写无）
+  - 开关：扩展自身 package.json 贡献的全部 `kbengine.*` 布尔设置（自动枚举，与配置面同步增长），逐项 on/off
+  - 队列数据：诊断排队/在途、待更新注解、索引任务、schema 冷构建，加语言服务在册操作计数（IDE-MET-008 口径）
+  - 连接（已遮蔽）：引擎 dbmgr 数据库接口配置渲染为 `host=… port=… database=… username=*** password=*** encrypt=…`——username/password 永不落值，全文再过一遍把 `password=`/`token=`/`secret=`/`authorization=` 赋值与 URL userinfo 改写为 `***` 的兜底
+- 边界：渲染纯函数在 `src/reproductionSummary.ts`；采集只读现有面（引擎数据库配置、活动 profile、扫描根、诊断调度器、语言服务台账）与自身 package.json

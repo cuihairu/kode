@@ -267,7 +267,8 @@ import {
   renderDiscoveryReport,
   runWorkspaceDiscovery
 } from './workspaceDiscovery';
-import { renderExtensionIdentityReport } from './extensionIdentity';
+import { hostLabel, renderExtensionIdentityReport, sideLabel } from './extensionIdentity';
+import { renderReproductionSummary } from './reproductionSummary';
 import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';
 import { setFileReadVerbose } from './fileReadMetrics';
@@ -3440,6 +3441,77 @@ export function activate(context: vscode.ExtensionContext) {
   if (dualActivationWarning !== null) {
     void vscode.window.showWarningMessage(dualActivationWarning);
   }
+
+  // IDE-REL-007 复现配置摘要:诊断排障时「环境长什么样」一页导出——活动
+  // 版本(cuihairu. 名下 id@version+构建提交)/根(workspace/索引扫描根/
+  // 活动 profile 双根)/宿主角色(local|remote + 扩展宿主侧)/开关(自身
+  // package.json 里全部 kbengine.* 布尔项,自动随贡献面增长)/队列数据
+  // (诊断排队/在途、注解、索引任务、schema 冷构建+语言服务在册操作)。
+  // 连接信息取引擎 dbmgr 数据库接口配置,username/password 渲染层即遮蔽,
+  // 全文再过 maskConnectionSecrets 兜底;渲染纯函数在 reproductionSummary.ts。
+  const reproSummaryChannel = vscode.window.createOutputChannel('Kode 复现配置摘要');
+  const reproSummaryCommand = vscode.commands.registerCommand(
+    'kbengine.diagnostics.exportReproSummary',
+    () => {
+      const configuration = vscode.workspace.getConfiguration('kbengine');
+      const contributed = JSON.parse(
+        fs.readFileSync(path.join(context.extensionPath, 'package.json'), 'utf8')
+      ) as { contributes?: { configuration?: { properties?: Record<string, { type?: string }> } } };
+      const switchKeys = Object.entries(contributed.contributes?.configuration?.properties ?? {})
+        .filter(([, schema]) => schema.type === 'boolean')
+        .map(([key]) => key)
+        .sort();
+      const activeProfile = resolveActiveProfile(context.workspaceState);
+      const database = resolveDatabaseInterfaceConfig();
+      reproSummaryChannel.clear();
+      reproSummaryChannel.appendLine(renderReproductionSummary({
+        host: {
+          label: hostLabel({ remoteName: vscode.env.remoteName, appName: vscode.env.appName }),
+          side: sideLabel(String(context.extension.extensionKind ?? 'unknown'))
+        },
+        extensions: vscode.extensions.all
+          .filter(extension => extension.id.toLowerCase().startsWith('cuihairu.'))
+          .map(extension => ({
+            id: extension.id,
+            version: String(extension.packageJSON?.version ?? 'unknown'),
+            active: extension.isActive,
+            side: sideLabel(String(extension.extensionKind ?? 'unknown'))
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        buildCommit: readBuildCommit(context.extensionPath),
+        workspaceFolders: (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath),
+        scanRoots: getIndexScanRoots(),
+        profile: activeProfile
+          ? {
+              name: activeProfile.displayName,
+              assetsRoot: activeProfile.assetsRoot,
+              engineRoot: activeProfile.engineRoot
+            }
+          : null,
+        switches: switchKeys.map(key => ({ key, on: Boolean(configuration.get<boolean>(key)) })),
+        queue: {
+          diagnosticsQueued: getDiagnosticScheduler().pendingWorkload().queued,
+          diagnosticsInFlight: getDiagnosticScheduler().pendingWorkload().inFlight,
+          annotationUpdates: getPendingDocumentUpdateCount(),
+          indexTasksQueued: indexScheduler.getStatus().queued,
+          schemaColdBuilds: getPendingTypeStorageColdBuildCount()
+        },
+        activeOperations: getActiveOperationCounts(),
+        connections: database
+          ? [{
+              source: 'engine-dbmgr',
+              host: database.host,
+              port: database.port,
+              username: database.username,
+              databaseName: database.databaseName,
+              encrypt: database.encrypt
+            }]
+          : []
+      }));
+      reproSummaryChannel.show(true);
+    }
+  );
+  context.subscriptions.push(reproSummaryCommand, reproSummaryChannel);
 
   // Python 语言服务三态检查(IDE-PRJ-005):未安装/未启用/已激活,判定只看
   // 扩展事实(采集 collectPythonServiceFacts 与 profile 健康汇总同源);

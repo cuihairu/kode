@@ -553,6 +553,19 @@ The flow graph panel supports:
   - With no matching installs the report says so instead of listing nothing
 - Behavior: the command never scans the workspace; it only reads `vscode.extensions.all` and stats the install directories
 
+### `kbengine.diagnostics.exportReproSummary`
+
+- Title: `Export reproduction config summary`
+- Purpose: one-page export of "what the environment looks like" for reproducing a diagnostics report — active versions, roots, host role, switches, and queue data, with sensitive connection information masked
+- Report contents (output channel 「Kode 复现配置摘要」 (Kode reproduction config summary), copyable whole):
+  - Host role: `local` or `remote(<name>)` plus which extension host side (workspace host | ui host) the window runs
+  - Active versions: every `cuihairu.`-prefixed extension as `id@version active=yes|no side=…`, plus the build commit of this install (`out/buildCommit.json`; `unknown` is reported honestly when unreadable)
+  - Roots: workspace folders, index scan roots, and the active profile (`displayName`, assets root, engine root; "none" when no profile is selected)
+  - Switches: every boolean `kbengine.*` setting contributed by the extension itself (enumerated from its own `package.json`, so the list stays in sync with the configuration surface), rendered `on|off`
+  - Queue data: diagnostics queued/in-flight, pending document-update annotations, index tasks queued, schema cold builds, plus language-service operations currently on the ledger (the IDE-MET-008 counts)
+  - Connections (masked): the engine dbmgr database interface config rendered as `host=… port=… database=… username=*** password=*** encrypt=…` — the username and password values are never written, and the whole report is passed through a masking pass that rewrites `password=`/`token=`/`secret=`/`authorization=` assignments and URL userinfo to `***`
+- Behavior: rendering is a pure function in `src/reproductionSummary.ts`; collection reads only existing faces (`resolveDatabaseInterfaceConfig`, `resolveActiveProfile`, index scan roots, the diagnostic scheduler, the language-service metrics ledger) and the extension's own `package.json`
+
 ### `kbengine.quickActions.show`
 
 - Title: `Run Quick Actions`

@@ -91,6 +91,7 @@
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
     "onCommand:kbengine.extension.identity",
+    "onCommand:kbengine.diagnostics.exportReproSummary",
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.scanScripts",
     "onCommand:kbengine.quickActions.runDefault",
@@ -540,6 +541,10 @@
       {
         "command": "kbengine.extension.identity",
         "title": "Show Extension Identity Report"
+      },
+      {
+        "command": "kbengine.diagnostics.exportReproSummary",
+        "title": "Export reproduction config summary"
       },
       {
         "command": "kbengine.quickActions.show",

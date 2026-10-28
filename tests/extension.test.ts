@@ -86,7 +86,12 @@ const BAD_DEF = [
 
 const makeContext = (): ExtensionContext => ({
   subscriptions: [],
-  extensionUri: Uri.file('/workspace/ext')
+  extensionUri: Uri.file('/workspace/ext'),
+  // IDE-REL-007 复现配置摘要命令读自身 package.json 的布尔贡献项;
+  // 仓库根即真实清单(activation 面不读它,仅该命令与身份命令按需读)。
+  extensionPath: path.resolve(__dirname, '..'),
+  // 宿主侧判定读 context.extension.extensionKind(真 API 自带)
+  extension: { extensionKind: 'workspace' }
 });
 
 const disposeAll = (context: ExtensionContext): void => {
@@ -1028,6 +1033,38 @@ describe('extension activate 装配', () => {
       activate(context);
       expect(messages.warning.some(message => message.includes('同时激活'))).toBe(false);
     } finally {
+      disposeAll(context);
+      fakeExtensionList.length = 0;
+    }
+  });
+
+  it('IDE-REL-007 复现配置摘要:命令落五节进输出通道,全文无未遮蔽凭据', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-repro-'));
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    fakeExtensionList.push({ id: 'cuihairu.kode-kbengine', isActive: true });
+    const context = makeContext();
+    activate(context);
+    try {
+      await commands.executeCommand('kbengine.diagnostics.exportReproSummary');
+      const channel = windowState.channels.find(entry => entry.name === 'Kode 复现配置摘要');
+      expect(channel).toBeDefined();
+      const text = channel!.lines.join('');
+      expect(text).toContain('Kode 复现配置摘要');
+      expect(text).toContain('宿主角色: ');
+      expect(text).toContain('cuihairu.kode-kbengine@');
+      expect(text).toContain('构建提交: ');
+      expect(text).toContain(`workspace: ${root}`);
+      expect(text).toContain('profile: 无(未选择活动 profile)');
+      expect(text).toContain('kbengine.enableDiagnostics: ');
+      expect(text).toContain('诊断排队=');
+      expect(text).toContain('在册操作: ');
+      expect(text).toContain('连接(已遮蔽):');
+      // 裸环境未解析到引擎数据库连接:如实空态,不伪造连接行
+      expect(text).toContain('连接: 无(未解析到引擎数据库连接)');
+      // 兜底核验:全文不存在任何「凭据键=非***值」形态
+      expect(text).not.toMatch(/(?:password|passwd|token|secret|authorization)\s*[=:]\s*(?!\*\*\*)\S/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
       disposeAll(context);
       fakeExtensionList.length = 0;
     }
