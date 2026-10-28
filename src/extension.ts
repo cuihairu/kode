@@ -37,7 +37,7 @@ import {
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { KBEngineServerManager, SERVER_COMPONENTS } from './serverManager';
+import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey } from './serverManager';
 import { injectDebugpyAfterStart, syncDebugpyPackage } from './autoDebugpy';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
@@ -1574,7 +1574,10 @@ export function activate(context: vscode.ExtensionContext) {
         continue;
       }
       debugpyInjected.add(component);
-      void injectDebugpyAfterStart([component], () => telnetService.getTargets(), {
+      // RUN-001:登记键可带 #targetId 后缀(同组件多实例),telnet 目标与
+      // 调试端口仍按纯组件名分配,注入前剥回组件名
+      const { componentName: targetName } = parseServerKey(component);
+      void injectDebugpyAfterStart([targetName], () => telnetService.getTargets(), {
         log: (componentName, level, text) => {
           serverManager.logHub.ingest({
             source: 'process',

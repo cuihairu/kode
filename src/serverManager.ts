@@ -132,11 +132,35 @@ export enum ServerStatus {
  */
 export interface RunningServer {
   component: ServerComponent;
+  /** 实例标识(RUN-001):默认实例为 DEFAULT_TARGET_ID,显式命名的多实例各自持有 */
+  targetId: string;
   process: ChildProcess;
   pid: number;
   status: ServerStatus;
   startTime: Date;
   logs: string[];
+}
+
+/**
+ * 多实例目标 ID(RUN-001):省略 targetId 的启动走默认实例,登记键保持纯
+ * 组件名,UI 树/命令/调试注入等既有调用面零变化;显式命名的实例登记键
+ * 为 `组件名#targetId`,同组件多实例互不覆盖进程记录。
+ */
+export const DEFAULT_TARGET_ID = 'default';
+
+export function buildServerKey(componentName: string, targetId: string): string {
+  if (!targetId || targetId === DEFAULT_TARGET_ID) {
+    return componentName;
+  }
+  return `${componentName}#${targetId}`;
+}
+
+export function parseServerKey(key: string): { componentName: string; targetId: string } {
+  const hashIndex = key.indexOf('#');
+  if (hashIndex < 0) {
+    return { componentName: key, targetId: DEFAULT_TARGET_ID };
+  }
+  return { componentName: key.slice(0, hashIndex), targetId: key.slice(hashIndex + 1) };
 }
 
 /**
@@ -206,8 +230,8 @@ export class KBEngineServerManager {
     }));
     this.logSubscriptions.push(this.logHub.onBatch(batch => {
       const current = [...this.runningServers.entries()];
-      current.forEach(([name, server]) => {
-        const events = batch.events.filter(event => event.component === name);
+      current.forEach(([, server]) => {
+        const events = batch.events.filter(event => event.component === server.component.name);
         if (events.length > 0) server.logs.push(...events.map(event => event.text));
       });
       batch.events.forEach(event => {
@@ -367,12 +391,18 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 启动单个组件
+   * 启动单个组件;options.targetId 指定实例(默认实例键=纯组件名)
    */
-  async startComponent(component: ServerComponent): Promise<boolean> {
-    // 检查是否已运行
-    if (this.runningServers.has(component.name)) {
-      vscode.window.showWarningMessage(`${component.displayName} 已在运行中`);
+  async startComponent(component: ServerComponent, options?: { targetId?: string }): Promise<boolean> {
+    const targetId = options?.targetId ?? DEFAULT_TARGET_ID;
+    const serverKey = buildServerKey(component.name, targetId);
+    // 检查是否已运行(同组件不同 targetId 的实例互不拦截)
+    if (this.runningServers.has(serverKey)) {
+      vscode.window.showWarningMessage(
+        targetId === DEFAULT_TARGET_ID
+          ? `${component.displayName} 已在运行中`
+          : `${component.displayName} 实例 ${targetId} 已在运行中`
+      );
       return false;
     }
 
@@ -422,7 +452,7 @@ export class KBEngineServerManager {
 
     try {
       const managed = this.processManager.start({
-        id: component.name,
+        id: serverKey,
         command: exePath,
         args: component.defaultArgs || [],
         cwd: configPath,
@@ -434,6 +464,7 @@ export class KBEngineServerManager {
 
       const runningServer: RunningServer = {
         component,
+        targetId,
         process: managed.process,
         pid: managed.pid,
         status: ServerStatus.Starting,
@@ -441,7 +472,7 @@ export class KBEngineServerManager {
         logs: []
       };
 
-      this.runningServers.set(component.name, runningServer);
+      this.runningServers.set(serverKey, runningServer);
 
       this._onDidChangeStatus.fire();
       return true;
@@ -453,17 +484,19 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 停止单个组件
+   * 停止单个组件;targetId 指定实例(省略时 componentName 即登记键,
+   * stopAll 传入的复合键原样命中)
    */
-  async stopComponent(componentName: string): Promise<boolean> {
-    const runningServer = this.runningServers.get(componentName);
+  async stopComponent(componentName: string, targetId?: string): Promise<boolean> {
+    const serverKey = targetId ? buildServerKey(componentName, targetId) : componentName;
+    const runningServer = this.runningServers.get(serverKey);
     if (!runningServer) {
       return false;
     }
 
     this.log(runningServer.component, RuntimeLogLevel.INFO, `正在停止 ${runningServer.component.displayName}...`);
 
-    const stopped = await this.processManager.stop(componentName);
+    const stopped = await this.processManager.stop(serverKey);
     this.log(
       runningServer.component,
       RuntimeLogLevel.INFO,
@@ -538,18 +571,19 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 获取服务器状态
+   * 获取服务器状态;targetId 指定实例
    */
-  getServerStatus(componentName: string): ServerStatus {
-    const server = this.runningServers.get(componentName);
+  getServerStatus(componentName: string, targetId?: string): ServerStatus {
+    const serverKey = targetId ? buildServerKey(componentName, targetId) : componentName;
+    const server = this.runningServers.get(serverKey);
     return server?.status || ServerStatus.Stopped;
   }
 
   /**
-   * 重启组件
+   * 重启组件;targetId 指定实例
    */
-  async restartComponent(componentName: string): Promise<boolean> {
-    await this.stopComponent(componentName);
+  async restartComponent(componentName: string, targetId?: string): Promise<boolean> {
+    await this.stopComponent(componentName, targetId);
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     const component = SERVER_COMPONENTS.find(c => c.name === componentName);
@@ -557,7 +591,7 @@ export class KBEngineServerManager {
       return false;
     }
 
-    return this.startComponent(component);
+    return this.startComponent(component, targetId === undefined ? undefined : { targetId });
   }
 
   /**
