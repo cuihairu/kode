@@ -46,6 +46,7 @@ export default withMermaid(defineConfig({
                 { text: 'Client entity SDK', link: '/guide/client-sdk' },
                 { text: 'Database simulation', link: '/guide/database-simulation' },
                 { text: 'Database drift check', link: '/guide/database-drift-check' },
+                { text: 'Extension migration', link: '/guide/migration' },
                 { text: 'Development and release', link: '/guide/development' }
               ]
             }
@@ -107,6 +108,7 @@ export default withMermaid(defineConfig({
                 { text: '客户端实体 SDK', link: '/zh/guide/client-sdk' },
                 { text: '数据库模拟', link: '/zh/guide/database-simulation' },
                 { text: '数据库漂移校验', link: '/zh/guide/database-drift-check' },
+                { text: '扩展迁移', link: '/zh/guide/migration' },
                 { text: '开发与发布', link: '/zh/guide/development' }
               ]
             }
