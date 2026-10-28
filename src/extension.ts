@@ -125,6 +125,7 @@ import { TelnetWebView } from './telnetWebView';
 import {
   KBEngineCallHierarchyProvider,
   KBEngineReferencesProvider,
+  KBEngineDocumentSymbolProvider,
   KBEngineCompletionProvider,
   EventCodeLensProvider,
   KBEngineDefinitionProvider,
@@ -914,6 +915,13 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineReferencesProvider(entityMappingManager)
   );
   context.subscriptions.push(referencesProvider);
+
+  // IDE-NAV-005:def 文档符号(Outline)——Properties/三方法段容器+段内声明
+  const documentSymbolProvider = vscode.languages.registerDocumentSymbolProvider(
+    defDocumentSelector,
+    new KBEngineDocumentSymbolProvider()
+  );
+  context.subscriptions.push(documentSymbolProvider);
 
   // 注册重命名提供者(.def 属性/方法 F2 重命名,引用面见 defRenamer 头注)
   const renameProvider = vscode.languages.registerRenameProvider(

@@ -178,6 +178,18 @@ export enum CompletionItemKind {
   Constant = 20
 }
 
+// IDE-NAV-005:def Outline 用(children 初始空数组,供段容器挂子符号)
+export class DocumentSymbol {
+  children: DocumentSymbol[] = [];
+  constructor(
+    public name: string,
+    public detail: string,
+    public kind: SymbolKind,
+    public range: Range,
+    public selectionRange: Range
+  ) {}
+}
+
 export interface CompletionItemLabel {
   label: string;
   description?: string;
@@ -234,9 +246,13 @@ export class Hover {
   constructor(public contents: MarkdownString | MarkdownString[]) {}
 }
 
-// call hierarchy 三件套(真实 vscode 构造签名对齐;SymbolKind.Method=6)
+// call hierarchy 三件套(真实 vscode 构造签名对齐);IDE-NAV-005 起 def
+// Outline 复用同一枚举(取值与真实 vscode.SymbolKind 对齐)
 export enum SymbolKind {
-  Method = 6
+  Class = 5,
+  Method = 6,
+  Field = 8,
+  Struct = 23
 }
 
 export class CallHierarchyItem {

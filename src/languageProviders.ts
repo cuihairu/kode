@@ -5163,6 +5163,71 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
   }
 }
 
+/**
+ * IDE-NAV-005:def 文档符号(Outline):Properties/三方法段作容器
+ * (Properties=Struct,方法段=Class),段内声明作子符号(属性=Field,方法=
+ * Method)。精确范围:range=元素全跨度(开标签到闭标签,selfClosing 到开
+ * 标签尾),selectionRange=名字所在开标签跨度(⊆ range);只出在场段,
+ * 非符号段(Parent/Interfaces/Components/Volatile)不进 Outline。
+ */
+export class KBEngineDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
+  async provideDocumentSymbols(
+    document: vscode.TextDocument,
+    _token?: vscode.CancellationToken
+  ): Promise<vscode.DocumentSymbol[] | null> {
+    const ast = parseDefAst(document);
+    if (!ast || !ast.root) {
+      return null;
+    }
+
+    const symbols: vscode.DocumentSymbol[] = [];
+    for (const child of ast.root.children) {
+      if (child.kind !== 'element') {
+        continue;
+      }
+      const sectionName = toSectionName(child.name);
+      if (!sectionName || !DEF_SYMBOL_SECTIONS.has(sectionName)) {
+        continue;
+      }
+      const isProperties = sectionName === 'Properties';
+      const sectionSymbol = new vscode.DocumentSymbol(
+        sectionName,
+        '',
+        isProperties ? vscode.SymbolKind.Struct : vscode.SymbolKind.Class,
+        elementFullRange(document, child),
+        elementTagRange(document, child)
+      );
+      sectionSymbol.children = child.children
+        .filter((member): member is DefElementNode => member.kind === 'element')
+        .map(member => new vscode.DocumentSymbol(
+          member.name,
+          '',
+          isProperties ? vscode.SymbolKind.Field : vscode.SymbolKind.Method,
+          elementFullRange(document, member),
+          elementTagRange(document, member)
+        ));
+      symbols.push(sectionSymbol);
+    }
+    return symbols;
+  }
+}
+
+/** 元素全跨度:开标签头到闭标签尾;selfClosing(无闭标签)到开标签尾 */
+function elementFullRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
+  return new vscode.Range(
+    document.positionAt(node.tagStart),
+    document.positionAt(node.selfClosing ? node.tagEnd : node.closeTagEnd)
+  );
+}
+
+/** 名字所在开标签跨度(selectionRange 恒 ⊆ range) */
+function elementTagRange(document: vscode.TextDocument, node: DefElementNode): vscode.Range {
+  return new vscode.Range(
+    document.positionAt(node.tagStart),
+    document.positionAt(node.tagEnd)
+  );
+}
+
 export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer
