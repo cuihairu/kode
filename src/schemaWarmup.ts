@@ -5,7 +5,7 @@
 // 「首次交互付冷启动」变成「后台先付」。
 
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
-import { getDatabaseSchemaSnapshot } from './databaseSchema';
+import { buildDatabaseSchemaSnapshotAsync } from './databaseSchema';
 
 export interface SchemaWarmupDeps {
   /** 每个实体构建前等待(测试闸:挂起以观察取消与分块;生产缺省直通) */
@@ -23,8 +23,10 @@ export interface SchemaWarmupHandle {
 
 /**
  * 逐实体入队 schema 快照后台构建。每个实体一条 non-interactive 任务
- * (调度器语义:交互任务入队/冷却窗口内不上主线程);已建/失效由
- * getDatabaseSchemaSnapshot 自身缓存口径裁断(命中即免建,SCH-002)。
+ * (调度器语义:交互任务入队/冷却窗口内不上主线程);已建/失效由缓存口径
+ * 裁断(命中即免建,SCH-002)。2026-10-28 审核整改:构建走异步阶段闸面
+ * (buildDatabaseSchemaSnapshotAsync)——阶段间让出宿主,取消在构建中段
+ * 即刻止步;不再同步整段调用 getDatabaseSchemaSnapshot。
  */
 export function scheduleBackgroundSchemaWarmup(
   scheduler: IndexScheduler,
@@ -45,7 +47,12 @@ export function scheduleBackgroundSchemaWarmup(
           if (cancelled) { return; }
           await deps.beforeBuild?.(entityName);
           if (cancelled) { return; } // 闸门期间被取消:不再产出新快照
-          const snapshot = getDatabaseSchemaSnapshot(entityName, workspaceRoot);
+          const snapshot = await buildDatabaseSchemaSnapshotAsync(entityName, workspaceRoot, {
+            gate: async () => {
+              await new Promise<void>(resolve => { setImmediate(resolve); });
+              return !cancelled; // 构建中段被取消:止步,不发布
+            }
+          });
           if (snapshot) { built += 1; }
         }
       }));

@@ -352,38 +352,35 @@ export function invalidateDatabaseSchemaCacheForTypeRegistry(typesXmlPath: strin
   return dropped;
 }
 
-export function getDatabaseSchemaSnapshot(
+/** 缓存新鲜命中则返回条目(LRU 触碰+命中计数);脏条目删除;未命中 undefined */
+function peekFreshSchemaCache(
+  cacheKey: string
+): DatabaseSchemaSnapshot | null | undefined {
+  const cached = databaseSchemaCache.get(cacheKey);
+  if (cached && !isDatabaseSchemaSnapshotStale(cached)) {
+    // LRU 触碰:重插到队尾
+    databaseSchemaCache.delete(cacheKey);
+    databaseSchemaCache.set(cacheKey, cached);
+    databaseSchemaCacheHits += 1;
+    return cached;
+  }
+  if (cached) {
+    databaseSchemaCache.delete(cacheKey);
+  }
+  return undefined;
+}
+
+/**
+ * 2026-10-28 审核整改(SCH-006):构建管线阶段生成器——阶段间 yield 是
+ * 异步驱动的闸点(让出宿主+检查取消);同步查询面直通驱动(不暂停,行为
+ * 与原整段函数一致)。取消止步 = 生成器不再推进,缓存不发布部分结果。
+ */
+function* schemaBuildPhases(
   entityName: string,
-  target?: string | Pick<vscode.TextDocument, 'fileName'>
-): DatabaseSchemaSnapshot | null {
-  const workspaceRoot = typeof target === 'string'
-    ? target
-    : getWorkspaceRootForDocument(target);
-
-  // IDE-SCH-002:schema 缓存带实体与根身份——键 = 规范化根 + 实体名,A/B 两
-  // 个根的同名实体各自一份,不共用单例;条目按 SNP-006/010 双轴判过期
-  // (inputVersions/rootConfigGeneration),文件或根配置变了重建,不喂旧表。
-  // null 结果不入缓存(缺 def 是可变状态,watcher/磁盘演进即刻可见)。
-  const cacheKey = workspaceRoot ? `${normalizePath(workspaceRoot)}\u0000${entityName}` : '';
-  if (cacheKey) {
-    const cached = databaseSchemaCache.get(cacheKey);
-    if (cached && !isDatabaseSchemaSnapshotStale(cached)) {
-      // LRU 触碰:重插到队尾
-      databaseSchemaCache.delete(cacheKey);
-      databaseSchemaCache.set(cacheKey, cached);
-      databaseSchemaCacheHits += 1;
-      return cached;
-    }
-    if (cached) {
-      databaseSchemaCache.delete(cacheKey);
-    }
-  }
-  databaseSchemaCacheMisses += 1;
-
-  if (!workspaceRoot) {
-    return null;
-  }
-
+  target: string | Pick<vscode.TextDocument, 'fileName'> | undefined,
+  workspaceRoot: string,
+  cacheKey: string
+): Generator<'phase-gate', DatabaseSchemaSnapshot | null, void> {
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
   // 不可达(批62 定性):getDefinitionWorkspaceLayout 的 entityDefsRoot =
   // 已存在候选 || 候选[0],候选列表恒含非空相对路径,该值只能是字符串。
@@ -392,11 +389,14 @@ export function getDatabaseSchemaSnapshot(
     return null;
   }
   /* istanbul ignore stop */
+  yield 'phase-gate'; // 闸点 1:布局发现后
+
 
   const defFilePath = findEntityDefinitionFile(entityName, target);
   if (!defFilePath) {
     return null;
   }
+  yield 'phase-gate'; // 闸点 2:def 定位后
 
   // IDE-SNP-003:def 文本走共享快照——打开的脏缓冲优先,未打开磁盘补载
   // IDE-SNP-006:入口读得的来源域+版本进清单(后续遍历读点由 context 记录)
@@ -405,6 +405,7 @@ export function getDatabaseSchemaSnapshot(
     return null;
   }
   const entityContent = entityInput.content;
+  yield 'phase-gate'; // 闸点 3:def 读取后
 
   const entityDocument = parseDefDocument(entityContent);
   if (!entityDocument.root) {
@@ -427,6 +428,7 @@ export function getDatabaseSchemaSnapshot(
     typeRegistryConsumed: new Map<string, string>()
   };
   buildContext.typeAliases = parseTypeAliases(layout.typesXmlPath, buildContext.inputVersions);
+  yield 'phase-gate'; // 闸点 4:类型注册表解析后
   const entitySource: DefSourceRef = {
     filePath: defFilePath,
     line: 1,
@@ -439,6 +441,7 @@ export function getDatabaseSchemaSnapshot(
     'entity',
     buildContext
   );
+  yield 'phase-gate'; // 闸点 5:属性收集(含组件/父链递归)后
   // IDE-SCH-001:表/列推导走纯函数面——输入收集(文件/配置/布局)留在本快照
   // 面,推导本身不读配置不读文件(可缓存/可离线,SCH-002 的缓存前置)
   const effectiveTablePrefix = resolveSchemaTablePrefix();
@@ -488,6 +491,82 @@ export function getDatabaseSchemaSnapshot(
     }
   }
   return snapshot;
+}
+
+export function getDatabaseSchemaSnapshot(
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): DatabaseSchemaSnapshot | null {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+
+  // IDE-SCH-002:schema 缓存带实体与根身份——键 = 规范化根 + 实体名,A/B 两
+  // 个根的同名实体各自一份,不共用单例;条目按 SNP-006/010 双轴判过期
+  // (inputVersions/rootConfigGeneration),文件或根配置变了重建,不喂旧表。
+  // null 结果不入缓存(缺 def 是可变状态,watcher/磁盘演进即刻可见)。
+  const cacheKey = workspaceRoot ? `${normalizePath(workspaceRoot)}\u0000${entityName}` : '';
+  if (cacheKey) {
+    const cached = peekFreshSchemaCache(cacheKey);
+    if (cached) { return cached; }
+  }
+  databaseSchemaCacheMisses += 1;
+
+  if (!workspaceRoot) {
+    return null;
+  }
+  // 同步直通驱动:阶段 yield 只是异步面的闸点,同步面一口气跑完(行为不变)
+  const iterator = schemaBuildPhases(entityName, target, workspaceRoot, cacheKey);
+  let step = iterator.next();
+  while (!step.done) {
+    step = iterator.next();
+  }
+  return step.value;
+}
+
+/** 异步构建闸:阶段间回调——返回 false 即取消止步(不发布缓存) */
+export interface SchemaBuildGateOptions {
+  gate?: () => boolean | Promise<boolean>;
+}
+
+/**
+ * 2026-10-28 审核整改(SCH-006):异步构建面——同 schemaBuildPhases 管线,
+ * 阶段间过闸(让出宿主+取消检查)。后台预热走本面:冷构建不再整段占住
+ * 宿主,取消在构建中段即刻止步;缓存命中口径与同步面一致。
+ */
+export async function buildDatabaseSchemaSnapshotAsync(
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>,
+  options: SchemaBuildGateOptions = {}
+): Promise<DatabaseSchemaSnapshot | null> {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+  const cacheKey = workspaceRoot ? `${normalizePath(workspaceRoot)}\u0000${entityName}` : '';
+  if (cacheKey) {
+    const cached = peekFreshSchemaCache(cacheKey);
+    if (cached) { return cached; }
+  }
+  databaseSchemaCacheMisses += 1;
+  if (!workspaceRoot) {
+    return null;
+  }
+  // 缺省闸:让出宿主(setImmediate)不取消——异步面默认即不整段阻塞
+  const gate = options.gate ?? (async () => {
+    await new Promise<void>(resolve => { setImmediate(resolve); });
+    return true;
+  });
+  const iterator = schemaBuildPhases(entityName, target, workspaceRoot, cacheKey);
+  for (;;) {
+    const step = iterator.next();
+    if (step.done) {
+      return step.value;
+    }
+    const proceed = await gate();
+    if (!proceed) {
+      return null; // 中段取消:生成器不再推进,缓存不发布
+    }
+  }
 }
 
 /** IDE-SCH-001:纯推导输入——收集面读好的显式输入(不缺省、不读环境) */
