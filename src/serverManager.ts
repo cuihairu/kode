@@ -19,6 +19,8 @@ export interface ServerComponent {
   order: number;
   required: boolean;
   description: string;
+  /** 直接依赖(RUN-005):依赖键为组件名;组外依赖不参与排序,运行期就绪判定拦截 */
+  dependsOn?: readonly string[];
 }
 
 /**
@@ -32,7 +34,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=2129652375332859700', '--gus=1'],
     order: 1,
     required: true,
-    description: '机器管理器（必须最先启动）'
+    description: '机器管理器（必须最先启动）',
+    dependsOn: []
   },
   {
     name: 'logger',
@@ -41,7 +44,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=1129653375331859700', '--gus=2'],
     order: 2,
     required: false,
-    description: '日志服务器'
+    description: '日志服务器',
+    dependsOn: ['machine']
   },
   {
     name: 'interfaces',
@@ -50,7 +54,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=1129652375332859700', '--gus=3'],
     order: 3,
     required: false,
-    description: '外部接口服务'
+    description: '外部接口服务',
+    dependsOn: ['machine']
   },
   {
     name: 'dbmgr',
@@ -59,7 +64,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=3129652375332859700', '--gus=4'],
     order: 4,
     required: true,
-    description: '数据库管理器'
+    description: '数据库管理器',
+    dependsOn: ['machine']
   },
   {
     name: 'baseappmgr',
@@ -68,7 +74,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=4129652375332859700', '--gus=5'],
     order: 5,
     required: true,
-    description: 'BaseApp 管理器'
+    description: 'BaseApp 管理器',
+    dependsOn: ['dbmgr']
   },
   {
     name: 'cellappmgr',
@@ -77,7 +84,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=5129652375332859700', '--gus=6'],
     order: 6,
     required: true,
-    description: 'CellApp 管理器'
+    description: 'CellApp 管理器',
+    dependsOn: ['dbmgr']
   },
   {
     name: 'baseapp',
@@ -86,7 +94,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=6129652375332859700', '--gus=7'],
     order: 7,
     required: true,
-    description: '网关服务器'
+    description: '网关服务器',
+    dependsOn: ['baseappmgr']
   },
   {
     name: 'cellapp',
@@ -95,7 +104,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=7129652375332859700', '--gus=8'],
     order: 8,
     required: true,
-    description: '游戏服务器'
+    description: '游戏服务器',
+    dependsOn: ['cellappmgr']
   },
   {
     name: 'loginapp',
@@ -104,7 +114,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--cid=8129652375332859700', '--gus=9'],
     order: 9,
     required: true,
-    description: '登录服务器'
+    description: '登录服务器',
+    dependsOn: ['baseappmgr']
   },
   {
     name: 'bots',
@@ -113,7 +124,8 @@ export const SERVER_COMPONENTS: ServerComponent[] = [
     defaultArgs: ['--gus=1'],
     order: 10,
     required: false,
-    description: '机器人测试客户端'
+    description: '机器人测试客户端',
+    dependsOn: ['loginapp']
   }
 ];
 
