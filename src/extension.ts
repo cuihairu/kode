@@ -191,7 +191,6 @@ import {
   KBEngineSignatureHelpProvider,
   KBEngineTypeCodeActionProvider,
   KBEngineMethodImplementationCodeActionProvider,
-  KBENGINE_SOURCE_REVEAL_COMMAND,
   prewarmKbengineIndex,
   revealSourceCommand,
   PythonCompletionProvider,
@@ -268,6 +267,7 @@ import {
   runWorkspaceDiscovery
 } from './workspaceDiscovery';
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from './extensionIdentity';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 import { renderReproductionSummary } from './reproductionSummary';
 import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';

@@ -159,6 +159,7 @@ import {
   raceWithBudget,
   withInitialScanTimeout
 } from './hoverBudget';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 
 /**
  * 批159(用户令 2026-10-26「点击 codelens 跳 def 后 alt+← 后退,再点没反应」):
@@ -167,7 +168,6 @@ import {
  * 再对活动编辑器显式 revealRange(若命中),后退后再点也强制滚回。
  * 命令参数与旧 arguments 完全同形(uri, { selection }),测试/调用点零迁移成本。
  */
-export const KBENGINE_SOURCE_REVEAL_COMMAND = 'kbengine.source.reveal';
 
 export interface KbengineSourceRevealArgs {
   uri: vscode.Uri;

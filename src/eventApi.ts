@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
 import { WorkspaceIndex } from './workspaceIndex';
-import { KBENGINE_SOURCE_REVEAL_COMMAND } from './languageProviders';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 
 export type EventCall = { api: 'addEvent' | 'registerEvent' | 'emitEvent' | 'removeEvent' | 'deregisterEvent'; event: string; eventOffset: number; callback?: string; callbackOffset?: number }
 

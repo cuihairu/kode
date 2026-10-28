@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { KBENGINE_SOURCE_REVEAL_COMMAND } from './languageProviders';
+import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 import {
   resolveEntityTypeStubSource,
   resolvePythonTypeStubSource
