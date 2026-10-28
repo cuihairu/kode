@@ -578,7 +578,11 @@ export function activate(context: vscode.ExtensionContext) {
           documentVersion: document.version
         });
         try {
-          const result = await kbengineHoverImpl.provideHover(document, position, token);
+          // IDE-MET-003:hover 分支耗时经 per-request 计时器直传进 provider,
+          // 落到 operation.subPhases(总耗时仍由 operation.elapsedMs 承担)。
+          const result = await kbengineHoverImpl.provideHoverTimed(document, position, token, {
+            start: label => operation.startSubPhase(label)
+          });
           operation.end(emptyResultStatus(result));
           return result;
         } catch (error) {

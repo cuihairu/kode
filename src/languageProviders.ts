@@ -675,6 +675,11 @@ export class KBEngineBuiltinTypeInlayHintsProvider implements vscode.InlayHintsP
   }
 }
 
+/** IDE-MET-003:hover 分支级计时面——start(label) 返回段结束 stop */
+export interface HoverPhaseTimer {
+  start(label: string): () => void;
+}
+
 export class KBEngineHoverProvider implements vscode.HoverProvider {
   // 实体 def 方法标注面(用户令:只凭名字标 KBEngine 函数不严谨)需要 def
   // 索引,按 RpcCodeLensProvider 同款注入;可选参数保持既有无参用例口径。
@@ -734,6 +739,22 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     position: vscode.Position,
     token?: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.Hover> {
+    return this.provideHoverTimed(document, position, token);
+  }
+
+  /**
+   * IDE-MET-003:hover 分支级耗时记录——timer 由适配层注入(per-request
+   * operation.startSubPhase),并发请求各自归因;不传计时面零开销,行为与
+   * provideHover 完全一致。分支标签四类:annotation-query(注解查询)、
+   * def-mapping(def 映射/def 归属)、schema(签名/形参闸/属性表)、render;
+   * 总耗时由 operation.elapsedMs 承担。
+   */
+  provideHoverTimed(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token?: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
+  ): vscode.ProviderResult<vscode.Hover> {
     if (token?.isCancellationRequested) { return null; }
     const featureConfig = getLanguageFeatureConfig();
     // IDE-BUD-001:一次请求一个截止时间上下文——绝对 deadline + 链接 token
@@ -773,10 +794,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:def-method',
-            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, sharedToken)
-              .then(annotation =>
-                annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-              ),
+            this.resolveDefMethodAnnotation(manager, document, position.line, methodName, sharedToken, timer)
+              .then(annotation => {
+                if (annotation) { return annotation; }
+                const stop = timer?.start('annotation-query');
+                try {
+                  return this.provideKnownHover(document, position, featureConfig, range, word);
+                } finally { stop?.(); }
+              }),
             deadline.remainingMs(),
             sharedToken
           )
@@ -797,10 +822,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:receiver-call',
-            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall, sharedToken)
-              .then(annotation =>
-                annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-              ),
+            this.resolveReceiverCallAnnotation(manager, document, position.line, receiverCall, sharedToken, timer)
+              .then(annotation => {
+                if (annotation) { return annotation; }
+                const stop = timer?.start('annotation-query');
+                try {
+                  return this.provideKnownHover(document, position, featureConfig, range, word);
+                } finally { stop?.(); }
+              }),
             deadline.remainingMs(),
             sharedToken
           )
@@ -822,10 +851,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         return respond(this.memoizedHover(memoKey, document.version, sharedToken =>
           raceWithBudget(
             'hover:builtin-property',
-            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, sharedToken)
-              .then(annotation =>
-                annotation ?? this.provideKnownHover(document, position, featureConfig, range, word)
-              ),
+            this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, sharedToken, timer)
+              .then(annotation => {
+                if (annotation) { return annotation; }
+                const stop = timer?.start('annotation-query');
+                try {
+                  return this.provideKnownHover(document, position, featureConfig, range, word);
+                } finally { stop?.(); }
+              }),
             deadline.remainingMs(),
             sharedToken
           )
@@ -848,17 +881,22 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     if (document.languageId === 'python' && vscode.workspace.getConfiguration('kbengine').get<boolean>('hover.returnTypeInference', true)) {
       // PR2 快照接入:局部变量推导复用快照行数据(同版本不重拆);
       // IDE-HOV-011:按文档版本喂当前文件注解桶(未保存变化立即生效)
-      const inferred = resolveLocalVariableReturnTypeFromSnapshot(
-        getDocumentLines(document),
-        position.line,
-        word,
-        getWorkspaceRootForDocument(document),
-        {
-          fileKey: document.uri.toString(),
-          version: document.version,
-          source: () => document.getText()
-        }
-      );
+      // IDE-MET-003:推导整段属注解查询面(annotation-query)
+      const stopInfer = timer?.start('annotation-query');
+      let inferred: ReturnType<typeof resolveLocalVariableReturnTypeFromSnapshot>;
+      try {
+        inferred = resolveLocalVariableReturnTypeFromSnapshot(
+          getDocumentLines(document),
+          position.line,
+          word,
+          getWorkspaceRootForDocument(document),
+          {
+            fileKey: document.uri.toString(),
+            version: document.version,
+            source: () => document.getText()
+          }
+        );
+      } finally { stopInfer?.(); }
       if (inferred) {
         const markdown = new vscode.MarkdownString();
         markdown.appendMarkdown(`**${inferred.target}: ${inferred.annotation}**\n\n`);
@@ -868,7 +906,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
     }
 
-    const known = this.provideKnownHover(document, position, featureConfig, range, word);
+    const stopKnown = timer?.start('annotation-query');
+    let known: vscode.Hover | null;
+    try {
+      known = this.provideKnownHover(document, position, featureConfig, range, word);
+    } finally { stopKnown?.(); }
     deadline.dispose();
     return known;
   }
@@ -883,14 +925,18 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     document: vscode.TextDocument,
     line: number,
     methodName: string,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
   ): Promise<vscode.Hover | null> {
+    // IDE-MET-003 分段:def-mapping(def 索引映射)→ schema(形参闸+签名)→
+    // render(markdown 构造);timer 缺省零开销。
     let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
+    const stopMapping = timer?.start('def-mapping');
     try {
       location = await manager.resolveMethodDefinition(document.fileName, methodName, undefined, token);
     } catch {
       return null;
-    }
+    } finally { stopMapping?.(); }
     if (!location) {
       return null;
     }
@@ -901,29 +947,41 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const workspaceRoot = getWorkspaceRootForDocument(document);
     const resolveAnnotation = (raw: string): string =>
       resolveEntityAnnotationType(workspaceRoot ?? '', raw);
-    if (
-      declaredArgTypes &&
-      !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
-        declaredArgTypes,
-        [...getDocumentLines(document)],
-        line,
-        resolveAnnotation
-      )
-    ) {
+    const stopSchema = timer?.start('schema');
+    let signatureMatched = true;
+    let signature: string;
+    try {
+      if (
+        declaredArgTypes &&
+        !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
+          declaredArgTypes,
+          [...getDocumentLines(document)],
+          line,
+          resolveAnnotation
+        )
+      ) {
+        signatureMatched = false;
+      }
+      signature = formatDefMethodSignature(workspaceRoot ?? undefined, methodName, location.declaredArgs);
+    } finally { stopSchema?.(); }
+    if (!signatureMatched) {
       return null;
     }
-    const markdown = new vscode.MarkdownString();
-    markdown.appendMarkdown(
-      `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
-    );
-    markdown.appendMarkdown(
-      `签名: \`${formatDefMethodSignature(workspaceRoot ?? undefined, methodName, location.declaredArgs)}\`\n\n`
-    );
-    markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
-    if (location.exposed) {
-      markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
-    }
-    return new vscode.Hover(markdown);
+    const stopRender = timer?.start('render');
+    let hover: vscode.Hover;
+    try {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(
+        `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
+      );
+      markdown.appendMarkdown(`签名: \`${signature}\`\n\n`);
+      markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
+      if (location.exposed) {
+        markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
+      }
+      hover = new vscode.Hover(markdown);
+    } finally { stopRender?.(); }
+    return hover;
   }
 
   /**
@@ -936,9 +994,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     document: vscode.TextDocument,
     line: number,
     receiverCall: PythonReceiverCall,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
   ): Promise<vscode.Hover | null> {
+    // IDE-MET-003 分段:与声明面同构 def-mapping → schema → render。
     let location: Awaited<ReturnType<EntityMappingManager['resolveMethodDefinition']>>;
+    const stopMapping = timer?.start('def-mapping');
     try {
       location = await manager.resolveMethodDefinition(
         document.fileName,
@@ -948,7 +1009,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       );
     } catch {
       return null;
-    }
+    } finally { stopMapping?.(); }
     if (!location) {
       return null;
     }
@@ -958,30 +1019,46 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     const workspaceRoot = getWorkspaceRootForDocument(document);
     const resolveAnnotation = (raw: string): string =>
       resolveEntityAnnotationType(workspaceRoot ?? '', raw);
-    if (
-      declaredArgTypes &&
-      !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
-        declaredArgTypes,
-        [...getDocumentLines(document)],
-        line,
-        resolveAnnotation
-      )
-    ) {
+    const stopSchema = timer?.start('schema');
+    let signatureMatched = true;
+    let signature: string;
+    try {
+      if (
+        declaredArgTypes &&
+        !EntityMappingManager.pythonSignatureMatchesDeclaredArgs(
+          declaredArgTypes,
+          [...getDocumentLines(document)],
+          line,
+          resolveAnnotation
+        )
+      ) {
+        signatureMatched = false;
+      }
+      signature = formatDefMethodSignature(
+        workspaceRoot ?? undefined,
+        receiverCall.methodName,
+        location.declaredArgs
+      );
+    } finally { stopSchema?.(); }
+    if (!signatureMatched) {
       return null;
     }
-    const markdown = new vscode.MarkdownString();
-    markdown.appendMarkdown(
-      `**${receiverCall.methodName}** — 此调用是实体 def 声明的 ${location.section} 方法` +
-        `(接收者 self.${receiverCall.receiver})\n\n`
-    );
-    markdown.appendMarkdown(
-      `签名: \`${formatDefMethodSignature(workspaceRoot ?? undefined, receiverCall.methodName, location.declaredArgs)}\`\n\n`
-    );
-    markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
-    if (location.exposed) {
-      markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
-    }
-    return new vscode.Hover(markdown);
+    const stopRender = timer?.start('render');
+    let hover: vscode.Hover;
+    try {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(
+        `**${receiverCall.methodName}** — 此调用是实体 def 声明的 ${location.section} 方法` +
+          `(接收者 self.${receiverCall.receiver})\n\n`
+      );
+      markdown.appendMarkdown(`签名: \`${signature}\`\n\n`);
+      markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
+      if (location.exposed) {
+        markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
+      }
+      hover = new vscode.Hover(markdown);
+    } finally { stopRender?.(); }
+    return hover;
   }
 
   /**
@@ -996,8 +1073,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     manager: EntityMappingManager,
     document: vscode.TextDocument,
     attributeName: string,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
   ): Promise<vscode.Hover | null> {
+    // IDE-MET-003 分段:def-mapping(面归属判定+属性命中)→ render;此面无
+    // schema 段(不读 def 声明签名)。
+    const stopMapping = timer?.start('def-mapping');
     const pathFace = resolveEntityComponentFaceFromPath(document.fileName);
     let defFaces: readonly EntityComponentFace[] | null = null;
     if (!pathFace) {
@@ -1007,18 +1088,26 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         defFaces = null;
       }
     }
-    const hit = resolveEntityBuiltinPropertyHit(attributeName, pathFace, defFaces);
+    let hit: ReturnType<typeof resolveEntityBuiltinPropertyHit>;
+    try {
+      hit = resolveEntityBuiltinPropertyHit(attributeName, pathFace, defFaces);
+    } finally { stopMapping?.(); }
     if (!hit) {
       return null;
     }
-    const markdown = new vscode.MarkdownString();
-    // 首行紧凑形态(用户令 2026-10-21 形态升级单 ①):类型紧跟属性名冒号后
-    // (**self.databaseID: int** — baseapp面 · 只读),详情段走单一 formatter
-    markdown.appendMarkdown(
-      `${formatEntityBuiltinPropertyHeadline(hit.property.name, hit.face, hit.property)}\n\n`
-    );
-    markdown.appendMarkdown(`引擎注册面: \`${hit.property.source}\``);
-    return new vscode.Hover(markdown);
+    const stopRender = timer?.start('render');
+    let hover: vscode.Hover;
+    try {
+      const markdown = new vscode.MarkdownString();
+      // 首行紧凑形态(用户令 2026-10-21 形态升级单 ①):类型紧跟属性名冒号后
+      // (**self.databaseID: int** — baseapp面 · 只读),详情段走单一 formatter
+      markdown.appendMarkdown(
+        `${formatEntityBuiltinPropertyHeadline(hit.property.name, hit.face, hit.property)}\n\n`
+      );
+      markdown.appendMarkdown(`引擎注册面: \`${hit.property.source}\``);
+      hover = new vscode.Hover(markdown);
+    } finally { stopRender?.(); }
+    return hover;
   }
 
   private provideKnownHover(
