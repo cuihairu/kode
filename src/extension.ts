@@ -20,6 +20,7 @@ import type { OperationStatus } from './languageServiceMetrics';
 import {
   releaseAllDocumentSnapshots,
   releaseDocument,
+  releaseDocumentsUnderRoot,
   updateDocumentSnapshot
 } from './documentStore';
 import * as vscode from 'vscode';
@@ -722,6 +723,10 @@ export function activate(context: vscode.ExtensionContext) {
     { dispose: () => rootRemovals.dispose() },
     { dispose: rootRemovals.subscribe(event => { entityMappingManager.removeRoot(event.rootPath); }) },
     { dispose: rootRemovals.subscribe(event => { pythonClassIndex.removeRoot(event.rootPath); }) },
+    // IDE-RES-008:根移除同时释放 documentStore 派生缓存——该根下文档快照
+    // (源码文本/行索引)与 entities/def 解析缓存不再被长会话持有(文档可能
+    // 仍开着,下次访问按空快照重建重解析)
+    { dispose: rootRemovals.subscribe(event => { releaseDocumentsUnderRoot(event.rootPath); }) },
     { dispose: () => pythonIndexWatchers.forEach(watcher => watcher.dispose()) },
     vscode.workspace.onDidCloseTextDocument(document => pythonClassIndex.onDocumentClosed(document)),
     vscode.workspace.onDidChangeWorkspaceFolders(event => {

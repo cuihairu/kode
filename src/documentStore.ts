@@ -307,6 +307,24 @@ export function releaseDocument(document: DocumentStoreDocument | { uri: { toStr
   entries.delete(keyOf(document as DocumentStoreDocument));
 }
 
+/** 根移除释放(IDE-RES-008):该根下全部快照与解析缓存(源码文本/行索引/
+ *  entities/def 解析结果)整体删除——移除根时其文档可能仍开着,不再被长会话
+ *  持有;其余根原样保留。与 releaseDocument 同构:下次访问按空快照重建重解析。
+ *  返回释放的快照数。 */
+export function releaseDocumentsUnderRoot(rootPath: string): number {
+  const normalized = normalizeFileIdentity(rootPath);
+  const underRoot = (key: string): boolean =>
+    key === normalized || key.startsWith(`${normalized}/`);
+  let released = 0;
+  for (const key of [...entries.keys()]) {
+    if (underRoot(key)) {
+      entries.delete(key);
+      released += 1;
+    }
+  }
+  return released;
+}
+
 /** 测试与停用用:清空全部快照 */
 export function releaseAllDocumentSnapshots(): void {
   entries.clear();

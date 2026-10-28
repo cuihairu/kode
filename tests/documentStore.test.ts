@@ -11,6 +11,7 @@ import {
   peekDocumentSnapshot,
   releaseAllDocumentSnapshots,
   releaseDocument,
+  releaseDocumentsUnderRoot,
   updateDocumentSnapshot
 } from '../src/documentStore';
 import { resetLanguageServiceMetrics, getOperationSummary } from '../src/languageServiceMetrics';
@@ -311,6 +312,31 @@ describe('documentStore 快照释放', () => {
     releaseDocument(document);
     expect(getStoredSnapshotCount()).toBe(0);
     expect(peekDocumentSnapshot(document)).toBeNull();
+  });
+
+  it('根移除释放该根下全部快照与解析缓存,其余根原样保留(IDE-RES-008)', async () => {
+    const removed = docOf('removed source\n', { fileName: '/ws/gone/A.entities.xml', version: 1 });
+    const nested = docOf('nested\n', { fileName: '/ws/gone/sub/B.py', version: 1 });
+    const kept = docOf('kept source\n', { fileName: '/ws/kept/C.def', version: 2 });
+    await getOrParseDocument(removed, () => 'entities-analysis');
+    await getOrParseDocument(nested, () => 'py-ast');
+    await getOrParseDocument(kept, () => 'def-ast');
+    expect(getStoredSnapshotCount()).toBe(3);
+
+    const released = releaseDocumentsUnderRoot('/ws/gone');
+    expect(released).toBe(2);
+    expect(getStoredSnapshotCount()).toBe(1);
+    expect(peekDocumentSnapshot(removed)).toBeNull();
+    expect(peekDocumentSnapshot(nested)).toBeNull();
+    // 留存根不受影响(快照文本原样含结尾换行)
+    expect(peekDocumentSnapshot(kept)?.text).toBe('kept source\n');
+
+    // 前缀不误伤:移除 /ws 不该被 /wsX 拼写干扰,反之亦然
+    const sibling = docOf('sibling\n', { fileName: '/ws/goneX/D.py', version: 1 });
+    updateDocumentSnapshot(sibling);
+    expect(releaseDocumentsUnderRoot('/ws/gone')).toBe(0);
+    expect(peekDocumentSnapshot(sibling)).not.toBeNull();
+    releaseDocument(sibling);
   });
 
   it('同键不同拼写释放同一份快照', () => {
