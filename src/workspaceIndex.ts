@@ -1,18 +1,13 @@
 import * as vscode from 'vscode';
-import { findEventCalls, type EventCall } from './eventApi';
+import { findEventCalls } from './eventApi';
+import type { EventCall, EventCallIndex, IndexedEventCall } from './eventIndexTypes';
 import { findFilesAcrossRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './pythonScanRules';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
 // 一次性建索引 + watcher 增量失效；实例由 provider 持有（测试各自全新实例，互不污染）。
 // 范围（第一片）：.py 的 def/class/事件调用；后续片再并入 .def 常量与类型面。
-
-export interface IndexedEventCall {
-  readonly file: string;
-  readonly call: EventCall;
-  /** eventOffset 所在行（建索引时算好，消费端不再读盘换算） */
-  readonly line: number;
-}
+// IDE-ARC-002:事件消费面只以小接口 EventCallIndex 暴露(类型住 eventIndexTypes)。
 
 interface IndexedFile {
   version: number;
@@ -62,7 +57,7 @@ const yieldToHostIfDue = async (): Promise<void> => {
   await yieldToHost();
 };
 
-export class WorkspaceIndex {
+export class WorkspaceIndex implements EventCallIndex {
   private readonly cache = new Map<string, IndexedFile>();
   private readonly building = new Map<string, Promise<IndexedFile | null>>();
   private watchers: vscode.Disposable[] = [];

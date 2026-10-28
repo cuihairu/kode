@@ -1,9 +1,7 @@
 import * as vscode from 'vscode';
 import type { EntityMappingManager } from './entityMapping';
-import { WorkspaceIndex } from './workspaceIndex';
+import type { EventCall, EventCallIndex } from './eventIndexTypes';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
-
-export type EventCall = { api: 'addEvent' | 'registerEvent' | 'emitEvent' | 'removeEvent' | 'deregisterEvent'; event: string; eventOffset: number; callback?: string; callbackOffset?: number }
 
 // 只认三种实参形态：标识符/点名（self.EV_X、on_ready）与字符串字面量；表达式保持沉默。
 const ARG_TOKEN = /(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*|'[^'\n]*'|"[^"\n]*"/;
@@ -98,8 +96,10 @@ export class EventCodeLensProvider implements vscode.CodeLensProvider {
   private disposed = false;
 
   /** IDE-EVT-012:索引由扩展宿主统一持有一份并注入(共享缓存);provider
-   * 不再自持实例,全仓扫描入口只有共享索引一个。索引生命周期归注入方。 */
-  constructor(private readonly sharedIndex: WorkspaceIndex) {}
+   * 不再自持实例,全仓扫描入口只有共享索引一个。索引生命周期归注入方。
+   * IDE-ARC-002:注入面收窄为小接口 EventCallIndex(只消费 allEventCalls),
+   * 不再依赖 WorkspaceIndex 实现。 */
+  constructor(private readonly sharedIndex: EventCallIndex) {}
 
   private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
