@@ -408,7 +408,7 @@
 ### IDE-PRJ · KBEngine 项目模型与导入（P2）
 
 来源：审计 §6；src/workspaceDiscovery.ts、src/pythonExtraPaths.ts、src/engineApiMetadata.ts。
-- [ ] IDE-PRJ-001 [P2] 建立项目 profile 的稳定 ID；验收：同工作区两套 assets/engine 组合能分别保存身份，不用显示名当主键；前置：无。
+- [x] IDE-PRJ-001 [P2] 建立项目 profile 的稳定 ID；验收：同工作区两套 assets/engine 组合能分别保存身份，不用显示名当主键；前置：无。(7f8eb37;新 src/projectProfiles.ts ProjectProfileStore{id 创建时 randomUUID 一次分配+幂等键重摇,displayName/assetsRoot/engineRoot 皆为可变字段},持久化 workspaceState 键 kbengine.projectProfiles.v1(Memento 逐工作区,载荷逐条四字符串字段校验,损坏条目静默跳过不炸),极简装配无 workspaceState 退化会话内记忆;API create(新分配稳定 ID)/get/list(防御性拷贝)/update(按 ID 改字段身份不动,未知 ID 返 null 不静默新建)/remove(按 ID 只删目标);prove-red tests/projectProfiles.test.ts 6 例先红(模块不存在)后绿:两套组合各存各的身份互不覆盖/显示名非主键(B 改成与 A 同名仍两条 ID 不动)/重启(新 store 同 memento)ID 读回/update 换根不换 ID+remove 只删目标+防御拷贝/无 memento 会话内可用/损坏载荷跳过;门禁 eslint 0/tsc 0/unit 3519|7(294, +6)/demo 25 RC0;features.md+zh 新增 Project Model/项目模型节身份存储条目(证据指向真实路径);后续 PRJ-002 根路径持久化/PRJ-010 活动选择均在此 store 上挂)
 - [ ] IDE-PRJ-002 [P2] 按 profile 保存根与引擎路径；验收：两个 profile 分别读回各自 assets/engine 路径，重启后记录仍独立；前置：IDE-PRJ-001。
 - [ ] IDE-PRJ-003 [P2] 提供现有 KBEngine 项目导入命令；验收：选择资产根后能预览 entities/defs/scripts/engine 的识别结果；前置：IDE-PRJ-001。
 - [ ] IDE-PRJ-004 [P2] 记录 Python 解释器来源；验收：profile 明确使用哪一个解释器，找不到时显示缺失状态；前置：IDE-PRJ-001。
