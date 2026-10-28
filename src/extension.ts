@@ -1,11 +1,11 @@
-import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace } from './scanRoots';
+import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolveAssetsRootForWorkspace, setActiveProfileScanRoot } from './scanRoots';
 import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { importExistingProject } from './projectImport';
 import { createMinimalProject } from './projectCreate';
-import { selectActiveProfile } from './activeProfile';
+import { onDidChangeActiveProfile, resolveActiveProfile, selectActiveProfile } from './activeProfile';
 import { showProfileHealthSummary } from './profileHealth';
 import {
   classifyPythonService,
@@ -2450,6 +2450,30 @@ export function activate(context: vscode.ExtensionContext) {
     () => selectActiveProfile(context)
   );
   context.subscriptions.push(selectActiveProfileCommand);
+
+  // 语言索引响应 profile 切换(IDE-PRJ-011):活动 profile 的资产根成为索引
+  // 输入(优先于 assetsRoot 设置/自动发现,见 scanRoots);切换时旧外部根先
+  // 定向摘除(SNP-009 口径),generation 前进使旧输入的在途扫描批次经代闸
+  // 不再写入当前快照(entityMapping.performScanEntityMappings),Python 索引
+  // 面整组重建
+  const applyActiveProfileToIndexInput = (): void => {
+    const profile = resolveActiveProfile(context.workspaceState);
+    for (const oldRoot of getExternalScanRoots()) {
+      entityMappingManager.removeRoot(oldRoot);
+    }
+    bumpRootConfigGeneration('profile-switch');
+    setActiveProfileScanRoot(profile && profile.assetsRoot ? profile.assetsRoot : null);
+    resetScanRootCache();
+    pythonClassIndex.invalidate();
+    watchPythonIndex();
+    entityMappingManager.refreshExternalRootWatchers();
+    if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
+  };
+  context.subscriptions.push(onDidChangeActiveProfile(() => { applyActiveProfileToIndexInput(); }));
+  // 激活期:持久化的选择先落到索引输入(此后首扫按选定根起步;此刻零索引
+  // 面,不需要切换路径的摘除/失效序列,也不 bump)
+  const startupProfile = resolveActiveProfile(context.workspaceState);
+  setActiveProfileScanRoot(startupProfile && startupProfile.assetsRoot ? startupProfile.assetsRoot : null);
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
   // 语言清单在命令内选(已代决首批 TS + C#)

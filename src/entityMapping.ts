@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { jumpLog, jumpTimeStart } from './navigationLog';
 import { INTERACTIVE_INDEX_WAIT_MS, logLayerTiming, raceWithBudget } from './hoverBudget';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
@@ -412,6 +413,10 @@ export class EntityMappingManager {
     // 计数口径:发现=候选 .def 总数;读取/解析=实际走进 parseDefFile 的次数
     // (mtime 命中复用由 type-registry/缓存命中另行统计,这里如实记尝试数)。
     const scanMetrics = startLanguageServiceOperation('entity-mapping-scan');
+    // IDE-PRJ-011:扫描按起步时的根配置代定身——profile 切换(或 assetsRoot
+    // 等任何 bump)后,本扫描的输入已过期,在途批次经代闸整体不再写入当前
+    // 快照(新输入由新扫描重建)
+    const scanGeneration = getRootConfigGeneration();
     const defFiles = await findFilesAcrossRoots('**/*.def', null);
     scanMetrics.countFileDiscovery(defFiles.length);
     const entities = defFiles.filter(defFile => {
@@ -426,6 +431,10 @@ export class EntityMappingManager {
         priority: IndexTaskPriority.BackgroundFull,
         run: async () => {
           for (const defFile of batch) {
+            // 代闸:根配置已前进 → 本批属旧输入,剩余文件不解析不写入
+            if (getRootConfigGeneration() !== scanGeneration) {
+              return;
+            }
             await this.parseDefFile(path.basename(defFile.fsPath, '.def'), defFile.fsPath, loader);
             scanMetrics.countFileRead(1);
             scanMetrics.countFileParse(1);

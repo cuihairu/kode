@@ -40,6 +40,23 @@ function isContained(parentKey: string, childKey: string): boolean {
  */
 const discoveryMemo = new Map<string, string | null>();
 
+/**
+ * 活动 profile 的选定资产根(IDE-PRJ-011):会话内显式状态,由 profile
+ * 切换接线写入——选定根存在即在 resolveAssetsRootForWorkspace 里优先于
+ * assetsRoot 设置与自动发现(显式选择优先);不存在如实落空走原链。
+ * 它不是发现记忆,resetScanRootCache 不清它(选择的生命周期跟 profile,
+ * 跟缓存失效无关);测试用 setActiveProfileScanRoot(null) 复位。
+ */
+let activeProfileScanRoot: string | null = null;
+
+export function setActiveProfileScanRoot(root: string | null): void {
+  activeProfileScanRoot = root && root.trim() ? root : null;
+}
+
+export function getActiveProfileScanRoot(): string | null {
+  return activeProfileScanRoot;
+}
+
 /** 测试用:清 discovery 记忆(不同用例换工作区根时不残留) */
 export function resetScanRootCache(): void {
   discoveryMemo.clear();
@@ -48,6 +65,10 @@ export function resetScanRootCache(): void {
 }
 
 export function resolveAssetsRootForWorkspace(workspaceRoot: string): string {
+  // 选定根优先(IDE-PRJ-011):存在才采用,不存在如实落空走配置/发现链
+  if (activeProfileScanRoot && isDirectory(activeProfileScanRoot)) {
+    return activeProfileScanRoot;
+  }
   let configured = '';
   try {
     configured = (vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot', '') ?? '').trim();

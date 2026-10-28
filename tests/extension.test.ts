@@ -5,6 +5,9 @@ import * as path from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PythonClassIndex } from '../src/pythonClassIndex';
 import { activate, deactivate } from '../src/extension';
+import { setActiveProfile } from '../src/activeProfile';
+import { getRootConfigGeneration, getRootConfigLastBumpReason } from '../src/rootConfigGeneration';
+import { getActiveProfileScanRoot, resetScanRootCache, setActiveProfileScanRoot } from '../src/scanRoots';
 import { isPythonMroJumpEnabled } from '../src/languageProviders';
 import {
   applySavedFileAnnotations,
@@ -1518,6 +1521,51 @@ describe('激活期 profile 健康汇总命令装配(IDE-PRJ-009)', () => {
       windowish.showQuickPick = originalPick;
       messages.info.length = originalInfoCount;
       disposeAll(context);
+    }
+  }, 8000);
+});
+
+describe('激活期语言索引响应 profile 切换(IDE-PRJ-011)', () => {
+  it('激活即应用持久化选择,切换事件切换索引输入并前进 generation', async () => {
+    const dirA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-prj11-a-'));
+    const dirB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-prj11-b-'));
+    const map = new Map<string, unknown>([
+      ['kbengine.projectProfiles.v1', [
+        { id: 'p1', displayName: 'A', assetsRoot: dirA, engineRoot: '', interpreterPath: null, interpreterSource: 'missing' },
+        { id: 'p2', displayName: 'B', assetsRoot: dirB, engineRoot: '', interpreterPath: null, interpreterSource: 'missing' }
+      ]],
+      ['kbengine.activeProfileId.v1', 'p1']
+    ]);
+    const mementoLike = {
+      get: <T,>(key: string, defaultValue?: T): T | undefined =>
+        map.has(key) ? (map.get(key) as T) : defaultValue,
+      update: (key: string, value: unknown): Promise<void> => {
+        map.set(key, value);
+        return Promise.resolve();
+      }
+    };
+    const context: ExtensionContext = {
+      ...makeContext(),
+      workspaceState: mementoLike
+    };
+    const generationBefore = getRootConfigGeneration();
+    try {
+      activate(context);
+
+      // 激活期:持久化的选择落到索引输入
+      expect(getActiveProfileScanRoot()).toBe(dirA);
+
+      // 切换事件:输入换到选定根,generation 前进(旧输入在途批次由此判过期)
+      await setActiveProfile(mementoLike, 'p2');
+      expect(getActiveProfileScanRoot()).toBe(dirB);
+      expect(getRootConfigGeneration()).toBeGreaterThan(generationBefore);
+      expect(getRootConfigLastBumpReason()).toBe('profile-switch');
+    } finally {
+      disposeAll(context);
+      setActiveProfileScanRoot(null);
+      resetScanRootCache();
+      fs.rmSync(dirA, { recursive: true, force: true });
+      fs.rmSync(dirB, { recursive: true, force: true });
     }
   }, 8000);
 });
