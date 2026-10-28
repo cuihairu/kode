@@ -16,6 +16,14 @@ const activeProfileChangeEmitter = new vscode.EventEmitter<string>();
 /** 订阅活动 profile 切换(每次真实切换恰一次,载荷为新的稳定 ID) */
 export const onDidChangeActiveProfile = activeProfileChangeEmitter.event;
 
+/** 真实切换累计数(IDE-PRJ-013):长交互面(生成预览)用它检测打开期间的选择变化 */
+let activeProfileSwitchCountValue = 0;
+
+/** 当前真实切换累计数(重选同条/拒绝写入不计) */
+export function activeProfileSwitchCount(): number {
+  return activeProfileSwitchCountValue;
+}
+
 /** 当前选择的稳定 ID(极简装配无 workspaceState:无选择) */
 export function readActiveProfileId(memento?: vscode.Memento): string | null {
   if (!memento) {
@@ -53,6 +61,7 @@ export async function setActiveProfile(
   if (memento) {
     await memento.update(ACTIVE_PROFILE_STATE_KEY, profileId);
   }
+  activeProfileSwitchCountValue += 1;
   activeProfileChangeEmitter.fire(profileId);
   return profileId;
 }

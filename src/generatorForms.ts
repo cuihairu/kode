@@ -32,6 +32,7 @@ import {
 import { joinWorkspacePath } from './workspacePath';
 import { writeFileAtomic } from './atomicFileWrite';
 import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';
+import { activeProfileSwitchCount, resolveActiveProfile } from './activeProfile';
 
 export const GENERATOR_FORM_KINDS = ['proxy', 'space', 'component', 'fixedDict'] as const;
 export type GeneratorFormKind = (typeof GENERATOR_FORM_KINDS)[number];
@@ -811,8 +812,13 @@ function buildFormPlanItems(
   return items;
 }
 
-/** 命令入口:勾形态 → 填参数 → 落盘 + 附带改写 → 逐条播报说明 */
-export async function runGeneratorFormWizard(): Promise<void> {
+/**
+ * 命令入口:勾形态 → 填参数 → 落盘 + 附带改写 → 逐条播报说明。
+ * options.workspaceState 传入后落盘布局响应活动 profile(IDE-PRJ-013)
+ */
+export async function runGeneratorFormWizard(
+  options: { workspaceState?: vscode.Memento } = {}
+): Promise<void> {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceRoot) {
     vscode.window.showErrorMessage('没有打开的工作区');
@@ -850,33 +856,45 @@ export async function runGeneratorFormWizard(): Promise<void> {
 
   try {
     // IDE-GEN-008:与实体向导同规则——冲突不进预览直接交落盘层播报,
-    // 无冲突先出计划确认(准确路径+附带改写项),确认后才写
-    const layout = getDefinitionWorkspaceLayout(workspaceRoot);
-    const target = resolveGeneratorFormTarget(input, layout);
-    if (target.filePath !== null && !hasGeneratorFormConflict(input, target.filePath)) {
-      const confirmed = await confirmGenerationPlanItems(
-        buildFormPlanItems(input, layout, target.filePath, attachTo)
-      );
-      if (!confirmed) {
-        return;
+    // 无冲突先出计划确认(准确路径+附带改写项),确认后才写。
+    // IDE-PRJ-013:落盘布局按当前活动 profile 的资产根解析(预览与写入
+    // 同源);预览打开期间 profile 切换即作废,重算路径要求重新确认
+    for (;;) {
+      const profileAssetsRoot = resolveActiveProfile(options.workspaceState)?.assetsRoot;
+      const layoutRoot = profileAssetsRoot || workspaceRoot;
+      const layout = getDefinitionWorkspaceLayout(layoutRoot);
+      const target = resolveGeneratorFormTarget(input, layout);
+      if (target.filePath !== null && !hasGeneratorFormConflict(input, target.filePath)) {
+        const epochAtPreview = activeProfileSwitchCount();
+        const confirmed = await confirmGenerationPlanItems(
+          buildFormPlanItems(input, layout, target.filePath, attachTo)
+        );
+        if (!confirmed) {
+          return;
+        }
+        if (activeProfileSwitchCount() !== epochAtPreview) {
+          vscode.window.showInformationMessage('活动 profile 已切换，生成路径已按新 profile 重算，请重新确认');
+          continue;
+        }
       }
-    }
 
-    const outcome = generateGeneratorForm(input, workspaceRoot, { attachTo, layout });
-    for (const note of outcome.notes) {
-      vscode.window.showWarningMessage(note);
-    }
-
-    if (outcome.written && outcome.filePath) {
-      vscode.window.showInformationMessage(
-        `✅ 已生成${GENERATOR_FORM_LABELS[outcome.kind]}: ${outcome.filePath}`
-      );
-
-      const open = await vscode.window.showInformationMessage('是否打开生成的文件?', '是', '否');
-      if (open === '是') {
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(outcome.filePath));
-        await vscode.window.showTextDocument(document);
+      const outcome = generateGeneratorForm(input, layoutRoot, { attachTo, layout });
+      for (const note of outcome.notes) {
+        vscode.window.showWarningMessage(note);
       }
+
+      if (outcome.written && outcome.filePath) {
+        vscode.window.showInformationMessage(
+          `✅ 已生成${GENERATOR_FORM_LABELS[outcome.kind]}: ${outcome.filePath}`
+        );
+
+        const open = await vscode.window.showInformationMessage('是否打开生成的文件?', '是', '否');
+        if (open === '是') {
+          const document = await vscode.workspace.openTextDocument(vscode.Uri.file(outcome.filePath));
+          await vscode.window.showTextDocument(document);
+        }
+      }
+      return;
     }
   } catch (error) {
     vscode.window.showErrorMessage(`生成失败: ${error}`);

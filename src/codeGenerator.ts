@@ -12,6 +12,7 @@ import { joinWorkspacePath } from './workspacePath';
 import { writeFileAtomic } from './atomicFileWrite';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';
+import { activeProfileSwitchCount, onDidChangeActiveProfile, resolveActiveProfile } from './activeProfile';
 
 /**
  * 实体类型配置
@@ -106,9 +107,15 @@ export interface GeneratorConfig {
  */
 export class KBEngineCodeGenerator {
   private config: GeneratorConfig;
+  private readonly profileSwitchSubscription: vscode.Disposable;
 
   constructor(private context: vscode.ExtensionContext) {
     this.config = this.loadConfig();
+    // IDE-PRJ-013:profile 切换即时重载输出配置(下一次预览/写入即用新
+    // 根);已打开预览由 confirmGenerationPlan 的切换计数守卫作废重算
+    this.profileSwitchSubscription = onDidChangeActiveProfile(() => {
+      this.config = this.loadConfig();
+    });
   }
 
   /**
@@ -121,6 +128,26 @@ export class KBEngineCodeGenerator {
     }
 
     const config = vscode.workspace.getConfiguration('kbengine.generator');
+
+    // IDE-PRJ-013:活动 profile 的资产根优先——def/python 输出根都按所选
+    // profile 解析(共享发现链以资产根为基,布局未识别回落 <资产根>/scripts
+    // 约定),预览与写入同源;路径项不回落设置链(profile 是权威输入),
+    // 开关项(generatePython/注册)仍读设置
+    const profileAssetsRoot = resolveActiveProfile(this.context.workspaceState)?.assetsRoot;
+    if (profileAssetsRoot) {
+      return {
+        defOutputPath: findEntityDefinitionsRoot(profileAssetsRoot)
+          || joinWorkspacePath(profileAssetsRoot, 'scripts', 'entity_defs'),
+        // 不可达兜底(批64 不变量):entityScriptsRoot 恒非空字符串(发现链对
+        // 任意根都给出首选候选拼接路径),类型上仍是 string | null
+        /* istanbul ignore next */
+        pythonOutputPath: getDefinitionWorkspaceLayout(profileAssetsRoot).entityScriptsRoot
+          ?? joinWorkspacePath(profileAssetsRoot, 'scripts'),
+        generatePython: config.get<boolean>('generatePython') ?? true,
+        registerInEntitiesXml: config.get<boolean>('registerInEntitiesXml') ?? true
+      };
+    }
+
     const configuredDefOutputPath = config.get<string>('defOutputPath') || 'scripts/entity_defs';
     return {
       defOutputPath: this.resolveDefOutputPath(configuredDefOutputPath, workspaceFolder.uri.fsPath),
@@ -199,9 +226,26 @@ export class KBEngineCodeGenerator {
   }
 
   /**
-   * 解析 entities.xml 落点(注册与计划预览同源,预览路径=写入路径)
+   * 解析 python 输出根(IDE-PRJ-013):profile 模式下是绝对根(profile 的
+   * scripts 根),直接用;设置链保持相对值以工作区根为基
+   */
+  private resolvePythonOutputRoot(workspaceRoot: string): string {
+    return path.isAbsolute(this.config.pythonOutputPath)
+      ? this.config.pythonOutputPath
+      : joinWorkspacePath(workspaceRoot, this.config.pythonOutputPath);
+  }
+
+  /**
+   * 解析 entities.xml 落点(注册与计划预览同源,预览路径=写入路径)。
+   * IDE-PRJ-013:活动 profile 的资产根优先——发现链以资产根为基,未识别
+   * 回落 <资产根>/scripts/entities.xml;读取时解析,跟随切换即时生效
    */
   private resolveEntitiesXmlPath(workspaceRoot: string): string {
+    const profileAssetsRoot = resolveActiveProfile(this.context.workspaceState)?.assetsRoot;
+    if (profileAssetsRoot) {
+      return findEntitiesXmlFile(profileAssetsRoot)
+        || joinWorkspacePath(profileAssetsRoot, 'scripts', 'entities.xml');
+    }
     return findEntitiesXmlFile() || joinWorkspacePath(
       workspaceRoot,
       vscode.workspace
@@ -263,8 +307,7 @@ export class KBEngineCodeGenerator {
 
     if (this.config.generatePython) {
       const pythonFilePath = joinWorkspacePath(
-        workspaceFolder.uri.fsPath,
-        this.config.pythonOutputPath,
+        this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
         `${entityName}.py`
       );
       if (fs.existsSync(pythonFilePath)) {
@@ -277,7 +320,9 @@ export class KBEngineCodeGenerator {
 
   /**
    * 生成计划预览与确认(IDE-GEN-004):确认前列出将新增的
-   * def/Python 与注册项及准确路径,选择"确认生成"才继续落盘
+   * def/Python 与注册项及准确路径,选择"确认生成"才继续落盘。
+   * IDE-PRJ-013:预览打开期间活动 profile 切换即作废——旧预览的路径不再
+   * 可信,按重载后的配置重算计划并要求重新确认,绝不沿旧预览路径落盘
    */
   private async confirmGenerationPlan(config: EntityTypeConfig): Promise<boolean> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -285,11 +330,33 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
+    for (;;) {
+      const epochAtPreview = activeProfileSwitchCount();
+      // IDE-GEN-008:与表单向导共用同一确认面
+      const confirmed = await confirmGenerationPlanItems(
+        this.buildGenerationPlanItems(config, workspaceFolder.uri.fsPath)
+      );
+      if (!confirmed) {
+        return false;
+      }
+      if (activeProfileSwitchCount() === epochAtPreview) {
+        return true;
+      }
+      vscode.window.showInformationMessage('活动 profile 已切换，生成路径已按新 profile 重算，请重新确认');
+    }
+  }
+
+  /**
+   * 计划预览项(IDE-GEN-004/PRJ-013):def/Python/注册项的准确路径,
+   * 与写入同源(同一 resolveDefOutputRoot/resolvePythonOutputRoot/
+   * resolveEntitiesXmlPath)
+   */
+  private buildGenerationPlanItems(config: EntityTypeConfig, workspaceRoot: string): GenerationPlanItem[] {
     const planItems: GenerationPlanItem[] = [
       {
         label: '新增 .def',
         description: joinWorkspacePath(
-          this.resolveDefOutputRoot(workspaceFolder.uri.fsPath),
+          this.resolveDefOutputRoot(workspaceRoot),
           `${config.name}.def`
         )
       }
@@ -299,8 +366,7 @@ export class KBEngineCodeGenerator {
       planItems.push({
         label: '新增 Python',
         description: joinWorkspacePath(
-          workspaceFolder.uri.fsPath,
-          this.config.pythonOutputPath,
+          this.resolvePythonOutputRoot(workspaceRoot),
           `${config.name}.py`
         )
       });
@@ -309,12 +375,11 @@ export class KBEngineCodeGenerator {
     if (this.config.registerInEntitiesXml) {
       planItems.push({
         label: '注册 entities.xml',
-        description: `${this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath)}: ${this.generateEntityRegistration(config).trim()}`
+        description: `${this.resolveEntitiesXmlPath(workspaceRoot)}: ${this.generateEntityRegistration(config).trim()}`
       });
     }
 
-    // IDE-GEN-008:与表单向导共用同一确认面
-    return confirmGenerationPlanItems(planItems);
+    return planItems;
   }
 
   /**
@@ -496,8 +561,7 @@ export class KBEngineCodeGenerator {
     }
 
     const pythonFilePath = joinWorkspacePath(
-      workspaceFolder.uri.fsPath,
-      this.config.pythonOutputPath,
+      this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
       `${entity.config.name}.py`
     );
 
@@ -1315,5 +1379,6 @@ export class KBEngineCodeGenerator {
    */
   dispose(): void {
     // 清理资源
+    this.profileSwitchSubscription.dispose();
   }
 }

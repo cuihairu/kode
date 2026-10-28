@@ -2427,7 +2427,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 的定义面(此前只能手写)。已代决按「先出骨架 + 引擎装载口径附带改写」落地
   const showGeneratorFormWizardCommand = vscode.commands.registerCommand(
     'kbengine.generator.formWizard',
-    () => runGeneratorFormWizard()
+    () => runGeneratorFormWizard({ workspaceState: context.workspaceState })
   );
   context.subscriptions.push(showGeneratorFormWizardCommand);
 
