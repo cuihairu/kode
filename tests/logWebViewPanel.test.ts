@@ -443,3 +443,76 @@ describe('LogViewerWebView webview console messages', () => {
     expect(switchedPanel.webview.html).not.toContain('page error');
   });
 });
+
+describe('LogViewerWebView 发送积压上限(IDE-RES-006)', () => {
+  it('页面暂停消费时发送队列有界:在途只留一批,合并丢弃量可观测,消费恢复后补发最新', async () => {
+    const hub = new LogHub({ flushIntervalMs: 0 });
+    const webview = makeWebView();
+    webview.subscribeLogHub(hub);
+    webview.show();
+    const panel = currentPanel();
+
+    // 页面暂停消费:第一条 postMessage 挂起不 settle(后续若发出立即 settle)
+    let releaseFirst!: (value: boolean) => void;
+    const posted: Array<{ message: { command?: string; events?: Array<{ text: string }>; webviewDropped?: number } }> = [];
+    panel.webview.postMessage = (message: unknown) => {
+      posted.push({ message: message as typeof posted[number]['message'] });
+      return new Promise<boolean>(resolve => {
+        if (posted.length === 1) {
+          releaseFirst = resolve;
+        } else {
+          resolve(true);
+        }
+      });
+    };
+
+    hub.info({ source: 'process', component: 'baseapp', text: 'batch-1' });
+    hub.flush();
+    hub.info({ source: 'process', component: 'baseapp', text: 'batch-2' });
+    hub.flush();
+    hub.info({ source: 'process', component: 'baseapp', text: 'batch-3' });
+    hub.flush();
+
+    // 在途未 settle:宿主不再逐批堆发——只有第一条真发出(发送积压有界)
+    expect(posted).toHaveLength(1);
+    expect(posted[0].message.events?.map(event => event.text)).toEqual(['batch-1']);
+    // 暂停期间宿主保持响应:onBatch 同步路径轻量,事件仍全量进宿主侧缓冲
+    expect(webview['currentLogs' as keyof LogViewerWebView]).toHaveLength(3);
+
+    // 消费恢复:第一条 settle 后,待发槽里的最新批(batch-3)补发,
+    // 被顶替的 batch-2 丢弃量随批可观测(webviewDropped=1)
+    releaseFirst(true);
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+    expect(posted).toHaveLength(2);
+    expect(posted[1].message.events?.map(event => event.text)).toEqual(['batch-3']);
+    expect(posted[1].message.webviewDropped).toBe(1);
+
+    hub.dispose();
+    webview.dispose();
+  });
+
+  it('消费正常时逐批直发不合并:无在途挂起即走旧节拍', async () => {
+    const hub = new LogHub({ flushIntervalMs: 0 });
+    const webview = makeWebView();
+    webview.subscribeLogHub(hub);
+    webview.show();
+    const panel = currentPanel();
+
+    hub.info({ source: 'process', component: 'baseapp', text: 'solo-1' });
+    hub.flush();
+    // 上一批 settle(async 立即)后再来下一批:直发不进槽
+    await new Promise(resolve => setImmediate(resolve));
+    hub.info({ source: 'process', component: 'baseapp', text: 'solo-2' });
+    hub.flush();
+    await new Promise(resolve => setImmediate(resolve));
+
+    const appended = panel.webview.postedMessages
+      .map(record => record.message as { command?: string; events?: Array<{ text: string }>; webviewDropped?: number })
+      .filter(message => message.command === 'appendLogs');
+    expect(appended.map(message => message.events?.map(event => event.text))).toEqual([['solo-1'], ['solo-2']]);
+    expect(appended.every(message => (message.webviewDropped ?? 0) === 0)).toBe(true);
+    hub.dispose();
+    webview.dispose();
+  });
+});

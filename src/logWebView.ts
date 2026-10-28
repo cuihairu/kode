@@ -28,6 +28,12 @@ export class LogViewerWebView {
   private logSubscription?: () => void;
   private logHub?: LogHub;
   private readonly displayedLimit = 5000;
+  // 发送积压上限(IDE-RES-006):webview 暂停消费时在途只留一批,待发槽
+  // 只留一批——新批顶替旧槽(顶替事件计数累计进 webviewDropped 随批可观测),
+  // 宿主不为暂停的页面无限堆 postMessage。
+  private pendingWebviewBatch: { events: readonly LogEvent[]; dropped: number; capacity: number } | null = null;
+  private webviewPosting = false;
+  private webviewDropped = 0;
   private filter: LogFilter = {
     levels: [],
     components: [],
@@ -58,14 +64,42 @@ export class LogViewerWebView {
         this.currentLogs.splice(0, this.currentLogs.length - this.displayedLimit);
       }
       if (!this.panel) return;
-      void this.panel.webview.postMessage({
-        command: 'appendLogs',
-        events: batch.events,
-        dropped: batch.dropped,
-        capacity: batch.capacity,
-        displayLimit: this.displayedLimit
-      });
+      this.enqueueWebviewBatch(batch.events, batch.dropped, batch.capacity);
     });
+  }
+
+  /** webview 发送面:在途挂起时新批顶替待发槽(有界),槽顶替计数可观测 */
+  private enqueueWebviewBatch(events: readonly LogEvent[], dropped: number, capacity: number): void {
+    if (this.webviewPosting) {
+      if (this.pendingWebviewBatch) {
+        this.webviewDropped += this.pendingWebviewBatch.events.length;
+      }
+      this.pendingWebviewBatch = { events, dropped, capacity };
+      return;
+    }
+    this.deliverWebviewBatch(events, dropped, capacity);
+  }
+
+  private deliverWebviewBatch(events: readonly LogEvent[], dropped: number, capacity: number): void {
+    const panel = this.panel;
+    if (!panel) return;
+    this.webviewPosting = true;
+    const settled = (): void => {
+      this.webviewPosting = false;
+      const next = this.pendingWebviewBatch;
+      this.pendingWebviewBatch = null;
+      if (next) {
+        this.deliverWebviewBatch(next.events, next.dropped, next.capacity);
+      }
+    };
+    void panel.webview.postMessage({
+      command: 'appendLogs',
+      events,
+      dropped,
+      capacity,
+      displayLimit: this.displayedLimit,
+      webviewDropped: this.webviewDropped
+    }).then(settled, settled);
   }
 
   attachLogHub(hub: LogHub): void {
@@ -593,6 +627,8 @@ export class LogViewerWebView {
    */
   dispose(): void {
     this.logSubscription?.();
+    this.pendingWebviewBatch = null;
+    this.webviewPosting = false;
     if (this.panel) {
       this.panel.dispose();
       this.panel = null;
