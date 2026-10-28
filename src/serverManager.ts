@@ -244,12 +244,14 @@ export function createComponentReadinessProbe(
  * 进程启动端口(docs/redesign.md L2):默认实现透传 child_process.spawn,
  * 生产行为不变;测试可注入记录型/故障注入型 runner,或与
  * tests/sim/fakeComponentBin 的假组件二进制组合做真实进程编排。
+ * detached(RUN-007):POSIX 下建进程组,停止时可全组终止。
  */
 export interface ProcessRunner {
   spawn(command: string, args: string[], options: {
     cwd: string;
     env: NodeJS.ProcessEnv;
     windowsHide: true;
+    detached?: boolean;
   }): ChildProcess;
 }
 
@@ -290,7 +292,9 @@ export class KBEngineServerManager {
     this.processManager = new ProcessManager(request => this.processRunner.spawn(request.command, [...(request.args ?? [])], {
       cwd: request.cwd ?? process.cwd(),
       env: request.env ?? process.env,
-      windowsHide: true
+      windowsHide: true,
+      // POSIX 下设进程组长:停止时负 pid 杀全组(RUN-007);Windows 走 taskkill 树杀
+      detached: process.platform !== 'win32'
     }), this.logHub);
     this.logSubscriptions.push(this.processManager.onState(event => {
       const server = this.runningServers.get(event.id);

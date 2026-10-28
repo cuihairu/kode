@@ -36,6 +36,7 @@ export type FakeComponentBehavior =
   | { kind: 'exit'; code: number }
   | { kind: 'ignore-sigterm'; marker?: string }
   | { kind: 'listen'; port: number; delayMs?: number }
+  | { kind: 'spawn-child' }
   | { kind: 'unexecutable' };
 
 const KEEPALIVE = 'setInterval(function () {}, 3600000);';
@@ -91,6 +92,19 @@ const scriptBody = (behavior: FakeComponentBehavior): { shebang: string; body: s
       };
     case 'unexecutable':
       return { shebang: '#!/usr/bin/env node', body: KEEPALIVE };
+    case 'spawn-child':
+      // RUN-007 子进程清理面:派生一个常驻孙进程并报出其 pid(unref 不随
+      // 父进程退出),停止组件后孙进程不得残留
+      return {
+        shebang: '#!/usr/bin/env node',
+        body: [
+          'const cp = require("child_process");',
+          'const child = cp.spawn(process.execPath, ["-e", "setInterval(function () {}, 3600000);"], { stdio: "ignore" });',
+          'child.unref();',
+          'process.stdout.write("grandchild-pid:" + child.pid + "\\n");',
+          KEEPALIVE
+        ].join('\n')
+      };
     default:
       throw new Error(`Unknown fake component behavior: ${(behavior as { kind: string }).kind}`);
   }

@@ -9,6 +9,7 @@ import {
   parseServerKey,
   type ServerComponent
 } from '../src/serverManager';
+import { killProcessTree } from '../src/processManager';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
@@ -261,4 +262,53 @@ describe('KBEngineServerManager multi-instance targets', () => {
     expect(manager.getServerStatus('cellapp', 'b')).toBe(sibling?.status);
     expect(pidAlive(pidB)).toBe(true);
   }, 10000);
+});
+
+describe('KBEngineServerManager process tree cleanup on stop', () => {
+  it.skipIf(process.platform === 'win32')('kills spawned grandchildren when stopping the component', async () => {
+    // 组件派生常驻孙进程(unref):停止后孙进程不得残留(RUN-007)
+    bin.write('machine', { kind: 'spawn-child' });
+    const manager = makeManager();
+    const machine = SERVER_COMPONENTS.find(component => component.name === 'machine') as ServerComponent;
+
+    expect(await manager.startComponent(machine)).toBe(true);
+    const server = manager.getRunningServers().get('machine');
+    const logs = server?.logs ?? [];
+    await until(() => logs.join('').includes('grandchild-pid:'));
+    const grandchildPid = Number(logs.join('').match(/grandchild-pid:(\d+)/)?.[1]);
+    expect(grandchildPid).toBeGreaterThan(0);
+    expect(pidAlive(grandchildPid)).toBe(true);
+
+    expect(await manager.stopComponent('machine')).toBe(true);
+    await until(() => !pidAlive(grandchildPid), 5000);
+    // 父进程自然也死了
+    expect(manager.getRunningServers().has('machine')).toBe(false);
+  }, 12000);
+
+  it('uses taskkill /T for the tree on windows (platform split)', async () => {
+    // 平台区分面(RUN-007):Windows 臂按进程树递归终止;注入 platform+taskkill
+    // 在 Linux 上确定性覆盖 win32 分支
+    const recorded: string[][] = [];
+    const fakeTaskkill = (args: string[]) => {
+      recorded.push(args);
+      const listeners: Array<[string, (code: number | null) => void]> = [];
+      return {
+        on: (event: string, listener: (code: number | null) => void) => {
+          listeners.push([event, listener]);
+          setTimeout(() => {
+            if (event === 'exit') {
+              listener(0);
+            }
+          }, 0);
+        }
+      };
+    };
+
+    const killed = await killProcessTree(4242, 'SIGTERM', undefined, {
+      platform: 'win32',
+      runTaskkill: fakeTaskkill
+    });
+    expect(killed).toBe(true);
+    expect(recorded).toEqual([['/PID', '4242', '/T', '/F']]);
+  });
 });

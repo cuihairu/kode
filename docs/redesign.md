@@ -225,7 +225,8 @@ Each phase is independently deliverable and independently committed, and the ful
   structurally eliminating the "signal arrives before the trap is installed"
   race, replacing the original bash trap approach), listen (open a TCP
   listener on 127.0.0.1 after an optional delay — the readiness-probe face
-  for IDE-RUN-003), unexecutable (chmod 000
+  for IDE-RUN-003), spawn-child (spawn a keepalive grandchild and print its
+  pid — the process-tree cleanup face for IDE-RUN-007), unexecutable (chmod 000
   → EACCES). The node shebang is cross-platform.
 - `serverManager` extracts the `ProcessRunner` injection point (the default passes spawn through).
   Existing mocha-layer cases that mock `child_process` via `module._load` are unaffected.

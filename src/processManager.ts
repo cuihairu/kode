@@ -54,6 +54,47 @@ export interface ManagedProcessEvent {
 
 export type ProcessSpawnRunner = (request: ProcessSpawnRequest) => ChildProcess;
 
+/**
+ * 进程树终止(RUN-007):清理由组件派生的子进程。
+ * - POSIX:启动即 detached 进程组长(setsid),负 pid 信号杀全组;组长已
+ *   回收(ESRCH)或并非组长时回落 child.kill(单 pid 语义,测试替身同型)
+ * - Windows:无进程组语义,taskkill /PID /T /F 按进程树递归终止
+ */
+export const killProcessTree = async (
+  pid: number,
+  signal: NodeJS.Signals,
+  child?: ChildProcess,
+  deps: {
+    runTaskkill?: (args: string[]) => { on: (event: string, listener: (code: number | null) => void) => void };
+    platform?: NodeJS.Platform;
+  } = {}
+): Promise<boolean> => {
+  const platform = deps.platform ?? process.platform;
+  if (platform === 'win32') {
+    const taskkill = deps.runTaskkill
+      ? deps.runTaskkill(['/PID', String(pid), '/T', '/F'])
+      : spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
+    return new Promise(resolve => {
+      taskkill.on('exit', code => resolve(code === 0));
+      taskkill.on('error', () => resolve(false));
+    });
+  }
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    if (child) {
+      return child.kill(signal);
+    }
+    try {
+      process.kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
 export class ProcessManager {
   private readonly processes = new Map<string, ManagedProcess>();
   private readonly stateEvents = new EventEmitter();
@@ -65,6 +106,8 @@ export class ProcessManager {
         cwd: request.cwd,
         env: request.env,
         windowsHide: true,
+        // POSIX 下设进程组长:停止时可负 pid 杀全组(RUN-007);Windows 树杀走 taskkill
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe']
       }));
     this.stateEvents.setMaxListeners(0);
@@ -252,9 +295,11 @@ export class ProcessManager {
       });
 
       timer = setTimeout(() => {
-        managed.process.kill('SIGKILL');
+        // RUN-007:升级击杀同样走进程树,孙进程不残留
+        void killProcessTree(managed.pid, 'SIGKILL', managed.process);
       }, timeoutMs);
-      managed.process.kill('SIGTERM');
+      // RUN-007:停止即进程树终止(POSIX 负 pid 组信号/Windows taskkill /T)
+      void killProcessTree(managed.pid, 'SIGTERM', managed.process);
       await exited;
       return true;
     })();
@@ -271,7 +316,8 @@ export class ProcessManager {
   async dispose(): Promise<void> {
     const managed = Array.from(this.processes.values());
     await Promise.all(managed.map(item => {
-      item.process.kill('SIGKILL');
+      // RUN-007:dispose 同样树杀,不留孙进程
+      void killProcessTree(item.pid, 'SIGKILL', item.process);
       return new Promise<void>(resolve => {
         if (item.process.exitCode !== null || item.process.signalCode !== null) resolve();
         item.process.once('exit', resolve);
