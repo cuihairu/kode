@@ -38,7 +38,15 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey, DEFAULT_TARGET_ID } from './serverManager';
-import { injectDebugpyAfterStart, syncDebugpyPackage, allocateDebugpyInstancePort } from './autoDebugpy';
+import {
+  injectDebugpyAfterStart,
+  syncDebugpyPackage,
+  allocateDebugpyInstancePort,
+  autoDebugpyEnabled,
+  debugpyPackageDir,
+  type DebugpyInjectTarget
+} from './autoDebugpy';
+import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps } from './debugpyPreflight';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1563,6 +1571,34 @@ export function activate(context: vscode.ExtensionContext) {
   // DBG-001:命名实例 → 窗口分配的 debugpy 口;随实例退出清位,空出的口
   // 可被后续实例复用。默认实例不进 Map(走端口分配表)。
   const debugpyPortByServerKey = new Map<string, number>();
+  // DBG-003 注入统一入口(默认实例 string 形/命名实例对象形共用):发起前
+  // 先做所选解释器 debugpy 预检——缺依赖在注入前给可操作状态;资产树已
+  // 同步过包则照常注入(引擎导入的是资产树包,不依赖本机解释器)。
+  const runDebugpyInjection = (injectTarget: DebugpyInjectTarget): void => {
+    const log = (componentName: string, level: 'info' | 'warning' | 'error', text: string): void => {
+      serverManager.logHub.ingest({
+        source: 'process',
+        component: componentName,
+        level: level === 'error' ? RuntimeLogLevel.ERROR : level === 'warning' ? RuntimeLogLevel.WARNING : RuntimeLogLevel.INFO,
+        text
+      });
+    };
+    void (async () => {
+      if (autoDebugpyEnabled()) {
+        const preflight = await checkInterpreterDebugpy(debugpyPreflightDeps());
+        const allows = debugpyPreflightAllowsInjection(
+          preflight,
+          fs.existsSync(debugpyPackageDir(serverManager.getConfigPath()))
+        );
+        if (!allows) {
+          const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
+          log(componentName, 'warning', preflight.message);
+          return;
+        }
+      }
+      await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), { log });
+    })();
+  };
   const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
     serverControlProvider.refresh();
     updateStatusBar(serverManager);
@@ -1583,16 +1619,7 @@ export function activate(context: vscode.ExtensionContext) {
       // 配独立口——同类型多实例各持一口,attach 可指向指定实例。
       const { componentName: targetName, targetId } = parseServerKey(component);
       if (targetId === DEFAULT_TARGET_ID) {
-        void injectDebugpyAfterStart([targetName], () => telnetService.getTargets(), {
-          log: (componentName, level, text) => {
-            serverManager.logHub.ingest({
-              source: 'process',
-              component: componentName,
-              level: level === 'error' ? RuntimeLogLevel.ERROR : level === 'warning' ? RuntimeLogLevel.WARNING : RuntimeLogLevel.INFO,
-              text
-            });
-          }
-        });
+        runDebugpyInjection(targetName);
         continue;
       }
       const port = allocateDebugpyInstancePort(targetName, debugpyPortByServerKey.values());
@@ -1606,16 +1633,7 @@ export function activate(context: vscode.ExtensionContext) {
         continue;
       }
       debugpyPortByServerKey.set(component, port);
-      void injectDebugpyAfterStart([{ component: targetName, targetId, port }], () => telnetService.getTargets(), {
-        log: (componentName, level, text) => {
-          serverManager.logHub.ingest({
-            source: 'process',
-            component: componentName,
-            level: level === 'error' ? RuntimeLogLevel.ERROR : level === 'warning' ? RuntimeLogLevel.WARNING : RuntimeLogLevel.INFO,
-            text
-          });
-        }
-      });
+      runDebugpyInjection({ component: targetName, targetId, port });
     }
   });
   context.subscriptions.push(serverStatusSubscription);

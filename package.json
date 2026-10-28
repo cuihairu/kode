@@ -895,7 +895,7 @@
         "kbengine.debug.autoDebugpy": {
           "type": "boolean",
           "default": false,
-          "description": "组件启动成功后自动经 telnet :python 层注入 debugpy.listen（逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只本机 127.0.0.1；单组件失败只记日志不阻塞启动；注入走 telnet，entitydef/早期 config 阶段已过，进程级第一行断点属二期）。开启后 kbengine.debug.updateLaunchJson 会为每组件生成 debugpy attach 配置；debugpy 包先用 kbengine.python.debugpySync 命令复制进 <assets>/scripts/common/debugpy"
+          "description": "组件启动成功后自动经 telnet :python 层注入 debugpy.listen（逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只本机 127.0.0.1；单组件失败只记日志不阻塞启动；注入走 telnet，entitydef/早期 config 阶段已过，进程级第一行断点属二期）。注入前先对所选解释器（kbengine.python.interpreterPath→PATH 链）做 debugpy 预检，缺解释器/缺包/版本过老提前给可操作状态。开启后 kbengine.debug.updateLaunchJson 会为每组件生成 debugpy attach 配置；debugpy 包先用 kbengine.python.debugpySync 命令复制进 <assets>/scripts/common/debugpy"
         },
         "kbengine.jsoncAssociation": {
           "type": "boolean",

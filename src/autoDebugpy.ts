@@ -22,6 +22,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { KBEngineTelnetClient, type TelnetClientEvents } from './telnetClient';
+import { resolveProfileInterpreter } from './profileInterpreter';
 import type { TelnetTarget } from './telnetService';
 
 /** 同步开关(kbengine.debug.autoDebugpy,默认关:注入是显式 opt-in) */
@@ -131,8 +132,18 @@ const LOCATE_DEBUGPY_CODE =
   'import debugpy\n' +
   'print(json.dumps({"version": debugpy.__version__, "dir": os.path.dirname(debugpy.__file__)}))\n';
 
+/**
+ * 同步源候选(DBG-003):syncDebugpyPackage 的探测解释器链——所选解释器
+ * (PRJ-004 解析链)排第一,PATH 的 python3/python 随后,缺失不排。预检
+ * 指向的解释器与同步取包的解释器保持同一个,故事才连贯。
+ */
+export function debugpySyncSourceCandidates(interpreterPath: string | null): string[] {
+  return interpreterPath ? [interpreterPath, 'python3', 'python'] : ['python3', 'python'];
+}
+
 const defaultRunPython = async (code: string): Promise<{ stdout: string; exitCode: number | null }> => {
-  for (const command of ['python3', 'python']) {
+  const candidates = debugpySyncSourceCandidates(resolveProfileInterpreter().interpreterPath);
+  for (const command of candidates) {
     const result = await new Promise<{ stdout: string; exitCode: number | null } | null>(resolve => {
       try {
         const child = spawn(command, ['-c', code], { windowsHide: true });

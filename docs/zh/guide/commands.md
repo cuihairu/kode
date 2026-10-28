@@ -186,7 +186,7 @@
 - 作用：`kbengine.debug.autoDebugpy` 的一次性接线——把系统 pip 的 `debugpy` 包复制到 `<assets>/scripts/common/debugpy`，让引擎组件里 `import debugpy` 可解析（该目录在引擎模块搜索路径第一位，`python_app.cpp:167`；`site_import=0` 不影响）
 - 入口：命令面板 `Copy System debugpy into Assets`
 - 行为：
-  - 以 `python3`（回退 `python`）`-c "import debugpy"` 定位系统包；未安装/目录不可读时如实报告，零复制
+  - 按序探测取包解释器：所选解释器（`kbengine.python.interpreterPath` → PATH 链，与调试预检同一条链）→ `python3` → `python`，以 `-c "import debugpy"` 定位；未安装/目录不可读时如实报告，零复制
   - 版本闸：引擎内嵌 Python 为 3.12.13，debugpy 自 1.8.0 起支持 3.12——更老的系统版本说明原因后拒绝（`pip install -U debugpy`），绝不盲复制
   - 只动自己键：非本扩展写入的目标目录（workspaceState 无记账）不论什么版本一律视为用户手放、绝不动；同版本在位零写入跳过；自己的旧版本升级
   - 永不抛——结果（已复制/跳过/已升级/失败及原因）作为命令结果消息如实播报
