@@ -86,7 +86,7 @@ RSS 无单调增长(305 峰→237 平台),P50/P95 逐轮平稳——**长会话�
    Pylance 冷索引自身,非 Kode 阻塞;Kode 的既有阻塞面已由 P0 批门禁锁定。
 3. **hover 请求级取消**:公开命令面(`vscode.executeHoverProvider`)不暴露请求级 token,
    无法脚本化真实取消;以 hover 突发响应性(墙钟 23.05ms、P99 无堆积)+ 摘要 `cancelled=0`
-   近似,边界如实标注。
+   近似,边界如实标注。(→ 2026-10-28 审核重开已以激活探针 API 补齐真实取消面,见 §9)
 4. **大仓依赖树深度**:5000 文件外部根为合成平铺(规模面),真实依赖结构走 demo 工作区
    KBEngine 树(scripts/common/training/mixins 链);两面合计覆盖,单面不夸大。
 5. CPU 为扩展宿主进程差分采样(500ms/格),非 flamegraph;Pylance 自身服务器进程若独立,
@@ -110,4 +110,66 @@ RSS 无单调增长(305 峰→237 平台),P50/P95 逐轮平稳——**长会话�
 # 联合主面 / Pylance-only 对照
 KODE_FIELD_JOINT=1 pnpm test:demo:field
 KODE_FIELD_JOINT=1 KODE_FIELD_MODE=disabled KODE_FIELD_OUT=<path> pnpm test:demo:field
+# 长会话口径(2026-10-28 重验起):18 轮 × 20s 定距 ≈ 6 分钟会话
+KODE_FIELD_JOINT=1 KODE_FIELD_ROUNDS=18 KODE_FIELD_GAP_MS=20000 KODE_FIELD_OUT=<path> pnpm test:demo:field
 ```
+
+## 9. 2026-10-28 审核重开重验(内部命中 + 请求级取消 + 残留量规 + CPU profile + 足时长会话)
+
+审核重开三项缺口(§6.3、P0-4c 重开注)与补面:激活返回探针 API(9e02f6a,`probeHover`
+同实例真实 token / `pendingWork` 四面残留量规),harness 增命中探针/取消探针/残留采样/
+node:inspector CPU profile/可配长会话轮数。
+
+### 9.1 重验先抓到冷窗回归,先修后验(14411a8)
+
+首轮重验(pre-fix,`*-rerun-prefix.txt`)暴露整改自伤:冷首查 1189ms/3 目标 →
+2526ms/**0 目标**(启用场 7.2–12s/0),python 首扫 2.4s → 5.8–27.9s。归因:①逐文件双
+yield 在 5044 文件冷扫产生上万次宏任务跳转;②激活瞬间预启动把 workspace 全扫与 python
+首扫/发现灌进同一冷窗互踩。修复=让出改 25ms 时间切片(prove-red:小批 40 文件让出
+80 次 → ≤2,`tests/workspaceIndexColdYield.test.ts`;切片内并发竞态以同步落时间戳收口,
+5 连跑稳定)+ 预启动延迟 8s 错峰 + profile 采样 1ms→5ms(降观察税)。修后冷首查
+**831.21ms/3 目标**(反超老基线),python 首扫 3.98s,demo 场 53s → 4s。
+
+### 9.2 联合场重验证据(18 轮 × 20s ≈ 6 分钟会话,`2026-10-28-p0-4c-joint-rerun.txt`)
+
+| 审核缺口 | 重验证据 | 判定 |
+| --- | --- | --- |
+| 内部命中(hit=0) | 5/5 候选 HIT(def 方法 cell/base/client、def 文件、types.xml,带 preview 实文);公开命令面命中点位 20 连发 `ok` 计数 +20(`hit.burstHover.okDelta=20`)——非墙钟空转 | ✓ |
+| 请求级取消不可达 | 预取消 3/3:token 先于 provider 取消,零工作返回空(≤1ms);梯次 18 探针 `cancelledWithHover=0` 不变量成立;definition 摘要 `cancelled=2`(预算取消路径在途可见) | ✓ |
+| 残留无量规 | `pendingWork()` 取消+保存风暴后 t+0/+500/+2000ms 全 0(诊断排队/在途、编辑去抖注解、索引队列、schema 冷构建四面) | ✓ |
+| CPU profile 缺 | `2026-10-28-p0-4c-joint-rerun.txt.cpuprofile` 入库(5ms 采样整场);top 自耗时 idle 353.9s 主导,top10 无 Kode 帧 | ✓ |
+| 长会话不足时长 | 18 轮 ×20s:hover P50 2.7–9.5ms/P95 4.1–14.4ms(r10 单轮 21.0/25.4ms),def P95 3.4–13.9ms;RSS 264→270MiB(+6,pre-fix +19);pre-fix 尾部抬升(r16–18 P50 16–76ms)消失,且地板场同窗后半程加速 → 抬升非 Pylance 侧、已被修复消解 | ✓ |
+
+### 9.3 逐场景对账(修后联合场;括号内=修前同场)
+
+| 场景 | P50 | P95 | 备注 |
+| --- | --- | --- | --- |
+| 冷首查 definition | — | 831.21ms(2526) | 目标 3 个(修前 0) |
+| 暖机窗 hover ×50 | 23.01ms | 134.93ms(191.03) | 单列:扫描在场+Pylance 冷分析;老场(无 profiler)71.29ms |
+| 暖机窗 definition ×50 | 11.64ms | 26.04ms(247.92) | ≤50ms 目标 ✓ |
+| 未命中 hover/def ×20 | 2.08/1.44ms | 5.31/8.26ms | |
+| 保存风暴 ×10 后首跳 | — | 5.19ms(27.16) | |
+| 突发 20 路 def 墙钟 | — | 16.28ms(15.46 老) | 宿主 P99 无堆积 |
+| 联合 hover 突发 20 墙钟 | — | 52.2ms(75.72) | 宿主 P99 117.9ms 前后不变 |
+| 事件循环 p99/max | — | 22.79 / 1054.34ms | max 归因 Pylance 冷索引(对照场同有) |
+| 资源 | VmHWM 336MiB;CPU user+sys 25.3s | | pre-fix 42.1s |
+
+稳态判定沿用既定口径:会话轮 hover P95 ≤14.4ms(r10 25.4ms 单列)≤30ms ✓,def P95
+≤50ms ✓;暖机窗与冷启动单列不以热缓存替代。
+
+### 9.4 四面对照(重验)
+
+| 面 | 来源 | 冷首查 | 会话稳态 hover P95 | 峰值 RSS |
+| --- | --- | --- | --- | --- |
+| 联合(主面) | 本文 §9.2/9.3(18 轮) | 831ms/3 目标 | ≤14.4ms | 336MiB |
+| Pylance-only | `2026-10-28-p0-4c-floor-rerun.txt` | 59.09ms/0 目标 | 中位 13.8ms(轮间 8.4–227.0,尖峰轮 227ms 为 Pylance 自身) | 312MiB |
+| 裸面 / Kode-only | 2026-10-27 历史(§2)沿用 | 1197ms / 1189ms | 65.78 / — | 177 / 225MiB |
+
+历史两场代码漂移注:时间片让出与预启动错峰只作用于冷窗;历史热面数据不受影响。
+
+### 9.5 重验结论
+
+- **P0-4b**:三项缺项(CPU profile 联合场 / 请求级取消路径 / 残留量规)补齐并现场取证 → 关。
+- **P0-4c**:内部命中证据(5/5 候选 + okDelta=20)、请求级取消(预取消 3/3 + 梯次不变量)、
+  残留排干(t+2000 全 0)、足时长会话(18 轮 ×20s 无劣化)齐备 → **重验通过**。
+- B-1「半小时挂起不复现」自此有内部命中与取消面支撑;P0-4d 端到端证据(§9.2/9.3)补齐。

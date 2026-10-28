@@ -1,0 +1,183 @@
+FIELD-METRIC env.fieldRounds n=1 18
+FIELD-METRIC env.fieldGapMs n=1 20000
+FIELD-METRIC env.probeApi n=1 available
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 enabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-8YKKFK/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-8YKKFK/perf-assets/large
+FIELD-METRIC env.pylanceActive n=1 true
+FIELD-METRIC env.pylanceVersion n=1 2026.4.1
+FIELD-METRIC env.pythonExtActive n=1 false
+FIELD-METRIC cold.firstDefinitionMs n=1 2526.11ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 0
+FIELD-METRIC hot.hoverMs n=50 p50=17.83ms p95=191.03ms p99=1306.25ms max=1306.25ms avg=52.67ms
+FIELD-METRIC hot.definitionMs n=50 p50=16.45ms p95=247.92ms p99=2512.81ms max=2512.81ms avg=102.37ms
+FIELD-METRIC miss.hoverMs n=20 p50=8.66ms p95=15.57ms p99=25.16ms max=25.16ms avg=10.19ms
+FIELD-METRIC miss.definitionMs n=20 p50=7.01ms p95=11.66ms p99=14.28ms max=14.28ms avg=8.05ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 27.16ms
+FIELD-METRIC burst.20wallMs n=1 78.59ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 187.3ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 187.3ms
+FIELD-METRIC joint.burstHover.20wallMs n=1 75.72ms
+FIELD-METRIC joint.burstHover.20hostP99BeforeMs n=1 187.3ms
+FIELD-METRIC joint.burstHover.20hostP99AfterMs n=1 187.3ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=0ms cancelled=false returnedHover=true elapsed=9ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=2ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=0ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=16ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=0ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-METRIC cancel.probeCount n=1 18
+FIELD-METRIC cancel.cancelledCount n=1 0
+FIELD-METRIC cancel.cancelledWithHover n=1 0
+FIELD-METRIC cancel.elapsedMs n=18 p50=1ms p95=9ms p99=9ms max=9ms avg=1.06ms
+FIELD-EVIDENCE cancel.preCancelled cell.reqAttack cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled base.reqEnterArena cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled client.onBattleResult cancelled=true returnedHover=false elapsed=0ms
+FIELD-METRIC cancel.preCancelledCount n=1 3
+FIELD-METRIC hit.probe.cell.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.cell.reqAttack.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.cell.reqAttack.preview **reqAttack** — 此函数是实体 def 声明的 CellMethods 方法
+
+签名: `def reqAttack(self, arg1)`
+
+
+FIELD-METRIC hit.probe.base.reqEnterArena n=1 HIT
+FIELD-METRIC hit.probe.base.reqEnterArena.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.base.reqEnterArena.preview **reqEnterArena** — 此函数是实体 def 声明的 BaseMethods 方法
+
+签名: `def reqEnterArena(self)`
+FIELD-METRIC hit.probe.client.onBattleResult n=1 HIT
+FIELD-METRIC hit.probe.client.onBattleResult.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.client.onBattleResult.preview **onBattleResult** — 此函数是实体 def 声明的 ClientMethods 方法
+
+签名: `def onBattleResult(se
+FIELD-METRIC hit.probe.def.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.def.reqAttack.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.def.reqAttack.preview **reqAttack**
+
+方法区块中的自定义定义。
+
+**参数个数**: 1
+
+**Args**: `ENTITY_ID`
+FIELD-METRIC hit.probe.types.ITEM_ID n=1 HIT
+FIELD-METRIC hit.probe.types.ITEM_ID.elapsedMs n=1 4ms
+FIELD-EVIDENCE hit.probe.types.ITEM_ID.preview **ITEM_ID**
+
+Custom type from `types.xml`
+
+**AliasType**: `UINT16`
+
+**落库形态**:
+- 
+FIELD-METRIC hit.burstHoverMs n=20 p50=40.39ms p95=270.81ms p99=1485.86ms max=1485.86ms avg=126.12ms
+FIELD-METRIC hit.burstHover.okBefore n=1 0
+FIELD-METRIC hit.burstHover.okDelta n=1 20
+FIELD-EVIDENCE residual.t0 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t500 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t2000 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-METRIC residual.indexTasksQueuedAtDrain n=1 0
+FIELD-METRIC residual.schemaColdBuildsAtDrain n=1 0
+FIELD-METRIC session.r1.hoverMs n=20 p50=5.62ms p95=50.06ms p99=90.77ms max=90.77ms avg=14.69ms
+FIELD-METRIC session.r1.definitionMs n=20 p50=4.73ms p95=22.81ms p99=62.69ms max=62.69ms avg=10.45ms
+FIELD-METRIC session.r1.rssMiB n=1 266
+FIELD-METRIC session.r2.hoverMs n=20 p50=6.85ms p95=13.31ms p99=20.09ms max=20.09ms avg=7.96ms
+FIELD-METRIC session.r2.definitionMs n=20 p50=5.58ms p95=9.03ms p99=11.62ms max=11.62ms avg=6.13ms
+FIELD-METRIC session.r2.rssMiB n=1 266
+FIELD-METRIC session.r3.hoverMs n=20 p50=3.92ms p95=5.14ms p99=5.21ms max=5.21ms avg=4ms
+FIELD-METRIC session.r3.definitionMs n=20 p50=2.99ms p95=4.27ms p99=4.51ms max=4.51ms avg=3.2ms
+FIELD-METRIC session.r3.rssMiB n=1 267
+FIELD-METRIC session.r4.hoverMs n=20 p50=3.84ms p95=8.12ms p99=12ms max=12ms avg=4.63ms
+FIELD-METRIC session.r4.definitionMs n=20 p50=2.88ms p95=4.66ms p99=11.51ms max=11.51ms avg=3.47ms
+FIELD-METRIC session.r4.rssMiB n=1 267
+FIELD-METRIC session.r5.hoverMs n=20 p50=3.43ms p95=4.78ms p99=5.2ms max=5.2ms avg=3.59ms
+FIELD-METRIC session.r5.definitionMs n=20 p50=2.58ms p95=3.76ms p99=4.44ms max=4.44ms avg=2.82ms
+FIELD-METRIC session.r5.rssMiB n=1 268
+FIELD-METRIC session.r6.hoverMs n=20 p50=3.2ms p95=9.26ms p99=10.86ms max=10.86ms avg=4.54ms
+FIELD-METRIC session.r6.definitionMs n=20 p50=2.52ms p95=5.36ms p99=19.16ms max=19.16ms avg=3.73ms
+FIELD-METRIC session.r6.rssMiB n=1 269
+FIELD-METRIC session.r7.hoverMs n=20 p50=3.66ms p95=5.93ms p99=9.33ms max=9.33ms avg=4.11ms
+FIELD-METRIC session.r7.definitionMs n=20 p50=2.88ms p95=3.83ms p99=3.91ms max=3.91ms avg=2.97ms
+FIELD-METRIC session.r7.rssMiB n=1 272
+FIELD-METRIC session.r8.hoverMs n=20 p50=4.37ms p95=24.11ms p99=28.05ms max=28.05ms avg=7.35ms
+FIELD-METRIC session.r8.definitionMs n=20 p50=4.01ms p95=10.29ms p99=14.3ms max=14.3ms avg=4.95ms
+FIELD-METRIC session.r8.rssMiB n=1 273
+FIELD-METRIC session.r9.hoverMs n=20 p50=26.3ms p95=84.87ms p99=95.42ms max=95.42ms avg=35.68ms
+FIELD-METRIC session.r9.definitionMs n=20 p50=25.27ms p95=58.97ms p99=84.56ms max=84.56ms avg=33.07ms
+FIELD-METRIC session.r9.rssMiB n=1 277
+FIELD-METRIC session.r10.hoverMs n=20 p50=18.4ms p95=31.27ms p99=31.51ms max=31.51ms avg=19.2ms
+FIELD-METRIC session.r10.definitionMs n=20 p50=11.24ms p95=26.5ms p99=41.31ms max=41.31ms avg=13.81ms
+FIELD-METRIC session.r10.rssMiB n=1 276
+FIELD-METRIC session.r11.hoverMs n=20 p50=3.55ms p95=6.4ms p99=9.47ms max=9.47ms avg=4.04ms
+FIELD-METRIC session.r11.definitionMs n=20 p50=2.83ms p95=3.94ms p99=3.99ms max=3.99ms avg=3.04ms
+FIELD-METRIC session.r11.rssMiB n=1 276
+FIELD-METRIC session.r12.hoverMs n=20 p50=3.75ms p95=12.88ms p99=25.11ms max=25.11ms avg=6.17ms
+FIELD-METRIC session.r12.definitionMs n=20 p50=2.98ms p95=7.98ms p99=8.93ms max=8.93ms avg=3.78ms
+FIELD-METRIC session.r12.rssMiB n=1 277
+FIELD-METRIC session.r13.hoverMs n=20 p50=7.24ms p95=11.98ms p99=13.34ms max=13.34ms avg=7.56ms
+FIELD-METRIC session.r13.definitionMs n=20 p50=4.41ms p95=11.14ms p99=14.71ms max=14.71ms avg=5.38ms
+FIELD-METRIC session.r13.rssMiB n=1 278
+FIELD-METRIC session.r14.hoverMs n=20 p50=3.42ms p95=4.42ms p99=5.86ms max=5.86ms avg=3.47ms
+FIELD-METRIC session.r14.definitionMs n=20 p50=2.78ms p95=3.24ms p99=3.35ms max=3.35ms avg=2.81ms
+FIELD-METRIC session.r14.rssMiB n=1 278
+FIELD-METRIC session.r15.hoverMs n=20 p50=3.42ms p95=7.19ms p99=22.28ms max=22.28ms avg=4.82ms
+FIELD-METRIC session.r15.definitionMs n=20 p50=2.78ms p95=6.01ms p99=6.14ms max=6.14ms avg=3.4ms
+FIELD-METRIC session.r15.rssMiB n=1 280
+FIELD-METRIC session.r16.hoverMs n=20 p50=18.73ms p95=36.92ms p99=52.25ms max=52.25ms avg=21.12ms
+FIELD-METRIC session.r16.definitionMs n=20 p50=13.35ms p95=17.16ms p99=17.16ms max=17.16ms avg=13.5ms
+FIELD-METRIC session.r16.rssMiB n=1 280
+FIELD-METRIC session.r17.hoverMs n=20 p50=16.05ms p95=27.6ms p99=40.86ms max=40.86ms avg=18.17ms
+FIELD-METRIC session.r17.definitionMs n=20 p50=10.65ms p95=41.07ms p99=42.92ms max=42.92ms avg=15.42ms
+FIELD-METRIC session.r17.rssMiB n=1 281
+FIELD-METRIC session.r18.hoverMs n=20 p50=76.42ms p95=110.67ms p99=121.49ms max=121.49ms avg=80.56ms
+FIELD-METRIC session.r18.definitionMs n=20 p50=78.25ms p95=128.44ms p99=187.52ms max=187.52ms avg=85.83ms
+FIELD-METRIC session.r18.rssMiB n=1 285
+FIELD-METRIC host.cpuProfile.written n=1 docs/perf/2026-10-28-p0-4c-joint-rerun.txt.cpuprofile
+FIELD-METRIC host.cpuProfile.selfTop1 n=1 299291ms (idle) 
+FIELD-METRIC host.cpuProfile.selfTop2 n=1 800ms (program) 
+FIELD-METRIC host.cpuProfile.selfTop3 n=1 413ms (garbage collector) 
+FIELD-METRIC host.cpuProfile.selfTop4 n=1 337ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop5 n=1 321ms determineExtensionFromCallStack extension.js
+FIELD-METRIC host.cpuProfile.selfTop6 n=1 284ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop7 n=1 231ms wrapSafe loader
+FIELD-METRIC host.cpuProfile.selfTop8 n=1 165ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop9 n=1 161ms wrapSafe loader
+FIELD-METRIC host.cpuProfile.selfTop10 n=1 131ms open 
+FIELD-METRIC host.vmHwmMiB n=1 345
+FIELD-METRIC host.peakRssMiB n=1 343
+FIELD-METRIC host.cpuUserSec n=1 26.77
+FIELD-METRIC host.cpuSysSec n=1 15.28
+FIELD-METRIC host.cpuSampleCount n=1 776
+FIELD-METRIC eventloop.p50Ms n=1 20.19
+FIELD-METRIC eventloop.p95Ms n=1 22.02
+FIELD-METRIC eventloop.p99Ms n=1 26.9
+FIELD-METRIC eventloop.maxMs n=1 1215.3
+FIELD-METRIC eventloop.meanMs n=1 20.7
+FIELD-SUMMARY hover count=470 p50=1.1 p95=6.7 p99=18.3 max=553 hit=0 miss=0 discover=0 read=0 parse=0 ok=20 missStatus=450 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY definition count=452 p50=0.2 p95=7.6 p99=36.9 max=2502.2 hit=0 miss=0 discover=0 read=0 parse=0 ok=49 missStatus=401 cancelled=2 error=0 waitInit=0
+FIELD-SUMMARY diagnostics count=121 p50=0.2 p95=1.1 p99=4.9 max=13.1 hit=0 miss=120 discover=0 read=0 parse=0 ok=121 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-index-scan count=1 p50=5823.1 p95=5823.1 p99=5823.1 max=5823.1 hit=0 miss=0 discover=5044 read=5044 parse=5044 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-composition-roots count=1 p50=332.6 p95=332.6 p99=332.6 max=332.6 hit=0 miss=0 discover=15 read=15 parse=15 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY entity-mapping-scan count=1 p50=4211.2 p95=4211.2 p99=4211.2 max=4211.2 hit=0 miss=0 discover=11 read=8 parse=8 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY semantic-query count=452 p50=0 p95=6.9 p99=36.6 max=3681.2 hit=0 miss=0 discover=0 read=0 parse=0 ok=49 missStatus=401 cancelled=2 error=0 waitInit=0
+FIELD-SUMMARY type-registry-query count=44 p50=0.4 p95=3.4 p99=6 max=6 hit=42 miss=2 discover=0 read=0 parse=0 ok=44 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY file-discovery count=14 p50=209.1 p95=2285.6 p99=2285.6 max=2285.6 hit=0 miss=0 discover=10114 read=0 parse=0 ok=14 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY document-parse count=5094 p50=0 p95=0.1 p99=0.4 max=5 hit=8 miss=2 discover=0 read=0 parse=5084 ok=5094 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY sessionEnd 2026-10-28T03:17:24.379Z
