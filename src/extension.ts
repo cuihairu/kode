@@ -120,6 +120,7 @@ import { KBEngineCodeGenerator } from './codeGenerator';
 import { runGeneratorFormWizard } from './generatorForms';
 import { runClientSdkGenerateCommand } from './clientSdkGenerator';
 import { bindSdkGenerationToProfile } from './sdkGenerationProfile';
+import { makeSdkEngineTrace } from './sdkGenerationTrace';
 import {
   EntityExplorerProvider,
   pickServerComponent,
@@ -245,7 +246,7 @@ import {
   selectionToSnippetBody
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
-import { buildEngineApiCatalog } from './engineApiMetadata';
+import { buildEngineApiCatalog, readEngineApiMetadata } from './engineApiMetadata';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -3033,11 +3034,21 @@ export function activate(context: vscode.ExtensionContext) {
   // 点名(不静默覆盖);无活动 profile 回落工作区首根(旧口径)。
   const clientSdkGenerateCommand = vscode.commands.registerCommand(
     'kbengine.clientSdk.generate',
-    () => {
+    async () => {
       const profile = resolveActiveProfile(context.workspaceState);
       const profileRoot = profile?.assetsRoot || undefined;
+      // IDE-SDK-004 引擎溯源:探测面=readEngineApiMetadata(版本宏+git),
+      // 引擎根有 profile 记录时优先用,探测不到模块内写 unknown。
+      const generationRoot = profileRoot
+        ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+        ?? '';
+      const engineMetadata = await readEngineApiMetadata(
+        generationRoot,
+        profile ? { engineRoot: profile.engineRoot || undefined } : {}
+      );
+      const engineTrace = makeSdkEngineTrace(engineMetadata);
       if (!profileRoot) {
-        return runClientSdkGenerateCommand();
+        return runClientSdkGenerateCommand(undefined, undefined, engineTrace);
       }
       const binding = bindSdkGenerationToProfile(profileRoot, {
         listRegistrations: root => getRegisteredEntities(root),
@@ -3058,7 +3069,7 @@ export function activate(context: vscode.ExtensionContext) {
           return [...names];
         }
       });
-      return runClientSdkGenerateCommand(profileRoot, binding.skippedSameNameFromOtherRoots);
+      return runClientSdkGenerateCommand(profileRoot, binding.skippedSameNameFromOtherRoots, engineTrace);
     }
   );
   context.subscriptions.push(clientSdkGenerateCommand);

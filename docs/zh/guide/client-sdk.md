@@ -32,6 +32,8 @@
 
 每个实体一个文件，文件名为 `<实体名>.ts` / `<实体名>.cs`。类内依次是：实体 id 只读成员、客户端可见属性、构造函数、`ClientMethods` 回调、Exposed 包装调用、两个发送接缝。
 
+每个生成文件（实体文件与固定字典伴随文件）头部都带引擎溯源行：「引擎版本」/「引擎提交」记录输入引擎的版本宏与 git 提交（经 `readEngineApiMetadata` 探测，profile 记录的引擎根优先）；定位不到引擎时两行如实写 `unknown`，溯源绝不静默缺失（`src/sdkGenerationTrace.ts`）。
+
 - TypeScript：属性保持 def 原名，回调为具体方法，参数名 `_arg0`/`_arg1`…（def 的 `<Arg>` 只有类型没有名字）
 - C#：命名转 PascalCase（`hp` → `Hp`、`onHPChanged` → `OnHPChanged`），属性为 `get; set;`，回调为 `virtual`，参数写在类型之后，参数名 `arg0`/`arg1`…
 

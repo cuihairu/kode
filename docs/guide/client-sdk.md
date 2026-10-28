@@ -32,6 +32,8 @@ Output directory, relative to the workspace root, default `scripts/client_entiti
 
 One file per entity, named `<EntityName>.ts` / `<EntityName>.cs`. Inside the class, in order: a read-only entity id member, client-visible properties, the constructor, `ClientMethods` callbacks, Exposed wrapper calls, and the two send seams.
 
+Every generated file (entity files and the fixed-dict companion) carries an engine-trace header: `引擎版本`/`引擎提交` lines record the input engine's version macro and git commit (probed via `readEngineApiMetadata`, profile engine root preferred); when the engine cannot be located both lines read `unknown` verbatim — the trace is never silently omitted (`src/sdkGenerationTrace.ts`).
+
 - TypeScript: properties keep their def names, callbacks are concrete methods, parameters named `_arg0`/`_arg1`… (def `<Arg>` carries types only, no names)
 - C#: names are PascalCased (`hp` → `Hp`, `onHPChanged` → `OnHPChanged`), properties are `get; set;`, callbacks are `virtual`, parameters come after the type, named `arg0`/`arg1`…
 

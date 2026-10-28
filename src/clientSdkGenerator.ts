@@ -38,6 +38,8 @@ import {
 } from './definitionWorkspace';
 import type { CustomTypeInfo } from './definitionWorkspace';
 import { parseDefFileSemantics } from './defRenamer';
+import { formatSdkEngineTraceLines, makeSdkEngineTrace } from './sdkGenerationTrace';
+import type { SdkEngineTrace } from './sdkGenerationTrace';
 
 /** 首批目标语言（已代决，用户可推翻后增删） */
 export const CLIENT_SDK_LANGUAGES = ['typescript', 'csharp'] as const;
@@ -164,6 +166,8 @@ export interface ClientSdkGenerationOptions {
   readonly outputDir: string;
   readonly overwrite: boolean;
   readonly generatedAt?: string;
+  /** 引擎溯源(IDE-SDK-004):生成文件头部记录版本与提交;缺省写 unknown */
+  readonly engineTrace?: SdkEngineTrace;
 }
 
 export interface ClientSdkGeneratedFile {
@@ -384,11 +388,16 @@ function formatArgIds(argTypes: string[], underscored: boolean): string {
     .join(', ');
 }
 
-function defHeader(language: ClientSdkLanguage, generatedAt: string): string[] {
+function defHeader(
+  language: ClientSdkLanguage,
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace
+): string[] {
   return [
     '// 由 kode 客户端实体 SDK 生成器生成，手动修改会在下次生成时被覆盖',
     `// 目标语言: ${language === 'typescript' ? 'TypeScript' : 'C#'}`,
     `// 生成时间: ${generatedAt}`,
+    ...formatSdkEngineTraceLines(engineTrace ?? makeSdkEngineTrace(null)),
     ''
   ];
 }
@@ -396,9 +405,10 @@ function defHeader(language: ClientSdkLanguage, generatedAt: string): string[] {
 function generateTypeScriptEntityFile(
   entity: ClientSdkEntity,
   typeMap: ClientSdkTypeMap,
-  generatedAt: string
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace
 ): string {
-  const lines = defHeader('typescript', generatedAt);
+  const lines = defHeader('typescript', generatedAt, engineTrace);
   lines.push(`// 实体: ${entity.name}${entity.parent ? ` 父类: ${entity.parent}` : ''}`);
   lines.push('');
 
@@ -463,9 +473,10 @@ function generateTypeScriptEntityFile(
 function generateCSharpEntityFile(
   entity: ClientSdkEntity,
   typeMap: ClientSdkTypeMap,
-  generatedAt: string
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace
 ): string {
-  const lines = defHeader('csharp', generatedAt);
+  const lines = defHeader('csharp', generatedAt, engineTrace);
   lines.push(`namespace ${CLIENT_SDK_CSHARP_NAMESPACE}`);
   lines.push('{');
 
@@ -529,18 +540,20 @@ export function generateClientSdkEntityFile(
   entity: ClientSdkEntity,
   language: ClientSdkLanguage,
   typeMap: ClientSdkTypeMap,
-  generatedAt: string
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace
 ): string {
   return language === 'typescript'
-    ? generateTypeScriptEntityFile(entity, typeMap, generatedAt)
-    : generateCSharpEntityFile(entity, typeMap, generatedAt);
+    ? generateTypeScriptEntityFile(entity, typeMap, generatedAt, engineTrace)
+    : generateCSharpEntityFile(entity, typeMap, generatedAt, engineTrace);
 }
 
 export function generateClientSdkFixedDictsFile(
   entities: ReadonlyArray<ClientSdkEntity>,
   language: ClientSdkLanguage,
   typeMap: ClientSdkTypeMap,
-  generatedAt: string
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace
 ): string | null {
   const seen = new Set<string>();
   const used: ClientSdkFixedDictType[] = [];
@@ -558,7 +571,7 @@ export function generateClientSdkFixedDictsFile(
     return null;
   }
 
-  const lines = defHeader(language, generatedAt);
+  const lines = defHeader(language, generatedAt, engineTrace);
 
   if (language === 'typescript') {
     for (const type of used) {
@@ -666,13 +679,15 @@ export function generateClientSdkEntities(
       files.push(
         writeClientSdkFile(
           { path: filePath, kind: 'entity', language, entityName: entity.name },
-          () => generateClientSdkEntityFile(entity, language, typeMap, generatedAt),
+          () => generateClientSdkEntityFile(entity, language, typeMap, generatedAt, options.engineTrace),
           options
         )
       );
     }
 
-    const fixedDictsContent = generateClientSdkFixedDictsFile(entities, language, typeMap, generatedAt);
+    const fixedDictsContent = generateClientSdkFixedDictsFile(
+      entities, language, typeMap, generatedAt, options.engineTrace
+    );
     if (fixedDictsContent !== null) {
       const filePath = path.join(outputDir, `${CLIENT_SDK_FIXED_DICTS_BASENAME}.${extension}`);
       files.push(
@@ -696,7 +711,8 @@ export function generateClientSdkEntities(
    * 不静默吞掉跨根歧义）。 */
 export async function runClientSdkGenerateCommand(
   profileRoot?: string,
-  skippedSameNameFromOtherRoots?: string[]
+  skippedSameNameFromOtherRoots?: string[],
+  engineTrace?: SdkEngineTrace
 ): Promise<void> {
   const workspaceRoot = profileRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceRoot) {
@@ -732,7 +748,8 @@ export async function runClientSdkGenerateCommand(
     {
       languages: languages.map(choice => choice.value as ClientSdkLanguage),
       outputDir,
-      overwrite: overwriteChoice.value === 'overwrite'
+      overwrite: overwriteChoice.value === 'overwrite',
+      engineTrace
     },
     workspaceRoot
   );

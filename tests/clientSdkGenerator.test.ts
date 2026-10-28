@@ -759,6 +759,57 @@ describe('runClientSdkGenerateCommand', () => {
     expect(last).toContain('Avatar');
     expect(last).toContain('Monster');
   });
+
+  // IDE-SDK-004 SDK 输出记录引擎版本与提交:生成文件头部带引擎溯源两行
+  // (版本/提交);探测不到时写 unknown 字面量(未传 trace 同样写,可追溯恒在)。
+  it('engineTrace 传入 → 生成文件头部记录引擎版本与提交', async () => {
+    const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-cmd-trace-'));
+    try {
+      const defsDir = path.join(traceRoot, 'scripts', 'entity_defs');
+      fs.mkdirSync(defsDir, { recursive: true });
+      fs.writeFileSync(path.join(traceRoot, 'scripts', 'entities.xml'), '<root>\n  <Avatar hasBase="true"/>\n</root>\n', 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'Avatar.def'), FULL_DEF, 'utf8');
+      workspaceish.workspaceFolders = [
+        { uri: Uri.file(traceRoot), name: 'trace', index: 0 }
+      ];
+      windowish.showQuickPick = async (): Promise<unknown> => [{ value: 'typescript' }];
+      windowish.showInputBox = async (): Promise<string | undefined> => 'client_entities';
+
+      await runClientSdkGenerateCommand(traceRoot, undefined, {
+        engineVersion: '2.5.10',
+        engineCommit: 'f85ad81'
+      });
+
+      const head = fs.readFileSync(path.join(traceRoot, 'client_entities', 'Avatar.ts'), 'utf8').split('\n').slice(0, 6).join('\n');
+      expect(head).toContain('引擎版本: 2.5.10');
+      expect(head).toContain('引擎提交: f85ad81');
+    } finally {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('未传 engineTrace → 头部写 unknown 字面量(可追溯恒在,不空缺)', async () => {
+    const traceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-cmd-trace2-'));
+    try {
+      const defsDir = path.join(traceRoot, 'scripts', 'entity_defs');
+      fs.mkdirSync(defsDir, { recursive: true });
+      fs.writeFileSync(path.join(traceRoot, 'scripts', 'entities.xml'), '<root>\n  <Avatar hasBase="true"/>\n</root>\n', 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'Avatar.def'), FULL_DEF, 'utf8');
+      workspaceish.workspaceFolders = [
+        { uri: Uri.file(traceRoot), name: 'trace2', index: 0 }
+      ];
+      windowish.showQuickPick = async (): Promise<unknown> => [{ value: 'typescript' }];
+      windowish.showInputBox = async (): Promise<string | undefined> => 'client_entities';
+
+      await runClientSdkGenerateCommand(traceRoot);
+
+      const head = fs.readFileSync(path.join(traceRoot, 'client_entities', 'Avatar.ts'), 'utf8').split('\n').slice(0, 6).join('\n');
+      expect(head).toContain('引擎版本: unknown');
+      expect(head).toContain('引擎提交: unknown');
+    } finally {
+      fs.rmSync(traceRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 function requireResolve(typeMap: ClientSdkTypeMap, type: string, elementType: string | null): string {
