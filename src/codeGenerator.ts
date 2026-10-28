@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import { findEntitiesXmlFile, findEntityDefinitionsRoot, getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
 import { writeFileAtomic } from './atomicFileWrite';
+import { readSharedFileSnapshot } from './sharedFileSnapshot';
 
 /**
  * 实体类型配置
@@ -634,11 +635,14 @@ export class KBEngineCodeGenerator {
 
     const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
 
-    if (!fs.existsSync(entitiesXmlPath)) {
+    // IDE-GEN-007:文件在编辑器打开时以缓冲区当前文本为基底——用户尚未
+    // 保存的其他注册修改进入本次写入,不被磁盘旧内容覆盖;未打开回落磁盘
+    const snapshot = readSharedFileSnapshot(entitiesXmlPath);
+    if (!snapshot) {
       throw new Error(`entities.xml 不存在: ${entitiesXmlPath}`);
     }
 
-    let content = fs.readFileSync(entitiesXmlPath, 'utf8');
+    let content = snapshot.content;
 
     // 检查是否已经注册
     const entityPattern = new RegExp(`<${entity.name}(?=[\\s>/])`, 'i');
@@ -829,10 +833,11 @@ export class KBEngineCodeGenerator {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (workspaceFolder) {
           const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
-          if (fs.existsSync(entitiesXmlPath)) {
+          const backup = readSharedFileSnapshot(entitiesXmlPath);
+          if (backup) {
             this.rollbackLedger.overwrittenFiles.push({
               filePath: entitiesXmlPath,
-              previous: fs.readFileSync(entitiesXmlPath, 'utf8')
+              previous: backup.content
             });
           }
         }
@@ -1029,10 +1034,11 @@ export class KBEngineCodeGenerator {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (workspaceFolder) {
           const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
-          if (fs.existsSync(entitiesXmlPath)) {
+          const backup = readSharedFileSnapshot(entitiesXmlPath);
+          if (backup) {
             this.rollbackLedger.overwrittenFiles.push({
               filePath: entitiesXmlPath,
-              previous: fs.readFileSync(entitiesXmlPath, 'utf8')
+              previous: backup.content
             });
           }
         }

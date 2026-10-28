@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineCodeGenerator } from '../src/codeGenerator';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { analyzeDefDocument } from '../src/defAnalyzer';
@@ -651,6 +651,74 @@ describe('KBEngineCodeGenerator generation plan preview (IDE-GEN-004)', () => {
     await generator.showWizard();
 
     expect(previewItems.map(item => item.label)).toEqual(['确认生成', '新增 .def']);
+  });
+});
+
+describe('KBEngineCodeGenerator dirty buffer registration (IDE-GEN-007)', () => {
+  const originalTextDocuments = stubWorkspace.textDocuments;
+
+  afterEach(() => {
+    stubWorkspace.textDocuments = originalTextDocuments;
+  });
+
+  it('bases the registration write on the open document text', async () => {
+    const entitiesXml = path.join(root, 'scripts', 'entities.xml');
+    const diskContent = [
+      '<root>',
+      '  <BaseThing hasBase="true" hasCell="false" hasClient="false" />',
+      '</root>',
+      ''
+    ].join('\n');
+    fs.writeFileSync(entitiesXml, diskContent, 'utf8');
+    // 未保存的缓冲区:多了一条尚未落盘的注册
+    const bufferContent = [
+      '<root>',
+      '  <BaseThing hasBase="true" hasCell="false" hasClient="false" />',
+      '  <UnsavedThing hasBase="true" hasCell="false" hasClient="false" />',
+      '</root>',
+      ''
+    ].join('\n');
+    stubWorkspace.textDocuments = [
+      { uri: Uri.file(entitiesXml), version: 3, getText: () => bufferContent }
+    ];
+
+    await makeGenerator().registerInEntitiesXml({
+      name: 'Monster', hasBase: true, hasCell: false, hasClient: false
+    });
+
+    const written = fs.readFileSync(entitiesXml, 'utf8');
+    // 用户未保存的注册保留,新注册追加——写入基于当前文档
+    expect(written).toContain('<UnsavedThing hasBase="true" hasCell="false" hasClient="false" />');
+    expect(written).toContain('  <Monster hasCell="false" hasBase="true" hasClient="false" />');
+  });
+
+  it('sees registrations that only exist in the dirty buffer', async () => {
+    const entitiesXml = path.join(root, 'scripts', 'entities.xml');
+    const diskContent = [
+      '<root>',
+      '  <BaseThing hasBase="true" hasCell="false" hasClient="false" />',
+      '</root>',
+      ''
+    ].join('\n');
+    fs.writeFileSync(entitiesXml, diskContent, 'utf8');
+    const bufferContent = [
+      '<root>',
+      '  <BaseThing hasBase="true" hasCell="false" hasClient="false" />',
+      '  <Monster hasBase="true" hasCell="false" hasClient="false" />',
+      '</root>',
+      ''
+    ].join('\n');
+    stubWorkspace.textDocuments = [
+      { uri: Uri.file(entitiesXml), version: 2, getText: () => bufferContent }
+    ];
+
+    await makeGenerator().registerInEntitiesXml({
+      name: 'Monster', hasBase: true, hasCell: false, hasClient: false
+    });
+
+    expect(ui.warning).toEqual(['实体 Monster 已经在 entities.xml 中注册']);
+    // 未重复写入:磁盘保持原字节
+    expect(fs.readFileSync(entitiesXml, 'utf8')).toBe(diskContent);
   });
 });
 
