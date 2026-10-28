@@ -364,7 +364,7 @@
 - 识别口径（只做存在性探测，不写盘）：`entities`（entities.xml）、`defs`（entity_defs）、`scripts` 三面走与发现报告同一份约定链；`scripts` 取 entities.xml 所在目录（entities.xml 在根上时即根本身）；`engine` 面探测资产根/父目录/祖父目录下的 `kbe/` 源码锚点（引擎仓通常是资产根的兄弟）
 - 预览：QuickPick 逐面列出识别结果与准确路径；未命中的面如实显示「未识别」
 - 行为：
-  - 选「导入」建立 profile（显示名取资产根目录名）并报出其 ID；任一步取消（Esc/关闭对话框）零写入
+  - 选「导入」建立 profile（显示名取资产根目录名）并报出其 ID 与 Python 解释器状态（设置存在才采用 → PATH → 如实缺失）；任一步取消（Esc/关闭对话框）零写入
   - entities/defs/scripts 全空的目录在预览前就被拒绝并给出警告（不产生垃圾 profile）
 
 ### `kbengine.quickActions.show`

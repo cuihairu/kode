@@ -1028,6 +1028,11 @@
             }
           }
         },
+        "kbengine.python.interpreterPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）"
+        },
         "kbengine.python.extraPathsSync": {
           "type": "boolean",
           "default": true,

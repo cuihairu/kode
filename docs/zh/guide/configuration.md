@@ -218,6 +218,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
+| `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级;只管理本扩展写入的那一段,用户手填路径不动;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |

@@ -12,6 +12,11 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { DISCOVERY_CONVENTIONS } from './workspaceDiscovery';
 import { ProjectProfileStore } from './projectProfiles';
+import {
+  describeInterpreterState,
+  resolveProfileInterpreter,
+  type InterpreterResolution
+} from './profileInterpreter';
 
 /** 一次导入识别的结果:四面各报准确路径,null=未识别(如实预览) */
 export interface ProjectLayoutIdentification {
@@ -88,12 +93,19 @@ export function buildImportPreviewItems(identification: ProjectLayoutIdentificat
 }
 
 /**
- * 导入命令体:选资产根 → 识别四面 → 预览确认 → 建立项目 profile。
+ * 导入命令体:选资产根 → 识别四面 → 预览确认 → 建立项目 profile
+ * (含 Python 解释器解析与来源记录,IDE-PRJ-004:设置优先→PATH→缺失)。
  * 任一步取消(Esc/关闭对话框)即零写入;四面全空直接拒绝不出预览。
+ * deps.resolveInterpreter 为测试注入面,产品面走真实解析链。
  */
-export async function importExistingProject(context: {
-  workspaceState?: vscode.Memento;
-}): Promise<void> {
+export async function importExistingProject(
+  context: {
+    workspaceState?: vscode.Memento;
+  },
+  deps?: {
+    resolveInterpreter?: () => InterpreterResolution;
+  }
+): Promise<void> {
   const pickedFolders = await vscode.window.showOpenDialog({
     canSelectFolders: true,
     canSelectMany: false,
@@ -121,11 +133,16 @@ export async function importExistingProject(context: {
     return;
   }
 
+  const interpreter = (deps?.resolveInterpreter ?? resolveProfileInterpreter)();
   const store = new ProjectProfileStore(context.workspaceState);
   const profile = await store.create({
     displayName: path.basename(assetsRoot) || assetsRoot,
     assetsRoot,
-    engineRoot: identification.engineRoot ?? ''
+    engineRoot: identification.engineRoot ?? '',
+    interpreterPath: interpreter.interpreterPath,
+    interpreterSource: interpreter.interpreterSource
   });
-  await vscode.window.showInformationMessage(`已导入项目 profile: ${profile.displayName} (${profile.id})`);
+  await vscode.window.showInformationMessage(
+    `已导入项目 profile: ${profile.displayName} (${profile.id});${describeInterpreterState(profile)}`
+  );
 }

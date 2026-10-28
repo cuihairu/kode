@@ -139,22 +139,54 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
     };
     windowish.showWarningMessage = async (): Promise<unknown> => undefined;
 
-    await importExistingProject({ workspaceState: memento });
+    // 注入解释器解析:验证来源与路径一并记进 profile(IDE-PRJ-004)
+    await importExistingProject(
+      { workspaceState: memento },
+      { resolveInterpreter: () => ({ interpreterPath: '/opt/py/python3', interpreterSource: 'path' }) }
+    );
 
     // 预览四面:识别结果带准确路径
     expect(previewItems.map(item => item.label)).toEqual(['entities', 'defs', 'scripts', 'engine']);
     expect(previewItems[0].description).toBe(path.join(assetsRoot, 'scripts', 'entities.xml'));
     expect(previewItems[3].description).toBe(path.join(base, 'kbe'));
 
-    // 确认导入:profile 落进持久层,显示名取资产根目录名
+    // 确认导入:profile 落进持久层,显示名取资产根目录名,解释器来源入账
     const profiles = new ProjectProfileStore(memento).list();
     expect(profiles).toHaveLength(1);
     expect(profiles[0]).toMatchObject({
       displayName: 'proj',
       assetsRoot,
-      engineRoot: path.join(base, 'kbe')
+      engineRoot: path.join(base, 'kbe'),
+      interpreterPath: '/opt/py/python3',
+      interpreterSource: 'path'
     });
     expect(info.at(-1)).toContain('已导入项目 profile');
+    expect(info.at(-1)).toContain('Python 解释器: /opt/py/python3(来源: PATH)');
+
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('shows the missing interpreter state in the import confirmation', async () => {
+    const { base, assetsRoot } = buildProjectTree();
+    const memento = new MemoryMemento();
+    windowish.showOpenDialog = async () => [Uri.file(assetsRoot)];
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = (await items) as Array<{ label: string }>;
+      return resolved.find(item => item.label === '导入');
+    };
+    windowish.showInformationMessage = async (message: string): Promise<unknown> => {
+      info.push(message);
+      return undefined;
+    };
+
+    await importExistingProject(
+      { workspaceState: memento },
+      { resolveInterpreter: () => ({ interpreterPath: null, interpreterSource: 'missing' }) }
+    );
+
+    const profiles = new ProjectProfileStore(memento).list();
+    expect(profiles[0]).toMatchObject({ interpreterPath: null, interpreterSource: 'missing' });
+    expect(info.at(-1)).toContain('Python 解释器: 缺失(未找到 python3/python,可在设置 kbengine.python.interpreterPath 指定)');
 
     fs.rmSync(base, { recursive: true, force: true });
   });

@@ -463,7 +463,7 @@ The flow graph panel supports:
 - Identification (existence probing only, nothing is written to disk): the `entities` (entities.xml), `defs` (entity_defs) and `scripts` faces come from the shared convention chain (the same one the discovery report uses); `scripts` is the directory holding entities.xml (the assets root itself when entities.xml sits at the top); the `engine` face probes the `kbe/` source anchors under the assets root, its parent and its grandparent (the engine repo is usually a sibling of the assets root)
 - Preview: a QuickPick lists all four identification results with exact paths; a face that is not found is shown honestly as 「未识别」 (not identified)
 - Behavior:
-  - Picking 「导入」 (import) creates the profile (display name = assets root folder name) and reports its ID; Esc or dismissing any step writes nothing
+  - Picking 「导入」 (import) creates the profile (display name = assets root folder name) and reports its ID plus the Python interpreter state (setting if it exists → PATH → explicitly missing); Esc or dismissing any step writes nothing
   - A folder where all of entities/defs/scripts are missing is rejected with a warning before any preview (no junk profiles)
 
 ### `kbengine.extension.identity`

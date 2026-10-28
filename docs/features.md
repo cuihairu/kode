@@ -98,6 +98,7 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 
 - **Project profile identity store** — each KBEngine assets/engine combination is saved as its own profile with a persistent stable ID (assigned once at creation, stored per workspace in `workspaceState` and read back after restart); the display name is only a mutable field — renaming a profile or having two same-named profiles never merges or loses identity; roots are saved per profile (`saveRoots` touches only the target record's path fields, so re-saving one profile's assets/engine roots never bleeds into another and both read back independently after restart) — (evidence: src/projectProfiles.ts `ProjectProfileStore`)
 - **Existing project import** — pick the assets root and the four faces (entities/defs/scripts/engine) are identified via the shared convention chain, with any face not found previewed honestly as 未识别 (not identified); the preview lists all four results and only picking 导入 creates the profile — Esc or dismissing any step writes nothing, and a folder with no KBEngine structure at all is rejected without a preview — (evidence: package.json#contributes.commands `kbengine.project.import`; src/projectImport.ts `identifyProjectLayout`/`importExistingProject`)
+- **Interpreter source per profile** — each profile records which Python interpreter it uses and where it came from (the `kbengine.python.interpreterPath` setting if the file exists, else python3/python located on PATH, else an explicit missing state — never a fabricated path); the import confirmation shows the interpreter state inline, and records saved before this field existed read back as missing rather than being dropped — (evidence: src/profileInterpreter.ts `resolveInterpreterWith`/`describeInterpreterState`; src/projectProfiles.ts `saveInterpreter`)
 
 ## Settings
 
@@ -158,6 +159,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.telnet.configXmlPath` | `""` | Optional component kbengine.xml path for telnet port/password fallback (supports ${workspaceFolder}) |
 | `kbengine.telnet.probeIntervalSeconds` | `5` | Telnet port probe poll interval in seconds (low-frequency) |
 | `kbengine.httpRequests` | `[{"name": "热更新(示例)", "url": "http://127.0.0.1:8000/api/ho...` | HTTP quick request list; ${module} resolved by __init__.py package boundaries |
+| `kbengine.python.interpreterPath` | `""` | Python interpreter path recorded per project profile with its source (this setting if it exists, else python3/python from PATH, else an explicit missing state) |
 | `kbengine.python.extraPathsSync` | `true` | Auto-write discovered KBEngine scripts roots into python.analysis.extraPaths (own segment only) |
 | `kbengine.python.stubExport` | `true` | Auto-export the built-in KBEngine Python API index as a KBEngine.pyi stub |
 | `kbengine.python.stubDir` | `""` | .pyi stub directory (empty = managed default .kbengine/stubs; configured dir scanned, user .pyi never overwritten; supports VS Code variables) |

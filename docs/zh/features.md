@@ -96,6 +96,7 @@
 
 - **项目 profile 身份存储** —— 同一工作区里每套 assets/engine 组合保存为独立 profile，持有持久稳定 ID（创建时一次分配，按工作区存于 `workspaceState`，重启后照旧读回）；显示名只是可变字段——改名或两条同名互不吞并、不丢身份；根路径按 profile 保存（`saveRoots` 只动目标记录的路径字段，重存一条 profile 的 assets/engine 根不会串写另一条，重启后两条各自独立读回）——（证据：src/projectProfiles.ts `ProjectProfileStore`）
 - **现有项目导入** —— 选择资产根后按同一约定链识别 entities/defs/scripts/engine 四面（未命中的面如实预览「未识别」），预览清单逐面列出识别结果，选「导入」确认才建立 profile；任一步取消零写入，四面全空的目录直接拒绝不出预览 ——（证据：package.json#contributes.commands `kbengine.project.import`；src/projectImport.ts `identifyProjectLayout`/`importExistingProject`）
+- **按 profile 记录解释器来源** —— 每个 profile 记录用哪个 Python 解释器、来自哪里（`kbengine.python.interpreterPath` 设置存在才采用，否则定位 PATH 里的 python3/python，再没有如实记缺失状态，绝不伪造路径）；导入确认消息内联显示解释器状态，早于此字段存在的旧记录读回时归一为缺失而不是被丢弃——（证据：src/profileInterpreter.ts `resolveInterpreterWith`/`describeInterpreterState`；src/projectProfiles.ts `saveInterpreter`）
 
 ## 设置项
 
@@ -156,6 +157,7 @@
 | `kbengine.telnet.configXmlPath` | `""` | 可选：元件 kbengine.xml 路径，作 telnet 端口/密码回落（支持 ${workspaceFolder}） |
 | `kbengine.telnet.probeIntervalSeconds` | `5` | telnet 端口探测轮询间隔（秒，低频） |
 | `kbengine.httpRequests` | （含一条热更示例） | HTTP 快捷请求列表；`${module}` 按 `__init__.py` 包边界解析 |
+| `kbengine.python.interpreterPath` | `""` | Python 解释器路径，项目 profile 连来源一并记录（本设置存在才采用，否则取 PATH 的 python3/python，再没有记缺失状态） |
 | `kbengine.python.extraPathsSync` | `true` | 自动把发现的 KBEngine scripts 根写入 python.analysis.extraPaths（只管自己那段） |
 | `kbengine.python.stubExport` | `true` | 自动把内置 KBEngine Python API 索引导出为 KBEngine.pyi 存根 |
 | `kbengine.python.stubDir` | `""` | `.pyi` 存根目录（空 = 自管默认 `.kbengine/stubs`；配置目录则扫描、用户 .pyi 不覆盖；支持 VS Code 变量） |

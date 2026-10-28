@@ -17,26 +17,54 @@ export interface ProjectProfile {
   displayName: string;
   assetsRoot: string;
   engineRoot: string;
+  /** Python 解释器路径(IDE-PRJ-004);null=缺失(如实记录,不伪造) */
+  interpreterPath: string | null;
+  /** 解释器来源(setting/path/missing),随路径一并记录 */
+  interpreterSource: string;
 }
 
 export type ProjectProfilePatch = Partial<Omit<ProjectProfile, 'id'>>;
 
+/** 新建输入:解释器字段可省(缺省按缺失记录) */
+export type ProjectProfileInput = Omit<ProjectProfile, 'id' | 'interpreterPath' | 'interpreterSource'> & {
+  interpreterPath?: string | null;
+  interpreterSource?: string;
+};
+
 /** workspaceState 持久化键(v1:结构变化时换新键,不迁移旧形态) */
 export const PROJECT_PROFILES_STATE_KEY = 'kbengine.projectProfiles.v1';
 
-/** 持久化载荷按字段校验:缺任一字符串字段的条目视为损坏,静默跳过不炸 */
-function isProfileEntry(value: unknown): value is ProjectProfile {
+/**
+ * 持久化载荷校验+归一:基础四字段缺一视为损坏整条跳过;解释器字段是
+ * IDE-PRJ-004 后加的,旧记录没有时归一为缺失(null/'missing')而不是丢弃
+ * (身份先于字段存在,字段向后兼容)。
+ */
+function normalizeProfileEntry(value: unknown): ProjectProfile | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
+    return null;
   }
   const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === 'string' &&
-    record.id.length > 0 &&
-    typeof record.displayName === 'string' &&
-    typeof record.assetsRoot === 'string' &&
-    typeof record.engineRoot === 'string'
-  );
+  if (
+    typeof record.id !== 'string' ||
+    record.id.length === 0 ||
+    typeof record.displayName !== 'string' ||
+    typeof record.assetsRoot !== 'string' ||
+    typeof record.engineRoot !== 'string'
+  ) {
+    return null;
+  }
+  const interpreterPath =
+    typeof record.interpreterPath === 'string' ? record.interpreterPath : null;
+  const interpreterSource =
+    typeof record.interpreterSource === 'string' ? record.interpreterSource : 'missing';
+  return {
+    id: record.id,
+    displayName: record.displayName,
+    assetsRoot: record.assetsRoot,
+    engineRoot: record.engineRoot,
+    interpreterPath,
+    interpreterSource
+  };
 }
 
 /** 读出面统一:有 memento 读持久层,否则读会话记忆(极简装配上下文) */
@@ -45,7 +73,9 @@ function readProfiles(memento: vscode.Memento | undefined, session: ProjectProfi
     return session;
   }
   const raw = memento.get<unknown>(PROJECT_PROFILES_STATE_KEY);
-  return Array.isArray(raw) ? raw.filter(isProfileEntry) : [];
+  return Array.isArray(raw)
+    ? raw.map(normalizeProfileEntry).filter((profile): profile is ProjectProfile => profile !== null)
+    : [];
 }
 
 export class ProjectProfileStore {
@@ -64,13 +94,20 @@ export class ProjectProfileStore {
   }
 
   /** 新建一条 profile:分配稳定 ID 后整表落盘(幂等键冲突时重摇 ID) */
-  async create(input: Omit<ProjectProfile, 'id'>): Promise<ProjectProfile> {
+  async create(input: ProjectProfileInput): Promise<ProjectProfile> {
     const profiles = readProfiles(this.memento, this.sessionProfiles);
     let id = randomUUID();
     while (profiles.some(profile => profile.id === id)) {
       id = randomUUID();
     }
-    const created: ProjectProfile = { id, ...input };
+    const created: ProjectProfile = {
+      id,
+      displayName: input.displayName,
+      assetsRoot: input.assetsRoot,
+      engineRoot: input.engineRoot,
+      interpreterPath: input.interpreterPath ?? null,
+      interpreterSource: input.interpreterSource ?? 'missing'
+    };
     await this.persist([...profiles, created]);
     return { ...created };
   }
@@ -96,6 +133,18 @@ export class ProjectProfileStore {
    */
   async saveRoots(id: string, roots: { assetsRoot?: string; engineRoot?: string }): Promise<ProjectProfile | null> {
     return this.update(id, roots);
+  }
+
+  /**
+   * 按 profile 记录 Python 解释器与来源(IDE-PRJ-004):只动解释器两个字段,
+   * 身份与根路径不动;找不到解释器时记缺失(path=null/source='missing'),
+   * 不伪造路径。未知 ID 返回 null。
+   */
+  async saveInterpreter(
+    id: string,
+    resolution: { interpreterPath: string | null; interpreterSource: string }
+  ): Promise<ProjectProfile | null> {
+    return this.update(id, resolution);
   }
 
   /** 按 ID 删除:返回是否真删了一条 */
