@@ -163,7 +163,7 @@ describe('generatePythonFile guards', () => {
 describe('showWizard sample property branches', () => {
   it('assigns cell properties and methods for a Cell-only entity', async () => {
     ui.inputs.push('CellEntity');
-    ui.picks.push(pickIndex(1), pickNone, pickIndex(0));
+    ui.picks.push(pickIndex(1), pickNone, pickIndex(0), pickIndex(0));
 
     const generator = makeGenerator();
     await generator.showWizard();
@@ -179,7 +179,7 @@ describe('showWizard sample property branches', () => {
 
   it('assigns client properties for a Client-only entity', async () => {
     ui.inputs.push('ClientEntity');
-    ui.picks.push(pickIndex(2), pickNone, pickIndex(0));
+    ui.picks.push(pickIndex(2), pickNone, pickIndex(0), pickIndex(0));
 
     const generator = makeGenerator();
     await generator.showWizard();
@@ -198,7 +198,7 @@ describe('showWizard sample property branches', () => {
 describe('post-generation open prompt', () => {
   it('opens the generated def file when the user accepts', async () => {
     ui.inputs.push('OpenEntity');
-    ui.picks.push(pickIndex(0), pickNone, pickIndex(0));
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(0), pickIndex(0));
 
     const originalInfo = windowish.showInformationMessage;
     windowish.showInformationMessage = async (message: string): Promise<unknown> => {

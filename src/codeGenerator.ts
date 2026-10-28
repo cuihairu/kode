@@ -187,6 +187,27 @@ export class KBEngineCodeGenerator {
   }
 
   /**
+   * 解析 def 输出根(生成/预检/计划预览同源,预览路径=写入路径)
+   */
+  private resolveDefOutputRoot(workspaceRoot: string): string {
+    return path.isAbsolute(this.config.defOutputPath)
+      ? this.config.defOutputPath
+      : joinWorkspacePath(workspaceRoot, this.config.defOutputPath);
+  }
+
+  /**
+   * 解析 entities.xml 落点(注册与计划预览同源,预览路径=写入路径)
+   */
+  private resolveEntitiesXmlPath(workspaceRoot: string): string {
+    return findEntitiesXmlFile() || joinWorkspacePath(
+      workspaceRoot,
+      vscode.workspace
+        .getConfiguration('kbengine')
+        .get<string>('entitiesXmlPath', 'scripts/entities.xml')
+    );
+  }
+
+  /**
    * 预检全部生成目标(IDE-GEN-003):逐项报出冲突(def/python),
    * 调用方在写出任何文件前整体中止,不留半套
    */
@@ -197,10 +218,10 @@ export class KBEngineCodeGenerator {
     }
 
     const conflicts: string[] = [];
-    const outputRoot = path.isAbsolute(this.config.defOutputPath)
-      ? this.config.defOutputPath
-      : joinWorkspacePath(workspaceFolder.uri.fsPath, this.config.defOutputPath);
-    const defFilePath = joinWorkspacePath(outputRoot, `${entityName}.def`);
+    const defFilePath = joinWorkspacePath(
+      this.resolveDefOutputRoot(workspaceFolder.uri.fsPath),
+      `${entityName}.def`
+    );
     if (fs.existsSync(defFilePath)) {
       conflicts.push(`def 文件已存在，保留原文件未覆盖: ${defFilePath}`);
     }
@@ -220,6 +241,52 @@ export class KBEngineCodeGenerator {
   }
 
   /**
+   * 生成计划预览与确认(IDE-GEN-004):确认前列出将新增的
+   * def/Python 与注册项及准确路径,选择"确认生成"才继续落盘
+   */
+  private async confirmGenerationPlan(config: EntityTypeConfig): Promise<boolean> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      throw new Error('没有打开的工作区');
+    }
+
+    const planItems: Array<{ label: string; description: string }> = [
+      {
+        label: '新增 .def',
+        description: joinWorkspacePath(
+          this.resolveDefOutputRoot(workspaceFolder.uri.fsPath),
+          `${config.name}.def`
+        )
+      }
+    ];
+
+    if (this.config.generatePython) {
+      planItems.push({
+        label: '新增 Python',
+        description: joinWorkspacePath(
+          workspaceFolder.uri.fsPath,
+          this.config.pythonOutputPath,
+          `${config.name}.py`
+        )
+      });
+    }
+
+    if (this.config.registerInEntitiesXml) {
+      planItems.push({
+        label: '注册 entities.xml',
+        description: `${this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath)}: ${this.generateEntityRegistration(config).trim()}`
+      });
+    }
+
+    const picked = await vscode.window.showQuickPick(
+      [{ label: '确认生成', description: '按清单落盘' }, ...planItems],
+      { placeHolder: '核对将生成的文件（选择"确认生成"继续，Esc 取消）' }
+    );
+
+    return picked?.label === '确认生成';
+  }
+
+  /**
    * 生成 .def 文件
    */
   async generateDefFile(entity: EntityDefinition): Promise<string> {
@@ -228,9 +295,7 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const outputRoot = path.isAbsolute(this.config.defOutputPath)
-      ? this.config.defOutputPath
-      : joinWorkspacePath(workspaceFolder.uri.fsPath, this.config.defOutputPath);
+    const outputRoot = this.resolveDefOutputRoot(workspaceFolder.uri.fsPath);
     const defFilePath = joinWorkspacePath(outputRoot, `${entity.config.name}.def`);
 
     // IDE-GEN-001:同名 def 已存在时拒绝覆盖——原字节原样保留,
@@ -534,12 +599,7 @@ export class KBEngineCodeGenerator {
       throw new Error('没有打开的工作区');
     }
 
-    const entitiesXmlPath = findEntitiesXmlFile() || joinWorkspacePath(
-      workspaceFolder.uri.fsPath,
-      vscode.workspace
-        .getConfiguration('kbengine')
-        .get<string>('entitiesXmlPath', 'scripts/entities.xml')
-    );
+    const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
 
     if (!fs.existsSync(entitiesXmlPath)) {
       throw new Error(`entities.xml 不存在: ${entitiesXmlPath}`);
@@ -712,6 +772,11 @@ export class KBEngineCodeGenerator {
         for (const conflict of conflicts) {
           vscode.window.showErrorMessage(conflict);
         }
+        return;
+      }
+
+      // IDE-GEN-004:确认前列出将新增的 def/Python 与注册项及准确路径
+      if (!(await this.confirmGenerationPlan(entity.config))) {
         return;
       }
 
@@ -891,6 +956,11 @@ export class KBEngineCodeGenerator {
         for (const conflict of conflicts) {
           vscode.window.showErrorMessage(conflict);
         }
+        return;
+      }
+
+      // IDE-GEN-004:确认前列出将新增的 def/Python 与注册项及准确路径
+      if (!(await this.confirmGenerationPlan(entity.config))) {
         return;
       }
 

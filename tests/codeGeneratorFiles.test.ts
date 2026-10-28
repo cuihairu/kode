@@ -278,7 +278,7 @@ describe('KBEngineCodeGenerator wizard', () => {
 
   it('runs the full base+cell flow and registers the entity', async () => {
     ui.inputs.push('Hero');
-    ui.picks.push(pickIndex(3), pickIndex(1), pickIndex(0));
+    ui.picks.push(pickIndex(3), pickIndex(1), pickIndex(0), pickIndex(0));
 
     await makeGenerator().showWizard();
 
@@ -322,7 +322,7 @@ describe('KBEngineCodeGenerator wizard', () => {
       { uri: Uri.file(bareRoot), name: 'bare', index: 0 }
     ];
     ui.inputs.push('Hero');
-    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1), pickIndex(0));
 
     await makeGenerator().showWizard();
 
@@ -357,7 +357,7 @@ describe('KBEngineCodeGenerator templates', () => {
   });
 
   it('generates the account template under a new name', async () => {
-    ui.picks.push(pickIndex(0));
+    ui.picks.push(pickIndex(0), pickIndex(0));
     ui.inputs.push('MyAccount');
 
     await makeGenerator().showTemplates();
@@ -392,7 +392,7 @@ describe('KBEngineCodeGenerator templates', () => {
     ui.picks.push(items => {
       listed = items as Array<{ label: string; value: string }>;
       return listed.find(item => item.value === 'team');
-    });
+    }, pickIndex(0));
     ui.inputs.push('MyTeam');
 
     await makeGenerator().showTemplates();
@@ -544,7 +544,7 @@ describe('KBEngineCodeGenerator pre-flight conflicts (IDE-GEN-003)', () => {
 
   it('still generates the full set when no target conflicts', async () => {
     ui.inputs.push('Fresh');
-    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1), pickIndex(0));
 
     await makeGenerator().showWizard();
 
@@ -564,6 +564,93 @@ describe('KBEngineCodeGenerator pre-flight conflicts (IDE-GEN-003)', () => {
     expect(ui.error).toHaveLength(1);
     expect(ui.error[0]).toContain('Monster.def');
     expect(fs.readdirSync(path.join(root, 'scripts', 'entity_defs'))).toEqual(['Monster.def']);
+  });
+});
+
+describe('KBEngineCodeGenerator generation plan preview (IDE-GEN-004)', () => {
+  it('lists every planned artifact with exact paths and confirms', async () => {
+    let previewItems: Array<{ label: string; description?: string }> = [];
+    ui.inputs.push('Preview');
+    ui.picks.push(
+      pickIndex(0),
+      pickNone,
+      pickIndex(1),
+      items => {
+        previewItems = items as Array<{ label: string; description?: string }>;
+        return previewItems[0];
+      }
+    );
+
+    await makeGenerator().showWizard();
+
+    // 确认行 + def/python/注册三条计划项,路径逐字准确
+    expect(previewItems.map(item => item.label)).toEqual([
+      '确认生成', '新增 .def', '新增 Python', '注册 entities.xml'
+    ]);
+    expect(previewItems[1].description).toBe(path.join(root, 'scripts', 'entity_defs', 'Preview.def'));
+    expect(previewItems[2].description).toBe(path.join(root, 'scripts', 'Preview.py'));
+    expect(previewItems[3].description).toContain(path.join(root, 'scripts', 'entities.xml'));
+    expect(previewItems[3].description).toContain('<Preview hasCell="false" hasBase="true" hasClient="false" />');
+
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Preview.def'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'scripts', 'Preview.py'))).toBe(true);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toContain('<Preview ');
+    expect(ui.error).toEqual([]);
+  });
+
+  it('writes nothing when the preview is dismissed', async () => {
+    const entitiesXmlBefore = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
+    ui.inputs.push('Dismissed');
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1), pickNone);
+
+    await makeGenerator().showWizard();
+
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Dismissed.def'))).toBe(false);
+    expect(fs.existsSync(path.join(root, 'scripts', 'Dismissed.py'))).toBe(false);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
+    expect(ui.info).toEqual([]);
+    expect(ui.error).toEqual([]);
+  });
+
+  it('template flow shows the same preview before writing', async () => {
+    let previewItems: Array<{ label: string; description?: string }> = [];
+    ui.picks.push(
+      pickIndex(0),
+      items => {
+        previewItems = items as Array<{ label: string; description?: string }>;
+        return previewItems[0];
+      }
+    );
+    ui.inputs.push('TplPrev');
+
+    await makeGenerator().showTemplates();
+
+    expect(previewItems[0].label).toBe('确认生成');
+    expect(previewItems[1].label).toBe('新增 .def');
+    expect(previewItems[1].description).toBe(path.join(root, 'scripts', 'entity_defs', 'TplPrev.def'));
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'TplPrev.def'))).toBe(true);
+  });
+
+  it('preview only lists enabled artifacts', async () => {
+    const generator = makeGenerator();
+    internals(generator).config.generatePython = false;
+    internals(generator).config.registerInEntitiesXml = false;
+
+    let previewItems: Array<{ label: string }> = [];
+    ui.inputs.push('SoloPlan');
+    ui.picks.push(
+      pickIndex(0),
+      pickNone,
+      pickIndex(1),
+      items => {
+        previewItems = items as Array<{ label: string }>;
+        return previewItems[0];
+      }
+    );
+
+    await generator.showWizard();
+
+    expect(previewItems.map(item => item.label)).toEqual(['确认生成', '新增 .def']);
   });
 });
 

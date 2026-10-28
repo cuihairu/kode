@@ -146,7 +146,7 @@ describe('wizard with python and registration disabled', () => {
     internals(generator).config.registerInEntitiesXml = false;
 
     ui.inputs.push('Solo');
-    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1), pickIndex(0));
 
     await generator.showWizard();
 
@@ -173,7 +173,7 @@ describe('template flow with python and registration disabled', () => {
     internals(generator).config.generatePython = false;
     internals(generator).config.registerInEntitiesXml = false;
 
-    ui.picks.push(pickIndex(0));
+    ui.picks.push(pickIndex(0), pickIndex(0));
     ui.inputs.push('SoloAcct');
 
     await generator.showTemplates();
