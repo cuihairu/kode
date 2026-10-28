@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { findEntitiesXmlFile, findEntityDefinitionsRoot, getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import { joinWorkspacePath } from './workspacePath';
+import { writeFileAtomic } from './atomicFileWrite';
 
 /**
  * 实体类型配置
@@ -312,8 +313,8 @@ export class KBEngineCodeGenerator {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // 写入文件
-    fs.writeFileSync(defFilePath, content, 'utf8');
+    // 写入文件(IDE-GEN-005:原子替换,中断不留半截)
+    writeFileAtomic(defFilePath, content);
 
     return defFilePath;
   }
@@ -484,8 +485,8 @@ export class KBEngineCodeGenerator {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    // 写入文件
-    fs.writeFileSync(pythonFilePath, content, 'utf8');
+    // 写入文件(IDE-GEN-005:原子替换,中断不留半截)
+    writeFileAtomic(pythonFilePath, content);
 
     return pythonFilePath;
   }
@@ -625,8 +626,8 @@ export class KBEngineCodeGenerator {
 
     content = content.substring(0, insertIndex) + registration + '\n' + content.substring(insertIndex);
 
-    // 写回文件
-    fs.writeFileSync(entitiesXmlPath, content, 'utf8');
+    // 写回文件(IDE-GEN-005:原子替换,中断时旧注册保持完整)
+    writeFileAtomic(entitiesXmlPath, content);
   }
 
   /**

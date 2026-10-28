@@ -30,6 +30,7 @@ import {
   parseDefDocument
 } from './defParser';
 import { joinWorkspacePath } from './workspacePath';
+import { writeFileAtomic } from './atomicFileWrite';
 
 export const GENERATOR_FORM_KINDS = ['proxy', 'space', 'component', 'fixedDict'] as const;
 export type GeneratorFormKind = (typeof GENERATOR_FORM_KINDS)[number];
@@ -425,7 +426,7 @@ function writeOrSkip(filePath: string, content: string, overwrite: boolean): boo
   }
 
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, 'utf8');
+  writeFileAtomic(filePath, content);
   return true;
 }
 
@@ -454,7 +455,7 @@ function registerSpaceEntity(
     return;
   }
 
-  fs.writeFileSync(entitiesXmlPath, updated, 'utf8');
+  writeFileAtomic(entitiesXmlPath, updated);
   touchedFiles.push(entitiesXmlPath);
 }
 
@@ -470,10 +471,9 @@ function registerFixedDictType(
 ): boolean {
   if (!fs.existsSync(typesXmlPath)) {
     fs.mkdirSync(path.dirname(typesXmlPath), { recursive: true });
-    fs.writeFileSync(
+    writeFileAtomic(
       typesXmlPath,
-      `<root>\n\n<!-- 生成时间: ${generatedAt} -->\n${snippet}</root>\n`,
-      'utf8'
+      `<root>\n\n<!-- 生成时间: ${generatedAt} -->\n${snippet}</root>\n`
     );
     touchedFiles.push(typesXmlPath);
     return true;
@@ -491,7 +491,7 @@ function registerFixedDictType(
     return false;
   }
 
-  fs.writeFileSync(typesXmlPath, updated, 'utf8');
+  writeFileAtomic(typesXmlPath, updated);
   touchedFiles.push(typesXmlPath);
   return true;
 }
@@ -529,10 +529,9 @@ function attachComponentToEntity(
   }
 
   const snippet = buildComponentPropertySnippet(componentName);
-  fs.writeFileSync(
+  writeFileAtomic(
     entityDefPath,
-    `${content.slice(0, section.insertOffset)}${snippet}\n\n${content.slice(section.insertOffset)}`,
-    'utf8'
+    `${content.slice(0, section.insertOffset)}${snippet}\n\n${content.slice(section.insertOffset)}`
   );
   touchedFiles.push(entityDefPath);
 }
