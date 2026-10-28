@@ -94,6 +94,10 @@ Evidence-based feature list for the kode VS Code extension. Each entry carries a
 - **Def document symbols (Outline)** — Properties and the three method sections as containers with per-declaration children and precise element ranges — (evidence: src/languageProviders.ts `KBEngineDocumentSymbolProvider`)
 - **Def references (Shift+F12)** — def property/method references over owner-registered Python surfaces: property `self` accesses, method calls via the unified symbol identity chain, and receiver RPC calls (`self.cell.X` / `self.base.X` / `self.client.X`) counted per section; results follow unsaved buffers (open-document snapshot first, disk fallback) — (evidence: src/languageProviders.ts `KBEngineReferencesProvider`; src/entityMapping.ts `getIncomingPythonMethodCalls`)
 
+## Project Model
+
+- **Project profile identity store** — each KBEngine assets/engine combination is saved as its own profile with a persistent stable ID (assigned once at creation, stored per workspace in `workspaceState` and read back after restart); the display name is only a mutable field — renaming a profile or having two same-named profiles never merges or loses identity — (evidence: src/projectProfiles.ts `ProjectProfileStore`)
+
 ## Settings
 
 All extension settings (evidence: package.json#contributes.configuration for contributed keys; src/managedDir.ts for the runtime-read key).

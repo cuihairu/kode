@@ -92,6 +92,10 @@
 - **def 文档符号（Outline）** —— Properties 与三方法段作容器，段内声明作子符号，范围精确到元素全跨度 ——（证据：src/languageProviders.ts `KBEngineDocumentSymbolProvider`）
 - **def 引用查询（Shift+F12）** —— def 属性/方法引用按 owner 注册面归属：属性 `self` 访问、方法调用经统一符号身份链、receiver RPC 调用（`self.cell.X` / `self.base.X` / `self.client.X`）按段分开统计；结果跟随未保存缓冲区（打开文档快照优先、磁盘兜底）——（证据：src/languageProviders.ts `KBEngineReferencesProvider`；src/entityMapping.ts `getIncomingPythonMethodCalls`）
 
+## 项目模型
+
+- **项目 profile 身份存储** —— 同一工作区里每套 assets/engine 组合保存为独立 profile，持有持久稳定 ID（创建时一次分配，按工作区存于 `workspaceState`，重启后照旧读回）；显示名只是可变字段——改名或两条同名互不吞并、不丢身份——（证据：src/projectProfiles.ts `ProjectProfileStore`）
+
 ## 设置项
 
 全部扩展设置（证据：package.json#contributes.configuration 为已贡献键；src/managedDir.ts 为运行时读取键）。
