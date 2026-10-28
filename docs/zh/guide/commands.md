@@ -385,6 +385,16 @@
   - 原子写与回收：文件走原子写（临时文件 + rename）；任一步失败即回收本次新增的全部内容（先逆序删文件，再逆序删目录，目标根本身是本次隐式建出且此前不存在时一并回收）并报出失败
 - 行为：创建成功后走与导入命令同一识别链和身份存储建立 profile（显示名取目标目录名），消息报出 profile ID 与 Python 解释器状态（设置存在才采用 → PATH → 如实缺失）
 
+### `kbengine.project.selectActive`
+
+- 标题：`Select Active Project Profile`
+- 用途：选择哪条 project profile 是活动 profile；选择按稳定 ID 持久化（workspaceState），每次真实切换恰发一次切换事件（其他功能订阅该事件响应 profile 切换）
+- 选择器：QuickPick 逐条列出全部 profile 的显示名与稳定 ID；选中即持久化并报出
+- 诚实口径：
+  - 选择以稳定 ID 记忆——显示名改名不丢选择；重选已是活动的 profile 不算切换，不发事件
+  - 未知 ID 拒绝（不落盘不发事件）；选择对应的记录后来被删除时如实解析为 null，不伪装有效
+  - 完全没有 profile 时如实说明，不打开选择器
+
 ### `kbengine.quickActions.show`
 
 - 标题：`Run Quick Actions`

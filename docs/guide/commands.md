@@ -484,6 +484,16 @@ The flow graph panel supports:
   - Atomic writes and rollback: files land via atomic write (temp file + rename); if any step fails, everything created this run is rolled back (files first, then directories in reverse order, plus the implicitly created target root when it did not exist before) and the failure is reported
 - Behavior: after a successful creation the profile is built through the same identification chain and identity store as the import command (display name = target folder name), and the message reports the profile ID plus the Python interpreter state (setting if it exists → PATH → explicitly missing)
 
+### `kbengine.project.selectActive`
+
+- Title: `Select Active Project Profile`
+- Purpose: choose which project profile is the active one; the selection is persisted by stable ID (workspaceState) and each real switch fires exactly one change event (other features subscribe to it to react to profile switches)
+- Picker: a QuickPick lists every profile with its display name and stable ID; picking one persists the selection and reports it
+- Honesty rules:
+  - The selection is keyed by stable ID — renaming a profile never loses the selection; re-picking the already-active profile is not a switch and fires no event
+  - An unknown ID is refused (nothing persisted, nothing fired); a selection whose profile record was later removed resolves honestly to null instead of pretending to be valid
+  - With no profiles at all the command says so and never opens the picker
+
 ### `kbengine.extension.identity`
 
 - Title: `Show Extension Identity Report`

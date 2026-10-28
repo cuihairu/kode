@@ -71,6 +71,7 @@
     "onCommand:kbengine.generator.formWizard",
     "onCommand:kbengine.project.import",
     "onCommand:kbengine.project.create",
+    "onCommand:kbengine.project.selectActive",
     "onCommand:kbengine.python.serviceStatus",
     "onCommand:kbengine.generator.templates",
     "onCommand:kbengine.clientSdk.generate",
@@ -427,6 +428,10 @@
       {
         "command": "kbengine.project.create",
         "title": "Create Minimal KBEngine Project"
+      },
+      {
+        "command": "kbengine.project.selectActive",
+        "title": "Select Active Project Profile"
       },
       {
         "command": "kbengine.python.serviceStatus",

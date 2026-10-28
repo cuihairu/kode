@@ -109,7 +109,7 @@ A `buildCurlCommand` helper supporting headers exists (`src/quickActions.ts:178`
 ### HR-AUDIT-007 — Hot reload history / status bar / decorations / retry
 
 - No hot-reload history store, no request timeline, no failure retry anywhere in `src/`.
-- Status bars: exactly two — telnet (`src/extension.ts:1593`) and running-server count (`src/extension.ts:2702`). No hot-reload status item.
+- Status bars: exactly two — telnet (`src/extension.ts:1594`) and running-server count (`src/extension.ts:2710`). No hot-reload status item.
 - TreeView: `kbengine.quickActions` lists HTTP entries as static runnable nodes; no reload state, no decoration.
 - Notifications: hot-reload path pops errors only; no success notification exists (nothing to silence).
 - Conclusion: HR-STATE (§19.6) and HR-UI (§19.7) are **greenfield**; only the trigger plumbing and the two HTTP executors are reusable.

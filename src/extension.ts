@@ -5,6 +5,7 @@ import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
 import { importExistingProject } from './projectImport';
 import { createMinimalProject } from './projectCreate';
+import { selectActiveProfile } from './activeProfile';
 import {
   classifyPythonService,
   PYLANCE_EXTENSION_ID,
@@ -2443,6 +2444,13 @@ export function activate(context: vscode.ExtensionContext) {
     () => createMinimalProject(context)
   );
   context.subscriptions.push(createProjectCommand);
+
+  // 活动 profile 选择(IDE-PRJ-010):稳定 ID 持久化,真实切换恰发一次事件
+  const selectActiveProfileCommand = vscode.commands.registerCommand(
+    'kbengine.project.selectActive',
+    () => selectActiveProfile(context)
+  );
+  context.subscriptions.push(selectActiveProfileCommand);
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
   // 语言清单在命令内选(已代决首批 TS + C#)
