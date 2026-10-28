@@ -101,6 +101,7 @@
     "onCommand:kbengine.debug.waitAtStartup.on",
     "onCommand:kbengine.debug.waitAtStartup.off",
     "onCommand:kbengine.debug.focusTarget",
+    "onCommand:kbengine.build.previewTask",
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -595,6 +596,10 @@
       {
         "command": "kbengine.debug.focusTarget",
         "title": "debugpy: Focus Debug Target"
+      },
+      {
+        "command": "kbengine.build.previewTask",
+        "title": "Build: Preview Task Description"
       }
     ],
     "menus": {

@@ -735,3 +735,15 @@ If `Attach to Component` fails, check these first:
 3. Whether `telnetEnableCommands` in `.kbengine/debug.json` matches the project's real command (affects only `Start Debugging`'s instructions, not the telnet connection itself)
 4. Whether `pathMappings` in `.kbengine/debug.json` maps to the current workspace's source directory
 5. Whether `ms-python.debugpy` is installed and enabled on this machine
+
+### `kbengine.build.previewTask`
+
+- Title: `Build: Preview Task Description`
+- Purpose: preview the exact build task derived from the active profile (IDE-TSK-001) — a script compile check of the profile's assets: the shown command line, working directory and environment are literally what the task runs (the Tasks view registration arrives with TSK-002's TaskProvider, using this same spec)
+- Entries: command palette
+- Behavior:
+  - resolves the active profile (assets root + interpreter) and derives the spec: `<interpreter> -m compileall -q <assets>/scripts` with cwd `<assets>` and `PYTHONUTF8=1` (stable UTF-8 output for compileall error lines, no garbled paths on GBK consoles)
+  - a profile without an interpreter falls back to `python3` from PATH, and the fallback is stated in the preview itself — what you see is what runs
+  - the preview dialog shows the task type, name, `cd` line, full command line (paths with spaces quoted per shell word-splitting), each env entry, and the interpreter-provenance line
+  - no active profile: an honest message points at picking one first
+- Boundary: this command only previews; executing the build is TSK-002's task registration, and mapping compile errors to source locations is TSK-003's problem matcher

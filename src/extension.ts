@@ -66,6 +66,7 @@ import {
   type DebugInjectionEntry
 } from './debugStatusBoard';
 import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
+import { buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1796,6 +1797,27 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(focusDebugTargetCommand);
+
+  // IDE-TSK-001 构建任务描述预览:活动 profile → 脚本编译检查任务的
+  // command/args/cwd/env 四要素逐字预览(所见即所跑;TSK-002 起任务
+  // 列表按同一描述注册)。无活动 profile 如实提示去选。
+  const previewBuildTaskCommand = vscode.commands.registerCommand(
+    'kbengine.build.previewTask',
+    () => {
+      const profile = resolveActiveProfile(context.workspaceState);
+      if (!profile) {
+        void vscode.window.showInformationMessage(
+          '尚未选择活动 profile:先在 Profiles 里选一套 assets/engine 组合,再预览构建任务'
+        );
+        return;
+      }
+      void vscode.window.showInformationMessage(
+        formatBuildTaskPreview(buildScriptCheckTaskSpec(profile)),
+        { modal: true }
+      );
+    }
+  );
+  context.subscriptions.push(previewBuildTaskCommand);
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);

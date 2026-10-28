@@ -622,3 +622,15 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
 3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致（只影响 `Start Debugging` 的提示语，不影响 telnet 连接本身）
 4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前工作区源码目录
 5. 当前机器里是否已经安装并启用 `ms-python.debugpy`
+
+### `kbengine.build.previewTask`
+
+- 标题：`Build: Preview Task Description`
+- 作用：预览由活动 profile 派生的构建任务（IDE-TSK-001）——对 profile 资产做脚本编译检查；预览里的命令行、工作目录、环境变量就是任务实际执行的内容，逐字一致（任务列表注册是 TSK-002 的 TaskProvider，按同一描述）
+- 入口：命令面板
+- 行为：
+  - 解析活动 profile（assets 根 + 解释器）并派生任务描述：`<解释器> -m compileall -q <assets>/scripts`，cwd=`<assets>`，env 带 `PYTHONUTF8=1`（compileall 错误行按 UTF-8 稳定输出，GBK 控制台不乱码）
+  - profile 未选解释器时回退 PATH 上的 `python3`，回退在预览里如实标注——所见即所跑
+  - 预览对话框展示任务类型、名称、`cd` 行、完整命令行（含空格路径按 shell 拆词规则加引号）、env 逐条、解释器来源行
+  - 无活动 profile：如实提示先去选一套
+- 边界：本命令只预览不执行；执行面是 TSK-002 的任务注册，编译错误定位到源码是 TSK-003 的 problem matcher
