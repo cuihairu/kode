@@ -115,7 +115,6 @@ import {
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
 import {
   formatEntityBuiltinPropertyDetail,
-  formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace,
   hasKnownEntityBuiltinPropertyType,
   resolveEntityBuiltinPropertyHit,
@@ -123,6 +122,12 @@ import {
   collectEntityBuiltinPropertyInlayTargets,
   type EntityComponentFace
 } from './entityBuiltinProperties';
+import {
+  formatBuiltinPropertyHover,
+  formatEntityDefMethodHover,
+  formatEventStatsHover,
+  formatInferredReturnHover
+} from './hoverMarkdown';
 import { resolveLocalVariableReturnTypeFromSnapshot } from './pythonReturnTypeInference';
 import {
   startLanguageServiceOperation
@@ -905,8 +910,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       } finally { stopInfer?.(); }
       if (inferred) {
         const markdown = new vscode.MarkdownString();
-        markdown.appendMarkdown(`**${inferred.target}: ${inferred.annotation}**\n\n`);
-        markdown.appendMarkdown(`推导自 ${inferred.methodName}() 返回注解`);
+        markdown.appendMarkdown(formatInferredReturnHover(inferred.target, inferred.annotation, inferred.methodName));
         deadline.dispose();
         return new vscode.Hover(markdown);
       }
@@ -977,14 +981,14 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     let hover: vscode.Hover;
     try {
       const markdown = new vscode.MarkdownString();
-      markdown.appendMarkdown(
-        `**${methodName}** — 此函数是实体 def 声明的 ${location.section} 方法\n\n`
-      );
-      markdown.appendMarkdown(`签名: \`${signature}\`\n\n`);
-      markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
-      if (location.exposed) {
-        markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
-      }
+      markdown.appendMarkdown(formatEntityDefMethodHover({
+        methodName,
+        section: location.section,
+        signature,
+        defFile: location.defFile,
+        defLine: location.line,
+        exposed: location.exposed
+      }));
       hover = new vscode.Hover(markdown);
     } finally { stopRender?.(); }
     return hover;
@@ -1053,15 +1057,15 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     let hover: vscode.Hover;
     try {
       const markdown = new vscode.MarkdownString();
-      markdown.appendMarkdown(
-        `**${receiverCall.methodName}** — 此调用是实体 def 声明的 ${location.section} 方法` +
-          `(接收者 self.${receiverCall.receiver})\n\n`
-      );
-      markdown.appendMarkdown(`签名: \`${signature}\`\n\n`);
-      markdown.appendMarkdown(`声明: \`${path.basename(location.defFile)}:${location.line}\``);
-      if (location.exposed) {
-        markdown.appendMarkdown('\n\n**Exposed**: 该方法可被客户端远程调用。');
-      }
+      markdown.appendMarkdown(formatEntityDefMethodHover({
+        methodName: receiverCall.methodName,
+        section: location.section,
+        signature,
+        defFile: location.defFile,
+        defLine: location.line,
+        exposed: location.exposed,
+        receiver: receiverCall.receiver
+      }));
       hover = new vscode.Hover(markdown);
     } finally { stopRender?.(); }
     return hover;
@@ -1107,10 +1111,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       const markdown = new vscode.MarkdownString();
       // 首行紧凑形态(用户令 2026-10-21 形态升级单 ①):类型紧跟属性名冒号后
       // (**self.databaseID: int** — baseapp面 · 只读),详情段走单一 formatter
-      markdown.appendMarkdown(
-        `${formatEntityBuiltinPropertyHeadline(hit.property.name, hit.face, hit.property)}\n\n`
-      );
-      markdown.appendMarkdown(`引擎注册面: \`${hit.property.source}\``);
+      markdown.appendMarkdown(formatBuiltinPropertyHover(hit));
       hover = new vscode.Hover(markdown);
     } finally { stopRender?.(); }
     return hover;
@@ -1129,7 +1130,7 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       if (current) {
         const registrations = calls.filter(call => (call.api === 'addEvent' || call.api === 'registerEvent') && call.event === current.event).length;
         const emits = calls.filter(call => call.api === 'emitEvent' && call.event === current.event).length;
-        return new vscode.Hover(`**${current.event}**\n\n当前文件统计：${registrations} 处注册 · ${emits} 处触发`);
+        return new vscode.Hover(formatEventStatsHover(current.event, registrations, emits));
       }
     }
     if (featureConfig.hoverTypeStorage) {
