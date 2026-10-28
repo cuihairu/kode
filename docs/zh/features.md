@@ -41,6 +41,7 @@
 - **只读查询取消与超时（DB-003）** —— 慢查询到点立即返回 timeout/cancelled 态（不干等），连接释放等底层结算后 close 恰一次——慢查询结束等待并释放连接；轮询循环在结算/取消/超时任一成立即退，不滞留后台轮询；底层失败如实 failed 态带原错误、释放路径不跳过；close 失败经 released 暴露，不影响已定终态；时钟/打盹/取消探针全注入——快查询在一个宏任务边界内结算则零打盹 ——（证据：src/databaseQueryLifecycle.ts）
 - **结果列关联回 def/type 声明（DB-004）** —— 查询结果列经虚拟 schema 字段描述符链接回声明处：已推导列带 def 声明处（filePath+line，点击定位面）与声明类型原文；描述符带 synthetic 标记的引擎结构列（id/sm_autoLoad 等）说明为合成列、无 def 声明处；schema 里找不到的列如实 unknown——不猜合成、不猜邻居表（表名匹配由调用方经 snapshot.tableIndex 取对表，本模块只认拿到的那张表） ——（证据：src/databaseColumnSource.ts、src/databaseSchema.ts）
 - **单实体结构变更影响预览（DB-005）** —— 对该实体前后两代虚拟 schema 对比，列出新增/移除/类型变化列清单；纯计算模块零注入面零 IO——不存在执行 DDL 或写库的通路（预览只是清单，落地动作不在本模块）；类型判定以推导后的 mysql 型（typeLabel）为准，声明原文等价变化（别名）不产条目；引擎合成列不进影响面（def 变更不影响引擎结构列） ——（证据：src/databaseSchemaImpact.ts、src/databaseSchema.ts）
+- **按引擎版本保存 drift 联验证据（DB-006）** —— 每条记录分开存两个面：实际查询面（真实 MySQL 查询所得；未连接为 null）与模拟 schema 面（虚拟表结构推导，对比基准侧）；结论分类不冒充——引擎版本 unknown 只给 unknown-version（不宣称兼容）、无实际查询只给 unverified（纯模拟不冒充实测）、实测无漂移才 compatible-verified、有漂移如实 drift-found；按引擎版本保存，同版本重录覆盖为最新一次，持久化经注入 load/save ——（证据：src/databaseDriftEvidence.ts）
 - **数据库模拟与导出** —— 模拟表结构可导出 JSON/Markdown ——（证据：package.json#contributes.commands `kbengine.database.simulate|exportSimulation`；todo.md:71；src/databaseSimulator.ts）
 
 ## 类型桩与托管目录
