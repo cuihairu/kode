@@ -87,6 +87,25 @@ const defaultDeps: SharedFileSnapshotDeps = {
 };
 
 /**
+ * IDE-NAV-004:打开文档文本清单(缓冲区全文,不含磁盘补载)——批量扫描面
+ * (引用收录遍历整索引的文件集)一次取,免逐文件快照把磁盘补载放大成
+ * 全量读盘。读取副作用只有 listOpenDocuments。
+ */
+export interface OpenDocumentText {
+  fsPath: string;
+  content: string;
+}
+
+export function collectOpenDocumentTexts(
+  deps: SharedFileSnapshotDeps = defaultDeps
+): OpenDocumentText[] {
+  return deps.listOpenDocuments().map(document => ({
+    fsPath: document.uri.fsPath,
+    content: document.getText()
+  }));
+}
+
+/**
  * 读共享文件快照:打开文档优先(缓冲区全文+编辑序号),未打开文件磁盘补载
  * (utf8 文本+mtimeMs),双侧皆无返回 null。读取不打开任何文档。
  */

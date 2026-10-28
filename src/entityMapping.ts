@@ -10,6 +10,7 @@ import { jumpLog, jumpTimeStart } from './navigationLog';
 import { INTERACTIVE_INDEX_WAIT_MS, logLayerTiming, raceWithBudget } from './hoverBudget';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './fileReadMetrics';
+import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
 import {
   findFilesAcrossRoots,
   getExternalScanRoots,
@@ -2044,10 +2045,13 @@ export class EntityMappingManager {
     );
     for (const owner of index.pythonOwnerFiles) {
       if (token?.isCancellationRequested) { return accesses; }
-      if (!fs.existsSync(owner.filePath)) {
+      // IDE-NAV-004:未保存文档跟随——打开文档在位时扫缓冲区当前版,
+      // 未打开/已关闭回落磁盘(SNP-001 快照契约;磁盘侧读盘照常记账)。
+      const snapshot = readSharedFileSnapshot(owner.filePath);
+      if (!snapshot) {
         continue;
       }
-      const content = readFileSyncUtf8Recorded(owner.filePath);
+      const content = snapshot.content;
       const lines = content.split('\n');
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
         accessRegex.lastIndex = 0;
@@ -2087,10 +2091,12 @@ export class EntityMappingManager {
     const calls: Array<{ filePath: string; line: number; character: number }> = [];
     for (const owner of index.pythonOwnerFiles) {
       if (token?.isCancellationRequested) return calls;
-      if (!fs.existsSync(owner.filePath)) {
+      // IDE-NAV-004:同属性引用面——打开文档优先(缓冲区当前版),磁盘兜底
+      const snapshot = readSharedFileSnapshot(owner.filePath);
+      if (!snapshot) {
         continue;
       }
-      const content = readFileSyncUtf8Recorded(owner.filePath);
+      const content = snapshot.content;
       const lines = content.split('\n');
       for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
         callRegex.lastIndex = 0;
@@ -2122,7 +2128,30 @@ export class EntityMappingManager {
     const incoming: Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }> = [];
     const normalizedTarget = normalizeLookupPath(pythonFile);
 
+    // IDE-NAV-004:未保存文档跟随——在位打开文档以缓冲区当前版重解析方法块
+    // (parsePythonMethodBlocks 与索引首扫同一纯函数),覆盖该文件的索引条目
+    // 后再扫:新增/删除调用点随缓冲区,未打开文件走磁盘索引原样。逐文件
+    // 快照会把磁盘补载放大成整索引读盘,故清单一次取(collectOpenDocumentTexts)。
+    const methodsByFile = new Map<string, IndexedPythonMethodLocation[]>();
     for (const method of index.pythonMethods) {
+      const key = normalizeLookupPath(method.filePath);
+      const bucket = methodsByFile.get(key);
+      if (bucket) {
+        bucket.push(method);
+      } else {
+        methodsByFile.set(key, [method]);
+      }
+    }
+    for (const openText of collectOpenDocumentTexts()) {
+      const key = normalizeLookupPath(openText.fsPath);
+      const bucket = methodsByFile.get(key);
+      if (bucket) {
+        methodsByFile.set(key, parsePythonMethodBlocks(openText.content, bucket[0].filePath));
+      }
+    }
+    const methods = [...methodsByFile.values()].flat();
+
+    for (const method of methods) {
       if (token?.isCancellationRequested) return [];
       for (const call of method.calls) {
         if (token?.isCancellationRequested) return [];
@@ -2130,7 +2159,7 @@ export class EntityMappingManager {
           continue;
         }
 
-        const resolved = index.pythonMethods.find(candidate =>
+        const resolved = methods.find(candidate =>
           candidate.methodName === call.methodName
           && normalizeLookupPath(candidate.filePath) === normalizedTarget
         );
