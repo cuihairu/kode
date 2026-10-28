@@ -27,11 +27,9 @@ export class MonitoringWebView {
     private context: vscode.ExtensionContext,
     private collector: MonitoringCollector
   ) {
-    // 监听数据更新
+    // 监听数据更新(updateWebView 自守卫:无面板或隐藏时零渲染)
     collector.onMetricsUpdate(() => {
-      if (this.panel) {
-        this.updateWebView();
-      }
+      this.updateWebView();
     });
   }
 
@@ -72,6 +70,18 @@ export class MonitoringWebView {
       this.context.subscriptions
     );
 
+    // 隐藏期间停刷(IDE-RES-007):updateWebView 对不可见面板零渲染;
+    // 恢复可见时在此立即补渲一次,显示最新状态(不等下一拍)。
+    this.panel.onDidChangeViewState(
+      event => {
+        if (event.webviewPanel.visible) {
+          this.updateWebView();
+        }
+      },
+      undefined,
+      this.context.subscriptions
+    );
+
     void this.panel.webview.postMessage({
       command: 'protocolCapabilities',
       capabilities: {
@@ -104,7 +114,9 @@ export class MonitoringWebView {
    * 更新 WebView 内容
    */
   private updateWebView(): void {
-    if (!this.panel) {
+    // 隐藏面板不渲染(IDE-RES-007):完整图表快照(historySeries JSON+
+    // Chart.js 重建)只发给可见页面;恢复可见由 onDidChangeViewState 补渲。
+    if (!this.panel || !this.panel.visible) {
       return;
     }
 

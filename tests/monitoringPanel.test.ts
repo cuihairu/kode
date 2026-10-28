@@ -441,3 +441,25 @@ describe('MonitoringWebView.dispose', () => {
     expect(fake.state.disposed).toBe(2);
   });
 });
+
+describe('MonitoringWebView 隐藏停刷(IDE-RES-007)', () => {
+  it('面板隐藏后 collector 更新不再重渲完整快照,恢复可见立即显示最新状态', () => {
+    fake.state.metrics = [metric({ component: 'cellapp1', componentID: 1 })];
+    const panel = show();
+    expect(panel.webview.html).toContain('CELLAPP1');
+
+    // 用户切走标签页:面板隐藏,记下当前快照
+    panelRegistry.fireViewState(panel, false);
+    const hiddenSnapshot = panel.webview.html;
+
+    // 隐藏期间数据翻新并到达:不再发送完整图表快照(html 原样,零重渲)
+    fake.state.metrics = [metric({ component: 'cellapp2', componentID: 2, cpuUsage: 99 })];
+    fake.emit();
+    expect(panel.webview.html).toBe(hiddenSnapshot);
+    expect(panel.webview.html).not.toContain('CELLAPP2');
+
+    // 恢复可见:立即以最新状态补渲(不丢数据、不等下一拍)
+    panelRegistry.fireViewState(panel, true);
+    expect(panel.webview.html).toContain('CELLAPP2');
+  });
+});

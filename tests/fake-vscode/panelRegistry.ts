@@ -23,8 +23,15 @@ export interface FakeWebviewPanel {
   disposed: boolean;
   /** 测试驱动面:被捕获的消息监听器(fireMessage 逐个调用) */
   readonly messageListeners: Array<(message: unknown) => void>;
+  /** 测试驱动面:被捕获的显隐监听器(fireViewState 逐个调用并同步 visible) */
+  readonly viewStateListeners: Array<(event: { webviewPanel: FakeWebviewPanel }) => void>;
   readonly disposeListeners: Array<() => void>;
   onDidDispose(listener: () => void): { dispose(): void };
+  onDidChangeViewState(
+    listener: (event: { webviewPanel: FakeWebviewPanel }) => void,
+    thisArg?: unknown,
+    disposables?: Array<{ dispose(): void }>
+  ): { dispose(): void };
   reveal(): void;
   dispose(): void;
 }
@@ -59,6 +66,7 @@ function createPanel(viewType: string, title: string, showOptions: unknown, opti
     revealed: false,
     disposed: false,
     messageListeners: [],
+    viewStateListeners: [],
     disposeListeners: [],
     onDidDispose(listener: () => void): { dispose(): void } {
       panel.disposeListeners.push(listener);
@@ -67,6 +75,21 @@ function createPanel(viewType: string, title: string, showOptions: unknown, opti
           const index = panel.disposeListeners.indexOf(listener);
           if (index >= 0) {
             panel.disposeListeners.splice(index, 1);
+          }
+        }
+      };
+    },
+    onDidChangeViewState(
+      listener: (event: { webviewPanel: FakeWebviewPanel }) => void,
+      _thisArg?: unknown,
+      _disposables?: Array<{ dispose(): void }>
+    ): { dispose(): void } {
+      panel.viewStateListeners.push(listener);
+      return {
+        dispose: (): void => {
+          const index = panel.viewStateListeners.indexOf(listener);
+          if (index >= 0) {
+            panel.viewStateListeners.splice(index, 1);
           }
         }
       };
@@ -85,6 +108,7 @@ function createPanel(viewType: string, title: string, showOptions: unknown, opti
       }
       panel.disposeListeners.length = 0;
       panel.messageListeners.length = 0;
+      panel.viewStateListeners.length = 0;
     }
   };
   return panel;
@@ -103,6 +127,13 @@ export const panelRegistry = {
   fireMessage(panel: FakeWebviewPanel, message: unknown): void {
     for (const listener of [...panel.messageListeners]) {
       listener(message);
+    }
+  },
+  /** 模拟面板显隐切换:同步 visible 并触发 onDidChangeViewState 监听 */
+  fireViewState(panel: FakeWebviewPanel, visible: boolean): void {
+    panel.visible = visible;
+    for (const listener of [...panel.viewStateListeners]) {
+      listener({ webviewPanel: panel });
     }
   },
   /** 触发面板销毁监听(与 panel.dispose() 等价,额外入注册表核对) */
