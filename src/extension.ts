@@ -790,6 +790,24 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(eventCodeLensProvider, eventCodeLensProviderImpl);
   context.subscriptions.push(sharedWorkspaceIndex);
+  // EVT-012 冷路径(2026-10-28 审核整改):共享索引首扫提前到启动期后台
+  // 队列(KBEngine 特征门控与首扫口径一致),首次交互 CodeLens 不再是
+  // 全仓扫描的触发点;扫描本身逐文件让出宿主(见 workspaceIndex)。
+  // 门控外工作区保持懒启动:无事件调用的纯 Python 仓零后台扫描。
+  void shouldStartKbEngineIndexing().then(gated => {
+    if (!gated) { return; }
+    void indexScheduler.enqueue({
+      kind: 'non-interactive',
+      priority: IndexTaskPriority.NonInteractive,
+      run: async () => {
+        try {
+          await sharedWorkspaceIndex.ensureStarted();
+        } catch {
+          // 首扫失败不拖垮启动:交互侧首用时仍可按需重扫(幂等)
+        }
+      }
+    }).wait;
+  });
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
   // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开

@@ -23,6 +23,10 @@ interface IndexedFile {
 
 const INITIAL_SCAN_CONCURRENCY = 8;
 
+/** EVT-012 冷路径(2026-10-28 审核整改):首扫逐文件解析按趟让出宿主,
+ * 冷扫不再以整批同步块占住交互线程(setImmediate 宏任务边界)。 */
+const yieldToHost = (): Promise<void> => new Promise(resolve => { setImmediate(resolve); });
+
 export class WorkspaceIndex {
   private readonly cache = new Map<string, IndexedFile>();
   private readonly building = new Map<string, Promise<IndexedFile | null>>();
@@ -123,6 +127,12 @@ export class WorkspaceIndex {
           return this.cache.get(uri.fsPath) ?? null;
         }
         const text = Buffer.from(bytes).toString('utf8');
+        // 让出边界后重验:让出窗口内的保存/销毁按既有口径处置(弃旧解析,
+        // 不覆盖新数据),窗口本身不引入行为差。
+        await yieldToHost();
+        if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
+          return this.cache.get(uri.fsPath) ?? null;
+        }
         const lineStarts = [0];
         for (let i = 0; i < text.length; i += 1) {
           if (text[i] === '\n') lineStarts.push(i + 1);
@@ -141,7 +151,14 @@ export class WorkspaceIndex {
           name: m[1],
           line: lineAt(m.index || 0),
         }));
+        await yieldToHost();
+        if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
+          return this.cache.get(uri.fsPath) ?? null;
+        }
         const eventCalls = findEventCalls(text);
+        if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
+          return this.cache.get(uri.fsPath) ?? null;
+        }
         const indexed: IndexedFile = { version: 0, methods, eventCalls, eventLines: eventCalls.map(c => lineAt(c.eventOffset)) };
         this.cache.set(uri.fsPath, indexed);
         return indexed;
