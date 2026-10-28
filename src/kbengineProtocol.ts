@@ -77,7 +77,7 @@ export const COMPONENT_NAMES = [
   'tool'
 ];
 
-const WATCHER_QUERY_MSG_IDS: Record<number, number> = {
+export const WATCHER_QUERY_MSG_IDS: Record<number, number> = {
   1: 41006,
   2: 41003,
   3: 41004,
