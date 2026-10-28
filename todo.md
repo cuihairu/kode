@@ -501,7 +501,7 @@
 ### IDE-REL · 扩展发布与旧版共存（P1）
 
 来源：审计 §5/§6；package.json 与构建发布流程。
-- [ ] IDE-REL-001 [P1] 检测两个 Kode ID 是否同时激活；验收：只有实际共激活才提示冲突，不把已安装但禁用当作冲突；前置：IDE-MET-001。
+- [x] IDE-REL-001 [P1] 检测两个 Kode ID 是否同时激活；验收：只有实际共激活才提示冲突，不把已安装但禁用当作冲突；前置：IDE-MET-001。（17564c9;新 src/dualActivationConflict.ts 纯判定模块:detectDualActivation(facts)——activeIds=isActive 的 ID 字典序(≥2 才 conflict),inactiveInstalledIds=在 extensions.all 里但未激活的如实分列不算冲突;formatDualActivationWarning 冲突才产文案点名共激活 ID(无冲突 null 零打扰);被禁用扩展不进 extensions.all 采集面天然见不到=不虚报;extension.ts 装配=激活时筛 Kode 系(cuihairu. 前缀+id 含 kode)映射 {id,isActive}→检测→冲突才 showWarningMessage;fake-vscode 补 extensionsState 替身(fakeExtensionList 可变数组+extensions.all,vscodeStub re-export)——坑=激活直体路径读 vscode.extensions.all 而旧替身无此面,87 例激活测试全炸(TypeError),补替身后全绿;prove-red=tests/dualActivationConflict.test.ts Cannot find module 整文件红 7 例+extension.test.ts 装配用例(注入两激活 kode 系→警告含同时激活/单激活→无警告);import +1 行(extensionIdentity 后)九锚 389..1110→390..1111 与 baseline 引证同笔迁移;门禁=eslint 0/tsc 0/unit 3938|7(346)/demo 25 RC=0/docs build 绿;docs=features.md+zh REL-001 条目(无新命令,commands 不动)）
 - [ ] IDE-REL-002 [P1] 记录旧扩展 ID 的迁移说明；验收：文档给出旧 ID、新 ID 和保留用户设置的迁移步骤；前置：IDE-REL-001。
 - [ ] IDE-REL-003 [P1] 核验 VSIX 包含 parser worker 产物；验收：打包后可直接找到 worker 文件并从包内路径启动；前置：无。
 - [ ] IDE-REL-004 [P1] 在 VSIX 中暴露构建身份；验收：安装产物报告的提交与构建输入一致，源码目录版本不冒充已安装版本；前置：IDE-MET-002。
