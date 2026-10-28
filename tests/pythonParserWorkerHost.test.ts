@@ -159,6 +159,55 @@ describe('pythonParserWorkerHost worker 路径(审核发现 :185)', () => {
     await expect(empty).rejects.toThrow('empty parser result');
   });
 
+  it('快速提交 v1/v2/v3:未运行的旧版本不逐份派发(同文件合并,只发最新)', async () => {
+    const host = await loadHost();
+    const v1 = host.parsePythonFileResponsive(bigContent, '/burst.py', 1);
+    const v2 = host.parsePythonFileResponsive(bigContent, '/burst.py', 2);
+    const v3 = host.parsePythonFileResponsive(bigContent, '/burst.py', 3);
+    const worker = workerState.instances[0];
+    // 同文件:仅 v1 在途,未回包前不逐份派发 v2/v3(未运行的旧版本不解析)
+    expect(worker.posted).toHaveLength(1);
+    expect(worker.posted[0]).toMatchObject({ filePath: '/burst.py', revision: 1 });
+
+    worker.emit('message', { id: worker.posted[0].id, revision: 1, parsed: parsedStub });
+    await expect(v1).resolves.toEqual({ revision: 1, parsed: parsedStub });
+    // v1 回包后只派发最新 v3(v2 未运行即被合并)
+    expect(worker.posted).toHaveLength(2);
+    expect(worker.posted[1]).toMatchObject({ filePath: '/burst.py', revision: 3 });
+    worker.emit('message', { id: worker.posted[1].id, revision: 3, parsed: parsedStub });
+    // v2/v3 以同一(最新)结果结算;v2 调用方按 revision 比对丢弃
+    await expect(v2).resolves.toEqual({ revision: 3, parsed: parsedStub });
+    await expect(v3).resolves.toEqual({ revision: 3, parsed: parsedStub });
+    // 链尾收口:全部结算后无残留待派发
+    expect(worker.posted).toHaveLength(2);
+  });
+
+  it('合并不跨文件:不同文件的在途任务各自即时派发', async () => {
+    const host = await loadHost();
+    const a = host.parsePythonFileResponsive(bigContent, '/a.py', 1);
+    const b = host.parsePythonFileResponsive(bigContent, '/b.py', 2);
+    const worker = workerState.instances[0];
+    expect(worker.posted).toHaveLength(2);
+    worker.emit('message', { id: worker.posted[0].id, revision: 1, parsed: parsedStub });
+    worker.emit('message', { id: worker.posted[1].id, revision: 2, parsed: parsedStub });
+    await expect(a).resolves.toMatchObject({ revision: 1 });
+    await expect(b).resolves.toMatchObject({ revision: 2 });
+  });
+
+  it('在途+未派发最新并存时 worker 崩溃:两代等待者全部拒绝,后续请求重开新线程', async () => {
+    const host = await loadHost();
+    const v1 = host.parsePythonFileResponsive(bigContent, '/c.py', 1);
+    const v2 = host.parsePythonFileResponsive(bigContent, '/c.py', 2);
+    workerState.instances[0].emit('error', new Error('worker crash'));
+    await expect(v1).rejects.toThrow('worker crash');
+    await expect(v2).rejects.toThrow('worker crash');
+    // 队列已清:重开同文件不受上一代残留影响
+    const v3 = host.parsePythonFileResponsive(bigContent, '/c.py', 3);
+    const rebuilt = workerState.instances[1];
+    rebuilt.emit('message', { id: rebuilt.posted[0].id, revision: 3, parsed: parsedStub });
+    await expect(v3).resolves.toEqual({ revision: 3, parsed: parsedStub });
+  });
+
   it('不认识 id 的回包被忽略,不影响在途请求', async () => {
     const host = await loadHost();
     const pending = host.parsePythonFileResponsive(bigContent, '/a.py', 1);

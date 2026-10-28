@@ -17,13 +17,64 @@ interface PendingParse {
   reject: (error: Error) => void;
 }
 
+/** 一次解析任务(IDE-RES-001:waiters 可多于一个——未派发即被更新版本
+ *  合并的旧请求,其等待者改跟合并后任务的结果结算;调用方按 revision
+ *  比对丢弃,语义与旧行为一致)。 */
+interface HostedJob {
+  id: number;
+  filePath: string;
+  content: string;
+  revision: number;
+  waiters: PendingParse[];
+}
+
+/** 同文件派发链:在途一个 + 待派发最新一个。快速提交 v1/v2/v3 时,
+ *  未运行的旧版本(尚未派发给 worker)不逐份解析——只有首份与最新份
+ *  进 worker,中间版本零解析直接以最新结果结算。 */
+interface FileQueue {
+  inFlight: HostedJob | null;
+  pendingLatest: HostedJob | null;
+}
+
 let worker: Worker | null = null;
 let nextId = 1;
-const pending = new Map<number, PendingParse>();
+const posted = new Map<number, HostedJob>();
+const fileQueues = new Map<string, FileQueue>();
 
 function failPending(error: Error): void {
-  for (const job of pending.values()) { job.reject(error); }
-  pending.clear();
+  for (const job of posted.values()) {
+    for (const waiter of job.waiters) { waiter.reject(error); }
+  }
+  for (const queue of fileQueues.values()) {
+    const latest = queue.pendingLatest;
+    if (latest) {
+      for (const waiter of latest.waiters) { waiter.reject(error); }
+    }
+  }
+  posted.clear();
+  fileQueues.clear();
+}
+
+/** 派发队列下一项:在途空且有待派发最新时接链 */
+function drainQueue(queue: FileQueue): void {
+  if (queue.inFlight || !queue.pendingLatest) { return; }
+  const next = queue.pendingLatest;
+  queue.pendingLatest = null;
+  dispatchJob(queue, next);
+}
+
+function dispatchJob(queue: FileQueue, job: HostedJob): void {
+  queue.inFlight = job;
+  posted.set(job.id, job);
+  try {
+    ensureWorker().postMessage({ id: job.id, content: job.content, filePath: job.filePath, revision: job.revision });
+  } catch (error) {
+    posted.delete(job.id);
+    queue.inFlight = null;
+    const failure = error instanceof Error ? error : new Error(String(error));
+    for (const waiter of job.waiters) { waiter.reject(failure); }
+    drainQueue(queue);
+  }
 }
 
 function ensureWorker(): Worker {
@@ -31,11 +82,20 @@ function ensureWorker(): Worker {
   const created = new Worker(path.join(__dirname, 'pythonParserWorker.js'));
   created.unref();
   created.on('message', (reply: ParseReply) => {
-    const job = pending.get(reply.id);
+    const job = posted.get(reply.id);
     if (!job) { return; }
-    pending.delete(reply.id);
-    if (reply.error || !reply.parsed) { job.reject(new Error(reply.error ?? 'empty parser result')); }
-    else { job.resolve({ revision: reply.revision, parsed: reply.parsed }); }
+    posted.delete(reply.id);
+    const queue = fileQueues.get(job.filePath);
+    if (queue && queue.inFlight === job) { queue.inFlight = null; }
+    if (reply.error || !reply.parsed) {
+      const failure = new Error(reply.error ?? 'empty parser result');
+      for (const waiter of job.waiters) { waiter.reject(failure); }
+    } else {
+      for (const waiter of job.waiters) {
+        waiter.resolve({ revision: reply.revision, parsed: reply.parsed });
+      }
+    }
+    if (queue) { drainQueue(queue); }
   });
   const failed = (error: Error): void => {
     if (worker !== created) { return; }
@@ -58,15 +118,24 @@ export async function parsePythonFileResponsive(
   if (content.length < PYTHON_WORKER_PARSE_THRESHOLD || !fs.existsSync(workerFile)) {
     return { revision, parsed: parsePythonFile(content, filePath) };
   }
-  const id = nextId++;
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    try { ensureWorker().postMessage({ id, content, filePath, revision }); }
-    catch (error) {
-      pending.delete(id);
-      reject(error instanceof Error ? error : new Error(String(error)));
-    }
+  const job: HostedJob = { id: nextId++, filePath, content, revision, waiters: [] };
+  const promise = new Promise<{ revision: number; parsed: ParsedPythonFile }>((resolve, reject) => {
+    job.waiters.push({ resolve, reject });
   });
+  const queue = fileQueues.get(filePath) ?? { inFlight: null, pendingLatest: null };
+  fileQueues.set(filePath, queue);
+  if (queue.inFlight === null && queue.pendingLatest === null) {
+    dispatchJob(queue, job);
+    return promise;
+  }
+  // 同文件在途:未派发的上一版被本版合并(等待者改跟本版结果);
+  // 已在途的那份不可抢占,回包后本版接链派发
+  const superseded = queue.pendingLatest;
+  if (superseded) {
+    job.waiters.push(...superseded.waiters);
+  }
+  queue.pendingLatest = job;
+  return promise;
 }
 
 export function disposePythonParserWorker(): void {
