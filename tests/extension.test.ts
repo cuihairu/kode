@@ -159,6 +159,8 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.documentSymbolRegistrations).toHaveLength(1);
     // IDE-NAV-006:工作区符号(Ctrl+T)单注册
     expect(languagesRegistry.workspaceSymbolRegistrations).toHaveLength(1);
+    // IDE-NAV-007:Go to Implementations 单注册
+    expect(languagesRegistry.implementationRegistrations).toHaveLength(1);
     expect(languagesRegistry.callHierarchyRegistrations).toHaveLength(1);
     expect(languagesRegistry.renameRegistrations).toHaveLength(1);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml

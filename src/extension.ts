@@ -127,6 +127,7 @@ import {
   KBEngineReferencesProvider,
   KBEngineDocumentSymbolProvider,
   KBEngineWorkspaceSymbolProvider,
+  KBEngineImplementationProvider,
   KBEngineCompletionProvider,
   EventCodeLensProvider,
   KBEngineDefinitionProvider,
@@ -929,6 +930,13 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineWorkspaceSymbolProvider(entityMappingManager)
   );
   context.subscriptions.push(workspaceSymbolProvider);
+
+  // IDE-NAV-007:Go to Implementations——def 方法按精确声明身份出实现列表
+  const implementationProvider = vscode.languages.registerImplementationProvider(
+    defDocumentSelector,
+    new KBEngineImplementationProvider(entityMappingManager)
+  );
+  context.subscriptions.push(implementationProvider);
 
   // 注册重命名提供者(.def 属性/方法 F2 重命名,引用面见 defRenamer 头注)
   const renameProvider = vscode.languages.registerRenameProvider(

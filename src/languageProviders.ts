@@ -5260,6 +5260,60 @@ export class KBEngineWorkspaceSymbolProvider implements vscode.WorkspaceSymbolPr
   }
 }
 
+/**
+ * IDE-NAV-007:def 方法到 Python 的实现查询(Go to Implementations)——
+ * 统一符号身份链(与引用/调用层级同源:findDefSymbolInfo →
+ * resolveDefinitionSymbolAtPosition)后经 listMethodImplementationsByIdentity
+ * 出实现列表;属性段与非 def 文档不接管,取消位 null。
+ */
+export class KBEngineImplementationProvider implements vscode.ImplementationProvider {
+  constructor(private entityMappingManager: EntityMappingManager) {}
+
+  async provideImplementation(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.Location[] | null> {
+    if (token?.isCancellationRequested) { return null; }
+    if (
+      document.languageId !== 'kbengine-def' &&
+      !document.fileName.toLowerCase().endsWith('.def')
+    ) {
+      return null;
+    }
+    const range = document.getWordRangeAtPosition(position, /\w+/);
+    if (!range) {
+      return null;
+    }
+    const symbolInfo = findDefSymbolInfo(document, position, document.getText(range));
+    if (!symbolInfo || !METHOD_SECTIONS.has(symbolInfo.section)) {
+      return null;
+    }
+    const ast = parseDefAst(document);
+    if (!ast) {
+      return null;
+    }
+    const identity = await this.entityMappingManager.resolveDefinitionSymbolAtPosition(
+      document.fileName,
+      getLineNumberAt(ast, symbolInfo.symbolNode.tagStart),
+      symbolInfo.symbolNode.name,
+      symbolInfo.section as EntityMethodSection
+    );
+    if (!identity || token?.isCancellationRequested) {
+      return null;
+    }
+    const implementations =
+      await this.entityMappingManager.listMethodImplementationsByIdentity(identity, token);
+    if (token?.isCancellationRequested) {
+      return null;
+    }
+    return implementations.map(implementation => new vscode.Location(
+      vscode.Uri.file(implementation.filePath),
+      new vscode.Position(Math.max(0, implementation.line - 1), implementation.character)
+    ));
+  }
+}
+
 export class KBEngineRenameProvider implements vscode.RenameProvider {
   /**
    * .def 属性/方法重命名(重构支持):符号解析与引用编辑计算在 defRenamer

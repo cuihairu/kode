@@ -84,6 +84,7 @@
 - **形态向导** —— 一次生成代理/空间/组件/固定字典骨架 ——（证据：package.json#contributes.commands `kbengine.generator.formWizard`；todo.md:44）
 - **def 重命名** —— 重命名 provider 跨 def 文件解析链接路径 ——（证据：src/defRenamer.ts；src/languageProviders.ts `KBEngineRenameProvider`）
 - **调用层级** —— def 与 Python 符号的 prepare/callers/callees ——（证据：src/languageProviders.ts `KBEngineCallHierarchyProvider`）
+- **实现查询（Go to Implementations，def 方法）** —— def 方法声明按精确符号身份出实现列表（属主绑定与段属主脚本；不含全项目名字猜测回退）——（证据：src/entityMapping.ts `listMethodImplementationsByIdentity`；src/languageProviders.ts `KBEngineImplementationProvider`）
 - **工作区符号（Ctrl+T）** —— 已索引 def 符号按名称前缀跨 root 查询，返回 root/段容器信息，查询不触发全仓扫描 ——（证据：src/entityMapping.ts `searchDefSymbolsByPrefix`；src/languageProviders.ts `KBEngineWorkspaceSymbolProvider`）
 - **def 文档符号（Outline）** —— Properties 与三方法段作容器，段内声明作子符号，范围精确到元素全跨度 ——（证据：src/languageProviders.ts `KBEngineDocumentSymbolProvider`）
 - **def 引用查询（Shift+F12）** —— def 属性/方法引用按 owner 注册面归属：属性 `self` 访问、方法调用经统一符号身份链、receiver RPC 调用（`self.cell.X` / `self.base.X` / `self.client.X`）按段分开统计；结果跟随未保存缓冲区（打开文档快照优先、磁盘兜底）——（证据：src/languageProviders.ts `KBEngineReferencesProvider`；src/entityMapping.ts `getIncomingPythonMethodCalls`）

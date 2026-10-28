@@ -17,6 +17,7 @@ const definitionRegistrations: ProviderRegistration[] = [];
 const referenceRegistrations: ProviderRegistration[] = [];
 const documentSymbolRegistrations: ProviderRegistration[] = [];
 const workspaceSymbolRegistrations: ProviderRegistration[] = [];
+const implementationRegistrations: ProviderRegistration[] = [];
 const callHierarchyRegistrations: ProviderRegistration[] = [];
 const renameRegistrations: ProviderRegistration[] = [];
 const signatureHelpRegistrations: ProviderRegistration[] = [];
@@ -47,6 +48,7 @@ export const languages = {
   registerReferenceProvider: register(referenceRegistrations),
   registerDocumentSymbolProvider: register(documentSymbolRegistrations),
   registerWorkspaceSymbolProvider: register(workspaceSymbolRegistrations),
+  registerImplementationProvider: register(implementationRegistrations),
   registerCallHierarchyProvider: register(callHierarchyRegistrations),
   registerRenameProvider: register(renameRegistrations),
   registerSignatureHelpProvider: register(signatureHelpRegistrations),
@@ -66,6 +68,7 @@ export const languagesRegistry = {
   referenceRegistrations,
   documentSymbolRegistrations,
   workspaceSymbolRegistrations,
+  implementationRegistrations,
   callHierarchyRegistrations,
   renameRegistrations,
   signatureHelpRegistrations,
@@ -79,6 +82,7 @@ export const languagesRegistry = {
     referenceRegistrations.length = 0;
     documentSymbolRegistrations.length = 0;
     workspaceSymbolRegistrations.length = 0;
+    implementationRegistrations.length = 0;
     callHierarchyRegistrations.length = 0;
     renameRegistrations.length = 0;
     signatureHelpRegistrations.length = 0;

@@ -1504,6 +1504,62 @@ export class EntityMappingManager {
   }
 
   /**
+   * IDE-NAV-007:def 方法实现列表(Go to Implementations)。按精确声明身份
+   * 收全部实现:绑定命中(pythonMethods.binding sameIdentity)+ 段属主脚本
+   * 同名定义(owner 注册面 ownerName/ownerKind/section 匹配的每个文件),
+   * 按文件去重。不含全项目唯一名回退——那是 F12 按名字猜的导航兜底,
+   * 不是实现(Go to Impl 不猜)。
+   */
+  async listMethodImplementationsByIdentity(
+    identity: DefinitionSymbolIdentity,
+    token?: vscode.CancellationToken
+  ): Promise<Array<{ filePath: string; line: number; character: number }>> {
+    this.ensureStartup();
+    const index = await this.ensureIndexForOwner(identity);
+    if (!index || token?.isCancellationRequested) {
+      return [];
+    }
+
+    const implementations: Array<{ filePath: string; line: number; character: number }> = [];
+    const seenFiles = new Set<string>();
+
+    for (const method of index.pythonMethods) {
+      if (token?.isCancellationRequested) { return implementations; }
+      if (!method.binding || !sameIdentity(method.binding.identity, identity)) {
+        continue;
+      }
+      const key = normalizeLookupPath(method.filePath);
+      if (seenFiles.has(key)) {
+        continue;
+      }
+      seenFiles.add(key);
+      implementations.push({ filePath: method.filePath, line: method.line, character: method.character });
+    }
+
+    const section = identity.section;
+    const candidates = index.pythonOwnerFiles
+      .filter(item =>
+        item.ownerName === identity.ownerName
+        && item.ownerKind === identity.ownerKind
+        && (!section || item.section === section))
+      .map(item => item.filePath);
+    for (const filePath of uniqueFilePaths(candidates)) {
+      if (token?.isCancellationRequested) { return implementations; }
+      if (seenFiles.has(normalizeLookupPath(filePath))) {
+        continue;
+      }
+      const location = this.findPythonMethodLine(filePath, identity.symbolName);
+      if (!location) {
+        continue;
+      }
+      seenFiles.add(normalizeLookupPath(filePath));
+      implementations.push({ filePath, line: location.line, character: location.character });
+    }
+
+    return implementations;
+  }
+
+  /**
    * 全项目 python 回退(用户令 2026-10-20):方法名在全项目 py 中唯一命中才返回,
    * 多处/零处一律 null(静默,不误跳)。给 def 侧 identity 未命中/未绑定实现的
    * 两个早落分支复用——那两支不经过 resolveMethodImplementationByIdentity。
