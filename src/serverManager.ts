@@ -13,6 +13,7 @@ import {
   type DependencyReadyState,
   type LaunchTargetSpec
 } from './launchDependencies';
+import { resolveActiveProfile } from './activeProfile';
 
 /**
  * KBEngine 服务器组件信息
@@ -158,6 +159,14 @@ export interface RunningServer {
   status: ServerStatus;
   startTime: Date;
   logs: string[];
+  /**
+   * 启动解析快照(PRJ-012):本实例启动那一刻实际使用的引擎 bin 与配置根
+   * 及当时活动 profile 的稳定 ID(无 profile 为 null)。启动时一次写定,
+   * 此后 profile 切换不改变已运行实例的身份——下一次启动才用新选择。
+   */
+  binPath: string;
+  configPath: string;
+  profileId: string | null;
   /** 就绪等待放弃原因(RUN-004):超时/取消后等待终止,状态保持 Starting,绝不误标 Running */
   readinessGivenUp?: 'timeout' | 'cancelled';
   /** 就绪等待取消柄(RUN-004):stopComponent 置位,等待轮询即终止 */
@@ -323,9 +332,34 @@ export class KBEngineServerManager {
   }
 
   /**
+   * 活动 profile 的启动覆盖(PRJ-012):按稳定 ID 读当前选择(读时解析,
+   * 不缓存——profile 切换后下一次启动自然生效,已运行实例不受影响)。
+   * engineRoot 非空 → kbe/bin/server 推导 binPath;assetsRoot 非空 →
+   * 配置根;字段为空不覆盖该项,如实回落设置/发现链。无选择/极简装配
+   * 无 memento/记录已删(陈旧选择)都返回 null。
+   */
+  private getActiveProfileLaunchRoots(): { profileId: string; binPath?: string; configPath?: string } | null {
+    const profile = resolveActiveProfile(this.context.workspaceState);
+    if (!profile) {
+      return null;
+    }
+    return {
+      profileId: profile.id,
+      binPath: profile.engineRoot ? path.join(profile.engineRoot, 'kbe', 'bin', 'server') : undefined,
+      configPath: profile.assetsRoot || undefined
+    };
+  }
+
+  /**
    * 获取 KBEngine 二进制路径
    */
   getBinPath(): string {
+    // 活动 profile 的引擎根优先(显式选择优先于设置与自动发现)
+    const profileBinPath = this.getActiveProfileLaunchRoots()?.binPath;
+    if (profileBinPath) {
+      return profileBinPath;
+    }
+
     const config = vscode.workspace.getConfiguration('kbengine');
     let binPath = config.get<string>('binPath', '');
 
@@ -391,6 +425,13 @@ export class KBEngineServerManager {
    * 让启动检查链给出带期望形态的报错
    */
   getConfigPath(): string {
+    // 活动 profile 的资产根优先:所选 profile 的配置根是权威输入,探针未
+    // 通过也不回落工作区发现(回落会静默启动到别的 profile 的配置上)
+    const profileConfigPath = this.getActiveProfileLaunchRoots()?.configPath;
+    if (profileConfigPath) {
+      return profileConfigPath;
+    }
+
     const config = vscode.workspace.getConfiguration('kbengine');
     let configPath = config.get<string>('assetsRoot', '');
 
@@ -508,6 +549,7 @@ export class KBEngineServerManager {
     const exePath = this.getExecutablePath(component);
     const binPath = this.getBinPath();
     const configPath = this.getConfigPath();
+    const launchProfile = this.getActiveProfileLaunchRoots();
 
     // 检查可执行文件是否存在
     if (!fs.existsSync(exePath)) {
@@ -547,6 +589,9 @@ export class KBEngineServerManager {
     this.log(component, RuntimeLogLevel.INFO, `正在启动 ${component.displayName}...`);
     this.log(component, RuntimeLogLevel.INFO, `可执行文件: ${exePath}`);
     this.log(component, RuntimeLogLevel.INFO, `配置目录: ${configPath}`);
+    if (launchProfile) {
+      this.log(component, RuntimeLogLevel.INFO, `活动 profile: ${launchProfile.profileId}（引擎与配置根来自该 profile）`);
+    }
     this.log(component, RuntimeLogLevel.INFO, `启动参数: ${(component.defaultArgs || []).join(' ') || '(none)'}`);
 
     try {
@@ -578,6 +623,10 @@ export class KBEngineServerManager {
         status: ServerStatus.Starting,
         startTime: new Date(),
         logs: [],
+        // 启动解析快照(PRJ-012):此刻的引擎/配置根与活动 profile,切换不回溯
+        binPath,
+        configPath,
+        profileId: launchProfile?.profileId ?? null,
         readinessCancel
       };
 
