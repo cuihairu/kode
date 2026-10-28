@@ -299,6 +299,7 @@
 
 - 标题：`Generate Client Entity SDK`
 - 作用：按 `entities.xml` 登记的实体生成客户端实体骨架，语言在命令内勾选（TypeScript / C# 可多选），详见 [客户端实体 SDK 生成](./client-sdk.md)
+- profile 绑定：有活动 profile 时，实体注册顺序与类型数据只取该 profile 的资产根（`src/sdkGenerationProfile.ts`）；其他扫描根的同名实体拒收并在完成通知里逐个点名，绝不静默合并；无活动 profile 回落工作区首根
 
 ## 性能分析
 

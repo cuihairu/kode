@@ -338,6 +338,7 @@ The flow graph panel supports:
 
 - Title: `Generate Client Entity SDK`
 - Purpose: generate client entity skeletons from the entities registered in `entities.xml`; languages are checked inside the command (TypeScript / C#, multi-select) — see [Client Entity SDK Generation](./client-sdk.md)
+- Profile binding: with an active profile, entity registration order and type data are taken from that profile's assets root only (`src/sdkGenerationProfile.ts`); same-named entities from other scanned roots are rejected and named in the completion message, never silently merged; without an active profile the command falls back to the first workspace folder
 
 ### `kbengine.project.doctor`
 

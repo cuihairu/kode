@@ -119,6 +119,7 @@ import { EntityFlowWebView } from './entityFlowWebView';
 import { KBEngineCodeGenerator } from './codeGenerator';
 import { runGeneratorFormWizard } from './generatorForms';
 import { runClientSdkGenerateCommand } from './clientSdkGenerator';
+import { bindSdkGenerationToProfile } from './sdkGenerationProfile';
 import {
   EntityExplorerProvider,
   pickServerComponent,
@@ -234,7 +235,7 @@ import {
   KBENGINE_DATABASE_SIMULATION_SCHEME,
   KBEngineDatabaseSimulationProvider
 } from './databaseSimulator';
-import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities } from './definitionWorkspace';
+import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities, readWorkspaceTextFile } from './definitionWorkspace';
 import { scheduleBackgroundSchemaWarmup } from './schemaWarmup';
 import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
@@ -3026,10 +3027,39 @@ export function activate(context: vscode.ExtensionContext) {
   setActiveProfileScanRoot(startupProfile && startupProfile.assetsRoot ? startupProfile.assetsRoot : null);
 
   // 客户端实体 SDK 生成(盘点 G4):按 entities.xml 登记实体生成客户端语言骨架,
-  // 语言清单在命令内选(已代决首批 TS + C#)
+  // 语言清单在命令内选(已代决首批 TS + C#)。IDE-SDK-003 生成绑定活动
+  // profile:注册序与类型数据取所选 profile 资产根(getRegisteredEntities/
+  // getCustomTypeInfos 同一解析面),其他扫描根的同名实体经绑定模块拒收
+  // 点名(不静默覆盖);无活动 profile 回落工作区首根(旧口径)。
   const clientSdkGenerateCommand = vscode.commands.registerCommand(
     'kbengine.clientSdk.generate',
-    () => runClientSdkGenerateCommand()
+    () => {
+      const profile = resolveActiveProfile(context.workspaceState);
+      const profileRoot = profile?.assetsRoot || undefined;
+      if (!profileRoot) {
+        return runClientSdkGenerateCommand();
+      }
+      const binding = bindSdkGenerationToProfile(profileRoot, {
+        listRegistrations: root => getRegisteredEntities(root),
+        readTypesXml: root => {
+          const layout = getDefinitionWorkspaceLayout(root);
+          return layout.typesXmlPath ? readWorkspaceTextFile(layout.typesXmlPath) : null;
+        },
+        listOtherRootEntityNames: root => {
+          const names = new Set<string>();
+          for (const otherRoot of getIndexScanRoots()) {
+            if (otherRoot === root) {
+              continue;
+            }
+            for (const info of getRegisteredEntities(otherRoot)) {
+              names.add(info.name);
+            }
+          }
+          return [...names];
+        }
+      });
+      return runClientSdkGenerateCommand(profileRoot, binding.skippedSameNameFromOtherRoots);
+    }
   );
   context.subscriptions.push(clientSdkGenerateCommand);
 

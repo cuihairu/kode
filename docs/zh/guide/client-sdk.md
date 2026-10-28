@@ -6,6 +6,7 @@
 ## 能力概览
 
 - 生成来源：`entities.xml` 登记的实体，缺 `.def` 文件的登记项跳过
+- profile 绑定：有活动 profile 时，注册顺序与类型数据只取该 profile 的资产根（`src/sdkGenerationProfile.ts`）；其他扫描根的同名实体拒收并在完成通知里逐个点名，绝不静默合并；无活动 profile 用工作区首根
 - 属性面：只收 `Flags` 含客户端域（`BASE_AND_CLIENT`/`OWN_CLIENT`/`CELL_PUBLIC_AND_OWN`/`ALL_CLIENTS`/`OTHER_CLIENTS`）的项，成为可写字段
 - 回调面：`ClientMethods` 成为虚位回调，签名与参数类型齐全，方法体留 TODO
 - 请求面：带 `<Exposed>` 的 `BaseMethods`/`CellMethods` 成为包装调用

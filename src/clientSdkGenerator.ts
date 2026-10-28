@@ -688,10 +688,18 @@ export function generateClientSdkEntities(
   return { files, entities, skipped: files.filter(file => !file.written).length };
 }
 
-/** 命令编排：选语言 → 定输出目录 → 定覆盖策略 → 落盘 → 通知。任一步取消即无副作用返回。 */
-export async function runClientSdkGenerateCommand(): Promise<void> {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-  if (!workspaceFolder) {
+  /** 命令编排：选语言 → 定输出目录 → 定覆盖策略 → 落盘 → 通知。任一步取消即无副作用返回。
+   * IDE-SDK-003：profileRoot=活动 profile 资产根——实体注册序与类型数据
+   * 全部取自该根（generateClientSdkEntities 的注册/类型读取都吃该根），
+   * 不回落工作区根；skippedSameNameFromOtherRoots=其他根同名实体拒收
+   * 点名（装配侧经 bindSdkGenerationToProfile 算出，非空时通知点名，
+   * 不静默吞掉跨根歧义）。 */
+export async function runClientSdkGenerateCommand(
+  profileRoot?: string,
+  skippedSameNameFromOtherRoots?: string[]
+): Promise<void> {
+  const workspaceRoot = profileRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceRoot) {
     vscode.window.showErrorMessage('没有打开的工作区');
     return;
   }
@@ -706,7 +714,7 @@ export async function runClientSdkGenerateCommand(): Promise<void> {
 
   const config = vscode.workspace.getConfiguration('kbengine');
   const outputDir = await vscode.window.showInputBox({
-    prompt: '客户端实体 SDK 输出目录（相对工作区根）',
+    prompt: '客户端实体 SDK 输出目录（相对生成根）',
     value: config.get<string>(CLIENT_SDK_OUTPUT_DIR_KEY, CLIENT_SDK_DEFAULT_OUTPUT_DIR)
   });
   if (outputDir === undefined) {
@@ -726,12 +734,14 @@ export async function runClientSdkGenerateCommand(): Promise<void> {
       outputDir,
       overwrite: overwriteChoice.value === 'overwrite'
     },
-    workspaceFolder.uri.fsPath
+    workspaceRoot
   );
 
   const written = result.files.filter(file => file.written);
   const writtenPath = written[0]?.path;
+  const skippedNames = skippedSameNameFromOtherRoots ?? [];
+  const skippedNote = skippedNames.length > 0 ? `；跨根同名未覆盖：${skippedNames.join('、')}` : '';
   vscode.window.showInformationMessage(
-    `客户端实体 SDK 已生成 ${written.length} 个文件${writtenPath ? `（${writtenPath}）` : ''}，跳过 ${result.skipped} 个`
+    `客户端实体 SDK 已生成 ${written.length} 个文件${writtenPath ? `（${writtenPath}）` : ''}，跳过 ${result.skipped} 个${skippedNote}`
   );
 }

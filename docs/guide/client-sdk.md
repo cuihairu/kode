@@ -6,6 +6,7 @@ Generates client entity skeletons from `.def` files for the entities registered 
 ## Overview
 
 - Generation source: entities registered in `entities.xml`; registered entries missing a `.def` file are skipped
+- Profile binding: with an active profile, registration order and type data come from that profile's assets root only (`src/sdkGenerationProfile.ts`); same-named entities from other scanned roots are rejected and named in the completion message, never silently merged; without an active profile the first workspace folder is used
 - Property surface: only items whose `Flags` include a client domain (`BASE_AND_CLIENT`/`OWN_CLIENT`/`CELL_PUBLIC_AND_OWN`/`ALL_CLIENTS`/`OTHER_CLIENTS`) become writable fields
 - Callback surface: `ClientMethods` become virtual callback slots with full signatures and parameter types, bodies left as TODO
 - Request surface: `BaseMethods`/`CellMethods` carrying `<Exposed>` become wrapper calls

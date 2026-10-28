@@ -715,6 +715,50 @@ describe('runClientSdkGenerateCommand', () => {
     expect(messages.error).toHaveLength(1);
     expect(messages.info).toHaveLength(0);
   });
+
+  // IDE-SDK-003 SDK 生成绑定目标 profile:profileRoot=所选 profile 资产根,
+  // 实体注册序与类型数据全部取自该根(工作区根不含 entities.xml 也不回落);
+  // 其他根同名实体拒收不覆盖,完成通知逐个点名。
+  it('profileRoot 绑定:生成输入取自所选根,不回落工作区根', async () => {
+    const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-cmd-profile-'));
+    try {
+      const defsDir = path.join(profileRoot, 'scripts', 'entity_defs');
+      fs.mkdirSync(defsDir, { recursive: true });
+      fs.writeFileSync(path.join(profileRoot, 'scripts', 'entities.xml'), '<root>\n  <Avatar hasBase="true"/>\n</root>\n', 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'Avatar.def'), FULL_DEF, 'utf8');
+
+      // 工作区根指向空目录(无 entities.xml):绑定生效则生成仍来自 profileRoot
+      const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-cmd-empty-'));
+      try {
+        workspaceish.workspaceFolders = [
+          { uri: Uri.file(emptyRoot), name: 'empty', index: 0 }
+        ];
+        windowish.showQuickPick = async (): Promise<unknown> => [{ value: 'typescript' }];
+        windowish.showInputBox = async (): Promise<string | undefined> => 'client_entities';
+
+        await runClientSdkGenerateCommand(profileRoot);
+
+        expect(fs.existsSync(path.join(profileRoot, 'client_entities', 'Avatar.ts'))).toBe(true);
+        expect(fs.existsSync(path.join(emptyRoot, 'client_entities'))).toBe(false);
+      } finally {
+        fs.rmSync(emptyRoot, { recursive: true, force: true });
+      }
+    } finally {
+      fs.rmSync(profileRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('跨根同名拒收点名:skippedSameNameFromOtherRoots 非空 → 通知点名未覆盖', async () => {
+    windowish.showQuickPick = async (): Promise<unknown> => [{ value: 'typescript' }];
+    windowish.showInputBox = async (): Promise<string | undefined> => 'scripts/client_entities';
+
+    await runClientSdkGenerateCommand(workspaceRoot, ['Avatar', 'Monster']);
+
+    const last = messages.info[messages.info.length - 1];
+    expect(last).toContain('跨根同名未覆盖');
+    expect(last).toContain('Avatar');
+    expect(last).toContain('Monster');
+  });
 });
 
 function requireResolve(typeMap: ClientSdkTypeMap, type: string, elementType: string | null): string {
