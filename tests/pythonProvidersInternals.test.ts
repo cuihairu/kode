@@ -495,6 +495,9 @@ describe('PythonCompletionProvider', () => {
 
   it('returns null when the python file has no mapping', () => {
     const manager = {
+      // IDE-NAV-016:暖态桩(首扫已完成)——真无归属回 null;冷态回可刷新
+      // 空 CompletionList 由 pythonCompletionColdRefresh.test.ts 锁
+      isInitialScanComplete: () => true,
       getMappingForPythonFile: () => undefined
     } as unknown as EntityMappingManager;
 
@@ -608,6 +611,7 @@ describe('PythonCompletionProvider kbe 模块符号补全(批108 装配)', () =>
 
   it('非模块语境不返回 kbe 符号', () => {
     const provider = new PythonCompletionProvider({
+      isInitialScanComplete: () => true,
       getMappingForPythonFile: () => null
     } as unknown as EntityMappingManager);
     const { document, position } = pyDoc('import kbe\nx = self.|');

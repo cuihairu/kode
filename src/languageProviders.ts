@@ -5743,7 +5743,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     document: vscode.TextDocument,
     position: vscode.Position,
     token?: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+  ): vscode.ProviderResult<vscode.CompletionItem[] | vscode.CompletionList> {
     if (token?.isCancellationRequested) return null;
     const version = document.version;
     const result = this.computeCompletionItems(document, position);
@@ -5753,7 +5753,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
   private computeCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position
-  ): vscode.ProviderResult<vscode.CompletionItem[]> {
+  ): vscode.ProviderResult<vscode.CompletionItem[] | vscode.CompletionList> {
     const line = document.lineAt(position.line);
     const linePrefix = line.text.substring(0, position.character);
 
@@ -5786,6 +5786,13 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
     const mapping = this.entityMappingManager.getMappingForPythonFile(document.fileName);
 
     if (!mapping) {
+      // IDE-NAV-016:索引未就绪的冷查询回可刷新空 CompletionList
+      // (isIncomplete=true,编辑器继续输入会重查同前缀),不装作终答 null;
+      // 不记录任何 miss——首扫落地后同前缀重查即得成员补全。首扫已完成的
+      // 真无归属(非实体 .py)维持 null,不虚报可刷新。
+      if (!this.entityMappingManager.isInitialScanComplete()) {
+        return new vscode.CompletionList([], true);
+      }
       return null;
     }
 

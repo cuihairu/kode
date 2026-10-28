@@ -1211,6 +1211,16 @@ export class EntityMappingManager {
     await this.initialScan;
   }
 
+  /**
+   * IDE-NAV-016:首扫是否已成功落地(只读,不触发门控启动)。冷补全用它
+   * 区分「索引未就绪」(可刷新,isIncomplete 空 CompletionList)与「首扫
+   * 完成后的真 miss」(null,不虚报可刷新)。失败重触发中的未完成态按冷
+   * 处理——重试后同前缀自然拿到补全。
+   */
+  isInitialScanComplete(): boolean {
+    return this.initialScanCompleted;
+  }
+
   /** 解析缓存命中记账(测试/取证用):验证重扫确实复用未变更 .def */
   getDefParseCacheStats(): { entries: number; hits: number; misses: number } {
     return {

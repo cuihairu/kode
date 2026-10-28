@@ -214,6 +214,15 @@ export class CompletionItem {
   constructor(public label: string | CompletionItemLabel, public kind?: CompletionItemKind) {}
 }
 
+// IDE-NAV-016:冷补全可刷新状态(vscode 真实语义——isIncomplete=true 时
+// 编辑器继续输入会重查同前缀;items 为构造面,断言读字段即可)
+export class CompletionList {
+  constructor(
+    public readonly items: CompletionItem[],
+    public readonly isIncomplete = false
+  ) {}
+}
+
 export class MarkdownString {
   constructor(initialValue = '') {
     this.value = initialValue;
