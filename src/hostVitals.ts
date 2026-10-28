@@ -3,6 +3,10 @@
 // 是纳秒,任何报告面都必须显式声明「raw unit: nanoseconds」并把 ms 值按
 // 1e6 换算后另行列出,纳秒数字绝不直接贴上 ms 标签。渲染是纯函数
 // (renderEventLoopDelayReport),真实监视器只负责启停与窗口记账。
+//
+// IDE-MET-006:同一进程窗口内 CPU 与 RSS。process.cpuUsage 原生单位就是
+// 微秒——增量直接是微秒差,不再乘任何换算系数;RSS 分「窗口采样峰值」与
+// 「监视期高水位」两列(高水位跨报告窗口保留,峰值随窗口重置)。
 
 import { monitorEventLoopDelay, performance } from 'perf_hooks';
 
@@ -70,4 +74,116 @@ export function getEventLoopDelayReport(): string {
     return renderEventLoopDelayReport(null, 0, RESOLUTION_MS);
   }
   return renderEventLoopDelayReport(monitor, performance.now() - windowStartPerfMs, RESOLUTION_MS);
+}
+
+/** 一窗宿主资源快照:CPU 增量(微秒)与 RSS 三列(当前/窗口峰值/高水位) */
+export interface HostVitalsWindow {
+  windowMs: number;
+  samples: number;
+  cpuUserUs: number;
+  cpuSystemUs: number;
+  rssCurrentBytes: number;
+  rssWindowPeakBytes: number;
+  rssHighWaterBytes: number;
+}
+
+const BYTES_PER_MB = 1024 * 1024;
+
+const mb = (bytes: number): string => (bytes / BYTES_PER_MB).toFixed(1);
+
+/** 渲染宿主资源报告:微秒原值在账,ms/单核占比为派生行,峰值与高水位分列 */
+export function renderHostVitalsReport(window: HostVitalsWindow): string {
+  const cpuTotalMs = (window.cpuUserUs + window.cpuSystemUs) / 1000;
+  const corePercent = window.windowMs > 0 ? (cpuTotalMs / window.windowMs) * 100 : 0;
+  return [
+    `host vitals (process.cpuUsage raw unit: microseconds; rss bytes)`,
+    `  window: ${(window.windowMs / 1000).toFixed(1)}s (samples ${window.samples})`,
+    `  cpu: user=${window.cpuUserUs}us system=${window.cpuSystemUs}us ` +
+      `→ ${cpuTotalMs.toFixed(1)}ms (${corePercent.toFixed(1)}% of window on one core)`,
+    `  rss: current=${mb(window.rssCurrentBytes)}MB peak=${mb(window.rssWindowPeakBytes)}MB ` +
+      `(window) high-water=${mb(window.rssHighWaterBytes)}MB (since monitor start)`
+  ].join('\n') + '\n';
+}
+
+let vitalsActive = false;
+let lastCpu: NodeJS.CpuUsage | null = null;
+let vitalsWindowStart = 0;
+let vitalsSamples = 0;
+let vitalsUserUs = 0;
+let vitalsSystemUs = 0;
+let vitalsCurrentBytes = 0;
+let vitalsWindowPeakBytes = 0;
+let vitalsHighWaterBytes = 0;
+let vitalsInterval: ReturnType<typeof setInterval> | null = null;
+
+/** 幂等启动:基线 cpuUsage 立即落账,1s 周期采样(unref,不钉死进程生命周期) */
+export function startHostVitalsMonitor(): void {
+  if (vitalsActive) {
+    return;
+  }
+  vitalsActive = true;
+  lastCpu = process.cpuUsage();
+  vitalsWindowStart = performance.now();
+  const rss = process.memoryUsage().rss;
+  vitalsCurrentBytes = rss;
+  vitalsWindowPeakBytes = rss;
+  vitalsHighWaterBytes = rss;
+  vitalsInterval = setInterval(() => sampleHostVitals(), 1000);
+  vitalsInterval.unref?.();
+}
+
+export function stopHostVitalsMonitor(): void {
+  if (vitalsInterval) {
+    clearInterval(vitalsInterval);
+    vitalsInterval = null;
+  }
+  vitalsActive = false;
+}
+
+/** 测试面:清全部窗口与高水位状态 */
+export function resetHostVitalsMonitor(): void {
+  vitalsSamples = 0;
+  vitalsUserUs = 0;
+  vitalsSystemUs = 0;
+  vitalsWindowPeakBytes = 0;
+  vitalsHighWaterBytes = 0;
+  lastCpu = null;
+}
+
+/** 采一次:CPU 增量自上次采样累加,RSS 更新当前/峰值/高水位 */
+export function sampleHostVitals(): void {
+  if (!vitalsActive || !lastCpu) {
+    return;
+  }
+  const delta = process.cpuUsage(lastCpu);
+  lastCpu = process.cpuUsage();
+  vitalsUserUs += delta.user;
+  vitalsSystemUs += delta.system;
+  const rss = process.memoryUsage().rss;
+  vitalsCurrentBytes = rss;
+  vitalsWindowPeakBytes = Math.max(vitalsWindowPeakBytes, rss);
+  vitalsHighWaterBytes = Math.max(vitalsHighWaterBytes, rss);
+  vitalsSamples += 1;
+}
+
+/** 报告即消费:窗口(峰值/增量/样本数)随报告重置,高水位跨窗口保留 */
+export function getHostVitalsReport(): string {
+  if (!vitalsActive) {
+    return 'host vitals: not started\n';
+  }
+  const window: HostVitalsWindow = {
+    windowMs: performance.now() - vitalsWindowStart,
+    samples: vitalsSamples,
+    cpuUserUs: vitalsUserUs,
+    cpuSystemUs: vitalsSystemUs,
+    rssCurrentBytes: vitalsCurrentBytes,
+    rssWindowPeakBytes: vitalsWindowPeakBytes,
+    rssHighWaterBytes: vitalsHighWaterBytes
+  };
+  vitalsWindowStart = performance.now();
+  vitalsSamples = 0;
+  vitalsUserUs = 0;
+  vitalsSystemUs = 0;
+  vitalsWindowPeakBytes = vitalsCurrentBytes;
+  return renderHostVitalsReport(window);
 }

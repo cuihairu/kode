@@ -210,8 +210,11 @@ import { readBuildCommit } from './buildCommit';
 import { setFileReadVerbose } from './fileReadMetrics';
 import {
   getEventLoopDelayReport,
+  getHostVitalsReport,
   startEventLoopDelayMonitor,
-  stopEventLoopDelayMonitor
+  startHostVitalsMonitor,
+  stopEventLoopDelayMonitor,
+  stopHostVitalsMonitor
 } from './hostVitals';
 import { TelnetTreeProvider } from './telnetTree';
 /**
@@ -1706,11 +1709,18 @@ export function activate(context: vscode.ExtensionContext) {
     metricsChannel.clear();
     metricsChannel.append(getLanguageServiceSummaryReport());
     metricsChannel.append(getEventLoopDelayReport());
+    metricsChannel.append(getHostVitalsReport());
     metricsChannel.show();
   }));
-  // IDE-MET-005:宿主事件循环延迟自激活即开始采样(报告经 showSummary 面)
+  // IDE-MET-005/006:宿主事件循环延迟与 CPU/RSS 自激活即采样(showSummary 面)
   startEventLoopDelayMonitor();
-  context.subscriptions.push({ dispose: () => stopEventLoopDelayMonitor() });
+  startHostVitalsMonitor();
+  context.subscriptions.push({
+    dispose: () => {
+      stopEventLoopDelayMonitor();
+      stopHostVitalsMonitor();
+    }
+  });
   // IDE-MET-004:读盘明细开关(默认关=只累计计数,明细环形缓冲不启用)
   setFileReadVerbose(kbengineConfig.get<boolean>('metrics.fileReadDetail', false));
   logViewer.subscribeLogHub(logHub);
