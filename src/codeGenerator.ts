@@ -199,6 +199,13 @@ export class KBEngineCodeGenerator {
       ? this.config.defOutputPath
       : joinWorkspacePath(workspaceFolder.uri.fsPath, this.config.defOutputPath);
     const defFilePath = joinWorkspacePath(outputRoot, `${entity.config.name}.def`);
+
+    // IDE-GEN-001:同名 def 已存在时拒绝覆盖——原字节原样保留,
+    // 冲突信息带上目标路径;两个生成入口(向导/模板)都先走这里
+    if (fs.existsSync(defFilePath)) {
+      throw new Error(`def 文件已存在，保留原文件未覆盖: ${defFilePath}`);
+    }
+
     const content = this.generateDefContent(entity);
 
     // 确保目录存在

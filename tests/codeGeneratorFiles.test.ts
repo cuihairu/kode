@@ -424,6 +424,51 @@ describe('KBEngineCodeGenerator templates', () => {
   });
 });
 
+describe('KBEngineCodeGenerator overwrite guard (IDE-GEN-001)', () => {
+  const monsterSentinel = '<root><BaseMethods><roar/></BaseMethods></root>';
+
+  it('rejects def generation onto an existing def and keeps the original bytes', async () => {
+    const monster = sampleEntity();
+    monster.config.name = 'Monster';
+
+    await expect(makeGenerator().generateDefFile(monster)).rejects.toThrow('已存在');
+    await expect(makeGenerator().generateDefFile(monster)).rejects.toThrow(
+      path.join(root, 'scripts', 'entity_defs', 'Monster.def')
+    );
+    // 原字节原样保留,未被生成内容碰过
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(monsterSentinel);
+  });
+
+  it('wizard surfaces the def conflict and writes nothing else', async () => {
+    const entitiesXmlBefore = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
+    ui.inputs.push('Monster');
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+
+    await makeGenerator().showWizard();
+
+    expect(ui.error).toHaveLength(1);
+    expect(ui.error[0]).toContain('已存在');
+    expect(ui.error[0]).toContain('Monster.def');
+    // def 冲突在最前面抛出:python 未生成、entities.xml 未注册、无成功消息
+    expect(fs.existsSync(path.join(root, 'scripts', 'Monster.py'))).toBe(false);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
+    expect(ui.info).toEqual([]);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(monsterSentinel);
+  });
+
+  it('template flow refuses to overwrite an existing def', async () => {
+    ui.picks.push(pickIndex(9));
+    ui.inputs.push('Monster');
+
+    await makeGenerator().showTemplates();
+
+    expect(ui.error).toHaveLength(1);
+    expect(ui.error[0]).toContain('已存在');
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(monsterSentinel);
+    expect(fs.existsSync(path.join(root, 'scripts', 'Monster.py'))).toBe(false);
+  });
+});
+
 describe('KBEngineCodeGenerator config and lookups', () => {
   it('falls back to defaults without a workspace folder', () => {
     stubWorkspace.workspaceFolders = [];
