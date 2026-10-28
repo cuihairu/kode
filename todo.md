@@ -472,7 +472,7 @@
 
 来源：审计 §6；src/kbengineProtocol.ts、src/runtimeQueryWebView.ts。
 - [x] IDE-LIV-001 [P2] 登记真实引擎联验所需输入；验收：记录目标版本、组件地址和启动条件，缺实例时明确未测；前置：无。（eb23216;LiveValidationRegister 三段=引擎版本(仓 URL+ref)/组件地址(名词全出自 COMPONENT_NAMES 不自造:machine 广播口 20086/cellappmgr 空间查询/cellapp+baseapp watcher 路径)/启动条件(demo 服务端组件发现+可登录账号);默认登记全未登记+instanceAvailable false,describeLiveValidationStatus 逐项已登记/未登记·满足/未满足,缺实例行明确「未测」不冒充;registerLiveValidationInputs 纯函数按组件名合并原对象不变;lastVerifiedAt 联验后回填位;断言坑=模块文案含「不冒充已联验」字样,not.toContain 得抓结论行「可联验」而非「已联验」;prove-red=Cannot find module 整文件红 11 例;门禁=eslint 0/tsc 0/unit 3832|7(333)/demo 25 RC=0/docs build 绿;docs/features.md+zh LIV-001 条目)
-- [ ] IDE-LIV-002 [P2] 核对一个目标版本的 watcher 协议号；验收：请求与回包号可逐条指向该版本源码，不沿用未验证常量；前置：IDE-LIV-001。
+- [x] IDE-LIV-002 [P2] 核对一个目标版本的 watcher 协议号；验收：请求与回包号可逐条指向该版本源码，不沿用未验证常量；前置：IDE-LIV-001。（0029957;本机仓 /home/cui/workspaces/kbengine@f85ad81 实核:8 请求号逐条引 messages_fixed_defaults.xml `<组件::queryWatcher><id>N` 段(dbmgr 41006/loginapp 41003/baseappmgr 41004/cellappmgr 41005/cellapp 41002/baseapp 41001/logger 41008/interfaces 41007,注意 cellapp=41002/Baseapp=41001 不按号段直觉),回包 65502 引 console_helper.h:11 CONSOLE_WATCHERCB_MSGID;src/watcherProtocolAudit.ts 审计表+verifyWatcherProtocolAgainstAudit 与生产映射逐条咬合(缺键/多键/错号按组件点名),kbengineProtocol.ts WATCHER_QUERY_MSG_IDS 加 export 供咬合锁(仅一词不改值);prove-red=Cannot find module 整文件红 9 例;门禁=eslint 0/tsc 0/unit 3841|7(334)/demo 25 RC=0/docs build 绿;docs/features.md+zh LIV-002 条目)
 - [ ] IDE-LIV-003 [P2] 完成一次真实 watcher 路径查询；验收：面板结果与引擎控制台同路径值一致，保留原始联验证据；前置：IDE-LIV-002。
 - [ ] IDE-LIV-004 [P2] 完成一次真实空间列表查询；验收：空间与组件身份可与运行引擎对账，缺失字段明确标未知；前置：IDE-LIV-001。
 - [ ] IDE-LIV-005 [P2] 用稳定目标身份关联观测结果；验收：相同组件类型的两个实例不会混合数值或曲线；前置：IDE-RUN-001, IDE-LIV-003。
