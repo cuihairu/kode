@@ -205,6 +205,7 @@ import {
   renderDiscoveryReport,
   runWorkspaceDiscovery
 } from './workspaceDiscovery';
+import { renderExtensionIdentityReport } from './extensionIdentity';
 import { TelnetTreeProvider } from './telnetTree';
 /**
  * Kode - KBEngine Development Environment
@@ -1991,6 +1992,9 @@ export function activate(context: vscode.ExtensionContext) {
   const workbenchCommand = vscode.commands.registerCommand('kbengine.workbench.show', async () => {
     const selection = await vscode.window.showQuickPick([
       { label: '$(search) Discovery & Positioning', command: 'kbengine.discovery.report' },
+      // IDE-MET-001:活动扩展身份报告入口(区分安装目录存在/当前窗口已激活,
+      // 标注远程或本地宿主位置)
+      { label: '$(info) Extension Identity', command: 'kbengine.extension.identity' },
       { label: '$(checklist) Project Doctor', command: 'kbengine.project.doctor' },
       { label: '$(graph) Symbol References', command: 'kbengine.symbolReferences.show' },
       { label: '$(graph) Monitoring', command: 'kbengine.monitoring.show' },
@@ -2640,6 +2644,31 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(discoveryReportCommand, discoveryReportChannel);
+
+  // IDE-MET-001:活动扩展身份报告——区分「安装目录存在」(文件系统核验)与
+  // 「当前窗口已激活」(isActive),列宿主位置(remote(name)/local)与
+  // 扩展宿主侧(workspace/ui);渲染纯函数在 extensionIdentity.ts。
+  const identityChannel = vscode.window.createOutputChannel('Kode 扩展身份');
+  const identityCommand = vscode.commands.registerCommand('kbengine.extension.identity', () => {
+    const entries = vscode.extensions.all
+      .filter(extension => extension.id.toLowerCase().startsWith('cuihairu.'))
+      .map(extension => ({
+        id: extension.id,
+        version: String(extension.packageJSON?.version ?? 'unknown'),
+        extensionPath: extension.extensionPath ?? '',
+        installExists: Boolean(extension.extensionPath) && fs.existsSync(extension.extensionPath),
+        isActive: extension.isActive,
+        extensionKind: String(extension.extensionKind ?? 'unknown')
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    identityChannel.clear();
+    identityChannel.appendLine(renderExtensionIdentityReport(entries, {
+      remoteName: vscode.env.remoteName,
+      appName: vscode.env.appName
+    }));
+    identityChannel.show(true);
+  });
+  context.subscriptions.push(identityCommand, identityChannel);
 
   // 激活期发现完成后自动落一份报告;有问题时提示用户到输出面板看/复制回传
   const discoveryRoot = primaryWorkspaceRoot;

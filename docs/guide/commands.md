@@ -430,6 +430,16 @@ The flow graph panel supports:
   - With problems present it pops a warning pointing at the OUTPUT panel; when all is well, an info notice
   - After activation-time auto discovery completes, a report is also silently dropped into the same channel (a notice pops only when there are problems)
 
+### `kbengine.extension.identity`
+
+- Title: `Show Extension Identity Report`
+- Purpose: report the identity of every installed extension under this publisher and where it is hosted, so a bug report can tell exactly which build the user is running
+- Report contents (output channel 「Kode 扩展身份」 (Kode extension identity), copyable whole):
+  - Host location: `remote(<name>)` when `vscode.env.remoteName` is set, `local` otherwise, plus the host app name
+  - For each matching install (publisher-prefixed extension IDs, sorted): full ID and version; `installed=yes|no` — whether the install directory currently exists on the file system (a vanished directory is reported honestly); `active=yes|no` — whether it is activated in the current window (installation and activation are two orthogonal facts, never merged); `side=workspace host|ui host` — which extension host runs it
+  - With no matching installs the report says so instead of listing nothing
+- Behavior: the command never scans the workspace; it only reads `vscode.extensions.all` and stats the install directories
+
 ### `kbengine.quickActions.show`
 
 - Title: `Run Quick Actions`

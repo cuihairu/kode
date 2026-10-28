@@ -82,6 +82,7 @@
     "onCommand:kbengine.httpRequests.run",
     "onCommand:kbengine.httpRequest.run",
     "onCommand:kbengine.discovery.report",
+    "onCommand:kbengine.extension.identity",
     "onCommand:kbengine.quickActions.show",
     "onCommand:kbengine.quickActions.scanScripts",
     "onCommand:kbengine.quickActions.runDefault",
@@ -484,6 +485,10 @@
       {
         "command": "kbengine.discovery.report",
         "title": "Show Discovery Report"
+      },
+      {
+        "command": "kbengine.extension.identity",
+        "title": "Show Extension Identity Report"
       },
       {
         "command": "kbengine.quickActions.show",

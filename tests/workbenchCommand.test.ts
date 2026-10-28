@@ -30,6 +30,7 @@ describe('kbengine.workbench.show', () => {
       const list = items as Array<{ label: string; command: string }>;
       expect(list.map(item => item.command)).toEqual([
         'kbengine.discovery.report',
+        'kbengine.extension.identity',
         'kbengine.project.doctor',
         'kbengine.symbolReferences.show',
         'kbengine.monitoring.show',
@@ -41,7 +42,7 @@ describe('kbengine.workbench.show', () => {
         'kbengine.clientSdk.generate',
         'kbengine.compatibility.check'
       ]);
-      return list[1];
+      return list[2];
     }) as typeof vscode.window.showQuickPick;
 
     await commandRegistry.registrations.get('kbengine.workbench.show')!.handler();
