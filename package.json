@@ -1333,6 +1333,7 @@
     "test:demo": "pnpm demo:verify && vitest run tests/kbengineDemoNavigation.test.ts",
     "test:demo:editor": "pnpm run compile && tsc -p tsconfig.mocha.json && node out/test/electron/runTest.js --demo",
     "test:demo:field": "pnpm run compile && tsc -p tsconfig.mocha.json && node out/test/electron/runTest.js --field",
+    "test:smoke:vsix": "pnpm run compile && tsc -p tsconfig.mocha.json && node out/test/electron/runTest.js --vsix",
     "package": "pnpm exec vsce package --no-dependencies",
     "publish": "pnpm exec vsce publish --no-dependencies"
   },

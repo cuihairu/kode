@@ -14,7 +14,9 @@ export function run(): Promise<void> {
       ? file === 'demoNavigation.test.js'
       : suite === 'field'
         ? file === 'fieldBaseline.test.js'
-        : file !== 'demoNavigation.test.js');
+        : suite === 'vsix'
+          ? file === 'vsixSmoke.test.js'
+          : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }

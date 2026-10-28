@@ -109,6 +109,7 @@ pnpm run docs:build
 4. 依赖图、实体浏览器、日志、调试等入口是否可打开
 5. 打包出的 VSIX 是否包含 parser worker——`vsce package` 后解包确认 `extension/out/pythonParserWorker.js` 在，再用 `node` 从解包路径启动（`new Worker(<解包>/extension/out/pythonParserWorker.js)`）并确认一条解析请求能收到 `id`/`revision`/`parsed` 回包。结构守卫在 `tests/vsixPackaging.test.ts`：`.vscodeignore` 必须先排除 `out/**` 再保留 `!out/pythonParserWorker.js`、`bundle` 脚本必须保留 worker 的 esbuild 入口、worker/parser 源码不得 import `vscode`（worker 从包内路径启动不依赖扩展宿主）。2026-10-29 已在本地打包产物上核验通过（REL-003）。
 6. 打包出的 VSIX 是否暴露构建身份——同一解包产物须含 `extension/out/buildCommit.json`，其 `commit` 字段等于打包时的 `git rev-parse HEAD`（2026-10-29 核验通过，REL-004）。运行时 `readBuildCommit` 只读 `<extensionPath>/out/buildCommit.json`；文件缺失或损坏一律报 `unknown`，绝不回落源码目录的 git 状态——源码目录版本不冒充已安装版本。
+7. 对打包产物跑安装后烟测——`pnpm run test:smoke:vsix` 自动打包 VSIX、解包成安装布局、以解包 `extension/` 目录作为扩展加载进真 VS Code 宿主，并断言真实命中：身份（扩展路径是解包产物、安装布局文件齐全）、`.def` 标签 hover、`.def`→实体脚本跳转的精确源码行、以及实现落在 >256 KiB Python 大文件里的跨文件 self 方法跳转——该文件只可能由打包 worker 线程解析入索引（REL-006，2026-10-29 核验通过；接线由 `tests/vsixSmokeWiring.test.ts` 锁定）。`KODE_VSIX_PATH=<path.vsix>` 可注入预构建包加速复跑。
 
 ## 版本策略
 
