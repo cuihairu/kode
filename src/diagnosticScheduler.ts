@@ -51,6 +51,8 @@ export interface DiagnosticSchedulerStats {
   coalescedStale: number;
   /** 执行后才过期的任务:计算完成但版本已前进,结果丢弃不发布 */
   staleDropped: number;
+  /** IDE-DIA-008:文档关闭(或关闭后重开)后晚到的 worker 结果丢弃数 */
+  releasedDropped: number;
   /** 同版本 + 同诊断输入代已发布,重复请求跳过重算 */
   skippedCurrentVersion: number;
   /** 开关关闭期间受理的请求(只记账,不计算) */
@@ -75,6 +77,8 @@ interface QueuedTask {
   options: DiagnosticTaskOptions<unknown>;
   /** 入队时版本令牌 */
   version: number | undefined;
+  /** 入队时关闭代(IDE-DIA-008:处理前失配=文档已关闭,零计算丢弃) */
+  releaseEpoch: number;
 }
 
 function versionOf(document: DiagnosticTaskDocument): number | undefined {
@@ -110,6 +114,10 @@ export class DiagnosticScheduler {
   /** IDE-DIA-006:已出队、尚未处理完的条目数(pendingWorkload 诚实面:
    *  让出窗口内 map 面已空,残留量规仍要数上在途批的未处理条目) */
   private drainingCount = 0;
+  /** IDE-DIA-008 每 URI 关闭代:releaseDocument 自增;stateFor 新建状态
+   *  (重开/再请求)也自增——上一代的在途计算与出队条目全部失配作废,
+   *  晚到的 worker 结果不可能写入 DiagnosticCollection。 */
+  private readonly epochs = new Map<string, number>();
   private readonly sliceMs: number;
   private readonly yieldFn: () => Promise<void>;
   private readonly stats: DiagnosticSchedulerStats = {
@@ -118,6 +126,7 @@ export class DiagnosticScheduler {
     published: 0,
     coalescedStale: 0,
     staleDropped: 0,
+    releasedDropped: 0,
     skippedCurrentVersion: 0,
     disabledSkipped: 0,
     cleared: 0
@@ -219,7 +228,8 @@ export class DiagnosticScheduler {
       key,
       document,
       options: options as DiagnosticTaskOptions<unknown>,
-      version
+      version,
+      releaseEpoch: this.epochs.get(key) ?? 0
     };
   }
 
@@ -282,6 +292,11 @@ export class DiagnosticScheduler {
 
   /** 处理单个出队条目:处理时守卫(比入队时更新鲜)后才计算发布 */
   private processQueuedEntry(queued: QueuedTask): void {
+    // IDE-DIA-008:入队后文档已关闭(含让出窗口内关闭)→ 零计算直接丢弃
+    if ((this.epochs.get(queued.key) ?? 0) !== queued.releaseEpoch) {
+      this.stats.releasedDropped += 1;
+      return;
+    }
     const currentVersion = versionOf(queued.document);
     // 处理时文档已前进到入队之后的新版本(含让出窗口内前进):过期,丢弃
     if (queued.version !== undefined && currentVersion !== queued.version) {
@@ -320,7 +335,9 @@ export class DiagnosticScheduler {
     }
   }
 
-  /** 文档关闭:释放版本标记与残留排队任务(下次打开全量重算) */
+  /** 文档关闭:释放版本标记与残留排队任务(下次打开全量重算)。
+   *  IDE-DIA-008:关闭代自增——上一代全部在途计算与已出队未处理条目
+   *  的处理/发布前守卫失配,晚到的 worker 结果不可能写入 collection。 */
   releaseDocument(document: DiagnosticTaskDocument): void {
     const key = document.uri.toString();
     const state = this.states.get(key);
@@ -331,6 +348,7 @@ export class DiagnosticScheduler {
       this.stats.coalescedStale += 1;
     }
     this.states.delete(key);
+    this.epochs.set(key, (this.epochs.get(key) ?? 0) + 1);
     this.stats.cleared += 1;
   }
 
@@ -347,6 +365,7 @@ export class DiagnosticScheduler {
   /** 测试与停用面:清空全部 URI 状态与统计(不改开关/代数) */
   resetForTests(): void {
     this.states.clear();
+    this.epochs.clear();
     this.drainingCount = 0;
     this.resetStats();
     this.generation = 0;
@@ -358,6 +377,8 @@ export class DiagnosticScheduler {
     if (!state) {
       state = { publishedVersion: undefined, publishedGeneration: -1, queued: null };
       this.states.set(key, state);
+      // IDE-DIA-008:新建状态=重开/再请求,上一代残留的晚到结果全部作废
+      this.epochs.set(key, (this.epochs.get(key) ?? 0) + 1);
     }
     return state;
   }
@@ -368,6 +389,9 @@ export class DiagnosticScheduler {
     version: number | undefined,
     options: DiagnosticTaskOptions<unknown>
   ): void {
+    // IDE-DIA-008:捕获当代关闭代——计算在途期间文档关闭(或关闭后重开)
+    // 都会失配,晚到的 worker 结果发布前丢弃
+    const releaseEpoch = this.epochs.get(key) ?? 0;
     if (options.computeAsync) {
       // IDE-DIA-005:异步分片面——大文件计算移出同步入口,完成后复核版本
       // 才发布;null(中止)/版本前进均记过期不发布
@@ -382,6 +406,17 @@ export class DiagnosticScheduler {
         // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
         if (version !== undefined && versionOf(document) !== version) {
           this.stats.staleDropped += 1;
+          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+            status: 'ok',
+            fileKind: 'def',
+            documentVersion: version,
+            cacheMisses: 1
+          });
+          return;
+        }
+        // 发布守卫:计算期间文档已关闭(或关闭后重开到新代)→ 不写 collection
+        if ((this.epochs.get(key) ?? 0) !== releaseEpoch) {
+          this.stats.releasedDropped += 1;
           recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
             status: 'ok',
             fileKind: 'def',
@@ -414,6 +449,17 @@ export class DiagnosticScheduler {
     // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
     if (version !== undefined && versionOf(document) !== version) {
       this.stats.staleDropped += 1;
+      recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+        status: 'ok',
+        fileKind: 'def',
+        documentVersion: version,
+        cacheMisses: 1
+      });
+      return;
+    }
+    // 发布守卫(IDE-DIA-008):同步计算重入关闭文档 → 不写 collection
+    if ((this.epochs.get(key) ?? 0) !== releaseEpoch) {
+      this.stats.releasedDropped += 1;
       recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
         status: 'ok',
         fileKind: 'def',

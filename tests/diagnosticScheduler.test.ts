@@ -401,6 +401,105 @@ describe('IDE-DIA-006 诊断队列单轮时间片:多文档一轮 flush 不连�
   });
 });
 
+describe('IDE-DIA-008 关闭文档撤销待发布诊断:晚到的 worker 结果不写 collection', () => {
+  it('computeAsync 在途时关闭文档:晚到回包不发布', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const document = { uri: { toString: () => 'file:///closed/a.py' }, version: 1 };
+    const published: number[][] = [];
+    let releaseCompute: (() => void) | null = null;
+    const gate = new Promise<void>(resolve => { releaseCompute = resolve; });
+
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => {
+        await gate; // worker 在途期间文档关闭
+        return [9, 9];
+      },
+      publish: items => published.push([...items])
+    });
+    await scheduler.flushQueued();
+    expect(scheduler.hasPendingComputations()).toBe(true);
+
+    scheduler.releaseDocument(document); // 文档关闭(在途计算未完)
+    releaseCompute!();                   // worker 晚到回包
+    await scheduler.pendingComputations();
+
+    // 关闭后晚到的结果不重新写入 collection(发布闭包不被调用)
+    expect(published).toEqual([]);
+    expect(scheduler.getStats().published).toBe(0);
+    expect(scheduler.getStats().releasedDropped).toBe(1);
+  });
+
+  it('DIA-006 让出窗口内关闭文档:续批零计算丢弃(releasedDropped)', async () => {
+    const computeOrder: string[] = [];
+    let scheduler!: DiagnosticScheduler;
+    const mkDoc = (name: string) => ({
+      uri: { toString: () => `file:///closed-win/${name}.py` },
+      version: 1
+    });
+    const docB = mkDoc('b');
+    scheduler = new DiagnosticScheduler({
+      sliceMs: 0,
+      yieldToHost: async () => { scheduler.releaseDocument(docB); }
+    });
+    for (const name of ['a', 'b']) {
+      const document = mkDoc(name);
+      scheduler.requestQueued(document, {
+        layer: 'local',
+        compute: () => {
+          computeOrder.push(name);
+          return [];
+        },
+        publish: () => undefined
+      });
+    }
+    await scheduler.flushQueued();
+
+    // b 在让出窗口内关闭:续批处理时守卫失配,零计算直接丢弃
+    expect(computeOrder).toEqual(['a']);
+    const stats = scheduler.getStats();
+    expect(stats.computed).toBe(1);
+    expect(stats.published).toBe(1);
+    expect(stats.releasedDropped).toBe(1);
+  });
+
+  it('关闭后重开同 URI:上一代在途回包丢弃,新代正常发布不覆写', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const uriText = 'file:///reopen/a.py';
+    const oldDoc = { uri: { toString: () => uriText }, version: 5 };
+    const newDoc = { uri: { toString: () => uriText }, version: 1 };
+    const published: string[][] = [];
+    let releaseOld: (() => void) | null = null;
+    const gate = new Promise<void>(resolve => { releaseOld = resolve; });
+
+    scheduler.requestQueued(oldDoc, {
+      layer: 'local',
+      computeAsync: async () => {
+        await gate; // 旧代会话计算在途
+        return ['old'];
+      },
+      publish: items => published.push([...items as string[]])
+    });
+    await scheduler.flushQueued();
+    scheduler.releaseDocument(oldDoc); // 关闭:关闭代自增
+    // 重开同 URI:新文档新会话(版本从 1 重新计数),stateFor 新建 → 关闭代再自增
+    scheduler.requestQueued(newDoc, {
+      layer: 'local',
+      computeAsync: async () => ['new'],
+      publish: items => published.push([...items as string[]])
+    });
+    await scheduler.flushQueued();
+    releaseOld!();
+    await scheduler.pendingComputations();
+
+    // 旧代晚到回包丢弃;新代结果正常发布,不被旧会话内容覆写
+    expect(published).toEqual([['new']]);
+    const stats = scheduler.getStats();
+    expect(stats.published).toBe(1);
+    expect(stats.releasedDropped).toBe(1);
+  });
+});
+
 describe('A6-3 entities.xml 诊断入口同版本失效约束', () => {
   it('同版本重复校验命中分析缓存(零重分析),版本前进旧槽作废重分析', () => {
     const document = makeVersionedEntitiesDocument(DUPLICATE_ENTITIES, '/entities/entities.xml', 1);
