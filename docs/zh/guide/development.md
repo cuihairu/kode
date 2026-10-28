@@ -7,7 +7,20 @@
 
 - Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
 - pnpm 以 `package.json` 的 `packageManager` 字段为准（当前 pnpm 12.10.1）
-- VSCode 1.61.0 或更高版本
+- VSCode 1.82.0 或更高版本——底线依据见下方运行时矩阵
+
+## VS Code 运行时矩阵（REL-005）
+
+最低支持 VS Code **1.82**（`engines.vscode: ^1.82.0`），是推导出来的，不是沿用旧声明：
+
+| 约束 | 下限 | 依据 |
+| --- | --- | --- |
+| `languages.registerInlayHintsProvider`（类型桩内联提示） | 1.66 | 该 API 1.66 起 stable；`@types/vscode` 钉在 `1.82.0`，由 `tsc` 机器验证在用 API 全部 ≤1.82 |
+| `vscode.tests.createTestController` + `TestRun.appendOutput` | 1.59 / 1.61 | 测试树与输出面（IDE-TSK-005） |
+| `workspace.onDidRenameFiles`/`onDidDeleteFiles`、`workspace.fs` | 1.33 / 1.34 | 文件事件与虚拟文件系统 |
+| esbuild `--target=node18` 产物（`out/extension.js`、`out/pythonParserWorker.js`） | **1.82** | VS Code 1.82 起内嵌 Node 18.15（Electron 25）；按 [vscode-versions](https://github.com/ewanharris/vscode-versions) 数据（Node 16→1.80、Node 18→1.82、Node 20→1.90） |
+
+生效底线是 1.82（Node 运行时约束压过 API 下限）。`tests/runtimeMatrix.test.ts` 的守卫锁三处声明联动：`engines.vscode ≥1.82`、`@types/vscode` 与 `engines.vscode` 主次版本一致（types 漂移无法掩盖越界 API）、`bundle` 脚本里每个 `--target=nodeN` 映射到对应最低 VS Code。日后抬 bundle 靶（比如 Node 20）时守卫先红，直到 `engines.vscode` 升到 ≥1.90。
 
 ## 本地开发
 

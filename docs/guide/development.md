@@ -7,7 +7,20 @@ This page targets maintainers: how to develop locally, debug, build the docs, an
 
 - Node.js `^20.19.0 || >=22.12.0` (prefer the version pinned in `.nvmrc`)
 - pnpm: defer to the `packageManager` field in `package.json` (currently pnpm 12.10.1)
-- VSCode 1.61.0 or newer
+- VSCode 1.82.0 or newer — see the runtime matrix below for why this is the floor
+
+## VS Code Runtime Matrix (REL-005)
+
+The minimum supported VS Code is **1.82** (`engines.vscode: ^1.82.0`). This is derived, not inherited:
+
+| Constraint | Floor | Basis |
+| --- | --- | --- |
+| `languages.registerInlayHintsProvider` (type-stub inlays) | 1.66 | stable API since 1.66; pinning `@types/vscode` to `1.82.0` makes `tsc` verify every API we use is ≤1.82 |
+| `vscode.tests.createTestController` + `TestRun.appendOutput` | 1.59 / 1.61 | test-tree and output faces (IDE-TSK-005) |
+| `workspace.onDidRenameFiles`/`onDidDeleteFiles`, `workspace.fs` | 1.33 / 1.34 | file events and virtual FS |
+| esbuild `--target=node18` bundles (`out/extension.js`, `out/pythonParserWorker.js`) | **1.82** | VS Code 1.82+ embeds Node 18.15 (Electron 25); per the [vscode-versions](https://github.com/ewanharris/vscode-versions) mapping (Node 16→1.80, Node 18→1.82, Node 20→1.90) |
+
+The binding floor is 1.82 (the Node runtime beats the API floor). Guards in `tests/runtimeMatrix.test.ts` keep three declarations in sync: `engines.vscode ≥1.82`, `@types/vscode` pinned to the same major.minor as `engines.vscode` (so a floating types package cannot hide an out-of-matrix API), and every `--target=nodeN` in the `bundle` script mapped to its minimum VS Code. Raising the bundle target later (e.g. to Node 20) fails the guard until `engines.vscode` moves to ≥1.90.
 
 ## Local Development
 
