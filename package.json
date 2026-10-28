@@ -98,6 +98,8 @@
     "onCommand:kbengine.python.syncExtraPaths",
     "onCommand:kbengine.jsoncAssociation.off",
     "onCommand:kbengine.python.debugpySync",
+    "onCommand:kbengine.debug.waitAtStartup.on",
+    "onCommand:kbengine.debug.waitAtStartup.off",
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -562,6 +564,14 @@
         "title": "Copy System debugpy into Assets"
       },
       {
+        "command": "kbengine.debug.waitAtStartup.on",
+        "title": "debugpy: Wait for Debugger at Startup (On)"
+      },
+      {
+        "command": "kbengine.debug.waitAtStartup.off",
+        "title": "debugpy: Wait for Debugger at Startup (Off)"
+      },
+      {
         "command": "kbengine.python.exportStubs",
         "title": "Export KBEngine Python Stubs"
       },
@@ -896,6 +906,11 @@
           "type": "boolean",
           "default": false,
           "description": "组件启动成功后自动经 telnet :python 层注入 debugpy.listen（逐组件端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只本机 127.0.0.1；单组件失败只记日志不阻塞启动；注入走 telnet，entitydef/早期 config 阶段已过，进程级第一行断点属二期）。注入前先对所选解释器（kbengine.python.interpreterPath→PATH 链）做 debugpy 预检，缺解释器/缺包/版本过老提前给可操作状态。开启后 kbengine.debug.updateLaunchJson 会为每组件生成 debugpy attach 配置；debugpy 包先用 kbengine.python.debugpySync 命令复制进 <assets>/scripts/common/debugpy"
+        },
+        "kbengine.debug.waitAtStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "启动前等待调试器连接（显式 opt-in，默认关）。开启命令会在入口脚本 scripts/kbengine.py 顶部插入带标记的引导块：组件启动最早期 import debugpy 并 listen + wait_for_client，停在用户入口脚本早期断点之前，不依赖启动后 telnet 注入；组件将停住直到 VS Code 附加对应的 debugpy attach 配置。引导块读环境变量 KODE_DEBUGPY_WAIT_PORT（端口同逐组件分配表，默认实例口径；命名实例暂不覆盖仍走 telnet 注入），无该变量或没有 debugpy 包时静默放行不阻塞启动。关闭命令删除引导块逐字节还原"
         },
         "kbengine.jsoncAssociation": {
           "type": "boolean",

@@ -192,6 +192,26 @@
   - 永不抛——结果（已复制/跳过/已升级/失败及原因）作为命令结果消息如实播报
 - 边界：本命令只放包；起监听是 `kbengine.debug.autoDebugpy` 启动联动的事，附加调试是生成的 launch.json 条目的事
 
+### `kbengine.debug.waitAtStartup.on`
+
+- 标题：`debugpy: Wait for Debugger at Startup (On)`
+- 作用：显式 opt-in 的「启动前等待调试器连接」——让引擎组件停在最早的 Python 处（用户入口脚本的早期断点之前），不依赖启动后的 telnet 注入
+- 入口：命令面板
+- 行为：
+  - 在活动资产根下定位 `scripts/entity_defs` 同级的入口脚本 `scripts/kbengine.py`；找不到如实报错，零写入
+  - 在模块 docstring 之后插入带标记的引导块：读环境变量 `KODE_DEBUGPY_WAIT_PORT` 并执行 `debugpy.listen` + `debugpy.wait_for_client()`；无该变量、没有 debugpy 包或任何异常都静默放行，绝不阻塞引擎启动
+  - 把 `kbengine.debug.waitAtStartup` 设为 true；此后 serverManager 启动表内组件（baseapp/cellapp/loginapp/dbmgr/logger）的默认实例时带上 `KODE_DEBUGPY_WAIT_PORT`=该组件的分配表端口——组件停住，直到 VS Code 附加对应的 debugpy attach 配置
+  - 插入幂等（块已在=零写入），块外的用户编辑原样保留
+- 边界：命名实例仍走 telnet 注入路径（逐实例口来自启动联动窗口分配，等待模式暂不覆盖，如实写明）；等待模式开启期间，默认实例的 telnet 注入跳过并记一条日志（启动引导已持有表口监听）
+
+### `kbengine.debug.waitAtStartup.off`
+
+- 标题：`debugpy: Wait for Debugger at Startup (Off)`
+- 作用：关闭启动等待模式并还原入口脚本
+- 入口：命令面板
+- 行为：逐字节删除引导块还原原文（无块=零写入）并把 `kbengine.debug.waitAtStartup` 设为 false；入口脚本定位不到时设置照关并提示
+- 边界：与 On 命令对称；已在运行的组件保持既有监听不变
+
 ### `kbengine.jsoncAssociation.off`
 
 - 标题：`Turn Off debug.json JSONC Association`

@@ -47,6 +47,12 @@ import {
   type DebugpyInjectTarget
 } from './autoDebugpy';
 import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps } from './debugpyPreflight';
+import {
+  findEngineEntryScript,
+  injectWaitBootstrap,
+  removeWaitBootstrap,
+  debugpyWaitAtStartupEnabled
+} from './debugpyWaitAtStartup';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1596,6 +1602,12 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
       }
+      // DBG-004 等待连接模式:默认实例由入口脚本引导块在启动最早期
+      // listen+wait(端口同表),telnet 注入不再重复 listen,跳过并记一笔。
+      if (debugpyWaitAtStartupEnabled() && typeof injectTarget === 'string') {
+        log(injectTarget, 'info', 'autoDebugpy:等待连接模式已由启动引导监听,跳过 telnet 注入');
+        return;
+      }
       await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), { log });
     })();
   };
@@ -1959,6 +1971,53 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(debugpySyncCommand);
+
+  // DBG-004 等待连接模式开关命令:on=写引导块进入口脚本+开设置(显式
+  // opt-in);off=删块逐字节还原+关设置。块与设置双保险:任一缺席都不生效。
+  const waitAtStartupOnCommand = vscode.commands.registerCommand(
+    'kbengine.debug.waitAtStartup.on',
+    async () => {
+      const assetsRoot = serverManager.getConfigPath();
+      const entry = assetsRoot ? findEngineEntryScript(assetsRoot) : null;
+      if (!entry) {
+        void vscode.window.showErrorMessage(
+          `未找到入口脚本 ${assetsRoot ? `${assetsRoot}/scripts/kbengine.py` : '(资产根未知)'},等待连接模式需要它`
+        );
+        return;
+      }
+      const result = injectWaitBootstrap(entry);
+      if (result.status === 'error') {
+        void vscode.window.showErrorMessage(`开启等待连接模式失败: ${result.message}`);
+        return;
+      }
+      await vscode.workspace
+        .getConfiguration('kbengine')
+        .update('debug.waitAtStartup', true, vscode.ConfigurationTarget.Global);
+      void vscode.window.showInformationMessage(
+        `等待连接模式已开:${result.message}(组件启动将停住,直到 VS Code 附加对应 debugpy attach 配置)`
+      );
+    }
+  );
+  context.subscriptions.push(waitAtStartupOnCommand);
+  const waitAtStartupOffCommand = vscode.commands.registerCommand(
+    'kbengine.debug.waitAtStartup.off',
+    async () => {
+      await vscode.workspace
+        .getConfiguration('kbengine')
+        .update('debug.waitAtStartup', false, vscode.ConfigurationTarget.Global);
+      const assetsRoot = serverManager.getConfigPath();
+      const entry = assetsRoot ? findEngineEntryScript(assetsRoot) : null;
+      const result = entry ? removeWaitBootstrap(entry) : null;
+      if (result && result.status === 'error') {
+        void vscode.window.showErrorMessage(`移除等待引导块失败: ${result.message}(设置已关,引导块不再生效)`);
+        return;
+      }
+      void vscode.window.showInformationMessage(
+        `等待连接模式已关${result ? `:${result.message}` : '(入口脚本未定位,引导块若在可手动移除)'}`
+      );
+    }
+  );
+  context.subscriptions.push(waitAtStartupOffCommand);
 
   // 最终服务端配置合成(批112 用户令:defaults 先载、元件 kbengine.xml 覆盖)。
   // 默认开启令:激活即出(后台预览不抢焦点)、侧栏常驻节点、文件保存联动刷新,

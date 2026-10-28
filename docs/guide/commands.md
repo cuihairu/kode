@@ -226,6 +226,26 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Never throws — the outcome (synced / skipped / upgraded / error, with the reason) is surfaced as the command result message
 - Boundary: this command only places the package; starting the listener is the job of the `kbengine.debug.autoDebugpy` start-time injection, and attaching is the job of the generated launch.json entries
 
+### `kbengine.debug.waitAtStartup.on`
+
+- Title: `debugpy: Wait for Debugger at Startup (On)`
+- Purpose: opt-in wait-for-debugger mode — pause engine components at their earliest Python (before early breakpoints in the entry script), without depending on the post-start telnet injection
+- Entries: command palette
+- Behavior:
+  - Locates the entry script `scripts/kbengine.py` next to `scripts/entity_defs` under the active assets root; a missing entry script is reported honestly and nothing is written
+  - Inserts a marked bootstrap block after the module docstring: it reads the `KODE_DEBUGPY_WAIT_PORT` environment variable and runs `debugpy.listen` + `debugpy.wait_for_client()`; without the variable, without the debugpy package, or on any error it stays silent and never blocks engine startup
+  - Sets `kbengine.debug.waitAtStartup` to true; `serverManager` then launches default instances of table components (baseapp/cellapp/loginapp/dbmgr/logger) with `KODE_DEBUGPY_WAIT_PORT` set to the per-component table port — the component pauses until VS Code attaches the matching debugpy attach config
+  - Insertion is idempotent (already-present block = zero write) and keeps user edits outside the block
+- Boundary: named instances keep the telnet-injection path (their per-instance ports come from the start-linkage window; wait mode does not cover them yet, stated honestly); while wait mode is on, the telnet injection for default instances is skipped with a log line (the bootstrap listener already owns the table port)
+
+### `kbengine.debug.waitAtStartup.off`
+
+- Title: `debugpy: Wait for Debugger at Startup (Off)`
+- Purpose: turn the wait-for-debugger mode off and restore the entry script
+- Entries: command palette
+- Behavior: removes the bootstrap block byte-exactly (restoring the original text; an absent block is a zero write) and sets `kbengine.debug.waitAtStartup` to false; if the entry script cannot be located the setting is still turned off with a note
+- Boundary: mirrors the On command's boundaries; components already running keep whatever listener they had
+
 ### `kbengine.jsoncAssociation.off`
 
 - Title: `Turn Off debug.json JSONC Association`

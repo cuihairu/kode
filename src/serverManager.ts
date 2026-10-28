@@ -14,6 +14,7 @@ import {
   type LaunchTargetSpec
 } from './launchDependencies';
 import { resolveActiveProfile } from './activeProfile';
+import { applyWaitAtStartupEnv } from './debugpyWaitAtStartup';
 
 /**
  * KBEngine 服务器组件信息
@@ -595,12 +596,20 @@ export class KBEngineServerManager {
     this.log(component, RuntimeLogLevel.INFO, `启动参数: ${(component.defaultArgs || []).join(' ') || '(none)'}`);
 
     try {
+      const env = this.buildComponentEnvironment(configPath, binPath);
+      // DBG-004 等待连接模式:默认实例按端口表带 KODE_DEBUGPY_WAIT_PORT,
+      // 入口脚本引导块读到即 listen+wait_for_client(不依赖启动后 telnet
+      // 注入);命名实例不带(逐实例口由启动联动窗口分配,等待模式暂不
+      // 覆盖,如实记录在模块头注记)。
+      if (targetId === DEFAULT_TARGET_ID) {
+        applyWaitAtStartupEnv(env, component.name);
+      }
       const managed = this.processManager.start({
         id: serverKey,
         command: exePath,
         args: component.defaultArgs || [],
         cwd: configPath,
-        env: this.buildComponentEnvironment(configPath, binPath),
+        env,
         component: component.name,
         readyAfterMs: 1000,
         readiness: readinessProbe

@@ -11,8 +11,9 @@
  *     workspaceFolder,见 debugConfig.ts generateLaunchConfigurations)。
  *
  * 注入时机=组件 telnet 就绪即刻。局限(如实写进文档/tick):注入走 telnet
- * python 层,此时 entitydef 装载/早期 config 阶段已过——进程级第一行断点
- * 属二期(fork script.cpp 按开关早期注入,待本功能验收后另立项)。
+ * python 层,此时 entitydef 装载/早期 config 阶段已过——早期断点由
+ * DBG-004 启动等待模式覆盖(debugpyWaitAtStartup.ts:入口脚本引导块
+ * listen+wait_for_client,不依赖本注入)。
  * 注入不占用面板的持久 telnet 会话:每次自建短命客户端,连-注-断,
  * 面板会话零感知。单组件失败只记 LogHub,不阻塞启动也不炸调用方。
  */
