@@ -101,6 +101,7 @@ import {
   parseDefFileSemantics,
   resolveRenameSymbolAtOffset
 } from './defRenamer';
+import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
 import {
   DETAIL_LEVELS,
@@ -5359,7 +5360,9 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
       targetFilePath: document.fileName,
       targetText: document.getText(),
       symbol,
-      newName
+      newName,
+      // IDE-NAV-009:跨文件编辑按各文件当前文本(打开文档缓冲区优先)换算
+      readCrossFileContent: filePath => readSharedFileSnapshot(filePath)?.content ?? null
     });
     if (fileEdits.length === 0) {
       return null;

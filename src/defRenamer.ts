@@ -67,6 +67,9 @@ export interface DefRenameOptions {
   targetText: string;
   symbol: DefRenameSymbol;
   newName: string;
+  /** IDE-NAV-009:跨文件内容读取口——在位打开文档返回缓冲区全文,未打开回落磁盘;
+   *  缺省走 readFileOrNull。目标文件本身不经过此口(用 targetText)。 */
+  readCrossFileContent?: (filePath: string) => string | null;
 }
 
 /** def 属性/方法名的合法形态(C 风格标识符;实体名的首字母大写约束不适用于成员) */
@@ -569,11 +572,17 @@ export function computeDefRenameEdits(options: DefRenameOptions): DefRenameFileE
     fileIndex.set(entry.filePath, entry);
   }
 
-  // 每个文件至多读盘一次:语义面与编辑面共用同一份内容(不可读即 null)
+  // 每个文件至多读一次:语义面与编辑面共用同一份内容(不可读即 null)。
+  // IDE-NAV-009:注入读口在位时优先走它(脏缓冲区),否则读盘
   const contentCache = new Map<string, string | null>();
   const readContent = (filePath: string): string | null => {
     if (!contentCache.has(filePath)) {
-      contentCache.set(filePath, readFileOrNull(filePath));
+      contentCache.set(
+        filePath,
+        options.readCrossFileContent
+          ? options.readCrossFileContent(filePath)
+          : readFileOrNull(filePath)
+      );
     }
     return contentCache.get(filePath) ?? null;
   };

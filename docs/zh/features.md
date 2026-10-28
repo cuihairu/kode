@@ -82,7 +82,7 @@
 - **KBEngine Explorer 活动栏** —— 专属视图容器与实体/资源树 provider ——（证据：package.json#contributes.viewsContainers、package.json#contributes.views；src/explorerProviders.ts）
 - **def/Python 代码生成器** —— 模板化生成 .def + Python 骨架并登记 entities.xml ——（证据：package.json#contributes.commands `kbengine.generator.wizard|templates`；package.json#configuration `kbengine.generator.*`；src/codeGenerator.ts、src/generatorForms.ts）
 - **形态向导** —— 一次生成代理/空间/组件/固定字典骨架 ——（证据：package.json#contributes.commands `kbengine.generator.formWizard`；todo.md:44）
-- **def 重命名** —— 重命名 provider 跨 def 文件解析链接路径；目标名与同段方法或属性/组件冲突时拒绝并说明冲突位置 ——（证据：src/defRenamer.ts `findDefRenameConflict`；src/languageProviders.ts `KBEngineRenameProvider`）
+- **def 重命名** —— 重命名 provider 跨 def 文件解析链接路径；目标名与同段方法或属性/组件冲突时拒绝并说明冲突位置；跨文件编辑按各文件当前文本（经 `readSharedFileSnapshot` 优先取打开文档缓冲区）计算，不用过期磁盘偏移 ——（证据：src/defRenamer.ts `findDefRenameConflict`/`computeDefRenameEdits` `readCrossFileContent`；src/languageProviders.ts `KBEngineRenameProvider`）
 - **调用层级** —— def 与 Python 符号的 prepare/callers/callees ——（证据：src/languageProviders.ts `KBEngineCallHierarchyProvider`）
 - **实现查询（Go to Implementations，def 方法）** —— def 方法声明按精确符号身份出实现列表（属主绑定与段属主脚本；不含全项目名字猜测回退）——（证据：src/entityMapping.ts `listMethodImplementationsByIdentity`；src/languageProviders.ts `KBEngineImplementationProvider`）
 - **工作区符号（Ctrl+T）** —— 已索引 def 符号按名称前缀跨 root 查询，返回 root/段容器信息，查询不触发全仓扫描 ——（证据：src/entityMapping.ts `searchDefSymbolsByPrefix`；src/languageProviders.ts `KBEngineWorkspaceSymbolProvider`）
