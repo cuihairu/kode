@@ -37,6 +37,7 @@ import {
   configurationOverrides
 } from './fake-vscode/workspaceState';
 import { panelRegistry } from './fake-vscode/panelRegistry';
+import { tests as testsRegistry } from './fake-vscode/core';
 import { FakeComponentBin } from './sim/fakeComponentBin';
 import {
   makeTextDocument,
@@ -99,6 +100,7 @@ beforeEach(() => {
   windowState.reset();
   workspaceState.reset();
   panelRegistry.reset();
+  testsRegistry.reset();
   workspace.workspaceFolders = [];
   workspace.findFiles = async () => [] as import('./fake-vscode/core').Uri[];
 });
@@ -143,6 +145,13 @@ describe('extension activate 装配', () => {
     // (防"漏注册/漏声明"两类回归,重设计问题 P14 的核心验收)
     expect(commandRegistry.allRegisteredCommandIds().sort())
       .toEqual(declared.commands.map(entry => entry.command).sort());
+
+    // 测试面板(TSK-005):一个 controller,一个默认 Run 档
+    expect(testsRegistry.controllers).toHaveLength(1);
+    expect(testsRegistry.controllers[0].id).toBe('kbengine-python-tests');
+    expect(testsRegistry.controllers[0].profiles).toHaveLength(1);
+    expect(testsRegistry.controllers[0].profiles[0].kind).toBe(1);
+    expect(testsRegistry.controllers[0].profiles[0].isDefault).toBe(true);
 
     // 树视图:实体/进程/telnet/最终配置四个视图 id 与 views 贡献点一致
     const declaredViewIds = Object.values(declared.views)

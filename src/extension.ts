@@ -68,7 +68,8 @@ import {
 import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
 import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
-import { showPythonTestList } from './pythonTestDiscovery';
+import { discoverProjectPythonTests, showPythonTestList } from './pythonTestDiscovery';
+import { runPythonTests, spawnTestProcess } from './pythonTestRunner';
 import { ProjectProfileStore } from './projectProfiles';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
@@ -1859,9 +1860,123 @@ export function activate(context: vscode.ExtensionContext) {
           void vscode.window.showInformationMessage(message);
         }
       });
+      // 列表面也是发现面:顺手刷新测试面板树(profile 或文件变了之后
+      // 跑一次命令即同步;refreshHandler 是 1.64 仍 proposed 的面,不用)
+      refreshPythonTestItems();
     }
   );
   context.subscriptions.push(listPythonTestsCommand);
+
+  // IDE-TSK-005 测试面板:TSK-004 发现面落成 TestController 树(文件→
+  // 用例,用例条目 range=发现时的行号列号——通过失败即与源码位置对应);
+  // Run 档逐条目 <解释器> -m pytest(取消=下一跳发起前拦截,验收:取消
+  // 不继续执行下一测试);无活动 profile 树清空。测试 API 面=基准
+  // (1.59+)+appendOutput(1.61),engines 相应 ^1.61.0。
+  const testController = vscode.tests.createTestController('kbengine-python-tests', 'KBEngine Python 测试');
+  const testRunTargets = new Map<string, { file: string; caseName?: string; item: vscode.TestItem }>();
+  const refreshPythonTestItems = (): void => {
+    testController.items.replace([]);
+    testRunTargets.clear();
+    const profile = resolveActiveProfile(context.workspaceState);
+    if (!profile) {
+      return;
+    }
+    const result = discoverProjectPythonTests(profile);
+    for (const file of result.files) {
+      const absolutePath = path.join(result.scriptsRoot, file.relativePath);
+      const fileItem = testController.createTestItem(
+        file.relativePath,
+        file.relativePath,
+        vscode.Uri.file(absolutePath)
+      );
+      testRunTargets.set(file.relativePath, { file: absolutePath, item: fileItem });
+      for (const testCase of file.cases) {
+        const caseId = `${file.relativePath}::${testCase.className ? `${testCase.className}.` : ''}${testCase.name}`;
+        const item = testController.createTestItem(caseId, testCase.name, vscode.Uri.file(absolutePath));
+        item.range = new vscode.Range(
+          testCase.line - 1,
+          testCase.column,
+          testCase.line - 1,
+          testCase.column + testCase.name.length
+        );
+        fileItem.children.add(item);
+        testRunTargets.set(caseId, {
+          file: absolutePath,
+          caseName: testCase.className ? `${testCase.className}::${testCase.name}` : testCase.name,
+          item
+        });
+      }
+      testController.items.add(fileItem);
+    }
+  };
+  refreshPythonTestItems();
+  testController.createRunProfile(
+    '运行',
+    vscode.TestRunProfileKind.Run,
+    async (request, token) => {
+      const profile = resolveActiveProfile(context.workspaceState);
+      if (!profile) {
+        void vscode.window.showInformationMessage(
+          '尚未选择活动 profile:先在 Profiles 里选一套 assets/engine 组合,再运行测试'
+        );
+        return;
+      }
+      // 请求条目:include 空=全部;文件条目展开成逐用例(单测试执行语义)
+      const targets: Array<{ id: string; file: string; caseName?: string }> = [];
+      const pushTarget = (item: vscode.TestItem): void => {
+        const target = testRunTargets.get(item.id);
+        if (target) {
+          targets.push({ id: item.id, file: target.file, caseName: target.caseName });
+        }
+        item.children.forEach(child => pushTarget(child));
+      };
+      if (request.include && request.include.length > 0) {
+        request.include.forEach(item => pushTarget(item));
+      } else {
+        testController.items.forEach(item => pushTarget(item));
+      }
+      if (targets.length === 0) {
+        return;
+      }
+      const run = testController.createTestRun(request);
+      let cancelled = false;
+      token.onCancellationRequested(() => {
+        cancelled = true;
+      });
+      const entries = await runPythonTests(
+        {
+          interpreterPath: profile.interpreterPath ?? 'python3',
+          cwd: path.join(profile.assetsRoot, 'scripts'),
+          items: targets
+        },
+        { exec: spawnTestProcess, isCancelled: () => cancelled }
+      );
+      const entriesById = new Map(entries.map(entry => [entry.id, entry]));
+      for (const target of targets) {
+        const registered = testRunTargets.get(target.id);
+        if (!registered) {
+          continue;
+        }
+        const entry = entriesById.get(target.id);
+        if (!entry) {
+          // 取消未跑:面板如实标跳过,不冒充通过
+          run.skipped(registered.item);
+          continue;
+        }
+        run.appendOutput(entry.output, undefined, registered.item);
+        if (entry.outcome === 'passed') {
+          run.passed(registered.item);
+        } else if (entry.outcome === 'skipped') {
+          run.skipped(registered.item);
+        } else {
+          run.failed(registered.item, new vscode.TestMessage(entry.message ?? entry.outcome));
+        }
+      }
+      run.end();
+    },
+    true
+  );
+  context.subscriptions.push(testController);
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);

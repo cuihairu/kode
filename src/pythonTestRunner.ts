@@ -1,0 +1,207 @@
+/**
+ * 测试面板跑单个测试(IDE-TSK-005)的执行面:逐条目
+ * `<解释器> -m pytest <file>::<case> -v --tb=line -p no:cacheprovider`
+ * ——cwd=profile 的 scripts 根;-v 行定通过/失败,short summary 行给
+ * 失败消息,输出原文入账(面板 Output);`-p no:cacheprovider` 不在
+ * scripts 根落 .pytest_cache。取消语义(验收:取消不继续执行下一测
+ * 试)= 下一跳发起前探针拦截:已完成的入账,未发起的不再执行;解释
+ * 器没有 pytest 时如实 errored 一条指明缺口,不冒充测试失败。
+ */
+
+import { spawn } from 'child_process';
+
+/** 一个待跑条目(来自 TSK-004 的发现面) */
+export interface PythonTestRunItem {
+  /** 面板条目 id */
+  id: string;
+  /** 测试文件绝对路径 */
+  file: string;
+  /** pytest 节点后缀:'test_x' / 'TestX::test_x';undefined=整个文件 */
+  caseName?: string;
+}
+
+export type PythonTestOutcome = 'passed' | 'failed' | 'errored' | 'skipped';
+
+/** 一条目的执行结果 */
+export interface PythonTestRunEntry {
+  id: string;
+  outcome: PythonTestOutcome;
+  /** failed/errored 的消息(short summary 行或缺口说明) */
+  message?: string;
+  /** 本次执行的原始输出(stdout+stderr,面板 Output 用) */
+  output: string;
+}
+
+/** pytest 固定参数(-p no:cacheprovider:不在用户 scripts 根落缓存) */
+export const PYTEST_ARGS = ['-m', 'pytest', '-v', '--tb=line', '-p', 'no:cacheprovider'];
+
+export function buildPytestArgs(item: PythonTestRunItem): string[] {
+  const node = item.caseName ? `${item.file}::${item.caseName}` : item.file;
+  return [...PYTEST_ARGS, node];
+}
+
+const VERBOSE_OUTCOME_PATTERN = /^(\S+\.py(?:::\S+)?) (PASSED|FAILED|ERROR|SKIPPED)\b/;
+const SUMMARY_PATTERN = /^(FAILED|ERROR) (\S+) - (.+)$/;
+const NO_PYTEST_PATTERN = /No module named ['"]?pytest/;
+
+interface PytestNodeResult {
+  outcome: PythonTestOutcome;
+  message?: string;
+}
+
+/**
+ * 解析 pytest -v 输出:节点行定结果,summary 行补失败/错误消息。
+ * 节点键=传给 pytest 的形态(`<file>` 或 `<file>::<case>`)。
+ */
+export function parsePytestOutput(output: string): Map<string, PytestNodeResult> {
+  const results = new Map<string, PytestNodeResult>();
+  const outcomeRank: Record<PythonTestOutcome, number> = { failed: 0, errored: 1, skipped: 2, passed: 3 };
+  for (const line of output.split('\n')) {
+    const verbose = VERBOSE_OUTCOME_PATTERN.exec(line);
+    if (verbose) {
+      const node = verbose[1];
+      const outcome = verbose[2].toLowerCase() as PythonTestOutcome;
+      const existing = results.get(node);
+      if (!existing || outcomeRank[outcome] < outcomeRank[existing.outcome]) {
+        results.set(node, existing ? { ...existing, outcome } : { outcome });
+      }
+      continue;
+    }
+    const summary = SUMMARY_PATTERN.exec(line);
+    if (summary) {
+      const node = summary[2];
+      const outcome = summary[1].toLowerCase() as PythonTestOutcome;
+      const existing = results.get(node);
+      if (existing) {
+        if (outcomeRank[outcome] < outcomeRank[existing.outcome]) {
+          existing.outcome = outcome;
+        }
+        existing.message = summary[3];
+      } else {
+        results.set(node, { outcome, message: summary[3] });
+      }
+    }
+  }
+  return results;
+}
+
+const NO_PYTEST_MESSAGE =
+  '所选解释器没有 pytest(python3 -m pytest 不可用):先给该解释器安装 pytest,或换 profile 解释器';
+
+/**
+ * 节点行匹配:pytest 实测会把节点归一成 rootdir 相对路径(传绝对
+ * 路径,`-v` 行打 `test_x.py::test_ok`),故按「用例名精确+文件后
+ * 缀」匹配(绝对直传与相对归一两种形态都吃)。
+ */
+const pathSuffixMatch = (a: string, b: string): boolean => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+
+function nodeMatchesItem(node: string, item: PythonTestRunItem): boolean {
+  const separator = node.indexOf('::');
+  const filePart = separator === -1 ? node : node.slice(0, separator);
+  const casePart = separator === -1 ? undefined : node.slice(separator + 2);
+  if (item.caseName) {
+    return casePart === item.caseName && pathSuffixMatch(filePart, item.file);
+  }
+  return pathSuffixMatch(filePart, item.file);
+}
+
+/**
+ * 输出→逐条目结果:单用例条目按节点匹配直取;整文件条目聚合其全部
+ * 匹配子节点取最差面,消息取首条失败/错误。节点缺席(节点写错/收集
+ * 为空/没跑起来)如实 errored「未收集到测试」,不猜。
+ */
+export function resolvePytestEntries(output: string, items: PythonTestRunItem[]): PythonTestRunEntry[] {
+  const results = parsePytestOutput(output);
+  if (results.size === 0) {
+    const noPytest = NO_PYTEST_PATTERN.test(output);
+    return items.map(item => ({
+      id: item.id,
+      outcome: 'errored' as const,
+      message: noPytest ? NO_PYTEST_MESSAGE : '未收集到测试(pytest 未产出该条目的结果)',
+      output
+    }));
+  }
+  return items.map(item => {
+    const hits = [...results.entries()].filter(([node]) => nodeMatchesItem(node, item));
+    if (hits.length === 0) {
+      return {
+        id: item.id,
+        outcome: 'errored' as const,
+        message: '未收集到测试(pytest 未产出该条目的结果)',
+        output
+      };
+    }
+    // 最差面:failed > errored > skipped > passed;消息取首条失败/错误
+    const rank = (outcome: PythonTestOutcome): number => ({ failed: 0, errored: 1, skipped: 2, passed: 3 })[outcome];
+    const sorted = [...hits].sort((a, b) => rank(a[1].outcome) - rank(b[1].outcome));
+    const message = sorted.find(([, result]) => result.message !== undefined)?.[1].message;
+    return { id: item.id, outcome: sorted[0][1].outcome, message, output };
+  });
+}
+
+export interface PythonTestRunRequest {
+  interpreterPath: string;
+  /** 执行 cwd=profile 的 scripts 根(模块导入上下文) */
+  cwd: string;
+  items: PythonTestRunItem[];
+}
+
+export interface PythonTestExecResult {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+}
+
+export interface PythonTestRunDeps {
+  exec(request: { command: string; args: string[]; cwd: string }): Promise<PythonTestExecResult>;
+  /** 取消探针:每发起下一跳前问一次,真即停(已完成的照常入账) */
+  isCancelled(): boolean;
+}
+
+/**
+ * 逐条目串行执行:条目间逐跳探针取消(取消不继续执行下一测试),
+ * 每跳结果独立入账。开跑前已取消则零发起。
+ */
+export async function runPythonTests(
+  request: PythonTestRunRequest,
+  deps: PythonTestRunDeps
+): Promise<PythonTestRunEntry[]> {
+  const entries: PythonTestRunEntry[] = [];
+  for (const item of request.items) {
+    if (deps.isCancelled()) {
+      break;
+    }
+    const { stdout, stderr } = await deps.exec({
+      command: request.interpreterPath,
+      args: buildPytestArgs(item),
+      cwd: request.cwd
+    });
+    entries.push(...resolvePytestEntries(`${stdout}\n${stderr}`, [item]));
+  }
+  return entries;
+}
+
+/** 装配层默认注入:真子进程捕获 stdout/stderr 与退出码 */
+export function spawnTestProcess(request: {
+  command: string;
+  args: string[];
+  cwd: string;
+}): Promise<PythonTestExecResult> {
+  return new Promise(resolve => {
+    const child = spawn(request.command, request.args, { cwd: request.cwd });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', chunk => {
+      stderr += String(chunk);
+    });
+    child.on('error', error => {
+      resolve({ stdout, stderr: `${stderr}${request.command}: ${error.message}`, code: null });
+    });
+    child.on('close', code => {
+      resolve({ stdout, stderr, code });
+    });
+  });
+}

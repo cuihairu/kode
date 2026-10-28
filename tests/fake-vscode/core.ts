@@ -197,6 +197,124 @@ export const tasks = {
   }
 };
 
+// ---- IDE-TSK-005 测试面板面(vscode Testing API 最小替身,基准 API
+// 1.59+ + appendOutput 1.61;断言读 profiles/createdRuns/条目记录) ----
+
+export enum TestRunProfileKind {
+  Run = 1,
+  Debug = 2,
+  Coverage = 3
+}
+
+export class TestMessage {
+  location?: unknown;
+  constructor(public message: string) {}
+}
+
+export class TestItemCollection {
+  private entries = new Map<string, TestItem>();
+  add(item: TestItem): void {
+    this.entries.set(item.id, item);
+  }
+  get(id: string): TestItem | undefined {
+    return this.entries.get(id);
+  }
+  replace(items: TestItem[]): void {
+    this.entries = new Map(items.map(item => [item.id, item]));
+  }
+  forEach(callback: (item: TestItem, id: string) => void): void {
+    for (const [id, item] of this.entries) {
+      callback(item, id);
+    }
+  }
+  get size(): number {
+    return this.entries.size;
+  }
+}
+
+export class TestItem {
+  range?: Range;
+  readonly children = new TestItemCollection();
+  constructor(
+    public readonly id: string,
+    public label: string,
+    public readonly uri?: Uri
+  ) {}
+}
+
+export class TestRun {
+  readonly passedItems: TestItem[] = [];
+  readonly failedItems: Array<{ item: TestItem; message?: TestMessage }> = [];
+  readonly skippedItems: TestItem[] = [];
+  readonly outputChunks: Array<{ output: string; item?: TestItem }> = [];
+  ended = false;
+  passed(item: TestItem): void {
+    this.passedItems.push(item);
+  }
+  failed(item: TestItem, message?: TestMessage): void {
+    this.failedItems.push({ item, message });
+  }
+  skipped(item: TestItem): void {
+    this.skippedItems.push(item);
+  }
+  appendOutput(output: string, _location?: unknown, item?: TestItem): void {
+    this.outputChunks.push({ output, item });
+  }
+  end(): void {
+    this.ended = true;
+  }
+}
+
+export class TestController {
+  readonly items = new TestItemCollection();
+  readonly profiles: Array<{
+    label: string;
+    kind: TestRunProfileKind;
+    runHandler: (request: unknown, token: unknown) => unknown;
+    isDefault: boolean;
+  }> = [];
+  readonly createdRuns: TestRun[] = [];
+  constructor(
+    public readonly id: string,
+    public readonly label: string
+  ) {}
+  createTestItem(id: string, label: string, uri?: Uri): TestItem {
+    return new TestItem(id, label, uri);
+  }
+  // 真实 vscode API 形:createRunProfile(label, kind, handler, isDefault)
+  createRunProfile(
+    label: string,
+    kind: TestRunProfileKind,
+    runHandler: (request: unknown, token: unknown) => unknown,
+    isDefault = false
+  ): { dispose(): void } {
+    this.profiles.push({ label, kind, runHandler, isDefault });
+    return { dispose: () => undefined };
+  }
+  createTestRun(_request: unknown): TestRun {
+    const run = new TestRun();
+    this.createdRuns.push(run);
+    return run;
+  }
+  dispose(): void {
+    this.items.replace([]);
+  }
+}
+
+// tests 命名空间面:createTestController 登记(extension 激活链用;
+// 断言读 controllers)。reset 供装配测试 beforeEach 清场。
+export const tests = {
+  controllers: [] as TestController[],
+  createTestController(id: string, label: string): TestController {
+    const controller = new TestController(id, label);
+    this.controllers.push(controller);
+    return controller;
+  },
+  reset(): void {
+    this.controllers = [];
+  }
+};
+
 // debugConfig 的 attachToComponent 经 vscode.debug.startDebugging 启动
 // 调试会话;对象成员可变,测试按用例 monkey-patch startDebugging。
 // 会话生命周期事件(DBG-005 注册表接线):默认零订阅者,测试可回放会话。

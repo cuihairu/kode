@@ -7,7 +7,7 @@ This page targets maintainers: how to develop locally, debug, build the docs, an
 
 - Node.js `^20.19.0 || >=22.12.0` (prefer the version pinned in `.nvmrc`)
 - pnpm: defer to the `packageManager` field in `package.json` (currently pnpm 12.10.1)
-- VSCode 1.50.0 or newer
+- VSCode 1.61.0 or newer
 
 ## Local Development
 
