@@ -272,7 +272,7 @@
 - [x] IDE-EVT-009 [P0] 删除文件时清除事件反向记录；验收：删除监听文件后监听计数和跳转目标同时消失；前置：IDE-EVT-007。
 - [x] IDE-EVT-010 [P0] 重命名文件时更新事件 URI；验收：监听跳转只指向新路径，不保留旧路径；前置：IDE-EVT-009。
 - [x] IDE-EVT-011 [P0] 释放事件 provider 的索引和 watcher；验收：provider 销毁后 watcher 为 0，在途读取不得重新发布缓存；前置：IDE-EVT-002。
-- [x] IDE-EVT-012 [P0] 让事件 CodeLens 读取共享文件索引；验收：事件记录来源复用统一索引，移除该 provider 的独立全仓扫描入口；前置：IDE-EVT-006, IDE-SNP-001。（74b2d9a;实现=src/eventApi.ts 构造必注入共享 WorkspaceIndex(删 ownIndex 自持回退),删零调用方 scanEventCalls 独立全仓扫描入口;extension.ts 统一持一份 sharedWorkspaceIndex 注入并随 context 释放;测试=tests/workspaceEventIndex.test.ts 共享索引单扫锁(两 provider 三次调用 findFiles 恰 1 次)+全量 11 处构造改注入;前置 IDE-SNP-001 快照接口为 SNP 线另一接口面,本验收以统一 WorkspaceIndex 满足;测试绿 3237|7）
+- [x] IDE-EVT-012 [P0] 让事件 CodeLens 读取共享文件索引；验收：事件记录来源复用统一索引，移除该 provider 的独立全仓扫描入口；前置：IDE-EVT-006, IDE-SNP-001。（74b2d9a;实现=src/eventApi.ts 构造必注入共享 WorkspaceIndex(删 ownIndex 自持回退),删零调用方 scanEventCalls 独立全仓扫描入口;extension.ts 统一持一份 sharedWorkspaceIndex 注入并随 context 释放;测试=tests/workspaceEventIndex.test.ts 共享索引单扫锁(两 provider 三次调用 findFiles 恰 1 次)+全量 11 处构造改注入;前置 IDE-SNP-001 快照接口为 SNP 线另一接口面,本验收以统一 WorkspaceIndex 满足;测试绿 3237|7）。2026-10-28 审核整改(03fcb37):冷路径退交互线程——WorkspaceIndex.indexFile 逐文件解析按趟让出(setImmediate 宏任务边界,让出窗口重验 disposed/revision 不吞并发编辑),extension.ts 启动期经 shouldStartKbEngineIndexing 门控把 ensureStarted 入队 IndexScheduler non-interactive(首扫不再由首次交互 CodeLens 触发,门控外纯 Python 仓保持懒启动零后台扫描);prove-red=tests/workspaceIndexColdYield.test.ts 2 例(旧码微任务级假 fs 下 24×90KB 首扫 330ms 单宏任务、1ms 定时器零心跳→红,让出后心跳>0;稀疏事件行号让出前后口径不变);锚点对账 extension.ts 878→896/928→946/955→973;3384|7)
 
 ### IDE-IDX · 根身份、实体归属与增量正确性（P1）
 
