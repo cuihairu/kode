@@ -44,6 +44,7 @@ import {
   allocateDebugpyInstancePort,
   autoDebugpyEnabled,
   debugpyPackageDir,
+  debugpyPortFor,
   type DebugpyInjectTarget
 } from './autoDebugpy';
 import { checkInterpreterDebugpy, debugpyPreflightAllowsInjection, debugpyPreflightDeps } from './debugpyPreflight';
@@ -60,6 +61,11 @@ import {
   type DebugSessionEndBehavior,
   type DebugSessionLike
 } from './debugSessionRegistry';
+import {
+  buildDebugStatusRows,
+  type DebugInjectionEntry
+} from './debugStatusBoard';
+import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
 import { LogViewerWebView } from './logWebView';
@@ -1584,6 +1590,17 @@ export function activate(context: vscode.ExtensionContext) {
   // DBG-001:命名实例 → 窗口分配的 debugpy 口;随实例退出清位,空出的口
   // 可被后续实例复用。默认实例不进 Map(走端口分配表)。
   const debugpyPortByServerKey = new Map<string, number>();
+  // DBG-008 注入结果面(serverKey → listening/failed):autoDebugpy 的
+  // report 回调、预检拦截、等待模式播种、窗口耗尽四路喂;进程退出时
+  // 随实例清位。状态树据此四态归因(未注入=无条目)。
+  const debugInjections = new Map<string, DebugInjectionEntry>();
+  // 状态树刷新面(树 provider 在下方创建;注入回调可能先于其定义发生,
+  // 用前置持有器解前向引用)
+  let refreshDebugTargets = (): void => undefined;
+  const recordInjection = (serverKey: string, entry: DebugInjectionEntry): void => {
+    debugInjections.set(serverKey, entry);
+    refreshDebugTargets();
+  };
   // DBG-003 注入统一入口(默认实例 string 形/命名实例对象形共用):发起前
   // 先做所选解释器 debugpy 预检——缺依赖在注入前给可操作状态;资产树已
   // 同步过包则照常注入(引擎导入的是资产树包,不依赖本机解释器)。
@@ -1606,26 +1623,41 @@ export function activate(context: vscode.ExtensionContext) {
         if (!allows) {
           const componentName = typeof injectTarget === 'string' ? injectTarget : injectTarget.component;
           log(componentName, 'warning', preflight.message);
+          recordInjection(
+            typeof injectTarget === 'string' ? injectTarget : `${injectTarget.component}#${injectTarget.targetId}`,
+            { outcome: 'failed', detail: preflight.message }
+          );
           return;
         }
       }
       // DBG-004 等待连接模式:默认实例由入口脚本引导块在启动最早期
       // listen+wait(端口同表),telnet 注入不再重复 listen,跳过并记一笔。
+      // DBG-008:引导块持有表口监听=「监听」态(表外组件 machine 无 env,不播)。
       if (debugpyWaitAtStartupEnabled() && typeof injectTarget === 'string') {
+        const waitPort = debugpyPortFor(injectTarget);
         log(injectTarget, 'info', 'autoDebugpy:等待连接模式已由启动引导监听,跳过 telnet 注入');
+        if (waitPort !== undefined) {
+          recordInjection(injectTarget, { outcome: 'listening', port: waitPort });
+        }
         return;
       }
-      await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), { log });
+      await injectDebugpyAfterStart([injectTarget], () => telnetService.getTargets(), {
+        log,
+        report: (serverKey, outcome, detail, port) =>
+          recordInjection(serverKey, { outcome, detail, port })
+      });
     })();
   };
   const serverStatusSubscription = serverManager.onDidChangeStatus(() => {
     serverControlProvider.refresh();
     updateStatusBar(serverManager);
+    refreshDebugTargets();
     const running = new Set(serverManager.getRunningServers().keys());
     for (const gone of [...debugpyInjected]) {
       if (!running.has(gone)) {
         debugpyInjected.delete(gone);
         debugpyPortByServerKey.delete(gone);
+        debugInjections.delete(gone);
       }
     }
     for (const component of running) {
@@ -1648,6 +1680,10 @@ export function activate(context: vscode.ExtensionContext) {
           component: targetName,
           level: RuntimeLogLevel.WARNING,
           text: `autoDebugpy:实例 ${targetId} 组件端口窗口已耗尽(${targetName} 同组件命名实例超过 8 个),跳过注入`
+        });
+        recordInjection(component, {
+          outcome: 'failed',
+          detail: `同组件命名实例超过 8 个,端口窗口耗尽,未注入`
         });
         continue;
       }
@@ -1686,6 +1722,80 @@ export function activate(context: vscode.ExtensionContext) {
       });
     })
   );
+
+  // DBG-008 Debug Targets 状态树:进程在册面 × 注入结果面 × 会话挂链面
+  // 合成四态板(未注入/监听/已附加/失败)的工作台面;三面任一变化都
+  // 刷新(注入回报走 recordInjection,进程变化走状态订阅,会话起止走
+  // debug 事件双订阅)。
+  const getDebugStatusRows = () => {
+    const runningLike = new Map<string, { component: string; targetId: string; status: string }>();
+    for (const [serverKey, server] of serverManager.getRunningServers()) {
+      runningLike.set(serverKey, {
+        component: server.component.name,
+        targetId: server.targetId,
+        status: String(server.status)
+      });
+    }
+    return buildDebugStatusRows(runningLike, debugInjections, debugSessionRegistry);
+  };
+  const debugTargetTreeProvider = new DebugTargetTreeProvider({ getRows: getDebugStatusRows });
+  refreshDebugTargets = () => debugTargetTreeProvider.refresh();
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('kbengine.debugTargets', debugTargetTreeProvider)
+  );
+  context.subscriptions.push(
+    vscode.debug.onDidStartDebugSession(() => debugTargetTreeProvider.refresh())
+  );
+  context.subscriptions.push(
+    vscode.debug.onDidTerminateDebugSession(() => debugTargetTreeProvider.refresh())
+  );
+
+  // DBG-008 点击定位:已附加=打开 Run and Debug 视图(调用堆栈里可见
+  // 该会话,条目名一并给出);监听/失败/未注入=如实提示端口/细节/开启
+  // 路径;无参调用(命令面板)=指引去视图点击。
+  const focusDebugTargetCommand = vscode.commands.registerCommand(
+    'kbengine.debug.focusTarget',
+    async (serverKey?: string) => {
+      if (!serverKey) {
+        void vscode.window.showInformationMessage(
+          '在 KBEngine Explorer 的 Debug Targets 视图中点击某个目标,查看/定位其调试状态'
+        );
+        return;
+      }
+      const row = getDebugStatusRows().find(item => item.serverKey === serverKey);
+      if (!row) {
+        void vscode.window.showInformationMessage(`${serverKey} 不在运行中(进程已停)`);
+        return;
+      }
+      if (row.phase === 'attached') {
+        await vscode.commands.executeCommand('workbench.view.debug');
+        const names = debugSessionRegistry
+          .linksFor(serverKey)
+          .map(link => link.session.name)
+          .join(' / ');
+        void vscode.window.showInformationMessage(
+          `${serverKey} ${DEBUG_PHASE_LABELS.attached}:${names}(Run and Debug 视图已打开,调用堆栈可见该会话)`
+        );
+        return;
+      }
+      if (row.phase === 'listening') {
+        void vscode.window.showInformationMessage(
+          `${serverKey} ${DEBUG_PHASE_LABELS.listening}中(debugpy ${row.port ?? '?'}):用 launch.json 里对应的 attach 配置附加`
+        );
+        return;
+      }
+      if (row.phase === 'failed') {
+        void vscode.window.showErrorMessage(
+          `${serverKey} 注入失败:${row.detail ?? '(无细节)'}——处理后在 Debug Targets 视图确认,或重启组件重试`
+        );
+        return;
+      }
+      void vscode.window.showInformationMessage(
+        `${serverKey} ${DEBUG_PHASE_LABELS['not-injected']}:开启 kbengine.debug.autoDebugpy(启动联动注入)或 kbengine.debug.waitAtStartup(启动等待)并重启组件`
+      );
+    }
+  );
+  context.subscriptions.push(focusDebugTargetCommand);
 
   // telnet 面板与状态灯
   const telnetWebView = new TelnetWebView(context, telnetService);

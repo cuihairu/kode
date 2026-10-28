@@ -462,6 +462,75 @@ describe('injectDebugpyAfterStart(启动联动编排)', () => {
     expect(injectedOne?.level).toBe('info');
     expect(logs).toHaveLength(2);
   });
+
+  // DBG-008 状态板喂料面:report 逐目标回报 listening/failed(带端口/
+  // 细节),跳过路径(不在表/没开 telnet)不回报——板据缺席=未注入
+  it('report 面:注入成功回 listening 带口,命名实例按 component#id 键', async () => {
+    configurationOverrides.set('kbengine', { 'debug.autoDebugpy': true });
+    const engine = await startFakeEngine();
+    const reported: Array<{ serverKey: string; outcome: string; detail: string; port?: number }> = [];
+    await injectDebugpyAfterStart(
+      ['baseapp', { component: 'cellapp', targetId: 'a', port: 5708 }],
+      () => [{ ...target(engine.port), component: 'baseapp' }, { ...target(engine.port), component: 'cellapp' }],
+      {
+        log: recorder,
+        probe: async () => true,
+        deps: { stepTimeoutMs: 4000 },
+        report: (serverKey, outcome, detail, port) => reported.push({ serverKey, outcome, detail, port })
+      }
+    );
+
+    const baseapp = reported.find(entry => entry.serverKey === 'baseapp');
+    const instance = reported.find(entry => entry.serverKey === 'cellapp#a');
+    expect(baseapp?.outcome).toBe('listening');
+    expect(baseapp?.port).toBe(5678);
+    expect(baseapp?.detail).toContain('debugpy.listen');
+    expect(instance?.outcome).toBe('listening');
+    expect(instance?.port).toBe(5708);
+  });
+
+  it('report 面:telnet 到点放弃与注入落败都回 failed', async () => {
+    configurationOverrides.set('kbengine', { 'debug.autoDebugpy': true });
+    const reported: Array<{ serverKey: string; outcome: string; detail: string }> = [];
+    // telnet 永不就绪 → failed
+    await injectDebugpyAfterStart(['baseapp'], () => [target(40000)], {
+      log: recorder,
+      probe: async () => false,
+      readyTimeoutMs: 120,
+      pollIntervalMs: 40,
+      schedule: async () => undefined,
+      report: (serverKey, outcome, detail) => reported.push({ serverKey, outcome, detail })
+    });
+    // 假引擎拒不认注入命令 → failed
+    const deadPort = await freePort();
+    await injectDebugpyAfterStart(['cellapp'], () => [{ ...target(deadPort), component: 'cellapp' }], {
+      log: recorder,
+      probe: async () => true,
+      deps: { stepTimeoutMs: 200 },
+      report: (serverKey, outcome, detail) => reported.push({ serverKey, outcome, detail })
+    });
+
+    expect(reported).toHaveLength(2);
+    expect(reported[0]).toMatchObject({ serverKey: 'baseapp', outcome: 'failed' });
+    expect(reported[0].detail).toContain('放弃注入');
+    expect(reported[1]).toMatchObject({ serverKey: 'cellapp', outcome: 'failed' });
+  });
+
+  it('report 面:不在端口表/没开 telnet 的跳过不回报(缺席=未注入)', async () => {
+    configurationOverrides.set('kbengine', { 'debug.autoDebugpy': true });
+    const reported: string[] = [];
+    await injectDebugpyAfterStart(['machine'], () => [target(40000)], {
+      log: recorder,
+      probe: async () => true,
+      report: serverKey => reported.push(serverKey)
+    });
+    await injectDebugpyAfterStart(['baseapp'], () => [], {
+      log: recorder,
+      report: serverKey => reported.push(serverKey)
+    });
+
+    expect(reported).toEqual([]);
+  });
 });
 
 describe('launch 生成(autoDebugpy 三件套之 c)', () => {

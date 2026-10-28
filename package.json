@@ -100,6 +100,7 @@
     "onCommand:kbengine.python.debugpySync",
     "onCommand:kbengine.debug.waitAtStartup.on",
     "onCommand:kbengine.debug.waitAtStartup.off",
+    "onCommand:kbengine.debug.focusTarget",
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
@@ -253,6 +254,10 @@
           "name": "Servers"
         },
         {
+          "id": "kbengine.debugTargets",
+          "name": "Debug Targets"
+        },
+        {
           "id": "kbengine.telnetStatus",
           "name": "Telnet",
           "when": "kbengine.telnetConfigured"
@@ -382,18 +387,18 @@
         "title": "Show Language Service Metrics Summary",
         "category": "KBEngine"
       },
-        {
-          "command": "kbengine.metrics.startCpuProfile",
-          "title": "Kode: Start Extension Host CPU Profile"
-        },
-        {
-          "command": "kbengine.metrics.stopCpuProfile",
-          "title": "Kode: Stop Extension Host CPU Profile"
-        },
-        {
-          "command": "kbengine.metrics.showActiveTasks",
-          "title": "Kode: Show Active Language Service Tasks"
-        },
+      {
+        "command": "kbengine.metrics.startCpuProfile",
+        "title": "Kode: Start Extension Host CPU Profile"
+      },
+      {
+        "command": "kbengine.metrics.stopCpuProfile",
+        "title": "Kode: Stop Extension Host CPU Profile"
+      },
+      {
+        "command": "kbengine.metrics.showActiveTasks",
+        "title": "Kode: Show Active Language Service Tasks"
+      },
       {
         "command": "kbengine.debug.createConfig",
         "title": "Create Debug Config Template",
@@ -586,6 +591,10 @@
       {
         "command": "kbengine.hotReload.showLog",
         "title": "Show Hot Reload Log"
+      },
+      {
+        "command": "kbengine.debug.focusTarget",
+        "title": "debugpy: Focus Debug Target"
       }
     ],
     "menus": {
@@ -1180,7 +1189,11 @@
         },
         "kbengine.core.backend": {
           "type": "string",
-          "enum": ["ts", "rust", "shadow"],
+          "enum": [
+            "ts",
+            "rust",
+            "shadow"
+          ],
           "enumDescriptions": [
             "TS 单轨（默认）：现状真相，Rust 路径完全不参与",
             "保留值：切流前置条件未全绿前被 serving 门禁拒绝，生效轨道仍是 ts（见 docs/kode2/pr-012.md）",

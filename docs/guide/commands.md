@@ -246,6 +246,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Behavior: removes the bootstrap block byte-exactly (restoring the original text; an absent block is a zero write) and sets `kbengine.debug.waitAtStartup` to false; if the entry script cannot be located the setting is still turned off with a note
 - Boundary: mirrors the On command's boundaries; components already running keep whatever listener they had
 
+### `kbengine.debug.focusTarget`
+
+- Title: `debugpy: Focus Debug Target`
+- Purpose: locate a debug target from the Debug Targets tree view (IDE-DBG-008) — each running target shows one row whose phase is one of not-injected / listening (with its debugpy port) / attached (with session count) / failed (with the failure detail); rows refresh on injection outcomes, debug-session starts/ends, and process changes
+- Entries: clicking a row in the Debug Targets view (the palette entry explains where to click)
+- Behavior:
+  - attached: opens the Run and Debug view (`workbench.view.debug`) and names the session entry (its call stack is visible there) — the per-session focus within the view is the editor's own selection, stated honestly
+  - listening: reports the debugpy port and points at the matching launch.json attach config
+  - failed: shows the failure detail (preflight block, telnet never ready, window exhausted, injection rejected) and how to retry
+  - not-injected: explains the two opt-in paths (`kbengine.debug.autoDebugpy` start-time injection, or the wait-at-startup mode) and that a component restart is needed
+  - a serverKey that is no longer running is reported as stopped, honestly
+- Boundary: the tree only lists running targets (a stopped process has no row); the attached phase wins over listening/failed because a live session implies the injection once succeeded
+
 ### `kbengine.jsoncAssociation.off`
 
 - Title: `Turn Off debug.json JSONC Association`

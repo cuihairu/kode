@@ -395,6 +395,17 @@ export async function injectDebugpyListen(
 export interface DebugpyAutoInjectOptions {
   /** 逐组件日志出口(装配层传 LogHub 包装) */
   log(component: string, level: 'info' | 'warning' | 'error', text: string): void;
+  /**
+   * 逐目标结果回报(DBG-008 状态板喂料):serverKey=组件名(默认实例)
+   * 或 `组件#实例`;listening 带端口,failed 带细节。跳过路径(不在
+   * 端口表/未开 telnet)不回报——板据缺席归「未注入」。
+   */
+  report?(
+    serverKey: string,
+    outcome: 'listening' | 'failed',
+    detail: string,
+    port?: number
+  ): void;
   /** telnet 端口连通探测(默认 makeProbeOne(1500) 同款 1.5s) */
   probe?(host: string, port: number): Promise<boolean>;
   /** 轮询间隔/就绪等待上限毫秒(默认 1000/60000) */
@@ -448,6 +459,8 @@ export async function injectDebugpyAfterStart(
     // 命名实例的口在装配层按窗口分配后传入;默认实例查分配表
     const listenPort = isInstance ? injectTarget.port : debugpyPortFor(component);
     const label = isInstance ? `实例 ${injectTarget.targetId} ` : '';
+    // DBG-008 状态板键:默认实例=组件名,命名实例=component#id(serverKey 同构)
+    const serverKey = isInstance ? `${component}#${injectTarget.targetId}` : component;
     if (listenPort === undefined) {
       options.log(component, 'info', `autoDebugpy:${label}组件不在端口分配表,跳过(machine/interfaces/bots 无 Python 调试面)`);
       return;
@@ -466,14 +479,18 @@ export async function injectDebugpyAfterStart(
       open = await probe(target.host, target.port);
     }
     if (!open) {
-      options.log(component, 'error', `autoDebugpy:${label}telnet ${target.host}:${target.port} ${readyTimeoutMs}ms 内未就绪,放弃注入`);
+      const detail = `telnet ${target.host}:${target.port} ${readyTimeoutMs}ms 内未就绪,放弃注入`;
+      options.log(component, 'error', `autoDebugpy:${label}${detail}`);
+      options.report?.(serverKey, 'failed', detail);
       return;
     }
     const result = await injectDebugpyListen(target, listenPort, options.deps ?? {});
     if (result.status === 'injected') {
       options.log(component, 'info', `autoDebugpy:${label}${result.detail}`);
+      options.report?.(serverKey, 'listening', result.detail, listenPort);
     } else {
       options.log(component, 'error', `autoDebugpy:${label}注入失败——${result.detail}`);
+      options.report?.(serverKey, 'failed', result.detail);
     }
   }));
 }

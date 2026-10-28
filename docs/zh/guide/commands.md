@@ -212,6 +212,19 @@
 - 行为：逐字节删除引导块还原原文（无块=零写入）并把 `kbengine.debug.waitAtStartup` 设为 false；入口脚本定位不到时设置照关并提示
 - 边界：与 On 命令对称；已在运行的组件保持既有监听不变
 
+### `kbengine.debug.focusTarget`
+
+- 标题：`debugpy: Focus Debug Target`
+- 作用：从 Debug Targets 视图定位某个调试目标（IDE-DBG-008）——每个运行中的目标一行，四态各自可辨：未注入 / 监听（带 debugpy 端口）/ 已附加（带会话数）/ 失败（带失败细节）；注入回报、调试会话起止、进程变化三面都会刷新视图
+- 入口：点击 Debug Targets 视图中的行（命令面板直接调用则提示去视图点击）
+- 行为：
+  - 已附加：打开 Run and Debug 视图（`workbench.view.debug`）并给出会话条目名（调用堆栈在该视图可见；视图内选中哪个会话是编辑器自身的选择面，如实写明）
+  - 监听：报告 debugpy 端口并指向 launch.json 里对应的 attach 配置
+  - 失败：展示失败细节（预检拦截 / telnet 一直不就绪 / 端口窗口耗尽 / 注入被拒）与重试途径
+  - 未注入：说明两条 opt-in 路径（`kbengine.debug.autoDebugpy` 启动联动注入、启动等待模式）并说明需重启组件
+  - serverKey 已不在运行：如实提示进程已停
+- 边界：视图只列运行中的目标（进程停了行即消失）；已附加压过监听/失败——有在挂会话说明注入必然曾成功
+
 ### `kbengine.jsoncAssociation.off`
 
 - 标题：`Turn Off debug.json JSONC Association`
