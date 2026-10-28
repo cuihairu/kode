@@ -208,6 +208,7 @@ import {
 import { renderExtensionIdentityReport } from './extensionIdentity';
 import { readBuildCommit } from './buildCommit';
 import { setFileReadVerbose } from './fileReadMetrics';
+import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
 import {
   getEventLoopDelayReport,
   getHostVitalsReport,
@@ -1711,6 +1712,26 @@ export function activate(context: vscode.ExtensionContext) {
     metricsChannel.append(getEventLoopDelayReport());
     metricsChannel.append(getHostVitalsReport());
     metricsChannel.show();
+  }));
+  // IDE-MET-007:卡顿取证入口——start 开采/stop 落盘(.cpuprofile+.window.txt
+  // 关联请求窗口);globalStorage 不可用时回落系统临时目录。
+  if (context.globalStoragePath) {
+    setCpuProfileDirectory(context.globalStoragePath);
+  }
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.startCpuProfile', async () => {
+    if (await startCpuProfile()) {
+      vscode.window.showInformationMessage('Kode: CPU profile started');
+    } else {
+      vscode.window.showWarningMessage('Kode: CPU profile is already running');
+    }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.metrics.stopCpuProfile', async () => {
+    const result = await stopCpuProfile();
+    if (result) {
+      vscode.window.showInformationMessage(`Kode: CPU profile saved: ${result.profilePath}`);
+    } else {
+      vscode.window.showWarningMessage('Kode: no CPU profile is running');
+    }
   }));
   // IDE-MET-005/006:宿主事件循环延迟与 CPU/RSS 自激活即采样(showSummary 面)
   startEventLoopDelayMonitor();

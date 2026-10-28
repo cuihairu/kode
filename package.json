@@ -60,6 +60,8 @@
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
     "onCommand:kbengine.metrics.showSummary",
+    "onCommand:kbengine.metrics.startCpuProfile",
+    "onCommand:kbengine.metrics.stopCpuProfile",
     "onCommand:kbengine.debug.createConfig",
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
@@ -372,6 +374,14 @@
         "title": "Show Language Service Metrics Summary",
         "category": "KBEngine"
       },
+        {
+          "command": "kbengine.metrics.startCpuProfile",
+          "title": "Kode: Start Extension Host CPU Profile"
+        },
+        {
+          "command": "kbengine.metrics.stopCpuProfile",
+          "title": "Kode: Stop Extension Host CPU Profile"
+        },
       {
         "command": "kbengine.debug.createConfig",
         "title": "Create Debug Config Template",

@@ -188,6 +188,23 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Each line reports request count, P50/P95/P99/max/avg elapsed (monotonic clock, ms), cache hit rate, waited-for-init count, file discovery/read/parse totals and status counts
   - Per-request detailed samples are off by default; enable `kbengine.metrics.detailed` to also stream `[kode-lsm]` samples into the log timeline
 
+### `kbengine.metrics.startCpuProfile`
+
+- Title: `Kode: Start Extension Host CPU Profile`
+- Purpose: start V8 CPU profiling in the extension host process (IDE-MET-007 jank evidence entry point)
+- Behavior:
+  - Sampling interval 1000us via the Node inspector `Profiler` domain; a second start while running is rejected with a warning
+  - Output directory is the extension global storage (falls back to the system temp dir when unavailable)
+
+### `kbengine.metrics.stopCpuProfile`
+
+- Title: `Kode: Stop Extension Host CPU Profile`
+- Purpose: stop profiling and write the capture to disk with its request-window context
+- Behavior:
+  - Writes `kode-cpu-profile-<timestamp>.cpuprofile` (open in VS Code / Chrome DevTools) plus a sibling `.window.txt`
+  - The `.window.txt` sidecar records window start/end ISO timestamps, duration, the language service metrics summary and the event loop delay report, correlating the profile with the request window
+
+
 ### `kbengine.python.debugpySync`
 
 - Title: `Copy System debugpy into Assets`
