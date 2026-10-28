@@ -98,6 +98,7 @@
 - **现有项目导入** —— 选择资产根后按同一约定链识别 entities/defs/scripts/engine 四面（未命中的面如实预览「未识别」），预览清单逐面列出识别结果，选「导入」确认才建立 profile；任一步取消零写入，四面全空的目录直接拒绝不出预览 ——（证据：package.json#contributes.commands `kbengine.project.import`；src/projectImport.ts `identifyProjectLayout`/`importExistingProject`）
 - **按 profile 记录解释器来源** —— 每个 profile 记录用哪个 Python 解释器、来自哪里（`kbengine.python.interpreterPath` 设置存在才采用，否则定位 PATH 里的 python3/python，再没有如实记缺失状态，绝不伪造路径）；导入确认消息内联显示解释器状态，早于此字段存在的旧记录读回时归一为缺失而不是被丢弃——（证据：src/profileInterpreter.ts `resolveInterpreterWith`/`describeInterpreterState`；src/projectProfiles.ts `saveInterpreter`）
 - **Python 语言服务可用性检查** —— 按 `ms-python.vscode-pylance` 的注册/激活/安装目录证据报告未安装／未启用／已激活三态；extraPaths 写入绝不计为可用，只附明确警示——（证据：package.json#contributes.commands `kbengine.python.serviceStatus`；src/pythonLanguageServiceStatus.ts `classifyPythonService`）
+- **最小项目创建模板** —— 一份固定清单明确列出新建空 KBEngine 项目要落的每个目录和文件（相对路径逐条、文件内容齐备，scripts 布局与共享发现约定对齐，建出的骨架可被导入识别）；创建预检逐条探测目标路径——任一目标已存在即按准确路径上报冲突，预览每条一行给准确绝对路径——（证据：src/projectTemplate.ts `MINIMAL_PROJECT_TEMPLATE`/`planProjectCreation`/`buildProjectCreationPreviewItems`）
 
 ## 设置项
 
