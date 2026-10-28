@@ -209,6 +209,38 @@ export class KBEngineCodeGenerator {
   }
 
   /**
+   * 多文件生成的回滚账本(IDE-GEN-006):记录本次新增文件与被改写文件
+   * 的原内容;后续任何一步失败时逐项回收(新增删除,改写还原)
+   */
+  private rollbackLedger: { createdFiles: string[]; overwrittenFiles: Array<{ filePath: string; previous: string }> } = {
+    createdFiles: [],
+    overwrittenFiles: []
+  };
+
+  /**
+   * 回收本次新增项(IDE-GEN-006):先还原被改写文件(entities.xml 注册项),
+   * 再按写入逆序删除本次新增文件;单项回收失败不掩盖原始错误
+   */
+  private rollbackGeneration(): void {
+    for (const item of [...this.rollbackLedger.overwrittenFiles].reverse()) {
+      try {
+        writeFileAtomic(item.filePath, item.previous);
+      } catch {
+        // 回收失败不掩盖原始错误
+      }
+    }
+    for (const filePath of [...this.rollbackLedger.createdFiles].reverse()) {
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        // 回收失败不掩盖原始错误
+      }
+    }
+  }
+
+  /**
    * 预检全部生成目标(IDE-GEN-003):逐项报出冲突(def/python),
    * 调用方在写出任何文件前整体中止,不留半套
    */
@@ -781,15 +813,29 @@ export class KBEngineCodeGenerator {
         return;
       }
 
+      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [] };
       const defFile = await this.generateDefFile(entity);
+      this.rollbackLedger.createdFiles.push(defFile);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
         const pythonFile = await this.generatePythonFile(entity);
+        this.rollbackLedger.createdFiles.push(pythonFile);
         vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFile}`);
       }
 
       if (this.config.registerInEntitiesXml) {
+        // IDE-GEN-006:注册前记下原内容,后续失败时回收本次注册项
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (workspaceFolder) {
+          const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
+          if (fs.existsSync(entitiesXmlPath)) {
+            this.rollbackLedger.overwrittenFiles.push({
+              filePath: entitiesXmlPath,
+              previous: fs.readFileSync(entitiesXmlPath, 'utf8')
+            });
+          }
+        }
         await this.registerInEntitiesXml(entity.config);
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
       }
@@ -807,6 +853,8 @@ export class KBEngineCodeGenerator {
       }
 
     } catch (error) {
+      // IDE-GEN-006:回收本次新增文件与注册项,不留半套
+      this.rollbackGeneration();
       vscode.window.showErrorMessage(`生成失败: ${error}`);
     }
   }
@@ -965,20 +1013,36 @@ export class KBEngineCodeGenerator {
         return;
       }
 
+      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [] };
       const defFile = await this.generateDefFile(entity);
+      this.rollbackLedger.createdFiles.push(defFile);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
         const pythonFile = await this.generatePythonFile(entity);
+        this.rollbackLedger.createdFiles.push(pythonFile);
         vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFile}`);
       }
 
       if (this.config.registerInEntitiesXml) {
+        // IDE-GEN-006:注册前记下原内容,后续失败时回收本次注册项
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (workspaceFolder) {
+          const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
+          if (fs.existsSync(entitiesXmlPath)) {
+            this.rollbackLedger.overwrittenFiles.push({
+              filePath: entitiesXmlPath,
+              previous: fs.readFileSync(entitiesXmlPath, 'utf8')
+            });
+          }
+        }
         await this.registerInEntitiesXml(entity.config);
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
       }
 
     } catch (error) {
+      // IDE-GEN-006:回收本次新增文件与注册项,不留半套
+      this.rollbackGeneration();
       vscode.window.showErrorMessage(`生成失败: ${error}`);
     }
   }
