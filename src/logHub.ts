@@ -62,6 +62,10 @@ const DEFAULT_FLUSH_INTERVAL_MS = 40;
 const DEFAULT_MAX_BATCH_BYTES = 128 * 1024;
 const DEFAULT_DEDUPE_WINDOW_MS = 1000;
 
+/** 文件监控单批读取上限(IDE-RES-005):日志突增时分批读,不一次分配等于
+ *  全部增量的 Buffer;批边界可能切在行中间,未换行尾巴拼进下一批。 */
+const MAX_READ_CHUNK_BYTES = 1024 * 1024;
+
 export function normalizeText(value: string): string {
   return value.replace(/\r\n/g, '\n').replace(/\n$/, '');
 }
@@ -70,7 +74,7 @@ export class LogHub implements LogHubLike {
   private readonly pending: LogEvent[] = [];
   private readonly retained: LogEvent[] = [];
   private readonly recentOrigins = new Map<string, { timestamp: number; event: LogEvent }>();
-  private readonly fileWatchers = new Map<string, { offset: number; timer?: NodeJS.Timeout }>();
+  private readonly fileWatchers = new Map<string, { offset: number; timer?: NodeJS.Timeout; partial: string }>();
   private readonly events = new EventEmitter();
   private readonly capacity: number;
   private readonly flushIntervalMs: number;
@@ -178,7 +182,7 @@ export class LogHub implements LogHubLike {
   watchFile(component: string, filePath: string, pollIntervalMs = 200): void {
     const origin = `file:${filePath}`;
     if (this.fileWatchers.has(origin)) return;
-    const watcher: { offset: number; timer?: NodeJS.Timeout } = { offset: 0 };
+    const watcher: { offset: number; timer?: NodeJS.Timeout; partial: string } = { offset: 0, partial: '' };
     this.fileWatchers.set(origin, watcher);
     const poll = (): void => {
       let stat: import('fs').Stats;
@@ -195,27 +199,55 @@ export class LogHub implements LogHubLike {
         return;
       }
       try {
-        if (stat.size < watcher.offset) watcher.offset = 0;
+        if (stat.size < watcher.offset) {
+          watcher.offset = 0;
+          watcher.partial = '';
+        }
         if (stat.size === watcher.offset) return;
-        const length = stat.size - watcher.offset;
-        const buffer = Buffer.alloc(length);
+        // 分批读取(IDE-RES-005):循环内复用同一块 ≤上限的 buffer,
+        // 分配峰值与增量总量解耦;读满 2.6MiB 突增也只占 1MiB。
+        const buffer = Buffer.alloc(Math.min(MAX_READ_CHUNK_BYTES, stat.size - watcher.offset));
         const descriptor = fs.openSync(filePath, 'r');
         try {
-          const read = fs.readSync(descriptor, buffer, 0, length, watcher.offset);
-          watcher.offset += read;
-          const chunk = buffer.toString('utf8', 0, read);
-          chunk.split('\n').forEach((line, index) => {
-            if (line.trim()) {
+          for (;;) {
+            const remaining = stat.size - watcher.offset;
+            if (remaining <= 0) break;
+            const read = fs.readSync(descriptor, buffer, 0, Math.min(buffer.length, remaining), watcher.offset);
+            if (read <= 0) break;
+            watcher.offset += read;
+            const atEnd = watcher.offset >= stat.size;
+            const chunk = watcher.partial + buffer.toString('utf8', 0, read);
+            watcher.partial = '';
+            const lines = chunk.split('\n');
+            const tail = lines.pop();
+            // 批边界切在行中间:非末批把未换行尾巴拼进下一批;
+            // 末批尾巴立即入(与旧一次读全量行为一致,文件末行不压缓存)
+            if (!atEnd && tail !== undefined) {
+              watcher.partial = tail;
+            }
+            lines.forEach((line, index) => {
+              if (line.trim()) {
+                this.ingest({
+                  source: 'file',
+                  component,
+                  text: line,
+                  origin,
+                  level: RuntimeLogLevel.INFO,
+                  line: index + 1
+                });
+              }
+            });
+            if (atEnd && tail !== undefined && tail.trim()) {
               this.ingest({
                 source: 'file',
                 component,
-                text: line,
+                text: tail,
                 origin,
                 level: RuntimeLogLevel.INFO,
-                line: index + 1
+                line: lines.length + 1
               });
             }
-          });
+          }
         } finally {
           fs.closeSync(descriptor);
         }

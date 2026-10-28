@@ -66,6 +66,36 @@ describe('LogHub', () => {
     hub.dispose();
     rmSync(directory, { recursive: true, force: true });
   });
+
+  it('日志突增分批读取:单次分配不超过批上限,绝不一次吃下全部增量(IDE-RES-005)', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'kode-loghub-chunk-'));
+    const file = join(directory, 'surge.log');
+    const hub = new LogHub({ flushIntervalMs: 5 });
+    // 突增 ≈2.6MiB:3 行各 ≈900KB,行边界横跨 1MiB 批界(批边界切在行中间)
+    const lines = ['l1', 'l2', 'l3'].map(tag => `${tag}:${'x'.repeat(900 * 1024)}`);
+    writeFileSync(file, `${lines.join('\n')}\n`);
+
+    const allocOriginal = Buffer.alloc;
+    const allocSizes: number[] = [];
+    // watchFile 首轮 poll 在其调用栈内同步执行:记账 spy 必须先于 watchFile 挂上
+    const allocSpy = vi
+      .spyOn(Buffer, 'alloc')
+      .mockImplementation((size: number, fill?: string | number | Uint8Array, encoding?: BufferEncoding) => {
+        allocSizes.push(size);
+        return allocOriginal(size, fill, encoding);
+      });
+    hub.watchFile('svc', file, 5);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    allocSpy.mockRestore();
+    hub.dispose();
+
+    // 分批生效:任何一次分配都 ≤1MiB 批上限(旧实现一次 alloc 2.6MiB 全量)
+    expect(allocSizes.length).toBeGreaterThan(0);
+    expect(Math.max(...allocSizes)).toBeLessThanOrEqual(1024 * 1024);
+    // 内容完整且行不被批边界拆断:3 行原文整行按序 ingest
+    expect(hub.getRetained().map(event => event.text)).toEqual(lines);
+    rmSync(directory, { recursive: true, force: true });
+  });
 });
 
 describe('LogHub subscriber contract', () => {
