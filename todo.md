@@ -376,7 +376,7 @@
 ### IDE-NAV · 基础语言功能逐项补齐（P1）
 
 来源：审计 §4；src/languageProviders.ts、src/defReferenceGraph.ts、src/defRenamer.ts。
-- [ ] IDE-NAV-001 [P1] 注册 def 原生引用查询入口；验收：Shift+F12 可访问已有 def 引用结果，结果复用统一符号身份；前置：IDE-IDX-003。
+- [x] IDE-NAV-001 [P1] 注册 def 原生引用查询入口；验收：Shift+F12 可访问已有 def 引用结果，结果复用统一符号身份；前置：IDE-IDX-003。(bfa8a7d;KBEngineReferencesProvider(registerReferenceProvider over defDocumentSelector):与调用层级 prepare 完全同链 findDefSymbolInfo→resolveDefinitionSymbolAtPosition→resolveMethodImplementationByIdentity→getIncomingPythonMethodCalls,引用位=python 调用点(callLine/callCharacter 1基转0基,长度=方法名),不另起名字 grep;方法段收口,属性位如实 null(NAV-002 前不虚报),实现未解析不发引用查询;prove-red defReferences 4 例先红(类缺);fake-vscode/languages 补 referenceRegistrations 面,extension.test.ts 注册锁 reference=1;门禁 eslint 0/tsc 0/unit 3438|7/demo 25 RC0;锚点 extension 9+languageProviders 1(5029→5185)重探同步)
 - [ ] IDE-NAV-002 [P1] 为属性引用收录 Python self 访问；验收：已确定实体归属的 self.hp 纳入 hp 引用，无关实体同名属性不纳入；前置：IDE-NAV-001, IDE-IDX-004。
 - [ ] IDE-NAV-003 [P1] 为方法引用收录 receiver RPC 调用；验收：Base/Cell/Client 同名方法按 receiver 段分开统计；前置：IDE-NAV-001。
 - [ ] IDE-NAV-004 [P1] 让引用结果使用未保存文档；验收：新增或删除未保存调用点后，引用列表跟随当前版本；前置：IDE-NAV-002, IDE-NAV-003, IDE-SNP-001。
