@@ -208,6 +208,54 @@ describe('pythonParserWorkerHost worker 路径(审核发现 :185)', () => {
     await expect(v3).resolves.toEqual({ revision: 3, parsed: parsedStub });
   });
 
+  it('待处理字节量有上限:积压超限的新请求可解释拒绝,未超限照常结算', async () => {
+    const host = await loadHost();
+    // 40 个文件各「一份在途 + 一份待派发」:每份 ≈256KB,累计越过 8MiB 上限
+    const promises: Array<Promise<unknown>> = [];
+    for (let i = 0; i < 40; i += 1) {
+      const file = `/backlog/f${i}.py`;
+      promises.push(host.parsePythonFileResponsive(bigContent, file, 1));
+      promises.push(host.parsePythonFileResponsive(bigContent, file, 2));
+    }
+    // 逐个回包直至无在途(回包后链式派发待派发项)
+    const worker = workerState.instances[0];
+    let replied = 0;
+    while (replied < worker.posted.length) {
+      const message = worker.posted[replied];
+      replied += 1;
+      worker.emit('message', { id: message.id, revision: message.revision, parsed: parsedStub });
+    }
+    const outcomes = await Promise.allSettled(promises);
+    const rejected = outcomes.filter(outcome => outcome.status === 'rejected') as
+      Array<PromiseRejectedResult>;
+    // 上限真实生效:超限的待派发请求不再无限保留源码串
+    expect(rejected.length).toBeGreaterThan(0);
+    for (const outcome of rejected) {
+      // 可解释结果:拒绝原因明说字节积压上限
+      expect(outcome.reason.message).toMatch(/backlog/i);
+    }
+    // 上限内的请求(在途首份)不受影响,照常成功结算
+    const fulfilled = outcomes.filter(outcome => outcome.status === 'fulfilled');
+    expect(fulfilled.length).toBeGreaterThan(0);
+  });
+
+  it('同文件合并不重复记账:同文件快速多版不累积旧版本字节(单文件反复编辑不触上限)', async () => {
+    const host = await loadHost();
+    const versions: Array<Promise<unknown>> = [];
+    // 同一文件 60 版(旧实现逐份派发;合并链下每代只保留最新一份 ≈256KB)
+    for (let revision = 1; revision <= 60; revision += 1) {
+      versions.push(host.parsePythonFileResponsive(bigContent, '/solo.py', revision));
+    }
+    const worker = workerState.instances[0];
+    expect(worker.posted).toHaveLength(1);
+    // 只保留最新一版:回包后链式派发最终版,全部以最新结果结算
+    worker.emit('message', { id: worker.posted[0].id, revision: 1, parsed: parsedStub });
+    expect(worker.posted).toHaveLength(2);
+    worker.emit('message', { id: worker.posted[1].id, revision: 60, parsed: parsedStub });
+    const outcomes = await Promise.allSettled(versions);
+    expect(outcomes.every(outcome => outcome.status === 'fulfilled')).toBe(true);
+  });
+
   it('不认识 id 的回包被忽略,不影响在途请求', async () => {
     const host = await loadHost();
     const pending = host.parsePythonFileResponsive(bigContent, '/a.py', 1);

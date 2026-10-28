@@ -1143,8 +1143,14 @@ export class PythonClassIndex {
       return;
     }
     this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
-    await this.updateFileResponsive(document.fileName, document.getText(), document.version,
-      this.revisions.get(document.fileName)!);
+    const revision = this.revisions.get(document.fileName)!;
+    try {
+      await this.updateFileResponsive(document.fileName, document.getText(), document.version, revision);
+    } catch {
+      // 解析线程停用/积压字节上限拒绝(IDE-RES-002)等:本次编辑不入索引,
+      // 版本号已前进,下一次编辑自然重试同通道;拒绝不当 unhandled rejection 上抛。
+      jumpLog('info', () => `py 解析未入索引(待下次编辑重试): ${document.fileName}`);
+    }
   }
 
   /** 版本键只读面:缓存命中且版本一致才给解析结果,否则 null(不把旧代
