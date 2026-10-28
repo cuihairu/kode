@@ -37,6 +37,7 @@ import {
   configurationOverrides
 } from './fake-vscode/workspaceState';
 import { panelRegistry } from './fake-vscode/panelRegistry';
+import { fakeExtensionList } from './fake-vscode/extensionsState';
 import { tests as testsRegistry } from './fake-vscode/core';
 import { FakeComponentBin } from './sim/fakeComponentBin';
 import {
@@ -1003,6 +1004,34 @@ describe('extension activate 装配', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 15000);
+
+  it('IDE-REL-001 双 Kode 共激活:两 ID 都实际激活才警告,单激活零打扰', () => {
+    // 共激活:注入两个激活的 kode 系扩展(fake extensions.all)
+    fakeExtensionList.push(
+      { id: 'cuihairu.kode-kbengine', isActive: true },
+      { id: 'cuihairu.kode', isActive: true }
+    );
+    let context = makeContext();
+    try {
+      activate(context);
+      expect(messages.warning.some(message => message.includes('同时激活'))).toBe(true);
+    } finally {
+      disposeAll(context);
+      fakeExtensionList.length = 0;
+    }
+
+    // 单激活(只有自身):无该警告(已安装未激活/被禁用都不算冲突)
+    messages.warning.length = 0;
+    fakeExtensionList.push({ id: 'cuihairu.kode-kbengine', isActive: true });
+    context = makeContext();
+    try {
+      activate(context);
+      expect(messages.warning.some(message => message.includes('同时激活'))).toBe(false);
+    } finally {
+      disposeAll(context);
+      fakeExtensionList.length = 0;
+    }
+  });
 });
 
 describe('最终配置默认开启(批112 默认开启令)', () => {

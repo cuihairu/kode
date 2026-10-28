@@ -9,3 +9,4 @@ export * from '../fake-vscode/windowState';
 export * from '../fake-vscode/commandRegistry';
 export * from '../fake-vscode/languages';
 export * from '../fake-vscode/panelRegistry';
+export * from '../fake-vscode/extensionsState';

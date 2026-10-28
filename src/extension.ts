@@ -268,6 +268,7 @@ import {
   runWorkspaceDiscovery
 } from './workspaceDiscovery';
 import { renderExtensionIdentityReport } from './extensionIdentity';
+import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';
 import { setFileReadVerbose } from './fileReadMetrics';
 import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
@@ -3424,6 +3425,21 @@ export function activate(context: vscode.ExtensionContext) {
     identityChannel.show(true);
   });
   context.subscriptions.push(identityCommand, identityChannel);
+
+  // IDE-REL-001 两个 Kode ID 共激活检测:激活时查一次当前宿主窗口的
+  // Kode 系扩展(cuihairu. 名下 id 含 kode),只有「实际共激活」(两个
+  // 都 isActive)才提示冲突;已安装未激活/被禁用(禁用不进
+  // extensions.all,采集面天然见不到)不算冲突,零虚报零打扰。
+  const kodeFamilyFacts = vscode.extensions.all
+    .filter(extension => {
+      const id = extension.id.toLowerCase();
+      return id.startsWith('cuihairu.') && id.includes('kode');
+    })
+    .map(extension => ({ id: extension.id, isActive: extension.isActive }));
+  const dualActivationWarning = formatDualActivationWarning(detectDualActivation(kodeFamilyFacts));
+  if (dualActivationWarning !== null) {
+    void vscode.window.showWarningMessage(dualActivationWarning);
+  }
 
   // Python 语言服务三态检查(IDE-PRJ-005):未安装/未启用/已激活,判定只看
   // 扩展事实(采集 collectPythonServiceFacts 与 profile 健康汇总同源);
