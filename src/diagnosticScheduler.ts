@@ -69,6 +69,8 @@ interface UriState {
 }
 
 interface QueuedTask {
+  /** URI 键(IDE-DIA-006:出队后处理仍需回查 state,随任务携带) */
+  key: string;
   document: DiagnosticTaskDocument;
   options: DiagnosticTaskOptions<unknown>;
   /** 入队时版本令牌 */
@@ -81,6 +83,23 @@ function versionOf(document: DiagnosticTaskDocument): number | undefined {
     : undefined;
 }
 
+/** IDE-DIA-006 单轮时间片:一轮 flush 连续同步处理文档的时长上界。超出且
+ *  还有待处理条目时让出宿主(宏任务边界)再继续——多个文档待诊断时,一轮
+ *  flush 不连续占满宿主处理全部文档。与 workspaceIndex 的 YIELD_SLICE_MS
+ *  同族口径(25ms),单次宿主连续同步段上界=切片+单个文档计算。 */
+const FLUSH_SLICE_MS = 25;
+
+/** 默认让出面:setImmediate 宏任务边界(定时器/IO/其它宏任务可插进) */
+const yieldToHostDefault = (): Promise<void> =>
+  new Promise(resolve => { setImmediate(resolve); });
+
+export interface DiagnosticSchedulerOptions {
+  /** 单轮时间片毫秒(测试注入;默认 FLUSH_SLICE_MS) */
+  sliceMs?: number;
+  /** 让出面(测试注入;默认 setImmediate 宏任务边界) */
+  yieldToHost?: () => Promise<void>;
+}
+
 export class DiagnosticScheduler {
   /** 诊断输入代:配置切换(invalidateAll)自增,迫使已发布文档重算 */
   private generation = 0;
@@ -88,6 +107,11 @@ export class DiagnosticScheduler {
   private readonly states = new Map<string, UriState>();
   /** IDE-DIA-005:在途异步计算(完成/失败均自摘) */
   private readonly pending = new Set<Promise<unknown>>();
+  /** IDE-DIA-006:已出队、尚未处理完的条目数(pendingWorkload 诚实面:
+   *  让出窗口内 map 面已空,残留量规仍要数上在途批的未处理条目) */
+  private drainingCount = 0;
+  private readonly sliceMs: number;
+  private readonly yieldFn: () => Promise<void>;
   private readonly stats: DiagnosticSchedulerStats = {
     requested: 0,
     computed: 0,
@@ -99,6 +123,11 @@ export class DiagnosticScheduler {
     cleared: 0
   };
 
+  constructor(options: DiagnosticSchedulerOptions = {}) {
+    this.sliceMs = options.sliceMs ?? FLUSH_SLICE_MS;
+    this.yieldFn = options.yieldToHost ?? yieldToHostDefault;
+  }
+
   isEnabled(): boolean {
     return this.enabled;
   }
@@ -106,7 +135,8 @@ export class DiagnosticScheduler {
   /** 残留任务量规(P0-4b 审核重开 2026-10-28):排队中 URI 数与在途异步
    * 计算数——现场验收在取消/保存风暴后按此面观测宿主内无未泄残留。 */
   pendingWorkload(): { queued: number; inFlight: number } {
-    let queued = 0;
+    // IDE-DIA-006:让出窗口内 map 面已空,已出队未处理完的条目也计入
+    let queued = this.drainingCount;
     for (const state of this.states.values()) {
       if (state.queued) { queued += 1; }
     }
@@ -186,39 +216,87 @@ export class DiagnosticScheduler {
       }
     }
     state.queued = {
+      key,
       document,
       options: options as DiagnosticTaskOptions<unknown>,
       version
     };
   }
 
-  /** 冲刷排队任务:每 URI 至多一个(最新版本),发布前复核版本令牌 */
-  flushQueued(): void {
+  /** 冲刷排队任务:每 URI 至多一个(最新版本),发布前复核版本令牌。
+   *  IDE-DIA-006 单轮时间片:连续同步处理超过 sliceMs 且还有待处理条目时,
+   *  让出宿主(宏任务边界)再继续;让出窗口内新入队任务由后续轮次收编,
+   *  让出窗口内文档前进的条目按处理时守卫丢弃。无让出路径(小批量)与旧
+   *  同步口径逐拍等价——零让出时整轮原子完成,旧契约不变。 */
+  async flushQueued(): Promise<void> {
     if (!this.enabled) {
       return;
     }
-    for (const [key, state] of this.states) {
+    for (;;) {
+      const batch = this.collectQueued();
+      if (batch.length === 0) {
+        return;
+      }
+      this.drainingCount = batch.length;
+      let sliced = false;
+      let roundStart = performance.now();
+      for (let index = 0; index < batch.length; index += 1) {
+        this.processQueuedEntry(batch[index]);
+        this.drainingCount -= 1;
+        if (index === batch.length - 1) {
+          break;
+        }
+        if (performance.now() - roundStart >= this.sliceMs) {
+          await this.yieldFn();
+          // 让出窗口内开关关闭:剩余条目不再计算(重开 invalidateAll 兜重算)
+          if (!this.enabled) {
+            this.drainingCount = 0;
+            return;
+          }
+          sliced = true;
+          roundStart = performance.now();
+        }
+      }
+      this.drainingCount = 0;
+      // 本轮零让出=同步原子完成,窗口内不可能有新任务入队,收工;
+      // 让出过=再收一轮,收编让出窗口内的编辑新入队任务
+      if (!sliced) {
+        return;
+      }
+    }
+  }
+
+  /** 出队:把 map 面排队任务一次性取走(所有权转移,并发 flush 不双算) */
+  private collectQueued(): QueuedTask[] {
+    const batch: QueuedTask[] = [];
+    for (const state of this.states.values()) {
       const queued = state.queued;
       if (!queued) {
         continue;
       }
       state.queued = null;
-      const currentVersion = versionOf(queued.document);
-      // 冲刷时文档已前进到入队之后的新版本:该任务过期,丢弃
-      if (queued.version !== undefined && currentVersion !== queued.version) {
-        this.stats.staleDropped += 1;
-        continue;
-      }
-      const versionState = this.states.get(key);
-      if (queued.version !== undefined
-        && versionState
-        && versionState.publishedVersion === queued.version
-        && versionState.publishedGeneration === this.generation) {
-        this.stats.skippedCurrentVersion += 1;
-        continue;
-      }
-      this.computeAndPublish(queued.document, key, queued.version, queued.options);
+      batch.push(queued);
     }
+    return batch;
+  }
+
+  /** 处理单个出队条目:处理时守卫(比入队时更新鲜)后才计算发布 */
+  private processQueuedEntry(queued: QueuedTask): void {
+    const currentVersion = versionOf(queued.document);
+    // 处理时文档已前进到入队之后的新版本(含让出窗口内前进):过期,丢弃
+    if (queued.version !== undefined && currentVersion !== queued.version) {
+      this.stats.staleDropped += 1;
+      return;
+    }
+    const versionState = this.states.get(queued.key);
+    if (queued.version !== undefined
+      && versionState
+      && versionState.publishedVersion === queued.version
+      && versionState.publishedGeneration === this.generation) {
+      this.stats.skippedCurrentVersion += 1;
+      return;
+    }
+    this.computeAndPublish(queued.document, queued.key, queued.version, queued.options);
   }
 
   hasQueuedTasks(): boolean {
@@ -269,6 +347,7 @@ export class DiagnosticScheduler {
   /** 测试与停用面:清空全部 URI 状态与统计(不改开关/代数) */
   resetForTests(): void {
     this.states.clear();
+    this.drainingCount = 0;
     this.resetStats();
     this.generation = 0;
     this.enabled = true;

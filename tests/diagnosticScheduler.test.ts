@@ -307,6 +307,100 @@ describe('A6-2 分层与指标断言:同一事件脚本重算次数 before/after
   });
 });
 
+describe('IDE-DIA-006 诊断队列单轮时间片:多文档一轮 flush 不连续占满宿主', () => {
+  it('多文档重计算:切片耗尽让出宿主,后续文档计算前宿主探针已运行', async () => {
+    const scheduler = new DiagnosticScheduler();
+    // 宿主探针:注册先于 flush,让出(setImmediate 宏任务边界)后续批文档
+    // 恢复前必先运行——同步整块 flush 永远看不见它跑
+    const probeRan = { current: false };
+    const sawHostAtCompute: boolean[] = [];
+    const computeMs = 12; // 8 文档 ≈ 96ms,必穿 25ms 切片
+    const documents: VersionedDocument[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      documents.push(makeVersionedDefDocument(VALID_DEF, `/slice/d${index}.def`, 1));
+    }
+    for (const document of documents) {
+      scheduler.requestQueued(document, {
+        layer: 'local',
+        compute: () => {
+          const until = Date.now() + computeMs;
+          while (Date.now() < until) { /* 模拟重文档计算占用宿主 */ }
+          sawHostAtCompute.push(probeRan.current);
+          return [];
+        },
+        publish: () => undefined
+      });
+    }
+    setImmediate(() => { probeRan.current = true; });
+    await scheduler.flushQueued();
+
+    // 全部文档最终都处理并发布(切片只改节拍,不改结果)
+    expect(sawHostAtCompute).toHaveLength(8);
+    const stats = scheduler.getStats();
+    expect(stats.computed).toBe(8);
+    expect(stats.published).toBe(8);
+    // 切片前的先行文档未见宿主,切片让出后的文档见到宿主已运行
+    expect(sawHostAtCompute.some(saw => saw)).toBe(true);
+    expect(sawHostAtCompute.some(saw => !saw)).toBe(true);
+  });
+
+  it('切片注入:让出窗口内新入队/新版本被后续轮次收编,过期条目处理时守卫丢弃', async () => {
+    const computeOrder: string[] = [];
+    const queuedDuringYield: number[] = [];
+    let scheduler!: DiagnosticScheduler;
+    const optionsFor = (document: VersionedDocument, label: string) => ({
+      layer: 'local' as DiagnosticLayer,
+      compute: () => {
+        computeOrder.push(label);
+        return [label];
+      },
+      publish: () => undefined
+    });
+    // sliceMs=0:每个文档边界都到期 → 每处理完一个就让出一次(确定性)
+    let yieldCount = 0;
+    scheduler = new DiagnosticScheduler({
+      sliceMs: 0,
+      yieldToHost: async () => {
+        yieldCount += 1;
+        if (yieldCount === 2) {
+          // 让出窗口内 d3 编辑到 v2 重新入队(原条目已出队,顶替发生在 map 面)
+          doc3.version = 2;
+          scheduler.requestQueued(doc3, optionsFor(doc3, 'd3:v2'));
+        } else if (yieldCount === 3) {
+          // 让出窗口内全新文档入队(编辑事件照常到达)
+          scheduler.requestQueued(doc5, optionsFor(doc5, 'd5:late'));
+        }
+        // 窗口末采样:批内未处理条目 + map 面新入队,量规两头都要数上
+        queuedDuringYield.push(scheduler.pendingWorkload().queued);
+      }
+    });
+    const docFor = (name: string) =>
+      makeVersionedDefDocument(VALID_DEF, `/slice-win/${name}.def`, 1);
+    const doc3 = docFor('d3');
+    const doc5 = docFor('d5');
+
+    for (const name of ['d0', 'd1', 'd2']) {
+      const document = docFor(name);
+      scheduler.requestQueued(document, optionsFor(document, `${name}:v1`));
+    }
+    scheduler.requestQueued(doc3, optionsFor(doc3, 'd3:v1'));
+    await scheduler.flushQueued();
+
+    // d3:v1 在让出后处理,处理时守卫见 v2 ≠ v1 → 丢弃;后续轮次收编 d3:v2 与 d5
+    expect(computeOrder).toEqual(['d0:v1', 'd1:v1', 'd2:v1', 'd3:v2', 'd5:late']);
+    const stats = scheduler.getStats();
+    expect(stats.requested).toBe(6);
+    expect(stats.computed).toBe(5);
+    expect(stats.published).toBe(5);
+    expect(stats.staleDropped).toBe(1);
+    // 各让出窗口末的量规:批内未处理 + map 新入队都计数。y3 时 d3:v2 仍在
+    // map 面(重收集在整批末,不在每次让出),故 y1..y3 = 3,批二 y4 仅剩 d5 = 1
+    expect(queuedDuringYield).toEqual([3, 3, 3, 1]);
+    // 冲刷收尾后残留归零(量规不挂账)
+    expect(scheduler.pendingWorkload().queued).toBe(0);
+  });
+});
+
 describe('A6-3 entities.xml 诊断入口同版本失效约束', () => {
   it('同版本重复校验命中分析缓存(零重分析),版本前进旧槽作废重分析', () => {
     const document = makeVersionedEntitiesDocument(DUPLICATE_ENTITIES, '/entities/entities.xml', 1);

@@ -979,7 +979,9 @@ export function activate(context: vscode.ExtensionContext) {
       if (diagnosticFlushTimer === undefined) {
         diagnosticFlushTimer = setTimeout(() => {
           diagnosticFlushTimer = undefined;
-          diagnosticScheduler.flushQueued();
+          // IDE-DIA-006:flush 单轮时间片化(重批量让出宿主续批),不 await——
+          // 编辑事件面不等诊断收尾,发布节拍与版本守卫全在调度器内
+          void diagnosticScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
