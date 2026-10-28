@@ -357,6 +357,13 @@
   - 存在问题时弹警告指路 OUTPUT 面板；全部正常时信息提示
   - 激活期自动发现完成后也会静默落一份报告到同一通道（有问题时才弹提示）
 
+### `kbengine.python.serviceStatus`
+
+- 标题：`Check Python Language Service Status`
+- 用途：报告 Python 语言服务（`ms-python.vscode-pylance`）是否可用，三态之一：已激活／未启用（已安装但当前窗口未激活——被禁用或未参与本窗口）／未安装（既未注册也无磁盘证据）
+- 判定输入：`vscode.extensions.all` 注册、其 `isActive` 标记、本地用户扩展目录下的 `<id>-<version>` 安装目录（被禁用的扩展不进 `extensions.all`，磁盘探测是兜底证据）
+- 诚实口径：`python.analysis.extraPaths` 是否写入永不参与可用判定；有值时消息附明确警示「extraPaths 已写入不等于语言服务可用」
+
 ### `kbengine.project.import`
 
 - 标题：`Import Existing KBEngine Project`

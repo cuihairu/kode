@@ -456,6 +456,13 @@ The flow graph panel supports:
   - With problems present it pops a warning pointing at the OUTPUT panel; when all is well, an info notice
   - After activation-time auto discovery completes, a report is also silently dropped into the same channel (a notice pops only when there are problems)
 
+### `kbengine.python.serviceStatus`
+
+- Title: `Check Python Language Service Status`
+- Purpose: report whether the Python language service (`ms-python.vscode-pylance`) is available, in one of three states: 已激活 (active), 未启用 (installed but not active in this window — disabled or not participating), 未安装 (neither registered nor found on disk)
+- Classification inputs: registration in `vscode.extensions.all`, its `isActive` flag, and the `<id>-<version>` install directory under the local user extensions dir (disabled extensions never appear in `extensions.all`, so the disk probe is the fallback evidence)
+- Honesty rule: whether `python.analysis.extraPaths` has been written never participates in the availability decision; when it has a value, the message appends the explicit caveat 「extraPaths 已写入不等于语言服务可用」 (written ≠ available)
+
 ### `kbengine.project.import`
 
 - Title: `Import Existing KBEngine Project`
