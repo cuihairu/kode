@@ -494,12 +494,12 @@ describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
 
     await makeGenerator().showWizard();
 
-    // def 照常生成并报成功(GEN-003 再收紧前置检查),python 冲突抛出
-    expect(ui.info).toHaveLength(1);
-    expect(ui.info[0]).toContain('Hero.def');
+    // IDE-GEN-003 收紧后:python 冲突即整体中止,def 不再先写出
+    expect(ui.info).toEqual([]);
     expect(ui.error).toHaveLength(1);
     expect(ui.error[0]).toContain('已存在');
     expect(ui.error[0]).toContain('Hero.py');
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Hero.def'))).toBe(false);
     expect(fs.readFileSync(path.join(root, 'scripts', 'Hero.py'), 'utf8')).toBe(heroPySentinel);
     // 注册不会因 def 已写出而顺带发生
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
@@ -516,7 +516,54 @@ describe('KBEngineCodeGenerator python overwrite guard (IDE-GEN-002)', () => {
     expect(ui.error).toHaveLength(1);
     expect(ui.error[0]).toContain('已存在');
     expect(fs.readFileSync(path.join(root, 'scripts', 'MyAccount.py'), 'utf8')).toBe(accountPySentinel);
-    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'MyAccount.def'))).toBe(true);
+    // IDE-GEN-003 收紧后:python 冲突即整体中止,def 不再先写出
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'MyAccount.def'))).toBe(false);
+  });
+});
+
+describe('KBEngineCodeGenerator pre-flight conflicts (IDE-GEN-003)', () => {
+  it('reports every conflicting target and writes nothing when both def and python exist', async () => {
+    const defSentinel = '<root><BaseMethods><roar/></BaseMethods></root>';
+    const pySentinel = 'class MonsterBase():\n    def custom(self):\n        pass\n';
+    fs.writeFileSync(path.join(root, 'scripts', 'Monster.py'), pySentinel, 'utf8');
+    const entitiesXmlBefore = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
+    ui.inputs.push('Monster');
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+
+    await makeGenerator().showWizard();
+
+    // 两处冲突都报出,不是撞上第一个才停
+    expect(ui.error).toHaveLength(2);
+    expect(ui.error[0]).toContain('Monster.def');
+    expect(ui.error[1]).toContain('Monster.py');
+    expect(ui.info).toEqual([]);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Monster.def'), 'utf8')).toBe(defSentinel);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'Monster.py'), 'utf8')).toBe(pySentinel);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toBe(entitiesXmlBefore);
+  });
+
+  it('still generates the full set when no target conflicts', async () => {
+    ui.inputs.push('Fresh');
+    ui.picks.push(pickIndex(0), pickNone, pickIndex(1));
+
+    await makeGenerator().showWizard();
+
+    expect(ui.error).toEqual([]);
+    expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'Fresh.def'))).toBe(true);
+    expect(fs.existsSync(path.join(root, 'scripts', 'Fresh.py'))).toBe(true);
+    expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8')).toContain('<Fresh ');
+    expect(ui.info[ui.info.length - 1]).toBe('是否打开生成的文件？');
+  });
+
+  it('template flow is guarded by the same pre-flight', async () => {
+    ui.picks.push(pickIndex(9));
+    ui.inputs.push('Monster');
+
+    await makeGenerator().showTemplates();
+
+    expect(ui.error).toHaveLength(1);
+    expect(ui.error[0]).toContain('Monster.def');
+    expect(fs.readdirSync(path.join(root, 'scripts', 'entity_defs'))).toEqual(['Monster.def']);
   });
 });
 

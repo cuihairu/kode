@@ -187,6 +187,39 @@ export class KBEngineCodeGenerator {
   }
 
   /**
+   * 预检全部生成目标(IDE-GEN-003):逐项报出冲突(def/python),
+   * 调用方在写出任何文件前整体中止,不留半套
+   */
+  private collectGenerationConflicts(entityName: string): string[] {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      throw new Error('没有打开的工作区');
+    }
+
+    const conflicts: string[] = [];
+    const outputRoot = path.isAbsolute(this.config.defOutputPath)
+      ? this.config.defOutputPath
+      : joinWorkspacePath(workspaceFolder.uri.fsPath, this.config.defOutputPath);
+    const defFilePath = joinWorkspacePath(outputRoot, `${entityName}.def`);
+    if (fs.existsSync(defFilePath)) {
+      conflicts.push(`def 文件已存在，保留原文件未覆盖: ${defFilePath}`);
+    }
+
+    if (this.config.generatePython) {
+      const pythonFilePath = joinWorkspacePath(
+        workspaceFolder.uri.fsPath,
+        this.config.pythonOutputPath,
+        `${entityName}.py`
+      );
+      if (fs.existsSync(pythonFilePath)) {
+        conflicts.push(`Python 文件已存在，保留原代码未覆盖: ${pythonFilePath}`);
+      }
+    }
+
+    return conflicts;
+  }
+
+  /**
    * 生成 .def 文件
    */
   async generateDefFile(entity: EntityDefinition): Promise<string> {
@@ -673,6 +706,15 @@ export class KBEngineCodeGenerator {
 
     // 生成文件
     try {
+      // IDE-GEN-003:落盘前预检全部目标,任一冲突即整体中止,不写半套
+      const conflicts = this.collectGenerationConflicts(entity.config.name);
+      if (conflicts.length > 0) {
+        for (const conflict of conflicts) {
+          vscode.window.showErrorMessage(conflict);
+        }
+        return;
+      }
+
       const defFile = await this.generateDefFile(entity);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
@@ -843,6 +885,15 @@ export class KBEngineCodeGenerator {
 
     // 生成文件
     try {
+      // IDE-GEN-003:落盘前预检全部目标,任一冲突即整体中止,不写半套
+      const conflicts = this.collectGenerationConflicts(entity.config.name);
+      if (conflicts.length > 0) {
+        for (const conflict of conflicts) {
+          vscode.window.showErrorMessage(conflict);
+        }
+        return;
+      }
+
       const defFile = await this.generateDefFile(entity);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
