@@ -13,6 +13,7 @@ const workerState = vi.hoisted(() => {
       posted: Array<Record<string, unknown>>;
       terminated: number;
       emit: (event: string, ...args: unknown[]) => boolean;
+      terminate: () => Promise<number>;
     }>,
     existsProbe: undefined as undefined | ((candidate: string) => boolean)
   };
@@ -254,6 +255,66 @@ describe('pythonParserWorkerHost worker 路径(审核发现 :185)', () => {
     worker.emit('message', { id: worker.posted[1].id, revision: 60, parsed: parsedStub });
     const outcomes = await Promise.allSettled(versions);
     expect(outcomes.every(outcome => outcome.status === 'fulfilled')).toBe(true);
+  });
+
+  it('dispose 结清全部等待者:在途+待派发+被合并等待者一个不漏全部结算', async () => {
+    const host = await loadHost();
+    // 文件 A:一份在途;文件 B:在途 + 待派发(含被合并进 v3 的 v2 等待者)
+    const a1 = host.parsePythonFileResponsive(bigContent, '/settle/a.py', 1);
+    const b1 = host.parsePythonFileResponsive(bigContent, '/settle/b.py', 1);
+    const b2 = host.parsePythonFileResponsive(bigContent, '/settle/b.py', 2);
+    const b3 = host.parsePythonFileResponsive(bigContent, '/settle/b.py', 3);
+    host.disposePythonParserWorker();
+    // 全部在途 Promise 都结算(dispose 错误),不挂任何等待者
+    await expect(a1).rejects.toThrow('Python parser worker disposed');
+    await expect(b1).rejects.toThrow('Python parser worker disposed');
+    await expect(b2).rejects.toThrow('Python parser worker disposed');
+    await expect(b3).rejects.toThrow('Python parser worker disposed');
+  });
+
+  it('旧 worker 晚到回包/错误/退出不污染新实例:新任务只由新线程回包结算', async () => {
+    const host = await loadHost();
+    const old = host.parsePythonFileResponsive(bigContent, '/old.py', 1);
+    const staleWorker = workerState.instances[0];
+    host.disposePythonParserWorker();
+    await expect(old).rejects.toThrow('Python parser worker disposed');
+
+    // 新请求重建新线程;旧线程随后一切事件都不得影响新实例
+    const fresh = host.parsePythonFileResponsive(bigContent, '/new.py', 2);
+    expect(workerState.instances).toHaveLength(2);
+    const freshWorker = workerState.instances[1];
+    staleWorker.emit('message', {
+      id: staleWorker.posted[0].id, revision: 1, parsed: parsedStub
+    });
+    staleWorker.emit('error', new Error('old worker zombie error'));
+    staleWorker.emit('exit', 1);
+    // 新任务仍在途(未被旧线程事件结算/拒绝)
+    const stillPending = await Promise.race([
+      fresh.then(() => 'settled', () => 'settled'),
+      new Promise<string>(resolve => { setImmediate(() => resolve('pending')); })
+    ]);
+    expect(stillPending).toBe('pending');
+    // 新线程正确回包后正常结算
+    freshWorker.emit('message', { id: freshWorker.posted[0].id, revision: 2, parsed: parsedStub });
+    await expect(fresh).resolves.toEqual({ revision: 2, parsed: parsedStub });
+  });
+
+  it('terminate 拒绝也不产生 unhandled rejection(dispose 全路径可解释收口)', async () => {
+    const host = await loadHost();
+    const pendingParse = host.parsePythonFileResponsive(bigContent, '/term.py', 1);
+    const worker = workerState.instances[0];
+    worker.terminate = (): Promise<number> => Promise.reject(new Error('terminate blew up'));
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      host.disposePythonParserWorker();
+      await expect(pendingParse).rejects.toThrow('Python parser worker disposed');
+      await new Promise(resolve => { setImmediate(resolve); });
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   it('不认识 id 的回包被忽略,不影响在途请求', async () => {

@@ -168,5 +168,7 @@ export function disposePythonParserWorker(): void {
   const current = worker;
   worker = null;
   failPending(new Error('Python parser worker disposed'));
-  if (current) { void current.terminate(); }
+  // terminate 可能 reject(线程已死等):拒绝也不许变 unhandled rejection——
+  // 等待者已全部在 failPending 结清,终止失败无补救面,静默收口。
+  if (current) { void current.terminate().catch(() => undefined); }
 }
