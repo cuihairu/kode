@@ -111,6 +111,9 @@ export interface RemoteDebugTarget {
   name: string;
   host: string;
   port: number;
+  /** 路径映射(DBG-002):localRoot/remoteRoot 成对提供才落——缺一侧整对不收 */
+  localRoot?: string;
+  remoteRoot?: string;
 }
 
 /** debugpy 默认监听端口(debugpy --listen 不带端口时的约定值) */
@@ -118,11 +121,12 @@ const DEFAULT_DEBUGPY_PORT = 5678;
 
 /**
  * 读取 kbengine.debug.remoteTargets(批112 用户令):name/host 缺一不收,
- * port 缺省/非法落 debugpy 默认 5678。
+ * port 缺省/非法落 debugpy 默认 5678。localRoot/remoteRoot(DBG-002)
+ * 成对非空才收——映射需要两侧,半配不猜、保持省略。
  */
 export function readRemoteTargets(): RemoteDebugTarget[] {
   const config = vscode.workspace.getConfiguration('kbengine');
-  const raw = config.get<Array<{ name?: string; host?: string; port?: number }>>(
+  const raw = config.get<Array<{ name?: string; host?: string; port?: number; localRoot?: unknown; remoteRoot?: unknown }>>(
     'debug.remoteTargets',
     []
   );
@@ -138,9 +142,26 @@ export function readRemoteTargets(): RemoteDebugTarget[] {
       continue;
     }
     const port = typeof item.port === 'number' && item.port > 0 ? item.port : DEFAULT_DEBUGPY_PORT;
-    targets.push({ name, host, port });
+    const localRoot = typeof item.localRoot === 'string' ? item.localRoot.trim() : '';
+    const remoteRoot = typeof item.remoteRoot === 'string' ? item.remoteRoot.trim() : '';
+    const target: RemoteDebugTarget = { name, host, port };
+    if (localRoot.length > 0 && remoteRoot.length > 0) {
+      target.localRoot = localRoot;
+      target.remoteRoot = remoteRoot;
+    }
+    targets.push(target);
   }
   return targets;
+}
+
+/** 远程目标的 pathMappings(DBG-002):成对才有,半配/无配返回 undefined */
+export function remoteTargetPathMappings(
+  target: Pick<RemoteDebugTarget, 'localRoot' | 'remoteRoot'>
+): Array<{ localRoot: string; remoteRoot: string }> | undefined {
+  if (target.localRoot === undefined || target.remoteRoot === undefined) {
+    return undefined;
+  }
+  return [{ localRoot: target.localRoot, remoteRoot: target.remoteRoot }];
 }
 
 export class DebugConfigManager {
@@ -294,7 +315,8 @@ export class DebugConfigManager {
     }
 
     // 批112 用户令:远程调试目标写入 launch.json(connect 模式附加,
-    // 远端需已起 debugpy 监听;远程无本地源码映射,不写 pathMappings)
+    // 远端需已起 debugpy 监听)。DBG-002:目标带成对 localRoot/remoteRoot
+    // 时写 pathMappings(半配/无配保持省略,不猜映射)。
     for (const target of readRemoteTargets()) {
       configurations.push({
         name: `KBEngine: Python attach ${target.name} (remote)`,
@@ -305,6 +327,7 @@ export class DebugConfigManager {
           port: target.port
         },
         justMyCode: false,
+        pathMappings: remoteTargetPathMappings(target),
         presentation: {
           group: 'KBEngine',
           order: 2
@@ -639,7 +662,9 @@ export class DebugConfigManager {
         host: target.host,
         port: target.port
       },
-      justMyCode: false
+      justMyCode: false,
+      // DBG-002:目标带成对映射才写(与 launch.json 远程条目同口径)
+      pathMappings: remoteTargetPathMappings(target)
     };
     try {
       const success = await vscode.debug.startDebugging(undefined, attachConfig);

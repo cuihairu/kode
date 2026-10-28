@@ -145,7 +145,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.jumpLog` | `false` | Navigation decision-path logging to the KBEngine Navigation output channel (off = zero cost) |
 | `kbengine.showFinalConfigOnOpen` | `true` | Auto-open the synthesized read-only final-config view on activation when the engine default config is locatable |
 | `kbengine.autoRefreshFinalConfig` | `true` | Recompute the open final-config view when engine/component kbengine.xml files change |
-| `kbengine.debug.remoteTargets` | `[]` | Remote debug target list offered by Attach to Remote Component (debugpy connect, no pathMappings written) |
+| `kbengine.debug.remoteTargets` | `[]` | Remote debug target list offered by Attach to Remote Component (debugpy connect; an entry with both `localRoot`/`remoteRoot` gets those pathMappings, partial or absent stays omitted) |
 | `kbengine.jsoncAssociation` | `true` | Auto-write the debug.json glob key as `jsonc` into the workspace `files.associations` (WorkspaceFolder level; own key only, existing values never overwritten; `kbengine.jsoncAssociation.off` reclaims what kode wrote) |
 | `kbengine.debug.autoDebugpy` | `false` | Inject `debugpy.listen` through each started component's telnet `:python` layer (ports baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682, 127.0.0.1 only; named instances draw exclusive ports from per-component 8-slot windows at 5700+; single failures logged, never block startup; telnet-phase injection only — early-config breakpoints are phase 2) |
 | `kbengine.autoStart` | `["machine", "logger", "dbmgr"]` | Components auto-started (default machine/logger/dbmgr) |

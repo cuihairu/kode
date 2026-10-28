@@ -210,8 +210,10 @@ Fields per entry:
 | `name` | string | Yes | Target display name (the identifier in the picker) |
 | `host` | string | Yes | Remote IP or hostname |
 | `port` | number | No | debugpy listen port, default `5678` |
+| `localRoot` | string | No | Local source root for `pathMappings`; must be paired with `remoteRoot` — a partial pair is not collected |
+| `remoteRoot` | string | No | Remote source root for `pathMappings`; must be paired with `localRoot` — a partial pair is not collected |
 
-- Prerequisite: the remote component must first have been sent the enable-debugging command over telnet and have a debugpy listener up; the extension attaches with `connect: {host, port}`, without `pathMappings`
+- Prerequisite: the remote component must first have been sent the enable-debugging command over telnet and have a debugpy listener up; the extension attaches with `connect: {host, port}`. An entry carrying both `localRoot`/`remoteRoot` gets those `pathMappings` in the attach config and its launch.json entry; otherwise `pathMappings` stays omitted
 - Misconfiguration: a wrong `host` → attach fails through the error channel; a wrong `port` → debugpy unreachable; entries with empty `name`/`host` are not collected
 
 ### Python Integration
@@ -604,7 +606,7 @@ Check in this order:
 1. Whether the target component has really enabled debugging over telnet (telnet parameters confirmed along the three-layer chain, unrelated to `.kbengine/debug.json`)
 2. Whether the process picked in the list is the target component itself, not a machine/logger helper process
 3. Whether `telnetEnableCommands` in `.kbengine/debug.json` matches the project's real command (affects the instructions only)
-4. Whether `pathMappings` in `.kbengine/debug.json` maps to the current source directory (the remote connect mode writes no `pathMappings`)
+4. Whether `pathMappings` in `.kbengine/debug.json` maps to the current source directory (the remote connect mode writes `pathMappings` only when the target entry carries both `localRoot`/`remoteRoot`)
 5. Whether `ms-python.debugpy` is installed on this machine and VS Code can attach through it normally
 
 The old `kbengine.pythonPath`, `kbengine.debugPort`, `kbengine.autoAttachDebug` have been removed; `kbengine.pythonDefsPath`, `kbengine.enablePythonNavigation` have also been removed (navigation goes through the `.def` definition system — see the entity explorer).

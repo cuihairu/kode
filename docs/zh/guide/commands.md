@@ -166,7 +166,7 @@
 - 前提：在设置 `kbengine.debug.remoteTargets` 里配置目标列表（名称 + IP + debugpy 端口，端口缺省 5678）；远端组件需先经 telnet 发开启调试命令并起好 debugpy 监听
 - 行为：
   - 未配置目标时提示去设置，不空转
-  - 弹出目标选择，模态确认后以 `connect: {host, port}` 组装附加配置，不写 `pathMappings`
+  - 弹出目标选择，模态确认后以 `connect: {host, port}` 组装附加配置；目标条目带成对 `localRoot`/`remoteRoot` 时才写 `pathMappings`
 
 ## 配置相关
 
@@ -569,7 +569,7 @@ KBEngine 的调试模型不是“启动一个 Python 文件”。这里的 Pytho
 
 旧版本生成的 `${input:kbengineProcessId}` 手输 PID 输入项已废弃；运行 `Update launch.json` 会自动清除该遗留输入。
 
-配置了 `kbengine.debug.remoteTargets` 时，`Update launch.json` 会把每个远程目标以 debugpy `connect` 形式追加为独立配置（`connect: {host, port}`，不写 `pathMappings`）。
+配置了 `kbengine.debug.remoteTargets` 时，`Update launch.json` 会把每个远程目标以 debugpy `connect` 形式追加为独立配置（`connect: {host, port}`；仅当条目带成对 `localRoot`/`remoteRoot` 时写 `pathMappings`）。
 
 ### 推荐使用顺序
 

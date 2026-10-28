@@ -861,7 +861,7 @@
         "kbengine.debug.remoteTargets": {
           "type": "array",
           "default": [],
-          "description": "远程调试目标列表（「Attach to Remote Component」命令弹出的选择项）。远端组件需已起 debugpy 监听（通常先经 telnet 发开启调试命令），扩展以 debugpy connect 模式附加、不写 pathMappings。命令 kbengine.debug.attachRemote，同时会把这些目标追加进 launch.json",
+          "description": "远程调试目标列表（「Attach to Remote Component」命令弹出的选择项）。远端组件需已起 debugpy 监听（通常先经 telnet 发开启调试命令），扩展以 debugpy connect 模式附加；条目带成对 localRoot/remoteRoot 时附加配置与 launch.json 远程条目会写 pathMappings，半配或未配则省略。命令 kbengine.debug.attachRemote，同时会把这些目标追加进 launch.json",
           "items": {
             "type": "object",
             "required": [
@@ -880,6 +880,14 @@
               "port": {
                 "type": "number",
                 "description": "debugpy 监听端口，缺省 5678"
+              },
+              "localRoot": {
+                "type": "string",
+                "description": "本机源码根（pathMappings 的 localRoot；须与 remoteRoot 成对提供，半配不生效）"
+              },
+              "remoteRoot": {
+                "type": "string",
+                "description": "远端源码根（pathMappings 的 remoteRoot；须与 localRoot 成对提供，半配不生效）"
               }
             }
           }

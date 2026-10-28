@@ -210,8 +210,10 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `name` | string | 是 | 目标显示名(选择器里的标识) |
 | `host` | string | 是 | 远端 IP 或主机名 |
 | `port` | number | 否 | debugpy 监听端口,缺省 `5678` |
+| `localRoot` | string | 否 | 本机源码根,写进 `pathMappings`;须与 `remoteRoot` 成对提供,半配不收录 |
+| `remoteRoot` | string | 否 | 远端源码根,写进 `pathMappings`;须与 `localRoot` 成对提供,半配不收录 |
 
-- 前提:远端组件先经 telnet 发开启调试命令,并起好 debugpy 监听;扩展以 `connect: {host, port}` 附加,不写 `pathMappings`
+- 前提:远端组件先经 telnet 发开启调试命令,并起好 debugpy 监听;扩展以 `connect: {host, port}` 附加。条目带成对 `localRoot`/`remoteRoot` 时,附加配置与 launch.json 远程条目写该 `pathMappings`;半配或未配保持省略
 - 误配:`host` 填错 → 附加失败走错误通道;`port` 不对 → 连不上 debugpy;`name`/`host` 为空的条目不收录
 
 ### Python 集成
@@ -604,7 +606,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时,不是扩展直接启动一
 1. 目标组件是否已经通过 telnet 真正开启调试(telnet 参数按三层链确认,与 `.kbengine/debug.json` 无关)
 2. 进程列表里选的是否就是目标组件本身,而不是 machine/logger 等辅助进程
 3. `.kbengine/debug.json` 中的 `telnetEnableCommands` 是否与项目真实命令一致(只影响提示语)
-4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前源码目录(远程 connect 模式不写 `pathMappings`)
+4. `.kbengine/debug.json` 中的 `pathMappings` 是否映射到当前源码目录(远程 connect 模式只在目标条目带成对 `localRoot`/`remoteRoot` 时写 `pathMappings`)
 5. 本机是否已安装 `ms-python.debugpy`,VS Code 能否正常通过它附加进程
 
 旧的 `kbengine.pythonPath`、`kbengine.debugPort`、`kbengine.autoAttachDebug` 已移除,`kbengine.pythonDefsPath`、`kbengine.enablePythonNavigation` 也已移除(导航走 `.def` 定义体系,见实体浏览器)。
