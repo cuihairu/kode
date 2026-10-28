@@ -437,6 +437,12 @@ interface AnnotationBuild {
 }
 const annotationBuilds = new Map<string, AnnotationBuild>();
 
+/** 残留任务量规(P0-4b 审核重开 2026-10-28):编辑路径去抖在途的文档注解
+ * 更新数——现场验收观测取消/风暴后无未泄残留的只读面。 */
+export function getPendingDocumentUpdateCount(): number {
+  return pendingDocumentUpdates.size;
+}
+
 /** 测试用:清全部工作区缓存(换临时根/改文件后立即生效) */
 export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();

@@ -103,6 +103,16 @@ export class DiagnosticScheduler {
     return this.enabled;
   }
 
+  /** 残留任务量规(P0-4b 审核重开 2026-10-28):排队中 URI 数与在途异步
+   * 计算数——现场验收在取消/保存风暴后按此面观测宿主内无未泄残留。 */
+  pendingWorkload(): { queued: number; inFlight: number } {
+    let queued = 0;
+    for (const state of this.states.values()) {
+      if (state.queued) { queued += 1; }
+    }
+    return { queued, inFlight: this.pending.size };
+  }
+
   /**
    * 诊断开关切换(A6-4):关闭时经 clearAll 清空 collection,之后请求只记账;
    * 重开时迫使全部已发布文档重算。返回开关是否发生变化。

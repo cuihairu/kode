@@ -2498,6 +2498,11 @@ export async function flushTypeStorageUsageColdBuildForTests(): Promise<void> {
   }
 }
 
+/** 残留任务量规(P0-4b 审核重开 2026-10-28):在途冷构建根数(只读)。 */
+export function getPendingTypeStorageColdBuildCount(): number {
+  return pendingTypeStorageColdBuildRoots.size;
+}
+
 const defaultBackgroundDispatch: BackgroundSchemaTaskDispatcher = run =>
   new Promise<void>(resolve => {
     setImmediate(() => { void run().then(resolve, resolve); });

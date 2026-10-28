@@ -102,6 +102,7 @@ import {
 import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWorkspace';
 import {
   applySavedFileAnnotations,
+  getPendingDocumentUpdateCount,
   removeSavedFileAnnotations,
   renameSavedFileAnnotations,
   queueDocumentReturnAnnotations,
@@ -155,6 +156,7 @@ import {
   locateDatabaseSchemaLine,
   resolveEntityTableName,
   resolveSchemaTablePrefix,
+  getPendingTypeStorageColdBuildCount,
   setTypeStorageUsageBackgroundDispatcher
 } from './databaseSchema';
 import {
@@ -2676,6 +2678,64 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel.dispose();
     }
   });
+
+  // P0-4b/4c 审核重开(2026-10-28)验收面:激活返回值即现场探针 API——
+  // ①probeHover:请求级 hover 取消路径,走与注册 provider 同一 KBEngineHoverProvider
+  //   实例,调用方 token 经 cancelAfterMs 定时取消(真实请求级取消语义,不再以
+  //   突发响应性近似);②pendingWork:残留任务量规,聚合诊断排队/在途、编辑路径
+  //   去抖注解、索引任务、schema 冷构建四个后台面的在途计数。经
+  //   vscode.extensions.getExtension(...).exports 消费,不进命令面板不改注册行为。
+  const previewOf = (item: unknown): string => {
+    if (item === null || item === undefined) { return ''; }
+    if (typeof item === 'string') { return item; }
+    const value = (item as { value?: unknown }).value;
+    return value === undefined ? String(item) : String(value);
+  };
+  return {
+    probeHover: async (
+      target: { file: string; line: number; character: number },
+      cancelAfterMs?: number,
+      preCancel?: boolean
+    ) => {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target.file));
+      const canceller = new vscode.CancellationTokenSource();
+      let cancelled = false;
+      if (preCancel) {
+        // 预取消面:请求带着已取消 token 进入 provider(用户快速输入/失焦时
+        // VS Code 递给 provider 的真实语义)——入口守卫应零工作直接返回空。
+        cancelled = true;
+        canceller.cancel();
+      }
+      const timer = cancelAfterMs === undefined ? undefined : setTimeout(() => {
+        cancelled = true;
+        canceller.cancel();
+      }, cancelAfterMs);
+      const startedAt = Date.now();
+      try {
+        const hover = await kbengineHoverImpl.provideHover(
+          document,
+          new vscode.Position(target.line, target.character),
+          canceller.token
+        );
+        return {
+          elapsedMs: Date.now() - startedAt,
+          cancelled,
+          returnedHover: hover !== null && hover !== undefined,
+          preview: previewOf(hover?.contents?.[0]).slice(0, 120)
+        };
+      } finally {
+        if (timer !== undefined) { clearTimeout(timer); }
+        canceller.dispose();
+      }
+    },
+    pendingWork: () => ({
+      diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued,
+      diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight,
+      annotationUpdates: getPendingDocumentUpdateCount(),
+      indexTasksQueued: indexScheduler.getStatus().queued,
+      schemaColdBuilds: getPendingTypeStorageColdBuildCount()
+    })
+  };
 }
 
 export function deactivate() {
