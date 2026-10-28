@@ -236,4 +236,29 @@ describe('KBEngineServerManager multi-instance targets', () => {
     await manager.stopComponent('cellapp', 'a');
     expect(manager.getServerStatus('cellapp', 'a')).toBe('stopped');
   }, 8000);
+
+  it('keeps sibling instance records intact when one instance exits on its own', async () => {
+    bin.write('cellapp', { kind: 'run' });
+    const manager = makeManager();
+
+    expect(await manager.startComponent(cellapp, { targetId: 'a' })).toBe(true);
+    expect(await manager.startComponent(cellapp, { targetId: 'b' })).toBe(true);
+
+    const pidB = manager.getRunningServers().get('cellapp#b')?.pid;
+    expect(pidB).toBeGreaterThan(0);
+
+    // 实例 a 自己退出(外部 SIGKILL,不走 stopComponent):只有 a 的记录被摘除
+    const pidA = manager.getRunningServers().get('cellapp#a')?.pid;
+    process.kill(pidA as number, 'SIGKILL');
+    await until(() => !manager.getRunningServers().has('cellapp#a'));
+
+    // b 的记录原样保留:pid、状态、进程本体都不受 a 退出影响
+    const sibling = manager.getRunningServers().get('cellapp#b');
+    expect(sibling).toBeTruthy();
+    expect(sibling?.pid).toBe(pidB);
+    expect(sibling?.status).not.toBe('stopped');
+    expect(sibling?.status).not.toBe('error');
+    expect(manager.getServerStatus('cellapp', 'b')).toBe(sibling?.status);
+    expect(pidAlive(pidB)).toBe(true);
+  }, 10000);
 });
