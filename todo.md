@@ -512,7 +512,7 @@
 ### IDE-ARC · 模块职责收敛（P2）
 
 来源：审计 §2；逐个抽离，不合成一次大重构。
-- [ ] IDE-ARC-001 [P2] 抽离源码 reveal 命令常量；验收：eventApi 等消费者不再为取常量反向依赖整个 languageProviders；前置：无。
+- [x] IDE-ARC-001 [P2] 抽离源码 reveal 命令常量；验收：eventApi 等消费者不再为取常量反向依赖整个 languageProviders；前置：无。（3c682ec;新 src/sourceRevealCommand.ts 单一事实源(常量+批159 语义指针注释,handler revealSourceCommand 留在 languageProviders 不动=小步不合成大重构);消费面五处全换新路径=eventApi/generatedSourceLenses(反向依赖边切断,原本为取一个常量 import 整个 provider 模块)+languageProviders 内用三点+extension.ts 装配面;命令 id 值不变(kbengine.source.reveal),单一字符串面无再导出防双面漂移;prove-red=tests/sourceRevealCommandModule.test.ts Cannot find module 整文件红 3 例后绿=常量值与 package.json activationEvents/contributes.commands 双注册面钉死+两个低层消费者源级锁 from ./languageProviders 不回潮+languageProviders 不再定义;锚点锁步=extension.ts 净零移(194 删一行+272 增一行,九锚全在 272 后真位不动 650/1112 复核)+languageProviders 净零移(import +1/const -1,锚点全在 170 后不动),perfCallChainDoc 4/4 无需迁移;门禁=eslint 0/tsc 0/unit 3962|7(351)/demo 25 RC=0/docs build 绿）
 - [ ] IDE-ARC-002 [P2] 抽离事件索引的纯数据类型；验收：WorkspaceIndex 与事件语法分析通过小接口互用，不依赖 provider 实现；前置：IDE-ARC-001。
 - [ ] IDE-ARC-003 [P2] 抽离 hover Markdown 格式化函数；验收：纯格式化模块不读取文件或配置，既有 hover 文本保持一致；前置：无。
 - [ ] IDE-ARC-004 [P2] 抽离 schema 的 VS Code 文档适配层；验收：纯 schema 推导不 import vscode，虚拟文档 provider 只装配展示；前置：IDE-SCH-001。
