@@ -108,6 +108,12 @@ interface GuardCandidate {
   line: number;
   indent: number;
   kind: 'positive' | 'early-exit';
+  /** 正向 guard:if 块的闭合行(首个缩进 ≤ ifIndent 的非空行;无则方法体界+1)。
+   * use 行 < blockEnd 即仍在块体内(2026-10-28 审核整改:预计算一次,逐调用零重扫) */
+  blockEnd?: number;
+  /** 早退 guard:块体内首个 return/raise 行(去缩进前;无则 undefined)。
+   * exitLine < use 行即早退生效 */
+  exitLine?: number;
 }
 
 interface MethodGuardScan {
@@ -126,6 +132,17 @@ export function getGuardPrefixScanCountForTests(): number {
 
 export function resetGuardPrefixScanCountForTests(): void {
   guardPrefixScanCount = 0;
+}
+
+/** 测试面:块探测计数(blockContains/blockExits 触发次数) */
+let guardBlockProbeCount = 0;
+
+export function getGuardBlockProbeCountForTests(): number {
+  return guardBlockProbeCount;
+}
+
+export function resetGuardBlockProbeCountForTests(): void {
+  guardBlockProbeCount = 0;
 }
 
 /** 单趟扫方法体:维持存活 subject 集(self.<role> 起步,遇别名赋值追加),
@@ -163,10 +180,51 @@ function scanGuardCandidates(
     }
     if (matched) { continue; }
   }
+  // 2026-10-28 审核整改:块界/早退位置每候选预计算一次(扫描期,计探测数),
+  // 逐调用只做位置闸判定,不再从 guard 行重扫文本(平方级 → 近线性)
+  for (const candidate of candidates) {
+    if (candidate.kind === 'positive') {
+      candidate.blockEnd = firstDedentAfter(lines, span, candidate);
+    } else {
+      candidate.exitLine = firstExitAfter(lines, span, candidate);
+    }
+  }
   return { receiver, candidates, aliases };
 }
 
-/** 候选过闸:与逐点遍历同谓词(位置/缩进/块体),只对已收集候选判定 */
+/** if 块闭合行:candidate 行之后首个非空且缩进 ≤ ifIndent 的行;块贯通到方法体界则界+1 */
+function firstDedentAfter(
+  lines: readonly string[],
+  span: MethodSpan,
+  candidate: GuardCandidate
+): number {
+  guardBlockProbeCount += 1;
+  for (let j = candidate.line + 1; j <= span.endLine; j += 1) {
+    const text = lines[j];
+    if (COMMENT_ONLY.test(text)) { continue; }
+    if (indentOf(text) <= candidate.indent) { return j; }
+  }
+  return span.endLine + 1;
+}
+
+/** if 块体内首个 return/raise 行(缩进 > ifIndent;遇去缩进行即块闭,终止) */
+function firstExitAfter(
+  lines: readonly string[],
+  span: MethodSpan,
+  candidate: GuardCandidate
+): number | undefined {
+  guardBlockProbeCount += 1;
+  for (let j = candidate.line + 1; j <= span.endLine; j += 1) {
+    const text = lines[j];
+    if (COMMENT_ONLY.test(text)) { continue; }
+    if (indentOf(text) <= candidate.indent) { return undefined; }
+    if (/\b(return|raise)\b/.test(text)) { return j; }
+  }
+  return undefined;
+}
+
+/** 候选过闸:与逐点遍历同谓词,但块界/早退位置已扫描期预计算——逐调用
+ * 只比位置(candidate.line < use < blockEnd / exitLine < use),零文本重扫 */
 function hasReceiverGuardFromScan(
   lines: readonly string[],
   scan: MethodGuardScan,
@@ -176,10 +234,10 @@ function hasReceiverGuardFromScan(
   for (const candidate of scan.candidates) {
     if (candidate.line >= useLine) { continue; }
     if (candidate.kind === 'positive') {
-      if (candidate.indent < useIndent && blockContains(lines, candidate.line, useLine, candidate.indent)) {
+      if (candidate.indent < useIndent && (candidate.blockEnd ?? 0) > useLine) {
         return true;
       }
-    } else if (candidate.indent <= useIndent && blockExits(lines, candidate.line, useLine, candidate.indent)) {
+    } else if (candidate.indent <= useIndent && candidate.exitLine !== undefined && candidate.exitLine < useLine) {
       return true;
     }
   }
@@ -202,38 +260,6 @@ function scanSubjectsUpTo(scan: MethodGuardScan, useLine: number): string[] {
     if (alias.line < useLine) { subjects.push(escapeSubject(alias.name)); }
   }
   return subjects;
-}
-
-/** use 行是否仍在 if 块体内:j+1..useLine 之间无非空非注释行缩进 <= ifIndent */
-function blockContains(
-  lines: readonly string[],
-  ifLine: number,
-  useLine: number,
-  ifIndent: number
-): boolean {
-  for (let j = ifLine + 1; j < useLine; j += 1) {
-    const text = lines[j];
-    if (COMMENT_ONLY.test(text)) { continue; }
-    if (indentOf(text) <= ifIndent) { return false; }
-  }
-  return true;
-}
-
-/** if 块体内(j+1..stopLine 前、去缩进前)是否含 return/raise(早退)——
- * 早退只在 use 行之前发生才有保护作用,故止于 use 行 */
-function blockExits(
-  lines: readonly string[],
-  ifLine: number,
-  stopLine: number,
-  ifIndent: number
-): boolean {
-  for (let j = ifLine + 1; j < stopLine; j += 1) {
-    const text = lines[j];
-    if (COMMENT_ONLY.test(text)) { continue; }
-    if (indentOf(text) <= ifIndent) { break; }
-    if (/\b(return|raise)\b/.test(text)) { return true; }
-  }
-  return false;
 }
 
 const indentOf = (line: string): number => {
