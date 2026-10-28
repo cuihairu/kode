@@ -3,12 +3,17 @@ import * as vscode from 'vscode';
 import {
   getWorkspaceIndexYieldCountForTests,
   resetWorkspaceIndexYieldClockForTests,
+  setWorkspaceIndexYieldSliceMsForTests,
   WorkspaceIndex
 } from '../src/workspaceIndex';
 
 // 2026-10-28 审核整改(EVT-012 冷路径):共享索引首扫的逐文件解析让出宿主
-// (每趟扫描间 setImmediate)——冷扫不再以整批同步块占住事件循环;微任务
-// 级的假 fs readFile 下,旧码整趟首扫无宏任务边界,定时器零心跳。
+// (时间片口径:距上次让出不足 25ms 不让)——冷扫不再以整批同步块占住
+// 事件循环;微任务级的假 fs readFile 下,旧码整趟首扫无宏任务边界,定时器
+// 零心跳。2026-10-28 CI 现场修复:心跳断言不再依赖「本档密集 fixture 必超
+// 一个 25ms 片」(快速 runner 整趟不足一片→仅首让出时定时器未到期→余下
+// 解析在微任务排空中完成,clearInterval 先于 timers 阶段,ticks=0 机器
+// 相对 flake);测试内置片长 0,让出→心跳机制验证变为确定性。
 
 const makeDenseFile = (events: number, prefix: string): Buffer => {
   const lines: string[] = [];
@@ -25,6 +30,7 @@ it('冷首扫逐文件让出宿主,扫描期间事件循环仍有定时器心跳
   const body = makeDenseFile(3000, 'a'); // ~90KB/文件:两趟正则+行表实打实耗时
   vscode.workspace.findFiles = async () => files;
   vscode.workspace.fs.readFile = async () => body; // 微任务即决:无宏任务让出
+  setWorkspaceIndexYieldSliceMsForTests(0); // 每次批边界必让出:心跳确定性
   const index = new WorkspaceIndex();
   let ticks = 0;
   const timer = setInterval(() => { ticks += 1; }, 1);
@@ -34,6 +40,7 @@ it('冷首扫逐文件让出宿主,扫描期间事件循环仍有定时器心跳
   } finally {
     clearInterval(timer);
     index.dispose();
+    setWorkspaceIndexYieldSliceMsForTests(null); // 复位生产口径 25ms
     vscode.workspace.findFiles = originalFind;
     vscode.workspace.fs.readFile = originalRead;
   }

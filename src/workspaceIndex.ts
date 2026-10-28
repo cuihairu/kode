@@ -46,9 +46,16 @@ const yieldToHost = (): Promise<void> => {
 // 让出不足 YIELD_SLICE_MS 不让;让出后照旧重验 disposed/revision。宿主单次
 // 连续同步段上界=切片+单文件解析,仍受 timerDelay 契约约束,不再逐文件付费。
 const YIELD_SLICE_MS = 25;
+// 测试面切片注入口(2026-10-28 CI 现场修复):心跳断言依赖「扫描必超一片」,
+// 快速 runner 上整趟不足 25ms 即零让出,断言成机器相对 flake;置 0 使每次
+// 批边界必让出,让出→定时器心跳的机制验证变为确定性(生产口径不变)。
+let yieldSliceMsOverride: number | null = null;
+export function setWorkspaceIndexYieldSliceMsForTests(ms: number | null): void {
+  yieldSliceMsOverride = ms;
+}
 let lastYieldAt = 0;
 const yieldToHostIfDue = async (): Promise<void> => {
-  if (Date.now() - lastYieldAt < YIELD_SLICE_MS) { return; }
+  if (Date.now() - lastYieldAt < (yieldSliceMsOverride ?? YIELD_SLICE_MS)) { return; }
   // 同步先落时间戳再挂起:并发 worker 在首个 setImmediate 解析前都会过
   // 切片检查,迟落会把整批 worker 同时放进让出(实测 8 并发=8 连让)。
   lastYieldAt = Date.now();
