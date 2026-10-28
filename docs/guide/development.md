@@ -101,6 +101,7 @@ Check at least the following:
 3. Does the `.def` language surface match what the docs describe
 4. Do the dependency graph, entity explorer, logs, and debug entry points open
 5. Does the packaged VSIX contain the parser worker — after `vsce package`, unzip the artifact and confirm `extension/out/pythonParserWorker.js` is present, then start it from the unpacked path with `node` (`new Worker(<unpacked>/extension/out/pythonParserWorker.js)`) and check a parse request gets its `id`/`revision`/`parsed` reply. Structure guards for this live in `tests/vsixPackaging.test.ts`: `.vscodeignore` must exclude `out/**` before keeping `!out/pythonParserWorker.js`, the `bundle` script must keep the worker esbuild entry, and the worker/parser sources must not import `vscode` (the worker starts from the package path without the extension host). Verified 2026-10-29 on a locally packaged artifact (REL-003).
+6. Does the packaged VSIX expose the build identity — the same unzipped artifact must carry `extension/out/buildCommit.json`, and its `commit` field must equal the `git rev-parse HEAD` the package was built from (verified 2026-10-29, REL-004). At runtime `readBuildCommit` reads `<extensionPath>/out/buildCommit.json` only; a missing or corrupt file reports `unknown` and never falls back to the source checkout's git state, so a source-tree commit can never impersonate the installed build.
 
 ## Version Policy
 

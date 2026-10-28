@@ -26,6 +26,14 @@ describe('VSIX worker 产物结构守卫(IDE-REL-003)', () => {
     expect(lines).toContain('!out/extension.js');
   });
 
+  it('.vscodeignore:同样保留构建身份 out/buildCommit.json(IDE-REL-004)', () => {
+    const lines = readRepoFile('.vscodeignore').split('\n').map(line => line.trim());
+    const excludeIndex = lines.indexOf('out/**');
+    const keepCommitIndex = lines.indexOf('!out/buildCommit.json');
+    expect(excludeIndex).toBeGreaterThanOrEqual(0);
+    expect(keepCommitIndex).toBeGreaterThan(excludeIndex);
+  });
+
   it('bundle 脚本:esbuild 以 src/pythonParserWorker.ts 为入口产出自包含 bundle', () => {
     const scripts = JSON.parse(readRepoFile('package.json')).scripts as Record<string, string>;
     const bundle = scripts.bundle;

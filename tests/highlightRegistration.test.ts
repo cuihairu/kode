@@ -290,7 +290,10 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         '!out/extension.js',
         // 2026-10-27 Python 索引重构: parser worker 是随包分发的第二个
         // bundle(esbuild src/pythonParserWorker.ts),运行期按 __dirname 加载
-        '!out/pythonParserWorker.js'
+        '!out/pythonParserWorker.js',
+        // 2026-10-29 IDE-REL-004: 构建身份随包分发,运行期 readBuildCommit
+        // 只读 <extensionPath>/out/buildCommit.json(安装产物提交=构建输入)
+        '!out/buildCommit.json'
       ])
     );
   });

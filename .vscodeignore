@@ -49,10 +49,12 @@ TESTING.md
 todo.md
 CHANGELOG.zh.md
 # bundle 后 out/ 只带单文件产物(src/extension.ts 全量打进 out/extension.js,
-# tsc 的逐模块 js/.map/.d.ts 与 out/test 是开发/测试面,一律不进包)
+# tsc 的逐模块 js/.map/.d.ts 与 out/test 是开发/测试面,一律不进包;
+# buildCommit.json 是构建身份(IDE-REL-004),安装产物报告的提交=构建输入)
 out/**
 !out/extension.js
 !out/pythonParserWorker.js
+!out/buildCommit.json
 # e2e 用的 Rust 构建产物绝不进包（kodeCoreE2E 现场构建 target/debug/kode-server，
 # 若构建发生在打包前会被 vsce 整目录吞进 vsix——nightly 85MB 事故根因）
 target/
