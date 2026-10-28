@@ -459,7 +459,7 @@
 ### IDE-HOT · 热更新可验证状态（P2）
 
 来源：审计 §6；细化现有 HR-STATE/HR-HTTP/HR-UI 需求，旧条目作为汇总不双算。
-- [ ] IDE-HOT-001 [P2] 按 rootId 与 targetId 隔离热更新状态；验收：同文件发给不同实例分别保存结果，不复用上一目标绿色状态；前置：IDE-RUN-001。
+- [x] IDE-HOT-001 [P2] 按 rootId 与 targetId 隔离热更新状态；验收：同文件发给不同实例分别保存结果，不复用上一目标绿色状态；前置：IDE-RUN-001。(8b963c5;新 src/hotReloadTargetState.ts:HotReloadTargetKey{rootId,targetId}(rootId=文件归属扫描根,与 sharedFileSnapshot/SemanticIndex 同口径;targetId=服务实例,与 RUN-001 component#targetId 键同源)+buildHotReloadTargetKeyId('root::target' 串形)+HotReloadTargetStateStore 双维隔离台账(rootId→targetId→file→最新记录,注入时钟)——同文件发给不同实例各自落各自记录互不覆盖,b 失败不动 a 的 sent-unverified,没发过的目标 get=undefined 不复用邻居绿色,同 rootId 不同 target/同 target 不同 root 双向隔离,同目标同文件重发覆盖为最新一次(重试语义),targetsWithRecords/files 清单面+clearTarget 只清本目标;001 阶段两态 sent-unverified|failed,回执面(002 起 sent_unverified 收紧/003 accepted/004 applied)都在同一键上收紧不另立第二套目标身份;纯存储地基,接线随回执管道(HOT-002+)落地,文档如实写明;prove-red=模块不存在整文件红 9 例(键形 1/双实例分存 1/不复用绿色+b 失败不动 a 1/root 维隔离 1/重发覆盖 1/注入时钟 1/清单面 1/clearTarget 邻居不动 1/record 返回快照 1);extension.ts 零改动零锚点漂移;门禁=eslint 0/tsc 0/test:unit 3756|7(+9,325 文件,demo 25 RC=0,vitepress 绿);docs=features.md/zh 热更区新增 HOT-001 条目(双维隔离语义+地基定位+接线随回执面,未写成已接线))
 - [ ] IDE-HOT-002 [P2] 将 HTTP 发送成功记为未确认；验收：只有 2xx 且无可信应用证据时显示 sent_unverified；前置：IDE-HOT-001。
 - [ ] IDE-HOT-003 [P2] 解析单目标 accepted 回执；验收：只在符合已记录协议的回执上进入 accepted，未知结构保留未确认；前置：IDE-HOT-002。
 - [ ] IDE-HOT-004 [P2] 核验单目标 applied 状态；验收：仅可信 revision/digest 或已验证回执可标 applied，超时仍未确认；前置：IDE-HOT-003。
