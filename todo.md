@@ -364,7 +364,7 @@
 ### IDE-MET · 现场取证与版本可辨识性（P1）
 
 来源：审计 §5/§8；细化 P0-4b，已有并行采集实现可按证据认领。
-- [ ] IDE-MET-001 [P1] 导出活动扩展 ID 与版本；验收：报告区分安装目录存在和当前窗口已激活，并列出远程或本地宿主位置；前置：无。
+- [x] IDE-MET-001 [P1] 导出活动扩展 ID 与版本；验收：报告区分安装目录存在和当前窗口已激活，并列出远程或本地宿主位置；前置：无。(8b0d090;新建 src/extensionIdentity.ts 纯函数渲染面:hostLabel(vscode.env.remoteName 有值=remote(name),否则 local)+renderExtensionIdentityReport——每匹配安装四行:ID+version/installed=yes|no(fs.existsSync 核验安装目录,激活中目录已消失也如实报 no)/active=yes|no(isActive,安装与激活两正交事实分列不合并)/side=workspace host|ui host(extensionKind);空列表给空态行;extension.ts 接线 kbengine.extension.identity 命令:vscode.extensions.all 按 publisher 前缀(cuihairu.)筛,id 排序,fs 核验安装目录存在性,渲染进「Kode 扩展身份」输出通道供复制回传;workbench 菜单加 Extension Identity 入口;package.json 补命令贡献+activationEvents;prove-red:先写 tests/extensionIdentity.test.ts,红在模块不存在,实现后 4/4 绿;tests/workbenchCommand.test.ts 期望列表+新项(桩选取位同步 list[2]);docs/guide/commands.md 补真实行为小节(报告内容/两正交事实/空态/不扫工作区只读 extensions.all);锚点锁步:extension.ts 全九锚 +1(import 增行),ANCHORS+docs 四图引用同笔;门禁 eslint 0+tsc 0+test:unit 3410|7(+4)+xvfb demo RC=0 25 passing)
 - [ ] IDE-MET-002 [P1] 在扩展产物中写入构建提交；验收：运行中的诊断报告能追溯准确源码 SHA，不仅显示 package version；前置：无。
 - [ ] IDE-MET-003 [P1] 为 hover 增加分支级耗时记录；验收：能区分注解查询、def 映射、schema、渲染和总耗时；前置：无。
 - [ ] IDE-MET-004 [P1] 记录文件读取量与读取字节数；验收：一次普通 hover 可核对实际读盘范围，关闭详细日志时开销有界；前置：IDE-MET-003。
