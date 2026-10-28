@@ -1168,7 +1168,7 @@
   "scripts": {
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
-    "compile": "tsc -p ./",
+    "compile": "node scripts/write-build-commit.mjs && tsc -p ./",
     "bundle": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify && esbuild src/pythonParserWorker.ts --bundle --outfile=out/pythonParserWorker.js --platform=node --target=node18 --format=cjs --minify && pnpm bundle:webview",
     "bundle:webview": "node scripts/build-call-chain-viewer.mjs --entry=src/webview/defCallChainViewer.ts --outfile=media/defCallChainViewer.js",
     "watch": "tsc -watch -p ./",

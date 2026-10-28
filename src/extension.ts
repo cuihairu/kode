@@ -206,6 +206,7 @@ import {
   runWorkspaceDiscovery
 } from './workspaceDiscovery';
 import { renderExtensionIdentityReport } from './extensionIdentity';
+import { readBuildCommit } from './buildCommit';
 import { TelnetTreeProvider } from './telnetTree';
 /**
  * Kode - KBEngine Development Environment
@@ -2665,7 +2666,7 @@ export function activate(context: vscode.ExtensionContext) {
     identityChannel.appendLine(renderExtensionIdentityReport(entries, {
       remoteName: vscode.env.remoteName,
       appName: vscode.env.appName
-    }));
+    }, readBuildCommit(context.extensionPath)));
     identityChannel.show(true);
   });
   context.subscriptions.push(identityCommand, identityChannel);

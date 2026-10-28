@@ -35,14 +35,18 @@ function sideLabel(extensionKind: string): string {
   return extensionKind;
 }
 
-/** 渲染身份报告:每个匹配安装四行(ID/installed/active/side) */
+/** 渲染身份报告:每个匹配安装四行(ID/installed/active/side);报告头列
+ *  构建提交(IDE-MET-002,读不到=unknown 也如实呈现),读者能把源码 SHA
+ *  与 package version 分开对账。 */
 export function renderExtensionIdentityReport(
   entries: ExtensionIdentityEntry[],
-  host: ExtensionHostContext
+  host: ExtensionHostContext,
+  buildCommit: string
 ): string {
   const lines: string[] = [
     'Kode extension identity report',
-    `host: ${hostLabel(host)} in ${host.appName}`
+    `host: ${hostLabel(host)} in ${host.appName}`,
+    `build commit: ${buildCommit}`
   ];
   if (entries.length === 0) {
     lines.push('no matching extension installs found');
