@@ -127,8 +127,10 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
   });
 });
 
-// RPC 调用点形参 inlay(用户令 2026-10-21 第 3 问):self.base/cell/client.X(...)
-// 每实参后插 `argN: <类型>`,只做 def 已声明的(不做任何推导):解析走
+// RPC 调用点形参 inlay(用户令 2026-10-21 第 3 问;2026-10-29 用户定形态
+// 只显类型):self.base/cell/client.X(...) 每实参后插 `: <类型>`(不带
+// argN——.def <Arg> 无形参名,合成名是噪音;名字留给签名帮助/存根面),
+// 只做 def 已声明的(不做任何推导):解析走
 // resolveMethodDefinition 第三参段闸(段不符/解析不出 → null,不给),类型走
 // resolveEntityAnnotationType 同一解析链(内建 UINT8→int 等,与声明面
 // formatDefMethodSignature 同源),形参名 argN 与存根生成器同口径。
@@ -201,7 +203,7 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
       range
     )) as unknown as HintLike[];
 
-  it('正例:self.cell.reborn(37) → 实参后 `arg1: int`(kind=Parameter)', async () => {
+  it('正例:self.cell.reborn(37) → 实参后 `: int`(kind=Parameter,不带 argN)', async () => {
     const basePy = setupWorkspace();
     const provider = new PythonTypeInlayHintsProvider(makeManager());
     const line = '        self.cell.reborn(37)';
@@ -210,7 +212,7 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     expect(hints).toHaveLength(1);
     expect(hints[0].position).toEqual({ line: 2, character: line.indexOf('37') + 2 });
     // 类型与声明面签名 formatter 同源:UINT8 内建直查 → int(不显原词)
-    expect(hints[0].label).toBe('arg1: int');
+    expect(hints[0].label).toBe(': int');
     expect(hints[0].kind).toBe(InlayHintKind.Parameter);
     // 真身断言经 makeTextDocument 文档走 stub 类
     const raw = await provider.provideInlayHints(
@@ -220,25 +222,25 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     expect(raw?.[0]).toBeInstanceOf(InlayHint);
   });
 
-  it('正例:self.cell.reborn(1, 2) 双实参逐位出 `argN: int`', async () => {
+  it('正例:self.cell.reborn(1, 2) 双实参逐位出 `: int`', async () => {
     const basePy = setupWorkspace();
     const provider = new PythonTypeInlayHintsProvider(makeManager());
     const line = '        self.cell.reborn(1, 2)';
     const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
     const hints = await rpcHintsOf(provider, text, basePy);
-    expect(hints.map(hint => hint.label)).toEqual(['arg1: int', 'arg2: int']);
+    expect(hints.map(hint => hint.label)).toEqual([': int', ': int']);
     expect(hints[0].position).toEqual({ line: 2, character: line.indexOf('1') + 1 });
     expect(hints[1].position).toEqual({ line: 2, character: line.indexOf('2') + 1 });
   });
 
-  it('数量错位按位置对齐:声明两参实参一个 → 只出 arg1', async () => {
+  it('数量错位按位置对齐:声明两参实参一个 → 只出首参类型', async () => {
     const basePy = setupWorkspace();
     const provider = new PythonTypeInlayHintsProvider(makeManager());
     const line = '        self.cell.reborn(7)';
     const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
     const hints = await rpcHintsOf(provider, text, basePy);
     expect(hints).toHaveLength(1);
-    expect(hints[0].label).toBe('arg1: int');
+    expect(hints[0].label).toBe(': int');
     expect(hints[0].position).toEqual({ line: 2, character: line.indexOf('7') + 1 });
   });
 

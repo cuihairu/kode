@@ -17,12 +17,13 @@ import {
 // 零重复解析。一枚独立开关 kbengine.inlayHints.typeData(默认开);inlay
 // 没有变更事件可 fire,provider 每次调用现读配置,下一次渲染即生效。
 //
-// RPC 调用点形参提示(用户令 2026-10-21 形态升级单,内建属性 inlay 同批后续):
-// self.base/self.cell/self.client.X(...) 每实参后插 `argN: <类型>`,只做
-// def 已声明的(不做任何推导):resolveMethodDefinition 第三参段闸同源
+// RPC 调用点形参提示(用户令 2026-10-21 形态升级单;2026-10-29 用户定形态
+// 只显类型):self.base/self.cell/self.client.X(...) 每实参后插 `: <类型>`,
+// 只做 def 已声明的(不做任何推导):resolveMethodDefinition 第三参段闸同源
 // (段不符/解析不出 → null,不给),形参类型走 formatDefMethodSignature
-// (languageProviders.ts)同一 resolveEntityAnnotationType 解析链,形参名与
-// 存根生成器同口径 argN;<Arg> 缺席/实参文本空/类型解析落 Any 的位不出;
+// (languageProviders.ts)同一 resolveEntityAnnotationType 解析链;不带合成
+// 形参名 argN(.def <Arg> 无名可考,调用点上名字是噪音——名字留给签名
+// 帮助/存根面);<Arg> 缺席/实参文本空/类型解析落 Any 的位不出;
 // 实参数与声明数错位按位置对齐(取 min,逐位配对);跨行调用(同行括号
 // 不闭合)不出。开关复用既有贡献面 kbengine.inlayHints.typeData。
 export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
@@ -74,7 +75,8 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
   /**
    * RPC 调用点形参提示(只做 def 已声明的):每调用按段闸解析一次
    * (同 (接收者, 方法名) 记忆化,一文档多调用点零重复解析),声明 <Arg>
-   * 序列与同行实参按位置配对,逐位出 `argN: <类型>`(kind=Parameter)。
+   * 序列与同行实参按位置配对,逐位出 `: <类型>`(kind=Parameter,与定义点
+   * defParams inlay 同风格;不带 argN 合成名)。
    */
   private async collectRpcParameterHints(
     document: vscode.TextDocument,
@@ -116,11 +118,12 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         if (annotation === PYTHON_TYPE_STUB_FALLBACK) {
           continue;
         }
-        // 形参名与存根生成器同口径 argN(formatDefMethodSignature 同款)
+        // 只显类型不带 argN:.def <Arg> 无形参名可考,合成名在调用点是
+        // 噪音(2026-10-29 用户定形态;定义点 defParams inlay 同风格)
         hints.push(
           new vscode.InlayHint(
             new vscode.Position(call.line, argument.end),
-            `arg${index + 1}: ${annotation}`,
+            `: ${annotation}`,
             vscode.InlayHintKind.Parameter
           )
         );
