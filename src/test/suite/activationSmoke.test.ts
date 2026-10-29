@@ -58,7 +58,7 @@ describe('compiled extension activation smoke', () => {
   });
 
   it('creates the status bar items with the configured alignment', () => {
-    assert.strictEqual(stub.windowState.statusBars.length, 2);
+    assert.strictEqual(stub.windowState.statusBars.length, 3);
     const server = stub.windowState.statusBars.find(bar => bar.priority === 100);
     assert.ok(server);
     assert.strictEqual(server.alignment, stub.StatusBarAlignment.Right);
@@ -73,6 +73,11 @@ describe('compiled extension activation smoke', () => {
       stub.commandRegistry.contexts.get('kbengine.telnetConfigured'),
       false
     );
+    // 热更新状态灯:常亮灯(watch-off 也显示),点击开「KBEngine 热更」日志通道
+    const hotReload = stub.windowState.statusBars.find(bar => bar.priority === 98);
+    assert.ok(hotReload);
+    assert.strictEqual(hotReload.alignment, stub.StatusBarAlignment.Right);
+    assert.strictEqual(hotReload.visible, true);
   });
 
   it('dispatches a compiled command end to end', async () => {
