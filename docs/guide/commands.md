@@ -177,6 +177,17 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Clears the workspace-state key and confirms with a notification; it never starts an attach itself
   - A component with a configured `debugpyPort` always attaches in port mode regardless of the remembered choice
 
+### `kbengine.debug.pyspyDump`
+
+- Title: `Profile Component with py-spy`
+- Purpose: py-spy profiling entry (IDE-PDBG-003) on the Servers tree, inline right after the debug attach icon (`$(pulse)`); dumps the target component process's Python call stacks into the `KBEngine py-spy` output channel
+- Entry: Servers tree inline icon (after the debug icon), or the command palette
+- Behavior:
+  - The process picker is the existing one (component-name matches pinned ✓); the picked PID goes to `py-spy dump --pid <pid> --nonblocking` — nonblocking never pauses the target process, production components keep serving
+  - py-spy missing locally asks once: one-click install runs `<interpreter> -m pip install -U py-spy` on the selected interpreter chain; an install failure reports the pip exit code and output tail honestly, never retries in a loop
+  - A dump failure shows the cause in the output channel; permission failures append the ptrace guidance — Linux needs `kernel.yama.ptrace_scope=0` (or sudo/cap), containers need `--cap-add=SYS_PTRACE`, Windows needs an elevated or same-user session
+- Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission per the guidance above
+
 ## Configuration
 
 ### `kbengine.config.showFinal`

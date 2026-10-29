@@ -58,6 +58,7 @@
     "onCommand:kbengine.debug.attach",
     "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.resetAttachMode",
+    "onCommand:kbengine.debug.pyspyDump",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
     "onCommand:kbengine.metrics.showSummary",
@@ -375,6 +376,12 @@
         "command": "kbengine.debug.attach",
         "title": "Attach to Component",
         "icon": "$(plug)"
+      },
+      {
+        "command": "kbengine.debug.pyspyDump",
+        "title": "Profile Component with py-spy",
+        "category": "KBEngine",
+        "icon": "$(pulse)"
       },
       {
         "command": "kbengine.debug.attachRemote",
@@ -701,6 +708,11 @@
         },
         {
           "command": "kbengine.debug.attach",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.debug.pyspyDump",
           "when": "view == kbengine.serverControl",
           "group": "inline"
         }

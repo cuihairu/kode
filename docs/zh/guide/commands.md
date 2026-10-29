@@ -178,6 +178,17 @@
   - 只清工作区状态里的键并弹确认提示，本身不发起任何附加
   - 配置了 `debugpyPort` 的组件不受记忆影响，恒走端口模式
 
+### `kbengine.debug.pyspyDump`
+
+- 标题：`Profile Component with py-spy`
+- 作用：py-spy 性能分析入口（IDE-PDBG-003），在服务器树 debug 附加图标后inline 呈现（`$(pulse)`）；对目标组件进程跑 `py-spy dump` 把 Python 调用栈写进「KBEngine py-spy」输出通道
+- 入口：服务器树 inline 图标（debug 图标后）或命令面板
+- 行为：
+  - 进程选择复用既有选择器（组件名命中置顶标 ✓），选中的 PID 交给 `py-spy dump --pid <pid> --nonblocking`——nonblocking 不暂停目标进程，生产组件不卡服
+  - 本机未装 py-spy 先问一次：一键安装按所选解释器链跑 `<解释器> -m pip install -U py-spy`；装失败如实弹 pip 退出码与输出尾，绝不循环重试
+  - dump 失败原因进输出通道；权限类失败拼 ptrace 指引——Linux 需 `kernel.yama.ptrace_scope=0`（或 sudo/能力位），容器内需 `--cap-add=SYS_PTRACE`，Windows 需管理员或同用户会话
+- 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限按上面口径
+
 ## 配置相关
 
 ### `kbengine.config.showFinal`

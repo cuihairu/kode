@@ -99,6 +99,12 @@ import {
   scanRawLogErrors
 } from './logErrorScan';
 import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from './debugConfig';
+import {
+  defaultSpawnRunner,
+  ensurePyspyReady,
+  runPyspyDump
+} from './pyspyDump';
+import { resolveProfileInterpreter } from './profileInterpreter';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
@@ -2691,6 +2697,46 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(resetAttachModeCommand);
+
+  // IDE-PDBG-003:serverControl 树 debug 图标后的 py-spy 性能分析入口
+  // ($(pulse));dump 出目标组件进程的 Python 调用栈到输出通道,进程选择
+  // 复用既有选择器(组件名置顶 ✓);未装按所选解释器 pip 一键安装,装失败
+  // 如实弹原因不重试轰炸;dump 失败把 ptrace 权限指引拼在原因后。
+  const pyspyChannel = vscode.window.createOutputChannel('KBEngine py-spy');
+  context.subscriptions.push(pyspyChannel);
+  const pyspyDumpCommand = vscode.commands.registerCommand(
+    'kbengine.debug.pyspyDump',
+    async (target: unknown) => {
+      const fromTree = resolveServerComponent(target);
+      const component = fromTree ?? (await pickServerComponent('选择要性能分析的组件'));
+      if (!component) {
+        return; // 树节点无效且选择器取消:不空转
+      }
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const ready = await ensurePyspyReady(defaultSpawnRunner, {
+        warn: (message, ...actions) => vscode.window.showWarningMessage(message, ...actions),
+        info: message => vscode.window.showInformationMessage(message),
+        error: message => vscode.window.showErrorMessage(message)
+      }, () => resolveProfileInterpreter(workspaceRoot));
+      if (!ready) {
+        return; // 未装且未装成/用户取消:不往下跑
+      }
+      const pid = await debugConfigManager.pickProcessId(component.name);
+      if (pid === undefined) {
+        return; // 进程选择器取消/空清单:pickProcessId 已自行说明
+      }
+      pyspyChannel.appendLine(
+        `\n===== py-spy dump ${component.name} pid=${pid} ${new Date().toISOString()} =====`
+      );
+      pyspyChannel.show(true);
+      const dump = await runPyspyDump(defaultSpawnRunner, pid);
+      pyspyChannel.appendLine(dump.output);
+      if (!dump.ok) {
+        vscode.window.showErrorMessage(`py-spy dump 失败(pid=${pid}),详情见「KBEngine py-spy」输出通道`);
+      }
+    }
+  );
+  context.subscriptions.push(pyspyDumpCommand);
 
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);
