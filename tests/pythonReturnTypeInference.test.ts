@@ -675,6 +675,55 @@ describe('2026-10-28 审核整改:首扫在途窗口内的文件事件不被丢�
   });
 });
 
+// IDE-REV-006:TTL 过期重建在途时,已有缓存走「立即换桶」臂,保存事件不进
+// pendingFileEvents——重建的扫描期旧读在发布时覆盖本次保存,新值被吞。预热
+// →TTL 过期→门住重建的目录枚举→窗口内保存→释放,发布快照只含新值。
+describe('IDE-REV-006:TTL 重建在途窗口内的保存事件不被覆盖', () => {
+  /** 门住第二次目录枚举(重建的 readdir;首次已被预热消耗),返回放行函数 */
+  const gateRebuildScan = (): (() => void) => {
+    const realReaddir = fs.promises.readdir.bind(fs.promises);
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let scans = 0;
+    const spy = vi.spyOn(fs.promises, 'readdir').mockImplementation(
+      (async (...args: unknown[]) => {
+        scans += 1;
+        if (scans === 2) { await gate; }
+        return await realReaddir(...(args as Parameters<typeof fs.promises.readdir>));
+      }) as unknown as typeof fs.promises.readdir
+    );
+    return () => {
+      release();
+      spy.mockRestore();
+    };
+  };
+
+  it('预热→TTL 过期→门住旧内容读取→保存新注解→释放重建:新快照只含新值', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> OLD:\n    pass\n');
+    put('other.py', 'def other_fn() -> OTHER_VAL:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root); // 预热发布
+    const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(advanced);
+    try {
+      const release = gateRebuildScan(); // 门住重建:扫描期读到的磁盘内容仍是 OLD
+      const pending = resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+      applySavedFileAnnotations(root, path.join(root, 'svc.py'), 'def get_data() -> FRESH:\n    pass\n');
+      release();
+      const resolved = await pending;
+      // 重建发布必须重放窗口内保存:旧读的 OLD 不得覆盖 FRESH
+      expect(resolved).toMatchObject({ annotation: 'FRESH' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root))
+        .toMatchObject({ annotation: 'FRESH' });
+      // 单文件保存不动其他文件桶:other 的注解原样可查
+      expect(resolveLocalVariableReturnTypeFromSnapshot(['y = other_fn()'], 0, 'y', root))
+        .toMatchObject({ annotation: 'OTHER_VAL' });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+});
+
 describe('2026-10-28 审核整改:过期磁盘索引不得继续答', () => {
   it('TTL 过期后快照面不再从磁盘旧注解答', async () => {
     const { root, put } = setupWorkspace();

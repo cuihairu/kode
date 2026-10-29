@@ -369,11 +369,11 @@ export function applySavedFileAnnotations(
   source: string
 ): void {
   if (!workspaceRoot) { return; }
+  // IDE-REV-006:在途重建(TTL 过期重建/首扫)一律登记保存事件——仅改已发布
+  // 桶时,重建的扫描期旧读会在发布时覆盖本次保存;登记后发布前重放,新值不丢
+  annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'save', filePath, source });
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  if (!cached) {
-    annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'save', filePath, source });
-    return;
-  }
+  if (!cached) { return; }
   cached.fileBuckets.set(filePath, extractFileReturnAnnotations(source));
   cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
