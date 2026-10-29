@@ -207,6 +207,10 @@ export class ProcessManager {
    * running。探针异常吞作未就绪——探针后端自身抖动不该误判进程状态。
    * RUN-004:超时/取消即终局放弃——回调 onGiveUp 后不再排程,此后服务
    * 真的就绪也不会误标 running。
+   * IDE-REV-005:等待边界不依赖 probe 回包——盯守计时器独立采样取消与
+   * 截止(cancelHandle 是轮询标志无事件可订阅,采样间隔同 intervalMs;
+   * 截止另有一次性硬定时器兜底),probe 永不结束也按时终局;终局后迟到
+   * 回包不改终态不二次报,计时器全清,其他 target 各自独立不受连坐。
    */
   private scheduleReadinessProbe(
     request: ProcessSpawnRequest,
@@ -216,7 +220,17 @@ export class ProcessManager {
     const readiness = request.readiness as ProcessReadiness;
     const intervalMs = readiness.intervalMs ?? 250;
     const startedAt = Date.now();
+    let gaveUp = false;
+    let cancelSampler: ReturnType<typeof setInterval> | undefined;
+    let hardDeadline: ReturnType<typeof setTimeout> | undefined;
+    const stopWatchdog = (): void => {
+      if (cancelSampler) { clearInterval(cancelSampler); cancelSampler = undefined; }
+      if (hardDeadline) { clearTimeout(hardDeadline); hardDeadline = undefined; }
+    };
     const giveUp = (reason: 'timeout' | 'cancelled'): void => {
+      if (gaveUp) { return; }
+      gaveUp = true;
+      stopWatchdog();
       this.logHub?.info({
         source: 'process',
         component,
@@ -224,7 +238,34 @@ export class ProcessManager {
       });
       readiness.onGiveUp?.(reason);
     };
+    if (readiness.cancelHandle || readiness.timeoutMs !== undefined) {
+      cancelSampler = setInterval(() => {
+        if (gaveUp) { stopWatchdog(); return; }
+        // 进程已不在册/已退出:等待面随之收场,无需继续盯守
+        if (this.processes.get(request.id)?.process !== child ||
+            child.exitCode !== null || child.signalCode !== null) {
+          stopWatchdog();
+          return;
+        }
+        if (readiness.cancelHandle?.aborted) {
+          giveUp('cancelled');
+          return;
+        }
+        if (readiness.timeoutMs !== undefined && Date.now() - startedAt >= readiness.timeoutMs) {
+          giveUp('timeout');
+        }
+      }, intervalMs);
+      cancelSampler.unref?.();
+      if (readiness.timeoutMs !== undefined) {
+        hardDeadline = setTimeout(() => {
+          if (!gaveUp) { giveUp('timeout'); return; }
+          stopWatchdog();
+        }, readiness.timeoutMs);
+        hardDeadline.unref?.();
+      }
+    }
     const poll = async (): Promise<void> => {
+      if (gaveUp) return;
       if (this.processes.get(request.id)?.process !== child) return;
       if (child.exitCode !== null || child.signalCode !== null) return;
       if (readiness.cancelHandle?.aborted) {
@@ -241,6 +282,7 @@ export class ProcessManager {
       } catch {
         ready = false;
       }
+      if (gaveUp) return;
       if (this.processes.get(request.id)?.process !== child) return;
       if (child.exitCode !== null || child.signalCode !== null) return;
       // IDE-REV-004:probe 挂起跨过取消/截止,回包后必须复核终局条件——
@@ -254,6 +296,7 @@ export class ProcessManager {
         return;
       }
       if (ready && !child.killed) {
+        stopWatchdog();
         this.states.set(request.id, 'running');
         this.logHub?.info({ source: 'process', component, text: 'readiness probe passed' });
         this.emitState({ id: request.id, component, state: 'running' });

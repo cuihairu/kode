@@ -124,4 +124,88 @@ describe('ProcessManager', () => {
     expect(manager.get('svc')).toBeDefined();
     void manager.dispose();
   });
+
+  // IDE-REV-005:probe 永不结束也必须有等待边界——截止/取消由独立盯守
+  // 计时器兜底按时终局,迟到回包不改终态不二次报;其他 target 不受连坐
+  it('probe 永不结束:截止由盯守计时器按时终局,迟到 true 不改终态不二次报', async () => {
+    const child = new FakeChild();
+    const states: string[] = [];
+    const giveUps: string[] = [];
+    let resolveProbe: (value: boolean) => void = () => undefined;
+    const manager = new ProcessManager(() => child);
+    manager.onState(event => states.push(event.state));
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(resolve => (resolveProbe = resolve)),
+        intervalMs: 2,
+        timeoutMs: 5,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    // probe 挂起不回包,截止仍须按时终局(远小于测试步长)
+    await new Promise(resolve => setTimeout(resolve, 60));
+    expect(giveUps).toEqual(['timeout']);
+    expect(states).toEqual(['starting']);
+
+    // 迟到 true 不改变终态,也不二次报
+    resolveProbe(true);
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(giveUps).toEqual(['timeout']);
+    expect(states).toEqual(['starting']);
+    expect(manager.get('svc')).toBeDefined();
+    void manager.dispose();
+  });
+
+  it('probe 永不结束:取消由盯守采样发现,等待按时退出', async () => {
+    const child = new FakeChild();
+    const states: string[] = [];
+    const giveUps: string[] = [];
+    const cancelHandle = { aborted: false };
+    const manager = new ProcessManager(() => child);
+    manager.onState(event => states.push(event.state));
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        intervalMs: 2,
+        cancelHandle,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    cancelHandle.aborted = true;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(giveUps).toEqual(['cancelled']);
+    expect(states).toEqual(['starting']);
+    void manager.dispose();
+  });
+
+  it('probe 永不结束:其他 target 的就绪推进不受连坐', async () => {
+    const manager = new ProcessManager(() => new FakeChild());
+    const states: string[] = [];
+    manager.onState(event => states.push(event.state));
+    manager.start({
+      id: 'hung', command: 'a',
+      readiness: {
+        probe: () => new Promise<boolean>(() => undefined),
+        intervalMs: 2,
+        timeoutMs: 10_000,
+        onGiveUp: () => undefined
+      }
+    });
+    manager.start({
+      id: 'healthy', command: 'b',
+      readiness: {
+        probe: () => true,
+        intervalMs: 2,
+        onGiveUp: () => undefined
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(states).toContain('running');
+    expect(manager.get('hung')).toBeDefined();
+    expect(manager.get('healthy')).toBeDefined();
+    void manager.dispose();
+  });
 });
