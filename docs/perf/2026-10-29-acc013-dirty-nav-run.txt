@@ -1,0 +1,6 @@
+acc013.baseline.defLine=3
+acc013.dirty.isDirty=reverted
+acc013.dirty.bufferOnSpinLine=8
+acc013.dirty.defLine=8
+acc013.dirty.reverseHitsDef=true
+acc013.afterRevert.defLine=3

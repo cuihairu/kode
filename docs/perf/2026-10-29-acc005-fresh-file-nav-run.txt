@@ -1,7 +1,7 @@
 acc005.baseline.locations=1
 acc005.baseline.implHits=0
 acc005.fresh.attempts=1
-acc005.fresh.firstHitMs=76.7
+acc005.fresh.firstHitMs=64.3
 acc005.fresh.target=scripts/cell/FreshEntity.py:2
 acc005.fresh.windowReloads=0
 acc005.reverse.pythonToDef=scripts/entity_defs/FreshEntity.def:2

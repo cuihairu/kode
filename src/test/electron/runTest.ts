@@ -28,6 +28,7 @@ async function main(): Promise<void> {
   const longSessionMode = process.argv.includes('--longsession');
   const delFileMode = process.argv.includes('--delfile');
   const renameMode = process.argv.includes('--rename');
+  const dirtyMode = process.argv.includes('--dirty');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -421,6 +422,46 @@ async function main(): Promise<void> {
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'rename';
     process.env.KODE_RENAME_ROOT = temporaryRoot;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (dirtyMode) {
+    // IDE-ACC-013 未保存编辑与放弃编辑的导航验收:DirtyEntity 单段——
+    // BaseMethods <onSpin>(实现 scripts/base/DirtyEntity.py,def onSpin 固定
+    // 0 基第 3 行)。套件中途真实编辑器手势:开编辑器+顶部插 5 行(脏缓冲,
+    // 方法挪到第 8 行,不保存)→ F12 必须落缓冲新行;revert+关闭后 → F12
+    // 恢复磁盘行。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-dirty-'));
+    workspacePath = temporaryRoot;
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '	<DirtyEntity hasBase="true"></DirtyEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entity_defs', 'DirtyEntity.def'), [
+      '<root>',
+      '    <BaseMethods>',
+      '        <onSpin>',
+      '            <Arg>UINT8</Arg>',
+      '        </onSpin>',
+      '    </BaseMethods>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'base', 'DirtyEntity.py'), [
+      '# acc013 dirty buffer navigation fixture.',
+      'class DirtyEntity:',
+      '',
+      '    def onSpin(self, level):',
+      '        return None'
+    ].join('\n'));
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'dirty';
+    process.env.KODE_DIRTY_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   } else if (stormMode) {
     // IDE-ACC-006 连续输入后的补全与诊断验收:StormEntity 的 def 把 mA/mB

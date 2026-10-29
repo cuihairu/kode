@@ -3196,6 +3196,15 @@ function findDefSymbolInfo(
   return info;
 }
 
+// IDE-ACC-013:导航落点读取优先开着的文档缓冲——目标脚本已被打开(含未
+// 保存编辑)时按缓冲内容定行,方法在脏缓冲里挪行后 F12 落缓冲新行;未
+// 打开时回落磁盘直读(批110 既有口径)。放弃修改后缓冲内容回到磁盘版
+// (无论文档是否仍驻留宿主工作集),落点随之恢复磁盘位。
+function readScriptLinesForNavigation(scriptPath: string): string[] {
+  const openDocument = vscode.workspace.textDocuments.find(doc => doc.fileName === scriptPath);
+  return openDocument ? openDocument.getText().split('\n') : readWorkspaceTextLines(scriptPath);
+}
+
 const METHOD_SECTION_SCRIPT_ROLES: Partial<Record<KBEngineSectionName, 'base' | 'cell' | 'client'>> = {
   BaseMethods: 'base',
   CellMethods: 'cell',
@@ -3217,7 +3226,7 @@ function findPropertyScriptLocationInDef(document: vscode.TextDocument): vscode.
   logNavigation(`属性候选链 [${candidateScripts.join(' | ') || '空'}]`);
   for (const scriptPath of candidateScripts) {
     const lineIndex = resolvePropertyLandingLine(
-      readWorkspaceTextLines(scriptPath),
+      readScriptLinesForNavigation(scriptPath),
       entityName
     );
     return new vscode.Location(vscode.Uri.file(scriptPath), new vscode.Position(lineIndex, 0));
@@ -3426,7 +3435,7 @@ function findMethodScriptLocationInDef(
   const candidateScripts = collectMethodCandidateScripts(document, role);
   logNavigation(`方法候选链 [${candidateScripts.join(' | ') || '空'}]`);
   for (const scriptPath of candidateScripts) {
-    const defLineIndex = readWorkspaceTextLines(scriptPath).findIndex(line => {
+    const defLineIndex = readScriptLinesForNavigation(scriptPath).findIndex(line => {
       const match = /^\s*def\s+([A-Za-z_]\w*)/.exec(line);
       return match?.[1] === methodName;
     });
@@ -3486,6 +3495,24 @@ function findDetailLevelDefinitionInDef(
  * F12 的提示+注册回落是展示兜底(落 def/entities.xml,不是 python 目标),
  * 不进本链;调用层次拿不到 python 方法如实 null。
  */
+/** IDE-ACC-013:索引/全局回退臂的落点行是扫描期磁盘口径;目标脚本开着
+ * 脏缓冲(未保存编辑把方法挪行)时按缓冲内容找 `def <方法>` 行重定,以
+ * 缓冲为准(编辑时跳到脏缓冲区位置);缓冲里已无该方法(编辑中删除)时
+ * 保留索引行。约定链臂(findMethodScriptLocationInDef)读取本身已走缓冲,
+ * 不经此调。 */
+function adjustMethodTargetToOpenBuffer(
+  target: { filePath: string; line: number; character: number },
+  methodName: string
+): { filePath: string; line: number; character: number } {
+  const openDocument = vscode.workspace.textDocuments.find(doc => doc.fileName === target.filePath);
+  if (!openDocument) {
+    return target;
+  }
+  const defPattern = new RegExp(`^\\s*def\\s+${methodName}\\b`);
+  const bufferLine = openDocument.getText().split('\n').findIndex(line => defPattern.test(line));
+  return bufferLine >= 0 ? { ...target, line: bufferLine + 1 } : target;
+}
+
 async function resolveDefMethodPythonTarget(
   document: vscode.TextDocument,
   methodName: string,
@@ -3496,8 +3523,9 @@ async function resolveDefMethodPythonTarget(
   if (identity) {
     const bound = await manager.resolveMethodImplementationByIdentity(identity);
     if (bound) {
-      logNavigation(`方法落点(索引) ${bound.filePath}:${bound.line - 1}`);
-      return bound;
+      const adjusted = adjustMethodTargetToOpenBuffer(bound, methodName);
+      logNavigation(`方法落点(索引${adjusted === bound ? '' : ',缓冲重定'}) ${adjusted.filePath}:${adjusted.line - 1}`);
+      return adjusted;
     }
   }
 
@@ -3521,8 +3549,9 @@ async function resolveDefMethodPythonTarget(
     section === 'BaseMethods' || section === 'CellMethods' ? section : undefined;
   const glob = await manager.resolveMethodImplementationGlobally(methodName, defSection);
   if (glob) {
-    logNavigation(`方法落点(全项目回退) ${glob.filePath}:${glob.line - 1}`);
-    return glob;
+    const adjusted = adjustMethodTargetToOpenBuffer(glob, methodName);
+    logNavigation(`方法落点(全项目回退${adjusted === glob ? '' : ',缓冲重定'}) ${adjusted.filePath}:${adjusted.line - 1}`);
+    return adjusted;
   }
   return null;
 }
