@@ -87,6 +87,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Cancelling the picker (or the manual input) sends no preview query; an unreachable database reports the connection cause honestly with no output
   - Connect and every query run under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification (IDE-REV-017): timeout or cancel returns with that reason and releases the connection — it never falls back to manual table input on a connection that is being released
   - Rows over the limit are cut and marked truncated in the footer, which also shows the exact SQL that ran
+  - Column sources (IDE-REV-018): after the table, a 列来源 section links every result column back to its declaration — derived columns print `filePath:line` of the real `.def`/`types.xml` declaration (clickable in the output panel, the declared type text included), engine structural columns are stated as synthetic with no declaration to jump to, and columns outside the virtual schema stay honestly unknown; a table not derived by any workspace entity says so for the whole section instead of guessing neighbors
 
 ## Server Control
 

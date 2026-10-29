@@ -252,6 +252,7 @@ import {
   publishDriftReport
 } from './databaseDrift';
 import { runTablePreviewCommand } from './databaseTablePreviewCommand';
+import { createPreviewColumnSourceTableResolver } from './databasePreviewColumnSource';
 import {
   guardConnectionFactoryWithQueryLifecycle,
   type QueryGuard
@@ -1743,7 +1744,19 @@ export function activate(context: vscode.ExtensionContext) {
           showInputBox: options => vscode.window.showInputBox(options),
           showInformationMessage: message => vscode.window.showInformationMessage(message),
           showErrorMessage: message => vscode.window.showErrorMessage(message),
-          channel: tablePreviewChannel
+          channel: tablePreviewChannel,
+          // IDE-REV-018:预览表名反查虚拟 schema(逐注册实体含子表),
+          // 列来源段给 def/type 声明处点击定位面
+          resolveColumnSourceTable: createPreviewColumnSourceTableResolver({
+            listEntityRoots: () =>
+              (vscode.workspace.workspaceFolders ?? []).flatMap(folder =>
+                getRegisteredEntities(folder.uri.fsPath).map(entity => ({
+                  rootPath: folder.uri.fsPath,
+                  entityName: entity.name
+                }))
+              ),
+            getSnapshot: (entityName, rootPath) => getDatabaseSchemaSnapshot(entityName, rootPath)
+          })
         }))
   );
   context.subscriptions.push(previewTableCommand);

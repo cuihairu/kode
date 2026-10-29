@@ -233,7 +233,8 @@ describe('runTablePreviewCommand · 守卫连接(编排面)', () => {
               channelLines.push(line);
             },
             show: () => undefined
-          }
+          },
+          resolveColumnSourceTable: () => null
         })
     };
   };

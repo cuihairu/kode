@@ -11,6 +11,10 @@
 import type { QueryResult } from './databaseDrift';
 import { previewTableData, type TablePreviewResult } from './databaseTablePreview';
 import type { DatabaseInterfaceConfig } from './serverConfigMerge';
+import {
+  renderColumnSourceSection,
+  type ColumnSourceTableResolver
+} from './databasePreviewColumnSource';
 
 export interface TablePreviewConnection {
   runQuery(sql: string): Promise<QueryResult>;
@@ -29,6 +33,8 @@ export interface TablePreviewCommandDeps {
   showInformationMessage(message: string): unknown;
   showErrorMessage(message: string): unknown;
   channel: { appendLine(line: string): void; show(preserveFocus?: boolean): void };
+  /** IDE-REV-018:预览表名 → 虚拟 schema 描述符(列来源反查面) */
+  resolveColumnSourceTable: ColumnSourceTableResolver;
 }
 
 /** 表清单:SHOW TABLES(白名单允许的只读语句),首列即表名 */
@@ -151,6 +157,17 @@ export async function runTablePreviewCommand(deps: TablePreviewCommandDeps): Pro
       return;
     }
     deps.channel.appendLine(formatTablePreview(preview, table));
+    // IDE-REV-018:表尾追加列来源段——derived 行带声明处 filePath:line
+    // (输出面板点击定位),合成/未知列如实说明不带跳转面
+    for (const line of renderColumnSourceSection(
+      preview.columns,
+      table,
+      deps.resolveColumnSourceTable(table)
+    )) {
+      deps.channel.appendLine(line);
+    }
+    // IDE-REV-018:表尾追加列来源段——derived 行带声明处 filePath:line
+    // (输出面板点击定位),合成/未知列如实说明不带跳转面
     deps.channel.show(true);
   } finally {
     await connection.close();

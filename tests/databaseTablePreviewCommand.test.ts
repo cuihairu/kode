@@ -106,7 +106,8 @@ const makeHarness = (options: {
         show: () => {
           harness.shown = true;
         }
-      }
+      },
+      resolveColumnSourceTable: () => null
     }
   };
   return harness;
