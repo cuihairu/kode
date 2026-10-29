@@ -7,6 +7,7 @@ import {
 import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
 import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
+import { classifyDefChange } from './hotReloadDefStructure';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
@@ -213,90 +214,15 @@ export function setupHotReload(
       return;
     }
     status.setSending(triggers, settings.debounceMs);
-    const fail = (error: unknown): void => {
-      status.setFailed(error instanceof Error ? error.message : String(error));
-      reportActionError(error);
-    };
-    // IDE-REV-021:该次发送逐文件落双维台账——targetId/rootId 解不到的
-    // 维度如实不落;结果仍只有 sent-unverified/failed 两态(无回执管道,
-    // 传输/执行成功≠应用成功,绝不记成功态)
-    const recordOutcomes = (targetId: string | null, outcome: HotReloadDeliveryOutcome, detail?: string): void => {
-      const wiring = options.targetState;
-      if (!wiring || targetId === null) {
-        return;
-      }
-      for (const file of triggers) {
-        const rootId = wiring.resolveRootId(file);
-        if (rootId === null) {
-          continue;
-        }
-        wiring.store.record({ rootId, targetId }, file, outcome, detail !== undefined ? { detail } : {});
-      }
-    };
-    // IDE-REV-023:applied 核验接线。注解口只给仍未确认(sent-unverified)的
-    // 记录追加阻塞/超时原因——绝不动 accepted/applied/failed,recordedAt 原样
-    // 保留(注解不是新发送);同因去重防重复追注。
-    const noteStillUnverified = (
-      wiring: HotReloadTargetStateWiring,
-      key: { rootId: string; targetId: string },
-      file: string,
-      reason: string
-    ): void => {
-      const current = wiring.store.get(key, file);
-      if (!current || current.outcome !== 'sent-unverified' || (current.detail ?? '').includes(reason)) {
-        return;
-      }
-      wiring.store.record(key, file, 'sent-unverified', {
-        detail: `${current.detail} | ${reason}`,
-        now: current.recordedAt
-      });
-    };
-    // 核验窗口到点结算:仍未确认只注解超时(不冒充失败也不冒充 applied)
-    const scheduleAppliedSettle = (
-      wiring: HotReloadTargetStateWiring,
-      key: { rootId: string; targetId: string },
-      file: string,
-      sentAt: number
-    ): void => {
-      const handle = timers.set(() => {
-        settleHandles.delete(handle);
-        const verdict = settleAppliedStatus(wiring.store.get(key, file), {
-          deadlineMs: sentAt + HOT_RELOAD_APPLIED_SETTLE_MS,
-          now
-        });
-        if (verdict === 'unconfirmed-timeout') {
-          noteStillUnverified(
-            wiring,
-            key,
-            file,
-            `applied 核验超时(${Math.round(HOT_RELOAD_APPLIED_SETTLE_MS / 1000)}s 窗口):保持未确认`
-          );
-        }
-      }, HOT_RELOAD_APPLIED_SETTLE_MS);
-      settleHandles.add(handle);
-    };
-    // 所发内容读取(digest 比对基准):同批去重;读不到=null(如实无基准)
-    const contentReads = new Map<string, Promise<string | null>>();
-    const readSentContent = (file: string): Promise<string | null> => {
-      const reader = options.targetState?.readFileContent;
-      if (!reader) {
-        return Promise.resolve(null);
-      }
-      let pending = contentReads.get(file);
-      if (!pending) {
-        pending = Promise.resolve(reader(file)).catch(() => null);
-        contentReads.set(file, pending);
-      }
-      return pending;
-    };
-    const start = (targetId: string | null): void => {
-      // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
-      // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
-      // 升格(applyAcceptedReceipt 只认协议逐字段符合,未知响应保持未确认);
-      // 脚本/命令动作无响应面,回落 recordOutcomes 的 sent-unverified/failed。
-      let responseSeen = false;
-      const handleResponse = (response: HotReloadHttpResponse): void => {
-        responseSeen = true;
+    const proceed = (): void => {
+      const fail = (error: unknown): void => {
+        status.setFailed(error instanceof Error ? error.message : String(error));
+        reportActionError(error);
+      };
+      // IDE-REV-021:该次发送逐文件落双维台账——targetId/rootId 解不到的
+      // 维度如实不落;结果仍只有 sent-unverified/failed 两态(无回执管道,
+      // 传输/执行成功≠应用成功,绝不记成功态)
+      const recordOutcomes = (targetId: string | null, outcome: HotReloadDeliveryOutcome, detail?: string): void => {
         const wiring = options.targetState;
         if (!wiring || targetId === null) {
           return;
@@ -306,73 +232,207 @@ export function setupHotReload(
           if (rootId === null) {
             continue;
           }
-          const key = { rootId, targetId };
-          // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
-          const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
-          if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
-            applyAcceptedReceipt(wiring.store, key, file, response.body, {});
-            // IDE-REV-023:applied 双证核验(可信 digest+已验证回执)——以所发
-            // 内容为基准重算比对,对得上才升格 applied;无读取通道/读不到/回执
-            // 不合规/digest 不符一律不升格,阻塞原因如实注解进仍未确认的记录
-            if (!options.targetState?.readFileContent) {
-              noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准');
-            } else {
-              void readSentContent(file).then(content => {
-                if (content === null) {
-                  noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准');
-                  return;
-                }
-                const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
-                  sentContent: content
-                });
-                if (verdict.kind === 'not-applied') {
-                  noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`);
-                }
-              });
-            }
-            scheduleAppliedSettle(wiring, key, file, now());
-          }
+          wiring.store.record({ rootId, targetId }, file, outcome, detail !== undefined ? { detail } : {});
         }
       };
-      const sendOptions: HotReloadSendOptions | undefined = options.targetState
-        ? { onHttpResponse: handleResponse }
-        : undefined;
-      // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
-      try {
-        void Promise.resolve(runAction(settings.actionName, sendOptions)).then(
-          // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项);
-          // 有响应面则 handleResponse 已按传输事实落账,不再覆盖
-          () => {
-            if (!responseSeen) {
-              recordOutcomes(targetId, 'sent-unverified');
-            }
-            status.setSentUnverified();
-          },
-          error => {
-            if (!responseSeen) {
-              recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
-            }
-            fail(error);
-          }
-        );
-      } catch (error) {
-        if (!responseSeen) {
-          recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+      // IDE-REV-023:applied 核验接线。注解口只给仍未确认(sent-unverified)的
+      // 记录追加阻塞/超时原因——绝不动 accepted/applied/failed,recordedAt 原样
+      // 保留(注解不是新发送);同因去重防重复追注。
+      const noteStillUnverified = (
+        wiring: HotReloadTargetStateWiring,
+        key: { rootId: string; targetId: string },
+        file: string,
+        reason: string
+      ): void => {
+        const current = wiring.store.get(key, file);
+        if (!current || current.outcome !== 'sent-unverified' || (current.detail ?? '').includes(reason)) {
+          return;
         }
-        fail(error);
+        wiring.store.record(key, file, 'sent-unverified', {
+          detail: `${current.detail} | ${reason}`,
+          now: current.recordedAt
+        });
+      };
+      // 核验窗口到点结算:仍未确认只注解超时(不冒充失败也不冒充 applied)
+      const scheduleAppliedSettle = (
+        wiring: HotReloadTargetStateWiring,
+        key: { rootId: string; targetId: string },
+        file: string,
+        sentAt: number
+      ): void => {
+        const handle = timers.set(() => {
+          settleHandles.delete(handle);
+          const verdict = settleAppliedStatus(wiring.store.get(key, file), {
+            deadlineMs: sentAt + HOT_RELOAD_APPLIED_SETTLE_MS,
+            now
+          });
+          if (verdict === 'unconfirmed-timeout') {
+            noteStillUnverified(
+              wiring,
+              key,
+              file,
+              `applied 核验超时(${Math.round(HOT_RELOAD_APPLIED_SETTLE_MS / 1000)}s 窗口):保持未确认`
+            );
+          }
+        }, HOT_RELOAD_APPLIED_SETTLE_MS);
+        settleHandles.add(handle);
+      };
+      // 所发内容读取(digest 比对基准):同批去重;读不到=null(如实无基准)
+      const contentReads = new Map<string, Promise<string | null>>();
+      const readSentContent = (file: string): Promise<string | null> => {
+        const reader = options.targetState?.readFileContent;
+        if (!reader) {
+          return Promise.resolve(null);
+        }
+        let pending = contentReads.get(file);
+        if (!pending) {
+          pending = Promise.resolve(reader(file)).catch(() => null);
+          contentReads.set(file, pending);
+        }
+        return pending;
+      };
+      const start = (targetId: string | null): void => {
+        // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
+        // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
+        // 升格(applyAcceptedReceipt 只认协议逐字段符合,未知响应保持未确认);
+        // 脚本/命令动作无响应面,回落 recordOutcomes 的 sent-unverified/failed。
+        let responseSeen = false;
+        const handleResponse = (response: HotReloadHttpResponse): void => {
+          responseSeen = true;
+          const wiring = options.targetState;
+          if (!wiring || targetId === null) {
+            return;
+          }
+          for (const file of triggers) {
+            const rootId = wiring.resolveRootId(file);
+            if (rootId === null) {
+              continue;
+            }
+            const key = { rootId, targetId };
+            // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
+            const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
+            if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
+              applyAcceptedReceipt(wiring.store, key, file, response.body, {});
+              // IDE-REV-023:applied 双证核验(可信 digest+已验证回执)——以所发
+              // 内容为基准重算比对,对得上才升格 applied;无读取通道/读不到/回执
+              // 不合规/digest 不符一律不升格,阻塞原因如实注解进仍未确认的记录
+              if (!options.targetState?.readFileContent) {
+                noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准');
+              } else {
+                void readSentContent(file).then(content => {
+                  if (content === null) {
+                    noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准');
+                    return;
+                  }
+                  const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
+                    sentContent: content
+                  });
+                  if (verdict.kind === 'not-applied') {
+                    noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`);
+                  }
+                });
+              }
+              scheduleAppliedSettle(wiring, key, file, now());
+            }
+          }
+        };
+        const sendOptions: HotReloadSendOptions | undefined = options.targetState
+          ? { onHttpResponse: handleResponse }
+          : undefined;
+        // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
+        try {
+          void Promise.resolve(runAction(settings.actionName, sendOptions)).then(
+            // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项);
+            // 有响应面则 handleResponse 已按传输事实落账,不再覆盖
+            () => {
+              if (!responseSeen) {
+                recordOutcomes(targetId, 'sent-unverified');
+              }
+              status.setSentUnverified();
+            },
+            error => {
+              if (!responseSeen) {
+                recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+              }
+              fail(error);
+            }
+          );
+        } catch (error) {
+          if (!responseSeen) {
+            recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+          }
+          fail(error);
+        }
+      };
+      if (options.targetState) {
+        // 目标解析本身失败/拒绝:如实按无目标发送(不落台账),动作照常执行
+        void Promise.resolve(options.targetState.resolveTargetId(settings.actionName)).then(start, () => start(null));
+      } else {
+        start(null);
       }
     };
-    if (options.targetState) {
-      // 目标解析本身失败/拒绝:如实按无目标发送(不落台账),动作照常执行
-      void Promise.resolve(options.targetState.resolveTargetId(settings.actionName)).then(start, () => start(null));
-    } else {
-      start(null);
-    }
+    // IDE-REV-024:def 结构闸——批内 .def 文件先做结构指纹对比:结构性变化
+    // (序列化/RPC 参数面)整批不发普通 reload,状态回落就绪(不是失败)并提
+    // 示需重启;无基线/内容不可读/无读取通道证明不了无结构变化,一律保守不
+    // 发;非结构 def(注释/空白/顺序)与纯 Python 批照常发送。基线逐次滚动。
+    const warnRestart = (text: string): void => {
+      try {
+        void Promise.resolve(vscode.window.showWarningMessage(text)).catch(() => undefined);
+      } catch {
+        // VS Code 关闭期间提示 API 可能不可用,闸门决策不受影响
+      }
+    };
+    const gateDefChanges = (): void => {
+      const defFiles = triggers.filter(file => file.toLowerCase().endsWith('.def'));
+      if (defFiles.length === 0) {
+        proceed();
+        return;
+      }
+      const block = (reasons: string[]): void => {
+        status.setRestartRequired(reasons, triggers);
+        const first = reasons[0] ?? 'def 结构待核';
+        warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
+      };
+      const reader = options.targetState?.readFileContent;
+      if (!reader) {
+        block(['def 无内容读取通道,证明不了无结构变化(保守不发)']);
+        return;
+      }
+      void Promise.all(defFiles.map(file => Promise.resolve(reader(file)).catch(() => null)))
+        .then(contents => {
+          const reasons: string[] = [];
+          defFiles.forEach((file, index) => {
+            const after = contents[index];
+            if (after === null) {
+              reasons.push(`${file}: 内容不可读(保守按结构性,不发)`);
+              return;
+            }
+            const baseline = defBaselines.get(file);
+            if (baseline === undefined) {
+              reasons.push(`${file}: 无基线(本次会话首次见到,证明不了无结构变化)`);
+            } else {
+              const verdict = classifyDefChange(baseline, after);
+              if (verdict.structural) {
+                reasons.push(`${file}: ${verdict.reasons.join(';')}`);
+              }
+            }
+            defBaselines.set(file, after);
+          });
+          if (reasons.length > 0) {
+            block(reasons);
+            return;
+          }
+          proceed();
+        }, () => block(['def 内容读取失败(保守不发)']));
+    };
+    gateDefChanges();
   }, timers);
 
   const watchers: vscode.FileSystemWatcher[] = [];
   // IDE-REV-023 applied 核验窗口的结算定时器:随装配释放一并清掉
   const settleHandles = new Set<unknown>();
+  // IDE-REV-024 def 结构基线:上次闸门见到的 .def 内容(会话内存,逐次滚动)
+  const defBaselines = new Map<string, string>();
   const disposeWatchers = (): void => {
     for (const watcher of watchers) {
       watcher.dispose();

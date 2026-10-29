@@ -148,6 +148,13 @@ export class HotReloadStatusController {
     this.log(`触发到点但未配动作名(kbengine.hotReload.actionName), 跳过: ${triggerText}`);
   }
 
+  /** IDE-REV-024 结构性 def 变更:整批不发普通 reload,状态回落就绪(不是失败),日志记需重启原因 */
+  setRestartRequired(reasons: string[], triggers: string[]): void {
+    this.setState('ready');
+    const triggerText = triggers.length > 0 ? triggers.join(', ') : '(无文件路径)';
+    this.log(`结构性 def 变更需重启,不作为普通 reload 发送: ${reasons.join(';')} | 触发: ${triggerText}`);
+  }
+
   showLog(): void {
     this.channel.show();
   }
