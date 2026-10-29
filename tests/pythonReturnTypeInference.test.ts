@@ -751,6 +751,60 @@ describe('IDE-REV-007:TTL 重建在途窗口内的删除事件不复活来源', 
   });
 });
 
+// IDE-REV-008:同族重命名面——预热后 TTL 重建在途,窗口内迁键的桶在发布时
+// 不得把旧键带回来(旧模块不再命中、新模块可查、来源不重复);连续
+// 保存/重命名事件按到达序重放。
+describe('IDE-REV-008:TTL 重建在途窗口内的重命名事件不复活旧键', () => {
+  it('预热→门住重建→重命名→释放:旧模块不命中,新模块可查,来源不重复', async () => {
+    const { root, put } = setupWorkspace();
+    put('a.py', 'def get_data() -> FROM_A:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root); // 预热发布
+    const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(advanced);
+    try {
+      const release = gateRebuildScan(); // 门住重建:扫描期仍读到 a.py 旧路径
+      const lines = ['from b import get_data', 'data = get_data()'];
+      const pending = resolveLocalVariableReturnType(lines, 1, 'data', root);
+      renameSavedFileAnnotations(root, path.join(root, 'a.py'), path.join(root, 'b.py'));
+      release();
+      await pending; // 发布完成后再断言
+      // 新模块可查(内容承接),旧模块不再命中(桶已迁走),两键不同并存
+      expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root))
+        .toMatchObject({ annotation: 'FROM_A' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(
+        ['from a import get_data', 'data = get_data()'], 1, 'data', root
+      )).toBeNull();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('窗口内连续事件:先重命名后保存,发布按到达序重放', async () => {
+    const { root, put } = setupWorkspace();
+    put('a.py', 'def get_data() -> FROM_A:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root); // 预热发布
+    const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(advanced);
+    try {
+      const release = gateRebuildScan();
+      const lines = ['from b import get_data', 'data = get_data()'];
+      const pending = resolveLocalVariableReturnType(lines, 1, 'data', root);
+      renameSavedFileAnnotations(root, path.join(root, 'a.py'), path.join(root, 'b.py'));
+      applySavedFileAnnotations(root, path.join(root, 'b.py'), 'def get_data() -> SAVED_AT_B:\n    pass\n');
+      release();
+      await pending;
+      // 到达序重放:迁键后落新源,b 桶以最后保存为准;旧键不复活
+      expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'data', root))
+        .toMatchObject({ annotation: 'SAVED_AT_B' });
+      expect(resolveLocalVariableReturnTypeFromSnapshot(
+        ['from a import get_data', 'data = get_data()'], 1, 'data', root
+      )).toBeNull();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+});
+
 describe('2026-10-28 审核整改:过期磁盘索引不得继续答', () => {
   it('TTL 过期后快照面不再从磁盘旧注解答', async () => {
     const { root, put } = setupWorkspace();

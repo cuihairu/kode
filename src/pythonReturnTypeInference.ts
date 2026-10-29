@@ -410,11 +410,11 @@ export function renameSavedFileAnnotations(
   newFilePath: string
 ): void {
   if (!workspaceRoot) { return; }
+  // IDE-REV-008:在途重建一律登记迁移事件——仅迁已发布桶时,重建的扫描期
+  // 旧读会在发布时把旧键带回来;发布前重放迁键,旧模块不命中、新模块可查
+  annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'rename', oldFilePath, newFilePath });
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  if (!cached) {
-    annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'rename', oldFilePath, newFilePath });
-    return;
-  }
+  if (!cached) { return; }
   if (!cached.fileBuckets.has(oldFilePath)) { return; }
   const renamed = new Map<string, PythonReturnAnnotationIndex>();
   for (const [key, bucket] of cached.fileBuckets) {
