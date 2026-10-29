@@ -47,6 +47,10 @@ const posted = new Map<number, HostedJob>();
 const fileQueues = new Map<string, FileQueue>();
 /** IDE-RES-002:待派发任务保留的源码串字节总量(已派发的 postMessage 后即释放) */
 let queuedBytes = 0;
+/** IDE-REV-030:排队字节峰值(会话内高水位,单调不降;排干/清理不回落) */
+let peakQueuedBytes = 0;
+/** IDE-REV-030:因超预算被拒的请求累计数(恢复后保留,供现场报告辨认积压史) */
+let budgetRejects = 0;
 
 function failPending(error: Error): void {
   for (const job of posted.values()) {
@@ -61,6 +65,46 @@ function failPending(error: Error): void {
   posted.clear();
   fileQueues.clear();
   queuedBytes = 0;
+}
+
+/** IDE-REV-030:解析 worker 队列与字节占用的实测面。现场报告读这里,
+ * 不用 indexTasksQueued 代替——那是索引任务层的排队计数,不是解析线程
+ * 的派发队列。字节口径与 MAX_QUEUED_PARSE_BYTES 同源:JS 字符 length
+ * (源码串码元计),不做额外字节估算。 */
+export interface PythonParserWorkerGauge {
+  /** 已派发进 worker 的在途任务数(posted;worker 挂起不回包时持续可见) */
+  running: number;
+  /** 未派发的待派发任务数(每文件最多保留最新一份) */
+  queued: number;
+  /** 待派发任务保留的源码串字节量(同预算口径;已派发即释放) */
+  queuedBytes: number;
+  /** 字节预算上限(即 MAX_QUEUED_PARSE_BYTES) */
+  maxQueuedBytes: number;
+  /** 排队字节峰值(会话内高水位;排干后保留供辨认积压史) */
+  peakQueuedBytes: number;
+  /** 因超预算被拒的请求累计数 */
+  budgetRejects: number;
+}
+
+export function getPythonParserWorkerGauge(): PythonParserWorkerGauge {
+  let queued = 0;
+  for (const queue of fileQueues.values()) {
+    if (queue.pendingLatest) { queued += 1; }
+  }
+  return {
+    running: posted.size,
+    queued,
+    queuedBytes,
+    maxQueuedBytes: MAX_QUEUED_PARSE_BYTES,
+    peakQueuedBytes,
+    budgetRejects
+  };
+}
+
+/** 测试用:清峰值/拒绝计数(不影响在途队列本身) */
+export function resetPythonParserWorkerGaugeCountersForTests(): void {
+  peakQueuedBytes = 0;
+  budgetRejects = 0;
 }
 
 /** 派发队列下一项:在途空且有待派发最新时接链 */
@@ -139,11 +183,13 @@ export async function parsePythonFileResponsive(
     const superseded = queue.pendingLatest;
     const freedBytes = superseded ? superseded.content.length : 0;
     if (queuedBytes - freedBytes + content.length > MAX_QUEUED_PARSE_BYTES) {
+      budgetRejects += 1;
       return Promise.reject(new Error(
         `Python parse backlog byte budget exceeded (${MAX_QUEUED_PARSE_BYTES} bytes queued)`
       ));
     }
     queuedBytes += content.length - freedBytes;
+    if (queuedBytes > peakQueuedBytes) { peakQueuedBytes = queuedBytes; }
     const job: HostedJob = { id: nextId++, filePath, content, revision, waiters: [] };
     const promise = new Promise<{ revision: number; parsed: ParsedPythonFile }>((resolve, reject) => {
       job.waiters.push({ resolve, reject });

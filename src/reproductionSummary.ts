@@ -44,6 +44,16 @@ export interface ReproductionSummaryInput {
     annotationUpdates: number;
     /** 注解索引共享构建在途量(IDE-REV-029):运行/等待/已全体取消收尾中 */
     annotationBuilds: { running: number; waiting: number; cancelled: number };
+    /** 解析 worker 队列与字节占用(IDE-REV-030):运行/排队任务数、待派发
+     * 字节(与预算同口径,源码串码元计)、预算上限、峰值、超预算拒绝累计 */
+    worker: {
+      running: number;
+      queued: number;
+      queuedBytes: number;
+      maxQueuedBytes: number;
+      peakQueuedBytes: number;
+      budgetRejects: number;
+    };
     indexTasksQueued: number;
     schemaColdBuilds: number;
   };
@@ -107,6 +117,11 @@ export function renderReproductionSummary(input: ReproductionSummaryInput): stri
     + ` 注解索引构建=运行${input.queue.annotationBuilds.running}`
       + `/等待${input.queue.annotationBuilds.waiting}`
       + `/已全取消${input.queue.annotationBuilds.cancelled}`
+    + ` worker=运行${input.queue.worker.running}/排队${input.queue.worker.queued}`
+    + ` worker排队字节=${input.queue.worker.queuedBytes}`
+      + `/预算${input.queue.worker.maxQueuedBytes}`
+      + `/峰值${input.queue.worker.peakQueuedBytes}`
+      + `/超预算拒${input.queue.worker.budgetRejects}`
     + ` 索引任务=${input.queue.indexTasksQueued}`
     + ` schema冷构建=${input.queue.schemaColdBuilds}`);
   const operationEntries = Object.entries(input.activeOperations);

@@ -2,7 +2,7 @@ import { findFilesAcrossRoots, getExternalScanRoots, resetScanRootCache, resolve
 import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
-import { disposePythonParserWorker } from './pythonParserWorkerHost';
+import { disposePythonParserWorker, getPythonParserWorkerGauge } from './pythonParserWorkerHost';
 import { registerTypeStorageIndexWatchers } from './typeStorageIndexWatchers';
 import { importExistingProject } from './projectImport';
 import { createMinimalProject } from './projectCreate';
@@ -4141,6 +4141,7 @@ export function activate(context: vscode.ExtensionContext) {
           diagnosticsInFlight: getDiagnosticScheduler().pendingWorkload().inFlight,
           annotationUpdates: getPendingDocumentUpdateCount(),
           annotationBuilds: getAnnotationBuildWorkload(),
+          worker: getPythonParserWorkerGauge(),
           indexTasksQueued: indexScheduler.getStatus().queued,
           schemaColdBuilds: getPendingTypeStorageColdBuildCount()
         },
@@ -4285,6 +4286,7 @@ export function activate(context: vscode.ExtensionContext) {
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued,
       diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight,
       annotationUpdates: getPendingDocumentUpdateCount(),
+      worker: getPythonParserWorkerGauge(),
       annotationBuilds: getAnnotationBuildWorkload(),
       indexTasksQueued: indexScheduler.getStatus().queued,
       schemaColdBuilds: getPendingTypeStorageColdBuildCount()
