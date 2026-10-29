@@ -486,6 +486,16 @@
   - 每个目标不论成败都渲染逐文件块（`rootId::targetId(outcome):` 后随 `file → outcome(detail)` 行），同目标内最差面胜出（failed > sent-unverified > accepted > applied），绿灯文件不盖红灯文件
   - 空台账如实渲染 无投递记录，通道照样打开
   - 成功只到发出面口径：sent-unverified 绝不冒充 applied
+
+### `kbengine.hotReload.retryFailed`
+
+- 标题：`Retry Failed Hot Reload Targets`
+- 作用：把热更台账里的失败目标经真实 quick action 入口重新发送（IDE-REV-026 / HOT-007）；已确认成功侧（applied / accepted / sent-unverified——均已发出）不重发，发送次数不增加（重发=重复投递）
+- 行为：
+  - 在可取消的进度通知下执行，每跳发起前探取消令牌——取消后剩余目标标 跳过(已取消) 不再发送（已完成的动作保留，未发起的不冒充已发）
+  - 重发动作经 quick action 树反查（具名注册动作与扫描脚本优先，按索引对齐的 `@http:` 殿后）；反查不到动作的目标如实报告（找不到以 … 为接收方的动作）并跳过，不执行任何动作
+  - 重发落账与 fire 路径同走既有面：无响应面动作记 sent-unverified / failed；真实 HTTP 响应按传输事实分类（2xx=未确认送达，非 2xx=failed）；2xx 回包走 accepted/applied 升格与核验窗口结算——重发成功后台账如实翻面，不留 failed 旧账
+  - 报告（重发/不重发/取消跳过计数 + 逐目标行含重发结果）落「KBEngine 热更新」通道并打开；空台账如实报告 无投递记录，没有可重试的目标
 ### `kbengine.discovery.report`
 
 - 标题：`Show Discovery Report`

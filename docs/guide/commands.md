@@ -576,6 +576,16 @@ The flow graph panel supports:
   - Every target — failed or not — gets its per-file block (`rootId::targetId(outcome):` followed by `file → outcome(detail)` lines), so one green target never masks a red one (worst face wins within a target: failed > sent-unverified > accepted > applied)
   - An empty ledger is rendered honestly as 无投递记录 and the channel still opens
   - Success is delivery-face only: sent-unverified never masquerades as applied
+
+### `kbengine.hotReload.retryFailed`
+
+- Title: `Retry Failed Hot Reload Targets`
+- Purpose: re-send only the failed targets from the hot-reload ledger through the real quick-action entry (IDE-REV-026 / HOT-007); confirmed-successful targets (applied / accepted / sent-unverified — already delivered) are not re-sent, so their send count does not increase (a re-send would be a duplicate delivery)
+- Behavior:
+  - Runs under a cancellable progress notification; the cancellation token is probed before each hop — once cancelled, remaining targets are marked 跳过(已取消) and never sent (completed sends are kept, un-started ones never masquerade as sent)
+  - The re-send resolves the action by reverse lookup on the quick-action tree (named registered actions and scanned scripts first; index-aligned `@http:` entries last); a target with no resolvable action is reported honestly (找不到以 … 为接收方的动作) and skipped without invoking anything
+  - Ledger accounting goes through the same existing faces as the fire path: no-response-face actions record sent-unverified / failed; real HTTP responses are classified by transport fact (2xx = delivered-unverified, non-2xx = failed); a 2xx body is run through the accepted/applied upgrade and the settle window — so a successful retry turns the ledger page instead of leaving a stale failed record
+  - The report (resent / not-resent / cancelled counts plus per-target lines with the re-send result) is written to the 「KBEngine 热更新」 channel and the channel opens; an empty ledger reports 无投递记录，没有可重试的目标 honestly
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`

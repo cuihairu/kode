@@ -148,9 +148,15 @@ import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
-import { realHotReloadTimerDeps, setupHotReload } from './hotReload';
+import {
+  realHotReloadTimerDeps,
+  setupHotReload,
+  type HotReloadSendOptions,
+  type HotReloadTargetStateWiring
+} from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
+import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
 import { HotReloadTargetStateStore } from './hotReloadTargetState';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
@@ -3240,58 +3246,61 @@ export function activate(context: vscode.ExtensionContext) {
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
     timers: realHotReloadTimerDeps
   });
-  setupHotReload(context, (actionName, sendOptions) =>
+  // 无人值守动作入口:fire 路径与失败目标重发(IDE-REV-026)共用同一执行面
+  const runQuickActionForHotReload = (actionName: string, sendOptions?: HotReloadSendOptions) =>
     quickActionManager.runByName(actionName, {
       suppressConfirm: true,
       ...(sendOptions?.onHttpResponse
         ? { onHttpResponse: response => sendOptions.onHttpResponse!(response) }
         : {})
-    })
-  , {
-    status: hotReloadStatus,
-    targetState: {
-      store: hotReloadTargetStateStore,
-      resolveTargetId: async actionName => {
-        if (actionName.startsWith('@script:')) {
-          return actionName.slice('@script:'.length);
-        }
-        const tree = await quickActionManager.getTreeData();
-        if (actionName.startsWith('@http:')) {
-          const match = /^@http:(debug|settings):(\d+)$/.exec(actionName);
-          if (!match) {
-            return null;
-          }
-          return (
-            tree.httpRequests.find(
-              entry => entry.requestSource === match[1] && String(entry.requestIndex) === match[2]
-            )?.target ?? null
-          );
-        }
-        return (
-          tree.registered.find(entry => entry.name === actionName)?.target ??
-          tree.scripts.find(entry => entry.name === actionName)?.target ??
-          null
-        );
-      },
-      resolveRootId: file => {
-        for (const folder of vscode.workspace.workspaceFolders ?? []) {
-          const rootPath = folder.uri.fsPath;
-          if (file === rootPath || file.startsWith(`${rootPath}${path.sep}`)) {
-            return rootPath;
-          }
-        }
-        return null;
-      },
-      // IDE-REV-023:applied 回执 digest 基准——按所发文件现内容读,读不到=null
-      readFileContent: async file => {
-        try {
-          const data = await vscode.workspace.fs.readFile(vscode.Uri.file(file));
-          return Buffer.from(data).toString('utf8');
-        } catch {
+    });
+  // 台账接线(IDE-REV-021/023):fire 路径与失败目标重发共用同一注入面
+  const hotReloadTargetStateWiring: HotReloadTargetStateWiring = {
+    store: hotReloadTargetStateStore,
+    resolveTargetId: async actionName => {
+      if (actionName.startsWith('@script:')) {
+        return actionName.slice('@script:'.length);
+      }
+      const tree = await quickActionManager.getTreeData();
+      if (actionName.startsWith('@http:')) {
+        const match = /^@http:(debug|settings):(\d+)$/.exec(actionName);
+        if (!match) {
           return null;
         }
+        return (
+          tree.httpRequests.find(
+            entry => entry.requestSource === match[1] && String(entry.requestIndex) === match[2]
+          )?.target ?? null
+        );
+      }
+      return (
+        tree.registered.find(entry => entry.name === actionName)?.target ??
+        tree.scripts.find(entry => entry.name === actionName)?.target ??
+        null
+      );
+    },
+    resolveRootId: file => {
+      for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        const rootPath = folder.uri.fsPath;
+        if (file === rootPath || file.startsWith(`${rootPath}${path.sep}`)) {
+          return rootPath;
+        }
+      }
+      return null;
+    },
+    // IDE-REV-023:applied 回执 digest 基准——按所发文件现内容读,读不到=null
+    readFileContent: async file => {
+      try {
+        const data = await vscode.workspace.fs.readFile(vscode.Uri.file(file));
+        return Buffer.from(data).toString('utf8');
+      } catch {
+        return null;
       }
     }
+  };
+  setupHotReload(context, runQuickActionForHotReload, {
+    status: hotReloadStatus,
+    targetState: hotReloadTargetStateWiring
   });
   // IDE-REV-025:多目标批次聚合的展示入口——台账全量归并,partial 点名失败目标
   context.subscriptions.push(
@@ -3301,6 +3310,57 @@ export function activate(context: vscode.ExtensionContext) {
         show: () => hotReloadStatus.showLog()
       });
     })
+  );
+  // IDE-REV-026:失败目标重试的操作入口——台账里只挑失败目标经真实动作入口
+  // 重发(已确认成功侧不重复投递,发送次数不增加),取消走 withProgress 进度
+  // 通知令牌,取消后未发起的目标不再发送;重发落账与 fire 路径同走
+  // HOT-002..004 既有面(含 accepted/applied 升格与核验窗口结算)。动作反查
+  // 优先具名注册动作与扫描脚本,@http: 按索引对齐最易漂,殿后。结算句柄
+  // 随命令释放一并清。
+  const hotReloadRetrySettleHandles = new Set<unknown>();
+  const resolveHotReloadActionNameForTarget = async (targetId: string): Promise<string | null> => {
+    const tree = await quickActionManager.getTreeData();
+    const registered = tree.registered.find(entry => entry.target === targetId);
+    if (registered) {
+      return registered.name;
+    }
+    const script = tree.scripts.find(entry => entry.target === targetId);
+    if (script) {
+      return script.name;
+    }
+    const http = tree.httpRequests.find(entry => entry.target === targetId);
+    return http ? `@http:${http.requestSource}:${http.requestIndex}` : null;
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.retryFailed', () =>
+      vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'KBEngine 热更失败目标重试', cancellable: true },
+        (_progress, token) =>
+          runHotReloadRetryCommand(
+            hotReloadTargetStateStore,
+            {
+              runAction: runQuickActionForHotReload,
+              resolveActionNameForTarget: resolveHotReloadActionNameForTarget,
+              targetState: hotReloadTargetStateWiring,
+              timers: realHotReloadTimerDeps,
+              settleHandles: hotReloadRetrySettleHandles,
+              isCancelled: () => token.isCancellationRequested
+            },
+            {
+              logBlock: text => hotReloadStatus.log(text),
+              show: () => hotReloadStatus.showLog()
+            }
+          )
+      )
+    ),
+    {
+      dispose: (): void => {
+        for (const handle of hotReloadRetrySettleHandles) {
+          realHotReloadTimerDeps.clear(handle);
+        }
+        hotReloadRetrySettleHandles.clear();
+      }
+    }
   );
 
   // 临时编辑热重载 quick action(书 §19 HR-PR-02):先临时编辑 → 可选自动
