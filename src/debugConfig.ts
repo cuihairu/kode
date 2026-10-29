@@ -616,9 +616,7 @@ export class DebugConfigManager {
     try {
       const outcome = await this.startAttachGuarded(
         `${componentName} (pid ${processId})`,
-        // Thenable 适配:startDebugging 返回 Thenable<boolean>,截止闸
-        // 的竞速面要真 Promise(Promise.resolve 包装零开销)
-        () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig))
+        attachConfig
       );
       return outcome.status === 'completed' && outcome.success;
     } catch (error) {
@@ -679,7 +677,7 @@ export class DebugConfigManager {
     try {
       const outcome = await this.startAttachGuarded(
         `${target.name} ${target.host}:${target.port}`,
-        () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig))
+        attachConfig
       );
       return outcome.status === 'completed' && outcome.success;
     } catch (error) {
@@ -693,29 +691,47 @@ export class DebugConfigManager {
    * 会话,不再重试),kbengine.debug.attachTimeoutMs 到点同路径停止——
    * 无人监听的端口不会让入口永久等待;<=0 不限时。条期完成/错误语义
    * 与裸 startDebugging 一致(错误原样抛给调用方既有 catch)。
+   * IDE-REV-002:停止面只停本次附加——onDidStartDebugSession 按本配置名
+   * 捕获自家会话句柄,截止/取消向该句柄调用 stopDebugging;无参调用会把
+   * 并行运行的无关会话一并停掉。自家会话尚未启动(挂起在 TCP 连接)则无
+   * 句柄可停,不强杀他人;迟到启动的会话清理由 IDE-REV-003 接续。
    */
   private async startAttachGuarded(
     label: string,
-    start: () => Promise<boolean>
+    attachConfig: vscode.DebugConfiguration
   ): Promise<AttachGuardOutcome> {
-    return vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `附加调试 ${label}(等待连接,可取消)`,
-        cancellable: true
-      },
-      (_progress, token) =>
-        attachWithDeadline({
-          label,
-          timeoutMs: vscode.workspace
-            .getConfiguration('kbengine')
-            .get<number>('debug.attachTimeoutMs', DEBUG_ATTACH_TIMEOUT_DEFAULT_MS),
-          start,
-          stop: () => void vscode.debug.stopDebugging(),
-          notify: message => void vscode.window.showWarningMessage(message),
-          onCancel: listener => token.onCancellationRequested(() => listener())
-        })
-    );
+    let ownSession: vscode.DebugSession | undefined;
+    const sessionTracker = vscode.debug.onDidStartDebugSession(session => {
+      if (!ownSession && session.name === attachConfig.name) {
+        ownSession = session;
+      }
+    });
+    try {
+      return await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `附加调试 ${label}(等待连接,可取消)`,
+          cancellable: true
+        },
+        (_progress, token) =>
+          attachWithDeadline({
+            label,
+            timeoutMs: vscode.workspace
+              .getConfiguration('kbengine')
+              .get<number>('debug.attachTimeoutMs', DEBUG_ATTACH_TIMEOUT_DEFAULT_MS),
+            start: () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig)),
+            stop: () => {
+              // stopDebugging(undefined) 等同无参(停全部)——无自家句柄就一次都不停
+              if (!ownSession) { return; }
+              void vscode.debug.stopDebugging(ownSession).then(() => undefined, () => undefined);
+            },
+            notify: message => void vscode.window.showWarningMessage(message),
+            onCancel: listener => token.onCancellationRequested(() => listener())
+          })
+      );
+    } finally {
+      sessionTracker.dispose();
+    }
   }
 
   getConfig(): KBEngineDebugConfig {

@@ -543,16 +543,32 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
   const warnings: string[] = [];
   let fireCancel: (() => void) | undefined;
   let cancelDisposals = 0;
+  // IDE-REV-002:会话启动事件面——sessionFirePlan 控制本次 startDebugging
+  // 期间先后「启动」哪些会话('own'=以本次配置名命名的自家会话,其余字串=
+  // 并行运行的无关会话名),供停止面断言只停自家会话
+  let sessionFirePlan: Array<'own' | string> | undefined;
+  const sessionListeners: Array<(session: unknown) => void> = [];
+  let sessionTrackerDisposals = 0;
   let originalStart: unknown;
   let originalStop: unknown;
   let originalWithProgress: unknown;
   let originalWarn: unknown;
+  let originalSessionEvent: unknown;
 
   beforeAll(() => {
     originalStart = debugish.startDebugging;
     originalStop = debugish.stopDebugging;
     originalWithProgress = windowish.withProgress;
     originalWarn = windowish.showWarningMessage;
+    originalSessionEvent = debugish.onDidStartDebugSession;
+    debugish.onDidStartDebugSession = (listener: (session: unknown) => void) => {
+      sessionListeners.push(listener);
+      return {
+        dispose: () => {
+          sessionTrackerDisposals += 1;
+        }
+      };
+    };
     windowish.showWarningMessage = async (message: string) => {
       warnings.push(message);
       return undefined;
@@ -563,6 +579,12 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
       config: Record<string, unknown>
     ) => {
       debugCalls.push({ folder, config, result: true, throws: null });
+      for (const item of sessionFirePlan ?? []) {
+        const session = item === 'own'
+          ? { id: `own:${config.name}`, name: config.name }
+          : { id: `other:${item}`, name: item };
+        for (const listener of [...sessionListeners]) { listener(session); }
+      }
       if (hung) {
         return new Promise<boolean>(() => undefined);
       }
@@ -591,6 +613,7 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
   afterAll(() => {
     debugish.startDebugging = originalStart;
     debugish.stopDebugging = originalStop;
+    debugish.onDidStartDebugSession = originalSessionEvent;
     windowish.withProgress = originalWithProgress;
     windowish.showWarningMessage = originalWarn;
   });
@@ -600,6 +623,9 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     warnings.length = 0;
     cancelDisposals = 0;
     fireCancel = undefined;
+    sessionFirePlan = undefined;
+    sessionListeners.length = 0;
+    sessionTrackerDisposals = 0;
   });
 
   it('按期完成:withProgress 包裹,返回 true,零停止零警告,取消订阅已释放', async () => {
@@ -615,7 +641,7 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     expect(cancelDisposals).toBe(1);
   });
 
-  it('不可达端口到点:停掉卡住的会话+超时提示,false 且不重试(仅一次 startDebugging)', async () => {
+  it('不可达端口到点:自家会话未启动则零停止(无句柄不强杀他人)+超时提示,false 且不重试', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     configurationOverrides.set('kbengine', { 'debug.attachTimeoutMs': 5 });
     pickQueue.push({ label: 'baseapp', description: '123' });
@@ -626,7 +652,9 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     expect(await manager.attachToComponent('baseapp')).toBe(false);
 
     expect(debugCalls).toHaveLength(1);
-    expect(stopCalls).toHaveLength(1);
+    // IDE-REV-002:挂起态自家会话从未启动,没有可停句柄——无参 stopDebugging
+    // 会把并行无关会话一并停掉,此刻必须一次都不停
+    expect(stopCalls).toHaveLength(0);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('超时');
     expect(warnings[0]).toContain('不再重试');
@@ -645,12 +673,39 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     fireCancel?.();
     expect(await attaching).toBe(false);
 
-    expect(stopCalls).toHaveLength(1);
+    // IDE-REV-002:挂起态无自家会话句柄,取消同样零停止
+    expect(stopCalls).toHaveLength(0);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('已取消');
   });
 
-  it('attachRemote 同一闸:不可达远端到点停止,false', async () => {
+  it('REV-002 并行无关会话:取消只停本次附加的自家会话,无关会话不动', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    // 并行面:无关会话已在运行;本次附加的会话随后启动(连接仍挂起)
+    sessionFirePlan = ['无关的独立会话', 'own'];
+    hung = true;
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    const attaching = manager.attachToComponent('baseapp');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    fireCancel?.();
+    expect(await attaching).toBe(false);
+
+    // 只停自家会话:stopDebugging 收到且仅收到本次附加的会话句柄,
+    // 无关会话的名字绝不出现在任何停止调用里
+    expect(stopCalls).toHaveLength(1);
+    const stopped = (stopCalls[0] as Array<{ name?: string }>)[0];
+    expect(stopped?.name).toBe('KBEngine: Python attach to baseapp');
+    expect(stopCalls.some(call => (call[0] as { name?: string } | undefined)?.name === '无关的独立会话'))
+      .toBe(false);
+    // 会话追踪订阅随守卫收口释放,不遗留
+    expect(sessionTrackerDisposals).toBe(1);
+    expect(warnings[0]).toContain('已取消');
+  });
+
+  it('attachRemote 同一闸:远端会话已启动后到点,只停该远端会话', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     configurationOverrides.set('kbengine', {
       'debug.remoteTargets': [{ name: '外网', host: '10.0.0.8' }],
@@ -658,14 +713,19 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     });
     pickQueue.push({ label: '外网', description: '10.0.0.8:5678' });
     infoQueue.push('开始附加');
+    sessionFirePlan = ['own'];
     hung = true;
     const manager = makeManager();
     await flushAsync();
 
     expect(await manager.attachRemote()).toBe(false);
 
+    // IDE-REV-002:超时路径同一句柄语义——只停本次附加的远端会话
     expect(stopCalls).toHaveLength(1);
+    const stopped = (stopCalls[0] as Array<{ name?: string }>)[0];
+    expect(stopped?.name).toBe('KBEngine: Python attach 外网 (remote)');
     expect(warnings[0]).toContain('超时');
+    expect(sessionTrackerDisposals).toBe(1);
     configurationOverrides.clear();
   }, 10_000);
 });
