@@ -107,6 +107,7 @@ import {
 } from './pyspyDump';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import { buildSshExecArgs, readSshHostsFromHome, type SshHostsSnapshot } from './remoteConnection';
+import { listRemoteProcesses, pickRemoteProcessId } from './remoteProcessList';
 import {
   LOCAL_SERVER_ID,
   REMOTE_SERVERS_MANUAL_KEY,
@@ -2827,7 +2828,7 @@ export function activate(context: vscode.ExtensionContext) {
         return; // 树节点无效且选择器取消:不空转
       }
       // IDE-PDBG-004:组件连接声明为远程 → py-spy 探测/安装/dump 全走
-      // ssh 前缀(远端 python3 装包;远程进程列表对齐见后续,PID 手输)
+      // ssh 前缀(远端 python3 装包);进程清单与选择对齐本地口径(PDBG-005)
       const connection = debugConfigManager.getConnectionFor(component.name);
       const isRemote = connection !== 'local';
       const runner = isRemote
@@ -2849,12 +2850,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
       let pid: number | undefined;
       if (isRemote) {
-        // IDE-PDBG-005 前的诚实口径:远程进程列表未对齐,PID 手输
-        const pidText = await vscode.window.showInputBox({
-          prompt: `${connection.ssh.host} 上目标 ${component.name} 进程的 PID(远端 ps 查得)`,
-          validateInput: value => /^\d+$/.test(value.trim()) ? null : 'PID 须为正整数'
+        // IDE-PDBG-005:远端进程清单经 ssh ps,选择器口径与本地一致
+        // (buildProcessPickItems 共用);清单拿不到如实报,不本地兜底
+        pid = await pickRemoteProcessId(component.name, connection.ssh.host, {
+          listRemote: () => listRemoteProcesses(connection.ssh),
+          showQuickPick: (items, options) => vscode.window.showQuickPick(items, options),
+          showErrorMessage: message => vscode.window.showErrorMessage(`${hostPrefix}${message}`)
         });
-        pid = pidText ? Number(pidText) : undefined;
       } else {
         pid = await debugConfigManager.pickProcessId(component.name);
       }

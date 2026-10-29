@@ -186,6 +186,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - The process picker is the existing one (component-name matches pinned ✓); the picked PID goes to `py-spy dump --pid <pid> --nonblocking` — nonblocking never pauses the target process, production components keep serving
   - py-spy missing locally asks once: one-click install runs `<interpreter> -m pip install -U py-spy` on the selected interpreter chain; an install failure reports the pip exit code and output tail honestly, never retries in a loop
   - A dump failure shows the cause in the output channel; permission failures append the ptrace guidance — Linux needs `kernel.yama.ptrace_scope=0` (or sudo/cap), containers need `--cap-add=SYS_PTRACE`, Windows needs an elevated or same-user session
+- Behavior (remote, IDE-PDBG-004/005): on a component dispatched to a remote server, py-spy runs over `ssh <host> -- …` and the process list comes from the same `ps` over ssh — the picker keeps the local shape (component matches pinned ✓); a listing that cannot be fetched reports the host and ssh cause honestly and opens no picker (never the local list as a stand-in)
 - Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission per the guidance above
 
 ### `kbengine.remoteServers.select`

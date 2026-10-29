@@ -187,6 +187,7 @@
   - 进程选择复用既有选择器（组件名命中置顶标 ✓），选中的 PID 交给 `py-spy dump --pid <pid> --nonblocking`——nonblocking 不暂停目标进程，生产组件不卡服
   - 本机未装 py-spy 先问一次：一键安装按所选解释器链跑 `<解释器> -m pip install -U py-spy`；装失败如实弹 pip 退出码与输出尾，绝不循环重试
   - dump 失败原因进输出通道；权限类失败拼 ptrace 指引——Linux 需 `kernel.yama.ptrace_scope=0`（或 sudo/能力位），容器内需 `--cap-add=SYS_PTRACE`，Windows 需管理员或同用户会话
+- 行为（远程，IDE-PDBG-004/005）：组件分派到远程服务器时，py-spy 经 `ssh <host> -- …` 在远端跑，进程清单同样经 ssh 上的 `ps` 取得——选择器保持本地形状（组件名命中置顶 ✓）；清单取不到如实报主机与 ssh 原因、不弹选择器（绝不拿本地清单顶替）
 - 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限按上面口径
 
 ### `kbengine.remoteServers.select`

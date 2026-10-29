@@ -134,6 +134,36 @@ export function parseTasklistProcesses(output: string): ProcessEntry[] {
 }
 
 /**
+ * 进程选择器条目组(IDE-PDBG-005 起本地与远程共用,口径锁一致):组件名
+ * 命中的进程置顶并标 `$(check) `,其余随后;description=PID(选中即取它)。
+ */
+export function buildProcessPickItems(
+  processes: ProcessEntry[],
+  componentName: string
+): Array<{ label: string; description: string }> {
+  const needle = componentName.toLowerCase();
+  const matches = processes.filter(item => item.name.toLowerCase().includes(needle));
+  const rest = processes.filter(item => !item.name.toLowerCase().includes(needle));
+  const toItem = (entry: ProcessEntry): { label: string; description: string } => ({
+    label: entry.name,
+    description: String(entry.pid)
+  });
+  return [
+    ...matches.map(entry => ({ ...toItem(entry), label: `$(check) ${entry.name}` })),
+    ...rest.map(toItem)
+  ];
+}
+
+/** 选择器结果 → PID:description 承载;取消/非法值归 undefined */
+export function pidFromPick(picked: { description?: string } | undefined): number | undefined {
+  if (!picked) {
+    return undefined;
+  }
+  const pid = Number(picked.description);
+  return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+}
+
+/**
  * 进程清单器(批112 用户令):win32 走 tasklist CSV,其余走 ps;
  * 命令失败(无 ps/无权限)返回空清单,不抛——attach 流程自己提示。
  */
@@ -834,25 +864,13 @@ export class DebugConfigManager {
       vscode.window.showErrorMessage('未获取到进程列表,无法附加(请确认目标机器上进程可见)');
       return undefined;
     }
-    const needle = componentName.toLowerCase();
-    const matches = processes.filter(item => item.name.toLowerCase().includes(needle));
-    const rest = processes.filter(item => !item.name.toLowerCase().includes(needle));
-    const toItem = (entry: ProcessEntry): vscode.QuickPickItem => ({
-      label: entry.name,
-      description: String(entry.pid)
-    });
-    const items: vscode.QuickPickItem[] = [
-      ...matches.map(entry => ({ ...toItem(entry), label: `$(check) ${entry.name}` })),
-      ...rest.map(toItem)
-    ];
-    const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: `选择要附加的 ${componentName} 进程(✓ 匹配组件名的进程已置顶)`
-    });
-    if (!picked) {
-      return undefined;
-    }
-    const pid = Number(picked.description);
-    return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+    const picked = await vscode.window.showQuickPick(
+      buildProcessPickItems(processes, componentName),
+      {
+        placeHolder: `选择要附加的 ${componentName} 进程(✓ 匹配组件名的进程已置顶)`
+      }
+    );
+    return pidFromPick(picked);
   }
 
   async attachToComponent(componentName: string): Promise<boolean> {
