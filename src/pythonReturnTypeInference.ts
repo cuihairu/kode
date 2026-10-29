@@ -440,9 +440,17 @@ interface AnnotationBuild {
 const annotationBuilds = new Map<string, AnnotationBuild>();
 
 /** 残留任务量规(P0-4b 审核重开 2026-10-28):编辑路径去抖在途的文档注解
- * 更新数——现场验收观测取消/风暴后无未泄残留的只读面。 */
+ * 更新数——现场验收观测取消/风暴后无未泄残留的只读面。
+ * IDE-REV-028(2026-10-30):待处理量覆盖 pending(去抖排队)与 inflight
+ * (异步提取执行中)两面——门住提取时仍显示在途,不再只看去抖队列。 */
 export function getPendingDocumentUpdateCount(): number {
-  return pendingDocumentUpdates.size;
+  return pendingDocumentUpdates.size + inflightDocumentUpdates.size;
+}
+
+/** 执行中(inflight)文档注解更新数(IDE-REV-028):按文件计——异步提取
+ * 真正执行中的文件数,与去抖排队面分开可观测。 */
+export function getInflightDocumentUpdateCount(): number {
+  return inflightDocumentUpdates.size;
 }
 
 /** 测试用:清全部工作区缓存(换临时根/改文件后立即生效) */
@@ -559,15 +567,33 @@ export function queueDocumentReturnAnnotations(
   pendingDocumentUpdates.set(key, entry);
 }
 
+/** 测试面(IDE-REV-028):门住异步提取的确定性在途窗口——每笔提取发起前
+ * 调一次,返回的 promise 放行才继续。生产恒 null(零行为变化)。 */
+let documentExtractionGateForTests: (() => Promise<void>) | null = null;
+export function setDocumentExtractionGateForTests(gate: (() => Promise<void>) | null): void {
+  documentExtractionGateForTests = gate;
+}
+
 function scheduleInflight(
   workspaceRoot: string,
   fileKey: string,
   version: number,
   source: () => string
 ): void {
-  const extraction = updateDocumentReturnAnnotationsAsync(workspaceRoot, { fileKey, version, source }).catch(() => {});
+  const extraction = (async (): Promise<void> => {
+    if (documentExtractionGateForTests) {
+      await documentExtractionGateForTests();
+    }
+    await updateDocumentReturnAnnotationsAsync(workspaceRoot, { fileKey, version, source });
+  })().catch(() => {});
   inflightDocumentUpdates.set(fileKey, extraction);
-  void extraction.finally(() => { inflightDocumentUpdates.delete(fileKey); });
+  void extraction.finally(() => {
+    // IDE-REV-028:旧任务的 finally 不删除同文件新任务的在途记录——同文件
+    // 重叠版本各归各:只有记录仍属于本任务才删,新版本已接管则留给它自己。
+    if (inflightDocumentUpdates.get(fileKey) === extraction) {
+      inflightDocumentUpdates.delete(fileKey);
+    }
+  });
 }
 
 /** 让出式异步提取:按字符预算让出事件循环(大文件不再整段阻塞宿主) */
