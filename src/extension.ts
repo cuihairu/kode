@@ -149,6 +149,7 @@ import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import { setupHotReload } from './hotReload';
+import { HotReloadTargetStateStore } from './hotReloadTargetState';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
   shadowMirrorCorpusDocument,
@@ -3224,9 +3225,50 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 自动热重载(盘点 G5):文件保存/监视 → 按名触发 quick action。门控默认关
   // 防误触;无人值守通道跳过确认框,找不到名字只落 OUTPUT 流水不弹窗。
+  // IDE-REV-021:每次发送按「rootId × targetId」双维台账记账——targetId =
+  // 动作解析出的服务实例目标(注册动作的 resolved target;@script: 直取内
+  // 嵌路径;@http: 调试/设置源按索引对齐树数据,对不上如实不落),rootId =
+  // 文件归属的工作区扫描根;动作完成无回执仍只记 sent-unverified,绝不记
+  // 成功态——同文件发不同实例各落各的,切目标不复用上一目标状态。
+  const hotReloadTargetStateStore = new HotReloadTargetStateStore({ now: () => Date.now() });
   setupHotReload(context, actionName =>
     quickActionManager.runByName(actionName, { suppressConfirm: true })
-  );
+  , {
+    targetState: {
+      store: hotReloadTargetStateStore,
+      resolveTargetId: async actionName => {
+        if (actionName.startsWith('@script:')) {
+          return actionName.slice('@script:'.length);
+        }
+        const tree = await quickActionManager.getTreeData();
+        if (actionName.startsWith('@http:')) {
+          const match = /^@http:(debug|settings):(\d+)$/.exec(actionName);
+          if (!match) {
+            return null;
+          }
+          return (
+            tree.httpRequests.find(
+              entry => entry.requestSource === match[1] && String(entry.requestIndex) === match[2]
+            )?.target ?? null
+          );
+        }
+        return (
+          tree.registered.find(entry => entry.name === actionName)?.target ??
+          tree.scripts.find(entry => entry.name === actionName)?.target ??
+          null
+        );
+      },
+      resolveRootId: file => {
+        for (const folder of vscode.workspace.workspaceFolders ?? []) {
+          const rootPath = folder.uri.fsPath;
+          if (file === rootPath || file.startsWith(`${rootPath}${path.sep}`)) {
+            return rootPath;
+          }
+        }
+        return null;
+      }
+    }
+  });
 
   // 临时编辑热重载 quick action(书 §19 HR-PR-02):先临时编辑 → 可选自动
   // 还原 → reloadScript → 结果回显。开关默认关(与 kbengine.hotReload.enabled

@@ -1,11 +1,18 @@
 import * as vscode from 'vscode';
 import { HotReloadStatusController } from './hotReloadStatus';
+import {
+  HotReloadTargetStateStore,
+  type HotReloadDeliveryOutcome
+} from './hotReloadTargetState';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
 // 建 watcher,事件去抖合并连发保存,配置变更联动拆建 watcher。
 // 状态栏反馈(HR-UI-001):装配内建状态机控制器,Watch Off/Ready/Sending/
 // Sent(未确认)/Failed 上屏;动作完成且无错只记未确认,不校验业务回执。
+// IDE-REV-021:注入 targetState 即按「rootId × targetId」双维台账逐发送
+// 记账(同文件发不同实例各落各的,切目标不复用上一目标状态);动作完成
+// 无回执仍记 sent-unverified——传输成功≠应用成功,不宣称热更成功。
 
 export const HOT_RELOAD_DEFAULT_GLOBS = ['**/*.py'] as const;
 export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
@@ -113,6 +120,20 @@ export interface SetupHotReloadOptions {
   readonly onActionError?: (error: unknown) => void;
   /** 状态机控制器注入(测试用);缺省建真实状态栏项+专用 OUTPUT 通道 */
   readonly status?: HotReloadStatusController;
+  /** IDE-REV-021 目标状态台账接线:注入即逐发送按 rootId × targetId 记账 */
+  readonly targetState?: HotReloadTargetStateWiring;
+}
+
+/**
+ * 双维记账注入面(IDE-REV-021):resolveTargetId 把动作名解成服务实例标
+ * 识(解不到=null,该次发送如实不落目标态,不虚构实例);resolveRootId
+ * 把文件解成归属扫描根(解不到=null,该文件不落)。两个解析器都注入,
+ * 台账才有可能落记录;记录语义(同文件跨目标隔离/重发覆盖)归台账模块。
+ */
+export interface HotReloadTargetStateWiring {
+  readonly store: HotReloadTargetStateStore;
+  resolveTargetId(actionName: string): string | null | Promise<string | null>;
+  resolveRootId(file: string): string | null;
 }
 
 /**
@@ -171,15 +192,46 @@ export function setupHotReload(
       status.setFailed(error instanceof Error ? error.message : String(error));
       reportActionError(error);
     };
-    // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
-    try {
-      void Promise.resolve(runAction(settings.actionName)).then(
-        // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项)
-        () => status.setSentUnverified(),
-        fail
-      );
-    } catch (error) {
-      fail(error);
+    // IDE-REV-021:该次发送逐文件落双维台账——targetId/rootId 解不到的
+    // 维度如实不落;结果仍只有 sent-unverified/failed 两态(无回执管道,
+    // 传输/执行成功≠应用成功,绝不记成功态)
+    const recordOutcomes = (targetId: string | null, outcome: HotReloadDeliveryOutcome, detail?: string): void => {
+      const wiring = options.targetState;
+      if (!wiring || targetId === null) {
+        return;
+      }
+      for (const file of triggers) {
+        const rootId = wiring.resolveRootId(file);
+        if (rootId === null) {
+          continue;
+        }
+        wiring.store.record({ rootId, targetId }, file, outcome, detail !== undefined ? { detail } : {});
+      }
+    };
+    const start = (targetId: string | null): void => {
+      // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
+      try {
+        void Promise.resolve(runAction(settings.actionName)).then(
+          // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项)
+          () => {
+            recordOutcomes(targetId, 'sent-unverified');
+            status.setSentUnverified();
+          },
+          error => {
+            recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+            fail(error);
+          }
+        );
+      } catch (error) {
+        recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+        fail(error);
+      }
+    };
+    if (options.targetState) {
+      // 目标解析本身失败/拒绝:如实按无目标发送(不落台账),动作照常执行
+      void Promise.resolve(options.targetState.resolveTargetId(settings.actionName)).then(start, () => start(null));
+    } else {
+      start(null);
     }
   }, timers);
 
