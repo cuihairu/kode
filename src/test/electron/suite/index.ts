@@ -14,6 +14,7 @@ export function run(): Promise<void> {
       ? file === 'demoNavigation.test.js'
       : suite === 'field'
         ? file === 'fieldBaseline.test.js' || file === 'plainVariableHover.test.js'
+          || file === 'eventCodeLensCold.test.js'
         : suite === 'vsix'
           ? file === 'vsixSmoke.test.js'
           : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');

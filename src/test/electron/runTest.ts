@@ -156,6 +156,45 @@ async function main(): Promise<void> {
       'data = get_annotated_data()',
       'plain_local_info = get_unannotated_data()'
     ].join('\n'));
+    // IDE-ACC-003 首次事件 CodeLens 夹具:调用方 __init__ 里 addEvent(回调 def
+    // 处应出「事件回调」镜)+ ping 里 emitEvent(应出监听数镜);监听方文件两
+    // 个类各 addEvent 同名事件——全仓共 3 处注册,emitEvent 处的监听数镜应恰为
+    // 「3 处监听」(计数断言锚定真实夹具内容,不是非空即过)。
+    fs.writeFileSync(
+      path.join(workspacePath, 'scripts/common/training/event_caller_demo.py'),
+      [
+        '# IDE-ACC-003 first event CodeLens fixture: caller side.',
+        'class EventCallerDemo:',
+        '    def __init__(self):',
+        '        self.addEvent(EV_TRAIN, self.on_train)',
+        '',
+        '    def on_train(self):',
+        '        return None',
+        '',
+        '    def ping(self):',
+        '        self.emitEvent(EV_TRAIN)'
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(workspacePath, 'scripts/common/training/event_listener_demo.py'),
+      [
+        '# IDE-ACC-003 first event CodeLens fixture: two listeners for EV_TRAIN.',
+        'class EventListenerOne:',
+        '    def __init__(self):',
+        '        self.addEvent(EV_TRAIN, self.on_train)',
+        '',
+        '    def on_train(self):',
+        '        return None',
+        '',
+        '',
+        'class EventListenerTwo:',
+        '    def __init__(self):',
+        '        self.addEvent(EV_TRAIN, self.on_train)',
+        '',
+        '    def on_train(self):',
+        '        return None'
+      ].join('\n')
+    );
     process.env.KODE_ELECTRON_SUITE = 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
