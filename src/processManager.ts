@@ -243,6 +243,16 @@ export class ProcessManager {
       }
       if (this.processes.get(request.id)?.process !== child) return;
       if (child.exitCode !== null || child.signalCode !== null) return;
+      // IDE-REV-004:probe 挂起跨过取消/截止,回包后必须复核终局条件——
+      // 迟到的 true 不得把已放弃的等待又推进 running,如实报对应原因
+      if (readiness.cancelHandle?.aborted) {
+        giveUp('cancelled');
+        return;
+      }
+      if (readiness.timeoutMs !== undefined && Date.now() - startedAt >= readiness.timeoutMs) {
+        giveUp('timeout');
+        return;
+      }
       if (ready && !child.killed) {
         this.states.set(request.id, 'running');
         this.logHub?.info({ source: 'process', component, text: 'readiness probe passed' });

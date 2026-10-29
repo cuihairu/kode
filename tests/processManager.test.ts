@@ -68,4 +68,60 @@ describe('ProcessManager', () => {
     expect(manager.get('bad')).toBeUndefined();
     expect(states).toEqual(['starting', 'error']);
   });
+
+  // IDE-REV-004:probe 挂起期间取消/到点,迟到 true 不得把已放弃的等待
+  // 又推进 running——回包后必须复核终局条件并如实报对应 target 的原因
+  it('probe 挂起期间取消:迟到 true 不误标 running,仍报 cancelled', async () => {
+    const child = new FakeChild();
+    const states: string[] = [];
+    const giveUps: string[] = [];
+    const cancelHandle = { aborted: false };
+    let resolveProbe: (value: boolean) => void = () => undefined;
+    const manager = new ProcessManager(() => child);
+    manager.onState(event => states.push(event.state));
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(resolve => (resolveProbe = resolve)),
+        cancelHandle,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    // probe 在途时取消,随后 probe 才回 true
+    cancelHandle.aborted = true;
+    resolveProbe(true);
+    await new Promise(resolve => setTimeout(resolve, 5));
+
+    expect(giveUps).toEqual(['cancelled']);
+    expect(states).toEqual(['starting']);
+    expect(manager.get('svc')).toBeDefined();
+    void manager.dispose();
+  });
+
+  it('probe 挂起期间超时:迟到 true 不误标 running,仍报 timeout', async () => {
+    const child = new FakeChild();
+    const states: string[] = [];
+    const giveUps: string[] = [];
+    let resolveProbe: (value: boolean) => void = () => undefined;
+    const manager = new ProcessManager(() => child);
+    manager.onState(event => states.push(event.state));
+    manager.start({
+      id: 'svc', command: 'server',
+      readiness: {
+        probe: () => new Promise<boolean>(resolve => (resolveProbe = resolve)),
+        timeoutMs: 5,
+        onGiveUp: reason => giveUps.push(reason)
+      }
+    });
+    await new Promise(resolve => setTimeout(resolve, 15));
+    // 截止已过 probe 才回 true
+    resolveProbe(true);
+    await new Promise(resolve => setTimeout(resolve, 5));
+
+    expect(giveUps).toEqual(['timeout']);
+    expect(states).toEqual(['starting']);
+    expect(manager.get('svc')).toBeDefined();
+    void manager.dispose();
+  });
 });
