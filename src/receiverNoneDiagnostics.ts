@@ -5,6 +5,7 @@ import {
   type PythonReceiverCall
 } from './pythonLanguageUtils';
 import { parsePythonFile } from './pythonParser';
+import { parsePythonFileResponsive } from './pythonParserWorkerHost';
 
 /**
  * receiver 可能为 None 的诊断(用户令 2026-10-27,任务1):
@@ -295,6 +296,16 @@ function sectionMismatch(call: PythonReceiverCall, mapping: EntityMapping): stri
  */
 export type PreparsedPythonProvider = ReturnType<typeof parsePythonFile> | (() => ReturnType<typeof parsePythonFile>);
 
+/**
+ * IDE-REV-009 异步面提供器:在同步形态之上允许异步取解析(如
+ * asyncDocumentParse 的 worker 路径)与 null(本轮共享解析不可用——
+ * worker 停用/积压上限/版本代被并发编辑顶掉):null 时异步面中止本轮
+ * 返回 null,不回退宿主同步整文件解析。
+ */
+export type AsyncPreparsedPythonProvider =
+  | PreparsedPythonProvider
+  | (() => ReturnType<typeof parsePythonFile> | null | Promise<ReturnType<typeof parsePythonFile> | null>);
+
 /** 逐调用求值(同步/异步面共用):guard 过闸判定 + 段错配,结果入 findings */
 function appendCallFindings(
   calls: readonly PythonReceiverCall[],
@@ -340,14 +351,10 @@ interface ReceiverEvalContext {
   scanFor: (span: MethodSpan, receiver: PythonReceiverCall['receiver']) => MethodGuardScan;
 }
 
-function buildEvalContext(
+function buildEvalContextFromParsed(
   text: string,
-  preparsed: PreparsedPythonProvider | undefined,
-  filePath: string
+  parsed: ReturnType<typeof parsePythonFile>
 ): ReceiverEvalContext {
-  const parsed = typeof preparsed === 'function'
-    ? preparsed()
-    : preparsed ?? parsePythonFile(text, filePath);
   const methodSpans = buildMethodSpans(parsed);
   const lines = text.split(/\r?\n/);
   // IDE-DIA-004:guard 前缀扫描按(方法区间, 接收者)一次,同方法同接收者的
@@ -369,6 +376,24 @@ function buildEvalContext(
   return { lines, methodSpans, scanFor };
 }
 
+/** 异步面解析求值(IDE-REV-009):提供器优先(惰性——仅过闸后调用);无提供器
+ * 默认自解析同样经 parsePythonFileResponsive 分流(≥256KiB 进 worker,宿主
+ * 不落整文件同步解析;阈值下宿主同步与全仓口径一致)。null=本轮不可用。 */
+async function resolveParsedAsync(
+  text: string,
+  filePath: string,
+  preparsed: AsyncPreparsedPythonProvider | undefined
+): Promise<ReturnType<typeof parsePythonFile> | null> {
+  if (typeof preparsed === 'function') {
+    return preparsed();
+  }
+  if (preparsed !== undefined) {
+    return preparsed;
+  }
+  const responsive = await parsePythonFileResponsive(text, filePath, 0);
+  return responsive.parsed;
+}
+
 export function computeReceiverNoneFindings(
   text: string,
   filePath: string,
@@ -377,7 +402,10 @@ export function computeReceiverNoneFindings(
 ): ReceiverNoneFinding[] {
   const calls = findPythonReceiverCalls(text);
   if (calls.length === 0) return [];
-  const context = buildEvalContext(text, preparsed, filePath);
+  const parsed = typeof preparsed === 'function'
+    ? preparsed()
+    : preparsed ?? parsePythonFile(text, filePath);
+  const context = buildEvalContextFromParsed(text, parsed);
   const findings: ReceiverNoneFinding[] = [];
   appendCallFindings(calls, context.lines, context.methodSpans, context.scanFor, mapping, findings);
   return findings;
@@ -403,19 +431,31 @@ const yieldToHostDefault = (): Promise<void> =>
  * 片间让出宿主(计算期间宿主仍可响应定时器/请求);shouldContinue 为假
  * (版本已前进)中止并返回 null——调用方丢弃,绝不产出部分结果被当全量。
  * 产出与同步面逐项一致(同解析/同 guard 候选记忆化)。
+ *
+ * IDE-REV-009:解析消费异步面(resolveParsedAsync——提供器可异步/可 null,
+ * 无提供器默认自解析同样 worker 分流),首个 yield 之前的宿主工作只剩
+ * findPythonReceiverCalls 这一次线性正则扫描(无解析、无逐行状态机),
+ * 整文件同步解析窗口不再存在;解析落定后复核版本(等待期间前进即中止)。
  */
 export async function computeReceiverNoneFindingsAsync(
   text: string,
   filePath: string,
   mapping?: EntityMapping,
-  preparsed?: PreparsedPythonProvider,
+  preparsed?: AsyncPreparsedPythonProvider,
   deps: ReceiverNoneAsyncDeps = {}
 ): Promise<ReceiverNoneFinding[] | null> {
   const chunkSize = deps.chunkSize ?? RECEIVER_NONE_CHUNK_SIZE;
   const yieldToHost = deps.yieldToHost ?? yieldToHostDefault;
   const calls = findPythonReceiverCalls(text);
   if (calls.length === 0) { return []; }
-  const context = buildEvalContext(text, preparsed, filePath);
+  const parsed = await resolveParsedAsync(text, filePath, preparsed);
+  if (!parsed) {
+    return null; // 本轮共享解析不可用:中止,不产出,不回退宿主同步解析
+  }
+  if (deps.shouldContinue && !deps.shouldContinue()) {
+    return null; // 解析等待期间版本已前进:旧版本回包由调用方丢弃
+  }
+  const context = buildEvalContextFromParsed(text, parsed);
   const findings: ReceiverNoneFinding[] = [];
   for (let start = 0; start < calls.length; start += chunkSize) {
     if (start > 0) {
@@ -506,13 +546,15 @@ export function receiverNoneDiagnosticItems(
   return computeReceiverNoneFindings(text, filePath, mapping, preparsed).map(findingToDiagnosticItem);
 }
 
-/** IDE-DIA-005 异步面:分片计算 + 中止返回 null(旧版本回包丢弃) */
+/** IDE-DIA-005 异步面:分片计算 + 中止返回 null(旧版本回包丢弃)。
+ * IDE-REV-009:preparsed 放宽为异步提供器(共享解析经 asyncDocumentParse
+ * 的 worker 路径;null=本轮不可用,整体中止) */
 export async function receiverNoneDiagnosticItemsAsync(
   text: string,
   filePath: string,
   mapping: EntityMapping | undefined,
   enabled: boolean,
-  preparsed?: PreparsedPythonProvider,
+  preparsed?: AsyncPreparsedPythonProvider,
   deps: ReceiverNoneAsyncDeps = {}
 ): Promise<ReceiverDiagnosticItem[] | null> {
   if (!enabled) {

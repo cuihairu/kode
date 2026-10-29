@@ -1194,6 +1194,37 @@ export class PythonClassIndex {
     return parsed;
   }
 
+  /** IDE-REV-009 异步共享解析面:receiver 诊断异步入口的消费面——同版本
+   * 命中直取(零解析);未命中走 updateFileResponsive(≥256KiB 进
+   * pythonParserWorker,宿主不落整文件同步解析),版本键提交后读回同一份
+   * 解析供索引同版本去重。解析失败(worker 停用/积压字节上限拒绝)按
+   * loadFile 同款登记有界待补重试并返回 null——调用方中止本轮,绝不回退
+   * 宿主同步整文件解析。revision 令牌与文档身份在派发前同步推进(REV-001
+   * 纪律):并发编辑令牌前进,在途回包被 updateFileResponsive 守卫丢弃,
+   * 读回落 null 同样中止本轮。 */
+  async asyncDocumentParse(
+    document: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>
+  ): Promise<ParsedPythonFile | null> {
+    const hit = this.getParsedForVersion(document.fileName, document.version);
+    if (hit) { return hit; }
+    this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
+    const revision = this.revisions.get(document.fileName)!;
+    this.documents.set(document.fileName, document);
+    try {
+      await this.updateFileResponsive(
+        document.fileName, document.getText(), document.version ?? -1, revision
+      );
+    } catch {
+      this.stagedRequests.delete(document.fileName);
+      if (!this.pendingScanRetries.has(document.fileName)) {
+        this.pendingScanRetries.set(document.fileName, 1);
+      }
+      jumpLog('info', () => `py 异步共享解析未入索引(保留旧索引,已登记待补重试): ${document.fileName}`);
+      return null;
+    }
+    return this.getParsedForVersion(document.fileName, document.version ?? -1);
+  }
+
   async resolveClassBase(document: vscode.TextDocument, expression: string, line?: number,
     token?: vscode.CancellationToken): Promise<PythonClassDef | null> {
     if (token?.isCancellationRequested) { return null; }

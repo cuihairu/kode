@@ -519,12 +519,15 @@ export function activate(context: vscode.ExtensionContext) {
       computeAsync: async (): Promise<readonly ReceiverDiagnosticItem[] | null> => {
         const enabled = vscode.workspace.getConfiguration('kbengine')
           .get<boolean>('receiverNoneDiagnostics', RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT);
-        // IDE-DIA-003:与类索引消费同一份版本键解析(惰性提供器——仅当确有
-        // receiver 使用点过闸后才取解析,DIA-001 零使用点不解析语义保持;
-        // syncDocumentParse 命中即零解析,未命中解析一次入缓存供索引同版本
-        // 去重);层2 关闭时索引不参与跳转,不喂索引,诊断自解析(口径不变)
+        // IDE-DIA-003/IDE-REV-009:与类索引消费同一份版本键解析(惰性提供器
+        // ——仅当确有 receiver 使用点过闸后才取解析,DIA-001 零使用点不解析
+        // 语义保持);异步共享面 asyncDocumentParse——缓存命中直取,未命中走
+        // updateFileResponsive(≥256KiB 进 worker,宿主不落整文件同步解析),
+        // 返回 null(worker 停用/积压上限/版本代被并发编辑顶掉)时诊断中止
+        // 本轮不发布,下一次事件重试;层2 关闭时索引不参与跳转,不喂索引,
+        // 诊断自解析(receiverNoneDiagnostics 异步面同样 worker 分流,口径不变)
         const preparsed = isPythonMroJumpEnabled() && isPythonDocument(document)
-          ? () => pythonClassIndex.syncDocumentParse(document)
+          ? () => pythonClassIndex.asyncDocumentParse(document)
           : undefined;
         return receiverNoneDiagnosticItemsAsync(
           document.getText(),
