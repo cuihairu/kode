@@ -1,0 +1,30 @@
+# enabled face: kode + pylance
+acc008.mode=enabled
+acc008.kode.instances=1
+acc008.kode.version=0.2.0
+acc008.pylance.active=true
+acc008.pylance.version=2026.4.1
+acc008.host.rssMiB=336
+acc008.defBurst.hit=20/20
+acc008.defBurst.p50Ms=3.345
+acc008.defBurst.p95Ms=9.989
+acc008.defBurst.maxMs=9.989
+acc008.pyBurst.hit=20/20
+acc008.pyBurst.p50Ms=51.258
+acc008.pyBurst.p95Ms=97.143
+acc008.pyBurst.maxMs=97.143
+
+# disabled face: pylance only
+acc008.mode=disabled
+acc008.kode.instances=0
+acc008.pylance.active=true
+acc008.pylance.version=2026.4.1
+acc008.host.rssMiB=284
+acc008.defBurst.hit=0/20
+acc008.defBurst.p50Ms=0.915
+acc008.defBurst.p95Ms=28.407
+acc008.defBurst.maxMs=28.407
+acc008.pyBurst.hit=20/20
+acc008.pyBurst.p50Ms=37.764
+acc008.pyBurst.p95Ms=74.804
+acc008.pyBurst.maxMs=74.804
