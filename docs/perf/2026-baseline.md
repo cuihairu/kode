@@ -141,7 +141,7 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1228<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders.ts:4273)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders.ts:4275)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
@@ -167,7 +167,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4379,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4381,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:640,打点 :526)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
@@ -185,7 +185,7 @@ flowchart TD
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
   M3["extension.ts:587 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :1035 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:5793"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:5795"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}

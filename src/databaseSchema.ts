@@ -359,6 +359,88 @@ export interface SchemaBuildGateOptions {
   gate?: () => boolean | Promise<boolean>;
 }
 
+// IDE-REV-012:在飞后台构建登记(键=根+实体,同 getDatabaseSchemaSnapshot)
+interface SchemaBuildFlight {
+  promise: Promise<DatabaseSchemaSnapshot | null>;
+  cancel(): void;
+}
+const schemaBuildFlights = new Map<string, SchemaBuildFlight>();
+
+const schemaCacheKeyFor = (
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): string => {
+  const workspaceRoot = typeof target === 'string'
+    ? target
+    : getWorkspaceRootForDocument(target);
+  return workspaceRoot ? `${normalizePath(workspaceRoot)}\u0000${entityName}` : '';
+};
+
+/**
+ * IDE-REV-012:已发布快照只读面——只查缓存,绝不触发构建(命中走 LRU 触碰
+ * 与命中计数;未命中返回 null 且不记 miss)。属性 hover 冷查询走本面拿不到
+ * 就调度后台构建(scheduleDatabaseSchemaSnapshotBuild),发布后下一次查询命中。
+ */
+export function peekPublishedDatabaseSchemaSnapshot(
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): DatabaseSchemaSnapshot | null {
+  const cacheKey = schemaCacheKeyFor(entityName, target);
+  if (!cacheKey) {
+    return null;
+  }
+  return peekFreshSchemaCache(cacheKey) ?? null;
+}
+
+/**
+ * IDE-REV-012:调度已发布快照的后台构建(去重+可取消)——同一实体在飞构建
+ * 复用同一 Promise;取消只在发布前止步,不影响已发布结果。调用方
+ * fire-and-forget 即可,缓存发布由构建面(schemaBuildPhases 收尾)完成。
+ */
+export function scheduleDatabaseSchemaSnapshotBuild(
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>,
+  options: SchemaBuildGateOptions = {}
+): Promise<DatabaseSchemaSnapshot | null> {
+  const cacheKey = schemaCacheKeyFor(entityName, target);
+  const flight = cacheKey ? schemaBuildFlights.get(cacheKey) : undefined;
+  if (flight) {
+    return flight.promise;
+  }
+  let cancelled = false;
+  const externalGate = options.gate;
+  const gate = async (): Promise<boolean> => {
+    if (externalGate) {
+      if (!(await externalGate())) {
+        return false;
+      }
+    } else {
+      await new Promise<void>(resolve => { setImmediate(resolve); });
+    }
+    return !cancelled;
+  };
+  const promise = buildDatabaseSchemaSnapshotAsync(entityName, target, { gate });
+  if (cacheKey) {
+    schemaBuildFlights.set(cacheKey, { promise, cancel: () => { cancelled = true; } });
+    void promise.then(() => { schemaBuildFlights.delete(cacheKey); }, () => { schemaBuildFlights.delete(cacheKey); });
+  }
+  return promise;
+}
+
+/** IDE-REV-012:取消某实体的在飞后台构建(发布前止步);无在飞构建返回 false */
+export function cancelDatabaseSchemaSnapshotBuild(
+  entityName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): boolean {
+  const cacheKey = schemaCacheKeyFor(entityName, target);
+  const flight = cacheKey ? schemaBuildFlights.get(cacheKey) : undefined;
+  if (!flight) {
+    return false;
+  }
+  flight.cancel();
+  return true;
+}
+
 /**
  * 2026-10-28 审核整改(SCH-006):异步构建面——同 schemaBuildPhases 管线,
  * 阶段间过闸(让出宿主+取消检查)。后台预热走本面:冷构建不再整段占住
@@ -581,6 +663,32 @@ export function describePropertyDatabaseStorage(
   target?: string | Pick<vscode.TextDocument, 'fileName'>
 ): PropertyDatabaseStorageInfo | null {
   const snapshot = getDatabaseSchemaSnapshot(entityName, target);
+  return describeTargetsFromPublishedSnapshot(snapshot, propertyName);
+}
+
+/**
+ * IDE-REV-012:属性 hover 冷查询面——只读已发布快照,绝不同步构建。
+ * 冷/失效 miss 调度后台构建(可取消、阶段间让出宿主)后返回 null(悬停
+ * 不出存储行);发布后下一次查询命中出完整字段说明。
+ */
+export function describePropertyDatabaseStoragePublished(
+  entityName: string,
+  propertyName: string,
+  target?: string | Pick<vscode.TextDocument, 'fileName'>
+): PropertyDatabaseStorageInfo | null {
+  const snapshot = peekPublishedDatabaseSchemaSnapshot(entityName, target);
+  if (!snapshot) {
+    scheduleDatabaseSchemaSnapshotBuild(entityName, target);
+    return null;
+  }
+  return describeTargetsFromPublishedSnapshot(snapshot, propertyName);
+}
+
+/** 从已发布快照抽属性存储目标(describePropertyDatabaseStorage 共用体) */
+function describeTargetsFromPublishedSnapshot(
+  snapshot: DatabaseSchemaSnapshot | null,
+  propertyName: string
+): PropertyDatabaseStorageInfo | null {
   if (!snapshot) {
     return null;
   }

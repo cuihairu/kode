@@ -4,7 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { KBEngineDefinitionProvider, KBEngineHoverProvider, validateDocument } from '../src/languageProviders';
 import { EntityMappingManager } from '../src/entityMapping';
-import { getDatabaseSchemaSnapshot, renderDatabaseSchema } from '../src/databaseSchema';
+import { getDatabaseSchemaSnapshot, renderDatabaseSchema, scheduleDatabaseSchemaSnapshotBuild } from '../src/databaseSchema';
 import { messages } from './fake-vscode/windowState';
 import {
   Diagnostic,
@@ -859,7 +859,7 @@ describe('def method implementation jumps', () => {
 describe('persistent property database storage hover', () => {
   const provider = new KBEngineHoverProvider();
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // 追加引擎可装载的文本指引型 FIXED_DICT 别名(loadTypes 取首子节点
     // getValStr:<Type>FIXED_DICT</Type> 元素形态取值空串,引擎整份报错,
     // 批98 口径不展开;文本形态才装载)。先跑完的用例不受影响,afterAll 还原。
@@ -909,6 +909,9 @@ describe('persistent property database storage hover', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'utf8');
+
+    // IDE-REV-012:悬停只读已发布快照——先发布 Stor 的 schema 再悬停
+    await scheduleDatabaseSchemaSnapshotBuild('Stor', root);
   });
 
   afterAll(() => {

@@ -51,7 +51,7 @@ import {
   PropertyCodeLensHit
 } from './propertyCodeLens';
 import {
-  describePropertyDatabaseStorage,
+  describePropertyDatabaseStoragePublished,
   findDatabaseSchemaFieldAtPosition,
   findDatabaseSchemaSourceLocation,
   findDatabaseSchemaTargetsForSource,
@@ -2046,8 +2046,10 @@ function describePropertyDatabaseStorageHover(
   propertyName: string
 ): string | null {
   const entityName = path.basename(document.fileName, '.def');
+  // IDE-REV-012:悬停只读已发布快照——冷/失效 miss 不整段同步构建,调度
+  // 后台构建(阶段间让出宿主,可取消)后本悬停不出存储行,发布后下一悬停出
   return buildPropertyDatabaseStorageHover(
-    describePropertyDatabaseStorage(entityName, propertyName, document)
+    describePropertyDatabaseStoragePublished(entityName, propertyName, document)
   );
 }
 
