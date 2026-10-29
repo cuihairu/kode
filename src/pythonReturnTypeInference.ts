@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { recordLanguageServiceOperation } from './languageServiceMetrics';
+
 /**
  * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
  * → data: JSONDATA」):`<名> = <右值>` 的 hover 面按右值被调函数的返回注解
@@ -806,6 +808,25 @@ function resolveFromAnnotationIndex(candidates: readonly LocalAssignmentCall[], 
  * 先于磁盘索引:悬停文档自己的桶最优先,其余打开文档的桶次之,被「注解已删」
  * 遮蔽的名字不再从磁盘旧值借。 */
 export function resolveLocalVariableReturnTypeFromSnapshot(
+  lines: readonly string[],
+  hoverLine: number,
+  word: string,
+  workspaceRoot: string | null,
+  documentContext?: DocumentAnnotationContext
+): LocalVariableReturnType | null {
+  // IDE-RST-009:查询段耗时(python-annotation-query)——普通变量 hover 的
+  // 注解路径全量计入(含无候选早退),真实查询口径不做旁路
+  const queryStartedAt = performance.now();
+  try {
+    return resolveLocalVariableReturnTypeFromSnapshotImpl(lines, hoverLine, word, workspaceRoot, documentContext);
+  } finally {
+    recordLanguageServiceOperation('python-annotation-query', performance.now() - queryStartedAt, {
+      fileKind: 'python'
+    });
+  }
+}
+
+function resolveLocalVariableReturnTypeFromSnapshotImpl(
   lines: readonly string[],
   hoverLine: number,
   word: string,

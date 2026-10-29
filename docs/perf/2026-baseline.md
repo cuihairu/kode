@@ -68,8 +68,8 @@
 
 ## 6. PR1 观测基建清单
 
-- `src/languageServiceMetrics.ts`:单调时钟(perf_hooks)、请求 ID、11 类事件(hover/definition/completion/diagnostics/python-index-scan/python-composition-roots/entity-mapping-scan/semantic-query/type-registry-query/file-discovery/document-parse)、子阶段计时、文件发现/读取/解析计数、缓存命中率、是否等初始化、状态(ok/miss/cancelled/error);详细样本默认关闭(`kbengine.metrics.detailed` 开启)。
-- 埋点接入:hover/definition/completion/诊断(extension.ts 适配层)、provideDefinitionTraced(semantic-query)、resolveEntityAnnotationType(type-registry-query)、ensureScanned/ensureCompositionRoots、scanEntityMappings、findFilesAcrossRoots、updateFile(document-parse)。
+- `src/languageServiceMetrics.ts`:单调时钟(perf_hooks)、请求 ID、14 类事件(hover/definition/completion/diagnostics/python-index-scan/python-composition-roots/entity-mapping-scan/semantic-query/type-registry-query/file-discovery/document-parse/document-commit/python-mro-resolve/python-annotation-query/index-scheduler)、子阶段计时、文件发现/读取/解析计数、缓存命中率、是否等初始化、状态(ok/miss/cancelled/error);详细样本默认关闭(`kbengine.metrics.detailed` 开启)。
+- 埋点接入:hover/definition/completion/诊断(extension.ts 适配层)、provideDefinitionTraced(semantic-query)、resolveEntityAnnotationType(type-registry-query)、ensureScanned/ensureCompositionRoots、scanEntityMappings、findFilesAcrossRoots、updateFile(document-parse);IDE-RST-009 四阶段补埋:commitParsedFile(document-commit)/mroClasses(python-mro-resolve)/resolveLocalVariableReturnTypeFromSnapshot(python-annotation-query,普通变量 hover 注解路径)。
 - 汇总出口:命令面板 `KBEngine: Show Language Service Metrics Summary`(输出 P50/P95/P99/最大值/命中率/计数)。
 - 资产生成:`scripts/generate-perf-assets.mjs`;bench:`tests/perf/baseline.bench.ts`(不进 `pnpm test` 门禁)。
 
@@ -138,14 +138,14 @@ flowchart TD
   STUB["内置桩文档(buildKbeStubDocument)"]
   CB{"class X(Base) 基类位?"}
   CB1["kbe from-import 桩"]
-  CB2["pythonClassIndex.resolveClassBase :1175<br/>(显式 import 绑定优先)"]
+  CB2["pythonClassIndex.resolveClassBase :1191<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
   L0["层0 接收者段闸(languageProviders.ts:4238)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
-  MRO["PR5 两段方法解析(pythonClassIndex.ts:1287)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
+  MRO["PR5 两段方法解析(pythonClassIndex.ts:1303)<br/>① 静态类 MRO 命中仅记录——不提前返回<br/>(同一 mixin 可被多实体组合,静态命中只是候选之一)<br/>② 组合根 MRO + .def 声明 mixin:每根先精确类身份<br/>再 def mixin;多根命中全保留,provider 出 Location 列表"]
   PASS2["pass2:①② 均落空才等全量收敛重查<br/>(ensureScanned,PR5 主路径首查不等这里)<br/>③ 反向形态:子类 MRO 反查 enclosing(精确身份)"]
   SHD["kode2 shadow 对拍腿:shadowCompareDefinition<br/>languageProviders.ts:1360(fire-and-forget,不改返回值)"]
   END2["operation.end(hit|miss) → Location 或 Location 列表或 null"]
@@ -168,7 +168,7 @@ flowchart TD
   AD2 -.->|对拍| SHD
 
   WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4344,层1 属性命中后补类型信息时")
-  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:624,打点 :576)")
+  WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:640,打点 :526)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
   MRO -.->|等待| WAITC

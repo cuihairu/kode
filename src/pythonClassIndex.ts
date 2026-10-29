@@ -337,8 +337,17 @@ export class PythonClassIndex {
   }
 
   private mroClasses(cls: PythonClassDef): PythonClassDef[] {
+    // IDE-RST-009:MRO 段耗时(python-mro-resolve)——缓存命中臂与 C3 线性化
+    // 臂都计入,真实查询口径不做旁路
+    const mroStartedAt = performance.now();
+    const finish = (result: PythonClassDef[]): PythonClassDef[] => {
+      recordLanguageServiceOperation('python-mro-resolve', performance.now() - mroStartedAt, {
+        fileKind: 'python'
+      });
+      return result;
+    };
     const cached = this.mroCache.get(this.classKey(cls));
-    if (cached) { return cached; }
+    if (cached) { return finish(cached); }
     const graph = new Map<string, PythonClassDef>();
     const visit = (current: PythonClassDef): void => {
       const key = this.classKey(current);
@@ -351,7 +360,7 @@ export class PythonClassIndex {
     const result = linearizeC3(this.classKey(cls), key => graph.has(key) ? [graph.get(key)!] : [])
       .map(key => graph.get(key)!).filter(Boolean);
     this.mroCache.set(this.classKey(cls), result);
-    return result;
+    return finish(result);
   }
 
   private lookupClass(cls: PythonClassDef, methodName: string): PythonMethodLocation | null {
@@ -505,6 +514,9 @@ export class PythonClassIndex {
 
   private commitParsedFile(filePath: string, parsed: ParsedPythonFile, version: number,
     parseMs: number): void {
+    // IDE-RST-009:提交段耗时(document-commit)——缓存入账/类索引/三层签名
+    // 对账/组合根桥依赖登记,与解析段(document-parse)分列,合成完整编辑面
+    const commitStartedAt = performance.now();
     const previous = this.fileCache.get(filePath)?.parsed;
     this.generation += 1;
     this.mroCache.clear();
@@ -579,6 +591,10 @@ export class PythonClassIndex {
       // 只有「实现对象 → 类」桥真正变化才作废组合根(首解析无赋值不动派生)
       this.resetRoots();
     }
+    recordLanguageServiceOperation('document-commit', performance.now() - commitStartedAt, {
+      fileKind: 'python',
+      documentVersion: version
+    });
   }
 
   private indexClass(cls: PythonClassDef): void {

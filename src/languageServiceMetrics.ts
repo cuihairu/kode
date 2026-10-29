@@ -25,6 +25,9 @@ export type LanguageServiceEventName =
   | 'type-registry-query'
   | 'file-discovery'
   | 'document-parse'
+  | 'document-commit'
+  | 'python-mro-resolve'
+  | 'python-annotation-query'
   | 'index-scheduler';
 
 export type OperationStatus = 'ok' | 'miss' | 'cancelled' | 'error';
