@@ -4,7 +4,7 @@
 // re-export 本模块的 `workspace`,既有用例对它的 monkey-patch 语义不变
 // (共享同一可变对象)。
 
-import { EventEmitter, Uri } from './core';
+import { EventEmitter, RelativePattern, Uri } from './core';
 
 // 内存文件系统:debugConfig 的 loadConfig/updateLaunchJson 等经
 // workspace.fs 读写真实路径内容;文件不存在时按实现语义抛错(进 catch)。
@@ -34,8 +34,8 @@ export const configurationOverrides = new Map<string, Record<string, unknown>>()
 // entityMapping 的 watchPythonFiles 需要可观察的 watcher:记录回调并允许
 // 测试主动 fire。
 export interface StubFileSystemWatcher {
-  /** 创建时的 glob(装配线 watcher 断言用) */
-  pattern?: string;
+  /** 创建时的 glob(装配线 watcher 断言用;IDE-ACC-011 起可为 RelativePattern) */
+  pattern?: string | RelativePattern;
   onDidChange(listener: (uri: Uri) => void): { dispose(): void };
   onDidCreate(listener: (uri: Uri) => void): { dispose(): void };
   onDidDelete(listener: (uri: Uri) => void): { dispose(): void };
@@ -149,7 +149,7 @@ export const workspace = {
       }
     };
   },
-  createFileSystemWatcher: (pattern?: string): StubFileSystemWatcher => {
+  createFileSystemWatcher: (pattern?: string | RelativePattern): StubFileSystemWatcher => {
     const changeListeners: Array<(uri: Uri) => void> = [];
     const createListeners: Array<(uri: Uri) => void> = [];
     const deleteListeners: Array<(uri: Uri) => void> = [];

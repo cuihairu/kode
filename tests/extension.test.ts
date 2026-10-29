@@ -28,6 +28,7 @@ import packageJson from '../package.json';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
 import { messages, treeRegistrations, window as fakeWindow, windowState } from './fake-vscode/windowState';
+import { RelativePattern } from './fake-vscode/core';
 import {
   lastFileSystemWatcher,
   memoryFileSystem,
@@ -110,6 +111,13 @@ beforeEach(() => {
   workspace.workspaceFolders = [];
   workspace.findFiles = async () => [] as import('./fake-vscode/core').Uri[];
 });
+
+
+/** watcher pattern 归一化文本(RelativePattern 解包;IDE-ACC-011) */
+const watcherPatternKey = (pattern: unknown): string =>
+  pattern instanceof RelativePattern
+    ? `${String(pattern.base)}/${pattern.pattern}`
+    : String(pattern);
 
 describe('extension activate 装配', () => {
   it('切换 receiver 诊断开关时重新计算未编辑文档', async () => {
@@ -1144,7 +1152,7 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
     const patterns: string[] = [];
     const originalCreate = workspace.createFileSystemWatcher;
     (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = (pattern: unknown) => {
-      patterns.push(String(pattern));
+      patterns.push(watcherPatternKey(pattern));
       return originalCreate(pattern as never);
     };
     try {
@@ -1177,7 +1185,7 @@ describe('最终配置默认开启(批112 默认开启令)', () => {
     const originalCreate = workspace.createFileSystemWatcher;
     (workspace as unknown as Record<string, unknown>).createFileSystemWatcher = (pattern: unknown) => {
       const watcher = originalCreate.call(workspace, pattern as never);
-      createdWatchers.push({ pattern: String(pattern), watcher });
+      createdWatchers.push({ pattern: watcherPatternKey(pattern), watcher });
       return watcher;
     };
     try {
@@ -1692,10 +1700,13 @@ describe('Python index lifecycle wiring', () => {
     const assets = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-external-watch-'));
     const context = makeContext();
     const originalCreate = workspace.createFileSystemWatcher;
-    const watches: Array<{ pattern: unknown; watcher: ReturnType<typeof originalCreate> }> = [];
+    const watches: Array<{ pattern: unknown; disposed: boolean; watcher: ReturnType<typeof originalCreate> }> = [];
     const create = vi.spyOn(workspace, 'createFileSystemWatcher').mockImplementation(((pattern: unknown) => {
       const watcher = originalCreate();
-      watches.push({ pattern, watcher });
+      const record = { pattern, disposed: false, watcher };
+      const dispose = watcher.dispose.bind(watcher);
+      watcher.dispose = () => { record.disposed = true; dispose(); };
+      watches.push(record);
       return watcher;
     }) as typeof originalCreate);
     const invalidate = vi.spyOn(PythonClassIndex.prototype, 'invalidate');
@@ -1719,11 +1730,23 @@ describe('Python index lifecycle wiring', () => {
       const document = makeTextDocument('class Avatar: pass', { fileName: file.fsPath });
       workspaceEvents.documentClosed.fire(document);
       expect(closed).toHaveBeenCalledWith(document);
-      workspaceEvents.configurationChanged.fire({ affectsConfiguration: section => section === 'kbengine' || section === 'kbengine.assetsRoot' });
+      // assets 同 base 的活 watcher 数(扩展装配面 1 件+entityMapping 外部根
+      // 三件套,IDE-ACC-011 起后者也以 RelativePattern 注册)。测试内 manager
+      // 单例在 import 期构造,彼时 kbengine 覆盖未生效,外部三件套由首个配置
+      // 事件补挂——泄漏锁取「整组重建后再刷新,活集不增长」,不取首次前后等值
+      const liveAssetsWatchers = (): number =>
+        watches.filter(item => (item.pattern as { base?: string })?.base === assets && !item.disposed).length;
+      const fireAssetsRootChanged = (): void => {
+        workspaceEvents.configurationChanged.fire({ affectsConfiguration: section => section === 'kbengine' || section === 'kbengine.assetsRoot' });
+      };
+      fireAssetsRootChanged();
       const count = invalidate.mock.calls.length;
       watch!.watcher.fireCreate(file);
       expect(invalidate.mock.calls.length, 'old watchers are disposed when roots change').toBe(count);
-      expect(watches.filter(item => (item.pattern as { base?: string })?.base === assets)).toHaveLength(2);
+      const liveAfterRefresh = liveAssetsWatchers();
+      expect(liveAfterRefresh, 'assets root has live watchers after refresh').toBeGreaterThan(0);
+      fireAssetsRootChanged();
+      expect(liveAssetsWatchers(), 'watcher group rebuild does not leak live watchers').toBe(liveAfterRefresh);
     } finally {
       disposeAll(context);
       create.mockRestore(); invalidate.mockRestore(); changed.mockRestore(); closed.mockRestore();

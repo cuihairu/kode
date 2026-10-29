@@ -1,6 +1,6 @@
 acc007.cancel.probes=8
 acc007.cancel.cancelledCount=2
-acc007.cancel.maxElapsedMs=1
+acc007.cancel.maxElapsedMs=2
 acc007.reads.postCancelWindow=0
 acc007.pending.requestSide={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"schemaColdBuilds":0}
 acc007.shared.indexTasksQueuedAtSettle=0

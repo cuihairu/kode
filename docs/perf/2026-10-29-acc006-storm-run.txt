@@ -1,10 +1,10 @@
 acc006.storm.steps=12
 acc006.storm.versionDelta=11
-acc006.storm.ms=950
+acc006.storm.ms=844
 acc006.diag.convergeMs=0
 acc006.diag.finalCount=2
 acc006.diag.staleMACount=0
 acc006.completion.hpPresent=true
 acc006.completion.itemCount=13
-acc006.loop.p99Ms=20.595
+acc006.loop.p99Ms=13.967
 acc006.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0}

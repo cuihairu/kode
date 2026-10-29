@@ -26,6 +26,7 @@ async function main(): Promise<void> {
   // (longSessionResources.test.ts)。
   const attributionMode = process.argv.includes('--attribution');
   const longSessionMode = process.argv.includes('--longsession');
+  const delFileMode = process.argv.includes('--delfile');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -309,6 +310,59 @@ async function main(): Promise<void> {
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'freshfile';
     process.env.KODE_FRESH_ROOT = temporaryRoot;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (delFileMode) {
+    // IDE-ACC-011 删除文件后的导航清理验收:GoneEntity 双段——CellMethods
+    // <onGone>(实现 scripts/cell/GoneEntity.py,套件中途 fs.rmSync 真删)+
+    // BaseMethods <onPing>(实现留守,且 ping 调 self.cell.onGone()=<onGone>
+    // 的引用点)。删除后定义/实现列表不得再返回旧路径,引用与留守导航不牵连。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-delfile-'));
+    workspacePath = temporaryRoot;
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'base'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'cell'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '	<GoneEntity hasBase="true" hasCell="true"></GoneEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entity_defs', 'GoneEntity.def'), [
+      '<root>',
+      '    <BaseMethods>',
+      '        <onPing>',
+      '            <Arg>UINT8</Arg>',
+      '        </onPing>',
+      '    </BaseMethods>',
+      '    <CellMethods>',
+      '        <onGone>',
+      '            <Arg>UINT8</Arg>',
+      '        </onGone>',
+      '    </CellMethods>',
+      '</root>'
+    ].join('\n'));
+    // base 实现留守+提供 <onGone> 的调用点;cell 实现形参与 def <Arg> 对齐
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'base', 'GoneEntity.py'), [
+      '# acc011 surviving base implementation: calls the cell method (reference point).',
+      'class GoneEntity:',
+      '',
+      '    def onPing(self, level):',
+      '        self.cell.onGone()'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'cell', 'GoneEntity.py'), [
+      '# acc011 deletion target: removed mid-suite by fs.rmSync.',
+      'class GoneEntity:',
+      '',
+      '    def onGone(self, level):',
+      '        return None'
+    ].join('\n'));
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'delfile';
+    process.env.KODE_DEL_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   } else if (stormMode) {
     // IDE-ACC-006 连续输入后的补全与诊断验收:StormEntity 的 def 把 mA/mB

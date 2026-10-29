@@ -993,7 +993,7 @@ export class EntityMappingManager {
   }
 
   /** 挂单个 python watcher(工作区根与外部资产根共用;事件经合并器去重) */
-  private attachPythonWatcher(pattern: string): vscode.FileSystemWatcher {
+  private attachPythonWatcher(pattern: string | vscode.RelativePattern): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     watcher.onDidChange(uri => {
       this.fileEventMerger.emit(uri.fsPath, 'change');
@@ -1013,7 +1013,7 @@ export class EntityMappingManager {
    * 该文件的快照(事件驱动重建),实体索引不动——def 解析产物不内嵌已解析
    * 注解,类型查询在应答时经快照解析。
    */
-  private attachTypeRegistryWatcher(pattern: string): vscode.FileSystemWatcher {
+  private attachTypeRegistryWatcher(pattern: string | vscode.RelativePattern): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     const notify = (uri: vscode.Uri, kind: 'create' | 'change' | 'delete'): void => {
       if (isTypeRegistryFile(uri.fsPath)) {
@@ -1033,7 +1033,7 @@ export class EntityMappingManager {
    * 「无归属」负缓存仍整体让位(新 .def 可能补上此前 miss,集合很小);
    * 变更/新建文件定向重解析,依赖者留待下次查询按需重建。
    */
-  private attachDefWatcher(pattern: string): vscode.FileSystemWatcher {
+  private attachDefWatcher(pattern: string | vscode.RelativePattern): vscode.FileSystemWatcher {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
     watcher.onDidChange(uri => this.fileEventMerger.emit(uri.fsPath, 'change'));
     watcher.onDidCreate(uri => this.fileEventMerger.emit(uri.fsPath, 'create'));
@@ -1064,10 +1064,14 @@ export class EntityMappingManager {
 
   private watchPythonFiles(): void {
     // workspace 全部根(IDE-IDX-012/013 同口径);外部资产根部分由
-    // refreshExternalRootWatchers 统一挂载,assetsRoot 切换可整组重建
+    // refreshExternalRootWatchers 统一挂载,assetsRoot 切换可整组重建。
+    // IDE-ACC-011:glob 必须经 RelativePattern 挂——`Uri.joinPath(...).toString()`
+    // 会把 `**/*` 百分号编码成 `%2A%2A/%2A`,真机宿主里 pattern 匹配不到
+    // 任何文件,python 事件(含删除清理)从未到达重建链(fake Uri 不编码,
+    // 单测层抓不到,真机验收 2026-10-29 抓到)。
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
       const watcher = this.attachPythonWatcher(
-        vscode.Uri.joinPath(folder.uri, '**/*.py').toString()
+        new vscode.RelativePattern(folder.uri.fsPath, '**/*.py')
       );
       if (!this.pythonWatcher) {
         this.pythonWatcher = watcher;
@@ -1080,7 +1084,7 @@ export class EntityMappingManager {
     // 同样要作废快照);外部资产根部分见 refreshExternalRootWatchers
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
       this.attachTypeRegistryWatcher(
-        vscode.Uri.joinPath(folder.uri, '**/{types,alias}.xml').toString()
+        new vscode.RelativePattern(folder.uri.fsPath, '**/{types,alias}.xml')
       );
     }
   }
@@ -1090,7 +1094,7 @@ export class EntityMappingManager {
     // 定向失效);外部资产根部分见 refreshExternalRootWatchers
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
       const watcher = this.attachDefWatcher(
-        vscode.Uri.joinPath(folder.uri, '**/*.def').toString()
+        new vscode.RelativePattern(folder.uri.fsPath, '**/*.def')
       );
       if (!this.defWatcher) {
         this.defWatcher = watcher;
@@ -1109,11 +1113,11 @@ export class EntityMappingManager {
     }
     this.externalRootWatchers = [];
     for (const root of getExternalScanRoots()) {
-      const base = vscode.Uri.file(root);
+      // RelativePattern 而非 joinPath(编码坑同 watchPythonFiles 注记)
       this.externalRootWatchers.push(
-        this.attachPythonWatcher(vscode.Uri.joinPath(base, '**/*.py').toString()),
-        this.attachTypeRegistryWatcher(vscode.Uri.joinPath(base, '**/{types,alias}.xml').toString()),
-        this.attachDefWatcher(vscode.Uri.joinPath(base, '**/*.def').toString())
+        this.attachPythonWatcher(new vscode.RelativePattern(root, '**/*.py')),
+        this.attachTypeRegistryWatcher(new vscode.RelativePattern(root, '**/{types,alias}.xml')),
+        this.attachDefWatcher(new vscode.RelativePattern(root, '**/*.def'))
       );
     }
   }

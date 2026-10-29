@@ -9,7 +9,7 @@ import {
   workspaceState
 } from './fake-vscode/workspaceState';
 import { panelRegistry } from './fake-vscode/panelRegistry';
-import { Uri, type ExtensionContext } from './fake-vscode/core';
+import { RelativePattern, Uri, type ExtensionContext } from './fake-vscode/core';
 
 // 激活期工作区门控(书 PR-002 / AUDIT-003 负案例):
 //   负案例:纯 Python 工作区(特征探测零命中)→ EntityMappingManager 的
@@ -45,12 +45,18 @@ const disposeAll = (context: ExtensionContext): void => {
 const originalFindFiles = workspace.findFiles;
 const originalCreateWatcher = workspace.createFileSystemWatcher;
 
-/** 记账 createFileSystemWatcher,按 pattern 收集 */
+/** 记账 createFileSystemWatcher,按 pattern 收集(RelativePattern 解包成
+ * `base/glob` 文本——IDE-ACC-011 起 entityMapping 三件套以 RelativePattern
+ * 注册,joinPath 字符串会被真机宿主百分号编码成死 pattern) */
 const recordWatchers = (): string[] => {
   const patterns: string[] = [];
   const original = workspace.createFileSystemWatcher;
   workspace.createFileSystemWatcher = ((pattern: unknown) => {
-    patterns.push(String(pattern));
+    if (pattern instanceof RelativePattern) {
+      patterns.push(`${String(pattern.base)}/${pattern.pattern}`);
+    } else {
+      patterns.push(String(pattern));
+    }
     return original.call(workspace, pattern);
   }) as typeof workspace.createFileSystemWatcher;
   return patterns;

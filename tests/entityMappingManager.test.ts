@@ -7,6 +7,7 @@ import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
 import {
   Position,
   Range,
+  RelativePattern,
   Uri,
   lastFileSystemWatcher,
   workspace as stubWorkspace,
@@ -234,6 +235,14 @@ const withOpenedFiles = async (
     stubWindow.showTextDocument = originalShowTextDocument;
   }
 };
+
+
+/** watcher pattern 归一化键(IDE-ACC-011 起 entityMapping 以 RelativePattern
+ * 注册 glob;joinPath 字符串在真机宿主会被百分号编码成死 pattern) */
+const watcherPatternKey = (pattern: unknown): string =>
+  pattern instanceof RelativePattern
+    ? `${String(pattern.base)}/${pattern.pattern}`
+    : String(pattern);
 
 describe('EntityMappingManager scan and legacy mappings', () => {
   it('registers the python watcher in context subscriptions on construction', () => {
@@ -850,7 +859,7 @@ describe('IDE-IDX-012 全部工作区根 def watcher', () => {
           fireCreate: (uri: Uri) => create.forEach(fn => fn(uri)),
           fireDelete: (uri: Uri) => remove.forEach(fn => fn(uri))
         };
-        watchersByPattern.set(String(pattern), watcher);
+        watchersByPattern.set(watcherPatternKey(pattern), watcher);
         return {
           onDidChange(listener: (uri: Uri) => void) { change.push(listener); return { dispose: () => void 0 }; },
           onDidCreate(listener: (uri: Uri) => void) { create.push(listener); return { dispose: () => void 0 }; },
@@ -868,7 +877,7 @@ describe('IDE-IDX-012 全部工作区根 def watcher', () => {
         const aIndexBefore = rootIndexes().get(aKey);
 
         // 第二根必须有自己的 def watcher(红点:当前只挂第一根)
-        const wsBDefPattern = Uri.joinPath(Uri.file(wsB), '**/*.def').toString();
+        const wsBDefPattern = watcherPatternKey(new RelativePattern(wsB, '**/*.def'));
         const wsBDefWatcher = watchersByPattern.get(wsBDefPattern);
         expect(wsBDefWatcher).toBeDefined();
 
@@ -926,7 +935,7 @@ describe('IDE-IDX-013 全部工作区根类型 watcher', () => {
           fireCreate: (uri: Uri) => create.forEach(fn => fn(uri)),
           fireDelete: (uri: Uri) => remove.forEach(fn => fn(uri))
         };
-        watchersByPattern.set(String(pattern), watcher);
+        watchersByPattern.set(watcherPatternKey(pattern), watcher);
         return {
           onDidChange(listener: (uri: Uri) => void) { change.push(listener); return { dispose: () => void 0 }; },
           onDidCreate(listener: (uri: Uri) => void) { create.push(listener); return { dispose: () => void 0 }; },
@@ -944,7 +953,7 @@ describe('IDE-IDX-013 全部工作区根类型 watcher', () => {
 
         // 第二根 types.xml 更新为 STRING
         write(wsB, 'scripts/entity_defs/types.xml', '<root>\n  <B_ITEM>STRING</B_ITEM>\n</root>');
-        const wsBTypesPattern = Uri.joinPath(Uri.file(wsB), '**/{types,alias}.xml').toString();
+        const wsBTypesPattern = watcherPatternKey(new RelativePattern(wsB, '**/{types,alias}.xml'));
         const wsBTypesWatcher = watchersByPattern.get(wsBTypesPattern);
         // 红点:当前类型 watcher 只挂首根,第二根无 watcher 可触发
         expect(wsBTypesWatcher).toBeDefined();
@@ -1003,7 +1012,7 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
         const change: Array<(uri: Uri) => void> = [];
         const create: Array<(uri: Uri) => void> = [];
         const remove: Array<(uri: Uri) => void> = [];
-        watchersByPattern.set(String(pattern), {
+        watchersByPattern.set(watcherPatternKey(pattern), {
           fireChange: (uri: Uri) => change.forEach(fn => fn(uri)),
           fireCreate: (uri: Uri) => create.forEach(fn => fn(uri)),
           fireDelete: (uri: Uri) => remove.forEach(fn => fn(uri))
@@ -1027,7 +1036,7 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
         expect(aIndexBefore).toBeDefined();
 
         // 启动时外部根 extA 三件套已挂
-        const extADefPattern = Uri.joinPath(Uri.file(extA), '**/*.def').toString();
+        const extADefPattern = watcherPatternKey(new RelativePattern(extA, '**/*.def'));
         const oldExtADef = watchersByPattern.get(extADefPattern);
         expect(oldExtADef).toBeDefined();
 
@@ -1040,10 +1049,10 @@ describe('IDE-IDX-014 切换 assetsRoot 重建实体 watcher', () => {
         refresh!.call(manager);
 
         // 新根三件套已挂(新对象,不是旧 watcher 复用)
-        const extBDefWatcher = watchersByPattern.get(Uri.joinPath(Uri.file(extB), '**/*.def').toString());
+        const extBDefWatcher = watchersByPattern.get(watcherPatternKey(new RelativePattern(extB, '**/*.def')));
         expect(extBDefWatcher).toBeDefined();
-        expect(watchersByPattern.get(Uri.joinPath(Uri.file(extB), '**/*.py').toString())).toBeDefined();
-        expect(watchersByPattern.get(Uri.joinPath(Uri.file(extB), '**/{types,alias}.xml').toString())).toBeDefined();
+        expect(watchersByPattern.get(watcherPatternKey(new RelativePattern(extB, '**/*.py')))).toBeDefined();
+        expect(watchersByPattern.get(watcherPatternKey(new RelativePattern(extB, '**/{types,alias}.xml')))).toBeDefined();
 
         // 旧外部根 watcher 已释放:fire 事件不再触达维护(工作区实体不动)
         oldExtADef!.fireDelete(Uri.file(aDef));

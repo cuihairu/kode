@@ -1,0 +1,12 @@
+acc011.baseline.defHitsCell=true
+acc011.baseline.defLocations=1
+acc011.baseline.implLocations=1
+acc011.baseline.refHitsBase=true
+acc011.baseline.refLocations=1
+acc011.delete.attempts=2
+acc011.after.defLocations=1
+acc011.after.defHitsCell=false
+acc011.after.implLocations=0
+acc011.after.implHitsCell=false
+acc011.after.refHitsBase=true
+acc011.after.reverseBasePingHitsDef=true
