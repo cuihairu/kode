@@ -119,7 +119,28 @@ export function renderConfigXmlSections(root: ConfigXmlNode): string {
  * 批128:assetsRoot 未设或未过探针时,发现出的资产根同样参与(其下
  * res/server/kbengine.xml 是引擎装载口径的元件配置位置)。
  */
-export function resolveCustomConfigXmlPath(workspaceRoot: string | undefined): string | null {
+export function resolveCustomConfigXmlPath(
+  workspaceRoot: string | undefined,
+  /** profile 资产根(IDE-REV-015):给定时只在其下找,绝不混工作区/设置链(隔离) */
+  overrideRoot?: string
+): string | null {
+  if (overrideRoot !== undefined) {
+    // profile 面的元件配置只认 profile 自己的资产根:找不到 = 该 profile
+    // 无元件配置(纯 defaults),不回落别处——回落即读到别的项目的配置
+    const candidates = [
+      path.join(overrideRoot, 'kbengine.xml'),
+      path.join(overrideRoot, 'res', 'server', 'kbengine.xml')
+    ];
+    for (const candidate of candidates) {
+      try {
+        fs.readFileSync(candidate, 'utf8');
+        return candidate;
+      } catch {
+        // 缺失/不可读:试下一个候选
+      }
+    }
+    return null;
+  }
   const config = vscode.workspace.getConfiguration('kbengine');
   const settingPath = expandWorkspacePlaceholders(
     config.get<string>('assetsRoot', ''),
@@ -179,18 +200,36 @@ export interface MergedConfigTree {
 }
 
 /**
+ * 装载轴覆盖(IDE-REV-015):活动 profile 的引擎根/资产根各自替换对应
+ * 轴——被覆盖的轴绝不回落设置/发现/工作区链(回落即读到别的项目的
+ * 配置);未覆盖的轴照常走原有链。undefined 与空串不同义:空串视为
+ * 「该 profile 没有自己的根」,不覆盖。
+ */
+export interface MergedConfigTreeOverrides {
+  /** 引擎 bin 目录(profile.engineRoot + kbe/bin/server 推导) */
+  binPath?: string;
+  /** 资产根(profile.assetsRoot):只在其下找元件 kbengine.xml */
+  configRoot?: string;
+}
+
+/**
  * defaults + 元件 kbengine.xml 的合成树(批131 抽出):最终配置展示与
  * dbmgr 数据库接口读值共用一套装载口径,不各读各的。
  */
-export function buildMergedConfigTree(): MergedConfigTree {
+export function buildMergedConfigTree(overrides: MergedConfigTreeOverrides = {}): MergedConfigTree {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  const binPath = expandWorkspacePlaceholders(
-    vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
-    workspaceRoot
-  );
-  // 批125 自动发现:binPath 未配/推导不出时,用引擎源码根锚点兜底再推 defaults
+  const overridesBinPath = overrides.binPath !== undefined && overrides.binPath.length > 0
+    ? overrides.binPath
+    : undefined;
+  const binPath = overridesBinPath
+    ?? expandWorkspacePlaceholders(
+      vscode.workspace.getConfiguration('kbengine').get<string>('binPath', ''),
+      workspaceRoot
+    );
+  // 批125 自动发现:binPath 未配/推导不出时,用引擎源码根锚点兜底再推 defaults;
+  // profile 覆盖轴不走发现链(profile 的根读不到 defaults = 如实无 defaults)
   let defaultsPath = deriveEngineDefaultsXmlPath(binPath);
-  if (!defaultsPath && workspaceRoot) {
+  if (!defaultsPath && !overridesBinPath && workspaceRoot) {
     const kbeSourceRoot = resolveKbeSourceRoot(workspaceRoot);
     if (kbeSourceRoot) {
       defaultsPath = deriveEngineDefaultsXmlPath(path.join(kbeSourceRoot, 'bin', 'server'));
@@ -205,7 +244,12 @@ export function buildMergedConfigTree(): MergedConfigTree {
     }
   }
   const defaultsTree = defaultsXml !== null ? parseConfigXml(defaultsXml) : null;
-  const customPath = resolveCustomConfigXmlPath(workspaceRoot);
+  const overridesConfigRoot = overrides.configRoot !== undefined && overrides.configRoot.length > 0
+    ? overrides.configRoot
+    : undefined;
+  const customPath = overridesConfigRoot !== undefined
+    ? resolveCustomConfigXmlPath(workspaceRoot, overridesConfigRoot)
+    : resolveCustomConfigXmlPath(workspaceRoot);
   let customTree: ConfigXmlNode | null = null;
   if (customPath) {
     // 不可达(批112 定性):customPath 刚经 resolveCustomConfigXmlPath 以同

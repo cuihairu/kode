@@ -85,7 +85,17 @@ export class DatabaseConnectionRegistry {
 }
 
 export interface CachedQueryResult {
-  columns: Array<{ name: string; type: string }>;
+  /**
+   * 列信息:判读字段(nullable/defaultValue/key)可选保留——IDE-REV-015
+   * 起缓存随真实查询往返,丢这些字段会让二次判读与首查不一致,故带上。
+   */
+  columns: Array<{
+    name: string;
+    type: string;
+    nullable?: boolean;
+    defaultValue?: unknown;
+    key?: string;
+  }>;
   rows: Array<Record<string, unknown>>;
 }
 

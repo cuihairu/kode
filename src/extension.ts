@@ -265,7 +265,8 @@ import {
   FinalConfigTreeProvider,
   buildFinalServerConfig,
   resetDatabaseInterfaceConfigCache,
-  resolveDatabaseInterfaceConfig
+  resolveDatabaseInterfaceConfig,
+  type DatabaseInterfaceConfig
 } from './serverConfigMerge';
 import type { DiscoveryKey, DiscoveryLayoutFacts, DiscoveryPromptDeps } from './workspaceDiscovery';
 import {
@@ -276,6 +277,19 @@ import {
 import { hostLabel, renderExtensionIdentityReport, sideLabel } from './extensionIdentity';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 import { renderReproductionSummary } from './reproductionSummary';
+import {
+  DatabaseConnectionRegistry,
+  DatabaseQueryResultCache
+} from './databaseConnectionRegistry';
+import {
+  DATABASE_CONNECTIONS_STATE_KEY,
+  ProfileDatabaseConnectionService,
+  WORKSPACE_DEFAULT_DATABASE_PROFILE_ID,
+  createProfileScopedDriftExecutor,
+  getProfileDatabaseConnections,
+  installProfileDatabaseConnections,
+  resolveProfileDatabaseInterfaceConfig
+} from './profileDatabaseConnection';
 import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';
 import { setFileReadVerbose } from './fileReadMetrics';
@@ -1540,8 +1554,55 @@ export function activate(context: vscode.ExtensionContext) {
   // 数据库漂移校验(批C):用真实表结构反向校验 def 推导的虚拟表结构——
   // 属性→字段映射算错时唯一会暴露的地方。连接要素读引擎配置,不新增配置项;
   // 语句白名单 + 只读会话双保险;连不上降级为「未校验」不报错
+  //
+  // IDE-REV-015:连接配置经 profile 台账取——活动 profile 的引擎根/资产根
+  // 各自推导 dbmgr 连接要素入 DatabaseConnectionRegistry,命令只认台账;
+  // 台账无记录 = 如实「读不到配置」,绝不回退邻居 profile/工作区设置。
+  // 切换活动 profile 即释放旧 profile 的结果缓存;查询结果按 profile
+  // 缓存(TTL 内同 SQL 不再下发连接)。
   const databaseDriftChannel = vscode.window.createOutputChannel(DATABASE_DRIFT_CHANNEL_NAME);
   context.subscriptions.push(databaseDriftChannel);
+  const databaseConnectionRegistry = new DatabaseConnectionRegistry({
+    now: () => Date.now(),
+    load: () => context.workspaceState?.get(DATABASE_CONNECTIONS_STATE_KEY),
+    save: data => { void context.workspaceState?.update(DATABASE_CONNECTIONS_STATE_KEY, data); }
+  });
+  const databaseQueryResultCache = new DatabaseQueryResultCache({ now: () => Date.now() });
+  const databaseConnections = new ProfileDatabaseConnectionService({
+    registry: databaseConnectionRegistry,
+    queryResultCache: databaseQueryResultCache,
+    resolveConfig: resolveProfileDatabaseInterfaceConfig
+  });
+  installProfileDatabaseConnections(databaseConnections);
+  context.subscriptions.push({
+    dispose: () => {
+      // 只卸自己:后续激活装的新服务不被旧上下文卸掉
+      if (getProfileDatabaseConnections() === databaseConnections) {
+        installProfileDatabaseConnections(null);
+      }
+    }
+  });
+  // 切换即释放:活动 profile 换人时立刻清旧 profile 的会话面(不等下次命令)
+  context.subscriptions.push(
+    onDidChangeActiveProfile(() => {
+      const profile = resolveActiveProfile(context.workspaceState);
+      databaseConnections.selectActive(
+        profile?.id ?? WORKSPACE_DEFAULT_DATABASE_PROFILE_ID,
+        profile
+      );
+    })
+  );
+  /** 命令取连接:每次执行按当前活动 profile 重选(引擎配置变更即时生效),只认台账 */
+  const resolveCommandDatabaseConnection = (): {
+    profileId: string;
+    config: DatabaseInterfaceConfig;
+  } | null => {
+    const profile = resolveActiveProfile(context.workspaceState);
+    const profileId = profile?.id ?? WORKSPACE_DEFAULT_DATABASE_PROFILE_ID;
+    databaseConnections.selectActive(profileId, profile);
+    const config = databaseConnections.getActiveConfig(profileId);
+    return config ? { profileId, config } : null;
+  };
   const checkDatabaseDriftCommand = vscode.commands.registerCommand(
     'kbengine.database.checkDrift',
     async (entityName?: string) => {
@@ -1555,18 +1616,20 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage(`读取实体定义失败: ${resolvedEntityName}(未找到 .def 文件)`);
         return;
       }
-      const database = resolveDatabaseInterfaceConfig();
-      if (!database) {
+      const connection = resolveCommandDatabaseConnection();
+      if (!connection) {
         vscode.window.showInformationMessage(
-          '数据库漂移未校验:读不到引擎数据库配置(检查 kbengine.binPath / assetsRoot)'
+          '数据库漂移未校验:读不到引擎数据库配置(检查活动 profile 的引擎根/资产根,或 kbengine.binPath / assetsRoot 设置)'
         );
         return;
       }
       const report = await checkDatabaseDrift(
         snapshot,
-        database,
+        connection.config,
         resolveSchemaTablePrefix(),
-        createMysqlDriftExecutor
+        createProfileScopedDriftExecutor(
+          connection.profileId, databaseQueryResultCache, createMysqlDriftExecutor
+        )
       );
       publishDriftReport(databaseDriftChannel, vscode.window, report);
     }
@@ -1586,15 +1649,20 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('数据库漂移未校验:工作区没有可检查的实体定义');
         return;
       }
-      const database = resolveDatabaseInterfaceConfig();
-      if (!database) {
+      const connection = resolveCommandDatabaseConnection();
+      if (!connection) {
         vscode.window.showInformationMessage(
-          '数据库漂移未校验:读不到引擎数据库配置(检查 kbengine.binPath / assetsRoot)'
+          '数据库漂移未校验:读不到引擎数据库配置(检查活动 profile 的引擎根/资产根,或 kbengine.binPath / assetsRoot 设置)'
         );
         return;
       }
       const report = await checkDatabaseDriftForSnapshots(
-        snapshots, database, resolveSchemaTablePrefix(), createMysqlDriftExecutor
+        snapshots,
+        connection.config,
+        resolveSchemaTablePrefix(),
+        createProfileScopedDriftExecutor(
+          connection.profileId, databaseQueryResultCache, createMysqlDriftExecutor
+        )
       );
       publishDriftReport(databaseDriftChannel, vscode.window, report);
     }
