@@ -15,9 +15,11 @@ export function run(): Promise<void> {
       : suite === 'field'
         ? file === 'fieldBaseline.test.js' || file === 'plainVariableHover.test.js'
           || file === 'eventCodeLensCold.test.js'
-        : suite === 'vsix'
-          ? file === 'vsixSmoke.test.js'
-          : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
+        : suite === 'multiroot'
+          ? file === 'multiRootNavigation.test.js'
+          : suite === 'vsix'
+            ? file === 'vsixSmoke.test.js'
+            : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }

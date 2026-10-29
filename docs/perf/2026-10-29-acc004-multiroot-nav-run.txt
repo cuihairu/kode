@@ -1,0 +1,12 @@
+acc004.rootA.defToPython=scripts/base/TwinEntity.py:3
+acc004.rootA.pythonToDef=scripts/entity_defs/TwinEntity.def:2
+acc004.rootA.section=BaseMethods
+acc004.rootA.sigToken=arg1: int
+acc004.rootA.hoverHasOtherToken=false
+acc004.rootA.hoverFirstLine=**onPing** — 此函数是实体 def 声明的 BaseMethods 方法
+acc004.rootB.defToPython=scripts/cell/TwinEntity.py:3
+acc004.rootB.pythonToDef=scripts/entity_defs/TwinEntity.def:2
+acc004.rootB.section=CellMethods
+acc004.rootB.sigToken=arg2: str
+acc004.rootB.hoverHasOtherToken=false
+acc004.rootB.hoverFirstLine=**onPing** — 此函数是实体 def 声明的 CellMethods 方法

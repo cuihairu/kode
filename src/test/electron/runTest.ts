@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   const demoMode = process.argv.includes('--demo');
   const vsixMode = process.argv.includes('--vsix');
   const fieldMode = process.argv.includes('--field');
+  const multirootMode = process.argv.includes('--multiroot');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -209,6 +210,62 @@ async function main(): Promise<void> {
       devPath = path.join(temporaryRoot, 'empty-dev');
       fs.mkdirSync(devPath, { recursive: true });
     }
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (multirootMode) {
+    // IDE-ACC-004 多根同名实体跳转验收:A/B 两根各自标准布局,同一实体名
+    // TwinEntity 双方都注册——但 def 段(A=BaseMethods/B=CellMethods)、形参
+    // (A=1×UINT16/B=2×STRING)与落点(A=base/B=cell)全不同。根配对若退化成
+    // 「最后注册者覆盖」,签名与落点断言立即互相矛盾,不留侥幸面。用
+    // .code-workspace 双 folder 打开真多根宿主。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-multiroot-'));
+    const rootA = path.join(temporaryRoot, 'rootA');
+    const rootB = path.join(temporaryRoot, 'rootB');
+    const writeRoot = (root: string, section: 'BaseMethods' | 'CellMethods', args: string[]): void => {
+      const entityDir = path.join(root, 'scripts', 'entity_defs');
+      fs.mkdirSync(entityDir, { recursive: true });
+      fs.mkdirSync(path.join(root, 'scripts', 'base'), { recursive: true });
+      fs.mkdirSync(path.join(root, 'scripts', 'cell'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), [
+        '<root>',
+        `	<TwinEntity hasBase="true" hasCell="true"></TwinEntity>`,
+        '</root>'
+      ].join('\n'));
+      fs.writeFileSync(path.join(entityDir, 'TwinEntity.def'), [
+        '<root>',
+        `    <${section}>`,
+        '        <onPing>',
+        ...args.map(arg => `            <Arg>${arg}</Arg>`),
+        '        </onPing>',
+        `    </${section}>`,
+        '</root>'
+      ].join('\n'));
+      // python 实现形参个数与 def <Arg> 对齐(过 pythonSignatureMatchesDeclaredArgs)
+      const pyArgs = ['self', ...args.map((_, index) => `a${index}`)].join(', ');
+      const pyBody = [
+        `# acc004 ${path.basename(root)} implementation`,
+        'class TwinEntity:',
+        '',
+        `    def onPing(${pyArgs}):`,
+        `        return '${path.basename(root)}'`
+      ].join('\n');
+      fs.writeFileSync(path.join(root, 'scripts', 'base', 'TwinEntity.py'), pyBody);
+      fs.writeFileSync(path.join(root, 'scripts', 'cell', 'TwinEntity.py'), pyBody);
+    };
+    writeRoot(rootA, 'BaseMethods', ['UINT16']);
+    writeRoot(rootB, 'CellMethods', ['STRING', 'STRING']);
+    const wsFile = path.join(temporaryRoot, 'dual.code-workspace');
+    fs.writeFileSync(wsFile, JSON.stringify({
+      folders: [{ path: rootA }, { path: rootB }],
+      settings: {
+        'kbengine.showFinalConfigOnOpen': false,
+        'kbengine.python.stubExport': false,
+        'kbengine.python.extraPathsSync': false
+      }
+    }, null, 2));
+    workspacePath = wsFile;
+    process.env.KODE_ELECTRON_SUITE = 'multiroot';
+    process.env.KODE_MULTIROOT_A = rootA;
+    process.env.KODE_MULTIROOT_B = rootB;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   }
 
