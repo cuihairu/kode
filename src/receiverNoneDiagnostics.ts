@@ -20,6 +20,14 @@ import { parsePythonFile } from './pythonParser';
 
 export const RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT = true;
 
+/**
+ * 诊断稳定 code(B-7,2026-10-29):快速修复与诊断按 code 对账(与
+ * kbengine.unknownType 同款纪律)——守卫 QuickFix 只吃 receiver-none 码,
+ * 段错配是路由问题不是判空问题,不出守卫动作。
+ */
+export const RECEIVER_NONE_DIAGNOSTIC_CODE = 'kbengine.receiverNone';
+export const RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE = 'kbengine.sectionMismatch';
+
 /** 引擎源码引用(随诊断消息携带,给「为什么可能是 None」的直接证据) */
 export const RECEIVER_NONE_SOURCES: Record<PythonReceiverCall['receiver'], string> = {
   client: 'server/baseapp/entity.cpp:800 pyGetClientEntityCall',
@@ -432,6 +440,8 @@ export interface ReceiverDiagnosticItem {
   message: string;
   severity: 'Warning';
   source: 'kbengine';
+  /** 稳定 code(B-7):QuickFix provider 按此对账 */
+  code: string;
 }
 
 const findingToDiagnosticItem = (finding: ReceiverNoneFinding): ReceiverDiagnosticItem => ({
@@ -441,8 +451,46 @@ const findingToDiagnosticItem = (finding: ReceiverNoneFinding): ReceiverDiagnost
   },
   message: finding.message,
   severity: 'Warning' as const,
-  source: 'kbengine' as const
+  source: 'kbengine' as const,
+  code: finding.kind === 'receiver-none'
+    ? RECEIVER_NONE_DIAGNOSTIC_CODE
+    : RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE
 });
+
+/**
+ * 早退守卫插入编辑(B-7 纯函数):使用行之前插入
+ * `<缩进>if not self.<receiver>:` + `<缩进+一级>return`。
+ * 缩进复用使用行的前导空白原文(空格/制表符不混);内层一级=空格文件
+ * 加 4 空格、tab 文件加 1 tab。守卫形态即诊断面自认的 early-exit
+ * guard 一族,插入后重算该位不再报。行号越界/空文本返回 null(不猜)。
+ */
+export interface ReceiverNoneGuardEdit {
+  /** 插入点(0 起行;插入该行行首之前) */
+  line: number;
+  /** 插入文本(两行,含尾换行) */
+  text: string;
+}
+
+export function buildReceiverNoneGuardEdit(
+  text: string,
+  line: number,
+  receiver: PythonReceiverCall['receiver']
+): ReceiverNoneGuardEdit | null {
+  if (!text || line < 0) {
+    return null;
+  }
+  const lines = text.split(/\r?\n/);
+  const useLine = lines[line];
+  if (useLine === undefined || !useLine.trim()) {
+    return null;
+  }
+  const leading = /^[ \t]*/.exec(useLine)?.[0] ?? '';
+  const inner = leading.includes('\t') ? `${leading}\t` : `${leading}    `;
+  return {
+    line,
+    text: `${leading}if not self.${receiver}:\n${inner}return\n`
+  };
+}
 
 /** 开关口:enabled=false 零产出(用户令:配置开关默认开可关,severity=Warning) */
 export function receiverNoneDiagnosticItems(

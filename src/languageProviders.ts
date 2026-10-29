@@ -162,6 +162,12 @@ import {
   withInitialScanTimeout
 } from './hoverBudget';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
+import {
+  RECEIVER_NONE_DIAGNOSTIC_CODE,
+  buildReceiverNoneGuardEdit
+} from './receiverNoneDiagnostics';
+
+export { RECEIVER_NONE_DIAGNOSTIC_CODE };
 
 /**
  * 批159(用户令 2026-10-26「点击 codelens 跳 def 后 alt+← 后退,再点没反应」):
@@ -5549,6 +5555,63 @@ export class KBEngineMethodImplementationCodeActionProvider implements vscode.Co
     );
     action.edit = edit;
     return [action];
+  }
+}
+
+export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeActionProvider {
+  /**
+   * B-7(2026-10-29 用户令):receiver-none 诊断的快速修复——使用行之前
+   * 插入早退守卫 `if not self.<receiver>:\n    return`(守卫文本由
+   * receiverNoneDiagnostics.buildReceiverNoneGuardEdit 纯函数产出,形态即
+   * 诊断面自认的 early-exit guard 一族,插入后重算该位不再报)。code 对账
+   * kbengine.receiverNone:段错配码/无码诊断不出(路由问题不是判空问题);
+   * 接收者从诊断行文本提取(self.<cell|base|client>.),提不出不猜;
+   * 同行同码多诊断去重只出一条;只插本文档,无命令型动作。
+   */
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    context: vscode.CodeActionContext,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CodeAction[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    const actions: vscode.CodeAction[] = [];
+    const seen = new Set<string>();
+    for (const diagnostic of context.diagnostics) {
+      if (diagnostic.code !== RECEIVER_NONE_DIAGNOSTIC_CODE) {
+        continue;
+      }
+      if (!diagnosticRangeIntersects(diagnostic.range, range)) {
+        continue;
+      }
+      const line = diagnostic.range.start.line;
+      const receiverMatch = /\bself\.(cell|base|client)\s*\./.exec(document.lineAt(line).text);
+      if (!receiverMatch) {
+        continue;
+      }
+      const receiver = receiverMatch[1] as 'cell' | 'base' | 'client';
+      const dedupeKey = `${receiver}:${line}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      const guard = buildReceiverNoneGuardEdit(document.getText(), line, receiver);
+      if (!guard) {
+        continue;
+      }
+      seen.add(dedupeKey);
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(document.uri, new vscode.Position(guard.line, 0), guard.text);
+      const action = new vscode.CodeAction(
+        `插入 None 守卫(if not self.${receiver}: return)`,
+        vscode.CodeActionKind.QuickFix
+      );
+      action.diagnostics = [diagnostic];
+      action.edit = edit;
+      actions.push(action);
+    }
+    return actions;
   }
 }
 

@@ -192,6 +192,7 @@ import {
   KBEngineSignatureHelpProvider,
   KBEngineTypeCodeActionProvider,
   KBEngineMethodImplementationCodeActionProvider,
+  KBEngineReceiverNoneGuardCodeActionProvider,
   prewarmKbengineIndex,
   revealSourceCommand,
   PythonCompletionProvider,
@@ -550,6 +551,8 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.DiagnosticSeverity.Warning
           );
           diagnostic.source = item.source;
+          // B-7:稳定 code 随诊断发布,守卫 QuickFix 按此对账
+          diagnostic.code = item.code;
           return diagnostic;
         }));
       }
@@ -1063,6 +1066,14 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineMethodImplementationCodeActionProvider(entityMappingManager)
   );
   context.subscriptions.push(methodImplementationCodeActionProvider);
+
+  // B-7(2026-10-29 用户令):receiver-none 诊断的 None 守卫快速修复
+  // (python 面,使用行前插入早退守卫;code 对账 kbengine.receiverNone)
+  const receiverNoneGuardCodeActionProvider = vscode.languages.registerCodeActionsProvider(
+    pythonDocumentSelector,
+    new KBEngineReceiverNoneGuardCodeActionProvider()
+  );
+  context.subscriptions.push(receiverNoneGuardCodeActionProvider);
 
   // 监听文档变化，实时检查
   if (vscode.workspace.workspaceFolders) {
