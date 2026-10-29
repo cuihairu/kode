@@ -1,0 +1,23 @@
+acc009.session.rounds=8
+acc009.session.docsBaseline=2
+acc009.session.docsFinal=4
+acc009.session.docsWorkingSet=4
+acc009.session.rssBaselineMiB=252
+acc009.session.rssFinalMiB=367
+acc009.session.rssNetMiB=114.9
+acc009.session.rssTailMiB=25(r4=342→r8=367)
+acc009.session.parseObserved=57
+acc009.session.parseWindowDelta=57
+acc009.session.parseDroppedDelta=0
+acc009.session.parseWindowCount=3106
+acc009.session.parseCacheHits=41
+acc009.session.parseCacheMisses=1
+acc009.session.loopP99Ms=16.351
+acc009.r1.defHoverMs=305.809 | acc009.r1.pyHoverHit=false | acc009.r1.rssMiB=320 | acc009.r1.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r1.docs=4 | acc009.r1.parse.count=3056 | acc009.r1.parse.elapsedDropped=2000 | acc009.r1.parse.cacheHits=5 | acc009.r1.parse.cacheMisses=1
+acc009.r2.defHoverMs=122.123 | acc009.r2.pyHoverHit=false | acc009.r2.rssMiB=329 | acc009.r2.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r2.docs=4 | acc009.r2.parse.count=3063 | acc009.r2.parse.elapsedDropped=2000 | acc009.r2.parse.cacheHits=10 | acc009.r2.parse.cacheMisses=1
+acc009.r3.defHoverMs=63.836 | acc009.r3.pyHoverHit=false | acc009.r3.rssMiB=331 | acc009.r3.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r3.docs=4 | acc009.r3.parse.count=3070 | acc009.r3.parse.elapsedDropped=2000 | acc009.r3.parse.cacheHits=15 | acc009.r3.parse.cacheMisses=1
+acc009.r4.defHoverMs=52.461 | acc009.r4.pyHoverHit=true | acc009.r4.rssMiB=342 | acc009.r4.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r4.docs=4 | acc009.r4.parse.count=3078 | acc009.r4.parse.elapsedDropped=2000 | acc009.r4.parse.cacheHits=21 | acc009.r4.parse.cacheMisses=1
+acc009.r5.defHoverMs=121.193 | acc009.r5.pyHoverHit=true | acc009.r5.rssMiB=352 | acc009.r5.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r5.docs=4 | acc009.r5.parse.count=3085 | acc009.r5.parse.elapsedDropped=2000 | acc009.r5.parse.cacheHits=26 | acc009.r5.parse.cacheMisses=1
+acc009.r6.defHoverMs=32.994 | acc009.r6.pyHoverHit=true | acc009.r6.rssMiB=358 | acc009.r6.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r6.docs=4 | acc009.r6.parse.count=3092 | acc009.r6.parse.elapsedDropped=2000 | acc009.r6.parse.cacheHits=31 | acc009.r6.parse.cacheMisses=1
+acc009.r7.defHoverMs=37.205 | acc009.r7.pyHoverHit=true | acc009.r7.rssMiB=364 | acc009.r7.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r7.docs=4 | acc009.r7.parse.count=3099 | acc009.r7.parse.elapsedDropped=2000 | acc009.r7.parse.cacheHits=36 | acc009.r7.parse.cacheMisses=1
+acc009.r8.defHoverMs=32.800 | acc009.r8.pyHoverHit=true | acc009.r8.rssMiB=367 | acc009.r8.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0} | acc009.r8.docs=4 | acc009.r8.parse.count=3106 | acc009.r8.parse.elapsedDropped=2000 | acc009.r8.parse.cacheHits=41 | acc009.r8.parse.cacheMisses=1

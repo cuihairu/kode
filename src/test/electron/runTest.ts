@@ -22,7 +22,10 @@ async function main(): Promise<void> {
   // IDE-ACC-008 归因验收:与 --field 共用同一工作区装配(demo 资产+5000 文件
   // 外部根=同机同项目口径),suite 过滤切到 attribution,双跑
   // enabled/KODE_FIELD_MODE=disabled 两面(serviceAttribution.test.ts)。
+  // IDE-ACC-009 长会话资源边界:同样共用装配,过滤切 longsession
+  // (longSessionResources.test.ts)。
   const attributionMode = process.argv.includes('--attribution');
+  const longSessionMode = process.argv.includes('--longsession');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -110,7 +113,7 @@ async function main(): Promise<void> {
     process.env.KODE_VSIX_WORKSPACE = workspacePath;
     process.env.KODE_VSIX_EXT_DIR = devPath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  } else if (fieldMode || attributionMode) {
+  } else if (fieldMode || attributionMode || longSessionMode) {
     // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
     // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
@@ -202,7 +205,9 @@ async function main(): Promise<void> {
         '        return None'
       ].join('\n')
     );
-    process.env.KODE_ELECTRON_SUITE = attributionMode ? 'attribution' : 'field';
+    process.env.KODE_ELECTRON_SUITE = attributionMode
+      ? 'attribution'
+      : longSessionMode ? 'longsession' : 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
     process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
