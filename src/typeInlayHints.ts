@@ -12,10 +12,14 @@ import {
 } from './pythonLanguageUtils';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
-// self.<属性> 访问处原位渲染 def 声明的 <Type> 取值(types.xml 自定义别名
-// 或内建),读法与属性 F12 同走 resolvePropertyDefinitionInfo 索引,
-// 零重复解析。一枚独立开关 kbengine.inlayHints.typeData(默认开);inlay
-// 没有变更事件可 fire,provider 每次调用现读配置,下一次渲染即生效。
+// self.<属性> 访问处原位渲染 def 声明的 <Type> 注解(2026-10-29 用户定
+// 口径:解析到底——SERVER_ID(types.xml 别名)→int、VECTOR3→定长 tuple,
+// 与下方 RPC 实参 inlay 同一 resolveEntityAnnotationType 链,同文件单一
+// 口径),读法与属性 F12 同走 resolvePropertyDefinitionInfo 索引,
+// 零重复解析;PYTHON(任意可 pickle 对象,datatype.cpp PythonType)与
+// 未知类型最终落 Any,按「能推才显」闸不出提示。一枚独立开关
+// kbengine.inlayHints.typeData(默认开);inlay 没有变更事件可 fire,
+// provider 每次调用现读配置,下一次渲染即生效。
 //
 // RPC 调用点形参提示(用户令 2026-10-21 形态升级单;2026-10-29 用户定形态
 // 只显类型):self.base/self.cell/self.client.X(...) 每实参后插 `: <类型>`,
@@ -41,6 +45,7 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     // (与属性标记 provider 同口径,共用 propertyAccessKey 键)
     const hits = new Map<string, string | null>();
     const hints: vscode.InlayHint[] = [];
+    const propertyWorkspaceRoot = getWorkspaceRootForDocument(document);
     for (const access of findPythonSelfPropertyAccesses(document.getText())) {
       // inlay 按可视区要:视图口外的访问行不出 hint
       if (access.line < range.start.line || access.line > range.end.line) {
@@ -53,17 +58,24 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           access.fullPath,
           access.rootSymbol
         );
-        hits.set(key, location ? location.typeName ?? null : null);
+        // 2026-10-29 用户定口径:解析到底(与 RPC 实参 inlay 同链)——
+        // 别名/内建都到最终注解;PYTHON/未知落 Any 不出(能推才显)
+        hits.set(
+          key,
+          location?.typeName
+            ? resolveEntityAnnotationType(propertyWorkspaceRoot ?? '', location.typeName)
+            : null
+        );
       }
-      const typeName = hits.get(key);
-      if (!typeName || typeName === 'Any') {
+      const annotation = hits.get(key);
+      if (!annotation || annotation === PYTHON_TYPE_STUB_FALLBACK) {
         // 无 typeName 或解析落 Any(未知)→ 不出提示(能推才显,不显 Any)
         continue;
       }
       hints.push(
         new vscode.InlayHint(
           new vscode.Position(access.line, access.character + access.rootSymbol.length),
-          `: ${typeName}`,
+          `: ${annotation}`,
           vscode.InlayHintKind.Type
         )
       );

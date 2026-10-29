@@ -64,7 +64,8 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
 
     expect(hints).toHaveLength(1);
     expect(hints[0].position).toEqual({ line: 1, character: 11 });
-    expect(hints[0].label).toBe(': UINT32');
+    // 2026-10-29 用户定口径:解析到底(与 RPC 实参 inlay 同链)——UINT32→int
+    expect(hints[0].label).toBe(': int');
     expect(hints[0].kind).toBe(InlayHintKind.Type);
     expect(hints[0]).toBeInstanceOf(InlayHint);
     expect(calls).toEqual([
@@ -94,6 +95,25 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
 
     expect(hints.map(hint => hint.position.line)).toEqual([4]);
     expect(calls).toHaveLength(1);
+  });
+
+  it('解析到底口径:VECTOR3→定长 tuple;PYTHON/未知类型落 Any 按「能推才显」闸不出(2026-10-29)', async () => {
+    calls.length = 0;
+    const provider = new PythonTypeInlayHintsProvider(
+      managerOf({
+        direction: { typeName: 'VECTOR3' },
+        payload: { typeName: 'PYTHON' },
+        ghost: { typeName: 'NOT_A_TYPE' }
+      })
+    );
+    const hints = (await provider.provideInlayHints(
+      doc('def a(self):\n    self.direction = 1\n    self.payload = 2\n    self.ghost = 3\n') as never,
+      lineRange(0, 5)
+    )) as unknown as HintLike[];
+
+    // PYTHON=任意可 pickle 对象(datatype.cpp PythonType),最终型 Any 无信息量;
+    // 未知类型同落 Any——两者都不渲染(与 RPC 实参 inlay 的 Any 闸同口径)
+    expect(hints.map(hint => hint.label)).toEqual([': Tuple[float, float, float]']);
   });
 
   it('renders nothing for unresolved accesses and for declarations without a Type', async () => {
@@ -155,6 +175,11 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     };
     const defFile = put('scripts/entity_defs/Avatar.def', [
       '<root>',
+      '  <Properties>',
+      '    <serverID><Type>SERVER_ID</Type></serverID>',
+      '    <direction><Type>VECTOR3</Type></direction>',
+      '    <payload><Type>PYTHON</Type></payload>',
+      '  </Properties>',
       '  <CellMethods>',
       '    <reborn>',
       '      <Arg>UINT8</Arg>',
@@ -174,6 +199,12 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     ].join('\n'));
     const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
+    // SERVER_ID:types.xml 别名 → UINT16(2026-10-29 用户口径:属性 inlay 解析到底)
+    put('scripts/entity_defs/types.xml', [
+      '<root>',
+      '  <SERVER_ID> UINT16 </SERVER_ID>',
+      '</root>'
+    ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'rpc-inlay', index: 0 }];
     workspace.findFiles = async (glob?: string) => (glob === '**/*.def' || glob === `**/${path.basename(defFile)}` ? [Uri.file(defFile)] : []);
     return basePy;
@@ -242,6 +273,22 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     expect(hints).toHaveLength(1);
     expect(hints[0].label).toBe(': int');
     expect(hints[0].position).toEqual({ line: 2, character: line.indexOf('7') + 1 });
+  });
+
+  it('属性面解析到底:SERVER_ID(types.xml 别名)→int,PYTHON→Any 不出(2026-10-29 用户定口径)', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const text = [
+      'class Avatar(kbe.KBEntity):',
+      '    def tick(self):',
+      '        self.serverID = 1',
+      '        self.payload = 2',
+      ''
+    ].join('\n');
+    const hints = await rpcHintsOf(provider, text, basePy);
+    // 别名经注册表解析到底层内建 UINT16→int(与 RPC 实参 inlay 同一链);
+    // PYTHON 最终型 Any(任意可 pickle 对象)按「能推才显」闸不出
+    expect(hints.map(hint => hint.label)).toEqual([': int']);
   });
 
   it('段不符/def 未声明/类型解析不出 → 一律不给提示', async () => {
