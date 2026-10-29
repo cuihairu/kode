@@ -12,6 +12,11 @@ import { getFileReadTotals, resetFileReadMetrics } from '../../../fileReadMetric
 // 无注解被调(级联全落空,触发受控后台构建但不等待——冷查询返回前不做
 // 全项目发现/读取)。证据行 KEY=VALUE 落 KODE_ACC_OUT
 // (缺省 docs/perf/2026-10-29-acc001-plain-hover-run.txt)。
+// IDE-REV-035:大「当前文档」内 hover 验收——原场景是小调用方引用大外部
+// 文件(acc001/acc002 行),本例在超 256KiB 的 .py 自身内部测首次与编辑后
+// 立即 hover,分别记录命中、耗时与窗内最大宿主阻塞(下界口径);命中内容
+// 含仅本文件存在的 BIGDOC_RETURN 标记=确实走了当前文档注解路径的结构性
+// 证明。与小调用方场景分别报告(rev035.* 行独立分列,不混读)。
 
 const WORKSPACE = process.env.KODE_FIELD_WORKSPACE;
 assert.ok(WORKSPACE, 'runTest.js --field must set KODE_FIELD_WORKSPACE');
@@ -166,5 +171,109 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
     fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
     fs.appendFileSync(OUT_FILE, evidence.join('\n') + '\n', 'utf8');
     console.log('[acc002] evidence:\n' + evidence.join('\n'));
+  });
+
+  it('IDE-REV-035:大当前文档内 hover(首次+编辑后立即),命中/耗时/最大宿主阻塞分列', async function () {
+    this.timeout(60_000);
+    const BIG_REL = 'scripts/common/training/plain_var_large_annotated.py';
+    const bigPath = path.join(WORKSPACE!, BIG_REL);
+    assert.ok(fs.existsSync(bigPath), 'plain_var_large_annotated.py 夹具缺失');
+    const bigSource = fs.readFileSync(bigPath, 'utf8');
+    assert.ok(fs.statSync(bigPath).size > 256 * 1024, '大注解文件夹具体量不足 worker 阈值');
+    // 当前文档专属标记恰一处(词边界锚定:BIGDOC_RETURN_X 之类前缀撞名不
+    // 计数——prove-red 曾证子串口径放过撞名夹具):命中内容含它=走的是当前
+    // 文档注解路径,不是别处(小调用方的 JSONDATA/磁盘索引里其他文件)的注解
+    assert.strictEqual(
+      bigSource.match(/\bBIGDOC_RETURN\b/g)?.length ?? 0, 1,
+      'BIGDOC_RETURN 标记应恰一处(词边界口径,当前文档专属,防夹具混入或撞名)'
+    );
+
+    const evidence: string[] = [];
+    // 查询窗:预热一拍再跑查询,查询后留 150ms 收尾样本(短查询的延迟事件
+    // 常在返回后同拍落账);窗内 max 记为下界口径——采样方法论的完整修正
+    // 属 IDE-REV-036,本处只如实记录不据此放行
+    const loopWindow = async <T>(run: () => Promise<T>):
+      Promise<{ value: T; maxDelayMs: number }> => {
+      const histogram = monitorEventLoopDelay({ resolution: 1 });
+      histogram.enable();
+      await new Promise(resolve => setTimeout(resolve, 30));
+      const value = await run();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      histogram.disable();
+      return { value, maxDelayMs: histogram.max / 1e6 };
+    };
+
+    // ①首次 hover(大文档冷开):IDE-REV-010 语义=首查只读已发布桶,新文档
+    // 无桶;命中与否如实记录(不硬断),只断言不等全项目
+    resetFileReadMetrics();
+    const firstWindow = await loopWindow(() =>
+      probeAt(probe, BIG_REL, 'big_value = get_big_annotated()', 'big_value'));
+    const first = firstWindow.value;
+    const readsAtFirst = getFileReadTotals();
+    evidence.push(
+      `rev035.bigdoc.first.elapsedMs=${first.elapsedMs}`,
+      `rev035.bigdoc.first.returnedHover=${first.returnedHover}`,
+      `rev035.bigdoc.first.preview=${first.preview.replace(/\n/g, ' ')}`,
+      `rev035.bigdoc.first.loopMaxMs=${firstWindow.maxDelayMs.toFixed(3)}(窗内下界)`,
+      `rev035.bigdoc.first.reads=${readsAtFirst.reads}`,
+      `rev035.bigdoc.first.readBytes=${readsAtFirst.bytes}`
+    );
+    assert.ok(first.elapsedMs < 2000, `首次大文档 hover 不应等全项目发现: ${first.elapsedMs}ms`);
+
+    // ②等当前文档注解发布排干(去抖+worker 解析>256KiB,有界)再查:发布
+    // 后可见(REV-010 语义的命中面)
+    let publishWaitMs = 0;
+    while ((probe.pendingWork().annotationUpdates ?? 0) > 0 && publishWaitMs < 10_000) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      publishWaitMs += 250;
+    }
+    assert.strictEqual(
+      probe.pendingWork().annotationUpdates ?? 0, 0,
+      '大文档注解发布未在有界窗内排干'
+    );
+    const afterPublishWindow = await loopWindow(() =>
+      probeAt(probe, BIG_REL, 'big_value = get_big_annotated()', 'big_value'));
+    const afterPublish = afterPublishWindow.value;
+    evidence.push(
+      `rev035.bigdoc.publishWaitMs=${publishWaitMs}`,
+      `rev035.bigdoc.afterPublish.elapsedMs=${afterPublish.elapsedMs}`,
+      `rev035.bigdoc.afterPublish.returnedHover=${afterPublish.returnedHover}`,
+      `rev035.bigdoc.afterPublish.preview=${afterPublish.preview.replace(/\n/g, ' ')}`,
+      `rev035.bigdoc.afterPublish.loopMaxMs=${afterPublishWindow.maxDelayMs.toFixed(3)}(窗内下界)`
+    );
+    assert.strictEqual(afterPublish.returnedHover, true, `发布后大文档内 hover 应命中: ${afterPublish.preview}`);
+    assert.ok(
+      /\bBIGDOC_RETURN\b/.test(afterPublish.preview),
+      `命中应含大文档专属注解标记(词边界,当前文档注解路径的结构性证明): ${afterPublish.preview}`
+    );
+
+    // ③编辑后立即 hover:大文档末尾追加一行+保存(版本 bump→去抖重发布),
+    // 不等发布立即查——编辑后立即面(REV-010 语义下读已发布桶,桶落后交给
+    // 受控异步更新,记录命中与否与耗时)
+    const bigDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(bigPath));
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(bigDocument.uri, new vscode.Position(bigDocument.lineCount, 0), '# rev035 edit\n');
+    assert.ok(await vscode.workspace.applyEdit(edit), '大文档 applyEdit 失败');
+    assert.ok(await bigDocument.save(), '大文档保存失败');
+    const editSavedAt = Date.now();
+    const postEditWindow = await loopWindow(() =>
+      probeAt(probe, BIG_REL, 'big_value = get_big_annotated()', 'big_value'));
+    const postEdit = postEditWindow.value;
+    evidence.push(
+      `rev035.bigdoc.postEdit.saveToReturnMs=${Date.now() - editSavedAt}(编辑保存完成→hover 返回)`,
+      `rev035.bigdoc.postEdit.elapsedMs=${postEdit.elapsedMs}`,
+      `rev035.bigdoc.postEdit.returnedHover=${postEdit.returnedHover}`,
+      `rev035.bigdoc.postEdit.preview=${postEdit.preview.replace(/\n/g, ' ')}`,
+      `rev035.bigdoc.postEdit.loopMaxMs=${postEditWindow.maxDelayMs.toFixed(3)}(窗内下界)`
+    );
+    assert.ok(postEdit.elapsedMs < 2000, `编辑后立即 hover 不应等全量重解析: ${postEdit.elapsedMs}ms`);
+
+    // 与原场景分别报告:acc001.*/acc002.*=小调用方引用大外部文件(引用处
+    // hover);rev035.*=大当前文档内(定义与使用同在超阈值文档),两侧同档
+    // 分列不混读
+    evidence.push('rev035.report.separation=acc001.*/acc002.*=small caller referencing big external file;rev035.*=inside the oversized current document');
+    fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
+    fs.appendFileSync(OUT_FILE, evidence.join('\n') + '\n', 'utf8');
+    console.log('[rev035] evidence:\n' + evidence.join('\n'));
   });
 });

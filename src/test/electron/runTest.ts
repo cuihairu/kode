@@ -158,6 +158,28 @@ async function main(): Promise<void> {
           `    def large_method_${index}(self):\n        return ${index}\n\n    # acc001 padding ${index}: oversized on purpose for worker dispatch`)
       ).join('\n')
     );
+    // IDE-REV-035 大当前文档注解夹具:超 256KiB 且带「仅本文件存在」的返回
+    // 注解 BIGDOC_RETURN——大文档内 hover 命中时 preview 含该标记即证明走的是
+    // 当前文档注解路径(小调用方的 JSONDATA 与其他文件均无此标记)。体量
+    // 与 acc001 大文件同构(padding 同款),与无注解的 plain_var_large.py
+    // 互不影响(acc001 的「无 ->」断言只针对原文件)。
+    fs.writeFileSync(
+      path.join(workspacePath, 'scripts/common/training/plain_var_large_annotated.py'),
+      [
+        '# IDE-REV-035 fixture: oversized file WITH a current-document return annotation.',
+        'def get_big_annotated() -> BIGDOC_RETURN:',
+        '    return None',
+        '',
+        '',
+        'big_value = get_big_annotated()',
+        '',
+        '',
+        'class PlainVarLargeAnnotatedMixin:'
+      ].concat(
+        Array.from({ length: 5200 }, (_, index) =>
+          `    def large_annotated_method_${index}(self):\n        return ${index}\n\n    # rev035 padding ${index}: oversized on purpose for worker dispatch`)
+      ).join('\n')
+    );
     fs.writeFileSync(accCallerPath, [
       '# IDE-ACC-001 plain-variable cold hover fixture.',
       'from training.plain_var_large import get_unannotated_data',
