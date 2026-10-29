@@ -17,6 +17,7 @@ async function main(): Promise<void> {
   const vsixMode = process.argv.includes('--vsix');
   const fieldMode = process.argv.includes('--field');
   const multirootMode = process.argv.includes('--multiroot');
+  const freshFileMode = process.argv.includes('--freshfile');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -266,6 +267,38 @@ async function main(): Promise<void> {
     process.env.KODE_ELECTRON_SUITE = 'multiroot';
     process.env.KODE_MULTIROOT_A = rootA;
     process.env.KODE_MULTIROOT_B = rootB;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (freshFileMode) {
+    // IDE-ACC-005 新增文件后的首次导航验收:会话启动时实现文件刻意缺席
+    // (cell/ 目录空),套件中途 fs 现场创建 FreshEntity.py——watcher 的
+    // onDidCreate 必须把它带入索引,首次 def→python F12 命中新文件,
+    // 全程不执行任何窗口重载命令。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-fresh-'));
+    workspacePath = temporaryRoot;
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'cell'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '	<FreshEntity hasCell="true"></FreshEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entity_defs', 'FreshEntity.def'), [
+      '<root>',
+      '    <CellMethods>',
+      '        <onFresh>',
+      '            <Arg>UINT8</Arg>',
+      '        </onFresh>',
+      '    </CellMethods>',
+      '</root>'
+    ].join('\n'));
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'freshfile';
+    process.env.KODE_FRESH_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   }
 
