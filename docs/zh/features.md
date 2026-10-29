@@ -25,7 +25,7 @@
 - **CodeLens：RPC 方法标记** —— def 声明的 Exposed 方法在 Python 实现行出镜 ——（证据：package.json#configuration `kbengine.codeLens.rpc`；todo.md:74；src/rpcCodeLens.ts）
 - **CodeLens：事件回调标记** —— Python 脚本中事件回调/订阅数标记 ——（证据：package.json#configuration `kbengine.codeLens.eventCallbacks`；todo.md:27；src/eventApi.ts）
 - **CodeLens：属性访问反向跳转** —— `self.<属性>` 访问行回链 def 声明，附类型/可见域/持久化信息 ——（证据：package.json#configuration `kbengine.codeLens.property`；todo.md:21；src/propertyCodeLens.ts）
-- **CodeLens：types.xml 落库镜链** —— 类型声明行「落库到表 X」镜链带引用反扫，超 10 处折叠为计数镜 ——（证据：package.json#configuration `kbengine.codeLens.typesXml`；todo.md:20；src/languageProviders.ts `TypesXmlCodeLensProvider`）
+- **CodeLens：types.xml 落库镜链** —— 类型声明行「落库到表 X」镜链带引用反扫，超 10 处折叠为计数镜；冷 usage 索引逐实体后台构建——每个实体边界检查取消，连续执行超 25ms 预算即让出宿主，被取消的构建弃置部分记录（下一次只读查询重新调度） ——（证据：package.json#configuration `kbengine.codeLens.typesXml`；todo.md:20、todo.md:591；src/languageProviders.ts `TypesXmlCodeLensProvider`、src/databaseSchema.ts `buildTypeStorageUsageIndexPhased`、tests/typeStorageColdBuildPhased.test.ts）
 - **Inlay hint：def 声明数据类型** —— `self.<属性>` 访问处内联显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int、VECTOR3→Tuple;PYTHON/未知落 Any 不显示,2026-10-29);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名——.def `<Arg>` 无名可考)——（证据：package.json#configuration `kbengine.inlayHints.typeData`；todo.md:25；src/typeInlayHints.ts）
 - **Inlay hint：def 形参类型(定义点)** —— entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 的未标注形参后内联 def 声明的 `<Arg>` 类型,声明 `<ReturnType>` 时闭括号后内联 `-> 类型` ——（证据：package.json#configuration `kbengine.inlayHints.defParams`；src/defParamInlayHints.ts）
 - **entities.xml 校验** —— 同名重复实体落 warning（引擎按已有模块静默合并）+ Utype 清单序号悬停 ——（证据：todo.md:33；src/entitiesXmlAnalysis.ts）

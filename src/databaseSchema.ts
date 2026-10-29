@@ -1241,9 +1241,17 @@ function scheduleTypeStorageUsageColdBuild(workspaceRoot: string): void {
   typeStorageColdBuildChain = typeStorageColdBuildChain
     .then(() => dispatch(async () => {
       try {
-        buildTypeStorageUsageIndex(workspaceRoot);
+        // IDE-REV-013:冷索引逐实体分阶段——不再单个 setImmediate 回调里同步
+        // 遍历全部实体;预算让出宿主+取消检查,中途取消弃部分状态重新可调度
+        const outcome = await buildTypeStorageUsageIndexPhased(workspaceRoot, {
+          shouldContinue: () => !typeStorageColdBuildCancelFlags.has(workspaceRoot)
+        });
+        if (outcome.stopped && typeStorageUsageState?.key === workspaceRoot) {
+          typeStorageUsageState = null; // 部分记录不可当聚合:弃置,下次查询重调度
+        }
       } finally {
         pendingTypeStorageColdBuildRoots.delete(workspaceRoot);
+        typeStorageColdBuildCancelFlags.delete(workspaceRoot);
       }
     }))
     .catch(() => {});
@@ -1252,6 +1260,106 @@ function scheduleTypeStorageUsageColdBuild(workspaceRoot: string): void {
       listener();
     }
   });
+}
+
+// IDE-REV-013:调度面取消标记(键=根);在飞冷构建在实体边界看到即止步
+const typeStorageColdBuildCancelFlags = new Set<string>();
+
+/** IDE-REV-013:取消某根在飞 type storage 冷构建;无在飞构建返回 false */
+export function cancelTypeStorageUsageColdBuild(workspaceRoot: string): boolean {
+  if (!pendingTypeStorageColdBuildRoots.has(workspaceRoot)) {
+    return false;
+  }
+  typeStorageColdBuildCancelFlags.add(workspaceRoot);
+  return true;
+}
+
+/** IDE-REV-013:分阶段冷构建的让路与取消注入面 */
+export interface TypeStorageUsageColdBuildOptions {
+  /** 每实体边界(及每次让路后)调用;返回 false 即止步不发布 */
+  shouldContinue?: () => boolean | Promise<boolean>;
+  /** 让出宿主(缺省 setImmediate) */
+  yieldControl?: () => Promise<void>;
+  /** 连续执行时间预算(毫秒,超即让路;缺省 25ms,与诊断时间片同口径) */
+  entityBudgetMs?: number;
+}
+
+/** IDE-REV-013:一次分阶段冷构建的结果量规(测试/观测面) */
+export interface TypeStorageUsageColdBuildOutcome {
+  /** 处理完成的实体数(止步前) */
+  entities: number;
+  /** 是否因取消止步(true=未发布聚合) */
+  stopped: boolean;
+  /** 让出宿主次数(真实让路面,非 beforeBuild 假闸门) */
+  yields: number;
+  /** 两次让路之间最长连续执行时长(毫秒)——最大连续阻塞量规 */
+  maxSliceMs: number;
+}
+
+let lastTypeStorageColdBuildGauge: TypeStorageUsageColdBuildOutcome | null = null;
+
+/** IDE-REV-013:读最近一次分阶段冷构建量规(测试面) */
+export function getTypeStorageColdBuildGaugeForTests(): TypeStorageUsageColdBuildOutcome | null {
+  return lastTypeStorageColdBuildGauge;
+}
+
+/**
+ * IDE-REV-013:type storage 冷索引分阶段构建——逐实体刷新 usage 记录,
+ * 实体边界检查取消;连续执行超过预算(缺省 25ms)让出宿主再续。止步
+ * (取消)不发布聚合,部分记录由调用方裁断弃置。同步面
+ * buildTypeStorageUsageIndex 保持查询/测试口径不变。
+ */
+export async function buildTypeStorageUsageIndexPhased(
+  workspaceRoot: string,
+  options: TypeStorageUsageColdBuildOptions = {}
+): Promise<TypeStorageUsageColdBuildOutcome> {
+  if (!typeStorageUsageState || typeStorageUsageState.key !== workspaceRoot) {
+    typeStorageUsageState = { key: workspaceRoot, entityRecords: new Map(), index: null };
+  }
+  const state = typeStorageUsageState;
+  const entries = getDefinitionEntries(workspaceRoot, 'entity').filter(entry => entry.exists);
+  const liveEntities = new Set(entries.map(entry => entry.name));
+  const shouldContinue = options.shouldContinue ?? (() => true);
+  const yieldControl = options.yieldControl ?? (() => new Promise<void>(resolve => { setImmediate(resolve); }));
+  const budgetMs = options.entityBudgetMs ?? 25;
+
+  let entities = 0;
+  let yields = 0;
+  let stopped = false;
+  let maxSliceMs = 0;
+  let sliceStart = Date.now();
+  for (const entry of entries) {
+    if (!(await shouldContinue())) {
+      stopped = true; // 实体边界止步:后续实体不再处理
+      break;
+    }
+    refreshTypeStorageUsageRecord(workspaceRoot, entry.name);
+    entities += 1;
+    const now = Date.now();
+    maxSliceMs = Math.max(maxSliceMs, now - sliceStart);
+    if (now - sliceStart >= budgetMs) {
+      yields += 1;
+      await yieldControl();
+      if (!(await shouldContinue())) {
+        stopped = true; // 让路后取消:续批前止步
+        break;
+      }
+      sliceStart = Date.now();
+    }
+  }
+
+  const gauge: TypeStorageUsageColdBuildOutcome = { entities, stopped, yields, maxSliceMs };
+  lastTypeStorageColdBuildGauge = gauge;
+  if (stopped) {
+    return gauge; // 不清亡灵/不聚合:部分状态由调用方弃置
+  }
+  for (const name of [...state.entityRecords.keys()]) {
+    if (!liveEntities.has(name)) { // 实体已不在定义清单:清掉亡灵记录
+      state.entityRecords.delete(name);
+    }
+  }
+  rebuildTypeStorageUsageAggregate(state);
+  return gauge;
 }
 
 export function findTypeStorageUsagesReadOnly(workspaceRoot: string, typeName: string): TypeStorageUsage[] {
