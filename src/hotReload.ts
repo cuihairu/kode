@@ -6,6 +6,7 @@ import {
 } from './hotReloadTargetState';
 import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
+import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
@@ -18,6 +19,8 @@ import { applyAcceptedReceipt } from './hotReloadReceipt';
 
 export const HOT_RELOAD_DEFAULT_GLOBS = ['**/*.py'] as const;
 export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
+/** IDE-REV-023 applied 核验窗口:到点仍未确认只注解超时,不冒充任何终态 */
+export const HOT_RELOAD_APPLIED_SETTLE_MS = 10_000;
 
 export interface HotReloadSettings {
   readonly enabled: boolean;
@@ -124,6 +127,8 @@ export interface SetupHotReloadOptions {
   readonly status?: HotReloadStatusController;
   /** IDE-REV-021 目标状态台账接线:注入即逐发送按 rootId × targetId 记账 */
   readonly targetState?: HotReloadTargetStateWiring;
+  /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
+  readonly now?: () => number;
 }
 
 /**
@@ -136,6 +141,8 @@ export interface HotReloadTargetStateWiring {
   readonly store: HotReloadTargetStateStore;
   resolveTargetId(actionName: string): string | null | Promise<string | null>;
   resolveRootId(file: string): string | null;
+  /** IDE-REV-023 所发内容读取口:applied 回执 digest 比对基准;缺省不核验 */
+  readFileContent?(file: string): Promise<string | null>;
 }
 
 /**
@@ -166,6 +173,7 @@ export function setupHotReload(
   options: SetupHotReloadOptions = {}
 ): void {
   const timers = options.timers ?? realHotReloadTimerDeps;
+  const now = options.now ?? Date.now;
   const status =
     options.status ??
     new HotReloadStatusController({
@@ -225,6 +233,62 @@ export function setupHotReload(
         wiring.store.record({ rootId, targetId }, file, outcome, detail !== undefined ? { detail } : {});
       }
     };
+    // IDE-REV-023:applied 核验接线。注解口只给仍未确认(sent-unverified)的
+    // 记录追加阻塞/超时原因——绝不动 accepted/applied/failed,recordedAt 原样
+    // 保留(注解不是新发送);同因去重防重复追注。
+    const noteStillUnverified = (
+      wiring: HotReloadTargetStateWiring,
+      key: { rootId: string; targetId: string },
+      file: string,
+      reason: string
+    ): void => {
+      const current = wiring.store.get(key, file);
+      if (!current || current.outcome !== 'sent-unverified' || (current.detail ?? '').includes(reason)) {
+        return;
+      }
+      wiring.store.record(key, file, 'sent-unverified', {
+        detail: `${current.detail} | ${reason}`,
+        now: current.recordedAt
+      });
+    };
+    // 核验窗口到点结算:仍未确认只注解超时(不冒充失败也不冒充 applied)
+    const scheduleAppliedSettle = (
+      wiring: HotReloadTargetStateWiring,
+      key: { rootId: string; targetId: string },
+      file: string,
+      sentAt: number
+    ): void => {
+      const handle = timers.set(() => {
+        settleHandles.delete(handle);
+        const verdict = settleAppliedStatus(wiring.store.get(key, file), {
+          deadlineMs: sentAt + HOT_RELOAD_APPLIED_SETTLE_MS,
+          now
+        });
+        if (verdict === 'unconfirmed-timeout') {
+          noteStillUnverified(
+            wiring,
+            key,
+            file,
+            `applied 核验超时(${Math.round(HOT_RELOAD_APPLIED_SETTLE_MS / 1000)}s 窗口):保持未确认`
+          );
+        }
+      }, HOT_RELOAD_APPLIED_SETTLE_MS);
+      settleHandles.add(handle);
+    };
+    // 所发内容读取(digest 比对基准):同批去重;读不到=null(如实无基准)
+    const contentReads = new Map<string, Promise<string | null>>();
+    const readSentContent = (file: string): Promise<string | null> => {
+      const reader = options.targetState?.readFileContent;
+      if (!reader) {
+        return Promise.resolve(null);
+      }
+      let pending = contentReads.get(file);
+      if (!pending) {
+        pending = Promise.resolve(reader(file)).catch(() => null);
+        contentReads.set(file, pending);
+      }
+      return pending;
+    };
     const start = (targetId: string | null): void => {
       // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
       // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
@@ -247,6 +311,26 @@ export function setupHotReload(
           const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
           if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
             applyAcceptedReceipt(wiring.store, key, file, response.body, {});
+            // IDE-REV-023:applied 双证核验(可信 digest+已验证回执)——以所发
+            // 内容为基准重算比对,对得上才升格 applied;无读取通道/读不到/回执
+            // 不合规/digest 不符一律不升格,阻塞原因如实注解进仍未确认的记录
+            if (!options.targetState?.readFileContent) {
+              noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准');
+            } else {
+              void readSentContent(file).then(content => {
+                if (content === null) {
+                  noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准');
+                  return;
+                }
+                const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
+                  sentContent: content
+                });
+                if (verdict.kind === 'not-applied') {
+                  noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`);
+                }
+              });
+            }
+            scheduleAppliedSettle(wiring, key, file, now());
           }
         }
       };
@@ -287,6 +371,8 @@ export function setupHotReload(
   }, timers);
 
   const watchers: vscode.FileSystemWatcher[] = [];
+  // IDE-REV-023 applied 核验窗口的结算定时器:随装配释放一并清掉
+  const settleHandles = new Set<unknown>();
   const disposeWatchers = (): void => {
     for (const watcher of watchers) {
       watcher.dispose();
@@ -329,6 +415,10 @@ export function setupHotReload(
     dispose: (): void => {
       subscription.dispose();
       trigger.dispose();
+      for (const handle of settleHandles) {
+        timers.clear(handle);
+      }
+      settleHandles.clear();
       disposeWatchers();
       status.dispose();
     }

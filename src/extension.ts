@@ -3271,6 +3271,15 @@ export function activate(context: vscode.ExtensionContext) {
           }
         }
         return null;
+      },
+      // IDE-REV-023:applied 回执 digest 基准——按所发文件现内容读,读不到=null
+      readFileContent: async file => {
+        try {
+          const data = await vscode.workspace.fs.readFile(vscode.Uri.file(file));
+          return Buffer.from(data).toString('utf8');
+        } catch {
+          return null;
+        }
       }
     }
   });
