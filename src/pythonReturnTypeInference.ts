@@ -436,6 +436,8 @@ interface AnnotationBuild {
   waiters: Set<{ token?: AnnotationCancellation }>;
   promise: Promise<PythonReturnAnnotationIndex>;
   pendingFileEvents: PendingFileEvent[];
+  /** 共享取消令牌(IDE-REV-029 量规的取消归属面):全体等待者取消才取消 */
+  sharedToken: AnnotationCancellation;
 }
 const annotationBuilds = new Map<string, AnnotationBuild>();
 
@@ -451,6 +453,31 @@ export function getPendingDocumentUpdateCount(): number {
  * 真正执行中的文件数,与去抖排队面分开可观测。 */
 export function getInflightDocumentUpdateCount(): number {
   return inflightDocumentUpdates.size;
+}
+
+/**
+ * 注解索引共享构建的在途量(IDE-REV-029,原 IDE-MET-008):冷构建与 TTL
+ * 过期重建都走共享构建(annotationBuilds)——running=执行中的共享构建数
+ * (按工作区计);waiting=搭这些共享构建的请求数(等待面);cancelled=
+ * 全体等待者都已取消、正在收尾的共享构建数(取消归属:共享构建只认全体
+ * 取消,单个请求取消不拖死构建)。发布(缓存落账)或取消收尾后归零。
+ * 与 REV-028 的逐文件文档更新(请求独占任务)分开计量,不混账。
+ */
+export interface AnnotationBuildWorkload {
+  running: number;
+  waiting: number;
+  cancelled: number;
+}
+export function getAnnotationBuildWorkload(): AnnotationBuildWorkload {
+  let waiting = 0;
+  let cancelled = 0;
+  for (const build of annotationBuilds.values()) {
+    waiting += build.waiters.size;
+    if (build.sharedToken.isCancellationRequested) {
+      cancelled += 1;
+    }
+  }
+  return { running: annotationBuilds.size, waiting, cancelled };
 }
 
 /** 测试用:清全部工作区缓存(换临时根/改文件后立即生效) */
@@ -672,7 +699,8 @@ async function getReturnAnnotationIndex(workspaceRoot: string, token?: Annotatio
     const entry: AnnotationBuild = {
       waiters,
       promise: Promise.resolve().then(() => buildReturnAnnotationIndexForRoot(workspaceRoot, sharedToken, entry)),
-      pendingFileEvents: []
+      pendingFileEvents: [],
+      sharedToken
     };
     annotationBuilds.set(workspaceRoot, entry);
     build = entry;

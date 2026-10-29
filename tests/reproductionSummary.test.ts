@@ -29,6 +29,7 @@ function makeInput(overrides: Partial<ReproductionSummaryInput> = {}): Reproduct
       diagnosticsQueued: 2,
       diagnosticsInFlight: 1,
       annotationUpdates: 3,
+      annotationBuilds: { running: 1, waiting: 2, cancelled: 1 },
       indexTasksQueued: 4,
       schemaColdBuilds: 0
     },
@@ -100,6 +101,7 @@ describe('复现配置摘要渲染(IDE-REL-007)', () => {
     expect(text).toContain('诊断排队=2');
     expect(text).toContain('诊断在途=1');
     expect(text).toContain('注解待更新=3');
+    expect(text).toContain('注解索引构建=运行1/等待2/已全取消1');
     expect(text).toContain('索引任务=4');
     expect(text).toContain('schema冷构建=0');
     expect(text).toContain('hover=2');

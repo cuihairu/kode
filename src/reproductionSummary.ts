@@ -42,6 +42,8 @@ export interface ReproductionSummaryInput {
     diagnosticsQueued: number;
     diagnosticsInFlight: number;
     annotationUpdates: number;
+    /** 注解索引共享构建在途量(IDE-REV-029):运行/等待/已全体取消收尾中 */
+    annotationBuilds: { running: number; waiting: number; cancelled: number };
     indexTasksQueued: number;
     schemaColdBuilds: number;
   };
@@ -102,6 +104,9 @@ export function renderReproductionSummary(input: ReproductionSummaryInput): stri
   lines.push(`  诊断排队=${input.queue.diagnosticsQueued}`
     + ` 诊断在途=${input.queue.diagnosticsInFlight}`
     + ` 注解待更新=${input.queue.annotationUpdates}`
+    + ` 注解索引构建=运行${input.queue.annotationBuilds.running}`
+      + `/等待${input.queue.annotationBuilds.waiting}`
+      + `/已全取消${input.queue.annotationBuilds.cancelled}`
     + ` 索引任务=${input.queue.indexTasksQueued}`
     + ` schema冷构建=${input.queue.schemaColdBuilds}`);
   const operationEntries = Object.entries(input.activeOperations);

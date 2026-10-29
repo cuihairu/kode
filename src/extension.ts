@@ -187,6 +187,7 @@ import {
 import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWorkspace';
 import {
   applySavedFileAnnotations,
+  getAnnotationBuildWorkload,
   getPendingDocumentUpdateCount,
   removeSavedFileAnnotations,
   renameSavedFileAnnotations,
@@ -4139,6 +4140,7 @@ export function activate(context: vscode.ExtensionContext) {
           diagnosticsQueued: getDiagnosticScheduler().pendingWorkload().queued,
           diagnosticsInFlight: getDiagnosticScheduler().pendingWorkload().inFlight,
           annotationUpdates: getPendingDocumentUpdateCount(),
+          annotationBuilds: getAnnotationBuildWorkload(),
           indexTasksQueued: indexScheduler.getStatus().queued,
           schemaColdBuilds: getPendingTypeStorageColdBuildCount()
         },
@@ -4283,6 +4285,7 @@ export function activate(context: vscode.ExtensionContext) {
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued,
       diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight,
       annotationUpdates: getPendingDocumentUpdateCount(),
+      annotationBuilds: getAnnotationBuildWorkload(),
       indexTasksQueued: indexScheduler.getStatus().queued,
       schemaColdBuilds: getPendingTypeStorageColdBuildCount()
     })
