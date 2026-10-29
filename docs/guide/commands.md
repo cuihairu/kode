@@ -155,6 +155,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: attach to a KBEngine component process that has debugging enabled — a component with a configured `debugpyPort` connects straight to that port (port mode); otherwise the mode chosen once decides: port mode (per-component default port table, otherwise 5678) or process attach (local process picker)
 - Behavior:
   - First-time without a configured port asks between 端口模式 / 进程附加模式 (remembered in workspace state; `kbengine.debug.resetAttachMode` clears it)
+  - Port mode probes the debugpy port over TCP first (IDE-PDBG-002): an open port attaches with zero extra dialogs; a closed port names the cause, and a missing/outdated debugpy on the local interpreter chain offers a one-click `pip install -U debugpy` or a manual guide — after installing, the port is re-probed (installing alone never opens it)
   - Processes matching the target component name are pinned to the top with ✓; the rest keep the system process list order
   - After selection, the debugpy attach configuration is assembled from that process's PID directly — no manual PID typing
   - When the process list cannot be obtained it reports the error plainly instead of spinning

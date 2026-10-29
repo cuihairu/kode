@@ -17,6 +17,8 @@ import { configurationOverrides } from './fake-vscode/workspaceState';
 // 失败通道。配置装载与 launch 生成已由 debugConfig.test.ts 覆盖。
 // IDE-PDBG-001:附加入口分派端口模式(debugpy connect 直连)与进程附加
 // 模式(既有选择器);未配置端口首次弹模式选择并记住(workspaceState)。
+// IDE-PDBG-002:端口模式 connect 前置探测——通则零弹窗直附加;不通分
+// 开说端口未开/未装 debugpy,未装给一键安装,装完/端口开了再附加。
 
 interface InputBoxOptions {
   prompt?: string;
@@ -64,16 +66,20 @@ const patchedKeys = [
   'showInputBox',
   'showInformationMessage',
   'showErrorMessage',
-  'showQuickPick'
+  'showQuickPick',
+  'showWarningMessage'
 ];
 
 const inputs: Array<string | undefined> = [];
 const inputOptions: InputBoxOptions[] = [];
 const infoQueue: Array<string | undefined> = [];
+const warnQueue: Array<string | undefined> = [];
 const pickQueue: Array<QuickPickLike | undefined> = [];
 /** 每次选择器弹出的条目面(模式选择/进程选择都在此对账) */
 const pickOffers: QuickPickLike[][] = [];
-const messages = { info: [] as string[], error: [] as string[] };
+/** 每次警告弹窗的 (文案, 动作清单) 面(IDE-PDBG-002 端口分诊在此对账) */
+const warnOffers: Array<{ message: string; actions: string[] }> = [];
+const messages = { info: [] as string[], error: [] as string[], warn: [] as string[] };
 
 interface DebugCall {
   folder: unknown;
@@ -86,14 +92,45 @@ const debugCalls: DebugCall[] = [];
 let debugResult = true;
 let debugThrows: Error | null = null;
 
+/** IDE-PDBG-002 附加依赖注入面:探测/预检/安装都可控 */
+interface ManagerExtraDeps {
+  probeTcpPort?: (
+    host: string,
+    port: number,
+    timeoutMs: number
+  ) => Promise<{ open: boolean; reason?: string; detail?: string }>;
+  checkDebugpy?: () => Promise<{
+    kind: string;
+    interpreterPath: string | null;
+    version: string | null;
+    message: string;
+  }>;
+  installDebugpy?: (interpreterPath: string) => Promise<{ ok: boolean; detail: string }>;
+}
+
 const makeManager = (
   processes: Array<{ pid: number; name: string }> = [],
-  workspaceState: unknown = seededMemento('process-attach')
+  workspaceState: unknown = seededMemento('process-attach'),
+  extraDeps: ManagerExtraDeps = {}
 ) =>
   new DebugConfigManager(
     { subscriptions: [], workspaceState } as unknown as vscode.ExtensionContext,
-    { listProcesses: () => processes }
+    {
+      listProcesses: () => processes,
+      // 端口探测缺省打「通」:既有端口模式用例都在端口可达面上(探测门是
+      // IDE-PDBG-002 的产品行为,专用 describe 注入「不通」逐因分诊)
+      probeTcpPort: extraDeps.probeTcpPort ?? (async () => ({ open: true })),
+      ...(extraDeps.checkDebugpy ? { checkDebugpy: extraDeps.checkDebugpy } : {}),
+      ...(extraDeps.installDebugpy ? { installDebugpy: extraDeps.installDebugpy } : {})
+    }
   );
+
+/** 本机 debugpy 预检替身(IDE-PDBG-002 分诊的注入面) */
+const preflightStatus = (
+  kind: string,
+  interpreterPath: string | null = '/usr/bin/python3',
+  version: string | null = '1.8.0'
+) => ({ kind, interpreterPath, version, message: `debugpy 预检:${kind}` });
 
 const setWorkspaceAt = (fsPath: string | null): void => {
   stubWorkspace.workspaceFolders = fsPath
@@ -121,6 +158,14 @@ beforeAll(() => {
   windowish.showErrorMessage = async (message: string) => {
     messages.error.push(message);
     return undefined;
+  };
+  windowish.showWarningMessage = async (
+    message: string,
+    ...actions: string[]
+  ): Promise<string | undefined> => {
+    messages.warn.push(message);
+    warnOffers.push({ message, actions });
+    return warnQueue.shift();
   };
   windowish.showQuickPick = async (items: QuickPickLike[]) => {
     pickOffers.push(items);
@@ -151,10 +196,13 @@ beforeEach(() => {
   inputs.length = 0;
   inputOptions.length = 0;
   infoQueue.length = 0;
+  warnQueue.length = 0;
   pickQueue.length = 0;
   messages.info.length = 0;
   messages.error.length = 0;
+  messages.warn.length = 0;
   pickOffers.length = 0;
+  warnOffers.length = 0;
   debugCalls.length = 0;
   debugResult = true;
   debugThrows = null;
@@ -990,5 +1038,162 @@ describe('IDE-PDBG-001 附加模式分派(端口模式 / 进程附加模式)', (
     pickQueue.push({ label: '$(plug) 端口模式', mode: 'debugpy-port' });
     expect(await manager.attachToComponent('baseapp')).toBe(true);
     expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5678 }); // 端口表 baseapp=5678
+  });
+});
+
+describe('IDE-PDBG-002 端口模式前置探测(端口未开 / 未装 debugpy 分开说)', () => {
+  const writeDebugJson = (components: Record<string, unknown>): void => {
+    memoryFileSystem.set('/tmp/kode-dbg/.kbengine/debug.json', JSON.stringify({ debug: { components } }));
+  };
+  const closedProbe = (reason: string, detail = reason) =>
+    async () => ({ open: false, reason, detail });
+
+  it('端口通:直接 connect 附加,零多余弹窗', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyHost: '127.0.0.1', debugpyPort: 5678 } });
+    const manager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: async () => ({ open: true })
+    });
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    expect(debugCalls).toHaveLength(1);
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5678 });
+    // 零多余弹窗:无警告、无错误、无选择器
+    expect(messages.warn).toHaveLength(0);
+    expect(messages.error).toHaveLength(0);
+    expect(pickOffers).toHaveLength(0);
+  });
+
+  it('端口未开 + 本机 debugpy 就绪:不附加,警告给端口原因与起监听指引', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ cellapp: { debugpyPort: 5679 } });
+    const manager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: closedProbe('refused', 'ECONNREFUSED'),
+      checkDebugpy: async () => preflightStatus('ok')
+    });
+    await flushAsync();
+
+    expect(await manager.attachToComponent('cellapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(0);
+    expect(messages.warn).toHaveLength(1);
+    // 原因可定位:端口未开(没人监听)与起监听三条路径分开说
+    expect(messages.warn[0]).toContain('debugpy 端口未开');
+    expect(messages.warn[0]).toContain('连接被拒');
+    expect(messages.warn[0]).toContain('debugpy.listen');
+    // 本机 debugpy 就绪时无安装动作
+    expect(warnOffers[0].actions).toHaveLength(0);
+  });
+
+  it('端口未开 + 本机未装 debugpy:警告给安装动作;一键安装成功且端口随后开→附加', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyPort: 5678 } });
+    // 探测序列:先不通(触发分诊),装完再探通了(引擎恰好起监听)
+    const probeResults = [{ open: false, reason: 'refused', detail: 'ECONNREFUSED' }, { open: true }];
+    let probeIndex = 0;
+    const installCalls: string[] = [];
+    const manager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: async () => probeResults[probeIndex++],
+      checkDebugpy: async () => preflightStatus('debugpy-missing'),
+      installDebugpy: async interpreterPath => {
+        installCalls.push(interpreterPath);
+        return { ok: true, detail: 'Successfully installed debugpy' };
+      }
+    });
+    await flushAsync();
+    warnQueue.push('一键安装 debugpy');
+
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    // 主因分开说:端口未开 + 未装 debugpy 两个事实都在
+    expect(messages.warn[0]).toContain('debugpy 端口未开');
+    expect(messages.warn[0]).toContain('没有 debugpy');
+    expect(warnOffers[0].actions).toContain('一键安装 debugpy');
+    // 安装动作真实执行在对的解释器上
+    expect(installCalls).toEqual(['/usr/bin/python3']);
+    // 装完 + 端口开 → 附加
+    expect(debugCalls).toHaveLength(1);
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5678 });
+  });
+
+  it('一键安装失败:如实报错(含原因),不附加不假成功', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyPort: 5678 } });
+    const manager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: closedProbe('refused', 'ECONNREFUSED'),
+      checkDebugpy: async () => preflightStatus('debugpy-missing'),
+      installDebugpy: async () => ({ ok: false, detail: 'pip 退出码 1: no network' })
+    });
+    await flushAsync();
+    warnQueue.push('一键安装 debugpy');
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(messages.error).toHaveLength(1);
+    expect(messages.error[0]).toContain('debugpy 安装失败');
+    expect(messages.error[0]).toContain('pip 退出码 1');
+    expect(debugCalls).toHaveLength(0);
+  });
+
+  it('装好但端口仍未开:如实说装包≠起监听,不附加', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyPort: 5678 } });
+    const manager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: closedProbe('refused', 'ECONNREFUSED'),
+      checkDebugpy: async () => preflightStatus('debugpy-missing'),
+      installDebugpy: async () => ({ ok: true, detail: 'Successfully installed debugpy' })
+    });
+    await flushAsync();
+    warnQueue.push('一键安装 debugpy');
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(0);
+    expect(messages.warn).toHaveLength(2); // 分诊警告 + 装完仍未开警告
+    expect(messages.warn[1]).toContain('仍未开');
+    expect(messages.warn[1]).toContain('debugpy.listen');
+  });
+
+  it('手动安装指引:给可复制命令与后续两步,不附加', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyPort: 5678 } });
+    const manager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: closedProbe('refused', 'ECONNREFUSED'),
+      checkDebugpy: async () => preflightStatus('debugpy-missing')
+    });
+    await flushAsync();
+    warnQueue.push('手动安装指引');
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(0);
+    expect(messages.info).toHaveLength(1);
+    expect(messages.info[0]).toContain('/usr/bin/python3 -m pip install -U debugpy');
+    expect(messages.info[0]).toContain('kbengine.python.debugpySync');
+  });
+
+  it('debugpy 过老也归因缺包给安装动作;未找到解释器只给设置指引', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyPort: 5678 }, cellapp: { debugpyPort: 5679 } });
+    const outdatedManager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: closedProbe('timeout', 'connect timeout after 1500ms'),
+      checkDebugpy: async () => preflightStatus('debugpy-outdated', '/usr/bin/python3', '1.6.0')
+    });
+    await flushAsync();
+    expect(await outdatedManager.attachToComponent('baseapp')).toBe(false);
+    expect(messages.warn[0]).toContain('过老');
+    expect(warnOffers[0].actions).toContain('一键安装 debugpy');
+
+    const noInterpreterManager = makeManager([], new MemoryMemento(), {
+      probeTcpPort: closedProbe('timeout', 'connect timeout after 1500ms'),
+      checkDebugpy: async () => preflightStatus('interpreter-missing', null, null)
+    });
+    await flushAsync();
+    expect(await noInterpreterManager.attachToComponent('cellapp')).toBe(false);
+    expect(messages.warn[1]).toContain('kbengine.python.interpreterPath');
+    expect(warnOffers[1].actions).toHaveLength(0); // 解释器都没有:无可安装面
+    expect(debugCalls).toHaveLength(0);
   });
 });

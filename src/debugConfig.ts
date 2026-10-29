@@ -7,6 +7,22 @@ import {
   type AttachGuardOutcome
 } from './debugAttachGuard';
 import { parseDebugConfigText } from './debugConfigBootstrap';
+import {
+  DEBUGPY_PORT_PROBE_TIMEOUT_MS,
+  buildAfterInstallStillClosedMessage,
+  buildManualInstallGuide,
+  buildPortClosedGuidance,
+  defaultDebugpyInstallRunner,
+  defaultTcpConnect,
+  type DebugpyInstallRunner,
+  type TcpConnectFn,
+  type TcpProbeResult
+} from './debugpyPortProbe';
+import {
+  checkInterpreterDebugpy,
+  debugpyPreflightDeps,
+  type DebugpyPreflightStatus
+} from './debugpyPreflight';
 
 export interface ComponentDebugConfig {
   telnetHost?: string;
@@ -192,7 +208,15 @@ export class DebugConfigManager {
 
   constructor(
     private context: vscode.ExtensionContext,
-    private readonly deps: { listProcesses?: () => ProcessEntry[] } = {}
+    private readonly deps: {
+      listProcesses?: () => ProcessEntry[];
+      /** IDE-PDBG-002:端口探测注入面(缺省真实 net.connect) */
+      probeTcpPort?: TcpConnectFn;
+      /** IDE-PDBG-002:本机 debugpy 预检注入面(缺省既有 debugpyPreflight 链) */
+      checkDebugpy?: () => Promise<DebugpyPreflightStatus>;
+      /** IDE-PDBG-002:一键安装注入面(缺省 `<解释器> -m pip install -U debugpy`) */
+      installDebugpy?: DebugpyInstallRunner;
+    } = {}
   ) {
     this.config = this.getDefaultConfig();
     this.loadConfig();
@@ -635,18 +659,90 @@ export class DebugConfigManager {
    * 端口模式附加(IDE-PDBG-001):connect 到 debugpyHost:debugpyPort,不经
    * 进程选择器;未配置端口时用组件默认端口表(autoDebugpy 分配表),表外
    * 组件落 debugpy 默认 5678。host 缺省 127.0.0.1。
+   * IDE-PDBG-002:connect 前先探端口——通则直接附加零多余弹窗;不通分开
+   * 说原因(端口未开 / 未装 debugpy),未装给一键安装,装完/端口开了再附加。
    */
   async attachViaDebugpyPort(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
     const port = config.debugpyPort ?? debugpyPortFor(componentName) ?? DEFAULT_DEBUGPY_PORT;
     const host = config.debugpyHost || '127.0.0.1';
+    const probe = await (this.deps.probeTcpPort ?? defaultTcpConnect)(
+      host,
+      port,
+      DEBUGPY_PORT_PROBE_TIMEOUT_MS
+    );
+    if (!probe.open) {
+      return this.handlePortClosed(componentName, host, port, probe);
+    }
+    return this.attachPortConfig(componentName, host, port, config.pathMappings);
+  }
+
+  /** 端口不通的分诊(IDE-PDBG-002):本机 debugpy 预检 → 主因口径 → 安装/指引 */
+  private async handlePortClosed(
+    componentName: string,
+    host: string,
+    port: number,
+    probe: TcpProbeResult
+  ): Promise<boolean> {
+    const preflight = await (this.deps.checkDebugpy ?? this.defaultCheckDebugpy)();
+    const guidance = buildPortClosedGuidance(probe, preflight);
+    if (guidance.installAction === undefined || preflight.interpreterPath === null) {
+      vscode.window.showWarningMessage(guidance.message);
+      return false;
+    }
+    const pick = await vscode.window.showWarningMessage(
+      guidance.message,
+      guidance.installAction,
+      '手动安装指引'
+    );
+    if (pick === guidance.installAction) {
+      const install = await (this.deps.installDebugpy ?? defaultDebugpyInstallRunner)(
+        preflight.interpreterPath
+      );
+      if (!install.ok) {
+        // 安装失败如实报错,不假成功不重试轰炸
+        vscode.window.showErrorMessage(`debugpy 安装失败: ${install.detail}`);
+        return false;
+      }
+      const reprobe = await (this.deps.probeTcpPort ?? defaultTcpConnect)(
+        host,
+        port,
+        DEBUGPY_PORT_PROBE_TIMEOUT_MS
+      );
+      if (!reprobe.open) {
+        vscode.window.showWarningMessage(buildAfterInstallStillClosedMessage(host, port));
+        return false;
+      }
+      return this.attachPortConfig(componentName, host, port, this.getComponentConfig(componentName).pathMappings);
+    }
+    if (pick === '手动安装指引') {
+      vscode.window.showInformationMessage(
+        buildManualInstallGuide(preflight.interpreterPath, port)
+      );
+    }
+    return false;
+  }
+
+  /** 本机 debugpy 预检默认面:PRJ-004 解释器解析链 + 真实 spawn 探版本 */
+  private async defaultCheckDebugpy(): Promise<DebugpyPreflightStatus> {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return checkInterpreterDebugpy(debugpyPreflightDeps(workspaceRoot));
+  }
+
+  /** 端口模式 connect 附加本体(探测通过后调用) */
+  private async attachPortConfig(
+    componentName: string,
+    host: string,
+    port: number,
+    pathMappings: ComponentDebugConfig['pathMappings']
+  ): Promise<boolean> {
     const attachConfig: vscode.DebugConfiguration = {
       name: `KBEngine: Python attach to ${componentName} (debugpy ${port})`,
       type: this.getDebuggerType(),
       request: 'attach',
       connect: { host, port },
       justMyCode: false,
-      pathMappings: config.pathMappings
+      pathMappings
     };
     try {
       const outcome = await this.startAttachGuarded(`${componentName} ${host}:${port}`, attachConfig);
