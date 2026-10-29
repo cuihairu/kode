@@ -189,6 +189,43 @@
   - dump 失败原因进输出通道；权限类失败拼 ptrace 指引——Linux 需 `kernel.yama.ptrace_scope=0`（或 sudo/能力位），容器内需 `--cap-add=SYS_PTRACE`，Windows 需管理员或同用户会话
 - 前提：目标进程是 py-spy 可见的 Python 进程；ptrace 权限按上面口径
 
+### `kbengine.remoteServers.select`
+
+- 标题：`Select Remote Server`
+- 作用：选定 debug 与 py-spy 的执行服务器（IDE-PDBG-004）——点 Remote Servers 视图节点，或从面板打开选择器
+- 入口：Remote Servers 视图节点点击，或命令面板
+- 行为：
+  - 视图列出 `~/.ssh/config` 主机（逐 Host 块收 HostName/User/Port/ProxyJump；通配与 negated 别名不列；`Include` 不展开——被 include 文件里的主机不出现）加手动添加项，「本地(直接执行)」恒第一且默认选中
+  - 选择落工作区状态，分派按 组件 `sshHost` > `debug.defaultSshHost` > 视图选中 > 本地 的优先级生效
+  - 选远程主机后，端口模式附加走 `ssh -N -L` 隧道、py-spy 经 `ssh <host> -- …` 远端执行；选本地则都回到本机直接执行
+  - 无效 id 或选择器取消：不动现有选择
+
+### `kbengine.remoteServers.add`
+
+- 标题：`Add Remote Server`
+- 作用：往 Remote Servers 视图手动添加远程主机（IDE-PDBG-004）——主机没写进 `~/.ssh/config` 时用
+- 入口：Remote Servers 视图标题栏 `+`，或命令面板
+- 行为：
+  - 输入主机名（ssh 别名或 `user@host` 形）；ProxyJump 等参数请写 `~/.ssh/config`——手动项按裸主机名连
+  - 重复项自动去重（与 config 同名的不会列两遍）；删除手动项绝不碰 config 文件
+
+### `kbengine.remoteServers.remove`
+
+- 标题：`Remove Remote Server`
+- 作用：从 Remote Servers 视图移除手动添加的主机（IDE-PDBG-004）
+- 入口：手动项节点上的 inline 垃圾桶图标（右键亦可），或命令面板
+- 行为：
+  - 只作用于手动项——来自 `~/.ssh/config` 的主机没有移除入口（改 config 文件）
+  - 删的是当前选中项时选择回落本地，分派不悬空指向不存在的主机
+
+### `kbengine.remoteServers.refresh`
+
+- 标题：`Refresh Remote Servers`
+- 作用：重读 `~/.ssh/config` 重建 Remote Servers 视图（IDE-PDBG-004）
+- 入口：Remote Servers 视图标题栏刷新图标，或命令面板
+- 行为：
+  - 报告从 `~/.ssh/config` 读到几台主机；文件不存在也照直说（视图只剩本地与手动项）
+
 ## 配置相关
 
 ### `kbengine.config.showFinal`

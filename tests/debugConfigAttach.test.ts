@@ -106,6 +106,10 @@ interface ManagerExtraDeps {
     message: string;
   }>;
   installDebugpy?: (interpreterPath: string) => Promise<{ ok: boolean; detail: string }>;
+  /** IDE-PDBG-004:连接分派面(ssh 主机表/视图选中态/隧道进程) */
+  listSshHosts?: () => Array<{ host: string; hostname?: string; user?: string; port?: number; proxyJump?: string }>;
+  selectedServer?: () => string;
+  spawnTunnel?: (args: string[]) => { onExit(cb: () => void): void; kill(): void };
 }
 
 const makeManager = (
@@ -121,7 +125,10 @@ const makeManager = (
       // IDE-PDBG-002 的产品行为,专用 describe 注入「不通」逐因分诊)
       probeTcpPort: extraDeps.probeTcpPort ?? (async () => ({ open: true })),
       ...(extraDeps.checkDebugpy ? { checkDebugpy: extraDeps.checkDebugpy } : {}),
-      ...(extraDeps.installDebugpy ? { installDebugpy: extraDeps.installDebugpy } : {})
+      ...(extraDeps.installDebugpy ? { installDebugpy: extraDeps.installDebugpy } : {}),
+      ...(extraDeps.listSshHosts ? { listSshHosts: extraDeps.listSshHosts } : {}),
+      ...(extraDeps.selectedServer ? { selectedServer: extraDeps.selectedServer } : {}),
+      ...(extraDeps.spawnTunnel ? { spawnTunnel: extraDeps.spawnTunnel } : {})
     }
   );
 
@@ -1195,5 +1202,108 @@ describe('IDE-PDBG-002 端口模式前置探测(端口未开 / 未装 debugpy �
     expect(messages.warn[1]).toContain('kbengine.python.interpreterPath');
     expect(warnOffers[1].actions).toHaveLength(0); // 解释器都没有:无可安装面
     expect(debugCalls).toHaveLength(0);
+  });
+});
+
+describe('IDE-PDBG-004 远程分派(ssh 隧道附加 / 连接声明优先级)', () => {
+  const writeDebugJson = (debug: Record<string, unknown>): void => {
+    memoryFileSystem.set('/tmp/kode-dbg/.kbengine/debug.json', JSON.stringify({ debug }));
+  };
+  /** 隧道进程替身:记 args,kill 记账,退出回调可手动触发 */
+  const makeFakeTunnel = () => {
+    const calls: { args: string[]; killed: boolean; exitCallbacks: Array<() => void> } = {
+      args: [],
+      killed: false,
+      exitCallbacks: []
+    };
+    return {
+      calls,
+      spawnTunnel: (args: string[]) => {
+        calls.args = args;
+        return {
+          onExit: (cb: () => void) => {
+            calls.exitCallbacks.push(cb);
+          },
+          kill: () => {
+            calls.killed = true;
+          }
+        };
+      }
+    };
+  };
+  const sshHosts = [
+    { host: 'bastion', hostname: '10.0.0.1', user: 'dev', port: 2222, proxyJump: 'jump1' },
+    { host: 'gamesrv', hostname: '10.2.0.5' }
+  ];
+
+  it('组件声明远程:起 -L 隧道 connect 附加,附加结束拆隧道', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'gamesrv' } } });
+    const fake = makeFakeTunnel();
+    const manager = makeManager([], new MemoryMemento(), {
+      listSshHosts: () => sshHosts,
+      spawnTunnel: fake.spawnTunnel,
+      probeTcpPort: async () => ({ open: true })
+    });
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    // 附加是 connect 到本地隧道口(127.0.0.1),不是直连远端
+    expect(debugCalls).toHaveLength(1);
+    expect(debugCalls[0].config.connect.host).toBe('127.0.0.1');
+    // 隧道形状:-N -L 本地口:127.0.0.1:5678(本地口=附加实际用的口)
+    const localPort = debugCalls[0].config.connect.port;
+    expect(fake.calls.args).toContain('-N');
+    expect(fake.calls.args).toContain(`${localPort}:127.0.0.1:5678`);
+    // 附加结束(成功也算)拆隧道,不留后台 ssh
+    expect(fake.calls.killed).toBe(true);
+    expect(messages.error).toHaveLength(0);
+  });
+
+  it('隧道起不来(跳板/主机不可达):如实报错不附加', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'bastion' } } });
+    const fake = makeFakeTunnel();
+    const manager = makeManager([], new MemoryMemento(), {
+      listSshHosts: () => sshHosts,
+      spawnTunnel: args => {
+        const handle = fake.spawnTunnel(args);
+        // 起来之前就退出(连不上跳板的形状)
+        queueMicrotask(() => fake.calls.exitCallbacks.forEach(cb => cb()));
+        return handle;
+      },
+      probeTcpPort: async () => ({ open: false, reason: 'refused' })
+    });
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(0); // 不朝空隧道附加
+    expect(messages.error).toHaveLength(1);
+    expect(messages.error[0]).toContain('远程附加失败');
+    expect(messages.error[0]).toContain('BatchMode'); // 定位到免密登录
+    expect(fake.calls.killed).toBe(true);
+  });
+
+  it('连接声明优先级:组件级 > debug.json 全局 > 视图选中;local 归本地;未知名按裸主机连', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({
+      defaultSshHost: 'gamesrv',
+      components: { cellapp: { sshHost: 'bastion' }, baseapp: {}, loginapp: { sshHost: 'local' }, dbmgr: { sshHost: 'ghost' } }
+    });
+    const manager = makeManager([], new MemoryMemento(), {
+      listSshHosts: () => sshHosts,
+      selectedServer: () => 'gamesrv'
+    });
+    await flushAsync();
+
+    expect(manager.getConnectionFor('cellapp')).toEqual({ ssh: sshHosts[0] }); // 组件级赢
+    expect(manager.getConnectionFor('baseapp')).toEqual({ ssh: sshHosts[1] }); // 全局兜底
+    expect(manager.getConnectionFor('interfaces')).toEqual({ ssh: sshHosts[1] }); // 视图选中最后
+    expect(manager.getConnectionFor('logger')).toEqual({ ssh: sshHosts[1] });
+    expect(manager.getConnectionFor('loginapp')).toBe('local'); // local 显式归本地
+    // 组件声明的别名不在 config:按裸主机名连(HostName 缺省 = 别名,ssh 语义)
+    expect(manager.getConnectionFor('dbmgr')).toEqual({ ssh: { host: 'ghost' } });
   });
 });

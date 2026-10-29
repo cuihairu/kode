@@ -188,6 +188,43 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - A dump failure shows the cause in the output channel; permission failures append the ptrace guidance — Linux needs `kernel.yama.ptrace_scope=0` (or sudo/cap), containers need `--cap-add=SYS_PTRACE`, Windows needs an elevated or same-user session
 - Prerequisite: the target process must be a Python process visible to py-spy; ptrace permission per the guidance above
 
+### `kbengine.remoteServers.select`
+
+- Title: `Select Remote Server`
+- Purpose: pick the server that debug and py-spy dispatch through (IDE-PDBG-004) — click a node in the Remote Servers view, or open the picker from the palette
+- Entry: Remote Servers view node click, or the command palette
+- Behavior:
+  - The view lists hosts from `~/.ssh/config` (per-Host-block HostName/User/Port/ProxyJump; wildcard and negated aliases hidden; `Include` not expanded — hosts in included files don't show) plus manually added hosts, with `本地(直接执行)` always first and selected by default
+  - The choice lands in workspace state and applies to dispatch with the precedence component `sshHost` > `debug.defaultSshHost` > this selection > local
+  - Selecting a remote host makes port-mode attach go over an `ssh -N -L` tunnel and py-spy run over `ssh <host> -- …`; selecting 本地 switches both back to direct local execution
+  - An invalid id or a cancelled picker leaves the choice untouched
+
+### `kbengine.remoteServers.add`
+
+- Title: `Add Remote Server`
+- Purpose: manually add a remote host to the Remote Servers view (IDE-PDBG-004) — for hosts not written in `~/.ssh/config`
+- Entry: Remote Servers view title bar `+`, or the command palette
+- Behavior:
+  - Asks for a host name (ssh alias or `user@host` form); ProxyJump and other parameters belong in `~/.ssh/config` — a manual entry connects by its bare name
+  - Duplicates are collapsed (a name already listed from the config is not shown twice); removing a manual entry never touches the config file
+
+### `kbengine.remoteServers.remove`
+
+- Title: `Remove Remote Server`
+- Purpose: remove a manually added host from the Remote Servers view (IDE-PDBG-004)
+- Entry: inline trash icon on a manual node (right-click also works), or the command palette
+- Behavior:
+  - Applies to manual entries only — hosts coming from `~/.ssh/config` have no remove affordance (edit the config file instead)
+  - Removing the currently selected entry falls the selection back to 本地, so dispatch never points at a missing host
+
+### `kbengine.remoteServers.refresh`
+
+- Title: `Refresh Remote Servers`
+- Purpose: re-read `~/.ssh/config` and rebuild the Remote Servers view (IDE-PDBG-004)
+- Entry: Remote Servers view title bar refresh icon, or the command palette
+- Behavior:
+  - Reports how many hosts came from `~/.ssh/config`, and says plainly when the file doesn't exist (the view then holds 本地 plus manual entries only)
+
 ## Configuration
 
 ### `kbengine.config.showFinal`

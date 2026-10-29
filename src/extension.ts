@@ -37,6 +37,7 @@ import {
 } from './documentStore';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey, DEFAULT_TARGET_ID } from './serverManager';
 import {
@@ -105,6 +106,14 @@ import {
   runPyspyDump
 } from './pyspyDump';
 import { resolveProfileInterpreter } from './profileInterpreter';
+import { buildSshExecArgs, readSshHostsFromHome, type SshHostsSnapshot } from './remoteConnection';
+import {
+  LOCAL_SERVER_ID,
+  REMOTE_SERVERS_MANUAL_KEY,
+  REMOTE_SERVERS_SELECTED_KEY,
+  RemoteServerTreeProvider,
+  buildRemoteServerNodes
+} from './remoteServerTree';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
@@ -1716,6 +1725,107 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(telnetTreeRegistration);
 
+  // IDE-PDBG-004 远程服务器管理视图:~/.ssh/config 主机 + 手动项,「本地」
+  // 恒首位默认选中;选中态供 debug/py-spy 分派(debug.json 组件级声明仍最
+  // 优先)。快照先建空,后台读 config 后刷新。
+  let sshHostsSnapshot: SshHostsSnapshot | null = null;
+  const readManualHosts = (): string[] =>
+    context.workspaceState.get<string[]>(REMOTE_SERVERS_MANUAL_KEY) ?? [];
+  const selectedServerId = (): string =>
+    context.workspaceState.get<string>(REMOTE_SERVERS_SELECTED_KEY) ?? LOCAL_SERVER_ID;
+  const remoteServerTreeProvider = new RemoteServerTreeProvider({
+    getSnapshot: () => sshHostsSnapshot,
+    getManualHosts: readManualHosts,
+    getSelected: selectedServerId
+  });
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider('kbengine.remoteServers', remoteServerTreeProvider)
+  );
+  const loadSshHosts = async (): Promise<void> => {
+    sshHostsSnapshot = await readSshHostsFromHome(
+      configPath => fs.promises.readFile(configPath, 'utf8'),
+      os.homedir()
+    );
+    remoteServerTreeProvider.refresh();
+  };
+  void loadSshHosts();
+  const selectRemoteServerCommand = vscode.commands.registerCommand(
+    'kbengine.remoteServers.select',
+    async (hostId?: string) => {
+      const candidates = buildRemoteServerNodes(
+        sshHostsSnapshot ?? { hosts: [] },
+        readManualHosts(),
+        selectedServerId()
+      );
+      const target = typeof hostId === 'string'
+        ? candidates.find(node => node.id === hostId)?.id
+        : (await vscode.window.showQuickPick(
+            candidates.map(node => ({
+              label: node.id === LOCAL_SERVER_ID ? '本地(直接执行)' : node.id,
+              description: node.selected ? '当前' : '',
+              id: node.id
+            })),
+            { placeHolder: '选择 debug 与 py-spy 的执行服务器(debug.json 组件级声明优先)' }
+          ))?.id;
+      if (target === undefined) {
+        return; // 取消或无效 id:不动选择
+      }
+      await context.workspaceState.update(REMOTE_SERVERS_SELECTED_KEY, target);
+      remoteServerTreeProvider.refresh();
+      vscode.window.showInformationMessage(
+        target === LOCAL_SERVER_ID
+          ? '已切回本地:debug 与 py-spy 在本机执行'
+          : `已选择 ${target}:debug 与 py-spy 经 ssh 执行(端口模式走 -L 隧道)`
+      );
+    }
+  );
+  context.subscriptions.push(selectRemoteServerCommand);
+  const addRemoteServerCommand = vscode.commands.registerCommand(
+    'kbengine.remoteServers.add',
+    async () => {
+      const host = await vscode.window.showInputBox({
+        prompt: '手动添加远程主机(ssh 别名或 user@host;ProxyJump 等参数请写 ~/.ssh/config)',
+        validateInput: value => value.trim().length > 0 ? null : '主机名不能为空'
+      });
+      if (!host) {
+        return;
+      }
+      const manual = [...new Set([...readManualHosts(), host.trim()])];
+      await context.workspaceState.update(REMOTE_SERVERS_MANUAL_KEY, manual);
+      remoteServerTreeProvider.refresh();
+      vscode.window.showInformationMessage(`已添加远程主机 ${host.trim()}`);
+    }
+  );
+  context.subscriptions.push(addRemoteServerCommand);
+  const removeRemoteServerCommand = vscode.commands.registerCommand(
+    'kbengine.remoteServers.remove',
+    async (node?: { id?: string }) => {
+      const hostId = typeof node?.id === 'string' ? node.id : undefined;
+      if (!hostId) {
+        return;
+      }
+      const manual = readManualHosts().filter(item => item !== hostId);
+      await context.workspaceState.update(REMOTE_SERVERS_MANUAL_KEY, manual);
+      // 删的是当前选中项 → 回落本地(不悬空指向不存在的选择)
+      if (selectedServerId() === hostId) {
+        await context.workspaceState.update(REMOTE_SERVERS_SELECTED_KEY, LOCAL_SERVER_ID);
+      }
+      remoteServerTreeProvider.refresh();
+      vscode.window.showInformationMessage(`已移除手动主机 ${hostId}`);
+    }
+  );
+  context.subscriptions.push(removeRemoteServerCommand);
+  const refreshRemoteServersCommand = vscode.commands.registerCommand(
+    'kbengine.remoteServers.refresh',
+    async () => {
+      await loadSshHosts();
+      vscode.window.showInformationMessage(
+        `远程主机已刷新:${sshHostsSnapshot?.hosts.length ?? 0} 台来自 ~/.ssh/config${sshHostsSnapshot?.configExists === false ? '(文件不存在)' : ''}`
+      );
+    }
+  );
+  context.subscriptions.push(refreshRemoteServersCommand);
+
   // 服务器状态变化时刷新视图
   // 调试启动即 attach(2026-10-27 ③b):kbengine.debug.autoDebugpy 开时,
   // 组件进 Running 即联动注入(injectDebugpyAfterStart 自带开关闸/等 telnet
@@ -2489,7 +2599,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(scanRawLogErrorsCommand);
 
   // 初始化调试配置管理器
-  const debugConfigManager = new DebugConfigManager(context);
+  // IDE-PDBG-004:连接分派的 ssh 面(主机表 + 视图选中态)接进调试管理器
+  const debugConfigManager = new DebugConfigManager(context, {
+    listSshHosts: () => sshHostsSnapshot?.hosts ?? [],
+    selectedServer: selectedServerId
+  });
 
   // 注册调试相关命令(DBG-001:运行中的命名实例逐条透传,launch.json 里
   // 各得一条指向自己分配口的 attach 条目)
@@ -2712,24 +2826,46 @@ export function activate(context: vscode.ExtensionContext) {
       if (!component) {
         return; // 树节点无效且选择器取消:不空转
       }
-      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const ready = await ensurePyspyReady(defaultSpawnRunner, {
-        warn: (message, ...actions) => vscode.window.showWarningMessage(message, ...actions),
-        info: message => vscode.window.showInformationMessage(message),
-        error: message => vscode.window.showErrorMessage(message)
-      }, () => resolveProfileInterpreter(workspaceRoot));
+      // IDE-PDBG-004:组件连接声明为远程 → py-spy 探测/安装/dump 全走
+      // ssh 前缀(远端 python3 装包;远程进程列表对齐见后续,PID 手输)
+      const connection = debugConfigManager.getConnectionFor(component.name);
+      const isRemote = connection !== 'local';
+      const runner = isRemote
+        ? (command: string, args: string[], timeoutMs: number) =>
+            defaultSpawnRunner('ssh', buildSshExecArgs(connection.ssh, [command, ...args]), timeoutMs)
+        : defaultSpawnRunner;
+      const hostPrefix = isRemote ? `[${connection.ssh.host}] ` : '';
+      const uiFace = {
+        warn: (message: string, ...actions: string[]) =>
+          vscode.window.showWarningMessage(`${hostPrefix}${message}`, ...actions),
+        info: (message: string) => vscode.window.showInformationMessage(`${hostPrefix}${message}`),
+        error: (message: string) => vscode.window.showErrorMessage(`${hostPrefix}${message}`)
+      };
+      const ready = await ensurePyspyReady(runner, uiFace, isRemote
+        ? () => ({ interpreterPath: 'python3', interpreterSource: 'path' })
+        : () => resolveProfileInterpreter(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath));
       if (!ready) {
         return; // 未装且未装成/用户取消:不往下跑
       }
-      const pid = await debugConfigManager.pickProcessId(component.name);
-      if (pid === undefined) {
-        return; // 进程选择器取消/空清单:pickProcessId 已自行说明
+      let pid: number | undefined;
+      if (isRemote) {
+        // IDE-PDBG-005 前的诚实口径:远程进程列表未对齐,PID 手输
+        const pidText = await vscode.window.showInputBox({
+          prompt: `${connection.ssh.host} 上目标 ${component.name} 进程的 PID(远端 ps 查得)`,
+          validateInput: value => /^\d+$/.test(value.trim()) ? null : 'PID 须为正整数'
+        });
+        pid = pidText ? Number(pidText) : undefined;
+      } else {
+        pid = await debugConfigManager.pickProcessId(component.name);
+      }
+      if (pid === undefined || !Number.isFinite(pid) || pid <= 0) {
+        return; // 取消/空清单:pickProcessId 或输入框已自行说明
       }
       pyspyChannel.appendLine(
-        `\n===== py-spy dump ${component.name} pid=${pid} ${new Date().toISOString()} =====`
+        `\n===== py-spy dump ${component.name}${isRemote ? ` @${connection.ssh.host}` : ''} pid=${pid} ${new Date().toISOString()} =====`
       );
       pyspyChannel.show(true);
-      const dump = await runPyspyDump(defaultSpawnRunner, pid);
+      const dump = await runPyspyDump(runner, pid);
       pyspyChannel.appendLine(dump.output);
       if (!dump.ok) {
         vscode.window.showErrorMessage(`py-spy dump 失败(pid=${pid}),详情见「KBEngine py-spy」输出通道`);

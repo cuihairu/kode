@@ -59,6 +59,10 @@
     "onCommand:kbengine.debug.attachRemote",
     "onCommand:kbengine.debug.resetAttachMode",
     "onCommand:kbengine.debug.pyspyDump",
+    "onCommand:kbengine.remoteServers.select",
+    "onCommand:kbengine.remoteServers.add",
+    "onCommand:kbengine.remoteServers.remove",
+    "onCommand:kbengine.remoteServers.refresh",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
     "onCommand:kbengine.metrics.showSummary",
@@ -273,6 +277,10 @@
         {
           "id": "kbengine.config",
           "name": "Config"
+        },
+        {
+          "id": "kbengine.remoteServers",
+          "name": "Remote Servers"
         }
       ]
     },
@@ -382,6 +390,29 @@
         "title": "Profile Component with py-spy",
         "category": "KBEngine",
         "icon": "$(pulse)"
+      },
+      {
+        "command": "kbengine.remoteServers.select",
+        "title": "Select Remote Server",
+        "category": "KBEngine"
+      },
+      {
+        "command": "kbengine.remoteServers.add",
+        "title": "Add Remote Server Manually",
+        "category": "KBEngine",
+        "icon": "$(add)"
+      },
+      {
+        "command": "kbengine.remoteServers.remove",
+        "title": "Remove Manual Remote Server",
+        "category": "KBEngine",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "kbengine.remoteServers.refresh",
+        "title": "Refresh Remote Servers",
+        "category": "KBEngine",
+        "icon": "$(refresh)"
       },
       {
         "command": "kbengine.debug.attachRemote",
@@ -714,6 +745,21 @@
         {
           "command": "kbengine.debug.pyspyDump",
           "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.remoteServers.add",
+          "when": "view == kbengine.remoteServers",
+          "group": "navigation@0"
+        },
+        {
+          "command": "kbengine.remoteServers.refresh",
+          "when": "view == kbengine.remoteServers",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbengine.remoteServers.remove",
+          "when": "view == kbengine.remoteServers && viewItem == remote-server-manual",
           "group": "inline"
         }
       ],

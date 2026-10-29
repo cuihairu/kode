@@ -135,6 +135,7 @@ export function buildKbengineDebugJsonSchema(): JsonSchemaObject {
         properties: {
           defaultTelnetHost: text('默认 telnet 主机'),
           defaultTelnetPort: integer('默认 telnet 端口'),
+          defaultSshHost: text('IDE-PDBG-004:全局连接声明;ssh 主机别名或 local(缺省 local=本地执行)。组件级 sshHost 覆盖它,远程视图的选中态再兜底'),
           components: {
             type: 'object',
             description: '按元件名(BotServer / LoginApp / BaseApp / CellApp …)的连接与映射',
@@ -147,6 +148,7 @@ export function buildKbengineDebugJsonSchema(): JsonSchemaObject {
                 telnetDefaultLayer: text('默认层(base/cell/login/account)'),
                 debugpyHost: text('IDE-PDBG-001:debugpy 监听主机;缺省 127.0.0.1,与 debugpyPort 配对使用'),
                 debugpyPort: integer('IDE-PDBG-001:debugpy 监听端口;>0 时附加直接 connect 此端口(端口模式),缺省/0 走模式选择。引擎进程不内置监听,需在代码里 debugpy.listen(port) 或经注入面开启'),
+                sshHost: text('IDE-PDBG-004:组件连接声明;ssh 主机别名(远程执行 debug/py-spy,端口模式走 -L 隧道)或 local(本地),覆盖全局 defaultSshHost。别名不在 ~/.ssh/config 时按裸主机名连'),
                 telnetEnableCommands: {
                   type: 'array',
                   items: { type: 'string' },

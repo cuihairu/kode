@@ -468,6 +468,8 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `debug.components.<组件>.telnetEnableCommands` | 提示语里列出的「开启调试命令」,提醒你先经 telnet 输入项目实际使用的命令 |
 | `debug.components.<组件>.debugpyHost` / `debugpyPort` | IDE-PDBG-001:`debugpyPort` > 0 即该组件走端口模式——直连 `debugpyHost:debugpyPort`(host 缺省 `127.0.0.1`),`Start Debugging` 也不再弹 telnet 简报。未配置时按记住的模式走;端口模式下未配端口用组件默认表(baseapp 5678 / cellapp 5679 / loginapp 5680 / dbmgr 5681 / logger 5682,表外 5678)。引擎不会自己起监听——内嵌 Python 得先跑到 `debugpy.listen(port)`(autoDebugpy 注入、waitAtStartup 引导或你自己的代码) |
 | `debug.components.<组件>.pathMappings` | `Update launch.json` 生成 attach 配置时写入的路径映射 |
+| `debug.defaultSshHost` | IDE-PDBG-004:全局连接声明——组件自己没声明时 debug 与 py-spy 经哪台 ssh 主机执行(`'local'`/缺省 = 本地直接执行)。组件级 `sshHost` 覆盖它 |
+| `debug.components.<组件>.sshHost` | IDE-PDBG-004:组件级连接声明——填 ssh 别名(按 `~/.ssh/config` 解析 HostName/User/Port/ProxyJump;别名不在 config 里按裸主机名连),该组件的 debug 附加走 `ssh -N -L` 隧道、py-spy 经 `ssh <host> -- …` 远端执行;`'local'`/缺省 = 依次看 `debug.defaultSshHost`、Remote Servers 视图选中,最后本地 |
 
 本地 attach 不从这里拿进程号:未配置 `debugpyPort` 时,`Attach to Component` 列出本机进程(匹配组件名的置顶标 ✓),选中即以 PID 组装配置(模式第一次会问并记住;`kbengine.debug.resetAttachMode` 清除)。远程附加的目标来自设置 `kbengine.debug.remoteTargets`,也不读这个文件。
 

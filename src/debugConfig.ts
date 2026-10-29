@@ -23,6 +23,8 @@ import {
   debugpyPreflightDeps,
   type DebugpyPreflightStatus
 } from './debugpyPreflight';
+import { openSshTunnel, resolveComponentConnection, type ServerConnection } from './remoteConnection';
+import type { SshHostEntry } from './sshConfig';
 
 export interface ComponentDebugConfig {
   telnetHost?: string;
@@ -39,6 +41,13 @@ export interface ComponentDebugConfig {
    */
   debugpyHost?: string;
   debugpyPort?: number;
+  /**
+   * IDE-PDBG-004:连接声明——该组件的 debug/py-spy 在哪跑。'local'/
+   * 缺省 = 本地直接执行;填 ssh 主机别名则远程执行(ssh 前缀跑命令,
+   * 端口模式经 -L 隧道 connect 附加)。别名无需在 ~/.ssh/config 里
+   * (不在则按裸主机名连),跳板链随 config 的 ProxyJump。
+   */
+  sshHost?: string;
   pathMappings?: Array<{
     localRoot: string;
     remoteRoot: string;
@@ -54,6 +63,8 @@ export const DEBUG_ATTACH_MODE_STATE_KEY = 'kbengine.debug.attachMode.v1';
 export interface KBEngineDebugConfig {
   defaultTelnetHost?: string;
   defaultTelnetPort?: number;
+  /** IDE-PDBG-004:全局连接声明(组件级 sshHost 覆盖它;'local'/缺省=本地) */
+  defaultSshHost?: string;
   components: { [componentName: string]: ComponentDebugConfig };
 }
 
@@ -216,6 +227,12 @@ export class DebugConfigManager {
       checkDebugpy?: () => Promise<DebugpyPreflightStatus>;
       /** IDE-PDBG-002:一键安装注入面(缺省 `<解释器> -m pip install -U debugpy`) */
       installDebugpy?: DebugpyInstallRunner;
+      /** IDE-PDBG-004:ssh 主机表(连接声明按别名查参数;缺省空表=裸主机名连) */
+      listSshHosts?: () => SshHostEntry[];
+      /** IDE-PDBG-004:视图选中的服务器(debug.json 未声明时的分派层) */
+      selectedServer?: () => string;
+      /** IDE-PDBG-004:隧道进程注入面(缺省真实 spawn ssh -N -L) */
+      spawnTunnel?: (args: string[]) => { onExit(cb: () => void): void; kill(): void };
     } = {}
   ) {
     this.config = this.getDefaultConfig();
@@ -317,6 +334,9 @@ export class DebugConfigManager {
         typeof userConfig?.debugpyPort === 'number' && userConfig.debugpyPort > 0
           ? userConfig.debugpyPort
           : undefined,
+      sshHost: typeof userConfig?.sshHost === 'string' && userConfig.sshHost.trim().length > 0
+        ? userConfig.sshHost.trim()
+        : undefined,
       pathMappings: userConfig?.pathMappings || [{
         localRoot: workspaceFolder,
         remoteRoot: workspaceFolder
@@ -661,11 +681,17 @@ export class DebugConfigManager {
    * 组件落 debugpy 默认 5678。host 缺省 127.0.0.1。
    * IDE-PDBG-002:connect 前先探端口——通则直接附加零多余弹窗;不通分开
    * 说原因(端口未开 / 未装 debugpy),未装给一键安装,装完/端口开了再附加。
+   * IDE-PDBG-004:组件连接声明为远程主机时改走 ssh -L 隧道 connect 附加
+   * (远端监听口打到本地,附加结束隧道即拆)。
    */
   async attachViaDebugpyPort(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
     const port = config.debugpyPort ?? debugpyPortFor(componentName) ?? DEFAULT_DEBUGPY_PORT;
     const host = config.debugpyHost || '127.0.0.1';
+    const connection = this.getConnectionFor(componentName);
+    if (connection !== 'local') {
+      return this.attachViaTunnel(componentName, connection.ssh, port, config.pathMappings);
+    }
     const probe = await (this.deps.probeTcpPort ?? defaultTcpConnect)(
       host,
       port,
@@ -675,6 +701,42 @@ export class DebugConfigManager {
       return this.handlePortClosed(componentName, host, port, probe);
     }
     return this.attachPortConfig(componentName, host, port, config.pathMappings);
+  }
+
+  /** 组件连接声明(IDE-PDBG-004):py-spy/视图与端口模式的远程分派共用 */
+  getConnectionFor(componentName: string): ServerConnection {
+    const config = this.getComponentConfig(componentName);
+    return resolveComponentConnection(
+      config.sshHost,
+      this.config.defaultSshHost,
+      this.deps.listSshHosts?.() ?? [],
+      this.deps.selectedServer?.()
+    );
+  }
+
+  /**
+   * 远程端口模式:起 ssh -N -L 隧道,本地端 connect 附加;隧道起不来
+   * (跳板/主机不可达)如实报错,附加结束(成败都要)拆隧道不留后台 ssh。
+   */
+  private async attachViaTunnel(
+    componentName: string,
+    entry: SshHostEntry,
+    remotePort: number,
+    pathMappings: ComponentDebugConfig['pathMappings']
+  ): Promise<boolean> {
+    const outcome = await openSshTunnel(entry, remotePort, {
+      ...(this.deps.spawnTunnel ? { spawnTunnel: this.deps.spawnTunnel } : {}),
+      probe: this.deps.probeTcpPort ?? defaultTcpConnect
+    });
+    if (!outcome.ok) {
+      vscode.window.showErrorMessage(`远程附加失败:${outcome.reason}`);
+      return false;
+    }
+    try {
+      return await this.attachPortConfig(componentName, '127.0.0.1', outcome.tunnel.localPort, pathMappings);
+    } finally {
+      outcome.tunnel.stop();
+    }
   }
 
   /** 端口不通的分诊(IDE-PDBG-002):本机 debugpy 预检 → 主因口径 → 安装/指引 */
