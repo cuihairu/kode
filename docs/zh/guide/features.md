@@ -60,6 +60,8 @@
 - 生成的启动配置是 `debugpy` 的 attach 形态；本地附加由扩展列出本机进程（匹配组件名的置顶标 ✓），选中即以 PID 组装配置，不再手输 PID
 - 远程附加（`kbengine.debug.attachRemote`）的目标来自设置 `kbengine.debug.remoteTargets`，以 debugpy `connect` 模式直连远端 debugpy 监听端口
 - 调试模型：先经 telnet 向组件输入开启调试命令，再附加目标进程
+- 附加双模式（IDE-PDBG-001）：`.kbengine/debug.json` 里配置了 `debugpyPort`（> 0，可配伴随 `debugpyHost`）的组件恒走端口模式——`Start Debugging` 跳过 telnet 简报，以 debugpy `connect` 直连 `debugpyHost:debugpyPort`（host 缺省 `127.0.0.1`），`Attach to Component` 同一分派；未配置端口的组件第一次会问选哪种模式——端口模式（connect；未配端口时按组件默认端口表 baseapp 5678 / cellapp 5679 / loginapp 5680 / dbmgr 5681 / logger 5682，表外 5678）或进程附加模式（本机进程选择器按 PID 组装配置）——选择记入工作区状态，之后的附加不再问；首次提示里的「清除记住的选择」本次不附加也不记忆，`kbengine.debug.resetAttachMode`（面板：`Reset Debug Attach Mode Choice`）清除记忆让下次附加重新问
+- 端口模式前提是监听已在：引擎进程不会自己起 debugpy 监听——内嵌 Python 得先跑到 `debugpy.listen(port)`（或等价引导），IDE 才连得上。kode 备好三条现成路径：`kbengine.debug.autoDebugpy` 在组件启动后经 telnet 注入 `debugpy.listen`；显式 opt-in 的 `kbengine.debug.waitAtStartup` 在最早的 Python 处插入 `listen` + `wait_for_client` 引导块；`kbengine.python.debugpySync` 把 debugpy 包复制进 `<assets>/scripts/common/debugpy`，引擎里 `import debugpy` 可解析
 - 编辑期校验（批136 G3）：kode 随包贡献 `.kbengine/debug.json` 的 JSON Schema（`contributes.jsonValidation` 匹配 `**/.kbengine/debug.json`），VS Code 的 JSON 扩展在保存前就把类型写错、`telnetPort` 写成字符串、`pathMappings` 缺 `localRoot`/`remoteRoot`、`method` 不在白名单等问题标红；校验只作提示，解析器逐条剔除与类型回落的规则不变
 - 缺失即自动生成（批143）：工作区里找不到 `.kbengine/debug.json` 时，激活期在生效工作目录建 `.kbengine/` 并写一份带注释的骨架；骨架按 JSONC 写（允许 `//` 与块注释，同 `tsconfig.json` 口径），kode 读配置前统一剥注释，你自己写的注释不会让配置读不动。**已存在的文件绝不覆盖**，目录不可写只往「KBEngine 配置」输出通道如实说明，不影响其余能力
 

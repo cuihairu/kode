@@ -48,6 +48,14 @@
                 "type": "string",
                 "description": "默认层(base/cell/login/account)"
               },
+              "debugpyHost": {
+                "type": "string",
+                "description": "IDE-PDBG-001:debugpy 监听主机;缺省 127.0.0.1,与 debugpyPort 配对使用"
+              },
+              "debugpyPort": {
+                "type": "integer",
+                "description": "IDE-PDBG-001:debugpy 监听端口;>0 时附加直接 connect 此端口(端口模式),缺省/0 走模式选择。引擎进程不内置监听,需在代码里 debugpy.listen(port) 或经注入面开启"
+              },
               "telnetEnableCommands": {
                 "type": "array",
                 "items": {

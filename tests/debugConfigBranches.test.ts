@@ -16,9 +16,35 @@ type ManagerInternals = DebugConfigManager & {
   config: { defaultTelnetHost: string };
 };
 
+/** workspaceState 替身:预记进程附加模式(PDBG-001 起,未配置端口的首次会先问模式) */
+class MemoryMemento {
+  private readonly map = new Map<string, unknown>();
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return this.map.has(key) ? (this.map.get(key) as T) : defaultValue;
+  }
+  update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) {
+      this.map.delete(key);
+    } else {
+      this.map.set(key, value);
+    }
+    return Promise.resolve();
+  }
+  keys(): readonly string[] {
+    return [...this.map.keys()];
+  }
+  setKeysForSync(_keys: readonly string[]): void {
+    // 内存替身不参与云同步
+  }
+}
+
 const makeManager = (): ManagerInternals =>
   new DebugConfigManager(
-    { subscriptions: [] } as unknown as vscode.ExtensionContext,
+    (() => {
+      const memento = new MemoryMemento();
+      void memento.update('kbengine.debug.attachMode.v1', 'process-attach');
+      return { subscriptions: [], workspaceState: memento };
+    })() as unknown as vscode.ExtensionContext,
     { listProcesses: () => [{ pid: 4321, name: 'cellapp' }] }
   ) as ManagerInternals;
 

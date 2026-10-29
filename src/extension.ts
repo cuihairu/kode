@@ -98,7 +98,7 @@ import {
   runLogErrorScanCommand,
   scanRawLogErrors
 } from './logErrorScan';
-import { DebugConfigManager } from './debugConfig';
+import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from './debugConfig';
 import { MonitoringWebView } from './monitoringWebView';
 import { MonitoringCollector } from './monitoringCollector';
 import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbengineProtocol';
@@ -2681,6 +2681,16 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(attachRemoteCommand);
+
+  // IDE-PDBG-001:清除记住的附加模式(端口/进程附加)——下次附加重新选择
+  const resetAttachModeCommand = vscode.commands.registerCommand(
+    'kbengine.debug.resetAttachMode',
+    async () => {
+      await context.workspaceState.update(DEBUG_ATTACH_MODE_STATE_KEY, undefined);
+      vscode.window.showInformationMessage('已清除附加模式选择:下次附加时会重新询问');
+    }
+  );
+  context.subscriptions.push(resetAttachModeCommand);
 
   // 初始化监控面板
   const monitoringCollector = new MonitoringCollector(context);

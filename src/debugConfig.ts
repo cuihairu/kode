@@ -1,6 +1,6 @@
 import * as child_process from 'child_process';
 import * as vscode from 'vscode';
-import { DEBUGPY_PORT_TABLE } from './autoDebugpy';
+import { DEBUGPY_PORT_TABLE, debugpyPortFor } from './autoDebugpy';
 import {
   DEBUG_ATTACH_TIMEOUT_DEFAULT_MS,
   attachWithDeadline,
@@ -14,11 +14,26 @@ export interface ComponentDebugConfig {
   telnetPassword?: string;
   telnetDefaultLayer?: string;
   telnetEnableCommands?: string[];
+  /**
+   * IDE-PDBG-001:该组件的 debugpy 监听端口(端口模式)。配置了(>0)则
+   * 附加直接 connect 到 debugpyHost:debugpyPort,不再弹进程选择;未配置
+   * (缺省/0)= 走模式选择(首次)或记住的模式。引擎 Python 进程不内置
+   * debugpy 监听——需在代码里埋 debugpy.listen(port) 或经注入面开启,
+   * 文档「调试」节有说明。
+   */
+  debugpyHost?: string;
+  debugpyPort?: number;
   pathMappings?: Array<{
     localRoot: string;
     remoteRoot: string;
   }>;
 }
+
+/** 附加模式(IDE-PDBG-001):端口模式 connect 直连 / 进程附加模式按 PID */
+export type DebugAttachMode = 'debugpy-port' | 'process-attach';
+
+/** 模式选择记忆键(workspaceState):首次选择后记住,可经「清除」重问 */
+export const DEBUG_ATTACH_MODE_STATE_KEY = 'kbengine.debug.attachMode.v1';
 
 export interface KBEngineDebugConfig {
   defaultTelnetHost?: string;
@@ -273,6 +288,11 @@ export class DebugConfigManager {
       telnetPassword: userConfig?.telnetPassword || 'pwd123456',
       telnetDefaultLayer: userConfig?.telnetDefaultLayer || 'python',
       telnetEnableCommands: userConfig?.telnetEnableCommands || [],
+      debugpyHost: userConfig?.debugpyHost,
+      debugpyPort:
+        typeof userConfig?.debugpyPort === 'number' && userConfig.debugpyPort > 0
+          ? userConfig.debugpyPort
+          : undefined,
       pathMappings: userConfig?.pathMappings || [{
         localRoot: workspaceFolder,
         remoteRoot: workspaceFolder
@@ -507,6 +527,11 @@ export class DebugConfigManager {
 
   async startDebugging(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
+    // IDE-PDBG-001:已配置 debugpy 端口的组件直接端口模式附加——telnet 简
+    // 报是进程附加路径的开启指引,端口模式用不上,不再打扰
+    if (config.debugpyPort !== undefined) {
+      return this.attachViaDebugpyPort(componentName);
+    }
     // 不可达(批68 定性):telnetEnableCommands 与下方 password/layer 同族——
     // getComponentConfig 已归一化(`userConfig?.telnetEnableCommands || []`),
     // 产出恒为真值数组 ⇒ `|| []` 兜底右臂无触发路径。语句与两分支条目
@@ -556,6 +581,82 @@ export class DebugConfigManager {
     return this.attachToComponent(componentName);
   }
 
+  /**
+   * IDE-PDBG-001 附加模式解析:配置了 debugpyPort 的组件无需选择——端口
+   * 模式直接成立;未配置时第一次弹模式选择并记住(workspaceState),之后
+   * 按记住的模式走(重选走 kbengine.debug.resetAttachMode 命令清记忆);
+   * 首次提示里的「清除记住的选择」= 本次不附加且不记忆。极简装配(无
+   * workspaceState):每次都问,不记忆。
+   */
+  async resolveAttachMode(componentName: string): Promise<DebugAttachMode | undefined> {
+    const config = this.getComponentConfig(componentName);
+    if (config.debugpyPort !== undefined) {
+      return 'debugpy-port'; // 配置即端口模式,不问
+    }
+    const memento = this.context.workspaceState;
+    const remembered = memento?.get<string>(DEBUG_ATTACH_MODE_STATE_KEY);
+    if (remembered === 'debugpy-port' || remembered === 'process-attach') {
+      return remembered;
+    }
+    const picked = await vscode.window.showQuickPick(
+      [
+        {
+          label: '$(plug) 端口模式',
+          description: 'connect 到组件 debugpy 监听端口(未配置时用组件默认端口表)',
+          mode: 'debugpy-port' as DebugAttachMode
+        },
+        {
+          label: '$(search) 进程附加模式',
+          description: '弹出进程选择器按 PID 附加(既有口径)',
+          mode: 'process-attach' as DebugAttachMode
+        },
+        {
+          label: '$(discard) 清除记住的选择',
+          description: '本次不附加,下次再问',
+          mode: 'clear' as const
+        }
+      ],
+      {
+        placeHolder: `选择 ${componentName} 的附加模式(选择后记住;引擎进程需先有 debugpy 监听——文档「调试」节)`
+      }
+    );
+    if (!picked) {
+      return undefined;
+    }
+    if (picked.mode === 'clear') {
+      await memento?.update(DEBUG_ATTACH_MODE_STATE_KEY, undefined);
+      return undefined;
+    }
+    await memento?.update(DEBUG_ATTACH_MODE_STATE_KEY, picked.mode);
+    return picked.mode;
+  }
+
+  /**
+   * 端口模式附加(IDE-PDBG-001):connect 到 debugpyHost:debugpyPort,不经
+   * 进程选择器;未配置端口时用组件默认端口表(autoDebugpy 分配表),表外
+   * 组件落 debugpy 默认 5678。host 缺省 127.0.0.1。
+   */
+  async attachViaDebugpyPort(componentName: string): Promise<boolean> {
+    const config = this.getComponentConfig(componentName);
+    const port = config.debugpyPort ?? debugpyPortFor(componentName) ?? DEFAULT_DEBUGPY_PORT;
+    const host = config.debugpyHost || '127.0.0.1';
+    const attachConfig: vscode.DebugConfiguration = {
+      name: `KBEngine: Python attach to ${componentName} (debugpy ${port})`,
+      type: this.getDebuggerType(),
+      request: 'attach',
+      connect: { host, port },
+      justMyCode: false,
+      pathMappings: config.pathMappings
+    };
+    try {
+      const outcome = await this.startAttachGuarded(`${componentName} ${host}:${port}`, attachConfig);
+      return outcome.status === 'completed' && outcome.success;
+    } catch (error) {
+      vscode.window.showErrorMessage(`附加调试失败: ${error}`);
+      return false;
+    }
+  }
+
   /** 列出本机进程(ps/tasklist;命令失败返回空清单;清单器可注入便于测试) */
   private listProcesses(): ProcessEntry[] {
     return this.deps.listProcesses?.() ?? makeProcessLister(command =>
@@ -598,6 +699,15 @@ export class DebugConfigManager {
 
   async attachToComponent(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
+    // IDE-PDBG-001 附加模式分派:配置了 debugpy 端口 → 端口模式直连;未配置
+    // → 首次选择(记住)/按记住的模式走。模式未定(取消/清除)不附加。
+    const mode = await this.resolveAttachMode(componentName);
+    if (mode === undefined) {
+      return false;
+    }
+    if (mode === 'debugpy-port') {
+      return this.attachViaDebugpyPort(componentName);
+    }
     // 批112 用户令:附加前弹进程选择器,组件名命中的进程置顶分组,
     // 选中的 PID 直接写入附加配置(取消/空清单则不附加)
     const processId = await this.pickProcessId(componentName);

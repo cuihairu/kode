@@ -148,13 +148,14 @@
 ### `kbengine.debug.start`
 
 - 标题：`Start Debugging`
-- 作用：显示目标组件的 telnet 调试提示，然后进入进程选择器 attach 流程
+- 作用：显示目标组件的 telnet 调试提示，然后进入附加流程；配置了 `debugpyPort` 的组件跳过简报直连该端口（IDE-PDBG-001）
 
 ### `kbengine.debug.attach`
 
 - 标题：`Attach to Component`
-- 作用：列出本机进程供选择，附加到已开启调试的 KBEngine 组件进程
+- 作用：附加到已开启调试的 KBEngine 组件进程——配置了 `debugpyPort` 的组件直接 connect 该端口（端口模式）；未配置时按记住的模式走：端口模式（组件默认端口表，表外 5678）或进程附加（本机进程选择器）
 - 行为：
+  - 未配置端口且第一次使用会先问选端口模式还是进程附加模式（记入工作区状态；`kbengine.debug.resetAttachMode` 清除）
   - 匹配目标组件名的进程置顶并标 ✓，其余按系统进程清单原序排列
   - 选中后以该进程 PID 直接组装 debugpy attach 配置，不再手输 PID
   - 获取不到进程列表时明示报错，不空转
@@ -167,6 +168,14 @@
 - 行为：
   - 未配置目标时提示去设置，不空转
   - 弹出目标选择，模态确认后以 `connect: {host, port}` 组装附加配置；目标条目带成对 `localRoot`/`remoteRoot` 时才写 `pathMappings`
+
+### `kbengine.debug.resetAttachMode`
+
+- 标题：`Reset Debug Attach Mode Choice`
+- 作用：清除记住的附加模式选择（IDE-PDBG-001），下次 `Attach to Component` 重新在端口模式与进程附加模式之间询问
+- 行为：
+  - 只清工作区状态里的键并弹确认提示，本身不发起任何附加
+  - 配置了 `debugpyPort` 的组件不受记忆影响，恒走端口模式
 
 ## 配置相关
 

@@ -466,9 +466,10 @@ The first-install scan checks the effective config root and the top level of `as
 | `debug.defaultTelnetHost` / `defaultTelnetPort` | The telnet address in `Start Debugging`'s instructions (hint only, not part of actual probing) |
 | `debug.components.<Component>.telnetHost` / `telnetPort` | Same as above, overridden per component |
 | `debug.components.<Component>.telnetEnableCommands` | The "enable-debugging commands" listed in the instructions, reminding you to first send the project's actual command over telnet |
+| `debug.components.<Component>.debugpyHost` / `debugpyPort` | IDE-PDBG-001: `debugpyPort` > 0 makes the component attach in port mode — connect straight to `debugpyHost:debugpyPort` (host defaults to `127.0.0.1`), with `Start Debugging` skipping the telnet briefing. Without it, the mode chosen once applies; in port mode with no explicit port the per-component table (baseapp 5678 / cellapp 5679 / loginapp 5680 / dbmgr 5681 / logger 5682, otherwise 5678) is used. The engine never starts a listener by itself — the embedded Python must reach a `debugpy.listen(port)` first (`kbengine.debug.autoDebugpy` injection, `kbengine.debug.waitAtStartup` bootstrap, or your own code) |
 | `debug.components.<Component>.pathMappings` | The path mappings written when `Update launch.json` generates the attach configuration |
 
-Local attach does not take the process id from here: `Attach to Component` lists local processes (matches of the component name pinned with ✓), and assembling the configuration from the selected PID. Remote attach targets come from the setting `kbengine.debug.remoteTargets` and never read this file either.
+Local attach does not take the process id from here: without a configured `debugpyPort`, `Attach to Component` lists local processes (matches of the component name pinned with ✓) and assembles the configuration from the selected PID (the mode is asked once and remembered; `kbengine.debug.resetAttachMode` clears it). Remote attach targets come from the setting `kbengine.debug.remoteTargets` and never read this file either.
 
 Recommended structure:
 

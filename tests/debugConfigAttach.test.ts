@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { DebugConfigManager, readRemoteTargets } from '../src/debugConfig';
+import { DebugConfigManager, DEBUG_ATTACH_MODE_STATE_KEY, readRemoteTargets } from '../src/debugConfig';
 import type * as vscode from 'vscode';
 import {
   debug as stubDebug,
@@ -15,6 +15,8 @@ import { configurationOverrides } from './fake-vscode/workspaceState';
 // 过滤的 quick pick,选中 PID 直接写入 DebugConfiguration)→
 // vscode.debug.startDebugging、createExampleConfig/updateLaunchJson 的写盘
 // 失败通道。配置装载与 launch 生成已由 debugConfig.test.ts 覆盖。
+// IDE-PDBG-001:附加入口分派端口模式(debugpy connect 直连)与进程附加
+// 模式(既有选择器);未配置端口首次弹模式选择并记住(workspaceState)。
 
 interface InputBoxOptions {
   prompt?: string;
@@ -24,7 +26,37 @@ interface InputBoxOptions {
 interface QuickPickLike {
   label: string;
   description?: string;
+  mode?: string;
 }
+
+/** workspaceState 替身:模式选择记忆(IDE-PDBG-001)落这里读回 */
+class MemoryMemento {
+  private readonly map = new Map<string, unknown>();
+  get<T>(key: string, defaultValue?: T): T | undefined {
+    return this.map.has(key) ? (this.map.get(key) as T) : defaultValue;
+  }
+  update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) {
+      this.map.delete(key);
+    } else {
+      this.map.set(key, value);
+    }
+    return Promise.resolve();
+  }
+  keys(): readonly string[] {
+    return [...this.map.keys()];
+  }
+  setKeysForSync(_keys: readonly string[]): void {
+    // 内存替身不参与云同步
+  }
+}
+
+/** 已记住进程附加模式的 memento:既有进程选择器用例的前提(PDBG-001 起,未配置端口的首次会先问模式) */
+const seededMemento = (mode: string): MemoryMemento => {
+  const memento = new MemoryMemento();
+  memento.map.set(DEBUG_ATTACH_MODE_STATE_KEY, mode);
+  return memento;
+};
 
 const windowish = stubWindow as unknown as Record<string, unknown>;
 const originalWindow: Record<string, unknown> = {};
@@ -39,6 +71,8 @@ const inputs: Array<string | undefined> = [];
 const inputOptions: InputBoxOptions[] = [];
 const infoQueue: Array<string | undefined> = [];
 const pickQueue: Array<QuickPickLike | undefined> = [];
+/** 每次选择器弹出的条目面(模式选择/进程选择都在此对账) */
+const pickOffers: QuickPickLike[][] = [];
 const messages = { info: [] as string[], error: [] as string[] };
 
 interface DebugCall {
@@ -52,9 +86,12 @@ const debugCalls: DebugCall[] = [];
 let debugResult = true;
 let debugThrows: Error | null = null;
 
-const makeManager = (processes: Array<{ pid: number; name: string }> = []) =>
+const makeManager = (
+  processes: Array<{ pid: number; name: string }> = [],
+  workspaceState: unknown = seededMemento('process-attach')
+) =>
   new DebugConfigManager(
-    { subscriptions: [] } as unknown as vscode.ExtensionContext,
+    { subscriptions: [], workspaceState } as unknown as vscode.ExtensionContext,
     { listProcesses: () => processes }
   );
 
@@ -86,7 +123,7 @@ beforeAll(() => {
     return undefined;
   };
   windowish.showQuickPick = async (items: QuickPickLike[]) => {
-    void items;
+    pickOffers.push(items);
     return pickQueue.shift();
   };
   (stubDebug as unknown as Record<string, unknown>).startDebugging = async (
@@ -117,6 +154,7 @@ beforeEach(() => {
   pickQueue.length = 0;
   messages.info.length = 0;
   messages.error.length = 0;
+  pickOffers.length = 0;
   debugCalls.length = 0;
   debugResult = true;
   debugThrows = null;
@@ -315,7 +353,7 @@ describe('DebugConfigManager.attachToComponent (批112 进程选择器)', () => 
       'cellapp'
     ]);
     windowish.showQuickPick = async (items: QuickPickLike[]) => {
-      void items;
+      pickOffers.push(items);
       return pickQueue.shift();
     };
   }, 8000);
@@ -363,7 +401,7 @@ describe('DebugConfigManager.attachToComponent (批112 进程选择器)', () => 
   it('default 清单器走真 ps(注入缺省臂),选择取消收尾', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     const bareManager = new DebugConfigManager(
-      { subscriptions: [] } as unknown as vscode.ExtensionContext
+      { subscriptions: [], workspaceState: seededMemento('process-attach') } as unknown as vscode.ExtensionContext
     );
     pickQueue.push(undefined);
 
@@ -800,4 +838,157 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     expect(sessionTrackerDisposals).toBe(1);
     configurationOverrides.clear();
   }, 10_000);
+});
+
+describe('IDE-PDBG-001 附加模式分派(端口模式 / 进程附加模式)', () => {
+  const writeDebugJson = (components: Record<string, unknown>): void => {
+    memoryFileSystem.set('/tmp/kode-dbg/.kbengine/debug.json', JSON.stringify({ debug: { components } }));
+  };
+
+  it('配置了 debugpyPort:直接 connect 附加,零选择器零模态', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyHost: '10.1.2.3', debugpyPort: 5678 } });
+    const memento = new MemoryMemento(); // 未记忆任何模式:配置即端口模式,不该问
+    const manager = makeManager([], memento);
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    expect(debugCalls).toHaveLength(1);
+    expect(debugCalls[0].config.connect).toEqual({ host: '10.1.2.3', port: 5678 });
+    expect(debugCalls[0].config.name).toBe('KBEngine: Python attach to baseapp (debugpy 5678)');
+    expect(debugCalls[0].config.request).toBe('attach');
+    expect(pickOffers).toHaveLength(0); // 无模式选择器/进程选择器
+    expect(memento.get<string>(DEBUG_ATTACH_MODE_STATE_KEY)).toBeUndefined(); // 不落记忆(配置即模式)
+  });
+
+  it('startDebugging 端口已配置:不弹 telnet 模态,直接端口模式附加', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ cellapp: { debugpyPort: 5679 } });
+    const manager = makeManager();
+    await flushAsync();
+
+    expect(await manager.startDebugging('cellapp')).toBe(true);
+
+    expect(messages.info).toHaveLength(0); // telnet 简报不再打扰端口模式
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5679 }); // host 缺省 127.0.0.1
+  });
+
+  it('未配置且未记忆:首次弹模式选择,选端口模式→记忆落盘+组件默认端口表 connect', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const memento = new MemoryMemento();
+    const manager = makeManager([], memento);
+    await flushAsync();
+
+    pickQueue.push({ label: '$(plug) 端口模式', mode: 'debugpy-port' });
+    expect(await manager.attachToComponent('cellapp')).toBe(true);
+
+    // 首次:选择器是模式选择(两模式+清除),不是进程清单
+    expect(pickOffers).toHaveLength(1);
+    const labels = pickOffers[0].map(item => item.label);
+    expect(labels.some(label => label.includes('端口模式'))).toBe(true);
+    expect(labels.some(label => label.includes('进程附加模式'))).toBe(true);
+    expect(labels.some(label => label.includes('清除记住的选择'))).toBe(true);
+    // cellapp 未配置端口 → 端口表 5679
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5679 });
+    expect(memento.get<string>(DEBUG_ATTACH_MODE_STATE_KEY)).toBe('debugpy-port');
+  });
+
+  it('表外组件端口模式落 debugpy 默认 5678', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const memento = new MemoryMemento();
+    const manager = makeManager([], memento);
+    await flushAsync();
+
+    pickQueue.push({ label: '$(plug) 端口模式', mode: 'debugpy-port' });
+    expect(await manager.attachToComponent('bots')).toBe(true); // bots 不在端口表
+
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5678 });
+  });
+
+  it('选进程附加模式→记忆+走既有进程选择器(PID 入配置)', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const memento = new MemoryMemento();
+    const manager = makeManager([{ pid: 4321, name: 'baseapp' }], memento);
+    await flushAsync();
+
+    pickQueue.push({ label: '$(search) 进程附加模式', mode: 'process-attach' });
+    pickQueue.push({ label: '$(check) baseapp', description: '4321' });
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    expect(pickOffers).toHaveLength(2); // 模式选择 + 进程选择
+    expect(debugCalls[0].config.processId).toBe(4321);
+    expect(memento.get<string>(DEBUG_ATTACH_MODE_STATE_KEY)).toBe('process-attach');
+  });
+
+  it('第二次不再问:记住的模式直接走,零模式选择器', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const memento = seededMemento('process-attach');
+    const manager = makeManager([{ pid: 4321, name: 'baseapp' }], memento);
+    await flushAsync();
+
+    pickQueue.push({ label: '$(check) baseapp', description: '4321' });
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+
+    expect(pickOffers).toHaveLength(1); // 只有进程选择器
+    expect(pickOffers[0].some(item => item.label.includes('进程附加模式'))).toBe(false);
+    expect(debugCalls[0].config.processId).toBe(4321);
+  });
+
+  it('记住端口模式:直接 connect(未配置端口的组件也走端口表)', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const manager = makeManager([], seededMemento('debugpy-port'));
+    await flushAsync();
+
+    expect(await manager.attachToComponent('loginapp')).toBe(true);
+
+    expect(pickOffers).toHaveLength(0);
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5680 });
+  });
+
+  it('「清除记住的选择」:不记忆不附加,下次再问', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const memento = new MemoryMemento();
+    const manager = makeManager([], memento);
+    await flushAsync();
+
+    pickQueue.push({ label: '$(discard) 清除记住的选择', mode: 'clear' });
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(0);
+    expect(memento.get<string>(DEBUG_ATTACH_MODE_STATE_KEY)).toBeUndefined();
+
+    // 下次再问:模式选择器再次出现
+    pickQueue.push(undefined);
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+    expect(pickOffers.at(-1)?.some(item => item.label.includes('端口模式'))).toBe(true);
+  });
+
+  it('模式选择取消:不附加(false 且无调试会话)', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    const memento = new MemoryMemento();
+    const manager = makeManager([], memento);
+    await flushAsync();
+
+    pickQueue.push(undefined);
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    expect(debugCalls).toHaveLength(0);
+    expect(memento.get<string>(DEBUG_ATTACH_MODE_STATE_KEY)).toBeUndefined(); // 取消不记忆
+  });
+
+  it('端口配置为 0/负数/非数:视为未配置走模式分派(缺省=未配置)', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ baseapp: { debugpyPort: 0 }, cellapp: { debugpyPort: -5 }, loginapp: { debugpyPort: '5678' } });
+    const manager = makeManager([], new MemoryMemento());
+    await flushAsync();
+
+    expect(manager.getComponentConfig('baseapp').debugpyPort).toBeUndefined();
+    expect(manager.getComponentConfig('cellapp').debugpyPort).toBeUndefined();
+    expect(manager.getComponentConfig('loginapp').debugpyPort).toBeUndefined();
+
+    pickQueue.push({ label: '$(plug) 端口模式', mode: 'debugpy-port' });
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+    expect(debugCalls[0].config.connect).toEqual({ host: '127.0.0.1', port: 5678 }); // 端口表 baseapp=5678
+  });
 });

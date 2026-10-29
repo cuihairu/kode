@@ -147,13 +147,14 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 ### `kbengine.debug.start`
 
 - Title: `Start Debugging`
-- Purpose: show the target component's telnet debugging instructions, then enter the process-picker attach flow
+- Purpose: show the target component's telnet debugging instructions, then enter the attach flow; a component with a configured `debugpyPort` skips the briefing and connects to that port directly (IDE-PDBG-001)
 
 ### `kbengine.debug.attach`
 
 - Title: `Attach to Component`
-- Purpose: list local processes for selection and attach to a KBEngine component process that has debugging enabled
+- Purpose: attach to a KBEngine component process that has debugging enabled — a component with a configured `debugpyPort` connects straight to that port (port mode); otherwise the mode chosen once decides: port mode (per-component default port table, otherwise 5678) or process attach (local process picker)
 - Behavior:
+  - First-time without a configured port asks between 端口模式 / 进程附加模式 (remembered in workspace state; `kbengine.debug.resetAttachMode` clears it)
   - Processes matching the target component name are pinned to the top with ✓; the rest keep the system process list order
   - After selection, the debugpy attach configuration is assembled from that process's PID directly — no manual PID typing
   - When the process list cannot be obtained it reports the error plainly instead of spinning
@@ -166,6 +167,14 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Behavior:
   - With no targets configured it points to the settings instead of spinning
   - A target picker pops up; after modal confirmation the attach configuration is assembled as `connect: {host, port}`; `pathMappings` is written only when the target entry carries both `localRoot`/`remoteRoot`
+
+### `kbengine.debug.resetAttachMode`
+
+- Title: `Reset Debug Attach Mode Choice`
+- Purpose: clear the remembered attach-mode choice (IDE-PDBG-001) so the next `Attach to Component` asks again between port mode and process attach mode
+- Behavior:
+  - Clears the workspace-state key and confirms with a notification; it never starts an attach itself
+  - A component with a configured `debugpyPort` always attaches in port mode regardless of the remembered choice
 
 ## Configuration
 

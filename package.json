@@ -57,6 +57,7 @@
     "onCommand:kbengine.debug.start",
     "onCommand:kbengine.debug.attach",
     "onCommand:kbengine.debug.attachRemote",
+    "onCommand:kbengine.debug.resetAttachMode",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
     "onCommand:kbengine.metrics.showSummary",
@@ -387,6 +388,11 @@
         "command": "kbengine.debug.updateLaunchJson",
         "title": "Update launch.json",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "kbengine.debug.resetAttachMode",
+        "title": "Reset Debug Attach Mode Choice",
+        "category": "KBEngine"
       },
       {
         "command": "kbengine.metrics.showSummary",

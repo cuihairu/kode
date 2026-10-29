@@ -466,9 +466,10 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `debug.defaultTelnetHost` / `defaultTelnetPort` | `Start Debugging` 提示语里的 telnet 地址(仅提示,不参与实际探测) |
 | `debug.components.<组件>.telnetHost` / `telnetPort` | 同上,按组件覆盖 |
 | `debug.components.<组件>.telnetEnableCommands` | 提示语里列出的「开启调试命令」,提醒你先经 telnet 输入项目实际使用的命令 |
+| `debug.components.<组件>.debugpyHost` / `debugpyPort` | IDE-PDBG-001:`debugpyPort` > 0 即该组件走端口模式——直连 `debugpyHost:debugpyPort`(host 缺省 `127.0.0.1`),`Start Debugging` 也不再弹 telnet 简报。未配置时按记住的模式走;端口模式下未配端口用组件默认表(baseapp 5678 / cellapp 5679 / loginapp 5680 / dbmgr 5681 / logger 5682,表外 5678)。引擎不会自己起监听——内嵌 Python 得先跑到 `debugpy.listen(port)`(autoDebugpy 注入、waitAtStartup 引导或你自己的代码) |
 | `debug.components.<组件>.pathMappings` | `Update launch.json` 生成 attach 配置时写入的路径映射 |
 
-本地 attach 不从这里拿进程号:`Attach to Component` 列出本机进程(匹配组件名的置顶标 ✓),选中即以 PID 组装配置。远程附加的目标来自设置 `kbengine.debug.remoteTargets`,也不读这个文件。
+本地 attach 不从这里拿进程号:未配置 `debugpyPort` 时,`Attach to Component` 列出本机进程(匹配组件名的置顶标 ✓),选中即以 PID 组装配置(模式第一次会问并记住;`kbengine.debug.resetAttachMode` 清除)。远程附加的目标来自设置 `kbengine.debug.remoteTargets`,也不读这个文件。
 
 推荐结构:
 
