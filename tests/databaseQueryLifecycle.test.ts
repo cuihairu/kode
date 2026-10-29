@@ -161,4 +161,54 @@ describe('runReadOnlyQueryLifecycle(取消与超时)', () => {
     expect(outcome.kind).toBe('completed');
     await expect(outcome.released).rejects.toThrow('close refused');
   });
+
+  // IDE-REV-014(原项 IDE-DB-003 重开):永不结算的查询也结束等待——释放
+  // 等待有上限,到点强制销毁连接(释放或销毁合计恰一次);晚到成功/失败
+  // 不触发第二次释放;轮询面不因释放路径滞留。
+
+  it('永不结算的查询:released 在释放上限到点经 destroy 结束,close 零调用;晚到结算不重复释放', async () => {
+    const h = createHarness();
+    const destroy = vi.fn(async () => undefined);
+    const { promise, resolveRun } = deferredRun();
+    const outcome = await runReadOnlyQueryLifecycle(() => promise, h.close, {
+      timeoutMs: 100, isCancelled: h.isCancelled, now: h.now, sleep: h.sleep,
+      releaseDeadlineMs: 3, destroy
+    });
+    expect(outcome.kind).toBe('timeout');
+
+    await outcome.released; // 释放等待有界:sleep 每次+1ms,3ms 上限即到点
+    expect(destroy).toHaveBeenCalledTimes(1); // 强制销毁即唯一释放动作
+    expect(h.close).toHaveBeenCalledTimes(0); // close 不再叠加
+
+    resolveRun(QUERY_RESULT); // 晚到成功
+    await new Promise<void>(resolve => { setImmediate(resolve); });
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(h.close).toHaveBeenCalledTimes(0); // 不重复释放
+  });
+
+  it('未注入 destroy:释放上限到点退回 close,同样不等永不结算的查询', async () => {
+    const h = createHarness();
+    const { promise } = deferredRun();
+    const outcome = await runReadOnlyQueryLifecycle(() => promise, h.close, {
+      timeoutMs: 100, isCancelled: h.isCancelled, now: h.now, sleep: h.sleep,
+      releaseDeadlineMs: 2
+    });
+    expect(outcome.kind).toBe('timeout');
+
+    await outcome.released; // 有界:不等永不结算的 run
+    expect(h.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('结算路径不受释放上限影响:先结算仍走 close 恰一次,destroy 零调用', async () => {
+    const h = createHarness();
+    const destroy = vi.fn(async () => undefined);
+    const outcome = await runReadOnlyQueryLifecycle(async () => QUERY_RESULT, h.close, {
+      timeoutMs: 1000, isCancelled: h.isCancelled, now: h.now, sleep: h.sleep,
+      releaseDeadlineMs: 1, destroy
+    });
+    expect(outcome.kind).toBe('completed');
+    await outcome.released;
+    expect(h.close).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(0);
+  });
 });
