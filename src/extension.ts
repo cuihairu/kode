@@ -148,7 +148,9 @@ import { parseHttpRequestEntries } from './httpRequests';
 import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
-import { setupHotReload } from './hotReload';
+import { realHotReloadTimerDeps, setupHotReload } from './hotReload';
+import { HotReloadStatusController } from './hotReloadStatus';
+import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { HotReloadTargetStateStore } from './hotReloadTargetState';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
@@ -3231,6 +3233,13 @@ export function activate(context: vscode.ExtensionContext) {
   // 文件归属的工作区扫描根;动作完成无回执仍只记 sent-unverified,绝不记
   // 成功态——同文件发不同实例各落各的,切目标不复用上一目标状态。
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({ now: () => Date.now() });
+  // IDE-REV-025:状态控制器显式装配,批次聚合命令与状态栏/日志共用同一通道
+  const hotReloadStatus = new HotReloadStatusController({
+    createStatusBarItem: (alignment, priority) => vscode.window.createStatusBarItem(alignment, priority),
+    createOutputChannel: name => vscode.window.createOutputChannel(name),
+    registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
+    timers: realHotReloadTimerDeps
+  });
   setupHotReload(context, (actionName, sendOptions) =>
     quickActionManager.runByName(actionName, {
       suppressConfirm: true,
@@ -3239,6 +3248,7 @@ export function activate(context: vscode.ExtensionContext) {
         : {})
     })
   , {
+    status: hotReloadStatus,
     targetState: {
       store: hotReloadTargetStateStore,
       resolveTargetId: async actionName => {
@@ -3283,6 +3293,15 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   });
+  // IDE-REV-025:多目标批次聚合的展示入口——台账全量归并,partial 点名失败目标
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.showBatchSummary', () => {
+      runHotReloadBatchSummaryCommand(hotReloadTargetStateStore, {
+        logBlock: text => hotReloadStatus.log(text),
+        show: () => hotReloadStatus.showLog()
+      });
+    })
+  );
 
   // 临时编辑热重载 quick action(书 §19 HR-PR-02):先临时编辑 → 可选自动
   // 还原 → reloadScript → 结果回显。开关默认关(与 kbengine.hotReload.enabled

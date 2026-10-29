@@ -147,6 +147,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - `actionName` 留空或匹配不到任何动作时，事件照常触发但只往 OUTPUT 通道「KBEngine 快速执行动作」落一行流水，不弹窗、不执行
 - `http` 动作的真实响应会进逐目标台账：2xx 落「已送达未确认」（仅当回包体按已记录回执协议逐字回显所发文件时才升格 accepted），非 2xx 落 failed 点名状态码；未知回包体保持未确认。宣称 `applied` 需要双证——回执 digest 必须与所发文件内容 sha256 一致——证据不足（运行时无协议、内容不可读、digest 不符、核验超时）一律保持未确认并记录阻塞原因
 - 批内出现 `.def` 文件先过结构闸：序列化/RPC 参数变化（属性或方法增删、类型/Flags/签名变化）整批不发普通 reload 并弹需重启警告；注释/空白级 def 编辑与纯 Python 批照常发送
+- `kbengine.hotReload.showBatchSummary` 把台账全部目标聚合进日志通道：有败有成显示 partial 点名失败目标，各目标逐文件原因可查
 
 ## 依赖图能力
 

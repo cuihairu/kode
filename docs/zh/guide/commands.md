@@ -476,6 +476,16 @@
   - 每次触发记 time/触发文件(去抖合并到的)/去抖值,外加结果行(已发送未确认/失败/未配动作名跳过);日志行即时落账,不随状态栏节流合并
   - 不进命令面板(`when: false`)——状态栏项才是正入口
 
+
+### `kbengine.hotReload.showBatchSummary`
+
+- 标题：`Show Hot Reload Batch Summary`
+- 作用：把多目标热更批次聚合结果渲染进「KBEngine 热更新」通道并打开——每个目标一块、逐文件原因可查（IDE-REV-025 / HOT-006）
+- 行为：
+  - 聚合台账全部目标（所有有记录的 (rootId, targetId)——不只最近一次发送）：有败有成的批次显示 部分成功（partial）点名每个失败目标与原因；全败显示 全部失败；无败显示 全部目标发出面成功，并明示应用确认态以逐目标明细为准、批次文案不冒充
+  - 每个目标不论成败都渲染逐文件块（`rootId::targetId(outcome):` 后随 `file → outcome(detail)` 行），同目标内最差面胜出（failed > sent-unverified > accepted > applied），绿灯文件不盖红灯文件
+  - 空台账如实渲染 无投递记录，通道照样打开
+  - 成功只到发出面口径：sent-unverified 绝不冒充 applied
 ### `kbengine.discovery.report`
 
 - 标题：`Show Discovery Report`

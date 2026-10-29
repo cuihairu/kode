@@ -566,6 +566,16 @@ The flow graph panel supports:
   - Each trigger logs time / trigger files (merged by debounce) / the debounce value, plus the outcome line (sent-unverified / failed / skipped-no-action-name); log lines are appended immediately and are not subject to the status-bar throttle
   - Hidden from the command palette (`when: false`) — the status bar item is the intended entry
 
+
+### `kbengine.hotReload.showBatchSummary`
+
+- Title: `Show Hot Reload Batch Summary`
+- Purpose: render the multi-target hot-reload batch rollup into the 「KBEngine 热更新」 channel and open it — one block per target with per-file reasons (IDE-REV-025 / HOT-006)
+- Behavior:
+  - Aggregates the whole per-target ledger (every (rootId, targetId) that has records — not just the latest send): a batch with failed and non-failed targets shows 部分成功 (partial) naming each failed target and its reason; all failed shows 全部失败; no failures shows 全部目标发出面成功 with the explicit note that application-confirmation state lives in the per-target detail, never claimed by the batch text
+  - Every target — failed or not — gets its per-file block (`rootId::targetId(outcome):` followed by `file → outcome(detail)` lines), so one green target never masks a red one (worst face wins within a target: failed > sent-unverified > accepted > applied)
+  - An empty ledger is rendered honestly as 无投递记录 and the channel still opens
+  - Success is delivery-face only: sent-unverified never masquerades as applied
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`
