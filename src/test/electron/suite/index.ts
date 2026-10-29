@@ -19,6 +19,8 @@ export function run(): Promise<void> {
           ? file === 'multiRootNavigation.test.js'
           : suite === 'freshfile'
             ? file === 'freshFileNavigation.test.js'
+            : suite === 'storm'
+              ? file === 'stormRecovery.test.js'
           : suite === 'vsix'
             ? file === 'vsixSmoke.test.js'
             : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');

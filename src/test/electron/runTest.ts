@@ -18,6 +18,7 @@ async function main(): Promise<void> {
   const fieldMode = process.argv.includes('--field');
   const multirootMode = process.argv.includes('--multiroot');
   const freshFileMode = process.argv.includes('--freshfile');
+  const stormMode = process.argv.includes('--storm');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -299,6 +300,52 @@ async function main(): Promise<void> {
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'freshfile';
     process.env.KODE_FRESH_ROOT = temporaryRoot;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (stormMode) {
+    // IDE-ACC-006 连续输入后的补全与诊断验收:StormEntity 的 def 把 mA/mB
+    // 都声明在 BaseMethods,python 经 self.cell 调用必出「段错配」诊断且
+    // 消息点名被调方法——输入风暴交替改写被调方法名,风暴结束后诊断必须
+    // 只剩最终版本(mB),中间版本(mA)一个不留;补全面在风暴后于 self.h
+    // 前缀取 def 属性 hp。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-storm-'));
+    workspacePath = temporaryRoot;
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'base'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '	<StormEntity hasBase="true" hasCell="true"></StormEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entity_defs', 'StormEntity.def'), [
+      '<root>',
+      '    <Properties>',
+      '        <hp>',
+      '            <Type>UINT32</Type>',
+      '        </hp>',
+      '    </Properties>',
+      '    <BaseMethods>',
+      '        <mA>',
+      '            <Arg>UINT8</Arg>',
+      '        </mA>',
+      '        <mB>',
+      '            <Arg>UINT8</Arg>',
+      '        </mB>',
+      '    </BaseMethods>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'base', 'StormEntity.py'), [
+      'class StormEntity:',
+      '    def tick(self):',
+      '        self.cell.mA()'
+    ].join('\n'));
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'storm';
+    process.env.KODE_STORM_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   }
 
