@@ -27,6 +27,7 @@ async function main(): Promise<void> {
   const attributionMode = process.argv.includes('--attribution');
   const longSessionMode = process.argv.includes('--longsession');
   const delFileMode = process.argv.includes('--delfile');
+  const renameMode = process.argv.includes('--rename');
   let devPath = extensionDevelopmentPath;
   let workspacePath = path.resolve(extensionDevelopmentPath, 'tests/fixtures/electron-ws');
   if (demoMode) {
@@ -363,6 +364,63 @@ async function main(): Promise<void> {
     }, null, 2));
     process.env.KODE_ELECTRON_SUITE = 'delfile';
     process.env.KODE_DEL_ROOT = temporaryRoot;
+    process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+  } else if (renameMode) {
+    // IDE-ACC-012 重命名后的目标迁移验收:RenamedEntity 双段——CellMethods
+    // <onMove>(实现 scripts/cell/RenamedEntity.py,套件中途经宿主
+    // workspace.fs.rename 挪到平铺 scripts/RenamedEntity.py:归属约定按
+    // basename 找候选,平铺形态在候选序列内=重命名后映射应迁到新 URI)+
+    // BaseMethods <onPing>(实现留守,且 ping 调 self.cell.onMove()=
+    // <onMove> 的引用点)。重命名后定义/实现列表只返回新 URI,引用列表
+    // 无重复新旧目标,留守导航不牵连。
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-rename-'));
+    workspacePath = temporaryRoot;
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'entity_defs'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'base'), { recursive: true });
+    fs.mkdirSync(path.join(temporaryRoot, 'scripts', 'cell'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entities.xml'), [
+      '<root>',
+      '	<RenamedEntity hasBase="true" hasCell="true"></RenamedEntity>',
+      '</root>'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'entity_defs', 'RenamedEntity.def'), [
+      '<root>',
+      '    <BaseMethods>',
+      '        <onPing>',
+      '            <Arg>UINT8</Arg>',
+      '        </onPing>',
+      '    </BaseMethods>',
+      '    <CellMethods>',
+      '        <onMove>',
+      '            <Arg>UINT8</Arg>',
+      '        </onMove>',
+      '    </CellMethods>',
+      '</root>'
+    ].join('\n'));
+    // base 实现留守+提供 <onMove> 的调用点;cell 实现形参与 def <Arg> 对齐,
+    // 套件中途挪到 scripts/ 平铺位(内容不变,basename 不变)
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'base', 'RenamedEntity.py'), [
+      '# acc012 surviving base implementation: calls the cell method (reference point).',
+      'class RenamedEntity:',
+      '',
+      '    def onPing(self, level):',
+      '        self.cell.onMove()'
+    ].join('\n'));
+    fs.writeFileSync(path.join(temporaryRoot, 'scripts', 'cell', 'RenamedEntity.py'), [
+      '# acc012 rename target: moved mid-suite via workspace.fs.rename to scripts/ flat layout.',
+      'class RenamedEntity:',
+      '',
+      '    def onMove(self, level):',
+      '        return None'
+    ].join('\n'));
+    fs.mkdirSync(path.join(temporaryRoot, '.vscode'), { recursive: true });
+    fs.writeFileSync(path.join(temporaryRoot, '.vscode/settings.json'), JSON.stringify({
+      'kbengine.showFinalConfigOnOpen': false,
+      'kbengine.python.stubExport': false,
+      'kbengine.python.extraPathsSync': false
+    }, null, 2));
+    process.env.KODE_ELECTRON_SUITE = 'rename';
+    process.env.KODE_RENAME_ROOT = temporaryRoot;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
   } else if (stormMode) {
     // IDE-ACC-006 连续输入后的补全与诊断验收:StormEntity 的 def 把 mA/mB

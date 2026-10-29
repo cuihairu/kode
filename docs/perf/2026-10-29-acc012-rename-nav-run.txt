@@ -1,0 +1,15 @@
+acc012.baseline.defHitsCell=true
+acc012.baseline.defLocations=1
+acc012.baseline.implLocations=1
+acc012.baseline.refHitsBase=true
+acc012.baseline.refLocations=1
+acc012.rename.attempts=2
+acc012.after.defLocations=1
+acc012.after.defHitsMoved=true
+acc012.after.defHitsCell=false
+acc012.after.implLocations=1
+acc012.after.implHitsMoved=true
+acc012.after.refHitsBase=true
+acc012.after.refUniqueKeys=true
+acc012.after.pingHitsBase=true
+acc012.after.reverseMovedHitsDef=true
