@@ -146,7 +146,8 @@
         "scopeName": "text.kbengine-types",
         "path": "./syntaxes/kbengine-types-injection.json",
         "injectTo": [
-          "text.xml"
+          "text.xml",
+          "source.kbengine-def"
         ]
       },
       {

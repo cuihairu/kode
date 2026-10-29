@@ -26,7 +26,7 @@
 - **CodeLens：事件回调标记** —— Python 脚本中事件回调/订阅数标记 ——（证据：package.json#configuration `kbengine.codeLens.eventCallbacks`；todo.md:27；src/eventApi.ts）
 - **CodeLens：属性访问反向跳转** —— `self.<属性>` 访问行回链 def 声明，附类型/可见域/持久化信息 ——（证据：package.json#configuration `kbengine.codeLens.property`；todo.md:21；src/propertyCodeLens.ts）
 - **CodeLens：types.xml 落库镜链** —— 类型声明行「落库到表 X」镜链带引用反扫，超 10 处折叠为计数镜 ——（证据：package.json#configuration `kbengine.codeLens.typesXml`；todo.md:20；src/languageProviders.ts `TypesXmlCodeLensProvider`）
-- **Inlay hint：def 声明数据类型** —— `self.<属性>` 访问处内联显示 types.xml 数据类型;`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名——.def `<Arg>` 无名可考)——（证据：package.json#configuration `kbengine.inlayHints.typeData`；todo.md:25；src/typeInlayHints.ts）
+- **Inlay hint：def 声明数据类型** —— `self.<属性>` 访问处内联显示解析到底的类型注解(types.xml 别名逐层解析到底层内建,如 SERVER_ID→int、VECTOR3→Tuple;PYTHON/未知落 Any 不显示,2026-10-29);`self.base/cell/client` RPC 调用点每实参后内联显示 def 已声明的形参类型(`: 类型`,只显类型不带合成形参名——.def `<Arg>` 无名可考)——（证据：package.json#configuration `kbengine.inlayHints.typeData`；todo.md:25；src/typeInlayHints.ts）
 - **Inlay hint：def 形参类型(定义点)** —— entity 脚本区块(ClientMethods/BaseMethods/CellMethods)内 def 的未标注形参后内联 def 声明的 `<Arg>` 类型,声明 `<ReturnType>` 时闭括号后内联 `-> 类型` ——（证据：package.json#configuration `kbengine.inlayHints.defParams`；src/defParamInlayHints.ts）
 - **entities.xml 校验** —— 同名重复实体落 warning（引擎按已有模块静默合并）+ Utype 清单序号悬停 ——（证据：todo.md:33；src/entitiesXmlAnalysis.ts）
 - **跨文件继承检查** —— 继承链跨文件同名检查；Interfaces 装载语义对齐引擎 ——（证据：todo.md:65、todo.md:66；src/defAnalyzer.ts `collectInheritedNames`）
@@ -110,7 +110,7 @@
 
 ## 编辑器基础
 
-- **types.xml 注入语法** —— 向 XML 注入语义着色：内置类型、自定义类型引用、ARRAY/FIXED_DICT 关键字与 implementedBy 值 ——（证据：package.json#contributes.grammars（`injectTo: ["text.xml"]`）；todo.md:102）
+- **types.xml + .def 注入语法** —— 语义着色：内置类型、自定义类型引用、ARRAY/FIXED_DICT 关键字与 implementedBy 值，注入 XML(types.xml)与 kbengine-def 语法(.def 文件，2026-10-29)——（证据：package.json#contributes.grammars（`injectTo: ["text.xml", "source.kbengine-def"]`）；todo.md:102）
 - **kbengine-def / xml / python 片段** —— 各语言内置片段清单 ——（证据：package.json#contributes.snippets；snippets/）
 - **选区生成片段** —— 把编辑器选区文本转成工作区级自定义片段文件 ——（证据：package.json#contributes.commands `kbengine.snippets.generateFromSelection`；src/snippetGenerator.ts）
 - **11 套 KBEngine 配色主题** —— Monokai、One Dark、Dracula、GitHub Light、Solarized Light/Dark、Nord、Gruvbox Dark、Catppuccin Mocha、VS Dark+/Light+ ——（证据：package.json#contributes.themes）

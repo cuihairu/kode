@@ -59,6 +59,26 @@ const TYPES_SAMPLE = [
 const COMMENT_SAMPLE = '<!-- 注释里的 UINT16 ARRAY FIXED_DICT 不应着色 -->';
 const ATTR_SAMPLE = '<ghost id="UINT16" kind="ARRAY"/>';
 
+// .def 宿主注入样本(2026-10-29 用户令:def 文件内建/ARRAY/自定义类型着色):
+// def 走 source.kbengine-def 专属语法(末模式 include text.xml 委托分词),
+// 注入语法须同时覆盖该宿主——与 types.xml 同一套规则、同 scope 家族。
+const DEF_SAMPLE = [
+  '<root>',
+  '  <Properties>',
+  '    <serverID><Type>SERVER_ID</Type></serverID>',
+  '    <direction><Type>VECTOR3</Type></direction>',
+  '    <items>',
+  '      <Type>ARRAY<of>ITEM_INFO</of></Type>',
+  '    </items>',
+  '  </Properties>',
+  '  <CellMethods>',
+  '    <reborn>',
+  '      <Arg>UINT8</Arg>',
+  '    </reborn>',
+  '  </CellMethods>',
+  '</root>'
+].join('\n');
+
 // 批131:implementedBy 值形态专项——裸符号(模块缺省)与深层模块路径。
 // 引擎 datatype.cpp loadImplModule 把值当「模块路径.实现对象」装载,
 // 分段着色口径:点号前的每一段=模块段,紧贴闭标签的最后一段=符号段。
@@ -91,6 +111,7 @@ describe('types.xml 注入语法(批130)', () => {
 
     let textXml: unknown = null;
     let injection: unknown = null;
+    let defGrammar: unknown = null;
     let theme: unknown = null;
     try {
       const xmlModule = (await import('@shikijs/langs/xml')) as {
@@ -103,6 +124,9 @@ describe('types.xml 注入语法(批130)', () => {
       textXml = xmlGrammars.find(item => item.scopeName === 'text.xml') ?? null;
       injection = JSON.parse(
         fs.readFileSync(path.join(root, 'syntaxes', 'kbengine-types-injection.json'), 'utf8')
+      );
+      defGrammar = JSON.parse(
+        fs.readFileSync(path.join(root, 'syntaxes', 'kbengine.tmLanguage.json'), 'utf8')
       );
       theme = JSON.parse(
         fs.readFileSync(path.join(root, 'syntaxes', 'kbengine-color-theme.json'), 'utf8')
@@ -121,10 +145,18 @@ describe('types.xml 注入语法(批130)', () => {
       theme: { name: (theme as { name: string }).name, settings: (theme as { tokenColors: unknown }).tokenColors },
       // 与 VS Code TMGrammarFactory 同形:按宿主 scope 给注入者清单,
       // 选择器由注入语法文件自身的 injectionSelector 提供。
-      getInjections: scopeName => (scopeName === 'text.xml' ? ['text.kbengine-types'] : []),
+      // 2026-10-29:注入宿主扩双份——text.xml(types.xml 等)+
+      // source.kbengine-def(.def),与 package.json injectTo 同步。
+      getInjections: scopeName =>
+        scopeName === 'text.xml' || scopeName === 'source.kbengine-def'
+          ? ['text.kbengine-types']
+          : [],
       loadGrammar: async scopeName => {
         if (scopeName === 'text.xml') {
           return textXml as never;
+        }
+        if (scopeName === 'source.kbengine-def') {
+          return defGrammar as never;
         }
         if (scopeName === 'text.kbengine-types') {
           return injection as never;
@@ -161,6 +193,23 @@ describe('types.xml 注入语法(批130)', () => {
     let stack = null;
     const found: string[][] = [];
     for (const line of sample.split('\n')) {
+      const result = grammar!.tokenizeLine(line, stack);
+      stack = result.ruleStack;
+      for (const token of result.tokens) {
+        if (line.slice(token.startIndex, token.endIndex) === needle) {
+          found.push(token.scopes);
+        }
+      }
+    }
+    return found[0] ?? [];
+  };
+
+  /** 同 scopesIn,但宿主是 .def(source.kbengine-def 语法,注入双宿主另一边) */
+  const scopesInDef = async (needle: string): Promise<string[]> => {
+    const grammar = await registry!.loadGrammar('source.kbengine-def');
+    let stack = null;
+    const found: string[][] = [];
+    for (const line of DEF_SAMPLE.split('\n')) {
       const result = grammar!.tokenizeLine(line, stack);
       stack = result.ruleStack;
       for (const token of result.tokens) {
@@ -367,14 +416,34 @@ describe('types.xml 注入语法(批130)', () => {
     expect(moduleColor, '模块段与自定义类型引用同色,同区块内不可区分').not.toBe(custom);
   });
 
+  it('def 宿主注入(2026-10-29 用户令):内建/ARRAY/自定义类型在 .def 内取得同族 scope', async () => {
+    if (!registry) {
+      return;
+    }
+    // 方法定义 <Arg>UINT8</Arg> 与属性 <Type>VECTOR3</Type>:内建 support.type
+    const vector = await scopesInDef('VECTOR3');
+    expect(vector.some(scope => scope.endsWith('.kbengine.builtin'))).toBe(true);
+    const argType = await scopesInDef('UINT8');
+    expect(argType.some(scope => scope.endsWith('.kbengine.builtin'))).toBe(true);
+    // ARRAY 指令 keyword;<Type>ARRAY<of>...</Type> 内联形态同命中
+    const array = await scopesInDef('ARRAY');
+    expect(array.some(scope => scope.endsWith('.kbengine.array'))).toBe(true);
+    // 自定义类型引用(types.xml 名字)与 types.xml 内同款 custom scope
+    const serverId = await scopesInDef('SERVER_ID');
+    expect(serverId.some(scope => scope.endsWith('.kbengine.custom'))).toBe(true);
+  });
+
   it('五类落在五个不同语义 scope(换主题仍可区分的机制保证)', () => {
     const grammar = JSON.parse(
       fs.readFileSync(path.join(root, 'syntaxes', 'kbengine-types-injection.json'), 'utf8')
     ) as { scopeName: string; injectionSelector: string; patterns: Array<{ name?: string }> };
 
-    // 选择器形态:注入 text.xml,带注释/字符串排除(vscode 自带注入同款)
+    // 选择器形态:双宿主注入(text.xml + source.kbengine-def,2026-10-29
+    // def 着色扩展),带注释/字符串排除(vscode 自带注入同款)
     expect(grammar.scopeName).toBe('text.kbengine-types');
-    expect(grammar.injectionSelector).toBe('L:text.xml - (comment, string)');
+    expect(grammar.injectionSelector).toBe(
+      'L:text.xml - (comment, string), L:source.kbengine-def - (comment, string)'
+    );
 
     const scopes = grammar.patterns.map(rule => rule.name ?? '').filter(Boolean);
     // 内置类型的 <Type> 锚定式与裸文本式共用同一 scope(形态不同、语义相同)

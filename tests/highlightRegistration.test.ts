@@ -49,9 +49,10 @@ describe('高亮注册面恒等锁(批103)', () => {
     ]);
   });
 
-  it('grammars 逐字段锁定:def 主语法 + types.xml 注入语法(批130 起)', () => {
-    // 第二条是注入语法:无 language 键,injectTo 只许 text.xml——
-    // types.xml 默认由 XML 插件着色,kode 只在其上叠加 KBEngine 语义
+  it('grammars 逐字段锁定:def 主语法 + types.xml 注入语法(批130 起;2026-10-29 注入宿主扩双份)', () => {
+    // 第二条是注入语法:无 language 键,注入宿主双份——text.xml(types.xml
+    // 等,默认由 XML 插件着色)+ source.kbengine-def(.def 主语法,2026-10-29
+    // 用户令 def 内建/ARRAY/自定义类型着色)。kode 只叠加 KBEngine 语义
     // scope,不抢宿主分词。
     expect(pkg.contributes.grammars).toEqual([
       {
@@ -62,7 +63,7 @@ describe('高亮注册面恒等锁(批103)', () => {
       {
         scopeName: 'text.kbengine-types',
         path: './syntaxes/kbengine-types-injection.json',
-        injectTo: ['text.xml']
+        injectTo: ['text.xml', 'source.kbengine-def']
       },
       {
         scopeName: 'text.python-constants',
@@ -118,12 +119,13 @@ describe('高亮注册面恒等锁(批103)', () => {
     for (const grammar of pkg.contributes.grammars) {
       expect(String(grammar.scopeName)).not.toBe('source.python');
       expect(String(grammar.scopeName)).not.toContain('injection');
-      // 注入宿主白名单(2026-10-21 用户令演进): types.xml 语义着色(批130)
-      // 仅入 text.xml; 全局常量色(text.python-constants, 只发射
+      // 注入宿主白名单(2026-10-21 用户令演进; 2026-10-29 扩): types.xml
+      // 语义着色(批130)入 text.xml + source.kbengine-def(def 文件同款
+      // 着色, 用户令); 全局常量色(text.python-constants, 只发射
       // variable.other.constant.python 标准 scope) 与函数调用色
       // (text.python-function-calls, 只发射 variable.function.call.python
       // 标准 scope) 仅入 source.python——
-      // 除此三者外注入任何宿主仍锁死; 不得注册 source.python 重复语法、
+      // 除此四注入面外注入任何宿主仍锁死; 不得注册 source.python 重复语法、
       // 不得映射 .py 语言(上两条保持不变)
       const injectTo = grammar.injectTo as string[] | undefined;
       if (injectTo !== undefined) {
@@ -131,7 +133,7 @@ describe('高亮注册面恒等锁(批103)', () => {
           grammar.scopeName === 'text.python-constants' ||
           grammar.scopeName === 'text.python-function-calls'
             ? ['source.python']
-            : ['text.xml'];
+            : ['text.xml', 'source.kbengine-def'];
         expect(injectTo).toEqual(allowed);
       }
     }

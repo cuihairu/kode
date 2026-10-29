@@ -1,6 +1,6 @@
 {
   "scopeName": "text.kbengine-types",
-  "injectionSelector": "L:text.xml - (comment, string)",
+  "injectionSelector": "L:text.xml - (comment, string), L:source.kbengine-def - (comment, string)",
   "patterns": [
     {
       "match": "(?<=<Type>)(?:UINT8|UINT16|UINT32|UINT64|INT8|INT16|INT32|INT64|FLOAT|DOUBLE|STRING|UNICODE|VECTOR2|VECTOR3|VECTOR4|ENTITYCALL|PYTHON|PY_DICT|PY_TUPLE|PY_LIST|BLOB)(?![A-Za-z0-9_])",

@@ -90,7 +90,8 @@ describe('kbengine.tmLanguage 资产自洽', () => {
     const injectionEntry = pkg.contributes.grammars[1];
     expect(injectionEntry.language).toBeUndefined();
     expect(injectionEntry.scopeName).toBe('text.kbengine-types');
-    expect(injectionEntry.injectTo).toEqual(['text.xml']);
+    // 2026-10-29:def 着色扩展——注入宿主双份(text.xml + source.kbengine-def)
+    expect(injectionEntry.injectTo).toEqual(['text.xml', 'source.kbengine-def']);
     const injectionPath = path.join(root, injectionEntry.path.replace(/^\.\//, ''));
     expect(injectionPath).toBe(path.join(root, 'syntaxes', 'kbengine-types-injection.json'));
     expect(() => JSON.parse(fs.readFileSync(injectionPath, 'utf8'))).not.toThrow();
