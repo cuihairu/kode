@@ -180,6 +180,11 @@
   注册面外)→ Any。以上全部保留,不属于「可避免 Any」。
 - 元素型 ARRAY 的消灭(`ARRAY <of> X` → `List[X]`,of 套 of 递归)在 B 单
   已落地(pythonTypeStubs.test.ts 嵌套/缺 of/ALIAS 占位三例),本次未改。
+  2026-10-29 补:FIXED_DICT 属性面内联 `<Type>ARRAY<of>X</of></Type>` 同样
+  消灭——definitionWorkspace.parseCustomTypeProperties 现随 typeName 一并
+  产出 typeStructure(与类型条目顶层同一解析器),存根 propertyAnnotation
+  据此解析元素型;树缺失/解析失败才落 `List[Any]`(用户报 AVATAR_SHOW_INFO
+  roleInfoList 收口)。
 
 ### 8.4 实体存根继承与 mailbox 面(任务1,最小可用取舍)
 

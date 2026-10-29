@@ -32,7 +32,11 @@ interface TypeScript {
   rawValue?: string;
   of?: string;
   filePath?: string;
-  properties?: Array<{ name: string; typeName?: string }>;
+  properties?: Array<{
+    name: string;
+    typeName?: string;
+    typeStructure?: { name: string; rawValue?: string; children: Array<{ tag: string; value: { name: string; children: never[] } }> };
+  }>;
 }
 
 const makeType = (script: TypeScript): CustomTypeInfo => {
@@ -60,7 +64,11 @@ const makeType = (script: TypeScript): CustomTypeInfo => {
       rawValue,
       children: ofNode(script.of) ? [ofNode(script.of) as { tag: string; value: { name: string; rawValue: string; children: never[] } }] : []
     },
-    properties: (script.properties ?? []).map(property => ({ name: property.name, typeName: property.typeName }))
+    properties: (script.properties ?? []).map(property => ({
+      name: property.name,
+      typeName: property.typeName,
+      typeStructure: property.typeStructure
+    }))
   };
 };
 
@@ -375,6 +383,44 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(byName.mystery).toBe('Any');
     expect(byName.inlineArray).toBe('List[Any]');
     expect(byName.blank).toBe('Any');
+  });
+
+  it('FD 属性内联 ARRAY<of>自定义类型:元素型按结构树解析成 List[元素名](2026-10-29 用户报 List[Any])', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({
+        name: 'SHOW_ROLE_INFO',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [{ name: 'dbid', typeName: 'UINT64' }]
+      }),
+      makeType({
+        name: 'AVATAR_SHOW_INFO',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          {
+            name: 'roleInfoList',
+            typeName: 'ARRAY',
+            typeStructure: {
+              name: 'ARRAY',
+              rawValue: 'ARRAY <of> SHOW_ROLE_INFO </of>',
+              children: [
+                { tag: 'of', value: { name: 'SHOW_ROLE_INFO', rawValue: 'SHOW_ROLE_INFO', children: [] } }
+              ]
+            }
+          }
+        ]
+      })
+    ]);
+
+    const entry = plan.entries.find(candidate => candidate.name === 'AVATAR_SHOW_INFO');
+    expect(entry?.kind).toBe('class');
+    if (!entry || entry.kind !== 'class') {
+      return;
+    }
+    const byName = Object.fromEntries(entry.properties.map(property => [property.name, property.annotation]));
+    // 元素型照结构树解析到 FIXED_DICT 类名,不再有损落 List[Any]
+    expect(byName.roleInfoList).toBe('List[SHOW_ROLE_INFO]');
   });
 
   it('FD 零属性出 pass 体', () => {

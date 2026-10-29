@@ -35,6 +35,12 @@ export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
 export interface CustomTypePropertyInfo {
   name: string;
   typeName?: string;
+  /**
+   * 属性 <Type> 内联结构树(与类型条目 structure 同一解析器产出):内联数组
+   * ARRAY<of>X</of> 的元素型据此可解析(2026-10-29 用户报 pyi 落 List[Any]);
+   * 标量属性是单节点,无 <Type> 时为 undefined
+   */
+  typeStructure?: CustomTypeStructureNode;
   /** 属性标签所在行(1 起);T-05 原始定义导航不得反推生成行号 */
   line: number;
   /** <Type> 标签所在行;内联类型从此处独立回跳 types.xml */
@@ -1367,6 +1373,11 @@ function parseCustomTypeProperties(
       return {
         name: property.name,
         typeName: getScalarChildValue(property, 'Type'),
+        // 属性面内联结构(ARRAY<of>X</of>)与类型条目顶层同一解析器:
+        // 直文本 typeName 只并文本节点(ARRAY),元素型只在结构树里
+        typeStructure: typeNode
+          ? parseCustomTypeStructure(getInnerXml(typeNode))
+          : undefined,
         line: getLineNumberAt(document, property.tagStart),
         typeLine: typeNode
           ? getLineNumberAt(document, typeNode.tagStart)

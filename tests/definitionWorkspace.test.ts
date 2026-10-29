@@ -58,6 +58,12 @@ beforeAll(() => {
     '    </Properties>',
     '    <implementedBy>item.pos</implementedBy>',
     '  </ITEM_POS>',
+    '  <ROLE_BAG>',
+    '    FIXED_DICT',
+    '    <Properties>',
+    '      <slots><Type>ARRAY<of>ITEM_ID</of></Type></slots>',
+    '    </Properties>',
+    '  </ROLE_BAG>',
     '</root>'
   ].join('\n'));
   write('scripts/base/Hero.py', 'class Hero:\n    pass\n');
@@ -301,14 +307,14 @@ describe('getEntityRuntimeProfile', () => {
 
 describe('custom type lookups', () => {
   it('lists registered type names from types.xml', () => {
-    expect([...getRegisteredCustomTypes(root)].sort()).toEqual(['ITEM_ID', 'ITEM_POS']);
+    expect([...getRegisteredCustomTypes(root)].sort()).toEqual(['ITEM_ID', 'ITEM_POS', 'ROLE_BAG']);
   });
 
   it('builds full type infos with alias, structure and sorted properties', () => {
     const infos = getCustomTypeInfos(root);
     const byName = new Map(infos.map(info => [info.name, info]));
 
-    expect(infos.map(info => info.name).sort()).toEqual(['ITEM_ID', 'ITEM_POS']);
+    expect(infos.map(info => info.name).sort()).toEqual(['ITEM_ID', 'ITEM_POS', 'ROLE_BAG']);
 
     const itemId = byName.get('ITEM_ID')!;
     expect(itemId).toMatchObject({
@@ -336,6 +342,23 @@ describe('custom type lookups', () => {
       pythonFilePath: p('scripts', 'user_type', 'item', 'pos.py')
     });
     expect(itemPos.line).toBeGreaterThan(itemId.line);
+  });
+
+  it('属性内联 ARRAY<of> 解析出结构树,元素型不再随直文本丢弃(2026-10-29 用户报 List[Any])', () => {
+    const roleBag = getCustomTypeInfos(root).find(info => info.name === 'ROLE_BAG');
+    expect(roleBag?.aliasType).toBe('FIXED_DICT');
+    const slots = roleBag?.properties.find(property => property.name === 'slots');
+    // 直文本仍是 ARRAY(getElementText 只并文本节点);结构树与类型条目顶层同构
+    expect(slots?.typeName).toBe('ARRAY');
+    expect(slots?.typeStructure).toMatchObject({
+      name: 'ARRAY',
+      children: [{ tag: 'of', value: { name: 'ITEM_ID' } }]
+    });
+    // 标量属性结构树是单节点(无 of 子节点),不碍既有消费面
+    const scalar = getCustomTypeInfos(root)
+      .find(info => info.name === 'ITEM_POS')
+      ?.properties.find(property => property.name === 'x');
+    expect(scalar?.typeStructure).toMatchObject({ name: 'UINT8', children: [] });
   });
 
   it('locates the declaration line and implementedBy', () => {
@@ -454,7 +477,7 @@ describe('getDefinitionEntries', () => {
   it('lists interfaces, components and types as single-category lists', () => {
     expect(getDefinitionEntries(root, 'interface').map(e => e.name)).toEqual(['MoveIface']);
     expect(getDefinitionEntries(root, 'component').map(e => e.name)).toEqual(['HealthComp']);
-    expect(getDefinitionEntries(root, 'type').map(e => e.name).sort()).toEqual(['ITEM_ID', 'ITEM_POS']);
+    expect(getDefinitionEntries(root, 'type').map(e => e.name).sort()).toEqual(['ITEM_ID', 'ITEM_POS', 'ROLE_BAG']);
   });
 
   it('returns an empty list in a bare workspace', () => {

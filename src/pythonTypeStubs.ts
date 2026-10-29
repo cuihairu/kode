@@ -350,7 +350,16 @@ function propertyAnnotation(property: CustomTypePropertyInfo, context: Resolutio
     return PYTHON_TYPE_STUB_FALLBACK;
   }
   if (typeName === 'ARRAY') {
-    // 属性面内联数组(如 <Type>ARRAY<of>X</of></Type>)元素型拿不到,有损落 Any
+    // 属性面内联数组(<Type>ARRAY<of>X</of></Type>):元素型按属性结构树解析
+    // (definitionWorkspace.parseCustomTypeProperties 产出,与类型条目顶层
+    // 同源);树缺失/解析失败才有损落 List[Any](2026-10-29 用户报收口)
+    if (property.typeStructure) {
+      try {
+        return resolveStructureElement(property.typeStructure, context);
+      } catch {
+        return `List[${PYTHON_TYPE_STUB_FALLBACK}]`;
+      }
+    }
     return `List[${PYTHON_TYPE_STUB_FALLBACK}]`;
   }
   try {
