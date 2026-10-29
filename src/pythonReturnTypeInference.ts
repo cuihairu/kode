@@ -480,6 +480,13 @@ export function getAnnotationBuildWorkload(): AnnotationBuildWorkload {
   return { running: annotationBuilds.size, waiting, cancelled };
 }
 
+/** IDE-REV-031:注解索引缓存容量面——按工作区根每根一份,TTL 过期重建;
+ * 无条目上限(条目数受工作区根数约束)、无字节占用量可取,口径如实注明,
+ * 不臆造字节估算。 */
+export function getReturnAnnotationCacheGauge(): { entries: number; ttlMs: number } {
+  return { entries: returnAnnotationCaches.size, ttlMs: INDEX_TTL_MS };
+}
+
 /** 测试用:清全部工作区缓存(换临时根/改文件后立即生效) */
 export function resetPythonReturnAnnotationCache(): void {
   returnAnnotationCaches.clear();

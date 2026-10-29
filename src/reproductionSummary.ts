@@ -54,6 +54,13 @@ export interface ReproductionSummaryInput {
       peakQueuedBytes: number;
       budgetRejects: number;
     };
+    /** 相关缓存容量面(IDE-REV-031):条目数与可获取的占用量、配置上限;
+     * 无字节估算的缓存只报条目并注明口径,不把累计命中当容量 */
+    caches: {
+      parsedDocuments: { entries: number; maxEntries: number; bytes: number; maxBytes: number };
+      databaseSchemas: { entries: number; capacity: number };
+      annotationIndex: { entries: number; ttlMs: number };
+    };
     indexTasksQueued: number;
     schemaColdBuilds: number;
   };
@@ -122,6 +129,15 @@ export function renderReproductionSummary(input: ReproductionSummaryInput): stri
       + `/预算${input.queue.worker.maxQueuedBytes}`
       + `/峰值${input.queue.worker.peakQueuedBytes}`
       + `/超预算拒${input.queue.worker.budgetRejects}`
+    + ` 缓存:def文档=${input.queue.caches.parsedDocuments.entries}条`
+      + `/上限${input.queue.caches.parsedDocuments.maxEntries}`
+      + `/${input.queue.caches.parsedDocuments.bytes}B`
+      + `/预算${input.queue.caches.parsedDocuments.maxBytes}B`
+    + ` schema快照=${input.queue.caches.databaseSchemas.entries}条`
+      + `/上限${input.queue.caches.databaseSchemas.capacity}`
+    + ` 注解索引=${input.queue.caches.annotationIndex.entries}条`
+      + `/TTL${input.queue.caches.annotationIndex.ttlMs}ms`
+      + '(按工作区根,无字节估算)'
     + ` 索引任务=${input.queue.indexTasksQueued}`
     + ` schema冷构建=${input.queue.schemaColdBuilds}`);
   const operationEntries = Object.entries(input.activeOperations);

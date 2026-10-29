@@ -73,6 +73,23 @@ export function getParsedDocumentCacheStats(): { entries: number; bytes: number 
   return { entries: parsedDocumentCache.size, bytes: parsedDocumentCacheBytes() };
 }
 
+/** IDE-REV-031:现场报告容量面——条目数/条目上限、utf8 实测字节/字节预算
+ * (预算=当前配置值,测试可注入)。填充/淘汰后从这里核对,容量就是缓存
+ * 实际持有的条目与字节,不是累计命中计数。 */
+export function getParsedDocumentCacheGauge(): {
+  entries: number;
+  maxEntries: number;
+  bytes: number;
+  maxBytes: number;
+} {
+  return {
+    entries: parsedDocumentCache.size,
+    maxEntries: MAX_PARSED_DOCUMENT_CACHE_ENTRIES,
+    bytes: parsedDocumentCacheBytes(),
+    maxBytes: parsedDocumentCacheByteBudget
+  };
+}
+
 export interface DefElementNode {
   kind: 'element';
   name: string;

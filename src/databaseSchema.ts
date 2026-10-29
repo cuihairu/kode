@@ -105,6 +105,12 @@ export function getDatabaseSchemaCacheStatsForTests(): {
   };
 }
 
+/** IDE-REV-031:现场报告容量面——在册条目数与 LRU 上限。累计命中/未命中
+ * 计数不在此:hits 是历史计数,不是容量;容量=当前实际持有的条目数。 */
+export function getDatabaseSchemaCacheGauge(): { entries: number; capacity: number } {
+  return { entries: databaseSchemaCache.size, capacity: DATABASE_SCHEMA_CACHE_LIMIT };
+}
+
 /** IDE-SCH-003:按 def 依赖失效——文件变更事件到达时,只摘除输入清单里消费过
  * 该文件的缓存条目(它及其依赖实体在下次查询时重建),无关实体的条目原样
  * 保留继续命中(同一对象),不清整缓存。返回摘除条目数。懒过期(逐条目

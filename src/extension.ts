@@ -185,10 +185,12 @@ import {
   exportEntityTypeStubs
 } from './entityTypeStubs';
 import { getCustomTypeInfos, getWorkspaceRootForDocument } from './definitionWorkspace';
+import { getParsedDocumentCacheGauge } from './defParser';
 import {
   applySavedFileAnnotations,
   getAnnotationBuildWorkload,
   getPendingDocumentUpdateCount,
+  getReturnAnnotationCacheGauge,
   removeSavedFileAnnotations,
   renameSavedFileAnnotations,
   queueDocumentReturnAnnotations,
@@ -249,6 +251,7 @@ import {
   locateDatabaseSchemaLine,
   resolveEntityTableName,
   resolveSchemaTablePrefix,
+  getDatabaseSchemaCacheGauge,
   getPendingTypeStorageColdBuildCount,
   setTypeStorageUsageBackgroundDispatcher
 } from './databaseSchema';
@@ -4142,6 +4145,11 @@ export function activate(context: vscode.ExtensionContext) {
           annotationUpdates: getPendingDocumentUpdateCount(),
           annotationBuilds: getAnnotationBuildWorkload(),
           worker: getPythonParserWorkerGauge(),
+          caches: {
+            parsedDocuments: getParsedDocumentCacheGauge(),
+            databaseSchemas: getDatabaseSchemaCacheGauge(),
+            annotationIndex: getReturnAnnotationCacheGauge()
+          },
           indexTasksQueued: indexScheduler.getStatus().queued,
           schemaColdBuilds: getPendingTypeStorageColdBuildCount()
         },
@@ -4286,6 +4294,11 @@ export function activate(context: vscode.ExtensionContext) {
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued,
       diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight,
       annotationUpdates: getPendingDocumentUpdateCount(),
+      caches: {
+        parsedDocuments: getParsedDocumentCacheGauge(),
+        databaseSchemas: getDatabaseSchemaCacheGauge(),
+        annotationIndex: getReturnAnnotationCacheGauge()
+      },
       worker: getPythonParserWorkerGauge(),
       annotationBuilds: getAnnotationBuildWorkload(),
       indexTasksQueued: indexScheduler.getStatus().queued,
