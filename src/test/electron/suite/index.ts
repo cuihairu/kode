@@ -14,7 +14,7 @@ export function run(): Promise<void> {
       ? file === 'demoNavigation.test.js'
       : suite === 'field'
         ? file === 'fieldBaseline.test.js' || file === 'plainVariableHover.test.js'
-          || file === 'eventCodeLensCold.test.js'
+          || file === 'eventCodeLensCold.test.js' || file === 'hoverCancelConverge.test.js'
         : suite === 'multiroot'
           ? file === 'multiRootNavigation.test.js'
           : suite === 'freshfile'

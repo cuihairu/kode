@@ -1,0 +1,10 @@
+acc007.cancel.probes=8
+acc007.cancel.cancelledCount=2
+acc007.cancel.maxElapsedMs=1
+acc007.reads.postCancelWindow=0
+acc007.pending.requestSide={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"schemaColdBuilds":0}
+acc007.shared.indexTasksQueuedAtSettle=0
+acc007.shared.parseCountBefore=3073
+acc007.shared.parseCountAfter=3075
+acc007.shared.convergeMs=500
+acc007.pendingWorkFinal={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0}
