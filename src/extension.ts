@@ -3231,8 +3231,13 @@ export function activate(context: vscode.ExtensionContext) {
   // 文件归属的工作区扫描根;动作完成无回执仍只记 sent-unverified,绝不记
   // 成功态——同文件发不同实例各落各的,切目标不复用上一目标状态。
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({ now: () => Date.now() });
-  setupHotReload(context, actionName =>
-    quickActionManager.runByName(actionName, { suppressConfirm: true })
+  setupHotReload(context, (actionName, sendOptions) =>
+    quickActionManager.runByName(actionName, {
+      suppressConfirm: true,
+      ...(sendOptions?.onHttpResponse
+        ? { onHttpResponse: response => sendOptions.onHttpResponse!(response) }
+        : {})
+    })
   , {
     targetState: {
       store: hotReloadTargetStateStore,

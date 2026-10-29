@@ -145,6 +145,7 @@ Command details in [Commands and Panels](./commands.md); config keys and variabl
 - A file save / watcher event triggers the `quickActions` action named above. The gate `kbengine.hotReload.enabled` is **off by default** to avoid misfires: no file watcher is created before you turn it on, so activation behavior is unchanged; toggling it takes effect immediately, no window restart needed
 - Change, create, and delete all count as save events and are merged into one execution by debounce; the trigger path skips the execution confirm, while action failures and unexpected async errors are caught and reported without an unhandled Promise rejection
 - When `actionName` is empty or matches no action, the event still fires but only writes one line to the OUTPUT channel "KBEngine 快速执行动作" — no popup, no execution
+- For `http` actions the real response feeds the per-target ledger: 2xx lands as delivered-unverified (or upgraded to accepted only when the body echoes the sent file verbatim under the documented receipt protocol), non-2xx lands failed naming the status; unknown bodies stay unverified — nothing is ever claimed applied by this level
 
 ## Dependency Graph
 

@@ -96,12 +96,20 @@ export interface QuickActionManagerDeps {
   getSettingHttpEntries?: () => HttpRequestEntry[];
 }
 
+/** 真实 HTTP 动作的响应面(IDE-REV-022):HTTP 状态 + 回包 body 交给观察者 */
+export interface HttpActionResponse {
+  status: number;
+  body: string;
+}
+
 /** 无人值守通道(自动热重载等)的执行选项 */
 export interface QuickActionRunOptions {
   /** 跳过执行确认框(自动热重载等无人值守通道传 true) */
   readonly suppressConfirm?: boolean;
   /** 不记入「上次执行」记忆(默认仍记,Explorer ▶ 跟着最近一次执行走) */
   readonly skipLastRun?: boolean;
+  /** HTTP 响应到达即回调(回执解析面);脚本/命令动作无此回调 */
+  readonly onHttpResponse?: (response: HttpActionResponse) => void;
 }
 
 /** 工作区根清单;无工作区(只开了单文件)返回空数组,变量解析由调用方报错 */
@@ -658,7 +666,7 @@ export class QuickActionManager {
       if (resolved.type === 'script') {
         return await this.runScriptAction(resolved);
       }
-      return await this.runHttpAction(resolved);
+      return await this.runHttpAction(resolved, options);
     } catch (error) {
       // 执行器抛错(spawn 失败/请求超时/命令未注册)统一收口
       const message = errorMessage(error);
@@ -689,9 +697,14 @@ export class QuickActionManager {
     return false;
   }
 
-  private async runHttpAction(action: Extract<QuickAction, { type: 'http' }>): Promise<boolean> {
+  private async runHttpAction(
+    action: Extract<QuickAction, { type: 'http' }>,
+    options: QuickActionRunOptions = {}
+  ): Promise<boolean> {
     const result = await this.runHttp({ url: action.url, method: action.method, body: action.body });
     const ok = result.status >= 200 && result.status < 300;
+    // IDE-REV-022:响应到达即上报观察者(回执解析面);脚本/命令动作无此回调
+    options.onHttpResponse?.({ status: result.status, body: result.body });
     if (!ok) {
       await vscode.window.showErrorMessage(`执行快速动作失败: ${action.name} (HTTP ${result.status})`);
       return false;

@@ -4,6 +4,8 @@ import {
   HotReloadTargetStateStore,
   type HotReloadDeliveryOutcome
 } from './hotReloadTargetState';
+import { recordHttpDelivery } from './hotReloadDelivery';
+import { applyAcceptedReceipt } from './hotReloadReceipt';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
@@ -137,6 +139,21 @@ export interface HotReloadTargetStateWiring {
 }
 
 /**
+ * IDE-REV-022 真实 HTTP 响应面:HTTP 状态 + 回包 body。观察者只在响应真
+ * 正到达时触发(传输已成功),故分类按 status 走;脚本/命令动作没有此
+ * 面,onHttpResponse 不触发,回落原有记账。
+ */
+export interface HotReloadHttpResponse {
+  readonly status: number;
+  readonly body?: string;
+}
+
+/** 传给 runAction 的发送选项:onHttpResponse 在真实 HTTP 响应到达时回调 */
+export interface HotReloadSendOptions {
+  readonly onHttpResponse?: (response: HotReloadHttpResponse) => void;
+}
+
+/**
  * 装配自动热重载。context.subscriptions 只挂一条复合 disposable:
  * 配置变更监听、watcher 拆建与状态栏项随其一并释放。默认关时不建任何
  * watcher(激活与既有装配断言不受影响),把配置改成开才按 globs 各建一个
@@ -145,7 +162,7 @@ export interface HotReloadTargetStateWiring {
  */
 export function setupHotReload(
   context: vscode.ExtensionContext,
-  runAction: (actionName: string) => void | Promise<unknown>,
+  runAction: (actionName: string, sendOptions?: HotReloadSendOptions) => void | Promise<unknown>,
   options: SetupHotReloadOptions = {}
 ): void {
   const timers = options.timers ?? realHotReloadTimerDeps;
@@ -209,21 +226,55 @@ export function setupHotReload(
       }
     };
     const start = (targetId: string | null): void => {
+      // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
+      // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
+      // 升格(applyAcceptedReceipt 只认协议逐字段符合,未知响应保持未确认);
+      // 脚本/命令动作无响应面,回落 recordOutcomes 的 sent-unverified/failed。
+      let responseSeen = false;
+      const handleResponse = (response: HotReloadHttpResponse): void => {
+        responseSeen = true;
+        const wiring = options.targetState;
+        if (!wiring || targetId === null) {
+          return;
+        }
+        for (const file of triggers) {
+          const rootId = wiring.resolveRootId(file);
+          if (rootId === null) {
+            continue;
+          }
+          const key = { rootId, targetId };
+          // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
+          const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
+          if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
+            applyAcceptedReceipt(wiring.store, key, file, response.body, {});
+          }
+        }
+      };
+      const sendOptions: HotReloadSendOptions | undefined = options.targetState
+        ? { onHttpResponse: handleResponse }
+        : undefined;
       // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
       try {
-        void Promise.resolve(runAction(settings.actionName)).then(
-          // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项)
+        void Promise.resolve(runAction(settings.actionName, sendOptions)).then(
+          // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项);
+          // 有响应面则 handleResponse 已按传输事实落账,不再覆盖
           () => {
-            recordOutcomes(targetId, 'sent-unverified');
+            if (!responseSeen) {
+              recordOutcomes(targetId, 'sent-unverified');
+            }
             status.setSentUnverified();
           },
           error => {
-            recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+            if (!responseSeen) {
+              recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+            }
             fail(error);
           }
         );
       } catch (error) {
-        recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+        if (!responseSeen) {
+          recordOutcomes(targetId, 'failed', error instanceof Error ? error.message : String(error));
+        }
         fail(error);
       }
     };
