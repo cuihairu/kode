@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { createDefinitionSemanticsLoader } from '../src/definitionSemantics';
 import { resolveEntityAnnotationType } from '../src/definitionWorkspace';
-import { getDatabaseSchemaSnapshot } from '../src/databaseSchema';
+import { getDatabaseSchemaSnapshot, invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
 import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';
 import { resetSemanticTypeRegistryForTests } from '../src/semanticIndex';
 import { getStoredSnapshotCount, releaseDocument, updateDocumentSnapshot } from '../src/documentStore';
@@ -75,8 +75,9 @@ describe('IDE-SNP-005:关闭脏文档后恢复磁盘版本', () => {
     expect(schemaFieldNames(getDatabaseSchemaSnapshot('Gold', root))).toContain('sm_gold');
     expect(resolveEntityAnnotationType(root, 'GOLD_UID')).toBe('int');
 
-    // 丢弃未保存修改并关闭:下一次查询全部回到磁盘版本
+    // 丢弃未保存修改并关闭:事件面摘除(IDE-REV-011),下一次查询全部回到磁盘版本
     workspace.textDocuments = [];
+    invalidateDatabaseSchemaCacheForFiles([defPath]);
     expect(createDefinitionSemanticsLoader(root)!.loadLocal('Gold', 'entity')
       ?.properties.map(property => property.name)).toEqual(['hp']);
     const diskSnapshot = getDatabaseSchemaSnapshot('Gold', root);

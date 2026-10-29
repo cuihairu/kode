@@ -10,7 +10,14 @@
  */
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { invalidateTypeStorageUsageIndex, replaceTypeStorageUsageForEntity } from './databaseSchema';
+import {
+  invalidateDatabaseSchemaCacheForAll,
+  invalidateDatabaseSchemaCacheForFiles,
+  invalidateDatabaseSchemaCacheForTypeRegistry,
+  invalidateTypeStorageUsageIndex,
+  replaceTypeStorageUsageForEntity
+} from './databaseSchema';
+import { isTypeRegistryFile } from './semanticIndex';
 
 /** 建三枚全仓 watcher 并接失效策略;onUsageIndexChanged 在失效后回调(装配层
  * 用它驱动受影响 provider 的镜刷新)。返回的 Disposable 拆掉全部 watcher。 */
@@ -18,8 +25,19 @@ export function registerTypeStorageIndexWatchers(onUsageIndexChanged: () => void
   const watchers: vscode.FileSystemWatcher[] = [];
   for (const pattern of ['**/*.def', '**/types.xml', '**/entities.xml']) {
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    const invalidate = (): void => {
+    const invalidate = (uri?: vscode.Uri): void => {
       invalidateTypeStorageUsageIndex();
+      // IDE-REV-011:schema 缓存热命中不再懒重读输入文件(失效在事件面)——
+      // 带路径按清单/别名摘除,无 uri 兜底整表让位
+      if (uri) {
+        if (isTypeRegistryFile(uri.fsPath)) {
+          invalidateDatabaseSchemaCacheForTypeRegistry(uri.fsPath);
+        } else {
+          invalidateDatabaseSchemaCacheForFiles([uri.fsPath]);
+        }
+      } else {
+        invalidateDatabaseSchemaCacheForAll();
+      }
       onUsageIndexChanged();
     };
     const replaceEntity = (uri?: vscode.Uri): void => {
@@ -27,6 +45,9 @@ export function registerTypeStorageIndexWatchers(onUsageIndexChanged: () => void
         invalidate(); // 无 uri 的事件面兜底:退回整表置空
         return;
       }
+      // IDE-REV-011:def 变更同步摘除消费过该文件的 schema 缓存条目
+      // (依赖实体经 inputVersions 清单匹配连带重建)
+      invalidateDatabaseSchemaCacheForFiles([uri.fsPath]);
       const folder = vscode.workspace.workspaceFolders?.find(item =>
         uri.fsPath === item.uri.fsPath
         || uri.fsPath.startsWith(`${item.uri.fsPath}/`)
@@ -44,9 +65,9 @@ export function registerTypeStorageIndexWatchers(onUsageIndexChanged: () => void
       watcher.onDidCreate(replaceEntity);
       watcher.onDidDelete(replaceEntity);
     } else {
-      watcher.onDidChange(invalidate);
-      watcher.onDidCreate(invalidate);
-      watcher.onDidDelete(invalidate);
+      watcher.onDidChange(event => invalidate(event));
+      watcher.onDidCreate(event => invalidate(event));
+      watcher.onDidDelete(event => invalidate(event));
     }
     watchers.push(watcher);
   }

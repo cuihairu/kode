@@ -6,6 +6,7 @@ import {
   clearDatabaseSchemaCacheForTests,
   findTypeStorageUsages,
   getDatabaseSchemaCacheStatsForTests,
+  invalidateDatabaseSchemaCacheForFiles,
   invalidateTypeStorageUsageIndex,
   replaceTypeStorageUsageForEntity
 } from '../src/databaseSchema';
@@ -79,6 +80,9 @@ describe('IDE-SCH-008:按实体增量维护类型落库反查', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'utf8');
+    // IDE-REV-011:schema 缓存热命中不再懒重读输入文件,def 变更先走事件面
+    // 摘缓存(entityMapping watcher 同款),再按实体替换 usage 记录
+    invalidateDatabaseSchemaCacheForFiles([goldDef]);
     replaceTypeStorageUsageForEntity(root, 'Gold');
 
     const after = findTypeStorageUsages(root, 'ITEM_ID');
@@ -88,7 +92,7 @@ describe('IDE-SCH-008:按实体增量维护类型落库反查', () => {
     expect(silverAfter).toBe(silverBefore); // 无关实体:同一记录对象,未重建
   });
 
-  it('查询时懒自愈:不调事件面,改 Gold 后下一次反查同样只重建 Gold', () => {
+  it('事件面失效后下一次反查只重建 Gold(IDE-REV-011:懒自愈退役,失效走事件面)', () => {
     const { root, goldDef } = makeWorkspace();
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
     invalidateTypeStorageUsageIndex();
@@ -98,7 +102,8 @@ describe('IDE-SCH-008:按实体增量维护类型落库反查', () => {
     const goldBefore = before.find(usage => usage.entity === 'Gold');
     const missesAfterFirst = getDatabaseSchemaCacheStatsForTests().misses;
 
-    // 改 Gold(不加事件面调用):反查按快照身份自愈
+    // 改 Gold:事件面摘除 schema 缓存(entityMapping watcher 路由同款),
+    // 反查按快照身份只重建 Gold
     fs.writeFileSync(goldDef, [
       '<root>',
       '  <Properties>',
@@ -109,6 +114,7 @@ describe('IDE-SCH-008:按实体增量维护类型落库反查', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'utf8');
+    invalidateDatabaseSchemaCacheForFiles([goldDef]);
     const after = findTypeStorageUsages(root, 'ITEM_ID');
 
     expect(after.map(usage => usage.entity)).toEqual(['Silver']); // Gold 不再用 ITEM_ID

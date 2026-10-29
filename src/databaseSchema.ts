@@ -49,8 +49,9 @@ export interface DatabaseSchemaSnapshot {
   database?: DatabaseInterfaceConfig;
   /**
    * IDE-SNP-006:构建时消费的共享快照输入清单(fsPath → 来源域+版本)。
-   * 消费端持旧结果时对任一条目再读比对,source/version 漂移即判过期
-   * (isDatabaseSchemaSnapshotStale);缺失视为不过期(清单面新增,旧结果防御)。
+   * IDE-REV-011:失效走事件面(watcher 定向摘除 + 编辑/关闭事件接线),
+   * 查询热命中不再逐条目重读比对;清单仍供事件面匹配与对账面
+   * (isDatabaseSchemaSnapshotInputStale)使用。缺失视为不过期(旧结果防御)。
    */
   inputVersions?: Readonly<Record<string, SharedFileVersionRef>>;
   /**
@@ -152,12 +153,41 @@ export function invalidateDatabaseSchemaCacheForTypeRegistry(typesXmlPath: strin
   return dropped;
 }
 
+/**
+ * IDE-REV-011:热命中校验(零文件读取)——只比构建期记录的运行域配置轴
+ * (rootConfigGeneration/tablePrefix,均为内存值,比对不触文件系统)。
+ * 输入文件内容漂移不在查询路径懒重读(原逐条目再读比对降级为安全网
+ * isDatabaseSchemaSnapshotInputStale,仅供对账/测试面调用);失效职责在
+ * 事件面:磁盘域变更走 entityMapping watcher(IDE-SCH-003/004 定向摘除),
+ * 编辑器脏文档编辑/关闭走 extension.ts 事件接线(IDE-REV-011)。
+ */
+function isDatabaseSchemaSnapshotConfigStale(snapshot: DatabaseSchemaSnapshot): boolean {
+  if (snapshot.rootConfigGeneration !== undefined &&
+      snapshot.rootConfigGeneration !== getRootConfigGeneration()) {
+    return true;
+  }
+  // IDE-SCH-002:表前缀是运行域配置输入,构建值与当前值不符即过期(缓存面
+  // 不依赖扩展层 watcher 的 generation bump,单测/离线口径同样成立)
+  if (snapshot.tablePrefix !== undefined && snapshot.tablePrefix !== resolveSchemaTablePrefix()) {
+    return true;
+  }
+  return false;
+}
+
+/** IDE-REV-011:全量失效(无 uri 的事件面兜底)——事件不带路径时无法按
+ * 清单匹配,整体让位最安全(重建成本可接受,正确性优先)。返回摘除条目数。 */
+export function invalidateDatabaseSchemaCacheForAll(): number {
+  const dropped = databaseSchemaCache.size;
+  databaseSchemaCache.clear();
+  return dropped;
+}
+
 /** 缓存新鲜命中则返回条目(LRU 触碰+命中计数);脏条目删除;未命中 undefined */
 function peekFreshSchemaCache(
   cacheKey: string
 ): DatabaseSchemaSnapshot | null | undefined {
   const cached = databaseSchemaCache.get(cacheKey);
-  if (cached && !isDatabaseSchemaSnapshotStale(cached)) {
+  if (cached && !isDatabaseSchemaSnapshotConfigStale(cached)) {
     // LRU 触碰:重插到队尾
     databaseSchemaCache.delete(cacheKey);
     databaseSchemaCache.set(cacheKey, cached);
@@ -371,21 +401,27 @@ export async function buildDatabaseSchemaSnapshotAsync(
 
 
 /**
- * IDE-SNP-006:按清单判 schema 快照是否过期——任一记录条目再读后消失、
- * 或来源域/版本漂移即过期;无清单的旧快照视为不过期(防御面)。
- * IDE-SNP-010:根配置 generation 双轴——当前值与快照记录值不一致即过期
- * (assetsRoot/运行域配置变了,文件一字未动也过期);缺字段的旧快照防御不过期。
+ * IDE-SNP-006:按清单判 schema 快照是否过期——运行域配置轴漂移即过期
+ * (IDE-SNP-010 rootConfigGeneration / IDE-SCH-002 tablePrefix),任一记录
+ * 条目再读后消失或来源域/版本漂移也即过期;无清单的旧快照对文件轴视为
+ * 不过期(防御面)。
+ * IDE-REV-011:本函数是完整校验(含输入文件再读),已不在查询热路径调用
+ * ——热命中走零读取的 isDatabaseSchemaSnapshotConfigStale,文件漂移由事件
+ * 面失效;本面保留为对账/测试安全网。
  */
 export function isDatabaseSchemaSnapshotStale(snapshot: DatabaseSchemaSnapshot): boolean {
-  if (snapshot.rootConfigGeneration !== undefined &&
-      snapshot.rootConfigGeneration !== getRootConfigGeneration()) {
+  if (isDatabaseSchemaSnapshotConfigStale(snapshot)) {
     return true;
   }
-  // IDE-SCH-002:表前缀是运行域配置输入,构建值与当前值不符即过期(缓存面
-  // 不依赖扩展层 watcher 的 generation bump,单测/离线口径同样成立)
-  if (snapshot.tablePrefix !== undefined && snapshot.tablePrefix !== resolveSchemaTablePrefix()) {
-    return true;
-  }
+  return isDatabaseSchemaSnapshotInputStale(snapshot);
+}
+
+/**
+ * IDE-REV-011:输入清单再读校验(安全网/对账面)——对清单逐条目重读文件
+ * 内容比对来源域与版本,任一漂移即过期。有文件读取副作用,禁止在查询
+ * 热路径调用(热命中用 isDatabaseSchemaSnapshotConfigStale + 事件面失效)。
+ */
+export function isDatabaseSchemaSnapshotInputStale(snapshot: DatabaseSchemaSnapshot): boolean {
   if (!snapshot.inputVersions) {
     return false;
   }

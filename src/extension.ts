@@ -213,8 +213,11 @@ import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
 import { getDiagnosticScheduler } from './diagnosticScheduler';
+import { isTypeRegistryFile } from './semanticIndex';
 import {
   getDatabaseSchemaSnapshot,
+  invalidateDatabaseSchemaCacheForFiles,
+  invalidateDatabaseSchemaCacheForTypeRegistry,
   locateDatabaseSchemaLine,
   resolveEntityTableName,
   resolveSchemaTablePrefix,
@@ -1099,6 +1102,12 @@ export function activate(context: vscode.ExtensionContext) {
           document.uri.toString()
         );
       }
+      // IDE-REV-011:schema 缓存热命中不再懒重读输入文件(失效在事件面)——
+      // 脏 def/types/alias 文档关闭 = document 域输入消失(磁盘内容与缓冲
+      // 未必一致),同步摘除消费过该文件的缓存条目
+      if (isDefDocument(document) || isTypeRegistryFile(document.uri.fsPath)) {
+        invalidateDatabaseSchemaCacheForFiles([document.uri.fsPath]);
+      }
     });
     context.subscriptions.push(closeWatcher);
     const watcher = vscode.workspace.onDidChangeTextDocument(event => {
@@ -1124,6 +1133,17 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleEntitiesDiagnostics(event.document, 'queued');
       } else if (isPythonDocument(event.document)) {
         scheduleReceiverNoneDiagnostics(event.document, 'queued');
+      }
+      // IDE-REV-011:schema 缓存热命中不再懒重读输入文件(失效在事件面)——
+      // 脏 def/types/alias 文档编辑同步摘除消费条目(磁盘域变更已由
+      // entityMapping watcher 覆盖,这里补 document 域)
+      if ((event.contentChanges?.length ?? 0) > 0) {
+        const editedFsPath = event.document.uri.fsPath;
+        if (isDefDocument(event.document)) {
+          invalidateDatabaseSchemaCacheForFiles([editedFsPath]);
+        } else if (isTypeRegistryFile(editedFsPath)) {
+          invalidateDatabaseSchemaCacheForTypeRegistry(editedFsPath);
+        }
       }
       if (diagnosticFlushTimer === undefined) {
         diagnosticFlushTimer = setTimeout(() => {

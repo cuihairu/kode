@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { clearDatabaseSchemaCacheForTests } from '../src/databaseSchema';
+import { clearDatabaseSchemaCacheForTests, invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
 import { KBEngineDatabaseSchemaProvider, createDatabaseSchemaUri } from '../src/databaseSchemaPresentation';
 import { workspace } from './fake-vscode/workspaceState';
 import { Uri } from './fake-vscode/core';
@@ -69,6 +69,8 @@ describe('IDE-SCH-010:schema 导航复用同一代派生结果', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'utf8');
+    // IDE-REV-011:新代快照按事件面失效后重取(热命中不再懒重读输入)
+    invalidateDatabaseSchemaCacheForFiles([heroDef]);
 
     const publishedLine = provider.locateInPublishedContent(uri, 'tbl_Hero', 'sm_hp');
     expect(publishedLine).not.toBeNull();

@@ -9,6 +9,8 @@ import {
   findDatabaseSchemaSourceLocation,
   findDatabaseSchemaTargetsForSource,
   getDatabaseSchemaSnapshot,
+  invalidateDatabaseSchemaCacheForFiles,
+  invalidateDatabaseSchemaCacheForTypeRegistry,
   renderDatabaseSchema
 } from '../src/databaseSchema';
 import { KBEngineDatabaseSchemaProvider } from '../src/databaseSchemaPresentation';
@@ -569,8 +571,10 @@ describe('IDE-SNP-003:数据库 schema 读取共享快照', () => {
     const local = createDefinitionSemanticsLoader(snapRoot)!.loadLocal('Gold', 'entity');
     expect(local?.properties.map(property => property.name)).toEqual(['hp', 'gold']);
 
-    // 关闭脏文档:下一次查询两边一致回落磁盘版本(无 gold)
+    // 关闭脏文档:事件面摘除(IDE-REV-011:热命中不再懒重读输入),
+    // 下一次查询两边一致回落磁盘版本(无 gold)
     workspace.textDocuments = [];
+    invalidateDatabaseSchemaCacheForFiles([goldDefPath]);
     const diskSnapshot = getDatabaseSchemaSnapshot('Gold', snapRoot);
     expect(entityTableFields(diskSnapshot)).not.toContain('sm_gold');
     const diskLocal = createDefinitionSemanticsLoader(snapRoot)!.loadLocal('Gold', 'entity');
@@ -593,7 +597,9 @@ describe('IDE-SNP-003:数据库 schema 读取共享快照', () => {
     expect(diskSnapshot?.tables.some(table => table.propertyPath === 'wallet')).toBe(false);
 
     // 脏 types.xml 定义 GOLDCOIN = ARRAY of UINT8 → wallet 升格子表
+    // (IDE-REV-011:别名变更走事件面失效,热命中不再懒重读注册表)
     openDirty(typesXmlPath, '<root>\n  <GOLDCOIN>ARRAY<of>UINT8</of></GOLDCOIN>\n</root>\n');
+    invalidateDatabaseSchemaCacheForTypeRegistry(typesXmlPath);
     const snapshot = getDatabaseSchemaSnapshot('Gold', snapRoot);
     const walletTable = snapshot?.tables.find(table => table.propertyPath === 'wallet');
     expect(walletTable?.kind).toBe('array');

@@ -5,7 +5,8 @@ import * as path from 'path';
 import {
   clearDatabaseSchemaCacheForTests,
   getDatabaseSchemaCacheStatsForTests,
-  getDatabaseSchemaSnapshot
+  getDatabaseSchemaSnapshot,
+  invalidateDatabaseSchemaCacheForFiles
 } from '../src/databaseSchema';
 import { workspace } from './fake-vscode/workspaceState';
 
@@ -86,8 +87,10 @@ describe('IDE-SCH-002:schema 缓存的实体与根身份', () => {
     expect(before).not.toBeNull();
     expect(JSON.stringify(before!.tables)).not.toContain('"gold2"');
 
-    // 磁盘上新增一条持久属性:版本轴(source/version)漂移 → 过期 → 重建
-    fs.writeFileSync(path.join(root, 'scripts/entity_defs/Gold.def'), [
+    // 磁盘上新增一条持久属性:事件面失效(IDE-REV-011:热命中不再懒重读
+    // 输入清单,版本轴漂移由变更事件摘除)→ 重建
+    const defPath = path.join(root, 'scripts/entity_defs/Gold.def');
+    fs.writeFileSync(defPath, [
       '<root>',
       '  <Properties>',
       '    <gold>',
@@ -101,6 +104,7 @@ describe('IDE-SCH-002:schema 缓存的实体与根身份', () => {
       '  </Properties>',
       '</root>'
     ].join('\n'), 'utf8');
+    invalidateDatabaseSchemaCacheForFiles([defPath]);
 
     const after = getDatabaseSchemaSnapshot('Gold', root);
     expect(after).not.toBe(before); // 重建,不喂旧表
@@ -119,6 +123,8 @@ describe('IDE-SCH-002:schema 缓存的实体与根身份', () => {
         getText: () => '<root><Properties><dirty><Type>UINT32</Type><Persistent>true</Persistent></dirty></Properties></root>',
         fileName: defPath }
     ];
+    // IDE-REV-011:脏文档版本前进由编辑事件面摘缓存(extension 接线同款)
+    invalidateDatabaseSchemaCacheForFiles([defPath]);
 
     const dirty = getDatabaseSchemaSnapshot('Gold', root);
     expect(dirty).not.toBeNull();

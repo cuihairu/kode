@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { getDatabaseSchemaSnapshot, isDatabaseSchemaSnapshotStale } from '../src/databaseSchema';
+import { getDatabaseSchemaSnapshot, isDatabaseSchemaSnapshotStale, invalidateDatabaseSchemaCacheForFiles } from '../src/databaseSchema';
 import type { DatabaseSchemaSnapshot } from '../src/databaseSchema';
 import { workspace } from './fake-vscode/workspaceState';
 
@@ -98,21 +98,25 @@ describe('IDE-SNP-006:派生结果记录输入版本清单', () => {
     const built = getDatabaseSchemaSnapshot('Gold', root)!;
     expect(isDatabaseSchemaSnapshotStale(built)).toBe(false);
 
-    // 同一文档版本前进(继续编辑) → 旧清单过期
+    // 同一文档版本前进(继续编辑) → 旧清单对账面判过期
+    // (IDE-REV-011:查询热命中不再懒重读清单,版本前进由编辑事件面
+    // invalidateDatabaseSchemaCacheForFiles 摘除;本函数保留为对账面)
     workspace.textDocuments = [];
     openDocument(defPath, 9, '<root>\n  <Properties>\n  </Properties>\n</root>\n');
     openDocument(typesPath, 2, '<root>\n</root>\n');
     expect(isDatabaseSchemaSnapshotStale(built)).toBe(true);
 
-    // 重建 → 新清单 fresh
+    // 事件面摘除 → 重建 → 新清单 fresh
+    invalidateDatabaseSchemaCacheForFiles([defPath]);
     const rebuilt = getDatabaseSchemaSnapshot('Gold', root)!;
     expect(isDatabaseSchemaSnapshotStale(rebuilt)).toBe(false);
 
-    // 关闭脏文档(来源翻转 document → disk) → 旧清单过期
+    // 关闭脏文档(来源翻转 document → disk) → 对账面判旧清单过期
     workspace.textDocuments = [];
     expect(isDatabaseSchemaSnapshotStale(rebuilt)).toBe(true);
 
-    // 关闭后重建 → fresh
+    // 关闭后事件面摘除 → 重建 → fresh
+    invalidateDatabaseSchemaCacheForFiles([defPath]);
     expect(isDatabaseSchemaSnapshotStale(getDatabaseSchemaSnapshot('Gold', root)!)).toBe(false);
   });
 

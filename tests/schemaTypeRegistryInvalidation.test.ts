@@ -71,7 +71,7 @@ describe('IDE-SCH-004:按 types.xml 依赖版本失效 schema', () => {
     lastFileSystemWatcher.current = null;
   });
 
-  it('改 ITEM_ID 只重建消费它的 Gold;Silver/Bronze 懒过期口径下继续命中同一对象', () => {
+  it('改 ITEM_ID 只重建消费它的 Gold;Silver/Bronze 继续命中同一对象(IDE-REV-011:失效走事件面)', () => {
     const { root, typesPath } = makeWorkspace();
     clearDatabaseSchemaCacheForTests();
     const goldBefore = getDatabaseSchemaSnapshot('Gold', root);
@@ -83,8 +83,11 @@ describe('IDE-SCH-004:按 types.xml 依赖版本失效 schema', () => {
     expect(valueField(goldBefore)).toContain('smallint'); // 别名解析进列型(UINT16→smallint)
     expect(getDatabaseSchemaCacheStatsForTests().size).toBe(3);
 
-    // types.xml 变更:ITEM_ID UINT16 → UINT8(只动这一个别名)
+    // types.xml 变更:ITEM_ID UINT16 → UINT8(只动这一个别名)。
+    // IDE-REV-011:查询热命中不再懒重读输入文件,盘上变更经事件面失效
+    // (entityMapping watcher 路由到 invalidateDatabaseSchemaCacheForTypeRegistry)
     writeTypes(root, 'UINT8');
+    expect(invalidateDatabaseSchemaCacheForTypeRegistry(typesPath)).toBe(1);
 
     const goldAfter = getDatabaseSchemaSnapshot('Gold', root);
     const silverAfter = getDatabaseSchemaSnapshot('Silver', root);
