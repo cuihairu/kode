@@ -225,7 +225,7 @@ export const createMysqlDriftExecutor: DriftConnectionFactory = createMysqlDrift
 );
 
 /** 列型归一:整数显示宽度不影响存储;varchar/decimal 等参数属于真实结构 */
-function normalizeColumnType(type: string): string {
+export function normalizeColumnType(type: string): string {
   const lowered = type.toLowerCase().trim();
   const match = /^([a-z]+)(\([^)]*\))?(?:\s+(unsigned))?/.exec(lowered);
   if (!match) return lowered.replace(/\s+/g, ' ');
@@ -280,9 +280,9 @@ async function readTableNames(executor: DriftQueryExecutor): Promise<string[]> {
   return names;
 }
 
-/** 取单表列清单(SHOW FULL COLUMNS,带真实型别) */
-async function readTableColumns(
-  executor: DriftQueryExecutor,
+/** 取单表列清单(SHOW FULL COLUMNS,带真实型别);只用到 runQuery 面 */
+export async function readTableColumns(
+  executor: Pick<DriftQueryExecutor, 'runQuery'>,
   tableName: string
 ): Promise<QueryColumnInfo[]> {
   const result = await executor.runQuery(`SHOW FULL COLUMNS FROM \`${tableName}\``);

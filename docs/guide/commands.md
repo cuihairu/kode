@@ -89,6 +89,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Rows over the limit are cut and marked truncated in the footer, which also shows the exact SQL that ran
   - Column sources (IDE-REV-018): after the table, a 列来源 section links every result column back to its declaration — derived columns print `filePath:line` of the real `.def`/`types.xml` declaration (clickable in the output panel, the declared type text included), engine structural columns are stated as synthetic with no declaration to jump to, and columns outside the virtual schema stay honestly unknown; a table not derived by any workspace entity says so for the whole section instead of guessing neighbors
 
+### `kbengine.database.previewSchemaImpact`
+
+- Title: `Preview Schema Impact`
+- Purpose: read-only single-entity schema impact preview (IDE-REV-019) — diff one entity's real table structure (`SHOW FULL COLUMNS`, a read-only query) against the def-derived virtual schema, and print to the 「KBEngine 结构影响预览」 output channel the change list a sync by the current def would cause: added / removed / type-changed columns; no DDL or write path exists anywhere in the command
+- Entries: Command palette; optionally takes an entity name argument
+- Behavior:
+  - Entity selection: command argument, else the active `.def` file, else a quick pick over workspace registered entities; a cancel or an empty registry honestly runs nothing
+  - Integer display widths are normalized before comparing (`int(10) unsigned` equals `int unsigned`, same rule as the drift check); engine structural columns (id / sm_autoLoad / …) are excluded on both sides via the same def-derived synthetic list, so they never show up as removals
+  - A table not yet in the database is reported as 整表新建 (whole-table create) with the def-derived column count — no fabricated comparison
+  - The connection comes from the same per-profile ledger as the drift commands; without a readable engine database config it says so and runs nothing
+  - Connect and the query run under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification (IDE-REV-017): timeout or cancel returns with that reason; the connection is closed afterwards in every branch
+  - The report header states the read-only scope explicitly; zero differences are stated as such (无结构差异)
+
 ## Server Control
 
 ### `kbengine.server.start`

@@ -253,6 +253,7 @@ import {
 } from './databaseDrift';
 import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import { createPreviewColumnSourceTableResolver } from './databasePreviewColumnSource';
+import { runSchemaImpactCommand } from './databaseSchemaImpactCommand';
 import {
   guardConnectionFactoryWithQueryLifecycle,
   type QueryGuard
@@ -1760,6 +1761,47 @@ export function activate(context: vscode.ExtensionContext) {
         }))
   );
   context.subscriptions.push(previewTableCommand);
+
+  // IDE-REV-019 单实体结构影响预览:真实库结构(只读 SHOW FULL COLUMNS)
+  // 对照 def 推导虚拟 schema,输出新增/移除/类型变化清单——纯只读报告,
+  // 全程无 DDL/写库通路;实体选择 = 命令参数 / 活动 .def / 注册实体选择
+  // 器;建连与查询同过 IDE-REV-017 守卫。
+  const schemaImpactChannel = vscode.window.createOutputChannel('KBEngine 结构影响预览');
+  context.subscriptions.push(schemaImpactChannel);
+  const previewSchemaImpactCommand = vscode.commands.registerCommand(
+    'kbengine.database.previewSchemaImpact',
+    (entityName?: string) =>
+      runDatabaseQueryCommand('KBEngine 结构影响预览', guard =>
+        runSchemaImpactCommand({
+          resolveEntityName: () => entityName ?? resolveActiveDefEntityName(),
+          resolveEntityTable: name => {
+            const folders = vscode.workspace.workspaceFolders ?? [];
+            for (const folder of folders) {
+              const snapshot = getDatabaseSchemaSnapshot(name, folder.uri.fsPath);
+              const table =
+                snapshot?.tableIndex.get(`${resolveSchemaTablePrefix()}${name}`) ??
+                snapshot?.tables[0] ??
+                null;
+              if (table) {
+                return table;
+              }
+            }
+            return null;
+          },
+          resolveConnection: resolveCommandDatabaseConnection,
+          createConnection: (profileId, config) => lifecycleGuardedFactory(guard, profileId)(config),
+          listEntityNames: () =>
+            (vscode.workspace.workspaceFolders ?? []).flatMap(folder =>
+              getRegisteredEntities(folder.uri.fsPath).map(entity => entity.name)
+            ),
+          showQuickPick: (items, options) => vscode.window.showQuickPick(items, options),
+          showInformationMessage: message => vscode.window.showInformationMessage(message),
+          showWarningMessage: message => vscode.window.showWarningMessage(message),
+          showErrorMessage: message => vscode.window.showErrorMessage(message),
+          channel: schemaImpactChannel
+        }))
+  );
+  context.subscriptions.push(previewSchemaImpactCommand);
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);

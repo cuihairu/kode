@@ -78,24 +78,24 @@
 
 ## 3. 诊断面
 
-无 `registerDiagnosticProvider`;诊断经 DiagnosticScheduler(`getDiagnosticScheduler()` 单例,extension.ts:463;版本令牌 + 分层记账 + 同 URI 新版本胜出):
+无 `registerDiagnosticProvider`;诊断经 DiagnosticScheduler(`getDiagnosticScheduler()` 单例,extension.ts:464;版本令牌 + 分层记账 + 同 URI 新版本胜出):
 
 - 数据源:`validateDocument`(languageProviders.ts:1425)——defParser 一次解析结果共用标量 + 结构校验(`parseDefAst`,:1440),入口为 documentStore 同版本快照;`validateEntitiesXmlDocument`(:1458)——documentStore `entities-analysis` 命名空间缓存(:1471)。
 - 副作用:DiagnosticCollection 发布(诊断面合法出口)。
-- 通道:`onDidChangeTextDocument`(extension.ts:1149)→ `flushQueued()`(:1189,单轮 25ms 时间片,IDE-DIA-006)→ diagnosticScheduler.ts 调度。
-- Python receiver-none 诊断:独立调度 `scheduleReceiverNoneDiagnostics`(extension.ts:548,异步分片 computeReceiverNoneFindingsAsync);诊断带稳定 code(`kbengine.receiverNone`/`kbengine.sectionMismatch`,extension.ts:596 发布处),`KBEngineReceiverNoneGuardCodeActionProvider` 按 code 对账出守卫 QuickFix。
+- 通道:`onDidChangeTextDocument`(extension.ts:1150)→ `flushQueued()`(:1190,单轮 25ms 时间片,IDE-DIA-006)→ diagnosticScheduler.ts 调度。
+- Python receiver-none 诊断:独立调度 `scheduleReceiverNoneDiagnostics`(extension.ts:549,异步分片 computeReceiverNoneFindingsAsync);诊断带稳定 code(`kbengine.receiverNone`/`kbengine.sectionMismatch`,extension.ts:597 发布处),`KBEngineReceiverNoneGuardCodeActionProvider` 按 code 对账出守卫 QuickFix。
 
 ## 4. 共享服务与生命周期所有者
 
 | 服务 | 唯一构造位 | 释放通道 |
 |---|---|---|
-| IndexScheduler | extension.ts:522 | context.subscriptions |
-| EntityMappingManager | extension.ts:540 | context.subscriptions(manager 内 watcher 见 §5) |
-| DiagnosticScheduler | extension.ts:463(getDiagnosticScheduler 单例) | 进程生命周期 |
-| PythonClassIndex | extension.ts:753 | context.subscriptions |
-| WorkspaceIndex | extension.ts:922(全仓唯一,源级锁) | context.subscriptions |
-| TypesXmlCodeLensProvider 实例 | extension.ts:959 | context.subscriptions(注册面 + impl 实例,ARC-005) |
-| typesXml 落库索引 watcher 装配线 | typeStorageIndexWatchers.ts(extension.ts:966 接线) | context.subscriptions(返回的 Disposable) |
+| IndexScheduler | extension.ts:523 | context.subscriptions |
+| EntityMappingManager | extension.ts:541 | context.subscriptions(manager 内 watcher 见 §5) |
+| DiagnosticScheduler | extension.ts:464(getDiagnosticScheduler 单例) | 进程生命周期 |
+| PythonClassIndex | extension.ts:754 | context.subscriptions |
+| WorkspaceIndex | extension.ts:923(全仓唯一,源级锁) | context.subscriptions |
+| TypesXmlCodeLensProvider 实例 | extension.ts:960 | context.subscriptions(注册面 + impl 实例,ARC-005) |
+| typesXml 落库索引 watcher 装配线 | typeStorageIndexWatchers.ts(extension.ts:967 接线) | context.subscriptions(返回的 Disposable) |
 | Python parser worker / 快照缓存 | 装配层 | deactivate():disposePythonParserWorker() + releaseAllDocumentSnapshots() |
 
 ## 5. watcher 分布
