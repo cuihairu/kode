@@ -3875,6 +3875,16 @@ const toDefinitionLocation = (candidate: PythonMethodLocation): vscode.Location 
     new vscode.Position(candidate.line, candidate.character)
   );
 
+/** IDE-REV-033:测试面在途闸——定义跳转 provider 过入口守卫后、任何结果
+ * 产出前的确定性在途窗口(语义与 REV-032 hover 闸同款:生产恒 null,零行为
+ * 差异;释放方顺手清闸)。provider 为 async 方法,门内直接 await,放行后
+ * 重查取消——晚到的取消不再触发任何查找工作(无晚到结果发布)。 */
+let definitionInFlightGateForTests: (() => Promise<void>) | null = null;
+
+export function setDefinitionInFlightGateForTests(gate: (() => Promise<void>) | null): void {
+  definitionInFlightGateForTests = gate;
+}
+
 export class PythonDefinitionProvider implements vscode.DefinitionProvider {
   constructor(
     private entityMappingManager: EntityMappingManager,
@@ -3893,6 +3903,11 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     token?: vscode.CancellationToken
   ): Promise<vscode.Location | vscode.Location[] | null> {
     if (token?.isCancellationRequested) { return null; }
+    if (definitionInFlightGateForTests) {
+      // IDE-REV-033:门住确定性在途窗口;放行后重查取消,取消即零工作返回
+      await definitionInFlightGateForTests();
+      if (token?.isCancellationRequested) { return null; }
+    }
     const eventLocation = await eventDefinitionAt(document, position, this.entityMappingManager);
     if (token?.isCancellationRequested) { return null; }
     if (eventLocation) return eventLocation;

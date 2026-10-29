@@ -1,7 +1,7 @@
-rev032.gate.gateEnteredAtMs=1
-rev032.gate.cancelledAtMs=1
+rev032.gate.gateEnteredAtMs=0
+rev032.gate.cancelledAtMs=0
 rev032.gate.settledBeforeCancel=false
-rev032.gate.elapsedMs=1
+rev032.gate.elapsedMs=0
 rev032.gate.returnedHover=false
 rev032.reads.postCancelWindow=0
 rev032.pending.requestSide={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"schemaColdBuilds":0}

@@ -22,6 +22,7 @@ const OUT_FILE = process.env.KODE_ACC7_OUT
 
 const DEF_REL = 'scripts/entity_defs/TrainingAvatar.def';
 const TOUCH_REL = 'scripts/common/training/plain_var_caller.py';
+const IMPL_REL = 'scripts/cell/TrainingAvatar.py'; // 跳转取消用例:可解析落点的实现文件
 
 interface KodeProbeApi {
   probeHover(
@@ -41,6 +42,19 @@ interface KodeProbeApi {
     cancelled: boolean;
     returnedHover: boolean;
     preview: string;
+  }>;
+  probeDefinitionGatedCancel(target: {
+    file: string;
+    line: number;
+    character: number;
+  }): Promise<{
+    gateEnteredAtMs: number;
+    cancelledAtMs: number;
+    settledBeforeCancel: boolean;
+    elapsedMs: number;
+    cancelled: boolean;
+    returnedDefinition: boolean;
+    location: string | null;
   }>;
   pendingWork(): Record<string, number>;
 }
@@ -72,6 +86,7 @@ describe('IDE-ACC-007:hover/导航取消后的收敛(真实编辑器)', () => {
     assert.ok(typeof probe.probeHover === 'function', 'activate 未返回 probeHover 探针');
     assert.ok(fs.existsSync(path.join(WORKSPACE!, DEF_REL)), 'TrainingAvatar.def 夹具缺失');
     assert.ok(fs.existsSync(path.join(WORKSPACE!, TOUCH_REL)), '触碰夹具缺失');
+    assert.ok(fs.readFileSync(path.join(WORKSPACE!, IMPL_REL), 'utf8').includes('def reqAttack'), '实现夹具缺 def reqAttack');
   });
 
   it('实际取消后:请求有界停止、新增 IO 有界、残留归零、共享扫描继续', async function () {
@@ -237,7 +252,101 @@ describe('IDE-ACC-007:hover/导航取消后的收敛(真实编辑器)', () => {
     console.log('[rev032] evidence:\n' + evidence.join('\n'));
     assert.ok(newReads <= 50, `在途取消落潮窗新增读盘 ${newReads} 次超界`);
   });
+  // IDE-REV-033:定义跳转确定性在途取消——与 REV-032 hover 用例同构但走
+  // PythonDefinitionProvider(导航面,不以 hover 或预取消代替):门内斩=
+  // 开始后完成前取消;验收四面:①取消落在在途窗口内且无晚到结果发布
+  // (settledBeforeCancel=false 定格证明+被取消请求不回落点);②请求归属
+  // 新增 IO 在落潮窗内有界(请求独占任务停止);③请求侧残留量规归零;
+  // ④共享任务不被误停(取消后 document-parse 继续前进)。
+  it('确定性在途跳转取消(IDE-REV-033):门内斩=开始后完成前取消,无晚到结果发布', async function () {
+    this.timeout(120_000);
+    const OUT_FILE_REV33 = process.env.KODE_REV33_OUT
+      ?? path.resolve(__dirname, '../../../../docs/perf/2026-10-30-rev033-definition-midflight-cancel-run.txt');
+    // 目标取真机已证可解析的跳转位(cell/TrainingAvatar.py 的 def reqAttack,
+    // fieldBaseline hot.definition 同位):取消抑制的是本会解析出落点的请求,
+    // 不取消时回落点——这样「不回内容」断言才真正咬合取消语义
+    const result = await probeDefAtGated(probe, IMPL_REL, 'def reqAttack', 'reqAttack');
+
+    // ①取消落在在途窗口内:请求已开始(到达闸=过入口守卫)、取消时结果尚未
+    // 落定(结构性「无晚到结果发布」证明);放行后有界返回且不回落点
+    assert.ok(result.gateEnteredAtMs >= 0, '请求未到达在途闸:开始后取消的证据缺失');
+    assert.ok(
+      result.cancelledAtMs >= result.gateEnteredAtMs,
+      `取消早于在途闸进入: gate=${result.gateEnteredAtMs}ms cancel=${result.cancelledAtMs}ms`
+    );
+    assert.strictEqual(
+      result.settledBeforeCancel, false,
+      '取消时请求已完成:在途窗口证明失守(晚到结果发布)'
+    );
+    assert.strictEqual(result.cancelled, true, '在途取消必须报 cancelled');
+    assert.ok(!result.returnedDefinition, `已取消跳转不得回落点: ${result.location}`);
+    assert.ok(result.elapsedMs < 5000, `取消跳转必须有界返回: ${result.elapsedMs}ms`);
+
+    // ②请求归属新增 IO:取消落潮窗内请求独占任务停止读盘
+    const readsAtCancel = getFileReadTotals();
+    await sleep(2000);
+    const readsAfterSettle = getFileReadTotals();
+    const newReads = readsAfterSettle.reads - readsAtCancel.reads;
+
+    // ③请求侧残留量规归零(共享扫描位不设归零断言,如实记录)
+    const pending = probe.pendingWork();
+    const requestSide = {
+      diagnosticsQueued: pending.diagnosticsQueued ?? 0,
+      diagnosticsInFlight: pending.diagnosticsInFlight ?? 0,
+      annotationUpdates: pending.annotationUpdates ?? 0,
+      schemaColdBuilds: pending.schemaColdBuilds ?? 0
+    };
+    for (const [gauge, value] of Object.entries(requestSide)) {
+      assert.strictEqual(value, 0, `在途取消落潮后请求侧量规 ${gauge} 未归零: ${value}`);
+    }
+
+    // ④共享任务不被误停:取消后现场改一笔被跟踪文件,document-parse 前进
+    const parseCountBefore = getOperationSummary('document-parse')?.count ?? 0;
+    fs.appendFileSync(path.join(WORKSPACE!, TOUCH_REL), '\n# rev033 touch: shared scan alive\n', 'utf8');
+    let parseCountAfter = parseCountBefore;
+    let waitedMs = 0;
+    while (parseCountAfter <= parseCountBefore && waitedMs < 15_000) {
+      await sleep(500);
+      waitedMs += 500;
+      parseCountAfter = getOperationSummary('document-parse')?.count ?? 0;
+    }
+    assert.ok(
+      parseCountAfter > parseCountBefore,
+      `在途取消后共享扫描未处理文件变更(document-parse ${parseCountBefore}→${parseCountAfter})`
+    );
+
+    const evidence = [
+      `rev033.gate.gateEnteredAtMs=${result.gateEnteredAtMs}`,
+      `rev033.gate.cancelledAtMs=${result.cancelledAtMs}`,
+      `rev033.gate.settledBeforeCancel=${result.settledBeforeCancel}`,
+      `rev033.gate.elapsedMs=${result.elapsedMs}`,
+      `rev033.gate.returnedDefinition=${result.returnedDefinition}`,
+      `rev033.reads.postCancelWindow=${newReads}`,
+      `rev033.pending.requestSide=${JSON.stringify(requestSide)}`,
+      `rev033.shared.parseCountBefore=${parseCountBefore}`,
+      `rev033.shared.parseCountAfter=${parseCountAfter}`,
+      `rev033.shared.convergeMs=${waitedMs}`
+    ];
+    fs.mkdirSync(path.dirname(OUT_FILE_REV33), { recursive: true });
+    fs.writeFileSync(OUT_FILE_REV33, evidence.join('\n') + '\n', 'utf8');
+    console.log('[rev033] evidence:\n' + evidence.join('\n'));
+    assert.ok(newReads <= 50, `在途取消落潮窗新增读盘 ${newReads} 次超界`);
+  });
+
 });
+
+/** 行锚+符号双定位后的门内在途跳转取消(与 probeAt 同定位口径) */
+async function probeDefAtGated(
+  probe: KodeProbeApi, relPath: string, lineNeedle: string, symbol: string
+): Promise<Awaited<ReturnType<KodeProbeApi['probeDefinitionGatedCancel']>>> {
+  const filePath = path.join(WORKSPACE!, relPath);
+  const source = fs.readFileSync(filePath, 'utf8');
+  const lines = source.split(/\r?\n/);
+  const line = lines.findIndex(text => text.includes(lineNeedle));
+  assert.ok(line >= 0, `夹具缺行: ${lineNeedle}`);
+  const character = lines[line].indexOf(symbol) + Math.floor(symbol.length / 2);
+  return probe.probeDefinitionGatedCancel({ file: filePath, line, character });
+}
 
 /** 行锚+符号双定位后的门内在途取消(与 probeAt 同定位口径) */
 async function probeAtGated(

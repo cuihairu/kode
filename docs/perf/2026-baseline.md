@@ -39,8 +39,8 @@
 | # | 场景 | 指标 | 实测 |
 |---|---|---|---|
 | 1 | 冷启动首次索引(large,30,001 个 .py) | 首次类名查询总耗时 | **107,737 ms(≈107.7s,≈3.6ms/文件)** |
-| 1b | 冷启动 entity-mapping 首扫(def-heavy,1,320 .def) | waitForInitialScan | **652 ms** |
-| 5′ | .def 修改后热复扫(mtime 缓存命中) | scanEntityMappings | **17 ms**(对比冷扫 652ms,≈38×) |
+| 1b | 冷启动 entity-mapping 首扫(def-heavy,1,320 .def) | waitForInitialScan | **653 ms** |
+| 5′ | .def 修改后热复扫(mtime 缓存命中) | scanEntityMappings | **17 ms**(对比冷扫 653ms,≈38×) |
 | 2 | 索引就绪后重复查询 findClassesByName | P50/P95/P99 | 0.01 / 0.02 / 0.04 ms(n=200) |
 | 2 | 索引就绪后 computeMRO | P50/P95/P99 | 0.01 / 0.04 / 1.33 ms(n=40) |
 | 3 | 新文件落盘后首次查询(未索引文件) | 索引+查询 | **0.75 ms** |
@@ -53,7 +53,7 @@
 ## 4. 关键发现(基线事实,非优化结论)
 
 1. **冷启动全量 Python 扫描是唯一的秒级瓶颈**:30,001 文件 ≈107.7s(≈3.6ms/文件),验证评审「首次 Definition 被全仓扫描阻塞」的方向。热路径(场景 2/3/4/6/7)均在亚毫秒~低毫秒级。
-2. **mtime 缓存有效**:.def 全量扫描 652ms → 热复扫 17ms;单位文件解析不是当前主要矛盾。
+2. **mtime 缓存有效**:.def 全量扫描 653ms → 热复扫 17ms;单位文件解析不是当前主要矛盾。
 3. **编辑后单次 P99 尖峰 79.9ms**(big-py 8,000 方法文件):源于 `updateFile` 清空 MRO 缓存后的重建,量级可接受但应跟踪。
 4. **排除式扫描口径正确**:build/third_party/.git 共 600 个干扰 .py 未进索引。
 
@@ -82,7 +82,7 @@
 ```mermaid
 flowchart TD
   VC1["VS Code: registerHoverProvider.provideHover(document, position, token)"]
-  M1["extension.ts:727 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
+  M1["extension.ts:728 打点<br/>startLanguageServiceOperation('hover', fileKind, documentVersion)"]
   HP["KBEngineHoverProvider.provideHover<br/>languageProviders.ts:761"]
   CFG["getLanguageFeatureConfig() 开关快照"]
   WORD["getWordRangeAtPosition + getText(range)<br/>读 VS Code 缓冲区,不读磁盘"]
@@ -130,7 +130,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC2["VS Code: provideDefinition(document, position)"]
-  M2["extension.ts:763 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :809 一路)"]
+  M2["extension.ts:764 打点 startLanguageServiceOperation('definition')<br/>(python 侧另有 :809 一路)"]
   AD2["PythonDefinitionProvider.provideDefinition<br/>languageProviders.ts:3873"]
   TR["provideDefinitionTraced → Impl<br/>semantic-query 打点 :3664 / Impl :3682"]
   CTX{"isPythonCodePosition<br/>注释/字符串内直接 skip"}
@@ -141,7 +141,7 @@ flowchart TD
   CB2["pythonClassIndex.resolveClassBase :1228<br/>(显式 import 绑定优先)"]
   CB3["findEntityDefinitionFile → .def<br/>getEntityRuntimeProfile → 实体脚本"]
   REV["types.xml implementedBy 反向跳转"]
-  L0["层0 接收者段闸(languageProviders.ts:4290)<br/>self.段.方法:段不符即 miss"]
+  L0["层0 接收者段闸(languageProviders.ts:4305)<br/>self.段.方法:段不符即 miss"]
   L1["层1 entity-def 属性子探<br/>resolvePropertyDefinitionForClass / resolvePropertyDefinition"]
   SCAN["indexScheduler 队列(首扫在途时)"]
   TY["findCustomTypeDeclarationInfo 自定义类型声明"]
@@ -167,7 +167,7 @@ flowchart TD
   MRO -- "①② 落空" --> PASS2 --> END2
   AD2 -.->|对拍| SHD
 
-  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4396,层1 属性命中后补类型信息时")
+  WAITB("等待点 B:withInitialScanTimeout 5s<br/>languageProviders.ts:4411,层1 属性命中后补类型信息时")
   WAITC("等待点 C:ensureCompositionRoots joinWait<br/>组合根未就绪时等待构建(pythonClassIndex.ts:640,打点 :526)")
   WAITD("等待点 D:pass2 await ensureScanned<br/>①② 均落空才等全量收敛——PR5 主路径首查不等这里")
   L1 -.->|等待| WAITB
@@ -184,8 +184,8 @@ flowchart TD
 ```mermaid
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
-  M3["extension.ts:652 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :1087 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:5810"]
+  M3["extension.ts:653 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :1087 一路)"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:5825"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}
@@ -214,7 +214,7 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:1178 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:1179 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>diagnosticScheduler.ts:211"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
   FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:1211 → diagnosticScheduler.ts:241"]
@@ -222,7 +222,7 @@ flowchart TD
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
   SKIP["skippedCurrentVersion 跳过"]
-  CALC["computeAndPublish<br/>def 侧打点 extension.ts:463 / entities 侧 :463"]
+  CALC["computeAndPublish<br/>def 侧打点 extension.ts:464 / entities 侧 :464"]
   VD["validateDocument(languageProviders.ts:1440)<br/>parseDefAst 一次结果共用标量+结构校验(languageProviders.ts:1440,批92)"]
   VEX["validateEntitiesXmlDocument(languageProviders.ts:1473)<br/>documentStore 'entities-analysis' 命名空间缓存(languageProviders.ts:1471,A6-3)"]
   SHDD["kode2 shadow 对拍+语料镜像腿<br/>shadowObserveDefDocument(:1295,fire-and-forget)"]

@@ -1125,3 +1125,487 @@ FIELD-SUMMARY type-registry-query count=44 p50=0.3 p95=1.8 p99=6.2 max=6.2 hit=4
 FIELD-SUMMARY file-discovery count=5 p50=64.8 p95=76.9 p99=76.9 max=76.9 hit=0 miss=0 discover=15 read=0 parse=0 ok=5 missStatus=0 cancelled=0 error=0 waitInit=0
 FIELD-SUMMARY document-parse count=16 p50=0 p95=0.7 p99=0.7 max=0.7 hit=8 miss=1 discover=0 read=0 parse=7 ok=16 missStatus=0 cancelled=0 error=0 waitInit=0
 FIELD-SUMMARY sessionEnd 2026-10-29T21:38:59.405Z
+FIELD-METRIC env.fieldRounds n=1 10
+FIELD-METRIC env.fieldGapMs n=1 5000
+FIELD-METRIC env.probeApi n=1 available
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 enabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-Hj7uDD/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-Hj7uDD/perf-assets/large
+FIELD-METRIC cold.firstDefinitionMs n=1 168.72ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 3
+FIELD-METRIC hot.hoverMs n=50 p50=3.36ms p95=6.39ms p99=8.64ms max=8.64ms avg=3.68ms
+FIELD-METRIC hot.definitionMs n=50 p50=4.77ms p95=6.36ms p99=7.39ms max=7.39ms avg=4.8ms
+FIELD-METRIC miss.hoverMs n=20 p50=1.55ms p95=2.17ms p99=2.3ms max=2.3ms avg=1.62ms
+FIELD-METRIC miss.definitionMs n=20 p50=1.57ms p95=2.49ms p99=4.96ms max=4.96ms avg=1.81ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 1.77ms
+FIELD-METRIC burst.20wallMs n=1 13.91ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 41.55ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 41.55ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=0ms cancelled=false returnedHover=true elapsed=4ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=2ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=4ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=16ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=0ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=1ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=2ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=0ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=1ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=2ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=4ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=8ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=16ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-METRIC cancel.probeCount n=1 18
+FIELD-METRIC cancel.cancelledCount n=1 0
+FIELD-METRIC cancel.cancelledWithHover n=1 0
+FIELD-METRIC cancel.elapsedMs n=18 p50=1ms p95=4ms p99=4ms max=4ms avg=1.22ms
+FIELD-EVIDENCE cancel.preCancelled cell.reqAttack cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled base.reqEnterArena cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled client.onBattleResult cancelled=true returnedHover=false elapsed=0ms
+FIELD-METRIC cancel.preCancelledCount n=1 3
+FIELD-METRIC hit.probe.cell.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.cell.reqAttack.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.cell.reqAttack.preview **reqAttack** — 此函数是实体 def 声明的 CellMethods 方法
+
+签名: `def reqAttack(self, arg1)`
+
+
+FIELD-METRIC hit.probe.base.reqEnterArena n=1 HIT
+FIELD-METRIC hit.probe.base.reqEnterArena.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.base.reqEnterArena.preview **reqEnterArena** — 此函数是实体 def 声明的 BaseMethods 方法
+
+签名: `def reqEnterArena(self)`
+FIELD-METRIC hit.probe.client.onBattleResult n=1 HIT
+FIELD-METRIC hit.probe.client.onBattleResult.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.client.onBattleResult.preview **onBattleResult** — 此函数是实体 def 声明的 ClientMethods 方法
+
+签名: `def onBattleResult(se
+FIELD-METRIC hit.probe.def.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.def.reqAttack.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.def.reqAttack.preview **reqAttack**
+
+方法区块中的自定义定义。
+
+**参数个数**: 1
+
+**Args**: `ENTITY_ID`
+FIELD-METRIC hit.probe.types.ITEM_ID n=1 HIT
+FIELD-METRIC hit.probe.types.ITEM_ID.elapsedMs n=1 4ms
+FIELD-EVIDENCE hit.probe.types.ITEM_ID.preview **ITEM_ID**
+
+Custom type from `types.xml`
+
+**AliasType**: `UINT16`
+
+**落库形态**:
+- 
+FIELD-METRIC hit.burstHoverMs n=20 p50=2.8ms p95=5.41ms p99=33.37ms max=33.37ms avg=4.53ms
+FIELD-METRIC hit.burstHover.okBefore n=1 0
+FIELD-METRIC hit.burstHover.okDelta n=1 20
+FIELD-EVIDENCE residual.t0 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t500 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t2000 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-METRIC residual.indexTasksQueuedAtDrain n=1 0
+FIELD-METRIC residual.schemaColdBuildsAtDrain n=1 0
+FIELD-METRIC host.cpuProfile.written n=1 /home/cui/workspaces/kode/docs/perf/2026-10-27-field-baseline-run.txt.cpuprofile
+FIELD-METRIC host.cpuProfile.selfTop1 n=1 2500ms (idle) 
+FIELD-METRIC host.cpuProfile.selfTop2 n=1 55ms (program) 
+FIELD-METRIC host.cpuProfile.selfTop3 n=1 45ms spawn 
+FIELD-METRIC host.cpuProfile.selfTop4 n=1 20ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop5 n=1 15ms join node:path
+FIELD-METRIC host.cpuProfile.selfTop6 n=1 15ms (garbage collector) 
+FIELD-METRIC host.cpuProfile.selfTop7 n=1 10ms _receiveRequest extensionHostProcess.js
+FIELD-METRIC host.cpuProfile.selfTop8 n=1 10ms deserializeRequestJSONArgs extensionHostProcess.js
+FIELD-METRIC host.cpuProfile.selfTop9 n=1 10ms cmdTraversal extensionHostProcess.js
+FIELD-METRIC host.cpuProfile.selfTop10 n=1 10ms normalizeString node:path
+FIELD-METRIC host.vmHwmMiB n=1 356
+FIELD-METRIC host.peakRssMiB n=1 354
+FIELD-METRIC host.cpuUserSec n=1 8.62
+FIELD-METRIC host.cpuSysSec n=1 2.31
+FIELD-METRIC host.cpuSampleCount n=1 6
+FIELD-METRIC eventloop.p50Ms n=1 20.5
+FIELD-METRIC eventloop.p95Ms n=1 23.99
+FIELD-METRIC eventloop.p99Ms n=1 40.96
+FIELD-METRIC eventloop.maxMs n=1 41.71
+FIELD-METRIC eventloop.meanMs n=1 21
+FIELD-SUMMARY hover count=90 p50=1.4 p95=2.5 p99=4.6 max=4.6 hit=0 miss=0 discover=0 read=0 parse=0 ok=20 missStatus=70 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY definition count=92 p50=2.2 p95=3.7 p99=163.7 max=163.7 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY diagnostics count=19 p50=0.2 p95=1.1 p99=1.1 max=1.1 hit=0 miss=19 discover=0 read=0 parse=0 ok=19 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-composition-roots count=1 p50=92.6 p95=92.6 p99=92.6 max=92.6 hit=0 miss=0 discover=15 read=15 parse=15 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY semantic-query count=92 p50=2 p95=3.5 p99=162.7 max=162.7 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY type-registry-query count=44 p50=0.3 p95=1 p99=2.7 max=2.7 hit=42 miss=2 discover=0 read=0 parse=0 ok=44 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY file-discovery count=5 p50=57.4 p95=62 p99=62 max=62 hit=0 miss=0 discover=15 read=0 parse=0 ok=5 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY document-parse count=20 p50=0.1 p95=0.6 p99=0.7 max=0.7 hit=8 miss=1 discover=0 read=0 parse=11 ok=20 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY sessionEnd 2026-10-29T21:45:42.491Z
+FIELD-METRIC env.fieldRounds n=1 10
+FIELD-METRIC env.fieldGapMs n=1 5000
+FIELD-METRIC env.probeApi n=1 available
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 enabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-SAtFa7/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-SAtFa7/perf-assets/large
+FIELD-METRIC cold.firstDefinitionMs n=1 415.84ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 3
+FIELD-METRIC hot.hoverMs n=50 p50=6.85ms p95=20.27ms p99=39.71ms max=39.71ms avg=8.6ms
+FIELD-METRIC hot.definitionMs n=50 p50=10.16ms p95=19.55ms p99=42.14ms max=42.14ms avg=11.58ms
+FIELD-METRIC miss.hoverMs n=20 p50=2.92ms p95=3.38ms p99=5.43ms max=5.43ms avg=3.06ms
+FIELD-METRIC miss.definitionMs n=20 p50=3ms p95=3.51ms p99=4.47ms max=4.47ms avg=3.09ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 25.88ms
+FIELD-METRIC burst.20wallMs n=1 39.88ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 58.29ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 58.29ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=0ms cancelled=false returnedHover=true elapsed=5ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=1ms cancelled=false returnedHover=true elapsed=4ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=4ms cancelled=false returnedHover=true elapsed=4ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=0ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=0ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=1ms cancelled=false returnedHover=true elapsed=3ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=2ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=4ms cancelled=false returnedHover=true elapsed=5ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-METRIC cancel.probeCount n=1 18
+FIELD-METRIC cancel.cancelledCount n=1 0
+FIELD-METRIC cancel.cancelledWithHover n=1 0
+FIELD-METRIC cancel.elapsedMs n=18 p50=1ms p95=5ms p99=5ms max=5ms avg=1.67ms
+FIELD-EVIDENCE cancel.preCancelled cell.reqAttack cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled base.reqEnterArena cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled client.onBattleResult cancelled=true returnedHover=false elapsed=0ms
+FIELD-METRIC cancel.preCancelledCount n=1 3
+FIELD-METRIC hit.probe.cell.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.cell.reqAttack.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.cell.reqAttack.preview **reqAttack** — 此函数是实体 def 声明的 CellMethods 方法
+
+签名: `def reqAttack(self, arg1)`
+
+
+FIELD-METRIC hit.probe.base.reqEnterArena n=1 HIT
+FIELD-METRIC hit.probe.base.reqEnterArena.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.base.reqEnterArena.preview **reqEnterArena** — 此函数是实体 def 声明的 BaseMethods 方法
+
+签名: `def reqEnterArena(self)`
+FIELD-METRIC hit.probe.client.onBattleResult n=1 HIT
+FIELD-METRIC hit.probe.client.onBattleResult.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.client.onBattleResult.preview **onBattleResult** — 此函数是实体 def 声明的 ClientMethods 方法
+
+签名: `def onBattleResult(se
+FIELD-METRIC hit.probe.def.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.def.reqAttack.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.def.reqAttack.preview **reqAttack**
+
+方法区块中的自定义定义。
+
+**参数个数**: 1
+
+**Args**: `ENTITY_ID`
+FIELD-METRIC hit.probe.types.ITEM_ID n=1 HIT
+FIELD-METRIC hit.probe.types.ITEM_ID.elapsedMs n=1 9ms
+FIELD-EVIDENCE hit.probe.types.ITEM_ID.preview **ITEM_ID**
+
+Custom type from `types.xml`
+
+**AliasType**: `UINT16`
+
+**落库形态**:
+- 
+FIELD-METRIC hit.burstHoverMs n=20 p50=9.04ms p95=20.51ms p99=58.79ms max=58.79ms avg=11.78ms
+FIELD-METRIC hit.burstHover.okBefore n=1 0
+FIELD-METRIC hit.burstHover.okDelta n=1 20
+FIELD-EVIDENCE residual.t0 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t500 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t2000 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-METRIC residual.indexTasksQueuedAtDrain n=1 0
+FIELD-METRIC residual.schemaColdBuildsAtDrain n=1 0
+FIELD-METRIC host.cpuProfile.written n=1 /home/cui/workspaces/kode/docs/perf/2026-10-27-field-baseline-run.txt.cpuprofile
+FIELD-METRIC host.cpuProfile.selfTop1 n=1 3545ms (idle) 
+FIELD-METRIC host.cpuProfile.selfTop2 n=1 85ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop3 n=1 70ms addCACert 
+FIELD-METRIC host.cpuProfile.selfTop4 n=1 65ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop5 n=1 60ms spawn 
+FIELD-METRIC host.cpuProfile.selfTop6 n=1 45ms (program) 
+FIELD-METRIC host.cpuProfile.selfTop7 n=1 30ms (garbage collector) 
+FIELD-METRIC host.cpuProfile.selfTop8 n=1 25ms walkExternalRoot scanRoots.js
+FIELD-METRIC host.cpuProfile.selfTop9 n=1 25ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop10 n=1 20ms normalizeString node:path
+FIELD-METRIC host.vmHwmMiB n=1 357
+FIELD-METRIC host.peakRssMiB n=1 355
+FIELD-METRIC host.cpuUserSec n=1 10.65
+FIELD-METRIC host.cpuSysSec n=1 2.73
+FIELD-METRIC host.cpuSampleCount n=1 10
+FIELD-METRIC eventloop.p50Ms n=1 20.56
+FIELD-METRIC eventloop.p95Ms n=1 26.94
+FIELD-METRIC eventloop.p99Ms n=1 58.29
+FIELD-METRIC eventloop.maxMs n=1 95.42
+FIELD-METRIC eventloop.meanMs n=1 22.2
+FIELD-SUMMARY hover count=90 p50=2.4 p95=4.8 p99=14.9 max=14.9 hit=0 miss=0 discover=0 read=0 parse=0 ok=20 missStatus=70 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY definition count=92 p50=3.4 p95=10.7 p99=377.3 max=377.3 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY diagnostics count=19 p50=0.2 p95=5.2 p99=5.2 max=5.2 hit=0 miss=19 discover=0 read=0 parse=0 ok=19 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-composition-roots count=1 p50=241.5 p95=241.5 p99=241.5 max=241.5 hit=0 miss=0 discover=15 read=15 parse=15 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY semantic-query count=92 p50=3 p95=9.8 p99=376.4 max=376.4 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY type-registry-query count=44 p50=0.4 p95=3.3 p99=3.7 max=3.7 hit=42 miss=2 discover=0 read=0 parse=0 ok=44 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY file-discovery count=5 p50=137.6 p95=142.1 p99=142.1 max=142.1 hit=0 miss=0 discover=15 read=0 parse=0 ok=5 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY document-parse count=26 p50=0.2 p95=2.3 p99=3.8 max=3.8 hit=8 miss=1 discover=0 read=0 parse=17 ok=26 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY sessionEnd 2026-10-29T21:47:50.878Z
+FIELD-METRIC env.fieldRounds n=1 10
+FIELD-METRIC env.fieldGapMs n=1 5000
+FIELD-METRIC env.probeApi n=1 available
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 enabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-9K9HyZ/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-9K9HyZ/perf-assets/large
+FIELD-METRIC cold.firstDefinitionMs n=1 193.61ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 3
+FIELD-METRIC hot.hoverMs n=50 p50=3.67ms p95=6.91ms p99=9.87ms max=9.87ms avg=4.01ms
+FIELD-METRIC hot.definitionMs n=50 p50=5.05ms p95=9.72ms p99=11.97ms max=11.97ms avg=5.5ms
+FIELD-METRIC miss.hoverMs n=20 p50=2.33ms p95=4.93ms p99=7.44ms max=7.44ms avg=2.88ms
+FIELD-METRIC miss.definitionMs n=20 p50=2.28ms p95=3.97ms p99=5.31ms max=5.31ms avg=2.63ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 1.8ms
+FIELD-METRIC burst.20wallMs n=1 14.45ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 48.76ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 48.76ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=0ms cancelled=false returnedHover=true elapsed=5ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=4ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=16ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=0ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=16ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=0ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=1ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=2ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=4ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-METRIC cancel.probeCount n=1 18
+FIELD-METRIC cancel.cancelledCount n=1 0
+FIELD-METRIC cancel.cancelledWithHover n=1 0
+FIELD-METRIC cancel.elapsedMs n=18 p50=0ms p95=5ms p99=5ms max=5ms avg=0.83ms
+FIELD-EVIDENCE cancel.preCancelled cell.reqAttack cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled base.reqEnterArena cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled client.onBattleResult cancelled=true returnedHover=false elapsed=0ms
+FIELD-METRIC cancel.preCancelledCount n=1 3
+FIELD-METRIC hit.probe.cell.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.cell.reqAttack.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.cell.reqAttack.preview **reqAttack** — 此函数是实体 def 声明的 CellMethods 方法
+
+签名: `def reqAttack(self, arg1)`
+
+
+FIELD-METRIC hit.probe.base.reqEnterArena n=1 HIT
+FIELD-METRIC hit.probe.base.reqEnterArena.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.base.reqEnterArena.preview **reqEnterArena** — 此函数是实体 def 声明的 BaseMethods 方法
+
+签名: `def reqEnterArena(self)`
+FIELD-METRIC hit.probe.client.onBattleResult n=1 HIT
+FIELD-METRIC hit.probe.client.onBattleResult.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.client.onBattleResult.preview **onBattleResult** — 此函数是实体 def 声明的 ClientMethods 方法
+
+签名: `def onBattleResult(se
+FIELD-METRIC hit.probe.def.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.def.reqAttack.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.def.reqAttack.preview **reqAttack**
+
+方法区块中的自定义定义。
+
+**参数个数**: 1
+
+**Args**: `ENTITY_ID`
+FIELD-METRIC hit.probe.types.ITEM_ID n=1 HIT
+FIELD-METRIC hit.probe.types.ITEM_ID.elapsedMs n=1 5ms
+FIELD-EVIDENCE hit.probe.types.ITEM_ID.preview **ITEM_ID**
+
+Custom type from `types.xml`
+
+**AliasType**: `UINT16`
+
+**落库形态**:
+- 
+FIELD-METRIC hit.burstHoverMs n=20 p50=3.35ms p95=6.97ms p99=40.2ms max=40.2ms avg=5.46ms
+FIELD-METRIC hit.burstHover.okBefore n=1 0
+FIELD-METRIC hit.burstHover.okDelta n=1 20
+FIELD-EVIDENCE residual.t0 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t500 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t2000 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-METRIC residual.indexTasksQueuedAtDrain n=1 0
+FIELD-METRIC residual.schemaColdBuildsAtDrain n=1 0
+FIELD-METRIC host.cpuProfile.written n=1 /home/cui/workspaces/kode/docs/perf/2026-10-27-field-baseline-run.txt.cpuprofile
+FIELD-METRIC host.cpuProfile.selfTop1 n=1 2375ms (idle) 
+FIELD-METRIC host.cpuProfile.selfTop2 n=1 50ms spawn 
+FIELD-METRIC host.cpuProfile.selfTop3 n=1 45ms (program) 
+FIELD-METRIC host.cpuProfile.selfTop4 n=1 20ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop5 n=1 15ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop6 n=1 15ms deserializeRequestJSONArgs extensionHostProcess.js
+FIELD-METRIC host.cpuProfile.selfTop7 n=1 15ms (garbage collector) 
+FIELD-METRIC host.cpuProfile.selfTop8 n=1 15ms vM extensionHostProcess.js
+FIELD-METRIC host.cpuProfile.selfTop9 n=1 15ms existsSync 
+FIELD-METRIC host.cpuProfile.selfTop10 n=1 10ms normalizeSpawnArguments node:child_process
+FIELD-METRIC host.vmHwmMiB n=1 355
+FIELD-METRIC host.peakRssMiB n=1 354
+FIELD-METRIC host.cpuUserSec n=1 9.29
+FIELD-METRIC host.cpuSysSec n=1 2.48
+FIELD-METRIC host.cpuSampleCount n=1 6
+FIELD-METRIC eventloop.p50Ms n=1 20.45
+FIELD-METRIC eventloop.p95Ms n=1 22.95
+FIELD-METRIC eventloop.p99Ms n=1 40.17
+FIELD-METRIC eventloop.maxMs n=1 49.87
+FIELD-METRIC eventloop.meanMs n=1 21.08
+FIELD-SUMMARY hover count=90 p50=1.5 p95=2.7 p99=3.8 max=3.8 hit=0 miss=0 discover=0 read=0 parse=0 ok=20 missStatus=70 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY definition count=92 p50=2.3 p95=4.7 p99=188.1 max=188.1 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY diagnostics count=18 p50=0.2 p95=0.5 p99=0.5 max=0.5 hit=0 miss=18 discover=0 read=0 parse=0 ok=18 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-composition-roots count=1 p50=121 p95=121 p99=121 max=121 hit=0 miss=0 discover=15 read=15 parse=15 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY semantic-query count=92 p50=2.1 p95=4.3 p99=187.4 max=187.4 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY type-registry-query count=44 p50=0.3 p95=0.7 p99=2.5 max=2.5 hit=42 miss=2 discover=0 read=0 parse=0 ok=44 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY file-discovery count=5 p50=65.4 p95=76.9 p99=76.9 max=76.9 hit=0 miss=0 discover=15 read=0 parse=0 ok=5 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY document-parse count=16 p50=0 p95=1.4 p99=1.4 max=1.4 hit=8 miss=1 discover=0 read=0 parse=7 ok=16 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY sessionEnd 2026-10-29T21:49:29.056Z
+FIELD-METRIC env.fieldRounds n=1 10
+FIELD-METRIC env.fieldGapMs n=1 5000
+FIELD-METRIC env.probeApi n=1 available
+FIELD-METRIC env.vscodeVersion n=1 1.141.0
+FIELD-METRIC env.mode n=1 enabled
+FIELD-METRIC env.platform n=1 linux 7.0.0-38-generic x64
+FIELD-METRIC env.cpus n=1 14
+FIELD-METRIC env.totalmemMiB n=1 47077
+FIELD-METRIC env.nodeVersion n=1 v24.21.0
+FIELD-METRIC env.workspace n=1 /tmp/kode-kbengine-field-mvaCsY/kbengine-demo-assets
+FIELD-METRIC env.assetsRoot n=1 /tmp/kode-kbengine-field-mvaCsY/perf-assets/large
+FIELD-METRIC cold.firstDefinitionMs n=1 186.52ms
+FIELD-METRIC cold.firstDefinitionTargets n=1 3
+FIELD-METRIC hot.hoverMs n=50 p50=2.97ms p95=4.77ms p99=8.54ms max=8.54ms avg=3.26ms
+FIELD-METRIC hot.definitionMs n=50 p50=4.54ms p95=6.76ms p99=8.17ms max=8.17ms avg=4.79ms
+FIELD-METRIC miss.hoverMs n=20 p50=1.54ms p95=2.59ms p99=2.65ms max=2.65ms avg=1.63ms
+FIELD-METRIC miss.definitionMs n=20 p50=1.3ms p95=2.57ms p99=3.18ms max=3.18ms avg=1.57ms
+FIELD-METRIC saveStorm.firstJumpMs n=1 10.68ms
+FIELD-METRIC burst.20wallMs n=1 134.26ms
+FIELD-METRIC burst.20hostP99BeforeMs n=1 36.27ms
+FIELD-METRIC burst.20hostP99AfterMs n=1 28.02ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=0ms cancelled=false returnedHover=true elapsed=7ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=1ms cancelled=false returnedHover=true elapsed=3ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=2ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=4ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe cell.reqAttack after=16ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=0ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=2ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=4ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=8ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe base.reqEnterArena after=16ms cancelled=false returnedHover=true elapsed=0ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=0ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=1ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=2ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=4ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=8ms cancelled=false returnedHover=true elapsed=1ms
+FIELD-EVIDENCE cancel.probe client.onBattleResult after=16ms cancelled=false returnedHover=true elapsed=2ms
+FIELD-METRIC cancel.probeCount n=1 18
+FIELD-METRIC cancel.cancelledCount n=1 0
+FIELD-METRIC cancel.cancelledWithHover n=1 0
+FIELD-METRIC cancel.elapsedMs n=18 p50=1ms p95=7ms p99=7ms max=7ms avg=1.5ms
+FIELD-EVIDENCE cancel.preCancelled cell.reqAttack cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled base.reqEnterArena cancelled=true returnedHover=false elapsed=0ms
+FIELD-EVIDENCE cancel.preCancelled client.onBattleResult cancelled=true returnedHover=false elapsed=0ms
+FIELD-METRIC cancel.preCancelledCount n=1 3
+FIELD-METRIC hit.probe.cell.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.cell.reqAttack.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.cell.reqAttack.preview **reqAttack** — 此函数是实体 def 声明的 CellMethods 方法
+
+签名: `def reqAttack(self, arg1)`
+
+
+FIELD-METRIC hit.probe.base.reqEnterArena n=1 HIT
+FIELD-METRIC hit.probe.base.reqEnterArena.elapsedMs n=1 0ms
+FIELD-EVIDENCE hit.probe.base.reqEnterArena.preview **reqEnterArena** — 此函数是实体 def 声明的 BaseMethods 方法
+
+签名: `def reqEnterArena(self)`
+FIELD-METRIC hit.probe.client.onBattleResult n=1 HIT
+FIELD-METRIC hit.probe.client.onBattleResult.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.client.onBattleResult.preview **onBattleResult** — 此函数是实体 def 声明的 ClientMethods 方法
+
+签名: `def onBattleResult(se
+FIELD-METRIC hit.probe.def.reqAttack n=1 HIT
+FIELD-METRIC hit.probe.def.reqAttack.elapsedMs n=1 1ms
+FIELD-EVIDENCE hit.probe.def.reqAttack.preview **reqAttack**
+
+方法区块中的自定义定义。
+
+**参数个数**: 1
+
+**Args**: `ENTITY_ID`
+FIELD-METRIC hit.probe.types.ITEM_ID n=1 HIT
+FIELD-METRIC hit.probe.types.ITEM_ID.elapsedMs n=1 6ms
+FIELD-EVIDENCE hit.probe.types.ITEM_ID.preview **ITEM_ID**
+
+Custom type from `types.xml`
+
+**AliasType**: `UINT16`
+
+**落库形态**:
+- 
+FIELD-METRIC hit.burstHoverMs n=20 p50=3.03ms p95=3.99ms p99=43.89ms max=43.89ms avg=5.06ms
+FIELD-METRIC hit.burstHover.okBefore n=1 0
+FIELD-METRIC hit.burstHover.okDelta n=1 20
+FIELD-EVIDENCE residual.t0 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t500 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-EVIDENCE residual.t2000 diagQueued=0 diagInFlight=0 annotationUpdates=0 indexQueued=0 schemaColdBuilds=0
+FIELD-METRIC residual.indexTasksQueuedAtDrain n=1 0
+FIELD-METRIC residual.schemaColdBuildsAtDrain n=1 0
+FIELD-METRIC host.cpuProfile.written n=1 /home/cui/workspaces/kode/docs/perf/2026-10-27-field-baseline-run.txt.cpuprofile
+FIELD-METRIC host.cpuProfile.selfTop1 n=1 2575ms (idle) 
+FIELD-METRIC host.cpuProfile.selfTop2 n=1 60ms (program) 
+FIELD-METRIC host.cpuProfile.selfTop3 n=1 40ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop4 n=1 35ms spawn 
+FIELD-METRIC host.cpuProfile.selfTop5 n=1 30ms postMessage 
+FIELD-METRIC host.cpuProfile.selfTop6 n=1 15ms (anonymous) utility_init
+FIELD-METRIC host.cpuProfile.selfTop7 n=1 15ms walkExternalRoot scanRoots.js
+FIELD-METRIC host.cpuProfile.selfTop8 n=1 15ms normalizeString node:path
+FIELD-METRIC host.cpuProfile.selfTop9 n=1 10ms (anonymous) extensionHostProcess.js
+FIELD-METRIC host.cpuProfile.selfTop10 n=1 10ms normalizeSpawnArguments node:child_process
+FIELD-METRIC host.vmHwmMiB n=1 358
+FIELD-METRIC host.peakRssMiB n=1 357
+FIELD-METRIC host.cpuUserSec n=1 8.95
+FIELD-METRIC host.cpuSysSec n=1 2.56
+FIELD-METRIC host.cpuSampleCount n=1 7
+FIELD-METRIC eventloop.p50Ms n=1 20.5
+FIELD-METRIC eventloop.p95Ms n=1 23.23
+FIELD-METRIC eventloop.p99Ms n=1 32.51
+FIELD-METRIC eventloop.maxMs n=1 52.49
+FIELD-METRIC eventloop.meanMs n=1 20.94
+FIELD-SUMMARY hover count=90 p50=1.3 p95=2.4 p99=5.7 max=5.7 hit=0 miss=0 discover=0 read=0 parse=0 ok=20 missStatus=70 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY definition count=92 p50=2 p95=4.4 p99=172.5 max=172.5 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY diagnostics count=18 p50=0.2 p95=0.8 p99=0.8 max=0.8 hit=0 miss=18 discover=0 read=0 parse=0 ok=18 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY python-composition-roots count=1 p50=113 p95=113 p99=113 max=113 hit=0 miss=0 discover=15 read=15 parse=15 ok=1 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY semantic-query count=92 p50=1.9 p95=3.9 p99=171.6 max=171.6 hit=0 miss=0 discover=0 read=0 parse=0 ok=51 missStatus=41 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY type-registry-query count=44 p50=0.4 p95=1.5 p99=4.8 max=4.8 hit=42 miss=2 discover=0 read=0 parse=0 ok=44 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY file-discovery count=5 p50=65.6 p95=74.9 p99=74.9 max=74.9 hit=0 miss=0 discover=15 read=0 parse=0 ok=5 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY document-parse count=19 p50=0.1 p95=1.2 p99=1.2 max=1.2 hit=8 miss=1 discover=0 read=0 parse=10 ok=19 missStatus=0 cancelled=0 error=0 waitInit=0
+FIELD-SUMMARY sessionEnd 2026-10-29T21:50:17.897Z

@@ -233,6 +233,7 @@ import {
   isPythonMroJumpEnabled,
   setPythonMroJumpEnabled,
   setHoverInFlightGateForTests,
+  setDefinitionInFlightGateForTests,
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
@@ -4290,6 +4291,53 @@ export function activate(context: vscode.ExtensionContext) {
         if (timer !== undefined) { clearTimeout(timer); }
         canceller.dispose();
       }
+    },
+    // IDE-REV-033:定义跳转确定性在途取消探针——与 REV-032 hover 探针同构,
+    // 但走 PythonDefinitionProvider.provideDefinition(导航面,不得以 hover 或
+    // 预取消代替):门内斩 token=开始后完成前取消;settledBeforeCancel 斩后
+    // 立即定格,false 即「无晚到结果发布」的结构性证明。
+    probeDefinitionGatedCancel: async (target: { file: string; line: number; character: number }) => {
+      let markEntered!: () => void;
+      let releaseGate!: () => void;
+      const enteredSignal = new Promise<void>(resolve => { markEntered = resolve; });
+      const release = new Promise<void>(resolve => { releaseGate = resolve; });
+      setDefinitionInFlightGateForTests(() => {
+        markEntered();
+        return release.then(() => { setDefinitionInFlightGateForTests(null); });
+      });
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target.file));
+      const canceller = new vscode.CancellationTokenSource();
+      const startedAt = Date.now();
+      let gateEnteredAtMs = -1;
+      const definitionPromise = pythonDefinitionImpl.provideDefinition(
+        document,
+        new vscode.Position(target.line, target.character),
+        canceller.token
+      );
+      let definitionSettled = false;
+      void Promise.resolve(definitionPromise).then(() => { definitionSettled = true; }, () => { definitionSettled = true; });
+      await enteredSignal;
+      gateEnteredAtMs = Date.now() - startedAt;
+      // 确定性在途斩:此刻请求在途(已开始未完成)
+      canceller.cancel();
+      const cancelledAtMs = Date.now() - startedAt;
+      // 斩后立即定格:此刻之后结果落定属正常(放行收口),定格值才是「完成前」证明
+      const settledBeforeCancel = definitionSettled;
+      releaseGate();
+      const definition = await Promise.resolve(definitionPromise);
+      const elapsedMs = Date.now() - startedAt;
+      canceller.dispose();
+      return {
+        gateEnteredAtMs,
+        cancelledAtMs,
+        settledBeforeCancel,
+        elapsedMs,
+        cancelled: true,
+        returnedDefinition: definition !== null && definition !== undefined,
+        location: definition
+          ? (Array.isArray(definition) ? definition[0] : definition)?.uri?.toString() ?? null
+          : null
+      };
     },
     // IDE-REV-032:确定性在途取消探针——门住 provider「已过入口守卫、未出结果」
     // 的在途窗口,门内斩 token(开始后、完成前取消,不再靠 2ms 竞速),放行
