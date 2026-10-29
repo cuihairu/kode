@@ -496,6 +496,16 @@
   - 重发动作经 quick action 树反查（具名注册动作与扫描脚本优先，按索引对齐的 `@http:` 殿后）；反查不到动作的目标如实报告（找不到以 … 为接收方的动作）并跳过，不执行任何动作
   - 重发落账与 fire 路径同走既有面：无响应面动作记 sent-unverified / failed；真实 HTTP 响应按传输事实分类（2xx=未确认送达，非 2xx=failed）；2xx 回包走 accepted/applied 升格与核验窗口结算——重发成功后台账如实翻面，不留 failed 旧账
   - 报告（重发/不重发/取消跳过计数 + 逐目标行含重发结果）落「KBEngine 热更新」通道并打开；空台账如实报告 无投递记录，没有可重试的目标
+
+### `kbengine.hotReload.showRevisionEvidence`
+
+- 标题：`Show Hot Reload Revision Evidence`
+- 作用：把真实发送结果的 revision 证据逐（目标,文件）渲染进「KBEngine 热更新」通道——每类证据自带来源标签点名，绝不互相冒充（IDE-REV-027 / HOT-008）
+- 行为：
+  - 三类证据各自点名来源：fileHash（本地文件内容哈希重算）——对文件当前内容做 sha256 重算（与 applied 核验 digest 基准同一读取通道）；semanticHash（结构语义指纹）——仅 `.def` 文件，结构指纹（属性 `{Type,Flags}` + 方法 Arg 签名面）的 sha256，注释/空白/顺序不影响；engineDigest（运行时回执报告）——运行时回执报告的 digest，会话证据册只把它归到回执逐字回显的文件名下
+  - 跨类绝不比较：本地哈希不是运行时证据，值巧合相同也只是两条各自来源的行——跨类不判「一致」（同类比对是协议内验证手段，不在此面做）
+  - 缺的种类如实缺席：内容读不到就没有 fileHash/semanticHash 行，运行时没回执过就没有 engineDigest 行，`.py` 文件没有 semanticHash 行——不填空不冒充
+  - 两条发送路径都喂证据册：fire 路径与失败目标重发都把真实 HTTP 回包体转给它；空台账如实报 无投递记录
 ### `kbengine.discovery.report`
 
 - 标题：`Show Discovery Report`

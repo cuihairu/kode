@@ -128,6 +128,16 @@ export interface SetupHotReloadOptions {
   readonly status?: HotReloadStatusController;
   /** IDE-REV-021 目标状态台账接线:注入即逐发送按 rootId × targetId 记账 */
   readonly targetState?: HotReloadTargetStateWiring;
+  /**
+   * IDE-REV-027 引擎 digest 证据口:真实 HTTP 回包体喂给证据册(册内自
+   * 行判协议:非空 digest+逐字回显该文件才入册,归属不猜)。注入即逐文
+   * 件上报,不注入则证据面无运行时来源。
+   */
+  readonly noteEngineDigest?: (
+    key: { rootId: string; targetId: string },
+    file: string,
+    body: string | undefined
+  ) => void;
   /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
   readonly now?: () => number;
 }
@@ -309,6 +319,8 @@ export function setupHotReload(
               continue;
             }
             const key = { rootId, targetId };
+            // IDE-REV-027:回包体喂引擎 digest 证据册(册内判协议与归属)
+            options.noteEngineDigest?.(key, file, response.body);
             // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
             const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
             if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {

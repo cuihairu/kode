@@ -118,6 +118,7 @@
     "onCommand:kbengine.hotReload.showLog",
     "onCommand:kbengine.hotReload.showBatchSummary",
     "onCommand:kbengine.hotReload.retryFailed",
+    "onCommand:kbengine.hotReload.showRevisionEvidence",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
@@ -673,6 +674,10 @@
       {
         "command": "kbengine.hotReload.retryFailed",
         "title": "Retry Failed Hot Reload Targets"
+      },
+      {
+        "command": "kbengine.hotReload.showRevisionEvidence",
+        "title": "Show Hot Reload Revision Evidence"
       },
       {
         "command": "kbengine.debug.focusTarget",

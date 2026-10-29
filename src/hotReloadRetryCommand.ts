@@ -30,6 +30,12 @@ export interface HotReloadResendDeps {
   resolveActionNameForTarget(targetId: string): string | null | Promise<string | null>;
   /** 台账接线(与 fire 路径同一注入面);不注入则重发不落账 */
   readonly targetState?: HotReloadTargetStateWiring;
+  /** IDE-REV-027 引擎 digest 证据口:重发回包体喂证据册(与 fire 路径同款) */
+  readonly noteEngineDigest?: (
+    key: { rootId: string; targetId: string },
+    file: string,
+    body: string | undefined
+  ) => void;
   readonly timers: HotReloadTimerDeps;
   /** applied 核验窗口结算句柄集,随命令释放清(与 fire 路径同口径) */
   readonly settleHandles: Set<unknown>;
@@ -79,6 +85,8 @@ export async function resendHotReloadTarget(
       return;
     }
     for (const file of files) {
+      // IDE-REV-027:重发回包体喂引擎 digest 证据册(册内判协议与归属)
+      deps.noteEngineDigest?.(key, file, response.body);
       // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
       const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
       if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {

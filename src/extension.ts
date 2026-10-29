@@ -157,6 +157,8 @@ import {
 import { HotReloadStatusController } from './hotReloadStatus';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
+import { runHotReloadRevisionEvidenceCommand } from './hotReloadRevisionEvidenceCommand';
+import { HotReloadEngineDigestRegister } from './hotReloadRevisionEvidence';
 import { HotReloadTargetStateStore } from './hotReloadTargetState';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
@@ -3239,6 +3241,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 文件归属的工作区扫描根;动作完成无回执仍只记 sent-unverified,绝不记
   // 成功态——同文件发不同实例各落各的,切目标不复用上一目标状态。
   const hotReloadTargetStateStore = new HotReloadTargetStateStore({ now: () => Date.now() });
+  // IDE-REV-027 引擎 digest 证据册:fire 路径与失败目标重发的回包体都喂
+  // 进来(册内判协议:非空 digest+逐字回显该文件才入册),证据展示命令读
+  const hotReloadEngineDigestRegister = new HotReloadEngineDigestRegister({ now: () => Date.now() });
   // IDE-REV-025:状态控制器显式装配,批次聚合命令与状态栏/日志共用同一通道
   const hotReloadStatus = new HotReloadStatusController({
     createStatusBarItem: (alignment, priority) => vscode.window.createStatusBarItem(alignment, priority),
@@ -3300,7 +3305,8 @@ export function activate(context: vscode.ExtensionContext) {
   };
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,
-    targetState: hotReloadTargetStateWiring
+    targetState: hotReloadTargetStateWiring,
+    noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body)
   });
   // IDE-REV-025:多目标批次聚合的展示入口——台账全量归并,partial 点名失败目标
   context.subscriptions.push(
@@ -3342,6 +3348,7 @@ export function activate(context: vscode.ExtensionContext) {
               runAction: runQuickActionForHotReload,
               resolveActionNameForTarget: resolveHotReloadActionNameForTarget,
               targetState: hotReloadTargetStateWiring,
+              noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
               timers: realHotReloadTimerDeps,
               settleHandles: hotReloadRetrySettleHandles,
               isCancelled: () => token.isCancellationRequested
@@ -3361,6 +3368,25 @@ export function activate(context: vscode.ExtensionContext) {
         hotReloadRetrySettleHandles.clear();
       }
     }
+  );
+  // IDE-REV-027:revision 证据展示——台账逐目标逐文件渲染三类证据,各自
+  // 点名来源:fileHash=本地对当前内容 sha256 重算、semanticHash=.def 结
+  // 构语义指纹(注释/空白不影响)、engineDigest=运行时回执报告(证据册按
+  // 回显归属)。跨类不比较、不互相冒充;缺的种类如实缺席不填空。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.showRevisionEvidence', () => {
+      void runHotReloadRevisionEvidenceCommand(
+        hotReloadTargetStateStore,
+        {
+          readFileContent: file => hotReloadTargetStateWiring.readFileContent!(file),
+          digests: hotReloadEngineDigestRegister
+        },
+        {
+          logBlock: text => hotReloadStatus.log(text),
+          show: () => hotReloadStatus.showLog()
+        }
+      );
+    })
   );
 
   // 临时编辑热重载 quick action(书 §19 HR-PR-02):先临时编辑 → 可选自动

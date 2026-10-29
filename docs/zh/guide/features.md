@@ -149,6 +149,7 @@ KBEngine 组件是 C++ 进程内嵌 Python 运行时，调试走 attach，不存
 - 批内出现 `.def` 文件先过结构闸：序列化/RPC 参数变化（属性或方法增删、类型/Flags/签名变化）整批不发普通 reload 并弹需重启警告；注释/空白级 def 编辑与纯 Python 批照常发送
 - `kbengine.hotReload.showBatchSummary` 把台账全部目标聚合进日志通道：有败有成显示 partial 点名失败目标，各目标逐文件原因可查
 - `kbengine.hotReload.retryFailed` 只把失败目标经真实 quick action 入口重发（已确认成功侧绝不重发）；命令在可取消的进度通知下执行——取消后不再发送——重发成功后经与 fire 路径同一套回执/核验面把台账如实翻面
+- `kbengine.hotReload.showRevisionEvidence` 逐文件展示带来源标签的 revision 证据：本地重算的 fileHash、`.def` 结构 semanticHash、运行时回执的 engineDigest（只归到回执逐字回显的文件）；跨类不比较，缺的种类如实缺席
 
 ## 依赖图能力
 

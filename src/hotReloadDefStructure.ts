@@ -8,6 +8,8 @@
  * 应用的总闸(书 §19.4)随热更管道接线另行落地,本模块只做结构判定。
  */
 
+import { createHash } from 'crypto';
+
 import { DEF_METHOD_SECTIONS, parseDefDocument, type DefElementNode } from './defParser';
 
 export interface DefChangeVerdict {
@@ -73,6 +75,30 @@ function buildStructuralFingerprint(text: string): DefStructuralFingerprint | nu
     }
   }
   return fingerprint;
+}
+
+/**
+ * 结构语义指纹的稳定哈希(IDE-REV-027 semanticHash 证据):对序列化面
+ * (属性 {Type,Flags})+RPC 面(方法 Arg 签名)的指纹行做 sha256——注
+ * 释/空白/顺序/描述文本不进指纹,值不随它们变;解析不了=null(如实无
+ * 语义指纹,不造一个)。现成原语 node:crypto,不自创哈希。
+ */
+export function structuralFingerprintHash(text: string): string | null {
+  let fingerprint: DefStructuralFingerprint | null;
+  try {
+    fingerprint = buildStructuralFingerprint(text);
+  } catch {
+    // 解析抛错与解析不出同口径:证明不了结构面,如实无语义指纹
+    return null;
+  }
+  if (!fingerprint) {
+    return null;
+  }
+  const lines = [
+    ...[...fingerprint.properties].sort().map(([name, shape]) => `P ${name}=${shape}`),
+    ...[...fingerprint.methods].sort().map(([name, signature]) => `M ${name}(${signature})`)
+  ];
+  return createHash('sha256').update(lines.join('\n'), 'utf8').digest('hex');
 }
 
 /** 结构指纹对比:序列化面+RPC 面,变化逐条点名 */

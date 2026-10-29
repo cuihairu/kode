@@ -586,6 +586,16 @@ The flow graph panel supports:
   - The re-send resolves the action by reverse lookup on the quick-action tree (named registered actions and scanned scripts first; index-aligned `@http:` entries last); a target with no resolvable action is reported honestly (找不到以 … 为接收方的动作) and skipped without invoking anything
   - Ledger accounting goes through the same existing faces as the fire path: no-response-face actions record sent-unverified / failed; real HTTP responses are classified by transport fact (2xx = delivered-unverified, non-2xx = failed); a 2xx body is run through the accepted/applied upgrade and the settle window — so a successful retry turns the ledger page instead of leaving a stale failed record
   - The report (resent / not-resent / cancelled counts plus per-target lines with the re-send result) is written to the 「KBEngine 热更新」 channel and the channel opens; an empty ledger reports 无投递记录，没有可重试的目标 honestly
+
+### `kbengine.hotReload.showRevisionEvidence`
+
+- Title: `Show Hot Reload Revision Evidence`
+- Purpose: render the revision evidence per (target, file) from real send results into the 「KBEngine 热更新」 channel — each evidence kind named with its own source label, never masquerading for another (IDE-REV-027 / HOT-008)
+- Behavior:
+  - Three evidence kinds, each labeled: fileHash（本地文件内容哈希重算） — sha256 recomputed locally over the file's current content through the same read channel as the applied-verify digest basis; semanticHash（结构语义指纹） — for `.def` files only, the sha256 of the structural fingerprint (property `{Type,Flags}` + method arg-signature face; comments/whitespace/order do not change it); engineDigest（运行时回执报告） — the digest the runtime reported in a receipt, kept in a session register that attributes it only to the file the receipt echoes verbatim
+  - Cross-kind comparison never happens: a local hash is not runtime evidence, so even coincidentally equal values are just two separately-labeled lines — no 「一致」 claim across kinds (same-kind comparison is a protocol-internal verification means, not done on this surface)
+  - Missing kinds stay missing: an unreadable file has no fileHash/semanticHash lines, a runtime that never reported a digest has no engineDigest line, a `.py` file has no semanticHash line — nothing is filled in to pretend
+  - Both send paths feed the digest register: the fire path and the failed-target retry forward real HTTP receipt bodies to it; an empty ledger reports 无投递记录 honestly
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`

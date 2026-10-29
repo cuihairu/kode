@@ -75,3 +75,71 @@ export function formatRevisionEvidenceReport(
   }
   return lines.join('\n');
 }
+
+/**
+ * 运行时回执的 digest 提取(IDE-REV-027 接线):回包体是 JSON 对象且带
+ * 非空 digest 与非空 file 回显才算运行时报告过 digest;file 回显用于归
+ * 属——回执不点名该文件就不把 digest 记到它名下(归属不猜)。非 JSON/
+ * 缺 digest/缺回显一律 null。
+ */
+export function parseEngineDigestReceipt(
+  body: string | undefined
+): { digest: string; file: string } | null {
+  if (typeof body !== 'string' || body.length === 0) {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  const receipt = parsed as Record<string, unknown>;
+  if (typeof receipt.digest !== 'string' || receipt.digest.length === 0) {
+    return null;
+  }
+  if (typeof receipt.file !== 'string' || receipt.file.length === 0) {
+    return null;
+  }
+  return { digest: receipt.digest, file: receipt.file };
+}
+
+/** 引擎回执 digest 证据册条目:值 + 入册时刻(展示用「最近一次回执」口径) */
+export interface EngineDigestRecord {
+  digest: string;
+  at: number;
+}
+
+/**
+ * 会话内引擎 digest 证据册(IDE-REV-027):按 (rootId,targetId,file) 记
+ * 最近一次运行时回执报告的 digest——它是运行时证据(engineDigest 类),
+ * 与本地重算的 fileHash 各自展示,跨类不比较、不互相冒充。
+ */
+export class HotReloadEngineDigestRegister {
+  private readonly byKeyFile = new Map<string, EngineDigestRecord>();
+  private readonly now: () => number;
+
+  constructor(deps: { now?: () => number } = {}) {
+    this.now = deps.now ?? Date.now;
+  }
+
+  /** 原始回包体喂入:协议面认得(非空 digest+逐字回显该文件)才入册 */
+  note(key: { rootId: string; targetId: string }, file: string, body: string | undefined): void {
+    const receipt = parseEngineDigestReceipt(body);
+    if (!receipt || receipt.file !== file) {
+      return;
+    }
+    this.byKeyFile.set(`${key.rootId}::${key.targetId}\u0000${file}`, {
+      digest: receipt.digest,
+      at: this.now()
+    });
+  }
+
+  /** 该 (目标,文件) 最近一次运行时回执 digest;无记录=null(如实缺) */
+  receipt(key: { rootId: string; targetId: string }, file: string): EngineDigestRecord | null {
+    return this.byKeyFile.get(`${key.rootId}::${key.targetId}\u0000${file}`) ?? null;
+  }
+}
