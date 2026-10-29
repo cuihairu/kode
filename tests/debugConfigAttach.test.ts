@@ -549,6 +549,19 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
   let sessionFirePlan: Array<'own' | string> | undefined;
   const sessionListeners: Array<(session: unknown) => void> = [];
   let sessionTrackerDisposals = 0;
+  // REV-003:deferred=true 时 startDebugging 的落定权交测试——守卫已返回后
+  // 测试手动 resolve/reject,并按需先触发会话启动事件(迟到成功时自家会话
+  // 在 start 落定前才创建的真实序)
+  let deferred = false;
+  const pendingStarts: Array<{
+    resolve: (value: boolean) => void;
+    reject: (error: Error) => void;
+  }> = [];
+  const fireSessionStarted = (name: string): void => {
+    for (const listener of [...sessionListeners]) {
+      listener({ id: `late:${name}`, name });
+    }
+  };
   let originalStart: unknown;
   let originalStop: unknown;
   let originalWithProgress: unknown;
@@ -584,6 +597,11 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
           ? { id: `own:${config.name}`, name: config.name }
           : { id: `other:${item}`, name: item };
         for (const listener of [...sessionListeners]) { listener(session); }
+      }
+      if (deferred) {
+        return new Promise<boolean>((resolve, reject) => {
+          pendingStarts.push({ resolve, reject });
+        });
       }
       if (hung) {
         return new Promise<boolean>(() => undefined);
@@ -626,6 +644,8 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     sessionFirePlan = undefined;
     sessionListeners.length = 0;
     sessionTrackerDisposals = 0;
+    deferred = false;
+    pendingStarts.length = 0;
   });
 
   it('按期完成:withProgress 包裹,返回 true,零停止零警告,取消订阅已释放', async () => {
@@ -725,6 +745,58 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     const stopped = (stopCalls[0] as Array<{ name?: string }>)[0];
     expect(stopped?.name).toBe('KBEngine: Python attach 外网 (remote)');
     expect(warnings[0]).toContain('超时');
+    expect(sessionTrackerDisposals).toBe(1);
+    configurationOverrides.clear();
+  }, 10_000);
+
+  it('REV-003 超时返回后 start 迟到成功:自家会话清一次,无关会话不动,无二次提示', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    configurationOverrides.set('kbengine', { 'debug.attachTimeoutMs': 5 });
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    deferred = true;
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+    expect(stopCalls).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('超时');
+
+    // 迟到序:无关会话在场,自家会话此刻才启动,随后 start 才成功落定
+    fireSessionStarted('无关的独立会话');
+    fireSessionStarted('KBEngine: Python attach to baseapp');
+    pendingStarts[0].resolve(true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // 迟到成功不遗留新会话:自家会话被清理恰一次,停止目标不含无关会话
+    expect(stopCalls).toHaveLength(1);
+    const stopped = (stopCalls[0] as Array<{ name?: string }>)[0];
+    expect(stopped?.name).toBe('KBEngine: Python attach to baseapp');
+    expect(stopCalls.some(call => (call[0] as { name?: string } | undefined)?.name === '无关的独立会话'))
+      .toBe(false);
+    // 不二次提示;会话追踪订阅在迟到落定后释放
+    expect(warnings).toHaveLength(1);
+    expect(sessionTrackerDisposals).toBe(1);
+    configurationOverrides.clear();
+  }, 10_000);
+
+  it('REV-003 超时返回后 start 迟到拒绝:零停止,无二次提示,无 unhandled rejection', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    configurationOverrides.set('kbengine', { 'debug.attachTimeoutMs': 5 });
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    deferred = true;
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    pendingStarts[0].reject(new Error('迟到失败'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(stopCalls).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
     expect(sessionTrackerDisposals).toBe(1);
     configurationOverrides.clear();
   }, 10_000);

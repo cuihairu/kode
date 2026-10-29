@@ -69,7 +69,12 @@ const startNever = (): Promise<boolean> =>
 
 const runGuard = (
   harness: Harness,
-  options: { start: () => Promise<boolean>; timeoutMs: number; withCancel?: boolean },
+  options: {
+    start: () => Promise<boolean>;
+    timeoutMs: number;
+    withCancel?: boolean;
+    onStartSettled?: (late: boolean, success: boolean) => void;
+  },
   timers: AttachGuardTimers
 ) =>
   attachWithDeadline(
@@ -83,6 +88,9 @@ const runGuard = (
       notify: message => {
         harness.notifications.push(message);
       },
+      ...(options.onStartSettled === undefined
+        ? {}
+        : { onStartSettled: options.onStartSettled }),
       ...(options.withCancel === false
         ? {}
         : {
@@ -252,5 +260,87 @@ describe('attachWithDeadline(截止与取消,DBG-007)', () => {
     harness.cancelListeners.at(-1)?.();
     await expect(hung).resolves.toEqual({ status: 'cancelled' });
     expect(harness.stopped).toBe(1);
+  });
+});
+
+describe('attachWithDeadline onStartSettled(start 落定回调,REV-003)', () => {
+  it('按期完成:返回路径同步回调一次 late=false,success 如实', async () => {
+    const clock = makeTimers();
+    const harness = makeHarness();
+    const settled: Array<{ late: boolean; success: boolean }> = [];
+    let resolveStart: (value: boolean) => void = () => undefined;
+    const promise = runGuard(
+      harness,
+      {
+        timeoutMs: 15_000,
+        start: () => new Promise<boolean>(resolve => (resolveStart = resolve)),
+        onStartSettled: (late, success) => settled.push({ late, success })
+      },
+      clock.timers
+    );
+    resolveStart(true);
+    await expect(promise).resolves.toEqual({ status: 'completed', success: true });
+    expect(settled).toEqual([{ late: false, success: true }]);
+  });
+
+  it('超时后迟到成功:回调 late=true 恰一次,结果仍 timeout,无二次通知', async () => {
+    const clock = makeTimers();
+    const harness = makeHarness();
+    const settled: Array<{ late: boolean; success: boolean }> = [];
+    let resolveStart: (value: boolean) => void = () => undefined;
+    const promise = runGuard(
+      harness,
+      {
+        timeoutMs: 15_000,
+        start: () => new Promise<boolean>(resolve => (resolveStart = resolve)),
+        onStartSettled: (late, success) => settled.push({ late, success })
+      },
+      clock.timers
+    );
+    clock.fire();
+    await expect(promise).resolves.toEqual({ status: 'timeout' });
+    resolveStart(true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toEqual([{ late: true, success: true }]);
+    expect(harness.notifications).toHaveLength(1);
+  });
+
+  it('超时后迟到异常:回调 late=true/success=false,无 unhandled rejection', async () => {
+    const clock = makeTimers();
+    const harness = makeHarness();
+    const settled: Array<{ late: boolean; success: boolean }> = [];
+    let rejectStart: (error: Error) => void = () => undefined;
+    const promise = runGuard(
+      harness,
+      {
+        timeoutMs: 15_000,
+        start: () => new Promise<boolean>((_resolve, reject) => (rejectStart = reject)),
+        onStartSettled: (late, success) => settled.push({ late, success })
+      },
+      clock.timers
+    );
+    clock.fire();
+    await expect(promise).resolves.toEqual({ status: 'timeout' });
+    rejectStart(new Error('迟到失败'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(settled).toEqual([{ late: true, success: false }]);
+    expect(harness.notifications).toHaveLength(1);
+  });
+
+  it('start 期限内抛错:回调 late=false/success=false 一次,rejection 照旧透传', async () => {
+    const clock = makeTimers();
+    const harness = makeHarness();
+    const settled: Array<{ late: boolean; success: boolean }> = [];
+    const promise = runGuard(
+      harness,
+      {
+        timeoutMs: 15_000,
+        start: () => Promise.reject(new Error('适配器启动失败')),
+        onStartSettled: (late, success) => settled.push({ late, success })
+      },
+      clock.timers
+    );
+    await expect(promise).rejects.toThrow('适配器启动失败');
+    expect(settled).toEqual([{ late: false, success: false }]);
   });
 });

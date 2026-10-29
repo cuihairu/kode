@@ -26,6 +26,11 @@ export interface AttachGuardOptions {
   start(): Promise<boolean>;
   /** 截止/取消时停掉卡住的会话(生产:vscode.debug.stopSession()) */
   stop(): void;
+  /** IDE-REV-003:start 落定即回调(每闸恰一次):late=闸已返回后才落定
+   * (迟到成功由调用方关联本次会话并清理一次,迟到异常同样只经此通知,
+   * 不外泄成 unhandled rejection);timely 落定也回调,供调用方释放随闸
+   * 存活到落定为止的资源(如会话追踪订阅)。 */
+  onStartSettled?(late: boolean, success: boolean): void;
   /** 用户面提示(超时/取消各一条,写明已停止、不再重试) */
   notify(message: string): void;
   /** 可选外部取消面(生产:withProgress 的 CancellationToken 适配) */
@@ -74,18 +79,22 @@ export async function attachWithDeadline(
     startPromise.then(
       success => {
         if (finished) {
+          options.onStartSettled?.(true, success);
           return;
         }
         finished = true;
         cleanup();
+        options.onStartSettled?.(false, success);
         resolve({ status: 'completed', success });
       },
       error => {
         if (finished) {
+          options.onStartSettled?.(true, false);
           return;
         }
         finished = true;
         cleanup();
+        options.onStartSettled?.(false, false);
         reject(error);
       }
     );

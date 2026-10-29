@@ -701,11 +701,26 @@ export class DebugConfigManager {
     attachConfig: vscode.DebugConfiguration
   ): Promise<AttachGuardOutcome> {
     let ownSession: vscode.DebugSession | undefined;
+    let cleanupDone = false;
+    let trackerDisposed = false;
     const sessionTracker = vscode.debug.onDidStartDebugSession(session => {
       if (!ownSession && session.name === attachConfig.name) {
         ownSession = session;
       }
     });
+    // 会话追踪订阅必须活到 start 落定:迟到成功的会话在闸返回后才启动,
+    // 提前 dispose 会捕获不到句柄;两种落定(timely/迟到)各释放一次,幂等
+    const disposeTracker = (): void => {
+      if (trackerDisposed) { return; }
+      trackerDisposed = true;
+      sessionTracker.dispose();
+    };
+    // 清理恰一次:窗内停止(REV-002)与迟到成功清理(REV-003)共用,先到先清
+    const cleanupOwnSession = (): void => {
+      if (cleanupDone || !ownSession) { return; }
+      cleanupDone = true;
+      void vscode.debug.stopDebugging(ownSession).then(() => undefined, () => undefined);
+    };
     try {
       return await vscode.window.withProgress(
         {
@@ -720,17 +735,22 @@ export class DebugConfigManager {
               .getConfiguration('kbengine')
               .get<number>('debug.attachTimeoutMs', DEBUG_ATTACH_TIMEOUT_DEFAULT_MS),
             start: () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig)),
-            stop: () => {
-              // stopDebugging(undefined) 等同无参(停全部)——无自家句柄就一次都不停
-              if (!ownSession) { return; }
-              void vscode.debug.stopDebugging(ownSession).then(() => undefined, () => undefined);
+            // IDE-REV-002:窗内截止/取消只停自家会话;stopDebugging(undefined)
+            // 等同无参(停全部)——无自家句柄就一次都不停,迟到面由 REV-003 接
+            stop: () => cleanupOwnSession(),
+            // IDE-REV-003:超时/取消返回后 start 才落定——迟到成功时自家会话
+            // 此刻才创建,清一次且不二次提示;迟到异常同样只经此回调不外泄;
+            // 两种落定都释放追踪订阅
+            onStartSettled: late => {
+              if (late) { cleanupOwnSession(); }
+              disposeTracker();
             },
             notify: message => void vscode.window.showWarningMessage(message),
             onCancel: listener => token.onCancellationRequested(() => listener())
           })
       );
     } finally {
-      sessionTracker.dispose();
+      disposeTracker();
     }
   }
 
