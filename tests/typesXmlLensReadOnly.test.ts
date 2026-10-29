@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { TypesXmlCodeLensProvider } from '../src/languageProviders';
+import { registerTypeStorageIndexWatchers } from '../src/typeStorageIndexWatchers';
 import {
   clearDatabaseSchemaCacheForTests,
   flushTypeStorageUsageColdBuildForTests,
@@ -68,6 +69,7 @@ describe('IDE-SCH-009:types.xml CodeLens 只读反查快照', () => {
     clearDatabaseSchemaCacheForTests();
 
     const provider = new TypesXmlCodeLensProvider();
+    const wiring = registerTypeStorageIndexWatchers(() => provider.fireConfigurationChanged());
     try {
       const doc = (): MinimalTextDocument => makeTextDocument(
         fs.readFileSync(typesXml, 'utf8'),
@@ -120,6 +122,7 @@ describe('IDE-SCH-009:types.xml CodeLens 只读反查快照', () => {
       expect(getDatabaseSchemaCacheStatsForTests().hits).toBe(statsAfterEvent.hits);
       expect(getDatabaseSchemaCacheStatsForTests().misses).toBe(statsAfterEvent.misses);
     } finally {
+      wiring.dispose();
       provider.dispose();
     }
   });

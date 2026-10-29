@@ -11,6 +11,7 @@ import {
 } from '../src/databaseSchema';
 import type { TableFieldDescriptor, TypeStorageShape } from '../src/databaseSchema';
 import { TypesXmlCodeLensProvider, buildTypesXmlStorageLensSpecs } from '../src/languageProviders';
+import { registerTypeStorageIndexWatchers } from '../src/typeStorageIndexWatchers';
 import { Uri, configurationOverrides, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
@@ -382,12 +383,12 @@ describe('TypesXmlCodeLensProvider', () => {
     languageId: 'xml'
   });
 
-  it('watches def, types.xml and entities.xml patterns', () => {
+  it('装配线建 def/types.xml/entities.xml 三枚 watcher,dispose 统一拆(IDE-ARC-005)', () => {
     watchers.length = 0;
-    const provider = new TypesXmlCodeLensProvider();
+    const wiring = registerTypeStorageIndexWatchers(() => undefined);
 
     expect(watchers.map(watcher => watcher.pattern)).toEqual(['**/*.def', '**/types.xml', '**/entities.xml']);
-    provider.dispose();
+    wiring.dispose();
     expect(watchers.every(watcher => watcher.disposeCalls === 1)).toBe(true);
   });
 
@@ -480,11 +481,8 @@ describe('TypesXmlCodeLensProvider', () => {
     ].join('\n'), 'utf8');
 
     watchers.length = 0;
-    const provider = new TypesXmlCodeLensProvider();
     let fired = 0;
-    provider.onDidChangeCodeLenses(() => {
-      fired += 1;
-    });
+    const wiring = registerTypeStorageIndexWatchers(() => { fired += 1; });
 
     for (const watcher of watchers) {
       watcher.fireChange();
@@ -496,18 +494,20 @@ describe('TypesXmlCodeLensProvider', () => {
     watchers[0].fireChange();
     const usages = findTypeStorageUsages(root, 'ITEM_ID').map(u => `${u.entity}.${u.property}`);
     expect(usages).toEqual(['Hero.items[]']);
-    provider.dispose();
+    wiring.dispose();
   });
 
   it('stops reacting after dispose', () => {
     watchers.length = 0;
-    const provider = new TypesXmlCodeLensProvider();
-    provider.dispose();
+    let fired = 0;
+    const wiring = registerTypeStorageIndexWatchers(() => { fired += 1; });
+    wiring.dispose();
 
     expect(() => {
       for (const watcher of watchers) {
         watcher.fireChange();
       }
     }).not.toThrow();
+    expect(fired).toBe(0);
   });
 });

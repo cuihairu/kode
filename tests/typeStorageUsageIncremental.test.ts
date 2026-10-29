@@ -13,6 +13,7 @@ import { workspace } from './fake-vscode/workspaceState';
 import { allFileSystemWatchers, workspaceState } from './fake-vscode/workspaceState';
 import { Uri } from './fake-vscode/core';
 import { TypesXmlCodeLensProvider } from '../src/languageProviders';
+import { registerTypeStorageIndexWatchers } from '../src/typeStorageIndexWatchers';
 
 // IDE-SCH-008:按实体增量维护类型落库反查——修改一个实体只替换它贡献的
 // usage 记录,无关实体的记录对象原样保留(不整仓重建);事件面
@@ -124,6 +125,7 @@ describe('IDE-SCH-008:按实体增量维护类型落库反查', () => {
 
     let lensFired = 0;
     const provider = new TypesXmlCodeLensProvider();
+    const wiring = registerTypeStorageIndexWatchers(() => provider.fireConfigurationChanged());
     try {
       provider.onDidChangeCodeLenses(() => { lensFired += 1; });
       // 构造顺序:['**/*.def', '**/types.xml', '**/entities.xml']
@@ -164,6 +166,7 @@ describe('IDE-SCH-008:按实体增量维护类型落库反查', () => {
       expect(afterTypes.find(usage => usage.entity === 'Silver')).not.toBe(silverBefore);
       expect(lensFired).toBe(2);
     } finally {
+      wiring.dispose();
       provider.dispose();
     }
   });

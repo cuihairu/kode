@@ -3,6 +3,7 @@ import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker } from './pythonParserWorkerHost';
+import { registerTypeStorageIndexWatchers } from './typeStorageIndexWatchers';
 import { importExistingProject } from './projectImport';
 import { createMinimalProject } from './projectCreate';
 import { onDidChangeActiveProfile, resolveActiveProfile, selectActiveProfile } from './activeProfile';
@@ -907,14 +908,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   // types.xml 类型声明行的引用反扫镜(批134 用户拍板「形态 + 引用反扫
   // CodeLens」):声明行上方列真实使用(实体.属性 → 落库表.列),点击开
-  // schema 文档定位到列;def/types.xml/entities.xml 改动由 provider 内
-  // watcher 失效重扫;批154 起配独立开关 kbengine.codeLens.typesXml
+  // schema 文档定位到列;批154 起配独立开关 kbengine.codeLens.typesXml。
+  // IDE-ARC-005:def/types.xml/entities.xml 全仓 watcher 归装配线模块统一
+  // 建/释放(provider 不私建第二套全仓服务),impl 实例一并入 subscriptions
   const typesXmlCodeLensProviderImpl = new TypesXmlCodeLensProvider();
   const typesXmlCodeLensProvider = vscode.languages.registerCodeLensProvider(
     [{ language: 'xml', scheme: 'file', pattern: '**/types.xml' }],
     typesXmlCodeLensProviderImpl
   );
-  context.subscriptions.push(typesXmlCodeLensProvider);
+  context.subscriptions.push(typesXmlCodeLensProvider, typesXmlCodeLensProviderImpl);
+  context.subscriptions.push(
+    registerTypeStorageIndexWatchers(() => typesXmlCodeLensProviderImpl.fireConfigurationChanged())
+  );
 
   // 生成桩的来源镜(T-05):声明/字段行上方保留原始 types.xml 行,点击
   // 直接跳原始声明;禁止从生成行号反推来源。

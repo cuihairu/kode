@@ -34,6 +34,8 @@ export const configurationOverrides = new Map<string, Record<string, unknown>>()
 // entityMapping 的 watchPythonFiles 需要可观察的 watcher:记录回调并允许
 // 测试主动 fire。
 export interface StubFileSystemWatcher {
+  /** 创建时的 glob(装配线 watcher 断言用) */
+  pattern?: string;
   onDidChange(listener: (uri: Uri) => void): { dispose(): void };
   onDidCreate(listener: (uri: Uri) => void): { dispose(): void };
   onDidDelete(listener: (uri: Uri) => void): { dispose(): void };
@@ -147,11 +149,12 @@ export const workspace = {
       }
     };
   },
-  createFileSystemWatcher: (): StubFileSystemWatcher => {
+  createFileSystemWatcher: (pattern?: string): StubFileSystemWatcher => {
     const changeListeners: Array<(uri: Uri) => void> = [];
     const createListeners: Array<(uri: Uri) => void> = [];
     const deleteListeners: Array<(uri: Uri) => void> = [];
     const watcher: StubFileSystemWatcher = {
+      pattern,
       onDidChange(listener) {
         changeListeners.push(listener);
         return { dispose: () => void changeListeners.splice(changeListeners.indexOf(listener), 1) };
