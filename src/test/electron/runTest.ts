@@ -124,6 +124,38 @@ async function main(): Promise<void> {
       'kbengine.python.stubExport': false,
       'kbengine.python.extraPathsSync': false
     }, null, 2));
+    // IDE-ACC-001 普通变量冷 hover 夹具:调用方同文件 def 返回注解(命中面=
+    // HOV-010 快照级联第一层)+ 大文件无注解被调(空结果面=级联全落空,体量
+    // 超 worker 阈值 256KiB,解析派发 worker 线程)。大文件刻意不带 '->'
+    // 返回注解,套件对此有断言(防夹具悄悄退化成有注解)。
+    const accCallerPath = path.join(workspacePath, 'scripts/common/training/plain_var_caller.py');
+    fs.mkdirSync(path.dirname(accCallerPath), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, 'scripts/common/training/plain_var_large.py'),
+      [
+        '# IDE-ACC-001 fixture: oversized file with no return annotations.',
+        'def get_unannotated_data():',
+        '    return None',
+        '',
+        '',
+        'class PlainVarLargeMixin:'
+      ].concat(
+        Array.from({ length: 5200 }, (_, index) =>
+          `    def large_method_${index}(self):\n        return ${index}\n\n    # acc001 padding ${index}: oversized on purpose for worker dispatch`)
+      ).join('\n')
+    );
+    fs.writeFileSync(accCallerPath, [
+      '# IDE-ACC-001 plain-variable cold hover fixture.',
+      'from training.plain_var_large import get_unannotated_data',
+      '',
+      '',
+      'def get_annotated_data() -> JSONDATA:',
+      '    return None',
+      '',
+      '',
+      'data = get_annotated_data()',
+      'plain_local_info = get_unannotated_data()'
+    ].join('\n'));
     process.env.KODE_ELECTRON_SUITE = 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';

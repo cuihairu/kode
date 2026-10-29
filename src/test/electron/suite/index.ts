@@ -13,7 +13,7 @@ export function run(): Promise<void> {
     .filter(file => suite === 'demo'
       ? file === 'demoNavigation.test.js'
       : suite === 'field'
-        ? file === 'fieldBaseline.test.js'
+        ? file === 'fieldBaseline.test.js' || file === 'plainVariableHover.test.js'
         : suite === 'vsix'
           ? file === 'vsixSmoke.test.js'
           : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');

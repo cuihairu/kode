@@ -1,0 +1,12 @@
+acc001.empty.elapsedMs=9
+acc001.empty.returnedHover=false
+acc001.hit.elapsedMs=1
+acc001.hit.returnedHover=true
+acc001.hit.preview=**data: JSONDATA**  推导自 get_annotated_data() 返回注解
+acc001.reads.emptyDelta=1
+acc001.reads.emptyBytesDelta=1371
+acc001.reads.hitDelta=0
+acc001.reads.hitBytesDelta=0
+acc001.reads.settleTotal=3
+acc001.reads.settleBytes=4113
+acc001.pendingWork={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":194,"schemaColdBuilds":0}
