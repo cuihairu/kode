@@ -249,8 +249,20 @@ import {
   checkDatabaseDriftForSnapshots,
   createMysqlDriftExecutor,
   DATABASE_DRIFT_CHANNEL_NAME,
-  publishDriftReport
+  publishDriftReport,
+  type DriftReport
 } from './databaseDrift';
+import {
+  classifyDriftEvidence,
+  DriftEvidenceStore
+} from './databaseDriftEvidence';
+import {
+  DRIFT_EVIDENCE_STATE_KEY,
+  formatDriftEvidenceSaveLine,
+  formatDriftEvidenceSkipLine,
+  recordDriftEvidenceFromReport,
+  runShowDriftEvidenceCommand
+} from './databaseDriftEvidenceIntegration';
 import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import { createPreviewColumnSourceTableResolver } from './databasePreviewColumnSource';
 import { runSchemaImpactCommand } from './databaseSchemaImpactCommand';
@@ -275,7 +287,7 @@ import {
   selectionToSnippetBody
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
-import { buildEngineApiCatalog, readEngineApiMetadata } from './engineApiMetadata';
+import { buildEngineApiCatalog, readEngineApiMetadata, readEngineVersionMarker } from './engineApiMetadata';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -1662,6 +1674,43 @@ export function activate(context: vscode.ExtensionContext) {
       createProfileScopedDriftExecutor(profileId, databaseQueryResultCache, createMysqlDriftExecutor),
       guard
     );
+  // IDE-REV-020 漂移校验证据:真实执行(checked=true,确实查询过库)按引
+  // 擎版本落 workspaceState,重查走 showDriftEvidence 命令;未校验不落
+  // (模拟面单独存在也不冒充联调结果);版本探不到记 unknown——分类面
+  // 按未知版本悬置结论,不宣称兼容。版本口径与 engineCompatibility 同源
+  // (readEngineVersionMarker 版本宏读取,引擎根=活动 profile 根 → 设置根
+  // → 工作区树探测)。
+  const driftEvidenceStore = new DriftEvidenceStore({
+    now: () => Date.now(),
+    load: () => context.workspaceState?.get(DRIFT_EVIDENCE_STATE_KEY),
+    save: data => { void context.workspaceState?.update(DRIFT_EVIDENCE_STATE_KEY, data); }
+  });
+  const resolveActiveEngineVersion = (): string | null => {
+    const profile = resolveActiveProfile(context.workspaceState);
+    const explicitRoot =
+      profile?.engineRoot?.trim() ||
+      vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '').trim() ||
+      undefined;
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const root = findEngineRoot(folder.uri.fsPath, explicitRoot);
+      if (root) {
+        return readEngineVersionMarker(root, probe => fs.readFileSync(probe, 'utf8'));
+      }
+    }
+    return null;
+  };
+  const appendDriftEvidenceForReport = (report: DriftReport): void => {
+    const evidence = recordDriftEvidenceFromReport(report, {
+      resolveEngineVersion: resolveActiveEngineVersion,
+      now: () => Date.now()
+    });
+    if (evidence) {
+      const saved = driftEvidenceStore.save(evidence);
+      databaseDriftChannel.appendLine(formatDriftEvidenceSaveLine(saved, classifyDriftEvidence(saved)));
+    } else {
+      databaseDriftChannel.appendLine(formatDriftEvidenceSkipLine(report.reason ?? '未知原因'));
+    }
+  };
   const checkDatabaseDriftCommand = vscode.commands.registerCommand(
     'kbengine.database.checkDrift',
     async (entityName?: string) => {
@@ -1691,6 +1740,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
       );
       publishDriftReport(databaseDriftChannel, vscode.window, report);
+      appendDriftEvidenceForReport(report);
     }
   );
   context.subscriptions.push(checkDatabaseDriftCommand);
@@ -1724,9 +1774,23 @@ export function activate(context: vscode.ExtensionContext) {
         )
       );
       publishDriftReport(databaseDriftChannel, vscode.window, report);
+      appendDriftEvidenceForReport(report);
     }
   );
   context.subscriptions.push(checkAllDatabaseDriftCommand);
+
+  // IDE-REV-020 证据重查:已存证据按版本渲染进漂移通道,结论走
+  // classifyDriftEvidence(未知版本悬置/纯模拟未验证/实测两态),无证据如实说无
+  const showDriftEvidenceCommand = vscode.commands.registerCommand(
+    'kbengine.database.showDriftEvidence',
+    () =>
+      runShowDriftEvidenceCommand({
+        loadRecords: () => driftEvidenceStore.byVersion(),
+        channel: databaseDriftChannel,
+        showInformationMessage: message => vscode.window.showInformationMessage(message)
+      })
+  );
+  context.subscriptions.push(showDriftEvidenceCommand);
 
   // IDE-REV-016 单表只读预览:同一条 profile 连接台账取连接,SHOW TABLES
   // 选表(拿不到退手输)→ 白名单限量 SELECT → 专用输出通道渲染;取消选表

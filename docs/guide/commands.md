@@ -63,9 +63,19 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: verify the virtual table structures derived from `.def` against the real table structures, comparing table by table for missing tables, missing columns, extra columns, type mismatches, and leftover tables; the report goes to the 「KBEngine 数据库漂移」 (KBEngine database drift) output channel; without an entity name it infers from the active `.def` file
 - Prerequisite: the database credentials in the engine config must be stored in plaintext (`<encrypt>false</encrypt>`); with an RSA-encrypted password or an unreachable server it degrades to a 「未校验」 (not verified) notice instead of erroring
 - Timeout / cancel (IDE-REV-017): every connect and query runs under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification — timeout or cancel returns with that reason (shown in the 未校验 report), the connection is released right after the underlying query settles (a hung one is force-destroyed), so the entry never waits forever
+- Evidence (IDE-REV-020): a real run (report checked) saves drift evidence keyed by engine version to workspace state and appends a verdict line to the output channel; the verdict keeps the queried side (real MySQL) and the simulated side (def-derived baseline, marked 非实测) apart — an undetectable engine version is recorded `unknown` and the verdict stays unknown-version (no compatibility claim), while an unverified run (no connection / unreadable structure) saves nothing and says so honestly
 - Entries:
   - Command palette
 - See also: [Database Drift Check](./database-drift-check.md)
+
+### `kbengine.database.showDriftEvidence`
+
+- Title: `Show Drift Evidence`
+- Purpose: re-view the saved drift-check evidence (IDE-REV-020) in the 「KBEngine 数据库漂移」 output channel — one block per engine version, newest first, each with the classify verdict (`compatible-verified` / `unverified` / `unknown-version` / `drift-found`), the queried summary (real MySQL), the simulated summary (def-derived baseline, marked 非实测), and the record time
+- Behavior:
+  - Only real executions save evidence (`kbengine.database.checkDrift` / `checkAllDrift` with a checked report); unverified runs save nothing — a standalone simulated face never masquerades as a live result
+  - No saved evidence yet is stated honestly (channel + info message), nothing is fabricated
+- Entries: Command palette
 
 ### `kbengine.database.checkAllDrift`
 
@@ -73,6 +83,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Purpose: Check actual MySQL schemas for every workspace entity, reusing one connection and treating all entity tables as expected when finding residual tables
 - Prerequisite: Same as `kbengine.database.checkDrift`
 - Timeout / cancel: same deadline and progress-notification cancel as `kbengine.database.checkDrift` (per connect/query), over one guarded connection
+- Evidence (IDE-REV-020): a real run saves drift evidence keyed by engine version to workspace state and appends a verdict line to the output channel (see `kbengine.database.checkDrift`); an unverified run appends an honest skip line instead
 - Entries: Command palette
 - See also: [Database Drift Check](./database-drift-check.md)
 

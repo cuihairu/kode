@@ -64,9 +64,19 @@
 - 作用：用真实表结构反向校验 `.def` 推导出的虚拟表结构，逐表比对缺表、缺列、多列、型别不符与残留表，报告写进「KBEngine 数据库漂移」输出面板；不传实体名时取当前活动 `.def` 文件推断
 - 前置条件：引擎配置里的数据库账号密码需明文存放（`<encrypt>false</encrypt>`）；密码为 RSA 密文或连不上时降级为「未校验」提示，不报错
 - 超时/取消（IDE-REV-017）：建连与每条查询都在 `kbengine.databaseQueryTimeoutMs` 时限和可取消的进度通知下运行——超时或取消即按该原因返回（原因随未校验报告展示），连接等底层查询结算后释放（挂死的强制销毁），入口不会永久等待
+- 证据（IDE-REV-020）：真实执行（报告 checked）按引擎版本把漂移证据落 workspace state 并在输出通道尾附结论行——实际查询面（真实 MySQL）与模拟面（def 推导基准，标非实测）分开记录；引擎版本探不到记 `unknown`、结论保持 unknown-version 不宣称兼容；未校验（连不上/读不到结构）不落证据并在通道如实说明
 - 入口：
   - 命令面板
 - 详见：[数据库漂移校验](database-drift-check.md)
+
+### `kbengine.database.showDriftEvidence`
+
+- 标题：`Show Drift Evidence`
+- 作用：在「KBEngine 数据库漂移」输出面板重查已保存的漂移校验证据（IDE-REV-020）——按引擎版本一块、最新在前，各带分类结论（`compatible-verified` / `unverified` / `unknown-version` / `drift-found`）、实际查询面摘要（真实 MySQL）、模拟面摘要（def 推导基准，标非实测）与记录时间
+- 行为：
+  - 只有真实执行落证据（`kbengine.database.checkDrift` / `checkAllDrift` 报告 checked）；未校验不落——模拟面单独存在也不冒充联调结果
+  - 尚无证据时如实说明（通道+信息提示），不虚构任何记录
+- 入口：命令面板
 
 ### `kbengine.database.checkAllDrift`
 
@@ -74,6 +84,7 @@
 - 作用：检查所有工作区实体的真实 MySQL 表结构，一次连接并将全部实体表合并判断残留表
 - 前置条件：同 `kbengine.database.checkDrift`
 - 超时/取消：与 `kbengine.database.checkDrift` 同一时限与进度通知取消（逐建连/逐查询），共用一条守卫连接
+- 证据（IDE-REV-020）：真实执行同样按引擎版本落证据并在通道尾附结论行（口径同 `kbengine.database.checkDrift`）；未校验改为如实说明不落证据
 - 入口：命令面板
 - 详见：[数据库漂移校验](database-drift-check.md)
 

@@ -46,6 +46,7 @@
     "onCommand:kbengine.database.checkAllDrift",
     "onCommand:kbengine.database.previewTable",
     "onCommand:kbengine.database.previewSchemaImpact",
+    "onCommand:kbengine.database.showDriftEvidence",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -336,6 +337,11 @@
         "command": "kbengine.database.previewSchemaImpact",
         "title": "Preview Schema Impact",
         "icon": "$(diff)"
+      },
+      {
+        "command": "kbengine.database.showDriftEvidence",
+        "title": "Show Drift Evidence",
+        "icon": "$(history)"
       },
       {
         "command": "kbengine.server.start",
