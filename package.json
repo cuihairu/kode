@@ -44,6 +44,7 @@
     "onCommand:kbengine.database.exportSimulation",
     "onCommand:kbengine.database.checkDrift",
     "onCommand:kbengine.database.checkAllDrift",
+    "onCommand:kbengine.database.previewTable",
     "onCommand:kbengine.server.start",
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
@@ -324,6 +325,11 @@
         "command": "kbengine.database.checkAllDrift",
         "title": "Check All Database Drift",
         "icon": "$(database)"
+      },
+      {
+        "command": "kbengine.database.previewTable",
+        "title": "Preview Table Data",
+        "icon": "$(table)"
       },
       {
         "command": "kbengine.server.start",

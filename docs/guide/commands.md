@@ -74,6 +74,17 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Entries: Command palette
 - See also: [Database Drift Check](./database-drift-check.md)
 
+### `kbengine.database.previewTable`
+
+- Title: `Preview Table Data`
+- Purpose: read-only single-table preview (IDE-REV-016) — pick a table and see up to 100 rows in the 「KBEngine 数据库预览」 (KBEngine database preview) output channel; the executed statement is always the fixed whitelist shape `SELECT * FROM \`table\` LIMIT N` (double-checked against the read-only statement gate before it runs, and the connection itself is opened read-only)
+- Entries: Command palette
+- Behavior:
+  - The connection comes from the same per-profile ledger as the drift commands; without a readable engine database config it says so and runs nothing
+  - The table picker lists `SHOW TABLES` results; when the listing cannot be fetched (permissions) or the database has no tables, a manual table-name input takes over with the same identifier rules as the preview statement
+  - Cancelling the picker (or the manual input) sends no preview query; an unreachable database reports the connection cause honestly with no output
+  - Rows over the limit are cut and marked truncated in the footer, which also shows the exact SQL that ran
+
 ## Server Control
 
 ### `kbengine.server.start`

@@ -251,6 +251,7 @@ import {
   DATABASE_DRIFT_CHANNEL_NAME,
   publishDriftReport
 } from './databaseDrift';
+import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import {
   createDatabaseSimulationUri,
   getSimulationEntityName,
@@ -1684,6 +1685,29 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(checkAllDatabaseDriftCommand);
+
+  // IDE-REV-016 单表只读预览:同一条 profile 连接台账取连接,SHOW TABLES
+  // 选表(拿不到退手输)→ 白名单限量 SELECT → 专用输出通道渲染;取消选表
+  // 不发预览查询,连不上如实报错。
+  const tablePreviewChannel = vscode.window.createOutputChannel('KBEngine 数据库预览');
+  context.subscriptions.push(tablePreviewChannel);
+  const previewTableCommand = vscode.commands.registerCommand(
+    'kbengine.database.previewTable',
+    () =>
+      runTablePreviewCommand({
+        resolveConnection: resolveCommandDatabaseConnection,
+        createConnection: (profileId, config) =>
+          createProfileScopedDriftExecutor(
+            profileId, databaseQueryResultCache, createMysqlDriftExecutor
+          )(config),
+        showQuickPick: (items, options) => vscode.window.showQuickPick(items, options),
+        showInputBox: options => vscode.window.showInputBox(options),
+        showInformationMessage: message => vscode.window.showInformationMessage(message),
+        showErrorMessage: message => vscode.window.showErrorMessage(message),
+        channel: tablePreviewChannel
+      })
+  );
+  context.subscriptions.push(previewTableCommand);
 
   // 初始化服务器管理器
   const serverManager = new KBEngineServerManager(context);
