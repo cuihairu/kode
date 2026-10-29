@@ -181,7 +181,7 @@ export class PythonClassIndex {
   private revisions = new Map<string, number>();
   private generation = 0;
   private scanGeneration = 0;
-  private documents = new Map<string, vscode.TextDocument>();
+  private documents = new Map<string, Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>>();
   private mroCache = new Map<string, PythonClassDef[]>();
   /** 按需单文件解析(RequestLocal)进行中去重:同文件并发请求合并为一次入队 */
   private stagedRequests = new Map<string, Promise<void>>();
@@ -1097,7 +1097,7 @@ export class PythonClassIndex {
     // 把仍存在文件的旧类索引一并删掉)。读失败=文件被删/不可读,撤索引正确;
     // 解析失败=内容已读到、文件仍在盘,必须保留旧索引并登记待补重试。
     // 返回值:false=本次尝试未提交内容(待补重试,有界);true=已提交或无害早退。
-    let open: vscode.TextDocument | undefined;
+    let open: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'> | undefined;
     let content: string;
     try {
       open = vscode.workspace.textDocuments?.find(doc => doc.fileName === filePath) ?? this.documents.get(filePath);
@@ -1183,6 +1183,12 @@ export class PythonClassIndex {
   syncDocumentParse(document: Pick<vscode.TextDocument, 'fileName' | 'version' | 'getText'>): ParsedPythonFile {
     const hit = this.getParsedForVersion(document.fileName, document.version);
     if (hit) { return hit; }
+    // IDE-REV-001:同步提交新版本必须同步推进版本代令牌与当前文档身份——
+    // 否则随后的同版本编辑通知命中缓存提前返回(不递增令牌),在途旧版
+    // worker 的 revision 守卫仍比对旧令牌,回包把已发布的新代覆盖回旧代;
+    // 未注册身份时按需装载还会回退磁盘旧内容
+    this.revisions.set(document.fileName, (this.revisions.get(document.fileName) ?? 0) + 1);
+    this.documents.set(document.fileName, document);
     const parsed = parsePythonFile(document.getText(), document.fileName);
     this.commitParsedFile(document.fileName, parsed, document.version ?? -1, 0);
     return parsed;
