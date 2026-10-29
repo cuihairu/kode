@@ -389,11 +389,11 @@ export function removeSavedFileAnnotations(
   filePath: string
 ): void {
   if (!workspaceRoot) { return; }
+  // IDE-REV-007:在途重建一律登记删除事件——仅弃已发布桶时,重建的扫描期
+  // 旧读会在发布时把已删来源复活;登记后发布前重放弃桶,来源不驻留
+  annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'delete', filePath });
   const cached = returnAnnotationCaches.get(workspaceRoot);
-  if (!cached) {
-    annotationBuilds.get(workspaceRoot)?.pendingFileEvents.push({ kind: 'delete', filePath });
-    return;
-  }
+  if (!cached) { return; }
   if (!cached.fileBuckets.delete(filePath)) { return; }
   cached.index = mergeAnnotationBuckets(cached.fileBuckets);
 }
