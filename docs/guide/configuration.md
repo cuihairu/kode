@@ -383,6 +383,7 @@ Iron rule: with the default `ts`, the Rust path is not involved at all and user-
 | Setting | Type | Default | Purpose |
 | --- | --- | --- | --- |
 | `kbengine.db.tablePrefix` | string | `""` (empty = engine default `tbl_`) | Database table name prefix; replaced in the schema view and SQL templates from the same source |
+| `kbengine.databaseQueryTimeoutMs` | number | `10000` | Per-connect/per-query timeout in ms for the read-only database commands (drift check / table preview). A cancellable progress notification shows while running: timeout or cancel returns with that reason and releases the connection (a hung one is force-destroyed); cancelling the notification takes the same return path. `0` or negative disables the deadline (wait indefinitely, manual cancel still works) |
 
 With a custom value (e.g. `kb_`), table names in the schema view and the three SQL template lines are replaced from the same source:
 

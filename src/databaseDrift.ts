@@ -44,6 +44,8 @@ export interface QueryResult {
 export interface DriftQueryExecutor {
   runQuery(sql: string): Promise<QueryResult>;
   close(): Promise<void>;
+  /** 强制销毁(IDE-REV-017):close 等不完挂死连接时的兜底;缺省退 close */
+  destroy?(): Promise<void>;
 }
 
 export type DriftConnectionFactory = (
@@ -159,6 +161,8 @@ export interface MysqlModuleLike {
 export interface MysqlConnectionLike {
   query(sql: string): Promise<[unknown, unknown]>;
   end(): Promise<void>;
+  /** mysql2/promise 的 destroy 返回 void;替身返回 Promise 也收 */
+  destroy?(): void | Promise<void>;
 }
 
 /** 结果集字段 → 列信息(字段表缺失时退化为空列集) */
@@ -201,7 +205,16 @@ export function createMysqlDriftExecutorWith(
       },
       close: async (): Promise<void> => {
         await connection.end();
-      }
+      },
+      // 挂死查询连 end 都等不完时(IDE-REV-017)直接撕 socket;替身连接没
+      // 有 destroy 面就不暴露,守卫层自然退回 close
+      ...(connection.destroy
+        ? {
+            destroy: async (): Promise<void> => {
+              await connection.destroy!();
+            }
+          }
+        : {})
     };
   };
 }

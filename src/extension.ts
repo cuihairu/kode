@@ -253,6 +253,10 @@ import {
 } from './databaseDrift';
 import { runTablePreviewCommand } from './databaseTablePreviewCommand';
 import {
+  guardConnectionFactoryWithQueryLifecycle,
+  type QueryGuard
+} from './databaseQueryLifecycleIntegration';
+import {
   createDatabaseSimulationUri,
   getSimulationEntityName,
   isDatabaseSimulationDocument,
@@ -1620,6 +1624,42 @@ export function activate(context: vscode.ExtensionContext) {
     const config = databaseConnections.getActiveConfig(profileId);
     return config ? { profileId, config } : null;
   };
+  // IDE-REV-017 查询生命周期接线:漂移校验/表预览的真实数据库入口(建连+
+  // 每条只读查询)都过 databaseQueryLifecycle——时限走 kbengine.databaseQueryTimeoutMs
+  // (0 或负值不限时,与附加调试同口径),取消走 withProgress 进度通知令牌;
+  // 超时/取消立即带原因返回,连接等底层结算(上限 min(5s, 时限))后 close/
+  // destroy 恰一次,建连晚落地也兜底关掉。
+  const DATABASE_QUERY_TIMEOUT_DEFAULT_MS = 10000;
+  const readDatabaseQueryTimeoutMs = (): number => {
+    const raw = vscode.workspace.getConfiguration('kbengine').get<number>('databaseQueryTimeoutMs');
+    if (raw === undefined) {
+      return DATABASE_QUERY_TIMEOUT_DEFAULT_MS;
+    }
+    return raw > 0 ? raw : Number.POSITIVE_INFINITY;
+  };
+  const runDatabaseQueryCommand = <T>(
+    title: string,
+    work: (guard: QueryGuard) => Promise<T>
+  ): Thenable<T> =>
+    vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title, cancellable: true },
+      (_progress, token) => {
+        const timeoutMs = readDatabaseQueryTimeoutMs();
+        return work({
+          timeoutMs,
+          isCancelled: () => token.isCancellationRequested,
+          releaseDeadlineMs: timeoutMs < 5000 ? timeoutMs : undefined
+        });
+      }
+    );
+  const lifecycleGuardedFactory = (
+    guard: QueryGuard,
+    profileId: string
+  ): ReturnType<typeof createProfileScopedDriftExecutor> =>
+    guardConnectionFactoryWithQueryLifecycle(
+      createProfileScopedDriftExecutor(profileId, databaseQueryResultCache, createMysqlDriftExecutor),
+      guard
+    );
   const checkDatabaseDriftCommand = vscode.commands.registerCommand(
     'kbengine.database.checkDrift',
     async (entityName?: string) => {
@@ -1640,12 +1680,12 @@ export function activate(context: vscode.ExtensionContext) {
         );
         return;
       }
-      const report = await checkDatabaseDrift(
-        snapshot,
-        connection.config,
-        resolveSchemaTablePrefix(),
-        createProfileScopedDriftExecutor(
-          connection.profileId, databaseQueryResultCache, createMysqlDriftExecutor
+      const report = await runDatabaseQueryCommand('KBEngine 数据库漂移校验', guard =>
+        checkDatabaseDrift(
+          snapshot,
+          connection.config,
+          resolveSchemaTablePrefix(),
+          lifecycleGuardedFactory(guard, connection.profileId)
         )
       );
       publishDriftReport(databaseDriftChannel, vscode.window, report);
@@ -1673,12 +1713,12 @@ export function activate(context: vscode.ExtensionContext) {
         );
         return;
       }
-      const report = await checkDatabaseDriftForSnapshots(
-        snapshots,
-        connection.config,
-        resolveSchemaTablePrefix(),
-        createProfileScopedDriftExecutor(
-          connection.profileId, databaseQueryResultCache, createMysqlDriftExecutor
+      const report = await runDatabaseQueryCommand('KBEngine 数据库全量漂移校验', guard =>
+        checkDatabaseDriftForSnapshots(
+          snapshots,
+          connection.config,
+          resolveSchemaTablePrefix(),
+          lifecycleGuardedFactory(guard, connection.profileId)
         )
       );
       publishDriftReport(databaseDriftChannel, vscode.window, report);
@@ -1688,24 +1728,23 @@ export function activate(context: vscode.ExtensionContext) {
 
   // IDE-REV-016 单表只读预览:同一条 profile 连接台账取连接,SHOW TABLES
   // 选表(拿不到退手输)→ 白名单限量 SELECT → 专用输出通道渲染;取消选表
-  // 不发预览查询,连不上如实报错。
+  // 不发预览查询,连不上如实报错。IDE-REV-017:建连/查询过生命周期守卫,
+  // 进度通知可取消,超时/取消带原因返回并释放连接。
   const tablePreviewChannel = vscode.window.createOutputChannel('KBEngine 数据库预览');
   context.subscriptions.push(tablePreviewChannel);
   const previewTableCommand = vscode.commands.registerCommand(
     'kbengine.database.previewTable',
     () =>
-      runTablePreviewCommand({
-        resolveConnection: resolveCommandDatabaseConnection,
-        createConnection: (profileId, config) =>
-          createProfileScopedDriftExecutor(
-            profileId, databaseQueryResultCache, createMysqlDriftExecutor
-          )(config),
-        showQuickPick: (items, options) => vscode.window.showQuickPick(items, options),
-        showInputBox: options => vscode.window.showInputBox(options),
-        showInformationMessage: message => vscode.window.showInformationMessage(message),
-        showErrorMessage: message => vscode.window.showErrorMessage(message),
-        channel: tablePreviewChannel
-      })
+      runDatabaseQueryCommand('KBEngine 数据库预览', guard =>
+        runTablePreviewCommand({
+          resolveConnection: resolveCommandDatabaseConnection,
+            createConnection: (profileId, config) => lifecycleGuardedFactory(guard, profileId)(config),
+          showQuickPick: (items, options) => vscode.window.showQuickPick(items, options),
+          showInputBox: options => vscode.window.showInputBox(options),
+          showInformationMessage: message => vscode.window.showInformationMessage(message),
+          showErrorMessage: message => vscode.window.showErrorMessage(message),
+          channel: tablePreviewChannel
+        }))
   );
   context.subscriptions.push(previewTableCommand);
 

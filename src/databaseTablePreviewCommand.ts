@@ -3,6 +3,9 @@
  * 取真实连接 → SHOW TABLES 列表选表(列表拿不到退手输,标识符同口径)→
  * databaseTablePreview 白名单语句执行限量预览 → 输出通道渲染。取消选表
  * 不发预览查询;连不上/查询失败如实报错,不假造结果。
+ *
+ * IDE-REV-017:查询/建连的超时与取消是命令级终态(连接已在释放),按
+ * 原因如实报错返回,不退手输面。
  */
 
 import type { QueryResult } from './databaseDrift';
@@ -99,7 +102,28 @@ export async function runTablePreviewCommand(deps: TablePreviewCommandDeps): Pro
     return;
   }
   try {
-    const listing = await listPreviewTables(connection.runQuery);
+    // IDE-REV-017:超时/取消是命令级终态(连接已在释放),不走「清单拿不
+    // 到退手输」——手输也无法在一条释放中的连接上重试;结构面识别,不引
+    // 具体错误类
+    let lifecycleTerminal: string | undefined;
+    const listing = await listPreviewTables(async sql => {
+      try {
+        return await connection.runQuery(sql);
+      } catch (error) {
+        const record =
+          typeof error === 'object' && error !== null
+            ? (error as { lifecycleTerminal?: unknown; message?: unknown })
+            : undefined;
+        if (record?.lifecycleTerminal === true && typeof record.message === 'string') {
+          lifecycleTerminal = record.message;
+        }
+        throw error;
+      }
+    });
+    if (lifecycleTerminal !== undefined) {
+      deps.showErrorMessage(`数据库预览失败:${lifecycleTerminal}`);
+      return;
+    }
     let table: string | undefined;
     if (listing.ok && listing.tables.length > 0) {
       // 有表清单:选择器(取消=undefined,不发预览查询)

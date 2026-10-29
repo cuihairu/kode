@@ -62,6 +62,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Title: `Check Database Drift`
 - Purpose: verify the virtual table structures derived from `.def` against the real table structures, comparing table by table for missing tables, missing columns, extra columns, type mismatches, and leftover tables; the report goes to the 「KBEngine 数据库漂移」 (KBEngine database drift) output channel; without an entity name it infers from the active `.def` file
 - Prerequisite: the database credentials in the engine config must be stored in plaintext (`<encrypt>false</encrypt>`); with an RSA-encrypted password or an unreachable server it degrades to a 「未校验」 (not verified) notice instead of erroring
+- Timeout / cancel (IDE-REV-017): every connect and query runs under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification — timeout or cancel returns with that reason (shown in the 未校验 report), the connection is released right after the underlying query settles (a hung one is force-destroyed), so the entry never waits forever
 - Entries:
   - Command palette
 - See also: [Database Drift Check](./database-drift-check.md)
@@ -71,6 +72,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Title: `Check All Database Drift`
 - Purpose: Check actual MySQL schemas for every workspace entity, reusing one connection and treating all entity tables as expected when finding residual tables
 - Prerequisite: Same as `kbengine.database.checkDrift`
+- Timeout / cancel: same deadline and progress-notification cancel as `kbengine.database.checkDrift` (per connect/query), over one guarded connection
 - Entries: Command palette
 - See also: [Database Drift Check](./database-drift-check.md)
 
@@ -83,6 +85,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - The connection comes from the same per-profile ledger as the drift commands; without a readable engine database config it says so and runs nothing
   - The table picker lists `SHOW TABLES` results; when the listing cannot be fetched (permissions) or the database has no tables, a manual table-name input takes over with the same identifier rules as the preview statement
   - Cancelling the picker (or the manual input) sends no preview query; an unreachable database reports the connection cause honestly with no output
+  - Connect and every query run under `kbengine.databaseQueryTimeoutMs` in a cancellable progress notification (IDE-REV-017): timeout or cancel returns with that reason and releases the connection — it never falls back to manual table input on a connection that is being released
   - Rows over the limit are cut and marked truncated in the footer, which also shows the exact SQL that ran
 
 ## Server Control

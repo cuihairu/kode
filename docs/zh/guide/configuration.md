@@ -383,6 +383,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.db.tablePrefix` | string | `""`（空 = 引擎默认 `tbl_`） | 数据库表名前缀，schema 视图与 SQL 模板同源替换 |
+| `kbengine.databaseQueryTimeoutMs` | number | `10000` | 只读数据库命令（漂移校验/表预览）单条建连与查询的超时毫秒数。执行期间显示可取消的进度通知：超时或取消即按原因返回并释放连接（挂死的连接强制销毁），不永久等待；在通知上取消走同一返回路径。`0` 或负值不限时（等到底，手动取消仍可用） |
 
 设成自定义值（如 `kb_`）后，schema 视图里的表名与三行 SQL 模板同源替换：
 

@@ -812,6 +812,12 @@
           "default": "",
           "description": "数据库表名前缀（缺省空 = 引擎默认 tbl_；自定义前缀用于指向改过前缀的工程，schema 视图与 SQL 模板同源替换）"
         },
+        "kbengine.databaseQueryTimeoutMs": {
+          "type": "number",
+          "default": 10000,
+          "minimum": 0,
+          "description": "只读数据库命令（漂移校验/表预览）单条建连与查询的超时毫秒数。执行期间显示可取消的进度通知：超时或取消即按原因返回并释放连接（挂死的连接强制销毁），不永久等待；在通知上取消走同一返回路径。0 或负值不限时（等到底，手动取消仍可用）"
+        },
         "kbengine.enableDiagnostics": {
           "type": "boolean",
           "default": true,

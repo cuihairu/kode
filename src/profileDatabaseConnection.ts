@@ -168,7 +168,13 @@ export function createProfileScopedDriftExecutor(
         cache.set(profileId, sql, result);
         return result;
       },
-      close: (): Promise<void> => executor.close()
+      close: (): Promise<void> => executor.close(),
+      // 强制销毁面透传(IDE-REV-017):内层有才暴露,缓存层不造
+      ...(executor.destroy
+        ? {
+            destroy: (): Promise<void> => executor.destroy!()
+          }
+        : {})
     };
   };
 }
