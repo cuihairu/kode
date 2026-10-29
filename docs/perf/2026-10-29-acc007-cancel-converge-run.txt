@@ -7,4 +7,4 @@ acc007.shared.indexTasksQueuedAtSettle=0
 acc007.shared.parseCountBefore=3073
 acc007.shared.parseCountAfter=3075
 acc007.shared.convergeMs=500
-acc007.pendingWorkFinal={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"indexTasksQueued":0,"schemaColdBuilds":0}
+acc007.pendingWorkFinal={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"caches":{"parsedDocuments":{"entries":8,"maxEntries":8,"bytes":5304,"maxBytes":8388608},"databaseSchemas":{"entries":6,"capacity":32},"annotationIndex":{"entries":1,"ttlMs":3000}},"worker":{"running":0,"queued":0,"queuedBytes":0,"maxQueuedBytes":8388608,"peakQueuedBytes":0,"budgetRejects":0},"annotationBuilds":{"running":0,"waiting":0,"cancelled":0},"indexTasksQueued":0,"schemaColdBuilds":0}

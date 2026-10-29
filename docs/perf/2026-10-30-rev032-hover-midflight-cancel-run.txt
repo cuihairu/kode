@@ -1,0 +1,10 @@
+rev032.gate.gateEnteredAtMs=1
+rev032.gate.cancelledAtMs=1
+rev032.gate.settledBeforeCancel=false
+rev032.gate.elapsedMs=1
+rev032.gate.returnedHover=false
+rev032.reads.postCancelWindow=0
+rev032.pending.requestSide={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"schemaColdBuilds":0}
+rev032.shared.parseCountBefore=3075
+rev032.shared.parseCountAfter=3077
+rev032.shared.convergeMs=500

@@ -1,10 +1,10 @@
-acc003.ordinary.elapsedMs=171.010
+acc003.ordinary.elapsedMs=89.146
 acc003.ordinary.lensCount=0
 acc003.ordinary.eventLensCount=0
 acc003.ordinary.docsOpened=0
 acc003.ordinary.textDocuments=8
 acc003.ordinary.readsDelta=0
-acc003.events.elapsedMs=197.343
+acc003.events.elapsedMs=207.754
 acc003.events.lensCount=2
 acc003.events.eventLensCount=2
 acc003.events.titles=["事件回调 · EV_TRAIN","3 处监听"]

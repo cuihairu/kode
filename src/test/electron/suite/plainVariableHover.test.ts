@@ -83,7 +83,20 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
     const readsAfterEmpty = getFileReadTotals();
     assert.strictEqual(empty.returnedHover, false, `无注解局部变量不应出 hover: ${empty.preview}`);
 
-    // 命中(冷):同文件 def 返回注解经悬停文档桶解析
+    // 命中(冷):同文件 def 返回注解经悬停文档桶解析。IDE-REV-010(2026-10-29
+    // bb801b6)起首次 hover 不再做同步整文件提取——本查询只读已发布桶,桶版本
+    // 落后交给受控异步更新发布,发布后下次查询可见。空探针已对同文件排队了
+    // 文档注解更新,这里等发布排干(去抖+让出式提取,有界)再断言命中:
+    // 命中面从「首查同步出」对齐到「发布后可见」,不回退 REV-010 语义。
+    let publishWaitMs = 0;
+    while ((probe.pendingWork().annotationUpdates ?? 0) > 0 && publishWaitMs < 10_000) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      publishWaitMs += 250;
+    }
+    assert.strictEqual(
+      probe.pendingWork().annotationUpdates ?? 0, 0,
+      '文档注解更新发布未在有界窗内排干'
+    );
     const hit = await probeAt(probe, CALLER_REL, 'data = get_annotated_data()', 'data');
     const readsAfterHit = getFileReadTotals();
     assert.strictEqual(hit.returnedHover, true, '同文件注解局部变量应出 hover');
@@ -96,6 +109,7 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
     const lines = [
       `acc001.empty.elapsedMs=${empty.elapsedMs}`,
       `acc001.empty.returnedHover=${empty.returnedHover}`,
+      `acc001.hit.publishWaitMs=${publishWaitMs}`,
       `acc001.hit.elapsedMs=${hit.elapsedMs}`,
       `acc001.hit.returnedHover=${hit.returnedHover}`,
       `acc001.hit.preview=${hit.preview.replace(/\n/g, ' ')}`,

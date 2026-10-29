@@ -232,6 +232,7 @@ import {
   TypesXmlCodeLensProvider,
   isPythonMroJumpEnabled,
   setPythonMroJumpEnabled,
+  setHoverInFlightGateForTests,
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
@@ -4289,6 +4290,53 @@ export function activate(context: vscode.ExtensionContext) {
         if (timer !== undefined) { clearTimeout(timer); }
         canceller.dispose();
       }
+    },
+    // IDE-REV-032:确定性在途取消探针——门住 provider「已过入口守卫、未出结果」
+    // 的在途窗口,门内斩 token(开始后、完成前取消,不再靠 2ms 竞速),放行
+    // 后按取消语义收口。gateEnteredAtMs>=0 证请求已开始,cancelAtMs>gateEnteredAtMs
+    // 证取消落在在途窗口内(完成前)。
+    probeHoverGatedCancel: async (target: { file: string; line: number; character: number }) => {
+      let markEntered!: () => void;
+      let releaseGate!: () => void;
+      const enteredSignal = new Promise<void>(resolve => { markEntered = resolve; });
+      const release = new Promise<void>(resolve => { releaseGate = resolve; });
+      setHoverInFlightGateForTests(() => {
+        markEntered();
+        return release.then(() => { setHoverInFlightGateForTests(null); });
+      });
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target.file));
+      const canceller = new vscode.CancellationTokenSource();
+      const startedAt = Date.now();
+      let gateEnteredAtMs = -1;
+      const hoverPromise = kbengineHoverImpl.provideHover(
+        document,
+        new vscode.Position(target.line, target.character),
+        canceller.token
+      );
+      // 在途证明:门未放行前结果不可能落定;斩后立刻定格此旗,若定格时已
+      // 翻转,说明门未真正挡住结果(证明失守)
+      let hoverSettled = false;
+      void Promise.resolve(hoverPromise).then(() => { hoverSettled = true; }, () => { hoverSettled = true; });
+      await enteredSignal;
+      gateEnteredAtMs = Date.now() - startedAt;
+      // 确定性在途斩:此刻请求在途(已开始未完成)
+      canceller.cancel();
+      const cancelledAtMs = Date.now() - startedAt;
+      // 斩后立即定格:此刻之后结果落定属正常(放行收口),定格值才是「完成前」证明
+      const settledBeforeCancel = hoverSettled;
+      releaseGate();
+      const hover = await Promise.resolve(hoverPromise);
+      const elapsedMs = Date.now() - startedAt;
+      canceller.dispose();
+      return {
+        gateEnteredAtMs,
+        cancelledAtMs,
+        settledBeforeCancel,
+        elapsedMs,
+        cancelled: true,
+        returnedHover: hover !== null && hover !== undefined,
+        preview: previewOf(hover?.contents?.[0]).slice(0, 120)
+      };
     },
     pendingWork: () => ({
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued,

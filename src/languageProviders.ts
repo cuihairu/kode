@@ -694,6 +694,16 @@ export interface HoverPhaseTimer {
   start(label: string): () => void;
 }
 
+/** IDE-REV-032:测试面在途闸——provider 已过入口守卫(请求确实开始)、任何
+ * 结果尚未产出(未完成)之间一段可确定命中的在途窗口。生产恒 null,零
+ * 行为差异;测试方负责释放(惯用法=释放时顺手 setHoverInFlightGateForTests(null),
+ * 递归重入即走原路径)。 */
+let hoverInFlightGateForTests: (() => Promise<void>) | null = null;
+
+export function setHoverInFlightGateForTests(gate: (() => Promise<void>) | null): void {
+  hoverInFlightGateForTests = gate;
+}
+
 export class KBEngineHoverProvider implements vscode.HoverProvider {
   // 实体 def 方法标注面(用户令:只凭名字标 KBEngine 函数不严谨)需要 def
   // 索引,按 RpcCodeLensProvider 同款注入;可选参数保持既有无参用例口径。
@@ -770,6 +780,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     timer?: HoverPhaseTimer
   ): vscode.ProviderResult<vscode.Hover> {
     if (token?.isCancellationRequested) { return null; }
+    if (hoverInFlightGateForTests) {
+      // IDE-REV-032:门住一段确定性在途窗口;释放方负责清闸,重入走原路径
+      const gate = hoverInFlightGateForTests;
+      return gate().then(() => this.provideHoverTimed(document, position, token, timer));
+    }
     const featureConfig = getLanguageFeatureConfig();
     // IDE-BUD-001:一次请求一个截止时间上下文——绝对 deadline + 链接 token
     // 全分支共享:各层 raceWithBudget 用 remainingMs() 而非各起满额预算窗;
