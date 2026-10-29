@@ -26,6 +26,7 @@ async function main(): Promise<void> {
   // (longSessionResources.test.ts)。
   const attributionMode = process.argv.includes('--attribution');
   const longSessionMode = process.argv.includes('--longsession');
+  const finalMarksMode = process.argv.includes('--final');
   const delFileMode = process.argv.includes('--delfile');
   const renameMode = process.argv.includes('--rename');
   const dirtyMode = process.argv.includes('--dirty');
@@ -116,7 +117,7 @@ async function main(): Promise<void> {
     process.env.KODE_VSIX_WORKSPACE = workspacePath;
     process.env.KODE_VSIX_EXT_DIR = devPath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  } else if (fieldMode || attributionMode || longSessionMode) {
+  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode) {
     // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
     // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
@@ -208,9 +209,11 @@ async function main(): Promise<void> {
         '        return None'
       ].join('\n')
     );
-    process.env.KODE_ELECTRON_SUITE = attributionMode
-      ? 'attribution'
-      : longSessionMode ? 'longsession' : 'field';
+    process.env.KODE_ELECTRON_SUITE = finalMarksMode
+      ? 'final'
+      : attributionMode
+        ? 'attribution'
+        : longSessionMode ? 'longsession' : 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
     process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
