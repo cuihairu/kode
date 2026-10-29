@@ -838,8 +838,12 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
   if (candidates.length === 0) return null;
   // 2026-10-28 审核整改(HOV-009):先查赋值候选——无候选的 hover 不做全文
   // 注解提取(此前先更新桶再查候选,无赋值词的 hover 也白做全文件提取)。
+  // IDE-REV-010:首次 hover 不做同步整文件提取——本查询只读已发布桶;桶
+  // 版本落后(首次/编辑后)交给受控异步更新发布(queueDocumentReturnAnnotations
+  // 同文件合并到最新版本、让出式提取、版本/关闭竞态守卫),发布后下次查询
+  // 可见;冷版本本轮回级联(其余打开文档桶→磁盘新鲜索引),不等待发布。
   if (documentContext) {
-    updateDocumentReturnAnnotations(workspaceRoot, documentContext);
+    queueDocumentReturnAnnotations(workspaceRoot, documentContext);
   }
   const hoveredBucket = documentContext
     ? documentAnnotationBuckets.get(workspaceRoot)?.get(documentContext.fileKey)

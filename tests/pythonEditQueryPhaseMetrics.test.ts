@@ -13,7 +13,10 @@ import {
   getOperationSummary,
   resetLanguageServiceMetrics
 } from '../src/languageServiceMetrics';
-import { resolveLocalVariableReturnTypeFromSnapshot } from '../src/pythonReturnTypeInference';
+import {
+  flushPendingDocumentReturnAnnotationsForTests,
+  resolveLocalVariableReturnTypeFromSnapshot
+} from '../src/pythonReturnTypeInference';
 
 // IDE-RST-009:Python 编辑查询四阶段耗时拆分——解析(document-parse,既有
 // PR1 打点)、提交(document-commit)、MRO(python-mro-resolve)、查询
@@ -70,16 +73,20 @@ describe('IDE-RST-009:Python 编辑查询耗时阶段拆分', () => {
     expect((getOperationSummary('python-mro-resolve')?.count ?? 0)).toBeGreaterThanOrEqual(1);
   });
 
-  it('查询面:普通变量 hover 注解路径产出 python-annotation-query 样本', () => {
+  it('查询面:普通变量 hover 注解路径产出 python-annotation-query 样本', async () => {
     const dir = makeRoot();
     resetLanguageServiceMetrics();
     const source = ['data = get_data()', '', 'def get_data() -> JSONDATA:', '\tpass'].join('\n');
+    const context = { fileKey: path.join(dir, 'm.py'), version: 1, source: () => source };
+    // IDE-REV-010:首次查询只读已发布桶并触发受控异步更新;发布后查询可见
+    resolveLocalVariableReturnTypeFromSnapshot(source.split('\n'), 0, 'data', dir, context);
+    await flushPendingDocumentReturnAnnotationsForTests();
     const resolved = resolveLocalVariableReturnTypeFromSnapshot(
       source.split('\n'),
       0,
       'data',
       dir,
-      { fileKey: path.join(dir, 'm.py'), version: 1, source: () => source }
+      context
     );
 
     expect(resolved?.annotation).toBe('JSONDATA');

@@ -13,6 +13,7 @@ import {
   buildReturnAnnotationIndex,
   extractFileReturnAnnotations,
   extractFileReturnAnnotationsAsync,
+  flushPendingDocumentReturnAnnotationsForTests,
   releaseDocumentReturnAnnotations,
   removeSavedFileAnnotations,
   renameSavedFileAnnotations,
@@ -270,7 +271,7 @@ describe('三提示面无 Any(能推才显闸)', () => {
 });
 
 describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
-  it('未保存的注解变化立即进入当前文件桶:同文件 hover 即见新值,不等磁盘与 TTL', async () => {
+  it('未保存的注解变化经受控异步发布进入当前文件桶:发布后同文件 hover 见新值,不等磁盘与 TTL', async () => {
     const { root, put } = setupWorkspace();
     // 磁盘仍是旧值 JSONDATA;文档未保存改为 OTHERDATA
     put('main.py', 'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n');
@@ -279,12 +280,17 @@ describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
       'def get_data() -> JSONDATA:\n    pass\n\ndata = get_data()\n',
       { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
     );
+    // IDE-REV-010:hover 只读已发布桶并触发受控异步更新;发布后查询可见
+    await Promise.resolve(provider.provideHover(docV1, new Position(3, 1)));
+    await flushPendingDocumentReturnAnnotationsForTests();
     const v1 = hoverText(await Promise.resolve(provider.provideHover(docV1, new Position(3, 1))));
     expect(v1).toContain('**data: JSONDATA**');
     const docV2 = makeTextDocument(
       'def get_data() -> OTHERDATA:\n    pass\n\ndata = get_data()\n',
       { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
     );
+    await Promise.resolve(provider.provideHover(docV2, new Position(3, 1)));
+    await flushPendingDocumentReturnAnnotationsForTests();
     const v2 = hoverText(await Promise.resolve(provider.provideHover(docV2, new Position(3, 1))));
     expect(v2).toContain('**data: OTHERDATA**');
   });
@@ -331,6 +337,9 @@ describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
       'def get_data():\n    pass\n\ndata = get_data()\n',
       { fileName: path.join(root, 'main.py'), languageId: 'python', version: 2 }
     );
+    // IDE-REV-010:删除注解的变化同样经受控异步发布;发布后遮蔽生效
+    await Promise.resolve(provider.provideHover(docV2, new Position(3, 1)));
+    await flushPendingDocumentReturnAnnotationsForTests();
     const text = hoverText(await Promise.resolve(provider.provideHover(docV2, new Position(3, 1))));
     expect(text).not.toContain('JSONDATA');
     expect(text).not.toContain('推导自');
@@ -359,6 +368,74 @@ describe('IDE-HOV-011 按文档版本更新当前文件注解', () => {
     releaseDocumentReturnAnnotations(root, 'file:///svc.py');
     const resolved = resolveLocalVariableReturnTypeFromSnapshot(['data = get_data()'], 0, 'data', root);
     expect(resolved).toMatchObject({ annotation: 'JSONDATA' });
+  });
+});
+
+describe('IDE-REV-010:首次 hover 不做同步整文件注解提取', () => {
+  it('大文件首次 hover 同步段零 source() 调用(只读已发布桶),发布后能查到新注解', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    // 磁盘索引就绪(旧值 JSONDATA);文档未保存改为 OTHERDATA(大文件:候选后垫注释行)
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const pad = 'x'.repeat(120);
+    const bigSource = [
+      'def get_data() -> OTHERDATA:',
+      '    pass',
+      'data = get_data()',
+      ...Array.from({ length: 4000 }, (_, i) => `# pad-${i} ${pad}`)
+    ].join('\n');
+    let sourceCalls = 0;
+    const first = resolveLocalVariableReturnTypeFromSnapshot(
+      bigSource.split('\n'), 2, 'data', root,
+      { fileKey: 'file:///main.py', version: 1, source: () => { sourceCalls += 1; return bigSource; } }
+    );
+    // 同步段零提取:source() 未被调用(修复前红:同步整文件提取在此处即调),
+    // 本轮回磁盘旧值(JSONDATA),冷版本交受控异步更新
+    expect(sourceCalls).toBe(0);
+    expect(first).toMatchObject({ annotation: 'JSONDATA' });
+
+    // 受控异步更新发布后,新注解可查(发布后能查到新注解)
+    await flushPendingDocumentReturnAnnotationsForTests();
+    const second = resolveLocalVariableReturnTypeFromSnapshot(
+      bigSource.split('\n'), 2, 'data', root,
+      { fileKey: 'file:///main.py', version: 1, source: () => { sourceCalls += 1; return bigSource; } }
+    );
+    expect(second).toMatchObject({ annotation: 'OTHERDATA' });
+  });
+
+  it('编辑后立即 hover 同步段零提取;发布后见新值;旧版本不覆盖', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const ctx = (version: number, text: string, counter: { calls: number }) => ({
+      fileKey: 'file:///main.py',
+      version,
+      source: (): string => { counter.calls += 1; return text; }
+    });
+    const v2 = { calls: 0 };
+    // 编辑(v2,THIRDDATA)后立即 hover:同步段零提取
+    const text2 = 'def get_data() -> THIRDDATA:\n    pass\n\ndata = get_data()\n';
+    const immediate = resolveLocalVariableReturnTypeFromSnapshot(
+      text2.split('\n'), 3, 'data', root, ctx(2, text2, v2)
+    );
+    expect(v2.calls).toBe(0);
+    expect(immediate).toMatchObject({ annotation: 'JSONDATA' }); // 旧桶未发布,回磁盘旧值
+    await flushPendingDocumentReturnAnnotationsForTests();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      text2.split('\n'), 3, 'data', root, ctx(2, text2, { calls: 0 })
+    )).toMatchObject({ annotation: 'THIRDDATA' });
+
+    // 旧版本(v1,STALE)不能覆盖已发布的 v2:提取前版本闸拒绝(source 零调用)
+    const stale = { calls: 0 };
+    const text1 = 'def get_data() -> STALE:\n    pass\n\ndata = get_data()\n';
+    resolveLocalVariableReturnTypeFromSnapshot(
+      text1.split('\n'), 3, 'data', root, ctx(1, text1, stale)
+    );
+    await flushPendingDocumentReturnAnnotationsForTests();
+    expect(stale.calls).toBe(0);
+    expect(resolveLocalVariableReturnTypeFromSnapshot(
+      text2.split('\n'), 3, 'data', root, ctx(2, text2, { calls: 0 })
+    )).toMatchObject({ annotation: 'THIRDDATA' });
   });
 });
 
