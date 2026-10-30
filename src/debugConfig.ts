@@ -246,6 +246,12 @@ export class DebugConfigManager {
   private configWatcher: vscode.FileSystemWatcher | null = null;
   private _onDidChangeConfig = new vscode.EventEmitter<void>();
   readonly onDidChangeConfig = this._onDidChangeConfig.event;
+  /**
+   * IDE-AUD-001:尚未落定的会话追踪订阅(超时/取消已返回而 start 仍挂起)。
+   * 此类订阅必须存活到 start 落定以捕获迟到会话句柄;永不落定的 start 由
+   * 管理器 dispose 兜底释放,防订阅泄漏。
+   */
+  private readonly pendingAttachTrackers = new Set<{ dispose(): void }>();
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -989,17 +995,31 @@ export class DebugConfigManager {
     let ownSession: vscode.DebugSession | undefined;
     let cleanupDone = false;
     let trackerDisposed = false;
+    // IDE-AUD-001:闸返回态两标记——abandoned=截止/取消已收口(stop 被调过),
+    // 此时新出现的自家会话应立即停(start 可能永不落定,不能等 onStartSettled);
+    // startSettled=start 承诺已落定,追踪订阅释放的唯一权威时点
+    let abandoned = false;
+    let startSettled = false;
     const sessionTracker = vscode.debug.onDidStartDebugSession(session => {
-      if (!ownSession && session.name === attachConfig.name) {
-        ownSession = session;
+      if (ownSession || session.name !== attachConfig.name) {
+        return;
+      }
+      ownSession = session;
+      // 闸已返回(超时/取消)后才启动的自家会话立即停,不等 start 落定;
+      // timely 附加此刻闸未返回(abandoned=false),绝不误伤正常会话
+      if (abandoned) {
+        cleanupOwnSession();
       }
     });
+    this.pendingAttachTrackers.add(sessionTracker);
     // 会话追踪订阅必须活到 start 落定:迟到成功的会话在闸返回后才启动,
-    // 提前 dispose 会捕获不到句柄;两种落定(timely/迟到)各释放一次,幂等
+    // 提前 dispose 会捕获不到句柄(F01 反例);两种落定(timely/迟到)各释放
+    // 一次,幂等;永不落定的 start 由管理器 dispose 兜底
     const disposeTracker = (): void => {
       if (trackerDisposed) { return; }
       trackerDisposed = true;
       sessionTracker.dispose();
+      this.pendingAttachTrackers.delete(sessionTracker);
     };
     // 清理恰一次:窗内停止(REV-002)与迟到成功清理(REV-003)共用,先到先清
     const cleanupOwnSession = (): void => {
@@ -1023,11 +1043,15 @@ export class DebugConfigManager {
             start: () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig)),
             // IDE-REV-002:窗内截止/取消只停自家会话;stopDebugging(undefined)
             // 等同无参(停全部)——无自家句柄就一次都不停,迟到面由 REV-003 接
-            stop: () => cleanupOwnSession(),
+            stop: () => {
+              abandoned = true;
+              cleanupOwnSession();
+            },
             // IDE-REV-003:超时/取消返回后 start 才落定——迟到成功时自家会话
             // 此刻才创建,清一次且不二次提示;迟到异常同样只经此回调不外泄;
-            // 两种落定都释放追踪订阅
+            // 两种落定都释放追踪订阅(AUD-001:释放权威时点)
             onStartSettled: late => {
+              startSettled = true;
               if (late) { cleanupOwnSession(); }
               disposeTracker();
             },
@@ -1036,7 +1060,12 @@ export class DebugConfigManager {
           })
       );
     } finally {
-      disposeTracker();
+      // IDE-AUD-001:闸返回不得提前释放订阅(F01 反例=finally 无条件释放,
+      // 迟到会话捕获不到句柄)——仅在 start 已落定(onStartSettled 已释放过,
+      // 幂等)时收口;未落定的存活订阅由管理器 dispose 兜底
+      if (startSettled) {
+        disposeTracker();
+      }
     }
   }
 
@@ -1049,5 +1078,10 @@ export class DebugConfigManager {
       this.configWatcher.dispose();
     }
     this._onDidChangeConfig.dispose();
+    // IDE-AUD-001:永不落定的 start 所遗留的追踪订阅,卸载兜底释放
+    for (const tracker of this.pendingAttachTrackers) {
+      tracker.dispose();
+    }
+    this.pendingAttachTrackers.clear();
   }
 }

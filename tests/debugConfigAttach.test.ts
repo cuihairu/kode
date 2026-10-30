@@ -672,6 +672,12 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
       return {
         dispose: () => {
           sessionTrackerDisposals += 1;
+          // IDE-AUD-001:真 dispose 语义=退订——旧假替身只计数不移除,已释放
+          // 的追踪器仍收事件,把 F01(迟到会话捕获不到句柄)长期掩盖成绿
+          const index = sessionListeners.indexOf(listener);
+          if (index >= 0) {
+            sessionListeners.splice(index, 1);
+          }
         }
       };
     };
@@ -813,7 +819,10 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     expect(stopped?.name).toBe('KBEngine: Python attach to baseapp');
     expect(stopCalls.some(call => (call[0] as { name?: string } | undefined)?.name === '无关的独立会话'))
       .toBe(false);
-    // 会话追踪订阅随守卫收口释放,不遗留
+    // IDE-AUD-001:取消返回时 start 尚未落定(挂起),追踪订阅必须存活以捕获
+    // 迟到会话——不得随守卫收口释放(F01 反例);卸载时兜底释放
+    expect(sessionTrackerDisposals).toBe(0);
+    manager.dispose();
     expect(sessionTrackerDisposals).toBe(1);
     expect(warnings[0]).toContain('已取消');
   });
@@ -838,6 +847,9 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     const stopped = (stopCalls[0] as Array<{ name?: string }>)[0];
     expect(stopped?.name).toBe('KBEngine: Python attach 外网 (remote)');
     expect(warnings[0]).toContain('超时');
+    // IDE-AUD-001:超时返回时 start 未落定,订阅存活;卸载兜底释放
+    expect(sessionTrackerDisposals).toBe(0);
+    manager.dispose();
     expect(sessionTrackerDisposals).toBe(1);
     configurationOverrides.clear();
   }, 10_000);
@@ -891,6 +903,41 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     expect(stopCalls).toHaveLength(0);
     expect(warnings).toHaveLength(1);
     expect(sessionTrackerDisposals).toBe(1);
+    configurationOverrides.clear();
+  }, 10_000);
+
+  it('AUD-001 超时返回后 start 永不落定:迟到自家会话立即停,卸载兜底释放订阅', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    configurationOverrides.set('kbengine', { 'debug.attachTimeoutMs': 5 });
+    pickQueue.push({ label: 'baseapp', description: '123' });
+    hung = true;
+    const manager = makeManager([{ pid: 123, name: 'baseapp' }]);
+    await flushAsync();
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+    // 超时返回零停止,订阅因 start 未落定而存活
+    expect(stopCalls).toHaveLength(0);
+    expect(sessionTrackerDisposals).toBe(0);
+
+    // 迟到序:无关会话在场,自家会话此刻才启动——start 永不落定,只能靠
+    // abandoned 标记立即停,不能等 onStartSettled
+    fireSessionStarted('无关的独立会话');
+    fireSessionStarted('KBEngine: Python attach to baseapp');
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // 自家会话被停恰一次,无关会话不动
+    expect(stopCalls).toHaveLength(1);
+    const stopped = (stopCalls[0] as Array<{ name?: string }>)[0];
+    expect(stopped?.name).toBe('KBEngine: Python attach to baseapp');
+    expect(stopCalls.some(call => (call[0] as { name?: string } | undefined)?.name === '无关的独立会话'))
+      .toBe(false);
+
+    // 卸载兜底释放遗留订阅;已释放的订阅不再收事件,二次触发零新增停止
+    manager.dispose();
+    expect(sessionTrackerDisposals).toBe(1);
+    fireSessionStarted('KBEngine: Python attach to baseapp');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(stopCalls).toHaveLength(1);
     configurationOverrides.clear();
   }, 10_000);
 });
