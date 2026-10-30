@@ -1,4 +1,5 @@
 import { mkdtempSync, mkdirSync, rmSync } from 'fs';
+import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -687,6 +688,55 @@ describe('QuickActionManager.run backends', () => {
     expect(ok).toBe(false);
     expect(messages.error[0]).toBe('执行快速动作失败: hotfix (HTTP 500)');
 
+  });
+
+  it('debug http 请求解析变量并经 runHttpEntry 派发,headers 透传', async () => {
+    // execute 闭包是真实 terminalHttp(真发请求):用本地回环服务器让 200 确定性返回
+    let receivedBody = '';
+    const server = http.createServer((req, res) => {
+      req.on('data', (chunk: Buffer) => { receivedBody += chunk.toString(); });
+      req.on('end', () => {
+        res.statusCode = 200;
+        res.end('ok');
+      });
+    });
+    const port = await new Promise<number>(resolve => {
+      server.listen(0, '127.0.0.1', () => {
+        resolve((server.address() as { port: number }).port);
+      });
+    });
+    try {
+      setConfig({
+        httpRequests: [{
+          name: 'reload', method: 'POST',
+          url: 'http://127.0.0.1:' + String(port) + '${workspaceFolder}',
+          body: 'ok', headers: { 'X-K': 'v' }
+        }]
+      });
+      let entrySeen: { url: string; headers: Record<string, string> } | undefined;
+      const manager = new QuickActionManager(makeContext(), {
+        ...makeDeps(),
+        runHttpEntry: async (entry, execute) => {
+          entrySeen = entry as typeof entrySeen;
+          // 执行 execute 闭包(terminalHttp 真发到回环服务器)→ 覆盖 execute 面
+          if (execute) {
+            await execute();
+          }
+          return true;
+        }
+      });
+
+      const ok = await manager.runHttpRequestFrom('debug', 0);
+      expect(ok).toBe(true);
+      expect(entrySeen).toBeDefined();
+      // ${workspaceFolder} 已解析为工作区根;headers 透传到入口
+      expect(entrySeen!.url).toBe(`http://127.0.0.1:${port}/ws`);
+      expect(entrySeen!.headers).toEqual({ 'X-K': 'v' });
+      // execute 闭包确实执行过(回环服务器收到请求体)
+      expect(receivedBody).toBe('ok');
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 
   it('reports an http runner exception such as a timeout', async () => {

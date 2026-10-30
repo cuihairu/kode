@@ -88,6 +88,24 @@ describe('indexScheduler 任务生命周期与状态查询', () => {
     scheduler.dispose();
   });
 
+  it('isKeyedComplete 反映 keyed 任务终态:无条目 false,完成 true', async () => {
+    const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
+    // 无 keyed 条目:便捷查询不抛,按未完成处理
+    expect(scheduler.isKeyedComplete('first-scan')).toBe(false);
+
+    await scheduler.ensureTask('first-scan', () => ({
+      kind: 'dependency-update',
+      priority: IndexTaskPriority.CurrentFileLight,
+      run: async () => undefined
+    }));
+    await flush();
+
+    // 状态查询便捷面与 getStatus().keyedTasks 同源:'completed' 即真
+    expect(scheduler.isKeyedComplete('first-scan')).toBe(true);
+    expect(scheduler.getStatus().keyedTasks['first-scan']).toBe('completed');
+    scheduler.dispose();
+  });
+
   it('delete-cleanup 任务带 targetPath 全生命周期可查', async () => {
     const scheduler = new IndexScheduler({ interactiveCooldownMs: 1 });
     const handle = scheduler.enqueue({

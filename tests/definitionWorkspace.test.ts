@@ -17,7 +17,8 @@ import {
   getDefinitionWorkspaceLayout,
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
-  getRegisteredEntities
+  getRegisteredEntities,
+  resolveEntityFixedDictMember
 } from '../src/definitionWorkspace';
 
 // definitionWorkspace 的纯路径/解析逻辑:临时 workspace 真实文件树,
@@ -488,5 +489,12 @@ describe('getDefinitionEntries', () => {
     } finally {
       fs.rmSync(bareRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('resolveEntityFixedDictMember(workspaceRoot 守卫)', () => {
+  it('空工作区根:固定字典成员解析不猜,直接返回 null', () => {
+    expect(resolveEntityFixedDictMember('', 'Avatar', 'name', false)).toBeNull();
+    expect(resolveEntityFixedDictMember('', 'Avatar', 'name', true)).toBeNull();
   });
 });

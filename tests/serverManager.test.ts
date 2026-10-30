@@ -10,7 +10,9 @@ import {
   SERVER_COMPONENTS,
   ServerStatus
 } from '../src/serverManager';
+import { LogHub } from '../src/logHub';
 import {
+  channels,
   configurationOverrides,
   messages,
   workspace as stubWorkspace
@@ -340,5 +342,30 @@ describe('detectBinPath kbe 源码根锚点兜底(批125 自动发现)', () => {
       }
       configurationOverrides.delete('kbengine');
     }
+  });
+});
+
+describe('showComponentLogs(已保留日志回放输出通道)', () => {
+  it('回放对应组件日志到其通道;未知组件不建通道返回 false', () => {
+    const logHub = new LogHub({ flushIntervalMs: 25, maxListeners: 256 });
+    logHub.ingest({ text: 'server ready', component: 'machine', source: 'machine' });
+    logHub.ingest({ text: 'db alive', component: 'dbmgr', source: 'dbmgr' });
+    const manager = new KBEngineServerManager(
+      {} as unknown as vscode.ExtensionContext,
+      undefined,
+      logHub
+    );
+
+    expect(manager.showComponentLogs('machine')).toBe(true);
+    expect(manager.showComponentLogs('dbmgr')).toBe(true);
+    expect(manager.showComponentLogs('nope')).toBe(false);
+
+    // channels 是共享入账表(跨用例累积):取本次用例新建的通道(尾部匹配)
+    const machineChannel = channels.filter(c => /machine/i.test(c.name)).at(-1);
+    expect(machineChannel).toBeDefined();
+    expect(machineChannel!.lines.join('')).toContain('server ready');
+    const dbmgrChannel = channels.filter(c => /dbmgr/i.test(c.name)).at(-1);
+    expect(dbmgrChannel).toBeDefined();
+    expect(dbmgrChannel!.lines.join('')).toContain('db alive');
   });
 });

@@ -170,6 +170,37 @@ describe('buildReceiverNoneWrapEdit(2026-10-30 包裹式守卫纯函数)', () =>
       ].join('\n')
     });
   });
+
+  it('续行内空行/注释不断开(括号未闭合),且照原样保留不重缩进', () => {
+    // 空行与注释在 balance>0(括号未闭合)窗口内:语句组继续,body 里该两行
+    // 原样返回(不加一级缩进),其余续行仍整体 +1 级。
+    const text = [
+      'class Avatar:',
+      '    def onTimer(self):',
+      '        self.client.send(',
+      '            "hello",',
+      '            # mid comment',
+      '',
+      '            1,',
+      '        )',
+      '        self.base.notify()',
+      ''
+    ].join('\n');
+    const edit = buildReceiverNoneWrapEdit(text, 2, 'client');
+    expect(edit).toEqual({
+      startLine: 2,
+      endLine: 8,
+      text: [
+        '        if self.client:',
+        '            self.client.send(',
+        '                "hello",',
+        '            # mid comment',
+        '',
+        '                1,',
+        '            )'
+      ].join('\n')
+    });
+  });
 });
 
 describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {

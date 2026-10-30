@@ -153,6 +153,21 @@ describe('parseQuickActionConfigs', () => {
     expect(actions.map(action => action.background)).toEqual([true, false]);
     expect(warnings).toEqual([]);
   });
+
+  it('background 不可 JSON 序列化(如 BigInt):预览回退 String,告警仍出', () => {
+    // previewConfigValue 对 JSON.stringify 抛错(循环引用/BigInt)的兜底
+    // 分支:String(value)。BigInt 是最小可达输入——配置面接收 unknown,经
+    // 手写配置传入即触发,不必依赖真实 JSON5 也能产生该值。
+    const { actions, invalidCount, warnings } = parseQuickActionConfigs([
+      { name: 'bignum', type: 'script', script: 'run.bat', background: 10n }
+    ]);
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ name: 'bignum', background: false });
+    expect(invalidCount).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('10');
+  });
 });
 
 describe('parseHttpRequestConfigs', () => {
