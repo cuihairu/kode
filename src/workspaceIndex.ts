@@ -140,6 +140,27 @@ export class WorkspaceIndex implements EventCallIndex {
     this.revisions.clear();
   }
 
+  /**
+   * IDE-AUD-036(R2-F11):统一根移除通知覆盖共享事件索引——摘除该根全部缓存
+   * 条目并让该根在途任务按版本作废(读盘落定后 revision 不匹配即弃,不回写
+   * 已删缓存),其他根条目原样保留。移除 B 不清 A,旧 B 回包不再注册。
+   */
+  removeRoot(rootPath: string): void {
+    if (this.disposed || !rootPath) { return; }
+    // 前缀判定带分隔符:/ws 不误伤 /wsX;两种分隔符都认(键可能是任意拼写)
+    const underRoot = (filePath: string): boolean =>
+      filePath === rootPath ||
+      filePath.startsWith(rootPath + '/') ||
+      filePath.startsWith(rootPath + '\\');
+    const affected = new Set<string>();
+    for (const key of this.cache.keys()) { if (underRoot(key)) { affected.add(key); } }
+    for (const key of this.building.keys()) { if (underRoot(key)) { affected.add(key); } }
+    for (const key of affected) {
+      this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1);
+      this.cache.delete(key);
+    }
+  }
+
   /** 单文件建/重建索引；并发去重（同一文件不重复读）。 */
   private indexFile(uri: vscode.Uri): Promise<IndexedFile | null> {
     if (this.disposed) return Promise.resolve(null);

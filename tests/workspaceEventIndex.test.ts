@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -354,4 +354,54 @@ it('共享同一索引的多个 provider 只扫一次仓(统一索引复用)', a
     vscode.workspace.findFiles = originalFind;
     vscode.workspace.fs.readFile = originalRead;
   }
+});
+
+describe('IDE-AUD-036 统一根移除通知覆盖共享事件索引(R2-F11)', () => {
+  it('removeRoot 清除该根缓存条目,其他根保留', async () => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    const aUri = vscode.Uri.file('/ws/a/events.py');
+    const bUri = vscode.Uri.file('/ws/b/events.py');
+    vscode.workspace.findFiles = async () => [aUri, bUri];
+    vscode.workspace.fs.readFile = async (uri) =>
+      Buffer.from(uri.fsPath.startsWith('/ws/a/')
+        ? 'self.addEvent(A_EV, self.on_ev)\n'
+        : 'self.addEvent(B_EV, self.on_ev)\n');
+    const index = new WorkspaceIndex();
+    try {
+      const before = await index.allEventCalls();
+      expect(before.map(c => c.call.event).sort()).toEqual(['A_EV', 'B_EV']);
+      index.removeRoot('/ws/b');
+      const after = await index.allEventCalls();
+      expect(after.map(c => c.call.event)).toEqual(['A_EV']);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  });
+
+  it('removeRoot 期间在途 B 回包不再注册', async () => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    const bUri = vscode.Uri.file('/ws/b/events.py');
+    let release!: (bytes: Uint8Array) => void;
+    let start!: () => void;
+    const started = new Promise<void>(resolve => { start = resolve; });
+    const reading = new Promise<Uint8Array>(resolve => { release = resolve; });
+    vscode.workspace.findFiles = async () => [bUri];
+    vscode.workspace.fs.readFile = () => { start(); return reading; };
+    const index = new WorkspaceIndex();
+    try {
+      const pending = index.allEventCalls();
+      await started;
+      index.removeRoot('/ws/b');
+      release(Buffer.from('self.addEvent(B_EV, self.on_ev)\n'));
+      expect(await pending).toEqual([]);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  });
 });

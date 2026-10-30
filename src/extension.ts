@@ -990,6 +990,11 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(eventCodeLensProvider, eventCodeLensProviderImpl);
   context.subscriptions.push(sharedWorkspaceIndex);
+  // IDE-AUD-036:共享事件索引(WorkspaceIndex)也收统一根移除通知——该根缓存
+  // 条目定向摘除,在途 B 回包按版本作废,其他根原样保留(R2-F11 覆盖共享事件索引)。
+  context.subscriptions.push(
+    { dispose: rootRemovals.subscribe(event => { sharedWorkspaceIndex.removeRoot(event.rootPath); }) }
+  );
   // EVT-012 冷路径(2026-10-28 审核整改;同日现场联合重验修订):共享索引
   // 首扫提前到启动期后台队列(KBEngine 特征门控与首扫口径一致),首次交互
   // CodeLens 不再是全仓扫描的触发点。激活瞬间入队会让该任务与 python 首扫
