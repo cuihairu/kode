@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  getRegisteredAliasTypes,
   resolveEntityAnnotationType
 } from '../src/definitionWorkspace';
 import { getSemanticIndex } from '../src/semanticIndex';
@@ -156,6 +157,15 @@ describe('resolveEntityAnnotationType(统一解析链,单表收口)', () => {
   it('空工作区语境只剩内建直查', () => {
     expect(resolveEntityAnnotationType('', 'UINT8')).toBe('int');
     expect(resolveEntityAnnotationType('', 'FOO')).toBe('Any');
+  });
+
+  it('getRegisteredAliasTypes:开关关闭整体让位(空表)', () => {
+    configurationOverrides.set('kbengine', { 'types.aliasDiscovery': false });
+    try {
+      expect(getRegisteredAliasTypes('').size).toBe(0);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
   });
 });
 
