@@ -678,6 +678,71 @@ describe('IDE-AUD-042 返回类型推导尊重最后一次变量写入(R2-F16)',
   });
 });
 
+describe('IDE-AUD-043 显式本地无注解声明阻止跨文档借名(R2-F16 后半)', () => {
+  it('同文件 original 无注解 → 不借其他打开文件同名注解', () => {
+    const { root } = setupWorkspace();
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py',
+      version: 1,
+      source: () => 'def original():\n    pass\n\nx = original()\n'
+    });
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///other.py',
+      version: 1,
+      source: () => 'def original() -> OTHER_FILE:\n    pass\n'
+    });
+    const result = resolveLocalVariableReturnTypeFromSnapshot(
+      ['def original():', '    pass', '', 'x = original()'],
+      3,
+      'x',
+      root,
+      { fileKey: 'file:///main.py', version: 1, source: () => '' }
+    );
+    expect(result).toBeNull();
+  });
+
+  it('本地明确注解优先于其他打开文件', () => {
+    const { root } = setupWorkspace();
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py',
+      version: 1,
+      source: () => 'def original() -> LOCAL:\n    pass\n\nx = original()\n'
+    });
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///other.py',
+      version: 1,
+      source: () => 'def original() -> OTHER_FILE:\n    pass\n'
+    });
+    const result = resolveLocalVariableReturnTypeFromSnapshot(
+      ['def original() -> LOCAL:', '    pass', '', 'x = original()'],
+      3,
+      'x',
+      root,
+      { fileKey: 'file:///main.py', version: 1, source: () => '' }
+    );
+    expect(result).toMatchObject({ target: 'x', annotation: 'LOCAL', methodName: 'original' });
+  });
+
+  it('同文件无注解也挡磁盘同名注解(不留旧值)', () => {
+    const { root, put } = setupWorkspace();
+    put('orig.py', 'def original() -> DISK_ANN:\n    pass\n');
+    updateDocumentReturnAnnotations(root, {
+      fileKey: 'file:///main.py',
+      version: 1,
+      source: () => 'def original():\n    pass\n\nx = original()\n'
+    });
+    // 磁盘索引建成后,本地无注解定义挡住磁盘同名注解(与 shadowed 口径一致)
+    const result = resolveLocalVariableReturnTypeFromSnapshot(
+      ['def original():', '    pass', '', 'x = original()'],
+      3,
+      'x',
+      root,
+      { fileKey: 'file:///main.py', version: 1, source: () => '' }
+    );
+    expect(result).toBeNull();
+  });
+});
+
 describe('IDE-HOV-017 按显式 import 限定返回注解候选', () => {
   it('from 导入绑定只解析到对应模块,不借项目无关同名方法', async () => {
     const { root, put } = setupWorkspace();

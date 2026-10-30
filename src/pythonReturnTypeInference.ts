@@ -929,6 +929,9 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
   const cascadeAnnotation = (methodName: string): { annotation: string; source: string } | null => {
     const fromHovered = hoveredBucket?.annotations.get(methodName);
     if (fromHovered && fromHovered !== 'Any') { return { annotation: fromHovered, source: 'hovered-document' }; }
+    // IDE-AUD-043:当前文件显式无注解声明(在 unannotatedNames,不在 annotations)
+    // 是权威本地定义——不得再借其他打开文档的同名注解(旧码在 shadowed 检查前先借 fromOthers)。
+    if (hoveredBucket?.unannotatedNames.has(methodName)) { return null; }
     const fromOthers = otherAnnotations.get(methodName);
     if (fromOthers && fromOthers !== 'Any') { return { annotation: fromOthers, source: 'other-document' }; }
     if (shadowedNames.has(methodName)) { return null; }
