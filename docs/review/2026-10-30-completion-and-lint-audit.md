@@ -45,7 +45,7 @@
 | F15 / P2 | **证据不足**：REV034 正式阶段仅约 16 秒，worker 积压由测试直接调用分流器制造，并非编辑器事件自然形成；可验证短序列排干，不能据此保证长会话稳定 | IDE-REV-034 / IDE-ACC-009 | 将短压力验收与实际长会话分开；追加自然编辑事件、持续观察与缓存稳定性报告 |
 | F16 / P1 | **确认缺口**：结构影响预览只比较 entity 根表，ARRAY/组件子表未进入命令的对照，不能覆盖“单实体所有结构影响” | IDE-REV-019 | 枚举同实体快照全部表，对每张表报告新增/移除/字段变化 |
 | F17 / P1 | **确认验收缺陷**：finalMarks 算出的 hoverPass/definitionPass 只写日志，最后只断言命中次数；取三轮最优 P95 也不能代表总体 P95。同时 pendingWork 新增嵌套对象，而套件仍对所有 value 判 `===0`，当前形态不可能通过排干断言 | IDE-ACC-010 | 对齐量规类型，显式断言两个延迟门槛；预设采样与争用口径，不事后择优宣布达标 |
-| F18 / P1 | **真机确认缺陷**：自动 JSONC 关联向 WorkspaceFolder scope 写 files.associations，VS Code 拒绝且激活期异步调用未处理拒绝；默认开关下多根工作区可触发 | 历史勾选“debug.json 标 jsonc” | 使用该设置支持的 scope，保留用户关联与托管记账，激活期错误收口 |
+| F18 / P1 | **真机确认缺陷**：自动 JSONC 关联向 WorkspaceFolder scope 写 files.associations，VS Code 拒绝且激活期异步调用未处理拒绝；默认开关下多根工作区可触发 | 历史勾选“debug.json 标 jsonc” | 使用该设置支持的 scope，保留用户关联与托管记账，激活期错误收口。**已修 3237581**：scope 改 Workspace(单根写 settings.json/多根写 .code-workspace settings 段一次写共享)，拒绝/只读记录 OUTPUT 通道无未处理 Promise；18 例全绿 |
 
 ## 关键源码依据与反例
 
