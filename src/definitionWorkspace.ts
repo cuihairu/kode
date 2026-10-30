@@ -19,7 +19,7 @@ import {
 } from './defParser';
 // 统一注解解析底座(纯逻辑半边)在 pythonTypeStubs;此处只传注册表,调用
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
-import { resolveAnnotationTypeWithRegistry } from './pythonTypeStubs';
+import { resolveAnnotationTypeWithRegistry, resolveFixedDictMember } from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { getSemanticIndex } from './semanticIndex';
@@ -393,6 +393,46 @@ export function resolveEntityAnnotationType(workspaceRoot: string, raw: string):
     metrics.end('error');
     throw error;
   }
+}
+
+/**
+ * FIXED_DICT 子成员解析入口(2026-10-30 用户令):self.<FIXED_DICT 属性>.<字段
+ * 或字典方法> 钻入 types.xml 类型结构。根类型名是 FIXED_DICT 且成员命中字段
+ * (values 等)或字典方法(items/keys/values/get)时返回 Python 注解,否则
+ * null(不接管,调用方落回根注解)。快照口径与 resolveEntityAnnotationType
+ * 同源(语义索引缓存,open-document 前进时精确作废),但此处无打分子阶段
+ * (打分面仍归 type-registry-query 单口径)。
+ */
+export function resolveEntityFixedDictMember(
+  workspaceRoot: string,
+  rootTypeName: string,
+  member: string,
+  isCall: boolean
+): string | null {
+  if (!workspaceRoot) {
+    return null;
+  }
+  const aliasDiscoveryEnabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('types.aliasDiscovery', ALIAS_DISCOVERY_ENABLED_DEFAULT);
+  let snapshot = getSemanticIndex()
+    .getTypeRegistrySnapshot<CustomTypeInfo>(workspaceRoot, aliasDiscoveryEnabled);
+  const dependencies = getTypeRegistryDependencyPaths(workspaceRoot);
+  const openVersions = collectOpenDocumentVersions(dependencies);
+  if (snapshot && registrySnapshotStale(snapshot, openVersions)) {
+    snapshot = undefined;
+  }
+  if (!snapshot) {
+    snapshot = getSemanticIndex().storeTypeRegistrySnapshot(
+      workspaceRoot,
+      aliasDiscoveryEnabled,
+      getCustomTypeInfos(workspaceRoot),
+      dependencies,
+      openVersions
+    );
+  }
+  const hit = resolveFixedDictMember(rootTypeName, member, isCall, snapshot.entries);
+  return hit ? hit.annotation : null;
 }
 
 /** 快照依赖文件(types.xml + alias.xml 实际路径;失效通知按此精确裁断) */

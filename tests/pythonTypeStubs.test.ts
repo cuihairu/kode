@@ -7,6 +7,8 @@ import {
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
   kbeTypeStubFilePath,
+  resolveCustomTypePropertyAnnotation,
+  resolveFixedDictMember,
   setupTypeStubRegeneration,
   typeStubMirrorRelativeDir
 } from '../src/pythonTypeStubs';
@@ -536,6 +538,53 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(buildPythonTypeStubPlan([SAMPLE_TYPES()[2]]).content).not.toBeNull();
   });
 
+  it('FD 属性内联 ARRAY 元素引用成环别名:解析抛错有损落 List[Any],不外抛(覆盖率 360)', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({ name: 'LOOP', aliasType: 'LOOP', rawValue: 'LOOP' }),
+      makeType({
+        name: 'ARRAY_OF_LOOP',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [{
+          name: 'items',
+          typeName: 'ARRAY',
+          typeStructure: {
+            name: 'LOOP',
+            rawValue: 'LOOP',
+            children: [] as Array<{ tag: string; value: { name: string; children: never[] } }>
+          }
+        }]
+      })
+    ]);
+
+    const entry = plan.entries.find(candidate => candidate.name === 'ARRAY_OF_LOOP');
+    expect(entry?.kind).toBe('class');
+    if (!entry || entry.kind !== 'class') {
+      return;
+    }
+    // 成环元素解析抛错被属性层接住:数组形状保留,元素型 Any,不炸整份发射
+    expect(entry.properties[0].annotation).toBe('List[Any]');
+  });
+
+  it('FD 属性类型引用成环别名:有损落 Any,不外抛(覆盖率 368)', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({ name: 'LOOP', aliasType: 'LOOP', rawValue: 'LOOP' }),
+      makeType({
+        name: 'USES_LOOP',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [{ name: 'field', typeName: 'LOOP' }]
+      })
+    ]);
+
+    const entry = plan.entries.find(candidate => candidate.name === 'USES_LOOP');
+    expect(entry?.kind).toBe('class');
+    if (!entry || entry.kind !== 'class') {
+      return;
+    }
+    expect(entry.properties[0].annotation).toBe('Any');
+  });
+
   it('内容确定:同一输入两次构建逐字节一致(零写语义的前提)', () => {
     const first = buildPythonTypeStubPlan(SAMPLE_TYPES()).content;
     const second = buildPythonTypeStubPlan(SAMPLE_TYPES()).content;
@@ -603,6 +652,33 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
   it('头部 typing 导入中的 Union 也保留着落', () => {
     const content = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
     expect(content).toContain('from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union');
+  });
+
+  it('多外部模块引用按模块名排序逐组发 import(覆盖率 545 比较器)', () => {
+    const content = buildPythonTypeStubContent(
+      [{
+        kind: 'class',
+        name: 'MIXED',
+        properties: [
+          { name: 'left', annotation: 'A' },
+          { name: 'right', annotation: 'B' }
+        ],
+        propertySourceLines: { left: null, right: null },
+        sourceFile: 'types.xml',
+        sourceLine: 1
+      }],
+      new Map([
+        ['A', 'scripts.aaa.kbe_types'],
+        ['B', 'scripts.zzz.kbe_types']
+      ])
+    ) ?? '';
+    expect(content).toContain('from scripts.aaa.kbe_types import A');
+    expect(content).toContain('from scripts.zzz.kbe_types import B');
+    // 多模块:按模块路径排序列出,先 aaa 后 zzz
+    const aaa = content.indexOf('scripts.aaa.kbe_types');
+    const zzz = content.indexOf('scripts.zzz.kbe_types');
+    expect(aaa).toBeGreaterThanOrEqual(0);
+    expect(zzz).toBeGreaterThan(aaa);
   });
 });
 
@@ -936,6 +1012,25 @@ describe('exportPythonTypeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
   });
 
+  it('某分件模块全被跳过(成环)时 content=null 不落文件,其余模块照常(覆盖率 659)', async () => {
+    stubWorkspace.workspaceFolders = [folder('/ws')];
+    const { deps, writes } = makeDeps();
+    // cellapp 模块是成环对(整链跳过 → content null),entity_defs 模块正常发射
+    const cyclic = [
+      makeType({ name: 'LOOP_A', aliasType: 'LOOP_B', rawValue: 'LOOP_B', filePath: '/ws/scripts/cellapp/entity_defs/types.xml' }),
+      makeType({ name: 'LOOP_B', aliasType: 'LOOP_A', rawValue: 'LOOP_A', filePath: '/ws/scripts/cellapp/entity_defs/types.xml' })
+    ];
+
+    const written = await exportPythonTypeStubs(deps, { listCustomTypes: () => [...SAMPLE_TYPES(), ...cyclic] });
+
+    expect(written).toEqual(['ws']);
+    // 只落正常模块的分件,成环模块整份跳过不写文件
+    expect(writes).toHaveLength(1);
+    expect(writes[0].path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
+    expect(writes[0].content).toContain('class AVATAR_INFO(TypedDict):');
+    stubWorkspace.workspaceFolders = [];
+  });
+
   it('缺省 listCustomTypes 走真 getCustomTypeInfos(无 types.xml 即跳过)', async () => {
     stubWorkspace.workspaceFolders = [folder('/ws-empty')];
     const { deps, writes } = makeDeps();
@@ -1039,5 +1134,93 @@ describe('setupTypeStubRegeneration(types.xml watcher 自动重生成,def-pyi-st
 
     expect(context.subscriptions).toContain(watcher);
     stubWorkspace.workspaceFolders = [];
+  });
+});
+
+// 2026-10-30 用户令:FIXED_DICT(→TypedDict,运行时 dict 子类)属性的
+// 子成员推断——字段读(types.xml 字段名)与字典方法(items/keys/values/get)
+// 都应解析出 Python 注解;字段名优先于同名 dict 方法(values 即字段读)。
+describe('resolveFixedDictMember(FIXED_DICT 子成员推断)', () => {
+  it('字段读:直接命 types.xml 字段注解', () => {
+    const hit = resolveFixedDictMember('AVATAR_INFO', 'level', false, SAMPLE_TYPES());
+    expect(hit).toEqual({ annotation: 'int', kind: 'field' });
+  });
+
+  it('字典方法:items() 出 ItemsView[str, 值并]', () => {
+    const hit = resolveFixedDictMember('AVATAR_INFO', 'items', true, SAMPLE_TYPES());
+    expect(hit).toEqual({ annotation: 'ItemsView[str, str | int]', kind: 'method' });
+  });
+
+  it('字典方法:keys() 出 KeysView[str]', () => {
+    const hit = resolveFixedDictMember('AVATAR_INFO', 'keys', true, SAMPLE_TYPES());
+    expect(hit).toEqual({ annotation: 'KeysView[str]', kind: 'method' });
+  });
+
+  it('字典方法:values() 出 ValuesView[值并]', () => {
+    const hit = resolveFixedDictMember('AVATAR_INFO', 'values', true, SAMPLE_TYPES());
+    expect(hit).toEqual({ annotation: 'ValuesView[str | int]', kind: 'method' });
+  });
+
+  it('字典方法:get() 出 值并|None', () => {
+    const hit = resolveFixedDictMember('AVATAR_INFO', 'get', true, SAMPLE_TYPES());
+    expect(hit).toEqual({ annotation: 'str | int | None', kind: 'method' });
+  });
+
+  it('字段名优先于同名 dict 方法:REWARD_DICT.values 字段读', () => {
+    const rewardDict = makeType({
+      name: 'REWARD_DICT',
+      aliasType: 'FIXED_DICT',
+      rawValue: 'FIXED_DICT',
+      properties: [{ name: 'values', typeName: 'UINT32' }]
+    });
+    // 字段读(非调用)与同名方法调用都归字段:字段优先
+    expect(resolveFixedDictMember('REWARD_DICT', 'values', false, [rewardDict])).toEqual({
+      annotation: 'int',
+      kind: 'field'
+    });
+    expect(resolveFixedDictMember('REWARD_DICT', 'values', true, [rewardDict])).toEqual({
+      annotation: 'int',
+      kind: 'field'
+    });
+  });
+
+  it('字段是 ARRAY:按 typeStructure 解析元素型', () => {
+    const skillSlot = makeType({
+      name: 'SKILL_SLOT',
+      aliasType: 'FIXED_DICT',
+      rawValue: 'FIXED_DICT',
+      properties: [{ name: 'slot_list', typeName: 'ARRAY', typeStructure: { name: 'ARRAY', rawValue: 'ARRAY', children: [{ tag: 'of', value: { name: 'UINT32', rawValue: 'UINT32', children: [] } }] } }]
+    });
+    expect(resolveFixedDictMember('SKILL_SLOT', 'slot_list', false, [skillSlot])).toEqual({
+      annotation: 'List[int]',
+      kind: 'field'
+    });
+  });
+
+  it('非 FIXED_DICT 根 → null(不接管)', () => {
+    expect(resolveFixedDictMember('AVATAR_NAME', 'items', true, SAMPLE_TYPES())).toBeNull();
+    expect(resolveFixedDictMember('AVATAR_INFO_LIST', 'items', true, SAMPLE_TYPES())).toBeNull();
+  });
+
+  it('未知成员 → null(落回根注解)', () => {
+    expect(resolveFixedDictMember('AVATAR_INFO', 'unknown', false, SAMPLE_TYPES())).toBeNull();
+    // 非调用也不是字段 → 非方法调用不接管
+    expect(resolveFixedDictMember('AVATAR_INFO', 'items', false, SAMPLE_TYPES())).toBeNull();
+  });
+
+  it('空字段 FIXED_DICT:值并为 Any', () => {
+    const empty = makeType({ name: 'EMPTY', aliasType: 'FIXED_DICT', rawValue: 'FIXED_DICT', properties: [] });
+    expect(resolveFixedDictMember('EMPTY', 'items', true, [empty])).toEqual({
+      annotation: 'ItemsView[str, Any]',
+      kind: 'method'
+    });
+  });
+
+  it('属性字段面向解析链(ARRAY 别名/内建/未知)同口径', () => {
+    const types = SAMPLE_TYPES();
+    const prop = { name: 'level', typeName: 'UINT32', line: 1 };
+    expect(resolveCustomTypePropertyAnnotation(prop, types)).toBe('int');
+    const arrayProp = { name: 'slots', typeName: 'ARRAY', line: 1 };
+    expect(resolveCustomTypePropertyAnnotation(arrayProp, types)).toBe('List[Any]');
   });
 });

@@ -179,6 +179,10 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
       '    <serverID><Type>SERVER_ID</Type></serverID>',
       '    <direction><Type>VECTOR3</Type></direction>',
       '    <payload><Type>PYTHON</Type></payload>',
+      // FIXED_DICT 子成员面(2026-10-30 用户令):.def 只声明属性引用,
+      // 字段在 types.xml 类型条目下;bonus 带 values 字段测「字段名优先」
+      '    <reward><Type>REWARD_DICT</Type></reward>',
+      '    <bonus><Type>BONUS_DICT</Type></bonus>',
       '  </Properties>',
       '  <CellMethods>',
       '    <reborn>',
@@ -199,10 +203,23 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     ].join('\n'));
     const basePy = put('scripts/base/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
     put('scripts/cell/Avatar.py', 'class Avatar(kbe.KBEntity):\n    pass\n');
-    // SERVER_ID:types.xml 别名 → UINT16(2026-10-29 用户口径:属性 inlay 解析到底)
+    // SERVER_ID:types.xml 别名 → UINT16(2026-10-29 用户口径:属性 inlay 解析到底);
+    // REWARD_DICT/BONUS_DICT:FIXED_DICT 结构条目(引擎形态「条目名 FIXED_DICT
+    // + <Properties> 子键」,def-pyi-stubs.md §1.4 同构)
     put('scripts/entity_defs/types.xml', [
       '<root>',
       '  <SERVER_ID> UINT16 </SERVER_ID>',
+      '  <REWARD_DICT> FIXED_DICT',
+      '    <Properties>',
+      '      <gold><Type>UINT32</Type></gold>',
+      '      <name><Type>STRING</Type></name>',
+      '    </Properties>',
+      '  </REWARD_DICT>',
+      '  <BONUS_DICT> FIXED_DICT',
+      '    <Properties>',
+      '      <values><Type>UINT16</Type></values>',
+      '    </Properties>',
+      '  </BONUS_DICT>',
       '</root>'
     ].join('\n'));
     workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'rpc-inlay', index: 0 }];
@@ -332,5 +349,96 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     } finally {
       configurationOverrides.delete('kbengine');
     }
+  });
+
+  // FIXED_DICT 子成员面(2026-10-30 用户令):属性类型是 FIXED_DICT 时,
+  // self.<属性>.<字段> 读字段注解,self.<属性>.items()/keys()/values()/get()
+  // 出字典视图方法注解,位置贴完整路径后;字段名优先于字典方法。
+  it('FIXED_DICT 子成员:字段读 → 字段注解,位置贴完整路径后', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const line = '        self.reward.gold = 1';
+    const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
+    const hints = await rpcHintsOf(provider, text, basePy);
+    expect(hints).toHaveLength(1);
+    // 根段命中标在根段后(旧口径)会错位到 reward 后;子成员必须标 gold 后
+    expect(hints[0].position).toEqual({
+      line: 2,
+      character: line.indexOf('reward') + 'reward.gold'.length
+    });
+    expect(hints[0].label).toBe(': int');
+  });
+
+  it('FIXED_DICT 子成员:items() → ItemsView[str, int | str](值并集)', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const line = '        self.reward.items()';
+    const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
+    const hints = await rpcHintsOf(provider, text, basePy);
+    expect(hints).toHaveLength(1);
+    // 位置贴 items 后(方法名后,不占括号位)
+    expect(hints[0].position).toEqual({
+      line: 2,
+      character: line.indexOf('reward') + 'reward.items'.length
+    });
+    expect(hints[0].label).toBe(': ItemsView[str, int | str]');
+  });
+
+  it('FIXED_DICT 子成员:keys() → KeysView[str],values() → ValuesView[int | str]', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const text = [
+      'class Avatar(kbe.KBEntity):',
+      '    def tick(self):',
+      '        self.reward.keys()',
+      '        self.reward.values()',
+      ''
+    ].join('\n');
+    const hints = await rpcHintsOf(provider, text, basePy);
+    expect(hints.map(hint => hint.label)).toEqual([
+      ': KeysView[str]',
+      ': ValuesView[int | str]'
+    ]);
+    expect(hints.map(hint => hint.position.line)).toEqual([2, 3]);
+  });
+
+  it('FIXED_DICT 子成员:get() → 值并集 | None', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const line = '        self.reward.get(1)';
+    const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
+    const hints = await rpcHintsOf(provider, text, basePy);
+    expect(hints[0].label).toBe(': int | str | None');
+  });
+
+  it('FIXED_DICT 子成员:字段名优先(无括号 values 字段读,不出 ValuesView)', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const line = '        self.bonus.values = 1';
+    const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
+    const hints = await rpcHintsOf(provider, text, basePy);
+    // bonus 是 BONUS_DICT(字段 values:UINT16):values 字段读 → int,不是
+    // 字典方法 ValuesView[..](TypedDict 运行时字段遮蔽 dict 方法同口径)
+    expect(hints).toHaveLength(1);
+    expect(hints[0].position).toEqual({
+      line: 2,
+      character: line.indexOf('bonus') + 'bonus.values'.length
+    });
+    expect(hints[0].label).toBe(': int');
+  });
+
+  it('FIXED_DICT 子成员:未知成员(非字段/非方法)落回根注解', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const line = '        self.reward.unknown = 1';
+    const text = `class Avatar(kbe.KBEntity):\n    def tick(self):\n${line}\n`;
+    const hints = await rpcHintsOf(provider, text, basePy);
+    // 未命中子成员不硬造:落回根段注解(REWARD_DICT → 存根类名),位置回根段后
+    expect(hints).toHaveLength(1);
+    expect(hints[0].label).toBe(': REWARD_DICT');
+    expect(hints[0].position).toEqual({
+      line: 2,
+      character: line.indexOf('reward') + 'reward'.length
+    });
   });
 });

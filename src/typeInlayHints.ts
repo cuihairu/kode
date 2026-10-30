@@ -3,7 +3,8 @@ import type { EntityMappingManager } from './entityMapping';
 import { findPythonSelfPropertyAccesses, propertyAccessKey } from './propertyCodeLens';
 import {
   getWorkspaceRootForDocument,
-  resolveEntityAnnotationType
+  resolveEntityAnnotationType,
+  resolveEntityFixedDictMember
 } from './definitionWorkspace';
 import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
 import {
@@ -42,10 +43,12 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     }
 
     // 同一属性多处访问只解析一次:解析结果按 (根段, 完整路径) 一一对应
-    // (与属性标记 provider 同口径,共用 propertyAccessKey 键)
-    const hits = new Map<string, string | null>();
+    // (与属性标记 provider 同口径,共用 propertyAccessKey 键)。子成员命中
+    // (FIXED_DICT 字段/字典方法)时 member=true,标注位随完整路径。
+    const hits = new Map<string, { annotation: string | null; member: boolean }>();
     const hints: vscode.InlayHint[] = [];
     const propertyWorkspaceRoot = getWorkspaceRootForDocument(document);
+    const documentLines = document.getText().split(/\r?\n/);
     for (const access of findPythonSelfPropertyAccesses(document.getText())) {
       // inlay 按可视区要:视图口外的访问行不出 hint
       if (access.line < range.start.line || access.line > range.end.line) {
@@ -58,24 +61,50 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           access.fullPath,
           access.rootSymbol
         );
-        // 2026-10-29 用户定口径:解析到底(与 RPC 实参 inlay 同链)——
-        // 别名/内建都到最终注解;PYTHON/未知落 Any 不出(能推才显)
+        // FIXED_DICT 子成员面(2026-10-30 用户令):fullPath 有后缀且根类型是
+        // FIXED_DICT 时钻入 types.xml 解析子字段注解(items/keys/values/get 与
+        // 字段读);未命中落回根注解(不硬造)。
+        let memberHit: string | null = null;
+        if (location?.typeName && access.fullPath !== access.rootSymbol) {
+          const suffix = access.fullPath.slice(access.rootSymbol.length + 1);
+          const isCall = isMemberCallAt(
+            documentLines[access.line],
+            access.character + access.fullPath.length
+          );
+          memberHit = resolveEntityFixedDictMember(
+            propertyWorkspaceRoot ?? '',
+            location.typeName,
+            suffix,
+            isCall
+          );
+        }
         hits.set(
           key,
-          location?.typeName
-            ? resolveEntityAnnotationType(propertyWorkspaceRoot ?? '', location.typeName)
-            : null
+          memberHit
+            ? { annotation: memberHit, member: true }
+            : {
+                // 2026-10-29 用户定口径:解析到底(与 RPC 实参 inlay 同链)——
+                // 别名/内建都到最终注解;PYTHON/未知落 Any 不出(能推才显)
+                annotation: location?.typeName
+                  ? resolveEntityAnnotationType(propertyWorkspaceRoot ?? '', location.typeName)
+                  : null,
+                member: false
+              }
         );
       }
-      const annotation = hits.get(key);
-      if (!annotation || annotation === PYTHON_TYPE_STUB_FALLBACK) {
+      const hit = hits.get(key);
+      if (!hit || !hit.annotation || hit.annotation === PYTHON_TYPE_STUB_FALLBACK) {
         // 无 typeName 或解析落 Any(未知)→ 不出提示(能推才显,不显 Any)
         continue;
       }
+      // 子成员命中标在完整路径后(items() 紧贴方法名/字段名);根命中标在根段后
       hints.push(
         new vscode.InlayHint(
-          new vscode.Position(access.line, access.character + access.rootSymbol.length),
-          `: ${annotation}`,
+          new vscode.Position(
+            access.line,
+            access.character + (hit.member ? access.fullPath.length : access.rootSymbol.length)
+          ),
+          `: ${hit.annotation}`,
           vscode.InlayHintKind.Type
         )
       );
@@ -168,4 +197,13 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     }
     return resolved.get(key) ?? null;
   }
+}
+
+/**
+ * 成员名后紧跟 `(`(允许空白)= 方法调用:FIXED_DICT 字典方法面
+ * (items/keys/values/get)据此区分「方法调用」与「字段读」。endColumn 为
+ * 成员名末尾列(fullPath 末列),其后字符是 `(` 即调用。
+ */
+function isMemberCallAt(line: string, endColumn: number): boolean {
+  return /^\s*\(/.test(line.slice(endColumn));
 }

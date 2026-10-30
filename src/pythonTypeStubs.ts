@@ -381,19 +381,102 @@ export function resolveAnnotationTypeWithRegistry(
   raw: string,
   customTypes: readonly CustomTypeInfo[]
 ): string {
-  const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));
-  const context: ResolutionContext = {
-    byName: new Map(sorted.map(info => [info.name, info])),
-    resolving: new Set(),
-    poisoned: new Map(),
-    referencedExternals: new Map()
-  };
+  const context = buildResolutionContext(customTypes);
   try {
     return resolveTypeName(raw.trim(), context);
   } catch {
     // 成环/指引为空已按 B 单口径记 poisoned,这里统一回落 Any
     return PYTHON_TYPE_STUB_FALLBACK;
   }
+}
+
+/** 注册表解析上下文(名字序建表,确定性;poisoned/external 面随次解析独立) */
+function buildResolutionContext(customTypes: readonly CustomTypeInfo[]): ResolutionContext {
+  const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    byName: new Map(sorted.map(info => [info.name, info])),
+    resolving: new Set(),
+    poisoned: new Map(),
+    referencedExternals: new Map()
+  };
+}
+
+/**
+ * 自定义类型属性面的公开解析(与存根发射同链,2026-10-30 用户令 FIXED_DICT
+ * 子成员推断):单个属性字段 → Python 注解。ARRAY 字段按 typeStructure 解析
+ * 元素型;别名/内建走同一注册表;链断/未知落 Any。属性面不裸挂名字。
+ */
+export function resolveCustomTypePropertyAnnotation(
+  property: CustomTypePropertyInfo,
+  customTypes: readonly CustomTypeInfo[]
+): string {
+  const context = buildResolutionContext(customTypes);
+  try {
+    return propertyAnnotation(property, context);
+  } catch {
+    return PYTHON_TYPE_STUB_FALLBACK;
+  }
+}
+
+/**
+ * FIXED_DICT 的字典方法面(用户令 2026-10-30 map 型 items()/keys()):
+ * FIXED_DICT → TypedDict,运行时是 dict 子类,引擎侧属性访问其字典方法
+ * (items/keys/values/get)与字段读取都应可推断。返回类型按 typing 视图面:
+ * items()→ItemsView[str, 值并],keys()→KeysView[str],values()→ValuesView[值并],
+ * get()→值并|None;值并 = 全部字段注解去重并集(空字段 Any)。
+ */
+const FIXED_DICT_DICT_METHODS: Record<string, (union: string) => string> = {
+  items: union => `ItemsView[str, ${union}]`,
+  keys: () => 'KeysView[str]',
+  values: union => `ValuesView[${union}]`,
+  get: union => `${union} | None`
+};
+
+export interface FixedDictMemberHit {
+  /** 成员解析出的 Python 注解 */
+  annotation: string;
+  /** 命中方式:字段读(types.xml 字段)或字典方法(dict 视图) */
+  kind: 'field' | 'method';
+}
+
+/**
+ * FIXED_DICT 子成员解析(2026-10-30 用户令):根类型名是 FIXED_DICT 时,
+ * 成员名可命中 a) types.xml 字段名 → 字段注解;b) 字典方法名(items/keys/
+ * values/get)且 isCall → 视图注解。字段名优先(与 dict 方法同名如 values
+ * 时按字段读);命中返回注解与方式,未命中/根非 FIXED_DICT 返回 null(不
+ * 接管,落回根注解)。纯逻辑:注册表由调用方按工作区供给。
+ */
+export function resolveFixedDictMember(
+  rootTypeName: string,
+  member: string,
+  isCall: boolean,
+  customTypes: readonly CustomTypeInfo[]
+): FixedDictMemberHit | null {
+  const trimmed = rootTypeName.trim();
+  const info = customTypes.find(item => item.name === trimmed);
+  if (!info || info.aliasType !== 'FIXED_DICT') {
+    return null;
+  }
+  const field = info.properties.find(property => property.name === member);
+  if (field) {
+    return {
+      annotation: resolveCustomTypePropertyAnnotation(field, customTypes),
+      kind: 'field'
+    };
+  }
+  if (!isCall) {
+    return null;
+  }
+  const method = FIXED_DICT_DICT_METHODS[member];
+  if (!method) {
+    return null;
+  }
+  const annotations = info.properties.map(property =>
+    resolveCustomTypePropertyAnnotation(property, customTypes)
+  );
+  const unique = [...new Set(annotations)];
+  const union = unique.length === 0 ? 'Any' : unique.length === 1 ? unique[0] : unique.join(' | ');
+  return { annotation: method(union), kind: 'method' };
 }
 
 export interface PythonTypeStubPlanOptions {
