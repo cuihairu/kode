@@ -11,12 +11,13 @@ import {
   KBEngineReferencesProvider,
   KBEngineTypeCodeActionProvider,
   PythonDefinitionProvider,
+  setPythonMroJumpEnabled,
   UNKNOWN_TYPE_DIAGNOSTIC_CODE
 } from '../src/languageProviders';
 import { findKbeDataDictAccesses } from '../src/globalDataIndex';
 import { setJumpLogEnabled } from '../src/navigationLog';
 import type { EntityMappingManager } from '../src/entityMapping';
-import { Diagnostic, Position, Range, makeTextDocument } from './helpers/vscodeStub';
+import { Diagnostic, Position, Range, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // 覆盖率补齐:languageProviders 内建属性补全面(用户令 2026-10-21 内建属性
@@ -586,5 +587,359 @@ describe('类型修正候选空名与类块终止(覆盖率)', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+// 层2 python-mro(4678-4744)的候选/partial/miss/异常四终态,经声明方法路径
+// (declaredMethodName)直达:manager 全 miss 后进入 mro 层,由桩索引返回
+// 可控解析结果。同批覆盖 4461(enclosing 排序)。
+const missManager = (): EntityMappingManager =>
+  ({
+    resolveMethodDefinition: () => Promise.resolve(null),
+    resolveMethodDefinitionForClass: () => Promise.resolve(null),
+    resolvePropertyDefinition: () => Promise.resolve(null),
+    resolvePropertyDefinitionForClass: () => Promise.resolve(null),
+    resolveMemberAccess: () => Promise.resolve(null)
+  } as unknown as EntityMappingManager);
+
+const mroProvider = (resolution: unknown): PythonDefinitionProvider =>
+  new PythonDefinitionProvider(
+    missManager(),
+    { resolveSelfMethodResolution: () => Promise.resolve(resolution) } as never
+  );
+
+const methodDoc = (): MinimalTextDocument =>
+  pyDocument('class Hero:\n    def onTimer(self):\n        return 0\n', 'scripts/Hero.py');
+
+const METHOD_DECL_POS = new Position(1, 10);
+
+describe('PythonDefinitionProvider mro 层终态(覆盖率)', () => {
+  it('单候选:命中返回实现位置,记 python-mro hit', async () => {
+    const traced = await mroProvider({
+      candidates: [{ filePath: '/tmp/ws/scripts/base/Hero.py', line: 3, character: 4 }],
+      partial: false
+    }).provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+    expect(traced.location).not.toBeNull();
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'python-mro', status: 'hit' })
+    );
+  });
+
+  it('多候选:返回全部位置(数组)', async () => {
+    const traced = await mroProvider({
+      candidates: [
+        { filePath: '/a.py', line: 1, character: 0 },
+        { filePath: '/b.py', line: 2, character: 0 }
+      ],
+      partial: false
+    }).provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+    expect(Array.isArray(traced.location)).toBe(true);
+    expect((traced.location as unknown[]).length).toBe(2);
+  });
+
+  it('零候选 + partial:记 partial,继续后续层兜底', async () => {
+    const traced = await mroProvider({
+      candidates: [], partial: true
+    }).provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'python-mro', status: 'partial' })
+    );
+  });
+
+  it('零候选非 partial:记 miss', async () => {
+    const traced = await mroProvider({
+      candidates: [], partial: false
+    }).provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'python-mro', status: 'miss' })
+    );
+  });
+
+  it('解析拒绝:异常降级为落空,不断链', async () => {
+    const provider = new PythonDefinitionProvider(
+      missManager(),
+      { resolveSelfMethodResolution: (): Promise<never> => Promise.reject(new Error('mro boom')) } as never
+    );
+    const traced = await provider.provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'python-mro', status: 'miss', detail: expect.stringContaining('error') })
+    );
+  });
+});
+
+// 层0 接收者段闸(4481-4533):self.cell.onTimer 的命中/异常/落空三态——
+// 命中记 entity-def hit 并返回声明位置;manager 拒绝记 error 降级;全 miss
+// 记 miss。jumpLog 开启覆盖惰性日志闭包。
+const receiverDoc = (): MinimalTextDocument =>
+  pyDocument('class Hero:\n    def f(self):\n        self.cell.onTimer()\n', 'scripts/Hero.py');
+const RECEIVER_POS = new Position(2, 19); // onTimer 名上
+
+describe('PythonDefinitionProvider receiver 段闸(覆盖率)', () => {
+  const receiverManager = (overrides: {
+    classHit?: { defFile: string; line: number } | 'reject';
+    fileHit?: { defFile: string; line: number };
+  }): EntityMappingManager =>
+    ({
+      resolveMethodDefinitionForClass: () =>
+        overrides.classHit === 'reject'
+          ? Promise.reject(new Error('class probe boom'))
+          : Promise.resolve(overrides.classHit ?? null),
+      resolveMethodDefinition: () => Promise.resolve(overrides.fileHit ?? null)
+    } as unknown as EntityMappingManager);
+
+  it('对象级探针命中:返回 def 声明位置,entity-def hit', async () => {
+    const traced = await new PythonDefinitionProvider(receiverManager({
+      classHit: { defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 5 }
+    })).provideDefinitionTraced(receiverDoc(), RECEIVER_POS);
+    expect(traced.location).not.toBeNull();
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'entity-def', status: 'hit' })
+    );
+  });
+
+  it('对象级探针拒绝:降级记 error 后文件级兜底,不炸', async () => {
+    setJumpLogEnabled(true);
+    try {
+      const traced = await new PythonDefinitionProvider(receiverManager({
+        classHit: 'reject'
+      })).provideDefinitionTraced(receiverDoc(), RECEIVER_POS);
+      expect(traced.location).toBeNull();
+      expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'miss' });
+      expect(traced.layers[0].detail).toContain('error');
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('两级探针全 miss:entity-def miss,detail 记两次 miss', async () => {
+    setJumpLogEnabled(true);
+    try {
+      const traced = await new PythonDefinitionProvider(receiverManager({}))
+        .provideDefinitionTraced(receiverDoc(), RECEIVER_POS);
+      expect(traced.location).toBeNull();
+      expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'miss' });
+      expect(traced.layers[0].detail).toContain('miss');
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+});
+
+// 惰性日志闭包(jumpLog 开启才求值):mro 命中/多候选/文件作用域命中
+// 三条 detail 闭包——开启开关走真求值,覆盖 4703/4716/4761。
+describe('PythonDefinitionProvider 跳转日志闭包(覆盖率)', () => {
+  const withLog = async (provider: PythonDefinitionProvider): Promise<unknown> => {
+    setJumpLogEnabled(true);
+    try {
+      return await provider.provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  };
+
+  it('mro 单候选命中:命中 detail 日志求值', async () => {
+    const traced = await withLog(mroProvider({
+      candidates: [{ filePath: '/tmp/ws/scripts/base/Hero.py', line: 3, character: 4 }],
+      partial: false
+    }));
+    expect(traced.layers).toContainEqual(expect.objectContaining({ layer: 'python-mro', status: 'hit' }));
+  });
+
+  it('mro 多候选:候选列表 detail 日志求值', async () => {
+    const traced = await withLog(mroProvider({
+      candidates: [
+        { filePath: '/a.py', line: 1, character: 0 },
+        { filePath: '/b.py', line: 2, character: 0 }
+      ],
+      partial: false
+    }));
+    expect(Array.isArray(traced.location)).toBe(true);
+  });
+
+  it('文件作用域命中:基类方法兜底命中,命中日志求值', async () => {
+    const baseDoc = pyDocument(
+      'class Base:\n    def onTimer(self):\n        return 0\n' +
+      'class Hero(Base):\n    def onTimer(self):\n        return 0\n',
+      'scripts/Hero.py'
+    );
+    setJumpLogEnabled(true);
+    try {
+      const traced = await new PythonDefinitionProvider(
+        missManager(),
+        { resolveSelfMethodResolution: () => Promise.resolve({ candidates: [], partial: false }) } as never
+      ).provideDefinitionTraced(baseDoc, new Position(4, 10));
+      // Hero.onTimer(第4行)与光标同位置被排除,沿链落到 Base.onTimer(第1行)
+      expect(traced.location).not.toBeNull();
+      expect(traced.layers).toContainEqual(
+        expect.objectContaining({ layer: 'file-scope', status: 'hit' })
+      );
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+});
+
+// 嵌套类/嵌套接收者/方法探针命中回退/开关关闸(覆盖率):
+// - 4461/4798:enclosing 与 file-scope 的 sort 比较体只在候选 ≥2 类时执行——
+//   嵌套类(class A 含 class B)产生重叠区间,一行同时命中两类;
+// - 4465:光标不在任何类体内 → enclosingNote 'no enclosing class';
+// - 4615:self.component.hp 多段访问、探针全 miss → 嵌套接收者早退 miss;
+// - 4644-4649+4777-4779:方法探针命中 → 记 deferred skip,后续层全落空后
+//   回退 .def 声明行(Python implementation unavailable);
+// - 4582-4603:属性命中后首扫等待 + 自定义类型声明 → propertyTypeLocation;
+// - 4679-4680:enableMroJump 关闭 → 层2 只记 skip;
+// - 4518:receiver 命中日志闭包在 jumpLog 开启下真求值。
+describe('PythonDefinitionProvider 嵌套类与方法探针回退(覆盖率)', () => {
+  it('嵌套类内的多段访问:enclosing 两类参与排序,探针全 miss 早退 nested receiver', async () => {
+    const nested = pyDocument(
+      'class A:\n    def f(self):\n        return\n    class B:\n        def f(self):\n            self.component.hp = 1\n'
+    );
+    // 行5 = 12 空格 + self.(5) + component.(10),hp 起于列 27
+    const traced = await new PythonDefinitionProvider(missManager())
+      .provideDefinitionTraced(nested, new Position(5, 27));
+    expect(traced.location).toBeNull();
+    expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'miss' });
+    expect(traced.layers[0].detail).toContain('nested receiver type is unknown');
+  });
+
+  it('光标不在任何类体内:enclosing 空,记 no enclosing class(4465)', async () => {
+    const doc = pyDocument('self.hp = 1\nclass Hero:\n    pass\n');
+    const traced = await new PythonDefinitionProvider(missManager())
+      .provideDefinitionTraced(doc, new Position(0, 5));
+    expect(traced.location).toBeNull();
+    // enclosing 空 → file-scope 落空 detail 记 no enclosing class(4465 执行面)
+    expect(traced.layers).toContainEqual(expect.objectContaining({
+      layer: 'file-scope', detail: expect.stringContaining('no enclosing class')
+    }));
+  });
+
+  it('嵌套类方法声明:file-scope 两类排序比较体执行(4798)', async () => {
+    const doc = pyDocument(
+      'class A:\n    def run(self):\n        return\n    class B:\n        def run(self):\n            return\n'
+    );
+    // 行4 = 8 空格 + def(3) + 空格,run 起于列 12;自身声明行被排除 → miss
+    const traced = await new PythonDefinitionProvider(missManager())
+      .provideDefinitionTraced(doc, new Position(4, 12));
+    expect(traced.location).toBeNull();
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'file-scope', status: 'miss' })
+    );
+  });
+
+  it('方法探针命中:deferred skip 后全层落空,回退 .def 声明行(4777)', async () => {
+    const provider = new PythonDefinitionProvider({
+      resolvePropertyDefinition: () => Promise.resolve(null),
+      resolvePropertyDefinitionForClass: () => Promise.resolve(null),
+      resolveMethodDefinition: () => Promise.resolve(null),
+      resolveMethodDefinitionForClass: () =>
+        Promise.resolve({ defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 8 })
+    } as unknown as EntityMappingManager);
+    const traced = await provider.provideDefinitionTraced(selfAccessDoc(), SELF_HP_POS);
+    // 实现优先口径:defLocation 先暂存(entity-def skip),层2/层3 落空后回退声明行
+    expect(traced.location).not.toBeNull();
+    expect((traced.location as { uri: { fsPath: string } }).uri.fsPath).toContain('Hero.def');
+    expect(traced.layers).toContainEqual(expect.objectContaining({
+      layer: 'entity-def', status: 'skip', detail: expect.stringContaining('deferred method declaration')
+    }));
+    expect(traced.layers.at(-1)).toMatchObject({
+      layer: 'entity-def', status: 'hit', detail: expect.stringContaining('Python implementation unavailable')
+    });
+  });
+
+  it('mro 开关关闭:层2 只记 skip 不查索引(4679)', async () => {
+    setPythonMroJumpEnabled(false);
+    try {
+      const traced = await new PythonDefinitionProvider(missManager())
+        .provideDefinitionTraced(methodDoc(), METHOD_DECL_POS);
+      expect(traced.layers).toContainEqual(expect.objectContaining({
+        layer: 'python-mro', status: 'skip', detail: 'disabled by kbengine.python.enableMroJump'
+      }));
+    } finally {
+      setPythonMroJumpEnabled(true);
+    }
+  });
+
+  it('receiver 段闸命中且 jumpLog 开启:命中日志闭包真求值(4518)', async () => {
+    setJumpLogEnabled(true);
+    try {
+      const provider = new PythonDefinitionProvider({
+        resolveMethodDefinitionForClass: () =>
+          Promise.resolve({ defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 5 }),
+        resolveMethodDefinition: () => Promise.resolve(null)
+      } as unknown as EntityMappingManager);
+      const traced = await provider.provideDefinitionTraced(receiverDoc(), RECEIVER_POS);
+      expect(traced.location).not.toBeNull();
+      expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'hit' });
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('属性命中后首扫等待与自定义类型声明:propertyTypeLocation 指向 types.xml(4582-4603)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-typedeff-'));
+    const defsDir = path.join(root, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    fs.writeFileSync(path.join(defsDir, 'types.xml'), '<root>\n  <VEC3>UINT16</VEC3>\n</root>\n', 'utf8');
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: root }, name: 'root', index: 0 } as never];
+    try {
+      const doc = makeTextDocument(
+        'class Hero:\n    def f(self):\n        self.hp = 1\n',
+        { fileName: path.join(root, 'scripts', 'Hero.py'), languageId: 'python' }
+      );
+      const provider = new PythonDefinitionProvider({
+        resolvePropertyDefinitionForClass: () =>
+          Promise.resolve({ defFile: path.join(defsDir, 'Hero.def'), line: 3 }),
+        resolvePropertyDefinition: () => Promise.resolve(null),
+        waitForInitialScan: () => Promise.resolve(),
+        getIndexForPythonFile: () => ({
+          propertyDefinitions: { hp: { identity: { symbolName: 'hp' }, typeName: 'VEC3' } }
+        })
+      } as never);
+      const traced = await provider.provideDefinitionTraced(doc, new Position(2, 13));
+      // propertyTypeLocation 优先于 defLocation:返回 types.xml 的 VEC3 声明行
+      expect(traced.location).not.toBeNull();
+      expect((traced.location as { uri: { fsPath: string } }).uri.fsPath).toContain('types.xml');
+    } finally {
+      stubWorkspace.workspaceFolders = [];
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// access 路径(self.hp 属性)的属性探针链(4546-4665):对象级探针命中 →
+// defLocation 置位后越过嵌套接收者早退,返回 entity-def hit;探针拒绝记
+// error。receiver 命中日志闭包(4518)在 jumpLog 开启下求值。
+const selfAccessDoc = (): MinimalTextDocument =>
+  pyDocument('class Hero:\n    def f(self):\n        self.hp = 1\n', 'scripts/Hero.py');
+const SELF_HP_POS = new Position(2, 13); // hp 名上
+
+describe('PythonDefinitionProvider 属性探针链(覆盖率)', () => {
+  it('对象级属性探针命中:entity-def hit(越过嵌套接收者早退)', async () => {
+    setJumpLogEnabled(true);
+    try {
+      const provider = new PythonDefinitionProvider({
+        resolvePropertyDefinitionForClass: () =>
+          Promise.resolve({ defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 3 }),
+        resolvePropertyDefinition: () => Promise.resolve(null)
+      } as unknown as EntityMappingManager);
+      const traced = await provider.provideDefinitionTraced(selfAccessDoc(), SELF_HP_POS);
+      expect(traced.location).not.toBeNull();
+      expect(traced.layers).toContainEqual(
+        expect.objectContaining({ layer: 'entity-def', status: 'hit' })
+      );
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('对象级属性探针拒绝:记 error 后文件级兜底,落回嵌套接收者 miss', async () => {
+    const provider = new PythonDefinitionProvider({
+      resolvePropertyDefinitionForClass: () => Promise.reject(new Error('prop boom')),
+      resolvePropertyDefinition: () => Promise.resolve(null)
+    } as unknown as EntityMappingManager);
+    const traced = await provider.provideDefinitionTraced(selfAccessDoc(), SELF_HP_POS);
+    expect(traced.location).toBeNull();
+    // 属性探针全 miss + 嵌套接收者 → 4614 早退记 miss
+    expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'miss' });
   });
 });
