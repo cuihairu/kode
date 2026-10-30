@@ -717,7 +717,7 @@
 
 以下新增 33 个原子任务，一次只实现一个行为，验证后单独提交推送。优先 IDE-AUD-022/024 资源阻塞，再处理诊断和 F2 数据正确性。
 
-- [ ] IDE-AUD-022 [P0] 限制解析 worker 的全局派发与在途源码总量；验收：100 个不同文件首次提交不能绕过预算全部 post；worker 挂起时 posted/排队/字节均有硬上限，恢复后最新版本可继续，独占与共享取消边界不混淆；依据：R2-F01。
+- [x] IDE-AUD-022 [P0] 限制解析 worker 的全局派发与在途源码总量；验收：100 个不同文件首次提交不能绕过预算全部 post；worker 挂起时 posted/排队/字节均有硬上限，恢复后最新版本可继续，独占与共享取消边界不混淆；依据：R2-F01。1e36690（pythonParserWorkerHost 在途数量 16/字节 8MiB 双硬上限，首份任务在途满时转待派发排队受 8MiB 字节预算，回包后 drainAllQueues 全局让路面派发最新；量规加 postedBytes/maxPostedJobs/maxPostedBytes；测试:100 文件首份不全部 post、恢复后排队首份结算、在途满时首份排队可被新版本合并；门禁 lint+tsc+test:unit 4946\|7 + xvfb demo 全绿）
 - [ ] IDE-AUD-023 [P1] 让 worker 量规覆盖真正待处理输入；验收：区分 host 等待、已投递/实际处理，计入所有保留输入及对应单位；不能 running=100、queuedBytes=0 就宣称单 worker 无积压，超限拒绝/合并可解释；依据：R2-F01。
 - [x] IDE-AUD-024 [P0] 给日志每轮读取设置总字节与时间片；验收：2MiB/3万行及更大突增按有限总量让出宿主，非仅单块 Buffer 小；心跳与最大连续阻塞有断言，长行跨块与 UTF-8 边界正确；依据：R2-F02。bae99bc（logHub poll 单轮 64KB 字节预算+25ms 时间片，StringDecoder 保 UTF-8 跨块；测试:突增 3 万行心跳可走+轮数≥20+单轮不占排干一半、跨块多字节不损坏、预算 64KB 拆多轮；门禁 lint+tsc+test:unit 4943\|7 + xvfb demo 25 全绿）
 - [ ] IDE-AUD-025 [P1] 限制 LogHub 上游 pending 队列；验收：按事件/字节限额处理快生产慢消费，超限丢弃/合并策略及统计明确；retained=10 时 pending 也不能无限增，取消/释放排空；依据：R2-F02。
