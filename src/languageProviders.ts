@@ -153,6 +153,11 @@ import {
   getPythonClassBaseAtPosition,
   resolveKbeAccessAtPosition
 } from './kbeModuleIndex';
+import {
+  GlobalDataDictIndex,
+  getKbeDataDictAccessAtPosition,
+  type KbeDataDictSite
+} from './globalDataIndex';
 import type { EngineApiCatalog } from './engineApiMetadata';
 import {
   createHoverRequestDeadline,
@@ -3824,6 +3829,81 @@ export function isPythonMroJumpEnabled(): boolean {
 }
 
 /**
+ * GLOBDATA-001 数据字典键索引开关(kbengine.python.enableDataDictIndex,
+ * 默认开;2026-10-30 用户令的 globalData/baseAppData/cellAppData 键引用/
+ * 跳转面)。extension 激活时读取、配置变更时刷新(与 enableMroJump 同款
+ * 接线);关闭时 definition 前置层与 python 引用分支不查索引。
+ */
+let pythonDataDictIndexEnabled = true;
+
+export function setPythonDataDictIndexEnabled(enabled: boolean): void {
+  pythonDataDictIndexEnabled = enabled;
+}
+
+export function isPythonDataDictIndexEnabled(): boolean {
+  return pythonDataDictIndexEnabled;
+}
+
+/**
+ * 行内 `#` 注释检查:键起点之前存在引号外的 `#` 即注释里的假访问
+ * (扫描器逐行正则不识注释,这里补上);引号内 `#` 是字面量不算。
+ */
+function isKeyInsideLineComment(lineText: string, keyStart: number): boolean {
+  let inString: string | null = null;
+  for (let index = 0; index < keyStart && index < lineText.length; index += 1) {
+    const ch = lineText[index];
+    if (inString) {
+      if (ch === '\\') {
+        index += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      continue;
+    }
+    if (ch === '#') {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 数据字典键定位的共享实现:落点命中字典键访问时,经签名归一索引取同键
+ * 族全部写+读点。definition(跳首个异类点)与 references(全量)同源,
+ * 索引未装配或未启用返回 null。
+ */
+async function resolveDataDictSitesAtPosition(
+  dataDictIndex: GlobalDataDictIndex | undefined,
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  token?: vscode.CancellationToken
+): Promise<{ access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>; sites: KbeDataDictSite[] } | null> {
+  if (!dataDictIndex || !isPythonDataDictIndexEnabled()) {
+    return null;
+  }
+  const line = document.lineAt(position.line);
+  const access = getKbeDataDictAccessAtPosition(
+    line.text,
+    position.character,
+    getKbeAliases(document.getText())
+  );
+  if (!access) {
+    return null;
+  }
+  await dataDictIndex.ensureStarted();
+  if (token?.isCancellationRequested) {
+    return null;
+  }
+  return { access, sites: dataDictIndex.query(access.dict, access.keySignature) };
+}
+
+/**
  * 跳转分层追踪(用户 2026-10-16「放弃范围必须逐层收窄,对象级不是文件级」):
  * 记录本次跳转查过的每一层与命中/落空原因,全部落空时可据此说明「查过哪些层」。
  */
@@ -3832,7 +3912,8 @@ export interface JumpLayerTrace {
    * entity-def = .def 派生索引(对象级类粒度 → 文件级 owner 归属两个子探);
    * python-mro = PythonClassIndex 跨文件 C3-MRO + 组合根;
    * file-scope = 当前文件类作用域 / 本文件 MRO;
-   * kbe-stub / class-base / types-reverse = 前置契约分支(命中即终点);
+   * kbe-stub / class-base / types-reverse / globaldata-key = 前置契约分支
+   * (命中即终点);globaldata-key = 数据字典键跨进程互链(GLOBDATA-001);
    * member-access = 非 self 接收者成员调用(avatar.SendErrorInfo,批158);
    * context = 入参形态判定(既非 self 访问/成员调用也非方法声明)。
    */
@@ -3840,6 +3921,7 @@ export interface JumpLayerTrace {
     | 'kbe-stub'
     | 'class-base'
     | 'types-reverse'
+    | 'globaldata-key'
     | 'entity-def'
     | 'python-mro'
     | 'file-scope'
@@ -3892,7 +3974,9 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     // mixin/跨类跳转根因修复:.def 派生索引解析不到时(非实体文件或方法不在
     // 任何 .def),回退 Python 类层级 C3-MRO 解析 —— entityMapping.ts:573
     // 对非 .def 映射文件直接 return null 即丢定位处。
-    private pythonClassIndex?: PythonClassIndex
+    private pythonClassIndex?: PythonClassIndex,
+    // GLOBDATA-001:数据字典键索引(单例,extension 装配);未注入则前置层跳过
+    private dataDictIndex?: GlobalDataDictIndex
   ) {}
 
   /**
@@ -3959,6 +4043,48 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       return cancelledDefinitionResult();
     }
     const line = document.lineAt(position.line);
+
+    // GLOBDATA-001:KBEngine.globalData/baseAppData/cellAppData 字典键跨进程
+    // 互链。置于 isPythonCodePosition 守卫之前:键表达式可能是字符串字面量
+    // (get("cfg") 的 cfg),该守卫会把字符串内位置判为 skip,字典键因此
+    // 到不了层链;注释里的假访问由行内注释检查排除。落点命中键表达式时,
+    // 经签名归一索引把键族内的写/读点互链:读点 F12 → 首个写点;写点 F12
+    // → 首个异类同键点;无同键异类点则同键同类首点;键族无任何点(仅自身)
+    // 交回常规链。
+    if (isPythonDataDictIndexEnabled() && this.dataDictIndex) {
+      const dataDictHit = await resolveDataDictSitesAtPosition(
+        this.dataDictIndex,
+        document,
+        position,
+        token
+      );
+      if (dataDictHit && !isKeyInsideLineComment(line.text, dataDictHit.access.keyStart)) {
+        const { access, sites } = dataDictHit;
+        const otherKind = access.kind === 'write' ? 'read' : 'write';
+        const target =
+          sites.find(site => site.kind === otherKind) ??
+          sites.find(site => site.kind === access.kind);
+        if (target) {
+          jumpLog('info', () =>
+            `前置命中 globaldata-key:${access.dict}[${access.keySignature}] ${access.kind} → ` +
+            `${path.basename(target.file)}:${target.line + 1}`
+          );
+          return {
+            location: new vscode.Location(
+              vscode.Uri.file(target.file),
+              new vscode.Position(target.line, target.keyStart)
+            ),
+            layers: [{
+              layer: 'globaldata-key',
+              query: `${access.dict}[${access.keySignature}]`,
+              status: 'hit',
+              detail: `${access.kind} → ${path.basename(target.file)}:${target.line + 1}`
+            }]
+          };
+        }
+      }
+    }
+
     if (!isPythonCodePosition(document.getText(), position.line, position.character)) {
       return { location: null, layers: [{ layer: 'context', query: '', status: 'skip', detail: 'comment or string literal' }] };
     }
@@ -5148,7 +5274,11 @@ export class KBEngineCallHierarchyProvider implements vscode.CallHierarchyProvid
  * (NAV-003)在引用收录面上后续批扩展。
  */
 export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
-  constructor(private entityMappingManager: EntityMappingManager) {}
+  constructor(
+    private entityMappingManager: EntityMappingManager,
+    // GLOBDATA-001:数据字典键索引(单例);python 文档分支查同键族全量写+读点
+    private dataDictIndex?: GlobalDataDictIndex
+  ) {}
 
   async provideReferences(
     document: vscode.TextDocument,
@@ -5157,6 +5287,19 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     token?: vscode.CancellationToken
   ): Promise<vscode.Location[] | null> {
     if (token?.isCancellationRequested) { return null; }
+    // GLOBDATA-001:python 文档——落点在数据字典键表达式上时,返回同键族
+    // 全部写+读点(含自身);不在键上或索引未装配交回 null(无 .def 面)。
+    if (document.languageId === 'python' || document.fileName.toLowerCase().endsWith('.py')) {
+      const hit = await resolveDataDictSitesAtPosition(this.dataDictIndex, document, position, token);
+      if (!hit || isKeyInsideLineComment(document.lineAt(position.line).text, hit.access.keyStart)) {
+        return null;
+      }
+      return hit.sites.map(site =>
+        new vscode.Location(
+          vscode.Uri.file(site.file),
+          new vscode.Position(site.line, site.keyStart)
+        ));
+    }
     if (
       document.languageId !== 'kbengine-def' &&
       !document.fileName.toLowerCase().endsWith('.def')

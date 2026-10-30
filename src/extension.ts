@@ -237,11 +237,13 @@ import {
   TypesXmlCodeLensProvider,
   isPythonMroJumpEnabled,
   setPythonMroJumpEnabled,
+  setPythonDataDictIndexEnabled,
   setHoverInFlightGateForTests,
   setDefinitionInFlightGateForTests,
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
+import { GlobalDataDictIndex } from './globalDataIndex';
 import { WorkspaceIndex } from './workspaceIndex';
 import { PythonTypeInlayHintsProvider } from './typeInlayHints';
 import { DefParamInlayHintsProvider } from './defParamInlayHints';
@@ -403,6 +405,10 @@ export function activate(context: vscode.ExtensionContext) {
   });
   // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
   setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
+  // GLOBDATA-001:数据字典键索引开关(默认开;kbengine.python.enableDataDictIndex)
+  setPythonDataDictIndexEnabled(
+    vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)
+  );
   // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
   // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)
   setupKodeCoreGate(context);
@@ -830,7 +836,16 @@ export function activate(context: vscode.ExtensionContext) {
       startKbEngineIndexing();
     }
   });
-  const pythonDefinitionImpl = new PythonDefinitionProvider(entityMappingManager, pythonClassIndex);
+  // GLOBDATA-001:数据字典键索引单例(globalData/baseAppData/cellAppData
+  // 键写/读点互链)。懒建(首查 ensureStarted),extension 生命周期随订阅
+  // 释放;definition/references 共用同一实例与内存倒排。
+  const dataDictIndex = new GlobalDataDictIndex();
+  context.subscriptions.push({ dispose: () => dataDictIndex.dispose() });
+  const pythonDefinitionImpl = new PythonDefinitionProvider(
+    entityMappingManager,
+    pythonClassIndex,
+    dataDictIndex
+  );
   const pythonDefinitionProvider = vscode.languages.registerDefinitionProvider(
     { language: 'python', scheme: 'file' },
     {
@@ -1068,11 +1083,19 @@ export function activate(context: vscode.ExtensionContext) {
 
   // IDE-NAV-001:def 原生引用查询(Shift+F12)——统一符号身份链复用,
   // 引用位=python 调用点(getIncomingPythonMethodCalls 既有面)
+  const referencesImpl = new KBEngineReferencesProvider(entityMappingManager, dataDictIndex);
   const referencesProvider = vscode.languages.registerReferenceProvider(
     defDocumentSelector,
-    new KBEngineReferencesProvider(entityMappingManager)
+    referencesImpl
   );
   context.subscriptions.push(referencesProvider);
+  // GLOBDATA-001:python 文档引用查询(Shift+F12)——数据字典键访问落点
+  // 返回同键族全部写+读点;同一实例双 selector 注册(非字典键落点交回 null)
+  const pythonReferencesProvider = vscode.languages.registerReferenceProvider(
+    { language: 'python', scheme: 'file' },
+    referencesImpl
+  );
+  context.subscriptions.push(pythonReferencesProvider);
 
   // IDE-NAV-005:def 文档符号(Outline)——Properties/三方法段容器+段内声明
   const documentSymbolProvider = vscode.languages.registerDocumentSymbolProvider(
@@ -1346,6 +1369,12 @@ export function activate(context: vscode.ExtensionContext) {
     if (event.affectsConfiguration('kbengine.python.enableMroJump')) {
       const enabled = vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true);
       setPythonMroJumpEnabled(enabled);
+    }
+    // GLOBDATA-001:数据字典键索引开关变更即时生效(definition/引用查索引前现读)
+    if (event.affectsConfiguration('kbengine.python.enableDataDictIndex')) {
+      setPythonDataDictIndexEnabled(
+        vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)
+      );
     }
 
     // CodeLens 各功能开关变更即时生效(批154):四类镜链 provider 每次

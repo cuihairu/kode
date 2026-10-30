@@ -179,8 +179,9 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.completionRegistrations).toHaveLength(2);
     expect(languagesRegistry.hoverRegistrations).toHaveLength(2);
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
-    // IDE-NAV-001:def 文档选择器上的引用提供者(Shift+F12)一份
-    expect(languagesRegistry.referenceRegistrations).toHaveLength(1);
+    // 引用提供者(Shift+F12)两份:IDE-NAV-001 def 文档选择器一份、
+    // GLOBDATA-001 python 数据字典键选择器一份(同一实例双 selector 注册)
+    expect(languagesRegistry.referenceRegistrations).toHaveLength(2);
     // IDE-NAV-005:def Outline 单注册
     expect(languagesRegistry.documentSymbolRegistrations).toHaveLength(1);
     // IDE-NAV-006:工作区符号(Ctrl+T)单注册

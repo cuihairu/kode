@@ -1254,6 +1254,11 @@
           "default": true,
           "description": "Python 跨文件 C3-MRO 与 mixin 组合根导航开关，默认开；方法使用处优先寻找 Python 实现，找不到再回退 .def 声明；关闭后不做全仓扫描，保留当前文件继承解析和 .def 导航"
         },
+        "kbengine.python.enableDataDictIndex": {
+          "type": "boolean",
+          "default": true,
+          "description": "KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关，默认开；键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链，支持 Shift+F12 引用与 F12 跳转（读点跳写点）；关闭后不查索引，引用/跳转交回常规链"
+        },
         "kbengine.python.callChainHints": {
           "type": "boolean",
           "default": true,
