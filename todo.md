@@ -738,7 +738,7 @@
 - [ ] IDE-AUD-041 [P1] 将进程 attach 会话绑定到具体运行目标；验收：实际 PID 模式会话有结构化 component/targetId/尝试身份，工作台显示 attached；断开/停止只作用该目标，同名并发不误认；依据：R2-F15。
 - [x] IDE-AUD-042 [P1] 返回类型推导尊重最后一次变量写入；验收：调用赋值后常量/未知调用/局部遮蔽不借早先调用答案；跨作用域同名不误推，已知最新调用仍命中；依据：R2-F16。(e3d6885;matchingAssignments 改「最近一次写入」语义:自 hover 行向上只认最近一次对 word 的赋值——是单层调用则作唯一候选,否则(常量/未知表达式/局部遮蔽)返回空,不再把更早调用答案借给被覆盖变量;作用域边界(IDE-HOV-016)与「能推才显」闸保留;prove-red 4 例先红(常量 x=original();x=0/未知调用 x=unknown()/局部遮蔽 x=0 内层不借外层 original/旧「同名重赋值取最后一次可解析」例 191 反转期望 null)+1 正例(已知最新调用仍命中)保绿;门禁 eslint 0/tsc 0/unit 4928|7/demo 25 RC0)
 - [x] IDE-AUD-043 [P1] 显式本地无注解声明阻止跨文档借名；验收：当前文件定义 original 无注解时，不从其他打开文件同名 original 借类型；本地明确注解优先，删除/更新文档桶后不留旧值；依据：R2-F16。（0ea00fe;级联顶层加「当前文件 unannotatedNames 含名即 null」,在 fromOthers 之前;测试=tests/pythonReturnTypeInference.test.ts IDE-AUD-043 三例(同文件无注解不借 other.py 的 OTHER_FILE=红转绿,本地 LOCAL 压 OTHER_FILE,磁盘同名亦挡);测试绿 4931|7+25 demo）
-- [ ] IDE-AUD-044 [P1] 导入别名绑定保留原始符号名；验收：from mod import original as local 后 local() 查 original；不同模块同名、模块别名、相对导入及歧义分别处理，未知不借邻居；依据：R2-F17。
+- [x] IDE-AUD-044 [P1] 导入别名绑定保留原始符号名；验收：from mod import original as local 后 local() 查 original；不同模块同名、模块别名、相对导入及歧义分别处理，未知不借邻居；依据：R2-F17。（be79881;from-import 绑定值改 {module,symbol},查桶用 symbol 而非绑定名(接收者形态仍用方法名);测试=tests/pythonReturnTypeInference.test.ts IDE-AUD-044 三例(别名查原名 FROM_HELPERS=红转绿,未起别名维持,绑定符号无注解不借邻居);测试绿 4934|7+25 demo）
 - [ ] IDE-AUD-045 [P1] hover 超时停止无等待者需要的独占工作；验收：预算返回空后原请求不继续新增读取/排队；共享索引与仍有等待者的计算继续，实际在途依赖 token 收到取消，不能仅验证前台返回时间；依据：R2-F18。
 - [ ] IDE-AUD-046 [P2] 修复兼容检查命令的 manifest 路径；验收：真实命令传 package.json 文件路径，bundle 相对于扩展根检查；有效安装不再报 EISDIR/版本缺失，缺文件时原因准确；依据：R2-F21。
 - [ ] IDE-AUD-047 [P2] 分开 KBEngine 与 VS Code 版本域；验收：宿主版本只与 engines.vscode 比较，引擎版本只与已声明的引擎支持范围比较；没有引擎支持矩阵时标未知，不把 2.5.10 大于 1.84 当兼容；依据：R2-F22。

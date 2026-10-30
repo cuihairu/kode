@@ -34,7 +34,7 @@
 | R2-F14 | P1 | retryTarget 只被 serverManager 自身与测试使用，实际命令仍走 start/restart，缺少失败单目标重试入口 | IDE-RUN-008 尚未形成产品闭环 |
 | R2-F15 | P1 | 进程模式 attach 的名称不匹配 DebugSessionRegistry 的端口名称正则；实际生成的 `KBEngine: Python attach to cellapp` 得到 links=0 | IDE-DBG-005、006、008 在进程模式下不完整：会话关联、结束行为、工作台状态都受影响 |
 | R2-F16 | P1 | 当前变量 `x=original(); x=0` 仍推导 EXPECTED；同文件 original 无返回注解时又借另一个打开文件的 OTHER_FILE | IDE-HOV-016 的作用域/显式本地定义约束不完整。前半「最后一次写入」已修 e3d6885（todo.md IDE-AUD-042）；后半「同文件无注解不借另一打开文件」已修 0ea00fe（todo.md IDE-AUD-043，级联顶层 unannotatedNames 检查在 fromOthers 前） |
-| R2-F17 | P1 | `from mod import original as local` 丢失被导入的原始名字，查桶用 local 而非 original；未起别名时 EXPECTED，起别名后 null | IDE-HOV-017 显式绑定未全部支持 |
+| R2-F17 | P1 | `from mod import original as local` 丢失被导入的原始名字，查桶用 local 而非 original；未起别名时 EXPECTED，起别名后 null | IDE-HOV-017 显式绑定未全部支持。已修 be79881（todo.md IDE-AUD-044，from-import 绑定保留 symbol=original，查桶用 symbol） |
 | R2-F18 | P1 | hover 预算返回 null 后底层请求独占 token 仍未取消，underlyingTokenCancelled=false；内层 race 未传 onStop | 前台有界返回不等于后台停止，可能堆积过时工作 |
 | R2-F19 | P1 | Python 测试进程退出 1、stderr 有 teardown 错误，但出现 PASSED 节点后结果仍全部 passed；runPythonTests 丢弃了退出码 | IDE-TSK-005 需区分节点主体成功与整个测试会话失败 |
 | R2-F20 | P2 | class TestReal 之后出现普通 class Ordinary，发现器仍把 Ordinary.test_not_pytest 登记为 TestReal 的方法 | IDE-TSK-004 需重开 |
