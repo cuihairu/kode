@@ -49,6 +49,11 @@ describe('parseSshConfig', () => {
     expect(entries.map(entry => entry.port)).toEqual([undefined, undefined, 22]);
   });
 
+  it('无分隔空白符的行忽略(非键值形不解析)', () => {
+    const entries = parseSshConfig(['Host a', '  HostName', 'bareword', '  User ok'].join('\n'));
+    expect(entries).toEqual([{ host: 'a', hostname: undefined, user: 'ok', port: undefined, proxyJump: undefined }]);
+  });
+
   it('dedupe:同别名后块补缺不覆盖已有,输出按别名排序', () => {
     const entries = parseSshConfig([
       'Host zeta',

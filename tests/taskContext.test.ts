@@ -65,6 +65,16 @@ describe('compareTaskRunContexts(漂移清单)', () => {
     expect(drifts.join('\n')).toContain('/ws/proj/assets');
     expect(drifts.join('\n')).toContain('/ws/py/python3');
   });
+
+  it('引擎根漂移单独点名(四要素各自独立)', () => {
+    const drifted: TaskRunContext = {
+      ...captureTaskRunContext(PROFILE),
+      engineRoot: '/ws/engine-other'
+    };
+    const drifts = compareTaskRunContexts(captureTaskRunContext(PROFILE), drifted);
+    expect(drifts).toHaveLength(1);
+    expect(drifts[0]).toContain('引擎根:/ws/engine → /ws/engine-other');
+  });
 });
 
 describe('prepareTestRun(重跑协议:钉住快照,换根必须显式)', () => {

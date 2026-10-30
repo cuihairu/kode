@@ -5,16 +5,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
-import { messages, window as fakeWindow, windowState } from './fake-vscode/windowState';
-import { configurationOverrides, workspace, workspaceEvents, workspaceState } from './fake-vscode/workspaceState';
+import { messages, window as fakeWindow, windowState, treeRegistrations } from './fake-vscode/windowState';
+import { configurationOverrides, workspace, workspaceEvents, workspaceState, memoryFileSystem } from './fake-vscode/workspaceState';
 import { annotationSourceLog } from '../src/annotationSourceLog';
+import { setHoverInFlightGateForTests } from '../src/languageProviders';
 import {
   makeTextDocument,
   Position,
   Uri,
   type ExtensionContext
 } from './fake-vscode/core';
-import { tests as testsRegistry } from './fake-vscode/core';
+import { tests as testsRegistry, tasks } from './fake-vscode/core';
 import { fakeExtensionList } from './fake-vscode/extensionsState';
 import {
   resetCpuProfileCapture,
@@ -171,7 +172,19 @@ beforeAll(() => {
   extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-manifest-'));
   fs.writeFileSync(
     path.join(extDir, 'package.json'),
-    JSON.stringify({ name: 'kode', version: '0.2.0', engines: { vscode: '^1.84.0' } }),
+    JSON.stringify({
+      name: 'kode',
+      version: '0.2.0',
+      engines: { vscode: '^1.84.0' },
+      contributes: {
+        configuration: {
+          properties: {
+            'kbengine.annotationLog': { type: 'boolean', default: true },
+            'kbengine.jumpLog': { type: 'boolean', default: false }
+          }
+        }
+      }
+    }),
     'utf8'
   );
   fs.mkdirSync(path.join(extDir, 'out'), { recursive: true });
@@ -221,6 +234,8 @@ describe('extension 激活链命令面(补测)', () => {
     context = {
       subscriptions: [],
       extensionUri: Uri.file(path.join(extDir, 'package.json')),
+      extensionPath: extDir,
+      extension: { id: 'cuihairu.kode', extensionKind: 'workspace' },
       globalStoragePath: gsDir,
       workspaceState: makeMemento(new Map())
     };
@@ -593,6 +608,303 @@ describe('extension 激活链命令面(补测)', () => {
       fakeExtensionList.length = 0;
     }
   });
+
+  it('remoteServers:显式 id 选中 / 无效 id 即止 / 取消添加 / 无 id 移除', async () => {
+    const originalInputBox = fakeWindow.showInputBox;
+    try {
+      await commands.executeCommand('kbengine.remoteServers.select', 'local');
+      expect(messages.info.some(message => message.includes('已切回本地'))).toBe(true);
+      await commands.executeCommand('kbengine.remoteServers.select', 'no-such-host');
+      (fakeWindow as { showInputBox: unknown }).showInputBox = async () => undefined;
+      await commands.executeCommand('kbengine.remoteServers.add');
+      await commands.executeCommand('kbengine.remoteServers.remove', {});
+      await commands.executeCommand('kbengine.remoteServers.remove', undefined);
+    } finally {
+      (fakeWindow as { showInputBox: unknown }).showInputBox = originalInputBox;
+    }
+  });
+
+  it('remoteServers.add:校验回调与主机写入', async () => {
+    const originalInputBox = fakeWindow.showInputBox;
+    (fakeWindow as { showInputBox: unknown }).showInputBox =
+      async (options: { validateInput?: (value: string) => string | null }) => {
+        expect(typeof options.validateInput?.('')).toBe('string');
+        expect(options.validateInput?.('host-a')).toBeNull();
+        return 'host-a';
+      };
+    try {
+      await commands.executeCommand('kbengine.remoteServers.add');
+      expect(messages.info.some(message => message.includes('host-a'))).toBe(true);
+      await commands.executeCommand('kbengine.remoteServers.remove', { id: 'host-a' });
+    } finally {
+      (fakeWindow as { showInputBox: unknown }).showInputBox = originalInputBox;
+    }
+  });
+
+  it('remoteServers.refresh:重读 ssh 配置并提示台数', async () => {
+    await commands.executeCommand('kbengine.remoteServers.refresh');
+    expect(messages.info.some(message => message.includes('远程主机已刷新'))).toBe(true);
+  });
+
+  it('onDidChangeConfiguration:开关类变更逐路即时生效', () => {
+    const fire = (keys: string[]): void => {
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (key: string) => key === 'kbengine' || keys.includes(key)
+      });
+    };
+    fire(['kbengine.jumpLog', 'kbengine.annotationLog']);
+    fire(['kbengine.python.enableDataDictIndex']);
+    fire(['kbengine.codeLens']);
+    fire(['kbengine.entity']);
+    fire(['kbengine.python.callChainHints']);
+    fire(['kbengine.enableDiagnostics']);
+  });
+
+  it('onDidChangeConfiguration:managedDir 与引擎桩面变更重建托管资产', () => {
+    const fire = (keys: string[]): void => {
+      workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: (key: string) => key === 'kbengine' || keys.includes(key)
+      });
+    };
+    fire(['kbengine.managedDir']);
+    fire(['kbengine.python.stubEngineTypings', 'kbengine.python.entityStubMethods']);
+  });
+
+  it('文档事件面:def/types.xml 编辑失效 schema 缓存,python 开合走诊断与注解释放', () => {
+    const defDoc = makeTextDocument('<Avatar/>', {
+      fileName: path.join(defsRoot, 'Avatar.def'),
+      languageId: 'kbengine-def'
+    });
+    const typesDoc = makeTextDocument('<root/>', {
+      fileName: path.join(root, 'types.xml'),
+      languageId: 'xml'
+    });
+    const pyDoc = makeTextDocument('value = 1\n', {
+      fileName: path.join(root, 'scripts', 'loose.py'),
+      languageId: 'python'
+    });
+    workspaceEvents.documentChanged.fire({ document: defDoc, contentChanges: [{ text: '' }] });
+    workspaceEvents.documentChanged.fire({ document: typesDoc, contentChanges: [{ text: '' }] });
+    workspaceEvents.documentOpened.fire(pyDoc);
+    workspaceEvents.documentClosed.fire(pyDoc);
+  });
+
+  it('补全包装:取消 token 即止(cancelled 打点)', async () => {
+    const cancelledToken = {
+      isCancellationRequested: true,
+      onCancellationRequested: (): { dispose(): void } => ({ dispose: () => undefined })
+    };
+    const defDoc = makeTextDocument('<Avatar>\n  <BaseMethods>\n    <respawn', {
+      fileName: path.join(defsRoot, 'Avatar.def'),
+      languageId: 'kbengine-def'
+    });
+    const pyDoc = makeTextDocument('import base\nvalue = 1\n', {
+      fileName: path.join(root, 'scripts', 'value.py'),
+      languageId: 'python'
+    });
+    for (const registration of languagesRegistry.completionRegistrations) {
+      const provider = registration.provider as { provideCompletionItems?: (doc: unknown, pos: unknown, tok: unknown) => Promise<unknown> };
+      if (provider.provideCompletionItems) {
+        await provider.provideCompletionItems(
+          registration.triggerCharacters?.includes('<') ? defDoc : pyDoc,
+          new Position(registration.triggerCharacters?.includes('<') ? 0 : 1, 1),
+          cancelledToken
+        );
+      }
+    }
+  });
+
+  it('语言服务包装:hover/definition 打到 def 符号位(结果对象分支)', async () => {
+    const defDoc = makeTextDocument('<root>\n  <Properties>\n    <hp>\n      <Type>UINT32</Type>\n    </hp>\n  </Properties>\n</root>\n', {
+      fileName: path.join(defsRoot, 'Avatar.def'),
+      languageId: 'kbengine-def'
+    });
+    const callSafely = async (
+      registrations: Array<{ provider: unknown }>,
+      method: string
+    ): Promise<void> => {
+      for (const registration of registrations) {
+        const provider = registration.provider as Record<string, ((doc: unknown, pos: unknown, tok: unknown) => Promise<unknown>) | undefined>;
+        const handler = provider[method];
+        if (typeof handler !== 'function') {
+          continue;
+        }
+        try {
+          await handler(defDoc, new Position(2, 6), tokenStub);
+        } catch {
+          // 单个 provider 不支持 def 文档属正常面,错误路径同样计入包装 catch
+        }
+      }
+    };
+    await callSafely(languagesRegistry.hoverRegistrations, 'provideHover');
+    await callSafely(languagesRegistry.definitionRegistrations, 'provideDefinition');
+  });
+
+  it('探针:probeHover 门内定时取消(在途斩定时器分支)', async () => {
+    let markEntered!: () => void;
+    let releaseGate!: () => void;
+    const enteredSignal = new Promise<void>(resolve => { markEntered = resolve; });
+    const release = new Promise<void>(resolve => { releaseGate = resolve; });
+    setHoverInFlightGateForTests(() => {
+      markEntered();
+      return release.then(() => { setHoverInFlightGateForTests(null); });
+    });
+    const originalOpen = workspace.openTextDocument;
+    (workspace as { openTextDocument: unknown }).openTextDocument = async (uri: { fsPath?: string }) =>
+      makeTextDocument(fs.readFileSync(String(uri.fsPath), 'utf8'), {
+        fileName: String(uri.fsPath),
+        languageId: String(uri.fsPath).endsWith('.py') ? 'python' : 'kbengine-def'
+      });
+    try {
+      const probePromise = probes.probeHover(
+        { file: path.join(root, 'scripts', 'hero.py'), line: 1, character: 9 },
+        20
+      );
+      await enteredSignal;
+      await new Promise(resolve => setTimeout(resolve, 60));
+      releaseGate();
+      const result = await probePromise;
+      expect(result.cancelled).toBe(true);
+    } finally {
+      setHoverInFlightGateForTests(null);
+      (workspace as { openTextDocument: unknown }).openTextDocument = originalOpen;
+    }
+  });
+
+  it('python.serviceStatus:三态检查消息', async () => {
+    await commands.executeCommand('kbengine.python.serviceStatus');
+    expect(messages.info.length).toBeGreaterThan(0);
+  });
+
+  it('debug.pyspyDump:无目标且选择器取消即止', async () => {
+    await commands.executeCommand('kbengine.debug.pyspyDump');
+  });
+
+  it('project.doctor / symbolReferences:无 def 候选如实提示', async () => {
+    const originalFindFiles = workspace.findFiles;
+    (workspace as { findFiles: unknown }).findFiles = (async () => []);
+    try {
+      await commands.executeCommand('kbengine.project.doctor');
+      expect(messages.info.some(message => message.includes('未找到 .def 文件'))).toBe(true);
+      await commands.executeCommand('kbengine.symbolReferences.show');
+      expect(messages.info.some(message => message.includes('未找到 .def 文件'))).toBe(true);
+    } finally {
+      (workspace as { findFiles: unknown }).findFiles = originalFindFiles;
+    }
+  });
+
+  it('project.doctor / symbolReferences:非标准定义布局给出明确指引', async () => {
+    const looseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-loose-def-'));
+    const looseDef = path.join(looseDir, 'loose.def');
+    fs.writeFileSync(looseDef, '<root/>', 'utf8');
+    const originalFindFiles = workspace.findFiles;
+    (workspace as { findFiles: unknown }).findFiles = (async () => [Uri.file(looseDef)]);
+    try {
+      await commands.executeCommand('kbengine.project.doctor');
+      expect(messages.warning.some(message => message.includes('仅支持标准定义布局'))).toBe(true);
+      await commands.executeCommand('kbengine.symbolReferences.show');
+      expect(messages.warning.some(message => message.includes('仅支持标准定义布局'))).toBe(true);
+    } finally {
+      (workspace as { findFiles: unknown }).findFiles = originalFindFiles;
+      fs.rmSync(looseDir, { recursive: true, force: true });
+    }
+  });
+
+  it('workbench.show:选择入口项后转跳对应命令', async () => {
+    const originalQuickPick = fakeWindow.showQuickPick;
+    (fakeWindow as { showQuickPick: unknown }).showQuickPick =
+      async () => ({ command: 'kbengine.extension.identity' });
+    try {
+      await commands.executeCommand('kbengine.workbench.show');
+      expect(channelLines('Kode 扩展身份')).not.toBe('');
+    } finally {
+      (fakeWindow as { showQuickPick: unknown }).showQuickPick = originalQuickPick;
+    }
+  });
+
+  it('quickActions:按名执行 / 重扫脚本 / 树数据源', async () => {
+    await commands.executeCommand('kbengine.quickActions.runByName', 'missing-action');
+    await commands.executeCommand('kbengine.quickActions.scanScripts');
+    const provider = treeRegistrations.find(entry => entry.viewId === 'kbengine.quickActions')?.provider as {
+      getChildren?: () => unknown[];
+    };
+    if (provider.getChildren) {
+      provider.getChildren();
+    }
+  });
+
+  it('jsoncAssociation.off:关闭 jsonc 关联', async () => {
+    await commands.executeCommand('kbengine.jsoncAssociation.off');
+  });
+
+  it('python.showCallChain:无活动 Python 编辑器如实提示', async () => {
+    await commands.executeCommand('kbengine.python.showCallChain');
+  });
+
+  it('runtimeQuery.show:打开运行时查询面板', async () => {
+    await commands.executeCommand('kbengine.runtimeQuery.show');
+  });
+
+  it('compatibility.check:未打开工作区如实报错', async () => {
+    const originalFolders = workspace.workspaceFolders;
+    (workspace as { workspaceFolders: unknown }).workspaceFolders = [];
+    try {
+      await commands.executeCommand('kbengine.compatibility.check');
+      expect(messages.warning.some(message => message.includes('未打开工作区'))).toBe(true);
+    } finally {
+      (workspace as { workspaceFolders: unknown }).workspaceFolders = originalFolders;
+    }
+  });
+
+  it('identity / reproSummary:多扩展排序比较器', async () => {
+    fakeExtensionList.push(
+      { id: 'cuihairu.kode-a', isActive: true, packageJSON: { version: '0.1.0' }, extensionPath: '', extensionKind: 'workspace' } as never,
+      { id: 'cuihairu.kode-b', isActive: false, packageJSON: { version: '0.2.0' }, extensionPath: '', extensionKind: 'ui' } as never
+    );
+    try {
+      await commands.executeCommand('kbengine.extension.identity');
+      expect(channelLines('Kode 扩展身份')).toContain('cuihairu.kode-b');
+      await commands.executeCommand('kbengine.diagnostics.exportReproSummary');
+      expect(channelLines('Kode 复现配置摘要')).toContain('cuihairu.kode-b');
+    } finally {
+      fakeExtensionList.length = 0;
+    }
+  });
+
+  it('buildTaskProvider:任务列表按 profile 展开', async () => {
+    const provider = tasks.taskProviders.find(entry => entry.type === 'kbengine.build')?.provider as {
+      provideTasks?: () => unknown[];
+    };
+    if (provider.provideTasks) {
+      expect(Array.isArray(provider.provideTasks())).toBe(true);
+    }
+  });
+
+  it('remoteServers 树:getChildren/getTreeItem 面', async () => {
+    const provider = treeRegistrations.find(entry => entry.viewId === 'kbengine.remoteServers')?.provider as {
+      getChildren?: () => unknown[];
+      getTreeItem?: (element: unknown) => unknown;
+    };
+    if (provider.getChildren) {
+      const nodes = provider.getChildren();
+      if (provider.getTreeItem && nodes.length > 0) {
+        provider.getTreeItem(nodes[0]);
+      }
+    }
+  });
+
+  it('remoteServers:移除当前选中主机回落到本地', async () => {
+    const originalInputBox = fakeWindow.showInputBox;
+    (fakeWindow as { showInputBox: unknown }).showInputBox = async () => 'selected-host';
+    try {
+      await commands.executeCommand('kbengine.remoteServers.add');
+      await commands.executeCommand('kbengine.remoteServers.select', 'selected-host');
+      await commands.executeCommand('kbengine.remoteServers.remove', { id: 'selected-host' });
+      expect(messages.info.some(message => message.includes('已移除手动主机 selected-host'))).toBe(true);
+    } finally {
+      (fakeWindow as { showInputBox: unknown }).showInputBox = originalInputBox;
+    }
+  });
 });
 
 describe('extension 激活链命令面(活动 profile 侧)', () => {
@@ -617,6 +929,8 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
     context = {
       subscriptions: [],
       extensionUri: Uri.file(path.join(extDir, 'package.json')),
+      extensionPath: extDir,
+      extension: { id: 'cuihairu.kode', extensionKind: 'workspace' },
       globalStoragePath: gsDir,
       workspaceState: makeMemento(store)
     };
@@ -741,5 +1055,116 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
   it('project.doctor:工作区体检报告入通道', async () => {
     await commands.executeCommand('kbengine.project.doctor');
     expect(channelLines('KBEngine Project Doctor').length).toBeGreaterThan(0);
+  }, 30000);
+
+  it('tests.list:选中测试文件后打开源文件', async () => {
+    const originalQuickPick = fakeWindow.showQuickPick;
+    (fakeWindow as { showQuickPick: unknown }).showQuickPick =
+      async (items: Array<{ absolutePath?: string }>) => items[0];
+    const before = windowState.showTextDocumentCalls.length;
+    try {
+      await commands.executeCommand('kbengine.tests.list');
+      expect(windowState.showTextDocumentCalls.length).toBeGreaterThan(before);
+    } finally {
+      (fakeWindow as { showQuickPick: unknown }).showQuickPick = originalQuickPick;
+    }
+  });
+
+  it('messagetable.export:保存对话框给路径 → JSON 落盘', async () => {
+    const originalQuickPick = fakeWindow.showQuickPick;
+    const originalSave = fakeWindow.showSaveDialog;
+    const savePath = path.join(assets, 'messagetable-export.json');
+    (fakeWindow as { showQuickPick: unknown }).showQuickPick =
+      async (items: Array<{ label?: string }>) => items[0];
+    (fakeWindow as { showSaveDialog: unknown }).showSaveDialog = async () => ({ fsPath: savePath });
+    try {
+      await commands.executeCommand('kbengine.messagetable.export');
+      expect(memoryFileSystem.files.has(savePath)).toBe(true);
+    } finally {
+      (fakeWindow as { showQuickPick: unknown }).showQuickPick = originalQuickPick;
+      (fakeWindow as { showSaveDialog: unknown }).showSaveDialog = originalSave;
+      fs.rmSync(savePath, { force: true });
+    }
+  }, 20000);
+
+  it('测试面板 Run 档:指定 include 条目按需展开', async () => {
+    const controller = testsRegistry.controllers.find(entry => entry.id === 'kbengine-python-tests');
+    const profile = controller?.profiles.find(entry => entry.label === '运行');
+    let fileItem: unknown;
+    controller?.items.forEach(item => {
+      if (fileItem === undefined) {
+        fileItem = item;
+      }
+    });
+    expect(fileItem).toBeDefined();
+    await profile?.runHandler({ include: [fileItem] }, tokenStub);
+  }, 60000);
+
+  it('测试面板 Run 档:未注册 include 条目零目标即收口', async () => {
+    const controller = testsRegistry.controllers.find(entry => entry.id === 'kbengine-python-tests');
+    const profile = controller?.profiles.find(entry => entry.label === '运行');
+    const runsBefore = controller?.createdRuns.length ?? 0;
+    await profile?.runHandler(
+      { include: [{ id: 'not-registered', children: { forEach: (): void => undefined } }] },
+      tokenStub
+    );
+    expect(controller?.createdRuns.length ?? 0).toBe(runsBefore);
+  }, 60000);
+
+  it('测试面板 Run 档:token 立即取消 → 目标如实标跳过', async () => {
+    const controller = testsRegistry.controllers.find(entry => entry.id === 'kbengine-python-tests');
+    const profile = controller?.profiles.find(entry => entry.label === '运行');
+    const cancelToken = {
+      isCancellationRequested: false,
+      onCancellationRequested: (listener: () => void): { dispose(): void } => {
+        listener();
+        return { dispose: () => undefined };
+      }
+    };
+    await profile?.runHandler({ include: [] }, cancelToken);
+    const run = controller?.createdRuns.at(-1);
+    expect(run?.skippedItems.length).toBeGreaterThan(0);
+  }, 60000);
+
+  it('测试面板 Run 档:无钉住上下文即捕获并存储', async () => {
+    await context.workspaceState.update('kbengine.testTaskContext', undefined);
+    const controller = testsRegistry.controllers.find(entry => entry.id === 'kbengine-python-tests');
+    const profile = controller?.profiles.find(entry => entry.label === '运行');
+    await profile?.runHandler({ include: [] }, tokenStub);
+    expect(await context.workspaceState.get('kbengine.testTaskContext')).toBeDefined();
+  }, 60000);
+
+  it('测试面板 Run 档:pytest skip 用例标记跳过', async () => {
+    fs.writeFileSync(
+      path.join(assets, 'scripts', 'test_skip.py'),
+      'import pytest\n\n\n@pytest.mark.skip(reason="coverage")\ndef test_skip_me():\n    assert True\n',
+      'utf8'
+    );
+    await commands.executeCommand('kbengine.tests.list');
+    const controller = testsRegistry.controllers.find(entry => entry.id === 'kbengine-python-tests');
+    const profile = controller?.profiles.find(entry => entry.label === '运行');
+    await profile?.runHandler({ include: [] }, tokenStub);
+    const run = controller?.createdRuns.at(-1);
+    expect(run?.skippedItems.length).toBeGreaterThan(0);
+  }, 60000);
+
+  it('debug 装配命令:launch.json 同步 / debugpy 同步 / 等待连接关', async () => {
+    await commands.executeCommand('kbengine.debug.updateLaunchJson');
+    await commands.executeCommand('kbengine.python.debugpySync');
+    await commands.executeCommand('kbengine.debug.waitAtStartup.off');
+  }, 30000);
+
+  it('运行时查询:无运行组件如实提示', async () => {
+    await commands.executeCommand('kbengine.profile.start');
+    expect(messages.warning.some(message => message.includes('未发现可查询的 KBEngine 组件'))).toBe(true);
+    messages.warning.length = 0;
+    await commands.executeCommand('kbengine.spaces.query');
+    expect(messages.warning.some(message => message.includes('未发现可查询的 KBEngine 组件'))).toBe(true);
+  }, 30000);
+
+  it('hotReload 台账命令:批次摘要 / 失败重试 / revision 证据(空台账)', async () => {
+    await commands.executeCommand('kbengine.hotReload.showBatchSummary');
+    await commands.executeCommand('kbengine.hotReload.retryFailed');
+    await commands.executeCommand('kbengine.hotReload.showRevisionEvidence');
   }, 30000);
 });

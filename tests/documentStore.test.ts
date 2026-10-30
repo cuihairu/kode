@@ -185,6 +185,25 @@ describe('documentStore 同版本只解析一次', () => {
     expect(second).toBe(first);
   });
 
+  it('无版本替身每次现解析不缓存,xml 与其他扩展名的 fileKind 各归其类', async () => {
+    const noVersion = docOf('x', { fileName: '/p/NoVer.py' });
+    let parseCalls = 0;
+    const first = await getOrParseDocument(noVersion, () => { parseCalls += 1; return 'a'; });
+    const second = await getOrParseDocument(noVersion, () => { parseCalls += 1; return 'b'; });
+    expect(parseCalls).toBe(2);
+    expect(first).toBe('a');
+    expect(second).toBe('b');
+
+    const xmlDoc = docOf('<root/>', { fileName: '/p/extra.xml', version: 1 });
+    await getOrParseDocument(xmlDoc, () => 'xml');
+    const otherDoc = docOf('plain', { fileName: '/p/readme.txt', version: 1 });
+    await getOrParseDocument(otherDoc, () => 'other');
+    const entitiesDoc = docOf('<root/>', { fileName: '/p/entities.xml', version: 1 });
+    await getOrParseDocument(entitiesDoc, () => 'entities');
+    const typesDoc = docOf('<root/>', { fileName: '/p/types.xml', version: 1 });
+    await getOrParseDocument(typesDoc, () => 'types');
+  });
+
   it('版本前进后重新解析,新旧结果分开记账', async () => {
     const document = docOf('v1', { fileName: '/p/B.def', version: 1 });
     const results: string[] = [];

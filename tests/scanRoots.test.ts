@@ -65,6 +65,7 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
     }
   });
 
+
   it('assetsRoot 已包含在工作区内 → 包含去重,只留 workspace(不重复扫)', () => {
     const ws = makeTmpDir('ws-inner');
     const inner = path.join(ws, 'flyff_assets');

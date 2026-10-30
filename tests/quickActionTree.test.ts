@@ -29,6 +29,22 @@ describe('QuickActionTreeProvider', () => {
     expect(httpRequests[1].label).toBe('POST  127.0.0.1:8080/api/login');
   });
 
+  it('http 目标不是合法 URL 时按原样展示(shortUrl 兜底)', async () => {
+    const provider = new QuickActionTreeProvider({
+      getActions: async () => ({
+        registered: [],
+        scripts: [],
+        httpRequests: [
+          { name: 'odd', type: 'http', method: 'GET', target: 'not-a-valid-url', requestIndex: 0 }
+        ]
+      })
+    });
+    const groups = await provider.getChildren();
+    const httpRequests = await provider.getChildren(groups[2]);
+    expect(httpRequests[0].label).toContain('not-a-valid-url');
+    expect(httpRequests[0].tooltip).toContain('not-a-valid-url');
+  });
+
   it('shows a configuration hint and makes the empty row trigger script scanning', async () => {
     const provider = new QuickActionTreeProvider({ getActions: async () => ({ registered: [], scripts: [], httpRequests: [] }) });
     const [row] = await provider.getChildren();
