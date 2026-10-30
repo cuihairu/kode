@@ -1428,6 +1428,8 @@ export function activate(context: vscode.ExtensionContext) {
       watchPythonIndex();
       // IDE-IDX-014:实体面外部根 watcher 三件套整组重建(旧根释放,新根挂上)
       entityMappingManager.refreshExternalRootWatchers();
+      // IDE-AUD-035:事件索引外部根 watcher 同口径整组重建(旧根释放,新根挂上)
+      sharedWorkspaceIndex.refreshExternalWatchers();
       if (isPythonMroJumpEnabled()) { pythonClassIndex.scheduleBackgroundScan(); }
     }
 

@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { WorkspaceIndex } from '../src/workspaceIndex';
 import { EventCodeLensProvider } from '../src/eventApi';
-import { configurationOverrides, lastFileSystemWatcher, makeTextDocument, workspaceEvents } from './helpers/vscodeStub';
+import { allFileSystemWatchers, configurationOverrides, lastFileSystemWatcher, makeTextDocument, RelativePattern, workspaceEvents } from './helpers/vscodeStub';
 import { resetScanRootCache } from '../src/scanRoots';
 
 it('事件首扫后台读取文件，不打开其他文档并保留行号', async () => {
@@ -402,6 +402,97 @@ describe('IDE-AUD-036 统一根移除通知覆盖共享事件索引(R2-F11)', ()
       index.dispose();
       vscode.workspace.findFiles = originalFind;
       vscode.workspace.fs.readFile = originalRead;
+    }
+  });
+});
+
+describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)', () => {
+  const setupRoots = (assetsRoot: string): { root: string; workspaceRoot: string; restore: () => void } => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-events-watch-'));
+    const workspaceRoot = path.join(root, 'workspace');
+    fs.mkdirSync(workspaceRoot);
+    fs.mkdirSync(assetsRoot, { recursive: true });
+    const originalFolders = vscode.workspace.workspaceFolders;
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file(workspaceRoot), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { assetsRoot });
+    vscode.workspace.findFiles = async () => [];
+    vscode.workspace.fs.readFile = async uri => fs.promises.readFile(uri.fsPath);
+    resetScanRootCache();
+    return {
+      root,
+      workspaceRoot,
+      restore: () => {
+        vscode.workspace.workspaceFolders = originalFolders;
+        vscode.workspace.findFiles = originalFind;
+        vscode.workspace.fs.readFile = originalRead;
+        configurationOverrides.delete('kbengine');
+        resetScanRootCache();
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    };
+  };
+
+  it('外部 assetsRoot 初扫后挂 RelativePattern watcher', async () => {
+    const root = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kode-events-watch-')), 'assets');
+    const env = setupRoots(root);
+    const before = allFileSystemWatchers.length;
+    const index = new WorkspaceIndex();
+    try {
+      await index.allEventCalls();
+      const created = allFileSystemWatchers.slice(before);
+      const external = created.find(w =>
+        w.pattern instanceof RelativePattern && w.pattern.base === root && w.pattern.pattern === '**/*.py'
+      );
+      expect(external).toBeDefined();
+    } finally {
+      index.dispose();
+      env.restore();
+    }
+  });
+
+  it('切根释放旧 watcher 并绑定新根(旧不再触发,新可触发)', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-events-switch-'));
+    const assetsA = path.join(base, 'assetsA');
+    const assetsB = path.join(base, 'assetsB');
+    fs.mkdirSync(assetsA, { recursive: true });
+    fs.mkdirSync(assetsB, { recursive: true });
+    const env = setupRoots(assetsA);
+    const before = allFileSystemWatchers.length;
+    const index = new WorkspaceIndex();
+    try {
+      await index.allEventCalls();
+      const watcherA = allFileSystemWatchers.slice(before).find(w =>
+        w.pattern instanceof RelativePattern && w.pattern.base === assetsA);
+      expect(watcherA).toBeDefined();
+      // 切根:assetsRoot A → B
+      configurationOverrides.set('kbengine', { assetsRoot: assetsB });
+      resetScanRootCache();
+      const beforeSwitch = allFileSystemWatchers.length;
+      index.refreshExternalWatchers();
+      const watcherB = allFileSystemWatchers.slice(beforeSwitch).find(w =>
+        w.pattern instanceof RelativePattern && w.pattern.base === assetsB);
+      expect(watcherB).toBeDefined();
+      // 新根 watcher 可触发:assetsB 下文件变更入缓存(事件驱动异步,轮询等待)
+      const bFile = path.join(assetsB, 'listener.py');
+      fs.writeFileSync(bFile, 'self.addEvent(B_EV, self.on_ev)');
+      watcherB!.fireChange(vscode.Uri.file(bFile));
+      let sawB = false;
+      for (let i = 0; i < 200 && !sawB; i += 1) {
+        sawB = (await index.allEventCalls()).some(c => c.call.event === 'B_EV');
+        if (!sawB) { await new Promise(resolve => setTimeout(resolve, 1)); }
+      }
+      expect(sawB).toBe(true);
+      // 旧根 watcher 已释放:assetsA 下文件变更不再触发(不再入缓存)
+      const aFile = path.join(assetsA, 'listener.py');
+      fs.writeFileSync(aFile, 'self.addEvent(A_EV, self.on_ev)');
+      watcherA!.fireChange(vscode.Uri.file(aFile));
+      expect((await index.allEventCalls()).map(c => c.call.event)).not.toContain('A_EV');
+    } finally {
+      index.dispose();
+      env.restore();
+      fs.rmSync(base, { recursive: true, force: true });
     }
   });
 });

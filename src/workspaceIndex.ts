@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { findEventCalls } from './eventApi';
 import type { EventCall, EventCallIndex, IndexedEventCall } from './eventIndexTypes';
-import { findFilesAcrossRoots } from './scanRoots';
+import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './pythonScanRules';
 
 // 本地索引缓存（用户令 2026-10-20：跳转/CodeLens 不得每次全仓重扫）。
@@ -61,6 +61,7 @@ export class WorkspaceIndex implements EventCallIndex {
   private readonly cache = new Map<string, IndexedFile>();
   private readonly building = new Map<string, Promise<IndexedFile | null>>();
   private watchers: vscode.Disposable[] = [];
+  private externalWatchers: vscode.Disposable[] = [];
   private started = false;
   private starting?: Promise<void>;
   private disposed = false;
@@ -125,7 +126,35 @@ export class WorkspaceIndex implements EventCallIndex {
       this.cache.delete(uri.fsPath);
     });
     this.watchers.push(watcher);
+    // IDE-AUD-035(R2-F11):事件初扫支持外部根,但 watcher 只挂 workspace 字符串
+    // glob——外部 assetsRoot 增删改不触发维护。外部根改挂 RelativePattern 整组
+    // (切根可重建),与实体面 refreshExternalRootWatchers 同口径。
+    this.refreshExternalWatchers();
     this.started = true;
+  }
+
+  /**
+   * IDE-AUD-035:外部资产根 watcher 整组重建——旧根 watcher 全部释放,新根按
+   * 当前 getExternalScanRoots() 重挂,新根的增删改重新可触发维护;startIndex
+   * 首次接线,assetsRoot 配置切换时由扩展层调。
+   */
+  refreshExternalWatchers(): void {
+    for (const watcher of this.externalWatchers) {
+      watcher.dispose();
+    }
+    this.externalWatchers = [];
+    for (const root of getExternalScanRoots()) {
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(root, this.pyGlob)
+      );
+      watcher.onDidCreate(uri => { void this.indexFile(uri); });
+      watcher.onDidChange(uri => { void this.indexFile(uri); });
+      watcher.onDidDelete(uri => {
+        this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+        this.cache.delete(uri.fsPath);
+      });
+      this.externalWatchers.push(watcher);
+    }
   }
 
   dispose(): void {
@@ -136,6 +165,8 @@ export class WorkspaceIndex implements EventCallIndex {
     this.renameListener = undefined;
     for (const w of this.watchers) w.dispose();
     this.watchers = [];
+    for (const w of this.externalWatchers) w.dispose();
+    this.externalWatchers = [];
     this.cache.clear();
     this.revisions.clear();
   }
