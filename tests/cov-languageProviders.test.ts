@@ -10,7 +10,9 @@ import {
   KBEngineMethodImplementationCodeActionProvider,
   KBEngineReferencesProvider,
   KBEngineTypeCodeActionProvider,
+  KBEngineBuiltinTypeInlayHintsProvider,
   PythonDefinitionProvider,
+  prewarmKbengineIndex,
   setPythonMroJumpEnabled,
   UNKNOWN_TYPE_DIAGNOSTIC_CODE
 } from '../src/languageProviders';
@@ -941,5 +943,129 @@ describe('PythonDefinitionProvider 属性探针链(覆盖率)', () => {
     expect(traced.location).toBeNull();
     // 属性探针全 miss + 嵌套接收者 → 4614 早退记 miss
     expect(traced.layers[0]).toMatchObject({ layer: 'entity-def', status: 'miss' });
+  });
+});
+
+// KBEngineHoverProvider 注入面分支(覆盖率):def 方法/接收者调用的映射
+// 拒绝与签名闸、declaredArgs 空串「只出名不造型」、数据字典键悬停三态
+// (写点推不出/读点无写点/回程取消)、同点位在途 memo 超限驱逐、
+// prewarm 预热收尾、builtin inlay 无 manager 早退。
+const DICT_WRITE_DOC = (): MinimalTextDocument =>
+  pyDocument("import KBEngine\nKBEngine.globalData['cfg'] = makeThing()\n", 'scripts/Hero.py');
+const DICT_READ_DOC = (): MinimalTextDocument =>
+  pyDocument("import KBEngine\nv = KBEngine.globalData.get('cfg')\n", 'scripts/Hero.py');
+
+const dictIndexStub = (sites: unknown[]): unknown =>
+  ({ ensureStarted: () => Promise.resolve(), query: () => sites });
+
+describe('KBEngineHoverProvider 注入面分支(覆盖率)', () => {
+  it('def 方法标注:映射拒绝 → catch 落 null 交回普通链(1045)', async () => {
+    const provider = new KBEngineHoverProvider({
+      resolveMethodDefinition: () => Promise.reject(new Error('map boom'))
+    } as unknown as EntityMappingManager);
+    const result = await provider.provideHover(methodDoc(), METHOD_DECL_POS);
+    // 注解落空交回普通链(引擎生命周期文档),不外抛即覆盖 catch
+    expect(result).not.toBeNull();
+    expect((result as { contents: unknown }).contents).toBeDefined();
+  });
+
+  it('def 方法标注:declaredArgs 空串 → 只出名不造型(363)', async () => {
+    const provider = new KBEngineHoverProvider({
+      resolveMethodDefinition: () =>
+        Promise.resolve({
+          defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 8,
+          section: 'BaseMethods', declaredArgs: ['']
+        })
+    } as unknown as EntityMappingManager);
+    // 形参闸:[''] 对 (self) 长度相等且 self 无注解 → 放行;签名空类型只出名
+    const result = await provider.provideHover(methodDoc(), METHOD_DECL_POS);
+    expect(result).not.toBeNull();
+  });
+
+  it('接收者调用标注:映射拒绝 → catch 落 null(1118)', async () => {
+    const provider = new KBEngineHoverProvider({
+      resolveMethodDefinition: () => Promise.reject(new Error('map boom'))
+    } as unknown as EntityMappingManager);
+    const result = await provider.provideHover(receiverDoc(), RECEIVER_POS);
+    expect(result).not.toBeNull();
+    expect((result as { contents: unknown }).contents).toBeDefined();
+  });
+
+  it('接收者调用标注:形参数不符 → 签名闸拒给标注(1142/1151)', async () => {
+    const provider = new KBEngineHoverProvider({
+      resolveMethodDefinition: () =>
+        Promise.resolve({
+          defFile: '/tmp/ws/scripts/entity_defs/Hero.def', line: 9,
+          section: 'CellMethods', declaredArgs: ['int', 'str']
+        })
+    } as unknown as EntityMappingManager);
+    // def 声明两形参,调用行无参 → 个数对不上 → 不给标注(交回普通链)
+    const result = await provider.provideHover(receiverDoc(), RECEIVER_POS);
+    expect(result).not.toBeNull();
+    expect((result as { contents: unknown }).contents).toBeDefined();
+  });
+
+  it('数据字典键悬停:写点 RHS 推不出类型 → null 交回普通链(1007)', async () => {
+    const provider = new KBEngineHoverProvider(undefined, dictIndexStub([
+      { kind: 'write', valueText: 'makeThing()', file: '/tmp/ws/scripts/a.py', line: 1 }
+    ]) as never);
+    const result = await provider.provideHover(DICT_WRITE_DOC(), new Position(1, 21));
+    expect(result === null || result === undefined).toBe(true);
+  });
+
+  it('数据字典键悬停:读点无同键写点 → null(1010)', async () => {
+    const provider = new KBEngineHoverProvider(undefined, dictIndexStub([]) as never);
+    const result = await provider.provideHover(DICT_READ_DOC(), new Position(1, 30));
+    expect(result === null || result === undefined).toBe(true);
+  });
+
+  it('数据字典键悬停:ensureStarted 回程取消 → null(965)', async () => {
+    const gate = deferred<void>();
+    const provider = new KBEngineHoverProvider(undefined, {
+      ensureStarted: () => gate.promise, query: () => []
+    } as never);
+    const token = { isCancellationRequested: false };
+    const pending = provider.provideHover(DICT_WRITE_DOC(), new Position(1, 21), token);
+    await flush();
+    token.isCancellationRequested = true;
+    gate.resolve();
+    expect(await pending).toBeNull();
+  });
+
+  it('memo 超限驱逐:257 个在途 hover 逐条驱逐最旧(755)', async () => {
+    const never = deferred<never>();
+    const provider = new KBEngineHoverProvider({
+      resolveMethodDefinition: () => never.promise
+    } as unknown as EntityMappingManager);
+    const lines = ['class H:'];
+    const positions: Position[] = [];
+    for (let i = 0; i < 260; i += 1) {
+      lines.push(`    def m${i}(self):`, '        pass');
+      positions.push(new Position(1 + i * 2, 8));
+    }
+    const doc = pyDocument(`${lines.join('\n')}\n`);
+    for (const position of positions) {
+      void provider.provideHover(doc, position);
+    }
+    // 全部在途(映射不落定)→ memo 只保留最近 256 条,最早的被驱逐
+    const memo = (provider as unknown as { hoverMemo: Map<string, unknown> }).hoverMemo;
+    expect(memo.size).toBeLessThanOrEqual(256);
+    never.resolve(null as never);
+  });
+
+  it('prewarmKbengineIndex:python 文档触发预热收尾,拒绝不外抛(243)', async () => {
+    prewarmKbengineIndex(
+      { resolveMethodDefinition: () => Promise.reject(new Error('prewarm boom')) } as never,
+      methodDoc()
+    );
+    await flush();
+  });
+
+  it('builtin inlay:无 manager 且无目录面 → 空提示不接管(679)', async () => {
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider();
+    // scripts/Hero.py 无 base/cell/client 目录段 → pathFace=null → 无 manager 早退
+    const doc = pyDocument('class Hero:\n    def f(self):\n        self.cellType = 1\n');
+    expect(await provider.provideInlayHints(doc, new Range(new Position(0, 0), new Position(2, 30))))
+      .toEqual([]);
   });
 });
