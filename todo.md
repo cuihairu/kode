@@ -664,7 +664,7 @@
 
 依据：[完成状态与运行链路深审](docs/review/2026-10-30-completion-and-lint-audit.md)、[KBEngine lint 规则规范](docs/zh/guide/kbengine-lint-rules.md)。固定基线 bf26cbf；15 个 IDE 已勾选细项及 1 个历史 JSONC 条目有明确反例或验收缺口而重开。其他项是否复审通过见逐项 CSV，未评估不能当通过。一次实现一个行为，完成即独立验证、提交、推送；保留原标记的历史证据，不以其他 agent 的未提交改动作为完成依据。
 
-- [ ] IDE-AUD-001 [P1] 修复超时 attach 的迟到会话清理；验收：追踪订阅不在闸返回时提前释放；超时后才创建会话、再 resolve start，恰好停止本次会话一次且无订阅残留；卸载仍能释放；关联：IDE-REV-003。
+- [x] IDE-AUD-001 [P1] 修复超时 attach 的迟到会话清理；验收：追踪订阅不在闸返回时提前释放；超时后才创建会话、再 resolve start，恰好停止本次会话一次且无订阅残留；卸载仍能释放；关联：IDE-REV-003。 c647fdf
 - [ ] IDE-AUD-002 [P1] 用每次尝试唯一身份关联调试会话；验收：两个相同显示名称的 attach 并发，取消其中一个仅停止对应会话；不同 workspace/同名启动不误认；关联：IDE-REV-002。
 - [ ] IDE-AUD-003 [P1] 将 SSH 隧道存活绑定真实调试会话；验收：startDebugging 成功后隧道仍存活，会话终止才关闭；启动失败/取消/卸载也关闭，覆盖真实会话生命周期而非仅 Boolean 返回；关联：IDE-PDBG-004。
 - [ ] IDE-AUD-004 [P1] 阻止远端 PID 调试静默走本地；验收：远端选择时提供实际可工作的远端 attach 链；暂不支持则明确拒绝，绝不把本地 PID 列表当远端；远端 py-spy 与调试分别验收；关联：IDE-PDBG-005。

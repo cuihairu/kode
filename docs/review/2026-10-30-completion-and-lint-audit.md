@@ -26,7 +26,7 @@
 
 | 编号 / 优先级 | 结论与触发路径 | 关联已勾选项 | 修正方向 |
 | --- | --- | --- | --- |
-| F01 / P1 | **确认缺陷**：`startAttachGuarded` 的 finally 在超时返回时 dispose 追踪器。迟到会话创建后 `ownSession` 仍空，未停止；复现 `liveAfterTimeout=false, stopCount=0` | IDE-REV-003 | 追踪器活到 start 落定或本次会话完成清理，管理器卸载也应释放 |
+| F01 / P1 | **已修复 (c647fdf)**：追踪器不再随守卫返回提前释放，活到 `onStartSettled` 落定（幂等）或管理器 `dispose` 兜底；`abandoned` 标记使永不落定的迟到自家会话立即停。prove-red 4 用例（REV-002 取消面 / attachRemote / REV-003 迟到成功 / AUD-001 永不落定面）旧源码红、新源码绿；门禁 lint+tsc+unit 4659 通过 + xvfb demo RC=0 | IDE-REV-003 | 追踪器活到 start 落定或本次会话完成清理，管理器卸载也应释放 |
 | F02 / P1 | **确认缺陷**：只按 `session.name === attachConfig.name` 认领会话；同名并发会话被误认，超时停止了 `unrelated-same-name` | IDE-REV-002 | 每次 attach 使用唯一关联标记，校验配置/会话身份，而非显示名称 |
 | F03 / P1 | **确认缺陷**：`attachViaTunnel` 在 `attachPortConfig` 返回成功后立即 finally stop 隧道。startDebugging 返回的是启动结果，不是会话结束；复现 `attached=true, killed=1` | IDE-PDBG-004 | 隧道绑定对应 DebugSession 终止事件，失败/取消及卸载兜底释放 |
 | F04 / P1 | **确认缺口**：远端进程枚举只接进 py-spy。调试的 `pickProcessId` 仍使用本地 listProcesses，process attach 配置仍发给本地 debugpy | IDE-PDBG-005 | 明确支持远端 PID 附加的执行/隧道链；未实现前阻止远端选择悄悄走本地 |
