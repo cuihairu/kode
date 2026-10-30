@@ -3,6 +3,8 @@
 
 本页说明 Kode 在 `.def` 文件上的语言能力，包括高亮、补全、悬停、跳转和诊断。
 
+Python receiver 判空、RPC 路由及其他源码约束见 [KBEngine 写法陷阱与 lint 规则](./kbengine-lint-rules.md)，其中明确区分已实现检查、仅提示和待实现规则。
+
 ## 支持范围
 
 当前重点支持：

@@ -3,6 +3,8 @@
 
 This page covers Kode's language features on `.def` files: highlighting, completion, hover, navigation, and diagnostics.
 
+For Python receiver checks, RPC routing and source-backed constraints, see [KBEngine coding pitfalls and lint rules](./kbengine-lint-rules.md), including the distinction between implemented checks, hints and planned rules.
+
 ## Supported Scope
 
 The current focus:

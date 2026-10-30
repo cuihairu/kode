@@ -1,0 +1,150 @@
+2026-10-30 audit evidence; Kode baseline bf26cbf; engine f85ad81.
+Runtime probes load TypeScript in memory with a fake vscode API. No real debug sessions/databases are modified.
+Numbers are one-run localization data, not performance acceptance.
+
+
+--- repros ---
+{"test":"unguarded","findings":[{"kind":"receiver-none","receiver":"cell","line":2}]}
+{"test":"hasattrNone","findings":[]}
+{"test":"hasattrWrongReceiver","findings":[]}
+{"test":"orSameLine","findings":[]}
+{"test":"nestedReturn","findings":[]}
+{"test":"stringReturn","findings":[]}
+{"test":"aliasInvalidated","findings":[]}
+{"test":"orAnd","findings":[{"kind":"receiver-none","receiver":"cell","line":3}]}
+{"test":"safeAnd","findings":[]}
+{"test":"aliasOnly","findings":[]}
+{"test":"manyGuards","n":1000,"ms":36.38}
+{"test":"manyGuards","n":2000,"ms":45.71}
+{"test":"manyGuards","n":4000,"ms":260.61}
+{"test":"def-persistent","verdict":{"structural":false,"restartRequired":false,"reasons":[]}}
+{"test":"def-implements","verdict":{"structural":false,"restartRequired":false,"reasons":[]}}
+{"test":"def-components","verdict":{"structural":false,"restartRequired":false,"reasons":[]}}
+{"test":"sameProfileConfigChange","result":{"columns":[],"rows":[{"host":"database-A"}]},"calls":["database-A"]}
+{"test":"preCancelledQuery","ran":1,"outcome":"completed"}
+{"test":"sessionSetupFailure","closed":0}
+{"test":"lateAttachAfterTimeout","outcome":{"status":"timeout"},"liveAfterTimeout":false,"stopCount":0}
+
+
+--- more-repros ---
+{"test":"attachSameNameCollision","stoppedId":"unrelated-same-name"}
+{"test":"tunnelAfterSuccessfulStart","attached":true,"killed":1}
+{"test":"oldAppliedReplyOverwritesNewFailure","before":"failed","after":"applied","responseNumber":2}
+{"test":"previewSourceWithProfileB","chosenSource":"/project-A/Hero.def"}
+{"test":"nonCodeReceiver","body":"# self.cell.send()","findings":1}
+{"test":"nonCodeReceiver","body":"text = \"self.cell.send()\"","findings":1}
+{"test":"validDefStructure","a":"<Parent>A</Parent>","b":"<Parent>B</Parent>","verdict":{"structural":false,"restartRequired":false,"reasons":[]}}
+{"test":"validDefStructure","a":"<Interfaces><Interface>A</Interface></Interfaces>","b":"<Interfaces><Interface>B</Interface></Interfaces>","verdict":{"structural":false,"restartRequired":false,"reasons":[]}}
+{"test":"validDefStructure","a":"<Components><stats><Type>A</Type></stats></Components>","b":"<Components><stats><Type>B</Type></stats></Components>","verdict":{"structural":false,"restartRequired":false,"reasons":[]}}
+
+
+--- schema-repro ---
+{"test":"oneLargeEntityPhasedColdBuild","ms":841.1,"heartbeat":true,"result":{"entities":1,"stopped":false,"yields":1,"maxSliceMs":831}}
+
+
+--- baseline full unit summary ---
+··
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/receiverNoneGuardQuickFix.test.ts > KBEngineReceiverNoneGuardCodeActionProvider(B-7) > receiver-none 诊断 → 两条 QuickFix:包裹式(首选靠前)+早退式(次选),不碰其他文件
+AssertionError: expected 2 to deeply equal Position{ line: 2, character: +0 }
+
+- Expected:
+Position {
+  "character": 0,
+  "line": 2,
+}
+
++ Received:
+2
+
+ ❯ tests/receiverNoneGuardQuickFix.test.ts:168:38
+    166|     expect(wrapUri.toString()).toBe(document.uri.toString());
+    167|     expect(wrapEdits).toHaveLength(1);
+    168|     expect(wrapEdits[0].range.start).toEqual(new Position(2, 0));
+       |                                      ^
+    169|     expect(wrapEdits[0].range.end).toEqual(new Position(3, 0));
+    170|     expect(wrapEdits[0].newText).toBe(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 398 passed | 1 skipped (400)
+      Tests  1 failed | 4345 passed | 9 skipped (4355)
+   Start at  11:49:48
+   Duration  36.02s (tests 45%, import 35%, transform 18%, worker 2%)
+
+    Isolate  400 workers spawned · ~354ms startup each (spawn + environment, per file)
+             at least ~10.54s faster with isolate: false — reuses workers across files instead of one per file
+
+
+--- hasattr test: baseline implementation ---
+     69|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 7 passed (11)
+   Start at  11:55:46
+   Duration  533ms (transform 66%, tests 18%, import 13%, worker 4%)
+
+
+--- hasattr test: fixed implementation c351606, working-tree test dependencies ---
+ RUN  v5.0.3 /home/cui/workspaces/kode
+
+·········································
+
+ Test Files  8 passed (8)
+      Tests  41 passed (41)
+   Start at  11:55:47
+   Duration  1.87s (transform 70%, tests 15%, import 13%, worker 2%)
+
+  Transform  transforming modules took 4.59s · 70% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+
+
+--- fresh editor demo (baseline bf26cbf) ---
+    at async Object.s [as settled] (vscode-file://vscode-app/home/cui/workspaces/kode/.vscode-test/vscode-linux-x64-1.141.0/resources/app/out/vs/workbench/workbench.desktop.main.js:31:86358)
+    at async vLi.updateValue (vscode-file://vscode-app/home/cui/workspaces/kode/.vscode-test/vscode-linux-x64-1.141.0/resources/app/out/vs/workbench/workbench.desktop.main.js:5390:43135)
+[AgentHost] No signed-in session resolved for resource: https://api.github.com
+    ✔ sibling-history returns its exact target set (45ms)
+[AgentHost] No signed-in session resolved for resource: https://api.github.com/repos
+    ✔ sibling-reward returns its exact target set
+    ✔ sibling-inventory returns its exact target set (397ms)
+    ✔ same-class-heal returns its exact target set (491ms)
+    ✔ sibling-bounds returns its exact target set (291ms)
+    ✔ inherited-brain returns its exact target set (122ms)
+    ✔ sibling-combat returns its exact target set
+    ✔ avatar-attack returns its exact target set (430ms)
+[AccountPolicyGate] apply: state=inactive, reason=undefined, isRestricted=false
+    ✔ implementation-before-def returns its exact target set (280ms)
+    ✔ cell-role returns its exact target set (136ms)
+    ✔ base-role returns its exact target set (110ms)
+    ✔ monster-brain returns its exact target set (376ms)
+    ✔ elite-inherited-target returns its exact target set (88ms)
+    ✔ reexported-base returns its exact target set (148ms)
+    ✔ alias-base-collision returns its exact target set (97ms)
+    ✔ qualified-base returns its exact target set (245ms)
+    ✔ inherited-property returns its exact target set
+    ✔ def-to-cell returns its exact target set (77ms)
+    ✔ def-to-base returns its exact target set
+    ✔ def-to-client returns its exact target set
+    ✔ unknown-receiver returns its exact target set (169ms)
+    ✔ closure-is-not-method returns its exact target set (43ms)
+    ✔ ignore-comment returns its exact target set
+    ✔ ignore-string returns its exact target set
+  25 passing (5s)
+[main 2026-10-30T04:14:31.883Z] Extension host with pid 3838650 exited with code: 0, signal: unknown.
+Exit code:   0
+
+--- fresh editor final (baseline bf26cbf): exit 1 ---
+rejected promise not handled within 1 second: CodeExpectedError: Unable to write to Folder Settings because files.associations does not support the folder resource scope.
+stack trace: CodeExpectedError: Unable to write to Folder Settings because files.associations does not support the folder resource scope.
+Unable to write to Folder Settings because files.associations does not support the folder resource scope.: CodeExpectedError: Unable to write to Folder Settings because files.associations does not support the folder resource scope.
+  0 passing (2s)
+  1 failing
+      AssertionError [ERR_ASSERTION]: 排干窗内后台量未归零: {"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"caches":{"parsedDocuments":{"entries":8,"maxEntries":8,"bytes":5304,"maxBytes":8388608},"databaseSchemas":{"entries":6,"capacity":32},"annotationIndex":{"entries":0,"ttlMs":3000}},"worker":{"running":0,"queued":0,"queuedBytes":0,"maxQueuedBytes":8388608,"peakQueuedBytes":0,"budgetRejects":0},"annotationBuilds":{"running":0,"waiting":0,"cancelled":0},"indexTasksQueued":0,"schemaColdBuilds":0}
+Exit code:   1

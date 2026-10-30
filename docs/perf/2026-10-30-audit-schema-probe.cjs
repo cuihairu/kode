@@ -1,0 +1,9 @@
+// Run with node from the Kode bf26cbf checkout root; uses installed TypeScript and fake vscode.
+const fs=require('fs');const perf=require('perf_hooks').performance;const ts=require(process.cwd()+'/node_modules/typescript');const Module=require('module');const old=Module._load;
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,f);
+Module._load=function(id){if(id==='vscode')return require(process.cwd()+'/tests/helpers/vscodeStub.ts');return old.apply(this,arguments)};
+const load=n=>require(process.cwd()+'/src/'+n+'.ts');
+(async()=>{
+const os=require('os'),path=require('path');const vs=require(process.cwd()+'/tests/helpers/vscodeStub.ts');const schema=load('databaseSchema');const root=fs.mkdtempSync(path.join(os.tmpdir(),'kode-audit-large-schema-'));
+try{fs.mkdirSync(path.join(root,'scripts/entity_defs'),{recursive:true});fs.writeFileSync(path.join(root,'scripts/entities.xml'),'<root><Hero/></root>');fs.writeFileSync(path.join(root,'scripts/entity_defs/types.xml'),'<root/>');fs.writeFileSync(path.join(root,'scripts/entity_defs/Hero.def'),'<root><Properties>'+Array.from({length:6000},(_,i)=>'<p'+i+'><Type>UINT32</Type><Persistent>true</Persistent></p'+i+'>').join('')+'</Properties></root>');vs.workspace.workspaceFolders=[{uri:vs.Uri.file(root),name:'ws',index:0}];schema.clearDatabaseSchemaCacheForTests();let heartbeat=false;setTimeout(()=>{heartbeat=true},0);const start=perf.now();const result=await schema.buildTypeStorageUsageIndexPhased(root,{entityBudgetMs:25});console.log(JSON.stringify({test:'oneLargeEntityPhasedColdBuild',ms:+(perf.now()-start).toFixed(1),heartbeat,result}));}finally{fs.rmSync(root,{recursive:true,force:true})}
+})().catch(e=>{console.error(e.stack);process.exitCode=1});
