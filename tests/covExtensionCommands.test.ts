@@ -6,7 +6,8 @@ import { activate, deactivate } from '../src/extension';
 import { commandRegistry, commands } from './fake-vscode/commandRegistry';
 import { languagesRegistry } from './fake-vscode/languages';
 import { messages, window as fakeWindow, windowState } from './fake-vscode/windowState';
-import { configurationOverrides, workspace, workspaceEvents } from './fake-vscode/workspaceState';
+import { configurationOverrides, workspace, workspaceEvents, workspaceState } from './fake-vscode/workspaceState';
+import { annotationSourceLog } from '../src/annotationSourceLog';
 import {
   makeTextDocument,
   Position,
@@ -611,6 +612,8 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
       interpreterSource: 'path'
     }]);
     store.set('kbengine.activeProfileId.v1', 'p1');
+    // 注解来源日志开关:激活时读取,置真后 sink 接线可被直接发射验证
+    configurationOverrides.set('kbengine', { annotationLog: true });
     context = {
       subscriptions: [],
       extensionUri: Uri.file(path.join(extDir, 'package.json')),
@@ -622,6 +625,7 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
   });
 
   afterAll(() => {
+    configurationOverrides.delete('kbengine');
     disposeContext(context);
     expect(deactivate()).toBeUndefined();
   });
@@ -629,6 +633,20 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
   it('build.previewTask:活动 profile → 任务四要素预览弹层', async () => {
     await commands.executeCommand('kbengine.build.previewTask');
     expect(messages.info.some(message => message.includes('command') || message.length > 0)).toBe(true);
+  });
+
+  it('kbe-stub 虚拟文档:内容提供者直接给出完整桩内容', () => {
+    const provider = workspaceState.contentProviders.get('kbe-stub') as {
+      provideTextDocumentContent(): string;
+    };
+    expect(provider).toBeDefined();
+    const content = provider.provideTextDocumentContent();
+    expect(content.length).toBeGreaterThan(0);
+  });
+
+  it('注解来源日志:启用后 sink 接线落通道', () => {
+    annotationSourceLog('info', 'probe annotation line');
+    expect(channelLines('KBEngine Annotations')).toContain('probe annotation line');
   });
 
   it('tests.list:发现测试文件入面板与选择器', async () => {

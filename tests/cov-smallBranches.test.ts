@@ -65,6 +65,16 @@ import {
   classifyDefChange,
   structuralFingerprintHash
 } from '../src/hotReloadDefStructure';
+import {
+  createProfileScopedDriftExecutor,
+  ProfileDatabaseConnectionService
+} from '../src/profileDatabaseConnection';
+import { resolveAssetsRootForWorkspace } from '../src/scanRoots';
+import {
+  getOrParseDocumentSync,
+  type DocumentStoreDocument
+} from '../src/documentStore';
+import { resolveCustomTypePropertyAnnotation } from '../src/pythonTypeStubs';
 
 // 98% 主线:小文件孤立分支批量补面——每例直击一个未覆盖守卫/回退臂,
 // 纯逻辑无需 vscode 装配。
@@ -479,5 +489,50 @@ describe('小文件孤立分支第六波(覆盖率 98% 线)', () => {
     const verdict = classifyDefChange(before, after);
     expect(verdict.structural).toBe(true);
     expect(verdict.reasons.some(reason => reason.includes('方法新增'))).toBe(true);
+  });
+});
+
+describe('小文件孤立分支第七波(覆盖率 98% 线)', () => {
+  it('profileDatabaseConnection:cache 取当前结果缓存(145)', () => {
+    const service = new ProfileDatabaseConnectionService({
+      registry: new DatabaseConnectionRegistry({
+        now: () => 0,
+        load: () => ({ connections: {} })
+      }),
+      queryResultCache: {} as never,
+      resolveConfig: () => null
+    });
+    expect(service.cache).toBeDefined();
+  });
+
+  it('profileDatabaseConnection:内层有 destroy 则透传(175)', async () => {
+    const factory = createProfileScopedDriftExecutor(
+      'p1',
+      {} as never,
+      async () => ({
+        runQuery: async () => ({ columns: [], rows: [] }),
+        close: async (): Promise<void> => undefined,
+        destroy: async (): Promise<void> => undefined
+      } as never)
+    );
+    const executor = await factory({} as never);
+    expect(executor.destroy).toBeDefined();
+  });
+
+  it('scanRoots:无配置无发现 → 记录空发现并返回空(101)', () => {
+    expect(resolveAssetsRootForWorkspace('/tmp/kode-none-ws')).toBe('');
+  });
+
+  it('documentStore:文件类型分类 .py/.def(344/345)', () => {
+    const doc = (fsPath: string): DocumentStoreDocument => ({
+      uri: { toString: () => `file://${fsPath}`, fsPath },
+      getText: () => 'x = 1'
+    });
+    expect(getOrParseDocumentSync(doc('/tmp/ws/scripts/hero.py'), text => text).result).toBe('x = 1');
+    expect(getOrParseDocumentSync(doc('/tmp/ws/scripts/entity_defs/Avatar.def'), text => text).result).toBe('x = 1');
+  });
+
+  it('pythonTypeStubs:属性解析异常 → 回退 Any(417)', () => {
+    expect(resolveCustomTypePropertyAnnotation({ name: 'x' } as never, [])).toBe('Any');
   });
 });
