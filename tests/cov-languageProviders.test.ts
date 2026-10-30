@@ -6,8 +6,11 @@ import {
   KBEngineMethodImplementationCodeActionProvider,
   KBEngineReferencesProvider,
   KBEngineTypeCodeActionProvider,
+  PythonDefinitionProvider,
   UNKNOWN_TYPE_DIAGNOSTIC_CODE
 } from '../src/languageProviders';
+import { findKbeDataDictAccesses } from '../src/globalDataIndex';
+import { setJumpLogEnabled } from '../src/navigationLog';
 import type { EntityMappingManager } from '../src/entityMapping';
 import { Diagnostic, Position, Range, makeTextDocument } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
@@ -273,5 +276,105 @@ describe('KBEngineTypeCodeActionProvider 守卫(覆盖率)', () => {
       { diagnostics: [unknown] }, undefined
     );
     expect(actions).toEqual([]);
+  });
+});
+
+// 分层跳转追踪(用户 2026-10-16)的取消与异常终态(覆盖率):内层取消位
+// 返回明确「cancelled」结果,不抛不查;metrics 记 cancelled 而非 error。
+describe('PythonDefinitionProvider 取消终态(覆盖率)', () => {
+  it('取消位:traced 内层直接返回取消结果,不触 manager', async () => {
+    const provider = new PythonDefinitionProvider({} as unknown as EntityMappingManager);
+    const doc = pyDocument('x = 1\n', 'scripts/Hero.py');
+    const cancelled = { isCancellationRequested: true } as never;
+    const traced = await provider.provideDefinitionTraced(doc, new Position(0, 1), cancelled);
+    expect(traced.location).toBeNull();
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'context', status: 'skip', detail: 'cancelled' })
+    );
+  });
+});
+
+// resolveDataDictSitesAtPosition(3944-3946):索引 ensureStarted 已过、落点
+// 键表达式命中,但取消位在 await 回程置位 → 早退 null,不查 query(零工作)。
+// 与上一例(impl 口取消)互补:本例同步前缀已深入索引层。
+describe('PythonDefinitionProvider 数据字典键取消位(覆盖率)', () => {
+  it('ensureStarted 后取消:键早退 null,query 不被调用', async () => {
+    const dataDictIndex = {
+      ensureStarted: async (): Promise<void> => undefined,
+      query: (): never => { throw new Error('query must not run after cancel'); }
+    } as never;
+    const provider = new PythonDefinitionProvider(
+      {} as unknown as EntityMappingManager, undefined, dataDictIndex
+    );
+    const doc = pyDocument('import KBEngine\nKBEngine.globalData["cfg"] = 1\n');
+    const lineText = doc.getText().split('\n')[1];
+    const access = findKbeDataDictAccesses(lineText, new Set(['KBEngine']))[0];
+    expect(access).toBeDefined();
+    const token = { isCancellationRequested: false };
+    const pending = provider.provideDefinitionTraced(
+      doc, new Position(1, access.keyStart + 1), token as never
+    );
+    token.isCancellationRequested = true;
+    const traced = await pending;
+    expect(traced.location).toBeNull();
+    expect(traced.layers).toContainEqual(
+      expect.objectContaining({ layer: 'context', status: 'skip', detail: 'cancelled' })
+    );
+  });
+});
+
+// 语义查询外层 catch(4075-4078):impl 内任何未捕获异常 → metrics 记 error
+// 后原样重抛(不打断调用方错误处理)。经 dataDictIndex.query 抛错直达。
+// 类基类回退 catch(4197-4199)+ layerErrorMessage 非 Error 分支(3993):
+// resolveClassBase 以非 Error 值(string)拒绝,catch 内 String(error) 记录。
+describe('PythonDefinitionProvider 异常终态与基类回退 catch(覆盖率)', () => {
+  it('query 抛错:traced 整体 rejects(error 打点后重抛)', async () => {
+    const dataDictIndex = {
+      ensureStarted: async (): Promise<void> => undefined,
+      query: (): never => { throw new Error('query boom'); }
+    } as never;
+    const provider = new PythonDefinitionProvider(
+      {} as unknown as EntityMappingManager, undefined, dataDictIndex
+    );
+    const doc = pyDocument('import KBEngine\nKBEngine.globalData["cfg"] = 1\n');
+    const lineText = doc.getText().split('\n')[1];
+    const access = findKbeDataDictAccesses(lineText, new Set(['KBEngine']))[0];
+    await expect(
+      provider.provideDefinitionTraced(doc, new Position(1, access.keyStart + 1))
+    ).rejects.toThrow('query boom');
+  });
+
+  it('类基类解析以字符串拒绝:catch 记录后不炸,落回 context miss', async () => {
+    const pythonClassIndex = {
+      resolveClassBase: (): Promise<never> => Promise.reject('plain string boom')
+    } as never;
+    const provider = new PythonDefinitionProvider(
+      {} as unknown as EntityMappingManager, pythonClassIndex
+    );
+    // import Base 使显式导入成立;光标落在 class X(Base) 的 Base 上。
+    // jumpLog 惰性求值,开启后 catch 内 layerErrorMessage 实求,覆盖 String 分支。
+    setJumpLogEnabled(true);
+    try {
+      const doc = pyDocument('import Base\nclass X(Base):\n    pass\n');
+      const traced = await provider.provideDefinitionTraced(doc, new Position(1, 9));
+      expect(traced.location).toBeNull();
+      expect(traced.layers.at(-1)).toMatchObject({ layer: 'context', status: 'miss' });
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('未导入基类的 mro 回退 catch:同形非 Error 拒绝 → 不炸落 context miss', async () => {
+    const pythonClassIndex = {
+      resolveClassBase: (): Promise<never> => Promise.reject('unimported base boom')
+    } as never;
+    const provider = new PythonDefinitionProvider(
+      {} as unknown as EntityMappingManager, pythonClassIndex
+    );
+    // 无 import Base → explicitlyImportedBase=false → 4224 分支的 catch(4234)
+    const doc = pyDocument('class X(Base):\n    pass\n');
+    const traced = await provider.provideDefinitionTraced(doc, new Position(0, 9));
+    expect(traced.location).toBeNull();
+    expect(traced.layers.at(-1)).toMatchObject({ layer: 'context', status: 'miss' });
   });
 });
