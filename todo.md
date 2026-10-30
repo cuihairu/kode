@@ -676,7 +676,8 @@
 - [ ] IDE-AUD-010 [P1] 清理数据库会话初始化失败的连接；验收：mysql.createConnection 成功、SET READ ONLY 抛错/挂起时关闭或销毁连接并报原始原因；不用仅保护工厂返回后的 executor；关联：IDE-REV-017。
 - [ ] IDE-AUD-011 [P1] 把数据库来源导航限定到当前连接资产根；验收：两项目有同名实体/同名表，B 连接预览与 impact 只用 B 声明；没有匹配根时显示未知，不按 workspace 首命中；关联：IDE-REV-018、IDE-REV-019。
 - [ ] IDE-AUD-012 [P1] 让单实体结构影响覆盖全部子表；验收：遍历同实体快照所有表，ARRAY/组件子表的新增/移除/类型变化均进报告，全程只读；根表无变化不能掩盖子表变化；关联：IDE-REV-019。
-- [ ] IDE-AUD-013 [P0] 让单实体 schema 内部计算按预算让路；验收：对 6000 属性和深组件链验证实际最大连续片，25ms 预算不可在整实体 831ms 之后才检查；真实计算中取消不继续发布；关联：IDE-REV-013。
+- [ ] IDE-AUD-013 [P0] 让单实体 schema 内部计算按预算让路；验收：对 6000 属性和深组件链验证实际最大连续片，25ms 预算不可在整实体 831ms 之后才检查；真实计算中取消不继续发布；关联：IDE-REV-013。(51d9ed4 属性递归让路面已落：属性收集链(属性循环/FD 子键/接口/组件/父链递归)改同步生成器按预算 yield 'phase-gate'，同步面无 progress 行为不变、异步面共享 SchemaBuildProgress 在每次闸后重置记账；分阶段冷构建经 refreshTypeStorageUsageRecordAsync→buildDatabaseSchemaSnapshotAsync 单实体内部让路+中段取消即刻止步；深组件链测试(150 层×40 属性)实测 yields>1 且 maxSliceMs<150 入预算。**余量(未达 25ms)**：单文件大 def 的 parseDefDocument(vendor fast-xml-parser，12k 行实测 95-185ms)是共享 XML 解析器整块阻塞，不属属性递归让路面，需解析器分片/替换——已单列 IDE-REV-039，不塞本项风险面。)
+- [ ] IDE-REV-039 [P2] 共享 def XML 解析器分片或 worker 化：单文件大 def(≥12k 行)的 parseDefDocument 实测 95-185ms(vendor fast-xml-parser 整块 opaque，不可内部 yield)，是 schema 单实体预算让路面(AUD-013 51d9ed4)之后的残余最大连续阻塞；验收：冷构建中单实体最大连续片(含解析段)入预算量规，或解析移出宿主线程；前置：无；关联：IDE-AUD-013、IDE-REV-013。
 - [ ] IDE-AUD-014 [P1] 补齐热更新结构指纹的引擎装载面；验收：Parent/Interfaces/Components/Persistent/Utype 等已核验结构变化阻止普通 reload；未知结构保守处理，注释/空白等非结构变更仍可通过；关联：IDE-REV-024。
 - [ ] IDE-AUD-015 [P1] 验收真实工作已经启动后的 hover 取消；验收：在真实文件读取/解析/查找的中段取消，按请求记录已开始与停止，取消后无晚到结果；入口假闸测试保留但不能充抵；关联：IDE-REV-032。
 - [ ] IDE-AUD-016 [P1] 验收真实工作已经启动后的导航取消；验收：真实 definition 依赖链已派发后取消，排队/在途独占任务有证据停止，共享工作继续；取消前后 IO 按请求归属记录；关联：IDE-REV-033。
