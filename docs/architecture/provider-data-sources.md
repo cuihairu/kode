@@ -100,7 +100,7 @@
 
 ## 5. watcher 分布
 
-watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处):src/extension.ts=3 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=1 src/globalDataIndex.ts=1(合计 12 处调用位)
+watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern):src/extension.ts=3 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1(合计 13 处调用位)
 
 - 装配层自持:extension.ts ×3、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005)。
 - 模块自持(见 §6 标注):entityMapping ×3、hotReload ×1(显式 dispose/重建)、pythonTypeStubs ×1、debugConfig ×1。

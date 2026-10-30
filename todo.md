@@ -729,7 +729,7 @@
 - [ ] IDE-AUD-032 [P1] 新项目确认后执行 no-clobber 创建；验收：预览期间新增/替换任何目标文件时拒绝整次落盘或安全重预览；原子 rename 不能覆盖并发出现的文件，回滚也不删除他人新增；依据：R2-F08。
 - [ ] IDE-AUD-033 [P1] 事件索引在放弃脏文档后恢复磁盘结果；验收：编辑新增/删除监听可见，放弃修改并关闭后监听/跳转恢复；在途旧脏结果不复活，不能等碰巧收到磁盘 watcher 才自愈；依据：R2-F09。
 - [ ] IDE-AUD-034 [P1] 事件磁盘更新在途时保留最新变化；验收：门住旧文件读取并连续触发真实磁盘更新，旧回包不能覆盖新版本；合并后至少有一次尾随读取，删除/重命名不会被旧任务复活；依据：R2-F10。
-- [ ] IDE-AUD-035 [P1] 事件索引维护外部根 watcher 生命周期；验收：外部 assetsRoot 初扫后真实增删改均更新；切根时释放旧 RelativePattern watcher 并绑定新根，移除根后不返回其监听；依据：R2-F11。
+- [x] IDE-AUD-035 [P1] 事件索引维护外部根 watcher 生命周期；验收：外部 assetsRoot 初扫后真实增删改均更新；切根时释放旧 RelativePattern watcher 并绑定新根，移除根后不返回其监听；依据：R2-F11。（265f99e;src/workspaceIndex.ts startIndex 末调 refreshExternalWatchers:外部 getExternalScanRoots 逐个挂 RelativePattern watcher(py glob),旧根释放新根挂,dispose 整组释放;extension.ts assetsRoot 切换同步 refreshExternalWatchers;测试=tests/workspaceEventIndex.test.ts IDE-AUD-035 两例(外部挂 RelativePattern=红转绿/切根旧释放新可触发);watcher 分布对账 workspaceIndex 1→2;测试绿 4938|7+25 demo）
 - [x] IDE-AUD-036 [P1] 统一根移除通知覆盖共享事件索引；验收：事件缓存和该根在途任务收到同一终态通知，移除 B 不保留 B 监听/目标，不清掉 A；旧 B 回包不能再注册；依据：R2-F11。（6eb1ac7;src/workspaceIndex.ts 加 removeRoot(缓存+building 键前缀判定摘除,该根 revision 前进使在途读盘回包作废,其他根保留);extension.ts rootRemovals 订阅调 sharedWorkspaceIndex.removeRoot;测试=tests/workspaceEventIndex.test.ts IDE-AUD-036 两例(清 B 留 A 红转绿/在途 B 回包不再注册);锚点对账 1149/1227/1267→1154/1232/1272+baseline 同步;测试绿 4936|7+25 demo）
 - [ ] IDE-AUD-037 [P1] 将依赖就绪编排接到真实启动命令；验收：kbengine.server.start 的自动/组启动走统一依赖图；machine 失败或未 ready 时 logger/dbmgr 等依赖项不继续；命令级测试不能只测管理器 API；依据：R2-F13。
 - [ ] IDE-AUD-038 [P1] 提供接通 retryTarget 的实际操作入口；验收：从命令/工作台选择失败目标重试，已就绪目标 PID 不变，失败原因如实显示；取消与超时按既有原子任务守卫执行；依据：R2-F14。

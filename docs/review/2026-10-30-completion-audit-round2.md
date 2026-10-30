@@ -28,7 +28,7 @@
 | R2-F08 | P1 | 新项目只在预览前查冲突；确认期间其他来源新增 entities.xml，确认后被空模板覆盖，preservedConcurrentFile=false | IDE-PRJ-008 需补落盘时的拒绝覆盖保障 |
 | R2-F09 | P1 | 事件索引不监听脏文档关闭/放弃修改，关闭后仍返回 EV_DIRTY | 脏编辑增量存在，但丢弃编辑的事件恢复缺口未覆盖 |
 | R2-F10 | P1 | 事件 indexFile 在途时新磁盘事件直接复用原 Promise，不递增磁盘 revision、不安排尾随更新；第二次更新可永久丢失 | 编辑事件的 revision 不能证明磁盘 watcher 更新竞态已解决 |
-| R2-F11 | P1 | 事件初扫支持外部根，但 watcher 只有 workspace 字符串 glob；无外部根 RelativePattern、根切换/移除订阅和缓存清理 | IDE-SNP-009 的“各消费索引”与根生命周期仍有遗漏。统一根移除覆盖事件索引（WorkspaceIndex.removeRoot+订阅）已修 6eb1ac7（todo.md IDE-AUD-036）；外部根 watcher 生命周期另见 IDE-AUD-035 |
+| R2-F11 | P1 | 事件初扫支持外部根，但 watcher 只有 workspace 字符串 glob；无外部根 RelativePattern、根切换/移除订阅和缓存清理 | IDE-SNP-009 的“各消费索引”与根生命周期仍有遗漏。统一根移除覆盖事件索引（WorkspaceIndex.removeRoot+订阅）已修 6eb1ac7（todo.md IDE-AUD-036）；外部根 watcher 生命周期已修 265f99e（todo.md IDE-AUD-035，refreshExternalWatchers 挂 RelativePattern 切根重建） |
 | R2-F12 | P1 | 根移除只清 documentStore，defParser 全局 AST 缓存仍持有原文；实测释放文档 1 个，XML cache 仍 entries=1 | IDE-RES-008 需重开；全局 8 条/8MiB 预算可缓解，却不等于根移除释放 |
 | R2-F13 | P1 | 生产启动命令走 startAutoComponents，未调用 startTargetGroup；machine 返回 false 后仍启动 logger、dbmgr | IDE-RUN-006 只交付了未接入命令的 API |
 | R2-F14 | P1 | retryTarget 只被 serverManager 自身与测试使用，实际命令仍走 start/restart，缺少失败单目标重试入口 | IDE-RUN-008 尚未形成产品闭环 |
