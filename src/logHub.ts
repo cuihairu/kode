@@ -60,6 +60,10 @@ export interface LogHubOptions {
   maxPollBytesPerRound?: number;
   /** 单轮 poll 同步阻塞时间片(AUD-024):到点即中断循环,让宿主心跳可走。 */
   pollTimeSliceMs?: number;
+  /** 上游 pending 事件数上限(AUD-025):快生产慢消费时超限丢弃最旧。 */
+  maxPendingEvents?: number;
+  /** 上游 pending 字节上限(AUD-025):与事件数双限额,先超先丢。 */
+  maxPendingBytes?: number;
 }
 
 const DEFAULT_CAPACITY = 10000;
@@ -68,6 +72,8 @@ const DEFAULT_MAX_BATCH_BYTES = 128 * 1024;
 const DEFAULT_DEDUPE_WINDOW_MS = 1000;
 const DEFAULT_MAX_POLL_BYTES_PER_ROUND = 64 * 1024;
 const DEFAULT_POLL_TIME_SLICE_MS = 25;
+const DEFAULT_MAX_PENDING_EVENTS = 10000;
+const DEFAULT_MAX_PENDING_BYTES = 8 * 1024 * 1024;
 
 /** 文件监控单批读取上限(IDE-RES-005):日志突增时分批读,不一次分配等于
  *  全部增量的 Buffer;批边界可能切在行中间,未换行尾巴拼进下一批。 */
@@ -105,8 +111,12 @@ export class LogHub implements LogHubLike {
   private readonly dedupeWindowMs: number;
   private readonly maxPollBytesPerRound: number;
   private readonly pollTimeSliceMs: number;
+  private readonly maxPendingEvents: number;
+  private readonly maxPendingBytes: number;
   private readonly pollGauge: LogPollGauge = { polls: 0, maxPollMs: 0, lastPollMs: 0 };
   private dropped = 0;
+  private pendingBytes = 0;
+  private pendingDropped = 0;
   private flushTimer?: NodeJS.Timeout;
 
   constructor(options: LogHubOptions = {}) {
@@ -116,6 +126,8 @@ export class LogHub implements LogHubLike {
     this.dedupeWindowMs = options.dedupeWindowMs ?? DEFAULT_DEDUPE_WINDOW_MS;
     this.maxPollBytesPerRound = options.maxPollBytesPerRound ?? DEFAULT_MAX_POLL_BYTES_PER_ROUND;
     this.pollTimeSliceMs = options.pollTimeSliceMs ?? DEFAULT_POLL_TIME_SLICE_MS;
+    this.maxPendingEvents = options.maxPendingEvents ?? DEFAULT_MAX_PENDING_EVENTS;
+    this.maxPendingBytes = options.maxPendingBytes ?? DEFAULT_MAX_PENDING_BYTES;
     this.events.setMaxListeners(options.maxListeners ?? 64);
   }
 
@@ -159,10 +171,19 @@ export class LogHub implements LogHubLike {
 
   private append(event: LogEvent): void {
     this.pending.push(event);
+    this.pendingBytes += event.text.length;
     this.retained.push(event);
     if (this.retained.length > this.capacity) {
       this.dropped += this.retained.length - this.capacity;
       this.retained.splice(0, this.retained.length - this.capacity);
+    }
+    // 上游 pending 双限额(AUD-025):快生产慢消费时 pending 不得无限增,
+    // 超限丢弃最旧(shift 队首),丢计数与字节一并记账,量规可读。
+    // retained 不受影响:历史缓冲仍保 capacity 条,只是未 flush 队列被裁剪。
+    while (this.pending.length > this.maxPendingEvents || this.pendingBytes > this.maxPendingBytes) {
+      const dropped = this.pending.shift() as LogEvent;
+      this.pendingBytes -= dropped.text.length;
+      this.pendingDropped += 1;
     }
     this.scheduleFlush();
   }
@@ -184,7 +205,9 @@ export class LogHub implements LogHubLike {
       const event = this.pending[0];
       const eventBytes = event.text.length;
       if (events.length > 0 && bytes + eventBytes > this.maxBatchBytes) break;
-      events.push(this.pending.shift() as LogEvent);
+      this.pending.shift();
+      this.pendingBytes -= eventBytes;
+      events.push(event);
       bytes += eventBytes;
     }
     this.events.emit('batch', { events, dropped: this.dropped, capacity: this.capacity });
@@ -200,8 +223,14 @@ export class LogHub implements LogHubLike {
     return this.retained;
   }
 
+  /** 上游 pending 队列量规(AUD-025):未排干事件/字节与超限丢弃累计。 */
+  getLogHubGaugeForTests(): { pending: number; pendingBytes: number; pendingDropped: number } {
+    return { pending: this.pending.length, pendingBytes: this.pendingBytes, pendingDropped: this.pendingDropped };
+  }
+
   clear(): void {
     this.pending.length = 0;
+    this.pendingBytes = 0;
     this.retained.length = 0;
     this.recentOrigins.clear();
     this.dropped = 0;
@@ -326,6 +355,9 @@ export class LogHub implements LogHubLike {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.fileWatchers.forEach(({ timer }) => { if (timer) clearInterval(timer); });
     this.fileWatchers.clear();
+    // 释放即排空(AUD-025):pending 队列与字节一并清零,取消/释放不残留。
+    this.pending.length = 0;
+    this.pendingBytes = 0;
     this.events.removeAllListeners();
   }
 }

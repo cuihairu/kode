@@ -151,6 +151,47 @@ describe('LogHub', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it('容量 10 时 pending 也不能无限增:超限丢弃最旧,统计明确(AUD-025)', async () => {
+    // 慢消费(flush 5000ms)下快生产 50 条:上游 pending 不得无限保留
+    const hub = new LogHub({ capacity: 10, flushIntervalMs: 5000, maxPendingEvents: 20 });
+    for (let i = 0; i < 50; i += 1) {
+      hub.info({ source: 'stdout', component: 'svc', text: `line-${i}` });
+    }
+    const gauge = hub.getLogHubGaugeForTests();
+    expect(gauge.pending).toBeLessThanOrEqual(20); // 超限丢弃最旧
+    expect(gauge.pendingDropped).toBeGreaterThan(0); // 丢弃统计明确
+    // 字节与件数同源:丢弃的是最旧 30 条,残留 pending 条 = 索引 [dropped,50)
+    const droppedCount = gauge.pendingDropped;
+    expect(gauge.pending).toBe(50 - droppedCount);
+    const expectedBytes = Array.from({ length: gauge.pending }, (_, i) => `line-${droppedCount + i}`.length)
+      .reduce((a, b) => a + b, 0);
+    expect(gauge.pendingBytes).toBe(expectedBytes);
+    // 取消/释放即排空:dispose 后 pending 与字节不残留
+    hub.dispose();
+    const drained = hub.getLogHubGaugeForTests();
+    expect(drained.pending).toBe(0);
+    expect(drained.pendingBytes).toBe(0);
+  });
+
+  it('字节限额独立生效:长文本先触字节上限,丢弃累计与字节同步(AUD-025)', async () => {
+    const hub = new LogHub({ capacity: 10, flushIntervalMs: 5000, maxPendingEvents: 1000, maxPendingBytes: 100 });
+    for (let i = 0; i < 50; i += 1) {
+      hub.info({ source: 'stdout', component: 'svc', text: `${i}-${'x'.repeat(20)}` });
+    }
+    const gauge = hub.getLogHubGaugeForTests();
+    expect(gauge.pendingBytes).toBeLessThanOrEqual(100); // 字节上限先触(事件数远未到 1000)
+    expect(gauge.pending).toBeLessThan(50); // 丢弃了部分
+    expect(gauge.pendingDropped).toBeGreaterThan(0);
+    // 字节与件数同源:残留 pending 条 = 索引 [dropped,50),字节逐条精确
+    const droppedCount = gauge.pendingDropped;
+    expect(gauge.pending).toBe(50 - droppedCount);
+    const expectedBytes = Array.from({ length: gauge.pending }, (_, i) => `${droppedCount + i}-${'x'.repeat(20)}`.length)
+      .reduce((a, b) => a + b, 0);
+    expect(gauge.pendingBytes).toBe(expectedBytes);
+    hub.dispose();
+    expect(hub.getLogHubGaugeForTests().pendingBytes).toBe(0);
+  });
+
   it('日志突增按时间片让出宿主:心跳可走,单轮阻塞入预算(AUD-024)', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'kode-loghub-slice-'));
     const file = join(directory, 'surge.log');
