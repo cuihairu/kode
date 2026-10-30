@@ -740,6 +740,33 @@ describe('extension 激活链命令面(补测)', () => {
     await callSafely(languagesRegistry.definitionRegistrations, 'provideDefinition');
   });
 
+  it('定义包装:entities.xml 实体名 → 单 Location(空态判定对象臂)', async () => {
+    const entitiesDoc = makeTextDocument('<root>\n  <Avatar> <hasClient/></Avatar>\n</root>\n', {
+      fileName: path.join(root, 'scripts', 'entities.xml'),
+      languageId: 'xml'
+    });
+    let sawLocation = false;
+    for (const registration of languagesRegistry.definitionRegistrations) {
+      const provider = registration.provider as {
+        provideDefinition?: (doc: unknown, pos: unknown, tok: unknown) => Promise<unknown>;
+      };
+      if (typeof provider.provideDefinition !== 'function') {
+        continue;
+      }
+      try {
+        const result = (await provider.provideDefinition(entitiesDoc, new Position(1, 4), tokenStub)) as
+          | { uri?: unknown }
+          | null;
+        if (result && 'uri' in result) {
+          sawLocation = true;
+        }
+      } catch {
+        // 非 entities.xml 选择器的 provider 不支持该文档,跳过
+      }
+    }
+    expect(sawLocation).toBe(true);
+  });
+
   it('探针:probeHover 门内定时取消(在途斩定时器分支)', async () => {
     let markEntered!: () => void;
     let releaseGate!: () => void;

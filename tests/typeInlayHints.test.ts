@@ -292,6 +292,19 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
     expect(hints[0].position).toEqual({ line: 2, character: line.indexOf('7') + 1 });
   });
 
+  it('rpc:declaredArgs 含空白条目 → 该位不出(空声明位跳过)', async () => {
+    // getScalarChildValues 的 filter(Boolean) 使真实 def 永不产出空条目,
+    // 故经 resolveMethodDefinition 注入空串条目直击「声明空位」守卫臂
+    const malformed = {
+      resolveMethodDefinition: () => Promise.resolve({ declaredArgs: [''] }),
+      resolvePropertyDefinitionInfo: () => Promise.resolve(null)
+    } as unknown as EntityMappingManager;
+    const provider = new PythonTypeInlayHintsProvider(malformed);
+    const text = 'class Avatar(kbe.KBEntity):\n    def tick(self):\n        self.cell.blankArg(5)\n';
+    const hints = await rpcHintsOf(provider, text, '/tmp/ws/scripts/cell/Avatar.py');
+    expect(hints).toEqual([]);
+  });
+
   it('属性面解析到底:SERVER_ID(types.xml 别名)→int,PYTHON→Any 不出(2026-10-29 用户定口径)', async () => {
     const basePy = setupWorkspace();
     const provider = new PythonTypeInlayHintsProvider(makeManager());
@@ -515,6 +528,37 @@ describe('数据字典键 inlay 早退面(GLOBDATA-002 覆盖)', () => {
     configurationOverrides.delete('kbengine.python');
     try {
       expect(await provider.provideInlayHints(document as never, lineRange(0, 0))).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine.python');
+    }
+  });
+
+  it('数据字典写点出类型、注释内访问跳过、读点合并同键写点类型', async () => {
+    const queryIndex = {
+      ensureStarted: async () => undefined,
+      // 混入一个读点 site:读点聚合只认写点,读点条目被跳过(不并集进类型)
+      query: () => [
+        { kind: 'write', valueText: '"v"', keySignature: 'w' },
+        { kind: 'read', valueText: '"other"', keySignature: 'w' }
+      ]
+    } as never;
+    const provider = new PythonTypeInlayHintsProvider(({
+      resolvePropertyDefinitionInfo: () => Promise.resolve(null),
+      resolveMethodDefinition: () => Promise.resolve(null)
+    } as unknown) as EntityMappingManager, queryIndex);
+    const document = makeTextDocument(
+      'import KBEngine\nKBEngine.globalData["w"] = 1\n# KBEngine.globalData["c"] = 2\nx = KBEngine.globalData.get("w")\n',
+      { fileName: '/tmp/ws/scripts/base/A.py', languageId: 'python' }
+    );
+    configurationOverrides.delete('kbengine');
+    configurationOverrides.delete('kbengine.python');
+    try {
+      const hints = (await provider.provideInlayHints(
+        document as never,
+        lineRange(0, 4)
+      )) as unknown as Array<{ label: unknown; position: unknown }>;
+      // 写点 `: int` + 读点 `: str`;注释内访问不出提示
+      expect(hints).toHaveLength(2);
     } finally {
       configurationOverrides.delete('kbengine.python');
     }
