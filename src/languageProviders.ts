@@ -110,6 +110,7 @@ import {
   KBENGINE_TYPES
 } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
+import { provideTypesXmlReferences } from './typesXmlReferences';
 import {
   formatEntityBuiltinPropertyDetail,
   getEntityBuiltinPropertiesForFace,
@@ -5349,6 +5350,12 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
           vscode.Uri.file(site.file),
           new vscode.Position(site.line, site.keyStart)
         ));
+    }
+    // IDE-NAV-017:types.xml 符号引用查询(Shift+F12)——光标在类型符号上时
+    // 返回工作区 .def/<Type>/<Arg>/<of> 值使用处与 types.xml 内引用位;
+    // 不在类型符号上/空结果如实 null(调用方约定)。
+    if (document.fileName.endsWith('types.xml')) {
+      return provideTypesXmlReferences(document, position, token);
     }
     if (
       document.languageId !== 'kbengine-def' &&

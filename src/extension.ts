@@ -1098,6 +1098,13 @@ export function activate(context: vscode.ExtensionContext) {
     referencesImpl
   );
   context.subscriptions.push(pythonReferencesProvider);
+  // IDE-NAV-017:types.xml 符号引用查询(Shift+F12)——同一实例复用,只挂
+  // types.xml 选择器(entities.xml 无类型符号引用面,不进引用查询)
+  const typesXmlReferencesProvider = vscode.languages.registerReferenceProvider(
+    { language: 'xml', scheme: 'file', pattern: '**/types.xml' },
+    referencesImpl
+  );
+  context.subscriptions.push(typesXmlReferencesProvider);
 
   // IDE-NAV-005:def 文档符号(Outline)——Properties/三方法段容器+段内声明
   const documentSymbolProvider = vscode.languages.registerDocumentSymbolProvider(
