@@ -4,22 +4,27 @@ import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   KBEngineCompletionProvider,
+  KBEngineDefinitionProvider,
   KBEngineDocumentSymbolProvider,
   KBEngineHoverProvider,
   KBEngineImplementationProvider,
   KBEngineMethodImplementationCodeActionProvider,
   KBEngineReferencesProvider,
+  KBEngineSignatureHelpProvider,
   KBEngineTypeCodeActionProvider,
   KBEngineBuiltinTypeInlayHintsProvider,
   PythonDefinitionProvider,
+  RpcCodeLensProvider,
+  findRegisteredTypeSuggestions,
   prewarmKbengineIndex,
+  revealSourceCommand,
   setPythonMroJumpEnabled,
   UNKNOWN_TYPE_DIAGNOSTIC_CODE
 } from '../src/languageProviders';
 import { findKbeDataDictAccesses } from '../src/globalDataIndex';
 import { setJumpLogEnabled } from '../src/navigationLog';
 import type { EntityMappingManager } from '../src/entityMapping';
-import { Diagnostic, Position, Range, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { Diagnostic, Position, Range, Uri, makeTextDocument, workspace as stubWorkspace } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
 
 // 覆盖率补齐:languageProviders 内建属性补全面(用户令 2026-10-21 内建属性
@@ -1067,5 +1072,171 @@ describe('KBEngineHoverProvider 注入面分支(覆盖率)', () => {
     const doc = pyDocument('class Hero:\n    def f(self):\n        self.cellType = 1\n');
     expect(await provider.provideInlayHints(doc, new Range(new Position(0, 0), new Position(2, 30))))
       .toEqual([]);
+  });
+});
+
+// 覆盖率补面(98% 主线,2026-10-30):内建 inlay manager 拒绝 catch / 签名
+// 帮助 resolve 拒绝 catch / revealSourceCommand 带 selection 的 revealRange
+// 臂 / 类型建议同名跳过 / 数据字典同键同类回退 / 未导入基类 mro 命中 /
+// member-access 实体 def 与同文件类两路 / RPC 镜接收者去重与 catch /
+// def 方法实现全项目唯一名回退命中。
+describe('语言特性面剩余分支(覆盖率 98% 线)', () => {
+  it('内建 inlay:manager 拒绝 → catch 落空回空提示(679)', async () => {
+    const rejecting = {
+      getEntityComponentFacesForPythonFile: (): Promise<never> => Promise.reject(new Error('boom'))
+    } as unknown as EntityMappingManager;
+    const provider = new KBEngineBuiltinTypeInlayHintsProvider(rejecting);
+    const doc = pyDocument('class Hero:\n    def f(self):\n        self.cellType = 1\n');
+    expect(await provider.provideInlayHints(doc, new Range(new Position(0, 0), new Position(2, 30))))
+      .toEqual([]);
+  });
+
+  it('签名帮助:resolve 拒绝 → catch 回 null(1400)', async () => {
+    const rejecting = {
+      resolveMethodDefinition: (): Promise<never> => Promise.reject(new Error('boom'))
+    } as unknown as EntityMappingManager;
+    const provider = new KBEngineSignatureHelpProvider(rejecting);
+    const doc = pyDocument('self.cell.setHP(1)\n');
+    expect(await provider.provideSignatureHelp(doc, new Position(0, 12))).toBeNull();
+  });
+
+  it('revealSourceCommand:带 selection 时 editor.revealRange 被调用(206/207)', async () => {
+    const selection = new Range(new Position(3, 0), new Position(3, 0));
+    await revealSourceCommand(Uri.file('/tmp/ws/Avatar.def'), { selection });
+    // 无 uri 臂(197):早退不建通道
+    await revealSourceCommand(undefined, { selection });
+  });
+
+  it('类型建议:未知名精确相等的候选被跳过(3824)', () => {
+    // 距离闸=2:近拼写候选入列,精确同名被跳过
+    const hits = findRegisteredTypeSuggestions('Avatar', ['Avatar', 'Avatars', 'AvatarBase']);
+    expect(hits).toContain('Avatars');
+    expect(hits).not.toContain('Avatar');
+    expect(hits).not.toContain('AvatarBase');
+  });
+
+  it('数据字典同键仅有同类点:写点 F12 落自身同类首点(4110/4113)', async () => {
+    const dataDictIndex = {
+      ensureStarted: async (): Promise<void> => undefined,
+      query: (): Array<{ file: string; line: number; keyStart: number; kind: string; valueText: string }> =>
+        [{ file: '/tmp/ws/scripts/Hero.py', line: 1, keyStart: 21, kind: 'write', valueText: '1' }]
+    } as never;
+    const provider = new PythonDefinitionProvider(
+      {} as unknown as EntityMappingManager, undefined, dataDictIndex
+    );
+    setJumpLogEnabled(true);
+    try {
+      const doc = pyDocument('import KBEngine\nKBEngine.globalData["cfg"] = 1\n');
+      const lineText = doc.getText().split('\n')[1];
+      const access = findKbeDataDictAccesses(lineText, new Set(['KBEngine']))[0];
+      const traced = await provider.provideDefinitionTraced(doc, new Position(1, access.keyStart + 1));
+      expect(traced.location).not.toBeNull();
+      expect(traced.layers[0]).toMatchObject({ layer: 'globaldata-key', status: 'hit' });
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('未导入基类的 mro 解析命中:跳 python 基类(4227/4228)', async () => {
+    const pythonClassIndex = {
+      resolveClassBase: (): Promise<{ filePath: string; startLine: number; name: string }> =>
+        Promise.resolve({ filePath: '/tmp/ws/scripts/Base.py', startLine: 0, name: 'Base' })
+    } as never;
+    const provider = new PythonDefinitionProvider(
+      {} as unknown as EntityMappingManager, pythonClassIndex
+    );
+    setPythonMroJumpEnabled(true);
+    try {
+      const doc = pyDocument('class X(Base):\n    pass\n');
+      const traced = await provider.provideDefinitionTraced(doc, new Position(0, 9));
+      expect(traced.location).toMatchObject({ uri: { fsPath: '/tmp/ws/scripts/Base.py' } });
+      expect(traced.layers[0]).toMatchObject({ layer: 'class-base', status: 'hit' });
+    } finally {
+      setPythonMroJumpEnabled(true);
+    }
+  });
+
+  it('member-access:接收者名命中同名实体 def(4365)', async () => {
+    const hit = {
+      resolveMethodDefinitionForClass: (): Promise<{ defFile: string; line: number }> =>
+        Promise.resolve({ defFile: '/tmp/ws/scripts/entity_defs/Avatar.def', line: 4 })
+    } as unknown as EntityMappingManager;
+    const provider = new PythonDefinitionProvider(hit);
+    setJumpLogEnabled(true);
+    try {
+      const doc = pyDocument('avatar.SendErrorInfo(1)\n');
+      const traced = await provider.provideDefinitionTraced(doc, new Position(0, 8));
+      expect(traced.location).toMatchObject({
+        uri: { fsPath: '/tmp/ws/scripts/entity_defs/Avatar.def' }
+      });
+      expect(traced.layers[0]).toMatchObject({ layer: 'member-access', status: 'hit' });
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('member-access:接收者名命中同文件类方法(4394)', async () => {
+    const miss = {
+      resolveMethodDefinitionForClass: (): Promise<null> => Promise.resolve(null)
+    } as unknown as EntityMappingManager;
+    const provider = new PythonDefinitionProvider(miss, {} as never);
+    setJumpLogEnabled(true);
+    try {
+      const doc = pyDocument(
+        'class avatar:\n    def SendErrorInfo(self, a):\n        pass\navatar.SendErrorInfo(1)\n'
+      );
+      const traced = await provider.provideDefinitionTraced(doc, new Position(3, 8));
+      expect(traced.location).not.toBeNull();
+      expect(traced.layers[0]).toMatchObject({ layer: 'member-access', status: 'hit' });
+    } finally {
+      setJumpLogEnabled(false);
+    }
+  });
+
+  it('RPC 镜:同名同段接收者调用只解析一次(4960)', async () => {
+    const calls: string[] = [];
+    const m = {
+      resolveMethodDefinition: (file: string, method: string): Promise<unknown> => {
+        calls.push(method);
+        return Promise.resolve({
+          section: 'CellMethods',
+          defFile: '/tmp/ws/scripts/entity_defs/Avatar.def',
+          line: 4,
+          exposed: true
+        });
+      }
+    } as unknown as EntityMappingManager;
+    const provider = new RpcCodeLensProvider(m);
+    const doc = pyDocument('self.cell.setHP(1)\nself.cell.setHP(2)\n');
+    const lenses = await provider.provideCodeLenses(doc);
+    expect(calls.filter(call => call === 'setHP')).toHaveLength(1);
+    expect(lenses.length).toBeGreaterThan(0);
+  });
+
+  it('RPC 镜:接收者解析拒绝 → catch 置 null 不出镜(4979)', async () => {
+    const m = {
+      resolveMethodDefinition: (): Promise<never> => Promise.reject(new Error('boom'))
+    } as unknown as EntityMappingManager;
+    const provider = new RpcCodeLensProvider(m);
+    const doc = pyDocument('self.cell.setHP(1)\n');
+    expect(await provider.provideCodeLenses(doc)).toEqual([]);
+  });
+
+  it('def F12:identity 空时全项目唯一名回退命中(3654-3656)', async () => {
+    const m = {
+      resolveDefinitionSymbolAtPosition: (): Promise<null> => Promise.resolve(null),
+      resolveMethodImplementationGlobally: (): Promise<{ filePath: string; line: number; character: number }> =>
+        Promise.resolve({ filePath: '/tmp/ws-glob/scripts/cell/Avatar.py', line: 5, character: 0 })
+    } as unknown as EntityMappingManager;
+    const provider = new KBEngineDefinitionProvider(m);
+    const doc = makeTextDocument(
+      '<root>\n  <CellMethods>\n    <reborn exposed="true"/>\n  </CellMethods>\n</root>\n',
+      { fileName: '/tmp/ws-glob/scripts/entity_defs/Avatar.def', languageId: 'kbengine-def' }
+    );
+    const loc = await provider.provideDefinition(doc, new Position(2, 7));
+    expect(loc).toMatchObject({
+      uri: { fsPath: '/tmp/ws-glob/scripts/cell/Avatar.py' },
+      range: { start: { line: 4 } }
+    });
   });
 });

@@ -68,9 +68,11 @@ export const window = {
   },
   // 真实 vscode 返回 editor;openMethodTarget 断言 editor !== undefined,
   // 默认给真值对象,测试可临时覆盖为 undefined 模拟拒开。
+  // revealRange 默认给空实现:revealSourceCommand 的 selection 分支(206/207)
+  // 走 typeof === 'function' 闸,测试可覆盖为 undefined 模拟缺方法。
   showTextDocument: async (document: unknown, options?: unknown): Promise<unknown> => {
     showTextDocumentCalls.push({ document, options });
-    return {};
+    return { revealRange: (): void => undefined };
   },
   // codeGenerator 向导/模板与 debugConfig 组件选择消费;默认全部取消
   // (undefined),测试按用例 monkey-patch 为脚本化应答。
