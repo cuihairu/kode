@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1620" viewBox="0 0 1280 1620" role="img" aria-labelledby="title desc" xml:lang="en">
+<title id="title">Kode · Architecture</title>
+<desc id="desc">Kode is a VS Code extension for KBEngine. The VS Code extension host (TypeScript, src/ compiled to out/) carries all language providers, panels/WebViews, the data plane, the index plane and server integration; the Rust Core (kode-server binary) is the language server of the kode2 migration, dual-track switched with the extension host over stdio LSP frames (shadow parity). Dashed edges are control/configuration, solid edges are business data. The diagram reflects the current implementation facts, not everything implemented.</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#2563eb"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#64748b"/></marker><marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#c2410c"/></marker><marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#7c3aed"/></marker></defs>
+<style>text{font-family:Arial,'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172b4d}.title{font-size:30px;font-weight:700}.name{font-size:19px;font-weight:700}.body{font-size:15px;fill:#435570}.small{font-size:13px;fill:#52647b}.crate{font-size:14px;font-weight:700}.cdesc{font-size:12px;fill:#52647b}.label{font-size:13px;fill:#435570;paint-order:stroke;stroke:#f8fafc;stroke-width:5px;stroke-linejoin:round}.edge{fill:none;stroke-linejoin:round}.control{stroke-dasharray:7 5}</style>
+<rect width="1280" height="1620" rx="20" fill="#f8fafc"/>
+<text x="40" y="46" class="title" text-anchor="start">Kode · Architecture</text>
+<text x="40" y="78" class="body" text-anchor="start">VS Code extension host (TypeScript) + Rust Core (kode-server) · for KBEngine projects · bilingual docs site</text>
+
+<!-- Top: VS Code editor context -->
+<g id="vscode-editor" data-node="vscode-editor"><rect x="40" y="100" width="1200" height="64" rx="14" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="60" y="128" class="name" text-anchor="start">VS Code Editor · Extension Development Host</text>
+<text x="60" y="152" class="body" text-anchor="start">Document events · Commands · UI · Activation: onLanguage:kbengine-def / onLanguage:python / workspaceContains:**/*.def</text>
+</g>
+
+<!-- Extension host container -->
+<g id="extension-host" data-node="extension-host"><rect x="40" y="184" width="1200" height="800" rx="16" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+<text x="60" y="216" class="name" text-anchor="start" style="fill:#3730a3">VS Code Extension Host · TypeScript (src/ → out/extension.js)</text>
+<text x="1220" y="216" class="small" text-anchor="end">composition root extension.ts · 89 commands · 65 kbengine.* settings</text>
+
+<!-- R1 activation -->
+<g id="activation" data-node="activation"><rect x="60" y="228" width="1160" height="70" rx="12" fill="#fff" stroke="#a5b4fc" stroke-width="1.5"/>
+<text x="80" y="252" class="name" text-anchor="start">Activation entry · extension.ts (composition root)</text>
+<text x="80" y="280" class="body" text-anchor="start">Single activate() · instantiates IndexScheduler / EntityMappingManager / PythonClassIndex · registers all providers (completion / hover / definition / CodeLens / InlayHints)</text>
+</g>
+
+<!-- R2 config -->
+<g id="config" data-node="config"><rect x="60" y="312" width="1160" height="50" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+<text x="80" y="336" class="name" text-anchor="start">Configuration layer</text>
+<text x="80" y="354" class="body" text-anchor="start">activeProfile · rootConfigGeneration · kbengineMetadata · kbengine.jsoncAssociation (JSONC association) · 65 kbengine.* settings · debug.json schema validation</text>
+</g>
+
+<!-- R3 language providers -->
+<g id="language-providers" data-node="language-providers"><rect x="60" y="376" width="565" height="130" rx="12" fill="#fff" stroke="#fdba74" stroke-width="1.5"/>
+<text x="80" y="400" class="name" text-anchor="start">Language Provider layer · languageProviders.ts</text>
+<text x="80" y="424" class="body" text-anchor="start">Hover / Completion / Go-to-definition / Rename / Reference graph</text>
+<text x="80" y="444" class="body" text-anchor="start">Diagnostics / Inlay Hints / CodeLens / Semantic tokens</text>
+<text x="80" y="464" class="body" text-anchor="start">def + Python dual language · types.xml type alignment</text>
+<text x="80" y="484" class="body" text-anchor="start">Same-version single parse · version-token diagnostics</text>
+</g>
+
+<!-- R3 panels / webview -->
+<g id="panels" data-node="panels"><rect x="655" y="376" width="565" height="130" rx="12" fill="#fff" stroke="#93b9e3" stroke-width="1.5"/>
+<text x="675" y="400" class="name" text-anchor="start">Panel / WebView layer · explorerProviders.ts</text>
+<text x="675" y="424" class="body" text-anchor="start">Entity explorer · Server control · Logs · Monitoring</text>
+<text x="675" y="444" class="body" text-anchor="start">Telnet · Dependency graph · Codegen wizard · Quick actions</text>
+<text x="675" y="464" class="body" text-anchor="start">DB simulation / drift · Hot-reload log · Runtime query</text>
+<text x="675" y="484" class="body" text-anchor="start">webview standalone bundle (media/*, defCallChainViewer)</text>
+</g>
+
+<!-- R4 data plane -->
+<g id="data-plane" data-node="data-plane"><rect x="60" y="520" width="1160" height="98" rx="12" fill="#eef8f5" stroke="#86c9b3" stroke-width="1.5"/>
+<text x="80" y="546" class="name" text-anchor="start">Data plane</text>
+<text x="80" y="572" class="body" text-anchor="start">DocumentStore (snapshot + same-version single parse) · SemanticIndex (entity / type / symbol queries) · SemanticDependencyGraph (dependency invalidation, fullRebuild=false)</text>
+<text x="80" y="596" class="body" text-anchor="start">IndexScheduler (priority + interactive cooldown + task merge + failure recovery) · DiagnosticScheduler (version token · latest wins · layered accounting)</text>
+</g>
+
+<!-- R5 index plane -->
+<g id="index-plane" data-node="index-plane"><rect x="60" y="632" width="1160" height="98" rx="12" fill="#edf5ff" stroke="#93b9e3" stroke-width="1.5"/>
+<text x="80" y="658" class="name" text-anchor="start">Index plane</text>
+<text x="80" y="684" class="body" text-anchor="start">EntityMappingManager (.def / entities.xml / types.xml / alias.xml mapping) · PythonClassIndex (classes / bases / methods / MRO / composition roots, five axes)</text>
+<text x="80" y="708" class="body" text-anchor="start">WorkspaceIndex (local symbol index) · ScanRoots (cross-root + external-root file discovery · result cache) · multi-root lookup order rules</text>
+</g>
+
+<!-- R6 server integration -->
+<g id="server-integration" data-node="server-integration"><rect x="60" y="744" width="565" height="200" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="80" y="770" class="name" text-anchor="start">Server integration</text>
+<text x="80" y="796" class="body" text-anchor="start">serverManager · processManager</text>
+<text x="80" y="818" class="body" text-anchor="start">spawn child process · process table · SIGTERM→SIGKILL</text>
+<text x="80" y="842" class="body" text-anchor="start">telnetClient (probe + session) · telnetService (5s low frequency)</text>
+<text x="80" y="866" class="body" text-anchor="start">logHub (TCP log collection + sha256 dedup) · logger port</text>
+<text x="80" y="890" class="body" text-anchor="start">httpRequestService (outbound quick requests, 10s timeout)</text>
+<text x="80" y="914" class="body" text-anchor="start">kbengineMetadata · engineCompatibility</text>
+</g>
+
+<!-- R6 debug / generate / database / hot-reload -->
+<g id="debug-codegen-db" data-node="debug-codegen-db"><rect x="655" y="744" width="565" height="200" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="675" y="770" class="name" text-anchor="start">Debug · Generate · Database · Hot-reload</text>
+<text x="675" y="796" class="body" text-anchor="start">debugConfig · autoDebugpy · debugpyPreflight</text>
+<text x="675" y="818" class="body" text-anchor="start">debugSessionRegistry · debugStatusBoard</text>
+<text x="675" y="842" class="body" text-anchor="start">codeGenerator · clientSdkGenerator</text>
+<text x="675" y="866" class="body" text-anchor="start">pythonTypeStubs · pythonStubExport · generated-source jump</text>
+<text x="675" y="890" class="body" text-anchor="start">databaseSimulator · databaseDrift · databaseSchema</text>
+<text x="675" y="914" class="body" text-anchor="start">hotReload (save → debounce → HTTP action) · hot-reload status bar</text>
+</g>
+</g>
+
+<!-- Rust Core container -->
+<g id="rust-core" data-node="rust-core"><rect x="180" y="1004" width="920" height="256" rx="16" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+<text x="200" y="1034" class="name" text-anchor="start" style="fill:#9a3412">Rust Core · kode-server binary (kode2 core, v0.2 in progress)</text>
+
+<g id="kode-server" data-node="kode-server"><rect x="200" y="1048" width="880" height="58" rx="12" fill="#fff" stroke="#fdba74" stroke-width="1.5"/>
+<text x="220" y="1072" class="name" text-anchor="start">kode-server — stdio state machine (language server entry)</text>
+<text x="220" y="1094" class="body" text-anchor="start">spawn child process · LSP frame codec (kode-protocol) · initialize handshake · crash restart (10s window / 3 times)</text>
+</g>
+
+<g id="crate-row1" data-node="crate-row1">
+<g data-node="kode-protocol"><rect x="200" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="220" y="1142" class="crate" text-anchor="start">kode-protocol</text><text x="220" y="1164" class="cdesc" text-anchor="start">frame codec + DTO</text></g>
+<g data-node="kode-vfs"><rect x="425" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="445" y="1142" class="crate" text-anchor="start">kode-vfs</text><text x="445" y="1164" class="cdesc" text-anchor="start">virtual file system</text></g>
+<g data-node="kode-parser"><rect x="650" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="670" y="1142" class="crate" text-anchor="start">kode-parser</text><text x="670" y="1164" class="cdesc" text-anchor="start">XML state machine + def models</text></g>
+<g data-node="kode-root"><rect x="875" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="895" y="1142" class="crate" text-anchor="start">kode-root</text><text x="895" y="1164" class="cdesc" text-anchor="start">project root discovery</text></g>
+</g>
+<g id="crate-row2" data-node="crate-row2">
+<g data-node="kode-index"><rect x="200" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="220" y="1210" class="crate" text-anchor="start">kode-index</text><text x="220" y="1232" class="cdesc" text-anchor="start">symbol index</text></g>
+<g data-node="kode-types"><rect x="425" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="445" y="1210" class="crate" text-anchor="start">kode-types</text><text x="445" y="1232" class="cdesc" text-anchor="start">type graph IR</text></g>
+<g data-node="kode-scheduler"><rect x="650" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="670" y="1210" class="crate" text-anchor="start">kode-scheduler</text><text x="670" y="1232" class="cdesc" text-anchor="start">invalidation scheduling</text></g>
+<g data-node="kode-corpus"><rect x="875" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="895" y="1210" class="crate" text-anchor="start">kode-corpus</text><text x="895" y="1232" class="cdesc" text-anchor="start">corpus</text></g>
+</g>
+</g>
+
+<!-- Bottom: external systems -->
+<g id="kbengine-source" data-node="kbengine-source"><rect x="40" y="1300" width="590" height="200" rx="14" fill="#edf5ff" stroke="#93b9e3" stroke-width="1.5"/>
+<text x="60" y="1330" class="name" text-anchor="start">KBEngine project source</text>
+<text x="60" y="1358" class="body" text-anchor="start">.def entity definitions · entities.xml · types.xml · alias.xml</text>
+<text x="60" y="1382" class="body" text-anchor="start">Python scripts (entities/…) · kbengine.xml / kbengine_defaults.xml</text>
+<text x="60" y="1406" class="body" text-anchor="start">asset roots (workspace roots + external asset roots) · multi-root lookup order</text>
+</g>
+
+<g id="kbengine-server" data-node="kbengine-server"><rect x="650" y="1300" width="590" height="200" rx="14" fill="#eef8f5" stroke="#86c9b3" stroke-width="1.5"/>
+<text x="670" y="1330" class="name" text-anchor="start">KBEngine server components</text>
+<text x="670" y="1358" class="body" text-anchor="start">start/stop 10 components · process PID · status bar count</text>
+<text x="670" y="1382" class="body" text-anchor="start">telnet port · watcher metrics · logger port (TCP)</text>
+<text x="670" y="1406" class="body" text-anchor="start">debugpy injection (5678-5682) · HTTP hot-reload endpoint (outbound)</text>
+</g>
+
+<!-- Edges -->
+<path d="M640 164 V184" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="editor-events" data-from="vscode-editor" data-to="extension-host" d="M640 164 V184" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-blue)"/>
+<path d="M120 984 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="index-scan" data-from="extension-host" data-to="kbengine-source" d="M120 984 V1300" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-blue)"/>
+<path d="M1130 984 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="server-data" data-from="extension-host" data-to="kbengine-server" d="M1130 984 V1300" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-blue)"/>
+<path d="M1170 984 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="server-control" data-from="extension-host" data-to="kbengine-server" d="M1170 984 V1300" class="edge control" style="stroke:#64748b;stroke-width:2" marker-end="url(#arrow-gray)"/>
+<path d="M640 984 V1004" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="core-stdio" data-from="extension-host" data-to="rust-core" d="M640 984 V1004" class="edge control" style="stroke:#c2410c;stroke-width:2" marker-end="url(#arrow-orange)" marker-start="url(#arrow-orange)"/>
+<path d="M300 1260 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="core-scan" data-from="rust-core" data-to="kbengine-source" d="M300 1260 V1300" class="edge" style="stroke:#7c3aed;stroke-width:2" marker-end="url(#arrow-purple)"/>
+
+<!-- Edge labels -->
+<text x="652" y="178" class="label" text-anchor="start">Document events · Commands</text>
+<text transform="translate(112 1180) rotate(-90)" class="label" text-anchor="start">Index plane → source scan</text>
+<text transform="translate(1162 1180) rotate(-90)" class="label" text-anchor="start">Process · telnet · logs · HTTP</text>
+<text x="652" y="998" class="label" text-anchor="start" style="fill:#c2410c">stdio LSP frames · kodeCoreGate (ts|rust|shadow)</text>
+<text x="312" y="1288" class="label" text-anchor="start" style="fill:#7c3aed">kode-root · kode-parser</text>
+
+<!-- Legend / notes -->
+<g id="docs-tooling" data-node="docs-tooling"><rect x="40" y="1520" width="1200" height="42" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="60" y="1546" class="small" text-anchor="start">Repo companion · VitePress docs site (docs/ · bilingual en/zh) · this diagram embedded on the English and Chinese homepages</text>
+</g>
+<text x="40" y="1586" class="small" text-anchor="start">Dashed: control / configuration relations · Solid: business data · crossings without dots do not connect</text>
+<text x="40" y="1610" class="small" text-anchor="start">Dual-track switch: kodeCoreGate defaults to ts; the rust literal is refused by the serving gate, shadow only writes diff logs, user-visible behavior unchanged</text>
+</svg>

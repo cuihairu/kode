@@ -3,6 +3,8 @@
 
 Kode is a VS Code extension for KBEngine projects, covering `.def` language support, diagnostics, navigation, entity browsing, logs, monitoring, dependency graphs, and code generation.
 
+![Kode architecture](/images/architecture-en.svg)
+
 ## What you can find here
 
 - [Quick start](./guide/)

@@ -3,6 +3,8 @@
 
 Kode 是一个面向 KBEngine 项目的 VSCode 扩展，覆盖 `.def` 语言支持、诊断、跳转、实体浏览、日志、监控、依赖图和代码生成。
 
+![Kode 架构](/images/architecture-zh.svg)
+
 ## 你可以在这里找到什么
 
 - [快速开始](./guide/)

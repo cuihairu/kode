@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1620" viewBox="0 0 1280 1620" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+<title id="title">Kode · 扩展架构</title>
+<desc id="desc">Kode 是面向 KBEngine 的 VS Code 扩展。VS Code 扩展宿主(TypeScript, src/ 编译到 out/)承载全部语言 Provider、面板/WebView、数据面、索引面与服务器集成;Rust Core(kode-server 二进制)是 kode2 迁移中的语言服务器,经 stdio LSP 帧与扩展宿主双轨切换(shadow 对拍)。虚线为控制/配置,实线为业务数据。图示为当前实现事实,不代表全部已实现。</desc>
+<defs><marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#2563eb"/></marker><marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#64748b"/></marker><marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#c2410c"/></marker><marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#7c3aed"/></marker></defs>
+<style>text{font-family:Arial,'Noto Sans CJK SC','Microsoft YaHei',sans-serif;fill:#172b4d}.title{font-size:30px;font-weight:700}.name{font-size:19px;font-weight:700}.body{font-size:15px;fill:#435570}.small{font-size:13px;fill:#52647b}.crate{font-size:14px;font-weight:700}.cdesc{font-size:12px;fill:#52647b}.label{font-size:13px;fill:#435570;paint-order:stroke;stroke:#f8fafc;stroke-width:5px;stroke-linejoin:round}.edge{fill:none;stroke-linejoin:round}.control{stroke-dasharray:7 5}</style>
+<rect width="1280" height="1620" rx="20" fill="#f8fafc"/>
+<text x="40" y="46" class="title" text-anchor="start">Kode · 扩展架构</text>
+<text x="40" y="78" class="body" text-anchor="start">VS Code 扩展宿主(TypeScript)+ Rust Core(kode-server)· 面向 KBEngine 项目 · 双语文档站</text>
+
+<!-- 顶部:VS Code 编辑器上下文 -->
+<g id="vscode-editor" data-node="vscode-editor"><rect x="40" y="100" width="1200" height="64" rx="14" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="60" y="128" class="name" text-anchor="start">VS Code 编辑器 · Extension Development Host</text>
+<text x="60" y="152" class="body" text-anchor="start">文档事件 · 命令 · UI · 激活: onLanguage:kbengine-def / onLanguage:python / workspaceContains:**/*.def</text>
+</g>
+
+<!-- 扩展宿主容器 -->
+<g id="extension-host" data-node="extension-host"><rect x="40" y="184" width="1200" height="800" rx="16" fill="#eef2ff" stroke="#a5b4fc" stroke-width="1.5"/>
+<text x="60" y="216" class="name" text-anchor="start" style="fill:#3730a3">VS Code 扩展宿主 · TypeScript(src/ → out/extension.js)</text>
+<text x="1220" y="216" class="small" text-anchor="end">组合根 extension.ts · 89 命令 · 65 kbengine.* 配置</text>
+
+<!-- R1 激活入口 -->
+<g id="activation" data-node="activation"><rect x="60" y="228" width="1160" height="70" rx="12" fill="#fff" stroke="#a5b4fc" stroke-width="1.5"/>
+<text x="80" y="252" class="name" text-anchor="start">激活入口 · extension.ts(组合根)</text>
+<text x="80" y="280" class="body" text-anchor="start">唯一 activate() · 实例化 IndexScheduler / EntityMappingManager / PythonClassIndex · 注册全部 Provider(completion / hover / definition / CodeLens / InlayHints)</text>
+</g>
+
+<!-- R2 配置层 -->
+<g id="config" data-node="config"><rect x="60" y="312" width="1160" height="50" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+<text x="80" y="336" class="name" text-anchor="start">配置层</text>
+<text x="80" y="354" class="body" text-anchor="start">activeProfile · rootConfigGeneration · kbengineMetadata · kbengine.jsoncAssociation(JSONC 关联)· 65 项 kbengine.* 配置 · debug.json schema 校验</text>
+</g>
+
+<!-- R3 语言 Provider 层 -->
+<g id="language-providers" data-node="language-providers"><rect x="60" y="376" width="565" height="130" rx="12" fill="#fff" stroke="#fdba74" stroke-width="1.5"/>
+<text x="80" y="400" class="name" text-anchor="start">语言 Provider 层 · languageProviders.ts</text>
+<text x="80" y="424" class="body" text-anchor="start">Hover / 补全 / 定义跳转 / 重命名 / 引用图</text>
+<text x="80" y="444" class="body" text-anchor="start">诊断 / Inlay Hints / CodeLens / 语义 Token</text>
+<text x="80" y="464" class="body" text-anchor="start">def + Python 双语言 · types.xml 类型对齐</text>
+<text x="80" y="484" class="body" text-anchor="start">同版本单解析 · 版本令牌诊断</text>
+</g>
+
+<!-- R3 面板 / WebView 层 -->
+<g id="panels" data-node="panels"><rect x="655" y="376" width="565" height="130" rx="12" fill="#fff" stroke="#93b9e3" stroke-width="1.5"/>
+<text x="675" y="400" class="name" text-anchor="start">面板 / WebView 层 · explorerProviders.ts</text>
+<text x="675" y="424" class="body" text-anchor="start">实体浏览器 · 服务器控制 · 日志 · 监控</text>
+<text x="675" y="444" class="body" text-anchor="start">telnet · 依赖图 · 代码生成向导 · 快速动作</text>
+<text x="675" y="464" class="body" text-anchor="start">数据库模拟 / 漂移 · 热更日志 · 运行查询</text>
+<text x="675" y="484" class="body" text-anchor="start">webview 独立 bundle(media/*, defCallChainViewer)</text>
+</g>
+
+<!-- R4 数据面 -->
+<g id="data-plane" data-node="data-plane"><rect x="60" y="520" width="1160" height="98" rx="12" fill="#eef8f5" stroke="#86c9b3" stroke-width="1.5"/>
+<text x="80" y="546" class="name" text-anchor="start">数据面</text>
+<text x="80" y="572" class="body" text-anchor="start">DocumentStore(快照 + 同版本单解析)· SemanticIndex(实体 / 类型 / 符号查询)· SemanticDependencyGraph(依赖失效, fullRebuild=false)</text>
+<text x="80" y="596" class="body" text-anchor="start">IndexScheduler(优先级 + 交互冷却 + 任务合并 + 失败恢复)· DiagnosticScheduler(版本令牌 · 最新胜出 · 分层记账)</text>
+</g>
+
+<!-- R5 索引面 -->
+<g id="index-plane" data-node="index-plane"><rect x="60" y="632" width="1160" height="98" rx="12" fill="#edf5ff" stroke="#93b9e3" stroke-width="1.5"/>
+<text x="80" y="658" class="name" text-anchor="start">索引面</text>
+<text x="80" y="684" class="body" text-anchor="start">EntityMappingManager(.def / entities.xml / types.xml / alias.xml 映射)· PythonClassIndex(类 / 基类 / 方法 / MRO / 组合根 五轴)</text>
+<text x="80" y="708" class="body" text-anchor="start">WorkspaceIndex(局部符号索引)· ScanRoots(跨根 + 外部根文件发现 · 结果缓存)· 多根查找顺序规则</text>
+</g>
+
+<!-- R6 服务器集成 -->
+<g id="server-integration" data-node="server-integration"><rect x="60" y="744" width="565" height="200" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="80" y="770" class="name" text-anchor="start">服务器集成</text>
+<text x="80" y="796" class="body" text-anchor="start">serverManager · processManager</text>
+<text x="80" y="818" class="body" text-anchor="start">spawn 子进程 · 进程表 · SIGTERM→SIGKILL</text>
+<text x="80" y="842" class="body" text-anchor="start">telnetClient(探测 + 会话)· telnetService(5s 低频)</text>
+<text x="80" y="866" class="body" text-anchor="start">logHub(TCP 日志采集 + sha256 去重)· logger 端口</text>
+<text x="80" y="890" class="body" text-anchor="start">httpRequestService(出站快捷请求, 10s 超时)</text>
+<text x="80" y="914" class="body" text-anchor="start">kbengineMetadata · engineCompatibility</text>
+</g>
+
+<!-- R6 调试 / 生成 / 数据库 / 热更 -->
+<g id="debug-codegen-db" data-node="debug-codegen-db"><rect x="655" y="744" width="565" height="200" rx="12" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="675" y="770" class="name" text-anchor="start">调试 · 生成 · 数据库 · 热更</text>
+<text x="675" y="796" class="body" text-anchor="start">debugConfig · autoDebugpy · debugpyPreflight</text>
+<text x="675" y="818" class="body" text-anchor="start">debugSessionRegistry · debugStatusBoard</text>
+<text x="675" y="842" class="body" text-anchor="start">codeGenerator · clientSdkGenerator</text>
+<text x="675" y="866" class="body" text-anchor="start">pythonTypeStubs · pythonStubExport · 生成源码跳转</text>
+<text x="675" y="890" class="body" text-anchor="start">databaseSimulator · databaseDrift · databaseSchema</text>
+<text x="675" y="914" class="body" text-anchor="start">hotReload(保存 → 去抖 → HTTP 动作)· 热更状态栏</text>
+</g>
+</g>
+
+<!-- Rust Core 容器 -->
+<g id="rust-core" data-node="rust-core"><rect x="180" y="1004" width="920" height="256" rx="16" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+<text x="200" y="1034" class="name" text-anchor="start" style="fill:#9a3412">Rust Core · kode-server 二进制(kode2 核心, v0.2 建设中)</text>
+
+<g id="kode-server" data-node="kode-server"><rect x="200" y="1048" width="880" height="58" rx="12" fill="#fff" stroke="#fdba74" stroke-width="1.5"/>
+<text x="220" y="1072" class="name" text-anchor="start">kode-server — stdio 状态机(语言服务器入口)</text>
+<text x="220" y="1094" class="body" text-anchor="start">spawn 子进程 · LSP 帧编解码(kode-protocol)· initialize 握手 · 崩溃重启(10s 窗口 / 3 次)</text>
+</g>
+
+<g id="crate-row1" data-node="crate-row1">
+<g data-node="kode-protocol"><rect x="200" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="220" y="1142" class="crate" text-anchor="start">kode-protocol</text><text x="220" y="1164" class="cdesc" text-anchor="start">帧编解码 + DTO</text></g>
+<g data-node="kode-vfs"><rect x="425" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="445" y="1142" class="crate" text-anchor="start">kode-vfs</text><text x="445" y="1164" class="cdesc" text-anchor="start">虚拟文件系统</text></g>
+<g data-node="kode-parser"><rect x="650" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="670" y="1142" class="crate" text-anchor="start">kode-parser</text><text x="670" y="1164" class="cdesc" text-anchor="start">XML 状态机 + def 模型</text></g>
+<g data-node="kode-root"><rect x="875" y="1118" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="895" y="1142" class="crate" text-anchor="start">kode-root</text><text x="895" y="1164" class="cdesc" text-anchor="start">项目根发现</text></g>
+</g>
+<g id="crate-row2" data-node="crate-row2">
+<g data-node="kode-index"><rect x="200" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="220" y="1210" class="crate" text-anchor="start">kode-index</text><text x="220" y="1232" class="cdesc" text-anchor="start">符号索引</text></g>
+<g data-node="kode-types"><rect x="425" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="445" y="1210" class="crate" text-anchor="start">kode-types</text><text x="445" y="1232" class="cdesc" text-anchor="start">类型图 IR</text></g>
+<g data-node="kode-scheduler"><rect x="650" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="670" y="1210" class="crate" text-anchor="start">kode-scheduler</text><text x="670" y="1232" class="cdesc" text-anchor="start">失效调度</text></g>
+<g data-node="kode-corpus"><rect x="875" y="1186" width="205" height="58" rx="10" fill="#fff" stroke="#fdba74"/><text x="895" y="1210" class="crate" text-anchor="start">kode-corpus</text><text x="895" y="1232" class="cdesc" text-anchor="start">语料库</text></g>
+</g>
+</g>
+
+<!-- 底部:外部系统 -->
+<g id="kbengine-source" data-node="kbengine-source"><rect x="40" y="1300" width="590" height="200" rx="14" fill="#edf5ff" stroke="#93b9e3" stroke-width="1.5"/>
+<text x="60" y="1330" class="name" text-anchor="start">KBEngine 项目源码</text>
+<text x="60" y="1358" class="body" text-anchor="start">.def 实体定义 · entities.xml · types.xml · alias.xml</text>
+<text x="60" y="1382" class="body" text-anchor="start">Python 脚本(entities/…)· kbengine.xml / kbengine_defaults.xml</text>
+<text x="60" y="1406" class="body" text-anchor="start">资产根(工作区根 + 外部资产根)· 多根查找顺序</text>
+</g>
+
+<g id="kbengine-server" data-node="kbengine-server"><rect x="650" y="1300" width="590" height="200" rx="14" fill="#eef8f5" stroke="#86c9b3" stroke-width="1.5"/>
+<text x="670" y="1330" class="name" text-anchor="start">KBEngine 服务器组件</text>
+<text x="670" y="1358" class="body" text-anchor="start">start/stop 10 组件 · 进程 PID · 状态栏计数</text>
+<text x="670" y="1382" class="body" text-anchor="start">telnet 端口 · watcher 指标 · logger 端口(TCP)</text>
+<text x="670" y="1406" class="body" text-anchor="start">debugpy 注入(5678-5682)· HTTP 热更接口(出站)</text>
+</g>
+
+<!-- 边 -->
+<path d="M640 164 V184" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="editor-events" data-from="vscode-editor" data-to="extension-host" d="M640 164 V184" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-blue)"/>
+<path d="M120 984 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="index-scan" data-from="extension-host" data-to="kbengine-source" d="M120 984 V1300" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-blue)"/>
+<path d="M1130 984 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="server-data" data-from="extension-host" data-to="kbengine-server" d="M1130 984 V1300" class="edge" style="stroke:#2563eb;stroke-width:2" marker-end="url(#arrow-blue)"/>
+<path d="M1170 984 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="server-control" data-from="extension-host" data-to="kbengine-server" d="M1170 984 V1300" class="edge control" style="stroke:#64748b;stroke-width:2" marker-end="url(#arrow-gray)"/>
+<path d="M640 984 V1004" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="core-stdio" data-from="extension-host" data-to="rust-core" d="M640 984 V1004" class="edge control" style="stroke:#c2410c;stroke-width:2" marker-end="url(#arrow-orange)" marker-start="url(#arrow-orange)"/>
+<path d="M300 1260 V1300" fill="none" stroke="#f8fafc" stroke-width="9"/>
+<path id="core-scan" data-from="rust-core" data-to="kbengine-source" d="M300 1260 V1300" class="edge" style="stroke:#7c3aed;stroke-width:2" marker-end="url(#arrow-purple)"/>
+
+<!-- 边标注 -->
+<text x="652" y="178" class="label" text-anchor="start">文档事件 · 命令</text>
+<text transform="translate(112 1180) rotate(-90)" class="label" text-anchor="start">索引面 → 源码扫描</text>
+<text transform="translate(1162 1180) rotate(-90)" class="label" text-anchor="start">进程 · telnet · 日志 · HTTP</text>
+<text x="652" y="998" class="label" text-anchor="start" style="fill:#c2410c">stdio LSP 帧 · kodeCoreGate(ts|rust|shadow)</text>
+<text x="312" y="1288" class="label" text-anchor="start" style="fill:#7c3aed">kode-root · kode-parser</text>
+
+<!-- 图例 / 注记 -->
+<g id="docs-tooling" data-node="docs-tooling"><rect x="40" y="1520" width="1200" height="42" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="60" y="1546" class="small" text-anchor="start">仓库配套 · VitePress 文档站(docs/ · 双语 en/zh)· 本图嵌入英文首页与中文首页</text>
+</g>
+<text x="40" y="1586" class="small" text-anchor="start">虚线:控制 / 配置关系 · 实线:业务数据 · 无圆点交叉不表示连通</text>
+<text x="40" y="1610" class="small" text-anchor="start">双轨切换:kodeCoreGate 默认 ts;rust 字面量受 serving 门禁拒绝,shadow 只做差异日志,用户可见行为不变</text>
+</svg>
