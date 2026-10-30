@@ -777,8 +777,14 @@ export interface LocalVariableReturnType {
 /** IDE-HOV-017:文件级显式 import 绑定——`from X import n [as a]` 绑定名 n/a
  * 到模块 X;`import X [as Y]` 绑定接收者 Y/X 到模块 X(供 `X.fn()` 用)。
  * 通配 `import *` 非显式绑定,不参与;相对导入的前导点按后缀匹配近似。 */
+/** `from mod import original as local` 的绑定:保留被导入的原始符号名
+ * (symbol=original),查模块桶用 symbol 而非绑定名 local(R2-F17)。 */
+interface FromImportBinding {
+  module: string;
+  symbol: string;
+}
 interface FileImportBindings {
-  names: Map<string, string>;
+  names: Map<string, FromImportBinding>;
   receivers: Map<string, string>;
 }
 
@@ -790,7 +796,7 @@ const BARE_IMPORT_PATTERN =
 const IMPORT_ALIAS_PATTERN = /^([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?$/;
 
 function extractFileImports(lines: readonly string[]): FileImportBindings {
-  const names = new Map<string, string>();
+  const names = new Map<string, FromImportBinding>();
   const receivers = new Map<string, string>();
   for (const raw of lines) {
     const line = raw ?? '';
@@ -800,7 +806,7 @@ function extractFileImports(lines: readonly string[]): FileImportBindings {
       if (!module || from[2].includes('*')) { continue; }
       for (const part of from[2].split(',')) {
         const alias = IMPORT_ALIAS_PATTERN.exec(part.trim());
-        if (alias) { names.set(alias[2] ?? alias[1], module); }
+        if (alias) { names.set(alias[2] ?? alias[1], { module, symbol: alias[1] }); }
       }
       continue;
     }
@@ -943,15 +949,20 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
   // 绑定模块无注解、模块文件找不到或多处同名(无法确定)都不回退全局。
   const bindings = extractFileImports(lines);
   for (const assignment of candidates) {
-    const module = assignment.receiver
+    const fromBinding = bindings.names.get(assignment.methodName);
+    const receiverModule = assignment.receiver
       ? bindings.receivers.get(assignment.receiver)
-      : bindings.names.get(assignment.methodName);
-    if (module !== undefined) {
+      : undefined;
+    if (fromBinding !== undefined || receiverModule !== undefined) {
+      const module = receiverModule ?? fromBinding!.module;
+      // 接收者形态(X.fn())查桶用方法名 fn;from 导入形态查桶用被导入的
+      // 原始符号名(symbol),不是绑定名(R2-F17 别名 `as local` 丢原名)。
+      const symbol = receiverModule !== undefined ? assignment.methodName : fromBinding!.symbol;
       const bucket = diskIndexFresh ? locateModuleBucket(cached!.fileBuckets, module) : null;
-      const annotation = bucket?.get(assignment.methodName);
+      const annotation = bucket?.get(symbol);
       if (annotation && annotation !== 'Any') {
         annotationSourceLog('info', () =>
-          `hover-resolve word=${word} method=${assignment.methodName} source=disk-snapshot(import) module=${module}`
+          `hover-resolve word=${word} method=${symbol} source=disk-snapshot(import) module=${module}`
         );
         return { target: word, annotation, methodName: assignment.methodName };
       }

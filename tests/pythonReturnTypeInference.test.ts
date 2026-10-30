@@ -813,6 +813,49 @@ describe('IDE-HOV-017 按显式 import 限定返回注解候选', () => {
   });
 });
 
+describe('IDE-AUD-044 导入别名绑定保留原始符号名(R2-F17)', () => {
+  it('from mod import original as local → local() 查 original', async () => {
+    const { root, put } = setupWorkspace();
+    put('helpers.py', 'def load_all() -> FROM_HELPERS:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = load()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'from helpers import load_all as load\n\ndata = load()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 1))));
+    expect(text).toContain('**data: FROM_HELPERS**');
+  });
+
+  it('未起别名维持原符号名(正例前置)', async () => {
+    const { root, put } = setupWorkspace();
+    put('helpers.py', 'def load_all() -> FROM_HELPERS:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = load_all()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'from helpers import load_all\n\ndata = load_all()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 1))));
+    expect(text).toContain('**data: FROM_HELPERS**');
+  });
+
+  it('绑定符号在模块内无注解 → 未知,不借邻居同名', async () => {
+    const { root, put } = setupWorkspace();
+    put('helpers.py', 'def load_all():\n    pass\n');
+    put('unrelated.py', 'def load_all() -> NOISE:\n    pass\n');
+    await resolveLocalVariableReturnType(['data = load()'], 0, 'data', root);
+    const provider = new KBEngineHoverProvider(makeManager());
+    const doc = makeTextDocument(
+      'from helpers import load_all as load\n\ndata = load()\n',
+      { fileName: path.join(root, 'main.py'), languageId: 'python', version: 1 }
+    );
+    const text = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(2, 1))));
+    expect(text).not.toContain('NOISE');
+    expect(text).not.toContain('推导自');
+  });
+});
+
 // 2026-10-28 审核整改(HOV-012/014/015 竞态 + TTL 次序):三个文件事件面在
 // 「首扫在途、缓存未发布」时直接 return,窗口内的保存/删除/重命名被丢弃,
 // 发布用的是扫描期读到的旧内容 → 陈旧注解驻留;快照面 TTL 过期检查又在
