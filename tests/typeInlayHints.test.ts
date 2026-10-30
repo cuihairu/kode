@@ -441,4 +441,82 @@ describe('RPC 调用点形参 inlay(真实索引装配)', () => {
       character: line.indexOf('reward') + 'reward'.length
     });
   });
+
+  it('rpc:可视区外的调用行跳过;实参空白位跳过(该位不出)', async () => {
+    const basePy = setupWorkspace();
+    const provider = new PythonTypeInlayHintsProvider(makeManager());
+    const text = 'class Avatar(kbe.KBEntity):\n    def tick(self):\n        self.cell.reborn(37)\n';
+    // 可视区从行 5 起(调用在行 2)→ 可视区外整行跳过
+    const outside = await rpcHintsOf(provider, text, basePy, lineRange(5, 99));
+    expect(outside).toEqual([]);
+    // 实参带尾随空白(`37, ` 第二实参空文本)→ 该位不出,首实参照常
+    const withBlank = 'class Avatar(kbe.KBEntity):\n    def tick(self):\n        self.cell.reborn(37, )\n';
+    const hints = await rpcHintsOf(provider, withBlank, basePy);
+    expect(hints).toHaveLength(1);
+    expect(hints[0].label).toBe(': int');
+  });
+
+  it('rpc:resolveMethodDefinition 抛错 → 视为解析不出,不给提示不炸', async () => {
+    const throwing = {
+      resolveMethodDefinition: () => Promise.reject(new Error('index gone')),
+      resolvePropertyDefinitionInfo: () => Promise.resolve(null)
+    } as unknown as EntityMappingManager;
+    const provider = new PythonTypeInlayHintsProvider(throwing);
+    const text = 'class Avatar(kbe.KBEntity):\n    def tick(self):\n        self.cell.reborn(37)\n';
+    const hints = await rpcHintsOf(provider, text, '/tmp/ws/scripts/cell/Avatar.py');
+    expect(hints).toEqual([]);
+  });
+});
+
+describe('数据字典键 inlay 早退面(GLOBDATA-002 覆盖)', () => {
+  const stubIndex = { ensureStarted: async () => undefined } as never;
+
+  it('未注入 dataDictIndex → 数据字典段直接跳过(其余照常)', async () => {
+    configurationOverrides.delete('kbengine');
+    configurationOverrides.delete('kbengine.python');
+    const provider = new PythonTypeInlayHintsProvider(({
+      resolvePropertyDefinitionInfo: () => Promise.resolve(null),
+      resolveMethodDefinition: () => Promise.resolve(null)
+    } as unknown) as EntityMappingManager);
+    const document = makeTextDocument(
+      'import KBEngine\nKBEngine.globalData["k"] = 1\n',
+      { fileName: '/tmp/ws/scripts/base/A.py', languageId: 'python' }
+    );
+    expect(await provider.provideInlayHints(document as never, lineRange(0, 1))).toEqual([]);
+  });
+
+  it('enableDataDictIndex=false → 数据字典段早退', async () => {
+    const provider = new PythonTypeInlayHintsProvider(({
+      resolvePropertyDefinitionInfo: () => Promise.resolve(null),
+      resolveMethodDefinition: () => Promise.resolve(null)
+    } as unknown) as EntityMappingManager, stubIndex);
+    const document = makeTextDocument(
+      'import KBEngine\nKBEngine.globalData["k"] = 1\n',
+      { fileName: '/tmp/ws/scripts/base/A.py', languageId: 'python' }
+    );
+    configurationOverrides.set('kbengine.python', { enableDataDictIndex: false });
+    try {
+      expect(await provider.provideInlayHints(document as never, lineRange(0, 1))).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine.python');
+    }
+  });
+
+  it('无 kbe 别名文档 → 数据字典段早退(零扫描成本)', async () => {
+    const provider = new PythonTypeInlayHintsProvider(({
+      resolvePropertyDefinitionInfo: () => Promise.resolve(null),
+      resolveMethodDefinition: () => Promise.resolve(null)
+    } as unknown) as EntityMappingManager, stubIndex);
+    const document = makeTextDocument(
+      'x = KBEngineOther.globalData.get("k")\n',
+      { fileName: '/tmp/ws/scripts/base/A.py', languageId: 'python' }
+    );
+    configurationOverrides.delete('kbengine');
+    configurationOverrides.delete('kbengine.python');
+    try {
+      expect(await provider.provideInlayHints(document as never, lineRange(0, 0))).toEqual([]);
+    } finally {
+      configurationOverrides.delete('kbengine.python');
+    }
+  });
 });
