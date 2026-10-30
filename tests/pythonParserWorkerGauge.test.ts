@@ -106,6 +106,25 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
     expect(drained.queuedBytes).toBe(0);
   });
 
+  it('量规区分 host 等待与已投递:排队/在途计数与字节并存,总保留一次可读(AUD-023)', async () => {
+    const host = await loadHost();
+    const a = host.parsePythonFileResponsive(bigContent, '/dist/a.py', 1);
+    const b = host.parsePythonFileResponsive(bigContent, '/dist/b.py', 1);
+    const c = host.parsePythonFileResponsive(bigContent, '/dist/c.py', 1);
+    // 同文件第二版:host 等待(未投递),与 3 份已投递并存
+    const a2 = host.parsePythonFileResponsive(bigContent, '/dist/a.py', 2);
+    const gauge = host.getPythonParserWorkerGauge();
+    expect(gauge.running).toBe(3); // 已投递(worker 在途)
+    expect(gauge.queued).toBe(1); // host 等待
+    expect(gauge.queuedBytes).toBe(bigContent.length);
+    expect(gauge.postedBytes).toBe(3 * bigContent.length);
+    // 总保留(所有保留输入)一次可读:任务=运行+排队,字节=排队字节+在途字节
+    expect(gauge.running + gauge.queued).toBe(4);
+    expect(gauge.queuedBytes + gauge.postedBytes).toBe(4 * bigContent.length);
+    drainPosted(host);
+    await Promise.allSettled([a, b, c, a2]);
+  });
+
   it('超预算排队可辨认:拒绝累计+排队字节顶格停在预算内,峰值=高水位', async () => {
     const host = await loadHost();
     host.resetPythonParserWorkerGaugeCountersForTests();
@@ -183,6 +202,9 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
     expect(summary).toContain('/预算');
     expect(summary).toContain('/峰值');
     expect(summary).toContain('/超预算拒');
+    // AUD-023:在途字节/上限与总保留(host 等待+已投递)一页可读
+    expect(summary).toContain('worker在途字节=');
+    expect(summary).toContain('worker总保留=');
     // 口径锁:字节与 MAX_QUEUED_PARSE_BYTES 同源,不做第二套估算
     const host = await fs.promises.readFile('src/pythonParserWorkerHost.ts', 'utf8');
     expect(host).toContain('maxQueuedBytes: MAX_QUEUED_PARSE_BYTES');

@@ -44,8 +44,10 @@ export interface ReproductionSummaryInput {
     annotationUpdates: number;
     /** 注解索引共享构建在途量(IDE-REV-029):运行/等待/已全体取消收尾中 */
     annotationBuilds: { running: number; waiting: number; cancelled: number };
-    /** 解析 worker 队列与字节占用(IDE-REV-030):运行/排队任务数、待派发
-     * 字节(与预算同口径,源码串码元计)、预算上限、峰值、超预算拒绝累计 */
+    /** 解析 worker 队列与字节占用(IDE-REV-030/IDE-AUD-023):区分 host
+     * 等待(queued/queuedBytes,未投递)与已投递(running/postedBytes,worker
+     * 在途);计数与字节双口径,保留输入一次可读——总保留=运行+排队任务、
+     * 排队字节+在途字节,不能只凭 running 高或 queuedBytes=0 误读无积压 */
     worker: {
       running: number;
       queued: number;
@@ -53,6 +55,12 @@ export interface ReproductionSummaryInput {
       maxQueuedBytes: number;
       peakQueuedBytes: number;
       budgetRejects: number;
+      /** 已投递(worker 在途)源码串字节(AUD-022/023) */
+      postedBytes: number;
+      /** 在途任务数硬上限 */
+      maxPostedJobs: number;
+      /** 在途源码串字节硬上限 */
+      maxPostedBytes: number;
     };
     /** 相关缓存容量面(IDE-REV-031):条目数与可获取的占用量、配置上限;
      * 无字节估算的缓存只报条目并注明口径,不把累计命中当容量 */
@@ -129,6 +137,11 @@ export function renderReproductionSummary(input: ReproductionSummaryInput): stri
       + `/预算${input.queue.worker.maxQueuedBytes}`
       + `/峰值${input.queue.worker.peakQueuedBytes}`
       + `/超预算拒${input.queue.worker.budgetRejects}`
+    + ` worker在途字节=${input.queue.worker.postedBytes}`
+      + `/在途上限=数量${input.queue.worker.maxPostedJobs}`
+      + `/字节${input.queue.worker.maxPostedBytes}`
+    + ` worker总保留=任务${input.queue.worker.running + input.queue.worker.queued}`
+      + `/字节${input.queue.worker.queuedBytes + input.queue.worker.postedBytes}`
     + ` 缓存:def文档=${input.queue.caches.parsedDocuments.entries}条`
       + `/上限${input.queue.caches.parsedDocuments.maxEntries}`
       + `/${input.queue.caches.parsedDocuments.bytes}B`

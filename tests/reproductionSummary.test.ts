@@ -30,7 +30,7 @@ function makeInput(overrides: Partial<ReproductionSummaryInput> = {}): Reproduct
       diagnosticsInFlight: 1,
       annotationUpdates: 3,
       annotationBuilds: { running: 1, waiting: 2, cancelled: 1 },
-    worker: { running: 2, queued: 3, queuedBytes: 4096, maxQueuedBytes: 8388608, peakQueuedBytes: 6144, budgetRejects: 1 },
+    worker: { running: 2, queued: 3, queuedBytes: 4096, maxQueuedBytes: 8388608, peakQueuedBytes: 6144, budgetRejects: 1, postedBytes: 2048, maxPostedJobs: 16, maxPostedBytes: 8388608 },
     caches: {
       parsedDocuments: { entries: 5, maxEntries: 8, bytes: 4096, maxBytes: 8388608 },
       databaseSchemas: { entries: 3, capacity: 32 },
@@ -110,6 +110,8 @@ describe('复现配置摘要渲染(IDE-REL-007)', () => {
     expect(text).toContain('注解索引构建=运行1/等待2/已全取消1'
     + ' worker=运行2/排队3'
     + ' worker排队字节=4096/预算8388608/峰值6144/超预算拒1'
+    + ' worker在途字节=2048/在途上限=数量16/字节8388608'
+    + ' worker总保留=任务5/字节6144'
     + ' 缓存:def文档=5条/上限8/4096B/预算8388608B'
     + ' schema快照=3条/上限32'
     + ' 注解索引=1条/TTL3000ms(按工作区根,无字节估算)');
