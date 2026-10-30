@@ -17,6 +17,14 @@ import { getFileReadTotals, resetFileReadMetrics } from '../../../fileReadMetric
 // 立即 hover,分别记录命中、耗时与窗内最大宿主阻塞(下界口径);命中内容
 // 含仅本文件存在的 BIGDOC_RETURN 标记=确实走了当前文档注解路径的结构性
 // 证明。与小调用方场景分别报告(rev035.* 行独立分列,不混读)。
+// IDE-REV-036:短查询事件循环采样方法修正——旧口径「enable→查询→disable」
+// 的 p99 恒 0.001ms 级,把默认极小 p99 当已通过证据不成立。新口径四段:
+// 预热(enable→100ms)→reset 清零(启动积压与 enable 前尖峰不入窗)→落
+// 一拍(reset 重锚采样时钟,紧接的同步阻塞会被折进新锚记不到,实测吞掉
+// 300ms 阻塞——落一拍让锚先落定)→查询→查询后窗(200ms,短查询延迟事件
+// 常在返回后同拍落账)→落账有效样本数+最大延迟+p99;零/欠样本(<10)按
+// 未测处理不许过,最大延迟有界(注入阻塞可触发失败,prove-red 已证)。
+// acc002 例用完整断言面,rev035 三面同方法论记录。
 
 const WORKSPACE = process.env.KODE_FIELD_WORKSPACE;
 assert.ok(WORKSPACE, 'runTest.js --field must set KODE_FIELD_WORKSPACE');
@@ -141,12 +149,36 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
     await new Promise(resolve => setTimeout(resolve, 4000));
 
     resetFileReadMetrics();
+    // IDE-REV-036:短查询事件循环采样方法修正——旧口径 enable 后立刻查询、
+    // 返回即 disable,p99 恒极小(0.001ms 级),把「默认极小 p99」当已通过证
+    // 据不成立。新口径四段:①预热(enable 后等 100ms 让直方图先跑起来)再
+    // reset 清零——enable 前积压与启动尖峰不计入查询窗;②reset 后落一拍
+    // (10ms):reset 重锚采样时钟,紧跟其后的同步阻塞会被折进新锚(实测
+    // max≈0 吞掉 300ms 阻塞,prove-red 首版咬出),落一拍让锚先落定,
+    // 测量面从锚定后开始;③查询本体;④查询后窗口(200ms)——短查询的
+    // 延迟事件常在返回后同拍落账,返回即 disable 会漏记。落账=有效样本数
+    // +最大延迟+p99,样本数不足(零样本)按未测处理不许过,最大延迟有界
+    // (注入阻塞可触发失败,prove-red 已证)
     const histogram = monitorEventLoopDelay({ resolution: 1 });
     histogram.enable();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    histogram.reset();
+    await new Promise(resolve => setTimeout(resolve, 10));
     const expired = await probeAt(probe, CALLER_REL, 'data = get_annotated_data()', 'data');
     const readsAtReturn = getFileReadTotals();
+    await new Promise(resolve => setTimeout(resolve, 200));
     histogram.disable();
+    const loopSampleCount = histogram.count;
+    const delayMaxMs = histogram.max / 1e6;
     const delayP99Ms = histogram.percentile(99) / 1e6;
+    assert.ok(
+      loopSampleCount >= 10,
+      `事件循环样本 ${loopSampleCount} <10(零样本/欠采样=未测,采样方法未生效,本面不许记已通过)`
+    );
+    assert.ok(
+      delayMaxMs < 200,
+      `查询窗内最大宿主阻塞 ${delayMaxMs.toFixed(3)}ms ≥200ms(注入阻塞可触发本断言,prove-red 已证)`
+    );
 
     // 过期悬停仍命中(文档桶不依赖磁盘索引新鲜度),且同步路径不做全仓重扫
     assert.strictEqual(expired.returnedHover, true, `过期重复 hover 应仍命中: ${expired.preview}`);
@@ -161,6 +193,9 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
       `acc002.expired.elapsedMs=${expired.elapsedMs}`,
       `acc002.expired.returnedHover=${expired.returnedHover}`,
       `acc002.expired.preview=${expired.preview.replace(/\n/g, ' ')}`,
+      `acc002.loop.tested=${loopSampleCount >= 10}(REV-036:预热+查询后窗,零/欠样本=未测)`,
+      `acc002.loop.sampleCount=${loopSampleCount}`,
+      `acc002.loop.maxMs=${delayMaxMs.toFixed(3)}`,
       `acc002.loop.p99Ms=${delayP99Ms.toFixed(3)}`,
       `acc002.reads.atReturn=${readsAtReturn.reads}`,
       `acc002.reads.atReturnBytes=${readsAtReturn.bytes}`,
@@ -189,18 +224,23 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
     );
 
     const evidence: string[] = [];
-    // 查询窗:预热一拍再跑查询,查询后留 150ms 收尾样本(短查询的延迟事件
-    // 常在返回后同拍落账);窗内 max 记为下界口径——采样方法论的完整修正
-    // 属 IDE-REV-036,本处只如实记录不据此放行
+    // 查询窗(REV-036 方法论):预热一拍后 reset 清零再跑查询,查询后留
+    // 150ms 收尾样本(短查询的延迟事件常在返回后同拍落账);落账=窗内 max
+    // +有效样本数,样本数不足=窗无效。窗内 max 记为下界口径(方法论的完整
+    // 断言面在 acc002 例,本处如实记录不据此放行)
     const loopWindow = async <T>(run: () => Promise<T>):
-      Promise<{ value: T; maxDelayMs: number }> => {
+      Promise<{ value: T; maxDelayMs: number; sampleCount: number }> => {
       const histogram = monitorEventLoopDelay({ resolution: 1 });
       histogram.enable();
       await new Promise(resolve => setTimeout(resolve, 30));
+      histogram.reset();
+      // reset 重锚采样时钟,落一拍让锚先落定(否则 reset 后紧接的同步阻塞
+      // 会被折进新锚记不到——REV-036 prove-red 咬出的口径坑)
+      await new Promise(resolve => setTimeout(resolve, 10));
       const value = await run();
       await new Promise(resolve => setTimeout(resolve, 150));
       histogram.disable();
-      return { value, maxDelayMs: histogram.max / 1e6 };
+      return { value, maxDelayMs: histogram.max / 1e6, sampleCount: histogram.count };
     };
 
     // ①首次 hover(大文档冷开):IDE-REV-010 语义=首查只读已发布桶,新文档
@@ -214,7 +254,7 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
       `rev035.bigdoc.first.elapsedMs=${first.elapsedMs}`,
       `rev035.bigdoc.first.returnedHover=${first.returnedHover}`,
       `rev035.bigdoc.first.preview=${first.preview.replace(/\n/g, ' ')}`,
-      `rev035.bigdoc.first.loopMaxMs=${firstWindow.maxDelayMs.toFixed(3)}(窗内下界)`,
+      `rev035.bigdoc.first.loopMaxMs=${firstWindow.maxDelayMs.toFixed(3)}(窗内下界,样本${firstWindow.sampleCount})`,
       `rev035.bigdoc.first.reads=${readsAtFirst.reads}`,
       `rev035.bigdoc.first.readBytes=${readsAtFirst.bytes}`
     );
@@ -239,7 +279,7 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
       `rev035.bigdoc.afterPublish.elapsedMs=${afterPublish.elapsedMs}`,
       `rev035.bigdoc.afterPublish.returnedHover=${afterPublish.returnedHover}`,
       `rev035.bigdoc.afterPublish.preview=${afterPublish.preview.replace(/\n/g, ' ')}`,
-      `rev035.bigdoc.afterPublish.loopMaxMs=${afterPublishWindow.maxDelayMs.toFixed(3)}(窗内下界)`
+      `rev035.bigdoc.afterPublish.loopMaxMs=${afterPublishWindow.maxDelayMs.toFixed(3)}(窗内下界,样本${afterPublishWindow.sampleCount})`
     );
     assert.strictEqual(afterPublish.returnedHover, true, `发布后大文档内 hover 应命中: ${afterPublish.preview}`);
     assert.ok(
@@ -264,7 +304,7 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
       `rev035.bigdoc.postEdit.elapsedMs=${postEdit.elapsedMs}`,
       `rev035.bigdoc.postEdit.returnedHover=${postEdit.returnedHover}`,
       `rev035.bigdoc.postEdit.preview=${postEdit.preview.replace(/\n/g, ' ')}`,
-      `rev035.bigdoc.postEdit.loopMaxMs=${postEditWindow.maxDelayMs.toFixed(3)}(窗内下界)`
+      `rev035.bigdoc.postEdit.loopMaxMs=${postEditWindow.maxDelayMs.toFixed(3)}(窗内下界,样本${postEditWindow.sampleCount})`
     );
     assert.ok(postEdit.elapsedMs < 2000, `编辑后立即 hover 不应等全量重解析: ${postEdit.elapsedMs}ms`);
 
