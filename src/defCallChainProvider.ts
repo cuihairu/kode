@@ -164,10 +164,16 @@ export class CallChainController {
     }
 
     const chain = buildDefCallChain(index, { filePath: uri.fsPath, line, methodName });
+    // 重复守卫无触发输入——buildDefCallChain 内部先用同一 key 重跑
+    // findDefMethodByStart,其上一步(startDefinition)已非空,且两处调用间无
+    // await,索引不变,chain 恒非空;tests/cov-defcallchain.test.ts 以「索引有
+    // 但起点未登记」用例锁死上一守卫。
+    /* istanbul ignore start */
     if (!chain) {
       vscode.window.showInformationMessage(`${methodName} is not an indexed entity def method`);
       return;
     }
+    /* istanbul ignore stop */
     this.showPreview(chain);
   }
 

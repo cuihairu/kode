@@ -178,9 +178,14 @@ export function buildDefCallChain(
   for (let currentDepth = 0; currentDepth < depth && frontier.length > 0; currentDepth += 1) {
     const nextFrontier: typeof frontier = [];
     for (const { node, definition } of frontier) {
+      // visited 去重无触发输入——节点只在 `!nodes.has(targetNode.id)` 时才入
+      // nextFrontier(下方 push 臂),nodes 单调增长故每节点最多入 frontier 一次,
+      // visited 恒未含当前节点(自环/互调均被 nodes.has 闸住,不重入队)。
+      /* istanbul ignore start */
       if (visited.has(node.id)) {
         continue;
       }
+      /* istanbul ignore stop */
       visited.add(node.id);
 
       const boundMethod = findBoundMethod(index, definition);

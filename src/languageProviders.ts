@@ -4283,6 +4283,11 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         return accessResult;
       }
       // 光标行同时是方法声明的交叠形态:再走声明层序,层记录合并
+      // (两判定取位互斥,交叠臂无触发输入:声明面 getPythonMethodDeclarationAtPosition
+      // 要求光标落在 def 名 token 上(rpcCodeLens.ts:49 模式锚定 `def\s+name`),
+      // self 访问面 getPythonSelfAccessAtPosition 要求光标落在 self.成员段内,
+      // 同一光标不可同时满足;tests/pythonLanguageUtils.test.ts 锁死 self 访问取位界)
+      /* istanbul ignore start */
       if (declaredMethodName) {
         const declaredResult = await this.runDefinitionLayers(document, position, null, declaredMethodName, undefined, token);
         return {
@@ -4290,6 +4295,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           layers: [...accessResult.layers, ...declaredResult.layers]
         };
       }
+      /* istanbul ignore stop */
       return accessResult;
     }
     if (declaredMethodName) {
