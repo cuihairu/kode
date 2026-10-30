@@ -64,6 +64,17 @@ jobs:
       timeout-minutes: 15
       run: pnpm run compile
 
+    # 测试面板「运行」档用 /usr/bin/python3 -m pytest 真实执行;runner 系统
+    # python3 默认无 pytest,缺则用例 0 passed/0 skipped 断言挂。装进该解释器
+    # (Ubuntu 24.04 系统 python 标记 externally-managed,需 --break-system-packages)。
+    - name: 安装 pytest(测试面板真实执行依赖)
+      timeout-minutes: 5
+      run: |
+        /usr/bin/python3 -m pip install --user --break-system-packages --quiet pytest \
+          || /usr/bin/python3 -m pip install --user --quiet pytest \
+          || true
+        /usr/bin/python3 -m pytest --version
+
     - name: 运行测试（带覆盖率）
       timeout-minutes: 12
       run: pnpm exec vitest run --coverage
