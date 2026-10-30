@@ -214,10 +214,10 @@ flowchart TD
 ```mermaid
 flowchart TD
   CHG["VS Code: onDidChangeTextDocument"]
-  WATCH["extension.ts:1227 文档事件适配<br/>(onSave/onOpen 同通道)"]
+  WATCH["extension.ts:1232 文档事件适配<br/>(onSave/onOpen 同通道)"]
   RQ["DiagnosticScheduler.requestQueued<br/>diagnosticScheduler.ts:211"]
   CO["同 URI 只留最新版本任务<br/>旧版本记 coalescedStale 永不执行"]
-  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:1267 → diagnosticScheduler.ts:241"]
+  FL["flushQueued(单轮 25ms 时间片,IDE-DIA-006)<br/>extension.ts:1272 → diagnosticScheduler.ts:241"]
   VG{"版本令牌守卫:<br/>任务版本 == 文档当前版本?"}
   DROP["staleDropped 丢弃,不发布"]
   GEN{"同版本+同诊断输入代<br/>已发布?(A6-2 零重算)"}
