@@ -59,7 +59,7 @@ describe('2026-10-28 审核整改:文档注解桶走队列不占编辑同步路�
       clearInterval(interval);
     }
     expect(ticks).toBeGreaterThan(0); // 提取过程中事件循环在跑(定时器响应)
-  });
+  }, 30000); // 断言只看定时器是否响应;覆盖率插桩+全量并行下同一分片提取更慢,放宽墙钟
 
   it('关文档取消在途更新:弃桶后不复活', async () => {
     queueDocumentReturnAnnotations(ROOT, { fileKey: fileKey('c.py'), version: 1, source: () => 'def f() -> X:\n    pass\n' });

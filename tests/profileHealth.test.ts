@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import {
   PROFILE_HEALTH_ISSUE_LABELS,
@@ -8,7 +8,7 @@ import {
 import { ACTIVE_PROFILE_STATE_KEY, resolveActiveProfile, setActiveProfile } from '../src/activeProfile';
 import type { ProjectProfile } from '../src/projectProfiles';
 import { ProjectProfileStore } from '../src/projectProfiles';
-import { window as stubWindow } from './helpers/vscodeStub';
+import { commands, window as stubWindow } from './helpers/vscodeStub';
 
 // IDE-PRJ-009:profile 健康状态汇总到工作台。缺引擎/缺解释器/缺语言服务/
 // 根歧义四类问题各自带具体定位入口(命令或设置键),活动 profile 经 PRJ-010
@@ -258,5 +258,79 @@ describe('profile health summary command (IDE-PRJ-009)', () => {
     }
 
     expect(navigated).toHaveLength(0);
+  });
+
+  it('engine 根不在盘上如实记 engine-missing(覆盖率 83)', () => {
+    // engineRoot 有值但 exists=false:走「不在盘上」臂,不再走「未记录」臂
+    const issues = collectProfileHealth(
+      { ...healthyProfile, engineRoot: '/gone/kbe' },
+      activeServiceFacts,
+      { exists: (): boolean => false }
+    );
+    const engine = issues.find(issue => issue.kind === 'engine-missing');
+    expect(engine?.message).toContain('引擎根不在盘上');
+    expect(engine?.message).toContain('/gone/kbe');
+  });
+
+  it('未注入 navigate 时默认跳转:命令入口直跳命令(覆盖率 179-180)', async () => {
+    const memento = new MemoryMemento();
+    const store = new ProjectProfileStore(memento);
+    const profile = await store.create({
+      displayName: 'no-engine',
+      assetsRoot: '/ws/proj',
+      engineRoot: '/gone/kbe'
+    });
+    await setActiveProfile(memento, profile.id);
+    patchWindow();
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = (await items) as Array<{ label: string; issue: { kind: string } }>;
+      return resolved.find(row => row.issue.kind === 'engine-missing');
+    };
+    const exec = vi.spyOn(commands, 'executeCommand').mockResolvedValue(undefined);
+    try {
+      await showProfileHealthSummary({ workspaceState: memento }, {
+        exists: (): boolean => false,
+        resolveServiceFacts: () => activeServiceFacts
+      });
+      // engine-missing 的入口是命令 kbengine.project.import(断言须在
+      // mockRestore 前:restore 会清空调用记录)
+      expect(exec).toHaveBeenCalledWith('kbengine.project.import');
+    } finally {
+      exec.mockRestore();
+      restoreWindow();
+    }
+  });
+
+  it('未注入 navigate 时默认跳转:设置入口跳 openSettings(覆盖率 182)', async () => {
+    const memento = new MemoryMemento();
+    const store = new ProjectProfileStore(memento);
+    const profile = await store.create({
+      displayName: 'no-interp',
+      assetsRoot: '/ws/proj',
+      engineRoot: '/ws/kbe',
+      interpreterPath: ''
+    });
+    await setActiveProfile(memento, profile.id);
+    patchWindow();
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = (await items) as Array<{ label: string; issue: { kind: string } }>;
+      return resolved.find(row => row.issue.kind === 'interpreter-missing');
+    };
+    const exec = vi.spyOn(commands, 'executeCommand').mockResolvedValue(undefined);
+    try {
+      await showProfileHealthSummary({ workspaceState: memento }, {
+        exists: (candidate: string): boolean => candidate !== '/opt/py/python3',
+        resolveServiceFacts: () => activeServiceFacts
+      });
+      // interpreter-missing 的入口是设置键:跳 workbench.action.openSettings
+      // (断言须在 mockRestore 前:restore 会清空调用记录)
+      expect(exec).toHaveBeenCalledWith(
+        'workbench.action.openSettings',
+        'kbengine.python.interpreterPath'
+      );
+    } finally {
+      exec.mockRestore();
+      restoreWindow();
+    }
   });
 });

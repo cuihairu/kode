@@ -144,6 +144,28 @@ describe('raceWithBudget', () => {
     shared.resolve();
     linked.dispose();
   });
+
+  it('预取消 token:零等待返回 null 并触发 onStop(覆盖率 67-69)', async () => {
+    const token = { isCancellationRequested: true } as never;
+    let onStopCount = 0;
+    const result = await raceWithBudget(
+      'hover:precancel',
+      new Promise(() => undefined),
+      1000,
+      token,
+      () => { onStopCount += 1; }
+    );
+    expect(result).toBeNull();
+    expect(onStopCount).toBe(1);
+  });
+
+  it('环形缓冲越过上限 shift:101 次超时后仍只留 RECENT_LIMIT(覆盖率 45)', async () => {
+    clearRecentHoverTimeouts();
+    for (let i = 0; i < 101; i += 1) {
+      await raceWithBudget('hover:ring', new Promise(() => undefined), 1);
+    }
+    expect(getRecentHoverTimeouts().length).toBe(100);
+  });
 });
 
 describe('withInitialScanTimeout', () => {
