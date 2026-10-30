@@ -703,6 +703,13 @@
 - [ ] IDE-LINT-011 [P1] 统一 lint 规则注册与能力清单；验收/证据：每条规则注册 code/严重度/角色/开关/源码提交/触发入口/修复支持，导出的已启用规则与 Problems 一致；已实现、仅提示、待实现明确区分。
 - [ ] IDE-LINT-012 [P1] 验收 lint 快速修复的语法和语义边界；验收/证据：多行调用、同一行两个不同 receiver、EOF、同级后续语句与缩进均可在真实 VS Code 应用；不把第一个 receiver 的修复套给第二个，不无提示改动无关后续逻辑。
 
+## 2026-10-30 用户令 · KBEngine 跨进程数据字典键索引与类型互推
+
+引擎源码核验(2026-10-30):globalData/baseAppData/cellAppData 经 GlobalDataClient → dbmgr GlobalDataServer(std::map<std::string,std::string>) → 各进程,key/value 均 `script::Pickler::pickle`(标准库 pickle)序列化,接收侧 `Pickler::unpickle` 还原同一 Python 对象(globaldata_client.cpp:98-104、entity_app.h:1261-1308、pickler.cpp:25-26)——**一侧设置的类型在另一侧可恢复**,跨进程类型互推成立。拓扑:globalData→全部进程、baseAppData→仅 baseapp、cellAppData→仅 cellapp(globaldata_server.cpp:60-110);写者自身进程不重收。用户定口径:键粒度=字面量按键值/标识符按键名文本;类型精度=能推才显跳过未知;本次做引用互链+go-to-definition+读写点类型提示,键补全留后续增量。
+
+- [x] GLOBDATA-001 字典键索引与引用/跳转互链 (e6f53ac)；验收/证据：扫描器认 `alias.globalData[KEY]=RHS`(写)、`alias.globalData[KEY]`(读)、`alias.globalData.get(KEY[,default])`(读),非 alias/`self.` 前缀排除、`==` 不算赋值、跨行/复杂键跳过、字符串键解引;跨文件索引(仿 WorkspaceIndex,findFilesAcrossRoots+PY_SCAN_EXCLUDE+8并发时间片让出+noteSaved+watcher);引用 provider 落点 KEY 列出全部写+读点;go-to-definition 读点 KEY 跳首个写点、写点跳首个异类同键点。
+- [ ] GLOBDATA-002 读写点类型互推；验收/证据：写点 `[KEY]=RHS` 出 `: <RHS 类型>`、读点 `.get(KEY)` 出 `: <同键写点值类型 union>`(无写点不出);RHS 字面量(int/float/str/bool/None)、list/dict/tuple 字面量可推,函数调用/运算符/链式不出(能推才显);复用 kbengine.inlayHints.typeData 开关与 resolveEntityAnnotationType 链;hover 读点显示推导类型+写点位置。
+
 ## 2026-10-30 第二轮完成标记复审 · IDE-AUD-022 起
 
 依据：[第二轮深审](docs/review/2026-10-30-completion-audit-round2.md)，固定基线 5715296，独立单测 4351 通过/9 跳过，真实 VSIX 烟测 4 通过。27 类问题/缺口由源码与定向运行探针核对，不代表每项均有完整真机联验；来源与强度见审计 CSV 第二轮字段，不把分组源码复核当逐项独立验收。23 个原勾选项有新反例而重开，保留历史提交；c647fdf 的 IDE-AUD-001 迟到会话修复已独立验证，本轮不撤销。其他 agent 在途的字典/inlay/lint/测试工作不纳入本轮修复完成判断。
