@@ -31,6 +31,7 @@ import {
   type BuildContext,
   type DatabaseBackend,
   type DefSourceRef,
+  type SchemaBuildProgress,
   type RuntimeScope,
   type TypeAliasEntry,
   type PersistentPropertyDescriptor,
@@ -215,7 +216,8 @@ function* schemaBuildPhases(
   entityName: string,
   target: string | Pick<vscode.TextDocument, 'fileName'> | undefined,
   workspaceRoot: string,
-  cacheKey: string
+  cacheKey: string,
+  progress?: SchemaBuildProgress
 ): Generator<'phase-gate', DatabaseSchemaSnapshot | null, void> {
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
   // 不可达(批62 定性):getDefinitionWorkspaceLayout 的 entityDefsRoot =
@@ -271,11 +273,14 @@ function* schemaBuildPhases(
     path: entityName,
     category: 'entity'
   };
-  const properties = collectPersistentPropertiesForDefinition(
+  // IDE-AUD-013(F13):属性收集按预算在单实体内部让路——yield* 把属性循环/
+  // 组件/父链递归的让路面转发给驱动(同步面无 progress 恒不 yield)。
+  const properties = yield* collectPersistentPropertiesForDefinition(
     entityName,
     defFilePath,
     'entity',
-    buildContext
+    buildContext,
+    progress
   );
   yield 'phase-gate'; // 闸点 5:属性收集(含组件/父链递归)后
   // IDE-SCH-001:表/列推导走纯函数面——输入收集(文件/配置/布局)留在本快照
@@ -363,6 +368,12 @@ export function getDatabaseSchemaSnapshot(
 /** 异步构建闸:阶段间回调——返回 false 即取消止步(不发布缓存) */
 export interface SchemaBuildGateOptions {
   gate?: () => boolean | Promise<boolean>;
+  /** IDE-AUD-013(F13):单实体内部按预算让路的连续执行预算(ms);缺省不过闸
+   * 预算(仅阶段闸让路,行为与旧异步面一致) */
+  budgetMs?: number;
+  /** IDE-AUD-013(F13):共享让路量规——调用方(分阶段冷构建)传入以把单实体
+   * 内部的让路计入同一把量规 */
+  progress?: SchemaBuildProgress;
 }
 
 // IDE-REV-012:在飞后台构建登记(键=根+实体,同 getDatabaseSchemaSnapshot)
@@ -474,16 +485,29 @@ export async function buildDatabaseSchemaSnapshotAsync(
     await new Promise<void>(resolve => { setImmediate(resolve); });
     return true;
   });
-  const iterator = schemaBuildPhases(entityName, target, workspaceRoot, cacheKey);
+  // IDE-AUD-013(F13):共享让路量规——预算默认不过闸(Infinity),仅显式传
+  // budgetMs 才在单实体属性循环/递归内让路;调用方传入的量规在每次让路后
+  // 由本驱动重置 sliceStart 并记账(阶段闸与属性闸同口径)。
+  const progress = options.progress ?? {
+    sliceStart: Date.now(),
+    budgetMs: options.budgetMs ?? Number.POSITIVE_INFINITY,
+    yields: 0,
+    maxSliceMs: 0
+  };
+  const iterator = schemaBuildPhases(entityName, target, workspaceRoot, cacheKey, progress);
   for (;;) {
     const step = iterator.next();
     if (step.done) {
       return step.value;
     }
+    const now = Date.now();
+    progress.maxSliceMs = Math.max(progress.maxSliceMs, now - progress.sliceStart);
+    progress.yields += 1;
     const proceed = await gate();
     if (!proceed) {
       return null; // 中段取消:生成器不再推进,缓存不发布
     }
+    progress.sliceStart = Date.now();
   }
 }
 
@@ -1174,6 +1198,45 @@ function refreshTypeStorageUsageRecord(workspaceRoot: string, entityName: string
   return true;
 }
 
+/** IDE-AUD-013(F13):分阶段冷构建用的单实体刷新面——异步构建管线在单实体
+ * 内部按预算让路(属性循环/组件/父链递归),中段取消经 gate 立即止步。
+ * 返回 'cancelled' 即该实体未完整处理(记录不更新,调用方应止步不发布)。 */
+async function refreshTypeStorageUsageRecordAsync(
+  workspaceRoot: string,
+  entityName: string,
+  progress: SchemaBuildProgress,
+  gate: () => Promise<boolean>
+): Promise<'updated' | 'unchanged' | 'cancelled'> {
+  const state = typeStorageUsageState;
+  if (!state) {
+    return 'cancelled'; // 状态已弃置:无法记录,调用方应止步
+  }
+  let cancelled = false;
+  const snapshot = await buildDatabaseSchemaSnapshotAsync(entityName, workspaceRoot, {
+    budgetMs: progress.budgetMs,
+    progress,
+    gate: async () => {
+      if (!(await gate())) {
+        cancelled = true;
+        return false;
+      }
+      return true;
+    }
+  });
+  if (cancelled) {
+    return 'cancelled'; // 中段取消:未产出可用快照,不更新记录
+  }
+  const existing = state.entityRecords.get(entityName);
+  if (existing && existing.snapshot === snapshot) {
+    return 'unchanged'; // 快照对象未变:该实体贡献的记录原样复用
+  }
+  state.entityRecords.set(entityName, {
+    snapshot,
+    usages: collectTypeStorageUsagesForSnapshot(snapshot)
+  });
+  return 'updated';
+}
+
 export function invalidateTypeStorageUsageIndex(): void {
   typeStorageUsageState = null;
 }
@@ -1329,32 +1392,46 @@ export async function buildTypeStorageUsageIndexPhased(
   const yieldControl = options.yieldControl ?? (() => new Promise<void>(resolve => { setImmediate(resolve); }));
   const budgetMs = options.entityBudgetMs ?? 25;
 
+  // IDE-AUD-013(F13):共享让路量规——单实体内部(属性循环/组件/父链递归)
+  // 与实体边界让路记入同一把量规,最大连续片跨两者连续测量。
+  const progress: SchemaBuildProgress = { sliceStart: Date.now(), budgetMs, yields: 0, maxSliceMs: 0 };
+  const gate = async (): Promise<boolean> => {
+    await yieldControl();
+    return shouldContinue();
+  };
+
   let entities = 0;
-  let yields = 0;
   let stopped = false;
-  let maxSliceMs = 0;
-  let sliceStart = Date.now();
   for (const entry of entries) {
     if (!(await shouldContinue())) {
       stopped = true; // 实体边界止步:后续实体不再处理
       break;
     }
-    refreshTypeStorageUsageRecord(workspaceRoot, entry.name);
+    const status = await refreshTypeStorageUsageRecordAsync(workspaceRoot, entry.name, progress, gate);
+    if (status === 'cancelled') {
+      stopped = true; // 单实体内部让路后取消:该实体未完整处理,止步不发布
+      break;
+    }
     entities += 1;
     const now = Date.now();
-    maxSliceMs = Math.max(maxSliceMs, now - sliceStart);
-    if (now - sliceStart >= budgetMs) {
-      yields += 1;
+    progress.maxSliceMs = Math.max(progress.maxSliceMs, now - progress.sliceStart);
+    if (now - progress.sliceStart >= budgetMs) {
+      progress.yields += 1;
       await yieldControl();
       if (!(await shouldContinue())) {
         stopped = true; // 让路后取消:续批前止步
         break;
       }
-      sliceStart = Date.now();
+      progress.sliceStart = Date.now();
     }
   }
 
-  const gauge: TypeStorageUsageColdBuildOutcome = { entities, stopped, yields, maxSliceMs };
+  const gauge: TypeStorageUsageColdBuildOutcome = {
+    entities,
+    stopped,
+    yields: progress.yields,
+    maxSliceMs: progress.maxSliceMs
+  };
   lastTypeStorageColdBuildGauge = gauge;
   if (stopped) {
     return gauge; // 不清亡灵/不聚合:部分状态由调用方弃置

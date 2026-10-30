@@ -658,14 +658,18 @@ describe('databaseSchema 守卫分支', () => {
 
   it('分阶段冷构建:让出后再取消即止步,量规如实记 partial', async () => {
     const root = makeWorkspace();
-    let gateCalls = 0;
+    // IDE-AUD-013(F13):取消检查细化到单实体内部(阶段/属性闸)——首次让出
+    // 即翻转取消,构建即刻止步(不只等实体边界);部分状态不发布。
+    let cancelled = false;
     const outcome = await buildTypeStorageUsageIndexPhased(root, {
-      entityBudgetMs: 0, // 首个实体后必让出
-      yieldControl: async () => undefined,
-      shouldContinue: () => { gateCalls += 1; return gateCalls <= 1; }
+      entityBudgetMs: 0,
+      yieldControl: async () => { cancelled = true; },
+      shouldContinue: () => !cancelled
     });
-    expect(outcome).toMatchObject({ entities: 1, stopped: true, yields: 1 });
-    // 止步于 Gold 后:未被处理的 Silver 不出现在任何只读聚合里
+    expect(outcome.stopped).toBe(true);
+    expect(outcome.entities).toBeLessThan(2); // 未全量处理即止步
+    expect(outcome.yields).toBeGreaterThanOrEqual(1); // 真实让路面
+    // 止步后:未被处理的实体不出现在任何只读聚合里(部分不发布)
     expect(findTypeStorageUsagesReadOnly(root, 'SILVER_ID')).toEqual([]);
   });
 

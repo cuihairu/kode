@@ -356,12 +356,36 @@ function resolveEffectiveTypeName(typeName: string, context: BuildContext): stri
   return typeName;
 }
 
-export function collectPersistentPropertiesForDefinition(
+/** IDE-AUD-013(F13):单实体 schema 内部计算的让路量规——异步驱动在每次
+ * 让路(阶段闸/属性闸)后重置 sliceStart 并记账;生成器只看 budget 判断是否
+ * 让路。同步面(schemaBuildPhases 无 progress)恒不触发,行为与原整段一致。 */
+export interface SchemaBuildProgress {
+  /** 上次让路(或构建起)时间戳 */
+  sliceStart: number;
+  /** 连续执行预算(ms);Infinity=不按预算让路 */
+  budgetMs: number;
+  /** 让路次数(量规) */
+  yields: number;
+  /** 两次让路之间最长连续执行(量规) */
+  maxSliceMs: number;
+}
+
+/** IDE-AUD-013(F13):超预算即让路——生成器在此 yield 'phase-gate',由驱动
+ * 决定是否真正放弃宿主(异步面 await,同步面直通忽略)。无 progress(同步
+ * 面)恒不 yield,行为与原同步函数一致。 */
+function* maybeYieldForBudget(progress: SchemaBuildProgress | undefined): Generator<'phase-gate', void, void> {
+  if (progress && Date.now() - progress.sliceStart >= progress.budgetMs) {
+    yield 'phase-gate';
+  }
+}
+
+export function* collectPersistentPropertiesForDefinition(
   definitionName: string,
   filePath: string,
   category: DefinitionCategory,
-  context: BuildContext
-): PersistentPropertyDescriptor[] {
+  context: BuildContext,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
   const normalizedPath = normalizePath(filePath);
   if (context.visitedDefinitions.has(normalizedPath)) {
     return [];
@@ -381,23 +405,24 @@ export function collectPersistentPropertiesForDefinition(
 
   const properties = new Map<string, PersistentPropertyDescriptor>();
 
-  mergeProperties(properties, parsePropertySection(
+  mergeProperties(properties, yield* parsePropertySection(
     getDirectChildElement(root, 'Properties'),
     document,
     filePath,
     category,
     definitionName,
-    context
+    context,
+    progress
   ));
 
   // 接口只装载自身 Properties 与方法段(loadAllDefDescriptions),不跟随
   // 自己的 Interfaces/Components/Parent;其余类目按引擎继续下钻。
   if (category !== 'interface') {
-    mergeInterfaces(properties, root, filePath, category, context);
+    yield* mergeInterfaces(properties, root, filePath, category, context, progress);
 
     // 此处类目只可能是 entity/component(接口在上方提前 return),而引擎
     // Components 段对这两类都装载(loadAllDefDescriptions)
-    mergeComponents(properties, root, document, filePath, category, context);
+    yield* mergeComponents(properties, root, document, filePath, category, context, progress);
 
     const parentNode = getDirectChildElement(root, 'Parent');
     const parentName = getTypeRefName(parentNode);
@@ -409,22 +434,25 @@ export function collectPersistentPropertiesForDefinition(
       if (parentPath) {
         mergeProperties(
           properties,
-          collectPersistentPropertiesForDefinition(parentName, parentPath, parentCategory, context)
+          yield* collectPersistentPropertiesForDefinition(parentName, parentPath, parentCategory, context, progress)
         );
       }
     }
+    // 深父链/组件链让路:跨定义递归(每层属性段可能为空)也在预算内让路
+    yield* maybeYieldForBudget(progress);
   }
 
   return [...properties.values()];
 }
 
-function mergeInterfaces(
+function* mergeInterfaces(
   properties: Map<string, PersistentPropertyDescriptor>,
   root: DefElementNode,
   filePath: string,
   category: DefinitionCategory,
-  context: BuildContext
-): void {
+  context: BuildContext,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', void, void> {
   const interfacesNode = getDirectChildElement(root, 'Interfaces');
   if (!interfacesNode) {
     return;
@@ -449,24 +477,27 @@ function mergeInterfaces(
 
     mergeProperties(
       properties,
-      collectPersistentPropertiesForDefinition(
+      yield* collectPersistentPropertiesForDefinition(
         interfaceName,
         interfacePath,
         'interface',
-        context
+        context,
+        progress
       )
     );
+    yield* maybeYieldForBudget(progress);
   }
 }
 
-function mergeComponents(
+function* mergeComponents(
   properties: Map<string, PersistentPropertyDescriptor>,
   root: DefElementNode,
   document: ReturnType<typeof parseDefDocument>,
   filePath: string,
   category: DefinitionCategory,
-  context: BuildContext
-): void {
+  context: BuildContext,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', void, void> {
   const componentsNode = getDirectChildElement(root, 'Components');
   if (!componentsNode) {
     return;
@@ -488,6 +519,9 @@ function mergeComponents(
       path: componentNode.name,
       category
     };
+    const children = isPersistent
+      ? yield* getPersistentComponentProperties(componentTypeName, context, progress)
+      : [];
     const descriptor: PersistentPropertyDescriptor = {
       name: componentNode.name,
       typeName: 'ENTITY_COMPONENT',
@@ -499,55 +533,59 @@ function mergeComponents(
       scopes,
       source: componentSource,
       componentTypeName,
-      children: isPersistent
-        ? getPersistentComponentProperties(componentTypeName, context)
-        : []
+      children
     };
 
     if (descriptor.persistent) {
       mergeProperties(properties, [descriptor]);
     }
+    yield* maybeYieldForBudget(progress);
   }
 }
 
-function parsePropertySection(
+function* parsePropertySection(
   sectionNode: DefElementNode | undefined,
   document: ReturnType<typeof parseDefDocument>,
   filePath: string,
   category: DefinitionCategory,
   definitionName: string,
-  context: BuildContext
-): PersistentPropertyDescriptor[] {
+  context: BuildContext,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
   if (!sectionNode) {
     return [];
   }
 
   const properties: PersistentPropertyDescriptor[] = [];
   for (const propertyNode of getDirectChildElements(sectionNode)) {
-    const descriptor = parsePropertyNode(
+    const descriptor = yield* parsePropertyNode(
       propertyNode,
       document,
       filePath,
       category,
       definitionName,
-      context
+      context,
+      progress
     );
     if (descriptor?.persistent) {
       properties.push(descriptor);
     }
+    // IDE-AUD-013(F13):6000 属性片长的 831ms 全在此循环——按预算在属性间让路
+    yield* maybeYieldForBudget(progress);
   }
   return properties;
 }
 
-function parsePropertyNode(
+function* parsePropertyNode(
   propertyNode: DefElementNode,
   document: ReturnType<typeof parseDefDocument>,
   filePath: string,
   category: DefinitionCategory,
   definitionName: string,
   context: BuildContext,
+  progress?: SchemaBuildProgress,
   parentPath = ''
-): PersistentPropertyDescriptor | null {
+): Generator<'phase-gate', PersistentPropertyDescriptor | null, void> {
   const rawTypeName = getScalarChildValue(propertyNode, 'Type');
   if (!rawTypeName) {
     return null;
@@ -596,7 +634,7 @@ function parsePropertyNode(
     const containerNode = resolved.kind === 'array' ? resolved.node : getDirectChildElement(propertyNode, 'Type');
     const containerDocument = resolved.kind === 'array' ? resolved.document : document;
     const containerFilePath = resolved.kind === 'array' ? resolved.filePath : filePath;
-    descriptor.arrayElement = parseArrayElementDescriptor(
+    descriptor.arrayElement = yield* parseArrayElementDescriptor(
       containerNode,
       containerDocument,
       containerFilePath,
@@ -604,14 +642,15 @@ function parsePropertyNode(
       definitionName,
       context,
       propertyPath,
-      descriptor
+      descriptor,
+      progress
     );
   } else if (rawTypeName === 'FIXED_DICT' || resolved.kind === 'fixedDict') {
     descriptor.typeName = 'FIXED_DICT';
     const containerNode = resolved.kind === 'fixedDict' ? resolved.node : propertyNode;
     const containerDocument = resolved.kind === 'fixedDict' ? resolved.document : document;
     const containerFilePath = resolved.kind === 'fixedDict' ? resolved.filePath : filePath;
-    descriptor.children = parseFixedDictChildren(
+    descriptor.children = yield* parseFixedDictChildren(
       containerNode,
       containerDocument,
       containerFilePath,
@@ -619,7 +658,8 @@ function parsePropertyNode(
       definitionName,
       context,
       propertyPath,
-      descriptor
+      descriptor,
+      progress
     );
   } else if (resolved.kind === 'builtin') {
     descriptor.typeName = resolved.typeName;
@@ -628,7 +668,7 @@ function parsePropertyNode(
   return descriptor;
 }
 
-function parseArrayElementDescriptor(
+function* parseArrayElementDescriptor(
   containerNode: DefElementNode | undefined,
   document: ReturnType<typeof parseDefDocument>,
   filePath: string,
@@ -636,8 +676,9 @@ function parseArrayElementDescriptor(
   definitionName: string,
   context: BuildContext,
   propertyPath: string,
-  parentDescriptor: PersistentPropertyDescriptor
-): PersistentPropertyDescriptor | undefined {
+  parentDescriptor: PersistentPropertyDescriptor,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', PersistentPropertyDescriptor | undefined, void> {
   const ofNode = getDirectChildElement(containerNode, 'of');
   const rawElementTypeName = getScalarChildValue(containerNode, 'of');
   if (!containerNode || !ofNode || !rawElementTypeName) {
@@ -674,7 +715,7 @@ function parseArrayElementDescriptor(
     const nestedContainer = resolved.kind === 'array' ? resolved.node : ofNode;
     const nestedDocument = resolved.kind === 'array' ? resolved.document : document;
     const nestedFilePath = resolved.kind === 'array' ? resolved.filePath : filePath;
-    elementDescriptor.arrayElement = parseArrayElementDescriptor(
+    elementDescriptor.arrayElement = yield* parseArrayElementDescriptor(
       nestedContainer,
       nestedDocument,
       nestedFilePath,
@@ -682,7 +723,8 @@ function parseArrayElementDescriptor(
       definitionName,
       context,
       `${propertyPath}[]`,
-      elementDescriptor
+      elementDescriptor,
+      progress
     );
   } else if (rawElementTypeName === 'FIXED_DICT' || resolved.kind === 'fixedDict') {
     elementDescriptor.typeName = 'FIXED_DICT';
@@ -692,7 +734,7 @@ function parseArrayElementDescriptor(
     const fdContainer = resolved.kind === 'fixedDict' ? resolved.node : ofNode;
     const fdDocument = resolved.kind === 'fixedDict' ? resolved.document : document;
     const fdFilePath = resolved.kind === 'fixedDict' ? resolved.filePath : filePath;
-    elementDescriptor.children = parseFixedDictChildren(
+    elementDescriptor.children = yield* parseFixedDictChildren(
       fdContainer,
       fdDocument,
       fdFilePath,
@@ -700,7 +742,8 @@ function parseArrayElementDescriptor(
       definitionName,
       context,
       `${propertyPath}[]`,
-      elementDescriptor
+      elementDescriptor,
+      progress
     );
   } else if (resolved.kind === 'builtin') {
     elementDescriptor.typeName = resolved.typeName;
@@ -709,7 +752,7 @@ function parseArrayElementDescriptor(
   return elementDescriptor;
 }
 
-function parseFixedDictChildren(
+function* parseFixedDictChildren(
   containerNode: DefElementNode,
   document: ReturnType<typeof parseDefDocument>,
   filePath: string,
@@ -717,8 +760,9 @@ function parseFixedDictChildren(
   definitionName: string,
   context: BuildContext,
   propertyPath: string,
-  parentDescriptor: PersistentPropertyDescriptor
-): PersistentPropertyDescriptor[] {
+  parentDescriptor: PersistentPropertyDescriptor,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
   const propertiesNode = getDirectChildElement(containerNode, 'Properties');
   if (!propertiesNode) {
     return [];
@@ -772,7 +816,7 @@ function parseFixedDictChildren(
         : getDirectChildElement(childNode, 'Type');
       const containerDocument = resolved.kind === 'array' ? resolved.document : document;
       const containerFilePath = resolved.kind === 'array' ? resolved.filePath : filePath;
-      childDescriptor.arrayElement = parseArrayElementDescriptor(
+      childDescriptor.arrayElement = yield* parseArrayElementDescriptor(
         containerNodeOfChild,
         containerDocument,
         containerFilePath,
@@ -780,14 +824,15 @@ function parseFixedDictChildren(
         definitionName,
         context,
         childPath,
-        childDescriptor
+        childDescriptor,
+        progress
       );
     } else if (effectiveTypeName === 'FIXED_DICT') {
       childDescriptor.typeName = 'FIXED_DICT';
       const nestedContainer = resolved.kind === 'fixedDict' ? resolved.node : childNode;
       const nestedDocument = resolved.kind === 'fixedDict' ? resolved.document : document;
       const nestedFilePath = resolved.kind === 'fixedDict' ? resolved.filePath : filePath;
-      childDescriptor.children = parseFixedDictChildren(
+      childDescriptor.children = yield* parseFixedDictChildren(
         nestedContainer,
         nestedDocument,
         nestedFilePath,
@@ -795,13 +840,15 @@ function parseFixedDictChildren(
         definitionName,
         context,
         childPath,
-        childDescriptor
+        childDescriptor,
+        progress
       );
     } else if (resolved.kind === 'builtin') {
       childDescriptor.typeName = resolved.typeName;
     }
 
     children.push(childDescriptor);
+    yield* maybeYieldForBudget(progress);
   }
 
   return children;
@@ -824,10 +871,11 @@ function arrayDirectElementTypeName(
   return resolveEffectiveTypeName(rawElementTypeName, context);
 }
 
-function getPersistentComponentProperties(
+function* getPersistentComponentProperties(
   componentTypeName: string,
-  context: BuildContext
-): PersistentPropertyDescriptor[] {
+  context: BuildContext,
+  progress?: SchemaBuildProgress
+): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
   const cached = context.componentCache.get(componentTypeName);
   if (cached) {
     return clonePersistentProperties(cached);
@@ -838,11 +886,12 @@ function getPersistentComponentProperties(
     return [];
   }
 
-  const properties = collectPersistentPropertiesForDefinition(
+  const properties = yield* collectPersistentPropertiesForDefinition(
     componentTypeName,
     componentPath,
     'component',
-    context
+    context,
+    progress
   );
   context.componentCache.set(componentTypeName, clonePersistentProperties(properties));
   return clonePersistentProperties(properties);
