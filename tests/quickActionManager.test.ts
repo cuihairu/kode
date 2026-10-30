@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { QuickActionManager, terminalScript } from '../src/quickActions';
 import { QuickActionTreeProvider } from '../src/quickActionTree';
@@ -152,6 +152,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stubWorkspace.workspaceFolders = [];
+  vi.restoreAllMocks();
 });
 
 describe('QuickActionManager.show', () => {
@@ -1012,6 +1013,20 @@ describe('QuickActionManager.offerScanOnActivate', () => {
 
     expect(pickCalls).toHaveLength(0);
 
+  });
+
+  it('silently returns when candidate scanning rejects (读取异常兜底)', async () => {
+    // scanCandidates 内部吞掉 readDirectory 错误返回空,此 catch 只在扫描
+    // 自身抛(注入的拒绝)时触发:静默返回、不弹提示、不写记忆。
+    memoryFileSystem.setDirectory('/ws', [['start.bat', 1]]);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    vi.spyOn(manager as never, 'scanCandidates').mockRejectedValueOnce(new Error('EACCES'));
+
+    await manager.offerScanOnActivate();
+
+    expect(pickCalls).toHaveLength(0);
+    expect(memento.has('kbengine.quickActions.scanDismissed')).toBe(false);
+    expect(messages.info).toHaveLength(0);
   });
 
   it('treats a context without memento as a first run', async () => {

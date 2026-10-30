@@ -146,6 +146,24 @@ describe('buildKbeStubExportContentForWorkspace(engine detection)', () => {
       rmSync(engineRoot, { recursive: true, force: true });
     }
   });
+
+  it('falls back to the curated catalog when a typings module file is missing', () => {
+    // 树只带 marker(_KBEngine_common.pyi),模块序列第二个文件缺失 →
+    // 读取抛错落 catch → 引擎内容判 null → 回落精选目录,不产出残缺存根。
+    const engineRoot = mkdtempSync(join(os.tmpdir(), 'kode-engine-partial-'));
+    try {
+      mkdirSync(join(engineRoot, 'typings'), { recursive: true });
+      writeFileSync(join(engineRoot, 'typings', '_KBEngine_common.pyi'), 'class Entity:\n    id: int\n');
+      const content = buildKbeStubExportContentForWorkspace('/ws', {
+        engineRoot,
+        engineRootEnv: {}
+      });
+      expect(content).toBe(buildKbeStubExportContent());
+      expect(content).not.toContain('generated from the local KBEngine typings checkout');
+    } finally {
+      rmSync(engineRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('exportKbeStubs(装配层)', () => {

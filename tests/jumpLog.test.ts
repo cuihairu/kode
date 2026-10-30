@@ -165,4 +165,17 @@ describe('jumpLog 决策路径日志', () => {
     expect(tail).toContain('[kode-jump][info] info-line-kept');
     expect(tail).toContain('[kode-jump][debug] debug-line-kept');
   });
+
+  it('环形缓冲封顶:超 RECENT_LIMIT(400)条时滚动淘汰最旧,缓存不无界增长', () => {
+    setJumpLogEnabled(true);
+    clearRecentJumpLogs();
+    for (let i = 0; i < 401; i += 1) {
+      jumpLog('info', `line-${i}`);
+    }
+    const logs = getRecentJumpLogs();
+    expect(logs.length, '缓冲恒 ≤ RECENT_LIMIT').toBe(400);
+    expect(logs[0], '最旧一条已淘汰').toContain('line-1');
+    expect(logs[0]).not.toContain('line-0');
+    expect(logs[399], '最新一条保留').toContain('line-400');
+  });
 });

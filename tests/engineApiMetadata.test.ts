@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   UNKNOWN_ENGINE_VALUE,
   buildEngineApiCatalog,
-  readEngineApiMetadata
+  readEngineApiMetadata,
+  readEngineVersionMarker
 } from '../src/engineApiMetadata';
 
 const originalEngineRoot = process.env.KBENGINE_ROOT;
@@ -107,6 +108,16 @@ describe('engine API metadata', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('returns null when neither marker file is readable (legacy absent, kbeversion read fails)', () => {
+    // readFile 对两个候选路径都抛 → 先落 legacy 的 catch,再落 kbeversion 的
+    // catch → null(未知上游,不编造)。旧码在 kbeversion catch 上未覆盖。
+    expect(
+      readEngineVersionMarker('/nonexistent-engine-root', () => {
+        throw new Error('unreadable');
+      })
+    ).toBeNull();
   });
 
   it('adds original declaration locations to every API symbol', async () => {

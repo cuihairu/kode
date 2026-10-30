@@ -535,4 +535,10 @@ describe('小文件孤立分支第七波(覆盖率 98% 线)', () => {
   it('pythonTypeStubs:属性解析异常 → 回退 Any(417)', () => {
     expect(resolveCustomTypePropertyAnnotation({ name: 'x' } as never, [])).toBe('Any');
   });
+
+  it('pythonTypeStubs:非字符串 typeName(畸形输入)→ 属性注解整体回退 Any(417 catch)', () => {
+    // propertyAnnotation 内部各支路自带 catch(350/360/368),唯一逃逸到外层
+    // catch 的是 typeName 非字符串(数值.trim 抛 TypeError)——防御性兜底。
+    expect(resolveCustomTypePropertyAnnotation({ name: 'x', typeName: 42 } as never, [])).toBe('Any');
+  });
 });

@@ -81,4 +81,40 @@ describe('engine compatibility check', () => {
     expect(report.checks).toContainEqual(expect.objectContaining({ name: 'engine-version', status: 'warning' }));
     expect(report.checks).toContainEqual(expect.objectContaining({ name: 'bundle', status: 'error' }));
   });
+
+  it('engine 版本与要求完全相等时仍判 ok(满足比较的全等末臂)', () => {
+    // satisfies 逐位比较,仅当前缀全等且无更大/更小时落到末臂 return true;
+    // 旧码该末臂未覆盖。用版本完全相等的树(2.5.10 == ^2.5.10)触发。
+    const equalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-engine-equal-'));
+    const manifestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-compat-equal-'));
+    try {
+      fs.mkdirSync(path.join(equalRoot, 'kbe/src/lib/common'), { recursive: true });
+      fs.writeFileSync(
+        path.join(equalRoot, 'kbe/src/lib/common/version.h'),
+        '#define KBE_VERSION "2.5.10"\n'
+      );
+      fs.writeFileSync(path.join(manifestDir, 'package.json'), JSON.stringify({
+        version: '0.1.2',
+        engines: { vscode: '^2.5.10' }
+      }));
+      const report = checkExtensionCompatibility(
+        path.join(manifestDir, 'package.json'),
+        equalRoot,
+        {
+          displayName: 'Kode KBEngine',
+          engines: '^2.5.10',
+          vscodeEngine: '^2.5.10',
+          files: []
+        }
+      );
+      expect(report.checks).toContainEqual(expect.objectContaining({
+        name: 'engine-version',
+        status: 'ok',
+        detail: expect.stringContaining('Engine 2.5.10; extension host requirement ^2.5.10.')
+      }));
+    } finally {
+      fs.rmSync(equalRoot, { recursive: true, force: true });
+      fs.rmSync(manifestDir, { recursive: true, force: true });
+    }
+  });
 });
