@@ -1,0 +1,43 @@
+Baseline: a773c7c0263f5de85960acf1f7c1c5849c95cbc6
+Immutable snapshot: /tmp/kode-audit-round3-xasgeg94
+
+=== Data/runtime probes ===
+{"test":"schemaVirtualDocumentLosesRoot","controlDef":"/tmp/kode-round3-pHHN22/B/scripts/entity_defs/Hero.def","virtualDef":"/tmp/kode-round3-pHHN22/A/scripts/entity_defs/Hero.def","uri":"Hero.schema","containsOnlyA":true,"containsOnlyB":false}
+{"test":"closedVirtualDocumentsRetainMoreThanSchemaLru","publishedEntries":46,"schemaGauge":{"entries":32,"capacity":32},"openDocuments":0}
+{"test":"schemaProviderDisposeKeepsSnapshots","publishedEntries":46}
+{"test":"isolatedEntityDisappearsFromGraph","definitions":0}
+{"test":"uniqueClosedTagReportedDuplicate","definitions":["Parent.hp"],"issues":[{"code":"duplicate-symbol","name":"hp"}]}
+{"test":"messageTableProductOmitsTypeRegistry","withoutOptions":{"loadFailed":true,"issues":["unknown-arg-type"]},"withTypesXml":{"loadFailed":false,"issues":[]}}
+{"test":"renameIntroducesDescendantCollision","targetConflict":null,"before":0,"after":["属性 vigor 与继承链上的属性/组件槽同域位同名:同一模块 addPropertyDescription 判重拒绝,实体加载会失败(继承自 Hero.def)"],"editedFiles":["Hero.def"]}
+
+=== Generated SDK compiler and numeric probes ===
+{"test":"generatedSdkHelperCollision","diagnostics":[{"code":2687,"message":"All declarations of 'entityId' must have identical modifiers."},{"code":2300,"message":"Duplicate identifier 'entityId'."},{"code":2687,"message":"All declarations of 'entityId' must have identical modifiers."},{"code":2717,"message":"Subsequent property declarations must have the same type.  Property 'entityId' must be of type 'number', but here has type 'string'."}]}
+{"test":"sdkUint64Precision","generatedCoins":"  public coins: number;","input":"9007199254740993","roundTrip":"9007199254740992"}
+
+=== Concurrent generation probe ===
+{"test":"overlappingGeneratorRollbackDeletesOtherInvocation","before":{"first":true,"second":true},"after":{"first":true,"second":false}}
+
+=== Existing focused tests ===
+
+ RUN  v5.0.3 /tmp/kode-audit-round3-xasgeg94
+
+
+ Test Files  7 passed (7)
+      Tests  65 passed (65)
+   Start at  18:07:47
+   Duration  1.90s (transform 79%, import 13%, tests 7%, worker 1%)
+
+  Transform  transforming modules took 5.11s · 79% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+
+
+=== Existing rollback tests ===
+
+ RUN  v5.0.3 /tmp/kode-audit-round3-xasgeg94
+
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  18:08:20
+   Duration  1.07s (transform 80%, import 14%, tests 5%, worker 1%)
