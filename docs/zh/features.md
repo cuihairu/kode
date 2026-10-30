@@ -233,7 +233,7 @@
 | `kbengine.python.stubExport` | `true` | 自动把内置 KBEngine Python API 索引导出为 KBEngine.pyi 存根 |
 | `kbengine.python.stubDir` | `""` | `.pyi` 存根目录（空 = 自管默认 `.kbengine/stubs`；配置目录则扫描、用户 .pyi 不覆盖；支持 VS Code 变量） |
 | `kbengine.python.enableMroJump` | `true` | Python 跨文件 C3-MRO 与 mixin 组合根导航开关（关 = 仅当前文件继承解析 + .def 回退） |
-| `kbengine.python.enableDataDictIndex` | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关；键写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链，Shift+F12 引用、F12 读点跳写点（src/globalDataIndex.ts、src/languageProviders.ts） |
+| `kbengine.python.enableDataDictIndex` | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关；键写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链，Shift+F12 引用、F12 读点跳写点；写点 RHS 值类型能推才显，同键读点 inlay/hover 显示该类型（如 `{"gold": 1}` 写点在 `get("cfg")` 读点显 `Dict[str, int]`）（src/globalDataIndex.ts、src/languageProviders.ts、src/typeInlayHints.ts） |
 | `kbengine.python.apiMetadata` | `true` | 引擎感知的 KBEngine API 元数据——版本、源码 commit/describe 与原始声明位置——写进导出存根头部；取不到源码身份时显示 `unknown`，绝不编造（src/engineApiMetadata.ts、src/kbeModuleIndex.ts） |
 | `kbengine.python.callChainHints` | `true` | Python 实体方法调用链提示与命令；关则隐藏入口，Show Call Chain 不再生成预览（src/defCallChainProvider.ts） |
 | `kbengine.python.callChainView` | `"graph"` | Show Call Chain 面板初始视图：`graph`（打包内嵌 mermaid，离线）或 `text`；面板内 tab 选择持久化到工作区状态并优先于本设置（src/defCallChainViewLogic.ts） |

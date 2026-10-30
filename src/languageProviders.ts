@@ -156,6 +156,8 @@ import {
 import {
   GlobalDataDictIndex,
   getKbeDataDictAccessAtPosition,
+  inferDataDictValueType,
+  isKeyInsideLineComment,
   type KbeDataDictSite
 } from './globalDataIndex';
 import type { EngineApiCatalog } from './engineApiMetadata';
@@ -713,7 +715,11 @@ export function setHoverInFlightGateForTests(gate: (() => Promise<void>) | null)
 export class KBEngineHoverProvider implements vscode.HoverProvider {
   // 实体 def 方法标注面(用户令:只凭名字标 KBEngine 函数不严谨)需要 def
   // 索引,按 RpcCodeLensProvider 同款注入;可选参数保持既有无参用例口径。
-  constructor(private readonly entityMappingManager?: EntityMappingManager) {}
+  // GLOBDATA-002:数据字典键索引注入(可选),键类型悬停用;未注入跳过。
+  constructor(
+    private readonly entityMappingManager?: EntityMappingManager,
+    private readonly dataDictIndex?: GlobalDataDictIndex
+  ) {}
 
   // 批159:同点位在途 hover 去重(provider 实例级,生产单实例语义不变,
   // 测试逐用例新建 provider 天然隔离)。
@@ -940,6 +946,35 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       }
     }
 
+    // GLOBDATA-002:数据字典键类型悬停 —— 落点在键表达式上时:写点显示 RHS
+    // 类型;读点显示同键写点值类型(union)+ 首个写点位置;推不出且无写点
+    // 交回普通 hover 链(能推才显)。索引首次查询即触发懒建(与 definition
+    // 同源),后续查询零成本。
+    if (document.languageId === 'python' && this.dataDictIndex && isPythonDataDictIndexEnabled()) {
+      const dataDictIndex = this.dataDictIndex;
+      const lineText = document.lineAt(position.line).text;
+      const dictAccess = getKbeDataDictAccessAtPosition(
+        lineText,
+        position.character,
+        getKbeAliases(document.getText())
+      );
+      if (dictAccess && !isKeyInsideLineComment(lineText, dictAccess.keyStart)) {
+        return respond(
+          dataDictIndex.ensureStarted().then(() => {
+            if (token?.isCancellationRequested) {
+              return null;
+            }
+            const hover = this.buildDataDictHover(dictAccess, dataDictIndex);
+            if (hover) {
+              return hover;
+            }
+            // 推不出(无同键写点/未知类型)→ 交回普通 hover 链(同一 deadline)
+            return this.provideKnownHover(document, position, featureConfig, range, word);
+          })
+        );
+      }
+    }
+
     const stopKnown = timer?.start('annotation-query');
     let known: vscode.Hover | null;
     try {
@@ -947,6 +982,44 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     } finally { stopKnown?.(); }
     deadline.dispose();
     return known;
+  }
+
+  /**
+   * GLOBDATA-002 数据字典键类型悬停(格式与局部变量推导同风格):写点显示
+   * RHS 推导类型;读点显示同键写点值类型(union)与首个写点位置。写点类型
+   * 推不出→null(交回普通链);读点无同键写点→null;读点有写点但类型推
+   * 不出→只给写点位置。
+   */
+  private buildDataDictHover(
+    access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>,
+    index: GlobalDataDictIndex
+  ): vscode.Hover | null {
+    const writeSites = index.query(access.dict, access.keySignature)
+      .filter(site => site.kind === 'write');
+    const types: string[] = [];
+    for (const write of writeSites) {
+      const type = inferDataDictValueType(write.valueText);
+      if (type && !types.includes(type)) {
+        types.push(type);
+      }
+    }
+    if (access.kind === 'write' && types.length === 0) {
+      return null;
+    }
+    if (access.kind === 'read' && writeSites.length === 0) {
+      return null;
+    }
+    const markdown = new vscode.MarkdownString();
+    const headline =
+      `**KBEngine.${access.dict}\`${access.keySignature}\`${types.length > 0 ? `: ${types.join(' | ')}` : ''}**`;
+    if (access.kind === 'write') {
+      markdown.appendMarkdown(`${headline}\n\n推导自本写点右侧表达式`);
+    } else {
+      markdown.appendMarkdown(`${headline}\n\n读点 · 同键写点 ${writeSites.length} 处`);
+      const first = writeSites[0];
+      markdown.appendMarkdown(`\n\n首个写点 ${path.basename(first.file)}:${first.line + 1}`);
+    }
+    return new vscode.Hover(markdown);
   }
 
   /**
@@ -3842,35 +3915,6 @@ export function setPythonDataDictIndexEnabled(enabled: boolean): void {
 
 export function isPythonDataDictIndexEnabled(): boolean {
   return pythonDataDictIndexEnabled;
-}
-
-/**
- * 行内 `#` 注释检查:键起点之前存在引号外的 `#` 即注释里的假访问
- * (扫描器逐行正则不识注释,这里补上);引号内 `#` 是字面量不算。
- */
-function isKeyInsideLineComment(lineText: string, keyStart: number): boolean {
-  let inString: string | null = null;
-  for (let index = 0; index < keyStart && index < lineText.length; index += 1) {
-    const ch = lineText[index];
-    if (inString) {
-      if (ch === '\\') {
-        index += 1;
-        continue;
-      }
-      if (ch === inString) {
-        inString = null;
-      }
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      inString = ch;
-      continue;
-    }
-    if (ch === '#') {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

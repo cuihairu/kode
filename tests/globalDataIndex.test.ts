@@ -5,14 +5,17 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
+  KBEngineHoverProvider,
   KBEngineReferencesProvider,
   PythonDefinitionProvider,
   setPythonDataDictIndexEnabled
 } from '../src/languageProviders';
+import { PythonTypeInlayHintsProvider } from '../src/typeInlayHints';
 import {
   GlobalDataDictIndex,
   findKbeDataDictAccesses,
   getKbeDataDictAccessAtPosition,
+  inferDataDictValueType,
   normalizeKeySignature
 } from '../src/globalDataIndex';
 
@@ -244,6 +247,171 @@ describe('GLOBDATA-001 provider 装配(定义/引用)', () => {
       index.dispose();
       vscode.workspace.findFiles = originalFind;
       vscode.workspace.fs.readFile = originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('inferDataDictValueType(GLOBDATA-002 能推才显)', () => {
+  it('字面量:int/float/str/bool/None', () => {
+    expect(inferDataDictValueType('1')).toBe('int');
+    expect(inferDataDictValueType('-3')).toBe('int');
+    expect(inferDataDictValueType('2.5')).toBe('float');
+    expect(inferDataDictValueType('1e3')).toBe('float');
+    expect(inferDataDictValueType('"cfg"')).toBe('str');
+    expect(inferDataDictValueType("'a.b'")).toBe('str');
+    expect(inferDataDictValueType('f"SERVER_{id}"')).toBe('str');
+    expect(inferDataDictValueType('True')).toBe('bool');
+    expect(inferDataDictValueType('None')).toBe('None');
+  });
+
+  it('集合字面量:List/Dict/Set/Tuple,异类取 union,空/Any 抑制', () => {
+    expect(inferDataDictValueType('[1, 2]')).toBe('List[int]');
+    expect(inferDataDictValueType('[1, "a"]')).toBe('List[int | str]');
+    expect(inferDataDictValueType('{"gold": 1}')).toBe('Dict[str, int]');
+    expect(inferDataDictValueType('{"a": 1, "b": "x"}')).toBe('Dict[str, int | str]');
+    expect(inferDataDictValueType('{1, 2}')).toBe('Set[int]');
+    expect(inferDataDictValueType('(1, "a")')).toBe('Tuple[int, str]');
+    expect(inferDataDictValueType('(1,)')).toBe('Tuple[int]');
+    expect(inferDataDictValueType('[]')).toBeNull();
+    expect(inferDataDictValueType('{}')).toBeNull();
+    expect(inferDataDictValueType('()')).toBeNull();
+  });
+
+  it('构造调用:已知内建/类构造可取,未知/运算符/标识符不出', () => {
+    expect(inferDataDictValueType('str(x)')).toBe('str');
+    expect(inferDataDictValueType('Avatar(1)')).toBe('Avatar');
+    expect(inferDataDictValueType('dict()')).toBeNull();
+    expect(inferDataDictValueType('list()')).toBeNull();
+    expect(inferDataDictValueType('foo()')).toBeNull();
+    expect(inferDataDictValueType('a + b')).toBeNull();
+    expect(inferDataDictValueType('xx')).toBeNull();
+    expect(inferDataDictValueType('self.attr')).toBeNull();
+    expect(inferDataDictValueType(null)).toBeNull();
+  });
+});
+
+describe('GLOBDATA-002 exprEnd 标注位与注释剥离', () => {
+  it('写点 exprEnd=RHS 尾(尾随注释剥离);读点 exprEnd=`]`/`)` 尾', () => {
+    const text = [
+      'import KBEngine',
+      'KBEngine.globalData["cfg"] = {"gold": 1}  # note',
+      'v = KBEngine.globalData.get("cfg")',
+      'w = KBEngine.globalData[k]'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses[0].valueText).toBe('{"gold": 1}');
+    expect(accesses[0].exprEnd).toBe(text.split('\n')[1].indexOf('{') + '{"gold": 1}'.length);
+    expect(accesses[1].exprEnd).toBe(text.split('\n')[2].indexOf('get("cfg")') + 'get("cfg")'.length);
+    expect(accesses[2].exprEnd).toBe(text.split('\n')[3].indexOf('[k]') + 3);
+  });
+});
+
+describe('GLOBDATA-002 inlay/hover 装配', () => {
+  const setupWorkspace = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdip2-'));
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = {"gold": 1}\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("cfg")\n';
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    const stubs = {
+      originalFind: vscode.workspace.findFiles,
+      originalRead: vscode.workspace.fs.readFile
+    };
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    return { root, writer, reader, writerText, readerText, stubs };
+  };
+
+  it('inlay:写点 RHS 类型 + 读点同键写点 union;无写点/未知 RHS 不出', async () => {
+    const { root, writer, reader, writerText, readerText, stubs } = setupWorkspace();
+    const index = new GlobalDataDictIndex();
+    const provider = new PythonTypeInlayHintsProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    try {
+      const writeDoc = vscode.makeTextDocument(writerText, { fileName: writer, languageId: 'python' });
+      const writeHints = await provider.provideInlayHints(
+        writeDoc,
+        new vscode.Range(1, 0, 1, writerText.split('\n')[1].length)
+      );
+      expect(writeHints.map(h => h.label)).toContain(': Dict[str, int]');
+
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const readHints = await provider.provideInlayHints(
+        readDoc,
+        new vscode.Range(1, 0, 1, readerText.split('\n')[1].length)
+      );
+      expect(readHints.map(h => h.label)).toContain(': Dict[str, int]');
+
+      // 无写点键 → 读点不出
+      const noWrite = 'import KBEngine\nvalue = KBEngine.globalData.get("orphan")\n';
+      const noWriteDoc = vscode.makeTextDocument(noWrite, { fileName: reader, languageId: 'python' });
+      const noWriteHints = await provider.provideInlayHints(
+        noWriteDoc,
+        new vscode.Range(1, 0, 1, noWrite.split('\n')[1].length)
+      );
+      expect(noWriteHints.map(h => h.label)).not.toContain(': ');
+      // 未知 RHS → 写点不出
+      const unknown = 'import KBEngine\nKBEngine.globalData["k"] = foo()\n';
+      const unknownDoc = vscode.makeTextDocument(unknown, { fileName: writer, languageId: 'python' });
+      const unknownHints = await provider.provideInlayHints(
+        unknownDoc,
+        new vscode.Range(1, 0, 1, unknown.split('\n')[1].length)
+      );
+      expect(unknownHints.map(h => h.label)).not.toContain(': ');
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = stubs.originalFind;
+      vscode.workspace.fs.readFile = stubs.originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('hover:读点显示同键写点类型+首个写点位置;写点显示 RHS 类型', async () => {
+    const { root, writer, reader, writerText, readerText, stubs } = setupWorkspace();
+    const index = new GlobalDataDictIndex();
+    const provider = new KBEngineHoverProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    try {
+      const hoverText = (hover: vscode.Hover | null): string => {
+        if (!hover) {
+          return '';
+        }
+        const contents = hover.contents as { value: string } | Array<{ value: string }>;
+        return Array.isArray(contents) ? contents.map(item => item.value).join('') : contents.value;
+      };
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const readLine = readerText.split('\n')[1];
+      const readHover = await provider.provideHover(
+        readDoc,
+        new vscode.Position(1, readLine.indexOf('cfg') + 1)
+      ) as vscode.Hover | null;
+      const readText = hoverText(readHover);
+      expect(readText).toContain('Dict[str, int]');
+      expect(readText).toContain('首个写点');
+      expect(readText).toContain('writer.py');
+
+      const writeDoc = vscode.makeTextDocument(writerText, { fileName: writer, languageId: 'python' });
+      const writeLine = writerText.split('\n')[1];
+      const writeHover = await provider.provideHover(
+        writeDoc,
+        new vscode.Position(1, writeLine.indexOf('cfg') + 1)
+      ) as vscode.Hover | null;
+      const writeText = hoverText(writeHover);
+      expect(writeText).toContain('Dict[str, int]');
+      expect(writeText).toContain('写点');
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = stubs.originalFind;
+      vscode.workspace.fs.readFile = stubs.originalRead;
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

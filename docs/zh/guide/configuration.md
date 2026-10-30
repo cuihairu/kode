@@ -128,7 +128,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | --- | --- | --- | --- |
 | `kbengine.jumpLog` | boolean | `false` | 跳转决策路径日志开关(输出面板 KBEngine Navigation,过滤 `[kode-jump]`;关闭时零开销) |
 | `kbengine.python.enableMroJump` | boolean | `true` | Python 跳转层2(跨文件 C3-MRO + 组合根解析 mixin/基类方法)开关;关闭时层2 记 skip、不做全仓扫描,跳转回落层1(`.def` 派生索引)与层3(当前文件类作用域) |
-| `kbengine.python.enableDataDictIndex` | boolean | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关;键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链,支持 Shift+F12 引用与 F12 跳转(读点跳写点);关闭后不查索引,引用/跳转交回常规链 |
+| `kbengine.python.enableDataDictIndex` | boolean | `true` | KBEngine.globalData/baseAppData/cellAppData 跨进程数据字典键索引开关;键访问写点 `[K]=RHS` 与读点 `[K]`/`.get(K)` 按键签名互链,支持 Shift+F12 引用与 F12 跳转(读点跳写点);写点 RHS 值类型能推才显,同键读点 inlay/hover 显示该类型(如 `{"gold": 1}` 写点在 `get("cfg")` 读点显 `Dict[str, int]`);关闭后不查索引,引用/跳转交回常规链 |
 | `kbengine.python.callChainHints` | boolean | `true` | Python 实体方法 Call Chain 镜链与 `Show Call Chain` 命令;关闭后不显示链入口,命令也不生成预览 |
 | `kbengine.python.callChainView` | string | `graph` | `Show Call Chain` 面板初始视图:`graph`(面板内嵌 mermaid,npm 依赖打包,离线可用)或 `text`(文本链兜底);面板内 Tab 选择持久到工作区状态且优先于本配置;graph 渲染失败自动回落 text 并在面板头说明 |
 | `kbengine.python.apiMetadata` | boolean | `true` | KBEngine API 引擎版本/源码提交标识与原始声明位置;取不到源码标识显示 `unknown`,不硬造 |

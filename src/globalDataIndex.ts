@@ -38,6 +38,8 @@ export interface KbeDataDictAccess {
   kind: 'write' | 'read';
   /** 写点 RHS 直文本(增强赋值/无值时 null) */
   valueText: string | null;
+  /** 访问表达式尾后一列(写点=RHS 尾、读点=`]`/`)` 尾);inlay/hover 标注位 */
+  exprEnd: number;
 }
 
 /** 索引查询命中的一个访问点(带文件) */
@@ -181,54 +183,6 @@ function matchConcatSignature(text: string): string | null {
   return emitted.join('');
 }
 
-/** 顶层(深度 0、字符串外)`+` 切分;段保留原文 */
-function splitTopLevelPlus(text: string): string[] {
-  const parts: string[] = [];
-  let current = '';
-  let depth = 0;
-  let inString: string | null = null;
-  for (let index = 0; index < text.length; index += 1) {
-    const ch = text[index];
-    if (inString) {
-      current += ch;
-      if (ch === '\\') {
-        index += 1;
-        if (index < text.length) {
-          current += text[index];
-        }
-        continue;
-      }
-      if (ch === inString) {
-        inString = null;
-      }
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      inString = ch;
-      current += ch;
-      continue;
-    }
-    if (ch === '(' || ch === '[' || ch === '{') {
-      depth += 1;
-      current += ch;
-      continue;
-    }
-    if (ch === ')' || ch === ']' || ch === '}') {
-      depth -= 1;
-      current += ch;
-      continue;
-    }
-    if (ch === '+' && depth === 0) {
-      parts.push(current);
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  parts.push(current);
-  return parts;
-}
-
 interface KeySpan {
   keyRaw: string;
   keyStart: number;
@@ -238,7 +192,11 @@ interface KeySpan {
 interface SubscriptParse extends KeySpan {
   kind: 'write' | 'read';
   valueText: string | null;
+  exprEnd: number;
 }
+
+/** 访问表达式尾后一列(写点=RHS 尾、读点=`]`/`)` 尾);inlay/hover 标注位 */
+type AccessSpan = KeySpan & { exprEnd: number };
 
 /** 跳过行内空白后取列 */
 function skipWhitespace(lineText: string, from: number): number {
@@ -299,29 +257,30 @@ function parseSubscriptAccess(lineText: string, openBracket: number): SubscriptP
   const after = skipWhitespace(lineText, close + 1);
   const nextChar = lineText[after];
   if (nextChar === '=' && lineText[after + 1] !== '=') {
+    // RHS 去尾随注释(引号内 `#` 不算注释);valueText=去注释去空白原文,
+    // exprEnd=值表达式尾后一列(inlay 标注位)
+    const raw = lineText.slice(after + 1);
+    const commentAt = findLineCommentIndex(raw);
+    const valueText = (commentAt >= 0 ? raw.slice(0, commentAt) : raw).trim() || null;
+    const valueStart = valueText !== null ? raw.indexOf(valueText) : -1;
     return {
       ...span,
       kind: 'write',
-      valueText: lineText.slice(after + 1).trim() || null
+      valueText,
+      exprEnd: valueText !== null && valueStart >= 0 ? after + 1 + valueStart + valueText.length : close + 1
     };
   }
   if (AUGMENTED_ASSIGN_OPS.some(op => lineText.startsWith(op, after))) {
-    return { ...span, kind: 'write', valueText: null };
+    return { ...span, kind: 'write', valueText: null, exprEnd: close + 1 };
   }
-  return { ...span, kind: 'read', valueText: null };
+  return { ...span, kind: 'read', valueText: null, exprEnd: close + 1 };
 }
 
-/** `.get(KEY[, default])` 读点:只取首个实参,括号不闭合(跨行)不取 */
-function parseGetAccess(lineText: string, from: number): KeySpan | null {
-  const head = /^\.get[ \t]*\(/.exec(lineText.slice(from));
-  if (!head) {
-    return null;
-  }
-  const openParen = from + head[0].length - 1;
+/** 从开括号列找匹配闭括号(引号/深度感知);未闭合(跨行)返回 -1 */
+function matchCloseParen(lineText: string, openParen: number): number {
   let depth = 0;
   let inString: string | null = null;
-  let argStart = -1;
-  for (let index = openParen + 1; index < lineText.length; index += 1) {
+  for (let index = openParen; index < lineText.length; index += 1) {
     const ch = lineText[index];
     if (inString) {
       if (ch === '\\') {
@@ -335,33 +294,70 @@ function parseGetAccess(lineText: string, from: number): KeySpan | null {
     }
     if (ch === "'" || ch === '"') {
       inString = ch;
-      if (depth === 0 && argStart === -1) {
-        argStart = index;
+      continue;
+    }
+    if (ch === '(') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
       }
+      continue;
+    }
+  }
+  return -1;
+}
+
+/**
+ * `.get(KEY[, default])` 读点:只取首个实参(首个顶层逗号或闭括号为界),
+ * 括号不闭合(跨行)不取;exprEnd=闭括号尾后一列(inlay/hover 标注位)。
+ */
+function parseGetAccess(lineText: string, from: number): AccessSpan | null {
+  const head = /^\.get[ \t]*\(/.exec(lineText.slice(from));
+  if (!head) {
+    return null;
+  }
+  const openParen = from + head[0].length - 1;
+  const close = matchCloseParen(lineText, openParen);
+  if (close < 0) {
+    return null;
+  }
+  let depth = 0;
+  let inString: string | null = null;
+  for (let index = openParen + 1; index < close; index += 1) {
+    const ch = lineText[index];
+    if (inString) {
+      if (ch === '\\') {
+        index += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
       continue;
     }
     if (ch === '(' || ch === '[' || ch === '{') {
       depth += 1;
-      if (depth === 1 && argStart === -1) {
-        argStart = index;
-      }
       continue;
     }
     if (ch === ')' || ch === ']' || ch === '}') {
-      if (depth === 0 && ch === ')') {
-        return argStart === -1 ? null : trimSpan(lineText, argStart, index);
-      }
       depth -= 1;
       continue;
     }
     if (depth === 0 && ch === ',') {
-      return argStart === -1 ? null : trimSpan(lineText, argStart, index);
-    }
-    if (depth === 0 && argStart === -1 && !/\s/.test(ch)) {
-      argStart = index;
+      const span = trimSpan(lineText, openParen + 1, index);
+      return span ? { ...span, exprEnd: close + 1 } : null;
     }
   }
-  return null;
+  const span = trimSpan(lineText, openParen + 1, close);
+  return span ? { ...span, exprEnd: close + 1 } : null;
 }
 
 /** 区间去首尾空白;空区间 → null */
@@ -409,7 +405,7 @@ export function findKbeDataDictAccesses(
       }
       const dict = match[2] as KbeDataDictName;
       const after = skipWhitespace(lineText, match.index + match[0].length);
-      const push = (span: KeySpan, kind: 'write' | 'read', valueText: string | null): void => {
+      const push = (span: AccessSpan, kind: 'write' | 'read', valueText: string | null): void => {
         const keySignature = normalizeKeySignature(span.keyRaw);
         if (keySignature === null) {
           return;
@@ -421,7 +417,8 @@ export function findKbeDataDictAccesses(
           keyStart: span.keyStart,
           keyEnd: span.keyEnd,
           kind,
-          valueText
+          valueText,
+          exprEnd: span.exprEnd
         });
       };
       if (lineText[after] === '[') {
@@ -451,6 +448,293 @@ export function getKbeDataDictAccessAtPosition(
       return access;
     }
   }
+  return null;
+}
+
+/**
+ * 行内首个引号外 `#` 注释列;无注释返回 -1(引号内 `#` 是字面量不算)。
+ * 供扫描器剥离 RHS 尾随注释与 provider 排除注释里的假访问。
+ */
+export function findLineCommentIndex(lineText: string, from = 0): number {
+  let inString: string | null = null;
+  for (let index = from; index < lineText.length; index += 1) {
+    const ch = lineText[index];
+    if (inString) {
+      if (ch === '\\') {
+        index += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      continue;
+    }
+    if (ch === '#') {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/** 键起点之前存在引号外 `#` 即注释里的假访问(provider 排除用) */
+export function isKeyInsideLineComment(lineText: string, keyStart: number): boolean {
+  const commentAt = findLineCommentIndex(lineText);
+  return commentAt !== -1 && commentAt < keyStart;
+}
+
+/** 顶层(深度 0、字符串外)按分隔符切分;段保留原文 */
+function splitTopLevel(text: string, sep: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let depth = 0;
+  let inString: string | null = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      current += ch;
+      if (ch === '\\') {
+        index += 1;
+        if (index < text.length) {
+          current += text[index];
+        }
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      current += ch;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth += 1;
+      current += ch;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      depth -= 1;
+      current += ch;
+      continue;
+    }
+    if (ch === sep && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts;
+}
+
+/**
+ * 顶层(深度 0、字符串外)`+` 切分(原 splitTopLevelPlus 改经通用 splitTopLevel);
+ * 段保留原文。
+ */
+function splitTopLevelPlus(text: string): string[] {
+  return splitTopLevel(text, '+');
+}
+
+/** 取成对括号内文:`[..]`/`{..}`/`(..)` 全闭合且其后仅空白才认;未闭合 → null */
+function bracketedInner(text: string, open: string, close: string): string | null {
+  if (!text.startsWith(open)) {
+    return null;
+  }
+  let depth = 0;
+  let inString: string | null = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (ch === '\\') {
+        index += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      continue;
+    }
+    if (ch === open) {
+      depth += 1;
+      continue;
+    }
+    if (ch === close) {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(index + 1).trim() === '' ? text.slice(open.length, index) : null;
+      }
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      depth -= 1;
+      continue;
+    }
+  }
+  return null;
+}
+
+/** 顶层(深度 0、字符串外)存在冒号(字典对 `k: v` 判据) */
+function hasTopLevelColon(text: string): boolean {
+  let depth = 0;
+  let inString: string | null = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      if (ch === '\\') {
+        index += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth += 1;
+      continue;
+    }
+    if (ch === ')' || ch === ']' || ch === '}') {
+      depth -= 1;
+      continue;
+    }
+    if (ch === ':' && depth === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 去重保序,`|` 连接(单类型不包) */
+function unionJoin(types: Array<string | null>): string | null {
+  const distinct: string[] = [];
+  for (const type of types) {
+    if (type !== null && !distinct.includes(type)) {
+      distinct.push(type);
+    }
+  }
+  return distinct.length > 0 ? distinct.join(' | ') : null;
+}
+
+/**
+ * 字典值类型推断(能推才显,严格面):字面量/集合/元组/已知构造可推,
+ * 任何未知成分(Any/未推断元素/运算符/链式/小写函数调用)整体 null,
+ * 不显 Any、不硬猜。写点 RHS → 类型;读点侧由调用方并同键写点类型。
+ */
+export function inferDataDictValueType(valueText: string | null): string | null {
+  if (!valueText) {
+    return null;
+  }
+  return inferTypeExpr(valueText.trim());
+}
+
+function inferTypeExpr(text: string): string | null {
+  const t = text.trim();
+  if (!t) {
+    return null;
+  }
+  if (t === 'None') {
+    return 'None';
+  }
+  if (t === 'True' || t === 'False') {
+    return 'bool';
+  }
+  if (NUMERIC_PATTERN.test(t)) {
+    return /^[+-]?\d+$/.test(t) ? 'int' : 'float';
+  }
+  if (matchStringLiteral(t) !== null || matchFStringSignature(t) !== null) {
+    return 'str';
+  }
+  const listInner = bracketedInner(t, '[', ']');
+  if (listInner !== null) {
+    const elements = splitTopLevel(listInner, ',')
+      .map(piece => piece.trim())
+      .filter(piece => piece.length > 0);
+    if (elements.length === 0) {
+      return null;
+    }
+    const elementType = unionJoin(elements.map(inferTypeExpr));
+    return elementType === null ? null : `List[${elementType}]`;
+  }
+  const tupleInner = bracketedInner(t, '(', ')');
+  if (tupleInner !== null) {
+    const elements = splitTopLevel(tupleInner, ',')
+      .map(piece => piece.trim())
+      .filter(piece => piece.length > 0);
+    if (elements.length === 0) {
+      return null;
+    }
+    const memberTypes = elements.map(inferTypeExpr);
+    if (memberTypes.some(type => type === null)) {
+      return null;
+    }
+    return `Tuple[${memberTypes.join(', ')}]`;
+  }
+  const braceInner = bracketedInner(t, '{', '}');
+  if (braceInner !== null) {
+    const pairs = splitTopLevel(braceInner, ',')
+      .map(piece => piece.trim())
+      .filter(piece => piece.length > 0);
+    if (pairs.length === 0) {
+      return null;
+    }
+    if (hasTopLevelColon(braceInner)) {
+      const keyTypes: string[] = [];
+      const valueTypes: string[] = [];
+      for (const pair of pairs) {
+        const colon = splitTopLevel(pair, ':');
+        if (colon.length < 2) {
+          return null;
+        }
+        const keyType = inferTypeExpr(colon[0]);
+        const valueType = inferTypeExpr(colon.slice(1).join(':'));
+        if (keyType === null || valueType === null) {
+          return null;
+        }
+        keyTypes.push(keyType);
+        valueTypes.push(valueType);
+      }
+      const keyUnion = unionJoin(keyTypes);
+      const valueUnion = unionJoin(valueTypes);
+      return keyUnion === null || valueUnion === null ? null : `Dict[${keyUnion}, ${valueUnion}]`;
+    }
+    const elementType = unionJoin(pairs.map(inferTypeExpr));
+    return elementType === null ? null : `Set[${elementType}]`;
+  }
+  const call = /^([A-Za-z_]\w*)\s*\(/.exec(t);
+  if (call && t.endsWith(')')) {
+    const fn = call[1];
+    if (fn === 'str' || fn === 'int' || fn === 'float' || fn === 'bool') {
+      return fn;
+    }
+    // list()/dict()/set() 元素未知(Any)→ 严格面不出;类构造(大写)返回实例类名
+    if (fn === 'list' || fn === 'dict' || fn === 'set') {
+      return null;
+    }
+    if (/^[A-Z]/.test(fn)) {
+      return fn;
+    }
+    return null;
+  }
+  // 裸标识符/属性链/运算符/其余调用 → 未知(能推才显,不硬猜)
   return null;
 }
 

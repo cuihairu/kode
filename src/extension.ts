@@ -732,10 +732,17 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(signatureHelpProvider);
 
+  // GLOBDATA-001/002:数据字典键索引单例(globalData/baseAppData/cellAppData
+  // 键写/读点互链)。懒建(首查 ensureStarted),extension 生命周期随订阅
+  // 释放;definition/references/inlay/hover 共用同一实例与内存倒排。置于
+  // hover 装配之前(hover 构造需注入)。
+  const dataDictIndex = new GlobalDataDictIndex();
+  context.subscriptions.push({ dispose: () => dataDictIndex.dispose() });
   // 注册悬停文档提供者（.def/xml 与 Python 实体脚本均可查看 hook 文档;
   // 注入实体映射管理器后,python def 声明行的「实体 def 声明的 X 方法」
-  // 标注走与 RPC CodeLens 同一把形参闸门;PR1 起带 hover 打点）
-  const kbengineHoverImpl = new KBEngineHoverProvider(entityMappingManager);
+  // 标注走与 RPC CodeLens 同一把形参闸门;PR1 起带 hover 打点;GLOBDATA-002
+  // 起注入数据字典键索引做键类型悬停）
+  const kbengineHoverImpl = new KBEngineHoverProvider(entityMappingManager, dataDictIndex);
   const hoverProvider = vscode.languages.registerHoverProvider(
     [
       ...definitionNavigationSelector,
@@ -836,11 +843,6 @@ export function activate(context: vscode.ExtensionContext) {
       startKbEngineIndexing();
     }
   });
-  // GLOBDATA-001:数据字典键索引单例(globalData/baseAppData/cellAppData
-  // 键写/读点互链)。懒建(首查 ensureStarted),extension 生命周期随订阅
-  // 释放;definition/references 共用同一实例与内存倒排。
-  const dataDictIndex = new GlobalDataDictIndex();
-  context.subscriptions.push({ dispose: () => dataDictIndex.dispose() });
   const pythonDefinitionImpl = new PythonDefinitionProvider(
     entityMappingManager,
     pythonClassIndex,
@@ -1048,7 +1050,7 @@ export function activate(context: vscode.ExtensionContext) {
   // provider 现读配置下一次渲染即生效,不需要配置监听 fire
   const typeInlayHintsProvider = vscode.languages.registerInlayHintsProvider(
     pythonDocumentSelector,
-    new PythonTypeInlayHintsProvider(entityMappingManager)
+    new PythonTypeInlayHintsProvider(entityMappingManager, dataDictIndex)
   );
   context.subscriptions.push(typeInlayHintsProvider);
 

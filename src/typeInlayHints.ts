@@ -11,6 +11,13 @@ import {
   findPythonReceiverCallArguments,
   type PythonReceiverCallWithArguments
 } from './pythonLanguageUtils';
+import { getKbeAliases } from './kbeModuleIndex';
+import {
+  GlobalDataDictIndex,
+  findKbeDataDictAccesses,
+  inferDataDictValueType,
+  isKeyInsideLineComment
+} from './globalDataIndex';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
 // self.<属性> 访问处原位渲染 def 声明的 <Type> 注解(2026-10-29 用户定
@@ -32,7 +39,11 @@ import {
 // 实参数与声明数错位按位置对齐(取 min,逐位配对);跨行调用(同行括号
 // 不闭合)不出。开关复用既有贡献面 kbengine.inlayHints.typeData。
 export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
-  constructor(private entityMappingManager: EntityMappingManager) {}
+  constructor(
+    private entityMappingManager: EntityMappingManager,
+    // GLOBDATA-002:数据字典键索引(读点类型并同键写点值类型);未注入跳过
+    private dataDictIndex?: GlobalDataDictIndex
+  ) {}
 
   async provideInlayHints(
     document: vscode.TextDocument,
@@ -110,7 +121,78 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
       );
     }
     await this.collectRpcParameterHints(document, range, hints);
+    await this.collectDataDictHints(document, range, documentLines, hints);
     return hints;
+  }
+
+  /**
+   * GLOBDATA-002 数据字典键类型提示:写点 `[K]=RHS` 出 `: <RHS 类型>`;
+   * 读点 `[K]`/`.get(K)` 出 `: <同键写点值类型 union>`(无写点/推不出
+   * 不出)。能推才显:inferDataDictValueType 严格面(Any/未知一律 null)。
+   * 开关现读 kbengine.python.enableDataDictIndex(与 typeData 同款);
+   * 写点只读本行无需索引(纯字面量面),读点才懒建索引(与 definition
+   * 同源),纯写点文档零扫描成本。
+   */
+  private async collectDataDictHints(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    documentLines: string[],
+    hints: vscode.InlayHint[]
+  ): Promise<void> {
+    if (!this.dataDictIndex) {
+      return;
+    }
+    if (!vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)) {
+      return;
+    }
+    const aliases = getKbeAliases(document.getText());
+    if (aliases.size === 0) {
+      return;
+    }
+    let ensured = false;
+    const startLine = Math.max(0, range.start.line);
+    const endLine = Math.min(documentLines.length - 1, range.end.line);
+    for (let line = startLine; line <= endLine; line += 1) {
+      const lineText = documentLines[line];
+      for (const access of findKbeDataDictAccesses(lineText, aliases)) {
+        if (isKeyInsideLineComment(lineText, access.keyStart)) {
+          continue;
+        }
+        if (access.kind === 'write') {
+          const annotation = inferDataDictValueType(access.valueText);
+          if (annotation !== null) {
+            hints.push(new vscode.InlayHint(
+              new vscode.Position(line, access.exprEnd),
+              `: ${annotation}`,
+              vscode.InlayHintKind.Type
+            ));
+          }
+          continue;
+        }
+        // 读点:同键写点值类型 union(能推才显,无写点/全未知不出)
+        if (!ensured) {
+          await this.dataDictIndex.ensureStarted();
+          ensured = true;
+        }
+        const types: string[] = [];
+        for (const site of this.dataDictIndex.query(access.dict, access.keySignature)) {
+          if (site.kind !== 'write') {
+            continue;
+          }
+          const type = inferDataDictValueType(site.valueText);
+          if (type !== null && !types.includes(type)) {
+            types.push(type);
+          }
+        }
+        if (types.length > 0) {
+          hints.push(new vscode.InlayHint(
+            new vscode.Position(line, access.exprEnd),
+            `: ${types.join(' | ')}`,
+            vscode.InlayHintKind.Type
+          ));
+        }
+      }
+    }
   }
 
   /**
