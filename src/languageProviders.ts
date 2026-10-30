@@ -5913,8 +5913,12 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
   async provideRenameEdits(
     document: vscode.TextDocument,
     position: vscode.Position,
-    newName: string
+    newName: string,
+    token?: vscode.CancellationToken
   ): Promise<vscode.WorkspaceEdit | null> {
+    // IDE-AUD-027:捕获起始版本——异步 python 查找在途时输入再变,发布前
+    // 复核拒绝,不返回旧区间(NAV-010 只比上一手势,挡不住单次手势内漂移)
+    const startVersion = document.version;
     const symbol = resolveRenameSymbolAtOffset(document.getText(), document.offsetAt(position));
     if (!symbol) {
       return null;
@@ -5992,6 +5996,31 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
             PYTHON_RECEIVER_BY_SECTION[symbol.section]
           )
           : [];
+      // IDE-AUD-027 复核(异步查找结束后,不只比上一手势):
+      // ① 手势取消 → 不发布晚到编辑(编辑器已放弃本次重命名)
+      if (token?.isCancellationRequested) {
+        return null;
+      }
+      // ② 目标文档在异步查找期间被编辑 → 拒绝(旧区间按旧文本算,套到
+      //    新版本会错改;NAV-010 的版本检查在 await 之前,挡不住此面)
+      if (document.version !== startVersion) {
+        throw new Error(
+          'cannot apply rename: target document was modified; rename again to recompute'
+        );
+      }
+      // ③ 依赖 def(跨文件编辑)在异步期间变化 → 拒绝(不套旧行)
+      const postInputs = this.collectRenameInputs(document, fileEdits);
+      if (renameInputsDrifted(inputs.slice(1), postInputs.slice(1))) {
+        throw new Error(
+          'cannot apply rename: referenced files changed; rename again to recompute'
+        );
+      }
+      // ④ python 源文件在异步期间变化 → 访问位置失效,拒绝(不发布旧区间)
+      if (this.pythonAccessesDrifted(accesses, symbol.name)) {
+        throw new Error(
+          'cannot apply rename: python files changed; rename again to recompute'
+        );
+      }
       const pythonEditsByFile = new Map<string, vscode.TextEdit[]>();
       for (const access of accesses) {
         const list = pythonEditsByFile.get(access.filePath) ?? [];
@@ -6009,6 +6038,30 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
       }
     }
     return workspaceEdit;
+  }
+
+  /**
+   * IDE-AUD-027:python 访问位置复核——异步查找后重读共享快照,访问位置
+   * 不再指向 self.<name>(行漂移/内容改)即输入在途已变,拒绝不发布旧区间;
+   * 内容未变(无关处编辑)位置仍有效,照常返回(编辑范围本就正确)。
+   */
+  private pythonAccessesDrifted(
+    accesses: ReadonlyArray<{ filePath: string; line: number; character: number }>,
+    name: string
+  ): boolean {
+    for (const access of accesses) {
+      const snapshot = readSharedFileSnapshot(access.filePath);
+      // 文件消失:输入面变了,不能安全改写
+      if (!snapshot) {
+        return true;
+      }
+      const line = snapshot.content.split('\n')[access.line - 1];
+      // 行漂移(插入/删除)或内容改:该位置不再持有 self.<name>
+      if (!line || line.slice(access.character, access.character + name.length) !== name) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
