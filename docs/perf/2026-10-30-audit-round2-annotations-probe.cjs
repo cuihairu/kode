@@ -1,0 +1,10 @@
+// Baseline 5715296; run with node from its checkout root. c647 recheck additionally reads that commit with git show.
+// Run with node from the Kode bf26cbf checkout root; uses installed TypeScript and fake vscode.
+const fs=require('fs');const perf=require('perf_hooks').performance;const ts=require(process.cwd()+'/node_modules/typescript');const Module=require('module');const old=Module._load;
+require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,f);
+Module._load=function(id){if(id==='vscode')return require(process.cwd()+'/tests/helpers/vscodeStub.ts');return old.apply(this,arguments)};
+const load=n=>require(process.cwd()+'/src/'+n+'.ts');
+(async()=>{
+const os=require('os'),path=require('path');const root=fs.mkdtempSync(path.join(os.tmpdir(),'kode-round2-annotations-'));const r=load('pythonReturnTypeInference');try{fs.writeFileSync(path.join(root,'mod.py'),'def original() -> EXPECTED:\n    pass\n');await r.resolveLocalVariableReturnType(['x = original()'],0,'x',root);for(const [test,lines]of [['unaliasedImport',['from mod import original','x = original()']],['aliasedImport',['from mod import original as local','x = local()']],['reassignment',['x = original()','x = 0','x']]])console.log(JSON.stringify({test,result:r.resolveLocalVariableReturnTypeFromSnapshot(lines,lines.length-1,'x',root)}));
+const source='def original():\n    pass\nx = original()\nx\n';const context={fileKey:path.join(root,'current.py'),version:1,source:()=>source};r.updateDocumentReturnAnnotations(root,context);r.updateDocumentReturnAnnotations(root,{fileKey:path.join(root,'other.py'),version:1,source:()=> 'def original() -> OTHER_FILE:\n    pass\n'});console.log(JSON.stringify({test:'sameFileUnannotatedDefinitionBorrowsOtherOpenFile',result:r.resolveLocalVariableReturnTypeFromSnapshot(source.split('\n'),3,'x',root,context)}));}finally{r.resetPythonReturnAnnotationCache();fs.rmSync(root,{recursive:true,force:true})}
+})().catch(e=>{console.error(e.stack);process.exitCode=1});

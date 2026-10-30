@@ -1,0 +1,92 @@
+Second review baseline: 57152966ecb0843104f42b675352fda993835f26.
+Runtime probes use a fake vscode API and temporary fixtures. No real databases/debug sessions are modified.
+The PID probe replaces process.kill and sends no real signals.
+Performance values are single-run localization data, not acceptance baselines.
+
+
+--- runtime ---
+{"test":"dirtyEntitiesRegistration","diskHasFresh":true,"bufferHasFresh":false}
+{"test":"saveDirtyBufferAfterRegistration","diskHasFresh":false}
+{"test":"projectPreviewConflictRace","preservedConcurrentFile":false}
+{"test":"propertyRefsIncludeNonCodeAndOtherClass","lines":[3,4,5,8]}
+{"test":"rpcRefsIncludeNonCodeAndOtherClass","lines":[3,4,7]}
+{"test":"renameVersionChangesWhileReferenceLookupPending","returnedEdit":true,"firstEditStart":{"line":2,"character":1},"documentVersion":2}
+{"test":"eventIndexAfterDirtyDocumentClosed","events":["EV_DIRTY"]}
+{"test":"eventIndexDiskChangeDuringRead","samePromise":true,"diskSource":"self.addEvent(NEW_ON_DISK, self.on_ev)","events":["OLD_ON_DISK"]}
+{"test":"hoverUnionWithUncancellableWaiter","sharedCancelled":true}
+{"test":"pytestNonzeroAfterPassedNode","outcome":"passed"}
+{"test":"pidAttachSessionRegistry","registryKeys":["links","linkTerminatedListeners","subscriptions"],"links":0}
+{"test":"logTailSinglePoll","bytes":2148890,"elapsedMs":176.7,"pending":30000,"retained":10,"capacity":10}
+
+--- worker ---
+{"test":"distinctFilesBypassWorkerQueueBudget","posted":100,"totalPostedBytes":26214500,"gauge":{"running":100,"queued":0,"queuedBytes":0,"maxQueuedBytes":8388608,"peakQueuedBytes":0,"budgetRejects":0}}
+
+
+--- annotations ---
+{"test":"unaliasedImport","result":{"target":"x","annotation":"EXPECTED","methodName":"original"}}
+{"test":"aliasedImport","result":null}
+{"test":"reassignment","result":{"target":"x","annotation":"EXPECTED","methodName":"original"}}
+{"test":"sameFileUnannotatedDefinitionBorrowsOtherOpenFile","result":{"target":"x","annotation":"OTHER_FILE","methodName":"original"}}
+
+
+--- cancellation ---
+{"test":"diagnosticPublishesAfterDisable","published":["cleared",["old-warning"]]}
+{"test":"diagnosticOldGenerationOverwritesNew","published":[["new-config"],["old-config"]]}
+{"test":"hoverBudgetReturnsWithoutCancellingOwnedWork","returnedNull":true,"underlyingTokenCancelled":false}
+{"test":"discoveryKeepsPreviousTestClass","cases":[{"name":"test_good","kind":"method","className":"TestReal","line":2,"column":4},{"name":"test_not_pytest","kind":"method","className":"TestReal","line":4,"column":4}]}
+{"test":"asyncDiagnosticLatencyMetric","elapsedMs":35.65,"summary":{"name":"diagnostics","count":1,"elapsedDropped":0,"p50Ms":0,"p95Ms":0,"p99Ms":0,"maxMs":0,"avgMs":0,"totalMs":0,"cacheHitRate":0,"cacheHits":0,"cacheMisses":1,"waitedForInitCount":0,"fileDiscoveryCount":0,"fileReadCount":0,"fileParseCount":0,"statusCounts":{"ok":1,"miss":0,"cancelled":0,"error":0}}}
+{"test":"schemaCoreOfflineImport","loaded":false,"error":"vscode unavailable outside extension host"}
+
+
+--- compat ---
+{"test":"compatCommandDirectoryArgument","checks":[{"name":"manifest","status":"error","detail":"Unreadable package manifest: Error: EISDIR: illegal operation on a directory, read"},{"name":"engine-version","status":"ok","detail":"Engine 2.5.10; extension host requirement ^1.84.0."},{"name":"bundle","status":"error","detail":"out/extension.js is packaged."},{"name":"package-version","status":"error","detail":"package.json version is missing."}]}
+{"test":"compatComparesKbeVersionToVscodeRequirement","check":{"name":"engine-version","status":"ok","detail":"Engine 2.5.10; extension host requirement ^1.84.0."}}
+{"test":"rootReleaseLeavesGlobalXmlAst","releasedDocumentCount":1,"xmlCache":{"entries":1,"bytes":96}}
+{"test":"invalidPidZeroIsForwardedToKernel","signals":[{"pid":0,"signal":"SIGTERM"}],"realSignalSent":false}
+
+
+--- autostart ---
+{"test":"actualAutoStartContinuesAfterMachineFailure","calls":["machine","logger","dbmgr"]}
+
+
+--- hotreload ---
+{"test":"failedQuickActionBooleanRecordedAsSent","record":{"rootId":"/ws","targetId":"target","file":"/ws/Hero.py","outcome":"sent-unverified","recordedAt":1},"statusCalls":["setReady","setSending","setSentUnverified"]}
+{"test":"directHttpAliasDropsObserver","forwardedArgumentCount":2,"observerForwarded":false}
+
+
+--- c647 fix recheck ---
+{"test":"recheckC647F01","commit":"c647fdf","outcome":{"status":"timeout"},"aliveAfterTimeout":true,"stoppedBeforeStartSettled":1,"stops":1,"listenerLiveAfterSettled":false,"pendingTrackers":0}
+
+
+--- baseline full unit summary ---
+skip: D:/workspaces/kbengine/kbe/tools 或 D:/workspaces/kbengine/kbe/res/sdk_templates/server/python_assets 不存在
+
+·
+
+ Test Files  399 passed | 1 skipped (400)
+      Tests  4351 passed | 9 skipped (4360)
+   Start at  15:03:19
+   Duration  30.29s (tests 49%, import 33%, transform 16%, worker 2%)
+
+    Isolate  400 workers spawned · ~297ms startup each (spawn + environment, per file)
+             at least ~8.83s faster with isolate: false — reuses workers across files instead of one per file
+
+
+--- actual VSIX package ---
+   ├─ resources/ (2 files) [17.79 KB]
+   ├─ schemas/ (1 file) [10.4 KB]
+   ├─ scripts/ (7 files) [35.14 KB]
+   ├─ snippets/ (3 files) [6.28 KB]
+   └─ syntaxes/ (16 files) [84.25 KB]
+
+=> Run vsce ls --tree to see all included files.
+
+PACKAGED /tmp/kode-audit-round2.vsix
+
+--- installed VSIX smoke ---
+    ✔ activates from the unpacked vsix in install layout
+    ✔ hovers def tag documentation from the packaged provider (182ms)
+    ✔ jumps from a def method to the entity script source line (92ms)
+    ✔ hits a self-method jump on an oversized file parsed by the packaged worker (450ms)
+  4 passing (1s)
+Exit code:   0
