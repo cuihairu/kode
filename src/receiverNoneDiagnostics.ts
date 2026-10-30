@@ -49,9 +49,24 @@ export interface ReceiverNoneFinding {
 
 const COMMENT_ONLY = /^\s*(#.*)?$/;
 
-/** 正向 guard:`if x:` / `if x is not None:`(x 为接收者或其本地别名) */
-const positiveGuard = (subject: string): RegExp =>
-  new RegExp(`^\\s*if\\s+${subject}\\s*(is\\s+not\\s+None)?\\s*:`);
+/** 正向 guard 行判定:`if x:` / `if x is not None:`(x 为接收者或其本地
+ * 别名)。2026-10-30 用户令:链式 `if ok and self.client:` 已判空不得再报——
+ * 条件按顶层 `and` 分拆,任一完整分句恰为 `x` 或 `x is not None` 即认;
+ * `or` 分句不算(`if ok or self.client:` 不保证非 None,仍报)。subject 传
+ * 转义形(同 earlyExitGuard 口径),比较前解转义回原文。 */
+const unescapeSubject = (subject: string): string => subject.replace(/\\\./g, '.');
+
+const isPositiveGuardLine = (subject: string, text: string): boolean => {
+  const condition = /^\s*if\s+([^:]*):/.exec(text)?.[1];
+  if (condition === undefined) {
+    return false;
+  }
+  const target = unescapeSubject(subject);
+  return condition.split(/\s+and\s+/).some(part => {
+    const trimmed = part.trim();
+    return trimmed === target || trimmed === `${target} is not None`;
+  });
+};
 
 /** 早退 guard:`if not x:` / `if x is None:`(块体内 return/raise 才算) */
 const earlyExitGuard = (subject: string): RegExp =>
@@ -176,7 +191,7 @@ function scanGuardCandidates(
     }
     let matched = false;
     for (const subject of subjects) {
-      if (positiveGuard(subject).test(text) || hasattrGuard.test(text)) {
+      if (isPositiveGuardLine(subject, text) || hasattrGuard.test(text)) {
         candidates.push({ line: j, indent: indentOf(text), kind: 'positive' });
         matched = true;
         break;
@@ -529,6 +544,65 @@ export function buildReceiverNoneGuardEdit(
   return {
     line,
     text: `${leading}if not self.${receiver}:\n${inner}return\n`
+  };
+}
+
+/**
+ * 包裹式守卫替换编辑(2026-10-30 用户令):`if self.<receiver>:`(真值判定)
+ * 包住当前语句与后续同级块并整体缩进一级、继续执行——用户:常见操作是
+ * 判非 None 后继续,早退 `if not x: return` 反而不常见,故包裹式为首选。
+ * 编辑=Range 替换 [startLine, endLine):原 `if self.<receiver>:` 行 +
+ * 块内各行整体加一级缩进(前导原文空格/制表符不混;同级/更深行都进一级,
+ * 相对深度保持)。块界=首个缩进低于使用行的非空非注释行(块贯通则文末)。
+ * 行号越界/空文本/使用行为空行返回 null(不猜)。
+ */
+export interface ReceiverNoneWrapEdit {
+  /** 替换起点行(0 起,含) */
+  startLine: number;
+  /** 替换终点行(0 起,不含;块闭行/文末) */
+  endLine: number;
+  /** 替换文本(块内行已加一级缩进,`if` 头行在前;不含文末换行) */
+  text: string;
+}
+
+export function buildReceiverNoneWrapEdit(
+  text: string,
+  line: number,
+  receiver: PythonReceiverCall['receiver']
+): ReceiverNoneWrapEdit | null {
+  if (!text || line < 0) {
+    return null;
+  }
+  const lines = text.split(/\r?\n/);
+  const useLine = lines[line];
+  if (useLine === undefined || !useLine.trim()) {
+    return null;
+  }
+  const leading = /^[ \t]*/.exec(useLine)?.[0] ?? '';
+  const inner = leading.includes('\t') ? `${leading}\t` : `${leading}    `;
+  const useIndent = indentOf(useLine);
+  let end = line + 1;
+  while (end < lines.length) {
+    const current = lines[end];
+    if (!COMMENT_ONLY.test(current) && indentOf(current) < useIndent) {
+      break;
+    }
+    end += 1;
+  }
+  // 回退块尾的尾随空行/注释(块中段空白保留,尾随的不包进缩进)
+  while (end > line + 1 && COMMENT_ONLY.test(lines[end - 1])) {
+    end -= 1;
+  }
+  const body = lines.slice(line, end).map(entry => {
+    if (COMMENT_ONLY.test(entry) || !entry.trim()) {
+      return entry;
+    }
+    return `${inner}${entry.slice(leading.length)}`;
+  });
+  return {
+    startLine: line,
+    endLine: end,
+    text: [`${leading}if self.${receiver}:`, ...body].join('\n')
   };
 }
 

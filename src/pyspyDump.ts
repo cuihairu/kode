@@ -13,6 +13,9 @@
  */
 
 import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import type { InterpreterResolution } from './profileInterpreter';
 
 export interface CommandRunResult {
@@ -72,9 +75,35 @@ export interface PyspyPresence {
   detail: string;
 }
 
-/** 探测 PATH 链上的 py-spy:`py-spy --version`(版本号常走 stderr) */
-export async function checkPyspyInstalled(runner: SpawnRunner): Promise<PyspyPresence> {
-  const run = await runner('py-spy', ['--version'], 5000);
+/**
+ * 解释器旁的 py-spy 可执行文件定位:pip 把入口脚本装进解释器所在环境的
+ * 脚本目录(venv 的 bin//Scripts/、pip --user 的 ~/.local/bin),扩展宿主
+ * PATH 通常不含这些目录——只探 PATH 会把已装误判成未装,「一键安装」装完
+ * 仍探测不到,反复弹安装框(2026-10-30 用户实测)。候选按序:解释器同目录
+ * → ~/.local/bin;相对名解释器(ssh 远端的 'python3')与缺位都返回 null,
+ * 调用方回落 PATH 裸命令。
+ */
+export function resolvePyspyCommand(
+  interpreterPath: string | null | undefined,
+  exists: (candidate: string) => boolean = fs.existsSync
+): string | null {
+  if (!interpreterPath || !path.isAbsolute(interpreterPath)) {
+    return null;
+  }
+  const exe = process.platform === 'win32' ? 'py-spy.exe' : 'py-spy';
+  const candidates = [
+    path.join(path.dirname(interpreterPath), exe),
+    path.join(os.homedir(), '.local', 'bin', exe)
+  ];
+  return candidates.find(candidate => exists(candidate)) ?? null;
+}
+
+/** 探测 py-spy:`<命令> --version`(版本号常走 stderr);命令优先解释器旁定位,回落 PATH 裸命令 */
+export async function checkPyspyInstalled(
+  runner: SpawnRunner,
+  pyspyCommand?: string | null
+): Promise<PyspyPresence> {
+  const run = await runner(pyspyCommand ?? 'py-spy', ['--version'], 5000);
   const text = `${run.stdout} ${run.stderr}`.trim();
   const match = text.match(/py-spy\s+(\d+(?:\.\d+)*)/i);
   if (match) {
@@ -144,7 +173,11 @@ export async function ensurePyspyReady(
   ui: PyspyUi,
   resolveInterpreter: () => InterpreterResolution
 ): Promise<boolean> {
-  const presence = await checkPyspyInstalled(runner);
+  // 探测先于弹窗按所选解释器定位命令(解释器旁已装即零弹窗);ssh 远端的
+  // 相对名解释器定位不出,回落 PATH 裸命令,与远端口径一致
+  const resolution = resolveInterpreter();
+  const pyspyCommand = resolvePyspyCommand(resolution.interpreterPath);
+  const presence = await checkPyspyInstalled(runner, pyspyCommand);
   if (presence.installed) {
     return true; // 已装:零多余弹窗
   }
@@ -155,7 +188,6 @@ export async function ensurePyspyReady(
   if (pick !== '一键安装 py-spy') {
     return false;
   }
-  const resolution = resolveInterpreter();
   if (!resolution.interpreterPath) {
     ui.error('未找到所选 Python 解释器,先在设置 kbengine.python.interpreterPath 指定后再装 py-spy');
     return false;
@@ -182,8 +214,12 @@ const PTRACE_FAILURE_MARKERS = [
  * --nonblocking 不暂停目标进程(生产组件优先不卡服);失败把 ptrace 指引
  * 拼在原因后面,权限类报错一眼能定位。
  */
-export async function runPyspyDump(runner: SpawnRunner, pid: number): Promise<PyspyDumpResult> {
-  const run = await runner('py-spy', ['dump', '--pid', String(pid), '--nonblocking'], 30_000);
+export async function runPyspyDump(
+  runner: SpawnRunner,
+  pid: number,
+  pyspyCommand?: string | null
+): Promise<PyspyDumpResult> {
+  const run = await runner(pyspyCommand ?? 'py-spy', ['dump', '--pid', String(pid), '--nonblocking'], 30_000);
   if (run.exitCode === 0 && run.stdout.trim().length > 0) {
     return { ok: true, output: run.stdout.trim() };
   }

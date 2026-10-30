@@ -43,6 +43,26 @@ export interface QuickActionHttp extends QuickActionShared {
   body?: string;
 }
 
+/** venv 自动查找目录名默认清单(2026-10-30 用户令:环境目录不写死——团队各
+ * 有 .kbenv/.venv/venv 习惯):显式 venv.path 之外按此清单在动作目录、
+ * 配置根逐名探测;设置 kbengine.python.venvDirectories 可改清单。 */
+export const DEFAULT_VENV_DIRECTORY_NAMES: readonly string[] = ['.venv', 'venv', '.kbenv'];
+
+/** 设置原始值 → venv 目录名清单:非数组/全无效回落默认;过滤空串、'.'/'..'
+ * 与含路径分隔符的项(清单只允许单段目录名,防拼出探测点逃逸)。 */
+export function normalizeVenvDirectoryNames(raw: unknown): string[] {
+  const fallback = [...DEFAULT_VENV_DIRECTORY_NAMES];
+  if (!Array.isArray(raw)) {
+    return fallback;
+  }
+  const names = raw
+    .filter((name): name is string => typeof name === 'string')
+    .map(name => name.trim())
+    .filter(name => name.length > 0 && name !== '.' && name !== '..'
+      && !name.includes('/') && !name.includes('\\'));
+  return names.length > 0 ? names : fallback;
+}
+
 /** 独立「HTTP 请求」视图配置；不混入旧 quickActions 后端清单。 */
 export interface HttpRequestConfig {
   name?: string;

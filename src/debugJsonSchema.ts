@@ -88,7 +88,7 @@ const SCRIPT_BRANCH = actionBranch(QUICK_ACTION_TYPES[1], {
     required: ['enabled'],
     properties: {
       enabled: { type: 'boolean', description: '是否启用 venv;缺省为不启用' },
-      path: text('虚拟环境目录;可用 ${workspaceFolder} 变量,省略时自动查找 .venv/venv')
+      path: text('虚拟环境目录;可用 ${workspaceFolder} 变量,省略时按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)自动查找')
     }
   },
   background: {

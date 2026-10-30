@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
@@ -7,6 +8,7 @@ import {
   checkPyspyInstalled,
   ensurePyspyReady,
   installPyspy,
+  resolvePyspyCommand,
   runPyspyDump,
   type CommandRunResult,
   type PyspyUi,
@@ -98,6 +100,16 @@ describe('runPyspyDump', () => {
     expect(calls[0].args).toEqual(['dump', '--pid', '4321', '--nonblocking']);
   });
 
+  it('传解释器旁命令:dump 跑在该命令上(PATH 无 py-spy 也能 dump)', async () => {
+    const adjacent = '/proj/.venv/bin/py-spy';
+    const { runner, calls } = makeRunner([
+      { match: cmd => cmd === adjacent, result: run('Thread 0x7f (active): "python" main (a.py:1)\n') }
+    ]);
+    const result = await runPyspyDump(runner, 4321, adjacent);
+    expect(result.ok).toBe(true);
+    expect(calls[0].command).toBe(adjacent);
+  });
+
   it('权限类失败:ptrace 指引拼在原因后', async () => {
     const { runner } = makeRunner([
       { match: cmd => cmd === 'py-spy', result: run('', 'Error: Failed to suspend target process: Operation not permitted (os error 13)', 1) }
@@ -120,8 +132,45 @@ describe('runPyspyDump', () => {
   });
 });
 
+describe('resolvePyspyCommand(IDE-PDBG-006 解释器旁定位)', () => {
+  const exe = process.platform === 'win32' ? 'py-spy.exe' : 'py-spy';
+
+  it('解释器同目录有 py-spy:返回该绝对路径(venv bin 命中)', () => {
+    expect(resolvePyspyCommand('/proj/.venv/bin/python3', candidate => candidate === `/proj/.venv/bin/${exe}`))
+      .toBe(`/proj/.venv/bin/${exe}`);
+  });
+
+  it('同目录没有但 ~/.local/bin 有:pip --user 兜底命中', () => {
+    expect(resolvePyspyCommand('/usr/bin/python3', candidate => candidate.endsWith(`.local/bin/${exe}`)))
+      .toContain(`.local/bin/${exe}`);
+  });
+
+  it('相对名解释器(ssh 远端 python3)与缺位:回落 null(PATH 裸命令)', () => {
+    expect(resolvePyspyCommand('python3', () => true)).toBeNull();
+    expect(resolvePyspyCommand(null, () => true)).toBeNull();
+    expect(resolvePyspyCommand(undefined, () => true)).toBeNull();
+  });
+
+  it('候选都不在:null', () => {
+    expect(resolvePyspyCommand('/usr/bin/python3', () => false)).toBeNull();
+  });
+});
+
+describe('checkPyspyInstalled(命令透传)', () => {
+  it('传入解释器旁命令:探测跑在该命令上', async () => {
+    const { runner, calls } = makeRunner([
+      { match: (cmd, args) => cmd === '/proj/.venv/bin/py-spy' && args[0] === '--version', result: run('py-spy 0.3.14') }
+    ]);
+    const presence = await checkPyspyInstalled(runner, '/proj/.venv/bin/py-spy');
+    expect(presence.installed).toBe(true);
+    expect(calls[0].command).toBe('/proj/.venv/bin/py-spy');
+  });
+});
+
 describe('ensurePyspyReady(未装弹安装编排)', () => {
-  const versionProbe = { match: (cmd: string, args: string[]) => cmd === 'py-spy' && args[0] === '--version' };
+  // 探测命令不锁死 'py-spy':ensurePyspyReady 会先按解释器旁定位(venv bin/
+  // ~/.local/bin),锁裸命令会让用例依赖本机是否装过 py-spy
+  const versionProbe = { match: (cmd: string, args: string[]) => args[0] === '--version' };
   const pipInstall = { match: (cmd: string, args: string[]) => args.includes('pip') };
 
   const makeUi = (warnPick: string | undefined) => {
@@ -194,6 +243,26 @@ describe('ensurePyspyReady(未装弹安装编排)', () => {
     await expect(ensurePyspyReady(runner, ui, () => interpreter(null))).resolves.toBe(false);
     expect(face.error[0]).toContain('kbengine.python.interpreterPath');
     expect(calls).toHaveLength(1);
+  });
+
+  it('解释器旁已装(venv bin):零弹窗直接放行,探测跑在解释器旁命令上', async () => {
+    // 真实临时目录立解释器与同级 py-spy 文件(存在性探测面),装完即清
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pyspy-'));
+    const interpreterPath = path.join(dir, 'bin', 'python3');
+    const adjacent = path.join(dir, 'bin', process.platform === 'win32' ? 'py-spy.exe' : 'py-spy');
+    fs.mkdirSync(path.dirname(interpreterPath), { recursive: true });
+    fs.writeFileSync(adjacent, '#!/bin/sh\n', 'utf8');
+    try {
+      const { runner, calls } = makeRunner([
+        { match: (cmd, args) => cmd === adjacent && args[0] === '--version', result: run('py-spy 0.3.14') }
+      ]);
+      const { ui, face } = makeUi(undefined);
+      await expect(ensurePyspyReady(runner, ui, () => interpreter(interpreterPath))).resolves.toBe(true);
+      expect(face.warn).toHaveLength(0); // 装了不弹安装框——2026-10-30 用户反馈的死循环面
+      expect(calls[0].command).toBe(adjacent);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

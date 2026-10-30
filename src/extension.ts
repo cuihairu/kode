@@ -107,6 +107,7 @@ import { DEBUG_ATTACH_MODE_STATE_KEY, DebugConfigManager } from './debugConfig';
 import {
   defaultSpawnRunner,
   ensurePyspyReady,
+  resolvePyspyCommand,
   runPyspyDump
 } from './pyspyDump';
 import { resolveProfileInterpreter } from './profileInterpreter';
@@ -3061,9 +3062,15 @@ export function activate(context: vscode.ExtensionContext) {
         info: (message: string) => vscode.window.showInformationMessage(`${hostPrefix}${message}`),
         error: (message: string) => vscode.window.showErrorMessage(`${hostPrefix}${message}`)
       };
+      // IDE-PDBG-006:本地链解释器旁定位 py-spy 入口(venv bin/~/.local/bin),
+      // 探测与 dump 同一命令,装进解释器环境不再被 PATH 误判未装;远端保持
+      // ssh 裸命令口径
+      const localResolution = isRemote
+        ? null
+        : resolveProfileInterpreter(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
       const ready = await ensurePyspyReady(runner, uiFace, isRemote
         ? () => ({ interpreterPath: 'python3', interpreterSource: 'path' })
-        : () => resolveProfileInterpreter(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath));
+        : () => localResolution ?? { interpreterPath: '', interpreterSource: 'setting' });
       if (!ready) {
         return; // 未装且未装成/用户取消:不往下跑
       }
@@ -3086,7 +3093,7 @@ export function activate(context: vscode.ExtensionContext) {
         `\n===== py-spy dump ${component.name}${isRemote ? ` @${connection.ssh.host}` : ''} pid=${pid} ${new Date().toISOString()} =====`
       );
       pyspyChannel.show(true);
-      const dump = await runPyspyDump(runner, pid);
+      const dump = await runPyspyDump(runner, pid, localResolution && resolvePyspyCommand(localResolution.interpreterPath));
       pyspyChannel.appendLine(dump.output);
       if (!dump.ok) {
         vscode.window.showErrorMessage(`py-spy dump 失败(pid=${pid}),详情见「KBEngine py-spy」输出通道`);

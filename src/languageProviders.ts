@@ -164,7 +164,8 @@ import {
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from './sourceRevealCommand';
 import {
   RECEIVER_NONE_DIAGNOSTIC_CODE,
-  buildReceiverNoneGuardEdit
+  buildReceiverNoneGuardEdit,
+  buildReceiverNoneWrapEdit
 } from './receiverNoneDiagnostics';
 
 export { RECEIVER_NONE_DIAGNOSTIC_CODE };
@@ -5628,20 +5629,44 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
       if (seen.has(dedupeKey)) {
         continue;
       }
-      const guard = buildReceiverNoneGuardEdit(document.getText(), line, receiver);
-      if (!guard) {
+      const text = document.getText();
+      const wrap = buildReceiverNoneWrapEdit(text, line, receiver);
+      const guard = buildReceiverNoneGuardEdit(text, line, receiver);
+      if (!wrap && !guard) {
         continue;
       }
       seen.add(dedupeKey);
-      const edit = new vscode.WorkspaceEdit();
-      edit.insert(document.uri, new vscode.Position(guard.line, 0), guard.text);
-      const action = new vscode.CodeAction(
-        `插入 None 守卫(if not self.${receiver}: return)`,
-        vscode.CodeActionKind.QuickFix
-      );
-      action.diagnostics = [diagnostic];
-      action.edit = edit;
-      actions.push(action);
+      // 包裹式(2026-10-30 用户令):判非 None 后继续,常见操作,首选靠前
+      if (wrap) {
+        const lines = text.split(/\r?\n/);
+        const trailingNewline =
+          wrap.endLine < lines.length || (wrap.endLine === lines.length && text.endsWith('\n'));
+        const wrapEdit = new vscode.WorkspaceEdit();
+        wrapEdit.replace(
+          document.uri,
+          new vscode.Range(wrap.startLine, 0, wrap.endLine, 0),
+          trailingNewline ? `${wrap.text}\n` : wrap.text
+        );
+        const wrapAction = new vscode.CodeAction(
+          `包裹判空守卫(if self.${receiver}:)`,
+          vscode.CodeActionKind.QuickFix
+        );
+        wrapAction.diagnostics = [diagnostic];
+        wrapAction.edit = wrapEdit;
+        actions.push(wrapAction);
+      }
+      // 早退式:维持既有 B-7 口径,次选
+      if (guard) {
+        const edit = new vscode.WorkspaceEdit();
+        edit.insert(document.uri, new vscode.Position(guard.line, 0), guard.text);
+        const action = new vscode.CodeAction(
+          `插入 None 守卫(if not self.${receiver}: return)`,
+          vscode.CodeActionKind.QuickFix
+        );
+        action.diagnostics = [diagnostic];
+        action.edit = edit;
+        actions.push(action);
+      }
     }
     return actions;
   }

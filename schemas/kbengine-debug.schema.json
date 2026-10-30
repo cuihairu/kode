@@ -212,7 +212,7 @@
                   },
                   "path": {
                     "type": "string",
-                    "description": "虚拟环境目录;可用 ${workspaceFolder} 变量,省略时自动查找 .venv/venv"
+                    "description": "虚拟环境目录;可用 ${workspaceFolder} 变量,省略时按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)自动查找"
                   }
                 }
               },

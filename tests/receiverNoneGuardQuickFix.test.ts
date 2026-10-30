@@ -7,6 +7,7 @@ import {
   RECEIVER_NONE_DIAGNOSTIC_CODE as RECEIVER_NONE_CODE,
   RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE,
   buildReceiverNoneGuardEdit,
+  buildReceiverNoneWrapEdit,
   receiverNoneDiagnosticItems
 } from '../src/receiverNoneDiagnostics';
 import {
@@ -72,10 +73,67 @@ describe('buildReceiverNoneGuardEdit(纯函数)', () => {
   });
 });
 
+describe('buildReceiverNoneWrapEdit(2026-10-30 包裹式守卫纯函数)', () => {
+  const WRAP_TEXT = [
+    'class Avatar(kbe.KBEntity):',
+    '    def onTimer(self):',
+    '        self.client.onGmRes(-1)',
+    '        self.client.onGmRes(-2)',
+    ''
+  ].join('\n');
+
+  it('if self.client: 包住当前语句与后续同级块并整体缩进一级(空格文件)', () => {
+    const edit = buildReceiverNoneWrapEdit(WRAP_TEXT, 2, 'client');
+    expect(edit).toEqual({
+      startLine: 2,
+      endLine: 4,
+      text: [
+        '        if self.client:',
+        '            self.client.onGmRes(-1)',
+        '            self.client.onGmRes(-2)'
+      ].join('\n')
+    });
+  });
+
+  it('tab 文件:头行与内层全 tab,相对深度保持(同级+更深都进一级)', () => {
+    const tabText = 'class Avatar:\n\tdef onTimer(self):\n\t\tself.cell.tick()\n\t\tif self.cell:\n\t\t\tself.cell.go()\n\t\tself.cell.done()\n';
+    // 光标在第 2 行(0 基)= `self.cell.tick()`;块含同级 if 与更深 body,整体 +1 tab
+    const edit = buildReceiverNoneWrapEdit(tabText, 2, 'cell');
+    expect(edit).toEqual({
+      startLine: 2,
+      endLine: 6,
+      text: [
+        '\t\tif self.cell:',
+        '\t\t\tself.cell.tick()',
+        '\t\t\tif self.cell:',
+        '\t\t\t\tself.cell.go()',
+        '\t\t\tself.cell.done()'
+      ].join('\n')
+    });
+  });
+
+  it('块界=首个缩进低于使用行的行(同级/更深行都包进;块贯通到文末)', () => {
+    // 使用行在 0 基行 2(`\t\t` 缩进),下一行 `\tdef g` 缩进 4 < 8 即 dedent → 块只有自己
+    const oneLine = 'class A:\n\tdef f(self):\n\t\tself.client.a()\n\tdef g(self):\n\t\tpass\n';
+    const edit = buildReceiverNoneWrapEdit(oneLine, 2, 'client');
+    expect(edit).toEqual({
+      startLine: 2,
+      endLine: 3,
+      text: '\t\tif self.client:\n\t\t\tself.client.a()'
+    });
+  });
+
+  it('行号越界/空文本/使用行为空行 → null(不猜)', () => {
+    expect(buildReceiverNoneWrapEdit(WRAP_TEXT, 99, 'client')).toBeNull();
+    expect(buildReceiverNoneWrapEdit('', 0, 'client')).toBeNull();
+    expect(buildReceiverNoneWrapEdit(WRAP_TEXT, 4, 'client')).toBeNull();
+  });
+});
+
 describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
   const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
 
-  it('receiver-none 诊断 → 单条 QuickFix:使用行前插入守卫,不碰其他文件', () => {
+  it('receiver-none 诊断 → 两条 QuickFix:包裹式(首选靠前)+早退式(次选),不碰其他文件', () => {
     const document = pyDocument();
     const diagnostic = receiverNoneDiagnostic();
     const actions = provider.provideCodeActions(
@@ -85,32 +143,53 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
       undefined
     )!;
 
-    expect(actions).toHaveLength(1);
-    const action = actions[0];
-    expect(action.kind).toBe(CodeActionKind.QuickFix);
-    expect(action.title).toContain('self.client');
-    expect(action.title).toContain('None');
-    expect(action.diagnostics).toEqual([diagnostic]);
-    expect(action.command).toBeUndefined();
+    // 2026-10-30 用户令:包裹式(`if self.client:` 包住后续块继续执行)是常见
+    // 操作,排在早退式之前;两条都是 QuickFix,同码同诊断
+    expect(actions).toHaveLength(2);
+    const wrapAction = actions[0];
+    const guardAction = actions[1];
+    expect(wrapAction.title).toContain('包裹判空守卫');
+    expect(wrapAction.title).toContain('if self.client:');
+    expect(guardAction.title).toContain('插入 None 守卫');
+    for (const action of [wrapAction, guardAction]) {
+      expect(action.kind).toBe(CodeActionKind.QuickFix);
+      expect(action.diagnostics).toEqual([diagnostic]);
+      expect(action.command).toBeUndefined();
+      const entries = action.edit!.entries();
+      expect(entries).toHaveLength(1);
+      const [uri] = entries[0];
+      expect(uri.toString()).toBe(document.uri.toString());
+    }
 
-    const entries = action.edit!.entries();
-    expect(entries).toHaveLength(1);
-    const [uri, edits] = entries[0];
-    expect(uri.toString()).toBe(document.uri.toString());
-    expect(edits).toHaveLength(1);
-    // 插入点=使用行行首(0 基行 2 列 0),插入文本含早退守卫两行
-    expect(edits[0].range.start).toEqual(new Position(2, 0));
-    expect(edits[0].range.end).toEqual(new Position(2, 0));
-    expect(edits[0].newText).toBe('        if not self.client:\n            return\n');
+    // 包裹式:替换 [行 2,行 3)(块=唯一使用行),整体 +1 级缩进
+    const [wrapUri, wrapEdits] = wrapAction.edit!.entries()[0];
+    expect(wrapUri.toString()).toBe(document.uri.toString());
+    expect(wrapEdits).toHaveLength(1);
+    expect(wrapEdits[0].range.start).toEqual(new Position(2, 0));
+    expect(wrapEdits[0].range.end).toEqual(new Position(3, 0));
+    expect(wrapEdits[0].newText).toBe(
+      '        if self.client:\n            self.client.onGmRes(-1)\n'
+    );
+
+    // 早退式:插入点=使用行行首(0 基行 2 列 0),插入文本含早退守卫两行
+    const [, guardEdits] = guardAction.edit!.entries()[0];
+    expect(guardEdits).toHaveLength(1);
+    expect(guardEdits[0].range.start).toEqual(new Position(2, 0));
+    expect(guardEdits[0].range.end).toEqual(new Position(2, 0));
+    expect(guardEdits[0].newText).toBe('        if not self.client:\n            return\n');
   });
 
-  it('同码双诊断(同行两处调用)去重只出一条;段错配码/无码诊断不出', () => {
+  it('同码双诊断(同行两处调用)去重只出两条(包裹+早退各一);段错配码/无码诊断不出', () => {
     const document = pyDocument();
     const first = receiverNoneDiagnostic();
     const second = receiverNoneDiagnostic();
-    expect(provider.provideCodeActions(
+    // 同行同码去重:包裹+早退各一条,不会 4 条
+    const actions = provider.provideCodeActions(
       document, first.range, { diagnostics: [first, second] }, undefined
-    )).toHaveLength(1);
+    );
+    expect(actions).toHaveLength(2);
+    expect(actions[0].title).toContain('包裹判空守卫');
+    expect(actions[1].title).toContain('插入 None 守卫');
 
     // 段错配是路由问题不是判空问题:不出守卫动作
     const mismatch = receiverNoneDiagnostic(RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE);

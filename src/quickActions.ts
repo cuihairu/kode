@@ -2,7 +2,7 @@
  * 快速执行动作装配层(设计 1.9/1.10):
  * - 动作清单 quick pick(标签/类型/目标三列)与三后端分发(command/script/http);
  * - 默认执行器是真实现(集成终端 / node http),注入点只给测试与将来换实现;
- * - 破坏性动作默认弹 modal 确认,终端脚本输出实时可见,失败一次性弹窗;
+ * - 破坏性动作默认弹 modal 确认;前台脚本跑隐藏可复用终端(不抢焦点,失败一次性弹窗),
  * - 首装扫一层 .bat/.ps1(词表只定分类不过滤),用户勾选确认后才写回 .kbengine/debug.json。
  *
  * 安全边界(用户 2026-10-15 追加):script/http 只执行配置里显式声明的目标,
@@ -20,7 +20,9 @@ import {
   buildScannedActions,
   parseQuickActionConfigs,
   parseHttpRequestConfigs,
-  resolveActionVariables
+  resolveActionVariables,
+  DEFAULT_VENV_DIRECTORY_NAMES,
+  normalizeVenvDirectoryNames
 } from './quickActionConfig';
 import type {
   QuickAction,
@@ -783,20 +785,31 @@ export class QuickActionManager {
     return scanBatchScriptsInRoots(roots, scanRoot => entriesByRoot.get(scanRoot) ?? []);
   }
 
+  /** venv 自动查找目录名:设置 kbengine.python.venvDirectories(默认
+   * .venv/venv/.kbenv,环境目录不写死);读取异常回落默认清单。 */
+  private venvDirectoryNames(): string[] {
+    try {
+      return normalizeVenvDirectoryNames(
+        vscode.workspace.getConfiguration('kbengine').get('python.venvDirectories')
+      );
+    } catch {
+      return [...DEFAULT_VENV_DIRECTORY_NAMES];
+    }
+  }
+
   private resolveVenvEnvironment(action: Extract<QuickAction, { type: 'script' }>): NodeJS.ProcessEnv {
     const root = this.getConfigurationRoot() ?? process.cwd();
     const actionDirectory = action.cwd ?? path.dirname(action.script);
     const candidates = action.venv?.path
       ? [path.isAbsolute(action.venv.path) ? action.venv.path : path.resolve(root, action.venv.path)]
-      : [
-          path.resolve(actionDirectory, '.venv'), path.resolve(actionDirectory, 'venv'),
-          path.resolve(root, '.venv'), path.resolve(root, 'venv')
-        ];
+      : this.venvDirectoryNames().flatMap(name => [
+          path.resolve(actionDirectory, name), path.resolve(root, name)
+        ]);
     const venvPath = candidates.find(candidate => {
       try { return fs.statSync(candidate).isDirectory(); } catch { return false; }
     });
     if (!venvPath) {
-      throw new Error(`动作「${action.name}」启用了 venv，但找不到虚拟环境目录;请设置 venv.path 或创建 .venv/venv`);
+      throw new Error(`动作「${action.name}」启用了 venv，但找不到虚拟环境目录;请设置 venv.path 或按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)创建`);
     }
     const scriptsDirectory = process.platform === 'win32' ? 'Scripts' : 'bin';
     const binPath = path.join(venvPath, scriptsDirectory);

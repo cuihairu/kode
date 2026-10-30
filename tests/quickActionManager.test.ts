@@ -11,6 +11,7 @@ import type {
   ScriptRunResult
 } from '../src/quickActions';
 import {
+  configurationOverrides,
   memoryFileSystem,
   messages,
   Uri,
@@ -1178,6 +1179,46 @@ describe('QuickActionManager venv', () => {
       expect(scriptEnvs[0]?.PATH?.split(path.delimiter)[0]).toBe(path.join(venvPath, 'bin'));
 
     } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('auto-finds .kbenv at the action directory (PY-ENV: directory names are not hardcoded)', async () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kode-venv-kbenv-'));
+    const venvPath = path.join(tempRoot, '.kbenv');
+    mkdirSync(path.join(venvPath, 'bin'), { recursive: true });
+    try {
+      const manager = new QuickActionManager(makeContext(), makeDeps());
+      manager.setConfigurationRoots(tempRoot, []);
+      const run = (manager as unknown as { run: (action: unknown) => Promise<boolean> }).run.bind(manager);
+      const ok = await run({
+        name: 'task', type: 'script', script: path.join(tempRoot, 'task.bat'), cwd: tempRoot,
+        background: false, confirm: false, source: 'manual', venv: { enabled: true }
+      });
+      expect(ok).toBe(true);
+      expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('honors kbengine.python.venvDirectories for custom directory names', async () => {
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kode-venv-custom-'));
+    const venvPath = path.join(tempRoot, 'kbenv-main');
+    mkdirSync(path.join(venvPath, 'bin'), { recursive: true });
+    configurationOverrides.set('kbengine', { 'python.venvDirectories': ['kbenv-main'] });
+    try {
+      const manager = new QuickActionManager(makeContext(), makeDeps());
+      manager.setConfigurationRoots(tempRoot, []);
+      const run = (manager as unknown as { run: (action: unknown) => Promise<boolean> }).run.bind(manager);
+      const ok = await run({
+        name: 'task', type: 'script', script: path.join(tempRoot, 'task.bat'), cwd: tempRoot,
+        background: false, confirm: false, source: 'manual', venv: { enabled: true }
+      });
+      expect(ok).toBe(true);
+      expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
+    } finally {
+      configurationOverrides.delete('kbengine');
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });

@@ -72,6 +72,36 @@ describe('receiver 可能为 None 诊断(用户令 2026-10-27 任务1)', () => {
     expect(computeReceiverNoneFindings(guarded, '/avatar.py')).toEqual([]);
   });
 
+  it('链式正向 guard(`if ok and self.client:`)不报;or 链仍报(2026-10-30 用户令)', () => {
+    const guarded = py([
+      'class Avatar:',
+      '    def onAnd(self):',
+      '        if ok and self.client:',
+      '            self.client.tick()',
+      '',
+      '    def onAndIsNone(self):',
+      '        if ok and self.client is not None:',
+      '            self.client.tick()',
+      '',
+      '    def onAndTail(self):',
+      '        if self.client and ok:',
+      '            self.client.tick()',
+      ''
+    ]);
+    // and 链任一完整分句恰为接收者/接收者 is not None → 已判空,不报
+    expect(computeReceiverNoneFindings(guarded, '/avatar.py')).toEqual([]);
+
+    // or 链不保证非 None:`if ok or self.client:` 仍报
+    const orChain = py([
+      'class Avatar:',
+      '    def onOr(self):',
+      '        if ok or self.client:',
+      '            self.client.tick()',
+      ''
+    ]);
+    expect(computeReceiverNoneFindings(orChain, '/avatar.py')).toHaveLength(1);
+  });
+
   it('无 guard 引用报 receiver-none Warning,消息带引擎源码与场景', () => {
     const unguarded = py([
       'class Avatar:',

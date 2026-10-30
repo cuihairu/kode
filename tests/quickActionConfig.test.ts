@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_VENV_DIRECTORY_NAMES,
   buildScannedActions,
   classifyBatchScript,
+  normalizeVenvDirectoryNames,
   parseQuickActionConfigs,
   parseHttpRequestConfigs,
   resolveActionVariables
@@ -338,5 +340,23 @@ describe('parseQuickActionConfigs venv option', () => {
       actions: [{ venv: { enabled: true, path: '${workspaceFolder}/.venv' } }],
       invalidCount: 1
     });
+  });
+});
+
+describe('normalizeVenvDirectoryNames(PY-ENV:venv 目录名不写死)', () => {
+  it('默认清单含 .venv/venv/.kbenv 三名(2026-10-30 用户令)', () => {
+    expect([...DEFAULT_VENV_DIRECTORY_NAMES]).toEqual(['.venv', 'venv', '.kbenv']);
+    expect(normalizeVenvDirectoryNames(undefined)).toEqual(['.venv', 'venv', '.kbenv']);
+    expect(normalizeVenvDirectoryNames('not-an-array')).toEqual(['.venv', 'venv', '.kbenv']);
+  });
+
+  it('有效清单透传(可改名单,顺序即探测序)', () => {
+    expect(normalizeVenvDirectoryNames(['kbenv', ' .venv '])).toEqual(['kbenv', '.venv']);
+  });
+
+  it('过滤路径段与非法项;全无效回落默认(单段目录名,防探测点逃逸)', () => {
+    expect(normalizeVenvDirectoryNames(['ok', '../escape', 'a/b', '', '  ', '.', '..', 42, null]))
+      .toEqual(['ok']);
+    expect(normalizeVenvDirectoryNames(['../escape', 'a/b', ''])).toEqual(['.venv', 'venv', '.kbenv']);
   });
 });

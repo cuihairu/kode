@@ -1228,6 +1228,12 @@
           "default": "",
           "description": "Python 解释器路径（绝对路径，支持 ${workspaceFolder} 变量）。项目 profile 记录解释器来源：本设置存在才采用；否则取 PATH 里的 python3/python；都找不到记录缺失状态（不伪造路径）"
         },
+        "kbengine.python.venvDirectories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [".venv", "venv", ".kbenv"],
+          "description": "虚拟环境目录名清单（单段目录名，不含路径分隔符）：快速执行动作启用 venv 且未写 venv.path 时，按此清单在动作目录与配置根逐名探测（动作目录优先）。默认 ['.venv','venv','.kbenv']；非数组或全无效回落默认"
+        },
         "kbengine.python.extraPathsSync": {
           "type": "boolean",
           "default": true,

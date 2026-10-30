@@ -224,6 +224,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `kbengine.python.interpreterPath` | string | 空 | 项目 profile 连来源一并记录的 Python 解释器路径:本设置存在才采用(支持 `${workspaceFolder}`);否则定位 PATH 里的 python3/python;都找不到时 profile 如实记缺失状态,不伪造路径 |
+| `kbengine.python.venvDirectories` | string[] | `[".venv", "venv", ".kbenv"]` | 虚拟环境目录名清单(单段目录名,不含路径分隔符):快速执行动作启用 venv 且未写 `venv.path` 时,按此清单在动作目录与配置根逐名探测(动作目录优先)。非数组或全无效回落默认 |
 | `kbengine.python.extraPathsSync` | boolean | `true` | 自动把工作区发现的 KBEngine scripts 根写入 `python.analysis.extraPaths`(WorkspaceFolder 级;只管理本扩展写入的那一段,用户手填路径不动;无变化不写)。关掉后 `kbengine.python.syncExtraPaths` 命令只说明不写 |
 | `kbengine.python.stubExport` | boolean | `true` | 自动把内置 KBEngine Python API 索引(与补全/悬停/跳转同源)导出为 `KBEngine.pyi` 存根,并把 types.xml 自定义类型导出为 `kbe_types.py` 类型桩(`FIXED_DICT`→`TypedDict`、别名→类型名),配合 extraPaths 接线供 Pylance 解析 `import KBEngine`/`import kbe_types`(虚拟桩文档 Python 扩展看不见)。激活期静默自动一次,`kbengine.python.exportStubs`/`kbengine.python.exportTypeStubs` 手动入口 |
 | `kbengine.python.stubDir` | string | 空 | `.pyi` 存根目录,三级解析:设置 > 环境变量 `KBENGINE_STUB_DIR` > 默认约定 `.kbengine/stubs`。支持 `${workspaceFolder}`/`${env:NAME}` 等 VS Code 变量;相对路径按工作区根拼接,绝对路径原样使用 |
@@ -421,7 +422,7 @@ curl 'http://127.0.0.1:8000/api/hotfix?relaod=entities.fight.FightAI'
 | `args` | command | 参数数组,字符串项走变量替换,缺省 `[]` |
 | `script` | script | 脚本路径,必填,支持变量 |
 | `cwd` | script | 工作目录,支持变量,缺省工作区根 |
-| `venv` | script | 可选 `{ "enabled": true, "path": "${workspaceFolder}/.venv" }`;启用后把环境的 `bin`（Windows 为 `Scripts`）放到子进程 `PATH` 前面并设置 `VIRTUAL_ENV`;省略 `path` 自动查找脚本目录及配置根下的 `.venv` / `venv` |
+| `venv` | script | 可选 `{ "enabled": true, "path": "${workspaceFolder}/.venv" }`;启用后把环境的 `bin`（Windows 为 `Scripts`）放到子进程 `PATH` 前面并设置 `VIRTUAL_ENV`;省略 `path` 按 `kbengine.python.venvDirectories`(默认 `.venv` / `venv` / `.kbenv`)在脚本目录及配置根逐名自动查找 |
 | `background` | script | `true` 表示起服类不等退出码,缺省 `false` |
 | `url` | http | URL,必填,支持变量;只发配置里写死的地址,不接受运行时拼接 |
 | `method` | http | `GET` / `POST` / `PUT` / `PATCH` / `HEAD` / `OPTIONS`,缺省 `POST` |
