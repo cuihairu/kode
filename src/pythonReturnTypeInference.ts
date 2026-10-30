@@ -838,24 +838,30 @@ function locateModuleBucket(
  * IDE-HOV-016:自 hover 行向上找赋值,只在未跨出作用域前有效——上行路上
  * 每跨过一条 `def`/`class` 头(缩进 i),其上缩进 ≥ i+1 的赋值即属别的
  * 作用域(兄弟方法/被嵌套函数),不再借用;模块级(缩进 0)赋值不受限
- * (Python 全局读语义)。作用域内的同名重赋值仍按原次序全量收集。
+ * (Python 全局读语义)。
+ * IDE-AUD-042:尊重最后一次变量写入——自 hover 行向上只认最近一次对
+ * word 的赋值:是单层调用则作为唯一候选返回,否则(常量/未知表达式/局部
+ * 遮蔽)返回空——不再把更早的调用答案借给被覆盖的变量(R2-F16 反例
+ * `x=original(); x=0` 此前仍推导 EXPECTED)。
  */
 function matchingAssignments(lines: readonly string[], hoverLine: number, word: string): LocalAssignmentCall[] {
-  const candidates: LocalAssignmentCall[] = [];
   let scopeIndentLimit = Number.POSITIVE_INFINITY;
   for (let line = Math.min(hoverLine, lines.length - 1); line >= 0; line -= 1) {
     const text = lines[line] ?? '';
     const indent = text.length - text.trimStart().length;
     if (indent < scopeIndentLimit) {
-      const assignment = parseLocalAssignmentCall(text);
-      if (assignment?.target === word) candidates.push(assignment);
+      const write = ASSIGNMENT_PATTERN.exec(text);
+      if (write && write[2] === word) {
+        const assignment = parseLocalAssignmentCall(text);
+        return assignment ? [assignment] : [];
+      }
     }
     const scopeHeader = /^\s*(?:async\s+def|def|class)\s/.exec(text);
     if (scopeHeader) {
       scopeIndentLimit = Math.min(scopeIndentLimit, indent + 1);
     }
   }
-  return candidates;
+  return [];
 }
 
 function resolveFromAnnotationIndex(candidates: readonly LocalAssignmentCall[], word: string, index: PythonReturnAnnotationIndex): LocalVariableReturnType | null {

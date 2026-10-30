@@ -188,7 +188,7 @@ describe('返回类型推导(局部变量 hover)', () => {
     expect(text).not.toContain('Any');
   });
 
-  it('同名重赋值取最后一次可解析值:先可解析后不可解析 → 仍取 JSONDATA', async () => {
+  it('最后一次写入是未知调用 → 不借早先可解析调用答案(AUD-042)', async () => {
     const { put } = setupWorkspace();
     put(
       'scripts/entity/Activity.py',
@@ -199,14 +199,14 @@ describe('返回类型推导(局部变量 hover)', () => {
       'class Avatar:\n    def tick(self, activity_data, loader):\n        data = activity_data.get_data()\n        data = loader.load()\n        return data\n',
       path.join(workspace.workspaceFolders![0].uri.fsPath, 'scripts/base/Avatar.py')
     );
-    // 纯逻辑直接验:自 hover 行向上,末条赋值 load() 无注解 → 回退取 get_data()
+    // AUD-042:只认最后一次写入——load() 无注解(未知调用)不借 get_data() 答案
     const annotation = await resolveLocalVariableReturnType(
       doc.getText().split(/\r?\n/),
       4,
       'data',
       workspace.workspaceFolders![0].uri.fsPath
     );
-    expect(annotation).toMatchObject({ target: 'data', annotation: 'JSONDATA', methodName: 'get_data' });
+    expect(annotation).toBeNull();
   });
 });
 
@@ -624,6 +624,57 @@ describe('IDE-HOV-016 按当前文件限定返回注解候选', () => {
     const inB = hoverText(await Promise.resolve(provider.provideHover(doc, new Position(5, 16))));
     expect(inB).not.toContain('JSONDATA');
     expect(inB).not.toContain('推导自');
+  });
+});
+
+describe('IDE-AUD-042 返回类型推导尊重最后一次变量写入(R2-F16)', () => {
+  it('最后一次写入是常量 → 不借早先调用答案', async () => {
+    const { root, put } = setupWorkspace();
+    put('orig.py', 'def original() -> EXPECTED:\n    pass\n');
+    const annotation = await resolveLocalVariableReturnType(
+      ['x = original()', 'x = 0'],
+      1,
+      'x',
+      root
+    );
+    expect(annotation).toBeNull();
+  });
+
+  it('最后一次写入是未知调用 → 不借早先调用答案', async () => {
+    const { root, put } = setupWorkspace();
+    put('orig.py', 'def original() -> EXPECTED:\n    pass\n');
+    put('noann.py', 'def unknown():\n    pass\n');
+    const annotation = await resolveLocalVariableReturnType(
+      ['x = original()', 'x = unknown()'],
+      1,
+      'x',
+      root
+    );
+    expect(annotation).toBeNull();
+  });
+
+  it('局部遮蔽不借外层调用的答案', async () => {
+    const { root, put } = setupWorkspace();
+    put('orig.py', 'def original() -> EXPECTED:\n    pass\n');
+    const annotation = await resolveLocalVariableReturnType(
+      ['x = original()', 'def f():', '    x = 0', '    return x'],
+      3,
+      'x',
+      root
+    );
+    expect(annotation).toBeNull();
+  });
+
+  it('已知最新调用仍命中(正例前置,证明链路通非"不显"是断)', async () => {
+    const { root, put } = setupWorkspace();
+    put('orig.py', 'def original() -> EXPECTED:\n    pass\n');
+    const annotation = await resolveLocalVariableReturnType(
+      ['x = original()'],
+      0,
+      'x',
+      root
+    );
+    expect(annotation).toMatchObject({ target: 'x', annotation: 'EXPECTED', methodName: 'original' });
   });
 });
 
