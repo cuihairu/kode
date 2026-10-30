@@ -505,7 +505,12 @@ export class QuickActionManager {
     if (!root) return false;
     const candidate: BatchScriptCandidate = { path: scriptPath, category: null };
     const [action] = buildScannedActions([candidate], root);
+    // 不可达(批 65 定性):buildScannedActions 按候选逐一生成动作,单候选恒得
+    // 长 1 的 QuickActionScript 数组,解构首项恒非空且恒为 'script';空/非脚本
+    // 守卫无触发输入。
+    /* istanbul ignore start */
     if (!action || action.type !== 'script') return false;
+    /* istanbul ignore stop */
     const direct: QuickAction = { ...action, confirm: false };
     void vscode.window.showInformationMessage(`是否登记「${baseNameOf(scriptPath)}」为快速执行动作？`, '登记').then(async choice => {
       if (choice !== '登记') return;

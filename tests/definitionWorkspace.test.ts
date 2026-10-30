@@ -18,8 +18,10 @@ import {
   getEntityRuntimeProfile,
   getRegisteredCustomTypes,
   getRegisteredEntities,
+  resolveEntityAnnotationType,
   resolveEntityFixedDictMember
 } from '../src/definitionWorkspace';
+import { getSemanticIndex } from '../src/semanticIndex';
 import { makeTextDocument, workspace } from './helpers/vscodeStub';
 
 // definitionWorkspace 的纯路径/解析逻辑:临时 workspace 真实文件树,
@@ -513,6 +515,39 @@ describe('resolveEntityFixedDictMember(workspaceRoot 守卫)', () => {
       expect(resolveEntityFixedDictMember(root, 'ITEM_POS', 'x', false)).toBe('int');
     } finally {
       workspace.textDocuments = [];
+    }
+  });
+
+  it('旧快照未记版本:依赖有打开文档即视为过期(478)', () => {
+    // 旧版快照字段缺 sourceVersions(storeTypeRegistrySnapshot 未传第 5 参):
+    // 无从判断构建时读的是磁盘还是缓冲,依赖文件一旦有打开文档就判过期,
+    // 走重建(读盘)而非用旧快照。
+    const typesXmlPath = p('scripts', 'entity_defs', 'types.xml');
+    getSemanticIndex().storeTypeRegistrySnapshot(root, true, [], []);
+    try {
+      workspace.textDocuments = [makeTextDocument(
+        fs.readFileSync(typesXmlPath, 'utf8'),
+        { fileName: typesXmlPath, languageId: 'xml', version: 7 }
+      )];
+      expect(resolveEntityFixedDictMember(root, 'ITEM_POS', 'x', false)).toBe('int');
+    } finally {
+      workspace.textDocuments = [];
+    }
+  });
+});
+
+describe('resolveEntityAnnotationType(异常兜底)', () => {
+  it('配置读取抛错 → 记错误指标并重抛(393)', () => {
+    // 类型注册表查询的顶层 catch:getConfiguration 抛错(配置提供方不可用)
+    // 属真实防御面,记录错误分并重抛,不吞。
+    const originalGetConfig = (workspace as unknown as Record<string, unknown>).getConfiguration;
+    (workspace as unknown as Record<string, unknown>).getConfiguration = () => {
+      throw new Error('configuration provider unavailable');
+    };
+    try {
+      expect(() => resolveEntityAnnotationType(root, 'TIMESTAMP')).toThrow('configuration provider unavailable');
+    } finally {
+      (workspace as unknown as Record<string, unknown>).getConfiguration = originalGetConfig;
     }
   });
 });

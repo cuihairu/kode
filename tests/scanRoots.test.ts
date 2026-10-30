@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Uri } from './fake-vscode/core';
 import { configurationOverrides, workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import {
@@ -11,6 +11,7 @@ import {
   getScanRootForFile,
   resetScanRootCache
 } from '../src/scanRoots';
+import * as discoveryModule from '../src/workspaceDiscovery';
 
 // 扫描根口径(用户 2026-10-16):workspace 顶层 ∪ assetsRoot,去重;
 // assetsRoot 未配置/不存在时回退 workspace,任何读取异常都不外抛。
@@ -123,6 +124,24 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
       setAssetsRoot(undefined);
     }
   });
+
+  it('自动发现抛错 → 兜底 null,不外抛(101)', () => {
+    // 约定链/深扫描抛错(只读枚举被拒等):发现结果置 null,回退 workspace,
+    // 不打断索引扫描(与「读取异常不外抛」同口径)。
+    const ws = makeTmpDir('disc-throw');
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    const spy = vi.spyOn(discoveryModule, 'resolveDiscoveredConfigRoot').mockImplementation(() => {
+      throw new Error('discovery enumeration failed');
+    });
+    try {
+      setAssetsRoot(undefined);
+      expect(getIndexScanRoots()).toEqual([ws]);
+    } finally {
+      spy.mockRestore();
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
 });
 
 describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/exclude)', () => {
@@ -199,6 +218,27 @@ describe('findFilesAcrossRoots:workspace 结果 + 外部根手工遍历(去重/e
     } finally {
       release();
       fs.promises.readdir = originalReaddir;
+      stubWorkspace.findFiles = originalFind;
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('取消令牌:遍历外部根前置取消 → 循环首根即断,不手工走(279)', async () => {
+    const ws = makeTmpDir('cancel-pre-ws');
+    const assets = makeTmpDir('cancel-pre-assets');
+    const originalFind = stubWorkspace.findFiles;
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    stubWorkspace.findFiles = (async () => []) as typeof stubWorkspace.findFiles;
+    setAssetsRoot(assets);
+    try {
+      const result = await findFilesAcrossRoots(
+        '**/*.py',
+        null,
+        { isCancellationRequested: true } as never
+      );
+      expect(result).toEqual([]);
+    } finally {
       stubWorkspace.findFiles = originalFind;
       stubWorkspace.workspaceFolders = [];
       setAssetsRoot(undefined);

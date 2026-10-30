@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
+import type * as vscode from 'vscode';
 import { Position, Uri } from './fake-vscode/core';
 import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
 import {
@@ -138,6 +139,71 @@ describe('resolveSelfMethod(跨类唯一实现)', () => {
       expect(loc2!.line).toBe(4);
     } finally {
       stubWorkspace.findFiles = original;
+    }
+  });
+});
+
+describe('loadFileOnDemand(按需单文件缓存)', () => {
+  it('已入索引文件再请求 → 缓存命中早退(996)', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-loadondemand-'));
+    const file = path.join(tmp, 'solo.py');
+    fs.writeFileSync(file, 'class Solo:\n\tdef run(self):\n\t\tpass\n', 'utf8');
+    const original = stubWorkspace.findFiles;
+    stubWorkspace.findFiles = (async (pattern?: string) =>
+      pattern && pattern.includes('*.def') ? [] : [Uri.file(file)]) as typeof stubWorkspace.findFiles;
+    try {
+      const index = new PythonClassIndex();
+      // 首次:查询文件按需单文件解析入索引
+      const first = await index.resolveSelfMethod(file, 1, 'run');
+      expect(first).not.toBeNull();
+      // 二次:同文件已在缓存,stageRequestFiles 的按需再请求命中缓存早退
+      const second = await index.resolveSelfMethod(file, 1, 'run');
+      expect(second).not.toBeNull();
+    } finally {
+      stubWorkspace.findFiles = original;
+    }
+  });
+
+  it('取消令牌:查询入口前置检查零成本返回(1235/1316)', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-cancel-'));
+    const file = path.join(tmp, 'a.py');
+    fs.writeFileSync(file, 'class A:\n\tpass\n', 'utf8');
+    try {
+      const index = new PythonClassIndex();
+      const cancelled = { isCancellationRequested: true } as unknown as vscode.CancellationToken;
+      const doc = makeTextDocument('class A:\n\tpass\n', { fileName: file, languageId: 'python', version: 1 });
+      // resolveClassBase:首个 token 检查即返回 null(不读盘)
+      await expect(index.resolveClassBase(doc, 'A', 1, cancelled)).resolves.toBeNull();
+      // resolveSelfMethodResolution:首个 token 检查即返回 partial 空候选
+      const res = await index.resolveSelfMethodResolution(file, 0, 'run', undefined, cancelled);
+      expect(res).toEqual({ candidates: [], partial: true });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('查询中途取消:首查通过后二次检查返回(1242/1324)', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-cancel-mid-'));
+    const file = path.join(tmp, 'a.py');
+    fs.writeFileSync(file, 'class A:\n\tpass\n', 'utf8');
+    try {
+      const index = new PythonClassIndex();
+      let cancelled = false;
+      const token = { get isCancellationRequested() { return cancelled; } } as unknown as vscode.CancellationToken;
+      const doc = makeTextDocument('class A:\n\tpass\n', { fileName: file, languageId: 'python', version: 1 });
+      // 首次检查(1235)同步通过后即置取消,后续 onDocumentChanged 的 await
+      // 让出期间二次检查(1242)命中 → 返回 null
+      const pending = index.resolveClassBase(doc, 'A', 1, token);
+      cancelled = true;
+      await expect(pending).resolves.toBeNull();
+      // resolveSelfMethodResolution 同构:首次检查(1316)后置取消 → 二次(1324)
+      cancelled = false;
+      const pending2 = index.resolveSelfMethodResolution(file, 0, 'run', undefined, token);
+      cancelled = true;
+      const res = await pending2;
+      expect(res).toEqual({ candidates: [], partial: true });
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
 });

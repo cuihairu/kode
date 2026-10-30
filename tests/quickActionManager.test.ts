@@ -199,6 +199,18 @@ describe('QuickActionManager.show', () => {
     expect(received).toEqual([{ name: 'second', url: 'http://settings/second' }]);
   });
 
+  it('getTreeData:登记脚本动作进入已登记列表并参与脚本去重(529)', async () => {
+    // registered 含 script 型动作:529 的 filter/map 箭头被驱动(此前合并 HTTP
+    // 行用例只带 httpRequests,registered 恒空,`path.resolve(action.target)` 无触发输入)。
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    setConfig({ quickActions: [{ name: 'cleanup', type: 'script', script: '${workspaceFolder}/cleanup.bat', cwd: '${workspaceFolder}', background: true, confirm: true, source: 'manual' }] });
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    const data = await manager.getTreeData();
+    expect(data.registered).toEqual([{ name: 'cleanup', type: 'script', target: '/ws/cleanup.bat' }]);
+    // 已登记的 cleanup.bat 不再出现在待扫描脚本列表(同路径去重)
+    expect(data.scripts.map(script => script.target)).toEqual([]);
+  });
+
   it('tells the user where to configure when no actions exist', async () => {
     const manager = new QuickActionManager(makeContext(), makeDeps());
 
@@ -1200,6 +1212,66 @@ describe('QuickActionManager.scanScriptsAndRefresh', () => {
     }
   });
 
+  it('runScannedScript:登记询问被拒绝时静默吞掉(518 拒绝处理器)', async () => {
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    const originalMsg = windowish.showInformationMessage;
+    windowish.showInformationMessage = async () => {
+      throw new Error('registration prompt rejected');
+    };
+    try {
+      await manager.runScannedScript('/ws/cleanup.bat');
+      // 登记询问的 .then 是 fire-and-forget:让拒绝处理器(518)先于断言落地
+      await new Promise(resolve => setImmediate(resolve));
+    } finally {
+      windowish.showInformationMessage = originalMsg;
+    }
+    expect(scriptRuns).toHaveLength(1);
+    expect(scriptRuns[0].script).toBe('/ws/cleanup.bat');
+    expect(messages.info.some(message => String(message).includes('已登记'))).toBe(false);
+  });
+
+  it('runScannedScript:无配置根时直接返回 false(505)', async () => {
+    stubWorkspace.workspaceFolders = [];
+    try {
+      const manager = new QuickActionManager(makeContext(), makeDeps());
+      await expect(manager.runScannedScript('/ws/cleanup.bat')).resolves.toBe(false);
+      expect(scriptRuns).toHaveLength(0);
+    } finally {
+      stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    }
+  });
+
+  it('runScannedScript:登记确认后动作名已存在 → 不重复登记(515)', async () => {
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    setConfig({ quickActions: [{ name: 'cleanup', type: 'script', script: '${workspaceFolder}/cleanup.bat', cwd: '${workspaceFolder}', background: true, confirm: true, source: 'manual' }] });
+    // 登记询问是 (msg, '登记') 双参调用:beforeAll 的确认框替身把单动作吸进
+    // options 误判为「无按钮」→ 走原实现返回 undefined,永不到达 520 分支;
+    // 这里按 518 测试同法局部覆盖,把登记确认钉成 '登记'。
+    const originalMsg = windowish.showInformationMessage;
+    windowish.showInformationMessage = async () => '登记' as never;
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    try {
+      await manager.runScannedScript('/ws/cleanup.bat');
+      await new Promise(resolve => setImmediate(resolve));
+    } finally {
+      windowish.showInformationMessage = originalMsg;
+    }
+    // 已存在同名动作:登记分支在写配置前早退,config 保持原样(无 scan 源动作)
+    const written = JSON.parse(Buffer.from(memoryFileSystem.files.get('/ws/.kbengine/debug.json') ?? '').toString('utf8'));
+    expect(written.quickActions.some((item: { source?: string }) => item.source === 'scan')).toBe(false);
+    expect(messages.info.some(message => String(message).includes('已登记'))).toBe(false);
+  });
+
+  it('扫描选择被取消 → 不写配置不提示(404)', async () => {
+    memoryFileSystem.setDirectory('/ws', [['cleanup.bat', 1]]);
+    pickAnswers.push(undefined);
+    const manager = new QuickActionManager(makeContext(), makeDeps());
+    await manager.scanScriptsAndRefresh();
+    expect(memoryFileSystem.files.has('/ws/.kbengine/debug.json')).toBe(false);
+    expect(messages.info.some(message => String(message).includes('已重新扫描脚本'))).toBe(false);
+  });
+
   it('scans the effective config root and assetsRoot, preserves manual actions, and writes to that config root', async () => {
     memoryFileSystem.set('/repo/server/.kbengine/debug.json', JSON.stringify({
       version: 1,
@@ -1284,6 +1356,46 @@ describe('QuickActionManager venv', () => {
       expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
     } finally {
       configurationOverrides.delete('kbengine');
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('venv 目录名配置读取抛错 → 回落默认清单(796)', async () => {
+    // 配置提供方对 python.venvDirectories 抛错(读取异常防御面):catch 回落
+    // 默认 .venv/venv/.kbenv 清单,自动查找照常;其余配置键不受影响。
+    const tempRoot = mkdtempSync(path.join(os.tmpdir(), 'kode-venv-throw-'));
+    const venvPath = path.join(tempRoot, '.venv');
+    mkdirSync(path.join(venvPath, 'bin'), { recursive: true });
+    try {
+      const manager = new QuickActionManager(makeContext(), makeDeps());
+      manager.setConfigurationRoots(tempRoot, []);
+      const originalGetConfig = (stubWorkspace as unknown as Record<string, unknown>).getConfiguration;
+      (stubWorkspace as unknown as Record<string, unknown>).getConfiguration = (section?: string) => {
+        const base = (originalGetConfig as (s?: string) => {
+          get: <T>(key: string, defaultValue: T) => T;
+        })(section);
+        return {
+          ...base,
+          get: <T>(key: string, defaultValue: T): T => {
+            if (section === 'kbengine' && key === 'python.venvDirectories') {
+              throw new Error('venv directories config unavailable');
+            }
+            return base.get(key, defaultValue);
+          }
+        };
+      };
+      try {
+        const run = (manager as unknown as { run: (action: unknown) => Promise<boolean> }).run.bind(manager);
+        const ok = await run({
+          name: 'task', type: 'script', script: path.join(tempRoot, 'task.bat'), cwd: tempRoot,
+          background: false, confirm: false, source: 'manual', venv: { enabled: true }
+        });
+        expect(ok).toBe(true);
+        expect(scriptEnvs[0]?.VIRTUAL_ENV).toBe(venvPath);
+      } finally {
+        (stubWorkspace as unknown as Record<string, unknown>).getConfiguration = originalGetConfig;
+      }
+    } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });

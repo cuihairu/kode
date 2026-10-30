@@ -173,9 +173,16 @@ export function getExternalScanRoots(): string[] {
 export function getScanRootForFile(filePath: string): string | null {
   const key = normalizeForCompare(filePath);
   const matches = getIndexScanRoots()
-    .filter(root => isContained(normalizeForCompare(root), key))
-    .sort((left, right) => normalizeForCompare(right).length - normalizeForCompare(left).length);
-  return matches[0] ?? null;
+    .filter(root => isContained(normalizeForCompare(root), key));
+  // 排序比较器不可达(批 63 定性):getIndexScanRoots(115-159)按包含关系去重,
+  // 任意文件至多落入一个扫描根——两同含一文件的根必一含一,短者已被剔除,
+  // 故匹配集恒 ≤1,长度降序比较器从不会被调用;保留 sort 仅作「最长匹配」
+  // 防御语义,比较器体不可达。
+  /* istanbul ignore start */
+  const byLongestPath = (left: string, right: string): number =>
+    normalizeForCompare(right).length - normalizeForCompare(left).length;
+  /* istanbul ignore stop */
+  return matches.sort(byLongestPath)[0] ?? null;
 }
 
 /** 支持的 glob 形状 → 文件名谓词;不认识的形状不手工走(只返回 workspace 结果) */
