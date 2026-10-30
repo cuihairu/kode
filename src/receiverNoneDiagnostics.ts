@@ -580,17 +580,31 @@ export function buildReceiverNoneWrapEdit(
   const leading = /^[ \t]*/.exec(useLine)?.[0] ?? '';
   const inner = leading.includes('\t') ? `${leading}\t` : `${leading}    `;
   const useIndent = indentOf(useLine);
+  // 2026-10-30 用户反馈:包裹式不得把整段后续同级块都卷进来——只包「用到
+  // 本 receiver 的连续语句」(以及它们的多行续行),首个不引用本 receiver 的
+  // 同级语句即截断,避免无关语句(如后面的 self.base.notify())被误缩进。
+  const receiverPattern = new RegExp(`\\bself\\.${receiver}\\b`);
   let end = line + 1;
+  let balance = delimiterDelta(useLine);
   while (end < lines.length) {
     const current = lines[end];
-    if (!COMMENT_ONLY.test(current) && indentOf(current) < useIndent) {
+    if (COMMENT_ONLY.test(current) || !current.trim()) {
+      // 多行语句续行内(括号未闭合)不因空行/注释中断;否则语句组结束
+      if (balance > 0) {
+        end += 1;
+        continue;
+      }
       break;
     }
+    if (indentOf(current) < useIndent) {
+      break;
+    }
+    // 续行(balance>0 括号未闭合)或引用本 receiver → 纳入;否则语句组结束
+    if (!receiverPattern.test(current) && balance <= 0) {
+      break;
+    }
+    balance += delimiterDelta(current);
     end += 1;
-  }
-  // 回退块尾的尾随空行/注释(块中段空白保留,尾随的不包进缩进)
-  while (end > line + 1 && COMMENT_ONLY.test(lines[end - 1])) {
-    end -= 1;
   }
   const body = lines.slice(line, end).map(entry => {
     if (COMMENT_ONLY.test(entry) || !entry.trim()) {
@@ -603,6 +617,19 @@ export function buildReceiverNoneWrapEdit(
     endLine: end,
     text: [`${leading}if self.${receiver}:`, ...body].join('\n')
   };
+}
+
+/** 统计行内未闭合括号差(续行判定:>0 表示语句在下一行继续) */
+function delimiterDelta(line: string): number {
+  let delta = 0;
+  for (const char of line) {
+    if (char === '(' || char === '[' || char === '{') {
+      delta += 1;
+    } else if (char === ')' || char === ']' || char === '}') {
+      delta -= 1;
+    }
+  }
+  return delta;
 }
 
 /** 开关口:enabled=false 零产出(用户令:配置开关默认开可关,severity=Warning) */

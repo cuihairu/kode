@@ -128,6 +128,48 @@ describe('buildReceiverNoneWrapEdit(2026-10-30 包裹式守卫纯函数)', () =>
     expect(buildReceiverNoneWrapEdit('', 0, 'client')).toBeNull();
     expect(buildReceiverNoneWrapEdit(WRAP_TEXT, 4, 'client')).toBeNull();
   });
+
+  it('2026-10-30 用户反馈:首个不引用本 receiver 的同级语句即截断,不卷后续块', () => {
+    const text = [
+      'class Avatar:',
+      '    def onTimer(self):',
+      '        self.client.onGmRes(-1)',
+      '        self.base.notify()',
+      '        self.client.onGmRes(-2)',
+      ''
+    ].join('\n');
+    const edit = buildReceiverNoneWrapEdit(text, 2, 'client');
+    expect(edit).toEqual({
+      startLine: 2,
+      endLine: 3,
+      text: '        if self.client:\n            self.client.onGmRes(-1)'
+    });
+  });
+
+  it('多行续行(括号未闭合)即使续行不引用 receiver 也整段纳入', () => {
+    const text = [
+      'class Avatar:',
+      '    def onTimer(self):',
+      '        self.client.send(',
+      '            "hello",',
+      '            1,',
+      '        )',
+      '        self.base.notify()',
+      ''
+    ].join('\n');
+    const edit = buildReceiverNoneWrapEdit(text, 2, 'client');
+    expect(edit).toEqual({
+      startLine: 2,
+      endLine: 6,
+      text: [
+        '        if self.client:',
+        '            self.client.send(',
+        '                "hello",',
+        '                1,',
+        '            )'
+      ].join('\n')
+    });
+  });
 });
 
 describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
