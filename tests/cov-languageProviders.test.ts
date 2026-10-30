@@ -1,6 +1,10 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   KBEngineCompletionProvider,
+  KBEngineDocumentSymbolProvider,
   KBEngineHoverProvider,
   KBEngineImplementationProvider,
   KBEngineMethodImplementationCodeActionProvider,
@@ -102,6 +106,33 @@ const DEF_TEXT = [
 
 const defDocument = (): MinimalTextDocument =>
   makeTextDocument(DEF_TEXT, { fileName: '/tmp/ws/scripts/entity_defs/Avatar.def' });
+
+const provideRefs = (
+  provider: KBEngineReferencesProvider,
+  document: MinimalTextDocument,
+  position: Position,
+  token?: unknown
+): Promise<unknown> =>
+  provider.provideReferences(document, position, { includeDeclaration: false }, token as never);
+
+const provideCodeActions = (
+  provider: KBEngineMethodImplementationCodeActionProvider,
+  document: MinimalTextDocument,
+  position: Position,
+  token?: unknown
+): Promise<unknown> =>
+  provider.provideCodeActions(document, new Range(position, position), {}, token as never);
+
+const codeManagerFor = (overrides: {
+  ownerFiles?: unknown[];
+  impl?: Promise<unknown[]>;
+}): EntityMappingManager =>
+  ({
+    resolveDefinitionSymbolAtPosition: () =>
+      Promise.resolve({ symbolName: 'reqPos', section: 'BaseMethods', ownerName: 'Avatar' }),
+    listMethodImplementationsByIdentity: () => overrides.impl ?? Promise.resolve([]),
+    listOwnerScriptFilesForIdentity: () => Promise.resolve(overrides.ownerFiles ?? [])
+  } as unknown as EntityMappingManager);
 
 describe('KBEngineReferencesProvider def 分支守卫(覆盖率)', () => {
   const refsManager = (overrides: {
@@ -376,5 +407,184 @@ describe('PythonDefinitionProvider 异常终态与基类回退 catch(覆盖率)'
     const traced = await provider.provideDefinitionTraced(doc, new Position(0, 9));
     expect(traced.location).toBeNull();
     expect(traced.layers.at(-1)).toMatchObject({ layer: 'context', status: 'miss' });
+  });
+});
+
+// 方法段引用/实现/代码动作的「await 回程取消」守卫(5399/5415/5431/5586/
+// 5740):每处置取消位前必须先让前一个 await 落定——用可控门把翻转到精确
+// 位置,不靠竞速。5468(工作区符号非段子节点跳过)/5749/5755/5759 同批。
+const deferred = <T>(): { promise: Promise<T>; resolve: (value: T) => void } => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(r => { resolve = r; });
+  return { promise, resolve };
+};
+const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+const METHOD_POS = new Position(7, 6); // DEF_TEXT 第 7 行 <reqPos>(BaseMethods)
+
+describe('def 引用回程取消守卫(覆盖率)', () => {
+  const gateRefs = (gates: {
+    impl?: Promise<unknown>;
+    receiverCalls?: Promise<unknown[]>;
+    methodCalls?: Promise<unknown[]>;
+    implValue?: unknown;
+  }): EntityMappingManager =>
+    ({
+      resolveDefinitionSymbolAtPosition: () =>
+        Promise.resolve({ symbolName: 'reqPos', section: 'BaseMethods' }),
+      resolveMethodImplementationByIdentity: () => gates.impl ?? Promise.resolve(gates.implValue ?? null),
+      getIncomingPythonReceiverCalls: () => gates.receiverCalls ?? Promise.resolve([]),
+      getIncomingPythonMethodCalls: () => gates.methodCalls ?? Promise.resolve([]),
+      getIncomingPythonPropertyAccesses: () => Promise.resolve([])
+    } as unknown as EntityMappingManager);
+
+  it('实现解析回程取消:5399 return null', async () => {
+    const implGate = deferred<unknown>();
+    const provider = new KBEngineReferencesProvider(gateRefs({ impl: implGate.promise }));
+    const token = { isCancellationRequested: false };
+    const pending = provideRefs(provider, defDocument(), METHOD_POS, token);
+    await flush();
+    token.isCancellationRequested = true;
+    implGate.resolve(null);
+    expect(await pending).toBeNull();
+  });
+
+  it('receiver 调用回程取消:5415 return null', async () => {
+    const receiverGate = deferred<unknown[]>();
+    const provider = new KBEngineReferencesProvider(gateRefs({ receiverCalls: receiverGate.promise }));
+    const token = { isCancellationRequested: false };
+    const pending = provideRefs(provider, defDocument(), METHOD_POS, token);
+    await flush();
+    token.isCancellationRequested = true;
+    receiverGate.resolve([]);
+    expect(await pending).toBeNull();
+  });
+
+  it('方法调用回程取消:5431 return null(需实现非空)', async () => {
+    const callsGate = deferred<unknown[]>();
+    const provider = new KBEngineReferencesProvider(gateRefs({
+      methodCalls: callsGate.promise, implValue: { filePath: '/x.py' }
+    }));
+    const token = { isCancellationRequested: false };
+    const pending = provideRefs(provider, defDocument(), METHOD_POS, token);
+    await flush();
+    token.isCancellationRequested = true;
+    callsGate.resolve([]);
+    expect(await pending).toBeNull();
+  });
+});
+
+describe('工作区符号非段子节点跳过(5468)', () => {
+  it('<Parent> 等非符号段不进 Outline,段内属性/方法照常', async () => {
+    const provider = new KBEngineDocumentSymbolProvider();
+    const doc = makeTextDocument([
+      '<root>',
+      '  <Parent>Monster</Parent>',
+      '  <Properties>',
+      '    <hp><Type>UINT32</Type></hp>',
+      '  </Properties>',
+      '</root>'
+    ].join('\n'), { fileName: '/tmp/ws/scripts/entity_defs/Avatar.def' });
+    const symbols = await provider.provideDocumentSymbols(doc, undefined);
+    expect(symbols).not.toBeNull();
+    expect(symbols!.map(s => s.name)).toEqual(['Properties']);
+    expect(symbols![0].children.map(c => c.name)).toEqual(['hp']);
+  });
+});
+
+describe('KBEngineImplementationProvider 回程取消(5586)', () => {
+  it('实现列表回程取消 → null', async () => {
+    const implGate = deferred<unknown[]>();
+    const provider = new KBEngineImplementationProvider({
+      resolveDefinitionSymbolAtPosition: () =>
+        Promise.resolve({ symbolName: 'reqPos', section: 'BaseMethods' }),
+      listMethodImplementationsByIdentity: () => implGate.promise
+    } as unknown as EntityMappingManager);
+    const token = { isCancellationRequested: false };
+    const pending = provider.provideImplementation(defDocument(), METHOD_POS, token as never);
+    await flush();
+    token.isCancellationRequested = true;
+    implGate.resolve([]);
+    expect(await pending).toBeNull();
+  });
+});
+
+describe('KBEngineMethodImplementationCodeActionProvider 分支(覆盖率)', () => {
+  const codeGate = (gates: {
+    impl?: Promise<unknown[]>;
+    ownerFiles?: Promise<unknown[]> | unknown[];
+  }): EntityMappingManager =>
+    ({
+      resolveDefinitionSymbolAtPosition: () =>
+        Promise.resolve({ symbolName: 'reqPos', section: 'BaseMethods', ownerName: 'Avatar' }),
+      listMethodImplementationsByIdentity: () => gates.impl ?? Promise.resolve([]),
+      listOwnerScriptFilesForIdentity: () =>
+        gates.ownerFiles ? Promise.resolve(gates.ownerFiles as never) : Promise.resolve([])
+    } as unknown as EntityMappingManager);
+
+  it('实现列表回程取消 → []', async () => {
+    const implGate = deferred<unknown[]>();
+    const provider = new KBEngineMethodImplementationCodeActionProvider(codeGate({ impl: implGate.promise }));
+    const token = { isCancellationRequested: false };
+    const pending = provideCodeActions(provider, defDocument(), METHOD_POS, token);
+    await flush();
+    token.isCancellationRequested = true;
+    implGate.resolve([]);
+    expect(await pending).toEqual([]);
+  });
+
+  it('owner 脚本为空 → []', async () => {
+    const provider = new KBEngineMethodImplementationCodeActionProvider(codeGate({ ownerFiles: [] }));
+    expect(await provideCodeActions(provider, defDocument(), METHOD_POS)).toEqual([]);
+  });
+
+  it('owner 脚本快照缺失 → []', async () => {
+    const provider = new KBEngineMethodImplementationCodeActionProvider(codeGate({
+      ownerFiles: ['/nonexistent-owner/Avatar.py']
+    }));
+    expect(await provideCodeActions(provider, defDocument(), METHOD_POS)).toEqual([]);
+  });
+
+  it('owner 脚本无类块 → []', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-owner-'));
+    const owner = path.join(root, 'Avatar.py');
+    fs.writeFileSync(owner, 'x = 1\n', 'utf8');
+    try {
+      const provider = new KBEngineMethodImplementationCodeActionProvider(codeGate({ ownerFiles: [owner] }));
+      expect(await provideCodeActions(provider, defDocument(), METHOD_POS)).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// 5622:同码诊断但区间内文本为空(零宽区间)→ continue 跳过不建动作。
+// 5677:类体后出现顶格语句(indent<4)→ 类块扫描终止,插入点=类体末。
+describe('类型修正候选空名与类块终止(覆盖率)', () => {
+  it('零宽区间诊断:text 空 → continue 不出动作', () => {
+    const provider = new KBEngineTypeCodeActionProvider();
+    const doc = defDocument();
+    const zeroWidth = new Diagnostic(new Range(new Position(0, 0), new Position(0, 0)), 'x', 1);
+    zeroWidth.code = UNKNOWN_TYPE_DIAGNOSTIC_CODE;
+    const actions = provider.provideCodeActions(
+      doc, new Range(new Position(0, 0), new Position(0, 5)),
+      { diagnostics: [zeroWidth] }, undefined
+    );
+    expect(actions).toEqual([]);
+  });
+
+  it('owner 脚本类体后有顶格语句:插入点取类体末,动作照常生成', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-owner2-'));
+    const owner = path.join(root, 'Avatar.py');
+    fs.writeFileSync(owner, 'class Avatar:\n    def a(self):\n        pass\nx = 1\n', 'utf8');
+    try {
+      const provider = new KBEngineMethodImplementationCodeActionProvider(codeManagerFor({ ownerFiles: [owner] }));
+      const actions = await provider.provideCodeActions(
+        defDocument(), new Range(METHOD_POS, METHOD_POS), {}, undefined
+      ) as Array<{ title: string }>;
+      expect(actions.length).toBeGreaterThan(0);
+      expect(actions[0].title).toContain('reqPos');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
