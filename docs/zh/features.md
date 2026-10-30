@@ -151,6 +151,7 @@
 - **工作区符号（Ctrl+T）** —— 已索引 def 符号按名称前缀跨 root 查询，返回 root/段容器信息，查询不触发全仓扫描 ——（证据：src/entityMapping.ts `searchDefSymbolsByPrefix`；src/languageProviders.ts `KBEngineWorkspaceSymbolProvider`）
 - **def 文档符号（Outline）** —— Properties 与三方法段作容器，段内声明作子符号，范围精确到元素全跨度 ——（证据：src/languageProviders.ts `KBEngineDocumentSymbolProvider`）
 - **def 引用查询（Shift+F12）** —— def 属性/方法引用按 owner 注册面归属：属性 `self` 访问、方法调用经统一符号身份链、receiver RPC 调用（`self.cell.X` / `self.base.X` / `self.client.X`）按段分开统计；结果跟随未保存缓冲区（打开文档快照优先、磁盘兜底）——（证据：src/languageProviders.ts `KBEngineReferencesProvider`；src/entityMapping.ts `getIncomingPythonMethodCalls`）
+- **types.xml 引用查询（Shift+F12，IDE-NAV-017）** —— types.xml 自定义类型符号（顶层类型声明名，或 `<Type>`/`<Arg>`/`<of>` 值内的类型名引用）列出工作区全部使用位：`.def` 属性 `<Type>` 值、`ARRAY of X`/`FIXED_DICT` 元素类型、`<Arg>` 值，以及 types.xml 内其他引用位；内建类型（`UINT32` 等）非 types.xml 符号、无引用面；空结果如实无引用不虚构——（证据：src/typesXmlReferences.ts；src/languageProviders.ts `KBEngineReferencesProvider` types.xml 分支）
 
 ## 项目模型
 

@@ -10,6 +10,7 @@
 - entities.xml 实体登记悬停带清单序号（批147，`**Utype**` 行：引擎按 entities.xml 清单顺序分配 utype，序号取首次出现位置）
 - def 链合并悬停（批148，source-analysis D5 收口）：`.def` 内悬停根级 `<Parent>` 元素呈现该 def 的继承闭包三面——Parent 链递归、`interfaces/` 平铺、`components/` 挂接，与引擎归并口径一致；父名/接口/组件缺 def 文件如实标注，环被 visited 截断并标注（引擎 loadParentClass 无防环，kode 不照抄）
 - `.def` 内实体引用跳转
+- types.xml 符号引用查询（Shift+F12，IDE-NAV-017）：types.xml 自定义类型符号列出工作区全部使用位（`.def` 属性类型、`ARRAY of X`/`FIXED_DICT` 元素类型、`<Arg>` 值、types.xml 内其他引用位）；内建类型无引用面；空结果如实无引用不虚构
 - Python 与 `.def` 双向导航
 - RPC 方法标记（Python 实现脚本里命中 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明）
 - 语言功能按功能可独立开关（批154）：CodeLens 四类（RPC 标记/事件回调/属性标记/types.xml 落库镜链）与悬停六类（自定义类型存储、implementedBy 反链、实体注册、def 链、事件统计、服务配置字段）各一枚 `kbengine.*` 开关，默认全开、不设总闸一刀切；CodeLens 开关变更即时生效
