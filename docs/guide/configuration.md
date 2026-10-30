@@ -71,7 +71,7 @@ The 76 settings are grouped by feature — one small table per area (Setting/Typ
 | --- | --- | --- | --- |
 | `kbengine.enableDiagnostics` | boolean | `true` | Master switch for `.def` diagnostics (since batch 147 it also gates the duplicate entity registration check in `entities.xml`) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | Switch for structural validation (duplicate properties/methods, child-tag position, missing fields, duplicated field definitions) |
-| `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python-side diagnostics: `self.client`/`self.cell`/`self.base` member use without a null guard (positive `if`, early exit, alias, `hasattr`) is flagged as a Warning with the engine source cited; also flags `.def` section mismatches (calling a method via a receiver whose section does not declare it) |
+| `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python-side diagnostics: `self.client`/`self.cell`/`self.base` member use without a null guard (positive `if`, early exit, alias; `hasattr` does not establish a non-None value) is flagged as a Warning with the engine source cited; also flags `.def` section mismatches (calling a method via a receiver whose section does not declare it) |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | Check unknown type names |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | Check unknown Flags values |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | Check illegal DetailLevel values |

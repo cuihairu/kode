@@ -37,6 +37,50 @@ const mappingWithMethods = (
 }) as unknown as EntityMapping;
 
 describe('receiver 可能为 None 诊断(用户令 2026-10-27 任务1)', () => {
+  it.each(['cell', 'base', 'client'] as const)(
+    'hasattr(self, "%s") 不证明 getter 返回非 None，仍需 Warning',
+    receiver => {
+      const source = py([
+        'class Avatar:',
+        '    def tick(self):',
+        `        if hasattr(self, "${receiver}"):`,
+        `            self.${receiver}.tick()`,
+        ''
+      ]);
+      const items = receiverNoneDiagnosticItems(source, '/avatar.py', undefined, true);
+      expect(items).toHaveLength(1);
+      expect(items[0].code).toBe('kbengine.receiverNone');
+      expect(items[0].severity).toBe('Warning');
+      expect(items[0].range.start.line).toBe(3);
+      expect(receiverNoneDiagnosticItems(source, '/avatar.py', undefined, false)).toEqual([]);
+    }
+  );
+
+  it('另一个 receiver 的 hasattr 不消除本 receiver 的诊断', () => {
+    const source = py([
+      'class Avatar:',
+      '    def tick(self):',
+      '        if hasattr(self, "client"):',
+      '            self.cell.tick()',
+      ''
+    ]);
+    expect(computeReceiverNoneFindings(source, '/avatar.py')).toMatchObject([
+      { receiver: 'cell', kind: 'receiver-none', line: 3 }
+    ]);
+  });
+
+  it('hasattr 内仍可用真正的非 None 守卫，正确代码不报', () => {
+    const source = py([
+      'class Avatar:',
+      '    def tick(self):',
+      '        if hasattr(self, "cell"):',
+      '            if self.cell is not None:',
+      '                self.cell.tick()',
+      ''
+    ]);
+    expect(computeReceiverNoneFindings(source, '/avatar.py')).toEqual([]);
+  });
+
   it('多个调用点共享一次方法区间排序', () => {
     const source = py(['class Avatar:', '    def tick(self):', ...Array(30).fill('        self.cell.tick()')]);
     const sort = vi.spyOn(Array.prototype, 'sort');

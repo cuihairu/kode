@@ -72,9 +72,6 @@ const isPositiveGuardLine = (subject: string, text: string): boolean => {
 const earlyExitGuard = (subject: string): RegExp =>
   new RegExp(`^\\s*if\\s+(?:not\\s+${subject}|${subject}\\s+is\\s+None)\\s*:`);
 
-const hasattrGuard =
-  /^\s*if\s+hasattr\(self,\s*['"](cell|base|client)['"]\s*\)\s*:/;
-
 /** 接收者本地别名:`x = self.<role>`(其后 `if x:` 一族算 guard) */
 const aliasAssignment = /^\s*([A-Za-z_]\w*)\s*=\s*self\.(cell|base|client)\s*(?:#.*)?$/;
 
@@ -119,7 +116,7 @@ function enclosingMethodSpan(classes: readonly ClassMethodSpans[], line: number)
 
 /**
  * use 行之前是否存在接收者判空 guard:
- * a) 正向 if(`if self.cell:`/`if self.cell is not None:`/别名同形/hasattr)
+ * a) 正向 if(`if self.cell:`/`if self.cell is not None:`/别名同形)
  *    且 use 行在其块体内(缩进更深且之间无同级去缩进);
  * b) 早退 if(`if not self.cell:`/`if self.cell is None:`)块体内含 return/raise;
  * c) use 行同行的单行 if guard(`if self.cell: self.cell.x()`)/三元前置判空。
@@ -191,7 +188,9 @@ function scanGuardCandidates(
     }
     let matched = false;
     for (const subject of subjects) {
-      if (isPositiveGuardLine(subject, text) || hasattrGuard.test(text)) {
+      // EntityCall getters exist even when their peer is absent and they return
+      // None. hasattr(self, role) proves attribute existence, never a live peer.
+      if (isPositiveGuardLine(subject, text)) {
         candidates.push({ line: j, indent: indentOf(text), kind: 'positive' });
         matched = true;
         break;
