@@ -57,6 +57,11 @@ export interface DiagnosticSchedulerStats {
   skippedCurrentVersion: number;
   /** 开关关闭期间受理的请求(只记账,不计算) */
   disabledSkipped: number;
+  /** 计算在途时开关关闭(AUD-026):旧异步结果丢弃,不写回 collection */
+  disabledAsyncDropped: number;
+  /** 计算在途时诊断输入代已切换(AUD-026):旧配置结果丢弃,
+   *  不发布也不把新代标成已发布 */
+  staleGenerationDropped: number;
   /** 清理动作次数(开关关闭清空/文档关闭释放) */
   cleared: number;
 }
@@ -129,6 +134,8 @@ export class DiagnosticScheduler {
     releasedDropped: 0,
     skippedCurrentVersion: 0,
     disabledSkipped: 0,
+    disabledAsyncDropped: 0,
+    staleGenerationDropped: 0,
     cleared: 0
   };
 
@@ -392,6 +399,9 @@ export class DiagnosticScheduler {
     // IDE-DIA-008:捕获当代关闭代——计算在途期间文档关闭(或关闭后重开)
     // 都会失配,晚到的 worker 结果发布前丢弃
     const releaseEpoch = this.epochs.get(key) ?? 0;
+    // AUD-026:捕获发起代——计算在途期间诊断输入代切换(配置变更/invalidateAll),
+    // 旧配置结果不得发布,也不得把新代标成已发布
+    const startedGeneration = this.generation;
     if (options.computeAsync) {
       // IDE-DIA-005:异步分片面——大文件计算移出同步入口,完成后复核版本
       // 才发布;null(中止)/版本前进均记过期不发布
@@ -420,6 +430,29 @@ export class DiagnosticScheduler {
           recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
             status: 'ok',
             fileKind: 'def',
+            documentVersion: version,
+            cacheMisses: 1
+          });
+          return;
+        }
+        // AUD-026 发布守卫:计算在途时开关关闭 → 旧异步结果不写回 collection
+        if (!this.enabled) {
+          this.stats.disabledAsyncDropped += 1;
+          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+            status: 'ok',
+            fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
+            documentVersion: version,
+            cacheMisses: 1
+          });
+          return;
+        }
+        // AUD-026 发布守卫:计算在途时代已切换 → 旧配置结果丢弃(不发布,
+        // 也不把新代标成已发布,否则重开同版本会被 skippedCurrentVersion 跳过)
+        if (this.generation !== startedGeneration) {
+          this.stats.staleGenerationDropped += 1;
+          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+            status: 'ok',
+            fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
             documentVersion: version,
             cacheMisses: 1
           });

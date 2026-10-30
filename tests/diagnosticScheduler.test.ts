@@ -500,6 +500,106 @@ describe('IDE-DIA-008 关闭文档撤销待发布诊断:晚到的 worker 结果�
   });
 });
 
+describe('IDE-AUD-026 诊断回包核验开关与发起配置代:旧异步结果门住不写回', () => {
+  it('计算在途时开关关闭:旧异步结果不写回 collection,统计明确', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const document = { uri: { toString: () => 'file:///disabled/a.py' }, version: 1 };
+    const published: number[][] = [];
+    let releaseCompute: (() => void) | null = null;
+    const gate = new Promise<void>(resolve => { releaseCompute = resolve; });
+
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => { await gate; return [7, 7]; },
+      publish: items => published.push([...items])
+    });
+    await scheduler.flushQueued();
+    expect(scheduler.hasPendingComputations()).toBe(true);
+
+    // 开关关闭:清空 collection(旧行为清空后晚到回包仍会写回)
+    scheduler.setEnabled(false, () => { published.length = 0; });
+    releaseCompute!();
+    await scheduler.pendingComputations();
+
+    // 旧异步结果不得写回(关闭后的输出只有清空,没有 old-warning)
+    expect(published).toEqual([]);
+    const stats = scheduler.getStats();
+    expect(stats.published).toBe(0);
+    expect(stats.disabledAsyncDropped).toBe(1);
+  });
+
+  it('切代后先发布新配置结果,旧配置晚到回包不覆写', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const document = { uri: { toString: () => 'file:///gen/a.py' }, version: 1 };
+    const published: string[][] = [];
+    let releaseOld: (() => void) | null = null;
+    const gate = new Promise<void>(resolve => { releaseOld = resolve; });
+
+    // 旧配置(generation N)计算在途
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => { await gate; return ['old-config']; },
+      publish: items => published.push([...items as string[]])
+    });
+    await scheduler.flushQueued();
+    expect(scheduler.hasPendingComputations()).toBe(true);
+
+    // 配置切换(invalidateAll 自增代):新配置请求按新代立即计算发布
+    scheduler.invalidateAll();
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => ['new-config'],
+      publish: items => published.push([...items as string[]])
+    });
+    await scheduler.flushQueued();
+    expect(published).toEqual([['new-config']]);
+
+    // 旧配置晚到回包:不发布(旧行为先 new-config 再被 old-config 覆盖)
+    releaseOld!();
+    await scheduler.pendingComputations();
+    expect(published).toEqual([['new-config']]);
+    const stats = scheduler.getStats();
+    expect(stats.published).toBe(1);
+    expect(stats.staleGenerationDropped).toBe(1);
+  });
+
+  it('切代后旧结果先到:不标成新代已发布,同版本再请求仍重算', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const document = { uri: { toString: () => 'file:///genmark/a.py' }, version: 1 };
+    const published: string[][] = [];
+    let releaseOld: (() => void) | null = null;
+    const gate = new Promise<void>(resolve => { releaseOld = resolve; });
+
+    // 旧配置(generation N)计算在途
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => { await gate; return ['old-config']; },
+      publish: items => published.push([...items as string[]])
+    });
+    await scheduler.flushQueued();
+
+    // 配置切换后旧包先到:丢弃且不得把新代标成已发布
+    scheduler.invalidateAll();
+    releaseOld!();
+    await scheduler.pendingComputations();
+    let stats = scheduler.getStats();
+    expect(stats.published).toBe(0);
+    expect(stats.staleGenerationDropped).toBe(1);
+
+    // 同版本再请求仍重算(旧包没把新代标成已发布 → 不走 skippedCurrentVersion)
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => ['fresh-config'],
+      publish: items => published.push([...items as string[]])
+    });
+    await scheduler.flushQueued();
+    expect(published).toEqual([['fresh-config']]);
+    stats = scheduler.getStats();
+    expect(stats.published).toBe(1);
+    expect(stats.skippedCurrentVersion).toBe(0);
+  });
+});
+
 describe('A6-3 entities.xml 诊断入口同版本失效约束', () => {
   it('同版本重复校验命中分析缓存(零重分析),版本前进旧槽作废重分析', () => {
     const document = makeVersionedEntitiesDocument(DUPLICATE_ENTITIES, '/entities/entities.xml', 1);
