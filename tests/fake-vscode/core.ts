@@ -11,10 +11,21 @@ export class Position {
 }
 
 export class Range {
-  constructor(
-    public readonly start: Position,
-    public readonly end: Position
-  ) {}
+  public readonly start: Position;
+  public readonly end: Position;
+
+  // 真实 API 双构造:(start, end) 与 (startLine, startChar, endLine, endChar)
+  // ——src 多处用四参数字形式(如 generatedSourceLenses/defCallChainProvider),
+  // 替身只认双 Position 会让这些路径在测试里拿到数字当 start(静默错形状)。
+  constructor(startOrLine: Position | number, endOrPosition: Position | number, endLine?: number, endChar?: number) {
+    if (typeof startOrLine === 'number') {
+      this.start = new Position(startOrLine, endOrPosition as number);
+      this.end = new Position(endLine ?? startOrLine, endChar ?? (endOrPosition as number));
+    } else {
+      this.start = startOrLine;
+      this.end = endOrPosition as Position;
+    }
+  }
 }
 
 export class CodeLens {
@@ -67,6 +78,50 @@ export class Uri {
 
   toString(): string {
     return this.fsPath;
+  }
+}
+
+// 真实 vscode.CancellationToken/Source 的最小面(extension 探针
+// probeHover/probe*GatedCancel 用):cancel() 翻转旗标并通知订阅者,
+// dispose 只断订阅不再翻旗。
+export class CancellationToken {
+  isCancellationRequested = false;
+  private listeners: Array<() => void> = [];
+
+  onCancellationRequested(listener: () => void): { dispose(): void } {
+    this.listeners.push(listener);
+    return {
+      dispose: (): void => {
+        this.listeners = this.listeners.filter(candidate => candidate !== listener);
+      }
+    };
+  }
+
+  cancel(): void {
+    if (this.isCancellationRequested) {
+      return;
+    }
+    this.isCancellationRequested = true;
+    for (const listener of [...this.listeners]) {
+      listener();
+    }
+  }
+
+  /** 仅供 Source.dispose 断订阅用(旗标保持,不复活) */
+  removeAllListeners(): void {
+    this.listeners = [];
+  }
+}
+
+export class CancellationTokenSource {
+  readonly token = new CancellationToken();
+
+  cancel(): void {
+    this.token.cancel();
+  }
+
+  dispose(): void {
+    this.token.removeAllListeners();
   }
 }
 
