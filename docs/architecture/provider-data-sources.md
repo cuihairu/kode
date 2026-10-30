@@ -78,7 +78,7 @@
 
 ## 3. 诊断面
 
-无 `registerDiagnosticProvider`;诊断经 DiagnosticScheduler(`getDiagnosticScheduler()` 单例,extension.ts:477;版本令牌 + 分层记账 + 同 URI 新版本胜出):
+无 `registerDiagnosticProvider`;诊断经 DiagnosticScheduler(`getDiagnosticScheduler()` 单例,extension.ts:508;版本令牌 + 分层记账 + 同 URI 新版本胜出):
 
 - 数据源:`validateDocument`(languageProviders.ts:1425)——defParser 一次解析结果共用标量 + 结构校验(`parseDefAst`,:1440),入口为 documentStore 同版本快照;`validateEntitiesXmlDocument`(:1458)——documentStore `entities-analysis` 命名空间缓存(:1471)。
 - 副作用:DiagnosticCollection 发布(诊断面合法出口)。
@@ -91,7 +91,7 @@
 |---|---|---|
 | IndexScheduler | extension.ts:536 | context.subscriptions |
 | EntityMappingManager | extension.ts:554 | context.subscriptions(manager 内 watcher 见 §5) |
-| DiagnosticScheduler | extension.ts:477(getDiagnosticScheduler 单例) | 进程生命周期 |
+| DiagnosticScheduler | extension.ts:508(getDiagnosticScheduler 单例) | 进程生命周期 |
 | PythonClassIndex | extension.ts:767 | context.subscriptions |
 | WorkspaceIndex | extension.ts:936(全仓唯一,源级锁) | context.subscriptions |
 | TypesXmlCodeLensProvider 实例 | extension.ts:973 | context.subscriptions(注册面 + impl 实例,ARC-005) |

@@ -5,6 +5,11 @@ import { monitorEventLoopDelay } from 'perf_hooks';
 import * as vscode from 'vscode';
 
 import { getFileReadTotals, resetFileReadMetrics } from '../../../fileReadMetrics';
+import {
+  clearRecentAnnotationSourceLogs,
+  getRecentAnnotationSourceLogs,
+  setAnnotationSourceLogEnabled
+} from '../../../annotationSourceLog';
 
 // IDE-ACC-001:普通变量冷 hover 验收——真实编辑器(扩展宿主)覆盖
 // 「大文件无注解」场景,分别记录命中与空结果的请求耗时及读盘量。
@@ -47,6 +52,8 @@ interface KodeFieldProbeApi {
 
 const CALLER_REL = 'scripts/common/training/plain_var_caller.py';
 const LARGE_REL = 'scripts/common/training/plain_var_large.py';
+const TTL_CALLER_REL = 'scripts/common/training/ttl_import_caller.py';
+const TTL_PROVIDER_REL = 'scripts/common/training/ttl_provider.py';
 
 function lineOf(source: string, needle: string): number {
   const line = source.split(/\r?\n/).findIndex(text => text.includes(needle));
@@ -315,5 +322,161 @@ describe('IDE-ACC-001:普通变量冷 hover(真实编辑器,大文件无注解�
     fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
     fs.appendFileSync(OUT_FILE, evidence.join('\n') + '\n', 'utf8');
     console.log('[rev035] evidence:\n' + evidence.join('\n'));
+  });
+
+  it('IDE-REV-037:import 未打开文件跨 TTL hover(当前文档桶 vs 磁盘快照分列,来源日志在档)', async function () {
+    this.timeout(60000);
+    const evidence: string[] = [];
+    const callerPath = path.join(WORKSPACE!, TTL_CALLER_REL);
+    const providerPath = path.join(WORKSPACE!, TTL_PROVIDER_REL);
+    assert.ok(fs.existsSync(callerPath), 'ttl_import_caller.py 夹具缺失');
+    assert.ok(fs.existsSync(providerPath), 'ttl_provider.py 夹具缺失');
+    // 标记词边界恰一处且互不串场:provider 标记只在 provider 文件,
+    // caller 本地标记只在 caller 文件(撞名/前缀变体不许过,与 rev035 同口径)
+    const providerSource = fs.readFileSync(providerPath, 'utf8');
+    const callerSource = fs.readFileSync(callerPath, 'utf8');
+    assert.strictEqual(providerSource.match(/\bTTL_PROVIDER_RETURN\b/g)?.length, 1,
+      'provider 标记应恰一处(词边界)');
+    assert.strictEqual(callerSource.match(/\bTTL_LOCAL_RETURN\b/g)?.length, 1,
+      'caller 本地标记应恰一处(词边界)');
+    assert.ok(!callerSource.includes('TTL_PROVIDER_RETURN'),
+      'provider 标记不得出现在 caller(命中不得来自调用方自身内容)');
+
+    // 开注解来源日志(默认关;本例直接置位,验收「日志明确所用来源」)
+    setAnnotationSourceLogEnabled(true);
+    const logHas = (fragment: string): boolean =>
+      getRecentAnnotationSourceLogs().some(line => line.includes(fragment));
+    try {
+      // ── 面 A 当前文档桶:同文件 def 注解,发布排干后命中,来源=hovered-document
+      await probeAt(probe, TTL_CALLER_REL, 'local_value = local_annotated()', 'local_value');
+      let publishWaitMs = 0;
+      while ((probe.pendingWork().annotationUpdates ?? 0) > 0 && publishWaitMs < 10_000) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        publishWaitMs += 250;
+      }
+      clearRecentAnnotationSourceLogs();
+      const localHit = await probeAt(probe, TTL_CALLER_REL, 'local_value = local_annotated()', 'local_value');
+      assert.strictEqual(localHit.returnedHover, true, `同文件注解局部变量应出 hover: ${localHit.preview}`);
+      assert.ok(/\bTTL_LOCAL_RETURN\b/.test(localHit.preview),
+        `当前文档桶命中应含本地标记: ${localHit.preview}`);
+      assert.ok(logHas('hover-resolve') && logHas('source=hovered-document'),
+        `日志应明确当前文档桶来源: ${getRecentAnnotationSourceLogs().slice(-3).join(' | ')}`);
+      evidence.push(
+        `rev037.local.hit.elapsedMs=${localHit.elapsedMs}`,
+        `rev037.local.hit.preview=${localHit.preview.replace(/\n/g, ' ')}`,
+        `rev037.local.hit.source=hovered-document(日志在档)`
+      );
+
+      // ── 面 B 磁盘快照(新鲜):provider 全程未打开,ttl_data 只能由磁盘
+      // 注解快照答话。先有界轮到命中(冷盘/过期首查未命中属 REV-010 同语义,
+      // 受控重建异步发布),落潮后再做一次「零读盘命中」的度量探针。
+      let diskWaitMs = 0;
+      let diskProbe = await probeAt(probe, TTL_CALLER_REL, 'ttl_data = build_ttl_data()', 'ttl_data');
+      while (!/\bTTL_PROVIDER_RETURN\b/.test(diskProbe.preview) && diskWaitMs < 10_000) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        diskWaitMs += 250;
+        diskProbe = await probeAt(probe, TTL_CALLER_REL, 'ttl_data = build_ttl_data()', 'ttl_data');
+      }
+      assert.ok(/\bTTL_PROVIDER_RETURN\b/.test(diskProbe.preview),
+        `磁盘快照应答 import 未打开文件(有界窗内): ${diskProbe.preview}`);
+      // 落潮:注解构建/文档更新全排干后再度量,避免异步重建污染读盘口径
+      let settleMs = 0;
+      while (settleMs < 10_000) {
+        const pending = probe.pendingWork() as unknown as {
+          annotationUpdates?: number;
+          annotationBuilds?: { running?: number; waiting?: number };
+        };
+        if ((pending.annotationUpdates ?? 0) === 0
+          && (pending.annotationBuilds?.running ?? 0) === 0
+          && (pending.annotationBuilds?.waiting ?? 0) === 0) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+        settleMs += 250;
+      }
+      resetFileReadMetrics();
+      clearRecentAnnotationSourceLogs();
+      const diskHit = await probeAt(probe, TTL_CALLER_REL, 'ttl_data = build_ttl_data()', 'ttl_data');
+      const diskHitReads = getFileReadTotals();
+      assert.ok(/\bTTL_PROVIDER_RETURN\b/.test(diskHit.preview),
+        `新鲜快照命中应含 provider 标记: ${diskHit.preview}`);
+      assert.ok(logHas('source=disk-snapshot(import)'),
+        `日志应明确磁盘快照(import)来源: ${getRecentAnnotationSourceLogs().slice(-3).join(' | ')}`);
+      evidence.push(
+        `rev037.disk.fresh.waitMs=${diskWaitMs}`,
+        `rev037.disk.fresh.elapsedMs=${diskHit.elapsedMs}`,
+        `rev037.disk.fresh.preview=${diskHit.preview.replace(/\n/g, ' ')}`,
+        `rev037.disk.fresh.readsAtReturn=${diskHitReads.reads}`,
+        `rev037.disk.fresh.source=disk-snapshot(import)(日志在档)`
+      );
+
+      // ── 面 C 跨 TTL 过期:越过 3s 后查询——不借旧值答话(未命中)、同步
+      // 路径零重扫(读盘近零)、日志明确过期+受控重建排队
+      let expirySettleMs = 0;
+      while (expirySettleMs < 10_000) {
+        const pending = probe.pendingWork() as unknown as {
+          annotationUpdates?: number;
+          annotationBuilds?: { running?: number; waiting?: number };
+        };
+        if ((pending.annotationUpdates ?? 0) === 0
+          && (pending.annotationBuilds?.running ?? 0) === 0
+          && (pending.annotationBuilds?.waiting ?? 0) === 0) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+        expirySettleMs += 250;
+      }
+      // 落潮后睡过 TTL(3s):此刻起最近一次发布必已过期(窗内无查询触发重建)
+      await new Promise(resolve => setTimeout(resolve, 3500));
+      resetFileReadMetrics();
+      clearRecentAnnotationSourceLogs();
+      const expired = await probeAt(probe, TTL_CALLER_REL, 'ttl_data = build_ttl_data()', 'ttl_data');
+      const expiredReads = getFileReadTotals();
+      assert.strictEqual(expired.returnedHover, false,
+        `过期查询不得借旧值答话(应未命中): ${expired.preview}`);
+      assert.ok(!expired.preview.includes('TTL_PROVIDER_RETURN'),
+        `过期查询 preview 不得残留 provider 旧注解: ${expired.preview}`);
+      assert.ok(expired.elapsedMs < 2000, `过期查询不应等同步重扫: ${expired.elapsedMs}ms`);
+      assert.ok(expiredReads.reads <= 5,
+        `过期查询同步路径读盘应近零(实际 ${expiredReads.reads} 次)`);
+      assert.ok(logHas('hover-miss') && logHas('disk-index=expired') && logHas('rebuild=queued'),
+        `日志应明确过期未命中+受控重建排队: ${getRecentAnnotationSourceLogs().slice(-3).join(' | ')}`);
+      evidence.push(
+        `rev037.disk.expired.elapsedMs=${expired.elapsedMs}`,
+        `rev037.disk.expired.returnedHover=${expired.returnedHover}`,
+        `rev037.disk.expired.readsAtReturn=${expiredReads.reads}`,
+        `rev037.disk.expired.log=hover-miss disk-index=expired rebuild=queued(在档)`
+      );
+
+      // ── 面 D 新快照发布后恢复命中:受控重建落潮后,同一查询恢复命中且
+      // 来源仍是磁盘快照
+      let recoverWaitMs = 0;
+      let recovered = await probeAt(probe, TTL_CALLER_REL, 'ttl_data = build_ttl_data()', 'ttl_data');
+      while (!/\bTTL_PROVIDER_RETURN\b/.test(recovered.preview) && recoverWaitMs < 12_000) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        recoverWaitMs += 250;
+        recovered = await probeAt(probe, TTL_CALLER_REL, 'ttl_data = build_ttl_data()', 'ttl_data');
+      }
+      assert.ok(/\bTTL_PROVIDER_RETURN\b/.test(recovered.preview),
+        `新快照发布后应恢复命中(有界窗内): ${recovered.preview}`);
+      assert.ok(logHas('source=disk-snapshot(import)'),
+        `恢复命中的来源行应再次落账: ${getRecentAnnotationSourceLogs().slice(-3).join(' | ')}`);
+      evidence.push(
+        `rev037.disk.recover.waitMs=${recoverWaitMs}`,
+        `rev037.disk.recover.elapsedMs=${recovered.elapsedMs}`,
+        `rev037.disk.recover.preview=${recovered.preview.replace(/\n/g, ' ')}`,
+        `rev037.disk.recover.source=disk-snapshot(import)(日志在档)`
+      );
+
+      evidence.push(
+        'rev037.report.separation=rev037.local.*=hovered-document bucket(same-file def);rev037.disk.*=disk snapshot(import from never-opened provider);acc002 proves buckets survive TTL,rev037.disk.expired proves the snapshot does not',
+        `rev037.pendingWork=${JSON.stringify(probe.pendingWork())}`
+      );
+    } finally {
+      setAnnotationSourceLogEnabled(false);
+    }
+    fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
+    fs.appendFileSync(OUT_FILE, evidence.join('\n') + '\n', 'utf8');
+    console.log('[rev037] evidence:\n' + evidence.join('\n'));
   });
 });

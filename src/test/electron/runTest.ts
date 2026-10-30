@@ -192,6 +192,34 @@ async function main(): Promise<void> {
       'data = get_annotated_data()',
       'plain_local_info = get_unannotated_data()'
     ].join('\n'));
+    // IDE-REV-037 关闭文件注解 TTL 交互夹具:调用方 import 引用「未打开」的
+    // provider 模块(ttl_provider.py 全程不开,其注解只存在于磁盘注解快照);
+    // 两标记 TTL_PROVIDER_RETURN / TTL_LOCAL_RETURN 全工作区各仅一处(套件
+    // 断言词边界恰一处),命中 preview 含标记=答话来源的结构性证明——
+    // local_value 来自当前文档桶,ttl_data 只能来自磁盘快照,过期后必失。
+    fs.writeFileSync(
+      path.join(workspacePath, 'scripts/common/training/ttl_provider.py'),
+      [
+        '# IDE-REV-037 fixture: provider module, never opened by the test.',
+        'def build_ttl_data() -> TTL_PROVIDER_RETURN:',
+        '    return None'
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(workspacePath, 'scripts/common/training/ttl_import_caller.py'),
+      [
+        '# IDE-REV-037 fixture: caller imports an unopened module (disk snapshot path).',
+        'from training.ttl_provider import build_ttl_data',
+        '',
+        '',
+        'def local_annotated() -> TTL_LOCAL_RETURN:',
+        '    return None',
+        '',
+        '',
+        'local_value = local_annotated()',
+        'ttl_data = build_ttl_data()'
+      ].join('\n')
+    );
     // IDE-ACC-003 首次事件 CodeLens 夹具:调用方 __init__ 里 addEvent(回调 def
     // 处应出「事件回调」镜)+ ping 里 emitEvent(应出监听数镜);监听方文件两
     // 个类各 addEvent 同名事件——全仓共 3 处注册,emitEvent 处的监听数镜应恰为

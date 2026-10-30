@@ -23,6 +23,12 @@ import {
   updateDocumentReturnAnnotations
 } from '../src/pythonReturnTypeInference';
 import {
+  clearRecentAnnotationSourceLogs,
+  getRecentAnnotationSourceLogs,
+  setAnnotationSourceLogEnabled,
+  setAnnotationSourceLogSink
+} from '../src/annotationSourceLog';
+import {
   formatEntityBuiltinPropertyHeadline,
   getEntityBuiltinPropertiesForFace
 } from '../src/entityBuiltinProperties';
@@ -921,5 +927,72 @@ describe('2026-10-28 审核整改:import 子模块别名绑定不回退全局', 
     await resolveLocalVariableReturnType(['x = load_all()'], 0, 'x', root);
     const lines = ['import pkg.good as g', 'x = g.load_all()'];
     expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'x', root)).toBeNull();
+  });
+});
+
+// IDE-REV-037:注解来源日志——hover 推导答话/未命中在 [kode-annot] 行里明确
+// 所用来源。本组锁三面:①import 引用未打开文件(答话只能来自磁盘快照)命中
+// 时日志带 source=disk-snapshot(import);②跨 TTL 过期未命中时日志明确
+// disk-index=expired + rebuild=queued(不借旧值,受控重建异步排队);③重建
+// 发布后恢复命中且来源行再次落账。交互全链路(真实编辑器 hover)在真机
+// field 套件 rev037 例,本组为纯逻辑面。
+describe('IDE-REV-037:注解来源日志', () => {
+  afterEach(() => {
+    setAnnotationSourceLogEnabled(false);
+    setAnnotationSourceLogSink(undefined);
+    clearRecentAnnotationSourceLogs();
+  });
+
+  it('import 未打开文件命中→source=disk-snapshot(import);过期未命中→expired+rebuild=queued;重建后恢复命中', async () => {
+    const { root, put } = setupWorkspace();
+    put('provider.py', 'def build_ttl_data() -> TTL_PROVIDER_RETURN:\n    pass\n');
+    const lines = ['from provider import build_ttl_data', 'ttl_data = build_ttl_data()'];
+    // 预热:建盘索引并发布
+    await resolveLocalVariableReturnType(lines, 1, 'ttl_data', root);
+
+    setAnnotationSourceLogEnabled(true);
+    clearRecentAnnotationSourceLogs();
+    // ①新鲜:import 绑定 → 磁盘快照答话,日志明确来源与模块
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'ttl_data', root))
+      .toMatchObject({ annotation: 'TTL_PROVIDER_RETURN' });
+    expect(getRecentAnnotationSourceLogs().some(line =>
+      line.includes('hover-resolve') && line.includes('source=disk-snapshot(import)') && line.includes('module=provider')
+    )).toBe(true);
+
+    // ②跨 TTL 过期:不借旧值答话(返回 null),日志明确过期+受控重建排队
+    const advanced = Date.now() + 4000; // 越过 INDEX_TTL_MS(3s)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(advanced);
+    try {
+      expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'ttl_data', root)).toBeNull();
+      expect(getRecentAnnotationSourceLogs().some(line =>
+        line.includes('hover-miss') && line.includes('disk-index=expired') && line.includes('rebuild=queued')
+      )).toBe(true);
+      // ③受控重建发布(mock 时钟下建成,builtAtMs=推进时刻;恢复真实时钟后
+      // 距建成仍是「未到期」,后续命中按新鲜快照答话)
+      await resolveLocalVariableReturnType(lines, 1, 'ttl_data', root);
+    } finally {
+      nowSpy.mockRestore();
+    }
+    clearRecentAnnotationSourceLogs();
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'ttl_data', root))
+      .toMatchObject({ annotation: 'TTL_PROVIDER_RETURN' });
+    expect(getRecentAnnotationSourceLogs().some(line =>
+      line.includes('hover-resolve') && line.includes('source=disk-snapshot(import)')
+    )).toBe(true);
+  });
+
+  it('sink 与环形缓冲收同一行:真实接线面(面板落盘由 extension 注入)', async () => {
+    const { root, put } = setupWorkspace();
+    put('provider2.py', 'def build2() -> SINK_VAL:\n    pass\n');
+    const lines = ['from provider2 import build2', 'd = build2()'];
+    await resolveLocalVariableReturnType(lines, 1, 'd', root);
+    setAnnotationSourceLogEnabled(true);
+    clearRecentAnnotationSourceLogs();
+    const sinkLines: string[] = [];
+    setAnnotationSourceLogSink(line => sinkLines.push(line));
+    expect(resolveLocalVariableReturnTypeFromSnapshot(lines, 1, 'd', root))
+      .toMatchObject({ annotation: 'SINK_VAL' });
+    expect(sinkLines.length).toBeGreaterThanOrEqual(1);
+    expect(sinkLines[0]).toBe(getRecentAnnotationSourceLogs().at(-1));
   });
 });

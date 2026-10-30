@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { recordLanguageServiceOperation } from './languageServiceMetrics';
+import { annotationSourceLog } from './annotationSourceLog';
 
 /**
  * 局部变量返回类型推导(用户令 2026-10-21:「data = activity_data.get_data()
@@ -918,14 +919,16 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
   // 旧注解(原检查放在级联命中返回之后,过期旧值可无限命中)。
   const diskIndexFresh = cached !== undefined && Date.now() - cached.builtAtMs < INDEX_TTL_MS;
   // 三段级联(单名):悬停文档桶 → 其余打开文档桶 → 磁盘已发布索引(仅新鲜;遮蔽名不借)
-  const cascadeAnnotation = (methodName: string): string | null => {
+  // IDE-REV-037:级联各层答话时把所用来源落日志(验收「日志明确所用来源」)
+  const cascadeAnnotation = (methodName: string): { annotation: string; source: string } | null => {
     const fromHovered = hoveredBucket?.annotations.get(methodName);
-    if (fromHovered && fromHovered !== 'Any') { return fromHovered; }
+    if (fromHovered && fromHovered !== 'Any') { return { annotation: fromHovered, source: 'hovered-document' }; }
     const fromOthers = otherAnnotations.get(methodName);
-    if (fromOthers && fromOthers !== 'Any') { return fromOthers; }
+    if (fromOthers && fromOthers !== 'Any') { return { annotation: fromOthers, source: 'other-document' }; }
     if (shadowedNames.has(methodName)) { return null; }
     const fromDisk = diskIndexFresh ? cached!.index.get(methodName) : undefined;
-    return fromDisk && fromDisk !== 'Any' ? fromDisk : null;
+    if (fromDisk && fromDisk !== 'Any') { return { annotation: fromDisk, source: 'disk-snapshot' }; }
+    return null;
   };
   // IDE-HOV-017:显式 import 绑定的候选只解析到对应模块的文件桶;
   // 绑定模块无注解、模块文件找不到或多处同名(无法确定)都不回退全局。
@@ -938,14 +941,27 @@ function resolveLocalVariableReturnTypeFromSnapshotImpl(
       const bucket = diskIndexFresh ? locateModuleBucket(cached!.fileBuckets, module) : null;
       const annotation = bucket?.get(assignment.methodName);
       if (annotation && annotation !== 'Any') {
+        annotationSourceLog('info', () =>
+          `hover-resolve word=${word} method=${assignment.methodName} source=disk-snapshot(import) module=${module}`
+        );
         return { target: word, annotation, methodName: assignment.methodName };
       }
       continue;
     }
-    const annotation = cascadeAnnotation(assignment.methodName);
-    if (annotation) { return { target: word, annotation, methodName: assignment.methodName }; }
+    const resolved = cascadeAnnotation(assignment.methodName);
+    if (resolved) {
+      annotationSourceLog('info', () =>
+        `hover-resolve word=${word} method=${assignment.methodName} source=${resolved.source}`
+      );
+      return { target: word, annotation: resolved.annotation, methodName: assignment.methodName };
+    }
   }
   if (!cached || Date.now() - cached.builtAtMs >= INDEX_TTL_MS) {
+    // IDE-REV-037:过期/冷盘未命中在日志里明确——不借旧值答话,受控重建
+    // 异步排队,新快照发布后恢复命中。
+    annotationSourceLog('info', () =>
+      `hover-miss word=${word} disk-index=${cached ? 'expired' : 'cold'} rebuild=queued`
+    );
     void getReturnAnnotationIndex(workspaceRoot).catch(() => {});
   }
   return null;

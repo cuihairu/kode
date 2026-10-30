@@ -15,6 +15,10 @@ import {
 } from './pythonLanguageServiceStatus';
 import { setJumpLogEnabled } from './navigationLog';
 import {
+  setAnnotationSourceLogEnabled,
+  setAnnotationSourceLogSink
+} from './annotationSourceLog';
+import {
   RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT,
   receiverNoneDiagnosticItemsAsync,
   type ReceiverDiagnosticItem
@@ -360,6 +364,9 @@ import { TelnetTreeProvider } from './telnetTree';
  * KBEngine VSCode 扩展主入口
  */
 
+// IDE-REV-037:注解来源日志的输出通道(懒建,首条日志到达才创建)
+let annotationSourceChannel: vscode.OutputChannel | undefined;
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
   const engineApiEnabled = vscode.workspace.getConfiguration('kbengine')
@@ -385,6 +392,14 @@ export function activate(context: vscode.ExtensionContext) {
   );
   // 跳转决策路径日志开关(默认关闭;Settings 搜 kbengine.jumpLog 随时切换)
   setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
+  // 注解来源日志开关(IDE-REV-037,默认关闭;Settings 搜 kbengine.annotationLog
+  // 随时切换)——hover 推导答话把所用来源(文档桶/磁盘快照)落 KBEngine
+  // Annotations 通道,sink 在此接线(日志模块本身不 import vscode)。
+  setAnnotationSourceLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('annotationLog', false));
+  setAnnotationSourceLogSink(line => {
+    annotationSourceChannel ??= vscode.window.createOutputChannel('KBEngine Annotations');
+    annotationSourceChannel.appendLine(line);
+  });
   // 层2 python-mro(mixin 函数导航)开关(默认开;Settings 搜 kbengine.python.enableMroJump 随时切换)
   setPythonMroJumpEnabled(vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableMroJump', true));
   // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
@@ -1319,6 +1334,11 @@ export function activate(context: vscode.ExtensionContext) {
     // 跳转日志开关变更即时生效(不重载窗口)
     if (event.affectsConfiguration('kbengine.jumpLog')) {
       setJumpLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('jumpLog', false));
+    }
+
+    // 注解来源日志开关变更即时生效(IDE-REV-037,不重载窗口)
+    if (event.affectsConfiguration('kbengine.annotationLog')) {
+      setAnnotationSourceLogEnabled(vscode.workspace.getConfiguration('kbengine').get<boolean>('annotationLog', false));
     }
 
     // 层2 python-mro(mixin 函数导航)开关变更即时生效(不重载窗口)
