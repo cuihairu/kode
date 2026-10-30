@@ -668,6 +668,57 @@ describe('pythonClassIndex 覆盖补齐', () => {
     stubWorkspace.workspaceFolders = [];
     expect(displayPath('/elsewhere/a.py')).toBe('/elsewhere/a.py');
   });
+
+  it('ensureDiscovered 同代缓存命中:发现后分块入队即败,重扫复用已发现列表(972)', async () => {
+    const paths = makeRoot({ 'a.py': 'class A:\n    pass\n' });
+    pointWorkspaceAt(rootDirOf(paths['a.py']));
+    stubFindFiles(pattern => (String(pattern).includes('*.py') ? [paths['a.py']] : []));
+    // 发现任务(initial-scan)放行,分块解析任务(full-reindex)同步抛:
+    // 第一次扫描在发现成功后于入队处失败 → 完成代不记账,scanPromise 清空。
+    class ThrowChunkScheduler extends IndexScheduler {
+      override enqueue(spec: IndexTaskSpec): IndexTaskHandle {
+        if (spec.kind === 'full-reindex') { throw new Error('chunk enqueue boom'); }
+        return super.enqueue(spec);
+      }
+    }
+    const index = new PythonClassIndex(new ThrowChunkScheduler());
+    const internals = asInternals(index);
+    // 第一次:发现成功(discoveredFiles 落号),扫描失败(重抛被 ensureScanned 吞掉)
+    await index.waitForInitialScan();
+    expect(internals.discoveredFiles).not.toBeNull();
+    // 第二次:同代重扫 → ensureDiscovered 命中已发现列表缓存(972)
+    await index.waitForInitialScan();
+    expect((internals.discoveredFiles ?? []).map(uri => uri.fsPath)).toContain(paths['a.py']);
+  });
+
+  it('loadFileOnDemand 在途合并:同文件并发请求复用同一 pending(995)', async () => {
+    const paths = makeRoot({ 'x.py': 'class X:\n    pass\n' });
+    pointWorkspaceAt(rootDirOf(paths['x.py']));
+    const index = new PythonClassIndex();
+    const internals = asInternals(index);
+    // 同步连发两次(无 await 间隔):第一次入队即挂 staged,第二次命中 pending 合并
+    const first = index.findEnclosingClass(paths['x.py'], 0);
+    const second = index.findEnclosingClass(paths['x.py'], 0);
+    expect(internals.stagedRequests.has(paths['x.py'])).toBe(true);
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1?.name).toBe('X');
+    expect(r2?.name).toBe('X');
+  });
+
+  it('stageClassNameFiles 发现拒绝:按落空降级,不升级不抛(1073)', async () => {
+    const paths = makeRoot({ 'q.py': 'class Q:\n    pass\n' });
+    pointWorkspaceAt(rootDirOf(paths['q.py']));
+    // 类名同名 glob(**/Ghost.py)拒绝;全量 py 发现照常返回
+    stubFindFiles(pattern => {
+      const glob = String(pattern).replace(/\*\*\//, '');
+      if (glob === 'Ghost.py') { throw new Error('discovery boom'); }
+      return glob.includes('*.py') ? [paths['q.py']] : [];
+    });
+    const index = new PythonClassIndex();
+    // Ghost 不在查询文件 q.py 中 → 定点补载同类名 glob → 拒绝 → 按落空返回 null
+    const resolved = await index.resolveClassBase(fullDoc(paths['q.py'], 'class Q:\n    pass\n', 1), 'Ghost');
+    expect(resolved).toBeNull();
+  });
 });
 
 // ---- quickActions ----
