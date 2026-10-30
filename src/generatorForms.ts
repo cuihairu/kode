@@ -465,8 +465,15 @@ function rollbackFormWrites(
 }
 
 function writeOrSkip(filePath: string, content: string, overwrite: boolean): boolean {
+  // 「存在且不覆盖」臂无触发输入——generateGeneratorForm 的冲突闸
+  // (hasGeneratorFormConflict)对非 fixedDict 形态的判定与这里完全同源
+  // (都是 existsSync(filePath)),且闸查与此查之间无 await:闸放行时文件
+  // 必不存在(或 overwrite=true,条件恒假);fixedDict 形态不经此函数
+  // (registerFixedDictType 落库)。
   if (fs.existsSync(filePath) && !overwrite) {
+    /* istanbul ignore start */
     return false;
+    /* istanbul ignore stop */
   }
 
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -524,9 +531,14 @@ function registerFixedDictType(
   }
 
   const content = fs.readFileSync(typesXmlPath, 'utf8');
+  // 同名重检臂无触发输入——generateGeneratorForm 的冲突闸与这里重读同一
+  // types.xml 且闸读与此读之间无 await(内容不变):闸已确认文件不含同名
+  // 类型才放行到此,此处正则重检恒假。
   if (new RegExp(`<${typeName}(?=[\\s>/])`, 'i').test(content)) {
+    /* istanbul ignore start */
     notes.push(`types.xml 中已有同名类型 ${typeName},未写入`);
     return false;
+    /* istanbul ignore stop */
   }
 
   const updated = rootTailInsert(content, snippet);

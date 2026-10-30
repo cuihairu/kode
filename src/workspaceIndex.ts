@@ -186,8 +186,13 @@ export class WorkspaceIndex implements EventCallIndex {
           return this.cache.get(uri.fsPath) ?? null;
         }
         const eventCalls = findEventCalls(text);
+        // 二次守卫无触发输入——与上一守卫(185)同处一个同步段:两查之间只有
+        // 同步的 findEventCalls(纯正则扫描,无让出点),状态不可能在两查之间
+        // 变化;上一守卫已放行,此查同样放行。
         if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
+          /* istanbul ignore start */
           return this.cache.get(uri.fsPath) ?? null;
+          /* istanbul ignore stop */
         }
         const indexed: IndexedFile = { version: 0, methods, eventCalls, eventLines: eventCalls.map(c => lineAt(c.eventOffset)) };
         this.cache.set(uri.fsPath, indexed);

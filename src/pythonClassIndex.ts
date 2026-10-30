@@ -651,7 +651,12 @@ export class PythonClassIndex {
         await this.rootsPromise;
         joinWait.end('ok');
       } catch {
+        // 并入臂的拒绝分无触发输入——rootsPromise 的构建 IIFE 自带全量
+        // catch(派生失败只清缓存不外抛):IIFE 恒 resolve,await 不会落到
+        // 拒绝分。
+        /* istanbul ignore start */
         joinWait.end('error');
+        /* istanbul ignore stop */
       }
       return this.rootsPromise;
     }

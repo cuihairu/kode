@@ -633,6 +633,25 @@ describe('databaseSchema 守卫分支', () => {
     } as DatabaseSchemaSnapshot)).toBe(true);
   });
 
+  it('别名摘要记录元素属性:属性值变 → 摘要漂移(274 属性面)', () => {
+    // 摘要按「元素名+排序属性+子树」计算:别名元素自身带属性时属性进摘要。
+    // 两株仅属性值不同 → 摘要不同(注册表失效比对才不会被属性变动漏判)。
+    const mk = (note: string): string =>
+      '<root>\n' +
+      `  <FD note="${note}">\n` +
+      '    FIXED_DICT\n' +
+      '    <Properties>\n      <f>\n        <Type> UINT8 </Type>\n      </f>\n    </Properties>\n' +
+      '    <implementedBy> mod.inst </implementedBy>\n' +
+      '  </FD>\n' +
+      '</root>\n';
+    const a = parseTypeAliasesFromContent(mk('x'), '/ws/scripts/entity_defs/types.xml');
+    const b = parseTypeAliasesFromContent(mk('y'), '/ws/scripts/entity_defs/types.xml');
+    const digestA = aliasDigestInMap('FD', a);
+    expect(digestA).toMatch(/^d:/);
+    expect(digestA, '属性应进摘要').toContain('note=x');
+    expect(digestA, '属性值变 → 摘要漂移').not.toBe(aliasDigestInMap('FD', b));
+  });
+
   it('无在飞冷构建时取消返回 false', () => {
     expect(cancelTypeStorageUsageColdBuild('/no/such/root')).toBe(false);
   });

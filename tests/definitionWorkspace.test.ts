@@ -20,6 +20,7 @@ import {
   getRegisteredEntities,
   resolveEntityFixedDictMember
 } from '../src/definitionWorkspace';
+import { makeTextDocument, workspace } from './helpers/vscodeStub';
 
 // definitionWorkspace 的纯路径/解析逻辑:临时 workspace 真实文件树,
 // 不触 vscode 运行时(vscodeStub 的 getConfiguration 回落默认配置值)。
@@ -496,5 +497,22 @@ describe('resolveEntityFixedDictMember(workspaceRoot 守卫)', () => {
   it('空工作区根:固定字典成员解析不猜,直接返回 null', () => {
     expect(resolveEntityFixedDictMember('', 'Avatar', 'name', false)).toBeNull();
     expect(resolveEntityFixedDictMember('', 'Avatar', 'name', true)).toBeNull();
+  });
+
+  it('打开文档版本前进 → 快照判过期重建(423)', () => {
+    // 首次解析无打开文档 → 快照记 sourceVersions 空;随后 types.xml 以打开
+    // 文档身份(版本 7)出现在缓冲区 → collectOpenDocumentVersions 与快照
+    // 记录不一致 → registrySnapshotStale → 置空重建,成员注解口径不变。
+    const typesXmlPath = p('scripts', 'entity_defs', 'types.xml');
+    try {
+      expect(resolveEntityFixedDictMember(root, 'ITEM_POS', 'x', false)).toBe('int');
+      workspace.textDocuments = [makeTextDocument(
+        fs.readFileSync(typesXmlPath, 'utf8'),
+        { fileName: typesXmlPath, languageId: 'xml', version: 7 }
+      )];
+      expect(resolveEntityFixedDictMember(root, 'ITEM_POS', 'x', false)).toBe('int');
+    } finally {
+      workspace.textDocuments = [];
+    }
   });
 });

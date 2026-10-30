@@ -154,6 +154,19 @@ describe('resolveEntityAnnotationType(统一解析链,单表收口)', () => {
     }
   });
 
+  it('malformed alias.xml(解析无根)→ 别名让位空表,types.xml 链不受影响(514)', () => {
+    const ws = makeTypeRoot('<root>\n  <TIMESTAMP> UINT64 </TIMESTAMP>\n</root>');
+    fs.writeFileSync(
+      path.join(ws, 'scripts', 'entity_defs', 'alias.xml'),
+      'not-an-xml-document',
+      'utf8'
+    );
+    // alias.xml 读得出但无根:getAliasXmlCustomTypeInfos 返回空,不抛、不
+    // 拖垮 types.xml 链(TIMESTAMP 仍按 types.xml 解到 int)。
+    expect(resolveEntityAnnotationType(ws, 'TIMESTAMP')).toBe('int');
+    expect(resolveEntityAnnotationType(ws, 'UINT8')).toBe('int');
+  });
+
   it('空工作区语境只剩内建直查', () => {
     expect(resolveEntityAnnotationType('', 'UINT8')).toBe('int');
     expect(resolveEntityAnnotationType('', 'FOO')).toBe('Any');
