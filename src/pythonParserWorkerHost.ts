@@ -10,6 +10,15 @@ export const PYTHON_WORKER_PARSE_THRESHOLD = 256 * 1024;
  *  已在途任务与同文件合并(每文件只留最新一份)不受影响。 */
 export const MAX_QUEUED_PARSE_BYTES = 8 * 1024 * 1024;
 
+/** IDE-AUD-022:在途(已派发未回包)任务数硬上限。worker 挂起不回包时
+ *  posted 不再无限增长;超限的首份任务转为待派发排队(受字节预算约束),
+ *  回包后按全局让路面继续派发最新版本。 */
+export const MAX_POSTED_PARSE_JOBS = 16;
+
+/** IDE-AUD-022:在途源码串字节硬上限(已派发即 host 释放,此处计 worker
+ *  持有/传输中的源码量,与 MAX_QUEUED_PARSE_BYTES 同口径)。 */
+export const MAX_POSTED_PARSE_BYTES = 8 * 1024 * 1024;
+
 interface ParseReply {
   id: number;
   revision: number;
@@ -29,6 +38,8 @@ interface HostedJob {
   id: number;
   filePath: string;
   content: string;
+  /** 原始源码长度(AUD-022):派发后 host 释放 content,在途字节据此冲销。 */
+  contentLength: number;
   revision: number;
   waiters: PendingParse[];
 }
@@ -51,6 +62,8 @@ let queuedBytes = 0;
 let peakQueuedBytes = 0;
 /** IDE-REV-030:因超预算被拒的请求累计数(恢复后保留,供现场报告辨认积压史) */
 let budgetRejects = 0;
+/** IDE-AUD-022:在途(已派发未回包)源码串字节总量(派发时计,回包/失败冲销) */
+let postedBytes = 0;
 
 function failPending(error: Error): void {
   for (const job of posted.values()) {
@@ -65,6 +78,7 @@ function failPending(error: Error): void {
   posted.clear();
   fileQueues.clear();
   queuedBytes = 0;
+  postedBytes = 0;
 }
 
 /** IDE-REV-030:解析 worker 队列与字节占用的实测面。现场报告读这里,
@@ -84,6 +98,12 @@ export interface PythonParserWorkerGauge {
   peakQueuedBytes: number;
   /** 因超预算被拒的请求累计数 */
   budgetRejects: number;
+  /** 在途(已派发未回包)源码串字节总量(AUD-022) */
+  postedBytes: number;
+  /** 在途任务数硬上限(即 MAX_POSTED_PARSE_JOBS) */
+  maxPostedJobs: number;
+  /** 在途源码串字节硬上限(即 MAX_POSTED_PARSE_BYTES) */
+  maxPostedBytes: number;
 }
 
 export function getPythonParserWorkerGauge(): PythonParserWorkerGauge {
@@ -97,7 +117,10 @@ export function getPythonParserWorkerGauge(): PythonParserWorkerGauge {
     queuedBytes,
     maxQueuedBytes: MAX_QUEUED_PARSE_BYTES,
     peakQueuedBytes,
-    budgetRejects
+    budgetRejects,
+    postedBytes,
+    maxPostedJobs: MAX_POSTED_PARSE_JOBS,
+    maxPostedBytes: MAX_POSTED_PARSE_BYTES
   };
 }
 
@@ -107,18 +130,30 @@ export function resetPythonParserWorkerGaugeCountersForTests(): void {
   budgetRejects = 0;
 }
 
-/** 派发队列下一项:在途空且有待派发最新时接链 */
-function drainQueue(queue: FileQueue): void {
-  if (queue.inFlight || !queue.pendingLatest) { return; }
-  const next = queue.pendingLatest;
-  queue.pendingLatest = null;
-  queuedBytes -= next.content.length;
-  dispatchJob(queue, next);
+/** AUD-022:在途(已派发)任务是否还可接新任务——数量与字节双硬上限,
+ *  任一超限即不再直接 post,改走待派发排队。 */
+function canPostNow(contentLength: number): boolean {
+  return posted.size < MAX_POSTED_PARSE_JOBS && postedBytes + contentLength <= MAX_POSTED_PARSE_BYTES;
+}
+
+/** AUD-022:全局让路面。某任务回包/失败释放在途容量后,按文件登记序
+ *  派发各文件待派发最新,直至在途硬上限——恢复后最新版本可继续,
+ *  不因首份任务积压而丢更新。 */
+function drainAllQueues(): void {
+  for (const queue of fileQueues.values()) {
+    if (queue.inFlight !== null || !queue.pendingLatest) { continue; }
+    if (!canPostNow(queue.pendingLatest.content.length)) { continue; }
+    const next = queue.pendingLatest;
+    queue.pendingLatest = null;
+    queuedBytes -= next.content.length;
+    dispatchJob(queue, next);
+  }
 }
 
 function dispatchJob(queue: FileQueue, job: HostedJob): void {
   queue.inFlight = job;
   posted.set(job.id, job);
+  postedBytes += job.contentLength;
   try {
     ensureWorker().postMessage({ id: job.id, content: job.content, filePath: job.filePath, revision: job.revision });
     // IDE-RES-002:已派发即释放 host 侧源码串副本(worker 已持自有拷贝,
@@ -126,10 +161,11 @@ function dispatchJob(queue: FileQueue, job: HostedJob): void {
     job.content = '';
   } catch (error) {
     posted.delete(job.id);
+    postedBytes -= job.contentLength;
     queue.inFlight = null;
     const failure = error instanceof Error ? error : new Error(String(error));
     for (const waiter of job.waiters) { waiter.reject(failure); }
-    drainQueue(queue);
+    drainAllQueues();
   }
 }
 
@@ -141,6 +177,7 @@ function ensureWorker(): Worker {
     const job = posted.get(reply.id);
     if (!job) { return; }
     posted.delete(reply.id);
+    postedBytes -= job.contentLength;
     const queue = fileQueues.get(job.filePath);
     if (queue && queue.inFlight === job) { queue.inFlight = null; }
     if (reply.error || !reply.parsed) {
@@ -151,7 +188,7 @@ function ensureWorker(): Worker {
         waiter.resolve({ revision: reply.revision, parsed: reply.parsed });
       }
     }
-    if (queue) { drainQueue(queue); }
+    drainAllQueues();
   });
   const failed = (error: Error): void => {
     if (worker !== created) { return; }
@@ -190,7 +227,7 @@ export async function parsePythonFileResponsive(
     }
     queuedBytes += content.length - freedBytes;
     if (queuedBytes > peakQueuedBytes) { peakQueuedBytes = queuedBytes; }
-    const job: HostedJob = { id: nextId++, filePath, content, revision, waiters: [] };
+    const job: HostedJob = { id: nextId++, filePath, content, contentLength: content.length, revision, waiters: [] };
     const promise = new Promise<{ revision: number; parsed: ParsedPythonFile }>((resolve, reject) => {
       job.waiters.push({ resolve, reject });
     });
@@ -202,11 +239,24 @@ export async function parsePythonFileResponsive(
     queue.pendingLatest = job;
     return promise;
   }
-  const job: HostedJob = { id: nextId++, filePath, content, revision, waiters: [] };
+  const job: HostedJob = { id: nextId++, filePath, content, contentLength: content.length, revision, waiters: [] };
   const promise = new Promise<{ revision: number; parsed: ParsedPythonFile }>((resolve, reject) => {
     job.waiters.push({ resolve, reject });
   });
-  dispatchJob(queue, job);
+  // AUD-022:首份任务也不能绕过在途硬上限——在途满(数量/字节)时转为
+  // 待派发排队(受字节预算约束),回包后全局让路面继续派发
+  if (canPostNow(content.length)) {
+    dispatchJob(queue, job);
+  } else if (queuedBytes + content.length <= MAX_QUEUED_PARSE_BYTES) {
+    queuedBytes += content.length;
+    if (queuedBytes > peakQueuedBytes) { peakQueuedBytes = queuedBytes; }
+    queue.pendingLatest = job;
+  } else {
+    budgetRejects += 1;
+    return Promise.reject(new Error(
+      `Python parse backlog byte budget exceeded (${MAX_QUEUED_PARSE_BYTES} bytes queued)`
+    ));
+  }
   return promise;
 }
 

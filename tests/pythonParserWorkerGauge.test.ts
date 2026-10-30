@@ -116,23 +116,32 @@ describe('解析 worker 队列与字节占用(IDE-REV-030)', () => {
       promises.push(host.parsePythonFileResponsive(bigContent, file, 2));
     }
     const over = host.getPythonParserWorkerGauge();
-    // 31 份待派发留在预算内(31×262145=8126495 ≤ 8MiB),第 32 份起拒绝=9 笔
+    // AUD-022:首份任务也不绕过在途硬上限——16 份直接 post(数量顶格),
+    // 其余首份转待派发排队,受 8MiB 字节预算约束。
+    // 31 份待派发留在预算内(31×262145=8126495 ≤ 8MiB),第 32 份起拒绝;
+    // 文件 32-40 各 2 笔(首份+次份)= 18 笔。
     expect(over.maxQueuedBytes).toBe(8 * 1024 * 1024);
+    expect(over.running).toBe(16);
+    expect(over.running).toBeLessThanOrEqual(over.maxPostedJobs);
+    expect(over.postedBytes).toBe(16 * bigContent.length);
+    expect(over.postedBytes).toBeLessThanOrEqual(over.maxPostedBytes);
     expect(over.queued).toBe(31);
     expect(over.queuedBytes).toBe(31 * bigContent.length);
     expect(over.queuedBytes).toBeLessThanOrEqual(over.maxQueuedBytes);
-    expect(over.budgetRejects).toBe(9);
+    expect(over.budgetRejects).toBe(18);
     expect(over.peakQueuedBytes).toBe(over.queuedBytes);
 
-    // 9 笔拒绝立即结算(可解释错误);在途/待派发部分回包后结算
+    // 18 笔拒绝立即结算(可解释错误);在途/待派发部分回包后结算
     drainPosted(host);
     const settled = await Promise.allSettled(promises);
     const rejected = settled.filter(o => o.status === 'rejected');
-    expect(rejected).toHaveLength(9);
+    expect(rejected).toHaveLength(18);
     const recoveredAll = host.getPythonParserWorkerGauge();
+    expect(recoveredAll.running).toBe(0);
     expect(recoveredAll.queued).toBe(0);
     expect(recoveredAll.queuedBytes).toBe(0);
-    expect(recoveredAll.budgetRejects).toBe(9);
+    expect(recoveredAll.postedBytes).toBe(0);
+    expect(recoveredAll.budgetRejects).toBe(18);
     expect(recoveredAll.peakQueuedBytes).toBe(31 * bigContent.length);
   });
 

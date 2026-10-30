@@ -183,6 +183,79 @@ describe('pythonParserWorkerHost worker 路径(审核发现 :185)', () => {
     expect(worker.posted).toHaveLength(2);
   });
 
+  it('100 个不同文件首份任务不能绕过预算全部 post(R2-F01/AUD-022)', async () => {
+    const host = await loadHost();
+    const outcomes: Array<Promise<string>> = [];
+    for (let i = 0; i < 100; i += 1) {
+      outcomes.push(host.parsePythonFileResponsive(bigContent, `/bypass/f${i}.py`, 1)
+        .then(() => 'ok', () => 'rejected'));
+    }
+    const worker = workerState.instances[0];
+    // 在途受硬上限:旧实现 100 份首份任务全部直接 post(26MiB 输入,预算形同虚设)
+    expect(worker.posted.length).toBeLessThan(100);
+  });
+
+  it('恢复后最新版本可继续:在途回包后排队首份经让路面派发结算(AUD-022)', async () => {
+    const host = await loadHost();
+    const outcomes: Array<Promise<{ ok: boolean; reason?: string }>> = [];
+    for (let i = 0; i < 100; i += 1) {
+      outcomes.push(host.parsePythonFileResponsive(bigContent, `/recover/f${i}.py`, 1)
+        .then(() => ({ ok: true }), (error: Error) => ({ ok: false, reason: String(error.message) })));
+    }
+    // 排干:回包所有已派发,链式派发排队项直至无新派发
+    const worker = workerState.instances[0];
+    let replied = 0;
+    while (replied < worker.posted.length) {
+      const message = worker.posted[replied];
+      replied += 1;
+      worker.emit('message', { id: message.id, revision: message.revision, parsed: parsedStub });
+    }
+    const settled = await Promise.allSettled(outcomes);
+    const ok = settled.filter(o => o.status === 'fulfilled' && o.value.ok).length;
+    const rejected = settled.filter(o => o.status === 'fulfilled' && !o.value.ok);
+    // 排队首份经让路面派发结算:恢复后最新版本可继续(16 直接 post + 31 排队结算)
+    expect(ok).toBeGreaterThan(16);
+    expect(rejected.length).toBeGreaterThan(0);
+    for (const outcome of rejected) {
+      expect(outcome.value.reason).toMatch(/backlog/i); // 预算拒绝可解释
+    }
+    const gauge = host.getPythonParserWorkerGauge();
+    expect(gauge.running).toBe(0);
+    expect(gauge.queued).toBe(0);
+    expect(gauge.queuedBytes).toBe(0);
+    expect(gauge.postedBytes).toBe(0);
+  });
+
+  it('在途满时首份排队并可被新版本合并:共享边界保持,恢复派发最新(AUD-022)', async () => {
+    const host = await loadHost();
+    // 16 个文件占满在途上限;target 首份被迫排队,新版本合并(不逐份派发)
+    const fillers: Array<Promise<string>> = [];
+    for (let i = 0; i < 16; i += 1) {
+      fillers.push(host.parsePythonFileResponsive(bigContent, `/qf/f${i}.py`, 1).then(() => 'ok', () => 'r'));
+    }
+    const v1 = host.parsePythonFileResponsive(bigContent, '/qf/target.py', 1);
+    const v2 = host.parsePythonFileResponsive(bigContent, '/qf/target.py', 2);
+    const worker = workerState.instances[0];
+    // 在途满:target 首份未派发(排队);v2 合并不逐份派发
+    expect(worker.posted).toHaveLength(16);
+    // 让路面:释放一个在途,排队的 v2 派发(只发最新)
+    worker.emit('message', { id: worker.posted[0].id, revision: 1, parsed: parsedStub });
+    expect(worker.posted).toHaveLength(17);
+    expect(worker.posted[16]).toMatchObject({ filePath: '/qf/target.py', revision: 2 });
+    worker.emit('message', { id: worker.posted[16].id, revision: 2, parsed: parsedStub });
+    // 共享边界:被合并的 v1 等待者随 v2 结果结算(独占在途那份照常独立)
+    await expect(v1).resolves.toEqual({ revision: 2, parsed: parsedStub });
+    await expect(v2).resolves.toEqual({ revision: 2, parsed: parsedStub });
+    // 收尾:回包全部在途,不留挂起
+    let replied = 0;
+    while (replied < worker.posted.length) {
+      const message = worker.posted[replied];
+      replied += 1;
+      worker.emit('message', { id: message.id, revision: message.revision, parsed: parsedStub });
+    }
+    await Promise.allSettled(fillers);
+  });
+
   it('合并不跨文件:不同文件的在途任务各自即时派发', async () => {
     const host = await loadHost();
     const a = host.parsePythonFileResponsive(bigContent, '/a.py', 1);
