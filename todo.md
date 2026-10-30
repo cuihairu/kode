@@ -707,7 +707,7 @@
 
 引擎源码核验(2026-10-30):globalData/baseAppData/cellAppData 经 GlobalDataClient → dbmgr GlobalDataServer(std::map<std::string,std::string>) → 各进程,key/value 均 `script::Pickler::pickle`(标准库 pickle)序列化,接收侧 `Pickler::unpickle` 还原同一 Python 对象(globaldata_client.cpp:98-104、entity_app.h:1261-1308、pickler.cpp:25-26)——**一侧设置的类型在另一侧可恢复**,跨进程类型互推成立。拓扑:globalData→全部进程、baseAppData→仅 baseapp、cellAppData→仅 cellapp(globaldata_server.cpp:60-110);写者自身进程不重收。用户定口径:键粒度=字面量按键值/标识符按键名文本;类型精度=能推才显跳过未知;本次做引用互链+go-to-definition+读写点类型提示,键补全留后续增量。
 
-- [x] GLOBDATA-001 字典键索引与引用/跳转互链 (e6f53ac)；验收/证据：扫描器认 `alias.globalData[KEY]=RHS`(写)、`alias.globalData[KEY]`(读)、`alias.globalData.get(KEY[,default])`(读),非 alias/`self.` 前缀排除、`==` 不算赋值、跨行/复杂键跳过、字符串键解引;跨文件索引(仿 WorkspaceIndex,findFilesAcrossRoots+PY_SCAN_EXCLUDE+8并发时间片让出+noteSaved+watcher);引用 provider 落点 KEY 列出全部写+读点;go-to-definition 读点 KEY 跳首个写点、写点跳首个异类同键点。
+- [ ] GLOBDATA-001 字典键索引与引用/跳转互链 (e6f53ac)；验收/证据：扫描器认 `alias.globalData[KEY]=RHS`(写)、`alias.globalData[KEY]`(读)、`alias.globalData.get(KEY[,default])`(读),非 alias/`self.` 前缀排除、`==` 不算赋值、跨行/复杂键跳过、字符串键解引;跨文件索引(仿 WorkspaceIndex,findFilesAcrossRoots+PY_SCAN_EXCLUDE+8并发时间片让出+noteSaved+watcher);引用 provider 落点 KEY 列出全部写+读点;go-to-definition 读点 KEY 跳首个写点、写点跳首个异类同键点。 【2026-10-30 第四轮复审重开：错误词法目标、跨工程串跳、弃改/变更失效与同步编辑阻塞已复现；待 IDE-AUD-065..077 分项补齐并复核，原实现证据保留，见 docs/review/2026-10-30-completion-audit-round4.md。】
 - [ ] GLOBDATA-002 读写点类型互推；验收/证据：写点 `[KEY]=RHS` 出 `: <RHS 类型>`、读点 `.get(KEY)` 出 `: <同键写点值类型 union>`(无写点不出);RHS 字面量(int/float/str/bool/None)、list/dict/tuple 字面量可推,函数调用/运算符/链式不出(能推才显);复用 kbengine.inlayHints.typeData 开关与 resolveEntityAnnotationType 链;hover 读点显示推导类型+写点位置。
 
 ## 2026-10-30 第二轮完成标记复审 · IDE-AUD-022 起
@@ -764,3 +764,21 @@
 - [ ] IDE-AUD-062 [P1] 防止 SDK 辅助成员与业务名字冲突；验收：包含业务 entityId 的输入按明确策略生成可编译 TS 或提前拒绝并说明原因；覆盖固定辅助字段和方法名字，不静默覆盖；依据：R3-F06。
 - [ ] IDE-AUD-063 [P2] 明确 TS SDK 的 64 位整数表示策略；验收：UINT64/INT64 全域无静默精度丢失或提供明确受限模式；9007199254740993 边界验证，文档说明编译目标及编解码边界，不仅替换类型字符串；依据：R3-F07。
 - [ ] IDE-AUD-064 [P1] 隔离每次代码生成的回滚事务；验收：同一实例两次向导重叠时账本互不覆盖；First 打开失败不删除 Second 成功文件；提交后的打开 UI 错误不回滚已完成事务，原多文件写失败回滚用例继续通过；依据：R3-F08。
+
+### IDE-AUD · 第四轮：字典索引生产复核（2026-10-30）
+
+证据：[第四轮审计](docs/review/2026-10-30-completion-audit-round4.md)。基线 7008e15；GLOBDATA-001 重开，GLOBDATA-002 未提交内容不纳入本轮结论。每项独立验收，局部修复不自动关闭整个 GLOBDATA-001。
+
+- [ ] IDE-AUD-065 [P1] 过滤字典键索引中的非代码访问；验收：注释、普通字符串、三引号字符串中的伪写/读点不入索引；真实下标和 get 的字符串键仍识别；真实读点不会跳往注释或字符串内容；依据：R4-F01。
+- [ ] IDE-AUD-066 [P1] 在字典导航冷查前验证源访问的词法上下文；验收：外层字符串与注释中的伪访问不启动全量索引、不返回定义/引用；真实字符串键允许导航，覆盖定义与引用两个产品入口；依据：R4-F01。
+- [ ] IDE-AUD-067 [P2] 按 Python 字符串值归一化字典键；验收：换行转义与字母 n 不合并，十六进制 A 与字面 A 正确关联；明确支持的字面量前缀/转义范围，不支持语法如实跳过而不改写键值；依据：R4-F02。
+- [ ] IDE-AUD-068 [P1] 为字典键倒排与查询加入工程身份；验收：A/B 独立工程同 dict 同键不互跳；同工程 base/cell 的 globalData 可互链，身份贯穿命令、查询和缓存，不仅修改底层键；依据：R4-F03。
+- [ ] IDE-AUD-069 [P1] 关闭弃改 Python 文档时恢复字典键磁盘索引；验收：磁盘 disk、未保存编辑 dirty、丢弃关闭后只剩 disk；关闭已保存文档不丢正确索引，移除文件不复活旧键；依据：R4-F04。
+- [ ] IDE-AUD-070 [P1] 在飞字典索引读盘结束后追赶后到变更；验收：门住旧内容读取、磁盘改 latest 后再触发 watcher change，最终只发布 latest；覆盖多次通知合并、删除和脏文档优先级；依据：R4-F05。
+- [ ] IDE-AUD-071 [P1] 按根变化更新字典索引与 watcher；验收：移除根立即撤回其贡献；添加根与 assetsRoot/profile 切换重建正确覆盖，旧任务不能重新发布旧根，外部根监听有实际证据；依据：R4-F06。
+- [ ] IDE-AUD-072 [P1] 让字典导航等待冷索引时可及时取消；验收：门住发现/读盘后取消，当前 definition/references 调用在放闸前返回；共享初扫可继续服务其他请求，取消不破坏索引；依据：R4-F07。
+- [ ] IDE-AUD-073 [P2] 在发布字典导航前复核启用代际；验收：冷查询等待中关闭 enableDataDictIndex 后不返回旧结果；关闭再开启的代际切换也不放行过期请求；依据：R4-F08。
+- [ ] IDE-AUD-074 [P1] 消除字典索引初扫与监听之间的空窗；验收：初扫期间真实 create/change/delete 事件均被记账或重放；捕获旧字节后删文件不能发布幽灵写点，避免监听与全扫互相覆盖；依据：R4-F09。
+- [ ] IDE-AUD-075 [P1] 在字典导航异步等待后复核源文档版本；验收：cfg 查询等待期间源改成 different 后不返回旧 cfg 位置；定义与引用共同校验 URI/版本/查询代，覆盖编辑和关闭；依据：R4-F10。
+- [ ] IDE-AUD-076 [P1] 将字典索引编辑重扫接入交互调度预算；验收：合并连续编辑、取消旧代并限制单文件扫描和倒排提交的连续阻塞；用实际大文件记录最大执行片和旧结果丢弃，不能只给整个同步循环套 setImmediate；依据：R4-F11。
+- [ ] IDE-AUD-077 [P2] 修正共享 KBE alias helper 的 from-import 绑定；验收：from KBEngine import Entity 只绑定 Entity，不把未绑定 KBEngine 当模块；import KBEngine 和 import KBEngine as k 正常；复核共享导航/补全调用方的回归；依据：R4-F12。

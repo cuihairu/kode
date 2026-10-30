@@ -1,0 +1,37 @@
+Baseline: 7008e1578dd70e23381dc7f67b435fa22ed2963d
+Snapshot: /tmp/kode-audit-round4-mb989p2b
+
+=== Navigation and index lifecycle ===
+{"test":"nonCodeDestinations","definition":{"file":"/tmp/kode-gd-audit-lqc8PH/lexical/bad.py","line":1},"references":[{"file":"bad.py","line":1},{"file":"bad.py","line":2},{"file":"reader.py","line":1}],"rawScan":[{"line":1,"kind":"write"},{"line":2,"kind":"write"}]}
+{"test":"stringSourceTriggersNavigation","targetFile":"/tmp/kode-gd-audit-lqc8PH/lexical/bad.py","targetLine":1}
+{"test":"escapeNormalizationCollision","escapedNewline":"n","literalN":"n","hexA":"x41","plainA":"A"}
+{"test":"crossProjectKeyCollision","source":"/tmp/kode-gd-audit-lqc8PH/project-B/reader.py","target":"/tmp/kode-gd-audit-lqc8PH/project-A/writer.py"}
+{"test":"discardCloseRetainsDirtyText","diskSites":0,"dirtySites":1}
+{"test":"inflightChangeLosesNewestDiskVersion","samePromise":true,"reads":1,"diskSites":1,"latestSites":0}
+{"test":"removedWorkspaceStillQueried","remaining":["/tmp/kode-gd-audit-lqc8PH/project-A/writer.py","/tmp/kode-gd-audit-lqc8PH/project-B/reader.py"]}
+{"test":"cancelledColdDefinitionWaitsForScan","cancelled":true,"settledBeforeReadReleased":false}
+{"test":"disabledWhileWaitingStillPublishes","target":"/tmp/kode-gd-audit-lqc8PH/project-A/writer.py"}
+
+=== Startup, source version, performance and aliases ===
+{"test":"deletedDuringInitialScanStillPublished","watchersDuringInitialRead":0,"fileExists":false,"sites":1}
+{"test":"sourceEditedWhileWaitingUsesOldKey","sourceVersion":2,"currentKey":"different","returnedOldCfgWriter":true}
+{"test":"synchronousEveryEditScan","bytes":3720016,"lines":120000,"elapsedMs":292,"timerRanDuringCall":false,"retainedSites":120000}
+{"test":"fromImportIncorrectlyBindsModule","aliases":["KBEngine"],"indexed":1}
+
+=== Existing focused tests ===
+
+ RUN  v5.0.3 /tmp/kode-audit-round4-mb989p2b
+
+
+ Test Files  3 passed (3)
+      Tests  53 passed (53)
+   Start at  18:43:42
+   Duration  9.01s (tests 59%, transform 35%, import 7%)
+
+  Transform  transforming modules took 3.65s · 35% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns
+
+
+Python ast.literal_eval control: "\n" => newline; "n" => letter n; "\x41" => A; "A" => A.
+Python AST control: from KBEngine import Entity binds Entity, not KBEngine.

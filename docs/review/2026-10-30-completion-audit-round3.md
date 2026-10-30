@@ -53,3 +53,5 @@ node docs/perf/2026-10-30-audit-round3-generator-probe.cjs
 ```
 
 SDK 探针比较输出类型与 JavaScript 数值表示，不模拟传输协议。schema 的工作区和打开文档状态由替身控制，泄漏结论还同时核对源码中缺少关闭清理接线。上一轮见 [第二轮报告](./2026-10-30-completion-audit-round2.md)。
+
+后续：[第四轮审计](./2026-10-30-completion-audit-round4.md) 复核新增字典键索引的词法、根身份、生命周期和编辑性能。
