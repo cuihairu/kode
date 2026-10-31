@@ -111,7 +111,7 @@ describe('engine compatibility check', () => {
       expect(report.checks).toContainEqual(expect.objectContaining({
         name: 'engine-version',
         status: 'ok',
-        detail: expect.stringContaining('Engine 2.5.10; extension host requirement ^2.5.10.')
+        detail: expect.stringContaining('Engine 2.5.10 vs engine support range ^2.5.10.')
       }));
     } finally {
       fs.rmSync(equalRoot, { recursive: true, force: true });
@@ -143,5 +143,52 @@ describe('compatibility command manifest path (R2-F21 / IDE-AUD-046)', () => {
     expect(report.checks.some(check => check.status === 'error')).toBe(false);
     expect(report.checks).toContainEqual(expect.objectContaining({ name: 'bundle', status: 'ok' }));
     expect(report.checks).toContainEqual(expect.objectContaining({ name: 'package-version', status: 'ok' }));
+  });
+});
+
+describe('engine vs host version domain separation (R2-F22 / IDE-AUD-047)', () => {
+  // 引擎版本必须对照「引擎支持矩阵」而非 VS Code 引擎要求;宿主(扩展宿主)
+  // 版本必须对照 VS Code 引擎要求;两个产品版本域绝不混比。
+  // 旧码用 KBEngine 2.5.10 比较 VS Code ^1.84.0,并据此给 engine-version=ok,
+  // 且宿主版本根本没参与 —— 这是把不同产品版本当兼容性证明。
+  const baseTarget = {
+    displayName: 'Kode KBEngine',
+    engines: '^2.5.0',
+    vscodeEngine: '^1.84.0',
+    files: [{ relativePath: 'out/extension.js', exported: true }]
+  };
+
+  it('engine version is checked against the engine support range, not the VS Code range', () => {
+    // 引擎 2.5.10,声明引擎矩阵 ^3.0.0(引擎过旧),VS Code 要求 ^1.84.0。
+    // 旧码:satisfies(2.5.10, ^1.84.0) → 2>1 → 误判 ok。
+    // 新码:satisfies(2.5.10, ^3.0.0) → 2<3 → warning。
+    const report = checkExtensionCompatibility(path.join(root, 'package.json'), engineRoot, {
+      ...baseTarget,
+      engines: '^3.0.0'
+    });
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'engine-version', status: 'warning' }));
+  });
+
+  it('host version participates against the VS Code engine requirement', () => {
+    // 宿主 1.70.0 低于 VS Code 要求 ^1.84.0 → 新码 host-version=warning;
+    // 旧码根本没有宿主参与,故无此检查。
+    const report = checkExtensionCompatibility(path.join(root, 'package.json'), engineRoot, baseTarget, '1.70.0');
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'host-version', status: 'warning' }));
+  });
+
+  it('no declared engine support matrix marks unknown, not ok', () => {
+    // 无引擎支持矩阵(engines 未声明)时,不得把 2.5.10 大于 1.84 当兼容证明。
+    const report = checkExtensionCompatibility(path.join(root, 'package.json'), engineRoot, {
+      displayName: 'Kode KBEngine',
+      vscodeEngine: '^1.84.0',
+      files: [{ relativePath: 'out/extension.js', exported: true }]
+    });
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'engine-version', status: 'warning' }));
+  });
+
+  it('both domains green when engine and host satisfy their own ranges', () => {
+    const report = checkExtensionCompatibility(path.join(root, 'package.json'), engineRoot, baseTarget, '1.90.0');
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'engine-version', status: 'ok' }));
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'host-version', status: 'ok' }));
   });
 });

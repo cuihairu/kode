@@ -3307,9 +3307,10 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(showRuntimeQueryCommand);
 
   const compatibilityChannel = vscode.window.createOutputChannel('KBEngine Compatibility');
+  // R2-F22:engines 是「KBEngine 引擎支持矩阵」槽位,未声明时引擎兼容性标未知,
+  // 不把引擎版本与 VS Code 要求混比。宿主(扩展宿主)版本在命令内传入比对。
   const compatibilityTarget: ExtensionCompatibilityTarget = {
     displayName: 'Kode KBEngine',
-    engines: '^1.84.0',
     vscodeEngine: '^1.84.0',
     files: [{ relativePath: 'out/extension.js', exported: true }]
   };
@@ -3320,7 +3321,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     const engineRoot = findEngineRoot(root, vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '') || undefined);
-    const report = runCompatibilityCheck(context.extensionUri.fsPath, engineRoot, compatibilityTarget);
+    const report = runCompatibilityCheck(context.extensionUri.fsPath, engineRoot, compatibilityTarget, vscode.version);
     compatibilityChannel.clear();
     compatibilityChannel.appendLine(formatEngineCompatibilityReport(report));
     compatibilityChannel.show(true);
