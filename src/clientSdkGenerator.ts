@@ -72,11 +72,11 @@ const TS_BUILTIN_TYPES: Record<string, string> = {
   UINT8: 'number',
   UINT16: 'number',
   UINT32: 'number',
-  UINT64: 'number',
+  UINT64: 'bigint',
   INT8: 'number',
   INT16: 'number',
   INT32: 'number',
-  INT64: 'number',
+  INT64: 'bigint',
   FLOAT: 'number',
   DOUBLE: 'number',
   STRING: 'string',
@@ -517,6 +517,11 @@ function defHeader(
     '// 由 kode 客户端实体 SDK 生成器生成，手动修改会在下次生成时被覆盖',
     `// 目标语言: ${language === 'typescript' ? 'TypeScript' : 'C#'}`,
     `// 生成时间: ${generatedAt}`,
+    // IDE-AUD-063:TS 64 位整数表示与编解码边界——UINT64/INT64 用 bigint 保全域精确,
+    // 消费方工程需 ES2020+;bigint 不进 JSON.stringify,序列化须走 BigInt 感知通道。
+    ...(language === 'typescript'
+      ? ['// 64 位整数: UINT64/INT64 → bigint(全精确域);TS 编译目标需 ES2020+;bigint 不进 JSON.stringify,编解码按 BigInt 感知通道实现']
+      : []),
     ...formatSdkEngineTraceLines(engineTrace ?? makeSdkEngineTrace(null)),
     ''
   ];

@@ -468,3 +468,41 @@ fn no_member_conflict_generates_normally() {
     let files = files.as_array().expect("array result");
     assert!(content_of(files, "Avatar.ts").contains("export class Avatar"));
 }
+
+/// IDE-AUD-063:TS UINT64/INT64 → bigint(全精确域),ARRAY 元素随之,头部带边界说明;
+/// C# 保持 ulong/long(全域精确,无边界说明)。
+#[test]
+fn ts_int64_maps_to_bigint_with_boundary_note() {
+    let def = r#"<root>
+      <Properties>
+        <coins>
+          <Type>UINT64</Type>
+          <Flags>OWN_CLIENT</Flags>
+        </coins>
+        <balance>
+          <Type>INT64</Type>
+          <Flags>BASE_AND_CLIENT</Flags>
+        </balance>
+        <tags>
+          <Type>ARRAY<of>UINT64</of></Type>
+          <Flags>OWN_CLIENT</Flags>
+        </tags>
+      </Properties>
+    </root>"#;
+
+    let files = generate(sdk_params("typescript", def));
+    let files = files.as_array().expect("array result");
+    let ts = content_of(files, "Avatar.ts");
+    assert!(ts.contains("public coins: bigint"));
+    assert!(ts.contains("public balance: bigint"));
+    assert!(ts.contains("public tags: bigint[]"));
+    assert!(!ts.contains("public coins: number"));
+    assert!(ts.contains("64 位整数"));
+
+    let cs_files = generate(sdk_params("csharp", def));
+    let cs_files = cs_files.as_array().expect("array result");
+    let cs = content_of(cs_files, "Avatar.cs");
+    assert!(cs.contains("public ulong Coins { get; set; }"));
+    assert!(cs.contains("public long Balance { get; set; }"));
+    assert!(!cs.contains("64 位整数"));
+}

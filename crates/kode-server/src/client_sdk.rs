@@ -45,11 +45,12 @@ const TS_BUILTIN_TYPES: &[(&str, &str)] = &[
     ("UINT8", "number"),
     ("UINT16", "number"),
     ("UINT32", "number"),
-    ("UINT64", "number"),
+    // IDE-AUD-063:64 位整数用 bigint 保全域精确(number 为 float64,2^53+1 起静默丢精度)。
+    ("UINT64", "bigint"),
     ("INT8", "number"),
     ("INT16", "number"),
     ("INT32", "number"),
-    ("INT64", "number"),
+    ("INT64", "bigint"),
     ("FLOAT", "number"),
     ("DOUBLE", "number"),
     ("STRING", "string"),
@@ -699,6 +700,13 @@ fn def_header(language: &str, generated_at: &str, trace_lines: &[String]) -> Vec
         ),
         format!("// 生成时间: {generated_at}"),
     ];
+    // IDE-AUD-063:TS 64 位整数表示与编解码边界(与 TS defHeader 同口径)。
+    if language == "typescript" {
+        lines.push(
+            "// 64 位整数: UINT64/INT64 → bigint(全精确域);TS 编译目标需 ES2020+;bigint 不进 JSON.stringify,编解码按 BigInt 感知通道实现"
+                .to_string(),
+        );
+    }
     lines.extend(trace_lines.iter().cloned());
     lines.push(String::new());
     lines

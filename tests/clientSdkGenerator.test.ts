@@ -117,6 +117,25 @@ const ENTITY_ID_COLLISION_DEF = `<root>
 </root>
 `;
 
+// IDE-AUD-063:TS SDK 64 位整数表示——UINT64/INT64 与 ARRAY 元素。
+const INT64_DEF = `<root>
+  <Properties>
+    <coins>
+      <Type>UINT64</Type>
+      <Flags>OWN_CLIENT</Flags>
+    </coins>
+    <balance>
+      <Type>INT64</Type>
+      <Flags>BASE_AND_CLIENT</Flags>
+    </balance>
+    <tags>
+      <Type>ARRAY<of>UINT64</of></Type>
+      <Flags>OWN_CLIENT</Flags>
+    </tags>
+  </Properties>
+</root>
+`;
+
 function makeCustomTypeInfo(
   name: string,
   aliasType: string,
@@ -940,6 +959,41 @@ describe('findClientSdkMemberConflicts (IDE-AUD-062)', () => {
     expect(message).toContain('客户端实体 SDK 生成已拒绝：辅助成员与业务成员重名。');
     expect(message).toContain('实体 Hero 的 TypeScript SDK 成员 "entityId"');
     expect(message).toContain('业务属性 entityId');
+  });
+});
+
+describe('IDE-AUD-063 TS SDK 64 位整数表示', () => {
+  const entity = parseClientSdkEntity(INT64_DEF, 'Hero')!;
+
+  it('TS:UINT64/INT64 映射 bigint(全域精确),ARRAY 元素随之', () => {
+    const content = generateClientSdkEntityFile(entity, 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT);
+
+    expect(content).toContain('public coins: bigint');
+    expect(content).toContain('public balance: bigint');
+    expect(content).toContain('public tags: bigint[]');
+    expect(content).not.toContain('public coins: number');
+    expect(content).toContain('64 位整数'); // 头部边界说明
+  });
+
+  it('C#:UINT64/INT64 保持 ulong/long(全域精确)', () => {
+    const content = generateClientSdkEntityFile(entity, 'csharp', makeFixedDictTypeMap('csharp'), GENERATED_AT);
+
+    expect(content).toContain('public ulong Coins { get; set; }');
+    expect(content).toContain('public long Balance { get; set; }');
+  });
+
+  it('类型表:TS UINT64/INT64 为 bigint,非 number', () => {
+    const tsMap = makeFixedDictTypeMap('typescript');
+    expect(tsMap.builtin['UINT64']).toBe('bigint');
+    expect(tsMap.builtin['INT64']).toBe('bigint');
+  });
+
+  it('边界验证:9007199254740993(2^53+1)在 number 静默丢精度,在 bigint 精确', () => {
+    // bigint 全精确:2^53+1 保留原值。
+    expect(BigInt('9007199254740993')).toBe(9007199254740993n);
+    expect(`${BigInt('9007199254740993')}`).toBe('9007199254740993');
+    // number 为 float64,2^53+1 落到 2^53——这正是修复前 UINT64→number 的静默隐患。
+    expect(`${Number('9007199254740993')}`).not.toBe('9007199254740993');
   });
 });
 
