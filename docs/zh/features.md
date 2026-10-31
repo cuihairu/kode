@@ -134,6 +134,7 @@
 - **实体依赖图** —— 继承/引用依赖图，继承边认文本形态 Parent ——（证据：package.json#contributes.commands `kbengine.dependency.show`；todo.md:68；src/entityDependency.ts、src/entityDependencyWebView.ts）
 - **def 架构流程图** —— webview 呈现 client→base/cell 方法调用与属性同步，可导出 Markdown/SVG/PNG ——（证据：package.json#contributes.commands `kbengine.flow.show`；todo.md:60；src/entityFlowGraph.ts、src/entityFlowWebView.ts）
 - **网络包结构生成** —— 模拟消息/包结构并报 aliasID 占号与冲突，机读 JSON + 人读 Markdown 双产出 ——（证据：todo.md:72；src/messageTable.ts、src/kbengineProtocol.ts）
+- **组件语义收归 Rust 核心（IDE-RUST-006）** —— 组件槽不再硬编码三域属性：`$/kode/messageTable/build` 与 `$/kode/sdk/generate` 的入参闭包 `defs` 携带组件 def（从 `<Components>` 槽发现，递归组件 `Parent`/`Interfaces`），Rust 核心按组件模块 base/cell/client 域面派生槽 flags、透出槽 `<Persistent>`、缺 def 报 `component-def-missing`（宽容 issue + 硬编码回落）、SDK 发射客户端可见组件属性（slot 成员 + `ClientSdkComponents` 伴随文件）——（证据：crates/kode-server/src/message_table.rs、crates/kode-server/src/client_sdk.rs、src/messageTable.ts、src/clientSdkGenerator.ts、tests/messageTableRust.test.ts、tests/clientSdkGenerator.test.ts）
 - **发现与定位报告** —— 按需与激活时自动出发现/定位报告，整段可复制 ——（证据：package.json#contributes.commands `kbengine.discovery.report`；todo.md:76）
 
 ## 编辑器基础
