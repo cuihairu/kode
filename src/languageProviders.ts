@@ -113,6 +113,7 @@ import {
 } from './kbengineMetadata';
 import { jumpLog, jumpTimeStart, logNavigation } from './navigationLog';
 import { provideTypesXmlReferences } from './typesXmlReferences';
+import { provideDefSymbolReferences } from './defSymbolReferences';
 import {
   formatEntityBuiltinPropertyDetail,
   getEntityBuiltinPropertiesForFace,
@@ -5571,7 +5572,15 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     const word = document.getText(range);
     const symbolInfo = findDefSymbolInfo(document, position, word);
     if (!symbolInfo) {
-      return null;
+      // IDE-NAV-018:类型名/实体名/接口名不在 Properties/方法段,findDefSymbolInfo
+      // 不识别(返回 null)——交由 defSymbolReferences 补查(自定义类型/实体
+      // Parent/Type/Interface 引用位);非此类符号时其内部解析同样如实 null。
+      return provideDefSymbolReferences(
+        document,
+        position,
+        context.includeDeclaration === true,
+        token
+      );
     }
     // 引用 API 补项:includeDeclaration 支配「是否把精确声明(def 内该符号的
     // 名字范围)计入结果」——true 时前置声明,false 时不含;实现(Python def)

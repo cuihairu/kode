@@ -155,6 +155,7 @@
 - **def 文档符号（Outline）** —— Properties 与三方法段作容器，段内声明作子符号，范围精确到元素全跨度 ——（证据：src/languageProviders.ts `KBEngineDocumentSymbolProvider`）
 - **def 引用查询（Shift+F12）** —— def 属性/方法引用按 owner 注册面归属：属性 `self` 访问、方法调用经统一符号身份链、receiver RPC 调用（`self.cell.X` / `self.base.X` / `self.client.X`）按段分开统计；结果跟随未保存缓冲区（打开文档快照优先、磁盘兜底）——（证据：src/languageProviders.ts `KBEngineReferencesProvider`；src/entityMapping.ts `getIncomingPythonMethodCalls`）
 - **types.xml 引用查询（Shift+F12，IDE-NAV-017）** —— types.xml 自定义类型符号（顶层类型声明名，或 `<Type>`/`<Arg>`/`<of>` 值内的类型名引用）列出工作区全部使用位：`.def` 属性 `<Type>` 值、`ARRAY of X`/`FIXED_DICT` 元素类型、`<Arg>` 值，以及 types.xml 内其他引用位；内建类型（`UINT32` 等）非 types.xml 符号、无引用面；空结果如实无引用不虚构——（证据：src/typesXmlReferences.ts；src/languageProviders.ts `KBEngineReferencesProvider` types.xml 分支）
+- **def 符号引用查询（Shift+F12，IDE-NAV-018）** —— 非属性名/方法名的 def 符号现在列出工作区使用位而非空返回：自定义类型名（`<Type>`/`<Arg>`/`<of>` 值内）列出全部 `.def` 与 types.xml 使用位加 types.xml 声明，实体类型名列出 `<Parent>`/`<Type>` 使用位加实体 `.def`，`<Parent>` 值列出同套实体使用位加实体 `.def`，`<Interface>` 值列出全部 `<Interface>` 使用位加接口 `.def`；内建类型（`UINT32` 等）与容器字面（`ARRAY`/`FIXED_DICT`）仍无引用面，`includeDeclaration` 与属性/方法引用路径同义，空结果如实无引用不虚构——（证据：src/defSymbolReferences.ts；src/languageProviders.ts `KBEngineReferencesProvider` def 符号回落）
 
 ## 项目模型
 
