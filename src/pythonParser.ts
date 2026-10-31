@@ -23,7 +23,7 @@ export interface ParsedPythonFile {
 }
 
 /** Mask comments and literals without shifting any source positions. */
-function pythonCodeLines(content: string): string[] {
+export function pythonCodeLines(content: string): string[] {
   let quote = '';
   let triple = false;
   return content.split(/\r?\n/).map(raw => {

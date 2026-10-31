@@ -23,6 +23,7 @@ import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
+import { findOwnerSelfPropertyAccesses } from './pythonSelfScope';
 import {
   createDefinitionSemanticsLoader,
   DefinitionMemberSourceKind,
@@ -2154,10 +2155,6 @@ export class EntityMappingManager {
       return [];
     }
     const accesses: Array<{ filePath: string; line: number; character: number }> = [];
-    const accessRegex = new RegExp(
-      `\\bself\\.${escapeRegExp(propertyName)}\\b(?!\\s*\\()`,
-      'g'
-    );
     for (const owner of index.pythonOwnerFiles) {
       if (token?.isCancellationRequested) { return accesses; }
       // IDE-NAV-004:未保存文档跟随——打开文档在位时扫缓冲区当前版,
@@ -2166,18 +2163,16 @@ export class EntityMappingManager {
       if (!snapshot) {
         continue;
       }
-      const content = snapshot.content;
-      const lines = content.split('\n');
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-        accessRegex.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = accessRegex.exec(lines[lineIndex])) !== null) {
-          accesses.push({
-            filePath: owner.filePath,
-            line: lineIndex + 1,
-            character: match.index + 'self.'.length
-          });
-        }
+      // AUD-028(R2-F05):原文正则扫描混入字符串/注释/同文件其它类/嵌套重绑
+      // self——按词法与 self 所属作用域过滤,只保留 owner 类真读写点。
+      // ownerName 生产面恒有;缺失(探针/替身)回退文件基名。
+      const ownerClassName = owner.ownerName || path.basename(owner.filePath, '.py');
+      for (const access of findOwnerSelfPropertyAccesses(snapshot.content, ownerClassName, propertyName)) {
+        accesses.push({
+          filePath: owner.filePath,
+          line: access.line + 1,
+          character: access.character
+        });
       }
     }
     return accesses;
