@@ -29,8 +29,8 @@
 | 编号 / 优先级 | 结论与触发路径 | 关联已勾选项 | 修正方向 |
 | --- | --- | --- | --- |
 | F01 / P1 | **已修复 (c647fdf)**：追踪器不再随守卫返回提前释放，活到 `onStartSettled` 落定（幂等）或管理器 `dispose` 兜底；`abandoned` 标记使永不落定的迟到自家会话立即停。prove-red 4 用例（REV-002 取消面 / attachRemote / REV-003 迟到成功 / AUD-001 永不落定面）旧源码红、新源码绿；门禁 lint+tsc+unit 4659 通过 + xvfb demo RC=0 | IDE-REV-003 | 追踪器活到 start 落定或本次会话完成清理，管理器卸载也应释放 |
-| F02 / P1 | **确认缺陷**：只按 `session.name === attachConfig.name` 认领会话；同名并发会话被误认，超时停止了 `unrelated-same-name` | IDE-REV-002 | 每次 attach 使用唯一关联标记，校验配置/会话身份，而非显示名称 |
-| F03 / P1 | **确认缺陷**：`attachViaTunnel` 在 `attachPortConfig` 返回成功后立即 finally stop 隧道。startDebugging 返回的是启动结果，不是会话结束；复现 `attached=true, killed=1` | IDE-PDBG-004 | 隧道绑定对应 DebugSession 终止事件，失败/取消及卸载兜底释放 |
+| F02 / P1 | **已修复 (8467f88)**：每次附加尝试携带唯一 `__kodeAttachId` 标记，`startAttachGuarded` 只认本尝试标记（`session.configuration.__kodeAttachId`），同名并发/他处同名会话不再误认；prove-red 并发同名附加两用例旧码红新码绿 | IDE-REV-002 | 每次 attach 使用唯一关联标记，校验配置/会话身份，而非显示名称 |
+| F03 / P1 | **已修复 (3636645)**：`attachViaTunnel` 不再随 `attachPortConfig` 的 Boolean finally 拆隧道；成功附加后隧道活到自家会话终止（`onDidTerminateDebugSession`），失败/取消即时拆，管理器 `dispose` 兜底拆；prove-red 成功保活+卸载兜底两用例旧码红新码绿 | IDE-PDBG-004 | 隧道绑定对应 DebugSession 终止事件，失败/取消及卸载兜底释放 |
 | F04 / P1 | **确认缺口**：远端进程枚举只接进 py-spy。调试的 `pickProcessId` 仍使用本地 listProcesses，process attach 配置仍发给本地 debugpy | IDE-PDBG-005 | 明确支持远端 PID 附加的执行/隧道链；未实现前阻止远端选择悄悄走本地 |
 | F05 / P1 | **确认缺陷**：hasattr 被当成任意 receiver 的非空证明。同一个 getter 返回 None 仍漏报，甚至 `hasattr(client)` 压掉 cell 警告 | receiver lint / B-7 | **已修复 c351606**，同码 Warning 继续出现，开关仍有效 |
 | F06 / P1 | **确认缺陷**：同行 `if self.cell or ready: self.cell.send()`、None 分支里的嵌套条件 return、`print("return")`、已失效别名均可能消掉警告 | receiver lint / B-7 | 词法过滤、可靠条件分析、作用域与别名失效；不把出现关键字当作控制流证明 |
@@ -53,7 +53,7 @@
 
 `src/debugConfig.ts:startAttachGuarded`：追踪订阅在 `onStartSettled` 内释放，但外围 finally 仍无条件释放，抵消了这次修复。`session.name` 的匹配也没有每次尝试的唯一性。
 
-`src/debugConfig.ts:attachViaTunnel`：finally 的 stop 发生在 startAttachGuarded 返回 completed 时，真实会话才刚建立。`node_modules/@types/vscode/index.d.ts` 的 startDebugging 返回 Boolean 启动结果；会话结束需跟踪终止事件。本轮用真编排方法、假隧道验证，未在真 SSH 服务器上重跑。
+`src/debugConfig.ts:attachViaTunnel`：IDE-AUD-003 已修——隧道存活绑定 `onDidTerminateDebugSession` 的自家会话终止，`startDebugging` 返回的 Boolean 只是启动结果不是会话结束；成功附加后隧道保留到会话终止，失败/取消即时拆，管理器 `dispose` 兜底拆。本轮用真编排方法、假隧道验证，未在真 SSH 服务器上重跑。
 
 ### guard 的“存在”与“保证”不能混为一谈
 
