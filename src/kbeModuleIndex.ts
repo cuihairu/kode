@@ -297,13 +297,17 @@ export function getKbeSymbol(name: string): KbeSymbolEntry | null {
 }
 
 /**
- * 识别本文档引入的 kbe/KBEngine 模块别名(import X / import X as Y /
- * from X import ...),返回别名集合。无任何引入时返回空集——此时不接管
- * 导航/补全,交回 python 扩展,避免误吞普通标识符。
+ * 识别本文档引入的 kbe/KBEngine 模块别名(import X / import X as Y),
+ * 返回别名集合。无任何引入时返回空集——此时不接管导航/补全,交回 python
+ * 扩展,避免误吞普通标识符。
+ * R4-F12(AUD-077):from KBEngine import X 只引入符号 X,不绑定模块别名
+ * ——from-import 的模块名是来源不是绑定名,不得当 alias 用(否则接受并不
+ * 存在的 KBEngine.globalData 访问)。from-import 符号走
+ * getKbeFromImportedSymbols,与本集无关。
  */
 export function getKbeAliases(documentText: string): Set<string> {
   const aliases = new Set<string>();
-  const importPattern = /^\s*(?:import|from)\s+(KBEngine|kbe)\b(?:\s+as\s+(\w+))?/gm;
+  const importPattern = /^\s*import\s+(KBEngine|kbe)\b(?:\s+as\s+(\w+))?/gm;
   let match: RegExpExecArray | null;
   while ((match = importPattern.exec(documentText)) !== null) {
     aliases.add(match[2] ?? match[1]);

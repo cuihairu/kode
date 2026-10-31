@@ -123,6 +123,16 @@ describe('findKbeDataDictAccesses(GLOBDATA-001 扫描)', () => {
   it('别名未引入(空集)不扫描', () => {
     expect(findKbeDataDictAccesses('KBEngine.globalData[k] = 1', new Set())).toEqual([]);
   });
+
+  it('R4-F12:from-import 不绑定模块别名,KBEngine.globalData 不入索引;import/as 照常', () => {
+    // from KBEngine import Entity 只引入 Entity,KBEngine 不是模块绑定别名
+    const fromOnly = 'from KBEngine import Entity\nKBEngine.globalData["cfg"] = 1\n';
+    expect(getKbeAliases(fromOnly)).toEqual(new Set());
+    expect(findKbeDataDictAccesses(fromOnly, getKbeAliases(fromOnly))).toEqual([]);
+    // import / import as 照常识别
+    expect(getKbeAliases('import KBEngine\n').size).toBe(1);
+    expect(getKbeAliases('import KBEngine as k\n')).toEqual(new Set(['k']));
+  });
 });
 
 describe('AUD-065 词法过滤非代码访问(R4-F01 目标扫描)', () => {

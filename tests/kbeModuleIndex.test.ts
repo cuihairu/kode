@@ -43,12 +43,13 @@ describe('kbe 模块符号索引(批108)', () => {
   });
 
   describe('别名解析 getKbeAliases', () => {
-    it('import KBEngine / import kbe / as 别名 / from 语句全形态', () => {
+    it('import KBEngine / import kbe / as 别名全形态;from-import 不绑定模块别名', () => {
       expect(getKbeAliases('import KBEngine\n')).toEqual(new Set(['KBEngine']));
       expect(getKbeAliases('import kbe\n')).toEqual(new Set(['kbe']));
       expect(getKbeAliases('import KBEngine as kbe\n')).toEqual(new Set(['kbe']));
-      expect(getKbeAliases('from kbe import KBEntity\n')).toEqual(new Set(['kbe']));
-      expect(getKbeAliases('from KBEngine import Entity\n')).toEqual(new Set(['KBEngine']));
+      // R4-F12:from KBEngine import X 只引入符号 X,不把模块名当绑定别名
+      expect(getKbeAliases('from kbe import KBEntity\n')).toEqual(new Set());
+      expect(getKbeAliases('from KBEngine import Entity\n')).toEqual(new Set());
     });
 
     it('无引入语句时为空集', () => {
