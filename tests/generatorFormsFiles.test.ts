@@ -158,8 +158,8 @@ const fixedDictInput: GeneratorFormInput = {
 };
 
 describe('generateGeneratorForm 落盘', () => {
-  it('代理落 scripts/proxy_defs/<实体名>Proxy.def', () => {
-    const outcome = generateGeneratorForm(proxyInput, root, { generatedAt: 'TS', layout: layout() });
+  it('代理落 scripts/proxy_defs/<实体名>Proxy.def', async () => {
+    const outcome = await generateGeneratorForm(proxyInput, root, { generatedAt: 'TS', layout: layout() });
 
     expect(outcome.filePath).toBe(path.join(root, 'scripts', 'proxy_defs', 'AvatarProxy.def'));
     expect(outcome.written).toBe(true);
@@ -170,8 +170,8 @@ describe('generateGeneratorForm 落盘', () => {
     expect(content).toContain('<onTargetChanged>');
   });
 
-  it('空间落 def 并在 entities.xml 登记 hasBase + hasCell', () => {
-    const outcome = generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
+  it('空间落 def 并在 entities.xml 登记 hasBase + hasCell', async () => {
+    const outcome = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
 
     expect(outcome.written).toBe(true);
     expect(outcome.touchedFiles).toEqual([path.join(root, 'scripts', 'entities.xml')]);
@@ -187,16 +187,16 @@ describe('generateGeneratorForm 落盘', () => {
     );
   });
 
-  it('组件落 entity_defs/components/<名>.def', () => {
-    const outcome = generateGeneratorForm(componentInput, root, { generatedAt: 'TS', layout: layout() });
+  it('组件落 entity_defs/components/<名>.def', async () => {
+    const outcome = await generateGeneratorForm(componentInput, root, { generatedAt: 'TS', layout: layout() });
 
     expect(outcome.filePath).toBe(path.join(root, 'scripts', 'entity_defs', 'components', 'Inventory.def'));
     expect(fs.existsSync(outcome.filePath as string)).toBe(true);
     expect(outcome.touchedFiles).toEqual([]);
   });
 
-  it('固定字典写入已有 types.xml 的 </root> 前', () => {
-    const outcome = generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+  it('固定字典写入已有 types.xml 的 </root> 前', async () => {
+    const outcome = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
 
     expect(outcome.filePath).toBe(path.join(root, 'scripts', 'entity_defs', 'types.xml'));
     expect(outcome.touchedFiles).toEqual([path.join(root, 'scripts', 'entity_defs', 'types.xml')]);
@@ -220,9 +220,9 @@ describe('generateGeneratorForm 落盘', () => {
     );
   });
 
-  it('types.xml 不存在时新建最小根', () => {
+  it('types.xml 不存在时新建最小根', async () => {
     fs.rmSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'));
-    const outcome = generateGeneratorForm(fixedDictInput, root, { generatedAt: '2026-10-16T00:00:00.000Z', layout: layout() });
+    const outcome = await generateGeneratorForm(fixedDictInput, root, { generatedAt: '2026-10-16T00:00:00.000Z', layout: layout() });
     const content = fs.readFileSync(outcome.filePath as string, 'utf8');
 
     expect(content.startsWith('<root>')).toBe(true);
@@ -231,22 +231,22 @@ describe('generateGeneratorForm 落盘', () => {
     expect(content.trimEnd().endsWith('</root>')).toBe(true);
   });
 
-  it('已存在且未覆盖时只记说明不改文件;overwrite=true 覆盖', () => {
+  it('已存在且未覆盖时只记说明不改文件;overwrite=true 覆盖', async () => {
     const target = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
     fs.writeFileSync(target, '<root/>', 'utf8');
 
-    const skipped = generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
+    const skipped = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
     expect(skipped.written).toBe(false);
     expect(fs.readFileSync(target, 'utf8')).toBe('<root/>');
     expect(skipped.notes.some(note => note.includes('已存在,未覆盖'))).toBe(true);
 
-    const overwritten = generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', overwrite: true, layout: layout() });
+    const overwritten = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', overwrite: true, layout: layout() });
     expect(overwritten.written).toBe(true);
     expect(fs.readFileSync(target, 'utf8')).toContain('<Space/>');
   });
 
-  it('目录定位不到时如实说明,不写盘', () => {
-    const outcome = generateGeneratorForm(componentInput, root, {
+  it('目录定位不到时如实说明,不写盘', async () => {
+    const outcome = await generateGeneratorForm(componentInput, root, {
       layout: layout({ componentsRoot: null })
     });
 
@@ -255,13 +255,13 @@ describe('generateGeneratorForm 落盘', () => {
     expect(outcome.notes).toEqual(['未能定位组件的落盘目录,未生成']);
   });
 
-  it('主产物冲突时整体不写:空间 def 已存在则不做 entities.xml 登记', () => {
+  it('主产物冲突时整体不写:空间 def 已存在则不做 entities.xml 登记', async () => {
     const target = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
     fs.writeFileSync(target, '<root/>', 'utf8');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
 
-    const outcome = generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
+    const outcome = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
 
     expect(outcome.written).toBe(false);
     expect(outcome.conflict).toBe(true);
@@ -273,8 +273,8 @@ describe('generateGeneratorForm 落盘', () => {
 });
 
 describe('generateGeneratorForm 附带改写', () => {
-  it('空间已登记时不重复写入', () => {
-    const outcome = generateGeneratorForm(
+  it('空间已登记时不重复写入', async () => {
+    const outcome = await generateGeneratorForm(
       { kind: 'space', value: { name: 'Avatar' } },
       root,
       { generatedAt: 'TS', overwrite: true, layout: layout() }
@@ -284,18 +284,18 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8').match(/<Avatar /g)).toHaveLength(1);
   });
 
-  it('entities.xml 缺失或结构异常时如实说明', () => {
+  it('entities.xml 缺失或结构异常时如实说明', async () => {
     fs.rmSync(path.join(root, 'scripts', 'entities.xml'));
-    const missing = generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
+    const missing = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
     expect(missing.notes).toContain('未找到 entities.xml,空间 MySpace 未登记(引擎按登记装载,请手动补一行)');
 
     fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), '<root>\n', 'utf8');
-    const malformed = generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', overwrite: true, layout: layout() });
+    const malformed = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', overwrite: true, layout: layout() });
     expect(malformed.notes).toContain('entities.xml 找不到 </root> 标签,空间 MySpace 未登记');
   });
 
-  it('entitiesXmlPath 为 null 时同样如实说明', () => {
-    const outcome = generateGeneratorForm(spaceInput, root, {
+  it('entitiesXmlPath 为 null 时同样如实说明', async () => {
+    const outcome = await generateGeneratorForm(spaceInput, root, {
       generatedAt: 'TS',
       layout: layout({ entitiesXmlPath: null })
     });
@@ -303,22 +303,22 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(outcome.notes).toContain('未找到 entities.xml,空间 MySpace 未登记(引擎按登记装载,请手动补一行)');
   });
 
-  it('types.xml 类型重名不写入,缺 </root> 亦不写入', () => {
-    generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
-    const duplicated = generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+  it('types.xml 类型重名不写入,缺 </root> 亦不写入', async () => {
+    await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+    const duplicated = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
     expect(duplicated.notes).toEqual(['types.xml 中已有同名类型 MY_DATA,未写入']);
     expect(duplicated.written).toBe(false);
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), 'utf8').match(/<MY_DATA>/g)).toHaveLength(1);
 
     fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), '<root>\n', 'utf8');
-    const malformed = generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+    const malformed = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
     expect(malformed.notes).toEqual(['types.xml 找不到 </root> 标签,类型 MY_DATA 未写入']);
     expect(malformed.written).toBe(false);
   });
 
-  it('实体 def 只有注释(无根元素)时挂载如实说明', () => {
+  it('实体 def 只有注释(无根元素)时挂载如实说明', async () => {
     fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'Comment.def'), '<!-- 只有注释 -->\n', 'utf8');
-    const outcome = generateGeneratorForm(componentInput, root, {
+    const outcome = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       layout: layout(),
       attachTo: 'Comment'
@@ -327,8 +327,8 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(outcome.notes).toContain('Comment.def 里没有 <Properties> 段,组件未挂载(请手写 COMPONENT 属性)');
   });
 
-  it('组件挂载:在实体 Properties 段末插 COMPONENT 属性', () => {
-    const outcome = generateGeneratorForm(componentInput, root, {
+  it('组件挂载:在实体 Properties 段末插 COMPONENT 属性', async () => {
+    const outcome = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       layout: layout(),
       attachTo: 'Avatar'
@@ -340,9 +340,9 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(content.indexOf('<Inventory>')).toBeGreaterThan(content.indexOf('<hp>'));
   });
 
-  it('组件挂载不指定实体时不动任何已有文件', () => {
+  it('组件挂载不指定实体时不动任何已有文件', async () => {
     const before = fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'), 'utf8');
-    const outcome = generateGeneratorForm(componentInput, root, {
+    const outcome = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       layout: layout(),
       attachTo: null
@@ -352,15 +352,15 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'Avatar.def'), 'utf8')).toBe(before);
   });
 
-  it('组件挂载三类未做面各记一条说明', () => {
-    const noDefsRoot = generateGeneratorForm(componentInput, root, {
+  it('组件挂载三类未做面各记一条说明', async () => {
+    const noDefsRoot = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       layout: layout({ entityDefsRoot: null, componentsRoot: path.join(root, 'scripts', 'entity_defs', 'components') }),
       attachTo: 'Avatar'
     });
     expect(noDefsRoot.notes).toEqual(['未能定位实体定义目录,组件未挂载']);
 
-    const missingEntity = generateGeneratorForm(componentInput, root, {
+    const missingEntity = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       overwrite: true,
       layout: layout(),
@@ -373,7 +373,7 @@ describe('generateGeneratorForm 附带改写', () => {
       '<root><BaseMethods><roar/></BaseMethods></root>',
       'utf8'
     );
-    const noProperties = generateGeneratorForm(componentInput, root, {
+    const noProperties = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       overwrite: true,
       layout: layout(),
@@ -382,7 +382,7 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(noProperties.notes).toContain('Bare.def 里没有 <Properties> 段,组件未挂载(请手写 COMPONENT 属性)');
 
     fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'Broken.def'), '<root><Properties></root>', 'utf8');
-    const malformed = generateGeneratorForm(componentInput, root, {
+    const malformed = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       overwrite: true,
       layout: layout(),
@@ -391,15 +391,15 @@ describe('generateGeneratorForm 附带改写', () => {
     expect(malformed.notes).toContain('Broken.def 里没有 <Properties> 段,组件未挂载(请手写 COMPONENT 属性)');
   });
 
-  it('组件属性同名时(大小写不敏感)不重复挂载', () => {
-    const outcome = generateGeneratorForm(componentInput, root, {
+  it('组件属性同名时(大小写不敏感)不重复挂载', async () => {
+    const outcome = await generateGeneratorForm(componentInput, root, {
       generatedAt: 'TS',
       layout: layout(),
       attachTo: 'Avatar'
     });
     expect(outcome.notes).toEqual([]);
 
-    const second = generateGeneratorForm(
+    const second = await generateGeneratorForm(
       { kind: 'component', value: { name: 'INVENTORY', properties: [] } },
       root,
       { generatedAt: 'TS', layout: layout(), attachTo: 'Avatar' }

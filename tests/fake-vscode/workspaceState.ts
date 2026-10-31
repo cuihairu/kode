@@ -106,6 +106,16 @@ export const fs = {
 // openTextDocument 调用记账(kbengine.entity.open / kbengine.database.open
 // 装配断言用);默认返回值与旧 stub 完全一致,测试可整体替换。
 const openTextDocumentCalls: unknown[] = [];
+// applyEdit 调用记账(AUD-030:打开文档走缓冲写入而非原子写盘,测试断言
+// 未打开路径零调用)。
+const applyEditCalls: unknown[] = [];
+// 可被 applyEdit 变更的文档面(MinimalTextDocument + setText)
+interface MutableDoc {
+  uri: Uri;
+  getText(): string;
+  offsetAt(position: { line: number; character: number }): number;
+  setText(next: string): void;
+}
 // updateWorkspaceConfiguration 记账(pythonExtraPaths 写 python.analysis.extraPaths)
 const workspaceConfigurationUpdates: Array<Record<string, unknown>> = [];
 
@@ -132,6 +142,28 @@ export const workspace = {
   openTextDocument: async (uri: unknown): Promise<unknown> => {
     openTextDocumentCalls.push(uri);
     return { uri: Uri.file('') };
+  },
+  // AUD-030:把 WorkspaceEdit 应用到打开文档缓冲区(按 offset 逆序重组文本,
+  // 命中一个文档即视为已应用);未打开的文档面不命中返回 false。
+  applyEdit: async (edit: { entries(): Array<[Uri, Array<{ range: { start: { line: number; character: number }; end: { line: number; character: number } }; newText: string }>]> }): Promise<boolean> => {
+    applyEditCalls.push(edit);
+    let any = false;
+    for (const [uri, edits] of edit.entries()) {
+      const doc = (workspace.textDocuments as MutableDoc[]).find(candidate => candidate.uri.fsPath === uri.fsPath);
+      if (!doc) {
+        continue;
+      }
+      const ordered = [...edits].sort((a, b) => doc.offsetAt(b.range.start) - doc.offsetAt(a.range.start));
+      let text = doc.getText();
+      for (const item of ordered) {
+        const start = doc.offsetAt(item.range.start);
+        const end = doc.offsetAt(item.range.end);
+        text = `${text.slice(0, start)}${item.newText}${text.slice(end)}`;
+      }
+      doc.setText(text);
+      any = true;
+    }
+    return any;
   },
   onDidChangeTextDocument: workspaceEvents.documentChanged.event,
   onDidSaveTextDocument: workspaceEvents.documentSaved.event,
@@ -199,6 +231,7 @@ export const allFileSystemWatchers: StubFileSystemWatcher[] = [];
 
 export const workspaceState = {
   openTextDocumentCalls,
+  applyEditCalls,
   workspaceConfigurationUpdates,
   contentProviders: textDocumentContentProviders,
   /** 重置装配痕迹(事件监听器、文档集合、Provider 记账、内存 fs 与配置覆写)。
@@ -215,6 +248,7 @@ export const workspaceState = {
     workspace.textDocuments = [];
     textDocumentContentProviders.clear();
     openTextDocumentCalls.length = 0;
+    applyEditCalls.length = 0;
     workspaceConfigurationUpdates.length = 0;
     lastFileSystemWatcher.current = null;
     allFileSystemWatchers.length = 0;

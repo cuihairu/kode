@@ -438,14 +438,49 @@ export function hasGeneratorFormConflict(input: GeneratorFormInput, filePath: st
   return fs.existsSync(filePath);
 }
 
+/** AUD-030:一次落在打开文档缓冲区里的登记插入(回滚撤销记账) */
+interface BufferEditRecord {
+  filePath: string;
+  uri: vscode.Uri;
+  /** 插入点 0 基字符偏移(按当时缓冲文本) */
+  offset: number;
+  text: string;
+}
+
+/** 按落盘路径查打开中的文档(含脏;登记改写走缓冲而非盘的判定面) */
+function findOpenTextDocument(filePath: string): vscode.TextDocument | undefined {
+  return vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === filePath);
+}
+
 /**
  * 回收本次新增与改写(IDE-GEN-008 与实体向导同规则):先还原被改写文件,
- * 再按写入逆序删除本次新增;单项回收失败不掩盖原始错误
+ * 再按写入逆序删除本次新增;单项回收失败不掩盖原始错误。
+ * AUD-030:缓冲登记撤销优先——只撤回本次插入,且缓冲仍恰好含该插入才动
+ * (用户未再改动),避免误删他人后续改动。
  */
-function rollbackFormWrites(
+async function rollbackFormWrites(
   createdFiles: string[],
-  overwrittenFiles: Array<{ filePath: string; previous: string }>
-): void {
+  overwrittenFiles: Array<{ filePath: string; previous: string }>,
+  bufferEdits: BufferEditRecord[]
+): Promise<void> {
+  for (const item of [...bufferEdits].reverse()) {
+    try {
+      const doc = findOpenTextDocument(item.filePath);
+      if (!doc) {
+        continue;
+      }
+      const start = doc.positionAt(item.offset);
+      const end = doc.positionAt(item.offset + item.text.length);
+      if (doc.getText(new vscode.Range(start, end)) !== item.text) {
+        continue;
+      }
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(item.uri, new vscode.Range(start, end), '');
+      await vscode.workspace.applyEdit(edit);
+    } catch {
+      // 回收失败不掩盖原始错误
+    }
+  }
   for (const item of [...overwrittenFiles].reverse()) {
     try {
       writeFileAtomic(item.filePath, item.previous);
@@ -481,16 +516,50 @@ function writeOrSkip(filePath: string, content: string, overwrite: boolean): boo
   return true;
 }
 
-/** 空间登记:entities.xml 存在则插一行,缺失/已登记/结构异常各记一条说明 */
-function registerSpaceEntity(
+/**
+ * 空间登记:entities.xml 存在则插一行,缺失/已登记/结构异常各记一条说明。
+ * AUD-030(R2-F07):entities.xml 已在编辑器打开(含脏)时,登记进缓冲区而
+ * 非盘——重名检查与插入点都按缓冲区当前文本定位(读缓冲到 applyEdit 是
+ * 同一同步快照,即版本守卫),用户未保存改动原样保留,撤销/关闭语义与普通
+ * 编辑一致;applyEdit 未落地(被拒/内容未现)时如实说明。未打开才原子写盘。
+ */
+async function registerSpaceEntity(
   name: string,
   layout: DefinitionWorkspaceLayout,
   notes: string[],
-  touchedFiles: string[]
-): void {
+  touchedFiles: string[],
+  bufferEdits: BufferEditRecord[]
+): Promise<void> {
   const entitiesXmlPath = layout.entitiesXmlPath;
   if (!entitiesXmlPath || !fs.existsSync(entitiesXmlPath)) {
     notes.push(`未找到 entities.xml,空间 ${name} 未登记(引擎按登记装载,请手动补一行)`);
+    return;
+  }
+
+  const line = buildSpaceRegistrationLine(name);
+  const openDoc = findOpenTextDocument(entitiesXmlPath);
+  if (openDoc) {
+    const bufferContent = openDoc.getText();
+    if (new RegExp(`<${name}(?=[\\s>/])`, 'i').test(bufferContent)) {
+      notes.push(`${name} 已在 entities.xml 中注册,未重复写入`);
+      return;
+    }
+    const index = bufferContent.lastIndexOf('</root>');
+    if (index === -1) {
+      notes.push(`entities.xml 缓冲区找不到 </root> 标签,空间 ${name} 未登记`);
+      return;
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(openDoc.uri, openDoc.positionAt(index), `${line}\n`);
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied || !openDoc.getText().includes(line)) {
+      notes.push(`entities.xml 缓冲区写入未生效,空间 ${name} 未登记(请手动补一行)`);
+      return;
+    }
+
+    touchedFiles.push(entitiesXmlPath);
+    bufferEdits.push({ filePath: entitiesXmlPath, uri: openDoc.uri, offset: index, text: `${line}\n` });
     return;
   }
 
@@ -500,7 +569,7 @@ function registerSpaceEntity(
     return;
   }
 
-  const updated = rootTailInsert(content, buildSpaceRegistrationLine(name));
+  const updated = rootTailInsert(content, line);
   if (updated === null) {
     notes.push(`entities.xml 找不到 </root> 标签,空间 ${name} 未登记`);
     return;
@@ -592,17 +661,18 @@ function attachComponentToEntity(
   touchedFiles.push(entityDefPath);
 }
 
-/** 按形态生成定义文件并做引擎装载口径的附带改写 */
-export function generateGeneratorForm(
+/** 按形态生成定义文件并做引擎装载口径的附带改写(AUD-030 起登记面可异步进缓冲) */
+export async function generateGeneratorForm(
   input: GeneratorFormInput,
   workspaceRoot: string,
   options: GenerateGeneratorFormOptions = {}
-): GeneratorFormOutcome {
+): Promise<GeneratorFormOutcome> {
   const layout = options.layout ?? getDefinitionWorkspaceLayout(workspaceRoot);
   const generatedAt = options.generatedAt ?? new Date().toISOString();
   const overwrite = options.overwrite ?? false;
   const notes: string[] = [];
   const touchedFiles: string[] = [];
+  const bufferEdits: BufferEditRecord[] = [];
   const target = resolveGeneratorFormTarget(input, layout);
 
   if (target.filePath === null) {
@@ -638,7 +708,7 @@ export function generateGeneratorForm(
       }
       // 重名/结构异常时只有说明,不算已生成(重名已被上面的冲突闸拦下,
       // 这里剩缺 </root> 的结构异常面)
-      written = registerFixedDictType(
+      written = await registerFixedDictType(
         input.value.name,
         contentOf(input, generatedAt),
         filePath,
@@ -665,7 +735,7 @@ export function generateGeneratorForm(
       if (entitiesXmlPath && fs.existsSync(entitiesXmlPath)) {
         overwrittenFiles.push({ filePath: entitiesXmlPath, previous: fs.readFileSync(entitiesXmlPath, 'utf8') });
       }
-      registerSpaceEntity(input.value.name, layout, notes, touchedFiles);
+      await registerSpaceEntity(input.value.name, layout, notes, touchedFiles, bufferEdits);
     }
 
     if (input.kind === 'component') {
@@ -686,7 +756,7 @@ export function generateGeneratorForm(
     return { kind: input.kind, filePath, written, notes, touchedFiles };
   } catch (error) {
     // IDE-GEN-008:任一步失败回收本次新增与改写,不留半套
-    rollbackFormWrites(createdFiles, overwrittenFiles);
+    await rollbackFormWrites(createdFiles, overwrittenFiles, bufferEdits);
     throw error;
   }
 }
@@ -890,7 +960,7 @@ export async function runGeneratorFormWizard(
         }
       }
 
-      const outcome = generateGeneratorForm(input, layoutRoot, { attachTo, layout });
+      const outcome = await generateGeneratorForm(input, layoutRoot, { attachTo, layout });
       for (const note of outcome.notes) {
         vscode.window.showWarningMessage(note);
       }

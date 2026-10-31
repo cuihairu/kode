@@ -678,28 +678,30 @@ export function makeTextDocument(
   const fileName = options?.fileName ?? '/tmp/Anonymous.def';
   const languageId = options?.languageId ?? 'kbengine-def';
   const uri = options?.uri ?? Uri.file(fileName);
-  const lineStarts: number[] = [0];
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === '\n') {
-      lineStarts.push(i + 1);
-    }
-  }
+  let currentText = text;
+  let currentVersion = options?.version;
+  let lineStarts = computeLineStarts(currentText);
 
   const offsetAt = (position: Position): number => {
     const base = lineStarts[Math.min(position.line, lineStarts.length - 1)] ?? 0;
     return base + position.character;
   };
 
-  return {
+  const doc = {
     uri,
     fileName,
     languageId,
-    version: options?.version,
+    get version(): number | undefined {
+      return currentVersion;
+    },
+    set version(next: number | undefined) {
+      currentVersion = next;
+    },
     getText(range?: Range): string {
       if (!range) {
-        return text;
+        return currentText;
       }
-      return text.slice(offsetAt(range.start), offsetAt(range.end));
+      return currentText.slice(offsetAt(range.start), offsetAt(range.end));
     },
     positionAt(offset: number): Position {
       let line = 0;
@@ -710,10 +712,10 @@ export function makeTextDocument(
     },
     offsetAt,
     lineAt(line: number): { text: string } {
-      return { text: (text.split('\n')[line] ?? '') };
+      return { text: (currentText.split('\n')[line] ?? '') };
     },
     getWordRangeAtPosition(position: Position, rangeRegex: RegExp = /\w+/): Range | undefined {
-      const lineText = text.split('\n')[position.line] ?? '';
+      const lineText = currentText.split('\n')[position.line] ?? '';
       const wordRegex = new RegExp(
         rangeRegex.source,
         rangeRegex.flags.includes('g') ? rangeRegex.flags : `${rangeRegex.flags}g`
@@ -731,6 +733,25 @@ export function makeTextDocument(
         }
       }
       return undefined;
+    },
+    // AUD-030:applyEdit 变更缓冲文本;版本为数字时前进(供版本守卫观测)
+    setText(next: string): void {
+      currentText = next;
+      lineStarts = computeLineStarts(next);
+      if (typeof currentVersion === 'number') {
+        currentVersion += 1;
+      }
     }
   };
+  return doc;
 }
+
+const computeLineStarts = (text: string): number[] => {
+  const lineStarts: number[] = [0];
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '\n') {
+      lineStarts.push(i + 1);
+    }
+  }
+  return lineStarts;
+};

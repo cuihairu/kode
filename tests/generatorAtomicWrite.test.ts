@@ -76,7 +76,7 @@ describe('generator atomic writes (IDE-GEN-005)', () => {
     expect(fs.readdirSync(path.join(root, 'scripts')).sort()).toEqual(['entities.xml', 'entity_defs']);
   });
 
-  it('keeps types.xml intact when the fixed dict write is interrupted', () => {
+  it('keeps types.xml intact when the fixed dict write is interrupted', async () => {
     const typesXml = path.join(root, 'scripts', 'entity_defs', 'types.xml');
     const original = [
       '<root>',
@@ -89,12 +89,12 @@ describe('generator atomic writes (IDE-GEN-005)', () => {
     fs.writeFileSync(typesXml, original, 'utf8');
     interruptState.targets = [typesXml];
 
-    expect(() =>
+    await expect(
       generateGeneratorForm(
         { kind: 'fixedDict', value: { name: 'AVATAR_DATA', properties: [{ name: 'value', type: 'UINT32' }] } },
         root
       )
-    ).toThrow('simulated interruption');
+    ).rejects.toThrow('simulated interruption');
 
     expect(fs.readFileSync(typesXml, 'utf8')).toBe(original);
     expect(fs.readdirSync(path.join(root, 'scripts', 'entity_defs')).sort()).toEqual(['types.xml']);
@@ -128,7 +128,7 @@ describe('generator atomic writes (IDE-GEN-005)', () => {
 });
 
 describe('form generation rollback (IDE-GEN-008)', () => {
-  it('rolls back the space def when the entities.xml write fails', () => {
+  it('rolls back the space def when the entities.xml write fails', async () => {
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const original = [
       '<root>',
@@ -140,9 +140,9 @@ describe('form generation rollback (IDE-GEN-008)', () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
     interruptState.targets = [entitiesXml];
 
-    expect(() =>
+    await expect(
       generateGeneratorForm({ kind: 'space', value: { name: 'MySpace' } }, root)
-    ).toThrow('simulated interruption');
+    ).rejects.toThrow('simulated interruption');
 
     // def 已写出但 entities.xml 写入失败:本次新增文件回收,旧注册原样
     expect(fs.existsSync(defPath)).toBe(false);
