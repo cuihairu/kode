@@ -11,6 +11,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildClientSdkTypeMap,
   collectClientSdkEntities,
+  findClientSdkMemberConflicts,
+  formatClientSdkMemberConflictMessage,
   generateClientSdkComponentsFile,
   generateClientSdkEntities,
   generateClientSdkEntityFile,
@@ -96,6 +98,22 @@ const MINIMAL_DEF = `<root>
       <Flags>BASE</Flags>
     </level>
   </Properties>
+</root>
+`;
+
+// IDE-AUD-062:业务属性占用辅助成员名(TS entityId / C# EntityId)。
+const ENTITY_ID_COLLISION_DEF = `<root>
+  <Properties>
+    <entityId>
+      <Type>UINT32</Type>
+      <Flags>OWN_CLIENT</Flags>
+    </entityId>
+  </Properties>
+  <ClientMethods>
+    <onBaseOutgoing>
+      <Arg>UINT32</Arg>
+    </onBaseOutgoing>
+  </ClientMethods>
 </root>
 `;
 
@@ -825,6 +843,137 @@ describe('generateClientSdkEntities', () => {
       setKodeCoreShadowGate(null);
       fs.rmSync(emptyRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('findClientSdkMemberConflicts (IDE-AUD-062)', () => {
+  it('业务 entityId 属性:TS 与 C# 都报辅助字段重名', () => {
+    const entity = parseClientSdkEntity(ENTITY_ID_COLLISION_DEF, 'Hero')!;
+    const conflicts = findClientSdkMemberConflicts([entity], ['typescript', 'csharp']);
+
+    const ts = conflicts.find(c => c.language === 'typescript' && c.name === 'entityId');
+    expect(ts).toBeDefined();
+    expect(ts!.sources).toContain('辅助字段 entityId（实体 id）');
+    expect(ts!.sources).toContain('业务属性 entityId');
+
+    const cs = conflicts.find(c => c.language === 'csharp' && c.name === 'EntityId');
+    expect(cs).toBeDefined();
+    expect(cs!.sources).toContain('辅助字段 EntityId（实体 id）');
+    expect(cs!.sources).toContain('业务属性 entityId');
+  });
+
+  it('ClientMethods 回调占用发送接缝名:按语言报 onBaseOutgoing/OnBaseOutgoing', () => {
+    const entity = parseClientSdkEntity(ENTITY_ID_COLLISION_DEF, 'Hero')!;
+    const conflicts = findClientSdkMemberConflicts([entity], ['typescript', 'csharp']);
+
+    const ts = conflicts.find(c => c.language === 'typescript' && c.name === 'onBaseOutgoing');
+    expect(ts).toBeDefined();
+    expect(ts!.sources).toContain('辅助方法 onBaseOutgoing（发送接缝）');
+    expect(ts!.sources).toContain('ClientMethods 回调 onBaseOutgoing');
+
+    const cs = conflicts.find(c => c.language === 'csharp' && c.name === 'OnBaseOutgoing');
+    expect(cs).toBeDefined();
+  });
+
+  it('Exposed 方法包装 baseCall* 与同名业务属性重名', () => {
+    const def = `<root>
+      <Properties>
+        <baseCallAttack>
+          <Type>UINT32</Type>
+          <Flags>OWN_CLIENT</Flags>
+        </baseCallAttack>
+      </Properties>
+      <BaseMethods>
+        <attack>
+          <Exposed/>
+          <Arg>UINT32</Arg>
+        </attack>
+      </BaseMethods>
+    </root>`;
+    const entity = parseClientSdkEntity(def, 'Hero')!;
+    const conflicts = findClientSdkMemberConflicts([entity], ['typescript']);
+
+    const ts = conflicts.find(c => c.name === 'baseCallAttack');
+    expect(ts).toBeDefined();
+    expect(ts!.sources).toContain('业务属性 baseCallAttack');
+    expect(ts!.sources).toContain('Exposed BaseMethods 包装 attack');
+  });
+
+  it('C# PascalCase 互撞:属性 foo 与 Foo 同映射 Foo', () => {
+    const def = `<root>
+      <Properties>
+        <foo>
+          <Type>UINT32</Type>
+          <Flags>OWN_CLIENT</Flags>
+        </foo>
+        <Foo>
+          <Type>UINT32</Type>
+          <Flags>OWN_CLIENT</Flags>
+        </Foo>
+      </Properties>
+    </root>`;
+    const entity = parseClientSdkEntity(def, 'Hero')!;
+    const conflicts = findClientSdkMemberConflicts([entity], ['csharp']);
+
+    const cs = conflicts.find(c => c.name === 'Foo');
+    expect(cs).toBeDefined();
+    expect(cs!.sources).toContain('业务属性 foo');
+    expect(cs!.sources).toContain('业务属性 Foo');
+  });
+
+  it('无重名(仅客户端可见且不撞辅助)时不报冲突', () => {
+    const entity = parseClientSdkEntity(FULL_DEF, 'Avatar')!;
+    expect(findClientSdkMemberConflicts([entity], ['typescript', 'csharp'])).toEqual([]);
+  });
+
+  it('空实体组或空语言组:不报冲突', () => {
+    expect(findClientSdkMemberConflicts([], ['typescript'])).toEqual([]);
+    const entity = parseClientSdkEntity(MINIMAL_DEF, 'Ghost')!;
+    expect(findClientSdkMemberConflicts([entity], [])).toEqual([]);
+  });
+
+  it('formatClientSdkMemberConflictMessage:点名实体、语言、成员与来源', () => {
+    const entity = parseClientSdkEntity(ENTITY_ID_COLLISION_DEF, 'Hero')!;
+    const conflicts = findClientSdkMemberConflicts([entity], ['typescript']);
+    const message = formatClientSdkMemberConflictMessage(conflicts);
+
+    expect(message).toContain('客户端实体 SDK 生成已拒绝：辅助成员与业务成员重名。');
+    expect(message).toContain('实体 Hero 的 TypeScript SDK 成员 "entityId"');
+    expect(message).toContain('业务属性 entityId');
+  });
+});
+
+describe('IDE-AUD-062 辅助成员与业务成员重名', () => {
+  let workspaceRoot: string;
+  let outDir: string;
+
+  beforeAll(() => {
+    workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-collision-src-'));
+    outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-collision-out-'));
+    const defsDir = path.join(workspaceRoot, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceRoot, 'scripts', 'entities.xml'),
+      '<root>\n  <Hero hasBase="true"/>\n</root>\n',
+      'utf8'
+    );
+    fs.writeFileSync(path.join(defsDir, 'Hero.def'), ENTITY_ID_COLLISION_DEF, 'utf8');
+  });
+
+  afterAll(() => {
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    fs.rmSync(outDir, { recursive: true, force: true });
+  });
+
+  it('业务 entityId/onBaseOutgoing 重名:提前拒绝而非静默生成重复成员', async () => {
+    await expect(
+      generateClientSdkEntities(
+        { languages: ['typescript', 'csharp'], outputDir: outDir, overwrite: true },
+        workspaceRoot
+      )
+    ).rejects.toThrow(/辅助成员与业务成员重名/);
+    // 预检在落盘前拒绝,输出目录不残留任何生成文件。
+    expect(fs.readdirSync(outDir)).toEqual([]);
   });
 });
 

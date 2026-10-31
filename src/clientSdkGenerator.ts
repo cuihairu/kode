@@ -683,6 +683,115 @@ export function generateClientSdkEntityFile(
     : generateCSharpEntityFile(entity, typeMap, generatedAt, engineTrace);
 }
 
+// ---------------------------------------------------------------------------
+// IDE-AUD-062:辅助固定成员与业务成员重名预检。
+// 生成器固定输出 entityId / onBaseOutgoing / onCellOutgoing(TS)与
+// EntityId / OnBaseOutgoing / OnCellOutgoing(C#),外加 baseCall*/cellCall* 包装;
+// 业务属性/组件槽/ClientMethods 回调与这些固定名字撞名时,生成产物含重复成员
+// 无法编译(TS 2300/2687/2717)。策略=落盘前提前拒绝并说明原因,绝不静默覆盖。
+// ---------------------------------------------------------------------------
+
+/** IDE-AUD-062:单个重名冲突。name=发射后的成员名;sources=各来源说明。 */
+export interface ClientSdkMemberConflict {
+  readonly entity: string;
+  readonly language: ClientSdkLanguage;
+  readonly name: string;
+  readonly sources: readonly string[];
+}
+
+/** IDE-AUD-062:生成前预检拒绝,消息指明冲突实体、语言、成员与全部来源。 */
+export class ClientSdkMemberConflictError extends Error {
+  constructor(conflicts: readonly ClientSdkMemberConflict[]) {
+    super(formatClientSdkMemberConflictMessage(conflicts));
+    this.name = 'ClientSdkMemberConflictError';
+  }
+}
+
+/** 收集单实体在目标语言下全部发射成员(辅助固定 + 业务)。成员名→来源说明。 */
+function collectEmittedClientSdkMembers(
+  entity: ClientSdkEntity,
+  language: ClientSdkLanguage
+): Map<string, string[]> {
+  const members = new Map<string, string[]>();
+  const add = (name: string, source: string) => {
+    const list = members.get(name);
+    if (list) {
+      list.push(source);
+    } else {
+      members.set(name, [source]);
+    }
+  };
+
+  if (language === 'typescript') {
+    add('entityId', '辅助字段 entityId（实体 id）');
+    add('onBaseOutgoing', '辅助方法 onBaseOutgoing（发送接缝）');
+    add('onCellOutgoing', '辅助方法 onCellOutgoing（发送接缝）');
+  } else {
+    add('EntityId', '辅助字段 EntityId（实体 id）');
+    add('OnBaseOutgoing', '辅助方法 OnBaseOutgoing（发送接缝）');
+    add('OnCellOutgoing', '辅助方法 OnCellOutgoing（发送接缝）');
+  }
+
+  for (const property of clientVisibleProperties(entity)) {
+    const name = language === 'typescript' ? property.name : toPascalCase(property.name);
+    add(name, `业务属性 ${property.name}`);
+  }
+  for (const component of entity.components) {
+    const name = language === 'typescript' ? component.slot : toPascalCase(component.slot);
+    add(name, `组件槽 ${component.slot}`);
+  }
+  for (const method of entity.clientMethods) {
+    const name = language === 'typescript' ? method.name : toPascalCase(method.name);
+    add(name, `ClientMethods 回调 ${method.name}`);
+  }
+  for (const method of entity.exposedBaseMethods) {
+    const name = language === 'typescript'
+      ? `baseCall${toPascalCase(method.name)}`
+      : `BaseCall${toPascalCase(method.name)}`;
+    add(name, `Exposed BaseMethods 包装 ${method.name}`);
+  }
+  for (const method of entity.exposedCellMethods) {
+    const name = language === 'typescript'
+      ? `cellCall${toPascalCase(method.name)}`
+      : `CellCall${toPascalCase(method.name)}`;
+    add(name, `Exposed CellMethods 包装 ${method.name}`);
+  }
+
+  return members;
+}
+
+/** 检查实体组在各目标语言下发射成员的重名。空=可安全生成;非空=必须提前拒绝。 */
+export function findClientSdkMemberConflicts(
+  entities: ReadonlyArray<ClientSdkEntity>,
+  languages: ReadonlyArray<ClientSdkLanguage>
+): ClientSdkMemberConflict[] {
+  const conflicts: ClientSdkMemberConflict[] = [];
+  for (const entity of entities) {
+    for (const language of languages) {
+      for (const [name, sources] of collectEmittedClientSdkMembers(entity, language)) {
+        if (sources.length > 1) {
+          conflicts.push({ entity: entity.name, language, name, sources });
+        }
+      }
+    }
+  }
+  return conflicts;
+}
+
+export function formatClientSdkMemberConflictMessage(
+  conflicts: readonly ClientSdkMemberConflict[]
+): string {
+  const lines = conflicts.map(conflict => {
+    const lang = conflict.language === 'typescript' ? 'TypeScript' : 'C#';
+    return `实体 ${conflict.entity} 的 ${lang} SDK 成员 "${conflict.name}" 由 ${conflict.sources.length} 个来源生成：${conflict.sources.join('、')}`;
+  });
+  return [
+    '客户端实体 SDK 生成已拒绝：辅助成员与业务成员重名。',
+    ...lines,
+    '请重命名业务成员或调整 SDK 配置后重试。'
+  ].join('\n');
+}
+
 export function generateClientSdkFixedDictsFile(
   entities: ReadonlyArray<ClientSdkEntity>,
   language: ClientSdkLanguage,
@@ -1092,6 +1201,19 @@ export async function generateClientSdkEntities(
     ? options.outputDir
     : path.join(root, options.outputDir);
 
+  // IDE-AUD-062:落盘前预检辅助固定成员与业务成员重名,冲突即提前拒绝,
+  // 绝不静默生成含重复成员(TS 2300/2687/2717)的产物。解析失败(畸形 def 等)
+  // 跳过预检,交给主/兜底路径按既有口径处理,不改变既有行为。
+  let conflicts: ClientSdkMemberConflict[] = [];
+  try {
+    conflicts = findClientSdkMemberConflicts(collectClientSdkEntities(root), options.languages);
+  } catch {
+    conflicts = [];
+  }
+  if (conflicts.length > 0) {
+    throw new ClientSdkMemberConflictError(conflicts);
+  }
+
   // 主路径:Rust 生成核心;不可用时回落到 TS 纯实现。
   const rustResult = await generateClientSdkInRust(root, options, generatedAt, outputDir);
   if (rustResult !== null) {
@@ -1141,15 +1263,25 @@ export async function runClientSdkGenerateCommand(
     return;
   }
 
-  const result = await generateClientSdkEntities(
-    {
-      languages: languages.map(choice => choice.value as ClientSdkLanguage),
-      outputDir,
-      overwrite: overwriteChoice.value === 'overwrite',
-      engineTrace
-    },
-    workspaceRoot
-  );
+  let result: ClientSdkGenerationResult;
+  try {
+    result = await generateClientSdkEntities(
+      {
+        languages: languages.map(choice => choice.value as ClientSdkLanguage),
+        outputDir,
+        overwrite: overwriteChoice.value === 'overwrite',
+        engineTrace
+      },
+      workspaceRoot
+    );
+  } catch (error) {
+    // IDE-AUD-062:重名预检拒绝说明原因;其余错误按既有行为抛给命令宿主。
+    if (error instanceof ClientSdkMemberConflictError) {
+      vscode.window.showErrorMessage(error.message);
+      return;
+    }
+    throw error;
+  }
 
   const written = result.files.filter(file => file.written);
   const writtenPath = written[0]?.path;

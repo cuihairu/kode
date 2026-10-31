@@ -139,6 +139,29 @@ fn generate(params: Value) -> Value {
     response_of(&out).clone()
 }
 
+/// 走完整 `$/kode/rpc` 链路调 `$/kode/sdk/generate`,取错误消息(成功则 panic)。
+fn generate_err(params: Value) -> String {
+    let mut state = ServerState::new();
+    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    let out = handle_message(
+        &mut state,
+        request(
+            1,
+            "$/kode/rpc",
+            json!({"method": "$/kode/sdk/generate", "params": params}),
+        ),
+    );
+    match &out[0] {
+        Outgoing::Response(response) => response
+            .error
+            .as_ref()
+            .unwrap_or_else(|| panic!("expected error, got result {:?}", response.result))
+            .message
+            .clone(),
+        Outgoing::Notification(_) => panic!("expected response"),
+    }
+}
+
 /// 结果数组里按文件名取内容;找不到 panic。
 fn content_of<'a>(files: &'a [Value], file_name: &str) -> &'a str {
     files
@@ -408,4 +431,40 @@ fn unknown_language_is_error() {
         }
         Outgoing::Notification(_) => panic!("expected response"),
     }
+}
+
+/// IDE-AUD-062:业务 entityId 属性 + onBaseOutgoing 回调占用辅助成员名 →
+/// 生成前提前拒绝,不产任何文件(与 TS findClientSdkMemberConflicts 同口径)。
+#[test]
+fn rejects_member_name_collision_with_auxiliary() {
+    let def = r#"<root>
+      <Properties>
+        <entityId>
+          <Type>UINT32</Type>
+          <Flags>OWN_CLIENT</Flags>
+        </entityId>
+      </Properties>
+      <ClientMethods>
+        <onBaseOutgoing>
+          <Arg>UINT32</Arg>
+        </onBaseOutgoing>
+      </ClientMethods>
+    </root>"#;
+
+    let ts_err = generate_err(sdk_params("typescript", def));
+    assert!(ts_err.contains("客户端实体 SDK 生成已拒绝：辅助成员与业务成员重名。"));
+    assert!(ts_err.contains("实体 Avatar 的 TypeScript SDK 成员 \"entityId\""));
+    assert!(ts_err.contains("业务属性 entityId"));
+    assert!(ts_err.contains("ClientMethods 回调 onBaseOutgoing"));
+
+    let cs_err = generate_err(sdk_params("csharp", def));
+    assert!(cs_err.contains("实体 Avatar 的 C# SDK 成员 \"EntityId\""));
+}
+
+/// IDE-AUD-062:无重名输入照常生成(预检不误伤合法实体)。
+#[test]
+fn no_member_conflict_generates_normally() {
+    let files = generate(sdk_params("typescript", FULL_DEF));
+    let files = files.as_array().expect("array result");
+    assert!(content_of(files, "Avatar.ts").contains("export class Avatar"));
 }

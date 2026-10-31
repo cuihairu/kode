@@ -1125,6 +1125,93 @@ fn extension_for(language: &str) -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// IDE-AUD-062:辅助固定成员与业务成员重名预检(与 TS findClientSdkMemberConflicts 同口径)。
+// 生成器固定输出 entityId/onBaseOutgoing/onCellOutgoing(TS)与
+// EntityId/OnBaseOutgoing/OnCellOutgoing(C#),外加 baseCall*/cellCall* 包装;
+// 业务属性/组件槽/ClientMethods 回调与这些固定名字撞名时产物含重复成员无法编译。
+// 策略=生成前提前拒绝并说明原因,绝不静默覆盖。
+// ---------------------------------------------------------------------------
+
+fn add_member(members: &mut HashMap<String, Vec<String>>, name: &str, source: String) {
+    members.entry(name.to_string()).or_default().push(source);
+}
+
+fn collect_emitted_members(entity: &SdkEntity, language: &str) -> HashMap<String, Vec<String>> {
+    let mut members: HashMap<String, Vec<String>> = HashMap::new();
+
+    if language == "typescript" {
+        add_member(&mut members, "entityId", "辅助字段 entityId（实体 id）".to_string());
+        add_member(&mut members, "onBaseOutgoing", "辅助方法 onBaseOutgoing（发送接缝）".to_string());
+        add_member(&mut members, "onCellOutgoing", "辅助方法 onCellOutgoing（发送接缝）".to_string());
+    } else {
+        add_member(&mut members, "EntityId", "辅助字段 EntityId（实体 id）".to_string());
+        add_member(&mut members, "OnBaseOutgoing", "辅助方法 OnBaseOutgoing（发送接缝）".to_string());
+        add_member(&mut members, "OnCellOutgoing", "辅助方法 OnCellOutgoing（发送接缝）".to_string());
+    }
+
+    for property in client_visible_properties(entity) {
+        let name = if language == "typescript" {
+            property.name.clone()
+        } else {
+            to_pascal_case(&property.name)
+        };
+        add_member(&mut members, &name, format!("业务属性 {}", property.name));
+    }
+    for component in &entity.components {
+        let name = if language == "typescript" {
+            component.slot.clone()
+        } else {
+            to_pascal_case(&component.slot)
+        };
+        add_member(&mut members, &name, format!("组件槽 {}", component.slot));
+    }
+    for method in &entity.client_methods {
+        let name = if language == "typescript" {
+            method.name.clone()
+        } else {
+            to_pascal_case(&method.name)
+        };
+        add_member(&mut members, &name, format!("ClientMethods 回调 {}", method.name));
+    }
+    for method in &entity.exposed_base_methods {
+        let name = if language == "typescript" {
+            format!("baseCall{}", to_pascal_case(&method.name))
+        } else {
+            format!("BaseCall{}", to_pascal_case(&method.name))
+        };
+        add_member(&mut members, &name, format!("Exposed BaseMethods 包装 {}", method.name));
+    }
+    for method in &entity.exposed_cell_methods {
+        let name = if language == "typescript" {
+            format!("cellCall{}", to_pascal_case(&method.name))
+        } else {
+            format!("CellCall{}", to_pascal_case(&method.name))
+        };
+        add_member(&mut members, &name, format!("Exposed CellMethods 包装 {}", method.name));
+    }
+
+    members
+}
+
+fn find_member_conflicts(entities: &[SdkEntity], language: &str) -> Vec<String> {
+    let lang = if language == "typescript" { "TypeScript" } else { "C#" };
+    let mut conflicts = Vec::new();
+    for entity in entities {
+        for (name, sources) in collect_emitted_members(entity, language) {
+            if sources.len() > 1 {
+                conflicts.push(format!(
+                    "实体 {} 的 {lang} SDK 成员 \"{name}\" 由 {} 个来源生成：{}",
+                    entity.name,
+                    sources.len(),
+                    sources.join("、")
+                ));
+            }
+        }
+    }
+    conflicts
+}
+
 fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>, String> {
     let language = params.language.as_str();
     if language != "typescript" && language != "csharp" {
@@ -1142,6 +1229,16 @@ fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>, String> {
         .iter()
         .filter_map(|input| parse_entity(&input.def_text, &input.name, &params.component_defs))
         .collect();
+
+    // IDE-AUD-062:生成前预检辅助固定成员与业务成员重名,冲突即拒绝,绝不静默覆盖。
+    let conflict_msgs = find_member_conflicts(&entities, language);
+    if !conflict_msgs.is_empty() {
+        return Err(format!(
+            "客户端实体 SDK 生成已拒绝：辅助成员与业务成员重名。\n{}\n请重命名业务成员或调整 SDK 配置后重试。",
+            conflict_msgs.join("\n")
+        ));
+    }
+
     let entity_refs: Vec<&SdkEntity> = entities.iter().collect();
 
     let extension = extension_for(language);
