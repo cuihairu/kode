@@ -1597,6 +1597,50 @@ describe('extension activate 客户端实体 SDK 生成装配(盘点 G4)', () =>
   }, 8000);
 });
 
+describe('extension activate 消息表类型注册表接线(AUD-060)', () => {
+  it('messagetable.preview 读取所选根 types.xml:MY_INT→UINT32 参数不再 unknown-arg-type', async () => {
+    const windowish = fakeWindow as unknown as Record<string, unknown>;
+    const originalQuickPick = windowish.showQuickPick;
+    const originalFindFiles = workspace.findFiles;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-mt-typesxml-'));
+    const defsDir = path.join(root, 'scripts', 'entity_defs');
+    fs.mkdirSync(defsDir, { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), '<root><Hero hasBase="true"/></root>', 'utf8');
+    // 实体所属根的 types.xml:自定义别名 MY_INT→UINT32(审计 R3-K01 反例)
+    fs.writeFileSync(path.join(defsDir, 'types.xml'), '<root><MY_INT>UINT32</MY_INT></root>', 'utf8');
+    const heroDef = path.join(defsDir, 'Hero.def');
+    fs.writeFileSync(
+      heroDef,
+      '<root><BaseMethods><req><Exposed>true</Exposed><Arg>MY_INT</Arg></req></BaseMethods></root>',
+      'utf8'
+    );
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    // 映射首扫经 findFilesAcrossRoots → workspace.findFiles;替身默认返回 [],
+    // 这里让 Hero.def 被扫到(与 defAnalyzerCommand/defParamInlayHints 同式)
+    workspace.findFiles = (async (glob?: string) =>
+      glob === '**/*.def' ? [Uri.file(heroDef)] : []) as typeof workspace.findFiles;
+    const context = makeContext();
+    try {
+      activate(context);
+      windowish.showQuickPick = async (): Promise<unknown> => 'Hero';
+      await commands.executeCommand('kbengine.messagetable.preview');
+      // 预览经 openTextDocument({content, language}) 展示;取最后一次内容调用
+      const markdownCall = [...workspaceState.openTextDocumentCalls]
+        .reverse()
+        .find(call => typeof call === 'object' && call !== null && 'content' in call) as { content: string } | undefined;
+      expect(markdownCall).toBeTruthy();
+      expect(markdownCall!.content).toContain('# 消息编号表 — Hero');
+      // AUD-060:types.xml 已喂入 → MY_INT 进注册表,参数不报 unknown-arg-type
+      expect(markdownCall!.content).not.toContain('dataType[MY_INT] not found');
+    } finally {
+      windowish.showQuickPick = originalQuickPick;
+      workspace.findFiles = originalFindFiles;
+      disposeAll(context);
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 8000);
+});
+
 describe('extension activate 定义形态生成装配(盘点 G7)', () => {
   it('formWizard 命令:选空间形态 + 名称后落 def 并登记 entities.xml', async () => {
     const windowish = fakeWindow as unknown as Record<string, unknown>;

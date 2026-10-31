@@ -90,9 +90,11 @@ import {
 } from './taskContext';
 import { showEntityMessageTablePreview } from './messageTablePreview';
 import { exportEntityMessageTable } from './messageTableExport';
-import { buildMessageTable, buildMessageTableInRust, renderMessageTableJson, renderMessageTableMarkdown, type DefTreeSource, type MessageTable } from './messageTable';
+import { renderMessageTableJson, renderMessageTableMarkdown, type MessageTable } from './messageTable';
+import { buildEntityMessageTableShared } from './messageTableEntity';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
 import { getIndexScanRoots } from './scanRoots';
+import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { ProjectProfileStore } from './projectProfiles';
 import { RuntimeLogLevel } from './logHub';
 import { KBEngineLogCollector, LogCollectorConfig } from './logCollector';
@@ -329,6 +331,7 @@ import {
   FinalConfigContentProvider,
   FinalConfigTreeProvider,
   buildFinalServerConfig,
+  buildMergedConfigTree,
   resetDatabaseInterfaceConfigCache,
   resolveDatabaseInterfaceConfig,
   type DatabaseInterfaceConfig
@@ -2392,21 +2395,62 @@ export function activate(context: vscode.ExtensionContext) {
   // 构建主路径走 Rust 核心(buildMessageTableInRust,原文直传),Rust 不可用
   // (无 gate/serverPath/调用失败)回落 TS 纯实现——与 clientSdkGenerator
   // 的主路径/兜底分面同形。
-  const buildEntityMessageTable = async (entityName: string): Promise<MessageTable | null> => {
-    const loader = createDefinitionSemanticsLoader(getIndexScanRoots());
+  // IDE-AUD-060:类型注册表按「所选根」接入——实体所属根的 types.xml 全文
+  // (MY_INT→UINT32 等自定义别名)喂给两条构建路,方法参数不再误报
+  // unknown-arg-type;entitydefAliasID 引擎配置如实驱动 aliasID 开关。
+  const scanRoots = getIndexScanRoots();
+  const readEntityTypesXml = (entityName: string): string | null => {
+    const loader = createDefinitionSemanticsLoader(scanRoots);
     if (!loader) {
       return null;
     }
-    const fromRust = await buildMessageTableInRust(entityName, {
-      loadDefRaw: (name, kind) => loader.loadLocalRaw(name, kind)
-    });
-    if (fromRust) {
-      return fromRust;
+    const raw = loader.loadLocalRaw(entityName, 'entity');
+    if (!raw) {
+      return null;
     }
-    const source: DefTreeSource = {
+    // 实体所属根 = def 文件路径所在的最具体扫描根(前缀匹配;嵌套根取最长)。
+    // 与 loader 的 originRootOf 同一口径,保证 types.xml 与 def 同根解析。
+    const entityRoot = scanRoots
+      .filter(candidate => raw.filePath === candidate || raw.filePath.startsWith(`${candidate}${path.sep}`))
+      .sort((left, right) => right.length - left.length)[0];
+    if (!entityRoot) {
+      return null;
+    }
+    const layout = getDefinitionWorkspaceLayout(entityRoot);
+    if (!layout.typesXmlPath) {
+      return null;
+    }
+    // 共享快照:打开的脏缓冲优先(未保存别名修改即时进注册表),未打开磁盘补载
+    const content = readSharedFileSnapshot(layout.typesXmlPath)?.content ?? null;
+    return content !== null && content.length > 0 ? content : null;
+  };
+  const readAliasIdEnabled = (): boolean => {
+    // entitydefAliasID 是引擎全局开关(kbengine_defaults.xml 裸键,默认关);
+    // 配置树缺失(无引擎 defaults/解析失败)或值非真按 false 如实处理。
+    try {
+      const merged = buildMergedConfigTree().merged;
+      const aliasNode = merged?.children.find(child => child.name === 'entitydefAliasID');
+      if (!aliasNode) {
+        return false;
+      }
+      const value = aliasNode.text.trim().toLowerCase();
+      return value === '1' || value === 'true';
+    } catch {
+      return false;
+    }
+  };
+  const buildEntityMessageTable = async (entityName: string): Promise<MessageTable | null> => {
+    const loader = createDefinitionSemanticsLoader(scanRoots);
+    if (!loader) {
+      return null;
+    }
+    return buildEntityMessageTableShared(entityName, {
+      loadDefRaw: (name, kind) => loader.loadLocalRaw(name, kind),
       loadDef: (name, kind) => loader.loadLocal(name, kind)
-    };
-    return buildMessageTable(entityName, source);
+    }, {
+      readEntityTypesXml,
+      readAliasIdEnabled
+    });
   };
   const entityMessageTableDeps = {
     listEntityNames: () => entityMappingManager.getAllMappings().map(mapping => mapping.name),
