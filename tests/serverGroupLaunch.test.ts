@@ -284,4 +284,28 @@ describe('KBEngineServerManager.retryTarget', () => {
     expect(manager.getRunningServers().get('machine')?.pid).toBe(machinePid);
     expect(manager.getRunningServers().size).toBe(2);
   }, 20000);
+
+  it('tracks failed targets for retry and clears them on success (AUD-038)', async () => {
+    // machine 缺失 → spawn-failed,dbmgr 被门住 → dependency-failed;
+    // 失败表登记两者(带原因),成功重试后对应目标从失败表清除
+    bin.write('dbmgr', { kind: 'run' });
+    const manager = makeManager();
+
+    await manager.startTargetGroup([{ component: 'machine' }, { component: 'dbmgr' }]);
+
+    let failed = manager.getFailedTargetsForRetry();
+    expect(failed.find(item => item.key === 'machine')?.outcome).toBe('spawn-failed');
+    expect(failed.find(item => item.key === 'dbmgr')?.outcome).toBe('dependency-failed');
+    expect(failed.find(item => item.key === 'dbmgr')?.dependency).toBe('machine');
+
+    // 补上 machine 可执行文件后重试 machine → 成功即从失败表清除
+    bin.write('machine', { kind: 'run' });
+    const machineRetry = await manager.retryTarget({ component: 'machine' });
+    expect(machineRetry.outcome).toBe('started');
+    await until(() => manager.getServerStatus('machine') === 'running');
+    failed = manager.getFailedTargetsForRetry();
+    expect(failed.find(item => item.key === 'machine')).toBeUndefined();
+    // dbmgr 仍是失败目标(未被这次成功重试触及)
+    expect(failed.find(item => item.key === 'dbmgr')?.outcome).toBe('dependency-failed');
+  }, 20000);
 });

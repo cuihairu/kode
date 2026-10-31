@@ -51,6 +51,7 @@
     "onCommand:kbengine.server.stop",
     "onCommand:kbengine.server.restart",
     "onCommand:kbengine.server.showLogs",
+    "onCommand:kbengine.server.retry",
     "onCommand:kbengine.logs.showViewer",
     "onCommand:kbengine.logs.connect",
     "onCommand:kbengine.logs.disconnect",
@@ -365,6 +366,11 @@
         "command": "kbengine.server.showLogs",
         "title": "Show Logs",
         "icon": "$(output)"
+      },
+      {
+        "command": "kbengine.server.retry",
+        "title": "Retry Failed Target",
+        "icon": "$(debug-restart)"
       },
       {
         "command": "kbengine.logs.showViewer",
@@ -762,6 +768,11 @@
         },
         {
           "command": "kbengine.server.showLogs",
+          "when": "view == kbengine.serverControl",
+          "group": "inline"
+        },
+        {
+          "command": "kbengine.server.retry",
           "when": "view == kbengine.serverControl",
           "group": "inline"
         },

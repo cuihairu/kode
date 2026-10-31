@@ -289,6 +289,9 @@ export class KBEngineServerManager {
   readonly onDidChangeStatus = this._onDidChangeStatus.event;
 
   private outputChannels: Map<string, vscode.OutputChannel> = new Map();
+  // AUD-038(R2-F14):组启动的失败目标登记(供命令层选择重试)。键=buildServerKey;
+  // 目标转为 started/already-running 时清除(不再是失败),失败结局保留原因。
+  private failedTargets = new Map<string, TargetOutcome>();
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -827,11 +830,11 @@ export class KBEngineServerManager {
       });
     }
     if (unknown.length > 0) {
-      return {
-        outcomes: unknown.map(item => ({
-          key: item.key, component: item.componentName, targetId: item.targetId, outcome: 'not-found' as const
-        }))
-      };
+      const outcomes = unknown.map(item => ({
+        key: item.key, component: item.componentName, targetId: item.targetId, outcome: 'not-found' as const
+      }));
+      this.recordOutcomes(outcomes);
+      return { outcomes };
     }
 
     const specs: LaunchTargetSpec[] = resolved.map(target => ({ key: target.key, dependsOn: target.dependsOn }));
@@ -874,7 +877,31 @@ export class KBEngineServerManager {
       }
       outcomes.push({ key, component: target.componentName, targetId: target.targetId, outcome: 'started' });
     }
+    this.recordOutcomes(outcomes);
     return { order: order.order, outcomes };
+  }
+
+  /**
+   * AUD-038(R2-F14):登记一组组启动结局到失败表——失败结局(spawn-failed/
+   * dependency-failed/dependency-timeout/not-found)保留供命令层选择重试,
+   * 目标转为 started/already-running 时清除(不再是失败目标)。
+   */
+  private recordOutcomes(outcomes: readonly TargetOutcome[]): void {
+    for (const outcome of outcomes) {
+      if (outcome.outcome === 'started' || outcome.outcome === 'already-running') {
+        this.failedTargets.delete(outcome.key);
+      } else {
+        this.failedTargets.set(outcome.key, outcome);
+      }
+    }
+  }
+
+  /**
+   * AUD-038(R2-F14):当前可重试的失败目标(组件/实例/失败原因),命令层
+   * 以此呈现选择清单;失败原因如实为 startTargetGroup 登记的结局。
+   */
+  getFailedTargetsForRetry(): TargetOutcome[] {
+    return Array.from(this.failedTargets.values());
   }
 
   /**

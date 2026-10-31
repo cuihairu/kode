@@ -975,6 +975,76 @@ describe('extension activate 装配', () => {
     }
   });
 
+  it('retry 命令无失败目标时如实说明 (AUD-038)', async () => {
+    const context = makeContext();
+    activate(context);
+
+    // 全新装配无任何失败登记:命令应说明无可重试目标且不弹 QuickPick
+    const result = await commands.executeCommand('kbengine.server.retry');
+    expect(result).toBeUndefined();
+    expect(messages.info.some(message => message.includes('没有可重试的失败目标'))).toBe(true);
+
+    disposeAll(context);
+  });
+
+  it('retry 命令从失败目标选择重试,已就绪目标不重启 (AUD-038)', async () => {
+    const bin = await FakeComponentBin.create();
+    try {
+      const configRoot = path.join(bin.root, 'cfg');
+      fs.mkdirSync(configRoot, { recursive: true });
+      bin.write('dbmgr', { kind: 'run' });
+      configurationOverrides.set('kbengine', {
+        binPath: bin.binPath,
+        assetsRoot: configRoot,
+        autoStart: ['machine', 'dbmgr'],
+        logAutoConnect: false
+      });
+
+      const context = makeContext();
+      activate(context);
+      const bar = windowState.statusBars.find(item => item.priority === 100)!;
+
+      // 无目标自动启动:machine 可执行文件缺失 → spawn-failed,dbmgr 被门住
+      await commands.executeCommand('kbengine.server.start');
+      await new Promise(resolve => setTimeout(resolve, 300));
+      expect(bar.visible).toBe(false);
+
+      // 补上 machine 可执行文件;无目标 retry → QuickPick 列失败目标(带原因)
+      bin.write('machine', { kind: 'run', stdoutMarker: 'machine-up' });
+      const originalPick = fakeWindow.showQuickPick;
+      const pickArgs: unknown[] = [];
+      fakeWindow.showQuickPick = (async (items: unknown[]) => {
+        pickArgs.push(items);
+        return (items as Array<{ outcome: unknown }>)[0];
+      }) as typeof originalPick;
+      try {
+        await commands.executeCommand('kbengine.server.retry');
+      } finally {
+        fakeWindow.showQuickPick = originalPick;
+      }
+
+      // 失败原因如实显示在清单里(machine 启动失败/dbmgr 依赖未就绪)
+      const listed = pickArgs[0] as Array<{ label: string; description: string }>;
+      expect(listed.some(item => item.label === 'machine' && item.description.includes('启动失败'))).toBe(true);
+      expect(listed.some(item => item.label === 'dbmgr' && item.description.includes('依赖未就绪'))).toBe(true);
+
+      // 选中 machine 重试 → 启动成功,状态栏 1/10 Running
+      await until(() => bar.visible && bar.text === '$(server) KBEngine: 1/10 Running');
+      expect(messages.info.some(message => message.includes('machine 已启动'))).toBe(true);
+
+      // 对已就绪 machine 直接 retry:如实报 already-running,不重启
+      await commands.executeCommand('kbengine.server.retry', { name: 'machine' });
+      expect(messages.info.some(message => message.includes('machine 已在运行,未重启'))).toBe(true);
+      await until(() => bar.text === '$(server) KBEngine: 1/10 Running');
+
+      await commands.executeCommand('kbengine.server.stop');
+      disposeAll(context);
+    } finally {
+      configurationOverrides.delete('kbengine');
+      await bin.dispose();
+    }
+  });
+
   it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async () => {
     // 批111 起:配置显式开启 telnet(空 <telnet_service> 段=段在未写端口 →
     // 引擎默认表)才探测;引擎默认表第一个目标 loginapp:31000,起真 server

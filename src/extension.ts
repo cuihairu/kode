@@ -43,7 +43,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey, DEFAULT_TARGET_ID } from './serverManager';
+import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey, DEFAULT_TARGET_ID, type TargetOutcome } from './serverManager';
 import {
   injectDebugpyAfterStart,
   syncDebugpyPackage,
@@ -2709,6 +2709,87 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(restartServerCommand);
+
+  // AUD-038(R2-F14):失败单目标重试产品入口——retryTarget 原只被管理器与
+  // 测试使用,此命令把它接到命令面。带目标载荷直接重试该组件;无载荷时
+  // 从登记失败的组启动目标中 QuickPick 选择,失败原因如实显示。重试只作用
+  // 该失败目标,在册实例(report already-running)不重启;取消/超时沿用
+  // startTargetGroup 的既有依赖/就绪守卫(依赖与就绪超时)。
+  interface RetryTargetPickItem extends vscode.QuickPickItem {
+    outcome: TargetOutcome;
+  }
+  const describeServerRetryOutcome = (outcome: TargetOutcome): string => {
+    switch (outcome.outcome) {
+      case 'started': return '已启动';
+      case 'already-running': return '已在运行,未重启';
+      case 'spawn-failed': return '启动失败(进程未启动)';
+      case 'dependency-failed': return `依赖未就绪: ${outcome.dependency}`;
+      case 'dependency-timeout': return `依赖等待超时: ${outcome.dependency}`;
+      case 'not-found': return '未知组件';
+      default: return outcome.outcome;
+    }
+  };
+  const reportServerRetryOutcome = (outcome: TargetOutcome): void => {
+    const label = outcome.targetId === DEFAULT_TARGET_ID
+      ? outcome.component
+      : `${outcome.component} 实例 ${outcome.targetId}`;
+    switch (outcome.outcome) {
+      case 'started':
+        vscode.window.showInformationMessage(`${label} 已启动`);
+        break;
+      case 'already-running':
+        vscode.window.showInformationMessage(`${label} 已在运行,未重启`);
+        break;
+      case 'spawn-failed':
+        vscode.window.showErrorMessage(`${label} 启动失败`);
+        break;
+      case 'dependency-failed':
+        vscode.window.showErrorMessage(`${label} 未启动: 依赖 ${outcome.dependency} 未就绪`);
+        break;
+      case 'dependency-timeout':
+        vscode.window.showErrorMessage(`${label} 未启动: 等待依赖 ${outcome.dependency} 超时`);
+        break;
+      case 'not-found':
+        vscode.window.showErrorMessage(`${label} 未知组件`);
+        break;
+      default:
+        vscode.window.showErrorMessage(`${label} ${outcome.outcome}`);
+    }
+  };
+  const retryServerCommand = vscode.commands.registerCommand(
+    'kbengine.server.retry',
+    async (target) => {
+      const component = resolveServerComponent(target);
+      if (component) {
+        const outcome = await serverManager.retryTarget({ component: component.name });
+        reportServerRetryOutcome(outcome);
+        return outcome;
+      }
+      const failed = serverManager.getFailedTargetsForRetry();
+      if (failed.length === 0) {
+        vscode.window.showInformationMessage('没有可重试的失败目标');
+        return undefined;
+      }
+      const picked = await vscode.window.showQuickPick<RetryTargetPickItem>(
+        failed.map(item => ({
+          label: item.targetId === DEFAULT_TARGET_ID ? item.component : `${item.component} 实例 ${item.targetId}`,
+          description: describeServerRetryOutcome(item),
+          outcome: item
+        })),
+        { placeHolder: '选择要重试的失败目标' }
+      );
+      if (!picked) {
+        return undefined;
+      }
+      const outcome = await serverManager.retryTarget({
+        component: picked.outcome.component,
+        targetId: picked.outcome.targetId
+      });
+      reportServerRetryOutcome(outcome);
+      return outcome;
+    }
+  );
+  context.subscriptions.push(retryServerCommand);
 
   const showLogsCommand = vscode.commands.registerCommand(
     'kbengine.server.showLogs',

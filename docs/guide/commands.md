@@ -139,6 +139,14 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Title: `Show Logs`
 - Purpose: focus a component's log context
 
+### `kbengine.server.retry`
+
+- Title: `Retry Failed Target`
+- Purpose:
+  - With a component argument, retries that single failed target
+  - Without one, offers a picker of targets whose group start failed (with the failure reason), and retries the selection
+  - Ready targets are reported as already-running and are not restarted
+
 ## Logs
 
 ### `kbengine.logs.showViewer`
