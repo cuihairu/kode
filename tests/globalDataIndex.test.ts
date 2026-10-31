@@ -118,6 +118,110 @@ describe('findKbeDataDictAccesses(GLOBDATA-001 扫描)', () => {
   });
 });
 
+describe('AUD-065 词法过滤非代码访问(R4-F01 目标扫描)', () => {
+  it('注释行与尾随注释里的伪写/读点不入索引,行内真代码照常', () => {
+    const text = [
+      '# KBEngine.globalData["cfg"] = 1',
+      'KBEngine.globalData["real"] = 2  # KBEngine.globalData["fake"] = 3',
+      'v = KBEngine.baseAppData.get("a")  # KBEngine.baseAppData.get("b")'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses.map(a => a.keySignature)).toEqual(['real', 'a']);
+    expect(accesses.map(a => a.kind)).toEqual(['write', 'read']);
+  });
+
+  it('普通字符串里的伪访问不入索引', () => {
+    const text = [
+      's = "KBEngine.globalData[\'cfg\'] = 1"',
+      't = \'KBEngine.globalData.get("cfg")\'',
+      'KBEngine.globalData["real"] = 1'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses.map(a => a.keySignature)).toEqual(['real']);
+  });
+
+  it('三引号字符串(含跨行 docstring)里的伪访问不入索引,前后代码照常', () => {
+    const text = [
+      '"""',
+      'KBEngine.globalData["doc1"] = 1',
+      'KBEngine.globalData.get("doc2")',
+      '"""',
+      "'''",
+      'KBEngine.globalData["doc3"] = 1',
+      "'''",
+      'KBEngine.globalData["after"] = 1'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses.map(a => a.keySignature)).toEqual(['after']);
+    expect(accesses.map(a => a.kind)).toEqual(['write']);
+  });
+
+  it('真实下标与 get 的字符串键仍识别(回归)', () => {
+    const text = [
+      'KBEngine.globalData["cfg"] = {"gold": 1}',
+      'v = KBEngine.baseAppData.get("c", 5)'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses.map(a => ({ key: a.keySignature, kind: a.kind }))).toEqual([
+      { key: 'cfg', kind: 'write' },
+      { key: 'c', kind: 'read' }
+    ]);
+  });
+
+  it('键字符串里的 # 是字面量,行尾注释不误伤真实写点', () => {
+    const text = 'KBEngine.globalData["a#b"] = 1  # real comment';
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses).toHaveLength(1);
+    expect(accesses[0].keySignature).toBe('a#b');
+    expect(accesses[0].valueText).toBe('1');
+  });
+});
+
+describe('buildPythonCodeMask(AUD-065 词法掩码)', () => {
+  it('注释/字符串/三引号跨行/真实代码分类正确', async () => {
+    const { buildPythonCodeMask } = await import('../src/globalDataIndex');
+    const text = [
+      'code = 1',
+      '# comment KBEngine.globalData["x"] = 1',
+      's = "KBEngine.globalData[1]"',
+      '"""',
+      'KBEngine.globalData["doc"] = 1',
+      '"""',
+      'after = 2'
+    ].join('\n');
+    const mask = buildPythonCodeMask(text);
+    // 第 0 行 code;第 1 行 '#' 起 comment;第 2 行引号内 string
+    expect(mask[0]).toBe(0);
+    const line1 = text.indexOf('# comment');
+    expect(mask[line1]).toBe(2);
+    expect(mask[text.indexOf('"KBEngine')]).toBe(1);
+    const docLine = text.indexOf('KBEngine.globalData["doc"]');
+    expect(mask[docLine]).toBe(1);
+    const afterLine = text.indexOf('after = 2');
+    expect(mask[afterLine]).toBe(0);
+  });
+
+  it('字符串内 \\ 跳过下一字符(含行延续),引号不提前闭合', async () => {
+    const { buildPythonCodeMask } = await import('../src/globalDataIndex');
+    const text = 's = "a\\\'" + \'b\\\\c\'';
+    const mask = buildPythonCodeMask(text);
+    // `\\'` 转义引号在字符串内;`\\\\` 也整段在字符串内
+    const escapedQuote = text.indexOf("\\'");
+    expect(mask[escapedQuote]).toBe(1);
+    expect(mask[escapedQuote + 1]).toBe(1);
+  });
+
+  it('行延续:单引号字符串以 \\ 结尾换行后仍在字符串内', async () => {
+    const { buildPythonCodeMask } = await import('../src/globalDataIndex');
+    const text = 's = "abc\\\nKBEngine.globalData[foo] = 1"\ndef = 2';
+    const mask = buildPythonCodeMask(text);
+    const fakeLine = text.indexOf('KBEngine.globalData[foo]');
+    expect(mask[fakeLine]).toBe(1);
+    const defLine = text.indexOf('def = 2');
+    expect(mask[defLine]).toBe(0);
+  });
+});
+
 describe('getKbeDataDictAccessAtPosition(GLOBDATA-001 定位)', () => {
   it('落点落在键表达式上命中,落点在外返回 null', () => {
     const line = 'KBEngine.globalData.get("cfg")';

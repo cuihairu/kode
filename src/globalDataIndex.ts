@@ -377,10 +377,91 @@ function trimSpan(lineText: string, start: number, end: number): KeySpan | null 
 }
 
 /**
+ * 词法分类掩码(AUD-065):逐字符标注 0=代码 / 1=字符串 / 2=注释,供扫描
+ * 器剔除注释、普通字符串与三引号字符串(含跨行 docstring)里的伪访问。
+ * 支持单/双引号字面量与 `'''`/`"""` 三引号字面量,字符串内 `\` 跳过下一
+ * 字符(含 `\<newline>` 行延续);引号外 `#` 起到行尾为注释。字面量前缀
+ * (r/b/f/u)不影响掩码——前缀字符留在代码域,引号起才进字符串。
+ */
+export function buildPythonCodeMask(text: string): Uint8Array {
+  const mask = new Uint8Array(text.length);
+  let inString: { quote: string; triple: boolean } | null = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const ch = text[index];
+    if (inString) {
+      mask[index] = 1;
+      if (ch === '\\') {
+        if (index + 1 < text.length) {
+          mask[index + 1] = 1;
+          index += 1;
+        }
+        continue;
+      }
+      if (inString.triple) {
+        if (text.startsWith(inString.quote, index)) {
+          mask[index + 1] = 1;
+          mask[index + 2] = 1;
+          index += 2;
+          inString = null;
+        }
+      } else if (ch === inString.quote) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === '#') {
+      for (let j = index; j < text.length && text[j] !== '\n'; j += 1) {
+        mask[j] = 2;
+      }
+      while (index < text.length && text[index] !== '\n') {
+        index += 1;
+      }
+      index -= 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      const triple = text.startsWith(ch.repeat(3), index);
+      inString = { quote: ch, triple };
+      mask[index] = 1;
+      if (triple) {
+        mask[index + 1] = 1;
+        mask[index + 2] = 1;
+        index += 2;
+      }
+      continue;
+    }
+    mask[index] = 0;
+  }
+  return mask;
+}
+
+/** `[start,start+length)` 全段是否代码(掩码全 0) */
+function spanIsCode(mask: Uint8Array, start: number, length: number): boolean {
+  for (let index = start; index < start + length; index += 1) {
+    if (mask[index] !== 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 全文每行起始偏移(按 `\n` 切分,兼容 `\r\n`) */
+function lineStartOffsets(text: string): number[] {
+  const starts: number[] = [0];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') {
+      starts.push(index + 1);
+    }
+  }
+  return starts;
+}
+
+/**
  * 全文扫描字典键访问:接收者须为已引入的 kbe 别名(非 `alias.dict` 不
  * 认);别名前若是 `.`(如 x.KBEngine.globalData)视为属性链不接管,与
  * resolveKbeAccessAtPosition 同款守卫。键签名归一失败(全动态/复杂
- * 表达式)的访问跳过。
+ * 表达式)的访问跳过。AUD-065:只收词法代码域里的访问——注释、普通字符
+ * 串、三引号字符串中的伪写/读点不入索引,真实下标与 get 的字符串键照常。
  */
 export function findKbeDataDictAccesses(
   text: string,
@@ -389,6 +470,8 @@ export function findKbeDataDictAccesses(
   if (aliases.size === 0) {
     return [];
   }
+  const mask = buildPythonCodeMask(text);
+  const lineStarts = lineStartOffsets(text);
   const accesses: KbeDataDictAccess[] = [];
   const lines = text.split(/\r?\n/);
   for (let line = 0; line < lines.length; line += 1) {
@@ -401,6 +484,10 @@ export function findKbeDataDictAccesses(
       }
       // 别名前是 '.'(x.KBEngine.globalData / self.kbe)→ 属性访问非模块访问
       if (match.index > 0 && lineText[match.index - 1] === '.') {
+        continue;
+      }
+      // 词法上下文:alias.dict 整段必须是代码,注释/字符串里的假访问不入索引
+      if (!spanIsCode(mask, (lineStarts[line] ?? 0) + match.index, match[0].length)) {
         continue;
       }
       const dict = match[2] as KbeDataDictName;
