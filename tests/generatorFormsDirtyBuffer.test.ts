@@ -123,3 +123,168 @@ describe('entities.xml 登记进打开缓冲区(AUD-030)', () => {
     expect(saved).toContain('<MySpace hasBase="true" hasCell="true" />');
   });
 });
+
+// AUD-031:表单附带改写(固定字典 types.xml、组件挂载 def)同 R2-F07 闭环——
+// 打开文档(含脏)走 WorkspaceEdit 缓冲写入(插入点按缓冲区当前文本定位,
+// 用户未保存改动原样保留),未打开才原子写盘。
+
+const DISK_TYPES = [
+  '<root>',
+  '  <ITEM_ID>',
+  '    <Type>UINT32</Type>',
+  '  </ITEM_ID>',
+  '</root>',
+  ''
+].join('\n');
+
+const DIRTY_TYPES = [
+  '<root>',
+  '  <ITEM_ID>',
+  '    <Type>UINT32</Type>',
+  '  </ITEM_ID>',
+  '  <!-- 未保存:手工加的 BOSS_FLAGS -->',
+  '</root>',
+  ''
+].join('\n');
+
+const DISK_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <hp>',
+  '      <Type>UINT32</Type>',
+  '    </hp>',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const DIRTY_DEF = [
+  '<root>',
+  '  <Properties>',
+  '    <hp>',
+  '      <Type>UINT32</Type>',
+  '    </hp>',
+  '    <!-- 未保存:手工加的 mana 属性占位 -->',
+  '  </Properties>',
+  '</root>',
+  ''
+].join('\n');
+
+const fixedDictInput: GeneratorFormInput = {
+  kind: 'fixedDict',
+  value: { name: 'AVATAR_DATA', properties: [{ name: 'value', type: 'UINT32' }] }
+};
+const componentInput: GeneratorFormInput = { kind: 'component', value: { name: 'Inventory', properties: [] } };
+
+describe('types.xml 固定字典登记进打开缓冲区(AUD-031)', () => {
+  it('R2-F07 复现:打开脏 types.xml 时登记进缓冲区,盘不动,未保存行保留', async () => {
+    const typesPath = path.join(root, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesPath, DISK_TYPES, 'utf8');
+    const dirtyDoc = makeTextDocument(DIRTY_TYPES, { uri: Uri.file(typesPath), version: 5 });
+    stubWorkspace.textDocuments = [dirtyDoc];
+
+    const outcome = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+
+    expect(outcome.written).toBe(true);
+    expect(outcome.touchedFiles).toEqual([typesPath]);
+    const bufferText = dirtyDoc.getText();
+    expect(bufferText).toContain('<!-- 未保存:手工加的 BOSS_FLAGS -->');
+    expect(bufferText).toContain('<AVATAR_DATA>');
+    expect(fs.readFileSync(typesPath, 'utf8')).toBe(DISK_TYPES);
+    expect(dirtyDoc.version).toBe(6);
+  });
+
+  it('未打开才原子写盘(applyEdit 零调用)', async () => {
+    const typesPath = path.join(root, 'scripts', 'entity_defs', 'types.xml');
+    fs.writeFileSync(typesPath, DISK_TYPES, 'utf8');
+    stubWorkspace.textDocuments = [];
+    workspaceState.applyEditCalls.length = 0;
+
+    const outcome = await generateGeneratorForm(fixedDictInput, root, { generatedAt: 'TS', layout: layout() });
+
+    expect(outcome.written).toBe(true);
+    expect(fs.readFileSync(typesPath, 'utf8')).toContain('<AVATAR_DATA>');
+    expect(workspaceState.applyEditCalls).toHaveLength(0);
+  });
+});
+
+describe('组件挂载 def 进打开缓冲区(AUD-031)', () => {
+  it('R2-F07 复现:打开脏目标 def 时挂载进缓冲区,盘不动,未保存行保留', async () => {
+    const entityDefPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
+    fs.writeFileSync(entityDefPath, DISK_DEF, 'utf8');
+    const dirtyDoc = makeTextDocument(DIRTY_DEF, { uri: Uri.file(entityDefPath), version: 4 });
+    stubWorkspace.textDocuments = [dirtyDoc];
+
+    const outcome = await generateGeneratorForm(componentInput, root, {
+      generatedAt: 'TS',
+      layout: layout(),
+      attachTo: 'Avatar'
+    });
+
+    expect(outcome.touchedFiles).toContain(entityDefPath);
+    const bufferText = dirtyDoc.getText();
+    expect(bufferText).toContain('<!-- 未保存:手工加的 mana 属性占位 -->');
+    expect(bufferText).toContain('    <Inventory>\n      <Type>COMPONENT</Type>\n      <Flags>CELL_PUBLIC</Flags>\n    </Inventory>');
+    expect(fs.readFileSync(entityDefPath, 'utf8')).toBe(DISK_DEF);
+  });
+
+  it('未打开才原子写盘(applyEdit 零调用)', async () => {
+    const entityDefPath = path.join(root, 'scripts', 'entity_defs', 'Avatar.def');
+    fs.writeFileSync(entityDefPath, DISK_DEF, 'utf8');
+    stubWorkspace.textDocuments = [];
+    workspaceState.applyEditCalls.length = 0;
+
+    const outcome = await generateGeneratorForm(componentInput, root, {
+      generatedAt: 'TS',
+      layout: layout(),
+      attachTo: 'Avatar'
+    });
+
+    const content = fs.readFileSync(entityDefPath, 'utf8');
+    expect(content).toContain('    <Inventory>\n      <Type>COMPONENT</Type>\n      <Flags>CELL_PUBLIC</Flags>\n    </Inventory>');
+    expect(workspaceState.applyEditCalls).toHaveLength(0);
+  });
+});
+
+describe('缓冲写入异常语义(AUD-031)', () => {
+  const realApplyEdit = stubWorkspace.applyEdit;
+
+  afterEach(() => {
+    stubWorkspace.applyEdit = realApplyEdit;
+  });
+
+  it('applyEdit 抛错且文本未落缓冲:上抛交回滚,主产物回收,缓冲不动', async () => {
+    const dirtyDoc = makeTextDocument(DIRTY_XML, { uri: Uri.file(entitiesXmlPath), version: 7 });
+    stubWorkspace.textDocuments = [dirtyDoc];
+    const defPath = path.join(root, 'scripts', 'entity_defs', 'MySpace.def');
+    stubWorkspace.applyEdit = (async (): Promise<boolean> => {
+      throw new Error('simulated interruption');
+    }) as unknown as typeof stubWorkspace.applyEdit;
+
+    await expect(
+      generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() })
+    ).rejects.toThrow('simulated interruption');
+
+    // 主产物(先落盘的 def)被回收,缓冲区原样未动
+    expect(fs.existsSync(defPath)).toBe(false);
+    expect(dirtyDoc.getText()).toBe(DIRTY_XML);
+    expect(fs.readFileSync(entitiesXmlPath, 'utf8')).toBe(DISK_XML);
+  });
+
+  it('applyEdit 抛错但文本已进缓冲:按实文判落地,登记保留不误报失败', async () => {
+    const dirtyDoc = makeTextDocument(DIRTY_XML, { uri: Uri.file(entitiesXmlPath), version: 7 });
+    stubWorkspace.textDocuments = [dirtyDoc];
+    const real = stubWorkspace.applyEdit;
+    stubWorkspace.applyEdit = (async (edit: never): Promise<boolean> => {
+      await real(edit);
+      throw new Error('boom after land');
+    }) as unknown as typeof stubWorkspace.applyEdit;
+
+    const outcome = await generateGeneratorForm(spaceInput, root, { generatedAt: 'TS', layout: layout() });
+
+    expect(outcome.touchedFiles).toEqual([entitiesXmlPath]);
+    expect(dirtyDoc.getText()).toContain('<MySpace hasBase="true" hasCell="true" />');
+    expect(dirtyDoc.getText()).toContain('<!-- 未保存:手工加的 Boss 实体 -->');
+    expect(fs.readFileSync(entitiesXmlPath, 'utf8')).toBe(DISK_XML);
+  });
+});

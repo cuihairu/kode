@@ -453,16 +453,50 @@ function findOpenTextDocument(filePath: string): vscode.TextDocument | undefined
 }
 
 /**
+ * AUD-031:本次生成的全部写入记账(新增盘文件/盘写覆盖前值/缓冲插入)。
+ * 各写点按实际写入面自记(AUD-030 起),回滚只撤回本次编辑。
+ */
+interface FormWriteLedger {
+  createdFiles: string[];
+  overwrittenFiles: Array<{ filePath: string; previous: string }>;
+  bufferEdits: BufferEditRecord[];
+}
+
+/**
+ * AUD-031:把插入写进打开文档缓冲区,返回是否真的落进缓冲。落进的编辑
+ * 记入账本 bufferEdits 供回滚撤销;applyEdit 抛错但文本已进缓冲的边缘按
+ * 实文复核(仍算落地),抛错且未落地才上抛交回滚。
+ */
+async function insertIntoOpenBuffer(
+  openDoc: vscode.TextDocument,
+  offset: number,
+  text: string,
+  ledger: FormWriteLedger
+): Promise<boolean> {
+  const edit = new vscode.WorkspaceEdit();
+  edit.insert(openDoc.uri, openDoc.positionAt(offset), text);
+  try {
+    await vscode.workspace.applyEdit(edit);
+  } catch (error) {
+    if (!openDoc.getText().includes(text)) {
+      throw error;
+    }
+  }
+  if (!openDoc.getText().includes(text)) {
+    return false;
+  }
+  ledger.bufferEdits.push({ filePath: openDoc.uri.fsPath, uri: openDoc.uri, offset, text });
+  return true;
+}
+
+/**
  * 回收本次新增与改写(IDE-GEN-008 与实体向导同规则):先还原被改写文件,
  * 再按写入逆序删除本次新增;单项回收失败不掩盖原始错误。
  * AUD-030:缓冲登记撤销优先——只撤回本次插入,且缓冲仍恰好含该插入才动
  * (用户未再改动),避免误删他人后续改动。
  */
-async function rollbackFormWrites(
-  createdFiles: string[],
-  overwrittenFiles: Array<{ filePath: string; previous: string }>,
-  bufferEdits: BufferEditRecord[]
-): Promise<void> {
+async function rollbackFormWrites(ledger: FormWriteLedger): Promise<void> {
+  const { createdFiles, overwrittenFiles, bufferEdits } = ledger;
   for (const item of [...bufferEdits].reverse()) {
     try {
       const doc = findOpenTextDocument(item.filePath);
@@ -528,7 +562,7 @@ async function registerSpaceEntity(
   layout: DefinitionWorkspaceLayout,
   notes: string[],
   touchedFiles: string[],
-  bufferEdits: BufferEditRecord[]
+  ledger: FormWriteLedger
 ): Promise<void> {
   const entitiesXmlPath = layout.entitiesXmlPath;
   if (!entitiesXmlPath || !fs.existsSync(entitiesXmlPath)) {
@@ -550,16 +584,12 @@ async function registerSpaceEntity(
       return;
     }
 
-    const edit = new vscode.WorkspaceEdit();
-    edit.insert(openDoc.uri, openDoc.positionAt(index), `${line}\n`);
-    const applied = await vscode.workspace.applyEdit(edit);
-    if (!applied || !openDoc.getText().includes(line)) {
+    if (!(await insertIntoOpenBuffer(openDoc, index, `${line}\n`, ledger))) {
       notes.push(`entities.xml 缓冲区写入未生效,空间 ${name} 未登记(请手动补一行)`);
       return;
     }
 
     touchedFiles.push(entitiesXmlPath);
-    bufferEdits.push({ filePath: entitiesXmlPath, uri: openDoc.uri, offset: index, text: `${line}\n` });
     return;
   }
 
@@ -576,33 +606,64 @@ async function registerSpaceEntity(
   }
 
   writeFileAtomic(entitiesXmlPath, updated);
+  ledger.overwrittenFiles.push({ filePath: entitiesXmlPath, previous: content });
   touchedFiles.push(entitiesXmlPath);
 }
 
 /** 固定字典入库:types.xml 存在则插块,不存在则新建一份最小根。
+ *  AUD-031(R2-F07):types.xml 已在编辑器打开(含脏)时入库进缓冲区而非盘,
+ *  重名检查与 </root> 插入点按缓冲区当前文本定位,用户未保存改动原样保留;
+ *  未打开才原子写盘(写点自记盘写覆盖/新增,供回滚只撤本次编辑)。
  *  返回是否真的改写了 types.xml(重名/结构异常时只记说明,不算生成) */
-function registerFixedDictType(
+async function registerFixedDictType(
   typeName: string,
   snippet: string,
   typesXmlPath: string,
   generatedAt: string,
   notes: string[],
-  touchedFiles: string[]
-): boolean {
+  touchedFiles: string[],
+  ledger: FormWriteLedger
+): Promise<boolean> {
+  const openDoc = findOpenTextDocument(typesXmlPath);
+  if (openDoc) {
+    const bufferContent = openDoc.getText();
+    // 同名重检臂无触发输入——generateGeneratorForm 的冲突闸与这里重读
+    // 同一 types.xml 且闸读与此读之间无 await(内容不变):闸已确认文件
+    // 不含同名类型才放行到此,此处正则重检恒假。
+    if (new RegExp(`<${typeName}(?=[\\s>/])`, 'i').test(bufferContent)) {
+      /* istanbul ignore start */
+      notes.push(`types.xml 中已有同名类型 ${typeName},未写入`);
+      return false;
+      /* istanbul ignore stop */
+    }
+
+    const index = bufferContent.lastIndexOf('</root>');
+    if (index === -1) {
+      notes.push(`types.xml 缓冲区找不到 </root> 标签,类型 ${typeName} 未写入`);
+      return false;
+    }
+
+    if (!(await insertIntoOpenBuffer(openDoc, index, `${snippet}\n`, ledger))) {
+      notes.push(`types.xml 缓冲区写入未生效,类型 ${typeName} 未写入(请手动补一段)`);
+      return false;
+    }
+
+    touchedFiles.push(typesXmlPath);
+    return true;
+  }
+
   if (!fs.existsSync(typesXmlPath)) {
     fs.mkdirSync(path.dirname(typesXmlPath), { recursive: true });
     writeFileAtomic(
       typesXmlPath,
       `<root>\n\n<!-- 生成时间: ${generatedAt} -->\n${snippet}</root>\n`
     );
+    ledger.createdFiles.push(typesXmlPath);
     touchedFiles.push(typesXmlPath);
     return true;
   }
 
   const content = fs.readFileSync(typesXmlPath, 'utf8');
-  // 同名重检臂无触发输入——generateGeneratorForm 的冲突闸与这里重读同一
-  // types.xml 且闸读与此读之间无 await(内容不变):闸已确认文件不含同名
-  // 类型才放行到此,此处正则重检恒假。
   if (new RegExp(`<${typeName}(?=[\\s>/])`, 'i').test(content)) {
     /* istanbul ignore start */
     notes.push(`types.xml 中已有同名类型 ${typeName},未写入`);
@@ -617,18 +678,23 @@ function registerFixedDictType(
   }
 
   writeFileAtomic(typesXmlPath, updated);
+  ledger.overwrittenFiles.push({ filePath: typesXmlPath, previous: content });
   touchedFiles.push(typesXmlPath);
   return true;
 }
 
-/** 组件挂载:在目标实体 def 的 `<Properties>` 段末插一条 COMPONENT 属性 */
-function attachComponentToEntity(
+/** 组件挂载:在目标实体 def 的 `<Properties>` 段末插一条 COMPONENT 属性。
+ *  AUD-031(R2-F07):目标 def 已在编辑器打开(含脏)时挂载进缓冲区而非盘,
+ *  段解析与插入点按缓冲区当前文本定位,用户未保存改动原样保留;未打开才
+ *  原子写盘(写点自记盘写覆盖,供回滚只撤本次编辑)。 */
+async function attachComponentToEntity(
   componentName: string,
   attachTo: string,
   layout: DefinitionWorkspaceLayout,
   notes: string[],
-  touchedFiles: string[]
-): void {
+  touchedFiles: string[],
+  ledger: FormWriteLedger
+): Promise<void> {
   if (!layout.entityDefsRoot) {
     notes.push('未能定位实体定义目录,组件未挂载');
     return;
@@ -637,6 +703,31 @@ function attachComponentToEntity(
   const entityDefPath = joinWorkspacePath(layout.entityDefsRoot, `${attachTo}.def`);
   if (!fs.existsSync(entityDefPath)) {
     notes.push(`未找到实体 ${attachTo} 的 .def,组件未挂载`);
+    return;
+  }
+
+  const snippet = buildComponentPropertySnippet(componentName);
+  const openDoc = findOpenTextDocument(entityDefPath);
+  if (openDoc) {
+    const bufferContent = openDoc.getText();
+    const section = readPropertiesSection(bufferContent);
+    if (section === null) {
+      notes.push(`${attachTo}.def 里没有 <Properties> 段,组件未挂载(请手写 COMPONENT 属性)`);
+      return;
+    }
+
+    const existingNames = section.propertyNames.map(name => name.toLowerCase());
+    if (existingNames.includes(componentName.toLowerCase())) {
+      notes.push(`${attachTo}.def 已有同名属性 ${componentName},组件未挂载`);
+      return;
+    }
+
+    if (!(await insertIntoOpenBuffer(openDoc, section.insertOffset, `${snippet}\n\n`, ledger))) {
+      notes.push(`${attachTo}.def 缓冲区写入未生效,组件 ${componentName} 未挂载(请手动补一段)`);
+      return;
+    }
+
+    touchedFiles.push(entityDefPath);
     return;
   }
 
@@ -653,11 +744,11 @@ function attachComponentToEntity(
     return;
   }
 
-  const snippet = buildComponentPropertySnippet(componentName);
   writeFileAtomic(
     entityDefPath,
     `${content.slice(0, section.insertOffset)}${snippet}\n\n${content.slice(section.insertOffset)}`
   );
+  ledger.overwrittenFiles.push({ filePath: entityDefPath, previous: content });
   touchedFiles.push(entityDefPath);
 }
 
@@ -672,7 +763,7 @@ export async function generateGeneratorForm(
   const overwrite = options.overwrite ?? false;
   const notes: string[] = [];
   const touchedFiles: string[] = [];
-  const bufferEdits: BufferEditRecord[] = [];
+  const ledger: FormWriteLedger = { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
   const target = resolveGeneratorFormTarget(input, layout);
 
   if (target.filePath === null) {
@@ -693,70 +784,54 @@ export async function generateGeneratorForm(
     return { kind: input.kind, filePath, written: false, notes, touchedFiles, conflict: true };
   }
 
-  const createdFiles: string[] = [];
-  const overwrittenFiles: Array<{ filePath: string; previous: string }> = [];
-
   try {
     let written = false;
 
     if (input.kind === 'fixedDict') {
-      // 固定字典入库即主产物:新文件记新增,改写记原内容供回收
-      if (fs.existsSync(filePath)) {
-        overwrittenFiles.push({ filePath, previous: fs.readFileSync(filePath, 'utf8') });
-      } else {
-        createdFiles.push(filePath);
-      }
-      // 重名/结构异常时只有说明,不算已生成(重名已被上面的冲突闸拦下,
-      // 这里剩缺 </root> 的结构异常面)
+      // AUD-031:固定字典入库即主产物,写点自记盘写覆盖/新增/缓冲插入
+      // (重名/结构异常时只有说明,不算已生成;重名已被冲突闸拦下,这里
+      // 剩缺 </root> 的结构异常面)
       written = await registerFixedDictType(
         input.value.name,
         contentOf(input, generatedAt),
         filePath,
         generatedAt,
         notes,
-        touchedFiles
+        touchedFiles,
+        ledger
       );
     } else {
       // 冲突闸已拦下「存在且不覆盖」;到达此处要么新建(记新增)要么
       // overwrite=true 改写既有文件(记原内容供回收)
       const existed = fs.existsSync(filePath);
       if (existed) {
-        overwrittenFiles.push({ filePath, previous: fs.readFileSync(filePath, 'utf8') });
+        ledger.overwrittenFiles.push({ filePath, previous: fs.readFileSync(filePath, 'utf8') });
       }
       writeOrSkip(filePath, contentOf(input, generatedAt), overwrite);
       written = true;
       if (!existed) {
-        createdFiles.push(filePath);
+        ledger.createdFiles.push(filePath);
       }
     }
 
     if (input.kind === 'space') {
-      const entitiesXmlPath = layout.entitiesXmlPath;
-      if (entitiesXmlPath && fs.existsSync(entitiesXmlPath)) {
-        overwrittenFiles.push({ filePath: entitiesXmlPath, previous: fs.readFileSync(entitiesXmlPath, 'utf8') });
-      }
-      await registerSpaceEntity(input.value.name, layout, notes, touchedFiles, bufferEdits);
+      await registerSpaceEntity(input.value.name, layout, notes, touchedFiles, ledger);
     }
 
     if (input.kind === 'component') {
       const attachTo = options.attachTo ?? null;
       if (attachTo) {
-        // 备份只在能定位到实体 def 时记;挂载本身的各未做面说明
-        // 仍由 attachComponentToEntity 如实给出
-        if (layout.entityDefsRoot) {
-          const entityDefPath = joinWorkspacePath(layout.entityDefsRoot, `${attachTo}.def`);
-          if (fs.existsSync(entityDefPath)) {
-            overwrittenFiles.push({ filePath: entityDefPath, previous: fs.readFileSync(entityDefPath, 'utf8') });
-          }
-        }
-        attachComponentToEntity(input.value.name, attachTo, layout, notes, touchedFiles);
+        // AUD-031:挂载写点自记(缓冲插入入 bufferEdits,盘写覆盖记原内容),
+        // 挂载本身的各未做面说明仍由 attachComponentToEntity 如实给出
+        await attachComponentToEntity(input.value.name, attachTo, layout, notes, touchedFiles, ledger);
       }
     }
 
     return { kind: input.kind, filePath, written, notes, touchedFiles };
   } catch (error) {
-    // IDE-GEN-008:任一步失败回收本次新增与改写,不留半套
-    await rollbackFormWrites(createdFiles, overwrittenFiles, bufferEdits);
+    // IDE-GEN-008:任一步失败回收本次新增与改写,不留半套(AUD-031:只撤
+    // 本次编辑——缓冲插入仅当缓冲仍恰好含该插入才撤销)
+    await rollbackFormWrites(ledger);
     throw error;
   }
 }
