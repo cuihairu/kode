@@ -1,0 +1,6 @@
+{
+  "Replace with registered type {name}": "替换为已注册类型 {name}",
+  "Generate empty implementation {name} → {file}:{line}": "生成空实现 {name} → {file}:{line}",
+  "Wrap with null guard (if self.{receiver}:)": "包裹判空守卫(if self.{receiver}:)",
+  "Insert None guard (if not self.{receiver}: return)": "插入 None 守卫(if not self.{receiver}: return)"
+}

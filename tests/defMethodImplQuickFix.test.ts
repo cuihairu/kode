@@ -140,6 +140,7 @@ describe('缺实现方法生成空方法(IDE-NAV-014)', () => {
       expect(actions).toHaveLength(1);
       const action = actions[0];
       // 展示目标文件与插入点:类尾(0 基行 2)后 = 0 基行 3 → 1 基 4
+      expect(action.title).toContain('Generate empty implementation');
       expect(action.title).toContain('reqPos');
       expect(action.title).toContain(ws.basePy);
       expect(action.title).toContain(':4');

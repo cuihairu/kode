@@ -1,0 +1,6 @@
+{
+  "Replace with registered type {name}": "Replace with registered type {name}",
+  "Generate empty implementation {name} → {file}:{line}": "Generate empty implementation {name} → {file}:{line}",
+  "Wrap with null guard (if self.{receiver}:)": "Wrap with null guard (if self.{receiver}:)",
+  "Insert None guard (if not self.{receiver}: return)": "Insert None guard (if not self.{receiver}: return)"
+}

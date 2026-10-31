@@ -10,3 +10,4 @@ export * from '../fake-vscode/commandRegistry';
 export * from '../fake-vscode/languages';
 export * from '../fake-vscode/panelRegistry';
 export * from '../fake-vscode/extensionsState';
+export { l10n } from '../fake-vscode/l10n';

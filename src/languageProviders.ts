@@ -5646,7 +5646,7 @@ export class KBEngineTypeCodeActionProvider implements vscode.CodeActionProvider
         const edit = new vscode.WorkspaceEdit();
         edit.set(document.uri, [new vscode.TextEdit(diagnostic.range, candidate)]);
         const action = new vscode.CodeAction(
-          `替换为已注册类型 ${candidate}`,
+          vscode.l10n.t('Replace with registered type {name}', { name: candidate }),
           vscode.CodeActionKind.QuickFix
         );
         action.diagnostics = [diagnostic];
@@ -5791,7 +5791,11 @@ export class KBEngineMethodImplementationCodeActionProvider implements vscode.Co
       insertion.blankPrefix ? `\n${skeleton}` : skeleton
     );
     const action = new vscode.CodeAction(
-      `生成空实现 ${symbolInfo.symbolNode.name} → ${targetFile}:${insertion.line + 1}`,
+      vscode.l10n.t('Generate empty implementation {name} → {file}:{line}', {
+        name: symbolInfo.symbolNode.name,
+        file: targetFile,
+        line: insertion.line + 1
+      }),
       vscode.CodeActionKind.Refactor
     );
     action.edit = edit;
@@ -5856,7 +5860,7 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
           trailingNewline ? `${wrap.text}\n` : wrap.text
         );
         const wrapAction = new vscode.CodeAction(
-          `包裹判空守卫(if self.${receiver}:)`,
+          vscode.l10n.t('Wrap with null guard (if self.{receiver}:)', { receiver }),
           vscode.CodeActionKind.QuickFix
         );
         wrapAction.diagnostics = [diagnostic];
@@ -5868,7 +5872,7 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
         const edit = new vscode.WorkspaceEdit();
         edit.insert(document.uri, new vscode.Position(guard.line, 0), guard.text);
         const action = new vscode.CodeAction(
-          `插入 None 守卫(if not self.${receiver}: return)`,
+          vscode.l10n.t('Insert None guard (if not self.{receiver}: return)', { receiver }),
           vscode.CodeActionKind.QuickFix
         );
         action.diagnostics = [diagnostic];
