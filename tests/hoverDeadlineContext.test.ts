@@ -163,3 +163,67 @@ describe('IDE-BUD-001:hover 分支共享同一 deadline/token', () => {
     slow.resolve(null as never);
   });
 });
+
+describe('R2-F18:预算到期传播取消到请求独占 token', () => {
+  // 验收:预算返回空后原请求不继续新增读取/排队;共享索引与仍有等待者的
+  // 计算继续;实际在途依赖 token 收到取消——不能仅验证前台返回时间。
+
+  it('cancel():显式取消链接 token(预算到期传播面)', () => {
+    const deadline = createHoverRequestDeadline(neverToken(), 5000);
+    let observed = false;
+    deadline.token.onCancellationRequested(() => { observed = true; });
+    deadline.cancel();
+    expect(deadline.token.isCancellationRequested).toBe(true);
+    expect(observed).toBe(true);
+    deadline.dispose();
+  });
+
+  it('无其他等待者:预算到期后底层独占 token 收到取消(内层 race 传 onStop)', async () => {
+    configurationOverrides.set('kbengine', { 'hover.asyncBudgetMs': 20 });
+    let capturedToken: { isCancellationRequested: boolean } | null = null;
+    const never = new Promise<null>(() => undefined);
+    const manager = {
+      resolveMethodDefinition: (...args: Array<unknown>) => {
+        capturedToken = args[3] as never;
+        return never;
+      }
+    } as unknown as EntityMappingManager;
+    const provider = new KBEngineHoverProvider(manager);
+
+    const result = await provider.provideHover(
+      makeTextDocument(PY_TEXT, { fileName: '/tmp/project/scripts/base/Hero.py', languageId: 'python' }),
+      NAME_POSITION
+    );
+
+    expect(result).toBeNull();
+    expect(capturedToken).not.toBeNull();
+    expect(capturedToken!.isCancellationRequested).toBe(true);
+  });
+
+  it('有等待者:预算到期取消自己,共享计算不被斩断', async () => {
+    configurationOverrides.set('kbengine', { 'hover.asyncBudgetMs': 40 });
+    let capturedToken: { isCancellationRequested: boolean } | null = null;
+    const never = new Promise<null>(() => undefined);
+    const manager = {
+      resolveMethodDefinition: (...args: Array<unknown>) => {
+        capturedToken = args[3] as never;
+        return never;
+      }
+    } as unknown as EntityMappingManager;
+    const provider = new KBEngineHoverProvider(manager);
+    const document = makeTextDocument(PY_TEXT, {
+      fileName: '/tmp/project/scripts/base/Hero.py',
+      languageId: 'python'
+    });
+    const waiterB = cancelableToken();
+
+    const pendingA = provider.provideHover(document, NAME_POSITION);
+    const pendingB = provider.provideHover(document, NAME_POSITION, waiterB.token); // 同点合并
+
+    await tick(60); // A 的预算到期,B 还在等
+    expect(await pendingA).toBeNull();
+    // 共享 token 未被 A 的预算到期斩断(B 仍在等)——共享索引/计算继续
+    expect(capturedToken!.isCancellationRequested).toBe(false);
+    await pendingB;
+  });
+});

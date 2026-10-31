@@ -845,7 +845,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
                 } finally { stop?.(); }
               }),
             deadline.remainingMs(),
-            sharedToken
+            sharedToken,
+            // R2-F18:预算到期传播取消——取消本请求的链接 token;若是等待者
+            // 并集的唯一剩余,共享计算随之取消(停止新增读取/排队);他人
+            // 仍在等则不取消(共享计算继续)。
+            () => deadline.cancel()
           )
         , deadline.token));
       }
@@ -873,7 +877,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
                 } finally { stop?.(); }
               }),
             deadline.remainingMs(),
-            sharedToken
+            sharedToken,
+            // R2-F18:预算到期传播取消(见 def-method 分支)
+            () => deadline.cancel()
           )
         , deadline.token));
       }
@@ -902,7 +908,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
                 } finally { stop?.(); }
               }),
             deadline.remainingMs(),
-            sharedToken
+            sharedToken,
+            // R2-F18:预算到期传播取消(见 def-method 分支)
+            () => deadline.cancel()
           )
         , deadline.token));
       }

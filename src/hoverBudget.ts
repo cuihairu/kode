@@ -111,6 +111,13 @@ export interface HoverRequestDeadline {
   remainingMs(): number;
   /** 是否已到期;budgetMs<=0(关闸)恒 false */
   isExpired(): boolean;
+  /**
+   * R2-F18:显式取消链接 token(预算到期传播面)。到期本身不自动取消
+   * (见上),由层闸在预算耗尽时调用——取消传播进请求独占工作(若为
+   * 等待者并集的唯一剩余,共享计算随之取消;他人仍在等则不取消)。
+   * 幂等;已取消/已 dispose 再调安全。
+   */
+  cancel(): void;
   /** 请求落定即释放:清父监听(不取消 token 本身) */
   dispose(): void;
 }
@@ -130,6 +137,9 @@ export function createHoverRequestDeadline(
     },
     isExpired(): boolean {
       return budgetMs > 0 && this.remainingMs() <= 0;
+    },
+    cancel(): void {
+      linked.cancel();
     },
     dispose(): void {
       linked.dispose();
