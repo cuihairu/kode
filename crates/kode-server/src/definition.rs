@@ -310,33 +310,14 @@ impl HoverEngine {
 
 /// 内建类型表(与 TS kbengineMetadata::KBENGINE_TYPES 同表,ARRAY/FIXED_DICT
 /// 容器含)。
+pub(crate) const BUILTIN_TYPES: &[&str] = &[
+    "UINT8", "UINT16", "UINT32", "UINT64", "INT8", "INT16", "INT32", "INT64", "FLOAT", "DOUBLE",
+    "STRING", "UNICODE", "VECTOR2", "VECTOR3", "VECTOR4", "ENTITYCALL", "PYTHON", "PY_DICT",
+    "PY_TUPLE", "PY_LIST", "BLOB", "ARRAY", "FIXED_DICT",
+];
+
 pub(crate) fn is_builtin_type(name: &str) -> bool {
-    matches!(
-        name,
-        "UINT8"
-            | "UINT16"
-            | "UINT32"
-            | "UINT64"
-            | "INT8"
-            | "INT16"
-            | "INT32"
-            | "INT64"
-            | "FLOAT"
-            | "DOUBLE"
-            | "STRING"
-            | "UNICODE"
-            | "VECTOR2"
-            | "VECTOR3"
-            | "VECTOR4"
-            | "ENTITYCALL"
-            | "PYTHON"
-            | "PY_DICT"
-            | "PY_TUPLE"
-            | "PY_LIST"
-            | "BLOB"
-            | "ARRAY"
-            | "FIXED_DICT"
-    )
+    BUILTIN_TYPES.contains(&name)
 }
 
 /// UTF-16 (line, character) → 字节偏移(clamp 到行尾/文末,不 panic)。

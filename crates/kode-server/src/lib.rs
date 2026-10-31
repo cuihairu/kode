@@ -7,6 +7,7 @@ pub mod definition;
 pub mod diagnostics;
 pub mod flag_domains;
 pub mod hover;
+pub mod lint;
 pub mod rpc;
 pub mod server;
 

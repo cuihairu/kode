@@ -309,7 +309,7 @@ import {
 } from './databaseSimulator';
 import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities, readWorkspaceTextFile } from './definitionWorkspace';
 import { scheduleBackgroundSchemaWarmup } from './schemaWarmup';
-import { analyzeDefDocument, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
+import { analyzeDefDocumentWithRust, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
 import {
   CUSTOM_SNIPPETS_RELATIVE_PATH,
@@ -3928,10 +3928,18 @@ export function activate(context: vscode.ExtensionContext) {
       const readDefText = (filePath: string): string | null =>
         defTexts.get(path.resolve(filePath)) ?? null;
 
+      // Rust lint 注册表 unknown-type-reference 的类型语料:跨工作区根并集
+      // (types.xml 自定义类型 + 已注册实体名;内建类型由 Rust 侧自带)。
+      // 计算失败退化为空语料(只查内建),不阻塞分析命令。
+      const knownTypes = collectKnownTypesForAnalysis();
       let totalFindings = 0;
       for (const uri of sortedUris) {
         const document = openedDocuments.get(uri.fsPath) as vscode.TextDocument;
-        const findings = analyzeDefDocument(document.getText(), collectInheritedNames(uri.fsPath, readDefText));
+        const findings = await analyzeDefDocumentWithRust(
+          document.getText(),
+          collectInheritedNames(uri.fsPath, readDefText),
+          { knownTypes }
+        );
         totalFindings += findings.length;
         defAnalysisOutputChannel.appendLine(
           formatDefAnalysisReport(uri.fsPath, findings)
@@ -3961,6 +3969,26 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   context.subscriptions.push(analyzeDefCommand);
+
+  // 分析命令的类型语料:types.xml 自定义类型 + 已注册实体名(unknown-type-
+  // reference 规则用;Rust 侧以 builtin ∪ 语料判已知)。空根/读取失败退化为
+  // 空集(只查内建),不虚构语料也不抛错。
+  function collectKnownTypesForAnalysis(): string[] {
+    try {
+      const names = new Set<string>();
+      for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        for (const info of getCustomTypeInfos(folder.uri.fsPath)) {
+          names.add(info.name);
+        }
+        for (const entry of getRegisteredEntities(folder.uri.fsPath)) {
+          names.add(entry.name);
+        }
+      }
+      return [...names];
+    } catch {
+      return [];
+    }
+  }
 
   // Cross-file semantic doctor: reuses the same rename parser and engine
   // alignment as F2 so diagnostics and refactor decisions cannot diverge.

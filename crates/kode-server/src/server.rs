@@ -105,6 +105,7 @@ impl ServerState {
         // 加一行(消息表/生成/lint 模块自带 register,见 rpc.rs 模块注)。
         let mut rpc = crate::rpc::RpcRegistry::new();
         crate::client_sdk::register(&mut rpc);
+        crate::lint::register(&mut rpc);
         ServerState {
             initialized: false,
             shutdown_requested: false,

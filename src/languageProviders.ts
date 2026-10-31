@@ -35,7 +35,8 @@ import {
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
-import { shadowCompareDefinition, shadowObserveDefDocument } from './kodeCoreShadowFaces';
+import { getKodeCoreShadowGate, shadowCompareDefinition, shadowObserveDefDocument } from './kodeCoreShadowFaces';
+import { analyzeDefDocumentInRust, type DefAnalysisFinding } from './defAnalyzer';
 import { buildDefChain } from './defChain';
 import {
   METHOD_DECLARATION_PATTERN,
@@ -1550,6 +1551,102 @@ export function validateDocument(
   // Phase2 首片:shadow 双轨对拍(诊断面)+ 语料镜像腿。fire-and-forget,
   // 只读 diagnosticsList 的可比面,不改 collection 内容。
   shadowObserveDefDocument(document, diagnosticsList);
+  // Rust lint 注册表消费腿:把 analyzeDef 的分析建议(Rust 面)并集进诊断。
+  // fire-and-forget + 版本护栏 + 默认 ts 模式零开销(见 observeRustDefFindings)。
+  observeRustDefFindings(document, diagnostics);
+}
+
+// Rust lint 注册表消费腿(validateDocument 侧):把 `$/kode/lint/analyzeDef`
+// 的分析建议并集进诊断 collection。只并集 validateDocument 未覆盖的分析
+// 建议码(phantom-type / duplicate-type-tag / heavy-sync-broadcast /
+// redundant-detail-level / invalid-identifier / method-property-collision /
+// engine-limited-name / inherited-name-collision)——结构码(unknown-type-
+// reference / unknown-flag-value / unknown-detail-level / duplicate-definition /
+// missing-flags / missing-type)由 validateDefStructure 现产,重复落会产生
+// 双报。默认 ts 模式(未配 serverPath / backend=ts)零开销直通。
+const RUST_LIVE_MERGE_CODES = new Set<string>([
+  'phantom-type',
+  'duplicate-type-tag',
+  'heavy-sync-broadcast',
+  'redundant-detail-level',
+  'invalid-identifier',
+  'method-property-collision',
+  'engine-limited-name',
+  'inherited-name-collision'
+]);
+
+const toDiagnosticSeverity = (severity: DefAnalysisFinding['severity']): vscode.DiagnosticSeverity =>
+  severity === 'error'
+    ? vscode.DiagnosticSeverity.Error
+    : severity === 'warning'
+      ? vscode.DiagnosticSeverity.Warning
+      : vscode.DiagnosticSeverity.Information;
+
+function observeRustDefFindings(
+  document: vscode.TextDocument,
+  diagnostics: vscode.DiagnosticCollection
+): void {
+  const gate = getKodeCoreShadowGate();
+  if (!gate || gate.mode === 'ts') {
+    return;
+  }
+  const version = document.version;
+  // 空 inheritedNames:活校验侧只并集单文件分析建议,继承链同名由批分析命令
+  // (kbengine.def.analyze)承担,避免每次按键做祖先闭包磁盘 I/O。
+  void analyzeDefDocumentInRust(document.getText(), new Map(), {})
+    .then(findings => {
+      if (!findings || findings.length === 0) {
+        return;
+      }
+      if (document.version !== version) {
+        return;
+      }
+      const existing = diagnostics.get(document.uri) ?? [];
+      const rustDiags = mergeRustDefFindings(document, findings, existing);
+      if (rustDiags.length > 0) {
+        diagnostics.set(document.uri, [...existing, ...rustDiags]);
+      }
+    })
+    .catch(() => undefined);
+}
+
+function mergeRustDefFindings(
+  document: vscode.TextDocument,
+  findings: DefAnalysisFinding[],
+  existing: readonly vscode.Diagnostic[]
+): vscode.Diagnostic[] {
+  // 已存在同位置同文案的诊断不重复落(跨响应幂等:重入/重复 probe 不叠加)。
+  const existingKeys = new Set(
+    existing.map(
+      diag =>
+        `${diag.range.start.line}:${diag.range.start.character}:${diag.message}`
+    )
+  );
+  const seen = new Set<string>();
+  const out: vscode.Diagnostic[] = [];
+  for (const item of findings) {
+    if (!RUST_LIVE_MERGE_CODES.has(item.check)) {
+      continue;
+    }
+    const key = `${item.check}:${item.offset}:${item.message}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const start = document.positionAt(item.offset);
+    const end = document.positionAt(item.offset + item.length);
+    const diag = new vscode.Diagnostic(
+      new vscode.Range(start, end),
+      item.message,
+      toDiagnosticSeverity(item.severity)
+    );
+    const positionKey = `${diag.range.start.line}:${diag.range.start.character}:${diag.message}`;
+    if (existingKeys.has(positionKey)) {
+      continue;
+    }
+    out.push(diag);
+  }
+  return out;
 }
 
 // entities.xml 清单诊断(source-analysis 设计 D3):同名重复条目引擎按首条
