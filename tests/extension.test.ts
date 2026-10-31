@@ -935,6 +935,46 @@ describe('extension activate 装配', () => {
     }
   });
 
+  it('auto-start 命令走统一依赖图: machine 失败时 logger/dbmgr 不再启动 (R2-F13)', async () => {
+    const bin = await FakeComponentBin.create();
+    try {
+      const configRoot = path.join(bin.root, 'cfg');
+      fs.mkdirSync(configRoot, { recursive: true });
+      // machine 可执行文件缺失(= 启动失败,startComponent 返回 false);
+      // logger/dbmgr 有可执行文件但依赖 machine,不得被启动
+      bin.write('logger', { kind: 'run', stdoutMarker: 'logger-up' });
+      bin.write('dbmgr', { kind: 'run', stdoutMarker: 'dbmgr-up' });
+      configurationOverrides.set('kbengine', {
+        binPath: bin.binPath,
+        assetsRoot: configRoot,
+        autoStart: ['machine', 'logger', 'dbmgr'],
+        logAutoConnect: false
+      });
+
+      const context = makeContext();
+      activate(context);
+      const bar = windowState.statusBars.find(item => item.priority === 100)!;
+
+      // 无目标 = 自动/组启动,走统一依赖图(不再逐个盲目启动)
+      await commands.executeCommand('kbengine.server.start');
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // 0 运行:状态栏隐藏;logger/dbmgr 从未启动(无启动标记)
+      expect(bar.visible).toBe(false);
+      const loggerChannel = windowState.channels.find(item => item.name.includes('Logger'));
+      expect(loggerChannel?.lines.join('') ?? '').not.toContain('logger-up');
+      const dbmgrChannel = windowState.channels.find(item => item.name.includes('DBMgr'));
+      expect(dbmgrChannel?.lines.join('') ?? '').not.toContain('dbmgr-up');
+
+      // 清场(若旧码已把 logger/dbmgr 拉起来,stop 兜底回收)
+      await commands.executeCommand('kbengine.server.stop');
+      disposeAll(context);
+    } finally {
+      configurationOverrides.delete('kbengine');
+      await bin.dispose();
+    }
+  });
+
   it('telnet 探测翻转驱动树刷新与状态灯联动(真 TCP localhost)', async () => {
     // 批111 起:配置显式开启 telnet(空 <telnet_service> 段=段在未写端口 →
     // 引擎默认表)才探测;引擎默认表第一个目标 loginapp:31000,起真 server

@@ -703,22 +703,23 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 启动所有配置的组件
+   * 启动所有配置的组件(IDE-AUD-037/R2-F13):统一走 startTargetGroup 依赖
+   * 就绪图,不再逐个盲目顺序启动——machine 启动失败/未就绪时,依赖它的
+   * logger/dbmgr 等后续组件不再继续(失败沿组传染,旧序只记 false 仍继续)。
    */
-  async startAutoComponents(): Promise<void> {
+  async startAutoComponents(): Promise<TargetGroupReport> {
     const config = vscode.workspace.getConfiguration('kbengine');
     const autoStart: string[] = config.get('autoStart', ['machine', 'logger', 'dbmgr']);
 
-    // 按启动顺序排序
+    // 按组件声明序过滤作为稳定底序;组启动面内 resolveLaunchOrder 仍按依赖
+    // 定序(机器/进程失败时下游不再启动)。dependsOn 缺省取组件标准链。
     const componentsToStart = SERVER_COMPONENTS
       .filter(c => autoStart.includes(c.name))
       .sort((a, b) => a.order - b.order);
 
-    for (const component of componentsToStart) {
-      await this.startComponent(component);
-      // 等待一段时间再启动下一个
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
+    return this.startTargetGroup(
+      componentsToStart.map(component => ({ component: component.name }))
+    );
   }
 
   /**

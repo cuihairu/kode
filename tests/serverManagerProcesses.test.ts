@@ -375,14 +375,34 @@ describe('KBEngineServerManager real process lifecycle', () => {
 });
 
 describe('KBEngineServerManager batch orchestration', () => {
-  it('starts the configured auto-start components in launch order', async () => {
-    writeScript('logger', { kind: 'run' });
+  it('starts configured auto-start components in dependency order', async () => {
+    // machine 是 logger 的依赖:组启动面按依赖定序 machine→logger,
+    // 不再按声明序盲目启动
+    configTable.autoStart = ['machine', 'logger'];
+    writeScript('machine', { kind: 'run' });
+    writeScript('logger', { kind: 'run', stdoutMarker: 'up' });
     const manager = makeManager();
 
     await manager.startAutoComponents();
 
-    expect(Array.from(manager.getRunningServers().keys())).toEqual(['logger']);
-    expect(manager.getServerStatus('logger')).toBe(ServerStatus.Running);
+    expect(Array.from(manager.getRunningServers().keys())).toEqual(['machine', 'logger']);
+    await until(() => manager.getServerStatus('machine') === ServerStatus.Running);
+    await until(() => manager.getServerStatus('logger') === ServerStatus.Running);
+  }, 8000);
+
+  it('auto-start does not launch dependents when a prerequisite fails (R2-F13)', async () => {
+    // 只有 logger 有可执行文件,machine 缺失:组启动面 machine 启动失败
+    // (spawn-failed),依赖它的 logger 不得继续启动——旧序会跳过失败继续
+    configTable.autoStart = ['machine', 'logger'];
+    writeScript('logger', { kind: 'run', stdoutMarker: 'up' });
+    const manager = makeManager();
+
+    await manager.startAutoComponents();
+
+    expect(manager.getRunningServers().size).toBe(0);
+    // logger 从未被启动:无输出通道或通道里没有启动标记
+    const loggerChannel = channels.find(item => item.name.includes('Logger'));
+    expect(loggerChannel?.lines.join('') ?? '').not.toContain('up');
   }, 8000);
 
   it('stops every running component in reverse launch order', async () => {

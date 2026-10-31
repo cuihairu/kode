@@ -303,17 +303,23 @@ describe('startup failure and orchestration gaps', () => {
     }
   }, 8000);
 
-  it('orders auto-start components by their configured order', async () => {
-    // 乱序声明 dbmgr(4)→machine(1)→logger(2):实际按 order 升序启动;
-    // bin 下无这些可执行文件,全部走"找不到可执行文件"分支,不 spawn
+  it('auto-start gates dependents when machine fails (R2-F13)', async () => {
+    // 乱序声明 dbmgr(4)→machine(1)→logger(2):组启动面按依赖定序而非声明序;
+    // bin 下无这些可执行文件,machine 启动失败(spawn-failed),依赖它的
+    // logger/dbmgr 不得继续启动(失败沿组传染)——不再按旧序盲目逐个启动
     configTable.autoStart = ['dbmgr', 'machine', 'logger'];
 
-    await makeManager().startAutoComponents();
+    const report = await makeManager().startAutoComponents();
 
-    expect(messages.error).toHaveLength(3);
+    expect(report.cycle).toBeUndefined();
+    expect(report.order).toEqual(['machine', 'logger', 'dbmgr']);
+    expect(report.outcomes.map(outcome => outcome.key)).toEqual(['machine', 'logger', 'dbmgr']);
+    expect(report.outcomes[0]).toMatchObject({ key: 'machine', outcome: 'spawn-failed' });
+    expect(report.outcomes[1]).toMatchObject({ key: 'logger', outcome: 'dependency-failed', dependency: 'machine' });
+    expect(report.outcomes[2]).toMatchObject({ key: 'dbmgr', outcome: 'dependency-failed', dependency: 'machine' });
+    // 只有 machine 实际尝试启动并报错;logger/dbmgr 被门住,不再有它们的启动错误
+    expect(messages.error).toHaveLength(1);
     expect(messages.error[0]).toContain('machine');
-    expect(messages.error[1]).toContain('logger');
-    expect(messages.error[2]).toContain('dbmgr');
   }, 15000);
 
   it('exposes the component catalog and shows component logs', () => {
