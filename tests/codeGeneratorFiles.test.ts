@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/codeGenerator';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { analyzeDefDocument } from '../src/defAnalyzer';
 import type * as vscode from 'vscode';
@@ -186,7 +186,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
       hasBase: true,
       hasCell: false,
       hasClient: false
-    });
+    }, createGenerationRollbackLedger());
 
     const content = fs.readFileSync(path.join(root, 'scripts', 'entities.xml'), 'utf8');
     expect(content).toBe(
@@ -208,7 +208,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
       hasBase: true,
       hasCell: false,
       hasClient: false
-    });
+    }, createGenerationRollbackLedger());
 
     expect(ui.warning).toEqual(['实体 BaseThing 已经在 entities.xml 中注册']);
     expect(
@@ -219,7 +219,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
   it('rejects a malformed xml without a closing root tag', async () => {
     fs.writeFileSync(path.join(root, 'scripts', 'entities.xml'), '<root>\n', 'utf8');
     await expect(
-      makeGenerator().registerInEntitiesXml({ name: 'Ghost', hasBase: true, hasCell: false, hasClient: false })
+      makeGenerator().registerInEntitiesXml({ name: 'Ghost', hasBase: true, hasCell: false, hasClient: false }, createGenerationRollbackLedger())
     ).rejects.toThrow('entities.xml 格式错误：找不到 </root> 标签');
   });
 
@@ -228,7 +228,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
       { uri: Uri.file(bareRoot), name: 'bare', index: 0 }
     ];
     await expect(
-      makeGenerator().registerInEntitiesXml({ name: 'Ghost', hasBase: true, hasCell: false, hasClient: false })
+      makeGenerator().registerInEntitiesXml({ name: 'Ghost', hasBase: true, hasCell: false, hasClient: false }, createGenerationRollbackLedger())
     ).rejects.toThrow(
       `entities.xml 不存在: ${path.join(bareRoot, 'scripts', 'entities.xml')}`
     );
@@ -237,7 +237,7 @@ describe('KBEngineCodeGenerator file outputs', () => {
   it('rejects registration without a workspace', async () => {
     stubWorkspace.workspaceFolders = [];
     await expect(
-      makeGenerator().registerInEntitiesXml({ name: 'Ghost', hasBase: true, hasCell: false, hasClient: false })
+      makeGenerator().registerInEntitiesXml({ name: 'Ghost', hasBase: true, hasCell: false, hasClient: false }, createGenerationRollbackLedger())
     ).rejects.toThrow('没有打开的工作区');
   });
 });
@@ -685,7 +685,7 @@ describe('KBEngineCodeGenerator dirty buffer registration (IDE-GEN-007)', () => 
 
     await makeGenerator().registerInEntitiesXml({
       name: 'Monster', hasBase: true, hasCell: false, hasClient: false
-    });
+    }, createGenerationRollbackLedger());
 
     // 用户未保存的注册保留,新注册追加进缓冲区——写入基于当前文档
     const bufferText = doc.getText();
@@ -718,7 +718,7 @@ describe('KBEngineCodeGenerator dirty buffer registration (IDE-GEN-007)', () => 
 
     await makeGenerator().registerInEntitiesXml({
       name: 'Monster', hasBase: true, hasCell: false, hasClient: false
-    });
+    }, createGenerationRollbackLedger());
 
     expect(ui.warning).toEqual(['实体 Monster 已经在 entities.xml 中注册']);
     // 未重复写入:磁盘保持原字节

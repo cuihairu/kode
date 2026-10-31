@@ -103,6 +103,23 @@ export interface GeneratorConfig {
 }
 
 /**
+ * 单次生成调用的回滚账本(AUD-064):每次向导/模板调用持有自己的一份,
+ * 重叠调用互不覆盖——实例级共享账本会让后一次调用的重置/回滚误删前一次
+ * 的成功文件(R3-F08)。AUD-030:缓冲登记插入单记账(bufferEdits),回收只撤
+ * 本次插入,不把缓冲内容当盘上前值写回。
+ */
+interface GenerationRollbackLedger {
+  createdFiles: string[];
+  overwrittenFiles: Array<{ filePath: string; previous: string }>;
+  bufferEdits: Array<{ filePath: string; uri: vscode.Uri; offset: number; text: string }>;
+}
+
+/** 新的空回滚账本(每次调用独立创建)。 */
+export function createGenerationRollbackLedger(): GenerationRollbackLedger {
+  return { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
+}
+
+/**
  * 代码生成器
  */
 export class KBEngineCodeGenerator {
@@ -255,29 +272,14 @@ export class KBEngineCodeGenerator {
   }
 
   /**
-   * 多文件生成的回滚账本(IDE-GEN-006):记录本次新增文件与被改写文件
-   * 的原内容;后续任何一步失败时逐项回收(新增删除,改写还原)。
-   * AUD-030:打开文档的登记走缓冲插入,单独记账(bufferEdits),回收时
-   * 只撤销本次插入——绝不把缓冲内容当盘上前值写回(会覆盖用户未保存改动)。
-   */
-  private rollbackLedger: {
-    createdFiles: string[];
-    overwrittenFiles: Array<{ filePath: string; previous: string }>;
-    bufferEdits: Array<{ filePath: string; uri: vscode.Uri; offset: number; text: string }>;
-  } = {
-    createdFiles: [],
-    overwrittenFiles: [],
-    bufferEdits: []
-  };
-
-  /**
    * 回收本次新增项(IDE-GEN-006):先还原被改写文件(entities.xml 注册项),
    * 再按写入逆序删除本次新增文件;单项回收失败不掩盖原始错误。
    * AUD-030:缓冲登记撤销优先——只撤回本次插入,且缓冲仍恰好含该插入才动
    * (用户未再改动),避免误删他人后续改动。
+   * AUD-064:账本由调用方传入(每次调用独立),绝不共享实例状态。
    */
-  private async rollbackGeneration(): Promise<void> {
-    for (const item of [...this.rollbackLedger.bufferEdits].reverse()) {
+  private async rollbackGeneration(ledger: GenerationRollbackLedger): Promise<void> {
+    for (const item of [...ledger.bufferEdits].reverse()) {
       try {
         const doc = vscode.workspace.textDocuments.find(candidate => candidate.uri.fsPath === item.filePath);
         if (!doc) {
@@ -295,14 +297,14 @@ export class KBEngineCodeGenerator {
         // 回收失败不掩盖原始错误
       }
     }
-    for (const item of [...this.rollbackLedger.overwrittenFiles].reverse()) {
+    for (const item of [...ledger.overwrittenFiles].reverse()) {
       try {
         writeFileAtomic(item.filePath, item.previous);
       } catch {
         // 回收失败不掩盖原始错误
       }
     }
-    for (const filePath of [...this.rollbackLedger.createdFiles].reverse()) {
+    for (const filePath of [...ledger.createdFiles].reverse()) {
       try {
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
@@ -713,9 +715,10 @@ export class KBEngineCodeGenerator {
   }
 
   /**
-   * 在 entities.xml 中注册实体
+   * 在 entities.xml 中注册实体。
+   * AUD-064:回滚记账进调用方的本次调用账本(每次调用独立,不共享实例状态)。
    */
-  async registerInEntitiesXml(entity: EntityTypeConfig): Promise<void> {
+  async registerInEntitiesXml(entity: EntityTypeConfig, ledger: GenerationRollbackLedger): Promise<void> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('没有打开的工作区');
@@ -763,7 +766,7 @@ export class KBEngineCodeGenerator {
         vscode.window.showWarningMessage(`entities.xml 缓冲区写入未生效,实体 ${entity.name} 未登记`);
         return;
       }
-      this.rollbackLedger.bufferEdits.push({
+      ledger.bufferEdits.push({
         filePath: entitiesXmlPath,
         uri: openDoc.uri,
         offset: insertIndex,
@@ -774,7 +777,7 @@ export class KBEngineCodeGenerator {
 
     // 未打开:写回文件(IDE-GEN-005:原子替换,中断时旧注册保持完整)
     writeFileAtomic(entitiesXmlPath, content.substring(0, insertIndex) + registration + '\n' + content.substring(insertIndex));
-    this.rollbackLedger.overwrittenFiles.push({ filePath: entitiesXmlPath, previous: content });
+    ledger.overwrittenFiles.push({ filePath: entitiesXmlPath, previous: content });
   }
 
   /**
@@ -912,6 +915,10 @@ export class KBEngineCodeGenerator {
       }
     }
 
+    // 每次调用独立事务(AUD-064):账本为本次调用局部,重叠向导互不覆盖。
+    const ledger = createGenerationRollbackLedger();
+    let defFile = '';
+
     // 生成文件
     try {
       // IDE-GEN-003:落盘前预检全部目标,任一冲突即整体中止,不写半套
@@ -928,14 +935,13 @@ export class KBEngineCodeGenerator {
         return;
       }
 
-      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
-      const defFile = await this.generateDefFile(entity);
-      this.rollbackLedger.createdFiles.push(defFile);
+      defFile = await this.generateDefFile(entity);
+      ledger.createdFiles.push(defFile);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
         const pythonFile = await this.generatePythonFile(entity);
-        this.rollbackLedger.createdFiles.push(pythonFile);
+        ledger.createdFiles.push(pythonFile);
         vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFile}`);
       }
 
@@ -943,26 +949,34 @@ export class KBEngineCodeGenerator {
         // IDE-GEN-006/AUD-030:回滚前值由 registerInEntitiesXml 按实际写入
         // 面记账(缓冲插入入 bufferEdits,盘写覆盖入 overwrittenFiles),避免
         // 把打开文档的缓冲内容误当盘上前值
-        await this.registerInEntitiesXml(entity.config);
+        await this.registerInEntitiesXml(entity.config, ledger);
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
-      }
-
-      // 询问是否打开文件
-      const openFile = await vscode.window.showInformationMessage(
-        '是否打开生成的文件？',
-        '是',
-        '否'
-      );
-
-      if (openFile === '是') {
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(defFile));
-        await vscode.window.showTextDocument(document);
       }
 
     } catch (error) {
       // IDE-GEN-006:回收本次新增文件与注册项,不留半套
-      await this.rollbackGeneration();
+      await this.rollbackGeneration(ledger);
       vscode.window.showErrorMessage(`生成失败: ${error}`);
+      return;
+    }
+
+    // 提交边界(AUD-064):def/python 落盘与 entities.xml 注册全部完成,事务
+    // 已提交;此后的"打开生成文件"是已提交事务的 UI 后续,失败只提示打开
+    // 失败,绝不回滚——旧实现把打开步骤留在回滚 try 里,打开失败会删掉已
+    // 成功的产物,还会在重叠调用时误删另一调用的文件(R3-F08)。
+    const openFile = await vscode.window.showInformationMessage(
+      '是否打开生成的文件？',
+      '是',
+      '否'
+    );
+
+    if (openFile === '是') {
+      try {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(defFile));
+        await vscode.window.showTextDocument(document);
+      } catch (error) {
+        vscode.window.showErrorMessage(`打开生成文件失败: ${error}`);
+      }
     }
   }
 
@@ -1104,6 +1118,9 @@ export class KBEngineCodeGenerator {
 
     entity.config.name = entityName;
 
+    // 每次调用独立事务(AUD-064):账本为本次调用局部,重叠模板调用互不覆盖。
+    const ledger = createGenerationRollbackLedger();
+
     // 生成文件
     try {
       // IDE-GEN-003:落盘前预检全部目标,任一冲突即整体中止,不写半套
@@ -1120,14 +1137,13 @@ export class KBEngineCodeGenerator {
         return;
       }
 
-      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
       const defFile = await this.generateDefFile(entity);
-      this.rollbackLedger.createdFiles.push(defFile);
+      ledger.createdFiles.push(defFile);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
 
       if (this.config.generatePython) {
         const pythonFile = await this.generatePythonFile(entity);
-        this.rollbackLedger.createdFiles.push(pythonFile);
+        ledger.createdFiles.push(pythonFile);
         vscode.window.showInformationMessage(`✅ 已生成 Python 文件: ${pythonFile}`);
       }
 
@@ -1135,13 +1151,13 @@ export class KBEngineCodeGenerator {
         // IDE-GEN-006/AUD-030:回滚前值由 registerInEntitiesXml 按实际写入
         // 面记账(缓冲插入入 bufferEdits,盘写覆盖入 overwrittenFiles),避免
         // 把打开文档的缓冲内容误当盘上前值
-        await this.registerInEntitiesXml(entity.config);
+        await this.registerInEntitiesXml(entity.config, ledger);
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
       }
 
     } catch (error) {
       // IDE-GEN-006:回收本次新增文件与注册项,不留半套
-      await this.rollbackGeneration();
+      await this.rollbackGeneration(ledger);
       vscode.window.showErrorMessage(`生成失败: ${error}`);
     }
   }

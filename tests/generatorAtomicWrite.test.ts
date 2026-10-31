@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/codeGenerator';
 import { generateGeneratorForm } from '../src/generatorForms';
 import { writeFileAtomic } from '../src/atomicFileWrite';
 import type * as vscode from 'vscode';
@@ -68,7 +68,7 @@ describe('generator atomic writes (IDE-GEN-005)', () => {
     interruptState.targets = [entitiesXml];
 
     await expect(
-      generator.registerInEntitiesXml({ name: 'Monster', hasBase: true, hasCell: false, hasClient: false })
+      generator.registerInEntitiesXml({ name: 'Monster', hasBase: true, hasCell: false, hasClient: false }, createGenerationRollbackLedger())
     ).rejects.toThrow('simulated interruption');
 
     // 旧文件保持完整,没有半截文本,也没有临时文件残留
@@ -246,12 +246,12 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
     expect(fs.readFileSync(entitiesXml, 'utf8')).toBe(entitiesBefore);
   });
 
-  it('rolls back files and the registration when a post-registration step fails', async () => {
+  it('keeps files and registration when the post-commit open step fails (AUD-064)', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
     const pyPath = path.join(root, 'scripts', 'Rollback.py');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
-    // 注册成功后,打开生成的文件一步失败
+    // 提交边界后,打开生成的文件一步失败:已提交事务绝不被回滚
     stubWorkspace.openTextDocument = (async (): Promise<never> => {
       throw new Error('open failed');
     }) as unknown as typeof stubWorkspace.openTextDocument;
@@ -260,11 +260,64 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
     await generator.showWizard();
 
     expect(error).toHaveLength(1);
-    expect(error[0]).toContain('生成失败');
-    expect(fs.existsSync(defPath)).toBe(false);
-    expect(fs.existsSync(pyPath)).toBe(false);
-    // 本次注册项被回收:entities.xml 还原到注册前的原内容
-    expect(fs.readFileSync(entitiesXml, 'utf8')).toBe(entitiesBefore);
+    expect(error[0]).toContain('打开生成文件失败');
+    // 本次产物与注册项全部保留(事务已提交)
+    expect(fs.existsSync(defPath)).toBe(true);
+    expect(fs.existsSync(pyPath)).toBe(true);
+    expect(fs.readFileSync(entitiesXml, 'utf8')).not.toBe(entitiesBefore);
+    expect(fs.readFileSync(entitiesXml, 'utf8')).toContain('<Rollback ');
+  });
+
+  it('two overlapping wizards on one instance keep each other files (AUD-064)', async () => {
+    const firstDef = path.join(root, 'scripts', 'entity_defs', 'FirstA.def');
+    const secondDef = path.join(root, 'scripts', 'entity_defs', 'SecondB.def');
+    const entitiesXml = path.join(root, 'scripts', 'entities.xml');
+
+    // 实体名按调用次序分配,避免 Second 与 First 撞名
+    const nameQueue = ['FirstA', 'SecondB'];
+    const savedInputBox = windowish.showInputBox;
+    windowish.showInputBox = async (): Promise<string | undefined> => nameQueue.shift() ?? 'Rollback';
+
+    // First 停在"是否打开"提示(手动闸门),Second 在同一实例上跑完
+    let openPromptCount = 0;
+    let releaseFirstOpen: (() => void) | undefined;
+    const firstOpenGate = new Promise<unknown>(resolve => {
+      releaseFirstOpen = () => resolve('是');
+    });
+    const savedInfoMessage = windowish.showInformationMessage;
+    windowish.showInformationMessage = async (message: string): Promise<unknown> => {
+      if (message.includes('是否打开')) {
+        openPromptCount++;
+        if (openPromptCount === 1) {
+          return firstOpenGate;
+        }
+        return '否';
+      }
+      return undefined;
+    };
+    // 打开文件一步抛错:旧共享账本会把 Second 的成功产物一并回滚
+    stubWorkspace.openTextDocument = (async (): Promise<never> => {
+      throw new Error('open failed');
+    }) as unknown as typeof stubWorkspace.openTextDocument;
+
+    const generator = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
+    const first = generator.showWizard(); // 停在打开提示,产物已落盘
+    const second = generator.showWizard(); // 同实例第二次,完整跑完并选"否"
+    await second;
+    releaseFirstOpen?.();
+    await first;
+
+    expect(error).toHaveLength(1);
+    expect(error[0]).toContain('打开生成文件失败');
+    // 两调用的产物都在:Second 不被 First 的回滚误删,First 自身也未回滚
+    expect(fs.existsSync(firstDef)).toBe(true);
+    expect(fs.existsSync(secondDef)).toBe(true);
+    const xml = fs.readFileSync(entitiesXml, 'utf8');
+    expect(xml).toContain('<FirstA ');
+    expect(xml).toContain('<SecondB ');
+
+    windowish.showInputBox = savedInputBox;
+    windowish.showInformationMessage = savedInfoMessage;
   });
 
   it('template flow rolls back the same way', async () => {

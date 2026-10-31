@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { KBEngineCodeGenerator } from '../src/codeGenerator';
+import { KBEngineCodeGenerator, createGenerationRollbackLedger } from '../src/codeGenerator';
 import type * as vscode from 'vscode';
 import { makeTextDocument, Uri, window as stubWindow, workspace as stubWorkspace, workspaceState } from './helpers/vscodeStub';
 
@@ -59,7 +59,7 @@ describe('codeGenerator entities.xml 登记进打开缓冲区(AUD-030)', () => {
     stubWorkspace.textDocuments = [dirtyDoc];
 
     const generator = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
-    await generator.registerInEntitiesXml(entity);
+    await generator.registerInEntitiesXml(entity, createGenerationRollbackLedger());
 
     // 缓冲区=旧脏内容 + 新登记(用户未保存行原样保留)
     const bufferText = dirtyDoc.getText();
@@ -74,7 +74,7 @@ describe('codeGenerator entities.xml 登记进打开缓冲区(AUD-030)', () => {
 
   it('未打开才原子写盘(applyEdit 零调用)', async () => {
     const generator = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
-    await generator.registerInEntitiesXml(entity);
+    await generator.registerInEntitiesXml(entity, createGenerationRollbackLedger());
 
     expect(fs.readFileSync(entitiesXmlPath, 'utf8')).toContain(REGISTRATION);
     expect(workspaceState.applyEditCalls).toHaveLength(0);
@@ -86,17 +86,16 @@ describe('codeGenerator entities.xml 登记进打开缓冲区(AUD-030)', () => {
     stubWorkspace.textDocuments = [doc];
 
     const generator = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
-    await generator.registerInEntitiesXml(entity);
+    await generator.registerInEntitiesXml(entity, createGenerationRollbackLedger());
 
     expect(workspaceState.applyEditCalls).toHaveLength(0);
     expect(doc.getText().match(/<Monster /g)).toHaveLength(1);
     expect(fs.readFileSync(entitiesXmlPath, 'utf8')).toBe(DISK_XML);
   });
 
-  it('showWizard 注册进缓冲区后一步失败:缓冲撤销,盘不动', async () => {
+  it('showWizard 提交后打开失败:缓冲保留注册,盘不动 (AUD-064)', async () => {
     const dirtyDoc = makeTextDocument(DIRTY_XML, { uri: Uri.file(entitiesXmlPath), version: 7 });
     stubWorkspace.textDocuments = [dirtyDoc];
-    const bufferBefore = dirtyDoc.getText();
 
     const windowish = stubWindow as unknown as Record<string, unknown>;
     const originalWindow: Record<string, unknown> = {};
@@ -111,10 +110,14 @@ describe('codeGenerator entities.xml 登记进打开缓冲区(AUD-030)', () => {
     };
     windowish.showInformationMessage = async (message: string): Promise<unknown> =>
       message.includes('是否打开') ? '是' : undefined;
-    windowish.showErrorMessage = async (): Promise<unknown> => undefined;
+    const errorMessages: string[] = [];
+    windowish.showErrorMessage = async (message: string): Promise<unknown> => {
+      errorMessages.push(message);
+      return undefined;
+    };
     windowish.showWarningMessage = async (): Promise<unknown> => undefined;
 
-    // 注册成功后,打开生成的文件一步失败触发回滚
+    // 提交边界后,打开生成的文件一步失败
     stubWorkspace.openTextDocument = (async (): Promise<never> => {
       throw new Error('open failed');
     }) as unknown as typeof stubWorkspace.openTextDocument;
@@ -132,8 +135,10 @@ describe('codeGenerator entities.xml 登记进打开缓冲区(AUD-030)', () => {
       }
     }
 
-    // 缓冲被撤销回注册前,盘未动
-    expect(dirtyDoc.getText()).toBe(bufferBefore);
+    // 已提交事务不回滚:缓冲保留本次注册,只提示打开失败;盘未动
+    expect(errorMessages).toHaveLength(1);
+    expect(errorMessages[0]).toContain('打开生成文件失败');
+    expect(dirtyDoc.getText()).toContain('<Monster ');
     expect(fs.readFileSync(entitiesXmlPath, 'utf8')).toBe(DISK_XML);
   });
 });
