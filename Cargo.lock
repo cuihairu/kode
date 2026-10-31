@@ -60,6 +60,7 @@ dependencies = [
  "kode-index",
  "kode-parser",
  "kode-protocol",
+ "kode-types",
  "kode-vfs",
  "serde",
  "serde_json",
