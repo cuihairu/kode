@@ -372,3 +372,52 @@ describe('ShadowDiffLog', () => {
     expect(entry.timestamp).toBe('2026-10-23T00:00:00.000Z');
   });
 });
+
+describe('runInRust 命令级 RPC 面(Phase0 接线)', () => {
+  it('按需拉起并包成 $/kode/rpc,返回 ok:true + 结果', async () => {
+    const calls: Array<{ method: string; params?: unknown }> = [];
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async (method: string, params?: unknown) => {
+        calls.push({ method, params });
+        return { echoed: true };
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const result = await gate.runInRust<{ echoed: boolean }>('$/kode/echo', { a: 1 });
+    expect(result).toEqual({ ok: true, result: { echoed: true } });
+    expect(calls).toEqual([
+      { method: '$/kode/rpc', params: { method: '$/kode/echo', params: { a: 1 } } },
+    ]);
+  });
+
+  it('无 serverPath 时返回 ok:false 且不拉起', async () => {
+    const start = vi.fn(async () => ({}));
+    const client = {
+      start,
+      request: vi.fn(),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: '', shadowTimeoutMs: 500 });
+    const result = await gate.runInRust('$/kode/echo', {});
+    expect(result).toEqual({ ok: false, reason: 'no serverPath' });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('client 请求失败返回 ok:false + 原因(兜底路径)', async () => {
+    const client = {
+      start: vi.fn(async () => ({})),
+      request: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+      dispose: vi.fn(async () => undefined),
+    } as unknown as ShadowClientLike;
+    const gate = new KodeCoreGate({ clientFactory: () => client });
+    gate.setConfig({ backend: 'ts', serverPath: 'node:stub', shadowTimeoutMs: 500 });
+    const result = await gate.runInRust('$/kode/echo', {});
+    expect(result).toEqual({ ok: false, reason: 'boom' });
+  });
+});

@@ -95,10 +95,15 @@ pub struct ServerState {
     /// hover 响应链(PR-010/LSP-003):符号索引 + def 语料视图,纯内存应答。
     pub hover: HoverEngine,
     pub cancels: Arc<CancelRegistry>,
+    /// 通用命令 RPC 面(Phase0 接线):`$/kode/rpc` 单臂 dispatch + 注册表。
+    pub rpc: crate::rpc::RpcRegistry,
 }
 
 impl ServerState {
     pub fn new() -> Self {
+        // 内建命令(echo)在此注册;增量命令各自 crate::<mod>::register(&mut rpc)
+        // 加一行(消息表/生成/lint 模块自带 register,见 rpc.rs 模块注)。
+        let rpc = crate::rpc::RpcRegistry::new();
         ServerState {
             initialized: false,
             shutdown_requested: false,
@@ -109,6 +114,7 @@ impl ServerState {
             roots: RootRegistry::new(),
             hover: HoverEngine::new(),
             cancels: Arc::new(CancelRegistry::default()),
+            rpc,
         }
     }
 }
@@ -184,6 +190,7 @@ fn handle_request(
             ))]
         }
         "$/kode/wait" => vec![Outgoing::Response(handle_wait(state, request, poll))],
+        "$/kode/rpc" => vec![Outgoing::Response(handle_rpc(state, request))],
         "textDocument/hover" => vec![Outgoing::Response(handle_hover(state, request))],
         "textDocument/completion" => vec![Outgoing::Response(handle_completion(state, request))],
         "textDocument/definition" => vec![Outgoing::Response(handle_definition(state, request))],
@@ -193,6 +200,29 @@ fn handle_request(
             error_codes::METHOD_NOT_FOUND,
             format!("method not found: {}", request.method),
         ))],
+    }
+}
+
+/// `$/kode/rpc` 通用命令面:params = `{ method, params }`,按注册表派发。
+/// 未注册 method → -32601;handler Err → -32602(输入/内部错误,TS 兜底)。
+fn handle_rpc(state: &mut ServerState, request: Request) -> Response {
+    let payload = request.params.unwrap_or(serde_json::Value::Null);
+    let method = payload
+        .get("method")
+        .and_then(|m| m.as_str())
+        .unwrap_or("")
+        .to_string();
+    let params = payload.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    match state.rpc.dispatch(&method, params) {
+        Ok(value) => Response::success(request.id, value),
+        Err(msg) => {
+            let code = if msg.starts_with("method not found") {
+                error_codes::METHOD_NOT_FOUND
+            } else {
+                error_codes::INVALID_PARAMS
+            };
+            Response::error(Some(request.id), code, msg)
+        }
     }
 }
 

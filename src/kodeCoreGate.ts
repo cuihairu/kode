@@ -300,6 +300,35 @@ export class KodeCoreGate {
     return false;
   }
 
+  /**
+   * 命令级 Rust 调用(生成/消息表/lint 等用户主动命令):按需拉起 client,
+   * 把请求包成 `$/kode/rpc { method, params }` 调一次,成功返回 ok:true,
+   * 任何失败返回 ok:false(原因),由调用方回退 TS 路径。
+   * 与 serving 面正交:不动 serveFromRust(仍恒 false),不依赖 shadow 模式,
+   * 不依赖 mirror 语料(params 由调用方直传)。进程生命周期交给 teardown
+   * (kill-switch/配置变更 stopClient),连续命令复用同进程不重复 spawn。
+   */
+  async runInRust<T = unknown>(
+    method: string,
+    params?: unknown,
+    opts?: { timeoutMs?: number }
+  ): Promise<{ ok: true; result: T } | { ok: false; reason: string }> {
+    if (!this.config.serverPath) {
+      return { ok: false, reason: 'no serverPath' };
+    }
+    const client = this.ensureClient();
+    if (!client) {
+      return { ok: false, reason: 'client unavailable' };
+    }
+    try {
+      await client.start();
+      const result = (await client.request('$/kode/rpc', { method, params }, opts)) as T;
+      return { ok: true, result };
+    } catch (error) {
+      return { ok: false, reason: (error as Error).message };
+    }
+  }
+
   private noticeOnce(text: string): void {
     if (!this.notices.includes(text)) {
       this.notices.push(text);
