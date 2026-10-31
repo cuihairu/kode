@@ -1014,9 +1014,12 @@ export class GlobalDataDictIndex {
   private documentListener?: vscode.Disposable;
   private saveListener?: vscode.Disposable;
   private closeListener?: vscode.Disposable;
+  private foldersListener?: vscode.Disposable;
   private renameListener?: vscode.Disposable;
   /** 当前脏(未保存)编辑的 .py 文档;弃改关闭时据此回读盘版本。 */
   private readonly dirtyDocs = new Set<string>();
+  /** 根集世代:removeRoot/invalidate 前进,在飞旧读不得发布旧根(AUD-071)。 */
+  private generation = 0;
   private started = false;
   private starting?: Promise<void>;
   private disposed = false;
@@ -1058,6 +1061,17 @@ export class GlobalDataDictIndex {
       if (this.dirtyDocs.delete(fsPath)) {
         this.revisions.set(fsPath, (this.revisions.get(fsPath) ?? 0) + 1);
         void this.indexFile(document.uri);
+      }
+    });
+    this.foldersListener ??= vscode.workspace.onDidChangeWorkspaceFolders(event => {
+      // AUD-071:根集变化——移除根立即撤回其贡献;添加根/资产根切换整库重建
+      const removed = (event as { removed?: ReadonlyArray<{ uri: { fsPath: string } }> }).removed ?? [];
+      const added = (event as { added?: ReadonlyArray<{ uri: { fsPath: string } }> }).added ?? [];
+      for (const folder of removed) {
+        this.removeRoot(folder.uri.fsPath);
+      }
+      if (added.length > 0) {
+        this.invalidate();
       }
     });
     this.renameListener ??= vscode.workspace.onDidRenameFiles(event => {
@@ -1128,6 +1142,8 @@ export class GlobalDataDictIndex {
     this.saveListener = undefined;
     this.closeListener?.dispose();
     this.closeListener = undefined;
+    this.foldersListener?.dispose();
+    this.foldersListener = undefined;
     this.renameListener?.dispose();
     this.renameListener = undefined;
     for (const watcher of this.watchers) {
@@ -1150,6 +1166,8 @@ export class GlobalDataDictIndex {
     // 有更新版本(升过)则由本读追赶重读最新;无更新版本则直接沿用先前结果。
     const prior = this.building.get(fsPath) ?? null;
     const revision = this.revisions.get(fsPath) ?? 0;
+    // AUD-071:根集变化(removeRoot/invalidate)升 generation,旧读作废不发布旧根
+    const generation = this.generation;
     const holder: { task: Promise<{ accesses: KbeDataDictAccess[] } | null> } = {
       task: Promise.resolve(null)
     };
@@ -1165,7 +1183,7 @@ export class GlobalDataDictIndex {
         if (this.disposed) {
           return null;
         }
-        if ((this.revisions.get(fsPath) ?? 0) !== revision) {
+        if ((this.revisions.get(fsPath) ?? 0) !== revision || this.generation !== generation) {
           return this.cache.get(fsPath) ?? null;
         }
         const dirty = vscode.workspace.textDocuments.find(
@@ -1178,7 +1196,11 @@ export class GlobalDataDictIndex {
         const text = Buffer.from(bytes).toString('utf8');
         // 冷扫让出宿主:正则扫描轻,逐文件一个宏任务节拍即可
         await new Promise<void>(resolve => setImmediate(resolve));
-        if (this.disposed || (this.revisions.get(fsPath) ?? 0) !== revision) {
+        if (
+          this.disposed ||
+          (this.revisions.get(fsPath) ?? 0) !== revision ||
+          this.generation !== generation
+        ) {
           return this.cache.get(fsPath) ?? null;
         }
         this.commitFile(fsPath, text);
@@ -1230,6 +1252,74 @@ export class GlobalDataDictIndex {
   /** (作用域根, 字典, 键签名) 的全部写+读点(走内存索引,不重扫)。 */
   query(dict: string, keySignature: string, root = ''): KbeDataDictSite[] {
     return this.byKey.get(siteKey(root, dict, keySignature)) ?? [];
+  }
+
+  /**
+   * AUD-071:整根移除(workspace 根或外部 assetsRoot)。立即撤回该根下各文件
+   * 贡献(按该根身份键),并升 generation 使在飞旧读不得重新发布旧根;文件仍属
+   * 其他根(嵌套根)或外部根则重建,否则保持撤回。
+   */
+  removeRoot(rootPath: string): void {
+    if (this.disposed) {
+      return;
+    }
+    this.generation += 1;
+    const base = rootPath.endsWith(path.sep) ? rootPath : `${rootPath}${path.sep}`;
+    for (const [fsPath, entry] of [...this.cache]) {
+      if (fsPath !== rootPath && !fsPath.startsWith(base)) {
+        continue;
+      }
+      // 撤回该文件在 rootPath 身份下的贡献(嵌套根文件本就不挂 rootPath 键,无项可撤)
+      for (const access of entry.accesses) {
+        const key = siteKey(rootPath, access.dict, access.keySignature);
+        const sites = this.byKey.get(key);
+        if (sites) {
+          const kept = sites.filter(site => site.file !== fsPath);
+          if (kept.length === 0) {
+            this.byKey.delete(key);
+          } else {
+            this.byKey.set(key, kept);
+          }
+        }
+      }
+      this.cache.delete(fsPath);
+      // 仍属其他根 → 立即重建;脏文档 → 缓冲优先;无根 → 保持撤回
+      const dirty = vscode.workspace.textDocuments.find(
+        document => document.uri.fsPath === fsPath && document.isDirty
+      );
+      if (dirty) {
+        this.noteSaved(dirty);
+      } else if (resolveScopeRoot(fsPath)) {
+        void this.indexFile(vscode.Uri.file(fsPath));
+      }
+    }
+  }
+
+  /**
+   * AUD-071:根集添加/资产根切换——整库失效后重建,新根下文件按新根身份入键;
+   * 旧任务(若在飞)经 generation 作废,不发布旧根。
+   */
+  invalidate(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.generation += 1;
+    this.byKey.clear();
+    this.cache.clear();
+    void this.rebuild();
+  }
+
+  /** 按当前根集重扫全部(重建覆盖;根再变则放弃,由新 invalidate 接手)。 */
+  private async rebuild(): Promise<void> {
+    const generation = this.generation;
+    if (this.disposed) {
+      return;
+    }
+    const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
+    if (this.disposed || this.generation !== generation) {
+      return;
+    }
+    await Promise.all(files.map(uri => this.indexFile(uri)));
   }
 
   /** 文件重扫后替换其贡献的倒排项(先撤旧再进新)。 */

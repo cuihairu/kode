@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { workspaceEvents } from './helpers/vscodeStub';
+import { configurationOverrides } from './fake-vscode/workspaceState';
+import { resetScanRootCache } from '../src/scanRoots';
 import { EntityMappingManager } from '../src/entityMapping';
 import {
   KBEngineHoverProvider,
@@ -1660,6 +1662,181 @@ describe('AUD-070 在飞读盘追赶后到变更(R4-F05)', () => {
       index.dispose();
       watcher.restoreWatcher();
       restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('AUD-071 根变化更新索引与 watcher(R4-F06)', () => {
+  /** 捕获本测试自建 watcher 的监听器(可 fire change)。 */
+  const captureWatcherScoped = (): { fireChange: (uri: vscode.Uri) => void; restoreWatcher: () => void } => {
+    const listeners: { change: Array<(uri: vscode.Uri) => void> } = { change: [] };
+    const original = vscode.workspace.createFileSystemWatcher;
+    vscode.workspace.createFileSystemWatcher = ((): unknown => ({
+      onDidCreate: () => ({ dispose: () => undefined }),
+      onDidChange: (l: (uri: vscode.Uri) => void) => { listeners.change.push(l); return { dispose: () => undefined }; },
+      onDidDelete: () => ({ dispose: () => undefined }),
+      dispose: () => undefined
+    })) as typeof original;
+    return {
+      fireChange: uri => listeners.change.forEach(l => l(uri)),
+      restoreWatcher: () => { vscode.workspace.createFileSystemWatcher = original; }
+    };
+  };
+
+  /** 挂起读:放行时返回"门住时"快照(旧字节)。 */
+  const makeSnapshotRead = (): { read: typeof vscode.workspace.fs.readFile; hang: (p: string) => void; release: (p: string) => void } => {
+    const gates = new Map<string, () => void>();
+    const read = (async (uri: vscode.Uri) => {
+      const p = uri.fsPath;
+      if (gates.has(p)) {
+        const captured = fs.readFileSync(p);
+        await new Promise<void>(resolve => { gates.set(p, () => resolve()); });
+        return captured;
+      }
+      return fs.readFileSync(p);
+    }) as typeof vscode.workspace.fs.readFile;
+    return {
+      read,
+      hang: (p: string) => gates.set(p, () => undefined),
+      release: (p: string) => { const go = gates.get(p); if (go) { gates.delete(p); go(); } }
+    };
+  };
+
+  const cfgWrite = 'import KBEngine\nKBEngine.globalData["cfg"] = 1\n';
+
+  /** A/B 双 workspace 根,cfg 各一写点。 */
+  const setupTwoRoots = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-aud71-'));
+    const dirA = path.join(root, 'A');
+    const dirB = path.join(root, 'B');
+    fs.mkdirSync(dirA, { recursive: true });
+    fs.mkdirSync(dirB, { recursive: true });
+    const writerA = path.join(dirA, 'writer.py');
+    const writerB = path.join(dirB, 'writer.py');
+    fs.writeFileSync(writerA, cfgWrite);
+    fs.writeFileSync(writerB, cfgWrite);
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    const savedFolders = vscode.workspace.workspaceFolders;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writerA), vscode.Uri.file(writerB)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const setFolders = (dirs: string[]) => {
+      vscode.workspace.workspaceFolders = dirs.map((dir, i) => ({ uri: vscode.Uri.file(dir), name: path.basename(dir), index: i }));
+    };
+    setFolders([dirA, dirB]);
+    const restore = () => {
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+      vscode.workspace.workspaceFolders = savedFolders;
+    };
+    return { root, dirA, dirB, writerA, writerB, setFolders, restore };
+  };
+
+  it('移除根立即撤回其贡献:dirA 键下不再见 A 写点,B 根原样保留', async () => {
+    const { root, dirA, dirB, setFolders, restore } = setupTwoRoots();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'cfg', dirA).map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'cfg', dirB).map(s => s.kind)).toEqual(['write']);
+      setFolders([dirB]);
+      workspaceEvents.foldersChanged.fire({ removed: [{ uri: vscode.Uri.file(dirA) }], added: [] });
+      expect(index.query('globalData', 'cfg', dirA)).toEqual([]);
+      expect(index.query('globalData', 'cfg', dirB).map(s => s.kind)).toEqual(['write']);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('添加根重建覆盖:新根 C 下文件按 C 根身份入键', async () => {
+    const { root, dirA, dirB, writerB, setFolders, restore } = setupTwoRoots();
+    const dirC = path.join(root, 'C');
+    fs.mkdirSync(dirC, { recursive: true });
+    const writerC = path.join(dirC, 'writer.py');
+    fs.writeFileSync(writerC, cfgWrite);
+    const savedFind = vscode.workspace.findFiles;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writerB), vscode.Uri.file(writerC)];
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'cfg', dirC)).toEqual([]);
+      setFolders([dirA, dirB, dirC]);
+      workspaceEvents.foldersChanged.fire({ removed: [], added: [{ uri: vscode.Uri.file(dirC) }] });
+      await new Promise(r => setTimeout(r, 20));
+      expect(index.query('globalData', 'cfg', dirC).map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'cfg', dirC)[0].file).toBe(writerC);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('在飞旧读不得重新发布旧根:移除后放行作废,dirA 键不复活', async () => {
+    const { root, dirA, dirB, writerA, setFolders, restore } = setupTwoRoots();
+    const savedRead = vscode.workspace.fs.readFile;
+    const ctl = makeSnapshotRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'cfg', dirA).map(s => s.kind)).toEqual(['write']);
+      ctl.hang(writerA);
+      watcher.fireChange(vscode.Uri.file(writerA));
+      setFolders([dirB]);
+      workspaceEvents.foldersChanged.fire({ removed: [{ uri: vscode.Uri.file(dirA) }], added: [] });
+      expect(index.query('globalData', 'cfg', dirA)).toEqual([]);
+      ctl.release(writerA);
+      await new Promise(r => setTimeout(r, 20));
+      expect(index.query('globalData', 'cfg', dirA)).toEqual([]);
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      restore();
+      vscode.workspace.fs.readFile = savedRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('外部 assetsRoot 移除:整根身份键撤回(证据:removeRoot 根无关)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-aud71x-'));
+    const ws = path.join(root, 'ws');
+    const assets = path.join(root, 'assets');
+    fs.mkdirSync(ws, { recursive: true });
+    fs.mkdirSync(assets, { recursive: true });
+    const assetsWriter = path.join(assets, 'writer.py');
+    fs.writeFileSync(assetsWriter, cfgWrite);
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    const savedFolders = vscode.workspace.workspaceFolders;
+    const savedConfig = configurationOverrides.get('kbengine');
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(assetsWriter)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    vscode.workspace.workspaceFolders = [{ uri: vscode.Uri.file(ws), name: 'ws', index: 0 }];
+    configurationOverrides.set('kbengine', { assetsRoot: assets });
+    resetScanRootCache();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'cfg', assets).map(s => s.kind)).toEqual(['write']);
+      // 外部根被移除(配置清空):整根撤回
+      configurationOverrides.set('kbengine', { assetsRoot: '' });
+      resetScanRootCache();
+      index.removeRoot(assets);
+      expect(index.query('globalData', 'cfg', assets)).toEqual([]);
+      expect(index.query('globalData', 'cfg', '')).toEqual([]);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+      vscode.workspace.workspaceFolders = savedFolders;
+      if (savedConfig) configurationOverrides.set('kbengine', savedConfig);
+      else configurationOverrides.delete('kbengine');
+      resetScanRootCache();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

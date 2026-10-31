@@ -1437,6 +1437,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
       resetScanRootCache();
       pythonClassIndex.invalidate();
+      // AUD-071:assetsRoot/profile 切换 = 根集变化 → 字典键索引整库重建(旧外部根不再贡献)
+      dataDictIndex.invalidate();
       watchPythonIndex();
       // IDE-IDX-014:实体面外部根 watcher 三件套整组重建(旧根释放,新根挂上)
       entityMappingManager.refreshExternalRootWatchers();
