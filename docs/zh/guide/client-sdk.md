@@ -62,8 +62,10 @@ public baseCallCreateAvatar(_arg0: number): void {
 
 | def 类型 | TypeScript | C# |
 | --- | --- | --- |
-| `UINT8` / `UINT16` / `UINT32` / `UINT64` | `number` | `byte` / `ushort` / `uint` / `ulong` |
-| `INT8` / `INT16` / `INT32` / `INT64` | `number` | `sbyte` / `short` / `int` / `long` |
+| `UINT8` / `UINT16` / `UINT32` | `number` | `byte` / `ushort` / `uint` |
+| `UINT64` | `bigint` | `ulong` |
+| `INT8` / `INT16` / `INT32` | `number` | `sbyte` / `short` / `int` |
+| `INT64` | `bigint` | `long` |
 | `FLOAT` / `DOUBLE` | `number` | `float` / `double` |
 | `STRING` / `UNICODE` | `string` | `string` |
 | `VECTOR2` / `VECTOR3` / `VECTOR4` | `[number, number]` / `[number, number, number]` / `[number, number, number, number]` | `Vector2` / `Vector3` / `Vector4` |
@@ -75,6 +77,16 @@ public baseCallCreateAvatar(_arg0: number): void {
 类型表与引擎注册表同源（17 个内置类型）。引擎未注册的 `BOOL` 等幻影类型不给映射，落兜底值，由 def 分析诊断照报。
 
 C# 向量默认 `Vector2`/`Vector3`/`Vector4` 裸名（Unity 自带）；非 Unity 工程按工程内的向量类型改名。
+
+### 64 位整数边界（TypeScript）
+
+`UINT64`/`INT64` 映射为 `bigint` 而非 `number`：JavaScript `number` 是 IEEE-754 float64，整数精度止于 2^53-1，`9007199254740993`（2^53+1）会静默塌缩成 2^53；`bigint` 精确覆盖 64 位全域。后果（每个生成的 TypeScript SDK 文件头部都带说明行）：
+
+- **编译目标**：消费方 TS 工程需 **ES2020+**（BigInt 支持）。
+- **编解码边界**：`JSON.stringify` 遇 `bigint` 抛错；网络编解码须走 BigInt 感知通道（如按字符串或二进制缓冲编码）。`entityId` 仍是 `number`（baseapp 分配，远低于 2^53）。
+- C# 不受影响（`ulong`/`long` 本身全宽）。
+
+
 
 ## 固定字典伴随文件
 

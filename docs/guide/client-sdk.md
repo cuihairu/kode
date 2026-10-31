@@ -62,8 +62,10 @@ The seams themselves are empty. Each client plugin's own base/cell call channel 
 
 | def type | TypeScript | C# |
 | --- | --- | --- |
-| `UINT8` / `UINT16` / `UINT32` / `UINT64` | `number` | `byte` / `ushort` / `uint` / `ulong` |
-| `INT8` / `INT16` / `INT32` / `INT64` | `number` | `sbyte` / `short` / `int` / `long` |
+| `UINT8` / `UINT16` / `UINT32` | `number` | `byte` / `ushort` / `uint` |
+| `UINT64` | `bigint` | `ulong` |
+| `INT8` / `INT16` / `INT32` | `number` | `sbyte` / `short` / `int` |
+| `INT64` | `bigint` | `long` |
 | `FLOAT` / `DOUBLE` | `number` | `float` / `double` |
 | `STRING` / `UNICODE` | `string` | `string` |
 | `VECTOR2` / `VECTOR3` / `VECTOR4` | `[number, number]` / `[number, number, number]` / `[number, number, number, number]` | `Vector2` / `Vector3` / `Vector4` |
@@ -73,6 +75,16 @@ The seams themselves are empty. Each client plugin's own base/cell call channel 
 | Unrecognized | `unknown` | `object` |
 
 The type table shares its source with the engine's registry (17 built-in types). Phantom types the engine never registered, like `BOOL`, get no mapping and fall to the fallback value, while def analysis diagnostics still report them.
+
+### 64-bit integer boundary (TypeScript)
+
+`UINT64`/`INT64` map to `bigint`, not `number`: a JavaScript `number` is an IEEE-754 float64 whose integer precision ends at 2^53-1, so values like `9007199254740993` (2^53+1) silently collapse to 2^53. `bigint` covers the full 64-bit domain exactly. Consequences (each generated TypeScript SDK file carries a header line stating this):
+
+- **Compile target**: the consuming TS project must target **ES2020+** (BigInt support).
+- **Codec boundary**: `JSON.stringify` throws on a `bigint`; the wire codec must be BigInt-aware (e.g. encode as a string or via a binary buffer). `entityId` stays `number` (baseapp-assigned, safely below 2^53).
+- C# is unaffected (`ulong`/`long` are full-width).
+
+
 
 C# vectors default to the bare names `Vector2`/`Vector3`/`Vector4` (Unity ships them); non-Unity projects rename to their own vector types.
 
