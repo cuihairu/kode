@@ -106,6 +106,7 @@ impl ServerState {
         let mut rpc = crate::rpc::RpcRegistry::new();
         crate::client_sdk::register(&mut rpc);
         crate::lint::register(&mut rpc);
+        crate::message_table::register(&mut rpc);
         ServerState {
             initialized: false,
             shutdown_requested: false,

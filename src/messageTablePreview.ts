@@ -10,7 +10,7 @@ export interface MessageTablePreviewDeps {
   /** 实体名清单(来自共享索引/映射) */
   listEntityNames(): string[];
   /** 单实体构建 markdown;null=缺声明 */
-  buildTableMarkdown(entityName: string): string | null;
+  buildTableMarkdown(entityName: string): Promise<string | null>;
   pick(items: string[]): Promise<string | undefined>;
   show(markdown: string): Promise<unknown>;
   notifyWarning(message: string): unknown;
@@ -27,7 +27,7 @@ export async function showEntityMessageTablePreview(deps: MessageTablePreviewDep
   if (entityName === undefined) {
     return;
   }
-  const markdown = deps.buildTableMarkdown(entityName);
+  const markdown = await deps.buildTableMarkdown(entityName);
   if (markdown === null) {
     deps.notifyWarning(`缺声明:${entityName} 的 entity def 未找到(entities.xml 未登记或 entity_defs 缺该 .def 文件),无法生成 messageTable 预览`);
     return;

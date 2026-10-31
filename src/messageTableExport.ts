@@ -9,7 +9,7 @@ export interface MessageTableExportDeps {
   /** 实体名清单(来自共享索引/映射) */
   listEntityNames(): string[];
   /** 单实体构建 JSON 文本;null=缺声明 */
-  buildTableJson(entityName: string): string | null;
+  buildTableJson(entityName: string): Promise<string | null>;
   pick(items: string[]): Promise<string | undefined>;
   /** 保存路径选择(showSaveDialog 注入);undefined=取消 */
   chooseSavePath(defaultFileName: string): Promise<string | undefined>;
@@ -28,7 +28,7 @@ export async function exportEntityMessageTable(deps: MessageTableExportDeps): Pr
   if (entityName === undefined) {
     return;
   }
-  const json = deps.buildTableJson(entityName);
+  const json = await deps.buildTableJson(entityName);
   if (json === null) {
     deps.notifyWarning(`缺声明:${entityName} 的 entity def 未找到(entities.xml 未登记或 entity_defs 缺该 .def 文件),无法导出消息表`);
     return;

@@ -189,6 +189,25 @@ export class DefinitionSemanticsLoader {
     }
   }
 
+  /** 原文直传面(Rust 命令级 RPC 语料用):按名取文件原文+路径,不解析。
+   * 与 loadLocal 同一事实源(共享快照:打开缓冲区优先,未打开磁盘补载),
+   * 但跳过语义解析——Rust 侧负责解析,TS 侧只收集原文。 */
+  loadLocalRaw(
+    name: string,
+    category: DefinitionSemanticCategory,
+    originRoot?: string
+  ): { content: string; filePath: string } | null {
+    const filePath = this.resolveDefinitionFile(name, category, originRoot);
+    if (!filePath) {
+      return null;
+    }
+    const content = readSharedFileSnapshot(filePath)?.content ?? null;
+    if (content === null) {
+      return null;
+    }
+    return { content, filePath };
+  }
+
   loadResolved(
     name: string,
     category: DefinitionSemanticCategory,

@@ -90,7 +90,7 @@ import {
 } from './taskContext';
 import { showEntityMessageTablePreview } from './messageTablePreview';
 import { exportEntityMessageTable } from './messageTableExport';
-import { buildMessageTable, renderMessageTableJson, renderMessageTableMarkdown, type DefTreeSource } from './messageTable';
+import { buildMessageTable, buildMessageTableInRust, renderMessageTableJson, renderMessageTableMarkdown, type DefTreeSource, type MessageTable } from './messageTable';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
 import { getIndexScanRoots } from './scanRoots';
 import { ProjectProfileStore } from './projectProfiles';
@@ -2381,11 +2381,20 @@ export function activate(context: vscode.ExtensionContext) {
 
   // IDE-SDK-001/002 单实体 messageTable:预览(markdown 查看)与 JSON 导
   // 出共用同一构建面——def 取源与索引扫描同一 scanRoots/loader 公式;
-  // 缺声明(构建 null)两条命令同样明确提示,不展示空预览不写空文件
-  const buildEntityMessageTable = (entityName: string) => {
+  // 缺声明(构建 null)两条命令同样明确提示,不展示空预览不写空文件。
+  // 构建主路径走 Rust 核心(buildMessageTableInRust,原文直传),Rust 不可用
+  // (无 gate/serverPath/调用失败)回落 TS 纯实现——与 clientSdkGenerator
+  // 的主路径/兜底分面同形。
+  const buildEntityMessageTable = async (entityName: string): Promise<MessageTable | null> => {
     const loader = createDefinitionSemanticsLoader(getIndexScanRoots());
     if (!loader) {
       return null;
+    }
+    const fromRust = await buildMessageTableInRust(entityName, {
+      loadDefRaw: (name, kind) => loader.loadLocalRaw(name, kind)
+    });
+    if (fromRust) {
+      return fromRust;
     }
     const source: DefTreeSource = {
       loadDef: (name, kind) => loader.loadLocal(name, kind)
@@ -2413,8 +2422,8 @@ export function activate(context: vscode.ExtensionContext) {
       await entityMappingManager.waitForInitialScan();
       await showEntityMessageTablePreview({
         ...entityMessageTableDeps,
-        buildTableMarkdown: entityName => {
-          const table = buildEntityMessageTable(entityName);
+        buildTableMarkdown: async entityName => {
+          const table = await buildEntityMessageTable(entityName);
           return table === null ? null : renderMessageTableMarkdown(table);
         },
         show: async markdown => {
@@ -2437,8 +2446,8 @@ export function activate(context: vscode.ExtensionContext) {
       await entityMappingManager.waitForInitialScan();
       await exportEntityMessageTable({
         ...entityMessageTableDeps,
-        buildTableJson: entityName => {
-          const table = buildEntityMessageTable(entityName);
+        buildTableJson: async entityName => {
+          const table = await buildEntityMessageTable(entityName);
           return table === null ? null : renderMessageTableJson(table);
         },
         chooseSavePath: defaultFileName =>

@@ -68,8 +68,10 @@ import {
   DefinitionComponentRef,
   DefinitionMethod,
   DefinitionProperty,
-  LocalDefinitionSemantics
+  LocalDefinitionSemantics,
+  parseLocalDefinition
 } from './definitionSemantics';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 export interface MessageTableOptions {
   /** entitydefAliasID 开关(引擎默认关);关时 aliasID 全 null */
@@ -419,6 +421,100 @@ export function buildMessageTable(
     types: assembly.types,
     issues: assembly.issues
   };
+}
+
+/** def 原文取源(Rust 命令级 RPC 语料用):按名取文件原文+路径。 */
+export interface DefRawText {
+  content: string;
+  filePath: string;
+}
+
+export interface DefRawSource {
+  loadDefRaw(name: string, kind: 'entity' | 'interface'): DefRawText | null;
+}
+
+/**
+ * 主路径:Rust 核心建表(单一来源)。Rust 不可用(无 gate/无 serverPath/调用
+ * 失败/结果形状不完整)返回 null,由调用方回落到 TS 纯实现。
+ *
+ * 语料直传:TS 只负责按名取 def 原文(实体 + 父链 + 接口闭包),Rust 侧负责
+ * 全部解析与装配;不依赖 mirror 语料与 shadow 模式。TS 不解析原文,仅用
+ * parseLocalDefinition 的 Parent/Interfaces 引用做闭包发现。
+ */
+export async function buildMessageTableInRust(
+  entityName: string,
+  rawSource: DefRawSource,
+  options: MessageTableOptions = {}
+): Promise<MessageTable | null> {
+  const gate = getKodeCoreShadowGate();
+  if (!gate) {
+    return null;
+  }
+
+  const defs: Record<string, string> = {};
+  const paths: Record<string, string> = {};
+  const ownRaw = rawSource.loadDefRaw(entityName, 'entity');
+  if (!ownRaw) {
+    return null;
+  }
+
+  // 闭包发现:实体父链 BFS(每实体的接口引用 + 父类),接口只取原文不递归
+  // (引擎 loadInterfaces 不递归接口自身)。缺失 def 不收集,Rust 侧按
+  // parent-file-missing/interface-file-missing 如实报出。
+  const entityQueue: string[] = [entityName];
+  const seenEntities = new Set<string>();
+  const seenInterfaces = new Set<string>();
+  while (entityQueue.length > 0) {
+    const name = entityQueue.shift()!;
+    if (seenEntities.has(name)) {
+      continue;
+    }
+    seenEntities.add(name);
+    const raw = name === entityName ? ownRaw : rawSource.loadDefRaw(name, 'entity');
+    if (!raw) {
+      continue;
+    }
+    defs[name] = raw.content;
+    paths[name] = raw.filePath;
+    let local: LocalDefinitionSemantics;
+    try {
+      local = parseLocalDefinition(raw.content, 'entity', name, raw.filePath);
+    } catch {
+      continue;
+    }
+    if (local.parentName && !seenEntities.has(local.parentName)) {
+      entityQueue.push(local.parentName);
+    }
+    for (const ref of local.interfaces) {
+      if (seenInterfaces.has(ref.name)) {
+        continue;
+      }
+      seenInterfaces.add(ref.name);
+      const ifaceRaw = rawSource.loadDefRaw(ref.name, 'interface');
+      if (!ifaceRaw) {
+        continue;
+      }
+      defs[ref.name] = ifaceRaw.content;
+      paths[ref.name] = ifaceRaw.filePath;
+    }
+  }
+
+  const response = await gate.runInRust<MessageTable>('$/kode/messageTable/build', {
+    entityName,
+    defText: defs[entityName],
+    typesXml: options.typesXml,
+    defs,
+    paths,
+    aliasIdEnabled: options.aliasIdEnabled ?? false
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const table = response.result;
+  if (!table || typeof table.module !== 'string' || !Array.isArray(table.methods)) {
+    return null;
+  }
+  return table;
 }
 
 /**
