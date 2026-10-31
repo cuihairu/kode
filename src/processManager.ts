@@ -59,6 +59,9 @@ export type ProcessSpawnRunner = (request: ProcessSpawnRequest) => ChildProcess;
  * - POSIX:启动即 detached 进程组长(setsid),负 pid 信号杀全组;组长已
  *   回收(ESRCH)或并非组长时回落 child.kill(单 pid 语义,测试替身同型)
  * - Windows:无进程组语义,taskkill /PID /T /F 按进程树递归终止
+ * - R2-F23:无效 PID(缺失/0/负/非整数)绝不发信号——process.kill(-0) 命中
+ *   调用方自身进程组(误杀宿主组),taskkill /PID 0 同理;spawn 失败时
+ *   child.pid 为空落 0,停止/升级击杀/dispose 三路都经此闸挡下
  */
 export const killProcessTree = async (
   pid: number,
@@ -69,6 +72,9 @@ export const killProcessTree = async (
     platform?: NodeJS.Platform;
   } = {}
 ): Promise<boolean> => {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
   const platform = deps.platform ?? process.platform;
   if (platform === 'win32') {
     const taskkill = deps.runTaskkill

@@ -5,7 +5,7 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONSOLE_PROFILE_CB_MSG_ID,
   buildCString,
@@ -471,6 +471,55 @@ describe('killProcessTree(POSIX 单 pid 回落)', () => {
 
     await expect(killProcessTree(pid, 'SIGTERM')).resolves.toBe(false);
   }, 8000);
+});
+
+// R2-F23(IDE-AUD-050):无效 PID 绝不向内核或 taskkill 发信号——process.kill(-0)
+// 会命中调用方自身进程组(误杀宿主组),taskkill /PID 0 同理;pid 缺失(0,来自
+// child.pid ?? 0)/负/非整数一律拒绝,spawn 失败/退出并发下不误杀宿主组。
+describe('killProcessTree(无效 PID 拒绝, R2-F23)', () => {
+  const killSpy = () =>
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+  const withSpy = async (pid: number, signal: NodeJS.Signals, verify: (spy: ReturnType<typeof killSpy>) => void) => {
+    const spy = killSpy();
+    try {
+      const result = await killProcessTree(pid, signal);
+      expect(result).toBe(false);
+      verify(spy);
+    } finally {
+      spy.mockRestore();
+    }
+  };
+
+  it('pid 0(POSIX)不向内核发组信号', async () => {
+    await withSpy(0, 'SIGTERM', spy => {
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('负 pid(POSIX)不向内核发信号', async () => {
+    await withSpy(-5, 'SIGTERM', spy => {
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('非整数 pid(POSIX)不向内核发信号', async () => {
+    await withSpy(1.5, 'SIGTERM', spy => {
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it('pid 0(Windows)不调用 taskkill', async () => {
+    const calls: string[][] = [];
+    const result = await killProcessTree(0, 'SIGTERM', undefined, {
+      platform: 'win32',
+      runTaskkill: args => {
+        calls.push(args);
+        return { on: () => undefined };
+      }
+    });
+    expect(result).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 class FakeChild extends EventEmitter implements ChildProcess {
