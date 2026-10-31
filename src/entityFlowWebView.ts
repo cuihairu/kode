@@ -11,6 +11,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
 import { resolveEntityHasCell } from './databaseSchemaCore';
+import { buildSchemaSourcePorts } from './databaseSchemaSource';
 import { getDefinitionWorkspaceLayout } from './definitionWorkspace';
 import {
   buildEntityFlowGraph,
@@ -111,7 +112,7 @@ export class EntityFlowWebView {
     const layout = getDefinitionWorkspaceLayout(workspaceRoot);
     return buildEntityFlowGraph({
       semantics,
-      hasCell: resolveEntityHasCell(entityName, workspaceRoot, layout)
+      hasCell: resolveEntityHasCell(entityName, workspaceRoot, layout, buildSchemaSourcePorts())
     });
   }
 

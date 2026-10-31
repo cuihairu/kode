@@ -18,16 +18,42 @@ import {
   getScalarChildValue,
   parseDefDocument
 } from './defParser';
-import {
-  findDefinitionFileByCategory,
-  findEntityDefinitionFile,
-  getDefinitionWorkspaceLayout,
-  getRegisteredEntities,
-  type DefinitionCategory
-} from './definitionWorkspace';
 import { normalizeFileIdentity } from './pathIdentity';
-import { readSharedFileSnapshot } from './sharedFileSnapshot';
-import type { SharedFileVersionRef } from './sharedFileSnapshot';
+
+// R2-F24(IDE-AUD-051):本模块自足于普通 Node——源访问(def 文件发现/实体
+// 登记/共享快照读取)全部经 SchemaSourcePorts 注入,不 import 任何传递
+// 依赖 vscode 的模块(definitionWorkspace/sharedFileSnapshot 由适配层
+// databaseSchemaSource 包装)。下列类型镜像这两个模块的对应形状。
+export type DefinitionCategory = 'type' | 'entity' | 'interface' | 'component';
+
+export interface RegisteredEntityInfo {
+  name: string;
+  hasCellDeclared: boolean;
+  hasCell: boolean;
+}
+
+export interface SchemaInputSnapshot {
+  readonly content: string;
+  readonly source: 'document' | 'disk';
+  readonly version: number | undefined;
+}
+
+export interface SchemaVersionRef {
+  readonly source: 'document' | 'disk';
+  readonly version: number | undefined;
+}
+
+export interface SchemaSourcePorts {
+  findDefinitionFileByCategory(name: string, category: DefinitionCategory, workspaceRoot: string): string | null;
+  findEntityDefinitionFile(name: string, workspaceRoot: string): string | null;
+  getRegisteredEntities(workspaceRoot: string): RegisteredEntityInfo[];
+  readInputFile(filePath: string): SchemaInputSnapshot | null;
+}
+
+/** resolveEntityHasCell 只消费 entityScriptsRoot;适配层传整份布局也结构性兼容 */
+export interface SchemaLayout {
+  entityScriptsRoot: string | null;
+}
 
 /** 引擎默认库表前缀(entity_table_mysql.cpp 的 TABLE_PREFIX) */
 export const DB_TABLE_PREFIX = 'tbl_';
@@ -113,11 +139,13 @@ export interface BuildContext {
   typeAliases: Map<string, TypeAliasEntry>;
   entityHasCell: boolean;
   /** IDE-SNP-006:构建期消费的共享快照输入(fsPath → 来源域+版本),随快照发出 */
-  inputVersions: Map<string, SharedFileVersionRef>;
+  inputVersions: Map<string, SchemaVersionRef>;
   /** IDE-SCH-004:本次构建消费的类型注册表文件(types.xml 路径,无则 null) */
   typeRegistryPath: string | null;
   /** IDE-SCH-004:消费的别名 → 构建期解析摘要(随快照发出,注册表变更按消费比对) */
   typeRegistryConsumed: Map<string, string>;
+  /** R2-F24:源访问端口(文件发现/实体登记/快照读),由适配层注入 */
+  ports: SchemaSourcePorts;
 }
 
 /**
@@ -125,7 +153,7 @@ export interface BuildContext {
  * 读失败不记条目——文件出现/消失由 watcher 事件面裁断,清单只锁版本漂移。
  */
 function readSchemaInputFile(filePath: string, context: BuildContext): string | null {
-  const snapshot = readSharedFileSnapshot(filePath);
+  const snapshot = context.ports.readInputFile(filePath);
   if (!snapshot) {
     return null;
   }
@@ -218,14 +246,16 @@ export function deriveDatabaseTables(
 }
 export function parseTypeAliases(
   typesXmlPath: string | null,
-  inputVersions?: Map<string, SharedFileVersionRef>
+  inputVersions?: Map<string, SchemaVersionRef>,
+  readInputFile?: (filePath: string) => SchemaInputSnapshot | null
 ): Map<string, TypeAliasEntry> {
   if (!typesXmlPath) {
     return new Map<string, TypeAliasEntry>();
   }
 
-  // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema)
-  const snapshot = readSharedFileSnapshot(typesXmlPath);
+  // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema);R2-F24:
+  // 读取经注入的端口,适配层传 sharedFileSnapshot 包装,Node 直调传自备读取
+  const snapshot = readInputFile ? readInputFile(typesXmlPath) : null;
   if (!snapshot) {
     return new Map<string, TypeAliasEntry>();
   }
@@ -428,8 +458,8 @@ export function* collectPersistentPropertiesForDefinition(
     const parentName = getTypeRefName(parentNode);
     if (parentName) {
       const parentCategory = category === 'component' ? 'component' : 'entity';
-      const parentPath = findDefinitionFileByCategory(parentName, parentCategory, context.workspaceRoot)
-        || (parentCategory === 'entity' ? findEntityDefinitionFile(parentName, context.workspaceRoot) : null);
+      const parentPath = context.ports.findDefinitionFileByCategory(parentName, parentCategory, context.workspaceRoot)
+        || (parentCategory === 'entity' ? context.ports.findEntityDefinitionFile(parentName, context.workspaceRoot) : null);
 
       if (parentPath) {
         mergeProperties(
@@ -470,7 +500,7 @@ function* mergeInterfaces(
       continue;
     }
 
-    const interfacePath = findDefinitionFileByCategory(interfaceName, 'interface', context.workspaceRoot);
+    const interfacePath = context.ports.findDefinitionFileByCategory(interfaceName, 'interface', context.workspaceRoot);
     if (!interfacePath) {
       continue;
     }
@@ -881,7 +911,7 @@ function* getPersistentComponentProperties(
     return clonePersistentProperties(cached);
   }
 
-  const componentPath = findDefinitionFileByCategory(componentTypeName, 'component', context.workspaceRoot);
+  const componentPath = context.ports.findDefinitionFileByCategory(componentTypeName, 'component', context.workspaceRoot);
   if (!componentPath) {
     return [];
   }
@@ -913,7 +943,7 @@ function getComponentModuleScopes(componentTypeName: string, context: BuildConte
   // 独立 visited:has* 扫描先于属性收集执行,不得占用共享的
   // visitedDefinitions(否则同一 def 的属性收集会被短路成空)。
   const visitedScopes = new Set<string>();
-  const componentPath = findDefinitionFileByCategory(componentTypeName, 'component', context.workspaceRoot);
+  const componentPath = context.ports.findDefinitionFileByCategory(componentTypeName, 'component', context.workspaceRoot);
   if (componentPath) {
     collectDefinitionHasFlags(componentPath, 'component', context, has, visitedScopes);
   }
@@ -1003,7 +1033,7 @@ function collectDefinitionHasFlags(
         continue;
       }
 
-      const interfacePath = findDefinitionFileByCategory(interfaceName, 'interface', context.workspaceRoot);
+      const interfacePath = context.ports.findDefinitionFileByCategory(interfaceName, 'interface', context.workspaceRoot);
       if (interfacePath) {
         collectDefinitionHasFlags(interfacePath, 'interface', context, has, visitedScopes);
       }
@@ -1018,8 +1048,8 @@ function collectDefinitionHasFlags(
     // 与 findEntityDefinitionFile 兜底(可达孪生在属性收集的父臂)无触发路径。
     /* istanbul ignore start */
     const parentCategory = category === 'component' ? 'component' : 'entity';
-    const parentPath = findDefinitionFileByCategory(parentName, parentCategory, context.workspaceRoot)
-      || (parentCategory === 'entity' ? findEntityDefinitionFile(parentName, context.workspaceRoot) : null);
+    const parentPath = context.ports.findDefinitionFileByCategory(parentName, parentCategory, context.workspaceRoot)
+      || (parentCategory === 'entity' ? context.ports.findEntityDefinitionFile(parentName, context.workspaceRoot) : null);
     /* istanbul ignore stop */
     if (parentPath) {
       collectDefinitionHasFlags(parentPath, parentCategory, context, has, visitedScopes);
@@ -1033,9 +1063,10 @@ function collectDefinitionHasFlags(
 export function resolveEntityHasCell(
   entityName: string,
   workspaceRoot: string,
-  layout: ReturnType<typeof getDefinitionWorkspaceLayout>
+  layout: SchemaLayout,
+  ports: SchemaSourcePorts
 ): boolean {
-  const entityInfo = getRegisteredEntities(workspaceRoot).find(entity => entity.name === entityName);
+  const entityInfo = ports.getRegisteredEntities(workspaceRoot).find(entity => entity.name === entityName);
   if (entityInfo?.hasCellDeclared) {
     return entityInfo.hasCell;
   }

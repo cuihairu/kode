@@ -17,6 +17,7 @@ import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import type { SharedFileVersionRef } from './sharedFileSnapshot';
 import { buildDatabaseTablesInRust } from './databaseSchemaRust';
+import { buildSchemaSourcePorts } from './databaseSchemaSource';
 import {
   DB_TABLE_PREFIX,
   aliasDigestInMap,
@@ -36,6 +37,7 @@ import {
   type DefSourceRef,
   type SchemaBuildProgress,
   type RuntimeScope,
+  type SchemaVersionRef,
   type TypeAliasEntry,
   type PersistentPropertyDescriptor,
   type TableFieldDescriptor,
@@ -266,6 +268,7 @@ function* schemaBuildPhases(
     return null;
   }
 
+  const schemaPorts = buildSchemaSourcePorts();
   const buildContext: BuildContext = {
     workspaceRoot,
     entityDefsRoot: layout.entityDefsRoot,
@@ -274,14 +277,15 @@ function* schemaBuildPhases(
     componentCache: new Map<string, PersistentPropertyDescriptor[]>(),
     componentScopesCache: new Map<string, RuntimeScope[]>(),
     typeAliases: new Map<string, TypeAliasEntry>(),
-    entityHasCell: resolveEntityHasCell(entityName, workspaceRoot, layout),
-    inputVersions: new Map<string, SharedFileVersionRef>([
+    entityHasCell: resolveEntityHasCell(entityName, workspaceRoot, layout, schemaPorts),
+    inputVersions: new Map<string, SchemaVersionRef>([
       [defFilePath, { source: entityInput.source, version: entityInput.version }]
     ]),
     typeRegistryPath: layout.typesXmlPath,
-    typeRegistryConsumed: new Map<string, string>()
+    typeRegistryConsumed: new Map<string, string>(),
+    ports: schemaPorts
   };
-  buildContext.typeAliases = parseTypeAliases(layout.typesXmlPath, buildContext.inputVersions);
+  buildContext.typeAliases = parseTypeAliases(layout.typesXmlPath, buildContext.inputVersions, schemaPorts.readInputFile);
   yield 'phase-gate'; // 闸点 4:类型注册表解析后
   const entitySource: DefSourceRef = {
     filePath: defFilePath,
@@ -1142,12 +1146,13 @@ export function getTypeStorageShape(typesXmlPath: string | null, typeName: strin
     visitedDefinitions: new Set(),
     componentCache: new Map(),
     componentScopesCache: new Map(),
-    typeAliases: parseTypeAliases(typesXmlPath),
+    typeAliases: parseTypeAliases(typesXmlPath, undefined, buildSchemaSourcePorts().readInputFile),
     entityHasCell: false,
     inputVersions: new Map(),
     // IDE-SCH-004:形态查询不产快照,消费记账落空 Map(占位,不入缓存)
     typeRegistryPath: null,
-    typeRegistryConsumed: new Map<string, string>()
+    typeRegistryConsumed: new Map<string, string>(),
+    ports: buildSchemaSourcePorts()
   };
   return typeShapeOf(typeName, context, new Set());
 }
