@@ -162,6 +162,7 @@ import {
   getKbeDataDictAccessAtPosition,
   inferDataDictValueType,
   isKeyInsideLineComment,
+  resolveScopeRoot,
   type KbeDataDictSite
 } from './globalDataIndex';
 import type { EngineApiCatalog } from './engineApiMetadata';
@@ -4055,7 +4056,8 @@ async function resolveDataDictSitesAtPosition(
   if (token?.isCancellationRequested) {
     return null;
   }
-  return { access, sites: dataDictIndex.query(access.dict, access.keySignature) };
+  // AUD-068:查询带根身份——跨进程字典不跨工程共享命名空间,同根内互链。
+  return { access, sites: dataDictIndex.query(access.dict, access.keySignature, resolveScopeRoot(document.uri.fsPath)) };
 }
 
 /**

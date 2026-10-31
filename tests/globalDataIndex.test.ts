@@ -1324,3 +1324,100 @@ describe('AUD-067 字符串键按 Python 值归一化(R4-F02)', () => {
     expect(escaped[0].keySignature).toBe('a"b');
   });
 });
+
+describe('AUD-068 跨项目同名键不串跳(R4-F03 根身份)', () => {
+  /** 双 workspace 根(A/B)同键 cfg:A 写点 + B 读点(+A 同根读点) */
+  const setupTwoRoots = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-aud68-'));
+    const dirA = path.join(root, 'project-A');
+    const dirB = path.join(root, 'project-B');
+    fs.mkdirSync(dirA, { recursive: true });
+    fs.mkdirSync(dirB, { recursive: true });
+    const writerA = path.join(dirA, 'writer.py');
+    const readerB = path.join(dirB, 'reader.py');
+    const readerA = path.join(dirA, 'reader2.py');
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = 1\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("cfg")\n';
+    fs.writeFileSync(writerA, writerText);
+    fs.writeFileSync(readerB, readerText);
+    fs.writeFileSync(readerA, readerText);
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    const savedFolders = vscode.workspace.workspaceFolders;
+    vscode.workspace.findFiles = async () => [
+      vscode.Uri.file(writerA),
+      vscode.Uri.file(readerB),
+      vscode.Uri.file(readerA)
+    ];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    vscode.workspace.workspaceFolders = [
+      { uri: vscode.Uri.file(dirA), name: 'A', index: 0 },
+      { uri: vscode.Uri.file(dirB), name: 'B', index: 1 }
+    ];
+    const restore = () => {
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+      vscode.workspace.workspaceFolders = savedFolders;
+    };
+    return { root, writerA, readerB, readerA, writerText, readerText, index: new GlobalDataDictIndex(), restore };
+  };
+
+  it('纯索引:B 读 cfg 只见 B 根内站点,A 写点不在 B 的查询结果', async () => {
+    const { writerA, readerB, readerA, index, restore } = setupTwoRoots();
+    try {
+      await index.ensureStarted();
+      const dirA = path.dirname(readerA);
+      const dirB = path.dirname(readerB);
+      const inB = index.query('globalData', 'cfg', dirB).map(s => s.file);
+      expect(inB).toEqual([readerB]);
+      const inA = index.query('globalData', 'cfg', dirA).map(s => s.file).sort();
+      expect(inA).toEqual([readerA, writerA]);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(path.dirname(path.dirname(readerB)), { recursive: true, force: true });
+    }
+  });
+
+  it('定义入口:B 读点不跳 A 写点;A 读点同根跳 A 写点', async () => {
+    const { writerA, readerB, readerA, readerText, index, restore } = setupTwoRoots();
+    const provider = new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+    try {
+      const docB = vscode.makeTextDocument(readerText, { fileName: readerB, languageId: 'python' });
+      const posB = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const fromB = await provider.provideDefinition(docB, posB) as vscode.Location | null;
+      expect(fromB?.uri.fsPath).not.toBe(writerA);
+      const docA = vscode.makeTextDocument(readerText, { fileName: readerA, languageId: 'python' });
+      const posA = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const fromA = await provider.provideDefinition(docA, posA) as vscode.Location | null;
+      expect(fromA?.uri.fsPath).toBe(writerA);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(path.dirname(path.dirname(readerB)), { recursive: true, force: true });
+    }
+  });
+
+  it('引用入口:B 读点的引用不含 A 根站点', async () => {
+    const { writerA, readerB, readerText, index, restore } = setupTwoRoots();
+    const refs = new KBEngineReferencesProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    try {
+      const docB = vscode.makeTextDocument(readerText, { fileName: readerB, languageId: 'python' });
+      const posB = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const locs = await refs.provideReferences(docB, posB, {} as vscode.ReferenceContext);
+      expect(locs?.some(loc => loc.uri.fsPath === writerA)).toBe(false);
+      expect(locs?.map(loc => path.basename(loc.uri.fsPath))).toEqual(['reader.py']);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(path.dirname(path.dirname(readerB)), { recursive: true, force: true });
+    }
+  });
+});

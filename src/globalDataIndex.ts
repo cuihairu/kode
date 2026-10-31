@@ -1,5 +1,6 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { findFilesAcrossRoots } from './scanRoots';
+import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './pythonScanRules';
 import { getKbeAliases } from './kbeModuleIndex';
 
@@ -967,7 +968,34 @@ function inferTypeExpr(text: string): string | null {
   return null;
 }
 
-const siteKey = (dict: string, keySignature: string): string => `${dict}\u0000${keySignature}`;
+/**
+ * AUD-068:文件所属作用域根(跨进程字典不跨工程/集群共享命名空间)。
+ * 最深的 workspace 根前缀,否则外部扫描根(assetsRoot)前缀,否则 ''(独立
+ * 作用域)。倒排键与查询都带根身份,不同根同名键不再互跳。
+ */
+export function resolveScopeRoot(fsPath: string): string {
+  let best: string | null = null;
+  const consider = (root: string): void => {
+    const base = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+    if (fsPath === root || fsPath.startsWith(base)) {
+      if (best === null || root.length > best.length) {
+        best = root;
+      }
+    }
+  };
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    consider(folder.uri.fsPath);
+  }
+  if (best === null) {
+    for (const root of getExternalScanRoots()) {
+      consider(root);
+    }
+  }
+  return best ?? '';
+}
+
+const siteKey = (root: string, dict: string, keySignature: string): string =>
+  `${root}\u0000${dict}\u0000${keySignature}`;
 
 const INITIAL_SCAN_CONCURRENCY = 8;
 
@@ -1154,9 +1182,9 @@ export class GlobalDataDictIndex {
     this.commitFile(document.uri.fsPath, document.getText());
   }
 
-  /** (字典, 键签名) 的全部写+读点(走内存索引,不重扫)。 */
-  query(dict: string, keySignature: string): KbeDataDictSite[] {
-    return this.byKey.get(siteKey(dict, keySignature)) ?? [];
+  /** (作用域根, 字典, 键签名) 的全部写+读点(走内存索引,不重扫)。 */
+  query(dict: string, keySignature: string, root = ''): KbeDataDictSite[] {
+    return this.byKey.get(siteKey(root, dict, keySignature)) ?? [];
   }
 
   /** 文件重扫后替换其贡献的倒排项(先撤旧再进新)。 */
@@ -1165,8 +1193,9 @@ export class GlobalDataDictIndex {
     previous: KbeDataDictAccess[],
     next: KbeDataDictAccess[]
   ): void {
+    const root = resolveScopeRoot(fsPath);
     for (const access of previous) {
-      const key = siteKey(access.dict, access.keySignature);
+      const key = siteKey(root, access.dict, access.keySignature);
       const sites = this.byKey.get(key);
       if (!sites) {
         continue;
@@ -1179,7 +1208,7 @@ export class GlobalDataDictIndex {
       }
     }
     for (const access of next) {
-      const key = siteKey(access.dict, access.keySignature);
+      const key = siteKey(root, access.dict, access.keySignature);
       const sites = this.byKey.get(key) ?? [];
       sites.push({ ...access, file: fsPath });
       this.byKey.set(key, sites);
