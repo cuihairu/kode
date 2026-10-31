@@ -24,7 +24,7 @@
 | R3-F06 | P1 | SDK 辅助成员与业务成员冲突。`clientSdkGenerator.ts:429-435` 固定输出 readonly entityId:number，同时原样输出业务 entityId:STRING。实际生成后 TypeScript 报 2300 重复标识、2687 修饰符不一致、2717 类型不一致。静态受限属性名单未包含 entityId；此项未声称做了真实引擎加载 | AUD-062；为辅助成员与业务成员制定冲突策略，并检查生成产物而非仅断言字符串 |
 | R3-F07 | P2 | TS SDK 的 64 位整数表示有精度缺口。`clientSdkGenerator.ts:72,76` 将 UINT64/INT64 都映为 number，中文 SDK 文档也如此，未说明安全范围。生成 coins:number；9007199254740993 经 Number 再转 BigInt 得到 9007199254740992。此处证明的是类型表示无法覆盖引擎整数全域，未运行真实网络传输 | AUD-063；选择 bigint/字符串或明确受限模式，连同序列化边界一起定义，不能仅替换类型后宣称完整 SDK 兼容 |
 | R3-F08 | P1 | 并发生成回滚会删除另一调用成功产物。`codeGenerator.ts:261,881-883,911-925` 复用实例 rollbackLedger，且“打开生成文件”仍处在回滚 try 中。First 停在打开提示，Second 完成；First 选择打开并遇到异常后，First.def 留着、Second.def 被删。两次调用同一个产品实例即可重叠 | 重开 GEN-006；AUD-064 隔离调用事务及提交后的 UI 错误 |
-| R3-K01 | P2 | 已知缺口的运行验证：`extension.ts:2334-2342` 的共享 buildEntityMessageTable 未传 typesXml。方法 Arg=MY_INT、types.xml 定义 MY_INT→UINT32 时，默认调用 loadFailed=true/unknown-arg-type；同样输入传 typesXml 后成功。此项在 2026-10-29 messageTable 迁移取舍文档中已经承认，不能计作本轮新发现 | AUD-060 补真实配置接线；SDK-001/002 是预览/导出入口，不以此简单撤销其所有完成证据 |
+| R3-K01 | P2 | 已知缺口的运行验证：`extension.ts:2334-2342` 的共享 buildEntityMessageTable 未传 typesXml。方法 Arg=MY_INT、types.xml 定义 MY_INT→UINT32 时，默认调用 loadFailed=true/unknown-arg-type；同样输入传 typesXml 后成功。此项在 2026-10-29 messageTable 迁移取舍文档中已经承认，不能计作本轮新发现 | AUD-060 补真实配置接线；SDK-001/002 是预览/导出入口，不以此简单撤销其所有完成证据。已修 258bf26：共享构建面读所选根 types.xml + entitydefAliasID,preview/export 同输入;R3-K01 反例(MY_INT→UINT32)不再 unknown-arg-type |
 
 ## 修正建议与验收边界
 
