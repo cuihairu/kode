@@ -973,8 +973,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       );
       if (dictAccess && !isKeyInsideLineComment(lineText, dictAccess.keyStart)) {
         return respond(
-          dataDictIndex.ensureStarted().then(() => {
-            if (token?.isCancellationRequested) {
+          // AUD-072:冷索引等待可取消——取消即放行 null,共享初扫继续
+          awaitDataDictIndexReady(dataDictIndex, token).then(ready => {
+            if (!ready) {
               return null;
             }
             const hover = this.buildDataDictHover(dictAccess, dataDictIndex);
@@ -4027,6 +4028,47 @@ export function isPythonDataDictIndexEnabled(): boolean {
   return pythonDataDictIndexEnabled;
 }
 
+// AUD-072(R4-F07):冷索引等待可取消——旧实现先 await 全量 ensureStarted
+// 再查 token,初扫在飞时取消要等整轮扫描结束才返回。改为竞速:取消信号先
+// 到即放行当前调用(返回 false,不再查索引),共享初扫原样继续服务其他请求
+// (单次取消不中止、不破坏索引);初扫先到仍复检取消。返回 false = 已取消,
+// 调用方应停止后续查找工作。
+async function awaitDataDictIndexReady(
+  index: GlobalDataDictIndex,
+  token?: vscode.CancellationToken
+): Promise<boolean> {
+  if (token?.isCancellationRequested) {
+    return false;
+  }
+  const starting = index.ensureStarted();
+  if (!token) {
+    await starting;
+    return true;
+  }
+  let onDone: (() => void) | undefined;
+  // 取消订阅面缺失(手写桩 token 只有旗标)→ 退化为先检后检,不竞速
+  if (typeof token.onCancellationRequested !== 'function') {
+    await starting;
+    return !token.isCancellationRequested;
+  }
+  const cancelWins = new Promise<null>(resolve => {
+    const d = token.onCancellationRequested(() => resolve(null));
+    onDone = () => d.dispose();
+  });
+  try {
+    const winner = await Promise.race([
+      starting.then(() => 'ready' as const),
+      cancelWins
+    ]);
+    if (winner === null) {
+      return false;
+    }
+    return !token.isCancellationRequested;
+  } finally {
+    onDone?.();
+  }
+}
+
 /**
  * 数据字典键定位的共享实现:落点命中字典键访问时,经签名归一索引取同键
  * 族全部写+读点。definition(跳首个异类点)与 references(全量)同源,
@@ -4052,8 +4094,8 @@ async function resolveDataDictSitesAtPosition(
   if (!access) {
     return null;
   }
-  await dataDictIndex.ensureStarted();
-  if (token?.isCancellationRequested) {
+  // AUD-072:冷索引等待可取消——取消即放行,不查索引(共享初扫继续)。
+  if (!(await awaitDataDictIndexReady(dataDictIndex, token))) {
     return null;
   }
   // AUD-068:查询带根身份——跨进程字典不跨工程共享命名空间,同根内互链。
@@ -4240,6 +4282,12 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
           };
         }
       }
+    }
+
+    // AUD-072(R4-F07):冷查取消即停——初扫等待取消返回 null 后不再沿
+    // entity-def/python-mro 等重层继续查找(放闸前返回,零继续工作)。
+    if (token?.isCancellationRequested) {
+      return cancelledDefinitionResult();
     }
 
     if (!isPythonCodePosition(document.getText(), position.line, position.character)) {

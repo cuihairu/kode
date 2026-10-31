@@ -1841,3 +1841,217 @@ describe('AUD-071 根变化更新索引与 watcher(R4-F06)', () => {
     }
   });
 });
+
+describe('AUD-072 冷查询取消及时返回(R4-F07)', () => {
+  /** 双文件工作区:writer 写点 + reader 读点(同键 cfg)。 */
+  const setupWorkspace = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdip-a72-'));
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = {"gold": 1}\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("cfg")\n';
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    return { root, writer, reader, writerText, readerText };
+  };
+
+  /** 门住读盘:gate 标记的路径首次读取挂起,release 放行;engaged 反映
+   * 真正挂起的读(区分"已标记未读")。 */
+  const makeGatedColdRead = (): {
+    read: typeof vscode.workspace.fs.readFile;
+    gate: (p: string) => void;
+    release: (p: string) => void;
+    engagedAny: () => boolean;
+  } => {
+    const shouldHang = new Set<string>();
+    const hanging = new Map<string, () => void>();
+    const read = (async (uri: vscode.Uri) => {
+      const p = uri.fsPath;
+      if (shouldHang.has(p)) {
+        return new Promise<Uint8Array>(resolve => {
+          hanging.set(p, () => resolve(fs.readFileSync(p)));
+        });
+      }
+      return fs.readFileSync(p);
+    }) as typeof vscode.workspace.fs.readFile;
+    return {
+      read,
+      gate: p => shouldHang.add(p),
+      release: p => {
+        shouldHang.delete(p);
+        const go = hanging.get(p);
+        if (go) { hanging.delete(p); go(); }
+      },
+      engagedAny: () => hanging.size > 0
+    };
+  };
+
+  /** setImmediate 轮询等待条件成立(上限内不成立抛错)。 */
+  const waitUntil = async (cond: () => boolean, limit = 500): Promise<void> => {
+    for (let i = 0; i < limit && !cond(); i += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    if (!cond()) {
+      throw new Error('waitUntil condition not met');
+    }
+  };
+
+  /** 限时观察 promise 是否落定:返回 true=已落定(含拒绝),false=超时。 */
+  const settledWithin = (p: Promise<unknown>, ms: number): Promise<boolean> =>
+    Promise.race([
+      p.then(() => true, () => true),
+      new Promise<false>(resolve => setTimeout(() => resolve(false), ms))
+    ]);
+
+  it('冷扫描在飞时取消:definition 放闸前返回 null(R4-F07)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const provider = new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+    const source = new vscode.CancellationTokenSource();
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const readPos = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const defPromise = provider.provideDefinition(readDoc, readPos, source.token);
+      await waitUntil(() => ctl.engagedAny());
+      // 门仍在(初扫读盘挂起)时取消:当前调用须在放闸前返回
+      source.cancel();
+      expect(await settledWithin(defPromise, 200)).toBe(true);
+      expect(await defPromise).toBeNull();
+      expect(ctl.engagedAny()).toBe(true);
+    } finally {
+      source.dispose();
+      ctl.release(writer);
+      ctl.release(reader);
+      await settledWithin(Promise.resolve(), 0);
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('冷扫描在飞时取消:references 放闸前返回 null(R4-F07)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const refs = new KBEngineReferencesProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    const source = new vscode.CancellationTokenSource();
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const refPromise = refs.provideReferences(
+        readDoc,
+        new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1),
+        {} as vscode.ReferenceContext,
+        source.token
+      );
+      await waitUntil(() => ctl.engagedAny());
+      source.cancel();
+      expect(await settledWithin(refPromise, 200)).toBe(true);
+      expect(await refPromise).toBeNull();
+      expect(ctl.engagedAny()).toBe(true);
+    } finally {
+      source.dispose();
+      ctl.release(writer);
+      ctl.release(reader);
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('取消后共享初扫不中止,继续服务其他请求(R4-F07)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const provider = new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+    const source = new vscode.CancellationTokenSource();
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const readPos = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const cancelled = provider.provideDefinition(readDoc, readPos, source.token);
+      await waitUntil(() => ctl.engagedAny());
+      source.cancel();
+      expect(await settledWithin(cancelled, 200)).toBe(true);
+      // 放闸:共享初扫原样跑完(单次取消不中止)
+      ctl.release(writer);
+      ctl.release(reader);
+      // 后续无 token 请求命中写点 → 索引未被取消破坏
+      const fromRead = await provider.provideDefinition(readDoc, readPos) as vscode.Location | null;
+      expect(fromRead?.uri.fsPath).toBe(writer);
+    } finally {
+      source.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('已取消 token 不触发冷扫描读盘(守卫)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const provider = new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+    const source = new vscode.CancellationTokenSource();
+    source.cancel();
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const fromRead = await provider.provideDefinition(
+        readDoc,
+        new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1),
+        source.token
+      );
+      expect(fromRead).toBeNull();
+      expect(ctl.engagedAny()).toBe(false);
+    } finally {
+      source.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
