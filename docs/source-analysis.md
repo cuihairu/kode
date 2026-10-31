@@ -292,3 +292,107 @@ same-named classes in `scripts/{base,cell, client}/<Name>.py`.
 - Acceptance walkthrough record: tests/batch109NavigationWalkthrough.test.ts (11 steps, each
   asserting that the jump target really exists on disk), with the outcome recorded in the same
   TESTING.md section.
+
+## 6. Interfaces vs Components (is-a vs has-a Semantics)
+
+The `#### Interfaces` / `#### Components` subsections of section 1 give the loading-chain view of
+the two blocks; this section contrasts them at the semantic level. Everything below is
+source-verified against `kbe/src/lib/entitydef/entitydef.cpp`.
+
+**The distinction in one sentence**: `<Interfaces>` is *is-a* reuse — the interface's
+Properties/Methods are **flattened into the host entity's own module**, so once loaded an
+interface leaves no trace on the entity; `<Components>` is *has-a* reuse — each component slot
+becomes **one property of the entity**, typed `EntityComponent`, whose members live in the
+component's own module.
+
+### Interfaces (is-a / mixin)
+
+- Entry point: `loadInterfaces` (`entitydef.cpp:551-639`, call site `entitydef.cpp:354`).
+- The interface def file sits in the **global shared directory**
+  `defFilePath + "interfaces/" + <name> + ".def"` (`entitydef.cpp:586`) — one `interfaces/`
+  directory under `entity_defs/`, shared by every entity, not per-entity.
+- The interface's Properties/Methods (and DetailLevel) are loaded **into the entity's own
+  ScriptDefModule**: `loadAllDefDescriptions(moduleName, ..., pScriptModule)` is called with
+  `pScriptModule` = the entity (`entitydef.cpp:598`; `loadAllDefDescriptions` at
+  `entitydef.cpp:927-964` routes to loadDefPropertys / loadDefCellMethods / loadDefBaseMethods /
+  loadDefClientMethods), so the members are absorbed directly into the entity's def surface.
+- Recursive nesting: an interface def may itself carry `<Components>`
+  (`entitydef.cpp:616-625`) and further `<Interfaces>` (`entitydef.cpp:628-634`, unbounded
+  self-recursion); `ignoreComponents` defaults to `false` at the entity level
+  (`entitydef.h:103`), so nested components are honoured.
+- **No trace left on the entity**: `loadInterfaces` contains no `registerNewScriptDefModule`, no
+  `addComponentProperty` and no utype allocation — the interface is never registered as a module
+  or as a property slot; only its merged members remain, indistinguishable from the entity's own.
+
+### Components (has-a / composition)
+
+- Entry point: `loadComponents` (`entitydef.cpp:642-818`, call site `entitydef.cpp:363`).
+- Each child of `<Components>` is one **slot**: the slot name = the child element name
+  (`entitydef.cpp:654`), validated by `validDefPropertyName` (`entitydef.cpp:660`; the check at
+  `entitydef.cpp:967-1012` rejects the reserved `ENTITY_LIMITED_PROPERTYS` names — id, position,
+  direction, spaceID, cell, base, component, ... (`entitydef/common.h:125`) — and any
+  `KBEngine.Entity` attribute).
+- The `<Type>` child names the component type (`entitydef.cpp:669-671`); the component def =
+  `defFilePath + "components/" + <Type> + ".def"` (`entitydef.cpp:681`) — the `components/`
+  directory is keyed by **type**, not by slot.
+- `addComponentProperty` (`entitydef.cpp:821-887`) builds one `PropertyDescription` named after
+  the slot, whose DataType is an `EntityComponentType` wrapping the component module
+  (`entitydef.cpp:834-843`); the property's `DATATYPE` is `DATA_TYPE_ENTITY_COMPONENT = 15`
+  (`entitydef/common.h:104`, `entitydef/datatype.h:801`). The slot therefore occupies the
+  entity's property/utype namespace: `<Utype>` (`entitydef.cpp:698-701`) and `<Persistent>`
+  (default `true`, `false` disables, `entitydef.cpp:703-713`) are honoured; the property is
+  registered per-side by `addPropertyDescription` (`entitydef.cpp:864-874`) and
+  `addComponentDescription` records the ownership (`entitydef.cpp:745、813`).
+- The component def loads into **its own independent module**:
+  `registerNewScriptDefModule(<Type>)` + `isPersistent(false)` + `isComponentModule(true)`
+  (`entitydef.cpp:716-723`). If the type's module already exists it is reused and the def is not
+  re-parsed (`entitydef.cpp:715-747`), so several slots (within one entity or across entities)
+  may share one component type.
+- The component def is a **full mini-entity**: `loadAllDefDescriptions` into its own module
+  (`entitydef.cpp:756`), `loadInterfaces` (`entitydef.cpp:765`, called with `ignoreComponents=true`
+  so an interface reached from a component does **not** pull in further components),
+  `loadParentClass` with `components/` as the base path (`entitydef.cpp:774` — a component's
+  `<Parent>` resolves inside `entity_defs/components/`), `loadDetailLevelInfo`
+  (`entitydef.cpp:783`), then `autoMatchCompOwn()` (`entitydef.cpp:791`).
+- Slot domain flags are derived from what the component module exposes after `autoMatchCompOwn`
+  (`entitydef.cpp:793-811`): `hasBase → ED_FLAG_BASE` (`:795-796`); `hasCell →
+  ED_FLAG_CELL_PUBLIC` (`:798-799`); `hasClient → ED_FLAG_BASE_AND_CLIENT` if the component also
+  has base, plus the client union `ED_FLAG_ALL_CLIENTS | ED_FLAG_CELL_PUBLIC_AND_OWN |
+  ED_FLAG_OTHER_CLIENTS | ED_FLAG_OWN_CLIENT` if it also has cell (`:801-808`). These bits feed
+  back into the host entity's own hasBase/hasCell/hasClient inside `addComponentProperty`
+  (`entitydef.cpp:847-861`). (On the pre-registered reuse path a fresh slot instead takes the
+  default `ED_FLAG_BASE | ED_FLAG_CELL_PUBLIC | ENTITY_CLIENT_DATA_FLAGS`,
+  `entitydef.cpp:686-688`.)
+
+### is-a vs has-a at a glance
+
+| Aspect | `<Interfaces>` (is-a) | `<Components>` (has-a) |
+| --- | --- | --- |
+| Reuse style | mixin: members merged into the entity | composition: a slot property of type EntityComponent on the entity |
+| Script surface | the interface's members are the entity's own members after loading (no indirection) | the entity exposes one property named after the slot; the component's members stay in the component module |
+| Def directory | one global `entity_defs/interfaces/<Name>.def` shared by all entities | `entity_defs/components/<Type>.def` keyed by the `<Type>` child |
+| Trace left on the entity | none (no module, no property slot, no utype) | one PropertyDescription named after the slot (EntityComponent, with utype/persistent) |
+| Load target module | the entity's own ScriptDefModule | a separate ScriptDefModule (isComponentModule(true), isPersistent(false)) |
+| Own structure | may nest `<Components>` and `<Interfaces>` recursively | a full mini-def: Properties/Methods, Interfaces, `<Parent>` (resolved in components/), DetailLevel |
+| Multiplicity | any number of `<Interfaces>` children, unbounded recursion | any number of slots; several slots may share one `<Type>` (module reused) |
+
+### XML example (two blocks in one entity def)
+
+```xml
+<!-- entity_defs/Avatar.def -->
+<root>
+    <Interfaces>
+        <Interface>
+            <Combat/>   <!-- element name = interface name; loads entity_defs/interfaces/Combat.def and merges into Avatar -->
+        </Interface>
+    </Interfaces>
+
+    <Components>
+        <HP>            <!-- slot name: a property named HP appears on Avatar -->
+            <Type>HPComponent</Type>   <!-- -> entity_defs/components/HPComponent.def -->
+            <Utype> 10 </Utype>
+            <Persistent> true </Persistent>
+        </HP>
+    </Components>
+</root>
+```

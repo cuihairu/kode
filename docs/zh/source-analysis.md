@@ -263,3 +263,96 @@ client}/<Name>.py` 同名类。
   layout/清单读取 + 逐文件解析,对账口径见 TESTING.md 批108/109 节;
 - 验收走查记录:tests/batch109NavigationWalkthrough.test.ts(11 步,
   每步断言跳转目标在磁盘真实存在),结果记于 TESTING.md 同节。
+
+## 六、Interfaces 与 Components(is-a 与 has-a 语义)
+
+第一节的 `#### 接口(Interfaces)` / `#### 组件(Components)` 给出两块 XML 的加载链视图,
+本节在语义层面做对比。以下全部经 `kbe/src/lib/entitydef/entitydef.cpp` 源码核实。
+
+**一句话区分**:`<Interfaces>` 是 *is-a* 复用——接口的 Properties/Methods **平铺并进宿主实体
+自己的模块**,加载完成后接口在实体上不留任何痕迹;`<Components>` 是 *has-a* 复用——每个
+组件槽变成**实体上的一个属性**,类型为 `EntityComponent`,其成员活在组件自己的模块里。
+
+### 接口(Interfaces,is-a / 混入)
+
+- 入口:`loadInterfaces`(`entitydef.cpp:551-639`,调用点 `entitydef.cpp:354`)。
+- 接口 def 文件位于**全局共享目录**`defFilePath + "interfaces/" + <名> + ".def"`
+  (`entitydef.cpp:586`)——`entity_defs/` 下一个 `interfaces/` 目录,全体实体共用,不按实体分。
+- 接口的 Properties/Methods(及 DetailLevel)**加载进实体自己的 ScriptDefModule**:
+  `loadAllDefDescriptions(moduleName, ..., pScriptModule)` 传入的 `pScriptModule` = 实体
+  (`entitydef.cpp:598`;`loadAllDefDescriptions` 见 `entitydef.cpp:927-964`,分流到
+  loadDefPropertys / loadDefCellMethods / loadDefBaseMethods / loadDefClientMethods),
+  成员被直接吸收进实体的 def 面。
+- 递归嵌套:接口 def 自身还能带 `<Components>`(`entitydef.cpp:616-625`)与 `<Interfaces>`
+  (`entitydef.cpp:628-634`,无限自身递归);`ignoreComponents` 在实体层默认 `false`
+  (`entitydef.h:103`),故嵌套组件生效。
+- **实体上不留痕**:`loadInterfaces` 内无 `registerNewScriptDefModule`、无 `addComponentProperty`
+  、无 utype 分配——接口既不注册成模块也不注册成属性槽;只剩被并入的成员,与实体自身成员
+  无异。
+
+### 组件(Components,has-a / 组合)
+
+- 入口:`loadComponents`(`entitydef.cpp:642-818`,调用点 `entitydef.cpp:363`)。
+- `<Components>` 的每个子节点 = 一个**槽**:槽名 = 子元素名(`entitydef.cpp:654`),经
+  `validDefPropertyName` 校验(`entitydef.cpp:660`;该检查在 `entitydef.cpp:967-1012`,拒绝
+  `ENTITY_LIMITED_PROPERTYS` 保留名——id、position、direction、spaceID、cell、base、
+  component 等(`entitydef/common.h:125`)——及任何 `KBEngine.Entity` 属性)。
+- `<Type>` 子节点给组件类型名(`entitydef.cpp:669-671`);组件 def =
+  `defFilePath + "components/" + <类型> + ".def"`(`entitydef.cpp:681`)——`components/`
+  目录按**类型**而非槽名分键。
+- `addComponentProperty`(`entitydef.cpp:821-887`)在实体上建一个以槽名命名的
+  `PropertyDescription`,其 DataType 为包裹组件模块的 `EntityComponentType`
+  (`entitydef.cpp:834-843`);该属性的 `DATATYPE` 为 `DATA_TYPE_ENTITY_COMPONENT = 15`
+  (`entitydef/common.h:104`,`entitydef/datatype.h:801`)。槽因此占用实体的属性/utype 命名空间:
+  `<Utype>`(`entitydef.cpp:698-701`)与 `<Persistent>`(默认 `true`,`false` 关闭,
+  `entitydef.cpp:703-713`)均生效;属性按侧由 `addPropertyDescription` 注册
+  (`entitydef.cpp:864-874`),`addComponentDescription` 记录归属(`entitydef.cpp:745、813`)。
+- 组件 def 加载进**它自己的独立模块**:`registerNewScriptDefModule(<类型>)` +
+  `isPersistent(false)` + `isComponentModule(true)`(`entitydef.cpp:716-723`)。若该类型模块
+  已存在则复用、不再重解析(`entitydef.cpp:715-747`),故多个槽(同实体或跨实体)可共用同一
+  组件类型。
+- 组件 def 是**完整迷你实体**:`loadAllDefDescriptions` 进自身模块(`entitydef.cpp:756`)、
+  `loadInterfaces`(`entitydef.cpp:765`,以 `ignoreComponents=true` 调用,故组件内接口**不再**
+  拉入更深一层组件)、`loadParentClass` 以 `components/` 为基路径(`entitydef.cpp:774`——组件的
+  `<Parent>` 在 `entity_defs/components/` 内解析)、`loadDetailLevelInfo`
+  (`entitydef.cpp:783`),随后 `autoMatchCompOwn()`(`entitydef.cpp:791`)。
+- 槽域 flags 由组件模块 `autoMatchCompOwn` 后的暴露情况派生(`entitydef.cpp:793-811`):
+  `hasBase → ED_FLAG_BASE`(`:795-796`);`hasCell → ED_FLAG_CELL_PUBLIC`(`:798-799`);
+  `hasClient →` 组件同时有 base 则 `ED_FLAG_BASE_AND_CLIENT`,同时有 cell 则再并客户端联合
+  `ED_FLAG_ALL_CLIENTS | ED_FLAG_CELL_PUBLIC_AND_OWN | ED_FLAG_OTHER_CLIENTS | ED_FLAG_OWN_CLIENT`
+  (`:801-808`)。这些位在 `addComponentProperty` 内回喂宿主实体的
+  hasBase/hasCell/hasClient(`entitydef.cpp:847-861`)。(预注册复用路径上新槽默认取
+  `ED_FLAG_BASE | ED_FLAG_CELL_PUBLIC | ENTITY_CLIENT_DATA_FLAGS`,`entitydef.cpp:686-688`。)
+
+### is-a 与 has-a 一览
+
+| 维度 | `<Interfaces>`(is-a) | `<Components>`(has-a) |
+| --- | --- | --- |
+| 复用方式 | 混入:成员并进实体 | 组合:实体上的一个 EntityComponent 类型槽属性 |
+| 脚本面 | 接口成员即实体自身成员(无间接层) | 实体暴露一个以槽名命名的属性;组件成员留在组件模块 |
+| 目录 | 全局共享 `entity_defs/interfaces/<名>.def` | `entity_defs/components/<类型>.def` 按 `<Type>` 分键 |
+| 实体上留痕 | 无(不建模块、不建属性槽、无 utype) | 一个以槽名命名的 PropertyDescription(EntityComponent,含 utype/persistent) |
+| 加载目标模块 | 实体自己的 ScriptDefModule | 独立 ScriptDefModule(isComponentModule(true)、isPersistent(false)) |
+| 自身结构 | 可递归嵌套 `<Components>` 与 `<Interfaces>` | 完整迷你 def:Properties/Methods、Interfaces、`<Parent>`(components/ 内解析)、DetailLevel |
+| 可否多个 | 任意多个 `<Interfaces>` 子节点,递归无上限 | 任意多个槽;多槽可共用同一 `<Type>`(模块复用) |
+
+### XML 示例(同一实体 def 内两块)
+
+```xml
+<!-- entity_defs/Avatar.def -->
+<root>
+    <Interfaces>
+        <Interface>
+            <Combat/>   <!-- 元素名 = 接口名;加载 entity_defs/interfaces/Combat.def 并入 Avatar -->
+        </Interface>
+    </Interfaces>
+
+    <Components>
+        <HP>            <!-- 槽名:Avatar 上出现名为 HP 的属性 -->
+            <Type>HPComponent</Type>   <!-- -> entity_defs/components/HPComponent.def -->
+            <Utype> 10 </Utype>
+            <Persistent> true </Persistent>
+        </HP>
+    </Components>
+</root>
+```
