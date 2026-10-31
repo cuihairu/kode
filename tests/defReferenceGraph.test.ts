@@ -97,8 +97,44 @@ describe('def reference graph', () => {
     expect(report.checkedDefinitions).toBeGreaterThan(0);
     expect(report.checkedFiles).toBe(3);
     expect(report.errors.map(issue => issue.code)).toContain('dangling-parent');
-    expect(report.warnings.map(issue => issue.code)).toContain('duplicate-symbol');
+    // AUD-058:单个正常开闭标签零重复警告(此前 rename 开+闭两编辑位置被
+    // 误当两份声明)
+    expect(report.warnings.map(issue => issue.code)).not.toContain('duplicate-symbol');
     expect(formatProjectDoctorReport(report)).toMatch(/^Project Doctor:/);
+  });
+
+  it('AUD-058 同段真实重复声明仍定位正确且经 Project Doctor 同结果', () => {
+    // 自成一根的连边 def 树(Dup->DupBase),避免混入主 fixture 的
+    // Hero/Monster/Boss 分量影响 checkedFiles=3
+    const dupRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-def-dup-'));
+    try {
+      const write = (relative: string, content: string): void => {
+        const target = path.join(dupRoot, ...relative.split('/'));
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, content, 'utf8');
+      };
+      write('scripts/entities.xml', '<root>\n  <Dup hasBase="true"/>\n</root>\n');
+      write('scripts/entity_defs/DupBase.def', ['<root>', '</root>'].join('\n'));
+      write('scripts/entity_defs/Dup.def', [
+        '<root>',
+        '  <Parent> DupBase </Parent>',
+        '  <Properties>',
+        '    <hp> <Type> UINT32 </Type> </hp>',
+        '    <hp> <Type> UINT16 </Type> </hp>',
+        '  </Properties>',
+        '</root>'
+      ].join('\n'));
+
+      const graph = buildDefReferenceGraphFromFile(path.join(dupRoot, 'scripts/entity_defs/Dup.def'))!;
+      const report = buildProjectDoctorReport(graph);
+      const duplicates = report.warnings.filter(issue => issue.code === 'duplicate-symbol');
+      expect(duplicates).toHaveLength(1);
+      expect(duplicates[0].filePath).toContain('Dup.def');
+      expect(duplicates[0].name).toBe('hp');
+      expect(formatProjectDoctorReport(report)).toMatch(/declared more than once/);
+    } finally {
+      fs.rmSync(dupRoot, { recursive: true, force: true });
+    }
   });
 
   it('renders graph symbols, edges and unresolved targets in both forms', () => {

@@ -254,33 +254,32 @@ function connectedComponents(links: Link[]): Array<Set<string>> {
   return components;
 }
 
-function collectDuplicateIssues(entries: FileEntry[], definitions: DefSymbolDeclaration[]): DefSemanticIssue[] {
-  const declarationsByFile = new Map<string, DefSymbolDeclaration[]>();
+function collectDuplicateIssues(definitions: DefSymbolDeclaration[]): DefSemanticIssue[] {
+  // AUD-058:重复按「声明节点」计数,不按 rename 编辑次数——单个正常开闭
+  // 标签只有 1 个声明节点,rename 却产出开+闭 2 个编辑位置,曾把它误当 2 份
+  // 声明。同文件同段同 kind 同名出现 >1 个声明节点才是真重复。
+  const nodesByKey = new Map<string, DefSymbolDeclaration[]>();
   for (const declaration of definitions) {
-    if (!declarationsByFile.has(declaration.filePath)) declarationsByFile.set(declaration.filePath, []);
-    declarationsByFile.get(declaration.filePath)!.push(declaration);
+    const key = `${declaration.filePath}\u0000${declaration.section}\u0000${declaration.kind}\u0000${declaration.name}`;
+    const bucket = nodesByKey.get(key);
+    if (bucket) {
+      bucket.push(declaration);
+    } else {
+      nodesByKey.set(key, [declaration]);
+    }
   }
   const issues: DefSemanticIssue[] = [];
-  for (const entry of entries) {
-    for (const declaration of declarationsByFile.get(entry.filePath) ?? []) {
-      const edits = collectRenameEditsInText(entry.content, {
-        kind: declaration.kind,
-        name: declaration.name,
-        section: declaration.section,
-        wordStart: declaration.start,
-        wordEnd: declaration.end
-      });
-      if (edits.length > 1) {
-        issues.push({
-          code: 'duplicate-symbol',
-          severity: 'warning',
-          filePath: entry.filePath,
-          line: declaration.line,
-          name: declaration.name,
-          message: `${declaration.kind} "${declaration.name}" is declared more than once in ${entry.ownerName}.def.`
-        });
-      }
-    }
+  for (const nodes of nodesByKey.values()) {
+    if (nodes.length <= 1) continue;
+    const first = nodes[0];
+    issues.push({
+      code: 'duplicate-symbol',
+      severity: 'warning',
+      filePath: first.filePath,
+      line: first.line,
+      name: first.name,
+      message: `${first.kind} "${first.name}" is declared more than once in ${first.ownerName}.def.`
+    });
   }
   return issues;
 }
@@ -387,7 +386,7 @@ export function buildDefReferenceGraphFromFile(filePath: string): DefReferenceGr
 
   const reachableFiles = new Set(connectedComponents(links).flatMap(component => [...component]));
   const reachableDefinitions = definitions.filter(definition => reachableFiles.has(definition.filePath));
-  const duplicateIssues = collectDuplicateIssues(entries, reachableDefinitions);
+  const duplicateIssues = collectDuplicateIssues(reachableDefinitions);
   const { references, edges } = collectReferences(reachableDefinitions, entries, links);
 
   return {
