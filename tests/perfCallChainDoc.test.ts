@@ -47,7 +47,7 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/languageProviders.ts', 4090, 'provideDefinitionTracedImpl'],
   ['src/languageProviders.ts', 4491, '层0 接收者段闸'],
   ['src/languageProviders.ts', 4597, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 6115, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 6126, 'provideCompletionItems('],
   ['src/diagnosticScheduler.ts', 218, 'requestQueued'],
   ['src/diagnosticScheduler.ts', 248, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],

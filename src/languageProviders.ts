@@ -5342,7 +5342,7 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
   async provideReferences(
     document: vscode.TextDocument,
     position: vscode.Position,
-    _context: vscode.ReferenceContext,
+    context: vscode.ReferenceContext,
     token?: vscode.CancellationToken
   ): Promise<vscode.Location[] | null> {
     if (token?.isCancellationRequested) { return null; }
@@ -5380,6 +5380,11 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     if (!symbolInfo) {
       return null;
     }
+    // 引用 API 补项:includeDeclaration 支配「是否把精确声明(def 内该符号的
+    // 名字范围)计入结果」——true 时前置声明,false 时不含;实现(Python def)
+    // 与调用点都不当声明。声明在 def 文档,引用位在 .py,天然不重复。
+    const declarationLocation = new vscode.Location(document.uri, range);
+    const includeDeclaration = context.includeDeclaration === true;
     // IDE-NAV-002:属性段 self 访问——归属由 owner 注册面决定
     // (getIncomingPythonPropertyAccesses 只扫本 def 的 owner 文件),
     // 无关实体同名属性不进来;方法调用不带括号断言,不混入。
@@ -5392,11 +5397,12 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
       if (token?.isCancellationRequested) {
         return null;
       }
-      return accesses.map(access =>
+      const locations = accesses.map(access =>
         new vscode.Location(
           vscode.Uri.file(access.filePath),
           createSelectionRange(access.line, access.character, symbolInfo.symbolNode.name)
         ));
+      return includeDeclaration ? [declarationLocation, ...locations] : locations;
     }
     if (!METHOD_SECTIONS.has(symbolInfo.section)) {
       return null;
@@ -5441,7 +5447,11 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
         createSelectionRange(call.line, call.character, symbolInfo.symbolNode.name)
       ));
     if (!implementation) {
-      return receiverLocations.length > 0 ? receiverLocations : null;
+      if (receiverLocations.length > 0) {
+        return includeDeclaration ? [declarationLocation, ...receiverLocations] : receiverLocations;
+      }
+      // 无实现且无调用:includeDeclaration=true 时声明本身仍是合法引用位。
+      return includeDeclaration ? [declarationLocation] : null;
     }
     const calls = await this.entityMappingManager.getIncomingPythonMethodCalls(
       implementation.filePath,
@@ -5451,7 +5461,7 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     if (token?.isCancellationRequested) {
       return null;
     }
-    return [
+    const locations = [
       ...calls.map(call =>
         new vscode.Location(
           vscode.Uri.file(call.caller.filePath),
@@ -5459,6 +5469,7 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
         )),
       ...receiverLocations
     ];
+    return includeDeclaration ? [declarationLocation, ...locations] : locations;
   }
 }
 

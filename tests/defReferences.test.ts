@@ -105,6 +105,34 @@ describe('def 引用查询入口(IDE-NAV-001)', () => {
     expect(calls.receiverArgs[0][2]).toBe('base');
   });
 
+  it('includeDeclaration:true 含精确声明,false 不含,且不重复(引用 API 补项/IDE-AUD-049)', async () => {
+    const { manager } = managerStub({ filePath: '/tmp/ws/scripts/base/Avatar.py', line: 2, character: 4 });
+    const provider = new KBEngineReferencesProvider(manager);
+
+    // 方法段(RPC):includeDeclaration=true 时声明(def 内 <reqPos>)入列
+    const withDecl = await provider.provideReferences(
+      defDoc(), methodPosition(), { includeDeclaration: true }, undefined
+    );
+    expect(withDecl).not.toBeNull();
+    const methodDecl = withDecl!.filter(loc => loc.uri.fsPath === '/tmp/ws/scripts/entity_defs/Avatar.def');
+    expect(methodDecl).toHaveLength(1);
+    expect(methodDecl[0].range.start.line).toBe(7);
+
+    // includeDeclaration=false 时不含 def 声明(实现/python 调用点不是声明)
+    const withoutDecl = await provider.provideReferences(
+      defDoc(), methodPosition(), { includeDeclaration: false }, undefined
+    );
+    expect(withoutDecl!.filter(loc => loc.uri.fsPath === '/tmp/ws/scripts/entity_defs/Avatar.def')).toHaveLength(0);
+
+    // 属性段:同样受 includeDeclaration 支配,声明(def 内 <hp>)不重复
+    const propWith = await provider.provideReferences(
+      defDoc(), new Position(2, 6), { includeDeclaration: true }, undefined
+    );
+    const propDecl = propWith!.filter(loc => loc.uri.fsPath === '/tmp/ws/scripts/entity_defs/Avatar.def');
+    expect(propDecl).toHaveLength(1);
+    expect(propDecl[0].range.start.line).toBe(2);
+  });
+
   it('属性段不出方法引用(NAV-002 前如实空),非 def 文档与取消位同理 null', async () => {
     const { manager } = managerStub({ filePath: '/tmp/ws/scripts/base/Avatar.py', line: 2, character: 4 });
     const provider = new KBEngineReferencesProvider(manager);
