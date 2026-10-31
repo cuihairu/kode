@@ -103,7 +103,8 @@ impl ServerState {
     pub fn new() -> Self {
         // 内建命令(echo)在此注册;增量命令各自 crate::<mod>::register(&mut rpc)
         // 加一行(消息表/生成/lint 模块自带 register,见 rpc.rs 模块注)。
-        let rpc = crate::rpc::RpcRegistry::new();
+        let mut rpc = crate::rpc::RpcRegistry::new();
+        crate::lint::register(&mut rpc);
         ServerState {
             initialized: false,
             shutdown_requested: false,

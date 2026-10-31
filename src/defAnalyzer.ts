@@ -12,6 +12,7 @@ import {
   parseDefDocument
 } from './defParser';
 import { findEntityDefsRootFromFile, parseDefFileSemantics } from './defRenamer';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 
 // .def 静态分析建议(性能分析建议,COMPLETED_FEATURES「未来增强功能」条目)。
 // 定位与语言侧实时诊断(语法检查,languageProviders)错位:本模块只产出
@@ -47,7 +48,14 @@ export type DefAnalysisCheck =
   | 'invalid-identifier'
   | 'method-property-collision'
   | 'engine-limited-name'
-  | 'inherited-name-collision';
+  | 'inherited-name-collision'
+  // Rust lint 注册表结构校验面(diagnostics.rs 语料子集):validateDocument
+  // 侧只消费分析建议,这些 code 由 Rust 侧产出,TS 兜底实现不产出。
+  | 'unknown-type-reference'
+  | 'unknown-flag-value'
+  | 'unknown-detail-level'
+  | 'duplicate-definition'
+  | 'missing-flags';
 
 export const DEF_ANALYSIS_SEVERITY_ORDER: Record<DefAnalysisSeverity, number> = {
   error: 0,
@@ -737,6 +745,103 @@ export function analyzeDefDocument(
   }
 
   return findings;
+}
+
+// ---- Rust lint 注册表命令面(uv/ruff 口径收口) -----------------------------
+// `$/kode/lint/analyzeDef` 经 `$/kode/rpc` 单臂派发(命令面 runInRust):
+// 入参 `{text, inheritedNames?, knownTypes?}`,出 `{findings:[...]}`。每条
+// finding 与 TS 面同形(另有 `code`/`range` 冗余面)。TS 兜底(ok:false /
+// 无门 / 未配 serverPath)回退同步 analyzeDefDocument —— 既有行为不变。
+
+/** Rust analyzeDef 响应的一条 finding(与 TS 面同形;code/range 为冗余面)。 */
+interface RustAnalyzeDefFinding {
+  check: DefAnalysisCheck;
+  severity: DefAnalysisSeverity;
+  line: number;
+  offset: number;
+  length: number;
+  name?: string;
+  message: string;
+}
+
+const toDefAnalysisFinding = (item: RustAnalyzeDefFinding): DefAnalysisFinding => ({
+  check: item.check,
+  severity: item.severity,
+  line: item.line,
+  offset: item.offset,
+  length: item.length,
+  ...(item.name !== undefined ? { name: item.name } : {}),
+  message: item.message
+});
+
+/** InheritedNames(Map+Set)→ JSON 形(Set 收束为数组;Rust camelCase 反序列化)。 */
+const serializeInheritedNames = (inherited: InheritedNames): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const [name, info] of inherited) {
+    out[name] = {
+      propertyDomains: [...info.propertyDomains],
+      componentDomains: [...info.componentDomains],
+      methodSections: [...info.methodSections],
+      propertySources: info.propertySources,
+      componentSources: info.componentSources,
+      methodSources: info.methodSources
+    };
+  }
+  return out;
+};
+
+const buildAnalyzeDefParams = (
+  text: string,
+  inheritedNames: InheritedNames,
+  options: { knownTypes?: readonly string[] }
+): Record<string, unknown> => {
+  const params: Record<string, unknown> = {
+    text,
+    inheritedNames: serializeInheritedNames(inheritedNames)
+  };
+  if (options.knownTypes && options.knownTypes.length > 0) {
+    params.knownTypes = options.knownTypes;
+  }
+  return params;
+};
+
+/**
+ * Rust-only 面:经 gate.runInRust 跑 `$/kode/lint/analyzeDef`。Rust 不可用
+ * (无门 / 未配 serverPath / 调用失败)返回 null,由调用方自行回退 —— 与
+ * shadowObserveDefDocument 的「Rust 失败不上浮」同口径。knownTypes 为可选
+ * 类型语料(unknown-type-reference 规则用);缺省退化为仅内建类型。
+ */
+export async function analyzeDefDocumentInRust(
+  text: string,
+  inheritedNames: InheritedNames = new Map(),
+  options: { knownTypes?: readonly string[] } = {}
+): Promise<DefAnalysisFinding[] | null> {
+  const gate = getKodeCoreShadowGate();
+  if (!gate) {
+    return null;
+  }
+  const result = await gate.runInRust<{ findings: RustAnalyzeDefFinding[] }>(
+    '$/kode/lint/analyzeDef',
+    buildAnalyzeDefParams(text, inheritedNames, options)
+  );
+  if (!result.ok) {
+    return null;
+  }
+  return (result.result.findings ?? []).map(toDefAnalysisFinding);
+}
+
+/**
+ * 分析建议面 Rust-first:经 `$/kode/lint/analyzeDef` 跑全量 lint 注册表;
+ * Rust 不可用(ok:false)回退同步 analyzeDefDocument(TS 兜底)。
+ * knownTypes 为可选类型语料(unknown-type-reference 规则用)。
+ */
+export async function analyzeDefDocumentWithRust(
+  text: string,
+  inheritedNames: InheritedNames = new Map(),
+  options: { knownTypes?: readonly string[] } = {}
+): Promise<DefAnalysisFinding[]> {
+  const rustFindings = await analyzeDefDocumentInRust(text, inheritedNames, options);
+  return rustFindings ?? analyzeDefDocument(text, inheritedNames);
 }
 
 const SEVERITY_LABELS: Record<DefAnalysisSeverity, string> = {
