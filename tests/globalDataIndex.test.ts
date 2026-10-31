@@ -1172,3 +1172,110 @@ describe('生命周期边角(扫描让出窗口/倒排缺项)', () => {
     }
   });
 });
+
+describe('AUD-066 查询源词法上下文验证(R4-F01 冷查前)', () => {
+  /** 跨行 docstring 伪访问(与写点同键 cfg)+ 同文档真实读取的文档 */
+  const makeDocstringDoc = () => [
+    'import KBEngine',
+    '"""',
+    'KBEngine.globalData["cfg"] = 1',
+    '"""',
+    'value = KBEngine.globalData.get("cfg")'
+  ].join('\n');
+  const docText = makeDocstringDoc();
+  const docstringLine = 2;
+  const realLine = 4;
+  const docChar = docText.split('\n')[docstringLine].indexOf('cfg') + 1;
+  const realChar = docText.split('\n')[realLine].indexOf('cfg') + 1;
+
+  it('纯逻辑:跨行 docstring 内的伪访问 null,真实字符串键访问照常返回', async () => {
+    const { getDataDictAccessInCodeContext } = await import('../src/globalDataIndex');
+    const fake = getDataDictAccessInCodeContext(docText, docstringLine, docChar, KBE);
+    expect(fake).toBeNull();
+    const real = getDataDictAccessInCodeContext(docText, realLine, realChar, KBE);
+    expect(real?.keySignature).toBe('cfg');
+    expect(real?.kind).toBe('read');
+  });
+
+  it('纯逻辑:外层单行字符串里的伪访问 null;尾随注释里的伪访问 null', async () => {
+    const { getDataDictAccessInCodeContext } = await import('../src/globalDataIndex');
+    const plain = 's = "KBEngine.globalData[\'cfg\'] = 1"\nreal = 2';
+    const plainChar = plain.indexOf('cfg') + 1;
+    expect(getDataDictAccessInCodeContext(plain, 0, plainChar, KBE)).toBeNull();
+    const trailing = 'import KBEngine\nKBEngine.globalData["x"] = 1  # KBEngine.globalData["y"] = 2';
+    const trailingChar = trailing.indexOf('"y"') + 2;
+    expect(getDataDictAccessInCodeContext(trailing, 1, trailingChar, KBE)).toBeNull();
+  });
+
+  it('定义入口:docstring 里的伪访问不启动冷查不返回定义;真实读点照常跳写点', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdip-aud66-'));
+    const writer = path.join(root, 'writer.py');
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = 1\n';
+    fs.writeFileSync(writer, writerText);
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const index = new GlobalDataDictIndex();
+    const provider = new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+    try {
+      const doc = vscode.makeTextDocument(docText, { fileName: writer, languageId: 'python' });
+      const onDocstring = await provider.provideDefinition(
+        doc,
+        new vscode.Position(docstringLine, docChar)
+      ) as vscode.Location | null;
+      expect(onDocstring).toBeNull();
+      const onReal = await provider.provideDefinition(
+        doc,
+        new vscode.Position(realLine, realChar)
+      ) as vscode.Location | null;
+      expect(onReal?.uri.fsPath).toBe(writer);
+      expect(onReal?.range.start.line).toBe(1);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('引用入口:docstring 里的伪访问不返回引用;真实读点照常列同键族', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdip-aud66-'));
+    const writer = path.join(root, 'writer.py');
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = 1\n';
+    fs.writeFileSync(writer, writerText);
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const index = new GlobalDataDictIndex();
+    const refs = new KBEngineReferencesProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    try {
+      const doc = vscode.makeTextDocument(docText, { fileName: writer, languageId: 'python' });
+      const onDocstring = await refs.provideReferences(
+        doc,
+        new vscode.Position(docstringLine, docChar),
+        {} as vscode.ReferenceContext
+      );
+      expect(onDocstring).toBeNull();
+      const onReal = await refs.provideReferences(
+        doc,
+        new vscode.Position(realLine, realChar),
+        {} as vscode.ReferenceContext
+      );
+      expect((onReal ?? []).map(loc => path.basename(loc.uri.fsPath))).toEqual(['writer.py']);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

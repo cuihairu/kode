@@ -538,6 +538,62 @@ export function getKbeDataDictAccessAtPosition(
   return null;
 }
 
+/** 重扫该行,定位与 access 键区间对齐的 alias.dict 命中 span */
+function findAliasDictSpanForAccess(
+  lineText: string,
+  access: KbeDataDictAccess
+): { start: number; length: number } | null {
+  DATA_DICT_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DATA_DICT_PATTERN.exec(lineText)) !== null) {
+    if (match[2] !== access.dict) {
+      continue;
+    }
+    const after = skipWhitespace(lineText, match.index + match[0].length);
+    if (lineText[after] === '[') {
+      const subscript = parseSubscriptAccess(lineText, after);
+      if (subscript && subscript.keyStart === access.keyStart) {
+        return { start: match.index, length: match[0].length };
+      }
+    } else {
+      const getCall = parseGetAccess(lineText, after);
+      if (getCall && getCall.keyStart === access.keyStart) {
+        return { start: match.index, length: match[0].length };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * AUD-066:查询源词法上下文验证。落点命中字典键访问且该访问的 alias.dict
+ * 段在全文词法代码域(跨行三引号、外层字符串、注释里的伪访问一律 null;
+ * 真实下标与 get 的字符串键允许)时返回该访问。provider 冷查前调用,保证
+ * 外层字符串/注释中的伪访问不启动全量索引、不返回定义/引用。
+ */
+export function getDataDictAccessInCodeContext(
+  documentText: string,
+  line: number,
+  character: number,
+  aliases: Set<string>
+): KbeDataDictAccess | null {
+  const lineStart = lineStartOffsets(documentText)[line];
+  if (lineStart === undefined) {
+    return null;
+  }
+  const rawLine = documentText.slice(lineStart).split(/\r?\n/, 1)[0];
+  const access = getKbeDataDictAccessAtPosition(rawLine, character, aliases);
+  if (!access) {
+    return null;
+  }
+  const aliasSpan = findAliasDictSpanForAccess(rawLine, access);
+  if (!aliasSpan) {
+    return null;
+  }
+  const mask = buildPythonCodeMask(documentText);
+  return spanIsCode(mask, lineStart + aliasSpan.start, aliasSpan.length) ? access : null;
+}
+
 /**
  * 行内首个引号外 `#` 注释列;无注释返回 -1(引号内 `#` 是字面量不算)。
  * 供扫描器剥离 RHS 尾随注释与 provider 排除注释里的假访问。

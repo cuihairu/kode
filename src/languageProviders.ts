@@ -158,6 +158,7 @@ import {
 } from './kbeModuleIndex';
 import {
   GlobalDataDictIndex,
+  getDataDictAccessInCodeContext,
   getKbeDataDictAccessAtPosition,
   inferDataDictValueType,
   isKeyInsideLineComment,
@@ -4039,9 +4040,11 @@ async function resolveDataDictSitesAtPosition(
   if (!dataDictIndex || !isPythonDataDictIndexEnabled()) {
     return null;
   }
-  const line = document.lineAt(position.line);
-  const access = getKbeDataDictAccessAtPosition(
-    line.text,
+  // AUD-066:冷查前验证源访问的词法上下文——alias.dict 段须在全文代码域,
+  // 跨行三引号/外层字符串/注释里的伪访问不启动全量索引、不返回定义/引用。
+  const access = getDataDictAccessInCodeContext(
+    document.getText(),
+    position.line,
     position.character,
     getKbeAliases(document.getText())
   );
