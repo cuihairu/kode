@@ -96,6 +96,7 @@ import {
 import {
   computeDefRenameEdits,
   findDefRenameConflict,
+  findDefRenameConflictInClosure,
   getLineCharacterAtOffset,
   parseDefFileSemantics,
   renameInputsDrifted,
@@ -6052,6 +6053,22 @@ export class KBEngineRenameProvider implements vscode.RenameProvider {
       throw new Error(
         `cannot rename to "${newName}": already declared in ${conflict.surface} `
         + `at line ${conflict.line} of ${path.basename(document.fileName)}`
+      );
+    }
+    // IDE-AUD-061(R3-F05):声明文件之外,祖先/后代闭包同声明面占名也拒——
+    // 只查声明文件会让"改 Hero.hp→vigor 撞继承者 Monster.vigor"静默通过,
+    // 改名后 analyzer 从 0 变 1。冲突位带文件,拒绝信息指出真实位置。
+    const closureConflict = findDefRenameConflictInClosure({
+      targetFilePath: document.fileName,
+      targetText: document.getText(),
+      symbol,
+      newName,
+      readCrossFileContent: filePath => readSharedFileSnapshot(filePath)?.content ?? null
+    });
+    if (closureConflict) {
+      throw new Error(
+        `cannot rename to "${newName}": already declared in ${closureConflict.surface} `
+        + `at line ${closureConflict.line} of ${path.basename(closureConflict.filePath ?? document.fileName)}`
       );
     }
     const fileEdits = computeDefRenameEdits({

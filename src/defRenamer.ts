@@ -32,10 +32,12 @@ import {
   DefDocument,
   DefElementNode,
   DefMethodSection,
+  DefTextNode,
   getDirectChildElement,
   getDirectChildElements,
   parseDefDocument
 } from './defParser';
+import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens } from './generated/flagDomains';
 
 export type DefRenameSymbolKind = 'property' | 'method';
 
@@ -257,6 +259,8 @@ export interface DefRenameConflict {
   name: string;
   /** 冲突声明行(1 基) */
   line: number;
+  /** IDE-AUD-061:冲突所在文件(声明文件外的祖先/后代);仅声明文件内冲突可缺省 */
+  filePath?: string;
 }
 
 const offsetToLine = (text: string, offset: number): number =>
@@ -309,6 +313,216 @@ export function findDefRenameConflict(
           surface: section.name as 'Properties' | 'Components',
           name: newName,
           line: offsetToLine(text, child.tagStart)
+        };
+      }
+    }
+  }
+  return null;
+}
+
+// 闭包判重的成员声明面(一份 def 文本里顶层直接子元素的可重命名成员)。
+// 引擎把父类/接口/组件描述装进同一 ScriptDefModule 判重,这里按同一命名面
+// 取成员声明;属性/组件携带域位(Flags 派生)供域位相交判重。
+interface RenameMemberDecl {
+  kind: 'method' | 'property' | 'component';
+  name: string;
+  section: DefMethodSection | null;
+  domains: Set<string>;
+  line: number;
+}
+
+// Flags 文本 → 域位集(与 defAnalyzer.propertyFlagDomains 同口径;defRenamer
+// 不 import defAnalyzer——后者反向依赖本模块,避免循环)
+const flagDomainsOfNode = (node: DefElementNode): Set<string> => {
+  const flagsNode = getDirectChildElement(node, 'Flags');
+  const flagsText = flagsNode?.children.find((child): child is DefTextNode => child.kind === 'text');
+  const tokens = (flagsText?.text ?? '').split('|').map(token => token.trim()).filter(Boolean);
+  const domains = new Set<string>();
+  for (const token of normalizeFlagTokens(tokens.join('|'))) {
+    for (const domain of FLAG_TOKEN_DOMAINS[token] ?? []) {
+      domains.add(domain);
+    }
+  }
+  return domains;
+};
+
+const collectOwnMemberDecls = (text: string): RenameMemberDecl[] => {
+  const document = parseDefText(text);
+  if (!document?.root) {
+    return [];
+  }
+  const decls: RenameMemberDecl[] = [];
+  for (const section of getDirectChildElements(document.root)) {
+    if (section.name === 'Properties' || section.name === 'Components') {
+      for (const child of getDirectChildElements(section)) {
+        decls.push({
+          kind: section.name === 'Properties' ? 'property' : 'component',
+          name: child.name,
+          section: null,
+          domains: flagDomainsOfNode(child),
+          line: offsetToLine(text, child.tagStart)
+        });
+      }
+    } else if (METHOD_SECTION_SET.has(section.name)) {
+      for (const child of getDirectChildElements(section)) {
+        decls.push({
+          kind: 'method',
+          name: child.name,
+          section: section.name as DefMethodSection,
+          domains: new Set(),
+          line: offsetToLine(text, child.tagStart)
+        });
+      }
+    }
+  }
+  return decls;
+};
+
+const domainsOverlap = (left: Set<string>, right: Set<string>): boolean => {
+  for (const domain of left) {
+    if (right.has(domain)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// 引擎判重矩阵(defAnalyzer 同语义,批116 核对 scriptdef_module.cpp):
+// - 组件槽经 addComponentProperty 走 addPropertyDescription,与任何同名声明
+//   无条件冲突;
+// - 方法 vs 方法仅同段冲突(段即命名空间,异段同名可共存);
+// - 方法 vs 属性/组件:hasPropertyName/hasComponentName 全局拒绝,无条件冲突;
+// - 属性 vs 属性/组件:findXxxPropertyDescription 按域查找,域位相交才冲突。
+const memberConflicts = (own: RenameMemberDecl, inherited: RenameMemberDecl): boolean => {
+  if (own.kind === 'component' || inherited.kind === 'component') {
+    return true;
+  }
+  if (own.kind === 'method' && inherited.kind === 'method') {
+    return own.section === inherited.section;
+  }
+  if (own.kind !== inherited.kind) {
+    return true;
+  }
+  return domainsOverlap(own.domains, inherited.domains);
+};
+
+// 目标符号改名后的新声明面(用于与闭包文件判重):方法带段,属性取目标
+// 声明自身的域位;组件不是可重命名符号(见头注作用域),无需分支
+const resolveTargetRenameDecl = (targetText: string, symbol: DefRenameSymbol): RenameMemberDecl | null => {
+  if (symbol.kind === 'method') {
+    return { kind: 'method', name: symbol.name, section: symbol.section, domains: new Set(), line: 0 };
+  }
+  const document = parseDefText(targetText);
+  if (!document?.root) {
+    return null;
+  }
+  for (const section of getDirectChildElements(document.root)) {
+    if (section.name !== 'Properties') {
+      continue;
+    }
+    for (const child of getDirectChildElements(section)) {
+      if (child.name === symbol.name) {
+        return {
+          kind: 'property',
+          name: symbol.name,
+          section: null,
+          domains: flagDomainsOfNode(child),
+          line: 0
+        };
+      }
+    }
+  }
+  return null;
+};
+
+export interface DefRenameClosureConflictOptions {
+  targetFilePath: string;
+  targetText: string;
+  symbol: DefRenameSymbol;
+  newName: string;
+  /** 跨文件读取口(在位打开文档返回缓冲区全文,未打开回落磁盘);缺省读盘 */
+  readCrossFileContent?: (filePath: string) => string | null;
+}
+
+/**
+ * IDE-AUD-061(R3-F05):改名冲突预检纳入受影响继承闭包。在 NAV-008 的声明文件
+ * 检查之外,同时检查目标实体的祖先闭包(Parent 链 + Interfaces 混入)与全部
+ * 后代(其祖先闭包含目标)是否已在同一成员命名面占用 newName;占用即返回冲突
+ * 位(面 + 1 基行号 + 文件路径),供调用方拒绝编辑并说明位置。判重矩阵对齐
+ * 引擎 ScriptDefModule 装载语义与 defAnalyzer 的 inherited-name-collision
+ * (域位相交/同段/组件槽无条件),与 NAV-008 的窄面(仅同段方法/属性·组件)
+ * 不同——这里防的是"改名后 analyzer 从 0 变 1"的诊断,按引擎全局判重。
+ * 找不到定义根(无 entities.xml)、目标无法解析、名字非法/改名即本名 → null
+ * (调用方仍保留 NAV-008 的声明文件检查,这里只补闭包)。
+ */
+export function findDefRenameConflictInClosure(
+  options: DefRenameClosureConflictOptions
+): DefRenameConflict | null {
+  const { targetFilePath, targetText, symbol, newName } = options;
+  if (!DEF_IDENTIFIER_PATTERN.test(newName) || newName === symbol.name) {
+    return null;
+  }
+
+  const resolvedTarget = path.resolve(targetFilePath);
+  const defsRoot = findEntityDefsRootFromFile(resolvedTarget);
+  if (!defsRoot) {
+    return null;
+  }
+  const targetDecl = resolveTargetRenameDecl(targetText, symbol);
+  if (!targetDecl) {
+    return null;
+  }
+
+  const files = listDefFilesRecursive(defsRoot);
+  const fileIndex = new Map<string, DefFileEntry>();
+  for (const entry of files) {
+    fileIndex.set(entry.filePath, entry);
+  }
+  const contentCache = new Map<string, string | null>();
+  const readContent = (filePath: string): string | null => {
+    const resolved = path.resolve(filePath);
+    if (!contentCache.has(resolved)) {
+      contentCache.set(
+        resolved,
+        options.readCrossFileContent
+          ? options.readCrossFileContent(resolved)
+          : readFileOrNull(resolved)
+      );
+    }
+    return contentCache.get(resolved) ?? null;
+  };
+  const loadSemantics = (filePath: string): DefFileSemantics | null => {
+    const content = readContent(filePath);
+    return content === null ? null : parseDefFileSemantics(content);
+  };
+
+  const targetEntry = classifyDefFile(defsRoot, resolvedTarget);
+  const ancestorClosure = collectOwnerClosure(targetEntry, defsRoot, fileIndex, loadSemantics);
+
+  for (const entry of files) {
+    if (entry.filePath === targetEntry.filePath) {
+      continue;
+    }
+    const content = readContent(entry.filePath);
+    if (content === null) {
+      continue;
+    }
+    const isAncestor = ancestorClosure.has(entry.filePath);
+    const isDescendant = collectOwnerClosure(entry, defsRoot, fileIndex, loadSemantics)
+      .has(targetEntry.filePath);
+    if (!isAncestor && !isDescendant) {
+      continue;
+    }
+    for (const decl of collectOwnMemberDecls(content)) {
+      if (decl.name !== newName) {
+        continue;
+      }
+      if (memberConflicts(decl, targetDecl)) {
+        return {
+          surface: decl.section ?? (decl.kind === 'property' ? 'Properties' : 'Components'),
+          name: newName,
+          line: decl.line,
+          filePath: entry.filePath
         };
       }
     }
