@@ -70,6 +70,16 @@ export function parsePythonTestCases(source: string): PythonTestCase[] {
       classMethodIndent = undefined;
       continue;
     }
+    // R2-F20:顶层任意 class(含普通非 Test 类)重置类上下文——Test 类
+    // 之后的普通类,其 test_* 方法不归入前一 Test 类。顶层 class 才
+    // 重置(缩进的嵌套类/字符串字面量/注释里的 class 不以 ^class 起首,
+    // 不触发);静态行级启发对「列 0 的多行字符串里出现 class X:」无法
+    // 区分,属边界,如实不处理(见模块注释)。
+    if (/^class\s+/.test(line)) {
+      currentClass = undefined;
+      classMethodIndent = undefined;
+      continue;
+    }
     const defMatch = /^(\s*)def\s+(test_\w+)\s*\(/.exec(line);
     if (!defMatch) {
       continue;

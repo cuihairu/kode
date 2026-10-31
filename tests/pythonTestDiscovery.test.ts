@@ -168,6 +168,55 @@ describe('parsePythonTestCases(行级静态解析)', () => {
 
     expect(parsePythonTestCases(source)).toEqual([]);
   });
+
+  it('R2-F20:class TestReal 后的普通 class Ordinary 不把其 test_* 归入 TestReal', () => {
+    const source = [
+      'class TestReal:',
+      '    def test_ok(self):',
+      '        pass',
+      '',
+      'class Ordinary:',
+      '    def test_not_pytest(self):',
+      '        pass',
+      '',
+      'def test_after_ordinary():',
+      '    pass'
+    ].join('\n');
+
+    expect(parsePythonTestCases(source)).toEqual([
+      { name: 'test_ok', kind: 'method', className: 'TestReal', line: 2, column: 4 },
+      { name: 'test_after_ordinary', kind: 'function', line: 9, column: 0 }
+    ]);
+  });
+
+  it('R2-F20:切类与字面量正反例——类切换重置,注释/字面量里的 class 不重置', () => {
+    const source = [
+      'class TestA:',
+      '    def test_a(self):',
+      '        pass',
+      '',
+      'class Ordinary:',
+      '    def test_b(self):',
+      '        pass',
+      '',
+      'class TestC:',
+      '    def test_c(self):',
+      '        pass',
+      '',
+      '# class Fake:  # 注释里的类不重置',
+      'x = "class Fake2:"  # 字面量里的类不重置',
+      '',
+      'class TestD:',
+      '    def test_d(self):',
+      '        pass'
+    ].join('\n');
+
+    expect(parsePythonTestCases(source)).toEqual([
+      { name: 'test_a', kind: 'method', className: 'TestA', line: 2, column: 4 },
+      { name: 'test_c', kind: 'method', className: 'TestC', line: 10, column: 4 },
+      { name: 'test_d', kind: 'method', className: 'TestD', line: 17, column: 4 }
+    ]);
+  });
 });
 
 describe('showPythonTestList(列表命令体)', () => {
