@@ -2055,3 +2055,164 @@ describe('AUD-072 冷查询取消及时返回(R4-F07)', () => {
     }
   });
 });
+
+describe('AUD-073 开关代际拦截过期发布(R4-F08)', () => {
+  const setupWorkspace = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdip-a73-'));
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = {"gold": 1}\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("cfg")\n';
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    return { root, writer, reader, writerText, readerText };
+  };
+
+  const makeGatedColdRead = (): {
+    read: typeof vscode.workspace.fs.readFile;
+    gate: (p: string) => void;
+    release: (p: string) => void;
+    engagedAny: () => boolean;
+  } => {
+    const shouldHang = new Set<string>();
+    const hanging = new Map<string, () => void>();
+    const read = (async (uri: vscode.Uri) => {
+      const p = uri.fsPath;
+      if (shouldHang.has(p)) {
+        return new Promise<Uint8Array>(resolve => {
+          hanging.set(p, () => resolve(fs.readFileSync(p)));
+        });
+      }
+      return fs.readFileSync(p);
+    }) as typeof vscode.workspace.fs.readFile;
+    return {
+      read,
+      gate: p => shouldHang.add(p),
+      release: p => {
+        shouldHang.delete(p);
+        const go = hanging.get(p);
+        if (go) { hanging.delete(p); go(); }
+      },
+      engagedAny: () => hanging.size > 0
+    };
+  };
+
+  const waitUntil = async (cond: () => boolean, limit = 500): Promise<void> => {
+    for (let i = 0; i < limit && !cond(); i += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    if (!cond()) {
+      throw new Error('waitUntil condition not met');
+    }
+  };
+
+  const makeProvider = (index: GlobalDataDictIndex) =>
+    new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+
+  it('冷查询等待中关闭开关:definition 不返回旧结果(R4-F08)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const provider = makeProvider(index);
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const readPos = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const pending = provider.provideDefinition(readDoc, readPos);
+      await waitUntil(() => ctl.engagedAny());
+      // 等待期间关闭开关 → 发布前须拦截(不返回旧写点)
+      setPythonDataDictIndexEnabled(false);
+      ctl.release(writer);
+      ctl.release(reader);
+      const result = await pending;
+      expect(result).toBeNull();
+      // 重新开启:后续查询恢复正常
+      setPythonDataDictIndexEnabled(true);
+      const fromRead = await provider.provideDefinition(readDoc, readPos) as vscode.Location | null;
+      expect(fromRead?.uri.fsPath).toBe(writer);
+    } finally {
+      setPythonDataDictIndexEnabled(true);
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('关闭再开启的代际切换不放行过期请求(R4-F08)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const provider = makeProvider(index);
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const readPos = new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1);
+      const pending = provider.provideDefinition(readDoc, readPos);
+      await waitUntil(() => ctl.engagedAny());
+      // 关→开:代际已切换,启动于旧代际的请求不得放行
+      setPythonDataDictIndexEnabled(false);
+      setPythonDataDictIndexEnabled(true);
+      ctl.release(writer);
+      ctl.release(reader);
+      expect(await pending).toBeNull();
+    } finally {
+      setPythonDataDictIndexEnabled(true);
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('冷查询等待中关闭开关:references 不返回旧结果(R4-F08)', async () => {
+    const { root, writer, reader, readerText } = setupWorkspace();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const index = new GlobalDataDictIndex();
+    const refs = new KBEngineReferencesProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    try {
+      const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+      const pending = refs.provideReferences(
+        readDoc,
+        new vscode.Position(1, readerText.split('\n')[1].indexOf('cfg') + 1),
+        {} as vscode.ReferenceContext
+      );
+      await waitUntil(() => ctl.engagedAny());
+      setPythonDataDictIndexEnabled(false);
+      ctl.release(writer);
+      ctl.release(reader);
+      expect(await pending).toBeNull();
+    } finally {
+      setPythonDataDictIndexEnabled(true);
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      index.dispose();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

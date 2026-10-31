@@ -972,10 +972,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         getKbeAliases(document.getText())
       );
       if (dictAccess && !isKeyInsideLineComment(lineText, dictAccess.keyStart)) {
+        // AUD-073:发布前复核启用代际——等待期间开关被改过则不发布旧结果
+        const enabledGeneration = getPythonDataDictIndexGeneration();
         return respond(
           // AUD-072:冷索引等待可取消——取消即放行 null,共享初扫继续
           awaitDataDictIndexReady(dataDictIndex, token).then(ready => {
-            if (!ready) {
+            if (!ready || getPythonDataDictIndexGeneration() !== enabledGeneration) {
               return null;
             }
             const hover = this.buildDataDictHover(dictAccess, dataDictIndex);
@@ -4019,13 +4021,23 @@ export function isPythonMroJumpEnabled(): boolean {
  * 接线);关闭时 definition 前置层与 python 引用分支不查索引。
  */
 let pythonDataDictIndexEnabled = true;
+// AUD-073(R4-F08):启用代际——开关每次实际翻转前进;在飞冷查询据此判断
+// 等待期间开关是否被改过,改了则不发布旧结果(关闭/关→开代际都拦截)。
+let pythonDataDictIndexGeneration = 0;
 
 export function setPythonDataDictIndexEnabled(enabled: boolean): void {
-  pythonDataDictIndexEnabled = enabled;
+  if (pythonDataDictIndexEnabled !== enabled) {
+    pythonDataDictIndexEnabled = enabled;
+    pythonDataDictIndexGeneration += 1;
+  }
 }
 
 export function isPythonDataDictIndexEnabled(): boolean {
   return pythonDataDictIndexEnabled;
+}
+
+export function getPythonDataDictIndexGeneration(): number {
+  return pythonDataDictIndexGeneration;
 }
 
 // AUD-072(R4-F07):冷索引等待可取消——旧实现先 await 全量 ensureStarted
@@ -4083,6 +4095,9 @@ async function resolveDataDictSitesAtPosition(
   if (!dataDictIndex || !isPythonDataDictIndexEnabled()) {
     return null;
   }
+  // AUD-073:发布前复核启用代际——等待期间开关被改过(关闭或关→开)则
+  // 结果是过期的,不放行(在飞查询不发布旧结果)。
+  const enabledGeneration = getPythonDataDictIndexGeneration();
   // AUD-066:冷查前验证源访问的词法上下文——alias.dict 段须在全文代码域,
   // 跨行三引号/外层字符串/注释里的伪访问不启动全量索引、不返回定义/引用。
   const access = getDataDictAccessInCodeContext(
@@ -4096,6 +4111,9 @@ async function resolveDataDictSitesAtPosition(
   }
   // AUD-072:冷索引等待可取消——取消即放行,不查索引(共享初扫继续)。
   if (!(await awaitDataDictIndexReady(dataDictIndex, token))) {
+    return null;
+  }
+  if (getPythonDataDictIndexGeneration() !== enabledGeneration) {
     return null;
   }
   // AUD-068:查询带根身份——跨进程字典不跨工程共享命名空间,同根内互链。

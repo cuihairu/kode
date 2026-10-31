@@ -18,6 +18,7 @@ import {
   findRegisteredTypeSuggestions,
   prewarmKbengineIndex,
   revealSourceCommand,
+  setPythonDataDictIndexEnabled,
   setPythonMroJumpEnabled,
   UNKNOWN_TYPE_DIAGNOSTIC_CODE
 } from '../src/languageProviders';
@@ -1035,6 +1036,22 @@ describe('KBEngineHoverProvider 注入面分支(覆盖率)', () => {
     token.isCancellationRequested = true;
     gate.resolve();
     expect(await pending).toBeNull();
+  });
+
+  it('数据字典键悬停:等待期间关闭开关 → 不发布旧结果(AUD-073/R4-F08)', async () => {
+    const gate = deferred<void>();
+    const provider = new KBEngineHoverProvider(undefined, {
+      ensureStarted: () => gate.promise,
+      query: () => [{ kind: 'write', valueText: '1', file: '/tmp/ws/scripts/a.py', line: 1 }]
+    } as never);
+    const writeLiteralDoc = pyDocument("import KBEngine\nKBEngine.globalData['cfg'] = 1\n", 'scripts/Hero.py');
+    const pending = provider.provideHover(writeLiteralDoc, new Position(1, 21));
+    await flush();
+    // 等待期间关闭开关 → 放行前拦截(不发布旧悬停)
+    setPythonDataDictIndexEnabled(false);
+    gate.resolve();
+    expect(await pending).toBeNull();
+    setPythonDataDictIndexEnabled(true);
   });
 
   it('memo 超限驱逐:257 个在途 hover 逐条驱逐最旧(755)', async () => {
