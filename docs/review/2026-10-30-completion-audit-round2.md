@@ -37,7 +37,7 @@
 | R2-F17 | P1 | `from mod import original as local` 丢失被导入的原始名字，查桶用 local 而非 original；未起别名时 EXPECTED，起别名后 null | IDE-HOV-017 显式绑定未全部支持。已修 be79881（todo.md IDE-AUD-044，from-import 绑定保留 symbol=original，查桶用 symbol）。2026-10-31 复核关闭（todo.md IDE-HOV-017 标注 4934\|7+25 demo 复验） |
 | R2-F18 | P1 | hover 预算返回 null 后底层请求独占 token 仍未取消，underlyingTokenCancelled=false；内层 race 未传 onStop | 前台有界返回不等于后台停止，可能堆积过时工作 |
 | R2-F19 | P1 | Python 测试进程退出 1、stderr 有 teardown 错误，但出现 PASSED 节点后结果仍全部 passed；runPythonTests 丢弃了退出码 | IDE-TSK-005 需区分节点主体成功与整个测试会话失败 | 已修 47e9ff5（退出码不再丢弃：逐条目挂 exec 会话问题，selectSessionFailures 只取「节点看似成功却退出非零」者，输出面板会话错误横幅+stderr+工作台报错；节点主体真实结果保留） |
-| R2-F20 | P2 | class TestReal 之后出现普通 class Ordinary，发现器仍把 Ordinary.test_not_pytest 登记为 TestReal 的方法 | IDE-TSK-004 需重开 |
+| R2-F20 | P2 | class TestReal 之后出现普通 class Ordinary，发现器仍把 Ordinary.test_not_pytest 登记为 TestReal 的方法 | IDE-TSK-004 需重开 | 已修 d656a32（parsePythonTestCases 对顶层任意 class 重置类上下文：Test 类之后的普通类其 test_* 不再归入前一 Test 类，Test 类切换/顶层函数回归仍收；嵌套/注释/字符串字面量里的 class 不以 `^class` 起首不触发重置；列 0 多行字符串里出现 `class X:` 无法静态区分，边界如实标注；正反例两用例锁定） |
 | R2-F21 | P2 | 兼容检查命令传 extension 目录，但 helper 参数是 manifest 文件路径；有 package.json 和 out/extension.js 也报 EISDIR、bundle error、版本缺失 | 生产命令接线错误，新增修正任务 |
 | R2-F22 | P2 | 同一检查用 KBEngine 2.5.10 比较 VS Code ^1.84.0，并据此给 engine-version=ok；当前宿主版本根本没参与 | 比较的是不同产品版本，不能当兼容性证明 |
 | R2-F23 | P1 | killProcessTree 没有拒绝 pid<=0，传 0 会转发到 process.kill(0, SIGTERM)；ManagedProcess 的缺失 PID 又默认成 0 | 无效 PID 必须先拒绝，不能把进程组语义当成单个目标；本轮未发送信号 |
