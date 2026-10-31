@@ -9,7 +9,9 @@ import { validateDocument, validateEntitiesXmlDocument } from '../src/languagePr
 import { releaseAllDocumentSnapshots } from '../src/documentStore';
 import {
   getOperationSummary,
-  resetLanguageServiceMetrics
+  getRecentDetailedSamples,
+  resetLanguageServiceMetrics,
+  setDetailedRecordingEnabled
 } from '../src/languageServiceMetrics';
 import {
   configurationOverrides,
@@ -703,5 +705,73 @@ describe('A6-4 诊断开关配置切换:正确清理/重算', () => {
     } finally {
       configurationOverrides.delete('kbengine');
     }
+  });
+});
+
+describe('IDE-AUD-052 异步诊断耗时从发起时起算:计算阶段不再记为 0', () => {
+  it('computeAsync 延迟 35ms:总耗时 ≥35ms,compute/publish 分段可见', async () => {
+    setDetailedRecordingEnabled(true);
+    try {
+      const scheduler = new DiagnosticScheduler();
+      const collection = new DiagnosticCollection();
+      const document = makeVersionedDefDocument(VALID_DEF, '/aud052/hero.def', 1);
+
+      scheduler.requestQueued(document, {
+        layer: 'local',
+        computeAsync: async () => {
+          // 35ms 慢计算:旧实现在 then 内才取 startedAt,整段计算记 ~0
+          await new Promise(resolve => setTimeout(resolve, 35));
+          return [{ version: document.version }];
+        },
+        publish: items => {
+          collection.set(document.uri, items as never);
+        }
+      });
+      await scheduler.flushQueued();
+      await scheduler.pendingComputations();
+
+      const summary = getOperationSummary('diagnostics');
+      expect(summary).not.toBeNull();
+      expect(summary!.count).toBe(1);
+      expect(summary!.maxMs).toBeGreaterThanOrEqual(30);
+      expect(summary!.totalMs).toBeGreaterThanOrEqual(30);
+
+      const sample = getRecentDetailedSamples().find(s => s.name === 'diagnostics');
+      expect(sample).toBeDefined();
+      expect(sample!.elapsedMs).toBeGreaterThanOrEqual(30);
+      expect(sample!.subPhases.compute).toBeGreaterThanOrEqual(30);
+      expect(sample!.subPhases.publish).toBeGreaterThanOrEqual(0);
+      // compute+publish 与 elapsed 同口径(四舍五入容差)
+      expect(sample!.subPhases.compute + sample!.subPhases.publish)
+        .toBeLessThanOrEqual(sample!.elapsedMs + 1);
+    } finally {
+      setDetailedRecordingEnabled(false);
+    }
+  });
+
+  it('同步路径同口径:慢 compute 耗时与分段同样入账', () => {
+    const scheduler = new DiagnosticScheduler();
+    const collection = new DiagnosticCollection();
+    const document = makeVersionedDefDocument(VALID_DEF, '/aud052/sync.def', 1);
+
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      compute: () => {
+        const start = Date.now();
+        while (Date.now() - start < 35) {
+          /* 忙等 35ms,验证同步路径计时也含计算 */
+        }
+        return [{ version: document.version }];
+      },
+      publish: items => {
+        collection.set(document.uri, items as never);
+      }
+    });
+    scheduler.flushQueued();
+
+    const summary = getOperationSummary('diagnostics');
+    expect(summary).not.toBeNull();
+    expect(summary!.maxMs).toBeGreaterThanOrEqual(30);
+    expect(summary!.totalMs).toBeGreaterThanOrEqual(30);
   });
 });

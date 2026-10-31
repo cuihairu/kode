@@ -86,6 +86,11 @@ interface QueuedTask {
   releaseEpoch: number;
 }
 
+/** AUD-052:耗时到 0.1ms 取整(与 metrics 聚合 round1 同口径,仅展示层用) */
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 function versionOf(document: DiagnosticTaskDocument): number | undefined {
   return typeof document.version === 'number' && Number.isFinite(document.version)
     ? document.version
@@ -405,10 +410,24 @@ export class DiagnosticScheduler {
     if (options.computeAsync) {
       // IDE-DIA-005:异步分片面——大文件计算移出同步入口,完成后复核版本
       // 才发布;null(中止)/版本前进均记过期不发布
+      // AUD-052:计时起点在发起时——computeAsync 完成后的 then 里才取
+      // startedAt 会把整个计算阶段漏掉(35ms 计算记 ~0);分段:compute=计算阶段,
+      // publish=发布守卫+发布,同步路径同口径
+      const startedAt = performance.now();
       const computation = options.computeAsync().then(items => {
         this.pending.delete(computation);
         this.stats.computed += 1;
-        const startedAt = performance.now();
+        const computeEnd = performance.now();
+        const record = (
+          fields: Omit<Parameters<typeof recordLanguageServiceOperation>[2], 'subPhases'>
+        ) => {
+          const elapsed = performance.now() - startedAt;
+          const compute = round1(computeEnd - startedAt);
+          recordLanguageServiceOperation('diagnostics', elapsed, {
+            ...fields,
+            subPhases: { compute, publish: round1(elapsed - (computeEnd - startedAt)) }
+          });
+        };
         if (items === null) {
           this.stats.staleDropped += 1;
           return;
@@ -416,29 +435,19 @@ export class DiagnosticScheduler {
         // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
         if (version !== undefined && versionOf(document) !== version) {
           this.stats.staleDropped += 1;
-          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
-            status: 'ok',
-            fileKind: 'def',
-            documentVersion: version,
-            cacheMisses: 1
-          });
+          record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
           return;
         }
         // 发布守卫:计算期间文档已关闭(或关闭后重开到新代)→ 不写 collection
         if ((this.epochs.get(key) ?? 0) !== releaseEpoch) {
           this.stats.releasedDropped += 1;
-          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
-            status: 'ok',
-            fileKind: 'def',
-            documentVersion: version,
-            cacheMisses: 1
-          });
+          record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
           return;
         }
         // AUD-026 发布守卫:计算在途时开关关闭 → 旧异步结果不写回 collection
         if (!this.enabled) {
           this.stats.disabledAsyncDropped += 1;
-          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+          record({
             status: 'ok',
             fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
             documentVersion: version,
@@ -450,7 +459,7 @@ export class DiagnosticScheduler {
         // 也不把新代标成已发布,否则重开同版本会被 skippedCurrentVersion 跳过)
         if (this.generation !== startedGeneration) {
           this.stats.staleGenerationDropped += 1;
-          recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+          record({
             status: 'ok',
             fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
             documentVersion: version,
@@ -463,7 +472,7 @@ export class DiagnosticScheduler {
         state.publishedVersion = version;
         state.publishedGeneration = this.generation;
         this.stats.published += 1;
-        recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+        record({
           status: 'ok',
           fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
           documentVersion: version,
@@ -479,26 +488,27 @@ export class DiagnosticScheduler {
     const startedAt = performance.now();
     const items = options.compute!();
     this.stats.computed += 1;
+    const computeEnd = performance.now();
+    const record = (
+      fields: Omit<Parameters<typeof recordLanguageServiceOperation>[2], 'subPhases'>
+    ) => {
+      const elapsed = performance.now() - startedAt;
+      const compute = round1(computeEnd - startedAt);
+      recordLanguageServiceOperation('diagnostics', elapsed, {
+        ...fields,
+        subPhases: { compute, publish: round1(elapsed - (computeEnd - startedAt)) }
+      });
+    };
     // 发布守卫:计算期间文档前进(重入/编排)→ 结果与新版本不匹配,丢弃
     if (version !== undefined && versionOf(document) !== version) {
       this.stats.staleDropped += 1;
-      recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
-        status: 'ok',
-        fileKind: 'def',
-        documentVersion: version,
-        cacheMisses: 1
-      });
+      record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
       return;
     }
     // 发布守卫(IDE-DIA-008):同步计算重入关闭文档 → 不写 collection
     if ((this.epochs.get(key) ?? 0) !== releaseEpoch) {
       this.stats.releasedDropped += 1;
-      recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
-        status: 'ok',
-        fileKind: 'def',
-        documentVersion: version,
-        cacheMisses: 1
-      });
+      record({ status: 'ok', fileKind: 'def', documentVersion: version, cacheMisses: 1 });
       return;
     }
     options.publish(items);
@@ -506,7 +516,7 @@ export class DiagnosticScheduler {
     state.publishedVersion = version;
     state.publishedGeneration = this.generation;
     this.stats.published += 1;
-    recordLanguageServiceOperation('diagnostics', performance.now() - startedAt, {
+    record({
       status: 'ok',
       fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
       documentVersion: version,

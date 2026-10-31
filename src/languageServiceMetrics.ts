@@ -397,12 +397,12 @@ export function startLanguageServiceOperation(
   return operation;
 }
 
-/** 热路径便捷打点(如 document-parse):一条样本直落聚合,无子阶段 */
+/** 热路径便捷打点(如 document-parse):一条样本直落聚合;subPhases 缺省空(无子阶段) */
 export function recordLanguageServiceOperation(
   name: LanguageServiceEventName,
   elapsedMs: number,
   fields: Partial<Pick<MetricsSample, 'status' | 'cacheHits' | 'cacheMisses' | 'fileDiscoveryCount' |
-    'fileReadCount' | 'fileParseCount'>> & OperationMeta = {}
+    'fileReadCount' | 'fileParseCount'>> & OperationMeta & { subPhases?: Record<string, number> } = {}
 ): void {
   commitSample({
     name,
@@ -410,7 +410,7 @@ export function recordLanguageServiceOperation(
     startedAt: monotonicNow() - elapsedMs,
     elapsedMs: round1(elapsedMs),
     status: fields.status ?? 'ok',
-    subPhases: {},
+    subPhases: fields.subPhases ?? {},
     fileDiscoveryCount: fields.fileDiscoveryCount ?? 0,
     fileReadCount: fields.fileReadCount ?? 0,
     fileParseCount: fields.fileParseCount ?? 0,
