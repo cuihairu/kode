@@ -264,6 +264,13 @@ export class DebugConfigManager {
    */
   private readonly pendingAttachTrackers = new Set<{ dispose(): void }>();
 
+  /**
+   * IDE-AUD-003:成功附加后仍存活的隧道拆解器。隧道随自家会话终止关闭,
+   * 失败/取消即时关闭;会话启动事件迟到或未归属时隧道活到管理器 dispose
+   * 兜底——一律不留后台 ssh。
+   */
+  private readonly tunnelTeardowns = new Set<() => void>();
+
   constructor(
     private context: vscode.ExtensionContext,
     private readonly deps: {
@@ -729,7 +736,7 @@ export class DebugConfigManager {
    * IDE-PDBG-002:connect 前先探端口——通则直接附加零多余弹窗;不通分开
    * 说原因(端口未开 / 未装 debugpy),未装给一键安装,装完/端口开了再附加。
    * IDE-PDBG-004:组件连接声明为远程主机时改走 ssh -L 隧道 connect 附加
-   * (远端监听口打到本地,附加结束隧道即拆)。
+   * (远端监听口打到本地;隧道随会话终止关闭,见 attachViaTunnel)。
    */
   async attachViaDebugpyPort(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
@@ -763,7 +770,10 @@ export class DebugConfigManager {
 
   /**
    * 远程端口模式:起 ssh -N -L 隧道,本地端 connect 附加;隧道起不来
-   * (跳板/主机不可达)如实报错,附加结束(成败都要)拆隧道不留后台 ssh。
+   * (跳板/主机不可达)如实报错。IDE-AUD-003:隧道存活绑定真实调试会话,
+   * 不随 startDebugging 的 Boolean 立即拆(启动结果≠会话结束)——成功
+   * 附加后隧道保留到自家会话终止(onDidTerminateDebugSession)才关;
+   * 启动失败/取消即时关;管理器卸载兜底关。一律不留后台 ssh。
    */
   private async attachViaTunnel(
     componentName: string,
@@ -779,10 +789,45 @@ export class DebugConfigManager {
       vscode.window.showErrorMessage(`远程附加失败:${outcome.reason}`);
       return false;
     }
-    try {
-      return await this.attachPortConfig(componentName, '127.0.0.1', outcome.tunnel.localPort, pathMappings);
-    } finally {
+    // 隧道只拆一次;拆解器被会话终止/失败/取消/卸载四面共享
+    let ownSession: vscode.DebugSession | undefined;
+    let tunnelDown = false;
+    const stopTunnel = (): void => {
+      if (tunnelDown) { return; }
+      tunnelDown = true;
       outcome.tunnel.stop();
+    };
+    const releaseTunnel = (): void => {
+      terminateListener.dispose();
+      this.tunnelTeardowns.delete(releaseTunnel);
+      stopTunnel();
+    };
+    // 会话终止才是成功附加的隧道关闭时点;会话启动事件迟到/未归属(极端
+    // 形状)由 releaseTunnel 仍登记,卸载兜底关闭,不拆活会话的隧道。
+    const terminateListener = vscode.debug.onDidTerminateDebugSession(session => {
+      if (session !== ownSession) { return; }
+      releaseTunnel();
+    });
+    this.tunnelTeardowns.add(releaseTunnel);
+    try {
+      const ok = await this.attachPortConfig(
+        componentName,
+        '127.0.0.1',
+        outcome.tunnel.localPort,
+        pathMappings,
+        session => {
+          ownSession = session;
+        }
+      );
+      if (ok) {
+        // 成功:隧道交会话终止接管(terminateListener 已订阅)
+        return true;
+      }
+      releaseTunnel();
+      return false;
+    } catch (error) {
+      releaseTunnel();
+      throw error;
     }
   }
 
@@ -838,12 +883,17 @@ export class DebugConfigManager {
     return checkInterpreterDebugpy(debugpyPreflightDeps(workspaceRoot));
   }
 
-  /** 端口模式 connect 附加本体(探测通过后调用) */
+  /**
+   * 端口模式 connect 附加本体(探测通过后调用)。IDE-AUD-003:onSession 在
+   * 自家会话被捕获时上报(隧道存活绑定用);远程隧道口附加经此取得真实
+   * 会话句柄。
+   */
   private async attachPortConfig(
     componentName: string,
     host: string,
     port: number,
-    pathMappings: ComponentDebugConfig['pathMappings']
+    pathMappings: ComponentDebugConfig['pathMappings'],
+    onSession?: (session: vscode.DebugSession) => void
   ): Promise<boolean> {
     const attachConfig: vscode.DebugConfiguration = {
       name: `KBEngine: Python attach to ${componentName} (debugpy ${port})`,
@@ -854,7 +904,7 @@ export class DebugConfigManager {
       pathMappings
     };
     try {
-      const outcome = await this.startAttachGuarded(`${componentName} ${host}:${port}`, attachConfig);
+      const outcome = await this.startAttachGuarded(`${componentName} ${host}:${port}`, attachConfig, onSession);
       return outcome.status === 'completed' && outcome.success;
     } catch (error) {
       vscode.window.showErrorMessage(`附加调试失败: ${error}`);
@@ -1001,7 +1051,9 @@ export class DebugConfigManager {
    */
   private async startAttachGuarded(
     label: string,
-    attachConfig: vscode.DebugConfiguration
+    attachConfig: vscode.DebugConfiguration,
+    /** IDE-AUD-003:自家会话捕获即上报(隧道存活绑定等外部存活面) */
+    onSession?: (session: vscode.DebugSession) => void
   ): Promise<AttachGuardOutcome> {
     // IDE-AUD-002:每次尝试唯一身份。配置名(组件/端口或进程名)可相同——
     // 两个同名附加并发时,onDidStartDebugSession 无法只按名字区分彼此;
@@ -1029,6 +1081,8 @@ export class DebugConfigManager {
         return;
       }
       ownSession = session;
+      // IDE-AUD-003:隧道等外部存活面需要真实会话句柄,捕获即上报
+      onSession?.(session);
       // 闸已返回(超时/取消)后才启动的自家会话立即停,不等 start 落定;
       // timely 附加此刻闸未返回(abandoned=false),绝不误伤正常会话
       if (abandoned) {
@@ -1109,5 +1163,10 @@ export class DebugConfigManager {
       tracker.dispose();
     }
     this.pendingAttachTrackers.clear();
+    // IDE-AUD-003:成功附加后仍存活的隧道(会话未终止/未识别),卸载兜底关闭
+    for (const teardown of this.tunnelTeardowns) {
+      teardown();
+    }
+    this.tunnelTeardowns.clear();
   }
 }

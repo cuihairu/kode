@@ -1360,7 +1360,40 @@ describe('IDE-PDBG-004 远程分派(ssh 隧道附加 / 连接声明优先级)', 
     { host: 'gamesrv', hostname: '10.2.0.5' }
   ];
 
-  it('组件声明远程:起 -L 隧道 connect 附加,附加结束拆隧道', async () => {
+  // IDE-AUD-003:隧道存活要绑真实会话生命周期——本块补会话启动/终止事件
+  // 替身,供「成功附加后会话终止才拆隧道」与「会话未识别时卸载兜底」对账。
+  const debugish = stubDebug as unknown as Record<string, unknown>;
+  const sessionStartListeners: Array<(session: unknown) => void> = [];
+  const sessionTerminateListeners: Array<(session: unknown) => void> = [];
+  let originalSessionStart: unknown;
+  let originalSessionTerminate: unknown;
+  beforeAll(() => {
+    originalSessionStart = debugish.onDidStartDebugSession;
+    originalSessionTerminate = debugish.onDidTerminateDebugSession;
+    debugish.onDidStartDebugSession = (listener: (session: unknown) => void) => {
+      sessionStartListeners.push(listener);
+      return { dispose: () => undefined };
+    };
+    debugish.onDidTerminateDebugSession = (listener: (session: unknown) => void) => {
+      sessionTerminateListeners.push(listener);
+      return { dispose: () => undefined };
+    };
+  });
+  afterAll(() => {
+    debugish.onDidStartDebugSession = originalSessionStart;
+    debugish.onDidTerminateDebugSession = originalSessionTerminate;
+  });
+  beforeEach(() => {
+    sessionStartListeners.length = 0;
+    sessionTerminateListeners.length = 0;
+  });
+  const waitUntil = async (predicate: () => boolean, maxBeats = 80): Promise<void> => {
+    for (let i = 0; i < maxBeats && !predicate(); i += 1) {
+      await flushAsync();
+    }
+  };
+
+  it('组件声明远程:起 -L 隧道 connect 附加,成功隧道仍存活,会话终止才拆', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'gamesrv' } } });
     const fake = makeFakeTunnel();
@@ -1371,7 +1404,23 @@ describe('IDE-PDBG-004 远程分派(ssh 隧道附加 / 连接声明优先级)', 
     });
     await flushAsync();
 
-    expect(await manager.attachToComponent('baseapp')).toBe(true);
+    // 成功附加需有真实会话:startDebugging 内同步回放会话启动事件(携带本次
+    // 配置,含 __kodeAttachId 标记),与会话追踪/隧道归属的生产序一致
+    const originalStart = debugish.startDebugging;
+    let ownSession: { id: string; name: string; configuration: Record<string, unknown> };
+    debugish.startDebugging = async (_folder: unknown, config: Record<string, unknown>) => {
+      debugCalls.push({ folder: _folder, config, result: true, throws: null });
+      ownSession = { id: 'own', name: config.name, configuration: config };
+      for (const listener of [...sessionStartListeners]) {
+        listener(ownSession);
+      }
+      return true;
+    };
+    try {
+      expect(await manager.attachToComponent('baseapp')).toBe(true);
+    } finally {
+      debugish.startDebugging = originalStart;
+    }
 
     // 附加是 connect 到本地隧道口(127.0.0.1),不是直连远端
     expect(debugCalls).toHaveLength(1);
@@ -1380,9 +1429,92 @@ describe('IDE-PDBG-004 远程分派(ssh 隧道附加 / 连接声明优先级)', 
     const localPort = debugCalls[0].config.connect.port;
     expect(fake.calls.args).toContain('-N');
     expect(fake.calls.args).toContain(`${localPort}:127.0.0.1:5678`);
-    // 附加结束(成功也算)拆隧道,不留后台 ssh
+    // IDE-AUD-003:startDebugging 成功 ≠ 会话结束——隧道不得随 Boolean 立即拆
+    expect(fake.calls.killed).toBe(false);
+    // 会话终止才是拆隧道时点
+    for (const listener of [...sessionTerminateListeners]) {
+      listener(ownSession);
+    }
     expect(fake.calls.killed).toBe(true);
     expect(messages.error).toHaveLength(0);
+  });
+
+  it('启动失败:隧道立即拆,不留后台 ssh', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'gamesrv' } } });
+    const fake = makeFakeTunnel();
+    const manager = makeManager([], new MemoryMemento(), {
+      listSshHosts: () => sshHosts,
+      spawnTunnel: fake.spawnTunnel,
+      probeTcpPort: async () => ({ open: true })
+    });
+    await flushAsync();
+
+    debugResult = false; // startDebugging 返回 false = 启动失败
+    try {
+      expect(await manager.attachToComponent('baseapp')).toBe(false);
+    } finally {
+      debugResult = true;
+    }
+    expect(fake.calls.killed).toBe(true);
+    expect(debugCalls).toHaveLength(1);
+  });
+
+  it('取消附加:隧道立即拆,不留后台 ssh', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'gamesrv' } } });
+    const fake = makeFakeTunnel();
+    const manager = makeManager([], new MemoryMemento(), {
+      listSshHosts: () => sshHosts,
+      spawnTunnel: fake.spawnTunnel,
+      probeTcpPort: async () => ({ open: true })
+    });
+    await flushAsync();
+
+    const originalProgress = windowish.withProgress;
+    const originalStart = debugish.startDebugging;
+    let fireCancelNow: (() => void) | undefined;
+    windowish.withProgress = async (
+      _options: unknown,
+      task: (progress: unknown, token: unknown) => Promise<unknown>
+    ) =>
+      task(undefined, {
+        isCancellationRequested: false,
+        onCancellationRequested: (listener: () => void) => {
+          fireCancelNow = listener;
+          return { dispose: () => undefined };
+        }
+      });
+    // start 永不落定(无人监听端口形状),取消面接管
+    debugish.startDebugging = async () => new Promise<boolean>(() => undefined);
+    try {
+      const attaching = manager.attachToComponent('baseapp');
+      await waitUntil(() => fireCancelNow !== undefined);
+      fireCancelNow?.();
+      expect(await attaching).toBe(false);
+    } finally {
+      windowish.withProgress = originalProgress;
+      debugish.startDebugging = originalStart;
+    }
+    expect(fake.calls.killed).toBe(true);
+  });
+
+  it('会话未识别即卸载:成功附加后未归属会话的隧道由管理器兜底拆', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'gamesrv' } } });
+    const fake = makeFakeTunnel();
+    const manager = makeManager([], new MemoryMemento(), {
+      listSshHosts: () => sshHosts,
+      spawnTunnel: fake.spawnTunnel,
+      probeTcpPort: async () => ({ open: true })
+    });
+    await flushAsync();
+
+    // 文件级 startDebugging 不回放会话事件:成功但会话从未被识别
+    expect(await manager.attachToComponent('baseapp')).toBe(true);
+    expect(fake.calls.killed).toBe(false);
+    manager.dispose();
+    expect(fake.calls.killed).toBe(true);
   });
 
   it('隧道起不来(跳板/主机不可达):如实报错不附加', async () => {
