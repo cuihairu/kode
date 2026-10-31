@@ -745,7 +745,7 @@
 - [x] IDE-AUD-047 [P2] 分开 KBEngine 与 VS Code 版本域；验收：宿主版本只与 engines.vscode 比较，引擎版本只与已声明的引擎支持范围比较；没有引擎支持矩阵时标未知，不把 2.5.10 大于 1.84 当兼容；依据：R2-F22。(4eee9f4;src/engineCompatibility.ts:ExtensionCompatibilityTarget.engines 改可选(引擎支持矩阵,未声明=未知),checkExtensionCompatibility 加 hostVersion 参数——engine-version 改对 target.engines 比较(未声明→warning 不混比),新增 host-version 检查对 target.vscodeEngine 比较(宿主参与),runCompatibilityCheck 透传 hostVersion;extension.ts:3312 删 engines:'^1.84.0'(域混淆值),compat 命令传 vscode.version 作宿主;prove-red tests/engineCompatibility.test.ts 新 describe 4 例先红(旧码 2.5.10>1.84 误判 ok/无 host-version)后绿;门禁 lint 0/tsc 0/unit 5031|7)
 - [x] IDE-AUD-048 [P1] 根移除释放全局 XML AST 的对应输入；验收：documentStore 与 defParser 全局缓存共同处理根生命周期，根的源码/AST 不残留；共享同内容与其他根仍可用，不以固定条目预算代替清理；依据：R2-F12。(ada71ee;src/defParser.ts 新 releaseParsedDocuments(texts)——按原文逐出全局内容键缓存(不区分来源根,同内容其他根下次访问重解析,正确性不变);src/documentStore.ts releaseDocumentsUnderRoot 收集该根已释放文档的 snapshot.text 一并交 releaseParsedDocuments 逐出(原只清 documentStore 快照,R2-F12 实测释放 1 文档但 XML cache 仍 entries=1;8 条/8MiB LRU 预算只缓解不等于释放);prove-red tests/documentStore.test.ts 新用例先红(旧码 entries=1)后绿(0);tests/perfCallChainDoc.test.ts 承重锚点 documentStore.ts 154→155(+1 import 行移位);门禁 lint 0/tsc 0/unit 5039|7)
 - [x] IDE-AUD-049 [P2] 引用 provider 尊重 includeDeclaration；验收：true 时包含精确声明，false 时不包含，且不重复；属性/RPC 两面都有命令级断言，不把实现当声明；依据：引用 API 补项。(ff37ffd;src/languageProviders.ts KBEngineReferencesProvider:provideReferences 改认 context(原 _context 忽略)——includeDeclaration=true 前置声明 Location(document.uri, range)(range=光标词范围=当前 def 内符号名范围),false 不含;实现(Python def)与调用点都不当声明;声明在 def 文档、引用位在 .py 天然不重复;方法无实现无调用且 includeDeclaration=true 时声明本身仍合法引用位(返回 [declaration]),false 保持 null;prove-red tests/defReferences.test.ts 新用例先红(旧码 includeDeclaration 忽略→方法/属性 def 声明位空)后绿;锚点锁步 perfCallChainDoc languageProviders.ts 6115→6126(+11 行移位);门禁 lint 0/tsc 0/unit 5038|7(仅既有时序 flaky pythonTestRunner/typeStorageColdBuildPhased 隔离全过,与本改动无关))
-- [ ] IDE-AUD-050 [P1] 拒绝无效 PID 后再执行进程树信号；验收：pid 缺失/0/负数/非整数时不向内核或 taskkill 发信号；模拟 process.kill 记录参数验证，spawn 失败/退出并发下不误杀宿主组；依据：R2-F23。
+- [x] IDE-AUD-050 [P1] 拒绝无效 PID 后再执行进程树信号；验收：pid 缺失/0/负数/非整数时不向内核或 taskkill 发信号；模拟 process.kill 记录参数验证，spawn 失败/退出并发下不误杀宿主组；依据：R2-F23。(16f0af0 合入,门禁:cargo test 25 绿+lint 0+tsc 0+test:unit 5082|7 绿+demo 25 RC=0)
 - [ ] IDE-AUD-051 [P2] 将 schema 纯推导与输入收集真正隔离；验收：普通 Node 无 vscode 时可导入并运行纯推导；workspace/layout/fs/snapshot 留在适配层，传递依赖测试替代只查 import 字符串；依据：R2-F24。
 - [ ] IDE-AUD-052 [P1] 从发起时记录异步诊断耗时；验收：门住/延迟 35ms 的计算至少体现在对应等待/总耗时，不再全部为 0；计算/发布可分段，统计与同步路径口径写清；依据：R2-F25。
 - [ ] IDE-AUD-053 [P1] 让热更新遵守 quick action 的布尔失败结果；验收：真实 runByName 返回 false 时不得记已发送；自动发送与失败重试都处理 failed/skipped 并保留原因，成功但无业务回执才 sent-unverified；依据：R2-F26。
@@ -802,3 +802,15 @@
 
 - [ ] 审核发现：客户端 SDK 生成中，FIXED_DICT 类型仅被组件属性引用（不被任何实体属性引用）时，`ClientSdkComponents.ts` 会发出 `import { X } from './ClientSdkFixedDicts'`，但 `ClientSdkFixedDicts.ts` 因 `generateClientSdkFixedDictsFile` 只收集实体属性引用的 FIXED_DICT 而不生成（返回 null），产出断裂导入（src/clientSdkGenerator.ts:696-697/771-782；Rust 同缺陷 crates/kode-server/src/client_sdk.rs:965/1055-1075）。
 - [ ] 审核发现：本轮 diff 其余方面（Rust 消息表/旗标域/lint 规则、logHub 分块读与双限额、workspaceIndex 尾随读与根移除、pythonParserWorkerHost 派发队列、pythonSelfScope、processManager 树杀、Rust 测试 15+19+6 全绿、vitest 关键模块用例通过）未见问题（12388975..HEAD）。
+
+## 审核发现 2026-10-31
+
+- [ ] 审核发现：进程停止/释放时对异步启动失败的记录（pid=0）执行 process.kill(-0, sig)，等价于向调用者自身进程组发信号，可能误杀扩展宿主同组进程，应以 pid>0 为闸（src/processManager.ts:83/152/352/355/373）。
+- [ ] 审核发现：startTargetGroup 的依赖等待超时用 `?? READINESS_WAIT_TIMEOUT_MS` 把显式 null（约定为无限等待）改写成 60 秒，「等待不限时」路径实际不可达（src/serverManager.ts:858，对照 :755 的 null=无限契约）。
+- [ ] 审核发现：Rust lint 的 flag_scopes 把 OWN_CLIENT/OTHER_CLIENTS 归入 cell 域，与单一来源表（FLAG_TOKEN_DOMAINS：两者仅 client）相悖，继承同名判重与重复定义的域交集检查会误报（crates/kode-server/src/lint/rules.rs:180-188/538/772）。
+- [ ] 审核发现：Rust lint 的 flag_scopes 用未归一化原始旗标 token 与大写常量比对（缺 CELL→CELL_PUBLIC 别名、大写化与遗留拼写折叠），`Flags="CELL"` 等写法丢域导致 lint 漏报/错报，偏离 TS propertyFlagDomainList 同源口径（crates/kode-server/src/lint/rules.rs:161-200；对照 src/generated/flagDomains.ts normalizeFlagTokens）。
+- [ ] 审核发现：依赖图对 implementedBy 生成 implements 边时未确保 type:{name} 节点存在（仅 property-type 引用路径会建 type 节点），产出 from 端悬空的边，前端 mermaid 渲染成无样式隐式节点（crates/kode-server/src/dependency_graph.rs:409-417）。
+- [ ] 审核发现：globalDataIndex.indexFile 命中在途构建时直接复用旧 promise，不递增 revisions 也不安排尾随重读，在途期间落盘的变更被静默丢弃、索引停留旧内容（workspaceIndex 已修的 AUD-034 同型竞态未同步到此）（src/globalDataIndex.ts:863-866，对照 src/workspaceIndex.ts:231-244）。
+- [ ] 审核发现：workspaceIndex 在途任务的 finally 无条件 building.delete(fsPath)，会误删 noteDocumentAbandoned 先删后建的新任务条目，后续磁盘事件绕过去重/版本守卫并跳过尾随读，可能发布过期内容（src/workspaceIndex.ts:303-305/176-184）。
+- [ ] 审核发现：debugpy 安装与 py-spy 超时仅 child.kill() 且子进程未 detached，pip/py-spy 衍生的构建孙进程成为孤儿（对照 ProcessManager.killProcessTree 的组杀口径）（src/debugpyPortProbe.ts:154/167-169；src/pyspyDump.ts:38/50-52）。
+- [ ] 审核发现：autoDebugpy 的 defaultRunPython 是同组唯一无超时/截止的 spawn 包装，解释器挂起时 syncDebugpyPackage 永久等待，命令无反馈卡死（src/autoDebugpy.ts:145-168）。

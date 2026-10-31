@@ -40,7 +40,7 @@
 | R2-F20 | P2 | class TestReal 之后出现普通 class Ordinary，发现器仍把 Ordinary.test_not_pytest 登记为 TestReal 的方法 | IDE-TSK-004 需重开 | 已修 d656a32（parsePythonTestCases 对顶层任意 class 重置类上下文：Test 类之后的普通类其 test_* 不再归入前一 Test 类，Test 类切换/顶层函数回归仍收；嵌套/注释/字符串字面量里的 class 不以 `^class` 起首不触发重置；列 0 多行字符串里出现 `class X:` 无法静态区分，边界如实标注；正反例两用例锁定） |
 | R2-F21 | P2 | 兼容检查命令传 extension 目录，但 helper 参数是 manifest 文件路径；有 package.json 和 out/extension.js 也报 EISDIR、bundle error、版本缺失 | 生产命令接线错误，新增修正任务 |
 | R2-F22 | P2 | 同一检查用 KBEngine 2.5.10 比较 VS Code ^1.84.0，并据此给 engine-version=ok；当前宿主版本根本没参与 | 比较的是不同产品版本，不能当兼容性证明 |
-| R2-F23 | P1 | killProcessTree 没有拒绝 pid<=0，传 0 会转发到 process.kill(0, SIGTERM)；ManagedProcess 的缺失 PID 又默认成 0 | 无效 PID 必须先拒绝，不能把进程组语义当成单个目标；本轮未发送信号 |
+| R2-F23 | P1 | killProcessTree 没有拒绝 pid<=0，传 0 会转发到 process.kill(0, SIGTERM)；ManagedProcess 的缺失 PID 又默认成 0 | 无效 PID 必须先拒绝，不能把进程组语义当成单个目标；本轮未发送信号 | 已修 16f0af0（todo.md IDE-AUD-050：killProcessTree 入口拒 `Number.isInteger(pid) && pid>0` 之外一切，pid 0/负/非整数直接 return false 不发信号——process.kill(-0) 会命中调用方自身进程组、taskkill /PID 0 同理；spawn 失败 `child.pid ?? 0` 的 0 经 stop/升级击杀/dispose 三路都被此闸挡下；prove-red 4 例先红后绿，process.kill 记录 spy 验证零调用） |
 | R2-F24 | P2 | 标为零 VS Code 依赖的 databaseSchemaCore 仍导入 definitionWorkspace/sharedFileSnapshot，传递依赖 vscode，并有输入读取/存在性检查；隔离导入失败 | IDE-ARC-004 只完成部分抽离；deriveDatabaseTables 函数纯，不代表整个 core 模块纯 |
 | R2-F25 | P1 | 异步诊断把计时起点放在 computeAsync 完成后的 then 内；实测一次 35ms 计算的 diagnostics 聚合 total/max/P95 均为 0 | 成本排序可能漏掉真实慢诊断，需修采集起点，不能用当前零耗时证明诊断便宜 |
 | R2-F26 | P1 | 实际 QuickActionManager 以 false 表示未执行/失败；热更新外层只看 Promise 是否拒绝，false 仍被记 sent-unverified；重试编排也未检查 false | IDE-HOT-002、IDE-REV-026 不能继续按真实发送状态已验收关闭 |
