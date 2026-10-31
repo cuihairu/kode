@@ -974,10 +974,20 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       if (dictAccess && !isKeyInsideLineComment(lineText, dictAccess.keyStart)) {
         // AUD-073:发布前复核启用代际——等待期间开关被改过则不发布旧结果
         const enabledGeneration = getPythonDataDictIndexGeneration();
+        // AUD-075(R4-F10):源文档身份/版本复核(与 definition/references 同口径)
+        const sourceUri = document.uri.toString();
+        const sourceVersion = document.version;
         return respond(
           // AUD-072:冷索引等待可取消——取消即放行 null,共享初扫继续
           awaitDataDictIndexReady(dataDictIndex, token).then(ready => {
             if (!ready || getPythonDataDictIndexGeneration() !== enabledGeneration) {
+              return null;
+            }
+            if (
+              document.uri.toString() !== sourceUri ||
+              document.version !== sourceVersion ||
+              document.isClosed
+            ) {
               return null;
             }
             const hover = this.buildDataDictHover(dictAccess, dataDictIndex);
@@ -4098,6 +4108,11 @@ async function resolveDataDictSitesAtPosition(
   // AUD-073:发布前复核启用代际——等待期间开关被改过(关闭或关→开)则
   // 结果是过期的,不放行(在飞查询不发布旧结果)。
   const enabledGeneration = getPythonDataDictIndexGeneration();
+  // AUD-075(R4-F10):捕获查询时源文档身份/版本——冷索引等待后复核,源被
+  // 编辑(版本前进)、关闭(isClosed)或换文档(URI 变)则当前上下文过期,
+  // 不按旧光标上下文发布跳转。
+  const sourceUri = document.uri.toString();
+  const sourceVersion = document.version;
   // AUD-066:冷查前验证源访问的词法上下文——alias.dict 段须在全文代码域,
   // 跨行三引号/外层字符串/注释里的伪访问不启动全量索引、不返回定义/引用。
   const access = getDataDictAccessInCodeContext(
@@ -4114,6 +4129,13 @@ async function resolveDataDictSitesAtPosition(
     return null;
   }
   if (getPythonDataDictIndexGeneration() !== enabledGeneration) {
+    return null;
+  }
+  if (
+    document.uri.toString() !== sourceUri ||
+    document.version !== sourceVersion ||
+    document.isClosed
+  ) {
     return null;
   }
   // AUD-068:查询带根身份——跨进程字典不跨工程共享命名空间,同根内互链。
