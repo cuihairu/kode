@@ -19,6 +19,22 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
   // IDE-SCH-010:每个 uri 记「屏上这一代」渲染(快照+行),反向跳转定位
   // 只对已发布代取行号——展示与跳转同源,中途 def/配置变更不撕裂
   private readonly publishedRenders = new Map<string, { snapshot: DatabaseSchemaSnapshot | null; lines: string[] }>();
+  // AUD-056:关闭 schema 文档即释放该 URI 的已发布代(第二层强引用缓存
+  // 不再无界持有);仍打开文档不受影响,保持同代定位
+  private readonly closeSubscription: { dispose(): void };
+
+  constructor() {
+    this.closeSubscription = vscode.workspace.onDidCloseTextDocument(document => {
+      if (document.uri.scheme === KBENGINE_DATABASE_SCHEMA_SCHEME) {
+        this.closeDocument(document.uri);
+      }
+    });
+  }
+
+  /** AUD-056:关闭文档即删除该 URI 的已发布渲染(行数组+快照) */
+  closeDocument(uri: vscode.Uri): void {
+    this.publishedRenders.delete(uri.toString());
+  }
 
   provideTextDocumentContent(uri: vscode.Uri): string {
     const entityName = decodeURIComponent(uri.path.replace(/^\/+/, '').replace(/\.schema$/, ''));
@@ -61,6 +77,7 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
   }
 
   dispose(): void {
+    this.closeSubscription.dispose();
     this.onDidChangeEmitter.dispose();
   }
 }

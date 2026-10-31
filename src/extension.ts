@@ -420,7 +420,10 @@ export function activate(context: vscode.ExtensionContext) {
   setupKodeCoreGate(context);
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider)
+    vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider),
+    // AUD-056:provider 自身生命周期随 context 拆——关闭订阅与 onDidChange
+    // 发射器在 deactivate 时释放,不跨激活泄漏
+    databaseSchemaProvider
   );
   // 数据库模拟(批122):schema 快照之上的行模拟虚拟文档,scheme 与
   // databaseSchema 的 kbengine-db-schema 并列
