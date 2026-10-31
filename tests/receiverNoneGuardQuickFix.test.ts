@@ -19,6 +19,8 @@ import {
   makeTextDocument
 } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './helpers/vscodeStub';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 
 // B-7(2026-10-29 用户令点火):receiver-none 诊断的快速修复——在无判空
 // guard 的接收者使用行之前插入早退守卫 `if not self.<receiver>:\n return`。
@@ -221,9 +223,9 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
     expect(actions).toHaveLength(2);
     const wrapAction = actions[0];
     const guardAction = actions[1];
-    expect(wrapAction.title).toContain('包裹判空守卫');
+    expect(wrapAction.title).toContain('Wrap with null guard');
     expect(wrapAction.title).toContain('if self.client:');
-    expect(guardAction.title).toContain('插入 None 守卫');
+    expect(guardAction.title).toContain('Insert None guard');
     for (const action of [wrapAction, guardAction]) {
       expect(action.kind).toBe(CodeActionKind.QuickFix);
       expect(action.diagnostics).toEqual([diagnostic]);
@@ -261,8 +263,8 @@ describe('KBEngineReceiverNoneGuardCodeActionProvider(B-7)', () => {
       document, first.range, { diagnostics: [first, second] }, undefined
     );
     expect(actions).toHaveLength(2);
-    expect(actions[0].title).toContain('包裹判空守卫');
-    expect(actions[1].title).toContain('插入 None 守卫');
+    expect(actions[0].title).toContain('Wrap with null guard');
+    expect(actions[1].title).toContain('Insert None guard');
 
     // 段错配是路由问题不是判空问题:不出守卫动作
     const mismatch = receiverNoneDiagnostic(RECEIVER_SECTION_MISMATCH_DIAGNOSTIC_CODE);
@@ -315,5 +317,34 @@ describe('诊断项 code 对账面(B-7)', () => {
     expect(items).toHaveLength(1);
     expect(items[0].code).toBe(RECEIVER_NONE_DIAGNOSTIC_CODE);
     expect(RECEIVER_NONE_DIAGNOSTIC_CODE).toBe(RECEIVER_NONE_CODE);
+  });
+});
+
+describe('quick fix 标题本地化(默认英文,zh-cn 出中文)', () => {
+  const provider = new KBEngineReceiverNoneGuardCodeActionProvider();
+
+  it('默认(无 bundle)=英文;注入 zh-cn bundle=中文,复位回英文', () => {
+    const document = pyDocument();
+    const diagnostic = receiverNoneDiagnostic();
+    const actions = (): { title: string }[] =>
+      provider.provideCodeActions(
+        document, diagnostic.range, { diagnostics: [diagnostic] }, undefined
+      )!;
+
+    // 默认英文面
+    let got = actions();
+    expect(got[0].title).toBe('Wrap with null guard (if self.client:)');
+    expect(got[1].title).toBe('Insert None guard (if not self.client: return)');
+
+    // zh-cn 面(注入真实 bundle 文件,key 与代码 t() 源串对账)
+    setL10nBundle(zhCnBundle);
+    got = actions();
+    expect(got[0].title).toBe('包裹判空守卫(if self.client:)');
+    expect(got[1].title).toBe('插入 None 守卫(if not self.client: return)');
+
+    // 复位,防串扰后续用例
+    setL10nBundle(null);
+    got = actions();
+    expect(got[0].title).toBe('Wrap with null guard (if self.client:)');
   });
 });

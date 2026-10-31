@@ -110,6 +110,7 @@ describe('未知类型诊断修正候选(IDE-NAV-013)', () => {
 
     expect(actions.length).toBeGreaterThan(0);
     expect(actions.length).toBeLessThanOrEqual(5);
+    expect(actions[0].title).toContain('Replace with registered type');
     expect(actions[0].title).toContain('UINT16');
     expect(actions[0].kind).toBe(CodeActionKind.QuickFix);
 
@@ -167,6 +168,7 @@ describe('未知类型诊断修正候选(IDE-NAV-013)', () => {
       document, unknown!.range, { diagnostics }, undefined
     )!;
     expect(actions.length).toBeGreaterThan(0);
+    expect(actions[0].title).toContain('Replace with registered type');
     expect(actions[0].title).toContain('UINT16');
   });
 });
