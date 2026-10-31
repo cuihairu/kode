@@ -203,6 +203,10 @@ export interface MessageTable {
 
 // g_entityFlagMapping 12 项(entitydef.cpp L161-174),值为 EntityDataFlags 位
 // (common.h L19-30)。查找前 toupper(引擎 std::transform),大小写不敏感。
+// 注意:这是 utype 注册的**线位事实**(common.h L19-30 位集),与可见性域位表
+// (单一来源 Rust src/generated/flagDomains.ts)是两份不同的引擎事实——如
+// OWN_CLIENT(0x10)同时在 ENTITY_CELL_DATA_FLAGS 与 ENTITY_CLIENT_DATA_FLAGS
+// 里,而域位表只给 ['client']。两者不可互相推导,勿合并。
 const PROPERTY_FLAG_BITS: Record<string, number> = {
   CELL: 0x01,
   CELL_AND_CLIENT: 0x08,

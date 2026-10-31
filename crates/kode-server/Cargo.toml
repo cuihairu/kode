@@ -18,6 +18,10 @@ path = "src/bin/dump-hover-golden.rs"
 name = "dump-completion-golden"
 path = "src/bin/dump-completion-golden.rs"
 
+[[bin]]
+name = "dump-flag-domains-golden"
+path = "src/bin/dump-flag-domains-golden.rs"
+
 [lib]
 name = "kode_server"
 path = "src/lib.rs"

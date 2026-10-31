@@ -72,33 +72,20 @@ export interface InheritedNameInfo {
 /** 祖先闭包面:名字 → 声明聚合,analyzeDefDocument 的可选入参。 */
 export type InheritedNames = Map<string, InheritedNameInfo>;
 
-// 旗标 → 三域位映射(common.h L19-45 真值:base=BASE|BASE_AND_CLIENT,
-// cell=CELL_PUBLIC|CELL_PRIVATE|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|OWN_CLIENT|
-// OTHER_CLIENTS,client=BASE_AND_CLIENT|ALL_CLIENTS|CELL_PUBLIC_AND_OWN|
-// OWN_CLIENT|OTHER_CLIENTS)。同名属性判重按域位相交——不同域位同名引擎允许
-// 共存(addPropertyDescription 的 findXxxPropertyDescription 按域查找)。
-// CELL 是 g_entityFlagMapping 的别名(entitydef.cpp L161),归一到 CELL_PUBLIC。
-const PROPERTY_FLAG_DOMAINS: Record<string, string[]> = {
-  BASE: ['base'],
-  BASE_AND_CLIENT: ['base', 'client'],
-  CELL_PUBLIC: ['cell'],
-  CELL_PRIVATE: ['cell'],
-  ALL_CLIENTS: ['cell', 'client'],
-  CELL_PUBLIC_AND_OWN: ['cell', 'client'],
-  OWN_CLIENT: ['client'],
-  OTHER_CLIENTS: ['client']
-};
+// 旗标 → 三域位映射单一来源 = Rust(生成镜像 src/generated/flagDomains.ts,
+// 源 crates/kode-parser/src/model.rs flag_domains;common.h L19-45 真值)。
+// 同名属性判重按域位相交——不同域位同名引擎允许共存(addPropertyDescription
+// 的 findXxxPropertyDescription 按域查找)。CELL 别名归一见生成镜像。
+import { FLAG_TOKEN_DOMAINS, normalizeFlagTokens, type FlagDomain } from './generated/flagDomains';
 
-export type PropertyFlagDomain = 'base' | 'cell' | 'client';
+export type PropertyFlagDomain = FlagDomain;
 
 export const PROPERTY_FLAG_DOMAIN_ORDER: PropertyFlagDomain[] = ['base', 'cell', 'client'];
 
 const flagDomainsOfTokens = (tokens: string[]): Set<string> => {
   const domains = new Set<string>();
-  for (const token of tokens) {
-    const flag = token.trim().toUpperCase();
-    const normalized = flag === 'CELL' ? 'CELL_PUBLIC' : flag;
-    for (const domain of PROPERTY_FLAG_DOMAINS[normalized] ?? []) {
+  for (const token of normalizeFlagTokens(tokens.join('|'))) {
+    for (const domain of FLAG_TOKEN_DOMAINS[token] ?? []) {
       domains.add(domain);
     }
   }
