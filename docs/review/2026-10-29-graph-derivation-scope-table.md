@@ -15,9 +15,10 @@
 ## 2. entityDependency
 
 - **对象**:src/entityDependency.ts(622 行,EntityDependencyAnalyzer 两遍全图重建)+ entityDependencyWebView.ts(面板装配)。
-- **输入**:vscode.workspace.workspaceFolders + findFilesAcrossRoots('**/*.def')(含外部 assetsRoot 遍历,scanRoots.ts)+ vscode.workspace.fs.readFile;布局面走 definitionWorkspace(getRegisteredEntities 读 entities.xml/findEntityDefinitionFile/getDefinitionWorkspaceLayout);**正则文本提取,非严格 XML 解析器**(extractTagBodies/extractNamedChildBlocks);引用扫描仅 Properties 段,ARRAY/FIXED_DICT 容器展开(implementedBy/Type/嵌套递归);maxDepth 退化封顶 1(档内注明不修)。无配置读、无 watcher、无 Python。
-- **交互入口**:恰一命令 kbengine.dependency.show(extension.ts:2696)→ webview 面板 kbengine.entityDependency(Mermaid CDN 渲染/导出 PNG-SVG/节点点击开 def);无菜单/键位/hover。
-- **缓存**:analyzer 无记忆化,analyze() 每次清空两遍全量重扫;webview 持 currentGraph 仅供导出复用。
+- **主路径(IDE-RUST-007 起,2026-10-31)**:图拓扑推导收归 Rust 核心 `$/kode/dependency/graph`(crates/kode-server/src/dependency_graph.rs)——入参 entitiesXml/typesXml/defsRoot + defs/paths/categories/pythonFiles/typeImpls map(TS 收集:findFilesAcrossRoots 全根 *.def+目录前缀分类、脚本目录约定+ImplementedBy 模块解析的 python 候选、getCustomTypeInfos 的类型实现);出图 JSON 节点六 kind(entity/def/interface/component/type/python)七边(registration/inheritance/is-a/has-a/property-type/implements/method-impl)+reverseEdges+三路径(entities.xml/defsRoot/types.xml)+stats;Rust 不可用(无 gate/调用失败/形状不符/异常)回落下行 TS 面(来源徽章「Rust 核心」/「TS 兜底」)。
+- **输入(TS 兜底面)**:vscode.workspace.workspaceFolders + findFilesAcrossRoots('**/*.def')(含外部 assetsRoot 遍历,scanRoots.ts)+ vscode.workspace.fs.readFile;布局面走 definitionWorkspace(getRegisteredEntities 读 entities.xml/findEntityDefinitionFile/getDefinitionWorkspaceLayout);**正则文本提取,非严格 XML 解析器**(extractTagBodies/extractNamedChildBlocks);引用扫描仅 Properties 段,ARRAY/FIXED_DICT 容器展开(implementedBy/Type/嵌套递归);maxDepth 退化封顶 1(档内注明不修)。无配置读、无 watcher、无 Python。
+- **交互入口**:恰一命令 kbengine.dependency.show(extension.ts:2696)→ webview 面板 kbengine.entityDependency(Mermaid CDN 渲染/导出 PNG-SVG/节点点击开文件:def/entities.xml/types.xml/python);无菜单/键位/hover。
+- **缓存**:analyzer 无记忆化,analyze() 每次清空两遍全量重扫;webview 持 currentRender 仅供导出复用。
 
 ## 3. compositionRoots
 
