@@ -102,7 +102,7 @@ export type ProcessCommandRunner = (command: string) => string;
 export function parsePsProcesses(output: string): ProcessEntry[] {
   const entries: ProcessEntry[] = [];
   for (const line of output.split(/\r?\n/)) {
-    const match = line.match(/^(\d+)\s+(.+)$/);
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
     if (match) {
       const pid = Number(match[1]);
       if (Number.isFinite(pid) && pid > 0) {
