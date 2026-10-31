@@ -870,7 +870,9 @@ describe('组件槽', () => {
 
   it('槽 = 三域属性,占属性 utype,EntityComponentType 占 DataType utype,hasClient 计入', () => {
     const table = buildMessageTable('Hero', createSource(files))!;
-    expect(table.issues).toHaveLength(0);
+    // 缺组件 def → 宽容续行(IDE-RUST-006):报 component-def-missing + 硬编码三域回落
+    expect(issuesOfKind(table, 'component-def-missing')).toHaveLength(1);
+    expect(table.issues).toHaveLength(1);
     const pack = table.properties.find(property => property.name === 'pack')!;
     expect(pack).toMatchObject({
       typeName: 'PackComp',
@@ -897,7 +899,7 @@ describe('组件槽', () => {
         '</root>'
       ].join('\n')
     }))!;
-    expect(table.issues).toHaveLength(0);
+    expect(issuesOfKind(table, 'component-def-missing')).toHaveLength(2);
     expect(table.types.filter(type => type.name === 'PackComp')).toHaveLength(1);
     const slots = table.properties.filter(property => property.typeName === 'PackComp');
     expect(slots.map(property => property.utype)).toEqual([1, 2]);

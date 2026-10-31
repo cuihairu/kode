@@ -21,6 +21,8 @@ use crate::rpc::RpcRegistry;
 
 /// FIXED_DICT 伴随文件基名(无扩展名;与 TS 同源常量)。
 pub const FIXED_DICTS_BASENAME: &str = "ClientSdkFixedDicts";
+/// 组件类型类伴随文件基名(无扩展名;与 TS 同源常量)。
+pub const COMPONENTS_BASENAME: &str = "ClientSdkComponents";
 /// C# 输出命名空间缺省值(Unity 客户端工程可自行改)。
 pub const DEFAULT_CSHARP_NAMESPACE: &str = "KbEngineClient";
 /// 生成文件头部固定第一行(手写会在下次生成被覆盖)。
@@ -132,10 +134,19 @@ struct SdkMethod {
     arg_types: Vec<String>,
 }
 
+/// 组件槽 SDK 面:slot 成员 + 组件类型类(客户端可见属性)。
+struct SdkComponent {
+    slot: String,
+    type_name: String,
+    /// 客户端可见属性(组件模块自身 + 接口 + 父类递归,按名去重首个)。
+    properties: Vec<SdkProperty>,
+}
+
 struct SdkEntity {
     name: String,
     parent: Option<String>,
     properties: Vec<SdkProperty>,
+    components: Vec<SdkComponent>,
     client_methods: Vec<SdkMethod>,
     exposed_base_methods: Vec<SdkMethod>,
     exposed_cell_methods: Vec<SdkMethod>,
@@ -165,6 +176,9 @@ struct SdkEntityInput {
     def_text: String,
 }
 
+/// 组件 def 原文表(按名;TS 闭包发现 category 'component' 递归收集)。
+type ComponentDefs = HashMap<String, String>;
+
 struct EngineTrace {
     engine_version: String,
     engine_commit: String,
@@ -174,6 +188,7 @@ struct EngineTrace {
 struct SdkGenerateParams {
     language: String,
     entities: Vec<SdkEntityInput>,
+    component_defs: ComponentDefs,
     types_xml: Option<String>,
     generated_at: String,
     engine_trace: Option<EngineTrace>,
@@ -263,8 +278,92 @@ fn read_def_methods(
     methods
 }
 
+/// 组件槽 `<Type>` 名:文本直取,空回落首个元素子名(与 message_table node_value 同口径)。
+fn slot_type_name(doc: &Document, slot: usize) -> String {
+    let Some(type_idx) = doc.child_element(slot, "Type") else {
+        return String::new();
+    };
+    let text = doc.element(type_idx).text(doc).trim().to_string();
+    if !text.is_empty() {
+        return text;
+    }
+    doc.child_elements(type_idx)
+        .first()
+        .map(|&child| doc.element(child).name.clone())
+        .unwrap_or_default()
+}
+
+/// 组件模块客户端可见属性:自身 + 接口 + 父类(components/ 下)递归按名去重
+/// (首个即自身优先);缺失 def 返回 None(调用方跳过该槽/该引用)。
+fn parse_component_properties(
+    type_name: &str,
+    component_defs: &ComponentDefs,
+    visited: &mut HashSet<String>,
+) -> Option<Vec<SdkProperty>> {
+    let def_text = component_defs.get(type_name)?;
+    let doc = xml::parse(def_text, false);
+    if is_structural_error(&doc) {
+        return None;
+    }
+    let root = doc.root()?;
+    visited.insert(type_name.to_string());
+    let mut out: Vec<SdkProperty> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    let mut collect = |doc: &Document, root: usize, out: &mut Vec<SdkProperty>| {
+        let Some(properties_node) = doc.child_element(root, "Properties") else {
+            return;
+        };
+        for property in doc.child_elements(properties_node) {
+            let element = doc.element(property);
+            let (type_name, element_type) =
+                read_def_type_node(doc, doc.child_element(property, "Type"));
+            let flags = doc.scalar_child_value(property, "Flags").unwrap_or_default();
+            let domains = flag_domains(&normalize_flag_tokens(&flags));
+            if domains.contains(&"client") && seen.insert(element.name.clone()) {
+                out.push(SdkProperty {
+                    name: element.name.clone(),
+                    type_name,
+                    element_type,
+                    flags,
+                    domains,
+                });
+            }
+        }
+    };
+    collect(&doc, root, &mut out);
+
+    if let Some(ifaces) = doc.child_element(root, "Interfaces") {
+        for iface in doc.child_elements(ifaces) {
+            let name = reference_target_name(&doc, iface);
+            if !name.is_empty() && !visited.contains(&name) {
+                if let Some(iprops) = parse_component_properties(&name, component_defs, visited) {
+                    for p in iprops {
+                        if seen.insert(p.name.clone()) {
+                            out.push(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(parent) = doc.child_element(root, "Parent") {
+        let name = reference_target_name(&doc, parent);
+        if !name.is_empty() && !visited.contains(&name) {
+            if let Some(pprops) = parse_component_properties(&name, component_defs, visited) {
+                for p in pprops {
+                    if seen.insert(p.name.clone()) {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+    }
+    Some(out)
+}
+
 /// TS parseClientSdkEntity:def 内容 → 实体模型;结构错误返回 None(跳过)。
-fn parse_entity(def_text: &str, name: &str) -> Option<SdkEntity> {
+fn parse_entity(def_text: &str, name: &str, component_defs: &ComponentDefs) -> Option<SdkEntity> {
     let doc = xml::parse(def_text, false);
     if is_structural_error(&doc) {
         return None;
@@ -292,10 +391,34 @@ fn parse_entity(def_text: &str, name: &str) -> Option<SdkEntity> {
         }
     }
 
+    let mut components = Vec::new();
+    if let Some(components_node) = doc.child_element(root, "Components") {
+        for slot in doc.child_elements(components_node) {
+            let element = doc.element(slot);
+            let slot_name = element.name.clone();
+            let type_name = slot_type_name(&doc, slot);
+            if type_name.is_empty() {
+                continue;
+            }
+            // 缺失组件 def → 跳过该槽(宽容;引擎整表失败,SDK 面按 message_table
+            // 同口径报 issue 由 TS 侧闭包面处理,此处静默跳过)。
+            if let Some(properties) =
+                parse_component_properties(&type_name, component_defs, &mut HashSet::new())
+            {
+                components.push(SdkComponent {
+                    slot: slot_name,
+                    type_name,
+                    properties,
+                });
+            }
+        }
+    }
+
     Some(SdkEntity {
         name: name.to_string(),
         parent,
         properties,
+        components,
         client_methods: read_def_methods(&doc, root, "ClientMethods", false),
         exposed_base_methods: read_def_methods(&doc, root, "BaseMethods", true),
         exposed_cell_methods: read_def_methods(&doc, root, "CellMethods", true),
@@ -603,6 +726,18 @@ fn generate_ts_entity(
         ));
         lines.push(String::new());
     }
+    if !entity.components.is_empty() {
+        let comp_names = entity
+            .components
+            .iter()
+            .map(|comp| comp.type_name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!(
+            "import {{ {comp_names} }} from './{COMPONENTS_BASENAME}';"
+        ));
+        lines.push(String::new());
+    }
 
     lines.push(format!("export class {} {{", entity.name));
     lines.push("  /** 实体 id（由 baseapp 分配） */".to_string());
@@ -616,6 +751,11 @@ fn generate_ts_entity(
             property.name,
             resolve_property_type(type_map, property)
         ));
+    }
+    for component in &entity.components {
+        lines.push(String::new());
+        lines.push(format!("  /** 组件槽: {} */", component.type_name));
+        lines.push(format!("  public {}: {};", component.slot, component.type_name));
     }
 
     lines.push(String::new());
@@ -725,6 +865,14 @@ fn generate_cs_entity(
             "    public {} {} {{ get; set; }}",
             resolve_property_type(type_map, property),
             to_pascal_case(&property.name)
+        ));
+    }
+    for component in &entity.components {
+        lines.push(format!("    /// <summary>组件槽: {}</summary>", component.type_name));
+        lines.push(format!(
+            "    public {} {} {{ get; set; }}",
+            component.type_name,
+            to_pascal_case(&component.slot)
         ));
     }
 
@@ -882,6 +1030,88 @@ fn generate_fixed_dicts_file(
     Some(lines.join("\n"))
 }
 
+/// 组件类型类伴随文件(逐语言;引用为空 → None 不产文件)。
+/// 与 FIXED_DICT 伴随同模式:每组件类型一 class/interface(客户端可见属性)。
+fn generate_components_file(
+    entities: &[&SdkEntity],
+    type_map: &TypeMap,
+    language: &str,
+    generated_at: &str,
+    trace_lines: &[String],
+    namespace: &str,
+) -> Option<String> {
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut used: Vec<&SdkComponent> = Vec::new();
+    for entity in entities {
+        for comp in &entity.components {
+            if seen.insert(comp.type_name.clone()) {
+                used.push(comp);
+            }
+        }
+    }
+    if used.is_empty() {
+        return None;
+    }
+
+    // 组件属性引用的 FIXED_DICT(TS 需 import;与实体面同模式)。
+    let mut dict_seen: HashSet<String> = HashSet::new();
+    let mut fixed_names: Vec<String> = Vec::new();
+    if language == "typescript" {
+        for comp in &used {
+            for property in &comp.properties {
+                if let Some(dict) = type_map.fixed_dicts.get(&property.type_name) {
+                    if dict_seen.insert(dict.name.clone()) {
+                        fixed_names.push(dict.name.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    let mut lines = def_header(language, generated_at, trace_lines);
+    if language == "typescript" {
+        if !fixed_names.is_empty() {
+            let names = fixed_names.join(", ");
+            lines.push(format!("import {{ {names} }} from './{FIXED_DICTS_BASENAME}';"));
+            lines.push(String::new());
+        }
+        for comp in &used {
+            lines.push(format!("/** 实体组件: {} */", comp.type_name));
+            lines.push(format!("export class {} {{", comp.type_name));
+            for property in &comp.properties {
+                lines.push(format!("  /** Flags: {} */", property.flags));
+                lines.push(format!(
+                    "  public {}: {};",
+                    property.name,
+                    resolve_property_type(type_map, property)
+                ));
+            }
+            lines.push("}".to_string());
+            lines.push(String::new());
+        }
+    } else {
+        lines.push(format!("namespace {namespace}"));
+        lines.push("{".to_string());
+        for comp in &used {
+            lines.push(format!("  /// <summary>实体组件: {}</summary>", comp.type_name));
+            lines.push(format!("  public class {}", comp.type_name));
+            lines.push("  {".to_string());
+            for property in &comp.properties {
+                lines.push(format!("    /// <summary>Flags: {}</summary>", property.flags));
+                lines.push(format!(
+                    "    public {} {} {{ get; set; }}",
+                    resolve_property_type(type_map, property),
+                    to_pascal_case(&property.name)
+                ));
+            }
+            lines.push("  }".to_string());
+        }
+        lines.push("}".to_string());
+        lines.push(String::new());
+    }
+    Some(lines.join("\n"))
+}
+
 struct GeneratedFile {
     file_name: String,
     content: String,
@@ -910,7 +1140,7 @@ fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>, String> {
     let entities: Vec<SdkEntity> = params
         .entities
         .iter()
-        .filter_map(|input| parse_entity(&input.def_text, &input.name))
+        .filter_map(|input| parse_entity(&input.def_text, &input.name, &params.component_defs))
         .collect();
     let entity_refs: Vec<&SdkEntity> = entities.iter().collect();
 
@@ -946,6 +1176,19 @@ fn generate(params: &SdkGenerateParams) -> Result<Vec<GeneratedFile>, String> {
             content: fixed,
         });
     }
+    if let Some(comps) = generate_components_file(
+        &entity_refs,
+        &type_map,
+        language,
+        &params.generated_at,
+        &trace_lines,
+        &namespace,
+    ) {
+        files.push(GeneratedFile {
+            file_name: format!("{COMPONENTS_BASENAME}.{extension}"),
+            content: comps,
+        });
+    }
     Ok(files)
 }
 
@@ -969,6 +1212,15 @@ fn parse_params(params: Value) -> Result<SdkGenerateParams, String> {
         })
         .unwrap_or_default();
     let types_xml = params.get("typesXml").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let component_defs = params
+        .get("defs")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect::<ComponentDefs>()
+        })
+        .unwrap_or_default();
     let generated_at = params
         .get("generatedAt")
         .and_then(|v| v.as_str())
@@ -983,6 +1235,7 @@ fn parse_params(params: Value) -> Result<SdkGenerateParams, String> {
     Ok(SdkGenerateParams {
         language,
         entities,
+        component_defs,
         types_xml,
         generated_at,
         engine_trace,

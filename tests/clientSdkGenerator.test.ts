@@ -11,6 +11,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildClientSdkTypeMap,
   collectClientSdkEntities,
+  generateClientSdkComponentsFile,
   generateClientSdkEntities,
   generateClientSdkEntityFile,
   generateClientSdkFixedDictsFile,
@@ -217,6 +218,104 @@ describe('parseClientSdkEntity', () => {
       { name: 'emptyOf', type: 'ARRAY', elementType: null, flags: 'OWN_CLIENT', domains: ['client'] },
       { name: 'noFlags', type: 'UINT8', elementType: null, flags: '', domains: [] }
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// IDE-RUST-006 组件槽解析:slot 成员 + 组件类型类(仅客户端可见属性)。
+// 与 crates/kode-server/tests/client_sdk_dispatch.rs 同 fixture 同断言
+// (TS↔Rust 对拍契约)。
+// ---------------------------------------------------------------------------
+
+const COMPONENT_DEF =
+  '<root><Properties>' +
+  '<hp><Type>UINT32</Type><Flags>CELL_PUBLIC_AND_OWN</Flags></hp>' +
+  '<name><Type>STRING</Type><Flags>BASE</Flags></name>' +
+  '</Properties></root>';
+const COMPONENT_ENTITY_DEF =
+  '<root><Properties>' +
+  '<level><Type>UINT8</Type><Flags>BASE</Flags></level>' +
+  '</Properties><Components>' +
+  '<healthPack><Type>HealthComp</Type></healthPack>' +
+  '</Components></root>';
+
+describe('组件槽解析(IDE-RUST-006)', () => {
+  it('组件槽客户端可见属性入模型:slot + typeName + 可见属性', () => {
+    const entity = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', { HealthComp: COMPONENT_DEF });
+    expect(entity).not.toBeNull();
+    expect(entity?.components).toHaveLength(1);
+    const component = entity!.components[0];
+    expect(component.slot).toBe('healthPack');
+    expect(component.typeName).toBe('HealthComp');
+    expect(component.properties.map(property => property.name)).toEqual(['hp']);
+    expect(component.properties[0]).toMatchObject({ flags: 'CELL_PUBLIC_AND_OWN', domains: ['cell', 'client'] });
+    // 纯服务端属性(name BASE)不进组件模型
+    expect(component.properties.some(property => property.name === 'name')).toBe(false);
+  });
+
+  it('缺失组件 def:跳过该槽', () => {
+    const entity = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', {});
+    expect(entity?.components).toEqual([]);
+  });
+
+  it('组件 def 接口/父类递归:客户端可见属性按名去重(自身优先)', () => {
+    const ifaceDef =
+      '<root><Properties><shield><Type>UINT32</Type><Flags>BASE_AND_CLIENT</Flags></shield></Properties></root>';
+    const parentDef =
+      '<root><Properties><weight><Type>FLOAT</Type><Flags>BASE</Flags></weight></Properties></root>';
+    const compositeDef =
+      '<root><Interfaces><interface>IDef</interface></Interfaces><Parent><BaseComp/></Parent>' +
+      '<Properties><hp><Type>UINT32</Type><Flags>CELL_PUBLIC_AND_OWN</Flags></hp></Properties></root>';
+    const entity = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', {
+      HealthComp: compositeDef,
+      IDef: ifaceDef,
+      BaseComp: parentDef
+    });
+    // 自身 hp + 接口 shield(客户端可见);父类 weight 是 BASE 域不进
+    expect(entity!.components[0].properties.map(property => property.name)).toEqual(['hp', 'shield']);
+  });
+
+  it('槽缺 <Type> 或无目标:不产组件条目', () => {
+    const entity = parseClientSdkEntity(
+      '<root><Components><broken/></Components></root>', 'Avatar', { HealthComp: COMPONENT_DEF }
+    );
+    expect(entity?.components).toEqual([]);
+  });
+});
+
+describe('组件 SDK 发射(IDE-RUST-006,与 Rust client_sdk_dispatch 对拍)', () => {
+  it('TS:实体 slot 成员 + 组件类(仅客户端可见属性)', () => {
+    const entity = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', { HealthComp: COMPONENT_DEF })!;
+    const ts = generateClientSdkEntityFile(entity, 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT);
+    expect(ts).toContain('public healthPack: HealthComp;');
+    expect(ts).toContain("import { HealthComp } from './ClientSdkComponents';");
+
+    const comps = generateClientSdkComponentsFile(
+      [entity], 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT
+    );
+    expect(comps).not.toBeNull();
+    expect(comps ?? '').toContain('export class HealthComp');
+    expect(comps ?? '').toContain('public hp: number');
+    expect(comps ?? '').not.toContain('public name:');
+  });
+
+  it('C#:实体 slot 成员 + 组件类(仅客户端可见属性)', () => {
+    const entity = parseClientSdkEntity(COMPONENT_ENTITY_DEF, 'Avatar', { HealthComp: COMPONENT_DEF })!;
+    const cs = generateClientSdkEntityFile(entity, 'csharp', makeFixedDictTypeMap('csharp'), GENERATED_AT);
+    expect(cs).toContain('public HealthComp HealthPack { get; set; }');
+
+    const comps = generateClientSdkComponentsFile(
+      [entity], 'csharp', makeFixedDictTypeMap('csharp'), GENERATED_AT
+    );
+    expect(comps).not.toBeNull();
+    expect(comps ?? '').toContain('public class HealthComp');
+    expect(comps ?? '').toContain('public uint Hp { get; set; }');
+    expect(comps ?? '').not.toContain('public string Name');
+  });
+
+  it('无组件槽:不产组件伴随文件', () => {
+    const entity = parseClientSdkEntity(FULL_DEF, 'Avatar')!;
+    expect(generateClientSdkComponentsFile([entity], 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT)).toBeNull();
   });
 });
 
@@ -656,6 +755,55 @@ describe('generateClientSdkEntities', () => {
       expect(fs.readFileSync(avatar!.path, 'utf8')).toContain('class Avatar');
     } finally {
       setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('Rust RPC 携带组件 def 闭包(defs:组件 + 其接口/父类)', async () => {
+    const compRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-gen-comp-'));
+    try {
+      const defsDir = path.join(compRoot, 'scripts', 'entity_defs');
+      fs.mkdirSync(path.join(defsDir, 'components'), { recursive: true });
+      fs.mkdirSync(path.join(defsDir, 'interfaces'), { recursive: true });
+      fs.writeFileSync(path.join(compRoot, 'scripts', 'entities.xml'), '<root>\n  <Avatar hasBase="true"/>\n</root>\n', 'utf8');
+      fs.writeFileSync(
+        path.join(defsDir, 'Avatar.def'),
+        '<root><Components><healthPack><Type>HealthComp</Type></healthPack></Components></root>',
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(defsDir, 'components', 'HealthComp.def'),
+        '<root><Interfaces><interface>IDamageable</interface></Interfaces>' +
+        '<Properties><hp><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags></hp></Properties></root>',
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(defsDir, 'interfaces', 'IDamageable.def'),
+        '<root><Properties><shield><Type>UINT32</Type><Flags>BASE_AND_CLIENT</Flags></shield></Properties></root>',
+        'utf8'
+      );
+
+      let calledParams: unknown = null;
+      const fakeGate = {
+        runInRust: async (_method: string, params: unknown) => {
+          calledParams = params;
+          return { ok: true, result: [{ fileName: 'Avatar.ts', content: '// rust\n' }] };
+        }
+      } as unknown as KodeCoreGate;
+      setKodeCoreShadowGate(fakeGate);
+      try {
+        const result = await generateClientSdkEntities(
+          { languages: ['typescript'], outputDir: outDir, overwrite: true, generatedAt: GENERATED_AT },
+          compRoot
+        );
+        const params = calledParams as { defs: Record<string, string> };
+        expect(params.defs.HealthComp).toContain('<hp>');
+        expect(params.defs.IDamageable).toContain('<shield>');
+        expect(result.skipped).toBe(0);
+      } finally {
+        setKodeCoreShadowGate(null);
+      }
+    } finally {
+      fs.rmSync(compRoot, { recursive: true, force: true });
     }
   });
 

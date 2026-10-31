@@ -86,6 +86,47 @@ describe('buildMessageTableInRust(消息表 build 主路径)', () => {
     }
   });
 
+  it('组件 def 闭包(IDE-RUST-006):实体组件槽 → 组件 def + 其接口/父类进 defs/paths', async () => {
+    const componentEntityDef =
+      '<root><Components><healthPack><Type>HealthComp</Type></healthPack></Components></root>';
+    const healthCompDef =
+      '<root><Interfaces><interface>IDamageable</interface></Interfaces><Parent><BaseComp/></Parent>' +
+      '<Properties><hp><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags></hp></Properties></root>';
+    const idamageableDef =
+      '<root><Properties><shield><Type>UINT32</Type><Flags>BASE_AND_CLIENT</Flags></shield></Properties></root>';
+    const baseCompDef =
+      '<root><Properties><weight><Type>FLOAT</Type><Flags>BASE</Flags></weight></Properties></root>';
+    const componentRawSource: DefRawSource = {
+      loadDefRaw: (name, kind) => ({
+        'entity:CE': { content: componentEntityDef, filePath: '/defs/entitys/CE.def' },
+        'component:HealthComp': { content: healthCompDef, filePath: '/defs/components/HealthComp.def' },
+        'interface:IDamageable': { content: idamageableDef, filePath: '/defs/interfaces/IDamageable.def' },
+        'component:BaseComp': { content: baseCompDef, filePath: '/defs/components/BaseComp.def' }
+      } as Record<string, { content: string; filePath: string }>)[`${kind}:${name}`] ?? null
+    };
+    let calledParams: unknown = null;
+    const fakeGate = {
+      runInRust: async (_method: string, params: unknown) => {
+        calledParams = params;
+        return { ok: true, result: cannedTable() };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      await buildMessageTableInRust('CE', componentRawSource);
+      const params = calledParams as { defs: Record<string, string>; paths: Record<string, string> };
+      expect(params.defs.CE).toBe(componentEntityDef);
+      expect(params.defs.HealthComp).toBe(healthCompDef);
+      expect(params.defs.IDamageable).toBe(idamageableDef);
+      expect(params.defs.BaseComp).toBe(baseCompDef);
+      expect(params.paths.HealthComp).toBe('/defs/components/HealthComp.def');
+      expect(params.paths.IDamageable).toBe('/defs/interfaces/IDamageable.def');
+      expect(params.paths.BaseComp).toBe('/defs/components/BaseComp.def');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
   it('Rust 核心不可用(无 gate):返回 null,调用方回落', async () => {
     setKodeCoreShadowGate(null);
     const table = await buildMessageTableInRust('E', rawSource);

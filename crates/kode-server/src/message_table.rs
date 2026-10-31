@@ -196,6 +196,8 @@ struct PropertyJson {
     declared_utype: Option<i64>,
     #[serde(rename = "aliasID")]
     alias_id: Option<i64>,
+    /// 组件槽 `<Persistent>`(缺省 true);普通属性不透出(null)。
+    persistent: Option<bool>,
     origin: String,
     origin_kind: String,
     line: usize,
@@ -297,6 +299,7 @@ struct AsmProperty {
     utype: Option<i64>,
     declared_utype: Option<i64>,
     alias_id: Option<i64>,
+    persistent: Option<bool>,
     origin: String,
     origin_kind: &'static str,
     line: usize,
@@ -410,6 +413,8 @@ struct CompView {
     type_name: String,
     line: usize,
     utype: i64,
+    /// `<Persistent>`(truthy);缺省 None = 引擎默认 true(entitydef.cpp L689)。
+    persistent: Option<bool>,
 }
 
 /// TS getScalarChildValue:首个匹配子元素直接文本 trim;空 → None。
@@ -585,6 +590,9 @@ fn parse_comp(doc: &Document, lines: &LineMap, child: usize) -> Option<CompView>
         line: lines.line_of(e.name_span.start),
         type_name,
         utype: parse_utype(scalar_child(doc, child, "Utype").as_deref()),
+        persistent: doc
+            .child_element(child, "Persistent")
+            .map(|_| doc.truthy_child(child, "Persistent")),
     })
 }
 
@@ -621,6 +629,17 @@ impl Source<'_> {
         } else {
             self.defs.get(name)?
         };
+        let doc = parse_xml(text, true);
+        if is_structural_error(&doc) {
+            return None;
+        }
+        Some(parse_def_view_with(&doc, text))
+    }
+
+    /// 组件 def 装载:仅查 defs 原文表(不特判 entity_name;组件类型与实体同名
+    /// 属名称冲突边角,按 defs 表缺失处理→回落)。
+    fn load_component(&self, name: &str) -> Option<DefView> {
+        let text = self.defs.get(name)?;
         let doc = parse_xml(text, true);
         if is_structural_error(&doc) {
             return None;
@@ -837,7 +856,7 @@ fn load_def_into_module(
 
     // 组件槽注册(loadComponents 在接口后父类前)
     for component in &local.components {
-        register_component_slot(module_name, component, asm);
+        register_component_slot(module_name, component, source, asm);
     }
 
     if let Some(parent_name) = &local.parent {
@@ -1061,6 +1080,7 @@ fn simulate_property(
         utype: None,
         declared_utype: None,
         alias_id: None,
+        persistent: None,
         origin: origin.clone(),
         origin_kind,
         line: property.line,
@@ -1314,7 +1334,148 @@ fn allocate_property_utype(
 // 组件槽注册(TS registerComponentSlot)
 // ---------------------------------------------------------------------------
 
-fn register_component_slot(module_name: &str, component: &CompView, asm: &mut Assembly) {
+/// 组件模块面(引擎 isComponentModule ScriptDefModule 的 hasX 近似)。
+/// autoMatchCompOwn 的脚本文件面(scripts/{base,cell}/components/<name>.py)
+/// 纯函数不可见,按 def 段近似:非空属性域/方法段即有对应域。
+struct ComponentModuleFace {
+    has_base: bool,
+    has_cell: bool,
+    has_client: bool,
+    base_exposed: bool,
+    cell_exposed: bool,
+}
+
+impl ComponentModuleFace {
+    fn merge(&mut self, other: ComponentModuleFace) {
+        self.has_base |= other.has_base;
+        self.has_cell |= other.has_cell;
+        self.has_client |= other.has_client;
+        self.base_exposed |= other.base_exposed;
+        self.cell_exposed |= other.cell_exposed;
+    }
+}
+
+/// 组件模块域面:自身 + 接口 + 父类(components/ 下)递归累计。
+/// 引擎装载序 loadAllDefDescriptions → loadInterfaces → loadParentClass
+/// → autoMatchCompOwn;属性域位(loadDefPropertys L1150-1160)+ 方法段
+/// (addBase/Cell/ClientMethodDescription setter)累计 hasX;autoMatchCompOwn
+/// L322-328 近似:exposed base/cell 方法在最终 hasBase/hasCell 上推 client。
+fn analyze_component_module(
+    type_name: &str,
+    source: &Source,
+    visited: &mut HashSet<String>,
+) -> Option<ComponentModuleFace> {
+    let local = source.load_component(type_name)?;
+    visited.insert(type_name.to_string());
+    let mut face = ComponentModuleFace {
+        has_base: false,
+        has_cell: false,
+        has_client: false,
+        base_exposed: false,
+        cell_exposed: false,
+    };
+    merge_def_view_face(&local, &mut face);
+    for iface in &local.interfaces {
+        if !visited.contains(iface) {
+            if let Some(iv) = analyze_component_module(iface, source, visited) {
+                face.merge(iv);
+            }
+        }
+    }
+    if let Some(parent) = &local.parent {
+        if !visited.contains(parent) {
+            if let Some(pv) = analyze_component_module(parent, source, visited) {
+                face.merge(pv);
+            }
+        }
+    }
+    if (face.has_base && face.base_exposed) || (face.has_cell && face.cell_exposed) {
+        face.has_client = true;
+    }
+    Some(face)
+}
+
+/// 单份组件 def 视图并入域面(属性 Flags 位 + 方法段)。
+fn merge_def_view_face(local: &DefView, face: &mut ComponentModuleFace) {
+    for property in &local.properties {
+        let Some(flags_text) = property.flags.as_deref() else {
+            continue;
+        };
+        let Some(bits) = flag_bits_of(&flags_text.trim().to_ascii_uppercase()) else {
+            continue;
+        };
+        if bits & ENTITY_BASE_DATA_FLAGS > 0 {
+            face.has_base = true;
+        }
+        if bits & ENTITY_CELL_DATA_FLAGS > 0 {
+            face.has_cell = true;
+        }
+        if bits & ENTITY_CLIENT_DATA_FLAGS > 0 {
+            face.has_client = true;
+        }
+    }
+    for method in &local.methods {
+        match method.section {
+            "BaseMethods" => {
+                face.has_base = true;
+                if method.exposed {
+                    face.base_exposed = true;
+                }
+            }
+            "CellMethods" => {
+                face.has_cell = true;
+                if method.exposed {
+                    face.cell_exposed = true;
+                }
+            }
+            "ClientMethods" => {
+                face.has_client = true;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 引擎 loadComponents L793-808 新载分支:槽 flags 串派生。
+/// ED_FLAG_UNKOWN 起,hasBase→BASE(0x40),hasCell→CELL_PUBLIC(0x01),
+/// hasClient→hasBase?BASE_AND_CLIENT(0x20)+hasCell?ENTITY_CLIENT_DATA_FLAGS
+/// 位组(0x04|0x08|0x80|0x10)。
+fn derive_component_slot_flags(has_base: bool, has_cell: bool, has_client: bool) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if has_base {
+        parts.push("BASE");
+    }
+    if has_cell {
+        parts.push("CELL_PUBLIC");
+    }
+    if has_client {
+        if has_base {
+            parts.push("BASE_AND_CLIENT");
+        }
+        if has_cell {
+            parts.push("ENTITY_CLIENT_DATA_FLAGS");
+        }
+    }
+    parts.join("|")
+}
+
+/// 槽域位注册集(引擎 addComponentProperty L864-874:cell→base→client,
+/// 仅 flags 位命中的域登记)。
+fn slot_domains(has_base: bool, has_cell: bool, has_client: bool) -> Vec<&'static str> {
+    let mut domains = Vec::new();
+    if has_cell {
+        domains.push("cell");
+    }
+    if has_base {
+        domains.push("base");
+    }
+    if has_client {
+        domains.push("client");
+    }
+    domains
+}
+
+fn register_component_slot(module_name: &str, component: &CompView, source: &Source, asm: &mut Assembly) {
     if LIMITED_PROPERTY_NAMES.contains(&component.slot_name.as_str()) {
         asm.issues.push(AsmIssue {
             kind: "property-name-limited",
@@ -1328,15 +1489,47 @@ fn register_component_slot(module_name: &str, component: &CompView, asm: &mut As
         return;
     }
 
+    // 组件 def 域面(缺失/结构错误 → 报 issue + 既有硬编码三域回落,宽容续行
+    // 与缺失 parent/interface 同口径;引擎该情形整表失败,此处按 message_table
+    // 既有宽容口径报 issue 续行)。
+    let (flags, has_client, domains) = match analyze_component_module(
+        &component.type_name,
+        source,
+        &mut HashSet::new(),
+    ) {
+        Some(face) => (
+            derive_component_slot_flags(face.has_base, face.has_cell, face.has_client),
+            face.has_client,
+            slot_domains(face.has_base, face.has_cell, face.has_client),
+        ),
+        None => {
+            asm.issues.push(AsmIssue {
+                kind: "component-def-missing",
+                fatal: true,
+                line: Some(component.line),
+                message: format!(
+                    "EntityDef::loadComponents: failed to load component:{} (components/{}.def).",
+                    component.type_name, component.type_name
+                ),
+            });
+            (
+                "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS".to_string(),
+                true,
+                vec!["cell", "base", "client"],
+            )
+        }
+    };
+
     let origin = origin_label(module_name, "own");
     let entry = AsmProperty {
         name: component.slot_name.clone(),
         type_name: Some(component.type_name.clone()),
-        flags: "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS".to_string(),
-        has_client: true,
+        flags,
+        has_client,
         utype: None,
         declared_utype: None,
         alias_id: None,
+        persistent: Some(component.persistent.unwrap_or(true)),
         origin: origin.clone(),
         origin_kind: "own",
         line: component.line,
@@ -1362,7 +1555,7 @@ fn register_component_slot(module_name: &str, component: &CompView, asm: &mut As
     let Some(utype) = allocate_property_utype(
         declared,
         &component.slot_name,
-        &["cell", "base", "client"],
+        &domains,
         component.line,
         asm,
     ) else {
@@ -1393,7 +1586,7 @@ fn register_component_slot(module_name: &str, component: &CompView, asm: &mut As
         });
     } else {
         let mut registered = false;
-        for domain in ["cell", "base", "client"] {
+        for domain in &domains {
             if asm.property_domains.get_mut(domain).unwrap().contains(&component.slot_name) {
                 asm.issues.push(AsmIssue {
                     kind: "property-name-conflict",
@@ -1810,6 +2003,7 @@ fn property_to_json(p: &AsmProperty) -> PropertyJson {
         utype: p.utype,
         declared_utype: p.declared_utype,
         alias_id: p.alias_id,
+        persistent: p.persistent,
         origin: p.origin.clone(),
         origin_kind: p.origin_kind.to_string(),
         line: p.line,

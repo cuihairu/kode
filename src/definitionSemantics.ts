@@ -49,6 +49,8 @@ export interface DefinitionComponentRef {
   owner: DefinitionOwnerRef;
   /** 组件槽 <Utype> 子值(批123);null = 未声明,占用属性 utype 空间 */
   utype: number | null;
+  /** 组件槽 <Persistent>(IDE-RUST-006);undefined = 缺省(引擎默认 true) */
+  persistent?: boolean;
 }
 
 export interface DefinitionProperty {
@@ -678,7 +680,8 @@ function parseComponentRefs(
       typeName,
       line: getLineNumberAt(document, child.tagStart),
       owner,
-      utype: parseUtypeValue(getScalarChildValue(child, 'Utype'))
+      utype: parseUtypeValue(getScalarChildValue(child, 'Utype')),
+      persistent: parseOptionalBoolean(getScalarChildValue(child, 'Persistent'))
     });
   }
 

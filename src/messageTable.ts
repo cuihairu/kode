@@ -82,7 +82,7 @@ export interface MessageTableOptions {
 
 /** def 树取源:实体/接口 def 文件的本地语义;装配层用 DefinitionSemanticsLoader 适配 */
 export interface DefTreeSource {
-  loadDef(name: string, kind: 'entity' | 'interface'): LocalDefinitionSemantics | null;
+  loadDef(name: string, kind: 'entity' | 'interface' | 'component'): LocalDefinitionSemantics | null;
 }
 
 export type MessageTableIssueKind =
@@ -110,7 +110,8 @@ export type MessageTableIssueKind =
   | 'types-parse-error'
   | 'interface-file-missing'
   | 'parent-file-missing'
-  | 'parent-cycle';
+  | 'parent-cycle'
+  | 'component-def-missing';
 
 export interface MessageTableIssue {
   kind: MessageTableIssueKind;
@@ -161,6 +162,8 @@ export interface MessagePropertyEntry {
   utype: number | null;
   declaredUtype: number | null;
   aliasID: number | null;
+  /** 组件槽 `<Persistent>`(缺省 true);普通属性 null(不透出) */
+  persistent: boolean | null;
   origin: string;
   originKind: 'own' | 'interface' | 'parent';
   line: number;
@@ -430,7 +433,7 @@ export interface DefRawText {
 }
 
 export interface DefRawSource {
-  loadDefRaw(name: string, kind: 'entity' | 'interface'): DefRawText | null;
+  loadDefRaw(name: string, kind: 'entity' | 'interface' | 'component'): DefRawText | null;
 }
 
 /**
@@ -464,6 +467,28 @@ export async function buildMessageTableInRust(
   const entityQueue: string[] = [entityName];
   const seenEntities = new Set<string>();
   const seenInterfaces = new Set<string>();
+  const componentQueue: string[] = [];
+  const enqueuedComponents = new Set<string>();
+  const enqueueComponents = (local: LocalDefinitionSemantics): void => {
+    for (const component of local.components) {
+      if (!enqueuedComponents.has(component.typeName)) {
+        enqueuedComponents.add(component.typeName);
+        componentQueue.push(component.typeName);
+      }
+    }
+  };
+  const collectInterface = (name: string): void => {
+    if (seenInterfaces.has(name)) {
+      return;
+    }
+    seenInterfaces.add(name);
+    const ifaceRaw = rawSource.loadDefRaw(name, 'interface');
+    if (!ifaceRaw) {
+      return;
+    }
+    defs[name] = ifaceRaw.content;
+    paths[name] = ifaceRaw.filePath;
+  };
   while (entityQueue.length > 0) {
     const name = entityQueue.shift()!;
     if (seenEntities.has(name)) {
@@ -486,17 +511,34 @@ export async function buildMessageTableInRust(
       entityQueue.push(local.parentName);
     }
     for (const ref of local.interfaces) {
-      if (seenInterfaces.has(ref.name)) {
-        continue;
-      }
-      seenInterfaces.add(ref.name);
-      const ifaceRaw = rawSource.loadDefRaw(ref.name, 'interface');
-      if (!ifaceRaw) {
-        continue;
-      }
-      defs[ref.name] = ifaceRaw.content;
-      paths[ref.name] = ifaceRaw.filePath;
+      collectInterface(ref.name);
     }
+    enqueueComponents(local);
+  }
+  // 组件闭包 BFS(IDE-RUST-006):组件 def 原文 + 其接口(interface 类)+ 父类
+  // (component 类)递归,供 Rust 侧组件模块域面与 SDK 组件可见性用。
+  while (componentQueue.length > 0) {
+    const name = componentQueue.shift()!;
+    const raw = rawSource.loadDefRaw(name, 'component');
+    if (!raw) {
+      continue;
+    }
+    defs[name] = raw.content;
+    paths[name] = raw.filePath;
+    let local: LocalDefinitionSemantics;
+    try {
+      local = parseLocalDefinition(raw.content, 'component', name, raw.filePath);
+    } catch {
+      continue;
+    }
+    for (const ref of local.interfaces) {
+      collectInterface(ref.name);
+    }
+    if (local.parentName && !enqueuedComponents.has(local.parentName)) {
+      enqueuedComponents.add(local.parentName);
+      componentQueue.push(local.parentName);
+    }
+    enqueueComponents(local);
   }
 
   const response = await gate.runInRust<MessageTable>('$/kode/messageTable/build', {
@@ -577,7 +619,7 @@ function loadDefIntoModule(
   // (addComponentProperty → addPropertyDescription 三域),占属性 utype,
   // hasClient 计入 aliasID;组件 def 树本身是独立模块,不并入(见模块头)
   for (const component of local.components) {
-    registerComponentSlot(moduleName, component, assembly);
+    registerComponentSlot(moduleName, component, source, assembly);
   }
 
   if (local.parentName) {
@@ -799,6 +841,7 @@ function simulateProperty(
     utype: null,
     declaredUtype: null,
     aliasID: null,
+    persistent: null,
     origin,
     originKind,
     line: property.line
@@ -1016,9 +1059,143 @@ function allocatePropertyUtype(
  * DataType utype(模块缓存语义,重复引用不重占);名字查重沿用 addPropertyDescription。
  * 组件 def 树(独立 ScriptDefModule)不并入实体模块,见模块头边界说明。
  */
+/**
+ * 组件模块域面(引擎 isComponentModule ScriptDefModule 的 hasX 近似)。
+ * autoMatchCompOwn 的脚本文件面(scripts/{base,cell}/components/<name>.py)
+ * 纯函数不可见,按 def 段近似:非空属性域/方法段即有对应域。与 Rust
+ * message_table.rs analyze_component_module 同构(TS↔Rust 对拍一致)。
+ */
+interface ComponentModuleFace {
+  hasBase: boolean;
+  hasCell: boolean;
+  hasClient: boolean;
+  baseExposed: boolean;
+  cellExposed: boolean;
+}
+
+function analyzeComponentModule(
+  typeName: string,
+  source: DefTreeSource,
+  visited: Set<string>
+): ComponentModuleFace | null {
+  if (visited.has(typeName)) {
+    return null;
+  }
+  const local = source.loadDef(typeName, 'component');
+  if (!local) {
+    return null;
+  }
+  visited.add(typeName);
+  const face: ComponentModuleFace = {
+    hasBase: false,
+    hasCell: false,
+    hasClient: false,
+    baseExposed: false,
+    cellExposed: false
+  };
+  for (const property of local.properties) {
+    if (property.flags === undefined) {
+      continue;
+    }
+    const bits = PROPERTY_FLAG_BITS[property.flags.trim().toUpperCase()];
+    if (bits === undefined) {
+      continue;
+    }
+    if ((bits & ENTITY_BASE_DATA_FLAGS) > 0) {
+      face.hasBase = true;
+    }
+    if ((bits & ENTITY_CELL_DATA_FLAGS) > 0) {
+      face.hasCell = true;
+    }
+    if ((bits & ENTITY_CLIENT_DATA_FLAGS) > 0) {
+      face.hasClient = true;
+    }
+  }
+  for (const method of local.methodsBySection.BaseMethods) {
+    face.hasBase = true;
+    if (method.exposed) {
+      face.baseExposed = true;
+    }
+  }
+  for (const method of local.methodsBySection.CellMethods) {
+    face.hasCell = true;
+    if (method.exposed) {
+      face.cellExposed = true;
+    }
+  }
+  for (const _method of local.methodsBySection.ClientMethods) {
+    face.hasClient = true;
+  }
+  for (const iface of local.interfaces) {
+    const iv = analyzeComponentModule(iface.name, source, visited);
+    if (iv) {
+      face.hasBase ||= iv.hasBase;
+      face.hasCell ||= iv.hasCell;
+      face.hasClient ||= iv.hasClient;
+      face.baseExposed ||= iv.baseExposed;
+      face.cellExposed ||= iv.cellExposed;
+    }
+  }
+  if (local.parentName) {
+    const pv = analyzeComponentModule(local.parentName, source, visited);
+    if (pv) {
+      face.hasBase ||= pv.hasBase;
+      face.hasCell ||= pv.hasCell;
+      face.hasClient ||= pv.hasClient;
+      face.baseExposed ||= pv.baseExposed;
+      face.cellExposed ||= pv.cellExposed;
+    }
+  }
+  // autoMatchCompOwn L322-328 近似:exposed base/cell 方法在最终 hasX 上推 client
+  if ((face.hasBase && face.baseExposed) || (face.hasCell && face.cellExposed)) {
+    face.hasClient = true;
+  }
+  return face;
+}
+
+/** 引擎 loadComponents L793-808 新载分支:槽 flags 串派生(与 Rust 同构)。 */
+function deriveComponentSlotFlags(hasBase: boolean, hasCell: boolean, hasClient: boolean): string {
+  const parts: string[] = [];
+  if (hasBase) {
+    parts.push('BASE');
+  }
+  if (hasCell) {
+    parts.push('CELL_PUBLIC');
+  }
+  if (hasClient) {
+    if (hasBase) {
+      parts.push('BASE_AND_CLIENT');
+    }
+    if (hasCell) {
+      parts.push('ENTITY_CLIENT_DATA_FLAGS');
+    }
+  }
+  return parts.join('|');
+}
+
+/** 槽域位注册集(引擎 addComponentProperty L864-874:cell→base→client,仅命中域登记)。 */
+function slotDomains(
+  hasBase: boolean,
+  hasCell: boolean,
+  hasClient: boolean
+): ('cell' | 'base' | 'client')[] {
+  const domains: ('cell' | 'base' | 'client')[] = [];
+  if (hasCell) {
+    domains.push('cell');
+  }
+  if (hasBase) {
+    domains.push('base');
+  }
+  if (hasClient) {
+    domains.push('client');
+  }
+  return domains;
+}
+
 function registerComponentSlot(
   moduleName: string,
   component: DefinitionComponentRef,
+  source: DefTreeSource,
   assembly: ModuleAssembly
 ): void {
   if (LIMITED_PROPERTY_NAMES.has(component.slotName)) {
@@ -1031,14 +1208,37 @@ function registerComponentSlot(
     return;
   }
 
+  // 组件 def 域面(缺失/结构错误 → 报 issue + 既有硬编码三域回落,宽容续行
+  // 与缺失 parent/interface 同口径;与 Rust register_component_slot 同构)。
+  let flags: string;
+  let hasClient: boolean;
+  let domains: ('cell' | 'base' | 'client')[];
+  const face = analyzeComponentModule(component.typeName, source, new Set<string>());
+  if (face) {
+    flags = deriveComponentSlotFlags(face.hasBase, face.hasCell, face.hasClient);
+    hasClient = face.hasClient;
+    domains = slotDomains(face.hasBase, face.hasCell, face.hasClient);
+  } else {
+    assembly.issues.push({
+      kind: 'component-def-missing',
+      fatal: true,
+      line: component.line,
+      message: `EntityDef::loadComponents: failed to load component:${component.typeName} (components/${component.typeName}.def).`
+    });
+    flags = 'BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS';
+    hasClient = true;
+    domains = ['cell', 'base', 'client'];
+  }
+
   const entry: MessagePropertyEntry = {
     name: component.slotName,
     typeName: component.typeName,
-    flags: 'BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS',
-    hasClient: true,
+    flags,
+    hasClient,
     utype: null,
     declaredUtype: null,
     aliasID: null,
+    persistent: component.persistent ?? true,
     origin: originLabel(moduleName, 'own'),
     originKind: 'own',
     line: component.line
@@ -1059,13 +1259,7 @@ function registerComponentSlot(
 
   const declared = component.utype !== null && component.utype > 0 ? component.utype : null;
   entry.declaredUtype = declared;
-  const utype = allocatePropertyUtype(
-    declared,
-    component.slotName,
-    ['cell', 'base', 'client'],
-    component.line,
-    assembly
-  );
+  const utype = allocatePropertyUtype(declared, component.slotName, domains, component.line, assembly);
   if (utype === null) {
     return;
   }
@@ -1092,7 +1286,7 @@ function registerComponentSlot(
     });
   } else {
     let registered = false;
-    for (const domain of ['cell', 'base', 'client'] as const) {
+    for (const domain of domains) {
       if (assembly.propertyDomains[domain].has(component.slotName)) {
         assembly.issues.push({
           kind: 'property-name-conflict',

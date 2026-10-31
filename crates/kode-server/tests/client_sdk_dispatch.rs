@@ -313,6 +313,82 @@ fn malformed_defs_are_skipped() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// IDE-RUST-006 组件 SDK:组件槽客户端可见属性入 SDK(slot 成员 + 组件类伴随)
+// ---------------------------------------------------------------------------
+
+const COMPONENT_DEF: &str = r#"<root>
+  <Properties>
+    <hp><Type>UINT32</Type><Flags>CELL_PUBLIC_AND_OWN</Flags></hp>
+    <name><Type>STRING</Type><Flags>BASE</Flags></name>
+  </Properties>
+</root>
+"#;
+
+const COMPONENT_ENTITY_DEF: &str = r#"<root>
+  <Properties>
+    <level><Type>UINT8</Type><Flags>BASE</Flags></level>
+  </Properties>
+  <Components>
+    <healthPack><Type>HealthComp</Type></healthPack>
+  </Components>
+</root>
+"#;
+
+/// 组件槽客户端可见属性入 SDK:实体 slot 成员 + 组件类(仅客户端可见属性)。
+#[test]
+fn component_slot_client_visible_properties_into_sdk() {
+    let params = json!({
+        "language": "typescript",
+        "entities": [{"name": "Avatar", "defText": COMPONENT_ENTITY_DEF}],
+        "defs": {"HealthComp": COMPONENT_DEF},
+        "typesXml": TYPES_XML,
+        "generatedAt": GENERATED_AT,
+    });
+    let files = generate(params).as_array().unwrap().clone();
+    let ts = content_of(&files, "Avatar.ts");
+    assert!(ts.contains("public healthPack: HealthComp;"));
+    assert!(ts.contains("import { HealthComp } from './ClientSdkComponents';"));
+
+    let comps = content_of(&files, "ClientSdkComponents.ts");
+    assert!(comps.contains("export class HealthComp"));
+    assert!(comps.contains("public hp: number"));
+    // 纯服务端属性(name BASE)不进组件类
+    assert!(!comps.contains("public name:"));
+
+    // C# 同语义
+    let params = json!({
+        "language": "csharp",
+        "entities": [{"name": "Avatar", "defText": COMPONENT_ENTITY_DEF}],
+        "defs": {"HealthComp": COMPONENT_DEF},
+        "typesXml": TYPES_XML,
+        "generatedAt": GENERATED_AT,
+    });
+    let files = generate(params).as_array().unwrap().clone();
+    let cs = content_of(&files, "Avatar.cs");
+    assert!(cs.contains("public HealthComp HealthPack { get; set; }"));
+    let comps = content_of(&files, "ClientSdkComponents.cs");
+    assert!(comps.contains("public class HealthComp"));
+    assert!(comps.contains("public uint Hp { get; set; }"));
+    assert!(!comps.contains("public string Name"));
+}
+
+/// 缺失组件 def:跳过该槽,不产组件类。
+#[test]
+fn component_slot_missing_def_skipped() {
+    let params = json!({
+        "language": "typescript",
+        "entities": [{"name": "Avatar", "defText": COMPONENT_ENTITY_DEF}],
+        "defs": {},
+        "typesXml": TYPES_XML,
+        "generatedAt": GENERATED_AT,
+    });
+    let files = generate(params).as_array().unwrap().clone();
+    let ts = content_of(&files, "Avatar.ts");
+    assert!(!ts.contains("healthPack"));
+    assert!(!files.iter().any(|f| f["fileName"] == "ClientSdkComponents.ts"));
+}
+
 /// 未知语言 → handler 报错(TS 侧回退路径)。
 #[test]
 fn unknown_language_is_error() {

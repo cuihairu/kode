@@ -253,6 +253,207 @@ fn component_slot_registers_property_and_component_type() {
     assert_eq!(comp_type["utype"], 22);
 }
 
+// ---------------------------------------------------------------------------
+// IDE-RUST-006 组件语义:槽域 flags 派生 + 组件 def 递归 + Persistent 透出
+// ---------------------------------------------------------------------------
+
+/// 组件 def 提供时槽 flags/hasClient 由组件模块域位派生(引擎 L793-808)。
+/// 组件 HealthComp:hp(CELL_PUBLIC_AND_OWN→cell+client)、name(BASE→base)、
+/// BaseMethods req Exposed、ClientMethods onX → 三域齐 → 派生串 + hasClient。
+#[test]
+fn component_slot_flags_derived_from_component_def() {
+    let comp = "<root>\
+      <Properties>\
+        <hp><Type>UINT32</Type><Flags>CELL_PUBLIC_AND_OWN</Flags></hp>\
+        <name><Type>STRING</Type><Flags>BASE</Flags></name>\
+      </Properties>\
+      <BaseMethods>\
+        <req><Exposed/></req>\
+      </BaseMethods>\
+      <ClientMethods>\
+        <onX></onX>\
+      </ClientMethods>\
+    </root>";
+    let def = "<root>\
+      <Components>\
+        <healthPack><Type>HealthComp</Type></healthPack>\
+      </Components>\
+    </root>";
+    let table = build(json!({
+        "entityName": "E",
+        "defText": def,
+        "defs": {"HealthComp": comp},
+        "paths": {
+            "E": "/defs/entitys/E.def",
+            "HealthComp": "/defs/components/HealthComp.def",
+        },
+    }));
+    let slot = property_named(&table, "healthPack");
+    assert_eq!(
+        slot["flags"],
+        "BASE|CELL_PUBLIC|BASE_AND_CLIENT|ENTITY_CLIENT_DATA_FLAGS"
+    );
+    assert_eq!(slot["hasClient"], true);
+    // 客户端可见 → 入 clientProperties
+    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 1);
+}
+
+/// 纯 cell 组件(CELL_PRIVATE 仅 cell 域):派生 CELL_PUBLIC,无客户端可见。
+#[test]
+fn component_slot_flags_cell_only_no_client() {
+    let comp = "<root>\
+      <Properties>\
+        <hp><Type>UINT32</Type><Flags>CELL_PRIVATE</Flags></hp>\
+      </Properties>\
+    </root>";
+    let def = "<root>\
+      <Components>\
+        <healthPack><Type>HealthComp</Type></healthPack>\
+      </Components>\
+    </root>";
+    let table = build(json!({
+        "entityName": "E",
+        "defText": def,
+        "defs": {"HealthComp": comp},
+        "paths": {
+            "E": "/defs/entitys/E.def",
+            "HealthComp": "/defs/components/HealthComp.def",
+        },
+    }));
+    let slot = property_named(&table, "healthPack");
+    assert_eq!(slot["flags"], "CELL_PUBLIC");
+    assert_eq!(slot["hasClient"], false);
+    // 无客户端可见 → 不入 clientProperties
+    assert_eq!(table.get("clientProperties").unwrap().as_array().unwrap().len(), 0);
+}
+
+/// 缺失组件 def:报 component-def-missing 且回落硬编码三域(既有行为)。
+#[test]
+fn component_slot_missing_def_reports_issue_and_falls_back() {
+    let def = "<root>\
+      <Components>\
+        <healthPack><Type>HealthComp</Type></healthPack>\
+      </Components>\
+    </root>";
+    let table = build_single("E", def);
+    assert_eq!(issues_of_kind(&table, "component-def-missing").len(), 1);
+    let slot = property_named(&table, "healthPack");
+    assert_eq!(slot["flags"], "BASE|CELL_PUBLIC|ENTITY_CLIENT_DATA_FLAGS");
+    assert_eq!(slot["hasClient"], true);
+}
+
+/// 槽 Persistent 透出:false 显式、缺省默认 true(引擎 L689)。
+#[test]
+fn component_slot_persistent_surfaced() {
+    let comp = "<root>\
+      <Properties>\
+        <hp><Type>UINT32</Type><Flags>BASE</Flags></hp>\
+      </Properties>\
+    </root>";
+    let def = "<root>\
+      <Components>\
+        <nonPersist><Type>HealthComp</Type><Persistent>false</Persistent></nonPersist>\
+        <defaultPersist><Type>HealthComp</Type></defaultPersist>\
+      </Components>\
+    </root>";
+    let table = build(json!({
+        "entityName": "E",
+        "defText": def,
+        "defs": {"HealthComp": comp},
+        "paths": {
+            "E": "/defs/entitys/E.def",
+            "HealthComp": "/defs/components/HealthComp.def",
+        },
+    }));
+    assert_eq!(property_named(&table, "nonPersist")["persistent"], false);
+    assert_eq!(property_named(&table, "defaultPersist")["persistent"], true);
+}
+
+/// 槽显式 Utype 撞普通属性 utype(域位相交):报 utype-conflict,槽 utype 空。
+#[test]
+fn component_slot_utype_conflicts_with_property() {
+    let comp = "<root>\
+      <Properties>\
+        <hp><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags></hp>\
+      </Properties>\
+    </root>";
+    let def = "<root>\
+      <Properties>\
+        <foo><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags><Utype>5</Utype></foo>\
+      </Properties>\
+      <Components>\
+        <healthPack><Type>HealthComp</Type><Utype>5</Utype></healthPack>\
+      </Components>\
+    </root>";
+    let table = build(json!({
+        "entityName": "E",
+        "defText": def,
+        "defs": {"HealthComp": comp},
+        "paths": {
+            "E": "/defs/entitys/E.def",
+            "HealthComp": "/defs/components/HealthComp.def",
+        },
+    }));
+    let conflicts = issues_of_kind(&table, "utype-conflict");
+    assert_eq!(conflicts.len(), 1);
+    assert_eq!(
+        conflicts[0]["message"],
+        "EntityDef::calcDefPropertyUType: E.healthPack, 'Utype' 5 Conflict(E.foo 'Utype' 5)!"
+    );
+    assert!(property_named(&table, "healthPack").get("utype").unwrap().is_null());
+}
+
+/// 组件 def 自身 Parent/Interfaces 递归:父属性 base 域 + 接口 ClientMethods
+/// client 域并入组件模块 hasX,驱动槽 flags。
+#[test]
+fn component_def_parent_interface_recursion() {
+    let comp = "<root>\
+      <Parent><CompParent/></Parent>\
+      <Interfaces>\
+        <interface>IComp</interface>\
+      </Interfaces>\
+      <Properties>\
+        <hp><Type>UINT32</Type><Flags>CELL_PUBLIC</Flags></hp>\
+      </Properties>\
+    </root>";
+    let comp_parent = "<root>\
+      <Properties>\
+        <name><Type>STRING</Type><Flags>BASE</Flags></name>\
+      </Properties>\
+    </root>";
+    let comp_iface = "<root>\
+      <ClientMethods>\
+        <onChange></onChange>\
+      </ClientMethods>\
+    </root>";
+    let def = "<root>\
+      <Components>\
+        <healthPack><Type>HealthComp</Type></healthPack>\
+      </Components>\
+    </root>";
+    let table = build(json!({
+        "entityName": "E",
+        "defText": def,
+        "defs": {
+            "HealthComp": comp,
+            "CompParent": comp_parent,
+            "IComp": comp_iface,
+        },
+        "paths": {
+            "E": "/defs/entitys/E.def",
+            "HealthComp": "/defs/components/HealthComp.def",
+            "CompParent": "/defs/components/CompParent.def",
+            "IComp": "/defs/interfaces/IComp.def",
+        },
+    }));
+    let slot = property_named(&table, "healthPack");
+    assert_eq!(
+        slot["flags"],
+        "BASE|CELL_PUBLIC|BASE_AND_CLIENT|ENTITY_CLIENT_DATA_FLAGS"
+    );
+    assert_eq!(slot["hasClient"], true);
+}
+
 #[test]
 fn alias_ids_assigned_when_enabled() {
     let def = "<root>\

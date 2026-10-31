@@ -37,7 +37,7 @@ import {
   readWorkspaceTextFile
 } from './definitionWorkspace';
 import type { CustomTypeInfo } from './definitionWorkspace';
-import { parseDefFileSemantics } from './defRenamer';
+import { getReferenceTargetName, parseDefFileSemantics } from './defRenamer';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { formatSdkEngineTraceLines, makeSdkEngineTrace } from './sdkGenerationTrace';
 import type { SdkEngineTrace } from './sdkGenerationTrace';
@@ -59,6 +59,8 @@ export function listClientSdkBuiltinTypeNames(): string[] {
 }
 /** FIXED_DICT 伴随文件基名（无扩展名） */
 export const CLIENT_SDK_FIXED_DICTS_BASENAME = 'ClientSdkFixedDicts';
+/** 组件类型类伴随文件基名（无扩展名；IDE-RUST-006 组件槽 SDK 面） */
+export const CLIENT_SDK_COMPONENTS_BASENAME = 'ClientSdkComponents';
 
 export const CLIENT_SDK_LANGUAGE_EXTENSIONS: Record<ClientSdkLanguage, string> = {
   typescript: 'ts',
@@ -141,10 +143,22 @@ export interface ClientSdkEntity {
   /** def 的 `<Parent>` 目标名；无继承为 null */
   readonly parent: string | null;
   readonly properties: ReadonlyArray<ClientSdkProperty>;
+  /** 组件槽（IDE-RUST-006）：slot 成员 + 组件类型类（客户端可见属性） */
+  readonly components: ReadonlyArray<ClientSdkComponent>;
   readonly clientMethods: ReadonlyArray<ClientSdkMethod>;
   readonly exposedBaseMethods: ReadonlyArray<ClientSdkMethod>;
   readonly exposedCellMethods: ReadonlyArray<ClientSdkMethod>;
 }
+
+/** 实体组件槽：槽名 + 组件类型 + 组件模块客户端可见属性（递归含接口/父类）。 */
+export interface ClientSdkComponent {
+  readonly slot: string;
+  readonly typeName: string;
+  readonly properties: ReadonlyArray<ClientSdkProperty>;
+}
+
+/** Rust `$/kode/sdk/generate` 的 defs map：组件/接口名 → def 原文（闭包收集）。 */
+export type ClientSdkComponentDefs = Readonly<Record<string, string>>;
 
 export interface ClientSdkFixedDictProperty {
   readonly name: string;
@@ -179,7 +193,7 @@ export interface ClientSdkGenerationOptions {
 
 export interface ClientSdkGeneratedFile {
   readonly path: string;
-  readonly kind: 'entity' | 'fixedDicts';
+  readonly kind: 'entity' | 'fixedDicts' | 'components';
   readonly language: ClientSdkLanguage;
   readonly entityName: string | null;
   readonly written: boolean;
@@ -232,8 +246,14 @@ function parseDefDocumentSafely(content: string): ReturnType<typeof parseDefDocu
   }
 }
 
-/** 从 def 内容解析 SDK 生成模型。名字来自 entities.xml/def 文件名，不从内容推断。 */
-export function parseClientSdkEntity(content: string, name: string): ClientSdkEntity | null {
+/** 从 def 内容解析 SDK 生成模型。名字来自 entities.xml/def 文件名，不从内容推断。
+ * 组件槽解析依赖 componentDefs（组件 def 原文，闭包收集）；缺 def 的槽跳过
+ * （宽容，与 Rust 侧同口径）。 */
+export function parseClientSdkEntity(
+  content: string,
+  name: string,
+  componentDefs: ClientSdkComponentDefs = {}
+): ClientSdkEntity | null {
   const document = parseDefDocumentSafely(content);
   if (!document || !document.root) {
     return null;
@@ -254,15 +274,108 @@ export function parseClientSdkEntity(content: string, name: string): ClientSdkEn
     });
   }
 
+  const components: ClientSdkComponent[] = [];
+  const componentsNode = getDirectChildElement(root, 'Components');
+  for (const slot of getDirectChildElements(componentsNode)) {
+    const typeName = readSlotTypeName(slot);
+    if (!typeName) {
+      continue;
+    }
+    const slotProperties = parseClientSdkComponentProperties(typeName, componentDefs, new Set());
+    if (slotProperties !== null) {
+      components.push({ slot: slot.name, typeName, properties: slotProperties });
+    }
+  }
+
   const clientMethods = readDefMethods(root, 'ClientMethods', false);
   return {
     name,
     parent,
     properties,
+    components,
     clientMethods,
     exposedBaseMethods: readDefMethods(root, 'BaseMethods', true),
     exposedCellMethods: readDefMethods(root, 'CellMethods', true)
   };
+}
+
+/** 组件槽的 `<Type>` 目标名：直文本，缺文本回落首个子元素名（Rust slot_type_name 同口径）。 */
+function readSlotTypeName(slot: DefElementNode): string {
+  const typeNode = getDirectChildElement(slot, 'Type');
+  if (!typeNode) {
+    return '';
+  }
+  const text = getDirectTextNodes(typeNode).map(node => node.text).join('').trim();
+  if (text) {
+    return text;
+  }
+  return getDirectChildElements(typeNode)[0]?.name ?? '';
+}
+
+/** 组件模块客户端可见属性：自身 + 接口 + 父类（components/ 下）递归按名去重
+ * （首个即自身优先）；缺失 def 返回 null（调用方跳过该槽/该引用）。 */
+function parseClientSdkComponentProperties(
+  typeName: string,
+  componentDefs: ClientSdkComponentDefs,
+  visited: Set<string>
+): ClientSdkProperty[] | null {
+  const defText = componentDefs[typeName];
+  if (defText === undefined) {
+    return null;
+  }
+  const document = parseDefDocumentSafely(defText);
+  if (!document?.root) {
+    return null;
+  }
+  visited.add(typeName);
+  const out: ClientSdkProperty[] = [];
+  const seen = new Set<string>();
+
+  const collectFrom = (def: DefElementNode): void => {
+    const propertiesNode = getDirectChildElement(def, 'Properties');
+    for (const propertyNode of getDirectChildElements(propertiesNode)) {
+      const { type, elementType } = readDefTypeNode(getDirectChildElement(propertyNode, 'Type'));
+      const flags = getScalarChildValue(propertyNode, 'Flags') ?? '';
+      const domains = propertyFlagDomainList(flags);
+      if (domains.includes('client') && !seen.has(propertyNode.name)) {
+        seen.add(propertyNode.name);
+        out.push({ name: propertyNode.name, type, elementType, flags, domains });
+      }
+    }
+  };
+  collectFrom(document.root);
+
+  const interfacesNode = getDirectChildElement(document.root, 'Interfaces');
+  for (const iface of getDirectChildElements(interfacesNode)) {
+    const refName = getReferenceTargetName(iface);
+    if (refName && !visited.has(refName)) {
+      const ifaceProps = parseClientSdkComponentProperties(refName, componentDefs, visited);
+      if (ifaceProps) {
+        for (const property of ifaceProps) {
+          if (!seen.has(property.name)) {
+            seen.add(property.name);
+            out.push(property);
+          }
+        }
+      }
+    }
+  }
+  const parentNode = getDirectChildElement(document.root, 'Parent');
+  if (parentNode) {
+    const refName = getReferenceTargetName(parentNode);
+    if (refName && !visited.has(refName)) {
+      const parentProps = parseClientSdkComponentProperties(refName, componentDefs, visited);
+      if (parentProps) {
+        for (const property of parentProps) {
+          if (!seen.has(property.name)) {
+            seen.add(property.name);
+            out.push(property);
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function readDefMethods(root: DefElementNode, sectionName: string, onlyExposed: boolean): ClientSdkMethod[] {
@@ -424,6 +537,10 @@ function generateTypeScriptEntityFile(
     lines.push(`import { ${used.map(type => type.name).join(', ')} } from './${CLIENT_SDK_FIXED_DICTS_BASENAME}';`);
     lines.push('');
   }
+  if (entity.components.length > 0) {
+    lines.push(`import { ${entity.components.map(component => component.typeName).join(', ')} } from './${CLIENT_SDK_COMPONENTS_BASENAME}';`);
+    lines.push('');
+  }
 
   lines.push(`export class ${entity.name} {`);
   lines.push(`  /** 实体 id（由 baseapp 分配） */`);
@@ -433,6 +550,12 @@ function generateTypeScriptEntityFile(
     lines.push('');
     lines.push(`  /** Flags: ${property.flags} */`);
     lines.push(`  public ${property.name}: ${resolvePropertyType(typeMap, property)};`);
+  }
+
+  for (const component of entity.components) {
+    lines.push('');
+    lines.push(`  /** 组件槽: ${component.typeName} */`);
+    lines.push(`  public ${component.slot}: ${component.typeName};`);
   }
 
   lines.push('');
@@ -497,6 +620,11 @@ function generateCSharpEntityFile(
   for (const property of clientVisibleProperties(entity)) {
     lines.push(`    /// <summary>Flags: ${property.flags}</summary>`);
     lines.push(`    public ${resolvePropertyType(typeMap, property)} ${toPascalCase(property.name)} { get; set; }`);
+  }
+
+  for (const component of entity.components) {
+    lines.push(`    /// <summary>组件槽: ${component.typeName}</summary>`);
+    lines.push(`    public ${component.typeName} ${toPascalCase(component.slot)} { get; set; }`);
   }
 
   lines.push(`    public ${entity.name}(long entityId)`);
@@ -613,17 +741,85 @@ export function generateClientSdkFixedDictsFile(
   return lines.join('\n');
 }
 
+/** 组件类型类伴随文件（逐语言；引用为空 → null 不产文件）。
+ * 与 FIXED_DICT 伴随同模式：每组件类型一 class（客户端可见属性）。 */
+export function generateClientSdkComponentsFile(
+  entities: ReadonlyArray<ClientSdkEntity>,
+  language: ClientSdkLanguage,
+  typeMap: ClientSdkTypeMap,
+  generatedAt: string,
+  engineTrace?: SdkEngineTrace
+): string | null {
+  const seen = new Set<string>();
+  const used: ClientSdkComponent[] = [];
+  for (const entity of entities) {
+    for (const component of entity.components) {
+      if (!seen.has(component.typeName)) {
+        seen.add(component.typeName);
+        used.push(component);
+      }
+    }
+  }
+  if (used.length === 0) {
+    return null;
+  }
+
+  const lines = defHeader(language, generatedAt, engineTrace);
+
+  if (language === 'typescript') {
+    const dictSeen = new Set<string>();
+    const fixedNames: string[] = [];
+    for (const component of used) {
+      for (const property of component.properties) {
+        const dict = typeMap.fixedDicts.get(property.type);
+        if (dict && !dictSeen.has(dict.name)) {
+          dictSeen.add(dict.name);
+          fixedNames.push(dict.name);
+        }
+      }
+    }
+    if (fixedNames.length > 0) {
+      lines.push(`import { ${fixedNames.join(', ')} } from './${CLIENT_SDK_FIXED_DICTS_BASENAME}';`);
+      lines.push('');
+    }
+    for (const component of used) {
+      lines.push(`/** 实体组件: ${component.typeName} */`);
+      lines.push(`export class ${component.typeName} {`);
+      for (const property of component.properties) {
+        lines.push(`  /** Flags: ${property.flags} */`);
+        lines.push(`  public ${property.name}: ${resolvePropertyType(typeMap, property)};`);
+      }
+      lines.push('}');
+      lines.push('');
+    }
+  } else {
+    lines.push(`namespace ${CLIENT_SDK_CSHARP_NAMESPACE}`);
+    lines.push('{');
+    for (const component of used) {
+      lines.push(`  /// <summary>实体组件: ${component.typeName}</summary>`);
+      lines.push(`  public class ${component.typeName}`);
+      lines.push('  {');
+      for (const property of component.properties) {
+        lines.push(`    /// <summary>Flags: ${property.flags}</summary>`);
+        lines.push(`    public ${resolvePropertyType(typeMap, property)} ${toPascalCase(property.name)} { get; set; }`);
+      }
+      lines.push('  }');
+    }
+    lines.push('}');
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
 /** 按 entities.xml 登记序收集实体，缺 def 文件的登记项跳过。 */
 export function collectClientSdkEntities(workspaceRoot: string): ClientSdkEntity[] {
+  const sources = collectClientSdkEntitySources(workspaceRoot);
+  const componentDefs = collectClientSdkComponentDefs(workspaceRoot, sources);
   const entities: ClientSdkEntity[] = [];
 
-  for (const info of getRegisteredEntities(workspaceRoot)) {
-    const defPath = findClientSdkDefPath(workspaceRoot, info.name);
-    if (!defPath) {
-      continue;
-    }
-
-    const entity = parseClientSdkEntity(readWorkspaceTextFile(defPath), info.name);
+  for (const source of sources) {
+    const entity = parseClientSdkEntity(source.defText, source.name, componentDefs);
     if (entity) {
       entities.push(entity);
     }
@@ -686,13 +882,75 @@ function collectClientSdkEntitySources(workspaceRoot: string): ClientSdkEntitySo
   return sources;
 }
 
+/** 组件 def 闭包收集(IDE-RUST-006):实体 `<Components>` 槽出发,组件 def 自身 +
+ * 其 Interfaces(interface 类)+ Parent(组件类)递归;Rust 侧组件模块域面与 SDK
+ * 组件可见性都按名查这份 defs。缺失 def 不收集(调用方跳过/报 issue)。 */
+function collectClientSdkComponentDefs(
+  workspaceRoot: string,
+  entitySources: ReadonlyArray<ClientSdkEntitySource>
+): ClientSdkComponentDefs {
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const defs: Record<string, string> = {};
+  const queue: string[] = [];
+  const enqueued = new Set<string>();
+  const enqueue = (name: string): void => {
+    if (name && !enqueued.has(name)) {
+      enqueued.add(name);
+      queue.push(name);
+    }
+  };
+  const visit = (name: string): void => {
+    if (defs[name] !== undefined) {
+      return;
+    }
+    // 组件优先 components/,接口回落 interfaces/(两目录同名属畸形工程,取组件)
+    const componentPath = layout.componentsRoot
+      ? path.join(layout.componentsRoot, `${name}.def`)
+      : null;
+    const interfacePath = layout.interfacesRoot
+      ? path.join(layout.interfacesRoot, `${name}.def`)
+      : null;
+    const defPath = componentPath && fs.existsSync(componentPath)
+      ? componentPath
+      : interfacePath && fs.existsSync(interfacePath)
+        ? interfacePath
+        : null;
+    if (!defPath) {
+      return;
+    }
+    const content = readWorkspaceTextFile(defPath);
+    defs[name] = content;
+    const semantics = parseDefFileSemantics(content);
+    for (const iface of semantics?.interfaceNames ?? []) {
+      enqueue(iface);
+    }
+    if (semantics?.parentName) {
+      enqueue(semantics.parentName);
+    }
+    for (const typeName of semantics?.componentTypeNames ?? []) {
+      enqueue(typeName);
+    }
+  };
+  for (const source of entitySources) {
+    const semantics = parseDefFileSemantics(source.defText);
+    for (const typeName of semantics?.componentTypeNames ?? []) {
+      enqueue(typeName);
+    }
+  }
+  while (queue.length > 0) {
+    visit(queue.shift()!);
+  }
+  return defs;
+}
+
 /** 读 types.xml 原始文本(无该文件时返回空串,Rust 侧等价于空类型表)。 */
 function readTypesXmlText(workspaceRoot: string): string {
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
   return layout.typesXmlPath ? readWorkspaceTextFile(layout.typesXmlPath) : '';
 }
 
-/** 把 Rust 返回的文件名还原成写盘描述符(实体名 = 去扩展名基名,固定字典 = 基名匹配)。 */
+/** 把 Rust 返回的文件名还原成写盘描述符(实体名 = 去扩展名基名,固定字典/
+ * 组件伴随 = 基名匹配)。 */
 function describeRustGeneratedFile(
   fileName: string,
   filePath: string,
@@ -702,6 +960,10 @@ function describeRustGeneratedFile(
   const fixedDictsName = `${CLIENT_SDK_FIXED_DICTS_BASENAME}.${extension}`;
   if (fileName === fixedDictsName) {
     return { path: filePath, kind: 'fixedDicts', language, entityName: null };
+  }
+  const componentsName = `${CLIENT_SDK_COMPONENTS_BASENAME}.${extension}`;
+  if (fileName === componentsName) {
+    return { path: filePath, kind: 'components', language, entityName: null };
   }
   const entityName = fileName.slice(0, fileName.length - extension.length - 1);
   return { path: filePath, kind: 'entity', language, entityName };
@@ -727,12 +989,14 @@ async function generateClientSdkInRust(
   }
 
   const typesXml = readTypesXmlText(root);
+  const componentDefs = collectClientSdkComponentDefs(root, entitySources);
   const files: ClientSdkGeneratedFile[] = [];
 
   for (const language of options.languages) {
     const response = await gate.runInRust<ClientSdkRustFile[]>('$/kode/sdk/generate', {
       language,
       entities: entitySources,
+      defs: componentDefs,
       typesXml,
       generatedAt,
       engineTrace: options.engineTrace,
@@ -791,6 +1055,20 @@ function generateClientSdkEntitiesFallback(
         writeClientSdkFile(
           { path: filePath, kind: 'fixedDicts', language, entityName: null },
           () => fixedDictsContent,
+          options
+        )
+      );
+    }
+
+    const componentsContent = generateClientSdkComponentsFile(
+      entities, language, typeMap, generatedAt, options.engineTrace
+    );
+    if (componentsContent !== null) {
+      const filePath = path.join(outputDir, `${CLIENT_SDK_COMPONENTS_BASENAME}.${extension}`);
+      files.push(
+        writeClientSdkFile(
+          { path: filePath, kind: 'components', language, entityName: null },
+          () => componentsContent,
           options
         )
       );
