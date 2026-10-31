@@ -38,6 +38,7 @@ import {
 } from './definitionWorkspace';
 import type { CustomTypeInfo } from './definitionWorkspace';
 import { parseDefFileSemantics } from './defRenamer';
+import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { formatSdkEngineTraceLines, makeSdkEngineTrace } from './sdkGenerationTrace';
 import type { SdkEngineTrace } from './sdkGenerationTrace';
 
@@ -659,21 +660,111 @@ function writeClientSdkFile(
   return { ...descriptor, written: true };
 }
 
-export function generateClientSdkEntities(
+/** Rust 核心的 RPC 入参:每个实体的原始 def 文本(名称按 entities.xml 登记序)。 */
+interface ClientSdkEntitySource {
+  readonly name: string;
+  readonly defText: string;
+}
+
+/** Rust `$/kode/sdk/generate` 返回的单个生成文件。 */
+interface ClientSdkRustFile {
+  readonly fileName: string;
+  readonly content: string;
+}
+
+/** 按 entities.xml 登记序收集实体原始 def 文本,缺 def 文件的登记项跳过。
+ * 与 collectClientSdkEntities 同序,但保留原始文本供 Rust 核心消费。 */
+function collectClientSdkEntitySources(workspaceRoot: string): ClientSdkEntitySource[] {
+  const sources: ClientSdkEntitySource[] = [];
+  for (const info of getRegisteredEntities(workspaceRoot)) {
+    const defPath = findClientSdkDefPath(workspaceRoot, info.name);
+    if (!defPath) {
+      continue;
+    }
+    sources.push({ name: info.name, defText: readWorkspaceTextFile(defPath) });
+  }
+  return sources;
+}
+
+/** 读 types.xml 原始文本(无该文件时返回空串,Rust 侧等价于空类型表)。 */
+function readTypesXmlText(workspaceRoot: string): string {
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  return layout.typesXmlPath ? readWorkspaceTextFile(layout.typesXmlPath) : '';
+}
+
+/** 把 Rust 返回的文件名还原成写盘描述符(实体名 = 去扩展名基名,固定字典 = 基名匹配)。 */
+function describeRustGeneratedFile(
+  fileName: string,
+  filePath: string,
+  language: ClientSdkLanguage
+): Omit<ClientSdkGeneratedFile, 'written'> {
+  const extension = CLIENT_SDK_LANGUAGE_EXTENSIONS[language];
+  const fixedDictsName = `${CLIENT_SDK_FIXED_DICTS_BASENAME}.${extension}`;
+  if (fileName === fixedDictsName) {
+    return { path: filePath, kind: 'fixedDicts', language, entityName: null };
+  }
+  const entityName = fileName.slice(0, fileName.length - extension.length - 1);
+  return { path: filePath, kind: 'entity', language, entityName };
+}
+
+/** 主路径:Rust 核心生成(单一来源)。Rust 不可用(无 gate/无 serverPath/调用失败)
+ * 返回 null,由调用方回落到 TS 纯实现。 */
+async function generateClientSdkInRust(
+  root: string,
   options: ClientSdkGenerationOptions,
-  workspaceRoot?: string
-): ClientSdkGenerationResult {
-  const root = workspaceRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-  if (!root) {
+  generatedAt: string,
+  outputDir: string
+): Promise<ClientSdkGenerationResult | null> {
+  const gate = getKodeCoreShadowGate();
+  if (!gate) {
+    return null;
+  }
+
+  const entitySources = collectClientSdkEntitySources(root);
+  if (entitySources.length === 0) {
+    // 与 TS 路径同口径:无登记实体时不产出任何文件。
     return { files: [], entities: [], skipped: 0 };
   }
 
-  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const typesXml = readTypesXmlText(root);
+  const files: ClientSdkGeneratedFile[] = [];
+
+  for (const language of options.languages) {
+    const response = await gate.runInRust<ClientSdkRustFile[]>('$/kode/sdk/generate', {
+      language,
+      entities: entitySources,
+      typesXml,
+      generatedAt,
+      engineTrace: options.engineTrace,
+      namespace: CLIENT_SDK_CSHARP_NAMESPACE
+    });
+    if (!response.ok) {
+      return null;
+    }
+    for (const item of response.result) {
+      const filePath = path.join(outputDir, item.fileName);
+      files.push(
+        writeClientSdkFile(
+          describeRustGeneratedFile(item.fileName, filePath, language),
+          () => item.content,
+          options
+        )
+      );
+    }
+  }
+
+  return { files, entities: [], skipped: files.filter(file => !file.written).length };
+}
+
+/** 兜底:原 TS 纯生产器。仅在主路径(Rust 核心)不可用时执行。 */
+function generateClientSdkEntitiesFallback(
+  options: ClientSdkGenerationOptions,
+  root: string,
+  generatedAt: string,
+  outputDir: string
+): ClientSdkGenerationResult {
   const entities = collectClientSdkEntities(root);
   const customTypes = getCustomTypeInfos(root);
-  const outputDir = path.isAbsolute(options.outputDir)
-    ? options.outputDir
-    : path.join(root, options.outputDir);
   const files: ClientSdkGeneratedFile[] = [];
 
   for (const language of options.languages) {
@@ -707,6 +798,28 @@ export function generateClientSdkEntities(
   }
 
   return { files, entities, skipped: files.filter(file => !file.written).length };
+}
+
+export async function generateClientSdkEntities(
+  options: ClientSdkGenerationOptions,
+  workspaceRoot?: string
+): Promise<ClientSdkGenerationResult> {
+  const root = workspaceRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!root) {
+    return { files: [], entities: [], skipped: 0 };
+  }
+
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const outputDir = path.isAbsolute(options.outputDir)
+    ? options.outputDir
+    : path.join(root, options.outputDir);
+
+  // 主路径:Rust 生成核心;不可用时回落到 TS 纯实现。
+  const rustResult = await generateClientSdkInRust(root, options, generatedAt, outputDir);
+  if (rustResult !== null) {
+    return rustResult;
+  }
+  return generateClientSdkEntitiesFallback(options, root, generatedAt, outputDir);
 }
 
   /** 命令编排：选语言 → 定输出目录 → 定覆盖策略 → 落盘 → 通知。任一步取消即无副作用返回。
@@ -750,7 +863,7 @@ export async function runClientSdkGenerateCommand(
     return;
   }
 
-  const result = generateClientSdkEntities(
+  const result = await generateClientSdkEntities(
     {
       languages: languages.map(choice => choice.value as ClientSdkLanguage),
       outputDir,

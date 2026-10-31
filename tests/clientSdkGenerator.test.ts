@@ -24,6 +24,8 @@ import type {
   ClientSdkTypeMap
 } from '../src/clientSdkGenerator';
 import type { CustomTypeInfo } from '../src/definitionWorkspace';
+import type { KodeCoreGate } from '../src/kodeCoreGate';
+import { setKodeCoreShadowGate } from '../src/kodeCoreShadowFaces';
 import { Uri, messages } from './helpers/vscodeStub';
 import { window as windowish, workspace as workspaceish } from './helpers/vscodeStub';
 
@@ -568,7 +570,7 @@ describe('generateClientSdkEntities', () => {
     const saved = workspaceish.workspaceFolders;
     workspaceish.workspaceFolders = [];
     try {
-      expect(generateClientSdkEntities({ languages: ['typescript'], outputDir: outDir, overwrite: true })).toEqual({
+      await expect(generateClientSdkEntities({ languages: ['typescript'], outputDir: outDir, overwrite: true })).resolves.toEqual({
         files: [],
         entities: [],
         skipped: 0
@@ -586,6 +588,95 @@ describe('generateClientSdkEntities', () => {
 
     expect(result.files.filter(file => file.written)).toHaveLength(2);
     expect(fs.existsSync(path.join(workspaceRoot, 'scripts', 'client_entities', 'Avatar.ts'))).toBe(true);
+  });
+
+  it('Rust 核心在场时走 RPC 路径:契约参数与落盘内容都取自 Rust 返回', async () => {
+    let calledMethod = '';
+    let calledParams: unknown = null;
+    const canned = [
+      { fileName: 'Avatar.ts', content: '// rust: Avatar\n' },
+      { fileName: 'ClientSdkFixedDicts.ts', content: '// rust: fixed\n' }
+    ];
+    const fakeGate = {
+      runInRust: async (method: string, params: unknown) => {
+        calledMethod = method;
+        calledParams = params;
+        return { ok: true, result: canned };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      const result = await generateClientSdkEntities(
+        { languages: ['typescript'], outputDir: outDir, overwrite: true, generatedAt: GENERATED_AT },
+        workspaceRoot
+      );
+
+      expect(calledMethod).toBe('$/kode/sdk/generate');
+      const params = calledParams as {
+        language: string;
+        entities: Array<{ name: string; defText: string }>;
+        typesXml: string;
+        generatedAt: string;
+        engineTrace?: unknown;
+        namespace: string;
+      };
+      expect(params.language).toBe('typescript');
+      expect(params.entities).toEqual([{ name: 'Avatar', defText: FULL_DEF }]);
+      expect(params.typesXml).toContain('<AvatarProps>');
+      expect(params.generatedAt).toBe(GENERATED_AT);
+      expect(params.namespace).toBe('KbEngineClient');
+      expect(params.engineTrace).toBeUndefined();
+
+      // Rust 路径不解析实体(entities 空),文件内容按 Rust 返回原样落盘。
+      expect(result.entities).toEqual([]);
+      expect(result.skipped).toBe(0);
+      const avatar = result.files.find(file => file.entityName === 'Avatar');
+      expect(avatar?.path).toBe(path.join(outDir, 'Avatar.ts'));
+      expect(fs.readFileSync(avatar!.path, 'utf8')).toBe('// rust: Avatar\n');
+      expect(fs.readFileSync(path.join(outDir, 'ClientSdkFixedDicts.ts'), 'utf8')).toBe('// rust: fixed\n');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('Rust 调用失败时回落到 TS 纯实现(实体照常解析)', async () => {
+    const fakeGate = {
+      runInRust: async () => ({ ok: false, reason: 'no serverPath' })
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      const result = await generateClientSdkEntities(
+        { languages: ['typescript'], outputDir: outDir, overwrite: true, generatedAt: GENERATED_AT },
+        workspaceRoot
+      );
+
+      expect(result.entities.map(entity => entity.name)).toEqual(['Avatar']);
+      const avatar = result.files.find(file => file.entityName === 'Avatar');
+      expect(avatar).toBeDefined();
+      expect(fs.readFileSync(avatar!.path, 'utf8')).toContain('class Avatar');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
+  it('Rust 核心在场但无登记实体:短路过 Rust,空结果不落盘', async () => {
+    const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-gen-empty-'));
+    try {
+      const fakeGate = {
+        runInRust: async () => {
+          throw new Error('Rust 不应被调用');
+        }
+      } as unknown as KodeCoreGate;
+      setKodeCoreShadowGate(fakeGate);
+      const result = await generateClientSdkEntities(
+        { languages: ['typescript'], outputDir: outDir, overwrite: true },
+        emptyRoot
+      );
+      expect(result).toEqual({ files: [], entities: [], skipped: 0 });
+    } finally {
+      setKodeCoreShadowGate(null);
+      fs.rmSync(emptyRoot, { recursive: true, force: true });
+    }
   });
 });
 
