@@ -569,3 +569,74 @@ describe('IDE-AUD-033 放弃脏文档后事件索引恢复磁盘结果(R2-F09)',
   });
 
 });
+describe('IDE-AUD-034 事件磁盘更新在途保留最新变化(R2-F10)', () => {
+  it('R2-F10 复现:在途旧读取不覆盖新版本,合并后尾随读取', async () => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    const uri = vscode.Uri.file('/ws/listener.py');
+    vscode.workspace.findFiles = async () => [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const read = vi.fn()
+      // 在途旧读(门住):读 V1
+      .mockImplementationOnce(async () => { await gate; return Buffer.from('self.addEvent(V1, self.on_ev)'); })
+      // 尾随读(新版本)
+      .mockImplementation(async () => Buffer.from('self.addEvent(V2, self.on_ev)'));
+    vscode.workspace.fs.readFile = read;
+    const index = new WorkspaceIndex();
+    try {
+      await index.allEventCalls();
+      // 磁盘更新1:在途读开始(门住)
+      lastFileSystemWatcher.current!.fireChange(uri);
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      // 磁盘更新2:旧码复用同一在途任务,不递增 revision 不安排尾随→V2 永久丢失
+      lastFileSystemWatcher.current!.fireChange(uri);
+      // 释放旧读:旧回包(V1)不得覆盖新版本(V2)
+      release();
+      let sawV2 = false;
+      for (let i = 0; i < 100 && !sawV2; i += 1) {
+        sawV2 = (await index.allEventCalls()).some(c => c.call.event === 'V2');
+        if (!sawV2) await new Promise(resolve => setTimeout(resolve, 1));
+      }
+      expect(sawV2).toBe(true);
+      // 合并后至少一次尾随读取:readFile 至少被调两次(在途 + 尾随)
+      expect(read.mock.calls.length).toBeGreaterThanOrEqual(2);
+      // 旧回包 V1 不残留
+      expect((await index.allEventCalls()).map(c => c.call.event)).not.toContain('V1');
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  });
+
+  it('R2-F10 删除在途读期间不复活已删文件', async () => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    const uri = vscode.Uri.file('/ws/listener.py');
+    vscode.workspace.findFiles = async () => [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const read = vi.fn(async () => { await gate; return Buffer.from('self.addEvent(V1, self.on_ev)'); });
+    vscode.workspace.fs.readFile = read;
+    const index = new WorkspaceIndex();
+    try {
+      await index.allEventCalls();
+      lastFileSystemWatcher.current!.fireChange(uri);
+      await vi.waitFor(() => expect(read).toHaveBeenCalled());
+      lastFileSystemWatcher.current!.fireDelete(uri);
+      release();
+      let settled = false;
+      for (let i = 0; i < 100 && !settled; i += 1) {
+        await new Promise(resolve => setTimeout(resolve, 1));
+        settled = (await index.allEventCalls()).length === 0;
+      }
+      expect(await index.allEventCalls()).toEqual([]);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  });
+});
+

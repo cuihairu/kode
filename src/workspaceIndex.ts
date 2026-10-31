@@ -69,6 +69,8 @@ export class WorkspaceIndex implements EventCallIndex {
   private closeListener?: vscode.Disposable;
   private renameListener?: vscode.Disposable;
   private readonly revisions = new Map<string, number>();
+  // AUD-034(R2-F10):在途任务被复用时的尾随读记账(同文件只安排一条)。
+  private readonly trailingReads = new Set<string>();
 
   constructor(private readonly pyGlob = '**/*.py') {}
 
@@ -195,6 +197,7 @@ export class WorkspaceIndex implements EventCallIndex {
     this.externalWatchers = [];
     this.cache.clear();
     this.revisions.clear();
+    this.trailingReads.clear();
   }
 
   /**
@@ -226,7 +229,20 @@ export class WorkspaceIndex implements EventCallIndex {
   private indexFile(uri: vscode.Uri, preferDisk = false): Promise<IndexedFile | null> {
     if (this.disposed) return Promise.resolve(null);
     const inflight = this.building.get(uri.fsPath);
-    if (inflight) return inflight;
+    if (inflight) {
+      // AUD-034(R2-F10):在途任务被新磁盘事件复用——递增 revision(使在途
+      // 旧任务版本守卫失效,旧回包不覆盖新版本),并合并安排一条尾随读
+      // (同文件只一条,落定后按最新盘重读;多次事件合并,新版本不丢)。
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+      if (!this.trailingReads.has(uri.fsPath)) {
+        this.trailingReads.add(uri.fsPath);
+        void inflight.finally(() => {
+          this.trailingReads.delete(uri.fsPath);
+          void this.indexFile(uri, preferDisk);
+        });
+      }
+      return inflight;
+    }
     const revision = this.revisions.get(uri.fsPath) ?? 0;
     const task = (async () => {
       try {
