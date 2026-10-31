@@ -5,6 +5,10 @@
  * serverManager 在册面,合板后同一组件的默认实例与命名实例(两个
  * cellapp)的调试会话与进程状态各自可辨。事件面注入(vscode.debug 的
  * onStart/onTerminate),测试可回放。
+ * R2-F15:进程模式条目(名无 debugpy 口,实际生成
+ * `KBEngine: Python attach to cellapp`)也解析挂链——旧正则只认带口形态,
+ * 进程模式会话 links=0;进程模式无固定口,尝试身份取用户选中的进程
+ * (configuration.processId)。
  */
 
 import { DEFAULT_TARGET_ID } from './serverManager';
@@ -13,7 +17,11 @@ import { DEFAULT_TARGET_ID } from './serverManager';
 export interface DebugSessionLike {
   id: string;
   name: string;
-  configuration?: { connect?: { port?: number } };
+  configuration?: {
+    connect?: { port?: number };
+    /** 进程模式 attach 的进程选择结果(pickProcess 解析后的 PID) */
+    processId?: number | string;
+  };
 }
 
 /** 事件订阅面(生产传 vscode.debug 的 onDidStart/terminateDebugSession) */
@@ -27,17 +35,28 @@ export interface DebugSessionLink {
   session: DebugSessionLike;
   component: string;
   targetId: string;
-  port: number;
+  /** connect 形态的 debugpy 口;进程模式无固定口=undefined */
+  port?: number;
+  /** 进程模式尝试身份(用户选中进程的 PID;同名并发会话以此可辨) */
+  processId?: number;
   serverKey: string;
 }
 
 const TABLE_ENTRY_PATTERN = /^KBEngine: Python attach to (.+?) \(debugpy (\d+)\)$/;
 const INSTANCE_ENTRY_PATTERN = /^KBEngine: Python attach to (.+?)#(.+?) \(debugpy (\d+)\)$/;
+// 进程模式:名无 debugpy 口(debugConfig 表条目 `KBEngine: Python attach to
+// <component>`);`#` 可带命名实例。须在带口形态之后匹配,避免抢吃
+// `(debugpy N)` 后缀;remote 形态是 `attach `(无 to),本 pattern 不匹配。
+const PROCESS_ENTRY_PATTERN = /^KBEngine: Python attach to (.+?)(?:#(.+?))?$/;
 
-/** 条目名解析:表条目=默认实例;`#` 条目=命名实例;其余(remote/用户条目)null */
+/**
+ * 条目名解析:带口形态=connect(表条目=默认实例,`#`=命名实例);
+ * 无口形态=进程模式(同样表/`#` 实例);其余(remote/用户条目)null。
+ * 进程模式无固定口,port=undefined。
+ */
 export function parseDebugSessionName(
   name: string
-): { component: string; targetId: string; port: number } | null {
+): { component: string; targetId: string; port: number | undefined } | null {
   const instance = INSTANCE_ENTRY_PATTERN.exec(name);
   if (instance) {
     return { component: instance[1], targetId: instance[2], port: Number(instance[3]) };
@@ -46,7 +65,27 @@ export function parseDebugSessionName(
   if (table) {
     return { component: table[1], targetId: DEFAULT_TARGET_ID, port: Number(table[2]) };
   }
+  const process = PROCESS_ENTRY_PATTERN.exec(name);
+  if (process) {
+    return {
+      component: process[1],
+      targetId: process[2] ?? DEFAULT_TARGET_ID,
+      port: undefined
+    };
+  }
   return null;
+}
+
+/** 进程模式尝试身份:configuration.processId 解析为数字(字符串数字也收) */
+function attemptProcessId(session: DebugSessionLike): number | undefined {
+  const raw = session.configuration?.processId;
+  if (typeof raw === 'number') {
+    return raw;
+  }
+  if (typeof raw === 'string' && raw !== '' && !Number.isNaN(Number(raw))) {
+    return Number(raw);
+  }
+  return undefined;
 }
 
 /** serverKey 组装(serverManager 同构:组件名[#targetId]) */
@@ -81,6 +120,8 @@ export class DebugSessionRegistry {
       component: parsed.component,
       targetId: parsed.targetId,
       port: parsed.port,
+      // 进程模式(无固定口)才取 processId 当尝试身份;connect 形态身份=口
+      processId: parsed.port === undefined ? attemptProcessId(session) : undefined,
       serverKey: serverKeyOf(parsed.component, parsed.targetId)
     });
   }

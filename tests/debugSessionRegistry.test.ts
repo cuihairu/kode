@@ -5,17 +5,20 @@ import {
   buildDebugTargetBoard,
   applySessionEndBehavior
 } from '../src/debugSessionRegistry';
+import { buildDebugStatusRows } from '../src/debugStatusBoard';
 import { DEFAULT_TARGET_ID } from '../src/serverManager';
 
 // IDE-DBG-005 调试会话关联到运行目标:按 launch.json 生成条目名
 // (表条目=默认实例,`component#targetId` 条目=命名实例)把 VS Code 调试
 // 会话挂到对应 serverKey;进程状态来自 serverManager 在册面——同一组件
 // 的默认实例与命名实例(两个 cellapp)的会话与状态各自可辨。
+// R2-F15:进程模式条目名(无 debugpy 口)也挂——实际生成名
+// `KBEngine: Python attach to cellapp` 旧正则不认得,links=0。
 
 interface FakeSession {
   id: string;
   name: string;
-  configuration?: { connect?: { port?: number } };
+  configuration?: { connect?: { port?: number }; processId?: number | string };
 }
 
 type Listener = (session: FakeSession) => void;
@@ -61,6 +64,101 @@ describe('parseDebugSessionName(条目名解析)', () => {
     });
     expect(parseDebugSessionName('KBEngine: Python attach 外网 (remote)')).toBeNull();
     expect(parseDebugSessionName('My python attach')).toBeNull();
+  });
+
+  it('R2-F15:进程模式条目名(无 debugpy 口)也解析;connect 形态优先不被吃', () => {
+    expect(parseDebugSessionName('KBEngine: Python attach to cellapp')).toEqual({
+      component: 'cellapp',
+      targetId: DEFAULT_TARGET_ID,
+      port: undefined
+    });
+    expect(parseDebugSessionName('KBEngine: Python attach to cellapp#a')).toEqual({
+      component: 'cellapp',
+      targetId: 'a',
+      port: undefined
+    });
+    // 带口形态仍按原语义解析(进程模式 pattern 不抢)
+    expect(parseDebugSessionName('KBEngine: Python attach to cellapp (debugpy 5679)')).toEqual({
+      component: 'cellapp',
+      targetId: DEFAULT_TARGET_ID,
+      port: 5679
+    });
+    expect(parseDebugSessionName('KBEngine: Python attach 外网 (remote)')).toBeNull();
+  });
+});
+
+describe('R2-F15 进程模式会话(实际 PID 挂链)', () => {
+  it('进程模式会话挂链:结构化 component/targetId/processId 尝试身份,板显 attached', () => {
+    const harness = makeEvents();
+    const registry = new DebugSessionRegistry(harness.events);
+
+    harness.start({
+      id: 's1',
+      name: 'KBEngine: Python attach to cellapp',
+      configuration: { processId: 4242 }
+    });
+
+    const links = registry.linksFor('cellapp');
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      component: 'cellapp',
+      targetId: DEFAULT_TARGET_ID,
+      port: undefined,
+      processId: 4242,
+      serverKey: 'cellapp'
+    });
+
+    // 工作台状态:进程模式会话也把目标推为 attached(旧码 links=0,不挂)
+    const running = new Map<string, { component: string; targetId: string; status: string }>([
+      ['cellapp', { component: 'cellapp', targetId: DEFAULT_TARGET_ID, status: 'Running' }]
+    ]);
+    const rows = buildDebugStatusRows(running, new Map(), registry);
+    expect(rows[0].phase).toBe('attached');
+    expect(rows[0].attachedSessions).toBe(1);
+  });
+
+  it('同名并发两个 PID 会话不误认:各持各 processId,结束只摘自己', () => {
+    const harness = makeEvents();
+    const registry = new DebugSessionRegistry(harness.events);
+
+    harness.start({
+      id: 's1',
+      name: 'KBEngine: Python attach to cellapp',
+      configuration: { processId: 4242 }
+    });
+    harness.start({
+      id: 's2',
+      name: 'KBEngine: Python attach to cellapp',
+      configuration: { processId: 5252 }
+    });
+
+    const links = registry.linksFor('cellapp');
+    expect(links).toHaveLength(2);
+    expect(links.map(link => link.processId).sort()).toEqual([4242, 5252]);
+
+    harness.terminate({
+      id: 's1',
+      name: 'KBEngine: Python attach to cellapp',
+      configuration: { processId: 4242 }
+    });
+    expect(registry.linksFor('cellapp').map(link => link.processId)).toEqual([5252]);
+  });
+
+  it('进程模式链断开/停止只作用该目标(默认实例)', () => {
+    const harness = makeEvents();
+    const registry = new DebugSessionRegistry(harness.events);
+    harness.start({
+      id: 's1',
+      name: 'KBEngine: Python attach to cellapp',
+      configuration: { processId: 4242 }
+    });
+
+    const stopped: Array<[string, string | undefined]> = [];
+    const link = registry.linksFor('cellapp')[0];
+    applySessionEndBehavior('stop-process', link, (component, targetId) => {
+      stopped.push([component, targetId]);
+    });
+    expect(stopped).toEqual([['cellapp', DEFAULT_TARGET_ID]]);
   });
 });
 
