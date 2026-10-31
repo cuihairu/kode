@@ -354,9 +354,19 @@ export function setupHotReload(
         // 无人值守通道:同步异常与异步拒绝都在事件边界收口,不能变成未处理拒绝。
         try {
           void Promise.resolve(runAction(settings.actionName, sendOptions)).then(
+            // AUD-053:quick action 通道以 false=未执行/失败(runByName 找不
+            // 到动作/根目录缺失)且 resolve 不 reject——旧实现成功回调里仍
+            // 记 sent-unverified,false 必须如实记 failed。true/void 等其余
             // 无业务回执可校验:只记未确认,禁标成功(HR-STATE 系列另立项);
             // 有响应面则 handleResponse 已按传输事实落账,不再覆盖
-            () => {
+            echoed => {
+              if (echoed === false) {
+                if (!responseSeen) {
+                  recordOutcomes(targetId, 'failed', 'quick action 回执 false:未执行/失败');
+                }
+                fail(new Error('quick action 回执 false:未执行/失败'));
+                return;
+              }
               if (!responseSeen) {
                 recordOutcomes(targetId, 'sent-unverified');
               }

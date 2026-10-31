@@ -176,6 +176,21 @@ describe('runHotReloadRetryCommand(IDE-REV-026)', () => {
     expect(h.blocks[0]).toContain('重发结果: 失败:ECONNREFUSED 21345');
   });
 
+  it('IDE-AUD-053 重发回执 false(resolve 不 reject):落 failed 不冒充已重发', async () => {
+    const h = seedCommandHarness(store => {
+      store.record(KEY_BAD, FILE_A, 'failed', { detail: '旧错' });
+    });
+    // quick action 通道 false=未执行/失败(runByName 找不到动作/根目录缺失)
+    h.runAction.mockImplementation(async () => false);
+
+    await h.command();
+    await flush();
+
+    expect(h.store.get(KEY_BAD, FILE_A)?.outcome).toBe('failed');
+    expect(h.store.get(KEY_BAD, FILE_A)?.detail).toContain('false');
+    expect(h.blocks[0]).toContain('重发结果: 失败');
+  });
+
   it('HTTP 500:按传输事实落 failed(不冒充未确认送达)', async () => {
     const h = seedCommandHarness(store => {
       store.record(KEY_BAD, FILE_A, 'failed', { detail: '旧错' });

@@ -131,7 +131,19 @@ export async function resendHotReloadTarget(
   };
   const sendOptions: HotReloadSendOptions | undefined = wiring ? { onHttpResponse: handleResponse } : undefined;
   try {
-    await Promise.resolve(deps.runAction(actionName, sendOptions));
+    // AUD-053:quick action 通道 false=未执行/失败且 resolve 不 reject——旧
+    // 实现 await 后直接记 sent-unverified 并返回 ok:true,false 被冒充成重发
+    // 成功;必须如实 ok=false+落 failed。
+    const echoed = await Promise.resolve(deps.runAction(actionName, sendOptions));
+    if (echoed === false) {
+      const message = 'quick action 回执 false:未执行/失败';
+      if (!responseSeen && wiring) {
+        for (const file of files) {
+          wiring.store.record(key, file, 'failed', { detail: message });
+        }
+      }
+      return { ok: false, detail: message };
+    }
     if (!responseSeen && wiring) {
       // 无响应面(脚本/命令动作):传输/执行成功≠应用成功,只记未确认
       for (const file of files) {

@@ -110,6 +110,30 @@ describe('setupHotReload targetState 接线(IDE-REV-021)', () => {
     expect(record?.detail).toContain('ECONNREFUSED');
   });
 
+  it('IDE-AUD-053 动作回执 false(resolve 不 reject):如实记 failed,不冒充 sent-unverified', async () => {
+    enableHotReload();
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    setupHotReload(makeContext(), () => Promise.resolve(false), {
+      timers: clock.timers,
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws'
+      }
+    });
+
+    fireFiles(['/ws/a.py']);
+    clock.tick();
+    await flush();
+
+    // quick action 通道 false=未执行/失败(runByName 找不到动作/根目录缺失),
+    // resolve 不 reject——旧实现进成功回调仍记 sent-unverified
+    const record = store.get({ rootId: '/ws', targetId: 't1' }, '/ws/a.py');
+    expect(record?.outcome).toBe('failed');
+    expect(record?.detail).toContain('false');
+  });
+
   it('同文件两个实例结果独立:切目标不复用上一目标成功态,b 失败不动 a 的 sent-unverified', async () => {
     enableHotReload();
     const clock = makeTimers();
