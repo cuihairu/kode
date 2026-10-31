@@ -665,7 +665,7 @@
 依据：[完成状态与运行链路深审](docs/review/2026-10-30-completion-and-lint-audit.md)、[KBEngine lint 规则规范](docs/zh/guide/kbengine-lint-rules.md)。固定基线 bf26cbf；15 个 IDE 已勾选细项及 1 个历史 JSONC 条目有明确反例或验收缺口而重开。其他项是否复审通过见逐项 CSV，未评估不能当通过。一次实现一个行为，完成即独立验证、提交、推送；保留原标记的历史证据，不以其他 agent 的未提交改动作为完成依据。
 
 - [x] IDE-AUD-001 [P1] 修复超时 attach 的迟到会话清理；验收：追踪订阅不在闸返回时提前释放；超时后才创建会话、再 resolve start，恰好停止本次会话一次且无订阅残留；卸载仍能释放；关联：IDE-REV-003。 c647fdf
-- [ ] IDE-AUD-002 [P1] 用每次尝试唯一身份关联调试会话；验收：两个相同显示名称的 attach 并发，取消其中一个仅停止对应会话；不同 workspace/同名启动不误认；关联：IDE-REV-002。
+- [x] IDE-AUD-002 [P1] 用每次尝试唯一身份关联调试会话；验收：两个相同显示名称的 attach 并发，取消其中一个仅停止对应会话；不同 workspace/同名启动不误认；关联：IDE-REV-002。已修(8467f88)——startAttachGuarded 每次尝试生成唯一 __kodeAttachId(模块级递增 attachAttemptSeq),markedConfig 打标记后传入 startDebugging,onDidStartDebugSession 改按 session.configuration.__kodeAttachId === 本尝试标记 归属(弃按配置名匹配——两个同名并发附加的后者会捕获前者的会话),同名无关会话(他 workspace/窗口,无标记)不误捕获;自验 tests/debugConfigAttach.test.ts 新 AUD-002 例(两个同名附加挂起后手动发会话:无关同名先到+两尝试各带标记,取消第二次只停 ownSession2,ownSession1/无关同名会话不动,stopCalls 恰一且目标 id=own2),prove-red 旧码两红(标记缺失断言红+停面 ext:baseapp 误停红),门禁全绿(unit 5201|7)。
 - [ ] IDE-AUD-003 [P1] 将 SSH 隧道存活绑定真实调试会话；验收：startDebugging 成功后隧道仍存活，会话终止才关闭；启动失败/取消/卸载也关闭，覆盖真实会话生命周期而非仅 Boolean 返回；关联：IDE-PDBG-004。
 - [ ] IDE-AUD-004 [P1] 阻止远端 PID 调试静默走本地；验收：远端选择时提供实际可工作的远端 attach 链；暂不支持则明确拒绝，绝不把本地 PID 列表当远端；远端 py-spy 与调试分别验收；关联：IDE-PDBG-005。
 - [ ] IDE-AUD-005 [P1] 给热更新发送与回执加入代际守卫；验收：同根/目标/文件连续发送，门住第一次核验，第二次失败后释放第一次，状态仍是第二次失败；旧超时和回执不改新记录；关联：IDE-REV-021、IDE-REV-023。
