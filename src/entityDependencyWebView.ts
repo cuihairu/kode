@@ -1,10 +1,326 @@
 /**
  * KBEngine 实体依赖关系 WebView
  * 使用 Mermaid.js 可视化实体依赖图
+ *
+ * IDE-RUST-007:图拓扑推导走 Rust 核心(`$/kode/dependency/graph`,从
+ * entities.xml 登记实体出发 → 实体 def → 继承/接口/组件/属性类型 →
+ * types.xml 对象类 → python 实现,全部边反向可索引)。Rust 不可用回落
+ * TS EntityDependencyAnalyzer(降级 entity→entity 图,徽章「TS 兜底」)。
+ * 两源图先归一为 RenderGraph 再渲染:TS 兜底源输出与迁移前逐字节一致,
+ * Rust 源按节点 kind 分 emoji/classDef、按边 kind 分箭头,带三关键路径
+ * 与节点点击跳转。
  */
 
 import * as vscode from 'vscode';
-import { EntityDependencyAnalyzer, DependencyGraph, DependencyType, EntityType } from './entityDependency';
+import { EntityDependencyAnalyzer, DependencyGraph } from './entityDependency';
+import { buildDependencyGraphInRust } from './dependencyGraphRust';
+import type { DependencyGraphRust } from './dependencyGraphRust';
+
+/**
+ * 渲染层节点 kind(六员;TS 兜底源归一后全部是 entity)。
+ */
+export type RenderNodeKind = 'entity' | 'def' | 'interface' | 'component' | 'type' | 'python';
+
+/**
+ * 归一渲染节点:id 为最终 mermaid id(rawId 清洗 + 撞名消解),label 为展示名。
+ */
+export interface RenderNode {
+  readonly id: string;
+  readonly rawId: string;
+  readonly label: string;
+  readonly name: string;
+  readonly filePath: string;
+  readonly kind: RenderNodeKind;
+  readonly types?: string[];
+}
+
+export interface RenderEdge {
+  readonly from: string;
+  readonly to: string;
+  readonly kind: string;
+  readonly label?: string;
+}
+
+/**
+ * 两源统一渲染图:Rust 源带三关键路径与八计数;TS 兜底源 paths 为 null、
+ * 另带 legacyStats(六张 legacy 统计卡的数据面)。
+ */
+export interface RenderGraph {
+  readonly nodes: RenderNode[];
+  readonly edges: RenderEdge[];
+  readonly paths: { entitiesXml: string; defsRoot: string; typesXml: string } | null;
+  readonly stats: {
+    nodeCount: number;
+    edgeCount: number;
+    entityCount: number;
+    defCount: number;
+    interfaceCount: number;
+    componentCount: number;
+    typeCount: number;
+    pythonCount: number;
+  };
+  readonly legacyStats?: {
+    totalEntities: number;
+    baseEntities: number;
+    cellEntities: number;
+    clientEntities: number;
+    maxDepth: number;
+    mostReferenced: string;
+  };
+  readonly source: 'rust' | 'ts';
+}
+
+/**
+ * 类型域 emoji(Base🔵 Cell🟢 Client🟡;两源的实体节点共用)。
+ */
+function typeEmoji(t: string): string {
+  switch (t) {
+    case 'Base': return '🔵';
+    case 'Cell': return '🟢';
+    case 'Client': return '🟡';
+    // 不可达:两源的 entity types 都只可能是 Base/Cell/Client
+    // (TS 端 EntityType 三员;Rust 端从 hasBase/hasCell/hasClient 派生)。
+    /* istanbul ignore start */
+    default: return '';
+    /* istanbul ignore stop */
+  }
+}
+
+/** Rust 源非实体节点的 kind emoji。 */
+const KIND_EMOJI: Record<RenderNodeKind, string> = {
+  entity: '🔵',
+  def: '📄',
+  interface: '🧩',
+  component: '⚙️',
+  type: '🧬',
+  python: '🐍'
+};
+
+/** Rust 源按 kind 的 classDef 样式(entity 沿用 legacy baseNode 配色)。 */
+const KIND_STYLE: Record<RenderNodeKind, string> = {
+  entity: 'fill:#e1f5fe,stroke:#01579b,stroke-width:2px',
+  def: 'fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px',
+  interface: 'fill:#e0f7fa,stroke:#006064,stroke-width:2px',
+  component: 'fill:#fff3e0,stroke:#e65100,stroke-width:2px',
+  type: 'fill:#e8eaf6,stroke:#283593,stroke-width:2px',
+  python: 'fill:#e0f2f1,stroke:#004d40,stroke-width:2px'
+};
+
+/** Rust 源边 kind → mermaid 箭头;未登记 kind 回落 -->。 */
+const RUST_ARROW: Record<string, string> = {
+  inheritance: '-->',
+  registration: '--',
+  'is-a': '-.->',
+  'has-a': '--o',
+  implements: '==>',
+  'property-type': '-->',
+  'method-impl': '-.->'
+};
+
+/** mermaid id 清洗:非 [A-Za-z0-9_] 一律 '_'(entity:Hero→entity_Hero)。 */
+function sanitizeRustId(rawId: string): string {
+  return rawId.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
+/**
+ * TS 兜底分析图 → RenderGraph(id 去连字符与 label 拼装与迁移前渲染一致)。
+ */
+export function normalizeDependencyGraph(graph: DependencyGraph): RenderGraph {
+  const nodes: RenderNode[] = graph.nodes.map((node) => ({
+    id: node.name.replace(/-/g, '_'),
+    rawId: node.name,
+    label: `${node.types.map(typeEmoji).join('')} ${node.name}`,
+    name: node.name,
+    filePath: node.defFile,
+    kind: 'entity',
+    types: [...node.types]
+  }));
+  const edges: RenderEdge[] = graph.edges.map((edge) => ({
+    from: edge.from.replace(/-/g, '_'),
+    to: edge.to.replace(/-/g, '_'),
+    kind: edge.type,
+    label: edge.label
+  }));
+  return {
+    nodes,
+    edges,
+    paths: null,
+    stats: {
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+      entityCount: graph.stats.totalEntities,
+      defCount: 0,
+      interfaceCount: 0,
+      componentCount: 0,
+      typeCount: 0,
+      pythonCount: 0
+    },
+    legacyStats: { ...graph.stats },
+    source: 'ts'
+  };
+}
+
+/**
+ * Rust 核心图 → RenderGraph:id 清洗 + 撞名消解(_2/_3…);label 实体=类型域
+ * emoji,其余=kind emoji。
+ */
+export function normalizeRustGraph(graph: DependencyGraphRust): RenderGraph {
+  const idMap = new Map<string, string>();
+  const used = new Set<string>();
+  const nodes: RenderNode[] = graph.nodes.map((node) => {
+    const base = sanitizeRustId(node.id);
+    let id = base;
+    let suffix = 2;
+    while (used.has(id)) {
+      id = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    used.add(id);
+    idMap.set(node.id, id);
+
+    let label: string;
+    if (node.kind === 'entity') {
+      const domains = (node.types ?? []).map(typeEmoji).join('');
+      label = domains ? `${domains} ${node.name}` : node.name;
+    } else {
+      label = `${KIND_EMOJI[node.kind]} ${node.name}`;
+    }
+    return {
+      id,
+      rawId: node.id,
+      label,
+      name: node.name,
+      filePath: node.filePath,
+      kind: node.kind,
+      ...(node.types ? { types: [...node.types] } : {})
+    };
+  });
+  const edges: RenderEdge[] = graph.edges.map((edge) => ({
+    from: idMap.get(edge.from) ?? sanitizeRustId(edge.from),
+    to: idMap.get(edge.to) ?? sanitizeRustId(edge.to),
+    kind: edge.kind,
+    ...(edge.label !== undefined ? { label: edge.label } : {})
+  }));
+  return {
+    nodes,
+    edges,
+    paths: graph.paths,
+    stats: {
+      nodeCount: graph.stats.nodeCount,
+      edgeCount: graph.stats.edgeCount,
+      entityCount: graph.stats.entityCount,
+      defCount: graph.stats.defCount,
+      interfaceCount: graph.stats.interfaceCount,
+      componentCount: graph.stats.componentCount,
+      typeCount: graph.stats.typeCount,
+      pythonCount: graph.stats.pythonCount
+    },
+    source: 'rust'
+  };
+}
+
+/** click 指令:webview 脚本注册 openFilePath 回调,回抛 openNode 打开文件。 */
+function clickLine(node: RenderNode): string {
+  return `  click ${node.id} openFilePath "${node.filePath.replace(/"/g, '\\"')}"\n`;
+}
+
+/**
+ * TS 兜底渲染:节点/边/三 classDef 输出与迁移前逐字节一致,仅追加 click
+ * 指令(空图无节点,输出不变)。
+ */
+function renderLegacyMermaid(graph: RenderGraph): string {
+  let mermaid = 'graph TD\n';
+
+  // 添加节点
+  for (const node of graph.nodes) {
+    mermaid += `  ${node.id}["${node.label}"]\n`;
+  }
+
+  // 添加边(继承/组合等一律实线箭头,与迁移前口径一致)
+  for (const edge of graph.edges) {
+    mermaid += `  ${edge.from} -->|${edge.label ?? ''}| ${edge.to}\n`;
+  }
+
+  // 添加点击跳转
+  for (const node of graph.nodes) {
+    if (node.filePath) {
+      mermaid += clickLine(node);
+    }
+  }
+
+  // 添加样式
+  mermaid += '\n  classDef baseNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px;\n';
+  mermaid += '  classDef cellNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;\n';
+  mermaid += '  classDef clientNode fill:#fffde7,stroke:#f57f17,stroke-width:2px;\n';
+
+  for (const node of graph.nodes) {
+    const types = node.types ?? [];
+    if (types.includes('Base')) {
+      mermaid += `  class ${node.id} baseNode;\n`;
+    }
+    if (types.includes('Cell')) {
+      mermaid += `  class ${node.id} cellNode;\n`;
+    }
+    if (types.includes('Client')) {
+      mermaid += `  class ${node.id} clientNode;\n`;
+    }
+  }
+
+  return mermaid;
+}
+
+/**
+ * Rust 核心渲染:kind emoji 标签、按边 kind 分箭头、按 kind classDef
+ * (仅出现过的 kind,规范序)与 class 分配、click 跳转。
+ */
+function renderRustMermaid(graph: RenderGraph): string {
+  let mermaid = 'graph TD\n';
+
+  // 添加节点
+  for (const node of graph.nodes) {
+    mermaid += `  ${node.id}["${node.label}"]\n`;
+  }
+
+  // 添加边(带 label 的边渲染 |label| 段)
+  for (const edge of graph.edges) {
+    const arrow = RUST_ARROW[edge.kind] ?? '-->';
+    if (edge.label !== undefined) {
+      mermaid += `  ${edge.from} ${arrow}|${edge.label}| ${edge.to}\n`;
+    } else {
+      mermaid += `  ${edge.from} ${arrow} ${edge.to}\n`;
+    }
+  }
+
+  // 添加点击跳转
+  for (const node of graph.nodes) {
+    if (node.filePath) {
+      mermaid += clickLine(node);
+    }
+  }
+
+  // 添加样式:按 kind 出现顺序的规范序出 classDef
+  mermaid += '\n';
+  const kindOrder: RenderNodeKind[] = ['entity', 'def', 'interface', 'component', 'type', 'python'];
+  for (const kind of kindOrder) {
+    if (graph.nodes.some((node) => node.kind === kind)) {
+      mermaid += `  classDef ${kind}Node ${KIND_STYLE[kind]};\n`;
+    }
+  }
+
+  for (const node of graph.nodes) {
+    mermaid += `  class ${node.id} ${node.kind}Node;\n`;
+  }
+
+  return mermaid;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 /**
  * 实体依赖关系 WebView 面板
@@ -12,7 +328,7 @@ import { EntityDependencyAnalyzer, DependencyGraph, DependencyType, EntityType }
 export class EntityDependencyWebView {
   private panel: vscode.WebviewPanel | null = null;
   private analyzer: EntityDependencyAnalyzer;
-  private currentGraph: DependencyGraph | null = null;
+  private currentRender: RenderGraph | null = null;
   private pendingExport: { format: 'png' | 'svg'; uri: vscode.Uri } | null = null;
 
   constructor(
@@ -56,6 +372,9 @@ export class EntityDependencyWebView {
           case 'openEntity':
             await this.openEntityFile(message.entityName);
             break;
+          case 'openNode':
+            await this.openNode(message.filePath);
+            break;
           case 'export':
             await this.exportGraph(message.format);
             break;
@@ -73,7 +392,8 @@ export class EntityDependencyWebView {
   }
 
   /**
-   * 刷新依赖图
+   * 刷新依赖图:Rust 核心优先(实体→def→接口/组件/types.xml/python 全图);
+   * 不可用(无 gate/调用失败/形状不符)回落 TS 分析器(降级实体图)。
    */
   private async refreshGraph(): Promise<void> {
     if (!this.panel) {
@@ -81,14 +401,30 @@ export class EntityDependencyWebView {
     }
 
     try {
-      // 分析依赖关系
-      this.currentGraph = await this.analyzer.analyze();
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      let render: RenderGraph | null = null;
+      if (root) {
+        try {
+          const rust = await buildDependencyGraphInRust(root);
+          if (rust) {
+            render = normalizeRustGraph(rust);
+          }
+        } catch (rustError) {
+          // Rust 面异常按不可用处理(与返回 null 同),回落 TS 兜底
+          this.outputChannel.appendLine(`Rust 依赖图推导失败,回落 TS: ${rustError}`);
+        }
+      }
+      if (!render) {
+        render = normalizeDependencyGraph(await this.analyzer.analyze());
+      }
+
+      this.currentRender = render;
 
       // 生成 Mermaid 图
-      const mermaidGraph = this.generateMermaidGraph(this.currentGraph);
+      const mermaidGraph = this.generateMermaidGraph(render);
 
       // 获取 Webview 内容
-      this.panel.webview.html = this.getWebviewContent(mermaidGraph, this.currentGraph);
+      this.panel.webview.html = this.getWebviewContent(mermaidGraph, render);
     } catch (error) {
       this.outputChannel.appendLine(`刷新依赖图失败: ${error}`);
       vscode.window.showErrorMessage(`刷新依赖图失败: ${error}`);
@@ -96,72 +432,54 @@ export class EntityDependencyWebView {
   }
 
   /**
-   * 生成 Mermaid 图
+   * 生成 Mermaid 图(按图来源分流:Rust 核心/TS 兜底)
    */
-  private generateMermaidGraph(graph: DependencyGraph): string {
-    let mermaid = 'graph TD\n';
+  private generateMermaidGraph(graph: RenderGraph): string {
+    return graph.source === 'rust' ? renderRustMermaid(graph) : renderLegacyMermaid(graph);
+  }
 
-    // 添加节点
-    for (const node of graph.nodes) {
-      const nodeId = node.name.replace(/-/g, '_');
-      const typeLabels = node.types.map(t => {
-        switch (t) {
-          case 'Base': return '🔵';
-          case 'Cell': return '🟢';
-          case 'Client': return '🟡';
-          // 不可达(批62 定性):node.types 的元素类型 EntityType 只有 Base/Cell/Client
-          // 三员(entityDependency.ts 的解析与建边处也只 push 这三者),default 无值可命中。
-          /* istanbul ignore start */
-          default: return '';
-          /* istanbul ignore stop */
-        }
-      }).join('');
-
-      const label = `${typeLabels} ${node.name}`;
-      mermaid += `  ${nodeId}["${label}"]\n`;
-    }
-
-    // 添加边
-    for (const edge of graph.edges) {
-      const fromId = edge.from.replace(/-/g, '_');
-      const toId = edge.to.replace(/-/g, '_');
-      const label = edge.label || '';
-
-      switch (edge.type) {
-        case DependencyType.Inheritance:
-          // 继承关系使用实线箭头
-          mermaid += `  ${fromId} -->|${label}| ${toId}\n`;
-          break;
-        default:
-          mermaid += `  ${fromId} -->|${label}| ${toId}\n`;
-      }
-    }
-
-    // 添加样式
-    mermaid += '\n  classDef baseNode fill:#e1f5fe,stroke:#01579b,stroke-width:2px;\n';
-    mermaid += '  classDef cellNode fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;\n';
-    mermaid += '  classDef clientNode fill:#fffde7,stroke:#f57f17,stroke-width:2px;\n';
-
-    for (const node of graph.nodes) {
-      const nodeId = node.name.replace(/-/g, '_');
-      if (node.types.includes(EntityType.Base)) {
-        mermaid += `  class ${nodeId} baseNode;\n`;
-      }
-      if (node.types.includes(EntityType.Cell)) {
-        mermaid += `  class ${nodeId} cellNode;\n`;
-      }
-      if (node.types.includes(EntityType.Client)) {
-        mermaid += `  class ${nodeId} clientNode;\n`;
-      }
-    }
-
-    return mermaid;
+  private statCard(label: string, value: string | number): string {
+    return `      <div class="stat-card">
+        <div class="stat-label">${label}</div>
+        <div class="stat-value">${value}</div>
+      </div>`;
   }
 
   /**
    * 获取 Webview 内容
    */
-  private getWebviewContent(mermaidGraph: string, graph: DependencyGraph): string {
+  private getWebviewContent(mermaidGraph: string, graph: RenderGraph): string {
+    const sourceBadge = graph.source === 'rust' ? 'Rust 核心' : 'TS 兜底';
+
+    const statsHtml = graph.source === 'rust'
+      ? [
+        this.statCard('节点', graph.stats.nodeCount),
+        this.statCard('边', graph.stats.edgeCount),
+        this.statCard('实体', graph.stats.entityCount),
+        this.statCard('def', graph.stats.defCount),
+        this.statCard('接口', graph.stats.interfaceCount),
+        this.statCard('组件', graph.stats.componentCount),
+        this.statCard('类型', graph.stats.typeCount),
+        this.statCard('Python', graph.stats.pythonCount)
+      ].join('\n')
+      : [
+        this.statCard('总实体数', graph.legacyStats?.totalEntities ?? 0),
+        this.statCard('Base 实体', graph.legacyStats?.baseEntities ?? 0),
+        this.statCard('Cell 实体', graph.legacyStats?.cellEntities ?? 0),
+        this.statCard('Client 实体', graph.legacyStats?.clientEntities ?? 0),
+        this.statCard('最大继承深度', graph.legacyStats?.maxDepth ?? 0),
+        this.statCard('最常引用', graph.legacyStats?.mostReferenced || '-')
+      ].join('\n');
+
+    const pathsHtml = graph.paths
+      ? `
+  <div class="paths">
+    <div class="path-item"><span class="path-label">entities.xml</span><code>${escapeHtml(graph.paths.entitiesXml)}</code></div>
+    <div class="path-item"><span class="path-label">defsRoot</span><code>${escapeHtml(graph.paths.defsRoot)}</code></div>
+    <div class="path-item"><span class="path-label">types.xml</span><code>${escapeHtml(graph.paths.typesXml)}</code></div>
+  </div>`
+      : '';
+
     return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -189,6 +507,14 @@ export class EntityDependencyWebView {
     .title {
       font-size: 24px;
       font-weight: bold;
+    }
+
+    .source-badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 10px;
+      background-color: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
     }
 
     .toolbar {
@@ -234,6 +560,34 @@ export class EntityDependencyWebView {
       font-weight: bold;
     }
 
+    .paths {
+      background-color: var(--vscode-editor-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 12px;
+    }
+
+    .path-item {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .path-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .path-label {
+      color: var(--vscode-descriptionForeground);
+      min-width: 90px;
+    }
+
+    .path-item code {
+      word-break: break-all;
+    }
+
     #graph-container {
       background-color: var(--vscode-editor-background);
       border: 1px solid var(--vscode-panel-border);
@@ -272,39 +626,20 @@ export class EntityDependencyWebView {
 <body>
   <div class="header">
     <div class="title">KBEngine 实体依赖关系</div>
-    <div class="toolbar">
-      <button onclick="refreshGraph()">刷新</button>
-      <button onclick="exportGraph('png')">导出 PNG</button>
-      <button onclick="exportGraph('svg')">导出 SVG</button>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span class="source-badge">${sourceBadge}</span>
+      <div class="toolbar">
+        <button onclick="refreshGraph()">刷新</button>
+        <button onclick="exportGraph('png')">导出 PNG</button>
+        <button onclick="exportGraph('svg')">导出 SVG</button>
+      </div>
     </div>
   </div>
 
   <div class="stats">
-    <div class="stat-card">
-      <div class="stat-label">总实体数</div>
-      <div class="stat-value">${graph.stats.totalEntities}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Base 实体</div>
-      <div class="stat-value">${graph.stats.baseEntities}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Cell 实体</div>
-      <div class="stat-value">${graph.stats.cellEntities}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Client 实体</div>
-      <div class="stat-value">${graph.stats.clientEntities}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">最大继承深度</div>
-      <div class="stat-value">${graph.stats.maxDepth}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">最常引用</div>
-      <div class="stat-value">${graph.stats.mostReferenced || '-'}</div>
-    </div>
+${statsHtml}
   </div>
+${pathsHtml}
 
   <div id="graph-container">
     <div class="mermaid">
@@ -344,6 +679,14 @@ ${mermaidGraph}
         curve: 'basis'
       }
     });
+
+    // 节点点击 → 打开对应文件(entities.xml / .def / types.xml / python)
+    window.openFilePath = function(filePath) {
+      vscode.postMessage({
+        command: 'openNode',
+        filePath: filePath
+      });
+    };
 
     // 刷新图表
     function refreshGraph() {
@@ -444,6 +787,22 @@ ${mermaidGraph}
   }
 
   /**
+   * 打开图中节点对应的文件
+   */
+  private async openNode(filePath: string): Promise<void> {
+    if (!filePath) {
+      return;
+    }
+
+    try {
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+      await vscode.window.showTextDocument(document);
+    } catch (error) {
+      vscode.window.showErrorMessage(`打开文件失败: ${error}`);
+    }
+  }
+
+  /**
    * 打开实体文件
    */
   private async openEntityFile(entityName: string): Promise<void> {
@@ -465,7 +824,7 @@ ${mermaidGraph}
    * 导出图表
    */
   private async exportGraph(format: 'png' | 'svg'): Promise<void> {
-    if (!this.currentGraph || !this.panel) {
+    if (!this.currentRender || !this.panel) {
       vscode.window.showWarningMessage('没有可导出的图表');
       return;
     }

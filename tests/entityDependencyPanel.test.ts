@@ -315,7 +315,7 @@ describe('EntityDependencyWebView message handling', () => {
   it('warns when exporting with no graph available', async () => {
     const webview = makeWebView();
     await webview.show();
-    (webview as unknown as { currentGraph: unknown }).currentGraph = null;
+    (webview as unknown as { currentRender: unknown }).currentRender = null;
 
     send({ command: 'export', format: 'png' });
     await new Promise(resolve => setTimeout(resolve, 30));
