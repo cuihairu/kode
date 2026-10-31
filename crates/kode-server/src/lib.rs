@@ -3,6 +3,7 @@
 
 pub mod client_sdk;
 pub mod completion;
+pub mod database_schema;
 pub mod definition;
 pub mod dependency_graph;
 pub mod diagnostics;

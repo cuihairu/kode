@@ -16,6 +16,7 @@ import { resolveDatabaseInterfaceConfig, type DatabaseInterfaceConfig } from './
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import type { SharedFileVersionRef } from './sharedFileSnapshot';
+import { buildDatabaseTablesInRust } from './databaseSchemaRust';
 import {
   DB_TABLE_PREFIX,
   aliasDigestInMap,
@@ -30,6 +31,8 @@ import {
   resolveEntityHasCell,
   type BuildContext,
   type DatabaseBackend,
+  type DatabaseSchemaDerivationInput,
+  type DatabaseSchemaDerivationResult,
   type DefSourceRef,
   type SchemaBuildProgress,
   type RuntimeScope,
@@ -207,6 +210,19 @@ function peekFreshSchemaCache(
   return undefined;
 }
 
+// IDE-RUST-008:推导闸点的回填槽——生成器把纯推导输入交给驱动(异步驱动
+// await Rust 核心、不可用回落 TS;同步驱动直通 TS),驱动把结果写回槽后经
+// next() 恢复生成器,生成器从槽读结果。槽随相位对象经 yield 传出,单次构建
+// 恰一个推导闸点,故槽无需跨构建共享。
+interface DerivePhase {
+  derive: DatabaseSchemaDerivationInput;
+  result: { value: DatabaseSchemaDerivationResult | null };
+}
+type SchemaBuildPhase = 'phase-gate' | DerivePhase;
+
+const isDerivePhase = (phase: SchemaBuildPhase): phase is DerivePhase =>
+  typeof phase === 'object' && phase !== null;
+
 /**
  * 2026-10-28 审核整改(SCH-006):构建管线阶段生成器——阶段间 yield 是
  * 异步驱动的闸点(让出宿主+检查取消);同步查询面直通驱动(不暂停,行为
@@ -218,7 +234,7 @@ function* schemaBuildPhases(
   workspaceRoot: string,
   cacheKey: string,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', DatabaseSchemaSnapshot | null, void> {
+): Generator<SchemaBuildPhase, DatabaseSchemaSnapshot | null, void> {
   const layout = getDefinitionWorkspaceLayout(workspaceRoot);
   // 不可达(批62 定性):getDefinitionWorkspaceLayout 的 entityDefsRoot =
   // 已存在候选 || 候选[0],候选列表恒含非空相对路径,该值只能是字符串。
@@ -284,9 +300,22 @@ function* schemaBuildPhases(
   );
   yield 'phase-gate'; // 闸点 5:属性收集(含组件/父链递归)后
   // IDE-SCH-001:表/列推导走纯函数面——输入收集(文件/配置/布局)留在本快照
-  // 面,推导本身不读配置不读文件(可缓存/可离线,SCH-002 的缓存前置)
+  // 面,推导本身不读配置不读文件(可缓存/可离线,SCH-002 的缓存前置)。
+  // IDE-RUST-008:推导闸点——驱动在此拿到纯推导输入并回填结果(异步驱动
+  // await Rust 核心、不可用回落 TS;同步驱动直通 TS),本生成器只认槽值。
   const effectiveTablePrefix = resolveSchemaTablePrefix();
-  const derived = deriveDatabaseTables({
+  const deriveSlot: DerivePhase['result'] = { value: null };
+  yield {
+    derive: {
+      entityName,
+      defFilePath,
+      properties,
+      hasCellContent: buildContext.entityHasCell,
+      tablePrefix: effectiveTablePrefix
+    },
+    result: deriveSlot
+  } satisfies DerivePhase;
+  const derived = deriveSlot.value ?? deriveDatabaseTables({
     entityName,
     defFilePath,
     properties,
@@ -356,10 +385,16 @@ export function getDatabaseSchemaSnapshot(
   if (!workspaceRoot) {
     return null;
   }
-  // 同步直通驱动:阶段 yield 只是异步面的闸点,同步面一口气跑完(行为不变)
+  // 同步直通驱动:阶段 yield 只是异步面的闸点,同步面一口气跑完(行为不变)。
+  // IDE-RUST-008:同步面不能 await Rust,Rust 闸点直通 TS 推导(异步预热面才走
+  // Rust 核心;预热先付缓存,同步查询命中缓存,故生产主路径仍是 Rust 结果)。
   const iterator = schemaBuildPhases(entityName, target, workspaceRoot, cacheKey);
   let step = iterator.next();
   while (!step.done) {
+    if (isDerivePhase(step.value)) {
+      // Rust 闸点直通 TS 推导(同步面不能 await)。
+      step.value.result.value = deriveDatabaseTables(step.value.derive);
+    }
     step = iterator.next();
   }
   return step.value;
@@ -508,6 +543,18 @@ export async function buildDatabaseSchemaSnapshotAsync(
       return null; // 中段取消:生成器不再推进,缓存不发布
     }
     progress.sliceStart = Date.now();
+    // IDE-RUST-008:推导闸点——Rust 核心优先,不可用(无 gate/调用失败/形状
+    // 不合规/异常)回落 TS 推导;结果写回槽,下轮 next() 恢复生成器。
+    // 防御:buildDatabaseTablesInRust 按设计不抛(内部吞异常返 null),但推导闸点
+    // 再套 try/catch——Rust 核心任何意外异常绝不炸构建,一律回落 TS 推导。
+    if (isDerivePhase(step.value)) {
+      try {
+        step.value.result.value =
+          (await buildDatabaseTablesInRust(step.value.derive)) ?? deriveDatabaseTables(step.value.derive);
+      } catch {
+        step.value.result.value = deriveDatabaseTables(step.value.derive);
+      }
+    }
   }
 }
 
