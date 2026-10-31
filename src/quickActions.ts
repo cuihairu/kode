@@ -94,7 +94,11 @@ export interface QuickActionManagerDeps {
   runHttp?: HttpRunner;
   executeCommand?: CommandRunner;
   /** Shared HTTP service entry point used by both views and command picks. */
-  runHttpEntry?: (entry: HttpRequestEntry, execute?: () => Promise<void>) => Promise<boolean>;
+  runHttpEntry?: (
+    entry: HttpRequestEntry,
+    execute?: () => Promise<void>,
+    onHttpResponse?: (response: HttpActionResponse) => void
+  ) => Promise<boolean>;
   getSettingHttpEntries?: () => HttpRequestEntry[];
 }
 
@@ -348,7 +352,11 @@ export class QuickActionManager {
   private readonly runScript: ScriptRunner;
   private readonly runHttp: HttpRunner;
   private readonly executeCommand: CommandRunner;
-  private readonly runHttpEntry?: (entry: HttpRequestEntry, execute?: () => Promise<void>) => Promise<boolean>;
+  private readonly runHttpEntry?: (
+    entry: HttpRequestEntry,
+    execute?: () => Promise<void>,
+    onHttpResponse?: (response: HttpActionResponse) => void
+  ) => Promise<boolean>;
   private readonly getSettingHttpEntries: () => HttpRequestEntry[];
   private configurationRoot: string | null = null;
   private additionalScanRoots: string[] = [];
@@ -476,8 +484,12 @@ export class QuickActionManager {
       return false;
     }
     if (name.startsWith('@http:')) {
+      // AUD-054:options(含 onHttpResponse)必须随 @http: 直达入口透传,
+      // 不能在 runHttpRequestFrom 跳板处丢掉(R2-F27)
       const match = /^@http:(debug|settings):(\d+)$/.exec(name);
-      return match ? this.runHttpRequestFrom(match[1] as 'debug' | 'settings', Number(match[2])) : this.runHttpRequest(Number(name.slice('@http:'.length)));
+      return match
+        ? this.runHttpRequestFrom(match[1] as 'debug' | 'settings', Number(match[2]), options)
+        : this.runHttpRequest(Number(name.slice('@http:'.length)), options);
     }
     if (name.startsWith('@script:')) return this.runScannedScript(name.slice('@script:'.length));
     const { actions } = await this.loadActions();
@@ -558,15 +570,19 @@ export class QuickActionManager {
     return { registered, scripts, httpRequests };
   }
 
-  private async runHttpRequest(index: number): Promise<boolean> {
+  private async runHttpRequest(index: number, options: QuickActionRunOptions = {}): Promise<boolean> {
     // Legacy numeric selectors refer to debug.json entries.
-    return this.runHttpRequestFrom('debug', index);
+    return this.runHttpRequestFrom('debug', index, options);
   }
 
-  async runHttpRequestFrom(source: 'debug' | 'settings', index: number): Promise<boolean> {
+  async runHttpRequestFrom(
+    source: 'debug' | 'settings',
+    index: number,
+    options: QuickActionRunOptions = {}
+  ): Promise<boolean> {
     if (source === 'settings' && this.runHttpEntry) {
       const entry = this.getSettingHttpEntries()[index];
-      return entry ? this.runHttpEntry(entry) : false;
+      return entry ? this.runHttpEntry(entry, undefined, options.onHttpResponse) : false;
     }
     const config = await this.readConfigFile();
     const request = source === 'debug'
@@ -582,10 +598,14 @@ export class QuickActionManager {
         ...(request.headers ? { headers: Object.fromEntries(Object.entries(request.headers).map(([key, value]) => [key, resolveActionVariables(value, folders)])) } : {})
       };
       if (this.runHttpEntry) {
+        // AUD-054:有观察器时不再走 execute=terminalHttp 闭包(返回 void,拿
+        // 不到 status/body),改由 hook(真装配=httpRequestService.runEntry)自
+        // 身传输并上报 status/body——观察器才能按真实 HTTP 事实落账;无观
+        // 察器保留 terminalHttp 闭包原行为(既有用例与终端路径不受扰)。
         return await this.runHttpEntry({
           name: resolved.name ?? `${resolved.method} ${resolved.url}`, url: resolved.url, method: resolved.method,
           headers: resolved.headers ?? {}, body: resolved.body ?? '', enabled: true, keybinding: ''
-        }, () => terminalHttp(resolved));
+        }, options.onHttpResponse ? undefined : () => terminalHttp(resolved), options.onHttpResponse);
       }
       await terminalHttp(resolved);
       return true;

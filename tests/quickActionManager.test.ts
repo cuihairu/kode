@@ -5,6 +5,7 @@ import * as path from 'path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import { QuickActionManager, terminalScript } from '../src/quickActions';
+import { HttpRequestService } from '../src/httpRequestService';
 import { QuickActionTreeProvider } from '../src/quickActionTree';
 import type {
   HttpRunResult,
@@ -750,6 +751,65 @@ describe('QuickActionManager.run backends', () => {
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
+  });
+
+  // IDE-AUD-054(R2-F27):@http: 直达入口的响应观察器必须透传到底层真传输
+  // 面——真实编排 runByName→runHttpRequestFrom→runHttpEntry(hook)=
+  // HttpRequestService.runEntry→transport,观察者拿到真实 status/body 落账,
+  // 不手调假观察器。有观察器时 debug 路径不再走 execute=terminalHttp 闭包
+  // (返回 void 拿不到 status/body),改由 hook 自身传输。
+  const makeObservedManager = (
+    response: { ok: boolean; status: number; durationMs: number; body: string; error?: string },
+    deps: Partial<QuickActionManagerDeps> = {}
+  ): { manager: QuickActionManager; seen: Array<{ status: number; body: string }> } => {
+    const httpRequestService = new HttpRequestService({
+      getEntries: () => [],
+      log: () => {},
+      notifyError: message => { messages.error.push(message); },
+      transport: async () => response
+    });
+    const seen: Array<{ status: number; body: string }> = [];
+    const manager = new QuickActionManager(makeContext(), {
+      ...makeDeps(),
+      ...deps,
+      runHttpEntry: (entry, execute, onHttpResponse) =>
+        httpRequestService.runEntry(entry, execute, onHttpResponse)
+    });
+    return { manager, seen };
+  };
+
+  it('IDE-AUD-054 @http:debug:runByName 透传 onHttpResponse,2xx 按真实事实回调', async () => {
+    setConfig({ httpRequests: [{ name: 'reload', method: 'POST', url: 'http://127.0.0.1:21345/reload', body: 'ok' }] });
+    const { manager, seen } = makeObservedManager({ ok: true, status: 204, durationMs: 1, body: 'no-content' });
+
+    const ok = await manager.runByName('@http:debug:0', { onHttpResponse: r => seen.push(r) });
+
+    expect(ok).toBe(true);
+    expect(seen).toEqual([{ status: 204, body: 'no-content' }]);
+  });
+
+  it('IDE-AUD-054 @http:debug 非 2xx/传输失败也如实回调(status 原样透传)', async () => {
+    setConfig({ httpRequests: [{ name: 'reload', method: 'POST', url: 'http://127.0.0.1:21345/reload', body: 'ok' }] });
+    const { manager, seen } = makeObservedManager({ ok: true, status: 500, durationMs: 1, body: 'engine-error' });
+
+    await manager.runByName('@http:debug:0', { onHttpResponse: r => seen.push(r) });
+
+    expect(seen).toEqual([{ status: 500, body: 'engine-error' }]);
+    // 非 2xx 不吞错:输出面板有失败弹窗入账(transport ok=true 网络层成功,
+    // 失败分类由观察者/台账按状态码判,这里只锁观察器拿到真实 500)
+  });
+
+  it('IDE-AUD-054 @http:settings:runByName 透传 onHttpResponse', async () => {
+    const { manager, seen } = makeObservedManager({ ok: true, status: 200, durationMs: 1, body: '{"status":"accepted"}' }, {
+      getSettingHttpEntries: () => [
+        { name: 'reload', method: 'POST', url: 'http://s/reload', body: 'ok', headers: {}, enabled: true, keybinding: '' }
+      ]
+    });
+
+    const ok = await manager.runByName('@http:settings:0', { onHttpResponse: r => seen.push(r) });
+
+    expect(ok).toBe(true);
+    expect(seen).toEqual([{ status: 200, body: '{"status":"accepted"}' }]);
   });
 
   it('reports an http runner exception such as a timeout', async () => {

@@ -164,7 +164,11 @@ export class HttpRequestService {
   }
 
   /** Execute a caller-selected entry after its source/index identity was resolved. */
-  async runEntry(entry: HttpRequestEntry, execute?: () => Promise<void>): Promise<boolean> {
+  async runEntry(
+    entry: HttpRequestEntry,
+    execute?: () => Promise<void>,
+    onHttpResponse?: (response: { status: number; body: string }) => void
+  ): Promise<boolean> {
     if (!entry.enabled) {
       this.deps.notifyError(`HTTP 快捷请求「${entry.name}」不存在或已停用`);
       return false;
@@ -191,6 +195,11 @@ export class HttpRequestService {
       body: request.body,
       timeoutMs: this.timeoutMs
     });
+
+    // AUD-054(R2-F27):真实响应到达即上报观察者(回执解析面)——2xx/非 2xx/
+    // 传输失败(status=0)都按真实事实回调,观察者分类落账不靠猜;仅 hook
+    // 直连本服务时生效(execute 终端闭包路径拿不到 status/body,不回调)。
+    onHttpResponse?.({ status: result.status, body: result.body });
 
     if (result.ok) {
       this.deps.log(`✓ ${result.status} · ${result.durationMs}ms`);

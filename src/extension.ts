@@ -3389,7 +3389,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 批136:保留 runDefault 命令,供命令面板一键跑上次执行的动作。
   const quickActionManager = new QuickActionManager(context, {
     getSettingHttpEntries: () => parseHttpRequestEntries(vscode.workspace.getConfiguration('kbengine').get('httpRequests')),
-    runHttpEntry: entry => httpRequestService.runEntry(entry)
+    // AUD-054(R2-F27):entry/execute/onHttpResponse 三参透传——@http:debug/
+    // settings 入口的响应观察器直达 httpRequestService,按真实 HTTP 事实落账
+    runHttpEntry: (entry, execute, onHttpResponse) => httpRequestService.runEntry(entry, execute, onHttpResponse)
   });
   quickActionManagerRef.current = quickActionManager;
   const quickActionTreeProvider = new QuickActionTreeProvider({
