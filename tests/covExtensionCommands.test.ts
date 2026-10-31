@@ -1175,6 +1175,43 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
     expect(run?.skippedItems.length).toBeGreaterThan(0);
   }, 60000);
 
+  it('测试面板 Run 档:进程退出非零且无失败节点 → 会话错误显示+stderr,节点保留 passed (R2-F19)', async () => {
+    // pytest_unconfigure 抛错:test_ok PASSED、无 ERROR/FAILED 节点,但退出码 1
+    const subDir = path.join(assets, 'scripts', 'test_sessionfail');
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(subDir, 'conftest.py'),
+      'import pytest\n\n\ndef pytest_unconfigure(config):\n    raise RuntimeError("unconfigure boom")\n',
+      'utf8'
+    );
+    fs.writeFileSync(path.join(subDir, 'test_hook.py'), 'def test_ok():\n    assert True\n', 'utf8');
+    try {
+      await commands.executeCommand('kbengine.tests.list');
+      const controller = testsRegistry.controllers.find(entry => entry.id === 'kbengine-python-tests');
+      const profile = controller?.profiles.find(entry => entry.label === '运行');
+      let caseItem: unknown;
+      controller?.items.forEach(fileItem => {
+        const file = fileItem as { id?: string; children?: { forEach(cb: (child: unknown) => void): void } };
+        if (file.id === 'test_sessionfail/test_hook.py') {
+          file.children?.forEach(child => {
+            caseItem = child;
+          });
+        }
+      });
+      expect(caseItem).toBeDefined();
+      await profile?.runHandler({ include: [caseItem] }, tokenStub);
+      const run = controller?.createdRuns.at(-1);
+      expect(run).toBeDefined();
+      // 节点主体真实结果:test_ok 仍标 passed(不整个运行冒充成功也不误判失败)
+      expect(run?.passedItems.some(item => item.id.includes('test_sessionfail/test_hook.py'))).toBe(true);
+      // 会话错误及 stderr:输出面板横幅 + 工作台如实报错
+      expect(run?.outputChunks.some(chunk => chunk.output.includes('测试会话'))).toBe(true);
+      expect(messages.error.some(message => message.includes('测试会话失败'))).toBe(true);
+    } finally {
+      fs.rmSync(subDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it('debug 装配命令:launch.json 同步 / debugpy 同步 / 等待连接关', async () => {
     await commands.executeCommand('kbengine.debug.updateLaunchJson');
     await commands.executeCommand('kbengine.python.debugpySync');

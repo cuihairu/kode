@@ -1175,6 +1175,18 @@ describe('pythonTestRunner(判读与进程边角)', () => {
     const failed = await spawnTestProcess({ command, args: [], cwd: tmpdir() });
     expect(failed.code).toBeNull();
     expect(failed.stderr).toContain(command);
+    expect(failed.spawnError).toBeDefined();
+  }, 15_000);
+
+  it('spawnTestProcess:子进程被信号终止 → code null + signal 显式记录 (R2-F19)', async () => {
+    const result = await spawnTestProcess({
+      command: process.execPath,
+      args: ['-e', 'process.kill(process.pid, "SIGTERM")'],
+      cwd: tmpdir()
+    });
+    expect(result.code).toBeNull();
+    expect(result.signal).toBe('SIGTERM');
+    expect(result.spawnError).toBeUndefined();
   }, 15_000);
 });
 

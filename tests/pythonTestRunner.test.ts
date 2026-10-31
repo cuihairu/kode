@@ -5,9 +5,13 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   buildPytestArgs,
+  buildPythonTestSessionReport,
+  describePythonTestExecIssue,
   resolvePytestEntries,
   runPythonTests,
+  selectSessionFailures,
   spawnTestProcess,
+  type PythonTestExecIssue,
   type PythonTestRunItem
 } from '../src/pythonTestRunner';
 
@@ -189,6 +193,98 @@ describe('runPythonTests(逐条执行+取消语义)', () => {
 
     expect(calls).toHaveLength(0);
     expect(entries).toEqual([]);
+  });
+
+  it('PASSED 节点但进程退出非零:节点主体保留 passed,退出码入账不再丢弃 (R2-F19)', async () => {
+    const entries = await runPythonTests(
+      { interpreterPath: '/ws/py/python3', cwd: '/ws/assets/scripts', items: [ITEM] },
+      {
+        exec: async () => ({
+          stdout: passedOutput(ITEM),
+          stderr: 'teardown error text',
+          code: 1
+        }),
+        isCancelled: () => false
+      }
+    );
+
+    expect(entries[0].outcome).toBe('passed');
+    expect(entries[0].exec?.code).toBe(1);
+    expect(entries[0].exec?.stderr).toContain('teardown');
+  });
+
+  it('解释器缺失(spawn 错误):节点 errored 显式说明,exec 带 spawnError', async () => {
+    const entries = await runPythonTests(
+      { interpreterPath: '/ws/missing/python3', cwd: '/ws/assets/scripts', items: [ITEM] },
+      {
+        exec: async () => ({
+          stdout: '',
+          stderr: '/ws/missing/python3: No such file',
+          code: null,
+          spawnError: 'spawn ENOENT'
+        }),
+        isCancelled: () => false
+      }
+    );
+
+    expect(entries[0].outcome).toBe('errored');
+    expect(entries[0].message).toContain('解释器启动失败');
+    expect(entries[0].exec?.spawnError).toBe('spawn ENOENT');
+  });
+
+  it('被信号终止:节点 errored 显式说明,exec 带 signal', async () => {
+    const entries = await runPythonTests(
+      { interpreterPath: '/ws/py/python3', cwd: '/ws/assets/scripts', items: [ITEM] },
+      {
+        exec: async () => ({ stdout: '', stderr: '', code: null, signal: 'SIGTERM' }),
+        isCancelled: () => false
+      }
+    );
+
+    expect(entries[0].outcome).toBe('errored');
+    expect(entries[0].message).toContain('SIGTERM');
+    expect(entries[0].exec?.signal).toBe('SIGTERM');
+  });
+
+  it('退出码 0 且无 spawn/信号:不挂 exec 会话问题', async () => {
+    const entries = await runPythonTests(
+      { interpreterPath: '/ws/py/python3', cwd: '/ws/assets/scripts', items: [ITEM] },
+      {
+        exec: async () => ({ stdout: passedOutput(ITEM), stderr: '', code: 0 }),
+        isCancelled: () => false
+      }
+    );
+
+    expect(entries[0].outcome).toBe('passed');
+    expect(entries[0].exec).toBeUndefined();
+  });
+});
+
+describe('会话失败选取与报告(R2-F19)', () => {
+  const passedEntry = (exec: PythonTestExecIssue) => ({ id: 'a', outcome: 'passed' as const, output: '', exec });
+  const failedEntry = (exec: PythonTestExecIssue) => ({ id: 'b', outcome: 'failed' as const, output: '', exec });
+
+  it('describePythonTestExecIssue 三面:spawn/信号/退出码', () => {
+    expect(describePythonTestExecIssue({ code: null, spawnError: 'spawn ENOENT', stderr: '' })).toContain(
+      '解释器启动失败'
+    );
+    expect(describePythonTestExecIssue({ code: null, signal: 'SIGTERM', stderr: '' })).toContain('SIGTERM');
+    expect(describePythonTestExecIssue({ code: 1, stderr: '' })).toContain('退出码 1');
+  });
+
+  it('selectSessionFailures:只取 passed/skipped 却挂进程问题的条目(不冒充成功)', () => {
+    expect(selectSessionFailures([passedEntry({ code: 1, stderr: 'boom' })])).toHaveLength(1);
+    expect(selectSessionFailures([failedEntry({ code: 1, stderr: 'boom' })])).toHaveLength(0);
+    expect(selectSessionFailures([{ id: 'c', outcome: 'passed', output: '' }])).toHaveLength(0);
+  });
+
+  it('buildPythonTestSessionReport:无问题 null,有问题横幅含原因与 stderr', () => {
+    expect(buildPythonTestSessionReport([])).toBeNull();
+    const report = buildPythonTestSessionReport([passedEntry({ code: 1, stderr: 'teardown boom' })]);
+    expect(report).toContain('测试会话');
+    expect(report).toContain('a');
+    expect(report).toContain('退出码 1');
+    expect(report).toContain('teardown boom');
   });
 });
 

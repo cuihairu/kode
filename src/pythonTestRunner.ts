@@ -30,6 +30,22 @@ export interface PythonTestRunEntry {
   message?: string;
   /** 本次执行的原始输出(stdout+stderr,面板 Output 用) */
   output: string;
+  /**
+   * 该条目进程的会话问题(R2-F19):退出非零/被信号终止/spawn 失败时
+   * 挂上;节点主体真实结果(outcome)不受影响,由消费面另行呈报。
+   */
+  exec?: PythonTestExecIssue;
+}
+
+/** 一条目 pytest 进程的会话级问题(节点结果之外) */
+export interface PythonTestExecIssue {
+  /** 进程退出码;null=被信号终止或 spawn 失败 */
+  code: number | null;
+  /** 被信号终止时的信号名(如 SIGTERM) */
+  signal?: string;
+  /** spawn 失败消息(解释器缺失等,进程根本没起来) */
+  spawnError?: string;
+  stderr: string;
 }
 
 /** pytest 固定参数(-p no:cacheprovider:不在用户 scripts 根落缓存) */
@@ -150,6 +166,10 @@ export interface PythonTestExecResult {
   stdout: string;
   stderr: string;
   code: number | null;
+  /** 进程被信号终止时的信号名(如 SIGTERM) */
+  signal?: string;
+  /** spawn 失败消息(解释器缺失等,进程根本没起来) */
+  spawnError?: string;
 }
 
 export interface PythonTestRunDeps {
@@ -171,17 +191,80 @@ export async function runPythonTests(
     if (deps.isCancelled()) {
       break;
     }
-    const { stdout, stderr } = await deps.exec({
+    const { stdout, stderr, code, signal, spawnError } = await deps.exec({
       command: request.interpreterPath,
       args: buildPytestArgs(item),
       cwd: request.cwd
     });
-    entries.push(...resolvePytestEntries(`${stdout}\n${stderr}`, [item]));
+    // R2-F19:退出码不再丢弃——spawn 失败/被信号终止/退出非零都挂会话
+    // 问题(节点主体真实结果仍由 pytest 输出判读,不因退出码翻案)
+    const issue: PythonTestExecIssue | undefined =
+      spawnError !== undefined
+        ? { code: null, spawnError, stderr }
+        : signal !== undefined
+          ? { code: null, signal, stderr }
+          : code !== 0
+            ? { code, stderr }
+            : undefined;
+    const resolved = resolvePytestEntries(`${stdout}\n${stderr}`, [item]);
+    for (const entry of resolved) {
+      if (issue) {
+        entry.exec = issue;
+        // 解释器缺失/被信号终止:节点本就 errored(无 pytest 输出),
+        // 消息显式化,不冒充「未收集到测试」也不冒充测试失败
+        if (issue.spawnError) {
+          entry.message = `解释器启动失败: ${issue.spawnError}`;
+        } else if (issue.signal) {
+          entry.message = `测试进程被信号终止(${issue.signal})`;
+        }
+      }
+    }
+    entries.push(...resolved);
   }
   return entries;
 }
 
-/** 装配层默认注入:真子进程捕获 stdout/stderr 与退出码 */
+/** 会话问题的中文描述(报告与工作台报错共用) */
+export function describePythonTestExecIssue(issue: PythonTestExecIssue): string {
+  if (issue.spawnError) {
+    return `解释器启动失败: ${issue.spawnError}`;
+  }
+  if (issue.signal) {
+    return `进程被信号终止(${issue.signal})`;
+  }
+  return `进程退出码 ${issue.code}`;
+}
+
+/**
+ * R2-F19 会话失败选取:只挑「节点看起来成功(passed/skipped)却挂了
+ * 进程问题」的条目——退出非零而没有任何失败/错误节点,正是「整个
+ * 运行冒充成功」的形态;失败/错误节点的非零退出已被节点主体解释,
+ * 不再重复呈报。
+ */
+export function selectSessionFailures(entries: PythonTestRunEntry[]): PythonTestRunEntry[] {
+  return entries.filter(entry => entry.exec !== undefined && (entry.outcome === 'passed' || entry.outcome === 'skipped'));
+}
+
+/**
+ * 会话失败横幅(输出面板用):逐失败条目列出原因与 stderr;
+ * 无问题返回 null。
+ */
+export function buildPythonTestSessionReport(entries: PythonTestRunEntry[]): string | null {
+  if (entries.length === 0) {
+    return null;
+  }
+  const lines: string[] = ['========== 测试会话错误(节点结果仍如实保留) =========='];
+  for (const entry of entries) {
+    const issue = entry.exec!;
+    lines.push(`- ${entry.id}: ${describePythonTestExecIssue(issue)}`);
+    if (issue.stderr) {
+      lines.push(issue.stderr);
+    }
+  }
+  return lines.join('\n');
+}
+
+/** 装配层默认注入:真子进程捕获 stdout/stderr 与退出码/信号 */
 export function spawnTestProcess(request: {
   command: string;
   args: string[];
@@ -198,10 +281,15 @@ export function spawnTestProcess(request: {
       stderr += String(chunk);
     });
     child.on('error', error => {
-      resolve({ stdout, stderr: `${stderr}${request.command}: ${error.message}`, code: null });
+      resolve({
+        stdout,
+        stderr: `${stderr}${request.command}: ${error.message}`,
+        code: null,
+        spawnError: error.message
+      });
     });
-    child.on('close', code => {
-      resolve({ stdout, stderr, code });
+    child.on('close', (code, signal) => {
+      resolve({ stdout, stderr, code, signal: signal ?? undefined });
     });
   });
 }

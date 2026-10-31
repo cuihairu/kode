@@ -75,7 +75,13 @@ import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
 import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
 import { discoverProjectPythonTests, showPythonTestList } from './pythonTestDiscovery';
-import { runPythonTests, spawnTestProcess } from './pythonTestRunner';
+import {
+  buildPythonTestSessionReport,
+  describePythonTestExecIssue,
+  runPythonTests,
+  selectSessionFailures,
+  spawnTestProcess
+} from './pythonTestRunner';
 import {
   captureTaskRunContext,
   prepareTestRun,
@@ -2571,6 +2577,17 @@ export function activate(context: vscode.ExtensionContext) {
         } else {
           run.failed(registered.item, new vscode.TestMessage(entry.message ?? entry.outcome));
         }
+      }
+      // R2-F19:节点主体真实结果已入账(通过节点仍标 passed),但进程退出
+      // 非零/被信号终止/解释器缺失不再被丢弃——呈报会话错误+stderr,
+      // 整个运行不冒充成功。失败/错误节点的非零退出已被节点解释,不重复。
+      const sessionFailures = selectSessionFailures(entries);
+      if (sessionFailures.length > 0) {
+        run.appendOutput(`${buildPythonTestSessionReport(sessionFailures)}\n`);
+        const causes = sessionFailures
+          .map(entry => `${entry.id}: ${describePythonTestExecIssue(entry.exec!)}`)
+          .join('; ');
+        void vscode.window.showErrorMessage(`测试会话失败(节点结果仍如实保留): ${causes};详见测试输出面板`);
       }
       run.end();
     },
