@@ -3093,7 +3093,8 @@ function findDatabaseSchemaLocationFromDef(
 
   const primaryTarget = targets[0];
   return new vscode.Location(
-    createDatabaseSchemaUri(entityName),
+    // AUD-055:定位目标 URI 带根身份(与 def 文档同根),A/B 同名实体不串
+    createDatabaseSchemaUri(entityName, getWorkspaceRootForDocument(document)),
     new vscode.Position(
       Math.max(locateDatabaseSchemaLine(snapshot, primaryTarget.tableName, primaryTarget.fieldName) - 1, 0),
       0
@@ -5312,7 +5313,8 @@ export class TypesXmlCodeLensProvider implements vscode.CodeLensProvider {
           ? {
             title: spec.title,
             command: 'kbengine.database.open',
-            arguments: [spec.target.entity, spec.target.table, spec.target.column]
+            // AUD-055:根身份随命令入参贯穿,目标 schema 文档带根不串根
+            arguments: [spec.target.entity, spec.target.table, spec.target.column, workspaceRoot]
           }
           : undefined
       )

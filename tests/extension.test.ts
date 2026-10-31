@@ -21,6 +21,7 @@ import {
   resetLanguageServiceMetrics
 } from '../src/languageServiceMetrics';
 import { getDatabaseSchemaSnapshot, locateDatabaseSchemaLine } from '../src/databaseSchema';
+import { createDatabaseSchemaUri, parseDatabaseSchemaRoot } from '../src/databaseSchemaPresentation';
 import { getDiagnosticScheduler } from '../src/diagnosticScheduler';
 import { KBE_SCHEME, buildKbeStubDocument } from '../src/kbeModuleIndex';
 import { parseDebugConfigText } from '../src/debugConfigBootstrap';
@@ -767,7 +768,13 @@ describe('extension activate 装配', () => {
       const originalActiveEditor = fakeWindow.activeTextEditor;
       messages.warning.length = 0;
       fakeWindow.activeTextEditor = {
-        document: { uri: { fsPath: '/ws/scripts/entity_defs/Hero.def' }, languageId: 'kbengine-def' }
+        // AUD-055:面板直开从活动文档解析根(getWorkspaceRootForDocument 读
+        // fileName),桩补齐 fileName 与真实 TextDocument 面一致
+        document: {
+          uri: { fsPath: '/ws/scripts/entity_defs/Hero.def' },
+          fileName: '/ws/scripts/entity_defs/Hero.def',
+          languageId: 'kbengine-def'
+        }
       } as never;
       await commands.executeCommand('kbengine.database.open');
       expect(messages.warning).toHaveLength(0);
@@ -811,6 +818,65 @@ describe('extension activate 装配', () => {
       expect(messages.warning.filter(message => message.includes('打开实体方法失败: Avatar.respawn (BaseMethods) (Error: boom)'))).toHaveLength(2);
       workspace.openTextDocument = originalOpen;
 
+      disposeAll(context);
+    } finally {
+      workspace.findFiles = originalFindFiles;
+      workspace.workspaceFolders = [];
+      workspace.textDocuments = [];
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  it('IDE-AUD-055 database.open 第4参显式根贯穿到 openTextDocument 的 URI', async () => {
+    // 验收:真实命令到 provider 接线——视图/CodeLens 传入的根身份必须落到
+    // openTextDocument 的虚拟 URI(query root),provider 才按该根解析快照。
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-extension-root-'));
+    const originalFindFiles = workspace.findFiles;
+    try {
+      workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+      const defsRoot = path.join(root, 'scripts', 'entity_defs');
+      fs.mkdirSync(defsRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(defsRoot, 'Hero.def'),
+        [
+          '<root>',
+          '  <Properties>',
+          '    <hp>',
+          '      <Type>UINT32</Type>',
+          '      <Flags>BASE</Flags>',
+          '      <Persistent>true</Persistent>',
+          '    </hp>',
+          '  </Properties>',
+          '</root>'
+        ].join('\n'),
+        'utf8'
+      );
+      fs.writeFileSync(
+        path.join(defsRoot, 'entities.xml'),
+        '<root>\n  <Hero hasBase="true"/>\n</root>\n',
+        'utf8'
+      );
+      workspace.findFiles = (async (pattern: string): Promise<Uri[]> => {
+        if (pattern !== '**/*.def') {
+          return originalFindFiles(pattern);
+        }
+        return [Uri.file(path.join(defsRoot, 'Hero.def'))];
+      }) as typeof originalFindFiles;
+      workspace.textDocuments = [];
+
+      const context = makeContext();
+      activate(context);
+      const openedBefore = workspaceState.openTextDocumentCalls.length;
+
+      await commands.executeCommand('kbengine.database.open', 'Hero', undefined, undefined, root);
+
+      const openUri = workspaceState.openTextDocumentCalls.at(-1) as Uri;
+      expect(parseDatabaseSchemaRoot(openUri)).toBe(root);
+      expect(openUri.toString()).toBe(createDatabaseSchemaUri('Hero', root).toString());
+
+      // 兜底快照按该根解析:能定位到 tbl_Hero(命令不因根串根而报错)
+      expect(messages.warning).toHaveLength(0);
+      expect(workspaceState.openTextDocumentCalls.length).toBe(openedBefore + 1);
       disposeAll(context);
     } finally {
       workspace.findFiles = originalFindFiles;

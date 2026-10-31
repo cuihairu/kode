@@ -422,10 +422,11 @@ describe('TypesXmlCodeLensProvider', () => {
 
     const itemIdLens = lenses.find(lens => (lens.command?.arguments?.[2]) === 'sm_itemId')!;
     expect(itemIdLens.command!.command).toBe('kbengine.database.open');
-    expect(itemIdLens.command!.arguments).toEqual(['Hero', 'tbl_Hero', 'sm_itemId']);
+    // AUD-055:CodeLens 第4参带根身份,目标 schema 文档按该根解析不串根
+    expect(itemIdLens.command!.arguments).toEqual(['Hero', 'tbl_Hero', 'sm_itemId', root]);
     expect(itemIdLens.range.start).toEqual({ line: 1, character: 3 });
     const expandedFieldLens = lenses.find(lens => lens.command?.title.includes('skills[].count'))!;
-    expect(expandedFieldLens.command!.arguments).toEqual(['Hero', 'tbl_Hero_skills', 'sm_count']);
+    expect(expandedFieldLens.command!.arguments).toEqual(['Hero', 'tbl_Hero_skills', 'sm_count', root]);
     provider.dispose();
   });
 

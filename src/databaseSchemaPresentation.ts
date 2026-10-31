@@ -22,7 +22,9 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
 
   provideTextDocumentContent(uri: vscode.Uri): string {
     const entityName = decodeURIComponent(uri.path.replace(/^\/+/, '').replace(/\.schema$/, ''));
-    const snapshot = getDatabaseSchemaSnapshot(entityName);
+    // AUD-055:根身份从 URI query 取回——A/B 同名实体两份 URI 各带各根,
+    // 快照必须按该根解析,不能串根
+    const snapshot = getDatabaseSchemaSnapshot(entityName, parseDatabaseSchemaRoot(uri) ?? undefined);
     const lines = renderDatabaseSchema(snapshot).split('\n');
     this.publishedRenders.set(uri.toString(), { snapshot, lines });
     return lines.join('\n');
@@ -43,9 +45,10 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
     return this.publishedRenders.get(uri.toString())?.snapshot;
   }
 
-  refresh(entityName?: string): void {
+  refresh(entityName?: string, workspaceRoot?: string | null): void {
     if (entityName) {
-      this.onDidChangeEmitter.fire(createDatabaseSchemaUri(entityName));
+      // AUD-055:带根刷新——只动该根下的同名实体文档,不误刷另一根的同类文档
+      this.onDidChangeEmitter.fire(createDatabaseSchemaUri(entityName, workspaceRoot));
       return;
     }
     // IDE-SCH-005:无参 = 全部打开中的 .schema 文档重取(表前缀/连接配置切换
@@ -62,8 +65,18 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
   }
 }
 
-export function createDatabaseSchemaUri(entityName: string): vscode.Uri {
-  return vscode.Uri.parse(`${KBENGINE_DATABASE_SCHEMA_SCHEME}:/${encodeURIComponent(entityName)}.schema`);
+/** AUD-055:从 schema URI 取回根身份(query root 参数);无根返回 null */
+export function parseDatabaseSchemaRoot(uri: vscode.Uri): string | null {
+  // URLSearchParams.get 已解一次 percent 编码(建 uri 时 encodeURIComponent),
+  // 不再二次解码以免含 % 的路径被吃
+  return new URLSearchParams(uri.query).get('root');
+}
+
+export function createDatabaseSchemaUri(entityName: string, workspaceRoot?: string | null): vscode.Uri {
+  const base = `${KBENGINE_DATABASE_SCHEMA_SCHEME}:/${encodeURIComponent(entityName)}.schema`;
+  // AUD-055:根身份编进 query——A/B 同名实体两份不同 URI,文档身份按全
+  // URI(含 query)区分;无根(旧路径/测试)保持无 query 原形态
+  return workspaceRoot ? vscode.Uri.parse(`${base}?root=${encodeURIComponent(workspaceRoot)}`) : vscode.Uri.parse(base);
 }
 
 export function isDatabaseSchemaDocument(document: Pick<vscode.TextDocument, 'uri'>): boolean {

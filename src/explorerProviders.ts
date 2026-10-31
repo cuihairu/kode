@@ -667,7 +667,8 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
         command: {
           command: 'kbengine.database.open',
           title: 'Open Database Schema',
-          arguments: [entry.name, table.name, field.name]
+          // AUD-055:根身份随命令入参贯穿,A/B 同名实体各开各根
+          arguments: [entry.name, table.name, field.name, workspaceRoot]
         }
       }))
     }));

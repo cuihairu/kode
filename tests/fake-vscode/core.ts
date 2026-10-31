@@ -51,33 +51,47 @@ const URI_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/?\/?/;
 export class Uri {
   readonly scheme: string;
   readonly path: string;
+  /** AUD-055:schema 根身份编在 query;真机 vscode.Uri 恒有 query 字段,补最小面 */
+  readonly query: string;
 
   static file(fsPath: string): Uri {
-    return new Uri(fsPath, 'file');
+    return new Uri(fsPath, 'file', '');
   }
 
   static parse(value: string): Uri {
     // 带自定义 scheme 的虚拟 URI(如 kbengine-db-schema:/Hero.schema):
-    // scheme 单独记账,剩余部分作为 fsPath/path 供文档定位使用。
+    // scheme 单独记账,剩余部分作为 fsPath/path 供文档定位使用;
+    // query(若有)与 path 分开记账,避免把 ?root=… 吃进 path。
     const match = URI_SCHEME_PATTERN.exec(value);
     if (match && match[1] !== 'file') {
-      return new Uri(value.slice(match[0].length), match[1]);
+      return Uri.splitQuery(value.slice(match[0].length), match[1]);
     }
-    return new Uri(value, 'file');
+    return Uri.splitQuery(value, 'file');
   }
 
   static joinPath(base: Uri, ...segments: string[]): Uri {
     const baseDir = base.fsPath.replace(/\/+$/, '');
-    return new Uri([baseDir, ...segments].join('/'), base.scheme);
+    return new Uri([baseDir, ...segments].join('/'), base.scheme, base.query);
   }
 
-  private constructor(public readonly fsPath: string, scheme: string) {
+  private static splitQuery(rest: string, scheme: string): Uri {
+    const qIndex = rest.indexOf('?');
+    if (qIndex >= 0) {
+      return new Uri(rest.slice(0, qIndex), scheme, rest.slice(qIndex + 1));
+    }
+    return new Uri(rest, scheme, '');
+  }
+
+  private constructor(public readonly fsPath: string, scheme: string, query: string) {
     this.scheme = scheme;
     this.path = fsPath;
+    this.query = query;
   }
 
   toString(): string {
-    return this.fsPath;
+    const query = this.query ? `?${this.query}` : '';
+    // 真机 vscode.Uri.toString() 含 scheme;file 面保持纯路径,不动既有断言。
+    return this.scheme === 'file' ? `${this.fsPath}${query}` : `${this.scheme}:${this.fsPath}${query}`;
   }
 }
 

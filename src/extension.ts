@@ -1577,7 +1577,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const openDatabaseSchemaCommand = vscode.commands.registerCommand(
     'kbengine.database.open',
-    async (entityName?: string, tableName?: string, fieldName?: string) => {
+    async (entityName?: string, tableName?: string, fieldName?: string, workspaceRoot?: string) => {
       // 命令面板无参直开时取活动 .def 推断实体,与 simulate 同口径;仍无实体
       // 如实提示——此前命令体直接 return,面板点了毫无反应,数据库表结构入口
       // 找不到(Entities 视图的数据库条目是唯一可达路径)
@@ -1586,9 +1586,13 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('请先打开一个实体 .def 文件');
         return;
       }
+      // AUD-055:根身份贯穿——视图/CodeLens 显式传根优先;面板直开从活动
+      // 文档解析所在根(A/B 同名实体可各开各根,不串根)
+      const resolvedRoot = workspaceRoot
+        ?? getWorkspaceRootForDocument(vscode.window.activeTextEditor?.document);
 
       try {
-        const uri = createDatabaseSchemaUri(resolvedEntityName);
+        const uri = createDatabaseSchemaUri(resolvedEntityName, resolvedRoot);
         const document = await vscode.workspace.openTextDocument(uri);
         // IDE-SCH-010:优先用「屏上这一代」渲染定位(展示与跳转同源,await 期间
         // def/配置变更不撕裂行号);未发布过才退独立快照口径
@@ -1600,7 +1604,7 @@ export function activate(context: vscode.ExtensionContext) {
               fieldName
             ) ?? 1
           : (() => {
-              const snapshot = getDatabaseSchemaSnapshot(resolvedEntityName);
+              const snapshot = getDatabaseSchemaSnapshot(resolvedEntityName, resolvedRoot ?? undefined);
               return snapshot
                 ? locateDatabaseSchemaLine(snapshot, tableName || resolveEntityTableName(resolvedEntityName, snapshot), fieldName)
                 : 1;
