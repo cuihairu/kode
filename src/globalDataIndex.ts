@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { performance } from 'perf_hooks';
 import { findFilesAcrossRoots, getExternalScanRoots } from './scanRoots';
 import { PY_SCAN_EXCLUDE } from './pythonScanRules';
 import { getKbeAliases } from './kbeModuleIndex';
@@ -49,6 +50,24 @@ export interface KbeDataDictSite extends KbeDataDictAccess {
 }
 
 const DATA_DICT_PATTERN = new RegExp(`(\\w+)\\.(${KBENGINE_DATA_DICTS.join('|')})\\b`, 'g');
+
+/** 同步掩码包装的分块大小(输出与不分块逐字节一致,仅控制单段耗时) */
+const MASK_CHUNK = 1 << 20;
+
+/**
+ * AUD-076(R4-F11):编辑路径调度预算——
+ * - `EDIT_ASYNC_THRESHOLD_BYTES`:超过该字节数的文档改走异步预算化重扫
+ *   (同步一次全量扫描大文件会连续阻塞宿主,审计实测单文件 292ms);
+ *   预算内的常规小文件保持同步刷新(即时一致,无调度延迟)。
+ * - `EDIT_SCAN_LINE_SLICE`:异步扫描每片行数(掩码+行扫描片)。
+ * - `EDIT_COMMIT_ACCESS_SLICE`:异步倒排提交每片访问数(移除+新增)。
+ */
+const EDIT_ASYNC_THRESHOLD_BYTES = 64 * 1024;
+const EDIT_SCAN_LINE_SLICE = 4000;
+const EDIT_COMMIT_ACCESS_SLICE = 8000;
+
+/** 让出宿主一个宏任务节拍(与冷扫同款) */
+const yieldToHost = (): Promise<void> => new Promise<void>(resolve => setImmediate(resolve));
 
 /** 增强赋值符(算写点,但值类型不可推);长符在前防前缀截断 */
 const AUGMENTED_ASSIGN_OPS = [
@@ -470,10 +489,26 @@ function trimSpan(lineText: string, start: number, end: number): KeySpan | null 
  * 字符(含 `\<newline>` 行延续);引号外 `#` 起到行尾为注释。字面量前缀
  * (r/b/f/u)不影响掩码——前缀字符留在代码域,引号起才进字符串。
  */
-export function buildPythonCodeMask(text: string): Uint8Array {
-  const mask = new Uint8Array(text.length);
-  let inString: { quote: string; triple: boolean } | null = null;
-  for (let index = 0; index < text.length; index += 1) {
+/** 掩码扫描的可续状态(字符串/注释跨块延续)。 */
+interface MaskState {
+  inString: { quote: string; triple: boolean } | null;
+  index: number;
+}
+
+/**
+ * 把词法掩码从 state.index 续写到 `end`(含状态延续)。分块调用时输出与
+ * 一次性 `buildPythonCodeMask` 逐字节一致——仅把迭代序列按 `end` 分段,
+ * 每段携带 inString 状态;注释/三引号快进可越过 `end`,由下一块从越过处续。
+ */
+function extendPythonCodeMask(
+  text: string,
+  mask: Uint8Array,
+  state: MaskState,
+  end: number
+): void {
+  let inString = state.inString;
+  let index = state.index;
+  for (; index < end && index < text.length; index += 1) {
     const ch = text[index];
     if (inString) {
       mask[index] = 1;
@@ -519,6 +554,16 @@ export function buildPythonCodeMask(text: string): Uint8Array {
     }
     mask[index] = 0;
   }
+  state.inString = inString;
+  state.index = index;
+}
+
+export function buildPythonCodeMask(text: string): Uint8Array {
+  const mask = new Uint8Array(text.length);
+  const state: MaskState = { inString: null, index: 0 };
+  while (state.index < text.length) {
+    extendPythonCodeMask(text, mask, state, Math.min(state.index + MASK_CHUNK, text.length));
+  }
   return mask;
 }
 
@@ -550,6 +595,61 @@ function lineStartOffsets(text: string): number[] {
  * 表达式)的访问跳过。AUD-065:只收词法代码域里的访问——注释、普通字符
  * 串、三引号字符串中的伪写/读点不入索引,真实下标与 get 的字符串键照常。
  */
+/** 扫描单行字典键访问(lineOffset=该行在全文中的起始偏移);同步与切片扫描共用 */
+function scanLineDictAccesses(
+  lineText: string,
+  line: number,
+  lineOffset: number,
+  aliases: Set<string>,
+  mask: Uint8Array,
+  accesses: KbeDataDictAccess[]
+): void {
+  DATA_DICT_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DATA_DICT_PATTERN.exec(lineText)) !== null) {
+    if (!aliases.has(match[1])) {
+      continue;
+    }
+    // 别名前是 '.'(x.KBEngine.globalData / self.kbe)→ 属性访问非模块访问
+    if (match.index > 0 && lineText[match.index - 1] === '.') {
+      continue;
+    }
+    // 词法上下文:alias.dict 整段必须是代码,注释/字符串里的假访问不入索引
+    if (!spanIsCode(mask, lineOffset + match.index, match[0].length)) {
+      continue;
+    }
+    const dict = match[2] as KbeDataDictName;
+    const after = skipWhitespace(lineText, match.index + match[0].length);
+    const push = (span: AccessSpan, kind: 'write' | 'read', valueText: string | null): void => {
+      const keySignature = normalizeKeySignature(span.keyRaw);
+      if (keySignature === null) {
+        return;
+      }
+      accesses.push({
+        dict,
+        keySignature,
+        line,
+        keyStart: span.keyStart,
+        keyEnd: span.keyEnd,
+        kind,
+        valueText,
+        exprEnd: span.exprEnd
+      });
+    };
+    if (lineText[after] === '[') {
+      const subscript = parseSubscriptAccess(lineText, after);
+      if (subscript) {
+        push(subscript, subscript.kind, subscript.valueText);
+      }
+      continue;
+    }
+    const getCall = parseGetAccess(lineText, after);
+    if (getCall) {
+      push(getCall, 'read', null);
+    }
+  }
+}
+
 export function findKbeDataDictAccesses(
   text: string,
   aliases: Set<string>
@@ -562,53 +662,69 @@ export function findKbeDataDictAccesses(
   const accesses: KbeDataDictAccess[] = [];
   const lines = text.split(/\r?\n/);
   for (let line = 0; line < lines.length; line += 1) {
-    const lineText = lines[line];
-    DATA_DICT_PATTERN.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = DATA_DICT_PATTERN.exec(lineText)) !== null) {
-      if (!aliases.has(match[1])) {
-        continue;
-      }
-      // 别名前是 '.'(x.KBEngine.globalData / self.kbe)→ 属性访问非模块访问
-      if (match.index > 0 && lineText[match.index - 1] === '.') {
-        continue;
-      }
-      // 词法上下文:alias.dict 整段必须是代码,注释/字符串里的假访问不入索引
-      if (!spanIsCode(mask, (lineStarts[line] ?? 0) + match.index, match[0].length)) {
-        continue;
-      }
-      const dict = match[2] as KbeDataDictName;
-      const after = skipWhitespace(lineText, match.index + match[0].length);
-      const push = (span: AccessSpan, kind: 'write' | 'read', valueText: string | null): void => {
-        const keySignature = normalizeKeySignature(span.keyRaw);
-        if (keySignature === null) {
-          return;
-        }
-        accesses.push({
-          dict,
-          keySignature,
-          line,
-          keyStart: span.keyStart,
-          keyEnd: span.keyEnd,
-          kind,
-          valueText,
-          exprEnd: span.exprEnd
-        });
-      };
-      if (lineText[after] === '[') {
-        const subscript = parseSubscriptAccess(lineText, after);
-        if (subscript) {
-          push(subscript, subscript.kind, subscript.valueText);
-        }
-        continue;
-      }
-      const getCall = parseGetAccess(lineText, after);
-      if (getCall) {
-        push(getCall, 'read', null);
-      }
-    }
+    scanLineDictAccesses(lines[line], line, lineStarts[line] ?? 0, aliases, mask, accesses);
   }
   return accesses;
+}
+
+/** 切片扫描统计(AUD-076:测试与诊断取证最大执行片) */
+export interface SlicedScanStats {
+  sliceCount: number;
+  maxSliceMs: number;
+}
+
+/**
+ * AUD-076(R4-F11):预算化切片扫描——掩码与行扫描同一条流式遍历(流式
+ * 掩码对本行足够:spanIsCode 只查本行区间),每片 `EDIT_SCAN_LINE_SLICE`
+ * 行让出一个宏任务节拍;片间复核 `isCancelled`,取消即放弃整份结果
+ * (旧结果丢弃,由最新代重扫)。输出与同步 `findKbeDataDictAccesses`
+ * 逐项一致(同一逐行体 + 同一分块掩码)。
+ */
+export async function findKbeDataDictAccessesSliced(
+  text: string,
+  aliases: Set<string>,
+  isCancelled: () => boolean,
+  lineSlice = EDIT_SCAN_LINE_SLICE
+): Promise<{ accesses: KbeDataDictAccess[] | null } & SlicedScanStats> {
+  if (aliases.size === 0) {
+    return { accesses: [], sliceCount: 0, maxSliceMs: 0 };
+  }
+  const mask = new Uint8Array(text.length);
+  const maskState: MaskState = { inString: null, index: 0 };
+  const accesses: KbeDataDictAccess[] = [];
+  let offset = 0;
+  let line = 0;
+  let sliceCount = 0;
+  let maxSliceMs = 0;
+  while (offset < text.length) {
+    const sliceStartedAt = performance.now();
+    const sliceStart = offset;
+    // 片尾 = 向前数 lineSlice 个换行(含其后换行符);末片到文末
+    for (let i = 0; i < lineSlice && offset < text.length; i += 1) {
+      const nl = text.indexOf('\n', offset);
+      offset = nl === -1 ? text.length : nl + 1;
+    }
+    extendPythonCodeMask(text, mask, maskState, offset);
+    let cursor = sliceStart;
+    while (cursor < offset) {
+      const nl = text.indexOf('\n', cursor);
+      const lineEnd = nl === -1 ? text.length : nl;
+      let lineText = text.slice(cursor, lineEnd);
+      if (lineText.endsWith('\r')) {
+        lineText = lineText.slice(0, -1);
+      }
+      scanLineDictAccesses(lineText, line, cursor, aliases, mask, accesses);
+      line += 1;
+      cursor = lineEnd + 1;
+    }
+    sliceCount += 1;
+    maxSliceMs = Math.max(maxSliceMs, performance.now() - sliceStartedAt);
+    if (isCancelled()) {
+      return { accesses: null, sliceCount, maxSliceMs };
+    }
+    await yieldToHost();
+  }
+  return { accesses, sliceCount, maxSliceMs };
 }
 
 /** 落点命中某访问的键表达式区间(含首尾)时返回该访问;provider 定位用 */
@@ -997,6 +1113,64 @@ export function resolveScopeRoot(fsPath: string): string {
 const siteKey = (root: string, dict: string, keySignature: string): string =>
   `${root}\u0000${dict}\u0000${keySignature}`;
 
+/**
+ * AUD-076(R4-F11):预算化倒排提交——移除旧访问 + 新增新访问,每片
+ * `EDIT_COMMIT_ACCESS_SLICE` 个访问让出一个宏任务节拍。提交本身
+ * 不可中途取消(中断会留半提交状态),但片间让路保证宿主不被连续
+ * 占用;是否放行由调用方在提交前一次性复核(仅最新代进提交)。
+ */
+export async function replaceFileSitesSliced(
+  byKey: Map<string, KbeDataDictSite[]>,
+  fsPath: string,
+  previous: KbeDataDictAccess[],
+  next: KbeDataDictAccess[],
+  accessSlice = EDIT_COMMIT_ACCESS_SLICE
+): Promise<SlicedScanStats> {
+  const root = resolveScopeRoot(fsPath);
+  let sliceCount = 0;
+  let maxSliceMs = 0;
+  for (let start = 0; start < previous.length; start += accessSlice) {
+    const t0 = performance.now();
+    const end = Math.min(start + accessSlice, previous.length);
+    for (let i = start; i < end; i += 1) {
+      const access = previous[i];
+      const key = siteKey(root, access.dict, access.keySignature);
+      const sites = byKey.get(key);
+      if (!sites) {
+        continue;
+      }
+      const kept = sites.filter(site => site.file !== fsPath);
+      if (kept.length === 0) {
+        byKey.delete(key);
+      } else {
+        byKey.set(key, kept);
+      }
+    }
+    sliceCount += 1;
+    maxSliceMs = Math.max(maxSliceMs, performance.now() - t0);
+    if (end < previous.length) {
+      await yieldToHost();
+    }
+  }
+  for (let start = 0; start < next.length; start += accessSlice) {
+    const t0 = performance.now();
+    const end = Math.min(start + accessSlice, next.length);
+    for (let i = start; i < end; i += 1) {
+      const access = next[i];
+      const key = siteKey(root, access.dict, access.keySignature);
+      const sites = byKey.get(key) ?? [];
+      sites.push({ ...access, file: fsPath });
+      byKey.set(key, sites);
+    }
+    sliceCount += 1;
+    maxSliceMs = Math.max(maxSliceMs, performance.now() - t0);
+    if (end < next.length) {
+      await yieldToHost();
+    }
+  }
+  return { sliceCount, maxSliceMs };
+}
+
 const INITIAL_SCAN_CONCURRENCY = 8;
 
 /**
@@ -1023,6 +1197,20 @@ export class GlobalDataDictIndex {
   private started = false;
   private starting?: Promise<void>;
   private disposed = false;
+  /**
+   * AUD-076:大文件编辑路径的最新缓冲快照(noteSaved 登记,异步重扫
+   * 迭代开始时读——同一文件的连续编辑自然合并为最新一份)。
+   */
+  private readonly editBuffers = new Map<string, string>();
+  /** AUD-076:每文件在飞异步重扫(合并窗:在飞时新编辑只更新缓冲+revision) */
+  private readonly editInProgress = new Set<string>();
+  /** AUD-076:最近一次大文件编辑重扫统计(测试与诊断取证最大执行片) */
+  readonly lastEditStats = {
+    commits: 0,
+    scansCancelled: 0,
+    maxSliceMs: 0,
+    sliceCount: 0
+  };
 
   constructor(private readonly pyGlob = '**/*.py') {}
 
@@ -1159,6 +1347,8 @@ export class GlobalDataDictIndex {
     this.byKey.clear();
     this.revisions.clear();
     this.dirtyDocs.clear();
+    this.editBuffers.clear();
+    this.editInProgress.clear();
   }
 
   /** 单文件建/重建索引;并发去重(同文件不重复读)。 */
@@ -1237,7 +1427,11 @@ export class GlobalDataDictIndex {
     this.replaceFileSites(fsPath, previous, accesses);
   }
 
-  /** 保存时由编辑器路径直接刷新(免读盘);脏标记随之维护。 */
+  /**
+   * 保存时由编辑器路径直接刷新(免读盘);脏标记随之维护。
+   * AUD-076(R4-F11):超过预算的文档改走异步预算化重扫(合并连续编辑/
+   * 取消旧代/切片限阻塞),预算内的小文件保持同步即时刷新。
+   */
   noteSaved(document: vscode.TextDocument): void {
     if (this.disposed) {
       return;
@@ -1251,7 +1445,80 @@ export class GlobalDataDictIndex {
       this.dirtyDocs.delete(document.uri.fsPath);
     }
     this.revisions.set(document.uri.fsPath, (this.revisions.get(document.uri.fsPath) ?? 0) + 1);
-    this.commitFile(document.uri.fsPath, document.getText());
+    const text = document.getText();
+    if (text.length > EDIT_ASYNC_THRESHOLD_BYTES) {
+      this.editBuffers.set(document.uri.fsPath, text);
+      this.scheduleEditRecompute(document.uri.fsPath);
+      return;
+    }
+    this.commitFile(document.uri.fsPath, text);
+  }
+
+  /**
+   * AUD-076:调度大文件异步重扫。合并窗 = 同文件在飞时只更新缓冲+revision,
+   * 由在飞循环复核后重扫(取消旧代);无在飞则启动一个(逐代最新者胜)。
+   */
+  private scheduleEditRecompute(fsPath: string): void {
+    if (this.disposed) {
+      return;
+    }
+    if (this.editInProgress.has(fsPath)) {
+      return;
+    }
+    this.editInProgress.add(fsPath);
+    void this.runEditRecompute(fsPath);
+  }
+
+  /**
+   * AUD-076:预算化编辑重扫循环。每次迭代捕获 revision/generation 与最新
+   * 缓冲,切片扫描(片间让路+复核取消);扫描被取消(旧代)则循环重扫;
+   * 扫描完成后一次性复核,最新者才进倒排提交(提交自身不可中途取消)。
+   * 提交期间又来新编辑 → 提交完成(书账不可中断)后循环重扫,最终收敛最新。
+   */
+  private async runEditRecompute(fsPath: string): Promise<void> {
+    try {
+      while (!this.disposed) {
+        const text = this.editBuffers.get(fsPath);
+        if (text === undefined) {
+          return;
+        }
+        const revision = this.revisions.get(fsPath) ?? 0;
+        const generation = this.generation;
+        const isCancelled = (): boolean =>
+          this.disposed ||
+          (this.revisions.get(fsPath) ?? 0) !== revision ||
+          this.generation !== generation;
+        const aliases = getKbeAliases(text);
+        const scanned = await findKbeDataDictAccessesSliced(
+          text,
+          aliases,
+          isCancelled
+        );
+        if (scanned.accesses === null) {
+          this.lastEditStats.scansCancelled += 1;
+          this.lastEditStats.maxSliceMs = Math.max(this.lastEditStats.maxSliceMs, scanned.maxSliceMs);
+          continue;
+        }
+        if (isCancelled()) {
+          this.lastEditStats.scansCancelled += 1;
+          this.lastEditStats.maxSliceMs = Math.max(this.lastEditStats.maxSliceMs, scanned.maxSliceMs);
+          continue;
+        }
+        this.lastEditStats.maxSliceMs = Math.max(this.lastEditStats.maxSliceMs, scanned.maxSliceMs);
+        this.lastEditStats.sliceCount = Math.max(this.lastEditStats.sliceCount, scanned.sliceCount);
+        const previous = this.cache.get(fsPath)?.accesses ?? [];
+        this.cache.set(fsPath, { accesses: scanned.accesses });
+        const committed = await replaceFileSitesSliced(this.byKey, fsPath, previous, scanned.accesses);
+        this.lastEditStats.maxSliceMs = Math.max(this.lastEditStats.maxSliceMs, committed.maxSliceMs);
+        this.lastEditStats.commits += 1;
+        // 提交期间又来新编辑(revision/代际前进)→ 循环重扫,否则本轮完成
+        if ((this.revisions.get(fsPath) ?? 0) === revision && this.generation === generation) {
+          return;
+        }
+      }
+    } finally {
+      this.editInProgress.delete(fsPath);
+    }
   }
 
   /** (作用域根, 字典, 键签名) 的全部写+读点(走内存索引,不重扫)。 */

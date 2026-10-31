@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { performance } from 'perf_hooks';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -17,12 +18,16 @@ import { PythonTypeInlayHintsProvider } from '../src/typeInlayHints';
 import {
   GlobalDataDictIndex,
   findKbeDataDictAccesses,
+  findKbeDataDictAccessesSliced,
   findLineCommentIndex,
   getKbeDataDictAccessAtPosition,
   inferDataDictValueType,
   isKeyInsideLineComment,
-  normalizeKeySignature
+  normalizeKeySignature,
+  replaceFileSitesSliced
 } from '../src/globalDataIndex';
+import type { KbeDataDictSite } from '../src/globalDataIndex';
+import { getKbeAliases } from '../src/kbeModuleIndex';
 
 // GLOBDATA-001(2026-10-30 用户令):KBEngine.globalData/baseAppData/cellAppData
 // 字典键访问索引。纯逻辑面:键签名归一(字面量/标识符/计算键骨架)与
@@ -2544,4 +2549,172 @@ describe('AUD-075 源文档版本复核(R4-F10)', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+});
+
+describe('AUD-076 编辑重扫接入交互调度预算(R4-F11)', () => {
+  /** 合成大文件:约 3.7MB、12 万访问点(镜像审计 R4-F11 量级)。 */
+  const buildLargeText = (accessCount = 120000): { text: string; accesses: number } => {
+    const blocks: string[] = [];
+    let accesses = 0;
+    while (accesses < accessCount) {
+      const n = 40 + (accesses % 30);
+      let block = 'import KBEngine\n';
+      for (let i = 0; i < n && accesses < accessCount; i += 1) {
+        block += `KBEngine.globalData["k${accesses}"] = ${accesses}\n`;
+        accesses += 1;
+      }
+      blocks.push(block);
+    }
+    return { text: blocks.join('\n'), accesses };
+  };
+
+  const waitUntil = async (cond: () => boolean, limit = 4000): Promise<void> => {
+    for (let i = 0; i < limit && !cond(); i += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    if (!cond()) {
+      throw new Error('waitUntil condition not met');
+    }
+  };
+
+  it('大文件 noteSaved 不阻塞宿主(旧实现同步全量重扫)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-a76-'));
+    const writer = path.join(root, 'base', 'big.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    const { text } = buildLargeText();
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      const startedAt = performance.now();
+      index.noteSaved({
+        uri: { fsPath: writer },
+        getText: () => text,
+        isDirty: true
+      } as never);
+      const elapsed = performance.now() - startedAt;
+      // 交互预算:单次 noteSaved 的连续阻塞须远低于全量扫描时间(292ms 级)
+      expect(elapsed).toBeLessThan(200);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it('切片扫描与同步扫描逐项一致(含 \\r\\n/注释/三引号/跨行字符串)', async () => {
+    const mixed = [
+      'import KBEngine\n',
+      '# KBEngine.globalData["commented"] = 0\n',
+      'x = KBEngine.globalData["real1"] = 1\n',
+      's = """KBEngine.globalData["triple"] = 2"""\n',
+      'KBEngine.globalData["crlf"] = 3\r\n',
+      'KBEngine.cellAppData.get("cell")\n',
+      'KBEngine.baseAppData["base"] = {"gold": 1}\n'
+    ].join('');
+    const aliases = getKbeAliases(mixed);
+    const sync = findKbeDataDictAccesses(mixed, aliases);
+    const sliced = await findKbeDataDictAccessesSliced(mixed, aliases, () => false, 2);
+    expect(sliced.accesses).toEqual(sync);
+    expect(sliced.sliceCount).toBeGreaterThan(1);
+  });
+
+  it('切片扫描最大执行片远小于同步全量(交互预算)', async () => {
+    const { text } = buildLargeText(120000);
+    const aliases = getKbeAliases(text);
+    const syncStartedAt = performance.now();
+    const sync = findKbeDataDictAccesses(text, aliases);
+    const syncMs = performance.now() - syncStartedAt;
+    const sliced = await findKbeDataDictAccessesSliced(text, aliases, () => false);
+    expect(sliced.accesses).toEqual(sync);
+    expect(sliced.sliceCount).toBeGreaterThan(1);
+    // 最大执行片须远小于同步全量(至少切成 3 片且单片显著低于总量)
+    expect(sliced.maxSliceMs).toBeLessThan(syncMs / 3);
+    expect(sliced.maxSliceMs).toBeLessThan(300);
+  }, 60000);
+
+  it('倒排提交切片限阻塞(120k 访问点,非连续占用)', async () => {
+    const { text } = buildLargeText(120000);
+    const aliases = getKbeAliases(text);
+    const accesses = findKbeDataDictAccesses(text, aliases);
+    const byKey = new Map<string, KbeDataDictSite[]>();
+    const stats = await replaceFileSitesSliced(byKey, '/tmp/big.py', [], accesses);
+    expect(stats.sliceCount).toBeGreaterThan(1);
+    expect(stats.maxSliceMs).toBeLessThan(300);
+    expect(byKey.size).toBeGreaterThan(0);
+    // 撤销后无残留
+    const removed = await replaceFileSitesSliced(byKey, '/tmp/big.py', accesses, []);
+    expect(byKey.size).toBe(0);
+    expect(removed.maxSliceMs).toBeLessThan(300);
+  }, 60000);
+
+  it('连续编辑合并:突发多次 noteSaved 只提交最终一份', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-a76m-'));
+    const writer = path.join(root, 'base', 'big.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    fs.writeFileSync(writer, 'import KBEngine\n');
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      const mk = (marker: string): string =>
+        `import KBEngine\n${Array.from({ length: 5000 }, (_, i) => `KBEngine.globalData["${marker}${i}"] = ${i}\n`).join('')}`;
+      const v1 = mk('a');
+      const v2 = mk('b');
+      const v3 = mk('c');
+      // 同一宏任务内连续编辑 → 只合并为最新一份
+      index.noteSaved({ uri: { fsPath: writer }, getText: () => v1, isDirty: true } as never);
+      index.noteSaved({ uri: { fsPath: writer }, getText: () => v2, isDirty: true } as never);
+      index.noteSaved({ uri: { fsPath: writer }, getText: () => v3, isDirty: true } as never);
+      await waitUntil(() => index.lastEditStats.commits >= 1);
+      // 最终索引 = 最新文本 c;中间代(a/b)未成为最终态
+      expect(index.query('globalData', 'c0').map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'a0')).toEqual([]);
+      expect(index.query('globalData', 'b0')).toEqual([]);
+      expect(index.lastEditStats.commits).toBeLessThanOrEqual(2);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('取消旧代:在飞扫描被新编辑作废,旧结果丢弃', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-a76c-'));
+    const writer = path.join(root, 'base', 'big.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    fs.writeFileSync(writer, 'import KBEngine\n');
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      const mk = (marker: string): string =>
+        `import KBEngine\n${Array.from({ length: 12000 }, (_, i) => `KBEngine.globalData["${marker}${i}"] = ${i}\n`).join('')}`;
+      const v1 = mk('x');
+      const v2 = mk('y');
+      index.noteSaved({ uri: { fsPath: writer }, getText: () => v1, isDirty: true } as never);
+      // 同 tick 内作废:在飞扫描(旧代)被 revision 前进取消 → 旧结果丢弃
+      index.noteSaved({ uri: { fsPath: writer }, getText: () => v2, isDirty: true } as never);
+      await waitUntil(() => index.lastEditStats.commits >= 1);
+      expect(index.lastEditStats.scansCancelled).toBeGreaterThanOrEqual(1);
+      expect(index.query('globalData', 'y0').map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'x0')).toEqual([]);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }, 60000);
 });
