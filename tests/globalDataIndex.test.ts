@@ -1421,3 +1421,84 @@ describe('AUD-068 跨项目同名键不串跳(R4-F03 根身份)', () => {
     }
   });
 });
+
+describe('AUD-069 弃改关闭恢复盘版本(R4-F04)', () => {
+  /** 单文件临时工程(盘上固定文本);返回可 fire change/close 的驱动。 */
+  const setupOneFile = (diskText: string) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-aud69-'));
+    const file = path.join(root, 'w.py');
+    fs.writeFileSync(file, diskText);
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(file)];
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const restore = () => {
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+    };
+    return { root, file, restore };
+  };
+
+  it('弃改关闭恢复盘版本:dirty 键撤销、disk 键回来', async () => {
+    const { root, file, restore } = setupOneFile('import KBEngine\nKBEngine.globalData["disk"] = 1\n');
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'disk').map(s => s.kind)).toEqual(['write']);
+      // 编辑缓冲:disk 写点改为 dirty 写点(未保存)
+      workspaceEvents.documentChanged.fire({
+        document: { uri: { fsPath: file }, isDirty: true, getText: () => 'import KBEngine\nKBEngine.globalData["dirty"] = 1\n' }
+      } as never);
+      expect(index.query('globalData', 'disk')).toEqual([]);
+      expect(index.query('globalData', 'dirty').map(s => s.kind)).toEqual(['write']);
+      // 丢弃关闭(不保存)
+      workspaceEvents.documentClosed.fire({ uri: { fsPath: file }, isDirty: true } as never);
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(index.query('globalData', 'disk').map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'dirty')).toEqual([]);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('关闭已保存(干净)文档不丢正确索引:clean close 保持既有索引', async () => {
+    const { root, file, restore } = setupOneFile('import KBEngine\nKBEngine.globalData["cfg"] = 1\n');
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'cfg').map(s => s.kind)).toEqual(['write']);
+      workspaceEvents.documentClosed.fire({ uri: { fsPath: file }, isDirty: false } as never);
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(index.query('globalData', 'cfg').map(s => s.kind)).toEqual(['write']);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('移除文件后弃改关闭不复活旧键:读盘失败清站点', async () => {
+    const { root, file, restore } = setupOneFile('import KBEngine\nKBEngine.globalData["cfg"] = 1\n');
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'cfg').map(s => s.kind)).toEqual(['write']);
+      // 磁盘移除(不走 watcher 通知);缓冲仍脏
+      fs.rmSync(file);
+      workspaceEvents.documentChanged.fire({
+        document: { uri: { fsPath: file }, isDirty: true, getText: () => 'import KBEngine\nKBEngine.globalData["cfg"] = 1\n' }
+      } as never);
+      expect(index.query('globalData', 'cfg').map(s => s.kind)).toEqual(['write']);
+      // 弃改关闭 → 读盘失败 → 站点清空,不复活
+      workspaceEvents.documentClosed.fire({ uri: { fsPath: file }, isDirty: true } as never);
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(index.query('globalData', 'cfg')).toEqual([]);
+    } finally {
+      index.dispose();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

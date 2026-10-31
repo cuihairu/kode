@@ -1012,7 +1012,11 @@ export class GlobalDataDictIndex {
   private readonly revisions = new Map<string, number>();
   private watchers: vscode.Disposable[] = [];
   private documentListener?: vscode.Disposable;
+  private saveListener?: vscode.Disposable;
+  private closeListener?: vscode.Disposable;
   private renameListener?: vscode.Disposable;
+  /** 当前脏(未保存)编辑的 .py 文档;弃改关闭时据此回读盘版本。 */
+  private readonly dirtyDocs = new Set<string>();
   private started = false;
   private starting?: Promise<void>;
   private disposed = false;
@@ -1038,6 +1042,23 @@ export class GlobalDataDictIndex {
   private async startIndex(): Promise<void> {
     this.documentListener ??= vscode.workspace.onDidChangeTextDocument(event => {
       this.noteSaved(event.document);
+    });
+    this.saveListener ??= vscode.workspace.onDidSaveTextDocument(document => {
+      this.dirtyDocs.delete(document.uri.fsPath);
+    });
+    this.closeListener ??= vscode.workspace.onDidCloseTextDocument(document => {
+      if (this.disposed) {
+        return;
+      }
+      const fsPath = document.uri.fsPath;
+      if (!fsPath.endsWith('.py')) {
+        return;
+      }
+      // 弃改关闭:缓冲消失,回读盘版本覆盖索引(干净关闭为 no-op 不丢正确索引)
+      if (this.dirtyDocs.delete(fsPath)) {
+        this.revisions.set(fsPath, (this.revisions.get(fsPath) ?? 0) + 1);
+        void this.indexFile(document.uri);
+      }
     });
     this.renameListener ??= vscode.workspace.onDidRenameFiles(event => {
       for (const { oldUri, newUri } of event.files) {
@@ -1101,6 +1122,10 @@ export class GlobalDataDictIndex {
     this.disposed = true;
     this.documentListener?.dispose();
     this.documentListener = undefined;
+    this.saveListener?.dispose();
+    this.saveListener = undefined;
+    this.closeListener?.dispose();
+    this.closeListener = undefined;
     this.renameListener?.dispose();
     this.renameListener = undefined;
     for (const watcher of this.watchers) {
@@ -1110,6 +1135,7 @@ export class GlobalDataDictIndex {
     this.cache.clear();
     this.byKey.clear();
     this.revisions.clear();
+    this.dirtyDocs.clear();
   }
 
   /** 单文件建/重建索引;并发去重(同文件不重复读)。 */
@@ -1170,13 +1196,18 @@ export class GlobalDataDictIndex {
     this.replaceFileSites(fsPath, previous, accesses);
   }
 
-  /** 保存时由编辑器路径直接刷新(免读盘)。 */
+  /** 保存时由编辑器路径直接刷新(免读盘);脏标记随之维护。 */
   noteSaved(document: vscode.TextDocument): void {
     if (this.disposed) {
       return;
     }
     if (!document.uri.fsPath.endsWith('.py')) {
       return;
+    }
+    if (document.isDirty) {
+      this.dirtyDocs.add(document.uri.fsPath);
+    } else {
+      this.dirtyDocs.delete(document.uri.fsPath);
     }
     this.revisions.set(document.uri.fsPath, (this.revisions.get(document.uri.fsPath) ?? 0) + 1);
     this.commitFile(document.uri.fsPath, document.getText());
