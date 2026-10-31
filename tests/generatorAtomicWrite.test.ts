@@ -125,6 +125,30 @@ describe('generator atomic writes (IDE-GEN-005)', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('original-full-content');
     expect(fs.readdirSync(dir)).toEqual(['kept.txt']);
   });
+
+  it('writeFileAtomic noClobber refuses to overwrite a concurrently-created file', () => {
+    const dir = path.join(root, 'unit');
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, 'guarded.txt');
+    fs.writeFileSync(target, '并发先到的内容', 'utf8');
+
+    expect(() => writeFileAtomic(target, '本次要写的内容', { noClobber: true })).toThrow();
+
+    // 并发先到的文件字节原样,无临时残留
+    expect(fs.readFileSync(target, 'utf8')).toBe('并发先到的内容');
+    expect(fs.readdirSync(dir)).toEqual(['guarded.txt']);
+  });
+
+  it('writeFileAtomic noClobber lands when the target is absent', () => {
+    const dir = path.join(root, 'unit');
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, 'fresh-guarded.txt');
+
+    writeFileAtomic(target, 'fresh-content', { noClobber: true });
+
+    expect(fs.readFileSync(target, 'utf8')).toBe('fresh-content');
+    expect(fs.readdirSync(dir)).toEqual(['fresh-guarded.txt']);
+  });
 });
 
 describe('form generation rollback (IDE-GEN-008)', () => {

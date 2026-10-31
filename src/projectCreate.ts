@@ -29,17 +29,27 @@ export interface ProjectCreateDeps {
   mkdir?: (dirPath: string) => void;
 }
 
+/** 本次新建文件记账(含写入字节,供回收字节比对) */
+interface CreatedFileRecord {
+  filePath: string;
+  content: string;
+}
+
 /** 失败回收:先逆序删本次写的文件,再逆序删本次建的目录(逆序保证子先于父,删得动) */
 function rollbackCreation(
-  createdFiles: readonly string[],
+  createdFiles: readonly CreatedFileRecord[],
   createdDirs: readonly string[],
   implicitRoot: string | null
 ): void {
-  for (const filePath of [...createdFiles].reverse()) {
+  for (const { filePath, content } of [...createdFiles].reverse()) {
     try {
-      fs.unlinkSync(filePath);
+      // AUD-032(R2-F08):仅当盘上字节仍是本次写入的内容才回收;他人并发
+      // 替换过(内容已变)则如实留下,不越权删他人新增
+      if (fs.readFileSync(filePath, 'utf8') === content) {
+        fs.unlinkSync(filePath);
+      }
     } catch {
-      // 回收失败不掩盖原始错误
+      // 文件已不在或读取失败:不动别的内容
     }
   }
   for (const dirPath of [...createdDirs].reverse()) {
@@ -90,9 +100,20 @@ export async function createMinimalProject(
     return;
   }
 
-  const writeFile = deps.writeFile ?? writeFileAtomic;
+  // AUD-032(R2-F08):确认后、落盘前重查——预览期间另一来源新增/替换任何
+  // 目标(如 entities.xml)即整次拒绝,不写半套,不覆盖并发出现的文件
+  const landedConflicts = plan.entries.filter(({ absolutePath }) => fs.existsSync(absolutePath));
+  if (landedConflicts.length > 0) {
+    for (const { absolutePath } of landedConflicts) {
+      await vscode.window.showErrorMessage(`目标已存在，拒绝创建: ${absolutePath}`);
+    }
+    return;
+  }
+
+  const writeFile =
+    deps.writeFile ?? ((filePath: string, content: string) => writeFileAtomic(filePath, content, { noClobber: true }));
   const mkdir = deps.mkdir ?? ((dirPath: string) => fs.mkdirSync(dirPath, { recursive: true }));
-  const createdFiles: string[] = [];
+  const createdFiles: CreatedFileRecord[] = [];
   const createdDirs: string[] = [];
   // 目标根预先不存在时,首个递归 mkdir 会把它一并建出——回收面覆盖它
   const targetRootPreexisting = fs.existsSync(targetRoot);
@@ -104,7 +125,7 @@ export async function createMinimalProject(
         createdDirs.push(absolutePath);
       } else {
         writeFile(absolutePath, entry.content);
-        createdFiles.push(absolutePath);
+        createdFiles.push({ filePath: absolutePath, content: entry.content });
       }
     }
   } catch (error) {

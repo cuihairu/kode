@@ -203,4 +203,79 @@ describe('minimal project create flow (IDE-PRJ-008)', () => {
 
     fs.rmSync(base, { recursive: true, force: true });
   });
+
+  it('rejects the whole creation when a target appears during the preview (R2-F08)', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-create-concurrent-'));
+    const targetRoot = path.join(base, 'proj');
+    const memento = new MemoryMemento();
+    errors.length = 0;
+    info.length = 0;
+    windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
+    // 预览确认期间另一来源并发建出 entities.xml:落盘前重查必须整次拒绝
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = (await items) as Array<{ label: string }>;
+      fs.mkdirSync(path.join(targetRoot, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), '并发新增内容', 'utf8');
+      return resolved[0];
+    };
+    windowish.showErrorMessage = async (message: string): Promise<unknown> => {
+      errors.push(message);
+      return undefined;
+    };
+    windowish.showInformationMessage = async (): Promise<unknown> => undefined;
+
+    await createMinimalProject({ workspaceState: memento });
+
+    // 整次拒绝:并发的 entities.xml 字节原样,其他清单项一个都不落,不建档
+    expect(
+      errors.some(
+        message =>
+          message.includes('目标已存在') && message.includes(path.join(targetRoot, 'scripts', 'entities.xml'))
+      )
+    ).toBe(true);
+    // 并发的 entities.xml 连同其父目录 scripts(同为清单目标)一并如实摊开
+    expect(errors).toHaveLength(2);
+    expect(fs.readFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), 'utf8')).toBe('并发新增内容');
+    expect(fs.existsSync(path.join(targetRoot, 'scripts', 'entity_defs'))).toBe(false);
+    expect(fs.existsSync(path.join(targetRoot, 'scripts', 'base'))).toBe(false);
+    expect(fs.existsSync(path.join(targetRoot, 'scripts', 'cell'))).toBe(false);
+    expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
+
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('rollback leaves a file another source replaced after we wrote it (R2-F08)', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-create-replace-'));
+    const targetRoot = path.join(base, 'proj');
+    const memento = new MemoryMemento();
+    errors.length = 0;
+    info.length = 0;
+    windowish.showOpenDialog = async () => [Uri.file(targetRoot)];
+    pickConfirm();
+    windowish.showErrorMessage = async (message: string): Promise<unknown> => {
+      errors.push(message);
+      return undefined;
+    };
+    windowish.showInformationMessage = async (): Promise<unknown> => undefined;
+
+    await createMinimalProject({ workspaceState: memento }, {
+      writeFile: (filePath: string, content: string): void => {
+        if (filePath.endsWith(path.join('entity_defs', 'types.xml'))) {
+          throw new Error('模拟写入中断');
+        }
+        writeFileAtomic(filePath, content);
+        // 模拟本进程写入后、回滚前,另一来源替换了刚写出的 entities.xml
+        if (filePath.endsWith(path.join('scripts', 'entities.xml'))) {
+          fs.writeFileSync(filePath, '他人并发替换的内容', 'utf8');
+        }
+      }
+    });
+
+    // 字节不再匹配本次写入:他人新增不被回收,如实留下
+    expect(fs.readFileSync(path.join(targetRoot, 'scripts', 'entities.xml'), 'utf8')).toBe('他人并发替换的内容');
+    expect(errors.some(message => message.includes('创建失败') && message.includes('回收'))).toBe(true);
+    expect(new ProjectProfileStore(memento).list()).toHaveLength(0);
+
+    fs.rmSync(base, { recursive: true, force: true });
+  });
 });
