@@ -45,6 +45,30 @@ afterAll(() => {
   fs.rmSync(rootA, { recursive: true, force: true });
 });
 
+describe('IDE-AUD-057 dispose 清空发布记录', () => {
+  it('dispose 后 publishedRenders 为空,多次 dispose 幂等,关闭定位不受前置影响', () => {
+    const provider = new KBEngineDatabaseSchemaProvider();
+    const uris = [createDatabaseSchemaUri('Hero', rootA), createDatabaseSchemaUri('E2'), createDatabaseSchemaUri('E3')];
+    for (const uri of uris) {
+      provider.provideTextDocumentContent(uri);
+    }
+    for (const uri of uris) {
+      expect(provider.getPublishedSnapshot(uri)).toBeDefined();
+    }
+
+    provider.dispose();
+    // 清空:全部已发布代释放
+    for (const uri of uris) {
+      expect(provider.getPublishedSnapshot(uri)).toBeUndefined();
+    }
+    // 多次 dispose 安全(事件订阅/发射器二次释放无副作用)
+    expect(() => provider.dispose()).not.toThrow();
+    // 订阅已释放:关闭事件不再触发处理器;closeDocument 对空表安全
+    expect(() => workspaceEvents.documentClosed.fire({ uri: uris[0] } as never)).not.toThrow();
+    expect(() => provider.closeDocument(uris[0])).not.toThrow();
+  });
+});
+
 describe('IDE-AUD-056 关闭文档释放已发布快照', () => {
   it('顺次提供 46 个实体视图后关闭 45 个,只余仍打开 1 个(不无界持有)', () => {
     const provider = new KBEngineDatabaseSchemaProvider();

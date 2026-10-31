@@ -77,7 +77,10 @@ export class KBEngineDatabaseSchemaProvider implements vscode.TextDocumentConten
   }
 
   dispose(): void {
+    // AUD-057:释放 schema provider 时清空发布记录并断事件订阅;多次
+    // dispose 幂等(清空/释放二次调用无副作用),不触碰正常关闭前定位
     this.closeSubscription.dispose();
+    this.publishedRenders.clear();
     this.onDidChangeEmitter.dispose();
   }
 }
