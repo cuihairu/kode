@@ -15,6 +15,11 @@ import {
   updateDocumentSnapshot
 } from '../src/documentStore';
 import { resetLanguageServiceMetrics, getOperationSummary } from '../src/languageServiceMetrics';
+import {
+  clearParsedDocumentCacheForTests,
+  getParsedDocumentCacheStats,
+  parseDefDocument
+} from '../src/defParser';
 import { makeTextDocument, Uri } from './helpers/vscodeStub';
 import type { MinimalTextDocument } from './fake-vscode/core';
 
@@ -321,7 +326,10 @@ describe('documentStore 同步解析缓存(诊断 def AST 面)', () => {
 });
 
 describe('documentStore 快照释放', () => {
-  beforeEach(() => releaseAllDocumentSnapshots());
+  beforeEach(() => {
+    releaseAllDocumentSnapshots();
+    clearParsedDocumentCacheForTests();
+  });
   afterEach(() => releaseAllDocumentSnapshots());
 
   it('关文档释放:快照/行索引/解析缓存整体消失', async () => {
@@ -356,6 +364,23 @@ describe('documentStore 快照释放', () => {
     expect(releaseDocumentsUnderRoot('/ws/gone')).toBe(0);
     expect(peekDocumentSnapshot(sibling)).not.toBeNull();
     releaseDocument(sibling);
+  });
+
+  it('根移除同时释放 defParser 全局解析缓存中该根文本(R2-F12/IDE-AUD-048)', async () => {
+    const text = '<root><Properties/></root>';
+    // 先经 defParser 解析,填充全局内容键缓存
+    parseDefDocument(text);
+    expect(getParsedDocumentCacheStats().entries).toBe(1);
+    const document = docOf(text, { fileName: '/ws/gone/A.def', version: 1 });
+    updateDocumentSnapshot(document);
+    expect(getStoredSnapshotCount()).toBe(1);
+
+    const released = releaseDocumentsUnderRoot('/ws/gone');
+    expect(released).toBe(1);
+    // 旧码:releaseDocumentsUnderRoot 只清 documentStore,defParser 缓存仍持有
+    // 该文本(R2-F12 实测释放文档 1 个,XML cache 仍 entries=1);
+    // 新码:该根文档文本一并逐出,不以 8 条/8MiB 预算当释放。
+    expect(getParsedDocumentCacheStats().entries).toBe(0);
   });
 
   it('同键不同拼写释放同一份快照', () => {

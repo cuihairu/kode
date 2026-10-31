@@ -51,7 +51,7 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/diagnosticScheduler.ts', 218, 'requestQueued'],
   ['src/diagnosticScheduler.ts', 248, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
-  ['src/documentStore.ts', 154, 'getDocumentLines'],
+  ['src/documentStore.ts', 155, 'getDocumentLines'],
   ['src/pythonClassIndex.ts', 640, 'ensureCompositionRoots'],
   ['src/pythonClassIndex.ts', 1233, 'resolveClassBase'],
   ['src/pythonClassIndex.ts', 1345, '①② 两段查询']

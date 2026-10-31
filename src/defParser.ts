@@ -68,6 +68,20 @@ export function clearParsedDocumentCacheForTests(): void {
   parsedDocumentCache.clear();
 }
 
+/** IDE-AUD-048/R2-F12:按原文逐出全局解析缓存条目(内容键,不区分来源根)。
+ *  根移除时把该根已释放文档的原文交给这里,长会话不再持有其 XML AST;
+ *  其余根若复用同内容,下次访问重解析(正确性不变,只是缓存未命中)。
+ *  返回实际逐出的条目数。 */
+export function releaseParsedDocuments(texts: Iterable<string>): number {
+  let removed = 0;
+  for (const text of texts) {
+    if (parsedDocumentCache.delete(text)) {
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 /** 观测面:当前缓存条目数与总字节 */
 export function getParsedDocumentCacheStats(): { entries: number; bytes: number } {
   return { entries: parsedDocumentCache.size, bytes: parsedDocumentCacheBytes() };

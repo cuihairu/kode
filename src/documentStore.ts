@@ -16,6 +16,7 @@
 // 打点:document-parse 事件走 PR1 埋点(命中/未命中/耗时/版本),不记用户文本。
 
 import { recordLanguageServiceOperation } from './languageServiceMetrics';
+import { releaseParsedDocuments } from './defParser';
 import { normalizeFileIdentity } from './pathIdentity';
 
 /** 快照输入面:vscode.TextDocument 与测试替身的公共子集(不 import vscode) */
@@ -316,11 +317,21 @@ export function releaseDocumentsUnderRoot(rootPath: string): number {
   const underRoot = (key: string): boolean =>
     key === normalized || key.startsWith(`${normalized}/`);
   let released = 0;
+  const removedTexts: string[] = [];
   for (const key of [...entries.keys()]) {
     if (underRoot(key)) {
+      const text = entries.get(key)?.snapshot.text;
+      if (text) {
+        removedTexts.push(text);
+      }
       entries.delete(key);
       released += 1;
     }
+  }
+  // IDE-AUD-048/R2-F12:defParser 全局解析缓存是内容键,根移除时把该根已释放
+  // 文档原文一并逐出,不以 8 条/8MiB LRU 预算当释放(预算只缓解,不等于释放)。
+  if (removedTexts.length > 0) {
+    releaseParsedDocuments(removedTexts);
   }
   return released;
 }
