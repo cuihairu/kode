@@ -1279,3 +1279,48 @@ describe('AUD-066 查询源词法上下文验证(R4-F01 冷查前)', () => {
     }
   });
 });
+
+describe('AUD-067 字符串键按 Python 值归一化(R4-F02)', () => {
+  it('\\n 换行转义与字母 n 不合并(不同实际值)', () => {
+    const nl = normalizeKeySignature('"\\n"');
+    const n = normalizeKeySignature('"n"');
+    expect(nl).toBe('\n');
+    expect(n).toBe('n');
+    expect(nl).not.toBe(n);
+  });
+
+  it('\\x41 与字面 A 正确关联(同为 A);\\101 八进制同值', () => {
+    expect(normalizeKeySignature('"\\x41"')).toBe('A');
+    expect(normalizeKeySignature('"A"')).toBe('A');
+    expect(normalizeKeySignature('"\\101"')).toBe('A');
+  });
+
+  it('不支持转义如实跳过,不改写键值', () => {
+    expect(normalizeKeySignature('"\\z"')).toBeNull();
+    expect(normalizeKeySignature('"\\x4"')).toBeNull();
+    expect(normalizeKeySignature('"a\\z"')).toBeNull();
+  });
+
+  it('r 原始前缀:反斜杠保留,与普通转义不合并', () => {
+    expect(normalizeKeySignature('r"a\\n"')).toBe('a\\n');
+    expect(normalizeKeySignature('"a\\n"')).toBe('a\n');
+    expect(normalizeKeySignature('r"a\\n"')).not.toBe(normalizeKeySignature('"a\\n"'));
+    expect(normalizeKeySignature('R"\\x41"')).toBe('\\x41');
+  });
+
+  it('扫描器:换行键与 n 键互链各自成族(跨文件同键),互不串键', () => {
+    const text = [
+      'import KBEngine',
+      'KBEngine.globalData["\\n"] = 1',
+      'KBEngine.globalData["n"] = 2'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses.map(a => a.keySignature)).toEqual(['\n', 'n']);
+  });
+
+  it('扫描器:转义引号仍解出原文(回归)', () => {
+    const escaped = findKbeDataDictAccesses('KBEngine.globalData["a\\"b"] = 1', KBE);
+    expect(escaped).toHaveLength(1);
+    expect(escaped[0].keySignature).toBe('a"b');
+  });
+});

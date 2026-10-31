@@ -82,18 +82,104 @@ export function normalizeKeySignature(raw: string): string | null {
   return matchConcatSignature(trimmed);
 }
 
-/** 单段字符串字面量 → 解引内容;非字面量/含未转义同引号 → null */
+/**
+ * 转义序列解码(AUD-067):`\` 后一个字符按 Python 字面量语义解出。
+ * 支持单字符转义(\\ \' \" \n \t \r \a \b \f \v)、八进制 1-3 位
+ * (\0-\377)、十六进制 \xNN、Unicode \uNNNN / \UNNNNNNNN;不支持/非法
+ * 转义 → null(如实跳过,不改写键值)。next=已消费的最后下标。
+ */
+function decodeEscape(text: string, index: number): { value: string; next: number } | null {
+  const next = text[index + 1];
+  if (next === undefined) {
+    return null;
+  }
+  const simple: Record<string, string> = {
+    '\\': '\\',
+    "'": "'",
+    '"': '"',
+    n: '\n',
+    t: '\t',
+    r: '\r',
+    a: '\x07',
+    b: '\b',
+    f: '\f',
+    v: '\x0b'
+  };
+  if (next in simple) {
+    return { value: simple[next], next: index + 1 };
+  }
+  if (/[0-7]/.test(next)) {
+    let octal = '';
+    let j = index + 1;
+    while (j < text.length - 1 && j < index + 4 && /[0-7]/.test(text[j])) {
+      octal += text[j];
+      j += 1;
+    }
+    const code = parseInt(octal, 8);
+    if (code > 0xff) {
+      return null;
+    }
+    return { value: String.fromCharCode(code), next: j - 1 };
+  }
+  if (next === 'x') {
+    const hex = text.slice(index + 2, index + 4);
+    if (!/^[0-9a-fA-F]{2}$/.test(hex)) {
+      return null;
+    }
+    return { value: String.fromCharCode(parseInt(hex, 16)), next: index + 3 };
+  }
+  if (next === 'u') {
+    const hex = text.slice(index + 2, index + 6);
+    if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+      return null;
+    }
+    return { value: String.fromCharCode(parseInt(hex, 16)), next: index + 5 };
+  }
+  if (next === 'U') {
+    const hex = text.slice(index + 2, index + 10);
+    if (!/^[0-9a-fA-F]{8}$/.test(hex)) {
+      return null;
+    }
+    return { value: String.fromCodePoint(parseInt(hex, 16)), next: index + 9 };
+  }
+  return null;
+}
+
+/**
+ * 单段字符串字面量 → 按 Python 值解引内容(AUD-067);非字面量/含未转义
+ * 同引号/含不支持转义 → null。支持前缀:裸引号(普通转义)与 r/R(原始,
+ * 反斜杠保留,仅 `\` 仍避免下一引号闭合,与 Python 同);b/B/u/U/f 前缀
+ * 不在此处理(各自走字节/Unicode/f-string 或如实跳过)。
+ */
 function matchStringLiteral(text: string): string | null {
-  const quote = text[0];
-  if ((quote !== "'" && quote !== '"') || text.length < 2 || text[text.length - 1] !== quote) {
+  const head = /^([rR]?)(['"])/.exec(text);
+  if (!head) {
+    return null;
+  }
+  const raw = head[1] !== '';
+  const quote = head[2];
+  if (text.length < 2 || text[text.length - 1] !== quote) {
     return null;
   }
   let inner = '';
-  for (let index = 1; index < text.length - 1; index += 1) {
+  for (let index = head[0].length; index < text.length - 1; index += 1) {
     const ch = text[index];
     if (ch === '\\') {
-      inner += text[index + 1] ?? '';
-      index += 1;
+      if (raw) {
+        if (index + 1 >= text.length - 1) {
+          return null;
+        }
+        inner += '\\';
+        inner += text[index + 1];
+        index += 1;
+        continue;
+      }
+      const decoded = decodeEscape(text, index);
+      if (decoded === null) {
+        return null;
+      }
+      inner += decoded.value;
+      index = decoded.next;
       continue;
     }
     if (ch === quote) {
