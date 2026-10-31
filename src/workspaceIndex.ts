@@ -66,6 +66,7 @@ export class WorkspaceIndex implements EventCallIndex {
   private starting?: Promise<void>;
   private disposed = false;
   private documentListener?: vscode.Disposable;
+  private closeListener?: vscode.Disposable;
   private renameListener?: vscode.Disposable;
   private readonly revisions = new Map<string, number>();
 
@@ -86,6 +87,13 @@ export class WorkspaceIndex implements EventCallIndex {
   private async startIndex(): Promise<void> {
     this.documentListener ??= vscode.workspace.onDidChangeTextDocument(event => {
       this.noteSaved(event.document);
+    });
+    // AUD-033(R2-F09):放弃脏文档并关闭后,事件索引自愈回磁盘结果——
+    // 版本作废在途旧脏任务(不复活),强制重读盘(不依赖碰巧收到磁盘
+    // watcher 才自愈)。@types/vscode 1.82 未声明 onDidRevertTextDocument
+    // (1.84+ 运行时才有),故按验收口径只接关闭面。
+    this.closeListener ??= vscode.workspace.onDidCloseTextDocument(document => {
+      this.noteDocumentAbandoned(document);
     });
     this.renameListener ??= vscode.workspace.onDidRenameFiles(event => {
       for (const { oldUri, newUri } of event.files) {
@@ -157,10 +165,28 @@ export class WorkspaceIndex implements EventCallIndex {
     }
   }
 
+  /**
+   * AUD-033(R2-F09):放弃脏文档并关闭后的自愈面。版本作废在途旧脏任务
+   * (其版本守卫不匹配即弃,不复活为脏结果),随后强制重读盘重建缓存——
+   * 不依赖碰巧收到磁盘 watcher 才自愈。关闭后磁盘是真相源,统一按盘重读
+   * (干净文档关闭的重读幂等,顺带回收外部磁盘变更漏发)。
+   */
+  private noteDocumentAbandoned(document: vscode.TextDocument): void {
+    if (this.disposed) return;
+    const filePath = document.uri.fsPath;
+    if (!filePath.endsWith('.py')) return;
+    this.revisions.set(filePath, (this.revisions.get(filePath) ?? 0) + 1);
+    // 清除在途条目:强制新建一条磁盘读(旧在途任务版本不匹配会自然弃写)
+    this.building.delete(filePath);
+    void this.indexFile(document.uri, true);
+  }
+
   dispose(): void {
     this.disposed = true;
     this.documentListener?.dispose();
     this.documentListener = undefined;
+    this.closeListener?.dispose();
+    this.closeListener = undefined;
     this.renameListener?.dispose();
     this.renameListener = undefined;
     for (const w of this.watchers) w.dispose();
@@ -192,8 +218,12 @@ export class WorkspaceIndex implements EventCallIndex {
     }
   }
 
-  /** 单文件建/重建索引；并发去重（同一文件不重复读）。 */
-  private indexFile(uri: vscode.Uri): Promise<IndexedFile | null> {
+  /**
+   * 单文件建/重建索引；并发去重（同一文件不重复读）。
+   * preferDisk(AUD-033):放弃脏文档自愈路径强制读盘——跳过脏文档覆盖,
+   * 保证关闭后缓存回到磁盘结果而非仍在途的脏文本。
+   */
+  private indexFile(uri: vscode.Uri, preferDisk = false): Promise<IndexedFile | null> {
     if (this.disposed) return Promise.resolve(null);
     const inflight = this.building.get(uri.fsPath);
     if (inflight) return inflight;
@@ -203,7 +233,9 @@ export class WorkspaceIndex implements EventCallIndex {
         const bytes = await vscode.workspace.fs.readFile(uri);
         if (this.disposed) return null;
         if ((this.revisions.get(uri.fsPath) ?? 0) !== revision) return this.cache.get(uri.fsPath) ?? null;
-        const dirty = vscode.workspace.textDocuments.find(document => document.uri.fsPath === uri.fsPath && document.isDirty);
+        const dirty = preferDisk
+          ? undefined
+          : vscode.workspace.textDocuments.find(document => document.uri.fsPath === uri.fsPath && document.isDirty);
         if (dirty) {
           this.noteSaved(dirty);
           return this.cache.get(uri.fsPath) ?? null;

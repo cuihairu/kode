@@ -496,3 +496,76 @@ describe('IDE-AUD-035 事件索引维护外部根 watcher 生命周期(R2-F11)',
     }
   });
 });
+
+describe('IDE-AUD-033 放弃脏文档后事件索引恢复磁盘结果(R2-F09)', () => {
+  const waitForEvent = async (
+    index: WorkspaceIndex,
+    event: string
+  ): Promise<boolean> => {
+    for (let i = 0; i < 100; i += 1) {
+      if ((await index.allEventCalls()).some(c => c.call.event === event)) return true;
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    return false;
+  };
+
+  it('R2-F09 复现:脏编辑后关闭,结果从脏自愈为磁盘,不靠磁盘 watcher', async () => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    const uri = vscode.Uri.file('/ws/listener.py');
+    vscode.workspace.findFiles = async () => [];
+    const read = vi.fn(async () => Buffer.from('self.addEvent(OLD, self.on_ev)'));
+    vscode.workspace.fs.readFile = read;
+    const index = new WorkspaceIndex();
+    try {
+      await index.allEventCalls();
+      // 编辑使脏文档携带新监听:查询立即看到新增事件
+      const dirty = makeTextDocument('self.addEvent(NEW, self.on_ev)', { fileName: uri.fsPath, languageId: 'python' });
+      workspaceEvents.documentChanged.fire({ document: dirty });
+      expect(await index.allEventCalls()).toMatchObject([{ file: uri.fsPath, call: { event: 'NEW' } }]);
+      // 放弃修改并关闭:关闭事件驱动自愈(磁盘仍是 OLD,不依赖 watcher 碰巧)
+      workspaceEvents.documentClosed.fire(dirty);
+      expect(await waitForEvent(index, 'OLD')).toBe(true);
+      expect(await index.allEventCalls()).toMatchObject([{ file: uri.fsPath, call: { event: 'OLD' } }]);
+      // 自愈确实重读盘(而非仅靠磁盘 watcher 碰巧触发)
+      expect(read).toHaveBeenCalled();
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  });
+
+  it('关闭时在途旧磁盘读取回包不覆盖关闭自愈(在途旧脏不复活)', async () => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    const uri = vscode.Uri.file('/ws/listener.py');
+    vscode.workspace.findFiles = async () => [];
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const read = vi.fn(async () => { await gate; return Buffer.from('self.addEvent(DISK, self.on_ev)'); });
+    vscode.workspace.fs.readFile = read;
+    const index = new WorkspaceIndex();
+    try {
+      // 首扫完成(空仓),磁盘 watcher 就绪
+      await index.allEventCalls();
+      // 磁盘变更触发在途读(gated):此时该文件尚未被脏编辑
+      lastFileSystemWatcher.current!.fireChange(uri);
+      await vi.waitFor(() => expect(read).toHaveBeenCalled());
+      // 在途读未回包期间编辑脏:查询立即看到脏
+      const dirty = makeTextDocument('self.addEvent(DIRTY, self.on_ev)', { fileName: uri.fsPath, languageId: 'python' });
+      workspaceEvents.documentChanged.fire({ document: dirty });
+      expect(await index.allEventCalls()).toMatchObject([{ call: { event: 'DIRTY' } }]);
+      // 放弃并关闭,随后释放在途读:旧磁盘读回包不得复活为脏结果
+      workspaceEvents.documentClosed.fire(dirty);
+      release();
+      expect(await waitForEvent(index, 'DISK')).toBe(true);
+      expect(await index.allEventCalls()).toMatchObject([{ call: { event: 'DISK' } }]);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  });
+
+});
