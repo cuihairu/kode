@@ -23,7 +23,7 @@ import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
-import { findOwnerSelfPropertyAccesses } from './pythonSelfScope';
+import { findOwnerSelfPropertyAccesses, findOwnerSelfReceiverCalls } from './pythonSelfScope';
 import {
   createDefinitionSemanticsLoader,
   DefinitionMemberSourceKind,
@@ -2194,10 +2194,6 @@ export class EntityMappingManager {
     this.ensureStartup();
     const index = this.mappingIndexesByRoot.get(normalizeLookupPath(defFile));
     if (!index) return [];
-    const callRegex = new RegExp(
-      `\\bself\\.${receiver}\\.${escapeRegExp(methodName)}\\b(?=\\s*\\()`,
-      'g'
-    );
     const calls: Array<{ filePath: string; line: number; character: number }> = [];
     for (const owner of index.pythonOwnerFiles) {
       if (token?.isCancellationRequested) return calls;
@@ -2206,18 +2202,16 @@ export class EntityMappingManager {
       if (!snapshot) {
         continue;
       }
-      const content = snapshot.content;
-      const lines = content.split('\n');
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-        callRegex.lastIndex = 0;
-        let match: RegExpExecArray | null;
-        while ((match = callRegex.exec(lines[lineIndex])) !== null) {
-          calls.push({
-            filePath: owner.filePath,
-            line: lineIndex + 1,
-            character: match.index + `self.${receiver}.`.length
-          });
-        }
+      // AUD-029(R2-F06):原文正则扫描混入字符串/注释/同文件其它类/嵌套重绑
+      // self——按词法与 self 所属作用域过滤,只保留 owner 类真调用点。
+      // ownerName 生产面恒有;缺失(探针/替身)回退文件基名。
+      const ownerClassName = owner.ownerName || path.basename(owner.filePath, '.py');
+      for (const call of findOwnerSelfReceiverCalls(snapshot.content, ownerClassName, receiver, methodName)) {
+        calls.push({
+          filePath: owner.filePath,
+          line: call.line + 1,
+          character: call.character
+        });
       }
     }
     return calls;
