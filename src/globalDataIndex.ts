@@ -1106,6 +1106,8 @@ export class GlobalDataDictIndex {
       void this.indexFile(uri);
     });
     watcher.onDidChange(uri => {
+      // AUD-070:变更升 revision——在飞读盘若读到旧字节即作废,由追读接手
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
       void this.indexFile(uri);
     });
     watcher.onDidDelete(uri => {
@@ -1143,48 +1145,60 @@ export class GlobalDataDictIndex {
     if (this.disposed) {
       return Promise.resolve(null);
     }
-    const inflight = this.building.get(uri.fsPath);
-    if (inflight) {
-      return inflight;
-    }
-    const revision = this.revisions.get(uri.fsPath) ?? 0;
-    const task = (async () => {
+    const fsPath = uri.fsPath;
+    // AUD-070:在飞读盘期间又来变更——不吞,等先前读结束后核对 revision,
+    // 有更新版本(升过)则由本读追赶重读最新;无更新版本则直接沿用先前结果。
+    const prior = this.building.get(fsPath) ?? null;
+    const revision = this.revisions.get(fsPath) ?? 0;
+    const holder: { task: Promise<{ accesses: KbeDataDictAccess[] } | null> } = {
+      task: Promise.resolve(null)
+    };
+    holder.task = (async (): Promise<{ accesses: KbeDataDictAccess[] } | null> => {
       try {
+        if (prior) {
+          await prior.catch(() => undefined);
+          if (this.disposed || (this.revisions.get(fsPath) ?? 0) !== revision) {
+            return this.cache.get(fsPath) ?? null;
+          }
+        }
         const bytes = await vscode.workspace.fs.readFile(uri);
         if (this.disposed) {
           return null;
         }
-        if ((this.revisions.get(uri.fsPath) ?? 0) !== revision) {
-          return this.cache.get(uri.fsPath) ?? null;
+        if ((this.revisions.get(fsPath) ?? 0) !== revision) {
+          return this.cache.get(fsPath) ?? null;
         }
         const dirty = vscode.workspace.textDocuments.find(
-          document => document.uri.fsPath === uri.fsPath && document.isDirty
+          document => document.uri.fsPath === fsPath && document.isDirty
         );
         if (dirty) {
           this.noteSaved(dirty);
-          return this.cache.get(uri.fsPath) ?? null;
+          return this.cache.get(fsPath) ?? null;
         }
         const text = Buffer.from(bytes).toString('utf8');
         // 冷扫让出宿主:正则扫描轻,逐文件一个宏任务节拍即可
         await new Promise<void>(resolve => setImmediate(resolve));
-        if (this.disposed || (this.revisions.get(uri.fsPath) ?? 0) !== revision) {
-          return this.cache.get(uri.fsPath) ?? null;
+        if (this.disposed || (this.revisions.get(fsPath) ?? 0) !== revision) {
+          return this.cache.get(fsPath) ?? null;
         }
-        this.commitFile(uri.fsPath, text);
-        return this.cache.get(uri.fsPath) ?? null;
+        this.commitFile(fsPath, text);
+        return this.cache.get(fsPath) ?? null;
       } catch {
-        if ((this.revisions.get(uri.fsPath) ?? 0) === revision) {
-          const entry = this.cache.get(uri.fsPath);
-          this.replaceFileSites(uri.fsPath, entry?.accesses ?? [], []);
-          this.cache.delete(uri.fsPath);
+        if ((this.revisions.get(fsPath) ?? 0) === revision) {
+          const entry = this.cache.get(fsPath);
+          this.replaceFileSites(fsPath, entry?.accesses ?? [], []);
+          this.cache.delete(fsPath);
         }
         return null;
       } finally {
-        this.building.delete(uri.fsPath);
+        // 只清自己占位的项(后到变更会覆盖 slot,不得误删其追读)
+        if (this.building.get(fsPath) === holder.task) {
+          this.building.delete(fsPath);
+        }
       }
     })();
-    this.building.set(uri.fsPath, task);
-    return task;
+    this.building.set(fsPath, holder.task);
+    return holder.task;
   }
 
   /** 重扫文件文本并同步倒排(byKey) */

@@ -1502,3 +1502,165 @@ describe('AUD-069 弃改关闭恢复盘版本(R4-F04)', () => {
     }
   });
 });
+
+describe('AUD-070 在飞读盘追赶后到变更(R4-F05)', () => {
+  /** 捕获本测试自建 watcher 的监听器(可 fire create/change/delete)。 */
+  const captureWatcherScoped = (): {
+    fireCreate: (uri: vscode.Uri) => void;
+    fireChange: (uri: vscode.Uri) => void;
+    fireDelete: (uri: vscode.Uri) => void;
+  } => {
+    const listeners: {
+      create: Array<(uri: vscode.Uri) => void>;
+      change: Array<(uri: vscode.Uri) => void>;
+      delete: Array<(uri: vscode.Uri) => void>;
+    } = { create: [], change: [], delete: [] };
+    const original = vscode.workspace.createFileSystemWatcher;
+    vscode.workspace.createFileSystemWatcher = ((): unknown => ({
+      onDidCreate: (l: (uri: vscode.Uri) => void) => { listeners.create.push(l); return { dispose: () => undefined }; },
+      onDidChange: (l: (uri: vscode.Uri) => void) => { listeners.change.push(l); return { dispose: () => undefined }; },
+      onDidDelete: (l: (uri: vscode.Uri) => void) => { listeners.delete.push(l); return { dispose: () => undefined }; },
+      dispose: () => undefined
+    })) as typeof original;
+    const restore = (): void => { vscode.workspace.createFileSystemWatcher = original; };
+    return {
+      fireCreate: uri => listeners.create.forEach(l => l(uri)),
+      fireChange: uri => listeners.change.forEach(l => l(uri)),
+      fireDelete: uri => listeners.delete.forEach(l => l(uri)),
+      restoreWatcher: restore
+    };
+  };
+
+  /** 快照门读:挂起路径首次读捕获"门住时"字节,放行返回该旧快照(非当下盘内容)。 */
+  const makeSnapshotRead = (): {
+    read: typeof vscode.workspace.fs.readFile;
+    hang: (p: string) => void;
+    release: (p: string) => void;
+  } => {
+    const gates = new Map<string, () => void>();
+    const read = (async (uri: vscode.Uri) => {
+      const p = uri.fsPath;
+      if (gates.has(p)) {
+        const captured = fs.readFileSync(p);
+        await new Promise<void>(resolve => { gates.set(p, () => resolve()); });
+        return captured;
+      }
+      return fs.readFileSync(p);
+    }) as typeof vscode.workspace.fs.readFile;
+    return {
+      read,
+      hang: (p: string) => gates.set(p, () => undefined),
+      release: (p: string) => {
+        const go = gates.get(p);
+        if (go) { gates.delete(p); go(); }
+      }
+    };
+  };
+
+  const setup = (oldText: string) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-aud70-'));
+    const file = path.join(root, 'w.py');
+    fs.writeFileSync(file, oldText);
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(file)];
+    const ctl = makeSnapshotRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    const restore = () => {
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+    };
+    return { root, file, ctl, restore };
+  };
+
+  it('在飞读旧字节 + 磁盘改 latest 后再 change → 只发布 latest(不吞变更)', async () => {
+    const { root, file, ctl, restore } = setup('import KBEngine\nKBEngine.globalData["old"] = 1\n');
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(index.query('globalData', 'old').map(s => s.kind)).toEqual(['write']);
+      ctl.hang(file);
+      watcher.fireChange(vscode.Uri.file(file));
+      fs.writeFileSync(file, 'import KBEngine\nKBEngine.globalData["latest"] = 1\n');
+      watcher.fireChange(vscode.Uri.file(file));
+      ctl.release(file);
+      await new Promise(r => setTimeout(r, 20));
+      expect(index.query('globalData', 'latest').map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'old')).toEqual([]);
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('多次通知合并:在飞期间连续多次 change → 收敛 latest', async () => {
+    const { root, file, ctl, restore } = setup('import KBEngine\nKBEngine.globalData["v1"] = 1\n');
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      ctl.hang(file);
+      watcher.fireChange(vscode.Uri.file(file));
+      fs.writeFileSync(file, 'import KBEngine\nKBEngine.globalData["v2"] = 1\n');
+      watcher.fireChange(vscode.Uri.file(file));
+      fs.writeFileSync(file, 'import KBEngine\nKBEngine.globalData["v3"] = 1\n');
+      watcher.fireChange(vscode.Uri.file(file));
+      ctl.release(file);
+      await new Promise(r => setTimeout(r, 20));
+      expect(index.query('globalData', 'v3').map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'v1')).toEqual([]);
+      expect(index.query('globalData', 'v2')).toEqual([]);
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('在飞读期间删除 → 站点清除不复活', async () => {
+    const { root, file, ctl, restore } = setup('import KBEngine\nKBEngine.globalData["k"] = 1\n');
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      ctl.hang(file);
+      watcher.fireChange(vscode.Uri.file(file));
+      watcher.fireDelete(vscode.Uri.file(file));
+      ctl.release(file);
+      await new Promise(r => setTimeout(r, 20));
+      expect(index.query('globalData', 'k')).toEqual([]);
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('在飞读期间脏文档 → 缓冲优先', async () => {
+    const { root, file, ctl, restore } = setup('import KBEngine\nKBEngine.globalData["disk"] = 1\n');
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      ctl.hang(file);
+      watcher.fireChange(vscode.Uri.file(file));
+      workspaceEvents.documentChanged.fire({
+        document: { uri: { fsPath: file }, isDirty: true, getText: () => 'import KBEngine\nKBEngine.globalData["buf"] = 1\n' }
+      } as never);
+      ctl.release(file);
+      await new Promise(r => setTimeout(r, 20));
+      expect(index.query('globalData', 'buf').map(s => s.kind)).toEqual(['write']);
+      expect(index.query('globalData', 'disk')).toEqual([]);
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      restore();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
