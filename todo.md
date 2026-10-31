@@ -755,7 +755,7 @@
 
 证据：[第三轮审计](docs/review/2026-10-30-completion-audit-round3.md)。本轮只重开 GEN-006；其他窄范围验收项保留完成标记，缺口按下列任务分别验收。
 
-- [ ] IDE-AUD-055 [P1] 将 schema 视图的根身份贯穿命令与 URI；验收：A/B 同名实体可同时打开两份不同 URI；展示、定位、刷新始终使用各自根，覆盖真实命令到 provider 接线；依据：R3-F01。
+- [x] IDE-AUD-055 [P1] 将 schema 视图的根身份贯穿命令与 URI；验收：A/B 同名实体可同时打开两份不同 URI；展示、定位、刷新始终使用各自根，覆盖真实命令到 provider 接线；依据：R3-F01。已修 e5fc511：createDatabaseSchemaUri(entityName, workspaceRoot) 把根编进 URI query(?root=percent-encoded),provideTextDocumentContent/refresh 按 parseDatabaseSchemaRoot(uri) 取回各自根,无根保持无 query 原形态;extension openDatabaseSchemaCommand 第4参 workspaceRoot(视图/CodeLens 显式传根优先,面板直开从活动文档解析根),explorerProviders 数据库条目与 languageProviders CodeLens/definition Location 各带根;prove-red 3 例先红后绿(同名实体两 URI 不同/parse round-trip/provider 按各自根解析 A=hp B=onlyB 不串根),refresh 只刷该根 URI,extension 真实命令经 CommandRegistry 第4参贯穿到 openTextDocument URI;5096|7+25 demo 全绿。
 - [ ] IDE-AUD-056 [P1] 关闭 schema 文档时释放已发布快照；验收：关闭事件删除对应 publishedRenders；连续打开关闭超过 32 个实体后关闭文档不保留快照，仍打开文档保持同代定位；依据：R3-F02。
 - [ ] IDE-AUD-057 [P2] 释放 schema provider 时清空发布记录；验收：dispose 后 publishedRenders 为空、事件订阅释放；多次 dispose 安全，不影响正常关闭前定位；依据：R3-F02。
 - [ ] IDE-AUD-058 [P2] 按声明节点判断引用图重复符号；验收：单个正常开闭标签零重复警告，同段真实重复声明仍定位正确；Project Doctor 实际调用链得到相同结果；依据：R3-F03。

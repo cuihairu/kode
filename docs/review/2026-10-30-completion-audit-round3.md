@@ -16,7 +16,7 @@
 
 | 编号 | 优先级 | 结论及依据 | TODO 处理 |
 | --- | --- | --- | --- |
-| R3-F01 | P1 | schema 展示丢失根身份。`databaseSchemaPresentation.ts:23-28,65` 的 URI 只含实体名，provider 调 `getDatabaseSchemaSnapshot(entityName)` 不传根；`extension.ts:1540` 入口同样如此。A/B 同名 Hero：显式传 B 的对照得到 B.onlyB，虚拟视图得到 A.onlyA。底层根缓存正确，产品入口仍可串根 | 新增 AUD-055；不撤销 SCH-002 的底层缓存验收 |
+| R3-F01 | P1 | schema 展示丢失根身份。`databaseSchemaPresentation.ts:23-28,65` 的 URI 只含实体名，provider 调 `getDatabaseSchemaSnapshot(entityName)` 不传根；`extension.ts:1540` 入口同样如此。A/B 同名 Hero：显式传 B 的对照得到 B.onlyB，虚拟视图得到 A.onlyA。底层根缓存正确，产品入口仍可串根 | 新增 AUD-055；不撤销 SCH-002 的底层缓存验收；已修 e5fc511（URI query 根身份 + 命令第4参贯穿 + provider 按根解析，prove-red 绿，5096\|7+25 demo） |
 | R3-F02 | P1 | 展示面绕过缓存上限：`databaseSchemaPresentation.ts:21,27,60` 的 publishedRenders 没有关闭删除或 dispose.clear。顺次提供 46 个实体视图，在 textDocuments 为空的替身场景仍持有 46 个快照/行数组，底层 schema LRU 只有 32；dispose 后仍是 46。源码也没有接关闭事件。快照淘汰不代表整个展示链释放 | AUD-056 关闭清理、AUD-057 dispose 清理；不把未测堆内存字节数当作实测 |
 | R3-F03 | P2 | 正常闭合标签被当作重复声明。`defReferenceGraph.ts:257-274` 把 rename 的开/闭标签两个编辑位置当作两份声明；一份 Parent.hp，经 Child 继承连接后即产生 duplicate-symbol。Project Doctor 消费相同结果 | AUD-058；检测应按声明节点计数，不能把重命名编辑次数当作声明数 |
 | R3-F04 | P2 | 当前实体没有链接时，引用图丢失当前实体本身。`defReferenceGraph.ts:388-389` 只保留链接端点，单个 Solo.hp 的 definitions=0；Project Doctor 的 checkedFiles/checkedDefinitions 因而为 0。既有测试刻意排除无关 Orphan，不能据此推断整个设计必须纳入所有孤点；本问题只要求保留用户选中的 seed | AUD-059；明确 seed/连通分量与全项目扫描的不同范围 |
