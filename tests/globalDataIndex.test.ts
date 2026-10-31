@@ -2216,3 +2216,179 @@ describe('AUD-073 开关代际拦截过期发布(R4-F08)', () => {
     }
   });
 });
+describe('AUD-074 初扫与监听空窗(R4-F09)', () => {
+  /** 捕获本测试自建 watcher 的监听器(可 fire create/change/delete)。 */
+  const captureWatcherScoped = (): {
+    fireCreate: (uri: vscode.Uri) => void;
+    fireChange: (uri: vscode.Uri) => void;
+    fireDelete: (uri: vscode.Uri) => void;
+    restoreWatcher: () => void;
+  } => {
+    const listeners: {
+      create: Array<(uri: vscode.Uri) => void>;
+      change: Array<(uri: vscode.Uri) => void>;
+      delete: Array<(uri: vscode.Uri) => void>;
+    } = { create: [], change: [], delete: [] };
+    const original = vscode.workspace.createFileSystemWatcher;
+    vscode.workspace.createFileSystemWatcher = ((): unknown => ({
+      onDidCreate: (l: (uri: vscode.Uri) => void) => { listeners.create.push(l); return { dispose: () => undefined }; },
+      onDidChange: (l: (uri: vscode.Uri) => void) => { listeners.change.push(l); return { dispose: () => undefined }; },
+      onDidDelete: (l: (uri: vscode.Uri) => void) => { listeners.delete.push(l); return { dispose: () => undefined }; },
+      dispose: () => undefined
+    })) as typeof original;
+    const restore = (): void => { vscode.workspace.createFileSystemWatcher = original; };
+    return {
+      fireCreate: uri => listeners.create.forEach(l => l(uri)),
+      fireChange: uri => listeners.change.forEach(l => l(uri)),
+      fireDelete: uri => listeners.delete.forEach(l => l(uri)),
+      restoreWatcher: restore
+    };
+  };
+
+  const setupWorkspace = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdip-a74-'));
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(writer), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = {"gold": 1}\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("cfg")\n';
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    return { root, writer, reader, writerText, readerText };
+  };
+
+  const makeGatedColdRead = (): {
+    read: typeof vscode.workspace.fs.readFile;
+    gate: (p: string) => void;
+    release: (p: string) => void;
+    engagedAny: () => boolean;
+  } => {
+    const shouldHang = new Set<string>();
+    const hanging = new Map<string, () => void>();
+    const read = (async (uri: vscode.Uri) => {
+      const p = uri.fsPath;
+      if (shouldHang.has(p)) {
+        return new Promise<Uint8Array>(resolve => {
+          hanging.set(p, () => resolve(fs.readFileSync(p)));
+        });
+      }
+      return fs.readFileSync(p);
+    }) as typeof vscode.workspace.fs.readFile;
+    return {
+      read,
+      gate: p => shouldHang.add(p),
+      release: p => {
+        shouldHang.delete(p);
+        const go = hanging.get(p);
+        if (go) { hanging.delete(p); go(); }
+      },
+      engagedAny: () => hanging.size > 0
+    };
+  };
+
+  const waitUntil = async (cond: () => boolean, limit = 500): Promise<void> => {
+    for (let i = 0; i < limit && !cond(); i += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    if (!cond()) {
+      throw new Error('waitUntil condition not met');
+    }
+  };
+
+  it('初扫期间删除已捕获字节的文件:不发布幽灵写点(R4-F09)', async () => {
+    const { root, writer, reader } = setupWorkspace();
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      const pending = index.ensureStarted();
+      await waitUntil(() => ctl.engagedAny());
+      // 捕获旧字节(放行读盘)后、提交前删除实际文件 + 删除事件
+      ctl.release(writer);
+      fs.rmSync(writer);
+      watcher.fireDelete(vscode.Uri.file(writer));
+      ctl.release(reader);
+      await pending;
+      // 幽灵写点不得发布:writer 键不在索引
+      expect(index.query('globalData', 'cfg').map(s => path.basename(s.file))).not.toContain('writer.py');
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('初扫期间变更已捕获字节的文件:最新内容入索引,旧内容不发布(R4-F09)', async () => {
+    const { root, writer, reader } = setupWorkspace();
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      const pending = index.ensureStarted();
+      await waitUntil(() => ctl.engagedAny());
+      // 捕获旧字节(放行读盘)后、提交前改写文件 + 变更事件
+      ctl.release(writer);
+      fs.writeFileSync(writer, 'import KBEngine\nKBEngine.globalData["changed"] = 1\n');
+      watcher.fireChange(vscode.Uri.file(writer));
+      ctl.release(reader);
+      await pending;
+      await new Promise(resolve => setTimeout(resolve, 20));
+      // 最新内容入索引;writer 不再贡献旧 cfg 键(reader 自身读点仍在)
+      expect(index.query('globalData', 'changed').map(s => path.basename(s.file))).toEqual(['writer.py']);
+      expect(index.query('globalData', 'cfg').map(s => path.basename(s.file))).not.toContain('writer.py');
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('初扫期间新建文件:create 事件入账,新文件被索引(R4-F09)', async () => {
+    const { root, writer, reader } = setupWorkspace();
+    const created = path.join(root, 'cell', 'created.py');
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(writer), vscode.Uri.file(reader)];
+    const ctl = makeGatedColdRead();
+    vscode.workspace.fs.readFile = ctl.read;
+    ctl.gate(writer);
+    ctl.gate(reader);
+    const watcher = captureWatcherScoped();
+    const index = new GlobalDataDictIndex();
+    try {
+      const pending = index.ensureStarted();
+      await waitUntil(() => ctl.engagedAny());
+      // 初扫在飞时新建文件 + create 事件
+      fs.writeFileSync(created, 'import KBEngine\nKBEngine.globalData["created"] = 1\n');
+      watcher.fireCreate(vscode.Uri.file(created));
+      ctl.release(writer);
+      ctl.release(reader);
+      await pending;
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(index.query('globalData', 'created').map(s => path.basename(s.file))).toEqual(['created.py']);
+    } finally {
+      index.dispose();
+      watcher.restoreWatcher();
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

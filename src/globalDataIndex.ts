@@ -1097,6 +1097,27 @@ export class GlobalDataDictIndex {
       }
     }
     const initialRevisions = new Map(this.revisions);
+    // AUD-074(R4-F09):监听先挂——初扫到挂 watcher 之间的空窗会让真实
+    // create/change/delete 事件丢失(捕获旧字节后删文件→幽灵写点,捕获后
+    // 改文件→旧内容发布)。watcher 先于 findFiles/扫描创建:变更升 revision
+    // 使在飞旧读作废(AUD-070 追读接手),删除撤 cache+revision;扫描 worker
+    // 对升过 revision 的文件跳过交由监听器,监听与全扫互不覆盖(最新者胜)。
+    const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
+    watcher.onDidCreate(uri => {
+      void this.indexFile(uri);
+    });
+    watcher.onDidChange(uri => {
+      // AUD-070:变更升 revision——在飞读盘若读到旧字节即作废,由追读接手
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+      void this.indexFile(uri);
+    });
+    watcher.onDidDelete(uri => {
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+      const entry = this.cache.get(uri.fsPath);
+      this.replaceFileSites(uri.fsPath, entry?.accesses ?? [], []);
+      this.cache.delete(uri.fsPath);
+    });
+    this.watchers.push(watcher);
     const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
     if (this.disposed) {
       return;
@@ -1115,22 +1136,6 @@ export class GlobalDataDictIndex {
     if (this.disposed) {
       return;
     }
-    const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
-    watcher.onDidCreate(uri => {
-      void this.indexFile(uri);
-    });
-    watcher.onDidChange(uri => {
-      // AUD-070:变更升 revision——在飞读盘若读到旧字节即作废,由追读接手
-      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
-      void this.indexFile(uri);
-    });
-    watcher.onDidDelete(uri => {
-      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
-      const entry = this.cache.get(uri.fsPath);
-      this.replaceFileSites(uri.fsPath, entry?.accesses ?? [], []);
-      this.cache.delete(uri.fsPath);
-    });
-    this.watchers.push(watcher);
     this.started = true;
   }
 
