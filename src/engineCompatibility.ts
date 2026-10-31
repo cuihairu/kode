@@ -96,6 +96,21 @@ export function checkExtensionCompatibility(
   return { engineRoot, checks };
 }
 
+/**
+ * 兼容检查命令的命令体(R2-F21/IDE-AUD-046):入参是扩展根目录,内部把
+ * manifest 文件路径(package.json)传给 checkExtensionCompatibility ——
+ * 现网接线曾直接传目录,helper 以 fs.readFileSync(目录) 抛 EISDIR,且 bundle
+ * 探测落在 dirname(目录) 的上层,导致有 package.json+out/extension.js 也报错。
+ */
+export function runCompatibilityCheck(
+  extensionDir: string,
+  engineRoot: string | null,
+  target: ExtensionCompatibilityTarget
+): EngineCompatibilityReport {
+  const manifestPath = path.join(extensionDir, 'package.json');
+  return checkExtensionCompatibility(manifestPath, engineRoot, target);
+}
+
 export function formatEngineCompatibilityReport(report: EngineCompatibilityReport): string {
   return [
     report.engineRoot ? `Engine source: ${report.engineRoot}` : 'Engine source: not found',

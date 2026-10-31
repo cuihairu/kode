@@ -167,8 +167,8 @@ beforeAll(() => {
     'class Avatar:\n    def respawn(self):\n        pass\n',
     'utf8'
   );
-  // 兼容性检查的清单面:extensionUri 指向真实 package.json,旁边有
-  // out/extension.js(bundle 检查存在性)
+  // 兼容性检查的清单面:extensionUri 指向扩展根目录(真实 VS Code 语义),
+  // 目录下有真实 package.json + out/extension.js(bundle 检查存在性)
   extDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-ext-manifest-'));
   fs.writeFileSync(
     path.join(extDir, 'package.json'),
@@ -233,7 +233,7 @@ describe('extension 激活链命令面(补测)', () => {
     prepareWorkspace(root, defsRoot);
     context = {
       subscriptions: [],
-      extensionUri: Uri.file(path.join(extDir, 'package.json')),
+      extensionUri: Uri.file(extDir),
       extensionPath: extDir,
       extension: { id: 'cuihairu.kode', extensionKind: 'workspace' },
       globalStoragePath: gsDir,
@@ -955,7 +955,7 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
     configurationOverrides.set('kbengine', { annotationLog: true });
     context = {
       subscriptions: [],
-      extensionUri: Uri.file(path.join(extDir, 'package.json')),
+      extensionUri: Uri.file(extDir),
       extensionPath: extDir,
       extension: { id: 'cuihairu.kode', extensionKind: 'workspace' },
       globalStoragePath: gsDir,

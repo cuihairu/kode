@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   checkExtensionCompatibility,
   findEngineRoot,
-  formatEngineCompatibilityReport
+  formatEngineCompatibilityReport,
+  runCompatibilityCheck
 } from '../src/engineCompatibility';
 
 let root = '';
@@ -116,5 +117,31 @@ describe('engine compatibility check', () => {
       fs.rmSync(equalRoot, { recursive: true, force: true });
       fs.rmSync(manifestDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('compatibility command manifest path (R2-F21 / IDE-AUD-046)', () => {
+  const target = {
+    displayName: 'Kode KBEngine',
+    engines: '^1.84.0',
+    vscodeEngine: '^1.84.0',
+    files: [{ relativePath: 'out/extension.js', exported: true }]
+  };
+
+  it('documented bug: passing the extension directory (old wiring) breaks manifest and bundle checks', () => {
+    // 现网接线曾传 extension 目录:fs.readFileSync(目录) 抛 EISDIR → manifest
+    // error,且 bundle 探测落在 dirname(目录) 的上层 → bundle error。
+    // 即使 package.json 与 out/extension.js 都在,也报错(R2-F21 失败形态)。
+    const broken = checkExtensionCompatibility(root, engineRoot, target);
+    expect(broken.checks).toContainEqual(expect.objectContaining({ name: 'manifest', status: 'error' }));
+    expect(broken.checks).toContainEqual(expect.objectContaining({ name: 'bundle', status: 'error' }));
+  });
+
+  it('runCompatibilityCheck passes the manifest file path and yields a clean report', () => {
+    const report = runCompatibilityCheck(root, engineRoot, target);
+    // manifest 检查只在读取失败时出现;成功路径下不应有任何 error 级检查。
+    expect(report.checks.some(check => check.status === 'error')).toBe(false);
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'bundle', status: 'ok' }));
+    expect(report.checks).toContainEqual(expect.objectContaining({ name: 'package-version', status: 'ok' }));
   });
 });

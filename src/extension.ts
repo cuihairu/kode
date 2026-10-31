@@ -132,9 +132,9 @@ import { discoverLocalComponents, querySpaces, startProfileQuery } from './kbeng
 import { RuntimeQueryWebView } from './runtimeQueryWebView';
 import { CallChainController } from './defCallChainProvider';
 import {
-  checkExtensionCompatibility,
   findEngineRoot,
   formatEngineCompatibilityReport,
+  runCompatibilityCheck,
   type ExtensionCompatibilityTarget
 } from './engineCompatibility';
 import {
@@ -3320,7 +3320,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     const engineRoot = findEngineRoot(root, vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '') || undefined);
-    const report = checkExtensionCompatibility(context.extensionUri.fsPath, engineRoot, compatibilityTarget);
+    const report = runCompatibilityCheck(context.extensionUri.fsPath, engineRoot, compatibilityTarget);
     compatibilityChannel.clear();
     compatibilityChannel.appendLine(formatEngineCompatibilityReport(report));
     compatibilityChannel.show(true);
