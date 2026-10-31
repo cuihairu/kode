@@ -6,7 +6,7 @@ import { KBEngineCodeGenerator } from '../src/codeGenerator';
 import type { EntityDefinition } from '../src/codeGenerator';
 import { analyzeDefDocument } from '../src/defAnalyzer';
 import type * as vscode from 'vscode';
-import { Uri, workspace as stubWorkspace, window as stubWindow } from './helpers/vscodeStub';
+import { makeTextDocument, Uri, workspace as stubWorkspace, window as stubWindow, workspaceState } from './helpers/vscodeStub';
 
 // KBEngineCodeGenerator 的文件落盘与命令编排层:generateDefFile/
 // generatePythonFile/registerInEntitiesXml 在真实临时工作区树上写真实
@@ -678,18 +678,22 @@ describe('KBEngineCodeGenerator dirty buffer registration (IDE-GEN-007)', () => 
       '</root>',
       ''
     ].join('\n');
-    stubWorkspace.textDocuments = [
-      { uri: Uri.file(entitiesXml), version: 3, getText: () => bufferContent }
-    ];
+    // AUD-030:登记直接写进打开文档缓冲区(基于当前文档文本),不再写盘
+    const doc = makeTextDocument(bufferContent, { uri: Uri.file(entitiesXml), version: 3 });
+    stubWorkspace.textDocuments = [doc];
+    workspaceState.applyEditCalls.length = 0;
 
     await makeGenerator().registerInEntitiesXml({
       name: 'Monster', hasBase: true, hasCell: false, hasClient: false
     });
 
-    const written = fs.readFileSync(entitiesXml, 'utf8');
-    // 用户未保存的注册保留,新注册追加——写入基于当前文档
-    expect(written).toContain('<UnsavedThing hasBase="true" hasCell="false" hasClient="false" />');
-    expect(written).toContain('  <Monster hasCell="false" hasBase="true" hasClient="false" />');
+    // 用户未保存的注册保留,新注册追加进缓冲区——写入基于当前文档
+    const bufferText = doc.getText();
+    expect(bufferText).toContain('<UnsavedThing hasBase="true" hasCell="false" hasClient="false" />');
+    expect(bufferText).toContain('  <Monster hasCell="false" hasBase="true" hasClient="false" />');
+    // 盘未动:登记只在缓冲区,等用户保存才落盘
+    expect(fs.readFileSync(entitiesXml, 'utf8')).toBe(diskContent);
+    expect(doc.version).toBe(4);
   });
 
   it('sees registrations that only exist in the dirty buffer', async () => {

@@ -256,18 +256,45 @@ export class KBEngineCodeGenerator {
 
   /**
    * 多文件生成的回滚账本(IDE-GEN-006):记录本次新增文件与被改写文件
-   * 的原内容;后续任何一步失败时逐项回收(新增删除,改写还原)
+   * 的原内容;后续任何一步失败时逐项回收(新增删除,改写还原)。
+   * AUD-030:打开文档的登记走缓冲插入,单独记账(bufferEdits),回收时
+   * 只撤销本次插入——绝不把缓冲内容当盘上前值写回(会覆盖用户未保存改动)。
    */
-  private rollbackLedger: { createdFiles: string[]; overwrittenFiles: Array<{ filePath: string; previous: string }> } = {
+  private rollbackLedger: {
+    createdFiles: string[];
+    overwrittenFiles: Array<{ filePath: string; previous: string }>;
+    bufferEdits: Array<{ filePath: string; uri: vscode.Uri; offset: number; text: string }>;
+  } = {
     createdFiles: [],
-    overwrittenFiles: []
+    overwrittenFiles: [],
+    bufferEdits: []
   };
 
   /**
    * 回收本次新增项(IDE-GEN-006):先还原被改写文件(entities.xml 注册项),
-   * 再按写入逆序删除本次新增文件;单项回收失败不掩盖原始错误
+   * 再按写入逆序删除本次新增文件;单项回收失败不掩盖原始错误。
+   * AUD-030:缓冲登记撤销优先——只撤回本次插入,且缓冲仍恰好含该插入才动
+   * (用户未再改动),避免误删他人后续改动。
    */
-  private rollbackGeneration(): void {
+  private async rollbackGeneration(): Promise<void> {
+    for (const item of [...this.rollbackLedger.bufferEdits].reverse()) {
+      try {
+        const doc = vscode.workspace.textDocuments.find(candidate => candidate.uri.fsPath === item.filePath);
+        if (!doc) {
+          continue;
+        }
+        const start = doc.positionAt(item.offset);
+        const end = doc.positionAt(item.offset + item.text.length);
+        if (doc.getText(new vscode.Range(start, end)) !== item.text) {
+          continue;
+        }
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(item.uri, new vscode.Range(start, end), '');
+        await vscode.workspace.applyEdit(edit);
+      } catch {
+        // 回收失败不掩盖原始错误
+      }
+    }
     for (const item of [...this.rollbackLedger.overwrittenFiles].reverse()) {
       try {
         writeFileAtomic(item.filePath, item.previous);
@@ -703,7 +730,7 @@ export class KBEngineCodeGenerator {
       throw new Error(`entities.xml 不存在: ${entitiesXmlPath}`);
     }
 
-    let content = snapshot.content;
+    const content = snapshot.content;
 
     // 检查是否已经注册
     const entityPattern = new RegExp(`<${entity.name}(?=[\\s>/])`, 'i');
@@ -721,10 +748,33 @@ export class KBEngineCodeGenerator {
       throw new Error('entities.xml 格式错误：找不到 </root> 标签');
     }
 
-    content = content.substring(0, insertIndex) + registration + '\n' + content.substring(insertIndex);
+    // AUD-030:打开文档走缓冲写入(与 generatorForms.registerSpaceEntity 同
+    // 规则)——读缓冲到 applyEdit 是同一快照(此处到 applyEdit 无 await),
+    // 重名检查与插入点都按缓冲区当前文本定位;未打开才原子写盘。
+    if (snapshot.source === 'document') {
+      const openDoc = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === entitiesXmlPath);
+      if (!openDoc) {
+        throw new Error(`entities.xml 缓冲区已关闭: ${entitiesXmlPath}`);
+      }
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(openDoc.uri, openDoc.positionAt(insertIndex), `${registration}\n`);
+      const applied = await vscode.workspace.applyEdit(edit);
+      if (!applied || !openDoc.getText().includes(registration)) {
+        vscode.window.showWarningMessage(`entities.xml 缓冲区写入未生效,实体 ${entity.name} 未登记`);
+        return;
+      }
+      this.rollbackLedger.bufferEdits.push({
+        filePath: entitiesXmlPath,
+        uri: openDoc.uri,
+        offset: insertIndex,
+        text: `${registration}\n`
+      });
+      return;
+    }
 
-    // 写回文件(IDE-GEN-005:原子替换,中断时旧注册保持完整)
-    writeFileAtomic(entitiesXmlPath, content);
+    // 未打开:写回文件(IDE-GEN-005:原子替换,中断时旧注册保持完整)
+    writeFileAtomic(entitiesXmlPath, content.substring(0, insertIndex) + registration + '\n' + content.substring(insertIndex));
+    this.rollbackLedger.overwrittenFiles.push({ filePath: entitiesXmlPath, previous: content });
   }
 
   /**
@@ -878,7 +928,7 @@ export class KBEngineCodeGenerator {
         return;
       }
 
-      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [] };
+      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
       const defFile = await this.generateDefFile(entity);
       this.rollbackLedger.createdFiles.push(defFile);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
@@ -890,18 +940,9 @@ export class KBEngineCodeGenerator {
       }
 
       if (this.config.registerInEntitiesXml) {
-        // IDE-GEN-006:注册前记下原内容,后续失败时回收本次注册项
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (workspaceFolder) {
-          const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
-          const backup = readSharedFileSnapshot(entitiesXmlPath);
-          if (backup) {
-            this.rollbackLedger.overwrittenFiles.push({
-              filePath: entitiesXmlPath,
-              previous: backup.content
-            });
-          }
-        }
+        // IDE-GEN-006/AUD-030:回滚前值由 registerInEntitiesXml 按实际写入
+        // 面记账(缓冲插入入 bufferEdits,盘写覆盖入 overwrittenFiles),避免
+        // 把打开文档的缓冲内容误当盘上前值
         await this.registerInEntitiesXml(entity.config);
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
       }
@@ -920,7 +961,7 @@ export class KBEngineCodeGenerator {
 
     } catch (error) {
       // IDE-GEN-006:回收本次新增文件与注册项,不留半套
-      this.rollbackGeneration();
+      await this.rollbackGeneration();
       vscode.window.showErrorMessage(`生成失败: ${error}`);
     }
   }
@@ -1079,7 +1120,7 @@ export class KBEngineCodeGenerator {
         return;
       }
 
-      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [] };
+      this.rollbackLedger = { createdFiles: [], overwrittenFiles: [], bufferEdits: [] };
       const defFile = await this.generateDefFile(entity);
       this.rollbackLedger.createdFiles.push(defFile);
       vscode.window.showInformationMessage(`✅ 已生成 .def 文件: ${defFile}`);
@@ -1091,25 +1132,16 @@ export class KBEngineCodeGenerator {
       }
 
       if (this.config.registerInEntitiesXml) {
-        // IDE-GEN-006:注册前记下原内容,后续失败时回收本次注册项
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (workspaceFolder) {
-          const entitiesXmlPath = this.resolveEntitiesXmlPath(workspaceFolder.uri.fsPath);
-          const backup = readSharedFileSnapshot(entitiesXmlPath);
-          if (backup) {
-            this.rollbackLedger.overwrittenFiles.push({
-              filePath: entitiesXmlPath,
-              previous: backup.content
-            });
-          }
-        }
+        // IDE-GEN-006/AUD-030:回滚前值由 registerInEntitiesXml 按实际写入
+        // 面记账(缓冲插入入 bufferEdits,盘写覆盖入 overwrittenFiles),避免
+        // 把打开文档的缓冲内容误当盘上前值
         await this.registerInEntitiesXml(entity.config);
         vscode.window.showInformationMessage(`✅ 已在 entities.xml 中注册 ${entityName}`);
       }
 
     } catch (error) {
       // IDE-GEN-006:回收本次新增文件与注册项,不留半套
-      this.rollbackGeneration();
+      await this.rollbackGeneration();
       vscode.window.showErrorMessage(`生成失败: ${error}`);
     }
   }
