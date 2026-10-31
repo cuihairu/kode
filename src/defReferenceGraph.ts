@@ -385,6 +385,10 @@ export function buildDefReferenceGraphFromFile(filePath: string): DefReferenceGr
   }
 
   const reachableFiles = new Set(connectedComponents(links).flatMap(component => [...component]));
+  // AUD-059:保留无链接的当前实体(seed)——只留链接端点会丢掉用户选中的
+  // Solo.def(checkedFiles/definitions 归 0);无关孤立实体仍不纳入(它们不在
+  // 任何连通分量里,只有 seed 被显式保留)
+  reachableFiles.add(resolved);
   const reachableDefinitions = definitions.filter(definition => reachableFiles.has(definition.filePath));
   const duplicateIssues = collectDuplicateIssues(reachableDefinitions);
   const { references, edges } = collectReferences(reachableDefinitions, entries, links);

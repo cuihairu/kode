@@ -56,6 +56,15 @@ beforeAll(() => {
     '  <Properties>\n    <own> <Type> UINT8 </Type> </own>\n  </Properties>',
     '</root>'
   ].join('\n'));
+  // AUD-059:无链接当前实体(Solo 只有 hp,无 Parent 无后代)——选中它时
+  // 引用图必须保留 Solo.hp,Doctor 统计含当前文件
+  write('scripts/entity_defs/Solo.def', [
+    '<root>',
+    '  <Properties>',
+    '    <hp> <Type> UINT32 </Type> </hp>',
+    '  </Properties>',
+    '</root>'
+  ].join('\n'));
 });
 
 afterAll(() => {
@@ -135,6 +144,23 @@ describe('def reference graph', () => {
     } finally {
       fs.rmSync(dupRoot, { recursive: true, force: true });
     }
+  });
+
+  it('AUD-059 无链接的当前实体(seed)仍保留:图含 Solo.hp,Doctor 统计含当前文件', () => {
+    const graph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Solo.def'))!;
+    expect(graph.definitions.map(definition => `${definition.ownerName}.${definition.name}`))
+      .toContain('Solo.hp');
+
+    const report = buildProjectDoctorReport(graph);
+    // Solo.hp 在 definitions => Solo.def 计入统计;既有 union 行为仍把
+    // 有链接的 Hero/Monster/Boss 一并纳入,不因新增 seed 而改变
+    expect(report.checkedFiles).toBeGreaterThan(0);
+    expect(report.checkedDefinitions).toBeGreaterThan(0);
+
+    // 既有约束:无关孤立实体(Orphan)不误纳入——非 seed 的孤点仍被排除
+    const orphanGraph = buildDefReferenceGraphFromFile(path.join(root, 'scripts/entity_defs/Hero.def'))!;
+    expect(orphanGraph.definitions.map(definition => `${definition.ownerName}.${definition.name}`))
+      .not.toContain('Orphan.own');
   });
 
   it('renders graph symbols, edges and unresolved targets in both forms', () => {
