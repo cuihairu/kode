@@ -241,6 +241,17 @@ export function remoteTargetPathMappings(
   return [{ localRoot: target.localRoot, remoteRoot: target.remoteRoot }];
 }
 
+/**
+ * IDE-AUD-002:每次附加尝试的唯一身份。进程内单调递增,保证并发同名
+ * attach(同一组件/端口或同一进程名)各自可辨——会话追踪不再只按配置名
+ * 匹配(两个同名附加会互相捕获对方会话,取消其一误停他人)。
+ */
+let attachAttemptSeq = 0;
+function nextAttachAttemptId(): string {
+  attachAttemptSeq += 1;
+  return `kode-attach-${attachAttemptSeq}`;
+}
+
 export class DebugConfigManager {
   private config: KBEngineDebugConfig;
   private configWatcher: vscode.FileSystemWatcher | null = null;
@@ -992,6 +1003,17 @@ export class DebugConfigManager {
     label: string,
     attachConfig: vscode.DebugConfiguration
   ): Promise<AttachGuardOutcome> {
+    // IDE-AUD-002:每次尝试唯一身份。配置名(组件/端口或进程名)可相同——
+    // 两个同名附加并发时,onDidStartDebugSession 无法只按名字区分彼此;
+    // 给配置打上本次尝试的 __kodeAttachId,会话启动事件携带的
+    // session.configuration 据此精确归属(不同 workspace/同名启动也不误认)。
+    // 自定义字段经 DebugConfiguration 索引签名透传,无 resolveDebugConfiguration
+    // 改写配置,会话侧 configuration 保留该标记。
+    const attachAttemptId = nextAttachAttemptId();
+    const markedConfig: vscode.DebugConfiguration = {
+      ...attachConfig,
+      __kodeAttachId: attachAttemptId
+    };
     let ownSession: vscode.DebugSession | undefined;
     let cleanupDone = false;
     let trackerDisposed = false;
@@ -1001,7 +1023,9 @@ export class DebugConfigManager {
     let abandoned = false;
     let startSettled = false;
     const sessionTracker = vscode.debug.onDidStartDebugSession(session => {
-      if (ownSession || session.name !== attachConfig.name) {
+      // IDE-AUD-002:只认本尝试的标记,不按名字——同名无关会话/其他尝试的
+      // 会话(即便同名)一律不捕获;本尝试会话已捕获则忽略后到者。
+      if (ownSession || session.configuration?.__kodeAttachId !== attachAttemptId) {
         return;
       }
       ownSession = session;
@@ -1040,7 +1064,9 @@ export class DebugConfigManager {
             timeoutMs: vscode.workspace
               .getConfiguration('kbengine')
               .get<number>('debug.attachTimeoutMs', DEBUG_ATTACH_TIMEOUT_DEFAULT_MS),
-            start: () => Promise.resolve(vscode.debug.startDebugging(undefined, attachConfig)),
+            // IDE-AUD-002:startDebugging 用带尝试标记的配置,会话启动事件的
+            // configuration 才能据标记归属本次尝试。
+            start: () => Promise.resolve(vscode.debug.startDebugging(undefined, markedConfig)),
             // IDE-REV-002:窗内截止/取消只停自家会话;stopDebugging(undefined)
             // 等同无参(停全部)——无自家句柄就一次都不停,迟到面由 REV-003 接
             stop: () => {

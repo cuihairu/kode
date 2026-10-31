@@ -635,6 +635,9 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
   const stopCalls: unknown[][] = [];
   const warnings: string[] = [];
   let fireCancel: (() => void) | undefined;
+  // IDE-AUD-002:并发同名附加逐次收集取消触发器(首个=最先发起的附加),
+  // 供按尝试单独取消;单附加用例沿用 fireCancel(最后注册的那个)
+  const fireCancels: Array<() => void> = [];
   let cancelDisposals = 0;
   // IDE-REV-002:会话启动事件面——sessionFirePlan 控制本次 startDebugging
   // 期间先后「启动」哪些会话('own'=以本次配置名命名的自家会话,其余字串=
@@ -651,8 +654,12 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     reject: (error: Error) => void;
   }> = [];
   const fireSessionStarted = (name: string): void => {
+    // IDE-AUD-002:同名配置按已发起的 startDebugging 配置还原标记——自家
+    // 会话携带本尝试配置(含 __kodeAttachId),无关同名会话不带标记。
+    const config = debugCalls.find(call => (call.config as { name?: string }).name === name)?.config;
+    const session = { id: `late:${name}`, name, ...(config ? { configuration: config } : {}) };
     for (const listener of [...sessionListeners]) {
-      listener({ id: `late:${name}`, name });
+      listener(session);
     }
   };
   let originalStart: unknown;
@@ -692,8 +699,10 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     ) => {
       debugCalls.push({ folder, config, result: true, throws: null });
       for (const item of sessionFirePlan ?? []) {
+        // IDE-AUD-002:自家会话携带本尝试配置(含 __kodeAttachId 标记),
+        // 会话追踪按标记归属;无关会话不带标记(同名也不被误捕获)。
         const session = item === 'own'
-          ? { id: `own:${config.name}`, name: config.name }
+          ? { id: `own:${config.name}`, name: config.name, configuration: config }
           : { id: `other:${item}`, name: item };
         for (const listener of [...sessionListeners]) { listener(session); }
       }
@@ -710,7 +719,7 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     debugish.stopDebugging = async (...args: unknown[]) => {
       stopCalls.push(args);
     };
-    // 可控取消面:捕获 token 的取消订阅
+    // 可控取消面:捕获 token 的取消订阅(逐次收集,fireCancel 取最后注册者)
     windowish.withProgress = async (
       _options: unknown,
       task: (progress: unknown, token: unknown) => Promise<unknown>
@@ -718,6 +727,7 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
       task(undefined, {
         isCancellationRequested: false,
         onCancellationRequested: (listener: () => void) => {
+          fireCancels.push(listener);
           fireCancel = listener;
           return {
             dispose: () => {
@@ -740,6 +750,7 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     warnings.length = 0;
     cancelDisposals = 0;
     fireCancel = undefined;
+    fireCancels.length = 0;
     sessionFirePlan = undefined;
     sessionListeners.length = 0;
     sessionTrackerDisposals = 0;
@@ -939,6 +950,72 @@ describe('attachToComponent/attachRemote 截止与取消(DBG-007)', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(stopCalls).toHaveLength(1);
     configurationOverrides.clear();
+  }, 10_000);
+
+  it('AUD-002 并发同名附加:取消其一只停对应会话,另一尝试与无关同名会话不动', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    pickQueue.push(
+      { label: 'baseapp', description: '123' },
+      { label: 'baseapp', description: '456' }
+    );
+    hung = true;
+    // 不随 startDebugging 同步发会话:两个尝试都挂起后由测试手动发,
+    // 保证两个会话追踪器都在场(旧码按名字匹配时后者会捕获前者的会话)
+    sessionFirePlan = [];
+    const manager = makeManager([
+      { pid: 123, name: 'baseapp' },
+      { pid: 456, name: 'baseapp' }
+    ]);
+    await flushAsync();
+
+    void manager.attachToComponent('baseapp');
+    void manager.attachToComponent('baseapp');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // 两个同名附加都已发起 startDebugging(hung),各带自己的尝试标记
+    expect(debugCalls).toHaveLength(2);
+    const config1 = debugCalls[0].config as Record<string, unknown>;
+    const config2 = debugCalls[1].config as Record<string, unknown>;
+    expect(config1.__kodeAttachId).toBeTruthy();
+    expect(config2.__kodeAttachId).toBeTruthy();
+    expect(config1.__kodeAttachId).not.toBe(config2.__kodeAttachId);
+
+    const fireNow = (session: unknown): void => {
+      for (const listener of [...sessionListeners]) { listener(session); }
+    };
+    // 无关同名会话(另一 workspace/窗口启动的同名会话,无本尝试标记)先到:
+    // 不能被任一尝试误认为自家会话;两个本尝试会话随后启动(各带标记)
+    const extSession = { id: 'ext:baseapp', name: 'KBEngine: Python attach to baseapp' };
+    const ownSession1 = {
+      id: 'own1',
+      name: 'KBEngine: Python attach to baseapp',
+      configuration: config1
+    };
+    const ownSession2 = {
+      id: 'own2',
+      name: 'KBEngine: Python attach to baseapp',
+      configuration: config2
+    };
+    for (const session of [extSession, ownSession1, ownSession2]) {
+      fireNow(session);
+    }
+
+    // 取消第二次尝试:只停该尝试的 ownSession2;另一尝试与无关同名会话不动
+    fireCancels[1]?.();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(stopCalls).toHaveLength(1);
+    const stopped = (stopCalls[0] as Array<{ id?: string; name?: string }>)[0];
+    expect(stopped?.id).toBe('own2');
+    expect(stopped?.name).toBe('KBEngine: Python attach to baseapp');
+    expect(stopCalls.some(call => (call[0] as { id?: string } | undefined)?.id === 'own1'))
+      .toBe(false);
+    expect(stopCalls.some(call => (call[0] as { id?: string } | undefined)?.id === 'ext:baseapp'))
+      .toBe(false);
+
+    // hung=true:两个附加的 startDebugging 永不落定,attachToComponent 不会
+    // resolve——只断言停止面,不等它们返回;管理器卸载兜底释放遗留订阅。
+    manager.dispose();
   }, 10_000);
 });
 
