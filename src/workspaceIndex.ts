@@ -244,7 +244,8 @@ export class WorkspaceIndex implements EventCallIndex {
       return inflight;
     }
     const revision = this.revisions.get(uri.fsPath) ?? 0;
-    const task = (async () => {
+    const holder: { task: Promise<IndexedFile | null> } = { task: Promise.resolve(null) };
+    holder.task = (async () => {
       try {
         const bytes = await vscode.workspace.fs.readFile(uri);
         if (this.disposed) return null;
@@ -301,11 +302,16 @@ export class WorkspaceIndex implements EventCallIndex {
         if ((this.revisions.get(uri.fsPath) ?? 0) === revision) this.cache.delete(uri.fsPath);
         return null;
       } finally {
-        this.building.delete(uri.fsPath);
+        // 只清自己占位的项:noteDocumentAbandoned 会先 building.delete 再建新
+        // 任务(新条目),若这里无条件 delete 会误删新任务,后续磁盘事件绕过
+        // 去重/版本守卫并跳过尾随读,可能发布过期内容。
+        if (this.building.get(uri.fsPath) === holder.task) {
+          this.building.delete(uri.fsPath);
+        }
       }
     })();
-    this.building.set(uri.fsPath, task);
-    return task;
+    this.building.set(uri.fsPath, holder.task);
+    return holder.task;
   }
 
   /** 保存时由编辑器路径直接刷新（免读盘）。 */
