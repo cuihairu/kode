@@ -820,3 +820,11 @@
 - [ ] 审核发现：workspaceIndex 在途任务的 finally 无条件 building.delete(fsPath)，会误删 noteDocumentAbandoned 先删后建的新任务条目，后续磁盘事件绕过去重/版本守卫并跳过尾随读，可能发布过期内容（src/workspaceIndex.ts:303-305/176-184）。
 - [ ] 审核发现：debugpy 安装与 py-spy 超时仅 child.kill() 且子进程未 detached，pip/py-spy 衍生的构建孙进程成为孤儿（对照 ProcessManager.killProcessTree 的组杀口径）（src/debugpyPortProbe.ts:154/167-169；src/pyspyDump.ts:38/50-52）。
 - [ ] 审核发现：autoDebugpy 的 defaultRunPython 是同组唯一无超时/截止的 spawn 包装，解释器挂起时 syncDebugpyPackage 永久等待，命令无反馈卡死（src/autoDebugpy.ts:145-168）。
+
+- [ ] **C-15 · P1 · 实现 · def 驱动的线格式序列化/反序列化**
+  - 依据 2026-11-01 用户确认缺失。现状:message_table.rs 已有消息编号表(utype 分配/别名 id/组件槽),缺字节级编解码。
+  - 交付:Datatype 编解码器全集(UINT8/16/32/64、STRING、BLOB、VECTOR2/3/4、ARRAY、FIXED_DICT、PYTHON 对象位流,与 KBEngine 线格式逐字节兼容);属性更新流打包/解包;方法调用参数打包;bundle 分片语义;别名 id 编码路径。
+  - 验收:与 KBEngine 官方线格式对拍——用官方客户端/抓包样本或 KBEngine 引擎产出的字节流做黄金样本,解码结果逐字节一致;往返(序列化→反序列化)无损;畸形流不 panic(错误返回)。
+- [ ] **C-16 · P1 · 实现 · def 驱动的数据库表生成**
+  - 交付:从 def 模型生成实体表结构(属性→列映射、类型→SQL 类型映射、Flags INDEXED/UNIQUE→索引、默认值、持久化标记过滤非持久属性);MySQL DDL 输出 + 迁移(已有表结构 diff 升级);dbmgr 对应的读写接口面。与 message_table 同源(共用 def 模型,单一事实源)。
+  - 验收:用 KBEngine 官方示例资产(defs)生成,与官方 dbmgr 建表结果对照;round-trip:def→表→描述回读=def 语义。
