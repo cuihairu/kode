@@ -842,3 +842,8 @@
   - MVP 工具面(全是现有 crate 薄封装):search_entities(按名/标签查实体) / get_entity_model(实体全模型:属性/方法/Flags/进程归属) / get_type_graph(别名/数组/FIXED_DICT 解析) / validate_defs(def 校验,挂 C-17 错配预警) / get_message_entry(消息号+线格式布局,挂 C-15) / encode_decode_sample(参数→线格式字节样本) / db_schema_preview(def→DDL 预览,挂 C-16 落地后)。
   - 排期:P2,依赖 C-15(已完成)/C-16/C-17 落地后封装。
   - 验收:rmcp 客户端 stdio 端到端(list_tools→call_tool 全工具真数据返回);与 kode-server 同源单测;README + 双语文档。
+
+- [ ] **C-18 · P1 · 实现 · KBEngine 官方 def MD5(引擎互通)**
+  - 依据 2026-11-01 用户确认缺失。现状:TS 侧有 IDE 内部 hash 体系(hotReloadDefHash sha256 内容 hash + semanticHash 结构 hash + 回执比对,保留不替换),但引擎互通的官方「全 def 复合 MD5」仅有协商描桩未实现,Rust 侧无。
+  - 交付:官方 def MD5 算法实现(与 KBEngine 引擎 Def::md5 逐字节一致——遍历顺序/序列化细节严格对齐官方);输出复合 md5 供一致性握手/热更后上报;与 C-15 线格式编码共用 def 遍历顺序。
+  - 验收:黄金对拍——用 KBEngine 官方引擎对同一 assets 计算 md5,与 kode 实现输出逐字节一致;官方客户端连服的 def 校验场景可通过。IDE 内部 sha256/semanticHash 双轨保留(用途不同:内部基线 vs 引擎互通)。
