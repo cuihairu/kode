@@ -13,6 +13,7 @@
  */
 
 import { spawn } from 'child_process';
+import { killProcessTree } from './processManager';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -35,7 +36,12 @@ export type SpawnRunner = (
 export const defaultSpawnRunner: SpawnRunner = (command, args, timeoutMs) =>
   new Promise(resolve => {
     try {
-      const child = spawn(command, args, { windowsHide: true });
+      const child = spawn(command, args, {
+        windowsHide: true,
+        // POSIX 下设进程组长(与 ProcessManager 同口径):超时按组杀,
+        // py-spy 派生的孙进程不残留成孤儿
+        detached: process.platform !== 'win32'
+      });
       let stdout = '';
       let stderr = '';
       let settled = false;
@@ -48,7 +54,9 @@ export const defaultSpawnRunner: SpawnRunner = (command, args, timeoutMs) =>
         resolve({ stdout, stderr, exitCode });
       };
       const timer = setTimeout(() => {
-        child.kill();
+        // 组杀(对照 ProcessManager.killProcessTree 口径):派生孙进程不
+        // 残留;单进程兜底回落 child.kill
+        void killProcessTree(child.pid ?? 0, 'SIGKILL', child);
         finish(-1);
       }, timeoutMs);
       child.stdout.on('data', chunk => {

@@ -9,6 +9,7 @@ import {
   AUTO_DEBUGPY_ENABLED_DEFAULT,
   DEBUGPY_PORT_TABLE,
   EMBEDDED_PYTHON_VERSION,
+  defaultRunPython,
   MIN_DEBUGPY_VERSION,
   buildDebugpyListenCommand,
   compareVersions,
@@ -17,6 +18,7 @@ import {
   injectDebugpyAfterStart,
   injectDebugpyListen,
   readDebugpyVersionFromSource,
+  setRunPythonTimeoutMsForTests,
   syncDebugpyPackage,
   type DebugpySyncDeps
 } from '../src/autoDebugpy';
@@ -575,4 +577,26 @@ describe('launch 生成(autoDebugpy 三件套之 c)', () => {
     expect(configurations.some(item => item.processId === '${command:pickProcess}')).toBe(true);
     stubWorkspace.workspaceFolders = [];
   });
+});
+
+describe('defaultRunPython(真实 spawn 的诚实通道)', () => {
+  beforeEach(() => {
+    setRunPythonTimeoutMsForTests(300);
+    configurationOverrides.delete('kbengine');
+  });
+
+  afterEach(() => {
+    setRunPythonTimeoutMsForTests(null);
+    configurationOverrides.delete('kbengine');
+  });
+
+  it('解释器挂起:按截止组杀并如实报超时失败,不再永久等待', async () => {
+    // 用 node 自身当解释器,挂起脚本(node -c 跑 JS;设 10s 但 300ms 截止)
+    // /bin/sh -c <code> 把 code 当 shell 脚本跑:sleep 100 挂起,300ms 截止组杀
+    configurationOverrides.set('kbengine', { 'python.interpreterPath': '/bin/sh' });
+    const started = Date.now();
+    const result = await defaultRunPython('sleep 100');
+    expect(result.exitCode).toBe(124);
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 8000);
 });
