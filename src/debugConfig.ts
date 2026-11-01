@@ -951,6 +951,18 @@ export class DebugConfigManager {
     if (mode === 'debugpy-port') {
       return this.attachViaDebugpyPort(componentName);
     }
+    // IDE-AUD-004:进程附加(PID)模式的 debugpy 适配器只认本地进程 PID——
+    // 组件声明在远端主机(或经 defaultSshHost/视图选中归远端)时,本地 PID
+    // 列表绝不冒充远端(静默走本地是缺陷)。暂不支持远端 PID 附加,明确
+    // 拒绝并指引端口模式(经 ssh -L 隧道 connect 到组件 debugpy 端口)。
+    const connection = this.getConnectionFor(componentName);
+    if (connection !== 'local') {
+      vscode.window.showErrorMessage(
+        `${componentName} 声明为远程主机(${connection.ssh.host}),进程附加(PID)模式暂不支持远端:` +
+          'debugpy 适配器按本地 PID 附加。请改用端口模式——先起 ssh -L 隧道 connect 到组件 debugpy 端口。'
+      );
+      return false;
+    }
     // 批112 用户令:附加前弹进程选择器,组件名命中的进程置顶分组,
     // 选中的 PID 直接写入附加配置(取消/空清单则不附加)
     const processId = await this.pickProcessId(componentName);

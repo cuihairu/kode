@@ -1517,6 +1517,28 @@ describe('IDE-PDBG-004 远程分派(ssh 隧道附加 / 连接声明优先级)', 
     expect(fake.calls.killed).toBe(true);
   });
 
+  it('远程组件进程附加:明确拒绝,绝不把本地 PID 当远端', async () => {
+    setWorkspaceAt('/tmp/kode-dbg');
+    // 组件声明远程主机但未配 debugpy 端口 → 进程附加(PID)模式
+    writeDebugJson({ components: { baseapp: { sshHost: 'gamesrv' } } });
+    const manager = makeManager([{ pid: 4321, name: 'baseapp' }], seededMemento('process-attach'), {
+      listSshHosts: () => sshHosts
+    });
+    await flushAsync();
+    // 本地进程选择器若被调用会返回此 PID(旧实现静默走本地的形状)
+    pickQueue.push({ label: '$(check) baseapp', description: '4321' });
+
+    expect(await manager.attachToComponent('baseapp')).toBe(false);
+
+    // 本地进程列表绝不冒充远端:进程选择器未弹出、未朝本地 debugpy 附加
+    expect(pickOffers).toHaveLength(0);
+    expect(debugCalls).toHaveLength(0);
+    // 明确拒绝并说明原因
+    expect(messages.error).toHaveLength(1);
+    expect(messages.error[0]).toContain('远程');
+    expect(messages.error[0]).toContain('进程附加');
+  });
+
   it('隧道起不来(跳板/主机不可达):如实报错不附加', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     writeDebugJson({ components: { baseapp: { debugpyPort: 5678, sshHost: 'bastion' } } });
