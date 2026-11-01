@@ -10,6 +10,9 @@
  * 查询永不结算时不再无限挂 released:到点注入 destroy 即强制销毁连接
  * (未注入则退回 close);释放或销毁合计恰一次,晚到的成功/失败不触发
  * 第二次释放。
+ *
+ * IDE-AUD-009:预取消不发起查询(run 零调用);轮询序取消/超时先于
+ * 结算判定——与查询同拍到达的取消/超时不被晚到成功冒充成 completed。
  */
 
 export type ReadOnlyQueryLifecycleOutcome<T> =
@@ -51,6 +54,18 @@ export async function runReadOnlyQueryLifecycle<T>(
   const pollMs = options.pollMs ?? 25;
   const startedAt = options.now();
   const deadline = startedAt + options.timeoutMs;
+
+  // IDE-AUD-009:预取消——查询根本不发起(run 零调用),释放即 close 恰一次
+  if (options.isCancelled()) {
+    return {
+      kind: 'cancelled',
+      elapsedMs: options.now() - startedAt,
+      released: (async () => {
+        await close();
+      })()
+    };
+  }
+
   const runState: RunHolder<T> = { state: 'pending' };
   const running = run().then(
     value => {
@@ -65,17 +80,18 @@ export async function runReadOnlyQueryLifecycle<T>(
   // 宏任务边界:同步/近同步完成的查询在此落标,零打盹
   await new Promise<void>(resolve => setImmediate(resolve));
   for (;;) {
-    if (runState.state === 'fulfilled') {
-      return { kind: 'completed', result: runState.value as T, elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
-    }
-    if (runState.state === 'rejected') {
-      return { kind: 'failed', error: runState.error, elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
-    }
+    // IDE-AUD-009:终态原因优先——同拍完成不冒充 completed
     if (options.isCancelled()) {
       return { kind: 'cancelled', elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
     }
     if (options.now() > deadline) {
       return { kind: 'timeout', elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
+    }
+    if (runState.state === 'fulfilled') {
+      return { kind: 'completed', result: runState.value as T, elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
+    }
+    if (runState.state === 'rejected') {
+      return { kind: 'failed', error: runState.error, elapsedMs: options.now() - startedAt, released: releaseAfter(running, close, options, () => runState.state !== 'pending') };
     }
     await options.sleep(pollMs);
   }

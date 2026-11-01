@@ -74,16 +74,50 @@ describe('runReadOnlyQueryLifecycle(取消与超时)', () => {
     expect(h.close).toHaveBeenCalledTimes(1);
   });
 
-  it('取消:cancelled 态,等结算释放,close 仍恰一次', async () => {
+  it('IDE-AUD-009:预取消不执行 query——run 零调用,released 立即完成,close 恰一次', async () => {
     const h = createHarness({ isCancelled: vi.fn(() => true) });
-    const run = deferredRun();
-    const outcome = await runReadOnlyQueryLifecycle(() => run.promise, h.close, {
+    const run = vi.fn(() => deferredRun().promise);
+    const outcome = await runReadOnlyQueryLifecycle(run, h.close, {
       timeoutMs: 60_000, isCancelled: h.isCancelled, now: h.now, sleep: h.sleep, pollMs: 25
     });
 
     expect(outcome.kind).toBe('cancelled');
-    expect(h.close).not.toHaveBeenCalled();
-    run.resolveRun(QUERY_RESULT);
+    expect(run).not.toHaveBeenCalled(); // 预取消:query 根本不发起
+    await outcome.released;
+    expect(h.close).toHaveBeenCalledTimes(1); // close 仍由调用方接走
+  });
+
+  it('等待期间取消、查询同拍完成 → cancelled(不标 completed),close 恰一次', async () => {
+    const h = createHarness({ isCancelled: vi.fn(() => false) });
+    const run = deferredRun();
+    const pending = runReadOnlyQueryLifecycle(() => run.promise, h.close, {
+      timeoutMs: 5000, isCancelled: h.isCancelled, now: h.now, sleep: h.sleep, pollMs: 5
+    });
+    const racer = pending.then(outcome => ({ outcome }));
+
+    await h.sleep.mock.results[0]?.value; // 查询在途
+    h.isCancelled.mockReturnValue(true); // 此刻用户取消
+    run.resolveRun(QUERY_RESULT); // 查询同一拍才完成
+    const { outcome } = await racer;
+
+    expect(outcome.kind).toBe('cancelled'); // 取消优先:晚到成功不冒充 completed
+    await outcome.released;
+    expect(h.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('等待期间超时、查询同拍完成 → timeout(不标 completed),close 恰一次', async () => {
+    const h = createHarness();
+    const run = deferredRun();
+    const pending = runReadOnlyQueryLifecycle(() => run.promise, h.close, {
+      timeoutMs: 10, isCancelled: h.isCancelled, now: h.now, sleep: h.sleep, pollMs: 5
+    });
+    const racer = pending.then(outcome => ({ outcome }));
+
+    h.now.advance(11); // 越过截止
+    run.resolveRun(QUERY_RESULT); // 查询同一拍完成
+    const { outcome } = await racer;
+
+    expect(outcome.kind).toBe('timeout'); // 截止优先:晚到成功不冒充 completed
     await outcome.released;
     expect(h.close).toHaveBeenCalledTimes(1);
   });

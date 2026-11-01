@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as net from 'net';
 import type { AddressInfo } from 'net';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activate } from '../src/extension';
 import {
   guardConnectionFactoryWithQueryLifecycle,
@@ -186,6 +186,17 @@ describe('guardConnectionFactoryWithQueryLifecycle(建连面)', () => {
       fastGuard({ isCancelled: () => true })
     );
     await expect(guardedFactory({} as never)).rejects.toBeInstanceOf(QueryCancelledError);
+  });
+
+  it('IDE-AUD-009:预取消不建连——工厂零调用(inner 不执行)', async () => {
+    const hang = deferred<DriftQueryExecutor>();
+    const factory = vi.fn<DriftConnectionFactory>(() => hang.promise);
+    const guardedFactory = guardConnectionFactoryWithQueryLifecycle(
+      factory,
+      fastGuard({ isCancelled: () => true })
+    );
+    await expect(guardedFactory({} as never)).rejects.toBeInstanceOf(QueryCancelledError);
+    expect(factory).not.toHaveBeenCalled(); // 预取消:连接根本不建
   });
 
   it('命令退出后建连才落地:兜底关掉,不漏连接(恰一次)', async () => {

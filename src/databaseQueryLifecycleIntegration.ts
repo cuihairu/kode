@@ -143,12 +143,13 @@ export function guardConnectionFactoryWithQueryLifecycle(
       landed = null;
       await executor.close();
     };
-    const connecting = (async () => {
-      landed = await inner(database);
-      await closeIfAsked();
-    })();
+    // IDE-AUD-009:内层建连惰性——只在生命周期真发起时才调 inner;
+    // 预取消时 inner 零调用(连接根本不建,不白开 socket)
     const outcome = await runReadOnlyQueryLifecycle(
-      () => connecting,
+      async () => {
+        landed = await inner(database);
+        await closeIfAsked();
+      },
       () => undefined,
       lifecycleOptions(guard)
     );
