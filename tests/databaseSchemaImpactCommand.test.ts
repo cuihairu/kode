@@ -98,7 +98,9 @@ describe('buildDatabaseTableDescriptor / formatSchemaImpactReport(纯面)', () =
       engineStructuralNamesOf(HERO_TABLE)
     );
     const impact = previewEntitySchemaImpact(databaseTable, HERO_TABLE);
-    const text = formatSchemaImpactReport('Hero', impact);
+    const text = formatSchemaImpactReport('Hero', [
+      { table: HERO_TABLE, outcome: { kind: 'diff', impact } }
+    ]);
     expect(text).toContain('只读预览,不执行任何 DDL/写库');
     expect(text).toContain('+ sm_level smallint unsigned(新增:def 有,库无)');
     expect(text).toContain('- sm_old varchar(64)(移除:库有,def 无)');
@@ -119,7 +121,41 @@ describe('buildDatabaseTableDescriptor / formatSchemaImpactReport(纯面)', () =
     );
     const impact = previewEntitySchemaImpact(databaseTable, HERO_TABLE);
     expect(impact.entries).toEqual([]);
-    expect(formatSchemaImpactReport('Hero', impact)).toContain('无结构差异');
+    expect(
+      formatSchemaImpactReport('Hero', [{ table: HERO_TABLE, outcome: { kind: 'diff', impact } }])
+    ).toContain('无结构差异');
+  });
+
+  it('IDE-AUD-012:多表报告按表分区——根表无变化不掩盖子表,子表整表新建如实', () => {
+    const childTable: TableSchemaDescriptor = {
+      name: 'tbl_Hero_bag',
+      kind: 'array',
+      title: 'Hero.bag',
+      source: { filePath: '/ws/scripts/entity_defs/Hero.def', line: 3, path: 'Hero.bag', category: 'entity' },
+      fields: [
+        {
+          name: 'sm_item',
+          typeLabel: 'int unsigned',
+          sourcePath: 'Hero.bag.item',
+          source: { filePath: '/ws/scripts/entity_defs/Hero.def', line: 3, path: 'Hero.bag.item', category: 'entity' },
+          identifier: false
+        }
+      ]
+    };
+    const text = formatSchemaImpactReport('Hero', [
+      {
+        table: HERO_TABLE,
+        outcome: { kind: 'diff', impact: { table: HERO_TABLE.name, entries: [] } }
+      },
+      { table: childTable, outcome: { kind: 'whole-create' } }
+    ]);
+    expect(text).toContain('===== KBEngine 结构影响预览 Hero =====');
+    expect(text).toContain('根表 + 子表 1');
+    expect(text).toContain('-- 根表 tbl_Hero --');
+    expect(text).toContain('(无结构差异——def 推导列与真实库列一致)');
+    expect(text).toContain('-- 子表 tbl_Hero_bag(ARRAY) --');
+    expect(text).toContain('表 tbl_Hero_bag 还不在库里——按当前 def 同步将整表新建');
+    expect(text).toContain('def 推导列 1 项');
   });
 });
 
@@ -136,8 +172,9 @@ describe('runSchemaImpactCommand(编排面)', () => {
 
   const makeHarness = (options: {
     entityName?: string;
-    entityTable?: TableSchemaDescriptor | null;
+    entityTables?: TableSchemaDescriptor[] | null;
     queryResult?: QueryResult | Error;
+    queryBySql?: (sql: string) => QueryResult | Error;
     pickAnswer?: string;
     connectFails?: string;
   } = {}): Harness => {
@@ -150,7 +187,8 @@ describe('runSchemaImpactCommand(编排面)', () => {
       pickItems: [],
       deps: {
         resolveEntityName: () => options.entityName,
-        resolveEntityTable: () => options.entityTable === undefined ? HERO_TABLE : options.entityTable,
+        resolveEntityTables: () =>
+          options.entityTables === undefined ? [HERO_TABLE] : options.entityTables,
         resolveConnection: () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/ws' }),
         createConnection: async () => {
           if (options.connectFails) {
@@ -159,6 +197,13 @@ describe('runSchemaImpactCommand(编排面)', () => {
           return {
             runQuery: async (sql: string): Promise<QueryResult> => {
               harness.sqlLog.push(sql);
+              if (options.queryBySql) {
+                const result = options.queryBySql(sql);
+                if (result instanceof Error) {
+                  throw result;
+                }
+                return result;
+              }
               if (options.queryResult instanceof Error) {
                 throw options.queryResult;
               }
@@ -237,7 +282,7 @@ describe('runSchemaImpactCommand(编排面)', () => {
   });
 
   it('实体定义读不到:警告带实体名', async () => {
-    const harness = makeHarness({ entityName: 'Ghost', entityTable: null });
+    const harness = makeHarness({ entityName: 'Ghost', entityTables: null });
     await runSchemaImpactCommand(harness.deps);
     expect(harness.warnings.at(-1)).toContain('读取实体定义失败: Ghost');
     expect(harness.sqlLog).toHaveLength(0);
@@ -256,12 +301,54 @@ describe('runSchemaImpactCommand(编排面)', () => {
     let scopeArg: string | null | undefined = 'unset';
     const harness = makeHarness({ entityName: 'Hero' });
     harness.deps.resolveConnection = () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/wsB' });
-    harness.deps.resolveEntityTable = (name, scope) => {
+    harness.deps.resolveEntityTables = (name, scope) => {
       scopeArg = scope;
-      return HERO_TABLE;
+      return [HERO_TABLE];
     };
     await runSchemaImpactCommand(harness.deps);
     expect(scopeArg).toBe('/wsB'); // 只按当前连接的资产根解析,不跨 workspace 首命中
+  });
+
+  it('IDE-AUD-012:子表变更进报告——遍历同实体全部表,根表无变化不掩盖子表', async () => {
+    const childTable: TableSchemaDescriptor = {
+      name: 'tbl_Hero_bag',
+      kind: 'array',
+      title: 'Hero.bag',
+      source: { filePath: '/ws/scripts/entity_defs/Hero.def', line: 3, path: 'Hero.bag', category: 'entity' },
+      fields: [
+        {
+          name: 'sm_item',
+          typeLabel: 'int unsigned',
+          sourcePath: 'Hero.bag.item',
+          source: { filePath: '/ws/scripts/entity_defs/Hero.def', line: 3, path: 'Hero.bag.item', category: 'entity' },
+          identifier: false
+        }
+      ]
+    };
+    const harness = makeHarness({
+      entityName: 'Hero',
+      queryBySql: sql => {
+        if (sql === 'SHOW FULL COLUMNS FROM `tbl_Hero`') {
+          // 根表无变化:库列与 def 列一致(id 结构列 + sm_hp + sm_level)
+          return showColumnsResult([
+            { Field: 'id', Type: 'bigint(20) unsigned' },
+            { Field: 'sm_hp', Type: 'int(10) unsigned' },
+            { Field: 'sm_level', Type: 'smallint(5) unsigned' }
+          ]);
+        }
+        // 子表库侧多一列 → def 无该列 → 移除
+        return showColumnsResult([
+          { Field: 'sm_item', Type: 'int(10) unsigned' },
+          { Field: 'sm_extra', Type: 'varchar(32)' }
+        ]);
+      }
+    });
+    harness.deps.resolveEntityTables = () => [HERO_TABLE, childTable];
+    await runSchemaImpactCommand(harness.deps);
+    expect(harness.sqlLog).toContain('SHOW FULL COLUMNS FROM `tbl_Hero_bag`'); // 子表也进对照
+    const text = harness.channelLines.join('\n');
+    expect(text).toContain('tbl_Hero_bag'); // 子表进报告
+    expect(text).toContain('- sm_extra'); // 子表变更(移除)进报告,不被根表无变化掩盖
   });
 
   it('连不上:如实报错带原因,不发查询不写通道', async () => {

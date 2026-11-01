@@ -5,6 +5,8 @@
  * 写库通路:查询过白名单执行器,输出只是清单;实体选择 = 命令参数 / 活
  * 动 .def / 注册实体选择器;建连与查询过 IDE-REV-017 守卫,超时/取消按
  * 原因返回;表还不在库里时如实说明「整表将新建」,不虚构对照。
+ * IDE-AUD-012:遍历同实体快照全部表(根表 + ARRAY/组件子表)逐表只读对
+ * 照——子表变更进报告,根表无变化不掩盖子表变化。
  */
 
 import {
@@ -48,26 +50,84 @@ export function engineStructuralNamesOf(table: TableSchemaDescriptor): Set<strin
   return new Set(table.fields.filter(field => field.synthetic).map(field => field.name));
 }
 
-/** 报告渲染:三态条目 + 只读声明;无差异如实说无 */
-export function formatSchemaImpactReport(entityName: string, impact: EntitySchemaImpact): string {
+/** 单表对照结果:diff 或 整表将新建(表不在库里,如实不虚构对照) */
+export type SchemaTableImpactOutcome =
+  | { kind: 'diff'; impact: EntitySchemaImpact }
+  | { kind: 'whole-create' };
+
+export interface SchemaImpactTableResult {
+  table: TableSchemaDescriptor;
+  outcome: SchemaTableImpactOutcome;
+}
+
+const tableSectionLabel = (table: TableSchemaDescriptor): string => {
+  if (table.kind === 'entity') {
+    return `根表 ${table.name}`;
+  }
+  if (table.kind === 'array') {
+    return `子表 ${table.name}(ARRAY)`;
+  }
+  return `子表 ${table.name}(组件)`;
+};
+
+const renderDiffEntries = (impact: EntitySchemaImpact): string[] => {
+  if (impact.entries.length === 0) {
+    return ['  (无结构差异——def 推导列与真实库列一致)'];
+  }
+  const lines = impact.entries.map(entry => {
+    if (entry.change === 'added') {
+      return `  + ${entry.field} ${entry.after ?? ''}(新增:def 有,库无)`;
+    }
+    if (entry.change === 'removed') {
+      return `  - ${entry.field} ${entry.before ?? ''}(移除:库有,def 无)`;
+    }
+    return `  ~ ${entry.field} ${entry.before ?? ''} → ${entry.after ?? ''}(类型变化)`;
+  });
+  lines.push(`  (共 ${impact.entries.length} 项)`);
+  return lines;
+};
+
+const renderWholeCreateBlock = (table: TableSchemaDescriptor): string[] => [
+  `表 ${table.name} 还不在库里——按当前 def 同步将整表新建`,
+  `(只读预览,不执行任何 DDL/写库;def 推导列 ${table.fields.filter(field => !field.synthetic).length} 项)`
+];
+
+/**
+ * 报告渲染(IDE-AUD-012):逐表结果(根表 + ARRAY/组件子表)全部进报告;
+ * 单表沿用旧格式(标题带表名),多表按表分区(根表无变化不掩盖子表变化);
+ * 全程只读声明。
+ */
+export function formatSchemaImpactReport(
+  entityName: string,
+  results: SchemaImpactTableResult[]
+): string {
+  if (results.length === 1) {
+    const { table, outcome } = results[0];
+    if (outcome.kind === 'whole-create') {
+      return [
+        `===== KBEngine 结构影响预览 ${entityName}(${table.name}) =====`,
+        ...renderWholeCreateBlock(table)
+      ].join('\n');
+    }
+    return [
+      `===== KBEngine 结构影响预览 ${entityName}(${table.name}) =====`,
+      '对照:真实库结构(SHOW FULL COLUMNS,只读查询) ↔ def 推导虚拟 schema',
+      '以下为按当前 def 同步库会发生的结构变更清单(只读预览,不执行任何 DDL/写库):',
+      ...renderDiffEntries(outcome.impact)
+    ].join('\n');
+  }
   const lines = [
-    `===== KBEngine 结构影响预览 ${entityName}(${impact.table}) =====`,
-    '对照:真实库结构(SHOW FULL COLUMNS,只读查询) ↔ def 推导虚拟 schema',
+    `===== KBEngine 结构影响预览 ${entityName} =====`,
+    `对照:真实库结构(SHOW FULL COLUMNS,只读查询) ↔ def 推导虚拟 schema(根表 + 子表 ${results.length - 1})`,
     '以下为按当前 def 同步库会发生的结构变更清单(只读预览,不执行任何 DDL/写库):'
   ];
-  if (impact.entries.length === 0) {
-    lines.push('  (无结构差异——def 推导列与真实库列一致)');
-  } else {
-    for (const entry of impact.entries) {
-      if (entry.change === 'added') {
-        lines.push(`  + ${entry.field} ${entry.after ?? ''}(新增:def 有,库无)`);
-      } else if (entry.change === 'removed') {
-        lines.push(`  - ${entry.field} ${entry.before ?? ''}(移除:库有,def 无)`);
-      } else {
-        lines.push(`  ~ ${entry.field} ${entry.before ?? ''} → ${entry.after ?? ''}(类型变化)`);
-      }
+  for (const { table, outcome } of results) {
+    lines.push(`-- ${tableSectionLabel(table)} --`);
+    if (outcome.kind === 'whole-create') {
+      lines.push(...renderWholeCreateBlock(table));
+    } else {
+      lines.push(...renderDiffEntries(outcome.impact));
     }
-    lines.push(`(共 ${impact.entries.length} 项)`);
   }
   return lines.join('\n');
 }
@@ -81,14 +141,14 @@ export interface SchemaImpactConnection {
 export interface SchemaImpactCommandDeps {
   resolveEntityName(): string | undefined;
   /**
-   * 实体名 → def 推导根表描述符(虚拟 schema;读不到 = null)。IDE-AUD-011:
-   * 反查按当前连接的作用域根(scopeRootPath=资产根)限定,不跨 workspace
-   * 首命中(两项目同名实体只看当前连接项目)。
+   * IDE-AUD-011/012:实体名 → def 推导全部表(根表 + ARRAY/组件子表;读
+   * 不到 = null)。反查按当前连接的作用域根(scopeRootPath=资产根)限定,
+   * 不跨 workspace 首命中(两项目同名实体只看当前连接项目)。
    */
-  resolveEntityTable(
+  resolveEntityTables(
     entityName: string,
     scopeRootPath: string | null
-  ): TableSchemaDescriptor | null;
+  ): TableSchemaDescriptor[] | null;
   /** 当前连接解析(IDE-AUD-011):assetsRoot=活动 profile 的资产根 */
   resolveConnection(): {
     profileId: string;
@@ -126,8 +186,8 @@ export async function runSchemaImpactCommand(deps: SchemaImpactCommandDeps): Pro
     }
     entityName = picked;
   }
-  // IDE-AUD-011:先取当前连接(拿到资产根作用域),实体表反查按作用域根
-  // 限定——两项目同名实体只看当前连接项目;连接解析失败先如实降级
+  // IDE-AUD-011/012:先取当前连接(拿到资产根作用域),实体全部表反查按
+  // 作用域根限定——两项目同名实体只看当前连接项目;连接解析失败先如实降级
   const resolved = deps.resolveConnection();
   if (!resolved) {
     deps.showInformationMessage(
@@ -135,8 +195,8 @@ export async function runSchemaImpactCommand(deps: SchemaImpactCommandDeps): Pro
     );
     return;
   }
-  const entityTable = deps.resolveEntityTable(entityName, resolved.assetsRoot);
-  if (!entityTable) {
+  const entityTables = deps.resolveEntityTables(entityName, resolved.assetsRoot);
+  if (!entityTables || entityTables.length === 0) {
     deps.showWarningMessage(`读取实体定义失败: ${entityName}(未找到 .def 文件)`);
     return;
   }
@@ -148,32 +208,34 @@ export async function runSchemaImpactCommand(deps: SchemaImpactCommandDeps): Pro
     return;
   }
   try {
-    let columns: QueryColumnInfo[];
-    try {
-      columns = await readTableColumns({ runQuery: sql => connection.runQuery(sql) }, entityTable.name);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (UNKNOWN_TABLE_PATTERN.test(message)) {
-        deps.channel.appendLine(
-          [
-            `===== KBEngine 结构影响预览 ${entityName}(${entityTable.name}) =====`,
-            `表 ${entityTable.name} 还不在库里——按当前 def 同步将整表新建`,
-            `(只读预览,不执行任何 DDL/写库;def 推导列 ${entityTable.fields.filter(field => !field.synthetic).length} 项)`
-          ].join('\n')
+    // IDE-AUD-012:遍历同实体全部表(根表 + ARRAY/组件子表),逐表只读
+    // 对照——子表变更进报告,根表无变化不掩盖子表;全程无 DDL/写库通路
+    const results: SchemaImpactTableResult[] = [];
+    for (const entityTable of entityTables) {
+      let columns: QueryColumnInfo[];
+      try {
+        columns = await readTableColumns(
+          { runQuery: sql => connection.runQuery(sql) },
+          entityTable.name
         );
-        deps.channel.show(true);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (UNKNOWN_TABLE_PATTERN.test(message)) {
+          results.push({ table: entityTable, outcome: { kind: 'whole-create' } });
+          continue;
+        }
+        deps.showErrorMessage(`结构影响预览失败:读取表结构失败(${message})`);
         return;
       }
-      deps.showErrorMessage(`结构影响预览失败:读取表结构失败(${message})`);
-      return;
+      const databaseTable = buildDatabaseTableDescriptor(
+        entityTable.name,
+        columns,
+        engineStructuralNamesOf(entityTable)
+      );
+      const impact = previewEntitySchemaImpact(databaseTable, entityTable);
+      results.push({ table: entityTable, outcome: { kind: 'diff', impact } });
     }
-    const databaseTable = buildDatabaseTableDescriptor(
-      entityTable.name,
-      columns,
-      engineStructuralNamesOf(entityTable)
-    );
-    const impact = previewEntitySchemaImpact(databaseTable, entityTable);
-    deps.channel.appendLine(formatSchemaImpactReport(entityName, impact));
+    deps.channel.appendLine(formatSchemaImpactReport(entityName, results));
     deps.channel.show(true);
   } finally {
     await connection.close();

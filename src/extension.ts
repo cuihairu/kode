@@ -1957,19 +1957,16 @@ export function activate(context: vscode.ExtensionContext) {
       runDatabaseQueryCommand('KBEngine 结构影响预览', guard =>
         runSchemaImpactCommand({
           resolveEntityName: () => entityName ?? resolveActiveDefEntityName(),
-          // IDE-AUD-011:实体表反查按当前连接的作用域根(scopeRootPath=资产
-          // 根)限定——只认该根内声明,无根/无命中如实 null,不跨 workspace
-          // 首命中(两项目同名实体只认当前连接项目)
-          resolveEntityTable: (name, scopeRootPath) => {
+          // IDE-AUD-011/012:实体全部表反查按当前连接的作用域根(scopeRootPath
+          // =资产根)限定——只认该根内声明,无根/无命中如实 null,不跨
+          // workspace 首命中;返回快照全部表(根表 + ARRAY/组件子表),子表
+          // 变更进报告不被根表无变化掩盖
+          resolveEntityTables: (name, scopeRootPath) => {
             if (!scopeRootPath) {
               return null;
             }
             const snapshot = getDatabaseSchemaSnapshot(name, scopeRootPath);
-            return (
-              snapshot?.tableIndex.get(`${resolveSchemaTablePrefix()}${name}`) ??
-              snapshot?.tables[0] ??
-              null
-            );
+            return snapshot ? snapshot.tables : null;
           },
           resolveConnection: resolveCommandDatabaseConnection,
           createConnection: (profileId, config) => lifecycleGuardedFactory(guard, profileId)(config),
