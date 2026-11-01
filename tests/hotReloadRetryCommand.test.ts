@@ -411,6 +411,45 @@ describe('resendHotReloadTarget(单目标重发器)', () => {
     expect(record?.detail ?? '').not.toContain('digest 一致');
   });
 
+  it('IDE-AUD-006:重发核验基准在发送时点冻结——响应后文件已变也不拿新版本冒充所发', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    store.record(KEY_BAD, FILE_A, 'failed', { detail: '原失败' });
+    const content = 'print(1)';
+    const changed = `${content}\n# 发送后被编辑\n`;
+    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+    let responseSent = false;
+    const runAction = vi.fn(
+      async (_name: string, sendOptions?: { onHttpResponse?: (r: HotReloadHttpResponse) => void }) => {
+        responseSent = true;
+        sendOptions?.onHttpResponse?.({
+          status: 200,
+          body: JSON.stringify({ status: 'applied', file: FILE_A, digest })
+        });
+        return true;
+      }
+    );
+
+    const result = await resendHotReloadTarget(store, KEY_BAD, {
+      runAction,
+      resolveActionNameForTarget: () => '热更',
+      targetState: {
+        store,
+        resolveTargetId: () => null,
+        resolveRootId: () => '/ws',
+        // 发送时点读到所发内容;响应后文件已变(读到新版本)
+        readFileContent: async () => (responseSent ? changed : content)
+      },
+      timers: makeTimers().timers,
+      settleHandles: new Set<unknown>()
+    });
+
+    expect(result.ok).toBe(true);
+    await flush(); // applied 升格在基准微任务链,结算后断言
+    const record = store.get(KEY_BAD, FILE_A);
+    expect(record?.outcome).toBe('applied');
+    expect(record?.detail).toContain('digest 一致');
+  });
+
   it('IDE-AUD-005:第一次重发的旧核验窗口结算,不追注新一次重发的记录(旧超时不改新记录)', async () => {
     const store = new HotReloadTargetStateStore({ now: () => 1000 });
     store.record(KEY_BAD, FILE_A, 'failed', { detail: '原失败' });

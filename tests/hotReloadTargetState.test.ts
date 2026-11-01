@@ -148,6 +148,28 @@ describe('HotReloadTargetStateStore(双维隔离台账)', () => {
     expect(current?.detail).toBe('当前回执');
   });
 
+  it('IDE-AUD-006:发送时点冻结基准落台账,升格/注解改写不动基准', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const key = { rootId: 'r', targetId: 't' };
+    const file = '/x.py';
+    const frozen = 'a'.repeat(64);
+
+    const record = store.record(key, file, 'sent-unverified', { sentDigest: frozen });
+    expect(record?.sentDigest).toBe(frozen);
+    // 升格(applied)改写不丢基准
+    store.record(key, file, 'applied', { attempt: record?.attempt });
+    expect(store.get(key, file)?.outcome).toBe('applied');
+    expect(store.get(key, file)?.sentDigest).toBe(frozen);
+    // 注解(带 attempt)改写不丢基准
+    store.record(key, file, 'applied', { attempt: record?.attempt, detail: '补充' });
+    expect(store.get(key, file)?.sentDigest).toBe(frozen);
+    expect(store.get(key, file)?.detail).toBe('补充');
+    // 新发送(无 attempt)无基准=新代不带旧基准
+    const next = store.record(key, file, 'failed', { detail: '新失败' });
+    expect(next?.sentDigest).toBeUndefined();
+    expect(store.get(key, file)?.attempt).toBe((record?.attempt ?? 0) + 1);
+  });
+
   it('IDE-AUD-005:无当前记录时带 attempt 写回被拒(记录已清),不凭空造记录', () => {
     const store = new HotReloadTargetStateStore({ now: () => 1000 });
     const key = { rootId: 'r', targetId: 't' };

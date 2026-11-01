@@ -106,6 +106,34 @@ describe('verifyAppliedReceipt(可信 digest 或已验证回执才 applied)', ()
     expect(store.get(keyB, FILE)?.outcome).toBe('accepted');
   });
 
+  it('IDE-AUD-006:发送时点冻结基准优先——sentDigest 与回执一致即 applied,不 re-read 冒充', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    store.record(KEY, FILE, 'sent-unverified');
+    // 回执 digest = 发送时点所发内容 CONTENT 的 sha256;sentContent 给的是响应后
+    // 已变的新内容(现算必然不符)——冻结基准 sentDigest 优先,仍应 applied
+    const frozen = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+
+    const verdict = verifyAppliedReceipt(store, KEY, FILE, appliedBody(), {
+      sentContent: `${CONTENT}\n# 响应后已变\n`,
+      sentDigest: frozen
+    });
+
+    expect(verdict.kind).toBe('applied');
+    expect(store.get(KEY, FILE)?.outcome).toBe('applied');
+    expect(store.get(KEY, FILE)?.sentDigest).toBeUndefined(); // 基准来自传入,记录未带
+  });
+
+  it('IDE-AUD-006:无任何基准(sentContent 与 sentDigest 都缺)→ 不升格,注解基准缺失', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    store.record(KEY, FILE, 'sent-unverified');
+
+    const verdict = verifyAppliedReceipt(store, KEY, FILE, appliedBody(), {} as never);
+
+    expect(verdict.kind).toBe('not-applied');
+    expect((verdict as { reason: string }).reason).toContain('基准缺失');
+    expect(store.get(KEY, FILE)?.outcome).toBe('sent-unverified');
+  });
+
   it('IDE-AUD-005:旧代回执不写回——attempt 与当前记录不符 → stale,状态原样', () => {
     const store = new HotReloadTargetStateStore({ now: () => 1 });
     store.record(KEY, FILE, 'failed', { detail: '新失败' }); // attempt 1(当前代)

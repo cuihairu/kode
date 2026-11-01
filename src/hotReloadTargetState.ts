@@ -39,6 +39,12 @@ export interface HotReloadDeliveryRecord {
    * (否则晚到的第一次核验会把第二次的失败翻成 applied)。
    */
   attempt: number;
+  /**
+   * 发送时点冻结的内容 sha256(IDE-AUD-006):发送前读一次所发内容算的核验
+   * 基准。响应后核验用它,绝不再读文件当前内容冒充所发版本(响应后文件已
+   * 变也不影响判定)。读取失败=无基准(如实 undefined,核验面注解阻塞)。
+   */
+  sentDigest?: string;
 }
 
 export interface HotReloadTargetStateDeps {
@@ -70,7 +76,7 @@ export class HotReloadTargetStateStore {
     key: HotReloadTargetKey,
     file: string,
     outcome: HotReloadDeliveryOutcome,
-    options: { detail?: string; now?: number; attempt?: number } = {}
+    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string } = {}
   ): HotReloadDeliveryRecord | undefined {
     const attemptKey = `${buildHotReloadTargetKeyId(key)}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${file}`;
     const current = this.get(key, file);
@@ -101,6 +107,9 @@ export class HotReloadTargetStateStore {
     };
     if (options.detail !== undefined) {
       record.detail = options.detail;
+    }
+    if (options.sentDigest !== undefined) {
+      record.sentDigest = options.sentDigest;
     }
     this.put(key, file, record);
     return record;

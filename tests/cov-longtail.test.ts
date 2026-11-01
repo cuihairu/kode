@@ -1104,7 +1104,7 @@ describe('hotReloadRetryCommand(重发核验阻塞注解)', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     const record = store.get(key, file);
     expect(record?.outcome).toBe('sent-unverified');
-    expect(record?.detail).toContain('所发内容不可读');
+    expect(record?.detail).toContain('发送时点内容基准不可读');
     expect(record?.detail).toContain('digest 无基准');
   });
 });
@@ -1352,7 +1352,7 @@ describe('debugConfig(附加边角)', () => {
 //   临时口同时拿不到,无注入口,只能靠端口资源耗尽的竞态)
 // - scanRoots:101(resolveDiscoveredConfigRoot 抛错:发现链内部自吞异常,
 //   无注入口)、177(排序比较器:包含去重后不可能有两个包含根)
-// - hotReload:295(readSentContent 无 reader 分支:调用点已判 reader 在场)、
+// - hotReload:315(baselineReads 无 reader 分支:调用点已判 reader 在场)、
 //   438(def 读取 Promise.all 拒绝分支:每个元素都预 catch)
 // - hotReloadRetryCommand:85(handleResponse 无 wiring 分支:sendOptions 仅
 //   在 wiring 在场时构造)

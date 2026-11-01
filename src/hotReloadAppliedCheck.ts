@@ -20,8 +20,10 @@ export type AppliedReceiptVerdict =
   | { kind: 'stale' };
 
 export interface AppliedVerifyOptions {
-  /** 所发文件原始内容(digest 比对基准) */
-  sentContent: string;
+  /** 所发文件原始内容(digest 比对基准)——sentDigest 未给时用它现算 */
+  sentContent?: string;
+  /** 发送时点冻结的内容 sha256(IDE-AUD-006):优先用它,不 re-read 文件当前内容冒充所发 */
+  sentDigest?: string;
   now?: number;
   /**
    * 所属发送代际(IDE-AUD-005):绑定该回执属于哪次发送。与当前记录代际
@@ -61,8 +63,17 @@ export function verifyAppliedReceipt(
   if (typeof receipt.digest !== 'string' || receipt.digest.length === 0) {
     return { kind: 'not-applied', reason: '回执无 digest:无可信 revision/digest 证据,不升格' };
   }
-  // 现成原语重算比对:所发内容 UTF-8 sha256(hotReloadDefHash 同源,不自创)
-  const expected = createHash('sha256').update(Buffer.from(options.sentContent, 'utf8')).digest('hex');
+  // 现成原语重算比对:所发内容 UTF-8 sha256(hotReloadDefHash 同源,不自创)。
+  // IDE-AUD-006:优先用发送时点冻结的基准(传入 sentDigest),不再拿响应后文件
+  // 当前内容冒充所发版本;两者都没有=无基准(如实不升格,注解阻塞)。
+  const expected =
+    options.sentDigest ??
+    (options.sentContent !== undefined
+      ? createHash('sha256').update(Buffer.from(options.sentContent, 'utf8')).digest('hex')
+      : undefined);
+  if (expected === undefined) {
+    return { kind: 'not-applied', reason: '发送时点内容基准缺失,digest 无基准' };
+  }
   if (receipt.digest !== expected) {
     return { kind: 'not-applied', reason: '回执 digest 与所发内容不符:可疑回执不升格' };
   }

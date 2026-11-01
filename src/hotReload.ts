@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 import * as vscode from 'vscode';
 import { HotReloadStatusController } from './hotReloadStatus';
 import {
@@ -296,25 +298,31 @@ export function setupHotReload(
         }, HOT_RELOAD_APPLIED_SETTLE_MS);
         settleHandles.add(handle);
       };
-      // 所发内容读取(digest 比对基准):同批去重;读不到=null(如实无基准)
-      const contentReads = new Map<string, Promise<string | null>>();
-      const readSentContent = (file: string): Promise<string | null> => {
-        const reader = options.targetState?.readFileContent;
-        if (!reader) {
-          return Promise.resolve(null);
-        }
-        let pending = contentReads.get(file);
-        if (!pending) {
-          pending = Promise.resolve(reader(file)).catch(() => null);
-          contentReads.set(file, pending);
-        }
-        return pending;
-      };
       const start = (targetId: string | null): void => {
         // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
         // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
         // 升格(applyAcceptedReceipt 只认协议逐字段符合,未知响应保持未确认);
         // 脚本/命令动作无响应面,回落 recordOutcomes 的 sent-unverified/failed。
+        // IDE-AUD-006:发送前冻结内容核验基准——runAction 之前读一次所发内容算
+        // sha256(每次 start 各自的基准,后续发送不串),响应后核验全用它并带进
+        // 台账 sentDigest;绝不响应后再读文件当前内容冒充所发版本(响应后文件
+        // 已变不影响判定)。读取失败=无基准(如实 undefined,核验面注解阻塞)。
+        const baselineReader = options.targetState?.readFileContent;
+        const baselineReads = new Map<string, Promise<string | undefined>>();
+        if (baselineReader) {
+          for (const file of triggers) {
+            baselineReads.set(
+              file,
+              Promise.resolve(baselineReader(file))
+                .then(content =>
+                  content === null
+                    ? undefined
+                    : createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')
+                )
+                .catch(() => undefined)
+            );
+          }
+        }
         let responseSeen = false;
         const handleResponse = (response: HotReloadHttpResponse): void => {
           responseSeen = true;
@@ -337,19 +345,33 @@ export function setupHotReload(
             const attempt = record.attempt;
             if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
               applyAcceptedReceipt(wiring.store, key, file, response.body, { attempt });
-              // IDE-REV-023:applied 双证核验(可信 digest+已验证回执)——以所发
-              // 内容为基准重算比对,对得上才升格 applied;无读取通道/读不到/回执
-              // 不合规/digest 不符一律不升格,阻塞原因如实注解进仍未确认的记录
-              if (!options.targetState?.readFileContent) {
+              // IDE-REV-023:applied 双证核验(可信 digest+已验证回执)——以发送
+              // 时点冻结的基准比对(IDE-AUD-006),对得上才升格 applied;无读取
+              // 通道/基准不可读/回执不合规/digest 不符一律不升格,阻塞原因如实
+              // 注解进仍未确认的记录
+              if (!baselineReader) {
                 noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准', attempt);
               } else {
-                void readSentContent(file).then(content => {
-                  if (content === null) {
-                    noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准', attempt);
+                void baselineReads.get(file)!.then(sentDigest => {
+                  if (sentDigest === undefined) {
+                    noteStillUnverified(
+                      wiring,
+                      key,
+                      file,
+                      'applied 核验阻塞:发送时点内容基准不可读,digest 无基准',
+                      attempt
+                    );
                     return;
                   }
+                  // IDE-AUD-006:发送时点冻结的基准带进台账(可审计);代际守卫下
+                  // 只在当前代写(换代则拒,旧代基准不污染新代记录),且不改写
+                  // 已升格的 outcome(accepted/applied 原样保留)
+                  const currentAtWrite = wiring.store.get(key, file);
+                  if (currentAtWrite) {
+                    wiring.store.record(key, file, currentAtWrite.outcome, { sentDigest, attempt });
+                  }
                   const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
-                    sentContent: content,
+                    sentDigest,
                     attempt
                   });
                   if (verdict.kind === 'not-applied') {

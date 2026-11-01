@@ -167,7 +167,7 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
 
     const record = run.store.get(KEY, FILE);
     expect(record?.outcome).toBe('sent-unverified');
-    expect(record?.detail).toContain('所发内容不可读');
+    expect(record?.detail).toContain('发送时点内容基准不可读');
   });
 
   it('核验窗口到点仍未确认:只注解超时,不冒充失败也不冒充 applied', async () => {
@@ -275,6 +275,41 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     const record = store.get(KEY, FILE);
     expect(record?.outcome).toBe('failed');
     expect(record?.detail ?? '').not.toContain('digest 一致');
+  });
+
+  it('IDE-AUD-006:核验基准在发送时点冻结——响应后文件已变也不拿新版本冒充所发', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 5 });
+    const changed = `${CONTENT}\n# 发送后被编辑\n`;
+    const digest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+    let responseSent = false;
+    enableHotReload();
+    setupHotReload(
+      makeContext(),
+      (_name, sendOptions) => {
+        responseSent = true;
+        sendOptions?.onHttpResponse?.({ status: 200, body: appliedBody(digest) });
+        return true;
+      },
+      {
+        timers: clock.timers,
+        now: () => 1000,
+        targetState: {
+          store,
+          resolveTargetId: () => 't1',
+          resolveRootId: () => '/ws',
+          // 发送时点读到的是所发内容;响应后文件已变(读到的是新版本)
+          readFileContent: async () => (responseSent ? changed : CONTENT)
+        }
+      }
+    );
+    fireOne();
+    clock.tick();
+    await flush();
+
+    const record = store.get(KEY, FILE);
+    expect(record?.outcome).toBe('applied');
+    expect(record?.detail).toContain('digest 一致');
   });
 
   it('源锁:extension.ts 接内容读取口,hotReload 接双证核验与窗口结算', () => {

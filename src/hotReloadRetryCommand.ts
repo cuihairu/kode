@@ -9,6 +9,8 @@
  * 不留在 failed 旧账上冒充仍未恢复。
  */
 
+import { createHash } from 'crypto';
+
 import { retryFailedHotReloadTargets, type HotReloadRetryAction, type HotReloadSendResult } from './hotReloadRetry';
 import { summarizeHotReloadBatch } from './hotReloadBatchSummary';
 import {
@@ -80,6 +82,25 @@ export async function resendHotReloadTarget(
   const wiring = deps.targetState;
   const now = deps.now ?? Date.now;
   const sentAt = now();
+  // IDE-AUD-006:发送前冻结内容核验基准——runAction 之前读一次所发内容算
+  // sha256,响应后核验全用它并带进台账 sentDigest;绝不响应后再读文件当前
+  // 内容冒充所发版本。读取失败=无基准(如实 undefined,核验面注解阻塞)。
+  const baselineReader = wiring?.readFileContent;
+  const baselineReads = new Map<string, Promise<string | undefined>>();
+  if (baselineReader) {
+    for (const file of files) {
+      baselineReads.set(
+        file,
+        Promise.resolve(baselineReader(file))
+          .then(content =>
+            content === null
+              ? undefined
+              : createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')
+          )
+          .catch(() => undefined)
+      );
+    }
+  }
   let responseSeen = false;
   const handleResponse = (response: HotReloadHttpResponse): void => {
     responseSeen = true;
@@ -95,24 +116,35 @@ export async function resendHotReloadTarget(
       const attempt = record.attempt;
       if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
         applyAcceptedReceipt(wiring.store, key, file, response.body, { attempt });
-        if (!wiring.readFileContent) {
+        if (!baselineReader) {
           noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准', attempt);
         } else {
-          void Promise.resolve(wiring.readFileContent(file))
-            .catch(() => null)
-            .then(content => {
-              if (content === null) {
-                noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准', attempt);
-                return;
-              }
-              const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
-                sentContent: content,
+          void baselineReads.get(file)!.then(sentDigest => {
+            if (sentDigest === undefined) {
+              noteStillUnverified(
+                wiring,
+                key,
+                file,
+                'applied 核验阻塞:发送时点内容基准不可读,digest 无基准',
                 attempt
-              });
-              if (verdict.kind === 'not-applied') {
-                noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`, attempt);
-              }
+              );
+              return;
+            }
+            // IDE-AUD-006:发送时点冻结的基准带进台账(可审计);代际守卫下
+            // 只在当前代写(换代则拒,旧代基准不污染新代记录),且不改写
+            // 已升格的 outcome(accepted/applied 原样保留)
+            const currentAtWrite = wiring.store.get(key, file);
+            if (currentAtWrite) {
+              wiring.store.record(key, file, currentAtWrite.outcome, { sentDigest, attempt });
+            }
+            const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
+              sentDigest,
+              attempt
             });
+            if (verdict.kind === 'not-applied') {
+              noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`, attempt);
+            }
+          });
         }
         // 核验窗口到点结算:仍未确认只注解超时,不冒充任何终态;代际不符则不动
         const handle = deps.timers.set(() => {

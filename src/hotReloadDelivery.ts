@@ -34,15 +34,19 @@ export function classifyHttpDelivery(result: HttpDeliveryLike): HttpDeliveryVerd
   return { outcome: 'failed', detail: `HTTP 状态 ${result.status}:非 2xx 不算送达` };
 }
 
-/** 分类即入账:结果连同 detail 落到 (rootId,targetId,file) 键上。新发送必落账(带 attempt 的拒写分支不在此路径) */
+/** 分类即入账:结果连同 detail(与发送时点冻结的 sentDigest,IDE-AUD-006)落到 (rootId,targetId,file) 键上。新发送必落账(带 attempt 的拒写分支不在此路径) */
 export function recordHttpDelivery(
   store: HotReloadTargetStateStore,
   key: HotReloadTargetKey,
   file: string,
   result: HttpDeliveryLike,
-  options: { now?: number } = {}
+  options: { now?: number; sentDigest?: string } = {}
 ): HotReloadDeliveryRecord {
   const { outcome, detail } = classifyHttpDelivery(result);
-  const record = store.record(key, file, outcome, { detail, now: options.now });
+  const record = store.record(key, file, outcome, {
+    detail,
+    now: options.now,
+    sentDigest: options.sentDigest
+  });
   return record as HotReloadDeliveryRecord;
 }
