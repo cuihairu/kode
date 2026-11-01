@@ -31,7 +31,7 @@
 | F01 / P1 | **已修复 (c647fdf)**：追踪器不再随守卫返回提前释放，活到 `onStartSettled` 落定（幂等）或管理器 `dispose` 兜底；`abandoned` 标记使永不落定的迟到自家会话立即停。prove-red 4 用例（REV-002 取消面 / attachRemote / REV-003 迟到成功 / AUD-001 永不落定面）旧源码红、新源码绿；门禁 lint+tsc+unit 4659 通过 + xvfb demo RC=0 | IDE-REV-003 | 追踪器活到 start 落定或本次会话完成清理，管理器卸载也应释放 |
 | F02 / P1 | **已修复 (8467f88)**：每次附加尝试携带唯一 `__kodeAttachId` 标记，`startAttachGuarded` 只认本尝试标记（`session.configuration.__kodeAttachId`），同名并发/他处同名会话不再误认；prove-red 并发同名附加两用例旧码红新码绿 | IDE-REV-002 | 每次 attach 使用唯一关联标记，校验配置/会话身份，而非显示名称 |
 | F03 / P1 | **已修复 (3636645)**：`attachViaTunnel` 不再随 `attachPortConfig` 的 Boolean finally 拆隧道；成功附加后隧道活到自家会话终止（`onDidTerminateDebugSession`），失败/取消即时拆，管理器 `dispose` 兜底拆；prove-red 成功保活+卸载兜底两用例旧码红新码绿 | IDE-PDBG-004 | 隧道绑定对应 DebugSession 终止事件，失败/取消及卸载兜底释放 |
-| F04 / P1 | **确认缺口**：远端进程枚举只接进 py-spy。调试的 `pickProcessId` 仍使用本地 listProcesses，process attach 配置仍发给本地 debugpy | IDE-PDBG-005 | 明确支持远端 PID 附加的执行/隧道链；未实现前阻止远端选择悄悄走本地 |
+| F04 / P1 | **已修拒绝面 (600b0cf)**：调试的进程附加模式对远端声明组件（sshHost/defaultSshHost/视图选中）明确报错拒绝，不再弹本地 PID 列表、不再朝本地 debugpy 发 process attach（远端 py-spy 的 ssh+手输 PID 面不变，两路分别验收）；远端 PID 附加执行链仍不支持（诚实拒绝，非静默） | IDE-PDBG-005 | 明确支持远端 PID 附加的执行/隧道链；未实现前阻止远端选择悄悄走本地 |
 | F05 / P1 | **确认缺陷**：hasattr 被当成任意 receiver 的非空证明。同一个 getter 返回 None 仍漏报，甚至 `hasattr(client)` 压掉 cell 警告 | receiver lint / B-7 | **已修复 c351606**，同码 Warning 继续出现，开关仍有效 |
 | F06 / P1 | **确认缺陷**：同行 `if self.cell or ready: self.cell.send()`、None 分支里的嵌套条件 return、`print("return")`、已失效别名均可能消掉警告 | receiver lint / B-7 | 词法过滤、可靠条件分析、作用域与别名失效；不把出现关键字当作控制流证明 |
 | F07 / P2 | **确认缺陷/缺口**：注释与普通字符串的 receiver 文本会报 Warning；`peer=self.cell; peer.send()` 却零诊断 | receiver lint | 调用发现复用词法/语法；别名使用点单独建模，不宣称已有完整别名检查 |
