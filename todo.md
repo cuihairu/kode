@@ -855,12 +855,21 @@
   - 实现:kode-index 已有 Python 符号索引 + kode-parser MethodDef,做集合差;CodeAction 走 kode-server 现有 LSP 通道。
   - 验收:示例实体(def 有 3 方法/Python 缺 1)→ 恰好 1 条 warning + code action 生成后 warning 消除;已实现方法零误报;vitest/cargo 绿。
 
-- [ ] **C-20 · P2 · 实现 · kode-python:Python 调用图与数据流(Rust)**
+- [x] **C-20 · P2 · 实现 · kode-python:Python 调用图与数据流(Rust)** · 已完成 0910ffe
   - 依据 2026-11-01 用户确认缺失:Rust/TS 均无 Python 代码级调用关系与数据流(现有图仅 def→def 依赖)。
   - 集成:Python 解析用 ruff_python_parser(Rust 原生,不造轮子);新 crate kode-python:AST→符号/调用边提取。
   - 交付①调用图:函数/方法级 call graph + KBEngine 特化边(allClients/baseClients 广播边、cell/base 跨进程调用边,进程归属联动 C-17);②过程内数据流(MVP:def-use 链,变量来源与传播);③图入 kode-scheduler DAG,可视化挂 dependencyGraph 面板;④供 C-19 一致性检查复用 Python 符号表(替代自建)。
   - 验收:示例实体项目调用图与人工核对一致(抽样 10 条调用边);改方法签名→受影响调用点全数列出;增量更新(改一个文件只重算该文件)。
   - 后置:过程间数据流/指针分析不进本期。
+  - 已完成证据(0910ffe):新 crate `crates/kode-python`(ruff_python_parser 0.0.20,MSRV 1.97 注):
+    - 解析 `parse.rs`:`parse_unchecked_source` 容错解析 + LineIndex 行/UTF-16 列定位;
+    - 符号表 `symbols.rs`:类/方法/属性/导入四表,识别装饰器/async/继承链/dotted base,`to_corpus()` 降级为 `kode_corpus::PythonModule`(C-19/wt-parity 复用面),`class_index` 查类方法;
+    - 调用图 `callgraph.rs`:遍历方法体/模块函数/模块顶层;8 类 `EdgeKind`(Local/Method/SelfMethod/KbeBroadcast/KbeBaseClients/KbeCrossProcess/KbeApi/Unknown),`self.allClients/baseClients` 广播边、`self.cell/base` 跨进程边、`KBEngine.*` API 边;嵌套控制流(if/for/try)行走;
+    - 数据流 `dataflow.rs`:过程内 def-use 链(直线 MVP,重定义开新链,self.attr 跟踪,param 标注);
+    - 图聚合 `graph.rs`:`PyCallGraph`(callers_of/calls_of/of_kind)+ `build_call_reverse_index` 被调方文件→调用方文件集;
+    - 接入 kode-scheduler `invalidation.rs`:`InvalidationGraph::with_call_dependents` + `affected_by` 并集调用方反依赖(泛型 `CallReverseIndex` 消费,保持 scheduler 零第三方依赖);
+    - 验收:74 套件 391 测试全绿(含 kode-python 4 测试文件 + scheduler 2 新反依赖测试);`cargo clippy -p kode-python -p kode-scheduler --all-targets --no-deps -- -D warnings` 干净。
+  - 未完成(如实标注):交付③「可视化挂 dependencyGraph 面板」只完成 DAG 反依赖数据侧,面板 UI 挂载未在本批——属前端渲染面,待后续批次。
 
 - [ ] **C-21 · P2 · 实现 · KBEngine API 文档 hover(双语 i18n)**
   - 交付①嵌入式 API 文档库:KBEngine 模块函数 + Entity 类方法 + 生命周期回调 + 常量(约 150-200 条),每条含签名/摘要(en+zh)/参数说明/返回/示例/引入版本;以官方文档为准人工精校,嵌入 kode-server(单一事实源)。
