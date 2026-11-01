@@ -46,6 +46,15 @@ export function databaseConfigSnapshotFromInterface(
 }
 
 /**
+ * 连接有效身份键(IDE-AUD-008):host/port/user/database 四要素的确定性指纹。
+ * 同一 profile 任一有效身份要素变化 → 键变 → 结果缓存不再命中旧连接结果
+ * (旧结果不冒充新连接);密钥分隔符 \u0000 不在身份要素正常值域内。
+ */
+export function databaseConnectionIdentityKey(config: DatabaseInterfaceConfig): string {
+  return [config.host, config.port, config.username, config.databaseName].join('\u0000');
+}
+
+/**
  * 按根组合解析连接要素:profile 带自己的根 → 只认 profile 的根(根缺
  * 配置/读不到 = 如实 null,不回落工作区链——回落即读到别的项目);根为
  * 空串 = 该 profile 没有自己的根,该轴照常走设置链。无 profile(null)
@@ -81,6 +90,8 @@ export class ProfileDatabaseConnectionService {
   private readonly queryResultCache: DatabaseQueryResultCache;
   private readonly resolveConfig: ProfileDatabaseConnectionServiceDeps['resolveConfig'];
   private readonly fullConfigs = new Map<string, DatabaseInterfaceConfig>();
+  /** 各 profile 上次选中的连接有效身份键(IDE-AUD-008):变化即失效该 profile 缓存 */
+  private readonly identityKeys = new Map<string, string | null>();
   private lastProfileId: string | null = null;
 
   constructor(deps: ProfileDatabaseConnectionServiceDeps) {
@@ -108,6 +119,15 @@ export class ProfileDatabaseConnectionService {
     } else {
       this.fullConfigs.set(profileId, config);
     }
+    // IDE-AUD-008:同 profile 的有效连接身份变化(host/port/user/db 任一)≠
+    // 缓存自动属于新配置——使该 profile 缓存失效(推进代际+清桶),旧结果
+    // 不再命中、旧连接晚到回写被拒;首次选中(无前值)与身份未变都不触发。
+    const identityKey = config === null ? null : databaseConnectionIdentityKey(config);
+    const previousKey = this.identityKeys.get(profileId);
+    if (previousKey !== undefined && previousKey !== identityKey) {
+      this.queryResultCache.clearProfile(profileId);
+    }
+    this.identityKeys.set(profileId, identityKey);
     return this.registry.select(profileId, () =>
       config === null ? null : databaseConfigSnapshotFromInterface(config)
     );
@@ -117,6 +137,7 @@ export class ProfileDatabaseConnectionService {
   releaseProfile(profileId: string): void {
     this.queryResultCache.clearProfile(profileId);
     this.fullConfigs.delete(profileId);
+    this.identityKeys.delete(profileId);
   }
 
   /**
@@ -150,6 +171,10 @@ export class ProfileDatabaseConnectionService {
  * 按套一层 per-profile 结果缓存:同 SQL 命中即不再下发到连接(TTL 过期
  * 不命中);结果按 profileId 各存各的,切换即清(releaseProfile)。列的
  * nullable/default/key 等判读字段随缓存往返不丢(缓存列型带可选元数据)。
+ *
+ * IDE-AUD-008 两维加固:缓存键含连接身份(host/port/user/db)——同 profile
+ * 换连接后同 SQL 不再命中旧结果;查询发起时捕获代际,回写时代际不符(失效
+ * 面在查询期间推进)即被拒,旧连接晚到回写不重新污染新代。
  */
 export function createProfileScopedDriftExecutor(
   profileId: string,
@@ -158,14 +183,16 @@ export function createProfileScopedDriftExecutor(
 ): DriftConnectionFactory {
   return async database => {
     const executor = await inner(database);
+    const identity = databaseConnectionIdentityKey(database);
     return {
       runQuery: async (sql: string): Promise<QueryResult> => {
-        const hit = cache.get(profileId, sql);
+        const generation = cache.generationOf(profileId); // 查询发起时代际(晚到写回比对)
+        const hit = cache.get(profileId, sql, identity);
         if (hit) {
           return hit;
         }
         const result = await executor.runQuery(sql);
-        cache.set(profileId, sql, result);
+        cache.set(profileId, sql, result, { identity, generation });
         return result;
       },
       close: (): Promise<void> => executor.close(),

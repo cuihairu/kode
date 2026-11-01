@@ -107,38 +107,79 @@ interface CacheEntry {
 /** 查询结果默认 TTL(ms):过期不再命中,陈旧结果不冒充新查询 */
 export const DEFAULT_QUERY_RESULT_TTL_MS = 30_000;
 
-/** 结果缓存:profileId → SQL → 结果,会话级(TTL 过期不再命中) */
+/**
+ * 结果缓存:profileId → 连接身份 → SQL → 结果,会话级(TTL 过期不再命中)。
+ *
+ * IDE-AUD-008 两维加固(F10):
+ * - 键含连接身份(host/port/user/database)——同 profile 配置有效身份变化后,
+ *   同 SQL 不再命中旧连接的缓存(旧结果不冒充新连接);
+ * - 代际守卫——失效面(clearProfile/invalidateProfile)推进该 profile 代际并清桶,
+ *   查询发起时捕获代际,回写时代际不符(旧连接在失效后晚到)即拒绝,不重新污染新代。
+ */
 export class DatabaseQueryResultCache {
   private readonly now: () => number;
-  private readonly byProfile = new Map<string, Map<string, CacheEntry>>();
+  private readonly byProfile = new Map<string, Map<string, Map<string, CacheEntry>>>();
+  private readonly generations = new Map<string, number>();
 
   constructor(deps: Pick<DatabaseConnectionRegistryDeps, 'now'>) {
     this.now = deps.now;
   }
 
-  get(profileId: string, sql: string): CachedQueryResult | undefined {
-    const entry = this.byProfile.get(profileId)?.get(sql);
+  get(profileId: string, sql: string, identity: string): CachedQueryResult | undefined {
+    const entry = this.byProfile.get(profileId)?.get(identity)?.get(sql);
     if (!entry) {
       return undefined;
     }
     if (this.now() > entry.expiresAt) {
-      this.byProfile.get(profileId)?.delete(sql);
+      this.byProfile.get(profileId)?.get(identity)?.delete(sql);
       return undefined;
     }
     return entry.result;
   }
 
-  set(profileId: string, sql: string, result: CachedQueryResult, options: { ttlMs?: number } = {}): void {
-    let bySql = this.byProfile.get(profileId);
+  /**
+   * 写入;返回 false = 被拒(带 generation 且与当前代际不符——旧连接晚到回写)。
+   * 不带 generation 的写入(未接代际的调用方)照常落桶。
+   */
+  set(
+    profileId: string,
+    sql: string,
+    result: CachedQueryResult,
+    options: { identity: string; ttlMs?: number; generation?: number }
+  ): boolean {
+    if (options.generation !== undefined && options.generation !== (this.generations.get(profileId) ?? 0)) {
+      return false;
+    }
+    let byIdentity = this.byProfile.get(profileId);
+    if (!byIdentity) {
+      byIdentity = new Map();
+      this.byProfile.set(profileId, byIdentity);
+    }
+    let bySql = byIdentity.get(options.identity);
     if (!bySql) {
       bySql = new Map();
-      this.byProfile.set(profileId, bySql);
+      byIdentity.set(options.identity, bySql);
     }
     bySql.set(sql, { result, expiresAt: this.now() + (options.ttlMs ?? DEFAULT_QUERY_RESULT_TTL_MS) });
+    return true;
   }
 
-  /** 只清目标 profile 的缓存,邻居原样 */
-  clearProfile(profileId: string): void {
+  /** 某 profile 的当前代际(查询发起时捕获,回写时比对;失效面推进) */
+  generationOf(profileId: string): number {
+    return this.generations.get(profileId) ?? 0;
+  }
+
+  /**
+   * 使某 profile 的缓存失效:推进代际 + 清该 profile 全部身份桶。晚到旧代
+   * 回写(set 带旧 generation)被拒,不重新污染新代。邻居 profile 原样。
+   */
+  invalidateProfile(profileId: string): void {
+    this.generations.set(profileId, (this.generations.get(profileId) ?? 0) + 1);
     this.byProfile.delete(profileId);
+  }
+
+  /** 只清目标 profile 的缓存,邻居原样(失效面,推进代际) */
+  clearProfile(profileId: string): void {
+    this.invalidateProfile(profileId);
   }
 }

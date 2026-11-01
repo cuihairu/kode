@@ -89,35 +89,62 @@ describe('DatabaseQueryResultCache(结果缓存按 profile 隔离)', () => {
 
   it('同 SQL 各 profile 各存各的:切项目查不到邻居缓存', () => {
     const cache = new DatabaseQueryResultCache({ now: () => 1000 });
-    cache.set('profile-a', SQL, RESULT_A);
-    cache.set('profile-b', SQL, RESULT_B);
+    cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a' });
+    cache.set('profile-b', SQL, RESULT_B, { identity: 'conn-a' });
 
-    expect(cache.get('profile-a', SQL)).toEqual(RESULT_A);
-    expect(cache.get('profile-b', SQL)).toEqual(RESULT_B);
+    expect(cache.get('profile-a', SQL, 'conn-a')).toEqual(RESULT_A);
+    expect(cache.get('profile-b', SQL, 'conn-a')).toEqual(RESULT_B);
     const fresh = new DatabaseQueryResultCache({ now: () => 1000 });
-    expect(fresh.get('profile-c', SQL)).toBeUndefined();
+    expect(fresh.get('profile-c', SQL, 'conn-a')).toBeUndefined();
+  });
+
+  it('IDE-AUD-008:同 profile 不同连接身份各存各的,身份变化不命中旧结果', () => {
+    const cache = new DatabaseQueryResultCache({ now: () => 1000 });
+    cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a' });
+
+    // 换了连接(host/port/user/db 任一变化=另一身份)→ 同 SQL 不吃旧身份的缓存
+    expect(cache.get('profile-a', SQL, 'conn-b')).toBeUndefined();
+    // 旧身份自己的桶还在(切换回去时 TTL 内仍可命中,直到失效面清理)
+    expect(cache.get('profile-a', SQL, 'conn-a')).toEqual(RESULT_A);
   });
 
   it('TTL 窗口内命中,过期不再命中(陈旧结果不冒充)', () => {
     let now = 1000;
     const cache = new DatabaseQueryResultCache({ now: () => now });
-    cache.set('profile-a', SQL, RESULT_A, { ttlMs: 5000 });
+    cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a', ttlMs: 5000 });
 
     now = 4000;
-    expect(cache.get('profile-a', SQL)).toEqual(RESULT_A);
+    expect(cache.get('profile-a', SQL, 'conn-a')).toEqual(RESULT_A);
     now = 7000;
-    expect(cache.get('profile-a', SQL)).toBeUndefined();
+    expect(cache.get('profile-a', SQL, 'conn-a')).toBeUndefined();
   });
 
   it('clearProfile 只清目标 profile,邻居缓存原样', () => {
     const cache = new DatabaseQueryResultCache({ now: () => 1000 });
-    cache.set('profile-a', SQL, RESULT_A);
-    cache.set('profile-b', SQL, RESULT_B);
+    cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a' });
+    cache.set('profile-b', SQL, RESULT_B, { identity: 'conn-b' });
 
     cache.clearProfile('profile-a');
 
-    expect(cache.get('profile-a', SQL)).toBeUndefined();
-    expect(cache.get('profile-b', SQL)).toEqual(RESULT_B);
+    expect(cache.get('profile-a', SQL, 'conn-a')).toBeUndefined();
+    expect(cache.get('profile-b', SQL, 'conn-b')).toEqual(RESULT_B);
+  });
+
+  it('IDE-AUD-008:clearProfile 推进代际,晚到旧代写回被拒不重新污染', () => {
+    const cache = new DatabaseQueryResultCache({ now: () => 1000 });
+    // 旧代查询发起时捕获的代际
+    const staleGeneration = cache.generationOf('profile-a');
+
+    cache.clearProfile('profile-a'); // 失效面:代际推进+清桶
+
+    expect(cache.generationOf('profile-a')).toBe(staleGeneration + 1);
+    // 旧连接的查询此刻才回来:带旧代际写回 → 被拒
+    expect(cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a', generation: staleGeneration }))
+      .toBe(false);
+    expect(cache.get('profile-a', SQL, 'conn-a')).toBeUndefined();
+    // 新代写回照常
+    expect(cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a' })).toBe(true);
+    expect(cache.get('profile-a', SQL, 'conn-a')).toEqual(RESULT_A);
   });
 
   it('缓存是会话级:registry 持久化载荷不含查询结果', () => {
@@ -130,9 +157,9 @@ describe('DatabaseQueryResultCache(结果缓存按 profile 隔离)', () => {
     const registry = new DatabaseConnectionRegistry(deps);
     registry.select('profile-a', () => CFG_A);
     const cache = new DatabaseQueryResultCache(deps);
-    cache.set('profile-a', SQL, RESULT_A);
+    cache.set('profile-a', SQL, RESULT_A, { identity: 'conn-a' });
 
     expect(JSON.stringify(stored)).not.toContain('rows');
-    expect(new DatabaseQueryResultCache({ now: () => 1, load: () => stored }).get('profile-a', SQL)).toBeUndefined();
+    expect(new DatabaseQueryResultCache({ now: () => 1, load: () => stored }).get('profile-a', SQL, 'conn-a')).toBeUndefined();
   });
 });

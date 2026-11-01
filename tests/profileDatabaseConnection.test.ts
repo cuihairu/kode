@@ -12,6 +12,7 @@ import {
   ProfileDatabaseConnectionService,
   WORKSPACE_DEFAULT_DATABASE_PROFILE_ID,
   createProfileScopedDriftExecutor,
+  databaseConnectionIdentityKey,
   resolveProfileDatabaseInterfaceConfig
 } from '../src/profileDatabaseConnection';
 import { configurationOverrides, workspace } from './fake-vscode/workspaceState';
@@ -83,13 +84,13 @@ describe('ProfileDatabaseConnectionService(台账中介)', () => {
   it('切换即释放:旧 profile 的结果缓存被清,新 profile 不继承', () => {
     const h = makeService({ '/eng/a': CONFIG_A, '/eng/b': CONFIG_B });
     h.service.selectActive('id-a', { engineRoot: '/eng/a', assetsRoot: '' });
-    h.cache.set('id-a', 'SHOW TABLES', { columns: [], rows: [{ t: 'tbl_Gold' }] });
-    expect(h.cache.get('id-a', 'SHOW TABLES')).toBeDefined();
+    h.cache.set('id-a', 'SHOW TABLES', { columns: [], rows: [{ t: 'tbl_Gold' }] }, { identity: databaseConnectionIdentityKey(CONFIG_A) });
+    expect(h.cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_A))).toBeDefined();
 
     h.service.selectActive('id-b', { engineRoot: '/eng/b', assetsRoot: '' });
 
-    expect(h.cache.get('id-a', 'SHOW TABLES')).toBeUndefined(); // 释放
-    expect(h.cache.get('id-b', 'SHOW TABLES')).toBeUndefined(); // 新人不吃旧缓存
+    expect(h.cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_A))).toBeUndefined(); // 释放
+    expect(h.cache.get('id-b', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_B))).toBeUndefined(); // 新人不吃旧缓存
     expect(h.service.getActiveConfig('id-b')).toMatchObject({ host: '10.0.0.2' });
   });
 
@@ -114,16 +115,30 @@ describe('ProfileDatabaseConnectionService(台账中介)', () => {
     expect(h.registry.getActive('id-a')).toMatchObject({ host: '10.0.0.1' });
   });
 
-  it('重选同 profile 覆盖旧配置(引擎配置变更生效)且不清自己的缓存', () => {
+  it('重选同 profile 且配置不变:覆盖旧配置生效,自己的缓存保留(TTL 内命中)', () => {
     const h = makeService({ '/eng/a': CONFIG_A });
     h.service.selectActive('id-a', { engineRoot: '/eng/a', assetsRoot: '' });
-    h.cache.set('id-a', 'SHOW TABLES', { columns: [], rows: [] });
+    h.cache.set('id-a', 'SHOW TABLES', { columns: [], rows: [] }, { identity: databaseConnectionIdentityKey(CONFIG_A) });
 
-    h.resolveConfig.mockImplementation(() => CONFIG_B);
-    h.service.selectActive('id-a', { engineRoot: '/eng/a', assetsRoot: '' }); // 同 profile 重选
+    h.service.selectActive('id-a', { engineRoot: '/eng/a', assetsRoot: '' }); // 同配置重选
+
+    expect(h.service.getActiveConfig('id-a')).toMatchObject({ host: '10.0.0.1' });
+    expect(h.cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_A))).toBeDefined(); // 同人不触发释放
+  });
+
+  it('IDE-AUD-008:同 profile 配置有效身份变化 → 该 profile 缓存失效,不命中旧结果', () => {
+    const h = makeService({ '/eng/a': CONFIG_A });
+    h.service.selectActive('id-a', { engineRoot: '/eng/a', assetsRoot: '' });
+    h.cache.set('id-a', 'SHOW TABLES', { columns: [], rows: [{ t: 'tbl_old' }] }, { identity: databaseConnectionIdentityKey(CONFIG_A) });
+    expect(h.cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_A))).toBeDefined();
+
+    h.resolveConfig.mockImplementation(() => CONFIG_B); // 引擎配置落盘变更(host/port/user/db 全变)
+    h.service.selectActive('id-a', { engineRoot: '/eng/a', assetsRoot: '' });
 
     expect(h.service.getActiveConfig('id-a')).toMatchObject({ host: '10.0.0.2' });
-    expect(h.cache.get('id-a', 'SHOW TABLES')).toBeDefined(); // 同人不触发释放
+    // 新身份下旧配置的缓存已失效:同 SQL 不命中,必须真查
+    expect(h.cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_B))).toBeUndefined();
+    expect(h.cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_A))).toBeUndefined(); // 旧桶也清
   });
 
   it('台账快照随选择落盘(save),重启经 load 按 profile 读回', () => {
@@ -199,6 +214,35 @@ describe('createProfileScopedDriftExecutor(结果按 profile 缓存)', () => {
     await b.runQuery('SHOW TABLES');
 
     expect(runQuery).toHaveBeenCalledTimes(2); // B 不吃 A 的缓存
+  });
+
+  it('IDE-AUD-008:同 profile 换连接身份后,同 SQL 不吃旧连接缓存(旧结果不冒充新连接)', async () => {
+    const cache = new DatabaseQueryResultCache({ now: () => 1 });
+    const runQuery = vi.fn(async () => RESULT);
+    const makeExecutor = async (config: DatabaseInterfaceConfig) =>
+      createProfileScopedDriftExecutor('id-a', cache, async () => ({ runQuery, close: async () => undefined }))(config);
+
+    const a = await makeExecutor(CONFIG_A);
+    await a.runQuery('SHOW TABLES'); // 连接 A:真查一次
+    const b = await makeExecutor(CONFIG_B); // 同 profile 换到连接 B(身份变)
+    await b.runQuery('SHOW TABLES');
+
+    expect(runQuery).toHaveBeenCalledTimes(2); // B 不吃 A 的缓存,必须真查
+  });
+
+  it('IDE-AUD-008:旧连接晚到回写不重新污染新代(失效面推进代际后拒绝)', async () => {
+    const cache = new DatabaseQueryResultCache({ now: () => 1 });
+    const runQuery = vi.fn(async () => RESULT);
+    const makeExecutor = async () =>
+      createProfileScopedDriftExecutor('id-a', cache, async () => ({ runQuery, close: async () => undefined }))(CONFIG_A);
+    const executor = await makeExecutor();
+
+    // 查询发起后、回写前,失效面触发(切走/身份变化)——代际推进
+    const pending = executor.runQuery('SHOW TABLES');
+    cache.clearProfile('id-a');
+    await pending;
+
+    expect(cache.get('id-a', 'SHOW TABLES', databaseConnectionIdentityKey(CONFIG_A))).toBeUndefined(); // 旧代回写被拒
   });
 });
 
