@@ -77,6 +77,8 @@ The 76 settings are grouped by feature — one small table per area (Setting/Typ
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | Check illegal DetailLevel values |
 | `kbengine.diagnostics.checkDuplicateDefinitions` | boolean | `true` | Check duplicate property/method names |
 | `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | Check properties missing `Type`/`Flags` or duplicated fields |
+| `kbengine.diagnostics.checkDefMethodMissingInPython` | boolean | `true` | def↔Python method consistency (forward): a method declared in an entity `.def` (Base/Cell/Client methods) with no implementation in the same-named Python entity class is flagged as a Warning on the def method line, with the target Python file and class in the related info (default: enabled) |
+| `kbengine.diagnostics.checkPythonMethodNotInDef` | boolean | `false` | def↔Python method consistency (reverse, heuristic): a Python entity-class method with no def declaration is flagged — engine hooks and `__dunder__` are skipped (default: disabled; enable only when you want the stricter direction) |
 
 | Setting | What turning it off does | Common misconfiguration |
 | --- | --- | --- |
@@ -88,6 +90,8 @@ The 76 settings are grouped by feature — one small table per area (Setting/Typ
 | `diagnostics.checkUnknownDetailLevels` | Illegal DetailLevel values no longer reported | — |
 | `diagnostics.checkDuplicateDefinitions` | Real duplicates go unreported | Projects with too many hints may turn this off, at the cost of missing real duplicates |
 | `diagnostics.checkMissingPropertyFields` | Properties missing `Type`/`Flags` go unreported | — |
+| `diagnostics.checkDefMethodMissingInPython` | def methods missing a Python implementation are no longer flagged | The one-click generate-impl CodeAction stays available from the def side; only the diagnostic is muted |
+| `diagnostics.checkPythonMethodNotInDef` | Python methods with no def declaration are no longer flagged | — |
 
 Diagnostics trigger only when a `.def` file is opened or edited; `kbengine.receiverNoneDiagnostics` additionally triggers on Python entity scripts opened or edited. After `kbengine.*` configuration changes, already-open documents are rescanned.
 
@@ -238,6 +242,7 @@ Fields per entry:
 | --- | --- | --- | --- |
 | `kbengine.entity.builtinProperties` | boolean | `true` | Hover annotations and `self.` completion for built-in entity properties (per base/cell/client face; default: enabled); when off, falls back to the plain symbol chain |
 | `kbengine.entity.receiverSections` | boolean | `true` | Filter def candidates by receiver section on `self.cell.`/`self.base.`/`self.client.` calls — hover, F12, RPC lens (default: enabled); when off, falls back to section-unaware resolution while the def signature (arg/type) gate stays on |
+| `kbengine.entity.methodStubBody` | string | `pass` | Body of the one-click implementation skeleton generated on the def side (`pass` empty body, or `raise` → `raise NotImplementedError`); parameters map from the def `<Arg>` types — builtins emit annotations (`int`/`float`/`str`/`bool`/`bytes`), others stay bare parameter names |
 | `kbengine.python.builtinTypeInlayHints` | boolean | `true` | Inline `: <type>` hints after `self.<builtin property>` accesses in entity scripts (same hit basis as hover; default: enabled); double-gated by `kbengine.entity.builtinProperties` (master switch) and this key — either off renders no builtin-property inlay hints |
 | `kbengine.types.aliasDiscovery` | boolean | `true` | Discover custom types from `scripts/entity_defs/alias.xml` into the type list (default: enabled); when off, falls back to `types.xml` only |
 

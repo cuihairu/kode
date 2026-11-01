@@ -34,6 +34,14 @@
   - 点击实体浏览器中的方法条目
   - 命令面板
 
+### `kbengine.defMethodConsistency.revalidate`
+
+- 标题：`Revalidate Def Method Consistency`
+- 作用：重算某 `.def` 文档的 def↔Python 方法一致性诊断(正向 `def-method-missing-in-python` 与反向 `python-method-not-in-def`);一键生成实现 CodeAction 应用编辑后自动触发,诊断不等保存即消除——带 `.def` URI 参数(命令面板裸跑为 no-op)
+- 入口：
+  - 自动：由 `.def` 方法符号上的一键生成实现 CodeAction 附加
+  - 命令面板
+
 ### `kbengine.database.open`
 
 - 标题：`Open Database Schema`

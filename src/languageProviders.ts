@@ -21,12 +21,18 @@ import {
   findTextNodeAtOffset,
   getDirectChildElement,
   getDirectChildElements,
+  getElementText,
   getLineNumberAt,
   getScalarChildValue,
   getScalarChildValues,
   hasTruthyChildTag,
   parseDefDocument
 } from './defParser';
+import {
+  KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
+  buildMethodStubCode,
+  type MethodStubBody
+} from './defMethodConsistency';
 import {
   EntityMappingManager,
   EntityMethodSection,
@@ -259,6 +265,13 @@ function getLanguageFeatureConfig() {
     diagnosticsCheckUnknownDetailLevels: config.get<boolean>('diagnostics.checkUnknownDetailLevels', true),
     diagnosticsCheckDuplicateDefinitions: config.get<boolean>('diagnostics.checkDuplicateDefinitions', true),
     diagnosticsCheckMissingPropertyFields: config.get<boolean>('diagnostics.checkMissingPropertyFields', true),
+    // C-19:def↔Python 方法一致性规则。正向(def 有 Python 无)默认开;反向
+    // (Python 有 def 无)默认关(防误报,跳过引擎钩子/dunder 后仍启发式)。
+    checkDefMethodMissingInPython: config.get<boolean>('diagnostics.checkDefMethodMissingInPython', true),
+    checkPythonMethodNotInDef: config.get<boolean>('diagnostics.checkPythonMethodNotInDef', false),
+    // C-19 交付②:一键骨架体(IDE-NAV-014 空方法生成的体),pass=空体默认,
+    // raise=抛 NotImplementedError。
+    methodStubBody: config.get<'pass' | 'raise'>('entity.methodStubBody', 'pass'),
     hoverShowTagDocs: config.get<boolean>('hover.showTagDocs', true),
     hoverShowValueDocs: config.get<boolean>('hover.showValueDocs', true),
     hoverShowSymbolDocs: config.get<boolean>('hover.showSymbolDocs', true),
@@ -5915,10 +5928,15 @@ function findPythonClassInsertionPoint(
   return { line: lastBodyLine + 1, blankPrefix: lastBodyLine > classLine };
 }
 
-/** 空方法骨架:def 名(self, arg0..argN-1) + pass(<Arg> 声明数=形参个数) */
-function buildPythonMethodSkeleton(methodName: string, argCount: number): string {
-  const args = Array.from({ length: argCount }, (_, index) => `arg${index}`);
-  return `    def ${methodName}(self${args.length ? `, ${args.join(', ')}` : ''}):\n        pass\n`;
+/** 空方法骨架:def 名(self, 形参自 <Arg> 类型映射) + 体(pass/raise 可配)。
+ * C-19 交付②:签名参数从 def 类型映射(内建注解 int/float/str/bool/bytes,
+ * 其余裸 argN 不发射未导入名);体经 kbengine.entity.methodStubBody 可配。 */
+function buildPythonMethodSkeleton(
+  methodName: string,
+  argTypes: string[],
+  body: MethodStubBody
+): string {
+  return buildMethodStubCode(methodName, argTypes, body);
 }
 
 export class KBEngineMethodImplementationCodeActionProvider implements vscode.CodeActionProvider {
@@ -5993,9 +6011,16 @@ export class KBEngineMethodImplementationCodeActionProvider implements vscode.Co
       return [];
     }
 
-    const argCount = getDirectChildElements(symbolInfo.symbolNode)
-      .filter(node => node.name === 'Arg').length;
-    const skeleton = buildPythonMethodSkeleton(symbolInfo.symbolNode.name, argCount);
+    // C-19 交付②:形参从 def <Arg> 文本映射(与索引 declaredArgs 同源,单一
+    // 事实源),体经配置(pass 默认 / raise 可配)。
+    const argTypes = getDirectChildElements(symbolInfo.symbolNode)
+      .filter(node => node.name === 'Arg')
+      .map(node => getElementText(node).trim());
+    const skeleton = buildPythonMethodSkeleton(
+      symbolInfo.symbolNode.name,
+      argTypes,
+      getLanguageFeatureConfig().methodStubBody
+    );
 
     const edit = new vscode.WorkspaceEdit();
     edit.insert(
@@ -6012,6 +6037,14 @@ export class KBEngineMethodImplementationCodeActionProvider implements vscode.Co
       vscode.CodeActionKind.Refactor
     );
     action.edit = edit;
+    // C-19 交付②:编辑应用后重算源 def 文档的缺实现诊断(诊断消除)。VS Code
+    // 先应用 action.edit 再执行 action.command;命令按 def URI 重排一致性
+    // 计算,不依赖 Python 文件是否打开(编辑作用于磁盘文件时事件不必然触发)。
+    action.command = {
+      command: KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
+      title: 'Revalidate def method consistency',
+      arguments: [document.uri.toString()]
+    };
     return [action];
   }
 }

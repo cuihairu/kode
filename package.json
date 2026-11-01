@@ -309,6 +309,10 @@
         "icon": "$(symbol-method)"
       },
       {
+        "command": "kbengine.defMethodConsistency.revalidate",
+        "title": "Revalidate Def Method Consistency"
+      },
+      {
         "command": "kbengine.database.open",
         "title": "Open Database Schema",
         "icon": "$(database)"
@@ -897,6 +901,16 @@
           "default": true,
           "description": "诊断：检查属性缺少 Type/Flags 或重复定义字段"
         },
+        "kbengine.diagnostics.checkDefMethodMissingInPython": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断（C-19）：.def 声明的方法在对应同名 Python 实体类中无实现时报告 Warning，定位在 def 方法行并关联目标 Python 文件与类名（default: enabled）。关闭后不产出 def-method-missing-in-python 诊断"
+        },
+        "kbengine.diagnostics.checkPythonMethodNotInDef": {
+          "type": "boolean",
+          "default": false,
+          "description": "诊断（C-19，反向，默认关）：Python 实体类方法在 .def 中无声明时报告 Warning（跳过引擎钩子与 dunder，仍属启发式防误报）。默认关闭，开启后产出 python-method-not-in-def 诊断"
+        },
         "kbengine.hover.showTagDocs": {
           "type": "boolean",
           "default": true,
@@ -1374,6 +1388,12 @@
           "type": "boolean",
           "default": true,
           "description": "Filter def method candidates by receiver section on self.cell./self.base./self.client. hover, go-to-definition and RPC CodeLens (default: enabled); disabled falls back to section-unaware resolution while the def signature (arg/type) gate stays on"
+        },
+        "kbengine.entity.methodStubBody": {
+          "type": "string",
+          "enum": ["pass", "raise"],
+          "default": "pass",
+          "description": "C-19 一键生成实现骨架的体：pass（空体，default）或 raise（raise NotImplementedError）。形参自 .def <Arg> 类型映射（内建注解 int/float/str/bool/bytes，其余裸参数名）"
         },
         "kbengine.python.stubEngineTypings": {
           "type": "boolean",

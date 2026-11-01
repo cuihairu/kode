@@ -19,6 +19,8 @@ import {
   getScanRootForFile
 } from './scanRoots';
 import { DefMethodSection } from './defParser';
+import type { DefMethodGap, PythonMethodNotInDefGap } from './defMethodConsistency';
+import { getHookByName } from './hooks';
 import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 import { propertyFlagDomainList } from './defAnalyzer';
@@ -1219,6 +1221,16 @@ export class EntityMappingManager {
     return this.findIndexForPythonFile(pythonFile);
   }
 
+  /**
+   * C-19 交付①:Python 文件所属的根 def 文件(正向规则「Python 改动 → 重算
+   * 属主 def 诊断」)。未建立索引返回 undefined(静默无诊断,与
+   * getMappingForPythonFile 同语义);返回空串表示已索引但无根 def。
+   */
+  getDefFileForPythonFile(pythonFile: string): string | undefined {
+    const entry = this.semanticIndex.findEntityByPythonFile(pythonFile);
+    return entry?.defFile;
+  }
+
   async waitForInitialScan(): Promise<void> {
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
@@ -1606,6 +1618,98 @@ export class EntityMappingManager {
         && (!section || item.section === section))
       .map(item => item.filePath);
     return uniqueFilePaths(candidates);
+  }
+
+  /**
+   * C-19 交付①:def 文件中「def 有 Python 无」的方法集合差(缺实现记录)。
+   * 只看 rootCategory='entity' 的根(接口 def 无 Python 实体类,报了全是
+   * 误报;组件 def 的实现归属面另行处理);只标记 defFile 落在本文件的声明
+   * (继承/接口闭包成员归属各自的 def,不在本文档报)。实现判存与 Go to
+   * Implementations 同一查询面(listMethodImplementationsByIdentity)——
+   * 诊断、CodeAction(IDE-NAV-014)、跳转三方口径一致。
+   */
+  async collectDefMethodImplementationGaps(
+    defFile: string,
+    token?: vscode.CancellationToken
+  ): Promise<DefMethodGap[]> {
+    this.ensureStartup();
+    const index = await this.ensureIndexByDefFile(defFile);
+    if (!index || index.rootCategory !== 'entity') {
+      return [];
+    }
+    const defKey = normalizeLookupPath(defFile);
+    const gaps: DefMethodGap[] = [];
+    for (const method of index.methodDefinitions) {
+      if (token?.isCancellationRequested) {
+        return gaps;
+      }
+      if (normalizeLookupPath(method.defFile) !== defKey) {
+        continue;
+      }
+      const implementations =
+        await this.listMethodImplementationsByIdentity(method.identity, token);
+      if (token?.isCancellationRequested) {
+        return gaps;
+      }
+      if (implementations.length > 0) {
+        continue;
+      }
+      const ownerFiles =
+        await this.listOwnerScriptFilesForIdentity(method.identity, token);
+      // 缓冲区感知兜底(诊断面特有):索引判存读盘,未保存的缓冲区不参与——
+      // CodeAction 生成骨架后(打开缓冲区已含 def <name>())诊断要立即消除,
+      // 故这里按 readSharedFileSnapshot(打开缓冲区优先,未打开回磁盘)再查一次。
+      if (ownerFiles.some(file => hasMethodImplementationInSnapshot(file, method.identity.symbolName))) {
+        continue;
+      }
+      gaps.push({
+        name: method.identity.symbolName,
+        line: method.line,
+        section: method.section,
+        declaredArgs: method.declaredArgs ?? [],
+        ownerName: method.identity.ownerName,
+        ownerFile: ownerFiles[0] ?? ''
+      });
+    }
+    return gaps;
+  }
+
+  /**
+   * C-19 交付①(反向,默认关):Python 实体类文件中「Python 有 def 无」的
+   * 方法集合差。跳过引擎钩子(KBENGINE_HOOKS)与 dunder(它们天然只在
+   * Python 侧);def 声明名集合按本索引全部方法段(不分段,声明过即算)。
+   * 仅同步读已建索引(无索引=静默无诊断,与 getMappingForPythonFile 同语义)。
+   */
+  collectPythonMethodNotInDef(pythonFile: string): PythonMethodNotInDefGap[] {
+    const index = this.findIndexForPythonFile(pythonFile);
+    if (!index) {
+      return [];
+    }
+    const defNames = new Set(
+      index.methodDefinitions.map(method => method.identity.symbolName)
+    );
+    const fileKey = normalizeLookupPath(pythonFile);
+    const gaps: PythonMethodNotInDefGap[] = [];
+    for (const method of index.pythonMethods) {
+      if (normalizeLookupPath(method.filePath) !== fileKey) {
+        continue;
+      }
+      if (defNames.has(method.methodName)) {
+        continue;
+      }
+      if (method.methodName.startsWith('__')) {
+        continue;
+      }
+      if (getHookByName(method.methodName)) {
+        continue;
+      }
+      gaps.push({
+        methodName: method.methodName,
+        line: method.line,
+        character: method.character
+      });
+    }
+    return gaps;
   }
 
   /**
@@ -2843,6 +2947,24 @@ export function uniqueFilePaths(candidatePaths: string[]): string[] {
 
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * C-19 诊断面缓冲区感知判存:readSharedFileSnapshot 打开缓冲区优先,未打开
+ * 回磁盘;命中 `def <name>(`(可选 async)即视为已实现。与 findPythonMethodLine
+ * 同 regex 形态(逐行匹配,不越行),供 collectDefMethodImplementationGaps
+ * 在索引判存落空后兜底——覆盖「CodeAction 已生成但未保存」的即时消除。
+ */
+function hasMethodImplementationInSnapshot(filePath: string, methodName: string): boolean {
+  const snapshot = readSharedFileSnapshot(filePath);
+  if (!snapshot) {
+    return false;
+  }
+  const regex = new RegExp(
+    `^(\\s*)(?:async\\s+)?def\\s+(${escapeRegExp(methodName)})\\s*\\(`,
+    'm'
+  );
+  return regex.test(snapshot.content);
 }
 
 export function getLineNumber(text: string, index: number): number {

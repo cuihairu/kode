@@ -189,6 +189,8 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | Diagnose unknown DetailLevel values |
 | `kbengine.diagnostics.checkDuplicateDefinitions` | `true` | Diagnose duplicate property/method definitions |
 | `kbengine.diagnostics.checkMissingPropertyFields` | `true` | Diagnose properties missing Type/Flags or duplicate definition fields |
+| `kbengine.diagnostics.checkDefMethodMissingInPython` | `true` | Warn on def-declared methods with no Python implementation (forward def↔Python consistency) |
+| `kbengine.diagnostics.checkPythonMethodNotInDef` | `false` | Warn on Python methods with no def declaration (reverse consistency, heuristic; off by default) |
 | `kbengine.hover.showTagDocs` | `true` | Show .def tag documentation on hover |
 | `kbengine.hover.showValueDocs` | `true` | Show docs for type/Flags/DetailLevel values on hover |
 | `kbengine.hover.showSymbolDocs` | `true` | Show summaries for custom property/method names on hover |
@@ -260,6 +262,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.managedDir` | `` `.kbengine` `` | Name of the kode-managed directory hosting debug.json and stubs (runtime-read key, not in contributes; auto-rebuild on rename) |
 | `kbengine.entity.builtinProperties` | `true` | Builtin entity property hover + `self.` completion (faces) — `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | Receiver-aware def-section gating on hover/F12/RPC lens — `src/languageProviders.ts:515,3374,3897` |
+| `kbengine.entity.methodStubBody` | `"pass"` | One-click generated method stub body (`pass`/`raise`) — `src/defMethodConsistency.ts` (`buildMethodStubCode`), `src/languageProviders.ts` |
 | `kbengine.python.builtinTypeInlayHints` | `true` | Inline `: <type>` hints after `self.<builtin prop>` accesses — `src/languageProviders.ts` (`KBEngineBuiltinTypeInlayHintsProvider`), gated by `kbengine.entity.builtinProperties` master switch |
 | `kbengine.python.stubEngineTypings` | `true` | Full engine-typings export into `KBEngine.pyi` — `src/pythonStubExport.ts:360` |
 | `kbengine.python.entityStubMethods` | `true` | Entity stub method surface in `entity_types.pyi` — `src/entityTypeStubs.ts:74,139` |

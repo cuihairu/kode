@@ -186,6 +186,8 @@
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | 诊断未知 DetailLevel 取值 |
 | `kbengine.diagnostics.checkDuplicateDefinitions` | `true` | 诊断属性/方法重复定义 |
 | `kbengine.diagnostics.checkMissingPropertyFields` | `true` | 诊断属性缺 Type/Flags 或重复定义字段 |
+| `kbengine.diagnostics.checkDefMethodMissingInPython` | `true` | def 声明方法在 Python 无实现时报 Warning(def↔Python 一致性正向) |
+| `kbengine.diagnostics.checkPythonMethodNotInDef` | `false` | Python 方法在 def 无声明时报 Warning(反向一致性,启发式;默认关) |
 | `kbengine.hover.showTagDocs` | `true` | 悬停显示 .def 标签说明 |
 | `kbengine.hover.showValueDocs` | `true` | 悬停显示类型/Flags/DetailLevel 取值说明 |
 | `kbengine.hover.showSymbolDocs` | `true` | 悬停显示自定义属性/方法名摘要 |
@@ -257,6 +259,7 @@
 | `kbengine.managedDir` | `` `.kbengine` `` | kode 托管目录名（运行时读取键，不在 contributes 中；改名后自动重建） |
 | `kbengine.entity.builtinProperties` | `true` | 内建属性 hover + `self.` 补全（分面）— `src/languageProviders.ts:400,561` |
 | `kbengine.entity.receiverSections` | `true` | hover/F12/RPC 镜的接收者段过滤 — `src/languageProviders.ts:515,3374,3897` |
+| `kbengine.entity.methodStubBody` | `"pass"` | 一键生成方法骨架的体(`pass`/`raise`) — `src/defMethodConsistency.ts`(`buildMethodStubCode`)、`src/languageProviders.ts` |
 | `kbengine.python.builtinTypeInlayHints` | `true` | `self.<内建属性>` 访问后内联 `: <类型>` 提示 — `src/languageProviders.ts`（`KBEngineBuiltinTypeInlayHintsProvider`），受 `kbengine.entity.builtinProperties` 总闸控制 |
 | `kbengine.python.stubEngineTypings` | `true` | KBEngine.pyi 并入引擎 typings 全量 — `src/pythonStubExport.ts:360` |
 | `kbengine.python.entityStubMethods` | `true` | entity_types.pyi 方法面 — `src/entityTypeStubs.ts:74,139` |

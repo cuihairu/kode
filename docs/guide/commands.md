@@ -33,6 +33,14 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - Clicking a method entry in the entity explorer
   - Command palette
 
+### `kbengine.defMethodConsistency.revalidate`
+
+- Title: `Revalidate Def Method Consistency`
+- Purpose: recompute the def↔Python method-consistency diagnostics of a `.def` document (forward `def-method-missing-in-python` and reverse `python-method-not-in-def`); runs automatically after the one-click generate-implementation CodeAction applies its edit, so the diagnostic clears without waiting for the next save — with a `.def` URI argument (command palette run is a no-op)
+- Entries:
+  - Automatic: appended by the generate-implementation CodeAction on `.def` method symbols
+  - Command palette
+
 ### `kbengine.database.open`
 
 - Title: `Open Database Schema`

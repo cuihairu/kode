@@ -24,6 +24,13 @@ import {
   receiverNoneDiagnosticItemsAsync,
   type ReceiverDiagnosticItem
 } from './receiverNoneDiagnostics';
+import {
+  DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
+  KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
+  PYTHON_METHOD_NOT_IN_DEF_DIAGNOSTIC_CODE,
+  collectDefMethodMissingItems,
+  collectPythonMethodNotInDefItems
+} from './defMethodConsistency';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getActiveOperationCounts,
@@ -260,7 +267,7 @@ import { PythonClassIndex } from './pythonClassIndex';
 import { IndexScheduler, IndexTaskPriority } from './indexScheduler';
 import { shouldStartKbEngineIndexing } from './workspaceGate';
 import { preheatDiscoveryScan } from './workspaceDiscovery';
-import { getDiagnosticScheduler } from './diagnosticScheduler';
+import { DiagnosticScheduler, getDiagnosticScheduler } from './diagnosticScheduler';
 import { isTypeRegistryFile } from './semanticIndex';
 import {
   getDatabaseSchemaSnapshot,
@@ -1191,6 +1198,116 @@ export function activate(context: vscode.ExtensionContext) {
   const diagnostics = vscode.languages.createDiagnosticCollection('kbengine');
   context.subscriptions.push(diagnostics);
 
+  // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python
+  // (def 有 Python 无,默认开,kbengine.defMethodMissingInPython)定位 def 方法
+  // 行并关联目标 Python 文件与类名;反向 python-method-not-in-def(Python 有
+  // def 无,默认关防误报,kbengine.pythonMethodNotInDef)定位 Python 方法行。
+  // 专用 collection(整组替换)——与主 collection 的 .def 结构诊断互不覆写,
+  // 重算即整文档替换,方法补实现后诊断自然消除(生成后重算经 CodeAction 命令
+  // 与 Python 改动钩子双路)。计算走实体映射索引(ensureIndexByDefFile +
+  // listMethodImplementationsByIdentity 同一实现查询面),版本令牌守卫由调度器
+  // 承担;索引不可用/开关关闭一律静默无诊断。
+  // 独立调度器:diagnosticScheduler 每 URI 单排队槽(one-pipeline-per-document),
+  // 主 .def 结构诊断已占该槽——同一文档再 requestQueued 会顶掉主任务致结构
+  // 诊断永不算(且 immediate 通道同版本会被 skippedCurrentVersion 跳过)。
+  // 故一致性管线独立建调度器,各自保版本/关闭代/输入代守卫,互不挤占。
+  const defMethodConsistencyDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-def-method-consistency'
+  );
+  context.subscriptions.push(defMethodConsistencyDiagnostics);
+  const defMethodConsistencyScheduler = new DiagnosticScheduler();
+  const scheduleDefMethodConsistencyDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    const capturedVersion = document.version;
+    const isDef = isDefDocument(document);
+    const isPython = isPythonDocument(document);
+    if (!isDef && !isPython) {
+      return;
+    }
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly vscode.Diagnostic[] | null> => {
+        const config = vscode.workspace.getConfiguration('kbengine');
+        if (isDef) {
+          const enabled = config.get<boolean>('diagnostics.checkDefMethodMissingInPython', true);
+          if (!enabled || document.version !== capturedVersion) {
+            return [];
+          }
+          const gaps = await entityMappingManager.collectDefMethodImplementationGaps(
+            document.uri.fsPath
+          );
+          return collectDefMethodMissingItems(document.getText(), gaps).map(item => {
+            const diagnostic = new vscode.Diagnostic(
+              new vscode.Range(
+                document.positionAt(item.startOffset),
+                document.positionAt(item.endOffset)
+              ),
+              item.message,
+              vscode.DiagnosticSeverity.Warning
+            );
+            diagnostic.code = DEF_METHOD_MISSING_DIAGNOSTIC_CODE;
+            if (item.related.targetFile) {
+              diagnostic.relatedInformation = [
+                new vscode.DiagnosticRelatedInformation(
+                  new vscode.Location(
+                    vscode.Uri.file(item.related.targetFile),
+                    new vscode.Range(0, 0, 0, 0)
+                  ),
+                  item.related.label
+                )
+              ];
+            }
+            return diagnostic;
+          });
+        }
+        // python 文档:反向规则(默认关)
+        const reverseEnabled = config.get<boolean>('diagnostics.checkPythonMethodNotInDef', false);
+        if (!reverseEnabled || document.version !== capturedVersion) {
+          return [];
+        }
+        const gaps = entityMappingManager.collectPythonMethodNotInDef(document.uri.fsPath);
+        return collectPythonMethodNotInDefItems(gaps).map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              new vscode.Position(item.line - 1, item.character),
+              new vscode.Position(item.line - 1, item.character + item.length)
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.code = PYTHON_METHOD_NOT_IN_DEF_DIAGNOSTIC_CODE;
+          return diagnostic;
+        });
+      },
+      publish: (items: readonly vscode.Diagnostic[]) => {
+        defMethodConsistencyDiagnostics.set(document.uri, items);
+      }
+    };
+    if (channel === 'queued') {
+      defMethodConsistencyScheduler.requestQueued(document, options);
+    } else {
+      defMethodConsistencyScheduler.request(document, options);
+    }
+  };
+
+  // C-19 交付②:CodeAction 应用后重算源 def 文档缺实现诊断(诊断消除)。
+  // VS Code 先应用 action.edit 再执行本命令;按 def URI 重排一致性计算,
+  // 不依赖 Python 文件是否打开(编辑作用于磁盘文件时文档事件不必然触发)。
+  const defMethodConsistencyRevalidateCommand = vscode.commands.registerCommand(
+    KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
+    (defUri: string) => {
+      const document = vscode.workspace.textDocuments.find(
+        candidate => candidate.uri.toString() === defUri
+      );
+      if (document && isDefDocument(document)) {
+        scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
+      }
+    }
+  );
+  context.subscriptions.push(defMethodConsistencyRevalidateCommand);
+
   // IDE-NAV-013:未知类型诊断的 QuickFix 替换候选(只出已注册类型的近似替换)
   const typeCodeActionProvider = vscode.languages.registerCodeActionsProvider(
     defDocumentSelector,
@@ -1225,6 +1342,9 @@ export function activate(context: vscode.ExtensionContext) {
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
       diagnosticScheduler.releaseDocument(document);
+      // C-19:关闭文档同步摘除本规则的诊断与一致性调度器状态(随文档生命周期)
+      defMethodConsistencyDiagnostics.delete(document.uri);
+      defMethodConsistencyScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -1261,10 +1381,25 @@ export function activate(context: vscode.ExtensionContext) {
       // validateDocument/validateEntitiesXmlDocument,仅发布时点推迟一拍)。
       if (isDefDocument(event.document)) {
         scheduleDefDiagnostics(event.document, 'queued');
+        scheduleDefMethodConsistencyDiagnostics(event.document, 'queued');
       } else if (isEntitiesXmlDocument(event.document)) {
         scheduleEntitiesDiagnostics(event.document, 'queued');
       } else if (isPythonDocument(event.document)) {
         scheduleReceiverNoneDiagnostics(event.document, 'queued');
+        // C-19:Python 改动联动两路——反向诊断(Python 有 def 无)与正向重算
+        // (属主 def 文档的缺实现,手动补实现即消除;索引不可用静默跳过)
+        scheduleDefMethodConsistencyDiagnostics(event.document, 'queued');
+        const owningDefFile = entityMappingManager.getDefFileForPythonFile(
+          event.document.uri.fsPath
+        );
+        if (owningDefFile) {
+          const owningDefDoc = vscode.workspace.textDocuments.find(
+            candidate => candidate.uri.fsPath === owningDefFile
+          );
+          if (owningDefDoc && isDefDocument(owningDefDoc)) {
+            scheduleDefMethodConsistencyDiagnostics(owningDefDoc, 'queued');
+          }
+        }
       }
       // IDE-REV-011:schema 缓存热命中不再懒重读输入文件(失效在事件面)——
       // 脏 def/types/alias 文档编辑同步摘除消费条目(磁盘域变更已由
@@ -1283,6 +1418,8 @@ export function activate(context: vscode.ExtensionContext) {
           // IDE-DIA-006:flush 单轮时间片化(重批量让出宿主续批),不 await——
           // 编辑事件面不等诊断收尾,发布节拍与版本守卫全在调度器内
           void diagnosticScheduler.flushQueued();
+          // C-19 一致性管线独立调度器,同节拍冲刷(守卫语义同上)
+          void defMethodConsistencyScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
@@ -1354,10 +1491,12 @@ export function activate(context: vscode.ExtensionContext) {
     const openWatcher = vscode.workspace.onDidOpenTextDocument(document => {
       if (isDefDocument(document)) {
         scheduleDefDiagnostics(document, 'immediate');
+        scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
       } else if (isPythonDocument(document)) {
         scheduleReceiverNoneDiagnostics(document, 'immediate');
+        scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
       }
       // 批159:开 Python 档即预热实体 def 定向首解析,首次 hover/CodeLens/
       // 签名帮助不再吃冷启动等待(失败静默,预热是优化不是功能)。
@@ -1369,10 +1508,12 @@ export function activate(context: vscode.ExtensionContext) {
       shadowMirrorCorpusDocument(document);
       if (isDefDocument(document)) {
         scheduleDefDiagnostics(document, 'immediate');
+        scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
       } else if (isPythonDocument(document)) {
         scheduleReceiverNoneDiagnostics(document, 'immediate');
+        scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
       }
     });
   }
@@ -1471,27 +1612,47 @@ export function activate(context: vscode.ExtensionContext) {
       const enabled = vscode.workspace.getConfiguration('kbengine')
         .get<boolean>('enableDiagnostics', true);
       diagnosticScheduler.setEnabled(enabled, () => diagnostics.clear());
+      // C-19:主开关同闸一致性管线(关→清一致性集合,开→强制重算已发布文档)
+      defMethodConsistencyScheduler.setEnabled(enabled, () =>
+        defMethodConsistencyDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
       event.affectsConfiguration('kbengine.diagnostics') ||
       event.affectsConfiguration('kbengine.enableDiagnostics') ||
       event.affectsConfiguration('kbengine.receiverNoneDiagnostics');
-    if (diagnosticsInputsChanged && diagnosticScheduler.isEnabled()) {
+    // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
+    const defMethodConsistencyInputsChanged =
+      event.affectsConfiguration('kbengine.diagnostics.checkDefMethodMissingInPython') ||
+      event.affectsConfiguration('kbengine.diagnostics.checkPythonMethodNotInDef') ||
+      event.affectsConfiguration('kbengine.entity.methodStubBody');
+    if ((diagnosticsInputsChanged || defMethodConsistencyInputsChanged) &&
+        diagnosticScheduler.isEnabled()) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
           event.affectsConfiguration('kbengine.diagnostics') ||
           event.affectsConfiguration('kbengine.receiverNoneDiagnostics')) {
         diagnosticScheduler.invalidateAll();
+      }
+      // C-19:一致性输入开关/骨架体变更 → 一致性调度器输入代自增,已发布重算
+      if (defMethodConsistencyInputsChanged && defMethodConsistencyScheduler.isEnabled()) {
+        defMethodConsistencyScheduler.invalidateAll();
       }
       // receiverNoneDiagnostics 开关切换即重算(任务1,用户令 2026-10-27):
       // compute 每次现读配置，失效版本标记后重调已开文档。
       vscode.workspace.textDocuments.forEach(doc => {
         if (isDefDocument(doc)) {
           scheduleDefDiagnostics(doc, 'immediate');
+          if (defMethodConsistencyInputsChanged) {
+            scheduleDefMethodConsistencyDiagnostics(doc, 'immediate');
+          }
         } else if (isEntitiesXmlDocument(doc)) {
           scheduleEntitiesDiagnostics(doc, 'immediate');
         } else if (isPythonDocument(doc)) {
           scheduleReceiverNoneDiagnostics(doc, 'immediate');
+          if (defMethodConsistencyInputsChanged) {
+            scheduleDefMethodConsistencyDiagnostics(doc, 'immediate');
+          }
         }
       });
     }
@@ -4666,8 +4827,10 @@ export function activate(context: vscode.ExtensionContext) {
       };
     },
     pendingWork: () => ({
-      diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued,
-      diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight,
+      diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued +
+        defMethodConsistencyScheduler.pendingWorkload().queued,
+      diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight +
+        defMethodConsistencyScheduler.pendingWorkload().inFlight,
       annotationUpdates: getPendingDocumentUpdateCount(),
       caches: {
         parsedDocuments: getParsedDocumentCacheGauge(),

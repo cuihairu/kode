@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EntityMappingManager } from '../src/entityMapping';
 import { KBEngineMethodImplementationCodeActionProvider } from '../src/languageProviders';
+import { configurationOverrides } from './fake-vscode/workspaceState';
 import { CodeActionKind, makeTextDocument, Position, Range, Uri, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // IDE-NAV-014:为缺少实现的方法生成单个空方法。验收口径:Code Action 展示
@@ -145,14 +146,48 @@ describe('缺实现方法生成空方法(IDE-NAV-014)', () => {
       expect(action.title).toContain(ws.basePy);
       expect(action.title).toContain(':4');
       expect(action.kind).toBe(CodeActionKind.Refactor);
-      expect(action.command).toBeUndefined();
+      // C-19 交付②:编辑应用后重算源 def 一致性(诊断消除),命令按 def URI 寻址
+      expect(action.command).toBeDefined();
+      expect(action.command!.command).toBe('kbengine.defMethodConsistency.revalidate');
+      // 测试桩 Uri.toString() 的 file 面是纯路径(与真机含 scheme 不同)
+      expect(action.command!.arguments).toEqual([ws.avatarDef]);
 
       const edits = editsByPath(action.edit!, ws.basePy);
       expect(edits, '只碰目标属主脚本,不动 def/别的文件').toHaveLength(1);
       expect(edits[0].range.start).toEqual(new Position(3, 0));
-      // 空行前缀 + 4 缩进方法 + <Arg> 数量一致的 argN 形参 + 空体 pass
-      expect(edits[0].newText).toBe('\n    def reqPos(self, arg0, arg1):\n        pass\n');
+      // 空行前缀 + 4 缩进方法 + 形参自 <Arg> 类型映射(UINT32→int,VECTOR3 裸
+      // arg1——Tuple 需 import 不发射)+ 空体 pass
+      expect(edits[0].newText).toBe('\n    def reqPos(self, arg0: int, arg1):\n        pass\n');
     });
+  });
+
+  it('kbengine.entity.methodStubBody=raise 时生成体为 raise NotImplementedError', async () => {
+    const ws = buildWorkspace(BASE_PY);
+    roots.push(ws.root);
+    const originalOverrides = configurationOverrides.get('kbengine');
+    configurationOverrides.set('kbengine', { 'entity.methodStubBody': 'raise' });
+    try {
+      await withStubbedDefs(ws.avatarDef, async () => {
+        const manager = await makeManager();
+        const provider = new KBEngineMethodImplementationCodeActionProvider(manager);
+        const document = makeTextDocument(AVATAR_DEF, { fileName: ws.avatarDef }) as never;
+        const cursor = cursorOnWord(AVATAR_DEF, 'reqPos');
+        const actions = (await provider.provideCodeActions(
+          document, new Range(cursor, cursor), { diagnostics: [] }, undefined
+        ))!;
+        expect(actions).toHaveLength(1);
+        const edits = editsByPath(actions[0].edit!, ws.basePy);
+        expect(edits[0].newText).toBe(
+          '\n    def reqPos(self, arg0: int, arg1):\n        raise NotImplementedError\n'
+        );
+      });
+    } finally {
+      if (originalOverrides === undefined) {
+        configurationOverrides.delete('kbengine');
+      } else {
+        configurationOverrides.set('kbengine', originalOverrides);
+      }
+    }
   });
 
   it('类体为空:onTick 插在类头下一行,无空行前缀,签名只 (self)', async () => {

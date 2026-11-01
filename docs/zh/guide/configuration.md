@@ -77,6 +77,8 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |
 | `kbengine.diagnostics.checkDuplicateDefinitions` | boolean | `true` | 检查重名属性/方法 |
 | `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | 检查属性缺 `Type`/`Flags` 或字段重复 |
+| `kbengine.diagnostics.checkDefMethodMissingInPython` | boolean | `true` | def↔Python 方法一致性(正向):实体 `.def`(Base/Cell/Client 方法节)声明的方法在对应同名 Python 实体类中无实现时,在 def 方法行报 Warning 并关联目标 Python 文件与类名(默认开) |
+| `kbengine.diagnostics.checkPythonMethodNotInDef` | boolean | `false` | def↔Python 方法一致性(反向,启发式):Python 实体类方法在 `.def` 中无声明时报 Warning——跳过引擎钩子与 `__dunder__`(默认关;要更严的方向再开) |
 
 | 配置项 | 关掉会怎样 | 常见误配 |
 | --- | --- | --- |
@@ -88,6 +90,8 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `diagnostics.checkUnknownDetailLevels` | DetailLevel 非法值不再报 | — |
 | `diagnostics.checkDuplicateDefinitions` | 真重名漏报 | 提示过多的项目可关,代价是漏掉真重名 |
 | `diagnostics.checkMissingPropertyFields` | 缺 `Type`/`Flags` 的属性不报 | — |
+| `diagnostics.checkDefMethodMissingInPython` | def 方法缺 Python 实现不再提示 | def 侧的一键生成实现 CodeAction 仍然可用,只静音诊断 |
+| `diagnostics.checkPythonMethodNotInDef` | Python 里 def 未声明的方法不再提示 | — |
 
 诊断只在打开或编辑 `.def` 文件时触发;`kbengine.receiverNoneDiagnostics` 另在打开或编辑 Python 实体脚本时触发。`kbengine.*` 配置变化后会重扫已打开文档。
 
@@ -238,6 +242,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | --- | --- | --- | --- |
 | `kbengine.entity.builtinProperties` | boolean | `true` | 实体脚本 `self.<内建属性>` 的悬停标注与 `self.` 补全(按 base/cell/client 分面);关掉整体让位,回落普通符号链 |
 | `kbengine.entity.receiverSections` | boolean | `true` | `self.cell.`/`self.base.`/`self.client.` 调用按接收者段过滤 def 候选(悬停/F12/RPC 镜链,默认开);关掉回归不感知段的旧解析,def 形参/类型闸门不受影响 |
+| `kbengine.entity.methodStubBody` | string | `pass` | def 侧一键生成实现骨架的体:`pass`(空体)或 `raise`(`raise NotImplementedError`);形参自 def `<Arg>` 类型映射——内建发注解(`int`/`float`/`str`/`bool`/`bytes`),其余裸形参名 |
 | `kbengine.python.builtinTypeInlayHints` | boolean | `true` | 实体脚本 `self.<内建属性>` 访问处行内 `: <类型>` 提示(与悬停同一命中底座,默认开);受总闸 `kbengine.entity.builtinProperties` 与本键双控,任一关闭都不渲染内建属性 inlay |
 | `kbengine.types.aliasDiscovery` | boolean | `true` | 从 `scripts/entity_defs/alias.xml` 发现自定义类型并入类型表(默认开);关掉回落只认 `types.xml` |
 
