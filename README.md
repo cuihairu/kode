@@ -1,4 +1,5 @@
-<p align="center"><a href="https://cuihairu.github.io/kode//"><img src="https://img.shields.io/badge/docs-docs-blue" alt="docs"></a> <a href="https://cuihairu.github.io/kode/"><img src="https://img.shields.io/badge/docs-docs-blue" alt="docs"></a></p>
+<p align="center"><img src="resources/logo.png" width="64" height="64" alt="logo" /> <a href="https://cuihairu.github.io/kode//"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
+</p>
 
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
