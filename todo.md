@@ -854,3 +854,10 @@
   - 交付②LSP CodeAction 一键生成:仅在「def 有 Python 无」的方法上出现——在目标 Python 类末尾生成方法骨架(签名参数从 def 类型映射,默认 raise NotImplementedError 或 pass 可配);生成后自动重算一致性(诊断消除)。
   - 实现:kode-index 已有 Python 符号索引 + kode-parser MethodDef,做集合差;CodeAction 走 kode-server 现有 LSP 通道。
   - 验收:示例实体(def 有 3 方法/Python 缺 1)→ 恰好 1 条 warning + code action 生成后 warning 消除;已实现方法零误报;vitest/cargo 绿。
+
+- [ ] **C-20 · P2 · 实现 · kode-python:Python 调用图与数据流(Rust)**
+  - 依据 2026-11-01 用户确认缺失:Rust/TS 均无 Python 代码级调用关系与数据流(现有图仅 def→def 依赖)。
+  - 集成:Python 解析用 ruff_python_parser(Rust 原生,不造轮子);新 crate kode-python:AST→符号/调用边提取。
+  - 交付①调用图:函数/方法级 call graph + KBEngine 特化边(allClients/baseClients 广播边、cell/base 跨进程调用边,进程归属联动 C-17);②过程内数据流(MVP:def-use 链,变量来源与传播);③图入 kode-scheduler DAG,可视化挂 dependencyGraph 面板;④供 C-19 一致性检查复用 Python 符号表(替代自建)。
+  - 验收:示例实体项目调用图与人工核对一致(抽样 10 条调用边);改方法签名→受影响调用点全数列出;增量更新(改一个文件只重算该文件)。
+  - 后置:过程间数据流/指针分析不进本期。
