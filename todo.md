@@ -835,3 +835,10 @@
   - 交付①进程拓扑清单(部署清单文件):声明部署内全部进程与职能——参照 KBEngine 五进程(loginapp/baseapp/cellapp/dbmgr/machine)并可自定义;每进程:角色职能、承载的 entity 类型归属(cells/base 进程映射)、入口命令行、监听端口、依赖启动顺序;与 def 联动=entity 类型归属哪个进程由 defs 推导校验。
   - 交付②定义期错配预警(静态校验,接入 kode 已有 lint/diagnostics 体系):entity 方法节(Cell/Base/Client)引用了拓扑中不存在或不承载该角色的进程;持久化实体存在但拓扑缺 dbmgr;进程角色重复/冲突;未知进程引用;entity 归属与清单声明矛盾。全部以 warning 诊断形式在编辑/构建期给出(文件+行定位),并可 CI 拦截。
   - 验收:构造五进程拓扑示例;错配用例(实体落错进程/缺 dbmgr/未知进程)逐条产生定位准确的 warning;正确拓扑零误报。
+
+- [ ] **MCP-001 · P2 · 实现 · kode-mcp:把 def 知识库暴露给 AI agent**
+  - 依据 2026-11-01 用户问「mcp 有没有做的价值」——判定值得:kode 本质是 def 知识库,MCP 让 agent 一次调用拿到准确 def 知识,替代每次自行读文件猜语义。
+  - 模式复用:照 sandtable-mcp 先例(Rust rmcp 3.7 + stdio + 原生直调 crate,零 Node 依赖,新 crate kode-mcp 入 workspace)。
+  - MVP 工具面(全是现有 crate 薄封装):search_entities(按名/标签查实体) / get_entity_model(实体全模型:属性/方法/Flags/进程归属) / get_type_graph(别名/数组/FIXED_DICT 解析) / validate_defs(def 校验,挂 C-17 错配预警) / get_message_entry(消息号+线格式布局,挂 C-15) / encode_decode_sample(参数→线格式字节样本) / db_schema_preview(def→DDL 预览,挂 C-16 落地后)。
+  - 排期:P2,依赖 C-15(已完成)/C-16/C-17 落地后封装。
+  - 验收:rmcp 客户端 stdio 端到端(list_tools→call_tool 全工具真数据返回);与 kode-server 同源单测;README + 双语文档。
