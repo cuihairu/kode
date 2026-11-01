@@ -99,7 +99,7 @@ describe('IDE-REV-013:type storage 冷索引逐实体分阶段', () => {
     fs.writeFileSync(path.join(root, 'scripts/entities.xml'), '<root>\n  <Gold/>\n</root>\n', 'utf8');
     fs.writeFileSync(path.join(root, 'scripts/entity_defs/types.xml'),
       '<root>\n  <ITEM_ID> UINT16 </ITEM_ID>\n</root>\n', 'utf8');
-    const propCount = 3000;
+    const propCount = 6000; // IDE-AUD-013 验收:6000 属性(旧码整实体 831ms)
     const props = Array.from({ length: propCount }, (_, i) => [
       `    <prop${i}>`,
       '      <Type>ITEM_ID</Type>',
@@ -110,9 +110,9 @@ describe('IDE-REV-013:type storage 冷索引逐实体分阶段', () => {
       ['<root>', '  <Properties>', ...props, '  </Properties>', '</root>'].join('\n'), 'utf8');
     workspace.workspaceFolders = [{ uri: { toString: () => `file://${root}`, fsPath: root }, name: 'ws', index: 0 }];
     const outcome = await buildTypeStorageUsageIndexPhased(root, { entityBudgetMs: 25 });
-    // F13:单实体(6000 属性实测 831ms)内部必须按预算让路——整块 831ms 的
-    // 旧码只有实体边界一次让路(yields=1),真让路面应为多次(属性循环按属性
-    // 切片让路)。
+    // F13/AUD-013:单实体(6000 属性,旧码实测整块 831ms)内部必须按预算让路
+    // ——整块 831ms 的旧码只有实体边界一次让路(yields=1),真让路面应为多次
+    // (属性循环按属性切片让路),预算不在整实体之后才检查。
     expect(outcome.yields).toBeGreaterThan(1);
     // 注:单文件大 def 的 parseDefDocument(fast-xml-parser,12k 行≈185ms)仍是
     // 共享 XML 解析器的整块阻塞,不属属性递归让路面——深组件链测试证
