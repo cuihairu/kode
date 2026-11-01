@@ -919,3 +919,16 @@
   - 交付③文档页:docs 增「配置效果」页,每开关=说明+off/on 静态图+动态 GIF(VitePress 直接嵌),双语。
   - 验收:清单内每个开关都有 off/on 图+GIF;流水线重跑可再生成(配置变更不腐化);流水线兼作配置效果回归测试。
   - 顺序:流水线基建(约半天)→逐开关出图(每个几分钟)。
+
+## KBEngine 协议分析器（用户令 2026-11-01，源 ChatGPT 架构评审+代决拍板）
+
+  - 技术决策:Rust=唯一协议语义实现(kode-kbengine-schema/protocol/analyzer 三 crate 入现有 workspace);Wireshark/TShark 仅展示与采集适配层;CLI 先行、插件最后接;MVP=Client↔Server TCP;不建独立 WireLens 仓库;许可证边界=Rust 核心 Apache-2.0,Wireshark 插件单独处理 GPL-2.0。
+  - 与 C-15 关系:C-15 线格式编解码器=Phase 2 的类型系统基础;但静态消息表假设在真实连接不成立(登录动态导入协议映射),PA-001 取证后校准。
+
+- [ ] PA-001 [P1] Phase 0 协议源码取证；验收：产出 docs/kbengine-wire-protocol.md（Wire Protocol Specification），每条结论带 kbe/src 源码 file:line+真实报文样本，查不到的标 TODO 不编造。范围：定基线引擎版本；客户端 MessageReader/服务端 PacketReader；消息 ID 分配机制（静态 fixed defaults+登录动态导入）；固定/可变/扩展长度（>65534 用 65535 标记+4 字节实长）；packetAlwaysContainLength 配置；字节序/字符串 Unicode/自定义类型编码；登录-协议导入-EntityDef 导入流程；加密/压缩/连接切换；生成测试报文与 PCAP 样本。同步产出：C-15 需修订点清单。前置：无。
+- [ ] PA-002 [P1] Phase 1 Schema 引擎（新 crate kode-kbengine-schema）；验收：从真实 KBEngine 项目自动生成完整协议 Schema（JSON+Hash+版本兼容检查）。复用 kode-parser/kode-types/kode-vfs；解析 messages_fixed_defaults.xml+项目 messages_fixed.xml+全部 .def+types.xml/alias.xml/entities.xml；构建 Wire Type Layout（独立于现有类型图，类型图≠网络序列化规则）；Schema IR+Golden 测试。前置：PA-001。
+- [ ] PA-003 [P1] Phase 2 协议引擎（新 crate kode-kbengine-protocol）；验收：完全脱离 Wireshark 的 KBEngine 协议解析库，Fuzz+边界测试绿。模块：cursor 零拷贝/framing 三种长度+TCP 粘包拆包/message ID 静态+动态映射/codec 基础类型/containers ARRAY+FIXED_DICT/entity 属性方法/session 每 Flow 独立/handshake 协商/diagnostics 偏移定位/schema 编译缓存。红线：失败不 panic/不越界/内存有上限/递归类型有界/未知类型 Raw 保留。MVP=Client↔Server。前置：PA-002。
+- [ ] PA-004 [P2] Phase 3 CLI（kode-kbengine bin）；验收：schema validate/build/diff/inspect、decode --hex、capture analyze（支持 stdin pcap 流式）；PCAP 输入层先复用 TShark 成熟能力。前置：PA-003。
+- [ ] PA-005 [P2] Phase 3 分析引擎（新 crate kode-kbengine-analyzer）；验收：独立分析一组解码消息出 JSON 报告。能力：消息/流量统计、请求响应关联（仅协议确证标识，不拿相邻猜对）、延迟 P50/P95/P99、异常检测（未知消息/非法长度/Schema 不匹配）、Entity 事件与 RPC 时间线、连接分析（登录/切 Baseapp/重连）。前置：PA-003。
+- [ ] PA-006 [P3] Phase 4 Wireshark/TShark 集成；验收：能加载并解析 KBEngine 报文的原生插件（或 C 适配层）。先验证 libwireshark Rust 绑定（现 alpha 0.0.0，按 Wireshark 版本分别构建）六项能力；不满足启用 C Thin Adapter（C 只做注册/重组/协议树映射，解析全在 Rust）。GPL 边界：插件独立 crate+独立许可评估，不混入 Apache VSIX。前置：PA-003（核心稳定后接）。
+- [ ] PA-007 [P3] Phase 5 Kode 集成；验收：用户零手动配置。Protocol Analyzer 命令+协议管理面板；Wireshark/TShark/插件版本检测；Schema 自动生成与协议文件变化监听（仅协议定义文件触发重建，Python 业务变更不触发）；一键开 PCAP/跑 TShark；Schema 版本提示+错误诊断。前置：PA-004、PA-006。
