@@ -188,6 +188,22 @@ describe('guardConnectionFactoryWithQueryLifecycle(建连面)', () => {
     await expect(guardedFactory({} as never)).rejects.toBeInstanceOf(QueryCancelledError);
   });
 
+  it('IDE-AUD-010:SET READ ONLY 挂死 → 守卫超时经 in-flight 面销毁在途连接', async () => {
+    let destroyed = 0;
+    // 工厂签名带 hooks(第二参):建连成功即登记在途强杀面,随后 SET READ ONLY 永久挂死
+    const factory: DriftConnectionFactory = (_database, hooks) =>
+      new Promise<DriftQueryExecutor>(() => {
+        hooks?.registerInFlight(async () => {
+          destroyed += 1;
+        });
+      });
+    const guardedFactory = guardConnectionFactoryWithQueryLifecycle(factory, fastGuard());
+    await expect(guardedFactory({} as never)).rejects.toBeInstanceOf(QueryTimeoutError);
+    // releaseDeadlineMs(60) 到点:未结算 → 走 destroy → in-flight 面撕连接
+    await new Promise(resolve => setTimeout(resolve, 80));
+    expect(destroyed).toBe(1);
+  });
+
   it('IDE-AUD-009:预取消不建连——工厂零调用(inner 不执行)', async () => {
     const hang = deferred<DriftQueryExecutor>();
     const factory = vi.fn<DriftConnectionFactory>(() => hang.promise);

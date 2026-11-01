@@ -18,7 +18,7 @@ import {
   DatabaseQueryResultCache,
   type DatabaseConnectionConfigSnapshot
 } from './databaseConnectionRegistry';
-import type { DriftConnectionFactory, QueryResult } from './databaseDrift';
+import type { ConnectionAbortHooks, DriftConnectionFactory, QueryResult } from './databaseDrift';
 import {
   buildMergedConfigTree,
   extractDatabaseInterfaceConfig,
@@ -179,10 +179,13 @@ export class ProfileDatabaseConnectionService {
 export function createProfileScopedDriftExecutor(
   profileId: string,
   cache: DatabaseQueryResultCache,
-  inner: DriftConnectionFactory
+  inner: DriftConnectionFactory,
+  hooks?: ConnectionAbortHooks
 ): DriftConnectionFactory {
-  return async database => {
-    const executor = await inner(database);
+  return async (database, abortHooks) => {
+    // IDE-AUD-010:守卫给的在途强杀登记面透传给内层工厂(SET READ ONLY 挂死
+    // 时守卫经它撕在途连接);本层只用透传,不碰缓存与连接语义
+    const executor = await inner(database, hooks ?? abortHooks);
     const identity = databaseConnectionIdentityKey(database);
     return {
       runQuery: async (sql: string): Promise<QueryResult> => {

@@ -666,6 +666,59 @@ describe('createMysqlDriftExecutorWith(mysql2 装配)', () => {
     }
   });
 
+  it('IDE-AUD-010:SET READ ONLY 抛错 → 连接 end 恰一次,原始错误同一实例透传', async () => {
+    const failure = new Error('ER_OPTION_PREVENTS_STATEMENT');
+    const log: FakeConnectionLog = { options: [], sqls: [], ended: false };
+    const mysql: MysqlModuleLike = {
+      createConnection: async options => {
+        log.options.push(options);
+        return {
+          query: async (sql: string): Promise<[unknown, unknown]> => {
+            log.sqls.push(sql);
+            if (sql === 'SET SESSION TRANSACTION READ ONLY') {
+              throw failure;
+            }
+            return [[], []];
+          },
+          end: async (): Promise<void> => {
+            log.ended = true;
+          }
+        };
+      }
+    };
+    const factory = createMysqlDriftExecutorWith(async () => mysql);
+
+    await expect(factory(database)).rejects.toBe(failure); // 原始原因原样透传
+    expect(log.ended).toBe(true); // 初始化失败即收尾连接,不泄漏
+  });
+
+  it('IDE-AUD-010:SET READ ONLY 抛错(连接带 destroy 面)→ 走 destroy,end 不叠加', async () => {
+    const failure = new Error('ER_OPTION_PREVENTS_STATEMENT');
+    let destroyed = 0;
+    let ended = 0;
+    const mysql: MysqlModuleLike = {
+      createConnection: async () => ({
+        query: async (sql: string): Promise<[unknown, unknown]> => {
+          if (sql === 'SET SESSION TRANSACTION READ ONLY') {
+            throw failure;
+          }
+          return [[], []];
+        },
+        end: async (): Promise<void> => {
+          ended += 1;
+        },
+        destroy: async (): Promise<void> => {
+          destroyed += 1;
+        }
+      })
+    };
+    const factory = createMysqlDriftExecutorWith(async () => mysql);
+
+    await expect(factory(database)).rejects.toBe(failure);
+    expect(destroyed).toBe(1); // 有 destroy 面优先撕连接
+    expect(ended).toBe(0); // end 不叠加
+  });
+
   it('opens a read-only session before the first query and passes results through', async () => {
     const log: FakeConnectionLog = { options: [], sqls: [], ended: false };
     const { mysql } = makeMysql(

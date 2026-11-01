@@ -48,8 +48,18 @@ export interface DriftQueryExecutor {
   destroy?(): Promise<void>;
 }
 
+/**
+ * IDE-AUD-010:建连/初始化在途强杀登记面。建连成功、初始化(SET READ ONLY)
+ * 尚未完成时,外层守卫(guardConnectionFactoryWithQueryLifecycle)经此登记
+ * 的强杀面撕掉在途连接——SET READ ONLY 挂死时守卫超时后能销毁连接,不泄漏。
+ */
+export interface ConnectionAbortHooks {
+  registerInFlight(destroy: () => Promise<void>): void;
+}
+
 export type DriftConnectionFactory = (
-  database: DatabaseInterfaceConfig
+  database: DatabaseInterfaceConfig,
+  hooks?: ConnectionAbortHooks
 ) => Promise<DriftQueryExecutor>;
 
 /** 白名单首关键字(大小写不敏感,允许前置括号/空白) */
@@ -191,11 +201,35 @@ function toRows(rows: unknown): Array<Record<string, unknown>> {
 export function createMysqlDriftExecutorWith(
   loadMysql: () => Promise<MysqlModuleLike>
 ): DriftConnectionFactory {
-  return async database => {
+  return async (database, hooks) => {
     const mysql = await loadMysql();
     const connection = await mysql.createConnection(buildMysqlConnectionOptions(database));
+    // IDE-AUD-010:建连成功即登记在途强杀面——SET READ ONLY 挂死时,外层守卫
+    // 超时后经此销毁连接(有 destroy 用 destroy 撕 socket,否则退 end),不泄漏
+    hooks?.registerInFlight(async () => {
+      if (connection.destroy) {
+        await connection.destroy();
+        return;
+      }
+      await connection.end();
+    });
     // 第二道保险:连接即置只读事务默认值(即便语句白名单被绕过也写不进去)
-    await connection.query('SET SESSION TRANSACTION READ ONLY');
+    // IDE-AUD-010:初始化失败即收尾连接再抛原始原因——不在仅保护工厂返回后
+    // 的 executor 的面上留泄漏(SET READ ONLY 抛错时 close/destroy 恰一次)
+    try {
+      await connection.query('SET SESSION TRANSACTION READ ONLY');
+    } catch (error) {
+      try {
+        if (connection.destroy) {
+          await connection.destroy();
+        } else {
+          await connection.end();
+        }
+      } catch {
+        // 收尾失败不吞原始原因:原样抛出初始化错误
+      }
+      throw error;
+    }
 
     return {
       runQuery: async (sql: string): Promise<QueryResult> => {

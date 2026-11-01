@@ -10,7 +10,7 @@ import {
   runReadOnlyQueryLifecycle,
   type QueryLifecycleOptions
 } from './databaseQueryLifecycle';
-import type { DriftConnectionFactory, DriftQueryExecutor } from './databaseDrift';
+import type { ConnectionAbortHooks, DriftConnectionFactory, DriftQueryExecutor } from './databaseDrift';
 
 /** 单条查询/建连超时:命令层据此展示「超时并已释放」的原因 */
 export class QueryTimeoutError extends Error {
@@ -134,6 +134,14 @@ export function guardConnectionFactoryWithQueryLifecycle(
   return async database => {
     let landed: DriftQueryExecutor | null = null;
     let wantClose = false;
+    // IDE-AUD-010:内层工厂建连成功即经此登记在途强杀面;初始化(SET READ
+    // ONLY)挂死时,生命周期释放上限到点走 destroy 把在途连接撕掉不泄漏
+    let inFlightDestroy: (() => Promise<void>) | null = null;
+    const abortHooks: ConnectionAbortHooks = {
+      registerInFlight: destroy => {
+        inFlightDestroy = destroy;
+      }
+    };
     // 命令已退出而建连刚落地:关掉刚拿到的连接(恰一次,置空防重复)
     const closeIfAsked = async (): Promise<void> => {
       if (!wantClose || !landed) {
@@ -147,11 +155,18 @@ export function guardConnectionFactoryWithQueryLifecycle(
     // 预取消时 inner 零调用(连接根本不建,不白开 socket)
     const outcome = await runReadOnlyQueryLifecycle(
       async () => {
-        landed = await inner(database);
+        landed = await inner(database, abortHooks);
         await closeIfAsked();
       },
       () => undefined,
-      lifecycleOptions(guard)
+      {
+        ...lifecycleOptions(guard),
+        // IDE-AUD-010:建连永不结算时释放上限到点撕在途连接(未登记=noop,
+        // 建连本身都没成;登记了=SET READ ONLY 挂死的连接被销毁)
+        destroy: async () => {
+          await inFlightDestroy?.();
+        }
+      }
     );
     if (outcome.kind === 'completed') {
       return guardExecutorWithQueryLifecycle(landed!, guard);
