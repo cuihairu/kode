@@ -870,7 +870,9 @@
   - 协同:与 P0-A 类型桩同源互补(补全=签名,hover=文档);usage 统计(扫描 KBEngine 资产)指导文档优先级排序。
 
 - [ ] **KB-001 · P2 · 建设 · KBEngine 源码解析知识库（双语,人机共用）**
-  - 首批头号专题(用户点名的重灾区,2026-11-01):内存对象引用与释放——实体对象生命周期引用规则、cell/base 迁移后引用失效语义、destroy 后 Python 侧持引用的行为、timer/Functor 持引用与回收、跨进程引用(cellData 快照 vs 活对象)等,逐坑整理:现象/根因(带 kbe/src 源码引用)/正确姿势。用户多次踩坑,经验最密集的区域。
+  - 首批头号专题（用户点名的重灾区，2026-11-01）：内存对象引用与释放——实体对象生命周期引用规则、cell/base 迁移后引用失效语义、destroy 后 Python 侧持引用的行为、timer/Functor 持引用与回收、跨进程引用（cellData 快照 vs 活对象）等，逐坑整理：现象/根因（带 kbe/src 源码引用）/正确姿势。用户多次踩坑，经验最密集的区域。
+  - 知识源交叉引用（2026-11-01 盘点）：CPython 地基直接链接 hello-python/docs/internals/ 的 10 篇源码级分析（object-model/memory-management/gc-module/type-system/eval-loop 等，不重写）；KB-001 内存专题 = CPython 引用计数/GC × KBEngine 托管引用的交叉解释。
+  - 扩展域（后续批次）：①KBEngine Python 绑定层源码分析（API 暴露机制/entity 基类机制/属性 __init__ 前赋值的引擎侧根因/脚本加载与热重载实现）；②KBEngine C++ 进程内部（baseapp/cellapp/dbmgr 源码机制）；③BigWorld-Engine-14.4.1 遗产源码（cell 机制血统）；④协议交互序列（握手/重连/迁移时序）；⑤历次会话分析结论收割（C-22/C-23 已部分入账）。
   - 依据 2026-11-01 用户令:「整理出源码解析出来的知识经验」。把历次分析 KBEngine 源码积累的知识结构化沉淀,不是会话记录,是可检索、可维护、喂给 hover/MCP 的资产。
   - 结构(docs/knowledge/,双语 en+zh):
     ① API 知识:逐条 KBEngine API——签名/语义/用途分类(定时器/实体通信/客户端广播/持久化/空间移动/日志/全局数据)/使用示例/坑(与 C-21 文档库同源,共享一份)
@@ -897,3 +899,10 @@
     timer-leak-on-destroy:addTimer 句柄未在 onDestroy 注销的模式检测。
   - 交付③hover 行为注记:FIXED_DICT/易坑 API 的 hover 附加行为警告段(数据源=KB-001 结构化条目)。
   - 验收:三个规则各配正反用例(误报=0);hover 注记双语;规则可用配置关闭。
+
+- [ ] **C-24 · P2 · 实现 · 配置开关效果文档流水线(开关前后截图+动态图,用户令 2026-11-01)**
+  - 交付①配置效果清单:枚举全部「开启后有效果」的配置项(VSCode contributes 配置点+引擎侧开关),标注效果可见面(编辑器/面板/行为)。
+  - 交付②自动截图流水线:@vscode/test-electron 可编程驱动——起扩展主机→写配置 on→稳定后截图→写配置 off→截图;行为类开关(如热重载)录过程多帧;ffmpeg 缝合动态 GIF。
+  - 交付③文档页:docs 增「配置效果」页,每开关=说明+off/on 静态图+动态 GIF(VitePress 直接嵌),双语。
+  - 验收:清单内每个开关都有 off/on 图+GIF;流水线重跑可再生成(配置变更不腐化);流水线兼作配置效果回归测试。
+  - 顺序:流水线基建(约半天)→逐开关出图(每个几分钟)。
