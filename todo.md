@@ -861,3 +861,10 @@
   - 交付①调用图:函数/方法级 call graph + KBEngine 特化边(allClients/baseClients 广播边、cell/base 跨进程调用边,进程归属联动 C-17);②过程内数据流(MVP:def-use 链,变量来源与传播);③图入 kode-scheduler DAG,可视化挂 dependencyGraph 面板;④供 C-19 一致性检查复用 Python 符号表(替代自建)。
   - 验收:示例实体项目调用图与人工核对一致(抽样 10 条调用边);改方法签名→受影响调用点全数列出;增量更新(改一个文件只重算该文件)。
   - 后置:过程间数据流/指针分析不进本期。
+
+- [ ] **C-21 · P2 · 实现 · KBEngine API 文档 hover(双语 i18n)**
+  - 交付①嵌入式 API 文档库:KBEngine 模块函数 + Entity 类方法 + 生命周期回调 + 常量(约 150-200 条),每条含签名/摘要(en+zh)/参数说明/返回/示例/引入版本;以官方文档为准人工精校,嵌入 kode-server(单一事实源)。
+  - 交付②hover 渲染:四类触发点——KBEngine.<api> 调用、实体通道(self.allClients/base/cell/cellData)、生命周期钩子定义、def 声明的方法/属性(联动 def 模型显示参数与 Flags);markdown hover=签名代码块+本地化说明+示例。
+  - 交付③i18n:locale 取自 LSP 客户端能力(VSCode 语言设置),zh 缺失条目回退 en;双语字段独立维护。
+  - 验收:四类触发点 hover 正确;中英 locale 切换生效;文档库覆盖率对官方 API 清单 >=95%;单测锁签名与文档一致性(防漂移)。
+  - 协同:与 P0-A 类型桩同源互补(补全=签名,hover=文档);usage 统计(扫描 KBEngine 资产)指导文档优先级排序。
