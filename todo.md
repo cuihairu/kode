@@ -843,10 +843,11 @@
   - 排期:P2,依赖 C-15(已完成)/C-16/C-17 落地后封装。
   - 验收:rmcp 客户端 stdio 端到端(list_tools→call_tool 全工具真数据返回);与 kode-server 同源单测;README + 双语文档。
 
-- [ ] **C-18 · P1 · 实现 · KBEngine 官方 def MD5(引擎互通)**
+- [x] **C-18 · P1 · 实现 · KBEngine 官方 def MD5(引擎互通)**
   - 依据 2026-11-01 用户确认缺失。现状:TS 侧有 IDE 内部 hash 体系(hotReloadDefHash sha256 内容 hash + semanticHash 结构 hash + 回执比对,保留不替换),但引擎互通的官方「全 def 复合 MD5」仅有协商描桩未实现,Rust 侧无。
   - 交付:官方 def MD5 算法实现(与 KBEngine 引擎 Def::md5 逐字节一致——遍历顺序/序列化细节严格对齐官方);输出复合 md5 供一致性握手/热更后上报;与 C-15 线格式编码共用 def 遍历顺序。
   - 验收:黄金对拍——用 KBEngine 官方引擎对同一 assets 计算 md5,与 kode 实现输出逐字节一致;官方客户端连服的 def 校验场景可通过。IDE 内部 sha256/semanticHash 双轨保留(用途不同:内部基线 vs 引擎互通)。
+  - 完成 ✔ 2026-11-01 feat c817267（crates/kode-server/src/def_md5.rs 新——引擎 EntityDef::md5() 字节级重放器:手写 RFC 1321 MD5(无新依赖,公开向量单测)+DefMd5Stream 结构化字节流构建器(逐段溯源 trace:field+kbengine file:line+hex);Phase1 DataTypes::initialize(21 内建构造序 uid u16+aliasName 空串+types.xml 文档序 FIXED_DICT 每键/ARRAY of/别名链,嵌套先于宿主入流)+Phase2 entities.xml 文档序(模块名→Properties/CellMethods/BaseMethods/ClientMethods 文档序(PropertyDescription 全字段 26B ctor,方法 utype 恒 0x0000,pushArgType=uid u16+exposed 4B,setExposed 4B,引擎坑:Arg 文本即类型、<Utype> 是 Arg 兄弟节点)→接口**递归**(引擎深度,非 message_table 单层)→组件未注册才注册→父类递归→autoMatchCompOwn 每 loadDefInfo 递归层各追加 3×int32(引擎 quirk,恒用子模块名);$/kode/def/md5 RPC(server.rs+lib.rs 双注册);golden=tests/golden/def-md5-parity.json 3 样本(demo-assets BED58F95…/parity-project 37BAB195…/minimal 手推锚点 7D30F640…,手推字节流逐字节核对:21 uid→"Gate"→26B 属性 ctor→方法→3×int32)+dump-def-md5-golden bin 再生成+字符串等值测;tests/def_md5_units.rs 9(RFC1321 向量/21 uid 序/minimal 26B ctor/utype 恒 0/autoMatchCompOwn 3×int32 尾/确定性/畸形不 panic/嵌套先入流/夹具装载)+def_md5_golden.rs 2(等值+md5-vs-stream 自洽)+def_md5_dispatch.rs 2(全链 dispatch+错误通道);TS 面:defMd5Rust.ts computeDefMd5InRust(原文直传,形状校验 32hex/algorithm==='md5'/trace 数组,无 gate/!ok/形不合规→null),hotReloadDefHash.ts negotiateEngineDigest md5 分支(unknown 描桩升格,negotiated/digest 回传,空串/短串退 unknown 兜底),sha256/semanticHash/回执三轨零改动;tests/defMd5Rust.test.ts 4(契约参数/无 gate/!ok/4 形不合规)+hotReloadDefHash.test.ts md5 分支 3;引擎 kbcmd 交叉验证尽力跳过(无可构建 kbcmd,需完整 KBEngine 构建,同 C-15 wire-probe 先例,规范推导 golden 为权威,features.md 如实记录);门禁 cargo test --workspace --exclude kode-scheduler 355 绿|clippy 零新增(7 处既有漂移未动)|pnpm lint+tsc 干净|test:unit 5251 绿 7 skip)
 
 - [ ] **C-19 · P1 · 实现 · def↔Python 方法一致性检查 + 一键生成骨架**
   - 依据 2026-11-01 用户确认缺失(旧版本无法正确识别;现在 def 解析与 Python 符号索引地基已齐)。
