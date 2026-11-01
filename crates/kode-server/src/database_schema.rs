@@ -336,6 +336,10 @@ fn create_component_table(table_name: &str, parent_table_name: &str, property: &
         property_path: Some(source_path),
         fields: vec![
             synthetic_field("id", "bigint unsigned", "id", &property.source, Some("PRIMARY")),
+            // 组件子表同属引擎 child 表(isChild(true),entity_table_mysql.cpp:1525):
+            // syncToDB 给全部 child 表追加 parentID 结构列(entity_table_mysql.cpp:
+            // 379-380),与 ARRAY 子表同形——TS 派生已含,此处补齐对齐(parity bug #1)。
+            synthetic_field("parentID", "bigint unsigned", "parentID", &property.source, Some("INDEX")),
             synthetic_field("sm_autoLoad", "tinyint", "autoLoad", &property.source, Some("INDEX")),
         ],
     }

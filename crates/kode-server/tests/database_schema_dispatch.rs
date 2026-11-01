@@ -214,10 +214,12 @@ fn full_fixture_builds_root_and_child_tables() {
     assert_eq!(elem.get("typeLabel").and_then(|v| v.as_str()), Some("float"));
     assert_eq!(elem.get("sourcePath").and_then(|v| v.as_str()), Some("Gold.scores[]"));
 
-    // 组件子表:无 parentID,子键列在组件表内。
+    // 组件子表:引擎同样 isChild(true)(entity_table_mysql.cpp:1525),syncToDB
+    // 给全部 child 表追加 parentID 结构列(:379-380)——与 ARRAY 子表同形,子键
+    // 列在组件表内。
     let weapon = table_named(&result, "tbl_Gold_weapon");
     assert_eq!(weapon.get("kind").and_then(|v| v.as_str()), Some("component"));
-    assert_eq!(field_names(weapon), vec!["id", "sm_autoLoad", "sm_ammo"]);
+    assert_eq!(field_names(weapon), vec!["id", "parentID", "sm_autoLoad", "sm_ammo"]);
 
     // hasCell=true ⇒ hiddenComp(base 无 cell 域)不跳过。
     assert!(table_named(&result, "tbl_Gold_hiddenComp").get("name").is_some());
