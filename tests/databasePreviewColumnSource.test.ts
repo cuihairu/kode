@@ -45,9 +45,9 @@ describe('createPreviewColumnSourceTableResolver(反查面)', () => {
       ],
       getSnapshot: (entityName, rootPath) => snapshots.get(`${entityName}|${rootPath}`) ?? null
     });
-    expect(resolve('tbl_Avatar')).toBe(tableA);
-    expect(resolve('tbl_Bag')).toBe(childB); // 中间快照为 null 不挡后续实体
-    expect(resolve('tbl_Ghost')).toBeNull(); // 全清单 miss = 如实 null
+    expect(resolve('tbl_Avatar', '/ws')).toBe(tableA);
+    expect(resolve('tbl_Bag', '/ws')).toBe(childB); // 中间快照为 null 不挡后续实体
+    expect(resolve('tbl_Ghost', '/ws')).toBeNull(); // 全清单 miss = 如实 null
   });
 
   it('快照为 null 的实体如实跳过,不伪造描述符', () => {
@@ -55,7 +55,26 @@ describe('createPreviewColumnSourceTableResolver(反查面)', () => {
       listEntityRoots: () => [{ rootPath: '/ws', entityName: 'Ghost' }],
       getSnapshot: () => null
     });
-    expect(resolve('tbl_Ghost')).toBeNull();
+    expect(resolve('tbl_Ghost', '/ws')).toBeNull();
+  });
+
+  it('IDE-AUD-011:按作用域根反查——同名表两根部只认作用域根,无根如实 null 不首命中', () => {
+    const tableA = makeTable('tbl_Hero', []);
+    const tableB = makeTable('tbl_Hero', []);
+    const snapshots = new Map([
+      ['Hero|/wsA', { tableIndex: new Map([['tbl_Hero', tableA]]) }],
+      ['Hero|/wsB', { tableIndex: new Map([['tbl_Hero', tableB]]) }]
+    ]);
+    const resolve = createPreviewColumnSourceTableResolver({
+      listEntityRoots: () => [
+        { rootPath: '/wsA', entityName: 'Hero' },
+        { rootPath: '/wsB', entityName: 'Hero' }
+      ],
+      getSnapshot: (entityName, rootPath) => snapshots.get(`${entityName}|${rootPath}`) ?? null
+    });
+    expect(resolve('tbl_Hero', '/wsB')).toBe(tableB); // B 连接只看 B 声明
+    expect(resolve('tbl_Hero', '/wsA')).toBe(tableA); // A 连接只看 A 声明
+    expect(resolve('tbl_Hero', null)).toBeNull(); // 无作用域根:如实未知,不按 workspace 首命中
   });
 });
 
@@ -159,7 +178,7 @@ describe('反查真链路(真注册表 + 真 schema 快照 + 真 def 文件)', (
 
   it('真 def 推导:根表/ARRAY 子表都能反查到,derived 行给真声明行号', () => {
     const resolve = realResolver();
-    const heroTable = resolve('tbl_Hero');
+    const heroTable = resolve('tbl_Hero', root);
     expect(heroTable).not.toBeNull();
     const lines = renderColumnSourceSection([{ name: 'id' }, { name: 'sm_hp' }], 'tbl_Hero', heroTable);
     const text = lines.join('\n');
@@ -167,11 +186,11 @@ describe('反查真链路(真注册表 + 真 schema 快照 + 真 def 文件)', (
     expect(text).toMatch(/sm_hp:源自 def 声明 [^\s]*scripts\/entity_defs\/Hero\.def:3\(hp,TypeUINT32\)/);
     expect(text).toContain('id:引擎合成列');
 
-    const bagTable = resolve('tbl_Hero_bag');
+    const bagTable = resolve('tbl_Hero_bag', root);
     expect(bagTable).not.toBeNull();
     expect(bagTable!.kind).toBe('array');
 
-    expect(resolve('tbl_Ghost')).toBeNull();
+    expect(resolve('tbl_Ghost', root)).toBeNull();
   });
 });
 
@@ -187,13 +206,13 @@ describe('runTablePreviewCommand · 列来源段(编排面)', () => {
     }
   ]);
 
-  const harness = (resolver: (table: string) => TableSchemaDescriptor | null) => {
+  const harness = (resolver: (table: string, scope: string | null) => TableSchemaDescriptor | null) => {
     const channelLines: string[] = [];
     return {
       channelLines,
       run: () =>
         runTablePreviewCommand({
-          resolveConnection: () => ({ profileId: 'p1', config: {} as never }),
+          resolveConnection: () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/ws' }),
           createConnection: async () => ({
             runQuery: async (sql: string) =>
               sql === 'SHOW TABLES'

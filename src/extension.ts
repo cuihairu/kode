@@ -1728,16 +1728,34 @@ export function activate(context: vscode.ExtensionContext) {
       );
     })
   );
-  /** 命令取连接:每次执行按当前活动 profile 重选(引擎配置变更即时生效),只认台账 */
+  /**
+   * 命令取连接:每次执行按当前活动 profile 重选(引擎配置变更即时生效),
+   * 只认台账。IDE-AUD-011:附资产根作用域——列来源/实体表反查按当前连接
+   * 的资产根限定,不跨 workspace 首命中(两项目同名表只看当前连接项目)。
+   * 作用域根 = 活动 profile 的资产根;profile 无自己的根(空串/无 profile
+   * = 工作区默认链,连接配置经 resolveDatabaseInterfaceConfig 全局设置链)
+   * 时回落首个工作区文件夹——工作区默认项目的资产根,与 schema 快照按
+   * 工作区文件夹键的口径一致(schema 快照在给定根下找 scripts/,无引擎
+   * 探针也能建;发现链要 kbengine.xml 才认根,对纯资产 fixture 过严)。
+   */
   const resolveCommandDatabaseConnection = (): {
     profileId: string;
     config: DatabaseInterfaceConfig;
+    assetsRoot: string | null;
   } | null => {
     const profile = resolveActiveProfile(context.workspaceState);
     const profileId = profile?.id ?? WORKSPACE_DEFAULT_DATABASE_PROFILE_ID;
     databaseConnections.selectActive(profileId, profile);
     const config = databaseConnections.getActiveConfig(profileId);
-    return config ? { profileId, config } : null;
+    if (!config) {
+      return null;
+    }
+    const profileRoot = profile?.assetsRoot ?? '';
+    if (profileRoot) {
+      return { profileId, config, assetsRoot: profileRoot };
+    }
+    const firstRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    return { profileId, config, assetsRoot: firstRoot || null };
   };
   // IDE-REV-017 查询生命周期接线:漂移校验/表预览的真实数据库入口(建连+
   // 每条只读查询)都过 databaseQueryLifecycle——时限走 kbengine.databaseQueryTimeoutMs
@@ -1939,19 +1957,19 @@ export function activate(context: vscode.ExtensionContext) {
       runDatabaseQueryCommand('KBEngine 结构影响预览', guard =>
         runSchemaImpactCommand({
           resolveEntityName: () => entityName ?? resolveActiveDefEntityName(),
-          resolveEntityTable: name => {
-            const folders = vscode.workspace.workspaceFolders ?? [];
-            for (const folder of folders) {
-              const snapshot = getDatabaseSchemaSnapshot(name, folder.uri.fsPath);
-              const table =
-                snapshot?.tableIndex.get(`${resolveSchemaTablePrefix()}${name}`) ??
-                snapshot?.tables[0] ??
-                null;
-              if (table) {
-                return table;
-              }
+          // IDE-AUD-011:实体表反查按当前连接的作用域根(scopeRootPath=资产
+          // 根)限定——只认该根内声明,无根/无命中如实 null,不跨 workspace
+          // 首命中(两项目同名实体只认当前连接项目)
+          resolveEntityTable: (name, scopeRootPath) => {
+            if (!scopeRootPath) {
+              return null;
             }
-            return null;
+            const snapshot = getDatabaseSchemaSnapshot(name, scopeRootPath);
+            return (
+              snapshot?.tableIndex.get(`${resolveSchemaTablePrefix()}${name}`) ??
+              snapshot?.tables[0] ??
+              null
+            );
           },
           resolveConnection: resolveCommandDatabaseConnection,
           createConnection: (profileId, config) => lifecycleGuardedFactory(guard, profileId)(config),

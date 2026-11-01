@@ -23,7 +23,15 @@ export interface TablePreviewConnection {
 
 /** UI/连接注入面(vscode 窗口面返回 Thenable,统一 unknown 收) */
 export interface TablePreviewCommandDeps {
-  resolveConnection(): { profileId: string; config: DatabaseInterfaceConfig } | null;
+  /**
+   * 当前连接解析(IDE-AUD-011):assetsRoot=活动 profile 的资产根,列来源
+   * 反查按它限定作用域(两项目同名表只看当前连接项目;无根如实未知)。
+   */
+  resolveConnection(): {
+    profileId: string;
+    config: DatabaseInterfaceConfig;
+    assetsRoot: string | null;
+  } | null;
   createConnection(profileId: string, config: DatabaseInterfaceConfig): Promise<TablePreviewConnection>;
   showQuickPick(items: string[], options: { placeHolder: string }): unknown;
   showInputBox(options: {
@@ -159,15 +167,14 @@ export async function runTablePreviewCommand(deps: TablePreviewCommandDeps): Pro
     deps.channel.appendLine(formatTablePreview(preview, table));
     // IDE-REV-018:表尾追加列来源段——derived 行带声明处 filePath:line
     // (输出面板点击定位),合成/未知列如实说明不带跳转面
+    // IDE-AUD-011:反查按当前连接资产根限定作用域,不跨 workspace 首命中
     for (const line of renderColumnSourceSection(
       preview.columns,
       table,
-      deps.resolveColumnSourceTable(table)
+      deps.resolveColumnSourceTable(table, resolved.assetsRoot)
     )) {
       deps.channel.appendLine(line);
     }
-    // IDE-REV-018:表尾追加列来源段——derived 行带声明处 filePath:line
-    // (输出面板点击定位),合成/未知列如实说明不带跳转面
     deps.channel.show(true);
   } finally {
     await connection.close();

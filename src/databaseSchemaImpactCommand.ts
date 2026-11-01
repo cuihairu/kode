@@ -80,9 +80,21 @@ export interface SchemaImpactConnection {
 /** UI/连接注入面(vscode 窗口面返回 Thenable,统一 unknown 收) */
 export interface SchemaImpactCommandDeps {
   resolveEntityName(): string | undefined;
-  /** 实体名 → def 推导根表描述符(虚拟 schema;读不到 = null) */
-  resolveEntityTable(entityName: string): TableSchemaDescriptor | null;
-  resolveConnection(): { profileId: string; config: DatabaseInterfaceConfig } | null;
+  /**
+   * 实体名 → def 推导根表描述符(虚拟 schema;读不到 = null)。IDE-AUD-011:
+   * 反查按当前连接的作用域根(scopeRootPath=资产根)限定,不跨 workspace
+   * 首命中(两项目同名实体只看当前连接项目)。
+   */
+  resolveEntityTable(
+    entityName: string,
+    scopeRootPath: string | null
+  ): TableSchemaDescriptor | null;
+  /** 当前连接解析(IDE-AUD-011):assetsRoot=活动 profile 的资产根 */
+  resolveConnection(): {
+    profileId: string;
+    config: DatabaseInterfaceConfig;
+    assetsRoot: string | null;
+  } | null;
   createConnection(
     profileId: string,
     config: DatabaseInterfaceConfig
@@ -114,16 +126,18 @@ export async function runSchemaImpactCommand(deps: SchemaImpactCommandDeps): Pro
     }
     entityName = picked;
   }
-  const entityTable = deps.resolveEntityTable(entityName);
-  if (!entityTable) {
-    deps.showWarningMessage(`读取实体定义失败: ${entityName}(未找到 .def 文件)`);
-    return;
-  }
+  // IDE-AUD-011:先取当前连接(拿到资产根作用域),实体表反查按作用域根
+  // 限定——两项目同名实体只看当前连接项目;连接解析失败先如实降级
   const resolved = deps.resolveConnection();
   if (!resolved) {
     deps.showInformationMessage(
       '结构影响预览未执行:读不到引擎数据库配置(检查活动 profile 的引擎根/资产根,或 kbengine.binPath / assetsRoot 设置)'
     );
+    return;
+  }
+  const entityTable = deps.resolveEntityTable(entityName, resolved.assetsRoot);
+  if (!entityTable) {
+    deps.showWarningMessage(`读取实体定义失败: ${entityName}(未找到 .def 文件)`);
     return;
   }
   let connection: SchemaImpactConnection;

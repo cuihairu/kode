@@ -58,7 +58,7 @@ const makeHarness = (options: {
     channelLines: [],
     shown: false,
     deps: {
-      resolveConnection: () => ({ profileId: 'p1', config: {} as never }),
+      resolveConnection: () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/ws' }),
       createConnection: async () => {
         if (options.connectFails) {
           throw new Error(options.connectFails);

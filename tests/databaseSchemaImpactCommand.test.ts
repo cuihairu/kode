@@ -151,7 +151,7 @@ describe('runSchemaImpactCommand(编排面)', () => {
       deps: {
         resolveEntityName: () => options.entityName,
         resolveEntityTable: () => options.entityTable === undefined ? HERO_TABLE : options.entityTable,
-        resolveConnection: () => ({ profileId: 'p1', config: {} as never }),
+        resolveConnection: () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/ws' }),
         createConnection: async () => {
           if (options.connectFails) {
             throw new Error(options.connectFails);
@@ -250,6 +250,18 @@ describe('runSchemaImpactCommand(编排面)', () => {
     expect(harness.infos.at(-1)).toContain('结构影响预览未执行');
     expect(harness.infos.at(-1)).toContain('读不到引擎数据库配置');
     expect(harness.sqlLog).toHaveLength(0);
+  });
+
+  it('IDE-AUD-011:实体表按当前连接资产根解析(作用域根传入,不按 workspace 首命中)', async () => {
+    let scopeArg: string | null | undefined = 'unset';
+    const harness = makeHarness({ entityName: 'Hero' });
+    harness.deps.resolveConnection = () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/wsB' });
+    harness.deps.resolveEntityTable = (name, scope) => {
+      scopeArg = scope;
+      return HERO_TABLE;
+    };
+    await runSchemaImpactCommand(harness.deps);
+    expect(scopeArg).toBe('/wsB'); // 只按当前连接的资产根解析,不跨 workspace 首命中
   });
 
   it('连不上:如实报错带原因,不发查询不写通道', async () => {

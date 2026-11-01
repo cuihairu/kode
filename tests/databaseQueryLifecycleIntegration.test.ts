@@ -240,7 +240,7 @@ describe('runTablePreviewCommand · 守卫连接(编排面)', () => {
       inputPrompts,
       run: () =>
         runTablePreviewCommand({
-          resolveConnection: () => ({ profileId: 'p1', config: {} as never }),
+          resolveConnection: () => ({ profileId: 'p1', config: {} as never, assetsRoot: '/ws' }),
           createConnection: guardConnectionFactoryWithQueryLifecycle(async () => connection, guard),
           showQuickPick: async () => undefined,
           showInputBox: async options => {

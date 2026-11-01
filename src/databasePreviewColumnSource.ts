@@ -20,14 +20,30 @@ export interface ColumnSourceResolverDeps {
   ): { tableIndex: Map<string, TableSchemaDescriptor> } | null;
 }
 
-export type ColumnSourceTableResolver = (tableName: string) => TableSchemaDescriptor | null;
+/**
+ * 表名 → 虚拟 schema 描述符。IDE-AUD-011:反查按当前连接的作用域根
+ * (scopeRootPath=连接的资产根)限定——只认该根内的实体声明;作用域根为
+ * null/未给时如实返回 null(无匹配根显示未知),绝不跨 workspace 根首命中
+ * (两项目同名表不再跳到邻居项目的声明)。
+ */
+export type ColumnSourceTableResolver = (
+  tableName: string,
+  scopeRootPath: string | null
+) => TableSchemaDescriptor | null;
 
-/** 表名 → 虚拟 schema 描述符:按注册清单逐实体反查,首个命中即返回;miss=null */
+/** 表名 → 虚拟 schema 描述符:按作用域根内注册清单逐实体反查,miss=null */
 export function createPreviewColumnSourceTableResolver(
   deps: ColumnSourceResolverDeps
 ): ColumnSourceTableResolver {
-  return tableName => {
+  return (tableName, scopeRootPath) => {
+    if (!scopeRootPath) {
+      // 无作用域根(无活动 profile/资产根):如实未知,不按 workspace 首命中
+      return null;
+    }
     for (const { rootPath, entityName } of deps.listEntityRoots()) {
+      if (rootPath !== scopeRootPath) {
+        continue; // 只认当前连接的资产根
+      }
       const snapshot = deps.getSnapshot(entityName, rootPath);
       const descriptor = snapshot?.tableIndex.get(tableName);
       if (descriptor) {
