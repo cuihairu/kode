@@ -6,6 +6,7 @@ import {
   getScalarChildValue,
   parseDefDocument
 } from './defParser';
+import { parseDefDocumentResponsive } from './defParserWorkerHost';
 import {
   findEntityDefinitionFile,
   getDefinitionEntries,
@@ -27,6 +28,8 @@ import {
   normalizePath,
   parseTypeAliases,
   parseTypeAliasesFromContent,
+  parseTypeAliasesFromDocument,
+  readTypeAliasesContent,
   resolveAliasType,
   resolveDbTypeLabel,
   resolveEntityHasCell,
@@ -35,6 +38,7 @@ import {
   type DatabaseSchemaDerivationInput,
   type DatabaseSchemaDerivationResult,
   type DefSourceRef,
+  type ParseDefPhase,
   type SchemaBuildProgress,
   type RuntimeScope,
   type SchemaVersionRef,
@@ -220,10 +224,13 @@ interface DerivePhase {
   derive: DatabaseSchemaDerivationInput;
   result: { value: DatabaseSchemaDerivationResult | null };
 }
-type SchemaBuildPhase = 'phase-gate' | DerivePhase;
+type SchemaBuildPhase = 'phase-gate' | DerivePhase | ParseDefPhase;
 
 const isDerivePhase = (phase: SchemaBuildPhase): phase is DerivePhase =>
-  typeof phase === 'object' && phase !== null;
+  typeof phase === 'object' && phase !== null && 'derive' in phase;
+
+const isParseDefPhase = (phase: SchemaBuildPhase): phase is ParseDefPhase =>
+  typeof phase === 'object' && phase !== null && 'parseDef' in phase;
 
 /**
  * 2026-10-28 审核整改(SCH-006):构建管线阶段生成器——阶段间 yield 是
@@ -263,8 +270,13 @@ function* schemaBuildPhases(
   const entityContent = entityInput.content;
   yield 'phase-gate'; // 闸点 3:def 读取后
 
-  const entityDocument = parseDefDocument(entityContent);
-  if (!entityDocument.root) {
+  // IDE-REV-039:def 解析移出宿主(异步驱动经 worker,同步驱动直通)——解析段
+  // 是闸 3→4 之间的非让路 CPU 块(vendor fast-xml-parser 整块 opaque,不可内部
+  // yield);驱动把文档写回槽后经 next() 恢复本生成器。
+  const entityDocumentSlot: ParseDefPhase['parseDef']['result'] = { value: null };
+  yield { parseDef: { text: entityContent, label: 'entity', result: entityDocumentSlot } };
+  const entityDocument = entityDocumentSlot.value;
+  if (!entityDocument?.root) {
     return null;
   }
 
@@ -285,7 +297,20 @@ function* schemaBuildPhases(
     typeRegistryConsumed: new Map<string, string>(),
     ports: schemaPorts
   };
-  buildContext.typeAliases = parseTypeAliases(layout.typesXmlPath, buildContext.inputVersions, schemaPorts.readInputFile);
+  // IDE-REV-039:types.xml 解析同经 ParseDefPhase(通常小文件,阈值以下由驱动
+  // 同步解析;机制统一,大 types.xml 同样移出宿主)。
+  const typeAliasesSnapshot = readTypeAliasesContent(
+    layout.typesXmlPath,
+    buildContext.inputVersions,
+    schemaPorts.readInputFile
+  );
+  if (typeAliasesSnapshot) {
+    const typeAliasesSlot: ParseDefPhase['parseDef']['result'] = { value: null };
+    yield { parseDef: { text: typeAliasesSnapshot.content, label: 'types', result: typeAliasesSlot } };
+    buildContext.typeAliases = typeAliasesSlot.value
+      ? parseTypeAliasesFromDocument(typeAliasesSlot.value, typeAliasesSnapshot.filePath)
+      : buildContext.typeAliases;
+  }
   yield 'phase-gate'; // 闸点 4:类型注册表解析后
   const entitySource: DefSourceRef = {
     filePath: defFilePath,
@@ -398,6 +423,9 @@ export function getDatabaseSchemaSnapshot(
     if (isDerivePhase(step.value)) {
       // Rust 闸点直通 TS 推导(同步面不能 await)。
       step.value.result.value = deriveDatabaseTables(step.value.derive);
+    } else if (isParseDefPhase(step.value)) {
+      // IDE-REV-039:def 解析直通(同步面不能 await;共享缓存,行为与原直调一致)。
+      step.value.parseDef.result.value = parseDefDocument(step.value.parseDef.text);
     }
     step = iterator.next();
   }
@@ -558,6 +586,18 @@ export async function buildDatabaseSchemaSnapshotAsync(
       } catch {
         step.value.result.value = deriveDatabaseTables(step.value.derive);
       }
+    } else if (isParseDefPhase(step.value)) {
+      // IDE-REV-039:def 解析移出宿主线程——大文本经 worker(阈值以下/产物
+      // 缺失/在途超限/worker 崩溃一律兜底同步解析,绝不炸构建)。解析段是宿主
+      // 真实让点(让给 worker),解析后重置 sliceStart:worker 往返不计入下一
+      // 连续片,量规只记宿主自身连续执行。
+      try {
+        step.value.parseDef.result.value =
+          await parseDefDocumentResponsive(step.value.parseDef.text, step.value.parseDef.label);
+      } catch {
+        step.value.parseDef.result.value = parseDefDocument(step.value.parseDef.text);
+      }
+      progress.sliceStart = Date.now();
     }
   }
 }

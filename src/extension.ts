@@ -3,6 +3,7 @@ import { bumpRootConfigGeneration } from './rootConfigGeneration';
 import { createRootRemovalNotifier } from './rootRemovalEvents';
 import { createSharedFileEventMerger } from './sharedFileEvents';
 import { disposePythonParserWorker, getPythonParserWorkerGauge } from './pythonParserWorkerHost';
+import { disposeDefParserWorker } from './defParserWorkerHost';
 import { registerTypeStorageIndexWatchers } from './typeStorageIndexWatchers';
 import { importExistingProject } from './projectImport';
 import { createMinimalProject } from './projectCreate';
@@ -4683,6 +4684,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 export function deactivate() {
   disposePythonParserWorker();
+  // IDE-REV-039:def 解析 worker 一并停用(在途解析拒绝,由调用方同步兜底)
+  disposeDefParserWorker();
   // PR2:停用即释放全部文档快照(进程回收前不留缓冲区副本)
   releaseAllDocumentSnapshots();
   console.log('KBEngine Language Extension is now deactivated!');

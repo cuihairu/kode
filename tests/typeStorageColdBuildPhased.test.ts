@@ -114,9 +114,35 @@ describe('IDE-REV-013:type storage 冷索引逐实体分阶段', () => {
     // ——整块 831ms 的旧码只有实体边界一次让路(yields=1),真让路面应为多次
     // (属性循环按属性切片让路),预算不在整实体之后才检查。
     expect(outcome.yields).toBeGreaterThan(1);
-    // 注:单文件大 def 的 parseDefDocument(fast-xml-parser,12k 行≈185ms)仍是
-    // 共享 XML 解析器的整块阻塞,不属属性递归让路面——深组件链测试证
-    // maxSliceMs 入预算(现实多文件场景),解析器分片单列后续审计项。
+    // 注:本 def 全为持久属性,最大连续片由 6000 列的推导段(buildMysqlTableSchemas)
+    // 主导(≈400ms),属 F13 推导成本非解析段;解析段排除见下方 IDE-REV-039 用例。
+  });
+
+  it('大 def 解析段移出宿主不入量规:ParseDefPhase 交驱动,解析后重置 sliceStart(IDE-REV-039)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rev39-'));
+    temporaryDirectories.push(root);
+    fs.mkdirSync(path.join(root, 'scripts/entity_defs'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'scripts/entities.xml'), '<root>\n  <Gold/>\n</root>\n', 'utf8');
+    fs.writeFileSync(path.join(root, 'scripts/entity_defs/types.xml'),
+      '<root>\n  <ITEM_ID> UINT16 </ITEM_ID>\n</root>\n', 'utf8');
+    // 12000 非持久属性:大 def(≈48k 行/1.1MB,解析段 200-400ms)但零持久列——
+    // 推导段快,解析段是唯一大块。异步驱动经 ParseDefPhase 把解析交 worker
+    // (移出宿主;worker 不可用兜底同步),解析后重置 sliceStart:解析段不
+    // 计入最大连续片,量规只记宿主自身连续执行。旧码(解析整块在闸 3→4 间
+    // 同步跑)该片 200-400ms 直接入 maxSliceMs。
+    const propCount = 12000;
+    const props = Array.from({ length: propCount }, (_, i) => [
+      `    <prop${i}>`,
+      '      <Type>ITEM_ID</Type>',
+      '      <Persistent>false</Persistent>',
+      `    </prop${i}>`
+    ]).flat();
+    fs.writeFileSync(path.join(root, 'scripts/entity_defs', 'Gold.def'),
+      ['<root>', '  <Properties>', ...props, '  </Properties>', '</root>'].join('\n'), 'utf8');
+    workspace.workspaceFolders = [{ uri: { toString: () => `file://${root}`, fsPath: root }, name: 'ws', index: 0 }];
+    const outcome = await buildTypeStorageUsageIndexPhased(root, { entityBudgetMs: 25 });
+    expect(outcome.yields).toBeGreaterThan(1); // 属性循环照常按预算让路
+    expect(outcome.maxSliceMs).toBeLessThan(150); // 解析段(200-400ms)不入量规
   });
 
   it('深组件链让路:递归不整块阻塞,最大连续片入预算(F13)', async () => {

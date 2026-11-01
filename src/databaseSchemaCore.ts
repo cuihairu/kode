@@ -244,32 +244,47 @@ export function deriveDatabaseTables(
   const tableIndex = new Map<string, TableSchemaDescriptor>(tables.map(table => [table.name, table]));
   return { tables, tableIndex };
 }
-export function parseTypeAliases(
+/** IDE-REV-039:types.xml 读取+清单记账(与解析分离——生成器把内容解析经
+ * ParseDefPhase 让给 worker;事件面/直调面仍走 parseTypeAliases 整段)。 */
+export function readTypeAliasesContent(
   typesXmlPath: string | null,
   inputVersions?: Map<string, SchemaVersionRef>,
   readInputFile?: (filePath: string) => SchemaInputSnapshot | null
-): Map<string, TypeAliasEntry> {
+): { content: string; filePath: string } | null {
   if (!typesXmlPath) {
-    return new Map<string, TypeAliasEntry>();
+    return null;
   }
 
   // IDE-SNP-003:types.xml 同一共享快照(未保存别名修改进 schema);R2-F24:
   // 读取经注入的端口,适配层传 sharedFileSnapshot 包装,Node 直调传自备读取
   const snapshot = readInputFile ? readInputFile(typesXmlPath) : null;
   if (!snapshot) {
-    return new Map<string, TypeAliasEntry>();
+    return null;
   }
   if (inputVersions) {
     inputVersions.set(typesXmlPath, { source: snapshot.source, version: snapshot.version });
   }
-  return parseTypeAliasesFromContent(snapshot.content, typesXmlPath);
+  return { content: snapshot.content, filePath: typesXmlPath };
 }
 
-/** IDE-SCH-004:内容面解析(注册表失效比对重用——事件时对当前内容解析一遍,
- * 与构建期同一分类规则,不落盘不记清单) */
-export function parseTypeAliasesFromContent(content: string, filePath: string): Map<string, TypeAliasEntry> {
+export function parseTypeAliases(
+  typesXmlPath: string | null,
+  inputVersions?: Map<string, SchemaVersionRef>,
+  readInputFile?: (filePath: string) => SchemaInputSnapshot | null
+): Map<string, TypeAliasEntry> {
+  const snapshot = readTypeAliasesContent(typesXmlPath, inputVersions, readInputFile);
+  return snapshot
+    ? parseTypeAliasesFromContent(snapshot.content, snapshot.filePath)
+    : new Map<string, TypeAliasEntry>();
+}
+
+/** IDE-REV-039:已解析文档面(生成器经 ParseDefPhase 让 worker 解析后调用;
+ * 与 parseTypeAliasesFromContent 同一分类规则)。 */
+export function parseTypeAliasesFromDocument(
+  document: DefDocument,
+  filePath: string
+): Map<string, TypeAliasEntry> {
   const aliases = new Map<string, TypeAliasEntry>();
-  const document = parseDefDocument(content);
   if (!document.root) {
     return aliases;
   }
@@ -291,6 +306,12 @@ export function parseTypeAliasesFromContent(content: string, filePath: string): 
   }
 
   return aliases;
+}
+
+/** IDE-SCH-004:内容面解析(注册表失效比对重用——事件时对当前内容解析一遍,
+ * 与构建期同一分类规则,不落盘不记清单) */
+export function parseTypeAliasesFromContent(content: string, filePath: string): Map<string, TypeAliasEntry> {
+  return parseTypeAliasesFromDocument(parseDefDocument(content), filePath);
 }
 
 /** IDE-SCH-004:结构别名的稳定摘要——元素名+排序属性+子树(纯空白文本节点
@@ -409,13 +430,29 @@ function* maybeYieldForBudget(progress: SchemaBuildProgress | undefined): Genera
   }
 }
 
+// IDE-REV-039:def XML 解析相位(回填槽,镜像 DerivePhase)——生成器把解析输入
+// 交给驱动(异步驱动 await worker 移出宿主、同步驱动直通 parseDefDocument),
+// 驱动把文档写回槽后经 next() 恢复生成器,生成器从槽读文档。单次构建一个解析
+// 相位恰对应一次解析,槽无需跨构建共享。DefDocument 是纯 plain object 图
+// (parent/document 回引成环),structured clone 支持环与共享引用。
+export interface ParseDefPhase {
+  parseDef: {
+    text: string;
+    label: string;
+    result: { value: DefDocument | null };
+  };
+}
+
+/** schema 构建生成器的让路相位:阶段闸或 def 解析(两者都让驱动处理)。 */
+export type SchemaYieldPhase = 'phase-gate' | ParseDefPhase;
+
 export function* collectPersistentPropertiesForDefinition(
   definitionName: string,
   filePath: string,
   category: DefinitionCategory,
   context: BuildContext,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
+): Generator<SchemaYieldPhase, PersistentPropertyDescriptor[], void> {
   const normalizedPath = normalizePath(filePath);
   if (context.visitedDefinitions.has(normalizedPath)) {
     return [];
@@ -427,8 +464,12 @@ export function* collectPersistentPropertiesForDefinition(
     return [];
   }
 
-  const document = parseDefDocument(content);
-  const root = document.root;
+  // IDE-REV-039:def 解析移出宿主(异步驱动经 worker,同步驱动直通)——解析段
+  // 是组件/接口递归内的非让路 CPU 块,交驱动解析后从槽读回文档。
+  const documentSlot: ParseDefPhase['parseDef']['result'] = { value: null };
+  yield { parseDef: { text: content, label: 'definition', result: documentSlot } };
+  const document = documentSlot.value;
+  const root = document?.root;
   if (!root) {
     return [];
   }
@@ -482,7 +523,7 @@ function* mergeInterfaces(
   category: DefinitionCategory,
   context: BuildContext,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', void, void> {
+): Generator<SchemaYieldPhase, void, void> {
   const interfacesNode = getDirectChildElement(root, 'Interfaces');
   if (!interfacesNode) {
     return;
@@ -527,7 +568,7 @@ function* mergeComponents(
   category: DefinitionCategory,
   context: BuildContext,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', void, void> {
+): Generator<SchemaYieldPhase, void, void> {
   const componentsNode = getDirectChildElement(root, 'Components');
   if (!componentsNode) {
     return;
@@ -581,7 +622,7 @@ function* parsePropertySection(
   definitionName: string,
   context: BuildContext,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
+): Generator<SchemaYieldPhase, PersistentPropertyDescriptor[], void> {
   if (!sectionNode) {
     return [];
   }
@@ -615,7 +656,7 @@ function* parsePropertyNode(
   context: BuildContext,
   progress?: SchemaBuildProgress,
   parentPath = ''
-): Generator<'phase-gate', PersistentPropertyDescriptor | null, void> {
+): Generator<SchemaYieldPhase, PersistentPropertyDescriptor | null, void> {
   const rawTypeName = getScalarChildValue(propertyNode, 'Type');
   if (!rawTypeName) {
     return null;
@@ -708,7 +749,7 @@ function* parseArrayElementDescriptor(
   propertyPath: string,
   parentDescriptor: PersistentPropertyDescriptor,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', PersistentPropertyDescriptor | undefined, void> {
+): Generator<SchemaYieldPhase, PersistentPropertyDescriptor | undefined, void> {
   const ofNode = getDirectChildElement(containerNode, 'of');
   const rawElementTypeName = getScalarChildValue(containerNode, 'of');
   if (!containerNode || !ofNode || !rawElementTypeName) {
@@ -792,7 +833,7 @@ function* parseFixedDictChildren(
   propertyPath: string,
   parentDescriptor: PersistentPropertyDescriptor,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
+): Generator<SchemaYieldPhase, PersistentPropertyDescriptor[], void> {
   const propertiesNode = getDirectChildElement(containerNode, 'Properties');
   if (!propertiesNode) {
     return [];
@@ -905,7 +946,7 @@ function* getPersistentComponentProperties(
   componentTypeName: string,
   context: BuildContext,
   progress?: SchemaBuildProgress
-): Generator<'phase-gate', PersistentPropertyDescriptor[], void> {
+): Generator<SchemaYieldPhase, PersistentPropertyDescriptor[], void> {
   const cached = context.componentCache.get(componentTypeName);
   if (cached) {
     return clonePersistentProperties(cached);
