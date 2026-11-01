@@ -34,7 +34,7 @@ export function classifyHttpDelivery(result: HttpDeliveryLike): HttpDeliveryVerd
   return { outcome: 'failed', detail: `HTTP 状态 ${result.status}:非 2xx 不算送达` };
 }
 
-/** 分类即入账:结果连同 detail 落到 (rootId,targetId,file) 键上 */
+/** 分类即入账:结果连同 detail 落到 (rootId,targetId,file) 键上。新发送必落账(带 attempt 的拒写分支不在此路径) */
 export function recordHttpDelivery(
   store: HotReloadTargetStateStore,
   key: HotReloadTargetKey,
@@ -43,5 +43,6 @@ export function recordHttpDelivery(
   options: { now?: number } = {}
 ): HotReloadDeliveryRecord {
   const { outcome, detail } = classifyHttpDelivery(result);
-  return store.record(key, file, outcome, { detail, now: options.now });
+  const record = store.record(key, file, outcome, { detail, now: options.now });
+  return record as HotReloadDeliveryRecord;
 }

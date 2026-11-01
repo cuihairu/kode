@@ -108,7 +108,52 @@ describe('HotReloadTargetStateStore(双维隔离台账)', () => {
       file: '/x.py',
       outcome: 'failed',
       detail: 'boom',
-      recordedAt: 7
+      recordedAt: 7,
+      attempt: 1
     });
+  });
+
+  it('重发=新一次投递:同目标同文件推进代际', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const key = { rootId: 'r', targetId: 't' };
+    const file = '/x.py';
+
+    const first = store.record(key, file, 'failed', { detail: '第一次失败' });
+    const second = store.record(key, file, 'sent-unverified', {});
+    expect(first?.attempt).toBe(1);
+    expect(second?.attempt).toBe(2);
+    expect(store.get(key, file)?.attempt).toBe(2);
+    expect(store.get(key, file)?.outcome).toBe('sent-unverified');
+  });
+
+  it('IDE-AUD-005:旧代写回被拒——绑定过时 attempt 不改新记录', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const key = { rootId: 'r', targetId: 't' };
+    const file = '/x.py';
+
+    store.record(key, file, 'failed', { detail: '第一次失败' }); // attempt 1
+    store.record(key, file, 'failed', { detail: '第二次失败' }); // attempt 2
+
+    // 第一次发送的旧代回执/注解/结算写回:被拒,记录原样不动
+    const stale = store.record(key, file, 'applied', { attempt: 1, detail: '旧回执' });
+    expect(stale).toBeUndefined();
+    expect(store.get(key, file)?.outcome).toBe('failed');
+    expect(store.get(key, file)?.attempt).toBe(2);
+    expect(store.get(key, file)?.detail).toBe('第二次失败');
+
+    // 当前代写回照常
+    const current = store.record(key, file, 'applied', { attempt: 2, detail: '当前回执' });
+    expect(current?.outcome).toBe('applied');
+    expect(current?.attempt).toBe(2);
+    expect(current?.detail).toBe('当前回执');
+  });
+
+  it('IDE-AUD-005:无当前记录时带 attempt 写回被拒(记录已清),不凭空造记录', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const key = { rootId: 'r', targetId: 't' };
+    const file = '/x.py';
+
+    expect(store.record(key, file, 'applied', { attempt: 3 })).toBeUndefined();
+    expect(store.get(key, file)).toBeUndefined();
   });
 });

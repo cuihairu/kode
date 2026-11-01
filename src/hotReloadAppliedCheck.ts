@@ -16,12 +16,19 @@ import type { HotReloadDeliveryRecord, HotReloadTargetKey, HotReloadTargetStateS
 
 export type AppliedReceiptVerdict =
   | { kind: 'applied'; digest: string }
-  | { kind: 'not-applied'; reason: string };
+  | { kind: 'not-applied'; reason: string }
+  | { kind: 'stale' };
 
 export interface AppliedVerifyOptions {
   /** 所发文件原始内容(digest 比对基准) */
   sentContent: string;
   now?: number;
+  /**
+   * 所属发送代际(IDE-AUD-005):绑定该回执属于哪次发送。与当前记录代际
+   * 不符=旧代异步回执,绝不写回(返回 stale);未给(纯单测/无代际面)
+   * 走旧行为直接写回。
+   */
+  attempt?: number;
 }
 
 /** 逐字段核验:协议符合且 digest 与所发内容一致才 applied */
@@ -59,10 +66,15 @@ export function verifyAppliedReceipt(
   if (receipt.digest !== expected) {
     return { kind: 'not-applied', reason: '回执 digest 与所发内容不符:可疑回执不升格' };
   }
-  store.record(key, file, 'applied', {
+  const updated = store.record(key, file, 'applied', {
     detail: `回执 applied 且 digest 一致(${expected.slice(0, 12)}…):已应用`,
-    now: options.now
+    now: options.now,
+    attempt: options.attempt
   });
+  // IDE-AUD-005:绑定代际写回被拒=更新的发送已接管该记录,旧代回执作废
+  if (!updated) {
+    return { kind: 'stale' };
+  }
   return { kind: 'applied', digest: expected };
 }
 

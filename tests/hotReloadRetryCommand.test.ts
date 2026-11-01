@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
@@ -347,6 +348,128 @@ describe('resendHotReloadTarget(单目标重发器)', () => {
     expect(result.ok).toBe(true);
     expect(runAction).toHaveBeenCalledWith('热更', undefined);
     expect(store.get(KEY_BAD, FILE_A)?.outcome).toBe('failed');
+  });
+
+  it('IDE-AUD-005:第一次重发的核验晚到,不翻第二次重发的失败(旧代回执作废)', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    store.record(KEY_BAD, FILE_A, 'failed', { detail: '原失败' });
+    const pendingReads: Array<(value: string | null) => void> = [];
+    const content = 'print(1)';
+    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+    let sendCount = 0;
+    const runAction = vi.fn(
+      async (_name: string, sendOptions?: { onHttpResponse?: (r: HotReloadHttpResponse) => void }) => {
+        sendCount += 1;
+        // 第一次重发:200 + 有效 applied 回执——核验挂起;第二次重发:500 失败
+        if (sendCount === 1) {
+          sendOptions?.onHttpResponse?.({
+            status: 200,
+            body: JSON.stringify({ status: 'applied', file: FILE_A, digest })
+          });
+        } else {
+          sendOptions?.onHttpResponse?.({ status: 500, body: '' });
+        }
+        return true;
+      }
+    );
+    const wiring = {
+      store,
+      resolveTargetId: () => null,
+      resolveRootId: () => '/ws',
+      readFileContent: (): Promise<string | null> =>
+        new Promise(resolve => {
+          pendingReads.push(resolve);
+        })
+    };
+
+    const first = await resendHotReloadTarget(store, KEY_BAD, {
+      runAction,
+      resolveActionNameForTarget: () => '热更',
+      targetState: wiring,
+      timers: makeTimers().timers,
+      settleHandles: new Set<unknown>()
+    });
+    expect(first.ok).toBe(true);
+    expect(store.get(KEY_BAD, FILE_A)?.outcome).toBe('sent-unverified');
+    expect(pendingReads).toHaveLength(1);
+
+    const second = await resendHotReloadTarget(store, KEY_BAD, {
+      runAction,
+      resolveActionNameForTarget: () => '热更',
+      targetState: wiring,
+      timers: makeTimers().timers,
+      settleHandles: new Set<unknown>()
+    });
+    expect(second.ok).toBe(true);
+    expect(store.get(KEY_BAD, FILE_A)?.outcome).toBe('failed');
+
+    // 释放第一次的核验(内容可读):旧代回执不得翻新代的失败
+    pendingReads[0]?.(content);
+    await flush();
+    const record = store.get(KEY_BAD, FILE_A);
+    expect(record?.outcome).toBe('failed');
+    expect(record?.detail ?? '').not.toContain('digest 一致');
+  });
+
+  it('IDE-AUD-005:第一次重发的旧核验窗口结算,不追注新一次重发的记录(旧超时不改新记录)', async () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    store.record(KEY_BAD, FILE_A, 'failed', { detail: '原失败' });
+    // 两次重发各持自己的时钟——第一次的结算定时器可以在第二次记录之后才到点
+    const clockOne = makeTimers();
+    const clockTwo = makeTimers();
+    let clockOneNow = 2000;
+    let clockTwoNow = 3000;
+    let sendCount = 0;
+    const runAction = vi.fn(
+      async (_name: string, sendOptions?: { onHttpResponse?: (r: HotReloadHttpResponse) => void }) => {
+        sendCount += 1;
+        // 两次都 200 + 非 applied 回执:保持未确认,各自进核验窗口
+        sendOptions?.onHttpResponse?.({ status: 200, body: 'ok' });
+        return true;
+      }
+    );
+    const wiring = {
+      store,
+      resolveTargetId: () => null,
+      resolveRootId: () => '/ws',
+      readFileContent: async (): Promise<string | null> => 'print(1)'
+    };
+
+    const first = await resendHotReloadTarget(store, KEY_BAD, {
+      runAction,
+      resolveActionNameForTarget: () => '热更',
+      targetState: wiring,
+      timers: clockOne.timers,
+      settleHandles: new Set<unknown>(),
+      now: () => clockOneNow
+    });
+    expect(first.ok).toBe(true);
+    await flush();
+    expect(store.get(KEY_BAD, FILE_A)?.outcome).toBe('sent-unverified');
+
+    const second = await resendHotReloadTarget(store, KEY_BAD, {
+      runAction,
+      resolveActionNameForTarget: () => '热更',
+      targetState: wiring,
+      timers: clockTwo.timers,
+      settleHandles: new Set<unknown>(),
+      now: () => clockTwoNow
+    });
+    expect(second.ok).toBe(true);
+    await flush();
+    const before = store.get(KEY_BAD, FILE_A);
+    expect(before?.outcome).toBe('sent-unverified');
+    expect(before?.detail ?? '').not.toContain('核验超时');
+
+    // 第一次的窗口到点(第二次自己的窗口还远未到):旧代结算不得把超时
+    // 注解追到新一次重发的记录上
+    clockOneNow = 2000 + 10_001;
+    clockOne.tick();
+    await flush();
+
+    const record = store.get(KEY_BAD, FILE_A);
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.detail ?? '').not.toContain('核验超时');
   });
 });
 

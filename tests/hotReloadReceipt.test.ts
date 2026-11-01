@@ -116,4 +116,20 @@ describe('applyAcceptedReceipt(升格即入账)', () => {
     expect(store.get(keyA, EXPECTATION.file)?.outcome).toBe('accepted');
     expect(store.get(keyB, EXPECTATION.file)?.outcome).toBe('sent-unverified');
   });
+
+  it('IDE-AUD-005:旧代 accepted 回执不写回——attempt 与当前记录不符,状态原样', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    const key = { rootId: 'r', targetId: 'cellapp#a' };
+    store.record(key, EXPECTATION.file, 'failed', { detail: '新失败' }); // attempt 1
+    store.record(key, EXPECTATION.file, 'failed', { detail: '更新失败' }); // attempt 2
+
+    const verdict = applyAcceptedReceipt(store, key, EXPECTATION.file, JSON.stringify({ status: 'accepted', file: EXPECTATION.file }), {
+      attempt: 1 // 旧代
+    });
+
+    expect(verdict.kind).toBe('accepted'); // 协议本身合规(回执解读不受代际影响)
+    expect(store.get(key, EXPECTATION.file)?.outcome).toBe('failed');
+    expect(store.get(key, EXPECTATION.file)?.attempt).toBe(2);
+    expect(store.get(key, EXPECTATION.file)?.detail).toBe('更新失败');
+  });
 });

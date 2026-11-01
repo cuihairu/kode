@@ -105,6 +105,22 @@ describe('verifyAppliedReceipt(可信 digest 或已验证回执才 applied)', ()
     expect(store.get(KEY, FILE)?.outcome).toBe('applied');
     expect(store.get(keyB, FILE)?.outcome).toBe('accepted');
   });
+
+  it('IDE-AUD-005:旧代回执不写回——attempt 与当前记录不符 → stale,状态原样', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1 });
+    store.record(KEY, FILE, 'failed', { detail: '新失败' }); // attempt 1(当前代)
+    store.record(KEY, FILE, 'failed', { detail: '更新失败' }); // attempt 2
+
+    const verdict = verifyAppliedReceipt(store, KEY, FILE, appliedBody(), {
+      sentContent: CONTENT,
+      attempt: 1 // 旧代
+    });
+
+    expect(verdict.kind).toBe('stale');
+    expect(store.get(KEY, FILE)?.outcome).toBe('failed');
+    expect(store.get(KEY, FILE)?.attempt).toBe(2);
+    expect(store.get(KEY, FILE)?.detail).toBe('更新失败');
+  });
 });
 
 describe('settleAppliedStatus(超时仍未确认)', () => {

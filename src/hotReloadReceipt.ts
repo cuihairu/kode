@@ -53,20 +53,22 @@ export function parseHotReloadAcceptedReceipt(
 
 /**
  * 升格即入账:协议符合 → 该 (rootId,targetId,file) 记录升格
- * accepted;不符合 → 台账原样保留未确认(不动既有记录)。
+ * accepted;不符合 → 台账原样保留未确认(不动既有记录)。带 attempt
+ * (IDE-AUD-005)=绑定所属发送代际写回,记录已换代则拒写不动。
  */
 export function applyAcceptedReceipt(
   store: HotReloadTargetStateStore,
   key: HotReloadTargetKey,
   file: string,
   body: string,
-  options: { now?: number } = {}
+  options: { now?: number; attempt?: number } = {}
 ): HotReloadReceiptParse {
   const verdict = parseHotReloadAcceptedReceipt(body, { file, targetId: key.targetId });
   if (verdict.kind === 'accepted') {
     store.record(key, file, 'accepted', {
       detail: '回执 accepted:file 回显一致(应用仍需 HOT-004 核验)',
-      now: options.now
+      now: options.now,
+      attempt: options.attempt
     });
   }
   return verdict;

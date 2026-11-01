@@ -222,6 +222,61 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     expect(record?.detail ?? '').not.toContain('applied');
   });
 
+  it('IDE-AUD-005(F08):连续发送,第二次失败后第一次的 applied 核验不改新记录', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 5 });
+    const pendingReads: Array<(value: string | null) => void> = [];
+    const digest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+    let fakeNow = 1000;
+    let sendCount = 0;
+    enableHotReload();
+    setupHotReload(
+      makeContext(),
+      (_name, sendOptions) => {
+        sendCount += 1;
+        // 第一次:200 + 有效 applied 回执(digest 与所发一致)——核验挂起;
+        // 第二次:500(失败)——新代接管该记录
+        if (sendCount === 1) {
+          sendOptions?.onHttpResponse?.({ status: 200, body: appliedBody(digest) });
+        } else {
+          sendOptions?.onHttpResponse?.({ status: 500, body: '' });
+        }
+        return true;
+      },
+      {
+        timers: clock.timers,
+        now: () => fakeNow,
+        targetState: {
+          store,
+          resolveTargetId: () => 't1',
+          resolveRootId: () => '/ws',
+          // 内容读取挂起=第一次的核验在途(测试控制释放时点)
+          readFileContent: () =>
+            new Promise(resolve => {
+              pendingReads.push(resolve);
+            })
+        }
+      }
+    );
+    // 第一次发送:响应已到(记录 sent-unverified),内容读取挂起=核验在途
+    fireOne();
+    clock.tick();
+    await flush();
+    expect(store.get(KEY, FILE)?.outcome).toBe('sent-unverified');
+    expect(pendingReads).toHaveLength(1);
+    // 第二次发送:HTTP 500 → failed(新代)
+    fireOne();
+    clock.tick();
+    await flush();
+    expect(store.get(KEY, FILE)?.outcome).toBe('failed');
+    // 释放第一次的核验(内容可读):旧代回执不得翻新代的失败
+    pendingReads[0]?.(CONTENT);
+    await flush();
+    const record = store.get(KEY, FILE);
+    expect(record?.outcome).toBe('failed');
+    expect(record?.detail ?? '').not.toContain('digest 一致');
+  });
+
   it('源锁:extension.ts 接内容读取口,hotReload 接双证核验与窗口结算', () => {
     const read = (name: string): string => readFileSync(path.join(__dirname, '..', 'src', name), 'utf8');
     const extension = read('extension.ts');

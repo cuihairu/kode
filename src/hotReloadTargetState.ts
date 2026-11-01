@@ -33,6 +33,12 @@ export interface HotReloadDeliveryRecord {
   detail?: string;
   /** 记录时刻(注入时钟,ms) */
   recordedAt: number;
+  /**
+   * 发送代际(IDE-AUD-005):同 (rootId,targetId,file) 每次新发送递增。
+   * 回执/注解/核验结算都绑定所属代际写回——旧代异步回执绝不改新代记录
+   * (否则晚到的第一次核验会把第二次的失败翻成 applied)。
+   */
+  attempt: number;
 }
 
 export interface HotReloadTargetStateDeps {
@@ -46,27 +52,61 @@ export interface HotReloadTargetStateDeps {
 export class HotReloadTargetStateStore {
   private readonly now: () => number;
   private readonly targets = new Map<string, Map<string, Map<string, HotReloadDeliveryRecord>>>();
+  /** IDE-AUD-005:发送代际计数——(rootId::targetId::file) → 已发生的发送次数 */
+  private readonly attempts = new Map<string, number>();
 
   constructor(deps: HotReloadTargetStateDeps) {
     this.now = deps.now;
   }
 
+  /**
+   * 落一条记录。两种写法:
+   * - 不带 options.attempt = 新发送(重发=新一次投递):推进代际并覆盖为最新一次;
+   * - 带 options.attempt = 绑定所属发送代际的写回(回执/注解/核验结算):
+   *   当前记录已换代(更新的发送在途)则拒绝——返回 undefined,记录原样不动,
+   *   旧代异步结果绝不改新代记录(IDE-AUD-005)。
+   */
   record(
     key: HotReloadTargetKey,
     file: string,
     outcome: HotReloadDeliveryOutcome,
-    options: { detail?: string; now?: number } = {}
-  ): HotReloadDeliveryRecord {
+    options: { detail?: string; now?: number; attempt?: number } = {}
+  ): HotReloadDeliveryRecord | undefined {
+    const attemptKey = `${buildHotReloadTargetKeyId(key)}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${file}`;
+    const current = this.get(key, file);
+    if (options.attempt !== undefined) {
+      if (!current || current.attempt !== options.attempt) {
+        return undefined;
+      }
+      const updated: HotReloadDeliveryRecord = {
+        ...current,
+        outcome,
+        recordedAt: options.now ?? current.recordedAt
+      };
+      if (options.detail !== undefined) {
+        updated.detail = options.detail;
+      }
+      this.put(key, file, updated);
+      return updated;
+    }
+    const attempt = (this.attempts.get(attemptKey) ?? 0) + 1;
+    this.attempts.set(attemptKey, attempt);
     const record: HotReloadDeliveryRecord = {
       rootId: key.rootId,
       targetId: key.targetId,
       file,
       outcome,
+      attempt,
       recordedAt: options.now ?? this.now()
     };
     if (options.detail !== undefined) {
       record.detail = options.detail;
     }
+    this.put(key, file, record);
+    return record;
+  }
+
+  private put(key: HotReloadTargetKey, file: string, record: HotReloadDeliveryRecord): void {
     let byTarget = this.targets.get(key.rootId);
     if (!byTarget) {
       byTarget = new Map();
@@ -78,7 +118,6 @@ export class HotReloadTargetStateStore {
       byTarget.set(key.targetId, byFile);
     }
     byFile.set(file, record);
-    return record;
   }
 
   get(key: HotReloadTargetKey, file: string): HotReloadDeliveryRecord | undefined {

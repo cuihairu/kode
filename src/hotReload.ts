@@ -252,7 +252,8 @@ export function setupHotReload(
         wiring: HotReloadTargetStateWiring,
         key: { rootId: string; targetId: string },
         file: string,
-        reason: string
+        reason: string,
+        attempt: number
       ): void => {
         const current = wiring.store.get(key, file);
         if (!current || current.outcome !== 'sent-unverified' || (current.detail ?? '').includes(reason)) {
@@ -260,19 +261,26 @@ export function setupHotReload(
         }
         wiring.store.record(key, file, 'sent-unverified', {
           detail: `${current.detail} | ${reason}`,
-          now: current.recordedAt
+          now: current.recordedAt,
+          attempt
         });
       };
-      // 核验窗口到点结算:仍未确认只注解超时(不冒充失败也不冒充 applied)
+      // 核验窗口到点结算:仍未确认只注解超时(不冒充失败也不冒充 applied);
+      // IDE-AUD-005:结算绑定所属发送代际,记录已换代(更新的发送在途)则不动
       const scheduleAppliedSettle = (
         wiring: HotReloadTargetStateWiring,
         key: { rootId: string; targetId: string },
         file: string,
-        sentAt: number
+        sentAt: number,
+        attempt: number
       ): void => {
         const handle = timers.set(() => {
           settleHandles.delete(handle);
-          const verdict = settleAppliedStatus(wiring.store.get(key, file), {
+          const current = wiring.store.get(key, file);
+          if (!current || current.attempt !== attempt) {
+            return;
+          }
+          const verdict = settleAppliedStatus(current, {
             deadlineMs: sentAt + HOT_RELOAD_APPLIED_SETTLE_MS,
             now
           });
@@ -281,7 +289,8 @@ export function setupHotReload(
               wiring,
               key,
               file,
-              `applied 核验超时(${Math.round(HOT_RELOAD_APPLIED_SETTLE_MS / 1000)}s 窗口):保持未确认`
+              `applied 核验超时(${Math.round(HOT_RELOAD_APPLIED_SETTLE_MS / 1000)}s 窗口):保持未确认`,
+              attempt
             );
           }
         }, HOT_RELOAD_APPLIED_SETTLE_MS);
@@ -323,28 +332,32 @@ export function setupHotReload(
             options.noteEngineDigest?.(key, file, response.body);
             // 观察者只在响应到达时触发 → 传输已成功,分类按 status 走
             const record = recordHttpDelivery(wiring.store, key, file, { ok: true, status: response.status }, {});
+            // IDE-AUD-005:该次发送的代际——回执/注解/核验结算全绑定它,旧代
+            // 异步结果绝不改新代记录(晚到的第一次核验不翻第二次的失败)
+            const attempt = record.attempt;
             if (record.outcome === 'sent-unverified' && typeof response.body === 'string' && response.body.length > 0) {
-              applyAcceptedReceipt(wiring.store, key, file, response.body, {});
+              applyAcceptedReceipt(wiring.store, key, file, response.body, { attempt });
               // IDE-REV-023:applied 双证核验(可信 digest+已验证回执)——以所发
               // 内容为基准重算比对,对得上才升格 applied;无读取通道/读不到/回执
               // 不合规/digest 不符一律不升格,阻塞原因如实注解进仍未确认的记录
               if (!options.targetState?.readFileContent) {
-                noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准');
+                noteStillUnverified(wiring, key, file, 'applied 核验阻塞:无内容读取通道,digest 无基准', attempt);
               } else {
                 void readSentContent(file).then(content => {
                   if (content === null) {
-                    noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准');
+                    noteStillUnverified(wiring, key, file, 'applied 核验阻塞:所发内容不可读,digest 无基准', attempt);
                     return;
                   }
                   const verdict = verifyAppliedReceipt(wiring.store, key, file, response.body as string, {
-                    sentContent: content
+                    sentContent: content,
+                    attempt
                   });
                   if (verdict.kind === 'not-applied') {
-                    noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`);
+                    noteStillUnverified(wiring, key, file, `applied 核验阻塞:${verdict.reason}`, attempt);
                   }
                 });
               }
-              scheduleAppliedSettle(wiring, key, file, now());
+              scheduleAppliedSettle(wiring, key, file, now(), attempt);
             }
           }
         };
