@@ -887,3 +887,13 @@
   - 交付③(可选视觉增强):__init__ 注释锚 # kode:props-from-def 处以 inlay hint 折叠渲染 def 属性只读视图(纯渲染,非代码)。
   - 原则:属性唯一事实源=def;一切方便理解的呈现走生成物或渲染层,不在 Python 源码造第二事实源。
   - 验收:self.hp 跳转直达 def 行;pyi 再生与 def 同步(改 def ≤1 周期内更新);零误导(无引擎不调用的死代码)。
+
+- [ ] **C-23 · P2 · 实现 · 行为知识工具化(坑→lint/code action/hover 流水线)**
+  - 背景 2026-11-01 用户例:「属性修改只有顶层 key 才触发事件」这类行为知识无法在代码里体现,只能踩坑后知道。目标:把 KB-001 知识条目升级为开发者工具可执行的三通道呈现。
+  - 交付①KB-001 条目结构化:每条知识增字段 applies_to(适用属性类型/API)/detection(可静态检测的代码模式)/fix(正确姿势与修复代码);detection 非空的条目自动成为 lint 规则候选。
+  - 交付②首批 lint 规则(接入现有 lint/diagnostics 体系):
+    fixed-dict-nested-mutation:FIXED_DICT 属性子键赋值不触发同步 → warning+code action(一键整体重赋习语);类型判定复用 kode-types 类型图;
+    destroyed-entity-reference:检测 Python 侧对已 destroy 实体的常见引用模式(KB-001 内存专题配套);
+    timer-leak-on-destroy:addTimer 句柄未在 onDestroy 注销的模式检测。
+  - 交付③hover 行为注记:FIXED_DICT/易坑 API 的 hover 附加行为警告段(数据源=KB-001 结构化条目)。
+  - 验收:三个规则各配正反用例(误报=0);hover 注记双语;规则可用配置关闭。
