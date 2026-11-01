@@ -485,6 +485,35 @@ function usedFixedDictTypes(
   return used;
 }
 
+/** 全部实体(属性 + 组件槽属性)引用的 FIXED_DICT 类型,按 types.xml 序去重。
+ * 组件属性引用也计入(与 generateClientSdkComponentsFile 的 import 同源),
+ * 避免「仅组件属性引用」时 FIXED_DICT 伴随文件缺失导致断裂导入。 */
+function collectClientSdkFixedDictTypes(
+  entities: ReadonlyArray<ClientSdkEntity>,
+  typeMap: ClientSdkTypeMap
+): ClientSdkFixedDictType[] {
+  const seen = new Set<string>();
+  const used: ClientSdkFixedDictType[] = [];
+  const add = (typeName: string): void => {
+    const type = typeMap.fixedDicts.get(typeName);
+    if (type && !seen.has(type.name)) {
+      seen.add(type.name);
+      used.push(type);
+    }
+  };
+  for (const entity of entities) {
+    for (const property of clientVisibleProperties(entity)) {
+      add(property.type);
+    }
+    for (const component of entity.components) {
+      for (const property of component.properties) {
+        add(property.type);
+      }
+    }
+  }
+  return used;
+}
+
 function toPascalCase(name: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
@@ -804,17 +833,7 @@ export function generateClientSdkFixedDictsFile(
   generatedAt: string,
   engineTrace?: SdkEngineTrace
 ): string | null {
-  const seen = new Set<string>();
-  const used: ClientSdkFixedDictType[] = [];
-  for (const entity of entities) {
-    for (const property of clientVisibleProperties(entity)) {
-      const type = typeMap.fixedDicts.get(property.type);
-      if (type && !seen.has(type.name)) {
-        seen.add(type.name);
-        used.push(type);
-      }
-    }
-  }
+  const used = collectClientSdkFixedDictTypes(entities, typeMap);
 
   if (used.length === 0) {
     return null;

@@ -299,6 +299,33 @@ fn fixed_dicts_only_referenced_types() {
     assert!(fixed.contains("  name: string;"));
 }
 
+/// 仅组件属性引用的 FIXED_DICT:伴随文件仍生成,与组件文件 import 同源不断裂。
+#[test]
+fn fixed_dicts_includes_component_only_references() {
+    let dict_comp_def = r#"<root><Properties>
+      <bag><Type>AvatarProps</Type><Flags>CELL_PUBLIC_AND_OWN</Flags></bag>
+    </Properties></root>"#;
+    let entity_def = r#"<root><Properties>
+      <level><Type>UINT8</Type><Flags>BASE</Flags></level>
+    </Properties><Components>
+      <inventory><Type>DictComp</Type></inventory>
+    </Components></root>"#;
+    let files = generate(json!({
+        "language": "typescript",
+        "entities": [{"name": "Avatar", "defText": entity_def}],
+        "defs": {"DictComp": dict_comp_def},
+        "typesXml": TYPES_XML,
+        "generatedAt": GENERATED_AT,
+    }));
+    let files = files.as_array().unwrap();
+    let fixed = content_of(files, "ClientSdkFixedDicts.ts");
+    assert!(fixed.contains("/** AvatarProps FIXED_DICT 别名 */"));
+    assert!(fixed.contains("export interface AvatarProps"));
+
+    let comps = content_of(files, "ClientSdkComponents.ts");
+    assert!(comps.contains("import { AvatarProps } from './ClientSdkFixedDicts';"));
+}
+
 /// 引擎溯源:未传 engineTrace → 头部写 unknown 字面量;传入 → 写实际值。
 #[test]
 fn engine_trace_defaults_to_unknown_and_echoes_input() {

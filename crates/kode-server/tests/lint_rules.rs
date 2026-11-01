@@ -249,3 +249,29 @@ fn unknown_type_reference_fires_without_corpus_and_not_with_known_type() {
 fn malformed_xml_yields_empty_findings() {
     assert!(checks("not xml at all").is_empty());
 }
+
+#[test]
+fn own_client_not_in_cell_domain_no_false_duplicate() {
+    // 同名属性一个 OWN_CLIENT(仅 client)、一个 CELL_PUBLIC(仅 cell):
+    // 域不相交,引擎允许共存,不应报 duplicate-definition。
+    // 旧 flag_scopes 把 OWN_CLIENT 归入 cell → 误报,此断言先红后绿。
+    let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>OWN_CLIENT</Flags>\n\t\t</hp>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL_PUBLIC</Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+    let findings = checks(text);
+    assert!(
+        !findings.contains(&"duplicate-definition".to_string()),
+        "OWN_CLIENT 与 CELL_PUBLIC 域不相交,不应判重: {findings:?}"
+    );
+}
+
+#[test]
+fn cell_alias_normalizes_to_cell_domain_and_collides() {
+    // Flags="CELL" 是 CELL_PUBLIC 的别名(engine 同义)。同名属性一个
+    // CELL、一个 CELL_PUBLIC 应判重(cell 域相交)。
+    // 旧 flag_scopes 用未归一化 token 比对,CELL 丢域 → 漏报,此断言先红后绿。
+    let text = "<root>\n\t<Properties>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL</Flags>\n\t\t</hp>\n\t\t<hp>\n\t\t\t<Type>UINT32</Type>\n\t\t\t<Flags>CELL_PUBLIC</Flags>\n\t\t</hp>\n\t</Properties>\n</root>\n";
+    let findings = checks(text);
+    assert!(
+        findings.contains(&"duplicate-definition".to_string()),
+        "CELL 别名应归一为 CELL_PUBLIC 与后者判重: {findings:?}"
+    );
+}

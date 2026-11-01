@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import {
   getWorkspaceIndexYieldCountForTests,
@@ -94,6 +94,54 @@ it('让出边界不改口径:稀疏事件行号仍按建索引时算好', async 
     const calls = await index.allEventCalls();
     expect(calls).toHaveLength(3);
     expect(calls.map(call => call.line)).toEqual(markLines);
+  } finally {
+    index.dispose();
+    vscode.workspace.findFiles = originalFind;
+    vscode.workspace.fs.readFile = originalRead;
+  }
+});
+
+it('AUD 竞态:noteDocumentAbandoned 重建的新任务不被旧任务 finally 误删', async () => {
+  const originalFind = vscode.workspace.findFiles;
+  const originalRead = vscode.workspace.fs.readFile;
+  const uri = vscode.Uri.file('/ws/abandoned.py');
+  vscode.workspace.findFiles = async () => [];
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const secondGate = new Promise<void>(resolve => { releaseSecond = resolve; });
+  // 第一读:门住(在途旧任务);第二读(重建任务):也门住,以便观察中间态
+  const read = vi.fn()
+    .mockImplementationOnce(async () => { await firstGate; return Buffer.from('self.addEvent(V1, self.on_ev)'); })
+    .mockImplementationOnce(async () => { await secondGate; return Buffer.from('self.addEvent(V2, self.on_ev)'); });
+  vscode.workspace.fs.readFile = read;
+  const index = new WorkspaceIndex();
+  const internals = index as unknown as {
+    building: Map<string, Promise<unknown>>;
+    noteDocumentAbandoned: (document: { uri: { fsPath: string }; isDirty?: boolean }) => void;
+  };
+  try {
+    await index.ensureStarted();
+    (index as unknown as { indexFile: (uri: vscode.Uri) => Promise<unknown> }).indexFile(uri);
+    await vi.waitFor(() => expect(read).toHaveBeenCalled());
+    const firstTask = internals.building.get(uri.fsPath);
+    expect(firstTask).toBeDefined();
+    // 模拟关闭脏文档:noteDocumentAbandoned 先删在途任务再建新任务
+    internals.noteDocumentAbandoned({ uri: { fsPath: uri.fsPath } });
+    const secondTask = internals.building.get(uri.fsPath);
+    expect(secondTask).toBeDefined();
+    expect(secondTask).not.toBe(firstTask);
+    // 释放旧读:旧任务 finally 若无条件 building.delete,会删掉 secondTask。
+    // 此时第二读仍门住,观察旧任务清理后 building 里是否还留着 secondTask。
+    releaseFirst();
+    await firstTask;
+    expect(internals.building.get(uri.fsPath)).toBe(secondTask);
+    // 放行第二读并等它完成(完成后其自身 finally 正常清理)
+    releaseSecond();
+    await secondTask;
+    expect(internals.building.get(uri.fsPath)).toBeUndefined();
+    const calls = await index.allEventCalls();
+    expect(calls.some(call => call.call.event === 'V2')).toBe(true);
   } finally {
     index.dispose();
     vscode.workspace.findFiles = originalFind;

@@ -977,6 +977,17 @@ fn generate_fixed_dicts_file(
                 }
             }
         }
+        // 组件属性引用的 FIXED_DICT 也计入(与 generate_components_file 的
+        // import 同源),避免「仅组件属性引用」时伴随文件缺失导致断裂导入。
+        for component in &entity.components {
+            for property in &component.properties {
+                if let Some(dict) = type_map.fixed_dicts.get(&property.type_name) {
+                    if seen.insert(dict.name.clone()) {
+                        used.push(dict);
+                    }
+                }
+            }
+        }
     }
     if used.is_empty() {
         return None;

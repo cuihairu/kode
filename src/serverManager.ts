@@ -201,6 +201,16 @@ const READINESS_PROBE_INTERVAL_MS = 250;
 /** 就绪等待默认上限(RUN-004):到期放弃等待并报告 target;null 可显式关闭 */
 const READINESS_WAIT_TIMEOUT_MS = 60000;
 
+/** 依赖等待截止毫秒数(与 READINESS_WAIT_TIMEOUT_MS 同源):显式 null = 无限
+ * 等待(与 waitForTargetDependencies 的 null 契约一致),undefined = 默认 60s。
+ * startTargetGroup 用此收束,不用 `??` 以免把显式 null 改写成默认值。 */
+export function resolveDependencyWaitDeadline(
+  dependencyTimeoutMs: number | null | undefined,
+  defaultMs: number = READINESS_WAIT_TIMEOUT_MS
+): number | null {
+  return dependencyTimeoutMs === null ? null : (dependencyTimeoutMs ?? defaultMs);
+}
+
 /**
  * 组启动请求(RUN-006):component=组件名,targetId=实例(dependsOn 缺省取
  * 组件声明链,可显式覆盖;readinessProbe 透传 startComponent 注入口)
@@ -855,7 +865,7 @@ export class KBEngineServerManager {
         continue;
       }
       const wait = await this.waitForTargetDependencies(target.dependsOn, failedKeys, {
-        timeoutMs: options?.dependencyTimeoutMs ?? READINESS_WAIT_TIMEOUT_MS
+        timeoutMs: resolveDependencyWaitDeadline(options?.dependencyTimeoutMs)
       });
       if (!wait.ok) {
         failedKeys.add(key);

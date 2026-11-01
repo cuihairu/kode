@@ -269,3 +269,30 @@ fn empty_params_yields_deterministic_empty_graph() {
     assert!(g.get("reverseEdges").unwrap().is_object());
     assert_eq!(g["stats"]["nodeCount"], 0);
 }
+
+#[test]
+fn implemented_by_only_type_gets_type_node_and_non_dangling_edge() {
+    // types.xml 的 Vec3 带 ImplementedBy,但没有任何实体属性引用它:
+    // 旧实现只经 property-type 路径建 type 节点,此处 type:Vec3 缺失,
+    // implements 边 from 端悬空。修复后应补建 type 节点,from 端有落点。
+    let g = graph(json!({
+        "entitiesXml": "<root><Hero hasBase=\"true\"/></root>",
+        "typesXml": "<root><Vec3><FIXED_DICT><implementedBy>game.Position</implementedBy></FIXED_DICT></Vec3></root>",
+        "typesXmlPath": "/defs/entitys/types.xml",
+        "defs": {
+            "Hero": "<root><Properties><hp><Type>UINT32</Type><Flags>BASE</Flags></hp></Properties></root>",
+        },
+        "paths": {"Hero": "/defs/entitys/Hero.def"},
+        "categories": {"Hero": "entity"},
+        "typeImpls": {"Vec3": "/scripts/types/Vec3.py"},
+    }));
+    // type:Vec3 节点必须存在
+    assert_eq!(node_named(&g, "type:Vec3")["kind"], "type");
+    assert_eq!(node_named(&g, "type:Vec3")["filePath"], "/defs/entitys/types.xml");
+    // implements 边 from 端有落点(type:Vec3),不悬空
+    assert!(has_edge(&g, "type:Vec3", "python:/scripts/types/Vec3.py", "implements"));
+    assert!(reverse_of(&g, "python:/scripts/types/Vec3.py")
+        .iter()
+        .any(|e| e.get("from").and_then(|v| v.as_str()) == Some("type:Vec3")
+            && e.get("kind").and_then(|v| v.as_str()) == Some("implements")));
+}

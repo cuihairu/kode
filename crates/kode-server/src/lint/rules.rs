@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use kode_parser::model::{flag_domains, normalize_flag_tokens};
 use kode_parser::xml::{self, Document, NodeData};
 
 use super::{make_finding, Finding, Rule, RuleRegistry};
@@ -165,38 +166,12 @@ fn split_flags(raw: &str) -> Vec<String> {
         .collect()
 }
 
-/// Flags 归一化大写(未知 Flags 值判定用;与 diagnostics.rs scalar_pass 同口径)。
-fn normalize_flag_upper(raw: &str) -> String {
-    raw.trim().to_uppercase()
-}
-
 /// Flags → 三域位(base/cell/client;common.h ENTITY_*_DATA_FLAGS 真值)。
+/// 与 TS propertyFlagDomainList 同源:先经 normalize_flag_tokens 归一(trim+
+/// 大写+CELL→CELL_PUBLIC 别名+遗留拼写折叠),再按 flag_domains 单一来源表
+/// 映射(OWN_CLIENT/OTHER_CLIENTS 仅 client,不入 cell)。
 fn flag_scopes(flags: &[String]) -> Vec<String> {
-    let has = |names: &[&str]| flags.iter().any(|f| names.contains(&f.as_str()));
-    let mut out = Vec::new();
-    if has(&["BASE", "BASE_AND_CLIENT"]) {
-        out.push("base".to_string());
-    }
-    if has(&[
-        "CELL_PUBLIC",
-        "CELL_PRIVATE",
-        "ALL_CLIENTS",
-        "CELL_PUBLIC_AND_OWN",
-        "OWN_CLIENT",
-        "OTHER_CLIENTS",
-    ]) {
-        out.push("cell".to_string());
-    }
-    if has(&[
-        "BASE_AND_CLIENT",
-        "ALL_CLIENTS",
-        "CELL_PUBLIC_AND_OWN",
-        "OWN_CLIENT",
-        "OTHER_CLIENTS",
-    ]) {
-        out.push("client".to_string());
-    }
-    out
+    flag_domains(&normalize_flag_tokens(&flags.join("|"))).iter().map(|s| s.to_string()).collect()
 }
 
 fn scope_label(scope: &str) -> &str {
@@ -694,8 +669,8 @@ impl Rule for UnknownFlagValueRule {
                 return;
             }
             let raw = node_value(doc, node);
-            let normalized = normalize_flag_upper(&raw);
-            if !normalized.is_empty() && !KNOWN_FLAGS.contains(&normalized.as_str()) {
+            let normalized = normalize_flag_tokens(&raw);
+            if !normalized.is_empty() && !normalized.iter().all(|t| KNOWN_FLAGS.contains(&t.as_str())) {
                 let data = doc.element(node);
                 out.push(make_finding(
                     "unknown-flag-value",

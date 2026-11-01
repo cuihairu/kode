@@ -25,6 +25,7 @@ import * as vscode from 'vscode';
 import { KBEngineTelnetClient, type TelnetClientEvents } from './telnetClient';
 import { resolveProfileInterpreter } from './profileInterpreter';
 import type { TelnetTarget } from './telnetService';
+import { killProcessTree } from './processManager';
 
 /** 同步开关(kbengine.debug.autoDebugpy,默认关:注入是显式 opt-in) */
 export const AUTO_DEBUGPY_ENABLED_DEFAULT = false;
@@ -114,6 +115,14 @@ export function readDebugpyVersionFromSource(text: string): string | null {
 /** workspaceState 记账键(逐目标目录拼后缀;extraPaths/jsonc 同法) */
 export const DEBUGPY_SYNC_MANAGED_KEY = 'kbengine.debugpySync.managed';
 
+/** 解释器运行单命令的截止(RUN-007 组杀同口径):挂起不再永久等待。 */
+let RUN_PYTHON_TIMEOUT_MS = 30_000;
+
+/** 测试注入口:覆写 defaultRunPython 的截止毫秒数(生产口径 30s)。 */
+export function setRunPythonTimeoutMsForTests(ms: number | null): void {
+  RUN_PYTHON_TIMEOUT_MS = ms ?? 30_000;
+}
+
 /** debugpy 包应落的位置:<assets>/scripts/common/debugpy(python_app.cpp:167) */
 export function debugpyPackageDir(assetsRoot: string): string {
   return path.join(assetsRoot, 'scripts', 'common', 'debugpy');
@@ -142,21 +151,42 @@ export function debugpySyncSourceCandidates(interpreterPath: string | null): str
   return interpreterPath ? [interpreterPath, 'python3', 'python'] : ['python3', 'python'];
 }
 
-const defaultRunPython = async (code: string): Promise<{ stdout: string; exitCode: number | null }> => {
+export const defaultRunPython = async (code: string): Promise<{ stdout: string; exitCode: number | null }> => {
   const candidates = debugpySyncSourceCandidates(resolveProfileInterpreter().interpreterPath);
   for (const command of candidates) {
     const result = await new Promise<{ stdout: string; exitCode: number | null } | null>(resolve => {
       try {
-        const child = spawn(command, ['-c', code], { windowsHide: true });
+        const child = spawn(command, ['-c', code], {
+          windowsHide: true,
+          // POSIX 下设进程组长:超时组杀(负 pid 信号)不留解释器衍生孙进程
+          detached: process.platform !== 'win32'
+        });
         let stdout = '';
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          // 同组唯一有超时的 spawn 包装:解释器挂起时不再永久等待,
+          // 组杀(与 ProcessManager.killProcessTree 同口径)并如实报超时失败。
+          void killProcessTree(child.pid ?? 0, 'SIGKILL', child);
+          resolve({ stdout, exitCode: 124 });
+        }, RUN_PYTHON_TIMEOUT_MS);
         child.stdout.on('data', chunk => {
           stdout += String(chunk);
         });
         child.on('error', error => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
           // 解释器不存在(ENOENT)才换下一个候选;其余按失败态返回
           resolve((error as NodeJS.ErrnoException).code === 'ENOENT' ? null : { stdout, exitCode: 1 });
         });
-        child.on('close', exitCode => resolve({ stdout, exitCode }));
+        child.on('close', exitCode => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ stdout, exitCode });
+        });
       } catch {
         resolve(null);
       }

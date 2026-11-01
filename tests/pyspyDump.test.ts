@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
   PYSPY_PTRACE_GUIDANCE,
+  defaultSpawnRunner,
   checkPyspyInstalled,
   ensurePyspyReady,
   installPyspy,
@@ -38,6 +39,21 @@ const makeRunner = (results: Array<{ match: (command: string, args: string[]) =>
 };
 
 const run = (stdout = '', stderr = '', exitCode: number | null = 0): CommandRunResult => ({ stdout, stderr, exitCode });
+
+describe('defaultSpawnRunner 超时组杀(不留孙进程孤儿)', () => {
+  it('挂起命令按截止被杀,如实返回 exitCode -1', async () => {
+    // 真实 node 子进程:挂起 10s,但 runner 只等 300ms——超时组杀路径
+    const started = Date.now();
+    const result = await defaultSpawnRunner(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 10000)'],
+      300
+    );
+    expect(result.exitCode).toBe(-1);
+    // 截止附近返回(远小于挂起的 10s)
+    expect(Date.now() - started).toBeLessThan(5000);
+  }, 8000);
+});
 
 describe('checkPyspyInstalled', () => {
   it('版本走 stdout 也能走 stderr(py-spy 实际行为两种都有)', async () => {

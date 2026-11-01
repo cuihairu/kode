@@ -859,12 +859,21 @@
   - 验收:示例实体(def 有 3 方法/Python 缺 1)→ 恰好 1 条 warning + code action 生成后 warning 消除;已实现方法零误报;vitest/cargo 绿。
   - 完成 ✔ 2026-11-01 feat dd7303f（src/defMethodConsistency.ts 新——纯逻辑半边:defArgTypeToPythonAnnotation 内建注解映射(UINT32/INT8/UINT64→int,FLOAT/DOUBLE→float,STRING/UNICODE→str,BOOL→bool,BLOB→bytes,与 PYTHON_BUILTIN_TYPE_ANNOTATIONS 单一事实源;typing 泛型 VECTOR2/3/4/PY_DICT/PY_LIST/PY_TUPLE/PYTHON/ENTITYCALL 需 import 不发射→undefined)+buildMethodStubCode(4 空格缩进,形参 argN[: 注解] 或裸 argN,体 pass/raise 可配)+collectDefMethodMissingItems(定位方法名首个 <name 出现+1,回退整行区间,越界跳过,\r\n 行首偏移兼容)+collectPythonMethodNotInDefItems+诊断 code 常量 kbengine.defMethodMissingInPython / kbengine.pythonMethodNotInDef(惯例 kbengine.<camelCase>);src/entityMapping.ts 三查询面+一模块助手:collectDefMethodImplementationGaps(只看 rootCategory='entity' 根防接口误报,只标 defFile 落在本文档的声明,判存与 Go to Implementations 同一 listMethodImplementationsByIdentity 面+缓冲区感知兜底 hasMethodImplementationInSnapshot(readSharedFileSnapshot 打开缓冲区优先,覆盖 CodeAction 生成未保存即消除))、collectPythonMethodNotInDef(跳 dunder/引擎钩子 KBENGINE_HOOKS,默认关防误报)、getDefFileForPythonFile(Python 改动→重算属主 def 寻址);src/languageProviders.ts getLanguageFeatureConfig 加 3 键+buildPythonMethodSkeleton 形参自 def <Arg> 类型映射+CodeAction 附加 action.command=kbengine.defMethodConsistency.revalidate(应用编辑后重算,诊断消除);src/extension.ts 专用诊断集合 kbengine-def-method-consistency(整组替换)+独立调度器 defMethodConsistencyScheduler(主调度器每 URI 单排队槽,共享会顶掉主结构诊断任务致永不算——独立保版本/关闭代/输入代守卫,flush 同节拍、关闭 releaseDocument、enableDiagnostics 主开关同闸、defMethodConsistencyInputsChanged 三键 invalidateAll)+revalidate 命令注册+def/Python 文档事件双路调度;package.json 三配置键(checkDefMethodMissingInPython 默认 true/checkPythonMethodNotInDef 默认 false/entity.methodStubBody enum pass|raise 默认 pass)+命令声明;tests/defMethodConsistency.test.ts 14(注解映射/骨架/定位/\r\n/反向项/code 常量)+defMethodConsistencyGaps.test.ts 5(缺实现入列已实现不入列/缓冲区兜底/接口门控/属主寻址/反向跳钩子)+defMethodImplQuickFix.test.ts 更新(新骨架预期+revalidate 命令断言+raise 体配置)+extension.test.ts(诊断集合 4 条顺序)+perfCallChainDoc.test.ts(锚点漂移校正)+docs 四文件(中英 configuration.md 总览/features.md Settings 表加 3 键,commands.md 加 revalidate 命令节);门禁 pnpm lint+tsc 干净|test:unit 5271 绿 7 skip|xvfb test:demo:editor 25 passing)
 
-- [ ] **C-20 · P2 · 实现 · kode-python:Python 调用图与数据流(Rust)**
+- [x] **C-20 · P2 · 实现 · kode-python:Python 调用图与数据流(Rust)** · 已完成 0910ffe
   - 依据 2026-11-01 用户确认缺失:Rust/TS 均无 Python 代码级调用关系与数据流(现有图仅 def→def 依赖)。
   - 集成:Python 解析用 ruff_python_parser(Rust 原生,不造轮子);新 crate kode-python:AST→符号/调用边提取。
   - 交付①调用图:函数/方法级 call graph + KBEngine 特化边(allClients/baseClients 广播边、cell/base 跨进程调用边,进程归属联动 C-17);②过程内数据流(MVP:def-use 链,变量来源与传播);③图入 kode-scheduler DAG,可视化挂 dependencyGraph 面板;④供 C-19 一致性检查复用 Python 符号表(替代自建)。
   - 验收:示例实体项目调用图与人工核对一致(抽样 10 条调用边);改方法签名→受影响调用点全数列出;增量更新(改一个文件只重算该文件)。
   - 后置:过程间数据流/指针分析不进本期。
+  - 已完成证据(0910ffe):新 crate `crates/kode-python`(ruff_python_parser 0.0.20,MSRV 1.97 注):
+    - 解析 `parse.rs`:`parse_unchecked_source` 容错解析 + LineIndex 行/UTF-16 列定位;
+    - 符号表 `symbols.rs`:类/方法/属性/导入四表,识别装饰器/async/继承链/dotted base,`to_corpus()` 降级为 `kode_corpus::PythonModule`(C-19/wt-parity 复用面),`class_index` 查类方法;
+    - 调用图 `callgraph.rs`:遍历方法体/模块函数/模块顶层;8 类 `EdgeKind`(Local/Method/SelfMethod/KbeBroadcast/KbeBaseClients/KbeCrossProcess/KbeApi/Unknown),`self.allClients/baseClients` 广播边、`self.cell/base` 跨进程边、`KBEngine.*` API 边;嵌套控制流(if/for/try)行走;
+    - 数据流 `dataflow.rs`:过程内 def-use 链(直线 MVP,重定义开新链,self.attr 跟踪,param 标注);
+    - 图聚合 `graph.rs`:`PyCallGraph`(callers_of/calls_of/of_kind)+ `build_call_reverse_index` 被调方文件→调用方文件集;
+    - 接入 kode-scheduler `invalidation.rs`:`InvalidationGraph::with_call_dependents` + `affected_by` 并集调用方反依赖(泛型 `CallReverseIndex` 消费,保持 scheduler 零第三方依赖);
+    - 验收:74 套件 391 测试全绿(含 kode-python 4 测试文件 + scheduler 2 新反依赖测试);`cargo clippy -p kode-python -p kode-scheduler --all-targets --no-deps -- -D warnings` 干净。
+  - 未完成(如实标注):交付③「可视化挂 dependencyGraph 面板」只完成 DAG 反依赖数据侧,面板 UI 挂载未在本批——属前端渲染面,待后续批次。
 
 - [ ] **C-21 · P2 · 实现 · KBEngine API 文档 hover(双语 i18n)**
   - 交付①嵌入式 API 文档库:KBEngine 模块函数 + Entity 类方法 + 生命周期回调 + 常量(约 150-200 条),每条含签名/摘要(en+zh)/参数说明/返回/示例/引入版本;以官方文档为准人工精校,嵌入 kode-server(单一事实源)。

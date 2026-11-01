@@ -8,7 +8,8 @@ import type { ChildProcess } from 'node:child_process';
 import {
   KBEngineServerManager,
   SERVER_COMPONENTS,
-  ServerStatus
+  ServerStatus,
+  resolveDependencyWaitDeadline
 } from '../src/serverManager';
 import { LogHub } from '../src/logHub';
 import {
@@ -66,6 +67,24 @@ describe('SERVER_COMPONENTS constant table', () => {
       expect(args.some(arg => arg.startsWith('--cid=')), component.name).toBe(true);
       expect(args).toContain(`--gus=${component.order}`);
     }
+  });
+});
+
+describe('resolveDependencyWaitDeadline(依赖等待截止:显式 null = 无限)', () => {
+  it('显式 null 保留为无限等待(null),不被 ?? 改写成默认 60s', () => {
+    expect(resolveDependencyWaitDeadline(null)).toBeNull();
+  });
+
+  it('undefined 回落到默认 60s', () => {
+    expect(resolveDependencyWaitDeadline(undefined)).toBe(60000);
+  });
+
+  it('有限值原样返回', () => {
+    expect(resolveDependencyWaitDeadline(8000)).toBe(8000);
+  });
+
+  it('自定义默认值生效(undefined 路径)', () => {
+    expect(resolveDependencyWaitDeadline(undefined, 123)).toBe(123);
   });
 });
 

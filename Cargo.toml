@@ -2,18 +2,22 @@
 # PR-004 (PH1-03 VFS 基础) 加入 kode-vfs(书 §5)。
 # PR-005 (书 §6 语法) 加入 kode-parser。
 # PR-006 (PH1-05 根发现) 加入 kode-root(书 §5 VFS-009 完整版)。
-# PR-007 (书 §7 符号索引) 加入 kode-index;其余 crate 见 crates/README.md,
+# PR-007 (书 §7 符号索引) 加入 kode-index;C-20 加入 kode-python(Python 集成,
+# 本仓库唯一显式第三方解析器依赖);其余 crate 见 crates/README.md,
 # 按书 PR-008..009 逐个落地后再加进 members。
 [workspace]
 resolver = "2"
-members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-root", "crates/kode-index", "crates/kode-scheduler", "crates/kode-types", "crates/kode-corpus"]
+members = ["crates/kode-protocol", "crates/kode-server", "crates/kode-vfs", "crates/kode-parser", "crates/kode-root", "crates/kode-index", "crates/kode-scheduler", "crates/kode-types", "crates/kode-corpus", "crates/kode-python"]
 
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
 # MSRV:本仓库 Rust 代码承诺的最低编译版本;依赖升级不得悄悄抬高它。
 # (BUILD-003;当前工具链 pin 见 rust-toolchain.toml)
-rust-version = "1.82"
+# C-20 引入 ruff_python_parser/ruff_python_ast(0.0.20)后,其 MSRV=1.97 高于
+# 原 1.82;为保持声明真实(工具链 pin 1.99.0),随 kode-python 一同升至 1.97。
+# 若后续移除该依赖,应回落到各 crate 实际所需的最低值。
+rust-version = "1.97"
 license = "Apache-2.0"
 
 [workspace.lints.rust]

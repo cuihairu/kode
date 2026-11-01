@@ -11,6 +11,7 @@
 import { spawn } from 'child_process';
 import * as net from 'net';
 import type { DebugpyPreflightStatus } from './debugpyPreflight';
+import { killProcessTree } from './processManager';
 
 /** 端口探测超时:与 telnet 探测同口径(1.5s),不通就分类,不干等 */
 export const DEBUGPY_PORT_PROBE_TIMEOUT_MS = 1500;
@@ -152,7 +153,9 @@ export const defaultDebugpyInstallRunner: DebugpyInstallRunner = interpreterPath
   new Promise(resolve => {
     try {
       const child = spawn(interpreterPath, ['-m', 'pip', 'install', '-U', 'debugpy'], {
-        windowsHide: true
+        windowsHide: true,
+        // POSIX 下设进程组长:超时组杀(负 pid 信号)不留 pip 衍生的构建孙进程
+        detached: process.platform !== 'win32'
       });
       let output = '';
       let settled = false;
@@ -165,7 +168,8 @@ export const defaultDebugpyInstallRunner: DebugpyInstallRunner = interpreterPath
         resolve(result);
       };
       const timer = setTimeout(() => {
-        child.kill();
+        // 与 ProcessManager.killProcessTree 同口径:组杀,不留孙进程孤儿
+        void killProcessTree(child.pid ?? 0, 'SIGKILL', child);
         finish({ ok: false, detail: `pip 安装超时(>${INSTALL_TIMEOUT_MS}ms)` });
       }, INSTALL_TIMEOUT_MS);
       const tail = (text: string): string =>

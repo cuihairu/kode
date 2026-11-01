@@ -556,6 +556,31 @@ describe('generateClientSdkFixedDictsFile', () => {
     expect(content).toContain('public uint Hp { get; set; }');
     expect(content).toContain('public string Name { get; set; }');
   });
+
+  it('仅组件属性引用的 FIXED_DICT:伴随文件仍生成,与组件 import 同源不断裂', () => {
+    // 实体属性不引用 FIXED_DICT,仅组件槽属性引用 AvatarProps(COMPONENT_DEF 的 hp 是
+    // CELL_PUBLIC_AND_OWN 客户端可见,但其 Type 是 UINT32;这里换用引用 FIXED_DICT 的组件)。
+    const dictCompDef =
+      '<root><Properties><bag><Type>AvatarProps</Type><Flags>CELL_PUBLIC_AND_OWN</Flags></bag></Properties></root>';
+    const entity = parseClientSdkEntity(
+      '<root><Properties><level><Type>UINT8</Type><Flags>BASE</Flags></level></Properties>' +
+        '<Components><inventory><Type>DictComp</Type></inventory></Components></root>',
+      'Avatar',
+      { DictComp: dictCompDef }
+    )!;
+
+    const fixed = generateClientSdkFixedDictsFile(
+      [entity], 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT
+    );
+    // 修复前:只收集实体属性引用 → 返回 null,组件文件的 import 断裂。
+    expect(fixed).not.toBeNull();
+    expect(fixed ?? '').toContain('export interface AvatarProps');
+
+    const comps = generateClientSdkComponentsFile(
+      [entity], 'typescript', makeFixedDictTypeMap('typescript'), GENERATED_AT
+    );
+    expect(comps ?? '').toContain("import { AvatarProps } from './ClientSdkFixedDicts';");
+  });
 });
 
 describe('collectClientSdkEntities', () => {
