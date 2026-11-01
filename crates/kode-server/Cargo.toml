@@ -26,6 +26,10 @@ path = "src/bin/dump-flag-domains-golden.rs"
 name = "dump-wire-golden"
 path = "src/bin/dump-wire-golden.rs"
 
+[[bin]]
+name = "dump-def-md5-golden"
+path = "src/bin/dump-def-md5-golden.rs"
+
 [lib]
 name = "kode_server"
 path = "src/lib.rs"

@@ -164,6 +164,32 @@ describe('negotiateEngineDigest / compareEngineDigest(引擎 Digest 描桩)', ()
   });
 });
 
+describe('negotiateEngineDigest md5 分支(C-18 引擎算法证据落地)', () => {
+  it('传入 Rust 重算的引擎格式 MD5 → 协商为 md5/已协商,digest 回传', () => {
+    const h = negotiateEngineDigest('7D30F640C07CD601D0E5B4083EFC6E40');
+    expect(h.algorithm).toBe('md5');
+    expect(h.negotiated).toBe(true);
+    expect(h.digest).toBe('7D30F640C07CD601D0E5B4083EFC6E40');
+    expect(h.reason).toContain('C-18');
+  });
+
+  it('空串/长度不足 32 视同未取得 → 退回 unknown/未协商(不猜)', () => {
+    for (const bad of ['', 'abc', '7D30F640C07CD601D0E5B4083EFC6E4']) {
+      const h = negotiateEngineDigest(bad);
+      expect(h.algorithm).toBe(ENGINE_DIGEST_ALGORITHM);
+      expect(h.negotiated).toBe(false);
+      expect(h.digest).toBeUndefined();
+    }
+  });
+
+  it('md5 已协商仍拒绝与客户端原文 sha256 比对(不同算法/不同输入,跨类不冒充)', () => {
+    const h = negotiateEngineDigest('7D30F640C07CD601D0E5B4083EFC6E40');
+    const cmp = compareEngineDigest(h, hashDefContent('<Root/>\n'));
+    expect(cmp.comparable).toBe(false);
+    expect(cmp.reason).toContain('sha256');
+  });
+});
+
 describe('verdictFromTempEditOutcome(接入 HR-PR-02 回执链路)', () => {
   it('HR-PR-02 sent-unverified → 三路径 sent-unverified,applied=false(回显链路同口径)', () => {
     const v = verdictFromTempEditOutcome(makeOutcome('sent-unverified', true));

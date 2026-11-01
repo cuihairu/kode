@@ -137,43 +137,68 @@ export function classifyThreePath(input: ThreePathInput): ThreePathVerdict {
 }
 
 /**
- * 引擎 Digest 协商描桩(委托书 ③:未知标 unknown 不猜)。
- * HR-AUDIT-008:本仓库内引擎 Digest 算法零证据(唯一 sha256 是 logHub.ts
- * 日志去重,与 .def 无关;KBEngine.reloadEntityDef/isReload 已被审计否定为
- * 不存在的公开 API)。因此协商结果恒为未协商——接口留在莫,等引擎侧证据
- * (HR-AUDIT-009/HR-QA-015)到达后由版本化策略替换实现,签名不变得改。
+ * 引擎 Digest 协商(委托书 ③:未知标 unknown 不猜)。
+ * C-18 证据落地:引擎 EntityDef::md5() 算法已规范推导(kbengine 732b389,
+ * entitydef.cpp/scriptdef_module.cpp/datatype.cpp/property.cpp/method.cpp
+ * 逐字节镜像),引擎 Digest 算法为 **md5**(输出大写 32-hex,md5.cpp:65-72)。
+ * 客户端侧计算引擎格式 MD5 的唯一入口是 Rust 权威实现(computeDefMd5InRust),
+ * 协商经传入该结果完成;Rust 不可用(无门/失败)时协商退化为 unknown——
+ * unknown 一律不参与比对,不猜、不替引擎猜算法。
+ *
+ * HR-AUDIT-008 旧结论(仓库内引擎 Digest 算法零证据)已被 C-18 推翻:md5
+ * 算法现在有仓库内证据(规范推导 + RFC1321 向量 + 平台 md5 对拍 + 手推
+ * 锚点)。保留 unknown 常量作退化哨兵,不删(历史回显/测试同源)。
  */
 export const ENGINE_DIGEST_ALGORITHM = 'unknown' as const;
+/** C-18:引擎 EntityDef::md5() 实际算法 */
+export const ENGINE_DIGEST_ALGORITHM_MD5 = 'md5' as const;
 
 export interface DefDigestHandshake {
-  /** 恒 'unknown':引擎 Digest 算法无仓库内证据,不猜 */
-  readonly algorithm: typeof ENGINE_DIGEST_ALGORITHM;
-  /** 恒 false:未协商成功 */
-  readonly negotiated: false;
-  /** unknown 边界声明(回显/日志同源) */
+  /** 'md5'(C-18 已证引擎算法)或 'unknown'(Rust 不可用退化) */
+  readonly algorithm: typeof ENGINE_DIGEST_ALGORITHM | typeof ENGINE_DIGEST_ALGORITHM_MD5;
+  /** true=协商出已知算法(md5);false=未协商(unknown) */
+  readonly negotiated: boolean;
+  /** md5 协商成功时携带引擎格式复合摘要(客户端经 Rust 重算) */
+  readonly digest?: string;
+  /** 边界声明(回显/日志同源) */
   readonly reason: string;
 }
 
-/** Digest 协商入口(描桩):恒返回 unknown/未协商,不做任何猜测性匹配 */
-export function negotiateEngineDigest(): DefDigestHandshake {
+/**
+ * Digest 协商入口:传入客户端经 Rust 重算的引擎格式 MD5(computeDefMd5InRust
+ * 的 md5 字段)则协商为 md5/已协商;缺省(未传或 Rust 不可用)退回
+ * unknown/未协商,不做任何猜测性匹配。
+ */
+export function negotiateEngineDigest(engineMd5?: string): DefDigestHandshake {
+  if (engineMd5 && engineMd5.length === 32) {
+    return {
+      algorithm: ENGINE_DIGEST_ALGORITHM_MD5,
+      negotiated: true,
+      digest: engineMd5,
+      reason: '引擎 Digest 算法 md5(C-18:EntityDef::md5() 规范推导);客户端经 Rust 重算'
+    };
+  }
   return {
     algorithm: ENGINE_DIGEST_ALGORITHM,
     negotiated: false,
     reason:
-      '引擎 Digest 算法 unknown(HR-AUDIT-008:仓库内无证据);Digest 协商未执行,客户端 hash 不与引擎摘要比对'
+      '引擎 Digest 算法 unknown(HR-AUDIT-008 原审计无证据;C-18 已规范推导 md5,但 Rust 重算不可用);Digest 协商未执行,客户端 hash 不与引擎摘要比对'
   };
 }
 
 /** 引擎 Digest 比对请求:algorithm 未协商成功前 comparable 恒 false */
 export interface DigestComparison {
-  /** 恒 false 直到协商出已知算法;unknown 算法禁止比对 */
+  /** 恒 false:客户端原文 sha256 与引擎复合 MD5 属不同输入/不同算法,跨类永不互比 */
   readonly comparable: false;
   readonly reason: string;
 }
 
 /**
- * 引擎摘要比对闸门:unknown 算法一律拒绝比对,防止拿客户端 sha256 冒充
- * 引擎 Digest 得出「内容一致/已应用」的假结论。
+ * 引擎摘要比对闸门:unknown 算法一律拒绝比对;即便 md5 已协商,客户端
+ * hashDefContent 是**原文 sha256**,与引擎复合 MD5 是不同算法/不同输入
+ * (结构化字节流),跨类永不互比——防止拿客户端 sha256 冒充引擎 Digest
+ * 得出「内容一致/已应用」的假结论。引擎↔引擎的 md5 对拍归 compare 面
+ * 之外(运行时回执 vs 本地重算,见 hotReloadRevisionEvidence 证据册)。
  */
 export function compareEngineDigest(
   handshake: DefDigestHandshake,
@@ -185,10 +210,9 @@ export function compareEngineDigest(
       reason: `Digest 算法 ${handshake.algorithm} 未协商,拒绝比对客户端 hash(不猜引擎算法)`
     };
   }
-  // 描桩不可达:类型上 algorithm 只有 'unknown';真实现随引擎证据落地时替换。
   return {
     comparable: false,
-    reason: `Digest 算法 ${handshake.algorithm} 无比对实现(描桩)`
+    reason: `Digest 算法 ${handshake.algorithm} 已协商,但客户端原文 hash(sha256)与引擎复合摘要(${handshake.algorithm})不同算法/不同输入,拒绝比对`
   };
 }
 
