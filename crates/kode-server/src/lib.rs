@@ -13,6 +13,7 @@ pub mod lint;
 pub mod message_table;
 pub mod rpc;
 pub mod server;
+pub mod wire_codec;
 
 pub use completion::{
     dump_completion_golden, to_lsp_items, CompletionContextFace, CompletionItemFace,

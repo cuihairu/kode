@@ -109,6 +109,7 @@ impl ServerState {
         crate::dependency_graph::register(&mut rpc);
         crate::lint::register(&mut rpc);
         crate::message_table::register(&mut rpc);
+        crate::wire_codec::register(&mut rpc);
         ServerState {
             initialized: false,
             shutdown_requested: false,
