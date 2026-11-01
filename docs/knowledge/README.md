@@ -4,13 +4,15 @@
 > 定位：把历次分析 KBEngine 源码积累的知识结构化沉淀——不是会话记录，是可检索、可维护、喂给 hover/MCP 的资产。
 > 结构：`docs/knowledge/`，双语 en+zh。
 
-## 首批已交付（2026-11-01）
+## 已交付（2026-11-01，首批 + 第二批）
 
 ### 机制文档
 
 | 专题 | 中文 | English |
 |------|------|---------|
 | 实体生命周期（创建 → cell 迁移 → 销毁） | [`entity-lifecycle/entity-lifecycle.zh.md`](./entity-lifecycle/entity-lifecycle.zh.md) | [`entity-lifecycle/entity-lifecycle.en.md`](./entity-lifecycle/entity-lifecycle.en.md) |
+| 定时器与消息机制（timer 语义 / 精度 / bundle 机制） | [`timer-messages/timer-messages.zh.md`](./timer-messages/timer-messages.zh.md) | [`timer-messages/timer-messages.en.md`](./timer-messages/timer-messages.en.md) |
+| 持久化流程（dbmgr 持久化 / 写回时机） | [`persistence-flow/persistence-flow.zh.md`](./persistence-flow/persistence-flow.zh.md) | [`persistence-flow/persistence-flow.en.md`](./persistence-flow/persistence-flow.en.md) |
 
 ### 头号专题：内存对象引用与释放坑集（五类）
 
