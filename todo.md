@@ -848,11 +848,11 @@
   - 交付:官方 def MD5 算法实现(与 KBEngine 引擎 Def::md5 逐字节一致——遍历顺序/序列化细节严格对齐官方);输出复合 md5 供一致性握手/热更后上报;与 C-15 线格式编码共用 def 遍历顺序。
   - 验收:黄金对拍——用 KBEngine 官方引擎对同一 assets 计算 md5,与 kode 实现输出逐字节一致;官方客户端连服的 def 校验场景可通过。IDE 内部 sha256/semanticHash 双轨保留(用途不同:内部基线 vs 引擎互通)。
 
-- [ ] **C-19 · P1 · 实现 · def↔Python 方法一致性检查 + 一键生成骨架**
+- [x] **C-19 · P1 · 实现 · def↔Python 方法一致性检查 + 一键生成骨架** — c6ee209(wt/parity,2026-11-01)
   - 依据 2026-11-01 用户确认缺失(旧版本无法正确识别;现在 def 解析与 Python 符号索引地基已齐)。
   - 交付①lint 规则 def-method-missing-in-python:def 中定义的方法在对应同名 Python 实体类中无实现 → warning 诊断,定位在 def 文件方法行,关联提示目标 Python 文件与类名;反向(Python 有 def 无)默认关闭可配,防误报。
   - 交付②LSP CodeAction 一键生成:仅在「def 有 Python 无」的方法上出现——在目标 Python 类末尾生成方法骨架(签名参数从 def 类型映射,默认 raise NotImplementedError 或 pass 可配);生成后自动重算一致性(诊断消除)。
-  - 实现:kode-index 已有 Python 符号索引 + kode-parser MethodDef,做集合差;CodeAction 走 kode-server 现有 LSP 通道。
+  - 实现:rule 住 crates/kode-server/src/lint/rules/def_python_parity.rs(独立文件避 wt/topology 冲突);`$/kode/lint/analyzeDef` 增 pythonParity 参(TS 采集各段已实现方法),Rust 集合差,Finding.related {file,className}→TS relatedInformation 双向定位;CodeAction KBEngineDefPythonParityCodeActionProvider 类尾插骨架(类型映射 UINT32→int 等)。
   - 验收:示例实体(def 有 3 方法/Python 缺 1)→ 恰好 1 条 warning + code action 生成后 warning 消除;已实现方法零误报;vitest/cargo 绿。
 
 - [ ] **C-20 · P2 · 实现 · kode-python:Python 调用图与数据流(Rust)**
