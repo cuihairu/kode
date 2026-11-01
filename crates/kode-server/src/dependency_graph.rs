@@ -410,10 +410,16 @@ impl Builder {
             if !self.object_classes.contains(&type_name) {
                 continue;
             }
+            // 确保 type:{name} 节点存在:仅 property-type 引用路径会建 type 节点,
+            // 若该类型只被 ImplementedBy 引用(不挂任何实体属性),from 端会悬空,
+            // 前端 mermaid 渲染成无样式隐式节点——先补建再推边。
+            let type_id = format!("type:{type_name}");
+            let type_path = self.types_xml_path.clone();
+            self.ensure_node(&type_id, NodeKind::Type, &type_name, &type_path, None);
             let py_id = format!("python:{py}");
             let py_name = basename_of(&py);
             self.ensure_node(&py_id, NodeKind::Python, &py_name, &py, None);
-            self.push_edge(&format!("type:{type_name}"), &py_id, "implements", None);
+            self.push_edge(&type_id, &py_id, "implements", None);
         }
 
         self.finish()
