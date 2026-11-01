@@ -91,6 +91,8 @@ if peer:
 
 accepted/applied 的 JSON 形态在客户端模块里有记录，测试可证明“解析器符合该形态”；本轮未找到可供新一轮联调的对应真实服务端环境/回执样本。**不能把模拟 JSON 测试当成已验证引擎 applied 协议**。缺协议证据的任务应保持部分完成，尤其原条目要求“缺协议证据时保持开放”。
 
+**AUD-007 接收端来源登记（2026-11-01，源码实勘）**：引擎仓（/home/cui/workspaces/kbengine，master 732b389e6ec4a29dbd43a19a89202fc3d5be4036，2026-10-31）的脚本重载面是 Python 模块函数 `KBEngine.reloadScript(fullReload)`，**不是 HTTP 接口、无回执**——注册点 baseapp.cpp:445 / cellapp.cpp:175（`APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), reloadScript, __py_reloadScript, METH_VARARGS, 0)`），入口 baseapp.cpp:5090-5106 / cellapp.cpp:1825（`__py_reloadScript` 解析 `b` 布尔、缺省 true，调 `Baseapp/Cellapp::getSingleton().reloadScript(fullReload)`），实现 baseapp.cpp:5109-5117 → `EntityApp<E>::reloadScript`（entity_app.h:1452）→ `EntityDef::reload(fullReload)` + `onReloadScript(fullReload)`，返回 `S_Return`=Py_None。全引擎 C++ 源码 grep 无任何 `"applied"`/`"accepted"` JSON 状态发射、无脚本重载 HTTP URI 处理器——**`{"status":"accepted"/"applied",...}` 是扩展侧自定契约，作用于用户配置的 `@http:` quick action URL 的回包体；引擎原生重载是 Python 调用、无回执**。故 AUD-007 的「接收端版本/实现」已登记为上述实勘，而「请求、响应与所应用 revision/digest」的真实样本需要一套会说该自定契约的 HTTP 服务（仓内/夹具没有），按条目自身口径维持未确认并保持开放。
+
 ### 数据库连接身份、初始化与来源
 
 `profileDatabaseConnection.ts:createProfileScopedDriftExecutor` 对缓存的读写只传 profileId 和 SQL，`selectActive` 只在 profileId 改变时释放旧缓存。解析出了新配置不等于缓存自动属于新配置。旧连接的晚到查询结果也可在缓存清理后重新写入。
