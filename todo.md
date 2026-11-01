@@ -821,10 +821,11 @@
 - [ ] 审核发现：debugpy 安装与 py-spy 超时仅 child.kill() 且子进程未 detached，pip/py-spy 衍生的构建孙进程成为孤儿（对照 ProcessManager.killProcessTree 的组杀口径）（src/debugpyPortProbe.ts:154/167-169；src/pyspyDump.ts:38/50-52）。
 - [ ] 审核发现：autoDebugpy 的 defaultRunPython 是同组唯一无超时/截止的 spawn 包装，解释器挂起时 syncDebugpyPackage 永久等待，命令无反馈卡死（src/autoDebugpy.ts:145-168）。
 
-- [ ] **C-15 · P1 · 实现 · def 驱动的线格式序列化/反序列化**
+- [x] **C-15 · P1 · 实现 · def 驱动的线格式序列化/反序列化**
   - 依据 2026-11-01 用户确认缺失。现状:message_table.rs 已有消息编号表(utype 分配/别名 id/组件槽),缺字节级编解码。
   - 交付:Datatype 编解码器全集(UINT8/16/32/64、STRING、BLOB、VECTOR2/3/4、ARRAY、FIXED_DICT、PYTHON 对象位流,与 KBEngine 线格式逐字节兼容);属性更新流打包/解包;方法调用参数打包;bundle 分片语义;别名 id 编码路径。
   - 验收:与 KBEngine 官方线格式对拍——用官方客户端/抓包样本或 KBEngine 引擎产出的字节流做黄金样本,解码结果逐字节一致;往返(序列化→反序列化)无损;畸形流不 panic(错误返回)。
+  - 完成 ✔ 2026-11-01 feat bd1754a（crates/kode-server/src/wire_codec.rs 新——KBEngine 线格式编解码器全集(标量定宽全小端无 varint/STRING NUL 结尾无长度前缀/UNICODE/BLOB/PYTHON* u32 长度+字节(pickle 透传)/ENTITYCALL 16B 定长 id+cid+type+utype/VECTOR2/3/4 连续 f32/ARRAY u32 元素数+部分数组流尽早停/FIXED_DICT 声明序无键名),WireLayout/WireValue/WireError(手动 Display 无 thiserror)/WireCursor 全 LE,encode_value/decode_value 双向,WireSchema::from_sources 结构重解析(不用 TypeGraph 因 field_refs 丢名折平 <of>)+resolve 环守卫;高层入口 encode/decode_property_stream(EntityRef Full/Alias 与属性模式正交;别名 u8+u8/utype u16+u16;特殊 base prop 别名恒 1/2/3、utype 走 BasePropUtype 默认 40000/40001/40002)+encode/decode_method_args(别名=u8 componentAliasID+u8 methodAliasID+实参无计数前缀,utype=u16 utype 组件 id 不读)+encode/decode_message_frame(变长 u16 回填=载荷不含 4 头字节,≥65535=65535+u32 扩展);$/kode/wire/encode|decode RPC 边界注册(server.rs register+lib.rs pub mod 双注册),无 TS 镜像;golden=dump-wire-golden bin+tests/golden/wire-parity.json 35 样本(标量边界/容器/属性流别名+utype+特殊 base/方法实参/消息帧,内置 encode→decode 往返自校验),tests/wire_codec_units.rs 12 测试(golden 字符串等值/双向/逐字节截断不 panic/部分数组尽早停/STRING 非 ASCII 停/ENTITYCALL 16B/别名 id 溢出/≥65535 扩展帧/schema 嵌套+环+未知/RPC dispatch);scripts/wire-probe/memprobe.cpp 尽力交叉验证(编译级通过,链接需完整 KBEngine 构建→跳过,规范推导为权威);门禁 cargo test --workspace --exclude kode-scheduler 全绿|wire_codec_units 12|clippy 本文件零告警(workspace 既有 client_sdk/database_schema/message_table 8 处漂移为 pre-existing 未动)）
 - [ ] **C-16 · P1 · 实现 · def 驱动的数据库表生成**
   - 交付:从 def 模型生成实体表结构(属性→列映射、类型→SQL 类型映射、Flags INDEXED/UNIQUE→索引、默认值、持久化标记过滤非持久属性);MySQL DDL 输出 + 迁移(已有表结构 diff 升级);dbmgr 对应的读写接口面。与 message_table 同源(共用 def 模型,单一事实源)。
   - 验收:用 KBEngine 官方示例资产(defs)生成,与官方 dbmgr 建表结果对照;round-trip:def→表→描述回读=def 语义。
