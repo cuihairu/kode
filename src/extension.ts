@@ -236,6 +236,7 @@ import {
   KBEngineSignatureHelpProvider,
   KBEngineTypeCodeActionProvider,
   KBEngineMethodImplementationCodeActionProvider,
+  KBEngineDefPythonParityCodeActionProvider,
   KBEngineReceiverNoneGuardCodeActionProvider,
   prewarmKbengineIndex,
   revealSourceCommand,
@@ -1204,6 +1205,14 @@ export function activate(context: vscode.ExtensionContext) {
     new KBEngineMethodImplementationCodeActionProvider(entityMappingManager)
   );
   context.subscriptions.push(methodImplementationCodeActionProvider);
+
+  // C-19:def-method-missing-in-python 诊断的一键生成方法骨架(签名按 def
+  // 类型映射,目标取诊断双向定位面;生成后一致性重算,诊断消除)
+  const defPythonParityCodeActionProvider = vscode.languages.registerCodeActionsProvider(
+    defDocumentSelector,
+    new KBEngineDefPythonParityCodeActionProvider()
+  );
+  context.subscriptions.push(defPythonParityCodeActionProvider);
 
   // B-7(2026-10-29 用户令):receiver-none 诊断的 None 守卫快速修复
   // (python 面,使用行前插入早退守卫;code 对账 kbengine.receiverNone)

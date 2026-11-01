@@ -11,6 +11,10 @@ use kode_parser::xml::{self, Document, NodeData};
 
 use super::{make_finding, Finding, Rule, RuleRegistry};
 
+/// def↔Python 方法一致性规则(任务 C-19)独立文件,避免与并行分支
+/// (wt/topology)对 rules.rs 的改碰冲突。
+pub mod def_python_parity;
+
 // ---------------------------------------------------------------------------
 // 词表(与 TS defAnalyzer / kbengineMetadata 同表)
 // ---------------------------------------------------------------------------
@@ -967,4 +971,5 @@ pub fn register_all(reg: &mut RuleRegistry) {
     reg.push(Box::new(UnknownDetailLevelRule));
     reg.push(Box::new(DuplicateDefinitionRule));
     reg.push(Box::new(MissingFlagsRule));
+    reg.push(Box::new(def_python_parity::DefMethodMissingInPythonRule));
 }
