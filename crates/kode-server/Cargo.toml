@@ -30,6 +30,10 @@ path = "src/bin/dump-wire-golden.rs"
 name = "dump-def-md5-golden"
 path = "src/bin/dump-def-md5-golden.rs"
 
+[[bin]]
+name = "validate-process-topology"
+path = "src/bin/validate-process-topology.rs"
+
 [lib]
 name = "kode_server"
 path = "src/lib.rs"

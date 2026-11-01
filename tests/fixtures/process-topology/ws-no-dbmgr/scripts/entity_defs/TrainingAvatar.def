@@ -1,0 +1,6 @@
+<root>
+    <Interfaces><interface>TRAINING_ACTOR</interface></Interfaces>
+    <BaseMethods><reqEnterArena><Exposed>true</Exposed></reqEnterArena></BaseMethods>
+    <CellMethods><reqAttack><Arg>ENTITY_ID</Arg></reqAttack></CellMethods>
+    <ClientMethods><onBattleResult><Arg>UINT16</Arg><Arg>UINT32</Arg></onBattleResult></ClientMethods>
+</root>

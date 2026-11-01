@@ -1630,7 +1630,7 @@ function isTrueAttributeValue(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === 'true';
 }
 
-function listDefinitionFiles(directory: string | null): string[] {
+export function listDefinitionFiles(directory: string | null): string[] {
   if (!pathExists(directory)) {
     return [];
   }

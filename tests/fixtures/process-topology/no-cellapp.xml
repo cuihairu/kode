@@ -1,0 +1,22 @@
+<processTopology>
+  <!-- 缺 cellapp 角色:cell 内容实体 Avatar/Monster 触发 D1 -->
+  <process name="machine_1" role="machine">
+    <entry>machine --cid=1000 --gus=1</entry>
+    <port>20099</port>
+  </process>
+  <process name="dbmgr_1" role="dbmgr">
+    <entry>dbmgr --cid=1001 --gus=1</entry>
+    <port>20000</port>
+    <dependsOn>machine_1</dependsOn>
+  </process>
+  <process name="baseapp_1" role="baseapp">
+    <entry>baseapp --cid=1002 --gus=1</entry>
+    <port>20005</port>
+    <dependsOn>dbmgr_1</dependsOn>
+  </process>
+  <process name="loginapp_1" role="loginapp">
+    <entry>loginapp --cid=1004 --gus=1</entry>
+    <port>20013</port>
+    <dependsOn>baseapp_1</dependsOn>
+  </process>
+</processTopology>

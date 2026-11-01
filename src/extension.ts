@@ -317,7 +317,9 @@ import {
   KBENGINE_DATABASE_SIMULATION_SCHEME,
   KBEngineDatabaseSimulationProvider
 } from './databaseSimulator';
-import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities, readWorkspaceTextFile } from './definitionWorkspace';
+import { findEntityDefinitionFile, getDefinitionWorkspaceLayout, getRegisteredEntities, listDefinitionFiles, readWorkspaceTextFile } from './definitionWorkspace';
+import { validateProcessTopologyInRust } from './processTopologyRust';
+import { mapFindingsToDiagnostics, type ProcessTopologyDiagnosticSpec } from './processTopologyDiagnostics';
 import { scheduleBackgroundSchemaWarmup } from './schemaWarmup';
 import { analyzeDefDocumentWithRust, collectInheritedNames, formatDefAnalysisReport } from './defAnalyzer';
 import { joinWorkspacePath } from './workspacePath';
@@ -483,6 +485,10 @@ export function activate(context: vscode.ExtensionContext) {
   // .def/entities.xml 共用诊断 collection 与文档事件生命周期
   const isPythonDocument = (document: vscode.TextDocument): boolean =>
     document.languageId === 'python';
+  // C-17:进程拓扑清单文件(workspace 根 process_topology.xml)。清单变更触发
+  // 全量重排(拓扑是全局输入,单文件变更影响全部实体归属)。
+  const isProcessTopologyManifestDocument = (document: vscode.TextDocument): boolean =>
+    document.fileName.endsWith('process_topology.xml');
 
   // PR1 性能观测:请求级打点只看「结果是否为空」定 ok/miss(vscode Hover /
   // Location / CompletionItem[] 约定),结果对象原样透传,不改任何语义。
@@ -1308,6 +1314,181 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(defMethodConsistencyRevalidateCommand);
 
+  // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
+  // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
+  // 诊断任务,必独立,同 C-19 范式)。缺清单=静默零发现(零误报)。
+  const processTopologyDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-process-topology'
+  );
+  context.subscriptions.push(processTopologyDiagnostics);
+  const processTopologyScheduler = new DiagnosticScheduler();
+  const processTopologyManifestName = 'process_topology.xml';
+
+  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。 */
+  const resolveProcessTopologyManifestPath = (): string | null => {
+    const root = getWorkspaceRootForDocument();
+    if (!root) {
+      return null;
+    }
+    return `${root}${path.sep}${processTopologyManifestName}`;
+  };
+
+  /** 读文件原文(优先打开文档缓冲,回退磁盘快照)。 */
+  const readTextForPath = (fsPath: string): string | null => {
+    const open = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === fsPath);
+    if (open) {
+      return open.getText();
+    }
+    const snapshot = readSharedFileSnapshot(fsPath);
+    return snapshot?.content ?? null;
+  };
+
+  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。 */
+  const collectTopologyDefInputs = (): Array<{ name: string; category: string; filePath: string; text: string }> => {
+    const root = getWorkspaceRootForDocument();
+    if (!root) {
+      return [];
+    }
+    const layout = getDefinitionWorkspaceLayout(root);
+    const defs: Array<{ name: string; category: string; filePath: string; text: string }> = [];
+    const push = (directory: string | null, category: string) => {
+      for (const filePath of listDefinitionFiles(directory)) {
+        const name = filePath.split(/[\\/]/).pop()?.replace(/\.def$/i, '') ?? '';
+        const text = readTextForPath(filePath);
+        if (text !== null) {
+          defs.push({ name, category, filePath, text });
+        }
+      }
+    };
+    push(layout.entityDefsRoot, 'entity');
+    push(layout.interfacesRoot, 'interface');
+    push(layout.componentsRoot, 'component');
+    return defs;
+  };
+
+  /** 行首偏移表(同 defMethodConsistency 纯逻辑半边)。 */
+  const computeLineStarts = (text: string): number[] => {
+    const starts: number[] = [0];
+    for (let i = 0; i < text.length; i += 1) {
+      if (text[i] === '\n') {
+        starts.push(i + 1);
+      }
+    }
+    return starts;
+  };
+
+  /** 字节偏移 → vscode.Position(0 基行/列)。 */
+  const documentPositionFromOffset = (text: string, offset: number): vscode.Position => {
+    const starts = computeLineStarts(text);
+    let line = 0;
+    while (line + 1 < starts.length && starts[line + 1] <= offset) {
+      line += 1;
+    }
+    return new vscode.Position(line, offset - starts[line]);
+  };
+
+  /** 把 spec 换算成 vscode.Diagnostic(整行定位;related 钉 0 位,同 C-19)。 */
+  const specToDiagnostic = (spec: ProcessTopologyDiagnosticSpec, text: string): vscode.Diagnostic => {
+    const lineStarts = computeLineStarts(text);
+    const lineIndex = Math.min(Math.max(spec.line - 1, 0), Math.max(lineStarts.length - 1, 0));
+    const start = lineStarts[lineIndex];
+    const end = lineStarts[lineIndex + 1] ?? text.length;
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(
+        documentPositionFromOffset(text, start),
+        documentPositionFromOffset(text, Math.max(start, end - 1))
+      ),
+      spec.message,
+      vscode.DiagnosticSeverity.Warning
+    );
+    diagnostic.code = spec.code;
+    if (spec.related.length > 0) {
+      diagnostic.relatedInformation = spec.related.map(related =>
+        new vscode.DiagnosticRelatedInformation(
+          new vscode.Location(vscode.Uri.file(related.filePath), new vscode.Range(0, 0, 0, 0)),
+          related.message
+        )
+      );
+    }
+    return diagnostic;
+  };
+
+  /** 进程拓扑发布项:单文件诊断集合(全量重发用)。 */
+  interface ProcessTopologyPublishItem {
+    filePath: string;
+    diagnostics: vscode.Diagnostic[];
+  }
+
+  /**
+   * 进程拓扑诊断调度:读清单 + entities.xml + defs → Rust 校验 → 分组发布。
+   * 清单/任一 def 变更都会全量重算(拓扑是全局输入)。
+   */
+  const scheduleProcessTopologyDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    const capturedVersion = document.version;
+    const manifestPath = resolveProcessTopologyManifestPath();
+    if (!manifestPath) {
+      return;
+    }
+    // 清单未启用(缺文件)→ 静默零发现(不阻塞)。
+    const manifestText = readTextForPath(manifestPath);
+    if (manifestText === null) {
+      return;
+    }
+    const options = {
+      layer: 'local' as const,
+      // 计算产出:按文件分组的诊断清单(拓扑是全局输入,单文件重算产出全量)。
+      computeAsync: async (): Promise<readonly ProcessTopologyPublishItem[] | null> => {
+        const config = vscode.workspace.getConfiguration('kbengine');
+        const enabled = config.get<boolean>('diagnostics.checkProcessTopology', true);
+        if (!enabled || document.version !== capturedVersion) {
+          return [];
+        }
+        const root = getWorkspaceRootForDocument();
+        if (!root) {
+          return [];
+        }
+        const layout = getDefinitionWorkspaceLayout(root);
+        const entitiesXmlPath = layout.entitiesXmlPath;
+        const entitiesXmlText = entitiesXmlPath
+          ? (readTextForPath(entitiesXmlPath) ?? '')
+          : '';
+        const result = await validateProcessTopologyInRust({
+          manifestText,
+          entitiesXmlText,
+          defs: collectTopologyDefInputs()
+        });
+        if (!result) {
+          // Rust 不可用/失败 → 零发现(静默,不误报)。
+          return [];
+        }
+        const specs = mapFindingsToDiagnostics(result.findings, resolveProcessTopologyManifestPath);
+        const grouped = new Map<string, vscode.Diagnostic[]>();
+        for (const spec of specs) {
+          const text = readTextForPath(spec.filePath) ?? '';
+          const list = grouped.get(spec.filePath) ?? [];
+          list.push(specToDiagnostic(spec, text));
+          grouped.set(spec.filePath, list);
+        }
+        return Array.from(grouped, ([filePath, diagnostics]) => ({ filePath, diagnostics }));
+      },
+      publish: (items: readonly ProcessTopologyPublishItem[]) => {
+        // 全量重发:清空后按文件重设(拓扑全局输入,任一变更都产出全量状态)。
+        processTopologyDiagnostics.clear();
+        for (const item of items) {
+          processTopologyDiagnostics.set(vscode.Uri.file(item.filePath), item.diagnostics);
+        }
+      }
+    };
+    if (channel === 'queued') {
+      processTopologyScheduler.requestQueued(document, options);
+    } else {
+      processTopologyScheduler.request(document, options);
+    }
+  };
+
   // IDE-NAV-013:未知类型诊断的 QuickFix 替换候选(只出已注册类型的近似替换)
   const typeCodeActionProvider = vscode.languages.registerCodeActionsProvider(
     defDocumentSelector,
@@ -1345,6 +1526,9 @@ export function activate(context: vscode.ExtensionContext) {
       // C-19:关闭文档同步摘除本规则的诊断与一致性调度器状态(随文档生命周期)
       defMethodConsistencyDiagnostics.delete(document.uri);
       defMethodConsistencyScheduler.releaseDocument(document);
+      // C-17:进程拓扑集合/调度器随文档生命周期(清单或 def 关闭即摘除)。
+      processTopologyDiagnostics.delete(document.uri);
+      processTopologyScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -1382,8 +1566,15 @@ export function activate(context: vscode.ExtensionContext) {
       if (isDefDocument(event.document)) {
         scheduleDefDiagnostics(event.document, 'queued');
         scheduleDefMethodConsistencyDiagnostics(event.document, 'queued');
+        // C-17:def 变更 → 拓扑校验(该 def 是全局输入之一)。
+        scheduleProcessTopologyDiagnostics(event.document, 'queued');
       } else if (isEntitiesXmlDocument(event.document)) {
         scheduleEntitiesDiagnostics(event.document, 'queued');
+        // C-17:entities.xml 变更 → 拓扑校验(实体注册信息是输入)。
+        scheduleProcessTopologyDiagnostics(event.document, 'queued');
+      } else if (isProcessTopologyManifestDocument(event.document)) {
+        // C-17:清单变更 → 拓扑校验(全量重排,拓扑是全局输入)。
+        scheduleProcessTopologyDiagnostics(event.document, 'queued');
       } else if (isPythonDocument(event.document)) {
         scheduleReceiverNoneDiagnostics(event.document, 'queued');
         // C-19:Python 改动联动两路——反向诊断(Python 有 def 无)与正向重算
@@ -1492,8 +1683,14 @@ export function activate(context: vscode.ExtensionContext) {
       if (isDefDocument(document)) {
         scheduleDefDiagnostics(document, 'immediate');
         scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
+        // C-17:def 打开 → 拓扑校验(该 def 是全局输入之一)。
+        scheduleProcessTopologyDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
+        scheduleProcessTopologyDiagnostics(document, 'immediate');
+      } else if (isProcessTopologyManifestDocument(document)) {
+        // C-17:清单打开 → 全量重排(拓扑是全局输入)。
+        scheduleProcessTopologyDiagnostics(document, 'immediate');
       } else if (isPythonDocument(document)) {
         scheduleReceiverNoneDiagnostics(document, 'immediate');
         scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
@@ -1509,8 +1706,12 @@ export function activate(context: vscode.ExtensionContext) {
       if (isDefDocument(document)) {
         scheduleDefDiagnostics(document, 'immediate');
         scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
+        scheduleProcessTopologyDiagnostics(document, 'immediate');
       } else if (isEntitiesXmlDocument(document)) {
         scheduleEntitiesDiagnostics(document, 'immediate');
+        scheduleProcessTopologyDiagnostics(document, 'immediate');
+      } else if (isProcessTopologyManifestDocument(document)) {
+        scheduleProcessTopologyDiagnostics(document, 'immediate');
       } else if (isPythonDocument(document)) {
         scheduleReceiverNoneDiagnostics(document, 'immediate');
         scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
@@ -1616,6 +1817,10 @@ export function activate(context: vscode.ExtensionContext) {
       defMethodConsistencyScheduler.setEnabled(enabled, () =>
         defMethodConsistencyDiagnostics.clear()
       );
+      // C-17:主开关同闸进程拓扑管线(关→清拓扑集合,开→强制重算)
+      processTopologyScheduler.setEnabled(enabled, () =>
+        processTopologyDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -1627,7 +1832,10 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.diagnostics.checkDefMethodMissingInPython') ||
       event.affectsConfiguration('kbengine.diagnostics.checkPythonMethodNotInDef') ||
       event.affectsConfiguration('kbengine.entity.methodStubBody');
-    if ((diagnosticsInputsChanged || defMethodConsistencyInputsChanged) &&
+    // C-17:进程拓扑开关变更 → 拓扑调度器重算。
+    const processTopologyInputsChanged =
+      event.affectsConfiguration('kbengine.diagnostics.checkProcessTopology');
+    if ((diagnosticsInputsChanged || defMethodConsistencyInputsChanged || processTopologyInputsChanged) &&
         diagnosticScheduler.isEnabled()) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
           event.affectsConfiguration('kbengine.diagnostics') ||
@@ -1638,6 +1846,10 @@ export function activate(context: vscode.ExtensionContext) {
       if (defMethodConsistencyInputsChanged && defMethodConsistencyScheduler.isEnabled()) {
         defMethodConsistencyScheduler.invalidateAll();
       }
+      // C-17:拓扑开关变更 → 拓扑调度器输入代自增,已发布重算。
+      if (processTopologyInputsChanged && processTopologyScheduler.isEnabled()) {
+        processTopologyScheduler.invalidateAll();
+      }
       // receiverNoneDiagnostics 开关切换即重算(任务1,用户令 2026-10-27):
       // compute 每次现读配置，失效版本标记后重调已开文档。
       vscode.workspace.textDocuments.forEach(doc => {
@@ -1646,8 +1858,18 @@ export function activate(context: vscode.ExtensionContext) {
           if (defMethodConsistencyInputsChanged) {
             scheduleDefMethodConsistencyDiagnostics(doc, 'immediate');
           }
+          if (processTopologyInputsChanged) {
+            scheduleProcessTopologyDiagnostics(doc, 'immediate');
+          }
         } else if (isEntitiesXmlDocument(doc)) {
           scheduleEntitiesDiagnostics(doc, 'immediate');
+          if (processTopologyInputsChanged) {
+            scheduleProcessTopologyDiagnostics(doc, 'immediate');
+          }
+        } else if (isProcessTopologyManifestDocument(doc)) {
+          if (processTopologyInputsChanged) {
+            scheduleProcessTopologyDiagnostics(doc, 'immediate');
+          }
         } else if (isPythonDocument(doc)) {
           scheduleReceiverNoneDiagnostics(doc, 'immediate');
           if (defMethodConsistencyInputsChanged) {

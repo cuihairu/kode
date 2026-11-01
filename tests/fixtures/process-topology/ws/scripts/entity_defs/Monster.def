@@ -1,0 +1,20 @@
+<root>
+	<Parent> Avatar </Parent>
+	<Interfaces>
+		<interface> ROLE </interface>
+	</Interfaces>
+
+	<Properties>
+		<aiState>
+			<Type> UINT8 </Type>
+			<Flags> CELL_PUBLIC </Flags>
+		</aiState>
+	</Properties>
+
+	<CellMethods>
+		<onAggro>
+			<Arg> ENTITY_ID </Arg>
+		</onAggro>
+	</CellMethods>
+
+</root>

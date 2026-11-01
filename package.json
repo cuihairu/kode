@@ -911,6 +911,11 @@
           "default": false,
           "description": "诊断（C-19，反向，默认关）：Python 实体类方法在 .def 中无声明时报告 Warning（跳过引擎钩子与 dunder，仍属启发式防误报）。默认关闭，开启后产出 python-method-not-in-def 诊断"
         },
+        "kbengine.diagnostics.checkProcessTopology": {
+          "type": "boolean",
+          "default": true,
+          "description": "诊断（C-17）：进程拓扑定义期错配预警——校验 process_topology.xml 清单与实体 def 归属（方法节/持久属性 vs 拓扑角色、进程名/端口/单例角色重复、未知角色/依赖、hosts 归属矛盾等），全部 Warning 定位精确行。workspace 根无 process_topology.xml 时功能静默（零误报）。默认开启"
+        },
         "kbengine.hover.showTagDocs": {
           "type": "boolean",
           "default": true,

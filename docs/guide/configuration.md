@@ -79,6 +79,7 @@ The 76 settings are grouped by feature — one small table per area (Setting/Typ
 | `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | Check properties missing `Type`/`Flags` or duplicated fields |
 | `kbengine.diagnostics.checkDefMethodMissingInPython` | boolean | `true` | def↔Python method consistency (forward): a method declared in an entity `.def` (Base/Cell/Client methods) with no implementation in the same-named Python entity class is flagged as a Warning on the def method line, with the target Python file and class in the related info (default: enabled) |
 | `kbengine.diagnostics.checkPythonMethodNotInDef` | boolean | `false` | def↔Python method consistency (reverse, heuristic): a Python entity-class method with no def declaration is flagged — engine hooks and `__dunder__` are skipped (default: disabled; enable only when you want the stricter direction) |
+| `kbengine.diagnostics.checkProcessTopology` | boolean | `true` | Process-topology definition-mismatch warnings: validates the `process_topology.xml` manifest (workspace root, optional) against entity defs — method sections (Base/Cell) or persistent properties whose topology role is missing, duplicate process names/ports, duplicate singleton roles, unknown roles/dependencies, and `hosts` ownership conflicts are all flagged as precisely-located Warnings (default: enabled; silent, zero findings, when no manifest is present) |
 
 | Setting | What turning it off does | Common misconfiguration |
 | --- | --- | --- |

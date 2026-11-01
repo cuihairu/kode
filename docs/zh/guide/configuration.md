@@ -79,6 +79,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.diagnostics.checkMissingPropertyFields` | boolean | `true` | 检查属性缺 `Type`/`Flags` 或字段重复 |
 | `kbengine.diagnostics.checkDefMethodMissingInPython` | boolean | `true` | def↔Python 方法一致性(正向):实体 `.def`(Base/Cell/Client 方法节)声明的方法在对应同名 Python 实体类中无实现时,在 def 方法行报 Warning 并关联目标 Python 文件与类名(默认开) |
 | `kbengine.diagnostics.checkPythonMethodNotInDef` | boolean | `false` | def↔Python 方法一致性(反向,启发式):Python 实体类方法在 `.def` 中无声明时报 Warning——跳过引擎钩子与 `__dunder__`(默认关;要更严的方向再开) |
+| `kbengine.diagnostics.checkProcessTopology` | boolean | `true` | 进程拓扑定义期错配预警:校验 workspace 根(可选)的 `process_topology.xml` 清单与实体 def——方法节(Base/Cell)或持久属性对应的拓扑角色缺失、进程名/端口重复、单例角色重复、未知角色/依赖、`hosts` 承载归属矛盾,全部报定位精确的 Warning(默认开;无清单时静默零发现) |
 
 | 配置项 | 关掉会怎样 | 常见误配 |
 | --- | --- | --- |

@@ -1,0 +1,30 @@
+<processTopology>
+  <process name="machine_1" role="machine">
+    <entry>machine --cid=1000 --gus=1</entry>
+    <port>20099</port>
+  </process>
+  <process name="dbmgr_1" role="dbmgr">
+    <entry>dbmgr --cid=1001 --gus=1</entry>
+    <port>20000</port>
+    <dependsOn>machine_1</dependsOn>
+  </process>
+  <process name="baseapp_1" role="baseapp">
+    <entry>baseapp --cid=1002 --gus=1</entry>
+    <port>20005</port>
+    <dependsOn>dbmgr_1</dependsOn>
+    <hosts>Avatar</hosts>
+    <!-- 未在 entities.xml 也无 def 的实体 → O2 -->
+    <hosts>Ghost</hosts>
+  </process>
+  <process name="cellapp_1" role="cellapp">
+    <entry>cellapp --cid=1003 --gus=1</entry>
+    <port>20015</port>
+    <dependsOn>baseapp_1</dependsOn>
+    <hosts>Avatar</hosts>
+  </process>
+  <process name="loginapp_1" role="loginapp">
+    <entry>loginapp --cid=1004 --gus=1</entry>
+    <port>20013</port>
+    <dependsOn>baseapp_1</dependsOn>
+  </process>
+</processTopology>

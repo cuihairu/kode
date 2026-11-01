@@ -1,0 +1,22 @@
+<processTopology>
+  <!-- 缺 dbmgr 角色:持久实体 Avatar/Account 触发 D3 -->
+  <process name="machine_1" role="machine">
+    <entry>machine --cid=1000 --gus=1</entry>
+    <port>20099</port>
+  </process>
+  <process name="baseapp_1" role="baseapp">
+    <entry>baseapp --cid=1002 --gus=1</entry>
+    <port>20005</port>
+    <dependsOn>machine_1</dependsOn>
+  </process>
+  <process name="cellapp_1" role="cellapp">
+    <entry>cellapp --cid=1003 --gus=1</entry>
+    <port>20015</port>
+    <dependsOn>baseapp_1</dependsOn>
+  </process>
+  <process name="loginapp_1" role="loginapp">
+    <entry>loginapp --cid=1004 --gus=1</entry>
+    <port>20013</port>
+    <dependsOn>baseapp_1</dependsOn>
+  </process>
+</processTopology>

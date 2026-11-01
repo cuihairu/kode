@@ -1,0 +1,39 @@
+<processTopology>
+  <!-- 正确五进程拓扑:loginapp/baseapp/cellapp/dbmgr/machine,demo-assets 定义零发现 -->
+  <process name="machine_1" role="machine">
+    <description>机器守护进程,负责启动/停止同机组件</description>
+    <entry>machine --cid=1000 --gus=1</entry>
+    <port>20099</port>
+  </process>
+  <process name="dbmgr_1" role="dbmgr">
+    <description>数据库管理(按 uid 单实例,components.cpp:933;不承载实体)</description>
+    <entry>dbmgr --cid=1001 --gus=1</entry>
+    <port>20000</port>
+    <dependsOn>machine_1</dependsOn>
+  </process>
+  <process name="baseapp_1" role="baseapp">
+    <description>承载 base 域实体(Avatar/Account 的 base 部分)</description>
+    <entry>baseapp --cid=1002 --gus=1</entry>
+    <port>20005</port>
+    <dependsOn>dbmgr_1</dependsOn>
+    <dependsOn>machine_1</dependsOn>
+    <hosts>Avatar</hosts>
+    <hosts>Account</hosts>
+  </process>
+  <process name="cellapp_1" role="cellapp">
+    <description>承载 cell 域实体(Avatar/Monster 的 cell 部分)</description>
+    <entry>cellapp --cid=1003 --gus=1</entry>
+    <port>20015</port>
+    <dependsOn>baseapp_1</dependsOn>
+    <dependsOn>machine_1</dependsOn>
+    <hosts>Avatar</hosts>
+    <hosts>Monster</hosts>
+  </process>
+  <process name="loginapp_1" role="loginapp">
+    <description>客户端登录网关</description>
+    <entry>loginapp --cid=1004 --gus=1</entry>
+    <port>20013</port>
+    <dependsOn>baseapp_1</dependsOn>
+    <dependsOn>machine_1</dependsOn>
+  </process>
+</processTopology>
