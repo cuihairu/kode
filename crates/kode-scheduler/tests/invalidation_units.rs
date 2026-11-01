@@ -138,3 +138,47 @@ fn dependency_task_planning_labels_changed_file_and_batches() {
     let executed = exec.borrow().clone();
     assert_eq!(executed.len(), 2);
 }
+
+// C-20 交付③:调用反依赖 overlay 入失效 DAG —— 「改被调方文件 → 重算调用方文件」。
+#[test]
+fn affected_set_includes_call_dependents_overlay() {
+    let index = indexed_workspace();
+    let callee = key("/proj/scripts/combat.py");
+    let caller = key("/proj/scripts/game.py");
+    let mut call: kode_scheduler::CallReverseIndex = Default::default();
+    call.entry(callee.clone())
+        .or_default()
+        .insert(caller.clone());
+
+    // 无 overlay:只含自身
+    let plain = InvalidationGraph::new(&index);
+    assert!(!plain.affected_by(&callee).contains(&caller));
+
+    // 有 overlay:含调用方
+    let graph = InvalidationGraph::with_call_dependents(&index, &call);
+    let affected = graph.affected_by(&callee);
+    assert!(affected.contains(&caller));
+    assert!(affected.contains(&callee));
+}
+
+// C-20 交付③:多调用方折叠 + 自身不含(同文件调用不产跨文件条目)。
+#[test]
+fn call_dependents_overlay_dedupes_and_skips_self() {
+    let index = indexed_workspace();
+    let callee = key("/proj/scripts/combat.py");
+    let a = key("/proj/scripts/a.py");
+    let b = key("/proj/scripts/b.py");
+    let mut call: kode_scheduler::CallReverseIndex = Default::default();
+    call.entry(callee.clone()).or_default().insert(a.clone());
+    call.entry(callee.clone()).or_default().insert(b.clone());
+    call.entry(callee.clone())
+        .or_default()
+        .insert(callee.clone());
+
+    let graph = InvalidationGraph::with_call_dependents(&index, &call);
+    let affected = graph.affected_by(&callee);
+    assert!(affected.contains(&a));
+    assert!(affected.contains(&b));
+    // 自身被受影响集去重后仅出现一次
+    assert_eq!(affected.iter().filter(|k| **k == callee).count(), 1);
+}

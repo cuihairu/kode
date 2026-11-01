@@ -28,7 +28,7 @@ pub mod journal;
 pub mod model;
 pub mod scheduler;
 
-pub use invalidation::{plan_dependency_tasks, InvalidationGraph};
+pub use invalidation::{plan_dependency_tasks, CallReverseIndex, InvalidationGraph};
 pub use journal::{load_journal, write_journal, RecoveryReport, TaskRecord};
 pub use model::{SchedulerMetrics, SchedulerStatus, TaskKind, TaskState};
 pub use scheduler::{

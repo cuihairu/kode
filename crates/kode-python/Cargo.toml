@@ -1,0 +1,24 @@
+# kode2 C-20 (docs/kode2/phase2-py-face-gap.md §4 + KODE_2_COMPLETE_TODO C-20):
+# Python 集成层 —— AST 解析(ruff_python_parser)+ 方法级调用图 + KBEngine 特化边 +
+# 过程内 def-use 数据流(MVP)+ 供 C-19/wt-parity 复用的符号表。
+# 铁律说明:这是本仓库唯一显式引入第三方解析器 crate 的模块(C-20 用户令
+# 「Python 解析用 ruff_python_parser(Rust 原生,不造轮子)」);其余 crate 保持
+# 零第三方依赖。ruff 系列 MSRV=1.97,故 workspace rust-version 升至 1.97
+# (见根 Cargo.toml 注)。
+[package]
+name = "kode-python"
+description = "kode2 Python integration: ruff_python_parser AST, method-level call graph with KBEngine-specialized edges (allClients/baseClients/cell/base), intra-procedural def-use dataflow (MVP), reusable AST symbol table (C-20)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ruff_python_ast = "0.0.20"
+ruff_python_parser = "0.0.20"
+ruff_text_size = "0.0.20"
+kode-vfs = { path = "../kode-vfs" }
+kode-corpus = { path = "../kode-corpus" }
+
+[lints]
+workspace = true

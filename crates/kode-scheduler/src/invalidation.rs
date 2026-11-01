@@ -5,22 +5,47 @@
 //! - 分批重建:受影响集确定性排序后按上限切块,每批一个 `dependency-update`
 //!   任务(优先级继承变更文件面),整批走 [`crate::Scheduler`] 的批量/合并面。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kode_index::{DocumentKey, SymbolIndex};
 
 use crate::model::{priority, TaskKind};
 use crate::scheduler::{RunFn, TaskSpec};
 
+/// 跨文件调用反依赖:被调方文件 → 调用方文件集。
+///
+/// 由 kode-python 的 [`kode_python::graph::build_call_reverse_index`] 产出,
+/// 经 [`InvalidationGraph::with_call_dependents`] 接入失效 DAG,使「改被调方
+/// 文件 → 重算调用方文件」。本 crate 保持零第三方/零语言耦合:只消费泛型
+/// `BTreeMap`,不依赖 kode-python(调用图面在语言集成层)。
+pub type CallReverseIndex = BTreeMap<DocumentKey, BTreeSet<DocumentKey>>;
+
 /// 基于符号索引的反向失效视图(只读;图即索引的投影,不复制数据)。
+///
+/// 可选携带调用反依赖 overlay(C-20 交付③:Python 调用图入 DAG)。
 #[derive(Debug, Clone, Copy)]
 pub struct InvalidationGraph<'a> {
     index: &'a SymbolIndex,
+    call_dependents: Option<&'a CallReverseIndex>,
 }
 
 impl<'a> InvalidationGraph<'a> {
     pub fn new(index: &'a SymbolIndex) -> InvalidationGraph<'a> {
-        InvalidationGraph { index }
+        InvalidationGraph {
+            index,
+            call_dependents: None,
+        }
+    }
+
+    /// 带调用反依赖的失效图(名称倒排 + 调用边反向投影)。
+    pub fn with_call_dependents(
+        index: &'a SymbolIndex,
+        call_dependents: &'a CallReverseIndex,
+    ) -> InvalidationGraph<'a> {
+        InvalidationGraph {
+            index,
+            call_dependents: Some(call_dependents),
+        }
     }
 
     /// 该文件声明的名字(去重升序;实体/属性/方法/类型/别名/组件)。
@@ -36,7 +61,8 @@ impl<'a> InvalidationGraph<'a> {
         names
     }
 
-    /// 变更该文件的受影响集 = 自身 ∪ ⋃(依赖它声明的名字的文件)。
+    /// 变更该文件的受影响集 = 自身 ∪ ⋃(依赖它声明的名字的文件)
+    /// ∪ ⋃(调用它定义方法的文件)。
     /// 确定性:DocumentKey 自带 Ord,结果为排序集合,重复依赖自动折叠。
     pub fn affected_by(&self, key: &DocumentKey) -> BTreeSet<DocumentKey> {
         let mut affected: BTreeSet<DocumentKey> = BTreeSet::new();
@@ -44,6 +70,13 @@ impl<'a> InvalidationGraph<'a> {
         for name in self.declared_names(key) {
             for dependent in self.index.dependents_of(&name) {
                 affected.insert(dependent);
+            }
+        }
+        if let Some(call) = self.call_dependents {
+            if let Some(dependents) = call.get(key) {
+                for dependent in dependents {
+                    affected.insert(dependent.clone());
+                }
             }
         }
         affected
