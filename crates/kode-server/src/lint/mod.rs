@@ -38,6 +38,17 @@ pub struct RangeFace {
     pub length: usize,
 }
 
+/// 双向定位面(def↔Python 一致性规则用):目标 Python 文件 + 类名。
+/// 消费方(TS)据此构造 vscode.Diagnostic.relatedInformation 与 CodeAction 目标。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelatedFace {
+    /// 目标 Python 文件路径(平台路径)。
+    pub file: String,
+    /// 目标 Python 类名(同名实体类)。
+    pub class_name: String,
+}
+
 /// 一条 lint finding(与 TS `analyzeDefDocument` 输出同形;`code` 为
 /// `check` 的别名,`range` 为定位区间的自描述面,二者皆与 `check`/`offset`/
 /// `length` 冗余,仅供消费方按需取用,不影响 TS 直用)。
@@ -55,6 +66,10 @@ pub struct Finding {
     pub name: Option<String>,
     pub message: String,
     pub range: RangeFace,
+    /// 双向定位面(def↔Python 一致性规则):目标 Python 文件 + 类名。
+    /// 其余规则不设(省略)。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related: Option<RelatedFace>,
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +92,34 @@ pub struct InheritedNameInfo {
 pub type InheritedNames = BTreeMap<String, InheritedNameInfo>;
 
 // ---------------------------------------------------------------------------
+// def↔Python 一致性输入面(任务 C-19:def-method-missing-in-python 规则)
+// ---------------------------------------------------------------------------
+
+/// 单个方法段(base/cell/client)的 Python 侧上下文:该段属主文件 + 类内
+/// 已实现方法集合(做集合差的减数)。`python_file` 空 = 无法核验,该段不产
+/// finding(零误报口径)。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PythonParitySection {
+    /// 该段属主 Python 文件路径(目标定位用)。
+    pub python_file: String,
+    /// 该段 Python 类内已实现的方法名集合。
+    pub implemented_methods: Vec<String>,
+}
+
+/// def↔Python 一致性检查输入(`pythonParity` 可选入参,TS 直传)。三段缺省
+/// 均可省(缺省段不核验);`python_class` 空 = 调用方未提供上下文,规则零产出。
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct PythonParityInput {
+    /// 目标 Python 实体类名(消息与定位用)。
+    pub python_class: String,
+    pub base: Option<PythonParitySection>,
+    pub cell: Option<PythonParitySection>,
+    pub client: Option<PythonParitySection>,
+}
+
+// ---------------------------------------------------------------------------
 // 规则上下文与 trait
 // ---------------------------------------------------------------------------
 
@@ -89,6 +132,8 @@ pub struct RuleContext<'a> {
     pub inherited: &'a InheritedNames,
     /// 已知类型并集(内建 ∪ 调用方提供的语料)。
     pub known_types: &'a BTreeSet<String>,
+    /// def↔Python 一致性输入(C-19);缺省空 → parity 规则零产出。
+    pub python: PythonParityInput,
 }
 
 /// 一条 lint 规则:稳定 id + 对上下文产出 findings(规则内部自保序)。
@@ -180,15 +225,30 @@ fn handle_analyze_def(params: Value) -> Result<Value, String> {
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
     let known_refs: Vec<&str> = known_types.iter().map(|s| s.as_str()).collect();
-    let findings = analyze_def(&text, &inherited, &known_refs)?;
+    let python: PythonParityInput = params
+        .get("pythonParity")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let findings = analyze_def_with_python(&text, &inherited, &known_refs, python)?;
     Ok(serde_json::json!({ "findings": findings }))
 }
 
-/// 对一份 .def 文本运行全量 lint 规则(与 RPC handler 同口径,供单测直用)。
+/// 对一份 .def 文本运行全量 lint 规则(与 RPC handler 同口径,供单测直用;
+/// Python 一致性输入缺省 → parity 规则零产出,既有调用方不变)。
 pub fn analyze_def(
     text: &str,
     inherited: &InheritedNames,
     known_types: &[&str],
+) -> Result<Vec<Finding>, String> {
+    analyze_def_with_python(text, inherited, known_types, PythonParityInput::default())
+}
+
+/// 对一份 .def 文本运行全量 lint 规则,带 def↔Python 一致性输入(C-19)。
+pub fn analyze_def_with_python(
+    text: &str,
+    inherited: &InheritedNames,
+    known_types: &[&str],
+    python: PythonParityInput,
 ) -> Result<Vec<Finding>, String> {
     let doc = kode_parser::xml::parse(text, true);
     if doc.root().is_none() {
@@ -209,6 +269,7 @@ pub fn analyze_def(
         line_map: &line_map,
         inherited,
         known_types: &known,
+        python,
     };
     Ok(all_rules().run(&ctx))
 }
@@ -258,5 +319,6 @@ pub(crate) fn make_finding(
         name,
         message,
         range: RangeFace { offset, length },
+        related: None,
     }
 }

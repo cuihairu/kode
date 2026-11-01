@@ -233,3 +233,49 @@ fn registry_lists_lint_method() {
     let state = ServerState::new();
     assert!(state.rpc.methods().any(|m| m == "$/kode/lint/analyzeDef"));
 }
+
+/// pythonParity 入参(C-19)经 JSON 驱动 def-method-missing-in-python:
+/// base 段上下文已实现 hp,onTick 未实现 → 恰好 1 条,携带 related 双向定位。
+#[test]
+fn analyze_def_python_parity_fires_with_related() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let text = "<root>\n\
+\t<BaseMethods>\n\
+\t\t<hp>\n\
+\t\t\t<Arg>INT8</Arg>\n\
+\t\t</hp>\n\
+\t\t<onTick>\n\
+\t\t\t<Arg>UINT8</Arg>\n\
+\t\t</onTick>\n\
+\t</BaseMethods>\n\
+</root>\n";
+    let python_parity = json!({
+        "pythonClass": "Avatar",
+        "base": {
+            "pythonFile": "/a/scripts/base/Avatar.py",
+            "implementedMethods": ["hp"]
+        }
+    });
+    let findings = analyze(
+        &mut state,
+        6,
+        json!({"text": text, "pythonParity": python_parity}),
+    );
+    let parity: Vec<&serde_json::Value> = findings
+        .iter()
+        .filter(|f| f.get("check").and_then(|c| c.as_str()) == Some("def-method-missing-in-python"))
+        .collect();
+    assert_eq!(parity.len(), 1, "恰好 1 条 warning");
+    assert_eq!(parity[0].get("severity").and_then(|s| s.as_str()), Some("warning"));
+    assert_eq!(parity[0].get("name").and_then(|n| n.as_str()), Some("onTick"));
+    let related = parity[0].get("related").expect("related key");
+    assert_eq!(
+        related.get("file").and_then(|f| f.as_str()),
+        Some("/a/scripts/base/Avatar.py")
+    );
+    assert_eq!(
+        related.get("className").and_then(|c| c.as_str()),
+        Some("Avatar")
+    );
+}

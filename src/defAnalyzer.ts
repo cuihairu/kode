@@ -35,6 +35,8 @@ export interface DefAnalysisFinding {
   /** 涉及的属性/方法名(无则省略) */
   name?: string;
   message: string;
+  /** 双向定位面(C-19 def↔Python 一致性):目标 Python 文件 + 类名。 */
+  related?: { file: string; className: string };
 }
 
 export type DefAnalysisSeverity = 'error' | 'warning' | 'info';
@@ -762,6 +764,7 @@ interface RustAnalyzeDefFinding {
   length: number;
   name?: string;
   message: string;
+  related?: { file: string; className: string };
 }
 
 const toDefAnalysisFinding = (item: RustAnalyzeDefFinding): DefAnalysisFinding => ({
@@ -771,7 +774,8 @@ const toDefAnalysisFinding = (item: RustAnalyzeDefFinding): DefAnalysisFinding =
   offset: item.offset,
   length: item.length,
   ...(item.name !== undefined ? { name: item.name } : {}),
-  message: item.message
+  message: item.message,
+  ...(item.related !== undefined ? { related: item.related } : {})
 });
 
 /** InheritedNames(Map+Set)→ JSON 形(Set 收束为数组;Rust camelCase 反序列化)。 */
@@ -793,7 +797,7 @@ const serializeInheritedNames = (inherited: InheritedNames): Record<string, unkn
 const buildAnalyzeDefParams = (
   text: string,
   inheritedNames: InheritedNames,
-  options: { knownTypes?: readonly string[] }
+  options: { knownTypes?: readonly string[]; pythonParity?: unknown }
 ): Record<string, unknown> => {
   const params: Record<string, unknown> = {
     text,
@@ -801,6 +805,9 @@ const buildAnalyzeDefParams = (
   };
   if (options.knownTypes && options.knownTypes.length > 0) {
     params.knownTypes = options.knownTypes;
+  }
+  if (options.pythonParity !== undefined) {
+    params.pythonParity = options.pythonParity;
   }
   return params;
 };
@@ -814,7 +821,7 @@ const buildAnalyzeDefParams = (
 export async function analyzeDefDocumentInRust(
   text: string,
   inheritedNames: InheritedNames = new Map(),
-  options: { knownTypes?: readonly string[] } = {}
+  options: { knownTypes?: readonly string[]; pythonParity?: unknown } = {}
 ): Promise<DefAnalysisFinding[] | null> {
   const gate = getKodeCoreShadowGate();
   if (!gate) {

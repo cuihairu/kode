@@ -43,6 +43,11 @@ import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
 import { getKodeCoreShadowGate, shadowCompareDefinition, shadowObserveDefDocument } from './kodeCoreShadowFaces';
 import { analyzeDefDocumentInRust, type DefAnalysisFinding } from './defAnalyzer';
+import {
+  buildPythonMethodSkeletonWithTypes,
+  collectDefPythonParityInput,
+  entityNameOfDefFile
+} from './defPythonParity';
 import { buildDefChain } from './defChain';
 import {
   METHOD_DECLARATION_PATTERN,
@@ -1602,7 +1607,10 @@ const RUST_LIVE_MERGE_CODES = new Set<string>([
   'invalid-identifier',
   'method-property-collision',
   'engine-limited-name',
-  'inherited-name-collision'
+  'inherited-name-collision',
+  // C-19:def↔Python 方法一致性(warning,双向定位 related 面在
+  // mergeRustDefFindings 转 relatedInformation)。
+  'def-method-missing-in-python'
 ]);
 
 const toDiagnosticSeverity = (severity: DefAnalysisFinding['severity']): vscode.DiagnosticSeverity =>
@@ -1621,9 +1629,18 @@ function observeRustDefFindings(
     return;
   }
   const version = document.version;
+  // C-19:def↔Python 一致性入参按标准布局现采(打开缓冲区优先读盘);
+  // 非 scripts/entity_defs 布局 → null,Rust parity 规则零产出。采集失败
+  // (盘上异常)不阻断诊断面,回落零产出(Rust 规则不核验)。
+  let pythonParity: unknown;
+  try {
+    pythonParity = collectDefPythonParityInput(document.fileName) ?? undefined;
+  } catch {
+    pythonParity = undefined;
+  }
   // 空 inheritedNames:活校验侧只并集单文件分析建议,继承链同名由批分析命令
   // (kbengine.def.analyze)承担,避免每次按键做祖先闭包磁盘 I/O。
-  void analyzeDefDocumentInRust(document.getText(), new Map(), {})
+  void analyzeDefDocumentInRust(document.getText(), new Map(), { pythonParity })
     .then(findings => {
       if (!findings || findings.length === 0) {
         return;
@@ -1670,6 +1687,17 @@ function mergeRustDefFindings(
       item.message,
       toDiagnosticSeverity(item.severity)
     );
+    // C-19 双向定位:目标 Python 文件 + 类名 → relatedInformation
+    // (vscode 面;CodeAction 经同一面定位目标文件,无需重新解析)。
+    if (item.related) {
+      const relatedUri = vscode.Uri.file(item.related.file);
+      diag.relatedInformation = [
+        new vscode.DiagnosticRelatedInformation(
+          new vscode.Location(relatedUri, new vscode.Range(0, 0, 0, 0)),
+          item.related.className
+        )
+      ];
+    }
     const positionKey = `${diag.range.start.line}:${diag.range.start.character}:${diag.message}`;
     if (existingKeys.has(positionKey)) {
       continue;
@@ -6047,6 +6075,131 @@ export class KBEngineMethodImplementationCodeActionProvider implements vscode.Co
     };
     return [action];
   }
+}
+
+/** C-19 def↔Python 一致性诊断 code(与 Rust lint 规则 id 同源)。 */
+export const DEF_PYTHON_PARITY_DIAGNOSTIC_CODE = 'def-method-missing-in-python';
+
+/**
+ * C-19 交付②:def-method-missing-in-python 诊断的一键生成 CodeAction。
+ * 仅出现在「def 有 Python 无」方法上(诊断 code 对账),在目标 Python 类
+ * 末尾生成方法骨架(签名参数从 def `<Arg>` 类型映射,体默认 raise
+ * NotImplementedError,可配 pass);生成后一致性自动重算(诊断消除,走
+ * 既有 observeRustDefFindings 重扫)。目标文件取自诊断双向定位面
+ * (relatedInformation),与 lint 规则同一解析口径,不重新猜测。
+ */
+export class KBEngineDefPythonParityCodeActionProvider implements vscode.CodeActionProvider {
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    context: vscode.CodeActionContext,
+    token?: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.CodeAction[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    if (
+      document.languageId !== 'kbengine-def' &&
+      !document.fileName.toLowerCase().endsWith('.def')
+    ) {
+      return [];
+    }
+    const actions: vscode.CodeAction[] = [];
+    const seen = new Set<string>();
+    for (const diagnostic of context.diagnostics) {
+      if (diagnostic.code !== DEF_PYTHON_PARITY_DIAGNOSTIC_CODE) {
+        continue;
+      }
+      if (!diagnosticRangeIntersects(diagnostic.range, range)) {
+        continue;
+      }
+      // 双向定位面:目标 Python 文件 + 类名(lint 规则同一解析口径)。
+      const related = diagnostic.relatedInformation?.[0];
+      if (!related) {
+        continue;
+      }
+      const targetFile = related.location.uri.fsPath;
+      const className = related.message || entityNameOfDefFile(document.fileName);
+      const methodName = document.getText(diagnostic.range).trim();
+      if (!methodName) {
+        continue;
+      }
+      const dedupeKey = `${targetFile}:${methodName}`;
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
+
+      const argTypes = collectMethodArgTypes(document, methodName);
+      const snapshot = readSharedFileSnapshot(targetFile);
+      if (!snapshot) {
+        continue;
+      }
+      const insertion = findPythonClassInsertionPoint(snapshot.content, className);
+      if (!insertion) {
+        continue;
+      }
+      const skeleton = buildPythonMethodSkeletonWithTypes(methodName, argTypes);
+
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(
+        vscode.Uri.file(targetFile),
+        new vscode.Position(insertion.line, 0),
+        insertion.blankPrefix ? `\n${skeleton}` : skeleton
+      );
+      const action = new vscode.CodeAction(
+        vscode.l10n.t('Generate method {name} → {file}:{line}', {
+          name: methodName,
+          file: targetFile,
+          line: insertion.line + 1
+        }),
+        vscode.CodeActionKind.QuickFix
+      );
+      action.diagnostics = [diagnostic];
+      action.edit = edit;
+      actions.push(action);
+    }
+    return actions;
+  }
+}
+
+/**
+ * 取 def 文档中同名方法节点的 `<Arg>` 类型序列(签名类型映射输入);
+ * 解析不到(属性段同名/位置未落在方法名)→ 空数组(仅 (self) 签名)。
+ */
+function collectMethodArgTypes(document: vscode.TextDocument, methodName: string): string[] {
+  const ast = parseDefAst(document);
+  if (!ast?.root) {
+    return [];
+  }
+  const methodNode = findMethodElementByName(ast.root, methodName);
+  if (!methodNode) {
+    return [];
+  }
+  return getDirectChildElements(methodNode)
+    .filter(node => node.name === 'Arg')
+    .map(getNodeValue);
+}
+
+/** DFS 在方法段(BaseMethods/CellMethods/ClientMethods)内找同名方法元素。 */
+function findMethodElementByName(root: DefElementNode, name: string): DefElementNode | null {
+  const stack: DefElementNode[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop()!;
+    if (METHOD_SECTIONS.has(node.name as KBEngineSectionName)) {
+      for (const child of node.children) {
+        if (child.kind === 'element' && child.name === name) {
+          return child;
+        }
+      }
+    }
+    for (const child of node.children) {
+      if (child.kind === 'element') {
+        stack.push(child);
+      }
+    }
+  }
+  return null;
 }
 
 export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeActionProvider {

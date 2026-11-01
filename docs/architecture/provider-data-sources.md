@@ -19,7 +19,7 @@
 
 ## 2. Provider 清单
 
-### 2a. 语言 provider(vscode.languages.register\*,26 注册 / 25 类)
+### 2a. 语言 provider(vscode.languages.register\*,27 注册 / 26 类)
 
 注册位为 extension.ts 行号:
 
@@ -50,6 +50,7 @@
 | KBEngineRenameProvider | languageProviders.ts:5618 | :1055 | EntityMappingManager(def 符号改名) | 编辑提案(WorkspaceEdit) |
 | KBEngineTypeCodeActionProvider | languageProviders.ts:5375 | :1101 | 当前文档 def 结构(构造零依赖) | 编辑提案(WorkspaceEdit) |
 | KBEngineMethodImplementationCodeActionProvider | languageProviders.ts:5470 | :1108 | EntityMappingManager(接口方法补实现) | 编辑提案(WorkspaceEdit) |
+| KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1213 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1116 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
