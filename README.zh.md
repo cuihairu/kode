@@ -1,10 +1,9 @@
-<p align="center"><img src="resources/logo.png" width="64" height="64" alt="logo" /> <a href="https://cuihairu.github.io/kode/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
-</p>
+<p align="center"><img src="resources/logo.png" width="64" height="64" alt="logo" /></p>
 
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.61.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.61.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
