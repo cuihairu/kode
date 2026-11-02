@@ -23,6 +23,9 @@ import type { DefMethodGap, PythonMethodNotInDefGap } from './defMethodConsisten
 import { getHookByName } from './hooks';
 import { clearDefCallChainFileCache } from './defCallChain';
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
+import type { PythonSymbolCall } from './pythonCallGraphRust';
+import type { PythonSymbolsRustResult } from './pythonCallGraphRust';
+import { buildPythonSymbolsInRust } from './pythonCallGraphRust';
 import { propertyFlagDomainList } from './defAnalyzer';
 import type { PropertyFlagDomain } from './defAnalyzer';
 import { findOwnerSelfPropertyAccesses, findOwnerSelfReceiverCalls } from './pythonSelfScope';
@@ -546,7 +549,7 @@ export class EntityMappingManager {
     }
 
     const pythonOwnerFiles = this.collectPythonOwnerFiles(semantics);
-    const pythonMethods = this.collectPythonMethods(pythonOwnerFiles);
+    const pythonMethods = await this.collectPythonMethods(pythonOwnerFiles);
     const propertyDefinitions = this.collectPropertyDefinitions(semantics);
     const methodDefinitions = this.collectMethodDefinitions(semantics);
     this.bindPythonMethods(methodDefinitions, pythonMethods);
@@ -929,17 +932,27 @@ export class EntityMappingManager {
     };
   }
 
-  private collectPythonMethods(ownerFiles: PythonOwnerFile[]): IndexedPythonMethodLocation[] {
-    const methods: IndexedPythonMethodLocation[] = [];
-
+  private async collectPythonMethods(ownerFiles: PythonOwnerFile[]): Promise<IndexedPythonMethodLocation[]> {
+    const readableFiles: Array<{ path: string; text: string }> = [];
     for (const ownerFile of ownerFiles) {
       if (!fs.existsSync(ownerFile.filePath)) {
         continue;
       }
+      readableFiles.push({ path: ownerFile.filePath, text: readFileSyncUtf8Recorded(ownerFile.filePath) });
+    }
 
-      const content = readFileSyncUtf8Recorded(ownerFile.filePath);
-      const parsedMethods = parsePythonMethodBlocks(content, ownerFile.filePath);
-      for (const method of parsedMethods) {
+    // C-20:Rust 符号表主路径(AST 权威——方法枚举与自身调用点不含注释/字符串
+    // 误报);Rust 不可用(无门/失败/形状不合规)回退 TS 正则自建,行为不变。
+    if (readableFiles.length > 0) {
+      const rustSymbols = await buildPythonSymbolsInRust(readableFiles);
+      if (rustSymbols) {
+        return rustSymbolsToIndexedMethodLocations(readableFiles, rustSymbols);
+      }
+    }
+
+    const methods: IndexedPythonMethodLocation[] = [];
+    for (const file of readableFiles) {
+      for (const method of parsePythonMethodBlocks(file.text, file.path)) {
         methods.push({
           ...method
         });
@@ -2981,6 +2994,106 @@ export function getColumnNumber(text: string, index: number): number {
 
 function normalizePropertyLookupPath(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/**
+ * C-20:Rust 符号表 → C-19 方法定位(IndexedPythonMethodLocation)。
+ *
+ * 口径对齐(与 parsePythonMethodBlocks 逐字段一致,tests/pythonSymbolsParity
+ * 锁死):
+ * - Rust line/character 是 def 语句起点(装饰器行/def 关键字列),TS 口径是
+ *   def 行(1-based)与方法名列——故 line/character/endLine 从原文按 TS 同
+ *   一算法派生(def 块从 Rust 提示行起扫,装饰器形态天然对齐;endLine 为缩
+ *   进边界扫描,含 TS 的「跳过空行到下一条语句」语义)。
+ * - 调用点行号 Rust 0-based → +1;列 Rust 为调用式起点(self 列),TS 口径
+ *   为 self. 后方法名列 → +『self.』宽。`self(...)`(无方法名链)TS 正则
+ *   本就不记,过滤对齐。
+ * - 模块级函数无 calls(Rust 只按 (类,方法) 归集),空数组对齐。
+ */
+export function rustSymbolsToIndexedMethodLocations(
+  files: Array<{ path: string; text: string }>,
+  symbols: PythonSymbolsRustResult
+): IndexedPythonMethodLocation[] {
+  const symbolsByPath = new Map(symbols.map(file => [file.filePath, file]));
+  const methods: IndexedPythonMethodLocation[] = [];
+
+  for (const file of files) {
+    const fileSymbols = symbolsByPath.get(file.path);
+    if (!fileSymbols) {
+      continue;
+    }
+    const sourceLines = file.text.split('\n');
+    const defs: Array<{ name: string; hintLine: number; calls: PythonSymbolCall[] }> = [
+      ...fileSymbols.functions.map(fn => ({ name: fn.name, hintLine: fn.line, calls: [] as PythonSymbolCall[] })),
+      ...fileSymbols.classes.flatMap(cls =>
+        cls.methods.map(method => ({ name: method.name, hintLine: method.line, calls: method.calls }))
+      )
+    ];
+    for (const def of defs) {
+      const located = locatePythonDefBlock(sourceLines, def.name, def.hintLine);
+      if (!located) {
+        continue;
+      }
+      methods.push({
+        filePath: file.path,
+        methodName: def.name,
+        line: located.line,
+        character: located.character,
+        endLine: located.endLine,
+        calls: def.calls
+          .filter(call => call.methodName !== 'self')
+          .map(call => ({
+            methodName: call.methodName,
+            line: call.line + 1,
+            character: call.character + 'self.'.length,
+            filePath: file.path
+          }))
+      });
+    }
+  }
+
+  return methods;
+}
+
+/**
+ * 在原文行集内定位 `def name` 块,返回 TS 口径的 1-based line / 方法名列 /
+ * 缩进边界 endLine(算法与 parsePythonMethodBlocks 逐字相同)。hintLine 为
+ * Rust 报的 def 语句起点(0-based,装饰器形态早于 def 行)——从它起扫而非
+ * 全文扫,同名方法多块时各归其位。
+ */
+function locatePythonDefBlock(
+  sourceLines: string[],
+  methodName: string,
+  hintLine: number
+): { line: number; character: number; endLine: number } | null {
+  const definitionRegex = /^(\s*)(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/;
+
+  for (let index = Math.max(hintLine, 0); index < sourceLines.length; index += 1) {
+    const match = definitionRegex.exec(sourceLines[index]);
+    if (!match || match[2] !== methodName) {
+      continue;
+    }
+    const indent = match[1].length;
+    let endLine = sourceLines.length;
+    for (let nextLine = index + 1; nextLine < sourceLines.length; nextLine += 1) {
+      const nextText = sourceLines[nextLine];
+      if (!nextText.trim()) {
+        continue;
+      }
+      const nextIndent = nextText.match(/^\s*/)?.[0].length || 0;
+      if (nextIndent <= indent) {
+        endLine = nextLine;
+        break;
+      }
+    }
+    return {
+      line: index + 1,
+      character: sourceLines[index].indexOf(methodName),
+      endLine
+    };
+  }
+
+  return null;
 }
 
 export function parsePythonMethodBlocks(

@@ -29,7 +29,7 @@ interface ManagerInternals {
   storeIndex(index: unknown): void;
   getWorkspaceRoot(filePath: string): string | null;
   collectPythonOwnerFiles(semantics: unknown): unknown[];
-  collectPythonMethods(ownerFiles: Array<{ filePath: string }>): unknown[];
+  collectPythonMethods(ownerFiles: Array<{ filePath: string }>): Promise<unknown[]>;
   bindPythonMethods(definitions: unknown[], methods: Array<{ filePath: string }>): void;
   rebasePropertyPath(property: unknown, prefix: string): {
     fullPath: string;
@@ -201,9 +201,9 @@ describe('EntityMappingManager 私有工具的直接驱动', () => {
     expect(await internals(manager as EntityMappingManager).buildIndex('Nowhere', '')).toBeNull();
   });
 
-  it('collectPythonMethods 跳过不存在的 owner 文件', () => {
+  it('collectPythonMethods 跳过不存在的 owner 文件', async () => {
     const missing = [{ filePath: p(root, 'scripts', 'base', 'Nowhere.py') }];
-    expect(internals(manager as EntityMappingManager).collectPythonMethods(missing)).toEqual([]);
+    expect(await internals(manager as EntityMappingManager).collectPythonMethods(missing)).toEqual([]);
   });
 
   it('bindPythonMethods 对无法推断归属的文件用三种兜底键且不绑定', () => {
