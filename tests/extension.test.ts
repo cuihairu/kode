@@ -199,8 +199,9 @@ describe('extension activate 装配', () => {
     expect(languagesRegistry.codeActionsRegistrations).toHaveLength(4);
     // 批126:RPC 方法标记的 Python 侧 CodeLens 单注册;批134 起 types.xml
     // 引用反扫镜再加一份注册;批135 属性访问标记再加一份注册;批154 起
-    // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关)
-    expect(languagesRegistry.codeLensRegistrations).toHaveLength(7);
+    // 事件回调镜链从 RPC 镜链拆出独立注册(各自独立开关);IDE-HOT-100 起
+    // 文件热更状态点 CodeLens 再加一份注册(状态机派生视图,见其专测)
+    expect(languagesRegistry.codeLensRegistrations).toHaveLength(8);
     // 批154:python 侧 types.xml 数据类型 inlay hints 一份注册;内建属性行内
     // `: <type>` inlay 另一份独立注册(2026-10-21 形态升级单,独立开关);
     // 任务2(2026-10-27)def 定义点形参 inlay 再一份独立注册
@@ -726,10 +727,13 @@ describe('extension activate 装配', () => {
         affectsConfiguration: (section: string) =>
           section === 'kbengine' || section === 'kbengine.codeLens'
       });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 0]);
+      // 索引 6=IDE-HOT-100 文件热更状态点(kbengine 段变更刷新,与其它
+      // 配置敏感 provider 同口径);索引 5/7=generatedSource/generatedEntitySource
+      // 不订阅配置变更,计数不动
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 1, 0]);
       // 外层 guard:不影响 kbengine 段时不 fire(计数不动)
       workspaceEvents.configurationChanged.fire({ affectsConfiguration: () => false });
-      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 0]);
+      expect(lensFires.map(read => read())).toEqual([1, 1, 1, 1, 1, 0, 1, 0]);
 
       // 打开文档事件:def 文档触发校验
       const openedDef = makeTextDocument(BAD_DEF, { fileName: path.join(root, 'Opened.def') });

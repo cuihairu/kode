@@ -626,6 +626,26 @@ The flow graph panel supports:
   - Cross-kind comparison never happens: a local hash is not runtime evidence, so even coincidentally equal values are just two separately-labeled lines — no 「一致」 claim across kinds (same-kind comparison is a protocol-internal verification means, not done on this surface)
   - Missing kinds stay missing: an unreadable file has no fileHash/semanticHash lines, a runtime that never reported a digest has no engineDigest line, a `.py` file has no semanticHash line — nothing is filled in to pretend
   - Both send paths feed the digest register: the fire path and the failed-target retry forward real HTTP receipt bodies to it; an empty ledger reports 无投递记录 honestly
+
+### `kbengine.hotReload.filterByState`
+
+- Title: `Hot Reload: Show Changed Files (Dirty/Sent)`
+- Purpose: render the hot-reload attention set — files that changed but have not been (re)loaded — into the 「KBEngine 热更新」 channel and open it (IDE-HOT-100 / design §3.4)
+- Behavior:
+  - Attention set = DIRTY ∪ SENT only (「看哪些改了还没重载」); FAILED and RESTART_REQUIRED have their own dedicated command surfaces and are never mixed into this filter
+  - The state is derived over the delivery ledger (rootId × targetId × file) with content sha256 as the change basis — never mtime, so touch/perm-only edits do not mark a file dirty
+  - Each listed file shows its state, the baseline hash prefix, and the ledger detail (attempt generation / accepted annotation) — an empty attention set reports 无待处理 files honestly
+  - Hidden from the command palette (`when: false`) — the status bar item is the intended entry
+
+### `kbengine.hotReload.showFileState`
+
+- Title: `Hot Reload: Show File State`
+- Purpose: render the per-file hot-reload lifecycle state across every target that references it (invoked from the CodeLens status dot; IDE-HOT-100)
+- Behavior:
+  - The status dot (CodeLens) is derived from the same ledger-derived state machine: CLEAN (no badge) / DIRTY (orange) / SENT (blue) / APPLIED (green) / FAILED (red) / RESTART_REQUIRED (purple)
+  - A file in the workspace root shows one line per target with its state, baseline hash prefix, send generation, and detail; a file outside any root reports 不在工作区根内 honestly
+  - RESTART_REQUIRED is the HOT-005 structural-def gate: a structural def change blocks the whole batch and is surfaced as restart-required (a conservative hold, never a fake failure) — the reason text names the gate
+
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`

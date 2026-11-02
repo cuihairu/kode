@@ -69,17 +69,24 @@ CI and local development split into three paths by what changed — editing one 
 ### Go to Definition
 - [Navigate from `entities.xml` to `.def` files]
 - [Quick location of entity definitions]
+- [Def references (Shift+F12) across defs, including self-property access, receiver RPC calls and unsaved buffers]
+- [Go to implementations for def methods]
+- [Def outline document symbols and workspace symbol search]
+- [Def-chain reveal on hover (`kbengine.hover.defChain`)]
 
 ### Refactoring
 - [F2 renaming of properties/methods within .def files]
 - [Updates every same-name declaration in the file, across all Flags-scope variants]
 - [Auto-syncs restatements in descendant defs along the Parent chain and Interfaces mixins]
 - [Honest boundary: covers only .def definitions and references; Python-side references and entities.xml/types.xml are not touched]
+- [Cross-file def rename: reads dirty `.def` buffers, validates input versions, rejects on name conflicts, syncs resolved Python references and receiver-matched RPC calls]
 
 ### Syntax Checking
 - [Real-time syntax validation]
 - [Source-verifiable Flags / DetailLevel / required-field validation]
 - [Type validity checking]
+- [Def↔Python method consistency (`kbengine.diagnostics.checkDefMethodMissingInPython` / `checkPythonMethodNotInDef`) with lint and a quick-fix code action]
+- [Process topology validation (`kbengine.diagnostics.checkProcessTopology`)]
 
 ### Entity Explorer
 - [Sidebar listing of all entities]
@@ -98,6 +105,11 @@ CI and local development split into three paths by what changed — editing one 
 - [importlib.reload() hot reload in Python scripts]
 - [Reload-related hover documentation and usage examples]
 - [Hot-reload status bar: Off → Ready → Sending → Sent(unverified) → Failed; a clean completion is only "sent, unverified" (no receipt check); click the item to open the hot-reload audit log]
+- [Hot-reload receipts: accepted ≠ applied — only an engine-confirmed receipt counts as applied; otherwise the outcome stays "sent, unverified" (three-path transport_ok ≠ accepted ≠ applied)]
+- [Multi-target hot-reload batch summary (`kbengine.hotReload.showBatchSummary`) and retry-failed-only (`kbengine.hotReload.retryFailed`)]
+- [Hot-reload revision evidence with sources (`kbengine.hotReload.showRevisionEvidence`); drift evidence saved per engine version]
+- [Structural `.def` changes are blocked from auto-reload and marked restart-required]
+- [Temp-edit hot-reload quick action (`kbengine.hotReload.tempEdit.run`): temporary edit → optional auto-restore → reloadScript → result echo; settings `kbengine.hotReload.tempEdit.*`]
 
 ### Server Management
 - [Start/stop control for 10 components]
@@ -126,6 +138,11 @@ The logger protocol adaptation is not finished yet; the extension states clearly
 - [Start-time debugpy injection (`kbengine.debug.autoDebugpy`, default off): telnet `:python` layer, per-component ports 5678-5682; `kbengine.python.debugpySync` places the package in `<assets>/scripts/common/debugpy`]
 - [Attach to KBEngine component processes by PID]
 - [Path mapping configuration]
+- [Per-instance debugpy ports for named targets; debugpy preflight on the selected interpreter]
+- [Attach deadline and cancel guard; debug-session end behavior (`kbengine.debug.sessionEndBehavior`)]
+- [Remote servers over SSH (`kbengine.remoteServers.*`): remote process picker, remote attach (`kbengine.debug.attachRemote`), path mappings]
+- [py-spy profiling (`kbengine.debug.pyspyDump`) and debug status in the workbench]
+- [Launch targets in dependency order with cycle detection, a real readiness probe, per-targetId instance separation, and process-tree kill]
 
 ### Monitoring Panel
 - [Runtime monitoring based on machine + watcher]
@@ -160,6 +177,8 @@ Monitoring data requires both `machine` discovery and `watcher` queries. When th
 - [Automatic entity registration in entities.xml]
 - [Custom property and method definitions]
 - [Configurable output paths and options]
+- [Preflight all generation targets before writing; plan preview with confirmation; atomic replace; roll back partial generation on failure]
+- [Refuse to overwrite existing `.def`/Python files in the wizard; generate an empty implementation for unimplemented def methods]
 
 ### Telnet Probe and Session Integration
 - [Status bar + server control panel status lamps (connected / open / password rejected / off, etc.)]
@@ -175,6 +194,51 @@ Monitoring data requires both `machine` discovery and `watcher` queries. When th
 - [Official VS Code variable family also resolves in templates (`${file}`=absolute path, `${workspaceFolder}`, `${fileBasenameNoExtension}`, `${env:NAME}`, ...); placeholders unknown to both tables are kept as-is]
 - [Two trigger paths: the command-palette quick pick, or a keybinding on `kbengine.httpRequest.run` with `args.name` via keybindings.json — open a .py file and press the shortcut to fire a hot reload]
 - [Execution log goes to the OUTPUT channel "KBEngine HTTP 快捷请求": `▶` request line → `✓` status · duration · response body; failures show a `✗` marker + error notification, with honest reporting and no hanging]
+
+### Rust Core (kode2)
+
+A Rust core runs alongside the TypeScript extension and speaks the same LSP surface over stdio; the backend is selectable and reversible:
+
+- [Dual-track backend (`kbengine.core.backend`: `ts` | `rust` | `shadow`): `ts` = TypeScript serves (default), `rust` = Rust serves, `shadow` = Rust computes and compares but TypeScript still serves; switch back to `ts` at any time]
+- [Shadow diff log (`kbengine.core.showShadowDiffLog`) reports Rust-vs-TypeScript divergence per feature surface]
+- [Rust-ported def analysis: message table (`message_table.rs`), dependency graph, component semantics, database tables, def MD5 replay, process topology, client SDK generation, and the KBEngine wire-format codec (`wire_codec.rs`)]
+- [Cargo workspace crates: `kode-server` (LSP), `kode-parser`, `kode-types`, `kode-index`, `kode-scheduler`, `kode-root`, `kode-vfs`, `kode-python` (ruff AST call graph and dataflow), `kode-corpus`]
+
+### Message Table & Client SDK
+
+- [Entity message-table preview (`kbengine.messagetable.preview`) and JSON export (`kbengine.messagetable.export`)]
+- [Client SDK generation (`kbengine.clientSdk.generate`) bound to the active profile (`kbengine.clientSdk.outputDir`), with engine trace in the output and message-number audit against the engine]
+
+### Database Schema & Drift
+
+- [Read-only table preview (`kbengine.database.previewTable`) with query cancel and timeout lifecycle (`kbengine.databaseQueryTimeoutMs`)]
+- [Schema impact preview (`kbengine.database.previewSchemaImpact`); result columns are linked back to def sources]
+- [Drift check (`kbengine.database.checkDrift` / `checkAllDrift`) with evidence review (`kbengine.database.showDriftEvidence`) and simulation (`kbengine.database.simulate` / `exportSimulation`)]
+- [Isolated DB connections per profile (`kbengine.database.open`) and table prefix (`kbengine.db.tablePrefix`)]
+
+### Project Profiles & Remote Servers
+
+- [Project identity store with profiles (`kbengine.project.create` / `import` / `doctor` / `selectActive`; `kbengine.profile.start` / `kbengine.profile.health`); the index follows profile switches]
+- [Remote servers over SSH (`kbengine.remoteServers.add` / `select` / `refresh`): remote process picker, remote debug attach, py-spy]
+
+### Python Tooling
+
+- [Per-file Python type stubs (`.pyi`) with alias resolution (`kbengine.python.exportStubs` / `exportTypeStubs`; `kbengine.python.stubDir` / `stubExport` / `stubEngineTypings`)]
+- [Def call-chain view (`kbengine.python.showCallChain`) and call-chain inlay hints (`kbengine.python.callChainHints`)]
+- [Python test discovery and run (`kbengine.tests.list`) and the build task provider (`kbengine.build.previewTask`)]
+- [Python language service status check (`kbengine.python.serviceStatus`)]
+
+### Inlay Hints & Type Inference
+
+- [Def parameter inlay hints (`kbengine.inlayHints.defParams`) and type-data inlay hints (`kbengine.inlayHints.typeData`)]
+- [Hover return-type inference (`kbengine.hover.returnTypeInference`) and Python builtin type inlay hints (`kbengine.python.builtinTypeInlayHints`)]
+- [Data-dict key access index (`kbengine.python.enableDataDictIndex`) and engine-aware API metadata (`kbengine.python.apiMetadata`)]
+
+### Telemetry, Metrics & Profiling
+
+- [Language-service metrics summary (`kbengine.metrics.showSummary`) and active-task counts (`kbengine.metrics.showActiveTasks`)]
+- [Extension host CPU profile capture (`kbengine.metrics.startCpuProfile` / `stopCpuProfile`); host CPU/RSS vitals, event-loop delay, and file-read detail (`kbengine.metrics.fileReadDetail`)]
+- [Reproduction config export (`kbengine.diagnostics.exportReproSummary`) and extension identity report (`kbengine.extension.identity`)]
 
 ## Def Performance Analysis
 

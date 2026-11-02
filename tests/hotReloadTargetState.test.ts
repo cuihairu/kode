@@ -178,4 +178,24 @@ describe('HotReloadTargetStateStore(双维隔离台账)', () => {
     expect(store.record(key, file, 'applied', { attempt: 3 })).toBeUndefined();
     expect(store.get(key, file)).toBeUndefined();
   });
+
+  it('IDE-HOT-100:onRecorded 在每次落账/升格后触发,被拒旧代写回不触发', () => {
+    let fired = 0;
+    const store = new HotReloadTargetStateStore({ now: () => 1000, onRecorded: () => { fired += 1; } });
+    const key = { rootId: 'r', targetId: 't' };
+    const file = '/x.py';
+
+    // 新发送落账触发一次
+    const first = store.record(key, file, 'sent-unverified', { sentDigest: 'a'.repeat(64) });
+    expect(fired).toBe(1);
+    // 升格(带 attempt 写回)触发一次
+    store.record(key, file, 'applied', { attempt: first?.attempt });
+    expect(fired).toBe(2);
+    // 被拒旧代写回(attempt 不匹配)不触发(记录原样不动)
+    store.record(key, file, 'failed', { attempt: (first?.attempt ?? 0) + 99 });
+    expect(fired).toBe(2);
+    // 新一次发送(换代)再触发
+    store.record(key, file, 'failed', { detail: '失败' });
+    expect(fired).toBe(3);
+  });
 });
