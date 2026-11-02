@@ -209,11 +209,13 @@ describe('extension activate 装配', () => {
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份;
     // C-19 起 def↔Python 方法一致性独立诊断集再一份(不并 kbengine 主集);
     // C-17 起进程拓扑独立诊断集再一份(kbengine-process-topology);
-    // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract)
+    // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract);
+    // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
       'kbengine-user-type-contract',
+      'kbengine-property-direction',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis'

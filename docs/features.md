@@ -185,6 +185,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.enableDiagnostics` | `true` | Master switch for real-time KBEngine diagnostics |
 | `kbengine.enableStructureDiagnostics` | `true` | Structured .def validation (duplicates, tag placement, missing fields) |
 | `kbengine.receiverNoneDiagnostics` | `true` | Python-side Warning for unguarded `self.cell`/`self.base`/`self.client` use and `.def` section mismatches |
+| `kbengine.propertyDirectionDiagnostics` | `true` | Python-side Warning for def property access direction violations (`self.<prop>` / `self.<role>.<prop>` where the access position is outside the property's Flag domains); downgraded to Information when the file's process scope is unknown |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | Diagnose unknown KBEngine types |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | Diagnose unknown Flags values |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | Diagnose unknown DetailLevel values |

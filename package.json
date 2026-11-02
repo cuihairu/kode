@@ -883,6 +883,11 @@
           "default": true,
           "description": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出"
         },
+        "kbengine.propertyDirectionDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 侧诊断：def 属性访问方向违规——self.<属性>/self.<role>.<属性> 访问位置不在属性 Flags 域位内报 Warning，文件作用域不足降级为 Information（default: enabled）；关闭后 Python 文档零诊断产出"
+        },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,

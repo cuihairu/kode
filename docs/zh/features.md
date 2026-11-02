@@ -182,6 +182,7 @@
 | `kbengine.enableDiagnostics` | `true` | KBEngine 实时诊断总开关 |
 | `kbengine.enableStructureDiagnostics` | `true` | 结构化 .def 校验（重复定义、标签位置、缺失字段） |
 | `kbengine.receiverNoneDiagnostics` | `true` | Python 侧 Warning：无判空的 `self.cell`/`self.base`/`self.client` 引用与 `.def` 段错配 |
+| `kbengine.propertyDirectionDiagnostics` | `true` | Python 侧 Warning：def 属性访问方向违规（`self.<属性>`/`self.<role>.<属性>` 访问位置不在属性 Flags 域位内）；文件作用域不足降级为 Information |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | 诊断未知 KBEngine 类型 |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | 诊断未知 Flags 取值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | 诊断未知 DetailLevel 取值 |

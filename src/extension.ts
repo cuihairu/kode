@@ -36,6 +36,12 @@ import {
   collectUserTypeContractMissingByImplFile
 } from './userTypeContract';
 import { collectUserTypeContractStatuses } from './userTypeContractSource';
+import {
+  PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT,
+  propertyDirectionDiagnosticItemsAsync,
+  type PropertyDirectionDiagnosticItem,
+  type PropertyDirectionHit
+} from './propertyDirectionDiagnostics';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getActiveOperationCounts,
@@ -1396,6 +1402,83 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
+  // GEN-DEF-1e ④:方向违规诊断(属性面)——self.<属性> / self.<role>.<属性>
+  // 访问位置不在 def 属性 Flags 域位内 → Warning;文件作用域不足 → Information
+  // (不标 Error)。独立诊断集合 + 独立调度器(同 C-19/user_type 范式);属性域
+  // 位经 EntityMappingManager.resolvePropertyDefinitionInfo(与属性 CodeLens
+  // 同索引同口径)。开关 kbengine.propertyDirectionDiagnostics 默认开。
+  const propertyDirectionDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-property-direction'
+  );
+  context.subscriptions.push(propertyDirectionDiagnostics);
+  const propertyDirectionScheduler = new DiagnosticScheduler();
+  const schedulePropertyDirectionDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly PropertyDirectionDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('propertyDirectionDiagnostics', PROPERTY_DIRECTION_DIAGNOSTICS_ENABLED_DEFAULT);
+        const resolve = async (
+          propertyPath: string,
+          rootSymbol: string
+        ): Promise<PropertyDirectionHit | null | undefined> => {
+          const info = await entityMappingManager.resolvePropertyDefinitionInfo(
+            document.uri.fsPath,
+            propertyPath,
+            rootSymbol
+          );
+          if (!info) {
+            return null;
+          }
+          return {
+            propertyName: info.identity.symbolName,
+            domains: info.domains,
+            defFile: info.defFile,
+            defLine: info.line
+          };
+        };
+        return propertyDirectionDiagnosticItemsAsync(
+          document.getText(),
+          document.uri.fsPath,
+          resolve,
+          enabled
+        );
+      },
+      publish: (items: readonly PropertyDirectionDiagnosticItem[]) => {
+        propertyDirectionDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            item.severity === 'Information'
+              ? vscode.DiagnosticSeverity.Information
+              : vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      propertyDirectionScheduler.requestQueued(document, options);
+    } else {
+      propertyDirectionScheduler.request(document, options);
+    }
+  };
+
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
   // 诊断任务,必独立,同 C-19 范式)。缺清单=静默零发现(零误报)。
@@ -1611,6 +1694,8 @@ export function activate(context: vscode.ExtensionContext) {
       shadowMirrorCorpusDocument(document);
       // GEN-DEF-1e:打开 impl 文件即排 user_type 契约诊断(未打开时无诊断面)
       scheduleUserTypeContractDiagnostics(document, 'immediate');
+      // GEN-DEF-1e ④:打开 python 文件即排方向违规诊断(属性面)
+      schedulePropertyDirectionDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -1624,6 +1709,9 @@ export function activate(context: vscode.ExtensionContext) {
       // GEN-DEF-1e:user_type 契约诊断随文档生命周期(impl 文件关闭即摘除)。
       userTypeContractDiagnostics.delete(document.uri);
       userTypeContractScheduler.releaseDocument(document);
+      // GEN-DEF-1e ④:方向违规诊断随文档生命周期(关闭即摘除)。
+      propertyDirectionDiagnostics.delete(document.uri);
+      propertyDirectionScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -1678,6 +1766,8 @@ export function activate(context: vscode.ExtensionContext) {
         // GEN-DEF-1e:impl 文件改动 → 重排本文件的 user_type 契约诊断
         // (缺方法即补即消,无需等 types.xml 变更)。
         scheduleUserTypeContractDiagnostics(event.document, 'queued');
+        // GEN-DEF-1e ④:python 改动 → 重排本文件的方向违规诊断(属性面)
+        schedulePropertyDirectionDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -1715,6 +1805,8 @@ export function activate(context: vscode.ExtensionContext) {
           void defMethodConsistencyScheduler.flushQueued();
           // GEN-DEF-1e:user_type 契约调度器同节拍冲刷(守卫语义同上)
           void userTypeContractScheduler.flushQueued();
+          // GEN-DEF-1e ④:方向违规调度器同节拍冲刷(守卫语义同上)
+          void propertyDirectionScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
@@ -1929,12 +2021,17 @@ export function activate(context: vscode.ExtensionContext) {
       userTypeContractScheduler.setEnabled(enabled, () =>
         userTypeContractDiagnostics.clear()
       );
+      // GEN-DEF-1e ④:主开关同闸方向违规管线(关→清集合,开→强制重算)
+      propertyDirectionScheduler.setEnabled(enabled, () =>
+        propertyDirectionDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
       event.affectsConfiguration('kbengine.diagnostics') ||
       event.affectsConfiguration('kbengine.enableDiagnostics') ||
-      event.affectsConfiguration('kbengine.receiverNoneDiagnostics');
+      event.affectsConfiguration('kbengine.receiverNoneDiagnostics') ||
+      event.affectsConfiguration('kbengine.propertyDirectionDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
       event.affectsConfiguration('kbengine.diagnostics.checkDefMethodMissingInPython') ||
@@ -1989,6 +2086,10 @@ export function activate(context: vscode.ExtensionContext) {
           }
           if (userTypeContractInputsChanged) {
             scheduleUserTypeContractDiagnostics(doc, 'immediate');
+          }
+          // GEN-DEF-1e ④:方向违规开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.propertyDirectionDiagnostics')) {
+            schedulePropertyDirectionDiagnostics(doc, 'immediate');
           }
         }
       });
@@ -5173,10 +5274,12 @@ export function activate(context: vscode.ExtensionContext) {
     pendingWork: () => ({
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued +
         defMethodConsistencyScheduler.pendingWorkload().queued +
-        userTypeContractScheduler.pendingWorkload().queued,
+        userTypeContractScheduler.pendingWorkload().queued +
+        propertyDirectionScheduler.pendingWorkload().queued,
       diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight +
         defMethodConsistencyScheduler.pendingWorkload().inFlight +
-        userTypeContractScheduler.pendingWorkload().inFlight,
+        userTypeContractScheduler.pendingWorkload().inFlight +
+        propertyDirectionScheduler.pendingWorkload().inFlight,
       annotationUpdates: getPendingDocumentUpdateCount(),
       caches: {
         parsedDocuments: getParsedDocumentCacheGauge(),
