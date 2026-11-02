@@ -135,4 +135,4 @@
 
 1. `python.analysis.stubPath` 相对 `extraPaths` 对 `.pyi` 的命中优先级 —— 本仓未接线(0 命中),实施前实测。
 2. 真实游戏工程的类型分布(多层嵌套 FIXED_DICT、VECTOR3 键、混合 ARRAY) —— 本仓语料只有夹具级样例(§1.4);SDK 模板 `types.xml` 为空壳。
-3. 向量类型(`VECTOR3`)在 `KBEngine.pyi` 中的可用性 —— `src/kbeModuleIndex.ts` 的符号表 `KbeSymbolKind` 只有 `class|function`(`:18`),`VECTOR3`/`vector` 字样 **0 命中** → 生成桩是否已有向量类可引用未证。
+3. 向量类型(`VECTOR3`)在 `KBEngine.pyi` 中的可用性 —— gen-def-1b/1c 已证: `src/kbeModuleIndex.ts` `KBE_SYMBOLS` 现载 `class Vector2/3/4` 条目(完整方法体,`cppClassName` `ScriptVectorN`),`VECTOR2/3/4` → `KBEngine.Vector2/3/4` 注解映射由 `tests/kbeModuleIndex.test.ts` + `tests/entityTypeStubs.test.ts` 锁。

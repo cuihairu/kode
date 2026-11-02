@@ -665,7 +665,7 @@
 - 行为：
   - 内容确定：同输入生成逐字节一致的内容（头部无时间戳），与 KBEngine.pyi 同一套「内容一致零写、陈旧重写」纪律
   - 别名赋值是模块级急切求值，按依赖拓扑排序发射；`types.xml` 指引为空或别名成环的类型跳过并在提示里说明原因，绝不生成引用未定义名字的赋值
-  - 内置类型映射与 TS 生成器同表：整型 → `int`、浮点 → `float`、字符串 → `str`、向量 → 定长 `Tuple`、`PY_DICT/PY_TUPLE/PY_LIST` → typing 泛型、无对应物 → `Any`（有损但合法）
+  - 内置类型映射与 TS 生成器同表：整型 → `int`、浮点 → `float`、字符串 → `str`、`VECTOR2/3/4` → `KBEngine.Vector2/3/4`、`PY_DICT/PY_TUPLE/PY_LIST` → `dict`/`tuple`/`list`（有 `<Default>` 时按字面量精化）、`PYTHON` → def 声明了 `impl` 时按 impl 类否则 `Any`、`ENTITYCALL` → `KBEngine.EntityCall`、`BLOB` → `bytes`、无对应物 → `Any`（有损但合法）
   - 配置的用户目录里已有同名 `kbe_types.py` 按用户资产不覆盖；默认目录 `.kbengine/stubs` 归 kode 自管
   - 工作区没有自定义类型时不生成文件、不提示打扰；导出成功后链一次 extraPaths 同步
 - `types.xml` 落盘即自动重生成：保存/新建/删除后由 watcher 静默重导出（不设去抖、不加开关——零写纪律保证重复触发无副作用；`kbengine.python.stubExport` 关掉时实际停摆）

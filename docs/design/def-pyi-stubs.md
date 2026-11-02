@@ -134,7 +134,7 @@
 
 1. `python.analysis.stubPath` hit precedence over `extraPaths` for `.pyi` — not wired in this repo (0 hits), measure before implementing.
 2. Type distribution of a real game project (multi-level nested FIXED_DICT, VECTOR3 keys, mixed ARRAY) — this repo's corpus only has fixture-level samples (§1.4); the SDK template `types.xml` is an empty shell.
-3. Availability of the vector type (`VECTOR3`) inside `KBEngine.pyi` — the symbol table `KbeSymbolKind` in `src/kbeModuleIndex.ts` only has `class|function` (`:18`), and `VECTOR3`/`vector` have **0 hits** → whether the generated stub has a vector class to reference is unproven.
+3. Availability of the vector type (`VECTOR3`) inside `KBEngine.pyi` — resolved by gen-def-1b/1c: `src/kbeModuleIndex.ts` `KBE_SYMBOLS` now carries `class Vector2/3/4` entries (full method bodies, `cppClassName` `ScriptVectorN`), and the `VECTOR2/3/4` → `KBEngine.Vector2/3/4` annotation mapping is locked by `tests/kbeModuleIndex.test.ts` + `tests/entityTypeStubs.test.ts`.
 
 ## 8. 增补:2026-10-27 pyi ④(Any 消灭与分件合并)
 
@@ -174,10 +174,13 @@
 ### 8.3 诚实 Any 的最终边界(消灭后剩下的都有名有据)
 
 - 裸 ARRAY(def 直接写 `ARRAY` 无自定义类型、types.xml `<Type>ARRAY</Type>`
-  缺 `<of>`)→ `List[Any]`;`PYTHON`/`ENTITYCALL` → `Any`(引擎侧任意可
-  pickle 对象);`PY_DICT/PY_TUPLE/PY_LIST` 泛型参数 → Any 族;ALIAS 占位/
-  指引为空/成环 → poisoned 不发射,引用处 Any;BigWorld 专有类型名(kbengine
-  注册面外)→ Any。以上全部保留,不属于「可避免 Any」。
+  缺 `<of>`)→ `List[Any]`;裸 `PYTHON`(def 未声明 `impl`)→ `Any`(引擎侧
+  任意可 pickle 对象);ALIAS 占位/指引为空/成环 → poisoned 不发射,引用处
+  Any;BigWorld 专有类型名(kbengine 注册面外)→ Any。以上全部保留,不属于
+  「可避免 Any」。GEN-DEF-1c 已把 `ENTITYCALL`→`KBEngine.EntityCall`、
+  `PY_DICT/PY_TUPLE/PY_LIST`→`dict`/`tuple`/`list`(按 `<Default>` 字面量
+  精化)、`PYTHON` 有 `impl` 时→impl 类、`BLOB`→`bytes`、
+  `VECTOR2/3/4`→`KBEngine.Vector2/3/4` 移出本边界(裸 PYTHON 仍留)。
 - 元素型 ARRAY 的消灭(`ARRAY <of> X` → `List[X]`,of 套 of 递归)在 B 单
   已落地(pythonTypeStubs.test.ts 嵌套/缺 of/ALIAS 占位三例),本次未改。
   2026-10-29 补:FIXED_DICT 属性面内联 `<Type>ARRAY<of>X</of></Type>` 同样

@@ -804,7 +804,7 @@ The flow graph panel supports:
 - Behavior:
   - Deterministic content: the same input produces byte-identical content (no timestamp in the header), following the same zero-write-when-unchanged, rewrite-when-stale discipline as KBEngine.pyi
   - Alias assignments are module-level eager evaluations, emitted in dependency topological order; types with empty `types.xml` directives or alias cycles are skipped with the reason stated in the message — no assignment referencing an undefined name is ever generated
-  - The built-in type mapping shares the table with the TS generator: integers → `int`, floats → `float`, strings → `str`, vectors → fixed-length `Tuple`, `PY_DICT/PY_TUPLE/PY_LIST` → typing generics, no counterpart → `Any` (lossy but valid)
+  - The built-in type mapping shares the table with the TS generator: integers → `int`, floats → `float`, strings → `str`, `VECTOR2/3/4` → `KBEngine.Vector2/3/4`, `PY_DICT/PY_TUPLE/PY_LIST` → `dict`/`tuple`/`list` with the `<Default>` literal refined when present, `PYTHON` → the def `impl` class when declared else `Any`, `ENTITYCALL` → `KBEngine.EntityCall`, `BLOB` → `bytes`, no counterpart → `Any` (lossy but valid)
   - An existing `kbe_types.py` in a configured user directory is treated as a user asset and never overwritten; the default directory `.kbengine/stubs` is kode-managed
   - When a workspace has no custom types, no file is generated and no message disturbs; after a successful export it chains one extraPaths sync
 - `types.xml` on disk regenerates automatically: after a save/create/delete the watcher silently re-exports (no debouncing, no extra setting — the zero-write discipline makes repeated triggers side-effect free; with `kbengine.python.stubExport` off it effectively stops)
