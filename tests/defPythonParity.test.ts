@@ -40,7 +40,7 @@ describe('def→python 类型注解映射(C-19)', () => {
     expect(mapDefTypeToPythonAnnotation('FLOAT')).toBe('float');
     expect(mapDefTypeToPythonAnnotation('STRING')).toBe('str');
     expect(mapDefTypeToPythonAnnotation('BOOL')).toBe('bool');
-    expect(mapDefTypeToPythonAnnotation('VECTOR3')).toBe('Tuple[float, float, float]');
+    expect(mapDefTypeToPythonAnnotation('VECTOR3')).toBe('Vector3');
   });
 
   it('未识别类型兜底 Any', () => {
@@ -52,7 +52,7 @@ describe('def→python 类型注解映射(C-19)', () => {
 describe('方法骨架生成(签名按 def 类型)(C-19)', () => {
   it('多参数:argN 名 + 类型注解 + raise NotImplementedError 体', () => {
     expect(buildPythonMethodSkeletonWithTypes('reqPos', ['UINT32', 'VECTOR3'])).toBe(
-      '    def reqPos(self, arg0: int, arg1: Tuple[float, float, float]) -> None:\n' +
+      '    def reqPos(self, arg0: int, arg1: Vector3) -> None:\n' +
         '        raise NotImplementedError\n'
     );
   });

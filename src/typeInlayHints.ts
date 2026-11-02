@@ -21,7 +21,7 @@ import {
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
 // self.<属性> 访问处原位渲染 def 声明的 <Type> 注解(2026-10-29 用户定
-// 口径:解析到底——SERVER_ID(types.xml 别名)→int、VECTOR3→定长 tuple,
+// 口径:解析到底——SERVER_ID(types.xml 别名)→int、VECTOR3→KBEngine.Vector3,
 // 与下方 RPC 实参 inlay 同一 resolveEntityAnnotationType 链,同文件单一
 // 口径),读法与属性 F12 同走 resolvePropertyDefinitionInfo 索引,
 // 零重复解析;PYTHON(任意可 pickle 对象,datatype.cpp PythonType)与

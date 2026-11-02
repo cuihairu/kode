@@ -30,6 +30,11 @@ export interface KbeSymbolEntry {
   sourceLine: number;
   /** kode 别名条目指向的正式符号名(KBEntity → Entity) */
   aliasOf?: string;
+  /**
+   * Python 暴露名 ≠ C++ 类名时的 C++ 类名(如 Vector3 → ScriptVector3)。
+   * 引擎源码锚点回验按此名匹配 `class <cppClassName>` 声明行。
+   */
+  cppClassName?: string;
 }
 
 const COMMON_STUB = 'typings/_KBEngine_common.pyi';
@@ -299,6 +304,33 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: 'def FIXED_DICT 属性的运行时容器(script::Map):键集合按 def 固定,属性注解用 TypedDict 精确表达,本类是它的容器基面。',
     sourceFile: 'kbe/src/lib/entitydef/fixeddict.h',
     sourceLine: 15
+  },
+  {
+    name: 'Vector2',
+    kind: 'class',
+    signature: 'class Vector2',
+    summary: 'KBEngine 二维向量(ScriptVector2,pyscript/vector2.h):x/y 分量、length/lengthSquared 只读、distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR2 属性注解用本类。',
+    sourceFile: 'kbe/src/lib/pyscript/vector2.h',
+    sourceLine: 12,
+    cppClassName: 'ScriptVector2'
+  },
+  {
+    name: 'Vector3',
+    kind: 'class',
+    signature: 'class Vector3',
+    summary: 'KBEngine 三维向量(ScriptVector3,pyscript/vector3.h):x/y/z 分量、length/lengthSquared 只读、flatDistTo/flatDistSqrTo/distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR3 属性注解用本类。',
+    sourceFile: 'kbe/src/lib/pyscript/vector3.h',
+    sourceLine: 12,
+    cppClassName: 'ScriptVector3'
+  },
+  {
+    name: 'Vector4',
+    kind: 'class',
+    signature: 'class Vector4',
+    summary: 'KBEngine 四维向量(ScriptVector4,pyscript/vector4.h):x/y/z/w 分量、length/lengthSquared 只读、distTo/distSqrTo/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR4 属性注解用本类。',
+    sourceFile: 'kbe/src/lib/pyscript/vector4.h',
+    sourceLine: 12,
+    cppClassName: 'ScriptVector4'
   }
 ];
 
@@ -475,12 +507,15 @@ export interface KbeStubDocument {
  *  emitKbeContainerStubClasses 以完整方法体发射(补全/悬停走 KBE_SYMBOLS
  *  条目,桩文档与导出 .pyi 走方法体,两处共用同一 signature 对齐声明行)。 */
 const KBE_CONTAINER_CLASSES = new Set(['FixedArray', 'FixedDict']);
+/** 运行时向量类型(GEN-DEF-1c):同容器不进普通符号发射,由
+ *  emitKbeVectorStubClasses 以完整方法体发射。 */
+const KBE_VECTOR_CLASSES = new Set(['Vector2', 'Vector3', 'Vector4']);
 
 function emitKbeStubBody(lines: string[]): Record<string, number> {
   const symbolLines: Record<string, number> = {};
   let lastKind: KbeSymbolKind | null = null;
   for (const entry of KBE_SYMBOLS) {
-    if (KBE_CONTAINER_CLASSES.has(entry.name)) {
+    if (KBE_CONTAINER_CLASSES.has(entry.name) || KBE_VECTOR_CLASSES.has(entry.name)) {
       continue;
     }
     if (lastKind !== entry.kind) {
@@ -564,6 +599,129 @@ function emitKbeContainerStubClasses(
   lines.push('    def __contains__(self, key: str) -> bool: ...');
 }
 
+/** 逐行发射 KBEngine 运行时向量类型(GEN-DEF-1c):Vector2/3/4 是 def
+ *  VECTOR2/3/4 属性在 Python 侧的真实运行时类型(pyscript/vectorN.h,
+ *  Python 暴露名经 tp_name 注册,与 C++ 类名 ScriptVectorN 不同)。方法面
+ *  逐条对齐引擎 py 接口:scale 返回新向量(非就地),normalise/set 就地
+ *  返回 None,distTo/distSqrTo/cross2D/dot 返回 float,tuple()/list() 返回
+ *  定长元组/列表;序列(__len__/__getitem__/__setitem__)与算术协议
+ *  (nb_add/subtract/multiply/divide/negative/positive/nonzero/inplace_*)
+ *  同样导出。只进桩文档与导出 .pyi,声明行恰为 `${entry.signature}:`。 */
+function emitKbeVectorStubClasses(
+  lines: string[],
+  symbolLines: Record<string, number>
+): void {
+  lines.push('');
+  lines.push('# KBEngine 运行时向量类型(pyscript/vector2.h、vector3.h、vector4.h)');
+  lines.push('# 方法签名逐条对齐引擎 py 接口;def VECTOR2/3/4 属性注解用本组类。');
+  lines.push('from typing import List, Tuple');
+  lines.push('');
+  symbolLines['Vector2'] = lines.length;
+  lines.push('class Vector2:');
+  lines.push('    """KBEngine 二维向量(ScriptVector2):x/y 分量;');
+  lines.push('    scale 返回新向量,normalise/set 就地返回 None。"""');
+  lines.push('    x: float');
+  lines.push('    y: float');
+  lines.push('    length: float');
+  lines.push('    lengthSquared: float');
+  lines.push('    def __init__(self, x: float, y: float) -> None: ...');
+  lines.push('    def distTo(self, other: Vector2) -> float: ...');
+  lines.push('    def distSqrTo(self, other: Vector2) -> float: ...');
+  lines.push('    def cross2D(self, other: Vector2) -> float: ...');
+  lines.push('    def scale(self, factor: float) -> Vector2: ...');
+  lines.push('    def dot(self, other: Vector2) -> float: ...');
+  lines.push('    def normalise(self) -> None: ...');
+  lines.push('    def tuple(self) -> Tuple[float, float]: ...');
+  lines.push('    def list(self) -> List[float]: ...');
+  lines.push('    def set(self, *args: float) -> None: ...');
+  lines.push('    def __len__(self) -> int: ...');
+  lines.push('    def __getitem__(self, index: int) -> float: ...');
+  lines.push('    def __setitem__(self, index: int, value: float) -> None: ...');
+  lines.push('    def __add__(self, other: Vector2) -> Vector2: ...');
+  lines.push('    def __sub__(self, other: Vector2) -> Vector2: ...');
+  lines.push('    def __mul__(self, factor: float) -> Vector2: ...');
+  lines.push('    def __rmul__(self, factor: float) -> Vector2: ...');
+  lines.push('    def __truediv__(self, factor: float) -> Vector2: ...');
+  lines.push('    def __neg__(self) -> Vector2: ...');
+  lines.push('    def __pos__(self) -> Vector2: ...');
+  lines.push('    def __bool__(self) -> bool: ...');
+  lines.push('    def __iadd__(self, other: Vector2) -> Vector2: ...');
+  lines.push('    def __isub__(self, other: Vector2) -> Vector2: ...');
+  lines.push('    def __imul__(self, factor: float) -> Vector2: ...');
+  lines.push('    def __itruediv__(self, factor: float) -> Vector2: ...');
+  lines.push('');
+  symbolLines['Vector3'] = lines.length;
+  lines.push('class Vector3:');
+  lines.push('    """KBEngine 三维向量(ScriptVector3):x/y/z 分量;');
+  lines.push('    flatDistTo/flatDistSqrTo 是 XZ 平面距离。"""');
+  lines.push('    x: float');
+  lines.push('    y: float');
+  lines.push('    z: float');
+  lines.push('    length: float');
+  lines.push('    lengthSquared: float');
+  lines.push('    def __init__(self, x: float, y: float, z: float) -> None: ...');
+  lines.push('    def flatDistTo(self, other: Vector3) -> float: ...');
+  lines.push('    def flatDistSqrTo(self, other: Vector3) -> float: ...');
+  lines.push('    def distTo(self, other: Vector3) -> float: ...');
+  lines.push('    def distSqrTo(self, other: Vector3) -> float: ...');
+  lines.push('    def cross2D(self, other: Vector3) -> float: ...');
+  lines.push('    def scale(self, factor: float) -> Vector3: ...');
+  lines.push('    def dot(self, other: Vector3) -> float: ...');
+  lines.push('    def normalise(self) -> None: ...');
+  lines.push('    def tuple(self) -> Tuple[float, float, float]: ...');
+  lines.push('    def list(self) -> List[float]: ...');
+  lines.push('    def set(self, *args: float) -> None: ...');
+  lines.push('    def __len__(self) -> int: ...');
+  lines.push('    def __getitem__(self, index: int) -> float: ...');
+  lines.push('    def __setitem__(self, index: int, value: float) -> None: ...');
+  lines.push('    def __add__(self, other: Vector3) -> Vector3: ...');
+  lines.push('    def __sub__(self, other: Vector3) -> Vector3: ...');
+  lines.push('    def __mul__(self, factor: float) -> Vector3: ...');
+  lines.push('    def __rmul__(self, factor: float) -> Vector3: ...');
+  lines.push('    def __truediv__(self, factor: float) -> Vector3: ...');
+  lines.push('    def __neg__(self) -> Vector3: ...');
+  lines.push('    def __pos__(self) -> Vector3: ...');
+  lines.push('    def __bool__(self) -> bool: ...');
+  lines.push('    def __iadd__(self, other: Vector3) -> Vector3: ...');
+  lines.push('    def __isub__(self, other: Vector3) -> Vector3: ...');
+  lines.push('    def __imul__(self, factor: float) -> Vector3: ...');
+  lines.push('    def __itruediv__(self, factor: float) -> Vector3: ...');
+  lines.push('');
+  symbolLines['Vector4'] = lines.length;
+  lines.push('class Vector4:');
+  lines.push('    """KBEngine 四维向量(ScriptVector4):x/y/z/w 分量。"""');
+  lines.push('    x: float');
+  lines.push('    y: float');
+  lines.push('    z: float');
+  lines.push('    w: float');
+  lines.push('    length: float');
+  lines.push('    lengthSquared: float');
+  lines.push('    def __init__(self, x: float, y: float, z: float, w: float) -> None: ...');
+  lines.push('    def distTo(self, other: Vector4) -> float: ...');
+  lines.push('    def distSqrTo(self, other: Vector4) -> float: ...');
+  lines.push('    def scale(self, factor: float) -> Vector4: ...');
+  lines.push('    def dot(self, other: Vector4) -> float: ...');
+  lines.push('    def normalise(self) -> None: ...');
+  lines.push('    def tuple(self) -> Tuple[float, float, float, float]: ...');
+  lines.push('    def list(self) -> List[float]: ...');
+  lines.push('    def set(self, *args: float) -> None: ...');
+  lines.push('    def __len__(self) -> int: ...');
+  lines.push('    def __getitem__(self, index: int) -> float: ...');
+  lines.push('    def __setitem__(self, index: int, value: float) -> None: ...');
+  lines.push('    def __add__(self, other: Vector4) -> Vector4: ...');
+  lines.push('    def __sub__(self, other: Vector4) -> Vector4: ...');
+  lines.push('    def __mul__(self, factor: float) -> Vector4: ...');
+  lines.push('    def __rmul__(self, factor: float) -> Vector4: ...');
+  lines.push('    def __truediv__(self, factor: float) -> Vector4: ...');
+  lines.push('    def __neg__(self) -> Vector4: ...');
+  lines.push('    def __pos__(self) -> Vector4: ...');
+  lines.push('    def __bool__(self) -> bool: ...');
+  lines.push('    def __iadd__(self, other: Vector4) -> Vector4: ...');
+  lines.push('    def __isub__(self, other: Vector4) -> Vector4: ...');
+  lines.push('    def __imul__(self, factor: float) -> Vector4: ...');
+  lines.push('    def __itruediv__(self, factor: float) -> Vector4: ...');
+}
+
 function appendCatalogFootnote(lines: string[]): void {
   lines.push('');
   lines.push(`# Coverage: ${KBE_SYMBOL_CATALOG_NOTE}`);
@@ -598,6 +756,7 @@ export function buildKbeStubDocument(): KbeStubDocument {
   ];
   const symbolLines = emitKbeStubBody(lines);
   emitKbeContainerStubClasses(lines, symbolLines);
+  emitKbeVectorStubClasses(lines, symbolLines);
   appendCatalogFootnote(lines);
   return { content: lines.join('\n'), symbolLines };
 }
@@ -615,6 +774,7 @@ export function buildKbeStubExportContent(): string {
   ];
   const symbolLines = emitKbeStubBody(lines);
   emitKbeContainerStubClasses(lines, symbolLines);
+  emitKbeVectorStubClasses(lines, symbolLines);
   appendCatalogFootnote(lines);
   return lines.join('\n');
 }

@@ -97,7 +97,7 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('解析到底口径:VECTOR3→定长 tuple;PYTHON/未知类型落 Any 按「能推才显」闸不出(2026-10-29)', async () => {
+  it('解析到底口径:VECTOR3→KBEngine.Vector3;PYTHON/未知类型落 Any 按「能推才显」闸不出(2026-10-29)', async () => {
     calls.length = 0;
     const provider = new PythonTypeInlayHintsProvider(
       managerOf({
@@ -113,7 +113,7 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
 
     // PYTHON=任意可 pickle 对象(datatype.cpp PythonType),最终型 Any 无信息量;
     // 未知类型同落 Any——两者都不渲染(与 RPC 实参 inlay 的 Any 闸同口径)
-    expect(hints.map(hint => hint.label)).toEqual([': Tuple[float, float, float]']);
+    expect(hints.map(hint => hint.label)).toEqual([': Vector3']);
   });
 
   it('renders nothing for unresolved accesses and for declarations without a Type', async () => {

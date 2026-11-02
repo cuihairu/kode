@@ -291,9 +291,11 @@ describe('buildEntityTypeStubPlan', () => {
     for (const name of ['Any', 'Dict', 'List', 'Tuple']) {
       expect(importLine).toContain(name);
     }
-    expect(plan.content).toContain('    pos: Tuple[float, float, float]');
-    expect(plan.content).toContain('    bag: Dict[Any, Any]');
-    expect(plan.content).toContain('    history: List[Any]');
+    // GEN-DEF-1c:VECTOR3→KBEngine.Vector3、PY_DICT→dict、PY_LIST→list。
+    expect(plan.content).toContain('    pos: Vector3');
+    expect(plan.content).toContain('    bag: dict');
+    expect(plan.content).toContain('    history: list');
+    expect(plan.content).toContain('from KBEngine import Entity, Vector3');
     expect(plan.content).not.toMatch(/\blist\[/);
   });
 
@@ -324,6 +326,43 @@ describe('buildEntityTypeStubPlan', () => {
     // FixedArray 在注解面真实引用 → KBEngine 导入面一并带上
     expect(plan.content).toContain('from KBEngine import Entity, FixedArray');
     expect(plan.content).toContain('    slots: FixedArray[int]');
+  });
+
+  it('PYTHON 族属性按 <Default> 字面量精化(GEN-DEF-1c)', () => {
+    const pyMapping = {
+      name: 'Alchemist',
+      defFile: '/ws/scripts/entity_defs/Alchemist.def',
+      pythonFile: '/ws/scripts/entity/Alchemist.py',
+      pythonFiles: ['/ws/scripts/entity/Alchemist.py'],
+      properties: {
+        buff: { defFile: '/ws/scripts/entity_defs/Alchemist.def', line: 30 },
+        loot: { defFile: '/ws/scripts/entity_defs/Alchemist.def', line: 31 },
+        recipe: { defFile: '/ws/scripts/entity_defs/Alchemist.def', line: 32 }
+      },
+      methods: {},
+      propertyDefinitions: [
+        {
+          defFile: '/ws/scripts/entity_defs/Alchemist.def', line: 30,
+          identity: { symbolName: 'buff' }, domains: [], persistent: false,
+          typeName: 'PY_DICT', defaultValue: "{'hp': 1, 'mp': 2}"
+        },
+        {
+          defFile: '/ws/scripts/entity_defs/Alchemist.def', line: 31,
+          identity: { symbolName: 'loot' }, domains: [], persistent: false,
+          typeName: 'PY_LIST', defaultValue: '[1, 2, 3]'
+        },
+        {
+          defFile: '/ws/scripts/entity_defs/Alchemist.def', line: 32,
+          identity: { symbolName: 'recipe' }, domains: [], persistent: false,
+          typeName: 'PY_TUPLE'
+        }
+      ]
+    } as unknown as EntityMapping;
+    const plan = buildEntityTypeStubPlan([pyMapping], []);
+    expect(plan.content).toContain('    buff: dict[str, int]');
+    expect(plan.content).toContain('    loot: list[int]');
+    // 无 Default 回落基类 tuple
+    expect(plan.content).toContain('    recipe: tuple');
   });
 
   it('def 属性注解一律非 Optional(GEN-DEF-1a 回归:创建/装载线恒非 None)', () => {

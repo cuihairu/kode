@@ -41,6 +41,8 @@ export interface CustomTypePropertyInfo {
    * 标量属性是单节点,无 <Type> 时为 undefined
    */
   typeStructure?: CustomTypeStructureNode;
+  /** <Default> 直文本(GEN-DEF-1c):PYTHON 族字段据此精化字面量类型 */
+  defaultValue?: string;
   /** 属性标签所在行(1 起);T-05 原始定义导航不得反推生成行号 */
   line: number;
   /** <Type> 标签所在行;内联类型从此处独立回跳 types.xml */
@@ -1418,6 +1420,7 @@ function parseCustomTypeProperties(
         typeStructure: typeNode
           ? parseCustomTypeStructure(getInnerXml(typeNode))
           : undefined,
+        defaultValue: getScalarChildValue(property, 'Default'),
         line: getLineNumberAt(document, property.tagStart),
         typeLine: typeNode
           ? getLineNumberAt(document, typeNode.tagStart)

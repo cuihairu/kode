@@ -40,6 +40,7 @@ import {
   resolveStubDir,
   type StubExportDeps
 } from './pythonStubExport';
+import { PYTHON_FAMILY_BASE, inferPythonLiteralAnnotation } from './pythonLiteralTypes';
 
 export const PYTHON_TYPE_STUB_FILE_NAME = 'kbe_types.pyi';
 
@@ -74,14 +75,14 @@ export const PYTHON_BUILTIN_TYPE_ANNOTATIONS: Record<string, string> = {
   STRING: 'str',
   UNICODE: 'str',
   BOOL: 'bool',
-  VECTOR2: 'Tuple[float, float]',
-  VECTOR3: 'Tuple[float, float, float]',
-  VECTOR4: 'Tuple[float, float, float, float]',
+  VECTOR2: 'Vector2',
+  VECTOR3: 'Vector3',
+  VECTOR4: 'Vector4',
   ENTITYCALL: 'Any',
   PYTHON: 'Any',
-  PY_DICT: 'Dict[Any, Any]',
-  PY_TUPLE: 'Tuple[Any, ...]',
-  PY_LIST: 'List[Any]',
+  PY_DICT: 'dict',
+  PY_TUPLE: 'tuple',
+  PY_LIST: 'list',
   BLOB: 'bytes'
 };
 
@@ -366,6 +367,11 @@ function propertyAnnotation(property: CustomTypePropertyInfo, context: Resolutio
     }
     return `FixedArray[${PYTHON_TYPE_STUB_FALLBACK}]`;
   }
+  // GEN-DEF-1c:PYTHON 族字段带 <Default> 字面量时精化(如 PY_LIST
+  // <Default>[1, 2]</Default> → list[int]),无 Default/解析失败走同链回落。
+  if (PYTHON_FAMILY_BASE[typeName] !== undefined) {
+    return inferPythonLiteralAnnotation(property.defaultValue, typeName);
+  }
   try {
     return resolveTypeName(typeName, context);
   } catch {
@@ -610,6 +616,12 @@ export function buildPythonTypeStubContent(
     }
     if (/\bFixedArray\b/.test(annotation)) {
       referencedKbeNames.add('FixedArray');
+    }
+    // GEN-DEF-1c:VECTOR2/3/4 注解面引用 KBEngine.Vector2/3/4,一并导入。
+    for (const name of ['Vector2', 'Vector3', 'Vector4']) {
+      if (new RegExp(`\\b${name}\\b`).test(annotation)) {
+        referencedKbeNames.add(name);
+      }
     }
   };
   for (const entry of entries) {

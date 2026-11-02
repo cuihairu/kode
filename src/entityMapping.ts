@@ -92,6 +92,8 @@ export interface EntityPropertyDefinitionLocation {
 export interface PropertyDefinitionInfo extends EntityPropertyDefinitionLocation {
   /** <Type> 直文本(别名未展开,与 def 声明行同源) */
   typeName?: string;
+  /** <Default> 直文本(GEN-DEF-1c):PYTHON 族属性据此精化字面量类型 */
+  defaultValue?: string;
   /** Flags 位集推导的引擎三域位,定序 base → cell → client */
   domains: PropertyFlagDomain[];
   persistent: boolean;
@@ -836,6 +838,7 @@ export class EntityMappingManager {
           componentSlotName
         },
         typeName: property.typeName,
+        defaultValue: property.defaultValue,
         domains: propertyFlagDomainList(property.flags),
         // <Persistent> 缺省视作非持久(与 databaseSchema 的 isTruePersistent 口径一致)
         persistent: property.persistent ?? false

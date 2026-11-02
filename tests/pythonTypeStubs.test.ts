@@ -38,6 +38,7 @@ interface TypeScript {
     name: string;
     typeName?: string;
     typeStructure?: { name: string; rawValue?: string; children: Array<{ tag: string; value: { name: string; children: never[] } }> };
+    defaultValue?: string;
   }>;
 }
 
@@ -69,7 +70,8 @@ const makeType = (script: TypeScript): CustomTypeInfo => {
     properties: (script.properties ?? []).map(property => ({
       name: property.name,
       typeName: property.typeName,
-      typeStructure: property.typeStructure
+      typeStructure: property.typeStructure,
+      defaultValue: property.defaultValue
     }))
   };
 };
@@ -142,14 +144,14 @@ describe('PYTHON_BUILTIN_TYPE_ANNOTATIONS(内置类型 → Python 注解)', () =
     expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.BOOL).toBe('bool');
   });
 
-  it('向量按定长 tuple,PY 系与 ENTITYCALL 归 Any 族,BLOB→bytes', () => {
-    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.VECTOR2).toBe('Tuple[float, float]');
-    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.VECTOR3).toBe('Tuple[float, float, float]');
-    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.VECTOR4).toBe('Tuple[float, float, float, float]');
+  it('向量→KBEngine.Vector2/3/4,PY_DICT/TUPLE/LIST→dict/tuple/list,PYTHON/ENTITYCALL→Any,BLOB→bytes', () => {
+    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.VECTOR2).toBe('Vector2');
+    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.VECTOR3).toBe('Vector3');
+    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.VECTOR4).toBe('Vector4');
     expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PYTHON).toBe('Any');
-    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PY_DICT).toBe('Dict[Any, Any]');
-    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PY_TUPLE).toBe('Tuple[Any, ...]');
-    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PY_LIST).toBe('List[Any]');
+    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PY_DICT).toBe('dict');
+    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PY_TUPLE).toBe('tuple');
+    expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.PY_LIST).toBe('list');
     expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.ENTITYCALL).toBe('Any');
     expect(PYTHON_BUILTIN_TYPE_ANNOTATIONS.BLOB).toBe('bytes');
   });
@@ -205,6 +207,26 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(plan.content).toContain('class AVATAR_INFO(TypedDict):');
     expect(plan.content).toContain('    name: str');
     expect(plan.content).toContain('    level: int');
+  });
+
+  it('FIXED_DICT 字段按 <Default> 字面量精化 PYTHON 族(GEN-DEF-1c)', () => {
+    const plan = buildPythonTypeStubPlan([
+      makeType({
+        name: 'BUFF_BOX',
+        aliasType: 'FIXED_DICT',
+        rawValue: 'FIXED_DICT',
+        properties: [
+          { name: 'effects', typeName: 'PY_DICT', defaultValue: "{'hp': 1, 'mp': 2}" },
+          { name: 'trace', typeName: 'PY_LIST', defaultValue: '[1, 2]' },
+          { name: 'stamp', typeName: 'PY_TUPLE' }
+        ]
+      })
+    ]);
+    expect(plan.content).toContain('class BUFF_BOX(TypedDict):');
+    expect(plan.content).toContain('    effects: dict[str, int]');
+    expect(plan.content).toContain('    trace: list[int]');
+    // 无 Default 回落基类 tuple
+    expect(plan.content).toContain('    stamp: tuple');
   });
 
   it('ARRAY 别名发 FixedArray[元素](引擎容器,非 Python list),元素是自定义类型名', () => {

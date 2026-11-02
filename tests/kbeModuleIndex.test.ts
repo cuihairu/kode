@@ -310,12 +310,64 @@ describe('kbe 模块符号索引(批108)', () => {
       expect(stub.content).toContain('def append(self, item: T) -> bool: ...');
     });
   });
+
+  describe('KBEngine 运行时向量类型(GEN-DEF-1c)', () => {
+    it('导出 .pyi 定义 Vector2/3/4 完整方法体,签名对齐 vector2/3/4.h', () => {
+      const content = buildKbeStubExportContent();
+      // Vector2:两个分量,distTo/distSqrTo/cross2D/dot 返回 float,scale 返回
+      // 新向量,normalise/set 就地返回 None,tuple()/list() 定长返回。
+      expect(content).toContain('class Vector2:');
+      expect(content).toContain('    x: float');
+      expect(content).toContain('    y: float');
+      expect(content).toContain('    length: float');
+      expect(content).toContain('    lengthSquared: float');
+      expect(content).toContain('def distTo(self, other: Vector2) -> float: ...');
+      expect(content).toContain('def scale(self, factor: float) -> Vector2: ...');
+      expect(content).toContain('def normalise(self) -> None: ...');
+      expect(content).toContain('def set(self, *args: float) -> None: ...');
+      expect(content).toContain('def tuple(self) -> Tuple[float, float]: ...');
+      expect(content).toContain('def list(self) -> List[float]: ...');
+      expect(content).toContain('def __add__(self, other: Vector2) -> Vector2: ...');
+      // Vector3 独有:XZ 平面距离 + z 分量
+      expect(content).toContain('class Vector3:');
+      expect(content).toContain('    z: float');
+      expect(content).toContain('def flatDistTo(self, other: Vector3) -> float: ...');
+      expect(content).toContain('def tuple(self) -> Tuple[float, float, float]: ...');
+      // Vector4 独有:w 分量
+      expect(content).toContain('class Vector4:');
+      expect(content).toContain('    w: float');
+      expect(content).toContain('def tuple(self) -> Tuple[float, float, float, float]: ...');
+    });
+
+    it('向量类在 KBE_SYMBOLS 索引,补全/跳转可命中', () => {
+      expect(getKbeSymbol('Vector2')?.kind).toBe('class');
+      expect(getKbeSymbol('Vector3')?.kind).toBe('class');
+      expect(getKbeSymbol('Vector4')?.kind).toBe('class');
+      expect(getKbeSymbol('Vector3')?.cppClassName).toBe('ScriptVector3');
+      const names = filterKbeSymbols('Vector').map(entry => entry.name);
+      expect(names).toEqual(['Vector2', 'Vector3', 'Vector4']);
+    });
+
+    it('桩文档 symbolLines 指向向量类声明行,行内容即签名(跳转不落空)', () => {
+      const stub = buildKbeStubDocument();
+      const lines = stub.content.split('\n');
+      for (const name of ['Vector2', 'Vector3', 'Vector4']) {
+        const entry = getKbeSymbol(name)!;
+        const lineNo = stub.symbolLines[name];
+        expect(lineNo, `${name} 应有桩文档行`).toBeGreaterThan(0);
+        expect(lines[lineNo]).toBe(`${entry.signature}:`);
+      }
+      expect(stub.content).toContain('def distSqrTo(self, other: Vector3) -> float: ...');
+    });
+  });
 });
 
 describe.skipIf(!engineRoot)('kbe 符号索引 vs 引擎 typings 源码', () => {
   it('每条符号的 sourceFile:sourceLine 落在引擎 typings 的对应声明行', () => {
     for (const entry of KBE_SYMBOLS) {
-      const declName = entry.aliasOf ?? entry.name;
+      // Vector2/3/4 的 Python 暴露名(Vector3)≠ C++ 类名(ScriptVector3),
+      // 锚点行按 C++ 类名匹配 `class ScriptVector3`(cppClassName 字段)。
+      const declName = entry.cppClassName ?? entry.aliasOf ?? entry.name;
       const stubPath = path.join(engineRoot!, entry.sourceFile);
       const lines = fs.readFileSync(stubPath, 'utf8').split('\n');
       const declLine = lines[entry.sourceLine - 1];

@@ -103,10 +103,10 @@ describe('resolveEntityAnnotationType(统一解析链,单表收口)', () => {
     }
   });
 
-  it('别名链断到内建:TIMESTAMP→UINT64 发 int,VECTOR3 别名发 Tuple', () => {
+  it('别名链断到内建:TIMESTAMP→UINT64 发 int,VECTOR3 别名发 Vector3', () => {
     const ws = makeTypeRoot('<root>\n  <TIMESTAMP> UINT64 </TIMESTAMP>\n  <HOME_POS> VECTOR3 </HOME_POS>\n</root>');
     expect(resolveEntityAnnotationType(ws, 'TIMESTAMP')).toBe('int');
-    expect(resolveEntityAnnotationType(ws, 'HOME_POS')).toBe('Tuple[float, float, float]');
+    expect(resolveEntityAnnotationType(ws, 'HOME_POS')).toBe('Vector3');
   });
 
   it('多链逐层下钻:C→B→STRING 发 str;内建直查仍生效', () => {
