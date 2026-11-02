@@ -19,7 +19,7 @@
 
 ## 2. Provider 清单
 
-### 2a. 语言 provider(vscode.languages.register\*,27 注册 / 26 类)
+### 2a. 语言 provider(vscode.languages.register\*,28 注册 / 27 类)
 
 注册位为 extension.ts 行号:
 
@@ -52,6 +52,7 @@
 | KBEngineMethodImplementationCodeActionProvider | languageProviders.ts:5470 | :1108 | EntityMappingManager(接口方法补实现) | 编辑提案(WorkspaceEdit) |
 | KBEngineDefPythonParityCodeActionProvider | languageProviders.ts:6058 | :1213 | 诊断面(context.diagnostics,code=def-method-missing-in-python)+双向定位面(目标 Python 文件/类)+当前文档 def 结构(签名类型映射) | 编辑提案(WorkspaceEdit,类尾插方法骨架) |
 | KBEngineReceiverNoneGuardCodeActionProvider | languageProviders.ts:5594 | :1116 | 诊断面(context.diagnostics,code=kbengine.receiverNone)+当前文档文本 | 编辑提案(WorkspaceEdit,包裹式首选+早退式) |
+| HotReloadFileStateCodeLensProvider | hotReloadFileStateLens.ts:43 | :4124 | HotReloadFileStateMachine 派生视图(台账事实源,IDE-HOT-100) | 纯读;状态点点击命令 kbengine.hotReload.showFileState |
 
 命令查询面(非 register\*Provider,同口径记录):符号引用面板 `kbengine.symbolReferences.show` 走 defReferenceGraph 自定义引用图(与 LSP references provider 并存);实体依赖图 `kbengine.dependency.show` 走 dependencyGraph.ts + webview。数据源同为 EntityMappingManager 快照,副作用限于 webview。
 
@@ -76,6 +77,12 @@
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | 快捷动作清单 | 树刷新 + 用户触发命令 |
 | FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml 合成树 | 树刷新事件 |
+
+### 2d. 文件树角标 provider(vscode.window.registerFileDecorationProvider,IDE-HOT-100)
+
+| Provider | 类定义 | 注册位 | 数据源 | 允许副作用 |
+|---|---|---|---|---|
+| HotReloadFileDecorationProvider | hotReloadFileDecorations.ts:35 | :4114 | HotReloadFileStateMachine 派生视图按 (rootId,targetId,file) 聚合,取 worst 态着色 | 纯读;refresh() 经 onDidChangeFileDecorations 事件 |
 
 ## 3. 诊断面
 

@@ -46,6 +46,33 @@ export enum InlayHintKind {
   Parameter = 2
 }
 
+// IDE-HOT-100 文件树角标:与真实 vscode.ThemeColor 同形(构造即记 id),
+// 真机 FileDecoration.color 接受 ThemeColor,测试断言 color.id 即可。
+export class ThemeColor {
+  constructor(public readonly id: string) {}
+}
+
+// 文件树角标替身:真实 vscode.FileDecoration 的构造面与字段面(badge/
+// tooltip/color/propagate),测试断言字段,不读真实颜色渲染。
+export class FileDecoration {
+  badge?: string;
+  tooltip?: string;
+  color?: ThemeColor;
+  propagate?: boolean;
+
+  constructor(badge?: string, tooltip?: string, color?: ThemeColor) {
+    if (badge !== undefined) {
+      this.badge = badge;
+    }
+    if (tooltip !== undefined) {
+      this.tooltip = tooltip;
+    }
+    if (color !== undefined) {
+      this.color = color;
+    }
+  }
+}
+
 const URI_SCHEME_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/?\/?/;
 
 export class Uri {

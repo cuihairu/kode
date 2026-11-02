@@ -54,6 +54,9 @@ export const statusBars: RecordedStatusBarItem[] = [];
 /** registerTreeDataProvider 的入账(viewId → provider) */
 export const treeRegistrations: Array<{ viewId: string; provider: unknown }> = [];
 
+/** registerFileDecorationProvider 的入账(IDE-HOT-100 文件树角标;真 API 在 window 面) */
+export const fileDecorationRegistrations: unknown[] = [];
+
 export const window = {
   showErrorMessage: async (message: string): Promise<undefined> => {
     messages.error.push(message);
@@ -132,6 +135,17 @@ export const window = {
         const index = treeRegistrations.findIndex(item => item.viewId === viewId && item.provider === provider);
         if (index >= 0) {
           treeRegistrations.splice(index, 1);
+        }
+      }
+    };
+  },
+  registerFileDecorationProvider: (provider: unknown): { dispose(): void } => {
+    fileDecorationRegistrations.push(provider);
+    return {
+      dispose: (): void => {
+        const index = fileDecorationRegistrations.indexOf(provider);
+        if (index >= 0) {
+          fileDecorationRegistrations.splice(index, 1);
         }
       }
     };

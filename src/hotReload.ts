@@ -140,6 +140,12 @@ export interface SetupHotReloadOptions {
     file: string,
     body: string | undefined
   ) => void;
+  /**
+   * IDE-HOT-100 结构性 def 拦下通知:def 结构闸把批拦下时回调(动作名/
+   * 文件/原因),接线方把它标进文件状态机的 RESTART_REQUIRED 呈现面。
+   * 注入即回调;不注入则状态机无从知拦下(拦下本身仍照常发生)。
+   */
+  readonly onRestartRequired?: (actionName: string, files: string[], reasons: string[]) => void;
   /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
   readonly now?: () => number;
 }
@@ -447,6 +453,9 @@ export function setupHotReload(
       }
       const block = (reasons: string[]): void => {
         status.setRestartRequired(reasons, triggers);
+        // IDE-HOT-100:拦下通知状态机标 RESTART_REQUIRED 呈现(与日志同源);
+        // 拦下本身是 HOT-005 的既有面,这里只多一个呈现通知。
+        options.onRestartRequired?.(settings.actionName, triggers, reasons);
         const first = reasons[0] ?? 'def 结构待核';
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
