@@ -103,14 +103,14 @@
 
 ### 3.3 Coexisting with the existing navigation index
 
-- Everything **reads** `.def`/`types.xml` read-only; writes only land in `stubDir` (default dir is kode-managed, content-identical zero-write, suggest gitignore: `configuration.md:279`; the `KBEngine.pyi` header also carries that suggestion itself, `kbeModuleIndex.ts:513`).
+- Everything **reads** `.def`/`types.xml` read-only; writes only land in `stubDir` (default dir is kode-managed, content-identical zero-write, suggest gitignore: `configuration.md:279`; the `KBEngine.pyi` header also carries that suggestion itself, `kbeModuleIndex.ts:831`).
 - `entityMapping` (`:152`) and `PythonClassIndex` (`:247`) do not read `.pyi` — mutually unaffected; kode's own hover/completion/navigation (`languageProviders`, data source = `.def`) **does not depend on Pylance** — the two are **complementary, not conflicting**: Pylance gets type names, kode gets project semantics (RPC, DB storage, navigation).
 
 ## 4. Timing and updates
 
 - **The precedent trio is complete**: auto-export on activation (`extension.ts:972-975`, `{ silent: true }`) + manual command (`:964-971`) + content-identical zero-write / stale-only rewrite (`pythonStubExport.ts:5-7/:58`).
 - **`.def`/types.xml change → regenerate**: a debounced watcher has a ready precedent (`src/hotReload.ts:5` builds a watcher, debounce-merges successive saves, `:38-44` debounceMs convention) → suggested same approach; the minimal start can be **manual command + activation only**, the watcher as phase two (small → medium).
-- **Whether artifacts are committed**: the default `.kbengine/stubs` is already characterized as "kode-managed, suggest `.gitignore`, artifacts follow the index" (`configuration.md:279`, `kbeModuleIndex.ts:513`) → **not committed**; a user-configured directory = user assets, kode only scans, never overwrites (`configuration.md:279`).
+- **Whether artifacts are committed**: the default `.kbengine/stubs` is already characterized as "kode-managed, suggest `.gitignore`, artifacts follow the index" (`configuration.md:279`, `kbeModuleIndex.ts:831`) → **not committed**; a user-configured directory = user assets, kode only scans, never overwrites (`configuration.md:279`).
 
 ## 5. Per-item conclusions and effort
 

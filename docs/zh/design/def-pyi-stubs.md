@@ -104,14 +104,14 @@
 
 ### 3.3 与现有跳转索引共存
 
-- 全部**只读**消费 `.def`/`types.xml`;写只落 `stubDir`(默认目录 kode 自管、内容一致零写、建议 gitignore:`configuration.md:279`;`KBEngine.pyi` 头部亦自带该建议 `kbeModuleIndex.ts:513`)。
+- 全部**只读**消费 `.def`/`types.xml`;写只落 `stubDir`(默认目录 kode 自管、内容一致零写、建议 gitignore:`configuration.md:279`;`KBEngine.pyi` 头部亦自带该建议 `kbeModuleIndex.ts:831`)。
 - `entityMapping`(`:152`)与 `PythonClassIndex`(`:247`)都不读 `.pyi`,互不影响;kode 自有的 hover/补全/跳转(`languageProviders`,数据源是 `.def`)**不依赖 Pylance**,两者**互补不冲突**:Pylance 拿类型名,kode 拿工程语义(RPC、落库、跳转)。
 
 ## 4. 时机与更新
 
 - **先例三件套已齐**:激活期自动导出(`extension.ts:972-975`,`{ silent: true }`)+ 手动命令(`:964-971`)+ 内容一致零写/陈旧才重写(`pythonStubExport.ts:5-7/:58`)。
 - **`.def`/types.xml 变更 → 重生成**:去抖 watcher 有现成先例(`src/hotReload.ts:5` 建 watcher 去抖合并连发保存、`:38-44` debounceMs 口径)→ 建议同法;最小起步可**只做手动命令 + 激活期**,watcher 二期(小 → 中)。
-- **产物提交与否**:默认 `.kbengine/stubs` 已定性为「kode 自管、建议 `.gitignore` 忽略,生成物随索引更新」(`configuration.md:279`、`kbeModuleIndex.ts:513`)→ **不提交**;用户自配目录 = 用户资产,kode 只扫描不覆盖(`configuration.md:279`)。
+- **产物提交与否**:默认 `.kbengine/stubs` 已定性为「kode 自管、建议 `.gitignore` 忽略,生成物随索引更新」(`configuration.md:279`、`kbeModuleIndex.ts:831`)→ **不提交**;用户自配目录 = 用户资产,kode 只扫描不覆盖(`configuration.md:279`)。
 
 ## 5. 分条结论与工作量
 
