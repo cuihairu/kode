@@ -914,6 +914,11 @@
           "default": true,
           "description": "Python 侧诊断：def 属性访问方向违规——self.<属性>/self.<role>.<属性> 访问位置不在属性 Flags 域位内报 Warning，文件作用域不足降级为 Information（default: enabled）；关闭后 Python 文档零诊断产出"
         },
+        "kbengine.startupScriptDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动脚本诊断：.sh/.bat 启动行上的服务器进程（machine/dbmgr/baseapp 等）未知 --参数、--cid/--gus 非数字值、引用 $KBE_RES_PATH/$KBE_BIN_PATH/$KBE_ROOT 但未赋值且未 source 报 Warning（default: enabled）；非启动行不检"
+        },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,
@@ -1003,6 +1008,11 @@
           "type": "boolean",
           "default": true,
           "description": "悬停时显示 kbengine.xml 服务配置项的取值与说明"
+        },
+        "kbengine.hover.startupScript": {
+          "type": "boolean",
+          "default": true,
+          "description": "悬停/补全时显示 .sh/.bat 启动脚本里的 KBEngine 启动参数(--cid/--gus/--hide/--KBE_*)与环境变量(KBE_ROOT/KBE_RES_PATH/KBE_BIN_PATH/KBE_TIMING_METHOD/UID/UUID)说明；`--` 前缀补全参数、KBE_ 前缀补全环境变量"
         },
         "kbengine.hover.asyncBudgetMs": {
           "type": "number",

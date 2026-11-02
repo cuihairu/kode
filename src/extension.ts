@@ -361,6 +361,15 @@ import {
   ServerConfigHoverProvider
 } from './serverConfigHover';
 import {
+  STARTUP_SCRIPT_DIAGNOSTIC_CODE,
+  STARTUP_SCRIPT_DIAGNOSTICS_ENABLED_DEFAULT,
+  StartupScriptCompletionProvider,
+  StartupScriptHoverProvider,
+  computeStartupScriptFindings,
+  isStartupScriptDocument,
+  type StartupScriptFinding
+} from './kbengineStartupScript';
+import {
   KBE_CONFIG_SCHEME,
   KBE_CONFIG_VIRTUAL_PATH,
   FinalConfigContentProvider,
@@ -730,6 +739,51 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
+  // KBEXP-1 启动脚本诊断(用户令 2026-11-02;KB-001 第六篇):对 .sh/.bat 启动
+  // 脚本链里的服务器进程启动行做 未知 --xxx / --cid|--gus 非数字 / 缺必要
+  // 环境 三类保守检查,severity=Warning,kbengine.startupScriptDiagnostics 开关
+  // 默认开,与其它诊断共用 collection 与文档事件生命周期(compute 同步,行级
+  // 纯文本扫描,零异步面)。
+  const scheduleStartupScriptDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    const options = {
+      layer: 'local' as const,
+      compute: (): readonly StartupScriptFinding[] => {
+        const config = vscode.workspace.getConfiguration('kbengine');
+        const enabled = config.get<boolean>(
+          'startupScriptDiagnostics',
+          STARTUP_SCRIPT_DIAGNOSTICS_ENABLED_DEFAULT
+        );
+        if (!enabled) {
+          return [];
+        }
+        return computeStartupScriptFindings(document.getText());
+      },
+      publish: (items: readonly StartupScriptFinding[]) => {
+        diagnostics.set(
+          document.uri,
+          items.map(item => {
+            const diagnostic = new vscode.Diagnostic(
+              new vscode.Range(item.line, item.start, item.line, item.end),
+              item.message,
+              vscode.DiagnosticSeverity.Warning
+            );
+            diagnostic.source = 'kbengine';
+            diagnostic.code = item.code ?? STARTUP_SCRIPT_DIAGNOSTIC_CODE;
+            return diagnostic;
+          })
+        );
+      }
+    };
+    if (channel === 'queued') {
+      diagnosticScheduler.requestQueued(document, options);
+    } else {
+      diagnosticScheduler.request(document, options);
+    }
+  };
+
   // 注册智能提示提供者（.def 结构补全 + Python 热更 API 补全;PR1 起带 completion 打点）
   const kbengineCompletionImpl = new KBEngineCompletionProvider(entityMappingManager);
   const completionProvider = vscode.languages.registerCompletionItemProvider(
@@ -854,6 +908,21 @@ export function activate(context: vscode.ExtensionContext) {
     new ServerConfigHoverProvider()
   );
   context.subscriptions.push(serverConfigHoverProvider);
+
+  // KBEXP-1 启动参数悬浮/补全(用户令 2026-11-02;KB-001 第六篇):.sh/.bat
+  // 启动脚本链里的 --cid/--gus/--hide/--KBE_* 与 KBE_ROOT/KBE_RES_PATH/
+  // KBE_BIN_PATH/KBE_TIMING_METHOD/UID/UUID 文档悬浮与补全;开关
+  // kbengine.hover.startupScript(默认开),装配即注册(提供者自读开关)。
+  const startupScriptHoverProvider = vscode.languages.registerHoverProvider(
+    [{ language: 'shellscript' }, { language: 'bat' }],
+    new StartupScriptHoverProvider()
+  );
+  context.subscriptions.push(startupScriptHoverProvider);
+  const startupScriptCompletionProvider = vscode.languages.registerCompletionItemProvider(
+    [{ language: 'shellscript' }, { language: 'bat' }],
+    new StartupScriptCompletionProvider()
+  );
+  context.subscriptions.push(startupScriptCompletionProvider);
 
   // 注册定义跳转提供者（.def 文件）
   // PR1 打点:definition(.def 导航面)。结果原样透传。
@@ -1817,6 +1886,9 @@ export function activate(context: vscode.ExtensionContext) {
         // GEN-DEF-1e:types.xml/alias.xml 变更 = user_type 契约输入变,
         // 重排全部已打开 impl 文件的契约诊断。
         rescheduleUserTypeContractForRegistryChange();
+      } else if (isStartupScriptDocument(event.document)) {
+        // KBEXP-1:启动脚本改动 → 重排本文件启动参数诊断(行级纯文本扫描)。
+        scheduleStartupScriptDiagnostics(event.document, 'queued');
       }
       // IDE-REV-011:schema 缓存热命中不再懒重读输入文件(失效在事件面)——
       // 脏 def/types/alias 文档编辑同步摘除消费条目(磁盘域变更已由
@@ -1924,6 +1996,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isPythonDocument(document)) {
         scheduleReceiverNoneDiagnostics(document, 'immediate');
         scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
+      } else if (isStartupScriptDocument(document)) {
+        // KBEXP-1:开启动脚本档即发布启动参数诊断(立即通道)。
+        scheduleStartupScriptDiagnostics(document, 'immediate');
       }
       // 批159:开 Python 档即预热实体 def 定向首解析,首次 hover/CodeLens/
       // 签名帮助不再吃冷启动等待(失败静默,预热是优化不是功能)。
@@ -1945,6 +2020,9 @@ export function activate(context: vscode.ExtensionContext) {
       } else if (isPythonDocument(document)) {
         scheduleReceiverNoneDiagnostics(document, 'immediate');
         scheduleDefMethodConsistencyDiagnostics(document, 'immediate');
+      } else if (isStartupScriptDocument(document)) {
+        // KBEXP-1:已开启动脚本档(激活期补发)即发布启动参数诊断。
+        scheduleStartupScriptDiagnostics(document, 'immediate');
       }
     });
   }
@@ -2066,7 +2144,8 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.enableDiagnostics') ||
       event.affectsConfiguration('kbengine.receiverNoneDiagnostics') ||
       event.affectsConfiguration('kbengine.attributeNoneDiagnostics') ||
-      event.affectsConfiguration('kbengine.propertyDirectionDiagnostics');
+      event.affectsConfiguration('kbengine.propertyDirectionDiagnostics') ||
+      event.affectsConfiguration('kbengine.startupScriptDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
       event.affectsConfiguration('kbengine.diagnostics.checkDefMethodMissingInPython') ||
@@ -2084,7 +2163,8 @@ export function activate(context: vscode.ExtensionContext) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
           event.affectsConfiguration('kbengine.diagnostics') ||
           event.affectsConfiguration('kbengine.receiverNoneDiagnostics') ||
-          event.affectsConfiguration('kbengine.attributeNoneDiagnostics')) {
+          event.affectsConfiguration('kbengine.attributeNoneDiagnostics') ||
+          event.affectsConfiguration('kbengine.startupScriptDiagnostics')) {
         diagnosticScheduler.invalidateAll();
       }
       // C-19:一致性输入开关/骨架体变更 → 一致性调度器输入代自增,已发布重算
@@ -2127,6 +2207,10 @@ export function activate(context: vscode.ExtensionContext) {
           if (event.affectsConfiguration('kbengine.propertyDirectionDiagnostics')) {
             schedulePropertyDirectionDiagnostics(doc, 'immediate');
           }
+        } else if (isStartupScriptDocument(doc)) {
+          // KBEXP-1:启动脚本诊断开关变更 → 立即重算已开启动脚本(compute
+          // 每次现读配置,关闭即清,开启即重发布)。
+          scheduleStartupScriptDiagnostics(doc, 'immediate');
         }
       });
     }

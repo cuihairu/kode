@@ -207,10 +207,10 @@ describe('extension activate 装配', () => {
       .sort();
     expect(treeRegistrations.map(item => item.viewId).sort()).toEqual(declaredViewIds);
 
-    // 语言服务:补全 2(.def + Python)、悬停 2(.def/hook + 引擎配置字段,
-    // 批112)、定义 2、调用层级 1、重命名 1
-    expect(languagesRegistry.completionRegistrations).toHaveLength(2);
-    expect(languagesRegistry.hoverRegistrations).toHaveLength(2);
+    // 语言服务:补全 3(.def + Python + 启动脚本,KBEXP-1)、悬停 3(.def/hook +
+    // 引擎配置字段,批112 + 启动脚本,KBEXP-1)、定义 2、调用层级 1、重命名 1
+    expect(languagesRegistry.completionRegistrations).toHaveLength(3);
+    expect(languagesRegistry.hoverRegistrations).toHaveLength(3);
     expect(languagesRegistry.definitionRegistrations).toHaveLength(2);
     // 引用提供者(Shift+F12)三份:IDE-NAV-001 def 文档选择器一份、
     // GLOBDATA-001 python 数据字典键选择器一份(同一实例双 selector 注册)、
