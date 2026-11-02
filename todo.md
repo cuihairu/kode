@@ -939,3 +939,5 @@
   - 生成器口径:__init__ 初始化守卫用 `if self.xxx is None:`(防手工改库/迁移缺列/外部 delattr/stub 脱离引擎);仅对 FIXED_DICT/ARRAY 等引用型生成;简单类型不生成;禁 `if not self.xxx:`(falsy 判断会把引擎合法默认 0/""/[] 误判并重建,引用失效)。
 
 - [ ] GEN-DEF-1 [P1] pyi/stub 生成器 __init__ 守卫按上述口径改造;验收:生成的实体类中 FIXED_DICT/ARRAY 属性生成 is None 守卫、简单类型无守卫、全仓无 `if not self.` 形态守卫;现有生成物全量重生成 diff 审计;测试绿。
+- [ ] GEN-DEF-1a [P1] GEN-DEF-1 补充:stub 注解去 Optional——def 属性声明类型一律非 Optional(源码已核实创建/装载线恒非 None),现有 List[X] | None 形态全量改为 List[X];验收:重生成后 .get/.append 等调用无 None 警告。
+- [ ] LANG-NAR-1 [P1] 语义引擎流敏感窄化:`if self.X is None: self.X = expr` 后属性类型收窄为 expr 类型;__init__ 内赋值参与属性类型收敛(声明∪赋值);验收:用户场景 self.TalentTree.is None 守卫后 .get 无 List|None 警告,__init__ 初始化后同样无警告;带测试。
