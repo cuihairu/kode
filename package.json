@@ -39,6 +39,7 @@
     "onCommand:kbengine.refreshExplorer",
     "onCommand:kbengine.entity.open",
     "onCommand:kbengine.entity.method.open",
+    "onCommand:kbengine.defMethodConsistency.revalidate",
     "onCommand:kbengine.database.open",
     "onCommand:kbengine.database.simulate",
     "onCommand:kbengine.database.exportSimulation",
