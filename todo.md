@@ -932,3 +932,10 @@
 - [ ] PA-005 [P2] Phase 3 分析引擎（新 crate kode-kbengine-analyzer）；验收：独立分析一组解码消息出 JSON 报告。能力：消息/流量统计、请求响应关联（仅协议确证标识，不拿相邻猜对）、延迟 P50/P95/P99、异常检测（未知消息/非法长度/Schema 不匹配）、Entity 事件与 RPC 时间线、连接分析（登录/切 Baseapp/重连）。前置：PA-003。
 - [ ] PA-006 [P3] Phase 4 Wireshark/TShark 集成；验收：能加载并解析 KBEngine 报文的原生插件（或 C 适配层）。先验证 libwireshark Rust 绑定（现 alpha 0.0.0，按 Wireshark 版本分别构建）六项能力；不满足启用 C Thin Adapter（C 只做注册/重组/协议树映射，解析全在 Rust）。GPL 边界：插件独立 crate+独立许可评估，不混入 Apache VSIX。前置：PA-003（核心稳定后接）。
 - [ ] PA-007 [P3] Phase 5 Kode 集成；验收：用户零手动配置。Protocol Analyzer 命令+协议管理面板；Wireshark/TShark/插件版本检测；Schema 自动生成与协议文件变化监听（仅协议定义文件触发重建，Python 业务变更不触发）；一键开 PCAP/跑 TShark；Schema 版本提示+错误诊断。前置：PA-004、PA-006。
+
+## KBENGINE 属性默认值守卫规则(用户令 2026-11-02,源码已核实)
+
+  - 源码结论:实体创建线引擎对所有 def 属性灌 newDefaultVal()(entity_macro.h:1616→property.cpp:200);FixedDictType::parseDefaultStr 恒建 FixedDict(datatype.cpp:2570,子键递归 2623/2639);FixedArrayType 空默认→[](1823);MySQL 列 not null DEFAULT(db_mysql/entity_table_mysql.cpp:522)。创建线复杂类型不产 None。
+  - 生成器口径:__init__ 初始化守卫用 `if self.xxx is None:`(防手工改库/迁移缺列/外部 delattr/stub 脱离引擎);仅对 FIXED_DICT/ARRAY 等引用型生成;简单类型不生成;禁 `if not self.xxx:`(falsy 判断会把引擎合法默认 0/""/[] 误判并重建,引用失效)。
+
+- [ ] GEN-DEF-1 [P1] pyi/stub 生成器 __init__ 守卫按上述口径改造;验收:生成的实体类中 FIXED_DICT/ARRAY 属性生成 is None 守卫、简单类型无守卫、全仓无 `if not self.` 形态守卫;现有生成物全量重生成 diff 审计;测试绿。
