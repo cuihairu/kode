@@ -14,7 +14,8 @@ import {
   getKbeFromImportedSymbols,
   getKbeSymbol,
   getPythonClassBaseAtPosition,
-  resolveKbeAccessAtPosition
+  resolveKbeAccessAtPosition,
+  summaryForLanguage
 } from '../src/kbeModuleIndex';
 import { resolveEngineRoot } from './helpers/engineRoot';
 
@@ -255,7 +256,8 @@ describe('kbe 模块符号索引(批108)', () => {
     it('KBEntity 条目带别名指向与引擎锚点行', () => {
       const kbLine = stub.symbolLines['KBEntity'];
       const lines = stub.content.split('\n');
-      const body = lines.slice(kbLine, kbLine + 6).join('\n');
+      // GEN-DEF-1d:docstring 双语(zh+EN 段)加长,窗口放宽到 14 行
+      const body = lines.slice(kbLine, kbLine + 14).join('\n');
       expect(body).toContain('Entity');
       expect(body).toContain('typings/_KBEngine_common.pyi:67');
     });
@@ -381,5 +383,35 @@ describe.skipIf(!engineRoot)('kbe 符号索引 vs 引擎 typings 源码', () => 
         `${entry.name} 锚点行应为 "${keyword} ${declName}",实得: ${declLine}`
       ).toBe(true);
     }
+  });
+});
+
+// GEN-DEF-1d:API 索引条目双语契约——每条 zh(summary)+en(summaryEn) 双字段
+// 必填非空(缺一 TS 类型级报错,这里运行时锁非空),summaryForLanguage 按
+// IDE 语言选文案(zh 前缀取中文,其余取英文,缺位回落英文)。
+describe('KBEngine API 索引条目双语契约(GEN-DEF-1d)', () => {
+  it('每条符号 zh+en 双字段必填非空', () => {
+    for (const entry of KBE_SYMBOLS) {
+      expect(entry.summary.trim(), `${entry.name} zh summary 非空`).not.toBe('');
+      expect(entry.summaryEn.trim(), `${entry.name} en summaryEn 非空`).not.toBe('');
+    }
+  });
+
+  it('summaryForLanguage 按 IDE 语言选择(zh 前缀取中文,其余英文)', () => {
+    const entry = KBE_SYMBOLS.find(s => s.name === 'Entity')!;
+    expect(summaryForLanguage(entry, 'zh-cn')).toBe(entry.summary);
+    expect(summaryForLanguage(entry, 'zh-tw')).toBe(entry.summary);
+    expect(summaryForLanguage(entry, 'en')).toBe(entry.summaryEn);
+    expect(summaryForLanguage(entry, undefined)).toBe(entry.summaryEn);
+    expect(summaryForLanguage(entry, 'fr')).toBe(entry.summaryEn);
+  });
+
+  it('桩文档 docstring 双语言并陈(中文段 + EN 段)', () => {
+    const stub = buildKbeStubDocument();
+    const kbLine = stub.symbolLines['Entity'];
+    const lines = stub.content.split('\n');
+    const doc = lines.slice(kbLine, kbLine + 12).join('\n');
+    expect(doc).toContain('引擎实体基类');
+    expect(doc).toContain('EN: Engine entity base class');
   });
 });

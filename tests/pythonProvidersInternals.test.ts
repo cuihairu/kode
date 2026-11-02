@@ -18,6 +18,7 @@ import {
   SymbolKind,
   CallHierarchyItem,
   Uri,
+  envState,
   makeTextDocument,
   workspace as stubWorkspace
 } from './helpers/vscodeStub';
@@ -437,6 +438,31 @@ describe('PythonCompletionProvider', () => {
     expect(address?.detail).toContain('def address');
     expect(address?.documentation.value)
       .toContain('原始声明: `typings/_KBEngine_baseapp.pyi:21`');
+  });
+
+  it('KBEngine API 补全 documentation 按 IDE 语言选 summary(GEN-DEF-1d)', async () => {
+    const provider = new PythonCompletionProvider(
+      {} as EntityMappingManager,
+      buildEngineApiCatalog('/ws', { engineRoot: null })
+    );
+    const { document, position } = pyDoc('import KBEngine\nKBEngine.a|');
+    const docs = async () => {
+      const items = await provider.provideCompletionItems(document, position) as Array<{
+        label: string;
+        documentation?: { value: string };
+      }>;
+      return items.find(item => item.label === 'address')?.documentation?.value ?? '';
+    };
+    try {
+      envState.language = 'zh-cn';
+      expect(await docs()).toContain('当前组件进程的监听地址。');
+      envState.language = 'en';
+      expect(await docs()).toContain('Listen address of the current component process.');
+      envState.language = undefined;
+      expect(await docs()).toContain('Listen address of the current component process.');
+    } finally {
+      envState.language = 'en';
+    }
   });
 
   const makeMapping = (overrides?: {

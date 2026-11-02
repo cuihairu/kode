@@ -22,8 +22,10 @@ export interface KbeSymbolEntry {
   kind: KbeSymbolKind;
   /** 桩文档与补全详情里展示的签名 */
   signature: string;
-  /** 一句话说明(桩文档 docstring 与补全 documentation 复用) */
+  /** 一句话说明,中文(桩文档 docstring 与补全 documentation 复用) */
   summary: string;
+  /** 一句话说明,英文(GEN-DEF-1d:双语必填,缺一不可,TS 构建校验) */
+  summaryEn: string;
   /** 引擎 typings 内的锚点文件(相对引擎仓库根) */
   sourceFile: string;
   /** 引擎 typings 内 class/def 声明行(1 起) */
@@ -48,6 +50,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary:
       'kode 内置别名:对齐项目侧 `kbe.KBEntity` 基类习惯,实体指向引擎 Entity 基类(非引擎原生符号)。' +
       '实体脚本继承它即可获得 id/className/cell/base 等实体属性与生命周期钩子。',
+    summaryEn: 'kode built-in alias: aligns with the project-side `kbe.KBEntity` base-class convention, pointing entities at the engine Entity base (not an engine-native symbol). Inheriting from it in an entity script gives id/className/cell/base attributes and lifecycle hooks.',
     sourceFile: COMMON_STUB,
     sourceLine: 67,
     aliasOf: 'Entity'
@@ -59,6 +62,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary:
       '引擎实体基类(baseapp/cellapp 侧实体脚本基类):id/className/client/cell/base/databaseID 属性与 ' +
       'addTimer/destroy 等实体方法,以及 onDestroy 等生命周期钩子。',
+    summaryEn: 'Engine entity base class (base class for entity scripts on baseapp/cellapp): id/className/client/cell/base/databaseID attributes, entity methods like addTimer/destroy, and lifecycle hooks like onDestroy.',
     sourceFile: COMMON_STUB,
     sourceLine: 67
   },
@@ -67,6 +71,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class Proxy(Entity)',
     summary: '账号代理实体基类,携带 __ACCOUNT_NAME__/__ACCOUNT_PASSWORD__ 协议字段。',
+    summaryEn: 'Base class for account proxy entities, carrying the __ACCOUNT_NAME__/__ACCOUNT_PASSWORD__ protocol fields.',
     sourceFile: COMMON_STUB,
     sourceLine: 204
   },
@@ -75,6 +80,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class Space(Entity)',
     summary: '空间实体基类。',
+    summaryEn: 'Base class for space entities.',
     sourceFile: COMMON_STUB,
     sourceLine: 224
   },
@@ -83,6 +89,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class EntityComponent',
     summary: '实体组件基类:client/cell/base EntityCall 引用与实体生命周期钩子。',
+    summaryEn: 'Base class for entity components: client/cell/base EntityCall references and entity lifecycle hooks.',
     sourceFile: COMMON_STUB,
     sourceLine: 227
   },
@@ -91,6 +98,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class Entities(Dict[int, Entity])',
     summary: '实体表:entityID → Entity 映射。',
+    summaryEn: 'Entity table: entityID → Entity mapping.',
     sourceFile: COMMON_STUB,
     sourceLine: 240
   },
@@ -99,6 +107,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class EntityCall',
     summary: '实体远程调用句柄基类:getComponent 取组件 EntityCall。',
+    summaryEn: 'Base class for entity remote-call handles: getComponent returns a component EntityCall.',
     sourceFile: COMMON_STUB,
     sourceLine: 32
   },
@@ -110,6 +119,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class EntityComponentCall(EntityCall)',
     summary: '实体组件远程调用句柄。',
+    summaryEn: 'Entity component remote-call handle.',
     sourceFile: COMMON_STUB,
     sourceLine: 43
   },
@@ -118,6 +128,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class MemoryStream',
     summary: '二进制流:append/pop 按 dataType 读写,常用于自定义协议打包。',
+    summaryEn: 'Binary stream: append/pop read-write by dataType, commonly used for custom protocol packing.',
     sourceFile: COMMON_STUB,
     sourceLine: 45
   },
@@ -126,6 +137,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def address() -> Address',
     summary: '当前组件进程的监听地址。',
+    summaryEn: 'Listen address of the current component process.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 21
   },
@@ -134,6 +146,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def time() -> int',
     summary: '引擎游戏时间(秒,游戏节拍)。',
+    summaryEn: 'Engine game time (seconds, game tick).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 22
   },
@@ -142,6 +155,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def isShuttingDown() -> bool',
     summary: '进程是否正在关闭。',
+    summaryEn: 'Whether the process is shutting down.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 23
   },
@@ -150,6 +164,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def getWatcher(path: str) -> WatcherValue',
     summary: '读取 watcher 指标值(监控面板数据源同款)。',
+    summaryEn: 'Read a watcher metric value (same data source as the monitoring panel).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 24
   },
@@ -158,6 +173,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def getWatcherDir(path: str) -> Tuple[str, ...]',
     summary: '列出 watcher 目录下的组件/路径。',
+    summaryEn: 'List components/paths under a watcher directory.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 25
   },
@@ -166,6 +182,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def addWatcher(path: str, dataType: str, getFunction: Callable[[], WatcherValue]) -> None',
     summary: '注册自定义 watcher 指标。',
+    summaryEn: 'Register a custom watcher metric.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 26
   },
@@ -174,6 +191,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def delWatcher(path: str) -> None',
     summary: '注销自定义 watcher 指标。',
+    summaryEn: 'Unregister a custom watcher metric.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 31
   },
@@ -182,6 +200,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def setAppFlags(flags: int) -> None',
     summary: '设置进程 flags 位。',
+    summaryEn: 'Set process flags bits.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 32
   },
@@ -190,6 +209,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def getAppFlags() -> int',
     summary: '读取进程 flags 位。',
+    summaryEn: 'Read process flags bits.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 33
   },
@@ -198,6 +218,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def reloadScript(fullReload: bool = False) -> None',
     summary: '热更脚本(与 kode 热更新支持面板同一入口)。',
+    summaryEn: 'Hot-reload scripts (same entry as the kode hot-update support panel).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 34
   },
@@ -206,6 +227,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def quantumPassedPercent() -> int',
     summary: '当前时间片推进百分比。',
+    summaryEn: 'Current time-slice advancement percentage.',
     sourceFile: BASEAPP_STUB,
     sourceLine: 35
   },
@@ -214,6 +236,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntity(entityType: str, params: Union[Dict[str, Any], None] = None) -> Union[Entity, None]',
     summary: '本地创建实体(同步返回)。',
+    summaryEn: 'Create an entity locally (returns synchronously).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 36
   },
@@ -222,6 +245,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntityLocally(entityType: str, params: Union[Dict[str, Any], None] = None) -> Union[Entity, None]',
     summary: '在本进程创建实体(同步返回)。',
+    summaryEn: 'Create an entity in this process (returns synchronously).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 40
   },
@@ -230,6 +254,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntityAnywhere(entityType: str, params: Union[Dict[str, Any], None] = None, callback: Union[Callback, None] = None) -> None',
     summary: '在任意合适进程创建实体(回调返回)。',
+    summaryEn: 'Create an entity in any suitable process (returns via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 44
   },
@@ -238,6 +263,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntityRemotely(entityType: str, baseMB: EntityCall, params: Union[Dict[str, Any], None] = None, callback: Union[Callback, None] = None) -> None',
     summary: '在指定 base 实体所在进程创建实体(回调返回)。',
+    summaryEn: 'Create an entity in the process hosting a specified base entity (returns via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 49
   },
@@ -246,6 +272,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntityFromDBID(entityType: str, dbID: int, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 创建实体(回调返回)。',
+    summaryEn: 'Create an entity by database ID (returns via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 55
   },
@@ -254,6 +281,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntityAnywhereFromDBID(entityType: str, dbID: int, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 在任意进程创建实体(回调返回)。',
+    summaryEn: 'Create an entity by database ID in any process (returns via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 61
   },
@@ -262,6 +290,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def createEntityRemotelyFromDBID(entityType: str, dbID: int, baseMB: EntityCall, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 在指定 base 实体所在进程创建实体(回调返回)。',
+    summaryEn: 'Create an entity by database ID in the process hosting a specified base entity (returns via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 67
   },
@@ -270,6 +299,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def charge(ordersID: str, dbID: int, byteDatas: bytes, pycallback: Union[Callback, None] = None) -> None',
     summary: '提交计费订单(回调返回计费结果)。',
+    summaryEn: 'Submit a billing order (returns the billing result via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 75
   },
@@ -278,6 +308,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def deleteEntityByDBID(entityType: str, dbID: int, callback: Union[Callback, None] = None, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 删除实体(回调返回)。',
+    summaryEn: 'Delete an entity by database ID (returns via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 81
   },
@@ -286,6 +317,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'function',
     signature: 'def lookUpEntityByDBID(entityType: str, dbID: int, callback: Callback, dbInterfaceName: str = "default") -> None',
     summary: '按数据库 ID 查找已存在实体(回调返回 EntityCall)。',
+    summaryEn: 'Look up an existing entity by database ID (returns an EntityCall via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 87
   },
@@ -294,6 +326,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class FixedArray(Generic[T])',
     summary: 'def ARRAY 属性的运行时容器(script::Sequence):元素类型受检,append/extend/insert/remove 返回 bool,pop 返回被弹出元素。',
+    summaryEn: 'Runtime container for def ARRAY properties (script::Sequence): element types are checked, append/extend/insert/remove return bool, pop returns the popped element.',
     sourceFile: 'kbe/src/lib/entitydef/fixedarray.h',
     sourceLine: 13
   },
@@ -302,6 +335,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class FixedDict(Mapping[str, Any])',
     summary: 'def FIXED_DICT 属性的运行时容器(script::Map):键集合按 def 固定,属性注解用 TypedDict 精确表达,本类是它的容器基面。',
+    summaryEn: 'Runtime container for def FIXED_DICT properties (script::Map): the key set is fixed by def; the property annotation is expressed precisely as a TypedDict; this class is its container base surface.',
     sourceFile: 'kbe/src/lib/entitydef/fixeddict.h',
     sourceLine: 15
   },
@@ -310,6 +344,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class Vector2',
     summary: 'KBEngine 二维向量(ScriptVector2,pyscript/vector2.h):x/y 分量、length/lengthSquared 只读、distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR2 属性注解用本类。',
+    summaryEn: 'KBEngine 2D vector (ScriptVector2, pyscript/vector2.h): x/y components, read-only length/lengthSquared, distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set, sequence and arithmetic protocols. def VECTOR2 property annotations use this class.',
     sourceFile: 'kbe/src/lib/pyscript/vector2.h',
     sourceLine: 12,
     cppClassName: 'ScriptVector2'
@@ -319,6 +354,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class Vector3',
     summary: 'KBEngine 三维向量(ScriptVector3,pyscript/vector3.h):x/y/z 分量、length/lengthSquared 只读、flatDistTo/flatDistSqrTo/distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR3 属性注解用本类。',
+    summaryEn: 'KBEngine 3D vector (ScriptVector3, pyscript/vector3.h): x/y/z components, read-only length/lengthSquared, flatDistTo/flatDistSqrTo/distTo/distSqrTo/cross2D/dot/scale/normalise/tuple/list/set, sequence and arithmetic protocols. def VECTOR3 property annotations use this class.',
     sourceFile: 'kbe/src/lib/pyscript/vector3.h',
     sourceLine: 12,
     cppClassName: 'ScriptVector3'
@@ -328,6 +364,7 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     kind: 'class',
     signature: 'class Vector4',
     summary: 'KBEngine 四维向量(ScriptVector4,pyscript/vector4.h):x/y/z/w 分量、length/lengthSquared 只读、distTo/distSqrTo/dot/scale/normalise/tuple/list/set,序列与算术协议。def VECTOR4 属性注解用本类。',
+    summaryEn: 'KBEngine 4D vector (ScriptVector4, pyscript/vector4.h): x/y/z/w components, read-only length/lengthSquared, distTo/distSqrTo/dot/scale/normalise/tuple/list/set, sequence and arithmetic protocols. def VECTOR4 property annotations use this class.',
     sourceFile: 'kbe/src/lib/pyscript/vector4.h',
     sourceLine: 12,
     cppClassName: 'ScriptVector4'
@@ -342,6 +379,21 @@ const KBE_SYMBOL_BY_NAME = new Map(KBE_SYMBOLS.map(entry => [entry.name, entry])
 
 export function getKbeSymbol(name: string): KbeSymbolEntry | null {
   return KBE_SYMBOL_BY_NAME.get(name) ?? null;
+}
+
+/**
+ * GEN-DEF-1d:按 IDE 显示语言选 API 条目的 summary 文案。zh 前缀(zh-cn/
+ * zh-tw 等)取中文,其余取英文;任何缺位回落英文(双字段类型级强制,
+ * 这里只做防御)。传入 `vscode.env.language`。
+ */
+export function summaryForLanguage(
+  entry: Pick<KbeSymbolEntry, 'summary' | 'summaryEn'>,
+  ideLanguage?: string
+): string {
+  if (ideLanguage?.startsWith('zh')) {
+    return entry.summary || entry.summaryEn;
+  }
+  return entry.summaryEn || entry.summary;
 }
 
 /**
@@ -524,9 +576,16 @@ function emitKbeStubBody(lines: string[]): Record<string, number> {
     }
     symbolLines[entry.name] = lines.length;
     lines.push(`${entry.signature}:`);
+    // GEN-DEF-1d:docstring 双语——中文段后空行 + `EN:` 段(Pylance 静态桩
+    // 无 IDE 语言语境,双语言并陈;hover/补全的动态面按语言单选)
     for (const docLine of wrapSummary(entry.summary)) {
       lines.push(`    """${docLine}"""`);
     }
+    lines.push('    """"""');
+    const enDoc = wrapSummary(entry.summaryEn);
+    enDoc.forEach((docLine, index) => {
+      lines.push(`    """${index === 0 ? 'EN: ' : ''}${docLine}"""`);
+    });
     if (entry.aliasOf) {
       lines.push(`    # kode 别名:实体指向 ${entry.aliasOf}`);
     }

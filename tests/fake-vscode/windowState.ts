@@ -16,9 +16,10 @@ export const messages = {
 const showTextDocumentCalls: Array<{ document: unknown; options?: unknown }> = [];
 
 /** vscode.env 替身(可变字段,测试可注入 remote 窗口语境;reset 还原本地窗) */
-export const envState: { remoteName?: string; appName: string } = {
+export const envState: { remoteName?: string; appName: string; language?: string } = {
   remoteName: undefined,
-  appName: 'Visual Studio Code'
+  appName: 'Visual Studio Code',
+  language: 'en'
 };
 
 /** 经 vscodeStub 以 vscode.env 名义暴露(与 envState 同引用) */
@@ -168,5 +169,6 @@ export const windowState = {
     statusBars.length = 0;
     treeRegistrations.length = 0;
     envState.remoteName = undefined;
+    envState.language = 'en';
   }
 };

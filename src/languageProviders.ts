@@ -166,7 +166,8 @@ import {
   getKbeFromImportedSymbols,
   getKbeSymbol,
   getPythonClassBaseAtPosition,
-  resolveKbeAccessAtPosition
+  resolveKbeAccessAtPosition,
+  summaryForLanguage
 } from './kbeModuleIndex';
 import {
   GlobalDataDictIndex,
@@ -6558,7 +6559,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
         );
         item.detail = entry.signature;
         item.documentation = new vscode.MarkdownString(
-          `${entry.summary}\n\n原始声明: \`${entry.sourceFile}:${entry.sourceLine}\``
+          `${summaryForLanguage(entry, vscode.env.language)}\n\n原始声明: \`${entry.sourceFile}:${entry.sourceLine}\``
         );
         return item;
       });
