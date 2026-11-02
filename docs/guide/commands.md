@@ -404,6 +404,20 @@ The dependency graph panel supports:
 - exporting SVG
 - exporting PNG
 
+### `kbengine.pythonCallGraph.show`
+
+- Title: `Show Python Call Graph`
+- Purpose: open the Python method-level call graph (same panel as the entity dependency graph, in callgraph mode)
+
+The callgraph mode panel supports:
+
+- Collecting all `*.py` files under the workspace roots (excluding `node_modules`/`out`/`.vscode-test`/`.git`) and sending their text to the Rust core
+- Method-level call edges classified into 8 kinds (local / method / self-method / kbe-broadcast / kbe-base-clients / kbe-cross-process / kbe-api / unknown), each with a dedicated arrow and color
+- Unresolved callees rendered as stub nodes (`ext:` / `kbe:` prefixes) so call sites are never dropped
+- Cross-file callers (via `reverseIndex`) feeding the kode-scheduler invalidation DAG
+- Clicking a node opens the corresponding `.py` file
+- Export SVG / PNG
+
 ### `kbengine.flow.show`
 
 - Title: `Show Entity Flow Graph`

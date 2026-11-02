@@ -3835,6 +3835,13 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(showDependencyCommand);
 
+  // C-20:调用图模式(同面板切 mode='callgraph')。
+  const showPythonCallGraphCommand = vscode.commands.registerCommand(
+    'kbengine.pythonCallGraph.show',
+    () => dependencyWebView.show('callgraph')
+  );
+  context.subscriptions.push(showPythonCallGraphCommand);
+
   // 实体架构流程图(批124):客户端到 base/cell 的方法调用与属性自动同步,
   // 边语义按 Flags 位带引擎出处。实体名缺省取活动 .def 编辑器。
   const flowWebView = new EntityFlowWebView(context);

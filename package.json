@@ -77,6 +77,7 @@
     "onCommand:kbengine.debug.createConfig",
     "onCommand:kbengine.monitoring.show",
     "onCommand:kbengine.dependency.show",
+    "onCommand:kbengine.pythonCallGraph.show",
     "onCommand:kbengine.flow.show",
     "onCommand:kbengine.generator.wizard",
     "onCommand:kbengine.generator.formWizard",
@@ -496,6 +497,11 @@
         "command": "kbengine.dependency.show",
         "title": "Show Entity Dependency Graph",
         "icon": "$(graph-scatter)"
+      },
+      {
+        "command": "kbengine.pythonCallGraph.show",
+        "title": "Show Python Call Graph",
+        "icon": "$(graph)"
       },
       {
         "command": "kbengine.flow.show",

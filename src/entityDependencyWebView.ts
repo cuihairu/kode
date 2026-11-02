@@ -9,12 +9,24 @@
  * 两源图先归一为 RenderGraph 再渲染:TS 兜底源输出与迁移前逐字节一致,
  * Rust 源按节点 kind 分 emoji/classDef、按边 kind 分箭头,带三关键路径
  * 与节点点击跳转。
+ *
+ * C-20:同一面板双模式「dependency(实体依赖)| callgraph(Python 方法级
+ * 调用图)」。callgraph 模式走 `$/kode/python/callgraph`(Rust ruff AST),
+ * 收集 workspace 全部根 *.py 原文直传;归一为 CallGraphGraph 再渲染
+ * (8 类边分箭头/样式,未解析被调方补 stub 节点,绝不丢调用点)。Rust
+ * 不可用 = 面板徽标「Rust 不可用」+ 空图注记(无 TS 兜底,不虚构)。
  */
 
 import * as vscode from 'vscode';
 import { EntityDependencyAnalyzer, DependencyGraph } from './entityDependency';
 import { buildDependencyGraphInRust } from './dependencyGraphRust';
 import type { DependencyGraphRust } from './dependencyGraphRust';
+import { buildPythonCallGraphInRust } from './pythonCallGraphRust';
+import type {
+  PythonCallGraphRustResult,
+  PythonCallGraphNode
+} from './pythonCallGraphRust';
+import { readWorkspaceTextFile } from './definitionWorkspace';
 
 /**
  * 渲染层节点 kind(六员;TS 兜底源归一后全部是 entity)。
@@ -220,7 +232,7 @@ export function normalizeRustGraph(graph: DependencyGraphRust): RenderGraph {
 }
 
 /** click 指令:webview 脚本注册 openFilePath 回调,回抛 openNode 打开文件。 */
-function clickLine(node: RenderNode): string {
+function clickLine(node: { id: string; filePath: string }): string {
   return `  click ${node.id} openFilePath "${node.filePath.replace(/"/g, '\\"')}"\n`;
 }
 
@@ -314,6 +326,257 @@ function renderRustMermaid(graph: RenderGraph): string {
   return mermaid;
 }
 
+// ---------------------------------------------------------------------------
+// C-20 callgraph 模式:类型/常量/归一/渲染
+// ---------------------------------------------------------------------------
+
+/** callgraph 渲染层节点 kind(四员;Rust 节点 + 未解析 stub)。 */
+export type CallGraphNodeKind = 'method' | 'function' | 'module' | 'external';
+
+export interface CallGraphNode {
+  readonly id: string;
+  readonly label: string;
+  readonly name: string;
+  readonly filePath: string;
+  readonly kind: CallGraphNodeKind;
+  readonly className?: string;
+  readonly line?: number;
+}
+
+export interface CallGraphEdge {
+  readonly from: string;
+  readonly to: string;
+  readonly kind: string;
+  readonly callerLine?: number;
+}
+
+/** callgraph 归一渲染图(仅 Rust 源;无 TS 兜底)。 */
+export interface CallGraphGraph {
+  readonly nodes: CallGraphNode[];
+  readonly edges: CallGraphEdge[];
+  readonly stats: {
+    nodeCount: number;
+    edgeCount: number;
+    fileCount: number;
+    errorCount: number;
+  };
+  readonly processRoles: string[];
+  readonly source: 'rust';
+}
+
+/** 调用图节点 kind emoji。 */
+const CALL_KIND_EMOJI: Record<CallGraphNodeKind, string> = {
+  method: '🔧',
+  function: 'ƒ',
+  module: '📦',
+  external: '❓'
+};
+
+/** 边 kind → mermaid 箭头(kbe 广播/API 用实线或双线;未登记回落 -->)。 */
+const CALL_KIND_ARROW: Record<string, string> = {
+  local: '-->',
+  'self-method': '-.->',
+  method: '-->',
+  'kbe-broadcast': '==>',
+  'kbe-base-clients': '==>',
+  'kbe-cross-process': '-.->',
+  'kbe-api': '---',
+  unknown: '---'
+};
+
+/** 边 kind → classDef 填充色(kind 独立配色,图例可辨)。 */
+const CALL_KIND_STYLE: Record<CallGraphNodeKind, string> = {
+  method: 'fill:#e3f2fd,stroke:#1565c0,stroke-width:2px',
+  function: 'fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px',
+  module: 'fill:#fff3e0,stroke:#e65100,stroke-width:2px',
+  external: 'fill:#eceff1,stroke:#455a64,stroke-width:1px,stroke-dasharray:3 3'
+};
+
+/** 边 kind → 中文图例(未登记回落「未知」)。 */
+const CALL_KIND_LABEL: Record<string, string> = {
+  local: '本地调用',
+  'self-method': '自身方法',
+  method: '对象方法',
+  'kbe-broadcast': '客户端广播',
+  'kbe-base-clients': 'base 广播',
+  'kbe-cross-process': '跨进程',
+  'kbe-api': '引擎 API',
+  unknown: '未知'
+};
+
+/** basename 去 `.py`(与 Rust file_stem 同口径)。 */
+function callGraphFileStem(filePath: string): string {
+  const base = filePath.split('/').pop() ?? filePath;
+  return base.endsWith('.py') ? base.slice(0, -3) : base;
+}
+
+/**
+ * Rust 调用图 → CallGraphGraph:以 RPC 节点为种子,边逐条解析被调方,
+ * 未解析补 stub(ext:/kbe: 外部节点),绝不丢调用点。from/to 都用统一
+ * 逻辑 id(经 sanitizeRustId 洗成 mermaid id 时两侧一致)。
+ */
+export function normalizeCallGraph(graph: PythonCallGraphRustResult): CallGraphGraph {
+  const nodes = new Map<string, CallGraphNode>();
+  const edges: CallGraphEdge[] = [];
+
+  const toKind = (kind: string): CallGraphNodeKind =>
+    kind === 'method' ? 'method' : kind === 'function' ? 'function' : 'module';
+
+  const seed = (node: PythonCallGraphNode): void => {
+    const kind = toKind(node.kind);
+    nodes.set(node.id, {
+      id: node.id,
+      label: `${CALL_KIND_EMOJI[kind]} ${node.name}`,
+      name: node.name,
+      filePath: node.filePath,
+      kind,
+      ...(node.className !== undefined ? { className: node.className } : {}),
+      ...(node.line !== undefined ? { line: node.line } : {})
+    });
+  };
+  for (const node of graph.nodes) {
+    seed(node);
+  }
+
+  const ensure = (
+    id: string,
+    name: string,
+    filePath: string,
+    kind: CallGraphNodeKind
+  ): void => {
+    if (!nodes.has(id)) {
+      nodes.set(id, {
+        id,
+        label: `${CALL_KIND_EMOJI[kind]} ${name}`,
+        name,
+        filePath,
+        kind
+      });
+    }
+  };
+
+  const moduleCaller = '<module>';
+  for (const edge of graph.edges) {
+    const stem = callGraphFileStem(edge.filePath);
+    // 调用方节点 id:类方法 `Class.method` / 顶层 `<stem>` / 模块函数 `<stem>::func`。
+    const fromId = edge.callerClass
+      ? `${edge.callerClass}.${edge.caller}`
+      : edge.caller === moduleCaller
+        ? stem
+        : `${stem}::${edge.caller}`;
+    ensure(
+      fromId,
+      edge.caller === moduleCaller ? stem : edge.caller,
+      edge.filePath,
+      edge.callerClass ? 'method' : edge.caller === moduleCaller ? 'module' : 'function'
+    );
+
+    // 被调方节点 id(未解析补 stub,外部用 ext:/kbe: 前缀)。
+    let toId: string;
+    let toKind: CallGraphNodeKind;
+    switch (edge.kind) {
+      case 'self-method':
+        toId = `${edge.callerClass ?? ''}${edge.callerClass ? '.' : ''}${edge.callee}`;
+        toKind = 'method';
+        break;
+      case 'local':
+        toId = `${stem}::${edge.callee}`;
+        toKind = 'function';
+        break;
+      case 'method':
+        toId = `ext:${edge.receiver ?? '?'}.${edge.callee}`;
+        toKind = 'external';
+        break;
+      case 'kbe-broadcast':
+      case 'kbe-base-clients':
+      case 'kbe-cross-process':
+      case 'kbe-api':
+        toId = `kbe:${edge.callee}`;
+        toKind = 'external';
+        break;
+      default:
+        toId = `ext:${edge.callee}`;
+        toKind = 'external';
+        break;
+    }
+    ensure(toId, edge.callee, edge.filePath, toKind);
+
+    edges.push({
+      from: fromId,
+      to: toId,
+      kind: edge.kind,
+      ...(edge.callerLine !== undefined ? { callerLine: edge.callerLine } : {})
+    });
+  }
+
+  return {
+    nodes: [...nodes.values()],
+    edges,
+    stats: {
+      nodeCount: nodes.size,
+      edgeCount: edges.length,
+      fileCount: graph.stats.fileCount,
+      errorCount: graph.stats.errorCount
+    },
+    processRoles: graph.processRoles,
+    source: 'rust'
+  };
+}
+
+/**
+ * callgraph 渲染:mermaid graph TD + 节点/边/click/classDef。边箭头按 kind,
+ * 节点 classDef 按 kind 出现顺序规范序;空图输出仅表头(与 dependency 同)。
+ */
+export function renderCallGraphMermaid(graph: CallGraphGraph): string {
+  let mermaid = 'graph TD\n';
+  for (const node of graph.nodes) {
+    mermaid += `  ${sanitizeRustId(node.id)}["${node.label}"]\n`;
+  }
+  for (const edge of graph.edges) {
+    const arrow = CALL_KIND_ARROW[edge.kind] ?? '-->';
+    mermaid += `  ${sanitizeRustId(edge.from)} ${arrow} ${sanitizeRustId(edge.to)}\n`;
+  }
+  for (const node of graph.nodes) {
+    if (node.filePath) {
+      mermaid += clickLine({ id: sanitizeRustId(node.id), filePath: node.filePath });
+    }
+  }
+  mermaid += '\n';
+  const kindOrder: CallGraphNodeKind[] = ['method', 'function', 'module', 'external'];
+  for (const kind of kindOrder) {
+    if (graph.nodes.some((node) => node.kind === kind)) {
+      mermaid += `  classDef ${kind}Call ${CALL_KIND_STYLE[kind]};\n`;
+    }
+  }
+  for (const node of graph.nodes) {
+    mermaid += `  class ${sanitizeRustId(node.id)} ${node.kind}Call;\n`;
+  }
+  return mermaid;
+}
+
+/** callgraph 图例 HTML(按出现 kind 出;边 kind 图例固定 8 类)。 */
+function callGraphLegendHtml(): string {
+  const nodeLegend = (['method', 'function', 'module', 'external'] as CallGraphNodeKind[])
+    .map(
+      (kind) => `<div class="legend-item">
+      <div class="legend-dot" style="background-color: ${CALL_KIND_STYLE[kind].split(',')[0].split(':')[1]};"></div>
+      <span>${kind === 'method' ? '方法' : kind === 'function' ? '函数' : kind === 'module' ? '模块' : '外部/未解析'}</span>
+    </div>`
+    )
+    .join('\n');
+  const edgeLegend = Object.entries(CALL_KIND_LABEL)
+    .map(
+      ([kind, label]) => `<div class="legend-item">
+      <span>${CALL_KIND_ARROW[kind] ?? '-->'} ${label}</span>
+    </div>`
+    )
+    .join('\n');
+  return nodeLegend + '\n' + edgeLegend;
+}
+
+/** 面板双模式。 */
+export type DependencyPanelMode = 'dependency' | 'callgraph';
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -329,7 +592,9 @@ export class EntityDependencyWebView {
   private panel: vscode.WebviewPanel | null = null;
   private analyzer: EntityDependencyAnalyzer;
   private currentRender: RenderGraph | null = null;
+  private currentCallGraph: CallGraphGraph | null = null;
   private pendingExport: { format: 'png' | 'svg'; uri: vscode.Uri } | null = null;
+  private mode: DependencyPanelMode = 'dependency';
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -338,18 +603,29 @@ export class EntityDependencyWebView {
     this.analyzer = new EntityDependencyAnalyzer(context);
   }
 
+  /** 面板标题(双模式)。 */
+  private panelTitle(): string {
+    return this.mode === 'callgraph' ? 'KBEngine Python 调用图' : 'KBEngine 实体依赖关系';
+  }
+
   /**
-   * 显示依赖关系图
+   * 显示依赖图(mode:'dependency'|'callgraph';已开面板时仅切换模式并刷新)。
    */
-  async show(): Promise<void> {
+  async show(mode: DependencyPanelMode = 'dependency'): Promise<void> {
+    const modeChanged = this.mode !== mode;
+    this.mode = mode;
     if (this.panel) {
+      this.panel.title = this.panelTitle();
       this.panel.reveal();
+      if (modeChanged) {
+        await this.refreshGraph();
+      }
       return;
     }
 
     this.panel = vscode.window.createWebviewPanel(
       'kbengine.entityDependency',
-      'KBEngine 实体依赖关系',
+      this.panelTitle(),
       vscode.ViewColumn.Two,
       {
         enableScripts: true,
@@ -381,6 +657,16 @@ export class EntityDependencyWebView {
           case 'exportData':
             await this.saveExportedGraph(message.format, message.data);
             break;
+          case 'setMode':
+            if (
+              (message.mode === 'dependency' || message.mode === 'callgraph') &&
+              this.panel
+            ) {
+              this.mode = message.mode;
+              this.panel.title = this.panelTitle();
+              await this.refreshGraph();
+            }
+            break;
         }
       },
       null,
@@ -392,8 +678,11 @@ export class EntityDependencyWebView {
   }
 
   /**
-   * 刷新依赖图:Rust 核心优先(实体→def→接口/组件/types.xml/python 全图);
-   * 不可用(无 gate/调用失败/形状不符)回落 TS 分析器(降级实体图)。
+   * 刷新依赖图:按模式分流。
+   * - dependency:Rust 核心优先(实体→def→接口/组件/types.xml/python 全图),
+   *   不可用(无 gate/调用失败/形状不符)回落 TS 分析器(降级实体图)。
+   * - callgraph:收集 workspace 全部根 *.py 原文直传 Rust `$/kode/python/callgraph`;
+   *   Rust 不可用 → 面板徽标「Rust 不可用」+ 空图注记(无 TS 兜底,不虚构)。
    */
   private async refreshGraph(): Promise<void> {
     if (!this.panel) {
@@ -401,6 +690,10 @@ export class EntityDependencyWebView {
     }
 
     try {
+      if (this.mode === 'callgraph') {
+        await this.refreshCallGraph();
+        return;
+      }
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       let render: RenderGraph | null = null;
       if (root) {
@@ -424,10 +717,71 @@ export class EntityDependencyWebView {
       const mermaidGraph = this.generateMermaidGraph(render);
 
       // 获取 Webview 内容
-      this.panel.webview.html = this.getWebviewContent(mermaidGraph, render);
+      this.panel.webview.html = this.getWebviewContent(mermaidGraph, render, null, false);
     } catch (error) {
       this.outputChannel.appendLine(`刷新依赖图失败: ${error}`);
       vscode.window.showErrorMessage(`刷新依赖图失败: ${error}`);
+    }
+  }
+
+  /** workspace 全部根 *.py(含 scripts/assets,不深入 node_modules/out)。 */
+  private async collectPythonFiles(
+    root: string
+  ): Promise<Array<{ path: string; text: string }>> {
+    const uris = await vscode.workspace.findFiles(
+      new vscode.RelativePattern(root, '**/*.py'),
+      '{**/node_modules/**,**/out/**,**/.vscode-test/**,**/.git/**}',
+      10_000
+    );
+    return uris.map((uri) => ({
+      path: uri.fsPath,
+      text: readWorkspaceTextFile(uri.fsPath)
+    }));
+  }
+
+  /** callgraph 模式刷新:收集全部 *.py → Rust RPC → 归一 → 渲染。 */
+  private async refreshCallGraph(): Promise<void> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root || !this.panel) {
+      return;
+    }
+    let callGraph: CallGraphGraph | null = null;
+    let rustUnavailable = false;
+    try {
+      const files = await this.collectPythonFiles(root);
+      const manifestText = await this.readProcessTopologyText(root);
+      const rust = await buildPythonCallGraphInRust({
+        files,
+        ...(manifestText !== null ? { manifestXmlText: manifestText } : {})
+      });
+      if (rust) {
+        callGraph = normalizeCallGraph(rust);
+      } else {
+        rustUnavailable = true;
+      }
+    } catch (rustError) {
+      rustUnavailable = true;
+      this.outputChannel.appendLine(`Rust 调用图失败: ${rustError}`);
+    }
+
+    this.currentCallGraph = callGraph;
+    const mermaidGraph = callGraph ? renderCallGraphMermaid(callGraph) : '';
+    this.panel.webview.html = this.getWebviewContent(
+      mermaidGraph,
+      null,
+      callGraph,
+      rustUnavailable
+    );
+  }
+
+  /** `<root>/process_topology.xml` 原文(缺省 null → RPC 侧空清单)。 */
+  private async readProcessTopologyText(root: string): Promise<string | null> {
+    const uri = vscode.Uri.joinPath(vscode.Uri.file(root), 'process_topology.xml');
+    try {
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      return Buffer.from(bytes).toString('utf8');
+    } catch {
+      return null;
     }
   }
 
@@ -446,46 +800,105 @@ export class EntityDependencyWebView {
   }
 
   /**
-   * 获取 Webview 内容
+   * 获取 Webview 内容(双模式:dependency 渲染 RenderGraph;callgraph 渲染
+   * CallGraphGraph,Rust 不可用时出空图注记)
    */
-  private getWebviewContent(mermaidGraph: string, graph: RenderGraph): string {
-    const sourceBadge = graph.source === 'rust' ? 'Rust 核心' : 'TS 兜底';
+  private getWebviewContent(
+    mermaidGraph: string,
+    graph: RenderGraph | null,
+    callGraph: CallGraphGraph | null,
+    rustUnavailable: boolean
+  ): string {
+    const title = this.panelTitle();
+    const isCallGraph = this.mode === 'callgraph';
+    const sourceBadge = isCallGraph
+      ? rustUnavailable
+        ? 'Rust 不可用'
+        : 'Rust 核心'
+      : graph && graph.source === 'rust'
+        ? 'Rust 核心'
+        : 'TS 兜底';
 
-    const statsHtml = graph.source === 'rust'
+    const statsHtml = isCallGraph
       ? [
-        this.statCard('节点', graph.stats.nodeCount),
-        this.statCard('边', graph.stats.edgeCount),
-        this.statCard('实体', graph.stats.entityCount),
-        this.statCard('def', graph.stats.defCount),
-        this.statCard('接口', graph.stats.interfaceCount),
-        this.statCard('组件', graph.stats.componentCount),
-        this.statCard('类型', graph.stats.typeCount),
-        this.statCard('Python', graph.stats.pythonCount)
+        this.statCard('文件', callGraph?.stats.fileCount ?? 0),
+        this.statCard('节点', callGraph?.stats.nodeCount ?? 0),
+        this.statCard('调用边', callGraph?.stats.edgeCount ?? 0),
+        this.statCard('语法错误', callGraph?.stats.errorCount ?? 0),
+        this.statCard(
+          '进程角色',
+          callGraph && callGraph.processRoles.length > 0
+            ? callGraph.processRoles.join(', ')
+            : '-'
+        )
       ].join('\n')
-      : [
-        this.statCard('总实体数', graph.legacyStats?.totalEntities ?? 0),
-        this.statCard('Base 实体', graph.legacyStats?.baseEntities ?? 0),
-        this.statCard('Cell 实体', graph.legacyStats?.cellEntities ?? 0),
-        this.statCard('Client 实体', graph.legacyStats?.clientEntities ?? 0),
-        this.statCard('最大继承深度', graph.legacyStats?.maxDepth ?? 0),
-        this.statCard('最常引用', graph.legacyStats?.mostReferenced || '-')
-      ].join('\n');
+      : graph && graph.source === 'rust'
+        ? [
+          this.statCard('节点', graph.stats.nodeCount),
+          this.statCard('边', graph.stats.edgeCount),
+          this.statCard('实体', graph.stats.entityCount),
+          this.statCard('def', graph.stats.defCount),
+          this.statCard('接口', graph.stats.interfaceCount),
+          this.statCard('组件', graph.stats.componentCount),
+          this.statCard('类型', graph.stats.typeCount),
+          this.statCard('Python', graph.stats.pythonCount)
+        ].join('\n')
+        : [
+          this.statCard('总实体数', graph?.legacyStats?.totalEntities ?? 0),
+          this.statCard('Base 实体', graph?.legacyStats?.baseEntities ?? 0),
+          this.statCard('Cell 实体', graph?.legacyStats?.cellEntities ?? 0),
+          this.statCard('Client 实体', graph?.legacyStats?.clientEntities ?? 0),
+          this.statCard('最大继承深度', graph?.legacyStats?.maxDepth ?? 0),
+          this.statCard('最常引用', graph?.legacyStats?.mostReferenced || '-')
+        ].join('\n');
 
-    const pathsHtml = graph.paths
-      ? `
+    const pathsHtml =
+      !isCallGraph && graph && graph.paths
+        ? `
   <div class="paths">
     <div class="path-item"><span class="path-label">entities.xml</span><code>${escapeHtml(graph.paths.entitiesXml)}</code></div>
     <div class="path-item"><span class="path-label">defsRoot</span><code>${escapeHtml(graph.paths.defsRoot)}</code></div>
     <div class="path-item"><span class="path-label">types.xml</span><code>${escapeHtml(graph.paths.typesXml)}</code></div>
   </div>`
-      : '';
+        : '';
+
+    const graphHtml = isCallGraph
+      ? rustUnavailable
+        ? `    <div class="loading">Rust 核心不可用(未配置 serverPath 或调用失败),调用图无法生成。</div>`
+        : `
+    <div class="mermaid">
+${mermaidGraph}
+    </div>`
+      : `
+    <div class="mermaid">
+${mermaidGraph}
+    </div>`;
+
+    const legendHtml = isCallGraph
+      ? callGraphLegendHtml()
+      : `
+    <div class="legend-item">
+      <div class="legend-dot" style="background-color: #e1f5fe; border: 2px solid #01579b;"></div>
+      <span>Base 实体</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background-color: #e8f5e9; border: 2px solid #1b5e20;"></div>
+      <span>Cell 实体</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background-color: #fffde7; border: 2px solid #f57f17;"></div>
+      <span>Client 实体</span>
+    </div>
+    <div class="legend-item">
+      <span>→ 继承关系</span>
+    </div>`;
 
     return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KBEngine 实体依赖关系</title>
+  <title>${title}</title>
   <style>
     body {
       font-family: var(--vscode-font-family);
@@ -625,10 +1038,14 @@ export class EntityDependencyWebView {
 </head>
 <body>
   <div class="header">
-    <div class="title">KBEngine 实体依赖关系</div>
+    <div class="title">${title}</div>
     <div style="display: flex; align-items: center; gap: 10px;">
       <span class="source-badge">${sourceBadge}</span>
       <div class="toolbar">
+        <select id="mode-select" onchange="setMode(this.value)" style="padding: 8px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);">
+          <option value="dependency" ${isCallGraph ? '' : 'selected'}>实体依赖</option>
+          <option value="callgraph" ${isCallGraph ? 'selected' : ''}>调用图</option>
+        </select>
         <button onclick="refreshGraph()">刷新</button>
         <button onclick="exportGraph('png')">导出 PNG</button>
         <button onclick="exportGraph('svg')">导出 SVG</button>
@@ -642,27 +1059,11 @@ ${statsHtml}
 ${pathsHtml}
 
   <div id="graph-container">
-    <div class="mermaid">
-${mermaidGraph}
-    </div>
+${graphHtml}
   </div>
 
   <div class="legend">
-    <div class="legend-item">
-      <div class="legend-dot" style="background-color: #e1f5fe; border: 2px solid #01579b;"></div>
-      <span>Base 实体</span>
-    </div>
-    <div class="legend-item">
-      <div class="legend-dot" style="background-color: #e8f5e9; border: 2px solid #1b5e20;"></div>
-      <span>Cell 实体</span>
-    </div>
-    <div class="legend-item">
-      <div class="legend-dot" style="background-color: #fffde7; border: 2px solid #f57f17;"></div>
-      <span>Client 实体</span>
-    </div>
-    <div class="legend-item">
-      <span>→ 继承关系</span>
-    </div>
+${legendHtml}
   </div>
 
   <script>
@@ -687,6 +1088,14 @@ ${mermaidGraph}
         filePath: filePath
       });
     };
+
+    // 模式切换 → 扩展侧重绘
+    function setMode(mode) {
+      vscode.postMessage({
+        command: 'setMode',
+        mode: mode
+      });
+    }
 
     // 刷新图表
     function refreshGraph() {
@@ -824,13 +1233,16 @@ ${mermaidGraph}
    * 导出图表
    */
   private async exportGraph(format: 'png' | 'svg'): Promise<void> {
-    if (!this.currentRender || !this.panel) {
+    const hasGraph = this.mode === 'callgraph' ? !!this.currentCallGraph : !!this.currentRender;
+    if (!hasGraph || !this.panel) {
       vscode.window.showWarningMessage('没有可导出的图表');
       return;
     }
 
+    const filename =
+      this.mode === 'callgraph' ? `python-call-graph.${format}` : `entity-dependency.${format}`;
     const uri = await vscode.window.showSaveDialog({
-      defaultUri: vscode.Uri.file(`entity-dependency.${format}`),
+      defaultUri: vscode.Uri.file(filename),
       filters: {
         'PNG Image': ['png'],
         'SVG Image': ['svg']

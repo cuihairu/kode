@@ -9,9 +9,15 @@ import type { DependencyGraphRust } from '../src/dependencyGraphRust';
 import {
   EntityDependencyWebView,
   normalizeDependencyGraph,
-  normalizeRustGraph
+  normalizeRustGraph,
+  normalizeCallGraph,
+  renderCallGraphMermaid
 } from '../src/entityDependencyWebView';
-import type { RenderGraph } from '../src/entityDependencyWebView';
+import type {
+  RenderGraph,
+  CallGraphGraph
+} from '../src/entityDependencyWebView';
+import type { PythonCallGraphRustResult } from '../src/pythonCallGraphRust';
 
 // EntityDependencyWebView 的纯图渲染:mermaid 生成与 webview HTML 骨架。
 // 面板生命周期/导出(截图、文件写入)依赖真实 vscode.WebviewPanel,
@@ -35,7 +41,13 @@ const makeWebView = () =>
 const internals = (webview: EntityDependencyWebView) =>
   webview as unknown as {
     generateMermaidGraph: (graph: RenderGraph) => string;
-    getWebviewContent: (mermaidGraph: string, graph: RenderGraph) => string;
+    getWebviewContent: (
+      mermaidGraph: string,
+      graph: RenderGraph | null,
+      callGraph: CallGraphGraph | null,
+      rustUnavailable: boolean
+    ) => string;
+    mode: 'dependency' | 'callgraph';
   };
 
 const graph = (over: Partial<DependencyGraph> = {}): DependencyGraph => ({
@@ -247,7 +259,7 @@ describe('EntityDependencyWebView.getWebviewContent', () => {
     });
     const render = normalizeDependencyGraph(full);
     const mermaid = impl.generateMermaidGraph(render);
-    const html = impl.getWebviewContent(mermaid, render);
+    const html = impl.getWebviewContent(mermaid, render, null, false);
 
     expect(html).toContain('graph TD');
     expect(html).toContain('Hero');
@@ -264,7 +276,7 @@ describe('EntityDependencyWebView.getWebviewContent', () => {
     const impl = internals(makeWebView());
     const render = normalizeRustGraph(rustGraph());
     const mermaid = impl.generateMermaidGraph(render);
-    const html = impl.getWebviewContent(mermaid, render);
+    const html = impl.getWebviewContent(mermaid, render, null, false);
 
     expect(html).toContain('Rust 核心');
     expect(html).not.toContain('TS 兜底');
@@ -277,5 +289,142 @@ describe('EntityDependencyWebView.getWebviewContent', () => {
     expect(html).toContain('接口');
     // 节点点击回调注册
     expect(html).toContain('openFilePath');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-20 callgraph 模式:normalizeCallGraph / renderCallGraphMermaid / 模式壳
+// ---------------------------------------------------------------------------
+
+const callGraphRust = (): PythonCallGraphRustResult => ({
+  nodes: [
+    { id: 'Avatar.act', kind: 'method', className: 'Avatar', name: 'act', filePath: '/ws/scripts/cell/Avatar.py', line: 1, isAsync: false, params: ['self'] },
+    { id: 'Avatar.notify', kind: 'method', className: 'Avatar', name: 'notify', filePath: '/ws/scripts/cell/Avatar.py', line: 3, isAsync: false, params: ['self'] },
+    { id: 'Avatar::helper', kind: 'function', name: 'helper', filePath: '/ws/scripts/cell/Avatar.py', line: 5, isAsync: false, params: ['x'] }
+  ],
+  edges: [
+    { caller: 'act', callerClass: 'Avatar', callerLine: 2, callee: 'notify', receiver: 'self', kind: 'self-method', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: 'act', callerClass: 'Avatar', callerLine: 2, callee: 'helper', kind: 'local', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: 'act', callerClass: 'Avatar', callerLine: 4, callee: 'onDamage', receiver: 'allClients', kind: 'kbe-broadcast', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: 'act', callerClass: 'Avatar', callerLine: 5, callee: 'recalc', receiver: 'cell', kind: 'kbe-cross-process', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: 'act', callerClass: 'Avatar', callerLine: 6, callee: 'log', receiver: 'KBEngine', kind: 'kbe-api', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: 'act', callerClass: 'Avatar', callerLine: 7, callee: 'use', receiver: 'tool', kind: 'method', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: 'act', callerClass: 'Avatar', callerLine: 8, callee: 'unknownFn', kind: 'unknown', filePath: '/ws/scripts/cell/Avatar.py' },
+    { caller: '<module>', callerLine: 9, callee: 'standalone', kind: 'local', filePath: '/ws/scripts/cell/Avatar.py' }
+  ],
+  reverseIndex: { '/ws/scripts/cell/Avatar.py': [] },
+  dataflow: [],
+  processRoles: ['cellapp', 'baseapp'],
+  stats: {
+    fileCount: 1,
+    nodeCount: 3,
+    edgeCount: 8,
+    dataflowCount: 0,
+    errorCount: 0,
+    byKind: { 'self-method': 1, local: 2, 'kbe-broadcast': 1, 'kbe-cross-process': 1, 'kbe-api': 1, method: 1, unknown: 1 }
+  }
+});
+
+describe('EntityDependencyWebView.callgraph mode(normalizeCallGraph)', () => {
+  it('resolves self-method and local callees to existing nodes, never drops a call edge', () => {
+    const graph = normalizeCallGraph(callGraphRust());
+    // 全部 8 条边都保留
+    expect(graph.edges).toHaveLength(8);
+    // self-method → Avatar.notify(已存在节点,不补 stub)
+    const selfEdge = graph.edges.find((e) => e.kind === 'self-method')!;
+    expect(selfEdge.to).toBe('Avatar.notify');
+    expect(graph.nodes.some((n) => n.id === 'Avatar.notify')).toBe(true);
+    // local(act→helper) → Avatar::helper(已存在)
+    const localEdge = graph.edges.find((e) => e.kind === 'local' && e.from === 'Avatar.act')!;
+    expect(localEdge.to).toBe('Avatar::helper');
+    expect(graph.nodes.some((n) => n.id === 'Avatar::helper')).toBe(true);
+  });
+
+  it('stubs unresolved external callees (ext:/kbe: prefixes) without losing the call site', () => {
+    const graph = normalizeCallGraph(callGraphRust());
+    // kbe-broadcast → kbe:onDamage(外部 stub)
+    expect(graph.edges.find((e) => e.kind === 'kbe-broadcast')!.to).toBe('kbe:onDamage');
+    // kbe-cross-process → kbe:recalc
+    expect(graph.edges.find((e) => e.kind === 'kbe-cross-process')!.to).toBe('kbe:recalc');
+    // kbe-api → kbe:log
+    expect(graph.edges.find((e) => e.kind === 'kbe-api')!.to).toBe('kbe:log');
+    // method(receiver tool) → ext:tool.use
+    expect(graph.edges.find((e) => e.kind === 'method')!.to).toBe('ext:tool.use');
+    // unknown → ext:unknownFn
+    expect(graph.edges.find((e) => e.kind === 'unknown')!.to).toBe('ext:unknownFn');
+    // 每个 stub 节点都是 external kind
+    for (const id of ['kbe:onDamage', 'kbe:recalc', 'kbe:log', 'ext:tool.use', 'ext:unknownFn']) {
+      expect(graph.nodes.find((n) => n.id === id)?.kind).toBe('external');
+    }
+    // module 顶层调用 → <module> 伪节点,从为文件 stem
+    const moduleEdge = graph.edges.find((e) => e.from === 'Avatar')!;
+    expect(moduleEdge).toBeTruthy();
+    expect(moduleEdge.to).toBe('Avatar::standalone');
+  });
+
+  it('propagates stats and process roles', () => {
+    const graph = normalizeCallGraph(callGraphRust());
+    expect(graph.stats.fileCount).toBe(1);
+    expect(graph.stats.nodeCount).toBeGreaterThan(3);
+    expect(graph.stats.edgeCount).toBe(8);
+    expect(graph.processRoles).toEqual(['cellapp', 'baseapp']);
+    expect(graph.source).toBe('rust');
+  });
+});
+
+describe('EntityDependencyWebView.callgraph mode(renderCallGraphMermaid)', () => {
+  it('renders kind-specific arrows, classDefs, clicks and sanitized ids', () => {
+    const graph = normalizeCallGraph(callGraphRust());
+    const mermaid = renderCallGraphMermaid(graph);
+
+    expect(mermaid.startsWith('graph TD\n')).toBe(true);
+    // 节点 id 清洗:Avatar.act → Avatar_act
+    expect(mermaid).toContain('  Avatar_act["🔧 act"]');
+    // 自方法箭头 -.->;kbe 广播 ==>
+    expect(mermaid).toContain('  Avatar_act -.-> Avatar_notify');
+    expect(mermaid).toContain('  Avatar_act ==> kbe_onDamage');
+    // classDef 按出现 kind 规范序(method/function/module/external)
+    expect(mermaid).toContain('classDef methodCall fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;');
+    expect(mermaid).toContain('classDef externalCall fill:#eceff1,stroke:#455a64,stroke-width:1px,stroke-dasharray:3 3');
+    expect(mermaid).toContain('  class Avatar_act methodCall;');
+    expect(mermaid).toContain('  class kbe_onDamage externalCall;');
+    // click 跳转:节点 + openFilePath + 文件路径
+    expect(mermaid).toContain('  click Avatar_act openFilePath "/ws/scripts/cell/Avatar.py"');
+    expect(mermaid).toContain('  click kbe_onDamage openFilePath "/ws/scripts/cell/Avatar.py"');
+  });
+
+  it('renders an empty graph as the bare header only', () => {
+    const mermaid = renderCallGraphMermaid({ nodes: [], edges: [], stats: { nodeCount: 0, edgeCount: 0, fileCount: 0, errorCount: 0 }, processRoles: [], source: 'rust' });
+    expect(mermaid).toBe('graph TD\n\n');
+  });
+});
+
+describe('EntityDependencyWebView.callgraph mode(getWebviewContent)', () => {
+  it('shows callgraph stats, mode select and rust badge when graph is available', () => {
+    const impl = internals(makeWebView());
+    impl.mode = 'callgraph';
+    const graph = normalizeCallGraph(callGraphRust());
+    const mermaid = renderCallGraphMermaid(graph);
+    const html = impl.getWebviewContent(mermaid, null, graph, false);
+
+    expect(html).toContain('KBEngine Python 调用图');
+    expect(html).toContain('Rust 核心');
+    expect(html).toContain('调用边');
+    expect(html).toContain('进程角色');
+    expect(html).toContain('cellapp, baseapp');
+    expect(html).toContain('<option value="callgraph" selected>');
+    expect(html).toContain('setMode');
+    expect(html).toContain('本地调用');
+    expect(html).toContain('客户端广播');
+  });
+
+  it('shows the rust-unavailable badge and empty-graph notice when Rust is down', () => {
+    const impl = internals(makeWebView());
+    impl.mode = 'callgraph';
+    const html = impl.getWebviewContent('', null, null, true);
+
+    expect(html).toContain('Rust 不可用');
+    expect(html).toContain('Rust 核心不可用');
+    expect(html).not.toContain('classDef methodCall');
   });
 });
