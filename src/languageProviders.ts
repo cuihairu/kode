@@ -104,6 +104,11 @@ import {
   readWorkspaceTextFile,
   readWorkspaceTextLines
 } from './definitionWorkspace';
+import { describeMethodCallDirection, describePropertySyncDirection } from './entityFlowGraph';
+import {
+  renderUserTypeContractHoverSection,
+  userTypeContractStatusForName
+} from './userTypeContractSource';
 import {
   computeDefRenameEdits,
   findDefRenameConflict,
@@ -2259,6 +2264,12 @@ function getSymbolHover(
     if (symbolInfo.flags) {
       markdown.appendMarkdown(`**Flags**: \`${symbolInfo.flags}\`\n\n`);
     }
+    // GEN-DEF-1e ③:属性数据流方向(同步源→受众),与 entityFlowGraph 主图
+    // 同源旗标语义;无旗标给出「不注册任何域」,不发明方向。
+    const syncDirection = describePropertySyncDirection(symbolInfo.flags);
+    if (syncDirection) {
+      markdown.appendMarkdown(`**同步方向**: ${syncDirection}\n\n`);
+    }
     if (symbolInfo.defaultValue) {
       markdown.appendMarkdown(`**Default**: \`${symbolInfo.defaultValue}\`\n\n`);
     }
@@ -2282,6 +2293,11 @@ function getSymbolHover(
   }
 
   if (METHOD_SECTIONS.has(symbolInfo.section)) {
+    // GEN-DEF-1e ③:方法段调用方向(baseapp/cellapp 方法 / 客户端回调)。
+    const methodDirection = describeMethodCallDirection(symbolInfo.section);
+    if (methodDirection) {
+      markdown.appendMarkdown(`**调用方向**: ${methodDirection}\n\n`);
+    }
     markdown.appendMarkdown(`**参数个数**: ${symbolInfo.args.length}\n\n`);
     if (symbolInfo.args.length > 0) {
       markdown.appendMarkdown(`**Args**: \`${symbolInfo.args.join(', ')}\``);
@@ -2338,6 +2354,27 @@ function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
   return new vscode.Hover(markdown);
 }
 
+// GEN-DEF-1e ②+口径①:user_type 带 impl 时,悬停补三契约方法状态与双向
+// 序列化契约。workspace root 不可得 / 无 implementedBy / 未注册 → null
+// (不打扰无契约的类型悬停)。
+function resolveUserTypeContractSection(
+  document: vscode.TextDocument,
+  customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>
+): string | null {
+  if (!customTypeInfo.implementedBy) {
+    return null;
+  }
+  const workspaceRoot = getWorkspaceRootForDocument(document);
+  if (!workspaceRoot) {
+    return null;
+  }
+  const status = userTypeContractStatusForName(workspaceRoot, customTypeInfo.name);
+  if (!status) {
+    return null;
+  }
+  return renderUserTypeContractHoverSection(status);
+}
+
 function getCustomTypeHover(
   document: vscode.TextDocument,
   position: vscode.Position,
@@ -2356,7 +2393,8 @@ function getCustomTypeHover(
     customTypeTarget.info,
     'Custom type from `types.xml`',
     // 批134:声明行悬停追加落库形态;implementedBy 值上的悬停只谈引用,不谈存储
-    customTypeTarget.isImplementedByValue ? null : getTypeStorageShapeMarkdown(document, word)
+    customTypeTarget.isImplementedByValue ? null : getTypeStorageShapeMarkdown(document, word),
+    resolveUserTypeContractSection(document, customTypeTarget.info)
   );
 }
 
@@ -2446,7 +2484,12 @@ function getTypeValueHover(
 
   const customTypeInfo = findCustomTypeInfo(word, document);
   if (customTypeInfo) {
-    return createCustomTypeHover(customTypeInfo, 'Referenced custom type from `types.xml`');
+    return createCustomTypeHover(
+      customTypeInfo,
+      'Referenced custom type from `types.xml`',
+      null,
+      resolveUserTypeContractSection(document, customTypeInfo)
+    );
   }
 
   const componentPath = findDefinitionFileByCategory(word, 'component', document);
@@ -2466,7 +2509,8 @@ function getTypeValueHover(
 function createCustomTypeHover(
   customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>,
   summary: string,
-  shapeMarkdown: string | null = null
+  shapeMarkdown: string | null = null,
+  contractSection: string | null = null
 ): vscode.Hover {
   const markdown = new vscode.MarkdownString();
   markdown.appendMarkdown(`**${customTypeInfo.name}**\n\n`);
@@ -2490,6 +2534,11 @@ function createCustomTypeHover(
     for (const property of customTypeInfo.properties) {
       markdown.appendMarkdown(`- \`${property.name}\`: \`${property.typeName || 'UNKNOWN'}\`\n`);
     }
+  }
+
+  // GEN-DEF-1e ②+口径①:user_type 带 impl 时补三契约方法状态与双向序列化契约
+  if (contractSection) {
+    markdown.appendMarkdown(contractSection);
   }
 
   if (shapeMarkdown) {

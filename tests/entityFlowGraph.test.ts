@@ -9,7 +9,9 @@ import {
   FLOW_ACTOR_LABELS,
   PROPERTY_FLAG_BITS,
   buildEntityFlowGraph,
+  describeMethodCallDirection,
   describePropertyFlagSemantics,
+  describePropertySyncDirection,
   renderEntityFlowMarkdown,
   renderEntityFlowMermaid
 } from '../src/entityFlowGraph';
@@ -256,6 +258,79 @@ describe('describePropertyFlagSemantics', () => {
       base: true,
       unknownFlags: ['OWNER']
     });
+  });
+});
+
+// GEN-DEF-1e ③:数据流方向文案(属性同步方向 + 方法段调用方向),与主图
+// 同源旗标语义,锁文案不发明方向。
+describe('describePropertySyncDirection', () => {
+  it('ALL_CLIENTS 由 cellapp 发起广播到所有客户端(并跨 cell/其它客户端)', () => {
+    const out = describePropertySyncDirection('ALL_CLIENTS');
+    expect(out).toContain('cellapp→所有客户端');
+    expect(out).toContain('cellapp→AOI 其它客户端');
+    expect(out).toContain('cellapp→其它 cellapp');
+  });
+
+  it('BASE_AND_CLIENT 由 baseapp 发起广播到所属客户端', () => {
+    expect(describePropertySyncDirection('BASE_AND_CLIENT')).toBe('baseapp→所属客户端');
+  });
+
+  it('OTHER_CLIENTS 广播 AOI 其它客户端并跨 cell,不涉所属', () => {
+    const out = describePropertySyncDirection('OTHER_CLIENTS');
+    expect(out).toContain('cellapp→AOI 其它客户端');
+    expect(out).toContain('cellapp→其它 cellapp');
+    expect(out).not.toContain('所属客户端');
+  });
+
+  it('CELL_PUBLIC 广播其它 cell 但不广播客户端', () => {
+    expect(describePropertySyncDirection('CELL_PUBLIC')).toBe('cellapp→其它 cellapp');
+  });
+
+  it('OWN_CLIENT 只同步所属客户端(无跨 cell/其它客户端广播)', () => {
+    expect(describePropertySyncDirection('OWN_CLIENT')).toBe('cellapp→所属客户端');
+  });
+
+  it('BASE 无广播位只报注册域,不发明方向', () => {
+    expect(describePropertySyncDirection('BASE')).toBe('仅baseapp注册');
+  });
+
+  it('CELL_PRIVATE 无广播位只报注册域', () => {
+    expect(describePropertySyncDirection('CELL_PRIVATE')).toBe('仅cellapp注册');
+  });
+
+  it('BASE_AND_CLIENT 走 base 面时 baseapp 发起', () => {
+    // BASE_AND_CLIENT 属 base 注册域(broadcastOwnClient),发起方 baseapp
+    expect(describePropertySyncDirection('BASE_AND_CLIENT')).toContain('baseapp');
+  });
+
+  it('空旗标不注册任何域', () => {
+    expect(describePropertySyncDirection('')).toBe('无同步旗标(不注册任何域)');
+    expect(describePropertySyncDirection()).toBe('无同步旗标(不注册任何域)');
+  });
+
+  it('组合旗标逐段列出', () => {
+    const out = describePropertySyncDirection('CELL_PUBLIC|OWN_CLIENT');
+    expect(out).toContain('cellapp→所属客户端');
+    expect(out).toContain('cellapp→其它 cellapp');
+  });
+});
+
+describe('describeMethodCallDirection', () => {
+  it('BaseMethods 是客户端远程调用 baseapp 方法', () => {
+    expect(describeMethodCallDirection('BaseMethods')).toBe('baseapp 方法(客户端远程调用 → baseapp)');
+  });
+
+  it('CellMethods 是客户端经 baseapp 转发到 cellapp', () => {
+    expect(describeMethodCallDirection('CellMethods')).toBe('cellapp 方法(客户端经 baseapp 转发 → cellapp)');
+  });
+
+  it('ClientMethods 是服务端回调客户端', () => {
+    expect(describeMethodCallDirection('ClientMethods')).toBe('客户端回调(服务端 → 客户端)');
+  });
+
+  it('未知/缺省段不产出方向文案', () => {
+    expect(describeMethodCallDirection('UnknownMethods')).toBe('');
+    expect(describeMethodCallDirection()).toBe('');
   });
 });
 

@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { collectUserTypeContractStatuses, userTypeSerializationContractDoc, pythonPickleContractDoc } from '../src/userTypeContractSource';
+import { collectUserTypeContractStatuses, userTypeSerializationContractDoc, pythonPickleContractDoc, userTypeContractStatusForName, renderUserTypeContractHoverSection } from '../src/userTypeContractSource';
 
 const write = (root: string, relative: string, content: string): void => {
   const target = path.join(root, ...relative.split('/'));
@@ -88,6 +88,39 @@ describe('GEN-DEF-1e user_type 契约收集(userTypeContractSource)', () => {
       getDictFromObj: true,
       isSameType: true
     });
+  });
+
+  it('userTypeContractStatusForName 只扫单类型(带 impl 返回快照,无 impl/未注册 → null)', () => {
+    const talent = userTypeContractStatusForName(root, 'TalentTree');
+    expect(talent).not.toBeNull();
+    expect(talent?.methods).toEqual({
+      createObjFromDict: true,
+      getDictFromObj: true,
+      isSameType: true
+    });
+    // NoImpl 无 implementedBy → 不进入契约索引
+    expect(userTypeContractStatusForName(root, 'NoImpl')).toBeNull();
+    // 未注册类型 → null
+    expect(userTypeContractStatusForName(root, 'NoSuchType')).toBeNull();
+  });
+
+  it('悬停契约补全面(口径①+②):全齐给三行 ✓ 有 + 双向序列化契约', () => {
+    const status = userTypeContractStatusForName(root, 'TalentTree');
+    const section = renderUserTypeContractHoverSection(status!);
+    expect(section).toContain('user_type 契约');
+    expect(section.match(/✓ 有/g)?.length).toBe(3);
+    expect(section).toContain('wire/db→mem');
+    expect(section).toContain('mem→wire/db');
+  });
+
+  it('悬停契约补全面:缺方法行带后果方向(反序列化入口缺失)', () => {
+    const status = userTypeContractStatusForName(root, 'BrokenType');
+    const section = renderUserTypeContractHoverSection(status!);
+    expect(section).toContain('✗ 缺');
+    expect(section).toContain('createObjFromDict');
+    expect(section).toContain('反序列化入口缺失');
+    // 其余两方法仍标记有
+    expect(section.match(/✓ 有/g)?.length).toBe(2);
   });
 
   it('implementedBy 指向缺失文件 → implFile 为空(缺方法诊断静默,兜底诊断接管)', () => {

@@ -234,6 +234,70 @@ export function describePropertyFlagSemantics(flags?: string): PropertyFlagSeman
   };
 }
 
+/**
+ * GEN-DEF-1e ③:把 def 属性 <Flags> 解成数据流方向的展示文案(如
+ * 「cellapp→所有客户端」)。方向与受众由 describePropertyFlagSemantics 的
+ * 广播位决定(与 entityFlowGraph 主图同源,不另立规则):
+ *  - 所属+AOI 其它客户端 = 所有客户端;纯 AOI 其它 = 广播其它;
+ *  - 广播位带 base 注册 → baseapp 发起,否则 cellapp;
+ *  - 无广播位时只报注册域(baseapp/cellapp/客户端),不发明方向。
+ */
+export function describePropertySyncDirection(flags?: string): string {
+  const semantics = describePropertyFlagSemantics(flags);
+  const parts: string[] = [];
+  if (semantics.broadcastOwnClient && semantics.broadcastOtherClients) {
+    parts.push(semantics.base ? 'baseapp→所有客户端' : 'cellapp→所有客户端');
+  } else if (semantics.broadcastOwnClient) {
+    parts.push(semantics.base ? 'baseapp→所属客户端' : 'cellapp→所属客户端');
+  }
+  if (semantics.broadcastOtherClients) {
+    parts.push('cellapp→AOI 其它客户端');
+  }
+  if (semantics.broadcastCells) {
+    parts.push('cellapp→其它 cellapp');
+  }
+  if (parts.length === 0) {
+    const domains: string[] = [];
+    if (semantics.base) {
+      domains.push('baseapp');
+    }
+    if (semantics.cell) {
+      domains.push('cellapp');
+    }
+    if (semantics.client) {
+      domains.push('客户端');
+    }
+    if (domains.length > 0) {
+      parts.push(`仅${domains.join('+')}注册`);
+    }
+  }
+  if (parts.length === 0) {
+    return '无同步旗标(不注册任何域)';
+  }
+  return parts.join('; ');
+}
+
+/**
+ * GEN-DEF-1e ③:def 方法段的调用方向展示文案。引擎方法段语义
+ * (baseapp/cellapp 方法由客户端远程调用、ClientMethods 是服务端回调客户端,
+ * 与 buildEntityFlowGraph 的方法边同源):
+ *  - BaseMethods → baseapp 方法,客户端可远程调用(exposed 时);
+ *  - CellMethods → cellapp 方法(客户端经 baseapp 转发);
+ *  - ClientMethods → 客户端回调方法(服务端→客户端)。
+ */
+export function describeMethodCallDirection(section: string | undefined): string {
+  switch (section) {
+    case 'BaseMethods':
+      return 'baseapp 方法(客户端远程调用 → baseapp)';
+    case 'CellMethods':
+      return 'cellapp 方法(客户端经 baseapp 转发 → cellapp)';
+    case 'ClientMethods':
+      return '客户端回调(服务端 → 客户端)';
+    default:
+      return '';
+  }
+}
+
 /** 方法暴露闸门:非 Exposed 的方法客户端调用被引擎拒绝。 */
 const BASE_EXPOSED_GATE: FlowCitation = {
   file: 'kbe/src/server/baseapp/entity.cpp',
