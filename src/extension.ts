@@ -31,6 +31,11 @@ import {
   collectDefMethodMissingItems,
   collectPythonMethodNotInDefItems
 } from './defMethodConsistency';
+import {
+  USER_TYPE_CONTRACT_MISSING_DIAGNOSTIC_CODE,
+  collectUserTypeContractMissingByImplFile
+} from './userTypeContract';
+import { collectUserTypeContractStatuses } from './userTypeContractSource';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getActiveOperationCounts,
@@ -1315,6 +1320,82 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(defMethodConsistencyRevalidateCommand);
 
+  // GEN-DEF-1e:user_type 三契约方法缺方法预警(impl 类缺 createObjFromDict/
+  // getDictFromObj/isSameType → 引擎装载实现模块必失败)。独立诊断集合 +
+  // 独立调度器(共享调度器每 URI 单排队槽,同 C-19 范式)。诊断锚定在
+  // impl python 文件符号行;types.xml/alias.xml 变更联动重排全部 impl 文件。
+  const userTypeContractDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-user-type-contract'
+  );
+  context.subscriptions.push(userTypeContractDiagnostics);
+  const userTypeContractScheduler = new DiagnosticScheduler();
+  const scheduleUserTypeContractDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly vscode.Diagnostic[] | null> => {
+        const workspaceRoot = getWorkspaceRootForDocument(document);
+        if (!workspaceRoot || document.version !== capturedVersion) {
+          return [];
+        }
+        const statuses = collectUserTypeContractStatuses(workspaceRoot);
+        const items = collectUserTypeContractMissingByImplFile(
+          statuses,
+          document.uri.fsPath
+        );
+        const text = document.getText();
+        const lineStarts = computeLineStarts(text);
+        return items.map(item => {
+          const lineIndex = Math.min(Math.max(item.line - 1, 0), Math.max(lineStarts.length - 1, 0));
+          const start = lineStarts[lineIndex];
+          const end = start + item.symbolLength;
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              document.positionAt(start),
+              document.positionAt(end)
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Error
+          );
+          diagnostic.code = USER_TYPE_CONTRACT_MISSING_DIAGNOSTIC_CODE;
+          diagnostic.relatedInformation = [
+            new vscode.DiagnosticRelatedInformation(
+              new vscode.Location(
+                vscode.Uri.file(item.related.targetFile),
+                new vscode.Range(0, 0, 0, 0)
+              ),
+              item.related.label
+            )
+          ];
+          return diagnostic;
+        });
+      },
+      publish: (items: readonly vscode.Diagnostic[]) => {
+        userTypeContractDiagnostics.set(document.uri, items);
+      }
+    };
+    if (channel === 'queued') {
+      userTypeContractScheduler.requestQueued(document, options);
+    } else {
+      userTypeContractScheduler.request(document, options);
+    }
+  };
+
+  /** 类型注册表(types.xml/alias.xml)变更:契约输入变,重排全部已打开 impl 文件。 */
+  const rescheduleUserTypeContractForRegistryChange = (): void => {
+    for (const doc of vscode.workspace.textDocuments) {
+      if (isPythonDocument(doc)) {
+        scheduleUserTypeContractDiagnostics(doc, 'queued');
+      }
+    }
+  };
+
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
   // 诊断任务,必独立,同 C-19 范式)。缺清单=静默零发现(零误报)。
@@ -1528,6 +1609,8 @@ export function activate(context: vscode.ExtensionContext) {
       updateDocumentSnapshot(document);
       // E-1:语料镜像腿独立于诊断开关(不走 validateDocument 的提前返回)
       shadowMirrorCorpusDocument(document);
+      // GEN-DEF-1e:打开 impl 文件即排 user_type 契约诊断(未打开时无诊断面)
+      scheduleUserTypeContractDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -1538,6 +1621,9 @@ export function activate(context: vscode.ExtensionContext) {
       // C-17:进程拓扑集合/调度器随文档生命周期(清单或 def 关闭即摘除)。
       processTopologyDiagnostics.delete(document.uri);
       processTopologyScheduler.releaseDocument(document);
+      // GEN-DEF-1e:user_type 契约诊断随文档生命周期(impl 文件关闭即摘除)。
+      userTypeContractDiagnostics.delete(document.uri);
+      userTypeContractScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -1589,6 +1675,9 @@ export function activate(context: vscode.ExtensionContext) {
         // C-19:Python 改动联动两路——反向诊断(Python 有 def 无)与正向重算
         // (属主 def 文档的缺实现,手动补实现即消除;索引不可用静默跳过)
         scheduleDefMethodConsistencyDiagnostics(event.document, 'queued');
+        // GEN-DEF-1e:impl 文件改动 → 重排本文件的 user_type 契约诊断
+        // (缺方法即补即消,无需等 types.xml 变更)。
+        scheduleUserTypeContractDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -1600,6 +1689,10 @@ export function activate(context: vscode.ExtensionContext) {
             scheduleDefMethodConsistencyDiagnostics(owningDefDoc, 'queued');
           }
         }
+      } else if (isTypeRegistryFile(event.document.uri.fsPath)) {
+        // GEN-DEF-1e:types.xml/alias.xml 变更 = user_type 契约输入变,
+        // 重排全部已打开 impl 文件的契约诊断。
+        rescheduleUserTypeContractForRegistryChange();
       }
       // IDE-REV-011:schema 缓存热命中不再懒重读输入文件(失效在事件面)——
       // 脏 def/types/alias 文档编辑同步摘除消费条目(磁盘域变更已由
@@ -1620,6 +1713,8 @@ export function activate(context: vscode.ExtensionContext) {
           void diagnosticScheduler.flushQueued();
           // C-19 一致性管线独立调度器,同节拍冲刷(守卫语义同上)
           void defMethodConsistencyScheduler.flushQueued();
+          // GEN-DEF-1e:user_type 契约调度器同节拍冲刷(守卫语义同上)
+          void userTypeContractScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
@@ -1830,6 +1925,10 @@ export function activate(context: vscode.ExtensionContext) {
       processTopologyScheduler.setEnabled(enabled, () =>
         processTopologyDiagnostics.clear()
       );
+      // GEN-DEF-1e:主开关同闸 user_type 契约管线(关→清契约集合,开→强制重算)
+      userTypeContractScheduler.setEnabled(enabled, () =>
+        userTypeContractDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -1844,6 +1943,10 @@ export function activate(context: vscode.ExtensionContext) {
     // C-17:进程拓扑开关变更 → 拓扑调度器重算。
     const processTopologyInputsChanged =
       event.affectsConfiguration('kbengine.diagnostics.checkProcessTopology');
+    // GEN-DEF-1e:user_type 契约诊断无独立子开关(引擎装载必炸恒应亮),
+    // 只随主 enableDiagnostics 开关重算。
+    const userTypeContractInputsChanged =
+      event.affectsConfiguration('kbengine.enableDiagnostics');
     if ((diagnosticsInputsChanged || defMethodConsistencyInputsChanged || processTopologyInputsChanged) &&
         diagnosticScheduler.isEnabled()) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -1883,6 +1986,9 @@ export function activate(context: vscode.ExtensionContext) {
           scheduleReceiverNoneDiagnostics(doc, 'immediate');
           if (defMethodConsistencyInputsChanged) {
             scheduleDefMethodConsistencyDiagnostics(doc, 'immediate');
+          }
+          if (userTypeContractInputsChanged) {
+            scheduleUserTypeContractDiagnostics(doc, 'immediate');
           }
         }
       });
@@ -5066,9 +5172,11 @@ export function activate(context: vscode.ExtensionContext) {
     },
     pendingWork: () => ({
       diagnosticsQueued: diagnosticScheduler.pendingWorkload().queued +
-        defMethodConsistencyScheduler.pendingWorkload().queued,
+        defMethodConsistencyScheduler.pendingWorkload().queued +
+        userTypeContractScheduler.pendingWorkload().queued,
       diagnosticsInFlight: diagnosticScheduler.pendingWorkload().inFlight +
-        defMethodConsistencyScheduler.pendingWorkload().inFlight,
+        defMethodConsistencyScheduler.pendingWorkload().inFlight +
+        userTypeContractScheduler.pendingWorkload().inFlight,
       annotationUpdates: getPendingDocumentUpdateCount(),
       caches: {
         parsedDocuments: getParsedDocumentCacheGauge(),

@@ -208,10 +208,12 @@ describe('extension activate 装配', () => {
     // 批91 起:def 分析命令的独立诊断集合与语言侧诊断并存;
     // 书 §19 HR-PR-02:临时编辑热更新问题通道诊断集并存一份;
     // C-19 起 def↔Python 方法一致性独立诊断集再一份(不并 kbengine 主集);
-    // C-17 起进程拓扑独立诊断集再一份(kbengine-process-topology)
+    // C-17 起进程拓扑独立诊断集再一份(kbengine-process-topology);
+    // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
+      'kbengine-user-type-contract',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis'
