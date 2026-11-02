@@ -3,7 +3,7 @@
 <h1 align="center">Kode — KBEngine Development Environment</h1>
 
 <p align="center">
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.61.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.1-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a> <a href="https://code.visualstudio.com/"><img src="https://img.shields.io/badge/VS_Code-1.82.0+-blue.svg" alt="VS Code" /></a> <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-4.x-blue.svg" alt="TypeScript" /></a> <a href="https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine"><img src="https://img.shields.io/badge/marketplace-v0.1.3-blue" alt="VS Code Marketplace" /></a> <a href="https://codecov.io/gh/cuihairu/kode"><img src="https://codecov.io/gh/cuihairu/kode/branch/main/graph/badge.svg" alt="codecov" /></a> <a href="https://cuihairu.github.io/kode/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
 [English](README.md) | [中文](README.zh.md)
@@ -18,10 +18,10 @@ KBEngine 是一个开源的 MMO 游戏服务器框架，采用分布式架构。
 
 ## 每日构建
 
-仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`，仓库不带版本 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
+仓库每日自动从 `main` 构建并**滚动发布**到 [Releases 的 `nightly` 标签](https://github.com/cuihairu/kode/releases/tag/nightly)：每次构建替换上一版资产与说明（含构建时间、commit 与资产表），tag 恒为 `nightly`；正式版本（`v0.1.0`–`v0.1.3`）由已发布的 `0.1.x` 线手动出 tag。默认分支 48 小时无新提交时当天定时构建自动跳过；构建流程见 [.github/workflows/daily-build.yml](.github/workflows/daily-build.yml)。
 | 资产 | 平台 | 安装 |
 |------|------|------|
-| `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.61 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
+| `kode-nightly.vsix` | Windows / macOS / Linux（VS Code ≥1.82 通用） | 下载后执行 `code --install-extension kode-nightly.vsix` |
 
 > **已发布到 VSCode Marketplace**：[cuihairu.kode-kbengine](https://marketplace.visualstudio.com/items?itemName=cuihairu.kode-kbengine)
 >
@@ -289,10 +289,7 @@ code --install-extension kode-kbengine-*.vsix
 
 ## 版本策略
 
-当前阶段默认沿用 `0.1.x` 作为修复与完善版本线。
-
-- 修复问题、补充文档、增强现有功能：继续使用 `0.1.x`
-- 只有在出现明确的新阶段功能升级时，才考虑提升到 `0.2.0`
+已发布版本线为 `0.1.x`，最后一次发布 `v0.1.3`。`main` 当前在 `0.2.0` 进行中线（Rust core）；尚无 `v0.2.x` tag。
 
 ## 截图
 
@@ -318,7 +315,7 @@ code --install-extension kode-kbengine-*.vsix
 
 - Node.js `^20.19.0 || >=22.12.0`（推荐直接使用 `.nvmrc` 中的版本）
 - Git
-- VSCode 1.61.0 或更高版本
+- VSCode 1.82.0 或更高版本
 
 ### 开发步骤
 
@@ -356,6 +353,9 @@ kode/
 │   ├── kbengine.json             # def 代码片段 (11)
 │   ├── kbengine-python.json      # Python 热更片段 (4)
 │   └── kbengine-types-xml.json   # types.xml 类型别名片段 (2)
+├── crates/                       # Rust core workspace (kode-server/parser/types/...)
+├── tests/                        # vitest 功能测试
+├── docs/                         # VitePress 文档站
 ├── resources/
 │   └── docs/                     # 项目文档
 ├── .vscode/
@@ -438,4 +438,4 @@ pnpm test:coverage  # vitest + 覆盖率
 
 ---
 
-当前发布版本 0.1.1，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 33 项功能、45 条命令、54 个配置项；功能清单见 [COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md)，测试口径见 [TESTING.md](./TESTING.md)。
+当前发布版本 v0.1.3，已以 `cuihairu.kode-kbengine` 发布到 Marketplace。已落地 95 条命令、92 个配置项；[COMPLETED_FEATURES.md](./COMPLETED_FEATURES.md) 的功能清单是 0.1.x 时点快照，测试口径见 [TESTING.md](./TESTING.md)。

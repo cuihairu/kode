@@ -46,7 +46,7 @@ pnpm run package
 
 ## 改了代码但行为没变？先确认 VS Code 跑的是哪份产物
 
-「改了没生效」绝大多数不是逻辑问题,而是 VS Code 还在跑旧产物。按序排查:
+「改了没生效」绝大多数是 VS Code 还在跑旧产物,不是逻辑问题。按序排查:
 
 1. **已装扩展**:`%USERPROFILE%\.vscode\extensions` 下应存在
    `cuihairu.kode-kbengine-*` 目录(扩展 id 由 `kode` 改名为 `kode-kbengine`,目录尾段随版本);没有就是没装(你测的不是这份代码)。

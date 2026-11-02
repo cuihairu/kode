@@ -19,7 +19,7 @@
 
 关键点:**"大文件量"的主体就是 `.py`**。30k 语料里 30001 个 `.py`、201 个 `.def`,
 Rust 侧 definition/hover/diagnostics 的语料面全部落在 201 个 `.def` 与 3 个 xml 上。
-所以 `.py` 不是边角料,而是 Rust 尚未覆盖的 99% 文件体量。
+所以 Rust 尚未覆盖的 99% 文件体量都是 `.py`。
 
 VFS 侧**已经**把 Python 分类出来(`crates/kode-vfs/src/walk.rs:39` 的
 `FileKind::Python`),缺的是解析/索引/语义面 —— 发现 ≠ 入库 ≠ 可应答。
