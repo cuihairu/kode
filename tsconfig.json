@@ -24,6 +24,7 @@
     ".vscode-test",
     "tests",
     "src/webview",
+    "wt",
     "vitest.config.ts",
     "vitest.bench.config.ts",
     "vitest.integration.config.ts"
