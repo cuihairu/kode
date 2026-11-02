@@ -691,6 +691,14 @@
         "title": "Show Hot Reload Revision Evidence"
       },
       {
+        "command": "kbengine.hotReload.filterByState",
+        "title": "Hot Reload: Show Changed Files (Dirty/Sent)"
+      },
+      {
+        "command": "kbengine.hotReload.showFileState",
+        "title": "Hot Reload: Show File State"
+      },
+      {
         "command": "kbengine.debug.focusTarget",
         "title": "debugpy: Focus Debug Target"
       },

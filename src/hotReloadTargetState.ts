@@ -49,6 +49,13 @@ export interface HotReloadDeliveryRecord {
 
 export interface HotReloadTargetStateDeps {
   now(): number;
+  /**
+   * 台账写入后回调(IDE-HOT-100 呈现面):任何一条记录落账/升级(新发送、
+   * 回执升级、注解写回)都触发一次;被拒的旧代写回(record 返回 undefined,
+   * 记录原样不动)不触发。接线方借它刷文件树角标/CodeLens 状态点,使呈
+   * 现面跟住台账事实(回执落地即时反映,不等下次保存)。
+   */
+  onRecorded?: () => void;
 }
 
 /**
@@ -57,12 +64,14 @@ export interface HotReloadTargetStateDeps {
  */
 export class HotReloadTargetStateStore {
   private readonly now: () => number;
+  private readonly onRecorded?: () => void;
   private readonly targets = new Map<string, Map<string, Map<string, HotReloadDeliveryRecord>>>();
   /** IDE-AUD-005:发送代际计数——(rootId::targetId::file) → 已发生的发送次数 */
   private readonly attempts = new Map<string, number>();
 
   constructor(deps: HotReloadTargetStateDeps) {
     this.now = deps.now;
+    this.onRecorded = deps.onRecorded;
   }
 
   /**
@@ -93,6 +102,7 @@ export class HotReloadTargetStateStore {
         updated.detail = options.detail;
       }
       this.put(key, file, updated);
+      this.onRecorded?.();
       return updated;
     }
     const attempt = (this.attempts.get(attemptKey) ?? 0) + 1;
@@ -112,6 +122,7 @@ export class HotReloadTargetStateStore {
       record.sentDigest = options.sentDigest;
     }
     this.put(key, file, record);
+    this.onRecorded?.();
     return record;
   }
 

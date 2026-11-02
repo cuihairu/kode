@@ -170,6 +170,7 @@ import { HttpRequestService } from './httpRequestService';
 import { QuickActionManager, setDefaultScriptRuntime } from './quickActions';
 import { QuickActionTreeProvider } from './quickActionTree';
 import {
+  HOT_RELOAD_APPLIED_SETTLE_MS,
   realHotReloadTimerDeps,
   setupHotReload,
   type HotReloadSendOptions,
@@ -181,6 +182,13 @@ import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
 import { runHotReloadRevisionEvidenceCommand } from './hotReloadRevisionEvidenceCommand';
 import { HotReloadEngineDigestRegister } from './hotReloadRevisionEvidence';
 import { HotReloadTargetStateStore } from './hotReloadTargetState';
+import { HotReloadFileStateMachine } from './hotReloadFileState';
+import { HotReloadFileDecorationProvider } from './hotReloadFileDecorations';
+import { HotReloadFileStateCodeLensProvider } from './hotReloadFileStateLens';
+import {
+  runHotReloadFileStateFilterCommand,
+  runShowHotReloadFileStateCommand
+} from './hotReloadFileStateFilter';
 import { setupKodeCoreGate } from './kodeCoreGateWiring';
 import {
   shadowMirrorCorpusDocument,
@@ -3889,7 +3897,13 @@ export function activate(context: vscode.ExtensionContext) {
   // 嵌路径;@http: 调试/设置源按索引对齐树数据,对不上如实不落),rootId =
   // 文件归属的工作区扫描根;动作完成无回执仍只记 sent-unverified,绝不记
   // 成功态——同文件发不同实例各落各的,切目标不复用上一目标状态。
-  const hotReloadTargetStateStore = new HotReloadTargetStateStore({ now: () => Date.now() });
+  // IDE-HOT-100:台账落账即时刷呈现面(角标/状态点跟住回执落地,不等下次
+  // 保存);呈现面 provider 在后面才建,这里挂前向引用
+  const hotReloadStateViewRefresh: { refresh?: () => void } = {};
+  const hotReloadTargetStateStore = new HotReloadTargetStateStore({
+    now: () => Date.now(),
+    onRecorded: () => hotReloadStateViewRefresh.refresh?.()
+  });
   // IDE-REV-027 引擎 digest 证据册:fire 路径与失败目标重发的回包体都喂
   // 进来(册内判协议:非空 digest+逐字回显该文件才入册),证据展示命令读
   const hotReloadEngineDigestRegister = new HotReloadEngineDigestRegister({ now: () => Date.now() });
@@ -3899,6 +3913,14 @@ export function activate(context: vscode.ExtensionContext) {
     createOutputChannel: name => vscode.window.createOutputChannel(name),
     registerCommand: (command, handler) => vscode.commands.registerCommand(command, handler),
     timers: realHotReloadTimerDeps
+  });
+  // IDE-HOT-100 文件热更状态机:台账之上派生 CLEAN/DIRTY/SENT/APPLIED/FAILED/
+  // RESTART_REQUIRED 生命周期态(依据=内容 sha256+既有回执协议,不靠 mtime);
+  // 台账是事实源,状态机是派生视图,键同形不另立身份。def 结构闸拦下经
+  // setupHotReload.onRestartRequired 标进 RESTART_REQUIRED 呈现面。
+  const hotReloadFileStateMachine = new HotReloadFileStateMachine({
+    now: () => Date.now(),
+    timeoutWindowMs: HOT_RELOAD_APPLIED_SETTLE_MS
   });
   // 无人值守动作入口:fire 路径与失败目标重发(IDE-REV-026)共用同一执行面
   const runQuickActionForHotReload = (actionName: string, sendOptions?: HotReloadSendOptions) =>
@@ -3955,7 +3977,24 @@ export function activate(context: vscode.ExtensionContext) {
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
-    noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body)
+    noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
+    // IDE-HOT-100:def 结构闸拦下 → 状态机标 RESTART_REQUIRED 呈现(与日志
+    // 同源;拦下本身是 HOT-005 既有面)。targetId 经动作名反查,解不到该
+    // 次如实不标(无目标身份,不虚构);rootId 逐文件解析,解不到跳过。
+    onRestartRequired: (actionName, files, reasons) => {
+      void Promise.resolve(hotReloadTargetStateWiring.resolveTargetId(actionName)).then(targetId => {
+        if (targetId === null) {
+          return;
+        }
+        for (const file of files) {
+          const rootId = hotReloadTargetStateWiring.resolveRootId(file);
+          if (rootId === null) {
+            continue;
+          }
+          hotReloadFileStateMachine.markRestartRequired({ rootId, targetId }, [file], reasons);
+        }
+      });
+    }
   });
   // IDE-REV-025:多目标批次聚合的展示入口——台账全量归并,partial 点名失败目标
   context.subscriptions.push(
@@ -4034,6 +4073,119 @@ export function activate(context: vscode.ExtensionContext) {
           logBlock: text => hotReloadStatus.log(text),
           show: () => hotReloadStatus.showLog()
         }
+      );
+    })
+  );
+
+  // IDE-HOT-100 呈现:文件树角标 + 文件顶部 CodeLens 状态点 + 按状态过滤
+  // (「看哪些改了还没重载」=DIRTY∪SENT)。状态机是派生视图,呈现只把视图
+  // 映射成角标/lens/报告;读取与目标集经注入面。def 结构拦下(RESTART_
+  // REQUIRED)与 FAILED 各有着色不混用。
+  const hotReloadStateReadFile = async (file: string): Promise<string | undefined> =>
+    (await hotReloadTargetStateWiring.readFileContent!(file)) ?? undefined;
+  // 目标集:台账有记录目标(事实源)+ quick action 树已知 target(覆盖未发
+  // 送文件,首次角标查询即注册会话基线)。树读取一次缓存,配置变更刷新。
+  const hotReloadTargetCache = new Set<string>();
+  const refreshHotReloadTargetCache = async (): Promise<void> => {
+    hotReloadTargetCache.clear();
+    try {
+      const tree = await quickActionManager.getTreeData();
+      for (const entry of [...tree.registered, ...tree.scripts, ...tree.httpRequests]) {
+        if (entry.target) {
+          hotReloadTargetCache.add(entry.target);
+        }
+      }
+    } catch {
+      // 树暂不可读:如实空集,角标只认台账事实目标
+    }
+  };
+  void refreshHotReloadTargetCache();
+  const hotReloadTargetsForRoot = (rootId: string): string[] => {
+    const targets = new Set<string>(hotReloadTargetCache);
+    for (const key of hotReloadTargetStateStore.targetsWithRecords()) {
+      if (key.rootId === rootId) {
+        targets.add(key.targetId);
+      }
+    }
+    return [...targets];
+  };
+  const hotReloadFileDecorationProvider = new HotReloadFileDecorationProvider({
+    stateMachine: hotReloadFileStateMachine,
+    ledger: hotReloadTargetStateStore,
+    resolveRootId: file => hotReloadTargetStateWiring.resolveRootId(file),
+    targetsForRoot: hotReloadTargetsForRoot,
+    readFileContent: hotReloadStateReadFile
+  });
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(hotReloadFileDecorationProvider),
+    hotReloadFileDecorationProvider
+  );
+  const hotReloadFileStateLensProvider = new HotReloadFileStateCodeLensProvider({
+    stateMachine: hotReloadFileStateMachine,
+    ledger: hotReloadTargetStateStore,
+    resolveRootId: file => hotReloadTargetStateWiring.resolveRootId(file),
+    targetsForRoot: hotReloadTargetsForRoot
+  });
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider({ pattern: '**/*.{py,def}' }, hotReloadFileStateLensProvider),
+    hotReloadFileStateLensProvider
+  );
+  // 台账落账即时刷呈现面(前向引用在 provider 建成后接上;回执落地/注解
+  // 写回/重发换代都经 store.record → onRecorded 到此,角标与状态点跟住)
+  hotReloadStateViewRefresh.refresh = () => {
+    hotReloadFileDecorationProvider.refresh();
+    hotReloadFileStateLensProvider.refresh();
+  };
+  // 保存后刷新角标/状态点(文件内容变化即时反映);配置变更刷新目标缓存
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(() => {
+      hotReloadFileDecorationProvider.refresh();
+      hotReloadFileStateLensProvider.refresh();
+    }),
+    vscode.workspace.onDidChangeConfiguration(event => {
+      // 与全局 configWatcher 同口径:仅 kbengine 段变更才刷,无关配置不动
+      if (!event.affectsConfiguration('kbengine')) {
+        return;
+      }
+      void refreshHotReloadTargetCache();
+      hotReloadFileDecorationProvider.refresh();
+      hotReloadFileStateLensProvider.refresh();
+    })
+  );
+  // 状态过滤(注意力集=DIRTY∪SENT)与状态点点击(单文件跨目标明细)都落
+  // 「KBEngine 热更新」通道,与既有热更日志同源。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.filterByState', () =>
+      runHotReloadFileStateFilterCommand(
+        {
+          stateMachine: hotReloadFileStateMachine,
+          ledger: hotReloadTargetStateStore,
+          readFileContent: hotReloadStateReadFile
+        },
+        {
+          logBlock: text => hotReloadStatus.log(text),
+          show: () => hotReloadStatus.showLog()
+        }
+      )
+    ),
+    vscode.commands.registerCommand('kbengine.hotReload.showFileState', (file?: string) => {
+      if (typeof file !== 'string' || file.length === 0) {
+        hotReloadStatus.log('无活动文件:状态点点击需带文件参数');
+        return;
+      }
+      void runShowHotReloadFileStateCommand(
+        {
+          stateMachine: hotReloadFileStateMachine,
+          ledger: hotReloadTargetStateStore,
+          readFileContent: hotReloadStateReadFile,
+          resolveRootId: filePath => hotReloadTargetStateWiring.resolveRootId(filePath),
+          targetsForRoot: hotReloadTargetsForRoot
+        },
+        {
+          logBlock: text => hotReloadStatus.log(text),
+          show: () => hotReloadStatus.showLog()
+        },
+        file
       );
     })
   );
