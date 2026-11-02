@@ -56,9 +56,9 @@ export function fixedDictTypeName(entityName: string): string {
   return `${entityName}State`;
 }
 
-/** 生成 entities.xml 注册片段(与既有 generateEntityRegistration 同构) */
+/** 生成 entities.xml 注册片段(与既有 generateEntityRegistration 同构,属性序 hasCell/hasBase/hasClient) */
 export function buildNewEntityRegistration(input: NewEntityWizardInput): string {
-  return `  <${input.name} hasBase="${input.hasBase}" hasCell="${input.hasCell}" hasClient="${input.hasClient}" />`;
+  return `  <${input.name} hasCell="${input.hasCell}" hasBase="${input.hasBase}" hasClient="${input.hasClient}" />`;
 }
 
 /**

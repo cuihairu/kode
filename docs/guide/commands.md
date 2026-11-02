@@ -445,6 +445,21 @@ The flow graph panel supports:
 - Title: `Create Entity from Wizard`
 - Purpose: create an entity step by step through the wizard
 
+### `kbengine.entity.new`
+
+- Title: `New KBEngine Entity`
+- Purpose: generate a loadable new entity in three steps (name → property template → entity form)
+- Entry points: command palette, or right-click a folder in the Explorer (`entity_defs` only; other folders get a hint and abort)
+- What gets generated in one pass:
+  - `entity_defs/<Name>.def` skeleton with common sample properties (`name`/`hp`/`position`) plus a TEMP property (`Persistent=false`), and one property-template sample: simple `UINT32`, inline `ARRAY<of UINT32>`, or a FIXED_DICT named type
+  - Per-part scripts following the engine convention — class name exactly `<Name>` extending `KBEngine.Entity` — written to `scripts/base/<Name>.py` / `scripts/cell/<Name>.py` (hooks: `onTimer`, `onWriteToDB(self, cellData)` on base, `onEnterWorld`/`onLeaveWorld` on cell)
+  - `scripts/client/<Name>.py` client stub when the chosen form includes Client
+  - FIXED_DICT template auto-registers its named type in `types.xml` (no `implementedBy` — default serialization loads as-is)
+  - `<Name>` registration in `entities.xml`
+- `__init__` guards follow the GEN-DEF-1 convention: `if self.<prop> is None:` only for ARRAY/FIXED_DICT properties, and only in the part whose Flags domain includes the property; simple types get no guard and `if not self.` is never emitted
+- Project-level templates override the built-in skeletons: `.kode/templates/new-entity.def`, `new-entity.base.py`, `new-entity.cell.py`, `new-entity.client.py` with `{{Name}}`/`{{ClassName}}` placeholders (unknown placeholders are kept verbatim)
+- Behavior: preflight aborts on any existing target (no partial generation), a confirm screen lists every landing spot before writing, a failed pass rolls back created files (including the `types.xml` insertion), and after a committed pass the entity explorer is refreshed so the new def/script pair is indexed immediately
+
 ### `kbengine.generator.templates`
 
 - Title: `Create Entity from Template`

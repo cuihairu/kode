@@ -4629,6 +4629,14 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(showGeneratorWizardCommand);
 
+  // GEN-DEF-2 新建实体向导:资源管理器 entity_defs 目录右键或命令面板
+  // 「New KBEngine Entity」,3 步生成可直接加载的实体(def+按段 py+登记)
+  const newEntityWizardCommand = vscode.commands.registerCommand(
+    'kbengine.entity.new',
+    (folderUri?: vscode.Uri) => codeGenerator.runNewEntityWizard(folderUri?.fsPath)
+  );
+  context.subscriptions.push(newEntityWizardCommand);
+
   const showTemplatesCommand = vscode.commands.registerCommand(
     'kbengine.generator.templates',
     () => codeGenerator.showTemplates()

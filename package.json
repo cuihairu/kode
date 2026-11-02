@@ -38,6 +38,7 @@
     "workspaceContains:**/*.def",
     "onCommand:kbengine.refreshExplorer",
     "onCommand:kbengine.entity.open",
+    "onCommand:kbengine.entity.new",
     "onCommand:kbengine.entity.method.open",
     "onCommand:kbengine.defMethodConsistency.revalidate",
     "onCommand:kbengine.database.open",
@@ -514,6 +515,11 @@
         "icon": "$(new-file)"
       },
       {
+        "command": "kbengine.entity.new",
+        "title": "New KBEngine Entity",
+        "icon": "$(new-file)"
+      },
+      {
         "command": "kbengine.generator.formWizard",
         "title": "Create Def Form from Wizard",
         "icon": "$(symbol-structure)"
@@ -842,6 +848,13 @@
         },
         {
           "command": "kbengine.config.showFinal"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "kbengine.entity.new",
+          "when": "explorerResourceIsFolder",
+          "group": "creation"
         }
       ]
     },

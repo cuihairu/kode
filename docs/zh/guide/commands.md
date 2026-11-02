@@ -384,6 +384,21 @@
 - 标题：`Create Entity from Wizard`
 - 作用：通过向导逐步创建实体
 
+### `kbengine.entity.new`
+
+- 标题：`New KBEngine Entity`
+- 作用：三步（名称 → 属性模板 → 实体形态）生成一个可直接被引擎加载的新实体
+- 入口：命令面板，或资源管理器目录右键（仅 `entity_defs` 目录；其它目录给提示后中止）
+- 一次生成：
+  - `entity_defs/<Name>.def` 骨架：常用示例属性（`name`/`hp`/`position`）加一个 TEMP 属性（`Persistent=false`），再加一个属性模板示例：简单 `UINT32`、内联 `ARRAY<of UINT32>`、或 FIXED_DICT 命名类型
+  - 按段脚本（引擎约定：类名与实体名逐字一致、继承 `KBEngine.Entity`）落盘到 `scripts/base/<Name>.py` / `scripts/cell/<Name>.py`（钩子：`onTimer`、base 段 `onWriteToDB(self, cellData)`、cell 段 `onEnterWorld`/`onLeaveWorld`）
+  - 所选形态含 Client 时生成 `scripts/client/<Name>.py` 客户端 stub
+  - FIXED_DICT 模板自动在 `types.xml` 登记其命名类型（不带 `implementedBy`，默认序列化即可加载）
+  - `entities.xml` 登记 `<Name>`
+- `__init__` 守卫遵循 GEN-DEF-1 口径：仅 ARRAY/FIXED_DICT 属性生成 `if self.<prop> is None:`，且只出现在该属性 Flags 域所在的段；简单类型无守卫，绝不生成 `if not self.` 形态
+- 项目级模板覆盖内置骨架：`.kode/templates/new-entity.def`、`new-entity.base.py`、`new-entity.cell.py`、`new-entity.client.py`，占位符 `{{Name}}`/`{{ClassName}}`（未识别占位符原样保留）
+- 行为：任一目标已存在即预检整体中止（不写半套）、确认屏列出全部落点、失败回滚已创建文件（含 `types.xml` 插入）、提交后刷新实体树让新 def/脚本对立即入索引
+
 ### `kbengine.generator.templates`
 
 - 标题：`Create Entity from Template`

@@ -13,6 +13,17 @@ import { writeFileAtomic } from './atomicFileWrite';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { confirmGenerationPlanItems, type GenerationPlanItem } from './generationConfirm';
 import { activeProfileSwitchCount, onDidChangeActiveProfile, resolveActiveProfile } from './activeProfile';
+import {
+  buildEntityDefContent,
+  buildEntityPartContent,
+  buildFixedDictTypeDefinition,
+  buildNewEntityRegistration,
+  entityWizardPartsToGenerate,
+  fixedDictTypeName,
+  resolveEntityWizardTemplateOverrides,
+  type EntityWizardPart,
+  type NewEntityWizardInput
+} from './entityWizard';
 
 /**
  * 实体类型配置
@@ -415,6 +426,18 @@ export class KBEngineCodeGenerator {
    * 生成 .def 文件
    */
   async generateDefFile(entity: EntityDefinition): Promise<string> {
+    return this.generateDefFileWithContent(entity, this.generateDefContent(entity));
+  }
+
+  /**
+   * 以显式内容生成 .def 文件(GEN-DEF-2 新建实体向导:内容由
+   * entityWizard.buildEntityDefContent 提供,可被项目模板覆盖)。
+   * 同 generateDefFile 的冲突预检/原子写/目录保障。
+   */
+  async generateDefFileWithContent(
+    entity: { config: { name: string } },
+    content: string
+  ): Promise<string> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('没有打开的工作区');
@@ -428,8 +451,6 @@ export class KBEngineCodeGenerator {
     if (fs.existsSync(defFilePath)) {
       throw new Error(`def 文件已存在，保留原文件未覆盖: ${defFilePath}`);
     }
-
-    const content = this.generateDefContent(entity);
 
     // 确保目录存在
     const dir = path.dirname(defFilePath);
@@ -612,6 +633,111 @@ export class KBEngineCodeGenerator {
     writeFileAtomic(pythonFilePath, content);
 
     return pythonFilePath;
+  }
+
+  /**
+   * 生成某段实体脚本文件(GEN-DEF-2):scripts/<part>/<Name>.py,类名=实体名,
+   * 冲突预检/原子写同 generatePythonFile。
+   */
+  async generateEntityPartFile(
+    name: string,
+    part: EntityWizardPart,
+    content: string
+  ): Promise<string> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      throw new Error('没有打开的工作区');
+    }
+
+    const partFilePath = joinWorkspacePath(
+      this.resolvePythonOutputRoot(workspaceFolder.uri.fsPath),
+      part,
+      `${name}.py`
+    );
+
+    // IDE-GEN-002 同守:同名实现已存在时拒绝覆盖
+    if (fs.existsSync(partFilePath)) {
+      throw new Error(`Python 文件已存在，保留原代码未覆盖: ${partFilePath}`);
+    }
+
+    const dir = path.dirname(partFilePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    writeFileAtomic(partFilePath, content);
+    return partFilePath;
+  }
+
+  /**
+   * 解析 types.xml 落点(与 entities.xml 同源链:资产根优先)。
+   */
+  private resolveTypesXmlPath(workspaceRoot: string): string {
+    const profileAssetsRoot = resolveActiveProfile(this.context.workspaceState)?.assetsRoot;
+    if (profileAssetsRoot) {
+      return joinWorkspacePath(profileAssetsRoot, 'scripts', 'entity_defs', 'types.xml');
+    }
+    return joinWorkspacePath(workspaceRoot, 'scripts', 'entity_defs', 'types.xml');
+  }
+
+  /**
+   * 向 types.xml 追加 FIXED_DICT 命名类型(GEN-DEF-2 fixedDict 属性模板)。
+   * 仅当类型名未出现时追加;打开文档走缓冲写入,未打开原子写盘(与
+   * registerInEntitiesXml 同规则)。
+   */
+  async appendFixedDictTypeToTypesXml(
+    input: NewEntityWizardInput,
+    ledger: GenerationRollbackLedger
+  ): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      throw new Error('没有打开的工作区');
+    }
+
+    const typesXmlPath = this.resolveTypesXmlPath(workspaceFolder.uri.fsPath);
+    const typeName = fixedDictTypeName(input.name);
+
+    const snapshot = readSharedFileSnapshot(typesXmlPath);
+    if (!snapshot) {
+      throw new Error(`types.xml 不存在: ${typesXmlPath}`);
+    }
+
+    if (snapshot.content.includes(`<${typeName}>`)) {
+      // 已有同名类型:不追加也不改写,引用既有定义(幂等)
+      return;
+    }
+
+    const typeDefinition = buildFixedDictTypeDefinition(input);
+    const insertIndex = snapshot.content.lastIndexOf('</root>');
+    if (insertIndex === -1) {
+      throw new Error('types.xml 格式错误：找不到 </root> 标签');
+    }
+
+    if (snapshot.source === 'document') {
+      const openDoc = vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === typesXmlPath);
+      if (!openDoc) {
+        throw new Error(`types.xml 缓冲区已关闭: ${typesXmlPath}`);
+      }
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(openDoc.uri, openDoc.positionAt(insertIndex), `${typeDefinition}\n\n`);
+      const applied = await vscode.workspace.applyEdit(edit);
+      if (!applied || !openDoc.getText().includes(typeDefinition)) {
+        vscode.window.showWarningMessage(`types.xml 缓冲区写入未生效,类型 ${typeName} 未登记`);
+        return;
+      }
+      ledger.bufferEdits.push({
+        filePath: typesXmlPath,
+        uri: openDoc.uri,
+        offset: insertIndex,
+        text: `${typeDefinition}\n\n`
+      });
+      return;
+    }
+
+    const nextContent =
+      snapshot.content.substring(0, insertIndex) + typeDefinition + '\n\n' + snapshot.content.substring(insertIndex);
+    writeFileAtomic(typesXmlPath, nextContent);
+    ledger.overwrittenFiles.push({ filePath: typesXmlPath, previous: snapshot.content });
   }
 
   /**
@@ -978,6 +1104,244 @@ export class KBEngineCodeGenerator {
         vscode.window.showErrorMessage(`打开生成文件失败: ${error}`);
       }
     }
+  }
+
+  /**
+   * 新建实体向导(GEN-DEF-2):3 步(名称 → 属性模板 → 实体形态)生成一个
+   * 可直接被引擎加载的实体——def + 按段 py(base/cell/client stub)+
+   * FIXED_DICT types.xml 注册 + entities.xml 登记,冲突预检/计划确认/失败
+   * 回滚同旧向导纪律。项目级模板(.kode/templates/)优先于内置骨架。
+   */
+  async runNewEntityWizard(folderUri?: string): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      vscode.window.showErrorMessage('没有打开的工作区');
+      return;
+    }
+    const workspaceRoot = workspaceFolder.uri.fsPath;
+
+    // 右键入口:限定 entity_defs 目录(含其内)才走,否则提示后中止;
+    // 命令面板入口无 uri,直接按解析根走
+    if (folderUri) {
+      const defRoot = this.resolveDefOutputRoot(workspaceRoot);
+      const rel = path.relative(defRoot, folderUri);
+      const insideDefRoot = rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+      if (!insideDefRoot) {
+        vscode.window.showInformationMessage('请在 entity_defs 目录上使用「New KBEngine Entity」');
+        return;
+      }
+    }
+
+    // 步骤 1: 实体名
+    const name = await vscode.window.showInputBox({
+      prompt: '输入实体名称',
+      placeHolder: 'MyEntity',
+      validateInput: (value) => {
+        if (!value || !/^[A-Z][a-zA-Z0-9_]*$/.test(value)) {
+          return '实体名称必须以大写字母开头，只能包含字母、数字和下划线';
+        }
+        return null;
+      }
+    });
+    if (!name) {
+      return;
+    }
+
+    // 步骤 2: 属性模板
+    const templateChoices = [
+      {
+        label: '简单类型属性',
+        description: 'UINT32 示例,无守卫',
+        value: 'simple' as const
+      },
+      {
+        label: 'FixedArray 属性',
+        description: 'ARRAY<UINT32> 示例,py 生成 is None 守卫',
+        value: 'fixedArray' as const
+      },
+      {
+        label: 'FixedDict 属性',
+        description: 'FIXED_DICT 命名类型,自动登记 types.xml',
+        value: 'fixedDict' as const
+      }
+    ];
+    const templatePick = await vscode.window.showQuickPick(templateChoices, {
+      placeHolder: '选择属性模板'
+    });
+    if (!templatePick) {
+      return;
+    }
+
+    // 步骤 3: 实体形态(含 Client 即同时生成客户端 stub)
+    const formChoices = [
+      { label: 'Base', description: 'BaseApp 实体', hasBase: true, hasCell: false, hasClient: false },
+      { label: 'Cell', description: 'CellApp 实体', hasBase: false, hasCell: true, hasClient: false },
+      { label: 'Client', description: '客户端实体', hasBase: false, hasCell: false, hasClient: true },
+      { label: 'Base + Cell', description: '同时包含 Base 和 Cell', hasBase: true, hasCell: true, hasClient: false },
+      { label: 'Base + Client', description: '同时包含 Base 和 Client', hasBase: true, hasCell: false, hasClient: true },
+      { label: 'Cell + Client', description: '同时包含 Cell 和 Client', hasBase: false, hasCell: true, hasClient: true },
+      { label: 'Base + Cell + Client', description: '完整实体(生成客户端 stub)', hasBase: true, hasCell: true, hasClient: true }
+    ];
+    const formPick = await vscode.window.showQuickPick(formChoices, {
+      placeHolder: '选择实体形态(含 Client 时一并生成客户端 stub)'
+    });
+    if (!formPick) {
+      return;
+    }
+
+    const input: NewEntityWizardInput = {
+      name,
+      hasBase: formPick.hasBase,
+      hasCell: formPick.hasCell,
+      hasClient: formPick.hasClient,
+      generateClientStub: true,
+      propertyTemplate: templatePick.value,
+      description: `自动生成的 ${name} 实体`
+    };
+
+    // 每次调用独立事务(AUD-064 同口径)
+    const ledger = createGenerationRollbackLedger();
+    let defFile = '';
+
+    try {
+      // IDE-GEN-003 同口径:落盘前预检全部目标,任一冲突整体中止
+      const conflicts = this.collectNewEntityConflicts(input, workspaceRoot);
+      if (conflicts.length > 0) {
+        for (const conflict of conflicts) {
+          vscode.window.showErrorMessage(conflict);
+        }
+        return;
+      }
+
+      // IDE-GEN-004 同口径:确认前列出全部落点
+      if (!(await this.confirmNewEntityPlan(input, workspaceRoot))) {
+        return;
+      }
+
+      // 项目模板覆盖(.kode/templates/)优先于内置
+      const overrides = resolveEntityWizardTemplateOverrides(workspaceRoot, p =>
+        fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : null
+      );
+
+      defFile = await this.generateDefFileWithContent(
+        { config: { name: input.name } },
+        buildEntityDefContent(input, overrides)
+      );
+      ledger.createdFiles.push(defFile);
+
+      for (const part of entityWizardPartsToGenerate(input)) {
+        const partFile = await this.generateEntityPartFile(
+          input.name,
+          part,
+          buildEntityPartContent(input, part, overrides)
+        );
+        ledger.createdFiles.push(partFile);
+      }
+
+      if (input.propertyTemplate === 'fixedDict') {
+        await this.appendFixedDictTypeToTypesXml(input, ledger);
+      }
+
+      if (this.config.registerInEntitiesXml) {
+        await this.registerInEntitiesXml(input, ledger);
+      }
+
+      vscode.window.showInformationMessage(`✅ 已生成实体 ${name}: ${defFile}`);
+    } catch (error) {
+      await this.rollbackGeneration(ledger);
+      vscode.window.showErrorMessage(`生成失败: ${error}`);
+      return;
+    }
+
+    // 提交边界(AUD-064 同口径):此后是已提交事务的 UI 后续,失败不回滚
+    // ④ def 注册表同步:新文件由 fs watcher 自动入索引;此处主动刷新
+    // 实体树让新实体立即可见(命令未注册时静默跳过,不影响生成结果)
+    try {
+      await vscode.commands.executeCommand('kbengine.refreshExplorer');
+    } catch {
+      // 刷新面缺席不构成生成失败
+    }
+
+    const openFile = await vscode.window.showInformationMessage('是否打开生成的 def 文件？', '是', '否');
+    if (openFile === '是') {
+      try {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(defFile));
+        await vscode.window.showTextDocument(document);
+      } catch (error) {
+        vscode.window.showErrorMessage(`打开生成文件失败: ${error}`);
+      }
+    }
+  }
+
+  /**
+   * 新建实体向导的冲突预检:def/各段 py/types.xml(登记面存在性)。
+   */
+  private collectNewEntityConflicts(input: NewEntityWizardInput, workspaceRoot: string): string[] {
+    const conflicts: string[] = [];
+
+    const defPath = joinWorkspacePath(this.resolveDefOutputRoot(workspaceRoot), `${input.name}.def`);
+    if (fs.existsSync(defPath)) {
+      conflicts.push(`def 文件已存在: ${defPath}`);
+    }
+
+    for (const part of entityWizardPartsToGenerate(input)) {
+      const partPath = joinWorkspacePath(
+        this.resolvePythonOutputRoot(workspaceRoot),
+        part,
+        `${input.name}.py`
+      );
+      if (fs.existsSync(partPath)) {
+        conflicts.push(`${part} 段脚本已存在: ${partPath}`);
+      }
+    }
+
+    if (input.propertyTemplate === 'fixedDict') {
+      const typesXmlPath = this.resolveTypesXmlPath(workspaceRoot);
+      if (!fs.existsSync(typesXmlPath)) {
+        conflicts.push(`types.xml 不存在(FIXED_DICT 模板需登记命名类型): ${typesXmlPath}`);
+      }
+    }
+
+    return conflicts;
+  }
+
+  /**
+   * 新建实体向导的计划确认清单(IDE-GEN-004 同口径,列出全部落点)。
+   */
+  private async confirmNewEntityPlan(input: NewEntityWizardInput, workspaceRoot: string): Promise<boolean> {
+    const items: GenerationPlanItem[] = [
+      {
+        label: '新增 .def',
+        description: joinWorkspacePath(this.resolveDefOutputRoot(workspaceRoot), `${input.name}.def`)
+      }
+    ];
+
+    for (const part of entityWizardPartsToGenerate(input)) {
+      items.push({
+        label: `新增 ${part} 段脚本`,
+        description: joinWorkspacePath(
+          this.resolvePythonOutputRoot(workspaceRoot),
+          part,
+          `${input.name}.py`
+        )
+      });
+    }
+
+    if (input.propertyTemplate === 'fixedDict') {
+      items.push({
+        label: '登记 FIXED_DICT 类型',
+        description: `${this.resolveTypesXmlPath(workspaceRoot)}: <${fixedDictTypeName(input.name)}>`
+      });
+    }
+
+    if (this.config.registerInEntitiesXml) {
+      items.push({
+        label: '注册 entities.xml',
+        description: `${this.resolveEntitiesXmlPath(workspaceRoot)}: ${buildNewEntityRegistration(input).trim()}`
+      });
+    }
+
+    return confirmGenerationPlanItems(items);
   }
 
   /**

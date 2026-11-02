@@ -181,13 +181,13 @@ describe('GEN-DEF-2 客户端 stub 与注册', () => {
     ).toEqual(['cell', 'client']);
   });
 
-  it('注册片段带三态 hasX 属性', () => {
+  it('注册片段带三态 hasX 属性(属性序 hasCell/hasBase/hasClient 与落盘一致)', () => {
     expect(buildNewEntityRegistration(baseInput)).toBe(
-      '  <Avatar hasBase="true" hasCell="true" hasClient="true" />'
+      '  <Avatar hasCell="true" hasBase="true" hasClient="true" />'
     );
     expect(
       buildNewEntityRegistration({ ...baseInput, hasBase: false, hasCell: false, hasClient: true })
-    ).toBe('  <Avatar hasBase="false" hasCell="false" hasClient="true" />');
+    ).toBe('  <Avatar hasCell="false" hasBase="false" hasClient="true" />');
   });
 
   it('fixedDict 类型定义无 implementedBy(默认序列化可加载)', () => {
