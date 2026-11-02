@@ -22,6 +22,7 @@
 - **悬停：def 声明链合并** —— Parent 链 + interfaces + 组件槽整理为一条继承闭包悬停 ——（证据：package.json#configuration `kbengine.hover.defChain`；todo.md:31；src/defChain.ts）
 - **悬停：事件统计** —— 事件常量的注册/监听计数（事件回调反链）——（证据：package.json#configuration `kbengine.hover.eventStats`；src/eventApi.ts）
 - **悬停：服务配置取值** —— kbengine.xml 服务配置项的取值与说明 ——（证据：package.json#configuration `kbengine.hover.serverConfig`；src/serverConfigHover.ts）
+- **启动参数与启动脚本（KBEXP-1）** —— .sh/.bat 启动脚本分析：悬停/补全 KBEngine 启动参数（CLI `--cid`/`--gus`/`--hide`/`--KBE_ROOT`/`--KBE_RES_PATH`/`--KBE_BIN_PATH`，环境变量 `KBE_ROOT`/`KBE_RES_PATH`/`KBE_BIN_PATH`/`KBE_TIMING_METHOD`/`KBE_COMPONENTID`/`KBE_BOOTIDX_GLOBAL`/`KBE_BOOTIDX_GROUP`/`UID`/`UUID`）出双语文档并附引擎源码行（kbemain.h `parseMainCommandArgs`）；启动诊断只对真实服务器进程启动行检查——未知 `--参数`（拼写错）、`--cid`/`--gus` 非数字、`$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 引用未赋值且未 source——非启动行（echo/pkill/注释）一律不检，`--help` 之类不误报 ——（证据：package.json#configuration `kbengine.startupScriptDiagnostics`、`kbengine.hover.startupScript`；src/kbengineStartupScript.ts；src/extension.ts 悬停/补全/诊断装配；tests/kbengineStartupScript.test.ts；引擎源 kbe/src/lib/server/kbemain.h:238、kbe/src/lib/resmgr/resmgr.cpp:140）
 - **悬停：持久化属性数据库落点** —— 持久化属性显示完整 `` `db`.`tbl`.`col` `` 全名、引擎 DDL 片段与具体限制数值 ——（证据：todo.md:69、todo.md:124；src/databaseSchema.ts `describePropertyDatabaseStorage`）
 - **悬停：def 方法 / 接收者调用 / 内建属性标注（Python）** —— 光标落在 Python 实现脚本里 .def 声明过的方法名上时显示 def 声明标注，过与 RPC 镜同一把形参个数 / 注解类型闸门；`self.<段>.<方法>` 调用按段解析 def 候选，段不符不给标注；单段 `self.<属性>` 访问显示内建属性分面标注；每条异步分支受悬停总预算闸约束不再永转，超时层写 LogHub；预算到期同时取消本请求的链接 token——无其他等待者时停止底层独占读取/排队，他人仍在等的共享计算照常进行 ——（证据：package.json#configuration `kbengine.entity.receiverSections`、`kbengine.entity.builtinProperties`、`kbengine.hover.asyncBudgetMs`；src/languageProviders.ts `provideHover` def-method / receiver-call / builtin-property 分支；src/hoverBudget.ts `raceWithBudget`）
 - **CodeLens：RPC 方法标记** —— def 声明的 Exposed 方法在 Python 实现行出镜 ——（证据：package.json#configuration `kbengine.codeLens.rpc`；todo.md:74；src/rpcCodeLens.ts）
@@ -187,6 +188,7 @@
 | `kbengine.receiverNoneDiagnostics` | `true` | Python 侧 Warning：无判空的 `self.cell`/`self.base`/`self.client` 引用与 `.def` 段错配 |
 | `kbengine.attributeNoneDiagnostics` | `true` | Python 侧 Warning：用户自管 `self.<属性>` 成员访问无判空,且收敛类型含 None 当前位未窄化 |
 | `kbengine.propertyDirectionDiagnostics` | `true` | Python 侧 Warning：def 属性访问方向违规（`self.<属性>`/`self.<role>.<属性>` 访问位置不在属性 Flags 域位内）；文件作用域不足降级为 Information |
+| `kbengine.startupScriptDiagnostics` | `true` | .sh/.bat 启动脚本服务器进程启动行 Warning：未知 `--参数`（拼写错）、`--cid`/`--gus` 非数字、引用 `$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 未赋值且未 source；非启动行不检 |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | 诊断未知 KBEngine 类型 |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | 诊断未知 Flags 取值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | 诊断未知 DetailLevel 取值 |
@@ -205,6 +207,7 @@
 | `kbengine.hover.defChain` | `true` | 悬停显示 def 属性/方法声明链（文件与区块来源） |
 | `kbengine.hover.eventStats` | `true` | 悬停显示事件常量注册/监听统计 |
 | `kbengine.hover.serverConfig` | `true` | 悬停显示 kbengine.xml 服务配置取值与说明 |
+| `kbengine.hover.startupScript` | `true` | .sh/.bat 启动脚本里 KBEngine 启动参数的悬浮/补全说明——CLI 参数与环境变量,双语附引擎源码行(`--` 补全参数、`KBE_` 补全环境变量) |
 | `kbengine.hover.asyncBudgetMs` | `2500` | 悬停 def 方法 / 接收者调用 / 内建属性三条异步链的总预算（毫秒）；超预算截断该层不再永转，超时行写 LogHub（`[kode-hover][timeout]`）；`<= 0` 关闸（src/hoverBudget.ts、src/languageProviders.ts） |
 | `kbengine.codeLens.rpc` | `true` | Python 实现脚本中 def 声明方法的 RPC 标记 CodeLens |
 | `kbengine.codeLens.eventCallbacks` | `true` | Python 脚本中事件回调/订阅 CodeLens |
