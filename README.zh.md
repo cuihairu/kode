@@ -69,17 +69,24 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 ### 跳转定义
 - [从 `entities.xml` 跳转到 `.def` 文件]
 - [快速定位实体定义]
+- [def 引用(Shift+F12)跨 def,含 self 属性访问、receiver RPC 调用与未保存缓冲区]
+- [def 方法的跳转实现]
+- [def 大纲文档符号与工作区符号搜索]
+- [悬停时展开 def 链(`kbengine.hover.defChain`)]
 
 ### 重构支持
 - [.def 文件内 F2 重命名属性/方法]
 - [同文件同名声明与 Flags 作用域变体全部更新]
 - [Parent 链与 Interfaces 混入的后代 def 复述自动同步]
 - [如实边界：仅覆盖 .def 定义与引用面，Python 侧引用与 entities.xml/types.xml 不参与]
+- [跨文件 def 重命名:读取未保存 `.def` 缓冲区、校验输入版本、名字冲突拒绝、同步已解析的 Python 引用与 receiver 匹配的 RPC 调用]
 
 ### 语法检查
 - [实时语法验证]
 - [源码可证实的 Flags / DetailLevel / 必填字段校验]
 - [类型有效性检查]
+- [def↔Python 方法一致性(`kbengine.diagnostics.checkDefMethodMissingInPython` / `checkPythonMethodNotInDef`)带 lint 与快速修复 code action]
+- [进程拓扑校验(`kbengine.diagnostics.checkProcessTopology`)]
 
 ### 实体浏览器
 - [侧边栏显示所有实体]
@@ -98,6 +105,11 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 - [importlib.reload() Python 脚本热更新]
 - [重载相关悬停文档和使用示例]
 - [热更状态栏：关→就绪→发送中→已发送(未确认)→失败；完成无错只记「未确认」（不校验回执）；点击状态栏项打开热更审计日志]
+- [热更回执：accepted ≠ applied——只有引擎明确回执 confirmed 才算 applied，否则停留在「已发送(未确认)」(三路径 transport_ok ≠ accepted ≠ applied)]
+- [多目标热更批次汇总(`kbengine.hotReload.showBatchSummary`)与仅重试失败项(`kbengine.hotReload.retryFailed`)]
+- [热更修订证据带来源(`kbengine.hotReload.showRevisionEvidence`);漂移证据按引擎版本留存]
+- [结构性 `.def` 变更阻止自动热更并标记需重启]
+- [临时编辑热更快捷动作(`kbengine.hotReload.tempEdit.run`):临时编辑→可选自动还原→reloadScript→结果回显;设置 `kbengine.hotReload.tempEdit.*`]
 
 ### 服务器管理
 - [10个组件启动/停止控制]
@@ -126,6 +138,11 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 - [启动即 attach（`kbengine.debug.autoDebugpy`，默认关）：telnet `:python` 层注入、逐组件端口 5678-5682；`kbengine.python.debugpySync` 把包装进 `<assets>/scripts/common/debugpy`]
 - [按 PID 附加到 KBEngine 组件进程]
 - [路径映射配置]
+- [命名目标按实例 debugpy 端口;选定解释器上 debugpy 预检]
+- [附加截止与取消护栏;调试会话结束行为(`kbengine.debug.sessionEndBehavior`)]
+- [经 SSH 的远程服务器(`kbengine.remoteServers.*`):远程进程选择、远程附加(`kbengine.debug.attachRemote`)、路径映射]
+- [py-spy 性能剖析(`kbengine.debug.pyspyDump`)与工作台内调试状态]
+- [启动目标按依赖序启动带环检测、真实就绪探测、按 targetId 分离实例、进程树清理]
 
 ### 监控面板
 - [基于 machine + watcher 的运行态监控]
@@ -160,6 +177,8 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 - [自动在 entities.xml 中注册实体]
 - [支持自定义属性和方法定义]
 - [可配置输出路径和选项]
+- [写前预检全部生成目标;计划预览带确认;原子替换;失败回滚部分生成]
+- [向导内拒绝覆盖已有 `.def`/Python 文件;为未实现 def 方法生成空实现]
 
 ### Telnet 探测与会话联动
 - [状态栏 + 服务器控制面板状态灯（已连接/已开启/密码被拒/未开启等）]
@@ -175,6 +194,51 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 - [官方 VS Code 变量族同样可插（`${file}`=绝对路径、`${workspaceFolder}`/`${fileBasenameNoExtension}`/`${env:NAME}` 等）；两表都不认识的占位原样保留]
 - [触发两路：命令面板 quick pick，或经 keybindings.json 为 `kbengine.httpRequest.run` 配 `args.name` 键位直发——打开 .py 按快捷键即发热更新]
 - [执行流水进 OUTPUT「KBEngine HTTP 快捷请求」：`▶` 请求行 → `✓` 状态·耗时·回包；失败 `✗` 标记 + 错误弹窗，如实回执不悬挂]
+
+### Rust 核心 (kode2)
+
+Rust 核心与 TypeScript 扩展并行运行,经 stdio 讲同一套 LSP 面;后端可选且可回退:
+
+- [双轨后端(`kbengine.core.backend`:`ts` | `rust` | `shadow`):`ts` = TypeScript 服务(默认),`rust` = Rust 服务,`shadow` = Rust 计算比对但 TypeScript 仍服务;随时可切回 `ts`]
+- [影子差异日志(`kbengine.core.showShadowDiffLog`)按功能面报告 Rust 与 TypeScript 的分歧]
+- [Rust 移植的 def 分析:消息表(`message_table.rs`)、依赖图、组件语义、数据库表、def MD5 重放、进程拓扑、客户端 SDK 生成,以及 KBEngine 线格式编解码(`wire_codec.rs`)]
+- [Cargo workspace crate:`kode-server`(LSP)、`kode-parser`、`kode-types`、`kode-index`、`kode-scheduler`、`kode-root`、`kode-vfs`、`kode-python`(ruff AST 调用图与数据流)、`kode-corpus`]
+
+### 消息表与客户端 SDK
+
+- [实体消息表预览(`kbengine.messagetable.preview`)与 JSON 导出(`kbengine.messagetable.export`)]
+- [客户端 SDK 生成(`kbengine.clientSdk.generate`)绑定活动 profile(`kbengine.clientSdk.outputDir`),输出带引擎 trace 并对引擎做消息号审计]
+
+### 数据库 Schema 与漂移
+
+- [只读表预览(`kbengine.database.previewTable`)带查询取消与超时生命周期(`kbengine.databaseQueryTimeoutMs`)]
+- [Schema 影响预览(`kbengine.database.previewSchemaImpact`);结果列回连 def 源码]
+- [漂移检查(`kbengine.database.checkDrift` / `checkAllDrift`)带证据复核(`kbengine.database.showDriftEvidence`)与模拟(`kbengine.database.simulate` / `exportSimulation`)]
+- [按 profile 隔离数据库连接(`kbengine.database.open`)与表前缀(`kbengine.db.tablePrefix`)]
+
+### 项目 Profile 与远程服务器
+
+- [项目身份库 + profile(`kbengine.project.create` / `import` / `doctor` / `selectActive`;`kbengine.profile.start` / `kbengine.profile.health`);索引跟随 profile 切换]
+- [经 SSH 的远程服务器(`kbengine.remoteServers.add` / `select` / `refresh`):远程进程选择、远程调试附加、py-spy]
+
+### Python 工具链
+
+- [逐文件 Python 类型桩(`.pyi`)带别名解析(`kbengine.python.exportStubs` / `exportTypeStubs`;`kbengine.python.stubDir` / `stubExport` / `stubEngineTypings`)]
+- [def 调用链视图(`kbengine.python.showCallChain`)与调用链 inlay 提示(`kbengine.python.callChainHints`)]
+- [Python 测试发现与运行(`kbengine.tests.list`)与构建任务提供器(`kbengine.build.previewTask`)]
+- [Python 语言服务状态检查(`kbengine.python.serviceStatus`)]
+
+### Inlay 提示与类型推断
+
+- [def 参数 inlay 提示(`kbengine.inlayHints.defParams`)与类型数据 inlay 提示(`kbengine.inlayHints.typeData`)]
+- [悬停返回类型推断(`kbengine.hover.returnTypeInference`)与 Python 内建类型 inlay 提示(`kbengine.python.builtinTypeInlayHints`)]
+- [data dict 键访问索引(`kbengine.python.enableDataDictIndex`)与引擎感知 API 元数据(`kbengine.python.apiMetadata`)]
+
+### 遥测、指标与性能剖析
+
+- [语言服务指标汇总(`kbengine.metrics.showSummary`)与活动任务计数(`kbengine.metrics.showActiveTasks`)]
+- [扩展宿主 CPU profile 采集(`kbengine.metrics.startCpuProfile` / `stopCpuProfile`);宿主 CPU/RSS 体征、事件循环延迟、文件读取明细(`kbengine.metrics.fileReadDetail`)]
+- [复现配置导出(`kbengine.diagnostics.exportReproSummary`)与扩展身份报告(`kbengine.extension.identity`)]
 
 ## 性能分析
 
