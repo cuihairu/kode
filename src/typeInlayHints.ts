@@ -16,7 +16,8 @@ import {
   GlobalDataDictIndex,
   findKbeDataDictAccesses,
   inferDataDictValueType,
-  isKeyInsideLineComment
+  isKeyInsideLineComment,
+  queryDataDictSitesForAccess
 } from './globalDataIndex';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
@@ -175,7 +176,8 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
           ensured = true;
         }
         const types: string[] = [];
-        for (const site of this.dataDictIndex.query(access.dict, access.keySignature)) {
+        // 函数调用键 → 现解签名取并集;普通键走单键查询
+        for (const site of queryDataDictSitesForAccess(this.dataDictIndex, access)) {
           if (site.kind !== 'write') {
             continue;
           }

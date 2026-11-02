@@ -17,6 +17,7 @@ import {
 import { PythonTypeInlayHintsProvider } from '../src/typeInlayHints';
 import {
   GlobalDataDictIndex,
+  extractFunctionReturns,
   findKbeDataDictAccesses,
   findKbeDataDictAccessesSliced,
   findLineCommentIndex,
@@ -24,7 +25,9 @@ import {
   inferDataDictValueType,
   isKeyInsideLineComment,
   normalizeKeySignature,
-  replaceFileSitesSliced
+  queryDataDictSitesForAccess,
+  replaceFileSitesSliced,
+  resolveFunctionReturns
 } from '../src/globalDataIndex';
 import type { KbeDataDictSite } from '../src/globalDataIndex';
 import { getKbeAliases } from '../src/kbeModuleIndex';
@@ -2727,4 +2730,263 @@ describe('AUD-076 编辑重扫接入交互调度预算(R4-F11)', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   }, 60000);
+});
+
+describe('GLOBDATA-003 函数调用键解析(纯函数面)', () => {
+  const defsFrom = (text: string): Map<string, Map<string, string[]>> =>
+    new Map([['defs.py', extractFunctionReturns(text)]]);
+
+  it('extractFunctionReturns:字面量/拼接/多 return/嵌套 def 跳过/注释与字符串剔除', () => {
+    const text = [
+      'def literal():',
+      '    return "cfg"',
+      'def concat():',
+      '    return "SERVER_" + str(id)',
+      'def multi(cond):',
+      '    if cond:',
+      '        return "a"',
+      '    return "b"',
+      'def outer():',
+      '    def inner():',
+      '        return "inner"',
+      '    return "outer"',
+      'def bare():',
+      '    return',
+      'def none():',
+      '    return None',
+      'def dynamic():',
+      '    return data[key]',
+      'def callret():',
+      '    return literal()',
+      '# def notdef():',
+      '    # return "x"',
+      's = "def fake(): return \\"y\\""'
+    ].join('\n');
+    const defs = extractFunctionReturns(text);
+    expect(defs.get('literal')).toEqual(['"cfg"']);
+    expect(defs.get('concat')).toEqual(['"SERVER_" + str(id)']);
+    expect(defs.get('multi')).toEqual(['"a"', '"b"']);
+    expect(defs.get('outer')).toEqual(['"outer"']);
+    expect(defs.get('inner')).toBeUndefined(); // 嵌套 def 体整体跳过(闭包不可按名调用)
+    expect(defs.get('bare')).toBeUndefined(); // 裸 return
+    expect(defs.get('none')).toBeUndefined(); // return None
+    expect(defs.get('dynamic')).toEqual(['data[key]']);
+    expect(defs.get('callret')).toEqual(['literal()']);
+    expect(defs.has('notdef')).toBe(false);
+    expect(defs.has('fake')).toBe(false);
+  });
+
+  it('resolveFunctionReturns:字面量/拼接/嵌套调用/多 return/跨文件并集', () => {
+    expect(resolveFunctionReturns('literal', defsFrom('def literal(): return "cfg"'))).toEqual(['cfg']);
+    expect(resolveFunctionReturns('concat', defsFrom('def concat(): return "SERVER_" + str(id)'))).toEqual(['SERVER_*']);
+    expect(resolveFunctionReturns('multi', defsFrom('def multi(c):\n    if c:\n        return "a"\n    return "b"\n'))).toEqual(['a', 'b']);
+    expect(resolveFunctionReturns('k', defsFrom('def helper(): return "SERVER_" + str(id)\ndef k(): return helper()\n'))).toEqual(['SERVER_*']);
+    const cross = new Map<string, Map<string, string[]>>();
+    cross.set('f1.py', extractFunctionReturns('def k(): return "a"\n'));
+    cross.set('f2.py', extractFunctionReturns('def k(): return "b"\n'));
+    expect(resolveFunctionReturns('k', cross)).toEqual(['a', 'b']);
+  });
+
+  it('resolveFunctionReturns:递归自指/互指/深度超限/不在工作区/全动态 → null', () => {
+    expect(resolveFunctionReturns('a', defsFrom('def a(): return a()\n'))).toBeNull();
+    expect(resolveFunctionReturns('a', defsFrom('def a(): return b()\ndef b(): return a()\n'))).toBeNull();
+    const chain = defsFrom('def a(): return b()\ndef b(): return c()\ndef c(): return d()\ndef d(): return e()\ndef e(): return "x"\n');
+    expect(resolveFunctionReturns('a', chain)).toBeNull(); // 深度>3
+    expect(resolveFunctionReturns('d', chain)).toEqual(['x']);
+    expect(resolveFunctionReturns('nope', defsFrom('def a(): return "x"\n'))).toBeNull();
+    expect(resolveFunctionReturns('a', defsFrom('def a(): return data[k]\n'))).toBeNull();
+  });
+
+  it('findKbeDataDictAccesses 带解析器:调用键展开为每签名一条记录', () => {
+    const fnDefs = defsFrom('def k(): return "cfg"\n');
+    const resolver = (fn: string) => resolveFunctionReturns(fn, fnDefs);
+    const text = [
+      'import KBEngine',
+      'v = KBEngine.globalData.get(k())',
+      'KBEngine.globalData[k()] = 1'
+    ].join('\n');
+    const accesses = findKbeDataDictAccesses(text, KBE, resolver);
+    expect(accesses.length).toBe(2);
+    expect(accesses[0]).toMatchObject({ keySignature: 'cfg', callFn: 'k', kind: 'read' });
+    expect(accesses[1]).toMatchObject({ keySignature: 'cfg', callFn: 'k', kind: 'write', valueText: '1' });
+  });
+
+  it('多 return 一访问点展开多条记录(keyStart/keyEnd 指向调用整体)', () => {
+    const fnDefs = defsFrom('def k(c):\n    if c:\n        return "a"\n    return "b"\n');
+    const resolver = (fn: string) => resolveFunctionReturns(fn, fnDefs);
+    const text = 'import KBEngine\nv = KBEngine.globalData.get(k(1))';
+    const accesses = findKbeDataDictAccesses(text, KBE, resolver);
+    expect(accesses.length).toBe(2);
+    expect(accesses.map(a => a.keySignature).sort()).toEqual(['a', 'b']);
+    const keyStart = text.split('\n')[1].indexOf('k(1)');
+    for (const access of accesses) {
+      expect(access.keyStart).toBe(keyStart);
+      expect(access.keyEnd).toBe(keyStart + 'k(1)'.length);
+    }
+  });
+
+  it('动态 return/递归函数不解析(不索引);非调用复杂键仍不索引', () => {
+    const dyn = defsFrom('def k(): return data[k]\n');
+    expect(findKbeDataDictAccesses('import KBEngine\nv = KBEngine.globalData.get(k())', KBE, fn => resolveFunctionReturns(fn, dyn))).toEqual([]);
+    const rec = defsFrom('def k(): return k()\n');
+    expect(findKbeDataDictAccesses('import KBEngine\nv = KBEngine.globalData.get(k())', KBE, fn => resolveFunctionReturns(fn, rec))).toEqual([]);
+    expect(findKbeDataDictAccesses('import KBEngine\nKBEngine.globalData[data[k]] = 1', KBE, fn => resolveFunctionReturns(fn, defsFrom('')))).toEqual([]);
+  });
+
+  it('无解析器(查询面):调用键出标记记录(callFn 设、keySignature null)', () => {
+    const text = 'import KBEngine\nv = KBEngine.globalData.get(k())';
+    const accesses = findKbeDataDictAccesses(text, KBE);
+    expect(accesses.length).toBe(1);
+    expect(accesses[0].callFn).toBe('k');
+    expect(accesses[0].keySignature).toBeNull();
+    expect(accesses[0].kind).toBe('read');
+  });
+
+  it('queryDataDictSitesForAccess:调用键路由到签名并集,普通键走单键', () => {
+    const fnDefs = defsFrom('def k(c):\n    if c:\n        return "a"\n    return "b"\n');
+    const fakeIndex = {
+      resolveCallSignatures: (fn: string) => resolveFunctionReturns(fn, fnDefs),
+      query: (dict: string, sig: string) =>
+        sig === 'a' ? [{ file: 'w.py', dict, keySignature: 'a', line: 1, keyStart: 0, keyEnd: 1, kind: 'write', valueText: '1', exprEnd: 2 }] : []
+    } as never;
+    const callAccess = { dict: 'globalData', keySignature: null, callFn: 'k', line: 1, keyStart: 0, keyEnd: 3, kind: 'read', valueText: null, exprEnd: 4 };
+    const sites = queryDataDictSitesForAccess(fakeIndex, callAccess);
+    expect(sites.length).toBe(1);
+    expect(sites[0].keySignature).toBe('a');
+    const plain = queryDataDictSitesForAccess(fakeIndex, { ...callAccess, callFn: undefined, keySignature: 'cfg' });
+    expect(plain).toEqual([]); // 假索引 query('cfg') 为空
+  });
+});
+
+describe('GLOBDATA-003 函数调用键 provider 导航(定义/引用)', () => {
+  const setupCallKeyWorkspace = () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-k-'));
+    const defs = path.join(root, 'base', 'defs.py');
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(defs), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const defsText = 'def GetServerGlobalDataKey(serverId):\n    return "SERVER_" + str(serverId)\n';
+    const writerText = 'import KBEngine\nKBEngine.globalData["SERVER_" + str(serverId)] = {"gold": 1}\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get(GetServerGlobalDataKey(serverId))\n';
+    fs.writeFileSync(defs, defsText);
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    return { root, defs, writer, reader, writerText, readerText };
+  };
+
+  const withIndex = async (
+    files: string[],
+    run: (index: GlobalDataDictIndex, provider: PythonDefinitionProvider, refs: KBEngineReferencesProvider) => Promise<void>
+  ): Promise<void> => {
+    const originalFind = vscode.workspace.findFiles;
+    const originalRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => files.map(f => vscode.Uri.file(f));
+    vscode.workspace.fs.readFile = async uri => fs.readFileSync(uri.fsPath);
+    const index = new GlobalDataDictIndex();
+    const provider = new PythonDefinitionProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      undefined,
+      index
+    );
+    const refs = new KBEngineReferencesProvider(
+      new EntityMappingManager({ subscriptions: [] } as never),
+      index
+    );
+    try {
+      await run(index, provider, refs);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = originalFind;
+      vscode.workspace.fs.readFile = originalRead;
+    }
+  };
+
+  it('读点 `.get(Fn(x))` F12 跳跨文件写点;写点 F12 跳读点(拼接签名互链)', async () => {
+    const { root, defs, writer, reader, writerText, readerText } = setupCallKeyWorkspace();
+    try {
+      await withIndex([defs, writer, reader], async (_index, provider) => {
+        const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+        const readPos = new vscode.Position(1, readerText.split('\n')[1].indexOf('GetServerGlobalDataKey') + 1);
+        const fromRead = await provider.provideDefinition(readDoc, readPos) as vscode.Location | null;
+        expect(fromRead?.uri.fsPath).toBe(writer);
+        expect(fromRead?.range.start.line).toBe(1);
+        const writeDoc = vscode.makeTextDocument(writerText, { fileName: writer, languageId: 'python' });
+        const writePos = new vscode.Position(1, writerText.split('\n')[1].indexOf('SERVER_') + 3);
+        const fromWrite = await provider.provideDefinition(writeDoc, writePos) as vscode.Location | null;
+        expect(fromWrite?.uri.fsPath).toBe(reader);
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('字面量 return 与多 return 多签名:读点 F12 命中对应写点', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-kl-'));
+    const defs = path.join(root, 'base', 'defs.py');
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(defs), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const defsText = [
+      'def CfgKey():',
+      '    return "cfg"',
+      'def MultiKey(c):',
+      '    if c:',
+      '        return "m_a"',
+      '    return "m_b"',
+      ''
+    ].join('\n');
+    const writerText = 'import KBEngine\nKBEngine.globalData["cfg"] = 1\nKBEngine.globalData["m_a"] = 2\nKBEngine.globalData["m_b"] = 3\n';
+    const readerText = 'import KBEngine\nv = KBEngine.globalData.get(CfgKey())\nw = KBEngine.globalData.get(MultiKey(1))\n';
+    fs.writeFileSync(defs, defsText);
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    try {
+      await withIndex([defs, writer, reader], async (_index, provider) => {
+        const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+        const lines = readerText.split('\n');
+        const cfgPos = new vscode.Position(1, lines[1].indexOf('CfgKey') + 1);
+        const cfgHit = await provider.provideDefinition(readDoc, cfgPos) as vscode.Location | null;
+        expect(cfgHit?.uri.fsPath).toBe(writer);
+        expect(cfgHit?.range.start.line).toBe(1);
+        const multiPos = new vscode.Position(2, lines[2].indexOf('MultiKey') + 1);
+        const multiHit = await provider.provideDefinition(readDoc, multiPos) as vscode.Location | null;
+        expect(multiHit?.uri.fsPath).toBe(writer);
+        expect([2, 3]).toContain(multiHit?.range.start.line);
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('写侧 `[Fn(x)] = v` F12 跳读点;引用互链(写+读)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-kw-'));
+    const defs = path.join(root, 'base', 'defs.py');
+    const writer = path.join(root, 'base', 'writer.py');
+    const reader = path.join(root, 'cell', 'reader.py');
+    fs.mkdirSync(path.dirname(defs), { recursive: true });
+    fs.mkdirSync(path.dirname(reader), { recursive: true });
+    const defsText = 'def GetServerGlobalDataKey(serverId):\n    return "SERVER_" + str(serverId)\n';
+    const writerText = 'import KBEngine\nKBEngine.globalData[GetServerGlobalDataKey(serverId)] = {"gold": 1}\n';
+    const readerText = 'import KBEngine\nvalue = KBEngine.globalData.get("SERVER_" + str(serverId))\n';
+    fs.writeFileSync(defs, defsText);
+    fs.writeFileSync(writer, writerText);
+    fs.writeFileSync(reader, readerText);
+    try {
+      await withIndex([defs, writer, reader], async (_index, provider, refs) => {
+        const writeDoc = vscode.makeTextDocument(writerText, { fileName: writer, languageId: 'python' });
+        const writePos = new vscode.Position(1, writerText.split('\n')[1].indexOf('GetServerGlobalDataKey') + 1);
+        const fromWrite = await provider.provideDefinition(writeDoc, writePos) as vscode.Location | null;
+        expect(fromWrite?.uri.fsPath).toBe(reader);
+        const readDoc = vscode.makeTextDocument(readerText, { fileName: reader, languageId: 'python' });
+        const readPos = new vscode.Position(1, readerText.split('\n')[1].indexOf('SERVER_') + 3);
+        const refsOut = await refs.provideReferences(readDoc, readPos, {} as vscode.ReferenceContext);
+        const files = (refsOut ?? []).map(loc => path.basename(loc.uri.fsPath)).sort();
+        expect(files).toEqual(['reader.py', 'writer.py']);
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

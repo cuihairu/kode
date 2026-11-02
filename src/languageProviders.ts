@@ -180,6 +180,7 @@ import {
   getKbeDataDictAccessAtPosition,
   inferDataDictValueType,
   isKeyInsideLineComment,
+  queryDataDictSitesForAccess,
   resolveScopeRoot,
   type KbeDataDictSite
 } from './globalDataIndex';
@@ -1045,7 +1046,8 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     access: NonNullable<ReturnType<typeof getKbeDataDictAccessAtPosition>>,
     index: GlobalDataDictIndex
   ): vscode.Hover | null {
-    const writeSites = index.query(access.dict, access.keySignature)
+    // 函数调用键 → 现解签名取并集;普通键走单键查询
+    const writeSites = queryDataDictSitesForAccess(index, access)
       .filter(site => site.kind === 'write');
     const types: string[] = [];
     for (const write of writeSites) {
@@ -1060,9 +1062,10 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     if (access.kind === 'read' && writeSites.length === 0) {
       return null;
     }
+    const keyLabel = access.callFn ? `${access.callFn}(...)` : access.keySignature;
     const markdown = new vscode.MarkdownString();
     const headline =
-      `**KBEngine.${access.dict}\`${access.keySignature}\`${types.length > 0 ? `: ${types.join(' | ')}` : ''}**`;
+      `**KBEngine.${access.dict}\`${keyLabel}\`${types.length > 0 ? `: ${types.join(' | ')}` : ''}**`;
     if (access.kind === 'write') {
       markdown.appendMarkdown(`${headline}\n\n推导自本写点右侧表达式`);
     } else {
@@ -4231,7 +4234,15 @@ async function resolveDataDictSitesAtPosition(
     return null;
   }
   // AUD-068:查询带根身份——跨进程字典不跨工程共享命名空间,同根内互链。
-  return { access, sites: dataDictIndex.query(access.dict, access.keySignature, resolveScopeRoot(document.uri.fsPath)) };
+  // 函数调用键(callFn)→ 现解签名取并集;普通键走单键查询。
+  return {
+    access,
+    sites: queryDataDictSitesForAccess(
+      dataDictIndex,
+      access,
+      resolveScopeRoot(document.uri.fsPath)
+    )
+  };
 }
 
 /**
@@ -4391,13 +4402,14 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
       );
       if (dataDictHit && !isKeyInsideLineComment(line.text, dataDictHit.access.keyStart)) {
         const { access, sites } = dataDictHit;
+        const keyLabel = access.callFn ? `${access.callFn}(...)` : access.keySignature;
         const otherKind = access.kind === 'write' ? 'read' : 'write';
         const target =
           sites.find(site => site.kind === otherKind) ??
           sites.find(site => site.kind === access.kind);
         if (target) {
           jumpLog('info', () =>
-            `前置命中 globaldata-key:${access.dict}[${access.keySignature}] ${access.kind} → ` +
+            `前置命中 globaldata-key:${access.dict}[${keyLabel}] ${access.kind} → ` +
             `${path.basename(target.file)}:${target.line + 1}`
           );
           return {
@@ -4407,7 +4419,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             ),
             layers: [{
               layer: 'globaldata-key',
-              query: `${access.dict}[${access.keySignature}]`,
+              query: `${access.dict}[${keyLabel}]`,
               status: 'hit',
               detail: `${access.kind} → ${path.basename(target.file)}:${target.line + 1}`
             }]
