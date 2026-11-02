@@ -59,16 +59,71 @@ pub fn extract_call_graph(ast: &ParsedAst, symbols: &AstSymbols) -> Vec<CallEdge
                 for s in &cls.body {
                     if let Stmt::FunctionDef(f) = s {
                         let caller = f.name.as_str().to_string();
-                        walk_body(ast, &ctx, &f.body, Some(&class_name), &caller, &mut out);
+                        walk_body(
+                            ast,
+                            &ctx,
+                            &f.body,
+                            Some(&class_name),
+                            &caller,
+                            &mut |edge, _| out.push(edge),
+                        );
                     }
                 }
             }
             Stmt::FunctionDef(f) => {
                 let caller = f.name.as_str().to_string();
-                walk_body(ast, &ctx, &f.body, None, &caller, &mut out);
+                walk_body(ast, &ctx, &f.body, None, &caller, &mut |edge, _| {
+                    out.push(edge)
+                });
             }
             _ => {
-                walk_stmt(ast, &ctx, stmt, None, MODULE_CALLER, &mut out);
+                walk_stmt(ast, &ctx, stmt, None, MODULE_CALLER, &mut |edge, _| {
+                    out.push(edge)
+                });
+            }
+        }
+    }
+    out
+}
+
+/// 调用边 + 调用点列(0-based UTF-16;符号表 per-method `calls` 用)。
+///
+/// 与 [`extract_call_graph`] 同一条走查(边集逐条相等,顺序一致),仅额外带出
+/// 调用点列号——调用图边模型([`CallEdge`])保持只有行号,不为此改动 golden 面。
+pub type DetailedCallEdge = (CallEdge, usize);
+
+/// [`extract_call_graph`] 的带列变体(走查复用,产出逐条对齐)。
+pub fn extract_call_graph_detailed(ast: &ParsedAst, symbols: &AstSymbols) -> Vec<DetailedCallEdge> {
+    let ctx = CallContext::from_symbols(symbols);
+    let mut out = Vec::new();
+    for stmt in &ast.module().body {
+        match stmt {
+            Stmt::ClassDef(cls) => {
+                let class_name = cls.name.as_str().to_string();
+                for s in &cls.body {
+                    if let Stmt::FunctionDef(f) = s {
+                        let caller = f.name.as_str().to_string();
+                        walk_body(
+                            ast,
+                            &ctx,
+                            &f.body,
+                            Some(&class_name),
+                            &caller,
+                            &mut |edge, character| out.push((edge, character)),
+                        );
+                    }
+                }
+            }
+            Stmt::FunctionDef(f) => {
+                let caller = f.name.as_str().to_string();
+                walk_body(ast, &ctx, &f.body, None, &caller, &mut |edge, character| {
+                    out.push((edge, character))
+                });
+            }
+            _ => {
+                walk_stmt(ast, &ctx, stmt, None, MODULE_CALLER, &mut |edge, character| {
+                    out.push((edge, character))
+                });
             }
         }
     }
@@ -84,7 +139,7 @@ fn walk_body(
     body: &[Stmt],
     caller_class: Option<&str>,
     caller: &str,
-    out: &mut Vec<CallEdge>,
+    out: &mut impl FnMut(CallEdge, usize),
 ) {
     for stmt in body {
         walk_stmt(ast, ctx, stmt, caller_class, caller, out);
@@ -97,7 +152,7 @@ fn walk_stmt(
     stmt: &Stmt,
     caller_class: Option<&str>,
     caller: &str,
-    out: &mut Vec<CallEdge>,
+    out: &mut impl FnMut(CallEdge, usize),
 ) {
     match stmt {
         Stmt::Expr(e) => walk_expr(ast, ctx, &e.value, caller_class, caller, out),
@@ -203,7 +258,7 @@ fn walk_expr(
     expr: &Expr,
     caller_class: Option<&str>,
     caller: &str,
-    out: &mut Vec<CallEdge>,
+    out: &mut impl FnMut(CallEdge, usize),
 ) {
     use Expr::*;
     match expr {
@@ -342,7 +397,7 @@ fn record_call(
     call: &ast::ExprCall,
     caller_class: Option<&str>,
     caller: &str,
-    out: &mut Vec<CallEdge>,
+    out: &mut impl FnMut(CallEdge, usize),
 ) {
     let chain = dotted_chain(&call.func);
     let (receiver, callee) = match &chain {
@@ -358,15 +413,18 @@ fn record_call(
         _ => (None, String::new()),
     };
     let kind = classify(&chain, &callee, ctx);
-    let caller_line = ast.line_col(call.range().start().to_u32()).0;
-    out.push(CallEdge {
-        caller_class: caller_class.map(str::to_string),
-        caller: caller.to_string(),
-        caller_line,
-        callee,
-        receiver,
-        kind,
-    });
+    let (caller_line, caller_column) = ast.line_col(call.range().start().to_u32());
+    out(
+        CallEdge {
+            caller_class: caller_class.map(str::to_string),
+            caller: caller.to_string(),
+            caller_line,
+            callee,
+            receiver,
+            kind,
+        },
+        caller_column,
+    );
 }
 
 /// 解析 dotted attribute 链(`self.cell.xxx` → `["self","cell","xxx"]`)。

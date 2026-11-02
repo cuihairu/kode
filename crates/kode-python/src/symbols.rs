@@ -137,7 +137,7 @@ fn extract_method(ast: &ParsedAst, class: &str, f: &ast::StmtFunctionDef) -> Ast
         character,
         is_async: f.is_async,
         decorators: decorators(ast, &f.decorator_list),
-        params: params(&f.parameters),
+        params: method_params(&f.parameters),
         end_line,
     }
 }
@@ -151,13 +151,15 @@ fn extract_function(ast: &ParsedAst, f: &ast::StmtFunctionDef) -> AstFunction {
         character,
         is_async: f.is_async,
         decorators: decorators(ast, &f.decorator_list),
-        params: params(&f.parameters),
+        params: method_params(&f.parameters),
         end_line,
     }
 }
 
 /// 形参名(posonly → pos → kwonly → vararg → kwarg 顺序;`self` 不计入)。
-fn params(p: &ast::Parameters) -> Vec<String> {
+///
+/// 公开供 kode-server 的 dataflow 消费面复用(同一排序口径,防两套语义漂移)。
+pub fn method_params(p: &ast::Parameters) -> Vec<String> {
     let mut out = Vec::new();
     let mut push = |name: &str| {
         if name != "self" {

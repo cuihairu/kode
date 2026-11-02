@@ -29,6 +29,55 @@ pub fn dataflow_for_body(ast: &ParsedAst, params: &[String], body: &[Stmt]) -> D
     }
 }
 
+/// 单方法的 def-use 结果(RPC/消费面用;类方法带类名,模块级函数 `class=None`)。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodDataflow {
+    /// 所属类限定名;模块级函数为 `None`。
+    pub class: Option<String>,
+    pub method: String,
+    /// 形参名(与 [`crate::symbols::method_params`] 同序同过滤,`self` 不计)。
+    pub params: Vec<String>,
+    pub result: DataflowResult,
+}
+
+/// 全文件方法级 def-use:类方法 + 模块级函数(与 [`crate::callgraph`] 同一
+/// 类→方法走查,委托 [`crate::symbols::method_params`] 取形参,单一口径)。
+///
+/// 嵌套 def/class 不入本表(与调用图同边界:由外层面另行收集)。
+pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
+    let mut out = Vec::new();
+    for stmt in &ast.module().body {
+        match stmt {
+            Stmt::ClassDef(cls) => {
+                let class_name = cls.name.as_str().to_string();
+                for s in &cls.body {
+                    if let Stmt::FunctionDef(f) = s {
+                        let params =
+                            crate::symbols::method_params(&f.parameters);
+                        out.push(MethodDataflow {
+                            class: Some(class_name.clone()),
+                            method: f.name.as_str().to_string(),
+                            params: params.clone(),
+                            result: dataflow_for_body(ast, &params, &f.body),
+                        });
+                    }
+                }
+            }
+            Stmt::FunctionDef(f) => {
+                let params = crate::symbols::method_params(&f.parameters);
+                out.push(MethodDataflow {
+                    class: None,
+                    method: f.name.as_str().to_string(),
+                    params: params.clone(),
+                    result: dataflow_for_body(ast, &params, &f.body),
+                });
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 struct State {
     /// var → 当前活跃链下标(最近一次定值)。
     live: BTreeMap<String, usize>,

@@ -13,6 +13,7 @@ pub mod hover;
 pub mod lint;
 pub mod message_table;
 pub mod process_topology;
+pub mod python_callgraph;
 pub mod rpc;
 pub mod server;
 pub mod wire_codec;

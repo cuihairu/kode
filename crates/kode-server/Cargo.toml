@@ -42,6 +42,7 @@ path = "src/lib.rs"
 kode-protocol = { path = "../kode-protocol" }
 kode-vfs = { path = "../kode-vfs" }
 kode-parser = { path = "../kode-parser" }
+kode-python = { path = "../kode-python" }
 kode-index = { path = "../kode-index" }
 kode-types = { path = "../kode-types" }
 serde = { version = "1", features = ["derive"] }

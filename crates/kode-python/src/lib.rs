@@ -21,10 +21,12 @@ pub mod model;
 pub mod parse;
 pub mod symbols;
 
+pub use callgraph::{extract_call_graph_detailed, DetailedCallEdge};
+pub use dataflow::{dataflow_for_module, MethodDataflow};
 pub use graph::{CallReverseIndex, PyCallGraph};
 pub use model::{
     AstAttribute, AstClass, AstFunction, AstImport, AstMethod, AstSymbols, CallEdge,
     DataflowResult, DefUseChain, EdgeKind,
 };
 pub use parse::ParsedAst;
-pub use symbols::{parse_ast_symbols, AstExtraction};
+pub use symbols::{method_params, parse_ast_symbols, AstExtraction};

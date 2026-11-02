@@ -110,6 +110,7 @@ impl ServerState {
         crate::lint::register(&mut rpc);
         crate::message_table::register(&mut rpc);
         crate::process_topology::register(&mut rpc);
+        crate::python_callgraph::register(&mut rpc);
         crate::wire_codec::register(&mut rpc);
         crate::def_md5::register(&mut rpc);
         ServerState {

@@ -295,6 +295,7 @@ dependencies = [
  "kode-index",
  "kode-parser",
  "kode-protocol",
+ "kode-python",
  "kode-types",
  "kode-vfs",
  "serde",
