@@ -288,7 +288,11 @@ function resolveTypeName(typeName: string, context: ResolutionContext): string {
   return PYTHON_TYPE_STUB_FALLBACK;
 }
 
-/** 数组结构的元素注解:of 套 of 递归成 List[List[...]],缺 of 落 List[Any] */
+/**
+ * 数组结构的元素注解:of 套 of 递归成 FixedArray[FixedArray[...]](def 属性
+ * 的运行时容器是引擎 FixedArray,script::Sequence 语义,非 Python list),
+ * 缺 of 落 FixedArray[Any]。
+ */
 function resolveStructureElement(
   node: CustomTypeStructureNode,
   context: ResolutionContext
@@ -297,9 +301,9 @@ function resolveStructureElement(
     const ofChild = node.children.find(child => child.tag === 'of');
     if (!ofChild) {
       // 裸 ARRAY(缺 <of>):还是数组,只是元素型有损落 Any
-      return `List[${PYTHON_TYPE_STUB_FALLBACK}]`;
+      return `FixedArray[${PYTHON_TYPE_STUB_FALLBACK}]`;
     }
-    return `List[${resolveStructureElement(ofChild.value, context)}]`;
+    return `FixedArray[${resolveStructureElement(ofChild.value, context)}]`;
   }
   return resolveTypeName(node.name, context);
 }
@@ -352,15 +356,15 @@ function propertyAnnotation(property: CustomTypePropertyInfo, context: Resolutio
   if (typeName === 'ARRAY') {
     // 属性面内联数组(<Type>ARRAY<of>X</of></Type>):元素型按属性结构树解析
     // (definitionWorkspace.parseCustomTypeProperties 产出,与类型条目顶层
-    // 同源);树缺失/解析失败才有损落 List[Any](2026-10-29 用户报收口)
+    // 同源);树缺失/解析失败才有损落 FixedArray[Any](2026-10-29 用户报收口)
     if (property.typeStructure) {
       try {
         return resolveStructureElement(property.typeStructure, context);
       } catch {
-        return `List[${PYTHON_TYPE_STUB_FALLBACK}]`;
+        return `FixedArray[${PYTHON_TYPE_STUB_FALLBACK}]`;
       }
     }
-    return `List[${PYTHON_TYPE_STUB_FALLBACK}]`;
+    return `FixedArray[${PYTHON_TYPE_STUB_FALLBACK}]`;
   }
   try {
     return resolveTypeName(typeName, context);
@@ -594,13 +598,18 @@ export function buildPythonTypeStubContent(
     'from typing import Any, Callable, Dict, List, Tuple, TypedDict, Union'
   ];
   lines.push('import KBEngine');
-  lines.push('from KBEngine import Entity');
+  // KBEngine 导入面(GEN-DEF-1b):Entity 恒导;注解面出现 ARRAY 容器时
+  // FixedArray 一并从 KBEngine 导入(运行时容器真实类型,KBEngine.pyi 定义)。
+  const referencedKbeNames = new Set<string>(['Entity']);
   const referencedEngineAliases = new Set<string>();
   const collectEngineAliases = (annotation: string): void => {
     for (const alias of KBENGINE_TYPE_ALIASES) {
       if (new RegExp(`\\b${escapeRegExp(alias)}\\b`).test(annotation)) {
         referencedEngineAliases.add(alias);
       }
+    }
+    if (/\bFixedArray\b/.test(annotation)) {
+      referencedKbeNames.add('FixedArray');
     }
   };
   for (const entry of entries) {
@@ -612,6 +621,7 @@ export function buildPythonTypeStubContent(
       collectEngineAliases(entry.annotation);
     }
   }
+  lines.push(`from KBEngine import ${[...referencedKbeNames].sort().join(', ')}`);
   if (referencedEngineAliases.size > 0) {
     lines.push(`from KBEngine import ${[...referencedEngineAliases].sort().join(', ')}`);
   }

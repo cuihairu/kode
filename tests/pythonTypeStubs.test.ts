@@ -207,12 +207,12 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(plan.content).toContain('    level: int');
   });
 
-  it('ARRAY 别名发 List[元素],元素是自定义类型名', () => {
+  it('ARRAY 别名发 FixedArray[元素](引擎容器,非 Python list),元素是自定义类型名', () => {
     const plan = buildPythonTypeStubPlan([SAMPLE_TYPES()[0], SAMPLE_TYPES()[1]]);
 
     const alias = plan.entries.find(entry => entry.kind === 'alias');
     expect(alias).toEqual({
-      annotation: 'List[AVATAR_INFO]',
+      annotation: 'FixedArray[AVATAR_INFO]',
       kind: 'alias',
       name: 'AVATAR_INFO_LIST',
       sourceFile: 'types.xml',
@@ -329,7 +329,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(plan.skipped.find(item => item.name === 'FOLLOWER')?.reason).toContain('GHOST');
   });
 
-  it('嵌套 ARRAY(of 套 of)递归成 List[List[元素]]', () => {
+  it('嵌套 ARRAY(of 套 of)递归成 FixedArray[FixedArray[元素]]', () => {
     const nested = makeType({ name: 'NESTED', aliasType: 'ARRAY', rawValue: 'ARRAY <of> ARRAY <of> INT32 </of> </of>' });
     nested.structure = {
       name: 'ARRAY',
@@ -351,7 +351,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     const plan = buildPythonTypeStubPlan([nested]);
 
     expect(plan.entries[0]).toEqual({
-      annotation: 'List[List[int]]',
+      annotation: 'FixedArray[FixedArray[int]]',
       kind: 'alias',
       name: 'NESTED',
       sourceFile: 'types.xml',
@@ -359,7 +359,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     });
   });
 
-  it('FD 属性引用自定义类型名出名字注解;未知类型落 Any;内联 ARRAY 落 List[Any]', () => {
+  it('FD 属性引用自定义类型名出名字注解;未知类型落 Any;内联 ARRAY 落 FixedArray[Any]', () => {
     const plan = buildPythonTypeStubPlan([
       SAMPLE_TYPES()[0],
       makeType({
@@ -383,11 +383,11 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     const byName = Object.fromEntries(entry.properties.map(property => [property.name, property.annotation]));
     expect(byName.avatar).toBe('AVATAR_INFO');
     expect(byName.mystery).toBe('Any');
-    expect(byName.inlineArray).toBe('List[Any]');
+    expect(byName.inlineArray).toBe('FixedArray[Any]');
     expect(byName.blank).toBe('Any');
   });
 
-  it('FD 属性内联 ARRAY<of>自定义类型:元素型按结构树解析成 List[元素名](2026-10-29 用户报 List[Any])', () => {
+  it('FD 属性内联 ARRAY<of>自定义类型:元素型按结构树解析成 FixedArray[元素名](2026-10-29 用户报 List[Any])', () => {
     const plan = buildPythonTypeStubPlan([
       makeType({
         name: 'SHOW_ROLE_INFO',
@@ -422,7 +422,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     }
     const byName = Object.fromEntries(entry.properties.map(property => [property.name, property.annotation]));
     // 元素型照结构树解析到 FIXED_DICT 类名,不再有损落 List[Any]
-    expect(byName.roleInfoList).toBe('List[SHOW_ROLE_INFO]');
+    expect(byName.roleInfoList).toBe('FixedArray[SHOW_ROLE_INFO]');
   });
 
   it('FD 零属性出 pass 体', () => {
@@ -432,13 +432,13 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(plan.content).toContain('    pass');
   });
 
-  it('数组元素缺失 of 时落 List[Any]', () => {
+  it('数组元素缺失 of 时落 FixedArray[Any]', () => {
     const plan = buildPythonTypeStubPlan([
       makeType({ name: 'BARE_ARRAY', aliasType: 'ARRAY', rawValue: 'ARRAY' })
     ]);
 
     expect(plan.entries[0]).toEqual({
-      annotation: 'List[Any]',
+      annotation: 'FixedArray[Any]',
       kind: 'alias',
       name: 'BARE_ARRAY',
       sourceFile: 'types.xml',
@@ -446,13 +446,13 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     });
   });
 
-  it('数组元素指引为 ALIAS 占位时也落 List[Any],不把占位符当类型名发射', () => {
+  it('数组元素指引为 ALIAS 占位时也落 FixedArray[Any],不把占位符当类型名发射', () => {
     const ghostElement = makeType({ name: 'GHOST_ARRAY', aliasType: 'ARRAY', rawValue: 'ARRAY <of> ALIAS </of>', of: 'ALIAS' });
 
     const plan = buildPythonTypeStubPlan([ghostElement]);
 
     expect(plan.entries[0]).toEqual({
-      annotation: 'List[Any]',
+      annotation: 'FixedArray[Any]',
       kind: 'alias',
       name: 'GHOST_ARRAY',
       sourceFile: 'types.xml',
@@ -482,8 +482,8 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
 
     const avatar = plan.entries.find(entry => entry.name === 'AVATAR_INFO');
     expect(avatar?.kind === 'class' && avatar.properties.find(property => property.name === 'skillFlags')?.annotation)
-      .toBe('List[int]');
-    expect(plan.content).toContain('SKILL_FLAGS = List[int]');
+      .toBe('FixedArray[int]');
+    expect(plan.content).toContain('SKILL_FLAGS = FixedArray[int]');
     // 合并分件逐条可辨来源:alias.xml 条目不再冒名 types.xml
     expect(plan.content).toContain('# source: alias.xml:1');
     expect(plan.content).toContain('# source: types.xml:1');
@@ -516,8 +516,8 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       { externalModules: external }
     );
 
-    expect(plan.entries[0]?.kind === 'alias' && plan.entries[0].annotation).toBe('List[AVATAR_INFO]');
-    expect(plan.content).toContain('REMOTE_LIST = List[AVATAR_INFO]');
+    expect(plan.entries[0]?.kind === 'alias' && plan.entries[0].annotation).toBe('FixedArray[AVATAR_INFO]');
+    expect(plan.content).toContain('REMOTE_LIST = FixedArray[AVATAR_INFO]');
     expect(plan.content).toContain('from scripts.entity_defs.kbe_types import AVATAR_INFO');
   });
 
@@ -538,7 +538,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     expect(buildPythonTypeStubPlan([SAMPLE_TYPES()[2]]).content).not.toBeNull();
   });
 
-  it('FD 属性内联 ARRAY 元素引用成环别名:解析抛错有损落 List[Any],不外抛(覆盖率 360)', () => {
+  it('FD 属性内联 ARRAY 元素引用成环别名:解析抛错有损落 FixedArray[Any],不外抛(覆盖率 360)', () => {
     const plan = buildPythonTypeStubPlan([
       makeType({ name: 'LOOP', aliasType: 'LOOP', rawValue: 'LOOP' }),
       makeType({
@@ -563,7 +563,7 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
       return;
     }
     // 成环元素解析抛错被属性层接住:数组形状保留,元素型 Any,不炸整份发射
-    expect(entry.properties[0].annotation).toBe('List[Any]');
+    expect(entry.properties[0].annotation).toBe('FixedArray[Any]');
   });
 
   it('FD 属性类型引用成环别名:有损落 Any,不外抛(覆盖率 368)', () => {
@@ -621,6 +621,25 @@ describe('buildPythonTypeStubPlan(类型表→发射计划)', () => {
     const qualified = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
     expect(qualified).not.toContain('from KBEngine import Address');
     expect(qualified).not.toContain('from KBEngine import WatcherValue');
+  });
+
+  it('注解面引用 ARRAY 时从 KBEngine 导入 FixedArray(GEN-DEF-1b 容器接线)', () => {
+    const content = buildPythonTypeStubPlan(SAMPLE_TYPES()).content ?? '';
+    // SAMPLE_TYPES 含 ARRAY 别名(AVATAR_INFO_LIST)→ FixedArray 真实引用
+    expect(content).toContain('AVATAR_INFO_LIST = FixedArray[AVATAR_INFO]');
+    expect(content).toContain('from KBEngine import Entity, FixedArray');
+  });
+
+  it('TypedDict 字段注解一律非 Optional(GEN-DEF-1a:字段恒非 None,仅 get() 返回值可为 None)', () => {
+    const plan = buildPythonTypeStubPlan(SAMPLE_TYPES());
+    for (const entry of plan.entries) {
+      if (entry.kind !== 'class') {
+        continue;
+      }
+      for (const property of entry.properties) {
+        expect(property.annotation, `${entry.name}.${property.name} 应为非 Optional`).not.toMatch(/\|\s*None\b/);
+      }
+    }
   });
 
   it('生成桩中每类外部注解名都有导入着落', () => {
@@ -893,7 +912,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
     expect(writes[0]?.path).toBe('/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi');
     // 一份文件里两源齐在,跨文件引用解析到底
     expect(writes[0]?.content).toContain('class AVATAR_INFO(TypedDict):');
-    expect(writes[0]?.content).toContain('SKILL_FLAGS = List[int]');
+    expect(writes[0]?.content).toContain('SKILL_FLAGS = FixedArray[int]');
     expect(writes[0]?.content).toContain('LEVEL_ALIAS = int');
   });
 
@@ -914,7 +933,7 @@ describe('exportPythonTypeStubs(装配层)', () => {
 
     expect(writes).toHaveLength(2);
     const cellapp = writes.find(write => write.path.endsWith('cellapp/entity_defs/kbe_types.pyi'))?.content ?? '';
-    expect(cellapp).toContain('REMOTE_LIST = List[AVATAR_INFO]');
+    expect(cellapp).toContain('REMOTE_LIST = FixedArray[AVATAR_INFO]');
     expect(cellapp).toContain('from scripts.entity_defs.kbe_types import AVATAR_INFO');
     const main = writes.find(write => write.path === '/ws/.kbengine/stubs/scripts/entity_defs/kbe_types.pyi')?.content ?? '';
     expect(main).not.toContain('from scripts.entity_defs.kbe_types import');
@@ -1192,7 +1211,7 @@ describe('resolveFixedDictMember(FIXED_DICT 子成员推断)', () => {
       properties: [{ name: 'slot_list', typeName: 'ARRAY', typeStructure: { name: 'ARRAY', rawValue: 'ARRAY', children: [{ tag: 'of', value: { name: 'UINT32', rawValue: 'UINT32', children: [] } }] } }]
     });
     expect(resolveFixedDictMember('SKILL_SLOT', 'slot_list', false, [skillSlot])).toEqual({
-      annotation: 'List[int]',
+      annotation: 'FixedArray[int]',
       kind: 'field'
     });
   });
@@ -1221,6 +1240,6 @@ describe('resolveFixedDictMember(FIXED_DICT 子成员推断)', () => {
     const prop = { name: 'level', typeName: 'UINT32', line: 1 };
     expect(resolveCustomTypePropertyAnnotation(prop, types)).toBe('int');
     const arrayProp = { name: 'slots', typeName: 'ARRAY', line: 1 };
-    expect(resolveCustomTypePropertyAnnotation(arrayProp, types)).toBe('List[Any]');
+    expect(resolveCustomTypePropertyAnnotation(arrayProp, types)).toBe('FixedArray[Any]');
   });
 });

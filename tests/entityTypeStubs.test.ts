@@ -176,7 +176,7 @@ describe('buildEntityTypeStubPlan', () => {
   it('folds ARRAY element sub-paths into one legal attribute line', () => {
     // 用户报 bug:ARRAY of 的嵌套子属性经 `${fullPath}[]` 进 properties 表,
     // 存根原样吐出 foo 与 foo[] 各一行且 foo[] 非法标识符。折叠后只留 foo,
-    // 元素类型经同链解析 → List[FooItem];嵌套 foo[].x 也不得落行。
+    // 元素类型经同链解析 → FixedArray[FooItem](引擎容器);嵌套 foo[].x 也不得落行。
     const arrayMapping = {
       name: 'Soldier',
       defFile: '/ws/scripts/entity_defs/Soldier.def',
@@ -206,17 +206,17 @@ describe('buildEntityTypeStubPlan', () => {
     const plan = buildEntityTypeStubPlan([arrayMapping], [customType]);
     expect(plan.entries[0].properties).toEqual([{
       name: 'foo',
-      annotation: 'List[ITEM_INFO]',
+      annotation: 'FixedArray[ITEM_INFO]',
       customTypeLine: 8,
       sourceLine: 30
     }]);
-    expect(plan.content).toContain('    foo: List[ITEM_INFO]');
+    expect(plan.content).toContain('    foo: FixedArray[ITEM_INFO]');
     expect(plan.content).not.toContain('[]');
   });
 
-  it('keeps List[Any] for bare ARRAY and List[int] for builtin elements', () => {
+  it('keeps FixedArray[Any] for bare ARRAY and FixedArray[int] for builtin elements', () => {
     // 裸 ARRAY(def 直接写 ARRAY 无元素声明):无 `x[]` 条目可借力,诚实 Any;
-    // 元素为内建类型时走同一解析链 → List[int]。
+    // 元素为内建类型时走同一解析链 → FixedArray[int]。
     const bare = {
       name: 'Scout',
       defFile: '/ws/scripts/entity_defs/Scout.def',
@@ -252,8 +252,8 @@ describe('buildEntityTypeStubPlan', () => {
     } as unknown as EntityMapping;
     const plan = buildEntityTypeStubPlan([bare, builtinElem], []);
     // 条目按实体名排序:Archer(builtin 元素)在前,Scout(裸 ARRAY)在后
-    expect(plan.entries[0].properties[0].annotation).toBe('List[int]');
-    expect(plan.entries[1].properties[0].annotation).toBe('List[Any]');
+    expect(plan.entries[0].properties[0].annotation).toBe('FixedArray[int]');
+    expect(plan.entries[1].properties[0].annotation).toBe('FixedArray[Any]');
   });
 
   it('imports every typing name that annotations can emit', () => {
@@ -295,5 +295,68 @@ describe('buildEntityTypeStubPlan', () => {
     expect(plan.content).toContain('    bag: Dict[Any, Any]');
     expect(plan.content).toContain('    history: List[Any]');
     expect(plan.content).not.toMatch(/\blist\[/);
+  });
+
+  it('ARRAY 属性面从 KBEngine 导入 FixedArray(GEN-DEF-1b 容器接线)', () => {
+    const arrayMapping = {
+      name: 'Guard',
+      defFile: '/ws/scripts/entity_defs/Guard.def',
+      pythonFile: '/ws/scripts/entity/Guard.py',
+      pythonFiles: ['/ws/scripts/entity/Guard.py'],
+      properties: {
+        slots: { defFile: '/ws/scripts/entity_defs/Guard.def', line: 10 },
+        'slots[]': { defFile: '/ws/scripts/entity_defs/Guard.def', line: 10 }
+      },
+      methods: {},
+      propertyDefinitions: [
+        {
+          defFile: '/ws/scripts/entity_defs/Guard.def', line: 10,
+          identity: { symbolName: 'slots' }, domains: [], persistent: false, typeName: 'ARRAY'
+        },
+        {
+          defFile: '/ws/scripts/entity_defs/Guard.def', line: 10,
+          identity: { symbolName: 'slots[]' }, domains: [], persistent: false, typeName: 'UINT32'
+        }
+      ]
+    } as unknown as EntityMapping;
+    const plan = buildEntityTypeStubPlan([arrayMapping], []);
+    expect(plan.entries[0].properties[0].annotation).toBe('FixedArray[int]');
+    // FixedArray 在注解面真实引用 → KBEngine 导入面一并带上
+    expect(plan.content).toContain('from KBEngine import Entity, FixedArray');
+    expect(plan.content).toContain('    slots: FixedArray[int]');
+  });
+
+  it('def 属性注解一律非 Optional(GEN-DEF-1a 回归:创建/装载线恒非 None)', () => {
+    // 任意 def 属性(含 ARRAY/FIXED_DICT/邮箱句柄以外的字段)注解不得含
+    // `| None`——引擎创建线对所有 def 属性灌 newDefaultVal()(非 None)。
+    const plans = [
+      buildEntityTypeStubPlan([{
+        name: 'Hero',
+        defFile: '/ws/scripts/entity_defs/Hero.def',
+        pythonFile: '/ws/scripts/entity/Hero.py',
+        pythonFiles: ['/ws/scripts/entity/Hero.py'],
+        properties: {
+          hp: { defFile: '/ws/scripts/entity_defs/Hero.def', line: 5 },
+          talent: { defFile: '/ws/scripts/entity_defs/Hero.def', line: 6 },
+          'talent[]': { defFile: '/ws/scripts/entity_defs/Hero.def', line: 6 }
+        },
+        methods: {},
+        propertyDefinitions: [
+          { defFile: '/ws/scripts/entity_defs/Hero.def', line: 5, identity: { symbolName: 'hp' }, domains: [], persistent: false, typeName: 'UINT32' },
+          { defFile: '/ws/scripts/entity_defs/Hero.def', line: 6, identity: { symbolName: 'talent' }, domains: [], persistent: false, typeName: 'ARRAY' },
+          { defFile: '/ws/scripts/entity_defs/Hero.def', line: 6, identity: { symbolName: 'talent[]' }, domains: [], persistent: false, typeName: 'TALENT_NODE' }
+        ]
+      } as unknown as EntityMapping], [])
+    ];
+    for (const plan of plans) {
+      for (const entry of plan.entries) {
+        for (const property of entry.properties) {
+          expect(
+            property.annotation,
+            `${entry.entity}.${property.name} 注解应为非 Optional,实得: ${property.annotation}`
+          ).not.toMatch(/\|\s*None\b/);
+        }
+      }
+    }
   });
 });

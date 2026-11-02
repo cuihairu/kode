@@ -283,6 +283,22 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '按数据库 ID 查找已存在实体(回调返回 EntityCall)。',
     sourceFile: BASEAPP_STUB,
     sourceLine: 87
+  },
+  {
+    name: 'FixedArray',
+    kind: 'class',
+    signature: 'class FixedArray(Generic[T])',
+    summary: 'def ARRAY 属性的运行时容器(script::Sequence):元素类型受检,append/extend/insert/remove 返回 bool,pop 返回被弹出元素。',
+    sourceFile: 'kbe/src/lib/entitydef/fixedarray.h',
+    sourceLine: 13
+  },
+  {
+    name: 'FixedDict',
+    kind: 'class',
+    signature: 'class FixedDict(Mapping[str, Any])',
+    summary: 'def FIXED_DICT 属性的运行时容器(script::Map):键集合按 def 固定,属性注解用 TypedDict 精确表达,本类是它的容器基面。',
+    sourceFile: 'kbe/src/lib/entitydef/fixeddict.h',
+    sourceLine: 15
   }
 ];
 
@@ -455,10 +471,18 @@ export interface KbeStubDocument {
 
 /** 逐符号发射桩体(class/def + docstring + 引擎 typings 锚点),
  *  虚拟桩文档与导出 .pyi(盘点 G2)共用同一发射器,内容保证同源 */
+/** 容器类型(KBE_CONTAINER_CLASSES)不进普通符号发射,由
+ *  emitKbeContainerStubClasses 以完整方法体发射(补全/悬停走 KBE_SYMBOLS
+ *  条目,桩文档与导出 .pyi 走方法体,两处共用同一 signature 对齐声明行)。 */
+const KBE_CONTAINER_CLASSES = new Set(['FixedArray', 'FixedDict']);
+
 function emitKbeStubBody(lines: string[]): Record<string, number> {
   const symbolLines: Record<string, number> = {};
   let lastKind: KbeSymbolKind | null = null;
   for (const entry of KBE_SYMBOLS) {
+    if (KBE_CONTAINER_CLASSES.has(entry.name)) {
+      continue;
+    }
     if (lastKind !== entry.kind) {
       lines.push('');
       lastKind = entry.kind;
@@ -474,6 +498,70 @@ function emitKbeStubBody(lines: string[]): Record<string, number> {
     lines.push(`    # 源码: ${entry.sourceFile}:${entry.sourceLine}`);
   }
   return symbolLines;
+}
+
+/** 逐行发射 KBEngine 运行时容器类型(script::Sequence / script::Map 语义):
+ *  FixedArray[T] 与 FixedDict 是 def 容器在 Python 侧的真实运行时类型
+ *  (fixedarray.h / fixeddict.h),def 属性注解用它们替代有损 list/dict,方法
+ *  签名逐条对齐引擎 py 接口(append/extend/insert/remove 返回 bool,pop 返回
+ *  被弹出元素——非 Python list 的 None 语义)。只进桩文档与导出 .pyi,与
+ *  KBE_SYMBOLS 同源两处共用同一发射器;声明行恰为 `${entry.signature}:`,
+ *  撑起 buildKbeStubDocument 的「每个符号声明行即签名」纪律。 */
+function emitKbeContainerStubClasses(
+  lines: string[],
+  symbolLines: Record<string, number>
+): void {
+  lines.push('');
+  lines.push('# KBEngine 运行时容器类型(script::Sequence / script::Map 语义)');
+  lines.push('# 方法签名逐条对齐 kbe/src/lib/entitydef/fixedarray.h、fixeddict.h 的 py 接口。');
+  lines.push('# FixedArray 元素类型受检:创建/装载线由引擎灌入,恒非 None。');
+  lines.push('from typing import Any, Generic, Iterable, ItemsView, Iterator, KeysView,');
+  lines.push('    List, Mapping, TypeVar, ValuesView, overload');
+  lines.push('');
+  lines.push('T = TypeVar(\'T\')');
+  lines.push('');
+  symbolLines['FixedArray'] = lines.length;
+  lines.push('class FixedArray(Generic[T]):');
+  lines.push('    """KBEngine 固定数组(script::Sequence 语义)。');
+  lines.push('    元素类型受检(isSameItemType);append/extend/insert/remove 返回 bool,');
+  lines.push('    pop 返回被弹出元素;支持整数/切片下标、迭代与成员检测。"""');
+  lines.push('    def append(self, item: T) -> bool: ...');
+  lines.push('    def count(self, item: T) -> int: ...');
+  lines.push('    def extend(self, iterable: Iterable[T]) -> bool: ...');
+  lines.push('    def index(self, item: T) -> int: ...');
+  lines.push('    def insert(self, index: int, item: T) -> bool: ...');
+  lines.push('    def pop(self, index: int = -1) -> T: ...');
+  lines.push('    def remove(self, item: T) -> bool: ...');
+  lines.push('    def clear(self) -> None: ...');
+  lines.push('    @overload');
+  lines.push('    def __getitem__(self, index: int) -> T: ...');
+  lines.push('    @overload');
+  lines.push('    def __getitem__(self, index: slice) -> List[T]: ...');
+  lines.push('    def __setitem__(self, index: int, value: T) -> None: ...');
+  lines.push('    def __len__(self) -> int: ...');
+  lines.push('    def __iter__(self) -> Iterator[T]: ...');
+  lines.push('    def __contains__(self, item: T) -> bool: ...');
+  lines.push('    def __add__(self, other: Iterable[T]) -> FixedArray[T]: ...');
+  lines.push('    def __mul__(self, count: int) -> FixedArray[T]: ...');
+  lines.push('    def __iadd__(self, other: Iterable[T]) -> FixedArray[T]: ...');
+  lines.push('    def __imul__(self, count: int) -> FixedArray[T]: ...');
+  lines.push('');
+  symbolLines['FixedDict'] = lines.length;
+  lines.push('class FixedDict(Mapping[str, Any]):');
+  lines.push('    """KBEngine 固定字典(script::Map 语义):键集合按 def 固定。');
+  lines.push('    def 属性注解用 TypedDict(固定键精确),本类是它的运行时容器基面;');
+  lines.push('    keys/values/items/get/update 逐条对齐 fixeddict.h。"""');
+  lines.push('    def has_key(self, key: str) -> bool: ...');
+  lines.push('    def keys(self) -> KeysView[str]: ...');
+  lines.push('    def values(self) -> ValuesView[Any]: ...');
+  lines.push('    def items(self) -> ItemsView[str, Any]: ...');
+  lines.push('    def get(self, key: str, default: Any = None) -> Any: ...');
+  lines.push('    def update(self, *args: Any, **kwargs: Any) -> None: ...');
+  lines.push('    def __getitem__(self, key: str) -> Any: ...');
+  lines.push('    def __setitem__(self, key: str, value: Any) -> None: ...');
+  lines.push('    def __len__(self) -> int: ...');
+  lines.push('    def __iter__(self) -> Iterator[str]: ...');
+  lines.push('    def __contains__(self, key: str) -> bool: ...');
 }
 
 function appendCatalogFootnote(lines: string[]): void {
@@ -509,6 +597,7 @@ export function buildKbeStubDocument(): KbeStubDocument {
     ''
   ];
   const symbolLines = emitKbeStubBody(lines);
+  emitKbeContainerStubClasses(lines, symbolLines);
   appendCatalogFootnote(lines);
   return { content: lines.join('\n'), symbolLines };
 }
@@ -524,7 +613,8 @@ export function buildKbeStubExportContent(): string {
     '# 建议在 .gitignore 里忽略 .kbengine/stubs/(生成物,随索引更新)。',
     ''
   ];
-  emitKbeStubBody(lines);
+  const symbolLines = emitKbeStubBody(lines);
+  emitKbeContainerStubClasses(lines, symbolLines);
   appendCatalogFootnote(lines);
   return lines.join('\n');
 }

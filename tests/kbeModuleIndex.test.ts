@@ -6,6 +6,7 @@ import {
   KBE_STUB_PATH,
   KBE_SYMBOLS,
   buildKbeStubDocument,
+  buildKbeStubExportContent,
   buildKbeStubUriString,
   filterKbeSymbols,
   getKbeAliases,
@@ -257,6 +258,56 @@ describe('kbe 模块符号索引(批108)', () => {
       const body = lines.slice(kbLine, kbLine + 6).join('\n');
       expect(body).toContain('Entity');
       expect(body).toContain('typings/_KBEngine_common.pyi:67');
+    });
+  });
+
+  describe('KBEngine 运行时容器类型(GEN-DEF-1b)', () => {
+    it('导出 .pyi 定义 FixedArray/FixedDict 完整方法体,签名对齐 fixedarray.h/fixeddict.h', () => {
+      const content = buildKbeStubExportContent();
+      // FixedArray:script::Sequence 语义,append/extend/insert/remove 返回 bool,
+      // pop 返回被弹出元素(非 Python list 的 None 语义)
+      expect(content).toContain('class FixedArray(Generic[T]):');
+      expect(content).toContain('def append(self, item: T) -> bool: ...');
+      expect(content).toContain('def count(self, item: T) -> int: ...');
+      expect(content).toContain('def extend(self, iterable: Iterable[T]) -> bool: ...');
+      expect(content).toContain('def index(self, item: T) -> int: ...');
+      expect(content).toContain('def insert(self, index: int, item: T) -> bool: ...');
+      expect(content).toContain('def pop(self, index: int = -1) -> T: ...');
+      expect(content).toContain('def remove(self, item: T) -> bool: ...');
+      expect(content).toContain('def clear(self) -> None: ...');
+      expect(content).toContain('def __getitem__(self, index: int) -> T: ...');
+      expect(content).toContain('def __setitem__(self, index: int, value: T) -> None: ...');
+      expect(content).toContain('def __iter__(self) -> Iterator[T]: ...');
+      expect(content).toContain('def __contains__(self, item: T) -> bool: ...');
+      // FixedDict:script::Map 语义,键集合按 def 固定
+      expect(content).toContain('class FixedDict(Mapping[str, Any]):');
+      expect(content).toContain('def has_key(self, key: str) -> bool: ...');
+      expect(content).toContain('def keys(self) -> KeysView[str]: ...');
+      expect(content).toContain('def values(self) -> ValuesView[Any]: ...');
+      expect(content).toContain('def items(self) -> ItemsView[str, Any]: ...');
+      expect(content).toContain('def get(self, key: str, default: Any = None) -> Any: ...');
+      expect(content).toContain('def update(self, *args: Any, **kwargs: Any) -> None: ...');
+    });
+
+    it('容器类在 KBE_SYMBOLS 索引,补全/跳转可命中', () => {
+      expect(getKbeSymbol('FixedArray')?.kind).toBe('class');
+      expect(getKbeSymbol('FixedDict')?.kind).toBe('class');
+      const names = filterKbeSymbols('Fixed').map(entry => entry.name);
+      expect(names).toContain('FixedArray');
+      expect(names).toContain('FixedDict');
+    });
+
+    it('桩文档 symbolLines 指向容器类声明行,行内容即签名(跳转不落空)', () => {
+      const stub = buildKbeStubDocument();
+      const lines = stub.content.split('\n');
+      for (const name of ['FixedArray', 'FixedDict']) {
+        const entry = getKbeSymbol(name)!;
+        const lineNo = stub.symbolLines[name];
+        expect(lineNo, `${name} 应有桩文档行`).toBeGreaterThan(0);
+        expect(lines[lineNo]).toBe(`${entry.signature}:`);
+      }
+      // 容器体在桩文档与方法体同源(跳转后可见完整方法面)
+      expect(stub.content).toContain('def append(self, item: T) -> bool: ...');
     });
   });
 });
