@@ -152,6 +152,38 @@ describe('extension activate 装配', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+  it('切换自管属性 None 诊断开关时重新计算未编辑文档', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-attr-toggle-'));
+    const document = makeTextDocument(
+      'class Avatar:\n    def __init__(self):\n        self.TalentTree = None\n    def tick(self):\n        self.TalentTree.get(0)\n',
+      { fileName: path.join(root, 'Avatar.py'), languageId: 'python' }
+    );
+    workspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    workspace.textDocuments = [document];
+    const context = makeContext();
+    try {
+      activate(context);
+      await getDiagnosticScheduler().pendingComputations();
+      const collection = languagesRegistry.diagnosticCollections[0].collection;
+      // LANG-NAR-1:__init__ 仅 = None 且未守卫 → 报 1 条自管属性 None
+      expect(collection.get(document.uri)).toHaveLength(1);
+      const change = () => workspaceEvents.configurationChanged.fire({
+        affectsConfiguration: section => section === 'kbengine' || section === 'kbengine.attributeNoneDiagnostics'
+      });
+      configurationOverrides.set('kbengine', { attributeNoneDiagnostics: false });
+      change();
+      await getDiagnosticScheduler().pendingComputations(); // 关闭:发布空集即清
+      expect(collection.get(document.uri)).toHaveLength(0);
+      configurationOverrides.set('kbengine', { attributeNoneDiagnostics: true });
+      change();
+      await getDiagnosticScheduler().pendingComputations();
+      expect(collection.get(document.uri)).toHaveLength(1);
+    } finally {
+      disposeAll(context);
+      configurationOverrides.delete('kbengine');
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
   it('注册面与 package.json 贡献点一致', async () => {
     const context = makeContext();
     activate(context);

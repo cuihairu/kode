@@ -85,6 +85,42 @@ describe('PythonTypeInlayHintsProvider(批154)', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('LANG-NAR-1: def 未命中的用户自管属性出流敏感窄化注解(守卫后无 None)', async () => {
+    calls.length = 0;
+    const provider = new PythonTypeInlayHintsProvider(managerOf({}));
+    // 守卫 if self.hp is None: self.hp = 1 之后,self.hp 收窄为 int(无 None)。
+    // 守卫行流为空不出;赋值行流显 RHS 类型 int(写点与 def inlay 同口径);
+    // 收窄后的裸读行同样出 `: int`。
+    const hints = (await provider.provideInlayHints(
+      doc(
+        'class Avatar:\n    def tick(self):\n        if self.hp is None:\n            self.hp = 1\n        self.hp\n'
+      ) as never,
+      lineRange(0, 5)
+    )) as unknown as HintLike[];
+
+    expect(hints.map(hint => hint.position.line)).toEqual([3, 4]);
+    expect(hints.map(hint => hint.label)).toEqual([': int', ': int']);
+    expect(hints[0].kind).toBe(InlayHintKind.Type);
+    // def 解析只问一次(按路径缓存);流窄化注解按访问行现算不进缓存
+    expect(calls).toHaveLength(1);
+  });
+
+  it('LANG-NAR-1: 同属性多行访问各行按流窄化独立出注(不进路径缓存)', async () => {
+    calls.length = 0;
+    const provider = new PythonTypeInlayHintsProvider(managerOf({}));
+    // 首个访问行在守卫前(基线无证据,不出),守卫后两行收窄为 int:
+    // 若按路径缓存会错把首行空结果发给守卫后各行,此处断言各行独立出注。
+    const hints = (await provider.provideInlayHints(
+      doc(
+        'class Avatar:\n    def tick(self):\n        self.hp\n        if self.hp is None:\n            self.hp = 1\n        self.hp\n'
+      ) as never,
+      lineRange(0, 6)
+    )) as unknown as HintLike[];
+
+    expect(hints.map(hint => hint.position.line)).toEqual([4, 5]);
+    expect(hints.map(hint => hint.label)).toEqual([': int', ': int']);
+  });
+
   it('skips accesses outside the requested viewport range', async () => {
     calls.length = 0;
     const provider = new PythonTypeInlayHintsProvider(managerOf({ hp: { typeName: 'UINT32' } }));

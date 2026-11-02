@@ -904,6 +904,11 @@
           "default": true,
           "description": "Python 侧诊断：self.client/self.cell/self.base 无判空 guard 的引用报 Warning，含 .def 段错配检查（default: enabled）；关闭后 Python 文档零诊断产出"
         },
+        "kbengine.attributeNoneDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Python 侧诊断：用户自管属性 self.<attr> 流敏感类型含 None 且当前位未窄化的成员访问/方法调用报 Warning（default: enabled）；if self.<attr> is None 守卫/__init__ 赋值窄化后不报；关闭后 Python 文档零诊断产出"
+        },
         "kbengine.propertyDirectionDiagnostics": {
           "type": "boolean",
           "default": true,

@@ -72,6 +72,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.enableDiagnostics` | boolean | `true` | `.def` 诊断总开关(批147 起同管 entities.xml 同名重复登记检查) |
 | `kbengine.enableStructureDiagnostics` | boolean | `true` | 结构化校验开关(重复属性/方法、子标签位置、缺字段、字段重复定义) |
 | `kbengine.receiverNoneDiagnostics` | boolean | `true` | Python 侧诊断:`self.client`/`self.cell`/`self.base` 成员引用无判空 guard(正向 if、早退、别名；hasattr 不代表非 None)报 Warning 并附引擎源码;同时检查 `.def` 段错配(经接收者调用其对应 section 未声明的方法) |
+| `kbengine.attributeNoneDiagnostics` | boolean | `true` | Python 侧诊断:用户自管属性(非 `.def` 声明)`self.<属性>` 的类型收敛含 None 且当前位未窄化时,成员访问/调用前判空报 Warning(流敏感:`__init__` 赋值收敛、`is None`/`is not None` 守卫与早退均参与窄化) |
 | `kbengine.propertyDirectionDiagnostics` | boolean | `true` | Python 侧诊断:def 属性访问方向违规——`self.<属性>`/`self.<role>.<属性>` 的访问位置(裸访问取进程作用域、接收者限定取接收者角色)不在属性 Flags 推导的三域位内时报 Warning;文件作用域无法确定(不在 `scripts/base|cell|client`)时降级为 Information(不标 Error) |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |

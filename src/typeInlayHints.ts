@@ -19,6 +19,7 @@ import {
   isKeyInsideLineComment,
   queryDataDictSitesForAccess
 } from './globalDataIndex';
+import { inferSelfAttributeFlow } from './selfAttributeFlowTypes';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
 // self.<属性> 访问处原位渲染 def 声明的 <Type> 注解(2026-10-29 用户定
@@ -105,7 +106,16 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         );
       }
       const hit = hits.get(key);
-      if (!hit || !hit.annotation || hit.annotation === PYTHON_TYPE_STUB_FALLBACK) {
+      // LANG-NAR-1:def 未命中(hit.annotation null)且单段 self.<attr> → 用户
+      // 自管属性流敏感窄化注解,按当前访问行现算,不收进 hits 缓存(流注解
+      // 随行变:同属性不同行守卫前后收窄不同,按路径缓存会把首行结果错发
+      // 给后续行)。嵌套子成员归 def 面,不落流窄化。
+      const annotation =
+        hit?.annotation ??
+        (hit?.member || access.fullPath !== access.rootSymbol
+          ? null
+          : resolveUserSelfAttributeFlowAnnotation(documentLines, access.line, access.rootSymbol));
+      if (!annotation || annotation === PYTHON_TYPE_STUB_FALLBACK) {
         // 无 typeName 或解析落 Any(未知)→ 不出提示(能推才显,不显 Any)
         continue;
       }
@@ -114,9 +124,9 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         new vscode.InlayHint(
           new vscode.Position(
             access.line,
-            access.character + (hit.member ? access.fullPath.length : access.rootSymbol.length)
+            access.character + (hit?.member ? access.fullPath.length : access.rootSymbol.length)
           ),
-          `: ${hit.annotation}`,
+          `: ${annotation}`,
           vscode.InlayHintKind.Type
         )
       );
@@ -290,4 +300,21 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
  */
 function isMemberCallAt(line: string, endColumn: number): boolean {
   return /^\s*\(/.test(line.slice(endColumn));
+}
+
+/**
+ * LANG-NAR-1:用户自管属性(非 .def 声明)的流敏感窄化注解。单段 self.<attr>
+ * (fullPath===rootSymbol)才推;嵌套/推不出返回 null(能推才显)。收窄生效时
+ * 显示守卫后的 expr 类型(无 None),否则显示收敛基类(可能含 None)。
+ */
+function resolveUserSelfAttributeFlowAnnotation(
+  documentLines: string[],
+  line: number,
+  attr: string
+): string | null {
+  if (line < 0 || line >= documentLines.length || !attr) {
+    return null;
+  }
+  const flow = inferSelfAttributeFlow(documentLines, line, attr);
+  return flow?.annotation ?? null;
 }

@@ -25,6 +25,11 @@ import {
   type ReceiverDiagnosticItem
 } from './receiverNoneDiagnostics';
 import {
+  ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT,
+  attributeNoneDiagnosticItems,
+  ATTRIBUTE_NONE_DIAGNOSTIC_CODE
+} from './selfAttributeNoneDiagnostics';
+import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
   KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
   PYTHON_METHOD_NOT_IN_DEF_DIAGNOSTIC_CODE,
@@ -654,8 +659,14 @@ export function activate(context: vscode.ExtensionContext) {
     const options = {
       layer: 'local' as const,
       computeAsync: async (): Promise<readonly ReceiverDiagnosticItem[] | null> => {
-        const enabled = vscode.workspace.getConfiguration('kbengine')
+        const config = vscode.workspace.getConfiguration('kbengine');
+        const receiverEnabled = config
           .get<boolean>('receiverNoneDiagnostics', RECEIVER_NONE_DIAGNOSTICS_ENABLED_DEFAULT);
+        // LANG-NAR-1:自管属性可能为 None 诊断(默认开,有 None 证据才报)
+        const attrEnabled = config
+          .get<boolean>('attributeNoneDiagnostics', ATTRIBUTE_NONE_DIAGNOSTICS_ENABLED_DEFAULT);
+        const shouldContinue = () =>
+          capturedVersion === undefined || document.version === capturedVersion;
         // IDE-DIA-003/IDE-REV-009:与类索引消费同一份版本键解析(惰性提供器
         // ——仅当确有 receiver 使用点过闸后才取解析,DIA-001 零使用点不解析
         // 语义保持);异步共享面 asyncDocumentParse——缓存命中直取,未命中走
@@ -666,19 +677,34 @@ export function activate(context: vscode.ExtensionContext) {
         const preparsed = isPythonMroJumpEnabled() && isPythonDocument(document)
           ? () => pythonClassIndex.asyncDocumentParse(document)
           : undefined;
-        return receiverNoneDiagnosticItemsAsync(
-          document.getText(),
-          document.uri.fsPath,
-          isPythonDocument(document)
-            ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
-            : undefined,
-          enabled,
-          preparsed,
-          {
-            shouldContinue: () =>
-              capturedVersion === undefined || document.version === capturedVersion
-          }
-        );
+        const receiverItems = receiverEnabled
+          ? await receiverNoneDiagnosticItemsAsync(
+              document.getText(),
+              document.uri.fsPath,
+              isPythonDocument(document)
+                ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
+                : undefined,
+              receiverEnabled,
+              preparsed,
+              { shouldContinue }
+            )
+          : [];
+        if (receiverItems === null) {
+          return null; // 异步中止(worker 停用/版本前进),整轮不发布
+        }
+        const attrItems = attrEnabled && isPythonDocument(document)
+          ? attributeNoneDiagnosticItems(document.getText()).map(finding => ({
+              range: {
+                start: { line: finding.line, character: finding.character },
+                end: { line: finding.line, character: finding.character + finding.member.length }
+              },
+              message: finding.message,
+              severity: 'Warning' as const,
+              source: 'kbengine' as const,
+              code: ATTRIBUTE_NONE_DIAGNOSTIC_CODE
+            }))
+          : [];
+        return [...receiverItems, ...attrItems];
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {
         diagnostics.set(document.uri, items.map(item => {
@@ -2039,6 +2065,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.diagnostics') ||
       event.affectsConfiguration('kbengine.enableDiagnostics') ||
       event.affectsConfiguration('kbengine.receiverNoneDiagnostics') ||
+      event.affectsConfiguration('kbengine.attributeNoneDiagnostics') ||
       event.affectsConfiguration('kbengine.propertyDirectionDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
@@ -2056,7 +2083,8 @@ export function activate(context: vscode.ExtensionContext) {
         diagnosticScheduler.isEnabled()) {
       if (event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
           event.affectsConfiguration('kbengine.diagnostics') ||
-          event.affectsConfiguration('kbengine.receiverNoneDiagnostics')) {
+          event.affectsConfiguration('kbengine.receiverNoneDiagnostics') ||
+          event.affectsConfiguration('kbengine.attributeNoneDiagnostics')) {
         diagnosticScheduler.invalidateAll();
       }
       // C-19:一致性输入开关/骨架体变更 → 一致性调度器输入代自增,已发布重算
