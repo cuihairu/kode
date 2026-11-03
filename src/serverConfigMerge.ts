@@ -8,6 +8,15 @@ import {
 import { expandWorkspacePlaceholders } from './workspacePath';
 import { resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 import { annotateConfigTree } from './serverConfigAnnotations';
+import {
+  generatedCommentBody,
+  sanitizeXmlComment,
+  sourceCommentSameContent
+} from './serverConfigCommentText';
+
+// 注释文本工具在此仍按原名对外(既有调用/测试的入口不变),实现见
+// serverConfigCommentText(与挂注释侧共用,避免循环依赖)
+export { generatedCommentBody, sanitizeXmlComment, sourceCommentSameContent };
 
 /**
  * 最终服务端配置合成(批112 用户令):按引擎装载规则——先加载
@@ -22,54 +31,135 @@ export interface ConfigXmlNode {
   text: string;
   children: ConfigXmlNode[];
   /**
+   * 源注释(解析期捕获,输入 XML 里原有的注释,KODE-CFG-010):行内/尾随注释
+   * 挂到所属元素、前导注释挂到紧随的元素、段尾与文件级游离注释就近挂到所在段
+   * 的容器元素(归属规则见 parseConfigXml 文件头)。渲染时原样回写,与生成用
+   * comment/docHeader 分两套——二者是文案库生成物,本字段是用户原文。
+   * 声明/XML PI 不入树(仍丢弃)。
+   */
+  sourceComments?: string[];
+  /**
    * 逐项作用注释(仅渲染期写入,parseConfigXml 不产出也不回读):
    * 由 annotateConfigTree 按文案库挂上,渲染时放进元素内部。
+   * 渲染时源注释优先于本字段(去重见 renderConfigXml)。
    */
   comment?: string;
-  /** 文档头注(合成来源与覆盖口径),同样只出现在元素内部 */
+  /** 文档头注(合成来源与覆盖口径),同样只出现在元素内部;属生成物,
+   * 源注释在前,且 kbengine.finalConfigComments 关闭时不输出 */
   docHeader?: string;
 }
 
 /**
- * 解析引擎风格的服务端配置 XML(仅需元素树,注释/声明/属性忽略):
+ * 解析引擎风格的服务端配置 XML(仅需元素树,属性忽略;声明/XML PI 丢弃):
+ * 注释不剥离——按位置关联进树(源注释归属规则):
+ * - 紧跟 `</元素>` 同一行的行内/尾随注释 → 该元素(渲染时仍在值之后);
+ * - 其余注释先挂起,归到下一个打开的元素(即「前导注释 → 紧随的元素」);
+ * - 挂起的注释遇到所属容器闭合仍未归属(段尾)→ 挂回该容器;文件尾游离注释
+ *   挂到段首容器元素;一个元素都没有(纯注释输入)则丢弃,照旧返回 null,不崩。
  * 根为伪节点(名字空),顶层各组件段作其 children。标签不闭合或多余
  * 闭合按已见内容容错,不抛——配置展示宁可显示半棵树也不崩命令。
  */
 export function parseConfigXml(xml: string): ConfigXmlNode | null {
-  const cleaned = xml
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/<\?[\s\S]*?\?>/g, '');
   const root: ConfigXmlNode = { name: '', text: '', children: [] };
   const stack: ConfigXmlNode[] = [root];
-  const tagRe = /<(\/?)(\w+)([^>]*)>/g;
+  // 注释优先于标签匹配:注释体里出现 `<item>` 之类字样也不会被当成标签
+  const tokenRe = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<(\/?)(\w+)([^>]*)>/g;
   let lastEnd = 0;
+  /** 上一个标签(或注释)结束处:用于判断注释与前一标签是否同行 */
+  let lastTagEnd = 0;
+  /** 最近闭合的元素:同行的尾随注释归它 */
+  let lastClosed: ConfigXmlNode | null = null;
+  /** 尚未归属的前导注释,挂到下一个打开的元素上 */
+  let pending: string[] = [];
   let match: RegExpExecArray | null;
-  while ((match = tagRe.exec(cleaned)) !== null) {
-    const top = stack[stack.length - 1];
-    const text = cleaned.slice(lastEnd, match.index).trim();
+
+  const takeText = (top: ConfigXmlNode, end: number): void => {
+    const text = xml.slice(lastEnd, end).trim();
     if (text.length > 0 && top !== root) {
       top.text += (top.text.length > 0 ? ' ' : '') + text;
     }
-    lastEnd = tagRe.lastIndex;
+  };
+  const attach = (node: ConfigXmlNode, comments: readonly string[]): void => {
+    if (comments.length === 0) {
+      return;
+    }
+    node.sourceComments = [...(node.sourceComments ?? []), ...comments];
+  };
+
+  while ((match = tokenRe.exec(xml)) !== null) {
+    const top = stack[stack.length - 1];
+    const token = match[0];
+    takeText(top, match.index);
+    lastEnd = tokenRe.lastIndex;
+    if (token.startsWith('<!--')) {
+      const body = token.slice(4, -3);
+      const sinceTag = xml.slice(lastTagEnd, match.index);
+      if (lastClosed !== null && !sinceTag.includes('\n')) {
+        attach(lastClosed, [body]);
+      } else {
+        pending.push(body);
+      }
+      lastTagEnd = lastEnd;
+      continue;
+    }
+    lastTagEnd = lastEnd;
+    if (token.startsWith('<?')) {
+      continue; // 声明/XML PI:丢弃
+    }
+    lastClosed = null;
     if (match[1] === '/') {
       if (top !== root && top.name === match[2]) {
         stack.pop();
+        attach(top, pending); // 段尾游离注释 → 就近挂回所在容器
+        pending = [];
+        lastClosed = top;
       }
     } else {
       const node: ConfigXmlNode = { name: match[2], text: '', children: [] };
       top.children.push(node);
+      attach(node, pending); // 前导注释 → 紧随的元素
+      pending = [];
       if (!/\/\s*$/.test(match[3])) {
         stack.push(node);
       }
     }
   }
+  if (pending.length > 0) {
+    // 文件尾游离注释:就近挂到段首容器元素;一个元素都没有(纯注释输入)
+    // 则丢弃——返回 null 的既有路径,不崩
+    const target = stack.length > 1 ? stack[stack.length - 1] : root.children[0];
+    if (target !== undefined) {
+      attach(target, pending);
+    }
+    pending = [];
+  }
   return root.children.length > 0 ? root : null;
+}
+
+/**
+ * 两侧源注释合并(override 优先):override 侧在前、defaults 侧在后;
+ * 两侧不同则都保留(容器层不互相覆盖),规范化后相同的只留一条。
+ */
+function mergeSourceComments(base: ConfigXmlNode, override: ConfigXmlNode): string[] | undefined {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const comment of [...(override.sourceComments ?? []), ...(base.sourceComments ?? [])]) {
+    const normalized = sanitizeXmlComment(comment);
+    if (normalized.length === 0 || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    merged.push(comment);
+  }
+  return merged.length > 0 ? merged : undefined;
 }
 
 /**
  * 合并(引擎同键覆盖口径):以 defaults 为基、自定义覆盖。子键按名字对齐——
  * 自定义没有的保留默认;自定义写了的整名替换(叶子取自定义值,重复名列表
  * 如 <item> 整表替换,不与默认表交错);两边都是单一容器段则递归下钻。
+ * 源注释两侧都保留:override 侧在前(优先),同名单元素的 defaults 侧注释
+ * 追加其后;重复名列表整表替换时只带自定义侧注释。
  */
 export function mergeConfigXml(base: ConfigXmlNode, override: ConfigXmlNode): ConfigXmlNode {
   const names: string[] = [];
@@ -93,25 +183,36 @@ export function mergeConfigXml(base: ConfigXmlNode, override: ConfigXmlNode): Co
       overrideOnes[0].children.length > 0
     ) {
       children.push(mergeConfigXml(baseOnes[0], overrideOnes[0]));
+    } else if (baseOnes.length === 1 && overrideOnes.length === 1) {
+      // 同名单元素(叶子/空容器):值取自定义,源注释两侧都留(override 优先)
+      const node: ConfigXmlNode = { ...overrideOnes[0] };
+      const comments = mergeSourceComments(baseOnes[0], overrideOnes[0]);
+      if (comments !== undefined) {
+        node.sourceComments = comments;
+      }
+      children.push(node);
     } else {
       children.push(...overrideOnes);
     }
   }
-  return { name: override.name, text: override.text, children };
+  const comments = mergeSourceComments(base, override);
+  const merged: ConfigXmlNode = { name: override.name, text: override.text, children };
+  if (comments !== undefined) {
+    merged.sourceComments = comments;
+  }
+  return merged;
 }
 
-/** 渲染单节点(引擎 defaults 排版口径:叶子值两侧留空,缩进用 tab) */
+/**
+ * 渲染单节点(引擎 defaults 排版口径:叶子值两侧留空,缩进用 tab)。
+ * 注释装配顺序:源注释(输入 XML 原文) → 文档头注 → 文案库作用注释——
+ * 源注释优先于生成注释,全部经 sanitizeXmlComment 规范化后去重。
+ */
 export function renderConfigXml(node: ConfigXmlNode, depth = 0): string {
   const pad = '\t'.repeat(depth);
   // 注释一律放元素内部(不上元素上方、不落文件头):容器放子节点之前,叶子按
   // commentAfter 放值之后(引擎按 FirstChild 原样取值的键,见 serverConfigAnnotations)
-  const comments: string[] = [];
-  if (node.docHeader !== undefined) {
-    comments.push(sanitizeXmlComment(node.docHeader));
-  }
-  if (node.comment !== undefined) {
-    comments.push(sanitizeXmlComment(node.comment));
-  }
+  const comments = renderComments(node);
   if (node.children.length === 0) {
     const value = node.text.length > 0 ? ` ${node.text} ` : '';
     if (comments.length === 0) {
@@ -137,16 +238,43 @@ export function renderConfigXml(node: ConfigXmlNode, depth = 0): string {
 }
 
 /**
- * XML 注释内容消毒:注释内部不得出现 `--`(XML 规范),结尾的 `-` 不能与
- * `-->` 拼出 `--`;空白统一压成单行(文案库已单行,这里兜底)。
+ * 节点渲染注释装配(KODE-CFG-010 源注释回写):源注释在前,文档头注与文案库
+ * 作用注释(均为生成物)在后;全部规范化后去重——文本相等只留一条,生成注释
+ * 与某条源注释同一内容(见 sourceCommentSameContent)时只留源注释,否则同一
+ * 内容在同元素里显示两遍(kbengine_defaults.xml 192 条源注释里 138 条已被
+ * 文案库收割,不去重必双显)。
  */
-export function sanitizeXmlComment(text: string): string {
-  let comment = text.replace(/\s+/g, ' ').trim();
-  comment = comment.replace(/-+/g, '-');
-  if (comment.endsWith('-')) {
-    comment += ' ';
+export function renderComments(node: ConfigXmlNode): string[] {
+  const sources = (node.sourceComments ?? [])
+    .map(comment => sanitizeXmlComment(comment))
+    .filter(comment => comment.length > 0);
+  const kept: string[] = [...new Set(sources)];
+  const seen = new Set(kept);
+  const add = (raw: string): void => {
+    const comment = sanitizeXmlComment(raw);
+    if (comment.length === 0 || seen.has(comment)) {
+      return;
+    }
+    seen.add(comment);
+    kept.push(comment);
+  };
+  if (node.docHeader !== undefined) {
+    add(node.docHeader);
   }
-  return comment;
+  if (node.comment !== undefined) {
+    const comment = sanitizeXmlComment(node.comment);
+    const covered =
+      sources.length > 0 &&
+      sources.some(
+        source =>
+          sourceCommentSameContent(source, comment) ||
+          sourceCommentSameContent(source, generatedCommentBody(comment))
+      );
+    if (!covered) {
+      add(node.comment);
+    }
+  }
+  return kept;
 }
 
 /** 渲染整棵合成树(伪根不输出,顶层组件段各占一块) */

@@ -1,4 +1,5 @@
 import type { ConfigXmlNode } from './serverConfigMerge';
+import { sourceCommentSameContent } from './serverConfigCommentText';
 import {
   SERVER_CONFIG_GROUPS,
   SERVER_CONFIG_GROUP_ORDER,
@@ -49,9 +50,14 @@ const PROCESS_SECTION_NAMES = new Set([
 export interface ConfigAnnotationOptions {
   /** VS Code 显示语言(undefined/zh* → 中文注释,其余英文) */
   language?: string;
-  /** false = 关闭增强:不加作用注释、不按子分类重排(仅保留文档头注) */
+  /**
+   * false = 关闭增强(kbengine.finalConfigComments):不加作用注释、不加文档
+   * 头注、不按子分类重排。只关「生成物」——解析期捕获的源注释
+   * (sourceComments)是输入原文,不受开关影响,照常回写。
+   */
   enabled?: boolean;
-  /** 文档头注(合成来源与覆盖口径),放进第一个顶层元素内部 */
+  /** 文档头注(合成来源与覆盖口径),放进第一个顶层元素内部;属生成物,
+   * enabled=false 时不输出 */
   header?: string;
 }
 
@@ -111,9 +117,22 @@ export function annotateConfigTree(
 
     // 注释放元素内部(容器在子节点前、叶子在值后),规则与取证见文件头
     const out: ConfigXmlNode = { name: node.name, text: node.text, children };
-    if (enabled && doc) {
+    if (node.sourceComments !== undefined && node.sourceComments.length > 0) {
+      // 源注释原样带过(生成的注释是另一套字段,渲染时源注释优先)
+      out.sourceComments = [...node.sourceComments];
+    }
+    // 源注释优先:文案库正文(中英双语,正文常逐字收割自源注释)与源注释同一
+    // 内容时不再挂生成注释,否则同一条说明在同一元素里显示两遍(KODE-CFG-010)
+    const coveredBySource =
+      enabled &&
+      doc !== null &&
+      (node.sourceComments ?? []).some(
+        source =>
+          sourceCommentSameContent(source, doc.zh) || sourceCommentSameContent(source, doc.en)
+      );
+    if (enabled && doc && !coveredBySource) {
       out.comment = composeComment(doc, language);
-    } else if (enabled && !isWrapperNode) {
+    } else if (enabled && !doc && !isWrapperNode) {
       out.comment = composeUnknownComment(language);
     }
     return out;
@@ -124,6 +143,9 @@ export function annotateConfigTree(
     text: root.text,
     children: top.map(child => annotate(child, 1, []))
   };
+  if (root.sourceComments !== undefined && root.sourceComments.length > 0) {
+    annotated.sourceComments = [...root.sourceComments];
+  }
 
   // 段内按子分类排序:同组保持原序(稳定排序),自定义配置沉底。
   if (enabled) {
@@ -153,7 +175,8 @@ export function annotateConfigTree(
     sortChildren(annotated, 0);
   }
 
-  if (header !== undefined && annotated.children.length > 0) {
+  if (enabled && header !== undefined && annotated.children.length > 0) {
+    // 文档头注同属生成物:开关关闭时不输出(源注释不受此开关管辖)
     annotated.children[0].docHeader = header;
   }
   return annotated;

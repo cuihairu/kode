@@ -204,7 +204,7 @@ describe('annotateConfigTree(子分类分组)', () => {
     expect(SERVER_CONFIG_GROUPS.custom.zh).toContain('自定义配置');
   });
 
-  it('enabled=false:不加注释也不重排(只保留文档头注)', () => {
+  it('enabled=false:不加注释也不重排(头注同属生成物,一并不输出)', () => {
     const annotated = annotateConfigTree(tree(), {
       language: 'zh-CN',
       enabled: false,
@@ -217,7 +217,8 @@ describe('annotateConfigTree(子分类分组)', () => {
       'telnet_service'
     ]);
     expect(baseapp.children.every(child => child.comment === undefined)).toBe(true);
-    expect(annotated.children[0].docHeader).toContain('合成最终配置');
+    // 文档头注是生成物(与源注释分两套,见 ConfigXmlNode 注释),开关关闭即不输出
+    expect(annotated.children[0].docHeader).toBeUndefined();
   });
 });
 
@@ -422,7 +423,7 @@ describe('生成的 XML:可解析且值不变', () => {
     }
   });
 
-  it('开关关闭(kbengine.finalConfigComments=false):无作用注释、原顺序、头注仍在', () => {
+  it('开关关闭(kbengine.finalConfigComments=false):无生成注释、原顺序(源注释仍回写)', () => {
     const root = makeEngineTree(engineDefaults);
     try {
       configurationOverrides.set('kbengine', {
@@ -430,9 +431,10 @@ describe('生成的 XML:可解析且值不变', () => {
         finalConfigComments: false
       });
       const text = buildFinalServerConfig('zh-CN').text;
-      expect(commentsOf(text)).toHaveLength(1);
-      expect(commentsOf(text)[0]).toContain('kode 合成最终配置');
+      // 本用例的 defaults 无源注释 → 生成注释(含文档头注)全关后一条不剩
+      expect(commentsOf(text)).toHaveLength(0);
       expect(text).not.toContain('来源:');
+      expect(text).not.toContain('合成最终配置');
       const baseapp = parseConfigXml(text)!.children[0].children
         .find(child => child.name === 'baseapp')!;
       expect(baseapp.children.map(child => child.name)).toEqual([
