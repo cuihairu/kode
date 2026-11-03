@@ -1456,28 +1456,43 @@ export class EntityMappingManager {
   ): Promise<DefinitionSymbolIdentity | null> {
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
+    // IFACE-MERGE:接口/组件 def 无根索引——def 面符号位兜底扫宿主索引
+    // (成员已并入宿主 effectiveProperties/effectiveMethods)。
     const index = await this.ensureIndexByDefFile(defFile);
-    if (!index) {
-      return null;
+    const candidates: EntityMappingIndex[] = [];
+    if (index) {
+      candidates.push(index);
+    } else {
+      for (const host of this.findHostIndexesMergingDef(defFile)) {
+        candidates.push(host);
+      }
     }
 
-    if (propertyPath) {
-      const property = index.propertyDefinitions.find(item =>
-        normalizeLookupPath(item.defFile) === normalizeLookupPath(defFile)
-        && item.line === line
-        && normalizePropertyLookupPath(item.identity.propertyPath || '') === normalizePropertyLookupPath(propertyPath)
-      );
-      return property?.identity || null;
-    }
+    for (const candidate of candidates) {
+      if (propertyPath) {
+        const property = candidate.propertyDefinitions.find(item =>
+          normalizeLookupPath(item.defFile) === normalizeLookupPath(defFile)
+          && item.line === line
+          && normalizePropertyLookupPath(item.identity.propertyPath || '') === normalizePropertyLookupPath(propertyPath)
+        );
+        if (property) {
+          return property.identity;
+        }
+        continue;
+      }
 
-    if (section) {
-      const method = index.methodDefinitions.find(item =>
-        normalizeLookupPath(item.defFile) === normalizeLookupPath(defFile)
-        && item.line === line
-        && item.section === section
-        && item.identity.symbolName === symbolName
-      );
-      return method?.identity || null;
+      if (section) {
+        const method = candidate.methodDefinitions.find(item =>
+          normalizeLookupPath(item.defFile) === normalizeLookupPath(defFile)
+          && item.line === line
+          && item.section === section
+          && item.identity.symbolName === symbolName
+        );
+        if (method) {
+          return method.identity;
+        }
+        continue;
+      }
     }
 
     return null;
@@ -1526,7 +1541,11 @@ export class EntityMappingManager {
   ): Promise<{ filePath: string; line: number; character: number } | null> {
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动,结果口径与门控前一致
     this.ensureStartup();
-    const index = await this.ensureIndexForOwner(identity);
+    // IFACE-MERGE:接口/组件 def 无根索引——实现面兜底找宿主索引(成员已并入)。
+    let index = await this.ensureIndexForOwner(identity);
+    if (!index) {
+      index = this.findHostIndexForMergedIdentity(identity);
+    }
     if (!index) {
       return null;
     }
@@ -2262,6 +2281,46 @@ export class EntityMappingManager {
    * 只扫该 def 索引的 pythonOwnerFiles(已确定实体归属),无关实体同名
    * 属性不进来;self.<name>( 带调用括号的是方法调用(NAV-003 面),不收。
    */
+  /**
+   * IFACE-MERGE:找「合并了本 def 成员」的宿主索引。接口/组件 def 不进根索引
+   * (performScanEntityMappings 与 ensureIndexTargeted 都排除 /interfaces/ 与
+   * /components/),其成员经 semantics.effectiveProperties /
+   * effectiveMethodsBySection 并入宿主索引——接口成员 defFile=接口 def、
+   * sourceKind='interface';组件成员 defFile=组件 def、sourceKind 仍为组件
+   * 自身 'local' 但带 componentSlotName。引用位与实现位都在宿主
+   * pythonOwnerFiles。局部/Parent 成员不触发:宿主索引里其 sourceKind 为
+   * 'local'/'parent' 且无 componentSlotName,条件不中,行为与既有一致。
+   */
+  private findHostIndexesMergingDef(defFile: string): EntityMappingIndex[] {
+    const normalizedDef = normalizeLookupPath(defFile);
+    const hosts: EntityMappingIndex[] = [];
+    for (const candidate of this.mappingIndexes.values()) {
+      const merged = candidate.propertyDefinitions.some(def =>
+          normalizeLookupPath(def.defFile) === normalizedDef && this.isMergedMember(def.identity))
+        || candidate.methodDefinitions.some(def =>
+          normalizeLookupPath(def.defFile) === normalizedDef && this.isMergedMember(def.identity));
+      if (merged) {
+        hosts.push(candidate);
+      }
+    }
+    return hosts;
+  }
+
+  /** IFACE-MERGE:成员是否接口并入或组件槽并入(宿主面判定)。 */
+  private isMergedMember(identity: DefinitionSymbolIdentity): boolean {
+    return identity.sourceKind === 'interface' || identity.componentSlotName !== undefined;
+  }
+
+  /** IFACE-MERGE:按合并成员身份找宿主索引(接口身份无属主索引时回退)。 */
+  private findHostIndexForMergedIdentity(identity: DefinitionSymbolIdentity): EntityMappingIndex | undefined {
+    for (const candidate of this.mappingIndexes.values()) {
+      if (candidate.methodDefinitions.some(item => sameIdentity(item.identity, identity))) {
+        return candidate;
+      }
+    }
+    return undefined;
+  }
+
   async getIncomingPythonPropertyAccesses(
     defFile: string,
     propertyName: string,
@@ -2270,29 +2329,45 @@ export class EntityMappingManager {
     if (token?.isCancellationRequested) { return []; }
     // 门控兜底(书 PR-002):deferred 模式下首个使用证据即幂等启动
     this.ensureStartup();
+    // 主索引:实体 def 有独立根索引;接口 def 被扫面排除,无主索引,
+    // 引用面靠宿主索引(IFACE-MERGE)。
     const index = this.mappingIndexesByRoot.get(normalizeLookupPath(defFile));
-    if (!index) {
+    const indexSet = new Set<EntityMappingIndex>();
+    if (index) {
+      indexSet.add(index);
+    }
+    for (const host of this.findHostIndexesMergingDef(defFile)) {
+      indexSet.add(host);
+    }
+    if (indexSet.size === 0) {
       return [];
     }
     const accesses: Array<{ filePath: string; line: number; character: number }> = [];
-    for (const owner of index.pythonOwnerFiles) {
-      if (token?.isCancellationRequested) { return accesses; }
-      // IDE-NAV-004:未保存文档跟随——打开文档在位时扫缓冲区当前版,
-      // 未打开/已关闭回落磁盘(SNP-001 快照契约;磁盘侧读盘照常记账)。
-      const snapshot = readSharedFileSnapshot(owner.filePath);
-      if (!snapshot) {
-        continue;
-      }
-      // AUD-028(R2-F05):原文正则扫描混入字符串/注释/同文件其它类/嵌套重绑
-      // self——按词法与 self 所属作用域过滤,只保留 owner 类真读写点。
-      // ownerName 生产面恒有;缺失(探针/替身)回退文件基名。
-      const ownerClassName = owner.ownerName || path.basename(owner.filePath, '.py');
-      for (const access of findOwnerSelfPropertyAccesses(snapshot.content, ownerClassName, propertyName)) {
-        accesses.push({
-          filePath: owner.filePath,
-          line: access.line + 1,
-          character: access.character
-        });
+    const scannedFiles = new Set<string>();
+    for (const candidate of indexSet) {
+      for (const owner of candidate.pythonOwnerFiles) {
+        if (scannedFiles.has(normalizeLookupPath(owner.filePath))) {
+          continue;
+        }
+        scannedFiles.add(normalizeLookupPath(owner.filePath));
+        if (token?.isCancellationRequested) { return accesses; }
+        // IDE-NAV-004:未保存文档跟随——打开文档在位时扫缓冲区当前版,
+        // 未打开/已关闭回落磁盘(SNP-001 快照契约;磁盘侧读盘照常记账)。
+        const snapshot = readSharedFileSnapshot(owner.filePath);
+        if (!snapshot) {
+          continue;
+        }
+        // AUD-028(R2-F05):原文正则扫描混入字符串/注释/同文件其它类/嵌套重绑
+        // self——按词法与 self 所属作用域过滤,只保留 owner 类真读写点。
+        // ownerName 生产面恒有;缺失(探针/替身)回退文件基名。
+        const ownerClassName = owner.ownerName || path.basename(owner.filePath, '.py');
+        for (const access of findOwnerSelfPropertyAccesses(snapshot.content, ownerClassName, propertyName)) {
+          accesses.push({
+            filePath: owner.filePath,
+            line: access.line + 1,
+            character: access.character
+          });
+        }
       }
     }
     return accesses;
@@ -2312,11 +2387,24 @@ export class EntityMappingManager {
   ): Promise<Array<{ filePath: string; line: number; character: number }>> {
     if (token?.isCancellationRequested) return [];
     this.ensureStartup();
+    // IFACE-MERGE:接口 def 无根索引——引用面靠宿主索引(同属性面)。
     const index = this.mappingIndexesByRoot.get(normalizeLookupPath(defFile));
-    if (!index) return [];
+    const indexSet = new Set<EntityMappingIndex>();
+    if (index) {
+      indexSet.add(index);
+    }
+    for (const host of this.findHostIndexesMergingDef(defFile)) {
+      indexSet.add(host);
+    }
     const calls: Array<{ filePath: string; line: number; character: number }> = [];
-    for (const owner of index.pythonOwnerFiles) {
-      if (token?.isCancellationRequested) return calls;
+    const scannedFiles = new Set<string>();
+    for (const candidate of indexSet) {
+      for (const owner of candidate.pythonOwnerFiles) {
+        if (scannedFiles.has(normalizeLookupPath(owner.filePath))) {
+          continue;
+        }
+        scannedFiles.add(normalizeLookupPath(owner.filePath));
+        if (token?.isCancellationRequested) return calls;
       // IDE-NAV-004:同属性引用面——打开文档优先(缓冲区当前版),磁盘兜底
       const snapshot = readSharedFileSnapshot(owner.filePath);
       if (!snapshot) {
@@ -2332,6 +2420,7 @@ export class EntityMappingManager {
           line: call.line + 1,
           character: call.character
         });
+      }
       }
     }
     return calls;
