@@ -44,7 +44,7 @@ export interface OutgoingHttpRequest {
 /** 可注入的执行通道(测试用脚本化应答) */
 export type HttpTransport = (request: OutgoingHttpRequest) => Promise<HttpExecutionResult>;
 
-const defaultTransport: HttpTransport = request =>
+export const defaultTransport: HttpTransport = request =>
   new Promise<HttpExecutionResult>(resolve => {
     const startedAt = Date.now();
     let parsed: URL;
