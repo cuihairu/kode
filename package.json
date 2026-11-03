@@ -33,6 +33,8 @@
     "python"
   ],
   "activationEvents": [
+    "onCommand:kbengine.hotReload.showFileState",
+    "onCommand:kbengine.hotReload.filterByState",
     "onLanguage:kbengine-def",
     "onLanguage:python",
     "workspaceContains:**/*.def",
