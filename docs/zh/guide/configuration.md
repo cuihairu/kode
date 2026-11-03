@@ -244,6 +244,16 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.python.stubEngineTypings` | boolean | `true` | `KBEngine.pyi` 导出优先拼接本地引擎 checkout 的 typings 全量 API(默认开);关掉回落 kode 自带精选目录。总闸仍是 `kbengine.python.stubExport` |
 | `kbengine.python.entityStubMethods` | boolean | `true` | `entity_types.pyi` 实体存根包含 def 方法面(Base/Cell/ClientMethods,默认开);关掉回落只含属性面 |
 
+### 无标注函数 stub 推断(2026-11-03,pyrefly)
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `kbengine.infer.enabled` | boolean | `true` | 启用 pyrefly 无标注函数 stub 推断管道(KODE-CFG-017):`.kbengine/inferred` 副本镜像 scripts 树,pyrefly infer 以 `.kbengine/stubs`(def 真值)为类型环境在副本上写注解;用户真码默认不改 |
+| `kbengine.infer.pyreflyPath` | string | 空 | pyrefly 可执行文件绝对路径(留空则按 PATH 再 `~/.local/bin` pipx 默认位发现;找不到时 `kbengine.infer.run` 如实提示,功能降级不报错) |
+| `kbengine.infer.pythonVersion` | string | `3.7` | pyrefly infer `--python-version` 目标(KBEngine 内嵌解释器版本;官方最小支持 3.5) |
+| `kbengine.infer.sourceWrite` | string | `managed` | 写权限闸 scope:`managed`=仅 `.kbengine/**` 可写(默认);`user`=另允许写用户 `scripts/**`(须用户显式开启;scope 外写一律拒绝不静默) |
+| `kbengine.infer.exclusionsSync` | boolean | `true` | 自动把 `.kbengine` 从 `search.exclude` / `files.watcherExclude` 排除,并在 git 仓根 `.gitignore` 已存在时幂等追加(绝不创建;SVN/无 VCS 不写任何 git 专属物) |
+
 ### 实体脚本增强(2026-10-21)
 
 | 配置项 | 类型 | 默认值 | 说明 |

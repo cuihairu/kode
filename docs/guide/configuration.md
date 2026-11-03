@@ -244,6 +244,16 @@ Fields per entry:
 | `kbengine.python.stubEngineTypings` | boolean | `true` | Prefer concatenating the full API from a local engine typings checkout when exporting `KBEngine.pyi` (default: enabled); when off, fall back to the built-in curated catalog. The master switch is still `kbengine.python.stubExport` |
 | `kbengine.python.entityStubMethods` | boolean | `true` | Include the def method surface (Base/Cell/ClientMethods) in `entity_types.pyi` stubs (default: enabled); when off, keep the properties-only stub surface |
 
+### Un-annotated Function Stub Inference (2026-11-03, pyrefly)
+
+| Setting | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `kbengine.infer.enabled` | boolean | `true` | Enable the pyrefly un-annotated function stub inference pipeline (KODE-CFG-017): `.kbengine/inferred` mirrors the scripts tree, and `pyrefly infer` writes annotations on the copy with `.kbengine/stubs` (def truth) as the type environment; user source is never modified by default |
+| `kbengine.infer.pyreflyPath` | string | empty | Absolute path to the pyrefly executable (empty = discover on PATH, then the `~/.local/bin` pipx default location; if not found, `kbengine.infer.run` says so honestly and the feature degrades without throwing) |
+| `kbengine.infer.pythonVersion` | string | `3.7` | Target for `pyrefly infer --python-version` (the KBEngine embedded-interpreter version; official minimum is 3.5) |
+| `kbengine.infer.sourceWrite` | string | `managed` | Write-scope gate: `managed` = only `.kbengine/**` is writable (default); `user` = also allows writing user `scripts/**` (explicit opt-in required; any write outside the scope is refused, never silently) |
+| `kbengine.infer.exclusionsSync` | boolean | `true` | Automatically exclude `.kbengine` from `search.exclude` / `files.watcherExclude`, and idempotently append to the git repo-root `.gitignore` when the file already exists (never created; SVN / no-VCS workspaces get no git-specific write) |
+
 ### Entity Script Enhancements (2026-10-21)
 
 | Setting | Type | Default | Purpose |

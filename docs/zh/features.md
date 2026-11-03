@@ -275,6 +275,11 @@
 | `kbengine.python.builtinTypeInlayHints` | `true` | `self.<内建属性>` 访问后内联 `: <类型>` 提示 — `src/languageProviders.ts`（`KBEngineBuiltinTypeInlayHintsProvider`），受 `kbengine.entity.builtinProperties` 总闸控制 |
 | `kbengine.python.stubEngineTypings` | `true` | KBEngine.pyi 并入引擎 typings 全量 — `src/pythonStubExport.ts:360` |
 | `kbengine.python.entityStubMethods` | `true` | entity_types.pyi 方法面 — `src/entityTypeStubs.ts:74,139` |
+| `kbengine.infer.enabled` | `true` | 无标注函数 stub 推断管道 — `src/inferPipeline.ts`、`src/pyreflyInfer.ts` |
+| `kbengine.infer.pyreflyPath` | `""` | pyrefly 可执行路径（空 = PATH/pipx 发现）— `src/pyreflyInfer.ts` |
+| `kbengine.infer.pythonVersion` | `"3.7"` | pyrefly infer `--python-version` 目标 — `src/pyreflyInfer.ts` |
+| `kbengine.infer.sourceWrite` | `"managed"` | 写权限闸 scope（managed/user）— `src/pyreflyInfer.ts` |
+| `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher/gitignore 幂等，gitignore 绝不创建）— `src/managedDirExclusions.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | 运行时查询面板操作面（watcher 观察清单增删与结果订阅流；默认关时面板只剩单次手动查询）— `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | 文件读取明细审计（路径+字节数，环形缓冲 256 条，`kbengine.metrics.showSummary` 可查；默认关=只累计计数，开销有界）— `src/fileReadMetrics.ts` |

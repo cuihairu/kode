@@ -32,19 +32,21 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-03:extension.ts 顶部新增三行 import(injectDebugpyListen /
   // runListeningRowFocus / makeProbeOne),§7 四条链的 extension.ts
   // 锚点与 docs/perf/2026-baseline.md 的出处整体 +3
+  // 2026-11-03(二):extension.ts 新增 activateInferPipeline import(221)与
+  // 装配行(4731,在全部锚点之后),§7 全部 extension.ts 锚点与出处 +1
   // KODE-AUD-001:extension.ts 测试访问器块 +14 行(427 前锚点) +
   // setProcessTopologySchedulerForTests 装配行 +1 行(1597 后锚点再 +1):
   // 549~1298 锚点 +14,1839/1913 锚点 +15
-  ['src/extension.ts', 900, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 951, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1014, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 818, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1312, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 563, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 576, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 901, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 952, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1015, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 819, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1313, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 564, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 577, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1854, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1928, 'flushQueued()'],
+  ['src/extension.ts', 1855, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1929, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   ['src/languageProviders.ts', 715, 'getDocumentLines(document)'],

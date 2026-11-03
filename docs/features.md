@@ -279,6 +279,11 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.python.builtinTypeInlayHints` | `true` | Inline `: <type>` hints after `self.<builtin prop>` accesses — `src/languageProviders.ts` (`KBEngineBuiltinTypeInlayHintsProvider`), gated by `kbengine.entity.builtinProperties` master switch |
 | `kbengine.python.stubEngineTypings` | `true` | Full engine-typings export into `KBEngine.pyi` — `src/pythonStubExport.ts:360` |
 | `kbengine.python.entityStubMethods` | `true` | Entity stub method surface in `entity_types.pyi` — `src/entityTypeStubs.ts:74,139` |
+| `kbengine.infer.enabled` | `true` | Un-annotated function stub inference pipeline — `src/inferPipeline.ts`, `src/pyreflyInfer.ts` |
+| `kbengine.infer.pyreflyPath` | `""` | pyrefly executable path (empty = PATH/pipx discovery) — `src/pyreflyInfer.ts` |
+| `kbengine.infer.pythonVersion` | `"3.7"` | Target for `pyrefly infer --python-version` — `src/pyreflyInfer.ts` |
+| `kbengine.infer.sourceWrite` | `"managed"` | Write-scope gate (managed/user) — `src/pyreflyInfer.ts` |
+| `kbengine.infer.exclusionsSync` | `true` | `.kbengine` isolation (search/watcher/gitignore idempotent; gitignore never created) — `src/managedDirExclusions.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | `alias.xml` custom-type discovery — `src/definitionWorkspace.ts:285` |
 | `kbengine.runtimeQuery.enabled` | `false` | Runtime Queries panel operation surface (watcher watch-list add/remove and the result subscription stream; default off keeps the panel to single manual queries) — `src/runtimeQueryWebView.ts` |
 | `kbengine.metrics.fileReadDetail` | `false` | File-read audit detail (path+bytes, 256-entry ring shown by `kbengine.metrics.showSummary`; off keeps only cumulative counters) — `src/fileReadMetrics.ts` |

@@ -218,6 +218,7 @@ import {
   tempEditSectionReader
 } from './hotReloadTempEdit';
 import { fileSystemScriptRootDeps, syncPythonExtraPaths } from './pythonExtraPaths';
+import { activateInferPipeline } from './inferPipeline';
 import { disableJsoncAssociation, syncJsoncAssociation } from './jsoncAssociation';
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
@@ -4725,6 +4726,9 @@ export function activate(context: vscode.ExtensionContext) {
     generatedEntitySourceLensProviderImpl
   );
   context.subscriptions.push(generatedEntitySourceLensProvider);
+  // KODE-CFG-017:pyrefly 推断管道接线——.kbengine 隔离(搜索/watcher/gitignore)
+  // + .kbengine/inferred 副本同步 + 脚本变更 watcher + kbengine.infer.run 命令
+  activateInferPipeline(context);
   void (async () => {
     await exportKbeStubs(fileSystemStubExportDeps, { silent: true });
     await exportPythonTypeStubs(fileSystemStubExportDeps, { silent: true });

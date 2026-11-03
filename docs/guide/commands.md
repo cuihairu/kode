@@ -995,3 +995,26 @@ If `Attach to Component` fails, check these first:
   - a missing declaration gets the same honest warning as preview — no file is proposed
   - a write failure is reported verbatim with the cause; success names the written path
 - Boundary: export only; the preview command is SDK-001
+
+### `kbengine.infer.run`
+
+- Title: `KBEngine: Run pyrefly Infer (无标注函数 stub 推断)`
+- Purpose: run the pyrefly inference pipeline (KODE-CFG-017) — mirror the scripts tree to `.kbengine/inferred/`, then run `pyrefly infer` on the copy with `.kbengine/stubs` (def/types.xml-verified stubs) as the type environment, so un-annotated functions get inferred annotations without touching user source
+- Entries: command palette
+- Behavior:
+  - disabled (`kbengine.infer.enabled=false`): an honest notice says so and nothing runs
+  - pyrefly binary not found (no setting, not on PATH, not in the pipx default location): an honest notice tells the user to `pipx install pyrefly` or set `kbengine.infer.pyreflyPath` — the feature degrades, no error is thrown
+  - a non-zero exit from any scripts root is reported verbatim with the exit codes; success names the scripts-root count
+  - every write path passes the write-scope gate first — default `managed` scope only allows `.kbengine/**`, user source needs the explicit `kbengine.infer.sourceWrite=user` opt-in
+- Boundary: inference only; the consumer layer (native providers reading the annotated copy) is a later batch
+
+### `kbengine.managedDir.syncExclusions`
+
+- Title: `KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)`
+- Purpose: re-apply the `.kbengine` isolation — `search.exclude` and `files.watcherExclude` get the `.kbengine/**` entry (own-segment discipline: only kode's previously-written keys are touched, user entries are never removed) and the git repo root `.gitignore` gets an idempotent `.kbengine/` line when the file already exists
+- Entries: command palette
+- Behavior:
+  - runs the same face as the activation-time silent sync, but reports what it wrote (which workspaces got `search.exclude` / `watcherExclude`, which git roots got a `.gitignore` append)
+  - `.gitignore` is never created (SVN / no-VCS workspaces get no git-specific write at all)
+  - idempotent: a second run with no changes writes nothing
+- Boundary: isolation only; the mirror and infer steps are `kbengine.infer.run`
