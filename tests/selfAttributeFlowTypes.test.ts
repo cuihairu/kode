@@ -186,4 +186,95 @@ describe('语义引擎流敏感窄化(纯函数面)', () => {
     const flow = inferSelfAttributeFlow(lines, 7, 'X');
     expect(flow!.hasNone).toBe(false);
   });
+
+  it('KODE-AUD-004:else 块体赋值不再被跳过(if/else 两侧并集)', () => {
+    const lines = py([
+      'class Foo:',
+      '    def __init__(self):',
+      '        self.X = None',
+      '    def method(self):',
+      '        if cond:',
+      '            self.X = None',
+      '        else:',
+      '            self.X = [2]',
+      '        y = self.X'
+    ]);
+    // 块后并 then 侧(None)+ else 侧(list):types 含 None 与 list(修前只并
+    // then 侧,else 块体被跳过,漏 list)
+    const flow = inferSelfAttributeFlow(lines, 8, 'X');
+    expect(flow!.types).toContain('None');
+    expect(flow!.types).toContain('list');
+  });
+
+  it('KODE-AUD-004:if/elif/else 链三侧并集', () => {
+    const lines = py([
+      'class Foo:',
+      '    def method(self):',
+      '        if a:',
+      '            self.X = None',
+      '        elif b:',
+      '            self.X = [1]',
+      '        else:',
+      '            self.X = "s"',
+      '        y = self.X'
+    ]);
+    const flow = inferSelfAttributeFlow(lines, 8, 'X');
+    expect(flow!.types).toContain('None');
+    expect(flow!.types).toContain('list');
+    expect(flow!.types).toContain('str');
+  });
+
+  it('KODE-AUD-004:try/except/else/finally 块体赋值并入', () => {
+    const lines = py([
+      'class Foo:',
+      '    def method(self):',
+      '        try:',
+      '            self.X = [1]',
+      '        except ValueError:',
+      '            self.X = None',
+      '        else:',
+      '            self.X = [2]',
+      '        finally:',
+      '            cleanup()',
+      '        y = self.X'
+    ]);
+    const flow = inferSelfAttributeFlow(lines, 10, 'X');
+    expect(flow!.types).toContain('list');
+    expect(flow!.types).toContain('None');
+  });
+
+  it('KODE-AUD-004:提前 return 分支不落到块后(then 早退,else 侧继续)', () => {
+    const lines = py([
+      'class Foo:',
+      '    def method(self):',
+      '        if self.X is None:',
+      '            return',
+      '        else:',
+      '            self.X = [2]',
+      '        y = self.X'
+    ]);
+    // then 早退不落块后;else 侧 X=[2] 生效 → 无 None
+    const flow = inferSelfAttributeFlow(lines, 6, 'X');
+    expect(flow!.hasNone).toBe(false);
+    expect(flow!.types).toContain('list');
+  });
+
+  it('KODE-AUD-004:bytes 字面量 b/B 前缀判 bytes,其余前缀判 str', () => {
+    const lines = py([
+      'class Foo:',
+      '    def __init__(self):',
+      "        self.B = b'abc'",
+      "        self.BR = br'abc'",
+      "        self.RB = rb'abc'",
+      "        self.S = 'abc'",
+      "        self.R = r'abc'",
+      "        self.F = f'{x}'"
+    ]);
+    expect(inferSelfAttributeFlow(lines, 2, 'B')!.annotation).toBe('bytes');
+    expect(inferSelfAttributeFlow(lines, 3, 'BR')!.annotation).toBe('bytes');
+    expect(inferSelfAttributeFlow(lines, 4, 'RB')!.annotation).toBe('bytes');
+    expect(inferSelfAttributeFlow(lines, 5, 'S')!.annotation).toBe('str');
+    expect(inferSelfAttributeFlow(lines, 6, 'R')!.annotation).toBe('str');
+    expect(inferSelfAttributeFlow(lines, 7, 'F')!.annotation).toBe('str');
+  });
 });

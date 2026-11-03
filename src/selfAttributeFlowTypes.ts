@@ -108,8 +108,15 @@ const noneGuard = (attr: string): RegExp =>
 const notNoneGuard = (attr: string): RegExp =>
   new RegExp(`^\\s*if\\s+self\\.${escapeRegExp(attr)}\\s+is\\s+not\\s+None\\s*:`);
 
-/** 任何 `if`/`elif`/`for`/`while`/`try`/`with` 块开(非注释) */
-const anyBlockOpen = /^\s*(if|elif|for|while|try|with)\b/;
+/**
+ * 任何 `if`/`elif`/`else`/`for`/`while`/`try`/`except`/`finally`/`with` 块开
+ * (非注释)。KODE-AUD-004:补 else/except/finally——此前这三类块体在
+ * scanSequence 里不被 anyBlockOpen 识别,块体行以更深缩进被「跳过」分支吞掉,
+ * 块内 `self.<attr> = ...` 赋值不贡献流类型(如 `if c: X=None / else: X=[..]`
+ * 块后只并 then 侧,漏 else 侧)。else/except/finally 与 if/try 同缩进,并入
+ * 通用块处理,块后并集语义原样。
+ */
+const anyBlockOpen = /^\s*(if|elif|else|for|while|try|except|finally|with)\b/;
 const terminalLine = /^\s*(return|raise)\b/;
 
 function escapeRegExp(value: string): string {
@@ -169,9 +176,11 @@ function typeOfExpr(expr: string, options?: SelfAttributeFlowOptions): Set<strin
   if (/^[+-]?\d+\.\d+$/.test(text)) {
     return new Set(['float']);
   }
-  // 字符串字面量(带可选前缀 b/r/f/u)
-  if (/^[bBrRuUfF]{0,2}['"]/.test(text) && /['"]$/.test(text)) {
-    return new Set(['str']);
+  // 字符串字面量(带可选前缀 b/r/f/u):b/B 前缀=bytes(b''/br''/rb''/B''),
+  // 其余(r/u/f 及无前缀)=str。KODE-AUD-004:此前一律判 str,b'...' 误判。
+  const strPrefix = /^([bBrRuUfF]{0,2})['"]/.exec(text);
+  if (strPrefix && /['"]$/.test(text)) {
+    return new Set([/[bB]/.test(strPrefix[1]) ? 'bytes' : 'str']);
   }
   if (text.startsWith('[') && text.endsWith(']')) {
     return new Set(['list']);
