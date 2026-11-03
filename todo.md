@@ -964,3 +964,36 @@
 - [ ] 审核发现：调用图漏收嵌套 def/class 体内调用(注释称「由外层类/模块面另行收集」但外层只迭代模块级与类直属体,实际无处收集)且 Match case.guard 不遍历,`case _ if check():` 的 check() 调用丢失(crates/kode-python/src/callgraph.rs:236/241)。
 - [ ] 审核发现：symbols.collect_attributes 不递归 Stmt::Match(If/For/While/With/Try 均递归而 Match 缺),match case 体内 self.<attr> 赋值不入类属性表(crates/kode-python/src/symbols.rs:268)。
 - [ ] 审核发现：graph.resolve_callee_file 把任意点号接收者首段按同名 .py 文件基线解析而不校验是导入绑定,`avatar.x()` 等普通对象方法调用对无关同名文件产生伪跨文件失效边,违背「宁缺毋滥,避免误失效」原则(crates/kode-python/src/graph.rs:102)。
+
+## 代码审核发现（源 ChatGPT 代码审核 2026-11-03，基准 7b20c68e，5 项断言已实证）
+
+- [ ] KODE-AUD-001 [P1] 修复进程拓扑诊断 queued 队列不冲刷：extension.ts 编辑冲刷周期补 processTopologyScheduler.flushQueued()；验收：编辑 .def/entities.xml/process_topology.xml 后编辑期诊断更新、连续编辑只跑最新版、关文档不发过期诊断、补编辑事件进调度器的集成测试。
+- [x] KODE-AUD-002 [P1] 统一 C-19 诊断 ID：defMethodConsistency.ts:21 的 kbengine.defMethodMissingInPython 与 languageProviders.ts:6143/6172 的 def-method-missing-in-python 严格比较不匹配致 CodeAction 恒空；验收：TS/Rust/Provider 三方 code 统一，端到端测试从真实诊断到 CodeAction 返回非空，生成后诊断消失。（e57fb26;defMethodConsistency.ts:24 常量改 def-method-missing-in-python,languageProviders.ts:6150 DEF_PYTHON_PARITY_DIAGNOSTIC_CODE 别名自该常量(单一事实源),Rust def_python_parity.rs:68 同值(不改);tests/defPythonParity.test.ts:283 三方 code 统一用例喂 producer 的 code 断言 CodeAction 命中返回 Generate method onDeath(修前恒空);defMethodConsistency.test.ts:173 断言正向 code=Rust lint 规则 id;生成后诊断消失由 Rust implemented_methods_zero_false_positive(全实现→零发现)覆盖,现有「落盘骨架→重采集含方法」用例同证;门禁:lint+tsc+test:unit 5649 过/0 败 + Rust lint_def_python_parity 7/7 + xvfb test:demo:editor 25 过 exit 0;锚点锁步同步 perfCallChainDoc.test.ts ANCHORS 与 docs/perf/2026-baseline.md §7 引用(+1/+7)。2026-11-03 核验勾）
+- [ ] KODE-AUD-003 [P1] 热更新状态机代际写回丢失 sentDigest：hotReloadTargetState.ts:92-107 带 attempt 的回执路径未写 options.sentDigest；验收：FAILED→DIRTY 判定与 APPLIED 基线可用，旧 attempt 不污染新 attempt，发送/回执/确认/再编辑/重试全转换测试。
+- [ ] KODE-AUD-004 [P1] Python 流敏感分析补控制流：selfAttributeFlowTypes.ts anyBlockOpen 缺 else/except/finally，bytes 字面量误判 str；验收：if/elif/else、try/except/else/finally、提前 return/raise 分支合并正确，b'' 返回 bytes，分支交叉/嵌套/异常测试绿。
+- [ ] KODE-AUD-005 [P1] 修复 GlobalDataIndex 旧版覆盖新版竞态：大文件异步扫描与小文件同步提交时 commitFile 不清理 editBuffers 致旧内容回写；验收：大文件编辑→小文件保存→旧任务继续的竞态测试绿，commit/关文档/删除/dispose 均释放缓冲。
+- [ ] KODE-AUD-006 [P1] Rust def 递归循环保护：process_topology.rs walk_def 与 def_md5.rs 的 load_interfaces/load_parent_class/load_components 缺活动栈保护，A→B→A 栈溢出；验收：visited/visiting 双集合统一保护三类关系，循环返回诊断不溢出，A→B→A 测试绿。
+- [ ] KODE-AUD-007 [P1] 修复 Rust Python Dataflow AST 语义：dataflow.rs 漏 AugAssign 读、del、Subscript 容器元素、NamedExpr target、Comprehension target；验收：读/写/删/容器修改分别建模，AST fixture+golden 测试绿。
+- [ ] KODE-AUD-008 [P1] 补 Rust Python 调用图/符号表遗漏：callgraph.rs/symbols.rs/graph.rs 漏嵌套 def/class、Match guard 调用、Match 属性写、跨文件伪边；验收：对应 fixture 测试绿，嵌套/分支/导入绑定用例覆盖。
+- [ ] KODE-AUD-009 [P1] HTTP 热更新探测去副作用：hotReloadTransport.ts probe() 直接用真实 method/body 会触发实际重载；验收：probe 与真实 fire 请求分离，探测无副作用测试。
+- [ ] KODE-AUD-010 [P1] wire_codec STRING 拒绝内嵌 NUL：kode-server wire_codec.rs:333-338 NUL 终止符致静默截断；验收：拒绝非法输入+编解码往返测试。
+- [ ] KODE-PERF-001 [P1] 流敏感分析按文档版本建缓存：同版本只解析一次 AST，Hover/InlayHints/Diagnostics 共享；验收：访问点增多不重复解析，万行级性能测试。
+- [ ] KODE-PERF-002 [P1] 消除流诊断平方级行号计算：slice(0,match.index).split() 改一次行起始偏移表；验收：10 万行文件诊断耗时实测对比。
+- [ ] KODE-PERF-003 [P2] 清理 GlobalDataIndex 编辑缓冲的内存占用（与 AUD-005 同文件，串行做）。
+- [ ] KODE-PERF-004 [P2] Python CallGraph 收集支持多 workspace 根、异步读取、超 10,000 文件明确策略；验收：多根工程结果完整、宿主不阻塞。
+- [ ] KODE-PERF-005 [P2] entityDependencyWebView 异步刷新加 generation/取消守卫；验收：关面板/切模式后旧 RPC 结果不写入。
+- [ ] KODE-PERF-006 [P2] 测量进程拓扑全量诊断成本：连续编辑/取消/批量 def 输入下的 CPU 与事件循环延迟，落 perf 报告。
+- [ ] KODE-HOT-001 [P1] ReloadTransport 实际接入 hotReload.ts fire 路径（现有只在定义与测试出现，发送仍走 runAction）；验收：HTTP/Telnet 两传输真发、配置选择/参数校验/回执/状态记录闭环。
+- [ ] KODE-HOT-002 [P1] 热更新状态机全转换验收：sent/accepted/applied/failed/DIRTY/RESTART_REQUIRED 每个转换带测试。
+- [ ] KODE-FEAT-001 [P2] 评估 .def 原生 formatter（与 XML 解析器共享语法事实），先出评估结论再定实现。
+- [ ] KODE-FEAT-002 [P2] 明确性能分析能力边界：现有运行时指标/py-spy 快照 vs 未实现的 flamegraph/周期采样，分清已做与未做。
+- [ ] KODE-DBG-001 [P2] debugpy 早期附加自动化（提案 docs/design/debugpy-attach.md，未实现）：不改引擎三方案=①入口脚本(scripts/base|cell/<entry>.py,entity_app.h:509 首个业务导入点)顶部 bootstrap ②控制台运行时注入(telnet_handler.cpp:795 可执行任意 Python,Kode 现成 KBEngineTelnetClient) ③debugpy --pid 兜底；sitecustomize/.pth/PYTHONSTARTUP 走不通(script.cpp:32 site_import=0/:223 Py_NoSiteFlag=1/:33 use_environment=0)；自动化=调试会话管理器(按进程端口分配+127.0.0.1+SSH 隧道)+bootstrap 生成器+attach 启动配置生成+Disabled→Listening→ClientAttached 状态机；首选②(一条命令零文件改动),①作启动即断增强；验收：②命令真机附加成功断点命中、①bootstrap 门控生成+重启后启动期可断、端口分配多进程无冲突。
+- [ ] KODE-I18N-001 [P1] package.nls.json + package.nls.zh-cn.json：95 命令/95 配置/7 视图的标题描述全部 manifest 国际化；验收：两语言文件 key 全等、无占位符遗漏。
+- [ ] KODE-I18N-002 [P1] 运行时文案国际化：Provider/Diagnostics/QuickPick/Notification/Output/Webview 全接入 l10n；验收：中文系统全中文、英文系统全英文、缺 key 回退行为测试。
+- [ ] KODE-I18N-003 [P2] 翻译 key/占位符/回退一致性测试。
+- [ ] KODE-ARCH-001 [P2] 拆分 languageProviders.ts（6766 行）为 def/python/navigation/inlay/codeAction/callHierarchy 六模块，共享语义查询走服务不互调；验收：拆后全量测试绿。
+- [ ] KODE-ARCH-002 [P2] 精简 extension.ts（5577 行）：命令/Provider/诊断/调试/数据库/热更新拆独立装配模块；验收：拆后全量测试绿。
+- [ ] KODE-ARCH-003 [P2] 建立五索引（SemanticIndex/EntityMapping/PythonClassIndex/WorkspaceIndex/GlobalDataIndex）所有权与版本失效契约文档+断言。
+- [ ] KODE-ARCH-004 [P3] 更新 docs/architecture/current-state.md（现为 2026-10-23 旧快照）。
+- [ ] KODE-PERF-007 [P3] 建立 v0.2 最新性能基线：30k 文件/多资产根/大 Python 文件的 Hover/Completion/Definition/Diagnostics/内存/宿主延迟。
+- [ ] KODE-AUD-TODO-001 [P2] 对齐 3 条已修复未关闭的旧审核项（Client SDK FIXED_DICT 伴随文件、Rust flag 归一化 normalize_flag_tokens、dependency graph implementedBy 先 ensure_node），实证后勾账。
