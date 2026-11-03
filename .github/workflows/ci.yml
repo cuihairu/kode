@@ -92,6 +92,8 @@ jobs:
         use_oidc: true
         files: ./coverage/lcov.info
         disable_search: true
+        # VULN-KODE-R02:与 rust 侧对齐命名 flag,供 codecov.yml flag_management 归并
+        flags: ts
         fail_ci_if_error: false
 
     - name: 运行代码检查

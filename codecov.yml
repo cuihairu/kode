@@ -1,0 +1,13 @@
+# VULN-KODE-R02:ci.yml 两侧(ts/rust)各自上传 lcov 到同一 commit,缺 flag_management
+# 时 Codecov status 无法对两 flag 正确归并/carryforward——补上。
+# 上传失败仍静默(fail_ci_if_error:false,Codecov 瞬时抖动不拖红主门禁,与既有
+# 口径一致),但 status 规则现能对 rust/ts 分别生效:carryforward 让"文件未改的
+# flag"在 PR 里沿用基线的同一 flag 数据,避免另一侧上传时序造成的假阴性。
+flag_management:
+  default_rules:
+    carryforward: true
+  individual_flags:
+    - name: rust
+      carryforward: true
+    - name: ts
+      carryforward: true
