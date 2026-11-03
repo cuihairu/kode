@@ -426,6 +426,20 @@ import { TelnetTreeProvider } from './telnetTree';
 // IDE-REV-037:注解来源日志的输出通道(懒建,首条日志到达才创建)
 let annotationSourceChannel: vscode.OutputChannel | undefined;
 
+// KODE-AUD-001:进程拓扑诊断调度器是 activate 内局部实例(与其他四个同模式),
+// 测试经此访问器断言「编辑事件→requestQueued→同节拍 flushQueued」接线
+// (此前漏 flushQueued 致 queued 任务滞留不发布)。activate 每次装配覆写,
+// 测试方置 null 释放(惯用法同 setHoverInFlightGateForTests)。
+let processTopologySchedulerForTests: DiagnosticScheduler | null = null;
+export function setProcessTopologySchedulerForTests(
+  scheduler: DiagnosticScheduler | null
+): void {
+  processTopologySchedulerForTests = scheduler;
+}
+export function getProcessTopologySchedulerForTests(): DiagnosticScheduler | null {
+  return processTopologySchedulerForTests;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('KBEngine Language Extension is now active!');
   const engineApiEnabled = vscode.workspace.getConfiguration('kbengine')
@@ -1594,6 +1608,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(processTopologyDiagnostics);
   const processTopologyScheduler = new DiagnosticScheduler();
+  setProcessTopologySchedulerForTests(processTopologyScheduler);
   const processTopologyManifestName = 'process_topology.xml';
 
   /** workspace 根下清单路径(缺 workspace 根 → null,静默)。 */
@@ -1917,6 +1932,9 @@ export function activate(context: vscode.ExtensionContext) {
           void userTypeContractScheduler.flushQueued();
           // GEN-DEF-1e ④:方向违规调度器同节拍冲刷(守卫语义同上)
           void propertyDirectionScheduler.flushQueued();
+          // KODE-AUD-001:进程拓扑诊断调度器同节拍冲刷——此前编辑事件面只
+          // requestQueued 不冲刷,queued 任务滞留不发布致编辑期诊断不更新
+          void processTopologyScheduler.flushQueued();
         }, 0);
       }
       // Python 类索引增量失效:只重解析该文件,避免大仓全量扫描卡输入;
