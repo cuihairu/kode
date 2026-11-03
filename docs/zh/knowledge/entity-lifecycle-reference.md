@@ -2,8 +2,8 @@
 
 > KB-001 头号专题(用户点名优先):内存对象引用与释放。
 > 所有引用标注 `kbe/src` 的 `文件:行号`;每条结论都以引擎源码为据(锚定
-> `kbengine@c2a3b8f`)。baseapp 路径与本文 cellapp 路径类比;定时器/Functor
-> 深层引用持有属后续批次主题(标注 TODO,不虚构为已实现)。
+> `kbengine@c2a3b8f`)。baseapp 路径与本文 cellapp 路径类比;迁移/传送的引用
+> 流属后续批次主题(标注 TODO,不虚构为已实现)。
 
 ## 活跃注册表持有强引用
 
@@ -83,9 +83,25 @@ return entity;                 // ③ 以 PyObjectPtr 返回(保活供 destroy()
 `onLoseCell`(`:216-220`)——即便 cell 实体已销毁,base 仍保有 cell 数据快照,
 这解释了为何 base 侧对已销毁 cell 实体的引用仍能读到最后的 `cellData`。
 
-## 定时器注册/移除
+## 定时器:不持强引用,销毁即取消
 
-定时器按实体归属(`ScriptTimers`),移除经
-`ScriptTimersUtil::delTimer(&pobj->scriptTimers(), timerID)`
-(`entity_macro.h:1478`),定时器不存在时返回 `-1`。比实体活得久的定时器是
-引擎侧引用持有的隐患——定时器/Functor 深层引用规则属**后续批次主题**(TODO)。
+定时器按实体归属。Python `addTimer(interval, repeat, userArg)` 构造每个定时
+器的 `EntityScriptTimerHandler`,持**裸 `CLASS* pEntity_`**,而非 Python 强引用
+(`entity_macro.h:1362-1385`,创建于 `:1389`)。因此引擎**不会**借定时器保活已
+销毁实体。
+
+`Entity::destroy()` 调用 `scriptTimers_.cancelAll()`(`cellapp/entity.cpp:4002`);
+每个 `handle.cancel()` 触发 handler 的 `onRelease`,释放定时器条目并 `delete`
+该 handler(`entity_macro.h:1377-1382`)。故定时器绝不向已销毁实体触发(游戏
+逻辑单线程串行)。触发路径是 `handleTimeout` → `pEntity_->onTimer(id, userArg)`
+(`entity_macro.h:1370-1375`)→ 经 `bufferOrExeCallback` 调 Python
+`onTimer(timerID, userArg)`(`cellapp/entity.cpp:4318-4322`);该函数在
+`_scriptCallbacksBufferCount > 0` 时(如 init/ghost 期间)**缓冲**回调,否则
+立即执行(`cellapp/entity.cpp:1263-1293`)。
+
+移除:`delTimer(id)` → `ScriptTimersUtil::delTimer` → `handle.cancel()`,定时器
+不存在时返回 `-1`(`entity_macro.h:1478`,`script_timers.cpp:96-108`);
+`delTimer("All")` → `cancelAll()`(`entity_macro.h:1449`)。
+
+真正的引用隐患不在定时器本身,而在脚本闭包或列表捕获实体且存活超过销毁
+——那才是上文 `garbages`/3600 秒泄漏场景,而非定时器持引用。

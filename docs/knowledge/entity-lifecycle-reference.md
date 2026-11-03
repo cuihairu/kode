@@ -3,8 +3,8 @@
 > KB-001 head topic (user-named priority): memory object reference & release.
 > Sources cited by `kbe/src` `file:line`; every claim is grounded in the engine
 > source (`kbengine@c2a3b8f`). The baseapp path is analogous to the cellapp
-> path shown here; the timer/Functor deep reference holding is a later-batch
-> topic (marked TODO, not fabricated).
+> path shown here; the migration/teleport reference flow is a later-batch topic
+> (marked TODO, not fabricated).
 
 ## The live registry holds a strong reference
 
@@ -93,10 +93,28 @@ destroy the engine also `backupCellData()` and sends `onLoseCell` to the base
 destroyed, which is why a base-side reference to a destroyed cell entity can
 still read the last `cellData`.
 
-## Timer registration / removal
+## Timers: no strong reference, cancelled on destroy
 
-Timers are per-entity (`ScriptTimers`), and removal goes through
-`ScriptTimersUtil::delTimer(&pobj->scriptTimers(), timerID)`
-(`entity_macro.h:1478`), returning `-1` when the timer does not exist. A timer
-that outlives its entity is the engine-side reference-holding hazard — the deep
-timer/Functor reference rules are a **later-batch topic** (TODO).
+Timers are per-entity. Python `addTimer(interval, repeat, userArg)` builds a
+per-timer `EntityScriptTimerHandler` holding a **raw `CLASS* pEntity_`**, not a
+Python strong reference (`entity_macro.h:1362-1385`, created at `:1389`). The
+engine therefore does **not** keep a destroyed entity alive through a timer.
+
+`Entity::destroy()` calls `scriptTimers_.cancelAll()` (`cellapp/entity.cpp:4002`);
+each `handle.cancel()` fires the handler's `onRelease`, which releases the timer
+entry and `delete`s the handler (`entity_macro.h:1377-1382`). So a timer never
+fires on a destroyed entity (game logic is serialized on one thread). The
+timer's fire path is `handleTimeout` → `pEntity_->onTimer(id, userArg)`
+(`entity_macro.h:1370-1375`) → Python `onTimer(timerID, userArg)` via
+`bufferOrExeCallback` (`cellapp/entity.cpp:4318-4322`), which **buffers** the
+callback while `_scriptCallbacksBufferCount > 0` (e.g. during init/ghost) and
+executes it otherwise (`cellapp/entity.cpp:1263-1293`).
+
+Removal: `delTimer(id)` → `ScriptTimersUtil::delTimer` → `handle.cancel()`,
+returns `-1` when the timer does not exist (`entity_macro.h:1478`,
+`script_timers.cpp:96-108`); `delTimer("All")` → `cancelAll()`
+(`entity_macro.h:1449`).
+
+The real reference hazard is not the timer itself but a script closure or list
+that captures the entity and outlives the destroy — that is the `garbages`/
+3600 s leak scenario above, not a timer-holding reference.
