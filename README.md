@@ -8,6 +8,8 @@
 
 [English](README.md) | [中文](README.zh.md)
 
+<p align="center"><img src="docs/public/images/architecture-en.svg" alt="Kode architecture" width="760" /></p>
+
 > **Kode** (KBEngine Development Environment) - A VS Code development assistant extension for KBEngine
 
 ## Introduction

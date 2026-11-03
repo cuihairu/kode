@@ -8,6 +8,8 @@
 
 [English](README.md) | [中文](README.zh.md)
 
+<p align="center"><img src="docs/public/images/architecture-zh.svg" alt="Kode 架构" width="760" /></p>
+
 > **Kode** (KBEngine Development Environment) - 面向 KBEngine 的 VS Code 开发辅助扩展
 
 ## 简介
