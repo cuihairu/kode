@@ -6,6 +6,7 @@ import {
 } from './pythonLanguageUtils';
 import { parsePythonFile } from './pythonParser';
 import { parsePythonFileResponsive } from './pythonParserWorkerHost';
+import { maskPythonNonCode } from './pythonLexicalMask';
 
 /**
  * receiver 可能为 None 的诊断(用户令 2026-10-27,任务1):
@@ -49,33 +50,117 @@ export interface ReceiverNoneFinding {
 
 const COMMENT_ONLY = /^\s*(#.*)?$/;
 
-/** 正向 guard 行判定:`if x:` / `if x is not None:`(x 为接收者或其本地
- * 别名)。2026-10-30 用户令:链式 `if ok and self.client:` 已判空不得再报——
- * 条件按顶层 `and` 分拆,任一完整分句恰为 `x` 或 `x is not None` 即认;
- * `or` 分句不算(`if ok or self.client:` 不保证非 None,仍报)。subject 传
- * 转义形(同 earlyExitGuard 口径),比较前解转义回原文。 */
+const escapeSubject = (subject: string): string => subject.replace(/\./g, '\\.');
 const unescapeSubject = (subject: string): string => subject.replace(/\\\./g, '.');
 
-const isPositiveGuardLine = (subject: string, text: string): boolean => {
-  const condition = /^\s*if\s+([^:]*):/.exec(text)?.[1];
-  if (condition === undefined) {
-    return false;
+/**
+ * IDE-LINT-002:if 头条件提取(掩码行:字符串/注释已空白)。从 `if` 后扫到
+ * 括号深度 0 的首个 `:`——下标切片等代码内冒号不截断条件。
+ */
+function extractIfHeader(line: string): { condition: string; bodyStart: number } | null {
+  const match = /^\s*if\s+/.exec(line);
+  if (!match) { return null; }
+  let depth = 0;
+  for (let i = match[0].length; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '(' || char === '[' || char === '{') { depth += 1; continue; }
+    if (char === ')' || char === ']' || char === '}') { depth = Math.max(0, depth - 1); continue; }
+    if (char === ':' && depth === 0) {
+      return { condition: line.slice(match[0].length, i).trim(), bodyStart: i + 1 };
+    }
   }
-  const target = unescapeSubject(subject);
-  return condition.split(/\s+and\s+/).some(part => {
-    const trimmed = part.trim();
-    return trimmed === target || trimmed === `${target} is not None`;
-  });
-};
+  return null;
+}
 
-/** 早退 guard:`if not x:` / `if x is None:`(块体内 return/raise 才算) */
-const earlyExitGuard = (subject: string): RegExp =>
-  new RegExp(`^\\s*if\\s+(?:not\\s+${subject}|${subject}\\s+is\\s+None)\\s*:`);
+/** 剥最外层配对括号(`(a) and (b)` 的外括号不包全则原样返回) */
+function stripOuterParens(expr: string): string {
+  let current = expr.trim();
+  while (current.startsWith('(') && current.endsWith(')')) {
+    let depth = 0;
+    let wraps = true;
+    for (let i = 0; i < current.length; i += 1) {
+      if (current[i] === '(') { depth += 1; } else if (current[i] === ')') {
+        depth -= 1;
+        if (depth === 0 && i < current.length - 1) { wraps = false; break; }
+      }
+    }
+    if (!wraps || depth !== 0) { break; }
+    current = current.slice(1, -1).trim();
+  }
+  return current;
+}
 
-/** 接收者本地别名:`x = self.<role>`(其后 `if x:` 一族算 guard) */
-const aliasAssignment = /^\s*([A-Za-z_]\w*)\s*=\s*self\.(cell|base|client)\s*(?:#.*)?$/;
+const TOP_LEVEL_AND = /^(\s+)(and)(\s|$)/;
+const TOP_LEVEL_OR = /^(\s+)(or)(\s|$)/;
 
-const escapeSubject = (subject: string): string => subject.replace(/\./g, '\\.');
+/** 顶层(括号深度 0)按 and/or 切分——替代旧朴素字符串 split,不再被
+ * 字符串内容/括号误切(掩码行内字符串已空白,这里是结构级切分) */
+function splitTopLevel(expr: string, op: 'and' | 'or'): string[] {
+  const pattern = op === 'and' ? TOP_LEVEL_AND : TOP_LEVEL_OR;
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < expr.length; i += 1) {
+    const char = expr[i];
+    if (char === '(' || char === '[' || char === '{') { depth += 1; continue; }
+    if (char === ')' || char === ']' || char === '}') { depth = Math.max(0, depth - 1); continue; }
+    if (depth === 0) {
+      const rest = pattern.exec(expr.slice(i));
+      if (rest) {
+        parts.push(expr.slice(start, i));
+        i += rest[0].length - 1;
+        start = i + 1;
+      }
+    }
+  }
+  parts.push(expr.slice(start));
+  return parts;
+}
+
+/**
+ * IDE-LINT-002:条件布尔语义分诊。subject(原文,未转义)视角:
+ * - positive:顶层无 or(优先级 and 紧于 or,顶层有 or 即不确定);顶层 and
+ *   分句(剥外层括号)恰为 `subject` / `subject is not None` /
+ *   `not (subject is None)`;
+ * - early-exit:单一原子恰为 `not subject` / `subject is None`;
+ * - null:不确定形态(保留警告)。
+ */
+type ConditionVerdict = 'positive' | 'early-exit' | null;
+
+function conditionVerdict(condition: string, subject: string): ConditionVerdict {
+  const expr = stripOuterParens(condition);
+  if (splitTopLevel(expr, 'or').length > 1) { return null; }
+  const conjuncts = splitTopLevel(expr, 'and');
+  const positiveAtom = (atomRaw: string): boolean => {
+    const atom = stripOuterParens(atomRaw);
+    if (atom === subject || atom === `${subject} is not None`) { return true; }
+    if (/^not\b/.test(atom)) { return stripOuterParens(atom.slice(3)) === `${subject} is None`; }
+    return false;
+  };
+  if (conjuncts.length > 1) {
+    return conjuncts.some(positiveAtom) ? 'positive' : null;
+  }
+  const atom = stripOuterParens(conjuncts[0]);
+  if (positiveAtom(atom)) { return 'positive'; }
+  if (/^not\b/.test(atom) && stripOuterParens(atom.slice(3)) === subject) { return 'early-exit'; }
+  if (atom === `${subject} is None`) { return 'early-exit'; }
+  return null;
+}
+
+/** 接收者本地别名赋值:`x = self.<role>`(第 4 组须纯空白/已掩注释才算完赋值) */
+const RECEIVER_ALIAS_ASSIGN =
+  /^([ \t]*)([A-Za-z_]\w*)\s*=\s*self\.(cell|base|client)(.*)$/;
+
+/** 方法/类作用域头(掩码行;方法自身的 def 行由调用方排除) */
+const NESTED_SCOPE_HEADER = /^\s*(?:async\s+)?def\s|^\s*class\s/;
+
+/** 目标(别名名或 self.<role>)重绑:普通/增强赋值、海象;`==` `<=` 等比较不算 */
+const rebindPattern = (target: string): RegExp =>
+  new RegExp(`\\b${target}\\s*(?:(?:\\*\\*|//|>>|<<|[-+*/%&|^])?=(?!=)|:=)`);
+
+/** for/del/as 对名字的重绑 */
+const nameRebindExtras = (name: string): RegExp =>
+  new RegExp(`\\b(?:for|del|as)\\s+${name}\\b`);
 
 interface MethodSpan {
   startLine: number;
@@ -129,11 +214,12 @@ interface GuardCandidate {
   line: number;
   indent: number;
   kind: 'positive' | 'early-exit';
+  /** 命中的分句 subject(转义形):过闸时查 (guard 行, use 行) 间有无重绑 */
+  subject: string;
   /** 正向 guard:if 块的闭合行(首个缩进 ≤ ifIndent 的非空行;无则方法体界+1)。
    * use 行 < blockEnd 即仍在块体内(2026-10-28 审核整改:预计算一次,逐调用零重扫) */
   blockEnd?: number;
-  /** 早退 guard:块体内首个 return/raise 行(去缩进前;无则 undefined)。
-   * exitLine < use 行即早退生效 */
+  /** 早退 guard:块体内首个无条件 return/raise 行(0 起行;无则 undefined) */
   exitLine?: number;
 }
 
@@ -142,6 +228,11 @@ interface MethodGuardScan {
   candidates: GuardCandidate[];
   /** 别名赋值行与名(`x = self.<role>`),同行闸判定按 use 之前的过滤 */
   aliases: Array<{ line: number; name: string }>;
+  /** 转义 subject → 重绑行表(别名再赋值/for/del、self.<role> 属性重赋值):
+   * guard 与 use 之间的重绑使旧证明失效(IDE-LINT-004) */
+  rebinds: Map<string, number[]>;
+  /** 方法体内嵌套 def/class 头行:guard 证明不跨作用域边界(IDE-LINT-004) */
+  nestedHeaders: number[];
 }
 
 let guardPrefixScanCount = 0;
@@ -166,8 +257,8 @@ export function resetGuardBlockProbeCountForTests(): void {
   guardBlockProbeCount = 0;
 }
 
-/** 单趟扫方法体:维持存活 subject 集(self.<role> 起步,遇别名赋值追加),
- * 命中正向/早退 guard 形态的行记为候选 */
+/** 单趟扫方法体(掩码行):维持存活 subject 集(self.<role> 起步,遇别名
+ * 赋值追加),记录重绑行与嵌套 def/class 头,guard 形态按条件布尔语义分诊 */
 function scanGuardCandidates(
   lines: readonly string[],
   span: MethodSpan,
@@ -176,32 +267,66 @@ function scanGuardCandidates(
   guardPrefixScanCount += 1;
   const candidates: GuardCandidate[] = [];
   const aliases: Array<{ line: number; name: string }> = [];
-  const subjects = new Set([escapeSubject(`self.${receiver}`)]);
+  const rebinds = new Map<string, number[]>();
+  const nestedHeaders: number[] = [];
+  const subjects: Array<{ escaped: string; plain: string }> = [
+    { escaped: escapeSubject(`self.${receiver}`), plain: `self.${receiver}` }
+  ];
+  const aliasNames = new Set<string>();
+  const nestedIndents: number[] = [];
+  const recordRebind = (escaped: string, line: number): void => {
+    const list = rebinds.get(escaped);
+    if (list) { list.push(line); } else { rebinds.set(escaped, [line]); }
+  };
   for (let j = span.startLine; j <= span.endLine; j += 1) {
     const text = lines[j];
     if (COMMENT_ONLY.test(text)) { continue; }
-    const assigned = aliasAssignment.exec(text);
-    if (assigned && assigned[2] === receiver) {
-      subjects.add(escapeSubject(assigned[1]));
-      aliases.push({ line: j, name: assigned[1] });
-      continue; // 别名赋值行本身不是 guard 行
+    const indent = indentOf(text);
+    while (nestedIndents.length > 0 && indent <= nestedIndents[nestedIndents.length - 1]) {
+      nestedIndents.pop();
     }
-    let matched = false;
+    if (j > span.startLine && NESTED_SCOPE_HEADER.test(text)) {
+      nestedIndents.push(indent);
+      nestedHeaders.push(j);
+      continue; // 嵌套作用域头行本身不是 guard/别名行
+    }
+    const nested = nestedIndents.length > 0;
+    if (!nested) {
+      const assigned = RECEIVER_ALIAS_ASSIGN.exec(text);
+      if (assigned && assigned[3] === receiver && /^\s*$/.test(assigned[4] ?? '')) {
+        const name = assigned[2];
+        aliases.push({ line: j, name });
+        if (!aliasNames.has(name)) {
+          aliasNames.add(name);
+          subjects.push({ escaped: escapeSubject(name), plain: name });
+        }
+        continue; // 别名赋值行本身不是 guard 行
+      }
+    }
+    // 重绑记账(IDE-LINT-004):别名名与 self.<role> 属性的重赋值/for/del/as
     for (const subject of subjects) {
-      // EntityCall getters exist even when their peer is absent and they return
-      // None. hasattr(self, role) proves attribute existence, never a live peer.
-      if (isPositiveGuardLine(subject, text)) {
-        candidates.push({ line: j, indent: indentOf(text), kind: 'positive' });
-        matched = true;
-        break;
-      }
-      if (earlyExitGuard(subject).test(text)) {
-        candidates.push({ line: j, indent: indentOf(text), kind: 'early-exit' });
-        matched = true;
-        break;
-      }
+      const hit = rebindPattern(subject.plain).test(text)
+        || (!subject.plain.startsWith('self.') && nameRebindExtras(subject.plain).test(text));
+      if (hit) { recordRebind(subject.escaped, j); }
     }
-    if (matched) { continue; }
+    // guard 形态判定:if 头条件按布尔语义分诊(IDE-LINT-002;行内单行体不算
+    // 块 guard,正向单行走 hasReceiverGuardFromScan 的同行闸)
+    const header = extractIfHeader(text);
+    if (!header) { continue; }
+    const inlineBody = /\S/.test(text.slice(header.bodyStart));
+    let positive: string | null = null;
+    let early: string | null = null;
+    for (const subject of subjects) {
+      const verdict = conditionVerdict(header.condition, subject.plain);
+      if (verdict === 'positive' && positive === null) { positive = subject.escaped; }
+      if (verdict === 'early-exit' && early === null) { early = subject.escaped; }
+    }
+    if (inlineBody) { continue; }
+    if (positive !== null) {
+      candidates.push({ line: j, indent, kind: 'positive', subject: positive });
+    } else if (early !== null) {
+      candidates.push({ line: j, indent, kind: 'early-exit', subject: early });
+    }
   }
   // 2026-10-28 审核整改:块界/早退位置每候选预计算一次(扫描期,计探测数),
   // 逐调用只做位置闸判定,不再从 guard 行重扫文本(平方级 → 近线性)
@@ -212,7 +337,7 @@ function scanGuardCandidates(
       candidate.exitLine = firstExitAfter(lines, span, candidate);
     }
   }
-  return { receiver, candidates, aliases };
+  return { receiver, candidates, aliases, rebinds, nestedHeaders };
 }
 
 /** if 块闭合行:candidate 行之后首个非空且缩进 ≤ ifIndent 的行;块贯通到方法体界则界+1 */
@@ -230,24 +355,71 @@ function firstDedentAfter(
   return span.endLine + 1;
 }
 
-/** if 块体内首个 return/raise 行(缩进 > ifIndent;遇去缩进行即块闭,终止) */
+/**
+ * if 块体内首个无条件 return/raise 行(IDE-LINT-003):块体首行定块缩进,
+ * 按块级语句顺序扫——首个块级 return/raise 即退出;首个块级复合语句
+ * (嵌套 if/for/…,其 return 可不走)即不确定;更深缩进是续行/嵌套块,跳过。
+ * 掩码行保证字符串/注释里的 return/raise 不再误判。
+ */
 function firstExitAfter(
   lines: readonly string[],
   span: MethodSpan,
   candidate: GuardCandidate
 ): number | undefined {
   guardBlockProbeCount += 1;
+  let bodyIndent = -1;
   for (let j = candidate.line + 1; j <= span.endLine; j += 1) {
     const text = lines[j];
     if (COMMENT_ONLY.test(text)) { continue; }
-    if (indentOf(text) <= candidate.indent) { return undefined; }
-    if (/\b(return|raise)\b/.test(text)) { return j; }
+    const indent = indentOf(text);
+    if (indent <= candidate.indent) { return undefined; } // 块已闭
+    if (bodyIndent === -1) { bodyIndent = indent; }
+    if (indent === bodyIndent) {
+      if (/^\s*(?:return|raise)\b/.test(text)) { return j; }
+      // 块级复合语句(嵌套 if/for/…):其后 return 不保证所有路径退出;
+      // 块级普通语句:无条件执行,继续向后找
+      if (/^\s*(?:if|elif|else|for|while|try|except|finally|with|def|class|match|case)\b/.test(text)) {
+        return undefined;
+      }
+    }
   }
   return undefined;
 }
 
-/** 候选过闸:与逐点遍历同谓词,但块界/早退位置已扫描期预计算——逐调用
- * 只比位置(candidate.line < use < blockEnd / exitLine < use),零文本重扫 */
+/** guard 与 use 之间 subject 无重绑(IDE-LINT-004:重赋值使旧证明失效) */
+function bindingStableBetween(
+  scan: MethodGuardScan,
+  escapedSubject: string,
+  fromLine: number,
+  toLine: number
+): boolean {
+  const list = scan.rebinds.get(escapedSubject);
+  if (!list) { return true; }
+  return !list.some(line => line > fromLine && line < toLine);
+}
+
+/**
+ * IDE-LINT-004:别名 guard 的证明窗口起点不是 guard 行,而是 guard 前最近
+ * 一次该名的 receiver 赋值——赋值与 guard 之间的重赋值意味着 guard 测的
+ * 已不是 receiver 值。self.<role> 本体的窗口就是 guard 行。
+ */
+function proofWindowStart(scan: MethodGuardScan, candidate: GuardCandidate): number {
+  const selfSubject = escapeSubject(`self.${scan.receiver}`);
+  if (candidate.subject === selfSubject) { return candidate.line; }
+  const name = unescapeSubject(candidate.subject);
+  let start = -1;
+  for (const alias of scan.aliases) {
+    if (alias.name === name && alias.line < candidate.line) { start = alias.line; }
+  }
+  return start;
+}
+
+/** guard 与 use 之间不跨嵌套 def/class 边界(IDE-LINT-004) */
+function crossesNestedScope(scan: MethodGuardScan, fromLine: number, toLine: number): boolean {
+  return scan.nestedHeaders.some(header => header > fromLine && header < toLine);
+}
+
+/** 候选过闸:位置闸(块界/早退已预计算)+ 重绑/跨作用域失效闸,零文本重扫 */
 function hasReceiverGuardFromScan(
   lines: readonly string[],
   scan: MethodGuardScan,
@@ -256,6 +428,14 @@ function hasReceiverGuardFromScan(
   const useIndent = indentOf(lines[useLine]);
   for (const candidate of scan.candidates) {
     if (candidate.line >= useLine) { continue; }
+    if (crossesNestedScope(scan, candidate.line, useLine)) { continue; }
+    const proofStart = proofWindowStart(scan, candidate);
+    if (proofStart === -1
+      || !bindingStableBetween(scan, candidate.subject, proofStart, useLine)
+      // 别名值与接收者属性同源:期间 self.<role> 被重赋值则旧证明同失效
+      || !bindingStableBetween(scan, escapeSubject(`self.${scan.receiver}`), proofStart, useLine)) {
+      continue;
+    }
     if (candidate.kind === 'positive') {
       if (candidate.indent < useIndent && (candidate.blockEnd ?? 0) > useLine) {
         return true;
@@ -264,25 +444,104 @@ function hasReceiverGuardFromScan(
       return true;
     }
   }
-  // 同行 guard:`if self.cell: self.cell.send(...)` / `self.cell.x() if self.cell else ...`
+  // 同行 guard:单行 if(条件按布尔语义判定)/ 三元前置判空
   const useText = lines[useLine];
   for (const subject of scanSubjectsUpTo(scan, useLine)) {
-    const sameLineIf = new RegExp(`^\\s*if\\s+${subject}\\b[^:]*:\\s*\\S`);
+    const header = extractIfHeader(useText);
+    if (header
+      && /\S/.test(useText.slice(header.bodyStart))
+      && conditionVerdict(header.condition, unescapeSubject(subject)) === 'positive') {
+      return true;
+    }
     const sameLineTernary = new RegExp(`\\bif\\s+${subject}\\s*(is\\s+not\\s+None)?\\s+else\\b`);
-    if (sameLineIf.test(useText) || sameLineTernary.test(useText)) {
+    if (sameLineTernary.test(useText)) {
       return true;
     }
   }
   return false;
 }
 
-/** 同行闸的 subject 集:接收者本体 + use 之前赋值的别名 */
+/** 同行闸的 subject 集:接收者本体 + use 之前赋值且未被重绑的别名 */
 function scanSubjectsUpTo(scan: MethodGuardScan, useLine: number): string[] {
   const subjects = [escapeSubject(`self.${scan.receiver}`)];
   for (const alias of scan.aliases) {
-    if (alias.line < useLine) { subjects.push(escapeSubject(alias.name)); }
+    if (alias.line < useLine
+      && bindingStableBetween(scan, escapeSubject(alias.name), alias.line, useLine)) {
+      subjects.push(escapeSubject(alias.name));
+    }
   }
   return subjects;
+}
+
+/** 方法体内别名属性使用点:`name.attr`(name 仍绑定 receiver 才算) */
+const ALIAS_ATTR_USE = /\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)/g;
+
+interface AliasScope {
+  indent: number;
+  /** 名 → receiver 绑定(行号);null = 已重绑为其他值 */
+  bindings: Map<string, { receiver: PythonReceiverCall['receiver']; line: number } | null>;
+}
+
+/**
+ * IDE-LINT-006:收集方法体内本地别名的使用点(单趟,掩码行,按方法区间一次)。
+ * 作用域链解析:嵌套 def/class 各自持绑定表;use 从最内层向外找首个绑定该名
+ * 的作用域——内层有赋值(遮蔽)则不沿用外层 receiver 证明;外层绑定经闭包
+ * 可见时按外层绑定报。产出与 self.<role>.<name> 同形的调用点(列=属性名
+ * token),与直接调用共用同一 guard 闸与段错配检查。
+ */
+function collectAliasUseCalls(
+  lines: readonly string[],
+  span: MethodSpan
+): PythonReceiverCall[] {
+  const calls: PythonReceiverCall[] = [];
+  const scopes: AliasScope[] = [{ indent: -1, bindings: new Map() }];
+  for (let j = span.startLine + 1; j <= span.endLine; j += 1) {
+    const text = lines[j];
+    if (COMMENT_ONLY.test(text)) { continue; }
+    const indent = indentOf(text);
+    while (scopes.length > 1 && indent <= scopes[scopes.length - 1].indent) {
+      scopes.pop();
+    }
+    if (NESTED_SCOPE_HEADER.test(text)) {
+      scopes.push({ indent, bindings: new Map() });
+      continue;
+    }
+    const scope = scopes[scopes.length - 1];
+    const assigned = RECEIVER_ALIAS_ASSIGN.exec(text);
+    if (assigned && /^\s*$/.test(assigned[4] ?? '')) {
+      scope.bindings.set(assigned[2], {
+        receiver: assigned[3] as PythonReceiverCall['receiver'],
+        line: j
+      });
+      continue;
+    }
+    // 本作用域内重绑(普通/增强赋值、for/del/as)使该名绑定失效
+    for (const [name, binding] of scope.bindings) {
+      if (binding === null) { continue; }
+      if (rebindPattern(name).test(text) || nameRebindExtras(name).test(text)) {
+        scope.bindings.set(name, null);
+      }
+    }
+    let match: RegExpExecArray | null;
+    ALIAS_ATTR_USE.lastIndex = 0;
+    while ((match = ALIAS_ATTR_USE.exec(text)) !== null) {
+      // 作用域链向外解析:最内层持有该名绑定的作用域
+      let holder: AliasScope | undefined;
+      for (let s = scopes.length - 1; s >= 0; s -= 1) {
+        if (scopes[s].bindings.has(match[1])) { holder = scopes[s]; break; }
+      }
+      const binding = holder?.bindings.get(match[1]);
+      if (!binding || binding.line === j) { continue; }
+      calls.push({
+        line: j,
+        character: match.index + match[0].length - match[2].length,
+        receiver: binding.receiver,
+        section: PYTHON_RECEIVER_SECTIONS[binding.receiver],
+        methodName: match[2]
+      });
+    }
+  }
+  return calls;
 }
 
 const indentOf = (line: string): number => {
@@ -363,14 +622,19 @@ interface ReceiverEvalContext {
   lines: string[];
   methodSpans: ClassMethodSpans[];
   scanFor: (span: MethodSpan, receiver: PythonReceiverCall['receiver']) => MethodGuardScan;
+  /** IDE-LINT-006:本地别名使用点(掩码文本上按方法区间一次收集) */
+  aliasUseCalls: PythonReceiverCall[];
 }
 
+/** 文本里疑似有别名赋值(决定是否做别名使用点收集的廉价预检) */
+const RECEIVER_ALIAS_HINT = /\b[A-Za-z_]\w*\s*=\s*self\.(?:cell|base|client)\b/;
+
 function buildEvalContextFromParsed(
-  text: string,
+  maskedText: string,
   parsed: ReturnType<typeof parsePythonFile>
 ): ReceiverEvalContext {
   const methodSpans = buildMethodSpans(parsed);
-  const lines = text.split(/\r?\n/);
+  const lines = maskedText.split(/\r?\n/);
   // IDE-DIA-004:guard 前缀扫描按(方法区间, 接收者)一次,同方法同接收者的
   // 多处调用共享同一份候选
   const guardScans = new Map<MethodSpan, Map<PythonReceiverCall['receiver'], MethodGuardScan>>();
@@ -387,7 +651,17 @@ function buildEvalContextFromParsed(
     }
     return scan;
   };
-  return { lines, methodSpans, scanFor };
+  // IDE-LINT-006:掩码一次全文扫描(IDE-LINT-005)复用于调用发现与别名收集,
+  // 不逐命中重扫
+  const aliasUseCalls: PythonReceiverCall[] = [];
+  if (RECEIVER_ALIAS_HINT.test(maskedText)) {
+    for (const cls of methodSpans) {
+      for (const span of cls.methods) {
+        aliasUseCalls.push(...collectAliasUseCalls(lines, span));
+      }
+    }
+  }
+  return { lines, methodSpans, scanFor, aliasUseCalls };
 }
 
 /** 异步面解析求值(IDE-REV-009):提供器优先(惰性——仅过闸后调用);无提供器
@@ -414,14 +688,17 @@ export function computeReceiverNoneFindings(
   mapping?: EntityMapping,
   preparsed?: PreparsedPythonProvider
 ): ReceiverNoneFinding[] {
-  const calls = findPythonReceiverCalls(text);
-  if (calls.length === 0) return [];
+  // IDE-LINT-005:全文掩码一次,调用发现与 guard 分析共用(列偏移不变)
+  const masked = maskPythonNonCode(text);
+  const baseCalls = findPythonReceiverCalls(masked);
+  if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) { return []; }
   const parsed = typeof preparsed === 'function'
     ? preparsed()
     : preparsed ?? parsePythonFile(text, filePath);
-  const context = buildEvalContextFromParsed(text, parsed);
+  const context = buildEvalContextFromParsed(masked, parsed);
   const findings: ReceiverNoneFinding[] = [];
-  appendCallFindings(calls, context.lines, context.methodSpans, context.scanFor, mapping, findings);
+  appendCallFindings(baseCalls.concat(context.aliasUseCalls), context.lines,
+    context.methodSpans, context.scanFor, mapping, findings);
   return findings;
 }
 
@@ -460,8 +737,10 @@ export async function computeReceiverNoneFindingsAsync(
 ): Promise<ReceiverNoneFinding[] | null> {
   const chunkSize = deps.chunkSize ?? RECEIVER_NONE_CHUNK_SIZE;
   const yieldToHost = deps.yieldToHost ?? yieldToHostDefault;
-  const calls = findPythonReceiverCalls(text);
-  if (calls.length === 0) { return []; }
+  // IDE-LINT-005:全文掩码一次,调用发现与 guard 分析共用(列偏移不变)
+  const masked = maskPythonNonCode(text);
+  const baseCalls = findPythonReceiverCalls(masked);
+  if (baseCalls.length === 0 && !RECEIVER_ALIAS_HINT.test(masked)) { return []; }
   const parsed = await resolveParsedAsync(text, filePath, preparsed);
   if (!parsed) {
     return null; // 本轮共享解析不可用:中止,不产出,不回退宿主同步解析
@@ -469,7 +748,8 @@ export async function computeReceiverNoneFindingsAsync(
   if (deps.shouldContinue && !deps.shouldContinue()) {
     return null; // 解析等待期间版本已前进:旧版本回包由调用方丢弃
   }
-  const context = buildEvalContextFromParsed(text, parsed);
+  const context = buildEvalContextFromParsed(masked, parsed);
+  const calls = baseCalls.concat(context.aliasUseCalls);
   const findings: ReceiverNoneFinding[] = [];
   for (let start = 0; start < calls.length; start += chunkSize) {
     if (start > 0) {
