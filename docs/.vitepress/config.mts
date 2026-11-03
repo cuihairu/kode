@@ -12,7 +12,9 @@ export default withMermaid(defineConfig({
   base: process.env.GITHUB_ACTIONS ? '/kode/' : '/',
   rewrites: {
     'guide/README.md': 'guide/index.md',
-    'zh/guide/README.md': 'zh/guide/index.md'
+    'zh/guide/README.md': 'zh/guide/index.md',
+    'knowledge/README.md': 'knowledge/index.md',
+    'zh/knowledge/README.md': 'zh/knowledge/index.md'
   },
   lastUpdated: true,
   // 单语内部工作稿（review/、reference/ 为英文工作文档，无另一语言对位
@@ -27,10 +29,20 @@ export default withMermaid(defineConfig({
       themeConfig: {
         nav: [
           { text: 'Guide', link: '/guide/' },
+          { text: 'Knowledge', link: '/knowledge/' },
           { text: 'Configuration', link: '/guide/configuration' },
           { text: 'Features', link: '/guide/features' },
         ],
         sidebar: {
+          '/knowledge/': [
+            {
+              text: 'Knowledge base',
+              items: [
+                { text: 'Overview', link: '/knowledge/' },
+                { text: 'Entity lifecycle & reference release', link: '/knowledge/entity-lifecycle-reference' }
+              ]
+            }
+          ],
           '/guide/': [
             {
               text: 'Start',
@@ -91,10 +103,20 @@ export default withMermaid(defineConfig({
       themeConfig: {
         nav: [
           { text: '指南', link: '/zh/guide/' },
+          { text: '知识库', link: '/zh/knowledge/' },
           { text: '配置', link: '/zh/guide/configuration' },
           { text: '功能', link: '/zh/guide/features' },
         ],
         sidebar: {
+          '/zh/knowledge/': [
+            {
+              text: '知识库',
+              items: [
+                { text: '总览', link: '/zh/knowledge/' },
+                { text: '实体生命周期与引用释放', link: '/zh/knowledge/entity-lifecycle-reference' }
+              ]
+            }
+          ],
           '/zh/guide/': [
             {
               text: '开始',

@@ -1,0 +1,102 @@
+# Entity lifecycle & object reference release
+
+> KB-001 head topic (user-named priority): memory object reference & release.
+> Sources cited by `kbe/src` `file:line`; every claim is grounded in the engine
+> source (`kbengine@c2a3b8f`). The baseapp path is analogous to the cellapp
+> path shown here; the timer/Functor deep reference holding is a later-batch
+> topic (marked TODO, not fabricated).
+
+## The live registry holds a strong reference
+
+`KBEngine.entities` is the process-wide live-entity registry. It is a map
+`ENTITY_ID → PyObjectPtr` (`kbe/src/lib/entitydef/entities.h:24`): the map value
+is a **smart pointer that owns a strong CPython reference** to the entity's
+Python object. While an entity is in this map, the engine guarantees its Python
+object is alive (refcount ≥ 1 from the registry itself).
+
+## Destroy flow: move out of the registry, into `garbages`
+
+`entity.destroy()` from Python reaches `CLASS::destroyEntity()` (macro,
+`kbe/src/lib/entitydef/entity_macro.h:1486`), which forwards to the app-level
+`EntityApp::destroyEntity(id, true)` (`kbe/src/lib/server/entity_app.h:713`):
+
+```cpp
+PyObjectPtr entity = pEntities_->erase(entityID);   // move out of live map
+if(entity != NULL) { entity->destroy(callScript); } // destroy the (still-alive) object
+```
+
+`Entities<T>::erase` (`entities.h:331`) does the move in two steps:
+
+```cpp
+T* entity = static_cast<T*>(iter->second.get());
+_pGarbages->add(id, entity);   // ① record the raw pointer in `garbages`
+_entities.erase(iter);         // ② drop the registry's strong ref
+return entity;                 // ③ return as PyObjectPtr (kept alive for destroy())
+```
+
+So a destroyed entity is **removed from the live registry** and its raw
+`PyObject*` is **recorded in `KBEngine.entities.garbages`** — a
+non-owning pointer registry (`kbe/src/lib/entitydef/entity_garbages.h:23`, value
+type `PyObject*`). `garbages` does **not** increment the refcount on `add`
+(`entity_garbages.h:273-301`).
+
+## Reference semantics: the engine does not keep the destroyed object alive
+
+After the registry drops its strong ref (`_entities.erase`), the entity Python
+object's lifetime is decided entirely by the **other CPython references**
+(script closures, lists, timers, `cellData` snapshots, ...). `garbages` holds a
+raw pointer only — it does not own the object. Consequences:
+
+- If **no other reference** remains, the object is freed (refcount 0) and the
+  `garbages` entry becomes dangling — a query through `garbages[id]` is only
+  valid while the object is still alive.
+- If a script **still holds a reference** (the classic leak / use-after-destroy),
+  the object stays alive and `garbages` still points at it.
+
+## Leak detection
+
+`EntityGarbages::add` records a timestamp when the map first becomes non-empty
+(`entity_garbages.h:282-285`). If the garbages are **not emptied for 3600 s**
+(`stampsPerSecond() * 3600`, `entity_garbages.h:289`), the engine logs:
+
+> "For a long time(3600s) not to empty the garbages, there may be a leak of the
+> entitys(size:N), please use the `KBEngine.entities.garbages.items()` command
+> query!" (`entity_garbages.h:294-296`)
+
+`garbages` is exposed to Python with `has_key`/`keys`/`values`/`items`/`get`
+(`entity_garbages.h:124-130`), reachable as `KBEngine.entities.garbages`
+(`entities.h:126`). Accessing an entry hands out a strong ref to the caller
+(`Py_INCREF`, `entity_garbages.h:169`).
+
+## Destroy guards (traps)
+
+- `destroy()` during `__init__` (`initing`) → **AssertionError**
+  ("initing, reject the request", `cellapp/entity.cpp:315`).
+- `destroy()` on an already-destroyed entity → **AssertionError**
+  ("is destroyed", `cellapp/entity.cpp:322`).
+- Most entity methods guard the same way after destroy — `destroySpace`
+  (`:354`), `addProximity` (`:1616`), `clientEntity` (`:1638`), and more
+  (`:414`, `:1792`): calling any of these on a destroyed entity raises
+  AssertionError. A **remote** call targeting a destroyed entity is instead a
+  logged `ERROR_MSG`, not an assertion (`onRemoteMethodCall`,
+  `cellapp/entity.cpp:991`).
+- `entity.isDestroyed` is a read-only Python property (`entity_macro.h:34`).
+
+## `onDestroy` callback & cell data backup
+
+`Entity::onDestroy(callScript)` (`cellapp/entity.cpp:204`) calls the Python
+`onDestroy` callback **only when `callScript && isReal()`** (`:206-210`). The
+comment is explicit: "通常销毁一个entity不通知脚本可能是迁移或者传送造成的"
+(no script notification during migration/teleport). On a script-notified
+destroy the engine also `backupCellData()` and sends `onLoseCell` to the base
+(`:216-220`) — the base keeps the cell data snapshot even as the cell entity is
+destroyed, which is why a base-side reference to a destroyed cell entity can
+still read the last `cellData`.
+
+## Timer registration / removal
+
+Timers are per-entity (`ScriptTimers`), and removal goes through
+`ScriptTimersUtil::delTimer(&pobj->scriptTimers(), timerID)`
+(`entity_macro.h:1478`), returning `-1` when the timer does not exist. A timer
+that outlives its entity is the engine-side reference-holding hazard — the deep
+timer/Functor reference rules are a **later-batch topic** (TODO).
