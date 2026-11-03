@@ -186,7 +186,7 @@ describe('import existing project flow (IDE-PRJ-003)', () => {
 
     const profiles = new ProjectProfileStore(memento).list();
     expect(profiles[0]).toMatchObject({ interpreterPath: null, interpreterSource: 'missing' });
-    expect(info.at(-1)).toContain('Python 解释器: 缺失(未找到 python3/python,可在设置 kbengine.python.interpreterPath 指定)');
+    expect(info.at(-1)).toContain('Python 解释器: 缺失(未找到 python3/python;可指定设置 kbengine.python.interpreterPath,或在工作区按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)建 venv)');
 
     fs.rmSync(base, { recursive: true, force: true });
   });

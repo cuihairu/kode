@@ -7,6 +7,7 @@ import {
   INTERPRETER_SOURCE_LABELS,
   describeInterpreterState,
   locateInterpreterOnPath,
+  locateVenvInterpreter,
   resolveInterpreterWith
 } from '../src/profileInterpreter';
 import { ProjectProfileStore, PROJECT_PROFILES_STATE_KEY } from '../src/projectProfiles';
@@ -103,6 +104,108 @@ describe('interpreter resolution chain (IDE-PRJ-004)', () => {
   });
 });
 
+describe('workspace venv discovery in the interpreter chain (PY-ENV)', () => {
+  const makeVenv = (root: string, name: string, platform: NodeJS.Platform = 'linux') => {
+    const binDir = path.join(root, name, platform === 'win32' ? 'Scripts' : 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const exe = path.join(binDir, platform === 'win32' ? 'python.exe' : 'python');
+    fs.writeFileSync(exe, '', 'utf8');
+    return exe;
+  };
+  const rm = (dir: string) => fs.rmSync(dir, { recursive: true, force: true });
+
+  it('recognizes .venv / venv / .kbenv each on its own without config', () => {
+    for (const name of ['.venv', 'venv', '.kbenv']) {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-'));
+      const exe = makeVenv(root, name);
+      const result = resolveInterpreterWith({
+        workspaceRoot: root,
+        pathEnv: '',
+        platform: 'linux'
+      });
+      expect(result).toEqual({ interpreterPath: exe, interpreterSource: 'venv' });
+      rm(root);
+    }
+  });
+
+  it('custom venvDirectoryNames are respected and the source is venv', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-cfg-'));
+    const exe = makeVenv(root, 'envs');
+    const result = resolveInterpreterWith({
+      workspaceRoot: root,
+      venvDirectoryNames: ['envs', '.venv'],
+      pathEnv: '',
+      platform: 'linux'
+    });
+    expect(result).toEqual({ interpreterPath: exe, interpreterSource: 'venv' });
+    expect(INTERPRETER_SOURCE_LABELS.venv).toBe('工作区 venv');
+    rm(root);
+  });
+
+  it('a workspace venv is preferred over a bare PATH python', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-pref-'));
+    const exe = makeVenv(root, '.venv');
+    const pathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-path-'));
+    fs.writeFileSync(path.join(pathDir, 'python3'), '', 'utf8');
+    const result = resolveInterpreterWith({
+      workspaceRoot: root,
+      pathEnv: pathDir,
+      platform: 'linux'
+    });
+    expect(result).toEqual({ interpreterPath: exe, interpreterSource: 'venv' });
+    rm(root);
+    rm(pathDir);
+  });
+
+  it('an explicit valid setting still beats a workspace venv', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-set-'));
+    makeVenv(root, '.venv');
+    const interp = path.join(root, 'my-python');
+    fs.writeFileSync(interp, '', 'utf8');
+    const result = resolveInterpreterWith({
+      interpreterSetting: interp,
+      workspaceRoot: root,
+      pathEnv: '',
+      platform: 'linux'
+    });
+    expect(result).toEqual({ interpreterPath: interp, interpreterSource: 'setting' });
+    rm(root);
+  });
+
+  it('a ghost setting falls through to the workspace venv', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-ghost-'));
+    const exe = makeVenv(root, '.kbenv');
+    const result = resolveInterpreterWith({
+      interpreterSetting: path.join(root, 'ghost-python'),
+      workspaceRoot: root,
+      pathEnv: '',
+      platform: 'linux'
+    });
+    expect(result).toEqual({ interpreterPath: exe, interpreterSource: 'venv' });
+    rm(root);
+  });
+
+  it('does not probe a venv without a workspace root (falls to PATH/missing)', () => {
+    const result = resolveInterpreterWith({ pathEnv: '', platform: 'linux' });
+    expect(result).toEqual({ interpreterPath: null, interpreterSource: 'missing' });
+  });
+
+  it('windows uses Scripts/python.exe for venv discovery', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-win-'));
+    const exe = makeVenv(root, '.venv', 'win32');
+    expect(locateVenvInterpreter(root, ['.venv', 'venv', '.kbenv'], 'win32')).toBe(exe);
+    rm(root);
+  });
+
+  it('a venv directory without a python binary is not claimed', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-venv-nobin-'));
+    fs.mkdirSync(path.join(root, '.venv', 'bin'), { recursive: true });
+    const result = resolveInterpreterWith({ workspaceRoot: root, pathEnv: '', platform: 'linux' });
+    expect(result).toEqual({ interpreterPath: null, interpreterSource: 'missing' });
+    rm(root);
+  });
+});
+
 describe('profile interpreter recording (IDE-PRJ-004)', () => {
   it('saves the interpreter with its source and reads it back', async () => {
     const store = new ProjectProfileStore(new MemoryMemento());
@@ -136,7 +239,7 @@ describe('profile interpreter recording (IDE-PRJ-004)', () => {
       describeInterpreterState({ interpreterPath: '/usr/bin/python3', interpreterSource: 'path' })
     ).toBe(`Python 解释器: /usr/bin/python3(来源: ${INTERPRETER_SOURCE_LABELS.path})`);
     expect(describeInterpreterState({ interpreterPath: null, interpreterSource: 'missing' })).toBe(
-      'Python 解释器: 缺失(未找到 python3/python,可在设置 kbengine.python.interpreterPath 指定)'
+      'Python 解释器: 缺失(未找到 python3/python;可指定设置 kbengine.python.interpreterPath,或在工作区按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)建 venv)'
     );
   });
 

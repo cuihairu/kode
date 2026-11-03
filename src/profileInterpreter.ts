@@ -1,16 +1,23 @@
 /**
  * 项目 profile 的 Python 解释器来源(IDE-PRJ-004):profile 明确记录用哪个
  * 解释器、来自哪里。解析链:显式设置 kbengine.python.interpreterPath(存在
- * 才采用,支持 ${workspaceFolder})→ PATH 里的 python3/python → 都找不到记
- * 缺失状态(不伪造路径)。来源三值:setting/path/missing,随路径一并落进
- * profile 记录;显示面 describeInterpreterState 把缺失状态明说。
+ * 才采用,支持 ${workspaceFolder})→ 工作区 venv 自动发现(kbengine.python.
+ * interpreterPath 为空时,按同一目录名清单在 workspaceRoot 找 bin/python,
+ * PY-ENV;比裸 PATH python 更贴近项目意图)→ PATH 里的 python3/python → 都
+ * 找不到记缺失状态(不伪造路径)。来源四值:setting/venv/path/missing,随
+ * 路径一并落进 profile 记录;显示面 describeInterpreterState 把缺失状态
+ * 明说。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import {
+  DEFAULT_VENV_DIRECTORY_NAMES,
+  normalizeVenvDirectoryNames
+} from './quickActionConfig';
 
-export type InterpreterSource = 'setting' | 'path' | 'missing';
+export type InterpreterSource = 'setting' | 'venv' | 'path' | 'missing';
 
 export interface InterpreterResolution {
   /** 找到的解释器绝对路径;null=缺失(如实记录,不伪造) */
@@ -21,6 +28,7 @@ export interface InterpreterResolution {
 /** 显示文案里的来源标签 */
 export const INTERPRETER_SOURCE_LABELS: Record<InterpreterSource, string> = {
   setting: '设置',
+  venv: '工作区 venv',
   path: 'PATH',
   missing: '缺失'
 };
@@ -58,14 +66,42 @@ export function locateInterpreterOnPath(
   return null;
 }
 
-/** 解析链输入(注入面:测试给定 PATH/平台/设置原值) */
+/** 解析链输入(注入面:测试给定 PATH/平台/设置原值/venv 目录名清单) */
 export interface InterpreterResolutionInputs {
   /** kbengine.python.interpreterPath 配置原值 */
   interpreterSetting?: string;
-  /** ${workspaceFolder} 展开基底 */
+  /** ${workspaceFolder} 展开基底 + venv 探测根 */
   workspaceRoot?: string;
+  /** venv 目录名清单(默认 .venv/venv/.kbenv);省略用默认 */
+  venvDirectoryNames?: string[];
   pathEnv?: string;
   platform?: NodeJS.Platform;
+}
+
+/**
+ * 工作区 venv 解释器探测(PY-ENV):按目录名清单在 workspaceRoot 逐名找
+ * <name>/<bin|Scripts>/python[3][.exe](只做存在性探测,不执行);找不到
+ * 返回 null,不猜。win32 走 Scripts/python.exe,unix 走 bin/python 再
+ * bin/python3。
+ */
+export function locateVenvInterpreter(
+  workspaceRoot: string,
+  venvDirectoryNames: string[],
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  const scriptsDir = platform === 'win32' ? 'Scripts' : 'bin';
+  const candidates =
+    platform === 'win32' ? ['python.exe', 'python3.exe'] : ['python', 'python3'];
+  for (const name of venvDirectoryNames) {
+    const binDir = path.join(workspaceRoot, name, scriptsDir);
+    for (const candidate of candidates) {
+      const fullPath = path.join(binDir, candidate);
+      if (fs.existsSync(fullPath)) {
+        return fullPath;
+      }
+    }
+  }
+  return null;
 }
 
 export function resolveInterpreterWith(inputs: InterpreterResolutionInputs): InterpreterResolution {
@@ -76,6 +112,19 @@ export function resolveInterpreterWith(inputs: InterpreterResolutionInputs): Int
       return { interpreterPath: expanded, interpreterSource: 'setting' };
     }
   }
+  // PY-ENV:设置为空(或设置失效)时,在 workspaceRoot 内按同一目录名清单
+  // 自动发现 venv 解释器;置于 PATH 之前——工作区 venv 比裸 PATH python 更
+  // 贴近项目意图。来源如实记 venv,不伪造路径。
+  if (inputs.workspaceRoot) {
+    const venv = locateVenvInterpreter(
+      inputs.workspaceRoot,
+      inputs.venvDirectoryNames ?? [...DEFAULT_VENV_DIRECTORY_NAMES],
+      inputs.platform
+    );
+    if (venv) {
+      return { interpreterPath: venv, interpreterSource: 'venv' };
+    }
+  }
   const onPath = locateInterpreterOnPath(inputs.pathEnv, inputs.platform);
   if (onPath) {
     return { interpreterPath: onPath, interpreterSource: 'path' };
@@ -83,18 +132,24 @@ export function resolveInterpreterWith(inputs: InterpreterResolutionInputs): Int
   return { interpreterPath: null, interpreterSource: 'missing' };
 }
 
-/** 产品入口:读真实配置与 PATH */
+/** 产品入口:读真实配置与 PATH;workspaceRoot 缺省取首个工作区文件夹 */
 export function resolveProfileInterpreter(workspaceRoot?: string): InterpreterResolution {
   let configured = '';
+  let venvNames: string[] = [...DEFAULT_VENV_DIRECTORY_NAMES];
   try {
     configured =
       vscode.workspace.getConfiguration('kbengine').get<string>('python.interpreterPath', '') ?? '';
+    venvNames = normalizeVenvDirectoryNames(
+      vscode.workspace.getConfiguration('kbengine').get('python.venvDirectories')
+    );
   } catch {
     configured = '';
   }
+  const root = workspaceRoot ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   return resolveInterpreterWith({
     interpreterSetting: configured,
-    workspaceRoot,
+    workspaceRoot: root,
+    venvDirectoryNames: venvNames,
     pathEnv: process.env.PATH,
     platform: process.platform
   });
@@ -116,5 +171,5 @@ export function describeInterpreterState(profile: {
       source ? INTERPRETER_SOURCE_LABELS[source] : profile.interpreterSource
     })`;
   }
-  return 'Python 解释器: 缺失(未找到 python3/python,可在设置 kbengine.python.interpreterPath 指定)';
+  return 'Python 解释器: 缺失(未找到 python3/python;可指定设置 kbengine.python.interpreterPath,或在工作区按 kbengine.python.venvDirectories(默认 .venv/venv/.kbenv)建 venv)';
 }
