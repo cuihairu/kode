@@ -4,7 +4,12 @@
 //! - **直线近似**:按源码顺序扫描,进入 `if`/`for`/`while`/`with`/`try` 体时顺序
 //!   处理,不做控制流交汇合并(分支后变量的可能集不取并集);
 //! - 仅跟踪局部名与 `self.<attr>` 属性写入;全局/内建/自由变量不被跟踪;
-//! - 变量重定义会终结旧链(新定值开新链)。
+//! - 变量重定义会终结旧链(新定值开新链);
+//! - `del x` 视作 kill(终结链,不新开链),删除后 `use(x)` 不连旧链(MVP 近似)。
+//!
+//! KODE-AUD-007:补 AugAssign 读旧值(target 是 Store ctx 语义读)、del kill
+//! (Del ctx 非 Store 故旧实现漏)、Subscript 容器元素写侧读容器、NamedExpr(wa-
+//! lrus)target 定义、Comprehension generator target 定义。
 //!
 //! 产出 [`DataflowResult`] 每变量(或其每次重定义)一条 [`DefUseChain`],含
 //! 定值行与使用行,参数来源以 `is_param` 标记(「变量来源与传播」的可查询面)。
@@ -144,7 +149,10 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
             collect_writes(state, &a.target, line);
         }
         Stmt::AugAssign(a) => {
-            collect_reads(state, &a.target, line);
+            // KODE-AUD-007:`x += v` 的 target 是 Store 上下文,但语义读旧值再写新值。
+            // collect_reads 的 Name 分支只认 Load ctx 会漏读旧 x,故用 collect_reads_of
+            // 强制读 target 底层名(读旧值),再 collect_writes 写新链。
+            collect_reads_of(state, &a.target, line);
             collect_reads(state, &a.value, line);
             collect_writes(state, &a.target, line);
         }
@@ -156,8 +164,10 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::Delete(d) => {
             for t in &d.targets {
-                // `del x` 终结 x 当前链(MVP:视作一次重定义/kill)
-                collect_writes(state, t, line);
+                // KODE-AUD-007:`del x` 终结 x 当前链(视作 kill),后续 use(x) 不连旧链。
+                // 旧实现走 collect_writes,但 del 的 Name ctx 是 Del(非 Store),Name 分支
+                // 不认 → 旧链未终结仍被后续读。kill_var 删 live 映射即终结。
+                kill_var(state, t, line);
             }
         }
         Stmt::If(i) => {
@@ -280,7 +290,12 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
                 collect_reads(state, v, line);
             }
         }
-        Named(n) => collect_reads(state, &n.value, line),
+        Named(n) => {
+            // KODE-AUD-007:walrus `(x := v)` 的 target 是 Store 上下文,须在此定义 x
+            // (旧实现只读 value,漏 def target)。
+            collect_reads(state, &n.value, line);
+            collect_writes(state, &n.target, line);
+        }
         BinOp(b) => {
             collect_reads(state, &b.left, line);
             collect_reads(state, &b.right, line);
@@ -318,6 +333,7 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             collect_reads(state, &c.elt, line);
             for gen in &c.generators {
                 collect_reads(state, &gen.iter, line);
+                collect_writes(state, &gen.target, line);
                 for if_ in &gen.ifs {
                     collect_reads(state, if_, line);
                 }
@@ -327,6 +343,7 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             collect_reads(state, &c.elt, line);
             for gen in &c.generators {
                 collect_reads(state, &gen.iter, line);
+                collect_writes(state, &gen.target, line);
                 for if_ in &gen.ifs {
                     collect_reads(state, if_, line);
                 }
@@ -339,6 +356,7 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             collect_reads(state, &c.value, line);
             for gen in &c.generators {
                 collect_reads(state, &gen.iter, line);
+                collect_writes(state, &gen.target, line);
                 for if_ in &gen.ifs {
                     collect_reads(state, if_, line);
                 }
@@ -348,6 +366,7 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
             collect_reads(state, &c.elt, line);
             for gen in &c.generators {
                 collect_reads(state, &gen.iter, line);
+                collect_writes(state, &gen.target, line);
                 for if_ in &gen.ifs {
                     collect_reads(state, if_, line);
                 }
@@ -411,7 +430,79 @@ fn collect_writes(state: &mut State, target: &Expr, line: usize) {
             }
         }
         Starred(s) => collect_writes(state, &s.value, line),
-        Subscript(s) => collect_writes(state, &s.value, line),
+        Subscript(s) => {
+            // KODE-AUD-007:`a[0] = v` 写侧须读容器 a 与索引(旧实现只写 s.value 漏读)。
+            collect_reads(state, &s.value, line);
+            collect_reads(state, &s.slice, line);
+            collect_writes(state, &s.value, line);
+        }
+        _ => {}
+    }
+}
+
+/// 强制读 target 底层名(不看 ctx):用于 AugAssign 的 target——它是 Store 上下文
+/// 但语义读旧值(`x += v` 先读旧 x)。对 Name 无条件 use;对 Subscript/Attribute 递归。
+fn collect_reads_of(state: &mut State, expr: &Expr, line: usize) {
+    use Expr::*;
+    match expr {
+        Name(n) => state.use_var(n.id.as_str(), line),
+        Subscript(s) => {
+            collect_reads(state, &s.value, line);
+            collect_reads(state, &s.slice, line);
+        }
+        Attribute(a) => {
+            if is_self(&a.value) {
+                state.use_var(&format!("self.{}", a.attr.as_str()), line);
+            } else {
+                collect_reads_of(state, &a.value, line);
+            }
+        }
+        Tuple(t) => {
+            for e in &t.elts {
+                collect_reads_of(state, e, line);
+            }
+        }
+        List(l) => {
+            for e in &l.elts {
+                collect_reads_of(state, e, line);
+            }
+        }
+        Starred(s) => collect_reads_of(state, &s.value, line),
+        _ => collect_reads(state, expr, line),
+    }
+}
+
+/// 终结 var 当前链:`del x` 语义——后续 use(x) 不应连旧链。MVP 视作 kill(删 live
+/// 映射),不新开链(删除后 x 未定义,非重定义)。del 的 Name ctx 是 Del(非 Store),
+/// collect_writes 的 Name 分支不认,故单独处理。
+fn kill_var(state: &mut State, target: &Expr, line: usize) {
+    use Expr::*;
+    match target {
+        Name(n) => {
+            state.live.remove(n.id.as_str());
+        }
+        Attribute(a) => {
+            if is_self(&a.value) {
+                state.live.remove(&format!("self.{}", a.attr.as_str()));
+            }
+        }
+        Subscript(s) => {
+            // `del a[i]` 读容器 a 与索引,再终结容器链(对容器递归 kill)。
+            collect_reads(state, &s.value, line);
+            collect_reads(state, &s.slice, line);
+            kill_var(state, &s.value, line);
+        }
+        Tuple(t) => {
+            for e in &t.elts {
+                kill_var(state, e, line);
+            }
+        }
+        List(l) => {
+            for e in &l.elts {
+                kill_var(state, e, line);
+            }
+        }
+        Starred(s) => kill_var(state, &s.value, line),
         _ => {}
     }
 }

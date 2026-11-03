@@ -138,3 +138,112 @@ fn for_loop_var_is_def() {
     assert_eq!(it.def_line, Some(1));
     assert_eq!(it.use_lines, vec![2]);
 }
+
+// ---------------------------------------------------------------------------
+// KODE-AUD-007:数据流 AST 语义缺陷修复验证。
+// 5 项语义:AugAssign 读旧值 / del kill / Subscript 写侧读容器 /
+// NamedExpr target 定义 / Comprehension generator target 定义。
+// 判别性:每项修复前旧实现漏语义,修复后断言成立。
+// ---------------------------------------------------------------------------
+
+/// AugAssign `x += v`:target 是 Store 上下文但语义读旧值。旧实现
+/// collect_reads 的 Name 分支只认 Load → 漏读旧 x;修复用 collect_reads_of
+/// 强制读。断言第一条 x 链(定值于 x=1)在 x+=2 行被读。
+#[test]
+fn augassign_reads_old_value() {
+    let src = "def f():\n    x = 1\n    x += 2\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let xs: Vec<_> = result.chains.iter().filter(|c| c.var == "x").collect();
+    // x 两条链:x=1 定值,被 x+=2 读旧值;x+=2 定值新链。
+    assert_eq!(xs.len(), 2, "x 应两链: {:?}", result.chains);
+    assert_eq!(xs[0].def_line, Some(1));
+    assert_eq!(xs[0].use_lines, vec![2], "x+=2 应读旧 x");
+    assert_eq!(xs[1].def_line, Some(2));
+}
+
+/// `del x` 终结 x 当前链:后续 use(x) 不连旧链。旧实现走 collect_writes
+/// 但 del 的 Name ctx 是 Del(非 Store)不认 → 旧链仍被后续读;修复 kill_var
+/// 删 live 映射即终结。
+#[test]
+fn del_kills_chain() {
+    let src = "def f():\n    x = 1\n    del x\n    use(x)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let x = chain(&result, "x");
+    assert_eq!(x.def_line, Some(1));
+    assert!(
+        x.use_lines.is_empty(),
+        "del x 后 use(x) 不应连旧链: {:?}",
+        x.use_lines
+    );
+}
+
+/// Subscript 写侧 `a[0] = v` 语义读容器 a 与索引。旧实现只 collect_writes
+/// s.value(漏读容器);修复写分支先 collect_reads(s.value)+collect_reads(s.slice)。
+/// 容器 a 在 subscript 基座是 Load ctx(读容器找元素,不重定义变量 a),故 a
+/// 单链:def=1(初值),use=[2(a[0]=5 读容器), 3(use(a) 读)]。判别:修复前 use=[3]
+/// (漏行 2 容器读),修复后 [2,3]。
+#[test]
+fn subscript_write_reads_container() {
+    let src = "def f():\n    a = [1]\n    a[0] = 5\n    use(a)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let xs: Vec<_> = result.chains.iter().filter(|c| c.var == "a").collect();
+    assert_eq!(xs.len(), 1, "a 应单链(容器读不重定义): {:?}", result.chains);
+    assert_eq!(xs[0].def_line, Some(1));
+    assert_eq!(xs[0].use_lines, vec![2, 3], "a[0]=5 应读容器 a");
+}
+
+/// NamedExpr(walrus)`(n := v)`的 target 是 Store 上下文,须定义 n。旧实现
+/// 只读 value 漏 def target;修复在 Named 分支 collect_writes(target)。
+#[test]
+fn namedexpr_target_defined() {
+    let src = "def f():\n    (n := 1)\n    use(n)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let n = chain(&result, "n");
+    assert_eq!(n.def_line, Some(1), "walrus 应定义 n");
+    assert_eq!(n.use_lines, vec![2]);
+}
+
+/// Comprehension generator target `[x for x in items]` 定义 x。旧实现只
+/// collect_reads(iter)漏 def target;修复在 generator 循环 collect_writes(target)。
+#[test]
+fn comprehension_target_defined() {
+    let src = "def f(items):\n    vals = [x for x in items]\n    use(x)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["items".to_string()], &body);
+    let x = chain(&result, "x");
+    assert_eq!(x.def_line, Some(1), "comprehension target 应定义 x");
+    assert_eq!(x.use_lines, vec![2]);
+    // items 参数被 iter 读。
+    let items = chain(&result, "items");
+    assert!(items.is_param);
+    assert_eq!(items.use_lines, vec![1]);
+}
