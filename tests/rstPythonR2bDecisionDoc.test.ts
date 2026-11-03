@@ -61,8 +61,29 @@ describe('IDE-RST-010:Python R2b 决策记录', () => {
     const text = doc();
     expect(text).toContain('PYTHON_WORKER_PARSE_THRESHOLD = 256×1024');
     expect(text).toContain('pythonParserWorkerHost.ts:6');
-    // 暂缓核心理由:超阈值解析不在主线程,主线程实付是 commit 段
+    // 暂缓核心理由(REV-038 修正后口径):超阈值解析不在主线程只对
+    // 异步共享解析面成立,主线程实付是 commit 段——不再作无条件口径
+    expect(text).toContain('异步共享解析面');
     expect(text).toContain('不在扩展宿主主线程');
+    // 无条件的旧口径必须已移除
+    expect(text).not.toContain('生产路径上超阈值文件的解析不在扩展宿主主线程');
+    expect(text).not.toContain('所有大文件解析已退出宿主');
+  });
+
+  it('IDE-REV-038 证据边界:两处漏口在档且未测口径明确', () => {
+    const text = doc();
+    // 漏口一:同步面 syncDocumentParse(不按阈值分流的同步整文件解析)
+    expect(text).toContain('syncDocumentParse');
+    expect(text).toContain('pythonClassIndex.ts:1188');
+    // 漏口二:首次 hover 同步提取(REV-035/036 实测宿主阻塞样本)
+    expect(text).toContain('首次 hover 同步提取');
+    expect(text).toContain('21.807ms');
+    // 归因未隔离→标未测;本轮反例不直接决定迁移
+    expect(text).toContain('标未测');
+    expect(text).toContain('不直接决定迁移');
+    // 已测/未测场景分界在档
+    expect(text).toContain('已测与未测的边界');
+    expect(text).toContain('未测面=');
   });
 
   it('结论形态:暂缓 + 解析未被证明为主要成本 + 不含已采纳表述', () => {
