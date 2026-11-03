@@ -101,6 +101,14 @@ export class HotReloadTargetStateStore {
       if (options.detail !== undefined) {
         updated.detail = options.detail;
       }
+      // KODE-AUD-003:回执路径漏写 options.sentDigest——hotReload.ts:377 与
+      // hotReloadRetryCommand.ts:138 都经带 attempt 的写回把发送时点冻结的
+      // 内容 sha256 基准带进台账(IDE-AUD-006「可审计」),此前该分支只补
+      // detail,sentDigest 被静默丢弃,记录恒无基准,hotReloadFileState 的
+      // applied 基线回落重算。与 detail 同模式:提供了才覆写,未提供保留旧值。
+      if (options.sentDigest !== undefined) {
+        updated.sentDigest = options.sentDigest;
+      }
       this.put(key, file, updated);
       this.onRecorded?.();
       return updated;

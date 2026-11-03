@@ -170,6 +170,32 @@ describe('HotReloadTargetStateStore(双维隔离台账)', () => {
     expect(store.get(key, file)?.attempt).toBe((record?.attempt ?? 0) + 1);
   });
 
+  it('KODE-AUD-003:回执路径写回携带 sentDigest 落台账(代际守卫下可审计基准)', () => {
+    const store = new HotReloadTargetStateStore({ now: () => 1000 });
+    const key = { rootId: 'r', targetId: 't' };
+    const file = '/x.py';
+    const frozen = 'b'.repeat(64);
+
+    // 与 hotReload.ts:348 同径:新发送(无 attempt)不携基准创建
+    const record = store.record(key, file, 'sent-unverified', {});
+    expect(record?.sentDigest).toBeUndefined();
+    const attempt = record?.attempt;
+
+    // 与 hotReload.ts:377 同径:发送时点冻结基准经带 attempt 写回补进台账
+    // (修前该分支只补 detail,sentDigest 被静默丢弃,记录恒无基准)
+    store.record(key, file, 'sent-unverified', { sentDigest: frozen, attempt });
+    expect(store.get(key, file)?.sentDigest).toBe(frozen);
+    expect(store.get(key, file)?.attempt).toBe(attempt);
+
+    // 代际守卫仍有效:旧代写回携基准被拒,不污染新代记录
+    const next = store.record(key, file, 'failed', { detail: '新失败' });
+    const stale = store.record(key, file, 'sent-unverified', { sentDigest: 'c'.repeat(64), attempt });
+    expect(stale).toBeUndefined();
+    expect(store.get(key, file)?.attempt).toBe((attempt ?? 0) + 1);
+    expect(store.get(key, file)?.sentDigest).toBeUndefined();
+    void next;
+  });
+
   it('IDE-AUD-005:无当前记录时带 attempt 写回被拒(记录已清),不凭空造记录', () => {
     const store = new HotReloadTargetStateStore({ now: () => 1000 });
     const key = { rootId: 'r', targetId: 't' };
