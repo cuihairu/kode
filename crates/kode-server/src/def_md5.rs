@@ -449,6 +449,10 @@ struct Replayer {
     entities_attrs: HashMap<String, (i32, i32, i32)>,
     /// 已完成 def 装载的模块名(loadComponents 的 findScriptModule 判定)。
     loaded_modules: HashSet<String>,
+    /// KODE-AUD-006:当前 def 展开路径的活动栈(再入即环)。load_interfaces /
+    /// load_parent_class 不查 loaded_modules,interface/parent 链成环(A→B→A)
+    /// 会无限递归栈溢出;loading 标记正在展开的 def 名,再遇即截断。
+    loading: HashSet<String>,
     modules: HashMap<String, ModuleState>,
     /// g_propertyUtypeAuto/g_propertyUtypes(entitydef.cpp:45/1018-1093)。
     prop_utype_auto: u16,
@@ -484,6 +488,7 @@ impl Replayer {
             component_scripts: params.component_scripts,
             entities_attrs,
             loaded_modules: HashSet::new(),
+            loading: HashSet::new(),
             modules: HashMap::new(),
             prop_utype_auto: 1,
             prop_utypes: Vec::new(),
@@ -712,23 +717,32 @@ impl Replayer {
         module_name: &str,
         interfaces_ignore_components: bool,
     ) -> Result<(), String> {
-        let def_text = self
-            .defs
-            .get(file_name)
-            .cloned()
-            .ok_or_else(|| format!("def not found: {file_name}.def"))?;
-        let doc = parse_xml(&def_text, false);
-        let root = doc
-            .root()
-            .ok_or_else(|| format!("{file_name}.def: no root element"))?;
-        self.load_all_def_descriptions(&doc, root, module_name)?;
-        self.load_interfaces(&doc, root, module_name, interfaces_ignore_components)?;
-        self.load_components(&doc, root, module_name)?;
-        self.load_parent_class(&doc, root, module_name)?;
-        // loadDetailLevelInfo/loadVolatileInfo 不入流(已核:无 md5 追加)。
-        self.auto_match_comp_own(module_name);
-        self.loaded_modules.insert(file_name.to_string());
-        Ok(())
+        // KODE-AUD-006:活动栈保护——component 链成环(A→B→A)经 load_components
+        // → load_def_info 递归,loading 再遇即截断(引擎递归装载无法终止)。
+        if !self.loading.insert(file_name.to_string()) {
+            return Ok(());
+        }
+        let result = (|| {
+            let def_text = self
+                .defs
+                .get(file_name)
+                .cloned()
+                .ok_or_else(|| format!("def not found: {file_name}.def"))?;
+            let doc = parse_xml(&def_text, false);
+            let root = doc
+                .root()
+                .ok_or_else(|| format!("{file_name}.def: no root element"))?;
+            self.load_all_def_descriptions(&doc, root, module_name)?;
+            self.load_interfaces(&doc, root, module_name, interfaces_ignore_components)?;
+            self.load_components(&doc, root, module_name)?;
+            self.load_parent_class(&doc, root, module_name)?;
+            // loadDetailLevelInfo/loadVolatileInfo 不入流(已核:无 md5 追加)。
+            self.auto_match_comp_own(module_name);
+            self.loaded_modules.insert(file_name.to_string());
+            Ok(())
+        })();
+        self.loading.remove(file_name);
+        result
     }
 
     /// loadAllDefDescriptions(entitydef.cpp:927-964):Properties→Cell→Base→Client。
@@ -990,20 +1004,30 @@ impl Replayer {
                 None => continue,
             };
             let interface_name = doc.element(interface_el).name.clone();
-            let text = self
-                .defs
-                .get(&interface_name)
-                .cloned()
-                .ok_or_else(|| format!("interface def not found: {interface_name}.def"))?;
-            let idoc = parse_xml(&text, false);
-            let iroot = idoc
-                .root()
-                .ok_or_else(|| format!("{interface_name}.def: no root"))?;
-            self.load_all_def_descriptions(&idoc, iroot, module_name)?;
-            if !ignore_components {
-                self.load_components(&idoc, iroot, module_name)?;
+            // KODE-AUD-006:活动栈保护——interface 链成环(A→B→A)不查
+            // loaded_modules,递归无限栈溢出;loading 再遇即截断。处理完移除,
+            // 错误传播前必先移除(否则残留在 loading 污染后续展开)。
+            if !self.loading.insert(interface_name.clone()) {
+                continue;
             }
-            self.load_interfaces(&idoc, iroot, module_name, ignore_components)?;
+            let result = (|| {
+                let text = self
+                    .defs
+                    .get(&interface_name)
+                    .cloned()
+                    .ok_or_else(|| format!("interface def not found: {interface_name}.def"))?;
+                let idoc = parse_xml(&text, false);
+                let iroot = idoc
+                    .root()
+                    .ok_or_else(|| format!("{interface_name}.def: no root"))?;
+                self.load_all_def_descriptions(&idoc, iroot, module_name)?;
+                if !ignore_components {
+                    self.load_components(&idoc, iroot, module_name)?;
+                }
+                self.load_interfaces(&idoc, iroot, module_name, ignore_components)
+            })();
+            self.loading.remove(&interface_name);
+            result?;
         }
         Ok(())
     }
@@ -1153,24 +1177,33 @@ impl Replayer {
         // 引擎:parentClassName = getKey(enterNode("Parent")) = <Parent> 文本
         // (entitydef.cpp:897-899),非元素名。
         let parent_name = first_text(doc, parent_el);
-        let text = self
-            .defs
-            .get(&parent_name)
-            .cloned()
-            .ok_or_else(|| format!("parent def not found: {parent_name}.def"))?;
-        let pdoc = parse_xml(&text, false);
-        let proot = pdoc
-            .root()
-            .ok_or_else(|| format!("{parent_name}.def: no root"))?;
-        self.load_all_def_descriptions(&pdoc, proot, module_name)?;
-        self.load_interfaces(&pdoc, proot, module_name, false)?;
-        self.load_components(&pdoc, proot, module_name)?;
-        self.load_parent_class(&pdoc, proot, module_name)?;
-        // 引擎 loadDefInfo 每递归层尾部都调 pScriptModule->autoMatchCompOwn()
-        // (entitydef.cpp:398),其内部用模块自身 name_(子模块)查 entities.xml
-        // → 父链每层重复追子模块 3×int32(引擎怪癖,重放照实镜像)。
-        self.auto_match_comp_own(module_name);
-        Ok(())
+        // KODE-AUD-006:活动栈保护——parent 链成环(A→B→A)不查 loaded_modules,
+        // 递归无限栈溢出;loading 再遇即截断。处理完移除(错误传播前必先移除)。
+        if !self.loading.insert(parent_name.clone()) {
+            return Ok(());
+        }
+        let result = (|| {
+            let text = self
+                .defs
+                .get(&parent_name)
+                .cloned()
+                .ok_or_else(|| format!("parent def not found: {parent_name}.def"))?;
+            let pdoc = parse_xml(&text, false);
+            let proot = pdoc
+                .root()
+                .ok_or_else(|| format!("{parent_name}.def: no root"))?;
+            self.load_all_def_descriptions(&pdoc, proot, module_name)?;
+            self.load_interfaces(&pdoc, proot, module_name, false)?;
+            self.load_components(&pdoc, proot, module_name)?;
+            self.load_parent_class(&pdoc, proot, module_name)?;
+            // 引擎 loadDefInfo 每递归层尾部都调 pScriptModule->autoMatchCompOwn()
+            // (entitydef.cpp:398),其内部用模块自身 name_(子模块)查 entities.xml
+            // → 父链每层重复追子模块 3×int32(引擎怪癖,重放照实镜像)。
+            self.auto_match_comp_own(module_name);
+            Ok(())
+        })();
+        self.loading.remove(&parent_name);
+        result
     }
 
     /// autoMatchCompOwn(scriptdef_module.cpp:302-530):

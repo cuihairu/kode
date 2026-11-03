@@ -422,3 +422,57 @@ fn property_flags_map_to_domains() {
     assert!(codes.contains(&"kbengine.processTopologyMissingCellapp"), "got {codes:?}");
     assert!(codes.contains(&"kbengine.processTopologyMissingBaseapp"), "got {codes:?}");
 }
+
+// ---------------------------------------------------------------------------
+// KODE-AUD-006:def 递归循环保护(interface/parent 成环不栈溢出)
+// ---------------------------------------------------------------------------
+
+/// interface 链成环 A→B→A:walk_def 递归装载无法终止,活动栈 visiting 截断,
+/// 不 panic 不栈溢出(修前无限递归 stack overflow)。
+#[test]
+fn interface_cycle_a_to_b_to_a_terminates() {
+    let defs = vec![
+        DefInput {
+            name: "A".into(),
+            category: "entity".into(),
+            file_path: "/defs/entity_defs/A.def".into(),
+            text: r#"<root><Interfaces><interface> B </interface></Interfaces></root>"#.into(),
+        },
+        DefInput {
+            name: "B".into(),
+            category: "entity".into(),
+            file_path: "/defs/entity_defs/B.def".into(),
+            text: r#"<root><Interfaces><interface> A </interface></Interfaces></root>"#.into(),
+        },
+    ];
+    let xml = r#"<processTopology>
+      <process name="cellapp_1" role="cellapp"><port>20003</port></process>
+    </processTopology>"#;
+    // 不 panic 即通过(环被截断);发现集可有可无,关键是返回而非栈溢出。
+    let findings = validate_process_topology(xml, None, defs);
+    assert!(findings.len() <= 4);
+}
+
+/// parent 链成环 A→B→A:同样由活动栈截断。
+#[test]
+fn parent_cycle_a_to_b_to_a_terminates() {
+    let defs = vec![
+        DefInput {
+            name: "A".into(),
+            category: "entity".into(),
+            file_path: "/defs/entity_defs/A.def".into(),
+            text: r#"<root><Parent> B </Parent></root>"#.into(),
+        },
+        DefInput {
+            name: "B".into(),
+            category: "entity".into(),
+            file_path: "/defs/entity_defs/B.def".into(),
+            text: r#"<root><Parent> A </Parent></root>"#.into(),
+        },
+    ];
+    let xml = r#"<processTopology>
+      <process name="cellapp_1" role="cellapp"><port>20003</port></process>
+    </processTopology>"#;
+    let findings = validate_process_topology(xml, None, defs);
+    assert!(findings.len() <= 4);
+}

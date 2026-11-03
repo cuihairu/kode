@@ -334,6 +334,11 @@ impl DefCorpus {
 #[derive(Default)]
 struct ContentAcc {
     visited: HashSet<String>,
+    /// KODE-AUD-006:当前展开路径的活动栈(再入即环)。visited 只对
+    /// origin != "interface" 生效,interface 链 A→B→A 不入 visited 仍会无限
+    /// 递归栈溢出;visiting 标记正在展开的 def 名,再遇即截断(与 message_table
+    /// 同路,引擎递归装载无法终止)。非环 DAG 重访不受影响(visited 先行去重)。
+    visiting: HashSet<String>,
     has_cell: bool,
     has_base: bool,
     has_client: bool,
@@ -413,9 +418,18 @@ fn walk_def(
         // 父类链成环:引擎递归装载无法终止,kode 截断(与 message_table 同路)。
         return;
     }
+    // KODE-AUD-006:活动栈保护——component/interface/parent 三向关系成环
+    // (A→B→A)时,visited 只挡非 interface 链;interface 链 A→B→A 不入 visited
+    // 仍会无限递归栈溢出。visiting 标记当前展开路径,再入即环,截断返回。
+    if !acc.visiting.insert(name.to_string()) {
+        return;
+    }
     let def = match corpus.get(name) {
         Some(def) => def,
-        None => return,
+        None => {
+            acc.visiting.remove(name);
+            return;
+        }
     };
     let file: DefFile = parse_def(&def.text);
     for prop in &file.properties {
@@ -436,6 +450,7 @@ fn walk_def(
     if let Some(parent) = &file.parent {
         walk_def(parent, corpus, origin, acc);
     }
+    acc.visiting.remove(name);
 }
 
 // ---------------------------------------------------------------------------

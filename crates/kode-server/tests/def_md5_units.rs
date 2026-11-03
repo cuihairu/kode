@@ -252,3 +252,94 @@ fn golden_samples_load_fixtures() {
     assert!(names.contains(&"parity-project"));
     assert!(names.contains(&"minimal-single-entity"));
 }
+
+/// KODE-AUD-006:def 递归循环保护。interface 链成环 Ghost→Type→Type(自环):
+/// Replayer 的 load_interfaces 不查 loaded_modules,修前无限递归栈溢出;loading
+/// 活动栈截断,compute_def_md5 正常返回(不 panic)。
+///
+/// 夹具形态:load_interfaces 取 if_entry 子元素(Interface/interface/Type/type)
+/// 的**标签名**为接口名(engine entitydef.cpp:551-639 口径),故 interface_name=
+/// "Type"(由 `<Type>` 子元素标签名得),再加载同名 def "Type" 又引 `<Type>` →
+/// 自环。若用真实 def 的 `<interface>ROLE</interface>`(文本名)形态,接口名提取
+/// 不匹配、接口从不被加载、环不可达,测试不判别。判别已验证:无守卫 SIGABRT
+/// 栈溢出、有守卫返回 Ok。
+#[test]
+fn interface_cycle_does_not_overflow() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Ghost hasCell=\"true\"></Ghost></root>".into(),
+        defs: [
+            (
+                "Ghost".to_string(),
+                "<root><Interfaces><Iface><Type>Type</Type></Iface></Interfaces></root>"
+                    .to_string(),
+            ),
+            (
+                "Type".to_string(),
+                "<root><Interfaces><Iface><Type>Type</Type></Iface></Interfaces></root>"
+                    .to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    // 不 panic 即通过(环被截断);md5 值不校验,关键是返回而非栈溢出。
+    assert!(compute_def_md5(p).is_ok());
+}
+
+/// KODE-AUD-006:parent 链成环 Ghost→A→B→A(load_parent_class 不查
+/// loaded_modules),loading 活动栈截断。
+#[test]
+fn parent_cycle_does_not_overflow() {
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Ghost hasCell=\"true\"></Ghost></root>".into(),
+        defs: [
+            (
+                "Ghost".to_string(),
+                "<root><Parent> A </Parent></root>".to_string(),
+            ),
+            (
+                "A".to_string(),
+                "<root><Parent> B </Parent></root>".to_string(),
+            ),
+            (
+                "B".to_string(),
+                "<root><Parent> A </Parent></root>".to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    assert!(compute_def_md5(p).is_ok());
+}
+
+/// KODE-AUD-006:def 递归循环保护。component 链成环 Ghost→Type→Type(自环):
+/// load_components→load_def_info 递归,load_def_info 不查 loaded_modules(环上
+/// 无节点已装载),修前无限递归栈溢出;loading 活动栈截断,正常返回不 panic。
+///
+/// 夹具形态:load_components 的 component_name=comp_entry 标签名,child_el 再找
+/// 同名子元素(得 `<C>`),component_type_name=Type 子元素标签名="Type",加载同名
+/// def "Type" 又自引 → 环。判别已验证:无守卫 SIGABRT 栈溢出、有守卫返回 Ok。
+#[test]
+fn component_cycle_does_not_overflow() {
+    let cyc = "<root><Components><C><C><Type>Type</Type></C></C></Components></root>";
+    let p = DefMd5Params {
+        types_xml: "<root></root>".into(),
+        entities_xml: "<root><Ghost hasCell=\"true\"></Ghost></root>".into(),
+        defs: [
+            ("Ghost".to_string(), cyc.to_string()),
+            ("Type".to_string(), cyc.to_string()),
+        ]
+        .into_iter()
+        .collect(),
+        alias_xml: String::new(),
+        component_scripts: HashSet::new(),
+    };
+    // 不 panic 即通过(环被截断);md5 值不校验,关键是返回而非栈溢出。
+    assert!(compute_def_md5(p).is_ok());
+}
