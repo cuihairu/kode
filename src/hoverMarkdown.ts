@@ -9,6 +9,7 @@ import {
   formatEntityBuiltinPropertyHeadline,
   type EntityBuiltinPropertyHit
 } from './entityBuiltinProperties';
+import type { SelfPropertyResolved } from './selfPropertyTypeInference';
 
 /** def 声明方法/接收者调用共用输入:receiver 有值 = 接收者调用面(标题带
  * 接收者段),无值 = 声明面;签名/声明行/Exposed 尾段两面同构。 */
@@ -44,4 +45,16 @@ export function formatEventStatsHover(event: string, registrations: number, emit
 /** 内建属性标注:首行 headline(名称+类型+面/读写,复用纯格式化面)+ 注册来源段 */
 export function formatBuiltinPropertyHover(hit: EntityBuiltinPropertyHit): string {
   return `${formatEntityBuiltinPropertyHeadline(hit.property.name, hit.face, hit.property)}\n\n引擎注册面: \`${hit.property.source}\``;
+}
+
+/** TYP-ARRAY def 属性/数组元素标注:首行 `**目标: 注解**` + 来源段 + 诚实 Any 原因(④) */
+export function formatSelfPropertyTypeHover(resolved: SelfPropertyResolved): string {
+  const headline = `**${resolved.expr}: ${resolved.annotation}**`;
+  const source = resolved.kind === 'element'
+    ? `元素类型推导自 \`self.${resolved.propertyName}\`(\`${basename(resolved.defFile)}:${resolved.defLine}\`)`
+    : `def 属性声明: \`${basename(resolved.defFile)}:${resolved.defLine}\``;
+  const reason = resolved.reason
+    ? `\n\n> ${resolved.reason}(类型未解析,如实 Any)`
+    : '';
+  return `${headline}\n\n${source}${reason}`;
 }

@@ -100,6 +100,7 @@ import {
   getScriptsRootForDefFile,
   getWorkspaceRootForDocument,
   resolveEntityAnnotationType,
+  resolveEntityAnnotationTypeWithReason,
   scriptFoldersForRole,
   notifyEntitiesXmlMissingOnce,
   readWorkspaceTextFile,
@@ -144,13 +145,18 @@ import {
   formatBuiltinPropertyHover,
   formatEntityDefMethodHover,
   formatEventStatsHover,
-  formatInferredReturnHover
+  formatInferredReturnHover,
+  formatSelfPropertyTypeHover
 } from './hoverMarkdown';
 import { resolveLocalVariableReturnTypeFromSnapshot } from './pythonReturnTypeInference';
 import {
   startLanguageServiceOperation
 } from './languageServiceMetrics';
-import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
+import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
+import {
+  resolveSelfPropertyAnnotation,
+  type DefPropertyLocator
+} from './selfPropertyTypeInference';
 import {
   findPythonReceiverCalls,
   getPythonReceiverCallAtPosition,
@@ -309,6 +315,10 @@ function getLanguageFeatureConfig() {
     entityBuiltinProperties: config.get<boolean>('entity.builtinProperties', true),
     entityReceiverSections: config.get<boolean>('entity.receiverSections', true),
     entityBuiltinTypeInlayHints: config.get<boolean>('python.builtinTypeInlayHints', true),
+    // TYP-ARRAY(def 属性访问的类型推导与数组元素类型,hover 面):自属性类型
+    // hover(容器注解 + for/下标元素类型推导)复用 entity.builtinProperties
+    // 总闸(实体脚本 self.<属性> 类型 hover 的注册面开关,package.json 注册
+    // 键;false 落回普通 hover 链)。行内元素 inlay 面另走 inlayHints.typeData。
     // 悬停异步链总预算(用户令 2026-10-22「hover 永转 loading」):>0 时 def
     // 方法/接收者/内建属性三条异步链各套总预算 race,超时返回空悬停并记
     // LogHub(层名+耗时);<=0 关闭预算闸(既有行为)。
@@ -933,10 +943,13 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
             this.resolveBuiltinPropertyAnnotation(manager, document, selfAccess.currentSymbol, sharedToken, timer)
               .then(annotation => {
                 if (annotation) { return annotation; }
-                const stop = timer?.start('annotation-query');
-                try {
-                  return this.provideKnownHover(document, position, featureConfig, range, word);
-                } finally { stop?.(); }
+                // TYP-ARRAY:内建属性未命中 → 同点位试 def 属性容器注解
+                // (self.<def 属性> 声明类型,别名断到内建;与 inlay/存根同链);
+                // 仍不命中才落普通 hover 链。复用 entityBuiltinProperties 总闸
+                // (本分支已在总闸内)。
+                return this.resolveSelfPropertyAnnotationHover(
+                  manager, document, position, word, selfAccess, sharedToken, timer
+                ).then(selfHover => selfHover ?? this.provideKnownHover(document, position, featureConfig, range, word));
               }),
             deadline.remainingMs(),
             sharedToken,
@@ -984,6 +997,50 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
         deadline.dispose();
         return new vscode.Hover(markdown);
       }
+    }
+
+    // TYP-ARRAY:def 属性访问的类型推导与数组元素类型(hover 面,2026-10-30
+    // 用户反馈 self.<def 属性> 仍 Any)。self.<def 属性> → 声明类型(别名断到
+    // 内建);for x in self.<attr> / x = self.<attr>[i] → <of> 元素类型;赋值局部
+    // 变量延续推导;空 <of>/环/缺失 → Any + reason(诚实,不伪造)。形状不匹配
+    // (非 def 属性/元素位)快速返回 null,落回下方普通 hover 链(能推才显)。
+    // GLOBDATA-002 数据字典键悬停由下方该面专管:本面若不排除 dict 访问位,
+    // 会在解析不出时落回 provideKnownHover 短路掉下方数据字典面(丢同键写点
+    // 类型)。仅当数据字典索引装配且命中 dict 访问位时不接管(与下方同闸)。
+    const dictLineText = document.lineAt(position.line).text;
+    const isDataDictPosition =
+      !!this.dataDictIndex &&
+      isPythonDataDictIndexEnabled() &&
+      !!getKbeDataDictAccessAtPosition(
+        dictLineText,
+        position.character,
+        getKbeAliases(document.getText())
+      );
+    if (
+      manager &&
+      document.languageId === 'python' &&
+      // 自属性类型 hover 复用实体脚本属性 hover 总闸(见 getLanguageFeatureConfig)
+      featureConfig.entityBuiltinProperties &&
+      !isDataDictPosition
+    ) {
+      const selfAccess = getPythonSelfAccessAtPosition(
+        document.lineAt(position.line).text,
+        position.character
+      );
+      // 本面位于 manager 块外,memoKey 不在作用域:同口径按 (位置,版本) 现算
+      const selfPropertyMemoKey = hoverMemoKey(document, position);
+      return respond(this.memoizedHover(selfPropertyMemoKey, document.version, sharedToken =>
+        raceWithBudget(
+          'hover:self-property-type',
+          this.resolveSelfPropertyAnnotationHover(
+            manager, document, position, word, selfAccess, sharedToken, timer
+          ).then(hover => hover ?? this.provideKnownHover(document, position, featureConfig, range, word)),
+          deadline.remainingMs(),
+          sharedToken,
+          // R2-F18:预算到期传播取消(见 def-method 分支)
+          () => deadline.cancel()
+        )
+      , deadline.token));
     }
 
     // GLOBDATA-002:数据字典键类型悬停 —— 落点在键表达式上时:写点显示 RHS
@@ -1267,6 +1324,57 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
       hover = new vscode.Hover(markdown);
     } finally { stopRender?.(); }
     return hover;
+  }
+
+  /**
+   * TYP-ARRAY:def 属性/元素类型悬停(与 inlay/存根同一条 resolvePropertyDefinitionInfo
+   * + resolveEntityAnnotationTypeWithReason 解析链)。def-mapping 段管 def 属性定位,
+   * render 段管标注拼装;形状不匹配(非 def 属性/元素位)返回 null(调用方落回
+   * provideKnownHover,能推才显)。
+   */
+  private async resolveSelfPropertyAnnotationHover(
+    manager: EntityMappingManager,
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    word: string,
+    selfAccess: ReturnType<typeof getPythonSelfAccessAtPosition>,
+    sharedToken: vscode.CancellationToken,
+    timer?: HoverPhaseTimer
+  ): Promise<vscode.Hover | null> {
+    const stopMapping = timer?.start('def-mapping');
+    let resolved: Awaited<ReturnType<typeof resolveSelfPropertyAnnotation>>;
+    try {
+      const workspaceRoot = getWorkspaceRootForDocument(document);
+      const locator: DefPropertyLocator = (fullPath, rootSymbol) =>
+        // 无目录域路径(无 workspace root)/manager 面判定注入缺失(测试替身
+        // 无该方法)→ 视为无 def 属性位置,落回普通 hover 链(能推才显,不炸)
+        !manager || typeof manager.resolvePropertyDefinitionInfo !== 'function'
+          ? Promise.resolve(null)
+          : sharedToken.isCancellationRequested
+            ? Promise.resolve(null)
+            : manager.resolvePropertyDefinitionInfo(document.fileName, fullPath, rootSymbol);
+      const annotate = (raw: string) =>
+        workspaceRoot
+          ? resolveEntityAnnotationTypeWithReason(workspaceRoot, raw)
+          : resolveAnnotationTypeWithReason(raw, []);
+      resolved = await resolveSelfPropertyAnnotation(
+        getDocumentLines(document),
+        position.line,
+        word,
+        selfAccess,
+        locator,
+        annotate
+      );
+    } finally { stopMapping?.(); }
+    if (!resolved) {
+      return null;
+    }
+    const stopRender = timer?.start('render');
+    try {
+      const markdown = new vscode.MarkdownString();
+      markdown.appendMarkdown(formatSelfPropertyTypeHover(resolved));
+      return new vscode.Hover(markdown);
+    } finally { stopRender?.(); }
   }
 
   private provideKnownHover(

@@ -19,7 +19,11 @@ import {
 } from './defParser';
 // 统一注解解析底座(纯逻辑半边)在 pythonTypeStubs;此处只传注册表,调用
 // 均发生在函数体内,模块环(pythonTypeStubs→definitionWorkspace)为惰性引用。
-import { resolveAnnotationTypeWithRegistry, resolveFixedDictMember } from './pythonTypeStubs';
+import {
+  resolveAnnotationTypeWithReason,
+  resolveFixedDictMember,
+  type ResolvedAnnotationWithReason
+} from './pythonTypeStubs';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { getSemanticIndex } from './semanticIndex';
@@ -349,13 +353,25 @@ export function getCustomTypeInfos(workspaceRoot: string): CustomTypeInfo[] {
  * 被事件作废)时才读盘重建一次。
  */
 export function resolveEntityAnnotationType(workspaceRoot: string, raw: string): string {
+  return resolveEntityAnnotationTypeWithReason(workspaceRoot, raw).annotation;
+}
+
+/**
+ * 与 resolveEntityAnnotationType 同一快照口径,额外暴露落 Any 的如实原因
+ * (TYP-ARRAY ④:环/缺失/指引为空 → Any + reason,不伪造)。非 Any 结果恒
+ * null 原因;纯字符串注解取 .annotation 与旧函数逐字一致。
+ */
+export function resolveEntityAnnotationTypeWithReason(
+  workspaceRoot: string,
+  raw: string
+): ResolvedAnnotationWithReason {
   // PR1 打点:type-registry-query(高频类型注解查询)。PR4 起无 fingerprint
   // 子阶段;registry-build 只在快照 miss(首次/事件作废后)发生。
   const metrics = startLanguageServiceOperation('type-registry-query', { fileKind: 'types' });
   try {
     if (!workspaceRoot) {
       // 无工作区语境只剩内建直查与引擎别名,自定义类型无从谈起
-      const builtinResolved = resolveAnnotationTypeWithRegistry(raw, []);
+      const builtinResolved = resolveAnnotationTypeWithReason(raw, []);
       metrics.countCacheHit();
       metrics.end('ok');
       return builtinResolved;
@@ -388,7 +404,7 @@ export function resolveEntityAnnotationType(workspaceRoot: string, raw: string):
     } else {
       metrics.countCacheHit();
     }
-    const resolved = resolveAnnotationTypeWithRegistry(raw, snapshot.entries);
+    const resolved = resolveAnnotationTypeWithReason(raw, snapshot.entries);
     metrics.end('ok');
     return resolved;
   } catch (error) {

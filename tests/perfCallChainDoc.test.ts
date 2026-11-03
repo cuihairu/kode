@@ -51,16 +51,20 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/extension.ts', 1931, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
-  ['src/languageProviders.ts', 715, 'getDocumentLines(document)'],
-  ['src/languageProviders.ts', 805, 'provideHover('],
-  ['src/languageProviders.ts', 1515, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1574, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1598, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 1726, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4380, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 4788, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 4894, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 6599, 'provideCompletionItems('],
+  // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
+  // (import + getLanguageFeatureConfig 注释 + 内建分支链接 + 独立异步面 +
+  // resolveSelfPropertyAnnotationHover 方法 + locator 守卫),§7 的
+  // languageProviders.ts 锚点按真位逐点重探(非均匀位移),出处随 baseline 锁步
+  ['src/languageProviders.ts', 725, 'getDocumentLines(document)'],
+  ['src/languageProviders.ts', 815, 'provideHover('],
+  ['src/languageProviders.ts', 1623, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1682, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1706, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 1834, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4475, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 4896, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5002, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 6707, 'provideCompletionItems('],
   ['src/diagnosticScheduler.ts', 223, 'requestQueued'],
   ['src/diagnosticScheduler.ts', 253, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],

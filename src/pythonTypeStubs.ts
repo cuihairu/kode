@@ -400,6 +400,44 @@ export function resolveAnnotationTypeWithRegistry(
   }
 }
 
+/** 解析结果 + 诚实 Any 原因(TYP-ARRAY ④):非 Any 恒 null 原因。 */
+export interface ResolvedAnnotationWithReason {
+  annotation: string;
+  /** 注解落 Any 时的如实原因(环/缺失/指引为空);非 Any 恒 null */
+  reason: string | null;
+}
+
+/**
+ * 与 resolveAnnotationTypeWithRegistry 同一解析链,额外暴露落 Any 的如实
+ * 原因(TYP-ARRAY ④:空 <of>/别名链环/类型缺失 → Any + reason,绝不伪造)。
+ * 原因三源:①注册表 poisoned 面(成环/指引为空/依赖连带,已按 B 单口径记
+ * 因);②指引为空占位;③注册表未收录 → 明确「未解析到」。
+ */
+export function resolveAnnotationTypeWithReason(
+  raw: string,
+  customTypes: readonly CustomTypeInfo[]
+): ResolvedAnnotationWithReason {
+  const context = buildResolutionContext(customTypes);
+  const trimmed = raw.trim();
+  let annotation: string;
+  try {
+    annotation = resolveTypeName(trimmed, context);
+  } catch {
+    annotation = PYTHON_TYPE_STUB_FALLBACK;
+  }
+  if (annotation !== PYTHON_TYPE_STUB_FALLBACK) {
+    return { annotation, reason: null };
+  }
+  const poisoned = context.poisoned.get(trimmed);
+  if (poisoned !== undefined) {
+    return { annotation, reason: poisoned };
+  }
+  if (trimmed.length === 0 || trimmed === 'ALIAS') {
+    return { annotation, reason: EMPTY_GUIDANCE_REASON };
+  }
+  return { annotation, reason: `类型 ${trimmed} 未在 types.xml/alias.xml 解析到,回退 Any` };
+}
+
 /** 注册表解析上下文(名字序建表,确定性;poisoned/external 面随次解析独立) */
 function buildResolutionContext(customTypes: readonly CustomTypeInfo[]): ResolutionContext {
   const sorted = [...customTypes].sort((left, right) => left.name.localeCompare(right.name));

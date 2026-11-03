@@ -4,9 +4,11 @@ import { findPythonSelfPropertyAccesses, propertyAccessKey } from './propertyCod
 import {
   getWorkspaceRootForDocument,
   resolveEntityAnnotationType,
+  resolveEntityAnnotationTypeWithReason,
   resolveEntityFixedDictMember
 } from './definitionWorkspace';
-import { PYTHON_TYPE_STUB_FALLBACK } from './pythonTypeStubs';
+import { PYTHON_TYPE_STUB_FALLBACK, resolveAnnotationTypeWithReason } from './pythonTypeStubs';
+import { resolveSelfPropertyAnnotation, type DefPropertyLocator } from './selfPropertyTypeInference';
 import {
   findPythonReceiverCallArguments,
   type PythonReceiverCallWithArguments
@@ -131,9 +133,74 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         )
       );
     }
+    await this.collectSelfPropertyElementHints(document, range, documentLines, propertyWorkspaceRoot, hints);
     await this.collectRpcParameterHints(document, range, hints);
     await this.collectDataDictHints(document, range, documentLines, hints);
     return hints;
+  }
+
+  /**
+   * TYP-ARRAY:数组元素类型行内提示(② 视觉面)。`for item in self.<def 属性>:`
+   * → `item: <元素型>`;`x = self.<def 属性>[i]` → `x: <元素型>`;赋值局部变量
+   * 延续推导(变量间接一层,与 hover 同源同链)。空 <of>/环/缺失 → Any 不出
+   * (能推才显);非数组/形状不匹配 → 不出。开关现读 kbengine.inlayHints.typeData
+   * (与自属性面同款,顶部已拦)。
+   */
+  private async collectSelfPropertyElementHints(
+    document: vscode.TextDocument,
+    range: vscode.Range,
+    documentLines: string[],
+    workspaceRoot: string | null,
+    hints: vscode.InlayHint[]
+  ): Promise<void> {
+    const startLine = Math.max(0, range.start.line);
+    const endLine = Math.min(documentLines.length - 1, range.end.line);
+    const locator: DefPropertyLocator = (fullPath, rootSymbol) =>
+      this.entityMappingManager.resolvePropertyDefinitionInfo(document.fileName, fullPath, rootSymbol);
+    const annotate = (raw: string) =>
+      workspaceRoot
+        ? resolveEntityAnnotationTypeWithReason(workspaceRoot, raw)
+        : resolveAnnotationTypeWithReason(raw, []);
+    for (let line = startLine; line <= endLine; line += 1) {
+      const lineText = documentLines[line];
+      const forMatch = /^(\s*)for\s+([A-Za-z_]\w*)\s+in\s+(.+?)\s*:\s*(?:#.*)?$/.exec(lineText);
+      if (forMatch) {
+        const resolved = await resolveSelfPropertyAnnotation(
+          documentLines, line, forMatch[2], null, locator, annotate
+        );
+        if (resolved && resolved.kind === 'element') {
+          // 目标列 = 缩进 + `for ` 前缀(变量起点在缩进后 4 列)
+          hints.push(this.buildElementHint(line, forMatch[1].length + 'for '.length, forMatch[2], resolved.annotation));
+        }
+        continue;
+      }
+      const assign = /^(\s*)([A-Za-z_]\w*)\s*=\s*(?!=)(.+)$/.exec(lineText);
+      if (assign) {
+        const rhs = assign[3].trim();
+        // 只认下标或 self 源形态(其余赋值落回,不白解析)
+        if (/\]$/.test(rhs) || /^self\./.test(rhs)) {
+          const resolved = await resolveSelfPropertyAnnotation(
+            documentLines, line, assign[2], null, locator, annotate
+          );
+          if (resolved && resolved.kind === 'element') {
+            hints.push(this.buildElementHint(line, assign[1].length, assign[2], resolved.annotation));
+          }
+        }
+      }
+    }
+  }
+
+  private buildElementHint(
+    line: number,
+    column: number,
+    target: string,
+    annotation: string
+  ): vscode.InlayHint {
+    return new vscode.InlayHint(
+      new vscode.Position(line, column + target.length),
+      `: ${annotation}`,
+      vscode.InlayHintKind.Type
+    );
   }
 
   /**

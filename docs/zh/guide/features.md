@@ -14,7 +14,8 @@
 - Python 与 `.def` 双向导航
 - RPC 方法标记（Python 实现脚本里命中 def 方法声明的函数出一行可点 CodeLens，点击跳回 def 声明）
 - 语言功能按功能可独立开关（批154）：CodeLens 四类（RPC 标记/事件回调/属性标记/types.xml 落库镜链）与悬停六类（自定义类型存储、implementedBy 反链、实体注册、def 链、事件统计、服务配置字段）各一枚 `kbengine.*` 开关，默认全开、不设总闸一刀切；CodeLens 开关变更即时生效
-- Python 属性类型内联提示（批154）：`self.<属性>` 访问处以内联 hint 显示 def 声明的 `types.xml` 数据类型，与属性 F12 同一解析索引，受 `kbengine.inlayHints.typeData` 控制（inlay 无变更事件，下一次渲染生效）
+- Python 属性类型内联提示（批154）：`self.<属性>` 访问处以内联 hint 显示 def 声明的 `types.xml` 数据类型，与属性 F12 同一解析索引，受 `kbengine.inlayHints.typeData` 控制（inlay 无变更事件，下一次渲染生效）；数组 `<of>` 元素类型在 `for item in self.<属性>:` 迭代目标与 `x = self.<属性>[i]` 下标赋值局部变量后内联显示（同一解析链）
+- Python def 声明属性类型悬停：悬停 `self.<def 属性>` 显示 def 声明的类型（types.xml 别名断到内建，如 EQUIP_TRACK_LIST→FixedArray[EQUIP_INFO]）；悬停 for 目标或下标赋值局部变量推导 `<of>` 元素类型（局部变量间接一层；空 `<of>`/别名链环/类型缺失如实 `Any` 并亮出原因），受 `kbengine.entity.builtinProperties` 控制
 - `.def` 属性/方法 F2 重命名（同文件声明 + 后代 def 复述，见语言能力页边界说明）
 
 ## 诊断能力
