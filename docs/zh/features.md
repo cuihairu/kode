@@ -223,6 +223,7 @@
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |
 | `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开合成的只读最终配置视图 |
 | `kbengine.autoRefreshFinalConfig` | `true` | 引擎/元件 kbengine.xml 变更后自动重算并刷新已打开的最终配置视图 |
+| `kbengine.finalConfigComments` | `true` | 最终配置视图里每个元素内部带取证注释并按功能子分类排序;自定义项归入「自定义配置·未识别」,注释语言跟随 VS Code 显示语言 |
 | `kbengine.debug.remoteTargets` | `[]` | 「Attach to Remote Component」的远程调试目标列表（debugpy connect；条目带成对 `localRoot`/`remoteRoot` 时写入该 pathMappings，半配或未配保持省略） |
 | `kbengine.jsoncAssociation` | `true` | 自动把 debug.json 的 glob 键写成 `jsonc` 写进工作区 `files.associations`（WorkspaceFolder 级；只动自己键、已有值不覆盖；`kbengine.jsoncAssociation.off` 回收本扩展写入的条目） |
 | `kbengine.debug.autoDebugpy` | `false` | 组件启动后经其 telnet `:python` 层注入 `debugpy.listen`（端口 baseapp 5678/cellapp 5679/loginapp 5680/dbmgr 5681/logger 5682，只绑 127.0.0.1；命名实例从每组件 8 槽窗口（5700 起）取独立口；单组件失败只记日志不阻塞启动；注入走 telnet，早期断点由启动等待模式覆盖） |

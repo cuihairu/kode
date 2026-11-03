@@ -33,6 +33,18 @@ const node = (name: string, text = '', children: ConfigXmlNode[] = []): ConfigXm
   children
 });
 
+/**
+ * 取合成文本里按元素名逐层下钻的叶子文本:增强(默认开)会在每个元素内部
+ * 加作用注释并把值挪到独立行,按文本子串断言取不到值,故改按树取值。
+ */
+const leafText = (xml: string, ...names: string[]): string | undefined => {
+  let current: ConfigXmlNode | null = parseConfigXml(xml);
+  for (const name of names) {
+    current = current?.children.find(child => child.name === name) ?? null;
+  }
+  return current?.text;
+};
+
 describe('parseConfigXml', () => {
   it('解析元素树:注释/XML 声明剥离,自闭合不入栈,叶子收文本', () => {
     const xml = [
@@ -266,11 +278,12 @@ describe('resolveCustomConfigXmlPath / buildFinalServerConfig(装配读值)', ()
       const onlyDefaults = buildFinalServerConfig();
       expect(onlyDefaults.defaultsOnly).toBe(true);
       expect(onlyDefaults.defaultsPath).toBe(path.join(engine, 'res', 'server', 'kbengine_defaults.xml'));
-      expect(onlyDefaults.text).toContain('<archivePeriod> 300 </archivePeriod>');
-      expect(onlyDefaults.text).toContain('<port> 40000 </port>');
-      // 头注标一句来源与覆盖口径(默认开启令:读者不用猜数据从哪来)
-      expect(onlyDefaults.text.split('\n')[0]).toContain('仅引擎默认');
-      expect(onlyDefaults.text.split('\n')[0]).toContain('kbengine_defaults.xml');
+      expect(leafText(onlyDefaults.text, 'defaults', 'baseapp', 'archivePeriod')).toBe('300');
+      expect(leafText(onlyDefaults.text, 'defaults', 'baseapp', 'telnet_service', 'port')).toBe('40000');
+      // 头注标一句来源与覆盖口径(默认开启令:读者不用猜数据从哪来);
+      // 头注在增强后放进第一个顶层元素内部(注释不落文件头)
+      expect(onlyDefaults.text).toContain('仅引擎默认');
+      expect(onlyDefaults.text).toContain('kbengine_defaults.xml');
 
       // 元件 kbengine.xml 覆盖 archivePeriod 并新增 externalAddress
       fs.writeFileSync(
@@ -280,10 +293,10 @@ describe('resolveCustomConfigXmlPath / buildFinalServerConfig(装配读值)', ()
       const merged = buildFinalServerConfig();
       expect(merged.defaultsOnly).toBe(false);
       expect(merged.customPath).toBe(path.join(root, 'kbengine.xml'));
-      expect(merged.text).toContain('<archivePeriod> 600 </archivePeriod>');
-      expect(merged.text).toContain('<externalAddress> 10.0.0.9 </externalAddress>');
-      expect(merged.text).toContain('<password> pwd123456 </password>');
-      expect(merged.text.split('\n')[0]).toContain('同键覆盖');
+      expect(leafText(merged.text, 'root', 'baseapp', 'archivePeriod')).toBe('600');
+      expect(leafText(merged.text, 'root', 'baseapp', 'externalAddress')).toBe('10.0.0.9');
+      expect(leafText(merged.text, 'defaults', 'baseapp', 'telnet_service', 'password')).toBe('pwd123456');
+      expect(merged.text).toContain('同键覆盖');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -306,7 +319,7 @@ describe('resolveCustomConfigXmlPath / buildFinalServerConfig(装配读值)', ()
       const result = buildFinalServerConfig();
       expect(result.defaultsOnly).toBe(true);
       expect(result.customPath).toBe(path.join(root, 'kbengine.xml'));
-      expect(result.text).toContain('<archivePeriod> 300 </archivePeriod>');
+      expect(leafText(result.text, 'defaults', 'baseapp', 'archivePeriod')).toBe('300');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -338,7 +351,7 @@ describe('FinalConfigTreeProvider(侧栏常驻入口)', () => {
     const items = provider.getChildren();
     expect(items).toHaveLength(1);
     const item = provider.getTreeItem(items[0]);
-    expect(item.label).toBe('最终配置');
+    expect(item.label).toBe('Final Configuration');
     expect(item.description).toBe('kbengine-final.xml');
     expect(item.command).toMatchObject({ command: 'kbengine.config.showFinal' });
     expect(item.tooltip).toContain('只读视图');
@@ -406,7 +419,7 @@ describe('buildFinalServerConfig 引擎源码根兜底(批125 自动发现)', ()
       expect(result.defaultsPath)
         .toBe(path.join(root, 'kbe', 'res', 'server', 'kbengine_defaults.xml'));
       expect(result.defaultsOnly).toBe(true);
-      expect(result.text).toContain('<debug> 7 </debug>');
+      expect(leafText(result.text, 'baseapp', 'debug')).toBe('7');
     } finally {
       stubWorkspace.workspaceFolders = [];
       fs.rmSync(root, { recursive: true, force: true });

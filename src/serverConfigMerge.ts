@@ -7,6 +7,7 @@ import {
 } from './telnetService';
 import { expandWorkspacePlaceholders } from './workspacePath';
 import { resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
+import { annotateConfigTree } from './serverConfigAnnotations';
 
 /**
  * 最终服务端配置合成(批112 用户令):按引擎装载规则——先加载
@@ -20,6 +21,13 @@ export interface ConfigXmlNode {
   name: string;
   text: string;
   children: ConfigXmlNode[];
+  /**
+   * 逐项作用注释(仅渲染期写入,parseConfigXml 不产出也不回读):
+   * 由 annotateConfigTree 按文案库挂上,渲染时放进元素内部。
+   */
+  comment?: string;
+  /** 文档头注(合成来源与覆盖口径),同样只出现在元素内部 */
+  docHeader?: string;
 }
 
 /**
@@ -95,16 +103,50 @@ export function mergeConfigXml(base: ConfigXmlNode, override: ConfigXmlNode): Co
 /** 渲染单节点(引擎 defaults 排版口径:叶子值两侧留空,缩进用 tab) */
 export function renderConfigXml(node: ConfigXmlNode, depth = 0): string {
   const pad = '\t'.repeat(depth);
+  // 注释一律放元素内部(不上元素上方、不落文件头):容器放子节点之前,叶子按
+  // commentAfter 放值之后(引擎按 FirstChild 原样取值的键,见 serverConfigAnnotations)
+  const comments: string[] = [];
+  if (node.docHeader !== undefined) {
+    comments.push(sanitizeXmlComment(node.docHeader));
+  }
+  if (node.comment !== undefined) {
+    comments.push(sanitizeXmlComment(node.comment));
+  }
   if (node.children.length === 0) {
     const value = node.text.length > 0 ? ` ${node.text} ` : '';
-    return `${pad}<${node.name}>${value}</${node.name}>`;
+    if (comments.length === 0) {
+      return `${pad}<${node.name}>${value}</${node.name}>`;
+    }
+    // 叶子:注释放在值之后(元素内部)——tinyxml2 的 IntText()/DoubleText() 只认
+    // 第一个子节点是文本,注释在值之前会把数值读成默认值(取证见
+    // serverConfigAnnotations.ts 文件头);放值之后 GetText/IntText/ToText 都取原值。
+    const valueLine = node.text.length > 0 ? `${pad}\t${node.text}` : null;
+    return [
+      `${pad}<${node.name}>`,
+      ...(valueLine !== null ? [valueLine] : []),
+      ...comments.map(comment => `${pad}\t<!-- ${comment} -->`),
+      `${pad}</${node.name}>`
+    ].join('\n');
   }
-  const lines = [`${pad}<${node.name}>`];
+  const lines = [`${pad}<${node.name}>`, ...comments.map(comment => `${pad}\t<!-- ${comment} -->`)];
   for (const child of node.children) {
     lines.push(renderConfigXml(child, depth + 1));
   }
   lines.push(`${pad}</${node.name}>`);
   return lines.join('\n');
+}
+
+/**
+ * XML 注释内容消毒:注释内部不得出现 `--`(XML 规范),结尾的 `-` 不能与
+ * `-->` 拼出 `--`;空白统一压成单行(文案库已单行,这里兜底)。
+ */
+export function sanitizeXmlComment(text: string): string {
+  let comment = text.replace(/\s+/g, ' ').trim();
+  comment = comment.replace(/-+/g, '-');
+  if (comment.endsWith('-')) {
+    comment += ' ';
+  }
+  return comment;
 }
 
 /** 渲染整棵合成树(伪根不输出,顶层组件段各占一块) */
@@ -272,8 +314,13 @@ export function buildMergedConfigTree(overrides: MergedConfigTreeOverrides = {})
 /**
  * 合成最终生效配置:defaults 必须在(binPath 推导不出/读不到则 text 空,
  * 由命令层提示);元件 kbengine.xml 找不到时展示纯 defaults,不算错误。
+ *
+ * 注释增强(用户令 final XML config):默认开启 `kbengine.finalConfigComments`,
+ * 逐项挂作用注释并按子分类排序;注释语言跟随 VS Code 显示语言(传入 language
+ * 可覆盖,便于测试)。文档头注(来源与覆盖口径)放进第一个顶层元素内部,
+ * 文件头不放任何注释。
  */
-export function buildFinalServerConfig(): FinalServerConfig {
+export function buildFinalServerConfig(language?: string): FinalServerConfig {
   const { merged, defaultsPath, customPath, customApplied } = buildMergedConfigTree();
   if (!merged) {
     return { text: '', defaultsPath, customPath: null, defaultsOnly: true };
@@ -282,8 +329,16 @@ export function buildFinalServerConfig(): FinalServerConfig {
   const source = customApplied
     ? `先载引擎默认 ${defaultsPath},再以元件配置 ${customPath} 同键覆盖(子键按名对齐)`
     : `仅引擎默认 ${defaultsPath}(未找到元件 kbengine.xml)`;
+  const enabled = vscode.workspace
+    .getConfiguration('kbengine')
+    .get<boolean>('finalConfigComments', true);
+  const annotated = annotateConfigTree(merged, {
+    language: language ?? vscode.env.language,
+    enabled,
+    header: `kode 合成最终配置:${source};只读展示,不落盘`
+  });
   return {
-    text: `<!-- kode 合成最终配置:${source};只读展示,不落盘 -->\n${renderConfigXmlSections(merged)}`,
+    text: renderConfigXmlSections(annotated),
     defaultsPath,
     customPath,
     defaultsOnly: !customApplied
@@ -438,8 +493,11 @@ export function summarizeFinalTelnet(finalConfig: string): Array<{
   port: number | null;
   password: string | null;
 }> {
+  // 合成文档里每个配置元素内部都带作用注释,先剥注释再取值(否则
+  // `<!-- ... --> 40000` 落 Number() = NaN);无注释时行为不变。
+  const xml = finalConfig.replace(/<!--[\s\S]*?-->/g, '');
   return ENGINE_DEFAULT_TELNET_PORTS.map(({ component }) => {
-    const section = finalConfig.match(new RegExp(`<${component}>([\\s\\S]*?)</${component}>`));
+    const section = xml.match(new RegExp(`<${component}>([\\s\\S]*?)</${component}>`));
     const telnet = section?.[1].match(/<telnet_service>([\s\S]*?)<\/telnet_service>/);
     const port = telnet?.[1].match(/<port>([\s\S]*?)<\/port>/);
     const password = telnet?.[1].match(/<password>([\s\S]*?)<\/password>/);

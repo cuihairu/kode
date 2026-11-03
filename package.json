@@ -1087,6 +1087,11 @@
           "default": true,
           "description": "引擎默认配置或元件 kbengine.xml 文件变更/增删后,自动重算并刷新已打开的最终配置视图内容"
         },
+        "kbengine.finalConfigComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "合成的最终配置视图(kbengine-final.xml)里为每个配置元素在元素内部加作用注释,并按段内功能子分类排序(查不到含义的自定义项归入「自定义配置」并标「未识别」);注释内容逐条取证自 KBEngine 引擎默认配置与源码,语言跟随 VS Code 显示语言(中文环境出中文注释)。关闭则按原顺序、无注释展示"
+        },
         "kbengine.debug.remoteTargets": {
           "type": "array",
           "default": [],

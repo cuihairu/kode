@@ -196,6 +196,7 @@ All four are "optional overrides": a configured value is honored as-is, an uncon
 | --- | --- | --- | --- |
 | `kbengine.showFinalConfigOnOpen` | boolean | `true` | When the extension activates and defaults can be located, auto-open `kbengine-final.xml` in the background (a preview tab, not stealing focus); on location failure it silently skips without an error popup. When off, it can still be opened manually via the command or the sidebar Config view's 「最终配置」 node |
 | `kbengine.autoRefreshFinalConfig` | boolean | `true` | After defaults or the component `kbengine.xml` is saved, added, or deleted, recompose the open composed document automatically. When off, reopen the document or rerun the command |
+| `kbengine.finalConfigComments` | boolean | `true` | In the synthesized final-config view, put a sourced purpose comment inside every configuration element and order elements by the functional sub-category of their section (custom keys with no known meaning fall into the "Custom (unrecognized)" sub-category). Comments are evidenced from the engine defaults/source and follow the VS Code display language; when off, the original order and no comments are shown |
 
 ### Server and Logs
 
