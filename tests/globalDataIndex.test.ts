@@ -582,6 +582,32 @@ describe('GlobalDataDictIndex(GLOBDATA-001 跨文件索引)', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('KODE-AUD-005:大文件异步扫描后同文件缩为小文件同步提交,旧任务不回写旧内容', async () => {
+    const index = new GlobalDataDictIndex();
+    try {
+      // 大文件(>64KB 触发异步预算化路径)内容 A:仅含写点 cfg。用 8000 短注释行
+      // (而非单行巨注释)使切片扫描快速完成(4000 行/片,2 片,各片 yieldToHost)。
+      const bigText =
+        'import KBEngine\nKBEngine.globalData["cfg"] = 1\n' +
+        Array.from({ length: 8000 }, (_, i) => `# pad ${i}`).join('\n');
+      expect(bigText.length).toBeGreaterThan(64 * 1024);
+      index.noteSaved({ uri: { fsPath: '/r/big.py' }, getText: () => bigText } as never);
+      // 立即同文件缩为小文件:同步路径提交内容 B(键改为 small)。
+      // 修前:commitFile 不清 editBuffers,在飞异步循环重读旧文本 bigText 回写,
+      // 覆盖内容 B——终态键 cfg 残留(旧内容)。修复后:缓冲被清,旧任务跳过/返回。
+      const smallText = 'import KBEngine\nKBEngine.globalData["small"] = 2\n';
+      index.noteSaved({ uri: { fsPath: '/r/big.py' }, getText: () => smallText } as never);
+      // 等在飞异步任务落定(源复核跳过或读清空缓冲返回)
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(index.query('globalData', 'small').map(s => s.kind)).toContain('write');
+      expect(index.query('globalData', 'cfg')).toEqual([]);
+    } finally {
+      index.dispose();
+    }
+  }, 15000);
 });
 
 describe('GlobalDataDictIndex(GLOBDATA-001 生命周期/覆盖)', () => {

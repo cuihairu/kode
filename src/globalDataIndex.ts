@@ -1551,6 +1551,9 @@ export class GlobalDataDictIndex {
       if (!fsPath.endsWith('.py')) {
         return;
       }
+      // KODE-AUD-005:关文档释放异步缓冲——在飞异步扫描若仍持旧文本,源已清,
+      // 其提交前源复核不一致将跳过,不把已关闭文件的缓冲文本回写进索引。
+      this.editBuffers.delete(fsPath);
       // 弃改关闭:缓冲消失,回读盘版本覆盖索引(干净关闭为 no-op 不丢正确索引)
       if (this.dirtyDocs.delete(fsPath)) {
         this.revisions.set(fsPath, (this.revisions.get(fsPath) ?? 0) + 1);
@@ -1868,6 +1871,11 @@ export class GlobalDataDictIndex {
       this.scheduleEditRecompute(document.uri.fsPath);
       return;
     }
+    // KODE-AUD-005:同步提交前释放异步缓冲。同文件此前曾超阈值(在飞异步扫描
+    // 持有旧文本于 editBuffers),缩为小文件改走同步路径时若不清,在飞循环
+    // (runEditRecompute 顶部)重读 editBuffers 旧文本并回写,覆盖本处刚提交的
+    // 新内容。清后:在飞循环下轮读 undefined 即返回,或提交前源复核不一致而跳过。
+    this.editBuffers.delete(document.uri.fsPath);
     this.commitFile(document.uri.fsPath, text);
   }
 
@@ -1938,6 +1946,13 @@ export class GlobalDataDictIndex {
         }
         this.lastEditStats.maxSliceMs = Math.max(this.lastEditStats.maxSliceMs, scanned.maxSliceMs);
         this.lastEditStats.sliceCount = Math.max(this.lastEditStats.sliceCount, scanned.sliceCount);
+        // KODE-AUD-005:提交前复核缓冲源——同步提交已清缓冲/新编辑已换缓冲时,
+        // 本迭代扫描结果基于旧 text,提交会回写旧内容覆盖新内容。源不一致则
+        // 丢弃本轮(下轮重读最新缓冲),封住「旧任务继续回写」竞态窗口。
+        if (this.editBuffers.get(fsPath) !== text) {
+          this.lastEditStats.scansCancelled += 1;
+          continue;
+        }
         const previous = this.cache.get(fsPath);
         this.updateCallKeyDependents(
           fsPath,
