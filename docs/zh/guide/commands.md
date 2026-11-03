@@ -532,6 +532,19 @@
   - 跨类绝不比较：本地哈希不是运行时证据，值巧合相同也只是两条各自来源的行——跨类不判「一致」（同类比对是协议内验证手段，不在此面做）
   - 缺的种类如实缺席：内容读不到就没有 fileHash/semanticHash 行，运行时没回执过就没有 engineDigest 行，`.py` 文件没有 semanticHash 行——不填空不冒充
   - 两条发送路径都喂证据册：fire 路径与失败目标重发都把真实 HTTP 回包体转给它；空台账如实报 无投递记录
+
+### `kbengine.hotReload.configureChannel`
+
+- 标题：`Hot Reload: Configure Deployment Channel`
+- 作用：按 ProjectProfile 的部署级热更通道面板——选 profile → 选通道（未配/官方/自定义 HTTP）→ 逐项收参数 → 保存或连通性测试（IDE-HOT-102 / 设计 §5.1）
+- 行为：
+  - 通道按 profile 存（`profile.hotReload`）；**未配** 恢复回落既有 `kbengine.hotReload.actionName` quick action 通道（未配行为与现状一致）
+  - 两通道：`kbengine-official`（引擎内建 `reloadScript` 经控制台——host/port/可选密码）与 `http`（第三方 HTTP，自定 accepted/applied 回执契约——URL 模板可含 `${files}`/`${fileList}`、方法、请求体模板、可选 headers）
+  - **连通性测试** 对收集到的配置跑 `transport.probe()`，不保存（探测绝不写 profile）；畸形配置如实报（通道配置不完整）不猜
+  - 每步可取消，最后一步「保存」前零写入——任一步取消返回 false 且 profile 原样
+  - 面板走 quick-pick + input 流（仓内 profile 编辑既有模式）；未知 id 报 保存失败，绝不静默新建
+- 激活 profile 配了通道时，fire 路径整批走 `transport.send`（回执直喂双维台账）不再走 quick action；未配通道则 actionName 路径原样
+
 ### `kbengine.discovery.report`
 
 - 标题：`Show Discovery Report`

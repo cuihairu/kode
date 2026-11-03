@@ -197,6 +197,24 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(hotReloadLog().some(line => line.includes('无内容读取通道'))).toBe(true);
   });
 
+  it('结构性 def 拦下 → 审计行带通道「拦截:需重启」与触发源/文件/结果(IDE-HOT-102)', async () => {
+    const run = wire();
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    run.setContent(STRUCTURAL_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+
+    const audit = hotReloadLog().find(line => line.includes('审计'));
+    expect(audit).toBeDefined();
+    expect(audit).toContain('触发源=watcher-auto');
+    expect(audit).toContain('文件=1 个');
+    expect(audit).toContain('通道=拦截:需重启');
+    expect(audit).toContain('结果=未发送');
+  });
+
   it('def 内容不可读:保守按结构性不发', async () => {
     const run = wire();
     run.setContent(null);

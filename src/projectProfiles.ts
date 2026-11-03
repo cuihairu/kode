@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'crypto';
 import type * as vscode from 'vscode';
+import { normalizeReloadChannelConfig, type ReloadChannelConfig } from './hotReloadTransport';
 
 /** 一条 profile 记录:身份是 id,其余字段都可变 */
 export interface ProjectProfile {
@@ -21,6 +22,13 @@ export interface ProjectProfile {
   interpreterPath: string | null;
   /** 解释器来源(setting/path/missing),随路径一并记录 */
   interpreterSource: string;
+  /**
+   * 部署级热更新通道(IDE-HOT-102,设计 §5.1):本 profile 下挂的
+   * hotReload 段(通道选择 + 参数)。undefined=未配,发送回落既有
+   * kbengine.hotReload.actionName quick action 通道(行为与现状一致)。
+   * 持久化读回经 normalizeReloadChannelConfig 校验,畸形如实按未配。
+   */
+  hotReload?: ReloadChannelConfig;
 }
 
 export type ProjectProfilePatch = Partial<Omit<ProjectProfile, 'id'>>;
@@ -57,13 +65,17 @@ function normalizeProfileEntry(value: unknown): ProjectProfile | null {
     typeof record.interpreterPath === 'string' ? record.interpreterPath : null;
   const interpreterSource =
     typeof record.interpreterSource === 'string' ? record.interpreterSource : 'missing';
+  // IDE-HOT-102:hotReload 段是后加的,旧记录没有(undefined=未配,回落
+  // actionName 通道);有则经通道配置校验归一,畸形段如实按未配(不猜)。
+  const hotReload = normalizeReloadChannelConfig(record.hotReload);
   return {
     id: record.id,
     displayName: record.displayName,
     assetsRoot: record.assetsRoot,
     engineRoot: record.engineRoot,
     interpreterPath,
-    interpreterSource
+    interpreterSource,
+    ...(hotReload ? { hotReload } : {})
   };
 }
 
@@ -145,6 +157,15 @@ export class ProjectProfileStore {
     resolution: { interpreterPath: string | null; interpreterSource: string }
   ): Promise<ProjectProfile | null> {
     return this.update(id, resolution);
+  }
+
+  /**
+   * 按 profile 保存热更新通道配置(IDE-HOT-102):只动 hotReload 字段,身份
+   * 与其余字段不动;undefined=清除通道(回落既有 actionName 通道)。未知 ID
+   * 返回 null,绝不静默新建。
+   */
+  async saveHotReload(id: string, config: ReloadChannelConfig | undefined): Promise<ProjectProfile | null> {
+    return this.update(id, config === undefined ? { hotReload: undefined } : { hotReload: config });
   }
 
   /** 按 ID 删除:返回是否真删了一条 */

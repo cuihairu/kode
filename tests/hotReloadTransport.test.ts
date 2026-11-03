@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HttpReloadTransport,
   KbengineOfficialTransport,
+  normalizeReloadChannelConfig,
   parseReloadHttpReceipts,
   resolveReloadTransport,
   substituteReloadVariables,
@@ -324,5 +325,64 @@ describe('resolveReloadTransport (IDE-HOT-101 验收 3/4)', () => {
     expect(resolveReloadTransport({ channel: 'http' })).toBeNull();
     expect(resolveReloadTransport({ channel: 'kbengine-official' })).toBeNull();
     expect(resolveReloadTransport({ channel: 'unknown' as never })).toBeNull();
+  });
+});
+
+describe('normalizeReloadChannelConfig (IDE-HOT-102 profile 读回校验)', () => {
+  it('非对象/空 → undefined(如实按未配)', () => {
+    expect(normalizeReloadChannelConfig(undefined)).toBeUndefined();
+    expect(normalizeReloadChannelConfig(null)).toBeUndefined();
+    expect(normalizeReloadChannelConfig('http')).toBeUndefined();
+    expect(normalizeReloadChannelConfig([])).toBeUndefined();
+  });
+
+  it('channel 未知 → undefined(不猜)', () => {
+    expect(normalizeReloadChannelConfig({ channel: 'carrier-pigeon' })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({})).toBeUndefined();
+  });
+
+  it('http + url → 归一条目,未知字段忽略,缺省填类型默认', () => {
+    const normalized = normalizeReloadChannelConfig({
+      channel: 'http',
+      http: { url: 'http://h:1/r', method: 'put', headers: { a: 'b', skip: 42 }, junk: 'ignored' }
+    });
+    // normalize 只校验/填默认,不改写既有字段(面板写入时已大写,读回原样)
+    expect(normalized).toEqual({
+      channel: 'http',
+      http: {
+        name: 'hot-reload',
+        url: 'http://h:1/r',
+        method: 'put',
+        headers: { a: 'b' },
+        body: '',
+        enabled: true,
+        keybinding: ''
+      }
+    });
+  });
+
+  it('http url 缺失/空/非对象段 → undefined', () => {
+    expect(normalizeReloadChannelConfig({ channel: 'http', http: {} })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({ channel: 'http', http: { url: '' } })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({ channel: 'http' })).toBeUndefined();
+  });
+
+  it('official + host/port → 归一条目,password/fullReload/command 可选', () => {
+    const normalized = normalizeReloadChannelConfig({
+      channel: 'kbengine-official',
+      official: { host: '127.0.0.1', port: 2560, password: 'pw', fullReload: false, junk: 'ignored' }
+    });
+    expect(normalized).toEqual({
+      channel: 'kbengine-official',
+      official: { host: '127.0.0.1', port: 2560, password: 'pw', fullReload: false, command: undefined }
+    });
+  });
+
+  it('official host 空/port 越界或非整数 → undefined', () => {
+    expect(normalizeReloadChannelConfig({ channel: 'kbengine-official', official: { host: '', port: 1 } })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({ channel: 'kbengine-official', official: { host: 'h', port: 0 } })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({ channel: 'kbengine-official', official: { host: 'h', port: 65536 } })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({ channel: 'kbengine-official', official: { host: 'h', port: 1.5 } })).toBeUndefined();
+    expect(normalizeReloadChannelConfig({ channel: 'kbengine-official' })).toBeUndefined();
   });
 });

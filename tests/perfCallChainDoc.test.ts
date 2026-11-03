@@ -37,16 +37,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // KODE-AUD-001:extension.ts 测试访问器块 +14 行(427 前锚点) +
   // setProcessTopologySchedulerForTests 装配行 +1 行(1597 后锚点再 +1):
   // 549~1298 锚点 +14,1839/1913 锚点 +15
-  ['src/extension.ts', 901, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 952, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1015, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 819, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1313, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 564, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 577, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-04:IDE-HOT-102 extension.ts 顶部新增两行 import(hotReloadChannelConfig
+  // /hotReloadTransport),全部 extension.ts 锚点 +2(出处随 baseline 锁步)
+  ['src/extension.ts', 903, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 954, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1017, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 821, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1315, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 566, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 579, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1855, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1929, 'flushQueued()'],
+  ['src/extension.ts', 1857, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1931, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   ['src/languageProviders.ts', 715, 'getDocumentLines(document)'],

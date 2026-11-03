@@ -664,6 +664,18 @@ The flow graph panel supports:
   - A file in the workspace root shows one line per target with its state, baseline hash prefix, send generation, and detail; a file outside any root reports 不在工作区根内 honestly
   - RESTART_REQUIRED is the HOT-005 structural-def gate: a structural def change blocks the whole batch and is surfaced as restart-required (a conservative hold, never a fake failure) — the reason text names the gate
 
+### `kbengine.hotReload.configureChannel`
+
+- Title: `Hot Reload: Configure Deployment Channel`
+- Purpose: per-ProjectProfile deploy-level hot-reload channel panel — pick a profile, pick a channel (unset / KBEngine official / custom HTTP), collect its parameters, then save or run a connectivity test (IDE-HOT-102 / design §5.1)
+- Behavior:
+  - Channel is stored per profile (`profile.hotReload`); **unset** restores the fallback to the existing `kbengine.hotReload.actionName` quick-action channel (the channel-less behavior is unchanged)
+  - Two channels: `kbengine-official` (engine built-in `reloadScript` via console — host / port / optional password) and `http` (third-party HTTP with a custom accepted/applied receipt contract — URL template with `${files}` / `${fileList}`, method, body template, optional headers)
+  - A **connectivity test** runs `transport.probe()` on the collected config without saving (probe never writes the profile); a malformed config is reported honestly (通道配置不完整) rather than guessed
+  - Every step is cancellable and nothing is written until the final 保存 — cancel at any step reports `false` and leaves the profile untouched
+  - The panel is a quick-pick + input flow (the existing profile-edit pattern); unknown ids save as 保存失败 and never silently create
+- When a profile has a channel configured and is active, the fire path sends the whole reload batch through `transport.send` (receipts feed the per-target ledger directly) instead of the quick action; with no channel configured the actionName path is unchanged
+
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`

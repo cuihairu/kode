@@ -161,3 +161,60 @@ describe('per-profile root persistence (IDE-PRJ-002)', () => {
     expect(store.list()).toHaveLength(0);
   });
 });
+
+describe('per-profile hot reload channel persistence (IDE-HOT-102)', () => {
+  it('saves hotReload config on one profile without bleeding into the other, across restarts', async () => {
+    const memento = new MemoryMemento();
+    const first = new ProjectProfileStore(memento);
+    const a = await first.create(comboA);
+    const b = await first.create(comboB);
+
+    // 只给 A 配 http 通道:B 无 hotReload(未配,回落既有通道)
+    const reopened = new ProjectProfileStore(memento);
+    const saved = await reopened.saveHotReload(a.id, {
+      channel: 'http',
+      http: { name: 'hot-reload', url: 'http://127.0.0.1:8000/hotfix', method: 'POST', headers: {}, body: '${files}', enabled: true, keybinding: '' }
+    });
+    expect(saved).toMatchObject({
+      id: a.id,
+      hotReload: { channel: 'http', http: expect.objectContaining({ url: 'http://127.0.0.1:8000/hotfix' }) }
+    });
+
+    // 再一次重启:A 通道读回;B 仍未配(无 hotReload 字段),互不串写
+    const second = new ProjectProfileStore(memento);
+    expect(second.get(a.id)?.hotReload).toMatchObject({ channel: 'http' });
+    expect(second.get(b.id)?.hotReload).toBeUndefined();
+  });
+
+  it('saveHotReload(undefined) clears the channel (fallback)', async () => {
+    const memento = new MemoryMemento();
+    const store = new ProjectProfileStore(memento);
+    const a = await store.create(comboA);
+    await store.saveHotReload(a.id, {
+      channel: 'kbengine-official',
+      official: { host: '127.0.0.1', port: 2560, password: 'pw', fullReload: true }
+    });
+    expect(store.get(a.id)?.hotReload).toMatchObject({ channel: 'kbengine-official' });
+
+    const reopened = new ProjectProfileStore(memento);
+    await reopened.saveHotReload(a.id, undefined);
+    expect(reopened.get(a.id)?.hotReload).toBeUndefined();
+  });
+
+  it('returns null for unknown ids (no silent create)', async () => {
+    const store = new ProjectProfileStore(new MemoryMemento());
+    expect(await store.saveHotReload('missing', { channel: 'http', http: { url: 'http://h:1/r', method: 'POST', headers: {}, body: '', enabled: true, keybinding: '' } })).toBeNull();
+  });
+
+  it('malformed persisted hotReload normalizes to undefined on read (not guessed)', async () => {
+    const memento = new MemoryMemento();
+    const store = new ProjectProfileStore(memento);
+    const a = await store.create(comboA);
+    await store.update(a.id, {
+      hotReload: { channel: 'http', http: { url: '', method: 'POST', headers: {}, body: '', enabled: true, keybinding: '' } }
+    });
+    // 重启后畸形段读回按未配(undefined),不虚构通道
+    const reopened = new ProjectProfileStore(memento);
+    expect(reopened.get(a.id)?.hotReload).toBeUndefined();
+  });
+});

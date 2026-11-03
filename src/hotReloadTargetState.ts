@@ -45,6 +45,16 @@ export interface HotReloadDeliveryRecord {
    * 变也不影响判定)。读取失败=无基准(如实 undefined,核验面注解阻塞)。
    */
   sentDigest?: string;
+  /**
+   * 触发源(IDE-HOT-102 审计五要素「谁」):watcher-auto(自动监视)/
+   * command(手动)/retry(重试)/temp-edit(临时编辑);未提供=来源未记录。
+   */
+  source?: string;
+  /**
+   * 通道(IDE-HOT-102 审计五要素「通道」):kbengine-official/http(部署通道)
+   * 或 actionName:<名>(quick action 回落通道);未提供=通道未记录。
+   */
+  channel?: string;
 }
 
 export interface HotReloadTargetStateDeps {
@@ -85,7 +95,7 @@ export class HotReloadTargetStateStore {
     key: HotReloadTargetKey,
     file: string,
     outcome: HotReloadDeliveryOutcome,
-    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string } = {}
+    options: { detail?: string; now?: number; attempt?: number; sentDigest?: string; source?: string; channel?: string } = {}
   ): HotReloadDeliveryRecord | undefined {
     const attemptKey = `${buildHotReloadTargetKeyId(key)}${HOT_RELOAD_TARGET_KEY_SEPARATOR}${file}`;
     const current = this.get(key, file);
@@ -109,6 +119,14 @@ export class HotReloadTargetStateStore {
       if (options.sentDigest !== undefined) {
         updated.sentDigest = options.sentDigest;
       }
+      // IDE-HOT-102:触发源/通道与 detail/sentDigest 同模式——提供了才覆写,
+      // 未提供保留旧值(回执写回不动首次发送记录的来源/通道)。
+      if (options.source !== undefined) {
+        updated.source = options.source;
+      }
+      if (options.channel !== undefined) {
+        updated.channel = options.channel;
+      }
       this.put(key, file, updated);
       this.onRecorded?.();
       return updated;
@@ -128,6 +146,14 @@ export class HotReloadTargetStateStore {
     }
     if (options.sentDigest !== undefined) {
       record.sentDigest = options.sentDigest;
+    }
+    // IDE-HOT-102:首次发送记录带触发源/通道(审计五要素);未提供=该记录
+    // 无来源/通道字段(旧调用面如实无,不虚构)。
+    if (options.source !== undefined) {
+      record.source = options.source;
+    }
+    if (options.channel !== undefined) {
+      record.channel = options.channel;
     }
     this.put(key, file, record);
     this.onRecorded?.();

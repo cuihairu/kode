@@ -125,6 +125,7 @@
     "onCommand:kbengine.hotReload.showBatchSummary",
     "onCommand:kbengine.hotReload.retryFailed",
     "onCommand:kbengine.hotReload.showRevisionEvidence",
+    "onCommand:kbengine.hotReload.configureChannel",
     "onCommand:kbengine.python.exportStubs",
     "onCommand:kbengine.python.exportTypeStubs",
     "onCommand:kbengine.python.showCallChain",
@@ -712,6 +713,10 @@
       {
         "command": "kbengine.hotReload.showFileState",
         "title": "Hot Reload: Show File State"
+      },
+      {
+        "command": "kbengine.hotReload.configureChannel",
+        "title": "Hot Reload: Configure Deployment Channel"
       },
       {
         "command": "kbengine.debug.focusTarget",

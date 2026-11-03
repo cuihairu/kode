@@ -10,6 +10,7 @@ import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
 import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
 import { classifyDefChange } from './hotReloadDefStructure';
+import type { ReloadTransport } from './hotReloadTransport';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
 // 触发指定 quick action。门控默认关防误触;启用后才按 kbengine.hotReload.globs
@@ -148,6 +149,15 @@ export interface SetupHotReloadOptions {
   readonly onRestartRequired?: (actionName: string, files: string[], reasons: string[]) => void;
   /** 时钟注入口(测试用);缺省真 Date.now,用于 applied 核验窗口结算 */
   readonly now?: () => number;
+  /**
+   * IDE-HOT-102 部署通道接线:返回本 profile 配置的 ReloadTransport 与目标
+   * 标识(经 resolveReloadTransport 解出;未配返回 null)。注入即该次发送走
+   * 部署通道(回执流直喂台账),不注入则回落既有 actionName 通道。
+   * targetId 是通道目标的服务标识(如 profile id / 通道 kind),用于台账键。
+   */
+  readonly resolveChannelTransport?: () => { transport: ReloadTransport; targetId: string } | null;
+  /** IDE-HOT-102 审计「触发源」(谁):默认 'watcher-auto' 自动监视 */
+  readonly auditSource?: string;
 }
 
 /**
@@ -232,6 +242,13 @@ export function setupHotReload(
       return;
     }
     status.setSending(triggers, settings.debounceMs);
+    // IDE-HOT-102:审计五要素(谁/何时/文件/通道/结果)的「谁」与日志行——
+    // 触发源缺省 watcher-auto(自动监视);通道面、actionName 回落面与 def 闸
+    // 拦下面共用同一行式(「何时」由 OUTPUT 通道行前缀时间承担)。
+    const channelAuditSource = options.auditSource ?? 'watcher-auto';
+    const auditLine = (channelLabel: string, files: readonly string[], resultText: string): void => {
+      status.log(`审计: 触发源=${channelAuditSource} | 文件=${files.length} 个 | 通道=${channelLabel} | 结果=${resultText}`);
+    };
     const proceed = (): void => {
       const fail = (error: unknown): void => {
         status.setFailed(error instanceof Error ? error.message : String(error));
@@ -239,7 +256,10 @@ export function setupHotReload(
       };
       // IDE-REV-021:该次发送逐文件落双维台账——targetId/rootId 解不到的
       // 维度如实不落;结果仍只有 sent-unverified/failed 两态(无回执管道,
-      // 传输/执行成功≠应用成功,绝不记成功态)
+      // 传输/执行成功≠应用成功,绝不记成功态)。
+      // IDE-HOT-102:actionName 回落通道的台账记录带触发源与通道
+      // (actionName:<名>),与通道发送面共用审计五要素语义。
+      const fallbackChannel = `actionName:${settings.actionName}`;
       const recordOutcomes = (targetId: string | null, outcome: HotReloadDeliveryOutcome, detail?: string): void => {
         const wiring = options.targetState;
         if (!wiring || targetId === null) {
@@ -250,8 +270,16 @@ export function setupHotReload(
           if (rootId === null) {
             continue;
           }
-          wiring.store.record({ rootId, targetId }, file, outcome, detail !== undefined ? { detail } : {});
+          wiring.store.record(
+            { rootId, targetId },
+            file,
+            outcome,
+            detail !== undefined
+              ? { detail, source: channelAuditSource, channel: fallbackChannel }
+              : { source: channelAuditSource, channel: fallbackChannel }
+          );
         }
+        auditLine(fallbackChannel, triggers, outcome === 'failed' ? '失败' : '已发送(未校验业务回执)');
       };
       // IDE-REV-023:applied 核验接线。注解口只给仍未确认(sent-unverified)的
       // 记录追加阻塞/超时原因——绝不动 accepted/applied/failed,recordedAt 原样
@@ -304,7 +332,106 @@ export function setupHotReload(
         }, HOT_RELOAD_APPLIED_SETTLE_MS);
         settleHandles.add(handle);
       };
+      // IDE-HOT-102:部署通道发送——配置了 hotReload 通道时整批走通道回执流
+      // (transport.send 逐条回执直接喂台账),不回落 actionName 通道;无 wiring
+      // 解不到 root 的文件仍发送(单组 '' 键)但不落台账。
+      const sendViaChannel = (transport: ReloadTransport, channelTargetId: string): void => {
+        const wiring = options.targetState;
+        const channelLabel = transport.kind;
+        const groups = new Map<string, string[]>();
+        for (const file of triggers) {
+          const rootId = wiring ? (wiring.resolveRootId(file) ?? '') : '';
+          const list = groups.get(rootId) ?? [];
+          list.push(file);
+          groups.set(rootId, list);
+        }
+        const recordOutcome = (
+          rootId: string,
+          file: string,
+          outcome: HotReloadDeliveryOutcome,
+          detail?: string
+        ): void => {
+          if (!wiring || rootId === '') {
+            return;
+          }
+          wiring.store.record({ rootId, targetId: channelTargetId }, file, outcome, {
+            ...(detail !== undefined ? { detail } : {}),
+            source: channelAuditSource,
+            channel: channelLabel
+          });
+        };
+        let sentCount = 0;
+        let failedCount = 0;
+        const allGroups = [...groups.entries()];
+        const runAll = Promise.all(
+          allGroups.map(([rootId, files]) =>
+            Promise.resolve(
+              transport.send({ rootId, targetId: channelTargetId }, files, receipt => {
+                const receiptFiles = receipt.file !== undefined ? [receipt.file] : files;
+                for (const file of receiptFiles) {
+                  switch (receipt.status) {
+                    case 'applied':
+                      recordOutcome(rootId, file, 'applied');
+                      break;
+                    case 'accepted':
+                      recordOutcome(rootId, file, 'accepted');
+                      break;
+                    case 'failed':
+                      failedCount += 1;
+                      recordOutcome(rootId, file, 'failed', receipt.reason);
+                      break;
+                    case 'sent':
+                    default:
+                      sentCount += 1;
+                      recordOutcome(rootId, file, 'sent-unverified', receipt.detail);
+                      break;
+                  }
+                }
+              })
+            ).catch((error: unknown) => {
+              // 单组失败:整组按 failed 落账(不冒充未确认),错误如实上报
+              failedCount += files.length;
+              for (const file of files) {
+                recordOutcome(rootId, file, 'failed', error instanceof Error ? error.message : String(error));
+              }
+            })
+          )
+        );
+        void runAll.then(
+          () => {
+            const result =
+              failedCount > 0 && sentCount === 0
+                ? `失败(${failedCount})`
+                : failedCount > 0
+                  ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
+                  : `已发送(${sentCount})——未校验业务回执`;
+            auditLine(channelLabel, triggers, result);
+            if (failedCount > 0 && sentCount === 0) {
+              status.setFailed(`通道 ${channelLabel} 全部失败(${failedCount})`);
+            } else {
+              status.setSentUnverified();
+            }
+            // 组内错误已在 catch 落账 failed,这里按汇总如实上报一次(部分
+            // 失败也上报,动作名回落面的 fail() 同口径:失败即报)。
+            if (failedCount > 0) {
+              reportActionError(new Error(`通道 ${channelLabel} 发送失败:${failedCount} 个文件未送达`));
+            }
+          },
+          (error: unknown) => {
+            status.setFailed(error instanceof Error ? error.message : String(error));
+            reportActionError(error);
+          }
+        );
+      };
       const start = (targetId: string | null): void => {
+        // IDE-HOT-102:配置了部署通道则整批走通道(回执流直喂台账),不回落
+        // actionName 通道;未配(resolveChannelTransport 返回 null/未注入)走
+        // 既有 actionName 路径,行为与现状一致。
+        const channelHandle = options.resolveChannelTransport?.() ?? null;
+        if (channelHandle) {
+          sendViaChannel(channelHandle.transport, channelHandle.targetId);
+          return;
+        }
         // IDE-REV-022:真实 HTTP 响应到达即回执面——recordHttpDelivery 按传输
         // 事实落账(2xx=未确认送达/非 2xx=failed),2xx 且有回包才尝试 accepted
         // 升格(applyAcceptedReceipt 只认协议逐字段符合,未知响应保持未确认);
@@ -457,6 +584,10 @@ export function setupHotReload(
         // 拦下本身是 HOT-005 的既有面,这里只多一个呈现通知。
         options.onRestartRequired?.(settings.actionName, triggers, reasons);
         const first = reasons[0] ?? 'def 结构待核';
+        // IDE-HOT-102:def 闸拦下的重载也进审计——通道记为「拦截:需重启」,
+        // 结果=拦截原因,与通道发送/actionName 回落共用五要素语义(谁/何时/
+        // 文件/通道/结果);「何时」由 OUTPUT 通道行前缀时间承担。
+        auditLine('拦截:需重启', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
       const reader = options.targetState?.readFileContent;

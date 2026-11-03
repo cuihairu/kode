@@ -195,6 +195,8 @@ import {
   type HotReloadTargetStateWiring
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
+import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
+import { resolveReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
 import { runHotReloadRevisionEvidenceCommand } from './hotReloadRevisionEvidenceCommand';
@@ -4412,8 +4414,38 @@ export function activate(context: vscode.ExtensionContext) {
           hotReloadFileStateMachine.markRestartRequired({ rootId, targetId }, [file], reasons);
         }
       });
+    },
+    // IDE-HOT-102:部署通道接线——当前激活 profile 配了 hotReload 段才解出
+    // 通道(经 resolveReloadTransport 校验),未配返回 null,发送回落既有
+    // actionName 通道。targetId=profile.id(稳定身份,台账键用,改名不漂移)。
+    resolveChannelTransport: () => {
+      const activeProfile = resolveActiveProfile(context.workspaceState);
+      if (!activeProfile?.hotReload) {
+        return null;
+      }
+      const transport = resolveReloadTransport(activeProfile.hotReload);
+      return transport ? { transport, targetId: activeProfile.id } : null;
     }
   });
+  // IDE-HOT-102:部署级热更通道配置面板(官方/HTTP + 连通性测试)——按
+  // profile 读/写 hotReload 段;未配回落既有 actionName 通道。探测只走
+  // transport.probe()(经 resolveReloadTransport 建真实通道),不写 profile。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.configureChannel', () => {
+      const profileStore = new ProjectProfileStore(context.workspaceState);
+      return runHotReloadChannelConfigCommand({
+        listProfiles: () => profileStore.list(),
+        saveHotReload: (id, config) => profileStore.saveHotReload(id, config),
+        ui: {
+          showQuickPick: (items, options) => Promise.resolve(vscode.window.showQuickPick(items, { title: options.title })),
+          showInputBox: options =>
+            Promise.resolve(vscode.window.showInputBox({ title: options.title, value: options.value, prompt: options.prompt })),
+          showInformationMessage: message => Promise.resolve(vscode.window.showInformationMessage(message)),
+          showErrorMessage: message => Promise.resolve(vscode.window.showErrorMessage(message))
+        }
+      });
+    })
+  );
   // IDE-REV-025:多目标批次聚合的展示入口——台账全量归并,partial 点名失败目标
   context.subscriptions.push(
     vscode.commands.registerCommand('kbengine.hotReload.showBatchSummary', () => {

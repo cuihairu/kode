@@ -472,3 +472,75 @@ export function resolveReloadTransport(
   }
   return null;
 }
+
+/* ------------------------------------------------------------------ */
+/* 通道配置持久化校验(IDE-HOT-102)                                      */
+/* ------------------------------------------------------------------ */
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * 校验/归一 ReloadChannelConfig(IDE-HOT-102:profile 持久化读回):
+ * 只认已记录字段,未知字段忽略;channel 未知或对应参数段缺失/畸形
+ * 返回 undefined(调用方如实按「未配」处理,不猜测)。
+ * 字段逐项宽松校验:缺省可省字段用类型默认,必填缺失即判畸形。
+ */
+export function normalizeReloadChannelConfig(value: unknown): ReloadChannelConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const channel = value.channel;
+  if (channel !== 'http' && channel !== 'kbengine-official') {
+    return undefined;
+  }
+  if (channel === 'http') {
+    const http = value.http;
+    if (!isRecord(http)) {
+      return undefined;
+    }
+    if (typeof http.url !== 'string' || http.url.length === 0) {
+      return undefined;
+    }
+    const headers: Record<string, string> = {};
+    if (isRecord(http.headers)) {
+      for (const [key, headerValue] of Object.entries(http.headers)) {
+        if (typeof headerValue === 'string') {
+          headers[key] = headerValue;
+        }
+      }
+    }
+    const entry: HttpRequestEntry = {
+      name: typeof http.name === 'string' ? http.name : 'hot-reload',
+      url: http.url,
+      method: typeof http.method === 'string' ? http.method : 'POST',
+      headers,
+      body: typeof http.body === 'string' ? http.body : '',
+      enabled: typeof http.enabled === 'boolean' ? http.enabled : true,
+      keybinding: typeof http.keybinding === 'string' ? http.keybinding : ''
+    };
+    return { channel, http: entry };
+  }
+  const official = value.official;
+  if (!isRecord(official)) {
+    return undefined;
+  }
+  if (typeof official.host !== 'string' || official.host.length === 0) {
+    return undefined;
+  }
+  const port = official.port;
+  if (typeof port !== 'number' || !Number.isInteger(port) || port <= 0 || port > 65535) {
+    return undefined;
+  }
+  return {
+    channel,
+    official: {
+      host: official.host,
+      port,
+      password: typeof official.password === 'string' ? official.password : undefined,
+      fullReload: typeof official.fullReload === 'boolean' ? official.fullReload : undefined,
+      command: typeof official.command === 'string' ? official.command : undefined
+    }
+  };
+}
