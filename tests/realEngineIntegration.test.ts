@@ -15,7 +15,9 @@ const fantasyRoot = resolveFantasyRoot();
 const canRun = !!engineRoot && !!fantasyRoot;
 
 describe.skipIf(!canRun)('real KBEngine integration', () => {
-  const defsRoot = join(fantasyRoot!, 'scripts', 'entity_defs');
+  // vitest 收集期会执行被 skip 套件的 body（新版本行为），fantasyRoot 可为 null，
+  // 此处不得用非空断言；仅当 canRun 时套件内用例才会真跑。
+  const defsRoot = fantasyRoot === null ? '' : join(fantasyRoot, 'scripts', 'entity_defs');
 
   it('parses every real entity declaration and registry sample', () => {
     const defFiles = readdirSync(defsRoot).filter(name => name.endsWith('.def'));
