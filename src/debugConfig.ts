@@ -9,11 +9,16 @@ import {
 import { parseDebugConfigText } from './debugConfigBootstrap';
 import {
   DEBUGPY_PORT_PROBE_TIMEOUT_MS,
+  PORT_NEXT_STEP_ACTION_LIST,
+  PORT_NEXT_STEP_ACTIONS,
   buildAfterInstallStillClosedMessage,
+  buildListenManualGuide,
   buildManualInstallGuide,
   buildPortClosedGuidance,
+  buildPortNextStepMessage,
   defaultDebugpyInstallRunner,
   defaultTcpConnect,
+  portClosedReasonText,
   type DebugpyInstallRunner,
   type TcpConnectFn,
   type TcpProbeResult
@@ -242,6 +247,112 @@ export function remoteTargetPathMappings(
 }
 
 /**
+ * 端口模式 attach 条目名(生成、幂等合并、状态指引共用一个真源)——名字带
+ * `debugpy <port>`,端口变了即新条目名,老条目不残留指向旧口的同名项。
+ */
+export function portLaunchEntryName(componentName: string, port: number): string {
+  return `KBEngine: Python attach to ${componentName} (debugpy ${port})`;
+}
+
+/**
+ * 端口模式 connect 条目体(type/request/connect 三件套 = attach 断点可用的
+ * 最小面;type 与仓内其余生成条目同源走 debugpy 适配器)。
+ */
+export function buildPortLaunchEntry(
+  componentName: string,
+  host: string,
+  port: number,
+  pathMappings: Array<{ localRoot: string; remoteRoot: string }> | undefined,
+  debuggerType: string
+): Record<string, unknown> {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+  return {
+    name: portLaunchEntryName(componentName, port),
+    type: debuggerType,
+    request: 'attach',
+    connect: { host, port },
+    justMyCode: false,
+    pathMappings: pathMappings || [{ localRoot: workspaceFolder, remoteRoot: workspaceFolder }],
+    presentation: { group: 'KBEngine', order: 3 }
+  };
+}
+
+/**
+ * 同组件「旧端口」生成条目的回收:端口改了不该留一条指向死口的条目在 F5
+ * 下拉里。只认本扩展生成的精确名形 `KBEngine: Python attach to <组件>
+ * (debugpy <口>)`(组件名与当前口都不匹配才算陈旧)——用户条目、PID 条目、
+ * 命名实例条目(`组件#实例`)、远程条目一概不动。
+ */
+export function dropSupersededPortEntries(
+  configurations: unknown[],
+  componentName: string,
+  port: number
+): { configurations: unknown[]; removed: number } {
+  const list = Array.isArray(configurations) ? configurations : [];
+  const keepName = portLaunchEntryName(componentName, port);
+  const prefix = `KBEngine: Python attach to ${componentName} (debugpy `;
+  let removed = 0;
+  const kept = list.filter(item => {
+    const name =
+      item !== null && typeof item === 'object' ? (item as { name?: unknown }).name : undefined;
+    if (typeof name !== 'string' || name === keepName || !name.startsWith(prefix)) {
+      return true;
+    }
+    // 余下必须是 `<数字>)` 才是同组件的端口条目(命名实例/手写同前缀的不误删)
+    if (!/^\d+\)$/.test(name.slice(prefix.length))) {
+      return true;
+    }
+    removed += 1;
+    return false;
+  });
+  return { configurations: kept, removed };
+}
+
+/**
+ * launch.json 条目幂等合并(动态写入的合并口径,绝不破坏用户配置):
+ * - 无同名条目 → 追加在用户条目之后;
+ * - 有同名条目 → 只覆写托管字段(type/request/connect;端口/主机变了要跟着
+ *   走),其余字段(presentation、pathMappings、用户手改的一切)原样保留,
+ *   位置不动;已在位则 changed=false(重复调用零写入);
+ * - 非 KBEngine 条目与无名条目一律不动。
+ */
+export function mergePortLaunchEntry(
+  configurations: unknown[],
+  entry: Record<string, unknown>
+): { configurations: unknown[]; changed: boolean } {
+  const list = Array.isArray(configurations) ? configurations : [];
+  const name = typeof entry.name === 'string' ? entry.name : '';
+  const index = list.findIndex(
+    item => item !== null && typeof item === 'object' && (item as { name?: unknown }).name === name
+  );
+  if (index < 0) {
+    return { configurations: [...list, entry], changed: true };
+  }
+  const current = list[index] as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...current };
+  next.type = entry.type;
+  next.request = entry.request;
+  // connect 合并而非替换:用户在 connect 里手加的字段(若有)一并保留
+  next.connect = {
+    ...(current.connect !== null && typeof current.connect === 'object' ? current.connect : {}),
+    ...(entry.connect !== null && typeof entry.connect === 'object' ? entry.connect : {})
+  };
+  if (current.pathMappings === undefined && entry.pathMappings !== undefined) {
+    next.pathMappings = entry.pathMappings;
+  }
+  if (current.justMyCode === undefined && entry.justMyCode !== undefined) {
+    next.justMyCode = entry.justMyCode;
+  }
+  const changed = JSON.stringify(current) !== JSON.stringify(next);
+  if (!changed) {
+    return { configurations: list, changed: false };
+  }
+  const configurations2 = [...list];
+  configurations2[index] = next;
+  return { configurations: configurations2, changed };
+}
+
+/**
  * IDE-AUD-002:每次附加尝试的唯一身份。进程内单调递增,保证并发同名
  * attach(同一组件/端口或同一进程名)各自可辨——会话追踪不再只按配置名
  * 匹配(两个同名附加会互相捕获对方会话,取消其一误停他人)。
@@ -287,6 +398,16 @@ export class DebugConfigManager {
       selectedServer?: () => string;
       /** IDE-PDBG-004:隧道进程注入面(缺省真实 spawn ssh -N -L) */
       spawnTunnel?: (args: string[]) => { onExit(cb: () => void): void; kill(): void };
+      /**
+       * 端口模式下一步(死路修复):一键起 debugpy 监听——装配层负责同步
+       * debugpy 进资产树并经该组件 telnet 发 `debugpy.listen`,回执如实
+       * (ok=false 带原因)。缺省(未接线)= 一键动作退化为起监听指引,
+       * 不假装能起。
+       */
+      startDebugpyListener?: (
+        componentName: string,
+        port: number
+      ) => Promise<{ ok: boolean; detail: string }>;
     } = {}
   ) {
     this.config = this.getDefaultConfig();
@@ -458,18 +579,77 @@ export class DebugConfigManager {
       });
     }
 
+    // 端口模式显式声明(IDE-PDBG-001:debug.json 的 debugpyPort>0)。端口模式
+    // 的 attach 从 debug.json 取口,launch.json 就必须有指向该口的 connect
+    // 条目——否则 F5/Debug Targets 的「用 launch.json 附加」指引落空。与
+    // 动态写入口(ensurePortLaunchConfig)同名同体,幂等合流,默认关的
+    // autoDebugpy 不再是端口模式条目的前提。
+    const explicitPortComponents = new Set<string>();
+    for (const [componentName, componentConfig] of Object.entries(this.config.components)) {
+      const explicitPort =
+        typeof componentConfig.debugpyPort === 'number' && componentConfig.debugpyPort > 0
+          ? componentConfig.debugpyPort
+          : undefined;
+      if (explicitPort === undefined) {
+        continue;
+      }
+      explicitPortComponents.add(componentName);
+      configurations.push(
+        buildPortLaunchEntry(
+          componentName,
+          componentConfig.debugpyHost || '127.0.0.1',
+          explicitPort,
+          componentConfig.pathMappings,
+          this.getDebuggerType()
+        )
+      );
+    }
+
+    // 端口模式「记住的选择」(IDE-PDBG-001:没显式声明端口的组件,模式选择
+    // 一次对全部组件生效)。此时 Update launch.json 也得给这些组件各落一条
+    // 指向其实际端口(分配表/缺省 5678)的 connect 条目——否则重跑一次就
+    // 把端口模式的 F5 落点刷没了,动态写入与全量生成两个面才不互相拆台。
+    // 记忆面按最小可用取:极简装配/替身的 workspaceState 可能没有 get 面,
+    // 取不到就当没记住(不抛)
+    const memento = this.context.workspaceState;
+    const rememberedPortMode =
+      typeof memento?.get === 'function' &&
+      memento.get<string>(DEBUG_ATTACH_MODE_STATE_KEY) === 'debugpy-port';
+    if (rememberedPortMode) {
+      for (const [componentName, componentConfig] of Object.entries(this.config.components)) {
+        if (explicitPortComponents.has(componentName)) {
+          continue; // 显式端口条目已覆盖
+        }
+        explicitPortComponents.add(componentName);
+        configurations.push(
+          buildPortLaunchEntry(
+            componentName,
+            componentConfig.debugpyHost || '127.0.0.1',
+            debugpyPortFor(componentName) ?? DEFAULT_DEBUGPY_PORT,
+            componentConfig.pathMappings,
+            this.getDebuggerType()
+          )
+        );
+      }
+    }
+
     // 调试启动即 attach(2026-10-27 ③c):kbengine.debug.autoDebugpy 开时,
     // 按端口分配表逐组件追加 debugpy connect 附加配置(localRoot=
     // workspaceFolder,与本地 attach 同映射口径);注入由启动联动负责,
     // 这里只负责把「组件→端口」面写进 launch.json。默认关=零追加。
+    // 显式声明了 debugpyPort 的组件跳过表条目:它已有指向自己口的条目,
+    // 两条同组件条目会互相打架(名字不同、口不同)。
     // DBG-001 命名实例面:同组件多实例各持独立口(启动联动按组件窗口
     // 分配),逐实例追加一条 connect 附加——条目名带
     // `component#targetId` 指明归属实例;默认实例不进此列表(上方表配置
     // 已覆盖)。与表条目同映射口径(localRoot=workspaceFolder)。
     if (vscode.workspace.getConfiguration('kbengine').get<boolean>('debug.autoDebugpy', false)) {
       for (const { component, port } of DEBUGPY_PORT_TABLE) {
+        if (explicitPortComponents.has(component)) {
+          continue;
+        }
         configurations.push({
-          name: `KBEngine: Python attach to ${component} (debugpy ${port})`,
+          name: portLaunchEntryName(component, port),
           type: this.getDebuggerType(),
           request: 'attach',
           connect: {
@@ -513,6 +693,113 @@ export class DebugConfigManager {
     return configurations;
   }
 
+  /**
+   * launch.json 读改写串行闸(Update launch.json 与端口模式动态写入共用):
+   * 同一时刻只有一个「读-改-写」在飞,后到者基于前者落盘后的结果再读改写,
+   * 并发不丢条目;任务失败不毒化队列(下一个照常排队)。
+   */
+  private launchWriteChain: Promise<unknown> = Promise.resolve();
+
+  private queueLaunchWrite<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.launchWriteChain.then(task);
+    this.launchWriteChain = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  /**
+   * 读 .vscode/launch.json:文件不在=空骨架(照常生成);内容为空=空骨架;
+   * 解析不了=拒绝改写并给原因——JSONC 带注释时改写会丢注释,坏 JSON 改写会
+   * 丢整份用户配置,两种都绝不盲写(保留用户已有配置不破坏)。
+   */
+  private async readLaunchConfig(
+    launchJsonPath: vscode.Uri
+  ): Promise<{ config: Record<string, any> } | { error: string }> {
+    let text = '';
+    try {
+      const launchData = await vscode.workspace.fs.readFile(launchJsonPath);
+      text = Buffer.from(launchData).toString('utf8');
+    } catch {
+      return { config: { configurations: [], inputs: [] } };
+    }
+    if (text.trim().length === 0) {
+      return { config: { configurations: [], inputs: [] } };
+    }
+    try {
+      return { config: JSON.parse(text) as Record<string, any> };
+    } catch {
+      // 落到 JSONC/坏文件判定
+    }
+    const jsoncParsed = parseDebugConfigText(text);
+    if (jsoncParsed !== null && typeof jsoncParsed === 'object') {
+      return {
+        error: 'launch.json 带注释(JSONC),扩展改写会丢注释,为免破坏未改写;去掉注释后重跑'
+      };
+    }
+    return { error: 'launch.json 无法按 JSON 解析,为免破坏未改写;修好语法后重跑' };
+  }
+
+  /**
+   * 端口模式动态写 launch.json(IDE-PDBG-002 死路修复):为该组件的
+   * `debugpyHost:debugpyPort` 落一条 connect 附加条目。幂等(同名条目只更
+   * 托管字段,已在位零写入)、保留用户条目与手改字段、与 Update launch.json
+   * 串行走同一闸。永不抛:失败如实回 detail(引导文案里带出)。
+   */
+  async ensurePortLaunchConfig(
+    componentName: string,
+    host: string,
+    port: number
+  ): Promise<{ ok: boolean; detail: string; entryName: string }> {
+    const entryName = portLaunchEntryName(componentName, port);
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return { ok: false, detail: '没有打开的工作区,未写 launch.json', entryName };
+    }
+    return this.queueLaunchWrite(async () => {
+      const vscodeDir = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
+      const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
+      try {
+        await vscode.workspace.fs.createDirectory(vscodeDir);
+        const read = await this.readLaunchConfig(launchJsonPath);
+        if ('error' in read) {
+          return { ok: false, detail: read.error, entryName };
+        }
+        const entry = buildPortLaunchEntry(
+          componentName,
+          host,
+          port,
+          this.getComponentConfig(componentName).pathMappings,
+          this.getDebuggerType()
+        );
+        const cleaned = dropSupersededPortEntries(
+          read.config.configurations || [],
+          componentName,
+          port
+        );
+        const merged = mergePortLaunchEntry(cleaned.configurations, entry);
+        const changed = cleaned.removed > 0 || merged.changed;
+        if (changed) {
+          const finalConfig = {
+            version: read.config.version || '0.2.0',
+            configurations: merged.configurations,
+            inputs: this.generateLaunchInputs(read.config.inputs || [])
+          };
+          await vscode.workspace.fs.writeFile(
+            launchJsonPath,
+            Buffer.from(JSON.stringify(finalConfig, null, 2), 'utf8')
+          );
+        }
+        const note = cleaned.removed > 0
+          ? `已写入「${entryName}」并回收 ${cleaned.removed} 条同组件旧端口条目`
+          : merged.changed
+            ? `已写入「${entryName}」`
+            : `「${entryName}」已在位`;
+        return { ok: true, detail: note, entryName };
+      } catch (error) {
+        return { ok: false, detail: String(error), entryName };
+      }
+    });
+  }
+
   async updateLaunchJson(runningInstances: ReadonlyArray<{ component: string; targetId: string; port: number }> = []): Promise<boolean> {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
@@ -523,40 +810,40 @@ export class DebugConfigManager {
     const vscodeDir = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode');
     const launchJsonPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'launch.json');
 
-    try {
-      await vscode.workspace.fs.createDirectory(vscodeDir);
-
-      let existingConfig: any = { configurations: [], inputs: [] };
+    return this.queueLaunchWrite(async () => {
       try {
-        const launchData = await vscode.workspace.fs.readFile(launchJsonPath);
-        existingConfig = JSON.parse(Buffer.from(launchData).toString('utf8'));
-      } catch {
-        existingConfig = { configurations: [], inputs: [] };
+        await vscode.workspace.fs.createDirectory(vscodeDir);
+        const read = await this.readLaunchConfig(launchJsonPath);
+        if ('error' in read) {
+          vscode.window.showErrorMessage(`更新 launch.json 失败: ${read.error}`);
+          return false;
+        }
+        const existingConfig = read.config;
+
+        const newConfigurations = this.generateLaunchConfigurations(runningInstances);
+        const kbConfigs = newConfigurations.filter(item => item.name?.startsWith('KBEngine:'));
+        const userConfigs = (existingConfig.configurations || []).filter(
+          (item: any) => !item.name?.startsWith('KBEngine:')
+        );
+
+        const finalConfig = {
+          version: existingConfig.version || '0.2.0',
+          configurations: [...userConfigs, ...kbConfigs],
+          inputs: this.generateLaunchInputs(existingConfig.inputs || [])
+        };
+
+        await vscode.workspace.fs.writeFile(
+          launchJsonPath,
+          Buffer.from(JSON.stringify(finalConfig, null, 2), 'utf8')
+        );
+
+        vscode.window.showInformationMessage('launch.json 已更新为 KBEngine Python 附加配置（telnet 开启调试后经进程选择器附加）');
+        return true;
+      } catch (error) {
+        vscode.window.showErrorMessage(`更新 launch.json 失败: ${error}`);
+        return false;
       }
-
-      const newConfigurations = this.generateLaunchConfigurations(runningInstances);
-      const kbConfigs = newConfigurations.filter(item => item.name?.startsWith('KBEngine:'));
-      const userConfigs = (existingConfig.configurations || []).filter(
-        (item: any) => !item.name?.startsWith('KBEngine:')
-      );
-
-      const finalConfig = {
-        version: existingConfig.version || '0.2.0',
-        configurations: [...userConfigs, ...kbConfigs],
-        inputs: this.generateLaunchInputs(existingConfig.inputs || [])
-      };
-
-      await vscode.workspace.fs.writeFile(
-        launchJsonPath,
-        Buffer.from(JSON.stringify(finalConfig, null, 2), 'utf8')
-      );
-
-      vscode.window.showInformationMessage('launch.json 已更新为 KBEngine Python 附加配置（telnet 开启调试后经进程选择器附加）');
-      return true;
-    } catch (error) {
-      vscode.window.showErrorMessage(`更新 launch.json 失败: ${error}`);
-      return false;
-    }
+    });
   }
 
   async createExampleConfig(): Promise<boolean> {
@@ -734,9 +1021,13 @@ export class DebugConfigManager {
    * 进程选择器;未配置端口时用组件默认端口表(autoDebugpy 分配表),表外
    * 组件落 debugpy 默认 5678。host 缺省 127.0.0.1。
    * IDE-PDBG-002:connect 前先探端口——通则直接附加零多余弹窗;不通分开
-   * 说原因(端口未开 / 未装 debugpy),未装给一键安装,装完/端口开了再附加。
+   * 说原因(端口未开 / 未装 debugpy),未装给一键安装,装完/端口开了再附加;
+   * 仍不通则进「下一步」引导(起监听并附加 / 重试附加 / 起监听指引)。
+   * 动态写 launch.json(尽力而为、幂等、静默):端口模式的 F5 落点随每次
+   * 附加对齐到实际 host:port,失败不阻塞附加、在引导文案里如实带出。
    * IDE-PDBG-004:组件连接声明为远程主机时改走 ssh -L 隧道 connect 附加
-   * (远端监听口打到本地;隧道随会话终止关闭,见 attachViaTunnel)。
+   * (远端监听口打到本地;隧道随会话终止关闭,见 attachViaTunnel)——隧道口
+   * 是动态的,不落 launch.json。
    */
   async attachViaDebugpyPort(componentName: string): Promise<boolean> {
     const config = this.getComponentConfig(componentName);
@@ -746,6 +1037,8 @@ export class DebugConfigManager {
     if (connection !== 'local') {
       return this.attachViaTunnel(componentName, connection.ssh, port, config.pathMappings);
     }
+    // 静默对齐 launch.json:失败不拦附加(端口开了照样能连;引导文案里如实带出)
+    await this.ensurePortLaunchConfig(componentName, host, port);
     const probe = await (this.deps.probeTcpPort ?? defaultTcpConnect)(
       host,
       port,
@@ -831,7 +1124,11 @@ export class DebugConfigManager {
     }
   }
 
-  /** 端口不通的分诊(IDE-PDBG-002):本机 debugpy 预检 → 主因口径 → 安装/指引 */
+  /**
+   * 端口不通的分诊(IDE-PDBG-002):本机 debugpy 预检 → 主因口径 → 安装/指引;
+   * 装完仍未开、或压根没有安装动作可给(预检就绪/解释器缺位)——都不再是
+   * 死路,一律接「下一步」引导(guideNextSteps)。
+   */
   private async handlePortClosed(
     componentName: string,
     host: string,
@@ -841,8 +1138,7 @@ export class DebugConfigManager {
     const preflight = await (this.deps.checkDebugpy ?? this.defaultCheckDebugpy)();
     const guidance = buildPortClosedGuidance(probe, preflight);
     if (guidance.installAction === undefined || preflight.interpreterPath === null) {
-      vscode.window.showWarningMessage(guidance.message);
-      return false;
+      return this.guideNextSteps(componentName, host, port, guidance.message);
     }
     const pick = await vscode.window.showWarningMessage(
       guidance.message,
@@ -864,8 +1160,14 @@ export class DebugConfigManager {
         DEBUGPY_PORT_PROBE_TIMEOUT_MS
       );
       if (!reprobe.open) {
-        vscode.window.showWarningMessage(buildAfterInstallStillClosedMessage(host, port));
-        return false;
+        // 装完仍未开:不中断,接下一步(起监听 / 重试 / 指引)——这正是
+        // 「点完安装没下一步」的死路口,补上控件
+        return this.guideNextSteps(
+          componentName,
+          host,
+          port,
+          buildAfterInstallStillClosedMessage(host, port)
+        );
       }
       return this.attachPortConfig(componentName, host, port, this.getComponentConfig(componentName).pathMappings);
     }
@@ -875,6 +1177,90 @@ export class DebugConfigManager {
       );
     }
     return false;
+  }
+
+  /**
+   * 端口模式「下一步」引导(死路修复的主面):分诊/装完之后端口仍不开时的
+   * 三个控件——起监听并附加 / 重试附加 / 起监听指引,外加动态落好的
+   * launch.json 说明。动作逐个如实收口:
+   * - 起监听并附加:装配层同步 debugpy 进资产树并经 telnet 发 listen,成功
+   *   后重探端口,通了就附加;失败如实报错不假成功(未接线时退化为指引);
+   * - 重试附加:直接重探,通了就附加,不通按最新原因再来一轮(用户逐次点,
+   *   不自旋);
+   * - 起监听指引:三条现成路径 + 可复制命令,看完即止。
+   * 取消弹窗=本次到此为止,返回 false。
+   */
+  private async guideNextSteps(
+    componentName: string,
+    host: string,
+    port: number,
+    baseMessage: string
+  ): Promise<boolean> {
+    const launchState = await this.ensurePortLaunchConfig(componentName, host, port);
+    const launchNote = launchState.ok
+      ? `launch.json 已写入/更新「${launchState.entryName}」(Run and Debug 里可 F5 附加)`
+      : `launch.json 未更新:${launchState.detail}(可手动跑 kbengine.debug.updateLaunchJson)`;
+    let message = buildPortNextStepMessage(baseMessage, launchNote);
+    for (;;) {
+      const pick = await vscode.window.showWarningMessage(
+        message,
+        ...PORT_NEXT_STEP_ACTION_LIST
+      );
+      if (pick === PORT_NEXT_STEP_ACTIONS.listenGuide) {
+        vscode.window.showInformationMessage(buildListenManualGuide(port));
+        return false;
+      }
+      if (pick === PORT_NEXT_STEP_ACTIONS.startListen) {
+        const outcome = await this.startDebugpyListen(componentName, port);
+        if (!outcome.ok) {
+          vscode.window.showErrorMessage(`起 debugpy 监听失败:${outcome.detail}`);
+          return false;
+        }
+      } else if (pick !== PORT_NEXT_STEP_ACTIONS.retry) {
+        return false; // 关掉弹窗/点了别处:本次到此为止
+      }
+      const reprobe = await (this.deps.probeTcpPort ?? defaultTcpConnect)(
+        host,
+        port,
+        DEBUGPY_PORT_PROBE_TIMEOUT_MS
+      );
+      if (reprobe.open) {
+        return this.attachPortConfig(
+          componentName,
+          host,
+          port,
+          this.getComponentConfig(componentName).pathMappings
+        );
+      }
+      // listen 已发/再探仍不通:如实给最新原因,继续给一轮控件(不假成功)
+      message = buildPortNextStepMessage(
+        `debugpy 端口仍未开(${portClosedReasonText(reprobe)})`,
+        launchNote
+      );
+    }
+  }
+
+  /**
+   * 一键起监听:装配层注入面(startDebugpyListener)同步 debugpy 进资产树并
+   * 经该组件 telnet 发 `debugpy.listen`,进度通知可见;未接线=不假装能起,
+   * 返回 ok=false 让调用方给出指引。
+   */
+  private async startDebugpyListen(
+    componentName: string,
+    port: number
+  ): Promise<{ ok: boolean; detail: string }> {
+    const start = this.deps.startDebugpyListener;
+    if (!start) {
+      return { ok: false, detail: '本会话未接入 telnet 起监听面——按起监听指引手动处理' };
+    }
+    return vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `起 debugpy 监听 ${componentName} 127.0.0.1:${port}`,
+        cancellable: false
+      },
+      () => start(componentName, port)
+    );
   }
 
   /** 本机 debugpy 预检默认面:PRJ-004 解释器解析链 + 真实 spawn 探版本 */
@@ -896,7 +1282,7 @@ export class DebugConfigManager {
     onSession?: (session: vscode.DebugSession) => void
   ): Promise<boolean> {
     const attachConfig: vscode.DebugConfiguration = {
-      name: `KBEngine: Python attach to ${componentName} (debugpy ${port})`,
+      name: portLaunchEntryName(componentName, port),
       type: this.getDebuggerType(),
       request: 'attach',
       connect: { host, port },

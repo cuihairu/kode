@@ -2,9 +2,13 @@ import * as net from 'net';
 import { describe, expect, it } from 'vitest';
 import {
   DEBUGPY_PORT_PROBE_TIMEOUT_MS,
+  PORT_NEXT_STEP_ACTION_LIST,
+  PORT_NEXT_STEP_ACTIONS,
   buildAfterInstallStillClosedMessage,
+  buildListenManualGuide,
   buildManualInstallGuide,
   buildPortClosedGuidance,
+  buildPortNextStepMessage,
   defaultDebugpyInstallRunner,
   defaultTcpConnect,
   portClosedReasonText,
@@ -83,11 +87,36 @@ describe('buildPortClosedGuidance', () => {
 });
 
 describe('装完仍未开与手装指引起口径', () => {
-  it('装完仍未开:明说装包≠起监听,不附加', () => {
-    const message = buildAfterInstallStillClosedMessage('127.0.0.1', 5678);
-    expect(message).toContain('127.0.0.1:5678');
-    expect(message).toContain('仍未开');
+  it('装完仍未开:明说装包≠起监听;下一步引导补上起监听路径与 launch.json 落点', () => {
+    const base = buildAfterInstallStillClosedMessage('127.0.0.1', 5678);
+    expect(base).toContain('127.0.0.1:5678');
+    expect(base).toContain('仍未开');
+    // 基线事实不越界(不假装已经知道怎么起监听),下一步引导接着说
+    const message = buildPortNextStepMessage(base, 'launch.json 已写入「条目」');
     expect(message).toContain('debugpy.listen');
+    expect(message).toContain('launch.json 已写入「条目」');
+    expect(message).toContain('下一步');
+  });
+
+  it('起监听指引:三条现成路径 + 资产树同步 + 可复制的单进程命令', () => {
+    const guide = buildListenManualGuide(5679);
+    expect(guide).toContain('debugpy.listen');
+    expect(guide).toContain('kbengine.debug.autoDebugpy');
+    expect(guide).toContain('kbengine.debug.waitAtStartup');
+    expect(guide).toContain('kbengine.python.debugpySync');
+    expect(guide).toContain('--listen 127.0.0.1:5679');
+    expect(guide).toContain('--wait-for-client');
+  });
+
+  it('下一步三控件文案与顺序是单一真源(起监听并附加/重试附加/起监听指引)', () => {
+    expect(PORT_NEXT_STEP_ACTION_LIST).toEqual([
+      PORT_NEXT_STEP_ACTIONS.startListen,
+      PORT_NEXT_STEP_ACTIONS.retry,
+      PORT_NEXT_STEP_ACTIONS.listenGuide
+    ]);
+    expect(PORT_NEXT_STEP_ACTIONS.startListen).toBe('起监听并附加');
+    expect(PORT_NEXT_STEP_ACTIONS.retry).toBe('重试附加');
+    expect(PORT_NEXT_STEP_ACTIONS.listenGuide).toBe('起监听指引');
   });
 
   it('手装指引:可复制命令 + 同步资产树 + 引擎侧起监听两步', () => {

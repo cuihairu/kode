@@ -185,7 +185,8 @@
 ### `kbengine.debug.updateLaunchJson`
 
 - 标题：`Update launch.json`
-- 作用：根据 `.kbengine/debug.json` 的 `pathMappings` 生成或更新 VSCode 的 PID attach 配置；已配置 `kbengine.debug.remoteTargets` 时，同时把远程目标以 debugpy `connect` 形式追加进去
+- 作用：根据 `.kbengine/debug.json` 的 `pathMappings` 生成或更新 VSCode 的 PID attach 配置；已配置 `kbengine.debug.remoteTargets` 时，同时把远程目标以 debugpy `connect` 形式追加进去；`debug.json` 里配置了 `debugpyPort`（或已记住端口模式）的组件，另各生成一条指向其实际端口的 debugpy `connect` 条目（与端口模式动态写入口同名同体，重跑不会把端口模式的 F5 落点刷掉）
+- 行为：只替换 `KBEngine:` 前缀的条目，用户自建条目与 `inputs` 原样保留；`.vscode/launch.json` 带注释（JSONC）或语法坏掉时拒绝改写并如实说明（改写会丢内容），绝不盲写；读-改-写走串行闸，与端口模式动态写入并发也不丢条目
 
 ### `kbengine.debug.createConfig`
 
@@ -204,6 +205,8 @@
 - 行为：
   - 未配置端口且第一次使用会先问选端口模式还是进程附加模式（记入工作区状态；`kbengine.debug.resetAttachMode` 清除）
   - 端口模式先对 debugpy 端口做 TCP 探测（IDE-PDBG-002）：端口通零多余弹窗直接附加；不通分开说原因，本机解释器链没装/过老 debugpy 时给一键 `pip install -U debugpy` 或手装指引——装完再探一次端口（装包本身不会开端口）
+  - 端口仍不开即进「下一步」引导（不再是死路）：提示带最新未开原因、三条起监听路径与 launch.json 落点，三个控件——`起监听并附加`（先确保 debugpy 已同步进 `<assets>/scripts/common/debugpy`，再等该组件 telnet 就绪经 `:python` 层发 `debugpy.listen`，成功后重探端口并立即附加；失败如实报错不假成功）、`重试附加`（直接重探，端口已从别处起来就接上）、`起监听指引`（三条路径 + 可复制的 `python -m debugpy --listen 127.0.0.1:<口> --wait-for-client <入口脚本>`）
+  - 端口模式每次附加都把该组件 `host:port` 的 connect 条目幂等写进 `.vscode/launch.json`（`type`/`request`/`connect` 三件套；用户条目与手改字段原样保留，同组件旧端口的生成条目回收；文件带注释或语法坏则拒绝改写并说明）——Run and Debug 里可直接 F5 附加
   - 匹配目标组件名的进程置顶并标 ✓，其余按系统进程清单原序排列
   - 选中后以该进程 PID 直接组装 debugpy attach 配置，不再手输 PID
   - 获取不到进程列表时明示报错，不空转
@@ -325,7 +328,7 @@
 - 入口：点击 Debug Targets 视图中的行（命令面板直接调用则提示去视图点击）
 - 行为：
   - 已附加：打开 Run and Debug 视图（`workbench.view.debug`）并给出会话条目名（调用堆栈在该视图可见；视图内选中哪个会话是编辑器自身的选择面，如实写明）
-  - 监听：报告 debugpy 端口并指向 launch.json 里对应的 attach 配置
+  - 监听：报告 debugpy 端口并给出两个下一步控件——`立即附加`（走端口模式整条链，端口不开自动进下一步引导）与 `打开 launch.json`（先动态写好该口的 connect 条目再打开，写不成如实说明）；命名实例行（`组件#实例`）只给 `打开 launch.json`（附加按组件配置的口走，直接附加会指错实例，如实不给）
   - 失败：展示失败细节（预检拦截 / telnet 一直不就绪 / 端口窗口耗尽 / 注入被拒）与重试途径
   - 未注入：说明两条 opt-in 路径（`kbengine.debug.autoDebugpy` 启动联动注入、启动等待模式）并说明需重启组件
   - serverKey 已不在运行：如实提示进程已停

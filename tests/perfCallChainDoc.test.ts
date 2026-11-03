@@ -29,15 +29,18 @@ const sourceLines = (relative: string): string[] =>
 
 /** §7 四条链的承重锚点:行号 → 该行必须仍含所引符号(迁移即红) */
 const ANCHORS: Array<[string, number, string]> = [
-  ['src/extension.ts', 883, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 934, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 997, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 801, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1295, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 546, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 559, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 1835, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1909, 'flushQueued()'],
+  // 2026-11-03:extension.ts 顶部新增三行 import(injectDebugpyListen /
+  // runListeningRowFocus / makeProbeOne),§7 四条链的 extension.ts
+  // 锚点与 docs/perf/2026-baseline.md 的出处整体 +3
+  ['src/extension.ts', 886, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 937, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1000, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 804, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1298, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 549, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 562, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 1838, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1912, 'flushQueued()'],
   ['src/languageProviders.ts', 714, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 804, 'provideHover('],
   ['src/languageProviders.ts', 1514, 'shadowCompareDefinition'],

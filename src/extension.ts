@@ -70,6 +70,7 @@ import * as path from 'path';
 import { KBEngineServerManager, SERVER_COMPONENTS, parseServerKey, DEFAULT_TARGET_ID, type TargetOutcome } from './serverManager';
 import {
   injectDebugpyAfterStart,
+  injectDebugpyListen,
   syncDebugpyPackage,
   allocateDebugpyInstancePort,
   autoDebugpyEnabled,
@@ -96,6 +97,7 @@ import {
   type DebugInjectionEntry
 } from './debugStatusBoard';
 import { DebugTargetTreeProvider, DEBUG_PHASE_LABELS } from './debugStatusTree';
+import { runListeningRowFocus } from './debugTargetFocus';
 import { BUILD_TASK_TYPE, buildScriptCheckTaskSpec, formatBuildTaskPreview } from './buildTaskSpec';
 import { KbengineBuildTaskProvider } from './buildTaskProvider';
 import { discoverProjectPythonTests, showPythonTestList } from './pythonTestDiscovery';
@@ -247,6 +249,7 @@ import {
   fileSystemBootstrapDeps
 } from './debugConfigBootstrap';
 import {
+  makeProbeOne,
   readTelnetTargetsFromSettings,
   TelnetService,
   updateTelnetStatusBar
@@ -3043,9 +3046,39 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       if (row.phase === 'listening') {
-        void vscode.window.showInformationMessage(
-          `${serverKey} ${DEBUG_PHASE_LABELS.listening}中(debugpy ${row.port ?? '?'}):用 launch.json 里对应的 attach 配置附加`
-        );
+        // 下一步控件(端口模式):立即附加 / 打开 launch.json(先动态写好再开),
+        // 行为面收在 debugTargetFocus,副作用在此装配
+        const result = await runListeningRowFocus(serverKey, row.port, {
+          attach: componentName => debugConfigManager.attachToComponent(componentName),
+          openLaunchJson: async (componentName, port) => {
+            const folder = vscode.workspace.workspaceFolders?.[0];
+            if (!folder) {
+              return { ok: false, detail: '没有打开的工作区,写不了 launch.json' };
+            }
+            // 按组件声明的 host 写(缺省 127.0.0.1),与 attach 取口同源
+            const host =
+              debugConfigManager.getComponentConfig(componentName).debugpyHost || '127.0.0.1';
+            const state = await debugConfigManager.ensurePortLaunchConfig(
+              componentName,
+              host,
+              port
+            );
+            if (!state.ok) {
+              return state;
+            }
+            const document = await vscode.workspace.openTextDocument(
+              vscode.Uri.joinPath(folder.uri, '.vscode', 'launch.json')
+            );
+            await vscode.window.showTextDocument(document);
+            return state;
+          },
+          show: async (message, actions) => vscode.window.showInformationMessage(message, ...actions)
+        });
+        if (result.outcome === 'write-failed') {
+          void vscode.window.showWarningMessage(
+            `launch.json 未写入:${result.detail}(可手动跑 kbengine.debug.updateLaunchJson)`
+          );
+        }
         return;
       }
       if (row.phase === 'failed') {
@@ -3761,9 +3794,48 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 初始化调试配置管理器
   // IDE-PDBG-004:连接分派的 ssh 面(主机表 + 视图选中态)接进调试管理器
+  // 端口模式「下一步」(IDE-PDBG-002 死路修复):一键起监听面接进管理器——
+  // 引擎 import 的是资产树包(系统 pip 装好 ≠ 引擎能 import),先缺了就同步,
+  // 再等该组件 telnet 就绪经 :python 层发 debugpy.listen;结果同口径记进
+  // 状态板(监听/失败),Debug Targets 视图看得见这一步。
+  const startDebugpyListenerNow = async (
+    componentName: string,
+    port: number
+  ): Promise<{ ok: boolean; detail: string }> => {
+    const target = telnetService.getTargets().find(item => item.component === componentName);
+    if (!target) {
+      return {
+        ok: false,
+        detail:
+          `${componentName} 未开 telnet(缺 <telnet_service>),发不了 listen——改用 kbengine.debug.waitAtStartup ` +
+          `启动等待,或在代码里 debugpy.listen(("127.0.0.1", ${port}))`
+      };
+    }
+    const assetsRoot = serverManager.getConfigPath();
+    if (!fs.existsSync(debugpyPackageDir(assetsRoot))) {
+      const synced = await syncDebugpyPackage(context, assetsRoot);
+      if (synced.status === 'error') {
+        return { ok: false, detail: `资产树缺 debugpy 包且同步失败:${synced.message}` };
+      }
+    }
+    if (!(await makeProbeOne(1500)(target.host, target.port))) {
+      const detail = `telnet ${target.host}:${target.port} 连不上(组件未运行或 telnet 未开)`;
+      recordInjection(componentName, { outcome: 'failed', detail });
+      return { ok: false, detail };
+    }
+    const result = await injectDebugpyListen(target, port);
+    if (result.status === 'injected') {
+      recordInjection(componentName, { outcome: 'listening', detail: result.detail, port });
+      return { ok: true, detail: result.detail };
+    }
+    recordInjection(componentName, { outcome: 'failed', detail: result.detail });
+    return { ok: false, detail: `${componentName} telnet 注入失败——${result.detail}` };
+  };
+
   const debugConfigManager = new DebugConfigManager(context, {
     listSshHosts: () => sshHostsSnapshot?.hosts ?? [],
-    selectedServer: selectedServerId
+    selectedServer: selectedServerId,
+    startDebugpyListener: startDebugpyListenerNow
   });
 
   // 注册调试相关命令(DBG-001:运行中的命名实例逐条透传,launch.json 里

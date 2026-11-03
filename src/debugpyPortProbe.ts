@@ -128,14 +128,55 @@ export function buildPortClosedGuidance(
   };
 }
 
-/** 装完包端口仍未开的如实口径:装包 ≠ 起监听,不附加不假成功 */
+/** 装完包端口仍未开的如实口径(下一步引导的基线事实):装包 ≠ 起监听,不附加不假成功;怎么起监听由 buildPortNextStepMessage 接着说 */
 export function buildAfterInstallStillClosedMessage(host: string, port: number): string {
-  return `debugpy 已装好,但 ${host}:${port} 仍未开——装包不会自己起监听,${LISTEN_GUIDANCE};起监听后再点一次即附加`;
+  return `debugpy 已装好,但 ${host}:${port} 仍未开——装包不会自己起监听`;
 }
 
 /** 手装指引:给可复制的命令行与后续两步(同步进资产树 + 引擎侧起监听) */
 export function buildManualInstallGuide(interpreterPath: string, port: number): string {
   return `手动安装:${interpreterPath} -m pip install -U debugpy,再运行 kbengine.python.debugpySync 同步进资产树;端口 ${port} 要等引擎侧起监听才会开`;
+}
+
+/**
+ * 端口模式「下一步」动作名(IDE-PDBG-002 死路修复):分诊完/装完之后
+ * 弹窗上的三个控件文案,分诊、引导与测试共用这一个真源,不各说各话。
+ */
+export const PORT_NEXT_STEP_ACTIONS = {
+  /** 一键经 telnet 发 debugpy.listen 起监听,成功后立刻重探并附加 */
+  startListen: '起监听并附加',
+  /** 再探一次端口:已从别处起监听(等待引导/自埋代码)时直接接上 */
+  retry: '重试附加',
+  /** 三条起监听路径 + 资产树同步 + 可复制的单进程命令 */
+  listenGuide: '起监听指引'
+} as const;
+
+/** 下一步引导的三个动作(顺序即弹窗按钮顺序) */
+export const PORT_NEXT_STEP_ACTION_LIST: readonly string[] = [
+  PORT_NEXT_STEP_ACTIONS.startListen,
+  PORT_NEXT_STEP_ACTIONS.retry,
+  PORT_NEXT_STEP_ACTIONS.listenGuide
+];
+
+/**
+ * 端口仍未开时的下一步引导文案:基线事实(端口未开/装完仍未开)原样在前,
+ * 后面接「怎么走到监听」与 launch.json 落点。按钮名不重复写进文案
+ * (PORT_NEXT_STEP_ACTIONS 是按钮的单一真源)。
+ */
+export function buildPortNextStepMessage(baseMessage: string, launchNote: string): string {
+  return `${baseMessage};下一步:${LISTEN_GUIDANCE};${launchNote}`;
+}
+
+/**
+ * 起监听手动指引:引擎内 import 的是资产树包(先 debugpySync),三条现成
+ * 监听路径,外加单进程可复制命令——一键面失败/没接线时的兜底口径。
+ */
+export function buildListenManualGuide(port: number): string {
+  return (
+    `${LISTEN_GUIDANCE};引擎进程要先跑 kbengine.python.debugpySync 把 debugpy 同步进 ` +
+    `<assets>/scripts/common/debugpy(import 才能解析);单独进程可复制:` +
+    `python -m debugpy --listen 127.0.0.1:${port} --wait-for-client <入口脚本>`
+  );
 }
 
 export interface DebugpyInstallResult {

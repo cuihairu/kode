@@ -192,7 +192,8 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 ### `kbengine.debug.updateLaunchJson`
 
 - Title: `Update launch.json`
-- Purpose: generate or update VS Code's PID attach configuration from `pathMappings` in `.kbengine/debug.json`; when `kbengine.debug.remoteTargets` is configured, remote targets are appended at the same time as debugpy `connect` entries
+- Purpose: generate or update VS Code's PID attach configuration from `pathMappings` in `.kbengine/debug.json`; when `kbengine.debug.remoteTargets` is configured, remote targets are appended at the same time as debugpy `connect` entries; a component with a configured `debugpyPort` (or a remembered port mode) additionally gets one debugpy `connect` entry pointing at its actual port — same name and shape as the port-mode dynamic write, so re-running never wipes the port mode's F5 landing spot
+- Behavior: only `KBEngine:`-prefixed entries are replaced — user entries and `inputs` are kept as-is; a `.vscode/launch.json` carrying comments (JSONC) or broken syntax is refused with the reason stated (rewriting would lose content), never written blind; the read-modify-write runs behind a serial gate, so a concurrent port-mode dynamic write loses no entries
 
 ### `kbengine.debug.createConfig`
 
@@ -211,6 +212,8 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Behavior:
   - First-time without a configured port asks between 端口模式 / 进程附加模式 (remembered in workspace state; `kbengine.debug.resetAttachMode` clears it)
   - Port mode probes the debugpy port over TCP first (IDE-PDBG-002): an open port attaches with zero extra dialogs; a closed port names the cause, and a missing/outdated debugpy on the local interpreter chain offers a one-click `pip install -U debugpy` or a manual guide — after installing, the port is re-probed (installing alone never opens it)
+  - A port that is still closed moves on to the "next step" guidance instead of stopping (no dead end): the notice carries the latest not-listening cause, the three listening paths and the launch.json landing spot, with three controls — `起监听并附加` (make sure debugpy is synced into `<assets>/scripts/common/debugpy` first, wait for the component's telnet to be ready, send `debugpy.listen` through its `:python` layer, then re-probe the port and attach right away; a failure is reported as it is, never faked) / `重试附加` (re-probe directly — if the listener came up elsewhere it just connects) / `起监听指引` (the three paths plus a copyable `python -m debugpy --listen 127.0.0.1:<port> --wait-for-client <entry script>`)
+  - Every port-mode attach idempotently writes that component's `host:port` connect entry into `.vscode/launch.json` (`type`/`request`/`connect`; user entries and hand-edited fields kept as-is, superseded same-component port entries recycled; a file with comments or broken syntax is refused with the reason stated) — Run and Debug can F5 straight into it
   - Processes matching the target component name are pinned to the top with ✓; the rest keep the system process list order
   - After selection, the debugpy attach configuration is assembled from that process's PID directly — no manual PID typing
   - When the process list cannot be obtained it reports the error plainly instead of spinning
@@ -367,7 +370,7 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
 - Entries: clicking a row in the Debug Targets view (the palette entry explains where to click)
 - Behavior:
   - attached: opens the Run and Debug view (`workbench.view.debug`) and names the session entry (its call stack is visible there) — the per-session focus within the view is the editor's own selection, stated honestly
-  - listening: reports the debugpy port and points at the matching launch.json attach config
+  - listening: reports the debugpy port with two next-step controls — `立即附加` (runs the whole port-mode chain, falling into the next-step guidance when the port is closed) and `打开 launch.json` (writes that port's connect entry first, then opens it; a failed write is stated honestly); a named-instance row (`component#instance`) only offers `打开 launch.json` (attach follows the component's configured port and would target the wrong instance, so the control is honestly withheld)
   - failed: shows the failure detail (preflight block, telnet never ready, window exhausted, injection rejected) and how to retry
   - not-injected: explains the two opt-in paths (`kbengine.debug.autoDebugpy` start-time injection, or the wait-at-startup mode) and that a component restart is needed
   - a serverKey that is no longer running is reported as stopped, honestly
