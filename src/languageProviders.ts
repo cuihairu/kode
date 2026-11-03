@@ -29,6 +29,7 @@ import {
   parseDefDocument
 } from './defParser';
 import {
+  DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
   KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
   buildMethodStubCode,
   type MethodStubBody
@@ -6139,8 +6140,14 @@ export class KBEngineMethodImplementationCodeActionProvider implements vscode.Co
   }
 }
 
-/** C-19 def↔Python 一致性诊断 code(与 Rust lint 规则 id 同源)。 */
-export const DEF_PYTHON_PARITY_DIAGNOSTIC_CODE = 'def-method-missing-in-python';
+/**
+ * C-19 def↔Python 一致性诊断 code(单一事实源=defMethodConsistency 的
+ * DEF_METHOD_MISSING_DIAGNOSTIC_CODE = Rust lint 规则 id `def-method-missing-in-python`)。
+ * KODE-AUD-002:三方(TS producer/Provider CodeAction/Rust lint)同值,否则 CodeAction
+ * 严格比较不命中 → 恒空。反向规则(python-method-not-in-def)无 CodeAction 对接口,
+ * 不在本对账范围。
+ */
+export const DEF_PYTHON_PARITY_DIAGNOSTIC_CODE = DEF_METHOD_MISSING_DIAGNOSTIC_CODE;
 
 /**
  * C-19 交付②:def-method-missing-in-python 诊断的一键生成 CodeAction。

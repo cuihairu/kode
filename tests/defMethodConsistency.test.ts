@@ -167,8 +167,11 @@ describe('collectPythonMethodNotInDefItems(反向规则项)', () => {
 });
 
 describe('诊断 code 常量', () => {
-  it('code 遵循 kbengine.<camelCase> 惯例', () => {
-    expect(DEF_METHOD_MISSING_DIAGNOSTIC_CODE).toBe('kbengine.defMethodMissingInPython');
+  it('正向规则 code=Rust lint 规则 id(统一 def-method-missing-in-python)', () => {
+    // KODE-AUD-002:正向必须与 Provider CodeAction + Rust lint 规则 id 同值,
+    // 否则严格比较不命中致 CodeAction 恒空。
+    expect(DEF_METHOD_MISSING_DIAGNOSTIC_CODE).toBe('def-method-missing-in-python');
+    // 反向规则无 Rust/CodeAction 对接口,沿用 kbengine.<camelCase> 惯例。
     expect(PYTHON_METHOD_NOT_IN_DEF_DIAGNOSTIC_CODE).toBe('kbengine.pythonMethodNotInDef');
   });
 });

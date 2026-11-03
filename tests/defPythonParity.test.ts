@@ -20,6 +20,7 @@ import {
   DEF_PYTHON_PARITY_DIAGNOSTIC_CODE,
   KBEngineDefPythonParityCodeActionProvider
 } from '../src/languageProviders';
+import { DEF_METHOD_MISSING_DIAGNOSTIC_CODE } from '../src/defMethodConsistency';
 import {
   CodeActionKind,
   makeTextDocument,
@@ -272,6 +273,35 @@ describe('def-method-missing-in-python 一键生成 CodeAction(C-19)', () => {
     expect(await provider.provideCodeActions(
       document, onDeathRange, { diagnostics: [noRelated] }, undefined
     )).toEqual([]);
+  });
+
+  // KODE-AUD-002:producer(defMethodConsistency DEF_METHOD_MISSING_DIAGNOSTIC_CODE)
+  // 与 Consumer(Provider DEF_PYTHON_PARITY_DIAGNOSTIC_CODE)同值,producer 产的
+  // 真实诊断 code 才被 CodeAction 严格比较命中——此前 producer 用
+  // kbengine.defMethodMissingInPython 而 Consumer 用 def-method-missing-in-python,
+  // 不匹配致 CodeAction 恒空。本用例喂 producer 的 code,断言 CodeAction 非空。
+  it('三方 code 统一:producer 诊断 code 被 CodeAction 命中(不恒空)', async () => {
+    const ws = buildWorkspace(BASE_PY);
+    roots.push(ws.root);
+    const provider = new KBEngineDefPythonParityCodeActionProvider();
+    const document = makeTextDocument(AVATAR_DEF, { fileName: ws.avatarDef }) as never;
+    const onDeathRange = nameRange(AVATAR_DEF, 'onDeath');
+
+    // 三方同值:TS producer code = Provider CodeAction code(单一事实源)。
+    expect(DEF_METHOD_MISSING_DIAGNOSTIC_CODE).toBe(DEF_PYTHON_PARITY_DIAGNOSTIC_CODE);
+    expect(DEF_METHOD_MISSING_DIAGNOSTIC_CODE).toBe('def-method-missing-in-python');
+
+    // 喂 producer 的 code(真实诊断经 extension.ts:1374 赋此 code)→ 命中。
+    const producerDiagnostic = {
+      code: DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
+      range: onDeathRange,
+      relatedInformation: [{ location: { uri: Uri.file(ws.basePy) }, message: 'Avatar' }]
+    };
+    const actions = (await provider.provideCodeActions(
+      document, onDeathRange, { diagnostics: [producerDiagnostic] }, undefined
+    ))!;
+    expect(actions).toHaveLength(1);
+    expect(actions[0].title).toContain('Generate method onDeath');
   });
 
   it('取消位 → 空', async () => {

@@ -13,12 +13,15 @@
 //    引擎钩子(KBENGINE_HOOKS)与 dunder,仅剩真「有实现无声明」候选。
 //
 // 规则标识符(todo 命名):`def-method-missing-in-python` / `python-method-not-in-def`。
-// 诊断 code 遵循现有惯例 `kbengine.<camelCase>`(同 kbengine.receiverNone)。
+// 正向规则诊断 code = Rust lint 规则 id `def-method-missing-in-python`(必须与
+// languageProviders 的 DEF_PYTHON_PARITY_DIAGNOSTIC_CODE 及 Rust lint 规则 id
+// 同值,否则 CodeAction 严格比较不命中 → 恒空;KODE-AUD-002 统一);反向规则
+// 无 Rust/CodeAction 对接口,沿用惯例 `kbengine.<camelCase>`(同 kbengine.receiverNone)。
 
 import { PYTHON_BUILTIN_TYPE_ANNOTATIONS } from './pythonTypeStubs';
 
 /** 诊断 code:def 方法在对应实体类 Python 脚本无实现(默认开) */
-export const DEF_METHOD_MISSING_DIAGNOSTIC_CODE = 'kbengine.defMethodMissingInPython';
+export const DEF_METHOD_MISSING_DIAGNOSTIC_CODE = 'def-method-missing-in-python';
 /** 诊断 code:Python 实体类方法在 def 中无声明(默认关,防误报) */
 export const PYTHON_METHOD_NOT_IN_DEF_DIAGNOSTIC_CODE = 'kbengine.pythonMethodNotInDef';
 /** CodeAction 应用后按 def URI 重算缺实现诊断的命令(编辑后诊断消除) */

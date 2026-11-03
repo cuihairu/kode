@@ -1323,7 +1323,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(diagnostics);
 
   // C-19 交付①:def↔Python 方法一致性诊断。正向 def-method-missing-in-python
-  // (def 有 Python 无,默认开,kbengine.defMethodMissingInPython)定位 def 方法
+  // (def 有 Python 无,默认开;code=Rust lint 规则 id,与 CodeAction 同值
+  // KODE-AUD-002)定位 def 方法
   // 行并关联目标 Python 文件与类名;反向 python-method-not-in-def(Python 有
   // def 无,默认关防误报,kbengine.pythonMethodNotInDef)定位 Python 方法行。
   // 专用 collection(整组替换)——与主 collection 的 .def 结构诊断互不覆写,
