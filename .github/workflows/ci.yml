@@ -29,6 +29,12 @@ permissions:
   contents: write # 创建/更新 Release 与上传 vsix 需要（默认 token 为只读）
   id-token: write # codecov OIDC 免 token 上传覆盖率（2026-10-22）
 
+# 同 ref 同事件的 run 合并为一组，新 run 抢占旧 run（缓解 runner 排队）；
+# tag 发布（refs/tags/）不取消，保护 Release 上传不被超越 run 打断。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   build:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
