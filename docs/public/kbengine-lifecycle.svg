@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1760" height="1592" viewBox="0 0 1760 1592" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif">
+<defs><marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0,0 L8,4.5 L0,9 z" fill="#94a3b8"/></marker></defs>
+<rect width="1760" height="1592" fill="#ffffff"/>
+<text x="24" y="40" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="24" fill="#0f172a" font-weight="bold" text-anchor="start">KBEngine 入口脚本 SPI 生命周期（P0 → P7）</text>
+<text x="24" y="66" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#475569" font-weight="normal" text-anchor="start">源码基线 kbengine@c2a3b8f · 36 个引擎回调全覆盖 · 每节点标注调用点 file:line</text>
+<rect x="24" y="88" width="158.0" height="24" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="103.0" y="104" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="12" fill="#10233d" font-weight="middle" text-anchor="start">引擎内部阶段（非回调）</text>
+<rect x="196.0" y="88" width="93.8" height="24" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="242.9" y="104" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="12" fill="#10233d" font-weight="middle" text-anchor="start">必选回调 32</text>
+<rect x="303.8" y="88" width="157.39999999999995" height="24" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="382.5" y="104" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="12" fill="#10233d" font-weight="middle" text-anchor="start">可选回调（HasAttr） 4</text>
+<rect x="475.19999999999993" y="88" width="146.0" height="24" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="548.1999999999999" y="104" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="12" fill="#10233d" font-weight="middle" text-anchor="start">非引擎回调（待证伪）</text>
+<rect x="24" y="130" width="272" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="36" y="150" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P0 环境路径</text>
+<text x="36" y="168" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">Resmgr 解析 KBE_* 与 res/scripts</text>
+<rect x="24" y="188" width="272" height="48" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="34" y="210" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">Resmgr::initialize 读三环境变量</text>
+<text x="34" y="228" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">resmgr.cpp:134, 140-142</text>
+<rect x="24" y="246" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="34" y="268" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">autoSetPaths 反推 root 并硬编码</text>
+<text x="34" y="286" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">res_path</text>
+<text x="34" y="304" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">resmgr.cpp:62-69</text>
+<rect x="24" y="322" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="34" y="344" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">updatePaths 按 ';' 分割；非 Win32 且</text>
+<text x="34" y="362" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">&lt;2 段改 ':'</text>
+<text x="34" y="380" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">resmgr.cpp:97-110</text>
+<rect x="24" y="398" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="34" y="420" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">getPySysResPath / getPyUserResPath</text>
+<text x="34" y="438" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">= matchRes 命中段</text>
+<text x="34" y="456" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">resmgr.cpp:437-486</text>
+<rect x="24" y="474" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="34" y="496" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">getPyUserScriptsPath：rfind("res")</text>
+<text x="34" y="514" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">后补 scripts/</text>
+<text x="34" y="532" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">resmgr.cpp:489-503</text>
+<line x1="297" y1="153" x2="307" y2="153" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="308" y="130" width="272" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="320" y="150" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P1 模块导入</text>
+<text x="320" y="168" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">sys.path 注入 + wrapper 顶层执行</text>
+<rect x="308" y="188" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="318" y="210" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">PythonApp::installPyScript 注入</text>
+<text x="318" y="228" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">sys.path</text>
+<text x="318" y="246" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">python_app.cpp:144-213</text>
+<rect x="308" y="264" width="272" height="48" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="318" y="286" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">installPyModules 注册模块与常量</text>
+<text x="318" y="304" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">python_app.cpp:230 / entity_app.h:404</text>
+<rect x="308" y="322" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="318" y="344" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">getComponentPythonPaths</text>
+<text x="318" y="362" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">第二份目录清单</text>
+<text x="318" y="380" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">entitydef/common.cpp:72-126</text>
+<rect x="308" y="398" width="272" height="66" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="318" y="420" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">PyImport_Import(entryScriptFile)：w</text>
+<text x="318" y="438" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">rapper 顶层代码</text>
+<text x="318" y="456" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">entity_app.h:509</text>
+<line x1="581" y1="153" x2="591" y2="153" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="592" y="130" width="272" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="604" y="150" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P2 脚本加载完成</text>
+<text x="604" y="168" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">入口模块已持有，回调尚未触发</text>
+<rect x="592" y="188" width="272" height="48" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="602" y="210" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">注释「所有脚本都加载完毕」</text>
+<text x="602" y="228" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">entity_app.h:1459 / python_app.cpp:708</text>
+<rect x="592" y="246" width="272" height="48" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
+<text x="602" y="268" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#064e3b" font-weight="bold" text-anchor="start">entryScript_ 持有入口模块对象</text>
+<text x="602" y="286" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#064e3b" font-weight="normal" text-anchor="start">entity_app.h:509-527</text>
+<line x1="865" y1="153" x2="875" y2="153" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="876" y="130" width="272" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="888" y="150" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P3 首个引擎回调</text>
+<text x="888" y="168" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">onInit(isReload)</text>
+<rect x="876" y="188" width="272" height="66" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="886" y="210" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onInit(0)</text>
+<text x="886" y="228" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">baseapp（onDbmgrInitCompleted）</text>
+<text x="886" y="246" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:3601-3604</text>
+<rect x="876" y="264" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="886" y="286" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onInit(0) bots / client</text>
+<text x="886" y="304" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">bots.cpp:102-105 / clientapp.cpp:131-134</text>
+<rect x="876" y="322" width="272" height="82" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="886" y="344" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onInit(1) 热重载</text>
+<text x="886" y="362" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">KBEngine.reloadScript()</text>
+<text x="886" y="380" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">entity_app.h:1460-1463 /</text>
+<text x="886" y="396" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">python_app.cpp:709-712</text>
+<line x1="1149" y1="153" x2="1159" y2="153" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="1160" y="130" width="272" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="1172" y="150" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P4 组件就绪</text>
+<text x="1172" y="168" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">每个组件各自的 Ready 回调</text>
+<rect x="1160" y="188" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1170" y="210" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onBaseAppReady(firstGroup)</text>
+<text x="1170" y="228" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">initprogress_handler.cpp:185-188</text>
+<rect x="1160" y="246" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1170" y="268" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onLoginAppReady()</text>
+<text x="1170" y="286" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:174-176</text>
+<rect x="1160" y="304" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1170" y="326" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onDBMgrReady()</text>
+<text x="1170" y="344" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">dbmgr.cpp:309-311</text>
+<rect x="1160" y="362" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1170" y="384" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onInterfaceAppReady()</text>
+<text x="1170" y="402" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">interfaces.cpp:153-155</text>
+<rect x="1160" y="420" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1170" y="442" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onLoggerAppReady()</text>
+<text x="1170" y="460" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">logger.cpp:131-133</text>
+<rect x="1160" y="478" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1170" y="500" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onInit(0) cellapp 就绪</text>
+<text x="1170" y="518" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">cellapp/initprogress_handler.cpp:137-140</text>
+<line x1="1433" y1="153" x2="1443" y2="153" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="1444" y="130" width="272" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="1456" y="150" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P5 开放登录</text>
+<text x="1456" y="168" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">轮询放行后才接受登录</text>
+<rect x="1444" y="188" width="272" height="64" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="1454" y="210" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#78350f" font-weight="bold" text-anchor="start">onReadyForLogin（HasAttr 守卫）</text>
+<text x="1454" y="228" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#78350f" font-weight="normal" text-anchor="start">baseapp initprogress:201,206 /</text>
+<text x="1454" y="244" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#78350f" font-weight="normal" text-anchor="start">cellapp:153,156</text>
+<rect x="1444" y="262" width="272" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1454" y="284" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">轮询返回 v ≥ 0.9999 → completed</text>
+<text x="1454" y="302" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">initprogress_handler.cpp:244-260</text>
+<rect x="24" y="574" width="1712" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="36" y="594" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P6 运行期（按组件分泳道）</text>
+<text x="36" y="612" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">回调由网络消息 / 实体状态变化触发，行内为调用点 file:line</text>
+<rect x="150" y="632" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="654" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onGlobalData(key, value)</text>
+<text x="160" y="672" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">entity_app.h:1308</text>
+<rect x="410" y="632" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="420" y="654" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onGlobalDataDel(key)</text>
+<text x="420" y="672" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">entity_app.h:1290</text>
+<rect x="24" y="632" width="116" height="48" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="661.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">base + cell</text>
+<rect x="150" y="694" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="716" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onBaseAppData(key, value)</text>
+<text x="160" y="734" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:3668</text>
+<rect x="410" y="694" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="420" y="716" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onBaseAppDataDel(key)</text>
+<text x="420" y="734" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:3649</text>
+<rect x="670" y="694" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="680" y="716" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onCellAppDeath(cellappID)</text>
+<text x="680" y="734" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:696</text>
+<rect x="930" y="694" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="940" y="716" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onLoseChargeCB(...)</text>
+<text x="940" y="734" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:3563</text>
+<rect x="1190" y="694" width="250" height="66" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="1200" y="716" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#78350f" font-weight="bold" text-anchor="start">onAutoLoadEntityCreate(type,</text>
+<text x="1200" y="734" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#78350f" font-weight="bold" text-anchor="start">del) HasAttr</text>
+<text x="1200" y="752" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#78350f" font-weight="normal" text-anchor="start">entity_autoloader.cpp:90-92</text>
+<rect x="24" y="694" width="116" height="66" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="732.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">base</text>
+<rect x="150" y="774" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="796" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onCellAppData(key, value)</text>
+<text x="160" y="814" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">cellapp.cpp:864</text>
+<rect x="410" y="774" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="420" y="796" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onCellAppDataDel(key)</text>
+<text x="420" y="814" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">cellapp.cpp:844</text>
+<rect x="670" y="774" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="680" y="796" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onSpaceData(key, value, del)</text>
+<text x="680" y="814" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">spacememory.cpp:609-615</text>
+<rect x="930" y="774" width="250" height="66" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="940" y="796" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onSpaceGeometryLoaded(spaceID,</text>
+<text x="940" y="814" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">fname)</text>
+<text x="940" y="832" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">spacememory.cpp:308</text>
+<rect x="1190" y="774" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1200" y="796" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onAllSpaceGeometryLoaded()</text>
+<text x="1200" y="814" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">spacememory.cpp:336</text>
+<rect x="24" y="774" width="116" height="66" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="812.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">cell</text>
+<rect x="150" y="854" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="876" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onRequestLogin(...)</text>
+<text x="160" y="894" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:1013</text>
+<rect x="410" y="854" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="420" y="876" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onLoseLogin(reason)</text>
+<text x="420" y="894" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:130</text>
+<rect x="670" y="854" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="680" y="876" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onRequestCreateAccount(...)</text>
+<text x="680" y="894" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:368</text>
+<rect x="930" y="854" width="250" height="66" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="940" y="876" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onCreateAccountCallbackFromDB(..</text>
+<text x="940" y="894" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">.)</text>
+<text x="940" y="912" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:590</text>
+<rect x="1190" y="854" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1200" y="876" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onLoginCallbackFromDB(...)</text>
+<text x="1200" y="894" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:1231</text>
+<rect x="24" y="854" width="116" height="66" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="892.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">login</text>
+<rect x="150" y="934" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="956" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onSelectAccountDBInterface(name)</text>
+<text x="160" y="974" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">dbmgr.cpp:1242</text>
+<rect x="24" y="934" width="116" height="48" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="963.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">db</text>
+<rect x="150" y="996" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="1018" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onRequestCreateAccount(...)</text>
+<text x="160" y="1036" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">interfaces.cpp:525</text>
+<rect x="410" y="996" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="420" y="1018" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onRequestAccountLogin(...)</text>
+<text x="420" y="1036" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">interfaces.cpp:637</text>
+<rect x="670" y="996" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="680" y="1018" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onRequestCharge(...)</text>
+<text x="680" y="1036" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">interfaces.cpp:752</text>
+<rect x="24" y="996" width="116" height="48" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="1025.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">interface</text>
+<rect x="150" y="1058" width="250" height="48" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="160" y="1080" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#78350f" font-weight="bold" text-anchor="start">onLogWrote(...) HasAttr</text>
+<text x="160" y="1098" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#78350f" font-weight="normal" text-anchor="start">logger.cpp:287-290</text>
+<rect x="24" y="1058" width="116" height="48" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="1087.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">logger</text>
+<rect x="150" y="1120" width="250" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="160" y="1142" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onTargetChanged(entityID)</text>
+<text x="160" y="1160" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">clientapp.cpp:458-460</text>
+<rect x="410" y="1120" width="250" height="64" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="420" y="1142" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onFinish()（client / bots 收尾）</text>
+<text x="420" y="1160" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">clientapp.cpp:303-305 /</text>
+<text x="420" y="1176" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">bots.cpp:124-126</text>
+<rect x="24" y="1120" width="116" height="64" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="36" y="1157.0" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#0f172a" font-weight="bold" text-anchor="start">client / bots</text>
+<rect x="24" y="1222" width="1712" height="46" rx="6" fill="#1e293b" stroke="#1e293b" stroke-width="1.5"/>
+<text x="36" y="1242" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#ffffff" font-weight="bold" text-anchor="start">P7 关停（三段式 state = 0 → 1 → 2）</text>
+<text x="36" y="1260" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="11" fill="#cbd5e1" font-weight="normal" text-anchor="start">先问脚本能否关停，再按阶段逐次通知</text>
+<rect x="36" y="1282" width="520" height="48" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
+<text x="46" y="1304" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#78350f" font-weight="bold" text-anchor="start">onReadyForShutDown() HasAttr</text>
+<text x="46" y="1322" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#78350f" font-weight="normal" text-anchor="start">baseapp.cpp:275-278 · dbmgr.cpp:78-81 · logger.cpp:176-179</text>
+<line x1="558" y1="1306.0" x2="583" y2="1306.0" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="586" y="1282" width="520" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="596" y="1304" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onBaseAppShutDown(state=0)</text>
+<text x="596" y="1322" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:327-328 onShutdownBegin</text>
+<line x1="1108" y1="1306.0" x2="1133" y2="1306.0" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="1136" y="1282" width="520" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1146" y="1304" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onBaseAppShutDown(state=1)</text>
+<text x="1146" y="1322" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:342-343 onShutdown(first)</text>
+<rect x="36" y="1368" width="520" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="46" y="1390" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onBaseAppShutDown(state=2)</text>
+<text x="46" y="1408" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">baseapp.cpp:389-390 onShutdownEnd</text>
+<line x1="558" y1="1392.0" x2="583" y2="1392.0" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="586" y="1368" width="520" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="596" y="1390" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onLoginAppShutDown / onDBMgrShutDown</text>
+<text x="596" y="1408" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">loginapp.cpp:62 · dbmgr.cpp:156</text>
+<line x1="1108" y1="1392.0" x2="1133" y2="1392.0" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ah)"/>
+<rect x="1136" y="1368" width="520" height="48" rx="6" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="1146" y="1390" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#1e3a8a" font-weight="bold" text-anchor="start">onInterfaceAppShutDown / onLoggerAppShutDown</text>
+<text x="1146" y="1408" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#1e3a8a" font-weight="normal" text-anchor="start">interfaces.cpp:79 · logger.cpp:218</text>
+<text x="36" y="1430" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="14" fill="#0f172a" font-weight="bold" text-anchor="start">非引擎回调（模板里存在，但 kbe/src 无 getEntryScript 调用点）</text>
+<rect x="36" y="1444" width="536" height="48" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="46" y="1466" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#334155" font-weight="bold" text-anchor="start">onTick(timerID)</text>
+<text x="46" y="1484" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#334155" font-weight="normal" text-anchor="start">模板 onInit 内 addTimer 自注册：db/kbemain.py:17,19 · interface/kbemain.py:44,47</text>
+<rect x="602" y="1444" width="536" height="48" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="612" y="1466" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#334155" font-weight="bold" text-anchor="start">onFini()</text>
+<text x="612" y="1484" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#334155" font-weight="normal" text-anchor="start">模板标注 KBEngine method：base/kbemain.py:56 · C++ 无调用点 → 待证伪</text>
+<rect x="1168" y="1444" width="536" height="48" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="1178" y="1466" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" fill="#334155" font-weight="bold" text-anchor="start">onStart()</text>
+<text x="1178" y="1484" font-family="SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" fill="#334155" font-weight="normal" text-anchor="start">模板 bots/kbemain.py:14 · C++ 无调用点 → 待证伪</text>
+<text x="24" y="1552" font-family="Noto Sans CJK SC, Source Han Sans SC, PingFang SC, Microsoft YaHei, sans-serif" font-size="12" fill="#64748b" font-weight="normal" text-anchor="start">必选 32 / 可选 4（HasAttr）/ 非引擎回调 3 · 与《入口脚本 SPI 方法表》互链</text>
+</svg>

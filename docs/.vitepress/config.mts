@@ -39,7 +39,10 @@ export default withMermaid(defineConfig({
               text: 'Knowledge base',
               items: [
                 { text: 'Overview', link: '/knowledge/' },
-                { text: 'Entity lifecycle & reference release', link: '/knowledge/entity-lifecycle-reference' }
+                { text: 'Entity lifecycle & reference release', link: '/knowledge/entity-lifecycle-reference' },
+                { text: 'Fixed directories & path resolution', link: '/knowledge/fixed-directories-and-path-resolution' },
+                { text: 'Entry script SPI methods', link: '/knowledge/entry-script-spi-methods' },
+                { text: 'Startup flow and stack', link: '/knowledge/startup-flow-and-stack' }
               ]
             }
           ],
@@ -113,7 +116,10 @@ export default withMermaid(defineConfig({
               text: '知识库',
               items: [
                 { text: '总览', link: '/zh/knowledge/' },
-                { text: '实体生命周期与引用释放', link: '/zh/knowledge/entity-lifecycle-reference' }
+                { text: '实体生命周期与引用释放', link: '/zh/knowledge/entity-lifecycle-reference' },
+                { text: '固定目录与路径解析链', link: '/zh/knowledge/fixed-directories-and-path-resolution' },
+                { text: '入口脚本 SPI 方法表', link: '/zh/knowledge/entry-script-spi-methods' },
+                { text: '启动流程与堆栈', link: '/zh/knowledge/startup-flow-and-stack' }
               ]
             }
           ],
