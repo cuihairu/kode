@@ -997,3 +997,4 @@
 - [ ] KODE-ARCH-004 [P3] 更新 docs/architecture/current-state.md（现为 2026-10-23 旧快照）。
 - [ ] KODE-PERF-007 [P3] 建立 v0.2 最新性能基线：30k 文件/多资产根/大 Python 文件的 Hover/Completion/Definition/Diagnostics/内存/宿主延迟。
 - [ ] KODE-AUD-TODO-001 [P2] 对齐 3 条已修复未关闭的旧审核项（Client SDK FIXED_DICT 伴随文件、Rust flag 归一化 normalize_flag_tokens、dependency graph implementedBy 先 ensure_node），实证后勾账。
+- [ ] KODE-CFG-015 [P1] 引擎 SPI 实现函数单独 CodeLens 标注（用户令 2026-11-03：「很多函数都是引擎spi模式需要实现，如果根据配置识别为引擎的spi实现的函数，是不是需要单独的codelens去标注呢」）。入口脚本（kbemain.py）与组件脚本里被引擎以 SPI 模式调用的函数（`getEntryScript()` 36 方法：32 必选 + 4 可选 HasAttr 守卫，见 KODE-CFG-012）在 Python 定义处显示单独 CodeLens（如「引擎 SPI · onInit」+ 触发时机），与既有 RPC/事件回调/属性 CodeLens 同面、独立开关 `kbengine.codeLens.engineSpi`（default true）；识别依据=配置派生（entryScriptFile / 组件角色，KODE-CFG-004 派生面）+ 方法名匹配 SPI 表（KODE-CFG-012 权威 36 方法表）；验收：kbemain.py 的 onInit/onBaseAppReady 等定义处出 SPI CodeLens、普通函数不出、开关关闭后不出，入口脚本与组件脚本两向测试绿；前置：KODE-CFG-004（配置派生）、KODE-CFG-012（36 方法表）。稍后实现，先记录。
