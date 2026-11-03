@@ -17,6 +17,7 @@ import {
 } from '../src/defParser';
 import type { DefElementNode } from '../src/defParser';
 import { analyzeEntitiesXml } from '../src/entitiesXmlAnalysis';
+import { resolveFantasyRoot } from './helpers/fantasyRoot';
 
 // C-9(V-07·b):fantasydemo 真实脚本样例批 —— def 解析 / 继承 / 校验行为断言。
 // 口径与 tests/fantasydemoRealExport.test.ts 一致:无本机
@@ -27,9 +28,11 @@ import { analyzeEntitiesXml } from '../src/entitiesXmlAnalysis';
 // engine-limited-name / missing-type / inherited-name-collision);
 // ④ 无 Implements 的真实树继承闭包为空、def 链单节点无祖先(不虚构继承);
 // ⑤ entities.xml 注册面与 entity_defs 库存双向对账。
-const FANTASY_ROOT = '/home/cui/workspaces/BigWorld/programming/fantasydemo/res';
-const SCRIPTS_DIR = join(FANTASY_ROOT, 'scripts');
-const DEFS_DIR = join(SCRIPTS_DIR, 'entity_defs');
+// VULN-KODE-R04:夹具根改由 helpers 统一解析(env 覆盖 + 同级检出回退);
+// 无树时回 ''(existsSync('')=false)→ 整组可见 skip,与 fantasydemoRealExport 口径一致。
+const FANTASY_ROOT = resolveFantasyRoot();
+const SCRIPTS_DIR = FANTASY_ROOT ? join(FANTASY_ROOT, 'scripts') : '';
+const DEFS_DIR = SCRIPTS_DIR ? join(SCRIPTS_DIR, 'entity_defs') : '';
 
 const EXPECTED_DEFS = ['Account.def', 'Avatar.def', 'ClientOnly.def', 'Guard.def', 'Space.def'];
 

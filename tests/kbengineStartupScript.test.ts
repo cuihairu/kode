@@ -10,6 +10,7 @@ import {
   provideStartupScriptCompletions,
   computeStartupScriptFindings
 } from '../src/kbengineStartupScript';
+import { resolveEngineRoot } from './helpers/engineRoot';
 
 // KBEXP-1 启动参数与启动脚本分析面(用户令 2026-11-02;KB-001 第六篇):
 // 事实来源 kbe/src 源码取证(kbemain.h parseMainCommandArgs:238),悬浮/补全/
@@ -193,9 +194,15 @@ describe('computeStartupScriptFindings', () => {
   });
 
   it('真实引擎模板启动脚本零误报(防诊断对官方脚本翻车)', () => {
-    const assets = '/home/cui/workspaces/kbengine/kbe/res/sdk_templates/server/python_assets';
-    if (!existsSync(assets)) {
+    // VULN-KODE-R04:引擎树根走 helper 统一解析(env 覆盖 + 同级检出回退),
+    // 不再硬编码 /home/cui/workspaces/kbengine。
+    const engineRoot = resolveEngineRoot();
+    if (!engineRoot) {
       return; // 引擎树不在本机,跳过(门禁机器无 kbe 源码)
+    }
+    const assets = join(engineRoot, 'kbe/res/sdk_templates/server/python_assets');
+    if (!existsSync(assets)) {
+      return; // 树内无模板目录(稀疏检出/裁剪树),跳过
     }
     for (const file of readdirSync(assets).filter(f => f.endsWith('.sh') || f.endsWith('.bat'))) {
       const findings = computeStartupScriptFindings(readFileSync(join(assets, file), 'utf8'));

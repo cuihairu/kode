@@ -3,11 +3,17 @@ name: Engine Integration
 on:
   # 只手动 + 周巡:集成套件依赖真引擎源码树检出,通用 runner 上没有。
   # 因此不接 push/pull_request——接了也只是每次全量 skip,既不能出真结果,
-  # 也只会拖慢主门禁。树的来源由触发人给(C-10:有树环境真跑)。
+  # 也只会拖慢主门禁。树的来源优先由触发人给(C-10:有树环境真跑);
+  # 输入留空则自动稀疏检出两个公开 fork 的所需子路径(VULN-KODE-R04:
+  # 周巡从「永远 skip」变真跑,量级 ~2MB,不拖慢主门禁)。
   workflow_dispatch:
     inputs:
       kbengine_root:
-        description: 'KBEngine 源码树根路径(留空则套件按缺席 skip,不红)'
+        description: 'KBEngine 源码树根路径(留空则自动稀疏检出 cuihairu/kbengine)'
+        required: false
+        default: ''
+      fantasy_root:
+        description: 'BigWorld fantasydemo res 根路径(留空则自动稀疏检出 cuihairu/BigWorld)'
         required: false
         default: ''
   schedule:
@@ -24,9 +30,6 @@ jobs:
     timeout-minutes: 20
     # 定时只在本仓库跑;fork 上的手动触发放行
     if: github.event_name == 'workflow_dispatch' || github.repository == 'cuihairu/kode'
-    env:
-      # realEngineIntegration 认此探针;kode 产品侧探针见 src/engineApiMetadata.ts
-      KBENGINE_ROOT: ${{ inputs.kbengine_root }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -45,6 +48,48 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Provision engine fixtures (input or sparse clone)
+        # KBENGINE_ROOT / KODE_FANTASY_ROOT 写入 GITHUB_ENV 供后续步骤与套件
+        # 探针读取(tests/helpers/engineRoot.ts、tests/helpers/fantasyRoot.ts)。
+        # 不用 workflow 级 env 直填 input:输入留空时空串会掩盖 GITHUB_ENV 值。
+        env:
+          KBENGINE_ROOT_INPUT: ${{ inputs.kbengine_root }}
+          FANTASY_ROOT_INPUT: ${{ inputs.fantasy_root }}
+        timeout-minutes: 10
+        run: |
+          resolve_kbengine_root() {
+            if [ -n "$KBENGINE_ROOT_INPUT" ] && [ -d "$KBENGINE_ROOT_INPUT" ]; then
+              echo "KBENGINE_ROOT=$KBENGINE_ROOT_INPUT" >> "$GITHUB_ENV"
+              echo "kbengine root: triggerer-provided at $KBENGINE_ROOT_INPUT"
+              return
+            fi
+            git clone --depth 1 --filter=blob:none --no-checkout \
+              https://github.com/cuihairu/kbengine.git "$RUNNER_TEMP/kbengine"
+            # 只拉套件所需子路径:typings(.pyi 导出)、entitydef + common(探针 marker)
+            git -C "$RUNNER_TEMP/kbengine" sparse-checkout set --no-cone \
+              typings kbe/src/lib/entitydef kbe/src/lib/common
+            git -C "$RUNNER_TEMP/kbengine" checkout HEAD
+            echo "KBENGINE_ROOT=$RUNNER_TEMP/kbengine" >> "$GITHUB_ENV"
+            echo "kbengine root: sparse clone at $RUNNER_TEMP/kbengine"
+          }
+          resolve_fantasy_root() {
+            if [ -n "$FANTASY_ROOT_INPUT" ] && [ -d "$FANTASY_ROOT_INPUT" ]; then
+              echo "KODE_FANTASY_ROOT=$FANTASY_ROOT_INPUT" >> "$GITHUB_ENV"
+              echo "fantasy root: triggerer-provided at $FANTASY_ROOT_INPUT"
+              return
+            fi
+            git clone --depth 1 --filter=blob:none --no-checkout \
+              https://github.com/cuihairu/BigWorld.git "$RUNNER_TEMP/BigWorld"
+            # 只拉 fantasydemo 脚本子路径:def / entities.xml / alias.xml 等,~80KB
+            git -C "$RUNNER_TEMP/BigWorld" sparse-checkout set --no-cone \
+              programming/fantasydemo/res/scripts
+            git -C "$RUNNER_TEMP/BigWorld" checkout HEAD
+            echo "KODE_FANTASY_ROOT=$RUNNER_TEMP/BigWorld/programming/fantasydemo/res" >> "$GITHUB_ENV"
+            echo "fantasy root: sparse clone at $RUNNER_TEMP/BigWorld/programming/fantasydemo/res"
+          }
+          resolve_kbengine_root
+          resolve_fantasy_root
+
       - name: Show tree probe
         run: |
           if [ -n "${KBENGINE_ROOT:-}" ] && [ -d "$KBENGINE_ROOT" ]; then
@@ -52,6 +97,12 @@ jobs:
             ls "$KBENGINE_ROOT/kbe/src/lib" 2>/dev/null | head -20
           else
             echo "no engine root: suites will skip visibly (job stays green)"
+          fi
+          if [ -n "${KODE_FANTASY_ROOT:-}" ] && [ -d "$KODE_FANTASY_ROOT" ]; then
+            echo "fantasy root = $KODE_FANTASY_ROOT"
+            ls "$KODE_FANTASY_ROOT/scripts/entity_defs" 2>/dev/null | head -10
+          else
+            echo "no fantasy root: fantasydemo suites will skip visibly (job stays green)"
           fi
 
       - name: Run integration suites

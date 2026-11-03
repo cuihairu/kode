@@ -28,7 +28,7 @@ Every item below carries code evidence and is grouped by "what makes it hard".
 | P3 | Monitoring collection depends on real machine replies plus a real watcher TCP service per component | `src/monitoringCollector.ts:187,338` (`discoverLocalComponents`/`queryWatcherPath`) |
 | P4 | Log collection connects straight to logger TCP 20022, and the protocol adaptation is unfinished, so `connect()` rejects as things stand | `src/extension.ts:343`, `src/logCollector.ts` (the connect rejection path is already locked by tests) |
 | P5 | Debug attach needs real component process PIDs, telnet ports 31000-51000 and debugpy | `src/debugConfig.ts:30,271` |
-| P6 | The line-by-line engine source verification tests depend on a sibling `../kbengine` checkout or `KBENGINE_ROOT`, skip when missing, and do not run on CI without the engine | `tests/helpers/engineRoot.ts` |
+| P6 | The line-by-line engine source verification tests depend on a sibling `../kbengine` checkout or `KBENGINE_ROOT` and skip when missing; since VULN-KODE-R04 the engine-integration lane auto sparse-clones the fork's needed subtrees, so the weekly CI run executes them truly | `tests/helpers/engineRoot.ts` |
 
 ### 1.2 Slow to Start and to Exercise Jointly, Long Debug Chains
 

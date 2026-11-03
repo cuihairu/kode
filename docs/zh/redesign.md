@@ -33,7 +33,7 @@ Kode 是 KBEngine 的 VSCode 开发插件。功能验证长期面临一个结构
 | P3 | 监控采集依赖真实 machine 应答 + 每组件真实 watcher TCP 服务 | `src/monitoringCollector.ts:187,338`（`discoverLocalComponents`/`queryWatcherPath`） |
 | P4 | 日志收集直连 logger TCP 20022，且协议适配未完成，`connect()` 按现状直接拒绝 | `src/extension.ts:343`、`src/logCollector.ts`（connect 拒绝路径已有测试锁定） |
 | P5 | 调试附加需要真实组件进程 PID、telnet 端口 31000-51000 与 debugpy | `src/debugConfig.ts:30,271` |
-| P6 | 引擎源码逐行校验测试依赖同级 `../kbengine` 检出或 `KBENGINE_ROOT`，缺失即 skip，CI 无引擎时不执行 | `tests/helpers/engineRoot.ts` |
+| P6 | 引擎源码逐行校验测试依赖同级 `../kbengine` 检出或 `KBENGINE_ROOT`，缺失即 skip；VULN-KODE-R04 起 engine-integration 通道自动稀疏检出 fork 所需子路径，周巡可真跑 | `tests/helpers/engineRoot.ts` |
 
 ### 1.2 启动与联调慢、调试链路长
 

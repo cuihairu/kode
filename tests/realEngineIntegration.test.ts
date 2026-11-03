@@ -1,19 +1,21 @@
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 import { parseDefFileSemantics } from '../src/defRenamer';
 import { parseLocalDefinition } from '../src/definitionSemantics';
 import { getCustomTypeInfos } from '../src/definitionWorkspace';
 import { propertyFlagDomainList } from '../src/defAnalyzer';
+import { resolveEngineRoot } from './helpers/engineRoot';
+import { resolveFantasyRoot } from './helpers/fantasyRoot';
 
-const engineRoot = process.env.KBENGINE_ROOT;
-const hasEngineTree = !!engineRoot && existsSync(join(engineRoot, 'kbe', 'src', 'lib', 'entitydef'));
-const fantasyRoot = '/home/cui/workspaces/BigWorld/programming/fantasydemo/res';
-const hasRealAssets = existsSync(join(fantasyRoot, 'scripts', 'entity_defs', 'Avatar.def'));
-const canRun = hasEngineTree && hasRealAssets;
+// VULN-KODE-R04:引擎/脚本树根改由 helpers 统一解析(env 覆盖 + 同级检出回退),
+// marker 门控(entitydef / Avatar.def)在 helper 内,非空即可真跑。
+const engineRoot = resolveEngineRoot();
+const fantasyRoot = resolveFantasyRoot();
+const canRun = !!engineRoot && !!fantasyRoot;
 
 describe.skipIf(!canRun)('real KBEngine integration', () => {
-  const defsRoot = join(fantasyRoot, 'scripts', 'entity_defs');
+  const defsRoot = join(fantasyRoot!, 'scripts', 'entity_defs');
 
   it('parses every real entity declaration and registry sample', () => {
     const defFiles = readdirSync(defsRoot).filter(name => name.endsWith('.def'));
@@ -30,7 +32,7 @@ describe.skipIf(!canRun)('real KBEngine integration', () => {
       }
     }
 
-    const registry = readFileSync(join(fantasyRoot, 'scripts', 'entities.xml'), 'utf8');
+    const registry = readFileSync(join(fantasyRoot!, 'scripts', 'entities.xml'), 'utf8');
     expect(registry).toContain('<Account/>');
     expect(registry).toContain('<Avatar/>');
   });
@@ -65,7 +67,7 @@ describe.skipIf(!canRun)('real KBEngine integration', () => {
   });
 
   it('resolves real alias declarations and implementedBy scripts', () => {
-    const aliases = getCustomTypeInfos(fantasyRoot);
+    const aliases = getCustomTypeInfos(fantasyRoot!);
     const angle = aliases.find(alias => alias.name === 'ANGLE');
     const objectId = aliases.find(alias => alias.name === 'OBJECT_ID');
 
