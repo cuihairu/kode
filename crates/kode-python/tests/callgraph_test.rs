@@ -161,3 +161,47 @@ fn empty_and_invalid_source_tolerant() {
     let edges = edges_of("def broken(:\n    pass\n");
     let _ = edges;
 }
+
+// ---------------------------------------------------------------------------
+// KODE-AUD-008:调用图遗漏语义修复验证。
+// 嵌套 def/class 此前整体跳过(体内调用全漏)、match pattern guard 此前不走查。
+// 判别性:修复前边缺失,修复后断言成立。
+// ---------------------------------------------------------------------------
+
+/// 嵌套函数(def inner 于 def outer 体内)作为独立调用方:体内 `foo()` 调用
+/// 以 caller="inner" 记录(旧实现 walk_stmt 对嵌套 FunctionDef 整体 no-op,
+/// 边全漏);外层函数调用仍由外层走查记录,不重叠。
+#[test]
+fn nested_def_calls_recorded() {
+    let src = "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
+    let es = edges_of(src);
+    let hit = es.iter().find(|e| e.caller == "inner" && e.callee == "foo");
+    let e = hit.expect("嵌套函数 inner 内 foo() 应有边");
+    assert_eq!(e.kind, EdgeKind::Local, "foo 是模块级函数 → Local");
+}
+
+/// 嵌套类(方法体内 class Inner)的方法作为独立调用方:Inner.run 体内
+/// `foo()` 以 caller="run"、caller_class="Inner" 记录(旧实现漏)。
+#[test]
+fn nested_class_method_calls_recorded() {
+    let src = "def foo():\n    pass\n\nclass Outer:\n    def method(self):\n        class Inner:\n            def run(self):\n                foo()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.caller == "run" && e.callee == "foo")
+        .expect("嵌套类 Inner.run 内 foo() 应有边");
+    assert_eq!(e.caller_class.as_deref(), Some("Inner"));
+    assert_eq!(e.kind, EdgeKind::Local);
+}
+
+/// match pattern guard(`case 1 if foo():`)内调用:旧实现只走 subject 与
+/// case.body,guard 漏;修复走查 guard。
+#[test]
+fn match_guard_calls_recorded() {
+    let src = "def foo():\n    pass\n\ndef f(x):\n    match x:\n        case 1 if foo():\n            pass\n";
+    let es = edges_of(src);
+    assert!(
+        es.iter().any(|e| e.caller == "f" && e.callee == "foo"),
+        "match guard 内 foo() 应有边, got {es:?}"
+    );
+}

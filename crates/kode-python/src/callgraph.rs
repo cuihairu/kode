@@ -234,13 +234,30 @@ fn walk_stmt(
         Stmt::Match(m) => {
             walk_expr(ast, ctx, &m.subject, caller_class, caller, out);
             for case in &m.cases {
+                // KODE-AUD-008:pattern guard(`case x if foo():`)内调用此前漏走。
+                if let Some(g) = &case.guard {
+                    walk_expr(ast, ctx, g, caller_class, caller, out);
+                }
                 walk_body(ast, ctx, &case.body, caller_class, caller, out);
             }
         }
-        // 嵌套 def/class 体不并入本函数调用图(由外层类/模块面另行收集)
-        Stmt::FunctionDef(_)
-        | Stmt::ClassDef(_)
-        | Stmt::Import(_)
+        // KODE-AUD-008:嵌套 def/class 此前整体跳过(体内调用全漏)。现作为独立
+        // 调用方记录:嵌套函数以自身名为 caller(外层函数调用仍由外层走查记录,
+        // 不重叠);嵌套类的方法以嵌套类名为 caller_class。
+        Stmt::FunctionDef(f) => {
+            let nested = f.name.as_str().to_string();
+            walk_body(ast, ctx, &f.body, caller_class, &nested, out);
+        }
+        Stmt::ClassDef(cls) => {
+            let class_name = cls.name.as_str().to_string();
+            for s in &cls.body {
+                if let Stmt::FunctionDef(f) = s {
+                    let m = f.name.as_str().to_string();
+                    walk_body(ast, ctx, &f.body, Some(&class_name), &m, out);
+                }
+            }
+        }
+        Stmt::Import(_)
         | Stmt::ImportFrom(_)
         | Stmt::Global(_)
         | Stmt::Nonlocal(_)

@@ -262,6 +262,12 @@ fn collect_attributes(ast: &ParsedAst, class: &str, body: &[Stmt], out: &mut Vec
                 collect_attributes(ast, class, &t.orelse, out);
                 collect_attributes(ast, class, &t.finalbody, out);
             }
+            Stmt::Match(m) => {
+                // KODE-AUD-008:match case 体内 self.<attr>=... 此前漏收集。
+                for case in &m.cases {
+                    collect_attributes(ast, class, &case.body, out);
+                }
+            }
             Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {
                 // 嵌套 def/class 不收集(与 kode-corpus「类直属」口径一致)
             }

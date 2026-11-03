@@ -103,3 +103,17 @@ fn tolerant_of_syntax_errors() {
     let _ = ext.errors;
     assert!(ext.symbols.classes.is_empty() || !ext.symbols.classes.is_empty());
 }
+
+/// KODE-AUD-008:match case 体内 `self.<attr> = ...` 属性写此前漏收集
+/// (collect_attributes 不走 Match);修复后 case 体内属性入表。
+#[test]
+fn match_case_self_attribute_collected() {
+    let src = "class C:\n    def m(self, x):\n        match x:\n            case 1:\n                self.value = 1\n";
+    let ext = parse_ast_symbols(src);
+    let c = ext.symbols.classes.iter().find(|c| c.name == "C").unwrap();
+    assert!(
+        c.attributes.iter().any(|a| a.name == "value"),
+        "match case 内 self.value=1 应收集属性, got {:?}",
+        c.attributes
+    );
+}

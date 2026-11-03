@@ -83,7 +83,7 @@ pub fn build_call_reverse_index(
     rev
 }
 
-/// 解析被调方所在文件(启发式;None = 无法解析/外部)。
+/// 解析被调方所在文件(启发式;None = 无法解析/外部/歧义)。
 fn resolve_callee_file(
     caller_file: &DocumentKey,
     edge: &CallEdge,
@@ -95,37 +95,64 @@ fn resolve_callee_file(
         return Some(caller_file.clone());
     }
     if receiver.is_empty() {
-        // 裸名:模块级函数 → 全项目搜
-        return find_module_function(file_symbols, &edge.callee);
-    }
-    // 模块绑定接收者:`module.func` → 按模块名找文件
-    if let Some(module) = receiver.split('.').next() {
-        if let Some(f) = find_module_file(file_symbols, module) {
-            return Some(f);
+        // KODE-AUD-008:裸名调用——若调用方文件自身定义了该模块级函数,
+        // 则为本地调用,不产跨文件边(防伪边:旧实现全项目搜会先命中
+        // 同名函数所在文件,把本地调用误指为跨文件)。
+        if caller_defines_function(caller_file, file_symbols, &edge.callee) {
+            return None;
         }
+        return find_module_function(file_symbols, &edge.callee, caller_file);
+    }
+    // 模块绑定接收者:`module.func` → 按模块名找文件(排除调用方自身)
+    if let Some(module) = receiver.split('.').next() {
+        return find_module_file(file_symbols, module, caller_file);
     }
     None
 }
 
-/// 全项目搜模块级函数 `name`,返回定义文件。
+/// 调用方文件是否定义模块级函数 `name`(本地调用判定)。
+fn caller_defines_function(
+    caller_file: &DocumentKey,
+    file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
+    name: &str,
+) -> bool {
+    file_symbols
+        .get(caller_file)
+        .map(|s| s.functions.iter().any(|f| f.name == name))
+        .unwrap_or(false)
+}
+
+/// 全项目搜模块级函数 `name`(排除 `exclude` 调用方文件),恰一个定义 → 有;
+/// 零个或多个(歧义,宁缺毋滥避免误失效)→ None。
 fn find_module_function(
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
     name: &str,
+    exclude: &DocumentKey,
 ) -> Option<DocumentKey> {
-    file_symbols
+    let mut found: Vec<DocumentKey> = file_symbols
         .iter()
-        .find(|(_, s)| s.functions.iter().any(|f| f.name == name))
+        .filter(|(k, _)| *k != exclude)
+        .filter(|(_, s)| s.functions.iter().any(|f| f.name == name))
         .map(|(k, _)| k.clone())
+        .collect();
+    if found.len() == 1 {
+        found.pop()
+    } else {
+        None
+    }
 }
 
-/// 按模块绑定名(如 `os`、`utils`)找文件(basename 去 .py 匹配)。
+/// 按模块绑定名(如 `os`、`utils`)找文件(basename 去 .py 匹配,排除
+/// `exclude` 调用方自身);恰一个匹配 → 有,歧义/零 → None。
 fn find_module_file(
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
     module: &str,
+    exclude: &DocumentKey,
 ) -> Option<DocumentKey> {
-    file_symbols
+    let mut found: Vec<DocumentKey> = file_symbols
         .iter()
-        .find(|(k, _)| {
+        .filter(|(k, _)| *k != exclude)
+        .filter(|(k, _)| {
             k.uri
                 .basename()
                 .strip_suffix(".py")
@@ -133,4 +160,10 @@ fn find_module_file(
                 .unwrap_or(false)
         })
         .map(|(k, _)| k.clone())
+        .collect();
+    if found.len() == 1 {
+        found.pop()
+    } else {
+        None
+    }
 }

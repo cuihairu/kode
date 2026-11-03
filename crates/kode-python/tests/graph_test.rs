@@ -84,3 +84,28 @@ fn of_kind_filters_visualization_edges() {
     assert_eq!(graph.of_kind(kode_python::EdgeKind::KbeBroadcast).len(), 1);
     assert_eq!(graph.of_kind(kode_python::EdgeKind::KbeApi).len(), 1);
 }
+
+/// KODE-AUD-008:跨文件伪边防护。zcaller.py 本地定义 foo 并调用 `foo()`;
+/// afoo.py 也定义 foo 且键序在前。旧实现 find_module_function 全项目搜先
+/// 命中 afoo → 伪边 afoo→zcaller(本地调用被误指跨文件);修复后调用方
+/// 自身定义即判本地,不产跨文件边。
+#[test]
+fn local_bare_name_no_cross_file_pseudo_edge() {
+    let zcaller = "def foo():\n    pass\n\ndef caller():\n    foo()\n";
+    let afoo = "def foo():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/afoo.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "本地调用 foo() 不应产生跨文件伪边 afoo→zcaller, got {rev:?}"
+    );
+}
