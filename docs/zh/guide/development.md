@@ -83,6 +83,39 @@ pnpm run package
 [TESTING.md](https://github.com/cuihairu/kode/blob/main/TESTING.md) 与
 [重设计说明](../redesign.md)。
 
+## 测试覆盖率
+
+两份覆盖率报告上传到同一个 Codecov 项目，各自由
+`.github/workflows/ci.yml` 里的独立 job 负责：
+
+- TypeScript（`src/`、`tests/`）：`build` job 跑
+  `pnpm exec vitest run --coverage`，上传 `coverage/lcov.info`。
+- Rust core（`crates/`）：`rust-coverage` job 跑
+  `cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov
+  --output-path coverage/rust/lcov.info`，以 `rust` flag 上传该文件。
+
+这个 job 同时是 Rust 测试门禁：它把 `--workspace --all-targets
+--no-fail-fast` 透传给 `cargo test`——lib/bins/tests/examples/benches 的
+test 目标全跑，失败也跑完全部目标再报，任一失败即以非 0 退出让 job 变红。
+Rust 测试只在此执行一次，不在别处再跑一遍。
+
+README 徽章与 Codecov 总览图是两份报告的合并值；只想看 Rust 时在 Codecov
+界面选 `rust` flag（flag 由上传参数自动创建，见
+[Codecov flags 文档](https://docs.codecov.com/docs/flags)）。本地复算 Rust
+数字（工具链版本取自 `rust-toolchain.toml`）：
+
+```bash
+rustup component add llvm-tools-preview          # 首次
+cargo install cargo-llvm-cov --locked            # 首次
+cargo llvm-cov --workspace                       # 终端报告
+cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov \
+  --output-path coverage/rust/lcov.info          # CI 用的就是这条
+```
+
+该报告不含分支覆盖：Rust 只在 nightly 上插桩分支
+（`-Zcoverage-options=branch`），本仓钉的是稳定版工具链，因此对外给出的
+Rust 数字是行覆盖、区域覆盖与函数覆盖。
+
 ## 文档开发
 
 VitePress 文档入口在 `docs/`。

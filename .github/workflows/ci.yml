@@ -141,3 +141,60 @@ jobs:
         echo "== release 资产:"
         gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
           -q '.assets[] | "  \(.name)  \(.size) bytes"'
+
+  # Rust core 覆盖率独立成 job（与 build 的 TS 覆盖率并存，互不覆盖），同时是
+  # Rust 测试门禁的唯一执行点（本仓此前没有任何 workflow 跑过 cargo test）：
+  # ① rustup 工具链下载 + cargo-llvm-cov 安装 + 全 workspace 插桩编译耗时长，
+  #    放进 build 会挤占其 30 分钟预算并拖慢 TS 侧；
+  # ② 同一 job 内步骤失败会跳过后续步骤，Rust 失败若落在 build 里会连带丢掉
+  #    TS 的 codecov 上传；分 job 后两侧失败互不可见。
+  # codecov 侧两份 lcov 各自上传到同一 commit，总览图与 README 徽章为两者合并值；
+  # 本 job 附 flags: rust，只看 Rust 时在 Codecov 界面按 rust flag 过滤。
+  rust-coverage:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 40
+
+    steps:
+    - name: Checkout 代码
+      timeout-minutes: 3
+      uses: actions/checkout@v7.0.1
+
+    # 工具链版本由 rust-toolchain.toml 钉死（1.99.0），rustup 进入该目录后
+    # 首次调用自动安装；llvm-tools-preview 提供 llvm-profdata/llvm-cov，
+    # 是 cargo-llvm-cov 采集 profraw→lcov 的必需组件。
+    - name: 安装 Rust 工具链组件（llvm-tools-preview）
+      timeout-minutes: 10
+      run: |
+        rustup component add llvm-tools-preview
+        rustc --version
+        cargo --version
+
+    - name: 安装 cargo-llvm-cov
+      timeout-minutes: 10
+      # 不引第三方 install action：cargo install 走 crates.io，供应链面最小
+      run: cargo install cargo-llvm-cov --locked
+
+    - name: 运行 Rust 测试并生成覆盖率（全 workspace，唯一执行点）
+      timeout-minutes: 25
+      # 门禁口径 = cargo test --workspace --all-targets --no-fail-fast（QA 计划批0 的实测口径）：
+      # cargo-llvm-cov 把这些 flag 原样透传给 cargo test，只额外加插桩；--all-targets 覆盖
+      # lib/bins/tests/examples/benches 的 test 目标（不含 doctest；本仓 6a2e005 实测 77 个
+      # 测试二进制 / 453 passed / 0 failed），--no-fail-fast 让失败也跑完全部目标再报。
+      # 测试失败 → 本步退出码 101（实测，探针用例验证）→ job 红；不加 --ignore-run-fail
+      # （它会把失败吞成 0）、不加 continue-on-error。Rust 测试全仓只在此执行一次，
+      # 不另设测试 job，避免插桩与非插桩两套编译重复跑同一批测试。
+      run: |
+
+        mkdir -p coverage/rust
+
+        cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov --output-path coverage/rust/lcov.info
+
+    - name: 上传 Rust 覆盖率到 Codecov（OIDC 免 token）
+      timeout-minutes: 5
+      uses: codecov/codecov-action@v7.1.1
+      with:
+        use_oidc: true
+        files: ./coverage/rust/lcov.info
+        flags: rust
+        disable_search: true
+        fail_ci_if_error: false

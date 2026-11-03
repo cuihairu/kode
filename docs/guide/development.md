@@ -89,6 +89,43 @@ For the layering and how to run, see
 [TESTING.md](https://github.com/cuihairu/kode/blob/main/TESTING.md) and the
 [redesign notes](../redesign.md).
 
+## Test Coverage
+
+Two reports feed the same Codecov project, each uploaded by its own CI job in
+`.github/workflows/ci.yml`:
+
+- TypeScript (`src/`, `tests/`): the `build` job runs
+  `pnpm exec vitest run --coverage` and uploads `coverage/lcov.info`.
+- Rust core (`crates/`): the `rust-coverage` job runs
+  `cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov
+  --output-path coverage/rust/lcov.info` and uploads that file with the `rust`
+  flag.
+
+That job is also the Rust test gate: it forwards `--workspace --all-targets
+--no-fail-fast` to `cargo test`, so every lib, bin, test, example and bench
+target runs, all of them run even after a failure, and any failure exits
+non-zero so the job goes red. Rust tests are executed there and nowhere else,
+so they run once per CI run.
+
+The README badge and the Codecov overview graph merge both uploads; to look at
+the Rust report alone, pick the `rust` flag in the Codecov UI (flags are
+created by the upload itself, see the
+[Codecov flags docs](https://docs.codecov.com/docs/flags)). To reproduce the
+Rust numbers locally — the toolchain version comes from `rust-toolchain.toml`:
+
+```bash
+rustup component add llvm-tools-preview          # once
+cargo install cargo-llvm-cov --locked            # once
+cargo llvm-cov --workspace                       # terminal report
+cargo llvm-cov --workspace --all-targets --no-fail-fast --lcov \
+  --output-path coverage/rust/lcov.info          # the CI command
+```
+
+Branch coverage is not in that report. Rust instruments branches only on
+nightly (`-Zcoverage-options=branch`), and this repository pins a stable
+toolchain, so the published Rust figures are line, region and function
+coverage.
+
 ## Working on the Docs
 
 The VitePress docs entry point is `docs/`.
