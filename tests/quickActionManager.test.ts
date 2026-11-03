@@ -179,8 +179,8 @@ describe('QuickActionManager.show', () => {
     expect(rows).toHaveLength(3);
     const provider = new QuickActionTreeProvider({ getActions: async () => ({ registered: [], scripts: [], httpRequests: rows }) });
     const [group] = await provider.getChildren();
-    expect(group.label).toBe('已登记 0');
-    expect((await provider.getChildren())[2].label).toBe('HTTP 请求 3');
+    expect(group.label).toBe('Registered 0');
+    expect((await provider.getChildren())[2].label).toBe('HTTP Requests 3');
     const httpRows = await provider.getChildren((await provider.getChildren())[2]);
     expect(httpRows[0].tooltip).toContain('来源：.kbengine/debug.json');
     expect(httpRows[1].tooltip).toContain('来源：kbengine.httpRequests 设置');

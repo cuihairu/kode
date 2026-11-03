@@ -5,6 +5,9 @@
 
 import { findFilesAcrossRoots } from './scanRoots';
 import * as vscode from 'vscode';
+
+/** 面板分类文案走 vscode.l10n:调用期求值,默认英文源串,zh-cn bundle 出中文 */
+const l10nText = (message: string): string => vscode.l10n.t(message);
 import * as path from 'path';
 import * as fs from 'fs';
 import { findEntitiesXmlFile, findEntityDefinitionsRoot, getDefinitionWorkspaceLayout } from './definitionWorkspace';
@@ -941,17 +944,17 @@ export class KBEngineCodeGenerator {
 
     // 步骤 2: 选择实体类型
     const typeOptions = [
-      { label: 'Base', description: 'BaseApp 实体', hasBase: true, hasCell: false, hasClient: false },
-      { label: 'Cell', description: 'CellApp 实体', hasBase: false, hasCell: true, hasClient: false },
-      { label: 'Client', description: '客户端实体', hasBase: false, hasCell: false, hasClient: true },
-      { label: 'Base + Cell', description: '同时包含 Base 和 Cell', hasBase: true, hasCell: true, hasClient: false },
-      { label: 'Base + Client', description: '同时包含 Base 和 Client', hasBase: true, hasCell: false, hasClient: true },
-      { label: 'Cell + Client', description: '同时包含 Cell 和 Client', hasBase: false, hasCell: true, hasClient: true },
-      { label: 'Base + Cell + Client', description: '完整实体', hasBase: true, hasCell: true, hasClient: true }
+      { label: 'Base', description: l10nText('BaseApp entity'), hasBase: true, hasCell: false, hasClient: false },
+      { label: 'Cell', description: l10nText('CellApp entity'), hasBase: false, hasCell: true, hasClient: false },
+      { label: 'Client', description: l10nText('Client entity'), hasBase: false, hasCell: false, hasClient: true },
+      { label: 'Base + Cell', description: l10nText('Includes Base and Cell'), hasBase: true, hasCell: true, hasClient: false },
+      { label: 'Base + Client', description: l10nText('Includes Base and Client'), hasBase: true, hasCell: false, hasClient: true },
+      { label: 'Cell + Client', description: l10nText('Includes Cell and Client'), hasBase: false, hasCell: true, hasClient: true },
+      { label: 'Base + Cell + Client', description: l10nText('Complete entity'), hasBase: true, hasCell: true, hasClient: true }
     ];
 
     const selectedType = await vscode.window.showQuickPick(typeOptions, {
-      placeHolder: '选择实体类型'
+      placeHolder: l10nText('Select entity type')
     });
 
     if (!selectedType) {
@@ -962,7 +965,7 @@ export class KBEngineCodeGenerator {
     const parentEntity = await vscode.window.showQuickPick(
       this.getExistingEntities(),
       {
-        placeHolder: '选择父实体（可选）',
+        placeHolder: l10nText('Select parent entity (optional)'),
         canPickMany: false
       }
     );
@@ -970,10 +973,10 @@ export class KBEngineCodeGenerator {
     // 步骤 4: 选择是否生成属性
     const addProperties = await vscode.window.showQuickPick(
       [
-        { label: '是', value: true, description: '添加示例属性' },
-        { label: '否', value: false, description: '不添加属性' }
+        { label: l10nText('Yes'), value: true, description: l10nText('Add sample properties') },
+        { label: l10nText('No'), value: false, description: l10nText('No properties') }
       ],
-      { placeHolder: '是否添加示例属性？' }
+      { placeHolder: l10nText('Add sample properties?') }
     );
 
     // 构建实体定义
@@ -1150,23 +1153,23 @@ export class KBEngineCodeGenerator {
     // 步骤 2: 属性模板
     const templateChoices = [
       {
-        label: '简单类型属性',
-        description: 'UINT32 示例,无守卫',
+        label: l10nText('Simple type properties'),
+        description: l10nText('UINT32 sample, no guard'),
         value: 'simple' as const
       },
       {
-        label: 'FixedArray 属性',
-        description: 'ARRAY<UINT32> 示例,py 生成 is None 守卫',
+        label: l10nText('FixedArray properties'),
+        description: l10nText('ARRAY<UINT32> sample, generated py gets an is None guard'),
         value: 'fixedArray' as const
       },
       {
-        label: 'FixedDict 属性',
-        description: 'FIXED_DICT 命名类型,自动登记 types.xml',
+        label: l10nText('FixedDict properties'),
+        description: l10nText('FIXED_DICT named type, auto-registered in types.xml'),
         value: 'fixedDict' as const
       }
     ];
     const templatePick = await vscode.window.showQuickPick(templateChoices, {
-      placeHolder: '选择属性模板'
+      placeHolder: l10nText('Select property template')
     });
     if (!templatePick) {
       return;
@@ -1174,16 +1177,16 @@ export class KBEngineCodeGenerator {
 
     // 步骤 3: 实体形态(含 Client 即同时生成客户端 stub)
     const formChoices = [
-      { label: 'Base', description: 'BaseApp 实体', hasBase: true, hasCell: false, hasClient: false },
-      { label: 'Cell', description: 'CellApp 实体', hasBase: false, hasCell: true, hasClient: false },
-      { label: 'Client', description: '客户端实体', hasBase: false, hasCell: false, hasClient: true },
-      { label: 'Base + Cell', description: '同时包含 Base 和 Cell', hasBase: true, hasCell: true, hasClient: false },
-      { label: 'Base + Client', description: '同时包含 Base 和 Client', hasBase: true, hasCell: false, hasClient: true },
-      { label: 'Cell + Client', description: '同时包含 Cell 和 Client', hasBase: false, hasCell: true, hasClient: true },
-      { label: 'Base + Cell + Client', description: '完整实体(生成客户端 stub)', hasBase: true, hasCell: true, hasClient: true }
+      { label: 'Base', description: l10nText('BaseApp entity'), hasBase: true, hasCell: false, hasClient: false },
+      { label: 'Cell', description: l10nText('CellApp entity'), hasBase: false, hasCell: true, hasClient: false },
+      { label: 'Client', description: l10nText('Client entity'), hasBase: false, hasCell: false, hasClient: true },
+      { label: 'Base + Cell', description: l10nText('Includes Base and Cell'), hasBase: true, hasCell: true, hasClient: false },
+      { label: 'Base + Client', description: l10nText('Includes Base and Client'), hasBase: true, hasCell: false, hasClient: true },
+      { label: 'Cell + Client', description: l10nText('Includes Cell and Client'), hasBase: false, hasCell: true, hasClient: true },
+      { label: 'Base + Cell + Client', description: l10nText('Complete entity (generates client stub)'), hasBase: true, hasCell: true, hasClient: true }
     ];
     const formPick = await vscode.window.showQuickPick(formChoices, {
-      placeHolder: '选择实体形态(含 Client 时一并生成客户端 stub)'
+      placeHolder: l10nText('Select entity form (generates the client stub when Client is included)')
     });
     if (!formPick) {
       return;
@@ -1373,59 +1376,59 @@ export class KBEngineCodeGenerator {
   async showTemplates(): Promise<void> {
     const templates = [
       {
-        label: '账号实体',
-        description: '玩家账号实体，包含登录认证、角色选择等',
+        label: l10nText('Account entity'),
+        description: l10nText('Player account entity: login authentication, character selection, etc.'),
         value: 'account'
       },
       {
-        label: '角色实体',
-        description: '游戏角色实体，包含位置、属性、技能等',
+        label: l10nText('Character entity'),
+        description: l10nText('Game character entity: position, attributes, skills, etc.'),
         value: 'avatar'
       },
       {
-        label: 'NPC 实体',
-        description: '非玩家角色实体',
+        label: l10nText('NPC entity'),
+        description: l10nText('Non-player character entity'),
         value: 'npc'
       },
       {
-        label: '物品实体',
-        description: '游戏物品/道具实体',
+        label: l10nText('Item entity'),
+        description: l10nText('Game item/prop entity'),
         value: 'item'
       },
       {
-        label: '怪物实体',
-        description: '游戏怪物实体，包含生命值、移动与攻击',
+        label: l10nText('Monster entity'),
+        description: l10nText('Game monster entity: health, movement and attacks'),
         value: 'monster'
       },
       {
-        label: '场景实体',
-        description: '场景/空间实体，含实体进出场景回调',
+        label: l10nText('Scene entity'),
+        description: l10nText('Scene/space entity with enter/leave scene callbacks'),
         value: 'space'
       },
       {
-        label: '公会实体',
-        description: '玩家公会实体，包含公告与成员管理',
+        label: l10nText('Guild entity'),
+        description: l10nText('Player guild entity: announcements and member management'),
         value: 'guild'
       },
       {
-        label: '队伍实体',
-        description: '玩家组队实体，包含成员数组与队长',
+        label: l10nText('Team entity'),
+        description: l10nText('Player team entity: member list and leader'),
         value: 'team'
       },
       {
-        label: '邮件实体',
-        description: '游戏邮件实体，包含收发与已读状态',
+        label: l10nText('Mail entity'),
+        description: l10nText('Game mail entity: send, receive and read state'),
         value: 'mail'
       },
       {
-        label: '空实体',
-        description: '空白的实体模板',
+        label: l10nText('Empty entity'),
+        description: l10nText('Blank entity template'),
         value: 'empty'
       }
     ];
 
     const selected = await vscode.window.showQuickPick(templates, {
-      placeHolder: '选择实体模板'
+      placeHolder: l10nText('Select entity template')
     });
 
     if (!selected) {

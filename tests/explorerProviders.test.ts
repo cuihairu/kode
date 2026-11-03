@@ -2,7 +2,9 @@ import type * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { setL10nBundle } from './fake-vscode/l10n';
+import zhCnBundle from '../l10n/bundle.l10n.zh-cn.json';
 import { parseDefinitionStructure } from '../src/explorerProviders';
 import { EntityExplorerProvider, ServerControlProvider } from '../src/explorerProviders';
 import { KBEngineServerManager, ServerStatus } from '../src/serverManager';
@@ -539,5 +541,44 @@ describe('ServerControlProvider', () => {
 
   it('reports the stopped baseline as the enum value', () => {
     expect(ServerStatus.Stopped).toBe('stopped');
+  });
+});
+
+// 分类标签双语(用户令:分类标签全量国际化):默认未注入 bundle = 英文源串,
+// 注入 zh-cn bundle = 中文——与真实 VS Code 两态同口径。
+describe('EntityExplorerProvider 分类标签双语(两态)', () => {
+  afterEach(() => setL10nBundle(null));
+
+  it('默认(英文态):根分组与分类行出英文', () => {
+    const provider = makeExplorer();
+
+    expect(provider.getRootGroups(explorerRoot()).map(group => group.label)).toEqual([
+      'Types', 'Entities', 'Interfaces', 'Components'
+    ]);
+    expect(provider.getCategoryLabel('type')).toBe('Type');
+    expect(provider.getCategoryLabel('entity')).toBe('Entity');
+  });
+
+  it('zh-cn 态:根分组、分类行与面板分组标题出中文', () => {
+    setL10nBundle(zhCnBundle);
+    const provider = makeExplorer();
+
+    expect(provider.getRootGroups(explorerRoot()).map(group => group.label)).toEqual([
+      '类型', '实体', '接口', '组件'
+    ]);
+    expect(provider.getCategoryLabel('type')).toBe('类型');
+    expect(provider.getCategoryLabel('interface')).toBe('接口');
+    expect(provider.getCategoryLabel('component')).toBe('组件');
+
+    const hero = entityItem('Hero');
+    const summary = summaryOf(hero.viewModel);
+    expect(summary['分类']).toBe('实体');
+    expect(summary['定义']).toBeDefined();
+    expect(summary['已登记']).toBeDefined();
+
+    const sectionLabels = hero.viewModel.sections.map(section => section.label);
+    expect(sectionLabels).toContain('接口');
+    expect(sectionLabels).toContain('属性');
+    expect(sectionLabels).toContain('Base 段方法');
   });
 });

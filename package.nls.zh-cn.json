@@ -1,0 +1,10 @@
+{
+  "kbengine.viewContainer.explorer": "KBEngine 资源管理器",
+  "kbengine.view.quickActions": "快速执行",
+  "kbengine.view.entityExplorer": "实体",
+  "kbengine.view.serverControl": "服务器",
+  "kbengine.view.debugTargets": "调试目标",
+  "kbengine.view.telnetStatus": "Telnet",
+  "kbengine.view.config": "配置",
+  "kbengine.view.remoteServers": "远程服务器"
+}

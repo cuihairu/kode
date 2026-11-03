@@ -19,6 +19,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+
+/** 分类选择器文案走 vscode.l10n:调用期求值,默认英文源串,zh-cn bundle 出中文 */
+const l10nText = (message: string): string => vscode.l10n.t(message);
+
+/** 选择器选项就地本地化(label/description 按当前语言求值,value 原样透传) */
+const localizePick = <T extends { label: string; description?: string }>(items: readonly T[]): T[] =>
+  items.map(item => ({
+    ...item,
+    label: l10nText(item.label),
+    description: item.description === undefined ? item.description : l10nText(item.description)
+  }));
 import {
   getDefinitionWorkspaceLayout,
   getRegisteredEntities,
@@ -106,40 +117,40 @@ export const GENERATOR_FORM_LABELS: Record<GeneratorFormKind, string> = {
 
 export const GENERATOR_FORM_CHOICES: ReadonlyArray<GeneratorFormPickItem> = [
   {
-    label: '代理实体 (proxy)',
-    description: 'scripts/proxy_defs/<实体名>Proxy.def,Parent 指向同名 Proxy',
+    label: 'Proxy Entity (proxy)',
+    description: 'scripts/proxy_defs/<name>Proxy.def, Parent points at the same-named Proxy',
     value: 'proxy'
   },
   {
-    label: '空间实体 (space)',
-    description: 'entity_defs/<名称>.def,父类 Space,并登记进 entities.xml',
+    label: 'Space Entity (space)',
+    description: 'entity_defs/<name>.def, parent Space, registered in entities.xml',
     value: 'space'
   },
   {
-    label: '组件 (component)',
-    description: 'entity_defs/components/<名称>.def,可挂载为实体的 COMPONENT 属性',
+    label: 'Component (component)',
+    description: 'entity_defs/components/<name>.def, mountable as a COMPONENT property on an entity',
     value: 'component'
   },
   {
-    label: '固定字典类型 (fixedDict)',
-    description: '写入 types.xml 的 FIXED_DICT 类型',
+    label: 'Fixed Dict Type (fixedDict)',
+    description: 'FIXED_DICT type written into types.xml',
     value: 'fixedDict'
   }
 ];
 
 export const PROXY_METHOD_SECTION_CHOICES: ReadonlyArray<ProxySectionPickItem> = [
-  { label: 'BaseMethods', description: '方法声明在 BaseMethods 段', value: 'BaseMethods' },
-  { label: 'CellMethods', description: '方法声明在 CellMethods 段', value: 'CellMethods' }
+  { label: 'BaseMethods', description: 'Declared in the BaseMethods section', value: 'BaseMethods' },
+  { label: 'CellMethods', description: 'Declared in the CellMethods section', value: 'CellMethods' }
 ];
 
-const YES_NO_CHOICES: ReadonlyArray<YesNoPickItem> = [
-  { label: '是', value: true, description: '带上示例' },
-  { label: '否', value: false, description: '只出结构' }
+export const YES_NO_CHOICES: ReadonlyArray<YesNoPickItem> = [
+  { label: 'Yes', value: true, description: 'With samples' },
+  { label: 'No', value: false, description: 'Structure only' }
 ];
 
-const NO_ATTACH_CHOICE: AttachPickItem = {
-  label: '不挂载',
-  description: '只生成组件 def,挂载由使用者手写',
+export const NO_ATTACH_CHOICE: AttachPickItem = {
+  label: 'Do not attach',
+  description: 'Generates only the component def; attach it yourself',
   value: null
 };
 
@@ -845,7 +856,7 @@ async function askName(prompt: string, placeholder: string): Promise<string | un
 }
 
 async function askYesNo(placeHolder: string): Promise<boolean | undefined> {
-  const picked = await vscode.window.showQuickPick(YES_NO_CHOICES, { placeHolder });
+  const picked = await vscode.window.showQuickPick(localizePick(YES_NO_CHOICES), { placeHolder });
   return picked?.value;
 }
 
@@ -866,8 +877,8 @@ async function askProxyInput(): Promise<ProxyFormInput | null> {
     return { entityName, methodSection: 'BaseMethods', methodNames };
   }
 
-  const section = await vscode.window.showQuickPick(PROXY_METHOD_SECTION_CHOICES, {
-    placeHolder: '代理方法声明在哪个方法段'
+  const section = await vscode.window.showQuickPick(localizePick(PROXY_METHOD_SECTION_CHOICES), {
+    placeHolder: l10nText('Which method section declares the proxy methods?')
   });
   if (!section) {
     return null;
@@ -882,16 +893,18 @@ async function askComponentInput(): Promise<{ input: ComponentFormInput; attachT
     return null;
   }
 
-  const addSample = await askYesNo('是否添加示例属性?');
+  const addSample = await askYesNo(l10nText('Add sample properties?'));
   const attachItems: AttachPickItem[] = [
     NO_ATTACH_CHOICE,
     ...getRegisteredEntities(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '').map(entity => ({
       label: entity.name,
-      description: '挂到该实体(加一条 COMPONENT 属性)',
+      description: l10nText('Attach to this entity (adds a COMPONENT property)'),
       value: entity.name
     }))
   ];
-  const attach = await vscode.window.showQuickPick(attachItems, { placeHolder: '挂载到哪个实体?' });
+  const attach = await vscode.window.showQuickPick(localizePick(attachItems), {
+    placeHolder: l10nText('Attach to which entity?')
+  });
   if (!attach) {
     return null;
   }
@@ -922,7 +935,7 @@ async function askFixedDictInput(): Promise<FixedDictFormInput | null> {
     return null;
   }
 
-  const addSample = await askYesNo('是否添加示例字段?');
+  const addSample = await askYesNo(l10nText('Add sample fields?'));
   return {
     name,
     properties: addSample ? [FIXED_DICT_SAMPLE_PROPERTY] : [],
@@ -982,8 +995,8 @@ export async function runGeneratorFormWizard(
     return;
   }
 
-  const picked = await vscode.window.showQuickPick(GENERATOR_FORM_CHOICES, {
-    placeHolder: '选择要生成的定义形态'
+  const picked = await vscode.window.showQuickPick(localizePick(GENERATOR_FORM_CHOICES), {
+    placeHolder: l10nText('Select the definition form to generate')
   });
   if (!picked) {
     return;

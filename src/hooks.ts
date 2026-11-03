@@ -472,18 +472,18 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
   }
 ];
 
-// 钩子分类中文映射
+/** 钩子分类标签(英文源串;中文经 vscode.l10n 出,见 languageProviders 展示面) */
 export const HOOK_CATEGORY_NAMES: Record<HookCategory, string> = {
-  lifecycle: '实体生命周期',
-  database: '数据库与归档',
-  movement: '移动',
-  space: '空间',
-  teleport: '传送',
-  trap: '陷阱',
+  lifecycle: 'Entity Lifecycle',
+  database: 'Database & Archiving',
+  movement: 'Movement',
+  space: 'Space',
+  teleport: 'Teleport',
+  trap: 'Trap',
   cell: 'Cell',
-  witness: '视野',
-  control: '控制权',
-  client: '客户端'
+  witness: 'Witness',
+  control: 'Control',
+  client: 'Client'
 };
 
 // 按分类获取钩子

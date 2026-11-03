@@ -259,7 +259,7 @@
       "activitybar": [
         {
           "id": "kbengine-explorer",
-          "title": "KBEngine Explorer",
+          "title": "%kbengine.viewContainer.explorer%",
           "icon": "resources/logo.png"
         }
       ]
@@ -268,32 +268,32 @@
       "kbengine-explorer": [
         {
           "id": "kbengine.quickActions",
-          "name": "快速执行"
+          "name": "%kbengine.view.quickActions%"
         },
         {
           "id": "kbengine.entityExplorer",
-          "name": "Entities"
+          "name": "%kbengine.view.entityExplorer%"
         },
         {
           "id": "kbengine.serverControl",
-          "name": "Servers"
+          "name": "%kbengine.view.serverControl%"
         },
         {
           "id": "kbengine.debugTargets",
-          "name": "Debug Targets"
+          "name": "%kbengine.view.debugTargets%"
         },
         {
           "id": "kbengine.telnetStatus",
-          "name": "Telnet",
+          "name": "%kbengine.view.telnetStatus%",
           "when": "kbengine.telnetConfigured"
         },
         {
           "id": "kbengine.config",
-          "name": "Config"
+          "name": "%kbengine.view.config%"
         },
         {
           "id": "kbengine.remoteServers",
-          "name": "Remote Servers"
+          "name": "%kbengine.view.remoteServers%"
         }
       ]
     },

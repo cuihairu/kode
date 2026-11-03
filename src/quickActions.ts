@@ -47,10 +47,15 @@ export const QUICK_ACTION_TIMEOUT_MS = 10000;
  *  而本地服务失控时不该让扩展宿主无限攒内存 */
 export const RESPONSE_PREVIEW_LIMIT = 4000;
 
+/** 扫描清单里的动作分类标签:英文源串,中文经 vscode.l10n(zh-cn bundle)出 */
 const CATEGORY_LABELS: Record<QuickActionCategory, string> = {
-  server: '启停服务器',
-  export: '导配置表'
+  server: 'Start/Stop Servers',
+  export: 'Export Config Tables'
 };
+
+/** 分类标签按当前语言取值(调用期求值:语言切换即时生效,默认英文);导出供双语断言 */
+export const quickActionCategoryLabel = (category: QuickActionCategory): string =>
+  vscode.l10n.t(CATEGORY_LABELS[category]);
 
 /** 扫描确认清单项:label=bat 名,value=候选(与 buildScannedActions 同源) */
 interface ScanPickItem extends vscode.QuickPickItem {
@@ -403,7 +408,7 @@ export class QuickActionManager {
     const picked = await vscode.window.showQuickPick<ScanPickItem>(
       candidates.map(candidate => ({
         label: baseNameOf(candidate.path),
-        description: candidate.category === null ? '' : CATEGORY_LABELS[candidate.category],
+        description: candidate.category === null ? '' : quickActionCategoryLabel(candidate.category),
         detail: candidate.path,
         value: candidate
       })),
@@ -643,7 +648,7 @@ export class QuickActionManager {
     const picked = await vscode.window.showQuickPick<ScanPickItem>(
       candidates.map(candidate => ({
         label: baseNameOf(candidate.path),
-        description: candidate.category === null ? '' : CATEGORY_LABELS[candidate.category],
+        description: candidate.category === null ? '' : quickActionCategoryLabel(candidate.category),
         detail: candidate.path,
         value: candidate
       })),

@@ -571,7 +571,7 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
       KBENGINE_HOOKS.forEach(hook => {
         if (hook.name.toLowerCase().startsWith(methodName)) {
           const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
-          item.detail = `${HOOK_CATEGORY_NAMES[hook.category]} - ${hook.description}`;
+          item.detail = `${vscode.l10n.t(HOOK_CATEGORY_NAMES[hook.category])} - ${hook.description}`;
           item.documentation = new vscode.MarkdownString(
             `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}\n\n签名:\n\`\`\`python\n${hook.signature}\n\`\`\``
           );
@@ -2334,7 +2334,7 @@ function describePropertyDatabaseStorageHover(
 
 function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
   const markdown = new vscode.MarkdownString();
-  markdown.appendMarkdown(`**${hook.name}** - ${HOOK_CATEGORY_NAMES[hook.category]}\n\n`);
+  markdown.appendMarkdown(`**${hook.name}** - ${vscode.l10n.t(HOOK_CATEGORY_NAMES[hook.category])}\n\n`);
   markdown.appendMarkdown(`${hook.description}\n\n`);
   markdown.appendMarkdown('**调用时机**: ' + hook.timing + '\n\n');
   markdown.appendMarkdown('**函数签名**:\n');

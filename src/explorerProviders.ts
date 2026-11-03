@@ -23,6 +23,9 @@ import { DefinitionSymbolIdentity, EntityMethodSection } from './entityMapping';
 import { KBENGINE_TYPES } from './kbengineMetadata';
 import { KBEngineServerManager, SERVER_COMPONENTS, ServerStatus } from './serverManager';
 
+/** 面板分类/分组标题走 vscode.l10n:调用期求值(语言切换即时生效),默认英文源串 */
+const l10nText = (message: string): string => vscode.l10n.t(message);
+
 type EntityTreeNode =
   | ExplorerGroupItem
   | DefinitionTreeItem
@@ -190,7 +193,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
           element.definition,
           {
             key: 'summary',
-            label: 'Summary',
+            label: l10nText('Summary'),
             icon: 'list-selection',
             items: element.viewModel.summary.map(item => ({
               label: item.label,
@@ -232,10 +235,10 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const components = getDefinitionEntries(workspaceRoot, 'component');
 
     return [
-      new ExplorerGroupItem('Types', 'type', types.length),
-      new ExplorerGroupItem('Entities', 'entity', entities.length),
-      new ExplorerGroupItem('Interfaces', 'interface', interfaces.length),
-      new ExplorerGroupItem('Components', 'component', components.length)
+      new ExplorerGroupItem(l10nText('Types'), 'type', types.length),
+      new ExplorerGroupItem(l10nText('Entities'), 'entity', entities.length),
+      new ExplorerGroupItem(l10nText('Interfaces'), 'interface', interfaces.length),
+      new ExplorerGroupItem(l10nText('Components'), 'component', components.length)
     ];
   }
 
@@ -257,7 +260,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
         parts.push(`implementedBy: ${entry.implementedBy}`);
       }
       if (!entry.pythonFilePath) {
-        parts.push('Python Missing');
+        parts.push(l10nText('Python Missing'));
       }
       return parts.join(', ');
     }
@@ -282,12 +285,12 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
         parts.push(runtimeProfile.visibilityLabel);
       }
       if (!entry.registered) {
-        parts.push('Unregistered');
+        parts.push(l10nText('Unregistered'));
       }
       return parts.join(', ');
     }
 
-    return entry.exists ? path.basename(entry.filePath) : 'Missing';
+    return entry.exists ? path.basename(entry.filePath) : l10nText('Missing');
   }
 
   private buildDefinitionViewModel(
@@ -297,13 +300,13 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const relativePath = path.relative(workspaceRoot, entry.filePath) || entry.filePath;
     const summary: DefinitionSummaryDescriptor[] = [
       {
-        label: 'Definition',
+        label: l10nText('Definition'),
         value: relativePath,
         icon: 'go-to-file',
         command: entry.exists ? createOpenDefinitionCommand(entry.filePath, entry.line) : undefined
       },
       {
-        label: 'Category',
+        label: l10nText('Category'),
         value: this.getCategoryLabel(entry.category),
         icon: this.getCategoryIcon(entry.category)
       }
@@ -312,25 +315,25 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     if (entry.category === 'entity') {
       const runtimeProfile = getEntityRuntimeProfile(entry.name, workspaceRoot);
       summary.push(
-        { label: 'Registered', value: entry.registered ? 'Yes' : 'No', icon: entry.registered ? 'check' : 'warning' },
-        { label: 'Base', value: entry.hasBase ? 'Yes' : 'No', icon: 'circle-filled' },
-        { label: 'Cell', value: entry.hasCell ? 'Yes' : 'No', icon: 'circle-filled' },
-        { label: 'Client', value: entry.hasClient ? 'Yes' : 'No', icon: 'circle-filled' }
+        { label: l10nText('Registered'), value: entry.registered ? l10nText('Yes') : l10nText('No'), icon: entry.registered ? 'check' : 'warning' },
+        { label: 'Base', value: entry.hasBase ? l10nText('Yes') : l10nText('No'), icon: 'circle-filled' },
+        { label: 'Cell', value: entry.hasCell ? l10nText('Yes') : l10nText('No'), icon: 'circle-filled' },
+        { label: 'Client', value: entry.hasClient ? l10nText('Yes') : l10nText('No'), icon: 'circle-filled' }
       );
 
       if (runtimeProfile) {
         summary.push(
-          { label: 'Runtime', value: runtimeProfile.runtimeLabel, icon: 'server-process' },
-          { label: 'Visibility', value: runtimeProfile.visibilitySummary, icon: 'eye' },
-          { label: 'Registration', value: runtimeProfile.registrationSummary, icon: 'symbol-event' }
+          { label: l10nText('Runtime'), value: runtimeProfile.runtimeLabel, icon: 'server-process' },
+          { label: l10nText('Visibility'), value: runtimeProfile.visibilitySummary, icon: 'eye' },
+          { label: l10nText('Registration'), value: runtimeProfile.registrationSummary, icon: 'symbol-event' }
         );
       }
     }
 
     if (entry.category === 'type') {
       summary.push(
-        { label: 'AliasType', value: entry.aliasType || 'ALIAS', icon: 'symbol-key' },
-        { label: 'Python', value: entry.pythonFilePath ? path.relative(workspaceRoot, entry.pythonFilePath) : 'Missing', icon: entry.pythonFilePath ? 'file-code' : 'warning' }
+        { label: l10nText('AliasType'), value: entry.aliasType || 'ALIAS', icon: 'symbol-key' },
+        { label: 'Python', value: entry.pythonFilePath ? path.relative(workspaceRoot, entry.pythonFilePath) : l10nText('Missing'), icon: entry.pythonFilePath ? 'file-code' : 'warning' }
       );
 
       if (entry.implementedBy) {
@@ -339,7 +342,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
 
     if (!entry.exists) {
-      summary.push({ label: 'Status', value: 'Definition file not found', icon: 'warning' });
+      summary.push({ label: l10nText('Status'), value: l10nText('Definition file not found'), icon: 'warning' });
       return { summary, sections: [] };
     }
 
@@ -349,7 +352,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       if (entry.rawValue) {
         sections.push({
           key: 'alias',
-          label: 'Alias',
+          label: l10nText('Alias'),
           icon: 'symbol-type-parameter',
           items: this.createTypeStructureItems(workspaceRoot, entry.typeStructure).length > 0
             ? this.createTypeStructureItems(workspaceRoot, entry.typeStructure)
@@ -364,7 +367,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       if (entry.typeProperties?.length) {
         sections.push({
           key: 'properties',
-          label: 'Properties',
+          label: l10nText('Properties'),
           icon: 'symbol-property',
           items: entry.typeProperties.map(property => this.createTypePropertyItem(workspaceRoot, property))
         });
@@ -408,7 +411,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const componentCount = stats.components.length;
 
     if (interfaceCount > 0) {
-      summary.push({ label: 'Interfaces', value: String(interfaceCount), icon: 'symbol-interface' });
+      summary.push({ label: l10nText('Interfaces'), value: String(interfaceCount), icon: 'symbol-interface' });
     }
 
     if (componentCount > 0) {
@@ -416,9 +419,9 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
 
     summary.push(
-      { label: 'Properties', value: String(stats.properties.length + inheritedPropertyCount), icon: 'symbol-property' },
+      { label: l10nText('Properties'), value: String(stats.properties.length + inheritedPropertyCount), icon: 'symbol-property' },
       {
-        label: 'Methods',
+        label: l10nText('Methods'),
         value: String(
           stats.baseMethods.length + stats.cellMethods.length + stats.clientMethods.length + inheritedMethodCount
         ),
@@ -427,17 +430,17 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     );
 
     if (inherited.length > 0) {
-      summary.push({ label: 'Mixed In', value: String(inherited.length), icon: 'symbol-interface' });
+      summary.push({ label: l10nText('Mixed In'), value: String(inherited.length), icon: 'symbol-interface' });
     }
 
     if (exposedCount > 0) {
-      summary.push({ label: 'Exposed', value: String(exposedCount), icon: 'radio-tower' });
+      summary.push({ label: l10nText('Exposed'), value: String(exposedCount), icon: 'radio-tower' });
     }
 
     if (databaseModel.section) {
       summary.push(
-        { label: 'DB Tables', value: String(databaseModel.tableCount), icon: 'database' },
-        { label: 'DB Fields', value: String(databaseModel.fieldCount), icon: 'symbol-field' }
+        { label: l10nText('DB Tables'), value: String(databaseModel.tableCount), icon: 'database' },
+        { label: l10nText('DB Fields'), value: String(databaseModel.fieldCount), icon: 'symbol-field' }
       );
     }
 
@@ -446,7 +449,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     if (stats.parent) {
       sections.push({
         key: 'parent',
-        label: 'Parent',
+        label: l10nText('Parent'),
         icon: 'type-hierarchy-super',
         items: [this.createDefinitionReferenceItem(workspaceRoot, entry, stats.parent)]
       });
@@ -455,7 +458,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     if (stats.interfaces.length > 0) {
       sections.push({
         key: 'interfaces',
-        label: 'Interfaces',
+        label: l10nText('Interfaces'),
         icon: 'symbol-interface',
         items: stats.interfaces.map(name => this.createDefinitionReferenceItem(
           workspaceRoot,
@@ -486,16 +489,16 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       if (runtimeProfile) {
         sections.push({
           key: 'runtime',
-          label: 'Runtime',
+          label: l10nText('Runtime'),
           icon: 'server-process',
           items: [
             {
-              label: 'Roles',
+              label: l10nText('Roles'),
               description: runtimeProfile.runtimeLabel,
               icon: 'server-process'
             },
             {
-              label: 'Visibility',
+              label: l10nText('Visibility'),
               description: runtimeProfile.visibilityLabel,
               icon: runtimeProfile.client.enabled ? 'device-desktop' : 'vm'
             },
@@ -522,7 +525,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     if (exposedGroups.length > 0) {
       sections.push({
         key: 'exposed',
-        label: 'Exposed',
+        label: l10nText('Exposed'),
         icon: 'radio-tower',
         groups: exposedGroups
       });
@@ -560,18 +563,18 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
   ): DefinitionSectionDescriptor | null {
     const ownItems = stats.properties.map(name => ({
       label: name,
-      description: entry.category === 'entity' ? 'Property' : `${this.getCategoryLabel(entry.category)} Property`,
+      description: entry.category === 'entity' ? l10nText('Property') : `${this.getCategoryLabel(entry.category)} ${l10nText('Property')}`,
       icon: 'symbol-property'
     }));
     const inheritedGroups = inherited
       .filter(group => group.properties.length > 0)
       .map(group => ({
         label: group.label,
-        description: 'Mixed In',
+        description: l10nText('Mixed In'),
         icon: 'symbol-interface',
         items: group.properties.map(name => ({
           label: name,
-          description: 'Mixed Property',
+          description: l10nText('Mixed Property'),
           icon: 'symbol-property'
         }))
       }));
@@ -583,7 +586,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
       return {
         key: 'properties',
-        label: 'Properties',
+        label: l10nText('Properties'),
         icon: 'symbol-property',
         items: ownItems
       };
@@ -592,8 +595,8 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const groups: DefinitionGroupDescriptor[] = [];
     if (ownItems.length > 0) {
       groups.push({
-        label: 'Own',
-        description: 'Declared Here',
+        label: l10nText('Own'),
+        description: l10nText('Declared Here'),
         icon: 'symbol-class',
         items: ownItems
       });
@@ -602,7 +605,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
     return {
       key: 'properties',
-      label: 'Properties',
+      label: l10nText('Properties'),
       icon: 'symbol-property',
       groups
     };
@@ -619,8 +622,8 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
     if (ownItems.length > 0) {
       groups.push({
-        label: 'Own',
-        description: 'Declared Here',
+        label: l10nText('Own'),
+        description: l10nText('Declared Here'),
         icon: 'symbol-class',
         items: ownItems
       });
@@ -635,7 +638,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
       groups.push({
         label: group.label,
-        description: 'Mixed In',
+        description: l10nText('Mixed In'),
         icon: 'symbol-interface',
         items
       });
@@ -678,7 +681,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       fieldCount: snapshot.tables.reduce((sum, table) => sum + table.fields.length, 0),
       section: {
         key: 'database',
-        label: 'Database',
+        label: l10nText('Database'),
         icon: 'database',
         groups
       }
@@ -695,7 +698,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
       .filter(method => method.exposed)
       .map(method => ({
         label: method.name,
-        description: section,
+        description: l10nText(section),
         icon: 'radio-tower',
         command: this.createMethodCommand(entry, method, section)
       }));
@@ -712,7 +715,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const inheritedGroups = inherited
       .map(group => ({
         label: group.label,
-        description: 'Mixed In',
+        description: l10nText('Mixed In'),
         icon: 'symbol-interface',
         items: this.filterSectionMethods(group, section)
           .filter(method => !method.exposed)
@@ -727,7 +730,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
       return {
         key: section,
-        label: section,
+        label: l10nText(section),
         icon,
         items: localMethods.map(method => this.createMethodItem(entry, method, section))
       };
@@ -736,8 +739,8 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const groups: DefinitionGroupDescriptor[] = [];
     if (localMethods.length > 0) {
       groups.push({
-        label: 'Own',
-        description: 'Declared Here',
+        label: l10nText('Own'),
+        description: l10nText('Declared Here'),
         icon: 'symbol-class',
         items: localMethods.map(method => this.createMethodItem(entry, method, section))
       });
@@ -754,7 +757,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
 
     return {
       key: section,
-      label: section,
+      label: l10nText(section),
       icon,
       groups
     };
@@ -826,7 +829,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
   ): DefinitionLeafDescriptor {
     return {
       label: method.name,
-      description: method.exposed ? `${section} · Exposed` : section,
+      description: method.exposed ? `${l10nText(section)} · ${l10nText('Exposed')}` : l10nText(section),
       icon: method.exposed ? 'radio-tower' : 'symbol-method',
       command: this.createMethodCommand(entry, method, section)
     };
@@ -900,7 +903,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
   ): { label: string; icon: string; command?: vscode.Command } {
     if (KBENGINE_TYPES.some(type => type.name === typeName)) {
       return {
-        label: 'Built-in',
+        label: l10nText('Built-in'),
         icon: 'symbol-key'
       };
     }
@@ -908,7 +911,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const customTypeEntry = findDefinitionEntryByCategory(typeName, 'type', workspaceRoot);
     if (customTypeEntry) {
       return {
-        label: 'Type',
+        label: l10nText('Type'),
         icon: this.getCategoryIcon('type'),
         command: createOpenDefinitionCommand(customTypeEntry.filePath, customTypeEntry.line)
       };
@@ -917,7 +920,7 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const componentEntry = findDefinitionEntryByCategory(typeName, 'component', workspaceRoot);
     if (componentEntry) {
       return {
-        label: 'Component',
+        label: l10nText('Component'),
         icon: this.getCategoryIcon('component'),
         command: createOpenDefinitionCommand(componentEntry.filePath, componentEntry.line)
       };
@@ -926,14 +929,14 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     const entityEntry = findDefinitionEntryByCategory(typeName, 'entity', workspaceRoot);
     if (entityEntry) {
       return {
-        label: 'Entity',
+        label: l10nText('Entity'),
         icon: this.getCategoryIcon('entity'),
         command: createOpenDefinitionCommand(entityEntry.filePath, entityEntry.line)
       };
     }
 
     return {
-      label: 'Unresolved',
+      label: l10nText('Unresolved'),
       icon: 'warning'
     };
   }
@@ -950,26 +953,26 @@ export class EntityExplorerProvider implements vscode.TreeDataProvider<EntityTre
     }
   ): string {
     if (facet.declared) {
-      return facet.enabled ? 'Declared On' : 'Declared Off';
+      return facet.enabled ? l10nText('Declared On') : l10nText('Declared Off');
     }
 
     if (facet.scriptExists) {
-      return facet.enabled ? 'Inferred From Script' : 'Script Present';
+      return facet.enabled ? l10nText('Inferred From Script') : l10nText('Script Present');
     }
 
-    return 'Not Declared';
+    return l10nText('Not Declared');
   }
 
   private getCategoryLabel(category: DefinitionCategory): string {
     switch (category) {
       case 'type':
-        return 'Type';
+        return l10nText('Type');
       case 'entity':
-        return 'Entity';
+        return l10nText('Entity');
       case 'interface':
-        return 'Interface';
+        return l10nText('Interface');
       case 'component':
-        return 'Component';
+        return l10nText('Component');
     }
   }
 

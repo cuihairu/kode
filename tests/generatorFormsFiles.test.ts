@@ -411,7 +411,7 @@ describe('generateGeneratorForm 附带改写', () => {
 
 describe('runGeneratorFormWizard', () => {
   it('代理流程:形态 → 实体名 → 方法名 → 方法段 → 落盘 → 播报', async () => {
-    ui.picks = [pickLabel('代理实体 (proxy)'), pickLabel('BaseMethods'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('BaseMethods'), pickLabel('确认生成')];
     ui.inputs = ['Avatar', 'onTargetChanged, syncState'];
 
     await runGeneratorFormWizard();
@@ -425,19 +425,19 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('代理无方法名时不问方法段;取消方法段选择则中止', async () => {
-    ui.picks = [pickLabel('代理实体 (proxy)'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('确认生成')];
     ui.inputs = ['Avatar', ''];
     await runGeneratorFormWizard();
     expect(fs.readFileSync(path.join(root, 'scripts', 'proxy_defs', 'AvatarProxy.def'), 'utf8')).not.toContain('Methods>');
 
-    ui.picks = [pickLabel('代理实体 (proxy)')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)')];
     ui.inputs = ['Avatar', 'roar'];
     await runGeneratorFormWizard();
     expect(fs.readFileSync(path.join(root, 'scripts', 'proxy_defs', 'AvatarProxy.def'), 'utf8')).not.toContain('<roar>');
   });
 
   it('空间流程:名称 → 落盘 + 登记', async () => {
-    ui.picks = [pickLabel('空间实体 (space)'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Space Entity (space)'), pickLabel('确认生成')];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -449,7 +449,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('组件流程:名称 → 示例属性 → 挂载目标(实体列表来自 entities.xml)', async () => {
-    ui.picks = [pickLabel('组件 (component)'), pickLabel('是'), pickLabel('Avatar'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Component (component)'), pickLabel('Yes'), pickLabel('Avatar'), pickLabel('确认生成')];
     ui.inputs = ['Inventory'];
 
     await runGeneratorFormWizard();
@@ -461,7 +461,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('组件选「否」出空属性段,选「不挂载」不动实体', async () => {
-    ui.picks = [pickLabel('组件 (component)'), pickLabel('否'), pickLabel('不挂载'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Component (component)'), pickLabel('No'), pickLabel('Do not attach'), pickLabel('确认生成')];
     ui.inputs = ['Bare'];
 
     await runGeneratorFormWizard();
@@ -473,7 +473,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('固定字典流程:名称 → 实现符号 → 示例字段', async () => {
-    ui.picks = [pickLabel('固定字典类型 (fixedDict)'), pickLabel('是'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('Yes'), pickLabel('确认生成')];
     ui.inputs = ['MY_DATA', 'MY_DATA_DATA.my_data_inst'];
 
     await runGeneratorFormWizard();
@@ -484,7 +484,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('实现符号留空时不写 implementedBy;选「否」不出示例字段', async () => {
-    ui.picks = [pickLabel('固定字典类型 (fixedDict)'), pickLabel('否'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('No'), pickLabel('确认生成')];
     ui.inputs = ['MY_DATA', '   '];
 
     await runGeneratorFormWizard();
@@ -495,7 +495,7 @@ describe('runGeneratorFormWizard', () => {
   });
 
   it('输入校验:名称不合规与实现符号不合规各给一条提示', async () => {
-    ui.picks = [pickLabel('代理实体 (proxy)'), pickLabel('CellMethods'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('CellMethods'), pickLabel('确认生成')];
     ui.inputs = ['Avatar', 'roar'];
     await runGeneratorFormWizard();
 
@@ -504,7 +504,7 @@ describe('runGeneratorFormWizard', () => {
     expect(nameValidator?.validateInput?.('Good')).toBeNull();
 
     ui.inputOptions = [];
-    ui.picks = [pickLabel('固定字典类型 (fixedDict)'), pickLabel('否'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)'), pickLabel('No'), pickLabel('确认生成')];
     ui.inputs = ['MY_DATA', 'not-a-symbol'];
     await runGeneratorFormWizard();
 
@@ -518,36 +518,36 @@ describe('runGeneratorFormWizard', () => {
     await runGeneratorFormWizard();
     expect(fs.readdirSync(path.join(root, 'scripts'))).not.toContain('proxy_defs');
 
-    ui.picks = [pickLabel('空间实体 (space)')];
+    ui.picks = [pickLabel('Space Entity (space)')];
     ui.inputs = [];
     await runGeneratorFormWizard();
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'MySpace.def'))).toBe(false);
 
-    ui.picks = [pickLabel('固定字典类型 (fixedDict)')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)')];
     ui.inputs = ['MY_DATA'];
     await runGeneratorFormWizard();
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), 'utf8')).not.toContain('MY_DATA');
   });
 
   it('代理/组件/固定字典三形态在名称输入处取消都中止', async () => {
-    ui.picks = [pickLabel('代理实体 (proxy)')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)')];
     ui.inputs = [];
     await runGeneratorFormWizard();
     expect(fs.existsSync(path.join(root, 'scripts', 'proxy_defs'))).toBe(false);
 
-    ui.picks = [pickLabel('组件 (component)')];
+    ui.picks = [pickLabel('Component (component)')];
     ui.inputs = [];
     await runGeneratorFormWizard();
     expect(fs.existsSync(path.join(root, 'scripts', 'entity_defs', 'components'))).toBe(false);
 
-    ui.picks = [pickLabel('固定字典类型 (fixedDict)')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)')];
     ui.inputs = [];
     await runGeneratorFormWizard();
     expect(fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), 'utf8')).not.toContain('MY_DATA');
   });
 
   it('组件在挂载目标处取消则中止(名称已问完)', async () => {
-    ui.picks = [pickLabel('组件 (component)'), pickLabel('是')];
+    ui.picks = [pickLabel('Component (component)'), pickLabel('Yes')];
     ui.inputs = ['Inventory'];
 
     await runGeneratorFormWizard();
@@ -558,7 +558,7 @@ describe('runGeneratorFormWizard', () => {
 
   it('打开生成的文件:应答「是」时开文档', async () => {
     workspaceState.openTextDocumentCalls.length = 0;
-    ui.picks = [pickLabel('空间实体 (space)'), pickLabel('确认生成'), () => '是'];
+    ui.picks = [pickLabel('Space Entity (space)'), pickLabel('确认生成'), () => '是'];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -569,7 +569,7 @@ describe('runGeneratorFormWizard', () => {
 
   it('未覆盖时只播报说明不询问打开', async () => {
     fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'MySpace.def'), '<root/>', 'utf8');
-    ui.picks = [pickLabel('空间实体 (space)')];
+    ui.picks = [pickLabel('Space Entity (space)')];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -580,7 +580,7 @@ describe('runGeneratorFormWizard', () => {
 
   it('无工作区时报错并返回', async () => {
     stubWorkspace.workspaceFolders = [];
-    ui.picks = [pickLabel('空间实体 (space)')];
+    ui.picks = [pickLabel('Space Entity (space)')];
 
     await runGeneratorFormWizard();
 
@@ -591,7 +591,7 @@ describe('runGeneratorFormWizard', () => {
   it('落盘抛错时走错误通道', async () => {
     // 目标目录被同名文件占住 → 建目录/写文件抛错,命令应如实报错不静默
     fs.writeFileSync(path.join(root, 'scripts', 'proxy_defs'), 'occupied', 'utf8');
-    ui.picks = [pickLabel('代理实体 (proxy)'), pickLabel('确认生成')];
+    ui.picks = [pickLabel('Proxy Entity (proxy)'), pickLabel('确认生成')];
     ui.inputs = ['Avatar', ''];
 
     await runGeneratorFormWizard();
@@ -604,7 +604,7 @@ describe('runGeneratorFormWizard 统一预览与冲突 (IDE-GEN-008)', () => {
   it('确认前列出计划项与准确路径(与实体向导同款确认面)', async () => {
     let previewItems: Array<{ label: string; description?: string }> = [];
     ui.picks = [
-      pickLabel('空间实体 (space)'),
+      pickLabel('Space Entity (space)'),
       items => {
         previewItems = items as Array<{ label: string; description?: string }>;
         return previewItems[0];
@@ -624,7 +624,7 @@ describe('runGeneratorFormWizard 统一预览与冲突 (IDE-GEN-008)', () => {
   it('预览取消时不写任何文件', async () => {
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
-    ui.picks = [pickLabel('空间实体 (space)'), () => undefined];
+    ui.picks = [pickLabel('Space Entity (space)'), () => undefined];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -639,7 +639,7 @@ describe('runGeneratorFormWizard 统一预览与冲突 (IDE-GEN-008)', () => {
     fs.writeFileSync(path.join(root, 'scripts', 'entity_defs', 'MySpace.def'), '<root/>', 'utf8');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
-    ui.picks = [pickLabel('空间实体 (space)')];
+    ui.picks = [pickLabel('Space Entity (space)')];
     ui.inputs = ['MySpace'];
 
     await runGeneratorFormWizard();
@@ -656,7 +656,7 @@ describe('runGeneratorFormWizard 统一预览与冲突 (IDE-GEN-008)', () => {
       'utf8'
     );
     const typesBefore = fs.readFileSync(path.join(root, 'scripts', 'entity_defs', 'types.xml'), 'utf8');
-    ui.picks = [pickLabel('固定字典类型 (fixedDict)')];
+    ui.picks = [pickLabel('Fixed Dict Type (fixedDict)')];
     ui.inputs = ['MY_DATA', ''];
 
     await runGeneratorFormWizard();

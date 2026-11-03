@@ -163,7 +163,7 @@ describe('entity wizard follows the active profile', () => {
 
     let previewItems: Array<{ label: string; description?: string }> = [];
     ui.picks = [
-      pickLabel('空实体'),
+      pickLabel('Empty entity'),
       (items: unknown[]) => {
         previewItems = items as Array<{ label: string; description?: string }>;
         return pickConfirm(items);
@@ -199,7 +199,7 @@ describe('entity wizard follows the active profile', () => {
 
     // 第二步确认时模拟预览打开期间切换到 profile B
     ui.picks = [
-      pickLabel('空实体'),
+      pickLabel('Empty entity'),
       async (items: unknown[]) => {
         await setActiveProfile(memento, profileBId);
         return pickConfirm(items);
@@ -222,7 +222,7 @@ describe('entity wizard follows the active profile', () => {
     // 无 memento(极简装配):工作区链
     const bare = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
     generators.push(bare);
-    ui.picks = [pickLabel('空实体'), pickConfirm];
+    ui.picks = [pickLabel('Empty entity'), pickConfirm];
     ui.inputs = ['Hero'];
     await bare.showTemplates();
     expect(fs.existsSync(path.join(wsRoot, 'scripts', 'entity_defs', 'Hero.def'))).toBe(true);
@@ -234,7 +234,7 @@ describe('entity wizard follows the active profile', () => {
     await new ProjectProfileStore(memento).remove(doomedId);
     const stale = new KBEngineCodeGenerator({ workspaceState: memento } as unknown as vscode.ExtensionContext);
     generators.push(stale);
-    ui.picks = [pickLabel('空实体'), pickConfirm];
+    ui.picks = [pickLabel('Empty entity'), pickConfirm];
     ui.inputs = ['Warden'];
     await stale.showTemplates();
     expect(fs.existsSync(path.join(wsRoot, 'scripts', 'entity_defs', 'Warden.def'))).toBe(true);
@@ -247,7 +247,7 @@ describe('form wizard follows the active profile', () => {
     const profileAId = await makeProfile(memento, 'A', profileARoot);
     await setActiveProfile(memento, profileAId);
 
-    ui.picks = [pickLabel('空间实体 (space)'), pickConfirm];
+    ui.picks = [pickLabel('Space Entity (space)'), pickConfirm];
     ui.inputs = ['Lobby'];
 
     await runGeneratorFormWizard({ workspaceState: memento });
@@ -266,7 +266,7 @@ describe('form wizard follows the active profile', () => {
     await setActiveProfile(memento, profileAId);
 
     ui.picks = [
-      pickLabel('空间实体 (space)'),
+      pickLabel('Space Entity (space)'),
       async (items: unknown[]) => {
         await setActiveProfile(memento, profileBId);
         return pickConfirm(items);
@@ -286,7 +286,7 @@ describe('form wizard follows the active profile', () => {
   }, 15000);
 
   it('keeps the workspace chain when called without a workspaceState', async () => {
-    ui.picks = [pickLabel('空间实体 (space)'), pickConfirm];
+    ui.picks = [pickLabel('Space Entity (space)'), pickConfirm];
     ui.inputs = ['Village'];
 
     await runGeneratorFormWizard();

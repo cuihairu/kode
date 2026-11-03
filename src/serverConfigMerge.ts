@@ -408,7 +408,7 @@ export class FinalConfigContentProvider implements vscode.TextDocumentContentPro
 
 /** 侧栏常驻入口(批112 默认开启令):单节点,点击即开最终配置只读视图 */
 export class FinalConfigTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-  private readonly item = new vscode.TreeItem('最终配置', vscode.TreeItemCollapsibleState.None);
+  private readonly item = new vscode.TreeItem(vscode.l10n.t('Final Configuration'), vscode.TreeItemCollapsibleState.None);
 
   constructor() {
     this.item.description = 'kbengine-final.xml';

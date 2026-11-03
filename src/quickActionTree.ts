@@ -24,7 +24,12 @@ export interface QuickActionTreeDeps {
 export class QuickActionTreeItem extends vscode.TreeItem {
   constructor(entry?: QuickActionTreeEntry | { group: 'registered' | 'scripts' | 'httpRequests'; count: number }) {
     if (entry && 'group' in entry) {
-      const groupName = entry.group === 'registered' ? '已登记' : entry.group === 'scripts' ? '全部脚本' : 'HTTP 请求';
+      // 分类分组标题走 vscode.l10n:调用期求值,默认英文源串,zh-cn bundle 出中文
+      const groupName = entry.group === 'registered'
+        ? vscode.l10n.t('Registered')
+        : entry.group === 'scripts'
+          ? vscode.l10n.t('All Scripts')
+          : vscode.l10n.t('HTTP Requests');
       super(`${groupName} ${entry.count}`, vscode.TreeItemCollapsibleState.Expanded);
       this.contextValue = entry.group === 'registered' ? 'quickActionGroupRegistered' : entry.group === 'scripts' ? 'quickActionGroupScripts' : 'quickActionGroupHttp';
       return;

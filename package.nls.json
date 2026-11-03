@@ -1,0 +1,10 @@
+{
+  "kbengine.viewContainer.explorer": "KBEngine Explorer",
+  "kbengine.view.quickActions": "Quick Actions",
+  "kbengine.view.entityExplorer": "Entities",
+  "kbengine.view.serverControl": "Servers",
+  "kbengine.view.debugTargets": "Debug Targets",
+  "kbengine.view.telnetStatus": "Telnet",
+  "kbengine.view.config": "Config",
+  "kbengine.view.remoteServers": "Remote Servers"
+}

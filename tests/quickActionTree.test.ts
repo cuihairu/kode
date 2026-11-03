@@ -14,7 +14,7 @@ describe('QuickActionTreeProvider', () => {
       })
     });
     const groups = await provider.getChildren();
-    expect(groups.map(group => group.label)).toEqual(['已登记 1', '全部脚本 1', 'HTTP 请求 2']);
+    expect(groups.map(group => group.label)).toEqual(['Registered 1', 'All Scripts 1', 'HTTP Requests 2']);
     const registered = await provider.getChildren(groups[0]);
     const allScripts = await provider.getChildren(groups[1]);
     const httpRequests = await provider.getChildren(groups[2]);

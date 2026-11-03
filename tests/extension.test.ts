@@ -1706,7 +1706,7 @@ describe('extension activate 定义形态生成装配(盘点 G7)', () => {
         pickCalls += 1;
         // 第一次选空间形态,第二次(IDE-GEN-008 计划确认)选确认生成
         if (pickCalls === 1) {
-          return resolved.find(item => (item as { label: string }).label.startsWith('空间实体'));
+          return resolved.find(item => (item as { label: string }).label.startsWith('Space Entity'));
         }
         return resolved.find(item => (item as { label: string }).label === '确认生成');
       };
