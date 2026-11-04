@@ -608,6 +608,30 @@ describe('GlobalDataDictIndex(GLOBDATA-001 跨文件索引)', () => {
       index.dispose();
     }
   }, 15000);
+
+  it('KODE-PERF-003:大文件异步重扫收敛提交后释放编辑缓冲快照(不积压内存)', async () => {
+    const index = new GlobalDataDictIndex();
+    try {
+      // 大文件(>64KB 触发异步预算化路径):写点 cfg + 8000 短注释行(切片快)。
+      const bigText =
+        'import KBEngine\nKBEngine.globalData["cfg"] = 1\n' +
+        Array.from({ length: 8000 }, (_, i) => `# pad ${i}`).join('\n');
+      expect(bigText.length).toBeGreaterThan(64 * 1024);
+      index.noteSaved({ uri: { fsPath: '/r/big.py' }, getText: () => bigText } as never);
+      // 登记即缓冲持有快照(在飞异步重扫;异步任务首 await 前不收敛)。
+      expect(index.editBufferEntryCountForTests()).toBe(1);
+      // 等在飞异步重扫收敛提交(无新编辑 → 提交后返回)
+      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setImmediate(resolve));
+      // 修前:收敛后缓冲仍持完整大文件文本至关闭/下次编辑;修后:已全部索引
+      // 进 cache,缓冲释放归零——不积压内存。
+      expect(index.editBufferEntryCountForTests()).toBe(0);
+      // 缓冲释放不丢索引结果
+      expect(index.query('globalData', 'cfg').map(s => s.kind)).toContain('write');
+    } finally {
+      index.dispose();
+    }
+  }, 15000);
 });
 
 describe('GlobalDataDictIndex(GLOBDATA-001 生命周期/覆盖)', () => {

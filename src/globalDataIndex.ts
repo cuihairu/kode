@@ -1518,6 +1518,11 @@ export class GlobalDataDictIndex {
     sliceCount: 0
   };
 
+  /** KODE-PERF-003:测试面——编辑缓冲残留条目数(收敛提交后应归零)。 */
+  editBufferEntryCountForTests(): number {
+    return this.editBuffers.size;
+  }
+
   constructor(private readonly pyGlob = '**/*.py') {}
 
   /** 首次使用时建全量索引并挂 watcher(幂等)。 */
@@ -1972,6 +1977,10 @@ export class GlobalDataDictIndex {
         pendingReindex.clear();
         // 提交期间又来新编辑(revision/代际前进)→ 循环重扫,否则本轮完成
         if ((this.revisions.get(fsPath) ?? 0) === revision && this.generation === generation) {
+          // KODE-PERF-003:收敛提交后文本已全部索引进 cache,释放大文件快照,
+          // 不再为已收敛的打开文档积压完整文本(后续新编辑 noteSaved 重新登记,
+          // 不丢编辑;KODE-AUD-005 同步路径/关文档清缓冲不受影响)。
+          this.editBuffers.delete(fsPath);
           return;
         }
       }
