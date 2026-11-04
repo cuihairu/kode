@@ -8,12 +8,14 @@ import {
   buildKbeStubDocument,
   buildKbeStubExportContent,
   buildKbeStubUriString,
+  engineApiVersionAnnotation,
   filterKbeSymbols,
   getKbeAliases,
   getKbeCompletionContext,
   getKbeFromImportedSymbols,
   getKbeSymbol,
   getPythonClassBaseAtPosition,
+  kbeCompletionDocumentation,
   resolveKbeAccessAtPosition,
   summaryForLanguage
 } from '../src/kbeModuleIndex';
@@ -413,5 +415,65 @@ describe('KBEngine API 索引条目双语契约(GEN-DEF-1d)', () => {
     const doc = lines.slice(kbLine, kbLine + 12).join('\n');
     expect(doc).toContain('引擎实体基类');
     expect(doc).toContain('EN: Engine entity base class');
+  });
+});
+
+describe('KB-VER-002 版本分层标注', () => {
+  const entity = KBE_SYMBOLS.find(s => s.name === 'Entity')!;
+  const memoryStream = KBE_SYMBOLS.find(s => s.name === 'MemoryStream')!;
+  const forkEntry = { version: 'fork' as const };
+
+  it('条目版本归属仅三档,MemoryStream 为唯一非基线(待取证)', () => {
+    for (const entry of KBE_SYMBOLS) {
+      const v = entry.version ?? 'baseline';
+      expect(['baseline', 'fork', 'pending']).toContain(v);
+    }
+    expect(memoryStream.version).toBe('pending');
+    // 其余条目均基线(依各 api-*.md deviation 表:35 条目无 fork-3.12 新增符号)
+    const nonBaseline = KBE_SYMBOLS.filter(s => (s.version ?? 'baseline') !== 'baseline');
+    expect(nonBaseline.map(s => s.name)).toEqual(['MemoryStream']);
+  });
+
+  it('engineApiVersionAnnotation:基线条目恒无标注(双语)', () => {
+    expect(engineApiVersionAnnotation(entity, '3.7.3', 'zh')).toBeNull();
+    expect(engineApiVersionAnnotation(entity, 'fork-3.12', 'en')).toBeNull();
+    expect(engineApiVersionAnnotation({}, '3.7.3', 'zh')).toBeNull();
+  });
+
+  it('engineApiVersionAnnotation:pending 恒标「待取证」,与引擎版本无关', () => {
+    expect(engineApiVersionAnnotation(memoryStream, '3.7.3', 'zh')).toContain('待取证');
+    expect(engineApiVersionAnnotation(memoryStream, 'fork-3.12', 'zh')).toContain('待取证');
+    expect(engineApiVersionAnnotation(memoryStream, '3.7.3', 'en')).toContain('to be evidenced');
+  });
+
+  it('engineApiVersionAnnotation:fork 条目仅在基线引擎下标「需 fork」', () => {
+    // 默认/官方基线(3.7.3 / 3.6.3)→ 标注
+    expect(engineApiVersionAnnotation(forkEntry, '3.7.3', 'zh')).toContain('需 fork');
+    expect(engineApiVersionAnnotation(forkEntry, '3.7.3', 'en')).toContain('requires fork');
+    expect(engineApiVersionAnnotation(forkEntry, '3.6.3', 'zh')).toContain('需 fork');
+    // fork- 前缀(任意大小写/首尾空白)→ 视为魔改 fork 已含,不标注
+    expect(engineApiVersionAnnotation(forkEntry, 'fork-3.12', 'zh')).toBeNull();
+    expect(engineApiVersionAnnotation(forkEntry, 'FORK-3.12 ', 'zh')).toBeNull();
+    expect(engineApiVersionAnnotation(forkEntry, '  fork', 'zh')).toBeNull();
+  });
+
+  it('kbeCompletionDocumentation:基线条目无版本注,待取证条目带注', () => {
+    const base = kbeCompletionDocumentation(entity, 'zh', '3.7.3');
+    expect(base).toContain(entity.summary);
+    expect(base).toContain(`原始声明: \`${entity.sourceFile}:${entity.sourceLine}\``);
+    expect(base).not.toContain('待取证');
+    expect(base).not.toContain('需 fork');
+    const msDoc = kbeCompletionDocumentation(memoryStream, 'zh', '3.7.3');
+    expect(msDoc).toContain('待取证');
+    expect(msDoc).toContain(`原始声明: \`${memoryStream.sourceFile}:${memoryStream.sourceLine}\``);
+  });
+
+  it('桩文档与导出 .pyi 的 MemoryStream docstring 带版本归属注', () => {
+    const stub = buildKbeStubDocument();
+    const msLine = stub.symbolLines['MemoryStream'];
+    const lines = stub.content.split('\n');
+    const doc = lines.slice(msLine, msLine + 14).join('\n');
+    expect(doc).toContain('待取证');
+    expect(buildKbeStubExportContent()).toContain('版本标注 / version:');
   });
 });

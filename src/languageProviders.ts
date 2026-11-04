@@ -177,8 +177,8 @@ import {
   getKbeFromImportedSymbols,
   getKbeSymbol,
   getPythonClassBaseAtPosition,
-  resolveKbeAccessAtPosition,
-  summaryForLanguage
+  kbeCompletionDocumentation,
+  resolveKbeAccessAtPosition
 } from './kbeModuleIndex';
 import {
   GlobalDataDictIndex,
@@ -191,6 +191,7 @@ import {
   type KbeDataDictSite
 } from './globalDataIndex';
 import type { EngineApiCatalog } from './engineApiMetadata';
+import { getEngineVersion } from './engineVersion';
 import {
   createHoverRequestDeadline,
   createWaiterUnionToken,
@@ -6804,7 +6805,7 @@ export class PythonCompletionProvider implements vscode.CompletionItemProvider {
         );
         item.detail = entry.signature;
         item.documentation = new vscode.MarkdownString(
-          `${summaryForLanguage(entry, vscode.env.language)}\n\n原始声明: \`${entry.sourceFile}:${entry.sourceLine}\``
+          kbeCompletionDocumentation(entry, vscode.env.language, getEngineVersion())
         );
         return item;
       });

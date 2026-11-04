@@ -37,7 +37,17 @@ export interface KbeSymbolEntry {
    * 引擎源码锚点回验按此名匹配 `class <cppClassName>` 声明行。
    */
   cppClassName?: string;
+  /**
+   * KB-VER-002 版本分层归属:官方 3.7.3 基线 / fork 3.12+ 新增 / 待取证。
+   * 缺省(省略)即 baseline——3.7.3 基线。非基线条目须显式标注,标注依据
+   * 是各 api-*.md 的「3.7 source material vs fork 3.12 deviations」表,
+   * 不得凭猜测改标。
+   */
+  version?: EngineApiVersion;
 }
+
+/** KB-VER-002 版本分层标注的三档值(见 KbeSymbolEntry.version) */
+export type EngineApiVersion = 'baseline' | 'fork' | 'pending';
 
 const COMMON_STUB = 'typings/_KBEngine_common.pyi';
 const BASEAPP_STUB = 'typings/_KBEngine_baseapp.pyi';
@@ -130,7 +140,11 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summary: '二进制流:append/pop 按 dataType 读写,常用于自定义协议打包。',
     summaryEn: 'Binary stream: append/pop read-write by dataType, commonly used for custom protocol packing.',
     sourceFile: COMMON_STUB,
-    sourceLine: 45
+    sourceLine: 45,
+    // KB-VER-002:api-baseapp.md deviation 表实测 baseapp(EntityApp)注册链
+    // 无此构造器,仅 PythonApp 工具链注册(python_app.cpp:271 在,
+    // entity_app.h:407-453 无)——运行时归属待取证。
+    version: 'pending'
   },
   {
     name: 'address',
@@ -397,6 +411,69 @@ export function summaryForLanguage(
 }
 
 /**
+ * KB-VER-002:按条目版本归属与当前引擎版本设置计算补全/悬停的版本标注。
+ * 返回标注文案(按 IDE 语言)或 null(无标注)。
+ * - baseline:无标注(基线符号不噪音)。
+ * - pending:恒标注「待取证」——归属未定案,与引擎版本无关。
+ * - fork:仅当当前引擎版本不是 fork- 前缀(默认 3.7.3 官方基线)时标注
+ *   「需 fork」;fork- 前缀预设(fork-3.12 等)视为魔改 fork 已含该符号。
+ *   自定义 fork 版本未用 fork- 前缀时按保守口径仍标注(宁多提示不漏报),
+ *   口径见 configuration.md。
+ */
+export function engineApiVersionAnnotation(
+  entry: Pick<KbeSymbolEntry, 'version'>,
+  engineVersion: string,
+  ideLanguage?: string
+): string | null {
+  const version = entry.version ?? 'baseline';
+  if (version === 'pending') {
+    return ideLanguage?.startsWith('zh')
+      ? '版本归属待取证(官方 3.7.3 基线与 fork 3.12 间尚未定案)'
+      : 'version attribution to be evidenced (not yet settled between official 3.7.3 and fork 3.12)';
+  }
+  if (version === 'fork') {
+    if (engineVersion.trim().toLowerCase().startsWith('fork')) {
+      return null;
+    }
+    return ideLanguage?.startsWith('zh')
+      ? '需 fork(fork-3.12 新增,官方 3.7.3 基线无此符号)'
+      : 'requires fork (added in fork 3.12; absent from the official 3.7.3 baseline)';
+  }
+  return null;
+}
+
+/**
+ * KB-VER-002:补全 documentation 的单一装配口——summary(按语言)+ 原始
+ * 声明锚点 + 版本标注(KB-VER-002)。provider 与单测共用,保证补全面
+ * 版本标注与单测同源。
+ */
+export function kbeCompletionDocumentation(
+  entry: KbeSymbolEntry,
+  ideLanguage: string | undefined,
+  engineVersion: string
+): string {
+  const base = `${summaryForLanguage(entry, ideLanguage)}\n\n原始声明: \`${entry.sourceFile}:${entry.sourceLine}\``;
+  const note = engineApiVersionAnnotation(entry, engineVersion, ideLanguage);
+  return note ? `${base}\n\n${note}` : base;
+}
+
+/**
+ * KB-VER-002:桩文档(.pyi)docstring 的版本归属注——桩是静态文档,无
+ * 引擎版本语境,直接标归属(与 api-*.md deviation 表同源),hover 到桩上
+ * 即见。
+ */
+function engineApiVersionStubNote(entry: Pick<KbeSymbolEntry, 'version'>): string | null {
+  const version = entry.version ?? 'baseline';
+  if (version === 'pending') {
+    return '待取证 / to be evidenced: 该符号在 baseapp 注册链的归属未实证(见 api-baseapp deviation 表)';
+  }
+  if (version === 'fork') {
+    return 'fork-3.12 新增 / fork-3.12 addition: 官方 3.7.3 基线无此符号';
+  }
+  return null;
+}
+
+/**
  * 识别本文档引入的 kbe/KBEngine 模块别名(import X / import X as Y),
  * 返回别名集合。无任何引入时返回空集——此时不接管导航/补全,交回 python
  * 扩展,避免误吞普通标识符。
@@ -586,6 +663,11 @@ function emitKbeStubBody(lines: string[]): Record<string, number> {
     enDoc.forEach((docLine, index) => {
       lines.push(`    """${index === 0 ? 'EN: ' : ''}${docLine}"""`);
     });
+    // KB-VER-002:非基线条目在桩 docstring 末尾追加版本归属注
+    const versionNote = engineApiVersionStubNote(entry);
+    if (versionNote) {
+      lines.push(`    """版本标注 / version: ${versionNote}"""`);
+    }
     if (entry.aliasOf) {
       lines.push(`    # kode 别名:实体指向 ${entry.aliasOf}`);
     }

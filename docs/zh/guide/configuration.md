@@ -154,7 +154,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` 路径(依赖图读取与实体注册) |
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
-| `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控 |
+| `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控;`fork-` 前缀值还会对 fork 档 KBEngine API 参考条目抑制「需 fork」标注(补全与导出存根),自定义 fork 版本未带前缀则保留标注(保守口径——宁多提示不漏报) |
 
 四个路径项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」(`kbengine.engineVersion` 是版本门控值,不走路径发现)。逐项细节:
 

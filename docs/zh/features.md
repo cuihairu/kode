@@ -69,6 +69,7 @@
 ## 类型桩与托管目录
 
 - **KBEngine.pyi API 存根导出** —— 内置 KBEngine Python API 索引导出为存根供 Pylance 使用；激活期静默自动导出、内容一致零写、手动命令入口 ——（证据：package.json#configuration `kbengine.python.stubExport`；package.json#contributes.commands `kbengine.python.exportStubs`；todo.md:54；src/pythonStubExport.ts、src/kbeModuleIndex.ts）
+- **KBEngine API 参考的引擎版本分层(KB-VER-002)** —— 内置 KBEngine 模块索引每个条目都带显式引擎版本档(`baseline` / `fork` / `pending`),按 api-*.md 偏差表归属(缺省=官方 3.7.3 基线,当前版本档集合含 1 个非基线条目:`MemoryStream` = `pending`);非基线条目在补全文档与导出的存根体中标注——`pending` 标注「待取证」(归属在官方 3.7.3 基线与 fork 3.12 间尚未定案),`fork` 标注「需 fork」(fork-3.12 新增、官方 3.7.3 基线无此符号,如 bots 模块,留在 baseapp 作用域索引之外);把 `kbengine.engineVersion` 设为 `fork-` 前缀值(如 `fork-3.12`)则对该构建抑制「需 fork」标注,而自定义 fork 版本若省略前缀仍按保守口径标注(宁多提示不漏报) ——（证据：package.json#configuration `kbengine.engineVersion`；src/kbeModuleIndex.ts `EngineApiVersion`/`engineApiVersionAnnotation`/`kbeCompletionDocumentation`/`engineApiVersionStubNote`；src/languageProviders.ts 补全接线；src/engineVersion.ts；tests/kbeModuleIndex.test.ts `KB-VER-002 版本分层标注`）
 - **kbe_types 分件 Python 类型桩** —— types.xml 自定义类型（FIXED_DICT→TypedDict、ARRAY、别名按依赖拓扑序发射）导出为分件 `.pyi` 并做别名解析 ——（证据：package.json#contributes.commands `kbengine.python.exportTypeStubs`；todo.md:37；commit c445f8a、bfaff30；src/pythonTypeStubs.ts）
 - **types.xml 变更自动重生成桩** —— didChange/didCreate/didDelete 三事件静默重导出类型桩 ——（证据：todo.md:35；src/pythonTypeStubs.ts `setupTypeStubRegeneration`）
 - **entity_types.pyi 实体桩** —— def 引用自定义类型的实体级类型声明，挂激活期与实体映射刷新 ——（证据：todo.md:136；src/entityTypeStubs.ts）

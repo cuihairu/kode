@@ -154,7 +154,7 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path (dependency graph reads and entity registration) |
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path |
 | `kbengine.assetsRoot` | string | `""` | Assets root (containing `res/`, `scripts/` below); empty = auto-discover |
-| `kbengine.engineVersion` | string | `3.7.3` | Integrated KBEngine engine version (fork builds use custom values like `fork-3.12`); knowledge-base layering and diagnostics gate features by this value |
+| `kbengine.engineVersion` | string | `3.7.3` | Integrated KBEngine engine version (fork builds use custom values like `fork-3.12`); knowledge-base layering and diagnostics gate features by this value; a `fork`-prefixed value also suppresses the 需 fork annotation on fork-tier KBEngine API reference entries in completion and exported stubs, while a custom fork version without the prefix keeps the annotation (conservative — annotate rather than under-report) |
 
 The four path settings are "optional overrides": a configured value is honored as-is, an unconfigured one goes through the discovery chain — see "Auto-Discovery of Path Settings" below (`kbengine.engineVersion` is a plain version gate, not a path). Per-key details:
 
