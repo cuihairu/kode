@@ -61,21 +61,34 @@ impl<'a> InvalidationGraph<'a> {
         names
     }
 
-    /// 变更该文件的受影响集 = 自身 ∪ ⋃(依赖它声明的名字的文件)
-    /// ∪ ⋃(调用它定义方法的文件)。
+    /// 变更该文件的传递闭包受影响集 = 自身 ∪ ⋃(依赖它声明的名字的文件)
+    /// ∪ ⋃(调用它定义方法的文件),并沿反向边继续传播至不动点:
+    /// A 调 B、B 调 C 时改 C,A 同样入集(否则 A 的索引/调用图保持陈旧)。
+    /// 防环:visited 集保证已处理文件不重入,有限步终止。
     /// 确定性:DocumentKey 自带 Ord,结果为排序集合,重复依赖自动折叠。
     pub fn affected_by(&self, key: &DocumentKey) -> BTreeSet<DocumentKey> {
         let mut affected: BTreeSet<DocumentKey> = BTreeSet::new();
         affected.insert(key.clone());
-        for name in self.declared_names(key) {
-            for dependent in self.index.dependents_of(&name) {
-                affected.insert(dependent);
+        let mut processed: BTreeSet<DocumentKey> = BTreeSet::new();
+        let mut frontier: Vec<DocumentKey> = vec![key.clone()];
+        while let Some(current) = frontier.pop() {
+            if !processed.insert(current.clone()) {
+                continue; // 已展开过(环/重边):不重入,有限步终止。
             }
-        }
-        if let Some(call) = self.call_dependents {
-            if let Some(dependents) = call.get(key) {
-                for dependent in dependents {
-                    affected.insert(dependent.clone());
+            for name in self.declared_names(&current) {
+                for dependent in self.index.dependents_of(&name) {
+                    if affected.insert(dependent.clone()) {
+                        frontier.push(dependent);
+                    }
+                }
+            }
+            if let Some(call) = self.call_dependents {
+                if let Some(dependents) = call.get(&current) {
+                    for dependent in dependents {
+                        if affected.insert(dependent.clone()) {
+                            frontier.push(dependent.clone());
+                        }
+                    }
                 }
             }
         }

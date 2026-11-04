@@ -115,7 +115,8 @@ fn dependency_task_planning_labels_changed_file_and_batches() {
             Ok(())
         })
     });
-    // 每文件一批:变更文件本身 single-file-update,依赖文件 dependency-update。
+    // 每文件一批:变更文件本身 single-file-update,依赖文件 dependency-update
+    // (RUST-6 传递闭包:Monster + entities.xml 均受影响,共 3 个任务)。
     let mut kinds: Vec<(TaskKind, u8)> = specs
         .iter()
         .map(|s| {
@@ -124,19 +125,63 @@ fn dependency_task_planning_labels_changed_file_and_batches() {
         })
         .collect();
     kinds.sort();
-    assert_eq!(
-        kinds,
-        vec![
-            (TaskKind::SingleFileUpdate, 0),
-            (TaskKind::DependencyUpdate, 2),
-        ]
-    );
+    let mut expected = vec![
+        (TaskKind::SingleFileUpdate, 0),
+        (TaskKind::DependencyUpdate, 2),
+        (TaskKind::DependencyUpdate, 2),
+    ];
+    expected.sort();
+    assert_eq!(kinds, expected);
     // 执行面:任务体拿到各自批的文件清单。
     for spec in specs {
         (spec.run)(&kode_scheduler::CancelToken::new()).unwrap();
     }
     let executed = exec.borrow().clone();
-    assert_eq!(executed.len(), 2);
+    assert_eq!(executed.len(), 3);
+}
+
+// RUST-6:affected_by 传递闭包 —— A 引 B、B 引 C,改 C 后 affected 含 B **和 A**。
+#[test]
+fn affected_set_propagates_transitive_chain() {
+    let mut index = SymbolIndex::new();
+    // C.def 声明名字 "C";B.def Parent=C(依赖 C,声明 "B");A.def Parent=B(依赖 B)。
+    index.update_batch(&[
+        (key("/proj/chain/C.def"), def_text(None, "hc", "UINT32")),
+        (
+            key("/proj/chain/B.def"),
+            def_text(Some("C"), "hb", "UINT32"),
+        ),
+        (
+            key("/proj/chain/A.def"),
+            def_text(Some("B"), "ha", "UINT32"),
+        ),
+    ]);
+    let graph = InvalidationGraph::new(&index);
+    let affected = graph.affected_by(&key("/proj/chain/C.def"));
+    assert!(
+        affected.contains(&key("/proj/chain/B.def")),
+        "单级:B 必须入集"
+    );
+    assert!(
+        affected.contains(&key("/proj/chain/A.def")),
+        "闭包:A 必须经 B 传播入集"
+    );
+    assert!(affected.contains(&key("/proj/chain/C.def")));
+}
+
+// RUST-6:环场景 A⇄B(调用反依赖)不死循环,有限步终止且集合正确。
+#[test]
+fn affected_set_terminates_on_dependency_cycle() {
+    let index = SymbolIndex::new();
+    let a = key("/proj/scripts/a.py");
+    let b = key("/proj/scripts/b.py");
+    let mut call: kode_scheduler::CallReverseIndex = Default::default();
+    call.entry(a.clone()).or_default().insert(b.clone());
+    call.entry(b.clone()).or_default().insert(a.clone());
+    let graph = InvalidationGraph::with_call_dependents(&index, &call);
+    let affected = graph.affected_by(&a); // 旧实现会因无 visited 集而无法保证终止（防新增迭代逻辑死循环）;新实现 visited 集截断。
+    assert_eq!(affected.len(), 2);
+    assert!(affected.contains(&a) && affected.contains(&b));
 }
 
 // C-20 交付③:调用反依赖 overlay 入失效 DAG —— 「改被调方文件 → 重算调用方文件」。
