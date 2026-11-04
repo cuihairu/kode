@@ -62,7 +62,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onTimer(self, timerID, userArg=None):
     INFO_MSG(f"timer {timerID} fired with userArg={userArg}")
     self.delTimer(timerID)`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:4327; kbe/src/server/baseapp/entity.cpp:1656'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:4333; kbe/src/server/baseapp/entity.cpp:1662'
   },
   {
     name: 'onRestore',
@@ -88,7 +88,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onWriteToDB(self, dbContext=None):
     INFO_MSG("Writing to database")
     self.lastSavedAt = time.time()`,
-    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1399; kbe/src/server/cellapp/entity.cpp:1259'
+    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1405; kbe/src/server/cellapp/entity.cpp:1259'
   },
   {
     name: 'onPreArchive',
@@ -100,7 +100,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onPreArchive(self):
     if self.dirty:
         self.checksum = self.computeChecksum()`,
-    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1292'
+    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1298'
   },
 
   // ==================== 移动 ====================
@@ -208,7 +208,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '传送成功后',
     example: `def onTeleportSuccess(self, nearbyEntity=None):
     INFO_MSG("teleport success")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3811; kbe/src/server/baseapp/entity.cpp:1561'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3811; kbe/src/server/baseapp/entity.cpp:1567'
   },
   {
     name: 'onTeleportFailure',
@@ -219,7 +219,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '传送失败时',
     example: `def onTeleportFailure(self):
     ERROR_MSG("teleport failed")`,
-    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1552; kbe/src/server/cellapp/entity.cpp:3794'
+    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1558; kbe/src/server/cellapp/entity.cpp:3794'
   },
 
   // ==================== 陷阱 ====================
