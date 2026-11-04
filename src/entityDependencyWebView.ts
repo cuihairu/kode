@@ -616,12 +616,29 @@ export class EntityDependencyWebView {
   private currentCallGraph: CallGraphGraph | null = null;
   private pendingExport: { format: 'png' | 'svg'; uri: vscode.Uri } | null = null;
   private mode: DependencyPanelMode = 'dependency';
+  // KODE-PERF-005:刷新代际守卫——并发刷新/关面板/切模式后旧 RPC 结果不写入。
+  // 每代刷新自增 refreshGeneration 并持 CancellationTokenSource;新一代开始
+  // 或面板关闭取消旧代(收集循环提前终止),旧代结果在写入面按代际弃置。
+  private refreshGeneration = 0;
+  private refreshCancellation: vscode.CancellationTokenSource | null = null;
 
   constructor(
     private context: vscode.ExtensionContext,
     private outputChannel: vscode.OutputChannel
   ) {
     this.analyzer = new EntityDependencyAnalyzer(context);
+  }
+
+  /**
+   * KODE-PERF-005:写入面守卫——代际最新 + 面板在 + 模式未换代,三面齐才可写。
+   * 旧代(并发刷新被取代/关面板/切模式)任一不满足即整体弃置,不覆盖新代。
+   */
+  private canWriteRefresh(generation: number, expectedMode: DependencyPanelMode): boolean {
+    return (
+      generation === this.refreshGeneration &&
+      this.panel !== null &&
+      this.mode === expectedMode
+    );
   }
 
   /** 面板标题(双模式)。 */
@@ -656,6 +673,10 @@ export class EntityDependencyWebView {
 
     // 处理面板关闭
     this.panel.onDidDispose(() => {
+      // KODE-PERF-005:关面板即取消在途收集/RPC 代,旧代结果在写入面被弃。
+      this.refreshCancellation?.cancel();
+      this.refreshCancellation?.dispose();
+      this.refreshCancellation = null;
       this.panel = null;
     });
 
@@ -709,15 +730,23 @@ export class EntityDependencyWebView {
     if (!this.panel) {
       return;
     }
+    // KODE-PERF-005:新一代刷新开始——取消旧代收集 + 代际自增,旧代结果在
+    // 写入面被弃(同模式并发刷新的旧代不再覆盖新代;关面板/切模式同守卫)。
+    const previous = this.refreshCancellation;
+    const cancellation = new vscode.CancellationTokenSource();
+    this.refreshCancellation = cancellation;
+    previous?.cancel();
+    previous?.dispose();
+    const generation = ++this.refreshGeneration;
 
     try {
       if (this.mode === 'callgraph') {
-        await this.refreshCallGraph();
+        await this.refreshCallGraph(generation, cancellation.token);
         return;
       }
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       let render: RenderGraph | null = null;
-      if (root) {
+      if (root && !cancellation.token.isCancellationRequested) {
         try {
           const rust = await buildDependencyGraphInRust(root);
           if (rust) {
@@ -728,15 +757,19 @@ export class EntityDependencyWebView {
           this.outputChannel.appendLine(`Rust 依赖图推导失败,回落 TS: ${rustError}`);
         }
       }
-      if (!render) {
+      if (!render && !cancellation.token.isCancellationRequested) {
         render = normalizeDependencyGraph(await this.analyzer.analyze());
       }
 
-      // RPC 在途面复检(KODE 审核发现):面板在途关闭(panel=null)时写入
-      // 会 TypeError 冒泡成「刷新依赖图失败」;在途 setMode 切到 callgraph
-      // 时旧依赖图数据不得渲染进新模式视图——面板没了或模式已换代,本轮
-      // 旧代渲染整体丢弃(新一代刷新自会写入最新数据)。
-      if (!this.panel || this.mode !== 'dependency') {
+      // RPC 在途面复检(KODE 审核发现)+ KODE-PERF-005 代际守卫:面板在途
+      // 关闭(panel=null)或代际已换代(并发刷新/切模式)时旧结果不得渲染进
+      // 当前视图——本轮旧代渲染整体丢弃(新一代刷新自会写入最新数据)。
+      if (!this.canWriteRefresh(generation, 'dependency')) {
+        return;
+      }
+      // KODE-PERF-005:取消代不满足 canWriteRefresh(已 return);此处 render 为
+      // null 仅剩「本代未取消但推导得空」的异常态,按空图处理不写 null。
+      if (!render) {
         return;
       }
 
@@ -748,6 +781,10 @@ export class EntityDependencyWebView {
       // 获取 Webview 内容
       this.panel.webview.html = this.getWebviewContent(mermaidGraph, render, null, false);
     } catch (error) {
+      // KODE-PERF-005:旧代被取代/取消时错误不再冒泡成「刷新依赖图失败」。
+      if (generation !== this.refreshGeneration) {
+        return;
+      }
       this.outputChannel.appendLine(`刷新依赖图失败: ${error}`);
       vscode.window.showErrorMessage(`刷新依赖图失败: ${error}`);
     }
@@ -760,12 +797,20 @@ export class EntityDependencyWebView {
    *   标记(面板出「已截断」警告条并如实显示发现总数,绝不静默装完整);
    * - 宿主不阻塞:有界并发异步读(旧码同步 readWorkspaceTextFile 逐文件阻塞)。
    */
-  private async collectPythonFiles(): Promise<CollectedPythonFiles> {
+  private async collectPythonFiles(
+    token?: vscode.CancellationToken
+  ): Promise<CollectedPythonFiles> {
     const merged = new Map<string, vscode.Uri>();
     for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      // KODE-PERF-005:取消代不再发起新根收集(旧代结果在写入面被弃)。
+      if (token?.isCancellationRequested) {
+        break;
+      }
       const uris = await vscode.workspace.findFiles(
         new vscode.RelativePattern(folder.uri, '**/*.py'),
-        CALLGRAPH_EXCLUDE_GLOB
+        CALLGRAPH_EXCLUDE_GLOB,
+        undefined,
+        token
       );
       for (const uri of uris) {
         merged.set(uri.fsPath, uri);
@@ -777,7 +822,7 @@ export class EntityDependencyWebView {
     const selected =
       totalDiscovered > CALLGRAPH_MAX_FILES ? all.slice(0, CALLGRAPH_MAX_FILES) : all;
     return {
-      files: await this.readPythonFilesAsync(selected),
+      files: await this.readPythonFilesAsync(selected, token),
       truncated: totalDiscovered > CALLGRAPH_MAX_FILES,
       totalDiscovered
     };
@@ -785,7 +830,8 @@ export class EntityDependencyWebView {
 
   /** 有界并发异步读(默认 8 路);单文件读失败回落空串(与旧同步口径一致)。 */
   private async readPythonFilesAsync(
-    uris: vscode.Uri[]
+    uris: vscode.Uri[],
+    token?: vscode.CancellationToken
   ): Promise<Array<{ path: string; text: string }>> {
     const files: Array<{ path: string; text: string }> = [];
     let nextIndex = 0;
@@ -793,6 +839,10 @@ export class EntityDependencyWebView {
       { length: Math.min(CALLGRAPH_READ_CONCURRENCY, uris.length) },
       async () => {
         while (nextIndex < uris.length) {
+          // KODE-PERF-005:取消代不再拉取新文件(在读面尽早停,不空耗 IO)。
+          if (token?.isCancellationRequested) {
+            break;
+          }
           const index = nextIndex;
           nextIndex += 1;
           const uri = uris[index];
@@ -813,7 +863,10 @@ export class EntityDependencyWebView {
   }
 
   /** callgraph 模式刷新:收集全部根 *.py → Rust RPC → 归一 → 渲染。 */
-  private async refreshCallGraph(): Promise<void> {
+  private async refreshCallGraph(
+    generation: number,
+    token: vscode.CancellationToken
+  ): Promise<void> {
     if (!this.panel) {
       return;
     }
@@ -822,7 +875,12 @@ export class EntityDependencyWebView {
     try {
       // KODE-PERF-004:多根收集(旧码 root[0] 单根);process_topology.xml
       // 是项目级清单,仍取主根(根[0]),无根时空清单。
-      const collected = await this.collectPythonFiles();
+      const collected = await this.collectPythonFiles(token);
+      // KODE-PERF-005:收集在途被取消(关面板/切模式/并发刷新)→ 不再发 RPC、
+      // 不读清单,旧代整体丢弃。
+      if (token.isCancellationRequested) {
+        return;
+      }
       const primaryRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       const manifestText = primaryRoot
         ? await this.readProcessTopologyText(primaryRoot)
@@ -848,14 +906,18 @@ export class EntityDependencyWebView {
         rustUnavailable = true;
       }
     } catch (rustError) {
+      // KODE-PERF-005:旧代(被取代/取消)的错误不冒泡成「Rust 调用图失败」。
+      if (token.isCancellationRequested || generation !== this.refreshGeneration) {
+        return;
+      }
       rustUnavailable = true;
       this.outputChannel.appendLine(`Rust 调用图失败: ${rustError}`);
     }
 
-    // 在途面复检(KODE 审核发现):collect/RPC 在途时面板关闭(panel=null)
-    // 的写入会 TypeError 冒泡;在途 setMode 切回 dependency 时旧调用图不得
-    // 渲染——面板没了或模式已换代,本轮旧代结果整体丢弃。
-    if (!this.panel || this.mode !== 'callgraph') {
+    // KODE-PERF-005 代际守卫(取代在途面复检):collect/RPC 在途时面板关闭
+    // (panel=null)的写入会 TypeError 冒泡;在途 setMode 切回 dependency 或
+    // 并发同模式刷新时,旧代调用图不得渲染——本轮旧代结果整体丢弃。
+    if (!this.canWriteRefresh(generation, 'callgraph')) {
       return;
     }
 

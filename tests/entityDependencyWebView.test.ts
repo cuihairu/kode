@@ -1,6 +1,10 @@
 import type * as vscode from 'vscode';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Uri } from './fake-vscode/core';
+import {
+  CancellationToken,
+  CancellationTokenSource,
+  Uri
+} from './fake-vscode/core';
 import {
   workspace as stubWorkspace,
   workspaceState,
@@ -480,11 +484,17 @@ describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换
       panel: vscode.WebviewPanel | null;
       analyzer: { analyze(): Promise<DependencyGraph> };
       refreshGraph(): Promise<void>;
-      refreshCallGraph(): Promise<void>;
-      collectPythonFiles(): Promise<CollectedPythonFiles>;
+      refreshCallGraph(
+        generation: number,
+        token: CancellationToken
+      ): Promise<void>;
+      collectPythonFiles(
+        token?: CancellationToken
+      ): Promise<CollectedPythonFiles>;
       mode: 'dependency' | 'callgraph';
       currentRender: RenderGraph | null;
       currentCallGraph: CallGraphGraph | null;
+      refreshGeneration: number;
     };
 
   const deferred = <T>() => {
@@ -547,7 +557,9 @@ describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换
     const gate = deferred<CollectedPythonFiles>();
     impl.collectPythonFiles = () => gate.promise;
 
-    const pending = impl.refreshCallGraph();
+    // KODE-PERF-005:经 refreshGraph 走真实代际(生成 CTS + 代际自增),不直调
+    // refreshCallGraph——验证写入面守卫对「面板在途关闭」的整链行为。
+    const pending = impl.refreshGraph();
     impl.panel = null; // 面板在途关闭:写入面必须复检后放弃
     gate.resolve({ files: [], truncated: false, totalDiscovered: 0 });
     await expect(pending).resolves.toBeUndefined();
@@ -569,10 +581,79 @@ describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换
     const gate = deferred<CollectedPythonFiles>();
     impl.collectPythonFiles = () => gate.promise;
 
-    const pending = impl.refreshCallGraph();
+    const pending = impl.refreshGraph();
     impl.mode = 'dependency'; // 在途切换:旧调用图结果丢弃
     gate.resolve({ files: [], truncated: false, totalDiscovered: 0 });
     await expect(pending).resolves.toBeUndefined();
+
+    expect(fakePanel.webview.html).toBe('');
+    expect(impl.currentCallGraph).toBeNull();
+    expect(messages.error).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('callgraph 同模式并发刷新:旧代结果不覆盖新代(写入面代际守卫)', async () => {
+    windowState.reset();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = lifecycleInternals(webview);
+    impl.mode = 'callgraph';
+    // 写入记账:每次 html 赋值入栈,便于断言「旧代被取代后不再写」。
+    const writes: string[] = [];
+    const fakePanel = {
+      webview: {
+        get html() {
+          return writes[writes.length - 1] ?? '';
+        },
+        set html(value: string) {
+          writes.push(value);
+        }
+      }
+    } as unknown as vscode.WebviewPanel;
+    impl.panel = fakePanel;
+    // 每次 collectPythonFiles 返回新 gate,代际各自在途(旧码无代际,两会写)。
+    const gates: Array<{
+      promise: Promise<CollectedPythonFiles>;
+      resolve: (value: CollectedPythonFiles) => void;
+    }> = [];
+    impl.collectPythonFiles = () => {
+      const gate = deferred<CollectedPythonFiles>();
+      gates.push(gate);
+      return gate.promise;
+    };
+
+    const first = impl.refreshGraph(); // 代 1:collect 在途 gates[0]
+    const second = impl.refreshGraph(); // 代 2:取消代 1,collect 在途 gates[1]
+    gates[1].resolve({ files: [], truncated: false, totalDiscovered: 0 });
+    await second;
+    gates[0].resolve({ files: [], truncated: false, totalDiscovered: 0 });
+    await first;
+
+    // 关键断言:仅最新代(代 2)写入,旧代(代 1)被取代后结果整体弃置。
+    expect(writes).toHaveLength(1);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('callgraph 收集在途被取消:不再发 RPC、不写入(代际 token 守卫)', async () => {
+    windowState.reset();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = lifecycleInternals(webview);
+    impl.mode = 'callgraph';
+    const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
+    impl.panel = fakePanel;
+    // 令写入面代际守卫放行(gen===refreshGeneration),隔离验证「收集后 token
+    // 已取消 → 提前 return」这一处守卫(否则写守卫也会拦下,测不到点)。
+    impl.refreshGeneration = 1;
+    const cancellation = new CancellationTokenSource();
+    cancellation.cancel();
+    impl.collectPythonFiles = async () => ({
+      files: [],
+      truncated: false,
+      totalDiscovered: 0
+    });
+
+    await impl.refreshCallGraph(1, cancellation.token);
 
     expect(fakePanel.webview.html).toBe('');
     expect(impl.currentCallGraph).toBeNull();
