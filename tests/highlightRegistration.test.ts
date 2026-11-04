@@ -295,7 +295,13 @@ describe('.vscodeignore 打包防漏锁(批103,工单④类)', () => {
         '!out/pythonParserWorker.js',
         // 2026-10-29 IDE-REL-004: 构建身份随包分发,运行期 readBuildCommit
         // 只读 <extensionPath>/out/buildCommit.json(安装产物提交=构建输入)
-        '!out/buildCommit.json'
+        '!out/buildCommit.json',
+        // 2026-11-04 打包防漏: 本仓 git worktree 席位目录与 scratch 游离
+        // 目录(37000+ 文件/538MB,含断链 symlink——被整目录扫进 vsix 且
+        // yazl 打包崩溃;CI 无此目录)
+        'wt/',
+        'kode-wt-*/',
+        'scratch/'
       ])
     );
   });
