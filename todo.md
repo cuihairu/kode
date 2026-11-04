@@ -1120,3 +1120,102 @@
 - [ ] `KB-VER-003 [P1]` 版本越界提示：项目 def/config 使用了超出所选版本的特性（fork-only 字段在 3.7.3 下）时给 Warning（检测面从既有 xml/def 解析管道入手）。验收：netns 式夹具测一正一反。
 - [ ] `KB-VER-004 [P2]` 版本自动探测：从引擎安装目录读版本标记（res/version 或构建产物），打开项目时建议 engineVersion 值（不自动改用户设置）。
 
+
+
+## 外部深度审核跟踪：KR-AUD（2026-11-04 落地，deepseek 通道全量重核）
+
+> 来源：外部深度审核（基准 c5954f3），逐条对 HEAD `e512e99` 重核后落地。
+> 对照表（每条证据与定性）见 [docs/review/external-deep-audit-2026-11-04.md](docs/review/external-deep-audit-2026-11-04.md)——先读对照表再动工，行号以该档为准。
+> 口径：属实=HEAD 上仍在；部分属实=结构在但子声明不成立/已缓解（动手前先读档内定性）；编号 KR-AUD 为本节首用，与在飞席位无冲突。
+> 划界：dataflow/callgraph 项（09-21）与 KODE-AUD-007/008 席位同文件，派单须知会；UI-2/UI-4 行号已被今日 perf 批（1403e72）刷新。
+> 推进顺序：P1（25/26/27/38/39/67/68/69/70/80/81）→ P2 竞态与双轨正确性（09-14/28/29/40-44/53-56）→ P3 择期（转义/CSP 一批统一做：08/38/43/49/50）。验收统一口径：修复+判别测试（修复前红/修复后绿）+既有门禁全绿；引擎语义项（67-72/80-88）须附与引擎源码对拍的 fixture。
+
+- [ ] KR-AUD-01 [P2] CORE-1 src/kodeCoreClient.ts:248-275 dispose 挂起双路径——shutdown(:260) 无超时（仍开）+ 末尾 `await exited`(:273) 对 race 超时时已退出进程无守卫（残边；1.5s race+SIGKILL 已缓解主路径）。验收：shutdown 超时→SIGKILL；exit-after-race 不挂。
+- [ ] KR-AUD-02 [P3] CORE-2 src/kodeCoreClient.ts:183-189 resolve/reject 不清 cancelTimer——已完成 id 收到迟到 $/cancelRequest。验收：完成后无取消通知。
+- [ ] KR-AUD-03 [P3] CORE-3 src/kodeCoreClient.ts:396-402 重启握手失败仅记 stderr，child 不清空→后续请求吃误导性 -32002（server.rs:178）。验收：握手失败即杀子进程走 EXITED 路径。
+- [ ] KR-AUD-04 [P2] DIA-1 src/diagnosticScheduler.ts:417,481-485 computeAsync 失败重抛产生未处理 rejection。验收：错误路径无 UnhandledPromiseRejection，错误可观测。
+- [ ] KR-AUD-05 [P3] TST-1 src/pythonTestRunner.ts:268-295 spawnTestProcess 无超时/无 kill/输出无界。验收：挂死 pytest 可取消，输出有上限。
+- [ ] KR-AUD-06 [P3] TST-2 src/pythonTestRunner.ts:59 `\S+` 截断带空格参数化用例名。验收：`test_x[param with space]` 解析成功。
+- [ ] KR-AUD-07 [P3] PAR-1 src/pythonParserWorkerHost.ts:214-215 fileQueues 条目永不回收。验收：任务排干后条目删除，长会话 map 不随大文件数线性涨。
+- [ ] KR-AUD-08 [P3] 自查-CSP src/runtimeQueryWebView.ts:369 unsafe-inline。验收：nonce+cspSource 收紧（与 50 批量做）。
+- [ ] KR-AUD-09 [P2] RUST-1 dataflow.rs:332-374 推导式 elt 读先于 target 写，elt 内 def-use 断链。验收：`[str(x) for x in xs]` elt 内 use 有链。〔与 KODE-AUD-007 席位划界〕
+- [ ] KR-AUD-10 [P2] RUST-2 dataflow.rs:218-223 Match guard 不读、pattern 捕获不 def。验收：`case [a,b]:` 捕获 def+guard 读各一测试。〔callgraph 半边已由 KODE-AUD-008 闭合〕
+- [ ] KR-AUD-11 [P2] RUST-3 symbols.rs:46+dataflow.rs:224-233 `import a.b` 绑定名取首段。验收：dotted import def/use 链合拢+跨文件解析按顶层名。
+- [ ] KR-AUD-12 [P2] RUST-4 scheduler.rs:452-479 ensure 不查 outcome.decision，RejectedQueueFull/StaleDropped 写 id=0 假 keyed 条目永久卡。验收：入队被拒不写 keyed，重试可恢复。
+- [ ] KR-AUD-13 [P2] RUST-5 scheduler.rs:442 tasks HashMap 终态任务永不摘除。验收：终态消费后 remove/环形窗口，长会话任务数有界。
+- [ ] KR-AUD-14 [P2] RUST-6 invalidation.rs:67-83 affected_by 单级传播不取闭包。验收：A→B→C 改 C 时 A 入受影响集。
+- [ ] KR-AUD-15 [P3] RUST-7 graph.rs:93 `self.` 前缀恒回 caller_file（引擎 cell 侧漏报面；原稿自述取舍，登记待议）。
+- [ ] KR-AUD-16 [P3] RUST-8 dataflow.rs:247-248 Raise/Assert 表达式读漏记。验收：`raise err` 的 err 有 use。
+- [ ] KR-AUD-17 [P3] RUST-9 dataflow.rs:206-211 except 捕获名 def 行号记到 try 行。验收：def 行=handler 行。
+- [ ] KR-AUD-18 [P3] RUST-10 dataflow.rs:399 lambda 形参遮蔽不建模。验收：`lambda x: x+1` 不连外层 x 链。
+- [ ] KR-AUD-19 [P3] RUST-11 dataflow.rs:249-250 global/nonlocal 后赋值建假局部 def。验收：global x 赋值不产局部链。
+- [ ] KR-AUD-20 [P3] RUST-12 callgraph.rs:247-256 嵌套 def 继承外层 caller_class 产伪 (Foo, inner) 边。〔KODE-AUD-008 残留面，派单知会〕验收：方法体内嵌套函数不产类方法边。
+- [ ] KR-AUD-21 [P3] RUST-13 callgraph.rs:309 lambda 归外层 caller vs 嵌套 def 归自身——口径统一。验收：两者一致并以测试固化。
+- [ ] KR-AUD-22 [P3] RUST-14 symbols.rs:159 注释顺序错（posonly→pos→vararg→kwonly→kwarg）+ scheduler.rs:646-686 run 闭包 panic 无 catch_unwind 卡死调度。验收：注释修正+panic 按 Failed 终态落账。
+- [ ] KR-AUD-23 [P2级] RUST-注1 invalidation.rs:115,129-135 plan_dependency_tasks：changed 与依赖同批丢 SingleFileUpdate 优先级。验收：changed 强制单独成批。
+- [ ] KR-AUD-24 [P3级] RUST-注2 journal.rs:29 无扩展名路径产 `xxx..tmp` 临时名（无功能影响，防回归登记）。
+- [ ] KR-AUD-25 [P1] IDX-1 entityMapping.ts:215,462-470,528,1192 removedRootKeys 只加不删，根重加入后永久拦 null。验收：根重新登记即解除拉黑，A→B→A 切换索引恢复。
+- [ ] KR-AUD-26 [P1] IDX-2 pythonClassIndex.ts:704-782 ensureCompositionRoots 连续让位 8 次 fall-through 只打日志：rootsMap 不落地/metrics 不 end/rootsPromise 不清→组合根查询永久空。验收：fall-through 按最后快照落地或清 rootsPromise 允许重试（边缘场景注入测试）。
+- [ ] KR-AUD-27 [P1] IDX-3 workspaceIndex.ts:119-137 watcher(:131) 晚于首扫 await(:129)——初扫窗口磁盘变更永久漏。验收：对齐 AUD-074 口径（watcher 先挂或扫描后 stat 指纹复核）。
+- [ ] KR-AUD-28 [P2] IDX-4 pythonClassIndex.ts:377,496-498 单文件 invalidate 作废整扫描代+loadFile 无指纹短路。验收：关单文件不触发全仓重发现/重解析。
+- [ ] KR-AUD-29 [P2] IDX-5 globalDataIndex.ts:1643-1652 scanWorker 循环头无 generation 复核（守卫仅在 indexFile 层 :1718），初扫中 removeRoot 空根复活违反 AUD-071。验收：循环头 generation 复核测试。
+- [ ] KR-AUD-30 [P3] IDX-6 sharedFileEvents.ts:44 事件热路径 statSync 同步 IO。验收：改异步 fs.stat。
+- [ ] KR-AUD-31 [P3] IDX-7 dependencyGraph.ts:34 entities.xml 缺 `/` 前缀锚。验收：`xxxentities.xml` 不误判。
+- [ ] KR-AUD-32 [P3] IDX-8 pythonParser.ts:147-157 `from . import mod` 兄弟模块解析落空（解析侧轻核）。验收：`helper.Cls()` 跳转命中。
+- [ ] KR-AUD-33 [P3] IDX-9 kbeModuleIndex.ts:408-412 `import os, kbe` 逗号行不注册别名。验收：该写法整文件接管。
+- [ ] KR-AUD-34 [P3] IDX-10 workspaceDiscovery.ts:225,279-287 发现链缓存会话内不失效（轻核）。验收：新建 entity_defs 可发现+瞬时失败可重试。
+- [ ] KR-AUD-35 [P3] IDX-11 globalDataIndex.ts:2076 rebuild 无界并发。验收：并发上限常量+测试。
+- [ ] KR-AUD-36 [P3] IDX-12 definitionWorkspace.ts:172-200 布局解析无缓存，悬停热路径多次 existsSync。验收：按 rootConfigGeneration 缓存。
+- [ ] KR-AUD-37 [P3级] IDX-注 pathIdentity 不折叠 `..`/pythonExtraPaths 大小写敏感/noteSaved 每键两遍正则——原稿备注级，未逐项复核，动手前先自行取证。
+- [ ] KR-AUD-38 [P1] RT-1=UI-1 logWebView.ts:602-605 title(log.raw)/component 未转义直进 innerHTML——webview XSS。验收：两处 escapeHtml+判别测试（恶意日志行不产生标签）。
+- [ ] KR-AUD-39 [P1] RT-2 processManager.ts:336-365 stop 残边：spawn 失败 error-only 无 exit 时依赖超时升级 kill 兜底。验收：error 事件 resolve exited+超时兜底测试（注意 RUN-007 结构已在，勿回退）。
+- [ ] KR-AUD-40 [P2] RT-3 hotReloadRetryCommand.ts:72,261 重试路径绕过 gateDefChanges（fire 路径 hotReload.ts:575,625）。验收：结构性 def 变更经重试通道同样被拦。
+- [ ] KR-AUD-41 [P2] RT-4 debugConfig.ts:430,504,870-891,937 硬编码默认密码回落 `pwd123456`（原稿密码串 ucs775502 不属实，结构问题属实）。验收：无默认回落，缺配置显式提示。
+- [ ] KR-AUD-42 [P2] RT-5 debugConfig.ts:803,824-826 updateLaunchJson 按名称前缀误删用户配置。验收：生成条目加隐藏标记按标记清理。
+- [ ] KR-AUD-43 [P2] RT-6=UI-3 monitoringWebView.ts:243,601,1034 多字段未转义+JSON 直插 script+CDN。验收：escapeHtml 全覆盖+`\u003c` 替换+Chart.js 本地打包。
+- [ ] KR-AUD-44 [P2] RT-7≈UI-13 logWebView.ts:51-56 collector 路径每条日志整页重渲（logHub 增量路径 :96 未接）；monitoring 过滤同款。验收：高频路径节流+append-only。
+- [ ] KR-AUD-45 [P3] RT-8 hotReload.ts:298+hotReloadRetryCommand.ts:60-65 `undefined | reason` 文案。验收：filter(Boolean).join。
+- [ ] KR-AUD-46 [P3] RT-9 hotReload.ts:338 sendViaChannel accepted 即终态，与另一路径 applied digest 核验语义不一致（轻核）。验收：两路径状态语义对齐。
+- [ ] KR-AUD-47 [P3] RT-10 hotReloadRetryCommand.ts sentAt 时点与 fire 路径不一致（原稿未逐行复核项，动手前先取证）。验收：统一语义+注释固化。
+- [ ] KR-AUD-48 [P3] RT-11 serverManager.ts:583,590 existsSync/statSync TOCTOU。验收：statSync 入 try 或单次 stat 判存在。
+- [ ] KR-AUD-49 [P3] RT-12 telnetWebView.ts:365-404 插值未全转义+querySelector 拼接(:400)。验收：escapeHtml+CSS.escape。
+- [ ] KR-AUD-50 [P3] RT-13 monitoring/log/telnet/entityDependency/entityFlow 五 webview 均无 CSP。验收：最小 CSP 或 nonce（与 08/38/43 一批统一做）。
+- [ ] KR-AUD-51 [P3] RT-14 telnetClient.ts:141-243 connect 无超时。验收：socket 超时+destroy。
+- [ ] KR-AUD-52 [P3] RT-15 quickActions.ts:177-190 存活终端复用语义需明确+Windows `%`→`%%`。验收：复用语义注释固化+Windows 分支转义。
+- [ ] KR-AUD-53 [P2] UI-2 entityDependencyWebView.ts:1215(CDN)/1255(securityLevel loose)/1012(statCard 未转义)+entityFlowWebView.ts:276——CDN 供应链+离线失效+标签注入。验收：mermaid/chart.js 离线打包+nonce CSP+strict+escapeHtml（行号为 1403e72 后新行号）。
+- [ ] KR-AUD-54 [P2] UI-4 definitionWorkspace.ts:153 无参回落第一根；extension.ts:1626,1645,1746 无参调用点实核（entityDependencyWebView/databaseSimulator 旧调用点已重构未复核，动手前重定位）。验收：命令入口传根，多根不串。
+- [ ] KR-AUD-55 [P2] UI-5 extension.ts:5318-5319 entityDefsPath/entitiesXmlPath 不在配置失效清单。验收：两键变更触发 schema/索引失效。
+- [ ] KR-AUD-56 [P2] UI-6 inferPipeline.ts:305-444 watcher 无防抖无互斥，并发 unlink/write 竞态。验收：debounce+在途互斥（dirty 补一轮）。
+- [ ] KR-AUD-57 [P3] UI-7 extension.ts:5521-5522 serverManager.dispose() 重复调用笔误。验收：删一行。
+- [ ] KR-AUD-58 [P3] UI-8 selfAttributeNoneDiagnostics.ts:34,72-74 原文行匹配 self.x.y 无掩码，字符串/注释假阳性。验收：接 pythonLexicalMask+假阳性回归测试。
+- [ ] KR-AUD-59 [P3] UI-9 selfAttributeFlowTypes.ts:149,177 增强赋值误捕获 RHS。验收：`+=` 排除+流类型保持测试。
+- [ ] KR-AUD-60 [P3] UI-10 typeInlayHints.ts:53 不消费 CancellationToken。验收：token 透传+取消生效。
+- [ ] KR-AUD-61 [P3] UI-11 eventApi.ts:70 全仓逐文件 openTextDocument。验收：改索引/缓存路径，大仓 F12 不秒卡。
+- [ ] KR-AUD-62 [P3] UI-12 entityBuiltinProperties.ts:205-215+languageProviders.ts:726 内建属性 inlay 在注释/字符串产提示。验收：掩码后匹配。
+- [ ] KR-AUD-63 [P3] UI-14 entityDependency.ts:322-365 calculateMaxDepth 递归臂不可达（istanbul ignore 自证），继承深度恒 1。验收：真实链深计算+统计口径变更登记。
+- [ ] KR-AUD-64 [P3] UI-15 pythonReturnTypeInference.ts:42,79,83 赋值检测跑原始行，三引号内误判。验收：掩码先行+假阳性回归。
+- [ ] KR-AUD-65 [P3] UI-16 languageProviders.ts hover/定义数据字典口径不一致+每次悬停全文扫描。验收：口径统一+缓存。
+- [ ] KR-AUD-66 [P3] UI-17 projectProfiles.ts:108-127 create() 丢弃 input.hotReload。验收：字面量补拷贝+透传测试。
+- [ ] KR-AUD-67 [P1] DEF-1 messageTable.ts:605-608,463-466 接口 def 提前 return 跳过自身 Interfaces 递归与组件槽注册——utype/aliasID 与引擎错位。验收：带 Components/嵌套 Interfaces 的接口 fixture 与引擎对拍（引擎侧 entitydef.cpp:611-638 断言保留原稿）。同步修 Rust 侧闭包发现与注释。
+- [ ] KR-AUD-68 [P1] DEF-2 kbengineProtocol.ts:649-663 cprofile 分支漏读 timingLength，行数据整体错位。验收：夹具帧解析与引擎 CProfileHandler 写序对拍（引擎行号保留原稿）。
+- [ ] KR-AUD-69 [P1] DEF-3 entityWizard.ts:97-98 模板生成 `<position>` 触发引擎受限属性拒绝。验收：新向导产物不含受限名（position/direction/spaceID），与 defAnalyzer 检查一致。
+- [ ] KR-AUD-70 [P1] DEF-4 defCallChain.ts:135 `lines.slice(bodyStart)` 无 endLine 截尾，兄弟方法调用误归属。验收：`slice(bodyStart, endLine)`+同文件双方法 fixture。
+- [ ] KR-AUD-71 [P2] DEF-5 defReferenceGraph.ts:185-200 组件/接口 Parent 解析目录与引擎不一致（硬编码 category:'entity' :191）。验收：组件 Parent 按 components/ 目录解析，接口 Parent 忽略。
+- [ ] KR-AUD-72 [P2] DEF-6 definitionSemantics.ts:427-433,602-607 接口 def Parent 被合并进语义（引擎不可见）。验收：interface 解析丢弃 Parent。
+- [ ] KR-AUD-73 [P2] DEF-7 clientSdkGenerator.ts:284-367 实体 SDK 不合并父类/接口成员、无 extends（轻核）。验收：继承实体 SDK 含父链成员。
+- [ ] KR-AUD-74 [P2] DEF-8 codeGenerator.ts legacy 分支类名/目录与引擎约定不符。验收：对齐新向导或移除 legacy。
+- [ ] KR-AUD-75 [P3] DEF-9 defParser.ts:481 tokenizeXml `[^>]*?` 属性值含 '>' 提前终止。验收：注释/CDATA/属性值含 '>' 的定位不 desync。
+- [ ] KR-AUD-76 [P3] DEF-10 defChain.ts:73,100,127 嵌套 Interfaces 不进链式视图。验收：嵌套接口成员入链。
+- [ ] KR-AUD-77 [P3] DEF-11 defSymbolReferences.ts:245 仅识别 'Interface' 一种包装名（引擎接受四种）。验收：复用 defRenamer 常量覆盖四种。
+- [ ] KR-AUD-78 [P3] DEF-12 generatedSourceMap.ts:20-31 硬编码 line 0/2 全覆盖 key 0。验收：按实际类起始行分配。
+- [ ] KR-AUD-79 [P3] DEF-13 clientSdkGenerator.ts:390 `<Arg>ARRAY<of>X</of></Arg>` 只取 "ARRAY"。验收：识别 `<of>` 子元素。
+- [ ] KR-AUD-80 [P1] RSV-1 def_md5.rs:998-1005 load_interfaces 语义建模错误（child_el 具名查找+取元素名，引擎为 FirstChild 非注释子节点 getKey）——接口内容整体缺席 md5。验收：Avatar.def 文本/元素两种形态与引擎对拍。〔golden 为自推导，须先补引擎对拍夹具〕
+- [ ] KR-AUD-81 [P1] RSV-2 def_md5.rs:1042-1055 component_type_name 误取元素名 "Type"（应取 `<Type>` 文本，按引擎三步导航）。验收：`<bag><Type>Inventory</Type>` 夹具 md5 与引擎一致。
+- [ ] KR-AUD-82 [P2] RSV-3 def_md5.rs:341-364,543-548 is_entitycall 依赖可变 alias_name，types.xml 别名即失效。验收：改用构造即知的 TypeKind 判定，register 不覆写类型元信息。
+- [ ] KR-AUD-83 [P2] RSV-4 def_md5.rs:1167-1185 load_parent_class 不支持 `<Parent><Avatar/></Parent>` 元素形态。验收：first_child 两分支语义（文本优先，无文本取子元素名）。
+- [ ] KR-AUD-84 [P3] RSV-5 lint/rules.rs:664-945 UnknownFlagValueRule 多 token 放行 vs 引擎整串查表。验收：按引擎整串，'|' 形态单独出「引擎不支持」诊断。
+- [ ] KR-AUD-85 [P3] RSV-6 def_md5.rs:900-918 calc_property_utype 全局查重比引擎跨模块容忍更严。验收：对齐引擎容忍度或登记口径差异。
+- [ ] KR-AUD-86 [P3] RSV-7 def_md5.rs:354-364 is_entitycall 嵌套 ARRAY 递归 vs 引擎一层 type()。验收：ARRAY<ARRAY<ENTITYCALL>> 判定对齐引擎。
+- [ ] KR-AUD-87 [P3] RSV-8 kode-parser model.rs:349-350,400 OWN_CLIENT/OTHER_CLIENTS 未入 cell 域（仅 IDE 提示展示面）。验收：域表对齐 ENTITY_CELL_DATA_FLAGS。
+- [ ] KR-AUD-88 [P3] RSV-9 kode-parser model.rs:157-162 extract_def interfaces 仅识别文本形态（与 RSV-1 同根）。验收：元素形态产出接口引用。
+- [ ] KR-AUD-89 [P3级] RSV-10 python_callgraph.rs:161 file_stem 仅按 '/' 分割——非缺陷，防回归登记：上游斜杠归一化加断言。
