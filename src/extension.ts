@@ -362,6 +362,8 @@ import {
 } from './snippetGenerator';
 import type { MergeSnippetResult } from './snippetGenerator';
 import { buildEngineApiCatalog, readEngineApiMetadata, readEngineVersionMarker } from './engineApiMetadata';
+import { getEngineVersion } from './engineVersion';
+import { detectEngineVersionMarker, engineVersionSuggestion } from './engineVersionDetect';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -2570,6 +2572,49 @@ export function activate(context: vscode.ExtensionContext) {
     }
     return null;
   };
+  // KB-VER-004 版本自动探测:打开项目时从引擎安装目录读版本标记并「建议」
+  // kbengine.engineVersion 值,绝不自动改用户设置。忽略按探测到的版本值记
+  // 入 workspaceState(版本变了可再建议);探测失败静默,不阻塞激活。
+  const ENGINE_VERSION_SUGGEST_DISMISS_KEY = 'kbengine.engineVersionSuggestionDismissed';
+  const maybeSuggestEngineVersion = (): void => {
+    void (async () => {
+      try {
+        const folders = (vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath);
+        if (!folders.length) return;
+        const profile = resolveActiveProfile(context.workspaceState);
+        const explicitRoot =
+          profile?.engineRoot?.trim() ||
+          vscode.workspace.getConfiguration('kbengine').get<string>('engineRoot', '').trim() ||
+          undefined;
+        const detected = detectEngineVersionMarker(folders, explicitRoot, {
+          findRoot: findEngineRoot,
+          readMarker: root => readEngineVersionMarker(root, probe => fs.readFileSync(probe, 'utf8'))
+        });
+        const dismissed = context.workspaceState?.get<string>(ENGINE_VERSION_SUGGEST_DISMISS_KEY);
+        const decision = engineVersionSuggestion(getEngineVersion(), detected, dismissed);
+        if (decision.kind !== 'suggest') return;
+        const set = '设置';
+        const ignore = '忽略';
+        const pick = await vscode.window.showInformationMessage(
+          `检测到引擎版本标记 ${decision.version}(${detected!.engineRoot});是否将 kbengine.engineVersion 设为 ${decision.version}?`,
+          set,
+          ignore
+        );
+        if (pick === set) {
+          await vscode.workspace.getConfiguration('kbengine').update(
+            'engineVersion',
+            decision.version,
+            vscode.ConfigurationTarget.Workspace
+          );
+        } else if (pick === ignore) {
+          await context.workspaceState?.update(ENGINE_VERSION_SUGGEST_DISMISS_KEY, decision.version);
+        }
+      } catch {
+        // 探测/建议面不可用则静默——不因建议失败阻塞激活
+      }
+    })();
+  };
+  maybeSuggestEngineVersion();
   const appendDriftEvidenceForReport = (report: DriftReport): void => {
     const evidence = recordDriftEvidenceFromReport(report, {
       resolveEngineVersion: resolveActiveEngineVersion,
