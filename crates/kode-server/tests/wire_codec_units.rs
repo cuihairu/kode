@@ -114,7 +114,7 @@ fn wire_golden_stream_samples_bidirectional() {
                             map.insert(e.child, layout.clone());
                         }
                     }
-                    move |child: u16| {
+                    move |_parent: u16, child: u16| {
                         map.get(&child).cloned().ok_or_else(|| {
                             WireError::UnknownType(format!("child {child}"))
                         })
@@ -148,7 +148,7 @@ fn wire_golden_stream_samples_bidirectional() {
 
                 let arg_layouts_of = {
                     let layouts = call.arg_layouts.clone();
-                    move |_m: MethodRef| Ok(layouts.clone())
+                    move |_component: Option<u8>, _m: MethodRef| Ok(layouts.clone())
                 };
                 let back = decode_method_args(
                     &from_hex(hex).expect("hex"),
@@ -218,13 +218,13 @@ fn wire_golden_no_panic_on_truncation() {
                         EntityRefKind::of(&entity),
                         mode,
                         &base,
-                        |_c| Err(WireError::UnknownType("trunc".to_string())),
+                        |_parent, _c| Err(WireError::UnknownType("trunc".to_string())),
                     );
                 }
                 "method_call" => {
                     let mode: PropertyMode =
                         serde_json::from_value(s["input"]["mode"].clone()).unwrap();
-                    let _ = decode_method_args(prefix, mode, |_m| {
+                    let _ = decode_method_args(prefix, mode, |_component, _m| {
                         Err(WireError::UnknownType("trunc".to_string()))
                     });
                 }
@@ -500,4 +500,44 @@ fn wire_rpc_dispatch_smoke() {
         response_of(&out),
         &json!({"FixedDict": [{"F32": 1.5}, {"U32": 2}]})
     );
+}
+
+#[test]
+fn method_encoding_rejects_arity_and_identifier_mode_before_writing() {
+    for (mode, method, args, layouts) in [
+        (PropertyMode::Alias, MethodRef::Alias(1), vec![WireValue::U8(1), WireValue::U8(2)], vec![WireLayout::U8]),
+        (PropertyMode::Alias, MethodRef::Alias(1), vec![], vec![WireLayout::U8]),
+        (PropertyMode::Alias, MethodRef::Utype(257), vec![], vec![]),
+        (PropertyMode::Utype, MethodRef::Alias(1), vec![], vec![]),
+    ] {
+        let mut output = vec![42];
+        let call = MethodCall { component_alias: None, method, args, arg_layouts: layouts };
+        assert!(encode_method_args(&call, mode, &mut output).is_err());
+        assert_eq!(output, vec![42]);
+    }
+}
+
+#[test]
+fn component_identity_selects_property_and_method_layouts() {
+    let entries = vec![
+        PropertyEntry { parent: 6, child: 1, kind: PropKind::Regular { layout: WireLayout::U8, value: WireValue::U8(7) } },
+        PropertyEntry { parent: 7, child: 1, kind: PropKind::Regular { layout: WireLayout::U16, value: WireValue::U16(513) } },
+    ];
+    let mut bytes = Vec::new();
+    encode_property_stream(EntityRef::Full(1), PropertyMode::Utype, &entries, &mut bytes).unwrap();
+    let (_, actual) = decode_property_stream(&bytes, EntityRefKind::Full, PropertyMode::Utype, &BasePropUtype::default(), |parent, child| match (parent, child) {
+        (6, 1) => Ok(WireLayout::U8), (7, 1) => Ok(WireLayout::U16), _ => Err(WireError::UnknownType("property".into())),
+    }).unwrap();
+    assert_eq!(actual, entries);
+    for (component, layout, value) in [(1, WireLayout::U8, WireValue::U8(7)), (2, WireLayout::U16, WireValue::U16(513))] {
+        let call = MethodCall { component_alias: Some(component), method: MethodRef::Alias(1), args: vec![value], arg_layouts: vec![layout] };
+        let mut bytes = Vec::new();
+        encode_method_args(&call, PropertyMode::Alias, &mut bytes).unwrap();
+        let actual = decode_method_args(&bytes, PropertyMode::Alias, |component, method| match (component, method) {
+            (Some(1), MethodRef::Alias(1)) => Ok(vec![WireLayout::U8]),
+            (Some(2), MethodRef::Alias(1)) => Ok(vec![WireLayout::U16]),
+            _ => Err(WireError::UnknownType("method".into())),
+        }).unwrap();
+        assert_eq!(actual, call);
+    }
 }

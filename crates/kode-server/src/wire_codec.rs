@@ -151,6 +151,10 @@ pub enum WireError {
     ArraySizeTooLarge { size: u32 },
     /// 别名模式要求 ≤255 的 id 溢出。
     AliasIdOverflow(u16),
+    /// Method argument count does not match its schema.
+    ArgumentCountMismatch { expected: usize, actual: usize },
+    /// A method identifier belongs to a different encoding mode.
+    MethodModeMismatch,
     /// STRING 值含非 ASCII 字节(线上 STRING 遇非 ASCII 即停)。
     NonAsciiString,
     /// STRING 值含内嵌 NUL(NUL 是线上终止符,写进流解码即截断,静默损坏→拒绝)。
@@ -182,6 +186,8 @@ impl fmt::Display for WireError {
             WireError::AliasIdOverflow(id) => {
                 write!(f, "alias id {id} exceeds uint8 bound (use utype mode)")
             }
+            WireError::ArgumentCountMismatch { expected, actual } => write!(f, "expected {expected} arguments, got {actual}"),
+            WireError::MethodModeMismatch => write!(f, "method identifier does not match encoding mode"),
             WireError::NonAsciiString => write!(f, "STRING value contains non-ASCII bytes"),
             WireError::EmbeddedNulString => write!(f, "STRING value contains embedded NUL byte"),
             WireError::InvalidHex(s) => write!(f, "invalid hex string: {s}"),
@@ -853,7 +859,7 @@ pub fn decode_property_stream<F>(
     layout_of_child: F,
 ) -> Result<(EntityRef, Vec<PropertyEntry>), WireError>
 where
-    F: Fn(u16) -> Result<WireLayout, WireError>,
+    F: Fn(u16, u16) -> Result<WireLayout, WireError>,
 {
     let mut cur = WireCursor::new(data);
     let entity = match entity_kind {
@@ -878,14 +884,14 @@ where
                 },
                 c if c == space_id => PropKind::SpaceId(cur.read_u32()?),
                 c => {
-                    let layout = layout_of_child(c)?;
+                    let layout = layout_of_child(parent, c)?;
                     let value = decode_value(&layout, &mut cur)?;
                     PropKind::Regular { layout, value }
                 }
             }
         } else {
             // 组件子属性(parent≠0):子属性 id → 布局由调用方经闭包映射。
-            let layout = layout_of_child(child)?;
+            let layout = layout_of_child(parent, child)?;
             let value = decode_value(&layout, &mut cur)?;
             PropKind::Regular { layout, value }
         };
@@ -951,6 +957,12 @@ pub fn encode_method_args(
     mode: PropertyMode,
     out: &mut Vec<u8>,
 ) -> Result<(), WireError> {
+    if call.arg_layouts.len() != call.args.len() {
+        return Err(WireError::ArgumentCountMismatch { expected: call.arg_layouts.len(), actual: call.args.len() });
+    }
+    if !matches!((mode, call.method), (PropertyMode::Alias, MethodRef::Alias(_)) | (PropertyMode::Utype, MethodRef::Utype(_))) {
+        return Err(WireError::MethodModeMismatch);
+    }
     match mode {
         PropertyMode::Alias => {
             out.push(call.component_alias.unwrap_or(0));
@@ -982,7 +994,7 @@ pub fn decode_method_args<F>(
     arg_layouts_of: F,
 ) -> Result<MethodCall, WireError>
 where
-    F: Fn(MethodRef) -> Result<Vec<WireLayout>, WireError>,
+    F: Fn(Option<u8>, MethodRef) -> Result<Vec<WireLayout>, WireError>,
 {
     let mut cur = WireCursor::new(data);
     let (component_alias, method) = match mode {
@@ -997,7 +1009,7 @@ where
             (None, MethodRef::Utype(utype))
         }
     };
-    let arg_layouts = arg_layouts_of(method)?;
+    let arg_layouts = arg_layouts_of(component_alias, method)?;
     let mut args = Vec::with_capacity(arg_layouts.len());
     for layout in &arg_layouts {
         args.push(decode_value(layout, &mut cur)?);
@@ -1403,7 +1415,7 @@ pub fn dump_wire_golden() -> String {
             EntityRefKind::Full,
             mode,
             &base,
-            |child| {
+            |_parent, child| {
                 layouts
                     .get(&child)
                     .cloned()
@@ -1466,7 +1478,7 @@ pub fn dump_wire_golden() -> String {
             EntityRefKind::Full,
             PropertyMode::Utype,
             &BasePropUtype::default(),
-            |child| {
+            |_parent, child| {
                 layouts
                     .get(&child)
                     .cloned()
@@ -1527,7 +1539,7 @@ pub fn dump_wire_golden() -> String {
             EntityRefKind::Alias,
             PropertyMode::Alias,
             &BasePropUtype::default(),
-            |child| Err(WireError::UnknownType(format!("child {child}"))),
+            |_parent, child| Err(WireError::UnknownType(format!("child {child}"))),
         )
         .expect("golden prop stream special decode");
         assert_eq!(back_entity, EntityRef::Alias(7), "alias entity id round-trip");
@@ -1576,7 +1588,7 @@ pub fn dump_wire_golden() -> String {
             EntityRefKind::Full,
             PropertyMode::Utype,
             &BasePropUtype::default(),
-            |child| {
+            |_parent, child| {
                 if child == 1 {
                     Ok(WireLayout::U16)
                 } else {
@@ -1612,7 +1624,7 @@ pub fn dump_wire_golden() -> String {
     encode_method_args(&call_alias, PropertyMode::Alias, &mut out)
         .expect("golden method alias encode");
     {
-        let back = decode_method_args(&out, PropertyMode::Alias, |m| match m {
+        let back = decode_method_args(&out, PropertyMode::Alias, |_component, m| match m {
             MethodRef::Alias(1) => Ok(vec![WireLayout::Str]),
             other => Err(WireError::UnknownType(format!("method {other:?}"))),
         })
@@ -1637,7 +1649,7 @@ pub fn dump_wire_golden() -> String {
     encode_method_args(&call_utype, PropertyMode::Utype, &mut out)
         .expect("golden method utype encode");
     {
-        let back = decode_method_args(&out, PropertyMode::Utype, |m| match m {
+        let back = decode_method_args(&out, PropertyMode::Utype, |_component, m| match m {
             MethodRef::Utype(1) => Ok(vec![WireLayout::Str]),
             other => Err(WireError::UnknownType(format!("method {other:?}"))),
         })
