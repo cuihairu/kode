@@ -34,6 +34,17 @@ The `en/` file is canonical for line-number drift checks.
     callScript semantics and cell-data backup (`cellapp/entity.cpp:204`);
     timer registration/removal (`entity_macro.h:1478`).
 
+- **Python version baseline: 3.7 source material vs fork 3.12** (KB-API-001):
+  - [English](python-version-baseline.md)
+  - [中文](../zh/knowledge/python-version-baseline.md)
+  - Covers: the 3.7.3 → fork-3.12 version timeline with per-claim evidence;
+    the four verified runtime-baseline facts (python312 vcxproj links, source
+    repo doc drift, the neutralized `PyEval_InitThreads` call site, the
+    untracked vendored `kbe/src/lib/python` tree); the embedding-layer C API
+    audit table (`script.cpp:203/:239` are the only 3.13-blocking calls); the
+    script-layer deviation skeleton; the fixed deviation-annotation template
+    used by KB-API-002~008.
+
 ## Pipeline
 
 Source extraction → manual curation → consumers. Planned consumers

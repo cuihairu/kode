@@ -1067,7 +1067,7 @@
 
 - Windows 工程已链 python312 库：kbe/src/server/baseapp/baseapp.vcxproj:118（`python312_d.lib`）等 9 个 vcxproj——**3.12 已落地的事实证据**。
 - docs/zh/guide/engineering/python-3.12-upgrade.md:8 仍写「当前 vendored 版本是 3.7.3」——**文档漂移**，升级后未回改。
-- kbe/src/lib/pyscript/script.cpp:255 仍调 `PyEval_InitThreads()`（3.9 起弃用、3.13 移除；3.12 下可编译有弃用告警）——嵌入层 C API 审计未收口的实例。
+- kbe/src/lib/pyscript/script.cpp:255 调用点 `PyEval_InitThreads()` 已被 `scriptstdouterrhook.h:11-15` 宏中和（3.9 起弃用、3.13 官方移除；3.12 下无告警、无运行时调用）——嵌入层 C API 审计的实例。
 - **vendored `kbe/src/lib/python/` 树未入 git**（`git ls-files kbe/src/lib/python` = 0）且本机不在盘上——3.12 CPython 源码不在仓库内，偏离清单取证须另行取得 3.12 参照（本机 python3.12/官方 changelog），不得凭 3.7 docs/api 源料反推。
 
 ### 执行约定（本节通用）
@@ -1077,7 +1077,7 @@
 - 双语镜像按 docs/knowledge/README.md 约定：en 为 canonical（行号漂移检查基准），zh 逐篇镜像同引用同主张。
 - 与既有条目分工：入口 SPI 36 方法=KODE-CFG-012/014（kbemain 面，不在本节范围）；hover 文档库消费=C-21；MCP 消费=MCP-001；本节产出按 KB-001 流水线喂两者。
 
-- [ ] **KB-API-001 · P0 · 建设 · 版本口径说明：python 3.7→3.12 偏离清单**（双语一篇 docs/knowledge/python-version-baseline.md + zh 镜像）
+- [x] **KB-API-001 · P0 · 建设 · 版本口径说明：python 3.7→3.12 偏离清单**（双语一篇 docs/knowledge/python-version-baseline.md + zh 镜像）
   - 交付：以「版本口径说明」篇回答——官方 docs/api 源料按 3.7 口径写，fork 嵌入 3.12，整合各篇如何标注。内容含：①运行时基线事实（上方取证四条全部复核引用：vcxproj python312、upgrade 文档漂移、script.cpp:255 弃用调用、vendored 树未入 git）；②嵌入层 C API 审计清单（PyEval_InitThreads 及同类已移除/语义变更调用逐个 grep `kbe/src/lib/pyscript`+`lib/server`，逐条标 3.12 下的行为：可编译/告警/须改）；③脚本层 3.7→3.12 语义偏离表（影响 API 整合的子集：str/bytes、int、迭代器、asyncio 无关面不写）；④给 KB-API-002~008 的统一标注模板（每篇差异小节的固定格式）。
   - 验收：清单逐条带 kbe/src file:line 或 CPython 3.12 官方出处（两域分开标）；upgrade 指南页 3.7.3 漂移**不在本任务内改**（那是 kbengine 仓的事，仅在知识库篇里如实记「源仓文档漂移」）；双语镜像一致。
 - [ ] **KB-API-002 · P0 · 建设 · client 面（客户端运行时）**：源料 client/KBEngine.md(4.8k)+client/Entity.md(7.2k)+client/index.md，双语 docs/knowledge/api-client.md + zh 镜像
