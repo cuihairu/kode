@@ -159,6 +159,23 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
 });
 
 describe('HttpReloadTransport.probe (IDE-HOT-101 验收 5)', () => {
+  it('无副作用(KODE-AUD-009):探测与真实 fire 分离——GET 无体,不携带重载载荷', async () => {
+    const captured: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
+    const transport = new HttpReloadTransport(entry(), {
+      run: request => {
+        captured.push(request);
+        return Promise.resolve({ status: 200, body: '' });
+      }
+    });
+    await transport.probe();
+    expect(captured).toHaveLength(1);
+    // 与 fire(send)的 POST+body 载荷分离:安全方法 GET、空体、
+    // headers/url 不做文件占位替换——端点不会因探测而实际重载。
+    expect(captured[0].method).toBe('GET');
+    expect(captured[0].body).toBe('');
+    expect(captured[0].url).not.toContain('/ws/scripts');
+    expect(captured[0].headers['x-files']).toBe('${fileList}');
+  });
   it('2xx → ok', async () => {
     const transport = new HttpReloadTransport(entry(), { run: runStub({ status: 200, body: '' }) });
     expect(await transport.probe()).toEqual({ ok: true, detail: expect.stringContaining('可达') });
@@ -269,7 +286,7 @@ describe('KbengineOfficialTransport (IDE-HOT-101 验收 1/2)', () => {
         awaitEchoMs: 200
       }
     );
-    let pushed: ReloadReceipt[] = [];
+    const pushed: ReloadReceipt[] = [];
     const sendPromise = transport.send(target, files, r => pushed.push(r));
     // 模拟控制台回显到达
     queueMicrotask(() => conn.emitData('reload done'));

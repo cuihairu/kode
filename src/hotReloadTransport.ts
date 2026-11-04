@@ -198,11 +198,16 @@ export class HttpReloadTransport implements ReloadTransport {
   async probe(): Promise<{ ok: boolean; detail: string }> {
     const url = substituteReloadVariables(this.entry.url, [], this.deps.context);
     try {
+      // 无副作用探测(KODE-AUD-009):probe 与真实 fire 请求分离——连通性
+      // 测试发 GET 无体请求(HTTP 安全方法),不携带重载载荷(不用配置的
+      // 重载 method、不发 body/${files} 占位),端点不会因探测而实际重载;
+      // headers 保留(可能带鉴权),url 不替换文件占位。若端点仅认重载
+      // method,探测如实报非 2xx,不再误触发重载。
       const response = await this.deps.run({
         url,
-        method: this.entry.method,
+        method: 'GET',
         headers: this.entry.headers,
-        body: this.entry.body
+        body: ''
       });
       const ok = response.status >= 200 && response.status < 300;
       return {
