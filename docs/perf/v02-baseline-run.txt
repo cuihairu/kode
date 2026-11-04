@@ -1,0 +1,103 @@
+V02-ENV node=v24.21.0 platform=linux cpus=14 largeFiles=30000 assets=/tmp/kode-perf-v02-assets
+V02-METRIC V02.large-30k.process.rssAtStartMb n=1 92.99 MB
+V02-METRIC V02.large-30k.cold.hover n=1 23.92ms
+V02-METRIC V02.large-30k.cold.hoverHits n=1 0 hit
+V02-METRIC V02.large-30k.cold.completionPy n=1 1.49ms
+V02-METRIC V02.large-30k.cold.completionPyItems n=1 0 items
+V02-METRIC V02.large-30k.cold.completionDef n=1 6.67ms
+V02-METRIC V02.large-30k.cold.completionDefItems n=1 25 items
+V02-METRIC V02.large-30k.cold.definitionDef n=1 1.19ms
+V02-METRIC V02.large-30k.cold.definitionDefHits n=1 1 hit
+V02-METRIC V02.large-30k.cold.definitionPy n=1 8.02ms
+V02-METRIC V02.large-30k.cold.definitionPyHits n=1 1 hit
+V02-METRIC V02.large-30k.cold.diagnosticsDef n=1 7.45ms
+V02-METRIC V02.large-30k.cold.diagnosticsDefItems n=1 2 items
+V02-METRIC V02.large-30k.cold.diagnosticsDefDefect n=1 4.62ms
+V02-METRIC V02.large-30k.cold.diagnosticsEntitiesXml n=1 0.83ms
+V02-METRIC V02.large-30k.activation.defScanWall n=1 370.02ms
+V02-METRIC V02.large-30k.rss.activation.peakRssMb n=1 92.99 MB
+V02-METRIC V02.large-30k.rss.activation.peakRssDeltaMb n=1 0 MB
+V02-METRIC V02.large-30k.warm.hover n=100 p50=0.13ms p95=0.63ms p99=1.52ms max=2.74ms
+V02-METRIC V02.large-30k.warm.hoverHits n=1 1 hit
+V02-METRIC V02.large-30k.warm.completionPy n=100 p50=0.06ms p95=0.32ms p99=1.13ms max=1.47ms
+V02-METRIC V02.large-30k.warm.completionPyItems n=1 5 items
+V02-METRIC V02.large-30k.warm.completionDef n=100 p50=0.73ms p95=2.26ms p99=4.12ms max=4.53ms
+V02-METRIC V02.large-30k.warm.completionDefItems n=1 25 items
+V02-METRIC V02.large-30k.warm.definitionDef n=100 p50=0.25ms p95=0.45ms p99=1.01ms max=2.05ms
+V02-METRIC V02.large-30k.warm.definitionDefHits n=1 1 hit
+V02-METRIC V02.large-30k.warm.diagnosticsDef n=100 p50=0.7ms p95=1.88ms p99=2.76ms max=4.42ms
+V02-METRIC V02.large-30k.warm.diagnosticsDefDefect n=100 p50=0.7ms p95=1.39ms p99=2.32ms max=9.53ms
+V02-METRIC V02.large-30k.warm.diagnosticsEntitiesXml n=100 p50=0.01ms p95=0.03ms p99=0.11ms max=0.15ms
+V02-METRIC V02.large-30k.startup.fullPyScanWall n=1 10408.82ms
+V02-METRIC V02.large-30k.rss.scan.peakRssMb n=1 251.77 MB
+V02-METRIC V02.large-30k.rss.scan.peakRssDeltaMb n=1 127.91 MB
+V02-METRIC V02.large-30k.warm.definitionPy n=100 p50=0.4ms p95=4.22ms p99=5.55ms max=6.59ms
+V02-METRIC V02.large-30k.warm.definitionPyHits n=1 1 hit
+V02-METRIC V02.multi-root.process.rssAtStartMb n=1 251.9 MB
+V02-METRIC V02.multi-root.cold.hover n=1 7.06ms
+V02-METRIC V02.multi-root.cold.hoverHits n=1 0 hit
+V02-METRIC V02.multi-root.cold.completionPy n=1 0.08ms
+V02-METRIC V02.multi-root.cold.completionPyItems n=1 0 items
+V02-METRIC V02.multi-root.cold.completionDef n=1 5.55ms
+V02-METRIC V02.multi-root.cold.completionDefItems n=1 25 items
+V02-METRIC V02.multi-root.cold.definitionDef n=1 0.33ms
+V02-METRIC V02.multi-root.cold.definitionDefHits n=1 1 hit
+V02-METRIC V02.multi-root.cold.definitionPy n=1 0.8ms
+V02-METRIC V02.multi-root.cold.definitionPyHits n=1 1 hit
+V02-METRIC V02.multi-root.cold.diagnosticsDef n=1 2.61ms
+V02-METRIC V02.multi-root.cold.diagnosticsDefItems n=1 2 items
+V02-METRIC V02.multi-root.cold.diagnosticsDefDefect n=1 5.6ms
+V02-METRIC V02.multi-root.cold.diagnosticsEntitiesXml n=1 0.15ms
+V02-METRIC V02.multi-root.activation.defScanWall n=1 54.56ms
+V02-METRIC V02.multi-root.rss.activation.peakRssMb n=1 251.9 MB
+V02-METRIC V02.multi-root.rss.activation.peakRssDeltaMb n=1 0 MB
+V02-METRIC V02.multi-root.warm.hover n=100 p50=0.12ms p95=1.02ms p99=4.42ms max=6.14ms
+V02-METRIC V02.multi-root.warm.hoverHits n=1 1 hit
+V02-METRIC V02.multi-root.warm.completionPy n=100 p50=0.04ms p95=0.09ms p99=3.23ms max=4.06ms
+V02-METRIC V02.multi-root.warm.completionPyItems n=1 3 items
+V02-METRIC V02.multi-root.warm.completionDef n=100 p50=0.87ms p95=8.13ms p99=10.94ms max=15.64ms
+V02-METRIC V02.multi-root.warm.completionDefItems n=1 25 items
+V02-METRIC V02.multi-root.warm.definitionDef n=100 p50=0.29ms p95=6.32ms p99=14.51ms max=26.72ms
+V02-METRIC V02.multi-root.warm.definitionDefHits n=1 1 hit
+V02-METRIC V02.multi-root.warm.diagnosticsDef n=100 p50=0.68ms p95=10.94ms p99=11.91ms max=16.78ms
+V02-METRIC V02.multi-root.warm.diagnosticsDefDefect n=100 p50=0.63ms p95=2.83ms p99=3.54ms max=4.03ms
+V02-METRIC V02.multi-root.warm.diagnosticsEntitiesXml n=100 p50=0.01ms p95=0.03ms p99=0.06ms max=1.06ms
+V02-METRIC V02.multi-root.startup.fullPyScanWall n=1 8.58ms
+V02-METRIC V02.multi-root.rss.scan.peakRssMb n=1 265.15 MB
+V02-METRIC V02.multi-root.rss.scan.peakRssDeltaMb n=1 0 MB
+V02-METRIC V02.multi-root.warm.definitionPy n=100 p50=0.35ms p95=1ms p99=3.18ms max=4.91ms
+V02-METRIC V02.multi-root.warm.definitionPyHits n=1 1 hit
+V02-METRIC V02.big-py.process.rssAtStartMb n=1 269.02 MB
+V02-METRIC V02.big-py.cold.hover n=1 8.91ms
+V02-METRIC V02.big-py.cold.hoverHits n=1 0 hit
+V02-METRIC V02.big-py.cold.completionPy n=1 3.83ms
+V02-METRIC V02.big-py.cold.completionPyItems n=1 0 items
+V02-METRIC V02.big-py.cold.completionDef n=1 0.71ms
+V02-METRIC V02.big-py.cold.completionDefItems n=1 25 items
+V02-METRIC V02.big-py.cold.definitionDef n=1 0.03ms
+V02-METRIC V02.big-py.cold.definitionDefHits n=1 0 hit
+V02-METRIC V02.big-py.cold.definitionPy n=1 0.65ms
+V02-METRIC V02.big-py.cold.definitionPyHits n=1 1 hit
+V02-METRIC V02.big-py.cold.diagnosticsDef n=1 3.03ms
+V02-METRIC V02.big-py.cold.diagnosticsDefItems n=1 2 items
+V02-METRIC V02.big-py.cold.diagnosticsDefDefect n=1 2.67ms
+V02-METRIC V02.big-py.cold.diagnosticsEntitiesXml n=1 0.08ms
+V02-METRIC V02.big-py.activation.defScanWall n=1 482.15ms
+V02-METRIC V02.big-py.rss.activation.peakRssMb n=1 269.02 MB
+V02-METRIC V02.big-py.rss.activation.peakRssDeltaMb n=1 0 MB
+V02-METRIC V02.big-py.warm.hover n=100 p50=3.38ms p95=4.69ms p99=12.08ms max=13.47ms
+V02-METRIC V02.big-py.warm.hoverHits n=1 1 hit
+V02-METRIC V02.big-py.warm.completionPy n=100 p50=3.67ms p95=5.04ms p99=10.9ms max=12.69ms
+V02-METRIC V02.big-py.warm.completionPyItems n=1 9 items
+V02-METRIC V02.big-py.warm.completionDef n=100 p50=0.61ms p95=2.75ms p99=3.96ms max=6.05ms
+V02-METRIC V02.big-py.warm.completionDefItems n=1 25 items
+V02-METRIC V02.big-py.warm.definitionDef n=100 p50=0ms p95=0.01ms p99=0.18ms max=1.95ms
+V02-METRIC V02.big-py.warm.definitionDefHits n=1 0 hit
+V02-METRIC V02.big-py.warm.diagnosticsDef n=100 p50=0.61ms p95=1.53ms p99=2.12ms max=2.85ms
+V02-METRIC V02.big-py.warm.diagnosticsDefDefect n=100 p50=0.49ms p95=1.26ms p99=1.95ms max=3.84ms
+V02-METRIC V02.big-py.warm.diagnosticsEntitiesXml n=100 p50=0.01ms p95=0.02ms p99=0.05ms max=0.06ms
+V02-METRIC V02.big-py.startup.fullPyScanWall n=1 272.7ms
+V02-METRIC V02.big-py.rss.scan.peakRssMb n=1 287.07 MB
+V02-METRIC V02.big-py.rss.scan.peakRssDeltaMb n=1 0 MB
+V02-METRIC V02.big-py.warm.definitionPy n=100 p50=0.36ms p95=4.71ms p99=10.66ms max=13.53ms
+V02-METRIC V02.big-py.warm.definitionPyHits n=1 1 hit
