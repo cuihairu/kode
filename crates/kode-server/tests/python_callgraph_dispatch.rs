@@ -89,12 +89,10 @@ fn callgraph_full_shape_and_all_kinds() {
     let nodes = result.get("nodes").unwrap().as_array().unwrap();
     // 方法节点 Avatar.act / Avatar.notify,模块级函数 helper / standalone,
     // 模块伪节点(有顶层调用边)。
-    let ids: Vec<&str> = nodes.iter().map(|n| n["id"].as_str().unwrap()).collect();
-    assert!(ids.contains(&"Avatar.act"), "ids={ids:?}");
-    assert!(ids.contains(&"Avatar.notify"), "ids={ids:?}");
-    assert!(ids.contains(&"Avatar::helper"), "ids={ids:?}");
-    assert!(ids.contains(&"Avatar::standalone"), "ids={ids:?}");
-    assert!(ids.contains(&"Avatar"), "module pseudo node missing, ids={ids:?}");
+    for name in ["act", "notify", "helper", "standalone"] {
+        assert!(nodes.iter().any(|n| n["name"] == name && n["id"].as_str().unwrap().starts_with("sym_")));
+    }
+    assert!(nodes.iter().any(|n| n["kind"] == "module" && n["name"] == "Avatar"));
 
     // 8 类边全部出现(去重统计)。
     let edges = result.get("edges").unwrap().as_array().unwrap();
@@ -241,4 +239,22 @@ fn symbols_tolerates_syntax_error_reports_errors() {
 fn symbols_empty_files_contract() {
     let result = symbols(json!({"files": []}));
     assert_eq!(result.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn callgraph_keeps_same_named_methods_separate_across_files() {
+    let source = "class Avatar:\n def act(self):\n  self.target()\n def target(self):\n  pass\n";
+    let result = callgraph(json!({"files": [
+        {"path": "/base/Avatar.py", "text": source},
+        {"path": "/cell/Avatar.py", "text": source}
+    ]}));
+    let nodes = result["nodes"].as_array().unwrap();
+    let edges = result["edges"].as_array().unwrap();
+    let id = |path: &str, name: &str| nodes.iter().find(|n| n["filePath"] == path && n["name"] == name).unwrap()["id"].as_str().unwrap().to_string();
+    assert_ne!(id("/base/Avatar.py", "act"), id("/cell/Avatar.py", "act"));
+    for path in ["/base/Avatar.py", "/cell/Avatar.py"] {
+        let edge = edges.iter().find(|e| e["filePath"] == path && e["callee"] == "target").unwrap();
+        assert_eq!(edge["callerId"], id(path, "act"));
+        assert_eq!(edge["calleeId"], id(path, "target"));
+    }
 }

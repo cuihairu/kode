@@ -480,11 +480,11 @@ export function normalizeCallGraph(graph: PythonCallGraphRustResult): CallGraphG
   for (const edge of graph.edges) {
     const stem = callGraphFileStem(edge.filePath);
     // 调用方节点 id:类方法 `Class.method` / 顶层 `<stem>` / 模块函数 `<stem>::func`。
-    const fromId = edge.callerClass
+    const fromId = edge.callerId ?? (edge.callerClass
       ? `${edge.callerClass}.${edge.caller}`
       : edge.caller === moduleCaller
         ? stem
-        : `${stem}::${edge.caller}`;
+        : `${stem}::${edge.caller}`);
     ensure(
       fromId,
       edge.caller === moduleCaller ? stem : edge.caller,
@@ -520,6 +520,7 @@ export function normalizeCallGraph(graph: PythonCallGraphRustResult): CallGraphG
         toKind = 'external';
         break;
     }
+    toId = edge.calleeId ?? toId;
     ensure(toId, edge.callee, edge.filePath, toKind);
 
     edges.push({

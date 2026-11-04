@@ -731,3 +731,19 @@ describe('EntityDependencyWebView.collectPythonFiles(KODE-PERF-004 多根/异步
     stubWorkspace.workspaceFolders = [];
   });
 });
+
+it('keeps same-named methods in separate files when Rust supplies identities', () => {
+  const input = callGraphRust();
+  input.nodes = [
+    { id: 'sym_base', kind: 'method', className: 'Avatar', name: 'act', filePath: '/base/Avatar.py', line: 1, isAsync: false, params: [] },
+    { id: 'sym_cell', kind: 'method', className: 'Avatar', name: 'act', filePath: '/cell/Avatar.py', line: 1, isAsync: false, params: [] }
+  ];
+  input.edges = [
+    { callerId: 'sym_base', calleeId: 'sym_base_target', caller: 'act', callerClass: 'Avatar', callerLine: 2, callee: 'target', kind: 'self-method', filePath: '/base/Avatar.py' },
+    { callerId: 'sym_cell', calleeId: 'sym_cell_target', caller: 'act', callerClass: 'Avatar', callerLine: 2, callee: 'target', kind: 'self-method', filePath: '/cell/Avatar.py' }
+  ];
+  const graph = normalizeCallGraph(input);
+  expect(graph.nodes.find(n => n.id === 'sym_base')?.filePath).toBe('/base/Avatar.py');
+  expect(graph.nodes.find(n => n.id === 'sym_cell')?.filePath).toBe('/cell/Avatar.py');
+  expect(graph.edges.map(e => [e.from, e.to])).toEqual([['sym_base', 'sym_base_target'], ['sym_cell', 'sym_cell_target']]);
+});

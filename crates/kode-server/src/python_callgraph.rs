@@ -85,6 +85,8 @@ struct NodeOut {
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct EdgeOut {
+    caller_id: String,
+    callee_id: String,
     caller: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     caller_class: Option<String>,
@@ -188,6 +190,11 @@ fn build_handler(params: Value) -> Result<Value, String> {
     serde_json::to_value(build_callgraph(&input)).map_err(|e| e.to_string())
 }
 
+fn symbol_id(path: &str, kind: &str, scope: &str, name: &str) -> String {
+    fn hex(s: &str) -> String { s.as_bytes().iter().map(|b| format!("{b:02x}")).collect() }
+    format!("sym_{}_{}_{}_{}", hex(path), kind, hex(scope), hex(name))
+}
+
 fn build_callgraph(input: &CallgraphParams) -> Value {
     let analyses: Vec<FileAnalysis> = input
         .files
@@ -203,7 +210,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         for class in &a.symbols.classes {
             for m in &class.methods {
                 nodes.push(NodeOut {
-                    id: format!("{}.{}", class.name, m.name),
+                    id: symbol_id(&a.path, "method", &class.name, &m.name),
                     kind: "method",
                     class_name: Some(class.name.clone()),
                     name: m.name.clone(),
@@ -216,7 +223,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         }
         for f in &a.symbols.functions {
             nodes.push(NodeOut {
-                id: format!("{}::{}", a.stem, f.name),
+                id: symbol_id(&a.path, "function", "", &f.name),
                 kind: "function",
                 class_name: None,
                 name: f.name.clone(),
@@ -229,7 +236,7 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         let has_module_edges = a.edges.iter().any(|e| e.caller == MODULE_CALLER);
         if has_module_edges {
             nodes.push(NodeOut {
-                id: a.stem.clone(),
+                id: symbol_id(&a.path, "module", "", ""),
                 kind: "module",
                 class_name: None,
                 name: a.stem.clone(),
@@ -241,7 +248,21 @@ fn build_callgraph(input: &CallgraphParams) -> Value {
         }
         for e in &a.edges {
             *by_kind.entry(e.kind.as_str()).or_insert(0) += 1;
+            let caller_id = if let Some(class) = &e.caller_class {
+                symbol_id(&a.path, "method", class, &e.caller)
+            } else if e.caller == MODULE_CALLER {
+                symbol_id(&a.path, "module", "", "")
+            } else {
+                symbol_id(&a.path, "function", "", &e.caller)
+            };
+            let callee_id = match e.kind {
+                EdgeKind::SelfMethod => symbol_id(&a.path, "method", e.caller_class.as_deref().unwrap_or(""), &e.callee),
+                EdgeKind::Local => symbol_id(&a.path, "function", "", &e.callee),
+                _ => symbol_id(&a.path, "external", e.receiver.as_deref().unwrap_or(""), &e.callee),
+            };
             edges.push(EdgeOut {
+                caller_id,
+                callee_id,
                 caller: e.caller.clone(),
                 caller_class: e.caller_class.clone(),
                 caller_line: e.caller_line,

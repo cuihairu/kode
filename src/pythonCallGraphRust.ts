@@ -37,6 +37,8 @@ export interface PythonCallGraphNode {
 
 /** 单条调用边 */
 export interface PythonCallGraphEdge {
+  callerId?: string;
+  calleeId?: string;
   caller: string;
   callerClass?: string;
   /** 0-based */
