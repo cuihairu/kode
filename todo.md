@@ -1154,7 +1154,7 @@
 - [ ] KR-AUD-22 [P3] RUST-14 symbols.rs:159 注释顺序错（posonly→pos→vararg→kwonly→kwarg）+ scheduler.rs:646-686 run 闭包 panic 无 catch_unwind 卡死调度。验收：注释修正+panic 按 Failed 终态落账。
 - [ ] KR-AUD-23 [P2级] RUST-注1 invalidation.rs:115,129-135 plan_dependency_tasks：changed 与依赖同批丢 SingleFileUpdate 优先级。验收：changed 强制单独成批。
 - [ ] KR-AUD-24 [P3级] RUST-注2 journal.rs:29 无扩展名路径产 `xxx..tmp` 临时名（无功能影响，防回归登记）。
-- [ ] KR-AUD-25 [P1] IDX-1 entityMapping.ts:215,462-470,528,1192 removedRootKeys 只加不删，根重加入后永久拦 null。验收：根重新登记即解除拉黑，A→B→A 切换索引恢复。
+- [x] KR-AUD-25 [P1] IDX-1 entityMapping.ts:215,462-470,528,1192 removedRootKeys 只加不删，根重加入后永久拦 null。验收：根重新登记即解除拉黑，A→B→A 切换索引恢复。〔已修 2026-11-04:performScanEntityMappings 登记扫描根时删除对应 removedRootKeys 项(src/entityMapping.ts:406-414)——登记循环先于发现/解析,不影响同轮对已移除根的拦截;单测 tests/entityMappingManager.test.ts:1251-1335「移除 B→未重加入前拦截保持→重加入重登记后索引恢复」(未修先红:HEAD 复现 getMapping undefined,修复后绿);相关 7 文件 vitest 82/82 全绿(含 IDE-IDX-016 在途拦截既有用例),tsc -p ./ --noEmit 0 错,eslint 改动 2 文件 0 错〕
 - [ ] KR-AUD-26 [P1] IDX-2 pythonClassIndex.ts:704-782 ensureCompositionRoots 连续让位 8 次 fall-through 只打日志：rootsMap 不落地/metrics 不 end/rootsPromise 不清→组合根查询永久空。验收：fall-through 按最后快照落地或清 rootsPromise 允许重试（边缘场景注入测试）。
 - [ ] KR-AUD-27 [P1] IDX-3 workspaceIndex.ts:119-137 watcher(:131) 晚于首扫 await(:129)——初扫窗口磁盘变更永久漏。验收：对齐 AUD-074 口径（watcher 先挂或扫描后 stat 指纹复核）。
 - [ ] KR-AUD-28 [P2] IDX-4 pythonClassIndex.ts:377,496-498 单文件 invalidate 作废整扫描代+loadFile 无指纹短路。验收：关单文件不触发全仓重发现/重解析。

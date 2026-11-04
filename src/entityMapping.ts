@@ -404,6 +404,11 @@ export class EntityMappingManager {
     // PR4 A4-5:扫描根显式登记语义索引(规范化路径+稳定 rootId+显式序),
     // 查询按该序裁断,不再依赖 Map 插入序。
     for (const scanRoot of scanRoots) {
+      // KR-AUD-25(原 IDE-IDX-016 只加不删):重新登记即解除拉黑——黑名单
+      // 只该拦「移除后尚未回归」的根,根回到扫描根集说明已重加入,过期项
+      // 不清会永久拦 null(A→B→A 切换后索引永不恢复)。本循环在发现/解析
+      // 之前执行,不影响同轮在途批次对已移除根的拦截语义。
+      this.removedRootKeys.delete(normalizeLookupPath(scanRoot));
       this.semanticIndex.registerRoot(scanRoot);
     }
 

@@ -1247,3 +1247,89 @@ describe('IDE-IDX-016 旧根在途任务无法回写', () => {
     }
   }, 20000);
 });
+
+describe('KR-AUD-25 根重加入解除拉黑(removedRootKeys 过期)', () => {
+  it('移除 B → 未重加入前拦截保持 → 重加入重登记后 B 索引恢复', async () => {
+    const wsA = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rejoin-a-'));
+    const wsB = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-rejoin-b-'));
+    try {
+      write(wsA, 'scripts/entity_defs/HeroA.def',
+        '<root>\n  <BaseMethods>\n    <onA/>\n  </BaseMethods>\n</root>');
+      write(wsA, 'scripts/base/HeroA.py', 'class HeroA(object):\n    def onA(self):\n        pass\n');
+      write(wsB, 'scripts/entity_defs/HeroB.def',
+        '<root>\n  <BaseMethods>\n    <onB/>\n  </BaseMethods>\n</root>');
+      write(wsB, 'scripts/base/HeroB.py', 'class HeroB(object):\n    def onB(self):\n        pass\n');
+      const bDef = p(wsB, 'scripts', 'entity_defs', 'HeroB.def');
+      const bHeroPy = p(wsB, 'scripts', 'base', 'HeroB.py');
+
+      const originalFolders = stubWorkspace.workspaceFolders;
+      const originalFind = stubWorkspace.findFiles;
+      const walkRoots = (roots: string[]): Uri[] => {
+        const results: Uri[] = [];
+        for (const base of roots) {
+          const walk = (dir: string) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = p(dir, entry.name);
+              if (entry.isDirectory()) { walk(full); }
+              else if (entry.name.endsWith('.def')) { results.push(Uri.file(full)); }
+            }
+          };
+          walk(base);
+        }
+        return results;
+      };
+      stubWorkspace.workspaceFolders = [
+        { uri: Uri.file(wsA), name: 'wsA', index: 0 },
+        { uri: Uri.file(wsB), name: 'wsB', index: 1 }
+      ];
+      stubWorkspace.findFiles = async () => walkRoots([wsA, wsB]);
+
+      const manager = new EntityMappingManager({ subscriptions: [] });
+      try {
+        const rootIndexes = (): Map<string, unknown> =>
+          (manager as unknown as { mappingIndexesByRoot: Map<string, unknown> }).mappingIndexesByRoot;
+        // 生产在根集变化(generation 前进)后的冷查询会触发同一重扫入口;
+        // 测试直调以确定性复现「重加入后的下一轮全量扫描」。
+        const rescan = (manager as unknown as { scanEntityMappings(): Promise<void> })
+          .scanEntityMappings.bind(manager);
+        await until(() => rootIndexes().size >= 2, 'two-folder scan');
+        expect(manager.getMapping('HeroB')).toBeDefined();
+
+        // 移除 B:整根摘除 + 拉黑(IDE-IDX-015/016 语义不变)
+        stubWorkspace.workspaceFolders = [{ uri: Uri.file(wsA), name: 'wsA', index: 0 }];
+        stubWorkspace.findFiles = async () => walkRoots([wsA]);
+        resetScanRootCache();
+        manager.removeRoot(wsB);
+        expect(manager.getMapping('HeroB')).toBeUndefined();
+        // B 未重加入:重扫(A 单根)不得解除拉黑——只解除「重新登记」的根
+        await rescan();
+        expect(manager.getMapping('HeroB')).toBeUndefined();
+
+        // 重加入 B(即验收的 A→B→A 根切换回归段):根重新登记即解除拉黑
+        stubWorkspace.workspaceFolders = [
+          { uri: Uri.file(wsA), name: 'wsA', index: 0 },
+          { uri: Uri.file(wsB), name: 'wsB', index: 1 }
+        ];
+        stubWorkspace.findFiles = async () => walkRoots([wsA, wsB]);
+        resetScanRootCache();
+        await rescan();
+        // B 索引全面恢复:名字槽 / byRoot / owner 反查 / 类方法跳转
+        expect(manager.getMapping('HeroB')).toBeDefined();
+        expect([...rootIndexes().keys()].some(key => key.endsWith('HeroB.def'))).toBe(true);
+        expect(manager.getMappingForPythonFile(bHeroPy)).toBeDefined();
+        expect(await manager.resolveMethodDefinitionForClass('HeroB', 'onB', undefined, bHeroPy))
+          .toMatchObject({ defFile: bDef });
+        // A 全程不受影响
+        expect(manager.getMapping('HeroA')).toBeDefined();
+      } finally {
+        manager.dispose();
+        stubWorkspace.workspaceFolders = originalFolders;
+        stubWorkspace.findFiles = originalFind;
+        resetScanRootCache();
+      }
+    } finally {
+      fs.rmSync(wsA, { recursive: true, force: true });
+      fs.rmSync(wsB, { recursive: true, force: true });
+    }
+  }, 20000);
+});
