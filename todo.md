@@ -819,7 +819,7 @@
 - [x] 审核发现：globalDataIndex.indexFile 命中在途构建时直接复用旧 promise，不递增 revisions 也不安排尾随重读，在途期间落盘的变更被静默丢弃、索引停留旧内容（workspaceIndex 已修的 AUD-034 同型竞态未同步到此）（src/globalDataIndex.ts:863-866，对照 src/workspaceIndex.ts:231-244）。（复核已修：globalDataIndex.ts:1687-1740 revision 追赶重读，tests/globalDataIndex.test.ts:1552；lane-1 2026-11-03 勾）
 - [x] 审核发现：workspaceIndex 在途任务的 finally 无条件 building.delete(fsPath)，会误删 noteDocumentAbandoned 先删后建的新任务条目，后续磁盘事件绕过去重/版本守卫并跳过尾随读，可能发布过期内容（src/workspaceIndex.ts:303-305/176-184）。（复核已修：workspaceIndex.ts:231-246 升 revision+尾随重读、:304-309 只清自己占位，tests/workspaceIndexColdYield.test.ts:104+workspaceEventIndex.test.ts:572；lane-1 2026-11-03 勾）
 - [x] 审核发现：debugpy 安装与 py-spy 超时仅 child.kill() 且子进程未 detached，pip/py-spy 衍生的构建孙进程成为孤儿（对照 ProcessManager.killProcessTree 的组杀口径）（src/debugpyPortProbe.ts:154/167-169；src/pyspyDump.ts:38/50-52）。（复核已修：pyspyDump.ts 组杀+detached 9fd9844；debugpyPortProbe.ts 安装通道 f58f4ec——spawn detached(非 win32)设组长、超时 killProcessTree(pid,SIGKILL,child) 组杀不留孙孤儿,INSTALL_TIMEOUT_MS 可注入(测试 300ms 复现挂起),tests/cov-debug-process.test.ts「挂起的 pip 按截止组杀」例;lane-1 2026-11-04 勾）
-- [ ] 审核发现：autoDebugpy 的 defaultRunPython 是同组唯一无超时/截止的 spawn 包装，解释器挂起时 syncDebugpyPackage 永久等待，命令无反馈卡死（src/autoDebugpy.ts:145-168）。
+- [x] 审核发现：autoDebugpy 的 defaultRunPython 是同组唯一无超时/截止的 spawn 包装，解释器挂起时 syncDebugpyPackage 永久等待，命令无反馈卡死（src/autoDebugpy.ts:145-168）。（复核已修 9fd9844：defaultRunPython spawn detached(非 win32)设组长+RUN_PYTHON_TIMEOUT_MS 30s 截止(可注入 setRunPythonTimeoutMsForTests),超时 killProcessTree 组杀+exitCode 124 如实报超时失败,ENOENT 才换下一候选;tests/autoDebugpy.test.ts:593「解释器挂起:按截止组杀并如实报超时失败」例,2026-11-04 复核勾）
 
 - [x] **C-15 · P1 · 实现 · def 驱动的线格式序列化/反序列化**
   - 依据 2026-11-01 用户确认缺失。现状:message_table.rs 已有消息编号表(utype 分配/别名 id/组件槽),缺字节级编解码。
