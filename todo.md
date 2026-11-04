@@ -1130,7 +1130,7 @@
 > 划界：dataflow/callgraph 项（09-21）与 KODE-AUD-007/008 席位同文件，派单须知会；UI-2/UI-4 行号已被今日 perf 批（1403e72）刷新。
 > 推进顺序：P1（25/26/27/38/39/67/68/69/70/80/81）→ P2 竞态与双轨正确性（09-14/28/29/40-44/53-56）→ P3 择期（转义/CSP 一批统一做：08/38/43/49/50）。验收统一口径：修复+判别测试（修复前红/修复后绿）+既有门禁全绿；引擎语义项（67-72/80-88）须附与引擎源码对拍的 fixture。
 
-- [ ] KR-AUD-01 [P2] CORE-1 src/kodeCoreClient.ts:248-275 dispose 挂起双路径——shutdown(:260) 无超时（仍开）+ 末尾 `await exited`(:273) 对 race 超时时已退出进程无守卫（残边；1.5s race+SIGKILL 已缓解主路径）。验收：shutdown 超时→SIGKILL；exit-after-race 不挂。
+- [x] KR-AUD-01 [P2] CORE-1 src/kodeCoreClient.ts:248-275 dispose 挂起双路径——shutdown(:260) 无超时（仍开）+ 末尾 `await exited`(:273) 对 race 超时时已退出进程无守卫（残边；1.5s race+SIGKILL 已缓解主路径）。验收：shutdown 超时→SIGKILL；exit-after-race 不挂。（2026-11-04 修复：dispose 包 shutdown 超时（默认 5s，`shutdownTimeoutMs` 可配），超时即 SIGKILL 不再等宽限；`exited` promise 加 exitCode/signalCode 已退出守卫；rawRequest promise 自身挂 catch 防 unhandled rejection。kodeFakeServer.cjs 增 hangShutdown/exitOnShutdown 替身模式。判别测试 kodeCoreClient.test.ts 新增 3 例——修复前 2 例挂死红（10s 超时实录），修复后绿；kodeCore* + cov-longtail 7 文件 122/122 绿；tsc --noEmit 0 错；eslint 改动 3 文件 0 错。未 commit。）
 - [ ] KR-AUD-02 [P3] CORE-2 src/kodeCoreClient.ts:183-189 resolve/reject 不清 cancelTimer——已完成 id 收到迟到 $/cancelRequest。验收：完成后无取消通知。
 - [ ] KR-AUD-03 [P3] CORE-3 src/kodeCoreClient.ts:396-402 重启握手失败仅记 stderr，child 不清空→后续请求吃误导性 -32002（server.rs:178）。验收：握手失败即杀子进程走 EXITED 路径。
 - [ ] KR-AUD-04 [P2] DIA-1 src/diagnosticScheduler.ts:417,481-485 computeAsync 失败重抛产生未处理 rejection。验收：错误路径无 UnhandledPromiseRejection，错误可观测。

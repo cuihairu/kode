@@ -116,6 +116,46 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(client.childProcess).toBeNull();
   }, 10_000);
 
+  it('dispose:server 挂死(shutdown 永不回包)时按超时 SIGKILL,不永久挂起(CORE-1 路径1)', async () => {
+    const client = tracked(
+      makeClient({ args: [FAKE_SERVER, 'hangShutdown'], shutdownTimeoutMs: 300 })
+    );
+    await client.start();
+    const { pid } = (await client.request('kode/pid')) as { pid: number };
+    const startedAt = Date.now();
+    await client.dispose();
+    const elapsed = Date.now() - startedAt;
+    expect(elapsed).toBeGreaterThanOrEqual(250); // 走满超时窗,而非立即返回
+    expect(elapsed).toBeLessThan(2000); // 且有界,不吃到默认 5s/无超时挂死
+    expect(client.childProcess).toBeNull();
+    // 子进程确已被 SIGKILL:pid 不复存在(ESRCH)
+    expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+  }, 10_000);
+
+  it('dispose:shutdown 等待期间子进程自行退出(exit 竞态)不挂起(CORE-1 路径2)', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'exitOnShutdown'] }));
+    await client.start();
+    const startedAt = Date.now();
+    await client.dispose();
+    // 不吃满默认 shutdown 超时:exit 事件已被 handleExit 消费,守卫直接完成
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+    expect(client.childProcess).toBeNull();
+    // disposed 状态下意外退出不触发崩溃重启
+    expect(client.restartGeneration).toBe(0);
+  }, 10_000);
+
+  it('dispose:正常 shutdown 路径不受守卫影响,子进程优雅退出(exit code 0)', async () => {
+    const client = tracked(makeClient());
+    await client.start();
+    const child = client.childProcess!;
+    const exitCode = new Promise<number | null>(resolve => child.once('exit', code => resolve(code)));
+    const startedAt = Date.now();
+    await client.dispose();
+    expect(Date.now() - startedAt).toBeLessThan(1500); // 正常路径不等超时窗
+    expect(await exitCode).toBe(0); // shutdown→exit 协议走完的优雅退出
+    expect(client.childProcess).toBeNull();
+  }, 10_000);
+
   it('KodeCoreTransportError 携带分类码', () => {
     const error = new KodeCoreTransportError('boom', 'BAD_FRAME');
     expect(error.name).toBe('KodeCoreTransportError');

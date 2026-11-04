@@ -9,6 +9,9 @@ import { ChildProcess, spawn } from 'child_process';
 const RESTART_WINDOW_MS_DEFAULT = 10_000;
 const RESTART_MAX_DEFAULT = 3;
 
+/** dispose 优雅关闭上限:shutdown 回包等待超过即判定服务器挂死,直接 SIGKILL(CORE-1) */
+const DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT = 5_000;
+
 export interface KodeCoreClientOptions {
   /** kode-server 二进制路径(cargo build 产物) */
   binaryPath: string;
@@ -17,6 +20,8 @@ export interface KodeCoreClientOptions {
   env?: NodeJS.ProcessEnv;
   /** 崩溃重启策略;不传用默认(10s 窗口 3 次) */
   restart?: { maxRestarts?: number; windowMs?: number };
+  /** dispose 时 shutdown 回包等待上限(ms);默认 5000,超时判定挂死并 SIGKILL(CORE-1) */
+  shutdownTimeoutMs?: number;
   /** initialize 参数;不传用最小集 */
   initializeParams?: KodeCoreInitializeParams;
   /** 重启完成回调(测试/可观测用) */
@@ -256,13 +261,47 @@ export class KodeCoreClient {
       return;
     }
     this.rejectAll(new KodeCoreTransportError('client disposed', 'DISPOSED'));
+    // CORE-1 挂起路径 1:shutdown 回包原本无超时,server 存活但挂死(handler
+    // 死循环/背压)时 dispose 永久挂起,后面的 exit/KILL 清理永远走不到。
+    // 包一层超时:超时判定挂死,直接 SIGKILL;rawRequest promise 自身保持
+    // 挂 catch,避免 exit 竞态迟到的 rejectAll 变成 unhandled rejection。
+    const shutdownTimeoutMs = this.options.shutdownTimeoutMs ?? DISPOSE_SHUTDOWN_TIMEOUT_MS_DEFAULT;
+    let shutdownTimedOut = false;
     try {
-      await this.rawRequest('shutdown', undefined);
+      await new Promise<unknown>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          shutdownTimedOut = true;
+          reject(new KodeCoreTransportError(`shutdown timed out after ${shutdownTimeoutMs}ms`, 'TIMEOUT'));
+        }, shutdownTimeoutMs);
+        this.rawRequest('shutdown', undefined).then(
+          value => {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          error => {
+            clearTimeout(timer);
+            reject(error);
+          }
+        );
+      });
     } catch {
-      // 服务器已死也继续走 exit/kill
+      // 服务器已死也继续走 exit/kill;挂死则立即 SIGKILL,不再等宽限
+      if (shutdownTimedOut && child.exitCode === null) {
+        child.kill('SIGKILL');
+      }
     }
     this.sendRaw({ jsonrpc: '2.0', method: 'exit' });
-    const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+    const exited = new Promise<void>(resolve => {
+      // CORE-1 挂起路径 2:shutdown 等待期间子进程已自行退出时(handleExit
+      // 已消费 exit 事件并置 child=null),once('exit') 注册在已发事件的进程
+      // 上永不触发——用 exitCode/signalCode 守卫直接完成,避免末尾
+      // `await exited` 永久挂起(子进程孤儿泄漏)。
+      if (child.exitCode !== null || child.signalCode !== null) {
+        resolve();
+        return;
+      }
+      child.once('exit', () => resolve());
+    });
     const timeout = new Promise<void>(resolve => setTimeout(resolve, 1500));
     await Promise.race([exited, timeout]);
     if (!child.killed && child.exitCode === null) {

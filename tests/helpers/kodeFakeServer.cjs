@@ -1,11 +1,18 @@
 // kode2 PR-003 单测替身:最小 stdio LSP 服务器(无需 Rust 工具链)。
-// 用法:node tests/helpers/kodeFakeServer.cjs [crashMethod]
+// 用法:node tests/helpers/kodeFakeServer.cjs [crashMethod|挂死模式]
 //   crashMethod 非空时,收到同名请求立即 exit(1)(测崩溃重启)。
+//   模式令牌(与 crashMethod 互斥,可同时出现):
+//     hangShutdown    — shutdown 请求永不回包(测 dispose 超时 SIGKILL,CORE-1)
+//     exitOnShutdown  — 收到 shutdown 后延迟自行 exit 且不回包(测 exit 竞态)
 // 行为对齐 kode-server:initialize 协商、didOpen/didChange/didClose、
 // $/kode/health、可取消的 $/kode/wait、shutdown/exit。
 'use strict';
 
-const crashMethod = process.argv[2] || null;
+const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown'];
+const args = process.argv.slice(2);
+const crashMethod = args.find(a => !MODE_TOKENS.includes(a)) || null;
+const hangShutdown = args.includes('hangShutdown');
+const exitOnShutdown = args.includes('exitOnShutdown');
 
 let buffer = Buffer.alloc(0);
 let shutdown = false;
@@ -41,6 +48,14 @@ function handle(msg) {
     case 'initialized':
       return;
     case 'shutdown':
+      if (hangShutdown || exitOnShutdown) {
+        // CORE-1 替身:不回包模拟挂死;exitOnShutdown 额外延迟自行退出,
+        // 复现 dispose 在 shutdown 等待期间子进程先退出的竞态。
+        if (exitOnShutdown) {
+          setTimeout(() => process.exit(0), 150);
+        }
+        return;
+      }
       shutdown = true;
       return reply(msg.id, null);
     case 'exit':
