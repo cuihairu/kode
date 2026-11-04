@@ -62,7 +62,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onTimer(self, timerID, userArg=None):
     INFO_MSG(f"timer {timerID} fired with userArg={userArg}")
     self.delTimer(timerID)`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:4333; kbe/src/server/baseapp/entity.cpp:1662'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:4352; kbe/src/server/baseapp/entity.cpp:1662'
   },
   {
     name: 'onRestore',
