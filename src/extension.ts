@@ -4148,14 +4148,14 @@ export function activate(context: vscode.ExtensionContext) {
   // 点击提交记录:主编辑区打开该版本 vs 父版本只读 diff(参数=hash/文件/仓库)
   const gitOpenVersionDiffCommand = vscode.commands.registerCommand(
     'kbengine.git.openVersionDiff',
-    (commit: string, filePath: string, repoRoot: string) => runGitHistoryWhenEnabled(
+    (commit: string, filePath: string, repoRoot: string, parentFilePath?: string) => runGitHistoryWhenEnabled(
       readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
       async () => {
         if (typeof commit !== 'string' || typeof filePath !== 'string' || typeof repoRoot !== 'string') {
           void vscode.window.showInformationMessage('打开版本差异:参数不完整(缺少提交/文件/仓库)。');
           return;
         }
-        await openVersionDiff(filePath, repoRoot, commit, defaultVersionQueryDeps());
+        await openVersionDiff(filePath, repoRoot, commit, defaultVersionQueryDeps(), parentFilePath);
       }
     )
   );

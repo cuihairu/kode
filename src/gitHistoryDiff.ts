@@ -157,15 +157,18 @@ export class GitHistoryVersionContentProvider implements vscode.TextDocumentCont
 /**
  * 打开提交版本 vs 父版本的只读 diff(两侧均虚拟文档,绝不覆盖工作区文件)。
  * 根提交父侧为空(整文件呈现为新增);本提交删除文件右列为空。
+ * parentFilePath(IDE-GIT-007):父提交时文件所在路径——重命名提交的父侧在
+ * 老路径,缺省同 filePath(非重命名提交两侧同路径)。
  */
 export async function openVersionDiff(
   filePath: string,
   repoRoot: string,
   commit: string,
-  deps: VersionQueryDeps
+  deps: VersionQueryDeps,
+  parentFilePath?: string
 ): Promise<void> {
   const parent = await getParentCommit(repoRoot, commit, deps);
-  const left = makeVersionUri(repoRoot, parent ?? 'EMPTY', filePath);
+  const left = makeVersionUri(repoRoot, parent ?? 'EMPTY', parentFilePath ?? filePath);
   const right = makeVersionUri(repoRoot, commit, filePath);
   const label = `${path.basename(filePath)} @ ${commit.slice(0, 8)}`;
   await vscode.commands.executeCommand(

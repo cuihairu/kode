@@ -877,6 +877,7 @@ The flow graph panel supports:
   - Gated by the same switch: with the feature off the command is hidden from menus and a direct invocation runs nothing Git
   - Resolves the target from the invocation argument (context menu URI) or the active editor; on demand locates the owning Git repository and queries page 0 into the `kbengine.gitHistory` sidebar tree, then focuses it
   - The tree rows show subject + `author · time` and a tooltip (hash, author email, times, body); a trailing 加载下一页 row appends the next bounded page on click only; the view title names the file and its baseline commit (`a.py @ 01234567`)
+  - The query follows renames (IDE-GIT-007): commits before and after a rename are listed, each row carries the path the file had at that commit, and a trace that ends in a copy/delete rather than a clean rename shows an honest copy-or-move boundary row instead of pretending history continues
   - An idle view shows a guidance row and makes zero Git calls; terminal states (untracked / staged-no-history / empty-repo / locate failure / bounded-runner outcome) are reported honestly
 
 ### `kbengine.git.historyNextPage`
@@ -900,7 +901,8 @@ The flow graph panel supports:
 - Title: `Kode: 打开版本差异 (Open Version Diff)`
 - Purpose: open a historical commit's version of a file versus its parent as a read-only diff in the editor (IDE-GIT-006). Bound to clicking a commit row in the `kbengine.gitHistory` view; hidden from the command palette (`when: false`)
 - Behavior:
-  - Invoked with `(commit, filePath, repoRoot)`; resolves the commit's parent via `git rev-list --parents -n1`; the root commit uses an empty left side so the whole file reads as added
+  - Invoked with `(commit, filePath, repoRoot, parentFilePath?)`; resolves the commit's parent via `git rev-list --parents -n1`; the root commit uses an empty left side so the whole file reads as added
+  - Across a rename the left side uses the parent-era path (IDE-GIT-007), so a pure rename shows no change instead of a fabricated whole-file add
   - Both sides open as virtual documents (`kode-git-version` scheme) keyed by repo/commit/path — workspace files are never overwritten or opened as real files
   - A path absent at that commit (deleted or not-yet-created) shows as an empty side; a bounded read failure surfaces an honest error rather than a silent empty
   - Gated by `kbengine.gitHistory.enabled`; a disabled feature runs nothing Git

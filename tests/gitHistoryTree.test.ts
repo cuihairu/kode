@@ -106,6 +106,55 @@ describe('IDE-GIT-005 状态机(纯)', () => {
     expect(summarizeGitError({ kind: 'spawn', message: 'Git 进程启动失败:ENOENT' })).toContain('ENOENT');
     expect(summarizeGitError({ kind: 'invalid-args', reason: 'args 为空' })).toContain('参数被拒');
   });
+
+  it('IDE-GIT-007:提交行按 pathAtCommit 定打开路径(重命名前老路径)', () => {
+    const items = buildHistoryItems({
+      kind: 'loaded',
+      filePath: '/repo/src/new.py',
+      repoRoot: '/repo',
+      entries: [entry('h1', '改新'), { ...entry('h2', '改老'), pathAtCommit: 'src/old.py' }],
+      page: 0,
+      pageSize: 50,
+      hasMore: false,
+    });
+    const commits = items.filter((i): i is Extract<GitHistoryItem, { kind: 'commit' }> => i.kind === 'commit');
+    // 当前路径提交 → 打开当前路径;重命名前提交 → 打开老路径(绝对化)
+    expect(commits[0].filePath).toBe('/repo/src/new.py');
+    expect(commits[1].filePath).toBe('/repo/src/old.py');
+  });
+
+  it('IDE-GIT-007:到头且最老提交以复制/删除收尾 → 边界警告行', () => {
+    const items = buildHistoryItems({
+      kind: 'loaded',
+      filePath: '/repo/src/new.py',
+      repoRoot: '/repo',
+      entries: [entry('h1', '改新')],
+      page: 0,
+      pageSize: 50,
+      hasMore: false,
+      boundary: { kind: 'copy-or-move', atCommit: 'abc12345', atPath: 'src/old.py' },
+    });
+    const warnings = items.filter((i) => i.kind === 'message');
+    expect(warnings).toHaveLength(1);
+    if (warnings[0].kind === 'message') {
+      expect(warnings[0].message).toContain('复制/移动边界');
+      expect(warnings[0].message).toContain('abc12345');
+    }
+  });
+
+  it('IDE-GIT-007:还有下一页时边界不显示(未到头不断言)', () => {
+    const items = buildHistoryItems({
+      kind: 'loaded',
+      filePath: '/repo/src/new.py',
+      repoRoot: '/repo',
+      entries: [entry('h1', '改新')],
+      page: 0,
+      pageSize: 50,
+      hasMore: true,
+      boundary: null,
+    });
+    expect(items.some((i) => i.kind === 'message')).toBe(false);
+  });
 });
 
 describe('IDE-GIT-005 提供者(fake-vscode)', () => {
@@ -180,14 +229,15 @@ describe('IDE-GIT-005 提供者(fake-vscode)', () => {
       index: 0,
       filePath: '/repo/src/a.py',
       repoRoot: '/repo',
+      parentFilePath: '/repo/src/a.py',
     });
     expect(commitItem.label).toBe('主题一');
     expect(commitItem.description).toContain('作者甲');
     expect(commitItem.contextValue).toBe('gitCommit');
     expect(commitItem.tooltip).toContain('h1');
-    // IDE-GIT-006:点击提交记录 → 打开该版本 vs 父版本只读 diff(参数=hash/文件/仓库)
+    // IDE-GIT-006:点击提交记录 → 打开该版本 vs 父版本只读 diff(参数=hash/文件/仓库/父路径)
     expect(commitItem.command?.command).toBe('kbengine.git.openVersionDiff');
-    expect(commitItem.command?.arguments).toEqual(['h1', '/repo/src/a.py', '/repo']);
+    expect(commitItem.command?.arguments).toEqual(['h1', '/repo/src/a.py', '/repo', '/repo/src/a.py']);
 
     const next = provider.getTreeItem({ kind: 'next-page', loadedCount: 50 });
     expect(next.label).toContain('50');

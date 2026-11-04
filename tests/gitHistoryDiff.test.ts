@@ -202,6 +202,29 @@ describe('IDE-GIT-006 diff 与内容打开命令', () => {
     }
   });
 
+  it('IDE-GIT-007:重命名提交的 diff 左列按父提交老路径取内容', async () => {
+    let diffArgs: unknown[] = [];
+    const spy = vi
+      .spyOn(vscode.commands, 'executeCommand')
+      .mockImplementation(async (command: string, ...args: unknown[]) => {
+        if (command === 'vscode.diff') diffArgs = args;
+        return undefined;
+      });
+    try {
+      const { deps } = makeDeps(async (args) => {
+        if (args[0] === 'rev-list') return okOutcome('renamed0 parent9999\n');
+        throw new Error(`unexpected: ${args.join(' ')}`);
+      });
+      // 该提交在 new.py,父提交在 old.py(重命名)
+      await openVersionDiff('/repo/src/new.py', '/repo', 'renamed0', deps, '/repo/src/old.py');
+      const [left, right] = diffArgs as [vscode.Uri, vscode.Uri, string];
+      expect(decodeVersionUri(left).filePath).toBe('/repo/src/old.py');
+      expect(decodeVersionUri(right).filePath).toBe('/repo/src/new.py');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('openVersionContent:只读打开该版本(虚拟文档,preview:false,不落盘)', async () => {
     const openCalls = workspaceState.openTextDocumentCalls;
     const before = openCalls.length;

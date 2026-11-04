@@ -37,6 +37,11 @@ export type GitHistoryItem =
       /** 所属文件与仓库(IDE-GIT-006 打开版本 diff/内容时定位虚拟文档三键)。 */
       filePath: string;
       repoRoot: string;
+      /**
+       * 父提交时文件所在路径(IDE-GIT-007):重命名提交的父侧在老路径,
+       * 供 diff 左列按父版本真实路径取内容;缺省同 filePath。
+       */
+      parentFilePath: string;
     }
   | { kind: 'next-page'; loadedCount: number }
   | { kind: 'message'; message: string; tone: 'guidance' | 'warning' };
@@ -53,6 +58,8 @@ export type GitHistoryState =
       page: number;
       pageSize: number;
       hasMore: boolean;
+      /** IDE-GIT-007 追踪边界(仅到头时):最老提交以删除/复制收尾,如实标注。 */
+      boundary?: { kind: 'copy-or-move'; atCommit: string; atPath: string } | null;
     }
   | { kind: 'untracked'; filePath: string }
   | { kind: 'no-history'; filePath: string }
@@ -78,7 +85,7 @@ export function defaultGitHistoryDeps(deps?: Partial<GitHistoryDeps>): GitHistor
         realGitRepoLocationDeps()
       ),
     queryLog: (filePath, repoRoot, page, pageSize) =>
-      queryGitCommitLog({ repoRoot, filePath, page, pageSize }),
+      queryGitCommitLog({ repoRoot, filePath, page, pageSize, follow: true }),
     pageSize: DEFAULT_GIT_LOG_PAGE_SIZE,
     ...deps,
   };
@@ -98,15 +105,31 @@ export function buildHistoryItems(state: GitHistoryState): GitHistoryItem[] {
     case 'loading':
       return [{ kind: 'message', tone: 'guidance', message: '正在查询文件历史…' }];
     case 'loaded': {
-      const items: GitHistoryItem[] = state.entries.map((entry, index) => ({
-        kind: 'commit',
-        entry,
-        index,
-        filePath: state.filePath,
-        repoRoot: state.repoRoot,
-      }));
+      const items: GitHistoryItem[] = state.entries.map((entry, index) => {
+        // IDE-GIT-007:打开该版本内容须按「该提交时的路径」而非当前路径
+        // (重命名前的老路径提交用老路径,否则 `git show <commit>:<当前路径>` 取不到)。
+        const filePath = entry.pathAtCommit
+          ? path.join(state.repoRoot, entry.pathAtCommit)
+          : state.filePath;
+        // 父提交时路径 = 下一条(更老)记录的 pathAtCommit;页内未知(最老一条
+        // 或非 follow)回退同路径——重命名提交的父侧据此走老路径。
+        const next = state.entries[index + 1];
+        const parentFilePath = next?.pathAtCommit
+          ? path.join(state.repoRoot, next.pathAtCommit)
+          : filePath;
+        return { kind: 'commit', entry, index, filePath, repoRoot: state.repoRoot, parentFilePath };
+      });
       if (state.hasMore) {
         items.push({ kind: 'next-page', loadedCount: state.entries.length });
+      }
+      // IDE-GIT-007:追踪到头且最老提交以删除/复制收尾(非干净重命名链)——
+      // 沿重命名链回溯到此为止,如实提示边界,绝不假装继续。
+      if (!state.hasMore && state.boundary?.kind === 'copy-or-move') {
+        items.push({
+          kind: 'message',
+          tone: 'warning',
+          message: `历史在此前为复制/移动边界(提交 ${state.boundary.atCommit.slice(0, 8)} 起路径 ${state.boundary.atPath} 无法沿重命名链继续回溯)`,
+        });
       }
       return items;
     }
@@ -162,11 +185,12 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
         .filter((line) => line.trim() !== '')
         .join('\n');
       tree.contextValue = 'gitCommit';
-      // IDE-GIT-006:点击提交记录在主编辑区打开该版本 vs 父版本只读 diff
+      // IDE-GIT-006:点击提交记录在主编辑区打开该版本 vs 父版本只读 diff;
+      // IDE-GIT-007:第 4 参为父提交时路径(重命名提交父侧走老路径)。
       tree.command = {
         command: 'kbengine.git.openVersionDiff',
         title: '打开版本差异',
-        arguments: [item.entry.hash, item.filePath, item.repoRoot],
+        arguments: [item.entry.hash, item.filePath, item.repoRoot, item.parentFilePath],
       };
     } else if (item.kind === 'next-page') {
       tree.label = `加载下一页(已载 ${item.loadedCount} 条)`;
@@ -226,6 +250,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       entries: [...prev.entries, ...result.entries],
       page: result.page,
       hasMore: result.hasMore,
+      boundary: result.boundary ?? prev.boundary ?? null,
     };
     this.fire();
   }
@@ -253,6 +278,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
           page: result.page,
           pageSize: result.pageSize,
           hasMore: result.hasMore,
+          boundary: result.boundary ?? null,
         };
       }
       case 'untracked':
