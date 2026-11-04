@@ -62,3 +62,8 @@ target/
 # Cargo/Rust 中间物（防未来扩展目录结构变化时渗漏）
 cargo-home/
 *.pdb
+# 本仓 git worktree 席位目录（37000+ 文件/538MB，含断链 symlink——
+# 2026-11-04 本地预检发现被整目录扫进 vsix 且 yazl 打包崩溃；CI 无此目录）
+wt/
+kode-wt-*/
+scratch/
