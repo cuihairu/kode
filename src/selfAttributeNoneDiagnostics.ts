@@ -39,6 +39,22 @@ function buildMessage(attr: string, member: string): string {
 }
 
 /**
+ * KODE-PERF-002:一次行起始偏移表(每 '\n' 后一位置;0 起行 0 从 0)。
+ * 与旧口径 `slice(0, index).split('\n').length - 1` 等值——行号='\n' 计数
+ * ('\r' 留在行尾不影响计数,CRLF/LF 同值);g 正则匹配 index 单调递增,配
+ * 双指针整体 O(n),替代每匹配 O(index) 切片分裂的平方级。
+ */
+function buildLineStarts(source: string): number[] {
+  const starts: number[] = [0];
+  for (let offset = 0; offset < source.length; offset += 1) {
+    if (source.charCodeAt(offset) === 10) {
+      starts.push(offset + 1);
+    }
+  }
+  return starts;
+}
+
+/**
  * 全量计算:无判空窄化的自管属性成员访问(Warning)。纯函数(文本 + 回调)。
  * 逐访问按 (行, 属性) 记忆化流类型——同一访问行同属性只推一次。
  */
@@ -50,6 +66,9 @@ export function computeSelfAttributeNoneFindings(
   const lines = source.split(/\r?\n/);
   const findings: SelfAttributeNoneFinding[] = [];
   const memo = new Map<string, boolean>();
+  // KODE-PERF-002:行起始偏移表一次建好,匹配 index 单调递增 → 双指针推进
+  const lineStarts = buildLineStarts(source);
+  let lineStartIdx = 0;
   SELF_MEMBER_ACCESS.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = SELF_MEMBER_ACCESS.exec(source)) !== null) {
@@ -58,7 +77,10 @@ export function computeSelfAttributeNoneFindings(
       continue;
     }
     // 行内计算匹配的 0 起行号与成员列
-    const line = source.slice(0, match.index).split('\n').length - 1;
+    while (lineStartIdx + 1 < lineStarts.length && lineStarts[lineStartIdx + 1] <= match.index) {
+      lineStartIdx += 1;
+    }
+    const line = lineStartIdx;
     const member = match[2];
     // 成员列 = 匹配起点 + `self.<attr>.` 长度
     const memberCharacter = match.index + match[0].indexOf(member);
