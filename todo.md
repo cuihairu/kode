@@ -1046,3 +1046,65 @@
 - [ ] `IDE-STUB-004 [P1]` 测试：默认档不触发复制代码路径；real-source 档触发；fantasydemoRealExport 标注为 real-source 专属 fixture；`tests/fantasydemoRealExport.test.ts` 在默认档下 skip 理由更新。
 
 > **⚠ 0.2.0 范围冻结（用户令 2026-11-03）**：本账本仅清既有条目与新暴露缺陷；CFG/STUB/KB/协议分析器/IDE-GIT 等**新功能批次一律顺延 0.2.1**，冻结期内不派工。发布判定=QA 线缩水版全绿（见 docs/kode2/qa-execution-plan.md §8）。解冻须用户明示。
+
+## KBEngine Python API 全量整合（用户令 2026-11-04，明示解冻本批次；本节为拆解入账，整合正文未动笔）
+
+来源：`../kbengine` fork `docs/api/`（32 篇 md，kbengine/ 27 + bigworld/ 5；正主=kbengine_api(cn).chm 转换产物）。落点：docs/knowledge/ + docs/zh/knowledge/ 双语逐篇镜像，grounding=kbengine@c2a3b8f 源码 file:line，禁捏造。本节各任务=每组一条（双语两篇交付 + file:line grounding + 源料 3.7 口径→fork 3.12 实际的差异标注）。
+
+### 盘点摘要（2026-11-04）
+
+- **kbengine/ 27 篇**：baseapp 三篇最大（KBEngine.md 44.9k 字符/50 h3 节、Entity.md 17.3k/19、Proxy.md 8.4k/12）；cellapp 两篇（Entity.md 44.0k/50、KBEngine.md 32.4k/42）；client 两篇（Entity.md 7.2k/13、KBEngine.md 4.8k/9）；bots 四篇（KBEngine 7.6k/10、Entity 8.3k/11、PyClientApp 1.4k/2、index）；interfaces KBEngine.md 13.4k/12；loginapp 9.0k/11、dbmgr 9.2k/8、logger 5.8k/7 各一篇+薄 index；横切=keywords.md 7.6k/19、basetypes.md 0.3k（裸类型表）、总览 index.md 0.8k；audit-checklist.md 12.6k 是审计方法论文档（非 API 面，作各任务校验口径用）。
+- **bigworld/ 5 篇全部为骨架 stub**（base/bigworld-module/bwpersonality/entity/index，每篇 1.2k-1.7k，只有「源文件位置+已知 API 组+Next steps」，无签名无语义）——不可直接整合。
+- 源料质量：正文语义可信（抽验 6 断言 5 过，见 KB-API-003/004/002 内嵌证据），但**排版含chm转换粘连**（单词粘连如 ThisKBEngine、表格破损），整合时须重写不照抄；client 面混入**插件层 API**（login/createAccount/findEntity 等），实现不在 kbe/src（见 KB-API-002）。
+
+### 源码对账抽验结果（2026-11-04，抽 3 篇×2 断言，均已亲验 file:line）
+
+- baseapp/KBEngine.md：`baseAppData`=GlobalDataClient ✓（kbe/src/server/baseapp/baseapp.cpp:461 `registerPyObjectToScript("baseAppData", pBaseAppData_)`，DBMGR_TYPE+BASEAPP_DATA）；`globalData`=GlobalDataClient ✓（kbe/src/lib/server/entity_app.h:418-419，GLOBAL_DATA，baseapp/cellapp 共用此注册点）。
+- cellapp/Entity.md：`addTimer(start, interval=0.0, userData=0)` ✓（kbe/src/server/cellapp/entity_component.cpp:12 SCRIPT_METHOD_DECLARE("addTimer", pyAddTimer)）；`controlledBy` BaseEntityCall ✓（kbe/src/server/cellapp/entity.cpp:87 SCRIPT_GETSET_DECLARE("controlledBy", pyGetControlledBy, pySetControlledBy)）。
+- client/KBEngine.md：`player()` ✓（kbe/src/lib/client_lib/clientobjectbase.cpp:28 SCRIPT_DIRECT_METHOD_DECLARE("player")；`entities` 同文件 :36）；`findEntity(entityID)` ✗ **kbe/src 全树无注册点**——客户端插件层 API（login/createAccount/reloginBaseapp/bindAccountEmail/newPassword/resetPassword/findEntity 九个成员函数中仅 player/entities/getSpaceData/callback/cancelCallback/getWatcher/getWatcherDir/disconnect/kbassert 在 client_lib/clientobjectbase.cpp:20-28 注册）。结论：client 面文档是「C++ client_lib + 客户端 SDK 插件」混合面，grounding 须分域标注。
+
+### 版本口径取证（2026-11-04，KB-API-001 的已验事实）
+
+- Windows 工程已链 python312 库：kbe/src/server/baseapp/baseapp.vcxproj:118（`python312_d.lib`）等 9 个 vcxproj——**3.12 已落地的事实证据**。
+- docs/zh/guide/engineering/python-3.12-upgrade.md:8 仍写「当前 vendored 版本是 3.7.3」——**文档漂移**，升级后未回改。
+- kbe/src/lib/pyscript/script.cpp:255 仍调 `PyEval_InitThreads()`（3.9 起弃用、3.13 移除；3.12 下可编译有弃用告警）——嵌入层 C API 审计未收口的实例。
+- **vendored `kbe/src/lib/python/` 树未入 git**（`git ls-files kbe/src/lib/python` = 0）且本机不在盘上——3.12 CPython 源码不在仓库内，偏离清单取证须另行取得 3.12 参照（本机 python3.12/官方 changelog），不得凭 3.7 docs/api 源料反推。
+
+### 执行约定（本节通用）
+
+- grounding 统一口径：kbengine@c2a3b8f（该 commit 是 fork HEAD `6d12b8f` 的祖先，账面引用以 c2a3b8f 为准）；每条 API 断言带 `kbe/src` file:line；已在上方抽验过的证据点各任务**复核后引用，不得凭空改写**。
+- 差异标注口径：源料 CHM=官方 3.7 时代文档；fork 嵌入 3.12。每篇交付含「源料 vs fork 实测」差异小节（如脚本层 str/bytes、int 无上限、datetime 等 3.7→3.12 语义差 + 嵌入层 C API 变化），无差异的篇目显式写「无偏离」不空缺。
+- 双语镜像按 docs/knowledge/README.md 约定：en 为 canonical（行号漂移检查基准），zh 逐篇镜像同引用同主张。
+- 与既有条目分工：入口 SPI 36 方法=KODE-CFG-012/014（kbemain 面，不在本节范围）；hover 文档库消费=C-21；MCP 消费=MCP-001；本节产出按 KB-001 流水线喂两者。
+
+- [ ] **KB-API-001 · P0 · 建设 · 版本口径说明：python 3.7→3.12 偏离清单**（双语一篇 docs/knowledge/python-version-baseline.md + zh 镜像）
+  - 交付：以「版本口径说明」篇回答——官方 docs/api 源料按 3.7 口径写，fork 嵌入 3.12，整合各篇如何标注。内容含：①运行时基线事实（上方取证四条全部复核引用：vcxproj python312、upgrade 文档漂移、script.cpp:255 弃用调用、vendored 树未入 git）；②嵌入层 C API 审计清单（PyEval_InitThreads 及同类已移除/语义变更调用逐个 grep `kbe/src/lib/pyscript`+`lib/server`，逐条标 3.12 下的行为：可编译/告警/须改）；③脚本层 3.7→3.12 语义偏离表（影响 API 整合的子集：str/bytes、int、迭代器、asyncio 无关面不写）；④给 KB-API-002~008 的统一标注模板（每篇差异小节的固定格式）。
+  - 验收：清单逐条带 kbe/src file:line 或 CPython 3.12 官方出处（两域分开标）；upgrade 指南页 3.7.3 漂移**不在本任务内改**（那是 kbengine 仓的事，仅在知识库篇里如实记「源仓文档漂移」）；双语镜像一致。
+- [ ] **KB-API-002 · P0 · 建设 · client 面（客户端运行时）**：源料 client/KBEngine.md(4.8k)+client/Entity.md(7.2k)+client/index.md，双语 docs/knowledge/api-client.md + zh 镜像
+  - 范围口径（本批抽验已定）：九个模块函数中 `player/entities/getSpaceData`（+callback/cancelCallback/getWatcher/getWatcherDir/disconnect/kbassert）落 kbe/src grounding（lib/client_lib/clientobjectbase.cpp:20-28 已验，复核后引用）；`login/createAccount/reloginBaseapp/resetPassword/bindAccountEmail/newPassword/findEntity` **无 kbe/src 注册点，标注「实现于客户端 SDK 插件层（本仓库外）」**，不得落到任何 kbe/src file:line，也不得写成未实现——它们对用户可用，只是实现域不同。
+  - 内容：Entity 面（isPlayer/player 语义边界、onEnterWorld/onLeaveWorld/onEnterSpace/onLeaveSpace 触发语义、baseCall/cellCall 限制、isOnGround/moveToPoint 同步、ownerOnly 可见性）按 audit-checklist §2 焦点逐条 grounding 后撰写；抽验锚：clientobjectbase.cpp:28/:36。
+  - 验收：每断言 file:line 或「插件层」显式标注；差异小节按 KB-API-001 模板；与 KB-001 既有 entity-lifecycle 篇互链。
+- [ ] **KB-API-003 · P0 · 建设 · baseapp 面**：源料 baseapp/KBEngine.md(44.9k)+Entity.md(17.3k)+Proxy.md(8.4k)+index.md，双语 docs/knowledge/api-baseapp.md + zh 镜像（四源料合一篇过大则拆 api-baseapp + api-baseapp-entity 两篇，拆法写进篇首）
+  - 内容：进程级（createBaseEntity/createBaseLocally/globalData/baseAppData/baseBases/onGlobalData 系回调/定时器/addTimer 进程版/远程方法调用）+ Base Entity 面（createCellEntity 语义=Base→Cell 移交非本地创建、writeToDB/destroy/createFromDB）+ Proxy 面（giveClientTo 客户端移交与 Witness 链）。
+  - 抽验锚（复核后引用）：baseAppData=baseapp.cpp:461、globalData=entity_app.h:418-419；audit-checklist §3 焦点（Base→Cell handoff 回调序、持久化时序与失败路径、controlledBy/isControlled/control 转移）逐条落。
+  - 验收：Proxy giveClientTo 必须落到源码实现点（baseapp proxy.cpp/entity.cpp 相应 file:line）；createCellEntity 按 audit-checklist 定论写「handoff not local creation」并带实现点；差异小节模板齐。
+- [ ] **KB-API-004 · P0 · 建设 · cellapp 面**：源料 cellapp/Entity.md(44.0k)+cellapp/KBEngine.md(32.4k)+index.md，双语 docs/knowledge/api-cellapp.md + zh 镜像（篇过大可拆两篇，拆法写篇首）
+  - 内容：Cell Entity 全面（allClients/其他客户端广播、controlledBy/controlBy、moveToPoint/navigate/navigatePathPoints/cancelController 控制器链、addTimer/delTimer、AOI/进入离开空间回调、volatile/属性广播）+ 进程级（cellData/globalData/cellAppData 注册与回调、createEntity/createSpace 失败语义）。
+  - 抽验锚（复核后引用）：addTimer=cellapp/entity_component.cpp:12、controlledBy=cellapp/entity.cpp:87、cellAppData=cellapp.cpp:199、globalData=entity_app.h:418-419；audit-checklist §3 移动/控制器/AOI 焦点逐条落。
+  - 验收：控制器链（moveToPoint/navigate/cancelController 共享一条 controller 链，audit-checklist 已连源码分析）带实现点；广播面 allClients/其他 clients 按源码语义写不准含糊；差异小节模板齐。
+- [ ] **KB-API-005 · P1 · 建设 · interfaces 面**：源料 interfaces/KBEngine.md(13.4k)+index.md，双语 docs/knowledge/api-interfaces.md + zh 镜像
+  - 内容：第三方账号接入面（onRequestAccountLogin/onRequestCharge 等 interfaces 组件回调、dbInterface 配置交互），按 audit-checklist §4 「Account/login/database/third-party integration 边界」焦点。
+  - 验收：每回调带调用点 file:line（kbe/src/server/tools/interfaces/）；差异小节模板齐。
+- [ ] **KB-API-006 · P1 · 建设 · loginapp/dbmgr/logger 进程全局面**：源料三篇 KBEngine.md（loginapp 9.0k/dbmgr 9.2k/logger 5.8k）+三篇薄 index，双语 docs/knowledge/api-loginapp.md、api-dbmgr.md、api-logger.md 三篇 + zh 镜像
+  - 内容：loginapp（login/createAccount/resetPassword/bindAccountEmail 服务端协议面、onRequestLogin/onLoginCallbackFromDB）、dbmgr（持续化与 Account 查询接口、onSelectAccountDBInterface）、logger（日志观察面/Watcher 挂接）。
+  - 验收：三篇各自独立可验收（一篇一 checkbox 口径在本行内分号列出）；audit-checklist §4 进程边界焦点逐条落；差异小节模板齐。
+- [ ] **KB-API-007 · P1 · 建设 · bots 面（压测组件）**：源料 bots/KBEngine.md(7.6k)+Entity.md(8.3k)+PyClientApp.md(1.4k)+index.md，双语 docs/knowledge/api-bots.md + zh 镜像
+  - 内容：压测客户端运行时（PyClientApp 入口、bots 复用 client_lib 的 player/entities 面、压测专用回调 onInit/onTick 压测逻辑挂点）；与 KB-API-002 的 client 面共域部分**互链不重写**（同一 client_lib 注册点，差异只在压测挂接面）。
+  - 验收：共域断言引用 KB-API-002 已 grounding 的锚点不重复取证；bots 专属回调带 kbe/src/server/tools/bots file:line；差异小节模板齐。
+- [ ] **KB-API-008 · P1 · 建设 · 核心概念篇（basetypes+keywords+总览）**：源料 basetypes.md(0.3k 裸表)+keywords.md(7.6k/19 节)+总览 index.md(0.8k)，双语 docs/knowledge/api-basetypes.md（含 keywords 术语矩阵）+ zh 镜像
+  - 内容：基础类型表（UINT8..VECTOR4/PYTHON/STRING/UNICODE 及字节数——与 kbe/src/lib/entitydef/datatypes.cpp DataTypes::initialize 21 内建逐名对账，kode 仓 1cf55c4 批已核过 21 名清单可复核引用）+ keywords 术语矩阵（ENTITYCALL/CELLDATADICT/PyClient 等按 audit-checklist「表面名 vs 运行时语义」焦点展开）+ API 总览（四桶导航篇）。
+  - 验收：类型表每行与 datatypes.cpp 注册点对账（字节断言只写有实现依据的）；术语条目分「表面名/运行时语义/易混点」三列；audit-checklist 建议的「最后收口术语」顺序照做（排在 002-007 之后实施）。
+- [ ] **KB-API-009 · P2 · 建设 · bigworld/ 5 篇遗产处置决策**：源料 bigworld/{base,bigworld-module,bwpersonality,entity,index}.md（全部骨架 stub，仅 1.2k-1.7k）
+  - 交付：一篇**处置决策记录**（docs/knowledge/bigworld-legacy-status.md + zh 镜像，或并入总览篇一节）：按 stub 内 Next steps 评估「从 /*~ 注释提取补全」的成本收益，给出「整合/只留状态说明/明确不整合」三选一建议与理由（stub 所指 server/baseapp/base.hpp 的 /*~ 注释面在 fork 源码里是否存在须先取证）；不整合则写明范围边界防后续误派工。
+  - 验收：决策带取证（fork 源码里 /*~ 注释面 grep 结果 file:line）；不得把 stub 内容当已验证 API 整合进任何一篇。
+
