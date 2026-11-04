@@ -13,7 +13,7 @@
 //! - 暂停/恢复:暂停时 pump 不出活,入队照常,恢复后继续;
 //! - 逻辑时钟:对拍/测试可注入推进,真实接入时由调用方喂时钟。
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -251,6 +251,9 @@ impl StormBuffer {
 pub struct Scheduler {
     opts: SchedulerOptions,
     tasks: HashMap<u64, Task>,
+    /// 终态条目环形窗口(到达序,front=最旧):超 [`MAX_RETAINED_TERMINAL_TASKS`]
+    /// 时摘除最旧终态条目(RUST-5 有界化)。queued/running 永不入此窗口。
+    terminal_order: VecDeque<u64>,
     queue_order: Vec<u64>,
     running: Option<u64>,
     next_id: u64,
@@ -270,6 +273,11 @@ pub struct Scheduler {
 }
 
 const NEVER_MS: i64 = -1_000_000_000;
+
+/// 终态任务(Completed/Failed/Cancelled)在 `tasks` 中的保留窗口上限(RUST-5):
+/// 只保留最近这么多条终态记录供 `task_state` 查询,更早的摘除释放,
+/// 长会话高频 didChange 下 `tasks` 不再无界增长。
+pub const MAX_RETAINED_TERMINAL_TASKS: usize = 1024;
 
 impl Default for Scheduler {
     fn default() -> Self {
@@ -297,6 +305,7 @@ impl Scheduler {
         Scheduler {
             opts,
             tasks: HashMap::new(),
+            terminal_order: VecDeque::new(),
             queue_order: Vec::new(),
             running: None,
             next_id: 1,
@@ -503,6 +512,11 @@ impl Scheduler {
         self.tasks.get(&id).map(|t| t.state)
     }
 
+    /// 当前 `tasks` 表保留的任务条目数(含在飞 + 终态窗口,内存面探针)。
+    pub fn retained_task_count(&self) -> usize {
+        self.tasks.len()
+    }
+
     /// 取消一个 queued 任务(运行中不中断;返回是否确实取消了)。
     pub fn cancel(&mut self, id: u64, reason: &str) -> bool {
         self.cancel_queued(id, reason)
@@ -693,6 +707,7 @@ impl Scheduler {
             task.state = final_state;
         }
         self.running = None;
+        self.record_terminal(id);
         if interactive {
             self.last_interactive_end_ms = self.clock_ms as i64;
         }
@@ -711,10 +726,37 @@ impl Scheduler {
         task.state = TaskState::Cancelled;
         task.cancel_reason = Some(reason.to_string());
         self.cancelled += 1;
+        self.record_terminal(id);
         if reason == "stale-version" {
             self.metrics.stale_dropped += 1;
         }
         true
+    }
+
+    /// 终态登记(RUST-5):终态 id 入环形保留窗口,超限时摘除最旧的终态条目。
+    ///
+    /// 与 Reused 语义的兼容性:`ensure` 的复用/恢复判定读的是独立的 `keyed`
+    /// 台账(KeyedEntry 自持状态副本,execute 回写按 id 匹配),不查 `tasks`——
+    /// 摘除终态 tasks 条目不会让 keyed 条目失效,不产生假 pending;
+    /// `task_state` 查询面保留最近 [`MAX_RETAINED_TERMINAL_TASKS`] 条终态记录。
+    /// id 单调递增且每任务至多到达一次终态(取消只作用于 Queued,执行先摘队),
+    /// 故窗口内 id 不重不漏;防御性仅摘确为终态的条目。
+    fn record_terminal(&mut self, id: u64) {
+        self.terminal_order.push_back(id);
+        while self.terminal_order.len() > MAX_RETAINED_TERMINAL_TASKS {
+            let Some(oldest) = self.terminal_order.pop_front() else {
+                break;
+            };
+            let is_terminal = self.tasks.get(&oldest).is_some_and(|t| {
+                matches!(
+                    t.state,
+                    TaskState::Completed | TaskState::Failed | TaskState::Cancelled
+                )
+            });
+            if is_terminal {
+                self.tasks.remove(&oldest);
+            }
+        }
     }
 }
 

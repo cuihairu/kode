@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use kode_scheduler::{
     CancelToken, EnqueueDecision, EnsureDecision, Pump, Scheduler, SchedulerOptions, StormBuffer,
-    TaskKind, TaskSpec,
+    TaskKind, TaskSpec, MAX_RETAINED_TERMINAL_TASKS,
 };
 
 fn spec(kind: TaskKind, priority: u8, file: Option<&str>, version: Option<u64>) -> TaskSpec {
@@ -429,4 +429,99 @@ fn same_priority_runs_in_enqueue_order() {
             "/a3.def".to_string()
         ]
     );
+}
+
+// RUST-5:tasks HashMap 终态任务(Completed/Failed/Cancelled)曾永不摘除——
+// 长会话高频 didChange 下无界内存增长。终态条目按环形窗口保留最近 N 条,
+// 更早的终态条目摘除;窗口上限见 MAX_RETAINED_TERMINAL_TASKS。
+
+#[test]
+fn terminal_tasks_stay_bounded_under_did_change_churn() {
+    let mut s = Scheduler::default();
+    let mut peak = 0usize;
+    for v in 1..=3000u64 {
+        let file = format!("/f{v}.def");
+        let out = s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some(&file), Some(v)));
+        assert_eq!(out.decision, EnqueueDecision::Queued);
+        s.drain(200);
+        peak = peak.max(s.retained_task_count());
+    }
+    assert_eq!(s.status().completed, 3000);
+    assert_eq!(s.status().queued, 0);
+    assert!(
+        peak <= MAX_RETAINED_TERMINAL_TASKS,
+        "retained tasks unbounded: {peak}"
+    );
+}
+
+#[test]
+fn cancelled_tasks_stay_bounded_under_version_churn() {
+    let mut s = Scheduler::default();
+    s.enqueue(spec(
+        TaskKind::SingleFileUpdate,
+        1,
+        Some("/hot.def"),
+        Some(0),
+    ));
+    // 每个新版本取消让位旧版本(stale-version 终态),队列长度恒 1。
+    for v in 1..=3000u64 {
+        let out = s.enqueue(spec(
+            TaskKind::SingleFileUpdate,
+            1,
+            Some("/hot.def"),
+            Some(v),
+        ));
+        assert_eq!(out.decision, EnqueueDecision::Queued);
+    }
+    s.drain(200);
+    assert_eq!(s.status().cancelled, 3000);
+    assert_eq!(s.status().completed, 1);
+    assert!(
+        s.retained_task_count() <= MAX_RETAINED_TERMINAL_TASKS,
+        "retained tasks unbounded: {}",
+        s.retained_task_count()
+    );
+}
+
+#[test]
+fn ensure_reentry_correct_after_terminal_eviction() {
+    let mut s = Scheduler::default();
+    // 首扫完成;其终态条目随后被窗口摘除。
+    let (d0, id0) = s.ensure("scan", spec(TaskKind::FullReindex, 3, None, None));
+    assert_eq!(d0, EnsureDecision::Queued);
+    s.drain(200);
+    assert_eq!(
+        s.task_state(id0),
+        Some(kode_scheduler::TaskState::Completed)
+    );
+    // 高频重入:同 key 反复 ensure→执行,越过保留窗口(id0 条目被摘除)。
+    let mut last_id = 0u64;
+    for v in 1..=1100u64 {
+        let (d, id) = s.ensure("scan", spec(TaskKind::FullReindex, 3, None, None));
+        // 上次已完成 → 每轮全新入队,不得被 Reused 短路(假 pending 教训 RUST-4)。
+        assert_eq!(d, EnsureDecision::Queued, "v={v}");
+        last_id = id;
+        s.drain(200);
+    }
+    assert!(s.retained_task_count() <= MAX_RETAINED_TERMINAL_TASKS);
+    // 旧条目已摘除、新条目仍可查询。
+    assert_eq!(s.task_state(id0), None);
+    assert_eq!(
+        s.task_state(last_id),
+        Some(kode_scheduler::TaskState::Completed)
+    );
+    // 进行中复用语义不受摘除影响:ensure 入队未执行 → 再次 ensure Reused 指向真实在飞任务。
+    let (d_inflight, id_inflight) = s.ensure("scan", spec(TaskKind::FullReindex, 3, None, None));
+    assert_eq!(d_inflight, EnsureDecision::Queued);
+    let (d_reuse, id_reuse) = s.ensure("scan", spec(TaskKind::FullReindex, 3, None, None));
+    assert_eq!(d_reuse, EnsureDecision::Reused);
+    assert_eq!(id_reuse, id_inflight);
+    s.drain(200);
+    assert!(s.is_keyed_complete("scan"));
+    assert_eq!(
+        s.task_state(id_inflight),
+        Some(kode_scheduler::TaskState::Completed)
+    );
+    assert_eq!(s.status().queued, 0);
+    assert_eq!(s.status().completed, 1102);
 }

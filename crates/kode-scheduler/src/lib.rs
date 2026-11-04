@@ -33,7 +33,7 @@ pub use journal::{load_journal, write_journal, RecoveryReport, TaskRecord};
 pub use model::{SchedulerMetrics, SchedulerStatus, TaskKind, TaskState};
 pub use scheduler::{
     CancelToken, EnqueueDecision, EnsureDecision, Pump, Scheduler, SchedulerOptions, StormBuffer,
-    TaskSpec,
+    TaskSpec, MAX_RETAINED_TERMINAL_TASKS,
 };
 
 pub use kode_index::DocumentKey;
