@@ -43,7 +43,11 @@ export default withMermaid(defineConfig({
                 { text: 'Fixed directories & path resolution', link: '/knowledge/fixed-directories-and-path-resolution' },
                 { text: 'Entry script SPI methods', link: '/knowledge/entry-script-spi-methods' },
                 { text: 'Startup flow and stack', link: '/knowledge/startup-flow-and-stack' },
-                { text: 'Python version baseline (3.7 vs fork 3.12)', link: '/knowledge/python-version-baseline' }
+                { text: 'Python version baseline (3.7 vs fork 3.12)', link: '/knowledge/python-version-baseline' },
+                { text: 'API: client', link: '/knowledge/api-client' },
+                { text: 'API: baseapp module & Entity/Proxy', link: '/knowledge/api-baseapp' },
+                { text: 'API: baseapp entity classes', link: '/knowledge/api-baseapp-entity' },
+                { text: 'API: cellapp', link: '/knowledge/api-cellapp' }
               ]
             }
           ],
@@ -121,7 +125,11 @@ export default withMermaid(defineConfig({
                 { text: '固定目录与路径解析链', link: '/zh/knowledge/fixed-directories-and-path-resolution' },
                 { text: '入口脚本 SPI 方法表', link: '/zh/knowledge/entry-script-spi-methods' },
                 { text: '启动流程与堆栈', link: '/zh/knowledge/startup-flow-and-stack' },
-                { text: 'Python 版本口径（3.7 源料 vs fork 3.12）', link: '/zh/knowledge/python-version-baseline' }
+                { text: 'Python 版本口径（3.7 源料 vs fork 3.12）', link: '/zh/knowledge/python-version-baseline' },
+                { text: 'API：client 面', link: '/zh/knowledge/api-client' },
+                { text: 'API：baseapp 模块与 Entity/Proxy', link: '/zh/knowledge/api-baseapp' },
+                { text: 'API：baseapp 实体类', link: '/zh/knowledge/api-baseapp-entity' },
+                { text: 'API：cellapp 面', link: '/zh/knowledge/api-cellapp' }
               ]
             }
           ],

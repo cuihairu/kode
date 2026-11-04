@@ -37,6 +37,7 @@ The `en/` file is canonical for line-number drift checks.
 - **Python version baseline: 3.7 source material vs fork 3.12** (KB-API-001):
   - [English](python-version-baseline.md)
   - [中文](../zh/knowledge/python-version-baseline.md)
+
   - Covers: the 3.7.3 → fork-3.12 version timeline with per-claim evidence;
     the four verified runtime-baseline facts (python312 vcxproj links, source
     repo doc drift, the neutralized `PyEval_InitThreads` call site, the
@@ -50,6 +51,19 @@ The `en/` file is canonical for line-number drift checks.
 Source extraction → manual curation → consumers. Planned consumers
 (later batches, not fabricated as done):
 
+
+- **API reference: client face** (KB-API-002):
+  - [English](api-client.md)
+  - [中文](../zh/knowledge/api-client.md)
+- **API reference: baseapp module + Entity/Proxy** (KB-API-003):
+  - [English](api-baseapp.md)
+  - [中文](../zh/knowledge/api-baseapp.md)
+- **API reference: baseapp entity classes** (KB-API-003):
+  - [English](api-baseapp-entity.md)
+  - [中文](../zh/knowledge/api-baseapp-entity.md)
+- **API reference: cellapp face** (KB-API-004):
+  - [English](api-cellapp.md)
+  - [中文](../zh/knowledge/api-cellapp.md)
 - **C-21**: hover tooltips powered by KB articles.
 - **MCP-001**: expose KB to MCP for agent consumption.
 - A `kbe-api-scan.py` extraction script (bucket ①) is a **later-batch**

@@ -1080,15 +1080,15 @@
 - [x] **KB-API-001 · P0 · 建设 · 版本口径说明：python 3.7→3.12 偏离清单**（双语一篇 docs/knowledge/python-version-baseline.md + zh 镜像）
   - 交付：以「版本口径说明」篇回答——官方 docs/api 源料按 3.7 口径写，fork 嵌入 3.12，整合各篇如何标注。内容含：①运行时基线事实（上方取证四条全部复核引用：vcxproj python312、upgrade 文档漂移、script.cpp:255 弃用调用、vendored 树未入 git）；②嵌入层 C API 审计清单（PyEval_InitThreads 及同类已移除/语义变更调用逐个 grep `kbe/src/lib/pyscript`+`lib/server`，逐条标 3.12 下的行为：可编译/告警/须改）；③脚本层 3.7→3.12 语义偏离表（影响 API 整合的子集：str/bytes、int、迭代器、asyncio 无关面不写）；④给 KB-API-002~008 的统一标注模板（每篇差异小节的固定格式）。
   - 验收：清单逐条带 kbe/src file:line 或 CPython 3.12 官方出处（两域分开标）；upgrade 指南页 3.7.3 漂移**不在本任务内改**（那是 kbengine 仓的事，仅在知识库篇里如实记「源仓文档漂移」）；双语镜像一致。
-- [ ] **KB-API-002 · P0 · 建设 · client 面（客户端运行时）**：源料 client/KBEngine.md(4.8k)+client/Entity.md(7.2k)+client/index.md，双语 docs/knowledge/api-client.md + zh 镜像
+- [x] **KB-API-002 · P0 · 建设 · client 面（客户端运行时）**：源料 client/KBEngine.md(4.8k)+client/Entity.md(7.2k)+client/index.md，双语 docs/knowledge/api-client.md + zh 镜像
   - 范围口径（本批抽验已定）：九个模块函数中 `player/entities/getSpaceData`（+callback/cancelCallback/getWatcher/getWatcherDir/disconnect/kbassert）落 kbe/src grounding（lib/client_lib/clientobjectbase.cpp:20-28 已验，复核后引用）；`login/createAccount/reloginBaseapp/resetPassword/bindAccountEmail/newPassword/findEntity` **无 kbe/src 注册点，标注「实现于客户端 SDK 插件层（本仓库外）」**，不得落到任何 kbe/src file:line，也不得写成未实现——它们对用户可用，只是实现域不同。
   - 内容：Entity 面（isPlayer/player 语义边界、onEnterWorld/onLeaveWorld/onEnterSpace/onLeaveSpace 触发语义、baseCall/cellCall 限制、isOnGround/moveToPoint 同步、ownerOnly 可见性）按 audit-checklist §2 焦点逐条 grounding 后撰写；抽验锚：clientobjectbase.cpp:28/:36。
   - 验收：每断言 file:line 或「插件层」显式标注；差异小节按 KB-API-001 模板；与 KB-001 既有 entity-lifecycle 篇互链。
-- [ ] **KB-API-003 · P0 · 建设 · baseapp 面**：源料 baseapp/KBEngine.md(44.9k)+Entity.md(17.3k)+Proxy.md(8.4k)+index.md，双语 docs/knowledge/api-baseapp.md + zh 镜像（四源料合一篇过大则拆 api-baseapp + api-baseapp-entity 两篇，拆法写进篇首）
+- [x] **KB-API-003 · P0 · 建设 · baseapp 面**：源料 baseapp/KBEngine.md(44.9k)+Entity.md(17.3k)+Proxy.md(8.4k)+index.md，双语 docs/knowledge/api-baseapp.md + zh 镜像（四源料合一篇过大则拆 api-baseapp + api-baseapp-entity 两篇，拆法写进篇首）
   - 内容：进程级（createBaseEntity/createBaseLocally/globalData/baseAppData/baseBases/onGlobalData 系回调/定时器/addTimer 进程版/远程方法调用）+ Base Entity 面（createCellEntity 语义=Base→Cell 移交非本地创建、writeToDB/destroy/createFromDB）+ Proxy 面（giveClientTo 客户端移交与 Witness 链）。
   - 抽验锚（复核后引用）：baseAppData=baseapp.cpp:461、globalData=entity_app.h:418-419；audit-checklist §3 焦点（Base→Cell handoff 回调序、持久化时序与失败路径、controlledBy/isControlled/control 转移）逐条落。
   - 验收：Proxy giveClientTo 必须落到源码实现点（baseapp proxy.cpp/entity.cpp 相应 file:line）；createCellEntity 按 audit-checklist 定论写「handoff not local creation」并带实现点；差异小节模板齐。
-- [ ] **KB-API-004 · P0 · 建设 · cellapp 面**：源料 cellapp/Entity.md(44.0k)+cellapp/KBEngine.md(32.4k)+index.md，双语 docs/knowledge/api-cellapp.md + zh 镜像（篇过大可拆两篇，拆法写篇首）
+- [x] **KB-API-004 · P0 · 建设 · cellapp 面**：源料 cellapp/Entity.md(44.0k)+cellapp/KBEngine.md(32.4k)+index.md，双语 docs/knowledge/api-cellapp.md + zh 镜像（篇过大可拆两篇，拆法写篇首）
   - 内容：Cell Entity 全面（allClients/其他客户端广播、controlledBy/controlBy、moveToPoint/navigate/navigatePathPoints/cancelController 控制器链、addTimer/delTimer、AOI/进入离开空间回调、volatile/属性广播）+ 进程级（cellData/globalData/cellAppData 注册与回调、createEntity/createSpace 失败语义）。
   - 抽验锚（复核后引用）：addTimer=cellapp/entity_component.cpp:12、controlledBy=cellapp/entity.cpp:87、cellAppData=cellapp.cpp:199、globalData=entity_app.h:418-419；audit-checklist §3 移动/控制器/AOI 焦点逐条落。
   - 验收：控制器链（moveToPoint/navigate/cancelController 共享一条 controller 链，audit-checklist 已连源码分析）带实现点；广播面 allClients/其他 clients 按源码语义写不准含糊；差异小节模板齐。
@@ -1107,4 +1107,14 @@
 - [ ] **KB-API-009 · P2 · 建设 · bigworld/ 5 篇遗产处置决策**：源料 bigworld/{base,bigworld-module,bwpersonality,entity,index}.md（全部骨架 stub，仅 1.2k-1.7k）
   - 交付：一篇**处置决策记录**（docs/knowledge/bigworld-legacy-status.md + zh 镜像，或并入总览篇一节）：按 stub 内 Next steps 评估「从 /*~ 注释提取补全」的成本收益，给出「整合/只留状态说明/明确不整合」三选一建议与理由（stub 所指 server/baseapp/base.hpp 的 /*~ 注释面在 fork 源码里是否存在须先取证）；不整合则写明范围边界防后续误派工。
   - 验收：决策带取证（fork 源码里 /*~ 注释面 grep 结果 file:line）；不得把 stub 内容当已验证 API 整合进任何一篇。
+
+
+## 版本感知：引擎版本配置与特性门控（用户令 2026-11-04）
+
+> 背景：官方基线 3.7.3，魔改 fork 版本各异（本仓知识库已取证 fork 嵌入 Python 3.12）；不同版本支持的 API/特性不同，kode 的 hover/补全/诊断与知识消费应按所选版本门控。
+
+- [ ] `KB-VER-001 [P0]` 新增设置 `kbengine.engineVersion`（默认 `"3.7.3"`，自由串+常见预设提示）：package.json 配置面、读取链、`ConfigurationChangeEvent` 联动；交付单测（默认值/变更事件）。
+- [ ] `KB-VER-002 [P1]` 知识库/API 参考版本分层标注：每 API 条目标「3.7.3 基线 / fork 3.12+ 新增 / 待取证」，hover/补全内容按 engineVersion 过滤或标注（缺省 3.7.3 时 fork-only 项显式标注「需 fork」）。
+- [ ] `KB-VER-003 [P1]` 版本越界提示：项目 def/config 使用了超出所选版本的特性（fork-only 字段在 3.7.3 下）时给 Warning（检测面从既有 xml/def 解析管道入手）。验收：netns 式夹具测一正一反。
+- [ ] `KB-VER-004 [P2]` 版本自动探测：从引擎安装目录读版本标记（res/version 或构建产物），打开项目时建议 engineVersion 值（不自动改用户设置）。
 
