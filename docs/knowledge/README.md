@@ -9,7 +9,7 @@
 
 | Bucket | Content | Status |
 | --- | --- | --- |
-| ① API 知识 | `KBEngine.*` Python API reference | todo (later batch) |
+| ① API 知识 | `KBEngine.*` Python API reference | **拆解完成待实施**（KB-API-001~009，见 `todo.md`「KBEngine Python API 全量整合」节；源料盘点+抽验+版本口径取证已入账） |
 | ② 引擎机制文档 | lifecycle, references, callbacks, timers, network | **in progress** |
 | ③ 使用模式与统计 | canonical usage patterns, frequency stats | todo (later batch) |
 | ④ 踩坑经验 | traps, footguns, common bugs | todo (later batch) |
