@@ -39,16 +39,19 @@ const ANCHORS: Array<[string, number, string]> = [
   // 549~1298 锚点 +14,1839/1913 锚点 +15
   // 2026-11-04:IDE-HOT-102 extension.ts 顶部新增两行 import(hotReloadChannelConfig
   // /hotReloadTransport),全部 extension.ts 锚点 +2(出处随 baseline 锁步)
-  ['src/extension.ts', 903, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 954, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1017, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 821, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1315, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 566, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 579, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-04(二):KODE-PERF-001 流解析缓存——extension.ts 顶部新增 1 行
+  // import(flowVersionKeyForDocument) + 诊断装配块 +6 行(723):723 前锚点
+  // +1(566/579→567/580),723 后锚点 +7(821/903/954/1017/1315/1857/1931 各 +7)
+  ['src/extension.ts', 910, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 961, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1024, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 828, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1322, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 567, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 580, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1857, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1931, 'flushQueued()'],
+  ['src/extension.ts', 1864, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1938, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

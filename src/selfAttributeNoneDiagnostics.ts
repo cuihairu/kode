@@ -44,7 +44,8 @@ function buildMessage(attr: string, member: string): string {
  */
 export function computeSelfAttributeNoneFindings(
   source: string,
-  options?: SelfAttributeFlowOptions
+  options?: SelfAttributeFlowOptions,
+  versionKey?: string
 ): SelfAttributeNoneFinding[] {
   const lines = source.split(/\r?\n/);
   const findings: SelfAttributeNoneFinding[] = [];
@@ -63,7 +64,8 @@ export function computeSelfAttributeNoneFindings(
     const memberCharacter = match.index + match[0].indexOf(member);
     const key = `${line}\u0000${attr}`;
     if (!memo.has(key)) {
-      const flow = inferSelfAttributeFlow(lines, line, attr, options);
+      // KODE-PERF-001:版本键传入 → 同版本多次流查询共享一次解析。
+      const flow = inferSelfAttributeFlow(lines, line, attr, options, versionKey);
       memo.set(key, flow !== null && flow.hasNone);
     }
     if (memo.get(key)) {
@@ -82,7 +84,8 @@ export function computeSelfAttributeNoneFindings(
 /** 测试面:诊断数据项(免 vscode 依赖;开关门由调用方控制) */
 export function attributeNoneDiagnosticItems(
   source: string,
-  options?: SelfAttributeFlowOptions
+  options?: SelfAttributeFlowOptions,
+  versionKey?: string
 ): SelfAttributeNoneFinding[] {
-  return computeSelfAttributeNoneFindings(source, options);
+  return computeSelfAttributeNoneFindings(source, options, versionKey);
 }

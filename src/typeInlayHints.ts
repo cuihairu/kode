@@ -22,6 +22,7 @@ import {
   queryDataDictSitesForAccess
 } from './globalDataIndex';
 import { inferSelfAttributeFlow } from './selfAttributeFlowTypes';
+import { flowVersionKeyForDocument } from './flowVersionKey';
 
 // 批154(用户令 todo:7):types.xml 数据类型 inlay hints —— python 侧
 // self.<属性> 访问处原位渲染 def 声明的 <Type> 注解(2026-10-29 用户定
@@ -64,6 +65,9 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
     const hints: vscode.InlayHint[] = [];
     const propertyWorkspaceRoot = getWorkspaceRootForDocument(document);
     const documentLines = document.getText().split(/\r?\n/);
+    // KODE-PERF-001:文档版本键——同版本多次流查询(诊断/inlay)共享一次解析。
+    // 按实例身份+版本成键(跨实例/重开不撞键,见 flowVersionKey.ts)。
+    const flowVersionKey = flowVersionKeyForDocument(document);
     for (const access of findPythonSelfPropertyAccesses(document.getText())) {
       // inlay 按可视区要:视图口外的访问行不出 hint
       if (access.line < range.start.line || access.line > range.end.line) {
@@ -116,7 +120,12 @@ export class PythonTypeInlayHintsProvider implements vscode.InlayHintsProvider {
         hit?.annotation ??
         (hit?.member || access.fullPath !== access.rootSymbol
           ? null
-          : resolveUserSelfAttributeFlowAnnotation(documentLines, access.line, access.rootSymbol));
+          : resolveUserSelfAttributeFlowAnnotation(
+              documentLines,
+              access.line,
+              access.rootSymbol,
+              flowVersionKey
+            ));
       if (!annotation || annotation === PYTHON_TYPE_STUB_FALLBACK) {
         // 无 typeName 或解析落 Any(未知)→ 不出提示(能推才显,不显 Any)
         continue;
@@ -377,11 +386,12 @@ function isMemberCallAt(line: string, endColumn: number): boolean {
 function resolveUserSelfAttributeFlowAnnotation(
   documentLines: string[],
   line: number,
-  attr: string
+  attr: string,
+  versionKey?: string
 ): string | null {
   if (line < 0 || line >= documentLines.length || !attr) {
     return null;
   }
-  const flow = inferSelfAttributeFlow(documentLines, line, attr);
+  const flow = inferSelfAttributeFlow(documentLines, line, attr, undefined, versionKey);
   return flow?.annotation ?? null;
 }

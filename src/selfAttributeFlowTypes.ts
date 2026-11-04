@@ -1,4 +1,4 @@
-import { parsePythonFile } from './pythonParser';
+import { parsePythonFile, type ParsedPythonFile } from './pythonParser';
 
 /**
  * LANG-NAR-1 语义引擎流敏感窄化(用户令 2026-11-02):
@@ -22,6 +22,55 @@ import { parsePythonFile } from './pythonParser';
  * 'TalentNode');表达式类型推不出即空集(不硬造 Any)——空集在收窄并集里
  * 等价于「未知,不新增 None」,诊断侧按「有 None 证据才报」保守闸,不误报。
  */
+
+/**
+ * KODE-PERF-001:按文档版本键的解析缓存(有界 LRU)。同文档版本(键=
+ * `${uri}|${version}`)的多次流查询——诊断/inlay 同版本共享——只解析一次
+ * AST;版本递增或换文档自然换键,旧键靠有界淘汰回收;无键调用(纯函数/
+ * 测试)不读写缓存,行为与既有纯函数逐字节一致。
+ */
+const PARSE_CACHE_MAX_ENTRIES = 8;
+const flowParseCache = new Map<string, ParsedPythonFile>();
+let flowParseCountForTests = 0;
+
+/** 清缓存并归零解析计数(测试注入口;生产不用) */
+export function resetSelfAttributeFlowParseCacheForTests(): void {
+  flowParseCache.clear();
+  flowParseCountForTests = 0;
+}
+
+/** 实际解析次数(缓存命中不计;测试断言「访问点增多不重复解析」用) */
+export function selfAttributeFlowParseCountForTests(): number {
+  return flowParseCountForTests;
+}
+
+/** 按版本键取/建解析结果;无键=每次现解析(纯函数回退) */
+function parseWithVersionCache(
+  lines: readonly string[],
+  versionKey: string | undefined
+): ParsedPythonFile {
+  if (versionKey !== undefined) {
+    const cached = flowParseCache.get(versionKey);
+    if (cached) {
+      // LRU 触碰:移到尾(最近使用)
+      flowParseCache.delete(versionKey);
+      flowParseCache.set(versionKey, cached);
+      return cached;
+    }
+  }
+  flowParseCountForTests += 1;
+  const parsed = parsePythonFile(lines.join('\n'), '<flow>');
+  if (versionKey !== undefined) {
+    flowParseCache.set(versionKey, parsed);
+    if (flowParseCache.size > PARSE_CACHE_MAX_ENTRIES) {
+      const oldest = flowParseCache.keys().next().value;
+      if (oldest !== undefined) {
+        flowParseCache.delete(oldest);
+      }
+    }
+  }
+  return parsed;
+}
 
 /** 查询位自管属性的流敏感类型事实 */
 export interface SelfAttributeFlow {
@@ -473,13 +522,15 @@ export function inferSelfAttributeFlow(
   lines: readonly string[],
   queryLine: number,
   attr: string,
-  options?: SelfAttributeFlowOptions
+  options?: SelfAttributeFlowOptions,
+  versionKey?: string
 ): SelfAttributeFlow | null {
   if (!attr || queryLine < 0 || queryLine >= lines.length) {
     return null;
   }
-  const content = lines.join('\n');
-  const parsed = parsePythonFile(content, '<flow>');
+  // KODE-PERF-001:同文档版本多次流查询共享一次解析(键=uri|version);
+  // 无键(纯函数/测试)=现解析,行为不变。
+  const parsed = parseWithVersionCache(lines, versionKey);
   const classes = (parsed.classes as unknown as ClassSpan[]) ?? [];
   const enclosing = enclosingMethod(classes, queryLine);
   let baseline: Set<string>;

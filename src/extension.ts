@@ -29,6 +29,7 @@ import {
   attributeNoneDiagnosticItems,
   ATTRIBUTE_NONE_DIAGNOSTIC_CODE
 } from './selfAttributeNoneDiagnostics';
+import { flowVersionKeyForDocument } from './flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
   KBENGINE_DEF_METHOD_CONSISTENCY_REVALIDATE_COMMAND,
@@ -722,7 +723,13 @@ export function activate(context: vscode.ExtensionContext) {
           return null; // 异步中止(worker 停用/版本前进),整轮不发布
         }
         const attrItems = attrEnabled && isPythonDocument(document)
-          ? attributeNoneDiagnosticItems(document.getText()).map(finding => ({
+          // KODE-PERF-001:文档版本键——同版本诊断/inlay 共享一次流解析。
+          // 按实例身份+版本成键(跨实例/重开不撞键,见 flowVersionKey.ts)。
+          ? attributeNoneDiagnosticItems(
+              document.getText(),
+              undefined,
+              flowVersionKeyForDocument(document)
+            ).map(finding => ({
               range: {
                 start: { line: finding.line, character: finding.character },
                 end: { line: finding.line, character: finding.character + finding.member.length }
