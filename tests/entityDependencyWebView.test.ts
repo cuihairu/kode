@@ -1,7 +1,11 @@
 import type * as vscode from 'vscode';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { Uri } from './fake-vscode/core';
-import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
+import {
+  workspace as stubWorkspace,
+  workspaceState,
+  memoryFileSystem
+} from './fake-vscode/workspaceState';
 import { messages, windowState } from './fake-vscode/windowState';
 import {
   DependencyType,
@@ -16,9 +20,13 @@ import {
   normalizeCallGraph,
   renderCallGraphMermaid
 } from '../src/entityDependencyWebView';
+import {
+  CALLGRAPH_MAX_FILES
+} from '../src/entityDependencyWebView';
 import type {
   RenderGraph,
-  CallGraphGraph
+  CallGraphGraph,
+  CollectedPythonFiles
 } from '../src/entityDependencyWebView';
 import type { PythonCallGraphRustResult } from '../src/pythonCallGraphRust';
 
@@ -430,6 +438,36 @@ describe('EntityDependencyWebView.callgraph mode(getWebviewContent)', () => {
     expect(html).toContain('Rust 核心不可用');
     expect(html).not.toContain('classDef methodCall');
   });
+
+  it('shows truncation warning and collected/discovered file count when over the cap', () => {
+    const impl = internals(makeWebView());
+    impl.mode = 'callgraph';
+    const normalized = normalizeCallGraph(callGraphRust());
+    const truncated: CallGraphGraph = {
+      ...normalized,
+      stats: { ...normalized.stats, truncated: true, totalDiscovered: 12_345 }
+    };
+    const mermaid = renderCallGraphMermaid(truncated);
+    const html = impl.getWebviewContent(mermaid, null, truncated, false);
+
+    // 类名 .callgraph-warning 恒在 CSS 块,须以警告文案断言(而非类名)。
+    expect(html).toContain('callgraph-warning');
+    expect(html).toContain('超出 10000 个 Python 文件上限');
+    expect(html).toContain('（截断）');
+    expect(html).toContain('12345');
+    expect(html).toContain(`${CALLGRAPH_MAX_FILES}`);
+  });
+
+  it('does not show truncation warning when under the cap', () => {
+    const impl = internals(makeWebView());
+    impl.mode = 'callgraph';
+    const graph = normalizeCallGraph(callGraphRust());
+    const mermaid = renderCallGraphMermaid(graph);
+    const html = impl.getWebviewContent(mermaid, null, graph, false);
+
+    expect(html).not.toContain('超出 10000 个 Python 文件上限');
+    expect(html).not.toContain('（截断）');
+  });
 });
 
 // KODE 审核发现(冻结期 lane-2):refreshGraph/refreshCallGraph 在 await 后
@@ -443,7 +481,7 @@ describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换
       analyzer: { analyze(): Promise<DependencyGraph> };
       refreshGraph(): Promise<void>;
       refreshCallGraph(): Promise<void>;
-      collectPythonFiles(root: string): Promise<Array<{ path: string; text: string }>>;
+      collectPythonFiles(): Promise<CollectedPythonFiles>;
       mode: 'dependency' | 'callgraph';
       currentRender: RenderGraph | null;
       currentCallGraph: CallGraphGraph | null;
@@ -506,12 +544,12 @@ describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换
     impl.mode = 'callgraph';
     const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
     impl.panel = fakePanel;
-    const gate = deferred<Array<{ path: string; text: string }>>();
+    const gate = deferred<CollectedPythonFiles>();
     impl.collectPythonFiles = () => gate.promise;
 
     const pending = impl.refreshCallGraph();
     impl.panel = null; // 面板在途关闭:写入面必须复检后放弃
-    gate.resolve([]);
+    gate.resolve({ files: [], truncated: false, totalDiscovered: 0 });
     await expect(pending).resolves.toBeUndefined();
 
     expect(fakePanel.webview.html).toBe('');
@@ -528,17 +566,87 @@ describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换
     impl.mode = 'callgraph';
     const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
     impl.panel = fakePanel;
-    const gate = deferred<Array<{ path: string; text: string }>>();
+    const gate = deferred<CollectedPythonFiles>();
     impl.collectPythonFiles = () => gate.promise;
 
     const pending = impl.refreshCallGraph();
     impl.mode = 'dependency'; // 在途切换:旧调用图结果丢弃
-    gate.resolve([]);
+    gate.resolve({ files: [], truncated: false, totalDiscovered: 0 });
     await expect(pending).resolves.toBeUndefined();
 
     expect(fakePanel.webview.html).toBe('');
     expect(impl.currentCallGraph).toBeNull();
     expect(messages.error).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+});
+
+// KODE-PERF-004:callgraph 收集支持多 workspace 根、异步读取、超 10,000 文件
+// 明确策略。旧码只取根[0]、同步 readWorkspaceTextFile 逐文件阻塞宿主、
+// findFiles 静默封顶 10,000;新码遍历全部根去重、有界并发异步读、发现全量
+// 按路径排序取上限并出截断标记(面板出警告条,绝不静默装完整)。
+describe('EntityDependencyWebView.collectPythonFiles(KODE-PERF-004 多根/异步/截断)', () => {
+  const collectInternals = (webview: EntityDependencyWebView) =>
+    webview as unknown as {
+      collectPythonFiles(): Promise<CollectedPythonFiles>;
+    };
+
+  beforeEach(() => {
+    workspaceState.reset();
+  });
+
+  it('多 workspace 根:合并全部根 *.py,重叠文件按路径去重(旧码只取根[0])', async () => {
+    stubWorkspace.workspaceFolders = [
+      { uri: Uri.file('/rootA'), name: 'A', index: 0 },
+      { uri: Uri.file('/rootB'), name: 'B', index: 1 }
+    ];
+    // 按 RelativePattern.base 分发;根B 与根A 重叠 /rootA/a.py(去重面)。
+    stubWorkspace.findFiles = async (glob: unknown) => {
+      const pattern = glob as { base: string | Uri; pattern: string };
+      const base = typeof pattern.base === 'string' ? pattern.base : pattern.base.fsPath;
+      if (base === '/rootA') return [Uri.file('/rootA/a.py'), Uri.file('/rootA/b.py')];
+      if (base === '/rootB') return [Uri.file('/rootB/c.py'), Uri.file('/rootA/a.py')];
+      return [];
+    };
+    memoryFileSystem.set('/rootA/a.py', 'x = 1');
+    memoryFileSystem.set('/rootA/b.py', 'y = 2');
+    memoryFileSystem.set('/rootB/c.py', 'z = 3');
+
+    const collected = await collectInternals(makeWebView()).collectPythonFiles();
+    // 重叠 a.py 只出现一次;三文件全到(多根结果完整)。
+    expect(collected.files.map((f) => f.path).sort()).toEqual(
+      ['/rootA/a.py', '/rootA/b.py', '/rootB/c.py'].sort()
+    );
+    // 内容经异步 fs.readFile 读回(非空串)——证明走异步读而非同步空串兜底。
+    const byPath = new Map(collected.files.map((f) => [f.path, f.text]));
+    expect(byPath.get('/rootA/a.py')).toBe('x = 1');
+    expect(byPath.get('/rootA/b.py')).toBe('y = 2');
+    expect(byPath.get('/rootB/c.py')).toBe('z = 3');
+    expect(collected.truncated).toBe(false);
+    expect(collected.totalDiscovered).toBe(3);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('异步读失败(文件消失)回落空串,不静默丢文件计数', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/rootA'), name: 'A', index: 0 }];
+    stubWorkspace.findFiles = async () => [Uri.file('/rootA/gone.py')];
+    // 不播种 memoryFiles → fs.readFile 抛 ENOENT → 回落空串。
+    const collected = await collectInternals(makeWebView()).collectPythonFiles();
+    expect(collected.files).toEqual([{ path: '/rootA/gone.py', text: '' }]);
+    expect(collected.totalDiscovered).toBe(1);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('超 10,000 文件:截断到上限并如实报告发现总数(明确策略,不静默)', async () => {
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/rootA'), name: 'A', index: 0 }];
+    const over = CALLGRAPH_MAX_FILES + 5;
+    const uris = Array.from({ length: over }, (_, i) => Uri.file(`/rootA/f${i}.py`));
+    stubWorkspace.findFiles = async () => uris;
+
+    const collected = await collectInternals(makeWebView()).collectPythonFiles();
+    expect(collected.files.length).toBe(CALLGRAPH_MAX_FILES);
+    expect(collected.truncated).toBe(true);
+    expect(collected.totalDiscovered).toBe(over);
     stubWorkspace.workspaceFolders = [];
   });
 });

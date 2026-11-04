@@ -26,7 +26,6 @@ import type {
   PythonCallGraphRustResult,
   PythonCallGraphNode
 } from './pythonCallGraphRust';
-import { readWorkspaceTextFile } from './definitionWorkspace';
 
 /**
  * 渲染层节点 kind(六员;TS 兜底源归一后全部是 entity)。
@@ -330,6 +329,24 @@ function renderRustMermaid(graph: RenderGraph): string {
 // C-20 callgraph 模式:类型/常量/归一/渲染
 // ---------------------------------------------------------------------------
 
+// KODE-PERF-004:callgraph 收集面常量(导出供测试锁值)。
+/** 收集 *.py 文件数上限:超限截断并出警告条(明确策略,不静默装完整)。 */
+export const CALLGRAPH_MAX_FILES = 10_000;
+/** 有界并发异步读上限(宿主不阻塞)。 */
+export const CALLGRAPH_READ_CONCURRENCY = 8;
+/** callgraph 收集排除 glob(不深入 node_modules/out/vscode-test/git)。 */
+export const CALLGRAPH_EXCLUDE_GLOB =
+  '{**/node_modules/**,**/out/**,**/.vscode-test/**,**/.git/**}';
+
+/** KODE-PERF-004:收集结果(文件集 + 截断信息)。 */
+export interface CollectedPythonFiles {
+  files: Array<{ path: string; text: string }>;
+  /** 超上限截断标记(明确策略=面板出警告条,不静默装完整)。 */
+  truncated: boolean;
+  /** 全部根实际发现 *.py 总数(截断时 > files.length)。 */
+  totalDiscovered: number;
+}
+
 /** callgraph 渲染层节点 kind(四员;Rust 节点 + 未解析 stub)。 */
 export type CallGraphNodeKind = 'method' | 'function' | 'module' | 'external';
 
@@ -359,6 +376,10 @@ export interface CallGraphGraph {
     edgeCount: number;
     fileCount: number;
     errorCount: number;
+    /** KODE-PERF-004:超上限截断(明确策略,面板出警告条)。 */
+    truncated?: boolean;
+    /** 全部根实际发现总数(截断时 > fileCount)。 */
+    totalDiscovered?: number;
   };
   readonly processRoles: string[];
   readonly source: 'rust';
@@ -732,38 +753,97 @@ export class EntityDependencyWebView {
     }
   }
 
-  /** workspace 全部根 *.py(含 scripts/assets,不深入 node_modules/out)。 */
-  private async collectPythonFiles(
-    root: string
-  ): Promise<Array<{ path: string; text: string }>> {
-    const uris = await vscode.workspace.findFiles(
-      new vscode.RelativePattern(root, '**/*.py'),
-      '{**/node_modules/**,**/out/**,**/.vscode-test/**,**/.git/**}',
-      10_000
-    );
-    return uris.map((uri) => ({
-      path: uri.fsPath,
-      text: readWorkspaceTextFile(uri.fsPath)
-    }));
+  /**
+   * KODE-PERF-004:收集 workspace 全部根 *.py。
+   * - 多根:遍历全部 workspaceFolders(旧码只取根[0])并按 fsPath 去重;
+   * - 超 10,000 文件明确策略:发现全量→按路径排序→取前上限→truncated
+   *   标记(面板出「已截断」警告条并如实显示发现总数,绝不静默装完整);
+   * - 宿主不阻塞:有界并发异步读(旧码同步 readWorkspaceTextFile 逐文件阻塞)。
+   */
+  private async collectPythonFiles(): Promise<CollectedPythonFiles> {
+    const merged = new Map<string, vscode.Uri>();
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      const uris = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(folder.uri, '**/*.py'),
+        CALLGRAPH_EXCLUDE_GLOB
+      );
+      for (const uri of uris) {
+        merged.set(uri.fsPath, uri);
+      }
+    }
+    // 确定序:截断保留稳定前缀,不因 findFiles 序抖动而漂移。
+    const all = [...merged.values()].sort((a, b) => a.fsPath.localeCompare(b.fsPath));
+    const totalDiscovered = all.length;
+    const selected =
+      totalDiscovered > CALLGRAPH_MAX_FILES ? all.slice(0, CALLGRAPH_MAX_FILES) : all;
+    return {
+      files: await this.readPythonFilesAsync(selected),
+      truncated: totalDiscovered > CALLGRAPH_MAX_FILES,
+      totalDiscovered
+    };
   }
 
-  /** callgraph 模式刷新:收集全部 *.py → Rust RPC → 归一 → 渲染。 */
+  /** 有界并发异步读(默认 8 路);单文件读失败回落空串(与旧同步口径一致)。 */
+  private async readPythonFilesAsync(
+    uris: vscode.Uri[]
+  ): Promise<Array<{ path: string; text: string }>> {
+    const files: Array<{ path: string; text: string }> = [];
+    let nextIndex = 0;
+    const workers = Array.from(
+      { length: Math.min(CALLGRAPH_READ_CONCURRENCY, uris.length) },
+      async () => {
+        while (nextIndex < uris.length) {
+          const index = nextIndex;
+          nextIndex += 1;
+          const uri = uris[index];
+          let text = '';
+          try {
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            text = Buffer.from(bytes).toString('utf8');
+          } catch {
+            // 读失败(文件消失/IO):回落空串,与旧 readWorkspaceTextFile 一致,
+            // 保持「选中文件数 = Rust 输入数」口径,不静默丢文件。
+          }
+          files.push({ path: uri.fsPath, text });
+        }
+      }
+    );
+    await Promise.all(workers);
+    return files;
+  }
+
+  /** callgraph 模式刷新:收集全部根 *.py → Rust RPC → 归一 → 渲染。 */
   private async refreshCallGraph(): Promise<void> {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!root || !this.panel) {
+    if (!this.panel) {
       return;
     }
     let callGraph: CallGraphGraph | null = null;
     let rustUnavailable = false;
     try {
-      const files = await this.collectPythonFiles(root);
-      const manifestText = await this.readProcessTopologyText(root);
+      // KODE-PERF-004:多根收集(旧码 root[0] 单根);process_topology.xml
+      // 是项目级清单,仍取主根(根[0]),无根时空清单。
+      const collected = await this.collectPythonFiles();
+      const primaryRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const manifestText = primaryRoot
+        ? await this.readProcessTopologyText(primaryRoot)
+        : null;
       const rust = await buildPythonCallGraphInRust({
-        files,
+        files: collected.files,
         ...(manifestText !== null ? { manifestXmlText: manifestText } : {})
       });
       if (rust) {
-        callGraph = normalizeCallGraph(rust);
+        const normalized = normalizeCallGraph(rust);
+        // KODE-PERF-004:截断信息并入渲染图(面板出警告条,不静默装完整)。
+        callGraph = collected.truncated
+          ? {
+            ...normalized,
+            stats: {
+              ...normalized.stats,
+              truncated: true,
+              totalDiscovered: collected.totalDiscovered
+            }
+          }
+          : normalized;
       } else {
         rustUnavailable = true;
       }
@@ -836,7 +916,10 @@ export class EntityDependencyWebView {
 
     const statsHtml = isCallGraph
       ? [
-        this.statCard('文件', callGraph?.stats.fileCount ?? 0),
+        // KODE-PERF-004:截断时如实显示「已收集 / 实际发现(截断)」,不装完整。
+        this.statCard('文件', callGraph?.stats.truncated
+          ? `${callGraph.stats.fileCount} / ${callGraph.stats.totalDiscovered ?? callGraph.stats.fileCount}（截断）`
+          : (callGraph?.stats.fileCount ?? 0)),
         this.statCard('节点', callGraph?.stats.nodeCount ?? 0),
         this.statCard('调用边', callGraph?.stats.edgeCount ?? 0),
         this.statCard('语法错误', callGraph?.stats.errorCount ?? 0),
@@ -875,6 +958,14 @@ export class EntityDependencyWebView {
     <div class="path-item"><span class="path-label">defsRoot</span><code>${escapeHtml(graph.paths.defsRoot)}</code></div>
     <div class="path-item"><span class="path-label">types.xml</span><code>${escapeHtml(graph.paths.typesXml)}</code></div>
   </div>`
+        : '';
+
+    // KODE-PERF-004:超 10,000 文件截断的明确策略——出可见警告条,绝不静默
+    // 装完整(发现数/已收集数/上限都如实显示)。
+    const callgraphWarningHtml =
+      isCallGraph && callGraph?.stats.truncated
+        ? `
+  <div class="callgraph-warning">⚠ 超出 ${CALLGRAPH_MAX_FILES} 个 Python 文件上限,仅收集前 ${callGraph.stats.fileCount} 个(实际发现 ${callGraph.stats.totalDiscovered ?? callGraph.stats.fileCount} 个),调用图可能不完整。</div>`
         : '';
 
     const graphHtml = isCallGraph
@@ -1048,6 +1139,16 @@ ${mermaidGraph}
       padding: 50px;
       color: var(--vscode-descriptionForeground);
     }
+
+    .callgraph-warning {
+      background-color: var(--vscode-inputValidation-warningBackground, #5a3d00);
+      border: 1px solid var(--vscode-inputValidation-warningBorder, #bd8b00);
+      color: var(--vscode-inputValidation-warningForeground, var(--vscode-editor-foreground));
+      border-radius: 4px;
+      padding: 10px 15px;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -1072,6 +1173,7 @@ ${mermaidGraph}
 ${statsHtml}
   </div>
 ${pathsHtml}
+${callgraphWarningHtml}
 
   <div id="graph-container">
 ${graphHtml}
