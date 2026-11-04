@@ -90,6 +90,31 @@ function stripOuterParens(expr: string): string {
   return current;
 }
 
+/**
+ * USER-LINT-01(用户报 2026-11-04):引擎校验器名单。KBEngine 全局 API
+ * `kbe.isValid(entityRef)`——实体引用有效(未销毁)返回 True,
+ * `isValid(None)`/无效引用返回 False,故 `kbe.isValid(X)` 真值 ⟹ X 可
+ * 安全解引用,是引擎惯用的正向判空守卫。名单收敛于此一处常量表,后续
+ * 引擎侧新增校验器(如 kbe.hasClient 等)在此追加限定名即可,勿散落
+ * 硬编码到形态判定里。
+ */
+const ENGINE_VALIDATOR_NAMES: readonly string[] = ['kbe.isValid'];
+
+/** 正则字面元转义(subject 含 `self.client` 的点号) */
+const escapeRegexLiteral = (text: string): string =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * 名单校验器调用形态:atom 恰为 `<validator>(subject)`(实参内空白宽容;
+ * 多余实参/前缀后缀不匹配——`kbe.isValid(other)` 不构成对 subject 的守卫)。
+ */
+const isEngineValidatorCall = (atom: string, subject: string): boolean => {
+  const pattern = new RegExp(
+    `^(?:${ENGINE_VALIDATOR_NAMES.map(escapeRegexLiteral).join('|')})\\(\\s*${escapeRegexLiteral(subject)}\\s*\\)$`
+  );
+  return pattern.test(atom);
+};
+
 const TOP_LEVEL_AND = /^(\s+)(and)(\s|$)/;
 const TOP_LEVEL_OR = /^(\s+)(or)(\s|$)/;
 
@@ -121,8 +146,10 @@ function splitTopLevel(expr: string, op: 'and' | 'or'): string[] {
  * IDE-LINT-002:条件布尔语义分诊。subject(原文,未转义)视角:
  * - positive:顶层无 or(优先级 and 紧于 or,顶层有 or 即不确定);顶层 and
  *   分句(剥外层括号)恰为 `subject` / `subject is not None` /
- *   `not (subject is None)`;
- * - early-exit:单一原子恰为 `not subject` / `subject is None`;
+ *   `not (subject is None)` / 引擎校验器真值 `kbe.isValid(subject)`
+ *   (USER-LINT-01:真值 ⟹ subject 可安全解引用);
+ * - early-exit:单一原子恰为 `not subject` / `subject is None` /
+ *   `not kbe.isValid(subject)`(校验器为假 ⟹ subject 无效,反向同理);
  * - null:不确定形态(保留警告)。
  */
 type ConditionVerdict = 'positive' | 'early-exit' | null;
@@ -134,6 +161,9 @@ function conditionVerdict(condition: string, subject: string): ConditionVerdict 
   const positiveAtom = (atomRaw: string): boolean => {
     const atom = stripOuterParens(atomRaw);
     if (atom === subject || atom === `${subject} is not None`) { return true; }
+    if (isEngineValidatorCall(atom, subject)) { return true; }
+    // `not kbe.isValid(subject)` 是反向(校验器为假才走块体)→ 早退非正向,
+    // 此处只认 `not (subject is None)`
     if (/^not\b/.test(atom)) { return stripOuterParens(atom.slice(3)) === `${subject} is None`; }
     return false;
   };
@@ -142,7 +172,11 @@ function conditionVerdict(condition: string, subject: string): ConditionVerdict 
   }
   const atom = stripOuterParens(conjuncts[0]);
   if (positiveAtom(atom)) { return 'positive'; }
-  if (/^not\b/.test(atom) && stripOuterParens(atom.slice(3)) === subject) { return 'early-exit'; }
+  if (/^not\b/.test(atom)) {
+    const inner = stripOuterParens(atom.slice(3));
+    if (inner === subject) { return 'early-exit'; }
+    if (isEngineValidatorCall(inner, subject)) { return 'early-exit'; }
+  }
   if (atom === `${subject} is None`) { return 'early-exit'; }
   return null;
 }
