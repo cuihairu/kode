@@ -1,5 +1,8 @@
 import type * as vscode from 'vscode';
 import { describe, expect, it } from 'vitest';
+import { Uri } from './fake-vscode/core';
+import { workspace as stubWorkspace } from './fake-vscode/workspaceState';
+import { messages, windowState } from './fake-vscode/windowState';
 import {
   DependencyType,
   EntityType
@@ -426,5 +429,116 @@ describe('EntityDependencyWebView.callgraph mode(getWebviewContent)', () => {
     expect(html).toContain('Rust 不可用');
     expect(html).toContain('Rust 核心不可用');
     expect(html).not.toContain('classDef methodCall');
+  });
+});
+
+// KODE 审核发现(冻结期 lane-2):refreshGraph/refreshCallGraph 在 await 后
+// 未复检 this.panel 与 this.mode——面板在 RPC 在途时关闭(panel=null)会把
+// TypeError 冒泡成「刷新依赖图失败」;在途 setMode 切换会把旧模式数据渲染
+// 进新模式视图。修复=渲染前复检,面板没了/模式已换代即丢弃本轮旧代结果。
+describe('EntityDependencyWebView.refresh 在途复检(面板关闭/模式切换不写旧代)', () => {
+  const lifecycleInternals = (webview: EntityDependencyWebView) =>
+    webview as unknown as {
+      panel: vscode.WebviewPanel | null;
+      analyzer: { analyze(): Promise<DependencyGraph> };
+      refreshGraph(): Promise<void>;
+      refreshCallGraph(): Promise<void>;
+      collectPythonFiles(root: string): Promise<Array<{ path: string; text: string }>>;
+      mode: 'dependency' | 'callgraph';
+      currentRender: RenderGraph | null;
+      currentCallGraph: CallGraphGraph | null;
+    };
+
+  const deferred = <T>() => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((resolvePromise) => {
+      resolve = resolvePromise;
+    });
+    return { promise, resolve };
+  };
+
+  it('dependency 刷新在途面板关闭:不写入、不报「刷新依赖图失败」', async () => {
+    windowState.reset();
+    stubWorkspace.workspaceFolders = [];
+    const webview = makeWebView();
+    const impl = lifecycleInternals(webview);
+    const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
+    impl.panel = fakePanel;
+    const gate = deferred<DependencyGraph>();
+    impl.analyzer = { analyze: () => gate.promise };
+
+    const pending = impl.refreshGraph();
+    impl.panel = null; // 面板在 RPC 在途时被关闭(onDidDispose 语义)
+    gate.resolve(graph());
+    await expect(pending).resolves.toBeUndefined();
+
+    expect(fakePanel.webview.html).toBe('');
+    expect(impl.currentRender).toBeNull();
+    expect(messages.error).toHaveLength(0);
+  });
+
+  it('dependency 刷新在途 setMode 切到 callgraph:旧依赖图不渲染进新模式面板', async () => {
+    windowState.reset();
+    stubWorkspace.workspaceFolders = [];
+    const webview = makeWebView();
+    const impl = lifecycleInternals(webview);
+    const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
+    impl.panel = fakePanel;
+    const gate = deferred<DependencyGraph>();
+    impl.analyzer = { analyze: () => gate.promise };
+
+    const pending = impl.refreshGraph();
+    impl.mode = 'callgraph'; // 在途切换(与新一代 refreshGraph 并发)
+    gate.resolve(graph());
+    await expect(pending).resolves.toBeUndefined();
+
+    expect(fakePanel.webview.html).toBe('');
+    expect(impl.currentRender).toBeNull();
+    expect(messages.error).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('callgraph 刷新在途面板关闭:不写入、Promise 不冒泡 TypeError', async () => {
+    windowState.reset();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = lifecycleInternals(webview);
+    impl.mode = 'callgraph';
+    const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
+    impl.panel = fakePanel;
+    const gate = deferred<Array<{ path: string; text: string }>>();
+    impl.collectPythonFiles = () => gate.promise;
+
+    const pending = impl.refreshCallGraph();
+    impl.panel = null; // 面板在途关闭:写入面必须复检后放弃
+    gate.resolve([]);
+    await expect(pending).resolves.toBeUndefined();
+
+    expect(fakePanel.webview.html).toBe('');
+    expect(impl.currentCallGraph).toBeNull();
+    expect(messages.error).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
+  });
+
+  it('callgraph 刷新在途 setMode 切回 dependency:旧调用图不渲染', async () => {
+    windowState.reset();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file('/ws'), name: 'ws', index: 0 }];
+    const webview = makeWebView();
+    const impl = lifecycleInternals(webview);
+    impl.mode = 'callgraph';
+    const fakePanel = { webview: { html: '' } } as unknown as vscode.WebviewPanel;
+    impl.panel = fakePanel;
+    const gate = deferred<Array<{ path: string; text: string }>>();
+    impl.collectPythonFiles = () => gate.promise;
+
+    const pending = impl.refreshCallGraph();
+    impl.mode = 'dependency'; // 在途切换:旧调用图结果丢弃
+    gate.resolve([]);
+    await expect(pending).resolves.toBeUndefined();
+
+    expect(fakePanel.webview.html).toBe('');
+    expect(impl.currentCallGraph).toBeNull();
+    expect(messages.error).toHaveLength(0);
+    stubWorkspace.workspaceFolders = [];
   });
 });

@@ -711,6 +711,14 @@ export class EntityDependencyWebView {
         render = normalizeDependencyGraph(await this.analyzer.analyze());
       }
 
+      // RPC 在途面复检(KODE 审核发现):面板在途关闭(panel=null)时写入
+      // 会 TypeError 冒泡成「刷新依赖图失败」;在途 setMode 切到 callgraph
+      // 时旧依赖图数据不得渲染进新模式视图——面板没了或模式已换代,本轮
+      // 旧代渲染整体丢弃(新一代刷新自会写入最新数据)。
+      if (!this.panel || this.mode !== 'dependency') {
+        return;
+      }
+
       this.currentRender = render;
 
       // 生成 Mermaid 图
@@ -762,6 +770,13 @@ export class EntityDependencyWebView {
     } catch (rustError) {
       rustUnavailable = true;
       this.outputChannel.appendLine(`Rust 调用图失败: ${rustError}`);
+    }
+
+    // 在途面复检(KODE 审核发现):collect/RPC 在途时面板关闭(panel=null)
+    // 的写入会 TypeError 冒泡;在途 setMode 切回 dependency 时旧调用图不得
+    // 渲染——面板没了或模式已换代,本轮旧代结果整体丢弃。
+    if (!this.panel || this.mode !== 'callgraph') {
+      return;
     }
 
     this.currentCallGraph = callGraph;
