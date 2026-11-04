@@ -806,7 +806,7 @@
 
 ## 审核发现
 
-- [ ] 审核发现：客户端 SDK 生成中，FIXED_DICT 类型仅被组件属性引用（不被任何实体属性引用）时，`ClientSdkComponents.ts` 会发出 `import { X } from './ClientSdkFixedDicts'`，但 `ClientSdkFixedDicts.ts` 因 `generateClientSdkFixedDictsFile` 只收集实体属性引用的 FIXED_DICT 而不生成（返回 null），产出断裂导入（src/clientSdkGenerator.ts:696-697/771-782；Rust 同缺陷 crates/kode-server/src/client_sdk.rs:965/1055-1075）。
+- [x] 审核发现：客户端 SDK 生成中，FIXED_DICT 类型仅被组件属性引用（不被任何实体属性引用）时，`ClientSdkComponents.ts` 会发出 `import { X } from './ClientSdkFixedDicts'`，但 `ClientSdkFixedDicts.ts` 因 `generateClientSdkFixedDictsFile` 只收集实体属性引用的 FIXED_DICT 而不生成（返回 null），产出断裂导入（src/clientSdkGenerator.ts:696-697/771-782；Rust 同缺陷 crates/kode-server/src/client_sdk.rs:965/1055-1075）。（复核已修 60a6569：TS collectClientSdkFixedDictTypes 收集实体属性+组件槽属性(与 generateClientSdkComponentsFile import 同源),generateClientSdkFixedDictsFile 用之;Rust generate_fixed_dicts_file 同序补 entity.components 遍历;两侧判别测试=tests/clientSdkGenerator.test.ts「仅组件属性引用的 FIXED_DICT:伴随文件仍生成」(修复前返回 null 红)+crates/kode-server/tests/client_sdk_dispatch.rs fixed_dicts_includes_component_only_references,2026-11-04 复核勾）
 - [x] 审核发现：本轮 diff 其余方面（Rust 消息表/旗标域/lint 规则、logHub 分块读与双限额、workspaceIndex 尾随读与根移除、pythonParserWorkerHost 派发队列、pythonSelfScope、processManager 树杀、Rust 测试 15+19+6 全绿、vitest 关键模块用例通过）未见问题（12388975..HEAD）。（审计结论=无问题,2026-11-04 复核勾）
 
 ## 审核发现 2026-10-31
