@@ -225,3 +225,16 @@ fn root_registry_priority_and_conflict_diagnostics() {
         RootId::UNROOTED
     );
 }
+
+#[test]
+fn default_registry_reserves_unrooted_and_matches_filesystem_root() {
+    let mut registry = RootRegistry::default();
+    let root = registry.register("/");
+    assert_ne!(root, RootId::UNROOTED);
+    assert_eq!(registry.register("/"), root);
+    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project/a.py")), root);
+    let nested = registry.register("/project");
+    assert_ne!(root, nested);
+    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project/a.py")), nested);
+    assert_eq!(registry.root_for(&CanonicalUri::from_path("/project2/a.py")), root);
+}

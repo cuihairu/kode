@@ -39,10 +39,16 @@ impl DocumentKey {
 
 /// 资源根注册表(VFS-009 基础版)。
 /// id 从 1 起分配:0 恒留给 [`RootId::UNROOTED`](根外文档),不与任何注册根重合。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RootRegistry {
     roots: Vec<(RootId, String)>,
     next_id: u32,
+}
+
+impl Default for RootRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RootRegistry {
@@ -106,7 +112,7 @@ fn prefix_len_at_boundary(root: &str, path: &str) -> Option<usize> {
         return None;
     }
     let rest = &path[root.len()..];
-    if rest.starts_with('/') {
+    if root.ends_with('/') || rest.starts_with('/') {
         Some(root.len())
     } else {
         None // 兄弟目录:/w/demo 与 /w/demo2 不得互相吞并
