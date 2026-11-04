@@ -153,6 +153,8 @@ pub enum WireError {
     AliasIdOverflow(u16),
     /// STRING 值含非 ASCII 字节(线上 STRING 遇非 ASCII 即停)。
     NonAsciiString,
+    /// STRING 值含内嵌 NUL(NUL 是线上终止符,写进流解码即截断,静默损坏→拒绝)。
+    EmbeddedNulString,
     /// hex 字符串非法。
     InvalidHex(String),
     /// 消息帧扩展长度超 u32。
@@ -181,6 +183,7 @@ impl fmt::Display for WireError {
                 write!(f, "alias id {id} exceeds uint8 bound (use utype mode)")
             }
             WireError::NonAsciiString => write!(f, "STRING value contains non-ASCII bytes"),
+            WireError::EmbeddedNulString => write!(f, "STRING value contains embedded NUL byte"),
             WireError::InvalidHex(s) => write!(f, "invalid hex string: {s}"),
             WireError::MessageTooLarge { size } => {
                 write!(f, "message size {size} exceeds u32 extended length")
@@ -333,6 +336,11 @@ pub fn encode_value(
         (WireLayout::Str, WireValue::Str(s)) => {
             if !s.is_ascii() {
                 return Err(WireError::NonAsciiString);
+            }
+            // 内嵌 NUL 是线上终止符:写出后解码在首 NUL 截断,往返静默
+            // 损坏("a\0b"→"a")——宁可拒绝编码,不做静默截断(KODE-AUD-010)。
+            if s.contains('\0') {
+                return Err(WireError::EmbeddedNulString);
             }
             out.extend_from_slice(s.as_bytes());
             out.push(0);

@@ -269,6 +269,34 @@ fn wire_string_non_ascii_stop() {
     assert_eq!(cur.remaining(), 1, "0xff 被消费,剩 0x00");
 }
 
+/// STRING 编码拒绝内嵌 NUL(KODE-AUD-010):NUL 是线上终止符,写进流
+/// 解码在首 NUL 截断——"a\0b" 往返变 "a" 属静默损坏,编码期如实报错。
+#[test]
+fn wire_string_embedded_nul_rejected() {
+    let mut out = Vec::new();
+    let err = encode_value(
+        &WireLayout::Str,
+        &WireValue::Str("a\0b".to_string()),
+        &mut out,
+    )
+    .expect_err("内嵌 NUL 必须拒绝");
+    assert!(matches!(err, WireError::EmbeddedNulString), "got: {err}");
+    assert!(out.is_empty(), "拒绝时不写部分字节");
+}
+
+/// STRING 正常 ASCII 往返无损(NUL 终止,单字节无长度前缀)。
+#[test]
+fn wire_string_ascii_roundtrip() {
+    let v = WireValue::Str("hello world".to_string());
+    let mut out = Vec::new();
+    encode_value(&WireLayout::Str, &v, &mut out).expect("encode ascii string");
+    assert_eq!(out, b"hello world\0", "NUL 终止,无长度前缀");
+    let mut cur = WireCursor::new(&out);
+    let back = decode_value(&WireLayout::Str, &mut cur).expect("decode ascii string");
+    assert_eq!(back, v);
+    assert_eq!(cur.remaining(), 0, "终止字节被消费");
+}
+
 /// ENTITYCALL 恒 16 字节定长(id i32 + component_id u64 + call_type u16 + script_uid u16)。
 #[test]
 fn wire_entity_call_is_16_bytes() {
