@@ -883,7 +883,7 @@ describe('PythonDefinitionProvider 嵌套类与方法探针回退(覆盖率)', (
     }
   });
 
-  it('属性命中后首扫等待与自定义类型声明:propertyTypeLocation 指向 types.xml(4582-4603)', async () => {
+  it('属性命中后首扫等待:defLocation 优先,属性声明行(非类型声明)为目标(4582-4603)', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-typedeff-'));
     const defsDir = path.join(root, 'scripts', 'entity_defs');
     fs.mkdirSync(defsDir, { recursive: true });
@@ -899,14 +899,19 @@ describe('PythonDefinitionProvider 嵌套类与方法探针回退(覆盖率)', (
           Promise.resolve({ defFile: path.join(defsDir, 'Hero.def'), line: 3 }),
         resolvePropertyDefinition: () => Promise.resolve(null),
         waitForInitialScan: () => Promise.resolve(),
+        // 旧码读此喂 propertyTypeLocation(types.xml);新码不再读——保留以锁
+        // 旧码确实会(错)跳到 types.xml,新码忽略之
         getIndexForPythonFile: () => ({
           propertyDefinitions: { hp: { identity: { symbolName: 'hp' }, typeName: 'VEC3' } }
         })
       } as never);
       const traced = await provider.provideDefinitionTraced(doc, new Position(2, 13));
-      // propertyTypeLocation 优先于 defLocation:返回 types.xml 的 VEC3 声明行
+      // defLocation 优先于类型声明:属性 self.hp 的定义是 def 的属性声明行,
+      // 不是 types.xml 的 VEC3 类型声明(2026-11-04 用户反馈纠正)
       expect(traced.location).not.toBeNull();
-      expect((traced.location as { uri: { fsPath: string } }).uri.fsPath).toContain('types.xml');
+      const loc = traced.location as { uri: { fsPath: string }; range: { start: { line: number } } };
+      expect(loc.uri.fsPath).toBe(path.join(defsDir, 'Hero.def'));
+      expect(loc.range.start.line).toBe(2);
     } finally {
       stubWorkspace.workspaceFolders = [];
       fs.rmSync(root, { recursive: true, force: true });

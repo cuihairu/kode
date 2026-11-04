@@ -58,16 +58,21 @@ const ANCHORS: Array<[string, number, string]> = [
   // (import + getLanguageFeatureConfig 注释 + 内建分支链接 + 独立异步面 +
   // resolveSelfPropertyAnnotationHover 方法 + locator 守卫),§7 的
   // languageProviders.ts 锚点按真位逐点重探(非均匀位移),出处随 baseline 锁步
-  ['src/languageProviders.ts', 725, 'getDocumentLines(document)'],
-  ['src/languageProviders.ts', 815, 'provideHover('],
-  ['src/languageProviders.ts', 1623, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1682, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1706, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 1834, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4475, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 4896, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5002, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 6707, 'provideCompletionItems('],
+  // NAV-PROP(2026-11-04):languageProviders.ts 移除 EntityMappingIndex import
+  // (-1,行 41 后全部锚点 -1)+ F12 属性命中改 defLocation 优先 + 新增
+  // providePythonPropertyReferences / enclosingPythonClassAt 方法面,§7 的
+  // languageProviders.ts 锚点逐点重探:724/814/1622/1681/1705/1833/4474/4895/
+  // 5001 各 -1,provideCompletionItems 6707→6776(非均匀),出处随 baseline 锁步
+  ['src/languageProviders.ts', 724, 'getDocumentLines(document)'],
+  ['src/languageProviders.ts', 814, 'provideHover('],
+  ['src/languageProviders.ts', 1622, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1681, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1705, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 1833, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4474, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 4895, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5001, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 6776, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

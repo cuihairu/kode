@@ -37,8 +37,7 @@ import {
 import {
   EntityMappingManager,
   EntityMethodSection,
-  type DefinitionSymbolIdentity,
-  type EntityMappingIndex
+  type DefinitionSymbolIdentity
 } from './entityMapping';
 import { analyzeEntitiesXml } from './entitiesXmlAnalysis';
 import { getDocumentLines, getOrParseDocumentSync } from './documentStore';
@@ -4957,7 +4956,6 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
     const defParts: string[] = [];
     let defLocation: vscode.Location | null = null;
     let propertyHit = false;
-    let propertyTypeLocation: vscode.Location | null = null;
 
     if (access) {
       const propertyProbes: Array<{
@@ -4994,32 +4992,14 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
             vscode.Uri.file(hit.defFile),
             new vscode.Position(hit.line - 1, 0)
           );
-          const workspaceRoot = getWorkspaceRootForDocument(document)
-            || getScanRootForFile(document.fileName);
+          // 属性访问的定义 = def 的属性声明行(defLocation);类型的声明
+          // (types.xml)不是属性访问的定义——按 def 里的类型名才该去那里,
+          // 故不再优先类型声明(2026-11-04 用户反馈纠正)。
           const managerWithScan = manager as EntityMappingManager & { waitForInitialScan?: () => Promise<void> };
           if (managerWithScan.waitForInitialScan) {
             // 首扫超时闸(用户令 2026-10-22):大树首扫可秒级+,不拖死跳转层
             await withInitialScanTimeout(managerWithScan.waitForInitialScan(), undefined, token);
             if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
-          }
-          const indexAccessor = manager as EntityMappingManager & {
-            getIndex?: (entityName: string) => EntityMappingIndex | undefined;
-            getIndexForPythonFile?: (pythonFile: string) => EntityMappingIndex | undefined;
-          };
-          const mapping = enclosingName
-            ? indexAccessor.getIndex?.(enclosingName) || indexAccessor.getIndexForPythonFile?.(document.fileName)
-            : indexAccessor.getIndexForPythonFile?.(document.fileName);
-          const typeName = Object.values(mapping?.propertyDefinitions ?? [])
-            .find(definition => definition.identity.symbolName === access.currentSymbol)
-            ?.typeName;
-          if (typeName && workspaceRoot) {
-            const typeDeclaration = findCustomTypeDeclarationInfo(typeName, workspaceRoot);
-            if (typeDeclaration) {
-              propertyTypeLocation = new vscode.Location(
-                vscode.Uri.file(typeDeclaration.filePath),
-                new vscode.Position(typeDeclaration.line - 1, 0)
-              );
-            }
           }
           propertyHit = true;
           defParts.push(`property(${access.fullPath}) ${probe.via} hit ${path.basename(hit.defFile)}:${hit.line}`);
@@ -5082,7 +5062,7 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         `层1 entity-def 命中 → ${hitLocation.uri.fsPath}:${hitLocation.range.start.line + 1}` +
           `(${detail.slice(0, 200)}) ${defTimer()}ms`
       );
-      return { location: propertyTypeLocation ?? defLocation, layers };
+      return { location: defLocation, layers };
     }
     const defDetail = defParts.join('; ') || enclosingNote || 'no .def index';
     layers.push({
@@ -5756,14 +5736,22 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
     // 全部写+读点(含自身);不在键上或索引未装配交回 null(无 .def 面)。
     if (document.languageId === 'python' || document.fileName.toLowerCase().endsWith('.py')) {
       const hit = await resolveDataDictSitesAtPosition(this.dataDictIndex, document, position, token);
-      if (!hit || isKeyInsideLineComment(document.lineAt(position.line).text, hit.access.keyStart)) {
-        return null;
+      if (hit && !isKeyInsideLineComment(document.lineAt(position.line).text, hit.access.keyStart)) {
+        return hit.sites.map(site =>
+          new vscode.Location(
+            vscode.Uri.file(site.file),
+            new vscode.Position(site.line, site.keyStart)
+          ));
       }
-      return hit.sites.map(site =>
-        new vscode.Location(
-          vscode.Uri.file(site.file),
-          new vscode.Position(site.line, site.keyStart)
-        ));
+      // 2026-11-04 用户反馈:py 侧 self.<属性> 的 Shift+F12(含 Shift+Alt+F12,
+      // 同一 ReferenceProvider)此前无条件 null——补 def 声明 + py 使用处;
+      // 非 self 属性访问/未解析到 def 归属时如实 null(调用方约定)。
+      return this.providePythonPropertyReferences(
+        document,
+        position,
+        context.includeDeclaration === true,
+        token
+      );
     }
     // IDE-NAV-017:types.xml 符号引用查询(Shift+F12)——光标在类型符号上时
     // 返回工作区 .def/<Type>/<Arg>/<of> 值使用处与 types.xml 内引用位;
@@ -5884,6 +5872,87 @@ export class KBEngineReferencesProvider implements vscode.ReferenceProvider {
       ...receiverLocations
     ];
     return includeDeclaration ? [declarationLocation, ...locations] : locations;
+  }
+
+  /**
+   * 2026-11-04 用户反馈:py 侧 self.<属性> 的引用收录(Shift+F12 / Shift+Alt+F12,
+   * 同一 ReferenceProvider)。光标落在简单 self.<prop>(单段)上时,按 F12 层1
+   * 同口径探针解析属性归属(对象级→文件级),命中后返回 def 属性声明行
+   * (includeDeclaration)与 owner 文件里全部 self.<prop> 使用处;不在 self 属性
+   * 访问上/未解析到归属 → 如实 null(调用方约定)。
+   */
+  private async providePythonPropertyReferences(
+    document: vscode.TextDocument,
+    position: vscode.Position,
+    includeDeclaration: boolean,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.Location[] | null> {
+    if (token?.isCancellationRequested) { return null; }
+    // 与 F12 层同口径:注释/字符串里的伪 self 访问不作属性引用(4546 守卫)
+    if (!isPythonCodePosition(document.getText(), position.line, position.character)) { return null; }
+    const access = getPythonSelfAccessAtPosition(
+      document.lineAt(position.line).text,
+      position.character
+    );
+    if (!access) { return null; }
+    // 只认简单 self.<prop>(单段);接收者段(self.cell.x 等)交回方法/接收者面
+    if (access.fullPath.includes('.')) { return null; }
+    // 对象级(类粒度)探针优先,文件级兜底(与 F12 层1 同口径)。
+    let hit: { defFile: string; line: number } | null = null;
+    const enclosing = enclosingPythonClassAt(document, position.line);
+    if (enclosing) {
+      try {
+        hit = await this.entityMappingManager.resolvePropertyDefinitionForClass(
+          enclosing,
+          access.fullPath,
+          access.rootSymbol,
+          document.fileName
+        );
+      } catch {
+        hit = null;
+      }
+    }
+    if (!hit) {
+      try {
+        hit = await this.entityMappingManager.resolvePropertyDefinition(
+          document.fileName,
+          access.fullPath,
+          access.rootSymbol
+        );
+      } catch {
+        return null;
+      }
+    }
+    if (!hit || token?.isCancellationRequested) { return null; }
+    const accesses = await this.entityMappingManager.getIncomingPythonPropertyAccesses(
+      hit.defFile,
+      access.currentSymbol,
+      token
+    );
+    if (token?.isCancellationRequested) { return null; }
+    const locations = accesses.map(accessSite =>
+      new vscode.Location(
+        vscode.Uri.file(accessSite.filePath),
+        createSelectionRange(accessSite.line, accessSite.character, access.currentSymbol)
+      ));
+    if (includeDeclaration) {
+      locations.unshift(
+        new vscode.Location(vscode.Uri.file(hit.defFile), new vscode.Position(hit.line - 1, 0))
+      );
+    }
+    return locations.length ? locations : null;
+  }
+}
+
+/** 光标所在最内层 Python 类名(供对象级探针);解析失败 → undefined */
+function enclosingPythonClassAt(document: vscode.TextDocument, line: number): string | undefined {
+  try {
+    const parsed = parsePythonFile(document.getText(), document.fileName);
+    return parsed.classes
+      .filter(cls => line >= cls.startLine && line < cls.endLine)
+      .sort((left, right) => right.startLine - left.startLine)[0]?.name;
+  } catch {
+    return undefined;
   }
 }
 
