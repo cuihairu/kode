@@ -64,6 +64,29 @@ Source extraction → manual curation → consumers. Planned consumers
 - **API reference: cellapp face** (KB-API-004):
   - [English](api-cellapp.md)
   - [中文](../zh/knowledge/api-cellapp.md)
+- **API reference: bots face** (KB-API-007):
+  - [English](api-bots.md)
+  - [中文](../zh/knowledge/api-bots.md)
+
+- **API reference: interfaces face** ((KB-API-005)):
+  - [English](api-interfaces.md)
+  - [中文](../zh/knowledge/api-interfaces.md)
+
+- **API reference: loginapp / dbmgr / logger faces** ((KB-API-006)):
+  - [English](api-loginapp-dbmgr-logger.md)
+  - [中文](../zh/knowledge/api-loginapp-dbmgr-logger.md)
+
+- **API core concepts map** ((KB-API-008)):
+  - [English](api-core-concepts.md)
+  - [中文](../zh/knowledge/api-core-concepts.md)
+  - Covers: the bots process script-face assembly (six registration sites);
+    19 `KBEngine` module functions (8 documented + 11 fork-only), with the
+    `addBots` request-vs-instantiation semantics; entry-script callbacks
+    `onInit`/`onFinish` (+ fork-only `onTargetChanged`); the read-only `bots`
+    `PyBots` mapping; the client-object face (source name "PyClientApp" = fork
+    `ClientObjectBase`); the shared `Entity` face re-anchored locally; the
+    3.7-vs-fork deviation table (incl. the source material's phantom
+    `cellData`/`isOnGround`/`PyClientApp` items).
 - **C-21**: hover tooltips powered by KB articles.
 - **MCP-001**: expose KB to MCP for agent consumption.
 - A `kbe-api-scan.py` extraction script (bucket ①) is a **later-batch**

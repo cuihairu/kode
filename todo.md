@@ -1092,16 +1092,18 @@
   - 内容：Cell Entity 全面（allClients/其他客户端广播、controlledBy/controlBy、moveToPoint/navigate/navigatePathPoints/cancelController 控制器链、addTimer/delTimer、AOI/进入离开空间回调、volatile/属性广播）+ 进程级（cellData/globalData/cellAppData 注册与回调、createEntity/createSpace 失败语义）。
   - 抽验锚（复核后引用）：addTimer=cellapp/entity_component.cpp:12、controlledBy=cellapp/entity.cpp:87、cellAppData=cellapp.cpp:199、globalData=entity_app.h:418-419；audit-checklist §3 移动/控制器/AOI 焦点逐条落。
   - 验收：控制器链（moveToPoint/navigate/cancelController 共享一条 controller 链，audit-checklist 已连源码分析）带实现点；广播面 allClients/其他 clients 按源码语义写不准含糊；差异小节模板齐。
-- [ ] **KB-API-005 · P1 · 建设 · interfaces 面**：源料 interfaces/KBEngine.md(13.4k)+index.md，双语 docs/knowledge/api-interfaces.md + zh 镜像
+- [x] **KB-API-005 · P1 · 建设 · interfaces 面**：源料 interfaces/KBEngine.md(13.4k)+index.md，双语 docs/knowledge/api-interfaces.md + zh 镜像
   - 内容：第三方账号接入面（onRequestAccountLogin/onRequestCharge 等 interfaces 组件回调、dbInterface 配置交互），按 audit-checklist §4 「Account/login/database/third-party integration 边界」焦点。
   - 验收：每回调带调用点 file:line（kbe/src/server/tools/interfaces/）；差异小节模板齐。
-- [ ] **KB-API-006 · P1 · 建设 · loginapp/dbmgr/logger 进程全局面**：源料三篇 KBEngine.md（loginapp 9.0k/dbmgr 9.2k/logger 5.8k）+三篇薄 index，双语 docs/knowledge/api-loginapp.md、api-dbmgr.md、api-logger.md 三篇 + zh 镜像
+- [x] **KB-API-006 · P1 · 建设 · loginapp/dbmgr/logger 进程全局面**（交付形态：三源面合并为单篇 api-loginapp-dbmgr-logger.md，含 PythonApp 共享运行时面 15 项补充——与规格三篇口径差异已注明）：源料三篇 KBEngine.md（loginapp 9.0k/dbmgr 9.2k/logger 5.8k）+三篇薄 index，双语 docs/knowledge/api-loginapp.md、api-dbmgr.md、api-logger.md 三篇 + zh 镜像
   - 内容：loginapp（login/createAccount/resetPassword/bindAccountEmail 服务端协议面、onRequestLogin/onLoginCallbackFromDB）、dbmgr（持续化与 Account 查询接口、onSelectAccountDBInterface）、logger（日志观察面/Watcher 挂接）。
   - 验收：三篇各自独立可验收（一篇一 checkbox 口径在本行内分号列出）；audit-checklist §4 进程边界焦点逐条落；差异小节模板齐。
-- [ ] **KB-API-007 · P1 · 建设 · bots 面（压测组件）**：源料 bots/KBEngine.md(7.6k)+Entity.md(8.3k)+PyClientApp.md(1.4k)+index.md，双语 docs/knowledge/api-bots.md + zh 镜像
-  - 内容：压测客户端运行时（PyClientApp 入口、bots 复用 client_lib 的 player/entities 面、压测专用回调 onInit/onTick 压测逻辑挂点）；与 KB-API-002 的 client 面共域部分**互链不重写**（同一 client_lib 注册点，差异只在压测挂接面）。
-  - 验收：共域断言引用 KB-API-002 已 grounding 的锚点不重复取证；bots 专属回调带 kbe/src/server/tools/bots file:line；差异小节模板齐。
-- [ ] **KB-API-008 · P1 · 建设 · 核心概念篇（basetypes+keywords+总览）**：源料 basetypes.md(0.3k 裸表)+keywords.md(7.6k/19 节)+总览 index.md(0.8k)，双语 docs/knowledge/api-basetypes.md（含 keywords 术语矩阵）+ zh 镜像
+- [x] **KB-API-007 · P1 · 建设 · bots 面（压测组件）**：源料 bots/KBEngine.md(7.6k)+Entity.md(8.3k)+PyClientApp.md(1.4k)+index.md，双语 docs/knowledge/api-bots.md + zh 镜像
+  - 交付：docs/knowledge/api-bots.md + docs/zh/knowledge/api-bots.md。脚本面六注册点（bots.cpp:174-182/186-209/211-228 + clientapp.cpp:186-217/233-268 + script.cpp:247-258/pyurl.cpp:23）；19 个模块函数（源料仅记载 8，11 个 fork 独有）；addBots「请求 vs 即时创建」语义（CreateAndLoginHandler 1s 定时器 + 0.1s 子 tick 限速）；入口回调 onInit/onFinish（onInit 恒传 isReload=0）+ fork 独有 onTargetChanged；bots（PyBots）只读映射（has_key/keys/values/items/get + len/下标，键=appID）；客户端对象面（源料名 PyClientApp 无符号，实为 ClientObjectBase，8 方法/2 getset）；Entity 面与 KB-API-002 共域互链不重写、本地重锚定。与 todo 预期差异：**onTick 不存在**（grep 0 命中），压测挂点实为 onInit/onFinish/onTargetChanged，已按实写。
+  - 抽验锚（复核后引用）：addBots=bots.cpp:182/:344-387、bots 映射=pybots.cpp:17-25/:52-78、onInit=bots.cpp:99-113、客户端对象方法=clientobjectbase.cpp:21-28、id/entities getset=clientobjectbase.cpp:35-36、Entity 事件宏=entity_macro.h:47-49、Entity 属性=entity.cpp:41-46+entity_macro.h:58-61、component='bots'=script.cpp:247-251+common.h:110。
+  - 偏差小节模板齐（12 行，含源料虚构条目：bots Entity 无 cellData/isOnGround 脚本绑定；`component` 判定修正——script.cpp:247-251 在 lib/pyscript 注册，取代 api-client §3 仅扫 lib/client_lib 的结论，已互见）。
+  - 验收：共域断言引用 api-client 已 grounding 锚点；bots 专属回调带 kbe/src/server/tools/bots file:line；zh 镜像同结论同引用。
+- [x] **KB-API-008 · P1 · 建设 · 核心概念篇（basetypes+keywords+总览）**（交付形态：核心概念地图篇 api-core-concepts.md 吸收 basetypes/keywords 源料，未单独出 api-basetypes.md——与规格口径差异已注明）：源料 basetypes.md(0.3k 裸表)+keywords.md(7.6k/19 节)+总览 index.md(0.8k)，双语 docs/knowledge/api-basetypes.md（含 keywords 术语矩阵）+ zh 镜像
   - 内容：基础类型表（UINT8..VECTOR4/PYTHON/STRING/UNICODE 及字节数——与 kbe/src/lib/entitydef/datatypes.cpp DataTypes::initialize 21 内建逐名对账，kode 仓 1cf55c4 批已核过 21 名清单可复核引用）+ keywords 术语矩阵（ENTITYCALL/CELLDATADICT/PyClient 等按 audit-checklist「表面名 vs 运行时语义」焦点展开）+ API 总览（四桶导航篇）。
   - 验收：类型表每行与 datatypes.cpp 注册点对账（字节断言只写有实现依据的）；术语条目分「表面名/运行时语义/易混点」三列；audit-checklist 建议的「最后收口术语」顺序照做（排在 002-007 之后实施）。
 - [ ] **KB-API-009 · P2 · 建设 · bigworld/ 5 篇遗产处置决策**：源料 bigworld/{base,bigworld-module,bwpersonality,entity,index}.md（全部骨架 stub，仅 1.2k-1.7k）

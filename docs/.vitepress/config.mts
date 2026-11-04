@@ -47,7 +47,11 @@ export default withMermaid(defineConfig({
                 { text: 'API: client', link: '/knowledge/api-client' },
                 { text: 'API: baseapp module & Entity/Proxy', link: '/knowledge/api-baseapp' },
                 { text: 'API: baseapp entity classes', link: '/knowledge/api-baseapp-entity' },
-                { text: 'API: cellapp', link: '/knowledge/api-cellapp' }
+                { text: 'API: cellapp', link: '/knowledge/api-cellapp' },
+                { text: 'API: interfaces', link: '/knowledge/api-interfaces' },
+                { text: 'API: loginapp / dbmgr / logger', link: '/knowledge/api-loginapp-dbmgr-logger' },
+                { text: 'API: bots', link: '/knowledge/api-bots' },
+                { text: 'API: core concepts map', link: '/knowledge/api-core-concepts' }
               ]
             }
           ],
@@ -129,7 +133,11 @@ export default withMermaid(defineConfig({
                 { text: 'API：client 面', link: '/zh/knowledge/api-client' },
                 { text: 'API：baseapp 模块与 Entity/Proxy', link: '/zh/knowledge/api-baseapp' },
                 { text: 'API：baseapp 实体类', link: '/zh/knowledge/api-baseapp-entity' },
-                { text: 'API：cellapp 面', link: '/zh/knowledge/api-cellapp' }
+                { text: 'API：cellapp 面', link: '/zh/knowledge/api-cellapp' },
+                { text: 'API：interfaces 面', link: '/zh/knowledge/api-interfaces' },
+                { text: 'API：loginapp / dbmgr / logger', link: '/zh/knowledge/api-loginapp-dbmgr-logger' },
+                { text: 'API：bots', link: '/zh/knowledge/api-bots' },
+                { text: 'API：核心概念地图', link: '/zh/knowledge/api-core-concepts' }
               ]
             }
           ],

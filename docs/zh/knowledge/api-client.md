@@ -99,7 +99,7 @@ Python，仅为溯源列出）：
 | --- | --- | --- | --- |
 | `entities` | 进程内所有实体的字典，键含 `entity_uuid`/`entity_id`/`spaceID` | **entities 映射本身是 fork 实有的**：`ClientApp` 向模块安装一个 `Entities<client::Entity>` 对象（`kbe/src/lib/client_lib/clientapp.cpp:266`，卸载于 `:228`）；其脚本方法为 `has_key/keys/values/items/get` 加 `garbages` 注册表（`kbe/src/lib/entitydef/entities.h:114-126`） | Fork（映射本体） |
 | `entities.entity_uuid` / `entities.entity_id` / `entities.spaceID` | 映射上的类型化子属性 | fork 的 `Entities<T>` 脚本类型上不存在这些子属性；作为客户端脚本的便捷变量属于插件层 | 插件层 |
-| `component` | 只读字符串，取值 `'cellapp' 'baseapp' 'client' 'dbmgr' 'bots' 'editor'` | `lib/client_lib` 中不存在名为 `component` 的脚本注册（grep：0 命中）；组件身份是 C++ 编译期常量（`g_componentType`），不是模块属性 | **待取证**——插件侧属性；取证路径：比对官方 SDK 插件源码中 `component` 的暴露方式 |
+| `component` | 只读字符串，取值 `'cellapp' 'baseapp' 'client' 'dbmgr' 'bots' 'editor'` | 注册点在共享运行时层 `pyscript/script.cpp:247-251`（非 client_lib 局部）；`lib/client_lib` 局部确认 0 命中——组件身份是 C++ 编译期常量（`g_componentType`），经共享层暴露为模块属性 | **待取证**——插件侧属性；取证路径：比对官方 SDK 插件源码中 `component` 的暴露方式 |
 
 ## 4. `Entity` 类——成员函数
 
@@ -185,7 +185,7 @@ fork 取证而非断言。
 | `KBEngine.login/createAccount/reloginBaseapp/resetPassword/bindAccountEmail/newPassword` | 记载为客户端的 Python 模块函数 | `kbe/src` 中未注册到任何 Python 表面；仅存在底层协议发送路径（未注册的 C++） | 插件层 | 仓库外；协议路径 `clientobjectbase.cpp:604-632`、`:449-459`、`:655-668` |
 | `KBEngine.findEntity` | 记载为模块函数 | `client_lib` 无注册点；等价查找为 `entities[entityID]` | 插件层 | grep `client_lib` 的 `findEntity`：0 命中；注册表 `clientapp.cpp:266` |
 | `KBEngine.entities`「含 `entity_uuid`/`entity_id`/`spaceID`」 | 记载为 entities 映射的类型化子属性 | fork 的 `Entities<T>` 仅暴露 `has_key/keys/values/items/get/garbages` | 插件层 | `entitydef/entities.h:114-126` |
-| `KBEngine.component` | 只读字符串属性 | `lib/client_lib` 无脚本注册 | 待取证 | grep `lib/client_lib` 的 `"component"`：0 命中 |
+| `KBEngine.component` | 只读字符串属性 | 注册点在共享运行时层 `pyscript/script.cpp:247-251` | 已解决 | `lib/client_lib` 局部 0 命中（全局注册在共享层） |
 | `Entity.baseCall/cellCall` | 记载为 Entity 方法（示例为 js/c#） | `client_lib` 未注册；仅存在 `base`/`cell` EntityCall getter | 插件层 | `entity.cpp:40-46` |
 | `Entity.isOnGround` | 可读写脚本属性 | 仅为 C++ 成员，无脚本绑定 | 待取证 | `entity.cpp:65`、`clientobjectbase.cpp:868`，无 `SCRIPT_GET(SET)_DECLARE` |
 | `Entity.inWorld` | 只读脚本属性 | C++ 内部 `enterworld_`，无脚本绑定 | 待取证 | `entity.cpp:61` |

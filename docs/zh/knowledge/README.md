@@ -29,6 +29,40 @@
     (`cellapp/entity.cpp:315/:322`);`onDestroy` callScript 语义与 cell 数据
     备份(`cellapp/entity.cpp:204`);定时器注册/移除(`entity_macro.h:1478`)。
 
+- **API 参考:client 面** (KB-API-002):
+  - [English](../../knowledge/api-client.md)
+  - [中文](api-client.md)
+- **API 参考:baseapp 模块 + Entity/Proxy** (KB-API-003):
+  - [English](../../knowledge/api-baseapp.md)
+  - [中文](api-baseapp.md)
+- **API 参考:baseapp Entity 类** (KB-API-003):
+  - [English](../../knowledge/api-baseapp-entity.md)
+  - [中文](api-baseapp-entity.md)
+- **API 参考:cellapp 面** (KB-API-004):
+  - [English](../../knowledge/api-cellapp.md)
+  - [中文](api-cellapp.md)
+
+- **API 参考:interfaces 面** ((KB-API-005)):
+  - [English](../../knowledge/api-interfaces.md)
+  - [中文](api-interfaces.md)
+
+- **API 参考:loginapp/dbmgr/logger 进程全局面** ((KB-API-006)):
+  - [English](../../knowledge/api-loginapp-dbmgr-logger.md)
+  - [中文](api-loginapp-dbmgr-logger.md)
+
+- **API 核心概念地图** ((KB-API-008)):
+  - [English](../../knowledge/api-core-concepts.md)
+  - [中文](api-core-concepts.md)
+- **API 参考:bots 面** (KB-API-007):
+  - [English](../../knowledge/api-bots.md)
+  - [中文](api-bots.md)
+  - 覆盖:bots 进程脚本面组装(六个注册点);`KBEngine` 模块 19 个函数
+    (8 个已记载 + 11 个 fork 独有),含 `addBots`「请求 vs 即时创建」语义;
+    入口脚本回调 `onInit`/`onFinish`(外加 fork 独有的 `onTargetChanged`);
+    只读的 `bots`(`PyBots`)映射;客户端对象面(源料名 "PyClientApp" =
+    fork `ClientObjectBase`);共享 `Entity` 面的本地重锚定;3.7-vs-fork 偏差表
+    (含源料虚构的 `cellData`/`isOnGround`/`PyClientApp` 条目)。
+
 ## 流水线
 
 源码提取 → 人工精校 → 消费方。计划中的消费方(后续批次,不虚构为已完成):
