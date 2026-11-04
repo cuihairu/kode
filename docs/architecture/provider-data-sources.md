@@ -66,6 +66,7 @@
 | KBEngineDatabaseSchemaProvider | databaseSchemaPresentation.ts(ARC-004 装配面) | :358 | databaseSchema 快照/渲染(委托) |
 | KBEngineDatabaseSimulationProvider | databaseSimulator.ts:364 | :364 | databaseSimulator 行模拟(schema 快照之上) |
 | FinalConfigContentProvider | serverConfigMerge.ts:2768 | :2716 | kbengine.xml 合成树渲染 |
+| GitHistoryVersionContentProvider | gitHistoryDiff.ts:145 | :4143 | kode-git-version 虚拟文档:按 repo/commit/path 三键取版本内容(IDE-GIT-006,有界只读 git show;缺失路径空串/读取失败抛错) |
 
 ### 2c. 树/任务 provider(UI 装配面)
 
@@ -79,7 +80,7 @@
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | 快捷动作清单 | 树刷新 + 用户触发命令 |
 | FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml 合成树 | 树刷新事件 |
-| GitHistoryTreeProvider | gitHistoryTree.ts:126 | :4068 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git) | 树刷新事件 + 用户触发「加载下一页」 |
+| GitHistoryTreeProvider | gitHistoryTree.ts:135 | :4076 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git) | 树刷新事件 + 用户触发「加载下一页」 |
 
 ### 2d. 文件树角标 provider(vscode.window.registerFileDecorationProvider,IDE-HOT-100)
 

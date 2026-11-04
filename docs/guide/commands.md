@@ -895,6 +895,25 @@ The flow graph panel supports:
   - Gated by `kbengine.gitHistory.enabled`; a disabled feature hides the entry and a direct invocation runs nothing Git
   - Currently opens the file-level history view for the active file (the selection-to-committed-range mapping and timeline land in later IDE-GIT milestones and are reported honestly rather than fabricated)
 
+### `kbengine.git.openVersionDiff`
+
+- Title: `Kode: 打开版本差异 (Open Version Diff)`
+- Purpose: open a historical commit's version of a file versus its parent as a read-only diff in the editor (IDE-GIT-006). Bound to clicking a commit row in the `kbengine.gitHistory` view; hidden from the command palette (`when: false`)
+- Behavior:
+  - Invoked with `(commit, filePath, repoRoot)`; resolves the commit's parent via `git rev-list --parents -n1`; the root commit uses an empty left side so the whole file reads as added
+  - Both sides open as virtual documents (`kode-git-version` scheme) keyed by repo/commit/path — workspace files are never overwritten or opened as real files
+  - A path absent at that commit (deleted or not-yet-created) shows as an empty side; a bounded read failure surfaces an honest error rather than a silent empty
+  - Gated by `kbengine.gitHistory.enabled`; a disabled feature runs nothing Git
+
+### `kbengine.git.openVersionContent`
+
+- Title: `Kode: 打开版本内容 (Open Version Content)`
+- Purpose: read-only open a historical commit's version of a file (IDE-GIT-006). Bound to the commit row context menu in the `kbengine.gitHistory` view; hidden from the command palette (`when: false`)
+- Behavior:
+  - Opens the `kode-git-version` virtual document for that repo/commit/path in a non-preview editor tab — no workspace file is written or replaced
+  - A path absent at that commit (deleted) opens empty; a bounded read failure surfaces an honest error
+  - Gated by `kbengine.gitHistory.enabled`; a disabled feature runs nothing Git
+
 ## Typical Workflows
 
 ### Creating an entity

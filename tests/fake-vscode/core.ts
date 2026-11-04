@@ -101,6 +101,11 @@ export class Uri {
     return new Uri([baseDir, ...segments].join('/'), base.scheme, base.query);
   }
 
+  /** 真机 vscode.Uri.from 最小面:IDE-GIT-006 虚拟文档 URI(scheme+path+query)。 */
+  static from(components: { scheme: string; authority?: string; path?: string; query?: string; fragment?: string }): Uri {
+    return new Uri(components.path ?? '', components.scheme, components.query ?? '');
+  }
+
   private static splitQuery(rest: string, scheme: string): Uri {
     const qIndex = rest.indexOf('?');
     if (qIndex >= 0) {

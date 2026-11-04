@@ -30,7 +30,14 @@ import {
 
 /** 视图条目:提交记录 / 加载下一页 / 引导或状态(无查询零 Git 调用)。 */
 export type GitHistoryItem =
-  | { kind: 'commit'; entry: GitCommitEntry; index: number }
+  | {
+      kind: 'commit';
+      entry: GitCommitEntry;
+      index: number;
+      /** 所属文件与仓库(IDE-GIT-006 打开版本 diff/内容时定位虚拟文档三键)。 */
+      filePath: string;
+      repoRoot: string;
+    }
   | { kind: 'next-page'; loadedCount: number }
   | { kind: 'message'; message: string; tone: 'guidance' | 'warning' };
 
@@ -95,6 +102,8 @@ export function buildHistoryItems(state: GitHistoryState): GitHistoryItem[] {
         kind: 'commit',
         entry,
         index,
+        filePath: state.filePath,
+        repoRoot: state.repoRoot,
       }));
       if (state.hasMore) {
         items.push({ kind: 'next-page', loadedCount: state.entries.length });
@@ -153,6 +162,12 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
         .filter((line) => line.trim() !== '')
         .join('\n');
       tree.contextValue = 'gitCommit';
+      // IDE-GIT-006:点击提交记录在主编辑区打开该版本 vs 父版本只读 diff
+      tree.command = {
+        command: 'kbengine.git.openVersionDiff',
+        title: '打开版本差异',
+        arguments: [item.entry.hash, item.filePath, item.repoRoot],
+      };
     } else if (item.kind === 'next-page') {
       tree.label = `加载下一页(已载 ${item.loadedCount} 条)`;
       tree.command = { command: 'kbengine.git.historyNextPage', title: '加载下一页' };

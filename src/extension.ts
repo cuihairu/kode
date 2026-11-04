@@ -376,7 +376,15 @@ import {
   GitHistoryTreeProvider,
   defaultGitHistoryDeps,
   historyViewTitle,
+  type GitHistoryItem,
 } from './gitHistoryTree';
+import {
+  GIT_HISTORY_VERSION_SCHEME,
+  GitHistoryVersionContentProvider,
+  defaultVersionQueryDeps,
+  openVersionContent,
+  openVersionDiff,
+} from './gitHistoryDiff';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -4130,7 +4138,48 @@ export function activate(context: vscode.ExtensionContext) {
       void gitHistoryProvider.loadNextPage();
     }
   );
-  context.subscriptions.push(showFileHistoryCommand, showRangeHistoryCommand, gitHistoryNextPageCommand);
+  // IDE-GIT-006:虚拟文档内容提供者(只读,按仓库/提交/路径三键隔离取版本内容)。
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      GIT_HISTORY_VERSION_SCHEME,
+      new GitHistoryVersionContentProvider(defaultVersionQueryDeps())
+    )
+  );
+  // 点击提交记录:主编辑区打开该版本 vs 父版本只读 diff(参数=hash/文件/仓库)
+  const gitOpenVersionDiffCommand = vscode.commands.registerCommand(
+    'kbengine.git.openVersionDiff',
+    (commit: string, filePath: string, repoRoot: string) => runGitHistoryWhenEnabled(
+      readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
+      async () => {
+        if (typeof commit !== 'string' || typeof filePath !== 'string' || typeof repoRoot !== 'string') {
+          void vscode.window.showInformationMessage('打开版本差异:参数不完整(缺少提交/文件/仓库)。');
+          return;
+        }
+        await openVersionDiff(filePath, repoRoot, commit, defaultVersionQueryDeps());
+      }
+    )
+  );
+  // 提交行右键:只读打开该版本内容(虚拟文档,不覆盖工作区文件)
+  const gitOpenVersionContentCommand = vscode.commands.registerCommand(
+    'kbengine.git.openVersionContent',
+    (item: GitHistoryItem) => runGitHistoryWhenEnabled(
+      readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
+      async () => {
+        if (!item || item.kind !== 'commit') {
+          void vscode.window.showInformationMessage('打开版本内容:上下文不是提交记录。');
+          return;
+        }
+        await openVersionContent(item.filePath, item.repoRoot, item.entry.hash);
+      }
+    )
+  );
+  context.subscriptions.push(
+    showFileHistoryCommand,
+    showRangeHistoryCommand,
+    gitHistoryNextPageCommand,
+    gitOpenVersionDiffCommand,
+    gitOpenVersionContentCommand
+  );
 
   // 侧栏常驻入口:始终可见可回,不随配置门控
   const finalConfigTreeRegistration = vscode.window.registerTreeDataProvider(

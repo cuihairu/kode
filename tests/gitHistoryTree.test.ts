@@ -174,11 +174,20 @@ describe('IDE-GIT-005 提供者(fake-vscode)', () => {
 
   it('TreeItem 映射:提交行/下一页命令/消息', () => {
     const { provider } = makeProvider();
-    const commitItem = provider.getTreeItem({ kind: 'commit', entry: entry('h1', '主题一', '作者甲'), index: 0 });
+    const commitItem = provider.getTreeItem({
+      kind: 'commit',
+      entry: entry('h1', '主题一', '作者甲'),
+      index: 0,
+      filePath: '/repo/src/a.py',
+      repoRoot: '/repo',
+    });
     expect(commitItem.label).toBe('主题一');
     expect(commitItem.description).toContain('作者甲');
     expect(commitItem.contextValue).toBe('gitCommit');
     expect(commitItem.tooltip).toContain('h1');
+    // IDE-GIT-006:点击提交记录 → 打开该版本 vs 父版本只读 diff(参数=hash/文件/仓库)
+    expect(commitItem.command?.command).toBe('kbengine.git.openVersionDiff');
+    expect(commitItem.command?.arguments).toEqual(['h1', '/repo/src/a.py', '/repo']);
 
     const next = provider.getTreeItem({ kind: 'next-page', loadedCount: 50 });
     expect(next.label).toContain('50');

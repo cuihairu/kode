@@ -762,6 +762,14 @@
       {
         "command": "kbengine.git.historyNextPage",
         "title": "Kode: 加载下一页文件历史 (Load Next History Page)"
+      },
+      {
+        "command": "kbengine.git.openVersionDiff",
+        "title": "Kode: 打开版本差异 (Open Version Diff)"
+      },
+      {
+        "command": "kbengine.git.openVersionContent",
+        "title": "Kode: 打开版本内容 (Open Version Content)"
       }
     ],
     "menus": {
@@ -863,6 +871,11 @@
           "command": "kbengine.remoteServers.remove",
           "when": "view == kbengine.remoteServers && viewItem == remote-server-manual",
           "group": "inline"
+        },
+        {
+          "command": "kbengine.git.openVersionContent",
+          "when": "view == kbengine.gitHistory && viewItem == gitCommit",
+          "group": "navigation@0"
         }
       ],
       "commandPalette": [
@@ -891,6 +904,14 @@
         },
         {
           "command": "kbengine.git.historyNextPage",
+          "when": "false"
+        },
+        {
+          "command": "kbengine.git.openVersionDiff",
+          "when": "false"
+        },
+        {
+          "command": "kbengine.git.openVersionContent",
           "when": "false"
         }
       ],
