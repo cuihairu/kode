@@ -364,6 +364,14 @@ import type { MergeSnippetResult } from './snippetGenerator';
 import { buildEngineApiCatalog, readEngineApiMetadata, readEngineVersionMarker } from './engineApiMetadata';
 import { getEngineVersion } from './engineVersion';
 import { detectEngineVersionMarker, engineVersionSuggestion } from './engineVersionDetect';
+import {
+  GIT_HISTORY_CONTEXT_KEY,
+  GIT_HISTORY_ENABLED_SETTING,
+  GIT_HISTORY_SHOW_COMMAND,
+  GIT_HISTORY_SHOW_RANGE_COMMAND,
+  readGitHistoryEnabled,
+  runGitHistoryWhenEnabled,
+} from './gitHistory';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -4031,6 +4039,43 @@ export function activate(context: vscode.ExtensionContext) {
     () => openFinalConfig(false)
   );
   context.subscriptions.push(showFinalConfigCommand);
+
+  // IDE-GIT-001:文件历史功能开关(默认开启)。入口可见性由上下文键驱动,
+  // 激活时置一次,开关变更即时刷新;查询(IDE-GIT-002..005)后续接入,
+  // 本里程碑命令体绝不触达 Git(用户约束 2026-10-29:按需查询,零预取)。
+  const refreshGitHistoryContext = () => {
+    const enabled = readGitHistoryEnabled(
+      vscode.workspace.getConfiguration('kbengine')
+    );
+    void vscode.commands.executeCommand('setContext', GIT_HISTORY_CONTEXT_KEY, enabled);
+  };
+  refreshGitHistoryContext();
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (event.affectsConfiguration(GIT_HISTORY_ENABLED_SETTING)) {
+        refreshGitHistoryContext();
+      }
+    })
+  );
+  const showFileHistoryCommand = vscode.commands.registerCommand(
+    GIT_HISTORY_SHOW_COMMAND,
+    () => runGitHistoryWhenEnabled(
+      readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
+      () => {
+        void vscode.window.showInformationMessage('文件历史查询尚未接入。');
+      }
+    )
+  );
+  const showRangeHistoryCommand = vscode.commands.registerCommand(
+    GIT_HISTORY_SHOW_RANGE_COMMAND,
+    () => runGitHistoryWhenEnabled(
+      readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
+      () => {
+        void vscode.window.showInformationMessage('选中范围历史查询尚未接入。');
+      }
+    )
+  );
+  context.subscriptions.push(showFileHistoryCommand, showRangeHistoryCommand);
 
   // 侧栏常驻入口:始终可见可回,不随配置门控
   const finalConfigTreeRegistration = vscode.window.registerTreeDataProvider(

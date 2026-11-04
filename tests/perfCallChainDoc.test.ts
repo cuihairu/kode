@@ -42,16 +42,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-04(二):KODE-PERF-001 流解析缓存——extension.ts 顶部新增 1 行
   // import(flowVersionKeyForDocument) + 诊断装配块 +6 行(723):723 前锚点
   // +1(566/579→567/580),723 后锚点 +7(821/903/954/1017/1315/1857/1931 各 +7)
-  ['src/extension.ts', 910, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 961, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1024, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 828, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1322, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 567, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 580, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-05:KB-VER-002(31c3417)/KB-VER-004(d88a221) 与 IDE-GIT-001 的
+  // 语言服务导入与命令装配行位移——languageProviders.ts 顶部 import +1(全部
+  // 锚点 +1)、extension.ts 顶部 import/引擎版本建议装配 +10(全部锚点 +10),
+  // §7 出处随 baseline 锁步
+  ['src/extension.ts', 920, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 971, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1034, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 838, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1332, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 577, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 590, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1864, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1938, 'flushQueued()'],
+  ['src/extension.ts', 1874, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1948, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
@@ -63,16 +67,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // providePythonPropertyReferences / enclosingPythonClassAt 方法面,§7 的
   // languageProviders.ts 锚点逐点重探:724/814/1622/1681/1705/1833/4474/4895/
   // 5001 各 -1,provideCompletionItems 6707→6776(非均匀),出处随 baseline 锁步
-  ['src/languageProviders.ts', 724, 'getDocumentLines(document)'],
-  ['src/languageProviders.ts', 814, 'provideHover('],
-  ['src/languageProviders.ts', 1622, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1681, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1705, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 1833, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4474, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 4895, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5001, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 6776, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 725, 'getDocumentLines(document)'],
+  ['src/languageProviders.ts', 815, 'provideHover('],
+  ['src/languageProviders.ts', 1623, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1682, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1706, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 1834, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4475, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 4896, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5002, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 6777, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

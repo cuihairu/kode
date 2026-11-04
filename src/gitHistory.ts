@@ -1,0 +1,39 @@
+/**
+ * IDE-GIT 泳道(文件修改历史,类似 TortoiseGit)的功能开关与命令门。
+ *
+ * IDE-GIT-001:声明默认开启的历史功能开关 `kbengine.gitHistory.enabled`。
+ * 用户约束(2026-10-29):默认开启、按需查询——开启只提供入口,绝不在激活、
+ * 打开文件、移动光标或选区变化时运行 Git,不预取历史、不挂历史专用监听、
+ * 不新增常驻轮询;用户打开历史面板才启动查询;关闭功能时不启动 Git 子进程
+ * 或历史任务。本模块只承载开关读取与命令门,不接任何 Git 子进程。
+ */
+
+/** 历史功能开关设置键。 */
+export const GIT_HISTORY_ENABLED_SETTING = 'kbengine.gitHistory.enabled';
+
+/** 历史视图/命令可见性上下文键(经 vscode setContext 驱动 `when` 子句)。 */
+export const GIT_HISTORY_CONTEXT_KEY = 'kode.gitHistoryEnabled';
+
+/** 命令 ID:查看文件历史(资源管理器/编辑器/命令面板)。 */
+export const GIT_HISTORY_SHOW_COMMAND = 'kbengine.git.showHistory';
+
+/** 命令 ID:查看选中范围历史(编辑器选区/命令面板)。 */
+export const GIT_HISTORY_SHOW_RANGE_COMMAND = 'kbengine.git.showRangeHistory';
+
+/** 配置读取注入面(与其余设置读取链同口径)。 */
+export interface GitHistoryConfigReader {
+  get<T>(key: string, defaultValue: T): T;
+}
+
+/** 读开关:缺省(未配置)→true(默认开启);显式 true/false 照读。 */
+export function readGitHistoryEnabled(reader: GitHistoryConfigReader): boolean {
+  return reader.get<boolean>(GIT_HISTORY_ENABLED_SETTING, true) === true;
+}
+
+/**
+ * 命令门:只在开关开启时执行 body。开关关闭时直接命令调用也不运行 Git
+ * (body 是唯一可能触达 Git 的执行面,门关闭即不触达)。
+ */
+export function runGitHistoryWhenEnabled(enabled: boolean, body: () => void): void {
+  if (enabled) body();
+}

@@ -155,6 +155,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | 引擎二进制目录;兼推引擎根(`KBE_ROOT`)与引擎默认配置路径 |
 | `kbengine.assetsRoot` | string | `""` | 资产根目录(其下含 `res/`、`scripts/`),留空自动发现 |
 | `kbengine.engineVersion` | string | `3.7.3` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此值做版本门控;`fork-` 前缀值还会对 fork 档 KBEngine API 参考条目抑制「需 fork」标注(补全与导出存根),自定义 fork 版本未带前缀则保留标注(保守口径——宁多提示不漏报);打开项目时若引擎安装目录版本标记与此值不同会给出设置建议(一键提供、绝不自动改、忽略按工作区记住) |
+| `kbengine.gitHistory.enabled` | boolean | `true` | 文件 Git 历史功能开关(IDE-GIT-001):开启时出现「查看文件历史 / 查看选中范围历史」入口(资源管理器/编辑器右键+命令面板),仅在用户点开入口时按需查询 Git(激活/打开文件/光标/选区变化绝不运行 Git,不预取不轮询);关闭后入口隐藏,直接调用命令也不运行任何 Git |
 
 四个路径项都是「可选覆盖」:配置了就照配置,没配就按发现链找,详见下文「路径类配置的自动发现」(`kbengine.engineVersion` 是版本门控值,不走路径发现)。逐项细节:
 

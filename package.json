@@ -745,6 +745,14 @@
       {
         "command": "kbengine.managedDir.syncExclusions",
         "title": "KBEngine: Sync .kbengine Exclusions (搜索/watcher/gitignore)"
+      },
+      {
+        "command": "kbengine.git.showHistory",
+        "title": "Kode: 查看文件历史 (View File History)"
+      },
+      {
+        "command": "kbengine.git.showRangeHistory",
+        "title": "Kode: 查看选中范围历史 (View Selection History)"
       }
     ],
     "menus": {
@@ -863,6 +871,14 @@
         },
         {
           "command": "kbengine.config.showFinal"
+        },
+        {
+          "command": "kbengine.git.showHistory",
+          "when": "kode.gitHistoryEnabled"
+        },
+        {
+          "command": "kbengine.git.showRangeHistory",
+          "when": "kode.gitHistoryEnabled"
         }
       ],
       "explorer/context": [
@@ -870,6 +886,23 @@
           "command": "kbengine.entity.new",
           "when": "explorerResourceIsFolder",
           "group": "creation"
+        },
+        {
+          "command": "kbengine.git.showHistory",
+          "when": "kode.gitHistoryEnabled && explorerResourceIsFile",
+          "group": "navigation@50"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "kbengine.git.showHistory",
+          "when": "kode.gitHistoryEnabled",
+          "group": "navigation@50"
+        },
+        {
+          "command": "kbengine.git.showRangeHistory",
+          "when": "kode.gitHistoryEnabled && editorHasSelection",
+          "group": "navigation@51"
         }
       ]
     },
@@ -893,6 +926,12 @@
           "default": "3.7.3",
           "scope": "window",
           "description": "集成的 KBEngine 引擎版本（Engine version of the integrated KBEngine）。默认 3.7.3（官方稳定基线）；魔改 fork 各异，填自定义版本号（如 fork-3.12）。知识库分层标注与诊断按此值做版本门控：不同版本支持的特性不同，fork-only 特性在基线版本下会显式标注。常见预设：3.7.3 / 3.7.2 / 3.6.3 / fork-3.12 / 2.5.10"
+        },
+        "kbengine.gitHistory.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "文件 Git 历史查询功能开关（File Git history feature toggle）。默认开启：资源管理器/编辑器右键与命令面板出现「查看文件历史/查看选中范围历史」入口；历史只在用户打开入口时按需查询 Git，绝不在激活、打开文件、光标或选区变化时自动运行 Git，不预取、不轮询。关闭后入口隐藏，直接调用命令也不运行 Git（Enabled by default: adds \"View File History / View Selection History\" entries and queries Git only on demand; when disabled the entries hide and the commands never spawn Git）"
         },
         "kbengine.metrics.fileReadDetail": {
           "type": "boolean",

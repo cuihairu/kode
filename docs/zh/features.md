@@ -179,6 +179,7 @@
 - **Python 语言服务可用性检查** —— 按 `ms-python.vscode-pylance` 的注册/激活/安装目录证据报告未安装／未启用／已激活三态；extraPaths 写入绝不计为可用，只附明确警示——（证据：package.json#contributes.commands `kbengine.python.serviceStatus`；src/pythonLanguageServiceStatus.ts `classifyPythonService`）
 - **最小项目创建模板** —— 一份固定清单明确列出新建空 KBEngine 项目要落的每个目录和文件（相对路径逐条、文件内容齐备，scripts 布局与共享发现约定对齐，建出的骨架可被导入识别）；创建预检逐条探测目标路径——任一目标已存在即按准确路径上报冲突，预览每条一行给准确绝对路径——（证据：src/projectTemplate.ts `MINIMAL_PROJECT_TEMPLATE`/`planProjectCreation`/`buildProjectCreationPreviewItems`）；创建命令把清单接到盘面并全程继承生成器保护——预览前冲突即拒、与生成器共用的确认 QuickPick、文件原子写、失败回收本次全部新增，成功后走与导入同一识别链建档——（证据：package.json#contributes.commands `kbengine.project.create`；src/projectCreate.ts `createMinimalProject`）
 - **打开项目时引擎版本标记建议(KB-VER-004)** —— 激活期扩展按与兼容性检查同一条链探测引擎根（profile 引擎根 → `kbengine.engineRoot` 设置 → 工作区树向上走；version.h 单宏 legacy | kbeversion.h 三宏 2.5.10+），当标记与当前 `kbengine.engineVersion` 值不同时提供一键建议设为该值（Workspace 作用域）——设置绝不被自动改动；忽略按探测到的版本值记入 workspaceState 记住，同一标记不再骚扰、标记变了可再建议；标记缺失/畸形则不建议（绝不编造——fork 树无 `res/version` 文件，版本宏是权威标记面）——（证据：src/engineVersionDetect.ts `detectEngineVersionMarker`/`engineVersionSuggestion`；src/extension.ts `maybeSuggestEngineVersion`；src/engineCompatibility.ts `findEngineRoot`；src/engineApiMetadata.ts `readEngineVersionMarker`；tests/engineVersionDetect.test.ts 13 例）
+- **文件历史功能开关(IDE-GIT-001)** —— `kbengine.gitHistory.enabled`（默认 true）门控文件/选区历史入口：仅开关开启时资源管理器文件右键、编辑器右键与命令面板才出现「查看文件历史 / 查看选中范围历史」（由 `kode.gitHistoryEnabled` 上下文键驱动，激活时置一次、开关变更即时刷新）——开关只是入口声明，绝不在激活、打开文件、移动光标或选区变化时运行 Git，不预取、不轮询；关闭后入口隐藏，直接调用命令也不运行任何 Git（命令体与同一开关同门；历史查询本体在后续里程碑接入）——（证据：package.json#contributes.configuration `kbengine.gitHistory.enabled`；package.json#contributes.menus `explorer/context`/`editor/context`/`commandPalette`；src/gitHistory.ts `readGitHistoryEnabled`/`runGitHistoryWhenEnabled`；src/extension.ts `refreshGitHistoryContext`；tests/gitHistory.test.ts 7 例）
 
 ## 设置项
 
@@ -188,6 +189,7 @@
 | --- | --- | --- |
 | `kbengine.db.tablePrefix` | `""` | 数据库表名前缀（空 = 引擎默认 tbl_）；schema 视图与 SQL 模板同源替换 |
 | `kbengine.databaseQueryTimeoutMs` | `10000` | 只读数据库命令（漂移校验/表预览）单条建连与查询的超时毫秒数：执行期间显示可取消的进度通知，超时或取消即按原因返回并释放连接（挂死的强制销毁）；`0`/负值不限时 |
+| `kbengine.gitHistory.enabled` | `true` | 文件 Git 历史功能开关（IDE-GIT-001）：开启时出现「查看文件历史 / 查看选中范围历史」入口（资源管理器/编辑器右键+命令面板），仅在用户点开入口时按需查询 Git；激活/打开文件/光标/选区变化绝不运行 Git，不预取不轮询——关闭后入口隐藏，直接调用命令也不运行任何 Git |
 | `kbengine.enableDiagnostics` | `true` | KBEngine 实时诊断总开关 |
 | `kbengine.enableStructureDiagnostics` | `true` | 结构化 .def 校验（重复定义、标签位置、缺失字段） |
 | `kbengine.receiverNoneDiagnostics` | `true` | Python 侧 Warning：无判空的 `self.cell`/`self.base`/`self.client` 引用与 `.def` 段错配 |

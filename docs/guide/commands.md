@@ -869,6 +869,22 @@ The flow graph panel supports:
   - No-op when invoked without a URI
   - Exists for definition providers, not as a user-facing entry point: it is registered like every contributed command (with its `onCommand:` activation event) so the palette stays empty while programmatic jumps can rely on it
 
+### `kbengine.git.showHistory`
+
+- Title: `Kode: 查看文件历史 (View File History)`
+- Purpose: open the file history entry (IDE-GIT-001 gate, IDE-GIT-005 entry point). The entry is visible only while `kbengine.gitHistory.enabled` is on (explorer file context menu, editor context menu, command palette); it is a pure entry declaration — history is queried on demand only when the user opens it, never at activation, file open, cursor move or selection change, with no prefetch or polling
+- Behavior:
+  - Gated by the same switch: with the feature off the command is hidden from menus and a direct invocation runs nothing Git
+  - The history view and query pipeline land in later IDE-GIT milestones; until then an enabled invocation reports 尚未接入 honestly rather than fabricating a view
+
+### `kbengine.git.showRangeHistory`
+
+- Title: `Kode: 查看选中范围历史 (View Selection History)`
+- Purpose: open the selection history entry (IDE-GIT-001 gate, IDE-GIT-010 entry point), shown in the editor context menu only with a selection and in the command palette; gated like the file history entry
+- Behavior:
+  - Gated by `kbengine.gitHistory.enabled`; a disabled feature hides the entry and a direct invocation runs nothing Git
+  - The selection-to-committed-range mapping and timeline land in later IDE-GIT milestones; until then an enabled invocation reports 尚未接入 honestly
+
 ## Typical Workflows
 
 ### Creating an entity
