@@ -888,6 +888,12 @@
     "configuration": {
       "title": "KBEngine",
       "properties": {
+        "kbengine.engineVersion": {
+          "type": "string",
+          "default": "3.7.3",
+          "scope": "window",
+          "description": "集成的 KBEngine 引擎版本（Engine version of the integrated KBEngine）。默认 3.7.3（官方稳定基线）；魔改 fork 各异，填自定义版本号（如 fork-3.12）。知识库分层标注与诊断按此值做版本门控：不同版本支持的特性不同，fork-only 特性在基线版本下会显式标注。常见预设：3.7.3 / 3.7.2 / 3.6.3 / fork-3.12 / 2.5.10"
+        },
         "kbengine.metrics.fileReadDetail": {
           "type": "boolean",
           "default": false,

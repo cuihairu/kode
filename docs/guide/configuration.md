@@ -63,7 +63,7 @@ Two boundaries:
 
 ## Overview of `kbengine.*` Settings (by Feature Area)
 
-The 76 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
+The 102 settings are grouped by feature — one small table per area (Setting/Type/Default/Purpose), immediately followed by that area's impact of changes and common misconfigurations; no more one 76-row table. To find a setting, locate the feature area first, then the row within it.
 
 ### Diagnostics
 
@@ -154,8 +154,9 @@ The four CodeLens switches take effect on change, no window reload needed; inlay
 | `kbengine.entitiesXmlPath` | string | `scripts/entities.xml` | `entities.xml` path (dependency graph reads and entity registration) |
 | `kbengine.binPath` | string | `${workspaceFolder}/../kbe/bin/server` | Engine binaries directory; also derives the engine root (`KBE_ROOT`) and the engine default config path |
 | `kbengine.assetsRoot` | string | `""` | Assets root (containing `res/`, `scripts/` below); empty = auto-discover |
+| `kbengine.engineVersion` | string | `3.7.3` | Integrated KBEngine engine version (fork builds use custom values like `fork-3.12`); knowledge-base layering and diagnostics gate features by this value |
 
-All four are "optional overrides": a configured value is honored as-is, an unconfigured one goes through the discovery chain — see "Auto-Discovery of Path Settings" below. Per-key details:
+The four path settings are "optional overrides": a configured value is honored as-is, an unconfigured one goes through the discovery chain — see "Auto-Discovery of Path Settings" below (`kbengine.engineVersion` is a plain version gate, not a path). Per-key details:
 
 #### `kbengine.entityDefsPath`
 
@@ -603,7 +604,7 @@ Sub-paths inferable from existing files never become settings: the def root deri
 | `kbengine.telnet.probeIntervalSeconds` | Value 5 | No | **Keep** (frequency preference) |
 | `kbengine.httpRequests` | Default: one disabled example (`enabled: false`) | No (the user's business endpoints) | **Keep**; the example is disabled by default and has no side effects |
 
-Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 10 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`, and `kbengine.python.enableMroJump`), all registered in the grouped overview tables above.
+Counted: **all 32 kept, 0 deleted** (deleting entries would break existing user settings — not done); of them, 5 path settings were downgraded from "must configure" to "optional override", 3 telnet/value settings were already override-style, and 21 are preference/security/business switches (whose defaults carry zero-config semantics). Additionally, 3 kinds of purely discovered resources with **no settings** were added (types.xml, messages_fixed(_defaults).xml, and the engine defaults' source-root fallback). Since batch 126, 11 more settings were added beyond this table (`kbengine.db.tablePrefix`, 4 × `kbengine.hotReload.*`, `kbengine.clientSdk.outputDir`, `kbengine.python.extraPathsSync`/`stubExport`/`stubDir`, `kbengine.python.enableMroJump`, and `kbengine.engineVersion`), all registered in the grouped overview tables above.
 
 ## FAQ
 

@@ -280,6 +280,7 @@
 | `kbengine.infer.enabled` | `true` | 无标注函数 stub 推断管道 — `src/inferPipeline.ts`、`src/pyreflyInfer.ts` |
 | `kbengine.infer.pyreflyPath` | `""` | pyrefly 可执行路径（空 = PATH/pipx 发现）— `src/pyreflyInfer.ts` |
 | `kbengine.infer.pythonVersion` | `"3.7"` | pyrefly infer `--python-version` 目标 — `src/pyreflyInfer.ts` |
+| `kbengine.engineVersion` | `"3.7.3"` | 集成的 KBEngine 引擎版本(魔改 fork 填自定义版本号如 `fork-3.12`);知识库分层标注与诊断按此门控 — `src/engineVersion.ts` |
 | `kbengine.infer.sourceWrite` | `"managed"` | 写权限闸 scope（managed/user）— `src/pyreflyInfer.ts` |
 | `kbengine.infer.exclusionsSync` | `true` | .kbengine 隔离（search/watcher/gitignore 幂等，gitignore 绝不创建）— `src/managedDirExclusions.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | alias.xml 自定义类型发现 — `src/definitionWorkspace.ts:285` |

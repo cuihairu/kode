@@ -283,6 +283,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.infer.enabled` | `true` | Un-annotated function stub inference pipeline — `src/inferPipeline.ts`, `src/pyreflyInfer.ts` |
 | `kbengine.infer.pyreflyPath` | `""` | pyrefly executable path (empty = PATH/pipx discovery) — `src/pyreflyInfer.ts` |
 | `kbengine.infer.pythonVersion` | `"3.7"` | Target for `pyrefly infer --python-version` — `src/pyreflyInfer.ts` |
+| `kbengine.engineVersion` | `"3.7.3"` | Integrated KBEngine engine version (fork builds use custom values like `fork-3.12`); knowledge-base layering and diagnostics gate by it — `src/engineVersion.ts` |
 | `kbengine.infer.sourceWrite` | `"managed"` | Write-scope gate (managed/user) — `src/pyreflyInfer.ts` |
 | `kbengine.infer.exclusionsSync` | `true` | `.kbengine` isolation (search/watcher/gitignore idempotent; gitignore never created) — `src/managedDirExclusions.ts` |
 | `kbengine.types.aliasDiscovery` | `true` | `alias.xml` custom-type discovery — `src/definitionWorkspace.ts:285` |
