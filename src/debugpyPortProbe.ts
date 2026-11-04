@@ -187,7 +187,13 @@ export interface DebugpyInstallResult {
 
 export type DebugpyInstallRunner = (interpreterPath: string) => Promise<DebugpyInstallResult>;
 
-const INSTALL_TIMEOUT_MS = 120_000;
+/** pip 安装截止:挂起的 pip 不永久等待,超时组杀不留构建孙进程孤儿。 */
+let INSTALL_TIMEOUT_MS = 120_000;
+
+/** 测试注入口:覆写 defaultDebugpyInstallRunner 的截止毫秒数(生产口径 120s)。 */
+export function setDebugpyInstallTimeoutMsForTests(ms: number | null): void {
+  INSTALL_TIMEOUT_MS = ms ?? 120_000;
+}
 
 /** 真实安装:`<解释器> -m pip install -U debugpy`;起不来/超时/非零退出都算失败,永不抛 */
 export const defaultDebugpyInstallRunner: DebugpyInstallRunner = interpreterPath =>

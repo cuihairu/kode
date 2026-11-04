@@ -26,7 +26,11 @@ import {
   syncDebugpyPackage,
   type InjectionClientFactory
 } from '../src/autoDebugpy';
-import { defaultDebugpyInstallRunner, defaultTcpConnect } from '../src/debugpyPortProbe';
+import {
+  defaultDebugpyInstallRunner,
+  defaultTcpConnect,
+  setDebugpyInstallTimeoutMsForTests
+} from '../src/debugpyPortProbe';
 import { checkInterpreterDebugpy, debugpyPreflightDeps } from '../src/debugpyPreflight';
 import { defaultSpawnRunner } from '../src/pyspyDump';
 import { ProcessManager, killProcessTree } from '../src/processManager';
@@ -183,6 +187,23 @@ describe('defaultTcpConnect(未开原因归类)', () => {
 });
 
 describe('defaultDebugpyInstallRunner(真实 spawn 安装通道)', () => {
+  it('挂起的 pip 按截止组杀:超时如实失败,不永久等待', async () => {
+    // 假解释器无视 -m pip 参数直接 sleep 10s(等价 pip 挂起);300ms 截止组杀
+    setDebugpyInstallTimeoutMsForTests(300);
+    const bin = makeTempDir('kode-pip-hang-');
+    const interpreter = writeFakeInterpreter(bin, 'sleep 10');
+    const started = Date.now();
+    try {
+      const result = await defaultDebugpyInstallRunner(interpreter);
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain('pip 安装超时');
+      // 截止附近返回(远小于挂起的 10s)
+      expect(Date.now() - started).toBeLessThan(5000);
+    } finally {
+      setDebugpyInstallTimeoutMsForTests(null);
+    }
+  }, 8000);
+
   it('假解释器零退出:ok 带输出尾三行(更早行剔除)', async () => {
     const bin = makeTempDir('kode-pip-');
     writeFakeInterpreter(bin, 'printf \'l1\\nl2\\nl3\\nl4\\n\'');
