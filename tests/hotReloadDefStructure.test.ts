@@ -124,6 +124,149 @@ describe('classifyDefChange(结构指纹:序列化面+RPC 面)', () => {
   });
 });
 
+describe('IDE-AUD-014 装载面:Parent/接口/组件/Persistent/Utype/未建模段', () => {
+  // 装载面与未建模段基准:真实 def 形态(Parent/Interfaces/Components 在
+  // wt/wire fixtures 实证:Parent 单文本、interface 小写子元素、组件槽
+  // <槽名><Type><Persistent>)。装载面任一变化=核验结构性(继承/接口合并/
+  // 组件装载都改有效结构);未建模顶段变=保守按结构性;注释/空白/重排
+  // 不进指纹仍可通过。
+  const LOADING_BASE = [
+    '<root>',
+    '  <Parent> Avatar </Parent>',
+    '  <Interfaces>',
+    '    <interface> ROLE </interface>',
+    '    <interface> TALK </interface>',
+    '  </Interfaces>',
+    '  <Properties>',
+    '    <hp>',
+    '      <Type> UINT32 </Type>',
+    '      <Flags> CELL_PUBLIC </Flags>',
+    '      <Persistent> true </Persistent>',
+    '      <Utype> 101 </Utype>',
+    '    </hp>',
+    '  </Properties>',
+    '  <Components>',
+    '    <bag>',
+    '      <Type> Inventory </Type>',
+    '      <Persistent> true </Persistent>',
+    '    </bag>',
+    '  </Components>',
+    '  <DetailLevels>',
+    '    <NEAR>',
+    '      <radius> 10 </radius>',
+    '    </NEAR>',
+    '  </DetailLevels>',
+    '</root>'
+  ].join('\n');
+
+  it('Parent 改 → 结构性(装载面)', () => {
+    const after = LOADING_BASE.replace('<Parent> Avatar </Parent>', '<Parent> Monster </Parent>');
+    const verdict = classifyDefChange(LOADING_BASE, after);
+    expect(verdict.structural).toBe(true);
+    expect(verdict.reasons.join('\n')).toContain('parent');
+  });
+
+  it('接口增/删 → 结构性(装载面)', () => {
+    const added = LOADING_BASE.replace(
+      '</Interfaces>',
+      '    <interface> COMBAT </interface>\n  </Interfaces>'
+    );
+    expect(classifyDefChange(LOADING_BASE, added).structural).toBe(true);
+    const removed = LOADING_BASE.replace('    <interface> TALK </interface>\n', '');
+    expect(classifyDefChange(LOADING_BASE, removed).structural).toBe(true);
+  });
+
+  it('接口顺序重排 → 非结构性(集合语义,顺序无关)', () => {
+    const reordered = LOADING_BASE.replace(
+      '    <interface> ROLE </interface>\n    <interface> TALK </interface>',
+      '    <interface> TALK </interface>\n    <interface> ROLE </interface>'
+    );
+    const verdict = classifyDefChange(LOADING_BASE, reordered);
+    expect(verdict.structural).toBe(false);
+    expect(verdict.reasons).toEqual([]);
+  });
+
+  it('组件槽 Type/Persistent 改 → 结构性(装载面)', () => {
+    const typeChanged = LOADING_BASE.replace('<Type> Inventory </Type>', '<Type> WeaponSlot </Type>');
+    expect(classifyDefChange(LOADING_BASE, typeChanged).structural).toBe(true);
+    const persistentChanged = LOADING_BASE.replace(
+      '<Persistent> true </Persistent>\n    </bag>',
+      '<Persistent> false </Persistent>\n    </bag>'
+    );
+    expect(classifyDefChange(LOADING_BASE, persistentChanged).structural).toBe(true);
+  });
+
+  it('属性 Persistent 改 → 结构性(序列化面)', () => {
+    const after = LOADING_BASE.replace(
+      '<Persistent> true </Persistent>\n      <Utype>',
+      '<Persistent> false </Persistent>\n      <Utype>'
+    );
+    const verdict = classifyDefChange(LOADING_BASE, after);
+    expect(verdict.structural).toBe(true);
+    expect(verdict.reasons.join('\n')).toContain('hp');
+  });
+
+  it('属性 Utype 改 → 结构性(序列化面)', () => {
+    const after = LOADING_BASE.replace('<Utype> 101 </Utype>', '<Utype> 202 </Utype>');
+    expect(classifyDefChange(LOADING_BASE, after).structural).toBe(true);
+  });
+
+  it('ClientMethods 方法 Arg 改 → 结构性(RPC 面,既有能力补测)', () => {
+    const withClient = [
+      '<root>',
+      '  <ClientMethods>',
+      '    <onBattleResult>',
+      '      <Arg> UINT16 </Arg>',
+      '    </onBattleResult>',
+      '  </ClientMethods>',
+      '</root>'
+    ].join('\n');
+    const changed = withClient.replace('<Arg> UINT16 </Arg>', '<Arg> UINT32 </Arg>');
+    expect(classifyDefChange(withClient, changed).structural).toBe(true);
+  });
+
+  it('未建模段(DetailLevels)内容改 → 保守按结构性', () => {
+    const after = LOADING_BASE.replace('<radius> 10 </radius>', '<radius> 20 </radius>');
+    const verdict = classifyDefChange(LOADING_BASE, after);
+    expect(verdict.structural).toBe(true);
+    expect(verdict.reasons.join('\n')).toContain('DetailLevels');
+  });
+
+  it('未建模段新增 → 保守按结构性', () => {
+    const after = LOADING_BASE.replace(
+      '</root>',
+      '  <Volatile>\n    <position> true </position>\n  </Volatile>\n</root>'
+    );
+    const verdict = classifyDefChange(LOADING_BASE, after);
+    expect(verdict.structural).toBe(true);
+    expect(verdict.reasons.join('\n')).toContain('Volatile');
+  });
+
+  it('未建模段注释/空白改 → 仍可通过(非结构性)', () => {
+    const after = LOADING_BASE.replace(
+      '    <NEAR>\n      <radius>',
+      '    <NEAR>\n      <!-- lod 调整 -->\n      <radius>'
+    );
+    const verdict = classifyDefChange(LOADING_BASE, after);
+    expect(verdict.structural).toBe(false);
+    expect(verdict.reasons).toEqual([]);
+  });
+
+  it('装载面注释/空白改 → 非结构性', () => {
+    const after = LOADING_BASE.replace(
+      '  <Parent> Avatar </Parent>',
+      '  <!-- 继承根 -->\n  <Parent>   Avatar   </Parent>'
+    );
+    const verdict = classifyDefChange(LOADING_BASE, after);
+    expect(verdict.structural).toBe(false);
+    expect(verdict.reasons).toEqual([]);
+  });
+
+  it('identical(含装载面/未建模段) → 非结构性', () => {
+    expect(classifyDefChange(LOADING_BASE, LOADING_BASE).structural).toBe(false);
+  });
+});
+
 describe('defChangeVerdictDetail(需重启标注文案)', () => {
   it('结构性给需重启+原因;非结构性给可走普通 reload 文案', () => {
     const structural = classifyDefChange(BASE, withBase({ properties: '    <hp><Type> FLOAT </Type><Flags> CELL_PUBLIC </Flags></hp>' +
