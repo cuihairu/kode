@@ -264,6 +264,80 @@ fn keyed_task_reuses_inflight_and_recovers_after_failure() {
 }
 
 #[test]
+fn keyed_ensure_rejected_queue_full_writes_no_fake_entry_and_retries() {
+    // rust_ext 有界队列:max_queued=1,先占满一个 p0 任务,
+    // 再 ensure 低优(p3)keyed 任务 → RejectedQueueFull。
+    let mut s = Scheduler::new(SchedulerOptions {
+        max_queued: Some(1),
+        ..SchedulerOptions::default()
+    });
+    s.enqueue(spec(TaskKind::FullReindex, 0, None, None));
+    let (d1, id1) = s.ensure("initial-scan", spec(TaskKind::InitialScan, 3, None, None));
+    // 被拒:返回 Rejected + id=0,不落 id=0 假 keyed 条目。
+    assert_eq!(d1, EnsureDecision::Rejected);
+    assert_eq!(id1, 0);
+    assert!(!s.is_keyed_complete("initial-scan"));
+    assert_eq!(s.status().queued, 1);
+    assert_eq!(s.status().metrics.queue_full_rejected, 1);
+    // 无假条目 → 后续 ensure 不被 Reused 短路,而是重新走入队。
+    let (d_dup, id_dup) = s.ensure("initial-scan", spec(TaskKind::InitialScan, 3, None, None));
+    assert_eq!(d_dup, EnsureDecision::Rejected);
+    assert_eq!(id_dup, 0);
+    assert_eq!(s.status().metrics.queue_full_rejected, 2);
+    // 队列腾出空位后:任务真正入队并执行,不再永久假 pending。
+    s.drain(200);
+    let ran = Rc::new(Cell::new(0));
+    let (d2, id2) = s.ensure(
+        "initial-scan",
+        counting_spec(TaskKind::InitialScan, 3, None, None, &ran),
+    );
+    assert_eq!(d2, EnsureDecision::Queued);
+    assert_ne!(id2, 0);
+    s.drain(200);
+    assert_eq!(ran.get(), 1);
+    assert!(s.is_keyed_complete("initial-scan"));
+    assert_eq!(s.status().metrics.recoveries, 0);
+}
+
+#[test]
+fn keyed_ensure_stale_dropped_writes_no_fake_entry_and_retries() {
+    // 队里已有 /a.def v2,再 ensure 同文件旧 v1 的 keyed 任务 → StaleDropped。
+    let mut s = Scheduler::default();
+    let cur = s.enqueue(spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(2)));
+    let (d1, id1) = s.ensure(
+        "scan-a",
+        spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(1)),
+    );
+    // 丢弃:返回 Rejected + id=0,不落假 keyed 条目。
+    assert_eq!(d1, EnsureDecision::Rejected);
+    assert_eq!(id1, 0);
+    assert!(!s.is_keyed_complete("scan-a"));
+    assert_eq!(s.status().metrics.stale_dropped, 1);
+    // 无假条目 → 后续 ensure 不被 Reused 短路。
+    let (d_dup, id_dup) = s.ensure(
+        "scan-a",
+        spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(1)),
+    );
+    assert_eq!(d_dup, EnsureDecision::Rejected);
+    assert_eq!(id_dup, 0);
+    assert_eq!(s.status().metrics.stale_dropped, 2);
+    // 新版本到达后同 key 可真正入队执行(execute 回写命中 entry.id)。
+    s.drain(200);
+    assert_eq!(
+        s.task_state(cur.id),
+        Some(kode_scheduler::TaskState::Completed)
+    );
+    let (d2, id2) = s.ensure(
+        "scan-a",
+        spec(TaskKind::SingleFileUpdate, 1, Some("/a.def"), Some(3)),
+    );
+    assert_eq!(d2, EnsureDecision::Queued);
+    assert_ne!(id2, 0);
+    s.drain(200);
+    assert!(s.is_keyed_complete("scan-a"));
+}
+
+#[test]
 fn cancel_token_reaches_run_body() {
     let mut s = Scheduler::default();
     let seen_cancelled = Rc::new(Cell::new(false));

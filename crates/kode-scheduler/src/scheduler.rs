@@ -92,6 +92,9 @@ pub enum EnsureDecision {
     Reused,
     /// 上次失败/取消后重新入队(计入 recoveries)。
     Recovered,
+    /// rust_ext:入队被拒(有界队列满)或新任务过期丢弃,keyed 条目未写入。
+    /// 返回 id 恒为 0;后续 ensure 可重试(失败不缓存成永久 pending)。
+    Rejected,
 }
 
 /// 单步 pump 结果。
@@ -459,10 +462,20 @@ impl Scheduler {
             self.keyed.get(key).map(|e| e.state),
             Some(TaskState::Failed | TaskState::Cancelled)
         );
+        let outcome = self.enqueue(spec);
+        if !matches!(
+            outcome.decision,
+            EnqueueDecision::Queued | EnqueueDecision::Merged
+        ) {
+            // 入队被拒(队列满)或过期丢弃:enqueue 未产生真实任务(id=0),
+            // 此时写 keyed 条目会变成永不执行的假 pending(execute 回写按
+            // entry.id 匹配不上,后续 ensure 又恒 Reused)。保持无条目,
+            // 后续 ensure 走全新入队路径(与「失败不缓存成永久 pending」一致)。
+            return (EnsureDecision::Rejected, outcome.id);
+        }
         if recovered {
             self.metrics.recoveries += 1;
         }
-        let outcome = self.enqueue(spec);
         self.keyed.insert(
             key.to_string(),
             KeyedEntry {

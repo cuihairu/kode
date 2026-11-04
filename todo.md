@@ -1141,7 +1141,7 @@
 - [ ] KR-AUD-09 [P2] RUST-1 dataflow.rs:332-374 推导式 elt 读先于 target 写，elt 内 def-use 断链。验收：`[str(x) for x in xs]` elt 内 use 有链。〔与 KODE-AUD-007 席位划界〕
 - [ ] KR-AUD-10 [P2] RUST-2 dataflow.rs:218-223 Match guard 不读、pattern 捕获不 def。验收：`case [a,b]:` 捕获 def+guard 读各一测试。〔callgraph 半边已由 KODE-AUD-008 闭合〕
 - [ ] KR-AUD-11 [P2] RUST-3 symbols.rs:46+dataflow.rs:224-233 `import a.b` 绑定名取首段。验收：dotted import def/use 链合拢+跨文件解析按顶层名。
-- [ ] KR-AUD-12 [P2] RUST-4 scheduler.rs:452-479 ensure 不查 outcome.decision，RejectedQueueFull/StaleDropped 写 id=0 假 keyed 条目永久卡。验收：入队被拒不写 keyed，重试可恢复。
+- [x] KR-AUD-12 [P2] RUST-4 scheduler.rs:452-479 ensure 不查 outcome.decision，RejectedQueueFull/StaleDropped 写 id=0 假 keyed 条目永久卡。验收：入队被拒不写 keyed，重试可恢复。（2026-11-04 修复：ensure 在 enqueue 后检查 outcome.decision——仅 Queued/Merged（Merged 返回真实 merged_id）才写 keyed 条目，RejectedQueueFull/StaleDropped 不写并返回新增 EnsureDecision::Rejected（id=0），keyed 保持无条目，后续 ensure 走全新入队不再被 Reused 短路；recoveries 计数后移到确认真实入队之后，被拒不再虚计。scheduler.rs:458-481。新增 2 测——queue_full 场景（max_queued=1 被 p0 占满 → p3 keyed ensure 恒 Rejected/id=0/queue_full_rejected 计数、无假条目，drain 腾位后重 ensure 真入队执行 is_keyed_complete=true）与 stale_dropped 场景（队有 /a.def v2 → v1 keyed ensure 恒 Rejected，v3 到达后同 key 真入队执行）；prove-red：旧逻辑两条路径均写 id=0 假条目。门禁：cargo test -p kode-scheduler 28 绿（lib 0+invalidation 6+journal 4+golden 3+units 15）；cargo clippy -p kode-scheduler --all-targets -- -D warnings 0 警告；cargo fmt --check 过。未 commit。）
 - [ ] KR-AUD-13 [P2] RUST-5 scheduler.rs:442 tasks HashMap 终态任务永不摘除。验收：终态消费后 remove/环形窗口，长会话任务数有界。
 - [ ] KR-AUD-14 [P2] RUST-6 invalidation.rs:67-83 affected_by 单级传播不取闭包。验收：A→B→C 改 C 时 A 入受影响集。
 - [ ] KR-AUD-15 [P3] RUST-7 graph.rs:93 `self.` 前缀恒回 caller_file（引擎 cell 侧漏报面；原稿自述取舍，登记待议）。
@@ -1219,3 +1219,7 @@
 - [ ] KR-AUD-87 [P3] RSV-8 kode-parser model.rs:349-350,400 OWN_CLIENT/OTHER_CLIENTS 未入 cell 域（仅 IDE 提示展示面）。验收：域表对齐 ENTITY_CELL_DATA_FLAGS。
 - [ ] KR-AUD-88 [P3] RSV-9 kode-parser model.rs:157-162 extract_def interfaces 仅识别文本形态（与 RSV-1 同根）。验收：元素形态产出接口引用。
 - [ ] KR-AUD-89 [P3级] RSV-10 python_callgraph.rs:161 file_stem 仅按 '/' 分割——非缺陷，防回归登记：上游斜杠归一化加断言。
+
+- [ ] **USER-LINT-01 · P1 · 误报修复 · 引擎校验器守卫不识别**（用户报 2026-11-04）：`if kbe.isValid(self.client): self.client.xxx()` 仍报 receiver-none Warning——receiverNoneDiagnostics 的 guard 分析只认 `subject`/`subject is not None`/`not subject` 三形态，不识别 `kbe.isValid(subject)` 引擎校验器。验收：①`kbe.isValid(self.client)` 正向 guard 不再误报；②`not kbe.isValid(...)` 早退形态正确；③别名（`c=self.client; kbe.isValid(c)`）与复合条件（`kbe.isValid(c) and ready`）兼容；④既有 is None/truthy 用例零回归。文件：src/receiverNoneDiagnostics.ts + tests。
+
+- [ ] **USER-LINT-02 · P1 · 误报修复 · 注释形态漏屏蔽**（用户报 2026-11-04）：`# self.client` 已有 # 注释仍报 receiver-none 警告——词法掩码（pythonLexicalMask）理论应屏蔽注释内的接收者引用，但实际有路径漏走。验收：建立注释形态复现矩阵（整行注释含 self.client / 行尾注释 / 注释掉的代码行 / docstring / f-string 混排）逐形态 prove-red 后修复，全绿。
