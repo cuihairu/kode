@@ -87,6 +87,18 @@ Source extraction → manual curation → consumers. Planned consumers
     `ClientObjectBase`); the shared `Entity` face re-anchored locally; the
     3.7-vs-fork deviation table (incl. the source material's phantom
     `cellData`/`isOnGround`/`PyClientApp` items).
+
+- **BigWorld API legacy stubs disposal decision** ((KB-API-009)):
+  - [English](bigworld-legacy-status.md)
+  - [中文](../zh/knowledge/bigworld-legacy-status.md)
+  - Covers: the five skeletal `bigworld/` stubs (BigWorld-Engine-14.4.1, not
+    KBEngine) are explicitly **not** integrated; the `/*~` source-comment
+    surface they reference is verified to exist at the submodule's pinned
+    commit `3d3cc16` (server: 57 files / 532 `/*~` blocks, incl.
+    `server/baseapp/base.hpp:38` `/*~ class BigWorld.Base`), but the submodule
+    is uninitialized in the fork working tree and the surface is a different
+    engine with no kode consumer; scope boundary documented so no future
+    mis-scoped task folds BigWorld into the KBEngine reference.
 - **C-21**: hover tooltips powered by KB articles.
 - **MCP-001**: expose KB to MCP for agent consumption.
 - A `kbe-api-scan.py` extraction script (bucket ①) is a **later-batch**
