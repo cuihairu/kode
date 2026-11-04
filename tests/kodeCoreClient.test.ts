@@ -1,4 +1,6 @@
+import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
+import { tmpdir } from 'os';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -85,6 +87,49 @@ describe('kodeCoreClient transport(fake stdio server)', () => {
     expect(await client.request('kode/pid')).toMatchObject({ pid: expect.any(Number) });
     expect(client.childProcess).not.toBeNull();
     await client.dispose();
+  }, 15_000);
+
+  it('请求正常完成后清理 cancelTimer,对已完成 id 无迟到 $/cancelRequest(CORE-2)', async () => {
+    const client = tracked(makeClient({ args: [FAKE_SERVER, 'traceCancels'] }));
+    await client.start();
+    // 请求在 timeoutMs 内正常完成:修复前 cancelTimer 保留至 300ms 触发,
+    // 对已完成 id 发迟到取消;修复后在 resolve 时即被清理
+    await client.request('kode/pid', undefined, { timeoutMs: 300 });
+    await sleep(600); // 越过 cancelTimer 触发点
+    // 真正挂起的请求仍按超时取消(超时路径不受影响)
+    const slow = client.request('$/kode/wait', { ms: 5000 }, { timeoutMs: 300 });
+    await expect(slow).rejects.toMatchObject({ code: 'REQUEST_CANCELLED' });
+    const cancels = (await client.request('kode/cancels')) as { ids: number[] };
+    expect(cancels.ids).toHaveLength(1); // 只有挂起 wait 被取消,无迟到取消
+    await client.dispose();
+  }, 10_000);
+
+  it('重启握手失败后杀掉未初始化进程,后续请求得 EXITED 而非 SERVER_ERROR(CORE-3)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'kode-fake-handshake-'));
+    const markerPath = join(dir, 'crashed.marker');
+    try {
+      const client = tracked(
+        makeClient({
+          // triggerCrash 崩溃时写标记;respawn 出的新进程 initialize 看到标记
+          // 回 -32002(对齐 kode-server/src/server.rs 未初始化态)→ 握手失败
+          args: [FAKE_SERVER, 'triggerCrash', 'failHandshakeAfterCrash', `markerPath=${markerPath}`],
+        })
+      );
+      await client.start(); // 首次握手成功(标记尚不存在)
+      await expect(client.request('triggerCrash')).rejects.toMatchObject({ code: 'EXITED' });
+      // 修复前:握手失败只记 stderr,child 非 null 且永不清理 → 此处超时失败
+      const deadline = Date.now() + 5000;
+      while (client.childProcess !== null && Date.now() < deadline) {
+        await sleep(20);
+      }
+      expect(client.childProcess).toBeNull();
+      expect(client.restartGeneration).toBe(1); // 只重启一次,不循环 respawn
+      expect(client.recentStderr.some(line => line.includes('restart handshake failed'))).toBe(true);
+      // 错误语义正确:EXITED(服务不可用),而非误导性 SERVER_ERROR(-32002)
+      await expect(client.request('kode/pid')).rejects.toMatchObject({ code: 'EXITED' });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   }, 15_000);
 
   it('重启窗口耗尽后放弃重启,后续请求立即失败不悬挂', async () => {

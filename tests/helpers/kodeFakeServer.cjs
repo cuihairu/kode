@@ -4,20 +4,29 @@
 //   模式令牌(与 crashMethod 互斥,可同时出现):
 //     hangShutdown    — shutdown 请求永不回包(测 dispose 超时 SIGKILL,CORE-1)
 //     exitOnShutdown  — 收到 shutdown 后延迟自行 exit 且不回包(测 exit 竞态)
-// 行为对齐 kode-server:initialize 协商、didOpen/didChange/didClose、
-// $/kode/health、可取消的 $/kode/wait、shutdown/exit。
+//     traceCancels    — 记录收到的全部 $/cancelRequest id,kode/cancels 可查
+//                       (测 CORE-2 正常完成后的迟到取消)
+//     failHandshakeAfterCrash — 与 markerPath=<file> 配合:crashMethod 触发时
+//                       写标记文件;重启后的新进程 initialize 看到标记即回
+//                       -32002 SERVER_NOT_INITIALIZED(测 CORE-3 握手失败语义)
 'use strict';
 
-const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown'];
+const fs = require('fs');
+
+const MODE_TOKENS = ['hangShutdown', 'exitOnShutdown', 'traceCancels', 'failHandshakeAfterCrash'];
 const args = process.argv.slice(2);
-const crashMethod = args.find(a => !MODE_TOKENS.includes(a)) || null;
+const crashMethod = args.find(a => !MODE_TOKENS.includes(a) && !a.startsWith('markerPath=')) || null;
 const hangShutdown = args.includes('hangShutdown');
 const exitOnShutdown = args.includes('exitOnShutdown');
+const traceCancels = args.includes('traceCancels');
+const failHandshakeAfterCrash = args.includes('failHandshakeAfterCrash');
+const markerPath = (args.find(a => a.startsWith('markerPath=')) || '').slice('markerPath='.length) || null;
 
 let buffer = Buffer.alloc(0);
 let shutdown = false;
 const documents = new Map();
 const waitTimers = new Map();
+const cancelTrace = new Set();
 
 function send(obj) {
   const body = Buffer.from(JSON.stringify(obj), 'utf8');
@@ -37,10 +46,22 @@ function replyError(id, code, message) {
 function handle(msg) {
   const isRequest = msg.id !== undefined && msg.id !== null;
   if (isRequest && msg.method === crashMethod) {
+    if (failHandshakeAfterCrash && markerPath) {
+      // CORE-3 替身:崩溃时留标记,重启出的新进程据此让 initialize 失败
+      try {
+        fs.writeFileSync(markerPath, 'crashed');
+      } catch {
+        // 写不了标记就退化为普通崩溃
+      }
+    }
     process.exit(1);
   }
   switch (msg.method) {
     case 'initialize':
+      if (failHandshakeAfterCrash && markerPath && fs.existsSync(markerPath)) {
+        // 行为对齐 kode-server/src/server.rs 未初始化态的 -32002
+        return replyError(msg.id, -32002, 'Server not initialized');
+      }
       return reply(msg.id, {
         capabilities: { textDocumentSync: { openClose: true, change: 1 } },
         serverInfo: { name: 'kode-fake-server', version: '0.0.0-test' },
@@ -70,6 +91,9 @@ function handle(msg) {
       documents.delete(msg.params.textDocument.uri);
       return;
     case '$/cancelRequest': {
+      if (traceCancels) {
+        cancelTrace.add(Number(msg.params.id));
+      }
       const key = String(msg.params.id);
       const timer = waitTimers.get(key);
       if (timer) {
@@ -102,6 +126,8 @@ function handle(msg) {
     }
     case 'kode/pid':
       return reply(msg.id, { pid: process.pid });
+    case 'kode/cancels':
+      return reply(msg.id, { ids: [...cancelTrace].sort((a, b) => a - b) });
     default:
       if (isRequest) {
         return replyError(msg.id, -32601, `method not found: ${msg.method}`);

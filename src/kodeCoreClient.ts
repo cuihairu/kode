@@ -184,8 +184,9 @@ export class KodeCoreClient {
     const promise = new Promise<unknown>((resolve, reject) => {
       // 硬超时:cancel 之后服务器仍不回(挂死)时兜底拒绝
       let hardTimer: NodeJS.Timeout | undefined;
+      let cancelTimer: NodeJS.Timeout | undefined;
       if (opts?.timeoutMs) {
-        const cancelTimer = setTimeout(() => this.cancelRequest(id), opts.timeoutMs);
+        cancelTimer = setTimeout(() => this.cancelRequest(id), opts.timeoutMs);
         hardTimer = setTimeout(() => {
           clearTimeout(cancelTimer);
           this.pending.delete(id);
@@ -197,11 +198,19 @@ export class KodeCoreClient {
           if (hardTimer) {
             clearTimeout(hardTimer);
           }
+          // CORE-2:请求正常完成后同时清理 cancelTimer,避免对已完成 id
+          // 发送迟到的 $/cancelRequest 通知
+          if (cancelTimer) {
+            clearTimeout(cancelTimer);
+          }
           resolve(value);
         },
         reject: error => {
           if (hardTimer) {
             clearTimeout(hardTimer);
+          }
+          if (cancelTimer) {
+            clearTimeout(cancelTimer);
           }
           reject(error);
         },
@@ -436,7 +445,19 @@ export class KodeCoreClient {
     this.initialize()
       .then(() => this.options.onRestart?.(this.restartGeneration))
       .catch(error => {
-        this.recordStderrLine(`restart handshake failed: ${(error as Error).message}`);
+        const message = `restart handshake failed: ${(error as Error).message}`;
+        this.recordStderrLine(message);
+        // CORE-3:respawn 后握手失败的进程处于未初始化态,继续接单只会让
+        // 后续请求得到误导性 SERVER_ERROR(Rust 侧 -32002 SERVER_NOT_INITIALIZED)。
+        // 杀掉子进程并置 child=null,让请求走 EXITED 路径(服务不可用语义)。
+        // 摘掉 exit 监听再杀,避免触发 handleExit 无意义的二次 respawn。
+        const child = this.child;
+        this.child = null;
+        if (child) {
+          child.removeAllListeners('exit');
+          child.kill('SIGKILL');
+        }
+        this.rejectAll(new KodeCoreTransportError(message, 'EXITED'));
       });
   }
 }
