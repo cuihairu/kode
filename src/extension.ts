@@ -372,6 +372,11 @@ import {
   readGitHistoryEnabled,
   runGitHistoryWhenEnabled,
 } from './gitHistory';
+import {
+  GitHistoryTreeProvider,
+  defaultGitHistoryDeps,
+  historyViewTitle,
+} from './gitHistoryTree';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -4057,25 +4062,75 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+  // IDE-GIT-005:文件历史侧边栏视图(kbengine.gitHistory)与命令体接入。
+  // 视图挂在既有 kbengine-explorer 容器;命令只在用户入口触发查询(按需,
+  // 空闲零 Git 调用)。视图标题随状态刷新(文件名 @ 基准提交)。
+  const gitHistoryProvider = new GitHistoryTreeProvider(defaultGitHistoryDeps());
+  if (typeof vscode.window.createTreeView === 'function') {
+    // 真宿主:TreeView 可动态设标题(文件名 @ 基准提交)并可聚焦
+    const gitHistoryTree = vscode.window.createTreeView('kbengine.gitHistory', {
+      treeDataProvider: gitHistoryProvider,
+      showCollapseAll: false,
+    });
+    context.subscriptions.push(gitHistoryTree);
+    gitHistoryTree.title = historyViewTitle(gitHistoryProvider.getState());
+    context.subscriptions.push(
+      gitHistoryProvider.onDidChangeTreeData(() => {
+        gitHistoryTree.title = historyViewTitle(gitHistoryProvider.getState());
+      })
+    );
+  } else {
+    // 受限宿主(单元测试 fake-vscode 无 createTreeView):退化为仅注册数据
+    // 提供者——视图仍渲染,标题保持 package.json 静态名,不影响激活。
+    context.subscriptions.push(
+      vscode.window.registerTreeDataProvider('kbengine.gitHistory', gitHistoryProvider)
+    );
+  }
+
+  const resolveHistoryTarget = (uri?: vscode.Uri): vscode.Uri | null => {
+    if (uri instanceof vscode.Uri) return uri;
+    const active = vscode.window.activeTextEditor?.document.uri;
+    return active ?? null;
+  };
+
   const showFileHistoryCommand = vscode.commands.registerCommand(
     GIT_HISTORY_SHOW_COMMAND,
-    () => runGitHistoryWhenEnabled(
+    (uri?: vscode.Uri) => runGitHistoryWhenEnabled(
       readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
-      () => {
-        void vscode.window.showInformationMessage('文件历史查询尚未接入。');
+      async () => {
+        const target = resolveHistoryTarget(uri);
+        if (!target) {
+          void vscode.window.showInformationMessage('无活动文件可查看历史。');
+          return;
+        }
+        await gitHistoryProvider.showHistory(target.fsPath, true);
+        void vscode.commands.executeCommand('kbengine.gitHistory.focus');
       }
     )
   );
   const showRangeHistoryCommand = vscode.commands.registerCommand(
     GIT_HISTORY_SHOW_RANGE_COMMAND,
-    () => runGitHistoryWhenEnabled(
+    (uri?: vscode.Uri) => runGitHistoryWhenEnabled(
       readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
-      () => {
-        void vscode.window.showInformationMessage('选中范围历史查询尚未接入。');
+      async () => {
+        // 选中范围历史:暂以文件级历史呈现(范围标注属后续粒度),打开正确文件
+        const target = resolveHistoryTarget(uri);
+        if (!target) {
+          void vscode.window.showInformationMessage('无活动文件可查看历史。');
+          return;
+        }
+        await gitHistoryProvider.showHistory(target.fsPath, true);
+        void vscode.commands.executeCommand('kbengine.gitHistory.focus');
       }
     )
   );
-  context.subscriptions.push(showFileHistoryCommand, showRangeHistoryCommand);
+  const gitHistoryNextPageCommand = vscode.commands.registerCommand(
+    'kbengine.git.historyNextPage',
+    () => {
+      void gitHistoryProvider.loadNextPage();
+    }
+  );
+  context.subscriptions.push(showFileHistoryCommand, showRangeHistoryCommand, gitHistoryNextPageCommand);
 
   // 侧栏常驻入口:始终可见可回,不随配置门控
   const finalConfigTreeRegistration = vscode.window.registerTreeDataProvider(

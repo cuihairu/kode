@@ -293,6 +293,11 @@
           "name": "%kbengine.view.config%"
         },
         {
+          "id": "kbengine.gitHistory",
+          "name": "%kbengine.view.gitHistory%",
+          "when": "kode.gitHistoryEnabled"
+        },
+        {
           "id": "kbengine.remoteServers",
           "name": "%kbengine.view.remoteServers%"
         }
@@ -753,6 +758,10 @@
       {
         "command": "kbengine.git.showRangeHistory",
         "title": "Kode: 查看选中范围历史 (View Selection History)"
+      },
+      {
+        "command": "kbengine.git.historyNextPage",
+        "title": "Kode: 加载下一页文件历史 (Load Next History Page)"
       }
     ],
     "menus": {
@@ -879,6 +888,10 @@
         {
           "command": "kbengine.git.showRangeHistory",
           "when": "kode.gitHistoryEnabled"
+        },
+        {
+          "command": "kbengine.git.historyNextPage",
+          "when": "false"
         }
       ],
       "explorer/context": [
@@ -903,6 +916,13 @@
           "command": "kbengine.git.showRangeHistory",
           "when": "kode.gitHistoryEnabled && editorHasSelection",
           "group": "navigation@51"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "kbengine.git.showHistory",
+          "when": "kode.gitHistoryEnabled",
+          "group": "navigation@50"
         }
       ]
     },

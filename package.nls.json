@@ -6,5 +6,6 @@
   "kbengine.view.debugTargets": "Debug Targets",
   "kbengine.view.telnetStatus": "Telnet",
   "kbengine.view.config": "Config",
+  "kbengine.view.gitHistory": "File History",
   "kbengine.view.remoteServers": "Remote Servers"
 }

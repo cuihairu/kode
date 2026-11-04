@@ -872,10 +872,20 @@ The flow graph panel supports:
 ### `kbengine.git.showHistory`
 
 - Title: `Kode: 查看文件历史 (View File History)`
-- Purpose: open the file history entry (IDE-GIT-001 gate, IDE-GIT-005 entry point). The entry is visible only while `kbengine.gitHistory.enabled` is on (explorer file context menu, editor context menu, command palette); it is a pure entry declaration — history is queried on demand only when the user opens it, never at activation, file open, cursor move or selection change, with no prefetch or polling
+- Purpose: open the file history view (IDE-GIT-001 gate, IDE-GIT-005). The entry is visible only while `kbengine.gitHistory.enabled` is on (explorer file context menu, editor context/tab context menu, command palette); it is an entry point — history is queried on demand only when the user opens it, never at activation, file open, cursor move or selection change, with no prefetch or polling
 - Behavior:
   - Gated by the same switch: with the feature off the command is hidden from menus and a direct invocation runs nothing Git
-  - The history view and query pipeline land in later IDE-GIT milestones; until then an enabled invocation reports 尚未接入 honestly rather than fabricating a view
+  - Resolves the target from the invocation argument (context menu URI) or the active editor; on demand locates the owning Git repository and queries page 0 into the `kbengine.gitHistory` sidebar tree, then focuses it
+  - The tree rows show subject + `author · time` and a tooltip (hash, author email, times, body); a trailing 加载下一页 row appends the next bounded page on click only; the view title names the file and its baseline commit (`a.py @ 01234567`)
+  - An idle view shows a guidance row and makes zero Git calls; terminal states (untracked / staged-no-history / empty-repo / locate failure / bounded-runner outcome) are reported honestly
+
+### `kbengine.git.historyNextPage`
+
+- Title: `Kode: 加载下一页文件历史 (Load Next History Page)`
+- Purpose: internal tree-item action for the `kbengine.gitHistory` view (IDE-GIT-005); appends the next bounded page of commit records on explicit click. Hidden from the command palette (`when: false`) — it is not a user-facing entry point
+- Behavior:
+  - Only queries while the view holds a loaded, has-more state; a terminal or last-page state queries nothing
+  - Appends the next page without duplicates or gaps; a failed/empty next page keeps the already-loaded rows and clears has-more
 
 ### `kbengine.git.showRangeHistory`
 
@@ -883,7 +893,7 @@ The flow graph panel supports:
 - Purpose: open the selection history entry (IDE-GIT-001 gate, IDE-GIT-010 entry point), shown in the editor context menu only with a selection and in the command palette; gated like the file history entry
 - Behavior:
   - Gated by `kbengine.gitHistory.enabled`; a disabled feature hides the entry and a direct invocation runs nothing Git
-  - The selection-to-committed-range mapping and timeline land in later IDE-GIT milestones; until then an enabled invocation reports 尚未接入 honestly
+  - Currently opens the file-level history view for the active file (the selection-to-committed-range mapping and timeline land in later IDE-GIT milestones and are reported honestly rather than fabricated)
 
 ## Typical Workflows
 

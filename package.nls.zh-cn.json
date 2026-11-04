@@ -6,5 +6,6 @@
   "kbengine.view.debugTargets": "调试目标",
   "kbengine.view.telnetStatus": "Telnet",
   "kbengine.view.config": "配置",
+  "kbengine.view.gitHistory": "文件历史",
   "kbengine.view.remoteServers": "远程服务器"
 }
