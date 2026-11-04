@@ -68,8 +68,11 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/languageProviders.ts', 4896, '层0 接收者段闸'],
   ['src/languageProviders.ts', 5002, 'withInitialScanTimeout'],
   ['src/languageProviders.ts', 6707, 'provideCompletionItems('],
-  ['src/diagnosticScheduler.ts', 223, 'requestQueued'],
-  ['src/diagnosticScheduler.ts', 253, 'flushQueued'],
+  // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
+  // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
+  // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
+  ['src/diagnosticScheduler.ts', 228, 'requestQueued'],
+  ['src/diagnosticScheduler.ts', 258, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 155, 'getDocumentLines'],
   ['src/pythonClassIndex.ts', 640, 'ensureCompositionRoots'],

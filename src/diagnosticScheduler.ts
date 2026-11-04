@@ -62,6 +62,10 @@ export interface DiagnosticSchedulerStats {
   /** 计算在途时诊断输入代已切换(AUD-026):旧配置结果丢弃,
    *  不发布也不把新代标成已发布 */
   staleGenerationDropped: number;
+  /** KR-AUD-04(DIA-1):异步计算失败次数(worker 崩溃/解析异常等)。
+   *  失败不重抛(computeAndPublish 返回 void,调用方无 catch 面),
+   *  在此记账供诊断健康度观测 */
+  errored: number;
   /** 清理动作次数(开关关闭清空/文档关闭释放) */
   cleared: number;
 }
@@ -141,6 +145,7 @@ export class DiagnosticScheduler {
     disabledSkipped: 0,
     disabledAsyncDropped: 0,
     staleGenerationDropped: 0,
+    errored: 0,
     cleared: 0
   };
 
@@ -478,9 +483,23 @@ export class DiagnosticScheduler {
           documentVersion: version,
           cacheMisses: 1
         });
-      }, error => {
+      }, _error => {
+        // KR-AUD-04(DIA-1):失败不重抛——重抛后 computation 变 rejected,
+        // 除 pendingComputations() 偶然 Promise.all 外无任何消费者
+        // (computeAndPublish 返回 void,调用方无法挂 catch),错误只会在
+        // 扩展宿主里以 UnhandledPromiseRejection 形式泄漏、信息丢失。
+        // 记统计(errored)+ error 状态打点供健康度观测,吞掉不重抛。
+        // 同步 compute 路径(:489 起同步调用)的既有抛错语义不受影响。
         this.pending.delete(computation);
-        throw error;
+        this.stats.errored += 1;
+        const elapsed = performance.now() - startedAt;
+        recordLanguageServiceOperation('diagnostics', elapsed, {
+          status: 'error',
+          fileKind: options.layer === 'semantic' ? 'semantic' : 'def',
+          documentVersion: version,
+          cacheMisses: 1,
+          subPhases: { compute: round1(elapsed), publish: 0 }
+        });
       });
       this.pending.add(computation);
       return;

@@ -156,7 +156,7 @@ describe('diagnosticScheduler 守卫分支', () => {
     expect(scheduler.hasQueuedTasks()).toBe(false);
   });
 
-  it('异步计算失败:错误面自摘在途登记并原样外抛', async () => {
+  it('异步计算失败:错误面自摘在途登记,记账 errored 不外抛(KR-AUD-04)', async () => {
     const scheduler = new DiagnosticScheduler();
     const publish = vi.fn();
     scheduler.request(makeDoc('boom.def', 1), {
@@ -165,10 +165,14 @@ describe('diagnosticScheduler 守卫分支', () => {
       publish
     });
     expect(scheduler.hasPendingComputations()).toBe(true);
-    await expect(scheduler.pendingComputations()).rejects.toThrow('worker boom');
+    // KR-AUD-04 修复前:重抛使 pendingComputations() 的 Promise.all rejects
+    //('worker boom')且无人消费 → unhandled rejection;修复后失败在 error
+    // 分支就地记账(errored),不再外抛
+    await scheduler.pendingComputations();
     expect(scheduler.hasPendingComputations()).toBe(false);
     expect(publish).not.toHaveBeenCalled();
     expect(scheduler.getStats().published).toBe(0);
+    expect(scheduler.getStats().errored).toBe(1);
   });
 
   it('同步计算期间版本前进:结果丢弃不发布(staleDropped)', () => {

@@ -775,3 +775,86 @@ describe('IDE-AUD-052 异步诊断耗时从发起时起算:计算阶段不再记
     expect(summary!.totalMs).toBeGreaterThanOrEqual(30);
   });
 });
+
+describe('KR-AUD-04(DIA-1)computeAsync 失败路径:无 unhandled rejection,错误可观测', () => {
+  it('computeAsync 抛错:进程无 unhandledRejection,errored 计数递增且不发布', async () => {
+    // 进程级监听器:修复前 error 分支重抛 → computation 变 rejected 且无
+    // 消费者 → unhandledRejection 在宿主(测试环境判红)触发
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason); };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const scheduler = new DiagnosticScheduler();
+      const document = { uri: { toString: () => 'file:///err/a.py' }, version: 1 };
+      const published: number[][] = [];
+      const failure = new Error('worker crashed');
+
+      scheduler.requestQueued(document, {
+        layer: 'local',
+        computeAsync: async () => {
+          throw failure;
+        },
+        publish: items => published.push([...items])
+      });
+      await scheduler.flushQueued();
+      await scheduler.pendingComputations();
+      // 越过数个宏任务边界:unhandledRejection 的检测在微任务队列排空后
+      // 由宿主触发,这里给足触发窗口再断言零触发
+      for (let i = 0; i < 3; i += 1) {
+        await new Promise<void>(resolve => { setImmediate(resolve); });
+      }
+
+      expect(unhandled).toEqual([]);
+      const stats = scheduler.getStats();
+      expect(stats.errored).toBe(1);
+      // 失败路径不算成功计算、不发布,错误也不滞留在途面
+      expect(stats.computed).toBe(0);
+      expect(stats.published).toBe(0);
+      expect(published).toEqual([]);
+      expect(scheduler.hasPendingComputations()).toBe(false);
+      // 打点观测面:error 状态入账(诊断健康度可查)
+      const summary = getOperationSummary('diagnostics');
+      expect(summary).not.toBeNull();
+      expect(summary!.statusCounts.error).toBe(1);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('正常路径零回归:成功计算 errored 保持 0,发布照常', async () => {
+    const scheduler = new DiagnosticScheduler();
+    const document = { uri: { toString: () => 'file:///ok/a.py' }, version: 1 };
+    const published: number[][] = [];
+
+    scheduler.requestQueued(document, {
+      layer: 'local',
+      computeAsync: async () => [1, 2],
+      publish: items => published.push([...items])
+    });
+    await scheduler.flushQueued();
+    await scheduler.pendingComputations();
+
+    const stats = scheduler.getStats();
+    expect(stats.errored).toBe(0);
+    expect(stats.computed).toBe(1);
+    expect(stats.published).toBe(1);
+    expect(published).toEqual([[1, 2]]);
+    const summary = getOperationSummary('diagnostics');
+    expect(summary).not.toBeNull();
+    expect(summary!.statusCounts.error).toBe(0);
+  });
+
+  it('同步 compute 抛错语义不变:异常同步传播给调用方(不吞)', () => {
+    const scheduler = new DiagnosticScheduler();
+    const document = { uri: { toString: () => 'file:///sync-err/a.py' }, version: 1 };
+    const boom = new Error('sync parse failure');
+
+    expect(() => scheduler.request(document, {
+      layer: 'local',
+      compute: () => { throw boom; },
+      publish: () => undefined
+    })).toThrow(boom);
+    // 同步抛错不记异步失败计数(errored 只面向 computeAsync 失败面)
+    expect(scheduler.getStats().errored).toBe(0);
+  });
+});
