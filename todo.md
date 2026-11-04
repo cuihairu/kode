@@ -959,11 +959,11 @@
 - [x] 审核发现：process_topology.walk_def 对 interface 来源跳过 visited 守卫(origin!="interface" 分支),接口环(A→B→A)无限递归栈溢出,父类/组件链有成环守卫而接口链没有(crates/kode-server/src/process_topology.rs:411)。（与 KODE-AUD-006 重复：6a2e005 已加 visiting/loading 活动栈守卫并带环测试，2026-11-03 复核勾）
 - [x] 审核发现：def_md5 的 load_interfaces 与 load_parent_class 无任何环守卫,load_components 的 loaded_modules 在 load_def_info 末尾才置位,组件/接口/父类任一成环即无限递归栈溢出(crates/kode-server/src/def_md5.rs:730/1006/1045/1168)。（与 KODE-AUD-006 重复：6a2e005 已加 visiting/loading 活动栈守卫并带环测试，2026-11-03 复核勾）
 - [ ] 审核发现：wire_codec 的 STRING 编码接受内嵌 NUL(is_ascii 对 0x00 为真)写入 NUL 终止流,解码在首个 NUL 截断——encode(Str("a\0b")) 产出字节解码为 "a",往返静默损坏而非报错(crates/kode-server/src/wire_codec.rs:333-338)。
-- [ ] 审核发现：kode-python 数据流对 ExprContext 处理过严且不一致——AugAssign 目标以 Store 上下文进 collect_reads(Name 只记 Load)漏记 `x += 1` 的读取(与 self.hp-= 不一致);`del x` 以 Del 上下文进 collect_writes(Name 只记 Store)不 kill 链,与「视作一次重定义/kill」注释相悖;Subscript 存储 self.d[k]=v 被整体重定义且丢 self.d/k 读取(crates/kode-python/src/dataflow.rs:146-160/388-414)。
-- [ ] 审核发现：kode-python 数据流 walrus 与推导式目标从不 def——(x := 5) 只读 n.value 忽略 n.target,`[i for i in seq]` 不遍历 gen.target,使用泄漏到同名外层链或丢弃(crates/kode-python/src/dataflow.rs:283/319)。
-- [ ] 审核发现：调用图漏收嵌套 def/class 体内调用(注释称「由外层类/模块面另行收集」但外层只迭代模块级与类直属体,实际无处收集)且 Match case.guard 不遍历,`case _ if check():` 的 check() 调用丢失(crates/kode-python/src/callgraph.rs:236/241)。
-- [ ] 审核发现：symbols.collect_attributes 不递归 Stmt::Match(If/For/While/With/Try 均递归而 Match 缺),match case 体内 self.<attr> 赋值不入类属性表(crates/kode-python/src/symbols.rs:268)。
-- [ ] 审核发现：graph.resolve_callee_file 把任意点号接收者首段按同名 .py 文件基线解析而不校验是导入绑定,`avatar.x()` 等普通对象方法调用对无关同名文件产生伪跨文件失效边,违背「宁缺毋滥,避免误失效」原则(crates/kode-python/src/graph.rs:102)。
+- [x] 审核发现：kode-python 数据流对 ExprContext 处理过严且不一致——AugAssign 目标以 Store 上下文进 collect_reads(Name 只记 Load)漏记 `x += 1` 的读取(与 self.hp-= 不一致);`del x` 以 Del 上下文进 collect_writes(Name 只记 Store)不 kill 链,与「视作一次重定义/kill」注释相悖;Subscript 存储 self.d[k]=v 被整体重定义且丢 self.d/k 读取(crates/kode-python/src/dataflow.rs:146-160/388-414)。（与 KODE-AUD-007 重复：b26396e 已修——AugAssign collect_reads 强制读旧值,Delete kill_var 终结链,Subscript 写补 collect_reads(value)+collect_reads(slice),tests/dataflow_test.rs 3 例,2026-11-04 复核勾）
+- [x] 审核发现：kode-python 数据流 walrus 与推导式目标从不 def——(x := 5) 只读 n.value 忽略 n.target,`[i for i in seq]` 不遍历 gen.target,使用泄漏到同名外层链或丢弃(crates/kode-python/src/dataflow.rs:283/319)。（与 KODE-AUD-007 重复：b26396e 已修——collect_reads NamedExpr target 补 collect_writes,4 种 Comprehension gen.target 补 collect_writes,tests/dataflow_test.rs 2 例,2026-11-04 复核勾）
+- [x] 审核发现：调用图漏收嵌套 def/class 体内调用(注释称「由外层类/模块面另行收集」但外层只迭代模块级与类直属体,实际无处收集)且 Match case.guard 不遍历,`case _ if check():` 的 check() 调用丢失(crates/kode-python/src/callgraph.rs:236/241)。（与 KODE-AUD-008 重复：dd869b5 已修——walk_stmt 嵌套 FunctionDef/ClassDef 改独立调用方,Match case.guard 补走查,tests/callgraph_test.rs 3 例,2026-11-04 复核勾）
+- [x] 审核发现：symbols.collect_attributes 不递归 Stmt::Match(If/For/While/With/Try 均递归而 Match 缺),match case 体内 self.<attr> 赋值不入类属性表(crates/kode-python/src/symbols.rs:268)。（与 KODE-AUD-008 重复：dd869b5 已修——collect_attributes 补 Stmt::Match 分支,tests/symbols_test.rs match_case_self_attribute_collected,2026-11-04 复核勾）
+- [x] 审核发现：graph.resolve_callee_file 把任意点号接收者首段按同名 .py 文件基线解析而不校验是导入绑定,`avatar.x()` 等普通对象方法调用对无关同名文件产生伪跨文件失效边,违背「宁缺毋滥,避免误失效」原则(crates/kode-python/src/graph.rs:102)。（与 KODE-AUD-008 重复：dd869b5 已修——resolve_callee_file 裸名先判调用方自身定义,find_module_function/find_module_file 排除调用方文件且恰一匹配才产,tests/graph_test.rs local_bare_name_no_cross_file_pseudo_edge,2026-11-04 复核勾）
 
 ## 代码审核发现（源 ChatGPT 代码审核 2026-11-03，基准 7b20c68e，5 项断言已实证）
 
@@ -996,7 +996,7 @@
 - [ ] KODE-ARCH-003 [P2] 建立五索引（SemanticIndex/EntityMapping/PythonClassIndex/WorkspaceIndex/GlobalDataIndex）所有权与版本失效契约文档+断言。
 - [ ] KODE-ARCH-004 [P3] 更新 docs/architecture/current-state.md（现为 2026-10-23 旧快照）。
 - [ ] KODE-PERF-007 [P3] 建立 v0.2 最新性能基线：30k 文件/多资产根/大 Python 文件的 Hover/Completion/Definition/Diagnostics/内存/宿主延迟。
-- [ ] KODE-AUD-TODO-001 [P2] 对齐 3 条已修复未关闭的旧审核项（Client SDK FIXED_DICT 伴随文件、Rust flag 归一化 normalize_flag_tokens、dependency graph implementedBy 先 ensure_node），实证后勾账。
+- [x] KODE-AUD-TODO-001 [P2] 对齐 3 条已修复未关闭的旧审核项（Client SDK FIXED_DICT 伴随文件、Rust flag 归一化 normalize_flag_tokens、dependency graph implementedBy 先 ensure_node），实证后勾账。（2026-11-04 三条实证对齐:①Client SDK FIXED_DICT=审核发现行已勾 5ad4946(修=60a6569,两侧测试绿);②Rust flag 归一化 normalize_flag_tokens=审核发现行已勾 e21f024(修=3cc6735,parser_units+flag_domains_golden 绿);③dependency graph implementedBy ensure_node=审核发现行 2026-11-03 已勾(修=ensure_node 补建,dependency_graph_dispatch 实跑 ok)）
 
 ## 配置先行架构（用户令 2026-11-03：XML 配置读取迁 Rust core + config-first 管道 + MCP 问答）
 
