@@ -68,9 +68,11 @@ const startReceiver = async (
 
 describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议证据)', () => {
   let handles: ReceiverHandle[] = [];
+  let engineDirs: string[] = [];
 
   beforeEach(() => {
     handles = [];
+    engineDirs = [];
   });
 
   afterEach(() => {
@@ -78,7 +80,11 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
       handle.proc.kill();
       rmSync(handle.root, { recursive: true, force: true });
     }
+    for (const dir of engineDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
     handles = [];
+    engineDirs = [];
   });
 
   const start = async (mode: string, scenario: string, extraArgs: string[] = []): Promise<ReceiverHandle> => {
@@ -100,6 +106,11 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
       { run: request => defaultReloadHttpRunner(request) }
     );
 
+  // F3 二轮:真实应用命令——把所发文件真实写入「引擎目录」(替代旧的
+  // process.exit(0) 空操作假应用),测试可对引擎侧产物断言
+  const realApplyCommand = (engineDir: string): string =>
+    `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
+
   it('accepted 回执:真实回包经 applyAcceptedReceipt 升格,台账 accepted(IDE-REV-022)', async () => {
     const receiver = await start('stage', 'accepted');
     const file = path.join(receiver.root, 'Avatar.py');
@@ -119,7 +130,9 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   });
 
   it('applied 回执:digest 与所发内容一致才升格 applied(IDE-REV-023)', async () => {
-    const receiver = await start('apply', 'applied', ['--apply-command', 'node -e "process.exit(0)"']);
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--apply-command', realApplyCommand(engineDir)]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 100\n';
     writeFileSync(file, content, 'utf8');
@@ -128,6 +141,10 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const key = { rootId: '/ws', targetId: 'cellapp-1' };
     const summary = await makeTransport(receiver.port).send(key, [file], () => {});
     expect(summary.receipts[0]).toMatchObject({ status: 'applied', file });
+    // 真实应用证据:引擎目录里确实写入了所发内容(不再是空操作假应用)
+    const engineFile = path.join(engineDir, 'Avatar.py');
+    expect(existsSync(engineFile)).toBe(true);
+    expect(readFileSync(engineFile, 'utf8')).toBe(content);
 
     const sentDigest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
     store.record(key, file, 'sent-unverified', { sentDigest });
@@ -143,7 +160,9 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   });
 
   it('digest 不符:接收端回包 digest 与所发内容不一致,保持未确认不升格', async () => {
-    const receiver = await start('apply', 'digest-mismatch', ['--apply-command', 'node -e "process.exit(0)"']);
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'digest-mismatch', ['--apply-command', realApplyCommand(engineDir)]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 200\n';
     writeFileSync(file, content, 'utf8');
@@ -152,6 +171,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const key = { rootId: '/ws', targetId: 'cellapp-1' };
     const summary = await makeTransport(receiver.port).send(key, [file], () => {});
     expect(summary.receipts[0].status).toBe('applied');
+    // 应用真实发生了(引擎目录有产物),只是回包 digest 被故意报错
+    expect(existsSync(path.join(engineDir, 'Avatar.py'))).toBe(true);
 
     const sentDigest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
     store.record(key, file, 'sent-unverified', { sentDigest });
@@ -211,7 +232,10 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   });
 
   it('F3 回归:apply 模式配置真实应用命令 → 执行成功才回 applied,回执带 revision 并落应用台账', async () => {
-    const receiver = await start('apply', 'applied', ['--apply-command', 'node -e "process.exit(0)"']);
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const applyCommand = realApplyCommand(engineDir);
+    const receiver = await start('apply', 'applied', ['--apply-command', applyCommand]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 300\n';
     writeFileSync(file, content, 'utf8');
@@ -220,10 +244,12 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
     expect(summary.receipts[0]).toMatchObject({ status: 'applied', file, revision: 1 });
     expect(summary.receipts[0].digest).toBe(digest);
+    // 真实应用证据:引擎目录里的内容与所发内容逐字一致
+    expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(content);
     // 应用后证据:版本台账逐条记录 revision/file/digest/命令
     const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
     const entry = JSON.parse(ledger.trim().split('\n')[0]);
-    expect(entry).toMatchObject({ revision: 1, file, digest, command: 'node -e "process.exit(0)"' });
+    expect(entry).toMatchObject({ revision: 1, file, digest, command: applyCommand });
   });
 
   it('F3 回归:应用命令执行失败 → 如实回 failed,不冒充 applied', async () => {
@@ -234,6 +260,24 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
     expect(summary.receipts[0].status).toBe('failed');
     expect((summary.receipts[0] as { reason?: string }).reason).toContain('应用命令');
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  it('F3 二轮回归:应用命令退出 0 但改动了所发内容 → 重算 digest 与发送方内容不符,如实回 failed 不自称 applied', async () => {
+    const receiver = await start('apply', 'applied', [
+      '--apply-command',
+      // 退出码 0 的应用命令,但把所发文件改了(应用的不是发送方 digest 指纹
+      // 指向的内容)——旧实现只看退出码就自称 applied
+      `node -e "require('fs').appendFileSync(process.env.KODE_RELOAD_FILE, '-drifted')"`
+    ]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 1\n';
+    writeFileSync(file, content, 'utf8');
+
+    const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
+    expect(summary.receipts[0].status).toBe('failed');
+    expect((summary.receipts[0] as { reason?: string }).reason).toContain('不一致');
+    // 内容漂移=应用核验不过,不落任何 applied 版本台账
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 

@@ -390,8 +390,12 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
 
   it('真实接收端 applied 回包(digest=接收端重算):火线双证核验升格 applied', async () => {
     // F3:接收端只在真实应用命令执行成功后才回 applied(不再读取+复制就
-    // 自称已应用),故这里给一条真实可执行的应用命令
-    const receiver = await startReferenceReceiver('apply', 'applied', 'node -e "process.exit(0)"');
+    // 自称已应用),故这里给一条真实可执行的应用命令。
+    // F3 二轮:命令真实写文件进引擎目录(不再 process.exit(0) 空操作假应用),
+    // 测试对引擎侧产物断言应用真实发生
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
+    const realApply = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
+    const receiver = await startReferenceReceiver('apply', 'applied', realApply);
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
@@ -405,14 +409,19 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
       expect(record?.detail).toContain('digest 一致');
       // 接收端重算的 digest 与所发内容一致(真实 wire 双证)
       expect(record?.sentDigest).toBe(createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex'));
+      // 真实应用证据:引擎目录写入的产物与所发内容逐字一致(不是空操作假应用)
+      expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(CONTENT);
       rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
+      rmSync(engineDir, { recursive: true, force: true });
     }
   });
 
   it('真实接收端 digest 不符回包(真 wire):保持未确认并注解阻塞', async () => {
-    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', 'node -e "process.exit(0)"');
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
+    const realApply = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
+    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', realApply);
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
@@ -427,6 +436,7 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
       rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
+      rmSync(engineDir, { recursive: true, force: true });
     }
   });
 });

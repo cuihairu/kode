@@ -22,6 +22,9 @@
  *    引擎 reloadScript 的包装脚本);逐文件执行,退出码 0 才回 applied,
  *    并把 revision/file/digest/命令/输出逐条落 <root>/applied-revisions.jsonl
  *    (应用后证据);非 0 如实回 failed(带退出码与 stderr 尾行),不冒充。
+ *  - F3 二轮:退出码 0 之后还要对所发文件重算 sha256,与收到时算的 digest
+ *    (发送方内容指纹)比对一致才回 applied——命令中途改动了所发内容即
+ *    如实 failed(不落应用台账);读不回所发文件同理。
  *  - 未配置 --apply-command 时如实回 accepted(仅暂存,未应用)+未配置原因,
  *    不落应用台账——没有引擎调用就没有 applied 证据,契约口径见 todo 的
  *    「缺服务端依据时保持开放」。
@@ -195,11 +198,38 @@ const server = createServer((request, response) => {
         );
         continue;
       }
+      // F3 二轮(2026-11-05 复审):退出码 0 只证明命令跑完,证明不了应用的
+      // 就是发送方 digest 指向的内容——应用完成后对所发文件重算 sha256,与
+      // 收到时算的 digest(发送方内容指纹)比对一致才回 applied;漂移即如实
+      // failed(不落应用台账、不自称 applied)。
+      let postApplyDigest;
+      try {
+        postApplyDigest = sha256Hex(readFileSync(file, 'utf8'));
+      } catch {
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: '应用后读不回所发文件,无法核验应用内容(不自称 applied)'
+          })
+        );
+        continue;
+      }
+      if (postApplyDigest !== digest) {
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: '应用后重算 sha256 与发送方内容指纹不一致(应用的不是所发内容):不自称 applied'
+          })
+        );
+        continue;
+      }
       appliedRevision += 1;
       const entry = {
         revision: appliedRevision,
         file,
-        digest,
+        digest: postApplyDigest,
         command: applyCommand,
         stdout: (result.stdout ?? '').trim(),
         appliedAt: new Date().toISOString()
@@ -213,7 +243,7 @@ const server = createServer((request, response) => {
         withTarget({
           status: 'applied',
           file,
-          digest: scenario === 'digest-mismatch' ? digest.replace(/^./, d => (d === '0' ? '1' : '0')) : digest,
+          digest: scenario === 'digest-mismatch' ? postApplyDigest.replace(/^./, d => (d === '0' ? '1' : '0')) : postApplyDigest,
           revision: appliedRevision
         })
       );
