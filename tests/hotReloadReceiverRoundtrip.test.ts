@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -401,34 +401,38 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
-  // F3 五轮(R2-F3 硬化 1+2)→ 六轮改由「只读旧产物」构造:写前读原内容成功、
-  // 落盘失败(EACCES),回滚还原也失败 → 回执如实附 rollback_failed(残留路径),
-  // 绝不谎称「已回滚无残留」。
-  it('F3 六轮回归:落盘失败且清理失败(只读旧产物)→ failed 回执如实 rollback_failed,不谎称无残留', async () => {
+  // F3 五轮(R2-F3 硬化 1+2)→ 七轮按 temp+rename 机制重造:落盘全部发生在
+  // 自建临时文件上('wx' 独占创建),引擎目录只读(0o555)时临时文件创建即
+  // 失败 → failed;既有产物从头到尾未被触碰、无临时文件残留。(旧构造
+  // 「0444 只读旧产物」在 temp+rename 下 rename 原子替换不读目标权限,如实
+  // applied——该场景由目录级只读替代构造真实的落盘失败。)
+  it('F3 七轮回归:引擎目录只读(0o555)落盘失败 → failed,既有产物原样无残留', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 11\n';
     writeFileSync(file, content, 'utf8');
-    // 预存在旧产物可读不可写(0444):写前读成功 → 走落盘,writeFileSync 必失败
-    // (EACCES);回滚还原原内容同样 EACCES → 接收端必须如实上报 rollback_failed
+    // 既有旧产物 + 引擎目录只读:临时文件创建失败 → 落盘失败,旧产物不被触碰
     const engineFile = path.join(engineDir, 'Avatar.py');
     const oldContent = 'class Avatar:\n    HP = 10\n';
     writeFileSync(engineFile, oldContent, 'utf8');
-    chmodSync(engineFile, 0o444);
+    chmodSync(engineDir, 0o555);
 
-    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
-    const receipt = JSON.parse(response.body) as { status: string; reason?: string; rollback_failed?: string };
-    expect(receipt.status).toBe('failed');
-    expect(receipt.reason).toContain('落盘失败');
-    // 清理失败如实上报残留路径,绝不声称「无残留」
-    expect(receipt.rollback_failed).toBe(engineFile);
-    expect(receipt.reason).not.toContain('无残留');
-    // 旧产物原内容仍在(可读)
-    expect(readFileSync(engineFile, 'utf8')).toBe(oldContent);
-    chmodSync(engineFile, 0o644);
-    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+    try {
+      const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+      const receipt = JSON.parse(response.body) as { status: string; reason?: string; rollback_failed?: string };
+      expect(receipt.status).toBe('failed');
+      expect(receipt.reason).toContain('落盘失败');
+      // 既有产物逐字节原样(temp+rename 下失败收尾不碰产物)
+      expect(readFileSync(engineFile, 'utf8')).toBe(oldContent);
+      // 无临时文件残留,回执不虚报 rollback_failed
+      expect(readdirSync(engineDir).filter(name => name.startsWith('.kode-artifact-tmp-'))).toEqual([]);
+      expect(receipt).not.toHaveProperty('rollback_failed');
+      expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+    } finally {
+      chmodSync(engineDir, 0o755);
+    }
   });
 
   // F3 六轮(复审 FAIL-3a):写前读旧产物把一切异常当 ENOENT → EACCES 时误判
@@ -741,6 +745,55 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     }
   });
 
+  // F3 六轮(复审 FAIL-2)七轮补口:悬空 symlink 穿透——最终组件是指向引擎
+  // 目录外**不存在文件**的 symlink 时,realpath 抛 ENOENT 回落到最深已存在
+  // 祖先(引擎目录本身)→ 六轮防护误判安全 → 写入沿悬空链接把产物落到引擎
+  // 目录外。修后写前 lstat 最终组件:是 symlink(无论悬空与否)一律拒绝。
+  it('F3 七轮回归:产物位悬空 symlink 指向目录外 → 拒绝写入不逃逸', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const outsideDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-outside-'));
+    outsideDirs.push(outsideDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    // 产物位 = 悬空 symlink → 引擎目录外的不存在文件
+    symlinkSync(path.join(outsideDir, 'missing.py'), path.join(engineDir, 'Dangling.py'), 'file');
+    const file = path.join(receiver.root, 'Dangling.py');
+    const content = 'X_DANGLING_PROBE = 71\n';
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('符号链接');
+    // 绝不沿悬空链接把产物写到引擎目录外,链接本身也不被动过
+    expect(existsSync(path.join(outsideDir, 'missing.py'))).toBe(false);
+    expect(lstatSync(path.join(engineDir, 'Dangling.py')).isSymbolicLink()).toBe(true);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  // F3 七轮:lstat 拒链接不分悬空与否——产物位是**指向引擎目录内**的 symlink
+  // 也一律拒绝(链接位被整体替换的语义不引入;产物只落自建普通文件)。
+  it('F3 七轮回归:产物位 symlink 指向目录内也一律拒绝', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    // 引擎目录内真实文件,产物位是指向它的 symlink
+    writeFileSync(path.join(engineDir, 'real.py'), 'REAL = 1\n', 'utf8');
+    symlinkSync(path.join(engineDir, 'real.py'), path.join(engineDir, 'Linked.py'), 'file');
+    const file = path.join(receiver.root, 'Linked.py');
+    const content = 'X_LINKED_PROBE = 72\n';
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('符号链接');
+    // 链接与其目标都原样
+    expect(lstatSync(path.join(engineDir, 'Linked.py')).isSymbolicLink()).toBe(true);
+    expect(readFileSync(path.join(engineDir, 'real.py'), 'utf8')).toBe('REAL = 1\n');
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
     let capturedBody: string | undefined;
     const transport = new HttpReloadTransport(
@@ -780,5 +833,9 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(source).toContain('--artifact-dir');
     expect(source).toContain('writeFileSync');
     expect(source).toContain('unlinkSync');
+    // F3 七轮:temp+rename 原子写 + lstat 拒链接——源码钉住新写入机制
+    expect(source).toContain('renameSync');
+    expect(source).toContain('lstatSync');
+    expect(source).toContain("'wx'");
   });
 });
