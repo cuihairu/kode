@@ -179,3 +179,38 @@
 - `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r4-cargo-full.log`。
 - `eslint src --ext ts`：退出 0 干净（`/tmp/r4-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r4-tsc.log`）。
 - 逐项 red 日志：`/tmp/r4-f1-red.log`（4 failed | 0 passed）、`/tmp/r4-f3-red.log`（12 failed | 16 passed）。
+
+## 第五轮返工记录（2026-11-06，R2-F3 四项硬化残余 + 文档对齐，分支 `feat/kode-fix-f1f4`）
+
+本轮处理四轮复审对 R2-F3 的五项残余：写失败残留、谎报回滚、同名碰撞、误删已 applied 产物/旧内容丢失、文档对齐。均在修码前源码（e04d497）或上一 commit 上实测失败测试（red 日志见下），再修码转绿、逐项独立 commit。`todo.md` 未改。
+
+说明：硬化项 1（写失败清理）与项 2（回滚如实）共享同一根因与同一条可构造 red 路径（EISDIR 残留 unlink 必失败是唯一可在测试内构造的「清理失败」场景），合并为一个 commit `0228be9`（R4-F3-1），其余逐项独立 commit。
+
+### R4-F3-1：写失败残留 best-effort 清理 + 回执如实 rollback_failed（commit `0228be9`，硬化项 1+2）
+
+- 问题：①`writeFileSync` 抛错直接回 failed，不清理已创建/截断的残留；②unlink 删除失败被吞、回执仍宣称「已回滚(引擎目录无残留)」。
+- 修法（`referenceReceiver.mjs`）：`rollbackArtifact` 改为 best-effort 且返回残留路径（ENOENT 视为已清干净）；新增 `failedWithRollback` 统一构造 failed 回执——清理失败时 reason 按事实注明 `残留:<路径>` 并新增 **`rollback_failed` 字段=残留路径**，绝不谎称无残留；写失败分支（含部分写入/截断）也走同一 best-effort 清理，读回失败/哈希不符两分支同步接入。
+- 回归（`tests/hotReloadReceiverRoundtrip.test.ts` 新增 1 条）：落盘失败（EISDIR）残留清不掉 → failed 回执含 `rollback_failed`=残留路径、reason 不含「无残留」、无 applied 台账。**red：1 failed | 15 passed**（修码前 e04d497 实测，日志 `/tmp/r5-f1-red.log`）→ green 16 passed。
+
+### R4-F3-2：产物按报文相对路径映射子结构 + 批内碰撞拒绝整批（commit `aa61e05`，硬化项 3）
+
+- 问题：产物路径只用 `basename`，不同目录同名文件写同一引擎目录位置相互踩踏（也是硬化项 4「误删已 applied 产物」的通路之一）。
+- 修法：产物路径改为按报文内相对路径映射到 `--artifact-dir` 子结构（批内共同祖先为基准）；路径安全清洗（任何 `..`/`.`/空段=逃逸→拒绝整批不写盘）；清洗后仍映射同址（如同一路径在批内重复）→**同名碰撞拒绝整批**：全批 failed、不写任何产物、不落台账。
+- 回归（新增 2 条）：不同目录同名文件（subA/subB 的 Monster.py）→ 各归各子路径、双双 applied、内容逐字一致；批内同址 → 全批 failed 含「拒绝整批」、引擎目录无产物无台账。**red：2 failed | 16 passed**（修码前 0228be9 实测，日志 `/tmp/r5-f3-red.log`）→ green（roundtrip+appliedVerify 31 passed）。
+
+### R4-F3-3：失败回滚还原原内容而非删除、只及本次失败文件（commit `2d26fc8`，硬化项 4）
+
+- 问题：回滚一律 unlink——预存在的旧产物（上一批已 applied 的版本）被本次失败连带删掉，旧内容丢失。
+- 修法：写前读原产物内容（per-file 状态）；任何失败路径回滚**优先还原原内容**（`writeFileSync` 恢复），本次新建（原本不存在）的才删除；回滚只处理本次失败那一个文件，不影响批内已 applied 的兄弟文件。
+- 回归（新增 2 条）：预存在产物+哈希不符 → 回执 failed 且产物**还原为原内容**（非删除）；多文件批坏文件失败 → 坏文件产物还原其原内容、好文件照常 applied 且台账只记好文件。**red：2 failed | 18 passed**（修码前 aa61e05 实测，日志 `/tmp/r5-f4-red.log`）→ green 33 passed。
+
+### R4-F3-4：文档对齐（commit `4ff0bfd`，硬化项 5）
+
+- `docs/design/hot-reload-design.md` §4.3：四轮的「回滚已写产物（引擎目录无残留）」无条件承诺改为与实现一致的五轮契约——回滚 best-effort、还原原内容优先、只及本次失败文件、产物相对路径子结构映射（清洗防逃逸、同址拒绝整批）、清理失败如实 `rollback_failed` **不承诺无残留**；接收端脚本头部契约注记同步。
+
+### 第五轮门禁数字（本机，2026-11-06）
+
+- `npm test`：**退出 0 一次通过**：Vitest 517 文件 **6364 passed、20 skipped、0 failed**；compile 与 mocha tsc 干净；VS Code 集成冒烟 **12 passing**。日志 `/tmp/r5-npm-test-full.log`。
+- `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r5-cargo-full.log`。
+- `eslint src --ext ts`：退出 0 干净（`/tmp/r5-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r5-tsc.log`）。
+- 逐项 red 日志：`/tmp/r5-f1-red.log`（1 failed | 15 passed）、`/tmp/r5-f3-red.log`（2 failed | 16 passed）、`/tmp/r5-f4-red.log`（2 failed | 18 passed）。
