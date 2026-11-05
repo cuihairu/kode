@@ -1886,9 +1886,10 @@ export function activate(context: vscode.ExtensionContext) {
   setProcessTopologySchedulerForTests(processTopologyScheduler);
   const processTopologyManifestName = 'process_topology.xml';
 
-  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。 */
-  const resolveProcessTopologyManifestPath = (): string | null => {
-    const root = getWorkspaceRootForDocument();
+  /** workspace 根下清单路径(缺 workspace 根 → null,静默)。KR-AUD-54:
+   *  根按触发文档定位,无参回落第一根在多根工作区会读错根的清单。 */
+  const resolveProcessTopologyManifestPath = (document?: vscode.TextDocument): string | null => {
+    const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return null;
     }
@@ -1905,9 +1906,10 @@ export function activate(context: vscode.ExtensionContext) {
     return snapshot?.content ?? null;
   };
 
-  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。 */
-  const collectTopologyDefInputs = (): Array<{ name: string; category: string; filePath: string; text: string }> => {
-    const root = getWorkspaceRootForDocument();
+  /** 收集 defs 原文集合(实体/接口/组件三根,闭包走查用)。KR-AUD-54:同
+   *  清单路径口径,根随触发文档定位,不无参回落第一根。 */
+  const collectTopologyDefInputs = (document?: vscode.TextDocument): Array<{ name: string; category: string; filePath: string; text: string }> => {
+    const root = getWorkspaceRootForDocument(document);
     if (!root) {
       return [];
     }
@@ -1990,7 +1992,8 @@ export function activate(context: vscode.ExtensionContext) {
     channel: 'immediate' | 'queued'
   ): void => {
     const capturedVersion = document.version;
-    const manifestPath = resolveProcessTopologyManifestPath();
+    // KR-AUD-54:清单路径与 defs 集合的根都随触发文档定位(多根不串)
+    const manifestPath = resolveProcessTopologyManifestPath(document);
     if (!manifestPath) {
       return;
     }
@@ -2008,7 +2011,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (!enabled || document.version !== capturedVersion) {
           return [];
         }
-        const root = getWorkspaceRootForDocument();
+        const root = getWorkspaceRootForDocument(document);
         if (!root) {
           return [];
         }
@@ -2020,7 +2023,7 @@ export function activate(context: vscode.ExtensionContext) {
         const result = await validateProcessTopologyInRust({
           manifestText,
           entitiesXmlText,
-          defs: collectTopologyDefInputs()
+          defs: collectTopologyDefInputs(document)
         });
         if (!result) {
           // Rust 不可用/失败 → 零发现(静默,不误报)。
