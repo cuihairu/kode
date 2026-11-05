@@ -14,7 +14,7 @@
 //! 产出 [`DataflowResult`] 每变量(或其每次重定义)一条 [`DefUseChain`],含
 //! 定值行与使用行,参数来源以 `is_param` 标记(「变量来源与传播」的可查询面)。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ruff_python_ast::{self as ast, Expr, ExprContext, Stmt};
 use ruff_text_size::Ranged;
@@ -86,6 +86,9 @@ struct State {
     /// 作用域栈:每层 var → 当前活跃链下标(最近一次定值);栈顶为最内层。
     /// 基层为函数体自身,KR-AUD-18 起 lambda 体推入独立子层(形参遮蔽)。
     scopes: Vec<BTreeMap<String, usize>>,
+    /// `global`/`nonlocal` 已声明的名字(KR-AUD-19):对这些名字的赋值写的是
+    /// 外层绑定,不建局部 def 链。
+    global_names: BTreeSet<String>,
     chains: Vec<DefUseChain>,
 }
 
@@ -93,6 +96,7 @@ impl State {
     fn new(params: &[String]) -> State {
         let mut state = State {
             scopes: vec![BTreeMap::new()],
+            global_names: BTreeSet::new(),
             chains: Vec::new(),
         };
         state.push_param_scope(params);
@@ -130,6 +134,10 @@ impl State {
     }
 
     fn def_var(&mut self, var: &str, line: usize) {
+        // KR-AUD-19:global/nonlocal 声明名的赋值写外层绑定,不建局部链。
+        if self.global_names.contains(var) {
+            return;
+        }
         let idx = self.chains.len();
         self.chains.push(DefUseChain {
             var: var.to_string(),
@@ -295,10 +303,19 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
                 collect_reads(state, m, line);
             }
         }
-        // 其余无 def-use 语义(global/nonlocal 见 KR-AUD-19)
-        Stmt::Global(_)
-        | Stmt::Nonlocal(_)
-        | Stmt::Pass(_)
+        // KR-AUD-19:global/nonlocal 名登记;对它们的后续赋值不建局部 def 链
+        // (写的是外层绑定;读侧本就不跟踪全局/闭包自由变量)。
+        Stmt::Global(g) => {
+            for n in &g.names {
+                state.global_names.insert(n.as_str().to_string());
+            }
+        }
+        Stmt::Nonlocal(n) => {
+            for name in &n.names {
+                state.global_names.insert(name.as_str().to_string());
+            }
+        }
+        Stmt::Pass(_)
         | Stmt::Break(_)
         | Stmt::Continue(_)
         | Stmt::TypeAlias(_)

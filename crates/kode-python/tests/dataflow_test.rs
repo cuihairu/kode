@@ -385,3 +385,38 @@ fn lambda_param_shadows_outer_var_kraud18() {
     assert_eq!(lam.def_line, None);
     assert_eq!(lam.use_lines, vec![1], "lambda 体内读连 lambda 形参链");
 }
+
+/// KR-AUD-19:`global x` / `nonlocal x` 之后的赋值写的是外层绑定,不应建
+/// 函数内局部 def 链(旧实现照常 def_var,产假局部链)。
+#[test]
+fn global_declared_assignment_makes_no_local_chain_kraud19() {
+    let src = "def f():\n    global counter\n    counter = 1\n    return counter\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    assert!(
+        !result.chains.iter().any(|c| c.var == "counter"),
+        "global 名不应产局部链: {:#?}",
+        result.chains
+    );
+}
+
+/// KR-AUD-19(nonlocal 面):`nonlocal x` 后赋值同样不产局部链;未声明
+/// nonlocal 的外层同名变量遮蔽语义不回归。
+#[test]
+fn nonlocal_declared_assignment_makes_no_local_chain_kraud19() {
+    let src = "def f():\n    nonlocal total\n    total = 0\n    other = 1\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    assert!(!result.chains.iter().any(|c| c.var == "total"));
+    assert!(result.chains.iter().any(|c| c.var == "other"));
+}
