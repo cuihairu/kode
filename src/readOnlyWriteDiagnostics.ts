@@ -46,6 +46,42 @@ const AUGMENTED_OPS = new Set([
   '+=', '-=', '*=', '/=', '//=', '%=', '**=', '&=', '|=', '^=', '<<=', '>>=', '@='
 ]);
 
+/** 引入复合语句套件(一行体 `:`)的语句头关键字 */
+const COMPOUND_KEYWORDS = new Set([
+  'if', 'elif', 'else', 'for', 'while', 'with', 'try', 'except', 'finally', 'def', 'class', 'match', 'case'
+]);
+
+/**
+ * `:` 是否为复合语句套件冒号(if/for/while 等一行体的 body 分隔冒号)。
+ * 判据:该冒号是所在简单语句内的**首个**括号深度 0 冒号,且该简单语句的
+ * 起始关键字是复合语句头关键字。
+ * - `if self.isDestroyed: self.counter = 0` → 冒号是首个深度0冒号且语句以
+ *   `if` 起 → 套件冒号(体里的 `=` 属别的语句,不是注解赋值)。
+ * - `def m(self): self.x: int = 0` → self.x 的冒号前已有深度0冒号(def 的
+ *   套件冒号)→ 非套件冒号,是注解冒号(正确放行)。
+ * - `self.x: int = 0` → 语句以 `self` 起,非复合关键字 → 非套件冒号。
+ */
+function isSuiteColon(line: string, colonIndex: number): boolean {
+  let depth = 0;
+  let i = colonIndex - 1;
+  // 向左扫到简单语句边界(行首或括号深度 0 的 `;`);途中遇到深度 0 冒号
+  // 说明我们的冒号不是语句内首个深度 0 冒号 → 非套件冒号。
+  while (i >= 0) {
+    const ch = line[i];
+    if (ch === ')' || ch === ']' || ch === '}') { depth += 1; }
+    else if (ch === '(' || ch === '[' || ch === '{') { depth -= 1; }
+    else if (ch === ';' && depth === 0) { break; }
+    else if (ch === ':' && depth === 0) { return false; }
+    i -= 1;
+  }
+  // 语句起始(行首或 `;` 后)的第一个词是否为复合关键字。
+  let j = i + 1;
+  while (j < line.length && (line[j] === ' ' || line[j] === '\t')) { j += 1; }
+  const start = j;
+  while (j < line.length && /[A-Za-z_]/.test(line[j])) { j += 1; }
+  return COMPOUND_KEYWORDS.has(line.slice(start, j));
+}
+
 /** 匹配的 `self.<name>` 之后同一行紧跟的运算符分类;null = 非写目标 */
 function classifyWriteKindAfter(line: string, afterIndex: number): ReadOnlyWriteKind | null {
   let i = afterIndex;
@@ -60,14 +96,18 @@ function classifyWriteKindAfter(line: string, afterIndex: number): ReadOnlyWrite
   }
   if (c === ':') {
     if (line[i + 1] === '=') { return null; } // 海象 :=(属性目标非法,不写)
-    // 注解赋值 `: <类型> =`:同层(括号深度 0)找到 `=` 才算写目标;
-    // `if self.<p>:`(行尾)/切片 `d[self.<p>:2]`/字典 `{self.<p>: x}` 都找不到
-    // 顶层 `=` → 不写。
+    // 复合语句套件冒号(if/for/while 一行体):体里的顶层 `=` 属体语句,
+    // 不是对 `self.<p>` 的注解赋值(如 `if self.isDestroyed: self.counter = 0`)。
+    if (isSuiteColon(line, i)) { return null; }
+    // 注解赋值 `: <类型> =`:同层(括号深度 0)、同语句(`;` 前)找到 `=` 才算
+    // 写目标;`if self.<p>:`(行尾)/切片 `d[self.<p>:2]`/字典 `{self.<p>: x}`
+    // 都找不到顶层 `=` → 不写。
     let depth = 0;
     for (let j = i; j < line.length; j += 1) {
       const ch = line[j];
       if (ch === '(' || ch === '[' || ch === '{') { depth += 1; }
       else if (ch === ')' || ch === ']' || ch === '}') { depth -= 1; }
+      else if (ch === ';' && depth === 0) { return null; } // 语句边界:注解的 `=` 不会在其后
       else if (ch === '=' && depth === 0 && line[j - 1] !== '=' && line[j + 1] !== '=' && line[j + 1] !== '>') {
         return 'annotated';
       }
