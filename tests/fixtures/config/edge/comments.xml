@@ -1,0 +1,11 @@
+<root>
+	<!-- file header comment -->
+	<server>
+		<port> 40000 </port> <!-- trailing -->
+		<!-- leading host -->
+		<host> localhost </host>
+	</server>
+	<!-- tail of server section -->
+	<name> kbe </name>
+</root>
+<!-- file-tail free comment -->

@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
+use crate::config::parse_config;
 use crate::model::{parse_alias, parse_entities, parse_types, TypeKind};
 use crate::xml::Document;
 
@@ -351,4 +352,87 @@ fn str_array(w: &mut JsonWriter, items: &[String]) {
         w.str(s);
     }
     w.raw("]");
+}
+
+// --- 配置域对拍(KODE-CFG-002) ---
+
+/// 配置语料(仓库相对路径;全部 `.xml`,含 edge/ 边界集)。
+pub const CONFIG_CORPORA: &[&str] = &["tests/fixtures/config"];
+
+/// 收集配置语料:递归收 `.xml` 文件(排序遍历保证确定性)。
+pub fn collect_config_corpus(repo_root: &Path) -> BTreeMap<String, String> {
+    fn walk(dir: &Path, rel_prefix: &str, out: &mut BTreeMap<String, String>) {
+        let mut entries: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
+            Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.path()).collect(),
+            Err(_) => return,
+        };
+        entries.sort();
+        for path in entries {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+            let rel = format!("{rel_prefix}/{name}");
+            if path.is_dir() {
+                walk(&path, &rel, out);
+                continue;
+            }
+            if !name.ends_with(".xml") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            out.insert(rel, text);
+        }
+    }
+    let mut out = BTreeMap::new();
+    for corpus in CONFIG_CORPORA {
+        walk(&repo_root.join(corpus), corpus, &mut out);
+    }
+    out
+}
+
+/// 整个配置语料的 golden JSON(与 tests/configParity.test.ts 的 TS 提取器逐字段一致)。
+pub fn dump_config_corpus(repo_root: &Path) -> String {
+    let files = collect_config_corpus(repo_root);
+    let mut w = JsonWriter::new();
+    w.raw("{\"generator\":\"kode-parser dump-config-golden\",\"fileCount\":");
+    w.num(files.len());
+    w.raw(",\"files\":[");
+    for (i, (file, text)) in files.iter().enumerate() {
+        if i > 0 {
+            w.raw(",");
+        }
+        w.raw("{\"file\":");
+        w.str(file);
+        w.raw(",\"record\":");
+        match parse_config(text) {
+            Some(node) => dump_config_node(&mut w, &node),
+            None => {
+                w.raw("null");
+            }
+        }
+        w.raw("}");
+    }
+    w.raw("]}");
+    w.buf
+}
+
+/// 配置树 golden 记录(镜像 TS `ConfigXmlNode` 提取字段)。
+pub fn dump_config_node(w: &mut JsonWriter, node: &crate::config::ConfigNode) {
+    w.raw("{\"name\":");
+    w.str(&node.name);
+    w.raw(",\"text\":");
+    w.str(&node.text);
+    w.raw(",\"children\":[");
+    for (i, c) in node.children.iter().enumerate() {
+        if i > 0 {
+            w.raw(",");
+        }
+        dump_config_node(w, c);
+    }
+    w.raw("],\"sourceComments\":");
+    str_array(w, &node.source_comments);
+    w.raw("}");
 }
