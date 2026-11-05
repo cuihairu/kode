@@ -619,9 +619,9 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
-  // F3 五轮(R2-F3 硬化 4):写前读原内容——失败回滚**还原原内容**而非删除,
-  // 绝不误删引擎目录里已 applied 的旧产物;回滚只及本次失败那一个文件。
-  it('F3 五轮回归:预存在产物失败回滚 → 还原原内容而非删除', async () => {
+  // F3 五轮(R2-F3 硬化 4)→ 七轮机制:temp+rename 下哈希不符只在临时文件
+  // 上发生,既有产物从未被触碰(不删不改写,强于「还原原内容」)。
+  it('F3 七轮回归:哈希不符失败 → 预存在产物原样保留(不删不改写)', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
@@ -638,12 +638,12 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const receipt = JSON.parse(response.body) as { status: string; reason?: string };
     expect(receipt.status).toBe('failed');
     expect(receipt.reason).toContain('不一致');
-    // 旧产物被还原原内容,而不是被删除(删除会让引擎目录丢掉已 applied 的版本)
+    // 旧产物原样保留(temp+rename 下失败只清理临时文件,产物位未被写入)
     expect(readFileSync(engineFile, 'utf8')).toBe(oldContent);
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
-  it('F3 五轮回归:多文件批坏文件回滚只及该文件且还原其原内容,好文件照常 applied', async () => {
+  it('F3 七轮回归:多文件批坏文件失败只清自己的临时文件,好文件照常 applied,坏文件旧产物原样', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
@@ -653,7 +653,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const badContent = 'class Monster:\n    HP = 33\n';
     writeFileSync(good, goodContent, 'utf8');
     writeFileSync(bad, badContent, 'utf8');
-    // 坏文件在引擎目录里也有上一批 applied 的旧产物:回滚必须还原它,好文件不受牵连
+    // 坏文件在引擎目录里也有上一批 applied 的旧产物:失败只清坏文件自己的
+    // 临时文件,旧产物原样,好文件不受牵连
     const badOld = 'class Monster:\n    HP = 30\n';
     writeFileSync(path.join(engineDir, 'Monster.py'), badOld, 'utf8');
 
@@ -666,7 +667,7 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const badReceipt = receipts.find(receipt => receipt.file === bad);
     expect(goodReceipt?.status).toBe('applied');
     expect(badReceipt?.status).toBe('failed');
-    // 好文件产物逐字一致;坏文件产物还原上一批原内容(非删除)
+    // 好文件产物逐字一致;坏文件旧产物原样(只清了它自己的临时文件)
     expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(goodContent);
     expect(readFileSync(path.join(engineDir, 'Monster.py'), 'utf8')).toBe(badOld);
     const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');

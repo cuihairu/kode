@@ -249,3 +249,32 @@
 - `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed**。日志 `/tmp/r6-cargo-full.log`。
 - `eslint src --ext ts`：退出 0 干净（`/tmp/r6-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r6-tsc.log`）。
 - 逐项 red 日志：`/tmp/r6-f1-red.log`（1 failed | 20 passed）、`/tmp/r6-f2-red.log`（1 failed）、`/tmp/r6-f3-red.log`（3 failed | 1 passed）。
+
+## 第七轮返工记录（2026-11-07，七轮复审两项精确漏洞 + 文档测试闭合，分支 `feat/kode-fix-f1f4`）
+
+本轮处理七轮复审对 R2-F3 的两项精确漏洞（根内外命名空间碰撞、悬空 symlink 穿透+检查-写入竞态）与文档/测试闭合。均先在修码前源码实测失败测试（red 日志见下），再修码转绿、逐项独立 commit。`todo.md` 未改。
+
+### R6-F1：根内外命名空间碰撞消除——根外路径拒绝整批（commit `3ed1cf3`）
+
+- 问题：六轮产物映射对暂存根之外的文件回落「绝对路径全结构展开」，该回落与根内相对路径共享同一命名空间——`--root=/stage` 时 `/stage/tmp/X.py`（根内）映射 `tmp/X.py`，`/tmp/X.py`（根外）回落也展开成 `tmp/X.py`，分批发送互覆盖。
+- 修法（`referenceReceiver.mjs`）：**根外路径直接拒绝整批**（failed 回执 `产物路径在暂存根之外(--root)…拒绝整批,不写盘`，不写盘不落台账）——不允许暂存根之外的绝对路径作为产物目标，产物命名空间只剩根内相对路径一种归属，碰撞从映射规则上不存在。发送侧同步收紧：`roundtripProbe.mjs` 把所发文件写进接收端暂存根内并发送前校验（越界抛错拒绝发送）；`tests/helpers/referenceReceiver.ts` 暴露 `root`，两个 wiring 测试的真实文件移入暂存根（原在根外、依赖已废除的绝对路径回落落位）。
+- 回归（`tests/hotReloadReceiverRoundtrip.test.ts` 新增 1 条）：根内 `tmp/X.py` 与根外 `/tmp/X.py` 分两批发送 → 第一批 applied，第二批 failed 含「暂存根之外」、第一批产物不被覆盖、台账只有根内记录。**red：3 failed | 25 passed**（修码前 c8fea6f 实测，含同批加入的七轮 symlink 两条，日志 `/tmp/r7-red-both.log`）→ green。
+
+### R6-F2：悬空 symlink 拒绝 + temp+rename 原子写消 TOCTOU（commit `ab0bc29`）
+
+- 问题：①最终组件是指向目录外**不存在文件**的悬空 symlink 时，realpath 抛 ENOENT 回落到最深已存在祖先（引擎目录本身）→ 六轮防护误判安全 → `writeFileSync` 沿悬空链接把产物写到引擎目录外；②realpath 检查与写入之间存在检查-写入（TOCTOU）窗口，竞态把产物位换成 symlink 后写入照样沿新链接逃逸。
+- 修法（`referenceReceiver.mjs`）组合拳：①写前 **lstat 最终组件**——是 symlink（无论悬空与否）一律拒绝（lstat 不跟随链接，悬空也拿到 symlink 状态，六轮「最深已存在祖先」回落穿不过）；②产物改 **temp+rename 原子写**——先在引擎目录内 `'wx'` 独占创建自建临时文件（进程级唯一名字绝不碰撞，O_EXCL 绝不沿既有任何路径含 symlink 写入），内容与 digest 核验全在临时文件上完成，最后 `fs.rename` 原子替换到产物位（rename 不跟随目标 symlink，TOCTOU 从写入机制上消除；rename 目标目录组件用 realpath 后的真实父目录构建，无 symlink 中间层），临时文件写前同样 lstat/realpath 校验；③失败收尾只清理自建临时文件（best-effort unlink，失败如实 `rollback_failed`=残留临时文件路径）——引擎目录既有产物从头到尾不被触碰，五/六轮「还原原内容」回滚通路退役（原产物天然原样保留）。写前读旧产物的 ENOENT-only 语义保留（非 ENOENT 读异常仍拒绝写入不触碰）。
+- 回归（新增 2 条 + 重造 1 条 + 改名 2 条）：悬空 symlink 指向目录外 → failed 含「符号链接」、目录外无落盘、链接原样；产物位 symlink 指向目录内也一律拒绝；落盘失败构造由「0444 只读旧产物」改为「引擎目录只读 0o555」（temp+rename 的原子替换不读目标文件权限，0444 场景如实 applied——改用目录级只读构造真实落盘失败，既有产物原样、无临时残留）；两条「还原原内容」回归改述为「原样保留不删不改写」（同一可观测契约，机制更强）。源锁测试补钉 `renameSync`/`lstatSync`/`'wx'`。**red：2 failed | 26 passed**（R6-F1 之后、R6-F2 修码前实测，日志 `/tmp/r7-f1-after.log`）→ green（roundtrip+两 wiring 51 passed）。
+
+### R6-F3：文档 §4.3 + 测试闭合（commit `b9afab2`）
+
+- `docs/design/hot-reload-design.md` §4.3 按新实现改写：产物命名空间只认暂存根内路径（根外拒绝整批+发送侧校验）、lstat 拒链接的符号链接逃逸防护、temp+rename 原子写消 TOCTOU、失败收尾只清临时文件（原产物不触碰，「还原原内容」退役）；五/六轮被替代的承诺（绝对路径回落命名空间、还原式回滚）从契约中移除。接收端脚本头部契约注记同步（随 R6-F2 落盘）。
+- 测试闭合（复审要求两类用例全落地）：①根内外碰撞（R6-F1：分批发送根内 `tmp/X.py` 与根外 `/tmp/X.py` → 后者拒绝整批、前者产物不被覆盖）；②悬空链接（R6-F2：悬空 symlink → 拒绝写入不逃逸；父目录 symlink 指向目录外 → 拒绝，沿用六轮回归）。
+- 连带：`roundtripProbe.mjs` 重跑落盘 AUD-007 wire 样本（所发文件现写入接收端暂存根内，发送侧校验在册）。
+
+### 第七轮门禁数字（本机，2026-11-07）
+
+- `cargo test --workspace --exclude kode-scheduler`：**退出 0**；87 个结果块 **525 passed、0 failed**。日志 `/tmp/r7-cargo-full.log`。
+- `npm test`：vitest 全量三轮（本机负载均值 177–193，同机另有 apollo C++ 构建/gradle/dotnet/go 测试并行）：**6367 passed、20 skipped**，每轮 5–6 failed 且**每轮失败的用例集互不相同**、全部是预算/截止时间/真实子进程类测试（`typeStorageColdBuildPhased`、`processTopologyPerf`、`hoverDeadlineContext`、`receiverNoneAsyncSharedParse`、`globalDataIndex`、`pythonTestRunner`、`debugConfigAttach`），**零热更换路失败**；失败文件离线单跑**全部通过（113 tests）**，判定为满载抖动（六轮首轮 11 个同类抖动同因）。日志 `/tmp/r7-npm-test-full.log`、`/tmp/r7-npm-test-full2.log`、`/tmp/r7-npm-test-full3.log`。链上其余段直跑验证：compile 退出 0（`/tmp/r7-compile.log`）、`tsc -p tsconfig.mocha.json` 干净、VS Code 集成冒烟 **12 passing**（首轮 1 个激活 hook 2s 超时为同因抖动，复跑干净；`/tmp/r7-electron2.log`）。
+- `eslint src --ext ts`：退出 0 干净；`tsc -p tsconfig.json --noEmit` 干净。
+- 逐项 red 日志：`/tmp/r7-red-both.log`（3 failed | 25 passed）、`/tmp/r7-f1-after.log`（2 failed | 26 passed）。
