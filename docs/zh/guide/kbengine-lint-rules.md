@@ -19,7 +19,8 @@
 | KBE-PY-005 | 将注释/字符串里的 `self.cell.foo` 当作代码 | 目前有误报，待修词法过滤 | `pythonLanguageUtils.ts:findPythonReceiverCalls` |
 | KBE-PY-006 | 接收者别名的实际使用，如 `peer = self.cell; peer.foo()` | 别名 guard 有局部支持；别名使用点诊断未完成 | 目前调用发现只认 `self.<role>.<name>` |
 | KBE-PY-007 | 写入引擎只读属性，如 `self.id = 1` | 已实现（IDE-LINT-007）：普通/增强/注解赋值与 `del` 报 Warning，可写属性与非实体同名字段不报 | `kbengine.readOnlyWrite`；`readOnlyWriteDiagnostics.ts`（表 `entityBuiltinProperties.ts`，注册面 `entity_macro.h` 等） |
-| KBE-PY-008 | 在错误角色访问引擎属性/API | 有角色属性/补全面，完整误用 lint 待实现 | baseapp/cellapp/client 分面；角色不明时不能猜 |
+| KBE-PY-008 | 在错误角色访问引擎 API（方法） | 仅 hover/补全元数据（角色面表未建立）；属性错用已由 KBE-PY-008b 实现 | `kbengine.entity.builtinProperties`；API 保持仅提示 |
+| KBE-PY-008b | 在错误角色访问引擎属性 | 已实现（IDE-LINT-009）：`self.<内建属性>` 注册于其他角色面而当前面没有时报 Warning，引注册面引擎源码取证；角色不明/非实体脚本/非内建属性不报 | `kbengine.roleMisuse`；`roleMisuseDiagnostics.ts`（属性面表取 `entityBuiltinProperties.ts`，与 hover 元数据同源） |
 | KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 已有实时 Warning（参数数量）；类型不符仍只有签名/提示面 | `kbengine.rpcArgCount`；`rpcArgCountDiagnostics.ts` |
 | KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 生命周期 lint 待设计 | `Entity::pyGetCellEntityCall` 等检查 destroyed；需控制流和生命周期证据，不能见到 destroy 就全文件报错 |
 | KBE-PY-011 | 用户自管 `self.<attr>` 含 None 且未窄化（如构造期赋值被早退绕过） | 已有实时 Warning | `kbengine.attributeNone`；`selfAttributeNoneDiagnostics.ts` |
@@ -115,12 +116,19 @@ if self.cell is not None:
 
 实现口径：调用点发现面走词法掩码（去字符串/注释里的伪调用，`findPythonReceiverCalls` 同款）；实参计数面走原文并自带字符串/注释词法态（字符串里的逗号不当分隔，`countCallArguments`）——掩码把字符串整体空白会吞掉字符串实参导致计数偏少，故计数面不复用掩码。跨行调用按括号深度计数到配对 `)`；空括号计 0；尾随逗号不多计。参数数量**类型**不符仍只有签名/提示面（`kbengine.rpcArgCount` 只对数量），inlay 提示不替代诊断。开关 `kbengine.rpcArgCountDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
 
+## 角色错用：属性面表有据可查才判
+
+已实现（IDE-LINT-009，KBE-PY-008b）：实体脚本里 `self.<内建属性>` 访问当前角色面（baseapp/cellapp/client）**未注册**该属性、但属性注册于**其他面**时报 `kbengine.roleMisuse`（Warning），每条命中引注册面引擎源码 file:line 取证（`position` 注册于 cellapp/client，在 base 脚本访问即错用）。角色判定与内建属性 hover/inlay 同一底座：文件段（`base`/`cell`/`client`）定面，段面判不出经 `.def` 归属面，多面歧义只兜底宏公共三项——那三项各面都注册，不可能错用，故歧义零产出；角色不明（非实体脚本/无 def 归属）与普通 Python 类不猜。属性面表复用 `entityBuiltinProperties.ts`（与 hover 元数据**同源**，同一张表）。
+
+已知边界（与同族 self-属性 lint 一致）：嵌套非实体类内的同名 `self.<p>` 不单列（文件级身份判定）；`self.<prop>` 仅单段——`self.cell.position` 等多段访问是 EntityCall 成员面，不参与（由 receiver/段错配负责）；引擎实体 **API**（方法，如 `teleport`/`addTimer`）的角色面表尚未建立，API 错用保持仅 hover/补全元数据，不冒充已实现。开关 `kbengine.roleMisuseDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
 ## .def 检查的触发方式
 
 - 实时结构诊断：`kbengine.enableDiagnostics`、`kbengine.enableStructureDiagnostics` 及 `kbengine.diagnostics.check*` 控制，打开/编辑文件时更新 Problems。
 - Python receiver 诊断：`kbengine.receiverNoneDiagnostics=true`，默认开启，使用现有诊断调度器；关闭只停止提示，不改变引擎行为。
 - 只读属性写入诊断：`kbengine.readOnlyWriteDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-readonly-write`）；关闭只停止提示，不改变引擎行为。
 - RPC 实参数量诊断：`kbengine.rpcArgCountDiagnostics=true`，默认开启，与 receiver/attr 同通道（集合 `kbengine`）发布；关闭只停止提示，不改变引擎行为。
+- 角色错用诊断：`kbengine.roleMisuseDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-role-misuse`）；关闭只停止提示，不改变引擎行为。
 - `.def` 优化/继承冲突分析：按需运行分析入口，见 `defAnalyzer.ts` 和[语言能力](./language.md)。按需分析有规则不代表每次输入都会自动 lint。
 - Hover、签名、inlay、CodeLens 是说明或导航界面；有提示内容不代表相应规则已做诊断。
 
