@@ -76,6 +76,7 @@ export interface GitHistoryDeps {
     repoRoot: string,
     page: number,
     pageSize: number,
+    continuation?: { parentCommit: string; path: string },
     request?: GitQueryRequest
   ): Promise<GitCommitLogResult>;
   /** 每页条数(缺省 50;硬上限由 IDE-GIT-004 钳制)。 */
@@ -91,8 +92,12 @@ export function defaultGitHistoryDeps(deps?: Partial<GitHistoryDeps>): GitHistor
         enabled,
         realGitRepoLocationDeps()
       ),
-    queryLog: (filePath, repoRoot, page, pageSize, request) =>
-      queryGitCommitLog({ repoRoot, filePath, page, pageSize, follow: true }, undefined, request),
+    queryLog: (filePath, repoRoot, page, pageSize, continuation, request) =>
+      queryGitCommitLog(
+        { repoRoot, filePath, page, pageSize, follow: true, continuation },
+        undefined,
+        request
+      ),
     pageSize: DEFAULT_GIT_LOG_PAGE_SIZE,
     ...deps,
   };
@@ -261,11 +266,18 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       this.fire();
       return;
     }
-    const result = await this.deps.queryLog(filePath, location.repoRoot, 0, this.deps.pageSize, {
-      token: this.viewToken,
-      // 显式刷新:重新获取 HEAD,不读缓存(IDE-GIT-011)。
-      bypassCache: true,
-    });
+    const result = await this.deps.queryLog(
+      filePath,
+      location.repoRoot,
+      0,
+      this.deps.pageSize,
+      undefined,
+      {
+        token: this.viewToken,
+        // 显式刷新:重新获取 HEAD,不读缓存(IDE-GIT-011)。
+        bypassCache: true,
+      }
+    );
     this.state = this.applyResult(filePath, location.repoRoot, result, /* append */ false);
     this.fire();
   }
@@ -274,11 +286,19 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
   async loadNextPage(): Promise<void> {
     if (this.state.kind !== 'loaded' || !this.state.hasMore) return;
     const prev = this.state;
+    // 续查起点:上一页最老提交的父提交与该提交时路径(IDE-GIT-007 修复)。
+    // 重命名边界后 `git log --follow --skip=N` 会中断,须从父提交+老路径重发。
+    const last = prev.entries[prev.entries.length - 1];
+    const continuation =
+      last && last.parentHash && last.continuationPath
+        ? { parentCommit: last.parentHash, path: last.continuationPath }
+        : undefined;
     const result = await this.deps.queryLog(
       prev.filePath,
       prev.repoRoot,
       prev.page + 1,
       prev.pageSize,
+      continuation,
       { token: this.viewToken }
     );
     if (result.kind !== 'page' || result.entries.length === 0) {

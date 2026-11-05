@@ -42,7 +42,8 @@ function entry(
   subject: string,
   body: string
 ): string {
-  return [hash, authorName, authorEmail, authorDate, commitDate, subject, body].join(FS) + RS;
+  // 第 2 字段=首父提交 %P(本批解析用;测试注入固定父,断言父链可独立覆盖)
+  return [hash, 'p1', authorName, authorEmail, authorDate, commitDate, subject, body].join(FS) + RS;
 }
 
 function makeDeps(outcome: GitRunOutcome, probeOutcome: GitRunOutcome = okOutcome('')) {
@@ -98,6 +99,7 @@ describe('IDE-GIT-004 分页与解析(注入面)', () => {
     expect(r.entries).toHaveLength(2);
     expect(r.entries[0]).toEqual({
       hash: 'h9',
+      parentHash: 'p1',
       authorName: '作者甲',
       authorEmail: 'jia@example.com',
       authorDate: '2026-11-01T10:00:00+08:00',

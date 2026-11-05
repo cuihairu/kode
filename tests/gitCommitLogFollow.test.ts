@@ -33,8 +33,8 @@ function record(rec: string, status: string): string {
   return `${rec}${RS}\n${status}\n`;
 }
 
-function rec(hash: string, subject: string): string {
-  return [hash, '作者', 'a@example.com', '2026-11-01T10:00:00+08:00', '2026-11-01T10:00:00+08:00', subject, ''].join(
+function rec(hash: string, subject: string, parent = ''): string {
+  return [hash, parent, '作者', 'a@example.com', '2026-11-01T10:00:00+08:00', '2026-11-01T10:00:00+08:00', subject, ''].join(
     FS
   );
 }
@@ -205,6 +205,52 @@ describe('IDE-GIT-007 真实临时仓库:重命名链与跨仓库隔离', () => 
         .trim();
       expect(content).toBe('x = 2');
     }
+  });
+
+  it('重命名边界翻页:不按当前路径重跑 skip,沿父提交+老路径续查', async () => {
+    const root = makeRepo();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'old.py'), 'x = 1\n');
+    commitAll(root, 'create old');
+    writeFileSync(join(root, 'src', 'old.py'), 'x = 2\n');
+    commitAll(root, 'edit old');
+    execFileSync('git', ['mv', 'src/old.py', 'src/new.py'], { cwd: root });
+    commitAll(root, 'rename old to new');
+    writeFileSync(join(root, 'src', 'new.py'), 'x = 3\n');
+    commitAll(root, 'edit new');
+
+    // pageSize=2:第一页=edit new + rename;下一页应=create/edit old,
+    // 不能因 `git log --follow --skip=2 -- new.py` 在重命名边界断裂而漏掉老历史。
+    const page1 = await queryGitCommitLog(
+      { repoRoot: root, filePath: join(root, 'src', 'new.py'), follow: true, pageSize: 2 },
+      realDeps
+    );
+    expect(page1.kind).toBe('page');
+    if (page1.kind !== 'page') return;
+    expect(page1.entries.map(e => e.subject)).toEqual(['edit new', 'rename old to new']);
+    const renameCommit = page1.entries[1];
+    expect(renameCommit.parentHash).toMatch(/^[0-9a-f]{40}$/);
+    expect(renameCommit.pathAtCommit).toBe('src/new.py');
+    expect(renameCommit.continuationPath).toBe('src/old.py');
+
+    const page2 = await queryGitCommitLog(
+      {
+        repoRoot: root,
+        filePath: join(root, 'src', 'new.py'),
+        follow: true,
+        page: 1,
+        pageSize: 2,
+        continuation: {
+          parentCommit: renameCommit.parentHash,
+          path: renameCommit.continuationPath,
+        },
+      },
+      realDeps
+    );
+    expect(page2.kind).toBe('page');
+    if (page2.kind !== 'page') return;
+    expect(page2.entries.map(e => e.subject)).toEqual(['edit old', 'create old']);
+    expect(page2.entries.map(e => e.pathAtCommit)).toEqual(['src/old.py', 'src/old.py']);
   });
 
   it('多仓库同名文件不串历史(repoRoot cwd 作用域)', async () => {

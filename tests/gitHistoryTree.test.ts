@@ -39,9 +39,8 @@ function makeProvider(opts?: {
     return { kind: 'repo', repoRoot: '/repo', gitDir: '/repo/.git', isWorktree: false };
   });
   const results = opts?.pageResults ?? [{ entries: [entry('abc12345', '主题一')], hasMore: false }];
-  let pageIndex = 0;
   const queryLog = vi.fn(
-    async (_filePath: string, repoRoot: string, page: number, pageSize: number) => {
+    async (_filePath: string, repoRoot: string, page: number, pageSize: number, _continuation?: unknown, _request?: unknown) => {
       const r = results[Math.min(page, results.length - 1)];
       return { kind: 'page', status: 'ok', entries: r.entries, hasMore: r.hasMore, page, pageSize } as const;
     }
@@ -173,6 +172,7 @@ describe('IDE-GIT-005 提供者(fake-vscode)', () => {
       '/repo',
       0,
       50,
+      undefined,
       expect.objectContaining({ bypassCache: true, token: expect.anything() })
     );
   });
@@ -193,9 +193,6 @@ describe('IDE-GIT-005 提供者(fake-vscode)', () => {
   });
 
   it('未跟踪:首页空 + ls-files 空 → untracked 状态', async () => {
-    const { provider } = makeProvider({
-      pageResults: [{ entries: [], hasMore: false }],
-    });
     const queryLog = vi.fn(async () => ({ kind: 'untracked' }) as const);
     const deps: GitHistoryDeps = {
       locateGitRepo: () => ({ kind: 'repo', repoRoot: '/repo', gitDir: '/repo/.git', isWorktree: false }),
@@ -272,6 +269,7 @@ describe('IDE-GIT-011 文件历史视图取消面', () => {
         _r: string,
         _p: number,
         _s: number,
+        _continuation?: unknown,
         request?: { token?: { isCancellationRequested: boolean } }
       ) => {
         tokens.push(request?.token as { isCancellationRequested: boolean } | undefined);

@@ -27,6 +27,8 @@ export const MAX_GIT_LOG_PAGE_SIZE = 500;
 export interface GitCommitEntry {
   /** 完整提交标识(commit hash)。 */
   hash: string;
+  /** 首父提交 hash(%P 首个);根提交为空串。供翻页沿边界续查。 */
+  parentHash: string;
   authorName: string;
   authorEmail: string;
   /** 作者时间(ISO 8601,含时区;%aI)。 */
@@ -43,6 +45,12 @@ export interface GitCommitEntry {
    * 故「打开对应版本内容」须按此路径而非当前路径取 `git show <commit>:<path>`。
    */
   pathAtCommit?: string;
+  /**
+   * 该提交之后的追踪路径(翻页续查起点):沿重命名链继续的路径。
+   * 重命名提交=旧路径(更老提交所在),其余=pathAtCommit(链不变)。
+   * 供 `git log --follow <parent> -- <continuationPath>` 续查下一页。
+   */
+  continuationPath?: string;
 }
 
 /** 查询依赖注入面(默认实现经 IDE-GIT-011 协调门,再落 IDE-GIT-003 只读执行器)。 */
@@ -73,7 +81,7 @@ export function clampGitLogPageSize(requested: number | undefined): number {
 // 字段以 %x1f、记录以 %x1e 分隔(正文可含换行,故不用行分隔)。
 const FIELD_SEP = '\u001f';
 const RECORD_SEP = '\u001e';
-const LOG_FORMAT = ['%H', '%an', '%ae', '%aI', '%cI', '%s', '%b'].join('%x1f') + '%x1e';
+const LOG_FORMAT = ['%H', '%P', '%an', '%ae', '%aI', '%cI', '%s', '%b'].join('%x1f') + '%x1e';
 
 /** 解析 `git log --format` 输出为提交记录(记录间 git 追加的换行剥除)。 */
 export function parseCommitRecords(stdout: string): GitCommitEntry[] {
@@ -81,16 +89,7 @@ export function parseCommitRecords(stdout: string): GitCommitEntry[] {
     .split(RECORD_SEP)
     .filter((record) => record.trim() !== '')
     .map((record) => {
-      const fields = record.replace(/^\n/, '').split(FIELD_SEP);
-      return {
-        hash: fields[0] ?? '',
-        authorName: fields[1] ?? '',
-        authorEmail: fields[2] ?? '',
-        authorDate: fields[3] ?? '',
-        commitDate: fields[4] ?? '',
-        subject: fields[5] ?? '',
-        body: (fields[6] ?? '').replace(/\n$/, ''),
-      };
+      return parseFormatFields(record.replace(/^\n/, ''));
     });
 }
 
@@ -128,6 +127,18 @@ export interface GitCommitLogQueryOptions {
    * 均入列且每条带 pathAtCommit;缺省 false(IDE-GIT-004 语义不变)。
    */
   follow?: boolean;
+  /**
+   * 翻页续查起点(IDE-GIT-007 修复):后续页沿上一页最老提交的**父提交**
+   * 与该提交时路径继续追踪。`git log --follow --skip=N` 在重命名边界处会
+   * 中断(skip 超过边界返回空),不能按当前路径重跑 skip。缺省同 filePath
+   * (首页/无重命名)。
+   */
+  continuation?: {
+    /** 上一页最老提交的父提交 hash(从该父提交起继续,不重复/不漏)。 */
+    parentCommit: string;
+    /** 上一页最老提交时的路径(重命名后为老路径)。 */
+    path: string;
+  };
 }
 
 /**
@@ -145,8 +156,19 @@ export async function queryGitCommitLog(
   const page = Math.max(0, Math.floor(options.page ?? 0));
   const pageSize = clampGitLogPageSize(options.pageSize);
   // 绝对路径换算为仓库相对路径;越界 `..` 由 IDE-GIT-003 的路径边界校验拒绝。
-  const fileArg = path.relative(options.repoRoot, path.resolve(options.repoRoot, options.filePath));
-  const args = ['log', `--skip=${page * pageSize}`, `--max-count=${pageSize + 1}`, `--format=${LOG_FORMAT}`];
+  const fileArg = path.relative(
+    options.repoRoot,
+    path.resolve(options.repoRoot, options.continuation?.path ?? options.filePath)
+  );
+  const args = ['log'];
+  if (options.follow && options.continuation) {
+    // 续查:从上一页最老提交的父提交起,沿该提交时路径继续 `--follow`
+    // (git log --follow --skip=N 在重命名边界会中断,不能按当前路径重跑 skip)。
+    args.push(options.continuation.parentCommit);
+  } else {
+    args.push(`--skip=${page * pageSize}`);
+  }
+  args.push(`--max-count=${pageSize + 1}`, `--format=${LOG_FORMAT}`);
   if (options.follow) {
     args.push('--follow', '--name-status');
   }
@@ -165,7 +187,12 @@ export async function queryGitCommitLog(
   if (options.follow) {
     // --name-status 输出与格式记录交错(`\x1e` 后 git 追加换行再打印状态行),
     // 必须整体一并解析,不能复用 parseCommitRecords(会把状态行误当记录)。
-    const traced = parseFollowCommitRecords(fileArg, outcome.stdout);
+    const traced = parseFollowCommitRecords(
+      options.continuation
+        ? path.relative(options.repoRoot, path.resolve(options.repoRoot, options.continuation.path))
+        : fileArg,
+      outcome.stdout
+    );
     entries = traced.entries;
     hasMore = entries.length > pageSize;
     // 边界只在本页到头(无下一页)时才如实上报:hasMore 时最老记录是探测位,
@@ -218,12 +245,13 @@ function parseFormatFields(fmt: string): GitCommitEntry {
   const fields = fmt.split(FIELD_SEP);
   return {
     hash: fields[0] ?? '',
-    authorName: fields[1] ?? '',
-    authorEmail: fields[2] ?? '',
-    authorDate: fields[3] ?? '',
-    commitDate: fields[4] ?? '',
-    subject: fields[5] ?? '',
-    body: (fields[6] ?? '').replace(/\n$/, ''),
+    parentHash: (fields[1] ?? '').split(' ')[0] ?? '',
+    authorName: fields[2] ?? '',
+    authorEmail: fields[3] ?? '',
+    authorDate: fields[4] ?? '',
+    commitDate: fields[5] ?? '',
+    subject: fields[6] ?? '',
+    body: (fields[7] ?? '').replace(/\n$/, ''),
   };
 }
 
@@ -269,10 +297,11 @@ export function parseFollowCommitRecords(
     if (status && (status.kind === 'R' || status.kind === 'C')) {
       // 重命名提交:该提交树上路径 = new;更老提交追踪 old。
       const atCommitPath = status.newPath ?? tracked;
+      const nextPath = status.oldPath ?? tracked;
       if (status.oldPath) tracked = status.oldPath;
-      return { ...entry, pathAtCommit: atCommitPath };
+      return { ...entry, pathAtCommit: atCommitPath, continuationPath: nextPath };
     }
-    return { ...entry, pathAtCommit: tracked };
+    return { ...entry, pathAtCommit: tracked, continuationPath: tracked };
   });
   const last = statuses[statuses.length - 1];
   const boundary =
