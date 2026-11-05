@@ -1294,18 +1294,21 @@
   验收：FakeComponentBin win32 产 .cmd 包装（或 spawn 走 node 直调），测试断言按平台取后缀；serverManager* 全族绿。
 
 - [ ] WIN-3 [P1] 测试硬编码 POSIX 路径（约 35 失败：gitHistoryDiff 9/gitRepoLocate 7/pythonTestDiscovery 5/quickActionScanner 5/inferPipeline 6/debugConfig 6/navigationLayoutMatrix 3/pyreflyInfer 2 等）
+  （2026-11-05 进度：pythonTestRunner.pathSuffixMatch 双分隔符归一已修（40d0082，pytest 结果条目从全 errored 转绿）；covExtensionCommands 夹具改 REAL_INTERPRETER 平台探测。git*/pythonTestDiscovery/inferPipeline 等硬断言批未动。）
   落点：测试断言 `/ws/...`、`/repo/...`，src path.join/dirname 在 win32 产出 `D:\repo\...`、`\ws\...`；gitRepoLocate.ts:62 `w + path.sep` 前缀匹配在混分隔符下必失配。
   验收：断言侧路径归一化（或 src 双分隔符兼容）；该批测试双平台绿。
 
-- [ ] WIN-4 [P1] 仓库无 .gitattributes + core.autocrlf=true（CRLF 类：configParity/configMergeParity golden 逐字段差 \r，与既有 wire_golden 同根因）
+- [x] WIN-4 [P1] 仓库无 .gitattributes + core.autocrlf=true（CRLF 类：configParity/configMergeParity golden 逐字段差 \r，与既有 wire_golden 同根因）（2026-11-05 关闭：.gitattributes 提交 559ce2f——tests/fixtures/** 与 crates/**/tests/golden/** 强制 eol=lf，两份上游 CRLF kbemain.py 以 -text 豁免；重检出后 configParity/configMergeParity 6/6、wire 17/17、cargo --workspace 仅剩与本项无关的既有 3 失败。）
   落点：tests/fixtures/** 检出 CRLF、golden 按 LF 生成。
   验收：.gitattributes 强制关键目录 eol=lf（或比对前归一化）；golden 类测试双平台绿且不破坏既有检出。
 
 - [ ] WIN-5 [P2] POSIX 语义依赖（约 15 失败：logCollectorSocket getuid/cov-longtail 信号 exit code/unexecutable chmod 000/schemaCacheCaseSensitivity 大小写盘等）
+  （2026-11-05 进度：covExtensionCommands「已装 dump」用例 win32 skip 带注释（Node spawn 无 PATHEXT、.cmd 直 spawn EINVAL，Linux CI 保留覆盖）；logCollectorSocket/cov-longtail/schemaCache 等未动。）
   落点：process.getuid 不存在于 win32；Windows 无真 signal，kill 后 code=null 断言失配；chmod 000 不阻止执行/读。
   验收：平台分支或 describe.skipIf(process.platform==='win32') 带注释；语义测试在两平台各自固化。
 
 - [ ] WIN-6 [P2] 环境缺失（本机安装，非仓库改动）
+  （2026-11-05 进度：真 Python= scoop 3.15.2（~\scoop\apps\python\current，持久 PATH 第1、2条本就正确，会话快照旧致误判）+ pip 装好 pytest 9.2.0/ruff 0.17.3；py-spy 按 covExtensionCommands「未装」用例前提不装（venv 布局 resolvePyspyCommand 不受影响）。开发者模式/symlink EPERM 未解——需用户开「设置→开发者选项→开发者模式」后复测 quickActionRunners/workspaceDiscovery。）
   缺口：真实 Python（现为 WindowsApps 别名 exit 9009）+ pytest + ruff；Windows 开发者模式未开（symlink EPERM，2 失败：quickActionRunners/workspaceDiscovery）。
   验收：python --version/pytest --version 真实可用；symlink 探针 OK；相关测试绿。
 
