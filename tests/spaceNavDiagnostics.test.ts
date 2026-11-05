@@ -135,4 +135,82 @@ describe('space/nav semantic diagnostics (SP-4)', () => {
       expect(computeSpaceNavFindings('')).toEqual([]);
     });
   });
+
+  describe('audit fixes (2026-11-05)', () => {
+    it('第二行起的诊断列号是行内列而非全文偏移', () => {
+      // 第一行 20 字符长;navigate 在第二行,旧实现把全文偏移当列号(错位/越界)
+      const text = [
+        'x = "a" * 20 # 第一行占位,使第二行偏移 != 列号',
+        '    self.navigate(dest, 1.0)',
+        ''
+      ].join('\n');
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+      // 方法名 navigate:行 1(0 基);"self." 前有 4 空格 → 列 4+5=9(0 基)
+      expect(findings[0].line).toBe(1);
+      expect(findings[0].start).toBe(9);
+      expect(findings[0].end).toBe(9 + 'navigate'.length);
+      // 断言旧行为(全文偏移当列号)会失败:全文偏移 >> 行内列 9
+      expect(findings[0].start).toBeLessThan(40);
+    });
+
+    it('第二行起的 _mapping 键列号是行内列', () => {
+      const text = [
+        'x = "long-prefix" * 10',
+        '    KBEngine.setSpaceData(1, "_mapping", p)',
+        ''
+      ].join('\n');
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+      expect(findings[0].line).toBe(1);
+      // 列 = 该行内 "_mapping" 开引号位置
+      const lineCol = text.split('\n')[1].indexOf('"');
+      expect(findings[0].start).toBe(lineCol);
+      expect(findings[0].end).toBe(lineCol + '_mapping'.length + 2);
+      expect(findings[0].start).toBeLessThan(80);
+    });
+
+    it('注释里的 navigate 与 canNavigate 不参与判定(不报也无守卫)', () => {
+      // 注释里出现 canNavigate,代码里 navigate 未守卫 → 应报(注释不充当守卫)
+      const text = [
+        '# 注释提到 canNavigate(),不构成守卫',
+        '    self.navigate(dest, 1.0)',
+        ''
+      ].join('\n');
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+      expect(findings[0].message).toContain('canNavigate');
+    });
+
+    it('字符串里的 navigate 字样不报', () => {
+      const text = [
+        'msg = "self.navigate(1, 2)"',
+        'def f(self):',
+        '    pass',
+        ''
+      ].join('\n');
+      expect(computeSpaceNavFindings(text)).toEqual([]);
+    });
+
+    it('任意对象的 navigate 不当引擎方法(不报)', () => {
+      const text = [
+        'def go(self):',
+        '    avatar.navigate(dest, 1.0)',
+        '    other.navigatePathPoints(dest)',
+        ''
+      ].join('\n');
+      expect(computeSpaceNavFindings(text)).toEqual([]);
+    });
+
+    it('self.navigate 仍报(引擎实体方法约定)', () => {
+      const text = [
+        'def go(self):',
+        '    self.navigate(dest, 1.0)',
+        ''
+      ].join('\n');
+      const findings = computeSpaceNavFindings(text);
+      expect(findings).toHaveLength(1);
+      expect(findings[0].message).toContain('canNavigate');
+    });
+  });
 });
