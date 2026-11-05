@@ -68,6 +68,11 @@ import {
   roleMisuseDiagnosticItemsAsync,
   type RoleMisuseDiagnosticItem
 } from './roleMisuseDiagnostics';
+import {
+  POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT,
+  postDestroyDiagnosticItemsAsync,
+  type PostDestroyDiagnosticItem
+} from './postDestroyDiagnostics';
 import { renderLintRulesReport } from './lintRuleRegistry';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
@@ -1809,6 +1814,66 @@ export function activate(context: vscode.ExtensionContext) {
       roleMisuseScheduler.request(document, options);
     }
   };
+  // IDE-LINT-010:Entity 销毁后访问诊断(独立集合,与只读写入/角色错用同族
+  // 生命周期)。同函数同块内确定的 `self.destroy()` 后直接访问 `self.<成员>`
+  // 报 Warning;def 声明 destroy(动态分派边界)经 getMappingForPythonFile 判
+  // → 整文件不分析;跨回调/异常/跨块不猜。
+  const postDestroyDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-post-destroy'
+  );
+  context.subscriptions.push(postDestroyDiagnostics);
+  const postDestroyScheduler = new DiagnosticScheduler();
+  const schedulePostDestroyDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly PostDestroyDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('postDestroyDiagnostics', POST_DESTROY_DIAGNOSTICS_ENABLED_DEFAULT);
+        return postDestroyDiagnosticItemsAsync(
+          document.getText(),
+          document.uri.fsPath,
+          () => entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath),
+          () => {
+            const mapping = entityMappingManager.getMappingForPythonFile(document.uri.fsPath);
+            return Boolean(
+              mapping && (mapping.methods.destroy || mapping.properties.destroy)
+            );
+          },
+          enabled
+        );
+      },
+      publish: (items: readonly PostDestroyDiagnosticItem[]) => {
+        postDestroyDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      postDestroyScheduler.requestQueued(document, options);
+    } else {
+      postDestroyScheduler.request(document, options);
+    }
+  };
 
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
@@ -2032,6 +2097,8 @@ export function activate(context: vscode.ExtensionContext) {
       scheduleReadOnlyWriteDiagnostics(document, 'immediate');
       // IDE-LINT-009:打开 python 文件即排角色错用诊断
       scheduleRoleMisuseDiagnostics(document, 'immediate');
+      // IDE-LINT-010:打开 python 文件即排销毁后访问诊断
+      schedulePostDestroyDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -2054,6 +2121,9 @@ export function activate(context: vscode.ExtensionContext) {
       // IDE-LINT-009:角色错用诊断随文档生命周期(关闭即摘除)。
       roleMisuseDiagnostics.delete(document.uri);
       roleMisuseScheduler.releaseDocument(document);
+      // IDE-LINT-010:销毁后访问诊断随文档生命周期(关闭即摘除)。
+      postDestroyDiagnostics.delete(document.uri);
+      postDestroyScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -2114,6 +2184,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleReadOnlyWriteDiagnostics(event.document, 'queued');
         // IDE-LINT-009:python 改动 → 重排本文件的角色错用诊断
         scheduleRoleMisuseDiagnostics(event.document, 'queued');
+        // IDE-LINT-010:python 改动 → 重排本文件的销毁后访问诊断
+        schedulePostDestroyDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -2160,6 +2232,8 @@ export function activate(context: vscode.ExtensionContext) {
           void readOnlyWriteScheduler.flushQueued();
           // IDE-LINT-009:角色错用调度器同节拍冲刷(守卫语义同上)
           void roleMisuseScheduler.flushQueued();
+          // IDE-LINT-010:销毁后访问调度器同节拍冲刷(守卫语义同上)
+          void postDestroyScheduler.flushQueued();
           // KODE-AUD-001:进程拓扑诊断调度器同节拍冲刷——此前编辑事件面只
           // requestQueued 不冲刷,queued 任务滞留不发布致编辑期诊断不更新
           void processTopologyScheduler.flushQueued();
@@ -2395,6 +2469,10 @@ export function activate(context: vscode.ExtensionContext) {
       roleMisuseScheduler.setEnabled(enabled, () =>
         roleMisuseDiagnostics.clear()
       );
+      // IDE-LINT-010:主开关同闸销毁后访问管线(关→清集合,开→强制重算)
+      postDestroyScheduler.setEnabled(enabled, () =>
+        postDestroyDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -2405,6 +2483,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.propertyDirectionDiagnostics') ||
       event.affectsConfiguration('kbengine.readOnlyWriteDiagnostics') ||
       event.affectsConfiguration('kbengine.roleMisuseDiagnostics') ||
+      event.affectsConfiguration('kbengine.postDestroyDiagnostics') ||
       event.affectsConfiguration('kbengine.startupScriptDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
@@ -2474,6 +2553,10 @@ export function activate(context: vscode.ExtensionContext) {
           // IDE-LINT-009:角色错用开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.roleMisuseDiagnostics')) {
             scheduleRoleMisuseDiagnostics(doc, 'immediate');
+          }
+          // IDE-LINT-010:销毁后访问开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.postDestroyDiagnostics')) {
+            schedulePostDestroyDiagnostics(doc, 'immediate');
           }
         } else if (isStartupScriptDocument(doc)) {
           // KBEXP-1:启动脚本诊断开关变更 → 立即重算已开启动脚本(compute

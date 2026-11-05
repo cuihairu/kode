@@ -245,7 +245,8 @@ describe('extension activate 装配', () => {
     // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract);
     // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction);
     // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write);
-    // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse)
+    // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse);
+    // IDE-LINT-010 销毁后访问诊断集再一份(kbengine-post-destroy)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
@@ -253,6 +254,7 @@ describe('extension activate 装配', () => {
       'kbengine-property-direction',
       'kbengine-readonly-write',
       'kbengine-role-misuse',
+      'kbengine-post-destroy',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis'

@@ -56,8 +56,12 @@ export function isPythonCodePosition(content: string, line: number, character: n
   return /\w/.test(raw[col] ?? '') && pythonCodeLines(content)[line]?.[col] === raw[col];
 }
 
-/** Join bracket/backslash continuations, retaining the first line's coordinates. */
-function pythonStatements(content: string): Array<{ text: string; line: number; endLine: number; indent: number }> {
+/**
+ * Join bracket/backslash continuations, retaining the first line's coordinates.
+ * `text` 为掩码文本(注释/字符串整体空白),`indent` 取首行前导空白。
+ * IDE-LINT-010 复用(销毁后访问 lint 的块/缩进结构分析)。
+ */
+export function pythonStatements(content: string): Array<{ text: string; line: number; endLine: number; indent: number }> {
   const statements: Array<{ text: string; line: number; endLine: number; indent: number }> = [];
   let depth = 0;
   let pending = '';

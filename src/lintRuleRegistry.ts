@@ -257,14 +257,22 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     quickFix: false, status: 'implemented',
     source: 'src/rpcArgCountDiagnostics.ts'
   },
+  {
+    id: 'KBE-PY-010', code: 'kbengine.postDestroy',
+    title: 'Entity 销毁后访问 lint(同函数同块可确定范围)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.postDestroyDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/postDestroyDiagnostics.ts'
+  },
   // ── 待实现(pending)────────────────────────────────────────────
   {
-    id: 'KBE-PY-010', code: null,
-    title: 'Entity 销毁后访问 lint(IDE-LINT-010)',
+    id: 'KBE-PY-009b', code: null,
+    title: 'RPC 参数类型与 .def 不一致(数量已实现;类型仍仅签名/提示面)',
     severity: null, roles: 'base/cell/client',
     toggles: [], trigger: '实时(open/edit)',
     quickFix: false, status: 'pending',
-    source: 'IDE-LINT-010(待实现)'
+    source: 'KBE-PY-009b(待实现,类型面无参数名对账依据)'
   }
 ];
 

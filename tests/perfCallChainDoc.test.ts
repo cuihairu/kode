@@ -95,16 +95,22 @@ const ANCHORS: Array<[string, number, string]> = [
   // 累计,onDidChangeTextDocument 锚点 +64、flushQueued 锚点 +66(flush
   // 触发 +2 在锚点后不累计):真位重探 624/637/921/1003/1054/1117/1415/
   // 2074/2152,出处随 baseline 锁步。
-  ['src/extension.ts', 1003, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1054, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1117, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 921, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1415, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 624, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 637, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06(四):IDE-LINT-010 销毁后访问诊断——顶部再 +5 行 import
+  // (postDestroyDiagnostics 三符号),全部锚点再 +5;独立集合装配块 +55
+  // 在 1420 后,其后锚点再 +55;open/close 触发 +2/+3、change 触发 +2、
+  // flush 触发 +2 依次累计,onDidChangeTextDocument 锚点 +70、flushQueued
+  // 锚点 +72(flush 触发在两者之间):真位重探 629/642/926/1008/1059/1122/
+  // 1420/2144/2224,出处随 baseline 锁步。
+  ['src/extension.ts', 1008, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1059, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1122, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 926, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1420, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 629, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 642, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 2074, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2152, 'flushQueued()'],
+  ['src/extension.ts', 2144, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2224, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
