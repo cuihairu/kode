@@ -96,16 +96,19 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
   appendFileSync,
+  closeSync,
   copyFileSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   renameSync,
   unlinkSync,
-  writeFileSync
+  writeSync
 } from 'node:fs';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const argv = process.argv.slice(2);
 const argValue = name => {
@@ -124,25 +127,32 @@ const scenario = argValue('--scenario') ?? (mode === 'apply' ? 'applied' : 'acce
 mkdirSync(root, { recursive: true });
 
 const sha256Hex = content => createHash('sha256').update(Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')).digest('hex');
-// F3 七轮(2026-11-07 第七轮复审):失败收尾=只清理**自建临时文件**——temp+
-// rename 原子写下,失败路径(临时文件落盘失败/读回失败/哈希不符/rename 失败)
-// 里引擎目录里的既有产物从头到尾未被触碰(原产物天然原样保留,五/六轮的
-// 「还原原内容」回滚通路退役),收尾只剩 best-effort unlink 临时文件;清理
-// 失败如实返回残留路径,由回执 rollback_failed 字段上报,绝不谎称无残留
-const cleanupTempArtifact = tempArtifact => {
+// F3 八轮(2026-11-08 第八轮复审):失败收尾=只清理**已确认自建**的临时文件
+// ——创建动作('wx' 独占 openSync)本身是独立的成功点:成功返回才算「自建」,
+// 之后的失败(写一半 EFBIG/读回失败/哈希不符/rename 失败)才允许收尾 unlink;
+// 创建即失败(EEXIST 等)时该路径上的同名文件**不是本次创建的**,绝不触碰
+// (七轮的无条件 unlink 可能删掉非本次创建的文件,封死)。temp+rename 原子写
+// 下,失败路径里引擎目录里的既有产物从头到尾未被触碰(原产物天然原样保留,
+// 五/六轮的「还原原内容」回滚通路退役);清理失败如实返回残留路径,由回执
+// rollback_failed 字段上报,绝不谎称无残留
+const cleanupTempArtifact = (tempArtifact, created) => {
+  // 非自建(创建即失败):收尾目标=不动任何既有文件,天然达成
+  if (!created) {
+    return undefined;
+  }
   try {
     unlinkSync(tempArtifact);
     return undefined;
   } catch (error) {
     if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      // 临时文件本来就没建成(独占创建即失败):清理目标已达成
+      // 已不存在:清理目标已达成
       return undefined;
     }
     return tempArtifact;
   }
 };
-const tempCleanupReceipt = (file, tempArtifact, reasonBase) => {
-  const residual = cleanupTempArtifact(tempArtifact);
+const tempCleanupReceipt = (file, tempArtifact, reasonBase, created) => {
+  const residual = cleanupTempArtifact(tempArtifact, created);
   const outcome =
     residual !== undefined
       ? `(回滚失败,残留:${residual})`
@@ -232,6 +242,37 @@ const safeArtifactTarget = artifact => {
     return undefined;
   }
 };
+// F3 八轮(2026-11-08 第八轮复审):rename 目标父目录双重验证——七轮 rename
+// 前 realpath 父目录但**不验包含性、也不验一致性**:中间目录被竞态换成外部
+// symlink 时,realpath 解析结果在引擎目录外,rename 就落到外部;换成内链时
+// rename 也沿真实父目录落盘(路径实际经 symlink 组件到达别处)。修后 rename
+// 前立即 realpathSync(父目录) 并验证:①包含性——解析结果必须在引擎目录
+// (realpath)内;②一致性——解析结果必须与原路径逐字一致(否则说明路径中有
+// symlink 组件),任一不过即拒绝本文件不落盘;③通过后用解析出的真实父目录做
+// rename(JS 无 O_NOFOLLOW,realpath→rename 一瞬的残余窗口如实记录,见设计
+// §4.3;窗口内的竞态同样被包含性+一致性验证拦下)
+const verifiedRealParentForRename = (dir, artifactDirReal) => {
+  try {
+    const real = realpathSync(dir);
+    const resolved = path.resolve(dir);
+    const rel = path.relative(artifactDirReal, real);
+    if (rel.startsWith(`..${path.sep}`) || rel === '..' || path.isAbsolute(rel)) {
+      // 包含性:解析到引擎目录外(中间目录被换成外部 symlink)
+      return undefined;
+    }
+    if (real !== resolved) {
+      // 一致性:路径中有 symlink 组件(解析结果 ≠ 原路径)
+      return undefined;
+    }
+    return real;
+  } catch {
+    return undefined;
+  }
+};
+
+// F3 八轮:内部助手按 ES 模块导出(单元测试直接钉收尾标志位与 rename 父目录
+// 验证的语义);脚本被 node 直接运行时行为不变(main 守卫见文件末尾)。
+export { cleanupTempArtifact, tempCleanupReceipt, verifiedRealParentForRename };
 
 const recordApplied = entry => {
   appendFileSync(APPLIED_LEDGER, `${JSON.stringify(entry)}\n`, 'utf8');
@@ -507,11 +548,25 @@ const server = createServer((request, response) => {
         `.kode-artifact-tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${path.basename(artifact)}`
       );
       let tempWriteError;
+      // F3 八轮:创建成功点——'wx' 独占 openSync 成功返回才算「自建」,此后
+      // 的失败才允许收尾 unlink;openSync 即败(EEXIST 等)→ created=false,
+      // 收尾绝不触碰该路径上的既有文件
+      let tempCreated = false;
       try {
         mkdirSync(path.dirname(artifact), { recursive: true });
         // 'wx' 独占创建:同位已有任何东西(含 symlink)→ EEXIST 直接失败,
         // 绝不沿既有路径写入
-        writeFileSync(tempArtifact, content, { encoding: 'utf8', flag: 'wx' });
+        const fd = openSync(tempArtifact, 'wx');
+        tempCreated = true;
+        try {
+          const payload = Buffer.from(content, 'utf8');
+          const written = writeSync(fd, payload);
+          if (written !== payload.length) {
+            throw new Error(`临时文件写入不完整(${written}/${payload.length} 字节)`);
+          }
+        } finally {
+          closeSync(fd);
+        }
         // 临时文件写前同样 lstat/realpath 校验:必须是自己刚建的普通文件,
         // 且 realpath 在引擎目录内
         const tempState = lstatSync(tempArtifact);
@@ -523,7 +578,7 @@ const server = createServer((request, response) => {
       }
       if (tempWriteError !== undefined) {
         const reasonBase = `应用产物落盘失败:${tempWriteError instanceof Error ? tempWriteError.message : String(tempWriteError)}`;
-        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase)));
+        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, tempCreated)));
         continue;
       }
       // 写后重算产物 sha256(按原始字节,在临时文件上与发送方冻结基准比对,
@@ -537,7 +592,8 @@ const server = createServer((request, response) => {
             tempCleanupReceipt(
               file,
               tempArtifact,
-              `应用后读不到应用产物(临时文件 ${tempArtifact}),无法核验应用内容`
+              `应用后读不到应用产物(临时文件 ${tempArtifact}),无法核验应用内容`,
+              true
             )
           )
         );
@@ -547,24 +603,29 @@ const server = createServer((request, response) => {
         // 哈希不符:清理临时文件即可——既有产物从未被触碰(无需还原)
         receipts.push(
           withTarget(
-            tempCleanupReceipt(file, tempArtifact, '应用产物 sha256 与 sender_digest 不一致')
+            tempCleanupReceipt(file, tempArtifact, '应用产物 sha256 与 sender_digest 不一致', true)
           )
         );
         continue;
       }
-      // 原子替换:rename 目录组件用真实父目录(realpath)构建,路径中无
-      // symlink 组件;rename 本身不跟随目标 symlink——竞态换上的 symlink 也
-      // 被整体替换而非被沿写逃逸
+      // 原子替换:rename 前 realpath 父目录并做包含性+一致性双重验证(八轮
+      // verifiedRealParentForRename),通过后用解析出的真实父目录构建目标——
+      // 路径中无 symlink 组件;rename 本身不跟随目标 symlink——竞态换上的
+      // symlink 也被整体替换而非被沿写逃逸
       let renameError;
       try {
-        const realParent = realpathSync(path.dirname(artifact));
-        renameSync(tempArtifact, path.join(realParent, path.basename(artifact)));
+        const realParent = verifiedRealParentForRename(path.dirname(artifact), realpathSync(artifactDir));
+        if (realParent === undefined) {
+          renameError = new Error('rename 目标父目录含符号链接组件或解析到引擎目录外');
+        } else {
+          renameSync(tempArtifact, path.join(realParent, path.basename(artifact)));
+        }
       } catch (error) {
         renameError = error;
       }
       if (renameError !== undefined) {
         const reasonBase = `应用产物原子替换失败:${renameError instanceof Error ? renameError.message : String(renameError)}`;
-        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase)));
+        receipts.push(withTarget(tempCleanupReceipt(file, tempArtifact, reasonBase, true)));
         continue;
       }
       appliedRevision += 1;
@@ -596,7 +657,18 @@ const server = createServer((request, response) => {
   });
 });
 
-server.listen(port, '127.0.0.1', () => {
-  const actual = server.address();
-  process.stdout.write(`KODE_RECEIVER_PORT=${actual.port}\n`);
-});
+// F3 八轮:main 守卫——被 import(单元测试)时不启动服务,直接运行行为不变
+const invokedAsMain = (() => {
+  try {
+    return import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
+  } catch {
+    return false;
+  }
+})();
+
+if (invokedAsMain) {
+  server.listen(port, '127.0.0.1', () => {
+    const actual = server.address();
+    process.stdout.write(`KODE_RECEIVER_PORT=${actual.port}\n`);
+  });
+}
