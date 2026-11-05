@@ -244,13 +244,15 @@ describe('extension activate 装配', () => {
     // C-17 起进程拓扑独立诊断集再一份(kbengine-process-topology);
     // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract);
     // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction);
-    // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write)
+    // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write);
+    // IDE-LINT-009 角色错用诊断集再一份(kbengine-role-misuse)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
       'kbengine-user-type-contract',
       'kbengine-property-direction',
       'kbengine-readonly-write',
+      'kbengine-role-misuse',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis'

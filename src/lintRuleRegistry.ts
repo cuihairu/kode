@@ -231,13 +231,23 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     status: 'implemented', source: 'src/defAnalyzer.ts'
   },
   // ── 仅提示(hint-only,无诊断)───────────────────────────────────
+  // 引擎实体 API(方法,如 teleport/addTimer)角色面表尚未建立 → 保持仅提示;
+  // 属性角色错用已实现(见 KBE-PY-008b)。
   {
     id: 'KBE-PY-008', code: null,
-    title: '在错误角色访问引擎属性/API(有 hover/补全元数据)',
+    title: '在错误角色访问引擎 API(仅 hover/补全元数据;属性面已实现 KBE-PY-008b)',
     severity: null, roles: 'base/cell/client',
     toggles: ['kbengine.entity.builtinProperties'], trigger: 'hover/inlay/补全',
     quickFix: false, status: 'hint-only',
     source: 'src/entityBuiltinProperties.ts'
+  },
+  {
+    id: 'KBE-PY-008b', code: 'kbengine.roleMisuse',
+    title: '在错误角色访问引擎属性(属性角色错用实时 Warning)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.roleMisuseDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/roleMisuseDiagnostics.ts(属性面表取 entityBuiltinProperties.ts)'
   },
   {
     id: 'KBE-PY-009', code: 'kbengine.rpcArgCount',
@@ -248,14 +258,6 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     source: 'src/rpcArgCountDiagnostics.ts'
   },
   // ── 待实现(pending)────────────────────────────────────────────
-  {
-    id: 'IDE-LINT-009', code: null,
-    title: '角色错用 lint(KBE-PY-008 的诊断面)',
-    severity: null, roles: 'base/cell/client',
-    toggles: [], trigger: '实时(open/edit)',
-    quickFix: false, status: 'pending',
-    source: 'IDE-LINT-009(待实现)'
-  },
   {
     id: 'KBE-PY-010', code: null,
     title: 'Entity 销毁后访问 lint(IDE-LINT-010)',

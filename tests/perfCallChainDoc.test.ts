@@ -89,16 +89,22 @@ const ANCHORS: Array<[string, number, string]> = [
   // 5 行 import(rpcArgCountDiagnostics 三符号),全部锚点 +5;诊断装配块
   // (entityMapping 提升 + rpcArgCountItems +20)在 632 后,其后锚点再 +20:
   // 真位重探 998/1049/1112/916/1410/619/632/2010/2086,出处随 baseline 锁步。
-  ['src/extension.ts', 998, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1049, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1112, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 916, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1410, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 619, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 632, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06(三):IDE-LINT-009 角色错用诊断——顶部再 +5 行 import
+  // (roleMisuseDiagnostics 三符号),全部锚点 +5;独立集合装配块 +54 在
+  // 1415 后,其后锚点再 +54;open/close 触发 +2/+3、change 触发 +2 依次
+  // 累计,onDidChangeTextDocument 锚点 +64、flushQueued 锚点 +66(flush
+  // 触发 +2 在锚点后不累计):真位重探 624/637/921/1003/1054/1117/1415/
+  // 2074/2152,出处随 baseline 锁步。
+  ['src/extension.ts', 1003, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1054, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1117, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 921, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1415, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 624, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 637, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 2010, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2086, 'flushQueued()'],
+  ['src/extension.ts', 2074, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2152, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

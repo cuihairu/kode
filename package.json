@@ -1061,6 +1061,11 @@
           "default": true,
           "description": "RPC 实参数量诊断：self.base/cell/client.<method>(...) 调用点顶层实参数与 .def 该方法 <Arg> 数明确不符时报 Warning（default: enabled）；星号实参/动态接收者/声明未就绪/段外声明保留未知不报，inlay 提示不替代诊断"
         },
+        "kbengine.roleMisuseDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "角色错用诊断：实体脚本里 self.<内建属性> 属于其他角色面（baseapp/cellapp/client）而当前面未注册时报 Warning，引注册面引擎源码取证（default: enabled）；角色不明与普通 Python 类不猜，属性面表与内建属性 hover 元数据同源"
+        },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,

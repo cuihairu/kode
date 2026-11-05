@@ -63,6 +63,11 @@ import {
   readOnlyWriteDiagnosticItemsAsync,
   type ReadOnlyWriteDiagnosticItem
 } from './readOnlyWriteDiagnostics';
+import {
+  ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT,
+  roleMisuseDiagnosticItemsAsync,
+  type RoleMisuseDiagnosticItem
+} from './roleMisuseDiagnostics';
 import { renderLintRulesReport } from './lintRuleRegistry';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
@@ -1750,6 +1755,60 @@ export function activate(context: vscode.ExtensionContext) {
       readOnlyWriteScheduler.request(document, options);
     }
   };
+  // IDE-LINT-009:已确认角色的引擎内建属性错用诊断(独立集合,与只读写入
+  // 同族生命周期)。角色判定复用内建属性表面解析(目录域优先,判不出经
+  // getEntityComponentFacesForPythonFile 取 def 归属),属性面表复用同一张
+  // 引擎属性表——hover 元数据与 lint 共用来源;角色不明/非实体脚本不猜。
+  const roleMisuseDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-role-misuse'
+  );
+  context.subscriptions.push(roleMisuseDiagnostics);
+  const roleMisuseScheduler = new DiagnosticScheduler();
+  const scheduleRoleMisuseDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly RoleMisuseDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('roleMisuseDiagnostics', ROLE_MISUSE_DIAGNOSTICS_ENABLED_DEFAULT);
+        return roleMisuseDiagnosticItemsAsync(
+          document.getText(),
+          document.uri.fsPath,
+          () => entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath),
+          enabled
+        );
+      },
+      publish: (items: readonly RoleMisuseDiagnosticItem[]) => {
+        roleMisuseDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      roleMisuseScheduler.requestQueued(document, options);
+    } else {
+      roleMisuseScheduler.request(document, options);
+    }
+  };
 
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
@@ -1971,6 +2030,8 @@ export function activate(context: vscode.ExtensionContext) {
       schedulePropertyDirectionDiagnostics(document, 'immediate');
       // IDE-LINT-007:打开 python 文件即排只读写入诊断
       scheduleReadOnlyWriteDiagnostics(document, 'immediate');
+      // IDE-LINT-009:打开 python 文件即排角色错用诊断
+      scheduleRoleMisuseDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -1990,6 +2051,9 @@ export function activate(context: vscode.ExtensionContext) {
       // IDE-LINT-007:只读写入诊断随文档生命周期(关闭即摘除)。
       readOnlyWriteDiagnostics.delete(document.uri);
       readOnlyWriteScheduler.releaseDocument(document);
+      // IDE-LINT-009:角色错用诊断随文档生命周期(关闭即摘除)。
+      roleMisuseDiagnostics.delete(document.uri);
+      roleMisuseScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -2048,6 +2112,8 @@ export function activate(context: vscode.ExtensionContext) {
         schedulePropertyDirectionDiagnostics(event.document, 'queued');
         // IDE-LINT-007:python 改动 → 重排本文件的只读写入诊断
         scheduleReadOnlyWriteDiagnostics(event.document, 'queued');
+        // IDE-LINT-009:python 改动 → 重排本文件的角色错用诊断
+        scheduleRoleMisuseDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -2092,6 +2158,8 @@ export function activate(context: vscode.ExtensionContext) {
           void propertyDirectionScheduler.flushQueued();
           // IDE-LINT-007:只读写入调度器同节拍冲刷(守卫语义同上)
           void readOnlyWriteScheduler.flushQueued();
+          // IDE-LINT-009:角色错用调度器同节拍冲刷(守卫语义同上)
+          void roleMisuseScheduler.flushQueued();
           // KODE-AUD-001:进程拓扑诊断调度器同节拍冲刷——此前编辑事件面只
           // requestQueued 不冲刷,queued 任务滞留不发布致编辑期诊断不更新
           void processTopologyScheduler.flushQueued();
@@ -2323,6 +2391,10 @@ export function activate(context: vscode.ExtensionContext) {
       readOnlyWriteScheduler.setEnabled(enabled, () =>
         readOnlyWriteDiagnostics.clear()
       );
+      // IDE-LINT-009:主开关同闸角色错用管线(关→清集合,开→强制重算)
+      roleMisuseScheduler.setEnabled(enabled, () =>
+        roleMisuseDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -2332,6 +2404,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.attributeNoneDiagnostics') ||
       event.affectsConfiguration('kbengine.propertyDirectionDiagnostics') ||
       event.affectsConfiguration('kbengine.readOnlyWriteDiagnostics') ||
+      event.affectsConfiguration('kbengine.roleMisuseDiagnostics') ||
       event.affectsConfiguration('kbengine.startupScriptDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
@@ -2397,6 +2470,10 @@ export function activate(context: vscode.ExtensionContext) {
           // IDE-LINT-007:只读写入开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.readOnlyWriteDiagnostics')) {
             scheduleReadOnlyWriteDiagnostics(doc, 'immediate');
+          }
+          // IDE-LINT-009:角色错用开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.roleMisuseDiagnostics')) {
+            scheduleRoleMisuseDiagnostics(doc, 'immediate');
           }
         } else if (isStartupScriptDocument(doc)) {
           // KBEXP-1:启动脚本诊断开关变更 → 立即重算已开启动脚本(compute
