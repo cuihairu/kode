@@ -184,11 +184,14 @@ function resolveLinks(entries: FileEntry[], defsRoot: string): { links: Link[]; 
       relation: Link['relation'];
       category: FileEntry['category'];
     }> = [];
-    if (source.semantics.parentName) {
+    if (source.semantics.parentName && source.category !== 'interface') {
+      // KR-AUD-71:引擎 Parent 装载目录随条目类别——实体在 defs 根
+      // (entitydef.cpp:372),组件 def 带 components/ 前缀(:774);接口 def
+      // 只走 loadAllDefDescriptions(:611-638),从不调 loadParentClass,图侧忽略。
       candidates.push({
         target: source.semantics.parentName,
         relation: 'inherit',
-        category: 'entity'
+        category: source.category === 'component' ? 'component' : 'entity'
       });
     }
     for (const target of source.semantics.interfaceNames) {
