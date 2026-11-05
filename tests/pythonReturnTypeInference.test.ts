@@ -1171,3 +1171,27 @@ describe('collectProjectPythonFiles 上限截断(覆盖率)', () => {
     expect(collectProjectPythonFiles(root, 1)).toHaveLength(1);
   });
 });
+
+/* ---------------- KR-AUD-64: 掩码先行(三引号体内的赋值形行不误判) ---------------- */
+
+describe('KR-AUD-64: 赋值检测掩码先行(三引号内不误判)', () => {
+  it('三引号字符串体内的 `data = get_data()` 不产推导候选', async () => {
+    const { root, put } = setupWorkspace();
+    put('svc.py', 'def get_data() -> JSONDATA:\n    pass\n');
+    // 预热注解索引(镜像本文件既有用例口径),否则查询面直接空转不红
+    await resolveLocalVariableReturnType(['data = get_data()'], 0, 'data', root);
+    const lines = [
+      'def render(self):',
+      '    doc = """',
+      'data = get_data()',
+      '"""',
+      '    return doc'
+    ];
+    // hover data(名字只存在于字符串体内):不得借三引号体赋值行推导
+    const resolvedData = resolveLocalVariableReturnTypeFromSnapshot(lines, 4, 'data', root);
+    expect(resolvedData).toBeNull();
+    // 真实赋值 doc = """(右值非单层调用)→ 无推导
+    const resolvedDoc = resolveLocalVariableReturnTypeFromSnapshot(lines, 4, 'doc', root);
+    expect(resolvedDoc).toBeNull();
+  });
+});
