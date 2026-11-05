@@ -90,33 +90,43 @@ const scenario = argValue('--scenario') ?? (mode === 'apply' ? 'applied' : 'acce
 mkdirSync(root, { recursive: true });
 
 const sha256Hex = content => createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
-// F3 五轮(2026-11-06 复审硬化):回滚=best-effort 清理本次已写/已截断的产物,
-// 任何失败路径(落盘失败/读回失败/哈希不符)都过这里;清理失败**如实返回残留
-// 路径**,由调用方在回执 rollback_failed 字段上报,绝不吞掉错误再谎称无残留
-const rollbackArtifact = artifact => {
+// F3 五轮(2026-11-06 复审硬化):回滚=best-effort,**还原原内容优先**——
+// 写前读到的原产物内容存在就恢复它(绝不误删引擎目录里已 applied 的旧产物),
+// 本次新建的(原本不存在)才删除;任何失败路径(落盘失败/读回失败/哈希不符)
+// 都过这里,且只处理本次失败的那一个文件;清理失败**如实返回残留路径**,由
+// 调用方在回执 rollback_failed 字段上报,绝不吞掉错误再谎称无残留
+const rollbackArtifact = (artifact, originalContent) => {
   try {
-    unlinkSync(artifact);
-    return undefined;
-  } catch (error) {
-    if (error && typeof error === 'object' && error.code === 'ENOENT') {
-      // 本来就不在(写失败分支没创建成功):清理目标已达成
+    if (originalContent !== undefined) {
+      writeFileSync(artifact, originalContent, 'utf8');
       return undefined;
     }
+    try {
+      unlinkSync(artifact);
+    } catch (error) {
+      if (error && typeof error === 'object' && error.code === 'ENOENT') {
+        // 本来就不在(写失败分支没创建成功):清理目标已达成
+        return undefined;
+      }
+      throw error;
+    }
+    return undefined;
+  } catch {
     return artifact;
   }
 };
-// F3 五轮:failed 回执统一构造——清理失败时 reason 按事实措辞(残留:<path>),
+// F3 五轮:failed 回执统一构造——按事实措辞:清干净且原本有旧产物=「已还原
+// 原产物内容」,本次新建=「已回滚,引擎目录无残留」,清理失败=「残留:<path>」
 // 并新增 rollback_failed 字段=残留路径;清干净才允许说「无残留」
-const failedWithRollback = (file, artifact, reasonBase, detail) => {
-  const residual = rollbackArtifact(artifact);
-  const receipt = {
-    status: 'failed',
-    file,
-    reason:
-      residual !== undefined
-        ? `${reasonBase}(${detail}失败,残留:${residual}):不自称 applied`
-        : `${reasonBase}(${detail},引擎目录无残留):不自称 applied`
-  };
+const failedWithRollback = (file, artifact, originalContent, reasonBase) => {
+  const residual = rollbackArtifact(artifact, originalContent);
+  const outcome =
+    residual !== undefined
+      ? `(回滚失败,残留:${residual})`
+      : originalContent !== undefined
+        ? '(已还原原产物内容)'
+        : '(已回滚,引擎目录无残留)';
+  const receipt = { status: 'failed', file, reason: `${reasonBase}${outcome}:不自称 applied` };
   if (residual !== undefined) {
     receipt.rollback_failed = residual;
   }
@@ -342,6 +352,14 @@ const server = createServer((request, response) => {
       // writeFileSync 写入,应用通路可证明)
       // F3 五轮:产物路径=按批内相对路径映射的子结构(不再是裸 basename)
       const artifact = path.join(artifactDir, ...artifactSegmentsByFile.get(file));
+      // F3 五轮(硬化 4):写前读原内容(per-file 状态)——失败回滚按它还原,
+      // 绝不误删引擎目录里已有的旧产物;回滚只处理本次失败这一个文件
+      let originalContent;
+      try {
+        originalContent = readFileSync(artifact, 'utf8');
+      } catch {
+        originalContent = undefined;
+      }
       let writeError;
       try {
         mkdirSync(path.dirname(artifact), { recursive: true });
@@ -350,10 +368,10 @@ const server = createServer((request, response) => {
         writeError = error;
       }
       if (writeError !== undefined) {
-        // F3 五轮:写失败(含部分写入/截断残留)也 best-effort 清理刚碰过的
-        // 产物文件;清理失败如实 rollback_failed,绝不直接返回 failed 就完事
+        // F3 五轮:写失败(含部分写入/截断残留)也 best-effort 还原/清理刚
+        // 碰过的产物文件;清理失败如实 rollback_failed,绝不 failed 了事
         const reasonBase = `应用产物落盘失败:${writeError instanceof Error ? writeError.message : String(writeError)}`;
-        receipts.push(withTarget(failedWithRollback(file, artifact, reasonBase, '已回滚')));
+        receipts.push(withTarget(failedWithRollback(file, artifact, originalContent, reasonBase)));
         continue;
       }
       // 写后重算产物 sha256,与发送方冻结基准比对一致才回 applied
@@ -366,18 +384,18 @@ const server = createServer((request, response) => {
             failedWithRollback(
               file,
               artifact,
-              `应用后读不到应用产物(${artifact}),无法核验应用内容`,
-              '已回滚'
+              originalContent,
+              `应用后读不到应用产物(${artifact}),无法核验应用内容`
             )
           )
         );
         continue;
       }
       if (artifactDigest !== senderDigest) {
-        // 哈希不符:回滚已写产物(best-effort,清理失败如实 rollback_failed)
+        // 哈希不符:回滚已写产物(best-effort 还原原内容,失败如实 rollback_failed)
         receipts.push(
           withTarget(
-            failedWithRollback(file, artifact, '应用产物 sha256 与 sender_digest 不一致', '已回滚')
+            failedWithRollback(file, artifact, originalContent, '应用产物 sha256 与 sender_digest 不一致')
           )
         );
         continue;

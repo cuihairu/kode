@@ -487,6 +487,60 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
+  // F3 五轮(R2-F3 硬化 4):写前读原内容——失败回滚**还原原内容**而非删除,
+  // 绝不误删引擎目录里已 applied 的旧产物;回滚只及本次失败那一个文件。
+  it('F3 五轮回归:预存在产物失败回滚 → 还原原内容而非删除', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 31\n';
+    writeFileSync(file, content, 'utf8');
+    // 引擎目录里已有上一批 applied 的旧产物
+    const engineFile = path.join(engineDir, 'Avatar.py');
+    const oldContent = 'class Avatar:\n    HP = 30\n';
+    writeFileSync(engineFile, oldContent, 'utf8');
+    const wrongDigest = sha256('drifted away');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: wrongDigest } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('不一致');
+    // 旧产物被还原原内容,而不是被删除(删除会让引擎目录丢掉已 applied 的版本)
+    expect(readFileSync(engineFile, 'utf8')).toBe(oldContent);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  it('F3 五轮回归:多文件批坏文件回滚只及该文件且还原其原内容,好文件照常 applied', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const good = path.join(receiver.root, 'Avatar.py');
+    const bad = path.join(receiver.root, 'Monster.py');
+    const goodContent = 'class Avatar:\n    HP = 32\n';
+    const badContent = 'class Monster:\n    HP = 33\n';
+    writeFileSync(good, goodContent, 'utf8');
+    writeFileSync(bad, badContent, 'utf8');
+    // 坏文件在引擎目录里也有上一批 applied 的旧产物:回滚必须还原它,好文件不受牵连
+    const badOld = 'class Monster:\n    HP = 30\n';
+    writeFileSync(path.join(engineDir, 'Monster.py'), badOld, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [good, bad],
+      sender_digests: { [good]: sha256(goodContent), [bad]: sha256('drifted baseline') }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string }>;
+    const goodReceipt = receipts.find(receipt => receipt.file === good);
+    const badReceipt = receipts.find(receipt => receipt.file === bad);
+    expect(goodReceipt?.status).toBe('applied');
+    expect(badReceipt?.status).toBe('failed');
+    // 好文件产物逐字一致;坏文件产物还原上一批原内容(非删除)
+    expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(goodContent);
+    expect(readFileSync(path.join(engineDir, 'Monster.py'), 'utf8')).toBe(badOld);
+    const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
+    expect(JSON.parse(ledger.trim().split('\n')[0])).toMatchObject({ file: good });
+  });
+
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
     let capturedBody: string | undefined;
     const transport = new HttpReloadTransport(
