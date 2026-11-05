@@ -210,12 +210,22 @@ describe('LogViewerWebView.show', () => {
     expect(second.webview.html).toContain('<!DOCTYPE html>');
   });
 
-  it('pushes collector entries into the live panel html', () => {
+  it('pushes collector entries into the live panel via appendLogs (KR-AUD-44)', async () => {
     const panel = show();
+    const htmlBefore = panel.webview.html;
     fake.emit(entry({ id: 9, component: 'baseapp', message: 'live tail' }));
 
-    expect(panel.webview.html).toContain('live tail');
-    expect(panel.webview.html).toContain('BASEAPP');
+    // 热路径不再整页重渲:窗口内 html 不动,窗口末一次性增量追加
+    expect(panel.webview.html).toBe(htmlBefore);
+    await new Promise(resolve => setTimeout(resolve, 400));
+
+    const appends = panel.webview.postedMessages
+      .map(item => item.message as { command: string; events: Array<{ text: string; component: string }> })
+      .filter(message => message.command === 'appendLogs');
+    expect(appends).toHaveLength(1);
+    expect(appends[0].events).toHaveLength(1);
+    expect(appends[0].events[0].text).toBe('live tail');
+    expect(appends[0].events[0].component).toBe('baseapp');
   });
 });
 
