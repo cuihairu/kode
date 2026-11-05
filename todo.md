@@ -1242,10 +1242,11 @@
 
 背景：kode 作为 KBEngine 配套插件，空间分配/导航加载相关 API 已有类型 stub（`kbengine/typings/_KBEngine_*.pyi`：`addSpaceGeometryMapping`/`navigate`/`setSpaceData`/`CellAppModuleHooks`）与知识库（`docs/knowledge/api-cellapp.md`、`entry-script-spi-methods.md`，含 file:line/签名/回调链），stub 导出经 `src/pythonStubExport.ts` 可被 Pylance 消费；但入口脚本 SPI 与资源路径提示未接入 kode 自有 language service（hover/补全/诊断）。
 
-- [ ] SP-1 [P0] 入口脚本 SPI hooks 接入 hover/补全
+- [x] SP-1 [P0] 入口脚本 SPI hooks 接入 hover/补全
   缺口：`onSpaceGeometryLoaded` / `onAllSpaceGeometryLoaded` / `onSpaceData` 等 kbemain 模块级回调只在 knowledge 文档与 `_KBEngine_hooks.pyi` Protocol 中；`src/hooks.ts` 36 个实体 hooks 仅含 `onEnterSpace`/`onLeaveSpace`/`onSpaceGone`，模块级 SPI 无 hover/文档/源码跳转。
   落点：`src/hooks.ts` 新增 entry 类（或复用 space 分类），数据源对齐 `docs/knowledge/entry-script-spi-methods.md`（已有宏签名/格式/file:line）；`src/languageProviders.ts` `createHookHover` 按文件路径（`scripts/*/kbemain.py`）作用域过滤，避免污染实体脚本。
   验收：kbemain.py 中 `onSpace*` 出现补全，hover 显示签名+调用时机+源码位置（如 `spacememory.cpp:308/336/609`）；实体 hooks 既有测试零回归；prove-red=修复前 kbemain 无该补全/hover。
+  （2026-11-05 完成：新建 `src/entryHooks.ts` 独立数据面——`KBENGINE_ENTRY_HOOKS` 收录空间三件套 `onSpaceData`/`onSpaceGeometryLoaded`/`onAllSpaceGeometryLoaded`，模块级签名无 self，sourceLocation=引擎实调行 `spacememory.cpp:613;:619`/`:308`/`:336`；`isComponentEntryScriptFile` 按 `/<component>/kbemain.py` 路径段作用域（cellapp→`/cell/`）。接线 `src/languageProviders.ts`：①补全=`provideCompletionItems` .py 分支 `def (on\w*)$` 前缀匹配+入口路径闸（:616-630）②hover=`provideKnownHover` hoverShowValueDocs 段先查 entry 再落实体 hooks（:1452-1468），新增 `createEntryHookHover`（:2507）。prove-red=tests/entryHooks.test.ts 首跑 `Cannot find module '../src/entryHooks'`；修后 11/11 绿（数据面 4+引擎源码行核验 1+补全 3+hover 3，实体脚本不接管/前缀过滤反例在内）。门禁：`npx vitest run tests/entryHooks.test.ts` 11/11；hooks+languageProviders+featureToggles 四件套 144 过/1 挂（挂=tests/hooks.test.ts `onDestroy` cellapp/entity.cpp:211 行号漂移，stash 验证与本改动无关的既有失败）；languageProvidersInternals 2 挂同为 stash 复现的既有失败；`tsc --noEmit` 0 错；eslint 改动 3 文件 0 错。未 commit。）
 
 - [ ] SP-2 [P1] KBEngine 模块函数 hover 挂 knowledge 摘要
   落点：`src/kbeModuleIndex.ts`（38 符号）为 `addSpaceGeometryMapping`/`setSpaceData`/`navigate`/`raycast` 等挂 metadata，hover 附 `api-cellapp.md` 对应行摘要+file:line（模式同 hooks 的 sourceLocation）。

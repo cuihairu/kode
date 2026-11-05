@@ -123,6 +123,11 @@ import type { DefRenameFileEdits, RenameInputVersionRef } from './defRenamer';
 import { readSharedFileSnapshot } from './sharedFileSnapshot';
 import { HOOK_CATEGORY_NAMES, KBENGINE_HOOKS, getHookByName } from './hooks';
 import {
+  KBENGINE_ENTRY_HOOKS,
+  getEntryHookByName,
+  isComponentEntryScriptFile
+} from './entryHooks';
+import {
   DETAIL_LEVELS,
   KBENGINE_FLAGS,
   KBENGINE_RELOAD_FUNCTIONS,
@@ -604,6 +609,24 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
           selfContext.parentPath === ''
         ) {
           return this.provideBuiltinPropertyCompletions(document);
+        }
+
+        // SP-1: 入口脚本(kbemain)模块级 SPI——`def on...` 前缀补全。
+        // 仅组件入口脚本路径生效,实体脚本(Avatar.py 等)不接管。
+        const entryDefMatch = lineText.match(/def\s+(on\w*)$/);
+        if (entryDefMatch && isComponentEntryScriptFile(document.fileName, 'cellapp')) {
+          const prefix = entryDefMatch[1].toLowerCase();
+          KBENGINE_ENTRY_HOOKS.forEach(hook => {
+            if (hook.name.toLowerCase().startsWith(prefix)) {
+              const item = new vscode.CompletionItem(hook.name, vscode.CompletionItemKind.Method);
+              item.detail = `Entry Script (${hook.component}) - ${hook.description}`;
+              item.documentation = new vscode.MarkdownString(
+                `**${hook.name}**\n\n${hook.documentation}\n\n调用时机: ${hook.timing}\n\n签名:\n\`\`\`python\n${hook.signature}\n\`\`\``
+              );
+              items.push(item);
+            }
+          });
+          return items;
         }
       }
 
@@ -1427,6 +1450,17 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     if (featureConfig.hoverShowValueDocs) {
+      // SP-1: 入口脚本 SPI 悬停——仅 kbemain.py 路径,避免污染实体脚本。
+      // 实体 hooks(getHookByName)与入口 SPI 名称不重叠,顺序无冲突。
+      if (
+        document.languageId === 'python' &&
+        isComponentEntryScriptFile(document.fileName, 'cellapp')
+      ) {
+        const entryHook = getEntryHookByName(word);
+        if (entryHook) {
+          return createEntryHookHover(entryHook);
+        }
+      }
       const earlyHook = getHookByName(word);
       if (earlyHook) {
         return createHookHover(earlyHook);
@@ -2469,6 +2503,24 @@ function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
 // GEN-DEF-1e ②+口径①:user_type 带 impl 时,悬停补三契约方法状态与双向
 // 序列化契约。workspace root 不可得 / 无 implementedBy / 未注册 → null
 // (不打扰无契约的类型悬停)。
+/** SP-1: entrance script (kbemain) module-level SPI hover - no self, scoped by component entry path */
+function createEntryHookHover(hook: import('./entryHooks').KBEngineEntryHook): vscode.Hover {
+  const markdown = new vscode.MarkdownString();
+  markdown.appendMarkdown(`**${hook.name}** - Entry Script (${hook.component})\n\n`);
+  markdown.appendMarkdown(`${hook.description}\n\n`);
+  markdown.appendMarkdown('**调用时机**: ' + hook.timing + '\n\n');
+  markdown.appendMarkdown('**函数签名**:\n');
+  markdown.appendCodeblock(hook.signature, 'python');
+  markdown.appendMarkdown('\n**详细说明**:\n');
+  markdown.appendMarkdown(hook.documentation);
+  markdown.appendMarkdown('\n\n**源码位置**: `' + hook.sourceLocation + '`');
+  if (hook.example) {
+    markdown.appendMarkdown('\n\n**使用示例**:\n');
+    markdown.appendCodeblock(hook.example, 'python');
+  }
+  return new vscode.Hover(markdown);
+}
+
 function resolveUserTypeContractSection(
   document: vscode.TextDocument,
   customTypeInfo: NonNullable<ReturnType<typeof findCustomTypeInfo>>
