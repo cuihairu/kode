@@ -34,6 +34,11 @@ import {
   SPACE_NAV_DIAGNOSTIC_CODE,
   computeSpaceNavFindings
 } from './spaceNavDiagnostics';
+import {
+  RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT,
+  RPC_ARG_COUNT_DIAGNOSTIC_CODE,
+  computeRpcArgCountFindings
+} from './rpcArgCountDiagnostics';
 import { flowVersionKeyForDocument } from './flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
@@ -754,13 +759,16 @@ export function activate(context: vscode.ExtensionContext) {
         const preparsed = isPythonMroJumpEnabled() && isPythonDocument(document)
           ? () => pythonClassIndex.asyncDocumentParse(document)
           : undefined;
+        // IDE-LINT-008:实体/根映射快照(receiver 段错配与 RPC 实参数共用
+        // 同一份;仅在 Python 文档且确需要时取,避免无谓快照)
+        const entityMapping = isPythonDocument(document)
+          ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
+          : undefined;
         const receiverItems = receiverEnabled
           ? await receiverNoneDiagnosticItemsAsync(
               document.getText(),
               document.uri.fsPath,
-              isPythonDocument(document)
-                ? entityMappingManager.getMappingForPythonFile(document.uri.fsPath)
-                : undefined,
+              entityMapping,
               receiverEnabled,
               preparsed,
               { shouldContinue }
@@ -803,7 +811,24 @@ export function activate(context: vscode.ExtensionContext) {
               code: finding.code || SPACE_NAV_DIAGNOSTIC_CODE
             }))
           : [];
-        return [...receiverItems, ...attrItems, ...spaceNavItems];
+        // IDE-LINT-008:RPC 实参数量 lint——调用点顶层实参数与 .def <Arg> 数
+        // 对账,明确数量不符才报;星号实参/动态接收者/声明未就绪保留未知
+        // (未知一律不报,不用 inlay 提示替代诊断面)。
+        const rpcArgCountEnabled = config
+          .get<boolean>('rpcArgCountDiagnostics', RPC_ARG_COUNT_DIAGNOSTICS_ENABLED_DEFAULT);
+        const rpcArgCountItems = rpcArgCountEnabled
+          ? computeRpcArgCountFindings(document.getText(), entityMapping).map(finding => ({
+              range: {
+                start: { line: finding.line, character: finding.character },
+                end: { line: finding.line, character: finding.character + finding.methodName.length }
+              },
+              message: finding.message,
+              severity: 'Warning' as const,
+              source: 'kbengine' as const,
+              code: RPC_ARG_COUNT_DIAGNOSTIC_CODE
+            }))
+          : [];
+        return [...receiverItems, ...attrItems, ...spaceNavItems, ...rpcArgCountItems];
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {
         diagnostics.set(document.uri, items.map(item => {

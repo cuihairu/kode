@@ -77,6 +77,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.readOnlyWriteDiagnostics` | boolean | `true` | Python 侧诊断:实体脚本对引擎内建只读属性(`self.id`/`self.isDestroyed`/`self.className` 及各面只读项)的普通赋值/增强赋值/注解赋值/del 报 Warning(引擎仅 GET,写入运行时被拒);合法可写属性(`self.position`、`self.shouldAutoBackup` 等)与非实体脚本同名字段不报 |
 | `kbengine.startupScriptDiagnostics` | boolean | `true` | 启动脚本诊断:.sh/.bat 启动脚本里的服务器进程启动行(machine/logger/dbmgr/baseappmgr/cellappmgr/baseapp/cellapp/loginapp/bots)——未知 `--xxx` 参数(疑似拼写错误)、`--cid`/`--gus` 值非数字、引用 `$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 但本文件未赋值且未 source——报 Warning;非启动行(echo/pkill/注释,以及参数面不同的独立工具 kbcmd/guiconsole)一律不检,`--help` 之类不会误报 |
 | `kbengine.spaceNavDiagnostics` | boolean | `true` | 空间/导航语义诊断:setSpaceData/delSpaceData 使用保留键 `_mapping`、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键——报 Warning(默认启用) |
+| `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |

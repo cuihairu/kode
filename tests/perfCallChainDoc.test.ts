@@ -85,16 +85,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // import(renderLintRulesReport),全部 extension.ts 锚点 +1(真位重探
   // 973/1024/1087/891/1385/614/627/1985/2061,命令装配块在全部锚点之后不再
   // 位移;出处随 baseline 锁步)。
-  ['src/extension.ts', 973, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1024, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1087, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 891, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1385, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 614, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 627, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06(二):IDE-LINT-008 RPC 实参数量诊断——extension.ts 顶部新增
+  // 5 行 import(rpcArgCountDiagnostics 三符号),全部锚点 +5;诊断装配块
+  // (entityMapping 提升 + rpcArgCountItems +20)在 632 后,其后锚点再 +20:
+  // 真位重探 998/1049/1112/916/1410/619/632/2010/2086,出处随 baseline 锁步。
+  ['src/extension.ts', 998, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1049, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1112, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 916, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1410, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 619, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 632, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1985, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2061, 'flushQueued()'],
+  ['src/extension.ts', 2010, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2086, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

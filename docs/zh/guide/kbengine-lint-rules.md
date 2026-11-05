@@ -20,7 +20,7 @@
 | KBE-PY-006 | 接收者别名的实际使用，如 `peer = self.cell; peer.foo()` | 别名 guard 有局部支持；别名使用点诊断未完成 | 目前调用发现只认 `self.<role>.<name>` |
 | KBE-PY-007 | 写入引擎只读属性，如 `self.id = 1` | 已实现（IDE-LINT-007）：普通/增强/注解赋值与 `del` 报 Warning，可写属性与非实体同名字段不报 | `kbengine.readOnlyWrite`；`readOnlyWriteDiagnostics.ts`（表 `entityBuiltinProperties.ts`，注册面 `entity_macro.h` 等） |
 | KBE-PY-008 | 在错误角色访问引擎属性/API | 有角色属性/补全面，完整误用 lint 待实现 | baseapp/cellapp/client 分面；角色不明时不能猜 |
-| KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 有参数提示、签名与跳转；完整 lint 待实现 | `.def` 的 Arg 与 EntityCall 调用绑定后才能判断 |
+| KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 已有实时 Warning（参数数量）；类型不符仍只有签名/提示面 | `kbengine.rpcArgCount`；`rpcArgCountDiagnostics.ts` |
 | KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 生命周期 lint 待设计 | `Entity::pyGetCellEntityCall` 等检查 destroyed；需控制流和生命周期证据，不能见到 destroy 就全文件报错 |
 | KBE-PY-011 | 用户自管 `self.<attr>` 含 None 且未窄化（如构造期赋值被早退绕过） | 已有实时 Warning | `kbengine.attributeNone`；`selfAttributeNoneDiagnostics.ts` |
 | KBE-PY-012 | def 属性访问方向违规（访问位置不在 Flags 域位内） | 已有实时 Warning | `kbengine.propertyDirectionViolation`；`propertyDirectionDiagnostics.ts` |
@@ -101,11 +101,26 @@ if self.cell is not None:
 
 已实现（IDE-LINT-007）：明确 Entity 身份与角色才检查——文件段（`base`/`cell`/`client`）定面，段面判不出经 `.def` 归属面，多面歧义只兜底宏公共三项；`self.id = ...`、增强赋值、注解赋值及 `del self.id` 报 `kbengine.readOnlyWrite`（Warning）；普通 Python 类恰好有同名字段（非实体脚本）不报；注释/字符串经词法掩码不报；比较（`==`/`<=`）、海象（属性目标非法）、属性续写（`self.<prop>.x`，非重绑定）与下标写（`self.<prop>[i]=x`）不报；每处命中引引擎注册面 file:line。已知边界（与同族 self-属性 lint 一致）：嵌套非实体类内的同名 `self.<p>` 不单列（文件级身份判定）；`del (self.<p>)` 与 `del self.<p>, x` 的第二项不报（括号/逗号前缀形态）。
 
+## RPC 参数数量：绑定当前 section 的 Arg 才判
+
+已实现（IDE-LINT-008）：`self.base/cell/client.<method>(...)` 调用点按**顶层实参数**与 `.def` 该方法在**调用所属 section**（`BaseMethods`/`CellMethods`/`ClientMethods`）声明的 `<Arg>` 数对账，明确数量不符报 `kbengine.rpcArgCount`（Warning）；`.def` 里 Arg 的直文本即参数（KBEngine def 方法参数不具名，只列类型），Arg 个数即声明参数个数。
+
+只报**明确不符**，以下保留未知一律不报：
+
+- **声明未就绪**：实体/根映射查不到该方法声明，或该方法声明的 Arg 数各来源不一致（同名跨实体/组件多来源，歧义）；`declaredArgs` 缺失（无 Arg 信息）。
+- **段外声明**：方法只在别的 section 声明（经当前接收者侧调用不会路由到），由 `kbengine.sectionMismatch` 单独报，此处不重复。
+- **星号参数**：调用点顶层任一实参段首以 `*` 开头（`*args`/`**kw` 解包或收集，数量不可判定），或声明 Arg 直文本以 `*` 开头。顶层 `a * b` 的二元乘法星号不触发（只认实参段首星号）；嵌套括号内的星号不影响外层实参计数。
+- **动态接收者**：非 `self.<role>.<name>` 形态（别名 `peer = self.cell; peer.foo()`、局部变量接收者）本就不在发现面，天然未知。
+- **括号不闭合**到文件尾、方法名与 `(` 之间有其他 token：形态不明，未知。
+
+实现口径：调用点发现面走词法掩码（去字符串/注释里的伪调用，`findPythonReceiverCalls` 同款）；实参计数面走原文并自带字符串/注释词法态（字符串里的逗号不当分隔，`countCallArguments`）——掩码把字符串整体空白会吞掉字符串实参导致计数偏少，故计数面不复用掩码。跨行调用按括号深度计数到配对 `)`；空括号计 0；尾随逗号不多计。参数数量**类型**不符仍只有签名/提示面（`kbengine.rpcArgCount` 只对数量），inlay 提示不替代诊断。开关 `kbengine.rpcArgCountDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
 ## .def 检查的触发方式
 
 - 实时结构诊断：`kbengine.enableDiagnostics`、`kbengine.enableStructureDiagnostics` 及 `kbengine.diagnostics.check*` 控制，打开/编辑文件时更新 Problems。
 - Python receiver 诊断：`kbengine.receiverNoneDiagnostics=true`，默认开启，使用现有诊断调度器；关闭只停止提示，不改变引擎行为。
 - 只读属性写入诊断：`kbengine.readOnlyWriteDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-readonly-write`）；关闭只停止提示，不改变引擎行为。
+- RPC 实参数量诊断：`kbengine.rpcArgCountDiagnostics=true`，默认开启，与 receiver/attr 同通道（集合 `kbengine`）发布；关闭只停止提示，不改变引擎行为。
 - `.def` 优化/继承冲突分析：按需运行分析入口，见 `defAnalyzer.ts` 和[语言能力](./language.md)。按需分析有规则不代表每次输入都会自动 lint。
 - Hover、签名、inlay、CodeLens 是说明或导航界面；有提示内容不代表相应规则已做诊断。
 

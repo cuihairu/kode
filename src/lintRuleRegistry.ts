@@ -240,22 +240,14 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     source: 'src/entityBuiltinProperties.ts'
   },
   {
-    id: 'KBE-PY-009', code: null,
-    title: 'RPC 参数数量/类型与 .def 不一致(有签名/参数提示)',
-    severity: null, roles: 'base/cell/client',
-    toggles: [], trigger: 'hover/inlay/补全',
-    quickFix: false, status: 'hint-only',
-    source: 'src/defAnalyzer.ts'
+    id: 'KBE-PY-009', code: 'kbengine.rpcArgCount',
+    title: 'RPC 参数数量与 .def 不一致(调用点实参数对账)',
+    severity: 'Warning', roles: 'base/cell/client',
+    toggles: ['kbengine.rpcArgCountDiagnostics'], trigger: '实时(open/edit)',
+    quickFix: false, status: 'implemented',
+    source: 'src/rpcArgCountDiagnostics.ts'
   },
   // ── 待实现(pending)────────────────────────────────────────────
-  {
-    id: 'IDE-LINT-008', code: null,
-    title: 'RPC 参数数量 lint(KBE-PY-009 的诊断面)',
-    severity: null, roles: 'base/cell/client',
-    toggles: [], trigger: '实时(open/edit)',
-    quickFix: false, status: 'pending',
-    source: 'IDE-LINT-008(待实现)'
-  },
   {
     id: 'IDE-LINT-009', code: null,
     title: '角色错用 lint(KBE-PY-008 的诊断面)',

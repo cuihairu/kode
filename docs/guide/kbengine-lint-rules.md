@@ -11,7 +11,7 @@ The [detailed rule catalog](../zh/guide/kbengine-lint-rules.md) records the sour
 | RPC routing | `kbengine.sectionMismatch` compares known declarations with receiver sections | Unknown declarations cannot establish a mismatch; adding a None guard does not fix routing |
 | `.def` structure and scalar values | Type, Flags, DetailLevel, duplicates and required fields have checks | On-demand analysis suggestions are separate from diagnostics on edit |
 | Readonly attributes and role restrictions | Metadata and hints exist | Dedicated assignment and comprehensive wrong-role lint remain planned |
-| RPC argument misuse and lifecycle hazards | Some signatures and hints exist | Complete argument and post-destroy flow checks remain planned |
+| RPC argument misuse and lifecycle hazards | `kbengine.rpcArgCount` reports a call-site argument count that definitely mismatches the `.def` method's `<Arg>` count for the routed section (star-args, dynamic receivers, out-of-section declarations and declaration-not-ready stay unknown) | Argument *type* checks and post-destroy flow checks remain planned |
 
 ## EntityCall values can be None
 

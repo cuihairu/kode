@@ -1056,6 +1056,11 @@
           "default": true,
           "description": "空间/导航语义诊断：setSpaceData/delSpaceData 使用保留键 _mapping、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键 报 Warning（default: enabled）"
         },
+        "kbengine.rpcArgCountDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "RPC 实参数量诊断：self.base/cell/client.<method>(...) 调用点顶层实参数与 .def 该方法 <Arg> 数明确不符时报 Warning（default: enabled）；星号实参/动态接收者/声明未就绪/段外声明保留未知不报，inlay 提示不替代诊断"
+        },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",
           "default": true,
