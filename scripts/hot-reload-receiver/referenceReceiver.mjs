@@ -122,7 +122,9 @@ const server = createServer((request, response) => {
       }
     }
     response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify(receipts));
+    // 单文件=单对象回执(@http: quick action 逐文件口径,hotReloadReceipt
+    // 单目标协议);多文件=逐条数组(parseReloadHttpReceipts 批量口径)。
+    response.end(JSON.stringify(receipts.length === 1 ? receipts[0] : receipts));
   });
 });
 

@@ -84,7 +84,8 @@ const scenarioRun = async (mode, scenario, fileBody, label) => {
     log(`  response     : HTTP ${response.status} ${response.body}`);
     let receipt = {};
     try {
-      receipt = JSON.parse(response.body)[0] ?? {};
+      const parsed = JSON.parse(response.body);
+      receipt = Array.isArray(parsed) ? parsed[0] ?? {} : parsed;
     } catch {
       log('  (回包非 JSON:未知结构样本,扩展侧解析器保持未确认不升格)');
     }
