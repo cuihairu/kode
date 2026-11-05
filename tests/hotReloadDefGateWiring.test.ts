@@ -225,12 +225,16 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(hotReloadLog().some(line => line.includes('内容不可读'))).toBe(true);
   });
 
-  it('源锁:hotReload 接 classifyDefChange 闸,状态面有 setRestartRequired', () => {
+  it('源锁:hotReload 接 def 结构闸(共用判定面),状态面有 setRestartRequired', () => {
     const read = (name: string): string => readFileSync(path.join(__dirname, '..', 'src', name), 'utf8');
     const hotReload = read('hotReload.ts');
-    expect(hotReload).toContain('classifyDefChange');
+    // RT-3:判定面抽到 hotReloadDefGate(fire 与重试共用同一实例与基线册)
+    expect(hotReload).toContain('createDefStructuralGate');
+    expect(hotReload).toContain('defGate');
     expect(hotReload).toContain('defBaselines');
-    expect(hotReload).toContain("endsWith('.def')");
+    const gate = read('hotReloadDefGate.ts');
+    expect(gate).toContain('classifyDefChange');
+    expect(gate).toContain("endsWith('.def')");
     const status = read('hotReloadStatus.ts');
     expect(status).toContain('setRestartRequired');
   });

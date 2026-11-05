@@ -43,6 +43,19 @@ export interface HotReloadResendDeps {
   readonly settleHandles: Set<unknown>;
   /** 时钟注入口(测试用);缺省真 Date.now */
   readonly now?: () => number;
+  /**
+   * def 结构闸(RT-3 / IDE-HOT-005):与 fire 路径共用同一实例与同一会话基线
+   * 册(hotReloadDefGate)。注入即重发前过闸——结构性 def 变更/无基线/不可读
+   * 一律不发送(拦下是保守拦截不是投递失败,不落账),非结构 def 与纯
+   * Python 批照常重发。不注入则不设防(与既有装配兼容,真装配必须注入)。
+   */
+  readonly defGate?: { check(files: readonly string[]): Promise<string[]> };
+  /** 结构闸拦下通知(接线方把文件标进状态机 RESTART_REQUIRED 呈现面) */
+  readonly onRestartRequired?: (
+    targetId: string,
+    files: readonly string[],
+    reasons: readonly string[]
+  ) => void;
 }
 
 /** 注解只给仍未确认的记录追加阻塞/超时原因,不动 accepted/applied/failed(与 fire 路径同款);IDE-AUD-005:绑定所属发送代际,旧代注解被拒 */
@@ -74,11 +87,25 @@ export async function resendHotReloadTarget(
   key: HotReloadTargetKey,
   deps: HotReloadResendDeps
 ): Promise<HotReloadSendResult> {
+  const files = store.files(key);
+  // RT-3(IDE-HOT-005):重发前过 def 结构闸,与 fire 路径同一判定、同一会话
+  // 基线册。结构性 def 变更/无基线/不可读一律不发普通 reload(拦下是保守拦
+  // 截不是投递失败:不落账,台账保留 failed 旧账原样),并发需重启通知。
+  if (deps.defGate) {
+    const reasons = await deps.defGate.check(files);
+    if (reasons.length > 0) {
+      deps.onRestartRequired?.(key.targetId, files, reasons);
+      const first = reasons[0] ?? 'def 结构待核';
+      return {
+        ok: false,
+        detail: `结构性 def 变更需要重启,重试不发普通 reload:${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`
+      };
+    }
+  }
   const actionName = await deps.resolveActionNameForTarget(key.targetId);
   if (actionName === null) {
     return { ok: false, detail: `找不到以 ${key.targetId} 为接收方的动作,无法重发` };
   }
-  const files = store.files(key);
   const wiring = deps.targetState;
   const now = deps.now ?? Date.now;
   const sentAt = now();

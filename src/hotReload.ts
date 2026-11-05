@@ -9,7 +9,7 @@ import {
 import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
 import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
-import { classifyDefChange } from './hotReloadDefStructure';
+import { createDefStructuralGate, type DefStructuralGate } from './hotReloadDefGate';
 import type { ReloadTransport } from './hotReloadTransport';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
@@ -158,6 +158,11 @@ export interface SetupHotReloadOptions {
   readonly resolveChannelTransport?: () => { transport: ReloadTransport; targetId: string } | null;
   /** IDE-HOT-102 审计「触发源」(谁):默认 'watcher-auto' 自动监视 */
   readonly auditSource?: string;
+  /**
+   * def 结构闸注入(RT-3):与失败目标重试共用同一闸实例与同一会话基线册,
+   * 两路径判定逐字一致。不注入则本装配自建(基线册私有,重试侧拿不到)。
+   */
+  readonly defGate?: DefStructuralGate;
 }
 
 /**
@@ -565,6 +570,8 @@ export function setupHotReload(
     // (序列化/RPC 参数面)整批不发普通 reload,状态回落就绪(不是失败)并提
     // 示需重启;无基线/内容不可读/无读取通道证明不了无结构变化,一律保守不
     // 发;非结构 def(注释/空白/顺序)与纯 Python 批照常发送。基线逐次滚动。
+    // RT-3:判定面抽到 hotReloadDefGate,fail 与失败目标重试共用同一实例与
+    // 同一基线册(可注入),重试不复用判定就会让结构性 def 经重试通道下发。
     const warnRestart = (text: string): void => {
       try {
         void Promise.resolve(vscode.window.showWarningMessage(text)).catch(() => undefined);
@@ -573,8 +580,8 @@ export function setupHotReload(
       }
     };
     const gateDefChanges = (): void => {
-      const defFiles = triggers.filter(file => file.toLowerCase().endsWith('.def'));
-      if (defFiles.length === 0) {
+      // 纯 Python 批同步放行(与抽闸前行为逐字一致,不引入微任务延迟)
+      if (!triggers.some(file => file.toLowerCase().endsWith('.def'))) {
         proceed();
         return;
       }
@@ -590,37 +597,13 @@ export function setupHotReload(
         auditLine('拦截:需重启', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
-      const reader = options.targetState?.readFileContent;
-      if (!reader) {
-        block(['def 无内容读取通道,证明不了无结构变化(保守不发)']);
-        return;
-      }
-      void Promise.all(defFiles.map(file => Promise.resolve(reader(file)).catch(() => null)))
-        .then(contents => {
-          const reasons: string[] = [];
-          defFiles.forEach((file, index) => {
-            const after = contents[index];
-            if (after === null) {
-              reasons.push(`${file}: 内容不可读(保守按结构性,不发)`);
-              return;
-            }
-            const baseline = defBaselines.get(file);
-            if (baseline === undefined) {
-              reasons.push(`${file}: 无基线(本次会话首次见到,证明不了无结构变化)`);
-            } else {
-              const verdict = classifyDefChange(baseline, after);
-              if (verdict.structural) {
-                reasons.push(`${file}: ${verdict.reasons.join(';')}`);
-              }
-            }
-            defBaselines.set(file, after);
-          });
-          if (reasons.length > 0) {
-            block(reasons);
-            return;
-          }
-          proceed();
-        }, () => block(['def 内容读取失败(保守不发)']));
+      void defGate.check(triggers).then(reasons => {
+        if (reasons.length > 0) {
+          block(reasons);
+          return;
+        }
+        proceed();
+      });
     };
     gateDefChanges();
   }, timers);
@@ -630,6 +613,10 @@ export function setupHotReload(
   const settleHandles = new Set<unknown>();
   // IDE-REV-024 def 结构基线:上次闸门见到的 .def 内容(会话内存,逐次滚动)
   const defBaselines = new Map<string, string>();
+  // RT-3:判定面共用(hotReloadDefGate)——注入的闸实例优先(与重试侧同一基
+  // 线册),否则本装配自建(基线册私有,重试侧拿不到)
+  const defGate =
+    options.defGate ?? createDefStructuralGate(options.targetState?.readFileContent, defBaselines);
   const disposeWatchers = (): void => {
     for (const watcher of watchers) {
       watcher.dispose();
