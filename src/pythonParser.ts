@@ -155,7 +155,16 @@ export function parsePythonFile(content: string, filePath: string): ParsedPython
       for (const binding of bindings) {
         const match = /^\s*([\w.]+)(?:\s+as\s+(\w+))?\s*$/.exec(binding);
         if (!match) { continue; }
-        if (from) { imports.set(match[2] ?? match[1], { module: from[1], symbol: match[1] }); }
+        if (from) {
+          if (/^\.+$/.test(from[1])) {
+            // KR-AUD-32:`from . import mod` 的导入名是模块接收者——折叠进模块
+            // 路径('.'+'mod' → '.mod',无 symbol),importModuleCandidates 才能按
+            // 兄弟文件 mod.py 解析;纯点号记成 module='.' 会解析到目录自身落空。
+            imports.set(match[2] ?? match[1], { module: from[1] + match[1] });
+          } else {
+            imports.set(match[2] ?? match[1], { module: from[1], symbol: match[1] });
+          }
+        }
         else { imports.set(match[2] ?? match[1].split('.')[0], { module: match[2] ? match[1] : match[1].split('.')[0] }); }
       }
     }
