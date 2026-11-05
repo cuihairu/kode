@@ -9,7 +9,7 @@ import {
 import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
 import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
-import { classifyDefChange } from './hotReloadDefStructure';
+import { createDefStructuralGate, type DefStructuralGate } from './hotReloadDefGate';
 import type { ReloadTransport } from './hotReloadTransport';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
@@ -158,6 +158,11 @@ export interface SetupHotReloadOptions {
   readonly resolveChannelTransport?: () => { transport: ReloadTransport; targetId: string } | null;
   /** IDE-HOT-102 审计「触发源」(谁):默认 'watcher-auto' 自动监视 */
   readonly auditSource?: string;
+  /**
+   * def 结构闸注入(RT-3):与失败目标重试共用同一闸实例与同一会话基线册,
+   * 两路径判定逐字一致。不注入则本装配自建(基线册私有,重试侧拿不到)。
+   */
+  readonly defGate?: DefStructuralGate;
 }
 
 /**
@@ -296,7 +301,7 @@ export function setupHotReload(
           return;
         }
         wiring.store.record(key, file, 'sent-unverified', {
-          detail: `${current.detail} | ${reason}`,
+          detail: [current.detail, reason].filter(Boolean).join(' | '),
           now: current.recordedAt,
           attempt
         });
@@ -335,9 +340,34 @@ export function setupHotReload(
       // IDE-HOT-102:部署通道发送——配置了 hotReload 通道时整批走通道回执流
       // (transport.send 逐条回执直接喂台账),不回落 actionName 通道;无 wiring
       // 解不到 root 的文件仍发送(单组 '' 键)但不落台账。
+      // RT-9(IDE-HOT-004):发送前冻结内容核验基准;回执自称 applied 必须过
+      // digest 双证核验(与发送时点冻结的所发内容 sha256 一致)才升格,缺失/
+      // 不符/无基准保持未确认并注解;未确认记录排核验窗口结算(与 fire 路径
+      // 同窗口同语义)。RT-10:结算窗口锚定发送发起时点(sentAt)。
       const sendViaChannel = (transport: ReloadTransport, channelTargetId: string): void => {
         const wiring = options.targetState;
         const channelLabel = transport.kind;
+        const channelSentAt = now();
+        const channelKey = (rootId: string): { rootId: string; targetId: string } => ({
+          rootId,
+          targetId: channelTargetId
+        });
+        const channelBaselineReader = wiring?.readFileContent;
+        const channelBaselineReads = new Map<string, Promise<string | undefined>>();
+        if (channelBaselineReader) {
+          for (const file of triggers) {
+            channelBaselineReads.set(
+              file,
+              Promise.resolve(channelBaselineReader(file))
+                .then(content =>
+                  content === null
+                    ? undefined
+                    : createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')
+                )
+                .catch(() => undefined)
+            );
+          }
+        }
         const groups = new Map<string, string[]>();
         for (const file of triggers) {
           const rootId = wiring ? (wiring.resolveRootId(file) ?? '') : '';
@@ -369,10 +399,62 @@ export function setupHotReload(
               transport.send({ rootId, targetId: channelTargetId }, files, receipt => {
                 const receiptFiles = receipt.file !== undefined ? [receipt.file] : files;
                 for (const file of receiptFiles) {
+                  // RT-9:未确认记录(含 applied 降级)排核验窗口结算,与 fire
+                  // 路径同窗口同语义;结算锚定发送发起时点(RT-10)
+                  const scheduleUnconfirmedSettle = (): void => {
+                    if (!wiring || rootId === '') {
+                      return;
+                    }
+                    const recorded = wiring.store.get(channelKey(rootId), file);
+                    if (recorded) {
+                      scheduleAppliedSettle(wiring, channelKey(rootId), file, channelSentAt, recorded.attempt);
+                    }
+                  };
                   switch (receipt.status) {
-                    case 'applied':
-                      recordOutcome(rootId, file, 'applied');
+                    case 'applied': {
+                      // RT-9:自称 applied 必须过 digest 双证核验——与发送时点
+                      // 冻结的所发内容 sha256 一致才升格;缺 digest/不符/无基准
+                      // 一律保持未确认并注解(绝不冒充 applied)
+                      if (!channelBaselineReader) {
+                        recordOutcome(
+                          rootId,
+                          file,
+                          'sent-unverified',
+                          'applied 回执不可信(无内容读取通道,digest 无基准):保持未确认'
+                        );
+                        scheduleUnconfirmedSettle();
+                        break;
+                      }
+                      void channelBaselineReads.get(file)!.then(sentDigest => {
+                        if (sentDigest === undefined) {
+                          recordOutcome(
+                            rootId,
+                            file,
+                            'sent-unverified',
+                            'applied 回执不可信(发送时点内容基准不可读):保持未确认'
+                          );
+                          scheduleUnconfirmedSettle();
+                          return;
+                        }
+                        if (receipt.digest !== undefined && receipt.digest === sentDigest) {
+                          recordOutcome(
+                            rootId,
+                            file,
+                            'applied',
+                            `applied 回执 digest 核验一致(指纹前 12 位 ${sentDigest.slice(0, 12)})`
+                          );
+                          return;
+                        }
+                        recordOutcome(
+                          rootId,
+                          file,
+                          'sent-unverified',
+                          'applied 回执不可信(digest 缺失或与所发内容不符):保持未确认'
+                        );
+                        scheduleUnconfirmedSettle();
+                      });
                       break;
+                    }
                     case 'accepted':
                       recordOutcome(rootId, file, 'accepted');
                       break;
@@ -384,6 +466,7 @@ export function setupHotReload(
                     default:
                       sentCount += 1;
                       recordOutcome(rootId, file, 'sent-unverified', receipt.detail);
+                      scheduleUnconfirmedSettle();
                       break;
                   }
                 }
@@ -424,6 +507,9 @@ export function setupHotReload(
         );
       };
       const start = (targetId: string | null): void => {
+        // RT-10:applied 核验窗口统一锚定「发送发起时点」——与重试路径
+        // (resendHotReloadTarget 的 sentAt)同语义,响应晚到不后移窗口。
+        const sentAt = now();
         // IDE-HOT-102:配置了部署通道则整批走通道(回执流直喂台账),不回落
         // actionName 通道;未配(resolveChannelTransport 返回 null/未注入)走
         // 既有 actionName 路径,行为与现状一致。
@@ -512,7 +598,7 @@ export function setupHotReload(
                   }
                 });
               }
-              scheduleAppliedSettle(wiring, key, file, now(), attempt);
+              scheduleAppliedSettle(wiring, key, file, sentAt, attempt);
             }
           }
         };
@@ -565,6 +651,8 @@ export function setupHotReload(
     // (序列化/RPC 参数面)整批不发普通 reload,状态回落就绪(不是失败)并提
     // 示需重启;无基线/内容不可读/无读取通道证明不了无结构变化,一律保守不
     // 发;非结构 def(注释/空白/顺序)与纯 Python 批照常发送。基线逐次滚动。
+    // RT-3:判定面抽到 hotReloadDefGate,fail 与失败目标重试共用同一实例与
+    // 同一基线册(可注入),重试不复用判定就会让结构性 def 经重试通道下发。
     const warnRestart = (text: string): void => {
       try {
         void Promise.resolve(vscode.window.showWarningMessage(text)).catch(() => undefined);
@@ -573,8 +661,8 @@ export function setupHotReload(
       }
     };
     const gateDefChanges = (): void => {
-      const defFiles = triggers.filter(file => file.toLowerCase().endsWith('.def'));
-      if (defFiles.length === 0) {
+      // 纯 Python 批同步放行(与抽闸前行为逐字一致,不引入微任务延迟)
+      if (!triggers.some(file => file.toLowerCase().endsWith('.def'))) {
         proceed();
         return;
       }
@@ -590,37 +678,13 @@ export function setupHotReload(
         auditLine('拦截:需重启', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
-      const reader = options.targetState?.readFileContent;
-      if (!reader) {
-        block(['def 无内容读取通道,证明不了无结构变化(保守不发)']);
-        return;
-      }
-      void Promise.all(defFiles.map(file => Promise.resolve(reader(file)).catch(() => null)))
-        .then(contents => {
-          const reasons: string[] = [];
-          defFiles.forEach((file, index) => {
-            const after = contents[index];
-            if (after === null) {
-              reasons.push(`${file}: 内容不可读(保守按结构性,不发)`);
-              return;
-            }
-            const baseline = defBaselines.get(file);
-            if (baseline === undefined) {
-              reasons.push(`${file}: 无基线(本次会话首次见到,证明不了无结构变化)`);
-            } else {
-              const verdict = classifyDefChange(baseline, after);
-              if (verdict.structural) {
-                reasons.push(`${file}: ${verdict.reasons.join(';')}`);
-              }
-            }
-            defBaselines.set(file, after);
-          });
-          if (reasons.length > 0) {
-            block(reasons);
-            return;
-          }
-          proceed();
-        }, () => block(['def 内容读取失败(保守不发)']));
+      void defGate.check(triggers).then(reasons => {
+        if (reasons.length > 0) {
+          block(reasons);
+          return;
+        }
+        proceed();
+      });
     };
     gateDefChanges();
   }, timers);
@@ -630,6 +694,10 @@ export function setupHotReload(
   const settleHandles = new Set<unknown>();
   // IDE-REV-024 def 结构基线:上次闸门见到的 .def 内容(会话内存,逐次滚动)
   const defBaselines = new Map<string, string>();
+  // RT-3:判定面共用(hotReloadDefGate)——注入的闸实例优先(与重试侧同一基
+  // 线册),否则本装配自建(基线册私有,重试侧拿不到)
+  const defGate =
+    options.defGate ?? createDefStructuralGate(options.targetState?.readFileContent, defBaselines);
   const disposeWatchers = (): void => {
     for (const watcher of watchers) {
       watcher.dispose();

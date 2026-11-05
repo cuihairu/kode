@@ -206,6 +206,7 @@ import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
 import { resolveReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
+import { createDefStructuralGate } from './hotReloadDefGate';
 import { runHotReloadRevisionEvidenceCommand } from './hotReloadRevisionEvidenceCommand';
 import { HotReloadEngineDigestRegister } from './hotReloadRevisionEvidence';
 import { HotReloadTargetStateStore } from './hotReloadTargetState';
@@ -4729,9 +4730,18 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   };
+  // RT-3(IDE-HOT-005):def 结构闸判定面 fire 与失败目标重试共用同一实例与
+  // 同一会话基线册(逐次滚动语义一致)——重试不复用闸判定,结构性 def 变更
+  // 会经「重试」通道以普通 reload 下发。
+  const hotReloadDefBaselines = new Map<string, string>();
+  const hotReloadDefGate = createDefStructuralGate(
+    hotReloadTargetStateWiring.readFileContent,
+    hotReloadDefBaselines
+  );
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
+    defGate: hotReloadDefGate,
     noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
     // IDE-HOT-100:def 结构闸拦下 → 状态机标 RESTART_REQUIRED 呈现(与日志
     // 同源;拦下本身是 HOT-005 既有面)。targetId 经动作名反查,解不到该
@@ -4824,6 +4834,18 @@ export function activate(context: vscode.ExtensionContext) {
               noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
               timers: realHotReloadTimerDeps,
               settleHandles: hotReloadRetrySettleHandles,
+              // RT-3(IDE-HOT-005):重发前过与 fire 路径同一 def 结构闸(同一
+              // 基线册);拦下标 RESTART_REQUIRED 呈现(targetId 即台账键目标)。
+              defGate: hotReloadDefGate,
+              onRestartRequired: (targetId, files, reasons) => {
+                for (const file of files) {
+                  const rootId = hotReloadTargetStateWiring.resolveRootId(file);
+                  if (rootId === null) {
+                    continue;
+                  }
+                  hotReloadFileStateMachine.markRestartRequired({ rootId, targetId }, [file], reasons);
+                }
+              },
               isCancelled: () => token.isCancellationRequested
             },
             {
