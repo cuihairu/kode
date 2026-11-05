@@ -50,10 +50,23 @@ export function createDefStructuralGate(
 ): DefStructuralGate {
   // 会话内闸判定见过的 def 文件(含被拦的)——confirmLoaded 的默认重建面
   const seenDefFiles = new Set<string>();
-  // F1 二轮:check 判定时留的内容快照(文件 → 判定面读到的内容)——commit
-  // 前滚只落这份快照,绝不重读(check 放行后文件再变,重读=把未判定内容
-  // 写进基线,构成时序绕过);confirmLoaded 不受影响(用户明确重启确认)。
-  const checkedSnapshots = new Map<string, string>();
+  // F1 二轮:check 判定时留的内容快照——commit 前滚只落判定时读到的内容,
+  // 绝不重读(check 放行后文件再变,重读=把未判定内容写进基线,构成时序绕过);
+  // confirmLoaded 不受影响(用户明确重启确认)。
+  // F1 三轮(2026-11-06 复审):快照按批次/代际隔离——二轮实现是「文件 → 内容」
+  // 的共享槽位,两批并发判定共享同一槽位,后判定批覆写先判定批的快照,先批
+  // commit 时会把从未通过判定的后批内容滚进基册(时序绕过)。修后每次 check
+  // 各自持有整批快照记录,commit 只按文件集匹配到自己那批的快照(按判定顺序
+  // 消费),并发判定互不覆写;被拦批永不 commit,其快照借别批 commit 入册的
+  // 通路被彻底切断。
+  interface CheckedBatchSnapshots {
+    readonly defFiles: readonly string[];
+    readonly snapshots: Map<string, string>;
+  }
+  const checkedBatches: CheckedBatchSnapshots[] = [];
+  // 防泄漏上限:被拦批永不 commit,记录只进不出;超限丢最老(判定面按旧基线
+  // 保守重判,不丢正确性)
+  const MAX_CHECKED_BATCHES = 64;
   const readContent = async (file: string): Promise<string | null> => {
     if (!reader) {
       return null;
@@ -83,6 +96,9 @@ export function createDefStructuralGate(
       }
       const contents = await readAll(defFiles);
       const reasons: string[] = [];
+      // F1 三轮:本批自己的判定快照(只收可读文件;不可读文件本批被拦,本就
+      // 无内容可滚)——与别批完全隔离
+      const batchSnapshots = new Map<string, string>();
       defFiles.forEach((file, index) => {
         const after = contents[index];
         if (after === null) {
@@ -90,7 +106,7 @@ export function createDefStructuralGate(
           return;
         }
         // F1 二轮:判定面读到的内容留快照——commit 前滚的唯一合法来源
-        checkedSnapshots.set(file, after);
+        batchSnapshots.set(file, after);
         const baseline = baselines.get(file);
         if (baseline === undefined) {
           reasons.push(`${file}: 无基线(本次会话首次见到,证明不了无结构变化;重启后请确认基线)`);
@@ -103,6 +119,11 @@ export function createDefStructuralGate(
         // F1:判定面不再前滚基线——被拦批次滚动基线会让第二次发送绕过
         // 需重启;放行批次由调用方 commit 前滚(见 gateDefChanges/重试)。
       });
+      // F1 三轮:整批快照按判定顺序入册(commit 按同序消费,同文件多批各归各)
+      checkedBatches.push({ defFiles, snapshots: batchSnapshots });
+      if (checkedBatches.length > MAX_CHECKED_BATCHES) {
+        checkedBatches.shift();
+      }
       return reasons;
     },
     async commit(files): Promise<void> {
@@ -110,12 +131,24 @@ export function createDefStructuralGate(
       if (!reader || defFiles.length === 0) {
         return;
       }
+      // F1 三轮:只认自己那批的快照——按文件集(逐字同序)匹配最早未消费的
+      // 判定批;并发判定批各持各的快照,后批绝不覆写先批。匹配不到(该文件集
+      // 从未判定过)不滚。
+      const batchIndex = checkedBatches.findIndex(
+        batch =>
+          batch.defFiles.length === defFiles.length &&
+          batch.defFiles.every((file, index) => file === defFiles[index])
+      );
+      if (batchIndex < 0) {
+        return;
+      }
+      const [batch] = checkedBatches.splice(batchIndex, 1);
       // F1 二轮:只落 check 判定时留的快照,绝不重读文件——判定放行后内容
       // 再变,重读会把从未通过判定的内容滚进基线(时序绕过反例:基线 A,
       // check 读到 A 放行,文件变 B,commit 重读 B 入基线;B 被拦/未被目标
-      // 应用后再次发送 B,指纹相同即放行)。无快照(未判定过)不滚。
+      // 应用后再次发送 B,指纹相同即放行)。
       for (const file of defFiles) {
-        const snapshot = checkedSnapshots.get(file);
+        const snapshot = batch.snapshots.get(file);
         if (snapshot !== undefined) {
           baselines.set(file, snapshot);
         }
