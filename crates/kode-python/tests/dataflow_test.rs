@@ -355,3 +355,33 @@ fn except_capture_def_line_is_handler_line_kraud17() {
     assert_eq!(e.def_line, Some(3), "except 捕获名 def 行应为 handler 行");
     assert_eq!(e.use_lines, vec![4]);
 }
+
+/// KR-AUD-18:lambda 形参此前不建模遮蔽——`lambda x: x + 1` 体内对 x 的读
+/// 连到外层参数 x 的链。修复:lambda 形参入独立子作用域,体内读先查子
+/// 作用域,外层链不受影响。
+#[test]
+fn lambda_param_shadows_outer_var_kraud18() {
+    let src = "def f(x):\n    g = lambda x: x + 1\n    return g(x)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["x".to_string()], &body);
+    let x_chains: Vec<&kode_python::DefUseChain> =
+        result.chains.iter().filter(|c| c.var == "x").collect();
+    assert_eq!(
+        x_chains.len(),
+        2,
+        "外层参数与 lambda 形参各一条链: {:#?}",
+        result.chains
+    );
+    let outer = x_chains[0];
+    assert!(outer.is_param);
+    assert_eq!(outer.use_lines, vec![2], "外层 x 只应在 return g(x) 被读");
+    let lam = x_chains[1];
+    assert!(lam.is_param, "lambda 形参按参数链记");
+    assert_eq!(lam.def_line, None);
+    assert_eq!(lam.use_lines, vec![1], "lambda 体内读连 lambda 形参链");
+}

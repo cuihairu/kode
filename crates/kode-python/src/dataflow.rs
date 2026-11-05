@@ -83,33 +83,48 @@ pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
 }
 
 struct State {
-    /// var → 当前活跃链下标(最近一次定值)。
-    live: BTreeMap<String, usize>,
+    /// 作用域栈:每层 var → 当前活跃链下标(最近一次定值);栈顶为最内层。
+    /// 基层为函数体自身,KR-AUD-18 起 lambda 体推入独立子层(形参遮蔽)。
+    scopes: Vec<BTreeMap<String, usize>>,
     chains: Vec<DefUseChain>,
 }
 
 impl State {
     fn new(params: &[String]) -> State {
-        let mut chains = Vec::new();
-        let mut live = BTreeMap::new();
+        let mut state = State {
+            scopes: vec![BTreeMap::new()],
+            chains: Vec::new(),
+        };
+        state.push_param_scope(params);
+        state
+    }
+
+    /// 推入一层作用域并把 `params` 记为该层的参数链(is_param,无 def_line;
+    /// 空链也保留,来源可查)。基层(new)与 lambda 子作用域(KR-AUD-18)共用。
+    fn push_param_scope(&mut self, params: &[String]) {
+        let mut scope = BTreeMap::new();
         for p in params {
-            let idx = chains.len();
-            chains.push(DefUseChain {
+            let idx = self.chains.len();
+            self.chains.push(DefUseChain {
                 var: p.clone(),
                 def_line: None,
                 use_lines: Vec::new(),
                 is_param: true,
             });
-            live.insert(p.clone(), idx);
+            scope.insert(p.clone(), idx);
         }
-        State { live, chains }
+        self.scopes.push(scope);
     }
 
     fn use_var(&mut self, var: &str, line: usize) {
-        if let Some(&idx) = self.live.get(var) {
-            let chain = &mut self.chains[idx];
-            if chain.use_lines.last() != Some(&line) {
-                chain.use_lines.push(line);
+        // 由内层作用域向外查找(KR-AUD-18:lambda 形参遮蔽外层同名变量)。
+        for scope in self.scopes.iter().rev() {
+            if let Some(&idx) = scope.get(var) {
+                let chain = &mut self.chains[idx];
+                if chain.use_lines.last() != Some(&line) {
+                    chain.use_lines.push(line);
+                }
+                return;
             }
         }
     }
@@ -122,7 +137,9 @@ impl State {
             use_lines: Vec::new(),
             is_param: false,
         });
-        self.live.insert(var.to_string(), idx);
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(var.to_string(), idx);
+        }
     }
 }
 
@@ -475,7 +492,30 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
                 collect_reads(state, st, line);
             }
         }
-        Lambda(l) => collect_reads(state, &l.body, line),
+        Lambda(l) => {
+            // KR-AUD-18:lambda 形参入独立子作用域(遮蔽外层同名变量);默认值
+            // 在外层作用域求值,先于推层读。体内读只查子作用域→外层,退出后
+            // 恢复外层作用域,外层链不受 lambda 体内定值影响。
+            for arg in l
+                .parameters
+                .as_ref()
+                .map(|p| p.posonlyargs.iter().chain(&p.args))
+                .into_iter()
+                .flatten()
+            {
+                if let Some(d) = &arg.default {
+                    collect_reads(state, d, line);
+                }
+            }
+            let names: Vec<String> = l
+                .parameters
+                .as_ref()
+                .map(|p| lambda_param_names(p))
+                .unwrap_or_default();
+            state.push_param_scope(&names);
+            collect_reads(state, &l.body, line);
+            state.scopes.pop();
+        }
         // 字面量/字符串/名字(Load 已在 Name 分支处理)
         StringLiteral(_) | BytesLiteral(_) | NumberLiteral(_) | BooleanLiteral(_)
         | NoneLiteral(_) | EllipsisLiteral(_) | TString(_) | FString(_) | IpyEscapeCommand(_) => {}
@@ -558,11 +598,21 @@ fn kill_var(state: &mut State, target: &Expr, line: usize) {
     use Expr::*;
     match target {
         Name(n) => {
-            state.live.remove(n.id.as_str());
+            // del 视作 kill:最内层作用域摘除映射即终结链(含 lambda 子作用域)。
+            for scope in state.scopes.iter_mut().rev() {
+                if scope.remove(n.id.as_str()).is_some() {
+                    break;
+                }
+            }
         }
         Attribute(a) => {
             if is_self(&a.value) {
-                state.live.remove(&format!("self.{}", a.attr.as_str()));
+                let key = format!("self.{}", a.attr.as_str());
+                for scope in state.scopes.iter_mut().rev() {
+                    if scope.remove(&key).is_some() {
+                        break;
+                    }
+                }
             }
         }
         Subscript(s) => {
@@ -584,6 +634,25 @@ fn kill_var(state: &mut State, target: &Expr, line: usize) {
         Starred(s) => kill_var(state, &s.value, line),
         _ => {}
     }
+}
+
+/// lambda 形参名(posonly → pos → vararg → kwonly → kwarg;不滤 `self`——
+/// lambda 形参全是普通名字)。KR-AUD-18。
+fn lambda_param_names(p: &ast::Parameters) -> Vec<String> {
+    let mut out: Vec<String> = p
+        .posonlyargs
+        .iter()
+        .chain(&p.args)
+        .chain(&p.kwonlyargs)
+        .map(|a| a.parameter.name.as_str().to_string())
+        .collect();
+    if let Some(v) = &p.vararg {
+        out.push(v.name.as_str().to_string());
+    }
+    if let Some(k) = &p.kwarg {
+        out.push(k.name.as_str().to_string());
+    }
+    out
 }
 
 /// `expr` 是否为 `self` 名。
