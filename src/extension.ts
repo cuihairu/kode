@@ -2434,6 +2434,16 @@ export function activate(context: vscode.ExtensionContext) {
       databaseSimulationProvider.refresh();
     }
 
+    // KR-AUD-55:defs 布局两键(entityDefsPath/entitiesXmlPath)变更同样进
+    // 失效清单——entities.xml 与 entity_defs 是 schema/实体索引的数据源,
+    // 指向切换不 bump 会继续喂旧路径的快照;口径与 db-config 分支一致。
+    if (event.affectsConfiguration('kbengine.entityDefsPath') ||
+        event.affectsConfiguration('kbengine.entitiesXmlPath')) {
+      bumpRootConfigGeneration('def-paths');
+      databaseSchemaProvider.refresh();
+      databaseSimulationProvider.refresh();
+    }
+
     // binPath/configPath 变更影响数据库连接读值(批131):只失效缓存本体;
     // 诊断面是否重算由下方诊断相关配置裁断决定(A6-2 收口:任意 kbengine.*
     // 变更都全量重扫旧行为废除,无关配置变更零重算)
