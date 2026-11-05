@@ -200,7 +200,11 @@ export async function mapSelectionToHeadRange(
   if (tracked.stdout.trim() === '') return { kind: 'untracked' };
 
   const diff = await deps.runGit(['diff', 'HEAD', '--unified=0', '--', rel], repoRoot);
-  if (diff.kind === 'exit' && diff.exitCode === 128 && /unknown revision|bad revision|not a valid/.test(diff.stderr)) {
+  if (
+    diff.kind === 'exit' &&
+    diff.exitCode === 128 &&
+    /unknown revision|bad revision|not a valid|does not have any commits/.test(diff.stderr)
+  ) {
     // 无提交(HEAD 未生):一次 rev-parse 探测区分 no-commits 与其它 git 错误。
     const head = await deps.runGit(['rev-parse', '--verify', 'HEAD'], repoRoot);
     if (head.kind !== 'ok') return { kind: 'no-commits' };
