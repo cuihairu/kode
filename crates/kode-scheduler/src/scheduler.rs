@@ -300,6 +300,17 @@ impl fmt::Debug for Scheduler {
     }
 }
 
+/// KR-AUD-22:panic payload → Err 文本(run 体 panic 按 Failed 落账)。
+fn panic_to_error(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        format!("run panicked: {s}")
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        format!("run panicked: {s}")
+    } else {
+        "run panicked".to_string()
+    }
+}
+
 impl Scheduler {
     pub fn new(opts: SchedulerOptions) -> Scheduler {
         Scheduler {
@@ -685,7 +696,15 @@ impl Scheduler {
             .run
             .take()
             .expect("run body present until executed");
-        let result = run(&cancel);
+        let result = {
+            // KR-AUD-22:run 体 panic 按 Failed 终态落账(catch_unwind 收敛),
+            // 不再掀翻 pump 卡死调度;panic 消息转 Err 供 failed 计数。
+            let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&cancel)));
+            match caught {
+                Ok(r) => r,
+                Err(payload) => Err(panic_to_error(payload)),
+            }
+        };
         let interactive = self
             .tasks
             .get(&id)
