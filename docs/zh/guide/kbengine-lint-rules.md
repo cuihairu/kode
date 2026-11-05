@@ -16,7 +16,7 @@
 | KBE-PY-004 | `or`、条件早退、别名重赋值被误当作非空证明 | 部分实现，本轮复现漏报，待修 | guard 不是完整 Python 控制流分析 |
 | KBE-PY-005 | 将注释/字符串里的 `self.cell.foo` 当作代码 | 目前有误报，待修词法过滤 | `pythonLanguageUtils.ts:findPythonReceiverCalls` |
 | KBE-PY-006 | 接收者别名的实际使用，如 `peer = self.cell; peer.foo()` | 别名 guard 有局部支持；别名使用点诊断未完成 | 目前调用发现只认 `self.<role>.<name>` |
-| KBE-PY-007 | 写入引擎只读属性，如 `self.id = 1` | 有 readonly 元数据/提示，专门赋值 lint 待实现 | `entityBuiltinProperties.ts`；`entity_macro.h` 和 Entity 属性注册宏 |
+| KBE-PY-007 | 写入引擎只读属性，如 `self.id = 1` | 已实现（IDE-LINT-007）：普通/增强/注解赋值与 `del` 报 Warning，可写属性与非实体同名字段不报 | `kbengine.readOnlyWrite`；`readOnlyWriteDiagnostics.ts`（表 `entityBuiltinProperties.ts`，注册面 `entity_macro.h` 等） |
 | KBE-PY-008 | 在错误角色访问引擎属性/API | 有角色属性/补全面，完整误用 lint 待实现 | baseapp/cellapp/client 分面；角色不明时不能猜 |
 | KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 有参数提示、签名与跳转；完整 lint 待实现 | `.def` 的 Arg 与 EntityCall 调用绑定后才能判断 |
 | KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 生命周期 lint 待设计 | `Entity::pyGetCellEntityCall` 等检查 destroyed；需控制流和生命周期证据，不能见到 destroy 就全文件报错 |
@@ -88,12 +88,13 @@ if self.cell is not None:
 
 `entityBuiltinProperties.ts` 已按 baseapp/cellapp/client 收集属性与 readonly 标记；例如 `id`、`isDestroyed`、`className` 和部分 EntityCall 属性是只读面。`position`、`direction` 等可写性要按角色看，不能把一个角色的规则复制给全部脚本。
 
-后续赋值 lint 的最低验收：明确 Entity 身份与角色才检查 `self.id = ...`、增强赋值及 `del self.id`；普通 Python 类恰好有同名字段时不报；注释/字符串不报；继承自项目封装的 Entity 要按真实类型来源判断。**当前没有实现该赋值 lint，不应在功能清单打勾。**
+已实现（IDE-LINT-007）：明确 Entity 身份与角色才检查——文件段（`base`/`cell`/`client`）定面，段面判不出经 `.def` 归属面，多面歧义只兜底宏公共三项；`self.id = ...`、增强赋值、注解赋值及 `del self.id` 报 `kbengine.readOnlyWrite`（Warning）；普通 Python 类恰好有同名字段（非实体脚本）不报；注释/字符串经词法掩码不报；比较（`==`/`<=`）、海象（属性目标非法）、属性续写（`self.<prop>.x`，非重绑定）与下标写（`self.<prop>[i]=x`）不报；每处命中引引擎注册面 file:line。已知边界（与同族 self-属性 lint 一致）：嵌套非实体类内的同名 `self.<p>` 不单列（文件级身份判定）；`del (self.<p>)` 与 `del self.<p>, x` 的第二项不报（括号/逗号前缀形态）。
 
 ## .def 检查的触发方式
 
 - 实时结构诊断：`kbengine.enableDiagnostics`、`kbengine.enableStructureDiagnostics` 及 `kbengine.diagnostics.check*` 控制，打开/编辑文件时更新 Problems。
 - Python receiver 诊断：`kbengine.receiverNoneDiagnostics=true`，默认开启，使用现有诊断调度器；关闭只停止提示，不改变引擎行为。
+- 只读属性写入诊断：`kbengine.readOnlyWriteDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-readonly-write`）；关闭只停止提示，不改变引擎行为。
 - `.def` 优化/继承冲突分析：按需运行分析入口，见 `defAnalyzer.ts` 和[语言能力](./language.md)。按需分析有规则不代表每次输入都会自动 lint。
 - Hover、签名、inlay、CodeLens 是说明或导航界面；有提示内容不代表相应规则已做诊断。
 

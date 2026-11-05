@@ -53,6 +53,11 @@ import {
   type PropertyDirectionDiagnosticItem,
   type PropertyDirectionHit
 } from './propertyDirectionDiagnostics';
+import {
+  READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT,
+  readOnlyWriteDiagnosticItemsAsync,
+  type ReadOnlyWriteDiagnosticItem
+} from './readOnlyWriteDiagnostics';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getActiveOperationCounts,
@@ -1666,6 +1671,59 @@ export function activate(context: vscode.ExtensionContext) {
       propertyDirectionScheduler.request(document, options);
     }
   };
+  // IDE-LINT-007:基于引擎属性表的只读写入诊断(独立集合,与方向违规同族
+  // 生命周期)。实体身份/角色判定复用内建属性表面解析(目录域优先,判不出
+  // 经 entityMappingManager.getEntityComponentFacesForPythonFile 取 def 归属)。
+  const readOnlyWriteDiagnostics = vscode.languages.createDiagnosticCollection(
+    'kbengine-readonly-write'
+  );
+  context.subscriptions.push(readOnlyWriteDiagnostics);
+  const readOnlyWriteScheduler = new DiagnosticScheduler();
+  const scheduleReadOnlyWriteDiagnostics = (
+    document: vscode.TextDocument,
+    channel: 'immediate' | 'queued'
+  ): void => {
+    if (!isPythonDocument(document)) {
+      return;
+    }
+    const capturedVersion = document.version;
+    const options = {
+      layer: 'local' as const,
+      computeAsync: async (): Promise<readonly ReadOnlyWriteDiagnosticItem[] | null> => {
+        if (document.version !== capturedVersion) {
+          return [];
+        }
+        const enabled = vscode.workspace.getConfiguration('kbengine')
+          .get<boolean>('readOnlyWriteDiagnostics', READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT);
+        return readOnlyWriteDiagnosticItemsAsync(
+          document.getText(),
+          document.uri.fsPath,
+          () => entityMappingManager.getEntityComponentFacesForPythonFile(document.uri.fsPath),
+          enabled
+        );
+      },
+      publish: (items: readonly ReadOnlyWriteDiagnosticItem[]) => {
+        readOnlyWriteDiagnostics.set(document.uri, items.map(item => {
+          const diagnostic = new vscode.Diagnostic(
+            new vscode.Range(
+              item.range.start.line, item.range.start.character,
+              item.range.end.line, item.range.end.character
+            ),
+            item.message,
+            vscode.DiagnosticSeverity.Warning
+          );
+          diagnostic.source = item.source;
+          diagnostic.code = item.code;
+          return diagnostic;
+        }));
+      }
+    };
+    if (channel === 'queued') {
+      readOnlyWriteScheduler.requestQueued(document, options);
+    } else {
+      readOnlyWriteScheduler.request(document, options);
+    }
+  };
 
   // C-17:进程拓扑定义期错配预警(清单 process_topology.xml + defs → Rust 校验)。
   // 独立诊断集合 + 独立调度器(共享调度器每 URI 单排队槽,会顶掉 def 结构
@@ -1885,6 +1943,8 @@ export function activate(context: vscode.ExtensionContext) {
       scheduleUserTypeContractDiagnostics(document, 'immediate');
       // GEN-DEF-1e ④:打开 python 文件即排方向违规诊断(属性面)
       schedulePropertyDirectionDiagnostics(document, 'immediate');
+      // IDE-LINT-007:打开 python 文件即排只读写入诊断
+      scheduleReadOnlyWriteDiagnostics(document, 'immediate');
     }));
     const closeWatcher = vscode.workspace.onDidCloseTextDocument(document => {
       releaseDocument(document);
@@ -1901,6 +1961,9 @@ export function activate(context: vscode.ExtensionContext) {
       // GEN-DEF-1e ④:方向违规诊断随文档生命周期(关闭即摘除)。
       propertyDirectionDiagnostics.delete(document.uri);
       propertyDirectionScheduler.releaseDocument(document);
+      // IDE-LINT-007:只读写入诊断随文档生命周期(关闭即摘除)。
+      readOnlyWriteDiagnostics.delete(document.uri);
+      readOnlyWriteScheduler.releaseDocument(document);
       // E-4:撤 Rust 侧镜像 overlay 与版本账(连续开合不积累)
       shadowReleaseCorpusDocument(document);
       // IDE-HOV-011:弃当前文件注解桶(未保存修改随关闭消失,回磁盘口径)
@@ -1957,6 +2020,8 @@ export function activate(context: vscode.ExtensionContext) {
         scheduleUserTypeContractDiagnostics(event.document, 'queued');
         // GEN-DEF-1e ④:python 改动 → 重排本文件的方向违规诊断(属性面)
         schedulePropertyDirectionDiagnostics(event.document, 'queued');
+        // IDE-LINT-007:python 改动 → 重排本文件的只读写入诊断
+        scheduleReadOnlyWriteDiagnostics(event.document, 'queued');
         const owningDefFile = entityMappingManager.getDefFileForPythonFile(
           event.document.uri.fsPath
         );
@@ -1999,6 +2064,8 @@ export function activate(context: vscode.ExtensionContext) {
           void userTypeContractScheduler.flushQueued();
           // GEN-DEF-1e ④:方向违规调度器同节拍冲刷(守卫语义同上)
           void propertyDirectionScheduler.flushQueued();
+          // IDE-LINT-007:只读写入调度器同节拍冲刷(守卫语义同上)
+          void readOnlyWriteScheduler.flushQueued();
           // KODE-AUD-001:进程拓扑诊断调度器同节拍冲刷——此前编辑事件面只
           // requestQueued 不冲刷,queued 任务滞留不发布致编辑期诊断不更新
           void processTopologyScheduler.flushQueued();
@@ -2226,6 +2293,10 @@ export function activate(context: vscode.ExtensionContext) {
       propertyDirectionScheduler.setEnabled(enabled, () =>
         propertyDirectionDiagnostics.clear()
       );
+      // IDE-LINT-007:主开关同闸只读写入管线(关→清集合,开→强制重算)
+      readOnlyWriteScheduler.setEnabled(enabled, () =>
+        readOnlyWriteDiagnostics.clear()
+      );
     }
     const diagnosticsInputsChanged =
       event.affectsConfiguration('kbengine.enableStructureDiagnostics') ||
@@ -2234,6 +2305,7 @@ export function activate(context: vscode.ExtensionContext) {
       event.affectsConfiguration('kbengine.receiverNoneDiagnostics') ||
       event.affectsConfiguration('kbengine.attributeNoneDiagnostics') ||
       event.affectsConfiguration('kbengine.propertyDirectionDiagnostics') ||
+      event.affectsConfiguration('kbengine.readOnlyWriteDiagnostics') ||
       event.affectsConfiguration('kbengine.startupScriptDiagnostics');
     // C-19:def↔Python 一致性两开关 + 骨架体配置,任一变更即重算已开文档。
     const defMethodConsistencyInputsChanged =
@@ -2295,6 +2367,10 @@ export function activate(context: vscode.ExtensionContext) {
           // GEN-DEF-1e ④:方向违规开关变更 → 立即重算已开 python 文档
           if (event.affectsConfiguration('kbengine.propertyDirectionDiagnostics')) {
             schedulePropertyDirectionDiagnostics(doc, 'immediate');
+          }
+          // IDE-LINT-007:只读写入开关变更 → 立即重算已开 python 文档
+          if (event.affectsConfiguration('kbengine.readOnlyWriteDiagnostics')) {
+            scheduleReadOnlyWriteDiagnostics(doc, 'immediate');
           }
         } else if (isStartupScriptDocument(doc)) {
           // KBEXP-1:启动脚本诊断开关变更 → 立即重算已开启动脚本(compute

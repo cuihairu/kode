@@ -243,12 +243,14 @@ describe('extension activate 装配', () => {
     // C-19 起 def↔Python 方法一致性独立诊断集再一份(不并 kbengine 主集);
     // C-17 起进程拓扑独立诊断集再一份(kbengine-process-topology);
     // GEN-DEF-1e 起 user_type 三契约缺方法独立诊断集再一份(kbengine-user-type-contract);
-    // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction)
+    // GEN-DEF-1e ④ 方向违规诊断集再一份(kbengine-property-direction);
+    // IDE-LINT-007 只读写入诊断集再一份(kbengine-readonly-write)
     expect(languagesRegistry.diagnosticCollections.map(entry => entry.name)).toEqual([
       'kbengine',
       'kbengine-def-method-consistency',
       'kbengine-user-type-contract',
       'kbengine-property-direction',
+      'kbengine-readonly-write',
       'kbengine-process-topology',
       'KBEngine 临时编辑热更新',
       'kbengine-def-analysis'

@@ -1,0 +1,210 @@
+// IDE-LINT-007:基于引擎属性表(EntityBuiltinProperty)的只读写入 lint——实体
+// 脚本里对引擎内建只读属性(self.id / self.isDestroyed / self.className / 各
+// 面只读项)的普通赋值 / 增强赋值 / 注解赋值 / del 报 Warning;合法可写属性
+// (self.position / self.shouldAutoBackup 等)与普通 Python 同名字段(非实体
+// 脚本)不报。
+//
+// 纯逻辑层,不 import vscode。实体身份与角色判定直接复用 entityBuiltinProperties
+// 的面解析(resolveEntityComponentFaceFromPath / resolveEntityBuiltinPropertyHit),
+// 与内建属性 hover / inlay 同一底座同一口径,不自创一套。
+//
+// 写入形态检测在 pythonLexicalMask 掩码文本上做(字符串/注释内容不误认),
+// 只认单段 `self.<属性>` 整体作写目标:
+//   - 普通赋值  self.<属性> = <值>
+//   - 增强赋值  self.<属性> <augop>= <值>
+//   - 注解赋值  self.<属性>: <类型> = <值>
+//   - 删除      del self.<属性>
+// 显式排除比较(==/!=/<=/>=)、海象(:=,属性目标非法)、属性续写(self.<p>.x,
+// 不是重绑定)、下标写(self.<p>[i]=x,不是重绑定)与算术(self.<p> + x)。
+// 已知边界(与同族 self-属性 lint 一致):嵌套非实体类内的同名 self.<p> 不
+// 单列(文件级实体身份判定);`del (self.<p>)`/`del self.<p>, x` 的第二项不
+// 报(括号/逗号前缀形态,罕见)。
+
+import { maskPythonNonCode } from './pythonLexicalMask';
+import {
+  resolveEntityBuiltinPropertyHit,
+  resolveEntityComponentFaceFromPath,
+  formatEntityBuiltinPropertyDetail,
+  type EntityBuiltinPropertyHit,
+  type EntityComponentFace
+} from './entityBuiltinProperties';
+
+export const READONLY_WRITE_DIAGNOSTIC_CODE = 'kbengine.readOnlyWrite';
+export const READONLY_WRITE_DIAGNOSTICS_ENABLED_DEFAULT = true;
+
+/** 写入形态(诊断文案与测试断言共用) */
+export type ReadOnlyWriteKind = 'assign' | 'augmented' | 'annotated' | 'del';
+
+const KIND_VERB: Record<ReadOnlyWriteKind, string> = {
+  assign: '普通赋值',
+  augmented: '增强赋值',
+  annotated: '注解赋值',
+  del: '删除'
+};
+
+const AUGMENTED_OPS = new Set([
+  '+=', '-=', '*=', '/=', '//=', '%=', '**=', '&=', '|=', '^=', '<<=', '>>=', '@='
+]);
+
+/** 匹配的 `self.<name>` 之后同一行紧跟的运算符分类;null = 非写目标 */
+function classifyWriteKindAfter(line: string, afterIndex: number): ReadOnlyWriteKind | null {
+  let i = afterIndex;
+  while (i < line.length && (line[i] === ' ' || line[i] === '\t')) { i += 1; }
+  if (i >= line.length) { return null; }
+  const c = line[i];
+  if (c === '.') { return null; } // self.<p>.x:续写属性,不是重绑定
+  if (c === '[') { return null; } // self.<p>[i]=x:下标写,不是重绑定
+  if (c === '=') {
+    if (line[i + 1] === '=') { return null; } // 比较 ==
+    return 'assign'; // 普通赋值 =
+  }
+  if (c === ':') {
+    if (line[i + 1] === '=') { return null; } // 海象 :=(属性目标非法,不写)
+    // 注解赋值 `: <类型> =`:同层(括号深度 0)找到 `=` 才算写目标;
+    // `if self.<p>:`(行尾)/切片 `d[self.<p>:2]`/字典 `{self.<p>: x}` 都找不到
+    // 顶层 `=` → 不写。
+    let depth = 0;
+    for (let j = i; j < line.length; j += 1) {
+      const ch = line[j];
+      if (ch === '(' || ch === '[' || ch === '{') { depth += 1; }
+      else if (ch === ')' || ch === ']' || ch === '}') { depth -= 1; }
+      else if (ch === '=' && depth === 0 && line[j - 1] !== '=' && line[j + 1] !== '=' && line[j + 1] !== '>') {
+        return 'annotated';
+      }
+    }
+    return null;
+  }
+  if (AUGMENTED_OPS.has(c + (line[i + 1] ?? ''))) { return 'augmented'; }
+  if (c === '<' || c === '>' || c === '!') { return null; } // <= >= !=
+  return null; // 单目算术 + - * / % & | ^ @ << >> 等:值上下文,非写目标
+}
+
+/** 同一行 `self` 之前紧邻(隔空白)是否为 `del` 关键字(整词) */
+function precededByDel(line: string, selfIndex: number): boolean {
+  let i = selfIndex - 1;
+  while (i >= 0 && (line[i] === ' ' || line[i] === '\t')) { i -= 1; }
+  if (i < 0) { return false; }
+  const end = i + 1;
+  while (i >= 0 && /[A-Za-z_]/.test(line[i])) { i -= 1; }
+  return line.slice(i + 1, end) === 'del';
+}
+
+/** 一处只读写入(诊断面所需最小信息) */
+export interface ReadOnlyWriteFinding {
+  /** 行(0 起) */
+  line: number;
+  /** `self` 起始列(0 起;高亮整个 `self.<name>`) */
+  character: number;
+  /** 高亮长度(`self.<name>` 全长) */
+  length: number;
+  propertyName: string;
+  kind: ReadOnlyWriteKind;
+  /** 生效面(null = 宏公共 3 域) */
+  face: EntityComponentFace | null;
+  hit: EntityBuiltinPropertyHit;
+  message: string;
+  severity: 'Warning';
+  code: string;
+}
+
+/**
+ * 只读写入判定(纯函数):掩码文本上扫单段 `self.<属性>`,写目标且命中只读
+ * 内建属性表 → Warning;可写属性/非实体脚本(表未命中)跳过。
+ * pathFace 与 defFaces 由调用方提供(与内建属性 hover 同源面判定)。
+ */
+export function findReadOnlyWriteFindings(
+  text: string,
+  pathFace: EntityComponentFace | null,
+  defFaces: readonly EntityComponentFace[] | null
+): ReadOnlyWriteFinding[] {
+  const masked = maskPythonNonCode(text);
+  const lines = masked.split(/\r?\n/);
+  const findings: ReadOnlyWriteFinding[] = [];
+  const pattern = /\bself\.(\w+)\b/g;
+
+  for (let line = 0; line < lines.length; line += 1) {
+    const lineText = lines[line];
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(lineText)) !== null) {
+      const propertyName = match[1];
+      const selfIndex = match.index;
+      const afterIndex = selfIndex + match[0].length;
+      // 续写(self.<p>.x)/下标写(self.<p>[i]=x)都不是重绑定 `self.<p>` 本身,
+      // 一律先排除(del 路径也不放行——del self.<p>.x 删的是值的属性)。
+      let afterFirst = afterIndex;
+      while (afterFirst < lineText.length && (lineText[afterFirst] === ' ' || lineText[afterFirst] === '\t')) { afterFirst += 1; }
+      if (afterFirst < lineText.length && (lineText[afterFirst] === '.' || lineText[afterFirst] === '[')) { continue; }
+      let kind = classifyWriteKindAfter(lineText, afterIndex);
+      if (kind === null && precededByDel(lineText, selfIndex)) {
+        kind = 'del';
+      }
+      if (kind === null) { continue; }
+
+      const hit = resolveEntityBuiltinPropertyHit(propertyName, pathFace, defFaces);
+      if (!hit || !hit.property.readonly) { continue; }
+
+      findings.push({
+        line,
+        character: selfIndex,
+        length: match[0].length,
+        propertyName,
+        kind,
+        face: hit.face,
+        hit,
+        severity: 'Warning',
+        code: READONLY_WRITE_DIAGNOSTIC_CODE,
+        message: `self.${propertyName} 只读写入:${propertyName} 为引擎内建只读属性`
+          + `(${formatEntityBuiltinPropertyDetail(hit.face, hit.property)};${hit.property.source}),`
+          + `${KIND_VERB[kind]}会被引擎拒绝`
+      });
+    }
+  }
+  return findings;
+}
+
+/** 诊断项(纯数据;extension 侧转 vscode.Diagnostic,测试免 vscode 依赖) */
+export interface ReadOnlyWriteDiagnosticItem {
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  message: string;
+  severity: 'Warning';
+  source: 'kbengine';
+  code: string;
+}
+
+/**
+ * 异步入口:pathFace 按目录域定面;pathFace 判不出时经 fetchDefFaces(通常
+ * entityMappingManager.getEntityComponentFacesForPythonFile)取 def 归属面
+ * (与内建属性 inlay provider 同源),失败按 null 兜底(非实体 → 零产出)。
+ * enabled=false 零产出。
+ */
+export async function readOnlyWriteDiagnosticItemsAsync(
+  text: string,
+  filePath: string,
+  fetchDefFaces: () => Promise<readonly EntityComponentFace[] | null>,
+  enabled: boolean
+): Promise<ReadOnlyWriteDiagnosticItem[]> {
+  if (!enabled) { return []; }
+  const pathFace = resolveEntityComponentFaceFromPath(filePath);
+  let defFaces: readonly EntityComponentFace[] | null = null;
+  if (!pathFace) {
+    try {
+      defFaces = await fetchDefFaces();
+    } catch {
+      defFaces = null;
+    }
+  }
+  return findReadOnlyWriteFindings(text, pathFace, defFaces).map(finding => ({
+    range: {
+      start: { line: finding.line, character: finding.character },
+      end: { line: finding.line, character: finding.character + finding.length }
+    },
+    message: finding.message,
+    severity: 'Warning' as const,
+    source: 'kbengine' as const,
+    code: finding.code
+  }));
+}
