@@ -15,6 +15,9 @@ export default defineConfig({
     // src/test/suite 的 mocha 只做编译产物烟测,两套互不掺和。
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // WIN-7:全量 499 文件按 CPU 数并行在 16C/8GB 上把 spawn/真跑型用例
+    // 挤出 5s testTimeout(单跑全绿)——封顶 worker 数留余量;Linux CI 同益。
+    maxWorkers: 8,
     // 回环 socket 集成测试已全部迁移 tests/sim 仿真器(端口动态分配,
     // 见 docs/redesign.md 阶段 1),文件级并行不再有固定端口争用。
     coverage: {
