@@ -156,3 +156,26 @@
 - `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r3-cargo-full.log`。
 - `eslint src --ext ts`：退出 0 干净（`/tmp/r3-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r3-tsc.log`）。
 - 逐项 red 日志：`/tmp/r3-f1-red.log`（2 failed | 1 passed）、`/tmp/r3-f3-red.log`（6 failed | 8 passed）。
+
+## 第四轮返工记录（2026-11-06，三轮复审残余两项设计级根因，分支 `feat/kode-fix-f1f4`）
+
+本轮处理三轮复审复核后的两项残余，均已收窄到设计根因：F1 的「按文件集匹配最早批」在**被拦批也入队**面前仍是错拿通路；F3 的「应用委托给外部命令」让接收端**无法证明产物是本次命令写的**。每项均先在修码前源码（52429b0）上实测失败测试（red 已留存日志，见下），再修码转绿、独立 commit。`todo.md` 未改。
+
+### R2-F1：def 闸快照按批次令牌认领（commit `7b03306`）
+
+- 问题：三轮实现按「文件集逐字同序匹配**最早未消费**批」消费快照，且**被拦批次也进快照队列**——批 A 被拦、同文件集批 B 放行时，B 的 commit 按文件集匹配到最早的 A 批，把从未通过判定的被拦内容滚进基册（指纹相同即放行，绕过需重启）。
+- 设计变更：①被拦批次**不入快照认领队列**（只入被拦记录册：令牌+文件+理由，快照即弃）；②`check` 返回判定结果 `{reasons, token}`——每次判定签发批次令牌；③`commit(token)` **只按令牌认领自己那批**（同文件集的并发/先后批次各归各，被拦/未知/过期令牌一律不滚）；fire 路径（hotReload.ts gateDefChanges）与重试路径（hotReloadRetryCommand.ts resendHotReloadTarget）各自传自己 check 的令牌。
+- 回归（重写 `tests/hotReloadDefGateBatchSnapshot.test.ts` 4 条 + 同步 `hotReloadRetryDefGate.test.ts` 令牌口径）：**A 被拦+B 放行（同文件集）→ B commit 后基线不含 A 的被拦内容且后续同结构变更仍被拦**；被拦批令牌 commit 不滚；未知/过期令牌不滚；同文件两批放行乱序按令牌各归各。**red：4 failed | 0 passed**（修码前 52429b0 实测，日志 `/tmp/r4-f1-red.log`）→ green；闸系三套件 22 passed、重试系 26 passed。
+
+### R2-F3：applied 路径改接收端自写产物 + 外部命令降级 accepted（commit `c23dd01`）
+
+- 问题：三轮后应用仍委托给外部命令（`--apply-command`），接收端无法证明引擎目录里的产物是**本次命令**写的——产物哈希核验只能证明「目录里有份内容一致的东西」，证明不了应用通路。
+- 设计变更（参考接收端 `referenceReceiver.mjs`）：①applied 路径改为**接收端自己写产物**——按报文 files 读到内容后由接收端自身代码 `writeFileSync` 直接落盘引擎目录（`--artifact-dir`），写后对产物重算 sha256 与报文 `sender_digests[file]` 比对**一致才回 applied**；②落盘失败/哈希不符→**failed 且回滚已写产物**（unlink，引擎目录无残留；多文件批逐文件回滚，坏文件回滚不影响好文件 applied）；③**外部命令模式降级**：命令仍执行（真实副作用）但退出 0 也最多 accepted（带「副作用不可证实」注解），绝不自称 applied、不落应用台账；命令失败仍如实 failed。空操作场景从设计上不存在假 applied：接收端没写产物就没有产物哈希可核验。协议定义同步 `docs/design/hot-reload-design.md` §4 与 `roundtripProbe.mjs` 契约行。
+- 回归（重写 `tests/hotReloadReceiverRoundtrip.test.ts` apply 面为双向断言 + 新增 5 条；`hotReloadAppliedVerifyWiring.test.ts` 真实接收端两例同步接自写产物模式）：接收端自己写的产物哈希=sender_digest→applied（引擎产物逐字一致+台账证据）；sender_digest 与产物不符→failed 且产物回滚；报文缺 sender_digest→failed 不写盘；产物路径被占（EISDIR）→failed；多文件批坏文件 failed+回滚、好文件照常 applied；外部命令真实写产物/空操作退出 0→均降级 accepted 绝不 applied 不落台账；外部命令失败→failed。**red：12 failed | 16 passed**（修码前 52429b0 实测，日志 `/tmp/r4-f3-red.log`）→ green；roundtrip 15 passed、appliedVerify+responseReceipt 23 passed。
+
+### 第四轮门禁数字（本机，2026-11-06）
+
+- `npm test`（vitest run + clean + compile + tsc -p tsconfig.mocha.json + VS Code 集成 runTest.js）：首轮 **1 failed**（`typeStorageColdBuildPhased` F13 预算型：maxSliceMs 213>150，全量负载下超时）——按预算型失败隔离复跑协议隔离复跑 **3 次：3/3 passed**（负载型抖动取真为通过）；全量复跑 **退出 0**：Vitest 517 文件 **6359 passed、20 skipped、0 failed**；compile 与 mocha tsc 干净；VS Code 集成冒烟 **12 passing**。日志 `/tmp/r4-npm-test-full.log`（首轮）、`/tmp/r4-npm-test-full2.log`（复跑）。
+- `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r4-cargo-full.log`。
+- `eslint src --ext ts`：退出 0 干净（`/tmp/r4-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r4-tsc.log`）。
+- 逐项 red 日志：`/tmp/r4-f1-red.log`（4 failed | 0 passed）、`/tmp/r4-f3-red.log`（12 failed | 16 passed）。
