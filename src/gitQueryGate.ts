@@ -68,6 +68,16 @@ export function gitQueryIdentity(cwd: string, args: readonly string[]): string {
   return `${cwd}\u001f${args.join('\u001f')}`;
 }
 
+/**
+ * 判查询是否含易变引用:HEAD 引用（含裸 `HEAD` 与 `HEAD:<path>`、`HEAD~N` 等）
+ * 的结果随提交/工作区变化——缓存这类查询会把过期 diff/HEAD 供后续用
+ * （审核发现：修改/提交后再查范围历史会读到旧映射/旧历史）。
+ * 固定 hash/路径/reflog/日期等不受影响；只读门仍放行全部查询。
+ */
+export function queryTouchesHead(args: readonly string[]): boolean {
+  return args.some((arg) => /(^|[/~^])HEAD([:~^/]|$)/.test(arg));
+}
+
 /** 协调门限制与缓存上限(全部有界,绝不无界堆积)。 */
 export interface GitQueryGateLimits {
   /** 并发子进程总数上限(默认 2)。 */
@@ -128,6 +138,7 @@ interface QueuedRequest {
   options: GitRunOptions;
   cost: GitQueryCost;
   bypassCache: boolean;
+  volatile: boolean;
   resolve: (outcome: GitRunOutcome) => void;
   cancel: () => void;
 }
@@ -188,6 +199,7 @@ export class GitQueryGate {
     const identity = gitQueryIdentity(options.cwd, args);
     const cost = deriveQueryCost(args);
     const bypassCache = opts?.bypassCache === true;
+    const volatile = queryTouchesHead(args);
 
     if (this.disposed) {
       return Promise.resolve({ kind: 'spawn', message: '历史查询已停用(功能已卸载)' });
@@ -201,8 +213,8 @@ export class GitQueryGate {
     if (existing) {
       return existing.promise;
     }
-    // 缓存命中(显式刷新 bypassCache 跳过读)。
-    if (!bypassCache) {
+    // 缓存命中(显式刷新 bypassCache 跳过读;易变查询一律不读——HEAD 会变)。
+    if (!bypassCache && !volatile) {
       const hit = this.cache.get(identity);
       if (hit) {
         return Promise.resolve(hit.outcome);
@@ -223,6 +235,7 @@ export class GitQueryGate {
       options: runOptions,
       cost,
       bypassCache,
+      volatile,
       resolve: resolvePromise,
       cancel: () => {
         signal.cancel();
@@ -307,7 +320,7 @@ export class GitQueryGate {
     void this.deps
       .spawn(request.args, request.options)
       .then((outcome) => {
-        if (outcome.kind === 'ok' && !this.disposed) {
+        if (outcome.kind === 'ok' && !request.volatile && !this.disposed) {
           this.writeCache(request.identity, outcome);
         }
         this.finish(request, outcome);

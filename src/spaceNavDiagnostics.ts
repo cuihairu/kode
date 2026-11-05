@@ -39,8 +39,10 @@ export interface SpaceNavFinding {
 
 const MAPPING_KEY_RE =
   /\b(?:setSpaceData|delSpaceData)\s*\(\s*[^,)]+,\s*("|')_mapping\1/g;
-const NAV_CALL_RE = /\b(?:navigate|navigatePathPoints)\s*\(/g;
-const CAN_NAVIGATE_RE = /\bcanNavigate\b/;
+// 只认 self.navigate / self.navigatePathPoints(引擎实体方法调用约定);
+// 任意对象(avatar.navigate 等)不当作引擎方法,避免无关告警。
+const NAV_CALL_RE = /\bself\s*\.\s*(navigate|navigatePathPoints)\s*\(/g;
+const CAN_NAVIGATE_RE = /\bcanNavigate\b/g;
 /** params dict 内的引号包键: "0": 或 'layer': (紧跟冒号才算键位) */
 const QUOTED_DICT_KEY_RE = /("|')((?:\\.|[^\\])*?)\1\s*:/g;
 
@@ -66,6 +68,72 @@ function offsetToLine(starts: readonly number[], offset: number): number {
     }
   }
   return lo;
+}
+
+/** 全文偏移 → 行内列(0 基):减该行起始偏移。 */
+function offsetToCol(starts: readonly number[], offset: number): number {
+  return offset - starts[offsetToLine(starts, offset)];
+}
+
+/**
+ * 纯文本词法掩码:true=该位置在代码区(非注释/字符串)。
+ * 供空间导航匹配过滤——注释/字符串里的 navigate/canNavigate 字样不参与
+ * 语义判定,避免无关告警。逐字符状态机:行注释 #、单/双引号字符串(含三引号)。
+ */
+function codeMask(text: string): boolean[] {
+  const mask = new Array<boolean>(text.length).fill(true);
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    if (ch === '#') {
+      // 行注释:到行尾(不含换行)
+      while (i < n && text[i] !== '\n') {
+        mask[i] = false;
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const q = ch;
+      const triple = text[i + 1] === q && text[i + 2] === q;
+      mask[i] = false;
+      i += 1;
+      if (triple) {
+        mask[i] = false;
+        i += 1;
+        mask[i] = false;
+        i += 1;
+      }
+      while (i < n) {
+        mask[i] = false;
+        if (text[i] === '\\') {
+          i += 1;
+          if (i < n) {
+            mask[i] = false;
+            i += 1;
+          }
+          continue;
+        }
+        if (triple) {
+          if (text[i] === q && text[i + 1] === q && text[i + 2] === q) {
+            mask[i] = false;
+            mask[i + 1] = false;
+            mask[i + 2] = false;
+            i += 3;
+            break;
+          }
+        } else if (text[i] === q) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    i += 1;
+  }
+  return mask;
 }
 
 /**
@@ -122,19 +190,22 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
   }
   const findings: SpaceNavFinding[] = [];
   const starts = lineStarts(text);
+  const mask = codeMask(text);
+  const inCode = (offset: number): boolean => offset >= 0 && offset < mask.length && mask[offset];
 
   // ── 1) _mapping 保留键 ──
   MAPPING_KEY_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = MAPPING_KEY_RE.exec(text)) !== null) {
+    if (!inCode(match.index)) continue; // 调用在注释/字符串里 → 不报
     const keyToken = match[0];
     // 命中位置落在 "_mapping" 上
     const keyOffset = match.index + keyToken.lastIndexOf(match[1] + '_mapping' + match[1]);
     const keyLen = '_mapping'.length + 2;
     findings.push({
       line: offsetToLine(starts, keyOffset),
-      start: keyOffset,
-      end: keyOffset + keyLen,
+      start: offsetToCol(starts, keyOffset),
+      end: offsetToCol(starts, keyOffset) + keyLen,
       message:
         '键 "_mapping" 是引擎保留键(set/del 均拒绝,运行时 AssertionError ' +
         '"key{_mapping} is protected!")。几何映射由 addSpaceGeometryMapping 管理,' +
@@ -143,15 +214,28 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     });
   }
 
-  // ── 2) navigate 无 canNavigate 前置 ──
-  if (!CAN_NAVIGATE_RE.test(text)) {
+  // ── 2) self.navigate / self.navigatePathPoints 无 canNavigate 前置 ──
+  let hasCanNavigate = false;
+  CAN_NAVIGATE_RE.lastIndex = 0;
+  let guardMatch: RegExpExecArray | null;
+  while ((guardMatch = CAN_NAVIGATE_RE.exec(text)) !== null) {
+    if (inCode(guardMatch.index)) {
+      hasCanNavigate = true;
+      break;
+    }
+  }
+  if (!hasCanNavigate) {
     NAV_CALL_RE.lastIndex = 0;
     while ((match = NAV_CALL_RE.exec(text)) !== null) {
       const offset = match.index;
+      if (!inCode(offset)) continue; // 注释/字符串里的调用不报
+      // 方法名起点(self. 之后),用于定位列。
+      const methodOffset = offset + match[0].indexOf(match[1]);
+      const line = offsetToLine(starts, offset);
       findings.push({
-        line: offsetToLine(starts, offset),
-        start: offset,
-        end: offset + match[0].length - 1, // 不含 '('
+        line,
+        start: offsetToCol(starts, methodOffset),
+        end: offsetToCol(starts, methodOffset) + match[1].length,
         message:
           '调用 navigate/navigatePathPoints 但全文未出现 canNavigate:导航数据未加载时' +
           '寻路静默失败(paths 为空,不建移动控制器)。建议先 if self.canNavigate() 守卫。' +
@@ -164,6 +248,7 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
   // ── 3) params dict 引号键(非 int 字面量) ──
   const mappingCallRe = /\baddSpaceGeometryMapping\s*\(/g;
   while ((match = mappingCallRe.exec(text)) !== null) {
+    if (!inCode(match.index)) continue; // 调用在注释/字符串里 → 不报
     const callOpen = match.index + match[0].length - 1;
     const span = findParamsDictSpan(text, callOpen);
     if (!span) {
@@ -176,10 +261,11 @@ export function computeSpaceNavFindings(text: string): SpaceNavFinding[] {
     while ((keyMatch = QUOTED_DICT_KEY_RE.exec(dictBody)) !== null) {
       const keyOffset = dictOpen + 1 + keyMatch.index;
       const keyLen = keyMatch[0].length - 1; // 不含尾冒号
+      const line = offsetToLine(starts, keyOffset);
       findings.push({
-        line: offsetToLine(starts, keyOffset),
-        start: keyOffset,
-        end: keyOffset + keyLen,
+        line,
+        start: offsetToCol(starts, keyOffset),
+        end: offsetToCol(starts, keyOffset) + keyLen,
         message:
           `params 层键 ${keyMatch[0].slice(0, keyMatch[0].length - 1).trim()} 是字符串字面量,` +
           '引擎要求 int 键(PyLong_Check 失败即 AssertionError "args(params) error!")。' +

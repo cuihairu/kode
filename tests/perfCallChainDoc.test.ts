@@ -73,16 +73,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // (createDefStructuralGate),全部 extension.ts 锚点 +1(966/1017/1080/884/
   // 1378/607/620/1920/1994);其后 4718 附近共享 def 闸装配块 +10 与重试闸
   // 依赖块 +12 均在全部锚点之后,不再位移。出处随 baseline 锁步。
-  ['src/extension.ts', 966, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1017, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1080, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 884, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1378, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 607, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 620, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-05(十):并入 main(IDE-GIT 守卫顶部 import)后全部 extension.ts 锚点再 +1;
+  // 出处随 baseline 锁步(2026-baseline.md 同步)。
+  // 2026-11-05(八):IDE-GIT 范围历史未保存守卫——extension.ts 顶部新增 1 行
+  // import(rangeHistoryDirtyGuard),全部 extension.ts 锚点再 +1(出处随 baseline 锁步)。
+  ['src/extension.ts', 967, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1018, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1081, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 885, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1379, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 608, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 621, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1920, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1994, 'flushQueued()'],
+  ['src/extension.ts', 1921, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1995, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

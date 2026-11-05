@@ -259,9 +259,9 @@ import {
   ensureDebugConfig,
   fileSystemBootstrapDeps
 } from './debugConfigBootstrap';
+import { readDerivedTelnetTargets } from './telnetDeriveTargets';
 import {
   makeProbeOne,
-  readTelnetTargetsFromSettings,
   TelnetService,
   updateTelnetStatusBar
 } from './telnetService';
@@ -379,6 +379,7 @@ import {
   GIT_HISTORY_SHOW_RANGE_COMMAND,
   readGitHistoryEnabled,
   runGitHistoryWhenEnabled,
+  rangeHistoryDirtyGuard,
 } from './gitHistory';
 import {
   GitHistoryTreeProvider,
@@ -2844,7 +2845,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 5s 低频探测
   const telnetService = new TelnetService({
     getTargets: () => {
-      const targets = readTelnetTargetsFromSettings();
+      // CFG-007:目标列表按配置派生(telnet 段开启 → 列出含派生端口,关闭
+      // → 空;派生不可用/显式端口/密码保护未覆盖时旧路径兜底,读同一份配置)。
+      const targets = readDerivedTelnetTargets();
       // 批111 用户令:配置未开 telnet 不展示 telnet 相关的东西——状态灯、
       // 独立树视图与命令面板入口随空目标/context key 自然隐藏。探测每轮
       // 重读目标,context 同步刷新。
@@ -4209,6 +4212,14 @@ export function activate(context: vscode.ExtensionContext) {
         if (!editor || !sel || sel.isEmpty) {
           // 无选区:不查询,给出选择代码提示(右键入口已由 editorHasSelection 隐藏)。
           gitRangeHistoryProvider.showNoSelection();
+          void vscode.commands.executeCommand('kbengine.gitRangeHistory.focus');
+          return;
+        }
+        // 未保存内容不参与映射(审核发现):磁盘差异与编辑器缓冲可能不一致,
+        // 映射到的 HEAD 行段是错的。如实拒绝并提示保存后重试。
+        const dirtyReason = rangeHistoryDirtyGuard(editor.document.isDirty);
+        if (dirtyReason !== null) {
+          gitRangeHistoryProvider.showUnavailable(dirtyReason);
           void vscode.commands.executeCommand('kbengine.gitRangeHistory.focus');
           return;
         }

@@ -3,7 +3,8 @@ import {
   GitQueryGate,
   deriveQueryCost,
   gitQueryIdentity,
-  defaultGitQueryGateLimits
+  defaultGitQueryGateLimits,
+  queryTouchesHead
 } from '../src/gitQueryGate';
 import type { GitCancellationToken, GitRunOptions, GitRunOutcome } from '../src/gitRunner';
 
@@ -45,6 +46,21 @@ describe('gitQueryIdentity', () => {
     expect(gitQueryIdentity('/a', ['log', '--', 'x.py'])).not.toBe(gitQueryIdentity('/b', ['log', '--', 'x.py']));
     expect(gitQueryIdentity('/a', ['log', '--', 'x.py'])).not.toBe(gitQueryIdentity('/a', ['log', '--', 'y.py']));
     expect(gitQueryIdentity('/a', ['log', '--', 'x.py'])).toBe(gitQueryIdentity('/a', ['log', '--', 'x.py']));
+  });
+});
+
+describe('queryTouchesHead', () => {
+  it('识别 HEAD 引用与 HEAD 版本路径(含嵌在参数里)', () => {
+    expect(queryTouchesHead(['diff', 'HEAD', '--', 'a.py'])).toBe(true);
+    expect(queryTouchesHead(['rev-parse', '--verify', 'HEAD'])).toBe(true);
+    expect(queryTouchesHead(['log', '-n1', 'HEAD~1'])).toBe(true);
+    expect(queryTouchesHead(['show', 'HEAD:a.py'])).toBe(true);
+  });
+
+  it('不误伤固定 hash/普通 ref/路径参数', () => {
+    expect(queryTouchesHead(['show', 'abc123:a.py'])).toBe(false);
+    expect(queryTouchesHead(['log', '--', 'a.py'])).toBe(false);
+    expect(queryTouchesHead(['ls-files', '--', 'a.py'])).toBe(false);
   });
 });
 
@@ -149,10 +165,10 @@ describe('隔离缓存与上限', () => {
   it('相同查询第二次命中缓存,不重复 spawn', async () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate(undefined, { spawn });
-    const p1 = gate.run(['show', 'HEAD:x.py'], runOpts());
+    const p1 = gate.run(['show', 'abc123:x.py'], runOpts());
     calls[0].resolve(ok('content'));
     await p1;
-    const p2 = gate.run(['show', 'HEAD:x.py'], runOpts());
+    const p2 = gate.run(['show', 'abc123:x.py'], runOpts());
     expect(calls).toHaveLength(1); // 未再 spawn
     expect(await p2).toEqual(ok('content'));
   });
@@ -160,11 +176,11 @@ describe('隔离缓存与上限', () => {
   it('缓存按 cwd 与参数隔离(仓库/提交/路径/范围/选项)', async () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate(undefined, { spawn });
-    const p1 = gate.run(['show', 'HEAD:x.py'], runOpts('/a'));
+    const p1 = gate.run(['show', 'abc123:x.py'], runOpts('/a'));
     calls[0].resolve(ok('a'));
     await p1;
     // 同参数不同 cwd → 未命中,再 spawn。
-    const p2 = gate.run(['show', 'HEAD:x.py'], runOpts('/b'));
+    const p2 = gate.run(['show', 'abc123:x.py'], runOpts('/b'));
     expect(calls).toHaveLength(2);
     calls[1].resolve(ok('b'));
     await p2;
@@ -189,13 +205,13 @@ describe('隔离缓存与上限', () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate({ maxCacheEntries: 2 }, { spawn });
     for (const f of ['a.py', 'b.py', 'c.py']) {
-      const p = gate.run(['show', `HEAD:${f}`], runOpts());
+      const p = gate.run(['show', `def456:${f}`], runOpts());
       calls.shift()!.resolve(ok(f));
       await p;
     }
     expect(gate.cacheCount()).toBe(2); // b,c 留存
     // a 已淘汰 → 重新 spawn。
-    const pa = gate.run(['show', 'HEAD:a.py'], runOpts());
+    const pa = gate.run(['show', 'def456:a.py'], runOpts());
     expect(calls).toHaveLength(1);
     calls.shift()!.resolve(ok('a2'));
     await pa;
@@ -205,10 +221,10 @@ describe('隔离缓存与上限', () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate({ maxCacheBytes: 10 }, { spawn });
     // 每结果 6 字节;10 字节上限只容 1 条。
-    const p1 = gate.run(['show', 'HEAD:a.py'], runOpts());
+    const p1 = gate.run(['show', 'def456:a.py'], runOpts());
     calls.shift()!.resolve(ok('aaaaaa'));
     await p1;
-    const p2 = gate.run(['show', 'HEAD:b.py'], runOpts());
+    const p2 = gate.run(['show', 'def456:b.py'], runOpts());
     calls.shift()!.resolve(ok('bbbbbb'));
     await p2;
     expect(gate.cacheCount()).toBe(1); // b 留,a 逐出
@@ -217,14 +233,50 @@ describe('隔离缓存与上限', () => {
   it('显式刷新 bypassCache 重新获取但仍写回', async () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate(undefined, { spawn });
-    const p1 = gate.run(['log', '-n1', 'HEAD'], runOpts());
+    const p1 = gate.run(['log', '-n1', 'main'], runOpts());
     calls.shift()!.resolve(ok('v1'));
     await p1;
-    const p2 = gate.run(['log', '-n1', 'HEAD'], runOpts(), { bypassCache: true });
+    const p2 = gate.run(['log', '-n1', 'main'], runOpts(), { bypassCache: true });
     expect(calls).toHaveLength(1); // 跳过读
     calls.shift()!.resolve(ok('v2'));
     const r2 = await p2;
     expect(r2).toEqual(ok('v2'));
+    expect(gate.cacheCount()).toBe(1);
+  });
+
+  it('易变 HEAD 查询不读不写缓存(修复过期 diff/HEAD 命中)', async () => {
+    const { spawn, calls } = makeSpawn();
+    const gate = new GitQueryGate(undefined, { spawn });
+    // 工作区 diff
+    const p1 = gate.run(['diff', 'HEAD', '--unified=0', '--', 'a.py'], runOpts());
+    calls.shift()!.resolve(ok('diff-v1'));
+    await p1;
+    const p2 = gate.run(['diff', 'HEAD', '--unified=0', '--', 'a.py'], runOpts());
+    expect(calls).toHaveLength(1); // 未命中缓存,重新 spawn(p1 已 shift)
+    calls.shift()!.resolve(ok('diff-v2'));
+    await p2;
+    expect(gate.cacheCount()).toBe(0); // 也不写回
+
+    // rev-parse HEAD(判定无提交)同样不可缓存
+    const p3 = gate.run(['rev-parse', '--verify', 'HEAD'], runOpts());
+    calls.shift()!.resolve(ok('head-v1'));
+    await p3;
+    const p4 = gate.run(['rev-parse', '--verify', 'HEAD'], runOpts());
+    expect(calls).toHaveLength(1);
+    calls.shift()!.resolve(ok('head-v2'));
+    await p4;
+    expect(gate.cacheCount()).toBe(0);
+  });
+
+  it('固定 hash 的 show 仍缓存(提交内容不可变,避免过度禁缓存)', async () => {
+    const { spawn, calls } = makeSpawn();
+    const gate = new GitQueryGate(undefined, { spawn });
+    const p1 = gate.run(['show', 'abc123:a.py'], runOpts());
+    calls.shift()!.resolve(ok('content-v1'));
+    await p1;
+    const p2 = gate.run(['show', 'abc123:a.py'], runOpts());
+    expect(calls).toHaveLength(0); // 命中缓存,不启动新子进程
+    expect(await p2).toEqual(ok('content-v1'));
     expect(gate.cacheCount()).toBe(1);
   });
 });
@@ -277,8 +329,8 @@ describe('取消与清理', () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate({ maxConcurrent: 1 }, { spawn });
     // 先填缓存:两独立查询依次结算(a 运行,b 排队→启动)。
-    const p1 = gate.run(['show', 'HEAD:a.py'], runOpts());
-    const p2 = gate.run(['show', 'HEAD:b.py'], runOpts());
+    const p1 = gate.run(['show', 'def456:a.py'], runOpts());
+    const p2 = gate.run(['show', 'def456:b.py'], runOpts());
     expect(calls).toHaveLength(1);
     calls[0].resolve(ok('a'));
     await p1;
@@ -310,8 +362,8 @@ describe('取消与清理', () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate({ maxConcurrent: 2 }, { spawn });
     // 先填缓存:两独立查询结算。
-    const p1 = gate.run(['show', 'HEAD:a.py'], runOpts());
-    const p2 = gate.run(['show', 'HEAD:b.py'], runOpts());
+    const p1 = gate.run(['show', 'def456:a.py'], runOpts());
+    const p2 = gate.run(['show', 'def456:b.py'], runOpts());
     expect(calls).toHaveLength(2);
     calls[0].resolve(ok('a'));
     calls[1].resolve(ok('b'));

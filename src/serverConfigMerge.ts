@@ -386,7 +386,24 @@ export interface MergedConfigTreeOverrides {
  * defaults + 元件 kbengine.xml 的合成树(批131 抽出):最终配置展示与
  * dbmgr 数据库接口读值共用一套装载口径,不各读各的。
  */
-export function buildMergedConfigTree(overrides: MergedConfigTreeOverrides = {}): MergedConfigTree {
+/** custom/defaults 两棵原始配置树(TS 读盘解析;core 不碰盘,设计 §5.2) */
+export interface ConfigTreePair {
+  /** 元件 kbengine.xml 解析树(缺失/不可解析为 null) */
+  customTree: ConfigXmlNode | null;
+  /** 引擎 kbengine_defaults.xml 解析树(缺失/不可解析为 null) */
+  defaultsTree: ConfigXmlNode | null;
+  customPath: string | null;
+  defaultsPath: string | null;
+}
+
+/**
+ * 装载 custom + defaults 两棵原始配置树(buildMergedConfigTree 的拆分面):
+ * CFG-007 起配置派生(`$/kode/config/derive`)以两棵树为输入——core 不碰盘,
+ * TS 读盘解析后送达;合成展示仍走 buildMergedConfigTree。两者共用同一套
+ * 装载口径(binPath 推导 + 引擎源码根发现兜底 + 元件配置约定探测),
+ * 不各读各的。
+ */
+export function buildConfigTreePair(overrides: MergedConfigTreeOverrides = {}): ConfigTreePair {
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const overridesBinPath = overrides.binPath !== undefined && overrides.binPath.length > 0
     ? overrides.binPath
@@ -433,10 +450,20 @@ export function buildMergedConfigTree(overrides: MergedConfigTreeOverrides = {})
     }
     /* istanbul ignore stop */
   }
-  const merged = defaultsTree
-    ? (customTree ? mergeConfigXml(defaultsTree, customTree) : defaultsTree)
+  return { customTree, defaultsTree, customPath, defaultsPath };
+}
+
+export function buildMergedConfigTree(overrides: MergedConfigTreeOverrides = {}): MergedConfigTree {
+  const pair = buildConfigTreePair(overrides);
+  const merged = pair.defaultsTree
+    ? (pair.customTree ? mergeConfigXml(pair.defaultsTree, pair.customTree) : pair.defaultsTree)
     : null;
-  return { merged, defaultsPath, customPath, customApplied: customTree !== null };
+  return {
+    merged,
+    defaultsPath: pair.defaultsPath,
+    customPath: pair.customPath,
+    customApplied: pair.customTree !== null
+  };
 }
 
 /**

@@ -41,3 +41,13 @@ export function readGitHistoryEnabled(reader: GitHistoryConfigReader): boolean {
 export function runGitHistoryWhenEnabled(enabled: boolean, body: () => void): void {
   if (enabled) body();
 }
+
+/**
+ * 选中范围历史前的未保存内容守卫(审核发现:未保存的插入/删除会让磁盘
+ * diff 与编辑器缓冲不一致,按磁盘内容映射选区会查错 HEAD 行)。
+ * 返回 null=可查询;否则返回用户可见的拒绝原因。
+ */
+export function rangeHistoryDirtyGuard(isDirty: boolean): string | null {
+  if (!isDirty) return null;
+  return '编辑器有未保存修改,选中范围历史暂不查询(保存后重试,避免按磁盘旧内容映射到错误 HEAD 行)';
+}
