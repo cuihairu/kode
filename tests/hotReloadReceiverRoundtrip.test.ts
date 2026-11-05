@@ -462,7 +462,37 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(readFileSync(path.join(engineDir, 'subB', 'Monster.py'), 'utf8')).toBe(contentB);
   });
 
-  // F3 五轮(R2-F3 硬化 3 防线):清洗后仍映射到同一产物位置(如同一路径在批
+  // F3 六轮(复审 FAIL-1):映射必须跨批确定——不做批内共同祖先剥离,永远按
+  // 报文内完整相对路径展开,与批次组成无关。旧实现 subA/X.py、subB/X.py 同批
+  // → 各归子目录;分两次单文件发送 → 都映射到引擎目录根 X.py,后者覆盖前者。
+  it('F3 六轮回归:跨批确定性映射——subA/X.py、subB/X.py 分两次单文件发送,各落子路径不覆盖', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const fileA = path.join(receiver.root, 'subA', 'X.py');
+    const fileB = path.join(receiver.root, 'subB', 'X.py');
+    const contentA = 'X_IN_SUB_A = 41\n';
+    const contentB = 'X_IN_SUB_B = 42\n';
+    mkdirSync(path.dirname(fileA), { recursive: true });
+    mkdirSync(path.dirname(fileB), { recursive: true });
+    writeFileSync(fileA, contentA, 'utf8');
+    writeFileSync(fileB, contentB, 'utf8');
+
+    // 第一批:只发 subA/X.py(单文件批)
+    const first = await postReload(receiver.port, { files: [fileA], sender_digests: { [fileA]: sha256(contentA) } });
+    const firstReceipt = JSON.parse(first.body) as { status: string };
+    expect(firstReceipt.status).toBe('applied');
+    // 第二批:只发 subB/X.py(单文件批)——批次组成不同,落位必须不变
+    const second = await postReload(receiver.port, { files: [fileB], sender_digests: { [fileB]: sha256(contentB) } });
+    const secondReceipt = JSON.parse(second.body) as { status: string };
+    expect(secondReceipt.status).toBe('applied');
+    // 各落各的子路径:第二批发送不覆盖第一批的产物,也不再裸落引擎目录根
+    expect(readFileSync(path.join(engineDir, 'subA', 'X.py'), 'utf8')).toBe(contentA);
+    expect(readFileSync(path.join(engineDir, 'subB', 'X.py'), 'utf8')).toBe(contentB);
+    expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+  });
+
+  // F3 五轮(R2-F3 硬化 3 防线):清洗后仍映射到同一产物位置(同一路径在批
   // 内重复出现)→ 拒绝整批,不写任何盘、不落台账。
   it('F3 五轮回归:批内映射到同一产物位置(同一路径重复)→ 拒绝整批不写盘', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));

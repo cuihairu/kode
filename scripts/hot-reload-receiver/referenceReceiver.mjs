@@ -206,27 +206,27 @@ const server = createServer((request, response) => {
     const withTarget = receipt => (targetId !== undefined ? { ...receipt, targetId } : receipt);
     const receipts = [];
     // F3 五轮(2026-11-06 复审硬化):产物路径不再只用 basename——按报文内
-    // 相对路径(批内共同祖先为基准)映射到 --artifact-dir 子结构,不同目录
-    // 同名文件各归各的子路径,不再相互踩踏;路径安全清洗(任何 '..'/'.'/
-    // 空段=逃逸)不过关,或清洗后仍映射到同一产物位置(如同一路径在批内
-    // 重复),一律拒绝整批:不写任何盘、不落任何台账。
+    // 相对路径映射到 --artifact-dir 子结构,不同目录同名文件各归各的子路径,
+    // 不再相互踩踏;批内清洗后仍映射到同一产物位置(同名碰撞)→ 拒绝整批:
+    // 不写任何盘、不落任何台账。
+    // F3 六轮(2026-11-06 复审 FAIL-1):产物路径**确定性映射**——不再按批内
+    // 共同祖先剥离(共同祖先随批次组成漂移:subA/X.py、subB/X.py 同批→各归
+    // 子目录,分两次单文件发送→都落 basename,后者覆盖前者)。改为永远按报文
+    // 内完整相对路径展开,基准只随接收端暂存根(--root)定,与批次组成无关:
+    // 同一文件无论单发/合批发,落位唯一;暂存根之外的文件回落按绝对路径全
+    // 结构展开(同样确定性)。路径安全清洗(任何 '..'/'.'/空段=逃逸)不过关,
+    // 或映射到同一产物位置(同一路径批内重复)→ 拒绝整批:不写任何盘、不落
+    // 任何台账。
     const stringFiles = files.filter(file => typeof file === 'string');
     const artifactSegmentsByFile = new Map();
     let batchRejectReason;
     if (stringFiles.length > 0) {
-      const dirParts = stringFiles.map(file => path.dirname(file).split(path.sep));
-      let common = dirParts[0];
-      for (const candidate of dirParts.slice(1)) {
-        let index = 0;
-        while (index < common.length && index < candidate.length && common[index] === candidate[index]) {
-          index += 1;
-        }
-        common = common.slice(0, index);
-      }
-      const commonDir = common.join(path.sep) || path.sep;
       const byKey = new Map();
       for (const file of stringFiles) {
-        const relative = path.relative(commonDir, file);
+        let relative = path.relative(root, file);
+        if (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative)) {
+          relative = file.split(path.sep).filter(segment => segment !== '').join('/');
+        }
         const segments = relative.split(path.sep);
         if (relative === '' || segments.some(segment => segment === '..' || segment === '.' || segment === '')) {
           batchRejectReason = `产物相对路径清洗后不安全(${relative}):拒绝整批,不写盘`;
