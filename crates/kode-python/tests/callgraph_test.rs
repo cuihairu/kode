@@ -209,3 +209,28 @@ fn match_guard_calls_recorded() {
         "match guard 内 foo() 应有边, got {es:?}"
     );
 }
+
+/// KR-AUD-20(KODE-AUD-008 残留面):方法体内嵌套 def 此前继承外层
+/// caller_class,产伪 (Foo, inner) 类方法边。修复:嵌套 def 体走查传
+/// caller_class=None——嵌套函数不是外层类的方法。
+#[test]
+fn nested_def_in_method_has_no_class_method_edge_kraud20() {
+    let src = "class Foo:\n    def method(self):\n        def inner():\n            helper()\n        inner()\n\ndef helper():\n    pass\n";
+    let es = edges_of(src);
+    let fake: Vec<&kode_python::CallEdge> = es
+        .iter()
+        .filter(|e| e.caller == "inner" && e.caller_class.is_some())
+        .collect();
+    assert!(fake.is_empty(), "嵌套 def 不应带 caller_class: {fake:#?}");
+    let e = es
+        .iter()
+        .find(|e| e.caller == "inner" && e.callee == "helper")
+        .expect("嵌套 def 体内调用边保持");
+    assert_eq!(e.caller_class, None);
+    // 外层方法的调用边不受影响。
+    assert!(
+        es.iter()
+            .any(|e| e.caller == "method" && e.callee == "inner"),
+        "外层方法走查保持"
+    );
+}

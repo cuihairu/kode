@@ -251,7 +251,10 @@ fn walk_stmt(
         // 不重叠);嵌套类的方法以嵌套类名为 caller_class。
         Stmt::FunctionDef(f) => {
             let nested = f.name.as_str().to_string();
-            walk_body(ast, ctx, &f.body, caller_class, &nested, out);
+            // KR-AUD-20(KODE-AUD-008 残留面):嵌套 def 不是外层类的方法——
+            // caller_class 置 None,不再继承外层产伪 (Foo, inner) 类方法边。
+            // 嵌套类的方法仍以嵌套类名为 caller_class(下方 ClassDef 分支)。
+            walk_body(ast, ctx, &f.body, None, &nested, out);
         }
         Stmt::ClassDef(cls) => {
             let class_name = cls.name.as_str().to_string();
