@@ -214,14 +214,20 @@ impl ExportPlanner {
     }
 }
 
+/// 标识符引用(反引号转义):表名/列名来自派生 schema,但标识符若含反引号
+/// 仍须转义,否则生成畸形/可注入 SELECT(与 information_schema 同口径)。
+fn quote_ident(name: &str) -> String {
+    format!("`{}`", name.replace('`', "``"))
+}
+
 /// 渲染只读 SELECT:显式反引号列 + `?` 绑定参数。仅生成 SELECT(白名单语句面)。
 fn render_select(table: &str, columns: &[String], filter: PlanFilter) -> String {
-    let quoted: Vec<String> = columns.iter().map(|c| format!("`{c}`")).collect();
+    let quoted: Vec<String> = columns.iter().map(|c| quote_ident(c)).collect();
     let predicate = match filter {
         PlanFilter::RootId => "`id` = ?",
         PlanFilter::ParentId => "`parentID` = ?",
     };
-    format!("SELECT {} FROM `{table}` WHERE {predicate}", quoted.join(", "))
+    format!("SELECT {} FROM {} WHERE {predicate}", quoted.join(", "), quote_ident(table))
 }
 
 #[cfg(test)]
@@ -443,5 +449,15 @@ mod tests {
                 column: "sm_name".into()
             })
         );
+    }
+    #[test]
+    fn render_select_escapes_backticks_in_identifiers() {
+        // 表/列名含反引号:转义为 ````,否则生成畸形/可注入 SELECT。
+        let sql = render_select("tbl`Avatar", &["id".into(), "weird`col".into()], PlanFilter::RootId);
+        assert!(sql.contains("FROM `tbl``Avatar`"), "表名反引号转义: {sql}");
+        assert!(sql.contains("`weird``col`"), "列名反引号转义: {sql}");
+        assert!(sql.contains("WHERE `id` = ?"), "谓词不变: {sql}");
+        let parent = render_select("tbl_Bag", &["parentID".into()], PlanFilter::ParentId);
+        assert!(parent.contains("WHERE `parentID` = ?"), "子表谓词不变: {parent}");
     }
 }
