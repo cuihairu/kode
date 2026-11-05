@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import { jumpLog, jumpTimeStart } from './navigationLog';
 import { INTERACTIVE_INDEX_WAIT_MS, logLayerTiming, raceWithBudget } from './hoverBudget';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
+import { ensureConfigDerivedScanRoot } from './configDerive';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { readFileUtf8Recorded, readFileSyncUtf8Recorded } from './fileReadMetrics';
 import { collectOpenDocumentTexts, readSharedFileSnapshot } from './sharedFileSnapshot';
@@ -394,9 +395,11 @@ export class EntityMappingManager {
   }
 
   private async performScanEntityMappings(): Promise<void> {
-    // 扫描根 = workspace 顶层 ∪ assetsRoot(2026-10-16):loader 按全部根逐个
-    // 解析 def(外部资产根下的 entities/接口/父链同样找得到)。空根集合(无
-    // 工作区且无 assetsRoot)= 原空工作区早退,不失败。
+    // 扫描根 = workspace 顶层 ∪ 资产根,资产根半边按配置派生优先(CFG-005:
+    // RPC 取 CFG-004 推导链,缓存按代键控;失败/降级回落旧 assetsRoot 链):
+    // loader 按全部根逐个解析 def(外部资产根下的 entities/接口/父链同样
+    // 找得到)。空根集合(无工作区且无 assetsRoot)= 原空工作区早退,不失败。
+    await ensureConfigDerivedScanRoot();
     const scanRoots = getIndexScanRoots();
     if (scanRoots.length === 0) {
       return;

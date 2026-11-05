@@ -108,3 +108,131 @@ fn rpc_registry_lists_registered_methods() {
     let methods: Vec<&str> = reg.methods().collect();
     assert!(methods.contains(&"$/kode/echo"));
 }
+
+/// KODE-CFG-005 `$/kode/config/derive`:def 扫描根按配置路径事实派生
+/// (`{assets}/res/server/kbengine.xml` → `{assets}/scripts`,CFG-004 链)。
+#[test]
+fn config_derive_dispatch_def_scan_root_from_path() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            5,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/derive",
+                "params": {
+                    "tree": null,
+                    "defaultsTree": null,
+                    "facts": {
+                        "workspaceRoot": "/ws",
+                        "customConfigPath": "/proj/assets/res/server/kbengine.xml",
+                        "entryScripts": []
+                    }
+                }
+            }),
+        ),
+    );
+    assert_eq!(
+        response_of(&out)["derive"]["defScanRoots"],
+        json!({"roots": ["/proj/assets/scripts"], "fallback": null, "degraded": false})
+    );
+}
+
+/// 配置路径无 `res` 锚点 → degraded + fallback=workspaceRoot + 诊断条
+/// (TS 侧回退旧链,不崩)。
+#[test]
+fn config_derive_dispatch_degraded_diagnostics() {
+    let mut state = ServerState::new();
+    init(&mut state);
+    let out = handle_message(
+        &mut state,
+        request(
+            6,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/derive",
+                "params": {
+                    "tree": null,
+                    "defaultsTree": null,
+                    "facts": {
+                        "workspaceRoot": "/ws",
+                        "customConfigPath": "/proj/kbengine.xml",
+                        "entryScripts": []
+                    }
+                }
+            }),
+        ),
+    );
+    let body = response_of(&out);
+    assert_eq!(
+        body["derive"]["defScanRoots"],
+        json!({"roots": ["/ws"], "fallback": "workspaceRoot", "degraded": true})
+    );
+    assert!(
+        body["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["scope"] == "defScanRoots" && d["severity"] == "warning"),
+        "降级应产出 defScanRoots 诊断条"
+    );
+}
+
+/// 树经 JSON 反序列化进派生(telnet 开关面);树形态非法 → Err(不 panic,
+/// TS 回退)。
+#[test]
+fn config_derive_dispatch_parses_tree_and_rejects_bad_shape() {
+    let mut state = ServerState::new();
+    init(&mut state);
+
+    // 自定义树含顶层 telnet_service → telnet enabled。
+    let out = handle_message(
+        &mut state,
+        request(
+            7,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/derive",
+                "params": {
+                    "tree": {"name": "", "text": "", "children": [
+                        {"name": "telnet_service", "text": "", "children": [
+                            {"name": "port", "text": "40009", "children": []},
+                            {"name": "password", "text": "pw", "children": []}
+                        ]}
+                    ], "sourceComments": []},
+                    "defaultsTree": null,
+                    "facts": {"workspaceRoot": "/ws", "customConfigPath": null, "entryScripts": []}
+                }
+            }),
+        ),
+    );
+    assert_eq!(response_of(&out)["derive"]["telnet"]["enabled"], true);
+    assert_eq!(
+        response_of(&out)["derive"]["telnet"]["endpoints"][0]["port"],
+        json!(40009)
+    );
+
+    // 树非对象 → Err,dispatch 不 panic。
+    let out = handle_message(
+        &mut state,
+        request(
+            8,
+            "$/kode/rpc",
+            json!({
+                "method": "$/kode/config/derive",
+                "params": {
+                    "tree": "not-an-object",
+                    "defaultsTree": null,
+                    "facts": {"workspaceRoot": "/ws", "customConfigPath": null, "entryScripts": []}
+                }
+            }),
+        ),
+    );
+    let err = match &out[0] {
+        Outgoing::Response(r) => r.error.as_ref().expect("应返回错误"),
+        Outgoing::Notification(_) => panic!("expected response"),
+    };
+    assert!(err.message.contains("应为对象"), "错误文案: {}", err.message);
+}

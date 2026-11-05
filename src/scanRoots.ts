@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { getConfigDerivedScanRoot } from './configDerive';
 import { startLanguageServiceOperation } from './languageServiceMetrics';
 import { resetDiscoveryMemo, resolveDiscoveredConfigRoot } from './workspaceDiscovery';
 
@@ -124,9 +125,17 @@ export function getIndexScanRoots(): string[] {
     // workspace 读取异常 → 只剩 assetsRoot 兜底,不外抛
   }
   const workspaceRoot = candidates[0] ?? '';
+  // KODE-CFG-005:配置派生扫描根优先(CFG-004 链,经 ensureConfigDerivedScanRoot
+  // 刷新的缓存读取;`{assets}/res/server/kbengine.xml` → `{assets}/scripts`)。
+  // 缓存未就绪/RPC 失败/降级/目录不存在 → 派生根落空,自然走旧
+  // workspace∪assetsRoot 链兜底(设计 §6.2:旧链保留为兜底,派生结果优先)
+  const derivedRoot = getConfigDerivedScanRoot();
+  if (derivedRoot) {
+    candidates.push(derivedRoot);
+  }
   try {
     const assetsRoot = resolveAssetsRootForWorkspace(workspaceRoot);
-    if (assetsRoot) {
+    if (assetsRoot && !derivedRoot) {
       candidates.push(assetsRoot);
     }
   } catch {
