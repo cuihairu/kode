@@ -1268,7 +1268,6 @@
   验收：cellappIndex 参数 hover 显示语义说明与示例。
   （2026-11-05 完成：`src/languageProviders.ts` 新增 `createCellappIndexHover`（:2632，word=cellappIndex 或 createCellEntityInNewSpace 时返回语义悬停——0/None=负载均衡自动选、N>0=取模轮转 `(N-1)%cellappSize`（cellappmgr.cpp:348-351）、搭配 NOT_PARTCIPATING_LOAD_BALANCING 钉大地图+副本走机动、python 示例块+源码锚点 baseapp.cpp:2462→cellappmgr.cpp:310）；接线于 provideKnownHover hoverShowValueDocs 段首（:1555,先于 SP-2/SP-1,名称无冲突）。prove-red=tests/cellappIndexHover.test.ts 首跑 4/5 挂（参数语义/示例/方法名/def Arg 四正例全空）；修后 5/5 绿（含不劫持无关标识符反例）。门禁：`npx vitest run tests/cellappIndexHover.test.ts` 5/5；SP 全家桶八件套 141/141 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。未 commit。）
 
-<<<<<<< HEAD
 - [x] 审核发现：诊断使用全文偏移作为行内列号，第二行起的空间导航告警会定位到错误位置或行末（src/spaceNavDiagnostics.ts:136）。（67d34aa；`computeSpaceNavFindings` 三类发现统一改 `start/end` 为行内列——新增 `offsetToCol(starts, offset)`（offset 减该行起始偏移），不再把全文偏移当列号；_mapping/引号键/self.navigate 三处均改列口径；tests/spaceNavDiagnostics.test.ts 新增「第二行起的诊断列号是行内列而非全文偏移」「第二行起的 _mapping 键列号是行内列」两例（旧实现全文偏移当列号即红）。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 18/18 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。）
 - [ ] 审核发现：范围历史不检查编辑器未保存内容，直接用磁盘差异映射选区，未保存的插入或删除会查询错误的 HEAD 行（src/extension.ts:4200）。
 - [ ] 审核发现：Git 查询缓存包含工作区 diff 和 HEAD 查询且范围历史未绕过缓存，文件修改或提交后再次查询会使用过期映射与历史（src/gitQueryGate.ts:205）。
@@ -1281,7 +1280,6 @@
 - [ ] 审核发现：派生 scripts 根存在时排除整个外部 assetsRoot，使 scripts 之外的资源和定义文件不再被索引（src/scanRoots.ts:138）。
 - [x] 审核发现：空间导航诊断在注释和字符串中也匹配调用，且把任意对象的 navigate 当作引擎方法，默认启用时会产生无关告警（src/spaceNavDiagnostics.ts:147）。（67d34aa；`computeSpaceNavFindings` 新增 `codeMask(text)` 逐字符词法掩码（行注释 `#`、单/双引号字符串含三引号→非代码区），三类发现只在调用点 `inCode` 才报，注释/字符串里的 navigate/canNavigate/引号键字样不再参与判定与守卫；`NAV_CALL_RE` 由 `\b(?:navigate|navigatePathPoints)\s*\(` 收紧为 `\bself\s*\.\s*(navigate|navigatePathPoints)\s*\(`——只认引擎实体方法调用约定 `self.navigate`，任意对象（avatar.navigate 等）不再误报；`CAN_NAVIGATE_RE` 补 `g` 标志（否则 exec 死循环，测试暴露后修复）；tests/spaceNavDiagnostics.test.ts 新增「注释里的 navigate 与 canNavigate 不参与判定」「字符串里的 navigate 字样不报」「任意对象的 navigate 不当引擎方法」「self.navigate 仍报」四例。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 18/18 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。）
 - [ ] 审核发现：共享在途 Git 查询仅使用首个调用方的取消令牌，一个视图取消会终止另一视图的相同查询，而后加入视图的取消不会生效（src/gitQueryGate.ts:200）。
-=======
 ## Windows 全量测试对齐（2026-11-05 全量 vitest 分析：6246 测试 194 失败/71 文件；CI=ubuntu 故 Windows 绿从未保证）
 
 - [x] WIN-1 [P1] 真 bug：entityDependency 用 Uri.parse 读 fsPath（18 失败）
@@ -1318,4 +1316,3 @@
 - [x] WIN-7 [P2] 全量并行超时（5 硬超时：debugConfigAttach/extension/processManager/pythonClassIndex 等，单跑绿）（2026-11-05 关闭：9b522f3 vitest maxWorkers=8。硬超时 6→1（余1为既有单点）；原「单跑绿全量挂」的 4 个（extension/processManager/pythonClassIndex 等）实为 WIN-2 spawn 失败假象，随 391864f 一并消失。）
   落点：499 文件并行在 16C/8GB 挤爆；vitest 默认 maxWorkers 无上限保护。
   验收：vitest.config 限 maxWorkers（或提供 --maxWorkers 配方）；全量跑超时类清零。
->>>>>>> 5398ef5 (docs(todo): record Windows full-suite analysis as WIN-1..WIN-7)
