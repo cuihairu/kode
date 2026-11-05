@@ -1,10 +1,13 @@
-import { readFileSync } from 'fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
+import * as http from 'http';
+import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { QuickActionManager } from '../src/quickActions';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { startReferenceReceiver } from './helpers/referenceReceiver';
 import {
   configurationOverrides,
   lastFileSystemWatcher,
@@ -246,5 +249,124 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     const hotReload = read('hotReload.ts');
     expect(hotReload).toContain('recordHttpDelivery');
     expect(hotReload).toContain('applyAcceptedReceipt');
+  });
+
+  // IDE-REV-022 重新核验(2026-11-05,AUD-007 证据落地后):回包体不再是
+  // 模拟 JSON 字符串——参考接收端真实监听回环端口,runAction 发真实 HTTP
+  // POST,响应按真实 wire 样本经既有响应面接线落台账。
+  const realHttpPost = async (
+    port: number,
+    body: string
+  ): Promise<{ status: number; body: string }> =>
+    new Promise((resolve, reject) => {
+      const request = http.request(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/reload',
+          method: 'POST',
+          headers: { 'content-type': 'application/json' }
+        },
+        response => {
+          let raw = '';
+          response.on('data', (chunk: Buffer) => {
+            raw += chunk.toString('utf8');
+          });
+          response.on('end', () => resolve({ status: response.statusCode ?? 0, body: raw }));
+        }
+      );
+      request.on('error', reject);
+      request.write(body);
+      request.end();
+    });
+
+  // 真实 wire 往返不受固定两拍 flush 约束:按终态有界轮询(5s 上限)
+  const waitForOutcome = async (
+    store: HotReloadTargetStateStore,
+    file: string,
+    expected: 'accepted' | 'sent-unverified'
+  ): Promise<void> => {
+    const key = { rootId: '/ws', targetId: 't1' };
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const outcome = store.get(key, file)?.outcome;
+      if (outcome === expected) {
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    expect(store.get(key, file)?.outcome).toBe(expected);
+  };
+
+  it('真实接收端 accepted 回包(真 wire):火线路径升格 accepted', async () => {
+    const receiver = await startReferenceReceiver('stage', 'accepted');
+    try {
+      const clock = makeTimers();
+      const store = new HotReloadTargetStateStore({ now: () => 7 });
+      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev022-')), 'Avatar.py');
+      writeFileSync(realFile, 'class Avatar:\n    pass\n', 'utf8');
+      enableHotReload();
+      setupHotReload(
+        makeContext(),
+        async (_name, sendOptions) => {
+          const response = await realHttpPost(receiver.port, JSON.stringify({ files: [realFile] }));
+          sendOptions?.onHttpResponse?.(response);
+          return true;
+        },
+        {
+          timers: clock.timers,
+          targetState: {
+            store,
+            resolveTargetId: () => 't1',
+            resolveRootId: () => '/ws',
+            readFileContent: async () => readFileSync(realFile, 'utf8')
+          }
+        }
+      );
+
+      fireFiles([realFile]);
+      clock.tick();
+      await flush();
+      await waitForOutcome(store, realFile, 'accepted');
+      rmSync(path.dirname(realFile), { recursive: true, force: true });
+    } finally {
+      receiver.dispose();
+    }
+  });
+
+  it('真实接收端非 JSON 回包(真 wire):已送达但保持未确认', async () => {
+    const receiver = await startReferenceReceiver('stage', 'echo');
+    try {
+      const clock = makeTimers();
+      const store = new HotReloadTargetStateStore({ now: () => 7 });
+      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev022-')), 'Avatar.py');
+      writeFileSync(realFile, 'class Avatar:\n    pass\n', 'utf8');
+      enableHotReload();
+      setupHotReload(
+        makeContext(),
+        async (_name, sendOptions) => {
+          const response = await realHttpPost(receiver.port, JSON.stringify({ files: [realFile] }));
+          sendOptions?.onHttpResponse?.(response);
+          return true;
+        },
+        {
+          timers: clock.timers,
+          targetState: {
+            store,
+            resolveTargetId: () => 't1',
+            resolveRootId: () => '/ws',
+            readFileContent: async () => readFileSync(realFile, 'utf8')
+          }
+        }
+      );
+
+      fireFiles([realFile]);
+      clock.tick();
+      await flush();
+      await waitForOutcome(store, realFile, 'sent-unverified');
+      rmSync(path.dirname(realFile), { recursive: true, force: true });
+    } finally {
+      receiver.dispose();
+    }
   });
 });

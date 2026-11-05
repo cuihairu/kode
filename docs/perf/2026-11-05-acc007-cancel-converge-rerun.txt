@@ -1,0 +1,10 @@
+acc007.cancel.probes=8
+acc007.cancel.cancelledCount=2
+acc007.cancel.maxElapsedMs=5
+acc007.reads.postCancelWindow=0
+acc007.pending.requestSide={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"schemaColdBuilds":0}
+acc007.shared.indexTasksQueuedAtSettle=0
+acc007.shared.parseCountBefore=3081
+acc007.shared.parseCountAfter=3083
+acc007.shared.convergeMs=500
+acc007.pendingWorkFinal={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"caches":{"parsedDocuments":{"entries":8,"maxEntries":8,"bytes":213,"maxBytes":8388608},"databaseSchemas":{"entries":6,"capacity":32},"annotationIndex":{"entries":1,"ttlMs":3000}},"worker":{"running":0,"queued":0,"queuedBytes":0,"maxQueuedBytes":8388608,"peakQueuedBytes":0,"budgetRejects":0,"postedBytes":0,"maxPostedJobs":16,"maxPostedBytes":8388608},"annotationBuilds":{"running":0,"waiting":0,"cancelled":0},"indexTasksQueued":0,"schemaColdBuilds":0}

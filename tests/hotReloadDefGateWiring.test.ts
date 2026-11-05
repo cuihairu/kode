@@ -35,6 +35,15 @@ const BASE_DEF = `<root>
 const STRUCTURAL_DEF = BASE_DEF.replace('<Type>INT32</Type>', '<Type>FLOAT</Type>');
 // 只加注释:结构指纹不变
 const NONSTRUCTURAL_DEF = `<!-- 注释不进指纹 -->\n${BASE_DEF}`;
+// 装载面结构变化(IDE-AUD-014):Parent 改名=继承根变化 → 有效属性/方法集变化
+const PARENT_BASE_DEF = `<root>\n  <Parent> Avatar </Parent>\n  <Properties>\n    <hp>\n      <Type>INT32</Type>\n      <Flags>CELL_PRIVATE</Flags>\n    </hp>\n  </Properties>\n</root>\n`;
+const PARENT_CHANGED_DEF = PARENT_BASE_DEF.replace('<Parent> Avatar </Parent>', '<Parent> Monster </Parent>');
+// 组件槽 Persistent 改(装载面/序列化交界):同样必须在火线路径被拦
+const COMPONENT_BASE_DEF = `<root>\n  <Properties>\n    <hp>\n      <Type>INT32</Type>\n      <Flags>CELL_PRIVATE</Flags>\n    </hp>\n  </Properties>\n  <Components>\n    <bag>\n      <Type>ITEMS</Type>\n      <Persistent> true </Persistent>\n    </bag>\n  </Components>\n</root>\n`;
+const COMPONENT_CHANGED_DEF = COMPONENT_BASE_DEF.replace(
+  '<Persistent> true </Persistent>',
+  '<Persistent> false </Persistent>'
+);
 
 const makeTimers = (): { timers: HotReloadTimerDeps; tick: () => number } => {
   const handles = new Map<unknown, () => void>();
@@ -237,5 +246,56 @@ describe('setupHotReload def 结构闸接线(IDE-REV-024)', () => {
     expect(gate).toContain("endsWith('.def')");
     const status = read('hotReloadStatus.ts');
     expect(status).toContain('setRestartRequired');
+  });
+
+  // IDE-REV-024 重新核验(2026-11-05):AUD-014 装载面(d08e315)在真实火线
+  // 入口的拦下面——Parent/组件槽变化不只是指纹单测结论,实际发送器同样
+  // 收不到 reload;非结构变化照常放行。
+  it('装载面 Parent 变化:实际发送器未收到 reload(火线路径重新核验)', async () => {
+    const run = wire();
+    run.setContent(PARENT_BASE_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    // 首见建基线:保守不发
+    expect(run.runCalls).toEqual([]);
+
+    run.setContent(PARENT_CHANGED_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('需重启'))).toBe(true);
+    expect(hotReloadLog().some(line => line.includes('装载面变化: parent'))).toBe(true);
+  });
+
+  it('装载面组件槽 Persistent 变化:拦下;之后非结构变化放行(火线路径重新核验)', async () => {
+    const run = wire();
+    run.setContent(COMPONENT_BASE_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    run.setContent(COMPONENT_CHANGED_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('装载面变化: component.bag'))).toBe(true);
+
+    // 基线逐次滚动(保守口径):改回去同样是相对新基线的结构变化,仍拦
+    run.setContent(COMPONENT_BASE_DEF);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual([]);
+    expect(hotReloadLog().some(line => line.includes('装载面变化: component.bag'))).toBe(true);
+
+    // 之后只加注释(相对当前基线非结构)→ 照常发送
+    const commented = `<!-- 注释不进指纹 -->\n${COMPONENT_BASE_DEF}`;
+    run.setContent(commented);
+    run.fire('/ws/scripts/Avatar.def');
+    run.clock.tick();
+    await flush();
+    expect(run.runCalls).toEqual(['热更']);
   });
 });

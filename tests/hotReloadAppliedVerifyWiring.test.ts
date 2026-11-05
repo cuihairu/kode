@@ -1,10 +1,13 @@
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import * as http from 'http';
+import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as vscode from 'vscode';
 import { setupHotReload, type HotReloadTimerDeps } from '../src/hotReload';
 import { HotReloadTargetStateStore } from '../src/hotReloadTargetState';
+import { startReferenceReceiver } from './helpers/referenceReceiver';
 import { configurationOverrides, lastFileSystemWatcher, workspace as stubWorkspace } from './helpers/vscodeStub';
 
 // IDE-REV-023 applied 证据核验接线:真实 HTTP 响应的回包体经
@@ -227,7 +230,7 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     const store = new HotReloadTargetStateStore({ now: () => 5 });
     const pendingReads: Array<(value: string | null) => void> = [];
     const digest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
-    let fakeNow = 1000;
+    const fakeNow = 1000;
     let sendCount = 0;
     enableHotReload();
     setupHotReload(
@@ -322,5 +325,106 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     expect(hotReload).toContain('verifyAppliedReceipt(');
     expect(hotReload).toContain('settleAppliedStatus(');
     expect(hotReload).toContain('HOT_RELOAD_APPLIED_SETTLE_MS');
+  });
+
+  // IDE-REV-023 重新核验(2026-11-05,AUD-007 证据落地后):applied 回包体
+  // 不再是模拟 JSON——参考接收端真实监听回环端口,对收到的文件重算 sha256
+  // 回真实 digest;火线以发送时点冻结基准双证核验。
+  const realHttpPost = async (port: number, body: string): Promise<{ status: number; body: string }> =>
+    new Promise((resolve, reject) => {
+      const request = http.request(
+        {
+          host: '127.0.0.1',
+          port,
+          path: '/reload',
+          method: 'POST',
+          headers: { 'content-type': 'application/json' }
+        },
+        response => {
+          let raw = '';
+          response.on('data', (chunk: Buffer) => {
+            raw += chunk.toString('utf8');
+          });
+          response.on('end', () => resolve({ status: response.statusCode ?? 0, body: raw }));
+        }
+      );
+      request.on('error', reject);
+      request.write(body);
+      request.end();
+    });
+
+  const wireRealReceiver = async (
+    receiver: { port: number },
+    store: HotReloadTargetStateStore,
+    clock: ReturnType<typeof makeTimers>,
+    realFile: string
+  ): Promise<void> => {
+    enableHotReload();
+    setupHotReload(
+      makeContext(),
+      async (_name, sendOptions) => {
+        const response = await realHttpPost(receiver.port, JSON.stringify({ files: [realFile] }));
+        sendOptions?.onHttpResponse?.(response);
+        return true;
+      },
+      {
+        timers: clock.timers,
+        targetState: {
+          store,
+          resolveTargetId: () => 't1',
+          resolveRootId: () => '/ws',
+          readFileContent: async () => readFileSync(realFile, 'utf8')
+        }
+      }
+    );
+    lastFileSystemWatcher.current!.fireChange({ fsPath: realFile } as never);
+    clock.tick();
+  };
+
+  const waitFor = async (predicate: () => boolean): Promise<void> => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && !predicate()) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  };
+
+  it('真实接收端 applied 回包(digest=接收端重算):火线双证核验升格 applied', async () => {
+    const receiver = await startReferenceReceiver('apply', 'applied');
+    try {
+      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
+      writeFileSync(realFile, CONTENT, 'utf8');
+      const store = new HotReloadTargetStateStore({ now: () => 5 });
+      await wireRealReceiver(receiver, store, makeTimers(), realFile);
+      await flush();
+      await waitFor(() => store.get(KEY, realFile)?.outcome === 'applied');
+
+      const record = store.get(KEY, realFile);
+      expect(record?.outcome).toBe('applied');
+      expect(record?.detail).toContain('digest 一致');
+      // 接收端重算的 digest 与所发内容一致(真实 wire 双证)
+      expect(record?.sentDigest).toBe(createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex'));
+      rmSync(path.dirname(realFile), { recursive: true, force: true });
+    } finally {
+      receiver.dispose();
+    }
+  });
+
+  it('真实接收端 digest 不符回包(真 wire):保持未确认并注解阻塞', async () => {
+    const receiver = await startReferenceReceiver('apply', 'digest-mismatch');
+    try {
+      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
+      writeFileSync(realFile, CONTENT, 'utf8');
+      const store = new HotReloadTargetStateStore({ now: () => 5 });
+      await wireRealReceiver(receiver, store, makeTimers(), realFile);
+      await flush();
+      await waitFor(() => (store.get(KEY, realFile)?.detail ?? '').includes('digest 与所发内容不符'));
+
+      const record = store.get(KEY, realFile);
+      expect(record?.outcome).toBe('sent-unverified');
+      expect(record?.detail).toContain('applied 核验阻塞');
+      rmSync(path.dirname(realFile), { recursive: true, force: true });
+    } finally {
+      receiver.dispose();
+    }
   });
 });
