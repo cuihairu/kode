@@ -16,6 +16,7 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
 
 /** 定位依赖注入面(纯函数可测,不落 vscode/fs 实面)。 */
 export interface GitRepoLocationDeps {
@@ -88,6 +89,38 @@ export function locateGitRepository(
   }
 
   return { kind: 'none', reason: 'outside-repo' };
+}
+
+/** 真实 fs 依赖面(探针/读指针/判目录),供调用面装配定位。 */
+export function realGitRepoLocationDeps(): GitRepoLocationDeps {
+  return {
+    probeGitMarker(dir: string): 'dir' | 'file' | null {
+      const marker = path.join(dir, '.git');
+      let stat: fs.Stats | undefined;
+      try {
+        stat = fs.statSync(marker);
+      } catch {
+        return null;
+      }
+      if (stat.isDirectory()) return 'dir';
+      if (stat.isFile()) return 'file';
+      return null;
+    },
+    readGitFile(absPath: string): string | null {
+      try {
+        return fs.readFileSync(absPath, 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    isDirectory(absPath: string): boolean {
+      try {
+        return fs.statSync(absPath).isDirectory();
+      } catch {
+        return false;
+      }
+    },
+  };
 }
 
 /** 定位失败/命中的明确反馈文案(供命令/视图呈现)。 */
