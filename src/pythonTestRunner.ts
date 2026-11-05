@@ -114,7 +114,12 @@ const NO_PYTEST_MESSAGE =
  * 路径,`-v` 行打 `test_x.py::test_ok`),故按「用例名精确+文件后
  * 缀」匹配(绝对直传与相对归一两种形态都吃)。
  */
-const pathSuffixMatch = (a: string, b: string): boolean => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+const pathSuffixMatch = (a: string, b: string): boolean => {
+  // 双平台:Windows item.file 是反斜杠绝对路径,pytest node id 用 /——归一后再比。
+  const na = a.replace(/\\/g, '/');
+  const nb = b.replace(/\\/g, '/');
+  return na === nb || na.endsWith(`/${nb}`) || nb.endsWith(`/${na}`);
+};
 
 function nodeMatchesItem(node: string, item: PythonTestRunItem): boolean {
   const separator = node.indexOf('::');

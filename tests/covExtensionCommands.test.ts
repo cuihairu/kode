@@ -22,6 +22,13 @@ import {
   setCpuProfileSessionFactory,
   type CpuProfilerSessionLike
 } from '../src/cpuProfileCapture';
+import { locateInterpreterOnPath } from '../src/profileInterpreter';
+
+// 真实解释器(双平台):测试面板「运行」档会真实 spawn 它跑 pytest——
+// CI(ubuntu) 取 PATH 上 /usr/bin/python3,Windows 取 PATH 上真实 python。
+// 写死 Linux 路径会在 Windows 上被 taskContext exists 守卫 refuse(WIN-3 批)。
+const REAL_INTERPRETER =
+  locateInterpreterOnPath(process.env.PATH ?? '', process.platform) ?? '/usr/bin/python3';
 
 // extension.ts 激活链命令面补测:metrics 四命令 / focusTarget 空参 /
 // 无 profile 拒绝路径 / 远程主机管理 / debugpy 同步与等待连接开关 /
@@ -430,7 +437,11 @@ describe('extension 激活链命令面(补测)', () => {
     ).toBe(true);
   }, 20000);
 
-  it('debug.pyspyDump:已装 → 进程选择 → dump 出栈入通道', async () => {
+  // win32 skip:fake py-spy 走 PATH 暴露——Windows 上 Node spawn 不解析
+  // PATHEXT(裸名只命中 .exe)且 .cmd/.bat 直 spawn 被拒(EINVAL,CVE-2024-27980),
+  // shebang 脚本亦不可执行,装配级无法注入假可执行文件。真实 pip 布局的
+  // py-spy.exe(PATH 上)生产链路不受影响;行为覆盖由 Linux CI 承担。
+  it.skipIf(process.platform === 'win32')('debug.pyspyDump:已装 → 进程选择 → dump 出栈入通道', async () => {
     const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-pyspy-bin-'));
     fs.writeFileSync(
       path.join(binDir, 'py-spy'),
@@ -447,7 +458,8 @@ describe('extension 激活链命令面(补测)', () => {
     );
     const originalPath = process.env.PATH;
     const originalQuickPick = fakeWindow.showQuickPick;
-    process.env.PATH = `${binDir}:${originalPath}`;
+    // PATH 分隔双平台::(POSIX) vs ;(win32)——写死 : 在 Windows 是一个坏条目。
+    process.env.PATH = `${binDir}${path.delimiter}${originalPath}`;
     (fakeWindow as { showQuickPick: unknown }).showQuickPick =
       async (items: Array<{ description?: string }>) => items[0];
     try {
@@ -947,7 +959,7 @@ describe('extension 激活链命令面(活动 profile 侧)', () => {
       displayName: 'cov-profile',
       assetsRoot: assets,
       engineRoot: '',
-      interpreterPath: '/usr/bin/python3',
+      interpreterPath: REAL_INTERPRETER,
       interpreterSource: 'path'
     }]);
     store.set('kbengine.activeProfileId.v1', 'p1');
