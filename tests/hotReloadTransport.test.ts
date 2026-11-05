@@ -210,6 +210,55 @@ describe('F4 回归:HTTP 通道透传并核验 targetId', () => {
     expect(captured[0].body).toContain('"target":"baseapp"');
   });
 
+  it('F4 二轮回归:显式非字符串 targetId(null/数字/对象)→ 拒绝该回执,不当「未提供」处理', () => {
+    for (const bad of [null, 42, { id: 'baseapp' }]) {
+      const receipts = parseReloadHttpReceipts(
+        JSON.stringify({ status: 'applied', file: files[0], digest: 'd'.repeat(64), targetId: bad }),
+        files,
+        'baseapp'
+      );
+      // 非字符串 targetId 是畸形回执不是缺省:绝不按未提供处理而接受 applied
+      expect(receipts.some(r => r.status === 'applied' || r.status === 'accepted')).toBe(false);
+      expect(receipts[0]).toMatchObject({ status: 'sent', file: files[0] });
+      expect(JSON.stringify(receipts[0])).toContain('targetId');
+    }
+  });
+
+  it('F4 二轮回归:JSON 请求体自动附加 targetId 字段(不依赖 ${targetId} 模板占位符)', async () => {
+    const captured: Array<{ body: string }> = [];
+    const transport = new HttpReloadTransport(
+      // 模板没有 ${targetId} 占位符:请求侧仍必须让接收端知道目标
+      entry({ body: '{"files":${files}}' }),
+      {
+        run: async request => {
+          captured.push(request);
+          return { status: 200, body: 'ok' };
+        }
+      }
+    );
+    await transport.send(target, files, () => undefined);
+    const parsed = JSON.parse(captured[0].body);
+    expect(parsed.targetId).toBe('baseapp');
+    expect(parsed.files).toEqual(files);
+  });
+
+  it('F4 二轮回归:请求体已有显式 targetId 字段 → 不覆盖', async () => {
+    const captured: Array<{ body: string }> = [];
+    const transport = new HttpReloadTransport(
+      entry({ body: '{"targetId":"explicit-target","files":${files}}' }),
+      {
+        run: async request => {
+          captured.push(request);
+          return { status: 200, body: 'ok' };
+        }
+      }
+    );
+    await transport.send(target, files, () => undefined);
+    const parsed = JSON.parse(captured[0].body);
+    expect(parsed.targetId).toBe('explicit-target');
+    expect(parsed.files).toEqual(files);
+  });
+
   it('端到端:回包 applied 带不匹配 targetId → 通道不产生 applied 回执', async () => {
     const transport = new HttpReloadTransport(entry(), {
       run: async () => ({

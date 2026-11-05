@@ -183,10 +183,16 @@ export function parseReloadHttpReceipts(
       continue;
     }
     // F4:回执显式 targetId 与预期目标不一致 → 整条拒绝(不认状态、不认
-    // digest);未给 targetId 的回执不受影响(可选字段,给了就必须一致,
-    // 与 hotReloadReceipt/hotReloadAppliedCheck 同口径)
+    // digest);F4 二轮:显式「非字符串」targetId(null/数字/对象)是畸形
+    // 回执,绝不归一化成 undefined 按「未提供」处理——同样整条拒绝。字段
+    // 缺失才是真的未提供(可选字段,给了就必须是匹配目标的字符串)。
+    const hasTargetIdField = 'targetId' in record;
     const receiptTargetId = typeof record.targetId === 'string' ? record.targetId : undefined;
-    if (expectedTargetId !== undefined && receiptTargetId !== undefined && receiptTargetId !== expectedTargetId) {
+    const malformedTargetId = hasTargetIdField && receiptTargetId === undefined;
+    if (
+      malformedTargetId ||
+      (expectedTargetId !== undefined && receiptTargetId !== undefined && receiptTargetId !== expectedTargetId)
+    ) {
       mismatched.add(file);
       continue;
     }
@@ -287,13 +293,32 @@ export class HttpReloadTransport implements ReloadTransport {
         fileSet,
         this.deps.context
       );
+    // F4 二轮:JSON 对象请求体自动附加 targetId 字段——目标寻址不依赖模板
+    // 作者记得写 ${targetId} 占位符;模板已显式给出(占位符替换产物或写死)
+    // 则不覆盖;非 JSON 对象(数组/纯文本)无处附加,如实保持原样。
+    const autoAttachTargetId = (text: string): string => {
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed) &&
+          !('targetId' in (parsed as Record<string, unknown>))
+        ) {
+          return JSON.stringify({ ...(parsed as Record<string, unknown>), targetId: target.targetId });
+        }
+      } catch {
+        // 非 JSON:无处附加,保持原样
+      }
+      return text;
+    };
     const request: ReloadHttpRequest = {
       url: substitute(this.entry.url),
       method: this.entry.method,
       headers: Object.fromEntries(
         Object.entries(this.entry.headers).map(([key, value]) => [key, substitute(value)])
       ),
-      body: substitute(this.entry.body)
+      body: autoAttachTargetId(substitute(this.entry.body))
     };
     let response: ReloadHttpResponse;
     try {
