@@ -12,6 +12,7 @@
 //! 铁律:除密码学外零第三方 crate(本 crate 仅依赖 workspace 内 kode-vfs);
 //! 任何输入不 panic(见 tests/blind.rs 变异抽验)。
 
+pub mod config;
 pub mod dep;
 pub mod diag;
 pub mod json;
