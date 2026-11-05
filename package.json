@@ -131,7 +131,14 @@
     "onCommand:kbengine.python.showCallChain",
     "onCommand:kbengine.hotReload.tempEdit.run",
     "onCommand:kbengine.core.showShadowDiffLog",
-    "onCommand:kbengine.source.reveal"
+    "onCommand:kbengine.source.reveal",
+    "onCommand:kbengine.infer.run",
+    "onCommand:kbengine.managedDir.syncExclusions",
+    "onCommand:kbengine.git.showHistory",
+    "onCommand:kbengine.git.showRangeHistory",
+    "onCommand:kbengine.git.historyNextPage",
+    "onCommand:kbengine.git.openVersionDiff",
+    "onCommand:kbengine.git.openVersionContent"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
