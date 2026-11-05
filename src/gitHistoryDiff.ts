@@ -60,8 +60,11 @@ export function relativeVersionPath(repoRoot: string, filePath: string): string 
   if (abs === root) return '';
   if (!abs.startsWith(root + path.sep)) return null;
   const rel = path.relative(root, abs);
-  // 反斜杠/父段(逃逸)拒绝;git 用 `/` 分隔
-  if (rel.includes('..') || rel.includes('\\')) return null;
+  // 拒绝确切 `..` 父段;Windows 上 path.sep=`\`,子目录路径必须合法,不能整串拒绝。
+  // 反斜杠路径仅作为分隔符出现;非 Windows 上一律拒绝反斜杠(路径不可能有分隔反斜杠)。
+  const segments = rel.split(path.sep);
+  if (segments.some(segment => segment === '..' || segment === '.')) return null;
+  if (path.sep !== '\\' && rel.includes('\\')) return null;
   return rel.split(path.sep).join('/');
 }
 

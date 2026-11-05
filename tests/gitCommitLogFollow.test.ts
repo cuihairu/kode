@@ -253,6 +253,30 @@ describe('IDE-GIT-007 真实临时仓库:重命名链与跨仓库隔离', () => 
     expect(page2.entries.map(e => e.pathAtCommit)).toEqual(['src/old.py', 'src/old.py']);
   });
 
+  it('中文/需引号文件名:默认 quotepath 转义会被关掉,pathAtCommit 原样可开', async () => {
+    const root = makeRepo();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    writeFileSync(join(root, 'src', 'old.py'), 'x = 1\n');
+    commitAll(root, 'create old');
+    execFileSync('git', ['mv', 'src/old.py', 'src/中文 文件.py'], { cwd: root });
+    commitAll(root, 'rename to chinese');
+
+    const result = await queryGitCommitLog(
+      { repoRoot: root, filePath: join(root, 'src', '中文 文件.py'), follow: true },
+      realDeps
+    );
+    expect(result.kind).toBe('page');
+    if (result.kind !== 'page') return;
+    expect(result.entries[0].pathAtCommit).toBe('src/中文 文件.py');
+    expect(result.entries[1].pathAtCommit).toBe('src/old.py');
+    // 老路径版本可经 git show <commit>:<old> 打开(路径非转义串)
+    const oldEdit = result.entries[1];
+    const content = execFileSync('git', ['show', `${oldEdit.hash}:src/old.py`], { cwd: root })
+      .toString()
+      .trim();
+    expect(content).toBe('x = 1');
+  });
+
   it('多仓库同名文件不串历史(repoRoot cwd 作用域)', async () => {
     const a = makeRepo();
     const b = makeRepo();
