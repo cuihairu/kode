@@ -106,32 +106,6 @@ export function defaultGitQueryGateDeps(): GitQueryGateDeps {
   return { spawn: (args, options) => runGitReadOnly(args, options) };
 }
 
-/** 组合取消:caller 或 gate 任一侧取消即触发(供 runGitReadOnly 终止子进程)。 */
-function combineTokens(
-  caller: GitCancellationToken | undefined,
-  gate: GitCancellationToken
-): GitCancellationToken {
-  if (!caller) return gate;
-  return {
-    get isCancellationRequested(): boolean {
-      return caller.isCancellationRequested || gate.isCancellationRequested;
-    },
-    onRequestCancel: (cb) => {
-      let disposed = false;
-      const a = caller.onRequestCancel?.(cb);
-      const b = gate.onRequestCancel?.(cb);
-      return {
-        dispose: () => {
-          if (disposed) return;
-          disposed = true;
-          a?.dispose();
-          b?.dispose();
-        },
-      };
-    },
-  };
-}
-
 interface QueuedRequest {
   identity: string;
   args: readonly string[];
@@ -141,6 +115,12 @@ interface QueuedRequest {
   volatile: boolean;
   resolve: (outcome: GitRunOutcome) => void;
   cancel: () => void;
+}
+
+interface PendingEntry {
+  promise: Promise<GitRunOutcome>;
+  cancel: () => void;
+  addCaller: (token: GitCancellationToken | undefined) => void;
 }
 
 /**
@@ -154,7 +134,7 @@ export class GitQueryGate {
   private running = 0;
   private rangeRunning = 0;
   private readonly queue: QueuedRequest[] = [];
-  private readonly pending = new Map<string, { promise: Promise<GitRunOutcome>; cancel: () => void }>();
+  private readonly pending = new Map<string, PendingEntry>();
   private readonly cache = new Map<string, { outcome: GitRunOutcome; bytes: number }>();
   private cachedBytes = 0;
   private spawns = 0;
@@ -211,6 +191,9 @@ export class GitQueryGate {
     // 同查询合并:在途或排队(无论 cost)共享一次。
     const existing = this.pending.get(identity);
     if (existing) {
+      // 后加入调用方共享同一次子进程,但其取消语义必须并入:
+      // 只有当前无人需要(所有 caller 都取消)或门侧取消才终止查询。
+      existing.addCaller(options.token);
       return existing.promise;
     }
     // 缓存命中(显式刷新 bypassCache 跳过读;易变查询一律不读——HEAD 会变)。
@@ -222,13 +205,20 @@ export class GitQueryGate {
     }
 
     const signal = new GitCancelSource();
-    const token = combineTokens(options.token, signal);
-    const runOptions = { ...options, token };
+    // 子进程只认门侧 signal:调用方取消不直接终止共享查询(须全部 caller
+    // 都取消或门侧取消才 signal.cancel),否则一个视图取消会误杀另一视图。
+    const runOptions = { ...options, token: signal };
 
     let resolvePromise!: (o: GitRunOutcome) => void;
     const promise = new Promise<GitRunOutcome>((resolve) => {
       resolvePromise = resolve;
     });
+    const callers: Array<GitCancellationToken | undefined> = [options.token];
+    const isCallerCancelled = (token?: GitCancellationToken): boolean => Boolean(token?.isCancellationRequested);
+    const maybeCancelWhenNoCallersNeedIt = (): void => {
+      if (callers.every(isCallerCancelled)) signal.cancel();
+    };
+    options.token?.onRequestCancel?.(() => maybeCancelWhenNoCallersNeedIt());
     const request: QueuedRequest = {
       identity,
       args,
@@ -241,7 +231,16 @@ export class GitQueryGate {
         signal.cancel();
       },
     };
-    this.pending.set(identity, { promise, cancel: () => request.cancel() });
+    this.pending.set(identity, {
+      promise,
+      cancel: () => request.cancel(),
+      addCaller: (token: GitCancellationToken | undefined) => {
+        if (!token) return;
+        callers.push(token);
+        token.onRequestCancel?.(() => maybeCancelWhenNoCallersNeedIt());
+        maybeCancelWhenNoCallersNeedIt();
+      }
+    });
 
     // 排队的重复选区只留最新:排队中同 identity 的新请求已在上方合并,
     // 不同 identity 不互斥(视图层代际守卫处理"只留最新")。

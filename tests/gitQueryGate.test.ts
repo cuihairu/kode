@@ -325,6 +325,25 @@ describe('取消与清理', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('共享查询:一个视图取消不终止另一视图的相同查询(全部取消才终止)', async () => {
+    const { spawn, calls } = makeSpawn();
+    const gate = new GitQueryGate(undefined, { spawn });
+    const t1 = makeToken();
+    const t2 = makeToken();
+    const p1 = gate.run(['log', '--', 'x.py'], { ...runOpts(), token: t1.token });
+    const p2 = gate.run(['log', '--', 'x.py'], { ...runOpts(), token: t2.token });
+    expect(calls).toHaveLength(1); // 同查询共享一次子进程
+    // 视图 1 取消:视图 2 仍需要 → 查询继续,不终止。
+    t1.cancel();
+    expect(gate.runningCount()).toBe(1);
+    // 视图 2 也取消:无人需要 → 终止子进程,两方都收 cancelled。
+    t2.cancel();
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1.kind).toBe('cancelled');
+    expect(r2.kind).toBe('cancelled');
+    expect(gate.runningCount()).toBe(0);
+  });
+
   it('dispose 取消在途与排队并清缓存,后续 run 拒绝', async () => {
     const { spawn, calls } = makeSpawn();
     const gate = new GitQueryGate({ maxConcurrent: 1 }, { spawn });
