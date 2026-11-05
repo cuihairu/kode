@@ -230,14 +230,20 @@ const KBENGINE_XML_CANDIDATE_PATHS = [
  * 补值——即「defaults 先载、元件 kbengine.xml 覆盖」的合成口径
  * (展示见 serverConfigMerge.ts)。配置未开 telnet → 空目标(批111 用户令)。
  */
-export function readTelnetTargetsFromSettings(): TelnetTarget[] {
+/** kode 设置读取(kbengine.telnet.*):host/port/password/enableCommands(CFG-007 抽出共用) */
+export function readTelnetSettings(): TelnetSettingsInput {
   const config = vscode.workspace.getConfiguration('kbengine');
-  const settings: TelnetSettingsInput = {
+  return {
     host: config.get<string>('telnet.host', '127.0.0.1'),
     port: config.get<number>('telnet.port', 0),
     password: config.get<string>('telnet.password', ''),
     enableCommands: config.get<string[]>('telnet.enableCommands', [])
   };
+}
+
+export function readTelnetTargetsFromSettings(): TelnetTarget[] {
+  const config = vscode.workspace.getConfiguration('kbengine');
+  const settings = readTelnetSettings();
   let xmlTelnet: ReturnType<typeof parseKbengineXmlTelnet> = null;
   const configXmlPath = config.get<string>('telnet.configXmlPath', '');
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;

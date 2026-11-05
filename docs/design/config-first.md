@@ -62,7 +62,13 @@
   写死表；**配置未开 telnet → 空目标**（批111：defaults 的 `telnet_service` 段恒在，
   只补值不当开关）。
 - `readTelnetTargetsFromSettings`（`:233`）——VS Code 设置读取。
-- 消费：`extension.ts:2842-2850` 接 `TelnetService` + `setContext('kbengine.telnetConfigured')`。
+- `readTelnetSettings`（`telnetService.ts:233`，CFG-007 抽出）——`kbengine.telnet.host/port/password/enableCommands` 读取。
+- 目标列表（**CFG-007 已交付**）：`src/telnetDeriveTargets.ts` 的 `readDerivedTelnetTargets` 是
+  extension 接线处的目标读取口——派生可用（`configDerive` 状态含 `derive.telnet`）走派生半
+  （`buildDerivedTelnetTargets`：端口/组件名来自派生端点，host/密码/白名单来自 settings 覆盖），
+  派生不可用/显式端口 `port>0`/密码保护且 settings 未覆盖密码时回落
+  `readTelnetTargetsFromSettings`（旧路径读同一份配置，端口与派生一致，密码来源不同）。
+- 消费：`extension.ts:2842-2852` 接 `TelnetService`（getTargets 换 `readDerivedTelnetTargets`）+ `setContext('kbengine.telnetConfigured')`。
 
 ### 2.3 def 域（纯 Rust，`crates/kode-parser`）
 
@@ -107,6 +113,14 @@
   `addBreakpoints`（入口脚本第 0 行），入口缺失 → 不预填 + 诊断。既有 `findEngineEntryScript`
   （`src/debugpyWaitAtStartup.ts:56`）仍按约定路径找 `scripts/entity_defs` 同级 `kbengine.py`，
   不读配置、不猜落点（薄壳化归 CFG-009）。
+- `telnet` 派生（**CFG-007 已交付**）：TS 在 `ensureConfigDerivedScanRoot` 经
+  `buildConfigTreePair` 读盘解析元件 `kbengine.xml` + 引擎 `kbengine_defaults.xml` 两棵树送达
+  Rust（core 不碰盘），`derive.telnet` = 段开关（元件 `<telnet_service>` 段在）+ 逐组件派生
+  端口（显式端口单目标标 `kbengine.xml`；无端口按 defaults 补值 > 写死表）+ `passwordSet` 布尔；
+  `src/telnetDeriveTargets.ts` 的 `readDerivedTelnetTargets` 是目标列表消费口（extension 接线处），
+  派生可用走 `buildDerivedTelnetTargets`（端口/组件名来自派生端点、host/密码/白名单来自 settings
+  覆盖），派生不可用/显式端口/密码保护未覆盖时回落 `readTelnetTargetsFromSettings`（旧路径读
+  同一份配置，端口与派生一致）。既有 `buildTelnetTargets` 的派生半仍留作兜底（薄壳化归 CFG-009）。
 - debug 就绪**无标志**；`debugpyWaitAtStartup`（IDE-DBG-004）是启动块注入开关，
   与本设计的「配置派生就绪」是两件事。
 - 配置变更监视：`extension.ts:4303` `createFileSystemWatcher('**/kbengine*.xml')`
@@ -227,7 +241,7 @@ flowchart TB
 | 21 | telnet | `parseKbengineXmlTelnet` | `telnetService.ts:70` | 元件 `kbengine.xml` telnet 段读值 | **Rust core** | CFG-004 |
 | 22 | telnet | `parseKbengineDefaultsTelnet` | `:104` | defaults telnet 读值 | **Rust core** | 与 #13/#21 同源去重（现存三套正则） |
 | 23 | telnet | `deriveEngineDefaultsXmlPath` | `:139` | `binPath` → defaults 路径 | **TS 留存** | 设置推导，`binPath` 是 VS Code 设置 |
-| 24 | telnet | `buildTelnetTargets` | `:164` | 拆两半：段开关+端口派生 / settings 覆盖+host+命令白名单 | **Rust core**（派生半）+ **TS 留存**（settings 半） | CFG-007；「defaults 段不当开关」口径原样迁 |
+| 24 | telnet | `buildTelnetTargets` | `:164` | 拆两半：段开关+端口派生 / settings 覆盖+host+命令白名单 | **Rust core**（派生半）+ **TS 留存**（settings 半） | CFG-007 **已交付**（派生半经 `derive.telnet` 进 `telnetDeriveTargets.ts`，settings 半与旧路径兜底留存）；「defaults 段不当开关」口径原样迁 |
 | 25 | telnet | `readTelnetTargetsFromSettings` | `:233` | VS Code 设置读取 | **TS 留存** | 设置面 |
 | 26 | telnet | `ENGINE_DEFAULT_TELNET_PORTS` | `:37` | 写死组件默认端口表 | **Rust core** | 引擎语义常量进 core；TS 不留副本，经 #24 派生结果获得 |
 | 27 | def 发现 | `getIndexScanRoots` / `getExternalScanRoots` / `resolveAssetsRootForWorkspace` | `scanRoots.ts:115`/`:162`/`:67` | 根集 = workspace ∪ assetsRoot ∪ 发现根 ∪ profile 根 | 拆分：配置派生根接 `derive.defScanRoots`（**Rust core**）；存在性/去重/包含剪枝留 **TS 留存** | CFG-005 |
