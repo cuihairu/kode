@@ -21,6 +21,8 @@ import {
   type HotReloadTimerDeps
 } from './hotReload';
 import type { HotReloadTargetKey, HotReloadTargetStateStore } from './hotReloadTargetState';
+import type { ReloadTransport } from './hotReloadTransport';
+import { sendFilesViaReloadChannel } from './hotReloadChannelSend';
 import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
 import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
@@ -60,6 +62,14 @@ export interface HotReloadResendDeps {
     files: readonly string[],
     reasons: readonly string[]
   ) => void;
+  /**
+   * 交叉修复(2026-11-05 二轮复审):部署通道发送口(与 fire 路径同一注入面)。
+   * 部署通道的目标是 profile ID,quick action 动作反查找不到——失败重试的
+   * 目标=当前部署通道目标时必须接回同一发送通道(resolveChannelTransport),
+   * 否则重试要么找不到动作(重试失效),要么走错通道。不注入或目标不符则
+   * 回落既有动作反查路径,行为不变。
+   */
+  readonly resolveChannelTransport?: () => { transport: ReloadTransport; targetId: string } | null;
 }
 
 /** 注解只给仍未确认的记录追加阻塞/超时原因,不动 accepted/applied/failed(与 fire 路径同款);IDE-AUD-005:绑定所属发送代际,旧代注解被拒 */
@@ -113,12 +123,42 @@ export async function resendHotReloadTarget(
       // 前滚失败不阻塞重发(下次判定按旧基线保守拦)
     }
   }
+  const wiring = deps.targetState;
+  const now = deps.now ?? Date.now;
+  // 交叉修复(二轮):部署通道目标是 profile ID,quick action 反查不到——重试
+  // 目标=当前部署通道目标时接回同一发送通道,发送核心(hotReloadChannelSend)
+  // 与 fire 路径共用:代际建立/冻结 digest/applied 双证核验/代际绑定结算同语义。
+  const channelHandle = deps.resolveChannelTransport?.() ?? null;
+  if (channelHandle && channelHandle.targetId === key.targetId) {
+    const outcome = await sendFilesViaReloadChannel({
+      transport: channelHandle.transport,
+      targetId: channelHandle.targetId,
+      files,
+      resolveRootId: file => wiring?.resolveRootId(file) ?? null,
+      store: wiring?.store,
+      readFileContent: wiring?.readFileContent,
+      timers: deps.timers,
+      settleHandles: deps.settleHandles,
+      now,
+      source: 'retry'
+    });
+    if (outcome.failedCount > 0 && outcome.sentCount === 0) {
+      return {
+        ok: false,
+        detail: `部署通道重发失败(${outcome.failedCount} 个文件未送达)`
+      };
+    }
+    return {
+      ok: outcome.failedCount === 0,
+      detail: outcome.failedCount > 0
+        ? `部署通道部分失败(${outcome.failedCount} 失败/${outcome.sentCount} 已发)`
+        : `已重新发送(部署通道 ${channelHandle.transport.kind},未校验业务回执)`
+    };
+  }
   const actionName = await deps.resolveActionNameForTarget(key.targetId);
   if (actionName === null) {
     return { ok: false, detail: `找不到以 ${key.targetId} 为接收方的动作,无法重发` };
   }
-  const wiring = deps.targetState;
-  const now = deps.now ?? Date.now;
   const sentAt = now();
   // IDE-AUD-006:发送前冻结内容核验基准——runAction 之前读一次所发内容算
   // sha256,响应后核验全用它并带进台账 sentDigest;绝不响应后再读文件当前

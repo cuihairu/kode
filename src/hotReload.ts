@@ -8,8 +8,9 @@ import {
 } from './hotReloadTargetState';
 import { recordHttpDelivery } from './hotReloadDelivery';
 import { applyAcceptedReceipt } from './hotReloadReceipt';
-import { settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
+import { HOT_RELOAD_APPLIED_SETTLE_MS, settleAppliedStatus, verifyAppliedReceipt } from './hotReloadAppliedCheck';
 import { createDefStructuralGate, type DefStructuralGate } from './hotReloadDefGate';
+import { sendFilesViaReloadChannel } from './hotReloadChannelSend';
 import type { ReloadTransport } from './hotReloadTransport';
 
 // 自动热重载(功能差距盘点 G5,docs/reference-feature-gap.md):文件保存/监视 →
@@ -24,7 +25,7 @@ import type { ReloadTransport } from './hotReloadTransport';
 export const HOT_RELOAD_DEFAULT_GLOBS = ['**/*.py'] as const;
 export const HOT_RELOAD_DEFAULT_DEBOUNCE_MS = 500;
 /** IDE-REV-023 applied 核验窗口:到点仍未确认只注解超时,不冒充任何终态 */
-export const HOT_RELOAD_APPLIED_SETTLE_MS = 10_000;
+export { HOT_RELOAD_APPLIED_SETTLE_MS } from './hotReloadAppliedCheck';
 
 export interface HotReloadSettings {
   readonly enabled: boolean;
@@ -339,265 +340,46 @@ export function setupHotReload(
       };
       // IDE-HOT-102:部署通道发送——配置了 hotReload 通道时整批走通道回执流
       // (transport.send 逐条回执直接喂台账),不回落 actionName 通道;无 wiring
-      // 解不到 root 的文件仍发送(单组 '' 键)但不落台账。
-      // RT-9(IDE-HOT-004):发送前冻结内容核验基准;回执自称 applied 必须过
-      // digest 双证核验(与发送时点冻结的所发内容 sha256 一致)才升格,缺失/
-      // 不符/无基准保持未确认并注解;未确认记录排核验窗口结算(与 fire 路径
-      // 同窗口同语义)。RT-10:结算窗口锚定发送发起时点(sentAt)。
-      // F2 二轮(2026-11-05 复审):冻结基准读取 await 到完成之后才发起发送
-      // (只发起不等待证明不了读到的是发送时的内容),冻结完成后全部回执分支
-      // (applied/accepted/failed/sent/整组异常)同步取基准把 sentDigest 落账,
-      // 台账不再有「该次所发 digest」盲区;回执排定的核验结算绑定该发送自己
-      // 的代际(attemptFor),绝不用当前记录的 attempt 给新发送排旧窗口结算。
+      // 解不到 root 的文件仍发送(单组 '' 键)但不落台账。发送核心(发送代际
+      // 建立/冻结基准 await/全分支 digest 落账/applied 双证核验/代际绑定结算)
+      // 抽到 hotReloadChannelSend,与失败目标重试共用同一实现(二轮交叉修复:
+      // 部署通道失败重试接回同一通道,不再各自复刻回执流)。
       const sendViaChannel = (transport: ReloadTransport, channelTargetId: string): void => {
         const wiring = options.targetState;
-        const channelLabel = transport.kind;
-        const channelSentAt = now();
-        const channelKey = (rootId: string): { rootId: string; targetId: string } => ({
-          rootId,
-          targetId: channelTargetId
-        });
-        // F2:发送代际在发送时点建立——transport.send 之前逐 (rootId,targetId,file)
-        // 落一条发送发起记录(不带 attempt=新发送,推进代际),此后全部回执/注解/
-        // 核验结算绑定该代际写回。旧实现回执落账不带 attempt,每个异步回执都被
-        // 台账当成新发送:旧发送晚到的 digest 核验能翻掉新发送的失败。
-        const channelAttempts = new Map<string, number>();
-        if (wiring) {
-          for (const file of triggers) {
-            const rootId = wiring.resolveRootId(file);
-            if (rootId === null) {
-              continue;
-            }
-            const initiated = wiring.store.record(channelKey(rootId), file, 'sent-unverified', {
-              now: channelSentAt,
-              source: channelAuditSource,
-              channel: channelLabel
-            });
-            if (initiated) {
-              channelAttempts.set(`${rootId}\n${file}`, initiated.attempt);
-            }
+        void sendFilesViaReloadChannel({
+          transport,
+          targetId: channelTargetId,
+          files: triggers,
+          resolveRootId: file => wiring?.resolveRootId(file) ?? null,
+          store: wiring?.store,
+          readFileContent: wiring?.readFileContent,
+          timers,
+          settleHandles,
+          now,
+          source: channelAuditSource
+        }).then(({ sentCount, failedCount }) => {
+          const result =
+            failedCount > 0 && sentCount === 0
+              ? `失败(${failedCount})`
+              : failedCount > 0
+                ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
+                : `已发送(${sentCount})——未校验业务回执`;
+          // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
+          // transport.kind,通道=前缀断言不受影响)
+          auditLine(`${transport.kind} 目标=${channelTargetId}`, triggers, result);
+          if (failedCount > 0 && sentCount === 0) {
+            status.setFailed(`通道 ${transport.kind} 全部失败(${failedCount})`);
+          } else {
+            status.setSentUnverified();
           }
-        }
-        const attemptFor = (rootId: string, file: string): number | undefined =>
-          channelAttempts.get(`${rootId}\n${file}`);
-        // F2 二轮:冻结基准读取 await 到完成——读取完成先于发送发起,冻结
-        // digest=实际发送内容(此后文件再变不影响本次基准);读取失败=无基准
-        // (如实 undefined,applied 核验面注解阻塞)。
-        const channelBaselineReader = wiring?.readFileContent;
-        const sentDigests = new Map<string, string | undefined>();
-        const freezeBaselines = channelBaselineReader
-          ? Promise.all(
-              triggers.map(async file => {
-                const digest = await Promise.resolve(channelBaselineReader(file))
-                  .then(content =>
-                    content === null || content === undefined
-                      ? undefined
-                      : createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')
-                  )
-                  .catch(() => undefined);
-                sentDigests.set(file, digest);
-              })
-            )
-          : Promise.resolve();
-        void freezeBaselines.then(() => {
-          const groups = new Map<string, string[]>();
-          for (const file of triggers) {
-            const rootId = wiring ? (wiring.resolveRootId(file) ?? '') : '';
-            const list = groups.get(rootId) ?? [];
-            list.push(file);
-            groups.set(rootId, list);
+          // 组内错误已在 catch 落账 failed,这里按汇总如实上报一次(部分
+          // 失败也上报,动作名回落面的 fail() 同口径:失败即报)。
+          if (failedCount > 0) {
+            reportActionError(new Error(`通道 ${transport.kind} 发送失败:${failedCount} 个文件未送达`));
           }
-          const recordOutcome = (
-            rootId: string,
-            file: string,
-            outcome: HotReloadDeliveryOutcome,
-            detail?: string,
-            extra?: { sentDigest?: string }
-          ): void => {
-            if (!wiring || rootId === '') {
-              return;
-            }
-            const attempt = attemptFor(rootId, file);
-            wiring.store.record(channelKey(rootId), file, outcome, {
-              ...(detail !== undefined ? { detail } : {}),
-              // F2:回执绑定发送时点的代际写回(已换代则被台账拒写,旧发送的
-              // 异步回执绝不改新代记录);无代际(未落发起记录,如实)才裸写
-              ...(attempt !== undefined ? { attempt } : {}),
-              ...(extra?.sentDigest !== undefined ? { sentDigest: extra.sentDigest } : {}),
-              source: channelAuditSource,
-              channel: channelLabel
-            });
-          };
-          // F2 二轮:冻结 digest 带进台账(绑定代际、不改写已升格的 outcome/
-          // 既有 detail)——sent/failed/异常分支与 accepted/applied 一样落账
-          const noteSentDigest = (rootId: string, file: string): void => {
-            if (!wiring || rootId === '') {
-              return;
-            }
-            const sentDigest = sentDigests.get(file);
-            if (sentDigest === undefined) {
-              return;
-            }
-            const current = wiring.store.get(channelKey(rootId), file);
-            if (current) {
-              recordOutcome(rootId, file, current.outcome, undefined, { sentDigest });
-            }
-          };
-          // F2 二轮:基准冻结即落账(绑定该次发送代际)——回执到达与否不影响
-          // 「该次实际发送内容 sha256」进台账;回执分支随后各自更新 outcome
-          for (const [rootId, groupFiles] of groups) {
-            if (rootId !== '') {
-              for (const file of groupFiles) {
-                noteSentDigest(rootId, file);
-              }
-            }
-          }
-          let sentCount = 0;
-          let failedCount = 0;
-          const allGroups = [...groups.entries()];
-          const runAll = Promise.all(
-            allGroups.map(([rootId, files]) =>
-              Promise.resolve(
-                transport.send({ rootId, targetId: channelTargetId }, files, receipt => {
-                  const receiptFiles = receipt.file !== undefined ? [receipt.file] : files;
-                  for (const file of receiptFiles) {
-                    // RT-9:未确认记录(含 applied 降级)排核验窗口结算,与 fire
-                    // 路径同窗口同语义;结算锚定发送发起时点(RT-10)。
-                    // F2 二轮:绑定该发送自己的代际(不是当前记录的 attempt——
-                    // 回执晚到时记录可能已被新发送接管)
-                    const scheduleUnconfirmedSettle = (): void => {
-                      if (!wiring || rootId === '') {
-                        return;
-                      }
-                      const attempt = attemptFor(rootId, file);
-                      if (attempt !== undefined) {
-                        scheduleAppliedSettle(wiring, channelKey(rootId), file, channelSentAt, attempt);
-                      }
-                    };
-                    switch (receipt.status) {
-                      case 'applied': {
-                        // F4:回执显式 targetId 与通道目标不符 → 整条不认(不升
-                        // 格、不落当前目标了事),如实保持未确认并注解原因
-                        if (
-                          'targetId' in receipt &&
-                          receipt.targetId !== undefined &&
-                          receipt.targetId !== channelTargetId
-                        ) {
-                          recordOutcome(
-                            rootId,
-                            file,
-                            'sent-unverified',
-                            `回执 targetId(${receipt.targetId})与通道目标(${channelTargetId})不一致:整条拒绝该回执`
-                          );
-                          scheduleUnconfirmedSettle();
-                          break;
-                        }
-                        // RT-9:自称 applied 必须过 digest 双证核验——与发送时点
-                        // 冻结的所发内容 sha256 一致才升格;缺 digest/不符/无基准
-                        // 一律保持未确认并注解(绝不冒充 applied)
-                        if (!channelBaselineReader) {
-                          recordOutcome(
-                            rootId,
-                            file,
-                            'sent-unverified',
-                            'applied 回执不可信(无内容读取通道,digest 无基准):保持未确认'
-                          );
-                          scheduleUnconfirmedSettle();
-                          break;
-                        }
-                        const sentDigest = sentDigests.get(file);
-                        if (sentDigest === undefined) {
-                          recordOutcome(
-                            rootId,
-                            file,
-                            'sent-unverified',
-                            'applied 回执不可信(发送时点内容基准不可读):保持未确认'
-                          );
-                          scheduleUnconfirmedSettle();
-                          break;
-                        }
-                        // F2:冻结 digest 先进台账(绑定代际),升格/注解随后
-                        noteSentDigest(rootId, file);
-                        if (receipt.digest !== undefined && receipt.digest === sentDigest) {
-                          recordOutcome(
-                            rootId,
-                            file,
-                            'applied',
-                            `applied 回执 digest 核验一致(指纹前 12 位 ${sentDigest.slice(0, 12)})`
-                          );
-                          break;
-                        }
-                        recordOutcome(
-                          rootId,
-                          file,
-                          'sent-unverified',
-                          'applied 回执不可信(digest 缺失或与所发内容不符):保持未确认'
-                        );
-                        scheduleUnconfirmedSettle();
-                        break;
-                      }
-                      case 'accepted': {
-                        recordOutcome(rootId, file, 'accepted');
-                        // F2:accepted 也把冻结 digest 带进台账(绑定代际)
-                        noteSentDigest(rootId, file);
-                        break;
-                      }
-                      case 'failed':
-                        failedCount += 1;
-                        recordOutcome(rootId, file, 'failed', receipt.reason);
-                        // F2 二轮:failed 分支同样落冻结 digest
-                        noteSentDigest(rootId, file);
-                        break;
-                      case 'sent':
-                      default:
-                        sentCount += 1;
-                        recordOutcome(rootId, file, 'sent-unverified', receipt.detail);
-                        // F2 二轮:sent 分支同样落冻结 digest
-                        noteSentDigest(rootId, file);
-                        scheduleUnconfirmedSettle();
-                        break;
-                    }
-                  }
-                })
-              ).catch((error: unknown) => {
-                // 单组失败:整组按 failed 落账(不冒充未确认),错误如实上报;
-                // F2:绑定发送时点代际写回(旧实现裸写=新发送,代际错位)
-                failedCount += files.length;
-                for (const file of files) {
-                  recordOutcome(rootId, file, 'failed', error instanceof Error ? error.message : String(error));
-                  // F2 二轮:整组异常分支同样落冻结 digest
-                  noteSentDigest(rootId, file);
-                }
-              })
-            )
-          );
-          void runAll.then(
-            () => {
-              const result =
-                failedCount > 0 && sentCount === 0
-                  ? `失败(${failedCount})`
-                  : failedCount > 0
-                    ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
-                    : `已发送(${sentCount})——未校验业务回执`;
-              // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
-              // transport.kind,通道=前缀断言不受影响)
-              auditLine(`${channelLabel} 目标=${channelTargetId}`, triggers, result);
-              if (failedCount > 0 && sentCount === 0) {
-                status.setFailed(`通道 ${channelLabel} 全部失败(${failedCount})`);
-              } else {
-                status.setSentUnverified();
-              }
-              // 组内错误已在 catch 落账 failed,这里按汇总如实上报一次(部分
-              // 失败也上报,动作名回落面的 fail() 同口径:失败即报)。
-              if (failedCount > 0) {
-                reportActionError(new Error(`通道 ${channelLabel} 发送失败:${failedCount} 个文件未送达`));
-              }
-            },
-            (error: unknown) => {
-              status.setFailed(error instanceof Error ? error.message : String(error));
-              reportActionError(error);
-            }
-          );
+        }, (error: unknown) => {
+          status.setFailed(error instanceof Error ? error.message : String(error));
+          reportActionError(error);
         });
       };
       const start = (targetId: string | null): void => {

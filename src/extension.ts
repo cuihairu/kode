@@ -208,7 +208,7 @@ import {
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
 import { runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
-import { resolveReloadTransport } from './hotReloadTransport';
+import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
 import { runHotReloadRetryCommand } from './hotReloadRetryCommand';
 import { createDefStructuralGate } from './hotReloadDefGate';
@@ -4826,6 +4826,19 @@ export function activate(context: vscode.ExtensionContext) {
       );
     })
   );
+  // IDE-HOT-102:部署通道发送口(fire 路径与失败目标重试共用同一解出口)——
+  // 当前激活 profile 配了 hotReload 段才解出通道(经 resolveReloadTransport
+  // 校验),未配返回 null,调用方回落既有 actionName 通道。targetId=profile.id
+  // (稳定身份,台账键用,改名不漂移)。交叉修复(二轮):失败重试的目标=
+  // 此目标时接回同一发送通道,不再只反查 quick action 动作。
+  const resolveHotReloadChannelTransport = (): { transport: ReloadTransport; targetId: string } | null => {
+    const activeProfile = resolveActiveProfile(context.workspaceState);
+    if (!activeProfile?.hotReload) {
+      return null;
+    }
+    const transport = resolveReloadTransport(activeProfile.hotReload);
+    return transport ? { transport, targetId: activeProfile.id } : null;
+  };
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
@@ -4851,14 +4864,9 @@ export function activate(context: vscode.ExtensionContext) {
     // IDE-HOT-102:部署通道接线——当前激活 profile 配了 hotReload 段才解出
     // 通道(经 resolveReloadTransport 校验),未配返回 null,发送回落既有
     // actionName 通道。targetId=profile.id(稳定身份,台账键用,改名不漂移)。
-    resolveChannelTransport: () => {
-      const activeProfile = resolveActiveProfile(context.workspaceState);
-      if (!activeProfile?.hotReload) {
-        return null;
-      }
-      const transport = resolveReloadTransport(activeProfile.hotReload);
-      return transport ? { transport, targetId: activeProfile.id } : null;
-    }
+    // 交叉修复(二轮):同一解出口给失败目标重试用——部署通道目标(profile
+    // ID)失败后的重试接回同一发送通道,不再只反查 quick action 动作。
+    resolveChannelTransport: resolveHotReloadChannelTransport
   });
   // IDE-HOT-102:部署级热更通道配置面板(官方/HTTP + 连通性测试)——按
   // profile 读/写 hotReload 段;未配回落既有 actionName 通道。探测只走
@@ -4919,6 +4927,9 @@ export function activate(context: vscode.ExtensionContext) {
               runAction: runQuickActionForHotReload,
               resolveActionNameForTarget: resolveHotReloadActionNameForTarget,
               targetState: hotReloadTargetStateWiring,
+              // 交叉修复(二轮):部署通道目标(profile ID)失败后的重试接回
+              // 同一发送通道(与 fire 路径同一解出口)
+              resolveChannelTransport: resolveHotReloadChannelTransport,
               noteEngineDigest: (key, file, body) => hotReloadEngineDigestRegister.note(key, file, body),
               timers: realHotReloadTimerDeps,
               settleHandles: hotReloadRetrySettleHandles,
