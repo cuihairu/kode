@@ -1,6 +1,12 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+
+import {
+  drainablePendingWork,
+  type PendingWorkSnapshot
+} from '../../../pendingWorkDrain';
 
 // IDE-ACC-010:按场景纠正最终完成标记——热态双指标分判面(真实编辑器,
 // field 同装配:demo 资产+5000 文件外部根)。验收原文「热态 Hover P95≤30ms、
@@ -9,9 +15,10 @@ import * as vscode from 'vscode';
 //   全命中且 P95 ≤ 30ms 单独判定;
 // ②热态 Definition:同锚 3 暖机+30 连发 executeDefinitionProvider,
 //   全命中且 P95 ≤ 50ms 单独判定;
-// 两指标各自出 pass/fail,不互相兜底。首命中轮询窗把首扫/惰性装载排除
-// 在测量外(热态口径)。证据行落 KODE_ACC10_OUT(缺省
-// docs/perf/2026-10-29-acc010-final-marks-run.txt)。
+// 排干断言用真实 pendingWork 结构逐项核对 queued/running(IDE-AUD-019:
+// caches/worker/annotationBuilds 嵌套对象不与 0 比较,缓存容量不要求归零)。
+// 首命中轮询窗把首扫/惰性装载排除在测量外(热态口径)。证据行落
+// KODE_ACC10_OUT(缺省 docs/perf/2026-10-29-acc010-final-marks-run.txt)。
 // 逐项通过/失败/未测的完成标记对账表在
 // docs/perf/2026-10-29-acc010-final-marks.md(本套件出双指标数字)。
 
@@ -28,19 +35,10 @@ const HOVER_P95_BOUND_MS = 30;
 const DEFINITION_P95_BOUND_MS = 50;
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
-
 function symbolPosition(lines: string[], needle: string, symbol: string): vscode.Position {
   const line = lines.findIndex(text => text.includes(needle));
   assert.ok(line >= 0, `夹具缺行: ${needle}`);
   return new vscode.Position(line, lines[line].indexOf(symbol) + Math.floor(symbol.length / 2));
-}
-
-interface BurstStats {
-  hits: number;
-  p50Ms: number;
-  p95Ms: number;
-  maxMs: number;
-  samples: number[];
 }
 
 /** 首命中轮询窗(≤25s):把首扫/惰性装载排除在测量外,窗口只等「能命中」。 */
@@ -77,8 +75,16 @@ async function burst(
   return { hits, p50Ms: at(50), p95Ms: at(95), maxMs: sorted[sorted.length - 1], samples };
 }
 
+interface BurstStats {
+  hits: number;
+  p50Ms: number;
+  p95Ms: number;
+  maxMs: number;
+  samples: number[];
+}
+
 describe('IDE-ACC-010:最终完成标记——热态 Hover/Definition 双指标分判(真实编辑器)', () => {
-  let probe: { pendingWork(): Record<string, number> };
+  let probe: { pendingWork(): PendingWorkSnapshot };
 
   before(async () => {
     const extension = vscode.extensions.getExtension('cuihairu.kode-kbengine');
@@ -104,21 +110,21 @@ describe('IDE-ACC-010:最终完成标记——热态 Hover/Definition 双指标�
     await awaitFirstHit('vscode.executeHoverProvider', defUri, anchor);
     await awaitFirstHit('vscode.executeDefinitionProvider', defUri, anchor);
     for (let attempt = 0; attempt < 50; attempt++) {
-      const pending = probe.pendingWork();
-      const busy = Object.values(pending).some(count => count > 0);
-      if (!busy) { break; }
+      // IDE-AUD-019:真实 pendingWork 结构逐项核对 queued/running——
+      // caches/worker 嵌套对象与容量量规不参与排干口径
+      const busy = drainablePendingWork(probe.pendingWork());
+      if (Object.keys(busy).length === 0) { break; }
       await sleep(500);
     }
     const pendingAtMeasure = probe.pendingWork();
+    const drainLeft = drainablePendingWork(pendingAtMeasure);
     assert.ok(
-      Object.values(pendingAtMeasure).every(count => count === 0),
-      `排干窗内后台量未归零: ${JSON.stringify(pendingAtMeasure)}`
+      Object.keys(drainLeft).length === 0,
+      `排干窗内在途/排队量未归零(容量面不要求归零): ${JSON.stringify(drainLeft)} / raw=${JSON.stringify(pendingAtMeasure)}`
     );
 
-    // 三轮突发取最优口径(热态无争用窗):本宿主为共享机(load avg 常年 8-12,
-    // co-tenant CPU 户在场),单轮 P95 会被宿主争用抬高(实测同锚单轮 P95
-    // 28-101ms 波动而静样本簇恒在 5-12ms);热态能力=三轮最优,三轮原始
-    // 数与负载快照全落证据,PERF-015 单轮免责。
+    // 三轮突发取最优口径(热态无争用窗):共享机单轮 P95 会被宿主争用抬高;
+    // 采样/争用与延迟判定口径随后续 IDE-AUD-020 批次预登记。
     const hoverBursts: BurstStats[] = [];
     const definitionBursts: BurstStats[] = [];
     for (let i = 0; i < BURST_REPS; i++) {
@@ -131,10 +137,7 @@ describe('IDE-ACC-010:最终完成标记——热态 Hover/Definition 双指标�
       && bestHoverP95 <= HOVER_P95_BOUND_MS;
     const definitionPass = definitionBursts.every(b => b.hits === BURST_ROUNDS)
       && bestDefinitionP95 <= DEFINITION_P95_BOUND_MS;
-    let loadAvg = '';
-    try {
-      loadAvg = (await import('fs')).readFileSync('/proc/loadavg', 'utf8').trim();
-    } catch { loadAvg = 'unavailable'; }
+    const loadAvg = fs.readFileSync('/proc/loadavg', 'utf8').trim();
 
     const evidence: string[] = [];
     for (let i = 0; i < BURST_REPS; i++) {
@@ -154,15 +157,20 @@ describe('IDE-ACC-010:最终完成标记——热态 Hover/Definition 双指标�
       `acc010.hover.pass=${hoverPass} (bound ${HOVER_P95_BOUND_MS}ms, best-of-${BURST_REPS})`,
       `acc010.definition.bestP95Ms=${bestDefinitionP95.toFixed(3)}`,
       `acc010.definition.pass=${definitionPass} (bound ${DEFINITION_P95_BOUND_MS}ms, best-of-${BURST_REPS})`,
-      'acc010.note=hot-path capability = best-of-3 bursts (quiet-window), same-host field assembly (demo assets + 5000-file external root); PERF-015: no cross-machine comparison',
       `acc010.hostLoadAvg=${loadAvg}`,
       `acc010.pendingWorkAtMeasure=${JSON.stringify(pendingAtMeasure)}`,
       `acc010.pendingWorkAfterBurst=${JSON.stringify(probe.pendingWork())}`
     );
-    const fs = await import('fs');
     fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
     fs.writeFileSync(OUT_FILE, evidence.join('\n') + '\n', 'utf8');
     console.log('[acc010] evidence:\n' + evidence.join('\n'));
+
+    // IDE-AUD-019:突发后请求侧在途/排队复检(容量面不要求归零)
+    const drainAfterBurst = drainablePendingWork(probe.pendingWork());
+    assert.ok(
+      Object.keys(drainAfterBurst).length === 0,
+      `突发后请求侧在途/排队量未归零: ${JSON.stringify(drainAfterBurst)}`
+    );
 
     for (let i = 0; i < BURST_REPS; i++) {
       assert.ok(
