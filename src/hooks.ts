@@ -50,7 +50,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onDestroy(self):
     INFO_MSG(f"{self.__class__.__name__} destroyed")
     self.delTimer(self.timerID)`,
-    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:169; kbe/src/server/cellapp/entity.cpp:209'
+    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:169; kbe/src/server/cellapp/entity.cpp:211'
   },
   {
     name: 'onTimer',
@@ -62,7 +62,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onTimer(self, timerID, userArg=None):
     INFO_MSG(f"timer {timerID} fired with userArg={userArg}")
     self.delTimer(timerID)`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:4352; kbe/src/server/baseapp/entity.cpp:1662'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:4358; kbe/src/server/baseapp/entity.cpp:1662'
   },
   {
     name: 'onRestore',
@@ -74,7 +74,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onRestore(self):
     INFO_MSG("Entity restored")
     self.rebuildRuntimeState()`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3868; kbe/src/server/baseapp/entity.cpp:1083'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3871; kbe/src/server/baseapp/entity.cpp:1083'
   },
 
   // ==================== 数据库与归档 ====================
@@ -88,7 +88,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onWriteToDB(self, dbContext=None):
     INFO_MSG("Writing to database")
     self.lastSavedAt = time.time()`,
-    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1405; kbe/src/server/cellapp/entity.cpp:1259'
+    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1405; kbe/src/server/cellapp/entity.cpp:1262'
   },
   {
     name: 'onPreArchive',
@@ -113,7 +113,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '移动控制器每次推进时',
     example: `def onMove(self, controllerID, userArg=None):
     DEBUG_MSG(f"moving, controller={controllerID}")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2943'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2946'
   },
   {
     name: 'onMoveOver',
@@ -125,7 +125,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onMoveOver(self, controllerID, userArg=None):
     INFO_MSG("arrived at destination")
     self.cancelController(controllerID)`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2961'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2964'
   },
   {
     name: 'onMoveFailure',
@@ -136,7 +136,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '移动失败时',
     example: `def onMoveFailure(self, controllerID, userArg=None):
     WARNING_MSG("move failed")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2979'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2982'
   },
   {
     name: 'onTurn',
@@ -147,7 +147,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '转向完成时',
     example: `def onTurn(self, controllerID, userArg=None):
     DEBUG_MSG(f"facing new direction, controller={controllerID}")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3095'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3098'
   },
 
   // ==================== 空间 ====================
@@ -161,7 +161,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onEnterSpace(self):
     INFO_MSG("Entered space")
     self.currentSpaceID = self.spaceID`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3820'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3823'
   },
   {
     name: 'onLeaveSpace',
@@ -173,7 +173,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onLeaveSpace(self):
     INFO_MSG("Left space")
     self.currentSpaceID = None`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3828'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3831'
   },
   {
     name: 'onSpaceGone',
@@ -184,7 +184,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '空间消失时',
     example: `def onSpaceGone(self):
     WARNING_MSG("space has gone")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:384'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:387'
   },
 
   // ==================== 传送 ====================
@@ -197,7 +197,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '传送开始时',
     example: `def onTeleport(self):
     INFO_MSG(f"teleporting to space {self.teleportSpaceID}")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3783'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3786'
   },
   {
     name: 'onTeleportSuccess',
@@ -208,7 +208,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '传送成功后',
     example: `def onTeleportSuccess(self, nearbyEntity=None):
     INFO_MSG("teleport success")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3811; kbe/src/server/baseapp/entity.cpp:1567'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3814; kbe/src/server/baseapp/entity.cpp:1567'
   },
   {
     name: 'onTeleportFailure',
@@ -219,7 +219,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '传送失败时',
     example: `def onTeleportFailure(self):
     ERROR_MSG("teleport failed")`,
-    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1558; kbe/src/server/cellapp/entity.cpp:3794'
+    sourceLocation: 'kbe/src/server/baseapp/entity.cpp:1558; kbe/src/server/cellapp/entity.cpp:3797'
   },
 
   // ==================== 陷阱 ====================
@@ -233,7 +233,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onEnterTrap(self, entity, range_xz, range_y, controllerID, userArg=None):
     INFO_MSG(f"{entity.className} entered trap")
     self.engage(entity)`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1756'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1759'
   },
   {
     name: 'onLeaveTrap',
@@ -244,7 +244,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '实体离开陷阱时',
     example: `def onLeaveTrap(self, entity, range_xz, range_y, controllerID, userArg=None):
     DEBUG_MSG(f"{entity.className} left trap")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1765'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1768'
   },
   {
     name: 'onLeaveTrapID',
@@ -255,7 +255,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '实体离开陷阱时（实体已不可用时）',
     example: `def onLeaveTrapID(self, entityID, range_xz, range_y, controllerID, userArg=None):
     DEBUG_MSG(f"entity {entityID} left trap")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1774'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1777'
   },
 
   // ==================== Cell ====================
@@ -292,7 +292,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '进入 cell 后',
     example: `def onEnteredCell(self):
     DEBUG_MSG("entered new cell")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3836'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3839'
   },
   {
     name: 'onEnteringCell',
@@ -303,7 +303,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '进入 cell 前',
     example: `def onEnteringCell(self):
     DEBUG_MSG("about to enter new cell")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3844'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3847'
   },
   {
     name: 'onLeavingCell',
@@ -314,7 +314,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '离开 cell 前',
     example: `def onLeavingCell(self):
     DEBUG_MSG("about to leave cell")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3852'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3855'
   },
   {
     name: 'onLeftCell',
@@ -325,7 +325,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '离开 cell 后',
     example: `def onLeftCell(self):
     DEBUG_MSG("left cell")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3860'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:3863'
   },
 
   // ==================== 视野 ====================
@@ -338,7 +338,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '获得第一个观察者时',
     example: `def onGetWitness(self):
     DEBUG_MSG("entity is now witnessed")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2177'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2180'
   },
   {
     name: 'onLoseWitness',
@@ -349,7 +349,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '失去全部观察者时',
     example: `def onLoseWitness(self):
     DEBUG_MSG("entity has no witnesses")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2215'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:2218'
   },
   {
     name: 'onWitnessed',
@@ -361,7 +361,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     example: `def onWitnessed(self, isWitnessed):
     if isWitnessed:
         self.playAppearAnimation()`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1483; kbe/src/server/cellapp/entity.cpp:1528'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1486; kbe/src/server/cellapp/entity.cpp:1531'
   },
   {
     name: 'onEnteredView',
@@ -372,7 +372,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '实体进入视野时',
     example: `def onEnteredView(self, entity):
     INFO_MSG(f"{entity.className} entered view")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1783'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1786'
   },
   {
     name: 'onUpdateBegin',
@@ -407,7 +407,7 @@ export const KBENGINE_HOOKS: KBEngineHook[] = [
     timing: '失去被控制权时',
     example: `def onLoseControlledBy(self, controllerID):
     WARNING_MSG(f"no longer controlled by {controllerID}")`,
-    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1510'
+    sourceLocation: 'kbe/src/server/cellapp/entity.cpp:1513'
   },
 
   // ==================== 客户端 ====================
