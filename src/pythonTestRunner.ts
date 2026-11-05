@@ -46,6 +46,8 @@ export interface PythonTestExecIssue {
   /** spawn 失败消息(解释器缺失等,进程根本没起来) */
   spawnError?: string;
   stderr: string;
+  /** KR-AUD-05:超时窗内未完成被 SIGKILL(挂死兜底) */
+  timedOut?: boolean;
 }
 
 /** pytest 固定参数(-p no:cacheprovider:不在用户 scripts 根落缓存) */
@@ -173,7 +175,15 @@ export interface PythonTestExecResult {
   signal?: string;
   /** spawn 失败消息(解释器缺失等,进程根本没起来) */
   spawnError?: string;
+  /** KR-AUD-05:进程超过超时窗被 SIGKILL 终止(挂死兜底,非用户取消) */
+  timedOut?: boolean;
 }
+
+/** KR-AUD-05:pytest 进程超时窗(挂死可取消的兜底;宽到不误杀合法慢套件) */
+export const PYTEST_PROCESS_TIMEOUT_MS = 600_000;
+/** KR-AUD-05:单进程 stdout/stderr 累计上限(截断+标记,防无界内存) */
+export const MAX_PYTEST_OUTPUT_CHARS = 1_000_000;
+const OUTPUT_TRUNCATED_MARKER = `\n[kode] pytest output truncated at ${MAX_PYTEST_OUTPUT_CHARS} chars`;
 
 export interface PythonTestRunDeps {
   exec(request: { command: string; args: string[]; cwd: string }): Promise<PythonTestExecResult>;
@@ -194,7 +204,7 @@ export async function runPythonTests(
     if (deps.isCancelled()) {
       break;
     }
-    const { stdout, stderr, code, signal, spawnError } = await deps.exec({
+    const { stdout, stderr, code, signal, spawnError, timedOut } = await deps.exec({
       command: request.interpreterPath,
       args: buildPytestArgs(item),
       cwd: request.cwd
@@ -205,9 +215,9 @@ export async function runPythonTests(
       spawnError !== undefined
         ? { code: null, spawnError, stderr }
         : signal !== undefined
-          ? { code: null, signal, stderr }
+          ? { code: null, signal, stderr, timedOut: timedOut || undefined }
           : code !== 0
-            ? { code, stderr }
+            ? { code, stderr, timedOut: timedOut || undefined }
             : undefined;
     const resolved = resolvePytestEntries(`${stdout}\n${stderr}`, [item]);
     for (const entry of resolved) {
@@ -218,7 +228,9 @@ export async function runPythonTests(
         if (issue.spawnError) {
           entry.message = `解释器启动失败: ${issue.spawnError}`;
         } else if (issue.signal) {
-          entry.message = `测试进程被信号终止(${issue.signal})`;
+          entry.message = issue.timedOut
+            ? `测试进程超时(${PYTEST_PROCESS_TIMEOUT_MS / 1000}s)被终止`
+            : `测试进程被信号终止(${issue.signal})`;
         }
       }
     }
@@ -233,7 +245,9 @@ export function describePythonTestExecIssue(issue: PythonTestExecIssue): string 
     return `解释器启动失败: ${issue.spawnError}`;
   }
   if (issue.signal) {
-    return `进程被信号终止(${issue.signal})`;
+    return issue.timedOut
+      ? `测试进程超时(${PYTEST_PROCESS_TIMEOUT_MS / 1000}s)被终止`
+      : `进程被信号终止(${issue.signal})`;
   }
   return `进程退出码 ${issue.code}`;
 }
@@ -267,23 +281,45 @@ export function buildPythonTestSessionReport(entries: PythonTestRunEntry[]): str
   return lines.join('\n');
 }
 
-/** 装配层默认注入:真子进程捕获 stdout/stderr 与退出码/信号 */
-export function spawnTestProcess(request: {
-  command: string;
-  args: string[];
-  cwd: string;
-}): Promise<PythonTestExecResult> {
+/** 装配层默认注入:真子进程捕获 stdout/stderr 与退出码/信号。
+ * KR-AUD-05:挂死兜底(超时 SIGKILL)与输出上限(截断+标记)。
+ * 超时窗可注入(测试用短窗),默认宽到不误杀合法慢套件。 */
+export function spawnTestProcess(
+  request: {
+    command: string;
+    args: string[];
+    cwd: string;
+  },
+  options: { timeoutMs?: number } = {}
+): Promise<PythonTestExecResult> {
+  const timeoutMs = options.timeoutMs ?? PYTEST_PROCESS_TIMEOUT_MS;
   return new Promise(resolve => {
     const child = spawn(request.command, request.args, { cwd: request.cwd });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    const append = (current: string, chunk: string): string => {
+      if (current.length >= MAX_PYTEST_OUTPUT_CHARS) {
+        return current;
+      }
+      const room = MAX_PYTEST_OUTPUT_CHARS - current.length;
+      if (chunk.length <= room) {
+        return current + chunk;
+      }
+      return current + chunk.slice(0, room) + OUTPUT_TRUNCATED_MARKER;
+    };
     child.stdout.on('data', chunk => {
-      stdout += String(chunk);
+      stdout = append(stdout, String(chunk));
     });
     child.stderr.on('data', chunk => {
-      stderr += String(chunk);
+      stderr = append(stderr, String(chunk));
     });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
     child.on('error', error => {
+      clearTimeout(timer);
       resolve({
         stdout,
         stderr: `${stderr}${request.command}: ${error.message}`,
@@ -292,7 +328,8 @@ export function spawnTestProcess(request: {
       });
     });
     child.on('close', (code, signal) => {
-      resolve({ stdout, stderr, code, signal: signal ?? undefined });
+      clearTimeout(timer);
+      resolve({ stdout, stderr, code, signal: signal ?? undefined, timedOut: timedOut || undefined });
     });
   });
 }

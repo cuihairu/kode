@@ -7,6 +7,7 @@ import {
   buildPytestArgs,
   buildPythonTestSessionReport,
   describePythonTestExecIssue,
+  MAX_PYTEST_OUTPUT_CHARS,
   resolvePytestEntries,
   runPythonTests,
   selectSessionFailures,
@@ -342,4 +343,42 @@ describe('真 python3+pytest 实跑(格式不是抄文档)', () => {
 
     rmSync(dir, { recursive: true, force: true });
   });
+});
+
+describe('spawnTestProcess(KR-AUD-05 挂死兜底与输出上限)', () => {
+  it('挂死进程超时后被 SIGKILL 终止并标 timedOut', async () => {
+    const result = await spawnTestProcess(
+      { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], cwd: '/tmp' },
+      { timeoutMs: 500 }
+    );
+    expect(result.timedOut).toBe(true);
+    expect(result.code).toBeNull();
+    expect(result.signal).toBe('SIGKILL');
+  }, 10000);
+
+  it('输出超上限被截断并带标记,未超时正常退出', async () => {
+    const result = await spawnTestProcess(
+      {
+        command: process.execPath,
+        args: ['-e', "process.stdout.write('x'.repeat(3000000)); setTimeout(() => {}, 200)"],
+        cwd: '/tmp'
+      },
+      { timeoutMs: 15000 }
+    );
+    expect(result.stdout.length).toBeLessThan(MAX_PYTEST_OUTPUT_CHARS + 200);
+    expect(result.stdout).toContain('truncated at');
+    expect(result.timedOut).toBeUndefined();
+    expect(result.signal).toBeUndefined();
+  }, 20000);
+
+  it('正常小输出不截断不标记,退出码与信号如实', async () => {
+    const result = await spawnTestProcess(
+      { command: process.execPath, args: ['-e', "process.stdout.write('ok'); process.exit(3)"], cwd: '/tmp' },
+      { timeoutMs: 10000 }
+    );
+    expect(result.stdout).toBe('ok');
+    expect(result.stdout).not.toContain('truncated');
+    expect(result.code).toBe(3);
+    expect(result.signal).toBeUndefined();
+  }, 15000);
 });
