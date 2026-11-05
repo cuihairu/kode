@@ -1551,6 +1551,11 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     if (featureConfig.hoverShowValueDocs) {
+      // SP-5: cellappIndex / createCellEntityInNewSpace 语义悬停
+      const cellappIdxHover = createCellappIndexHover(word);
+      if (cellappIdxHover) {
+        return cellappIdxHover;
+      }
       // SP-2: kbe/KBEngine 模块符号悬停(alias.Symbol 访问位)——
       // 空间/导航等模块函数挂 knowledge 摘要;未引入别名时不接管。
       if (document.languageId === 'python') {
@@ -2619,6 +2624,31 @@ function createHookHover(hook: import('./hooks').KBEngineHook): vscode.Hover {
 // GEN-DEF-1e ②+口径①:user_type 带 impl 时,悬停补三契约方法状态与双向
 // 序列化契约。workspace root 不可得 / 无 implementedBy / 未注册 → null
 // (不打扰无契约的类型悬停)。
+/**
+ * SP-5: cellappIndex semantics for createCellEntityInNewSpace.
+ * Sources: baseapp/Entity.md:144; cellappmgr.cpp:348-351 ((index-1)%size);
+ * baseapp.cpp:2473-2479 (0 => load balancer).
+ */
+function createCellappIndexHover(word: string): vscode.Hover | null {
+  if (word !== 'cellappIndex' && word !== 'createCellEntityInNewSpace') {
+    return null;
+  }
+  const markdown = new vscode.MarkdownString();
+  if (word === 'cellappIndex') {
+    markdown.appendMarkdown('**cellappIndex** - createCellEntityInNewSpace 的目标 cellapp 序号\n\n');
+  } else {
+    markdown.appendMarkdown('**createCellEntityInNewSpace**(cellappIndex) - 新建 Space 并把本实体 cell 放入\n\n');
+  }
+  markdown.appendMarkdown('**语义**:\n');
+  markdown.appendMarkdown('- `0`/`None`:由引擎负载均衡动态选择 cellapp(推荐,副本 space 默认用法)\n');
+  markdown.appendMarkdown('- `N > 0`:固定选第 N 个 cellapp;索引溢出取模轮转——预期 4 个实际只有 3 个时,`4→1`、`5→2`(cellappmgr.cpp:348-351 `(N-1) % cellappSize`)\n\n');
+  markdown.appendMarkdown('**搭配**:`KBEngine.setAppFlags(KBEngine.APP_FLAGS_NOT_PARTCIPATING_LOAD_BALANCING)` 把大地图钉在固定 cellapp,副本用 `cellappIndex=0` 走机动进程,互不抢负载。\n\n');
+  markdown.appendMarkdown('**示例**:\n');
+  markdown.appendCodeblock(['# 大地图:固定到第 2 个 cellapp(需先对该 cellapp 设 NOT_PARTCIPATING_LOAD_BALANCING)', 'self.createCellEntityInNewSpace(2)', '', '# 副本:自动均衡', 'self.createCellEntityInNewSpace(0)'].join('\n'), 'python');
+  markdown.appendMarkdown('\n**源码**: `baseapp.cpp:2462` → `cellappmgr.cpp:310`\n');
+  return new vscode.Hover(markdown);
+}
+
 /** SP-1: entrance script (kbemain) module-level SPI hover - no self, scoped by component entry path */
 function createEntryHookHover(hook: import('./entryHooks').KBEngineEntryHook): vscode.Hover {
   const markdown = new vscode.MarkdownString();

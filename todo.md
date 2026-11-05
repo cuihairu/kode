@@ -1263,6 +1263,7 @@
   验收：各反例产诊断、正例零误报，接入既有诊断测试口径（prove-red 后修复）。
   （2026-11-05 完成：新建 `src/spaceNavDiagnostics.ts` 纯文本三检——①setSpaceData/delSpaceData 保留键 `_mapping`（引擎 spacememory.cpp:740/862 双路径 AssertionError）②文件有 navigate/navigatePathPoints 但全文无 canNavigate（几何未加载静默失败,entity.cpp:2583 not found navhandle;canNavigate 探针 :2563）③addSpaceGeometryMapping params dict 引号层键（引擎 PyLong_Check,spacememory.cpp:194）。开关 `kbengine.spaceNavDiagnostics` 默认开,接入 extension.ts receiverNone 同通道（computeAsync 尾部追加 spaceNavItems,共享 collection/生命周期）。prove-red=tests/spaceNavDiagnostics.test.ts 首跑 Cannot find module；修后 12/12 绿（三类反例+正例+组合+空文）。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 12/12；receiverNone 三件套 53/53 绿；`tsc --noEmit` 0 错；eslint（修 no-useless-escape 后）0 错；package.json JSON 合法。extension.test.ts 2 超时为已 stash 验证的既有失败。未 commit。）
 
-- [ ] SP-5 [P2] `createCellEntityInNewSpace(cellappIndex)` 语义 hover
+- [x] SP-5 [P2] `createCellEntityInNewSpace(cellappIndex)` 语义 hover
   落点：参数处 hover 说明 0=自动均衡、N=取模轮转（口径=docs/zh/api/kbengine/baseapp/Entity.md:144）。
   验收：cellappIndex 参数 hover 显示语义说明与示例。
+  （2026-11-05 完成：`src/languageProviders.ts` 新增 `createCellappIndexHover`（:2632，word=cellappIndex 或 createCellEntityInNewSpace 时返回语义悬停——0/None=负载均衡自动选、N>0=取模轮转 `(N-1)%cellappSize`（cellappmgr.cpp:348-351）、搭配 NOT_PARTCIPATING_LOAD_BALANCING 钉大地图+副本走机动、python 示例块+源码锚点 baseapp.cpp:2462→cellappmgr.cpp:310）；接线于 provideKnownHover hoverShowValueDocs 段首（:1555,先于 SP-2/SP-1,名称无冲突）。prove-red=tests/cellappIndexHover.test.ts 首跑 4/5 挂（参数语义/示例/方法名/def Arg 四正例全空）；修后 5/5 绿（含不劫持无关标识符反例）。门禁：`npx vitest run tests/cellappIndexHover.test.ts` 5/5；SP 全家桶八件套 141/141 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。未 commit。）
