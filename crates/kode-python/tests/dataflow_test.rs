@@ -310,3 +310,32 @@ fn dotted_import_binds_top_level_name_kraud11() {
     assert_eq!(a.def_line, Some(1), "import a.b 应按顶层名 a def");
     assert_eq!(a.use_lines, vec![2], "a.c 的读应连上 import 链");
 }
+
+/// KR-AUD-16:`raise err` / `assert cond, msg` / `raise X(e) from c` 的表达式
+/// 侧此前整体不走读(Stmt::Raise/Assert 落在无语义分支)。修复:exc/cause/
+/// test/msg 全按读走查。
+#[test]
+fn raise_and_assert_expressions_are_reads_kraud16() {
+    let src = "def f(err, cond, msg):\n    raise err\n    assert cond, msg\n    raise ValueError(err) from cond\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["err".into(), "cond".into(), "msg".into()], &body);
+    let err = chain(&result, "err");
+    assert_eq!(
+        err.use_lines,
+        vec![1, 3],
+        "raise err 与 raise X(err) 均应读 err"
+    );
+    let cond = chain(&result, "cond");
+    assert_eq!(
+        cond.use_lines,
+        vec![2, 3],
+        "assert test 与 from cause 均应读 cond"
+    );
+    let msg = chain(&result, "msg");
+    assert_eq!(msg.use_lines, vec![2], "assert msg 应读 msg");
+}

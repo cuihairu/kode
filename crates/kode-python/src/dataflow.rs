@@ -259,10 +259,24 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::FunctionDef(f) => state.def_var(f.name.as_str(), line),
         Stmt::ClassDef(c) => state.def_var(c.name.as_str(), line),
-        // 其余无 def-use 语义
-        Stmt::Raise(_)
-        | Stmt::Assert(_)
-        | Stmt::Global(_)
+        // KR-AUD-16:raise/assert 的表达式侧按读走查(exc/cause/test/msg),
+        // 不再整体落进无语义分支。
+        Stmt::Raise(r) => {
+            if let Some(e) = &r.exc {
+                collect_reads(state, e, line);
+            }
+            if let Some(c) = &r.cause {
+                collect_reads(state, c, line);
+            }
+        }
+        Stmt::Assert(a) => {
+            collect_reads(state, &a.test, line);
+            if let Some(m) = &a.msg {
+                collect_reads(state, m, line);
+            }
+        }
+        // 其余无 def-use 语义(global/nonlocal 见 KR-AUD-19)
+        Stmt::Global(_)
         | Stmt::Nonlocal(_)
         | Stmt::Pass(_)
         | Stmt::Break(_)
