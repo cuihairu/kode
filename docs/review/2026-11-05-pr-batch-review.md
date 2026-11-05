@@ -214,3 +214,38 @@
 - `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r5-cargo-full.log`。
 - `eslint src --ext ts`：退出 0 干净（`/tmp/r5-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r5-tsc.log`）。
 - 逐项 red 日志：`/tmp/r5-f1-red.log`（1 failed | 15 passed）、`/tmp/r5-f3-red.log`（2 failed | 16 passed）、`/tmp/r5-f4-red.log`（2 failed | 18 passed）。
+
+## 第六轮返工记录（2026-11-06，R2-F3 六轮复审四 FAIL：确定性映射/逃逸防护/读语义/文档测试闭合，分支 `feat/kode-fix-f1f4`）
+
+本轮处理五轮复审对 R2-F3 的四项 FAIL：跨批路径不稳定、符号链接逃逸、读失败误判为不存在（含 UTF-8 转码丢字节）、文档+测试闭合。均在上一 commit 实测失败测试（red 日志见下）后修码转绿、逐项独立 commit。`todo.md` 未改。
+
+### R5-F1：产物路径确定性映射，跨批稳定（commit `c5ff743`）
+
+- 问题：产物映射以「当前批次共同祖先」为基准——共同祖先随批次组成漂移：`subA/X.py`+`subB/X.py` 同批→各归子目录；分两次单文件发送→都映射到引擎目录根 `X.py`，后者覆盖前者，同一文件落位随批次组成变化。
+- 修法（`referenceReceiver.mjs`）：**永远按报文内完整相对路径展开**，基准只随接收端暂存根（`--root`）定，与批次组成无关；暂存根之外的文件回落按绝对路径全结构展开（同样确定性）。安全清洗与批内同址拒绝整批保持不变。
+- 回归（新增 1 条）：跨批两次单文件发送 subA/X.py、subB/X.py → 各落 `subA/X.py`、`subB/X.py` 不覆盖、不裸落根。**red：1 failed | 20 passed**（日志 `/tmp/r6-f1-red.log`）→ green 21 passed。
+- 连带（commit `511d63f`，R5-F1a）：`hotReloadAppliedVerifyWiring` 所发真实文件在暂存根之外，产物落位随映射变为绝对路径全结构，断言同步改 mapped path（首轮全量 npm test 抓到，其余 11 个失败为满载抖动）。
+
+### R5-F2：符号链接逃逸防护（commit `14b73be`）
+
+- 问题：字符串清洗防不住产物目录内的 symlink 指向目录外——沿它写入/unlink 都作用在引擎目录外的真实目标上。
+- 修法：写/unlink 前对目标 realpath 解析（目标不存在时逐级取最深已存在祖先），验证仍在 `--artifact-dir`（realpath）内，否则拒绝（failed 回执，不写不删）；回滚路径同过此检查，过不了按 `rollback_failed` 如实上报残留。
+- 回归（新增 1 条）：引擎目录内 `subLink→目录外` → failed 含「逃逸」、目录外无产物、无台账。**red：1 failed**（修码前 R5-F1 之后实测，日志 `/tmp/r6-f2-red.log`）→ green 22 passed。
+
+### R5-F3：写前读旧产物 ENOENT-only + Buffer 逐字节还原（commit `351f845`）
+
+- 问题：①写前读旧产物把一切异常当 ENOENT→EACCES/EIO 时误判「不存在」，失败回滚 unlink **误删预存在产物**；②旧内容以 UTF-8 字符串保存，非 UTF-8 文件回滚后被转码破坏。
+- 修法：仅 ENOENT 视为不存在，其他读异常如实 failed（`读旧产物失败(<code>)`）拒绝写入且不删除；旧内容以 **Buffer** 保存恢复（逐字节还原），写后核验哈希按原始字节算。
+- 回归（新增 2 条 + 改造 2 条）：读旧产物 EACCES→拒绝且产物仍在（red：旧实现误删）；非 UTF-8 旧产物回滚逐字节一致（red：旧实现转码变字节）；目录占位路径改判「读旧产物失败(EISDIR)」拒绝写入不动产物；五轮 rollback_failed 回归由 EISDIR 残留改为只读旧产物（0444：写入 EACCES、回滚还原也 EACCES）构造，语义不变。**red：3 failed | 1 passed**（日志 `/tmp/r6-f3-red.log`）→ green 24 passed。
+
+### R5-F4：文档 §4.3 + 测试闭合（commit `01202b1`）
+
+- `docs/design/hot-reload-design.md` §4.3 按新实现改写：确定性映射（跨批稳定）、符号链接逃逸防护、ENOENT-only 读语义 + Buffer 还原、部分写入残留 best-effort 清理；接收端脚本头部契约注记同步。
+- 测试闭合（复审 FAIL-4 四类真实用例全落地）：①部分写入后抛错→残留被清理（RLIMIT_FSIZE 构造真实「写一半再抛错」：接收端 `ulimit -f 2` 下运行，900B 源文件可暂存、其 1100B 转码产物中途 EFBIG 留 1024B 残留，回滚清干净且如实「无残留」）；②跨批映射不覆盖（R5-F1）；③读旧产物 EACCES→拒绝不删（R5-F3）；④产物目录内 symlink 指向外部→拒绝写入（R5-F2）。
+
+### 第六轮门禁数字（本机，2026-11-06）
+
+- `npm test`：首轮 **12 failed**（`hotReloadAppliedVerifyWiring` 1 个为 R5-F1 映射变更的真实断言偏移，R5-F1a 修正；其余 11 个为满载时序/预算抖动）——全量复跑**退出 0 一次通过**：Vitest 517 文件 **6369 passed、20 skipped、0 failed**；compile 与 mocha tsc 干净；VS Code 集成冒烟 **12 passing**。日志 `/tmp/r6-npm-test-full.log`（首轮）、`/tmp/r6-npm-test-full2.log`（复跑）。
+- `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed**。日志 `/tmp/r6-cargo-full.log`。
+- `eslint src --ext ts`：退出 0 干净（`/tmp/r6-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r6-tsc.log`）。
+- 逐项 red 日志：`/tmp/r6-f1-red.log`（1 failed | 20 passed）、`/tmp/r6-f2-red.log`（1 failed）、`/tmp/r6-f3-red.log`（3 failed | 1 passed）。
