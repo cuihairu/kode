@@ -86,20 +86,34 @@ export interface InferredDirEntry {
   isDir: boolean;
 }
 
+export interface SourceFilesResult {
+  /** 成功列举到的 .py/.pyi 相对路径（深度不限） */
+  files: string[];
+  /**
+   * 列举期间有目录读取失败（如权限/暂态 IO）。结果不完整：调用方绝不能据此
+   * 判定「某镜像文件已过期」——读失败不是空目录，照空目录处理会误删既有副本。
+   */
+  incomplete: boolean;
+}
+
 /**
  * 列举 scripts 根下待镜像的 .py/.pyi 相对路径（深度不限）。
  * 目录条目不区分文件/目录时靠 isDir 决定下钻；.py/.pyi 文件收，其余跳过。
+ * 某目录读取失败置 incomplete=true 并跳过该子树（不抛出），由调用方据
+ * incomplete 决定禁止删除——「读失败」与「真空目录」必须可区分。
  */
 export function listSourceFiles(
   scriptsRoot: string,
   deps: { listDir: (absPath: string) => readonly InferredDirEntry[] }
-): string[] {
+): SourceFilesResult {
   const result: string[] = [];
+  let incomplete = false;
   const walk = (absDir: string, relDir: string): void => {
     let entries: readonly InferredDirEntry[];
     try {
       entries = deps.listDir(absDir);
     } catch {
+      incomplete = true;
       return;
     }
     for (const entry of entries) {
@@ -115,5 +129,5 @@ export function listSourceFiles(
     }
   };
   walk(scriptsRoot, '');
-  return result;
+  return { files: result, incomplete };
 }

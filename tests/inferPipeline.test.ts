@@ -74,6 +74,8 @@ interface MakeDepsInput {
   spawn?: InferPipelineDeps['spawn'];
   /** 覆盖存在性判定(仅 discoverPyrefly 用到;scripts 根发现走真 fs) */
   exists?: (p: string) => boolean;
+  /** 覆盖目录列举(默认从 files 推导;注入抛错可测「读失败≠空目录」) */
+  listDir?: (absDir: string) => readonly InferredDirEntry[];
 }
 
 function makeDeps(input: MakeDepsInput): InferPipelineDeps {
@@ -83,6 +85,7 @@ function makeDeps(input: MakeDepsInput): InferPipelineDeps {
   return {
     exists: input.exists ?? baseExists,
     ...mem,
+    listDir: input.listDir ?? mem.listDir,
     mkdir: (): void => undefined,
     findGitRoot: input.findGitRoot ?? ((): string | null => null),
     findSvnRoot: input.findSvnRoot ?? ((): string | null => null),
@@ -256,6 +259,31 @@ describe('syncInferredCopy(副本层执行器)', () => {
     expect(result.deleted).toBe(1);
     expect(files.get(path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py'))).toBeUndefined();
     expect(files.get(path.join(root, '.kbengine', 'inferred', 'scripts', 'base', 'Avatar.py'))).toContain('-> int');
+  });
+
+  it('源目录读取失败:不把读失败当空目录,绝不删既有镜像副本', async () => {
+    const { root, scriptsRoot, files } = makeTmpWorkspace();
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
+    // 首次正常同步:镜像落 main.py + base/Avatar.py
+    await syncInferredCopy(makeContext(), makeDeps({ files }), { silent: true });
+    const mirrorMain = path.join(root, '.kbengine', 'inferred', 'scripts', 'main.py');
+    expect(files.get(mirrorMain)).toBeDefined();
+    // 源 main.py 被删(完整列举下本应 stale 清理),但源根列举抛错(读失败)
+    files.delete(path.join(scriptsRoot, 'main.py'));
+    const mem = makeMemoryFs(files);
+    const failing = makeDeps({
+      files,
+      listDir: (p: string) => {
+        if (p === scriptsRoot) {
+          throw new Error('EACCES');
+        }
+        return mem.listDir(p);
+      }
+    });
+    const result = await syncInferredCopy(makeContext(), failing, { silent: true });
+    expect(result.deleted).toBe(0);
+    // 镜像残留仍在——「读失败≠空目录」核心断言:未把副本当过期删除
+    expect(files.get(mirrorMain)).toBeDefined();
   });
 
   it('写闸纪律:镜像阶段绝不动用户源码树', async () => {

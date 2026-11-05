@@ -256,9 +256,14 @@ function mirrorOneRoot(
     'inferred',
     mirrorPrefixFor(workspaceRoot, scriptsRoot)
   );
-  const sourceFiles = listSourceFiles(scriptsRoot, deps);
-  const existingInferred = listSourceFiles(inferredRoot, deps);
-  const plan = planInferredMirror(scriptsRoot, inferredRoot, sourceFiles, existingInferred, deps);
+  const sourceListing = listSourceFiles(scriptsRoot, deps);
+  const existingListing = listSourceFiles(inferredRoot, deps);
+  const plan = planInferredMirror(scriptsRoot, inferredRoot, sourceListing.files, existingListing.files, deps);
+  if (sourceListing.incomplete) {
+    // 源列举不完整（某目录读取失败）：无法判定何为过期，绝不删既有镜像。
+    // 「读失败被当空目录」会误删整个子树副本（审核发现）；只可能漏删/下次补齐。
+    plan.deleteStale = [];
+  }
   const denied: string[] = [];
   const write = (rel: string): boolean => {
     const target = path.join(inferredRoot, rel);

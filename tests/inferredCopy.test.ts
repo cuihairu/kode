@@ -89,16 +89,36 @@ describe('inferredCopy', () => {
         '/ws/scripts/entity_defs': [{ name: 'Avatar.def', isDir: false }]
       };
       const deps = { listDir: (p: string) => tree[p] ?? [] };
-      const files = listSourceFiles('/ws/scripts', deps);
-      expect(files.sort()).toEqual(['base/Account.pyi', 'base/Avatar.py', 'kbemain.py']);
+      const result = listSourceFiles('/ws/scripts', deps);
+      expect(result.files.sort()).toEqual(['base/Account.pyi', 'base/Avatar.py', 'kbemain.py']);
+      expect(result.incomplete).toBe(false);
     });
-    it('returns empty for unreadable root', () => {
+    it('marks unreadable dir incomplete instead of returning empty as if absent', () => {
       const deps = {
         listDir: () => {
           throw new Error('nope');
         }
       };
-      expect(listSourceFiles('/missing', deps)).toEqual([]);
+      expect(listSourceFiles('/missing', deps)).toEqual({ files: [], incomplete: true });
+    });
+    it('marks incomplete when a nested dir read fails (partial walk)', () => {
+      const tree: Record<string, readonly { name: string; isDir: boolean }[]> = {
+        '/ws/scripts': [
+          { name: 'base', isDir: true },
+          { name: 'kbemain.py', isDir: false }
+        ]
+      };
+      const deps = {
+        listDir: (p: string): readonly { name: string; isDir: boolean }[] => {
+          if (p === '/ws/scripts/base') {
+            throw new Error('EACCES');
+          }
+          return tree[p] ?? [];
+        }
+      };
+      const result = listSourceFiles('/ws/scripts', deps);
+      expect(result.files).toEqual(['kbemain.py']);
+      expect(result.incomplete).toBe(true);
     });
   });
 });
