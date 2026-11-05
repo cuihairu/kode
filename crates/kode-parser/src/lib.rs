@@ -13,6 +13,7 @@
 //! 任何输入不 panic(见 tests/blind.rs 变异抽验)。
 
 pub mod config;
+pub mod config_derive;
 pub mod dep;
 pub mod diag;
 pub mod json;
