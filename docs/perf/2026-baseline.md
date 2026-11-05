@@ -185,7 +185,7 @@ flowchart TD
 flowchart TD
   VC3["VS Code: provideCompletionItems(document, position)"]
   M3["extension.ts:891 打点 startLanguageServiceOperation('completion')<br/>(python 补全语境另有 :1385 一路)"]
-  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:7007"]
+  CP["PythonCompletionProvider.provideCompletionItems<br/>languageProviders.ts:7038"]
   KBEC{"kbe./KBEngine. 模块语境?<br/>(已引入/已用别名)"}
   FILTER["filterKbeSymbols 前缀过滤 :4921<br/>(engineApiMetadata 目录)"]
   SELFC{"self. 语境?<br/>getPythonSelfCompletionContext :4935"}

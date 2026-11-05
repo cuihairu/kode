@@ -6679,6 +6679,30 @@ function findMethodElementByName(root: DefElementNode, name: string): DefElement
   return null;
 }
 
+/**
+ * IDE-LINT-012:诊断行上按区间归属取 receiver——扫描 `self.<cell|base|client>.<方法>`
+ * 调用,取方法名 token 与诊断区间 `[startChar, endChar)` 相交的那个 receiver;
+ * 返回其角色,或 null(区间不覆盖任何 self.<receiver>.<方法>,不猜)。真实诊断
+ * 区间紧贴方法名 token(交集即唯一);宽松区间也按第一个相交归属,同行两个
+ * 不同 receiver 不会互串。
+ */
+export function receiverFromDiagnosticLine(
+  lineText: string,
+  startChar: number,
+  endChar: number
+): 'cell' | 'base' | 'client' | null {
+  const callRe = /\bself\.(cell|base|client)\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = callRe.exec(lineText)) !== null) {
+    const methodStart = match.index + match[0].length - match[2].length;
+    const methodEnd = methodStart + match[2].length;
+    if (startChar < methodEnd && endChar > methodStart) {
+      return match[1] as 'cell' | 'base' | 'client';
+    }
+  }
+  return null;
+}
+
 export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeActionProvider {
   /**
    * B-7(2026-10-29 用户令):receiver-none 诊断的快速修复——使用行之前
@@ -6708,11 +6732,18 @@ export class KBEngineReceiverNoneGuardCodeActionProvider implements vscode.CodeA
         continue;
       }
       const line = diagnostic.range.start.line;
-      const receiverMatch = /\bself\.(cell|base|client)\s*\./.exec(document.lineAt(line).text);
-      if (!receiverMatch) {
+      // IDE-LINT-012:接收者从诊断锚定的调用取——诊断区间覆盖 `self.<r>.<方法>` 的
+      // 方法名 token,同行两个不同 receiver(如 `self.cell.a(); self.base.b()`)时
+      // 必须按区间归属取对应 receiver,不能取行首个 self.<r>. 否则会把第一个
+      // receiver 的修复错套给第二个的诊断。区间内定位不到 receiver 则不出(不猜)。
+      const receiver = receiverFromDiagnosticLine(
+        document.lineAt(line).text,
+        diagnostic.range.start.character,
+        diagnostic.range.end.character
+      );
+      if (receiver === null) {
         continue;
       }
-      const receiver = receiverMatch[1] as 'cell' | 'base' | 'client';
       const dedupeKey = `${receiver}:${line}`;
       if (seen.has(dedupeKey)) {
         continue;

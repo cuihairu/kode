@@ -116,3 +116,5 @@ if self.cell is not None:
 实现约束：复用当前文档版本与共享解析；不执行用户 Python；不在 hover/补全中扫描仓库；事件风暴只发布最新版本；大文件检查可让路、可取消；规则查不到类型/声明时保留未知状态。项目级未知声明检查与本地语法检查分开，不用全仓同步解析弥补缺失信息。
 
 快速修复必须能在真实 VS Code 应用且保持 Python 语法合法；处理多行调用、同一行多个 receiver、EOF、缩进和同级后续语句，不为了消除 Warning 擅自包住无关逻辑。自动包裹守卫可能改变流程，不应作为无条件自动保存修复。
+
+receiver-none 守卫修复的边界已按此在真实 VS Code 验收（IDE-LINT-012）：多行调用（括号未闭合续行）整体纳入包裹、续行重缩进连贯；同一行两个不同 receiver 各诊断各得各的守卫——receiver 从诊断自身方法名区间提取（`receiverFromDiagnosticLine`），不取行首个 `self.<receiver>.`，第一个 receiver 的修复不会套到第二个的诊断上；EOF（末行使用、无尾换行）包裹与早退都应用成功、位置不越界；包裹把同级与更深语句整体进一级、在首个不引用本 receiver 的同级语句处截断，无关后续行逐字节不变（证据 `docs/perf/2026-11-06-lint-quickfix-boundaries-run.txt`）。

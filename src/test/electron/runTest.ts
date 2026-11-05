@@ -38,6 +38,10 @@ async function main(): Promise<void> {
   // 5000 外部根),suite 过滤切 longtrend(longSessionTrend.test.ts)。REV-034
   // 短压力(--longsession)原样保留,两套件互补互不覆盖。
   const longTrendMode = process.argv.includes('--longtrend');
+  // IDE-LINT-012 快速修复边界验收:与 --field 共用装配(夹具由套件自写),
+  // 过滤切 lintfix(lintQuickFixBoundaries.test.ts)——receiver-none 守卫
+  // 修复在真实 VS Code 应用:多行调用/同行双 receiver/EOF/同级后续语句。
+  const lintFixMode = process.argv.includes('--lintfix');
   const delFileMode = process.argv.includes('--delfile');
   const renameMode = process.argv.includes('--rename');
   const dirtyMode = process.argv.includes('--dirty');
@@ -128,7 +132,7 @@ async function main(): Promise<void> {
     process.env.KODE_VSIX_WORKSPACE = workspacePath;
     process.env.KODE_VSIX_EXT_DIR = devPath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode || historyMode || longTrendMode || longNaturalMode) {
+  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode || historyMode || longTrendMode || longNaturalMode || lintFixMode) {
     // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
     // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
@@ -280,13 +284,17 @@ async function main(): Promise<void> {
             ? 'longsession'
             : historyMode
               ? 'history'
-              : longTrendMode ? 'longtrend' : 'field';
+              : longTrendMode
+                ? 'longtrend'
+                : lintFixMode ? 'lintfix' : 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
     process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
       ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-10-27-field-baseline-run.txt');
     process.env.KODE_HISTORY_OUT = process.env.KODE_HISTORY_OUT
       ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-11-05-history-host-impact-run.txt');
+    process.env.KODE_LINTFIX_OUT = process.env.KODE_LINTFIX_OUT
+      ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-11-06-lint-quickfix-boundaries-run.txt');
     process.env.KODE_AUD17_OUT = process.env.KODE_AUD17_OUT
       ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-11-05-aud017-long-session-run.txt');
     if (historyMode) {

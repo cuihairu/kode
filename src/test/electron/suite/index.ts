@@ -41,7 +41,9 @@ export function run(): Promise<void> {
               ? file === 'gitHistoryHostImpact.test.js'
               : suite === 'longtrend'
                 ? file === 'longSessionTrend.test.js'
-                : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
+                : suite === 'lintfix'
+          ? file === 'lintQuickFixBoundaries.test.js'
+          : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }
