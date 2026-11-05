@@ -8,7 +8,8 @@
 //!   使 `affected_by` 纳入「改被调方文件 → 重算调用方文件」)。
 //!
 //! 跨文件被调方解析是启发式(动态语言):裸名 → 全项目模块级函数;`self.*` →
-//! 调用方自身文件;模块绑定接收者 → 按文件名解析模块;未知 → 不产反依赖
+//! 调用方自身文件(`self.<m>` 本地无定义时按全项目唯一类成员定义补继承链,
+//! 歧义不连);模块绑定接收者 → 按文件名解析模块;未知 → 不产反依赖
 //! (宁缺毋滥,避免误失效)。
 
 use std::collections::BTreeMap;
@@ -121,8 +122,20 @@ fn resolve_callee_file(
     if edge.kind == crate::model::EdgeKind::KbeCrossProcess {
         return None;
     }
-    if receiver == "self" || receiver.starts_with("self.") {
-        // 自身类方法/属性 → 调用方文件(同类,非跨文件;返回自身以便上层折叠)
+    if receiver == "self" {
+        // KR-AUD-15(RUST-7 残面):同文件同类是常态,但继承链(父实体脚本/混入
+        // 在另一文件)时 `self.<m>` 的定义不在调用方文件——恒回调用方文件等于
+        // 父类方法变更永不失效子类文件(引擎 cell 侧漏报面)。口径:本地有成员
+        // 即折叠(原行为不变);本地无 → 全项目恰一处类成员(方法/属性)定义才
+        // 连(继承面补链),零/多处保守不产边(同名 onTimer 多实体常态不误连)。
+        if caller_defines_member(caller_file, file_symbols, &edge.callee) {
+            return Some(caller_file.clone());
+        }
+        return find_unique_member_definer(file_symbols, &edge.callee, caller_file);
+    }
+    if receiver.starts_with("self.") {
+        // `self.<attr>.<m>()`:被调方挂在 self 的属性值上,静态不可解析,
+        // 保持原口径回调用方文件(上层同文件折叠,不产跨文件边)。
         return Some(caller_file.clone());
     }
     if receiver.is_empty() {
@@ -151,6 +164,48 @@ fn caller_defines_function(
         .get(caller_file)
         .map(|s| s.functions.iter().any(|f| f.name == name))
         .unwrap_or(false)
+}
+
+/// 调用方文件的类是否定义成员 `name`(方法/属性)或模块级函数。
+fn caller_defines_member(
+    caller_file: &DocumentKey,
+    file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
+    name: &str,
+) -> bool {
+    let Some(symbols) = file_symbols.get(caller_file) else {
+        return false;
+    };
+    if caller_defines_function(caller_file, file_symbols, name) {
+        return true;
+    }
+    symbols.classes.iter().any(|c| {
+        c.methods.iter().any(|m| m.name == name) || c.attributes.iter().any(|a| a.name == name)
+    })
+}
+
+/// 全项目搜类成员 `name` 的定义文件(排除 `exclude` 调用方自身),恰一个 → 有;
+/// 零个或多个(歧义,宁缺毋滥避免误失效)→ None。
+fn find_unique_member_definer(
+    file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
+    name: &str,
+    exclude: &DocumentKey,
+) -> Option<DocumentKey> {
+    let mut found: Vec<DocumentKey> = file_symbols
+        .iter()
+        .filter(|(k, _)| *k != exclude)
+        .filter(|(_, s)| {
+            s.classes.iter().any(|c| {
+                c.methods.iter().any(|m| m.name == name)
+                    || c.attributes.iter().any(|a| a.name == name)
+            })
+        })
+        .map(|(k, _)| k.clone())
+        .collect();
+    if found.len() == 1 {
+        found.pop()
+    } else {
+        None
+    }
 }
 
 /// 全项目搜模块级函数 `name`(排除 `exclude` 调用方文件),恰一个定义 → 有;

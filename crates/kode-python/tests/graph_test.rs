@@ -158,3 +158,55 @@ fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     );
     assert_eq!(uncertain.len(), 1);
 }
+
+/// KR-AUD-15(RUST-7 残面):`self.<m>()` 恒回调用方文件——继承链(父实体脚本/
+/// 混入在另一文件)时,父类方法变更不会失效子类文件(引擎 cell 侧漏报面)。
+/// 口径:本地有成员即折叠(原行为);本地无 → 全项目恰一处类成员定义才连。
+#[test]
+fn kr_aud_15_inherited_self_member_links_parent_file() {
+    let parent_src = "class Parent:\n    def inherited(self):\n        pass\n";
+    let child_src = "class Child(Parent):\n    def run(self):\n        self.inherited()\n";
+    let parent_key = key("scripts/parent.py");
+    let child_key = key("scripts/child.py");
+
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&parent_key, parent_src), (&child_key, child_src)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&parent_key)
+            .map(|s| s.contains(&child_key))
+            .unwrap_or(false),
+        "self.inherited() 定义在 parent.py,反索引应含 parent→child, got {rev:?}"
+    );
+}
+
+/// KR-AUD-15 保守面:同名成员在多文件并存(KBEngine 各实体同名 onTimer 常态)
+/// → 歧义不产边(宁缺毋滥,避免误失效)。
+#[test]
+fn kr_aud_15_ambiguous_self_member_produces_no_edge() {
+    let caller_src = "class Caller:\n    def run(self):\n        self.onTimer()\n";
+    let b_src = "class B:\n    def onTimer(self):\n        pass\n";
+    let c_src = "class C:\n    def onTimer(self):\n        pass\n";
+    let caller_key = key("scripts/caller.py");
+    let b_key = key("scripts/b.py");
+    let c_key = key("scripts/c.py");
+
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&caller_key, caller_src), (&b_key, b_src), (&c_key, c_src)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(rev.is_empty(), "同名成员多处定义应保守不产边, got {rev:?}");
+}
