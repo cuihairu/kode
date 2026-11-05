@@ -30,7 +30,10 @@ export interface DefStructuralGate {
   check(files: readonly string[]): Promise<string[]>;
   /**
    * F1:基线前滚口——仅当批次已通过判定且即将真实发送时由调用方调用。
-   * 把每个可读 .def 的基线滚到当前内容(=本次所发、目标即将加载的版本)。
+   * F1 二轮(2026-11-05 复审):前滚只落 check 判定时留的内容快照,绝不
+   * 重读文件——判定放行后文件再变,重读会把从未通过判定的内容写进基线,
+   * 该内容被拦/未被目标应用后再次发送即因指纹相同放行(异步时序绕过)。
+   * 无快照(未判定过的文件)不滚。
    */
   commit?(files: readonly string[]): Promise<void>;
   /**
@@ -47,6 +50,10 @@ export function createDefStructuralGate(
 ): DefStructuralGate {
   // 会话内闸判定见过的 def 文件(含被拦的)——confirmLoaded 的默认重建面
   const seenDefFiles = new Set<string>();
+  // F1 二轮:check 判定时留的内容快照(文件 → 判定面读到的内容)——commit
+  // 前滚只落这份快照,绝不重读(check 放行后文件再变,重读=把未判定内容
+  // 写进基线,构成时序绕过);confirmLoaded 不受影响(用户明确重启确认)。
+  const checkedSnapshots = new Map<string, string>();
   const readContent = async (file: string): Promise<string | null> => {
     if (!reader) {
       return null;
@@ -82,6 +89,8 @@ export function createDefStructuralGate(
           reasons.push(`${file}: 内容不可读(保守按结构性,不发)`);
           return;
         }
+        // F1 二轮:判定面读到的内容留快照——commit 前滚的唯一合法来源
+        checkedSnapshots.set(file, after);
         const baseline = baselines.get(file);
         if (baseline === undefined) {
           reasons.push(`${file}: 无基线(本次会话首次见到,证明不了无结构变化;重启后请确认基线)`);
@@ -101,13 +110,16 @@ export function createDefStructuralGate(
       if (!reader || defFiles.length === 0) {
         return;
       }
-      const contents = await readAll(defFiles);
-      defFiles.forEach((file, index) => {
-        const content = contents[index];
-        if (content !== null) {
-          baselines.set(file, content);
+      // F1 二轮:只落 check 判定时留的快照,绝不重读文件——判定放行后内容
+      // 再变,重读会把从未通过判定的内容滚进基线(时序绕过反例:基线 A,
+      // check 读到 A 放行,文件变 B,commit 重读 B 入基线;B 被拦/未被目标
+      // 应用后再次发送 B,指纹相同即放行)。无快照(未判定过)不滚。
+      for (const file of defFiles) {
+        const snapshot = checkedSnapshots.get(file);
+        if (snapshot !== undefined) {
+          baselines.set(file, snapshot);
         }
-      });
+      }
     },
     async confirmLoaded(files): Promise<number> {
       if (!reader) {

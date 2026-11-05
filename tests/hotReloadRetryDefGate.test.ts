@@ -158,6 +158,49 @@ describe('重试路径 def 结构闸(RT-3 / IDE-HOT-005)', () => {
     expect(third.runCalls).toEqual(['热更']);
   });
 
+  it('F1 二轮回归:放行判定后内容再变,commit 只落判定时快照,基线绝不进未判定内容', async () => {
+    baselines.set('/ws/entities/Avatar.def', BASE_DEF);
+    const gate = makeGate();
+    // 判定时读到的内容与基线结构一致 → 放行
+    content = BASE_DEF;
+    expect(await gate.check(['/ws/entities/Avatar.def'])).toEqual([]);
+    // 判定后、commit 前文件变成结构性变更:旧实现 commit 重读文件,会把这份
+    // 从未通过判定的内容滚进基线;修后 commit 只落判定时快照
+    content = STRUCTURAL_DEF;
+    await gate.commit!(['/ws/entities/Avatar.def']);
+    // 基线必须仍是判定过的 A——被拦/未应用内容重发时按旧基线保守拦下
+    expect(baselines.get('/ws/entities/Avatar.def')).toBe(BASE_DEF);
+    const second = await gate.check(['/ws/entities/Avatar.def']);
+    expect(second.length).toBeGreaterThan(0);
+    expect(second[0]).toContain('属性结构变化');
+  });
+
+  it('F1 二轮回归:「放行→内容变更→重试」时序——重试基线只滚判定时内容,再变内容不得经重试绕过', async () => {
+    baselines.set('/ws/entities/Avatar.def', BASE_DEF);
+    const gate = createDefStructuralGate(
+      // 第一次读(check 判定)返回与基线一致的内容并同步翻转为结构性内容:
+      // 旧实现 commit 重读会拿到翻转后的未判定内容并滚进基线,下一次重试
+      // 与该内容指纹相同即放行(需重启被绕过);修后 commit 用判定快照。
+      async () => {
+        const read = content;
+        content = STRUCTURAL_DEF;
+        return read;
+      },
+      baselines
+    );
+    const store = makeStore();
+    const first = await resend(store, gate);
+    expect(first.result.ok).toBe(true);
+    expect(first.runCalls).toEqual(['热更']);
+    // 基线只滚判定时内容(A),不是未判定过的 B
+    expect(baselines.get('/ws/entities/Avatar.def')).toBe(BASE_DEF);
+    // 当前内容已是结构性 B 且从未通过判定:再次重试必须拦下
+    const second = await resend(store, gate);
+    expect(second.result.ok).toBe(false);
+    expect(second.result.detail).toContain('需要重启');
+    expect(second.runCalls).toEqual([]);
+  });
+
   it('重试复用与 fire 相同的闸实例:fire 拦下后重试同被拦(同一基线册,不因 fire 拦截而放行)', async () => {
     const store = makeStore();
     const clock = makeTimers();
