@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { eventDefinitionAt, findEventCalls } from './eventApi';
 export { EventCodeLensProvider } from './eventApi';
-import { getScanRootForFile } from './scanRoots';
+import { getScanRootForFile, findFilesAcrossRoots } from './scanRoots';
 import {
   parsePythonFile,
   linearizeC3,
@@ -527,6 +527,55 @@ function getDefTagCompletionLabels(
   return [];
 }
 
+/**
+ * SP-3: detect cursor inside a string literal of addSpaceGeometryMapping(...).
+ * lineText is the line prefix up to the cursor. Returns the typed prefix
+ * inside the open string, or null when not in a target string context.
+ */
+function getAddSpaceGeometryStringPrefix(lineText: string): { prefix: string } | null {
+  const callIdx = lineText.indexOf('addSpaceGeometryMapping');
+  if (callIdx < 0) {
+    return null;
+  }
+  const openIdx = lineText.indexOf('(', callIdx);
+  if (openIdx < 0) {
+    return null;
+  }
+  let inString: string | null = null;
+  let stringStart = -1;
+  let depth = 0;
+  for (let i = openIdx; i < lineText.length; i += 1) {
+    const ch = lineText[i];
+    if (inString) {
+      if (ch === '\\') {
+        i += 1;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inString = ch;
+      stringStart = i + 1;
+      continue;
+    }
+    if (ch === '(' || ch === '[' || ch === '{') {
+      depth += 1;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      depth -= 1;
+      if (depth <= 0) {
+        return null; // left the call
+      }
+    }
+  }
+  if (!inString || depth < 1) {
+    return null;
+  }
+  return { prefix: lineText.slice(stringStart) };
+}
+
 export class KBEngineCompletionProvider implements vscode.CompletionItemProvider {
   // 内建属性补全(用户令 2026-10-21 内建属性单 ③):self. 上下文需要 def
   // 归属面兜底,可选注入;缺省时仅目录域判面(既有无参用例口径不变)。
@@ -630,6 +679,13 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
           });
           return items;
         }
+
+        // SP-3: addSpaceGeometryMapping 字符串实参(path 第 3 参 / params dict 值)
+        // → 扫描 workspace+assetsRoot 的 *.navmesh/*.tmx 路径补全。
+        const navString = getAddSpaceGeometryStringPrefix(lineText);
+        if (navString !== null) {
+          return this.provideNavPathCompletions(document, navString.prefix, token);
+        }
       }
 
       if (lineText.match(/KBEngine\.[a-zA-Z]*$/)) {
@@ -670,6 +726,49 @@ export class KBEngineCompletionProvider implements vscode.CompletionItemProvider
    * manager 时问 def 归属——唯一面给全量面属性,多面歧义或判为实体但无面
    * → 只给宏公共 3;非实体(manager 判 null 且无目录域)→ 空表不接管。
    */
+  /**
+   * SP-3: scan workspace+assetsRoot for *.navmesh/*.tmx and offer relative
+   * paths filtered by the typed string prefix. Empty result on no match
+   * (does not block or error).
+   */
+  private async provideNavPathCompletions(
+    document: vscode.TextDocument,
+    prefix: string,
+    token?: vscode.CancellationToken
+  ): Promise<vscode.CompletionItem[]> {
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    const [navmeshes, tmxes] = await Promise.all([
+      findFilesAcrossRoots('**/*.navmesh', null, token),
+      findFilesAcrossRoots('**/*.tmx', null, token)
+    ]);
+    if (token?.isCancellationRequested) {
+      return [];
+    }
+    const root = getWorkspaceRootForDocument(document);
+    const items: vscode.CompletionItem[] = [];
+    const seen = new Set<string>();
+    for (const uri of [...navmeshes, ...tmxes]) {
+      const abs = uri.fsPath.replace(/\\/g, '/');
+      const rel = root
+        ? path.relative(root, uri.fsPath).replace(/\\/g, '/')
+        : abs;
+      if (prefix && !rel.includes(prefix)) {
+        continue;
+      }
+      if (seen.has(rel)) {
+        continue;
+      }
+      seen.add(rel);
+      const item = new vscode.CompletionItem(rel, vscode.CompletionItemKind.File);
+      item.detail = abs.endsWith('.navmesh') ? 'navmesh' : 'tmx';
+      item.documentation = abs;
+      items.push(item);
+    }
+    return items;
+  }
+
   private provideBuiltinPropertyCompletions(
     document: vscode.TextDocument
   ): vscode.ProviderResult<vscode.CompletionItem[]> {

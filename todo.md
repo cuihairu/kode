@@ -1253,9 +1253,10 @@
   验收：`KBEngine.addSpaceGeometryMapping(...)` hover 含层参数语义与回调链说明；未挂符号零回归。
   （2026-11-05 完成：`src/kbeModuleIndex.ts` 新增 `CELLAPP_STUB`（typings/_KBEngine_cellapp.pyi）+6 个 cellapp 空间/导航模块函数——`addSpaceGeometryMapping`(:40)/`getSpaceGeometryMapping`(:47)/`setSpaceData`(:48)/`getSpaceData`(:49)/`delSpaceData`(:50)/`raycast`(:54)，summary=api-cellapp.md 行摘要（层参数/回调链 onSpaceGeometryLoaded/onAllSpaceGeometryLoaded/onSpaceData/raycast 几何前置），双语 GEN-DEF-1d 齐备。接线 `src/languageProviders.ts`：`provideKnownHover` hoverShowValueDocs 段先解析 `resolveKbeAccessAtPosition`（alias.Symbol 访问位,未引入别名不接管）→ `getKbeSymbol` → 新增 `createKbeSymbolHover`（:2542，summary+typings 锚点+版本标注）；导入 `summaryForLanguage`/`engineApiVersionAnnotation`。prove-red=tests/spaceNavSymbols.test.ts 首跑 7/9 挂（符号缺席+hover 空）；修后 9/9 绿（数据面 5+hover 4,含未引入别名反例与裸 reloadScript 兜底）。门禁：`npx vitest run tests/spaceNavSymbols.test.ts` 9/9；kbeModuleIndex+entryHooks+languageProviders×3 五件套 146/146 绿（引擎 typings 锚点逐条回验含新增 6 条）；pythonStubExport+parityGolden 绿；`tsc --noEmit` 0 错；eslint 改动 3 文件 0 错。extension.test.ts 2 超时经 stash 验证为既有失败（假组件进程 5s 超时,与本改动无关）。未 commit。）
 
-- [ ] SP-3 [P1] 导航资源路径补全
+- [x] SP-3 [P1] 导航资源路径补全
   落点：`addSpaceGeometryMapping` 第 3 参与 `params` dict 值 → 扫描 assetsRoot 下 `*.navmesh`/`*.tmx` 补全（参考既有 assetsRootScan/listPathRes 面）。
   验收：路径前缀补全出工作区实际存在的导航文件；无匹配文件时不误报、不阻塞补全。
+  （2026-11-05 完成：`src/languageProviders.ts` 新增 `getAddSpaceGeometryStringPrefix`（:535，检测光标位于 addSpaceGeometryMapping 字符串实参内,含 params dict 嵌套括号深度与转义感知,离开调用即拒）+ `KBEngineCompletionProvider.provideNavPathCompletions`（:734，`findFilesAcrossRoots('**/*.navmesh'/'**/*.tmx')` 双扫 workspace+assetsRoot,相对路径去重,按已输入前缀 includes 过滤,kind=File,detail=navmesh/tmx）；接线于 provideCompletionItems .py 分支 SP-1 entry hooks 之后（:685）。prove-red=tests/navPathCompletion.test.ts 首跑 3/6 挂（path 参/params 值/前缀过滤三正例全空）；修后 6/6 绿（正例 3+反例 3：无匹配空表不误报、非目标调用不接管、既有 KBEngine. reload 补全零回归）。门禁：`npx vitest run tests/navPathCompletion.test.ts` 6/6；languageProviders×3+entryHooks+spaceNavSymbols+kbeModuleIndex 六件套 155/155 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。未 commit。）
 
 - [ ] SP-4 [P2] 空间/导航语义诊断
   落点：DiagnosticScheduler——`navigate`/`canNavigate` 前置条件（几何未加载）、`_mapping` 保留键被脚本覆盖、layer 与 params 不一致。
