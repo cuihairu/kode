@@ -373,24 +373,42 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     unmappedLines: number,
     gen: number
   ): Promise<void> {
-    const span = headSpanFromSegments(segments);
-    if (!span) {
+    if (segments.length === 0) {
       this.state = { kind: 'invalid', message: '选区无已提交行段可查询' };
       this.fire();
       return;
     }
-    const result = await this.deps.queryTimeline(
-      filePath,
-      repoRoot,
-      {
-        startLine: span.start,
-        endLine: span.end,
-      },
-      { token: this.viewToken }
+    // 审核发现:多段不连续映射不得合并成 min..max——否则会漏进中间未选中行的
+    // 修改。逐段查询,再按提交 hash 去重合并时间线。
+    const results = await Promise.all(
+      segments.map(segment =>
+        this.deps.queryTimeline(
+          filePath,
+          repoRoot,
+          { startLine: segment.headFirstLine, endLine: segment.headLastLine },
+          { token: this.viewToken }
+        )
+      )
     );
     // 代际已更替(新选区/视图关闭)→ 丢弃旧结果,不覆盖最新状态。
     if (gen !== this.generation) return;
-    if (result.kind === 'timeline') {
+    const firstFailure = results.find(result => result.kind !== 'timeline');
+    if (firstFailure && firstFailure.kind !== 'timeline') {
+      this.state = this.applyTimelineFailure(firstFailure);
+      this.fire();
+      return;
+    }
+    const timelines = results.map(result => result as Extract<RangeTimelineResult, { kind: 'timeline' }>);
+    if (timelines.length > 0) {
+      const entriesByKey = new Map<string, RangeChangeEntry>();
+      for (const timeline of timelines) {
+        for (const entry of timeline.entries) {
+          if (!entriesByKey.has(entry.hash)) {
+            entriesByKey.set(entry.hash, entry);
+          }
+        }
+      }
+      const span = headSpanFromSegments(segments)!;
       this.state = {
         kind: 'loaded',
         filePath,
@@ -399,12 +417,10 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
         headEnd: span.end,
         selectionStart: range.startLine,
         selectionEnd: range.endLine,
-        entries: result.entries,
-        boundary: result.boundary,
+        entries: [...entriesByKey.values()],
+        boundary: timelines[timelines.length - 1].boundary,
         unmappedLines,
       };
-    } else {
-      this.state = this.applyTimelineFailure(result);
     }
     this.fire();
   }

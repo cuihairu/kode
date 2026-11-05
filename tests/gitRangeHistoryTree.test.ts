@@ -230,28 +230,45 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
     expect(queryTimeline).toHaveBeenCalledWith('/repo/src/a.py', '/repo', { startLine: 1, endLine: 3 }, request);
   });
 
-  it('多段映射:并集传入查询(跨段并集,不逐段查询)', async () => {
-    const { provider, queryTimeline } = makeProvider({
-      mapped: {
+  it('多段映射:逐段查询并去重(不把中间未选中行的修改漏进历史)', async () => {
+    let call = 0;
+    const queryTimeline = vi.fn(
+      async (_f: string, _r: string, range: SelectionRange): Promise<RangeTimelineResult> => {
+        call += 1;
+        return {
+          kind: 'timeline',
+          status: 'ok',
+          entries: [entry(`h${call}-${range.startLine}-${range.endLine}`, `段${call}`)],
+          boundary: { kind: 'origin', atCommit: `h${call}`, atPath: 'src/a.py' },
+        };
+      }
+    );
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      mapSelection: async () => ({
         kind: 'mapped',
         segments: [
           { firstLine: 1, lastLine: 1, headFirstLine: 2, headLastLine: 2 },
           { firstLine: 3, lastLine: 3, headFirstLine: 9, headLastLine: 9 },
         ],
         selectionLineCount: 3,
-      },
+      }),
+      queryTimeline,
     });
     await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    // 逐段查询:两段各查一次,不再合并成 2..9
+    expect(queryTimeline).toHaveBeenCalledTimes(2);
     expect(queryTimeline).toHaveBeenCalledWith(
-      '/repo/src/a.py',
-      '/repo',
-      { startLine: 2, endLine: 9 },
-      expect.objectContaining({ token: expect.anything() })
+      '/repo/src/a.py', '/repo', { startLine: 2, endLine: 2 }, expect.objectContaining({ token: expect.anything() })
+    );
+    expect(queryTimeline).toHaveBeenCalledWith(
+      '/repo/src/a.py', '/repo', { startLine: 9, endLine: 9 }, expect.objectContaining({ token: expect.anything() })
     );
     const state = provider.getState();
     if (state.kind === 'loaded') {
       expect(state.headStart).toBe(2);
       expect(state.headEnd).toBe(9);
+      expect(state.entries.map(e => e.subject)).toEqual(['段1', '段2']);
     }
   });
 
