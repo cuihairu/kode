@@ -368,14 +368,15 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(engineDir, 'Avatar.py'))).toBe(false);
   });
 
-  it('F3 四轮回归:产物落盘失败 → failed,不自称 applied(引擎目录路径被占)', async () => {
+  it('F3 六轮回归:读旧产物失败(目录占位,非 ENOENT)→ 拒绝写入不删除,不自称 applied', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 7\n';
     writeFileSync(file, content, 'utf8');
-    // 产物路径被目录占用 → 接收端 writeFileSync 必失败(EISDIR)
+    // 产物路径被目录占用 → 写前读旧产物抛 EISDIR(非 ENOENT):不得当作
+    // 「不存在」继续写,必须拒绝写入且不动已存在的产物
     const engineFile = path.join(engineDir, 'Avatar.py');
     writeFileSync(path.join(engineDir, 'placeholder'), '', 'utf8');
     mkdirSync(engineFile, { recursive: true });
@@ -383,23 +384,29 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
     const receipt = JSON.parse(response.body) as { status: string; reason?: string };
     expect(receipt.status).toBe('failed');
-    expect(receipt.reason).toContain('落盘失败');
+    expect(receipt.reason).toContain('读旧产物失败');
+    // 已存在的产物(此处为目录)保持原样,没有被删除/清理
+    expect(existsSync(engineFile)).toBe(true);
+    expect(receipt).not.toHaveProperty('rollback_failed');
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
-  // F3 五轮(R2-F3 硬化 1+2):writeFileSync 失败残留 best-effort 清理,清理
-  // 失败时回执如实附 rollback_failed(残留路径),绝不谎称「已回滚无残留」。
-  it('F3 五轮回归:落盘失败有残留且清不掉 → failed 回执如实 rollback_failed,不谎称无残留', async () => {
+  // F3 五轮(R2-F3 硬化 1+2)→ 六轮改由「只读旧产物」构造:写前读原内容成功、
+  // 落盘失败(EACCES),回滚还原也失败 → 回执如实附 rollback_failed(残留路径),
+  // 绝不谎称「已回滚无残留」。
+  it('F3 六轮回归:落盘失败且清理失败(只读旧产物)→ failed 回执如实 rollback_failed,不谎称无残留', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 11\n';
     writeFileSync(file, content, 'utf8');
-    // 产物路径被目录占用 → writeFileSync 必失败(EISDIR),该残留(目录本身)
-    // unlink 也清不掉 → 接收端必须如实上报 rollback_failed,绝不谎称无残留
+    // 预存在旧产物可读不可写(0444):写前读成功 → 走落盘,writeFileSync 必失败
+    // (EACCES);回滚还原原内容同样 EACCES → 接收端必须如实上报 rollback_failed
     const engineFile = path.join(engineDir, 'Avatar.py');
-    mkdirSync(engineFile, { recursive: true });
+    const oldContent = 'class Avatar:\n    HP = 10\n';
+    writeFileSync(engineFile, oldContent, 'utf8');
+    chmodSync(engineFile, 0o444);
 
     const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
     const receipt = JSON.parse(response.body) as { status: string; reason?: string; rollback_failed?: string };
@@ -408,7 +415,57 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     // 清理失败如实上报残留路径,绝不声称「无残留」
     expect(receipt.rollback_failed).toBe(engineFile);
     expect(receipt.reason).not.toContain('无残留');
+    // 旧产物原内容仍在(可读)
+    expect(readFileSync(engineFile, 'utf8')).toBe(oldContent);
+    chmodSync(engineFile, 0o644);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  // F3 六轮(复审 FAIL-3a):写前读旧产物把一切异常当 ENOENT → EACCES 时误判
+  // 「不存在」,失败回滚 unlink 把预存在产物误删。修后仅 ENOENT 视为不存在,
+  // 其他读异常如实拒绝写入且绝不删除。
+  it('F3 六轮回归:读旧产物 EACCES → 拒绝写入且不误删预存在产物', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 50\n';
+    writeFileSync(file, content, 'utf8');
+    // 预存在产物不可读(0000):写前读抛 EACCES → 不得当作不存在
+    const engineFile = path.join(engineDir, 'Avatar.py');
+    writeFileSync(engineFile, 'class Avatar:\n    HP = 49\n', 'utf8');
+    chmodSync(engineFile, 0o000);
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('读旧产物失败');
+    // 预存在产物不被误删(旧实现把读失败当不存在,失败回滚 unlink 误删)
     expect(existsSync(engineFile)).toBe(true);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+    chmodSync(engineFile, 0o644);
+  });
+
+  // F3 六轮(复审 FAIL-3b):旧内容以 UTF-8 字符串保存,非 UTF-8 文件无法按
+  // 原字节恢复。修后旧内容以 Buffer 保存恢复,逐字节还原。
+  it('F3 六轮回归:非 UTF-8 旧产物失败回滚按原字节恢复(Buffer)', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 51\n';
+    writeFileSync(file, content, 'utf8');
+    // 预存在旧产物含非法 UTF-8 字节:回滚必须按原字节还原,不得经 UTF-8 转码
+    const engineFile = path.join(engineDir, 'Avatar.py');
+    const rawOld = Buffer.from([0x41, 0x80, 0x42, 0xff, 0x43, 0x0a]);
+    writeFileSync(engineFile, rawOld);
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256('drifted away') } });
+    const receipt = JSON.parse(response.body) as { status: string };
+    expect(receipt.status).toBe('failed');
+    // 逐字节一致(旧实现 utf8 读→utf8 写会把 0x80/0xff 变成 U+FFFD,字节改变)
+    const restored = readFileSync(engineFile);
+    expect(Buffer.compare(restored, rawOld)).toBe(0);
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 

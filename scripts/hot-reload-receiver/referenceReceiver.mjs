@@ -97,7 +97,7 @@ const scenario = argValue('--scenario') ?? (mode === 'apply' ? 'applied' : 'acce
 
 mkdirSync(root, { recursive: true });
 
-const sha256Hex = content => createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+const sha256Hex = content => createHash('sha256').update(Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')).digest('hex');
 // F3 五轮(2026-11-06 复审硬化):回滚=best-effort,**还原原内容优先**——
 // 写前读到的原产物内容存在就恢复它(绝不误删引擎目录里已 applied 的旧产物),
 // 本次新建的(原本不存在)才删除;任何失败路径(落盘失败/读回失败/哈希不符)
@@ -111,7 +111,9 @@ const rollbackArtifact = (artifact, originalContent) => {
       return artifact;
     }
     if (originalContent !== undefined) {
-      writeFileSync(artifact, originalContent, 'utf8');
+      // F3 六轮(复审 FAIL-3):原内容以 Buffer 保存恢复——非 UTF-8 文件也能
+      // 逐字节还原,不再经 UTF-8 字符串转码丢字节
+      writeFileSync(artifact, originalContent);
       return undefined;
     }
     try {
@@ -413,12 +415,34 @@ const server = createServer((request, response) => {
         continue;
       }
       // F3 五轮(硬化 4):写前读原内容(per-file 状态)——失败回滚按它还原,
-      // 绝不误删引擎目录里已有的旧产物;回滚只处理本次失败这一个文件
+      // 绝不误删引擎目录里已有的旧产物;回滚只处理本次失败这一个文件。
+      // F3 六轮(复审 FAIL-3):仅 ENOENT 视为「不存在」——其他读异常
+      // (EACCES/EIO 等)如实拒绝写入,绝不当作不存在继续写(否则失败回滚的
+      // unlink 会把预存在产物误删);旧内容以 Buffer 保存,恢复按原字节。
       let originalContent;
+      let preReadFailure;
       try {
-        originalContent = readFileSync(artifact, 'utf8');
-      } catch {
-        originalContent = undefined;
+        originalContent = readFileSync(artifact);
+      } catch (error) {
+        if (error && typeof error === 'object' && error.code === 'ENOENT') {
+          originalContent = undefined;
+        } else {
+          preReadFailure = error;
+        }
+      }
+      if (preReadFailure !== undefined) {
+        const preReadCode =
+          preReadFailure && typeof preReadFailure === 'object' && typeof preReadFailure.code === 'string'
+            ? preReadFailure.code
+            : 'unknown';
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: `读旧产物失败(${preReadCode}):非 ENOENT,按预存在产物对待,拒绝写入且不删除`
+          })
+        );
+        continue;
       }
       let writeError;
       try {
@@ -434,10 +458,10 @@ const server = createServer((request, response) => {
         receipts.push(withTarget(failedWithRollback(file, artifact, originalContent, reasonBase)));
         continue;
       }
-      // 写后重算产物 sha256,与发送方冻结基准比对一致才回 applied
+      // 写后重算产物 sha256(按原始字节,与发送方冻结基准比对一致才回 applied)
       let artifactDigest;
       try {
-        artifactDigest = sha256Hex(readFileSync(artifact, 'utf8'));
+        artifactDigest = sha256Hex(readFileSync(artifact));
       } catch {
         receipts.push(
           withTarget(
