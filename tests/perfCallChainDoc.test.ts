@@ -58,16 +58,24 @@ const ANCHORS: Array<[string, number, string]> = [
   // import(sharedGitQueryGate),全部 extension.ts 锚点 +1(本批已提交);
   // pythonClassIndex.ts 锚点保持 1233/1345(HEAD 口径)——并发会话在途 +9 未提交,
   // 非本批代码;该会话提交其 +9 时须把锚点再移到 1242/1354 并随 baseline 锁步。
-  ['src/extension.ts', 942, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 993, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1056, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 860, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1354, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 599, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 612, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-05(六):积压锚点真位对账——KB-VER/KB-API/IDE-GIT/CFG 系列提交与
+  // AUD-016(languageProviders.ts 定义派发后闸)累计位移未锁步,锚点红。逐符号
+  // 真位重探:extension.ts 锚点 942/993/1056/860/1354→964/1015/1078/882/1376
+  // (+22),599/612→605/618(+6,其后新增 +16),1896/1970→1918/1992(+22);
+  // languageProviders.ts 非均匀位移 725/815/1623/1682/1706/1834/4475/4896/
+  // 5002/6777→849/939/1778/1837/1861/1989/4713/5121/5227/7007(TYP-ARRAY/
+  // NAV-PROP/KB-API 悬停面等多段新增);pythonClassIndex.ts 并发会话审计批次
+  // (KR-AUD-26/28)落位 640/1233/1345→657/1264/1376。出处随 baseline 锁步。
+  ['src/extension.ts', 964, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1015, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1078, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 882, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1376, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 605, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 618, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1896, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1970, 'flushQueued()'],
+  ['src/extension.ts', 1918, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1992, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面
@@ -79,16 +87,16 @@ const ANCHORS: Array<[string, number, string]> = [
   // providePythonPropertyReferences / enclosingPythonClassAt 方法面,§7 的
   // languageProviders.ts 锚点逐点重探:724/814/1622/1681/1705/1833/4474/4895/
   // 5001 各 -1,provideCompletionItems 6707→6776(非均匀),出处随 baseline 锁步
-  ['src/languageProviders.ts', 725, 'getDocumentLines(document)'],
-  ['src/languageProviders.ts', 815, 'provideHover('],
-  ['src/languageProviders.ts', 1623, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1682, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1706, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 1834, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4475, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 4896, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5002, 'withInitialScanTimeout'],
-  ['src/languageProviders.ts', 6777, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 849, 'getDocumentLines(document)'],
+  ['src/languageProviders.ts', 939, 'provideHover('],
+  ['src/languageProviders.ts', 1778, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1837, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1861, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 1989, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4713, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 5121, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5227, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 7007, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)
@@ -96,9 +104,9 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/diagnosticScheduler.ts', 258, 'flushQueued'],
   ['src/hoverBudget.ts', 59, 'raceWithBudget'],
   ['src/documentStore.ts', 155, 'getDocumentLines'],
-  ['src/pythonClassIndex.ts', 640, 'ensureCompositionRoots'],
-  ['src/pythonClassIndex.ts', 1233, 'resolveClassBase'],
-  ['src/pythonClassIndex.ts', 1345, '①② 两段查询']
+  ['src/pythonClassIndex.ts', 657, 'ensureCompositionRoots'],
+  ['src/pythonClassIndex.ts', 1264, 'resolveClassBase'],
+  ['src/pythonClassIndex.ts', 1376, '①② 两段查询']
 ];
 
 describe('perf baseline §7 调用链图结构面', () => {

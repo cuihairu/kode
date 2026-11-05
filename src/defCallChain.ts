@@ -130,7 +130,9 @@ function receiverCallsInMethod(
     return [];
   }
   const bodyStart = methodBlock.line;
-  return findPythonReceiverCalls(lines.slice(bodyStart).join('\n'))
+  // KR-AUD-70:endLine 截尾——methodBlock.endLine 是缩进边界,缺它则把同文件
+  // 后续兄弟方法体整个并进当前方法调用面(sibling 调用误归属)。
+  return findPythonReceiverCalls(lines.slice(bodyStart, methodBlock.endLine).join('\n'))
     .map(call => ({ ...call, line: call.line + bodyStart }));
 }
 

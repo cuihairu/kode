@@ -431,6 +431,42 @@ fn child_el(doc: &Document, parent: usize, key: &str) -> Option<usize> {
         .find(|&c| doc.element(c).name == key)
 }
 
+/// 引擎 xml.cpp:113-119 getKey=trim(Value):元素取标签名,文本/CDATA 取解码
+/// 文本 trim(接口/组件名文本形态的来源)。
+fn engine_get_key(doc: &Document, node: usize) -> String {
+    match &doc.nodes[node].data {
+        NodeData::Element(e) => e.name.trim().to_string(),
+        NodeData::Text { decoded, .. } | NodeData::Cdata { decoded, .. } => {
+            decoded.trim().to_string()
+        }
+        _ => String::new(),
+    }
+}
+
+/// 引擎 xml.cpp:72-95 enterNode:沿 node 起的兄弟链找 getKey==key 的元素,
+/// 命中返回其**首个非注释子节点**——文本或元素皆可(非具名子元素查找)。
+fn engine_enter_node(doc: &Document, node: usize, key: &str) -> Option<usize> {
+    let mut cur = Some(node);
+    while let Some(idx) = cur {
+        if matches!(doc.nodes[idx].data, NodeData::Element(_))
+            && engine_get_key(doc, idx) == key
+        {
+            return doc
+                .element(idx)
+                .children
+                .iter()
+                .copied()
+                .find(|&c| !matches!(doc.nodes[c].data, NodeData::Comment { .. }));
+        }
+        cur = doc.nodes[idx].parent.and_then(|parent| {
+            let siblings = &doc.element(parent).children;
+            let pos = siblings.iter().position(|&c| c == idx)?;
+            siblings.get(pos + 1).copied()
+        });
+    }
+    None
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MethodDomain {
     Cell,
@@ -996,14 +1032,24 @@ impl Replayer {
             None => return Ok(()),
         };
         for if_entry in doc.child_elements(interfaces_el) {
-            let interface_el = ["Interface", "interface", "Type", "type"]
+            // 引擎 entitydef.cpp:562-565:条目 getKey(=元素名)必属
+            // {interface,Interface,type,Type},否则 continue。
+            let entry_key = engine_get_key(doc, if_entry);
+            if !matches!(entry_key.as_str(), "interface" | "Interface" | "type" | "Type") {
+                continue;
+            }
+            // 引擎 entitydef.cpp:567-584:interfaceNode=enterNode(条目,键)依次
+            // 尝试四键——首非注释子节点;接口名=getKey(interfaceNode):
+            // 文本形态 `<interface> ROLE </interface>` 得 "ROLE",元素形态
+            // `<interface><Tank/></interface>` 得元素名 "Tank"。
+            let interface_node = ["Interface", "interface", "Type", "type"]
                 .iter()
-                .find_map(|k| child_el(doc, if_entry, k));
-            let interface_el = match interface_el {
-                Some(e) => e,
+                .find_map(|k| engine_enter_node(doc, if_entry, k));
+            let interface_node = match interface_node {
+                Some(n) => n,
                 None => continue,
             };
-            let interface_name = doc.element(interface_el).name.clone();
+            let interface_name = engine_get_key(doc, interface_node);
             // KODE-AUD-006:活动栈保护——interface 链成环(A→B→A)不查
             // loaded_modules,递归无限栈溢出;loading 再遇即截断。处理完移除,
             // 错误传播前必先移除(否则残留在 loading 污染后续展开)。
@@ -1044,23 +1090,33 @@ impl Replayer {
             None => return Ok(()),
         };
         for comp_entry in doc.child_elements(components_el) {
-            let component_name = doc.element(comp_entry).name.clone();
-            // enterNode(implementsNode, componentName)(entitydef.cpp:656)。
-            let comp_el = match child_el(doc, comp_entry, &component_name) {
-                Some(c) => c,
+            // 引擎 entitydef.cpp:655:componentName=getKey(条目)=元素名。
+            let component_name = engine_get_key(doc, comp_entry);
+            // enterNode(条目, componentName)(entitydef.cpp:656)=条目首个
+            // 非注释子节点(文本或元素)。
+            let comp_node = match engine_enter_node(doc, comp_entry, &component_name) {
+                Some(n) => n,
                 None => continue,
             };
-            let type_el = child_el(doc, comp_el, "Type")
-                .ok_or_else(|| format!("component name is NULL: {component_name}"))?;
-            let component_type_name = doc.element(type_el).name.clone();
+            // 引擎 entitydef.cpp:663-671 三步导航后半:componentTypeNameNode=
+            // enterNode(componentNode,"Type"),componentTypeName=getKey(·)——
+            // 即 `<Type>` 文本(trim),非元素名字面量 "Type"。
+            let component_type_name = match engine_enter_node(doc, comp_node, "Type") {
+                Some(n) => engine_get_key(doc, n),
+                None => String::new(),
+            };
+            if component_type_name.is_empty() {
+                // 引擎 entitydef.cpp:668-671:componentTypeName=="" → return false。
+                return Err(format!("component name is NULL: {component_name}"));
+            }
 
             let mut is_persistent = true;
-            if let Some(p) = child_el(doc, comp_el, "Persistent") {
+            if let Some(p) = child_el(doc, comp_entry, "Persistent") {
                 if first_text(doc, p) == "false" {
                     is_persistent = false;
                 }
             }
-            let i_utype = match child_el(doc, comp_el, "Utype") {
+            let i_utype = match child_el(doc, comp_entry, "Utype") {
                 Some(u) => first_text(doc, u).trim().parse::<i64>().unwrap_or(-1),
                 None => -1,
             };

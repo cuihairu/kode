@@ -206,6 +206,8 @@ export class PythonClassIndex {
   private pendingScanRetries = new Map<string, number>();
   /** 待补重试是否已有分块在队列里(防每次查询重复入队) */
   private scanRetryInFlight = false;
+  /** 关闭文档后按盘重载的进行中 promise(每文件一条;查询须等它落定) */
+  private closeReloads = new Map<string, Promise<void>>();
   /** 组合根来源内容缓存(mtime+size 指纹;未变更文件重派生不再重读) */
   private rootsContentCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
   /** 显式派生版本轴(④):断言「哪类变更动了哪层」 */
@@ -495,7 +497,22 @@ export class PythonClassIndex {
 
   onDocumentClosed(document: vscode.TextDocument): void {
     this.documents.delete(document.fileName);
-    this.invalidate(document.fileName);
+    // KR-AUD-28:关闭的是编辑器文档,文件仍在盘——只按盘重载该文件,不推进
+    // 扫描代(旧实现 invalidate 会作废整扫描代,下次查询全仓重发现+重解析)。
+    // 盘是真相源:先同步摘除缓冲版(否则即时查询仍见内存缓冲内容),再异步
+    // 按盘重载;loadFile 读不到文档便回落磁盘读。重载 promise 记账,后续
+    // 查询(ensureScanned)先等它落定,避免即时查询看到空窗或旧缓冲。
+    if (this.fileCache.has(document.fileName)) {
+      this.unindexFile(document.fileName);
+      this.fileCache.delete(document.fileName);
+      this.fileOrder.delete(document.fileName);
+      this.mroCache.clear();
+      this.indexVersions.classes += 1;
+    }
+    const pending = (this.closeReloads.get(document.fileName) ?? Promise.resolve())
+      .then(() => this.loadFile(document.fileName, -1))
+      .then(() => { this.closeReloads.delete(document.fileName); });
+    this.closeReloads.set(document.fileName, pending);
   }
 
   private updateFile(filePath: string, content: string, version: number): void {
@@ -696,6 +713,9 @@ export class PythonClassIndex {
       };
       let epochBefore = this.rootsEpoch;
       try {
+          let scoped = new Map<string, CompositionRootMap>();
+          let resolvedRoots: string[] = [];
+          let combinedMixins = new Map<string, string[]>();
         // PR5 并发护栏:首扫后台化后,分块解析与派生并发推进。派生输入 =
         // 元数据文件内容 + fileCache 实例赋值快照。注意不能用 this.generation
         // 判稳——每次单文件解析都会递增它,后台扫描期间会引发无谓重派风暴;
@@ -748,9 +768,9 @@ export class PythonClassIndex {
         for (const uri of entityXmlFiles) { await readGroup(uri, 'entities'); }
         for (const uri of typeXmlFiles) { await readGroup(uri, 'types'); }
         for (const uri of defFiles) { await readGroup(uri, 'def'); }
-        const scoped = new Map<string, CompositionRootMap>();
-        const resolvedRoots: string[] = [];
-        const combinedMixins = new Map<string, string[]>();
+        scoped = new Map<string, CompositionRootMap>();
+        resolvedRoots = [];
+        combinedMixins = new Map<string, string[]>();
         for (const [scope, group] of groups) {
           const derived = deriveCompositionRoots(group);
           const assignments = new Map<string, string>();
@@ -776,8 +796,14 @@ export class PythonClassIndex {
         );
         return;
         }
-        // 多次让位后输入仍在变(编辑风暴):按最后一次快照落地;真实失效
-        // (依赖图裁断/赋值签名变化)仍会在下一次 updateFile/invalidate 纠正。
+        // 多次让位后输入仍在变(编辑风暴):按最后一次快照正确收尾——rootsMap
+        // 落地、metrics end、rootsPromise 清理(KR-AUD-26:旧实现只打日志,
+        // join 臂对已 resolve 的旧 promise 空等,组合根查询永久空;落地后
+        // 真实失效仍会经 resetRoots/updateFile 赋值签名对比正常纠正)。
+        this.rootsByScope = scoped;
+        this.rootsMap = { roots: resolvedRoots, defMixins: combinedMixins };
+        compositionMetrics.end('ok');
+        this.rootsPromise = null;
         jumpLog('info', () => `组合根派生连续让位 8 次,按最后一次输入落地 ${rootsTimer()}ms`);
       } catch {
         compositionMetrics.end('error');
@@ -835,6 +861,11 @@ export class PythonClassIndex {
   private scanCompletedGeneration = -1;
 
   private ensureScanned(): Promise<void> {
+    // KR-AUD-28:关闭文档后的按盘重载先落定——查询不得越过它看到空窗或旧缓冲。
+    if (this.closeReloads.size > 0) {
+      const reloads = [...this.closeReloads.values()];
+      return Promise.all(reloads).then(() => this.ensureScanned());
+    }
     if (this.scanCompletedGeneration === this.scanGeneration) {
       // 扫描代已完成,但可能存在失败分块遗留的待补文件:定向重试(不全仓重扫)
       this.schedulePendingScanRetry();

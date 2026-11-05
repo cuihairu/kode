@@ -962,9 +962,12 @@ describe('parseProfileFrame(event/network/cprofile 结果帧)', () => {
     ]);
   });
 
-  it('cprofile 默认支:行带四个 float 时间,计时长度如实 0', () => {
+  it('cprofile 默认支:计时长度先行(KR-AUD-68),行带四个 float 时间', () => {
+    // 引擎 CProfileHandler::timeout() 写序(profile_handler.cpp:95-128):
+    // s << timinglen_ << size-1 << 每行(name,count,lastTime,sumTime,lastIntTime,sumIntTime)
     const body = Buffer.concat([
       Buffer.from([1]),
+      u32(15),
       u32(1),
       buildCString('KBEngine::onProcess'),
       u32(42),
@@ -976,7 +979,7 @@ describe('parseProfileFrame(event/network/cprofile 结果帧)', () => {
 
     const result = parseProfileFrame(body, component);
     expect(result.kind).toBe('cprofile');
-    expect(result.timingLength).toBe(0);
+    expect(result.timingLength).toBe(15);
     expect(result.rows).toEqual([
       {
         name: 'KBEngine::onProcess',
@@ -1006,6 +1009,7 @@ describe('parseProfileFrame(event/network/cprofile 结果帧)', () => {
 
     const truncatedC = Buffer.concat([
       Buffer.from([1]),
+      u32(7), // KR-AUD-68:timingLength 先行
       u32(2), // 声明 2 行,只给 1 行字节
       buildCString('only'),
       u32(1),

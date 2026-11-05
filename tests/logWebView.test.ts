@@ -112,8 +112,8 @@ describe('LogViewerWebView.formatLogEntry and escapeHtml', () => {
     expect(html).toContain('ℹ️ MACHINE');
     expect(html).toContain('background-color: #9C27B0');
     expect(html).toContain('villains &amp; &lt;heroes&gt;');
-    // title 属性按实现现状直接插入未转义的 raw(与 message 的转义不对称)
-    expect(html).toContain('title="raw<line>"');
+    // title(raw) 与 message 同样转义(KR-AUD-38):恶意日志行不得借 title 属性出逃
+    expect(html).toContain('title="raw&lt;line&gt;"');
     expect(html).toContain('log-timestamp');
   });
 

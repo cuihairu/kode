@@ -93,10 +93,9 @@ function commonPropertyLines(indent: string): string[] {
     `${indent}\t<Type> UINT32 </Type>`,
     `${indent}\t<Flags> ALL_CLIENTS </Flags>`,
     `${indent}</hp>`,
-    `${indent}<position>`,
-    `${indent}\t<Type> VECTOR3 </Type>`,
-    `${indent}\t<Flags> CELL_PUBLIC_AND_OWN </Flags>`,
-    `${indent}</position>`,
+    // KR-AUD-69:position/direction/spaceID 是引擎受限属性
+    // (ENTITY_LIMITED_PROPERTYS,Entity 基类自动提供),def 里声明即被引擎
+    // 拒绝装载,样板不得生成(与 defAnalyzer 受限名检查一致)。
     // TEMP 属性:Persistent=false,服务器重启即失
     `${indent}<tempState>`,
     `${indent}\t<Type> UINT32 </Type>`,

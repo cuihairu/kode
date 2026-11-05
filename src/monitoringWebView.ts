@@ -10,6 +10,11 @@ import {
   MonitoringDiagnostic,
   SystemOverview
 } from './monitoringCollector';
+import { randomNonce, toJsonForScript, webviewScriptCsp } from './webviewSecurity';
+
+// Chart.js 仍走 CDN(本地化打包已单独登记 todo);CSP 把脚本源钉死到该
+// 固定文件路径,除它之外脚本只认本次渲染的 nonce,别的一律不执行。
+const CHARTJS_CDN_SOURCE = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
 
 /**
  * 监控面板 WebView
@@ -226,6 +231,7 @@ export class MonitoringWebView {
     metrics: ComponentMetrics[],
     diagnostics: MonitoringDiagnostic[]
   ): string {
+    const nonce = randomNonce();
     const componentTypes = [...new Set(metrics.map(metric => metric.componentType))].sort();
     const metricsHtml = metrics.map(m => this.formatMetricCard(m)).join('\n');
     const diagnosticsHtml = diagnostics.map(item => this.formatDiagnostic(item)).join('\n');
@@ -240,7 +246,9 @@ export class MonitoringWebView {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KBEngine Monitoring</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  <!-- 最小 CSP:内联脚本只认本次渲染的 nonce;Chart.js 钉死到固定 CDN 路径(本地化 todo) -->
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [CHARTJS_CDN_SOURCE])}">
+  <script src="${CHARTJS_CDN_SOURCE}"></script>
   <style>
     * {
       margin: 0;
@@ -596,10 +604,10 @@ export class MonitoringWebView {
     </div>
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    const metrics = ${JSON.stringify(metrics)};
-    const historySeries = ${JSON.stringify(historySeries)};
+    const metrics = ${toJsonForScript(metrics)};
+    const historySeries = ${toJsonForScript(historySeries)};
 
     // 刷新
     document.getElementById('refreshBtn').addEventListener('click', () => {
@@ -1055,16 +1063,16 @@ export class MonitoringWebView {
 
     return `<div class="metric-card">
       <div class="metric-header">
-        <div class="metric-name">${metric.component.toUpperCase()}</div>
+        <div class="metric-name">${this.escapeHtml(metric.component.toUpperCase())}</div>
         <div class="metric-status ${statusClass}"></div>
       </div>
       <div class="metric-row">
         <span class="metric-label">组件类型</span>
-        <span class="metric-value">${metric.componentType}</span>
+        <span class="metric-value">${this.escapeHtml(metric.componentType)}</span>
       </div>
       <div class="metric-row">
         <span class="metric-label">状态</span>
-        <span class="metric-value">${metric.status}</span>
+        <span class="metric-value">${this.escapeHtml(metric.status)}</span>
       </div>
       <div class="metric-row">
         <span class="metric-label">CPU 使用率</span>
@@ -1111,7 +1119,7 @@ export class MonitoringWebView {
       </div>
       <div class="metric-row">
         <span class="metric-label">监听地址</span>
-        <span class="metric-value">${metric.internalAddress}</span>
+        <span class="metric-value">${this.escapeHtml(metric.internalAddress)}</span>
       </div>
       <div class="metric-details">
         <div class="metric-details-title">${detailTitle}</div>

@@ -75,6 +75,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.attributeNoneDiagnostics` | boolean | `true` | Python 侧诊断:用户自管属性(非 `.def` 声明)`self.<属性>` 的类型收敛含 None 且当前位未窄化时,成员访问/调用前判空报 Warning(流敏感:`__init__` 赋值收敛、`is None`/`is not None` 守卫与早退均参与窄化) |
 | `kbengine.propertyDirectionDiagnostics` | boolean | `true` | Python 侧诊断:def 属性访问方向违规——`self.<属性>`/`self.<role>.<属性>` 的访问位置(裸访问取进程作用域、接收者限定取接收者角色)不在属性 Flags 推导的三域位内时报 Warning;文件作用域无法确定(不在 `scripts/base|cell|client`)时降级为 Information(不标 Error) |
 | `kbengine.startupScriptDiagnostics` | boolean | `true` | 启动脚本诊断:.sh/.bat 启动脚本里的服务器进程启动行(machine/logger/dbmgr/baseappmgr/cellappmgr/baseapp/cellapp/loginapp/bots)——未知 `--xxx` 参数(疑似拼写错误)、`--cid`/`--gus` 值非数字、引用 `$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 但本文件未赋值且未 source——报 Warning;非启动行(echo/pkill/注释,以及参数面不同的独立工具 kbcmd/guiconsole)一律不检,`--help` 之类不会误报 |
+| `kbengine.spaceNavDiagnostics` | boolean | `true` | 空间/导航语义诊断:setSpaceData/delSpaceData 使用保留键 `_mapping`、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键——报 Warning(默认启用) |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |

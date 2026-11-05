@@ -343,19 +343,33 @@ export class ProcessManager {
 
     return (async () => {
       let timer: NodeJS.Timeout | undefined = undefined; // eslint-disable-line prefer-const
-      const exited = new Promise<void>(resolveExit => {
+      let resolveExited: () => void = () => undefined;
+      const clearEscalation = (): void => {
+        if (timer) clearTimeout(timer);
+      };
+      const exited = new Promise<void>(resolve => {
+        resolveExited = () => {
+          clearEscalation();
+          resolve();
+        };
         if (managed.process.exitCode !== null || managed.process.signalCode !== null) {
-          resolveExit();
+          resolveExited();
+          return;
         }
-        managed.process.once('exit', () => {
-          if (timer) clearTimeout(timer);
-          resolveExit();
-        });
+        managed.process.once('exit', resolveExited);
+        // KR-AUD-39:spawn 失败的子进程 error-only——只发 error 永不发 exit,
+        // 等待面同样认 error 为终局,不再干等超时升级击杀
+        managed.process.once('error', resolveExited);
       });
 
       timer = setTimeout(() => {
         // RUN-007:升级击杀同样走进程树,孙进程不残留
         void killProcessTree(managed.pid, 'SIGKILL', managed.process);
+        // KR-AUD-39 兜底:击杀被 R2-F23 无效 pid 闸挡下或进程装死时 exit 仍
+        // 不来——等待面按时终结,stop 绝不悬挂。先给 SIGKILL 一个短暂的真
+        // 实终局窗口,让 exit/error 正常触发(日志/状态完整),窗口内不来
+        // 才兜底 resolve。
+        setTimeout(resolveExited, 250);
       }, timeoutMs);
       // RUN-007:停止即进程树终止(POSIX 负 pid 组信号/Windows taskkill /T)
       void killProcessTree(managed.pid, 'SIGTERM', managed.process);

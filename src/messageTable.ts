@@ -6,8 +6,9 @@
  * 规格对齐引擎装载语义(kbe/src/lib/entitydef):
  * - 模块装配顺序:loadDefInfo(entitydef.cpp L339-387)= 本 def 全量描述
  *   (Properties → CellMethods → BaseMethods → ClientMethods,L927-975)→
- *   Interfaces 声明序逐个并入(仅属性+方法,不递归,L549-620)→ Components
- *   (各自独立 ScriptDefModule,全局缓存,L650-780)→ Parent 递归 loadDefInfo。
+ *   Interfaces 声明序逐个并入(每接口:全量描述 → 组件槽 → 递归自身
+ *   Interfaces,L549-638;接口路径不装父类)→ Components(各自独立
+ *   ScriptDefModule,全局缓存,L650-780)→ Parent 递归 loadDefInfo。
  *   组件模块不并入实体模块,其方法 utype 消耗依赖 entities.xml 全局装载序,
  *   静态不可定,本表不含组件模块(编号口径:该实体是本次装载的首个模块)。
  * - 方法 utype:显式 <Utype> 登记全局已用集(g_methodCusUtypes);未设置(≤0)
@@ -109,6 +110,7 @@ export type MessageTableIssueKind =
   | 'unknown-aliased-type'
   | 'types-parse-error'
   | 'interface-file-missing'
+  | 'interface-cycle'
   | 'parent-file-missing'
   | 'parent-cycle'
   | 'component-def-missing';
@@ -348,6 +350,12 @@ interface ModuleAssembly {
   properties: MessagePropertyEntry[];
   sources: Array<{ name: string; kind: 'own' | 'interface' | 'parent'; filePath: string }>;
   visited: Set<string>;
+  /**
+   * 接口装载路径(KR-AUD-67):接口递归自身 Interfaces 后存在成环可能
+   * (引擎 loadInterfaces 无去重,互指接口会无限递归),path 守卫截断;
+   * 重复声明(菱形)不走此守卫,靠撞名冲突如实报出(与引擎一致)。
+   */
+  interfacePath: Set<string>;
 }
 
 /**
@@ -393,7 +401,8 @@ export function buildMessageTable(
     methods: [],
     properties: [],
     sources: [],
-    visited: new Set<string>()
+    visited: new Set<string>(),
+    interfacePath: new Set<string>()
   };
 
   for (const [name, utype] of PRIMITIVE_TYPE_UTYPES) {
@@ -461,8 +470,10 @@ export async function buildMessageTableInRust(
     return null;
   }
 
-  // 闭包发现:实体父链 BFS(每实体的接口引用 + 父类),接口只取原文不递归
-  // (引擎 loadInterfaces 不递归接口自身)。缺失 def 不收集,Rust 侧按
+  // 闭包发现:实体父链 BFS(每实体的接口引用 + 父类),接口递归自身 Interfaces
+  // (引擎 loadInterfaces 对每个接口递归自身 Interfaces,entitydef.cpp L628-638;
+  // 接口内 Parent 不装,引擎 loadInterfaces 路径不调 loadParentClass),接口
+  // Components 的组件 def 同实体口径入组件闭包。缺失 def 不收集,Rust 侧按
   // parent-file-missing/interface-file-missing 如实报出。
   const entityQueue: string[] = [entityName];
   const seenEntities = new Set<string>();
@@ -488,6 +499,17 @@ export async function buildMessageTableInRust(
     }
     defs[name] = ifaceRaw.content;
     paths[name] = ifaceRaw.filePath;
+    let ifaceLocal: LocalDefinitionSemantics;
+    try {
+      ifaceLocal = parseLocalDefinition(ifaceRaw.content, 'interface', name, ifaceRaw.filePath);
+    } catch {
+      return;
+    }
+    // KR-AUD-67:接口自身 Interfaces 递归入闭包;接口 Components 入组件闭包
+    for (const ref of ifaceLocal.interfaces) {
+      collectInterface(ref.name);
+    }
+    enqueueComponents(ifaceLocal);
   };
   while (entityQueue.length > 0) {
     const name = entityQueue.shift()!;
@@ -561,7 +583,10 @@ export async function buildMessageTableInRust(
 
 /**
  * 单份 def 并入模块(引擎 loadDefInfo 递归单元):
- * 属性 → Cell → Base → Client 方法 →(非接口)接口声明序递归 → 组件槽名 → 父类递归。
+ * 属性 → Cell → Base → Client 方法 → 接口声明序递归 → 组件槽名 →(非接口)父类递归。
+ * 接口 origin 与实体同走 Interfaces 递归 + 组件槽注册(引擎 loadInterfaces 对每个
+ * 接口调 loadComponents 与递归 loadInterfaces,entitydef.cpp L598-638),但跳过父类
+ * (loadInterfaces 路径不调 loadParentClass)。
  * 父链是线性的(每份 def 单父),同文件重入即父链成环(引擎无限递归,kode 截断)。
  */
 function loadDefIntoModule(
@@ -572,11 +597,23 @@ function loadDefIntoModule(
   assembly: ModuleAssembly
 ): void {
   const visitKey = normalizeSourceKey(local.owner.filePath);
-  // 成环守卫只罩实体(own+父链):引擎父链递归无去重,同文件重入即环,截断报错。
-  // 接口不罩:引擎 loadInterfaces 对重复声明的接口无去重、每次声明都完整装载
-  // (entitydef.cpp L549-620),第二次装载撞名字报 [X] is exist!;接口自身在
-  // 装载尾部提前 return,不递归其 Interfaces,无环风险
-  if (originKind !== 'interface' && assembly.visited.has(visitKey)) {
+  // 成环守卫罩两处(引擎两处递归均无去重,同文件重入即环,kode 截断报错):
+  // 1. 实体 own+父链:parent-cycle。
+  // 2. 接口自身 Interfaces 递归(KR-AUD-67):interface-cycle,path 守卫
+  //    (进栈/出栈),菱形重复声明不经此守卫——引擎对重复声明每次完整装载,
+  //    第二次撞名字报 [X] is exist!,kode 由既有撞名冲突如实报出。
+  if (originKind === 'interface') {
+    if (assembly.interfacePath.has(visitKey)) {
+      assembly.issues.push({
+        kind: 'interface-cycle',
+        fatal: true,
+        line: local.parentLine ?? null,
+        message: `接口链成环:${assembly.entityName} 装载中重入接口 ${moduleName}(引擎 loadInterfaces 递归无法终止,kode 截断该分支)`
+      });
+      return;
+    }
+    assembly.interfacePath.add(visitKey);
+  } else if (assembly.visited.has(visitKey)) {
     assembly.issues.push({
       kind: 'parent-cycle',
       fatal: true,
@@ -602,11 +639,7 @@ function loadDefIntoModule(
     }
   }
 
-  // 接口 def 只并入属性+方法(引擎 loadInterfaces 不递归接口自身)
-  if (originKind === 'interface') {
-    return;
-  }
-
+  // 接口声明序递归(接口 origin 同样递归自身 Interfaces,引擎 L628-638)
   for (const interfaceRef of local.interfaces) {
     const interfaceLocal = loadSourceDef(interfaceRef.name, 'interface', source, assembly);
     if (!interfaceLocal) {
@@ -615,19 +648,24 @@ function loadDefIntoModule(
     loadDefIntoModule(interfaceRef.name, interfaceLocal, 'interface', source, assembly);
   }
 
-  // 组件槽注册(loadComponents 在接口后父类前):槽是一个属性
-  // (addComponentProperty → addPropertyDescription 三域),占属性 utype,
+  // 组件槽注册(loadComponents 在接口后父类前;接口 origin 同样注册,引擎 L617-625):
+  // 槽是一个属性(addComponentProperty → addPropertyDescription 三域),占属性 utype,
   // hasClient 计入 aliasID;组件 def 树本身是独立模块,不并入(见模块头)
   for (const component of local.components) {
     registerComponentSlot(moduleName, component, source, assembly);
   }
 
-  if (local.parentName) {
+  // 引擎 loadInterfaces 路径不调 loadParentClass:接口 origin 到此为止
+  if (originKind !== 'interface' && local.parentName) {
     const parentLocal = loadSourceDef(local.parentName, 'entity', source, assembly);
     if (!parentLocal) {
       return;
     }
     loadDefIntoModule(local.parentName, parentLocal, 'parent', source, assembly);
+  }
+
+  if (originKind === 'interface') {
+    assembly.interfacePath.delete(visitKey);
   }
 }
 

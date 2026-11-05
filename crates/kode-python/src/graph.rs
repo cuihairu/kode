@@ -83,6 +83,27 @@ pub fn build_call_reverse_index(
     rev
 }
 
+/// 跨进程边(`self.cell.*`/`self.base.*`/`self.client.*`)所在调用方文件集(RUST-7 uncertain 面)。
+///
+/// 这些调用方有跨进程调用边,但被调方文件无法静态解析(见
+/// [`resolve_callee_file`] 的 KbeCrossProcess 短路),故不进
+/// [`build_call_reverse_index`] 的反向失效索引——另一进程侧文件变更不会
+/// 经调用边触发这些文件重扫。消费方可将本集并入保守重扫面(如 profile/
+/// 配置变更时全量重扫这些文件)。
+pub fn uncertain_cross_process_files(
+    file_edges: &BTreeMap<DocumentKey, Vec<CallEdge>>,
+) -> BTreeSet<DocumentKey> {
+    file_edges
+        .iter()
+        .filter(|(_, edges)| {
+            edges
+                .iter()
+                .any(|e| e.kind == crate::model::EdgeKind::KbeCrossProcess)
+        })
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
 /// 解析被调方所在文件(启发式;None = 无法解析/外部/歧义)。
 fn resolve_callee_file(
     caller_file: &DocumentKey,
@@ -90,6 +111,16 @@ fn resolve_callee_file(
     file_symbols: &BTreeMap<DocumentKey, AstSymbols>,
 ) -> Option<DocumentKey> {
     let receiver = edge.receiver.as_deref().unwrap_or("");
+    // KbeCrossProcess(`self.cell.*`/`self.base.*`/`self.client.*`):base↔cell↔client 间接经配置关联,
+    // 被调方文件无法静态解析(实体类在另一进程侧的文件里,边里没有类名/文件名)。
+    // 旧实现落进下方 `self.` 分支按「同类」折叠回调用方文件,等于把跨进程边
+    // 无声丢弃。RUST-7:显式短路返回 None(行为不变:反索引不产边),但语义
+    // 不再冒充同类调用;uncertain 面由 [`uncertain_cross_process_files`]
+    // 单独标出,消费方可用它做保守重扫。TODO(设计现状):无日志门面(workspace
+    // 零第三方依赖铁律),warn 以查询面代替;若未来接入日志,在此处记 warn。
+    if edge.kind == crate::model::EdgeKind::KbeCrossProcess {
+        return None;
+    }
     if receiver == "self" || receiver.starts_with("self.") {
         // 自身类方法/属性 → 调用方文件(同类,非跨文件;返回自身以便上层折叠)
         return Some(caller_file.clone());

@@ -86,6 +86,46 @@ describe('buildMessageTableInRust(消息表 build 主路径)', () => {
     }
   });
 
+  it('KR-AUD-67 接口闭包递归:接口自身 Interfaces 的 def 原文也进 defs/paths', async () => {
+    // 引擎 loadInterfaces 递归接口自身 Interfaces(entitydef.cpp L628-638),
+    // 闭包发现必须把接口的接口原文一并收集,否则 Rust 侧嵌套接口并入缺原文。
+    const nestedFiles: Record<string, { content: string; filePath: string }> = {
+      'entity:E': {
+        content: '<root><Interfaces><interface>ICombat</interface></Interfaces></root>',
+        filePath: '/defs/entitys/E.def'
+      },
+      'interface:ICombat': {
+        content: '<root><Interfaces><interface>ISub</interface></Interfaces><BaseMethods><b1></b1></BaseMethods></root>',
+        filePath: '/defs/interfaces/ICombat.def'
+      },
+      'interface:ISub': {
+        content: '<root><ClientMethods><s1></s1></ClientMethods></root>',
+        filePath: '/defs/interfaces/ISub.def'
+      }
+    };
+    const nestedSource: DefRawSource = {
+      loadDefRaw: (name, kind) => nestedFiles[`${kind}:${name}`] ?? null
+    };
+    let calledParams: unknown = null;
+    const fakeGate = {
+      runInRust: async (_method: string, params: unknown) => {
+        calledParams = params;
+        return { ok: true, result: cannedTable() };
+      }
+    } as unknown as KodeCoreGate;
+    setKodeCoreShadowGate(fakeGate);
+    try {
+      const table = await buildMessageTableInRust('E', nestedSource);
+      expect(table).not.toBeNull();
+      const params = calledParams as { defs: Record<string, string>; paths: Record<string, string> };
+      expect(params.defs.ICombat).toBeDefined();
+      expect(params.defs.ISub).toBe(nestedFiles['interface:ISub'].content);
+      expect(params.paths.ISub).toBe('/defs/interfaces/ISub.def');
+    } finally {
+      setKodeCoreShadowGate(null);
+    }
+  });
+
   it('组件 def 闭包(IDE-RUST-006):实体组件槽 → 组件 def + 其接口/父类进 defs/paths', async () => {
     const componentEntityDef =
       '<root><Components><healthPack><Type>HealthComp</Type></healthPack></Components></root>';

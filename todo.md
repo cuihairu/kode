@@ -1155,10 +1155,10 @@
 - [ ] KR-AUD-23 [P2级] RUST-注1 invalidation.rs:115,129-135 plan_dependency_tasks：changed 与依赖同批丢 SingleFileUpdate 优先级。验收：changed 强制单独成批。
 - [ ] KR-AUD-24 [P3级] RUST-注2 journal.rs:29 无扩展名路径产 `xxx..tmp` 临时名（无功能影响，防回归登记）。
 - [x] KR-AUD-25 [P1] IDX-1 entityMapping.ts:215,462-470,528,1192 removedRootKeys 只加不删，根重加入后永久拦 null。验收：根重新登记即解除拉黑，A→B→A 切换索引恢复。〔已修 2026-11-04:performScanEntityMappings 登记扫描根时删除对应 removedRootKeys 项(src/entityMapping.ts:406-414)——登记循环先于发现/解析,不影响同轮对已移除根的拦截;单测 tests/entityMappingManager.test.ts:1251-1335「移除 B→未重加入前拦截保持→重加入重登记后索引恢复」(未修先红:HEAD 复现 getMapping undefined,修复后绿);相关 7 文件 vitest 82/82 全绿(含 IDE-IDX-016 在途拦截既有用例),tsc -p ./ --noEmit 0 错,eslint 改动 2 文件 0 错〕
-- [ ] KR-AUD-26 [P1] IDX-2 pythonClassIndex.ts:704-782 ensureCompositionRoots 连续让位 8 次 fall-through 只打日志：rootsMap 不落地/metrics 不 end/rootsPromise 不清→组合根查询永久空。验收：fall-through 按最后快照落地或清 rootsPromise 允许重试（边缘场景注入测试）。
-- [ ] KR-AUD-27 [P1] IDX-3 workspaceIndex.ts:119-137 watcher(:131) 晚于首扫 await(:129)——初扫窗口磁盘变更永久漏。验收：对齐 AUD-074 口径（watcher 先挂或扫描后 stat 指纹复核）。
-- [ ] KR-AUD-28 [P2] IDX-4 pythonClassIndex.ts:377,496-498 单文件 invalidate 作废整扫描代+loadFile 无指纹短路。验收：关单文件不触发全仓重发现/重解析。
-- [ ] KR-AUD-29 [P2] IDX-5 globalDataIndex.ts:1643-1652 scanWorker 循环头无 generation 复核（守卫仅在 indexFile 层 :1718），初扫中 removeRoot 空根复活违反 AUD-071。验收：循环头 generation 复核测试。
+- [x] KR-AUD-26 [P1] IDX-2 pythonClassIndex.ts:704-782 ensureCompositionRoots 连续让位 8 次 fall-through 只打日志：rootsMap 不落地/metrics 不 end/rootsPromise 不清→组合根查询永久空。验收：fall-through 按最后快照落地或清 rootsPromise 允许重试（边缘场景注入测试）。（本批;fall-through 落最后快照+end metrics+清 rootsPromise;tests/idxAuditKR26to29.test.ts:59 注入 assignmentsToken 每次变化复现 8 连让位,断言 rootsMap 落地/rootsPromise 清理/metrics 归零/后续查询可用;26 文件 602 过|2 跳）
+- [x] KR-AUD-27 [P1] IDX-3 workspaceIndex.ts:119-137 watcher(:131) 晚于首扫 await(:129)——初扫窗口磁盘变更永久漏。验收：对齐 AUD-074 口径（watcher 先挂或扫描后 stat 指纹复核）。（本批;workspaceIndex watcher 先于 findFiles 挂载,change 升 revision 由监听任务追读;tests/idxAuditKR26to29.test.ts:116 断言 watcher 创建先于 find,初扫窗口 fireChange 后旧 EV 不滞留新 EV 入账;26 文件 602 过|2 跳）
+- [x] KR-AUD-28 [P2] IDX-4 pythonClassIndex.ts:377,496-498 单文件 invalidate 作废整扫描代+loadFile 无指纹短路。验收：关单文件不触发全仓重发现/重解析。（本批;onDocumentClosed 只同步摘缓冲版并按盘定向重载,closeReloads 让后续查询等待落定,不推进 scanGeneration;tests/idxAuditKR26to29.test.ts:177+pythonMixinNavigation:174 双门=discover=0/其他文件 load=0/该文件盘内容恢复;26 文件 602 过|2 跳）
+- [x] KR-AUD-29 [P2] IDX-5 globalDataIndex.ts:1643-1652 scanWorker 循环头无 generation 复核（守卫仅在 indexFile 层 :1718），初扫中 removeRoot 空根复活违反 AUD-071。验收：循环头 generation 复核测试。（本批;scanWorker 捕获 scanGeneration,循环头 removeRoot/invalidate 升代后不再认领剩余文件;tests/idxAuditKR26to29.test.ts:220 8 worker 在飞+removeRoot 后 cache/byKey 均 0;26 文件 602 过|2 跳）
 - [ ] KR-AUD-30 [P3] IDX-6 sharedFileEvents.ts:44 事件热路径 statSync 同步 IO。验收：改异步 fs.stat。
 - [ ] KR-AUD-31 [P3] IDX-7 dependencyGraph.ts:34 entities.xml 缺 `/` 前缀锚。验收：`xxxentities.xml` 不误判。
 - [ ] KR-AUD-32 [P3] IDX-8 pythonParser.ts:147-157 `from . import mod` 兄弟模块解析落空（解析侧轻核）。验收：`helper.Cls()` 跳转命中。
@@ -1167,11 +1167,11 @@
 - [ ] KR-AUD-35 [P3] IDX-11 globalDataIndex.ts:2076 rebuild 无界并发。验收：并发上限常量+测试。
 - [ ] KR-AUD-36 [P3] IDX-12 definitionWorkspace.ts:172-200 布局解析无缓存，悬停热路径多次 existsSync。验收：按 rootConfigGeneration 缓存。
 - [ ] KR-AUD-37 [P3级] IDX-注 pathIdentity 不折叠 `..`/pythonExtraPaths 大小写敏感/noteSaved 每键两遍正则——原稿备注级，未逐项复核，动手前先自行取证。
-- [ ] KR-AUD-38 [P1] RT-1=UI-1 logWebView.ts:602-605 title(log.raw)/component 未转义直进 innerHTML——webview XSS。验收：两处 escapeHtml+判别测试（恶意日志行不产生标签）。
-- [ ] KR-AUD-39 [P1] RT-2 processManager.ts:336-365 stop 残边：spawn 失败 error-only 无 exit 时依赖超时升级 kill 兜底。验收：error 事件 resolve exited+超时兜底测试（注意 RUN-007 结构已在，勿回退）。
+- [x] KR-AUD-38 [P1] RT-1=UI-1 logWebView.ts:602-605 title(log.raw)/component 未转义直进 innerHTML——webview XSS。验收：两处 escapeHtml+判别测试（恶意日志行不产生标签）。（本批;title=log.raw 与 component 全量 escapeHtml,整页 nonce CSP;tests/webviewSecurity.test.ts:86 两面判别恶意 raw/component 不产生标签+无 unsafe-inline;26 文件 602 过|2 跳）
+- [x] KR-AUD-39 [P1] RT-2 processManager.ts:336-365 stop 残边：spawn 失败 error-only 无 exit 时依赖超时升级 kill 兜底。验收：error 事件 resolve exited+超时兜底测试（注意 RUN-007 结构已在，勿回退）。（本批;exit/error 均为等待终局,超时 SIGKILL 后 250ms 兜底 resolve;tests/processManager.test.ts spawn error-only 不悬挂+超时兜底双例;26 文件 602 过|2 跳）
 - [ ] KR-AUD-40 [P2] RT-3 hotReloadRetryCommand.ts:72,261 重试路径绕过 gateDefChanges（fire 路径 hotReload.ts:575,625）。验收：结构性 def 变更经重试通道同样被拦。
-- [ ] KR-AUD-41 [P2] RT-4 debugConfig.ts:430,504,870-891,937 硬编码默认密码回落 `pwd123456`（原稿密码串 ucs775502 不属实，结构问题属实）。验收：无默认回落，缺配置显式提示。
-- [ ] KR-AUD-42 [P2] RT-5 debugConfig.ts:803,824-826 updateLaunchJson 按名称前缀误删用户配置。验收：生成条目加隐藏标记按标记清理。
+- [x] KR-AUD-41 [P2] RT-4 debugConfig.ts:430,504,870-891,937 硬编码默认密码回落 `pwd123456`（原稿密码串 ucs775502 不属实，结构问题属实）。验收：无默认回落，缺配置显式提示。（本批;默认/逐组件/示例四处移除 pwd123456,缺省 telnetPassword=undefined 由 startDebugging 显式提示;tests/debugConfig*.test.ts 断言 JSON 全树不含 pwd123456+缺失提示面;26 文件 602 过|2 跳）
+- [x] KR-AUD-42 [P2] RT-5 debugConfig.ts:803,824-826 updateLaunchJson 按名称前缀误删用户配置。验收：生成条目加隐藏标记按标记清理。（本批;生成/动态写入口统一 `_kbengineGenerated` 标记,清理只认标记;用户手写 KBEngine: 前缀保留,带标记陈旧生成项回收;tests/debugConfig.test.ts:260+debugConfigLaunchWrite.test.ts:112;26 文件 602 过|2 跳）
 - [ ] KR-AUD-43 [P2] RT-6=UI-3 monitoringWebView.ts:243,601,1034 多字段未转义+JSON 直插 script+CDN。验收：escapeHtml 全覆盖+`\u003c` 替换+Chart.js 本地打包。
 - [ ] KR-AUD-44 [P2] RT-7≈UI-13 logWebView.ts:51-56 collector 路径每条日志整页重渲（logHub 增量路径 :96 未接）；monitoring 过滤同款。验收：高频路径节流+append-only。
 - [ ] KR-AUD-45 [P3] RT-8 hotReload.ts:298+hotReloadRetryCommand.ts:60-65 `undefined | reason` 文案。验收：filter(Boolean).join。
@@ -1196,10 +1196,10 @@
 - [ ] KR-AUD-64 [P3] UI-15 pythonReturnTypeInference.ts:42,79,83 赋值检测跑原始行，三引号内误判。验收：掩码先行+假阳性回归。
 - [ ] KR-AUD-65 [P3] UI-16 languageProviders.ts hover/定义数据字典口径不一致+每次悬停全文扫描。验收：口径统一+缓存。
 - [ ] KR-AUD-66 [P3] UI-17 projectProfiles.ts:108-127 create() 丢弃 input.hotReload。验收：字面量补拷贝+透传测试。
-- [ ] KR-AUD-67 [P1] DEF-1 messageTable.ts:605-608,463-466 接口 def 提前 return 跳过自身 Interfaces 递归与组件槽注册——utype/aliasID 与引擎错位。验收：带 Components/嵌套 Interfaces 的接口 fixture 与引擎对拍（引擎侧 entitydef.cpp:611-638 断言保留原稿）。同步修 Rust 侧闭包发现与注释。
-- [ ] KR-AUD-68 [P1] DEF-2 kbengineProtocol.ts:649-663 cprofile 分支漏读 timingLength，行数据整体错位。验收：夹具帧解析与引擎 CProfileHandler 写序对拍（引擎行号保留原稿）。
-- [ ] KR-AUD-69 [P1] DEF-3 entityWizard.ts:97-98 模板生成 `<position>` 触发引擎受限属性拒绝。验收：新向导产物不含受限名（position/direction/spaceID），与 defAnalyzer 检查一致。
-- [ ] KR-AUD-70 [P1] DEF-4 defCallChain.ts:135 `lines.slice(bodyStart)` 无 endLine 截尾，兄弟方法调用误归属。验收：`slice(bodyStart, endLine)`+同文件双方法 fixture。
+- [x] KR-AUD-67 [P1] DEF-1 messageTable.ts:605-608,463-466 接口 def 提前 return 跳过自身 Interfaces 递归与组件槽注册——utype/aliasID 与引擎错位。验收：带 Components/嵌套 Interfaces 的接口 fixture 与引擎对拍（引擎侧 entitydef.cpp:611-638 断言保留原稿）。同步修 Rust 侧闭包发现与注释。（本批;接口按引擎 L611-638 递归自身 Interfaces+注册 Components+不装 Parent,path 守卫截断接口环,Rust 闭包发现同步接口递归/组件;tests/messageTable.test.ts:488/518/559+messageTableRust 覆盖嵌套接口/组件槽/接口环;26 文件 602 过|2 跳+cargo kode-python/kode-server 全绿）
+- [x] KR-AUD-68 [P1] DEF-2 kbengineProtocol.ts:649-663 cprofile 分支漏读 timingLength，行数据整体错位。验收：夹具帧解析与引擎 CProfileHandler 写序对拍（引擎行号保留原稿）。（本批;cprofile 按 profile_handler.cpp:95-128 先读 timingLength 再行数/行数据;tests/cov-debug-process.test.ts:965 断言 timingLength=15+行字段,截断帧仍不越界;26 文件 602 过|2 跳）
+- [x] KR-AUD-69 [P1] DEF-3 entityWizard.ts:97-98 模板生成 `<position>` 触发引擎受限属性拒绝。验收：新向导产物不含受限名（position/direction/spaceID），与 defAnalyzer 检查一致。（本批;模板移除 position,受限名清单 position/direction/spaceID 与 defAnalyzer 同源;tests/entityWizard.test.ts 断言三受限名全缺席+生成物可装载;26 文件 602 过|2 跳）
+- [x] KR-AUD-70 [P1] DEF-4 defCallChain.ts:135 `lines.slice(bodyStart)` 无 endLine 截尾，兄弟方法调用误归属。验收：`slice(bodyStart, endLine)`+同文件双方法 fixture。（本批;receiver 调用面改为 slice(bodyStart,endLine);tests/defCallChain.test.ts 同文件双方法夹具断言兄弟方法调用不误归属;26 文件 602 过|2 跳）
 - [ ] KR-AUD-71 [P2] DEF-5 defReferenceGraph.ts:185-200 组件/接口 Parent 解析目录与引擎不一致（硬编码 category:'entity' :191）。验收：组件 Parent 按 components/ 目录解析，接口 Parent 忽略。
 - [ ] KR-AUD-72 [P2] DEF-6 definitionSemantics.ts:427-433,602-607 接口 def Parent 被合并进语义（引擎不可见）。验收：interface 解析丢弃 Parent。
 - [ ] KR-AUD-73 [P2] DEF-7 clientSdkGenerator.ts:284-367 实体 SDK 不合并父类/接口成员、无 extends（轻核）。验收：继承实体 SDK 含父链成员。

@@ -177,8 +177,12 @@ describe('related navigation and cache failures', () => {
     await index.onDocumentChanged(document);
     expect(await index.resolveSelfMethod(files['avatar.py'], 1, 'fresh')).toMatchObject({ line: 1 });
     index.onDocumentClosed(document);
-    expect(await index.resolveSelfMethod(files['avatar.py'], 1, 'fresh')).toBeNull();
-    expect(await index.resolveSelfMethod(files['avatar.py'], 1, 'old')).toMatchObject({ line: 1 });
+    // KR-AUD-28:关闭改为按盘异步重载(loadFile),不再是同步 invalidate——
+    // 等重载落地后再断言盘内容恢复。
+    await vi.waitFor(async () => {
+      expect(await index.resolveSelfMethod(files['avatar.py'], 1, 'fresh')).toBeNull();
+      expect(await index.resolveSelfMethod(files['avatar.py'], 1, 'old')).toMatchObject({ line: 1 });
+    });
   });
 
   it('an in-flight disk read cannot overwrite a newer unsaved edit', async () => {

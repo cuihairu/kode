@@ -61,7 +61,10 @@ const fileContents: Record<string, string> = {
     '        self.cell.move(1)',
     '        self.cell.missing()',
     '    def finish(self, amount):',
-    '        self.cell.move(3)'
+    '        self.cell.move(3)',
+    '    def cleanup(self, amount):',
+    '        # 兄弟方法 cleanup 不入 start 调用面(KR-AUD-70)',
+    '        self.cell.teleport(9)'
   ].join('\n'),
   [cellFile]: [
     'class Hero:',
@@ -130,6 +133,14 @@ describe('def call chain', () => {
       'Hero:CellMethods:move>Hero:BaseMethods:finish:base',
       'Hero:BaseMethods:finish>Hero:CellMethods:move:cell'
     ]);
+  });
+
+  it('KR-AUD-70 同文件兄弟方法体不并入当前方法调用面(bodyStart..endLine 截尾)', () => {
+    // cleanup(同文件 start 之后的兄弟方法)调用 self.cell.teleport(9);
+    // start 的调用面必须止于自身 endLine,不把 cleanup 的调用扫进来。
+    const chain = buildChain({ line: 2, methodName: 'start' })!;
+    expect(chain.nodes.map(node => node.methodName)).not.toContain('teleport');
+    expect(chain.edges.map(edge => edge.to)).not.toContain('Hero:CellMethods:teleport:unresolved');
   });
 
   it('cuts cycles while retaining the return edge', () => {

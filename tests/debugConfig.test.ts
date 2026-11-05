@@ -3,6 +3,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DebugConfigManager,
+  KBENGINE_LAUNCH_GENERATED_KEY,
   makeProcessLister,
   parsePsProcesses,
   parseTasklistProcesses
@@ -60,10 +61,15 @@ describe('default debug configuration', () => {
 
     for (const [name, component] of Object.entries(config.components)) {
       expect(component.telnetHost, name).toBe('127.0.0.1');
-      expect(component.telnetPassword, name).toBe('pwd123456');
+      // KR-AUD-41:密码无默认回落——默认配置不带 telnetPassword,缺失由
+      // startDebugging 显式提示,不再编造 pwd123456
+      expect(component.telnetPassword, name).toBeUndefined();
       expect(component.telnetDefaultLayer, name).toBe('python');
       expect(component.telnetEnableCommands, name).toEqual([]);
     }
+
+    // 守卫:任何默认面都不得再出现硬编码默认密码串
+    expect(JSON.stringify(config)).not.toContain('pwd123456');
 
     // logger 是纯日志进程,不映射工作区路径
     expect(config.components.logger.pathMappings).toBeUndefined();
@@ -146,7 +152,8 @@ describe('getComponentConfig', () => {
     expect(manager.getComponentConfig('cellapp')).toEqual({
       telnetHost: '127.0.0.1',
       telnetPort: 50000,
-      telnetPassword: 'pwd123456',
+      // KR-AUD-41:无默认密码回落
+      telnetPassword: undefined,
       telnetDefaultLayer: 'python',
       telnetEnableCommands: [],
       pathMappings: [{ localRoot: '', remoteRoot: '' }]
@@ -159,7 +166,8 @@ describe('getComponentConfig', () => {
     expect(manager.getComponentConfig('kbmachined')).toEqual({
       telnetHost: '127.0.0.1',
       telnetPort: 0,
-      telnetPassword: 'pwd123456',
+      // KR-AUD-41:无默认密码回落
+      telnetPassword: undefined,
       telnetDefaultLayer: 'python',
       telnetEnableCommands: [],
       pathMappings: [{ localRoot: '', remoteRoot: '' }]
@@ -230,7 +238,9 @@ describe('launch configuration generation', () => {
       processId: '${command:pickProcess}',
       justMyCode: false,
       pathMappings: [{ localRoot: '/proj', remoteRoot: '/proj' }],
-      presentation: { group: 'KBEngine', order: 1 }
+      presentation: { group: 'KBEngine', order: 1 },
+      // KR-AUD-42:生成条目带隐藏管理标记,updateLaunchJson 按标记清理
+      [KBENGINE_LAUNCH_GENERATED_KEY]: true
     });
     // logger 无组件映射时回落工作区映射
     expect(configurations[3].pathMappings).toEqual([{ localRoot: '/proj', remoteRoot: '/proj' }]);
@@ -260,7 +270,10 @@ describe('updateLaunchJson', () => {
       JSON.stringify({
         version: '0.4.0',
         configurations: [
-          { name: 'KBEngine: Python attach to old', type: 'debugpy' },
+          // KR-AUD-42:用户手写的 KBEngine: 前缀条目(无生成标记)不得被前缀误删
+          { name: 'KBEngine: My custom attach', type: 'debugpy' },
+          // 与生成条目同形的陈旧条目:带生成标记才回收,不带标记的用户条目不动
+          { name: 'KBEngine: Python attach to baseapp (debugpy 1111)', _kbengineGenerated: true },
           { name: 'My own config', type: 'node' }
         ],
         inputs: [
@@ -278,7 +291,9 @@ describe('updateLaunchJson', () => {
     ).toString('utf8'));
 
     expect(written.version).toBe('0.4.0');
+    // 用户条目全保留(含 KBEngine: 前缀的手写条目),带标记的陈旧生成条目被回收
     expect(written.configurations.map((c: { name: string }) => c.name)).toEqual([
+      'KBEngine: My custom attach',
       'My own config',
       ...makeManager().generateLaunchConfigurations().map(c => c.name)
     ]);
@@ -365,6 +380,11 @@ describe('createExampleConfig', () => {
     expect(Object.keys(written.debug.components)).toEqual(['baseapp', 'cellapp', 'loginapp']);
     expect(written.debug.components.baseapp.telnetPort).toBe(40000);
     expect(written.debug.components.baseapp.telnetEnableCommands).toHaveLength(2);
+    // KR-AUD-41:示例不带硬编码默认密码——密码字段缺省,由提示引导用户自填
+    for (const component of Object.values(written.debug.components)) {
+      expect(component.telnetPassword).toBeUndefined();
+    }
+    expect(JSON.stringify(written)).not.toContain('pwd123456');
     expect(written.debug.components.baseapp.pathMappings).toEqual([
       { localRoot: '${workspaceFolder}', remoteRoot: '${workspaceFolder}' }
     ]);

@@ -530,12 +530,13 @@ describe('webview 内联脚本渲染 watcher 结果表格', () => {
     elements: Map<string, FakeElement>;
     dispatch: (data: Record<string, unknown>) => void;
   } => {
-    const marker = '<script>';
-    const start = html.indexOf(marker);
-    if (start < 0) {
+    // 内联脚本带渲染期 nonce(KR-AUD-08 CSP 收紧),按前缀定位而非裸 '<script>'
+    const match = html.match(/<script[^>]*>/);
+    if (!match) {
       throw new Error('webview html 缺少内联 <script> 段');
     }
-    const body = html.slice(start + marker.length, html.indexOf('</script>', start));
+    const start = match.index ?? 0;
+    const body = html.slice(start + match[0].length, html.indexOf('</script>', start));
 
     const elements = new Map<string, FakeElement>();
     const tbody = makeElement('tbody');

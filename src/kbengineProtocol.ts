@@ -648,6 +648,11 @@ export function parseProfileFrame(body: Buffer, component: KBEngineComponentInfo
     return { ...base, kind: 'networkprofile', timingLength, rows };
   }
 
+  // cprofile(引擎 ProfileKind=1):CProfileHandler::timeout() 写序
+  // (profile_handler.cpp:95-128)= timinglen_ → size-1(除 RunningTime 外行数)
+  // → 每行(name,count,lastTime,sumTime,lastIntTime,sumIntTime)。漏读
+  // timingLength 会让行数据整体错位(KR-AUD-68)。
+  timingLength = reader.readUInt32();
   const rows: CProfileRow[] = [];
   const count = reader.readUInt32();
   for (let index =0; index < count && !reader.eof(); index += 1) {

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { randomNonce } from './webviewSecurity';
 import {
   discoverLocalComponents,
   querySpaces,
@@ -364,9 +365,10 @@ export class RuntimeQueryWebView {
   }
 
   private render(): string {
+    const nonce = randomNonce();
     return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';"></head>
+<head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';"></head>
 <body>
   <main>
     <header><h1>Runtime Queries</h1><button id="refresh" type="button">Refresh components</button></header>
@@ -401,7 +403,7 @@ export class RuntimeQueryWebView {
     <p><strong>Spaces</strong></p>
     <pre id="result" hidden></pre>
   </main>
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const component = document.getElementById('component');
     const path = document.getElementById('path');

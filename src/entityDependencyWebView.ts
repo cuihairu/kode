@@ -1067,6 +1067,10 @@ ${mermaidGraph}
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 最小 CSP:default-src 'none' 断掉一切外联/外帧/连接,脚本源钉死 mermaid 固定 CDN 路径。
+       未能收 nonce:mermaid securityLevel=loose 的 SVG 点击回调(openFilePath)与工具栏
+       都走内联事件处理器,需 mermaid 本地化+回调改造后才能收紧(已单独登记 todo)。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js 'unsafe-inline';">
   <title>${title}</title>
   <style>
     body {

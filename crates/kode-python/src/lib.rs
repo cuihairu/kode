@@ -23,7 +23,7 @@ pub mod symbols;
 
 pub use callgraph::{extract_call_graph_detailed, DetailedCallEdge};
 pub use dataflow::{dataflow_for_module, MethodDataflow};
-pub use graph::{CallReverseIndex, PyCallGraph};
+pub use graph::{uncertain_cross_process_files, CallReverseIndex, PyCallGraph};
 pub use model::{
     AstAttribute, AstClass, AstFunction, AstImport, AstMethod, AstSymbols, CallEdge,
     DataflowResult, DefUseChain, EdgeKind,

@@ -15,6 +15,7 @@
 import * as vscode from 'vscode';
 import { BUILTIN_QUICK_COMMANDS } from './telnetClient';
 import { TelnetProbeState, TelnetService, TelnetTarget } from './telnetService';
+import { randomNonce, webviewScriptCsp } from './webviewSecurity';
 
 const STATE_LABELS: Record<TelnetProbeState, string> = {
   unconfigured: '未配置',
@@ -233,10 +234,10 @@ export class TelnetWebView {
         const state = this.service.getState(target.key);
         const selected = target.key === this.selectedKey ? ' selected' : '';
         return [
-          `<div class="target${selected}" data-key="${target.key}">`,
+          `<div class="target${selected}" data-key="${escapeHtml(target.key)}">`,
           `  <span class="light" style="background:${STATE_COLORS[state]}"></span>`,
-          `  <span class="label">${target.label}</span>`,
-          `  <span class="addr">${target.host}:${target.port}</span>`,
+          `  <span class="label">${escapeHtml(target.label)}</span>`,
+          `  <span class="addr">${escapeHtml(target.host)}:${target.port}</span>`,
           `  <span class="state">${STATE_LABELS[state]}</span>`,
           '</div>'
         ].join('\n');
@@ -249,7 +250,7 @@ export class TelnetWebView {
     if (state === 'closed') {
       return [
         '<div class="hint">',
-        `  <p><strong>${target.label}(${target.host}:${target.port})的 telnet 未开启。</strong></p>`,
+        `  <p><strong>${escapeHtml(target.label)}(${escapeHtml(target.host)}:${target.port})的 telnet 未开启。</strong></p>`,
         '  <p>在元件配置 kbengine.xml 中加入以下段落并重启该组件即可开启:</p>',
         `  <pre>${escapeHtml(KBENGINE_XML_SNIPPET)}</pre>`,
         '</div>'
@@ -257,12 +258,12 @@ export class TelnetWebView {
     }
     const connectButton =
       state === 'connected'
-        ? `<button class="connect" data-key="${target.key}" data-action="disconnect">断开会话</button>`
-        : `<button class="connect" data-key="${target.key}" data-action="connect">连接会话(自动登录)</button>`;
+        ? `<button class="connect" data-key="${escapeHtml(target.key)}" data-action="disconnect">断开会话</button>`
+        : `<button class="connect" data-key="${escapeHtml(target.key)}" data-action="connect">连接会话(自动登录)</button>`;
     if (state === 'auth-required') {
       return [
         '<div class="hint">',
-        `  <p><strong>${target.label} 的 telnet 端口已开启,但未配置密码。</strong></p>`,
+        `  <p><strong>${escapeHtml(target.label)} 的 telnet 端口已开启,但未配置密码。</strong></p>`,
         '  <p>在设置 kbengine.telnet.password 或 kbengine.xml <telnet_service><password> 中填写密码后即可自动登录。</p>',
         `  ${connectButton}`,
         '</div>'
@@ -275,20 +276,21 @@ export class TelnetWebView {
       .join('\n');
     const quickButtons = BUILTIN_QUICK_COMMANDS.map(
       entry =>
-        `<button class="quick" data-key="${target.key}" data-command="${escapeHtml(entry.command)}">${entry.label}</button>`
+        `<button class="quick" data-key="${escapeHtml(target.key)}" data-command="${escapeHtml(entry.command)}">${entry.label}</button>`
     ).join('\n');
     return [
-      `<div class="session" data-session-state="${sessionState ?? ''}">`,
+      `<div class="session" data-session-state="${escapeHtml(sessionState ?? '')}">`,
       `  <div class="quickrow">${connectButton}</div>`,
       output.length > 0 ? `<div class="output">${output}</div>` : '<div class="output muted">暂无输出</div>',
       `<div class="quickrow">${quickButtons}</div>`,
-      `  <input class="cmd" data-key="${target.key}" placeholder="${sessionState === 'ready' ? '输入白名单内命令(回车发送)' : '等待会话就绪…'}" />`,
+      `  <input class="cmd" data-key="${escapeHtml(target.key)}" placeholder="${sessionState === 'ready' ? '输入白名单内命令(回车发送)' : '等待会话就绪…'}" />`,
       `  <div class="keyshint">Ctrl+] / Ctrl+D 断开会话</div>`,
       '</div>'
     ].join('\n');
   }
 
   private getHtml(): string {
+    const nonce = randomNonce();
     const targets = this.service.getTargets();
     // 未显式选中时默认看第一个目标:打开面板即见状态与指引,不留空面板
     const selected =
@@ -298,6 +300,8 @@ export class TelnetWebView {
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
+<!-- 最小 CSP:内联脚本只认本次渲染的 nonce,断掉一切外联/外帧/连接 -->
+<meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce)}" />
 <style>
   body { font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); padding: 8px; }
   .muted { color: var(--vscode-descriptionForeground); }
@@ -327,7 +331,7 @@ ${this.renderTargets()}
 <div id="session">
 ${sessionHtml}
 </div>
-<script>
+<script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const stateLabels = ${JSON.stringify(STATE_LABELS)};
   const stateColors = ${JSON.stringify(STATE_COLORS)};
@@ -397,7 +401,9 @@ ${sessionHtml}
     }
     if (message.command === 'states') {
       for (const entry of message.states) {
-        const item = document.querySelector('.target[data-key="' + entry.key + '"]');
+        // data-key 可能带选择器元字符(host:port 的冒号、配置里的引号):
+        // querySelector 拼接前必须 CSS.escape,否则选择器非法或错配
+        const item = document.querySelector('.target[data-key="' + CSS.escape(entry.key) + '"]');
         if (!item) {
           continue;
         }
@@ -423,5 +429,6 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }

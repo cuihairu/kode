@@ -210,6 +210,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.attributeNoneDiagnostics` | `true` | Python-side Warning for user-managed `self.<attr>` member access without a null check when the converged type includes None and the site is not narrowed |
 | `kbengine.propertyDirectionDiagnostics` | `true` | Python-side Warning for def property access direction violations (`self.<prop>` / `self.<role>.<prop>` where the access position is outside the property's Flag domains); downgraded to Information when the file's process scope is unknown |
 | `kbengine.startupScriptDiagnostics` | `true` | Warning on `.sh`/`.bat` startup-script server-process launch lines: unknown `--param` (misspelling), non-numeric `--cid`/`--gus`, referenced `$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` never assigned in-file and never sourced; non-launch lines are never inspected |
+| `kbengine.spaceNavDiagnostics` | `true` | Space/navigation semantic diagnostics: setSpaceData/delSpaceData using reserved key `_mapping`, calling navigate/navigatePathPoints with no canNavigate anywhere in the file, addSpaceGeometryMapping params dictionary string-layer keys — reported as Warning (default: enabled) |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | Diagnose unknown KBEngine types |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | Diagnose unknown Flags values |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | Diagnose unknown DetailLevel values |

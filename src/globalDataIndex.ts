@@ -1640,9 +1640,16 @@ export class GlobalDataDictIndex {
       return;
     }
     let nextFile = 0;
+    // KR-AUD-29:循环头捕获扫描起始 generation——初扫中 removeRoot/invalidate
+    // 升代后,尚未认领的文件不得再以新一代身份提交(空根身份复活,AUD-071)。
+    // 在飞 indexFile 已按各自调用时 generation 守卫,这里补循环头同口径复核。
+    const scanGeneration = this.generation;
     const scanWorker = async (): Promise<void> => {
       while (!this.disposed && nextFile < files.length) {
         const uri = files[nextFile++];
+        if (this.generation !== scanGeneration) {
+          continue;
+        }
         if ((this.revisions.get(uri.fsPath) ?? 0) !== (initialRevisions.get(uri.fsPath) ?? 0)) {
           continue;
         }

@@ -226,7 +226,20 @@ beforeEach(() => {
 describe('DebugConfigManager.startDebugging', () => {
   it('shows the modal briefing with telnet commands and attaches on confirm', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
+    // KR-AUD-41:简报里的密码/命令行来自用户配置,不再有默认密码可引用——
+    // 该用例显式配置以锁定「配置了就如实展示」的既有语义
+    memoryFileSystem.set(
+      '/tmp/kode-dbg/.kbengine/debug.json',
+      JSON.stringify({
+        debug: {
+          components: {
+            baseapp: { telnetPassword: 's3cret', telnetEnableCommands: ['# 开调试命令'] }
+          }
+        }
+      })
+    );
     const manager = makeManager([{ pid: 4321, name: 'baseapp' }]);
+    await flushAsync();
     pickQueue.push({ label: '$(check) baseapp', description: '4321' });
     const config = manager.getComponentConfig('baseapp');
     infoQueue.push('继续附加');
@@ -238,11 +251,14 @@ describe('DebugConfigManager.startDebugging', () => {
     const message = messages.info[0];
     expect(message).toContain('telnet 控制端口');
     expect(message).toContain(`telnet ${config.telnetHost} ${config.telnetPort}`);
+    // 配置了的密码如实展示(不改动用户现有配置语义)
     expect(message).toContain(`password: ${config.telnetPassword}`);
     expect(message).toContain(`default layer: ${config.telnetDefaultLayer}`);
     for (const command of config.telnetEnableCommands ?? []) {
       expect(message).toContain(command);
     }
+    // 密码已配置:不发缺配置警告
+    expect(messages.warn).toHaveLength(0);
 
     expect(debugCalls).toHaveLength(1);
     const attachConfig = debugCalls[0].config;
@@ -299,7 +315,7 @@ describe('DebugConfigManager.startDebugging', () => {
     expect(message).toContain('lookup 123');
   }, 8000);
 
-  it('falls back to documented defaults for explicitly empty telnet fields', async () => {
+  it('keeps host/port/layer defaults but reports missing telnet password explicitly', async () => {
     setWorkspaceAt('/tmp/kode-dbg');
     memoryFileSystem.set(
       '/tmp/kode-dbg/.kbengine/debug.json',
@@ -317,11 +333,15 @@ describe('DebugConfigManager.startDebugging', () => {
 
     const result = await manager.startDebugging('cellapp');
 
-    // 显式空值与缺省键同观感:主机/端口/密码/层级全部走文档默认
+    // KR-AUD-41:主机/端口/层级仍走文档默认,但密码无默认回落——显式空值
+    // 与缺省同观感,简报如实报未配置并另发显式警告,不再编造 pwd123456
     expect(result).toBe(false);
     expect(messages.info[0]).toContain('telnet 127.0.0.1 0');
-    expect(messages.info[0]).toContain('password: pwd123456');
+    expect(messages.info[0]).toContain('password: 未配置');
+    expect(messages.info[0]).not.toContain('pwd123456');
     expect(messages.info[0]).toContain('default layer: python');
+    expect(messages.warn[0]).toContain('未配置 telnet 密码');
+    expect(messages.warn[0]).toContain('telnetPassword');
   }, 8000);
 
   it('uses the literal host fallback when the merged host is empty', async () => {

@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use kode_python::callgraph::extract_call_graph;
-use kode_python::graph::{build_call_reverse_index, PyCallGraph};
+use kode_python::graph::{build_call_reverse_index, uncertain_cross_process_files, PyCallGraph};
 use kode_python::{parse_ast_symbols, ParsedAst};
 use kode_vfs::store::{DocumentKey, RootId};
 use kode_vfs::uri::CanonicalUri;
@@ -108,4 +108,53 @@ fn local_bare_name_no_cross_file_pseudo_edge() {
         !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
         "本地调用 foo() 不应产生跨文件伪边 afoo→zcaller, got {rev:?}"
     );
+}
+
+#[test]
+fn rust7_cross_process_edge_marked_uncertain_not_silent() {
+    // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
+    // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠
+    // 回调用方文件 → 反索引无声丢弃。要求:不产伪边,但调用方文件必须
+    // 出现在 uncertain 面(uncertain_cross_process_files),供保守重扫消费。
+    let base_src = "class Avatar:\n    def onHpChanged(self):\n        self.cell.recalc()\n";
+    let plain_src = "def unrelated():\n    pass\n";
+    let base_key = key("scripts/entities/avatar_base.py");
+    let plain_key = key("scripts/utils.py");
+
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&base_key, base_src), (&plain_key, plain_src)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+
+    // 边确实被识别为 KbeCrossProcess(前提:不是 Unknown 混进来的)
+    let edges = &file_edges[&base_key];
+    assert!(
+        edges
+            .iter()
+            .any(|e| e.kind == kode_python::EdgeKind::KbeCrossProcess),
+        "self.cell.recalc() 应分类为 KbeCrossProcess, got {edges:?}"
+    );
+
+    // 反索引:跨进程边既不产伪边,也不再无声折叠回调用方自身
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.is_empty(),
+        "跨进程边被调方不可解析,不应产任何反索引条目(含自身折叠), got {rev:?}"
+    );
+
+    // uncertain 面:有跨进程边的调用方文件必须被标出(非无声丢弃)
+    let uncertain = uncertain_cross_process_files(&file_edges);
+    assert!(
+        uncertain.contains(&base_key),
+        "有跨进程边的 avatar_base.py 应进 uncertain 面, got {uncertain:?}"
+    );
+    assert!(
+        !uncertain.contains(&plain_key),
+        "无跨进程边的 utils.py 不应进 uncertain 面"
+    );
+    assert_eq!(uncertain.len(), 1);
 }

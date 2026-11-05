@@ -485,7 +485,10 @@ describe('继承与接口装配', () => {
     expect(markdown).toContain('ICombat(接口)');
   });
 
-  it('接口 def 只并入属性与方法(接口内 Parent/Interfaces 不再递归)', () => {
+  it('KR-AUD-67 接口递归自身 Interfaces(引擎 loadInterfaces L628-638),接口不装父类', () => {
+    // 引擎 loadInterfaces 对每个接口:loadAllDefDescriptions → loadComponents →
+    // 递归 loadInterfaces(接口自身 Interfaces);loadInterfaces 路径不调
+    // loadParentClass,接口内 Parent 声明不被装载。
     const table = buildMessageTable('Hero', createSource({
       'entity:Hero': [
         '<root>',
@@ -496,12 +499,85 @@ describe('继承与接口装配', () => {
       'interface:Iface': [
         '<root>',
         '  <Parent>ShouldNotLoad</Parent>',
+        '  <Interfaces><interface>ISub</interface></Interfaces>',
         '  <CellMethods><im></im></CellMethods>',
+        '</root>'
+      ].join('\n'),
+      'interface:ISub': '<root><ClientMethods><sub></sub></ClientMethods></root>',
+      'entity:ShouldNotLoad': '<root><CellMethods><ghost></ghost></CellMethods></root>'
+    }))!;
+    expect(table.issues.some(issue => issue.kind === 'parent-file-missing')).toBe(false);
+    expect(table.methods.map(method => method.name).sort()).toEqual(['im', 'own', 'sub']);
+    // utype 序:own → Iface.im → ISub.sub(接口自身 Interfaces 声明序递归)
+    expect(methodOf(table, 'im').utype).toBe(2);
+    expect(methodOf(table, 'sub').utype).toBe(3);
+    expect(methodOf(table, 'sub').origin).toBe('ISub(接口)');
+    expect(table.sources.map(source => source.name)).toEqual(['Hero', 'Iface', 'ISub']);
+  });
+
+  it('KR-AUD-67 接口 Components 注册组件槽:占属性 utype/计入 aliasID/组件类型占号', () => {
+    // 引擎 loadInterfaces 对每个接口调 loadComponents(L617-625):槽=属性,
+    // 占属性 utype,hasClient 计入 aliasID(entitydefAliasID 开启时)。
+    const files = {
+      'entity:Hero': [
+        '<root>',
+        '  <Interfaces><interface>ICombat</interface></Interfaces>',
+        '  <CellMethods><h1></h1></CellMethods>',
+        '</root>'
+      ].join('\n'),
+      'interface:ICombat': [
+        '<root>',
+        '  <Properties>',
+        '    <armor><Type>UINT32</Type><Flags>ALL_CLIENTS</Flags></armor>',
+        '  </Properties>',
+        '  <Components><turret><Type>TurretComp</Type></turret></Components>',
+        '  <ClientMethods><i1><Exposed/></i1></ClientMethods>',
+        '</root>'
+      ].join('\n'),
+      'component:TurretComp': [
+        '<root>',
+        '  <Properties><shots><Type>UINT32</Type><Flags>ALL_CLIENTS</Flags></shots></Properties>',
+        '</root>'
+      ].join('\n')
+    };
+    const table = buildMessageTable('Hero', createSource(files), { aliasIdEnabled: true })!;
+    const slot = table.properties.find(property => property.name === 'turret');
+    expect(slot).toBeDefined();
+    expect(slot!.typeName).toBe('TurretComp');
+    expect(slot!.origin).toBe('ICombat');
+    expect(slot!.hasClient).toBe(true);
+    // hasClient 属性 aliasID 按名升序从 4 起:armor=4, turret=5
+    expect(table.properties.find(property => property.name === 'armor')!.aliasID).toBe(4);
+    expect(slot!.aliasID).toBe(5);
+    // 组件类型首见占 DataType utype(entity-component)
+    const compType = table.types.find(type => type.name === 'TurretComp');
+    expect(compType?.kind).toBe('entity-component');
+    // 组件 def 在场:槽 flags 按组件域面派生(hasClient → 含客户端位)
+    expect(table.clientProperties.map(property => property.name).sort()).toEqual(['armor', 'turret']);
+  });
+
+  it('KR-AUD-67 接口互指成环:path 守卫截断(引擎递归装载无法终止)', () => {
+    const table = buildMessageTable('Hero', createSource({
+      'entity:Hero': '<root><Interfaces><interface>IA</interface></Interfaces></root>',
+      'interface:IA': [
+        '<root>',
+        '  <Interfaces><interface>IB</interface></Interfaces>',
+        '  <CellMethods><a></a></CellMethods>',
+        '</root>'
+      ].join('\n'),
+      'interface:IB': [
+        '<root>',
+        '  <Interfaces><interface>IA</interface></Interfaces>',
+        '  <CellMethods><b></b></CellMethods>',
         '</root>'
       ].join('\n')
     }))!;
-    expect(table.issues.some(issue => issue.kind === 'parent-file-missing')).toBe(false);
-    expect(table.methods.map(method => method.name).sort()).toEqual(['im', 'own']);
+    const cycles = issuesOfKind(table, 'interface-cycle');
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0].fatal).toBe(true);
+    expect(table.loadFailed).toBe(true);
+    expect(methodOf(table, 'a').utype).toBe(1);
+    expect(methodOf(table, 'b').utype).toBe(2);
   });
 
   it('接口文件缺失:engine 文案 fatal,分支终止', () => {

@@ -298,7 +298,10 @@ it('销毁后在途文件读取不能重新发布事件索引或创建 watcher',
     release(Buffer.from('self.addEvent(EV, self.on_ev)'));
     expect(await query).toEqual([]);
     expect(await index.allEventCalls()).toEqual([]);
-    expect(watcher).not.toHaveBeenCalled();
+    // KR-AUD-27 起 watcher 先于首扫挂载(AUD-074 口径):销毁路径不再以
+    // 「watcher 未建」为判据。本例真正锁定的语义是上方两条——在途读落定
+    // 后不得重新发布事件索引(disposed 闸),watcher 由 dispose() 同步释放
+    // (watchers 数组逐项 dispose),不在此重复断言。
   } finally {
     index.dispose();
     watcher.mockRestore();

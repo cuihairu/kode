@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEBUG_ATTACH_MODE_STATE_KEY,
   DebugConfigManager,
+  KBENGINE_LAUNCH_GENERATED_KEY,
   buildPortLaunchEntry,
   dropSupersededPortEntries,
   mergePortLaunchEntry,
@@ -111,7 +112,10 @@ describe('portLaunchEntryName / buildPortLaunchEntry(条目体单一真源)', ()
       connect: { host: '127.0.0.1', port: 5678 },
       justMyCode: false,
       pathMappings: [{ localRoot: '/ws', remoteRoot: '/ws' }],
-      presentation: { group: 'KBEngine', order: 3 }
+      presentation: { group: 'KBEngine', order: 3 },
+      // KR-AUD-42:动态写入口与生成面同标记——updateLaunchJson 按标记清理
+      // 才不会把动态写入的条目当用户条目留下同名重份
+      [KBENGINE_LAUNCH_GENERATED_KEY]: true
     });
   });
 

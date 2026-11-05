@@ -8,6 +8,7 @@ import { LogEntry, LogParser, LogLevel } from './logParser';
 import { KBEngineLogCollector } from './logCollector';
 import { LogEvent, LogHub, RuntimeLogLevel } from './logHub';
 import { getWebviewConsoleScript, WEBVIEW_LOG_COMMAND, WebviewLogMessage } from './webviewConsoleBridge';
+import { randomNonce, webviewScriptCsp } from './webviewSecurity';
 
 /**
  * 日志过滤器配置
@@ -311,6 +312,7 @@ export class LogViewerWebView {
    * 生成 HTML
    */
   private getHtml(logs: LogEntry[]): string {
+    const nonce = randomNonce();
     const logsHtml = logs.map(log => this.formatLogEntry(log)).join('\n');
     const statusSummary = this.escapeHtml(this.collector.getStatusSummary());
 
@@ -319,6 +321,8 @@ export class LogViewerWebView {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 最小 CSP:内联脚本只认本次渲染的 nonce,断掉一切外联/外帧/连接 -->
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce)}">
   <title>KBEngine Logs</title>
   <style>
     * {
@@ -482,7 +486,7 @@ export class LogViewerWebView {
     ${logsHtml || '<div class="empty-state">暂无日志<br><small>启动 KBEngine 服务器后，日志将在此显示</small></div>'}
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     ${getWebviewConsoleScript({ throttle: true })}
 
@@ -599,10 +603,10 @@ export class LogViewerWebView {
 
     const componentColor = componentColors[log.component] || '#757575';
 
-    return `<div class="log-entry ${levelClass}" title="${log.raw}">
+    return `<div class="log-entry ${levelClass}" title="${this.escapeHtml(log.raw)}">
       <span class="log-timestamp">${timestamp}</span>
       <span class="log-component" style="background-color: ${componentColor}; color: white;">
-        ${levelIcon} ${log.component.toUpperCase()}
+        ${levelIcon} ${this.escapeHtml(log.component.toUpperCase())}
       </span>
       <span class="log-message">${this.escapeHtml(log.message)}</span>
     </div>`;

@@ -40,8 +40,23 @@ describe('GEN-DEF-2 def 骨架', () => {
     expect(content).toContain('<Properties>');
     expect(content).toContain('<name>');
     expect(content).toContain('<hp>');
-    expect(content).toContain('<position>');
+    // KR-AUD-69:引擎受限属性(ENTITY_LIMITED_PROPERTYS)不得出现在向导产物
+    expect(content).not.toContain('<position>');
     expect(content).toContain('<tempState>');
+  });
+
+  it('KR-AUD-69 向导产物不含引擎受限属性名(position/direction/spaceID)', () => {
+    // 引擎 loadComponents/属性装载拒绝受限名(entitydef.cpp validDefPropertyName;
+    // defAnalyzer ENTITY_LIMITED_PROPERTYS 同一清单),含 <position> 的骨架 def
+    // 装载即失败。position/direction/spaceID 由引擎在 Entity 基类自动提供,
+    // def 里重复声明属错误样板。
+    const content = buildNewEntityDefContent(
+      { ...baseInput, propertyTemplate: 'fixedArray' },
+      '2026-01-01T00:00:00.000Z'
+    );
+    for (const restricted of ['position', 'direction', 'spaceID']) {
+      expect(content).not.toContain(`<${restricted}>`);
+    }
   });
 
   it('不含 Parent 时省略声明', () => {
@@ -81,7 +96,7 @@ describe('GEN-DEF-2 def 骨架', () => {
 
   it('标签配平(结构面自检)', () => {
     const content = buildNewEntityDefContent({ ...baseInput, propertyTemplate: 'fixedArray' }, '2026-01-01T00:00:00.000Z');
-    for (const tag of ['root', 'Properties', 'name', 'hp', 'position', 'tempState', 'skillIds', 'Type', 'Flags']) {
+    for (const tag of ['root', 'Properties', 'name', 'hp', 'tempState', 'skillIds', 'Type', 'Flags']) {
       const opens = (content.match(new RegExp(`<${tag}(?=[\\s>])`, 'g')) ?? []).length;
       const closes = (content.match(new RegExp(`</${tag}>`, 'g')) ?? []).length;
       expect(opens, `${tag} 开标签数`).toBe(closes);

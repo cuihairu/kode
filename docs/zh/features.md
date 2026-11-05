@@ -207,6 +207,7 @@
 | `kbengine.attributeNoneDiagnostics` | `true` | Python 侧 Warning：用户自管 `self.<属性>` 成员访问无判空,且收敛类型含 None 当前位未窄化 |
 | `kbengine.propertyDirectionDiagnostics` | `true` | Python 侧 Warning：def 属性访问方向违规（`self.<属性>`/`self.<role>.<属性>` 访问位置不在属性 Flags 域位内）；文件作用域不足降级为 Information |
 | `kbengine.startupScriptDiagnostics` | `true` | .sh/.bat 启动脚本服务器进程启动行 Warning：未知 `--参数`（拼写错）、`--cid`/`--gus` 非数字、引用 `$KBE_RES_PATH`/`$KBE_BIN_PATH`/`$KBE_ROOT` 未赋值且未 source；非启动行不检 |
+| `kbengine.spaceNavDiagnostics` | `true` | 空间/导航语义诊断：setSpaceData/delSpaceData 使用保留键 `_mapping`、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键 报 Warning（默认启用） |
 | `kbengine.diagnostics.checkUnknownTypes` | `true` | 诊断未知 KBEngine 类型 |
 | `kbengine.diagnostics.checkUnknownFlags` | `true` | 诊断未知 Flags 取值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | `true` | 诊断未知 DetailLevel 取值 |

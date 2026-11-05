@@ -255,6 +255,27 @@ export function portLaunchEntryName(componentName: string, port: number): string
 }
 
 /**
+ * KR-AUD-42:本扩展生成条目的隐藏管理标记。updateLaunchJson 的清理只认
+ * 标记,不再按「KBEngine:」名字前缀区分——前缀是用户可见文案,用户手写的
+ * 同前缀条目会被误删;标记由生成面统一打下,清理只回收自己的产出。
+ */
+export const KBENGINE_LAUNCH_GENERATED_KEY = '_kbengineGenerated';
+
+/** 该条目是否本扩展生成(带隐藏管理标记);用户条目/无名条目一概不算 */
+export function isKbengineGeneratedEntry(item: unknown): boolean {
+  return (
+    item !== null &&
+    typeof item === 'object' &&
+    (item as Record<string, unknown>)[KBENGINE_LAUNCH_GENERATED_KEY] === true
+  );
+}
+
+/** 给生成条目打隐藏管理标记(幂等,不改其余字段) */
+function withGeneratedMarker<T extends Record<string, unknown>>(entry: T): T {
+  return { ...entry, [KBENGINE_LAUNCH_GENERATED_KEY]: true };
+}
+
+/**
  * 端口模式 connect 条目体(type/request/connect 三件套 = attach 断点可用的
  * 最小面;type 与仓内其余生成条目同源走 debugpy 适配器)。
  */
@@ -266,7 +287,7 @@ export function buildPortLaunchEntry(
   debuggerType: string
 ): Record<string, unknown> {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-  return {
+  return withGeneratedMarker({
     name: portLaunchEntryName(componentName, port),
     type: debuggerType,
     request: 'attach',
@@ -274,7 +295,7 @@ export function buildPortLaunchEntry(
     justMyCode: false,
     pathMappings: pathMappings || [{ localRoot: workspaceFolder, remoteRoot: workspaceFolder }],
     presentation: { group: 'KBEngine', order: 3 }
-  };
+  });
 }
 
 /**
@@ -427,7 +448,8 @@ export class DebugConfigManager {
         {
           telnetHost: '127.0.0.1',
           telnetPort,
-          telnetPassword: 'pwd123456',
+          // KR-AUD-41:默认面不带密码——硬编码 pwd123456 回落已废除,缺失由
+          // startDebugging 显式提示用户自行填写
           telnetDefaultLayer: 'python',
           telnetEnableCommands: [],
           pathMappings: ['baseapp', 'cellapp', 'interfaces', 'bots', 'loginapp', 'dbmgr'].includes(name)
@@ -501,7 +523,9 @@ export class DebugConfigManager {
     return {
       telnetHost: userConfig?.telnetHost || this.config.defaultTelnetHost,
       telnetPort: userConfig?.telnetPort || this.config.defaultTelnetPort,
-      telnetPassword: userConfig?.telnetPassword || 'pwd123456',
+      // KR-AUD-41:无默认密码回落——用户配了就给,没配/显式空值如实 undefined,
+      // 由 startDebugging 显式提示,不再编造 pwd123456
+      telnetPassword: userConfig?.telnetPassword,
       telnetDefaultLayer: userConfig?.telnetDefaultLayer || 'python',
       telnetEnableCommands: userConfig?.telnetEnableCommands || [],
       debugpyHost: userConfig?.debugpyHost,
@@ -690,7 +714,10 @@ export class DebugConfigManager {
       }
     }
 
-    return configurations;
+    // KR-AUD-42:统一在出口打隐藏管理标记——所有生成条目(组件 PID 条目/
+    // 远程条目/端口条目/命名实例条目)都可被 updateLaunchJson 按标记辨识,
+    // 清理只回收自己的产出,不碰用户手写的任何条目。
+    return configurations.map(item => withGeneratedMarker(item as Record<string, unknown>));
   }
 
   /**
@@ -821,9 +848,11 @@ export class DebugConfigManager {
         const existingConfig = read.config;
 
         const newConfigurations = this.generateLaunchConfigurations(runningInstances);
-        const kbConfigs = newConfigurations.filter(item => item.name?.startsWith('KBEngine:'));
+        // KR-AUD-42:生成/清理只认隐藏管理标记——「KBEngine:」前缀是用户可见
+        // 文案,用户手写的同前缀条目按名字前缀清理会被误删
+        const kbConfigs = newConfigurations.filter(isKbengineGeneratedEntry);
         const userConfigs = (existingConfig.configurations || []).filter(
-          (item: any) => !item.name?.startsWith('KBEngine:')
+          (item: unknown) => !isKbengineGeneratedEntry(item)
         );
 
         const finalConfig = {
@@ -867,7 +896,8 @@ export class DebugConfigManager {
             baseapp: {
               telnetHost: '127.0.0.1',
               telnetPort: 40000,
-              telnetPassword: 'pwd123456',
+              // KR-AUD-41:示例不带默认密码——telnetPassword 留给用户自填
+              // (扩展/文档均不再内置 pwd123456)
               telnetDefaultLayer: 'python',
               telnetEnableCommands: [
                 '# 先连接源码默认 telnet 端口，再根据项目实际环境输入开启 Python 调试的命令',
@@ -881,14 +911,12 @@ export class DebugConfigManager {
             cellapp: {
               telnetHost: '127.0.0.1',
               telnetPort: 50000,
-              telnetPassword: 'pwd123456',
               telnetDefaultLayer: 'python',
               telnetEnableCommands: []
             },
             loginapp: {
               telnetHost: '127.0.0.1',
               telnetPort: 31000,
-              telnetPassword: 'pwd123456',
               telnetDefaultLayer: 'python',
               telnetEnableCommands: []
             }
@@ -926,15 +954,22 @@ export class DebugConfigManager {
     const telnetLines = (config.telnetEnableCommands || []).filter(Boolean);
     /* istanbul ignore stop */
     const telnetCommand = `telnet ${config.telnetHost || '127.0.0.1'} ${config.telnetPort || 0}`;
+    // KR-AUD-41:密码无默认回落——缺失/显式空值显式警告 + 简报如实报未配置,
+    // 不再编造 pwd123456;配置了的用户密码语义不变,仍如实展示
+    if (!config.telnetPassword) {
+      void vscode.window.showWarningMessage(
+        `KBEngine ${componentName} 未配置 telnet 密码:请在 .kbengine/debug.json 的 ${componentName} 下填写 telnetPassword(扩展不带默认密码)`
+      );
+    }
     const telnetMeta = [
-      // 以下两处 `||` 右臂不可达(批68 定性):config 出自 getComponentConfig,
-      // 其 telnetPassword/telnetDefaultLayer 已做同款归一化
-      // (`userConfig?.x || 'pwd123456'/'python'`),产出恒为非空字符串 ⇒
-      // 此处的左操作数恒真,兜底右臂无触发路径。语句与两分支条目随区间
-      // 移出分母(TESTING.md 分母口径据实登记);真臂行为由既有
-      // startDebugging 简报断言锁定。
+      config.telnetPassword
+        ? `password: ${config.telnetPassword}`
+        : 'password: 未配置（在 .kbengine/debug.json 填 telnetPassword）',
+      // 不可达(批68 定性):config 出自 getComponentConfig,其
+      // telnetDefaultLayer 已做同款归一化(`userConfig?.x || 'python'`),
+      // 产出恒为非空字符串 ⇒ 兜底右臂无触发路径,随行移出分母(TESTING.md
+      // 分母口径据实登记);真臂行为由既有 startDebugging 简报断言锁定。
       /* istanbul ignore start */
-      `password: ${config.telnetPassword || 'pwd123456'}`,
       `default layer: ${config.telnetDefaultLayer || 'python'}`
       /* istanbul ignore stop */
     ];

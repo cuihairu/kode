@@ -115,6 +115,20 @@ export class WorkspaceIndex implements EventCallIndex {
     for (const document of vscode.workspace.textDocuments) {
       if (document.isDirty) this.noteSaved(document);
     }
+    // KR-AUD-27: watcher must precede discovery so changes during the initial
+    // scan bump revisions and are indexed instead of being lost forever.
+    const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
+    watcher.onDidCreate(uri => { void this.indexFile(uri); });
+    watcher.onDidChange(uri => {
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+      void this.indexFile(uri);
+    });
+    watcher.onDidDelete(uri => {
+      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
+      this.cache.delete(uri.fsPath);
+    });
+    this.watchers.push(watcher);
+
     const initialRevisions = new Map(this.revisions);
     const files = await findFilesAcrossRoots(this.pyGlob, PY_SCAN_EXCLUDE);
     if (this.disposed) return;
@@ -128,14 +142,6 @@ export class WorkspaceIndex implements EventCallIndex {
     };
     await Promise.all(Array.from({ length: Math.min(INITIAL_SCAN_CONCURRENCY, files.length) }, scanWorker));
     if (this.disposed) return;
-    const watcher = vscode.workspace.createFileSystemWatcher(this.pyGlob);
-    watcher.onDidCreate(uri => { void this.indexFile(uri); });
-    watcher.onDidChange(uri => { void this.indexFile(uri); });
-    watcher.onDidDelete(uri => {
-      this.revisions.set(uri.fsPath, (this.revisions.get(uri.fsPath) ?? 0) + 1);
-      this.cache.delete(uri.fsPath);
-    });
-    this.watchers.push(watcher);
     // IDE-AUD-035(R2-F11):事件初扫支持外部根,但 watcher 只挂 workspace 字符串
     // glob——外部 assetsRoot 增删改不触发维护。外部根改挂 RelativePattern 整组
     // (切根可重建),与实体面 refreshExternalRootWatchers 同口径。

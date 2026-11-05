@@ -333,3 +333,25 @@ describe('startup failure and orchestration gaps', () => {
     expect(channels.some(channel => channel.name.includes('Machine'))).toBe(true);
   });
 });
+
+describe('dispose idempotency (UI-7)', () => {
+  it('double dispose runs cleanup once (disposed guard)', async () => {
+    // extension.ts 曾连调 serverManager.dispose() 两次(:5521-5522):无守卫时
+    // processManager.dispose/事件总线等清理逻辑跑两遍。守卫后第二次调用须短路。
+    const manager = makeManager();
+    let processDisposes = 0;
+    const processManager = manager.processManager as unknown as {
+      dispose: () => Promise<void>;
+    };
+    const originalDispose = processManager.dispose.bind(manager.processManager);
+    processManager.dispose = async () => {
+      processDisposes += 1;
+      await originalDispose();
+    };
+
+    await manager.dispose();
+    await manager.dispose();
+
+    expect(processDisposes).toBe(1);
+  });
+});

@@ -1441,8 +1441,14 @@
         },
         "kbengine.python.venvDirectories": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": [".venv", "venv", ".kbenv"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".venv",
+            "venv",
+            ".kbenv"
+          ],
           "description": "虚拟环境目录名清单（单段目录名，不含路径分隔符）：快速执行动作启用 venv 且未写 venv.path 时，按此清单在动作目录与配置根逐名探测（动作目录优先）。默认 ['.venv','venv','.kbenv']；非数组或全无效回落默认"
         },
         "kbengine.python.extraPathsSync": {
@@ -1467,7 +1473,10 @@
         },
         "kbengine.infer.sourceWrite": {
           "type": "string",
-          "enum": ["managed", "user"],
+          "enum": [
+            "managed",
+            "user"
+          ],
           "default": "managed",
           "description": "写权限闸 scope：managed=仅 .kbengine/** 可写（默认）；user=另允许写用户 scripts/**（须用户显式开启；scope 外写一律拒绝不静默）"
         },
@@ -1602,7 +1611,10 @@
         },
         "kbengine.entity.methodStubBody": {
           "type": "string",
-          "enum": ["pass", "raise"],
+          "enum": [
+            "pass",
+            "raise"
+          ],
           "default": "pass",
           "description": "C-19 一键生成实现骨架的体：pass（空体，default）或 raise（raise NotImplementedError）。形参自 .def <Arg> 类型映射（内建注解 int/float/str/bool/bytes，其余裸参数名）"
         },
@@ -1676,7 +1688,7 @@
   "bugs": {
     "url": "https://github.com/cuihairu/kode/issues"
   },
-  "homepage": "https://github.com/cuihairu/kode#readme",
+  "homepage": "https://cuihairu.github.io/kode/",
   "scripts": {
     "vscode:prepublish": "pnpm run compile && pnpm run bundle",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
@@ -1702,25 +1714,25 @@
   },
   "devDependencies": {
     "@mermaid-js/tiny": "^12.2.0",
-    "@shikijs/langs": "^4.5.0",
-    "@types/mocha": "^8.2.2",
-    "@types/node": "~20.19.37",
+    "@shikijs/langs": "^4.6.0",
+    "@types/mocha": "^8.2.3",
+    "@types/node": "~20.19.43",
     "@types/vscode": "1.82.0",
-    "@typescript-eslint/eslint-plugin": "^8.58.0",
-    "@typescript-eslint/parser": "^8.58.0",
-    "@vitest/coverage-v8": "^5.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.72.1",
+    "@typescript-eslint/parser": "^8.72.1",
+    "@vitest/coverage-v8": "^5.1.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "3.9.1",
     "esbuild": "^0.28.2",
     "eslint": "^8.57.1",
     "glob": "^10.5.0",
     "mermaid": "^12.2.0",
-    "mocha": "^11.7.5",
+    "mocha": "^11.8.0",
     "mysql2": "^3.24.6",
-    "typescript": "^4.2.5",
+    "typescript": "^4.9.5",
     "vitepress": "2.0.0-alpha.17",
     "vitepress-plugin-mermaid": "^2.0.17",
-    "vitest": "^5.0.1",
+    "vitest": "^5.1.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   },

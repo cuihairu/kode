@@ -292,6 +292,7 @@ function ensureTrailingSeparator(value: string): string {
  */
 export class KBEngineServerManager {
   private runningServers: Map<string, RunningServer> = new Map();
+  private disposed = false;
   readonly logHub: LogHub;
   readonly processManager: ProcessManager;
   private readonly logSubscriptions: Array<() => void> = [];
@@ -998,9 +999,14 @@ export class KBEngineServerManager {
   }
 
   /**
-   * 清理资源
+   * 清理资源(幂等:UI-7——extension.ts 曾连调两次,守卫后二次调用短路,
+   * 不再重复释放 processManager/事件总线)
    */
   async dispose(): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
     await this.processManager.dispose();
     this.logSubscriptions.forEach(dispose => dispose());
     this.outputChannels.forEach(channel => channel.dispose());
