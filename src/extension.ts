@@ -293,6 +293,7 @@ import {
   setPythonDataDictIndexEnabled,
   setHoverInFlightGateForTests,
   setDefinitionInFlightGateForTests,
+  setDefinitionDispatchGateForTests,
   validateDocument,
   validateEntitiesXmlDocument
 } from './languageProviders';
@@ -448,7 +449,7 @@ import {
 } from './profileDatabaseConnection';
 import { detectDualActivation, formatDualActivationWarning } from './dualActivationConflict';
 import { readBuildCommit } from './buildCommit';
-import { setFileReadVerbose } from './fileReadMetrics';
+import { getFileReadTotals, setFileReadVerbose } from './fileReadMetrics';
 import { setCpuProfileDirectory, startCpuProfile, stopCpuProfile } from './cpuProfileCapture';
 import {
   getEventLoopDelayReport,
@@ -5930,6 +5931,89 @@ export function activate(context: vscode.ExtensionContext) {
         location: definition
           ? (Array.isArray(definition) ? definition[0] : definition)?.uri?.toString() ?? null
           : null
+      };
+    },
+    // IDE-AUD-016(F14/IDE-REV-033 深审):定义依赖链派发后取消探针——与
+    // probeDefinitionGatedCancel(入口闸,证明「进 provider 后取消零工作」)
+    // 互补:本闸在层1 entity-def 方法探针返回后(真实 def 依赖链已派发:定向
+    // glob/解析/索引解析已执行并返回),取消落在此窗口=「真实工作已启动后的
+    // 中止」。请求归属 IO 以请求窗前后读盘快照差记录(readsBefore/readsAtCancel),
+    // 本请求为窗内唯一在途请求(调用方先排干后台)。gateReached=false 即请求在
+    // 方法探针前已收口(夹具/层序不符),如实上报供断言失败说明。
+    probeDefinitionDispatchCancel: async (target: { file: string; line: number; character: number }) => {
+      let markEntered!: () => void;
+      let releaseGate!: () => void;
+      const enteredSignal = new Promise<void>(resolve => { markEntered = resolve; });
+      const release = new Promise<void>(resolve => { releaseGate = resolve; });
+      setDefinitionDispatchGateForTests(() => {
+        markEntered();
+        return release.then(() => { setDefinitionDispatchGateForTests(null); });
+      });
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(target.file));
+      const canceller = new vscode.CancellationTokenSource();
+      const readsBefore = getFileReadTotals();
+      const startedAt = Date.now();
+      let gateEnteredAtMs = -1;
+      const definitionPromise = pythonDefinitionImpl.provideDefinition(
+        document,
+        new vscode.Position(target.line, target.character),
+        canceller.token
+      );
+      let definitionSettled = false;
+      void Promise.resolve(definitionPromise).then(() => { definitionSettled = true; }, () => { definitionSettled = true; });
+      // 门达探测:请求跑到方法探针后即达;30s 未达说明在方法探针前已收口
+      let gateTimer: NodeJS.Timeout | undefined;
+      const gateTimeout = new Promise<boolean>(resolve => { gateTimer = setTimeout(() => resolve(false), 30_000); });
+      const gateReached = await Promise.race([enteredSignal.then(() => true), gateTimeout]);
+      if (gateTimer !== undefined) { clearTimeout(gateTimer); }
+      if (gateReached) {
+        gateEnteredAtMs = Date.now() - startedAt;
+        // 真实链已派发:此刻快照即本请求已派发的 IO 归属(窗内唯一在途请求)
+        const readsAtCancel = getFileReadTotals();
+        // 确定性在途斩:此刻请求在途(已派发真实链、未完成)
+        canceller.cancel();
+        const cancelledAtMs = Date.now() - startedAt;
+        // 斩后立即定格:「完成前」证明(放行后落定属正常收口)
+        const settledBeforeCancel = definitionSettled;
+        releaseGate();
+        const definition = await Promise.resolve(definitionPromise);
+        const elapsedMs = Date.now() - startedAt;
+        const readsAfter = getFileReadTotals();
+        canceller.dispose();
+        return {
+          gateReached,
+          gateEnteredAtMs,
+          cancelledAtMs,
+          settledBeforeCancel,
+          elapsedMs,
+          cancelled: true,
+          returnedDefinition: definition !== null && definition !== undefined,
+          location: definition
+            ? (Array.isArray(definition) ? definition[0] : definition)?.uri?.toString() ?? null
+            : null,
+          readsBefore: readsBefore.reads,
+          readsAtCancel: readsAtCancel.reads,
+          readsAfter: readsAfter.reads
+        };
+      }
+      // 门未达:释放闸(清安装)并如实上报,由测试断言说明夹具/层序不符
+      releaseGate();
+      const definition = await Promise.resolve(definitionPromise);
+      canceller.dispose();
+      return {
+        gateReached: false,
+        gateEnteredAtMs: -1,
+        cancelledAtMs: -1,
+        settledBeforeCancel: definitionSettled,
+        elapsedMs: Date.now() - startedAt,
+        cancelled: false,
+        returnedDefinition: definition !== null && definition !== undefined,
+        location: definition
+          ? (Array.isArray(definition) ? definition[0] : definition)?.uri?.toString() ?? null
+          : null,
+        readsBefore: readsBefore.reads,
+        readsAtCancel: readsBefore.reads,
+        readsAfter: getFileReadTotals().reads
       };
     },
     // IDE-REV-032:确定性在途取消探针——门住 provider「已过入口守卫、未出结果」

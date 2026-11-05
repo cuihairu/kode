@@ -1,0 +1,12 @@
+aud016.gate.gateReached=true
+aud016.gate.gateEnteredAtMs=5
+aud016.gate.cancelledAtMs=5
+aud016.gate.settledBeforeCancel=false
+aud016.gate.elapsedMs=5
+aud016.gate.returnedDefinition=false
+aud016.reads.requestWindow=1
+aud016.reads.postCancelWindow=0
+aud016.pending.requestSide={"diagnosticsQueued":0,"diagnosticsInFlight":0,"annotationUpdates":0,"schemaColdBuilds":0}
+aud016.shared.parseCountBefore=3080
+aud016.shared.parseCountAfter=3081
+aud016.shared.convergeMs=500

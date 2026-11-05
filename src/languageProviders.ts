@@ -4601,6 +4601,19 @@ export function setDefinitionInFlightGateForTests(gate: (() => Promise<void>) | 
   definitionInFlightGateForTests = gate;
 }
 
+/** IDE-AUD-016(F14/IDE-REV-033 深审):测试面派发后闸——层1 entity-def 方法
+ * 探针 `await probe.run()` 返回后、取消复查前的确定性窗口。此刻真实 def 依赖
+ * 链已派发(定向 glob/解析/索引解析在探针内执行并返回),门住=「真实工作已
+ * 启动」的在途证明面;放行后由既有取消复查收口(取消即不再进后续层/晚到
+ * 结果)。与入口闸(definitionInFlightGateForTests)互补:入口闸证明「进
+ * provider 后取消零工作」,本闸证明「真实链已派发后取消,链在下一观测点停」。
+ * 生产恒 null,零行为差异。 */
+let definitionDispatchGateForTests: (() => Promise<void>) | null = null;
+
+export function setDefinitionDispatchGateForTests(gate: (() => Promise<void>) | null): void {
+  definitionDispatchGateForTests = gate;
+}
+
 export class PythonDefinitionProvider implements vscode.DefinitionProvider {
   constructor(
     private entityMappingManager: EntityMappingManager,
@@ -5221,6 +5234,11 @@ export class PythonDefinitionProvider implements vscode.DefinitionProvider {
         } catch (error) {
           defParts.push(`method ${probe.via} error=${layerErrorMessage(error)}`);
           continue;
+        }
+        if (definitionDispatchGateForTests) {
+          // IDE-AUD-016:真实 def 依赖链已派发(探针 await 返回)后门住,放行由
+          // 下方既有取消复查收口——取消落在此窗口=「真实工作已启动后的中止」
+          await definitionDispatchGateForTests();
         }
         if (token?.isCancellationRequested) { return cancelledDefinitionResult(); }
         if (hit) {

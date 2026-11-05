@@ -56,6 +56,23 @@ interface KodeProbeApi {
     returnedDefinition: boolean;
     location: string | null;
   }>;
+  probeDefinitionDispatchCancel(target: {
+    file: string;
+    line: number;
+    character: number;
+  }): Promise<{
+    gateReached: boolean;
+    gateEnteredAtMs: number;
+    cancelledAtMs: number;
+    settledBeforeCancel: boolean;
+    elapsedMs: number;
+    cancelled: boolean;
+    returnedDefinition: boolean;
+    location: string | null;
+    readsBefore: number;
+    readsAtCancel: number;
+    readsAfter: number;
+  }>;
   pendingWork(): Record<string, number>;
 }
 
@@ -331,6 +348,131 @@ describe('IDE-ACC-007:hover/导航取消后的收敛(真实编辑器)', () => {
     fs.writeFileSync(OUT_FILE_REV33, evidence.join('\n') + '\n', 'utf8');
     console.log('[rev033] evidence:\n' + evidence.join('\n'));
     assert.ok(newReads <= 50, `在途取消落潮窗新增读盘 ${newReads} 次超界`);
+  });
+
+  // IDE-AUD-016(F14/IDE-REV-033 深审):真实 definition 依赖链已派发后取消——
+  // 门在层1 entity-def 方法探针返回后(真实链已派发),与 REV-033 入口闸互补:
+  // 入口闸证明「进 provider 后取消零工作」,本闸证明「真实链已派发后取消,
+  // 链在下一观测点停」。冷实体夹具(激活后新建 ColdProbeAvatar.def/.py,
+  // watcher 只进 pythonClassIndex 不进 entity 索引,首扫清单也没有它)保证
+  // 方法探针的定向解析走冷路径,真实读盘可归属本请求。验收四面:①门已达+
+  // 请求窗内 IO>0(真实链已派发,IO 按请求归属记录);②取消落在在途窗口内且
+  // 无晚到结果(settledBeforeCancel=false 定格);③取消后请求侧停止读盘+
+  // 残留量规归零(独占任务停);④共享扫描不被误停(取消后 document-parse 前进)。
+  it('依赖链派发后取消(IDE-AUD-016):冷实体真实 IO 已派发,取消即停,共享扫描继续', async function () {
+    this.timeout(180_000);
+    const OUT_FILE_AUD16 = process.env.KODE_AUD016_OUT
+      ?? path.resolve(__dirname, '../../../../docs/perf/2026-11-05-aud016-def-dispatch-cancel-run.txt');
+
+    // 排干后台(首扫/上一定时任务),窗内只剩本请求的 IO 可归属
+    for (let i = 0; i < 60; i++) {
+      const pending = probe.pendingWork();
+      const busy = [
+        pending.diagnosticsQueued ?? 0,
+        pending.diagnosticsInFlight ?? 0,
+        pending.annotationUpdates ?? 0,
+        pending.schemaColdBuilds ?? 0,
+        pending.indexTasksQueued ?? 0
+      ].some(count => count > 0);
+      if (!busy) break;
+      await sleep(500);
+    }
+    await sleep(1000);
+
+    // 冷实体夹具:激活后新建(watcher 只通知 pythonClassIndex,entity 索引不预热;
+    // 首扫清单里也没有它)→ 方法探针的定向解析必然走冷路径,真实读盘可归属本请求
+    const coldDefPath = path.join(WORKSPACE!, 'scripts/entity_defs/ColdProbeAvatar.def');
+    const coldPyPath = path.join(WORKSPACE!, 'scripts/cell/ColdProbeAvatar.py');
+    fs.writeFileSync(coldDefPath, fs.readFileSync(path.join(WORKSPACE!, DEF_REL), 'utf8'), 'utf8');
+    fs.writeFileSync(coldPyPath, [
+      'class ColdProbeAvatar(object):',
+      '    def reqAttack(self, targetID):',
+      '        return targetID',
+      ''
+    ].join('\n'), 'utf8');
+    // 等 watcher 对新文件的 pythonClassIndex 解析收敛,再取窗基线
+    for (let i = 0; i < 40; i++) {
+      const pending = probe.pendingWork();
+      const busy = [
+        pending.diagnosticsQueued ?? 0,
+        pending.diagnosticsInFlight ?? 0,
+        pending.annotationUpdates ?? 0,
+        pending.schemaColdBuilds ?? 0
+      ].some(count => count > 0);
+      if (!busy) break;
+      await sleep(500);
+    }
+    await sleep(1000);
+    // 定位置解析可见性:findFiles 能 glob 到冷 def(否则探针定向解析会 miss)
+    const found = await vscode.workspace.findFiles('**/ColdProbeAvatar.def');
+    assert.ok(found.length >= 1, `冷 def 未被 findFiles 可见: ${coldDefPath}`);
+
+    const pySource = fs.readFileSync(coldPyPath, 'utf8').split(/\r?\n/);
+    const line = pySource.findIndex(text => text.includes('def reqAttack'));
+    assert.ok(line >= 0, '冷实体夹具缺 def reqAttack');
+    const character = pySource[line].indexOf('reqAttack') + Math.floor('reqAttack'.length / 2);
+    const result = await probe.probeDefinitionDispatchCancel({ file: coldPyPath, line, character });
+
+    // ①门已达 + 请求窗内真实 IO>0(真实 def 依赖链已派发,IO 按请求归属记录)
+    assert.ok(result.gateReached, '请求未到达派发后闸:方法探针未派发(夹具/层序不符)');
+    assert.ok(
+      result.readsAtCancel - result.readsBefore > 0,
+      `请求窗内零读盘:真实 def 依赖链未派发(before=${result.readsBefore} atCancel=${result.readsAtCancel})`
+    );
+    // ②取消落在在途窗口内(真实链已派发、未完成),无晚到结果发布
+    assert.strictEqual(result.settledBeforeCancel, false, '取消时请求已完成:在途窗口证明失守');
+    assert.strictEqual(result.cancelled, true, '派发后取消必须报 cancelled');
+    assert.ok(!result.returnedDefinition, `已取消跳转不得回落点: ${result.location}`);
+    assert.ok(result.elapsedMs < 5000, `取消跳转必须有界返回: ${result.elapsedMs}ms`);
+
+    // ③取消后落潮窗:请求侧独占任务停止读盘
+    const readsAtCancel = getFileReadTotals();
+    await sleep(2000);
+    const newReads = getFileReadTotals().reads - readsAtCancel.reads;
+    const pending = probe.pendingWork();
+    const requestSide = {
+      diagnosticsQueued: pending.diagnosticsQueued ?? 0,
+      diagnosticsInFlight: pending.diagnosticsInFlight ?? 0,
+      annotationUpdates: pending.annotationUpdates ?? 0,
+      schemaColdBuilds: pending.schemaColdBuilds ?? 0
+    };
+    for (const [gauge, value] of Object.entries(requestSide)) {
+      assert.strictEqual(value, 0, `派发后取消落潮后请求侧量规 ${gauge} 未归零: ${value}`);
+    }
+
+    // ④共享任务不被误停:取消后现场改一笔被跟踪文件,document-parse 前进
+    const parseCountBefore = getOperationSummary('document-parse')?.count ?? 0;
+    fs.appendFileSync(path.join(WORKSPACE!, TOUCH_REL), '\n# aud016 touch: shared scan alive\n', 'utf8');
+    let parseCountAfter = parseCountBefore;
+    let waitedMs = 0;
+    while (parseCountAfter <= parseCountBefore && waitedMs < 15_000) {
+      await sleep(500);
+      waitedMs += 500;
+      parseCountAfter = getOperationSummary('document-parse')?.count ?? 0;
+    }
+    assert.ok(
+      parseCountAfter > parseCountBefore,
+      `派发后取消后共享扫描未处理文件变更(document-parse ${parseCountBefore}→${parseCountAfter})`
+    );
+
+    const evidence = [
+      `aud016.gate.gateReached=${result.gateReached}`,
+      `aud016.gate.gateEnteredAtMs=${result.gateEnteredAtMs}`,
+      `aud016.gate.cancelledAtMs=${result.cancelledAtMs}`,
+      `aud016.gate.settledBeforeCancel=${result.settledBeforeCancel}`,
+      `aud016.gate.elapsedMs=${result.elapsedMs}`,
+      `aud016.gate.returnedDefinition=${result.returnedDefinition}`,
+      `aud016.reads.requestWindow=${result.readsAtCancel - result.readsBefore}`,
+      `aud016.reads.postCancelWindow=${newReads}`,
+      `aud016.pending.requestSide=${JSON.stringify(requestSide)}`,
+      `aud016.shared.parseCountBefore=${parseCountBefore}`,
+      `aud016.shared.parseCountAfter=${parseCountAfter}`,
+      `aud016.shared.convergeMs=${waitedMs}`
+    ];
+    fs.mkdirSync(path.dirname(OUT_FILE_AUD16), { recursive: true });
+    fs.writeFileSync(OUT_FILE_AUD16, evidence.join('\n') + '\n', 'utf8');
+    console.log('[aud016] evidence:\n' + evidence.join('\n'));
+    assert.ok(newReads <= 50, `派发后取消落潮窗新增读盘 ${newReads} 次超界`);
   });
 
 });
