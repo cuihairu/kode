@@ -27,6 +27,9 @@ async function main(): Promise<void> {
   const attributionMode = process.argv.includes('--attribution');
   const longSessionMode = process.argv.includes('--longsession');
   const finalMarksMode = process.argv.includes('--final');
+  // IDE-GIT-012 历史宿主影响验收:与 --final 共用 field 装配(demo 资产+5000 外部根),
+  // 另把工作区根建成 git 仓库+大历史(history_probe.py),suite 过滤切 history。
+  const historyMode = process.argv.includes('--history');
   const delFileMode = process.argv.includes('--delfile');
   const renameMode = process.argv.includes('--rename');
   const dirtyMode = process.argv.includes('--dirty');
@@ -117,7 +120,7 @@ async function main(): Promise<void> {
     process.env.KODE_VSIX_WORKSPACE = workspacePath;
     process.env.KODE_VSIX_EXT_DIR = devPath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode) {
+  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode || historyMode) {
     // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
     // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
@@ -263,11 +266,42 @@ async function main(): Promise<void> {
       ? 'final'
       : attributionMode
         ? 'attribution'
-        : longSessionMode ? 'longsession' : 'field';
+        : longSessionMode
+          ? 'longsession'
+          : historyMode ? 'history' : 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
     process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
       ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-10-27-field-baseline-run.txt');
+    process.env.KODE_HISTORY_OUT = process.env.KODE_HISTORY_OUT
+      ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-11-05-history-host-impact-run.txt');
+    if (historyMode) {
+      // IDE-GIT-012:把工作区根建成 git 仓库 + 大历史(history_probe.py)。
+      // 每提交追加一段,使 `git log -L` 走全部提交→查询在途窗口(大历史)。
+      const git = (args: string[]): void => {
+        execFileSync('git', args, { cwd: workspacePath, stdio: 'pipe' });
+      };
+      git(['init', '-q']);
+      git(['config', 'user.email', 't@example.com']);
+      git(['config', 'user.name', 'T']);
+      git(['add', '-A']);
+      git(['commit', '-q', '-m', 'init']);
+      const probePath = path.join(workspacePath, 'scripts', 'common', 'training', 'history_probe.py');
+      fs.mkdirSync(path.dirname(probePath), { recursive: true });
+      fs.writeFileSync(probePath, [
+        '# IDE-GIT-012 large-history probe: one appended method per commit so',
+        '# `git log -L` walks every commit (in-flight query window).',
+        'class HistoryProbe:'
+      ].join('\n'));
+      git(['add', '-A']);
+      git(['commit', '-q', '-m', 'probe-base']);
+      const commits = Number(process.env.KODE_HISTORY_COMMITS ?? '300');
+      for (let i = 1; i <= commits; i += 1) {
+        fs.appendFileSync(probePath, `\n    def m${i}(self):\n        return ${i}\n`);
+        git(['add', '-A']);
+        git(['commit', '-q', '-m', `c${i}`]);
+      }
+    }
     // 禁用对照=VS Code 裸面:开发扩展经 extensionDevelopmentPath 强制加载且激活由
     // workspaceContains/onLanguage 自动触发,--disable-extension 对开发扩展无效,
     // 故禁用模式把 extensionDevelopmentPath 指向空目录——扩展完全不加载,suite 仍经

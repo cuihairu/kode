@@ -35,7 +35,9 @@ export function run(): Promise<void> {
               ? file === 'stormRecovery.test.js'
           : suite === 'vsix'
             ? file === 'vsixSmoke.test.js'
-            : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
+            : suite === 'history'
+              ? file === 'gitHistoryHostImpact.test.js'
+              : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }

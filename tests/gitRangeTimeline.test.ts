@@ -178,6 +178,23 @@ describe('IDE-GIT-009 流程(依赖注入)', () => {
     expect(r.kind).toBe('git-error');
   });
 
+  it('有界执行超时 → git-error 且不伪完整时间线(无 entries/无 boundary)', async () => {
+    // IDE-GIT-012 诚实截断:查询级 timeout 由有界执行器终止,解析只在 ok 进行,
+    // 绝不从截断流伪造 boundary/条目——结果须保留 outcome.kind 且无时间线产物。
+    const { deps } = makeDeps((args) => {
+      if (args[0] === 'ls-files') return ok('a.py\n');
+      if (args[0] === 'log') return { kind: 'timeout', timeoutMs: 10000 } as GitRunOutcome;
+      throw new Error(`unexpected: ${args.join(' ')}`);
+    });
+    const r = await queryRangeTimeline('/repo/a.py', '/repo', { startLine: 1, endLine: 300 }, deps);
+    expect(r.kind).toBe('git-error');
+    if (r.kind === 'git-error') {
+      expect(r.outcome.kind).toBe('timeout');
+      expect(r.outcome).not.toHaveProperty('entries');
+      expect(r.outcome).not.toHaveProperty('boundary');
+    }
+  });
+
   it('无提交仓库:unknown revision → rev-parse 探测 → no-commits', async () => {
     const { deps, runGit } = makeDeps((args) => {
       if (args[0] === 'ls-files') return ok('a.py\n');

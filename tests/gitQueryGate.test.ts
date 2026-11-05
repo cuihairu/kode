@@ -360,3 +360,47 @@ describe('默认限制与单例', () => {
     expect(l.maxCacheBytes).toBeGreaterThan(0);
   });
 });
+
+describe('宿主影响测量探针(IDE-GIT-012)', () => {
+  it('空闲(未查询)零 Git 调用/零任务/零缓存', () => {
+    const { spawn, calls } = makeSpawn();
+    const gate = new GitQueryGate(undefined, { spawn });
+    expect(gate.spawnCount()).toBe(0);
+    expect(gate.runningCount()).toBe(0);
+    expect(gate.queuedCount()).toBe(0);
+    expect(gate.cacheCount()).toBe(0);
+    expect(gate.cacheBytes()).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('查询启动记 1 次 spawn;成功入缓存(条目+字节);缓存命中不再 spawn', async () => {
+    const { spawn, calls } = makeSpawn();
+    const gate = new GitQueryGate(undefined, { spawn });
+    const p = gate.run(['log', '--', 'a.py'], runOpts());
+    expect(gate.spawnCount()).toBe(1);
+    expect(gate.runningCount()).toBe(1);
+    calls[0].resolve(ok('hello'));
+    await p;
+    expect(gate.runningCount()).toBe(0);
+    expect(gate.cacheCount()).toBe(1);
+    expect(gate.cacheBytes()).toBe(5);
+
+    // 缓存命中:不启动新子进程,spawn 计数不增。
+    const again = await gate.run(['log', '--', 'a.py'], runOpts());
+    expect(again).toEqual(ok('hello'));
+    expect(gate.spawnCount()).toBe(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('取消/失败结果不入缓存,spawn 已计但缓存空', async () => {
+    const { spawn, calls } = makeSpawn();
+    const gate = new GitQueryGate(undefined, { spawn });
+    const p = gate.run(['log', '-L', '1,5:a.py', '--', 'a.py'], runOpts());
+    calls[0].resolve({ kind: 'timeout', timeoutMs: 1000 });
+    const r = await p;
+    expect(r.kind).toBe('timeout');
+    expect(gate.spawnCount()).toBe(1);
+    expect(gate.cacheCount()).toBe(0);
+    expect(gate.cacheBytes()).toBe(0);
+  });
+});

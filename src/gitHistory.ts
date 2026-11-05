@@ -8,8 +8,10 @@
  * 或历史任务。本模块只承载开关读取与命令门,不接任何 Git 子进程。
  */
 
-/** 历史功能开关设置键。 */
+/** 历史功能开关设置键(完整,含 kbengine. 前缀;onDidChangeConfiguration.affectsConfiguration 用)。 */
 export const GIT_HISTORY_ENABLED_SETTING = 'kbengine.gitHistory.enabled';
+/** 设置键(getConfiguration('kbengine') 段内相对键,不带 kbengine. 前缀;读取用)。 */
+export const GIT_HISTORY_ENABLED_KEY = 'gitHistory.enabled';
 
 /** 历史视图/命令可见性上下文键(经 vscode setContext 驱动 `when` 子句)。 */
 export const GIT_HISTORY_CONTEXT_KEY = 'kode.gitHistoryEnabled';
@@ -25,9 +27,11 @@ export interface GitHistoryConfigReader {
   get<T>(key: string, defaultValue: T): T;
 }
 
-/** 读开关:缺省(未配置)→true(默认开启);显式 true/false 照读。 */
+/** 读开关:缺省(未配置)→true(默认开启);显式 true/false 照读。
+ * 读取用段内相对键(装配层传 getConfiguration('kbengine') 的段作用域读取器,
+ * 与 engineVersion/managedDir 同口径);完整键只用于 affectsConfiguration 判定。 */
 export function readGitHistoryEnabled(reader: GitHistoryConfigReader): boolean {
-  return reader.get<boolean>(GIT_HISTORY_ENABLED_SETTING, true) === true;
+  return reader.get<boolean>(GIT_HISTORY_ENABLED_KEY, true) === true;
 }
 
 /**

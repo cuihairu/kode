@@ -145,7 +145,8 @@ export class GitQueryGate {
   private readonly queue: QueuedRequest[] = [];
   private readonly pending = new Map<string, { promise: Promise<GitRunOutcome>; cancel: () => void }>();
   private readonly cache = new Map<string, { outcome: GitRunOutcome; bytes: number }>();
-  private cacheBytes = 0;
+  private cachedBytes = 0;
+  private spawns = 0;
   private disposed = false;
 
   constructor(limits?: Partial<GitQueryGateLimits>, deps?: Partial<GitQueryGateDeps>) {
@@ -166,6 +167,16 @@ export class GitQueryGate {
   /** 缓存条目数(测试探针)。 */
   cacheCount(): number {
     return this.cache.size;
+  }
+
+  /** 缓存字节数(测试探针,IDE-GIT-012 宿主影响验收口径)。 */
+  cacheBytes(): number {
+    return this.cachedBytes;
+  }
+
+  /** 累计启动的 Git 子进程数(测试探针,IDE-GIT-012 记录 Git 调用数)。 */
+  spawnCount(): number {
+    return this.spawns;
   }
 
   /**
@@ -238,14 +249,14 @@ export class GitQueryGate {
     const hit = this.cache.get(identity);
     if (hit) {
       this.cache.delete(identity);
-      this.cacheBytes -= hit.bytes;
+      this.cachedBytes -= hit.bytes;
     }
   }
 
   /** 清空缓存(条目数/字节归零)。 */
   clearCache(): void {
     this.cache.clear();
-    this.cacheBytes = 0;
+    this.cachedBytes = 0;
   }
 
   /**
@@ -291,6 +302,7 @@ export class GitQueryGate {
 
   private start(request: QueuedRequest): void {
     this.running += 1;
+    this.spawns += 1;
     if (request.cost === 'range') this.rangeRunning += 1;
     void this.deps
       .spawn(request.args, request.options)
@@ -328,18 +340,18 @@ export class GitQueryGate {
     if (outcome.kind !== 'ok') return;
     const bytes = outcome.stdout.length + outcome.stderr.length;
     const existing = this.cache.get(identity);
-    if (existing) this.cacheBytes -= existing.bytes;
+    if (existing) this.cachedBytes -= existing.bytes;
     this.cache.set(identity, { outcome, bytes });
-    this.cacheBytes += bytes;
+    this.cachedBytes += bytes;
     // LRU:超条目数或超字节时逐最旧(按插入序近似 LRU)淘汰。
-    while (this.cache.size > this.limits.maxCacheEntries || this.cacheBytes > this.limits.maxCacheBytes) {
+    while (this.cache.size > this.limits.maxCacheEntries || this.cachedBytes > this.limits.maxCacheBytes) {
       const oldest = this.cache.keys().next();
       if (oldest.done) break;
       const key = oldest.value;
       const evicted = this.cache.get(key);
       if (!evicted) break;
       this.cache.delete(key);
-      this.cacheBytes -= evicted.bytes;
+      this.cachedBytes -= evicted.bytes;
     }
   }
 }
