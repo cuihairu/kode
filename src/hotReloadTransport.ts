@@ -40,9 +40,23 @@ export interface ReloadTarget {
  */
 export type ReloadReceipt =
   | { status: 'sent'; file?: string; detail: string }
-  | { status: 'accepted'; file: string; digest?: string; note?: string }
-  | { status: 'applied'; file: string; digest?: string; revision?: number }
-  | { status: 'failed'; file?: string; reason: string };
+  | {
+      status: 'accepted';
+      file: string;
+      digest?: string;
+      note?: string;
+      /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
+      targetId?: string;
+    }
+  | {
+      status: 'applied';
+      file: string;
+      digest?: string;
+      revision?: number;
+      /** F4:回执显式 targetId(与预期目标不一致的回执在解析层被拒绝) */
+      targetId?: string;
+    }
+  | { status: 'failed'; file?: string; reason: string; targetId?: string };
 
 export interface ReloadSendSummary {
   readonly kind: ReloadTransportKind;
@@ -68,6 +82,8 @@ export interface ReloadTransport {
 /** ${files} 文件列表占位(JSON 数组)与 ${fileList}(逗号分隔) */
 export const RELOAD_FILES_PLACEHOLDER = '${files}';
 export const RELOAD_FILE_LIST_PLACEHOLDER = '${fileList}';
+/** F4:${targetId}=发送目标标识(通道侧替换,请求可区分/寻址目标实例) */
+export const RELOAD_TARGET_ID_PLACEHOLDER = '${targetId}';
 
 /**
  * 替换重载专用占位 + 既有变量表:
@@ -133,9 +149,16 @@ export const defaultReloadHttpRunner: ReloadHttpRunner = request =>
  * - 数组=逐条;单对象=单条;非 JSON=全 'sent'(已送达,无协议回执)。
  * - 只认 file 与所发文件集逐字一致的条目;status 只认
  *   accepted/applied/failed,其余未记录状态不认。
+ * - F4:expectedTargetId 给定时,条目显式携带的 targetId 必须与之一致,
+ *   不一致的回执整条拒绝(该文件落 'sent',不 claim applied)——回执带
+ *   错误 targetId 不得当作该目标的 accepted/applied 证据。
  * - 未认到的文件补 'sent'(送达成功但无匹配回执,不 claim applied)。
  */
-export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]): ReloadReceipt[] {
+export function parseReloadHttpReceipts(
+  body: string,
+  fileSet: readonly string[],
+  expectedTargetId?: string
+): ReloadReceipt[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
@@ -149,6 +172,7 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
   const items = Array.isArray(parsed) ? parsed : [parsed];
   const receipts: ReloadReceipt[] = [];
   const seen = new Set<string>();
+  const mismatched = new Set<string>();
   for (const item of items) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
       continue;
@@ -156,6 +180,14 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
     const record = item as Record<string, unknown>;
     const file = typeof record.file === 'string' ? record.file : undefined;
     if (file === undefined || seen.has(file) || !fileSet.includes(file)) {
+      continue;
+    }
+    // F4:回执显式 targetId 与预期目标不一致 → 整条拒绝(不认状态、不认
+    // digest);未给 targetId 的回执不受影响(可选字段,给了就必须一致,
+    // 与 hotReloadReceipt/hotReloadAppliedCheck 同口径)
+    const receiptTargetId = typeof record.targetId === 'string' ? record.targetId : undefined;
+    if (expectedTargetId !== undefined && receiptTargetId !== undefined && receiptTargetId !== expectedTargetId) {
+      mismatched.add(file);
       continue;
     }
     const digest = typeof record.digest === 'string' ? record.digest : undefined;
@@ -168,8 +200,8 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
         status: 'accepted',
         file,
         ...(digest !== undefined ? { digest } : {}),
-        // F3:接收端如实标注的未应用原因(如「未配置应用命令」)透传,不吞
-        ...(note !== undefined ? { note } : {})
+        ...(note !== undefined ? { note } : {}),
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
       });
     } else if (status === 'applied') {
       seen.add(file);
@@ -177,20 +209,27 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
         status: 'applied',
         file,
         ...(digest !== undefined ? { digest } : {}),
-        // F3:接收端真实应用后的 revision 证据透传,不吞
-        ...(revision !== undefined ? { revision } : {})
+        ...(revision !== undefined ? { revision } : {}),
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
       });
     } else if (status === 'failed') {
       seen.add(file);
       receipts.push({
         status: 'failed',
         file,
-        reason: typeof record.reason === 'string' ? record.reason : '回执 failed 无原因'
+        reason: typeof record.reason === 'string' ? record.reason : '回执 failed 无原因',
+        ...(receiptTargetId !== undefined ? { targetId: receiptTargetId } : {})
       });
     }
   }
   for (const file of fileSet) {
-    if (!seen.has(file)) {
+    if (mismatched.has(file)) {
+      receipts.push({
+        status: 'sent',
+        file,
+        detail: `回执 targetId 与目标 ${expectedTargetId} 不一致:整条拒绝该回执(不 claim applied)`
+      });
+    } else if (!seen.has(file)) {
       receipts.push({
         status: 'sent',
         file,
@@ -236,12 +275,18 @@ export class HttpReloadTransport implements ReloadTransport {
   }
 
   async send(
-    _target: ReloadTarget,
+    target: ReloadTarget,
     fileSet: readonly string[],
     onReceipt: (receipt: ReloadReceipt) => void
   ): Promise<ReloadSendSummary> {
+    // F4:${targetId} 占位先于变量替换替换为发送目标标识(请求侧区分/寻址
+    // 目标实例;未知占位原样保留的批量口径不受影响)
     const substitute = (text: string): string =>
-      substituteReloadVariables(text, fileSet, this.deps.context);
+      substituteReloadVariables(
+        text.split(RELOAD_TARGET_ID_PLACEHOLDER).join(target.targetId),
+        fileSet,
+        this.deps.context
+      );
     const request: ReloadHttpRequest = {
       url: substitute(this.entry.url),
       method: this.entry.method,
@@ -269,7 +314,8 @@ export class HttpReloadTransport implements ReloadTransport {
       }
       return { kind: this.kind, receipts };
     }
-    const receipts = parseReloadHttpReceipts(response.body, fileSet);
+    // F4:目标传入回执解析——显式 targetId 与该目标不一致的回执整条拒绝
+    const receipts = parseReloadHttpReceipts(response.body, fileSet, target.targetId);
     for (const receipt of receipts) {
       onReceipt(receipt);
     }

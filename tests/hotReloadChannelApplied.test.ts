@@ -166,6 +166,32 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
     expect(record?.detail).toContain('核验超时');
   });
 
+  it('F4 回归:通道回执带不匹配 targetId → 不升格 applied,状态如实未确认;审计行带目标', async () => {
+    const content = 'print("x")';
+    const { store } = await fire(
+      [
+        {
+          status: 'applied',
+          file: '/ws/a.py',
+          digest: digestOf(content),
+          targetId: 'other-profile'
+        } as ReloadReceipt
+      ],
+      {
+        readFileContent: async () => content
+      }
+    );
+    // F4:回执自称 applied 但 targetId 与通道目标不符 → 绝不升格,
+    // 保持未确认(回执按目标核验,不落入当前目标了事)
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.detail).toContain('targetId');
+    // 状态/审计面区分目标:通道审计行带 目标=profile-1
+    const channel = channels.find(entry => entry.name === 'KBEngine 热更新');
+    const audit = channel?.lines.find(line => line.includes('审计'));
+    expect(audit).toContain('目标=profile-1');
+  });
+
   it('F2 回归:通道发送在发送时点建立代际,冻结 digest 进台账', async () => {
     const content = 'print("sent content")';
     const { store } = await fire([{ status: 'applied', file: '/ws/a.py', digest: digestOf(content) }], {

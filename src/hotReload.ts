@@ -454,6 +454,22 @@ export function setupHotReload(
                   };
                   switch (receipt.status) {
                     case 'applied': {
+                      // F4:回执显式 targetId 与通道目标不符 → 整条不认(不升
+                      // 格、不落当前目标了事),如实保持未确认并注解原因
+                      if (
+                        'targetId' in receipt &&
+                        receipt.targetId !== undefined &&
+                        receipt.targetId !== channelTargetId
+                      ) {
+                        recordOutcome(
+                          rootId,
+                          file,
+                          'sent-unverified',
+                          `回执 targetId(${receipt.targetId})与通道目标(${channelTargetId})不一致:整条拒绝该回执`
+                        );
+                        scheduleUnconfirmedSettle();
+                        break;
+                      }
                       // RT-9:自称 applied 必须过 digest 双证核验——与发送时点
                       // 冻结的所发内容 sha256 一致才升格;缺 digest/不符/无基准
                       // 一律保持未确认并注解(绝不冒充 applied)
@@ -542,7 +558,9 @@ export function setupHotReload(
                 : failedCount > 0
                   ? `部分失败(${failedCount} 失败/${sentCount} 已发)`
                   : `已发送(${sentCount})——未校验业务回执`;
-            auditLine(channelLabel, triggers, result);
+            // F4:通道审计行带目标标识(状态/审计面区分目标;通道名仍是
+            // transport.kind,通道=前缀断言不受影响)
+            auditLine(`${channelLabel} 目标=${channelTargetId}`, triggers, result);
             if (failedCount > 0 && sentCount === 0) {
               status.setFailed(`通道 ${channelLabel} 全部失败(${failedCount})`);
             } else {

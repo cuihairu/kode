@@ -158,6 +158,77 @@ describe('HttpReloadTransport.send (IDE-HOT-101 验收 1/2)', () => {
   });
 });
 
+// F4 回归(2026-11-05 审核):HTTP 通道忽略可选 targetId——回执带错误
+// targetId 仍可 accepted/applied。修后:目标传入解析,显式不一致的
+// targetId 回执一律拒绝;${targetId} 占位透传,请求侧也能区分目标。
+describe('F4 回归:HTTP 通道透传并核验 targetId', () => {
+  it('回执显式 targetId 与目标一致 → 接受并回显 targetId', () => {
+    const receipts = parseReloadHttpReceipts(
+      JSON.stringify({ status: 'applied', file: files[0], digest: 'd'.repeat(64), targetId: 'baseapp' }),
+      files,
+      'baseapp'
+    );
+    expect(receipts[0]).toEqual({
+      status: 'applied',
+      file: files[0],
+      digest: 'd'.repeat(64),
+      targetId: 'baseapp'
+    });
+  });
+
+  it('回执显式 targetId 与目标不一致 → 拒绝该回执,该文件落 sent(不 claim applied)', () => {
+    const receipts = parseReloadHttpReceipts(
+      JSON.stringify([
+        { status: 'applied', file: files[0], digest: 'd'.repeat(64), targetId: 'other-app' },
+        { status: 'accepted', file: files[1], targetId: 'baseapp' }
+      ]),
+      files,
+      'baseapp'
+    );
+    // 被拒回执的文件在回退段如实落 sent(带不一致原因);一致回执照常接受
+    expect(receipts[0]).toEqual({ status: 'accepted', file: files[1], targetId: 'baseapp' });
+    expect(receipts[1]).toMatchObject({ status: 'sent', file: files[0] });
+    expect(JSON.stringify(receipts[1])).toContain('targetId');
+  });
+
+  it('${targetId} 占位替换为发送目标(url/headers/body 均可)', async () => {
+    const captured: Array<{ url: string; body: string; headers: Record<string, string> }> = [];
+    const transport = new HttpReloadTransport(
+      entry({
+        url: 'http://127.0.0.1:8000/${targetId}/reload?files=${files}',
+        body: '{"target":"${targetId}","files":${files}}'
+      }),
+      {
+        run: request => {
+          captured.push(request);
+          return Promise.resolve({ status: 200, body: 'ok' });
+        }
+      }
+    );
+    await transport.send(target, files, () => undefined);
+    expect(captured[0].url).toContain('/baseapp/reload');
+    expect(captured[0].body).toContain('"target":"baseapp"');
+  });
+
+  it('端到端:回包 applied 带不匹配 targetId → 通道不产生 applied 回执', async () => {
+    const transport = new HttpReloadTransport(entry(), {
+      run: async () => ({
+        status: 200,
+        body: JSON.stringify({
+          status: 'applied',
+          file: files[0],
+          digest: 'd'.repeat(64),
+          targetId: 'someone-else'
+        })
+      })
+    });
+    const pushed: ReloadReceipt[] = [];
+    await transport.send(target, files, r => pushed.push(r));
+    expect(pushed.some(r => r.status === 'applied')).toBe(false);
+    expect(pushed[0]).toMatchObject({ status: 'sent', file: files[0] });
+  });
+});
+
 describe('HttpReloadTransport.probe (IDE-HOT-101 验收 5)', () => {
   it('无副作用(KODE-AUD-009):探测与真实 fire 分离——GET 无体,不携带重载载荷', async () => {
     const captured: Array<{ url: string; method: string; headers: Record<string, string>; body: string }> = [];
