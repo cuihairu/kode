@@ -381,6 +381,31 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
+  // F3 五轮(R2-F3 硬化 1+2):writeFileSync 失败残留 best-effort 清理,清理
+  // 失败时回执如实附 rollback_failed(残留路径),绝不谎称「已回滚无残留」。
+  it('F3 五轮回归:落盘失败有残留且清不掉 → failed 回执如实 rollback_failed,不谎称无残留', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 11\n';
+    writeFileSync(file, content, 'utf8');
+    // 产物路径被目录占用 → writeFileSync 必失败(EISDIR),该残留(目录本身)
+    // unlink 也清不掉 → 接收端必须如实上报 rollback_failed,绝不谎称无残留
+    const engineFile = path.join(engineDir, 'Avatar.py');
+    mkdirSync(engineFile, { recursive: true });
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string; rollback_failed?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('落盘失败');
+    // 清理失败如实上报残留路径,绝不声称「无残留」
+    expect(receipt.rollback_failed).toBe(engineFile);
+    expect(receipt.reason).not.toContain('无残留');
+    expect(existsSync(engineFile)).toBe(true);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
   it('F3 四轮回归:多文件批一个 digest 不符 → 该文件 failed 且只回滚该文件,另一文件照常 applied', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
