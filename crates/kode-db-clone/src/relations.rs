@@ -90,7 +90,10 @@ impl RelationGraph {
                         payload_columns: payload,
                     },
                 );
-                children.entry(parent.clone()).or_default().push(table.name.clone());
+                children
+                    .entry(parent.clone())
+                    .or_default()
+                    .push(table.name.clone());
             }
         }
 
@@ -142,7 +145,11 @@ impl RelationGraph {
 }
 
 /// DFS 三色环检测(0 未访/1 在访/2 已访)。
-fn visit(node: &str, edges: &BTreeMap<String, Relation>, state: &mut BTreeMap<String, u8>) -> CloneResult<()> {
+fn visit(
+    node: &str,
+    edges: &BTreeMap<String, Relation>,
+    state: &mut BTreeMap<String, u8>,
+) -> CloneResult<()> {
     if state.get(node) == Some(&1) {
         return Err(CloneError::CycleDetected(format!("cycle through `{node}`")));
     }
@@ -197,7 +204,10 @@ mod tests {
     }
 
     fn table(name: &str, kind: &str, parent: Option<&str>) -> DerivedTable {
-        let mut fields = vec![field("id", "bigint unsigned"), field("sm_autoLoad", "tinyint")];
+        let mut fields = vec![
+            field("id", "bigint unsigned"),
+            field("sm_autoLoad", "tinyint"),
+        ];
         if parent.is_some() {
             fields.insert(1, field("parentID", "bigint unsigned"));
             fields.push(field("sm_value", "varchar"));
@@ -232,7 +242,10 @@ mod tests {
             graph.edges["tbl_Avatar_items"].kind,
             RelationKind::EngineGenerated
         );
-        assert_eq!(graph.edges["tbl_Avatar_items"].payload_columns, vec!["sm_value"]);
+        assert_eq!(
+            graph.edges["tbl_Avatar_items"].payload_columns,
+            vec!["sm_value"]
+        );
     }
 
     #[test]

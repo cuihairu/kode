@@ -127,7 +127,10 @@ fn response_of(out: &[Outgoing]) -> &Value {
 /// 走完整 `$/kode/rpc` 链路调 `$/kode/sdk/generate`,返回 handler 结果 JSON 数组。
 fn generate(params: Value) -> Value {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(
@@ -142,7 +145,10 @@ fn generate(params: Value) -> Value {
 /// 走完整 `$/kode/rpc` 链路调 `$/kode/sdk/generate`,取错误消息(成功则 panic)。
 fn generate_err(params: Value) -> String {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(
@@ -436,14 +442,19 @@ fn component_slot_missing_def_skipped() {
     let files = generate(params).as_array().unwrap().clone();
     let ts = content_of(&files, "Avatar.ts");
     assert!(!ts.contains("healthPack"));
-    assert!(!files.iter().any(|f| f["fileName"] == "ClientSdkComponents.ts"));
+    assert!(!files
+        .iter()
+        .any(|f| f["fileName"] == "ClientSdkComponents.ts"));
 }
 
 /// 未知语言 → handler 报错(TS 侧回退路径)。
 #[test]
 fn unknown_language_is_error() {
     let mut state = ServerState::new();
-    handle_message(&mut state, request(0, "initialize", json!({"capabilities": {}})));
+    handle_message(
+        &mut state,
+        request(0, "initialize", json!({"capabilities": {}})),
+    );
     let out = handle_message(
         &mut state,
         request(

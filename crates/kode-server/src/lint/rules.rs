@@ -25,8 +25,17 @@ const PHANTOM_TYPE_NAMES: &[&str] = &["BOOL", "BOOLEAN", "TUPLE", "MAP", "FIXED_
 
 /// 大负载类型(对全体客户端广播时同步开销显著)。
 const HEAVY_SYNC_TYPE_NAMES: &[&str] = &[
-    "STRING", "UNICODE", "BLOB", "ARRAY", "FIXED_DICT", "PY_DICT", "PY_LIST", "PY_TUPLE", "VECTOR2",
-    "VECTOR3", "VECTOR4",
+    "STRING",
+    "UNICODE",
+    "BLOB",
+    "ARRAY",
+    "FIXED_DICT",
+    "PY_DICT",
+    "PY_LIST",
+    "PY_TUPLE",
+    "VECTOR2",
+    "VECTOR3",
+    "VECTOR4",
 ];
 
 /// 客户端可见旗标(common.h ENTITY_CLIENT_DATA_FLAGS 位集展开,8 个无 ANY_CLIENT)。
@@ -41,9 +50,9 @@ const CLIENT_SYNC_FLAGS: &[&str] = &[
 /// Python 关键字(引擎 setattr 挂关键字名不报错,但脚本语法上不可访问)。
 const PYTHON_KEYWORDS: &[&str] = &[
     "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue",
-    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in",
-    "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while", "with",
-    "yield",
+    "def", "del", "elif", "else", "except", "finally", "for", "from", "global", "if", "import",
+    "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+    "with", "yield",
 ];
 
 /// 引擎受限属性名(validDefPropertyName 按名拒绝;FIXED_DICT 键不受此限)。
@@ -175,7 +184,10 @@ fn split_flags(raw: &str) -> Vec<String> {
 /// 大写+CELL→CELL_PUBLIC 别名+遗留拼写折叠),再按 flag_domains 单一来源表
 /// 映射(OWN_CLIENT/OTHER_CLIENTS 仅 client,不入 cell)。
 fn flag_scopes(flags: &[String]) -> Vec<String> {
-    flag_domains(&normalize_flag_tokens(&flags.join("|"))).iter().map(|s| s.to_string()).collect()
+    flag_domains(&normalize_flag_tokens(&flags.join("|")))
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn scope_label(scope: &str) -> &str {
@@ -374,7 +386,10 @@ impl Rule for RedundantDetailLevelRule {
                 continue;
             };
             let flags = property_flags(doc, prop);
-            if !flags.iter().any(|f| CLIENT_SYNC_FLAGS.contains(&f.as_str())) {
+            if !flags
+                .iter()
+                .any(|f| CLIENT_SYNC_FLAGS.contains(&f.as_str()))
+            {
                 out.push(make_finding(
                     "redundant-detail-level",
                     "info",
@@ -674,7 +689,9 @@ impl Rule for UnknownFlagValueRule {
             }
             let raw = node_value(doc, node);
             let normalized = normalize_flag_tokens(&raw);
-            if !normalized.is_empty() && !normalized.iter().all(|t| KNOWN_FLAGS.contains(&t.as_str())) {
+            if !normalized.is_empty()
+                && !normalized.iter().all(|t| KNOWN_FLAGS.contains(&t.as_str()))
+            {
                 let data = doc.element(node);
                 out.push(make_finding(
                     "unknown-flag-value",

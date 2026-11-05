@@ -112,9 +112,10 @@ impl<'a> InformationSchemaReader<'a> {
         }
         // 表查询必须覆盖列查询(列无表行 → fail-closed,不猜)。
         for row in &column_rows {
-            let name = row.first().and_then(|v| v.clone()).ok_or_else(|| {
-                CloneError::DriftMismatch("column row missing table name".into())
-            })?;
+            let name = row
+                .first()
+                .and_then(|v| v.clone())
+                .ok_or_else(|| CloneError::DriftMismatch("column row missing table name".into()))?;
             let table = tables.get_mut(&name).ok_or_else(|| {
                 CloneError::DriftMismatch(format!(
                     "column row references table `{name}` absent from TABLES result"
@@ -143,7 +144,10 @@ impl<'a> InformationSchemaReader<'a> {
             if index == "PRIMARY" {
                 primary_keys.entry(name).or_default().push(column);
             } else {
-                index_cols.entry((name.clone(), index)).or_default().push(column);
+                index_cols
+                    .entry((name.clone(), index))
+                    .or_default()
+                    .push(column);
             }
         }
         for (name, cols) in primary_keys {
@@ -180,21 +184,65 @@ mod tests {
             (
                 "FROM information_schema.COLUMNS".into(),
                 vec![
-                    vec![Some("tbl_Avatar".into()), Some("id".into()), Some("bigint(20) unsigned".into())],
-                    vec![Some("tbl_Avatar".into()), Some("sm_autoLoad".into()), Some("tinyint".into())],
-                    vec![Some("tbl_Avatar_items".into()), Some("id".into()), Some("bigint(20) unsigned".into())],
-                    vec![Some("tbl_Avatar_items".into()), Some("parentID".into()), Some("bigint(20) unsigned".into())],
-                    vec![Some("kbe_entitylog".into()), Some("id".into()), Some("bigint(20) unsigned".into())],
-                    vec![Some("tbl_MyISAM".into()), Some("id".into()), Some("bigint(20) unsigned".into())],
+                    vec![
+                        Some("tbl_Avatar".into()),
+                        Some("id".into()),
+                        Some("bigint(20) unsigned".into()),
+                    ],
+                    vec![
+                        Some("tbl_Avatar".into()),
+                        Some("sm_autoLoad".into()),
+                        Some("tinyint".into()),
+                    ],
+                    vec![
+                        Some("tbl_Avatar_items".into()),
+                        Some("id".into()),
+                        Some("bigint(20) unsigned".into()),
+                    ],
+                    vec![
+                        Some("tbl_Avatar_items".into()),
+                        Some("parentID".into()),
+                        Some("bigint(20) unsigned".into()),
+                    ],
+                    vec![
+                        Some("kbe_entitylog".into()),
+                        Some("id".into()),
+                        Some("bigint(20) unsigned".into()),
+                    ],
+                    vec![
+                        Some("tbl_MyISAM".into()),
+                        Some("id".into()),
+                        Some("bigint(20) unsigned".into()),
+                    ],
                 ],
             ),
             (
                 "FROM information_schema.STATISTICS".into(),
                 vec![
-                    vec![Some("tbl_Avatar".into()), Some("PRIMARY".into()), Some("id".into()), Some("0".into())],
-                    vec![Some("tbl_Avatar".into()), Some("idx_autoLoad".into()), Some("sm_autoLoad".into()), Some("1".into())],
-                    vec![Some("tbl_Avatar_items".into()), Some("PRIMARY".into()), Some("id".into()), Some("0".into())],
-                    vec![Some("tbl_Avatar_items".into()), Some("idx_parent".into()), Some("parentID".into()), Some("1".into())],
+                    vec![
+                        Some("tbl_Avatar".into()),
+                        Some("PRIMARY".into()),
+                        Some("id".into()),
+                        Some("0".into()),
+                    ],
+                    vec![
+                        Some("tbl_Avatar".into()),
+                        Some("idx_autoLoad".into()),
+                        Some("sm_autoLoad".into()),
+                        Some("1".into()),
+                    ],
+                    vec![
+                        Some("tbl_Avatar_items".into()),
+                        Some("PRIMARY".into()),
+                        Some("id".into()),
+                        Some("0".into()),
+                    ],
+                    vec![
+                        Some("tbl_Avatar_items".into()),
+                        Some("idx_parent".into()),
+                        Some("parentID".into()),
+                        Some("1".into()),
+                    ],
                 ],
             ),
         ])
@@ -221,7 +269,10 @@ mod tests {
         assert_eq!(avatar.columns.len(), 2);
         assert_eq!(avatar.primary_key, vec!["id"]);
         assert_eq!(avatar.indexes, vec![vec!["sm_autoLoad"]]);
-        let items = tables.iter().find(|t| t.name == "tbl_Avatar_items").unwrap();
+        let items = tables
+            .iter()
+            .find(|t| t.name == "tbl_Avatar_items")
+            .unwrap();
         assert_eq!(items.primary_key, vec!["id"]);
         assert_eq!(items.indexes, vec![vec!["parentID"]]);
         let myisam = tables.iter().find(|t| t.name == "tbl_MyISAM").unwrap();
@@ -233,7 +284,10 @@ mod tests {
         let rows = canned_rows();
         let reader = InformationSchemaReader::new(&rows, "kbe`game");
         let sql = reader.tables_sql();
-        assert!(sql.contains("TABLE_SCHEMA = `kbe``game`"), "反引号转义: {sql}");
+        assert!(
+            sql.contains("TABLE_SCHEMA = `kbe``game`"),
+            "反引号转义: {sql}"
+        );
     }
 
     #[test]
@@ -241,7 +295,11 @@ mod tests {
         // 读者生成的查询只含 information_schema 读取(SELECT),绝无 DML。
         let rows = canned_rows();
         let reader = InformationSchemaReader::new(&rows, "kbe");
-        for sql in [reader.tables_sql(), reader.columns_sql(), reader.statistics_sql()] {
+        for sql in [
+            reader.tables_sql(),
+            reader.columns_sql(),
+            reader.statistics_sql(),
+        ] {
             assert!(sql.starts_with("SELECT "), "只读 SELECT: {sql}");
             assert!(!sql.contains("INSERT") && !sql.contains("UPDATE") && !sql.contains("DELETE"));
         }

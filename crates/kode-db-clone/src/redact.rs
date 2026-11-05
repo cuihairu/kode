@@ -29,13 +29,27 @@ impl SensitivityPolicy {
             return *s;
         }
         let credential = [
-            "password", "passwd", "pwd", "secret", "token", "apikey", "api_key", "credential",
+            "password",
+            "passwd",
+            "pwd",
+            "secret",
+            "token",
+            "apikey",
+            "api_key",
+            "credential",
         ];
         if credential.iter().any(|k| lower.contains(k)) {
             return Sensitivity::Credential;
         }
         let personal = [
-            "email", "mail", "phone", "mobile", "idcard", "id_card", "realname", "real_name",
+            "email",
+            "mail",
+            "phone",
+            "mobile",
+            "idcard",
+            "id_card",
+            "realname",
+            "real_name",
             "birthday",
         ];
         if personal.iter().any(|k| lower.contains(k)) {
@@ -141,6 +155,9 @@ mod tests {
         assert!(out.contains("name=Alice"), "公开字段保留: {out}");
         assert!(out.contains("host=db"));
         assert!(out.contains("user=root"));
-        assert!(!out.contains("hunter2") && !out.contains("abc123"), "明文不残留: {out}");
+        assert!(
+            !out.contains("hunter2") && !out.contains("abc123"),
+            "明文不残留: {out}"
+        );
     }
 }
