@@ -176,6 +176,7 @@ import {
 import {
   buildKbeStubDocument,
   buildKbeStubUriString,
+  engineApiVersionAnnotation,
   filterKbeSymbols,
   getKbeAliases,
   getKbeCompletionContext,
@@ -183,7 +184,8 @@ import {
   getKbeSymbol,
   getPythonClassBaseAtPosition,
   kbeCompletionDocumentation,
-  resolveKbeAccessAtPosition
+  resolveKbeAccessAtPosition,
+  summaryForLanguage
 } from './kbeModuleIndex';
 import {
   GlobalDataDictIndex,
@@ -1450,6 +1452,21 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     }
 
     if (featureConfig.hoverShowValueDocs) {
+      // SP-2: kbe/KBEngine 模块符号悬停(alias.Symbol 访问位)——
+      // 空间/导航等模块函数挂 knowledge 摘要;未引入别名时不接管。
+      if (document.languageId === 'python') {
+        const kbeAccess = resolveKbeAccessAtPosition(
+          document.lineAt(position.line).text,
+          position.character,
+          getKbeAliases(document.getText())
+        );
+        if (kbeAccess) {
+          const kbeEntry = getKbeSymbol(kbeAccess.symbol);
+          if (kbeEntry) {
+            return createKbeSymbolHover(kbeEntry);
+          }
+        }
+      }
       // SP-1: 入口脚本 SPI 悬停——仅 kbemain.py 路径,避免污染实体脚本。
       // 实体 hooks(getHookByName)与入口 SPI 名称不重叠,顺序无冲突。
       if (
@@ -2517,6 +2534,20 @@ function createEntryHookHover(hook: import('./entryHooks').KBEngineEntryHook): v
   if (hook.example) {
     markdown.appendMarkdown('\n\n**使用示例**:\n');
     markdown.appendCodeblock(hook.example, 'python');
+  }
+  return new vscode.Hover(markdown);
+}
+
+/** SP-2: kbe/KBEngine module symbol hover - knowledge summary + typings anchor */
+function createKbeSymbolHover(entry: import('./kbeModuleIndex').KbeSymbolEntry): vscode.Hover {
+  const markdown = new vscode.MarkdownString();
+  const language = vscode.env.language;
+  markdown.appendMarkdown(`**${entry.name}** - ${entry.signature}\n\n`);
+  markdown.appendMarkdown(summaryForLanguage(entry, language) + '\n\n');
+  markdown.appendMarkdown('原始声明: `' + entry.sourceFile + ':' + entry.sourceLine + '`');
+  const note = engineApiVersionAnnotation(entry, getEngineVersion(), language);
+  if (note) {
+    markdown.appendMarkdown('\n\n' + note);
   }
   return new vscode.Hover(markdown);
 }

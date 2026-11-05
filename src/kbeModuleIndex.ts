@@ -51,6 +51,7 @@ export type EngineApiVersion = 'baseline' | 'fork' | 'pending';
 
 const COMMON_STUB = 'typings/_KBEngine_common.pyi';
 const BASEAPP_STUB = 'typings/_KBEngine_baseapp.pyi';
+const CELLAPP_STUB = 'typings/_KBEngine_cellapp.pyi';
 
 export const KBE_SYMBOLS: KbeSymbolEntry[] = [
   {
@@ -334,6 +335,81 @@ export const KBE_SYMBOLS: KbeSymbolEntry[] = [
     summaryEn: 'Look up an existing entity by database ID (returns an EntityCall via callback).',
     sourceFile: BASEAPP_STUB,
     sourceLine: 87
+  },
+  // ---- SP-2: cellapp 空间/导航模块函数(api-cellapp.md 行摘要) ----
+  {
+    name: 'addSpaceGeometryMapping',
+    kind: 'function',
+    signature:
+      'def addSpaceGeometryMapping(spaceID: int, mapper: Any, path: str, shouldLoadOnServer: bool = True, params: Union[Dict[int, str], None] = None) -> None',
+    summary:
+      '为空间绑定 navmesh/几何数据;params 为 layer→navmesh 文件映射(如 {0:"xx.navmesh"});' +
+      'shouldLoadOnServer=True 时经线程池异步加载,完成回调 onSpaceGeometryLoaded/onAllSpaceGeometryLoaded' +
+      '(cellapp.cpp:180 → SpaceMemory::__py_AddSpaceGeometryMapping)。',
+    summaryEn:
+      'Bind navmesh/geometry to a space; params maps layers to navmesh files (e.g. {0:"xx.navmesh"}); ' +
+      'with shouldLoadOnServer=True loads async on the thread pool, completion callbacks ' +
+      'onSpaceGeometryLoaded/onAllSpaceGeometryLoaded (cellapp.cpp:180 → SpaceMemory::__py_AddSpaceGeometryMapping).',
+    sourceFile: CELLAPP_STUB,
+    sourceLine: 40
+  },
+  {
+    name: 'getSpaceGeometryMapping',
+    kind: 'function',
+    signature: 'def getSpaceGeometryMapping(spaceID: int) -> str',
+    summary: '查询空间当前绑定的几何映射路径(cellapp.cpp:181)。',
+    summaryEn: "Query the space's current geometry mapping path (cellapp.cpp:181).",
+    sourceFile: CELLAPP_STUB,
+    sourceLine: 47
+  },
+  {
+    name: 'setSpaceData',
+    kind: 'function',
+    signature: 'def setSpaceData(spaceID: int, key: str, value: str) -> None',
+    summary:
+      '写入空间键值字符串(SpaceData);变更经 SpaceMemory::onSpaceDataChanged 广播,' +
+      '入口脚本回调 onSpaceData(cellapp.cpp:182)。',
+    summaryEn:
+      'Write a space key/value string (SpaceData); changes broadcast via SpaceMemory::onSpaceDataChanged, ' +
+      'entry-script callback onSpaceData (cellapp.cpp:182).',
+    sourceFile: CELLAPP_STUB,
+    sourceLine: 48
+  },
+  {
+    name: 'getSpaceData',
+    kind: 'function',
+    signature: 'def getSpaceData(spaceID: int, key: str) -> str',
+    summary: '读取空间键值字符串(cellapp.cpp:183)。',
+    summaryEn: 'Read a space key/value string (cellapp.cpp:183).',
+    sourceFile: CELLAPP_STUB,
+    sourceLine: 49
+  },
+  {
+    name: 'delSpaceData',
+    kind: 'function',
+    signature: 'def delSpaceData(spaceID: int, key: str) -> None',
+    summary:
+      '删除空间键值;变更同样经 onSpaceDataChanged 广播(del 路径 value 为 None),' +
+      '入口脚本回调 onSpaceData(cellapp.cpp:184)。',
+    summaryEn:
+      'Delete a space key; the change also broadcasts via onSpaceDataChanged (delete path passes value=None), ' +
+      'entry-script callback onSpaceData (cellapp.cpp:184).',
+    sourceFile: CELLAPP_STUB,
+    sourceLine: 50
+  },
+  {
+    name: 'raycast',
+    kind: 'function',
+    signature:
+      'def raycast(spaceID: int, layer: int, src: Vector3Like, dst: Vector3Like) -> Tuple[Vector3Like, ...]',
+    summary:
+      '几何射线检测(3 或 4 参,3 参形式 layer 默认 0);要求空间已经 addSpaceGeometryMapping 装载几何' +
+      '(cellapp.cpp:187,实现 cellapp.cpp:2158)。',
+    summaryEn:
+      'Geometry ray cast (3 or 4 args; the 3-arg form defaults layer to 0); requires the space to have ' +
+      'geometry loaded via addSpaceGeometryMapping (cellapp.cpp:187, impl cellapp.cpp:2158).',
+    sourceFile: CELLAPP_STUB,
+    sourceLine: 54
   },
   {
     name: 'FixedArray',
