@@ -1,0 +1,9 @@
+# WIN-4（2026-11-05）：golden/fixture 行尾与生成端（LF）对齐。
+# 本机 core.autocrlf=true 会把索引里的 LF 检出成 CRLF，导致 golden 逐字段/逐 md5
+# 比对在 Windows 上必失败（configParity/configMergeParity 与 wire_golden 同根因）。
+# eol=lf：检出强制 LF、提交归一 LF；CI（ubuntu）行为不变。
+# 注意：后行覆盖前行，kbemain.py 两份上游原样脚本（索引即 CRLF）单独豁免。
+tests/fixtures/** text eol=lf
+crates/**/tests/golden/** text eol=lf
+tests/fixtures/kbengine-demo-assets/scripts/interface/kbemain.py -text
+tests/fixtures/kbengine-tpl-scripts/interface/kbemain.py -text
