@@ -11,7 +11,7 @@
 ## v0.2.1 — Player Data Clone（2026-11-05 用户提供 ChatGPT 计划书，docs/design/v0.2.1-player-data-clone-plan.md）
 
 > 计划书自身的开发顺序铁律：先做 Phase 0（核实 KBEngine 真实 parentID 关联/嵌套 ARRAY 主键/Account-Avatar 引用结构），不直接写 ExportExecutor。
-- [ ] CLONE-P0 · P0 · 核实 kode 类型图推导与 KBEngine 真实库表映射（主表/ARRAY/组件/parentID 归属），产出映射证据文档（对照 docs/design/v0.2.1-player-data-clone-plan.md §3 SchemaResolver 输入）
+- [ ] CLONE-P0 · P0 · 核实 kode 类型图推导与 KBEngine 真实库表映射（主表/ARRAY/组件/parentID 归属），产出映射证据文档（对照 docs/design/v0.2.1-player-data-clone-plan.md——**完整版已落地**：§9 共 51 条 checkbox 为唯一细粒度任务基线，Phase 0 第一条即「事实取证与样本固化」，阻塞后续全部开发）
 - [ ] CLONE-P1 · P1 · 新 crate kode-db-clone：SchemaResolver + RelationGraph + ExportPlanner（计划书 §3/§4）
 - [ ] CLONE-P2 · P1 · 只读导出与版本化归档（含 sha256/Schema 指纹/脱敏开关）（§5）
 - [ ] CLONE-P3 · P1 · ImportPlanner + IDMapper + 冲突预览（Dry Run 先行）（§6/§7）
