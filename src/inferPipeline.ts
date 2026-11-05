@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { InferredDirEntry, listSourceFiles, mirrorPrefixFor, planInferredMirror } from './inferredCopy';
+import { pathApiFor } from './workspacePath';
 import { detectVcs, planExclusion, planGitignoreAdd, type ManagedExclusionEntry } from './managedDirExclusions';
 import { fileSystemScriptRootDeps, pythonScriptRootCandidates } from './pythonExtraPaths';
 import {
@@ -395,7 +396,10 @@ export async function runInfer(
     const workspaceRoot = folder.uri.fsPath;
     for (const scriptsRoot of pythonScriptRootCandidates(workspaceRoot, fileSystemScriptRootDeps)) {
       const mirrorRoot = path.join(workspaceRoot, managedDir, 'inferred', mirrorPrefixFor(workspaceRoot, scriptsRoot));
-      const args = buildInferArgs(pythonVersion, [kbeStubDir(workspaceRoot, managedDir)], mirrorRoot);
+      // WIN-3:kbeStubDir 为托管目录比较统一产出 / 形态(去重契约);spawn 参数
+      // 按工作区根风格归一——win32 断言期待平台分隔符形态。
+      const stubSearch = pathApiFor(workspaceRoot).join(kbeStubDir(workspaceRoot, managedDir));
+      const args = buildInferArgs(pythonVersion, [stubSearch], mirrorRoot);
       const outcome = await deps.spawn(pyreflyPath, args, { cwd: workspaceRoot });
       exitCodes.push(outcome.code);
     }

@@ -39,16 +39,21 @@ const makeContext = (): vscode.ExtensionContext =>
     }
   }) as unknown as vscode.ExtensionContext;
 
-/** 内存文件系统:listDir 从文件键推导目录形态(与 listSourceFiles 同构) */
+/** 内存文件系统:listDir 从文件键推导目录形态(与 listSourceFiles 同构)。
+ * WIN-3:键由平台 path.join 生成(win32 为 \),src 的 walk 用 `/` 拼子路径
+ * ——两侧统一归一为 / 再比,否则 win32 下前缀永失配、枚举恒空、镜像零写。 */
 function makeMemoryFs(files: Map<string, string>) {
+  const norm = (p: string): string => p.replace(/\\/g, '/');
   const listDir = (absDir: string): readonly InferredDirEntry[] => {
-    const prefix = absDir.endsWith('/') ? absDir : `${absDir}/`;
+    const base = norm(absDir);
+    const prefix = base.endsWith('/') ? base : `${base}/`;
     const seen = new Map<string, boolean>();
     for (const key of files.keys()) {
-      if (!key.startsWith(prefix)) {
+      const nk = norm(key);
+      if (!nk.startsWith(prefix)) {
         continue;
       }
-      const rest = key.slice(prefix.length);
+      const rest = nk.slice(prefix.length);
       const slash = rest.indexOf('/');
       const name = slash === -1 ? rest : rest.slice(0, slash);
       seen.set(name, slash !== -1);
@@ -274,7 +279,10 @@ describe('syncInferredCopy(副本层执行器)', () => {
     const failing = makeDeps({
       files,
       listDir: (p: string) => {
-        if (p === scriptsRoot) {
+        // WIN-3:发现层(pythonScriptRootCandidates)按配置口径统一 / 形态,
+        // 夹具 scriptsRoot 是平台 path.join——按归一形态比较。
+        const norm = (s: string): string => s.replace(/\\/g, '/');
+        if (norm(p) === norm(scriptsRoot)) {
           throw new Error('EACCES');
         }
         return mem.listDir(p);

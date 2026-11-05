@@ -10,7 +10,7 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 import type { ProjectProfile } from './projectProfiles';
 
 /** 一条测试用例(文件内静态可见) */
@@ -113,7 +113,10 @@ export function discoverProjectPythonTests(
   profile: Pick<ProjectProfile, 'assetsRoot'>,
   deps: PythonTestDiscoveryDeps = fileSystemTestDiscoveryDeps
 ): PythonTestDiscoveryResult {
-  const scriptsRoot = path.join(profile.assetsRoot, 'scripts');
+  // WIN-3:按 assetsRoot 风格 join——POSIX 根走 posix,否则 win32 产 \ws\...
+  // 与注入夹具的 / 键错配(exists 即刻失败,全链空结果)。
+  const P = pathApiFor(profile.assetsRoot);
+  const scriptsRoot = P.join(profile.assetsRoot, 'scripts');
   const files: PythonTestFile[] = [];
   if (!deps.exists(scriptsRoot)) {
     return { scriptsRoot, files };
@@ -124,11 +127,11 @@ export function discoverProjectPythonTests(
         if (entry.name.startsWith('.') || entry.name === '__pycache__') {
           continue;
         }
-        walk(path.join(dir, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
+        walk(P.join(dir, entry.name), prefix ? `${prefix}/${entry.name}` : entry.name);
       } else if (entry.isFile && isPythonTestFile(entry.name)) {
         files.push({
           relativePath: prefix ? `${prefix}/${entry.name}` : entry.name,
-          cases: parsePythonTestCases(deps.readFile(path.join(dir, entry.name)))
+          cases: parsePythonTestCases(deps.readFile(P.join(dir, entry.name)))
         });
       }
     }
@@ -196,7 +199,7 @@ export function showPythonTestList(
     label: file.relativePath,
     description: `${file.cases.length} 个用例`,
     detail: file.cases.length > 0 ? file.cases.map(item => item.name).join(', ') : '(静态未见 test_* 定义)',
-    absolutePath: path.join(result.scriptsRoot, file.relativePath)
+    absolutePath: pathApiFor(result.scriptsRoot).join(result.scriptsRoot, file.relativePath)
   }));
   void deps.pick(items).then(picked => {
     if (picked) {

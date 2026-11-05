@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as path from 'path';
 import {
   SOURCE_WRITE_SCOPE_MANAGED,
   SOURCE_WRITE_SCOPE_USER,
@@ -43,7 +44,12 @@ describe('pyreflyInfer', () => {
       expect(discoverPyrefly('/opt/pyrefly', deps)).toBe('/opt/pyrefly');
     });
     it('falls back to PATH search', () => {
-      const deps = { exists: (p: string) => p === '/usr/local/bin/pyrefly', envPath: '/usr/bin:/usr/local/bin', homeDir: '/home/u' };
+      // WIN-3:envPath 按平台分隔符拼——win32 split(';') 下 ':' 串不切分。
+      const deps = {
+        exists: (p: string) => p === '/usr/local/bin/pyrefly',
+        envPath: ['/usr/bin', '/usr/local/bin'].join(path.delimiter),
+        homeDir: '/home/u'
+      };
       expect(discoverPyrefly('', deps)).toBe('/usr/local/bin/pyrefly');
     });
     it('falls back to pipx default location (~/.local/bin)', () => {

@@ -8,6 +8,7 @@
  */
 
 import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 import { classifyBatchScript } from './quickActionConfig';
 import type { QuickActionCategory } from './quickActionConfig';
 
@@ -50,7 +51,9 @@ export function scanBatchScripts(
     if (!SCRIPT_PATTERN.test(entry.name)) {
       continue;
     }
-    const candidatePath = path.join(root, entry.name);
+    // WIN-3:按根风格 join——POSIX 根(/ 开头)走 posix,win32 fsPath 走平台
+    // path;否则 win32 把 /ws 拼成 \ws 与消费方期望错配。
+    const candidatePath = pathApiFor(root).join(root, entry.name);
     const normalized = path.resolve(candidatePath).replace(/\\/g, '/');
     const key = process.platform === 'win32' ? normalized.toLowerCase() : normalized;
     if (seen.has(key)) {

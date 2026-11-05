@@ -590,7 +590,10 @@ describe('defaultRunPython(真实 spawn 的诚实通道)', () => {
     configurationOverrides.delete('kbengine');
   });
 
-  it('解释器挂起:按截止组杀并如实报超时失败,不再永久等待', async () => {
+  // WIN-5:假解释器是 /bin/sh + sleep(POSIX 二进制),win32 上无此路径——
+  // 截止组杀的 124 语义由 Linux CI 覆盖;win32 的截止杀路径另见 defaultRunPython
+  // 平台分支用例。
+  it.skipIf(process.platform === 'win32')('解释器挂起:按截止组杀并如实报超时失败,不再永久等待', async () => {
     // 用 node 自身当解释器,挂起脚本(node -c 跑 JS;设 10s 但 300ms 截止)
     // /bin/sh -c <code> 把 code 当 shell 脚本跑:sleep 100 挂起,300ms 截止组杀
     configurationOverrides.set('kbengine', { 'python.interpreterPath': '/bin/sh' });

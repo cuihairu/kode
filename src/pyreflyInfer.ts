@@ -9,6 +9,7 @@
  */
 
 import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 
 // ---------------------------------------------------------------------------
 // 写权限闸（用户令 2026-11-03）：scope 外写一律拒绝，不静默。
@@ -86,14 +87,16 @@ export function discoverPyrefly(settingPath: unknown, deps: PyreflyDiscoveryDeps
   const names = pathEnv.includes(';') ? [PYREFLY_WINDOWS_BINARY, PYREFLY_BINARY] : [PYREFLY_BINARY];
   for (const dir of pathEnv.split(path.delimiter).filter(segment => segment !== '')) {
     for (const name of names) {
-      const candidate = path.join(dir, name);
+      // WIN-3:按目录风格 join——POSIX 目录(/ 开头)保持 /,win 盘符走平台
+      // path;否则 win32 把 /usr/local/bin 拼成 \usr\local\bin 与探针错配。
+      const candidate = pathApiFor(dir).join(dir, name);
       if (deps.exists(candidate)) {
         return candidate;
       }
     }
   }
   if (deps.homeDir) {
-    const candidate = path.join(deps.homeDir, '.local', 'bin', PYREFLY_BINARY);
+    const candidate = pathApiFor(deps.homeDir).join(deps.homeDir, '.local', 'bin', PYREFLY_BINARY);
     if (deps.exists(candidate)) {
       return candidate;
     }

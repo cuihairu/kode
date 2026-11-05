@@ -110,7 +110,7 @@ describe('configuration loading', () => {
   it('merges .kbengine/debug.json over the defaults', async () => {
     setWorkspaceAt('/proj');
     memoryFileSystem.set(
-      path.join('/proj', '.kbengine', 'debug.json'),
+      path.posix.join('/proj', '.kbengine', 'debug.json'),
       JSON.stringify({
         version: '1.0.0',
         debug: {
@@ -135,7 +135,7 @@ describe('configuration loading', () => {
 
   it('falls back to defaults on malformed json', async () => {
     setWorkspaceAt('/proj');
-    memoryFileSystem.set(path.join('/proj', '.kbengine', 'debug.json'), '{ not json');
+    memoryFileSystem.set(path.posix.join('/proj', '.kbengine', 'debug.json'), '{ not json');
 
     const manager = makeManager();
     await flushAsync();
@@ -266,7 +266,7 @@ describe('updateLaunchJson', () => {
   it('merges into an existing launch.json with user configs first', async () => {
     setWorkspaceAt('/proj');
     memoryFileSystem.set(
-      path.join('/proj', '.vscode', 'launch.json'),
+      path.posix.join('/proj', '.vscode', 'launch.json'),
       JSON.stringify({
         version: '0.4.0',
         configurations: [
@@ -287,7 +287,7 @@ describe('updateLaunchJson', () => {
     await expect(manager.updateLaunchJson()).resolves.toBe(true);
 
     const written = JSON.parse(Buffer.from(
-      memoryFileSystem.files.get(path.join('/proj', '.vscode', 'launch.json')) as Uint8Array
+      memoryFileSystem.files.get(path.posix.join('/proj', '.vscode', 'launch.json')) as Uint8Array
     ).toString('utf8'));
 
     expect(written.version).toBe('0.4.0');
@@ -308,7 +308,7 @@ describe('updateLaunchJson', () => {
     await expect(manager.updateLaunchJson()).resolves.toBe(true);
 
     const written = JSON.parse(Buffer.from(
-      memoryFileSystem.files.get(path.join('/proj', '.vscode', 'launch.json')) as Uint8Array
+      memoryFileSystem.files.get(path.posix.join('/proj', '.vscode', 'launch.json')) as Uint8Array
     ).toString('utf8'));
 
     expect(written.version).toBe('0.2.0');
@@ -322,7 +322,7 @@ describe('updateLaunchJson', () => {
     // 只给 configurations 且条目无 name:version/inputs 缺键走兜底,
     // 无名条目不匹配 KBEngine: 前缀原样保留在前
     memoryFileSystem.set(
-      path.join('/proj', '.vscode', 'launch.json'),
+      path.posix.join('/proj', '.vscode', 'launch.json'),
       JSON.stringify({ configurations: [{ type: 'node' }] })
     );
 
@@ -330,7 +330,7 @@ describe('updateLaunchJson', () => {
     await expect(manager.updateLaunchJson()).resolves.toBe(true);
 
     const written = JSON.parse(Buffer.from(
-      memoryFileSystem.files.get(path.join('/proj', '.vscode', 'launch.json')) as Uint8Array
+      memoryFileSystem.files.get(path.posix.join('/proj', '.vscode', 'launch.json')) as Uint8Array
     ).toString('utf8'));
 
     expect(written.version).toBe('0.2.0');
@@ -346,7 +346,7 @@ describe('updateLaunchJson', () => {
     setWorkspaceAt('/proj');
     // 只给 version:configurations/inputs 双缺键都走兜底空表
     memoryFileSystem.set(
-      path.join('/proj', '.vscode', 'launch.json'),
+      path.posix.join('/proj', '.vscode', 'launch.json'),
       JSON.stringify({ version: '0.3.0' })
     );
 
@@ -354,7 +354,7 @@ describe('updateLaunchJson', () => {
     await expect(manager.updateLaunchJson()).resolves.toBe(true);
 
     const written = JSON.parse(Buffer.from(
-      memoryFileSystem.files.get(path.join('/proj', '.vscode', 'launch.json')) as Uint8Array
+      memoryFileSystem.files.get(path.posix.join('/proj', '.vscode', 'launch.json')) as Uint8Array
     ).toString('utf8'));
 
     expect(written.version).toBe('0.3.0');
@@ -373,7 +373,7 @@ describe('createExampleConfig', () => {
     await expect(manager.createExampleConfig()).resolves.toBe(true);
 
     const written = JSON.parse(Buffer.from(
-      memoryFileSystem.files.get(path.join('/proj', '.kbengine', 'debug.json')) as Uint8Array
+      memoryFileSystem.files.get(path.posix.join('/proj', '.kbengine', 'debug.json')) as Uint8Array
     ).toString('utf8')) as DebugConfigFile;
 
     expect(written.version).toBe('1.0.0');
