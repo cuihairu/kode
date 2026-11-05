@@ -21,6 +21,7 @@ import {
   type GitRunOutcome,
 } from './gitRunner';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
+import { pathApiFor } from './workspacePath';
 
 /** 虚拟文档 scheme:内容一律只读(仅提供者,无编辑能力)。 */
 export const GIT_HISTORY_VERSION_SCHEME = 'kode-git-version';
@@ -55,21 +56,28 @@ export function defaultVersionQueryDeps(deps?: Partial<VersionQueryDeps>): Versi
  * 路径必须在 repoRoot 内(防御:逃逸即拒绝),以 `/` 分隔供 git 使用。
  */
 export function relativeVersionPath(repoRoot: string, filePath: string): string | null {
-  const abs = path.resolve(filePath);
-  const root = path.resolve(repoRoot);
+  // WIN-3:按输入风格选 path(win32 下 /repo 会被 resolve 锚到当前盘,rel 再
+  // 带上 \ 触发逃逸拒判——POSIX 输入必须走 path.posix)。
+  const P = pathApiFor(filePath);
+  const abs = P.resolve(filePath);
+  const root = P.resolve(repoRoot);
   if (abs === root) return '';
-  if (!abs.startsWith(root + path.sep)) return null;
-  const rel = path.relative(root, abs);
-  // 反斜杠/父段(逃逸)拒绝;git 用 `/` 分隔
-  if (rel.includes('..') || rel.includes('\\')) return null;
-  return rel.split(path.sep).join('/');
+  if (!abs.startsWith(root + P.sep)) return null;
+  const rel = P.relative(root, abs);
+  // 父段(逃逸)拒绝先行;win32 的 rel 用 \ 分隔是常态,归一成 `/` 后再查
+  // 残留反斜杠(POSIX 文件名中的字面 \ 维持拒绝口径)——顺序反了会在
+  // Windows 上把一切真实路径判成逃逸(文件历史映射全线失效)。
+  if (rel.includes('..')) return null;
+  const posixRel = rel.split(P.sep).join('/');
+  if (posixRel.includes('\\')) return null;
+  return posixRel;
 }
 
 /** 构造虚拟文档 URI(编码 repoRoot + commit + filePath,三键隔离)。 */
 export function makeVersionUri(repoRoot: string, commit: string, filePath: string): vscode.Uri {
   return vscode.Uri.from({
     scheme: GIT_HISTORY_VERSION_SCHEME,
-    path: path.resolve(filePath),
+    path: pathApiFor(filePath).resolve(filePath),
     query: `repo=${encodeURIComponent(repoRoot)}&commit=${encodeURIComponent(commit)}`,
   });
 }

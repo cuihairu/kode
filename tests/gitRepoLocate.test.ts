@@ -23,11 +23,20 @@ interface FakeTree {
   gitDirs: Set<string>; // 目录路径
 }
 
+/** WIN-3:夹具键归一为 / 形态——src 按输入风格选 path.posix/win32(见 pathApiFor),
+ * 桌平台 join 产的 \ 键在 win32 上会与 POSIX 形态入参错配;两侧归一后等价。 */
+const normKey = (p: string): string => p.replace(/\\/g, '/');
+
 function makeDeps(tree: FakeTree) {
+  const markers: Record<string, 'dir' | 'file' | null> = {};
+  for (const [k, v] of Object.entries(tree.markers)) markers[normKey(k)] = v;
+  const gitFiles: Record<string, string> = {};
+  for (const [k, v] of Object.entries(tree.gitFiles)) gitFiles[normKey(k)] = v;
+  const gitDirs = new Set([...tree.gitDirs].map(normKey));
   const deps: GitRepoLocationDeps = {
-    probeGitMarker: vi.fn((dir: string) => tree.markers[join(dir, '.git')] ?? null),
-    readGitFile: vi.fn((p: string) => tree.gitFiles[p] ?? null),
-    isDirectory: vi.fn((p: string) => tree.gitDirs.has(p)),
+    probeGitMarker: vi.fn((dir: string) => markers[normKey(join(dir, '.git'))] ?? null),
+    readGitFile: vi.fn((p: string) => gitFiles[normKey(p)] ?? null),
+    isDirectory: vi.fn((p: string) => gitDirs.has(normKey(p))),
   };
   return { deps, calls: { probe: deps.probeGitMarker as ReturnType<typeof vi.fn> } };
 }

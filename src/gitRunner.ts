@@ -15,7 +15,7 @@
  */
 
 import { spawn as nodeSpawn } from 'child_process';
-import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 
 /** 取消令牌(结构兼容 vscode.CancellationToken;缺省回调时仅结算点轮询)。 */
 export interface GitCancellationToken {
@@ -106,8 +106,11 @@ export function validateGitArgs(args: readonly string[], cwd: string): { reason:
     if (p === '') {
       return { reason: '路径参数为空' };
     }
-    const abs = path.resolve(cwd, p);
-    if (abs !== cwd && !abs.startsWith(cwd + path.sep)) {
+    // WIN-3:按 cwd 风格解析——POSIX cwd 走 posix,否则 win32 会把 /repo
+    // 锚到当前盘,cwd 内的合法路径反而判成越界。
+    const P = pathApiFor(cwd);
+    const abs = P.resolve(cwd, p);
+    if (abs !== cwd && !abs.startsWith(cwd + P.sep)) {
       return { reason: `路径越界(解析后逃出 cwd):${p}` };
     }
   }

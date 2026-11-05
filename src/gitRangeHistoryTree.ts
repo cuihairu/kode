@@ -17,6 +17,7 @@
  */
 
 import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 import * as vscode from 'vscode';
 import {
   queryRangeTimeline,
@@ -143,10 +144,10 @@ export function buildRangeHistoryItems(state: RangeHistoryState): RangeHistoryIt
         });
       }
       state.entries.forEach((entry, index) => {
-        const filePath = path.join(state.repoRoot, entry.path);
+        const filePath = pathApiFor(state.repoRoot).join(state.repoRoot, entry.path);
         // 父提交时路径 = 更老一条记录的 path(重命名提交的父侧在老路径)。
         const next = state.entries[index + 1];
-        const parentFilePath = next ? path.join(state.repoRoot, next.path) : filePath;
+        const parentFilePath = next ? pathApiFor(state.repoRoot).join(state.repoRoot, next.path) : filePath;
         items.push({ kind: 'entry', entry, filePath, repoRoot: state.repoRoot, parentFilePath });
       });
       const b = state.boundary;

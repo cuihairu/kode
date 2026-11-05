@@ -17,6 +17,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import { pathApiFor } from './workspacePath';
 
 /** 定位依赖注入面(纯函数可测,不落 vscode/fs 实面)。 */
 export interface GitRepoLocationDeps {
@@ -39,7 +40,8 @@ function resolveGitDirFile(gitFilePath: string, deps: GitRepoLocationDeps): stri
   if (!content) return null;
   const m = /^gitdir:\s*(.+)$/m.exec(content);
   if (!m) return null;
-  return path.resolve(path.dirname(gitFilePath), m[1].trim());
+  const P = pathApiFor(gitFilePath);
+  return P.resolve(P.dirname(gitFilePath), m[1].trim());
 }
 
 /**
@@ -56,32 +58,33 @@ export function locateGitRepository(
   if (!enabled) {
     return { kind: 'none', reason: 'disabled' };
   }
+  const P = pathApiFor(filePath);
 
   // 多工作区:取包含该文件的最长根(最长前缀);无 → no-workspace
   const root = workspaceRoots
-    .filter((w) => filePath === w || filePath.startsWith(w + path.sep))
+    .filter((w) => filePath === w || filePath.startsWith(w + P.sep))
     .sort((a, b) => b.length - a.length)[0];
   if (!root) {
     return { kind: 'none', reason: 'no-workspace' };
   }
 
   // 从文件所在目录向上到工作区根(含),最近命中优先,绝不越过根
-  let dir = path.dirname(filePath);
+  let dir = P.dirname(filePath);
   for (;;) {
     const marker = deps.probeGitMarker(dir);
     if (marker === 'dir') {
-      return { kind: 'repo', repoRoot: dir, gitDir: path.join(dir, '.git'), isWorktree: false };
+      return { kind: 'repo', repoRoot: dir, gitDir: P.join(dir, '.git'), isWorktree: false };
     }
     if (marker === 'file') {
-      const gitFile = path.join(dir, '.git');
+      const gitFile = P.join(dir, '.git');
       const gitDir = resolveGitDirFile(gitFile, deps) ?? gitFile;
-      const isWorktree = deps.isDirectory(path.join(gitDir, 'commondir'));
+      const isWorktree = deps.isDirectory(P.join(gitDir, 'commondir'));
       return { kind: 'repo', repoRoot: dir, gitDir, isWorktree };
     }
     if (dir === root) {
       break;
     }
-    const parent = path.dirname(dir);
+    const parent = P.dirname(dir);
     if (parent === dir) {
       break;
     }

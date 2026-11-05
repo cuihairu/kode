@@ -12,6 +12,7 @@
  */
 
 import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 import * as vscode from 'vscode';
 import {
   DEFAULT_GIT_LOG_PAGE_SIZE,
@@ -121,13 +122,13 @@ export function buildHistoryItems(state: GitHistoryState): GitHistoryItem[] {
         // IDE-GIT-007:打开该版本内容须按「该提交时的路径」而非当前路径
         // (重命名前的老路径提交用老路径,否则 `git show <commit>:<当前路径>` 取不到)。
         const filePath = entry.pathAtCommit
-          ? path.join(state.repoRoot, entry.pathAtCommit)
+          ? pathApiFor(state.repoRoot).join(state.repoRoot, entry.pathAtCommit)
           : state.filePath;
         // 父提交时路径 = 下一条(更老)记录的 pathAtCommit;页内未知(最老一条
         // 或非 follow)回退同路径——重命名提交的父侧据此走老路径。
         const next = state.entries[index + 1];
         const parentFilePath = next?.pathAtCommit
-          ? path.join(state.repoRoot, next.pathAtCommit)
+          ? pathApiFor(state.repoRoot).join(state.repoRoot, next.pathAtCommit)
           : filePath;
         return { kind: 'commit', entry, index, filePath, repoRoot: state.repoRoot, parentFilePath };
       });

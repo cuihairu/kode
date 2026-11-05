@@ -14,7 +14,7 @@
  * 纯函数(执行器经 deps.runGit 注入,默认实现走 IDE-GIT-003 的只读执行器)。
  */
 
-import * as path from 'path';
+import { pathApiFor } from './workspacePath';
 import { type GitRunOutcome } from './gitRunner';
 import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
 
@@ -156,10 +156,11 @@ export async function queryGitCommitLog(
   const page = Math.max(0, Math.floor(options.page ?? 0));
   const pageSize = clampGitLogPageSize(options.pageSize);
   // 绝对路径换算为仓库相对路径;越界 `..` 由 IDE-GIT-003 的路径边界校验拒绝。
-  const fileArg = path.relative(
-    options.repoRoot,
-    path.resolve(options.repoRoot, options.continuation?.path ?? options.filePath)
-  );
+  // WIN-3:按目标路径风格选 path——POSIX 形态走 posix,win32 平台 path 会把
+  // /repo 锚到当前盘并产 src\a.py 反斜杠入参;续查沿父提交时路径同口径。
+  const targetPath = options.continuation?.path ?? options.filePath;
+  const P = pathApiFor(targetPath);
+  const fileArg = P.relative(P.resolve(options.repoRoot), P.resolve(options.repoRoot, targetPath));
   const args = ['log'];
   if (options.follow && options.continuation) {
     // 续查:从上一页最老提交的父提交起,沿该提交时路径继续 `--follow`
@@ -187,12 +188,8 @@ export async function queryGitCommitLog(
   if (options.follow) {
     // --name-status 输出与格式记录交错(`\x1e` 后 git 追加换行再打印状态行),
     // 必须整体一并解析,不能复用 parseCommitRecords(会把状态行误当记录)。
-    const traced = parseFollowCommitRecords(
-      options.continuation
-        ? path.relative(options.repoRoot, path.resolve(options.repoRoot, options.continuation.path))
-        : fileArg,
-      outcome.stdout
-    );
+    // 初始追踪路径 = fileArg(已含 continuation.path 目标与风格感知换算)。
+    const traced = parseFollowCommitRecords(fileArg, outcome.stdout);
     entries = traced.entries;
     hasMore = entries.length > pageSize;
     // 边界只在本页到头(无下一页)时才如实上报:hasMore 时最老记录是探测位,
@@ -291,7 +288,9 @@ export function parseFollowCommitRecords(
     }
   }
   // 状态行数应等于记录数;逐条按重命名链换算 pathAtCommit。
-  let tracked = initialPath;
+  // pathAtCommit 是「提交内路径」语义,git 恒用 / 分隔——入参 fileArg 可能
+  // 是平台形态(win32 src\a.py),追踪链统一归一成 /。
+  let tracked = initialPath.replace(/\\/g, '/');
   const traced = records.map((entry, index) => {
     const status = statuses[index];
     if (status && (status.kind === 'R' || status.kind === 'C')) {
