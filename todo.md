@@ -1294,6 +1294,7 @@
   验收：FakeComponentBin win32 产 .cmd 包装（或 spawn 走 node 直调），测试断言按平台取后缀；serverManager* 全族绿。
 
 - [ ] WIN-3 [P1] 测试硬编码 POSIX 路径（约 35 失败：gitHistoryDiff 9/gitRepoLocate 7/pythonTestDiscovery 5/quickActionScanner 5/inferPipeline 6/debugConfig 6/navigationLayoutMatrix 3/pyreflyInfer 2 等）
+  （2026-11-05 进度2：4d801cf git 路径批落地——pathApiFor 按输入风格选 path（win32 反斜杠信号→平台 path，/ 与相对纯 / 形态→posix；Linux 恒 posix）；relativeVersionPath 逃逸判定顺序修正（先 '..' 拒、归一 / 后再查残余 \——原顺序把 Windows 一切真实路径判成逃逸，文件历史映射整面失效）；gitCommitLog/gitHistoryTree/gitRangeHistoryTree/gitRunner/gitRepoLocate 全部改走风格感知 API。git 九文件 27 失败→165/165。全量 121→90。余 pythonTestDiscovery5/quickActionScanner5/inferPipeline6/debugConfig6/navigation 等约 35。）
   （2026-11-05 进度：server 族内 WIN-3 已清（占位符归一+平台断言随 391864f）；余 git*9/pythonTestDiscovery5/quickActionScanner5/inferPipeline6/debugConfig6/navigation 等硬断言批未动，全量 121 失败中约 40+ 属本项。）
   （2026-11-05 进度：pythonTestRunner.pathSuffixMatch 双分隔符归一已修（40d0082，pytest 结果条目从全 errored 转绿）；covExtensionCommands 夹具改 REAL_INTERPRETER 平台探测。git*/pythonTestDiscovery/inferPipeline 等硬断言批未动。）
   落点：测试断言 `/ws/...`、`/repo/...`，src path.join/dirname 在 win32 产出 `D:\repo\...`、`\ws\...`；gitRepoLocate.ts:62 `w + path.sep` 前缀匹配在混分隔符下必失配。
