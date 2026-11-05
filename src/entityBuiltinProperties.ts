@@ -15,6 +15,8 @@
  * 目录与 def 归属都判不出 → 非实体脚本不接管;判为实体但面歧义 → 只给宏公共 3 项。
  */
 
+import { maskPythonNonCode } from './pythonLexicalMask';
+
 /** 组件面(报告 §2:baseapp/cellapp/client 各一套 getset 表) */
 export type EntityComponentFace = 'baseapp' | 'cellapp' | 'client';
 
@@ -210,10 +212,13 @@ export function collectEntityBuiltinPropertyInlayTargets(
 ): EntityBuiltinPropertyInlayTarget[] {
   const targets: EntityBuiltinPropertyInlayTarget[] = [];
   const pattern = /\bself\.(\w+)(?![\w.])/g;
-  for (let line = 0; line < lines.length; line += 1) {
+  // KR-AUD-62:匹配跑词法掩码文本(注释/字符串同长替换,行/列偏移不变)——
+  // 原文行匹配会在注释/字符串提及处产内建属性提示。掩码一次全文。
+  const maskedLines = maskPythonNonCode(lines.join('\n')).split('\n');
+  for (let line = 0; line < maskedLines.length; line += 1) {
     pattern.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(lines[line])) !== null) {
+    while ((match = pattern.exec(maskedLines[line])) !== null) {
       const attributeName = match[1];
       const hit = resolveEntityBuiltinPropertyHit(attributeName, pathFace, defFaces);
       if (!hit) {
