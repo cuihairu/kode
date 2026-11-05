@@ -505,6 +505,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kode-db-clone"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "kode-index"
 version = "0.2.0"
 dependencies = [
