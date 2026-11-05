@@ -1,18 +1,20 @@
 IDE-AUD-007 参考接收端真实回环联调样本
-时间: 2026-11-05T13:22:11.241Z
+时间: 2026-11-05T21:24:33.281Z
 主机: coding node v24.21.0
 接收端: scripts/hot-reload-receiver/referenceReceiver.mjs(零依赖 node:http,已记录契约参考实现)
 契约: {"status":"accepted","file":<逐字回显>} / {"status":"applied","file":<逐字回显>,"digest":<sha256 hex>}
+      请求报文带 sender_digests(发送方冻结 digest 随报文下发;F3 四轮:接收端自己写产物落盘引擎目录,写后重算 sha256 与 sender_digest 比对一致才回 applied,外部应用命令模式降级 accepted)
+      F3 七轮:所发文件写进接收端暂存根(--root)内并发送——发送侧校验只发根内路径,产物命名空间唯一(根外路径接收端整批拒绝)
 背景: 引擎原生重载 KBEngine.reloadScript 无 HTTP 回执(docs/review/2026-10-30-completion-and-lint-audit.md
       AUD-007 实勘);accepted/applied 契约作用于用户配置 @http: quick action 回包体,本探针提供会说
       该契约的真实服务端与真实 wire 样本。解析/升格行为由 tests/hotReloadReceiverRoundtrip.test.ts 钉住。
-基线: feat/kode-rev @ 5b33912
+基线: feat/kode-rev @ ab0bc29
 
 ### 场景 accepted(暂存回执)(mode=stage scenario=accepted)
 GET /probe -> HTTP 200 "ok"(连通性探测面)
 POST /reload
-  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py"]}
-  response     : HTTP 200 [{"status":"accepted","file":"/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py"}]
+  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-M7wssA/Avatar.py"],"sender_digests":{"/home/cui/.hermes/cache/scratch/kode-aud007-probe-M7wssA/Avatar.py":"2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}}
+  response     : HTTP 200 {"status":"accepted","file":"/home/cui/.hermes/cache/scratch/kode-aud007-probe-M7wssA/Avatar.py"}
   所发内容 sha256 : 2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
   回执 digest     : (无)
   digest 对照     : accepted 面无 digest(应用核验归 applied 阶段)
@@ -20,25 +22,25 @@ POST /reload
 ### 场景 applied(digest 双证回执)(mode=apply scenario=applied)
 GET /probe -> HTTP 200 "ok"(连通性探测面)
 POST /reload
-  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py"]}
-  response     : HTTP 200 [{"status":"applied","file":"/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py","digest":"2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}]
+  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-rP9EPZ/Avatar.py"],"sender_digests":{"/home/cui/.hermes/cache/scratch/kode-aud007-probe-rP9EPZ/Avatar.py":"2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}}
+  response     : HTTP 200 {"status":"accepted","file":"/home/cui/.hermes/cache/scratch/kode-aud007-probe-rP9EPZ/Avatar.py","note":"接收端未配置引擎产物目录(--artifact-dir),只暂存未应用,不自称 applied"}
   所发内容 sha256 : 2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
-  回执 digest     : 2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
-  digest 对照     : 一致(applied 可核验)
+  回执 digest     : (无)
+  digest 对照     : accepted 面无 digest(应用核验归 applied 阶段)
 
 ### 场景 digest 不符(可疑回执)(mode=apply scenario=digest-mismatch)
 GET /probe -> HTTP 200 "ok"(连通性探测面)
 POST /reload
-  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py"]}
-  response     : HTTP 200 [{"status":"applied","file":"/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py","digest":"0ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}]
+  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-XtCtzF/Avatar.py"],"sender_digests":{"/home/cui/.hermes/cache/scratch/kode-aud007-probe-XtCtzF/Avatar.py":"2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}}
+  response     : HTTP 200 {"status":"accepted","file":"/home/cui/.hermes/cache/scratch/kode-aud007-probe-XtCtzF/Avatar.py","note":"接收端未配置引擎产物目录(--artifact-dir),只暂存未应用,不自称 applied"}
   所发内容 sha256 : 2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
-  回执 digest     : 0ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
+  回执 digest     : (无)
   digest 对照     : 故意不符(可疑回执样本,扩展侧核验必须不升格)
 
 ### 场景 非 JSON 回包(未知结构)(mode=stage scenario=echo)
 GET /probe -> HTTP 200 "ok"(连通性探测面)
 POST /reload
-  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py"]}
+  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-cWHT98/Avatar.py"],"sender_digests":{"/home/cui/.hermes/cache/scratch/kode-aud007-probe-cWHT98/Avatar.py":"2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}}
   response     : HTTP 200 receiver said ok, move along
   (回包非 JSON:未知结构样本,扩展侧解析器保持未确认不升格)
   所发内容 sha256 : 2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
@@ -48,7 +50,7 @@ POST /reload
 ### 场景 非 2xx(送达失败)(mode=stage scenario=error500)
 GET /probe -> HTTP 200 "ok"(连通性探测面)
 POST /reload
-  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-file-yK9dBW/Avatar.py"]}
+  request body : {"files":["/home/cui/.hermes/cache/scratch/kode-aud007-probe-39UKq2/Avatar.py"],"sender_digests":{"/home/cui/.hermes/cache/scratch/kode-aud007-probe-39UKq2/Avatar.py":"2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab"}}
   response     : HTTP 500 internal receiver error (scenario)
   (回包非 JSON:未知结构样本,扩展侧解析器保持未确认不升格)
   所发内容 sha256 : 2ec16cf40b8a7b6079186df1c274f39e9478325817d6e9855982efbf664056ab
