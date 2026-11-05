@@ -6141,7 +6141,8 @@ export function activate(context: vscode.ExtensionContext) {
     dispose: async () => {
       telnetService.dispose();
       telnetWebView.dispose();
-      serverManager.dispose();
+      // KR-AUD-57:serverManager.dispose 只调一次(await)——原处多出一次
+      // 裸调(丢弃 promise),进程表清理被连跑两遍
       await serverManager.dispose();
       logHub.dispose();
       logCollector.dispose();
