@@ -57,8 +57,7 @@ pub fn dataflow_for_module(ast: &ParsedAst) -> Vec<MethodDataflow> {
                 let class_name = cls.name.as_str().to_string();
                 for s in &cls.body {
                     if let Stmt::FunctionDef(f) = s {
-                        let params =
-                            crate::symbols::method_params(&f.parameters);
+                        let params = crate::symbols::method_params(&f.parameters);
                         out.push(MethodDataflow {
                             class: Some(class_name.clone()),
                             method: f.name.as_str().to_string(),
@@ -256,6 +255,18 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
     }
 }
 
+/// 推导式 generators 按序走查:iter 读 → target 写 → ifs 读(KR-AUD-09:
+/// elt 的读必须排在这些之后,才能连上 target 的 def 链)。
+fn collect_comp_generators(state: &mut State, generators: &[ast::Comprehension], line: usize) {
+    for gen in generators {
+        collect_reads(state, &gen.iter, line);
+        collect_writes(state, &gen.target, line);
+        for if_ in &gen.ifs {
+            collect_reads(state, if_, line);
+        }
+    }
+}
+
 /// 收集读(Load 上下文的名字与 `self.<attr>` 属性读)。
 fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
     use Expr::*;
@@ -329,48 +340,27 @@ fn collect_reads(state: &mut State, expr: &Expr, line: usize) {
                 collect_reads(state, e, line);
             }
         }
+        // KR-AUD-09:先按序走完 generators(iter 读/target 写/ifs 读),最后读
+        // elt——旧实现 elt 先读,此时 generator target 尚未 def,elt 内对
+        // target 的 use 断链(`[str(x) for x in xs]` 的 str(x) 无链)。
         ListComp(c) => {
+            collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         SetComp(c) => {
+            collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         DictComp(c) => {
+            collect_comp_generators(state, &c.generators, line);
             if let Some(k) = &c.key {
                 collect_reads(state, k, line);
             }
             collect_reads(state, &c.value, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         Generator(c) => {
+            collect_comp_generators(state, &c.generators, line);
             collect_reads(state, &c.elt, line);
-            for gen in &c.generators {
-                collect_reads(state, &gen.iter, line);
-                collect_writes(state, &gen.target, line);
-                for if_ in &gen.ifs {
-                    collect_reads(state, if_, line);
-                }
-            }
         }
         Await(a) => collect_reads(state, &a.value, line),
         Yield(y) => {

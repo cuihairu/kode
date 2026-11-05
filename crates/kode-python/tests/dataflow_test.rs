@@ -241,9 +241,32 @@ fn comprehension_target_defined() {
     let result = dataflow_for_body(&ast, &["items".to_string()], &body);
     let x = chain(&result, "x");
     assert_eq!(x.def_line, Some(1), "comprehension target 应定义 x");
-    assert_eq!(x.use_lines, vec![2]);
+    // KR-AUD-09 语义更新:elt 本身的 `x` 读在 target def 之后,也连上链
+    // (旧实现 elt 先读,漏记这次 use)。
+    assert_eq!(x.use_lines, vec![1, 2]);
     // items 参数被 iter 读。
     let items = chain(&result, "items");
     assert!(items.is_param);
     assert_eq!(items.use_lines, vec![1]);
+}
+
+/// KR-AUD-09:推导式 elt 读先于 generator target 写,elt 内 def-use 断链
+/// (`[str(x) for x in xs]` 的 str(x) 读不到 x 链)。修复:先按序走完
+/// generators(iter 读/target 写/ifs 读),最后读 elt。
+#[test]
+fn comprehension_elt_use_links_to_generator_target_kraud09() {
+    let src = "def f(xs):\n    r = [str(x) for x in xs]\n    return r\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["xs".to_string()], &body);
+    // elt 内 str(x) 的读必须连上 generator target 定义的 x 链。
+    let x = chain(&result, "x");
+    assert_eq!(x.def_line, Some(1), "generator target 应定义 x");
+    assert_eq!(x.use_lines, vec![1], "elt 内 use 应连上 target 链");
+    let xs = chain(&result, "xs");
+    assert_eq!(xs.use_lines, vec![1]);
 }

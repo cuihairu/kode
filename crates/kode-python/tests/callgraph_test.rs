@@ -176,7 +176,8 @@ fn empty_and_invalid_source_tolerant() {
 /// 边全漏);外层函数调用仍由外层走查记录,不重叠。
 #[test]
 fn nested_def_calls_recorded() {
-    let src = "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
+    let src =
+        "def foo():\n    pass\n\ndef outer():\n    def inner():\n        foo()\n    return 1\n";
     let es = edges_of(src);
     let hit = es.iter().find(|e| e.caller == "inner" && e.callee == "foo");
     let e = hit.expect("嵌套函数 inner 内 foo() 应有边");
