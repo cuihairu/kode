@@ -89,12 +89,22 @@ impl SensitivityPolicy {
             if self.classify(key_trim) == Sensitivity::Credential {
                 out.push_str(&rest[..eq]);
                 out.push_str("=***");
-                // 跳到值末尾(值以空格/引号/行尾为界)。
+                // 跳过值体(不把明文凭据回灌输出)。引号值须跳过整个引号区间
+                // (含闭引号,不吸收其后的空白);裸值以空白/逗号为界。
                 let after_eq = eq + 1;
-                let val_end = rest[after_eq..]
-                    .find([' ', '\t', '"', '\'', ','])
-                    .map(|i| after_eq + i)
-                    .unwrap_or(rest.len());
+                let tail = &rest[after_eq..];
+                let val_end = match tail.as_bytes().first() {
+                    Some(b'"') | Some(b'\'') => {
+                        let quote = tail.as_bytes()[0] as char;
+                        // 配对闭引号之后的位置;未闭合则吞掉余下全部(安全)。
+                        let close = tail[1..].find(quote).map(|i| i + 2).unwrap_or(tail.len());
+                        after_eq + close
+                    }
+                    _ => tail
+                        .find([' ', '\t', ','])
+                        .map(|i| after_eq + i)
+                        .unwrap_or(rest.len()),
+                };
                 rest = &rest[val_end..];
             } else {
                 let next = eq + 1;
@@ -270,5 +280,32 @@ mod tests {
         assert!(out.contains("host=db"));
         assert!(out.contains("user=root"));
         assert!(!out.contains("hunter2") && !out.contains("abc123"), "明文不残留: {out}");
+    }
+
+    #[test]
+    fn redacts_quoted_credential_values_wholesale() {
+        // 带引号的凭据值:必须跳过整个引号区间,不得把值体回灌输出。
+        let p = SensitivityPolicy::default();
+        let line = "password=\"hunter2\" token='abc123' name=Alice";
+        let out = p.redact_log(line);
+        assert!(out.contains("password=***"), "密码掩掉: {out}");
+        assert!(out.contains("token=***"), "令牌掩掉: {out}");
+        assert!(out.contains("name=Alice"), "公开字段保留: {out}");
+        assert!(
+            !out.contains("hunter2") && !out.contains("abc123"),
+            "引号值明文不得泄漏: {out}"
+        );
+        assert!(!out.contains('"') && !out.contains('\''), "引号自身也不残留: {out}");
+    }
+
+    #[test]
+    fn redacts_quoted_value_with_internal_space() {
+        // 引号内空白不截断值:整段引号值一并掩掉。
+        let p = SensitivityPolicy::default();
+        let line = "password=\"my secret pass\" name=Alice";
+        let out = p.redact_log(line);
+        assert!(out.contains("password=***"), "密码掩掉: {out}");
+        assert!(out.contains("name=Alice"), "公开字段保留: {out}");
+        assert!(!out.contains("my secret pass"), "含空白引号值不泄漏: {out}");
     }
 }
