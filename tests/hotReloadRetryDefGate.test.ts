@@ -163,16 +163,17 @@ describe('重试路径 def 结构闸(RT-3 / IDE-HOT-005)', () => {
     const gate = makeGate();
     // 判定时读到的内容与基线结构一致 → 放行
     content = BASE_DEF;
-    expect(await gate.check(['/ws/entities/Avatar.def'])).toEqual([]);
+    const verdict = await gate.check(['/ws/entities/Avatar.def']);
+    expect(verdict.reasons).toEqual([]);
     // 判定后、commit 前文件变成结构性变更:旧实现 commit 重读文件,会把这份
     // 从未通过判定的内容滚进基线;修后 commit 只落判定时快照
     content = STRUCTURAL_DEF;
-    await gate.commit!(['/ws/entities/Avatar.def']);
+    await gate.commit!(verdict.token);
     // 基线必须仍是判定过的 A——被拦/未应用内容重发时按旧基线保守拦下
     expect(baselines.get('/ws/entities/Avatar.def')).toBe(BASE_DEF);
     const second = await gate.check(['/ws/entities/Avatar.def']);
-    expect(second.length).toBeGreaterThan(0);
-    expect(second[0]).toContain('属性结构变化');
+    expect(second.reasons.length).toBeGreaterThan(0);
+    expect(second.reasons[0]).toContain('属性结构变化');
   });
 
   it('F1 二轮回归:「放行→内容变更→重试」时序——重试基线只滚判定时内容,再变内容不得经重试绕过', async () => {

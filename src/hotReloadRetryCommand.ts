@@ -20,6 +20,7 @@ import {
   type HotReloadTargetStateWiring,
   type HotReloadTimerDeps
 } from './hotReload';
+import type { DefGateCheckVerdict } from './hotReloadDefGate';
 import type { HotReloadTargetKey, HotReloadTargetStateStore } from './hotReloadTargetState';
 import type { ReloadTransport } from './hotReloadTransport';
 import { sendFilesViaReloadChannel } from './hotReloadChannelSend';
@@ -50,11 +51,12 @@ export interface HotReloadResendDeps {
    * 册(hotReloadDefGate)。注入即重发前过闸——结构性 def 变更/无基线/不可读
    * 一律不发送(拦下是保守拦截不是投递失败,不落账),非结构 def 与纯
    * Python 批照常重发。不注入则不设防(与既有装配兼容,真装配必须注入)。
-   * F1:闸的 commit 口在重试放行即真实重发时前滚基线(可选,缺省不滚)。
+   * F1:闸的 commit 口在重试放行即真实重发时凭本批令牌前滚基线(可选,缺省
+   * 不滚);被拦批的令牌不认领任何快照。
    */
   readonly defGate?: {
-    check(files: readonly string[]): Promise<string[]>;
-    commit?(files: readonly string[]): Promise<void>;
+    check(files: readonly string[]): Promise<DefGateCheckVerdict>;
+    commit?(token: number): Promise<void>;
   };
   /** 结构闸拦下通知(接线方把文件标进状态机 RESTART_REQUIRED 呈现面) */
   readonly onRestartRequired?: (
@@ -106,19 +108,20 @@ export async function resendHotReloadTarget(
   // 基线册。结构性 def 变更/无基线/不可读一律不发普通 reload(拦下是保守拦
   // 截不是投递失败:不落账,台账保留 failed 旧账原样),并发需重启通知。
   if (deps.defGate) {
-    const reasons = await deps.defGate.check(files);
-    if (reasons.length > 0) {
-      deps.onRestartRequired?.(key.targetId, files, reasons);
-      const first = reasons[0] ?? 'def 结构待核';
+    const verdict = await deps.defGate.check(files);
+    if (verdict.reasons.length > 0) {
+      deps.onRestartRequired?.(key.targetId, files, verdict.reasons);
+      const first = verdict.reasons[0] ?? 'def 结构待核';
       return {
         ok: false,
-        detail: `结构性 def 变更需要重启,重试不发普通 reload:${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`
+        detail: `结构性 def 变更需要重启,重试不发普通 reload:${first}${verdict.reasons.length > 1 ? ` 等 ${verdict.reasons.length} 项` : ''}`
       };
     }
-    // F1:重试放行即真实重发——基线前滚到本次所发内容(与 fire 路径同口
-    // 径);被拦批次不走这里,基线保持引擎已加载版本,重复重试持续拦截。
+    // F1:重试放行即真实重发——基线凭本批令牌前滚到本次所发内容(与 fire
+    // 路径同口径);被拦批次不走这里也不在认领队列,基线保持引擎已加载版本,
+    // 重复重试持续拦截。
     try {
-      await deps.defGate.commit?.(files);
+      await deps.defGate.commit?.(verdict.token);
     } catch {
       // 前滚失败不阻塞重发(下次判定按旧基线保守拦)
     }

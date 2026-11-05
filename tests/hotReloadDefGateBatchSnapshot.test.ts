@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createDefStructuralGate } from '../src/hotReloadDefGate';
 
-// F1 三轮(2026-11-06 复审):check 判定时留的内容快照必须按批次/代际隔离——
-// 二轮实现把快照落进「文件 → 内容」的共享槽位,两批并发判定共享同一槽位,
-// 后判定批覆写先判定批的快照,先批 commit 时会把「从未通过判定的后批内容」
-// 滚进基册(时序绕过:被拦内容借并发批的 commit 入基线)。修后每批持有自己
-// 的判定快照,commit 只认自己那批的,并发判定互不覆写。
+// F1 四轮(2026-11-06 复审):三轮的「按文件集匹配最早未消费批」仍是错拿通路
+// ——被拦批次也进快照队列,批 A 被拦、同文件集批 B 放行时,B 的 commit 会按
+// 文件集匹配到**最早**的 A 批,把从未通过判定的被拦内容滚进基册(指纹相同
+// 即放行,绕过需重启)。修后:①被拦批次不入快照认领队列(只入被拦记录册);
+// ②check 返回批次令牌,commit(令牌) 只认领令牌对应的那一批——同文件集的
+// 并发/先后批次各归各,被拦批的快照没有任何通路借别批 commit 入册。
 
 const BASE_DEF = `<root>
   <Properties>
@@ -24,7 +25,7 @@ const STRUCTURAL_DEF = BASE_DEF.replace('<Type>INT32</Type>', '<Type>FLOAT</Type
 
 const FILE = '/ws/scripts/Avatar.def';
 
-describe('def 结构闸判定快照按批次隔离(F1 三轮回归)', () => {
+describe('def 结构闸批次令牌(F1 四轮回归)', () => {
   let baselines: Map<string, string>;
   let content: string;
   beforeEach(() => {
@@ -35,47 +36,63 @@ describe('def 结构闸判定快照按批次隔离(F1 三轮回归)', () => {
   const makeGate = () =>
     createDefStructuralGate(async () => content, baselines);
 
-  it('两批并发判定互不覆写:先批 commit 只滚自己批的快照,被拦批内容不入基册', async () => {
+  it('A 被拦+B 放行(同文件集):B commit 只滚 B 快照,基线不含 A 被拦内容且后续同结构变更仍被拦', async () => {
     const gate = makeGate();
-    // 批 A 判定(读到非结构内容,放行;快照 A=非结构内容)
-    const batchA = gate.check([FILE]);
-    // 批 A 的 commit 之前,批 B 并发判定(读到结构变化内容,被拦;快照 B=结构性内容)
+    // 批 A 判定:读到结构性内容 → 被拦(旧实现:A 的快照也进认领队列)
     content = STRUCTURAL_DEF;
-    const batchB = gate.check([FILE]);
-    expect(await batchA).toEqual([]);
-    expect(await batchB).toHaveLength(1);
+    const verdictA = await gate.check([FILE]);
+    expect(verdictA.reasons).toHaveLength(1);
+    // 批 B 判定:文件回到非结构内容 → 放行(与 A 同文件集)
+    content = NONSTRUCTURAL_DEF;
+    const verdictB = await gate.check([FILE]);
+    expect(verdictB.reasons).toEqual([]);
 
-    // 批 A 放行即真实发送 → commit 前滚。共享槽位旧实现此处读到批 B 覆写后
-    // 的快照,把「从未通过判定的结构性内容」滚进基册(时序绕过)。
-    await gate.commit([FILE]);
+    // B 放行即真实发送 → commit。旧实现按文件集匹配最早批 = A,
+    // 把 A 的被拦内容滚进基册(时序绕过);修后 commit(B.token) 只认 B 批。
+    await gate.commit(verdictB.token);
 
-    // 基册必须是批 A 自己判定的快照,绝不是批 B 的被拦内容
+    // 基线=B 自己判定的快照,绝不是 A 的被拦内容
     expect(baselines.get(FILE)).toBe(NONSTRUCTURAL_DEF);
-    // 行为后果:批 B 的结构性内容相对新基册仍被拦(基册未被污染放行)
-    expect(await gate.check([FILE])).toHaveLength(1);
+    // 行为后果:A 的被拦内容(结构性)相对新基册仍被拦——基册未被污染放行
+    content = STRUCTURAL_DEF;
+    const after = await gate.check([FILE]);
+    expect(after.reasons).toHaveLength(1);
+    expect(after.reasons[0]).toContain('属性结构变化');
   });
 
-  it('同文件先后两批都放行并先后 commit:各批快照按代际各归各(FIFO 消费)', async () => {
+  it('被拦批的令牌 commit 不滚任何快照(被拦批不入认领队列)', async () => {
+    const gate = makeGate();
+    content = STRUCTURAL_DEF;
+    const verdictA = await gate.check([FILE]);
+    expect(verdictA.reasons).toHaveLength(1);
+    // 被拦批绝不会被真实发送,其令牌不认领任何快照
+    await gate.commit(verdictA.token);
+    expect(baselines.get(FILE)).toBe(BASE_DEF);
+  });
+
+  it('未知/过期令牌 commit 不滚(只认自己那批的令牌)', async () => {
+    const gate = makeGate();
+    expect((await gate.check([FILE])).reasons).toEqual([]);
+    // 从未判定过的令牌:不借任何在册快照滚动
+    await gate.commit(999_999);
+    expect(baselines.get(FILE)).toBe(BASE_DEF);
+  });
+
+  it('同文件先后两批都放行,各令牌各归各:令牌乱序消费也各滚各的快照', async () => {
     const gate = makeGate();
     // 批 1 判定放行(快照=非结构内容)
-    expect(await gate.check([FILE])).toEqual([]);
+    const first = await gate.check([FILE]);
+    expect(first.reasons).toEqual([]);
     // 批 2 判定放行(内容再变,仍非结构;快照=另一份非结构内容)
     const second = `<!-- 第二批注释 -->\n${NONSTRUCTURAL_DEF}`;
     content = second;
-    expect(await gate.check([FILE])).toEqual([]);
+    const secondVerdict = await gate.check([FILE]);
+    expect(secondVerdict.reasons).toEqual([]);
 
-    // 两次 commit 按代际消费:第一次滚批 1 快照,第二次滚批 2 快照
-    await gate.commit([FILE]);
-    expect(baselines.get(FILE)).toBe(NONSTRUCTURAL_DEF);
-    await gate.commit([FILE]);
+    // 乱序消费:先 commit 批 2 再 commit 批 1,各令牌只滚自己批的快照
+    await gate.commit(secondVerdict.token);
     expect(baselines.get(FILE)).toBe(second);
-  });
-
-  it('commit 的文件集与任何判定批都不匹配:不滚任何快照(只认自己那批)', async () => {
-    const gate = makeGate();
-    expect(await gate.check([FILE])).toEqual([]);
-    // 未判定过的文件集:无本批快照,commit 不得借别批快照滚动
-    await gate.commit(['/ws/scripts/Monster.def']);
-    expect(baselines.get(FILE)).toBe(BASE_DEF);
+    await gate.commit(first.token);
+    expect(baselines.get(FILE)).toBe(NONSTRUCTURAL_DEF);
   });
 });

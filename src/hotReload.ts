@@ -542,11 +542,11 @@ export function setupHotReload(
         proceed();
         return;
       }
-      const block = (reasons: string[]): void => {
-        status.setRestartRequired(reasons, triggers);
+      const block = (reasons: readonly string[]): void => {
+        status.setRestartRequired([...reasons], triggers);
         // IDE-HOT-100:拦下通知状态机标 RESTART_REQUIRED 呈现(与日志同源);
         // 拦下本身是 HOT-005 的既有面,这里只多一个呈现通知。
-        options.onRestartRequired?.(settings.actionName, triggers, reasons);
+        options.onRestartRequired?.(settings.actionName, triggers, [...reasons]);
         const first = reasons[0] ?? 'def 结构待核';
         // IDE-HOT-102:def 闸拦下的重载也进审计——通道记为「拦截:需重启」,
         // 结果=拦截原因,与通道发送/actionName 回落共用五要素语义(谁/何时/
@@ -554,15 +554,17 @@ export function setupHotReload(
         auditLine('拦截:需重启', triggers, `未发送——${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
         warnRestart(`结构性 def 变更需要重启,本次不发普通 reload: ${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`);
       };
-      void defGate.check(triggers).then(reasons => {
-        if (reasons.length > 0) {
-          block(reasons);
+      void defGate.check(triggers).then(verdict => {
+        if (verdict.reasons.length > 0) {
+          block(verdict.reasons);
           return;
         }
         // F1:只有放行且即将真实发送的批次才前滚基线(commit)——被拦批次
-        // 绝不滚动,否则第二次发送同一内容指纹相同即绕过需重启。前滚失败
-        // 不阻塞发送(保守面在判定,不在前滚;下次判定按旧基线保守拦)。
-        void Promise.resolve(defGate.commit?.(triggers)).catch(() => undefined);
+        // 绝不滚动,否则第二次发送同一内容指纹相同即绕过需重启。F1 四轮:
+        // commit 凭本批自己的令牌认领快照(被拦批不入认领队列,同文件集的
+        // 并发批各归各)。前滚失败不阻塞发送(保守面在判定,不在前滚;下次
+        // 判定按旧基线保守拦)。
+        void Promise.resolve(defGate.commit?.(verdict.token)).catch(() => undefined);
         proceed();
       });
     };
