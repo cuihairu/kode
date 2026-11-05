@@ -104,7 +104,8 @@ pub enum EdgeKind {
     KbeBroadcast,
     /// KBEngine base 客户端广播:`self.baseClients.<method>(...)`。
     KbeBaseClients,
-    /// KBEngine 跨进程:`self.cell.<method>(...)`(base→cell)或 `self.base.<method>(...)`(cell→base)。
+    /// KBEngine 跨进程:`self.cell.<method>(...)`(base→cell)、`self.base.<method>(...)`(cell→base)
+    /// 或 `self.client.<method>(...)`(cell→client)。
     KbeCrossProcess,
     /// KBEngine 引擎 API:`KBEngine.<api>(...)` 或 `kbengine.<api>(...)`。
     KbeApi,

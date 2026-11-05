@@ -2445,6 +2445,13 @@ export class EntityMappingManager {
 
     const incoming: Array<{ caller: PythonMethodLocation; callLine: number; callCharacter: number }> = [];
     const normalizedTarget = normalizeLookupPath(pythonFile);
+    // 2026-11-05 用户反馈(def 方法 Shift+F12):本地调用按方法自身区块/进程作用域
+    // 收录——baseapp 的 self.x() 不计入 cellapp 同名方法引用。KBEngine def 方法
+    // 不可跨进程,本进程 self.x() 是本地调用,跨进程是 self.cell/base/client.x()
+    // (RPC,另走 getIncomingPythonReceiverCalls)。目标区块由实现文件路径推断;
+    // 调用方区块已知且不同 → 跨进程伪引用,跳过。调用方区块未知(common/ 等共享
+    // 脚本,可被目标进程导入)→ 保守保留;目标区块未知 → 全保留(现状行为)。
+    const targetSection = inferMethodSectionFromPythonFile(normalizedTarget);
 
     // IDE-NAV-004:未保存文档跟随——在位打开文档以缓冲区当前版重解析方法块
     // (parsePythonMethodBlocks 与索引首扫同一纯函数),覆盖该文件的索引条目
@@ -2482,6 +2489,13 @@ export class EntityMappingManager {
           && normalizeLookupPath(candidate.filePath) === normalizedTarget
         );
         if (!resolved) {
+          continue;
+        }
+
+        // 2026-11-05:进程作用域过滤(见上方 targetSection 注释)。调用方文件
+        // 区块与目标区块都已知且不同 → 跨进程伪引用(如 base 调 cell 方法),跳过。
+        const callerSection = inferMethodSectionFromPythonFile(method.filePath);
+        if (targetSection && callerSection && callerSection !== targetSection) {
           continue;
         }
 

@@ -20,6 +20,7 @@ class Avatar(KBEngine.Entity):
         self.baseClients.onSyncHp(self.hp)  # kbe-base-clients
         self.cell.recalc()                  # kbe-cross-process (base→cell)
         self.base.reportHp(self.hp)         # kbe-cross-process (cell→base)
+        self.client.notifyView()            # kbe-cross-process (cell→client)
         KBEngine.log("damage")              # kbe-api
         helper(self.hp)                     # local (module-level func)
         self.onDeath()                      # self-method
@@ -43,7 +44,7 @@ fn extracts_kbengine_specialized_edges() {
     // 全部在 Avatar.take_damage 内(7 条)+ Avatar.onDeath(0)+ 模块级 helper 无
     let methods: Vec<&kode_python::CallEdge> =
         edges.iter().filter(|e| e.caller == "take_damage").collect();
-    assert_eq!(methods.len(), 8, "应收集到 8 条调用边: {methods:#?}");
+    assert_eq!(methods.len(), 9, "应收集到 9 条调用边: {methods:#?}");
 
     let kinds: Vec<EdgeKind> = methods.iter().map(|e| e.kind).collect();
     assert!(kinds.contains(&EdgeKind::KbeBroadcast));
@@ -71,6 +72,8 @@ fn extracts_kbengine_specialized_edges() {
     assert_eq!(find("recalc").receiver.as_deref(), Some("self.cell"));
     assert_eq!(find("reportHp").kind, EdgeKind::KbeCrossProcess);
     assert_eq!(find("reportHp").receiver.as_deref(), Some("self.base"));
+    assert_eq!(find("notifyView").kind, EdgeKind::KbeCrossProcess);
+    assert_eq!(find("notifyView").receiver.as_deref(), Some("self.client"));
     assert_eq!(find("log").kind, EdgeKind::KbeApi);
     assert_eq!(find("helper").kind, EdgeKind::Local);
     assert_eq!(find("helper").receiver, None);

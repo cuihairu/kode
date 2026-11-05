@@ -3,9 +3,9 @@
 //! 从 AST 提取每个函数/方法体的调用边,并按 KBEngine 通道语义特化:
 //! - `self.allClients.<client-method>(...)` → [`EdgeKind::KbeBroadcast`];
 //! - `self.baseClients.<method>(...)` → [`EdgeKind::KbeBaseClients`];
-//! - `self.cell.<method>(...)`(base→cell)/ `self.base.<method>(...)`(cell→base)
-//!   → [`EdgeKind::KbeCrossProcess`](进程归属方向由 `receiver` 字段区分,
-//!   联动 C-17 进程语义);
+//! - `self.cell.<method>(...)`(base→cell)/ `self.base.<method>(...)`(cell→base)/
+//!   `self.client.<method>(...)`(cell→client)→ [`EdgeKind::KbeCrossProcess`]
+//!   (进程归属方向由 `receiver` 字段区分,联动 C-17 进程语义);
 //! - `KBEngine.<api>(...)` / `kbengine.<api>(...)` → [`EdgeKind::KbeApi`]。
 //!
 //! 分类是启发式的(动态语言无静态类型):`foo(...)` 在本文件有模块级函数或导入
@@ -473,7 +473,7 @@ fn classify(chain: &Option<Vec<String>>, callee: &str, ctx: &CallContext) -> Edg
             _ => match v[1].as_str() {
                 "allClients" => EdgeKind::KbeBroadcast,
                 "baseClients" => EdgeKind::KbeBaseClients,
-                "cell" | "base" => EdgeKind::KbeCrossProcess,
+                "cell" | "base" | "client" => EdgeKind::KbeCrossProcess,
                 _ => EdgeKind::Method,
             },
         },
