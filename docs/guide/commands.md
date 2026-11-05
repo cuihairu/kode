@@ -296,6 +296,11 @@ Open the palette with `Cmd/Ctrl + Shift + P` and search by title keyword, e.g. `
   - When defaults cannot be located it errors plainly; by default (`kbengine.showFinalConfigOnOpen`, with refresh linked to `kbengine.autoRefreshFinalConfig`) it auto-opens in the background after activation
   - Service parameters such as telnet port/password are read from the same composed source
 
+### `kbengine.lintRules.showReport`
+
+- Title: `Show Lint Rules Capability Report`
+- Purpose: print the lint rule capability list into the `Kode Lint Rules` output channel — each rule's spec number / diagnostic code / severity / applicable roles / config toggles / trigger entry / quick-fix support / evidence source module / implementation status, grouped as implemented / hint-only / pending with a per-rule enabled/disabled mark under the current configuration (IDE-LINT-011; single source of truth `src/lintRuleRegistry.ts`, rule numbering follows the `kbengine-lint-rules.md` rule table)
+
 ### `kbengine.metrics.showSummary`
 
 - Title: `Show Language Service Metrics Summary`

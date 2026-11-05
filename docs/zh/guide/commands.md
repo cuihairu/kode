@@ -289,6 +289,11 @@
   - 定位不到 defaults 时明示报错；默认（`kbengine.showFinalConfigOnOpen`，可用 `kbengine.autoRefreshFinalConfig` 关联动）激活后自动在后台打开
   - telnet 端口/密码等服务参数与该合成口径同源读取
 
+### `kbengine.lintRules.showReport`
+
+- 标题：`Show Lint Rules Capability Report`
+- 作用：在输出通道 `Kode Lint Rules` 输出 lint 规则能力清单——每条规则的规范编号/诊断 code/严重度/适用角色/配置开关/触发入口/修复支持/证据源码模块/实现状态，按「已实现/仅提示/待实现」分组并逐条标注当前配置下的启用/停用态（IDE-LINT-011；清单单一事实源 `src/lintRuleRegistry.ts`，规则编号与 `kbengine-lint-rules.md` 规则总表对应）
+
 ### `kbengine.python.debugpySync`
 
 - 标题：`Copy System debugpy into Assets`

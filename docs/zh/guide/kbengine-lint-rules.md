@@ -8,6 +8,8 @@
 
 文档编号用于追踪规范；“诊断 code”只填写实际已发布的代码。建议规则尚未注册为新的诊断 code，也没有自动加入检查。
 
+本表在源码中的单一事实源是 `src/lintRuleRegistry.ts`（IDE-LINT-011）：每条规则登记 code/严重度/角色/开关/触发入口/修复支持/实现状态/源码模块，一致性测试（`tests/lintRuleRegistry.test.ts`）钉住「已注册 = 真的发出诊断」（code 必须出现在真实 src 模块）与「无孤儿开关」（package.json 每个诊断类配置键都被至少一条规则引用）。命令面板 **Show Lint Rules Capability Report**（`kbengine.lintRules.showReport`）随时输出按当前配置渲染的规则清单（输出通道 `Kode Lint Rules`），已启用集合与 Problems 面板一致。
+
 | 规范编号 | 写法陷阱或约束 | 当前检查状态 | 诊断 / 实现依据 |
 | --- | --- | --- | --- |
 | KBE-PY-001 | 直接引用可能为 None 的 `self.cell/base/client` 成员 | 已有实时 Warning，复杂控制流仍有限制 | `kbengine.receiverNone`；`receiverNoneDiagnostics.ts` |
@@ -20,15 +22,24 @@
 | KBE-PY-008 | 在错误角色访问引擎属性/API | 有角色属性/补全面，完整误用 lint 待实现 | baseapp/cellapp/client 分面；角色不明时不能猜 |
 | KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 有参数提示、签名与跳转；完整 lint 待实现 | `.def` 的 Arg 与 EntityCall 调用绑定后才能判断 |
 | KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 生命周期 lint 待设计 | `Entity::pyGetCellEntityCall` 等检查 destroyed；需控制流和生命周期证据，不能见到 destroy 就全文件报错 |
+| KBE-PY-011 | 用户自管 `self.<attr>` 含 None 且未窄化（如构造期赋值被早退绕过） | 已有实时 Warning | `kbengine.attributeNone`；`selfAttributeNoneDiagnostics.ts` |
+| KBE-PY-012 | def 属性访问方向违规（访问位置不在 Flags 域位内） | 已有实时 Warning | `kbengine.propertyDirectionViolation`；`propertyDirectionDiagnostics.ts` |
+| KBE-PY-012b | 属性方向判定文件作用域不足（降级参考信息） | 已有实时 Information | `kbengine.propertyDirectionScopeUnknown`；同上 |
+| KBE-PY-013 | 空间/导航语义（保留键 `_mapping`、无 `canNavigate` 的 `navigate`、键类型） | 已有实时 Warning | `kbengine.spaceNav`；`spaceNavDiagnostics.ts` |
+| KBE-PY-014 | 启动脚本启动行未知 `--` 参数、非数字 `--cid/--gus`、未赋值引用 | 已有实时 Warning | `kbengine.startupScript`；`kbengineStartupScript.ts` |
 | KBE-DEF-001 | 未知 Type、Flags、DetailLevel | 已有实时校验；未知 Type 有稳定 code | `kbengine.unknownType`；`languageProviders.ts` |
 | KBE-DEF-002 | 将多个 Flags 用 `\|` 拼接成组合值 | 已有未知 Flags 校验 | 引擎按单个映射值解析；分析器的容错拆分不代表引擎接受 |
-| KBE-DEF-003 | 同域重复定义、缺少/重复必需字段 | 已有结构诊断 | `validateSectionStructure`、`validatePropertyStructure` |
+| KBE-DEF-003 | 同域重复定义、缺少/重复必需字段 | 已有结构诊断（发布时**不带诊断 code**，与其余规则不同；受结构开关与重复/必需字段子开关共同控制） | `validateSectionStructure`、`validatePropertyStructure`；`kbengine.enableStructureDiagnostics`/`checkDuplicateDefinitions`/`checkMissingPropertyFields` |
 | KBE-DEF-004 | `BOOL/BOOLEAN/TUPLE/MAP/FIXED_ARRAY` 等未注册类型 | 已有 `.def` 分析检查 | `defAnalyzer.ts:phantom-type`；类型是否存在以引擎注册表为准 |
 | KBE-DEF-005 | 方法/属性/继承声明名称冲突、非法名称 | 已有按需分析检查 | `method-property-collision`、`inherited-name-collision`、`invalid-identifier`、`engine-limited-name` |
 | KBE-DEF-006 | 重负载属性广播、无效 DetailLevel 配置 | 已有按需建议，非所有情况都是错误 | `heavy-sync-broadcast`、`redundant-detail-level` |
 | KBE-DEF-007 | 类型别名、ARRAY、FIXED_DICT 的错误使用 | 有类型解析/提示；不能宣称所有形态有 lint | 对齐 `types.xml` 及实际引擎注册类型，未知来源保持未知 |
 | KBE-DEF-008 | 更改 Parent/Interfaces/Components、持久化或 RPC 结构后当普通脚本 reload | 热更新已有闸门，但结构指纹不完整，待修 | `hotReloadDefStructure.ts` 当前主要覆盖 Properties 的 Type/Flags 与方法 Arg |
 | KBE-DEF-009 | entities.xml 重复实体注册 | 已有实时 Warning | `entitiesXmlAnalysis.ts:duplicate-entity-name` |
+| KBE-DEF-010 | `user_type` 三契约方法缺失（createObjFromDict/getDictFromObj/isSameType） | 已有实时 Error | `kbengine.userTypeContractMethodMissing`；`userTypeContract.ts`；随主诊断开关 |
+| KBE-DEF-011 | def 声明方法在 Python 缺实现 | 已有实时 Warning | `def-method-missing-in-python`；`defMethodConsistency.ts` |
+| KBE-DEF-012 | Python 方法在 def 无声明 | 已有实时 Warning | `kbengine.pythonMethodNotInDef`；`defMethodConsistency.ts` |
+| KBE-DEF-013 | 进程拓扑定义与定义期错配预警 | 已有实时 Warning | `kbengine.processTopology`；`processTopologyDiagnostics.ts` |
 
 ## EntityCall 判空：属性存在不代表另一端存在
 

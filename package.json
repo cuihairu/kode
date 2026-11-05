@@ -73,6 +73,7 @@
     "onCommand:kbengine.remoteServers.refresh",
     "onCommand:kbengine.debug.updateLaunchJson",
     "onCommand:kbengine.config.showFinal",
+    "onCommand:kbengine.lintRules.showReport",
     "onCommand:kbengine.metrics.showSummary",
     "onCommand:kbengine.metrics.startCpuProfile",
     "onCommand:kbengine.metrics.stopCpuProfile",
@@ -477,6 +478,10 @@
       {
         "command": "kbengine.config.showFinal",
         "title": "Show Final Server Config"
+      },
+      {
+        "command": "kbengine.lintRules.showReport",
+        "title": "Show Lint Rules Capability Report"
       },
       {
         "command": "kbengine.debug.updateLaunchJson",

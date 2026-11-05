@@ -81,16 +81,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // import(readOnlyWriteDiagnostics 三符号),诊断集合块 +47 行(1669 后锚点),
   // 触发行 open/close/change 各 +1:567 前锚点全部 +5,1921/1995 锚点分别
   // +63/+65(真位重探:1984/2060,出处随 baseline 锁步)。
-  ['src/extension.ts', 972, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1023, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1086, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 890, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1384, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 613, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 626, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06:IDE-LINT-011 lint 规则注册表——extension.ts 顶部新增 1 行
+  // import(renderLintRulesReport),全部 extension.ts 锚点 +1(真位重探
+  // 973/1024/1087/891/1385/614/627/1985/2061,命令装配块在全部锚点之后不再
+  // 位移;出处随 baseline 锁步)。
+  ['src/extension.ts', 973, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1024, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1087, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 891, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1385, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 614, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 627, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1984, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2060, 'flushQueued()'],
+  ['src/extension.ts', 1985, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2061, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

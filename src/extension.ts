@@ -58,6 +58,7 @@ import {
   readOnlyWriteDiagnosticItemsAsync,
   type ReadOnlyWriteDiagnosticItem
 } from './readOnlyWriteDiagnostics';
+import { renderLintRulesReport } from './lintRuleRegistry';
 import { createLinkedCancellationToken, HOVER_ASYNC_BUDGET_MS_DEFAULT, raceWithBudget, setHoverBudgetLogHub } from './hoverBudget';
 import {
   getActiveOperationCounts,
@@ -3910,6 +3911,17 @@ export function activate(context: vscode.ExtensionContext) {
     metricsChannel.append(getEventLoopDelayReport());
     metricsChannel.append(getHostVitalsReport());
     metricsChannel.show();
+  }));
+  // IDE-LINT-011:lint 规则能力清单——输出通道渲染规则表(单一事实源),
+  // 开关启用态按当前 vscode 配置实读(与 Problems 一致)。
+  const lintRulesChannel = vscode.window.createOutputChannel('Kode Lint Rules');
+  context.subscriptions.push(lintRulesChannel);
+  context.subscriptions.push(vscode.commands.registerCommand('kbengine.lintRules.showReport', () => {
+    lintRulesChannel.clear();
+    lintRulesChannel.append(renderLintRulesReport(key => {
+      return kbengineConfig.get<boolean>(key.slice('kbengine.'.length), false);
+    }));
+    lintRulesChannel.show();
   }));
   // IDE-MET-007:卡顿取证入口——start 开采/stop 落盘(.cpuprofile+.window.txt
   // 关联请求窗口);globalStorage 不可用时回落系统临时目录。
