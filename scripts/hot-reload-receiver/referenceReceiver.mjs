@@ -401,9 +401,20 @@ const server = createServer((request, response) => {
         receipts.push(withTarget({ status: 'failed', file, reason: '接收端读不到所发文件' }));
         continue;
       }
-      const staged = path.join(root, path.basename(file));
+      const digest = sha256Hex(content);
+      // F3 八轮(2026-11-08 第八轮复审):暂存副本不再按 basename 落暂存根
+      // 顶层——同批 <root>/sub/X.py 与 <root>/X.py 的顶层暂存路径相同,前者
+      // 的暂存动作会直接把后者的**源文件**覆盖掉。修后每文件按已通过清洗/
+      // 防碰撞校验的报文相对路径独立展开到 <root>/.staged/<相对路径>(与产物
+      // 映射同一套防碰撞防逃逸规则),同批互不覆盖、也碰不到任何源文件或台账
+      const stagedSegments = artifactSegmentsByFile.get(file);
+      const staged =
+        stagedSegments !== undefined ? path.join(root, '.staged', ...stagedSegments) : undefined;
       try {
-        copyFileSync(file, staged);
+        if (staged !== undefined && staged !== file) {
+          mkdirSync(path.dirname(staged), { recursive: true });
+          copyFileSync(file, staged);
+        }
       } catch (error) {
         // F3:暂存失败如实回 failed,不再静默忽略后继续自称已收下
         receipts.push(
@@ -415,7 +426,6 @@ const server = createServer((request, response) => {
         );
         continue;
       }
-      const digest = sha256Hex(content);
       if (mode !== 'apply') {
         receipts.push(withTarget({ status: 'accepted', file }));
         continue;
@@ -496,7 +506,7 @@ const server = createServer((request, response) => {
         continue;
       }
       // 接收端自己写产物:按报文读到的内容直接落盘引擎目录(产物由本进程
-      // writeFileSync 写入,应用通路可证明)
+      // 'wx' 独占自建 + writeSync 写入,应用通路可证明)
       // F3 五轮:产物路径=按报文内相对路径映射的子结构(不再是裸 basename)
       const artifact = path.join(artifactDir, ...artifactSegmentsByFile.get(file));
       // F3 六轮 → 七轮升级:写前符号链接逃逸检查——①父目录链任一级是目录外

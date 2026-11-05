@@ -899,10 +899,15 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(source).toContain('"status":"accepted"');
     expect(source).toContain('"status":"applied"');
     expect(source).toContain('sha256');
-    // F3 四轮:applied 路径=接收端自己写产物(writeFileSync)+ 哈希不符回滚
+    // F3 四轮:applied 路径=接收端自己写产物(独占自建+写入)+ 哈希不符回滚
     expect(source).toContain('sender_digests');
     expect(source).toContain('--artifact-dir');
-    expect(source).toContain('writeFileSync');
+    // F3 八轮:temp+rename 收尾只清**确认自建**的临时文件(创建成功点标志位),
+    // rename 前父目录包含性+一致性双重验证,暂存副本独立唯一子目录
+    expect(source).toContain('openSync');
+    expect(source).toContain('writeSync');
+    expect(source).toContain('verifiedRealParentForRename');
+    expect(source).toContain("'.staged'");
     expect(source).toContain('unlinkSync');
     // F3 七轮:temp+rename 原子写 + lstat 拒链接——源码钉住新写入机制
     expect(source).toContain('renameSync');
