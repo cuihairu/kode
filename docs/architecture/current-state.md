@@ -1,5 +1,55 @@
 # Kode 当前架构现状审计（Phase 0 / PR-001 / AUDIT-001..016）
 
+> **2026-11-05 现状刷新（KODE-ARCH-004）**：以下 AUDIT-*/PERF-* 各节是
+> 2026-10-23 的取证快照（基点 36052c4），按「快照不改写」原则原样保留；
+> 与当前代码的差量统一记在文首「现状刷新」一节。冲突时以刷新节 + git 为准。
+
+## 现状刷新（2026-11-05 · feat/kode-arch）
+
+- **规模**（静态取证，`find`/`wc`/package.json 实测）：src/ 顶层 245 个
+  .ts 模块（含子目录共 271 个）、92,581 行；
+  测试 506 个 `*.test.ts` + 11 个 bench；contributes：104 命令、104 配置项、
+  1 容器（kbengine-explorer）9 视图、107 activationEvents、debuggers 贡献
+  仍为空（调试面走 launch/attach 配置 + vscode.debug API，非 debug provider）。
+- **最大单件**（自 10-23 快照继续增长，迁移风险项）：languageProviders.ts
+  7,180 行（拆分条目 KODE-ARCH-001 未实现）、extension.ts 6,112 行
+  （KODE-ARCH-002 未实现）、entityMapping.ts 3,282、globalDataIndex.ts 2,155。
+- **Rust workspace 已落地**（10-23 时不存在）：crates/ 10 个
+  （kode-protocol/server/vfs/parser/root/index/scheduler/types/corpus/python），
+  MSRV 1.97（rust-toolchain pin 1.99.0）；kode-server 已有 RPC 面：进程拓扑
+  校验（process_topology.rs，C-17）、官方 def MD5（def_md5.rs，C-18）、
+  线格式（wire_codec.rs/message_table.rs，C-15）、数据库 schema
+  （database_schema.rs）、python 调用图（python_callgraph.rs）；方向 =
+  配置先行架构（todo「配置先行架构」节：配置解析收 Rust 单一真源，
+  渲染/l10n 留 TS，经 MCP 问答）。门禁：`cargo clippy --workspace
+  --all-targets -- -D warnings`（Cargo.toml 头注）。
+- **调试面自快照起从零建成**（AUDIT-008/011 中「deferred」项不再是空）：
+  debugpy 自动注入/预检/等待启动（autoDebugpy/debugpyPreflight/
+  debugpyWaitAtStartup）、附加守卫与会话登记（debugAttachGuard/
+  debugSessionRegistry/debugStatusBoard，Debug Targets 视图）、端口/进程双
+  模式与端口探测（debugConfig/debugpyPortProbe）、远程服务器分派
+  （sshConfig/remoteConnection/remoteServerTree/remoteProcessList）、
+  py-spy dump（pyspyDump）。能力边界见
+  docs/design/perf-analysis-boundary.md（KODE-FEAT-002）。
+- **热更新面建成**：ReloadTransport（HTTP/Telnet）双传输、状态机
+  （sent/accepted/applied/failed/DIRTY/RESTART_REQUIRED）与审计台账
+  （docs/hotreload/），细节现状 docs/hotreload/current-implementation.md；
+  接入缺口与状态机转换验收待收口（KODE-HOT-001/002 未实现）。
+- **数据库面建成**：schema/漂移检查/模拟器/查询生命周期
+  （databaseSchema*/databaseDrift*/databaseSimulator/databaseQueryLifecycle*，
+  Rust 化 schema 经 databaseSchemaRust）。
+- **索引契约文档化**：五索引所有权与版本失效契约
+  （docs/architecture/index-ownership.md，KODE-ARCH-003，含
+  tests/indexOwnershipContracts.test.ts 16 断言）；统一语义索引架构另见
+  docs/architecture/semantic-index.md（仍为现役文档）。
+- **性能基线更新**：v0.2 基线 docs/perf/2026-11-04-v02-baseline.md
+  （30k 文件/多根/大文件三场景）、进程拓扑诊断成本
+  docs/perf/2026-11-04-process-topology-diagnostics.md。
+- 【推断】10-23 快照的 AUDIT-011 结论「全部运行时边界都活在扩展宿主内」
+  已部分松动：Rust 侧 kode-server 以子进程/LSP 形态承载解析/校验 RPC
+  （processTopologyRust/databaseSchemaRust 等 TS 封装），但进程管理/
+  telnet/log/webview 仍在宿主内；「脚本执行须独立服务」的书目标未达成。
+
 - 日期:2026-10-23 · 分支:v0.2 · 执行协议:docs/kode2/KODE_2_COMPLETE_TODO.md 第 16 章
 - 性质:代码取证快照。三栏口径——【事实】=源码 file:line / git 可查;【已测】=有 commit + 报告/原始输出;【推断】=由事实推出的判断,需后续验证;【待测】=无数据,不造数。
 - 引用的 PR1-7 数据一律带 commit;测试为 fake-vscode + 真实索引实现的服务层口径,不含真实 VS Code UI 端到端(该项待测)。
