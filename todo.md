@@ -1267,3 +1267,16 @@
   落点：参数处 hover 说明 0=自动均衡、N=取模轮转（口径=docs/zh/api/kbengine/baseapp/Entity.md:144）。
   验收：cellappIndex 参数 hover 显示语义说明与示例。
   （2026-11-05 完成：`src/languageProviders.ts` 新增 `createCellappIndexHover`（:2632，word=cellappIndex 或 createCellEntityInNewSpace 时返回语义悬停——0/None=负载均衡自动选、N>0=取模轮转 `(N-1)%cellappSize`（cellappmgr.cpp:348-351）、搭配 NOT_PARTCIPATING_LOAD_BALANCING 钉大地图+副本走机动、python 示例块+源码锚点 baseapp.cpp:2462→cellappmgr.cpp:310）；接线于 provideKnownHover hoverShowValueDocs 段首（:1555,先于 SP-2/SP-1,名称无冲突）。prove-red=tests/cellappIndexHover.test.ts 首跑 4/5 挂（参数语义/示例/方法名/def Arg 四正例全空）；修后 5/5 绿（含不劫持无关标识符反例）。门禁：`npx vitest run tests/cellappIndexHover.test.ts` 5/5；SP 全家桶八件套 141/141 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。未 commit。）
+
+- [x] 审核发现：诊断使用全文偏移作为行内列号，第二行起的空间导航告警会定位到错误位置或行末（src/spaceNavDiagnostics.ts:136）。（67d34aa；`computeSpaceNavFindings` 三类发现统一改 `start/end` 为行内列——新增 `offsetToCol(starts, offset)`（offset 减该行起始偏移），不再把全文偏移当列号；_mapping/引号键/self.navigate 三处均改列口径；tests/spaceNavDiagnostics.test.ts 新增「第二行起的诊断列号是行内列而非全文偏移」「第二行起的 _mapping 键列号是行内列」两例（旧实现全文偏移当列号即红）。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 18/18 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。）
+- [ ] 审核发现：范围历史不检查编辑器未保存内容，直接用磁盘差异映射选区，未保存的插入或删除会查询错误的 HEAD 行（src/extension.ts:4200）。
+- [ ] 审核发现：Git 查询缓存包含工作区 diff 和 HEAD 查询且范围历史未绕过缓存，文件修改或提交后再次查询会使用过期映射与历史（src/gitQueryGate.ts:205）。
+- [ ] 审核发现：重命名历史翻页时以当前路径重新解析被跳过的历史，重命名以前的提交会关联错误路径而无法打开版本（src/gitCommitLog.ts:168）。
+- [ ] 审核发现：重命名状态直接使用 Git 默认转义后的路径，包含中文等需引号转义的文件名会导致历史版本路径错误（src/gitCommitLog.ts:209）。
+- [ ] 审核发现：相对路径检查拒绝任意包含两个连续点的合法文件名，且在 Windows 上拒绝所有子目录路径，导致版本和选区历史无法查询（src/gitHistoryDiff.ts:64）。
+- [ ] 审核发现：文件历史的并发请求没有代际检查，较早查询后返回时会覆盖用户刚选择的文件历史（src/gitHistoryTree.ts:269）。
+- [ ] 审核发现：父提交查询失败被当作根提交，超时或 Git 错误时差异视图会错误显示整份文件为新增（src/gitHistoryDiff.ts:134）。
+- [ ] 审核发现：选区跨越已删除的 HEAD 行时将多个不连续映射段合并为一个范围，导致历史包含用户未选中的已删除行（src/gitRangeHistoryTree.ts:375）。
+- [ ] 审核发现：派生 scripts 根存在时排除整个外部 assetsRoot，使 scripts 之外的资源和定义文件不再被索引（src/scanRoots.ts:138）。
+- [x] 审核发现：空间导航诊断在注释和字符串中也匹配调用，且把任意对象的 navigate 当作引擎方法，默认启用时会产生无关告警（src/spaceNavDiagnostics.ts:147）。（67d34aa；`computeSpaceNavFindings` 新增 `codeMask(text)` 逐字符词法掩码（行注释 `#`、单/双引号字符串含三引号→非代码区），三类发现只在调用点 `inCode` 才报，注释/字符串里的 navigate/canNavigate/引号键字样不再参与判定与守卫；`NAV_CALL_RE` 由 `\b(?:navigate|navigatePathPoints)\s*\(` 收紧为 `\bself\s*\.\s*(navigate|navigatePathPoints)\s*\(`——只认引擎实体方法调用约定 `self.navigate`，任意对象（avatar.navigate 等）不再误报；`CAN_NAVIGATE_RE` 补 `g` 标志（否则 exec 死循环，测试暴露后修复）；tests/spaceNavDiagnostics.test.ts 新增「注释里的 navigate 与 canNavigate 不参与判定」「字符串里的 navigate 字样不报」「任意对象的 navigate 不当引擎方法」「self.navigate 仍报」四例。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 18/18 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。）
+- [ ] 审核发现：共享在途 Git 查询仅使用首个调用方的取消令牌，一个视图取消会终止另一视图的相同查询，而后加入视图的取消不会生效（src/gitQueryGate.ts:200）。
