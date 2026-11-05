@@ -100,6 +100,45 @@ describe('pythonParserWorkerHost worker 路径(审核发现 :185)', () => {
     await expect(promise).resolves.toEqual({ revision: 7, parsed: parsedStub });
   });
 
+  it('排干后文件队列条目回收:map 不随处理文件数线性涨(KR-AUD-07)', async () => {
+    const host = await loadHost();
+    expect(host.fileQueueCountForTests()).toBe(0);
+    // 三个不同大文件依次走 worker 路径(各自入 fileQueues)
+    const jobs = [
+      host.parsePythonFileResponsive(bigContent, '/f1.py', 1),
+      host.parsePythonFileResponsive(bigContent, '/f2.py', 2),
+      host.parsePythonFileResponsive(bigContent, '/f3.py', 3)
+    ];
+    const worker = workerState.instances[0];
+    expect(worker.posted).toHaveLength(3);
+    expect(host.fileQueueCountForTests()).toBe(3);
+    // 逐个回包排干
+    for (let i = 0; i < 3; i += 1) {
+      const msg = worker.posted[i];
+      worker.emit('message', { id: msg.id, revision: msg.revision, parsed: parsedStub });
+    }
+    await Promise.all(jobs);
+    // 修复前:条目永不回收,size 恒 3;修复后排干即 0
+    expect(host.fileQueueCountForTests()).toBe(0);
+  });
+
+  it('同文件 pendingLatest 接链派发后同样回收队列条目(KR-AUD-07)', async () => {
+    const host = await loadHost();
+    // 首份在途,第二份同文件合并为 pendingLatest(不另占队列条目)
+    const first = host.parsePythonFileResponsive(bigContent, '/same.py', 1);
+    const second = host.parsePythonFileResponsive(bigContent, '/same.py', 2);
+    const worker = workerState.instances[0];
+    expect(worker.posted).toHaveLength(1);
+    expect(host.fileQueueCountForTests()).toBe(1);
+    // 回包首份 → drainAllQueues 派发 pendingLatest(第二份)接链
+    worker.emit('message', { id: worker.posted[0].id, revision: 1, parsed: parsedStub });
+    expect(worker.posted).toHaveLength(2);
+    worker.emit('message', { id: worker.posted[1].id, revision: 2, parsed: parsedStub });
+    await expect(first).resolves.toEqual({ revision: 1, parsed: parsedStub });
+    await expect(second).resolves.toEqual({ revision: 2, parsed: parsedStub });
+    expect(host.fileQueueCountForTests()).toBe(0);
+  });
+
   it('旧 revision 回包原样上抛:调用方负责比对丢弃(host 不代吞)', async () => {
     const host = await loadHost();
     const promise = host.parsePythonFileResponsive(bigContent, '/big.py', 9);
