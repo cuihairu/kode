@@ -301,7 +301,7 @@ export function setupHotReload(
           return;
         }
         wiring.store.record(key, file, 'sent-unverified', {
-          detail: `${current.detail} | ${reason}`,
+          detail: [current.detail, reason].filter(Boolean).join(' | '),
           now: current.recordedAt,
           attempt
         });
