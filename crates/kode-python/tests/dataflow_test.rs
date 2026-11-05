@@ -293,3 +293,20 @@ fn match_pattern_captures_def_and_guard_reads_kraud10() {
     let v = chain(&result, "v");
     assert_eq!(v.use_lines, vec![1], "match subject 读保持");
 }
+
+/// KR-AUD-11:`import a.b` 的绑定名是顶层名 `a`(Python 语义),旧实现取全段
+/// "a.b" 造链,后续 `a.attr` 的读断链。修复:无 asname 时取首段。
+#[test]
+fn dotted_import_binds_top_level_name_kraud11() {
+    let src = "def f():\n    import a.b\n    return a.c\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let a = chain(&result, "a");
+    assert_eq!(a.def_line, Some(1), "import a.b 应按顶层名 a def");
+    assert_eq!(a.use_lines, vec![2], "a.c 的读应连上 import 链");
+}

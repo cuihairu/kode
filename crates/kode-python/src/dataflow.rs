@@ -229,11 +229,21 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         }
         Stmt::Import(imp) => {
             for alias in &imp.names {
+                // KR-AUD-11:`import a.b` 绑定顶层名 `a`(与 symbols.rs 同口径),
+                // 无 asname 时不再按全段 "a.b" 造链(后续 `a.attr` 读才不断链)。
                 let binding = alias
                     .asname
                     .as_ref()
                     .map(|n| n.as_str().to_string())
-                    .unwrap_or_else(|| alias.name.as_str().to_string());
+                    .unwrap_or_else(|| {
+                        alias
+                            .name
+                            .as_str()
+                            .split('.')
+                            .next()
+                            .unwrap_or("")
+                            .to_string()
+                    });
                 state.def_var(&binding, line);
             }
         }
