@@ -178,11 +178,14 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
   private viewToken = new GitCancelSource();
   private lastFile: string | null = null;
   private lastEnabled = true;
+  /** IDE-GIT-011 代际守卫:每次入口自增,在途查询恢复时代际已更替则丢弃。 */
+  private generation = 0;
 
   constructor(private readonly deps: GitHistoryDeps) {}
 
   /** 关闭视图/卸载:取消在途查询(不残留子进程)。 */
   dispose(): void {
+    this.generation += 1;
     this.viewToken.cancel();
   }
 
@@ -191,6 +194,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
    * 重开视图后新查询仍可用(令牌不因一次隐藏而永久失效)。
    */
   cancelInFlight(): void {
+    this.generation += 1;
     this.viewToken.cancel();
     this.viewToken = new GitCancelSource();
   }
@@ -251,6 +255,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
 
   /** 入口:定位仓库 → 首页查询(只在用户触发时发生;显式查询绕过缓存拿最新 HEAD)。 */
   async showHistory(filePath: string, enabled: boolean): Promise<void> {
+    const gen = ++this.generation;
     this.lastFile = filePath;
     this.lastEnabled = enabled;
     if (!enabled) {
@@ -278,6 +283,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
         bypassCache: true,
       }
     );
+    if (gen !== this.generation) return; // 代际已更替,丢弃旧结果
     this.state = this.applyResult(filePath, location.repoRoot, result, /* append */ false);
     this.fire();
   }
@@ -286,6 +292,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
   async loadNextPage(): Promise<void> {
     if (this.state.kind !== 'loaded' || !this.state.hasMore) return;
     const prev = this.state;
+    const gen = this.generation;
     // 续查起点:上一页最老提交的父提交与该提交时路径(IDE-GIT-007 修复)。
     // 重命名边界后 `git log --follow --skip=N` 会中断,须从父提交+老路径重发。
     const last = prev.entries[prev.entries.length - 1];
@@ -301,6 +308,7 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       continuation,
       { token: this.viewToken }
     );
+    if (gen !== this.generation) return; // 代际已更替,丢弃旧翻页
     if (result.kind !== 'page' || result.entries.length === 0) {
       // 翻页失败/到尽头:保留已载内容,如实质感
       this.state = { ...prev, hasMore: false };
