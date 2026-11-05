@@ -121,19 +121,24 @@ describe('IDE-GIT-006 版本内容查询', () => {
 });
 
 describe('IDE-GIT-006 父提交判定', () => {
-  it('根提交:无父 → null(左侧为空)', async () => {
+  it('根提交:无父 → root(左侧为空)', async () => {
     const { deps } = makeDeps(async () => okOutcome('abc1234\n'));
-    await expect(getParentCommit('/repo', 'abc1234', deps)).resolves.toBeNull();
+    await expect(getParentCommit('/repo', 'abc1234', deps)).resolves.toEqual({ kind: 'root' });
   });
 
-  it('普通提交:首父哈希', async () => {
+  it('普通提交:首父哈希 → parent', async () => {
     const { deps } = makeDeps(async () => okOutcome('abc1234 parent9999\n'));
-    await expect(getParentCommit('/repo', 'abc1234', deps)).resolves.toBe('parent9999');
+    await expect(getParentCommit('/repo', 'abc1234', deps)).resolves.toEqual({
+      kind: 'parent',
+      hash: 'parent9999',
+    });
   });
 
-  it('判定失败(非 ok):按无父处理,不抛', async () => {
+  it('判定失败(非 ok):error 而非根(审核发现修复:不再当根提交显示整文件新增)', async () => {
     const { deps } = makeDeps(async () => ({ kind: 'exit', exitCode: 128, stderr: 'bad rev' }) as GitRunOutcome);
-    await expect(getParentCommit('/repo', 'nope', deps)).resolves.toBeNull();
+    const r = await getParentCommit('/repo', 'nope', deps);
+    expect(r.kind).toBe('error');
+    if (r.kind === 'error') expect(r.outcome).toEqual({ kind: 'exit', exitCode: 128, stderr: 'bad rev' });
   });
 });
 
@@ -242,6 +247,21 @@ describe('IDE-GIT-006 diff 与内容打开命令', () => {
     expect(decodeVersionUri(uri).commit).toBe('abc1234');
     expect(showCalls.length).toBe(beforeShow + 1);
     expect(showCalls[beforeShow].options).toEqual({ preview: false });
+  });
+
+  it('审核发现:父提交查询失败不当作根提交(抛错而非整文件显示为新增)', async () => {
+    const spy = vi.spyOn(vscode.commands, 'executeCommand').mockImplementation(async () => undefined);
+    try {
+      const { deps } = makeDeps(async (args) => {
+        if (args[0] === 'rev-list') {
+          return { kind: 'timeout', timeoutMs: 5000 } as GitRunOutcome;
+        }
+        throw new Error(`unexpected: ${args.join(' ')}`);
+      });
+      await expect(openVersionDiff('/repo/src/a.py', '/repo', 'abc1234', deps)).rejects.toThrow(/父提交/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
