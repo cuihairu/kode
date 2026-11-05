@@ -894,7 +894,18 @@ The flow graph panel supports:
 - Purpose: open the selection history entry (IDE-GIT-001 gate, IDE-GIT-010 entry point), shown in the editor context menu only with a selection and in the command palette; gated like the file history entry
 - Behavior:
   - Gated by `kbengine.gitHistory.enabled`; a disabled feature hides the entry and a direct invocation runs nothing Git
-  - Currently opens the file-level history view for the active file (the selection-to-committed-range mapping and timeline land in later IDE-GIT milestones and are reported honestly rather than fabricated)
+  - With a selection: maps the working-copy selection to its committed (HEAD) line span (IDE-GIT-008), queries that span's per-commit timeline (IDE-GIT-009), and shows it in the `kbengine.gitRangeHistory` sidebar view — the title states the query basis (`file @ HEAD 行 N-M`) and the original selection is preserved for display; uncommitted/unsaved lines produce an honest warning with only the committed part shown
+  - With no selection: the context-menu entry is hidden (requires `editorHasSelection`); a direct invocation gives a "select code first" prompt without running Git
+  - The view holds its own state — switching editors or moving the cursor never re-queries or mis-applies a stale selection to another editor (no activation/file-open/cursor/selection listeners)
+
+### `kbengine.git.openRangeHistoryDiff`
+
+- Title: `Kode: 打开版本差异并定位范围 (Open Version Diff and Locate)`
+- Purpose: open a range-history entry's commit version versus its parent as a read-only diff, then locate the entry's line range in that version (IDE-GIT-010). Bound to clicking an entry row in the `kbengine.gitRangeHistory` view; hidden from the command palette (`when: false`)
+- Behavior:
+  - Invoked with `(entry, filePath, repoRoot, parentFilePath?)`; opens the same version-vs-parent diff as `kbengine.git.openVersionDiff` (IDE-GIT-006 virtual documents), then opens the commit's version content in a non-preview tab with the entry's line range selected (`Range(rangeStart-1, 0, rangeEnd-1, 0)`)
+  - The line range span is recorded per entry from the `-L` diff hunks' new side (`RangeChangeEntry.rangeStart/rangeEnd`), so locating works even when the range moved between commits
+  - Across a rename the parent-era path is used for the left side (IDE-GIT-007); gated by `kbengine.gitHistory.enabled`, a disabled feature runs nothing Git
 
 ### `kbengine.git.openVersionDiff`
 

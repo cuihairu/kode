@@ -382,9 +382,17 @@ import {
   GIT_HISTORY_VERSION_SCHEME,
   GitHistoryVersionContentProvider,
   defaultVersionQueryDeps,
+  makeVersionUri,
   openVersionContent,
   openVersionDiff,
 } from './gitHistoryDiff';
+import {
+  GitRangeHistoryTreeProvider,
+  defaultRangeHistoryDeps,
+  rangeHistoryViewTitle,
+  type RangeHistoryItem,
+} from './gitRangeHistoryTree';
+import { editorSelectionToRange } from './gitSelectionMap';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -4116,19 +4124,47 @@ export function activate(context: vscode.ExtensionContext) {
       }
     )
   );
+  // IDE-GIT-010:选中范围历史侧边栏视图(kbengine.gitRangeHistory)与命令体接入。
+  // 只在用户经编辑器选区右键/命令面板发起时运行;切换编辑器不重查不错套。
+  const gitRangeHistoryProvider = new GitRangeHistoryTreeProvider(defaultRangeHistoryDeps());
+  if (typeof vscode.window.createTreeView === 'function') {
+    const gitRangeHistoryTree = vscode.window.createTreeView('kbengine.gitRangeHistory', {
+      treeDataProvider: gitRangeHistoryProvider,
+      showCollapseAll: false,
+    });
+    context.subscriptions.push(gitRangeHistoryTree);
+    gitRangeHistoryTree.title = rangeHistoryViewTitle(gitRangeHistoryProvider.getState());
+    context.subscriptions.push(
+      gitRangeHistoryProvider.onDidChangeTreeData(() => {
+        gitRangeHistoryTree.title = rangeHistoryViewTitle(gitRangeHistoryProvider.getState());
+      })
+    );
+  } else {
+    context.subscriptions.push(
+      vscode.window.registerTreeDataProvider('kbengine.gitRangeHistory', gitRangeHistoryProvider)
+    );
+  }
   const showRangeHistoryCommand = vscode.commands.registerCommand(
     GIT_HISTORY_SHOW_RANGE_COMMAND,
-    (uri?: vscode.Uri) => runGitHistoryWhenEnabled(
+    () => runGitHistoryWhenEnabled(
       readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
       async () => {
-        // 选中范围历史:暂以文件级历史呈现(范围标注属后续粒度),打开正确文件
-        const target = resolveHistoryTarget(uri);
-        if (!target) {
-          void vscode.window.showInformationMessage('无活动文件可查看历史。');
+        // 选中范围历史:取活动编辑器选区(0 基→1 基),映射到 HEAD 行段后查询时间线。
+        const editor = vscode.window.activeTextEditor;
+        const sel = editor?.selection;
+        if (!editor || !sel || sel.isEmpty) {
+          // 无选区:不查询,给出选择代码提示(右键入口已由 editorHasSelection 隐藏)。
+          gitRangeHistoryProvider.showNoSelection();
+          void vscode.commands.executeCommand('kbengine.gitRangeHistory.focus');
           return;
         }
-        await gitHistoryProvider.showHistory(target.fsPath, true);
-        void vscode.commands.executeCommand('kbengine.gitHistory.focus');
+        const range = editorSelectionToRange(sel.start.line, sel.end.line);
+        await gitRangeHistoryProvider.showSelectionHistory(
+          editor.document.uri.fsPath,
+          range,
+          readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine'))
+        );
+        void vscode.commands.executeCommand('kbengine.gitRangeHistory.focus');
       }
     )
   );
@@ -4173,12 +4209,46 @@ export function activate(context: vscode.ExtensionContext) {
       }
     )
   );
+  // IDE-GIT-010:点击范围历史条目——打开该版本 vs 父版本只读 diff,并在该版本
+  // 内容中定位历史行段(虚拟文档只读不落盘;范围由 -L 追踪到的该版本位置)。
+  const gitOpenRangeHistoryDiffCommand = vscode.commands.registerCommand(
+    'kbengine.git.openRangeHistoryDiff',
+    (item: RangeHistoryItem, filePath: string, repoRoot: string, parentFilePath: string) =>
+      runGitHistoryWhenEnabled(
+        readGitHistoryEnabled(vscode.workspace.getConfiguration('kbengine')),
+        async () => {
+          if (!item || item.kind !== 'entry') {
+            void vscode.window.showInformationMessage('打开版本差异:上下文不是修改记录。');
+            return;
+          }
+          await openVersionDiff(
+            filePath,
+            repoRoot,
+            item.entry.hash,
+            defaultVersionQueryDeps(),
+            parentFilePath
+          );
+          const uri = makeVersionUri(repoRoot, item.entry.hash, filePath);
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, {
+            preview: false,
+            selection: new vscode.Range(
+              item.entry.rangeStart - 1,
+              0,
+              item.entry.rangeEnd - 1,
+              0
+            ),
+          });
+        }
+      )
+  );
   context.subscriptions.push(
     showFileHistoryCommand,
     showRangeHistoryCommand,
     gitHistoryNextPageCommand,
     gitOpenVersionDiffCommand,
-    gitOpenVersionContentCommand
+    gitOpenVersionContentCommand,
+    gitOpenRangeHistoryDiffCommand
   );
 
   // 侧栏常驻入口:始终可见可回,不随配置门控

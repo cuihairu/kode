@@ -80,6 +80,11 @@ describe('IDE-GIT-009 parseRangeTimelineOutput', () => {
     expect(entries[0].authorName).toBe('乙');
     expect(entries[0].authorDate).toBe('2026-11-03T10:00:00+08:00');
     expect(entries.map((e) => e.path)).toEqual(['f.py', 'f.py']);
+    // 每条记录该版本中的行段范围(由 -L diff hunk 新侧推得):改三=3,1→3;创建=1,3→1-3。
+    expect(entries.map((e) => [e.rangeStart, e.rangeEnd])).toEqual([
+      [3, 3],
+      [1, 3],
+    ]);
     expect(boundary).toEqual({ kind: 'origin', atCommit: H('h1'), atPath: 'f.py' });
   });
 

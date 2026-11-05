@@ -27,6 +27,9 @@ export interface RangeChangeEntry {
   subject: string;
   /** 该提交中文件路径(-L 沿重命名追踪;重命名前为老路径)。 */
   path: string;
+  /** 该行段在该提交版本中的位置(1 基、含端点;由 `-L` diff 的 hunk 新侧推得,供 IDE-GIT-010 定位)。 */
+  rangeStart: number;
+  rangeEnd: number;
 }
 
 /** 追踪边界:origin=追溯到行段引入;stopped=合并/复制/无法继续,不代表完整历史。 */
@@ -76,6 +79,21 @@ function isPureAddition(diff: string): boolean {
   return !diff.split('\n').some((l) => l.startsWith('-') && !l.startsWith('---'));
 }
 
+/** 从行段 diff 的 hunk 头推该行段在该提交版本中的范围(1 基、含端点;hunk 缺省计数 1)。 */
+function extractRangeSpan(diff: string): { start: number; end: number } {
+  const re = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm;
+  let start = Infinity;
+  let end = 0;
+  for (const m of diff.matchAll(re)) {
+    const newStart = Number(m[3]);
+    const newCount = m[4] === undefined ? 1 : Number(m[4]);
+    start = Math.min(start, newStart);
+    end = Math.max(end, newStart + newCount - 1);
+  }
+  // 无 hunk(异常形态)兜底:1,1,不假装有范围。
+  return { start: start === Infinity ? 1 : start, end: end === 0 ? 1 : end };
+}
+
 /** 解析单行元数据记录(`%H%x1f%an%x1f%ae%x1f%aI%x1f%cI%x1f%s`)。 */
 function parseRecord(meta: string): RangeChangeEntry {
   const fields = meta.split(FIELD_SEP);
@@ -87,6 +105,8 @@ function parseRecord(meta: string): RangeChangeEntry {
     commitDate: fields[4] ?? '',
     subject: fields[5] ?? '',
     path: '',
+    rangeStart: 1,
+    rangeEnd: 1,
   };
 }
 
@@ -119,10 +139,14 @@ export function parseRangeTimelineOutput(stdout: string): {
   if (entries.length === 0) {
     return { entries, boundary: { kind: 'stopped', atCommit: '', atPath: '' } };
   }
-  // 每条记录按自身 diff 的新侧路径记 path(-L 沿重命名:引入提交=老路径)。
+  // 每条记录按自身 diff 记 path(新侧路径)与该版本中的行段范围(-L 沿重命名:引入提交=老路径)。
   for (let i = 0; i < entries.length; i += 1) {
-    const p = extractNewPath(diffs[i] ?? '');
+    const d = diffs[i] ?? '';
+    const p = extractNewPath(d);
     if (p) entries[i].path = p;
+    const span = extractRangeSpan(d);
+    entries[i].rangeStart = span.start;
+    entries[i].rangeEnd = span.end;
   }
   const last = entries.length - 1;
   const lastDiff = diffs[last] ?? '';

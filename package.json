@@ -138,7 +138,8 @@
     "onCommand:kbengine.git.showRangeHistory",
     "onCommand:kbengine.git.historyNextPage",
     "onCommand:kbengine.git.openVersionDiff",
-    "onCommand:kbengine.git.openVersionContent"
+    "onCommand:kbengine.git.openVersionContent",
+    "onCommand:kbengine.git.openRangeHistoryDiff"
   ],
   "main": "./out/extension.js",
   "l10n": "./l10n",
@@ -302,6 +303,11 @@
         {
           "id": "kbengine.gitHistory",
           "name": "%kbengine.view.gitHistory%",
+          "when": "kode.gitHistoryEnabled"
+        },
+        {
+          "id": "kbengine.gitRangeHistory",
+          "name": "%kbengine.view.gitRangeHistory%",
           "when": "kode.gitHistoryEnabled"
         },
         {
@@ -777,6 +783,10 @@
       {
         "command": "kbengine.git.openVersionContent",
         "title": "Kode: 打开版本内容 (Open Version Content)"
+      },
+      {
+        "command": "kbengine.git.openRangeHistoryDiff",
+        "title": "Kode: 打开版本差异并定位范围 (Open Version Diff and Locate)"
       }
     ],
     "menus": {
@@ -919,6 +929,10 @@
         },
         {
           "command": "kbengine.git.openVersionContent",
+          "when": "false"
+        },
+        {
+          "command": "kbengine.git.openRangeHistoryDiff",
           "when": "false"
         }
       ],

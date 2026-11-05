@@ -1,0 +1,371 @@
+/**
+ * IDE-GIT-010:展示选区历史并定位该次修改(Kode 侧边栏范围历史视图)。
+ * 用户约束(2026-10-29):默认开启、按需查询——只在用户经「Kode：查看选中范围
+ * 历史」(编辑器选区右键/命令面板)发起时运行;绝不预取、绝不挂编辑器切换/
+ * 选区变化监听。结构:纯状态机(item 构造/标题可测)+ 薄 TreeDataProvider
+ * 包装(vscode 依赖只在 item 映射,经 fake-vscode 可测)。
+ *
+ * 语义:
+ * - 入口 `showSelectionHistory(filePath, repoRoot, range)` 把工作区选区先经
+ *   IDE-GIT-008 映射为已提交(HEAD)行段(绝不把当前行号当 HEAD 行号),再经
+ *   IDE-GIT-009 查询该 HEAD 行段的逐提交修改时间线;视图呈现「文件 @ HEAD
+ *   行 N-M」基准与原选区。
+ * - 切换编辑器/光标/选区不会错套(视图持有自身查询结果,不随编辑器变化
+ *   重查,也不反向应用到别的编辑器)。
+ * - 点击条目经 `kbengine.git.openRangeHistoryDiff` 打开该版本 vs 父版本
+ *   diff,并在该版本内容中定位行段范围(IDE-GIT-006 虚拟文档,只读不落盘)。
+ */
+
+import * as path from 'path';
+import * as vscode from 'vscode';
+import {
+  queryRangeTimeline,
+  type GitRangeTimelineDeps,
+  type RangeChangeEntry,
+  type RangeTimelineBoundary,
+  type RangeTimelineResult,
+  defaultGitRangeTimelineDeps,
+} from './gitRangeTimeline';
+import {
+  mapSelectionToHeadRange,
+  type GitSelectionMapDeps,
+  type SelectionMapResult,
+  type SelectionRange,
+  defaultGitSelectionMapDeps,
+} from './gitSelectionMap';
+import { summarizeGitError } from './gitHistoryTree';
+import {
+  describeGitRepoLocation,
+  locateGitRepository,
+  realGitRepoLocationDeps,
+  type GitRepoLocation,
+} from './gitRepoLocate';
+
+/** 视图条目:修改记录(点击打开 diff+定位)/ 引导或状态。 */
+export type RangeHistoryItem =
+  | {
+      kind: 'entry';
+      entry: RangeChangeEntry;
+      /** 该提交时文件绝对路径(沿重命名:老路径提交用老路径)。 */
+      filePath: string;
+      repoRoot: string;
+      /** 父提交时文件绝对路径(重命名提交的父侧在老路径)。 */
+      parentFilePath: string;
+    }
+  | { kind: 'message'; message: string; tone: 'guidance' | 'warning' };
+
+/** 视图状态机:空闲(零 Git)→ 映射+查询 → 装载 / 明确失败。 */
+export type RangeHistoryState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | {
+      kind: 'loaded';
+      /** 当前文件绝对路径。 */
+      filePath: string;
+      repoRoot: string;
+      /** 已提交(HEAD)行段(1 基、含端点;由映射结果推得)。 */
+      headStart: number;
+      headEnd: number;
+      /** 原始编辑器选区(1 基、含端点,展示用)。 */
+      selectionStart: number;
+      selectionEnd: number;
+      entries: RangeChangeEntry[];
+      boundary: RangeTimelineBoundary;
+      /** 选区中未提交/未保存、无法映射的行数(>0 时顶部警告,时间线仅已提交部分)。 */
+      unmappedLines: number;
+    }
+  | { kind: 'no-selection' }
+  | { kind: 'has-uncommitted'; message: string }
+  | { kind: 'untracked' }
+  | { kind: 'no-commits' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'error'; message: string };
+
+export interface RangeHistoryDeps {
+  /** 定位所属仓库(默认:locateGitRepository + 当前工作区根 + 真实 fs 面)。 */
+  locateGitRepo(filePath: string, enabled: boolean): GitRepoLocation;
+  /** 工作区选区 → 已提交(HEAD)行段(默认:IDE-GIT-008 mapSelectionToHeadRange)。 */
+  mapSelection(filePath: string, repoRoot: string, range: SelectionRange): Promise<SelectionMapResult>;
+  /** HEAD 行段 → 逐提交修改时间线(默认:IDE-GIT-009 queryRangeTimeline)。 */
+  queryTimeline(filePath: string, repoRoot: string, range: SelectionRange): Promise<RangeTimelineResult>;
+}
+
+export function defaultRangeHistoryDeps(deps?: Partial<RangeHistoryDeps>): RangeHistoryDeps {
+  const mapDeps: GitSelectionMapDeps = defaultGitSelectionMapDeps();
+  const queryDeps: GitRangeTimelineDeps = defaultGitRangeTimelineDeps();
+  return {
+    locateGitRepo: (filePath, enabled) =>
+      locateGitRepository(
+        filePath,
+        (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath),
+        enabled,
+        realGitRepoLocationDeps()
+      ),
+    mapSelection: (filePath, repoRoot, range) =>
+      mapSelectionToHeadRange(filePath, repoRoot, range, mapDeps),
+    queryTimeline: (filePath, repoRoot, range) =>
+      queryRangeTimeline(filePath, repoRoot, range, queryDeps),
+    ...deps,
+  };
+}
+
+/** 由状态构造视图条目(纯函数:引导/警告/修改记录行)。 */
+export function buildRangeHistoryItems(state: RangeHistoryState): RangeHistoryItem[] {
+  switch (state.kind) {
+    case 'idle':
+      return [
+        {
+          kind: 'message',
+          tone: 'guidance',
+          message: '尚未查询:选中代码右键「Kode：查看选中范围历史」,或在命令面板运行同名命令',
+        },
+      ];
+    case 'loading':
+      return [{ kind: 'message', tone: 'guidance', message: '正在查询选中范围历史…' }];
+    case 'loaded': {
+      const items: RangeHistoryItem[] = [];
+      if (state.unmappedLines > 0) {
+        items.push({
+          kind: 'message',
+          tone: 'warning',
+          message: `选区 ${state.unmappedLines} 行为未提交/未保存新增或修改,无法映射(以下时间线仅已提交部分)`,
+        });
+      }
+      state.entries.forEach((entry, index) => {
+        const filePath = path.join(state.repoRoot, entry.path);
+        // 父提交时路径 = 更老一条记录的 path(重命名提交的父侧在老路径)。
+        const next = state.entries[index + 1];
+        const parentFilePath = next ? path.join(state.repoRoot, next.path) : filePath;
+        items.push({ kind: 'entry', entry, filePath, repoRoot: state.repoRoot, parentFilePath });
+      });
+      const b = state.boundary;
+      if (b.kind === 'origin') {
+        items.push({
+          kind: 'message',
+          tone: 'guidance',
+          message: `已追溯到行段引入处(提交 ${b.atCommit.slice(0, 8)} @ ${b.atPath})`,
+        });
+      } else {
+        items.push({
+          kind: 'message',
+          tone: 'warning',
+          message: `追踪止于 ${b.atCommit.slice(0, 8)} @ ${b.atPath}(合并/复制/无法继续,不代表完整历史)`,
+        });
+      }
+      return items;
+    }
+    case 'no-selection':
+      return [{ kind: 'message', tone: 'guidance', message: '请先选择要查看历史的代码范围' }];
+    case 'has-uncommitted':
+      return [{ kind: 'message', tone: 'warning', message: state.message }];
+    case 'untracked':
+      return [{ kind: 'message', tone: 'warning', message: '文件未纳入 Git 跟踪,没有历史可查' }];
+    case 'no-commits':
+      return [{ kind: 'message', tone: 'warning', message: '仓库尚无提交,没有历史可查' }];
+    case 'invalid':
+      return [{ kind: 'message', tone: 'warning', message: state.message }];
+    case 'error':
+      return [{ kind: 'message', tone: 'warning', message: state.message }];
+  }
+}
+
+/** 视图标题:文件 @ HEAD 行段(基准提交与原选区);非装载态回缺省。 */
+export function rangeHistoryViewTitle(state: RangeHistoryState): string {
+  if (state.kind !== 'loaded') return '选区历史';
+  return `${path.basename(state.filePath)} @ HEAD 行 ${state.headStart}-${state.headEnd}`;
+}
+
+/** 由映射结果推装载状态的 HEAD 行段(各段并集;无段返回 null)。 */
+function headSpanFromSegments(
+  segments: readonly { headFirstLine: number; headLastLine: number }[]
+): { start: number; end: number } | null {
+  if (segments.length === 0) return null;
+  let start = Infinity;
+  let end = 0;
+  for (const s of segments) {
+    start = Math.min(start, s.headFirstLine);
+    end = Math.max(end, s.headLastLine);
+  }
+  return { start, end };
+}
+
+/**
+ * 范围历史树(侧边栏 kbengine.gitRangeHistory)。
+ * showSelectionHistory 只在用户入口触发;不挂编辑器切换/选区变化监听
+ * (视图持有自身状态,切换编辑器不重查、不错套)。
+ */
+export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<RangeHistoryItem> {
+  private readonly changeEmitter = new vscode.EventEmitter<RangeHistoryItem | undefined | void>();
+  readonly onDidChangeTreeData = this.changeEmitter.event;
+  private state: RangeHistoryState = { kind: 'idle' };
+
+  constructor(private readonly deps: RangeHistoryDeps) {}
+
+  private fire(): void {
+    this.changeEmitter.fire();
+  }
+
+  getState(): RangeHistoryState {
+    return this.state;
+  }
+
+  getTreeItem(item: RangeHistoryItem): vscode.TreeItem {
+    const tree = new vscode.TreeItem(item.kind === 'entry' ? item.entry.subject : '');
+    if (item.kind === 'entry') {
+      tree.description = `${item.entry.authorName} · ${item.entry.authorDate}`;
+      tree.tooltip = [
+        item.entry.hash,
+        `${item.entry.authorName} <${item.entry.authorEmail}>`,
+        `作者时间:${item.entry.authorDate}`,
+        `提交时间:${item.entry.commitDate}`,
+        item.entry.subject,
+        `行 ${item.entry.rangeStart}-${item.entry.rangeEnd} @ ${item.entry.path}`,
+      ]
+        .filter((line) => line.trim() !== '')
+        .join('\n');
+      tree.contextValue = 'gitRangeEntry';
+      // 点击:打开该版本 vs 父版本 diff 并定位行段范围。
+      tree.command = {
+        command: 'kbengine.git.openRangeHistoryDiff',
+        title: '打开版本差异并定位',
+        arguments: [item.entry, item.filePath, item.repoRoot, item.parentFilePath],
+      };
+    } else {
+      tree.label = item.message;
+      if (item.tone === 'warning') tree.contextValue = 'gitRangeHistoryWarning';
+    }
+    return tree;
+  }
+
+  getChildren(): RangeHistoryItem[] {
+    return buildRangeHistoryItems(this.state);
+  }
+
+  /** 入口:定位仓库 → 映射选区 → 查询时间线(只在用户触发时发生;不挂编辑器监听)。 */
+  async showSelectionHistory(
+    filePath: string,
+    range: SelectionRange,
+    enabled: boolean
+  ): Promise<void> {
+    if (!enabled) {
+      this.state = { kind: 'error', message: '历史功能已关闭' };
+      this.fire();
+      return;
+    }
+    this.state = { kind: 'loading' };
+    this.fire();
+    const location = this.deps.locateGitRepo(filePath, enabled);
+    if (location.kind !== 'repo') {
+      this.state = { kind: 'error', message: describeGitRepoLocation(location) };
+      this.fire();
+      return;
+    }
+    const repoRoot = location.repoRoot;
+    const mapped = await this.deps.mapSelection(filePath, repoRoot, range);
+    switch (mapped.kind) {
+      case 'mapped':
+        await this.queryAndLoad(filePath, repoRoot, range, mapped.segments, 0);
+        return;
+      case 'has-uncommitted': {
+        // 已提交部分照常出时间线,未提交行如实警告。
+        if (mapped.segments.length > 0) {
+          await this.queryAndLoad(
+            filePath,
+            repoRoot,
+            range,
+            mapped.segments,
+            mapped.unmappedLines
+          );
+        } else {
+          this.state = {
+            kind: 'has-uncommitted',
+            message: `选区 ${mapped.selectionLineCount} 行均为未提交/未保存新增或修改,无法准确映射到已提交版本(保存后重试或选择已提交版本)`,
+          };
+          this.fire();
+        }
+        return;
+      }
+      case 'untracked':
+        this.state = { kind: 'untracked' };
+        this.fire();
+        return;
+      case 'no-commits':
+        this.state = { kind: 'no-commits' };
+        this.fire();
+        return;
+      case 'binary':
+        this.state = { kind: 'invalid', message: '二进制文件不支持按行映射到已提交版本' };
+        this.fire();
+        return;
+      case 'invalid-selection':
+        this.state = { kind: 'invalid', message: mapped.reason };
+        this.fire();
+        return;
+      case 'git-error':
+        this.state = { kind: 'error', message: `映射失败:${summarizeGitError(mapped.outcome)}` };
+        this.fire();
+        return;
+    }
+  }
+
+  /** 无选区提示(直接调用命令且无选区时)。 */
+  showNoSelection(): void {
+    this.state = { kind: 'no-selection' };
+    this.fire();
+  }
+
+  /** Git 不可用提示(调用面送文案)。 */
+  showUnavailable(message: string): void {
+    this.state = { kind: 'error', message };
+    this.fire();
+  }
+
+  private async queryAndLoad(
+    filePath: string,
+    repoRoot: string,
+    range: SelectionRange,
+    segments: readonly { headFirstLine: number; headLastLine: number }[],
+    unmappedLines: number
+  ): Promise<void> {
+    const span = headSpanFromSegments(segments);
+    if (!span) {
+      this.state = { kind: 'invalid', message: '选区无已提交行段可查询' };
+      this.fire();
+      return;
+    }
+    const result = await this.deps.queryTimeline(filePath, repoRoot, {
+      startLine: span.start,
+      endLine: span.end,
+    });
+    if (result.kind === 'timeline') {
+      this.state = {
+        kind: 'loaded',
+        filePath,
+        repoRoot,
+        headStart: span.start,
+        headEnd: span.end,
+        selectionStart: range.startLine,
+        selectionEnd: range.endLine,
+        entries: result.entries,
+        boundary: result.boundary,
+        unmappedLines,
+      };
+    } else {
+      this.state = this.applyTimelineFailure(result);
+    }
+    this.fire();
+  }
+
+  private applyTimelineFailure(result: Exclude<RangeTimelineResult, { kind: 'timeline' }>): RangeHistoryState {
+    switch (result.kind) {
+      case 'invalid-range':
+        return { kind: 'invalid', message: result.reason };
+      case 'untracked':
+        return { kind: 'untracked' };
+      case 'no-commits':
+        return { kind: 'no-commits' };
+      case 'git-error':
+        return { kind: 'error', message: `查询失败:${summarizeGitError(result.outcome)}` };
+    }
+  }
+}

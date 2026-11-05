@@ -7,5 +7,6 @@
   "kbengine.view.telnetStatus": "Telnet",
   "kbengine.view.config": "配置",
   "kbengine.view.gitHistory": "文件历史",
-  "kbengine.view.remoteServers": "远程服务器"
+  "kbengine.view.remoteServers": "远程服务器",
+  "kbengine.view.gitRangeHistory": "选区历史"
 }
