@@ -40,8 +40,8 @@ export interface ReloadTarget {
  */
 export type ReloadReceipt =
   | { status: 'sent'; file?: string; detail: string }
-  | { status: 'accepted'; file: string; digest?: string }
-  | { status: 'applied'; file: string; digest?: string }
+  | { status: 'accepted'; file: string; digest?: string; note?: string }
+  | { status: 'applied'; file: string; digest?: string; revision?: number }
   | { status: 'failed'; file?: string; reason: string };
 
 export interface ReloadSendSummary {
@@ -159,13 +159,27 @@ export function parseReloadHttpReceipts(body: string, fileSet: readonly string[]
       continue;
     }
     const digest = typeof record.digest === 'string' ? record.digest : undefined;
+    const note = typeof record.note === 'string' ? record.note : undefined;
+    const revision = typeof record.revision === 'number' ? record.revision : undefined;
     const status = record.status;
     if (status === 'accepted') {
       seen.add(file);
-      receipts.push({ status: 'accepted', file, ...(digest !== undefined ? { digest } : {}) });
+      receipts.push({
+        status: 'accepted',
+        file,
+        ...(digest !== undefined ? { digest } : {}),
+        // F3:接收端如实标注的未应用原因(如「未配置应用命令」)透传,不吞
+        ...(note !== undefined ? { note } : {})
+      });
     } else if (status === 'applied') {
       seen.add(file);
-      receipts.push({ status: 'applied', file, ...(digest !== undefined ? { digest } : {}) });
+      receipts.push({
+        status: 'applied',
+        file,
+        ...(digest !== undefined ? { digest } : {}),
+        // F3:接收端真实应用后的 revision 证据透传,不吞
+        ...(revision !== undefined ? { revision } : {})
+      });
     } else if (status === 'failed') {
       seen.add(file);
       receipts.push({

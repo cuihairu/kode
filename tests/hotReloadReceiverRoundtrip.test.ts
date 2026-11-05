@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -38,12 +38,13 @@ const RECEIVER_SCRIPT = path.join(
 
 const startReceiver = async (
   mode: string,
-  scenario: string
+  scenario: string,
+  extraArgs: string[] = []
 ): Promise<ReceiverHandle> => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-receiver-'));
   const proc = spawn(
     process.execPath,
-    [RECEIVER_SCRIPT, '--port', '0', '--root', root, '--mode', mode, '--scenario', scenario],
+    [RECEIVER_SCRIPT, '--port', '0', '--root', root, '--mode', mode, '--scenario', scenario, ...extraArgs],
     { stdio: ['ignore', 'pipe', 'inherit'] }
   );
   const port = await new Promise<number>((resolve, reject) => {
@@ -80,8 +81,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     handles = [];
   });
 
-  const start = async (mode: string, scenario: string): Promise<ReceiverHandle> => {
-    const handle = await startReceiver(mode, scenario);
+  const start = async (mode: string, scenario: string, extraArgs: string[] = []): Promise<ReceiverHandle> => {
+    const handle = await startReceiver(mode, scenario, extraArgs);
     handles.push(handle);
     return handle;
   };
@@ -118,7 +119,7 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   });
 
   it('applied 回执:digest 与所发内容一致才升格 applied(IDE-REV-023)', async () => {
-    const receiver = await start('apply', 'applied');
+    const receiver = await start('apply', 'applied', ['--apply-command', 'node -e "process.exit(0)"']);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 100\n';
     writeFileSync(file, content, 'utf8');
@@ -142,7 +143,7 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
   });
 
   it('digest 不符:接收端回包 digest 与所发内容不一致,保持未确认不升格', async () => {
-    const receiver = await start('apply', 'digest-mismatch');
+    const receiver = await start('apply', 'digest-mismatch', ['--apply-command', 'node -e "process.exit(0)"']);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 200\n';
     writeFileSync(file, content, 'utf8');
@@ -190,6 +191,50 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const summary = await makeTransport(receiver.port).send(key, [file], () => {});
     expect(summary.receipts[0]).toMatchObject({ status: 'failed' });
     expect(store.get(key, file)?.outcome ?? 'sent-unverified').toBe('sent-unverified');
+  });
+
+  // F3 回归(2026-11-05 审核):参考接收端伪称 applied 不能当协议证据——
+  // apply 模式必须真正执行应用实现(真实命令)并落版本台账后才回 applied;
+  // 无应用实现时如实回 accepted(仅暂存,未应用)。
+  it('F3 回归:apply 模式无应用命令 → 不自称 applied,如实回 accepted(仅暂存未应用)', async () => {
+    const receiver = await start('apply', 'applied');
+    const file = path.join(receiver.root, 'Avatar.py');
+    writeFileSync(file, 'class Avatar:\n    pass\n', 'utf8');
+
+    const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
+    expect(summary.receipts[0].status).not.toBe('applied');
+    expect(summary.receipts[0]).toMatchObject({ status: 'accepted', file });
+    // 未应用的原因如实点名(不冒充、不吞;解析器透传 note)
+    expect((summary.receipts[0] as { note?: string }).note).toContain('未配置');
+    // 没有真实应用 → 不落任何 applied 版本台账
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  it('F3 回归:apply 模式配置真实应用命令 → 执行成功才回 applied,回执带 revision 并落应用台账', async () => {
+    const receiver = await start('apply', 'applied', ['--apply-command', 'node -e "process.exit(0)"']);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 300\n';
+    writeFileSync(file, content, 'utf8');
+    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+
+    const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
+    expect(summary.receipts[0]).toMatchObject({ status: 'applied', file, revision: 1 });
+    expect(summary.receipts[0].digest).toBe(digest);
+    // 应用后证据:版本台账逐条记录 revision/file/digest/命令
+    const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
+    const entry = JSON.parse(ledger.trim().split('\n')[0]);
+    expect(entry).toMatchObject({ revision: 1, file, digest, command: 'node -e "process.exit(0)"' });
+  });
+
+  it('F3 回归:应用命令执行失败 → 如实回 failed,不冒充 applied', async () => {
+    const receiver = await start('apply', 'applied', ['--apply-command', 'node -e "process.exit(3)"']);
+    const file = path.join(receiver.root, 'Avatar.py');
+    writeFileSync(file, 'class Avatar:\n    pass\n', 'utf8');
+
+    const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
+    expect(summary.receipts[0].status).toBe('failed');
+    expect((summary.receipts[0] as { reason?: string }).reason).toContain('应用命令');
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
   it('证据源锁:接收端脚本在册,实现已登记契约', () => {
