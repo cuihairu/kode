@@ -676,6 +676,15 @@ The flow graph panel supports:
   - The panel is a quick-pick + input flow (the existing profile-edit pattern); unknown ids save as 保存失败 and never silently create
 - When a profile has a channel configured and is active, the fire path sends the whole reload batch through `transport.send` (receipts feed the per-target ledger directly) instead of the quick action; with no channel configured the actionName path is unchanged
 
+### `kbengine.hotReload.confirmDefBaseline`
+
+- Title: `Hot Reload: Confirm Restart (Rebuild def Structure Baselines)`
+- Purpose: rebuild the def structural-gate baselines after a real engine restart (F1, 2026-11-05 review) — baselines represent the structure version the target engine has actually loaded, and are only advanced by a real send (`commit`) or this explicit restart confirmation
+- Behavior:
+  - Re-baselines every def file the gate has seen this session to its current on-disk content and reports the confirmed file count in the hot-reload log + an info notice
+  - Blocked batches (structural change / no baseline / unreadable) never advance baselines — without a restart confirmation the second save of the same blocked content stays blocked instead of silently passing on the rolled baseline
+  - Unreadable files are skipped (not fabricated); the count reported is the number of files actually re-baselined
+
 ### `kbengine.core.showShadowDiffLog`
 
 - Title: `Kode Core Shadow: Show Diff Log`

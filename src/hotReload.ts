@@ -683,6 +683,10 @@ export function setupHotReload(
           block(reasons);
           return;
         }
+        // F1:只有放行且即将真实发送的批次才前滚基线(commit)——被拦批次
+        // 绝不滚动,否则第二次发送同一内容指纹相同即绕过需重启。前滚失败
+        // 不阻塞发送(保守面在判定,不在前滚;下次判定按旧基线保守拦)。
+        void Promise.resolve(defGate.commit?.(triggers)).catch(() => undefined);
         proceed();
       });
     };

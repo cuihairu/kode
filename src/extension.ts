@@ -4807,12 +4807,24 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
   // RT-3(IDE-HOT-005):def 结构闸判定面 fire 与失败目标重试共用同一实例与
-  // 同一会话基线册(逐次滚动语义一致)——重试不复用闸判定,结构性 def 变更
-  // 会经「重试」通道以普通 reload 下发。
+  // 同一会话基线册(放行即真实发送时前滚,见 F1)——重试不复用闸判定,
+  // 结构性 def 变更会经「重试」通道以普通 reload 下发。
   const hotReloadDefBaselines = new Map<string, string>();
   const hotReloadDefGate = createDefStructuralGate(
     hotReloadTargetStateWiring.readFileContent,
     hotReloadDefBaselines
+  );
+  // F1(2026-11-05 审核):被拦批次不前滚基线,基线只随真实发送或明确重启
+  // 确认建立——本命令是重启确认口:用户确认引擎已重启并加载当前 def 内容
+  // 后调用,基线重建为当前内容,其上的非结构 def 变更才可走普通热更。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('kbengine.hotReload.confirmDefBaseline', async () => {
+      const confirmed = (await hotReloadDefGate.confirmLoaded?.()) ?? 0;
+      hotReloadStatus.log(`def 结构基线重建(重启确认):${confirmed} 个文件基线已对齐当前内容(结构性变更仍会在下次发送前拦下)`);
+      void Promise.resolve(vscode.window.showInformationMessage(`def 结构基线已对齐当前内容(${confirmed} 个文件)`)).catch(
+        () => undefined
+      );
+    })
   );
   setupHotReload(context, runQuickActionForHotReload, {
     status: hotReloadStatus,

@@ -48,8 +48,12 @@ export interface HotReloadResendDeps {
    * 册(hotReloadDefGate)。注入即重发前过闸——结构性 def 变更/无基线/不可读
    * 一律不发送(拦下是保守拦截不是投递失败,不落账),非结构 def 与纯
    * Python 批照常重发。不注入则不设防(与既有装配兼容,真装配必须注入)。
+   * F1:闸的 commit 口在重试放行即真实重发时前滚基线(可选,缺省不滚)。
    */
-  readonly defGate?: { check(files: readonly string[]): Promise<string[]> };
+  readonly defGate?: {
+    check(files: readonly string[]): Promise<string[]>;
+    commit?(files: readonly string[]): Promise<void>;
+  };
   /** 结构闸拦下通知(接线方把文件标进状态机 RESTART_REQUIRED 呈现面) */
   readonly onRestartRequired?: (
     targetId: string,
@@ -100,6 +104,13 @@ export async function resendHotReloadTarget(
         ok: false,
         detail: `结构性 def 变更需要重启,重试不发普通 reload:${first}${reasons.length > 1 ? ` 等 ${reasons.length} 项` : ''}`
       };
+    }
+    // F1:重试放行即真实重发——基线前滚到本次所发内容(与 fire 路径同口
+    // 径);被拦批次不走这里,基线保持引擎已加载版本,重复重试持续拦截。
+    try {
+      await deps.defGate.commit?.(files);
+    } catch {
+      // 前滚失败不阻塞重发(下次判定按旧基线保守拦)
     }
   }
   const actionName = await deps.resolveActionNameForTarget(key.targetId);
