@@ -110,7 +110,7 @@ const main = async () => {
   log(`主机: ${os.hostname()} node ${process.version}`);
   log('接收端: scripts/hot-reload-receiver/referenceReceiver.mjs(零依赖 node:http,已记录契约参考实现)');
   log('契约: {"status":"accepted","file":<逐字回显>} / {"status":"applied","file":<逐字回显>,"digest":<sha256 hex>}');
-  log('      请求报文带 sender_digests(F3 三轮:发送方冻结 digest 随报文下发,接收端对引擎应用产物核验后才回 applied)');
+  log('      请求报文带 sender_digests(发送方冻结 digest 随报文下发;F3 四轮:接收端自己写产物落盘引擎目录,写后重算 sha256 与 sender_digest 比对一致才回 applied,外部应用命令模式降级 accepted)');
   log('背景: 引擎原生重载 KBEngine.reloadScript 无 HTTP 回执(docs/review/2026-10-30-completion-and-lint-audit.md');
   log('      AUD-007 实勘);accepted/applied 契约作用于用户配置 @http: quick action 回包体,本探针提供会说');
   log('      该契约的真实服务端与真实 wire 样本。解析/升格行为由 tests/hotReloadReceiverRoundtrip.test.ts 钉住。');

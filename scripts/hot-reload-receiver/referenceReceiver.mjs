@@ -18,24 +18,26 @@
  *
  * F3(2026-11-05 审核):applied 必须是「真实应用后」的协议证据,不是读取
  * +复制就能自称的状态——
- *  - apply 模式必须配置 --apply-command <shell 命令>(真实应用实现,例如调
- *    引擎 reloadScript 的包装脚本);逐文件执行,退出码 0 才回 applied,
- *    并把 revision/file/digest/命令/输出逐条落 <root>/applied-revisions.jsonl
- *    (应用后证据);非 0 如实回 failed(带退出码与 stderr 尾行),不冒充。
- *  - F3 三轮(2026-11-06 复审):协议级残余修复——二轮比较的是「所发源文件」
- *    应用命令前后两次哈希,而协议没把发送方冻结 digest 传给接收端,空操作
- *    命令(不改源文件、退出 0)前后哈希相同仍能假 applied。修后:
- *    ① 请求报文带 sender_digests 字段:{"files":[...],"sender_digests":
- *       {"<file>":"<发送方冻结 sha256 hex>"}}(发送方冻结 digest 随报文下发);
- *    ② apply 模式必须配置 --artifact-dir <引擎目录>(应用命令把产物装进
- *       该目录;命令环境注入 KODE_RELOAD_ARTIFACT=产物绝对路径);退出 0 后
- *       对应用产物重算 sha256,与 sender_digests[file] 比对一致才回 applied
- *       ——缺 --artifact-dir / 报文缺 sender_digest / 产物读不到 / 哈希不一致
- *       一律如实 failed(不落应用台账、不自称 applied)。旧「源文件前后哈希」
- *       比较废除:它证明不了引擎加载的是发送方冻结的内容。
- *  - 未配置 --apply-command 时如实回 accepted(仅暂存,未应用)+未配置原因,
- *    不落应用台账——没有引擎调用就没有 applied 证据,契约口径见 todo 的
- *    「缺服务端依据时保持开放」。
+ *  - F3 四轮(2026-11-06 复审,设计级重做):三轮的「外部应用命令 + 产物
+ *    哈希核验」仍有协议级残余——应用委托给外部命令,接收端无法证明引擎目录
+ *    里的产物是**本次命令**写的(命令可以是任何代码,产物核验只能证明「目录
+ *    里有份内容一致的东西」,证明不了应用通路)。修后 applied 路径改为
+ *    **接收端自己写产物**:按报文 files 读到内容后,由接收端自身代码直接把
+ *    该内容落盘引擎目录(--artifact-dir),写后对产物重算 sha256 与报文
+ *    sender_digests[file] 比对一致才回 applied;落盘失败/哈希不符一律如实
+ *    failed,且**回滚已写产物**(unlink,引擎目录不留半套残留)。
+ *  - 外部命令模式降级:--apply-command 配置的命令仍会执行(真实副作用,如
+ *    触发引擎 reloadScript 包装),但其副作用**不可证实**(接收端证明不了产
+ *    物是本次命令写的),退出 0 也最多 accepted(带降级原因注解),绝不自称
+ *    applied、不落应用台账;命令执行失败仍如实 failed(副作用失败是真失败)。
+ *    空操作场景从设计上不存在假 applied:接收端没写产物就没有产物哈希可核验。
+ *  - F3 三轮(2026-11-06 复审):协议报文带 sender_digests 字段:{"files":[...],
+ *    "sender_digests":{"<file>":"<发送方冻结 sha256 hex>"}}(发送方冻结
+ *    digest 随报文下发)——现为接收端自写产物的核验基准。旧「源文件前后
+ *    哈希」比较废除:它证明不了引擎加载的是发送方冻结的内容。
+ *  - apply 模式未配置 --artifact-dir 时接收端写不了产物,如实回 accepted
+ *    (仅暂存,未应用)+未配置原因,不落应用台账——没有引擎落盘就没有
+ *    applied 证据。
  *  - 暂存副本失败如实回 failed(不再静默忽略后继续自称 accepted/applied)。
  *
  * 用法:
@@ -49,8 +51,9 @@
  *   substitution + 发送方冻结 digest 自动附带产物)或裸 JSON 数组;逐文件读盘、
  *   sha256、暂存副本进 --root,按 mode 回:
  *   - stage:   每文件一条 accepted(暂存=接收端已收下待重载)
- *   - apply:   真实执行 --apply-command 成功后每文件一条 applied
- *              (digest=接收端对所发文件重算的 sha256,revision 递增)
+ *   - apply:   接收端自己写产物进 --artifact-dir,产物 sha256 与
+ *              sender_digests[file] 一致才回 applied(revision 递增);
+ *              配了 --apply-command 则执行命令但降级 accepted(副作用不可证实)
  *   - digest-mismatch: 形态同 applied 但 digest 故意错(可疑回执样本)
  *   - echo:    回纯文本非 JSON(未知结构样本)
  * - GET /probe(其余任何路径):200 "ok"(连通性探测面)。
@@ -60,7 +63,14 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { appendFileSync, copyFileSync, mkdirSync, readFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync
+} from 'node:fs';
 import * as path from 'node:path';
 
 const argv = process.argv.slice(2);
@@ -73,13 +83,23 @@ const port = Number(argValue('--port') ?? 0);
 const root = argValue('--root') ?? process.cwd();
 const mode = argValue('--mode') ?? 'stage';
 const applyCommand = argValue('--apply-command');
-// F3 三轮:引擎产物目录(应用命令把产物装进这里),applied 核验对象
+// F3 四轮:引擎产物目录(接收端自己把应用产物写进这里),applied 核验对象
 const artifactDir = argValue('--artifact-dir');
 const scenario = argValue('--scenario') ?? (mode === 'apply' ? 'applied' : 'accepted');
 
 mkdirSync(root, { recursive: true });
 
 const sha256Hex = content => createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+// F3 四轮:回滚已写产物——写后核验不过(读不到/哈希不符)就把接收端刚写的
+// 产物删掉,引擎目录不留半套残留(failed 分支必经此路)
+const rollbackArtifact = artifact => {
+  try {
+    unlinkSync(artifact);
+  } catch {
+    // 回滚尽力而为:文件本来就不在(写失败分支)或已不可删,如实由核验
+    // 失败原因兜底,不在回滚失败上再冒充任何状态
+  }
+};
 const APPLIED_LEDGER = path.join(root, 'applied-revisions.jsonl');
 let appliedRevision = 0;
 
@@ -177,70 +197,65 @@ const server = createServer((request, response) => {
         receipts.push(withTarget({ status: 'accepted', file }));
         continue;
       }
-      // F3:applied 只能来自真实应用实现——没有配置应用命令就如实回
-      // accepted(仅暂存,未应用),绝不自称 applied
-      if (!applyCommand) {
+      // F3 四轮:外部命令模式降级——命令仍会执行(真实副作用),但接收端无法
+      // 证明引擎目录里的产物是本次命令写的,退出 0 也最多 accepted(不可证实
+      // 的副作用),绝不自称 applied、不落应用台账;命令失败如实 failed。
+      if (applyCommand) {
+        const result = spawnSync(applyCommand, {
+          shell: true,
+          encoding: 'utf8',
+          timeout: 30_000,
+          env: {
+            ...process.env,
+            KODE_RELOAD_FILE: file,
+            KODE_RELOAD_DIGEST: digest,
+            ...(artifactDir !== undefined
+              ? { KODE_RELOAD_ARTIFACT: path.join(artifactDir, path.basename(file)) }
+              : {}),
+            ...(senderDigests !== undefined && typeof senderDigests[file] === 'string'
+              ? { KODE_RELOAD_SENDER_DIGEST: senderDigests[file] }
+              : {}),
+            ...(targetId !== undefined ? { KODE_RELOAD_TARGET_ID: targetId } : {})
+          }
+        });
+        if (result.error) {
+          receipts.push(
+            withTarget({
+              status: 'failed',
+              file,
+              reason: `应用命令执行失败:${result.error.message}`
+            })
+          );
+          continue;
+        }
+        if (result.status !== 0) {
+          const stderrTail = (result.stderr ?? '').trim().split('\n').slice(-1)[0] ?? '';
+          receipts.push(
+            withTarget({
+              status: 'failed',
+              file,
+              reason: `应用命令失败(exit ${result.status})${stderrTail ? `:${stderrTail}` : ''}`
+            })
+          );
+          continue;
+        }
         receipts.push(
           withTarget({
             status: 'accepted',
             file,
-            note: '接收端未配置真实应用命令(--apply-command),仅暂存未应用,不自称 applied'
+            note: '外部应用命令的副作用不可证实(产物非接收端所写,证明不了是本次命令写的):降级 accepted,不自称 applied'
           })
         );
         continue;
       }
-      const result = spawnSync(applyCommand, {
-        shell: true,
-        encoding: 'utf8',
-        timeout: 30_000,
-        env: {
-          ...process.env,
-          KODE_RELOAD_FILE: file,
-          KODE_RELOAD_DIGEST: digest,
-          // F3 三轮:应用产物(引擎目录中的实际文件)与发送方冻结基准,应用
-          // 命令可读;产物路径由接收端按 --artifact-dir + 文件名规约给出
-          ...(artifactDir !== undefined
-            ? { KODE_RELOAD_ARTIFACT: path.join(artifactDir, path.basename(file)) }
-            : {}),
-          ...(senderDigests !== undefined && typeof senderDigests[file] === 'string'
-            ? { KODE_RELOAD_SENDER_DIGEST: senderDigests[file] }
-            : {}),
-          ...(targetId !== undefined ? { KODE_RELOAD_TARGET_ID: targetId } : {})
-        }
-      });
-      if (result.error) {
-        receipts.push(
-          withTarget({
-            status: 'failed',
-            file,
-            reason: `应用命令执行失败:${result.error.message}`
-          })
-        );
-        continue;
-      }
-      if (result.status !== 0) {
-        const stderrTail = (result.stderr ?? '').trim().split('\n').slice(-1)[0] ?? '';
-        receipts.push(
-          withTarget({
-            status: 'failed',
-            file,
-            reason: `应用命令失败(exit ${result.status})${stderrTail ? `:${stderrTail}` : ''}`
-          })
-        );
-        continue;
-      }
-      // F3 三轮(2026-11-06 复审):退出码 0 只证明命令跑完,证明不了引擎
-      // 加载的是发送方冻结的内容——旧「源文件前后哈希」比较在空操作命令
-      // (不改源文件)面前恒真,是假 applied 通路。修后对应用产物(引擎目录
-      // --artifact-dir 中的实际文件)重算 sha256,与报文下发的 sender_digest
-      // (发送方冻结 digest)比对一致才回 applied;缺目录/缺基准/产物读不到/
-      // 哈希不一致一律如实 failed,不落应用台账、不自称 applied。
+      // F3 四轮:applied 路径=接收端自己写产物——未配置引擎产物目录写不了
+      // 产物,如实 accepted(仅暂存,未应用),绝不自称 applied
       if (artifactDir === undefined) {
         receipts.push(
           withTarget({
-            status: 'failed',
+            status: 'accepted',
             file,
-            reason: '接收端未配置引擎产物目录(--artifact-dir),无法核验应用产物:不自称 applied'
+            note: '接收端未配置引擎产物目录(--artifact-dir),只暂存未应用,不自称 applied'
           })
         );
         continue;
@@ -252,31 +267,50 @@ const server = createServer((request, response) => {
           withTarget({
             status: 'failed',
             file,
-            reason: '报文缺 sender_digest(发送方冻结 digest),应用产物无比对基准:不自称 applied'
+            reason: '报文缺 sender_digest(发送方冻结 digest),接收端自写产物无比对基准:不写盘不自称 applied'
           })
         );
         continue;
       }
+      // 接收端自己写产物:按报文读到的内容直接落盘引擎目录(产物由本进程
+      // writeFileSync 写入,应用通路可证明)
       const artifact = path.join(artifactDir, path.basename(file));
-      let artifactDigest;
       try {
-        artifactDigest = sha256Hex(readFileSync(artifact, 'utf8'));
-      } catch {
+        mkdirSync(artifactDir, { recursive: true });
+        writeFileSync(artifact, content, 'utf8');
+      } catch (error) {
         receipts.push(
           withTarget({
             status: 'failed',
             file,
-            reason: `应用后读不到应用产物(${artifact}),无法核验应用内容:不自称 applied`
+            reason: `应用产物落盘失败:${error instanceof Error ? error.message : String(error)}:不自称 applied`
+          })
+        );
+        continue;
+      }
+      // 写后重算产物 sha256,与发送方冻结基准比对一致才回 applied
+      let artifactDigest;
+      try {
+        artifactDigest = sha256Hex(readFileSync(artifact, 'utf8'));
+      } catch {
+        rollbackArtifact(artifact);
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: `应用后读不到应用产物(${artifact}),无法核验应用内容(已回滚):不自称 applied`
           })
         );
         continue;
       }
       if (artifactDigest !== senderDigest) {
+        // 哈希不符:回滚已写产物(引擎目录不留残留),如实 failed
+        rollbackArtifact(artifact);
         receipts.push(
           withTarget({
             status: 'failed',
             file,
-            reason: '应用产物 sha256 与 sender_digest 不一致(应用的不是发送方冻结内容):不自称 applied'
+            reason: '应用产物 sha256 与 sender_digest 不一致(已回滚,引擎目录无残留):不自称 applied'
           })
         );
         continue;
@@ -286,8 +320,7 @@ const server = createServer((request, response) => {
         revision: appliedRevision,
         file,
         digest: artifactDigest,
-        command: applyCommand,
-        stdout: (result.stdout ?? '').trim(),
+        appliedBy: 'receiver-self-write',
         appliedAt: new Date().toISOString()
       };
       try {

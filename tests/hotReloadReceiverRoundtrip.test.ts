@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -22,6 +22,13 @@ import {
 // node:http 回环网络驱动生产模块(HttpReloadTransport+defaultReloadHttpRunner
 // +真实台账),逐场景取证:accepted 升格/applied digest 双证/digest 不符不升格/
 // 非 JSON 回包保持未确认/非 2xx failed。请求/响应样本由 roundtripProbe 落盘。
+//
+// F3 四轮(2026-11-06 复审)设计级重做:applied 路径改为**接收端自己写产物**
+// ——按报文 files 读到内容后由接收端自身代码直接落盘引擎目录(--artifact-dir),
+// 写后重算 sha256 与 sender_digest 比对一致才回 applied(写失败/哈希不符→
+// failed 且已写产物回滚);外部应用命令模式降级:命令副作用不可证实(无法证明
+// 产物是本次命令写的),退出 0 也最多 accepted,绝不 applied。空操作场景从
+// 设计上不存在假 applied:接收端没写产物就没有产物哈希可核验。
 
 interface ReceiverHandle {
   port: number;
@@ -126,10 +133,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
       request.end();
     });
 
-  // F3 二轮:真实应用命令——把所发文件真实写入「引擎目录」(替代旧的
-  // process.exit(0) 空操作假应用),测试可对引擎侧产物断言
-  const realApplyCommand = (engineDir: string): string =>
-    `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
+  const sha256 = (content: string): string =>
+    createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
   it('accepted 回执:真实回包经 applyAcceptedReceipt 升格,台账 accepted(IDE-REV-022)', async () => {
     const receiver = await start('stage', 'accepted');
@@ -149,25 +154,22 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(store.get(key, file)?.outcome).toBe('accepted');
   });
 
-  it('applied 回执:digest 与所发内容一致才升格 applied(IDE-REV-023)', async () => {
+  it('applied 回执:接收端自己写产物,产物哈希与 sender_digest 一致才升格 applied', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
-    // F3 三轮:接收端按 --artifact-dir 里的应用产物核验 sender_digest
-    const receiver = await start('apply', 'applied', [
-      '--apply-command', realApplyCommand(engineDir),
-      '--artifact-dir', engineDir
-    ]);
+    // F3 四轮:接收端自己写产物模式——不配外部命令,只配引擎产物目录
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 100\n';
     writeFileSync(file, content, 'utf8');
-    const sentDigest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+    const sentDigest = sha256(content);
 
     const store = new HotReloadTargetStateStore({ now: () => 1_000 });
     const key = { rootId: '/ws', targetId: 'cellapp-1' };
-    // F3 三轮:发送方冻结 digest 随报文下发(sender_digests)
+    // 发送方冻结 digest 随报文下发(sender_digests)
     const summary = await makeTransport(receiver.port).send(key, [file], () => {}, new Map([[file, sentDigest]]));
     expect(summary.receipts[0]).toMatchObject({ status: 'applied', file });
-    // 真实应用证据:引擎目录里确实写入了所发内容(不再是空操作假应用)
+    // 接收端自己写的产物:引擎目录内容与所发内容逐字一致
     const engineFile = path.join(engineDir, 'Avatar.py');
     expect(existsSync(engineFile)).toBe(true);
     expect(readFileSync(engineFile, 'utf8')).toBe(content);
@@ -182,25 +184,25 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     );
     expect(verdict.kind).toBe('applied');
     expect(store.get(key, file)?.outcome).toBe('applied');
+    // applied 证据落版本台账(接收端自己写的产物哈希)
+    const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
+    expect(JSON.parse(ledger.trim().split('\n')[0])).toMatchObject({ file, digest: sentDigest });
   });
 
   it('digest 不符:接收端回包 digest 与所发内容不一致,保持未确认不升格', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
-    const receiver = await start('apply', 'digest-mismatch', [
-      '--apply-command', realApplyCommand(engineDir),
-      '--artifact-dir', engineDir
-    ]);
+    const receiver = await start('apply', 'digest-mismatch', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 200\n';
     writeFileSync(file, content, 'utf8');
-    const sentDigest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+    const sentDigest = sha256(content);
 
     const store = new HotReloadTargetStateStore({ now: () => 1_000 });
     const key = { rootId: '/ws', targetId: 'cellapp-1' };
     const summary = await makeTransport(receiver.port).send(key, [file], () => {}, new Map([[file, sentDigest]]));
+    // 接收端应用真实发生了(自己写的产物与所发一致),只是回包 digest 被故意报错
     expect(summary.receipts[0].status).toBe('applied');
-    // 应用真实发生了(引擎目录有产物且与发送方冻结内容一致),只是回包 digest 被故意报错
     expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(content);
 
     store.record(key, file, 'sent-unverified', { sentDigest });
@@ -242,53 +244,57 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(store.get(key, file)?.outcome ?? 'sent-unverified').toBe('sent-unverified');
   });
 
-  // F3 回归(2026-11-05 审核):参考接收端伪称 applied 不能当协议证据——
-  // apply 模式必须真正执行应用实现(真实命令)并落版本台账后才回 applied;
-  // 无应用实现时如实回 accepted(仅暂存,未应用)。
-  it('F3 回归:apply 模式无应用命令 → 不自称 applied,如实回 accepted(仅暂存未应用)', async () => {
+  // F3 四轮:apply 模式未配置引擎产物目录 → 接收端写不了产物,只暂存不自称
+  // applied,如实回 accepted + 未配置原因。
+  it('F3 四轮回归:apply 模式未配置引擎产物目录 → 只暂存不自称 applied,如实回 accepted', async () => {
     const receiver = await start('apply', 'applied');
     const file = path.join(receiver.root, 'Avatar.py');
-    writeFileSync(file, 'class Avatar:\n    pass\n', 'utf8');
-
-    const summary = await makeTransport(receiver.port).send({ rootId: '/ws', targetId: 'cellapp-1' }, [file], () => {});
-    expect(summary.receipts[0].status).not.toBe('applied');
-    expect(summary.receipts[0]).toMatchObject({ status: 'accepted', file });
-    // 未应用的原因如实点名(不冒充、不吞;解析器透传 note)
-    expect((summary.receipts[0] as { note?: string }).note).toContain('未配置');
-    // 没有真实应用 → 不落任何 applied 版本台账
-    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
-  });
-
-  it('F3 回归:apply 模式配置真实应用命令 → 执行成功才回 applied,回执带 revision 并落应用台账', async () => {
-    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
-    engineDirs.push(engineDir);
-    const applyCommand = realApplyCommand(engineDir);
-    const receiver = await start('apply', 'applied', [
-      '--apply-command', applyCommand,
-      '--artifact-dir', engineDir
-    ]);
-    const file = path.join(receiver.root, 'Avatar.py');
-    const content = 'class Avatar:\n    HP = 300\n';
+    const content = 'class Avatar:\n    pass\n';
     writeFileSync(file, content, 'utf8');
-    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
     const summary = await makeTransport(receiver.port).send(
       { rootId: '/ws', targetId: 'cellapp-1' },
       [file],
       () => {},
-      new Map([[file, digest]])
+      new Map([[file, sha256(content)]])
     );
-    expect(summary.receipts[0]).toMatchObject({ status: 'applied', file, revision: 1 });
-    expect(summary.receipts[0].digest).toBe(digest);
-    // 真实应用证据:引擎目录里的内容与所发内容逐字一致
-    expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(content);
-    // 应用后证据:版本台账逐条记录 revision/file/digest/命令
-    const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
-    const entry = JSON.parse(ledger.trim().split('\n')[0]);
-    expect(entry).toMatchObject({ revision: 1, file, digest, command: applyCommand });
+    expect(summary.receipts[0].status).not.toBe('applied');
+    expect(summary.receipts[0]).toMatchObject({ status: 'accepted', file });
+    expect((summary.receipts[0] as { note?: string }).note).toContain('--artifact-dir');
+    // 没有真实应用 → 不落任何 applied 版本台账
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
-  it('F3 回归:应用命令执行失败 → 如实回 failed,不冒充 applied', async () => {
+  // F3 四轮(设计级):外部应用命令的副作用不可证实——接收端无法证明引擎目录
+  // 里的产物是本次命令写的,命令退出 0 也最多 accepted(视为不可证实的副作用),
+  // 绝不自称 applied、不落应用台账。
+  it('F3 四轮回归:外部应用命令退出 0 → 降级 accepted(不可证实的副作用),绝不 applied 不落台账', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    // 命令真实把产物写进引擎目录(副作用真实发生),但接收端证明不了是它写的
+    const applyCommand = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
+    const receiver = await start('apply', 'applied', ['--apply-command', applyCommand, '--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 300\n';
+    writeFileSync(file, content, 'utf8');
+
+    const summary = await makeTransport(receiver.port).send(
+      { rootId: '/ws', targetId: 'cellapp-1' },
+      [file],
+      () => {},
+      new Map([[file, sha256(content)]])
+    );
+    // 降级:最多 accepted,绝不 applied
+    expect(summary.receipts[0].status).not.toBe('applied');
+    expect(summary.receipts[0]).toMatchObject({ status: 'accepted', file });
+    expect((summary.receipts[0] as { note?: string }).note).toContain('不可证实');
+    // 命令的副作用真实发生(引擎目录有产物),但回执仍不自称 applied
+    expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(content);
+    // 不落任何 applied 版本台账
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  it('F3 回归:外部应用命令执行失败 → 如实回 failed(副作用失败是真失败)', async () => {
     const receiver = await start('apply', 'applied', ['--apply-command', 'node -e "process.exit(3)"']);
     const file = path.join(receiver.root, 'Avatar.py');
     writeFileSync(file, 'class Avatar:\n    pass\n', 'utf8');
@@ -299,41 +305,7 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
-  it('F3 二轮回归:应用命令退出 0 但改动了所发内容 → 应用产物核验不过,如实回 failed 不自称 applied', async () => {
-    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
-    engineDirs.push(engineDir);
-    const receiver = await start('apply', 'applied', [
-      '--apply-command',
-      // 退出码 0 的应用命令,但把所发文件改了、没写引擎产物——旧实现比较源
-      // 文件前后哈希,空操作命令面前恒真;三轮修后按引擎产物核验 sender_digest
-      `node -e "require('fs').appendFileSync(process.env.KODE_RELOAD_FILE, '-drifted')"`,
-      '--artifact-dir', engineDir
-    ]);
-    const file = path.join(receiver.root, 'Avatar.py');
-    const content = 'class Avatar:\n    HP = 1\n';
-    writeFileSync(file, content, 'utf8');
-    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
-
-    const summary = await makeTransport(receiver.port).send(
-      { rootId: '/ws', targetId: 'cellapp-1' },
-      [file],
-      () => {},
-      new Map([[file, digest]])
-    );
-    expect(summary.receipts[0].status).toBe('failed');
-    expect((summary.receipts[0] as { reason?: string }).reason).toContain('应用产物');
-    // 内容漂移=应用核验不过,不落任何 applied 版本台账
-    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
-  });
-
-  // F3 三轮(2026-11-06 复审):协议级残余——二轮核验比较的是「所发源文件」
-  // 应用命令前后两次哈希,而协议没把发送方冻结 digest 传给接收端:空操作命令
-  // (不改源文件、退出 0)前后哈希相同仍能假 applied。修后:①请求报文带
-  // sender_digests(发送方冻结 digest 随报文下发);②应用命令执行后对应用
-  // 产物(--artifact-dir 引擎目录中的实际文件)重算 sha256,与 sender_digest
-  // 比对一致才回 applied,否则 failed。
-
-  it('F3 三轮回归:空操作命令(退出 0、不写引擎产物)→ failed,不自称 applied 不落台账', async () => {
+  it('F3 四轮回归:外部应用命令空操作(退出 0、不写引擎产物)→ 降级 accepted,不存在假 applied', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
     const receiver = await start('apply', 'applied', [
@@ -343,53 +315,99 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 1\n';
     writeFileSync(file, content, 'utf8');
-    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
-    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: digest } });
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
     expect(response.status).toBe(200);
-    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
-    // 旧实现:源文件前后哈希相同(空操作没改源文件)→ 假 applied;修后必须 failed
-    expect(receipt.status).toBe('failed');
-    expect(receipt.reason).toContain('应用产物');
-    // 没有真实应用 → 不落任何 applied 版本台账
+    const receipt = JSON.parse(response.body) as { status: string; note?: string };
+    // 旧实现:空操作命令仍能借产物核验/前后哈希假 applied;修后外部命令模式
+    // 一律降级 accepted——空操作场景从设计上不存在假 applied
+    expect(receipt.status).toBe('accepted');
+    expect(receipt.note).toContain('不可证实');
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
     // 引擎目录没有产物(空操作什么都没写)
     expect(existsSync(path.join(engineDir, 'Avatar.py'))).toBe(false);
   });
 
-  it('F3 三轮回归:引擎产物内容与 sender_digest 不一致 → failed,不自称 applied', async () => {
+  it('F3 四轮回归:接收端自己写产物但 sender_digest 与内容不符 → failed 且产物回滚(引擎目录无残留)', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
-    // 退出 0 的应用命令,但往引擎目录写的不是发送方冻结的内容
-    const applyCommand = `node -e "const fs=require('fs');fs.writeFileSync(process.env.KODE_RELOAD_ARTIFACT,'not what the sender froze')"`;
-    const receiver = await start('apply', 'applied', ['--apply-command', applyCommand, '--artifact-dir', engineDir]);
+    // 接收端自己写产物模式(无外部命令);sender_digest 是别的内容的哈希
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     const content = 'class Avatar:\n    HP = 2\n';
     writeFileSync(file, content, 'utf8');
-    const digest = createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
+    const wrongDigest = sha256('not what the receiver will read');
 
-    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: digest } });
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: wrongDigest } });
     const receipt = JSON.parse(response.body) as { status: string; reason?: string };
     expect(receipt.status).toBe('failed');
     expect(receipt.reason).toContain('不一致');
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+    // 哈希不符 → 已写产物回滚:引擎目录无残留
+    expect(existsSync(path.join(engineDir, 'Avatar.py'))).toBe(false);
   });
 
-  it('F3 三轮回归:报文缺 sender_digest → 无发送方冻结基准,不自称 applied', async () => {
+  it('F3 四轮回归:报文缺 sender_digest → 接收端不写产物不自称 applied,如实 failed', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
     engineDirs.push(engineDir);
-    const receiver = await start('apply', 'applied', [
-      '--apply-command', realApplyCommand(engineDir),
-      '--artifact-dir', engineDir
-    ]);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
     const file = path.join(receiver.root, 'Avatar.py');
     writeFileSync(file, 'class Avatar:\n    pass\n', 'utf8');
 
     const response = await postReload(receiver.port, { files: [file] });
     const receipt = JSON.parse(response.body) as { status: string };
-    expect(receipt.status).not.toBe('applied');
     expect(receipt.status).toBe('failed');
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+    // 无比对基准就不落盘:引擎目录无产物
+    expect(existsSync(path.join(engineDir, 'Avatar.py'))).toBe(false);
+  });
+
+  it('F3 四轮回归:产物落盘失败 → failed,不自称 applied(引擎目录路径被占)', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 7\n';
+    writeFileSync(file, content, 'utf8');
+    // 产物路径被目录占用 → 接收端 writeFileSync 必失败(EISDIR)
+    const engineFile = path.join(engineDir, 'Avatar.py');
+    writeFileSync(path.join(engineDir, 'placeholder'), '', 'utf8');
+    mkdirSync(engineFile, { recursive: true });
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('落盘失败');
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  it('F3 四轮回归:多文件批一个 digest 不符 → 该文件 failed 且只回滚该文件,另一文件照常 applied', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const good = path.join(receiver.root, 'Avatar.py');
+    const bad = path.join(receiver.root, 'Monster.py');
+    const goodContent = 'class Avatar:\n    HP = 8\n';
+    const badContent = 'class Monster:\n    HP = 9\n';
+    writeFileSync(good, goodContent, 'utf8');
+    writeFileSync(bad, badContent, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [good, bad],
+      // bad 的 sender_digest 故意给错的(别的内容的哈希)
+      sender_digests: { [good]: sha256(goodContent), [bad]: sha256('drifted baseline') }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string; reason?: string }>;
+    const goodReceipt = receipts.find(receipt => receipt.file === good);
+    const badReceipt = receipts.find(receipt => receipt.file === bad);
+    expect(goodReceipt?.status).toBe('applied');
+    expect(badReceipt?.status).toBe('failed');
+    expect(badReceipt?.reason).toContain('不一致');
+    // 好文件产物在,坏文件产物已回滚
+    expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(goodContent);
+    expect(existsSync(path.join(engineDir, 'Monster.py'))).toBe(false);
+    const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
+    expect(JSON.parse(ledger.trim().split('\n')[0])).toMatchObject({ file: good });
   });
 
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
@@ -426,8 +444,10 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(source).toContain('"status":"accepted"');
     expect(source).toContain('"status":"applied"');
     expect(source).toContain('sha256');
-    // F3 三轮:协议报文带 sender_digests,接收端对应用产物核验
+    // F3 四轮:applied 路径=接收端自己写产物(writeFileSync)+ 哈希不符回滚
     expect(source).toContain('sender_digests');
     expect(source).toContain('--artifact-dir');
+    expect(source).toContain('writeFileSync');
+    expect(source).toContain('unlinkSync');
   });
 });

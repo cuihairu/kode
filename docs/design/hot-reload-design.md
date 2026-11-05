@@ -24,7 +24,7 @@
 |---|---|---|
 | 投递结果台账 | `src/hotReloadTargetState.ts` | 四态 `sent-unverified \| accepted \| applied \| failed`；键 = `rootId × targetId × file`（rootId=文件归属扫描根，targetId=服务实例）；`attempt`=发送代际（IDE-AUD-005）；`sentDigest`=发送时点冻结内容 sha256（IDE-AUD-006） |
 | accepted 回执协议 | `src/hotReloadReceipt.ts` | JSON `{"status":"accepted","file":"<逐字回显>"}`（可选 targetId 一致） |
-| 热更请求报文 | `src/hotReloadTransport.ts` + `scripts/hot-reload-receiver/referenceReceiver.mjs` | 请求体 `{"files":[...],"targetId"?,"sender_digests"?}`；`sender_digests` = 发送时点冻结 sha256（F3 三轮随报文下发），接收端对引擎应用产物重算 sha256 与之比对一致才回 applied |
+| 热更请求报文 | `src/hotReloadTransport.ts` + `scripts/hot-reload-receiver/referenceReceiver.mjs` | 请求体 `{"files":[...],"targetId"?,"sender_digests"?}`；`sender_digests` = 发送时点冻结 sha256（F3 三轮随报文下发），接收端自己把该内容写盘引擎目录后对产物重算 sha256 与之比对一致才回 applied（F3 四轮） |
 | applied 回执协议 | `src/hotReloadAppliedCheck.ts` | JSON `{"status":"applied","file":"<逐字回显>","digest":"<sha256>"}`；digest 与发送时点冻结基准比对；`settleAppliedStatus` 超时保持未确认 |
 | HTTP 投递分类 | `src/hotReloadDelivery.ts` | 只认传输事实：2xx→sent-unverified，非 2xx/传输失败→failed；回包 body 一律不作为应用证据 |
 | 状态栏反馈 | `src/hotReloadStatus.ts` | `watch-off \| ready \| sending \| sent-unverified \| failed`；结构性 def 变更回落 ready（IDE-REV-024） |
@@ -153,11 +153,15 @@ interface ReloadTransport {
   `${files}` = 文件列表 JSON / `${fileList}` = 逗号分隔）。
 - F3 三轮（2026-11-06 复审）：请求体自动附带 `sender_digests` 字段——
   发送时点冻结的内容 sha256（IDE-AUD-006 基准）随报文下发，形如
-  `{"files":[...],"targetId":"...","sender_digests":{"<file>":"<sha256 hex>"}}`；
-  接收端应用命令执行后对**应用产物**（引擎目录中的实际文件）重算 sha256，
-  与 `sender_digest` 比对一致才回 applied，否则 failed（空操作命令不再能
-  假 applied）。参考实现：`scripts/hot-reload-receiver/referenceReceiver.mjs`
-  （`--artifact-dir` 引擎产物目录 + `sender_digests` 协议字段）。
+  `{"files":[...],"targetId":"...","sender_digests":{"<file>":"<sha256 hex>"}}`。
+- F3 四轮（2026-11-06 复审，设计级）：applied 路径改为**接收端自己写产物**
+  ——按报文 files 读到内容后由接收端自身代码直接落盘引擎目录
+  （`--artifact-dir`），写后对产物重算 sha256 与 `sender_digest` 比对一致才回
+  applied；落盘失败/哈希不符一律 failed 且回滚已写产物（引擎目录无残留）。
+  外部应用命令模式（`--apply-command`）降级：命令副作用不可证实（接收端证明
+  不了产物是本次命令写的），退出 0 也最多 accepted，绝不 applied、不落应用
+  台账；命令执行失败仍 failed。空操作场景从设计上不存在假 applied。参考实现：
+  `scripts/hot-reload-receiver/referenceReceiver.mjs`。
 - 回执 = 响应体走既有 accepted/applied 解析（HOT-003/004）；这是**唯一**
   能产生 applied 证据的通道（AUD-007：`{"status":"applied",...}` 是扩展侧
   自定契约，作用于用户配置的 `@http:` URL 的回包体）。

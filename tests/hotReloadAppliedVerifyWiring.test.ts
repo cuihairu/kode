@@ -394,15 +394,13 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     }
   };
 
-  it('真实接收端 applied 回包(digest=接收端重算):火线双证核验升格 applied', async () => {
-    // F3:接收端只在真实应用命令执行成功后才回 applied(不再读取+复制就
-    // 自称已应用),故这里给一条真实可执行的应用命令。
-    // F3 二轮:命令真实写文件进引擎目录(不再 process.exit(0) 空操作假应用),
-    // 测试对引擎侧产物断言应用真实发生
+  it('真实接收端 applied 回包(接收端自己写产物,digest=接收端重算):火线双证核验升格 applied', async () => {
+    // F3 四轮:applied 路径=接收端自己写产物——按报文 files 读到内容后由接收
+    // 端自身代码直接落盘引擎目录(--artifact-dir),写后重算 sha256 与报文
+    // sender_digests 比对一致才回 applied;外部应用命令模式已降级 accepted,
+    // 故这里不配 --apply-command,只配引擎产物目录。
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
-    const realApply = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
-    // F3 三轮:接收端对引擎产物重算 sha256 与报文 sender_digests 比对一致才回 applied
-    const receiver = await startReferenceReceiver('apply', 'applied', realApply, engineDir);
+    const receiver = await startReferenceReceiver('apply', 'applied', undefined, engineDir);
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
@@ -428,8 +426,8 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
 
   it('真实接收端 digest 不符回包(真 wire):保持未确认并注解阻塞', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
-    const realApply = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
-    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', realApply, engineDir);
+    // F3 四轮:接收端自己写产物模式(digest-mismatch 场景=回包 digest 故意报错)
+    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', undefined, engineDir);
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
