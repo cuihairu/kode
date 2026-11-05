@@ -1039,7 +1039,12 @@
         "kbengine.startupScriptDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "启动脚本诊断：.sh/.bat 启动行上的服务器进程（machine/dbmgr/baseapp 等）未知 --参数、--cid/--gus 非数字值、引用 $KBE_RES_PATH/$KBE_BIN_PATH/$KBE_ROOT 但未赋值且未 source 报 Warning（default: enabled）；非启动行不检"
+          "description": "启动脚本诊断：sh/.bat 启动行上的服务器进程（machine/dbmgr/baseapp 等）未知 --参数、--cid/--gus 非数字值、引用 $KBE_RES_PATH/$KBE_BIN_PATH/$KBE_ROOT 但未赋值且未 source 的报 Warning（default: enabled）；非启动行不检"
+        },
+        "kbengine.spaceNavDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "空间/导航语义诊断：setSpaceData/delSpaceData 使用保留键 _mapping、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键 报 Warning（default: enabled）"
         },
         "kbengine.diagnostics.checkUnknownTypes": {
           "type": "boolean",

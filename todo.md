@@ -1258,9 +1258,10 @@
   验收：路径前缀补全出工作区实际存在的导航文件；无匹配文件时不误报、不阻塞补全。
   （2026-11-05 完成：`src/languageProviders.ts` 新增 `getAddSpaceGeometryStringPrefix`（:535，检测光标位于 addSpaceGeometryMapping 字符串实参内,含 params dict 嵌套括号深度与转义感知,离开调用即拒）+ `KBEngineCompletionProvider.provideNavPathCompletions`（:734，`findFilesAcrossRoots('**/*.navmesh'/'**/*.tmx')` 双扫 workspace+assetsRoot,相对路径去重,按已输入前缀 includes 过滤,kind=File,detail=navmesh/tmx）；接线于 provideCompletionItems .py 分支 SP-1 entry hooks 之后（:685）。prove-red=tests/navPathCompletion.test.ts 首跑 3/6 挂（path 参/params 值/前缀过滤三正例全空）；修后 6/6 绿（正例 3+反例 3：无匹配空表不误报、非目标调用不接管、既有 KBEngine. reload 补全零回归）。门禁：`npx vitest run tests/navPathCompletion.test.ts` 6/6；languageProviders×3+entryHooks+spaceNavSymbols+kbeModuleIndex 六件套 155/155 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。未 commit。）
 
-- [ ] SP-4 [P2] 空间/导航语义诊断
+- [x] SP-4 [P2] 空间/导航语义诊断
   落点：DiagnosticScheduler——`navigate`/`canNavigate` 前置条件（几何未加载）、`_mapping` 保留键被脚本覆盖、layer 与 params 不一致。
   验收：各反例产诊断、正例零误报，接入既有诊断测试口径（prove-red 后修复）。
+  （2026-11-05 完成：新建 `src/spaceNavDiagnostics.ts` 纯文本三检——①setSpaceData/delSpaceData 保留键 `_mapping`（引擎 spacememory.cpp:740/862 双路径 AssertionError）②文件有 navigate/navigatePathPoints 但全文无 canNavigate（几何未加载静默失败,entity.cpp:2583 not found navhandle;canNavigate 探针 :2563）③addSpaceGeometryMapping params dict 引号层键（引擎 PyLong_Check,spacememory.cpp:194）。开关 `kbengine.spaceNavDiagnostics` 默认开,接入 extension.ts receiverNone 同通道（computeAsync 尾部追加 spaceNavItems,共享 collection/生命周期）。prove-red=tests/spaceNavDiagnostics.test.ts 首跑 Cannot find module；修后 12/12 绿（三类反例+正例+组合+空文）。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 12/12；receiverNone 三件套 53/53 绿；`tsc --noEmit` 0 错；eslint（修 no-useless-escape 后）0 错；package.json JSON 合法。extension.test.ts 2 超时为已 stash 验证的既有失败。未 commit。）
 
 - [ ] SP-5 [P2] `createCellEntityInNewSpace(cellappIndex)` 语义 hover
   落点：参数处 hover 说明 0=自动均衡、N=取模轮转（口径=docs/zh/api/kbengine/baseapp/Entity.md:144）。
