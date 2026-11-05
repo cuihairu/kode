@@ -251,7 +251,7 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
     const { deps, writes, mkdirs } = makeDeps([]);
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(mkdirs).toEqual(['/ws/main/typings']);
     expect(writes).toEqual(['/ws/main/typings/KBEngine.pyi']);
@@ -263,7 +263,7 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
     const { deps, writes } = makeDeps(['mine.pyi']);
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(writes).toEqual([]);
     expect(messages.info[0]).toContain('mine.pyi');
@@ -275,7 +275,7 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
     const { deps, writes } = makeDeps(null);
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(writes).toEqual([]);
     expect(messages.info[0]).toContain('读不到');
@@ -288,7 +288,7 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     const { deps, writes } = makeDeps([]);
     delete deps.listDir;
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(writes).toEqual([]);
     expect(messages.info[0]).toContain('未注入目录扫描能力');
@@ -300,7 +300,7 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws/main')];
     const { deps } = makeDeps(['mine.pyi']);
 
-    await exportKbeStubs(deps, { silent: true });
+    await exportKbeStubs(deps, { engineRoot: null, silent: true });
 
     expect(messages.info).toHaveLength(0);
     stubWorkspace.workspaceFolders = [];
@@ -310,10 +310,10 @@ describe('exportKbeStubs 用户指定目录(装配层)', () => {
     stubWorkspace.workspaceFolders = undefined as never;
     const { deps } = makeDeps([]);
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
     expect(messages.info[0]).toContain('未打开工作区');
 
-    await exportKbeStubs(deps, { silent: true });
+    await exportKbeStubs(deps, { engineRoot: null, silent: true });
     expect(messages.info).toHaveLength(1);
     stubWorkspace.workspaceFolders = [];
   });

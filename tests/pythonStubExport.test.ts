@@ -185,13 +185,13 @@ describe('exportKbeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const { deps, writes } = makeDeps();
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(messages.info[0]).toContain('已关闭');
     expect(writes).toHaveLength(0);
 
     // 静默模式(激活期)下关闭同样零提示
-    await exportKbeStubs(deps, { silent: true });
+    await exportKbeStubs(deps, { engineRoot: null, silent: true });
     expect(messages.info).toHaveLength(1);
     stubWorkspace.workspaceFolders = [];
   });
@@ -200,7 +200,7 @@ describe('exportKbeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [];
     const { deps } = makeDeps();
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(messages.info[0]).toContain('未打开工作区');
     expect(messages.info[0]).toContain('存根导出');
@@ -210,7 +210,7 @@ describe('exportKbeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const { deps, writes, mkdirs } = makeDeps();
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(mkdirs).toEqual(['/ws/.kbengine/stubs']);
     expect(writes).toHaveLength(1);
@@ -226,7 +226,7 @@ describe('exportKbeStubs(装配层)', () => {
       initial: { '/ws/.kbengine/stubs/KBEngine.pyi': buildKbeStubExportContent() }
     });
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(writes).toHaveLength(0);
     expect(messages.info).toHaveLength(0);
@@ -239,7 +239,7 @@ describe('exportKbeStubs(装配层)', () => {
       initial: { '/ws/.kbengine/stubs/KBEngine.pyi': '# 旧版本存根' }
     });
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(writes).toHaveLength(1);
     expect(writes[0].content).toBe(buildKbeStubExportContent());
@@ -252,7 +252,7 @@ describe('exportKbeStubs(装配层)', () => {
       readFails: true
     });
 
-    await exportKbeStubs(deps);
+    await exportKbeStubs(deps, { engineRoot: null });
 
     expect(writes).toHaveLength(1);
   });
@@ -261,7 +261,7 @@ describe('exportKbeStubs(装配层)', () => {
     stubWorkspace.workspaceFolders = [folder('/ws')];
     const { deps, writes } = makeDeps();
 
-    await exportKbeStubs(deps, { silent: true });
+    await exportKbeStubs(deps, { engineRoot: null, silent: true });
 
     expect(writes).toHaveLength(1);
     expect(messages.info).toHaveLength(0);
@@ -278,7 +278,7 @@ describe('exportKbeStubs(装配层)', () => {
       stubWorkspace.workspaceFolders = [folder(dir)];
 
       // 不注入 deps,走 fileSystemStubExportDeps 真实 fs
-      await exportKbeStubs();
+      await exportKbeStubs(undefined, { engineRoot: null });
 
       expect(messages.warning[0]).toContain(dir.split('/').pop() ?? dir);
       expect(messages.info).toHaveLength(0);
@@ -300,7 +300,7 @@ describe('exportKbeStubs(装配层)', () => {
       mkdir: (p: string): void => void (p.startsWith('/ro') ? failing.deps.mkdir(p) : writable.deps.mkdir(p))
     };
 
-    await exportKbeStubs(mixed);
+    await exportKbeStubs(mixed, { engineRoot: null });
 
     expect(writable.writes.map(write => write.path)).toEqual(['/ok/.kbengine/stubs/KBEngine.pyi']);
     expect(messages.warning[0]).toContain('ro');

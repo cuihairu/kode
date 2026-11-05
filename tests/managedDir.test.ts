@@ -97,7 +97,7 @@ describe('托管目录落点(pythonStubExport 面)', () => {
     try {
       stubWorkspace.workspaceFolders = [{ uri: Uri.file(root), name: 'ws', index: 0 }];
       configurationOverrides.set('kbengine', { managedDir: '.kbe2' });
-      const written = await exportKbeStubs(fileSystemStubExportDeps, { silent: true });
+      const written = await exportKbeStubs(fileSystemStubExportDeps, { engineRoot: null, silent: true });
       expect(written).toEqual(['ws']);
       expect(fs.existsSync(path.join(root, '.kbe2', 'stubs', 'KBEngine.pyi'))).toBe(true);
       expect(fs.existsSync(path.join(root, '.kbengine'))).toBe(false);
