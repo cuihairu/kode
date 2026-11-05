@@ -188,6 +188,50 @@ const server = createServer((request, response) => {
     }
     const withTarget = receipt => (targetId !== undefined ? { ...receipt, targetId } : receipt);
     const receipts = [];
+    // F3 五轮(2026-11-06 复审硬化):产物路径不再只用 basename——按报文内
+    // 相对路径(批内共同祖先为基准)映射到 --artifact-dir 子结构,不同目录
+    // 同名文件各归各的子路径,不再相互踩踏;路径安全清洗(任何 '..'/'.'/
+    // 空段=逃逸)不过关,或清洗后仍映射到同一产物位置(如同一路径在批内
+    // 重复),一律拒绝整批:不写任何盘、不落任何台账。
+    const stringFiles = files.filter(file => typeof file === 'string');
+    const artifactSegmentsByFile = new Map();
+    let batchRejectReason;
+    if (stringFiles.length > 0) {
+      const dirParts = stringFiles.map(file => path.dirname(file).split(path.sep));
+      let common = dirParts[0];
+      for (const candidate of dirParts.slice(1)) {
+        let index = 0;
+        while (index < common.length && index < candidate.length && common[index] === candidate[index]) {
+          index += 1;
+        }
+        common = common.slice(0, index);
+      }
+      const commonDir = common.join(path.sep) || path.sep;
+      const byKey = new Map();
+      for (const file of stringFiles) {
+        const relative = path.relative(commonDir, file);
+        const segments = relative.split(path.sep);
+        if (relative === '' || segments.some(segment => segment === '..' || segment === '.' || segment === '')) {
+          batchRejectReason = `产物相对路径清洗后不安全(${relative}):拒绝整批,不写盘`;
+          break;
+        }
+        const key = segments.join('/');
+        if (byKey.has(key)) {
+          batchRejectReason = `批内不同文件映射到同一产物位置(${key}):同名碰撞拒绝整批,不写盘`;
+          break;
+        }
+        byKey.set(key, file);
+        artifactSegmentsByFile.set(file, segments);
+      }
+    }
+    if (batchRejectReason !== undefined) {
+      for (const file of stringFiles) {
+        receipts.push(withTarget({ status: 'failed', file, reason: batchRejectReason }));
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(receipts.length === 1 ? receipts[0] : receipts));
+      return;
+    }
     for (const file of files) {
       if (typeof file !== 'string') {
         continue;
@@ -296,10 +340,11 @@ const server = createServer((request, response) => {
       }
       // 接收端自己写产物:按报文读到的内容直接落盘引擎目录(产物由本进程
       // writeFileSync 写入,应用通路可证明)
-      const artifact = path.join(artifactDir, path.basename(file));
+      // F3 五轮:产物路径=按批内相对路径映射的子结构(不再是裸 basename)
+      const artifact = path.join(artifactDir, ...artifactSegmentsByFile.get(file));
       let writeError;
       try {
-        mkdirSync(artifactDir, { recursive: true });
+        mkdirSync(path.dirname(artifact), { recursive: true });
         writeFileSync(artifact, content, 'utf8');
       } catch (error) {
         writeError = error;

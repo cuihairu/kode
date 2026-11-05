@@ -435,6 +435,58 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(JSON.parse(ledger.trim().split('\n')[0])).toMatchObject({ file: good });
   });
 
+  // F3 五轮(R2-F3 硬化 3):产物路径不再只用 basename——按报文内相对路径
+  // 映射到 --artifact-dir 子结构,不同目录同名文件各归各,不相互踩踏。
+  it('F3 五轮回归:不同目录同名文件 → 按报文相对路径映射子目录,不碰撞各自 applied', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const fileA = path.join(receiver.root, 'subA', 'Monster.py');
+    const fileB = path.join(receiver.root, 'subB', 'Monster.py');
+    const contentA = 'class MonsterA:\n    HP = 21\n';
+    const contentB = 'class MonsterB:\n    HP = 22\n';
+    mkdirSync(path.dirname(fileA), { recursive: true });
+    mkdirSync(path.dirname(fileB), { recursive: true });
+    writeFileSync(fileA, contentA, 'utf8');
+    writeFileSync(fileB, contentB, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [fileA, fileB],
+      sender_digests: { [fileA]: sha256(contentA), [fileB]: sha256(contentB) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; file: string }>;
+    expect(receipts).toHaveLength(2);
+    expect(receipts.map(receipt => receipt.status)).toEqual(['applied', 'applied']);
+    // 各归各的子路径:同名不踩踏,内容逐字一致
+    expect(readFileSync(path.join(engineDir, 'subA', 'Monster.py'), 'utf8')).toBe(contentA);
+    expect(readFileSync(path.join(engineDir, 'subB', 'Monster.py'), 'utf8')).toBe(contentB);
+  });
+
+  // F3 五轮(R2-F3 硬化 3 防线):清洗后仍映射到同一产物位置(如同一路径在批
+  // 内重复出现)→ 拒绝整批,不写任何盘、不落台账。
+  it('F3 五轮回归:批内映射到同一产物位置(同一路径重复)→ 拒绝整批不写盘', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    const file = path.join(receiver.root, 'Avatar.py');
+    const content = 'class Avatar:\n    HP = 23\n';
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, {
+      files: [file, file],
+      sender_digests: { [file]: sha256(content) }
+    });
+    const receipts = JSON.parse(response.body) as Array<{ status: string; reason?: string }>;
+    expect(receipts).toHaveLength(2);
+    for (const receipt of receipts) {
+      expect(receipt.status).toBe('failed');
+      expect(receipt.reason).toContain('拒绝整批');
+    }
+    // 整批拒绝:引擎目录不写任何产物,不落任何 applied 台账
+    expect(existsSync(path.join(engineDir, 'Avatar.py'))).toBe(false);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
     let capturedBody: string | undefined;
     const transport = new HttpReloadTransport(
