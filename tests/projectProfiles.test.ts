@@ -218,3 +218,32 @@ describe('per-profile hot reload channel persistence (IDE-HOT-102)', () => {
     expect(reopened.get(a.id)?.hotReload).toBeUndefined();
   });
 });
+
+/* ---------------- KR-AUD-66: create() 透传 input.hotReload ---------------- */
+
+describe('KR-AUD-66: create() 不丢弃 input.hotReload', () => {
+  it('create 携带 hotReload 时新建记录与读回(含重启)都保留', async () => {
+    const memento = new MemoryMemento();
+    const first = new ProjectProfileStore(memento);
+    const created = await first.create({
+      ...comboA,
+      hotReload: {
+        channel: 'http',
+        http: { name: 'hot-reload', url: 'http://127.0.0.1:8000/hotfix', method: 'POST', headers: {}, body: '${files}', enabled: true, keybinding: '' }
+      }
+    });
+    expect(created.hotReload).toMatchObject({ channel: 'http' });
+    expect(first.get(created.id)?.hotReload).toMatchObject({ channel: 'http' });
+
+    // 重启读回同键
+    const second = new ProjectProfileStore(memento);
+    expect(second.get(created.id)?.hotReload).toMatchObject({ channel: 'http' });
+  });
+
+  it('create 未带 hotReload 时保持未配(undefined,回落既有通道)', async () => {
+    const store = new ProjectProfileStore(new MemoryMemento());
+    const created = await store.create(comboA);
+    expect(created.hotReload).toBeUndefined();
+    expect(store.get(created.id)?.hotReload).toBeUndefined();
+  });
+});
