@@ -130,6 +130,11 @@ export function resetPythonParserWorkerGaugeCountersForTests(): void {
   budgetRejects = 0;
 }
 
+/** 测试用:fileQueues 当前条目数(PAR-1/KR-AUD-07 回收验收面) */
+export function fileQueueCountForTests(): number {
+  return fileQueues.size;
+}
+
 /** AUD-022:在途(已派发)任务是否还可接新任务——数量与字节双硬上限,
  *  任一超限即不再直接 post,改走待派发排队。 */
 function canPostNow(contentLength: number): boolean {
@@ -147,6 +152,17 @@ function drainAllQueues(): void {
     queue.pendingLatest = null;
     queuedBytes -= next.content.length;
     dispatchJob(queue, next);
+  }
+  // PAR-1(KR-AUD-07):已排干(无在途、无待派)的文件队列不再保留——回包/失败后
+  // 即回收,长会话 map 不随已处理文件数线性涨。先收集再删,防迭代中改 map。
+  const drained: string[] = [];
+  for (const [filePath, queue] of fileQueues) {
+    if (queue.inFlight === null && queue.pendingLatest === null) {
+      drained.push(filePath);
+    }
+  }
+  for (const filePath of drained) {
+    fileQueues.delete(filePath);
   }
 }
 
