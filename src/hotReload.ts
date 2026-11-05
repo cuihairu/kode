@@ -340,9 +340,34 @@ export function setupHotReload(
       // IDE-HOT-102:部署通道发送——配置了 hotReload 通道时整批走通道回执流
       // (transport.send 逐条回执直接喂台账),不回落 actionName 通道;无 wiring
       // 解不到 root 的文件仍发送(单组 '' 键)但不落台账。
+      // RT-9(IDE-HOT-004):发送前冻结内容核验基准;回执自称 applied 必须过
+      // digest 双证核验(与发送时点冻结的所发内容 sha256 一致)才升格,缺失/
+      // 不符/无基准保持未确认并注解;未确认记录排核验窗口结算(与 fire 路径
+      // 同窗口同语义)。RT-10:结算窗口锚定发送发起时点(sentAt)。
       const sendViaChannel = (transport: ReloadTransport, channelTargetId: string): void => {
         const wiring = options.targetState;
         const channelLabel = transport.kind;
+        const channelSentAt = now();
+        const channelKey = (rootId: string): { rootId: string; targetId: string } => ({
+          rootId,
+          targetId: channelTargetId
+        });
+        const channelBaselineReader = wiring?.readFileContent;
+        const channelBaselineReads = new Map<string, Promise<string | undefined>>();
+        if (channelBaselineReader) {
+          for (const file of triggers) {
+            channelBaselineReads.set(
+              file,
+              Promise.resolve(channelBaselineReader(file))
+                .then(content =>
+                  content === null
+                    ? undefined
+                    : createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex')
+                )
+                .catch(() => undefined)
+            );
+          }
+        }
         const groups = new Map<string, string[]>();
         for (const file of triggers) {
           const rootId = wiring ? (wiring.resolveRootId(file) ?? '') : '';
@@ -374,10 +399,62 @@ export function setupHotReload(
               transport.send({ rootId, targetId: channelTargetId }, files, receipt => {
                 const receiptFiles = receipt.file !== undefined ? [receipt.file] : files;
                 for (const file of receiptFiles) {
+                  // RT-9:未确认记录(含 applied 降级)排核验窗口结算,与 fire
+                  // 路径同窗口同语义;结算锚定发送发起时点(RT-10)
+                  const scheduleUnconfirmedSettle = (): void => {
+                    if (!wiring || rootId === '') {
+                      return;
+                    }
+                    const recorded = wiring.store.get(channelKey(rootId), file);
+                    if (recorded) {
+                      scheduleAppliedSettle(wiring, channelKey(rootId), file, channelSentAt, recorded.attempt);
+                    }
+                  };
                   switch (receipt.status) {
-                    case 'applied':
-                      recordOutcome(rootId, file, 'applied');
+                    case 'applied': {
+                      // RT-9:自称 applied 必须过 digest 双证核验——与发送时点
+                      // 冻结的所发内容 sha256 一致才升格;缺 digest/不符/无基准
+                      // 一律保持未确认并注解(绝不冒充 applied)
+                      if (!channelBaselineReader) {
+                        recordOutcome(
+                          rootId,
+                          file,
+                          'sent-unverified',
+                          'applied 回执不可信(无内容读取通道,digest 无基准):保持未确认'
+                        );
+                        scheduleUnconfirmedSettle();
+                        break;
+                      }
+                      void channelBaselineReads.get(file)!.then(sentDigest => {
+                        if (sentDigest === undefined) {
+                          recordOutcome(
+                            rootId,
+                            file,
+                            'sent-unverified',
+                            'applied 回执不可信(发送时点内容基准不可读):保持未确认'
+                          );
+                          scheduleUnconfirmedSettle();
+                          return;
+                        }
+                        if (receipt.digest !== undefined && receipt.digest === sentDigest) {
+                          recordOutcome(
+                            rootId,
+                            file,
+                            'applied',
+                            `applied 回执 digest 核验一致(指纹前 12 位 ${sentDigest.slice(0, 12)})`
+                          );
+                          return;
+                        }
+                        recordOutcome(
+                          rootId,
+                          file,
+                          'sent-unverified',
+                          'applied 回执不可信(digest 缺失或与所发内容不符):保持未确认'
+                        );
+                        scheduleUnconfirmedSettle();
+                      });
                       break;
+                    }
                     case 'accepted':
                       recordOutcome(rootId, file, 'accepted');
                       break;
@@ -389,6 +466,7 @@ export function setupHotReload(
                     default:
                       sentCount += 1;
                       recordOutcome(rootId, file, 'sent-unverified', receipt.detail);
+                      scheduleUnconfirmedSettle();
                       break;
                   }
                 }
@@ -429,6 +507,9 @@ export function setupHotReload(
         );
       };
       const start = (targetId: string | null): void => {
+        // RT-10:applied 核验窗口统一锚定「发送发起时点」——与重试路径
+        // (resendHotReloadTarget 的 sentAt)同语义,响应晚到不后移窗口。
+        const sentAt = now();
         // IDE-HOT-102:配置了部署通道则整批走通道(回执流直喂台账),不回落
         // actionName 通道;未配(resolveChannelTransport 返回 null/未注入)走
         // 既有 actionName 路径,行为与现状一致。
@@ -517,7 +598,7 @@ export function setupHotReload(
                   }
                 });
               }
-              scheduleAppliedSettle(wiring, key, file, now(), attempt);
+              scheduleAppliedSettle(wiring, key, file, sentAt, attempt);
             }
           }
         };
