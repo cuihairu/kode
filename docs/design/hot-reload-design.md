@@ -158,12 +158,12 @@ interface ReloadTransport {
   ——按报文 files 读到内容后由接收端自身代码直接落盘引擎目录
   （`--artifact-dir`），写后对产物重算 sha256 与 `sender_digest` 比对一致才回
   applied。
-- F3 五轮（2026-11-06 复审硬化，回滚契约对齐实现）：落盘失败/哈希不符一律
-  failed，回滚 best-effort。外部应用命令模式（`--apply-command`）降级：命令
-  副作用不可证实（接收端证明不了产物是本次命令写的），退出 0 也最多
-  accepted，绝不 applied、不落应用台账；命令执行失败仍 failed。空操作场景
-  从设计上不存在假 applied。参考实现：
-  `scripts/hot-reload-receiver/referenceReceiver.mjs`。
+- 外部应用命令模式（`--apply-command`）降级：命令副作用不可证实（接收端
+  证明不了产物是本次命令写的），退出 0 也最多 accepted，绝不 applied、不落
+  应用台账；命令执行失败仍 failed。空操作场景从设计上不存在假 applied。
+  （F3 五轮「回滚 best-effort/还原原内容」的旧表述已按七轮④/八轮②机制
+  退役：现役机制下既有产物从未被触碰，收尾只清「已确认自建」的临时文件。）
+  参考实现：`scripts/hot-reload-receiver/referenceReceiver.mjs`。
 - F3 七轮（2026-11-07 第七轮复审，命名空间唯一 + 悬空 symlink 封死 +
   temp+rename 原子写）：
   - **产物命名空间只认暂存根（`--root`）内路径**：根外绝对路径直接拒绝整批
@@ -187,12 +187,36 @@ interface ReloadTransport {
     目录构建（路径中无 symlink 中间层）。临时文件写前同样过 lstat/realpath
     校验。
   - **失败收尾只清理自建临时文件**：落盘失败/读回失败/哈希不符/rename 失败
-    一律 failed，best-effort unlink 临时文件，失败如实 `rollback_failed`
+    一律 failed，收尾只 unlink 临时文件，失败如实 `rollback_failed`
     （=残留临时文件路径），清干净才注明无残留——引擎目录里的既有产物从头到
     尾不被触碰，原产物天然原样保留（五/六轮的「还原原内容」回滚通路退役，
     预存在产物不会被误删或改写）。写前读旧产物的 ENOENT-only 语义保留：非
     ENOENT 读异常（`EACCES`/`EISDIR` 等）仍如实拒绝写入且不触碰，不覆盖
     不可核验的预存在产物。
+- F3 八轮（2026-11-08 第八轮复审，目录竞争包含性验证 + 收尾清理标志位 +
+  暂存唯一子目录）：
+  - **rename 目标父目录双重验证**：rename 前立即 `realpathSync(父目录)` 并
+    验证①**包含性**——解析结果必须在引擎目录（realpath）内；②**一致性**——
+    解析结果必须与原路径逐字一致（否则说明路径中有 symlink 组件）；任一
+    不过即拒绝本文件（failed 回执，不写盘、不落台账），通过后用解析出的
+    真实父目录做 rename。七轮 rename 前的 realpath 只取不验：中间目录被
+    竞态换成外部 symlink 时 rename 落到引擎目录外，换成内链时也沿 symlink
+    组件到达别处。**残余窗口如实记录**：JS 无 `O_NOFOLLOW`，realpath→rename
+    一瞬之间父目录链仍可能被竞态替换（窗口=相邻系统调用间隔，无法归零）；
+    窗口内的替换被同一包含性+一致性验证拦截，跨窗口竞态如实为已知限制，
+    不以「已消除」自称。
+  - **失败收尾只清理「已确认自建」的临时文件**：`'wx'` 独占 `openSync` 成功
+    返回是独立的**创建成功点**，临时文件校验时序=创建→写入→lstat/realpath
+    校验→读回核验→rename。创建即失败（`EEXIST` 等）时同名既有文件不是本次
+    创建的，收尾绝不触碰（七轮失败分支无条件 unlink 可能删掉非本次创建的
+    文件，此路封死）；创建成功后的失败（写一半 `EFBIG`/读回失败/哈希不符/
+    rename 失败）才允许收尾 unlink 自建临时文件，失败如实 `rollback_failed`。
+  - **暂存副本独立唯一子目录**：暂存副本不再按 basename 落暂存根顶层——
+    同批 `<root>/sub/X.py` 与 `<root>/X.py` 的顶层暂存路径相同，前者的暂存
+    动作会直接覆盖后者的**源文件**（后续读回被污染内容，digest 自然不符）。
+    修后按已清洗防碰撞的报文相对路径展开到 `<root>/.staged/<相对路径>`（与
+    产物映射同一套防碰撞防逃逸规则），同批互不覆盖，也碰不到任何源文件或
+    应用台账。
 - 回执 = 响应体走既有 accepted/applied 解析（HOT-003/004）；这是**唯一**
   能产生 applied 证据的通道（AUD-007：`{"status":"applied",...}` 是扩展侧
   自定契约，作用于用户配置的 `@http:` URL 的回包体）。
