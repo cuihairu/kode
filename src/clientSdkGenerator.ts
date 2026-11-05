@@ -130,12 +130,20 @@ export interface ClientSdkProperty {
   readonly elementType: string | null;
   readonly flags: string;
   readonly domains: PropertyFlagDomain[];
+  /** KR-AUD-73:合并自接口/父链 def 时的来源 def 名;自身成员无此字段 */
+  readonly inheritedFrom?: string;
+  /** KR-AUD-73:经父链合并(含父链上各 def 的接口)时为 true——基类承载,不重复声明 */
+  readonly inheritedViaParent?: boolean;
 }
 
 export interface ClientSdkMethod {
   readonly name: string;
   /** def 的 `<Arg>` 只有类型、没有名字 */
   readonly argTypes: string[];
+  /** KR-AUD-73:合并自接口/父链 def 时的来源 def 名;自身成员无此字段 */
+  readonly inheritedFrom?: string;
+  /** KR-AUD-73:经父链合并(含父链上各 def 的接口)时为 true——基类承载,不重复声明 */
+  readonly inheritedViaParent?: boolean;
 }
 
 export interface ClientSdkEntity {
@@ -252,7 +260,8 @@ function parseDefDocumentSafely(content: string): ReturnType<typeof parseDefDocu
 export function parseClientSdkEntity(
   content: string,
   name: string,
-  componentDefs: ClientSdkComponentDefs = {}
+  componentDefs: ClientSdkComponentDefs = {},
+  relatedDefs: ClientSdkComponentDefs = {}
 ): ClientSdkEntity | null {
   const document = parseDefDocumentSafely(content);
   if (!document || !document.root) {
@@ -288,14 +297,109 @@ export function parseClientSdkEntity(
   }
 
   const clientMethods = readDefMethods(root, 'ClientMethods', false);
+  const exposedBaseMethods = readDefMethods(root, 'BaseMethods', true);
+  const exposedCellMethods = readDefMethods(root, 'CellMethods', true);
+
+  // KR-AUD-73:引擎对实体 def 依序装载 Interfaces 与 Parent,并把两者的成员
+  // 并入同一模块(entitydef.cpp:371-372 loadInterfaces → loadParentClass)。
+  // SDK 骨架镜像合并面:自身成员优先(子覆盖同名成员),Interfaces 先于 Parent,
+  // 递归接口/父链;接口 def 不装 Parent(KR-AUD-72,entitydef.cpp:611-638)。
+  const seenProperties = new Set(properties.map(property => property.name));
+  const seenClientMethods = new Set(clientMethods.map(method => method.name));
+  const seenBaseMethods = new Set(exposedBaseMethods.map(method => method.name));
+  const seenCellMethods = new Set(exposedCellMethods.map(method => method.name));
+  const visited = new Set<string>([name]);
+
+  const mergeFrom = (defName: string, allowParent: boolean, viaParent: boolean): void => {
+    if (visited.has(defName)) {
+      return;
+    }
+    visited.add(defName);
+    const defText = relatedDefs[defName];
+    if (defText === undefined) {
+      return;
+    }
+    const defDocument = parseDefDocumentSafely(defText);
+    if (!defDocument?.root) {
+      return;
+    }
+    const defRoot = defDocument.root;
+
+    for (const propertyNode of getDirectChildElements(getDirectChildElement(defRoot, 'Properties'))) {
+      if (seenProperties.has(propertyNode.name)) {
+        continue;
+      }
+      seenProperties.add(propertyNode.name);
+      const { type, elementType } = readDefTypeNode(getDirectChildElement(propertyNode, 'Type'));
+      const flags = getScalarChildValue(propertyNode, 'Flags') ?? '';
+      properties.push({
+        name: propertyNode.name,
+        type,
+        elementType,
+        flags,
+        domains: propertyFlagDomainList(flags),
+        inheritedFrom: defName,
+        inheritedViaParent: viaParent || undefined
+      });
+    }
+
+    const mergeMethods = (
+      sectionName: string,
+      onlyExposed: boolean,
+      bucket: ClientSdkMethod[],
+      seen: Set<string>
+    ): void => {
+      for (const method of readDefMethods(defRoot, sectionName, onlyExposed)) {
+        if (seen.has(method.name)) {
+          continue;
+        }
+        seen.add(method.name);
+        bucket.push({
+          ...method,
+          inheritedFrom: defName,
+          inheritedViaParent: viaParent || undefined
+        });
+      }
+    };
+    mergeMethods('ClientMethods', false, clientMethods, seenClientMethods);
+    mergeMethods('BaseMethods', true, exposedBaseMethods, seenBaseMethods);
+    mergeMethods('CellMethods', true, exposedCellMethods, seenCellMethods);
+
+    // 接口 def 内部继续递归其 Interfaces(引擎 loadInterfaces 再入),
+    // 但不递归其 Parent(KR-AUD-72:引擎对接口 def 不调 loadParentClass)
+    for (const iface of getDirectChildElements(getDirectChildElement(defRoot, 'Interfaces'))) {
+      const refName = getReferenceTargetName(iface);
+      if (refName) {
+        mergeFrom(refName, false, viaParent);
+      }
+    }
+    if (allowParent) {
+      const defParentNode = getDirectChildElement(defRoot, 'Parent');
+      const parentRef = defParentNode ? getReferenceTargetName(defParentNode) : '';
+      if (parentRef) {
+        mergeFrom(parentRef, true, true);
+      }
+    }
+  };
+
+  for (const iface of getDirectChildElements(getDirectChildElement(root, 'Interfaces'))) {
+    const refName = getReferenceTargetName(iface);
+    if (refName) {
+      mergeFrom(refName, false, false);
+    }
+  }
+  if (parent) {
+    mergeFrom(parent, true, true);
+  }
+
   return {
     name,
     parent,
     properties,
     components,
     clientMethods,
-    exposedBaseMethods: readDefMethods(root, 'BaseMethods', true),
-    exposedCellMethods: readDefMethods(root, 'CellMethods', true)
+    exposedBaseMethods,
+    exposedCellMethods
   };
 }
 
@@ -560,11 +664,20 @@ function generateTypeScriptEntityFile(
   entity: ClientSdkEntity,
   typeMap: ClientSdkTypeMap,
   generatedAt: string,
-  engineTrace?: SdkEngineTrace
+  engineTrace?: SdkEngineTrace,
+  knownEntities?: ReadonlySet<string>
 ): string {
   const lines = defHeader('typescript', generatedAt, engineTrace);
   lines.push(`// 实体: ${entity.name}${entity.parent ? ` 父类: ${entity.parent}` : ''}`);
   lines.push('');
+
+  // KR-AUD-73:父实体在同一 SDK 生成集内 → extends(基类成员经继承承载);
+  // 否则父链成员平铺(见 parseClientSdkEntity 合并),不 extends 防止断链导入。
+  const extendsName = entity.parent !== null && knownEntities?.has(entity.parent)
+    ? entity.parent
+    : null;
+  const declaredHere = (member: { readonly inheritedViaParent?: boolean }): boolean =>
+    extendsName === null || member.inheritedViaParent !== true;
 
   const used = usedFixedDictTypes(entity, typeMap);
   if (used.length > 0) {
@@ -575,12 +688,19 @@ function generateTypeScriptEntityFile(
     lines.push(`import { ${entity.components.map(component => component.typeName).join(', ')} } from './${CLIENT_SDK_COMPONENTS_BASENAME}';`);
     lines.push('');
   }
+  if (extendsName !== null) {
+    lines.push(`import { ${extendsName} } from './${extendsName}';`);
+    lines.push('');
+  }
 
-  lines.push(`export class ${entity.name} {`);
+  lines.push(`export class ${entity.name}${extendsName !== null ? ` extends ${extendsName}` : ''} {`);
   lines.push(`  /** 实体 id（由 baseapp 分配） */`);
   lines.push(`  public readonly entityId: number;`);
 
   for (const property of clientVisibleProperties(entity)) {
+    if (!declaredHere(property)) {
+      continue;
+    }
     lines.push('');
     lines.push(`  /** Flags: ${property.flags} */`);
     lines.push(`  public ${property.name}: ${resolvePropertyType(typeMap, property)};`);
@@ -598,6 +718,9 @@ function generateTypeScriptEntityFile(
   lines.push(`  }`);
 
   for (const method of entity.clientMethods) {
+    if (!declaredHere(method)) {
+      continue;
+    }
     lines.push('');
     lines.push(`  /** ClientMethods 回调: ${method.name}(${method.argTypes.map(type => resolveArgType(typeMap, type)).join(', ')}) */`);
     const args = formatArgTypes(typeMap, method.argTypes, 'typescript');
@@ -611,6 +734,9 @@ function generateTypeScriptEntityFile(
     { methods: entity.exposedCellMethods, label: 'Exposed CellMethods（客户端可请求）', seam: 'onCellOutgoing' } as const
   ]) {
     for (const method of section.methods) {
+      if (!declaredHere(method)) {
+        continue;
+      }
       lines.push('');
       lines.push(`  /** ${section.label}: ${method.name} */`);
       const args = formatArgTypes(typeMap, method.argTypes, 'typescript');
@@ -638,20 +764,31 @@ function generateCSharpEntityFile(
   entity: ClientSdkEntity,
   typeMap: ClientSdkTypeMap,
   generatedAt: string,
-  engineTrace?: SdkEngineTrace
+  engineTrace?: SdkEngineTrace,
+  knownEntities?: ReadonlySet<string>
 ): string {
   const lines = defHeader('csharp', generatedAt, engineTrace);
   lines.push(`namespace ${CLIENT_SDK_CSHARP_NAMESPACE}`);
   lines.push('{');
 
+  // KR-AUD-73:同 TS 口径——父实体在生成集内则走基类列表,继承成员不重复声明。
+  const extendsName = entity.parent !== null && knownEntities?.has(entity.parent)
+    ? entity.parent
+    : null;
+  const declaredHere = (member: { readonly inheritedViaParent?: boolean }): boolean =>
+    extendsName === null || member.inheritedViaParent !== true;
+
   const used = usedFixedDictTypes(entity, typeMap);
   lines.push(`  /// <summary>${entity.name} 客户端实体 SDK 骨架${entity.parent ? `（父类 ${entity.parent}）` : ''}${used.length > 0 ? `（固定字典: ${used.map(type => type.name).join(', ')}）` : ''}</summary>`);
-  lines.push(`  public class ${entity.name}`);
+  lines.push(`  public class ${entity.name}${extendsName !== null ? ` : ${extendsName}` : ''}`);
   lines.push(`  {`);
   lines.push(`    /// <summary>实体 id（由 baseapp 分配）</summary>`);
   lines.push(`    public long EntityId { get; }`);
 
   for (const property of clientVisibleProperties(entity)) {
+    if (!declaredHere(property)) {
+      continue;
+    }
     lines.push(`    /// <summary>Flags: ${property.flags}</summary>`);
     lines.push(`    public ${resolvePropertyType(typeMap, property)} ${toPascalCase(property.name)} { get; set; }`);
   }
@@ -667,6 +804,9 @@ function generateCSharpEntityFile(
   lines.push(`    }`);
 
   for (const method of entity.clientMethods) {
+    if (!declaredHere(method)) {
+      continue;
+    }
     const args = formatArgTypes(typeMap, method.argTypes, 'csharp');
     lines.push(`    /// <summary>ClientMethods 回调: ${method.name}</summary>`);
     lines.push(`    public virtual void ${toPascalCase(method.name)}(${args})`);
@@ -680,6 +820,9 @@ function generateCSharpEntityFile(
     { methods: entity.exposedCellMethods, prefix: 'CellCall', seam: 'OnCellOutgoing' } as const
   ]) {
     for (const method of section.methods) {
+      if (!declaredHere(method)) {
+        continue;
+      }
       const args = formatArgTypes(typeMap, method.argTypes, 'csharp');
       const callArgs = formatArgIds(method.argTypes, false);
       lines.push(`    /// <summary>${section.seam === 'OnBaseOutgoing' ? 'Exposed BaseMethods' : 'Exposed CellMethods'}: ${method.name}</summary>`);
@@ -710,11 +853,12 @@ export function generateClientSdkEntityFile(
   language: ClientSdkLanguage,
   typeMap: ClientSdkTypeMap,
   generatedAt: string,
-  engineTrace?: SdkEngineTrace
+  engineTrace?: SdkEngineTrace,
+  knownEntities?: ReadonlySet<string>
 ): string {
   return language === 'typescript'
-    ? generateTypeScriptEntityFile(entity, typeMap, generatedAt, engineTrace)
-    : generateCSharpEntityFile(entity, typeMap, generatedAt, engineTrace);
+    ? generateTypeScriptEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities)
+    : generateCSharpEntityFile(entity, typeMap, generatedAt, engineTrace, knownEntities);
 }
 
 // ---------------------------------------------------------------------------
@@ -945,14 +1089,75 @@ export function generateClientSdkComponentsFile(
   return lines.join('\n');
 }
 
+/** KR-AUD-73:实体合并面(Interfaces/Parent 链)的 def 原文闭包——实体 def 以
+ * entities.xml 登记序预置,再从每个 def 的 Interfaces/Parent 出发在
+ * entity_defs/interfaces/components 三目录查找递归收集。缺失 def 不收集
+ * (调用方合并时按名跳过)。 */
+function collectClientSdkRelatedDefs(
+  workspaceRoot: string,
+  entitySources: ReadonlyArray<ClientSdkEntitySource>
+): ClientSdkComponentDefs {
+  const layout = getDefinitionWorkspaceLayout(workspaceRoot);
+  const defs: Record<string, string> = {};
+  const queue: string[] = [];
+  const enqueued = new Set<string>();
+  const enqueue = (name: string): void => {
+    if (name && !enqueued.has(name)) {
+      enqueued.add(name);
+      queue.push(name);
+    }
+  };
+  const readDefFor = (name: string): string | null => {
+    const candidates: Array<string | null> = [
+      layout.entityDefsRoot ? path.join(layout.entityDefsRoot, `${name}.def`) : null,
+      layout.interfacesRoot ? path.join(layout.interfacesRoot, `${name}.def`) : null,
+      layout.componentsRoot ? path.join(layout.componentsRoot, `${name}.def`) : null
+    ];
+    const defPath = candidates.find(candidate => candidate !== null && fs.existsSync(candidate));
+    return defPath ? readWorkspaceTextFile(defPath) : null;
+  };
+  const visit = (name: string): void => {
+    if (defs[name] !== undefined) {
+      return;
+    }
+    const content = readDefFor(name);
+    if (content === null) {
+      return;
+    }
+    defs[name] = content;
+    const semantics = parseDefFileSemantics(content);
+    for (const iface of semantics?.interfaceNames ?? []) {
+      enqueue(iface);
+    }
+    if (semantics?.parentName) {
+      enqueue(semantics.parentName);
+    }
+  };
+  for (const source of entitySources) {
+    defs[source.name] = source.defText;
+    const semantics = parseDefFileSemantics(source.defText);
+    for (const iface of semantics?.interfaceNames ?? []) {
+      enqueue(iface);
+    }
+    if (semantics?.parentName) {
+      enqueue(semantics.parentName);
+    }
+  }
+  while (queue.length > 0) {
+    visit(queue.shift()!);
+  }
+  return defs;
+}
+
 /** 按 entities.xml 登记序收集实体，缺 def 文件的登记项跳过。 */
 export function collectClientSdkEntities(workspaceRoot: string): ClientSdkEntity[] {
   const sources = collectClientSdkEntitySources(workspaceRoot);
   const componentDefs = collectClientSdkComponentDefs(workspaceRoot, sources);
+  const relatedDefs = collectClientSdkRelatedDefs(workspaceRoot, sources);
   const entities: ClientSdkEntity[] = [];
 
   for (const source of sources) {
-    const entity = parseClientSdkEntity(source.defText, source.name, componentDefs);
+    const entity = parseClientSdkEntity(source.defText, source.name, componentDefs, relatedDefs);
     if (entity) {
       entities.push(entity);
     }
@@ -1162,6 +1367,7 @@ function generateClientSdkEntitiesFallback(
 ): ClientSdkGenerationResult {
   const entities = collectClientSdkEntities(root);
   const customTypes = getCustomTypeInfos(root);
+  const entityNames = new Set(entities.map(entity => entity.name));
   const files: ClientSdkGeneratedFile[] = [];
 
   for (const language of options.languages) {
@@ -1173,7 +1379,7 @@ function generateClientSdkEntitiesFallback(
       files.push(
         writeClientSdkFile(
           { path: filePath, kind: 'entity', language, entityName: entity.name },
-          () => generateClientSdkEntityFile(entity, language, typeMap, generatedAt, options.engineTrace),
+          () => generateClientSdkEntityFile(entity, language, typeMap, generatedAt, options.engineTrace, entityNames),
           options
         )
       );

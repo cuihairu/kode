@@ -1279,6 +1279,154 @@ describe('runClientSdkGenerateCommand', () => {
   });
 });
 
+// KR-AUD-73:引擎对实体 def 依序装载 Interfaces 与 Parent 并把成员并入模块
+// (entitydef.cpp:371-372 loadInterfaces → loadParentClass);SDK 骨架此前只发
+// 自身成员、类声明无 extends。引擎口径:自身成员优先(子覆盖同名成员),
+// Interfaces 先于 Parent;接口 def 不装 Parent(KR-AUD-72,entitydef.cpp:611-638)。
+describe('KR-AUD-73 entity SDK merges parent/interface members', () => {
+  const AVATAR_DEF = [
+    '<root>',
+    '  <Parent>Monster</Parent>',
+    '  <Interfaces>',
+    '    <interface>TankIface</interface>',
+    '  </Interfaces>',
+    '  <Properties>',
+    '    <hp> <Type>UINT32</Type> <Flags>OWN_CLIENT</Flags> </hp>',
+    '    <name> <Type>STRING</Type> <Flags>BASE</Flags> </name>',
+    '  </Properties>',
+    '  <ClientMethods>',
+    '    <onHurt> <Arg>UINT32</Arg> </onHurt>',
+    '  </ClientMethods>',
+    '</root>'
+  ].join('\n');
+
+  const MONSTER_DEF = [
+    '<root>',
+    '  <Properties>',
+    '    <hp> <Type>UINT16</Type> <Flags>OWN_CLIENT</Flags> </hp>',
+    '    <monsterLevel> <Type>UINT8</Type> <Flags>OWN_CLIENT</Flags> </monsterLevel>',
+    '  </Properties>',
+    '  <BaseMethods>',
+    '    <monsterBanish> <Exposed/> </monsterBanish>',
+    '  </BaseMethods>',
+    '  <ClientMethods>',
+    '    <onMonsterRoar/>',
+    '  </ClientMethods>',
+    '</root>'
+  ].join('\n');
+
+  const TANK_IFACE_DEF = [
+    '<root>',
+    '  <Parent>Ghost</Parent>',
+    '  <Properties>',
+    '    <armor> <Type>UINT16</Type> <Flags>OWN_CLIENT</Flags> </armor>',
+    '  </Properties>',
+    '  <ClientMethods>',
+    '    <onShieldHit/>',
+    '  </ClientMethods>',
+    '</root>'
+  ].join('\n');
+
+  const GHOST_DEF = [
+    '<root>',
+    '  <Properties>',
+    '    <haunt> <Type>UINT8</Type> <Flags>OWN_CLIENT</Flags> </haunt>',
+    '  </Properties>',
+    '</root>'
+  ].join('\n');
+
+  const RELATED = {
+    Avatar: AVATAR_DEF,
+    Monster: MONSTER_DEF,
+    TankIface: TANK_IFACE_DEF,
+    Ghost: GHOST_DEF
+  };
+
+  it('merges interface then parent members after own members with override', () => {
+    const entity = parseClientSdkEntity(AVATAR_DEF, 'Avatar', {}, RELATED)!;
+
+    // 自身 → 接口 → 父链(引擎装载序);同名 hp 以自身 UINT32 优先(子覆盖)
+    expect(entity.properties.map(property => property.name)).toEqual([
+      'hp', 'name', 'armor', 'monsterLevel'
+    ]);
+    expect(entity.properties.find(property => property.name === 'hp')!.type).toBe('UINT32');
+    // 接口 def 的 Parent(Ghost/haunt)不得并入——引擎对接口 def 不调 loadParentClass
+    expect(entity.properties.map(property => property.name)).not.toContain('haunt');
+    // 来源标记:自身成员无标记,合并成员带来源 def 名
+    expect(entity.properties.find(property => property.name === 'hp')!.inheritedFrom).toBeUndefined();
+    expect(entity.properties.find(property => property.name === 'armor')!.inheritedFrom).toBe('TankIface');
+    expect(entity.properties.find(property => property.name === 'monsterLevel')!.inheritedFrom).toBe('Monster');
+
+    expect(entity.clientMethods.map(method => method.name)).toEqual([
+      'onHurt', 'onShieldHit', 'onMonsterRoar'
+    ]);
+    expect(entity.exposedBaseMethods.map(method => method.name)).toEqual(['monsterBanish']);
+  });
+
+  it('emits extends + parent import and skips redeclaring inherited members', () => {
+    const entity = parseClientSdkEntity(AVATAR_DEF, 'Avatar', {}, RELATED)!;
+    const typeMap = makeFixedDictTypeMap('typescript');
+    const file = generateClientSdkEntityFile(
+      entity, 'typescript', typeMap, GENERATED_AT, undefined, new Set(['Avatar', 'Monster'])
+    );
+
+    // 父实体在同一 SDK 生成集内 → extends + import
+    expect(file).toContain(`import { Monster } from './Monster';`);
+    expect(file).toContain('export class Avatar extends Monster {');
+    // 继承自父链的成员由基类承载,不得重复声明;接口成员仍平铺
+    expect(file).not.toMatch(/public monsterLevel:/);
+    expect(file).toMatch(/public armor:/);
+  });
+
+  it('flattens parent members without extends when parent is outside the SDK set', () => {
+    const entity = parseClientSdkEntity(AVATAR_DEF, 'Avatar', {}, RELATED)!;
+    const typeMap = makeFixedDictTypeMap('typescript');
+    const file = generateClientSdkEntityFile(
+      entity, 'typescript', typeMap, GENERATED_AT, undefined, new Set(['Avatar'])
+    );
+
+    expect(file).toContain('export class Avatar {');
+    // 父类不在生成集 → 无 extends,父链成员平铺保证成员完整
+    expect(file).toMatch(/public monsterLevel:/);
+    expect(file).toMatch(/public armor:/);
+  });
+
+  it('C# emitter inherits via base list and keeps interface members', () => {
+    const entity = parseClientSdkEntity(AVATAR_DEF, 'Avatar', {}, RELATED)!;
+    const typeMap = makeFixedDictTypeMap('csharp');
+    const file = generateClientSdkEntityFile(
+      entity, 'csharp', typeMap, GENERATED_AT, undefined, new Set(['Avatar', 'Monster'])
+    );
+
+    expect(file).toContain('public class Avatar : Monster');
+    expect(file).not.toContain('MonsterLevel { get; set; }');
+    expect(file).toContain('Armor { get; set; }');
+  });
+
+  it('collectClientSdkEntities wires the related-def closure end to end', () => {
+    const sdkRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-sdk-kr73-'));
+    try {
+      const defsDir = path.join(sdkRoot, 'scripts', 'entity_defs');
+      fs.mkdirSync(path.join(defsDir, 'interfaces'), { recursive: true });
+      fs.writeFileSync(path.join(sdkRoot, 'scripts', 'entities.xml'),
+        '<root>\n  <Avatar/>\n  <Monster/>\n</root>\n', 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'Avatar.def'), AVATAR_DEF, 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'Monster.def'), MONSTER_DEF, 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'interfaces', 'TankIface.def'), TANK_IFACE_DEF, 'utf8');
+      fs.writeFileSync(path.join(defsDir, 'interfaces', 'Ghost.def'), GHOST_DEF, 'utf8');
+
+      const entities = collectClientSdkEntities(sdkRoot);
+      const avatar = entities.find(entity => entity.name === 'Avatar')!;
+      expect(avatar.properties.map(property => property.name)).toEqual([
+        'hp', 'name', 'armor', 'monsterLevel'
+      ]);
+      expect(avatar.properties.map(property => property.name)).not.toContain('haunt');
+    } finally {
+      fs.rmSync(sdkRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 function requireResolve(typeMap: ClientSdkTypeMap, type: string, elementType: string | null): string {
   return resolveClientSdkTypeName(typeMap, type, elementType);
 }
