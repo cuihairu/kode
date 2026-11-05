@@ -298,4 +298,57 @@ describe('IDE-GIT-011 文件历史视图取消面', () => {
     expect(tokens[1]).toBeDefined();
     expect(tokens[1]?.isCancellationRequested).toBe(false);
   });
+
+  it('并发请求代际检查:先发起的慢查询回归时不覆盖用户刚选的文件历史', async () => {
+    let resolveFirst!: (r: GitCommitLogResult) => void;
+    let callCount = 0;
+    const queryLog = vi.fn(
+      async (): Promise<GitCommitLogResult> => {
+        callCount += 1;
+        if (callCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        return {
+          kind: 'page',
+          status: 'ok',
+          entries: [entry('h2', '新选择', '作者甲', '2026-11-01T10:00:00+08:00')],
+          hasMore: false,
+          page: 0,
+          pageSize: 50,
+        } as const;
+      }
+    );
+    const provider = new GitHistoryTreeProvider({
+      locateGitRepo: () => ({ kind: 'repo', repoRoot: '/repo', gitDir: '/repo/.git', isWorktree: false }),
+      queryLog,
+      pageSize: 50,
+    });
+    const first = provider.showHistory('/repo/src/a.py', true);
+    const second = provider.showHistory('/repo/src/b.py', true);
+    await second;
+    let state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.filePath).toBe('/repo/src/b.py');
+      expect(state.entries[0].subject).toBe('新选择');
+    }
+    // 先发起的查询此刻才回归:代际已更替,丢弃,不覆盖最新选择。
+    resolveFirst({
+      kind: 'page',
+      status: 'ok',
+      entries: [entry('h1', '旧选择', '作者乙', '2026-11-01T10:00:00+08:00')],
+      hasMore: false,
+      page: 0,
+      pageSize: 50,
+    });
+    await first;
+    state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.filePath).toBe('/repo/src/b.py'); // 仍是最新选择
+      expect(state.entries[0].subject).toBe('新选择');
+    }
+  });
 });
