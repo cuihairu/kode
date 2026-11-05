@@ -154,10 +154,11 @@ describe('KODE-CFG-005 def 扫描根按配置派生', () => {
     const scanRootsA = getIndexScanRoots();
     // 派生根 = assets/scripts(非降级、目录存在)。
     expect(derivedA).toBe(path.join(assetsA, 'scripts'));
-    // 扫描根:workspace 工具子目录 + 派生根;旧的宽 assetsRoot 被替换
-    // (不再整树扫 assets/)。
-    expect(scanRootsA).toContain(path.join(assetsA, 'scripts'));
-    expect(scanRootsA).not.toContain(assetsA);
+    // 扫描根:workspace 工具子目录 + 宽 assetsRoot(审核发现修复:scripts 之外
+    // 的资源/定义文件仍被索引;派生根 assets/scripts 被宽 assetsRoot 包含,去重后
+    // 不再单独入列,不重复扫)。
+    expect(scanRootsA).toContain(assetsA);
+    expect(scanRootsA).not.toContain(path.join(assetsA, 'scripts'));
     // RPC 收到的是真实解析出的 config 路径事实。
     const sent = calls[0].params as { facts?: DeriveFacts };
     expect(sent.facts?.customConfigPath).toBe(
@@ -182,8 +183,8 @@ describe('KODE-CFG-005 def 扫描根按配置派生', () => {
     const scanRootsB = getIndexScanRoots();
     expect(derivedB).toBe(path.join(otherB, 'scripts'));
     expect(derivedB).not.toBe(derivedA);
-    expect(scanRootsB).toContain(path.join(otherB, 'scripts'));
-    expect(scanRootsB).not.toContain(otherB);
+    expect(scanRootsB).toContain(otherB);
+    expect(scanRootsB).not.toContain(path.join(otherB, 'scripts'));
     // 两次 RPC 的 config 路径事实不同 → 派生结果随之变。
     expect(calls).toHaveLength(2);
     const sentB = calls[1].params as { facts?: DeriveFacts };

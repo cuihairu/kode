@@ -12,6 +12,7 @@ import {
   resetScanRootCache
 } from '../src/scanRoots';
 import * as discoveryModule from '../src/workspaceDiscovery';
+import * as configDeriveModule from '../src/configDerive';
 
 // 扫描根口径(用户 2026-10-16):workspace 顶层 ∪ assetsRoot,去重;
 // assetsRoot 未配置/不存在时回退 workspace,任何读取异常都不外抛。
@@ -136,6 +137,29 @@ describe('getIndexScanRoots:workspace ∪ assetsRoot(去重/回退/不抛)', () 
     try {
       setAssetsRoot(undefined);
       expect(getIndexScanRoots()).toEqual([ws]);
+    } finally {
+      spy.mockRestore();
+      stubWorkspace.workspaceFolders = [];
+      setAssetsRoot(undefined);
+    }
+  });
+
+  it('审核发现:派生 scripts 根存在时不排除外部 assetsRoot(scripts 之外仍被索引)', () => {
+    const base = makeTmpDir('derived-external');
+    const ws = path.join(base, 'ws');
+    const assets = path.join(base, 'ext_assets');
+    const scripts = path.join(assets, 'scripts');
+    fs.mkdirSync(scripts, { recursive: true });
+    fs.mkdirSync(assets, { recursive: true });
+    stubWorkspace.workspaceFolders = [{ uri: Uri.file(ws), name: 'ws', index: 0 }];
+    const spy = vi.spyOn(configDeriveModule, 'getConfigDerivedScanRoot').mockReturnValue(scripts);
+    try {
+      setAssetsRoot(assets);
+      const roots = getIndexScanRoots();
+      // 外部 assetsRoot 保留(scripts 之外的 res/entity_defs 仍被索引)
+      expect(roots).toContain(assets);
+      // 派生 scripts 根被 assetsRoot 包含 → 去重后不重复入列(不重复扫)
+      expect(roots).not.toContain(scripts);
     } finally {
       spy.mockRestore();
       stubWorkspace.workspaceFolders = [];

@@ -135,7 +135,10 @@ export function getIndexScanRoots(): string[] {
   }
   try {
     const assetsRoot = resolveAssetsRootForWorkspace(workspaceRoot);
-    if (assetsRoot && !derivedRoot) {
+    // 审核发现修复:派生 scripts 根存在时仍把外部 assetsRoot 入列——否则
+    // scripts 之外的资源/定义文件(res/、entity_defs 等)不再被索引。包含去重
+    // 会留下更宽的 assetsRoot 并剔除被其包含的派生 scripts 根(不重复扫)。
+    if (assetsRoot) {
       candidates.push(assetsRoot);
     }
   } catch {
