@@ -30,6 +30,10 @@ async function main(): Promise<void> {
   // IDE-GIT-012 历史宿主影响验收:与 --final 共用 field 装配(demo 资产+5000 外部根),
   // 另把工作区根建成 git 仓库+大历史(history_probe.py),suite 过滤切 history。
   const historyMode = process.argv.includes('--history');
+  // IDE-AUD-017 长会话趋势:与 --final/--history 共用 field 装配(demo 资产+
+  // 5000 外部根),suite 过滤切 longtrend(longSessionTrend.test.ts)。REV-034
+  // 短压力(--longsession)原样保留,两套件互补互不覆盖。
+  const longTrendMode = process.argv.includes('--longtrend');
   const delFileMode = process.argv.includes('--delfile');
   const renameMode = process.argv.includes('--rename');
   const dirtyMode = process.argv.includes('--dirty');
@@ -120,7 +124,7 @@ async function main(): Promise<void> {
     process.env.KODE_VSIX_WORKSPACE = workspacePath;
     process.env.KODE_VSIX_EXT_DIR = devPath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode || historyMode) {
+  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode || historyMode || longTrendMode) {
     // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
     // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
@@ -268,13 +272,17 @@ async function main(): Promise<void> {
         ? 'attribution'
         : longSessionMode
           ? 'longsession'
-          : historyMode ? 'history' : 'field';
+          : historyMode
+            ? 'history'
+            : longTrendMode ? 'longtrend' : 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
     process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
       ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-10-27-field-baseline-run.txt');
     process.env.KODE_HISTORY_OUT = process.env.KODE_HISTORY_OUT
       ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-11-05-history-host-impact-run.txt');
+    process.env.KODE_AUD17_OUT = process.env.KODE_AUD17_OUT
+      ?? path.resolve(extensionDevelopmentPath, 'docs/perf/2026-11-05-aud017-long-session-run.txt');
     if (historyMode) {
       // IDE-GIT-012:把工作区根建成 git 仓库 + 大历史(history_probe.py)。
       // 每提交追加一段,使 `git log -L` 走全部提交→查询在途窗口(大历史)。
