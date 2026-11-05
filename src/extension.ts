@@ -378,6 +378,7 @@ import {
   GIT_HISTORY_SHOW_RANGE_COMMAND,
   readGitHistoryEnabled,
   runGitHistoryWhenEnabled,
+  rangeHistoryDirtyGuard,
 } from './gitHistory';
 import {
   GitHistoryTreeProvider,
@@ -4208,6 +4209,14 @@ export function activate(context: vscode.ExtensionContext) {
         if (!editor || !sel || sel.isEmpty) {
           // 无选区:不查询,给出选择代码提示(右键入口已由 editorHasSelection 隐藏)。
           gitRangeHistoryProvider.showNoSelection();
+          void vscode.commands.executeCommand('kbengine.gitRangeHistory.focus');
+          return;
+        }
+        // 未保存内容不参与映射(审核发现):磁盘差异与编辑器缓冲可能不一致,
+        // 映射到的 HEAD 行段是错的。如实拒绝并提示保存后重试。
+        const dirtyReason = rangeHistoryDirtyGuard(editor.document.isDirty);
+        if (dirtyReason !== null) {
+          gitRangeHistoryProvider.showUnavailable(dirtyReason);
           void vscode.commands.executeCommand('kbengine.gitRangeHistory.focus');
           return;
         }

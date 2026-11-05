@@ -69,16 +69,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-05(七):KODE-CFG-006 entryScriptFile 断点预填——extension.ts 顶部
   // 新增 1 行 import(prefillEntryScriptBreakpoints),全部 extension.ts 锚点再
   // +1(965/1016/1079/883/1377/606/619/1919/1993,出处随 baseline 锁步)。
-  ['src/extension.ts', 965, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1016, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1079, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 883, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1377, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 606, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 619, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-05(八):IDE-GIT 范围历史未保存守卫——extension.ts 顶部新增 1 行
+  // import(rangeHistoryDirtyGuard),全部 extension.ts 锚点再 +1(出处随 baseline 锁步)。
+  ['src/extension.ts', 966, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1017, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1080, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 884, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1378, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 607, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 620, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1919, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1993, 'flushQueued()'],
+  ['src/extension.ts', 1920, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1994, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

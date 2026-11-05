@@ -7,6 +7,7 @@ import {
   GIT_HISTORY_SHOW_RANGE_COMMAND,
   readGitHistoryEnabled,
   runGitHistoryWhenEnabled,
+  rangeHistoryDirtyGuard,
 } from '../src/gitHistory';
 
 /** 构造一个可记录调用的配置读取替身。 */
@@ -72,5 +73,17 @@ describe('IDE-GIT-001 命令与上下文标识', () => {
     expect(GIT_HISTORY_SHOW_COMMAND).toBe('kbengine.git.showHistory');
     expect(GIT_HISTORY_SHOW_RANGE_COMMAND).toBe('kbengine.git.showRangeHistory');
     expect(GIT_HISTORY_CONTEXT_KEY).toBe('kode.gitHistoryEnabled');
+  });
+});
+
+describe('审核发现:选中范围历史未保存守卫', () => {
+  it('未保存(isDirty)拒绝并给出可读原因', () => {
+    const reason = rangeHistoryDirtyGuard(true);
+    expect(reason).not.toBeNull();
+    expect(reason).toContain('未保存');
+  });
+
+  it('已保存(isDirty=false)可查询', () => {
+    expect(rangeHistoryDirtyGuard(false)).toBeNull();
   });
 });
