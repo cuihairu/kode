@@ -80,8 +80,8 @@
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | 快捷动作清单 | 树刷新 + 用户触发命令 |
 | FinalConfigTreeProvider | serverConfigMerge.ts:2808 | :2756 | kbengine.xml 合成树 | 树刷新事件 |
-| GitHistoryTreeProvider | gitHistoryTree.ts:135 | :4076 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git) | 树刷新事件 + 用户触发「加载下一页」 |
-| GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:197 | :4129 | 选区→HEAD 行段映射(IDE-GIT-008)+ 逐提交修改时间线(IDE-GIT-009,仅用户入口按需查询;空闲零 Git,不挂编辑器切换/选区监听) | 树刷新事件(标题随状态) |
+| GitHistoryTreeProvider | gitHistoryTree.ts:165 | :4089 | GitCommitLog 分页(IDE-GIT-004,仅用户入口按需查询;空闲零 Git),经共享查询门(IDE-GIT-011:去重/并发上限 2 且范围追踪 1/有界队列/LRU 缓存/视图隐藏-禁用-卸载取消) | 树刷新事件 + 用户触发「加载下一页」 |
+| GitRangeHistoryTreeProvider | gitRangeHistoryTree.ts:208 | :4140 | 选区→HEAD 行段映射(IDE-GIT-008)+ 逐提交修改时间线(IDE-GIT-009,仅用户入口按需查询;空闲零 Git,不挂编辑器切换/选区监听),经共享查询门(IDE-GIT-011,重复选区只留最新) | 树刷新事件(标题随状态) |
 
 ### 2d. 文件树角标 provider(vscode.window.registerFileDecorationProvider,IDE-HOT-100)
 

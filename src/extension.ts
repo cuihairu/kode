@@ -393,6 +393,7 @@ import {
   type RangeHistoryItem,
 } from './gitRangeHistoryTree';
 import { editorSelectionToRange } from './gitSelectionMap';
+import { sharedGitQueryGate } from './gitQueryGate';
 import { KBE_SCHEME, appendEngineApiMetadata, buildKbeStubDocument } from './kbeModuleIndex';
 import {
   SERVER_CONFIG_SELECTOR,
@@ -4069,6 +4070,10 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.workspace.getConfiguration('kbengine')
     );
     void vscode.commands.executeCommand('setContext', GIT_HISTORY_CONTEXT_KEY, enabled);
+    // IDE-GIT-011:禁用配置即取消在途/排队历史查询并清缓存(门保持可用,重启用恢复)。
+    if (!enabled) {
+      sharedGitQueryGate.cancelAll();
+    }
   };
   refreshGitHistoryContext();
   context.subscriptions.push(
@@ -4082,6 +4087,8 @@ export function activate(context: vscode.ExtensionContext) {
   // 视图挂在既有 kbengine-explorer 容器;命令只在用户入口触发查询(按需,
   // 空闲零 Git 调用)。视图标题随状态刷新(文件名 @ 基准提交)。
   const gitHistoryProvider = new GitHistoryTreeProvider(defaultGitHistoryDeps());
+  // IDE-GIT-011:卸载/关闭视图取消该视图全部在途历史查询(不残留子进程)。
+  context.subscriptions.push({ dispose: () => gitHistoryProvider.dispose() });
   if (typeof vscode.window.createTreeView === 'function') {
     // 真宿主:TreeView 可动态设标题(文件名 @ 基准提交)并可聚焦
     const gitHistoryTree = vscode.window.createTreeView('kbengine.gitHistory', {
@@ -4089,6 +4096,10 @@ export function activate(context: vscode.ExtensionContext) {
       showCollapseAll: false,
     });
     context.subscriptions.push(gitHistoryTree);
+    // IDE-GIT-011:视图隐藏即取消该视图在途查询(不残留 Git 子进程;重开可用)。
+    gitHistoryTree.onDidChangeVisibility?.(event => {
+      if (!event.visible) gitHistoryProvider.cancelInFlight();
+    });
     gitHistoryTree.title = historyViewTitle(gitHistoryProvider.getState());
     context.subscriptions.push(
       gitHistoryProvider.onDidChangeTreeData(() => {
@@ -4127,12 +4138,18 @@ export function activate(context: vscode.ExtensionContext) {
   // IDE-GIT-010:选中范围历史侧边栏视图(kbengine.gitRangeHistory)与命令体接入。
   // 只在用户经编辑器选区右键/命令面板发起时运行;切换编辑器不重查不错套。
   const gitRangeHistoryProvider = new GitRangeHistoryTreeProvider(defaultRangeHistoryDeps());
+  // IDE-GIT-011:卸载/关闭视图取消该视图全部在途历史查询(不残留子进程)。
+  context.subscriptions.push({ dispose: () => gitRangeHistoryProvider.dispose() });
   if (typeof vscode.window.createTreeView === 'function') {
     const gitRangeHistoryTree = vscode.window.createTreeView('kbengine.gitRangeHistory', {
       treeDataProvider: gitRangeHistoryProvider,
       showCollapseAll: false,
     });
     context.subscriptions.push(gitRangeHistoryTree);
+    // IDE-GIT-011:视图隐藏即取消该视图在途查询(不残留 Git 子进程;重开可用)。
+    gitRangeHistoryTree.onDidChangeVisibility?.(event => {
+      if (!event.visible) gitRangeHistoryProvider.cancelInFlight();
+    });
     gitRangeHistoryTree.title = rangeHistoryViewTitle(gitRangeHistoryProvider.getState());
     context.subscriptions.push(
       gitRangeHistoryProvider.onDidChangeTreeData(() => {
@@ -5970,5 +5987,7 @@ export function deactivate() {
   disposeDefParserWorker();
   // PR2:停用即释放全部文档快照(进程回收前不留缓冲区副本)
   releaseAllDocumentSnapshots();
+  // IDE-GIT-011:卸载即取消全部在途/排队历史查询并清缓存(不残留 Git 子进程)。
+  sharedGitQueryGate.dispose();
   console.log('KBEngine Language Extension is now deactivated!');
 }

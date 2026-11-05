@@ -27,6 +27,7 @@ import {
   realGitRepoLocationDeps,
   type GitRepoLocation,
 } from './gitRepoLocate';
+import { GitCancelSource, type GitQueryRequest } from './gitQueryGate';
 
 /** 视图条目:提交记录 / 加载下一页 / 引导或状态(无查询零 Git 调用)。 */
 export type GitHistoryItem =
@@ -69,8 +70,14 @@ export type GitHistoryState =
 export interface GitHistoryDeps {
   /** 定位所属仓库(默认:locateGitRepository + 当前工作区根 + 真实 fs 面)。 */
   locateGitRepo(filePath: string, enabled: boolean): GitRepoLocation;
-  /** 查询分页提交记录(默认:IDE-GIT-004 queryGitCommitLog)。 */
-  queryLog(filePath: string, repoRoot: string, page: number, pageSize: number): Promise<GitCommitLogResult>;
+  /** 查询分页提交记录(默认:IDE-GIT-004 queryGitCommitLog;request 带 token/刷新)。 */
+  queryLog(
+    filePath: string,
+    repoRoot: string,
+    page: number,
+    pageSize: number,
+    request?: GitQueryRequest
+  ): Promise<GitCommitLogResult>;
   /** 每页条数(缺省 50;硬上限由 IDE-GIT-004 钳制)。 */
   pageSize: number;
 }
@@ -84,8 +91,8 @@ export function defaultGitHistoryDeps(deps?: Partial<GitHistoryDeps>): GitHistor
         enabled,
         realGitRepoLocationDeps()
       ),
-    queryLog: (filePath, repoRoot, page, pageSize) =>
-      queryGitCommitLog({ repoRoot, filePath, page, pageSize, follow: true }),
+    queryLog: (filePath, repoRoot, page, pageSize, request) =>
+      queryGitCommitLog({ repoRoot, filePath, page, pageSize, follow: true }, undefined, request),
     pageSize: DEFAULT_GIT_LOG_PAGE_SIZE,
     ...deps,
   };
@@ -159,8 +166,36 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
   private readonly changeEmitter = new vscode.EventEmitter<GitHistoryItem | undefined | void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
   private state: GitHistoryState = { kind: 'idle' };
+  /**
+   * IDE-GIT-011:视图级取消令牌——关闭视图/卸载时取消本视图全部在途查询,
+   * 经协调门传播到子进程(不残留 Git 子进程)。
+   */
+  private viewToken = new GitCancelSource();
+  private lastFile: string | null = null;
+  private lastEnabled = true;
 
   constructor(private readonly deps: GitHistoryDeps) {}
+
+  /** 关闭视图/卸载:取消在途查询(不残留子进程)。 */
+  dispose(): void {
+    this.viewToken.cancel();
+  }
+
+  /**
+   * IDE-GIT-011:视图隐藏(用户收合/切走面板)——取消当前在途查询并更换新令牌,
+   * 重开视图后新查询仍可用(令牌不因一次隐藏而永久失效)。
+   */
+  cancelInFlight(): void {
+    this.viewToken.cancel();
+    this.viewToken = new GitCancelSource();
+  }
+
+  /** IDE-GIT-011:显式刷新——对当前文件重新获取最新 HEAD(绕过缓存)。 */
+  async refresh(): Promise<void> {
+    if (this.lastFile) {
+      await this.showHistory(this.lastFile, this.lastEnabled);
+    }
+  }
 
   private fire(): void {
     this.changeEmitter.fire();
@@ -209,8 +244,10 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
     return buildHistoryItems(this.state);
   }
 
-  /** 入口:定位仓库 → 首页查询(只在用户触发时发生)。 */
+  /** 入口:定位仓库 → 首页查询(只在用户触发时发生;显式查询绕过缓存拿最新 HEAD)。 */
   async showHistory(filePath: string, enabled: boolean): Promise<void> {
+    this.lastFile = filePath;
+    this.lastEnabled = enabled;
     if (!enabled) {
       this.state = { kind: 'error', message: '文件历史功能已关闭' };
       this.fire();
@@ -224,7 +261,11 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       this.fire();
       return;
     }
-    const result = await this.deps.queryLog(filePath, location.repoRoot, 0, this.deps.pageSize);
+    const result = await this.deps.queryLog(filePath, location.repoRoot, 0, this.deps.pageSize, {
+      token: this.viewToken,
+      // 显式刷新:重新获取 HEAD,不读缓存(IDE-GIT-011)。
+      bypassCache: true,
+    });
     this.state = this.applyResult(filePath, location.repoRoot, result, /* append */ false);
     this.fire();
   }
@@ -237,7 +278,8 @@ export class GitHistoryTreeProvider implements vscode.TreeDataProvider<GitHistor
       prev.filePath,
       prev.repoRoot,
       prev.page + 1,
-      prev.pageSize
+      prev.pageSize,
+      { token: this.viewToken }
     );
     if (result.kind !== 'page' || result.entries.length === 0) {
       // 翻页失败/到尽头:保留已载内容,如实质感

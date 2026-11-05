@@ -14,9 +14,10 @@
  * 纯函数(执行器经 deps.runGit 注入,默认实现走 IDE-GIT-003 的只读执行器)。
  */
 
-import { runGitReadOnly, type GitRunOutcome } from './gitRunner';
+import { type GitRunOutcome } from './gitRunner';
 import { summarizeGitError } from './gitHistoryTree';
 import { relativeVersionPath } from './gitHistoryDiff';
+import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
 
 /** 选区(1 基、含端点;编辑器 0 基位置由调用面换算)。 */
 export interface SelectionRange {
@@ -66,16 +67,20 @@ export type SelectionMapResult =
   | { kind: 'invalid-selection'; reason: string }
   | { kind: 'git-error'; outcome: GitRunOutcome };
 
-/** 查询依赖注入面(默认实现经 IDE-GIT-003 只读执行器运行)。 */
+/** 查询依赖注入面(默认实现经 IDE-GIT-011 协调门,再落 IDE-GIT-003 只读执行器)。 */
 export interface GitSelectionMapDeps {
-  runGit(args: readonly string[], cwd: string): Promise<GitRunOutcome>;
+  runGit(args: readonly string[], cwd: string, request?: GitQueryRequest): Promise<GitRunOutcome>;
 }
 
 export function defaultGitSelectionMapDeps(): GitSelectionMapDeps {
   return {
-    runGit: (args, cwd) =>
-      // -U0 差分含整行内容,大文件大改动输出大;8MiB 留余量,仍有界。
-      runGitReadOnly(args, { cwd, timeoutMs: 10_000, maxOutputBytes: 8_388_608 }),
+    // -U0 差分含整行内容,大文件大改动输出大;8MiB 留余量,仍有界;token/刷新随 request。
+    runGit: (args, cwd, request) =>
+      sharedGitQueryGate.run(
+        args,
+        { cwd, timeoutMs: 10_000, maxOutputBytes: 8_388_608, token: request?.token },
+        { bypassCache: request?.bypassCache }
+      ),
   };
 }
 
@@ -184,7 +189,8 @@ export async function mapSelectionToHeadRange(
   filePath: string,
   repoRoot: string,
   range: SelectionRange,
-  deps: GitSelectionMapDeps = defaultGitSelectionMapDeps()
+  deps: GitSelectionMapDeps = defaultGitSelectionMapDeps(),
+  request?: GitQueryRequest
 ): Promise<SelectionMapResult> {
   const rel = relativeVersionPath(repoRoot, filePath);
   if (rel === null) {
@@ -195,18 +201,18 @@ export async function mapSelectionToHeadRange(
 
   // 未跟踪:index/HEAD 都没有该文件,无已提交版本可映射。
   // ls-files 自身失败(启动/超时)是 Git 错误,不冒充「未跟踪」。
-  const tracked = await deps.runGit(['ls-files', '--', rel], repoRoot);
+  const tracked = await deps.runGit(['ls-files', '--', rel], repoRoot, request);
   if (tracked.kind !== 'ok') return { kind: 'git-error', outcome: tracked };
   if (tracked.stdout.trim() === '') return { kind: 'untracked' };
 
-  const diff = await deps.runGit(['diff', 'HEAD', '--unified=0', '--', rel], repoRoot);
+  const diff = await deps.runGit(['diff', 'HEAD', '--unified=0', '--', rel], repoRoot, request);
   if (
     diff.kind === 'exit' &&
     diff.exitCode === 128 &&
     /unknown revision|bad revision|not a valid|does not have any commits/.test(diff.stderr)
   ) {
     // 无提交(HEAD 未生):一次 rev-parse 探测区分 no-commits 与其它 git 错误。
-    const head = await deps.runGit(['rev-parse', '--verify', 'HEAD'], repoRoot);
+    const head = await deps.runGit(['rev-parse', '--verify', 'HEAD'], repoRoot, request);
     if (head.kind !== 'ok') return { kind: 'no-commits' };
     return { kind: 'git-error', outcome: diff };
   }

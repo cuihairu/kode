@@ -17,18 +17,18 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import {
-  runGitReadOnly,
   type GitRunOptions,
   type GitRunOutcome,
 } from './gitRunner';
+import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
 
 /** 虚拟文档 scheme:内容一律只读(仅提供者,无编辑能力)。 */
 export const GIT_HISTORY_VERSION_SCHEME = 'kode-git-version';
 
-/** 内容查询依赖注入面(纯函数可测)。 */
+/** 内容查询依赖注入面(纯函数可测;默认经 IDE-GIT-011 协调门再落执行器)。 */
 export interface VersionQueryDeps {
-  /** 跑一条只读 Git(默认走 IDE-GIT-003 runGitReadOnly)。 */
-  runGit(args: readonly string[], options: GitRunOptions): Promise<GitRunOutcome>;
+  /** 跑一条只读 Git(默认经 IDE-GIT-011 协调门 → IDE-GIT-003 runGitReadOnly)。 */
+  runGit(args: readonly string[], options: GitRunOptions, request?: GitQueryRequest): Promise<GitRunOutcome>;
   /** 超时(默认 10s;内容有界)。 */
   timeoutMs: number;
   /** 单流输出上限(默认 2MiB;内容有界)。 */
@@ -37,7 +37,13 @@ export interface VersionQueryDeps {
 
 export function defaultVersionQueryDeps(deps?: Partial<VersionQueryDeps>): VersionQueryDeps {
   return {
-    runGit: (args, options) => runGitReadOnly(args, options),
+    // 提交内容(git show)经协调门缓存:同 (repo,commit,path) 复用,条目/字节有界。
+    runGit: (args, options, request) =>
+      sharedGitQueryGate.run(
+        args,
+        { ...options, token: request?.token },
+        { bypassCache: request?.bypassCache }
+      ),
     timeoutMs: 10_000,
     maxOutputBytes: 2 * 1024 * 1024,
     ...deps,
@@ -88,7 +94,8 @@ export async function queryVersionContent(
   repoRoot: string,
   commit: string,
   filePath: string,
-  deps: VersionQueryDeps
+  deps: VersionQueryDeps,
+  request?: GitQueryRequest
 ): Promise<VersionContentResult> {
   const rel = relativeVersionPath(repoRoot, filePath);
   if (rel === null) {
@@ -100,7 +107,8 @@ export async function queryVersionContent(
   }
   const outcome = await deps.runGit(
     ['show', `${commit}:${rel}`],
-    { cwd: repoRoot, timeoutMs: deps.timeoutMs, maxOutputBytes: deps.maxOutputBytes }
+    { cwd: repoRoot, timeoutMs: deps.timeoutMs, maxOutputBytes: deps.maxOutputBytes },
+    request
   );
   if (outcome.kind === 'ok') {
     return { kind: 'content', content: outcome.stdout };
@@ -115,11 +123,13 @@ export async function queryVersionContent(
 export async function getParentCommit(
   repoRoot: string,
   commit: string,
-  deps: VersionQueryDeps
+  deps: VersionQueryDeps,
+  request?: GitQueryRequest
 ): Promise<string | null> {
   const outcome = await deps.runGit(
     ['rev-list', '--parents', '-n1', commit],
-    { cwd: repoRoot, timeoutMs: deps.timeoutMs, maxOutputBytes: 4096 }
+    { cwd: repoRoot, timeoutMs: deps.timeoutMs, maxOutputBytes: 4096 },
+    request
   );
   if (outcome.kind !== 'ok') return null; // 无法判定按无父处理(左侧空)
   const tokens = outcome.stdout.trim().split(/\s+/);

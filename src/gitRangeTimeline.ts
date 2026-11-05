@@ -13,9 +13,10 @@
  * 纯函数(执行器经 deps.runGit 注入,默认实现走 IDE-GIT-003 的只读执行器)。
  */
 
-import { runGitReadOnly, type GitRunOutcome } from './gitRunner';
+import { type GitRunOutcome } from './gitRunner';
 import { summarizeGitError } from './gitHistoryTree';
 import { relativeVersionPath } from './gitHistoryDiff';
+import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
 
 /** 一次修改记录(-L 追踪到的、改动过该行段的提交)。 */
 export interface RangeChangeEntry {
@@ -44,16 +45,21 @@ export type RangeTimelineResult =
   | { kind: 'no-commits' }
   | { kind: 'git-error'; outcome: GitRunOutcome };
 
-/** 查询依赖注入面(默认实现经 IDE-GIT-003 只读执行器运行)。 */
+/** 查询依赖注入面(默认实现经 IDE-GIT-011 协调门,再落 IDE-GIT-003 只读执行器)。 */
 export interface GitRangeTimelineDeps {
-  runGit(args: readonly string[], cwd: string): Promise<GitRunOutcome>;
+  runGit(args: readonly string[], cwd: string, request?: GitQueryRequest): Promise<GitRunOutcome>;
 }
 
 export function defaultGitRangeTimelineDeps(): GitRangeTimelineDeps {
   return {
-    runGit: (args, cwd) =>
-      // -L 输出含每提交的行段 diff(有界到行段,仍留 8MiB 余量)。
-      runGitReadOnly(args, { cwd, timeoutMs: 10_000, maxOutputBytes: 8_388_608 }),
+    // -L 输出含每提交的行段 diff(有界到行段,仍留 8MiB 余量);协调门把
+    // `-L` 判为高成本范围追踪(并发上限 1),token/刷新随 request 传播。
+    runGit: (args, cwd, request) =>
+      sharedGitQueryGate.run(
+        args,
+        { cwd, timeoutMs: 10_000, maxOutputBytes: 8_388_608, token: request?.token },
+        { bypassCache: request?.bypassCache }
+      ),
   };
 }
 
@@ -166,7 +172,8 @@ export async function queryRangeTimeline(
   filePath: string,
   repoRoot: string,
   range: { startLine: number; endLine: number },
-  deps: GitRangeTimelineDeps = defaultGitRangeTimelineDeps()
+  deps: GitRangeTimelineDeps = defaultGitRangeTimelineDeps(),
+  request?: GitQueryRequest
 ): Promise<RangeTimelineResult> {
   const rel = relativeVersionPath(repoRoot, filePath);
   if (rel === null) return { kind: 'invalid-range', reason: '文件不在仓库内,无法查询' };
@@ -177,18 +184,18 @@ export async function queryRangeTimeline(
   if (startLine < 1) return { kind: 'invalid-range', reason: '起始行必须 ≥ 1(HEAD 行号)' };
   if (endLine < startLine) return { kind: 'invalid-range', reason: '结束行不能小于起始行' };
 
-  const tracked = await deps.runGit(['ls-files', '--', rel], repoRoot);
+  const tracked = await deps.runGit(['ls-files', '--', rel], repoRoot, request);
   if (tracked.kind !== 'ok') return { kind: 'git-error', outcome: tracked };
   if (tracked.stdout.trim() === '') return { kind: 'untracked' };
 
   const args = ['log', '-L', `${startLine},${endLine}:${rel}`, `--format=${RANGE_FORMAT}`];
-  const outcome = await deps.runGit(args, repoRoot);
+  const outcome = await deps.runGit(args, repoRoot, request);
   if (
     outcome.kind === 'exit' &&
     outcome.exitCode === 128 &&
     /unknown revision|bad revision|not a valid|does not have any commits/.test(outcome.stderr)
   ) {
-    const head = await deps.runGit(['rev-parse', '--verify', 'HEAD'], repoRoot);
+    const head = await deps.runGit(['rev-parse', '--verify', 'HEAD'], repoRoot, request);
     if (head.kind !== 'ok') return { kind: 'no-commits' };
     return { kind: 'git-error', outcome };
   }

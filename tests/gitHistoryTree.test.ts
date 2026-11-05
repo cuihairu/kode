@@ -167,7 +167,14 @@ describe('IDE-GIT-005 提供者(fake-vscode)', () => {
       expect(state.entries[0].subject).toBe('主题一');
       expect(state.repoRoot).toBe('/repo');
     }
-    expect(queryLog).toHaveBeenCalledWith('/repo/src/a.py', '/repo', 0, 50);
+    // IDE-GIT-011:首页显式查询绕过缓存(重新获取 HEAD),并携带视图级取消令牌。
+    expect(queryLog).toHaveBeenCalledWith(
+      '/repo/src/a.py',
+      '/repo',
+      0,
+      50,
+      expect.objectContaining({ bypassCache: true, token: expect.anything() })
+    );
   });
 
   it('关闭功能:disabled 短路,不定位不查询(入口与查询均不活跃)', async () => {
@@ -253,5 +260,44 @@ describe('IDE-GIT-005 提供者(fake-vscode)', () => {
     const state = provider.getState();
     expect(state.kind).toBe('error');
     if (state.kind === 'error') expect(state.message).toMatch(/安装 Git|PATH/);
+  });
+});
+
+describe('IDE-GIT-011 文件历史视图取消面', () => {
+  it('视图隐藏(cancelInFlight):取消旧令牌并更换新令牌,重开可用', async () => {
+    const tokens: Array<{ isCancellationRequested: boolean } | undefined> = [];
+    const queryLog = vi.fn(
+      async (
+        _f: string,
+        _r: string,
+        _p: number,
+        _s: number,
+        request?: { token?: { isCancellationRequested: boolean } }
+      ) => {
+        tokens.push(request?.token as { isCancellationRequested: boolean } | undefined);
+        return {
+          kind: 'page',
+          status: 'ok',
+          entries: [entry('abc12345', '主题一')],
+          hasMore: false,
+          page: 0,
+          pageSize: 50,
+        } as const;
+      }
+    );
+    const provider = new GitHistoryTreeProvider({
+      locateGitRepo: () => ({ kind: 'repo', repoRoot: '/repo', gitDir: '/repo/.git', isWorktree: false }),
+      queryLog,
+      pageSize: 50,
+    });
+    await provider.showHistory('/repo/src/a.py', true);
+    expect(tokens[0]?.isCancellationRequested).toBe(false);
+    // 视图隐藏:取消当前在途查询(令牌置位,经协调门终止子进程)。
+    provider.cancelInFlight();
+    expect(tokens[0]?.isCancellationRequested).toBe(true);
+    // 重开视图:新查询使用新令牌(未取消,功能仍可用)。
+    await provider.showHistory('/repo/src/a.py', true);
+    expect(tokens[1]).toBeDefined();
+    expect(tokens[1]?.isCancellationRequested).toBe(false);
   });
 });

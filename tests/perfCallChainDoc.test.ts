@@ -54,16 +54,20 @@ const ANCHORS: Array<[string, number, string]> = [
   // 2026-11-05(四):IDE-GIT-010 范围历史视图——extension.ts 顶部新增 8 行
   // import(gitRangeHistoryTree 四符号 + editorSelectionToRange),全部
   // extension.ts 锚点再 +8(出处随 baseline 锁步)
-  ['src/extension.ts', 941, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 992, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1055, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 859, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1353, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 598, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 611, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-05(五):IDE-GIT-011 历史查询协调门——extension.ts 顶部新增 1 行
+  // import(sharedGitQueryGate),全部 extension.ts 锚点 +1(本批已提交);
+  // pythonClassIndex.ts 锚点保持 1233/1345(HEAD 口径)——并发会话在途 +9 未提交,
+  // 非本批代码;该会话提交其 +9 时须把锚点再移到 1242/1354 并随 baseline 锁步。
+  ['src/extension.ts', 942, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 993, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1056, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 860, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1354, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 599, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 612, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 1895, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 1969, 'flushQueued()'],
+  ['src/extension.ts', 1896, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 1970, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

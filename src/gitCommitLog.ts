@@ -15,7 +15,8 @@
  */
 
 import * as path from 'path';
-import { runGitReadOnly, type GitRunOutcome } from './gitRunner';
+import { type GitRunOutcome } from './gitRunner';
+import { sharedGitQueryGate, type GitQueryRequest } from './gitQueryGate';
 
 /** 默认每页条数(验收:默认 50)。 */
 export const DEFAULT_GIT_LOG_PAGE_SIZE = 50;
@@ -44,15 +45,20 @@ export interface GitCommitEntry {
   pathAtCommit?: string;
 }
 
-/** 查询依赖注入面(默认实现经 IDE-GIT-003 只读执行器运行)。 */
+/** 查询依赖注入面(默认实现经 IDE-GIT-011 协调门,再落 IDE-GIT-003 只读执行器)。 */
 export interface GitCommitLogDeps {
-  runGit(args: readonly string[], cwd: string): Promise<GitRunOutcome>;
+  runGit(args: readonly string[], cwd: string, request?: GitQueryRequest): Promise<GitRunOutcome>;
 }
 
 export function defaultGitCommitLogDeps(): GitCommitLogDeps {
   return {
-    runGit: (args, cwd) =>
-      runGitReadOnly(args, { cwd, timeoutMs: 10_000, maxOutputBytes: 2_097_152 }),
+    // 同查询合并/并发上限/有界队列/隔离缓存全由协调门承担;token 与显式刷新随 request 传播。
+    runGit: (args, cwd, request) =>
+      sharedGitQueryGate.run(
+        args,
+        { cwd, timeoutMs: 10_000, maxOutputBytes: 2_097_152, token: request?.token },
+        { bypassCache: request?.bypassCache }
+      ),
   };
 }
 
@@ -133,7 +139,8 @@ export interface GitCommitLogQueryOptions {
  */
 export async function queryGitCommitLog(
   options: GitCommitLogQueryOptions,
-  deps: GitCommitLogDeps = defaultGitCommitLogDeps()
+  deps: GitCommitLogDeps = defaultGitCommitLogDeps(),
+  request?: GitQueryRequest
 ): Promise<GitCommitLogResult> {
   const page = Math.max(0, Math.floor(options.page ?? 0));
   const pageSize = clampGitLogPageSize(options.pageSize);
@@ -144,7 +151,7 @@ export async function queryGitCommitLog(
     args.push('--follow', '--name-status');
   }
   args.push('--', fileArg);
-  const outcome = await deps.runGit(args, options.repoRoot);
+  const outcome = await deps.runGit(args, options.repoRoot, request);
   if (outcome.kind !== 'ok') {
     if (outcome.kind === 'exit' && outcome.exitCode === 128 && outcome.stderr.includes('does not have any commits')) {
       return { kind: 'no-commits' };
@@ -170,7 +177,7 @@ export async function queryGitCommitLog(
   }
   if (page === 0 && entries.length === 0) {
     // 首页空:区分「未跟踪」(index/HEAD 都没有)与「已跟踪但尚无提交历史」
-    const probe = await deps.runGit(['ls-files', '--', fileArg], options.repoRoot);
+    const probe = await deps.runGit(['ls-files', '--', fileArg], options.repoRoot, request);
     const tracked = probe.kind === 'ok' && probe.stdout.trim() !== '';
     return tracked ? { kind: 'no-history' } : { kind: 'untracked' };
   }

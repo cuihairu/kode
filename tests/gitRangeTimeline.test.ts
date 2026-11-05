@@ -155,7 +155,7 @@ describe('IDE-GIT-009 流程(依赖注入)', () => {
     });
     const r = await queryRangeTimeline('/repo/src/a.py', '/repo', { startLine: 3, endLine: 5 }, deps);
     expect(r.kind).toBe('timeline');
-    expect(runGit).toHaveBeenNthCalledWith(1, ['ls-files', '--', 'src/a.py'], '/repo');
+    expect(runGit).toHaveBeenNthCalledWith(1, ['ls-files', '--', 'src/a.py'], '/repo', undefined);
     const logArgs = runGit.mock.calls[1][0] as readonly string[];
     expect(logArgs[0]).toBe('log');
     expect(logArgs[1]).toBe('-L');
@@ -193,7 +193,7 @@ describe('IDE-GIT-009 流程(依赖注入)', () => {
     });
     const r = await queryRangeTimeline('/repo/a.py', '/repo', { startLine: 1, endLine: 1 }, deps);
     expect(r).toEqual({ kind: 'no-commits' });
-    expect(runGit).toHaveBeenLastCalledWith(['rev-parse', '--verify', 'HEAD'], '/repo');
+    expect(runGit).toHaveBeenLastCalledWith(['rev-parse', '--verify', 'HEAD'], '/repo', undefined);
   });
 
   it('行号越界:git 报 has only N lines → invalid-range', async () => {

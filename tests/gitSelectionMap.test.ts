@@ -170,8 +170,8 @@ describe('IDE-GIT-008 流程(依赖注入)', () => {
     const { deps, runGit } = makeDeps(cleanHandler('src/a.py'));
     const r = await mapSelectionToHeadRange('/repo/src/a.py', '/repo', { startLine: 2, endLine: 3 }, deps);
     expect(r.kind).toBe('mapped');
-    expect(runGit).toHaveBeenNthCalledWith(1, ['ls-files', '--', 'src/a.py'], '/repo');
-    expect(runGit).toHaveBeenNthCalledWith(2, ['diff', 'HEAD', '--unified=0', '--', 'src/a.py'], '/repo');
+    expect(runGit).toHaveBeenNthCalledWith(1, ['ls-files', '--', 'src/a.py'], '/repo', undefined);
+    expect(runGit).toHaveBeenNthCalledWith(2, ['diff', 'HEAD', '--unified=0', '--', 'src/a.py'], '/repo', undefined);
     expect(runGit).toHaveBeenCalledTimes(2);
   });
 
@@ -205,7 +205,7 @@ describe('IDE-GIT-008 流程(依赖注入)', () => {
     });
     const r = await mapSelectionToHeadRange('/repo/a.py', '/repo', { startLine: 1, endLine: 1 }, deps);
     expect(r).toEqual({ kind: 'no-commits' });
-    expect(runGit).toHaveBeenLastCalledWith(['rev-parse', '--verify', 'HEAD'], '/repo');
+    expect(runGit).toHaveBeenLastCalledWith(['rev-parse', '--verify', 'HEAD'], '/repo', undefined);
   });
 
   it('diff 其它 128 失败:rev-parse 正常 → git-error 原样透传', async () => {

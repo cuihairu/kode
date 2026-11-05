@@ -40,6 +40,7 @@ import {
   realGitRepoLocationDeps,
   type GitRepoLocation,
 } from './gitRepoLocate';
+import { GitCancelSource, type GitQueryRequest } from './gitQueryGate';
 
 /** 视图条目:修改记录(点击打开 diff+定位)/ 引导或状态。 */
 export type RangeHistoryItem =
@@ -84,10 +85,20 @@ export type RangeHistoryState =
 export interface RangeHistoryDeps {
   /** 定位所属仓库(默认:locateGitRepository + 当前工作区根 + 真实 fs 面)。 */
   locateGitRepo(filePath: string, enabled: boolean): GitRepoLocation;
-  /** 工作区选区 → 已提交(HEAD)行段(默认:IDE-GIT-008 mapSelectionToHeadRange)。 */
-  mapSelection(filePath: string, repoRoot: string, range: SelectionRange): Promise<SelectionMapResult>;
-  /** HEAD 行段 → 逐提交修改时间线(默认:IDE-GIT-009 queryRangeTimeline)。 */
-  queryTimeline(filePath: string, repoRoot: string, range: SelectionRange): Promise<RangeTimelineResult>;
+  /** 工作区选区 → 已提交(HEAD)行段(默认:IDE-GIT-008 mapSelectionToHeadRange;request 带 token)。 */
+  mapSelection(
+    filePath: string,
+    repoRoot: string,
+    range: SelectionRange,
+    request?: GitQueryRequest
+  ): Promise<SelectionMapResult>;
+  /** HEAD 行段 → 逐提交修改时间线(默认:IDE-GIT-009 queryRangeTimeline;request 带 token)。 */
+  queryTimeline(
+    filePath: string,
+    repoRoot: string,
+    range: SelectionRange,
+    request?: GitQueryRequest
+  ): Promise<RangeTimelineResult>;
 }
 
 export function defaultRangeHistoryDeps(deps?: Partial<RangeHistoryDeps>): RangeHistoryDeps {
@@ -101,10 +112,10 @@ export function defaultRangeHistoryDeps(deps?: Partial<RangeHistoryDeps>): Range
         enabled,
         realGitRepoLocationDeps()
       ),
-    mapSelection: (filePath, repoRoot, range) =>
-      mapSelectionToHeadRange(filePath, repoRoot, range, mapDeps),
-    queryTimeline: (filePath, repoRoot, range) =>
-      queryRangeTimeline(filePath, repoRoot, range, queryDeps),
+    mapSelection: (filePath, repoRoot, range, request) =>
+      mapSelectionToHeadRange(filePath, repoRoot, range, mapDeps, request),
+    queryTimeline: (filePath, repoRoot, range, request) =>
+      queryRangeTimeline(filePath, repoRoot, range, queryDeps, request),
     ...deps,
   };
 }
@@ -198,8 +209,33 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
   private readonly changeEmitter = new vscode.EventEmitter<RangeHistoryItem | undefined | void>();
   readonly onDidChangeTreeData = this.changeEmitter.event;
   private state: RangeHistoryState = { kind: 'idle' };
+  /**
+   * IDE-GIT-011:视图级取消令牌——关闭视图/卸载时取消本视图全部在途查询。
+   */
+  private viewToken = new GitCancelSource();
+  /**
+   * IDE-GIT-011 代际守卫:重复选区「只留最新」——每次入口自增代际,在途查询
+   * 恢复时若代际已更替则丢弃(不写状态、不覆盖更新的查询)。
+   */
+  private generation = 0;
 
   constructor(private readonly deps: RangeHistoryDeps) {}
+
+  /** 关闭视图/卸载:取消在途查询(不残留子进程)。 */
+  dispose(): void {
+    this.generation += 1;
+    this.viewToken.cancel();
+  }
+
+  /**
+   * IDE-GIT-011:视图隐藏——取消当前在途查询(代际更替丢弃旧结果)并更换新令牌,
+   * 重开视图后新查询仍可用。
+   */
+  cancelInFlight(): void {
+    this.generation += 1;
+    this.viewToken.cancel();
+    this.viewToken = new GitCancelSource();
+  }
 
   private fire(): void {
     this.changeEmitter.fire();
@@ -247,6 +283,7 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     range: SelectionRange,
     enabled: boolean
   ): Promise<void> {
+    const gen = ++this.generation;
     if (!enabled) {
       this.state = { kind: 'error', message: '历史功能已关闭' };
       this.fire();
@@ -261,10 +298,14 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
       return;
     }
     const repoRoot = location.repoRoot;
-    const mapped = await this.deps.mapSelection(filePath, repoRoot, range);
+    const mapped = await this.deps.mapSelection(filePath, repoRoot, range, {
+      token: this.viewToken,
+    });
+    // 重复选区只留最新:在途回归时代际已更替 → 丢弃,不写状态。
+    if (gen !== this.generation) return;
     switch (mapped.kind) {
       case 'mapped':
-        await this.queryAndLoad(filePath, repoRoot, range, mapped.segments, 0);
+        await this.queryAndLoad(filePath, repoRoot, range, mapped.segments, 0, gen);
         return;
       case 'has-uncommitted': {
         // 已提交部分照常出时间线,未提交行如实警告。
@@ -274,7 +315,8 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
             repoRoot,
             range,
             mapped.segments,
-            mapped.unmappedLines
+            mapped.unmappedLines,
+            gen
           );
         } else {
           this.state = {
@@ -308,14 +350,16 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     }
   }
 
-  /** 无选区提示(直接调用命令且无选区时)。 */
+  /** 无选区提示(直接调用命令且无选区时;同时丢弃在途查询)。 */
   showNoSelection(): void {
+    this.generation += 1;
     this.state = { kind: 'no-selection' };
     this.fire();
   }
 
-  /** Git 不可用提示(调用面送文案)。 */
+  /** Git 不可用提示(调用面送文案;同时丢弃在途查询)。 */
   showUnavailable(message: string): void {
+    this.generation += 1;
     this.state = { kind: 'error', message };
     this.fire();
   }
@@ -325,7 +369,8 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
     repoRoot: string,
     range: SelectionRange,
     segments: readonly { headFirstLine: number; headLastLine: number }[],
-    unmappedLines: number
+    unmappedLines: number,
+    gen: number
   ): Promise<void> {
     const span = headSpanFromSegments(segments);
     if (!span) {
@@ -333,10 +378,17 @@ export class GitRangeHistoryTreeProvider implements vscode.TreeDataProvider<Rang
       this.fire();
       return;
     }
-    const result = await this.deps.queryTimeline(filePath, repoRoot, {
-      startLine: span.start,
-      endLine: span.end,
-    });
+    const result = await this.deps.queryTimeline(
+      filePath,
+      repoRoot,
+      {
+        startLine: span.start,
+        endLine: span.end,
+      },
+      { token: this.viewToken }
+    );
+    // 代际已更替(新选区/视图关闭)→ 丢弃旧结果,不覆盖最新状态。
+    if (gen !== this.generation) return;
     if (result.kind === 'timeline') {
       this.state = {
         kind: 'loaded',

@@ -224,8 +224,10 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
       expect(state.entries[0].subject).toBe('主题一');
       expect(state.boundary.kind).toBe('origin');
     }
-    expect(mapSelection).toHaveBeenCalledWith('/repo/src/a.py', '/repo', { startLine: 3, endLine: 8 });
-    expect(queryTimeline).toHaveBeenCalledWith('/repo/src/a.py', '/repo', { startLine: 1, endLine: 3 });
+    // IDE-GIT-011:查询携带视图级取消令牌(请求独占查询取消面)。
+    const request = expect.objectContaining({ token: expect.anything() });
+    expect(mapSelection).toHaveBeenCalledWith('/repo/src/a.py', '/repo', { startLine: 3, endLine: 8 }, request);
+    expect(queryTimeline).toHaveBeenCalledWith('/repo/src/a.py', '/repo', { startLine: 1, endLine: 3 }, request);
   });
 
   it('多段映射:并集传入查询(跨段并集,不逐段查询)', async () => {
@@ -240,7 +242,12 @@ describe('IDE-GIT-010 提供者(依赖注入 mock)', () => {
       },
     });
     await provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
-    expect(queryTimeline).toHaveBeenCalledWith('/repo/src/a.py', '/repo', { startLine: 2, endLine: 9 });
+    expect(queryTimeline).toHaveBeenCalledWith(
+      '/repo/src/a.py',
+      '/repo',
+      { startLine: 2, endLine: 9 },
+      expect.objectContaining({ token: expect.anything() })
+    );
     const state = provider.getState();
     if (state.kind === 'loaded') {
       expect(state.headStart).toBe(2);
@@ -371,5 +378,112 @@ describe('IDE-GIT-010 TreeItem 映射(fake-vscode)', () => {
     const guide = provider.getTreeItem({ kind: 'message', message: '尚未查询', tone: 'guidance' });
     expect(guide.label).toBe('尚未查询');
     expect(guide.contextValue).toBeUndefined();
+  });
+});
+
+describe('IDE-GIT-011 提供者验收(重复选区只留最新 / 视图取消)', () => {
+  it('重复选区只留最新:先发起的慢查询被后发起的查询覆盖,不写状态', async () => {
+    let resolveFirst!: (r: SelectionMapResult) => void;
+    let callCount = 0;
+    const mapSelection = vi.fn(
+      async (_f: string, _r: string, _range: SelectionRange): Promise<SelectionMapResult> => {
+        callCount += 1;
+        if (callCount === 1) {
+          // 第一个查询(先发起)被挂起。
+          return new Promise((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        // 第二个查询(后发起)立刻返回。
+        return {
+          kind: 'mapped',
+          segments: [{ firstLine: 5, lastLine: 6, headFirstLine: 5, headLastLine: 6 }],
+          selectionLineCount: 2,
+        };
+      }
+    );
+    // 第一个查询被挂起;第二个立刻返回。
+    const queryTimeline = vi.fn(
+      async (): Promise<RangeTimelineResult> => ({
+        kind: 'timeline',
+        status: 'ok',
+        entries: [entry('h2', '新选区')],
+        boundary: { kind: 'origin', atCommit: 'h2', atPath: 'src/a.py' },
+      })
+    );
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      mapSelection,
+      queryTimeline,
+    });
+    const first = provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    const second = provider.showSelectionHistory('/repo/src/a.py', { startLine: 5, endLine: 6 }, true);
+    await second;
+    // 后发起的查询已装载。
+    let state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.selectionStart).toBe(5);
+      expect(state.entries[0].subject).toBe('新选区');
+    }
+    // 先发起的查询此刻才回归:代际已更替,丢弃,不覆盖最新状态。
+    resolveFirst({
+      kind: 'mapped',
+      segments: [{ firstLine: 1, lastLine: 3, headFirstLine: 1, headLastLine: 3 }],
+      selectionLineCount: 3,
+    });
+    await first;
+    state = provider.getState();
+    expect(state.kind).toBe('loaded');
+    if (state.kind === 'loaded') {
+      expect(state.selectionStart).toBe(5); // 仍是新选区,未被旧结果覆盖
+    }
+  });
+
+  it('关闭视图(dispose):取消视图级令牌(在途请求经门取消,不残留子进程)', () => {
+    const { provider, mapSelection } = makeProvider();
+    let capturedToken: { isCancellationRequested: boolean } | undefined;
+    mapSelection.mockImplementationOnce(
+      async (_f: string, _r: string, _range: SelectionRange, request?: { token: unknown }) => {
+        capturedToken = request?.token as { isCancellationRequested: boolean };
+        return new Promise<SelectionMapResult>(() => {}); // 永挂起,模拟在途
+      }
+    );
+    void provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    expect(capturedToken).toBeDefined();
+    expect(capturedToken?.isCancellationRequested).toBe(false);
+    provider.dispose();
+    // 关闭视图即取消该视图全部在途查询(令牌置位,经协调门终止子进程)。
+    expect(capturedToken?.isCancellationRequested).toBe(true);
+  });
+
+  it('无选区提示丢弃在途查询(代际更替)', async () => {
+    let resolveFirst!: (r: SelectionMapResult) => void;
+    const mapSelection = vi.fn(
+      async (_f: string, _r: string, _range: SelectionRange): Promise<SelectionMapResult> =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        })
+    );
+    const provider = new GitRangeHistoryTreeProvider({
+      locateGitRepo: () => repoLocation(),
+      mapSelection,
+      queryTimeline: async () => ({
+        kind: 'timeline',
+        status: 'ok',
+        entries: [entry('h1', 'x')],
+        boundary: { kind: 'origin', atCommit: 'h1', atPath: 'src/a.py' },
+      }),
+    });
+    const pending = provider.showSelectionHistory('/repo/src/a.py', { startLine: 1, endLine: 3 }, true);
+    provider.showNoSelection();
+    resolveFirst({
+      kind: 'mapped',
+      segments: [{ firstLine: 1, lastLine: 3, headFirstLine: 1, headLastLine: 3 }],
+      selectionLineCount: 3,
+    });
+    await pending;
+    // 在途查询被 showNoSelection 丢弃:状态保持「无选区」,不转 loaded。
+    expect(provider.getState().kind).toBe('no-selection');
   });
 });

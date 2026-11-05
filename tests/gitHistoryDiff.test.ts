@@ -83,7 +83,8 @@ describe('IDE-GIT-006 版本内容查询', () => {
     expect(result).toEqual({ kind: 'content', content: 'line1\nline2\n' });
     expect(runGit).toHaveBeenCalledWith(
       ['show', 'abc1234:src/a.py'],
-      expect.objectContaining({ cwd: '/repo' })
+      expect.objectContaining({ cwd: '/repo' }),
+      undefined
     );
   });
 
