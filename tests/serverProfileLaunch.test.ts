@@ -7,6 +7,7 @@ import {
   type ServerComponent
 } from '../src/serverManager';
 import { setActiveProfile } from '../src/activeProfile';
+import { killProcessTree } from '../src/processManager';
 import { ProjectProfileStore } from '../src/projectProfiles';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
@@ -85,6 +86,19 @@ const engineBin = (engineRoot: string): string => path.join(engineRoot, 'kbe', '
 const writeEngineExecutable = (engineRoot: string, name: string, echoLines: string[] = []): string => {
   const dir = engineBin(engineRoot);
   fs.mkdirSync(dir, { recursive: true });
+  if (process.platform === 'win32') {
+    // WIN-2:Windows 不执行 shebang 脚本——写 JS 本体 + .cmd 转发(@node 走
+    // PATH),serverManager 探测 .cmd 后经 cmd /c 运行(见 spawnProcess)。
+    const jsPath = path.join(dir, `${name}.js`);
+    fs.writeFileSync(
+      jsPath,
+      ['#!/usr/bin/env node', ...echoLines, 'setInterval(function () {}, 3600000);'].join('\n'),
+      'utf8'
+    );
+    const cmdPath = path.join(dir, `${name}.cmd`);
+    fs.writeFileSync(cmdPath, `@echo off\r\n@node "%~dp0${name}.js" %*\r\n`, 'utf8');
+    return cmdPath;
+  }
   const scriptPath = path.join(dir, name);
   fs.writeFileSync(
     scriptPath,
@@ -163,7 +177,7 @@ afterEach(async () => {
   if (running) {
     for (const server of running.values()) {
       try {
-        server.process.kill('SIGKILL');
+        await killProcessTree(server.process.pid ?? 0, 'SIGKILL', server.process);
       } catch {
         // 进程已退出
       }
@@ -192,7 +206,10 @@ describe('active profile launch resolution', () => {
 
     expect(manager.getBinPath()).toBe(engineBin(engA));
     expect(manager.getConfigPath()).toBe(cfgA);
-    expect(manager.getExecutablePath(machine)).toBe(path.join(engineBin(engA), 'machine'));
+    // WIN-3:引擎目录尚无任何文件——win32 纯 derive 回落 .exe(真实引擎口径),
+    // POSIX 无后缀;探测到 .cmd 的场景由本文件「launches with…」用例覆盖。
+    const exeName = process.platform === 'win32' ? 'machine.exe' : 'machine';
+    expect(manager.getExecutablePath(machine)).toBe(path.join(engineBin(engA), exeName));
   });
 
   it('keeps the settings chain when no profile is selected', () => {

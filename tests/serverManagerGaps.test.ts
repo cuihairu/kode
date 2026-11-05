@@ -281,8 +281,10 @@ describe('kbe root and component environment gaps', () => {
 
 describe('startup failure and orchestration gaps', () => {
   it('reports a synchronous spawn throw through the failure catch', async () => {
-    fs.writeFileSync(path.join(root, 'bin', 'jinxed'), '#!/bin/sh\nexec sleep 30', 'utf8');
-    fs.chmodSync(path.join(root, 'bin', 'jinxed'), 0o755);
+    // WIN-3:win32 探测 .exe→.cmd,文件名带平台后缀(假 spawn 不执行,存在性过关即可)
+    const jinxedName = process.platform === 'win32' ? 'jinxed.exe' : 'jinxed';
+    fs.writeFileSync(path.join(root, 'bin', jinxedName), '#!/bin/sh\nexec sleep 30', 'utf8');
+    fs.chmodSync(path.join(root, 'bin', jinxedName), 0o755);
 
     // 参数校验后 spawn 同步 throw 在真实取值域下几乎不可抛,
     // 用模块级 spawn 假例驱动 catch 分支(行为断言不受影响)

@@ -9,6 +9,7 @@ import {
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
+import { killProcessTree } from '../src/processManager';
 
 // KBEngineServerManager 的进程编排层:startComponent 检查链(已运行/可执行
 // 文件缺失/配置目录三态)、真实 spawn 的 stdout/stderr/error/exit 事件流、
@@ -135,7 +136,9 @@ afterEach(async () => {
   if (running) {
     for (const server of running.values()) {
       try {
-        server.process.kill('SIGKILL');
+        // WIN-2:win32 假组件是 cmd 转发层(见 spawnProcess),直接 kill 只杀
+        // cmd 不杀 node 子——树杀防孤儿占盘(rmSync EPERM)。
+        await killProcessTree(server.process.pid ?? 0, 'SIGKILL', server.process);
       } catch {
         // 进程已退出
       }
@@ -169,7 +172,13 @@ describe('KBEngineServerManager startComponent preflight', () => {
     expect(await manager.startComponent(makeComponent('ghost'))).toBe(false);
 
     expect(messages.error).toHaveLength(1);
-    expect(messages.error[0]).toBe(`找不到 ghost 可执行文件：${path.join(bin.binPath, 'ghost')}`);
+    // WIN-2:getExecutablePath 在 win32 按存在性探测 .exe→.cmd,ghost 两者皆
+    // 缺回退 .exe(报错口径);POSIX 无后缀。
+    const expectedExe =
+      process.platform === 'win32'
+        ? path.join(bin.binPath, 'ghost.exe')
+        : path.join(bin.binPath, 'ghost');
+    expect(messages.error[0]).toBe(`找不到 ghost 可执行文件：${expectedExe}`);
   });
 
   it('rejects an empty configured config path', async () => {
@@ -308,7 +317,9 @@ describe('KBEngineServerManager real process lifecycle', () => {
     expect(messages.info).toEqual([]);
   });
 
-  it('surfaces spawn errors for an unexecutable binary and drops the entry', async () => {
+  // WIN-5:chmod 000 在 Windows 无执行权限语义(文件照常可执行)——剥权限产
+  // EACCES 的口径仅 POSIX;win32 由真实 .exe/.cmd 存在性与 spawn 错误面覆盖。
+  it.skipIf(process.platform === 'win32')('surfaces spawn errors for an unexecutable binary and drops the entry', async () => {
     writeScript('locked', { kind: 'unexecutable' });
     const manager = makeManager();
 
@@ -344,7 +355,10 @@ describe('KBEngineServerManager real process lifecycle', () => {
     });
   }, 8000);
 
-  it('escalates to SIGKILL when the child ignores SIGTERM', async () => {
+  // WIN-5:Windows 无 SIGTERM 可忽略语义——停止即 taskkill /F(force kill),
+  // 退出报告 code=1/signal=null,不存在「忽略 SIGTERM 后升级 SIGKILL」阶梯;
+  // 阶梯行为由 Linux CI 覆盖,win32 的强制树杀口径由 stopComponent 其余用例锁定。
+  it.skipIf(process.platform === 'win32')('escalates to SIGKILL when the child ignores SIGTERM', async () => {
     writeScript('stubborn', { kind: 'ignore-sigterm', marker: 'trapped' });
     const manager = makeManager();
 

@@ -4,8 +4,10 @@ import * as path from 'path';
 import { EventEmitter } from 'events';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { KBEngineServerManager, type ProcessRunner, type ServerComponent } from '../src/serverManager';
+import { spawnProcess } from '../src/processManager';
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
+import { killProcessTree } from '../src/processManager';
 import { FakeComponentBin } from './sim/fakeComponentBin';
 
 // ProcessRunner 注入点(重设计阶段 2):记录型 runner 验证 spawn 参数透传
@@ -120,7 +122,7 @@ afterEach(async () => {
   if (running) {
     for (const server of running.values()) {
       try {
-        server.process.kill('SIGKILL');
+        await killProcessTree(server.process.pid ?? 0, 'SIGKILL', server.process);
       } catch {
         // 进程已退出
       }
@@ -142,8 +144,9 @@ describe('KBEngineServerManager ProcessRunner injection', () => {
     const runner: ProcessRunner = {
       spawn: (cmd, args, options) => {
         recorded.push({ cmd, args, cwd: options.cwd, env: options.env });
-        // 记录之余走真实 spawn,让 stopComponent 的 SIGTERM 链路完整成立
-        return childProcess.spawn(cmd, args, options);
+        // 记录之余走真实 spawn,让 stopComponent 的 SIGTERM 链路完整成立。
+        // WIN-2:win32 探测可能给到 .cmd——经生产 spawnProcess(cmd /c)否则 EINVAL。
+        return spawnProcess(cmd, args, options);
       }
     };
     const manager = new KBEngineServerManager({} as unknown as vscode.ExtensionContext, runner);
@@ -152,7 +155,12 @@ describe('KBEngineServerManager ProcessRunner injection', () => {
     expect(await manager.startComponent(makeComponent('probe'))).toBe(true);
 
     expect(recorded).toHaveLength(1);
-    expect(recorded[0].cmd).toBe(path.join(bin.binPath, 'probe'));
+    // WIN-3:win32 存在性探测得 probe.cmd(见 getExecutablePath),POSIX 原名。
+    const expectedCmd =
+      process.platform === 'win32'
+        ? path.join(bin.binPath, 'probe.cmd')
+        : path.join(bin.binPath, 'probe');
+    expect(recorded[0].cmd).toBe(expectedCmd);
     expect(recorded[0].args).toEqual(['--flag']);
     expect(recorded[0].cwd).toBe(configRoot);
     // 环境装配:KBE_BIN_PATH 注入值带尾分隔符

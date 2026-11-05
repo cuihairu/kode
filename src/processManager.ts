@@ -55,6 +55,20 @@ export interface ManagedProcessEvent {
 export type ProcessSpawnRunner = (request: ProcessSpawnRequest) => ChildProcess;
 
 /**
+ * WIN-2:Windows 上 Node 直 spawn 批处理被拒(EINVAL,CVE-2024-27980)且裸名
+ * 不解析 PATHEXT——.cmd/.bat 统一经 `cmd /d /c` 运行(`@` 抑制命令回显)。
+ * 组件 defaultArgs 为无空格 token(--key=value 口径),透传安全;其余平台/
+ * 扩展原样 spawn。真实 .exe 引擎不受影响。
+ */
+export function spawnProcess(command: string, args: readonly string[], options: Parameters<typeof spawn>[2]): ChildProcess {
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    return spawn('cmd.exe', ['/d', '/c', `@${command}`, ...args], options);
+  }
+  return spawn(command, [...args], options);
+}
+
+
+/**
  * 进程树终止(RUN-007):清理由组件派生的子进程。
  * - POSIX:启动即 detached 进程组长(setsid),负 pid 信号杀全组;组长已
  *   回收(ESRCH)或并非组长时回落 child.kill(单 pid 语义,测试替身同型)
@@ -81,8 +95,16 @@ export const killProcessTree = async (
       ? deps.runTaskkill(['/PID', String(pid), '/T', '/F'])
       : spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true });
     return new Promise(resolve => {
-      taskkill.on('exit', code => resolve(code === 0));
-      taskkill.on('error', () => resolve(false));
+      taskkill.on('exit', code => {
+        if (code === 0) {
+          resolve(true);
+          return;
+        }
+        // taskkill 失败(进程已退出/PID 不存在/测试替身假 pid):回落
+        // child.kill——与 POSIX 分支同语义,否则 stop 干等到超时升级。
+        resolve(child ? child.kill(signal) : false);
+      });
+      taskkill.on('error', () => resolve(child ? child.kill(signal) : false));
     });
   }
   try {
@@ -108,7 +130,7 @@ export class ProcessManager {
 
   constructor(runner?: ProcessSpawnRunner, private readonly logHub?: LogHubLike) {
     this.runner = runner ?? ((request: ProcessSpawnRequest) =>
-      spawn(request.command, [...(request.args ?? [])], {
+      spawnProcess(request.command, request.args ?? [], {
         cwd: request.cwd,
         env: request.env,
         windowsHide: true,

@@ -136,7 +136,7 @@ afterEach(async () => {
   if (running) {
     for (const server of running.values()) {
       try {
-        server.process.kill('SIGKILL');
+        await killProcessTree(server.process.pid ?? 0, 'SIGKILL', server.process);
       } catch {
         // 进程已退出
       }

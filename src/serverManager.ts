@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess } from 'child_process';
 import { LogHub, RuntimeLogLevel } from './logHub';
-import { ProcessManager } from './processManager';
+import { ProcessManager, spawnProcess } from './processManager';
 import { joinWorkspacePath, usesPosixPath } from './workspacePath';
 import { hasEngineConfigProbe, resolveDiscoveredConfigRoot, resolveKbeSourceRoot } from './workspaceDiscovery';
 import { makeProbeOne, readTelnetTargetsFromSettings, type TelnetTarget } from './telnetService';
@@ -276,7 +276,8 @@ export interface ProcessRunner {
 }
 
 const defaultProcessRunner: ProcessRunner = {
-  spawn: (command, args, options) => spawn(command, args, options)
+  // WIN-2:.cmd/.bat 经 cmd /c(见 spawnProcess),其余原样
+  spawn: (command, args, options) => spawnProcess(command, args, options)
 };
 
 function ensureTrailingSeparator(value: string): string {
@@ -385,9 +386,15 @@ export class KBEngineServerManager {
 
     // 解析变量
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const hadPlaceholder = /\$\{(workspaceFolder|env:[^}]+)\}/.test(binPath);
     binPath = binPath
       .replace(/\$\{workspaceFolder\}/g, workspaceFolder)
       .replace(/\$\{env:(.+?)\}/g, (_, envVar) => process.env[envVar] || '');
+    // WIN-3:占位符拼出的混合分隔符归一(同 getConfigPath:仅 win32 盘符锚定,
+    // `/bin` 类 POSIX 根结果与纯设置值不触碰)。
+    if (hadPlaceholder && binPath && process.platform === 'win32' && /^[A-Za-z]:[\\/]/.test(binPath)) {
+      binPath = path.normalize(binPath);
+    }
     // 相对值以仓库根为基准(不许假设 cwd);无根可锚 → 空串。
     // 绝对判定含 win32 语义:Linux/macOS 主机上 path.isAbsolute 对
     // `D:\...` 判假会把 Windows 风格 binPath 锚到 workspace 根下。
@@ -451,7 +458,18 @@ export class KBEngineServerManager {
     let configPath = config.get<string>('assetsRoot', '');
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const hadPlaceholder = configPath.includes('${workspaceFolder}');
     configPath = configPath.replace(/\$\{workspaceFolder\}/g, workspaceFolder);
+    // WIN-3:占位符后的字面量后缀用 / 拼接(如 ${workspaceFolder}/server)——
+    // 仅 win32 且盘符锚定才归一(`/bin` 这类 POSIX 根结果保持原样)。
+    if (
+      hadPlaceholder &&
+      configPath &&
+      process.platform === 'win32' &&
+      /^[A-Za-z]:[\\/]/.test(configPath)
+    ) {
+      configPath = path.normalize(configPath);
+    }
     // 相对值以仓库根为基准(不许假设 cwd);无根可锚 → 空串(启动检查链报「未配置」)
     if (configPath && !path.isAbsolute(configPath)) {
       configPath = workspaceFolder ? path.join(workspaceFolder, configPath) : '';
@@ -506,8 +524,21 @@ export class KBEngineServerManager {
   getExecutablePath(component: ServerComponent): string {
     const binPath = this.getBinPath();
     const isWindows = process.platform === 'win32' && !usesPosixPath(binPath);
-    const exeName = isWindows ? `${component.executable}.exe` : component.executable;
-    return joinWorkspacePath(binPath, exeName);
+    if (!isWindows) {
+      return joinWorkspacePath(binPath, component.executable);
+    }
+    // WIN-2:真实引擎是 .exe(优先);自定义/测试组件常为 .cmd——存在性探测,
+    // 两者都缺回退 .exe 保持「找不到可执行文件」报错口径(serverManagerRunner
+    // 的纯 derive 单测在空 binPath 下仍得 .exe)。
+    const exe = joinWorkspacePath(binPath, `${component.executable}.exe`);
+    if (fs.existsSync(exe)) {
+      return exe;
+    }
+    const cmd = joinWorkspacePath(binPath, `${component.executable}.cmd`);
+    if (fs.existsSync(cmd)) {
+      return cmd;
+    }
+    return exe;
   }
 
   /**

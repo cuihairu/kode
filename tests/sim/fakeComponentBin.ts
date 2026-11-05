@@ -124,6 +124,17 @@ export class FakeComponentBin {
   write(name: string, behavior: FakeComponentBehavior): string {
     const scriptPath = path.join(this.binPath, name);
     const { shebang, body } = scriptBody(behavior);
+    if (process.platform === 'win32') {
+      // WIN-2:Windows 不执行 shebang 脚本,且 Node 直 spawn 拒 .cmd——
+      // 写 JS 本体 + .cmd 转发(@node 走 PATH);serverManager 按存在性探测
+      // .exe→.cmd 后经 cmd /c 运行(见 spawnProcess)。behavior 与 POSIX
+      // 共用 scriptBody 的 node 实现(含 listen/keepalive 全套)。
+      const jsPath = `${scriptPath}.js`;
+      fs.writeFileSync(jsPath, `${shebang}\n${body}\n`, 'utf8');
+      const cmdPath = `${scriptPath}.cmd`;
+      fs.writeFileSync(cmdPath, `@echo off\r\n@node "%~dp0${name}.js" %*\r\n`, 'utf8');
+      return cmdPath;
+    }
     fs.writeFileSync(scriptPath, `${shebang}\n${body}\n`, 'utf8');
     fs.chmodSync(scriptPath, behavior.kind === 'unexecutable' ? 0o000 : 0o755);
     return scriptPath;
@@ -131,6 +142,13 @@ export class FakeComponentBin {
 
   /** 直接拉起一个假组件(不经过 serverManager,供独立进程断言) */
   launch(name: string, args: string[] = [], options?: { cwd?: string; env?: NodeJS.ProcessEnv }): childProcess.ChildProcess {
+    if (process.platform === 'win32') {
+      // 与 write 的 win32 布局配套:直跑 JS(cmd 中转会混入回显行,直拉不需要)
+      return childProcess.spawn(process.execPath, [path.join(this.binPath, `${name}.js`), ...args], {
+        cwd: options?.cwd,
+        env: options?.env
+      });
+    }
     return childProcess.spawn(path.join(this.binPath, name), args, {
       cwd: options?.cwd,
       env: options?.env
@@ -138,6 +156,17 @@ export class FakeComponentBin {
   }
 
   async dispose(): Promise<void> {
-    fs.rmSync(this.root, { recursive: true, force: true });
+    // win32:子进程退出/taskkill 句柄释放有延迟,rm 首轮常 EPERM——短重试收尾。
+    for (let attempt = 0; ; attempt++) {
+      try {
+        fs.rmSync(this.root, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        if (attempt >= 40) {
+          throw error;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
   }
 }

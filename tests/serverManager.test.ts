@@ -259,7 +259,10 @@ describe('KBEngineServerManager startup grace guard (批73)', () => {
     // 宽限定时器到点后守卫判空,静默跳过——不复活状态、不发启动成功提示
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-grace-'));
     fs.mkdirSync(path.join(root, 'kbengine', 'kbe', 'bin', 'server'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'kbengine', 'kbe', 'bin', 'server', 'machine'), '#!/bin/sh\n');
+    // WIN-3:win32 getExecutablePath 按 .exe→.cmd 存在性探测;本用例假 runner
+    // 不真执行文件,存在性过关即可(POSIX 保持无后缀原名)。
+    const exeName = process.platform === 'win32' ? 'machine.exe' : 'machine';
+    fs.writeFileSync(path.join(root, 'kbengine', 'kbe', 'bin', 'server', exeName), '#!/bin/sh\n');
     const configRoot = path.join(root, 'configs');
     fs.mkdirSync(configRoot, { recursive: true });
     stubWorkspace.workspaceFolders = [

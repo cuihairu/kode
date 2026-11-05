@@ -11,6 +11,7 @@ import {
 import type * as vscode from 'vscode';
 import { window as stubWindow, workspace as stubWorkspace } from './helpers/vscodeStub';
 import { FakeComponentBin } from './sim/fakeComponentBin';
+import { killProcessTree } from '../src/processManager';
 
 // IDE-RUN-003 真实就绪探针:固定 1 秒宽限期不再单方面把组件标成 Running,
 // 探针(组件 telnet 端口 TCP 连通)通过才 ready。服务不可用 → 一直
@@ -146,7 +147,7 @@ afterEach(async () => {
   if (running) {
     for (const server of running.values()) {
       try {
-        server.process.kill('SIGKILL');
+        await killProcessTree(server.process.pid ?? 0, 'SIGKILL', server.process);
       } catch {
         // 进程已退出
       }
@@ -375,7 +376,10 @@ describe('KBEngineServerManager readiness wait timeout and cancel', () => {
     expect(manager.getRunningServers().has('cellapp')).toBe(true);
 
     // 清理:绕过优雅停止直接击杀
-    manager.getRunningServers().get('cellapp')?.process.kill('SIGKILL');
+    const leftover = manager.getRunningServers().get('cellapp')?.process;
+    if (leftover) {
+      await killProcessTree(leftover.pid ?? 0, 'SIGKILL', leftover);
+    }
     await until(() => manager.getRunningServers().size === 0);
   }, 12000);
 
