@@ -166,6 +166,77 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
     expect(record?.detail).toContain('核验超时');
   });
 
+  it('F2 回归:通道发送在发送时点建立代际,冻结 digest 进台账', async () => {
+    const content = 'print("sent content")';
+    const { store } = await fire([{ status: 'applied', file: '/ws/a.py', digest: digestOf(content) }], {
+      readFileContent: async () => content
+    });
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('applied');
+    // 代际在发送时点建立(不是回执到达时另起新发送):整批一次发送一代
+    expect(record?.attempt).toBe(1);
+    // 发送时点冻结的所发内容 sha256 带进台账(可审计),不是回执后才补
+    expect(record?.sentDigest).toBe(digestOf(content));
+  });
+
+  it('F2 回归:旧发送的晚到 digest 核验不翻新发送的失败(回执绑定代际)', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const content = 'print("v1")';
+    const digest = digestOf(content);
+    // 发送1的冻结基准读取挂起:applied 回执已到,核验迟迟不能结算
+    let gatedRead: ((value: string | null) => void) | undefined;
+    let sendIndex = 0;
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_target, files, onReceipt) => {
+        const index = sendIndex++;
+        if (index === 0) {
+          onReceipt({ status: 'applied', file: files[0], digest });
+          await new Promise<void>(() => undefined); // 发送1悬挂(响应未收口)
+        }
+        throw new Error('send 2 failed');
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(makeContext(), () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws',
+        readFileContent: async () =>
+          gatedRead === undefined
+            ? new Promise<string | null>(resolve => {
+                gatedRead = resolve;
+              })
+            : content
+      }
+    });
+    // 发送1:applied 回执到达但 digest 核验挂起(冻结基准未决)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    // 发送2:通道抛错整组 failed(新代际接管记录)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    const afterSend2 = store.get(KEY, '/ws/a.py');
+    expect(afterSend2?.outcome).toBe('failed');
+    // 旧发送的 digest 基准晚到:其核验写回必须被代际守卫拒绝,绝不把
+    // 新发送的失败翻成 applied(旧实现无代际绑定,此处被翻案)
+    gatedRead!(content);
+    await flush();
+    const finalRecord = store.get(KEY, '/ws/a.py');
+    expect(finalRecord?.outcome).toBe('failed');
+    expect(finalRecord?.attempt).toBe(2);
+    expect(finalRecord?.detail).toContain('send 2 failed');
+  });
+
   it('RT-10:fire 路径核验窗口锚定发送发起时点——响应晚到不后移窗口', async () => {
     // 发送发起时 now=1000;响应在 now=20000 才到达(晚到)。旧实现窗口从响应
     // 时刻起算(deadline=30000),窗口到点结算时(now=20000)仍是 pending 不

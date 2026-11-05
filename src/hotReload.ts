@@ -352,6 +352,30 @@ export function setupHotReload(
           rootId,
           targetId: channelTargetId
         });
+        // F2(2026-11-05 审核):发送代际在发送时点建立——transport.send 之前
+        // 逐 (rootId,targetId,file) 落一条发送发起记录(不带 attempt=新发送,
+        // 推进代际),此后全部回执/注解/核验结算绑定该代际写回。旧实现回执
+        // 落账不带 attempt,每个异步回执都被台账当成新发送:旧发送晚到的
+        // digest 核验能翻掉新发送的失败,代际保护形同虚设。
+        const channelAttempts = new Map<string, number>();
+        if (wiring) {
+          for (const file of triggers) {
+            const rootId = wiring.resolveRootId(file);
+            if (rootId === null) {
+              continue;
+            }
+            const initiated = wiring.store.record(channelKey(rootId), file, 'sent-unverified', {
+              now: channelSentAt,
+              source: channelAuditSource,
+              channel: channelLabel
+            });
+            if (initiated) {
+              channelAttempts.set(`${rootId}\n${file}`, initiated.attempt);
+            }
+          }
+        }
+        const attemptFor = (rootId: string, file: string): number | undefined =>
+          channelAttempts.get(`${rootId}\n${file}`);
         const channelBaselineReader = wiring?.readFileContent;
         const channelBaselineReads = new Map<string, Promise<string | undefined>>();
         if (channelBaselineReader) {
@@ -379,16 +403,34 @@ export function setupHotReload(
           rootId: string,
           file: string,
           outcome: HotReloadDeliveryOutcome,
-          detail?: string
+          detail?: string,
+          extra?: { sentDigest?: string }
         ): void => {
           if (!wiring || rootId === '') {
             return;
           }
-          wiring.store.record({ rootId, targetId: channelTargetId }, file, outcome, {
+          const attempt = attemptFor(rootId, file);
+          wiring.store.record(channelKey(rootId), file, outcome, {
             ...(detail !== undefined ? { detail } : {}),
+            // F2:回执绑定发送时点的代际写回(已换代则被台账拒写,旧发送的
+            // 异步回执绝不改新代记录);无代际(未落发起记录,如实)才裸写
+            ...(attempt !== undefined ? { attempt } : {}),
+            ...(extra?.sentDigest !== undefined ? { sentDigest: extra.sentDigest } : {}),
             source: channelAuditSource,
             channel: channelLabel
           });
+        };
+        // F2:冻结 digest 带进台账(绑定代际、不改写已升格的 outcome)——
+        // 发送时点冻结的所发内容 sha256 可审计,不再是「台账没有该次所发
+        // digest」的状态机盲区
+        const noteSentDigest = (rootId: string, file: string, sentDigest: string): void => {
+          if (!wiring || rootId === '') {
+            return;
+          }
+          const current = wiring.store.get(channelKey(rootId), file);
+          if (current) {
+            recordOutcome(rootId, file, current.outcome, undefined, { sentDigest });
+          }
         };
         let sentCount = 0;
         let failedCount = 0;
@@ -436,6 +478,8 @@ export function setupHotReload(
                           scheduleUnconfirmedSettle();
                           return;
                         }
+                        // F2:冻结 digest 先进台账(绑定代际),升格/注解随后
+                        noteSentDigest(rootId, file, sentDigest);
                         if (receipt.digest !== undefined && receipt.digest === sentDigest) {
                           recordOutcome(
                             rootId,
@@ -455,9 +499,18 @@ export function setupHotReload(
                       });
                       break;
                     }
-                    case 'accepted':
+                    case 'accepted': {
                       recordOutcome(rootId, file, 'accepted');
+                      // F2:accepted 也把冻结 digest 带进台账(绑定代际)
+                      if (channelBaselineReader) {
+                        void channelBaselineReads.get(file)!.then(sentDigest => {
+                          if (sentDigest !== undefined) {
+                            noteSentDigest(rootId, file, sentDigest);
+                          }
+                        });
+                      }
                       break;
+                    }
                     case 'failed':
                       failedCount += 1;
                       recordOutcome(rootId, file, 'failed', receipt.reason);
@@ -472,7 +525,8 @@ export function setupHotReload(
                 }
               })
             ).catch((error: unknown) => {
-              // 单组失败:整组按 failed 落账(不冒充未确认),错误如实上报
+              // 单组失败:整组按 failed 落账(不冒充未确认),错误如实上报;
+              // F2:绑定发送时点代际写回(旧实现裸写=新发送,代际错位)
               failedCount += files.length;
               for (const file of files) {
                 recordOutcome(rootId, file, 'failed', error instanceof Error ? error.message : String(error));
