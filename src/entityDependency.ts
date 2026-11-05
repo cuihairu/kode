@@ -137,7 +137,7 @@ export class EntityDependencyAnalyzer {
    */
   private async parseEntityFile(defPath: string): Promise<void> {
     try {
-      const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(defPath));
+      const content = await vscode.workspace.fs.readFile(vscode.Uri.file(defPath));
       const text = Buffer.from(content).toString('utf8');
       const entityName = path.basename(defPath, '.def');
       const existingNode = this.entities.get(entityName);
@@ -182,7 +182,7 @@ export class EntityDependencyAnalyzer {
    */
   private async parseDependencies(node: EntityNode): Promise<void> {
     try {
-      const content = await vscode.workspace.fs.readFile(vscode.Uri.parse(node.defFile));
+      const content = await vscode.workspace.fs.readFile(vscode.Uri.file(node.defFile));
       const text = Buffer.from(content).toString('utf8');
       const sections = ['Properties'];
 
