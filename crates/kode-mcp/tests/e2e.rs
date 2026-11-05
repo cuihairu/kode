@@ -1,0 +1,185 @@
+//! rmcp 客户端 stdio 端到端(MCP-001 验收):list_tools → call_tool 全工具
+//! 真数据返回。spawn 本 crate bin(kode-mcp <assets-root>),走完整 MCP
+//! 握手 + JSON-RPC 往返;夹具 = kbengine-demo-assets。
+
+use std::path::PathBuf;
+
+use rmcp::{
+    model::{CallToolRequestParams, CallToolResult},
+    service::{serve_client, RoleClient, RunningService},
+    transport::{ConfigureCommandExt, TokioChildProcess},
+};
+use serde_json::Value;
+use tokio::process::Command;
+
+fn fixture_root() -> PathBuf {
+    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    p.pop();
+    p.pop();
+    p.push("tests/fixtures/kbengine-demo-assets");
+    p
+}
+
+async fn connect() -> RunningService<RoleClient, ()> {
+    let process = TokioChildProcess::new(Command::new(env!("CARGO_BIN_EXE_kode-mcp")).configure(
+        |cmd| {
+            cmd.arg(fixture_root());
+        },
+    ))
+    .expect("spawn kode-mcp");
+    serve_client((), process).await.expect("mcp handshake")
+}
+
+fn call_params(name: &str, arguments: Value) -> CallToolRequestParams {
+    let arguments = arguments.as_object().cloned().unwrap_or_default();
+    CallToolRequestParams::new(name.to_string()).with_arguments(arguments)
+}
+
+fn payload_of(result: CallToolResult) -> Value {
+    assert!(
+        result.is_error != Some(true),
+        "tool call failed: {result:?}"
+    );
+    let text = result
+        .content
+        .first()
+        .map(|block| match block {
+            rmcp::model::ContentBlock::Text(text) => text.text.clone(),
+            other => panic!("expected text content, got {other:?}"),
+        })
+        .expect("tool result content");
+    serde_json::from_str(&text).expect("tool payload is JSON")
+}
+
+#[tokio::test]
+async fn list_tools_exposes_all_seven() {
+    let client = connect().await;
+    let tools = client.list_all_tools().await.expect("list_tools");
+    let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec![
+            "db_schema_preview",
+            "encode_decode_sample",
+            "get_entity_model",
+            "get_message_entry",
+            "get_type_graph",
+            "search_entities",
+            "validate_defs",
+        ]
+    );
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn call_tools_return_real_data() {
+    let client = connect().await;
+
+    // search_entities:按名子串真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "search_entities",
+                serde_json::json!({"query": "Avatar"}),
+            ))
+            .await
+            .expect("call search_entities"),
+    );
+    assert!(payload["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["name"] == "Avatar"));
+
+    // get_entity_model:真实体全模型。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "get_entity_model",
+                serde_json::json!({"entity": "Account"}),
+            ))
+            .await
+            .expect("call get_entity_model"),
+    );
+    assert_eq!(payload["name"], "Account");
+    assert!(!payload["properties"].as_array().unwrap().is_empty());
+
+    // get_type_graph:types.xml 节点真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("get_type_graph", serde_json::json!({})))
+            .await
+            .expect("call get_type_graph"),
+    );
+    assert!(payload["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "SKILL_SLOT"));
+
+    // validate_defs:净夹具零发现。
+    let payload = payload_of(
+        client
+            .call_tool(call_params("validate_defs", serde_json::json!({})))
+            .await
+            .expect("call validate_defs"),
+    );
+    assert!(payload["findings"].as_array().unwrap().is_empty());
+
+    // get_message_entry:C-15 同源真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "get_message_entry",
+                serde_json::json!({"entity": "Account", "method": "reqCreateAvatar"}),
+            ))
+            .await
+            .expect("call get_message_entry"),
+    );
+    assert_eq!(payload["entries"].as_array().unwrap().len(), 1);
+
+    // encode_decode_sample:别名类型 hex 样本。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "encode_decode_sample",
+                serde_json::json!({"typeName": "ITEM_ID", "value": 7}),
+            ))
+            .await
+            .expect("call encode_decode_sample"),
+    );
+    assert_eq!(payload["hex"], "0700");
+
+    // db_schema_preview:C-16 同源真数据。
+    let payload = payload_of(
+        client
+            .call_tool(call_params(
+                "db_schema_preview",
+                serde_json::json!({"entity": "Account"}),
+            ))
+            .await
+            .expect("call db_schema_preview"),
+    );
+    assert!(payload["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["name"] == "Account"));
+
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn tool_level_errors_come_back_as_is_error_results() {
+    let client = connect().await;
+    let response = client
+        .call_tool(call_params(
+            "get_entity_model",
+            serde_json::json!({"entity": "NoSuch"}),
+        ))
+        .await
+        .expect("call get_entity_model");
+    assert_eq!(response.is_error, Some(true));
+    let _ = client.cancel().await;
+}
