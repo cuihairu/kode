@@ -111,7 +111,7 @@ jobs:
       timeout-minutes: 3
       uses: actions/upload-artifact@v7.0.2
       with:
-        name: kode-vsix-${{ github.ref_name }}-${{ github.sha }}
+        name: kode-vsix-${{ github.sha }}
         path: "kode-*.vsix"
         retention-days: 30
 
