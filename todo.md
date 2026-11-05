@@ -8,6 +8,19 @@
 
 > **2026-10-24 用户令**: kode-v02 此后只在 `main` 开发，phase2 已合并（`377950f`，`--no-ff` 保留合并记录），不再开长期 feature 分支。
 
+## v0.2.1 — Player Data Clone（2026-11-05 用户提供 ChatGPT 计划书，docs/design/v0.2.1-player-data-clone-plan.md）
+
+> 计划书自身的开发顺序铁律：先做 Phase 0（核实 KBEngine 真实 parentID 关联/嵌套 ARRAY 主键/Account-Avatar 引用结构），不直接写 ExportExecutor。
+- [ ] CLONE-P0 · P0 · 核实 kode 类型图推导与 KBEngine 真实库表映射（主表/ARRAY/组件/parentID 归属），产出映射证据文档（对照 docs/design/v0.2.1-player-data-clone-plan.md §3 SchemaResolver 输入）
+- [ ] CLONE-P1 · P1 · 新 crate kode-db-clone：SchemaResolver + RelationGraph + ExportPlanner（计划书 §3/§4）
+- [ ] CLONE-P2 · P1 · 只读导出与版本化归档（含 sha256/Schema 指纹/脱敏开关）（§5）
+- [ ] CLONE-P3 · P1 · ImportPlanner + IDMapper + 冲突预览（Dry Run 先行）（§6/§7）
+- [ ] CLONE-P4 · P1 · 本地事务导入 + KBEngine 原生加载验证（§7/MVP）
+- [ ] CLONE-P5 · P2 · VSCode 一键导出/导入界面（§9 Phase 5）
+- [ ] CLONE-P6 · P2 · 性能/安全/兼容/回归测试 + MVP 八条验收（§10）
+- [ ] CLONE-ATT · P1 · 向用户索取完整 420 行计划书附件（含 40+ 条编号 Todo/失败注入/CLI 规范/DoD——现仅正文摘要落地，缺件已标注【提取缺失】）
+
+
 ## P0. 启用插件后卡死：重新打开性能治理（2026-10-26，优先处理）
 
 用户现场反馈：hover loading 约半小时才出现、Python 索引与跳转卡死，禁用插件恢复、启用再次卡顿。**问题未解决，不得沿用此前“性能已验收”的结论。** 当前源码基线 `550d824`；证据与复现范围见 [卡顿分析报告](docs/perf/2026-10-26-stall-analysis.md)。本地探针已确认算法与调度缺陷，但尚未取得用户现场 CPU profile、安装版本及运行日志，不能把“半小时”精确归因到单一函数。以下任务均未完成。

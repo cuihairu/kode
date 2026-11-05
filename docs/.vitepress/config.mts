@@ -88,6 +88,7 @@ export default withMermaid(defineConfig({
                 { text: 'Doc consistency audit', link: '/审计-文档一致性' },
                 { text: 'Quick actions and db hint design', link: '/design/quick-actions-and-db-hint' },
                 { text: 'Def/utype to .pyi stubs feasibility', link: '/design/def-pyi-stubs' },
+                { text: 'Player Data Clone plan (v0.2.1)', link: '/design/v0.2.1-player-data-clone-plan' },
                 { text: 'Space Viewer / Watcher protocol forensics', link: '/design/space-viewer-watcher' }
               ]
             }
