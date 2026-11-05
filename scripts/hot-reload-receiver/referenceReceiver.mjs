@@ -272,9 +272,17 @@ const server = createServer((request, response) => {
     if (stringFiles.length > 0) {
       const byKey = new Map();
       for (const file of stringFiles) {
-        let relative = path.relative(root, file);
+        // F3 七轮(2026-11-07 第七轮复审 FAIL-1):根内外命名空间碰撞消除——
+        // 六轮对暂存根之外的文件回落「绝对路径全结构展开」,但那个回落与根内
+        // 相对路径共享同一命名空间:/stage/tmp/X.py(根内)映射 tmp/X.py,
+        // /tmp/X.py(根外)回落也展开成 tmp/X.py——分批发送互覆盖。修后**根外
+        // 路径直接拒绝整批**(报错,不允许暂存根之外的绝对路径作为产物目标;
+        // 发送侧同步只发暂存根内路径):产物命名空间只剩根内相对路径一种归属,
+        // 碰撞从映射规则上不存在。路径安全清洗与同址碰撞拒绝整批保持不变。
+        const relative = path.relative(root, file);
         if (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative)) {
-          relative = file.split(path.sep).filter(segment => segment !== '').join('/');
+          batchRejectReason = `产物路径在暂存根之外(--root)(${file}):拒绝整批,不写盘`;
+          break;
         }
         const segments = relative.split(path.sep);
         if (relative === '' || segments.some(segment => segment === '..' || segment === '.' || segment === '')) {

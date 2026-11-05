@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -694,6 +694,51 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(receipt).not.toHaveProperty('rollback_failed');
     expect(receipt.reason).toContain('无残留');
     expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
+  });
+
+  // F3 七轮(复审 FAIL-1):根内外命名空间碰撞——六轮对暂存根之外的文件回落
+  // 「绝对路径全结构展开」,但该回落与根内相对路径共享同一命名空间:根内
+  // <root>/tmp/X.py 映射 tmp/X.py,根外 /tmp/X.py 回落也展开成 tmp/X.py,
+  // 分批发送后者覆盖前者。修后根外路径直接拒绝整批,产物命名空间只剩根内
+  // 相对路径一种归属。
+  it('F3 七轮回归:根内 tmp/X.py 与根外 /tmp/X.py 分批发送 → 根外拒绝整批,产物不被覆盖', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    // 根内:<root>/tmp/X.py → 映射 tmp/X.py
+    const insideFile = path.join(receiver.root, 'tmp', 'X.py');
+    const contentA = 'X_INSIDE_ROOT = 61\n';
+    mkdirSync(path.dirname(insideFile), { recursive: true });
+    writeFileSync(insideFile, contentA, 'utf8');
+    const first = await postReload(receiver.port, { files: [insideFile], sender_digests: { [insideFile]: sha256(contentA) } });
+    expect(JSON.parse(first.body as string).status).toBe('applied');
+    // 根外:/tmp/X.py(与暂存根只差最后一层目录名,回落展开同名 tmp/X.py)
+    const outsideFile = path.join(os.tmpdir(), 'X.py');
+    const hadOriginal = existsSync(outsideFile);
+    const originalBytes = hadOriginal ? readFileSync(outsideFile) : undefined;
+    const contentB = 'X_OUTSIDE_ROOT = 62\n';
+    writeFileSync(outsideFile, contentB, 'utf8');
+    try {
+      const second = await postReload(receiver.port, { files: [outsideFile], sender_digests: { [outsideFile]: sha256(contentB) } });
+      const receipt = JSON.parse(second.body) as { status: string; reason?: string };
+      // 根外路径拒绝整批:不写盘、不落台账
+      expect(receipt.status).toBe('failed');
+      expect(receipt.reason).toContain('暂存根之外');
+      // 第一批的产物不被第二批覆盖,也不落引擎目录根
+      expect(readFileSync(path.join(engineDir, 'tmp', 'X.py'), 'utf8')).toBe(contentA);
+      expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+      // 台账只有第一批(根内)的 applied 记录,根外拒绝不产生任何台账条目
+      const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
+      const ledgerEntries = ledger.trim().split('\n').map(line => JSON.parse(line) as { file: string });
+      expect(ledgerEntries).toHaveLength(1);
+      expect(ledgerEntries[0].file).toBe(insideFile);
+    } finally {
+      if (hadOriginal && originalBytes !== undefined) {
+        writeFileSync(outsideFile, originalBytes);
+      } else {
+        rmSync(outsideFile, { force: true });
+      }
+    }
   });
 
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {

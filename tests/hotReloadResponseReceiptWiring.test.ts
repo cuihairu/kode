@@ -303,7 +303,7 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     try {
       const clock = makeTimers();
       const store = new HotReloadTargetStateStore({ now: () => 7 });
-      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev022-')), 'Avatar.py');
+      const realFile = path.join(receiver.root, 'Avatar.py');
       writeFileSync(realFile, 'class Avatar:\n    pass\n', 'utf8');
       enableHotReload();
       setupHotReload(
@@ -328,7 +328,6 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
       clock.tick();
       await flush();
       await waitForOutcome(store, realFile, 'accepted');
-      rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
     }
@@ -339,7 +338,7 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
     try {
       const clock = makeTimers();
       const store = new HotReloadTargetStateStore({ now: () => 7 });
-      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev022-')), 'Avatar.py');
+      const realFile = path.join(receiver.root, 'Avatar.py');
       writeFileSync(realFile, 'class Avatar:\n    pass\n', 'utf8');
       enableHotReload();
       setupHotReload(
@@ -364,7 +363,6 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
       clock.tick();
       await flush();
       await waitForOutcome(store, realFile, 'sent-unverified');
-      rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
     }

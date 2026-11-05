@@ -69,7 +69,7 @@ const startReceiver = async (mode, scenario) => {
 
 const sha256Hex = content => createHash('sha256').update(Buffer.from(content, 'utf8')).digest('hex');
 
-const scenarioRun = async (mode, scenario, fileBody, label) => {
+const scenarioRun = async (mode, scenario, content, label) => {
   log('');
   log(`### 场景 ${label}(mode=${mode} scenario=${scenario})`);
   const receiver = await startReceiver(mode, scenario);
@@ -77,10 +77,19 @@ const scenarioRun = async (mode, scenario, fileBody, label) => {
   try {
     const probe = await httpRequest(receiver.port, 'GET', '/probe');
     log(`GET /probe -> HTTP ${probe.status} "${probe.body}"(连通性探测面)`);
+    // F3 七轮:发送侧校验——sender 只发接收端暂存根(--root)内路径。根外
+    // 路径接收端已按整批拒绝(七轮:根内外命名空间碰撞消除),发送侧先行
+    // 拦截,正常发送不产生拒绝回执。
+    const pyFile = path.join(root, 'Avatar.py');
+    const relative = path.relative(root, pyFile);
+    if (relative === '' || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative)) {
+      throw new Error(`发送侧校验失败:所发文件不在接收端暂存根内 ${pyFile} ∉ ${root}(F3 七轮:sender 只发 root 内路径)`);
+    }
+    writeFileSync(pyFile, content, 'utf8');
     // F3 三轮:请求报文带 sender_digests(发送方冻结 digest 随报文下发)
     const body = JSON.stringify({
-      files: [fileBody.path],
-      sender_digests: { [fileBody.path]: sha256Hex(fileBody.content) }
+      files: [pyFile],
+      sender_digests: { [pyFile]: sha256Hex(content) }
     });
     log(`POST /reload`);
     log(`  request body : ${body}`);
@@ -93,7 +102,7 @@ const scenarioRun = async (mode, scenario, fileBody, label) => {
     } catch {
       log('  (回包非 JSON:未知结构样本,扩展侧解析器保持未确认不升格)');
     }
-    const expected = sha256Hex(fileBody.content);
+    const expected = sha256Hex(content);
     log(`  所发内容 sha256 : ${expected}`);
     log(`  回执 digest     : ${receipt.digest ?? '(无)'}`);
     log(`  digest 对照     : ${receipt.digest === expected ? '一致(applied 可核验)' : scenario === 'digest-mismatch' ? '故意不符(可疑回执样本,扩展侧核验必须不升格)' : 'accepted 面无 digest(应用核验归 applied 阶段)'}`);
@@ -111,25 +120,24 @@ const main = async () => {
   log('接收端: scripts/hot-reload-receiver/referenceReceiver.mjs(零依赖 node:http,已记录契约参考实现)');
   log('契约: {"status":"accepted","file":<逐字回显>} / {"status":"applied","file":<逐字回显>,"digest":<sha256 hex>}');
   log('      请求报文带 sender_digests(发送方冻结 digest 随报文下发;F3 四轮:接收端自己写产物落盘引擎目录,写后重算 sha256 与 sender_digest 比对一致才回 applied,外部应用命令模式降级 accepted)');
+  log('      F3 七轮:所发文件写进接收端暂存根(--root)内并发送——发送侧校验只发根内路径,产物命名空间唯一(根外路径接收端整批拒绝)');
   log('背景: 引擎原生重载 KBEngine.reloadScript 无 HTTP 回执(docs/review/2026-10-30-completion-and-lint-audit.md');
   log('      AUD-007 实勘);accepted/applied 契约作用于用户配置 @http: quick action 回包体,本探针提供会说');
   log('      该契约的真实服务端与真实 wire 样本。解析/升格行为由 tests/hotReloadReceiverRoundtrip.test.ts 钉住。');
 
-  const workdir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-probe-file-'));
-  const pyFile = path.join(workdir, 'Avatar.py');
   const content = 'class Avatar:\n    HP_BASE = 100\n';
-  writeFileSync(pyFile, content, 'utf8');
+  // F3 七轮:所发文件由 scenarioRun 写进各自接收端暂存根(--root)内——
+  // 发送侧只发根内路径,不再用独立的暂存外工作目录。
 
   const gitRev = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: path.join(here, '..', '..') }).toString().trim();
   log(`基线: feat/kode-rev @ ${gitRev}`);
 
-  await scenarioRun('stage', 'accepted', { path: pyFile, content }, 'accepted(暂存回执)');
-  await scenarioRun('apply', 'applied', { path: pyFile, content }, 'applied(digest 双证回执)');
-  await scenarioRun('apply', 'digest-mismatch', { path: pyFile, content }, 'digest 不符(可疑回执)');
-  await scenarioRun('stage', 'echo', { path: pyFile, content }, '非 JSON 回包(未知结构)');
-  await scenarioRun('stage', 'error500', { path: pyFile, content }, '非 2xx(送达失败)');
+  await scenarioRun('stage', 'accepted', content, 'accepted(暂存回执)');
+  await scenarioRun('apply', 'applied', content, 'applied(digest 双证回执)');
+  await scenarioRun('apply', 'digest-mismatch', content, 'digest 不符(可疑回执)');
+  await scenarioRun('stage', 'echo', content, '非 JSON 回包(未知结构)');
+  await scenarioRun('stage', 'error500', content, '非 2xx(送达失败)');
 
-  rmSync(workdir, { recursive: true, force: true });
   writeFileSync(outPath, `${lines.join('\n')}\n`, 'utf8');
   process.stdout.write(`样本已落盘: ${outPath}\n`);
 };

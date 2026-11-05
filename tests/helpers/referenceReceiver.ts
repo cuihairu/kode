@@ -9,6 +9,9 @@ import * as path from 'path';
 
 export interface ReferenceReceiver {
   readonly port: number;
+  // F3 七轮:接收端暂存根(--root)暴露给发送侧——sender 只发暂存根内路径
+  // (根外路径接收端按整批拒绝,发送侧先行校验)。
+  readonly root: string;
   dispose(): void;
 }
 
@@ -54,6 +57,7 @@ export async function startReferenceReceiver(
   });
   return {
     port,
+    root,
     dispose: () => {
       proc.kill();
       rmSync(root, { recursive: true, force: true });

@@ -402,7 +402,10 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
     const receiver = await startReferenceReceiver('apply', 'applied', undefined, engineDir);
     try {
-      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
+      // F3 七轮:产物命名空间只认接收端暂存根内路径(根外整批拒绝)——所发
+      // 真实文件放进接收端暂存根;产物落位=根内相对路径映射(此处即 basename),
+      // 不再回落「绝对路径全结构展开」。
+      const realFile = path.join(receiver.root, 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
       const store = new HotReloadTargetStateStore({ now: () => 5 });
       const sentDigest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
@@ -416,11 +419,9 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
       // 接收端重算的 digest 与所发内容一致(真实 wire 双证)
       expect(record?.sentDigest).toBe(createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex'));
       // 真实应用证据:引擎目录写入的产物与所发内容逐字一致(不是空操作假应用)。
-      // F3 六轮:产物路径为确定性映射——realFile 在接收端暂存根之外,按绝对
-      // 路径全结构展开落位(与批次组成无关),不再是裸 basename。
-      const artifactPath = path.join(engineDir, ...realFile.split(path.sep).filter(Boolean));
+      // F3 七轮:realFile 在接收端暂存根内,产物落位=根内相对路径(basename)。
+      const artifactPath = path.join(engineDir, 'Avatar.py');
       expect(readFileSync(artifactPath, 'utf8')).toBe(CONTENT);
-      rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
       rmSync(engineDir, { recursive: true, force: true });
@@ -432,7 +433,10 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     // F3 四轮:接收端自己写产物模式(digest-mismatch 场景=回包 digest 故意报错)
     const receiver = await startReferenceReceiver('apply', 'digest-mismatch', undefined, engineDir);
     try {
-      const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
+      // F3 七轮:产物命名空间只认接收端暂存根内路径(根外整批拒绝)——所发
+      // 真实文件放进接收端暂存根;产物落位=根内相对路径映射(此处即 basename),
+      // 不再回落「绝对路径全结构展开」。
+      const realFile = path.join(receiver.root, 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
       const store = new HotReloadTargetStateStore({ now: () => 5 });
       const sentDigest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
