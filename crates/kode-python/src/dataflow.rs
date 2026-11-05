@@ -217,6 +217,13 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         Stmt::Match(m) => {
             collect_reads(state, &m.subject, line);
             for case in &m.cases {
+                // KR-AUD-10:dataflow 侧——pattern 捕获名 def、guard 读。
+                // 捕获 def 先于 guard 读(guard 可引用捕获,如 `case [a,b] if a > 0`)。
+                let case_line = ast.line_col(case.pattern.range().start().to_u32()).0;
+                collect_pattern_captures(state, &case.pattern, case_line);
+                if let Some(g) = &case.guard {
+                    collect_reads(state, g, case_line);
+                }
                 walk_body(ast, state, &case.body);
             }
         }
@@ -252,6 +259,61 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
         | Stmt::Continue(_)
         | Stmt::TypeAlias(_)
         | Stmt::IpyEscapeCommand(_) => {}
+    }
+}
+
+/// 收集 match pattern 的捕获名 def(KR-AUD-10):`case [a, b]:` 的 a/b、
+/// `*rest`、mapping `**rest`、`case X() as y` 的 y 各 def 一条链。
+/// 附带读面:`case Point(x, 0):` 的类名 Point 与 `case V(值):` 的 value 表达式
+/// 按 Load 读记录(与 guard/subject 同一 collect_reads 通道)。
+fn collect_pattern_captures(state: &mut State, pattern: &ast::Pattern, line: usize) {
+    use ast::Pattern;
+    match pattern {
+        Pattern::MatchValue(v) => collect_reads(state, &v.value, line),
+        Pattern::MatchSingleton(_) => {}
+        Pattern::MatchSequence(s) => {
+            for p in &s.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+        }
+        Pattern::MatchMapping(m) => {
+            for k in &m.keys {
+                collect_reads(state, k, line);
+            }
+            for p in &m.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+            if let Some(rest) = &m.rest {
+                state.def_var(rest.as_str(), line);
+            }
+        }
+        Pattern::MatchClass(c) => {
+            collect_reads(state, &c.cls, line);
+            for p in &c.arguments.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+            for kw in &c.arguments.keywords {
+                collect_pattern_captures(state, &kw.pattern, line);
+            }
+        }
+        Pattern::MatchStar(s) => {
+            if let Some(name) = &s.name {
+                state.def_var(name.as_str(), line);
+            }
+        }
+        Pattern::MatchAs(a) => {
+            if let Some(inner) = &a.pattern {
+                collect_pattern_captures(state, inner, line);
+            }
+            if let Some(name) = &a.name {
+                state.def_var(name.as_str(), line);
+            }
+        }
+        Pattern::MatchOr(o) => {
+            for p in &o.patterns {
+                collect_pattern_captures(state, p, line);
+            }
+        }
     }
 }
 

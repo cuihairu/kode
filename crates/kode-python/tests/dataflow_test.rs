@@ -270,3 +270,26 @@ fn comprehension_elt_use_links_to_generator_target_kraud09() {
     let xs = chain(&result, "xs");
     assert_eq!(xs.use_lines, vec![1]);
 }
+
+/// KR-AUD-10:dataflow 侧 match pattern 捕获名不 def、guard 不读(callgraph
+/// 半边已由 KODE-AUD-008 闭合,本测只修 dataflow)。`case [a, b] if b > 0:`
+/// 捕获 a/b 各 def 一条链,guard 内 b 的读、case 体内 a 的读均连上链。
+#[test]
+fn match_pattern_captures_def_and_guard_reads_kraud10() {
+    let src = "def f(v):\n    match v:\n        case [a, b] if b > 0:\n            return a\n        case _:\n            return None\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &["v".to_string()], &body);
+    let a = chain(&result, "a");
+    assert_eq!(a.def_line, Some(2), "pattern 捕获 a 应在 case 行 def");
+    assert_eq!(a.use_lines, vec![3], "case 体内 return a 应连上捕获链");
+    let b = chain(&result, "b");
+    assert_eq!(b.def_line, Some(2), "pattern 捕获 b 应在 case 行 def");
+    assert_eq!(b.use_lines, vec![2], "guard 内 b 的读应连上捕获链");
+    let v = chain(&result, "v");
+    assert_eq!(v.use_lines, vec![1], "match subject 读保持");
+}
