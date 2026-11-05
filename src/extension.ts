@@ -91,6 +91,7 @@ import {
   removeWaitBootstrap,
   debugpyWaitAtStartupEnabled
 } from './debugpyWaitAtStartup';
+import { prefillEntryScriptBreakpoints } from './entryScriptBreakpoint';
 import {
   DebugSessionRegistry,
   applySessionEndBehavior,
@@ -3141,6 +3142,19 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(
     vscode.debug.onDidTerminateDebugSession(() => debugTargetTreeProvider.refresh())
+  );
+
+  // KODE-CFG-006:entryScriptFile 自动断点——attach/端口模式调试目标启动
+  // 即按配置派生结果(CFG-004 推导链经 configDerive 缓存)预填入口脚本
+  // 断点,免手点;派生未就绪/入口缺失 → 如实不预填并出诊断(见
+  // entryScriptBreakpoint),绝不干扰调试会话。
+  context.subscriptions.push(
+    vscode.debug.onDidStartDebugSession(session => {
+      const name = (session.configuration as { name?: string } | undefined)?.name ?? '';
+      if (name.startsWith('KBEngine: Python attach to ')) {
+        void prefillEntryScriptBreakpoints();
+      }
+    })
   );
 
   // DBG-008 点击定位:已附加=打开 Run and Debug 视图(调用堆栈里可见

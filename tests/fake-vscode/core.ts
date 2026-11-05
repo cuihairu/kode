@@ -425,7 +425,11 @@ export const debug = {
   startDebugging: async (_folder: unknown, _config: unknown): Promise<boolean> => false,
   stopDebugging: async (_session?: unknown): Promise<void> => undefined,
   onDidStartDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined }),
-  onDidTerminateDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined })
+  onDidTerminateDebugSession: (_listener: (session: unknown) => void): { dispose(): void } => ({ dispose: () => undefined }),
+  // KODE-CFG-006:断点预填经 addBreakpoints;默认零动作,测试按用例 monkey-patch
+  // 记录。SourceBreakpoint 最小面(仅 location,测试断言 uri+行)。
+  addBreakpoints: (_breakpoints: readonly unknown[]): void => undefined,
+  removeBreakpoints: (_breakpoints: readonly unknown[]): void => undefined
 };
 
 export class ThemeIcon {
@@ -583,6 +587,15 @@ export class Location {
   }
 
   range: Range;
+}
+
+// KODE-CFG-006:SourceBreakpoint 最小面——真实构造取 Location + 可选 enabled,
+// 断点预填测试只断言 location(uri + 行)。
+export class SourceBreakpoint {
+  constructor(
+    public readonly location: Location,
+    public readonly enabled: boolean = true
+  ) {}
 }
 
 export enum DiagnosticSeverity {

@@ -10,7 +10,9 @@
 // 派生不可用时自然走旧链,不抛)。缓存按 rootConfigGeneration 键控:根
 // 配置变化 bump 后下一次 ensure 重取;同步消费面只读缓存(不阻塞宿主)。
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
+import { findEngineEntryScript } from './debugpyWaitAtStartup';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
 import { resolveCustomConfigXmlPath } from './serverConfigMerge';
@@ -53,6 +55,15 @@ export interface ConfigDerivedScanRootState {
   fallback: string | null;
   degraded: boolean;
   diagnostics: Array<{ scope: string; severity: string; message: string }>;
+  /** 派生入口脚本事实(CFG-006 断点预填面读;= facts 直传,真源在 Rust) */
+  entryScripts: Array<{
+    process: string;
+    module: string;
+    path: string | null;
+    exists: boolean;
+  }>;
+  /** 派生调试就绪(CFG-006 读 reasons 出缺入口诊断) */
+  debug: { ready: boolean; reasons: string[] };
   /** RPC 调用是否成功(失败=该代仅一次尝试,回退旧链,不再锤 Rust) */
   ok: boolean;
   reason: string | null;
@@ -115,6 +126,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
   } catch {
     customConfigPath = null;
   }
+  const entryScripts = resolveEntryScriptFacts(workspaceRoot);
 
   const gate = getKodeCoreShadowGate();
   if (!gate) {
@@ -126,6 +138,8 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
       fallback: null,
       degraded: true,
       diagnostics: [],
+      entryScripts,
+      debug: { ready: false, reasons: ['gate unavailable'] },
       ok: false,
       reason: 'gate unavailable'
     };
@@ -136,7 +150,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
     facts: {
       workspaceRoot: workspaceRoot || null,
       customConfigPath,
-      entryScripts: []
+      entryScripts
     }
   });
 
@@ -151,6 +165,8 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
       diagnostics: [
         { scope: 'rpc', severity: 'warning', message: outcome.reason }
       ],
+      entryScripts,
+      debug: { ready: false, reasons: [outcome.reason] },
       ok: false,
       reason: outcome.reason
     };
@@ -164,10 +180,46 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
     fallback: derive.defScanRoots.fallback,
     degraded: derive.defScanRoots.degraded,
     diagnostics: outcome.result.diagnostics,
+    entryScripts: derive.entryScripts,
+    debug: derive.debug,
     ok: true,
     reason: null
   };
   return cached;
+}
+
+/**
+ * 解析 entryScriptFile 事实(CFG-006):与启动面同约定——配置 assetsRoot
+ * (含 `${workspaceFolder}`/相对值展开),经 findEngineEntryScript 解析共享
+ * 入口脚本 kbengine.py。profile/发现分支属高级形态,此处走标准配置路径;
+ * 未解析到 → exists:false 如实上报(派生给「entry script missing」诊断,
+ * 消费端不预填、不崩)。单一事实(baseapp/kbengine):入口脚本各组件共用,
+ * 重复 7 份只会产生重复诊断噪音。
+ */
+function resolveEntryScriptFacts(workspaceRoot: string): ConfigDeriveResult['derive']['entryScripts'] {
+  let assetsRoot = '';
+  try {
+    const raw = (vscode.workspace.getConfiguration('kbengine').get<string>('assetsRoot', '') ?? '').trim();
+    const expanded = raw.replace(/\$\{workspaceFolder\}/g, workspaceRoot);
+    assetsRoot = expanded
+      ? path.isAbsolute(expanded)
+        ? path.resolve(expanded)
+        : workspaceRoot
+          ? path.resolve(workspaceRoot, expanded)
+          : ''
+      : '';
+  } catch {
+    assetsRoot = '';
+  }
+  const entryPath = assetsRoot ? findEngineEntryScript(assetsRoot) : null;
+  return [
+    {
+      process: 'baseapp',
+      module: 'kbengine',
+      path: entryPath,
+      exists: !!entryPath
+    }
+  ];
 }
 
 function firstWorkspaceRoot(): string {

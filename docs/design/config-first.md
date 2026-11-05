@@ -99,9 +99,14 @@
     （`resmgr.cpp:489-499`）→ 即 def 扫描根；反向 `getPyUserAssetsPath()` 去掉 `/scripts`
     即 assets 根（`:557-567`）。**锚点是 `res` 后缀，`assets/res` 与 `assets/scripts` 为兄弟目录**——
     配置文件头注自证：`({assets}/res/server/kbengine.xml)`。
-- `entryScriptFile` 派生**未实现**；既有 `findEngineEntryScript`
-  （`src/debugpyWaitAtStartup.ts:56`）按约定路径找 `scripts/entity_defs` 同级 `kbengine.py`，
-  不读配置、不猜落点。
+- `entryScriptFile` 派生（**CFG-006 已交付**）：TS 在 `ensureConfigDerivedScanRoot` 解析入口
+  事实（`resolveEntryScriptFacts`：配置 `assetsRoot` → `findEngineEntryScript` 约定找
+  `scripts/entity_defs` 同级 `kbengine.py`，`exists` 如实上报，单一 baseapp/kbengine 事实），
+  Rust 派生 `derive.entryScripts` = facts 直传 + `derive.debug.reasons` 含「entry script
+  missing: p/m」；`src/entryScriptBreakpoint.ts` 在 attach/端口模式调试目标启动时按派生结果
+  `addBreakpoints`（入口脚本第 0 行），入口缺失 → 不预填 + 诊断。既有 `findEngineEntryScript`
+  （`src/debugpyWaitAtStartup.ts:56`）仍按约定路径找 `scripts/entity_defs` 同级 `kbengine.py`，
+  不读配置、不猜落点（薄壳化归 CFG-009）。
 - debug 就绪**无标志**；`debugpyWaitAtStartup`（IDE-DBG-004）是启动块注入开关，
   与本设计的「配置派生就绪」是两件事。
 - 配置变更监视：`extension.ts:4303` `createFileSystemWatcher('**/kbengine*.xml')`
@@ -227,7 +232,7 @@ flowchart TB
 | 26 | telnet | `ENGINE_DEFAULT_TELNET_PORTS` | `:37` | 写死组件默认端口表 | **Rust core** | 引擎语义常量进 core；TS 不留副本，经 #24 派生结果获得 |
 | 27 | def 发现 | `getIndexScanRoots` / `getExternalScanRoots` / `resolveAssetsRootForWorkspace` | `scanRoots.ts:115`/`:162`/`:67` | 根集 = workspace ∪ assetsRoot ∪ 发现根 ∪ profile 根 | 拆分：配置派生根接 `derive.defScanRoots`（**Rust core**）；存在性/去重/包含剪枝留 **TS 留存** | CFG-005 |
 | 28 | debug | `findEngineEntryScript` | `debugpyWaitAtStartup.ts:56` | 约定路径找 `kbengine.py`（不读配置） | **Rust core**（缺省派生的约定兜底）+ **TS 留存**（存在性校验） | CFG-006；缺配置时的默认派生与配置派生同源 |
-| 29 | debug | `entryScriptFile` 派生（**未实现**） | — | 逐进程入口模块 → 定位 → 断点目标 | **Rust core** | CFG-006；断点是派生目标，非启动命令 |
+| 29 | debug | `entryScriptFile` 派生（**CFG-006 已交付**） | `entryScriptBreakpoint.ts` + `configDerive.ts` `resolveEntryScriptFacts` | 入口模块定位 → 断点目标（事实经 TS 探测、`derive.entryScripts` 直传、`addBreakpoints` 第 0 行） | **Rust core**（派生 entryScripts/debug） | CFG-006；断点是派生目标，非启动命令 |
 | 30 | debug | debug 就绪标志（**未实现**） | — | 配置可解析 + 派生无致命缺失 → ready | **Rust core**（计算）+ **TS 留存**（状态栏/树展示） | CFG-004 |
 | 31 | def 域 | `kode-parser` `xml/model/dep/diag/json` | `crates/kode-parser/src/*` | 字节级 def 解析 | **Rust core**（不动） | 本设计不改其语义；config 域为**新增兄弟模块**，不 import def 模块 |
 | 32 | 消费点 | hover / final 文档 / db 读值 / telnet 目标 / def 发现 / MCP 工具 | `extension.ts:4059`、`profileDatabaseConnection.ts:69` 等 | 现直接调 #7/#11 等 | **消费通道** | CFG-009 切通道；取数一律 `$/kode/config/*` |
@@ -432,9 +437,11 @@ config generation（复用 `bumpRootConfigGeneration` 语义，新增 `config` �
   实勘链实现——`derive.defScanRoots` = 定位 `server/kbengine.xml` 命中段 → `rfind("res")`
   截断 → 拼 `scripts/`；命中失败（无 kbengine.xml、respaths 段数不足、路径不存在）时
   走 `degraded` + 工作区根兜底，不虚构扫描根。**勿在实现中查找 `pyResPath`。**
-- **仍存取证缺口**：`entryScriptFile` 派生与 debug 就绪标志均未实现（§2.5）——
-  CFG-006 开工前需实勘引擎入口模块加载点（已知 `entity_app.h:509`
-  `PyImport_Import`，默认模块名 `kbemain`，`kbengine_defaults.xml:238/274`）。
+- **取证缺口已关闭**：`entryScriptFile` 派生与 debug 就绪标志已实现（CFG-004 派生调试就绪 +
+  CFG-006 入口断点）——引擎入口模块加载点实勘结论（`entity_app.h:509` `PyImport_Import`，
+  默认模块名 `kbemain`，`kbengine_defaults.xml:238/274`）保留为背景；`entryScriptFile` 语义按
+  §2.5 定为**共享引导模块** `scripts/kbengine.py`（entity_defs 同级，`findEngineEntryScript`
+  解析），与 `entryHooks` 的逐组件 `kbemain.py` 是两个概念。
 
 ## 8. 验收对照（KODE-CFG-001）
 
