@@ -287,3 +287,37 @@ describe('EventCodeLensProvider 独立开关(批154)', () => {
     }
   });
 });
+
+/* ---------------- KR-AUD-61: F12 定义解析走磁盘缓存,不逐文件 openTextDocument ---------------- */
+
+describe('KR-AUD-61: 事件定义解析不逐文件 openTextDocument', () => {
+  it('候选为真实磁盘文件时零 openTextDocument,位置结果不回归', async () => {
+    const fs = await import('fs');
+    const os = await import('os');
+    const nodePath = await import('path');
+    const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'kode-aud61-'));
+    const defPath = nodePath.join(dir, 'events.def');
+    fs.writeFileSync(defPath, '<root>\n\t<CellMethods>\n\t\t<PLAYER_EVENT>\n\t\t</PLAYER_EVENT>\n\t</CellMethods>\n</root>');
+    const originalFindFiles = vscode.workspace.findFiles;
+    const originalOpen = vscode.workspace.openTextDocument;
+    const opens: unknown[] = [];
+    vscode.workspace.findFiles = async () => [vscode.Uri.file(defPath)];
+    vscode.workspace.openTextDocument = (async (uri: unknown) => {
+      opens.push(uri);
+      return originalOpen(uri);
+    }) as never;
+    try {
+      const doc = makeTextDocument('self.emitEvent(PLAYER_EVENT)', {
+        fileName: nodePath.join(dir, 'use.py'), languageId: 'python'
+      }) as vscode.TextDocument;
+      const location = await eventDefinitionAt(doc, new vscode.Position(0, 17));
+      expect(location?.uri.fsPath).toBe(defPath);
+      // 大仓 F12 不秒卡:磁盘候选经 stat+readFile 缓存路径,不注册文本文档
+      expect(opens).toHaveLength(0);
+    } finally {
+      vscode.workspace.findFiles = originalFindFiles;
+      vscode.workspace.openTextDocument = originalOpen;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
