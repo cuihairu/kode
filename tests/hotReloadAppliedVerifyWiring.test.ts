@@ -389,7 +389,9 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
   };
 
   it('真实接收端 applied 回包(digest=接收端重算):火线双证核验升格 applied', async () => {
-    const receiver = await startReferenceReceiver('apply', 'applied');
+    // F3:接收端只在真实应用命令执行成功后才回 applied(不再读取+复制就
+    // 自称已应用),故这里给一条真实可执行的应用命令
+    const receiver = await startReferenceReceiver('apply', 'applied', 'node -e "process.exit(0)"');
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
@@ -410,7 +412,7 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
   });
 
   it('真实接收端 digest 不符回包(真 wire):保持未确认并注解阻塞', async () => {
-    const receiver = await startReferenceReceiver('apply', 'digest-mismatch');
+    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', 'node -e "process.exit(0)"');
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');

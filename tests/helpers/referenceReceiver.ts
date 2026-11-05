@@ -14,13 +14,20 @@ export interface ReferenceReceiver {
 
 export async function startReferenceReceiver(
   mode: 'stage' | 'apply',
-  scenario: 'accepted' | 'applied' | 'digest-mismatch' | 'echo' | 'error500'
+  scenario: 'accepted' | 'applied' | 'digest-mismatch' | 'echo' | 'error500',
+  applyCommand?: string
 ): Promise<ReferenceReceiver> {
   const root = mkdtempSync(path.join(os.tmpdir(), 'kode-receiver-wiring-'));
   const script = path.join(__dirname, '..', '..', 'scripts', 'hot-reload-receiver', 'referenceReceiver.mjs');
+  // F3:apply 模式必须配真实应用命令(--apply-command)接收端才会回 applied;
+  // 未配置时接收端如实回 accepted(仅暂存,未应用)。
+  const args = [script, '--port', '0', '--root', root, '--mode', mode, '--scenario', scenario];
+  if (applyCommand !== undefined) {
+    args.push('--apply-command', applyCommand);
+  }
   const proc = spawn(
     process.execPath,
-    [script, '--port', '0', '--root', root, '--mode', mode, '--scenario', scenario],
+    args,
     { stdio: ['ignore', 'pipe', 'inherit'] }
   );
   const port = await new Promise<number>((resolve, reject) => {
