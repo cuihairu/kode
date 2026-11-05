@@ -29,6 +29,11 @@ import {
   attributeNoneDiagnosticItems,
   ATTRIBUTE_NONE_DIAGNOSTIC_CODE
 } from './selfAttributeNoneDiagnostics';
+import {
+  SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT,
+  SPACE_NAV_DIAGNOSTIC_CODE,
+  computeSpaceNavFindings
+} from './spaceNavDiagnostics';
 import { flowVersionKeyForDocument } from './flowVersionKey';
 import {
   DEF_METHOD_MISSING_DIAGNOSTIC_CODE,
@@ -755,8 +760,8 @@ export function activate(context: vscode.ExtensionContext) {
           return null; // 异步中止(worker 停用/版本前进),整轮不发布
         }
         const attrItems = attrEnabled && isPythonDocument(document)
-          // KODE-PERF-001:文档版本键——同版本诊断/inlay 共享一次流解析。
-          // 按实例身份+版本成键(跨实例/重开不撞键,见 flowVersionKey.ts)。
+          // KODE-PERF-001:文档版本键——同版本诊断/inlay 共享一次流解析?
+          // 按实例身份版本成键(跨实例重开不撞;flowVersionKey.ts)?
           ? attributeNoneDiagnosticItems(
               document.getText(),
               undefined,
@@ -772,7 +777,23 @@ export function activate(context: vscode.ExtensionContext) {
               code: ATTRIBUTE_NONE_DIAGNOSTIC_CODE
             }))
           : [];
-        return [...receiverItems, ...attrItems];
+        // SP-4: 空间/导航语义诊断(_mapping 保留键/navigate 无 canNavigate/
+        // params 字符串层键)——纯文本行级扫描,与 receiver/attr 同通道发布。
+        const spaceNavEnabled = config
+          .get<boolean>('spaceNavDiagnostics', SPACE_NAV_DIAGNOSTICS_ENABLED_DEFAULT);
+        const spaceNavItems = spaceNavEnabled && isPythonDocument(document)
+          ? computeSpaceNavFindings(document.getText()).map(finding => ({
+              range: {
+                start: { line: finding.line, character: finding.start },
+                end: { line: finding.line, character: finding.end }
+              },
+              message: finding.message,
+              severity: 'Warning' as const,
+              source: 'kbengine' as const,
+              code: finding.code || SPACE_NAV_DIAGNOSTIC_CODE
+            }))
+          : [];
+        return [...receiverItems, ...attrItems, ...spaceNavItems];
       },
       publish: (items: readonly ReceiverDiagnosticItem[]) => {
         diagnostics.set(document.uri, items.map(item => {
