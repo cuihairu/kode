@@ -30,26 +30,26 @@
    不迁 VS Code 展示面到 Rust；不动引擎启动链（debugpy 挂进程，启动仍是引擎 launcher，
    `entryScriptFile` 只是**派生断点**与文件校验，不是启动命令参数）。
 
-## 2. 现状核对（实现前必须复核；行号为 2026-11-03 实测）
+## 2. 现状核对（实现前必须复核；行号为 2026-11-05 复测）
 
 ### 2.1 配置域（纯 TS，`src/`）
 
 | 面 | 位置 | 现状事实 |
 |---|---|---|
-| `parseConfigXml` | `src/serverConfigMerge.ts:38` | 正则容错解析：先剥 `<!-- -->` 与 `<? ?>`，伪根（空名节点），标签不闭合/多余闭合按已见内容容错、不抛；返回 `null` 当无子节点 |
-| `mergeConfigXml` | `src/serverConfigMerge.ts:74` | 子键按名对齐：override 无则留 base、有则整名替换（重复名 `<item>` 整表替换）、两边各一个且都有子节点则递归下钻 |
-| `renderConfigXml` | `src/serverConfigMerge.ts:104` | tab 缩进；注释一律放**元素内部**（叶子放值之后——tinyxml2 `IntText()` 只认首子节点为文本的取证写在 `serverConfigAnnotations.ts` 文件头） |
-| `sanitizeXmlComment` / `renderConfigXmlSections` | `:143` / `:153` | 注释消毒（`--` 压制）/ 顶层段拼接 |
-| `resolveCustomConfigXmlPath` | `:164` | 定位链：设置 `kbengine.assetsRoot` → 自动发现根 → 工作区约定路径；profile 面只认 profile 资产根、绝不回落（IDE-REV-015 隔离） |
-| `buildMergedConfigTree` | `:261` | 装配：defaults + 元件 `kbengine.xml` 定位读盘 → parse → merge，支持 `MergedConfigTreeOverrides`（profile 轴覆盖） |
-| `buildFinalServerConfig` | `:323` | 装配：merge 树 → `annotateConfigTree` → `renderConfigXmlSections`，头注写来源与覆盖口径 |
-| `extractDatabaseInterfaceConfig` | `:383` | dbmgr `<databaseInterfaces><default>` 读值（纯函数），含引擎默认兜底与 encrypt 口径 |
-| `resetDatabaseInterfaceConfigCache` / `resolveDatabaseInterfaceConfig` | `:419` / `:424` | 缓存 key = `workspaceRoot + binPath`（**不含 profile 轴**，见 §7.3） |
-| `summarizeFinalTelnet` | `:491` | 正则读最终配置的 telnet 端口/密码（先整段剥注释再 `Number()`，防 `<!-- --> 40000` → NaN） |
-| `ConfigXmlNode` | `:19` | 树节点 DTO：`name/text/children` + 仅渲染期写入的 `comment/docHeader` |
-| 文案库 | `src/serverConfigCatalog.ts:81` | `SERVER_CONFIG_ITEM_DOCS` **253 条**（实测 grep 计数），双语 zh/en + `source`（`kbe/res/server/kbengine_defaults.xml:行号` 出处）+ `group` |
+| `parseConfigXml` | `src/serverConfigMerge.ts:62` | 正则容错解析：先剥 `<!-- -->` 与 `<? ?>`，伪根（空名节点），标签不闭合/多余闭合按已见内容容错、不抛；返回 `null` 当无子节点 |
+| `mergeConfigXml` | `src/serverConfigMerge.ts:164` | 子键按名对齐：override 无则留 base、有则整名替换（重复名 `<item>` 整表替换）、两边各一个且都有子节点则递归下钻 |
+| `renderConfigXml` | `src/serverConfigMerge.ts:211` | tab 缩进；注释一律放**元素内部**（叶子放值之后——tinyxml2 `IntText()` 只认首子节点为文本的取证写在 `serverConfigAnnotations.ts` 文件头） |
+| `sanitizeXmlComment` / `renderConfigXmlSections` | `src/serverConfigCommentText.ts:11` / `src/serverConfigMerge.ts:281` | 注释消毒（`--` 压制，已拆至 commentText 防循环）/ 顶层段拼接 |
+| `resolveCustomConfigXmlPath` | `src/serverConfigMerge.ts:292` | 定位链：设置 `kbengine.assetsRoot` → 自动发现根 → 工作区约定路径；profile 面只认 profile 资产根、绝不回落（IDE-REV-015 隔离） |
+| `buildMergedConfigTree` | `src/serverConfigMerge.ts:389` | 装配：defaults + 元件 `kbengine.xml` 定位读盘 → parse → merge，支持 `MergedConfigTreeOverrides`（profile 轴覆盖） |
+| `buildFinalServerConfig` | `src/serverConfigMerge.ts:451` | 装配：merge 树 → `annotateConfigTree` → `renderConfigXmlSections`，头注写来源与覆盖口径 |
+| `extractDatabaseInterfaceConfig` | `src/serverConfigMerge.ts:511` | dbmgr `<databaseInterfaces><default>` 读值（纯函数），含引擎默认兜底与 encrypt 口径 |
+| `resetDatabaseInterfaceConfigCache` / `resolveDatabaseInterfaceConfig` | `src/serverConfigMerge.ts:547` / `:552` | 缓存 key = `workspaceRoot + binPath`（**不含 profile 轴**，见 §7.3） |
+| `summarizeFinalTelnet` | `src/serverConfigMerge.ts:619` | 正则读最终配置的 telnet 端口/密码（先整段剥注释再 `Number()`，防 `<!-- --> 40000` → NaN） |
+| `ConfigXmlNode` | `src/serverConfigMerge.ts:29` | 树节点 DTO：`name/text/children` + 仅渲染期写入的 `comment/docHeader` |
+| 文案库 | `src/serverConfigCatalog.ts:81` | `SERVER_CONFIG_ITEM_DOCS` **255 条**（实测 grep 计数），双语 zh/en + `source`（`kbe/res/server/kbengine_defaults.xml:行号` 出处）+ `group` |
 | 分组 | 同文件 `:34`/`:50` | 顶层段名 = 进程名（`serverconfig.cpp` 取证），分组主轴 = 进程 |
-| 注释注入 | `src/serverConfigAnnotations.ts:91` | `annotateConfigTree`：作用注释（按语言）+ 自定义项归类 + 文档头注 |
+| 注释注入 | `src/serverConfigAnnotations.ts:97` | `annotateConfigTree`：作用注释（按语言）+ 自定义项归类 + 文档头注 |
 | hover 文案 | `src/serverConfigHover.ts:20` | 另有 `SERVER_CONFIG_FIELD_DOCS` 一份字段说明表（与 catalog 有重叠，对账归 CFG-009） |
 
 ### 2.2 telnet 面（`src/telnetService.ts`）
@@ -62,7 +62,7 @@
   写死表；**配置未开 telnet → 空目标**（批111：defaults 的 `telnet_service` 段恒在，
   只补值不当开关）。
 - `readTelnetTargetsFromSettings`（`:233`）——VS Code 设置读取。
-- 消费：`extension.ts:2731-2748` 接 `TelnetService` + `setContext('kbengine.telnetConfigured')`。
+- 消费：`extension.ts:2842-2850` 接 `TelnetService` + `setContext('kbengine.telnetConfigured')`。
 
 ### 2.3 def 域（纯 Rust，`crates/kode-parser`）
 
@@ -104,9 +104,9 @@
   不读配置、不猜落点。
 - debug 就绪**无标志**；`debugpyWaitAtStartup`（IDE-DBG-004）是启动块注入开关，
   与本设计的「配置派生就绪」是两件事。
-- 配置变更监视：`extension.ts:3991` `createFileSystemWatcher('**/kbengine*.xml')`
+- 配置变更监视：`extension.ts:4303` `createFileSystemWatcher('**/kbengine*.xml')`
   → `resetDatabaseInterfaceConfigCache` + 合成文档刷新；设置变更走
-  `onDidChangeConfiguration` 逐项失效 + `bumpRootConfigGeneration(...)`（`extension.ts:2109/2131`）。
+  `onDidChangeConfiguration` 逐项失效 + `bumpRootConfigGeneration(...)`（`extension.ts:2172/2191`）。
 
 ### 2.6 既有测试资产（迁移不倒退的底账，实测 `it()` 计数）
 
@@ -199,23 +199,23 @@ flowchart TB
 
 | # | 分组 | 函数/符号 | 位置 | 现职责（一行） | 归属 | 迁移条目/依据 |
 |---|---|---|---|---|---|---|
-| 1 | 解析 | `parseConfigXml` | `serverConfigMerge.ts:38` | 剥注释/PI、伪根、容错解析 | **Rust core** | CFG-002；语义对齐清单见 §7.1 |
-| 2 | 合并 | `mergeConfigXml` | `:74` | 子名对齐、整名替换、单容器递归 | **Rust core** | CFG-003；字节级对拍 |
-| 3 | 渲染 | `renderConfigXml` | `:104` | tab 排版、注释入元素内部 | **TS 留存** | 展示口径；tinyxml2 取证在 TS 注释侧 |
-| 4 | 渲染 | `sanitizeXmlComment` | `:143` | 注释消毒（`--` 压制） | **TS 留存** | 渲染期专用 |
-| 5 | 渲染 | `renderConfigXmlSections` | `:153` | 顶层段拼接 | **TS 留存** | 同上 |
-| 6 | 定位 | `resolveCustomConfigXmlPath` | `:164` | 设置→发现→工作区约定链定位 | **TS 留存** | VS Code 设置/profile/发现链只存在于 TS |
-| 7 | 装配 | `buildMergedConfigTree` | `:261` | 定位+读盘+parse+merge 装配 | **TS 留存**（读盘/定位）+ **消费通道**（parse/merge 半） | 拆分：文本经通道，定位留 TS |
-| 8 | 装配 | `buildFinalServerConfig` | `:323` | annotate+render 装配、来源头注 | **TS 留存** | 展示装配；数据取自 #7 通道结果 |
-| 9 | 读值 | `extractDatabaseInterfaceConfig` | `:383` | dbmgr 连接要素读值（纯函数） | **Rust core** | 读值语义单一真源；`plainPassword` 口径随迁 |
-| 10 | 缓存 | `resetDatabaseInterfaceConfigCache` | `:419` | 缓存失效 | **TS 留存** | watcher/设置事件接线在 VS Code 侧 |
-| 11 | 缓存 | `resolveDatabaseInterfaceConfig` | `:424` | 缓存 key + 装配读值 | **TS 留存** | 缓存与设置读取；key 补 profile 轴见 §7.3 |
-| 12 | 展示 | `KBE_CONFIG_SCHEME` / `KBE_CONFIG_VIRTUAL_PATH` / `FinalConfigContentProvider` / `FinalConfigTreeProvider` | `:441`/`:444` + `extension.ts` | 合成配置虚拟文档与侧栏入口 | **TS 留存** | 虚拟文档是 VS Code 面 |
-| 13 | 读值 | `summarizeFinalTelnet` | `:491` | 正则读 telnet 端口/密码 | **Rust core** | CFG-004；与 #21/#22 三套读值合并为一处 |
-| 14 | DTO | `ConfigXmlNode` | `:19` | 树节点结构 | **Rust core**（产出） | 形状冻结为 §5 `ConfigTreeDto`，TS 只读不改写 |
-| 15 | 注释 | `annotateConfigTree` | `serverConfigAnnotations.ts:91` | 作用注释注入、自定义项归类 | **TS 留存** | 注释/l10n 是展示面，依赖 #17 文案库 |
+| 1 | 解析 | `parseConfigXml` | `serverConfigMerge.ts:62` | 剥注释/PI、伪根、容错解析 | **Rust core** | CFG-002；语义对齐清单见 §7.1 |
+| 2 | 合并 | `mergeConfigXml` | `:164` | 子名对齐、整名替换、单容器递归 | **Rust core** | CFG-003；字节级对拍 |
+| 3 | 渲染 | `renderConfigXml` | `:211` | tab 排版、注释入元素内部 | **TS 留存** | 展示口径；tinyxml2 取证在 TS 注释侧 |
+| 4 | 渲染 | `sanitizeXmlComment` | `serverConfigCommentText.ts:11` | 注释消毒（`--` 压制） | **TS 留存** | 渲染期专用 |
+| 5 | 渲染 | `renderConfigXmlSections` | `:281` | 顶层段拼接 | **TS 留存** | 同上 |
+| 6 | 定位 | `resolveCustomConfigXmlPath` | `:292` | 设置→发现→工作区约定链定位 | **TS 留存** | VS Code 设置/profile/发现链只存在于 TS |
+| 7 | 装配 | `buildMergedConfigTree` | `:389` | 定位+读盘+parse+merge 装配 | **TS 留存**（读盘/定位）+ **消费通道**（parse/merge 半） | 拆分：文本经通道，定位留 TS |
+| 8 | 装配 | `buildFinalServerConfig` | `:451` | annotate+render 装配、来源头注 | **TS 留存** | 展示装配；数据取自 #7 通道结果 |
+| 9 | 读值 | `extractDatabaseInterfaceConfig` | `:511` | dbmgr 连接要素读值（纯函数） | **Rust core** | 读值语义单一真源；`plainPassword` 口径随迁 |
+| 10 | 缓存 | `resetDatabaseInterfaceConfigCache` | `:547` | 缓存失效 | **TS 留存** | watcher/设置事件接线在 VS Code 侧 |
+| 11 | 缓存 | `resolveDatabaseInterfaceConfig` | `:552` | 缓存 key + 装配读值 | **TS 留存** | 缓存与设置读取；key 补 profile 轴见 §7.3 |
+| 12 | 展示 | `KBE_CONFIG_SCHEME` / `KBE_CONFIG_VIRTUAL_PATH` / `FinalConfigContentProvider` / `FinalConfigTreeProvider` | `:569`/`:572`（provider `:578`/`:593`） | 合成配置虚拟文档与侧栏入口 | **TS 留存** | 虚拟文档是 VS Code 面 |
+| 13 | 读值 | `summarizeFinalTelnet` | `:619` | 正则读 telnet 端口/密码 | **Rust core** | CFG-004；与 #21/#22 三套读值合并为一处 |
+| 14 | DTO | `ConfigXmlNode` | `:29` | 树节点结构 | **Rust core**（产出） | 形状冻结为 §5 `ConfigTreeDto`，TS 只读不改写 |
+| 15 | 注释 | `annotateConfigTree` | `serverConfigAnnotations.ts:97` | 作用注释注入、自定义项归类 | **TS 留存** | 注释/l10n 是展示面，依赖 #17 文案库 |
 | 16 | 注释 | 分组主轴/进程归类（文件内私有） | 同文件 | 顶层段 = 进程名 | **TS 留存** | 展示分组，不进 core |
-| 17 | 文案 | `SERVER_CONFIG_ITEM_DOCS`（253 条） | `serverConfigCatalog.ts:81` | 双语文案 + `source` 出处 + `group` | **TS 留存** | l10n 单一真源；MCP `why_setting` 引用它 |
+| 17 | 文案 | `SERVER_CONFIG_ITEM_DOCS`（255 条） | `serverConfigCatalog.ts:81` | 双语文案 + `source` 出处 + `group` | **TS 留存** | l10n 单一真源；MCP `why_setting` 引用它 |
 | 18 | 文案 | `SERVER_CONFIG_GROUPS` / `SERVER_CONFIG_GROUP_ORDER` / meta | `:34`/`:50` | 分组与排序 | **TS 留存** | 展示元数据 |
 | 19 | 文案 | `isZhConfigLanguage` / `configItemDocBody` / `findServerConfigItemDoc` / `SERVER_CONFIG_UNKNOWN_DOC` | `:341`–`:387` | 文案查找与未知项兜底 | **TS 留存** | 同上 |
 | 20 | 文案 | `SERVER_CONFIG_FIELD_DOCS` | `serverConfigHover.ts:20` | hover 字段说明 | **TS 留存** | 与 #17 重叠对账归 CFG-009（非本设计强制项） |
@@ -230,7 +230,7 @@ flowchart TB
 | 29 | debug | `entryScriptFile` 派生（**未实现**） | — | 逐进程入口模块 → 定位 → 断点目标 | **Rust core** | CFG-006；断点是派生目标，非启动命令 |
 | 30 | debug | debug 就绪标志（**未实现**） | — | 配置可解析 + 派生无致命缺失 → ready | **Rust core**（计算）+ **TS 留存**（状态栏/树展示） | CFG-004 |
 | 31 | def 域 | `kode-parser` `xml/model/dep/diag/json` | `crates/kode-parser/src/*` | 字节级 def 解析 | **Rust core**（不动） | 本设计不改其语义；config 域为**新增兄弟模块**，不 import def 模块 |
-| 32 | 消费点 | hover / final 文档 / db 读值 / telnet 目标 / def 发现 / MCP 工具 | `extension.ts:3220`、`:3953`、`profileDatabaseConnection.ts:69` 等 | 现直接调 #7/#11 等 | **消费通道** | CFG-009 切通道；取数一律 `$/kode/config/*` |
+| 32 | 消费点 | hover / final 文档 / db 读值 / telnet 目标 / def 发现 / MCP 工具 | `extension.ts:4059`、`profileDatabaseConnection.ts:69` 等 | 现直接调 #7/#11 等 | **消费通道** | CFG-009 切通道；取数一律 `$/kode/config/*` |
 
 共 **32 行**（#1–#32）。归属分布（实测计数）：纯 **Rust core** 10、纯 **TS 留存** 16、
 纯 **消费通道** 1（#32）、core+TS 拆半的混合行 5（#7、#24、#27、#28、#30，
@@ -357,13 +357,13 @@ Rust config 域 + derive 落地，**TS 一行不改**。同语料双跑对拍：
 
 | 旧实现 | 动作 | 顺序/条件 |
 |---|---|---|
-| `parseConfigXml`（`serverConfigMerge.ts:38`） | 删实现 → **兼容薄壳**（保留导出签名，内部转 `$/kode/config/parse`，标注 deprecated）→ 测试迁完后删薄壳 | 第 2 步末降薄壳；第 3 步删 |
-| `mergeConfigXml`（`:74`） | 同上，转 `$/kode/config/merge` | 同上 |
-| `summarizeFinalTelnet`（`:491`） | 删 → 薄壳转 `resolve.telnetSummary` | 第 3 步 |
+| `parseConfigXml`（`serverConfigMerge.ts:62`） | 删实现 → **兼容薄壳**（保留导出签名，内部转 `$/kode/config/parse`，标注 deprecated）→ 测试迁完后删薄壳 | 第 2 步末降薄壳；第 3 步删 |
+| `mergeConfigXml`（`:164`） | 同上，转 `$/kode/config/merge` | 同上 |
+| `summarizeFinalTelnet`（`:619`） | 删 → 薄壳转 `resolve.telnetSummary` | 第 3 步 |
 | `parseKbengineXmlTelnet` / `parseKbengineDefaultsTelnet`（`telnetService.ts:70`/`:104`） | 删，读值并入 core（#21/#22） | 第 3 步 |
 | `ENGINE_DEFAULT_TELNET_PORTS`（`:37`） | 删 TS 副本，core 常量为唯一真源 | 第 3 步 |
 | `buildTelnetTargets`（`:164`） | 拆分：派生半删、settings 半留存 | 第 2 步 |
-| `extractDatabaseInterfaceConfig`（`:383`） | 删实现 → 薄壳转 `resolve.dbInterface` | 第 3 步 |
+| `extractDatabaseInterfaceConfig`（`:511`） | 删实现 → 薄壳转 `resolve.dbInterface` | 第 3 步 |
 | `getIndexScanRoots` 中「按配置派生扫描根」的新增半 | 旧的 workspace/assetsRoot 链保留为兜底，派生结果优先 | 第 2 步（CFG-005） |
 | `findEngineEntryScript`（`debugpyWaitAtStartup.ts:56`） | 约定兜底逻辑并入 core 缺省派生；函数降薄壳 | 第 2 步（CFG-006） |
 | `renderConfigXml` / `renderConfigXmlSections` / `sanitizeXmlComment` | **不迁不删**（TS 留存面） | — |
