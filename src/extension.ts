@@ -258,9 +258,9 @@ import {
   ensureDebugConfig,
   fileSystemBootstrapDeps
 } from './debugConfigBootstrap';
+import { readDerivedTelnetTargets } from './telnetDeriveTargets';
 import {
   makeProbeOne,
-  readTelnetTargetsFromSettings,
   TelnetService,
   updateTelnetStatusBar
 } from './telnetService';
@@ -2843,7 +2843,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 5s 低频探测
   const telnetService = new TelnetService({
     getTargets: () => {
-      const targets = readTelnetTargetsFromSettings();
+      // CFG-007:目标列表按配置派生(telnet 段开启 → 列出含派生端口,关闭
+      // → 空;派生不可用/显式端口/密码保护未覆盖时旧路径兜底,读同一份配置)。
+      const targets = readDerivedTelnetTargets();
       // 批111 用户令:配置未开 telnet 不展示 telnet 相关的东西——状态灯、
       // 独立树视图与命令面板入口随空目标/context key 自然隐藏。探测每轮
       // 重读目标,context 同步刷新。

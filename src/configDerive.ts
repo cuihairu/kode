@@ -15,7 +15,7 @@ import * as vscode from 'vscode';
 import { findEngineEntryScript } from './debugpyWaitAtStartup';
 import { getKodeCoreShadowGate } from './kodeCoreShadowFaces';
 import { getRootConfigGeneration } from './rootConfigGeneration';
-import { resolveCustomConfigXmlPath } from './serverConfigMerge';
+import { buildConfigTreePair } from './serverConfigMerge';
 
 /** `$/kode/config/derive` 的 `{ derive, diagnostics }` 结果(镜像 Rust 序列化) */
 export interface ConfigDeriveResult {
@@ -64,6 +64,21 @@ export interface ConfigDerivedScanRootState {
   }>;
   /** 派生调试就绪(CFG-006 读 reasons 出缺入口诊断) */
   debug: { ready: boolean; reasons: string[] };
+  /**
+   * 派生 telnet 能力(CFG-007 目标列表读):段开关 + 逐组件派生端口,
+   * 真源在 Rust derive_telnet(core 不碰盘,两棵配置树由 refresh 读盘
+   * 解析后送达)。派生不可用/失败时为 enabled:false 空端点(如实降级,
+   * 消费端 telnetDeriveTargets 回退旧路径)。
+   */
+  telnet: {
+    enabled: boolean;
+    endpoints: Array<{
+      component: string;
+      host: string;
+      port: number;
+      passwordSet: boolean;
+    }>;
+  };
   /** RPC 调用是否成功(失败=该代仅一次尝试,回退旧链,不再锤 Rust) */
   ok: boolean;
   reason: string | null;
@@ -120,11 +135,14 @@ export async function ensureConfigDerivedScanRoot(): Promise<ConfigDerivedScanRo
 
 async function refresh(generation: number): Promise<ConfigDerivedScanRootState> {
   const workspaceRoot = firstWorkspaceRoot();
-  let customConfigPath: string | null = null;
+  // 配置树对(CFG-007):custom/defaults 两棵树 TS 读盘解析后送达 Rust
+  // (core 不碰盘,设计 §5.2);customPath 同时作为 facts 的配置路径,
+  // 单次探测不各读各的。
+  let pair: ReturnType<typeof buildConfigTreePair>;
   try {
-    customConfigPath = resolveCustomConfigXmlPath(workspaceRoot || undefined);
+    pair = buildConfigTreePair();
   } catch {
-    customConfigPath = null;
+    pair = { customTree: null, defaultsTree: null, customPath: null, defaultsPath: null };
   }
   const entryScripts = resolveEntryScriptFacts(workspaceRoot);
 
@@ -140,16 +158,17 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
       diagnostics: [],
       entryScripts,
       debug: { ready: false, reasons: ['gate unavailable'] },
+      telnet: { enabled: false, endpoints: [] },
       ok: false,
       reason: 'gate unavailable'
     };
   }
   const outcome = await gate.runInRust<ConfigDeriveResult>('$/kode/config/derive', {
-    tree: null,
-    defaultsTree: null,
+    tree: pair.customTree,
+    defaultsTree: pair.defaultsTree,
     facts: {
       workspaceRoot: workspaceRoot || null,
-      customConfigPath,
+      customConfigPath: pair.customPath,
       entryScripts
     }
   });
@@ -167,6 +186,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
       ],
       entryScripts,
       debug: { ready: false, reasons: [outcome.reason] },
+      telnet: { enabled: false, endpoints: [] },
       ok: false,
       reason: outcome.reason
     };
@@ -182,6 +202,7 @@ async function refresh(generation: number): Promise<ConfigDerivedScanRootState> 
     diagnostics: outcome.result.diagnostics,
     entryScripts: derive.entryScripts,
     debug: derive.debug,
+    telnet: derive.telnet,
     ok: true,
     reason: null
   };
