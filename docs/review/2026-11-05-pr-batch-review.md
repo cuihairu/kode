@@ -133,3 +133,26 @@
 - `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r2-cargo-full.log`。
 - `eslint src --ext ts`：退出 0 干净（`/tmp/r2-eslint-full.log`）；`tsc -p tsconfig.json --noEmit` 干净。
 - 逐项 red 日志：`/tmp/r2-f1-red.log`、`/tmp/r2-f2-red.log`、`/tmp/r2-f3-red.log`、`/tmp/r2-f4-red.log`、`/tmp/r2-f5-red.log`。
+
+## 第三轮返工记录（2026-11-06，二轮复审残余两项精确缺陷，分支 `feat/kode-fix-f1f4`）
+
+本轮处理二轮复审复核后的两项残余：F1 快照共享槽位（并发闸判定可覆写前一批的快照）与 F3 协议级缺陷（协议未把发送方冻结 digest 传给接收端，空操作命令仍能假 applied）。每项均先在修码前源码上实测失败测试（red 已留存日志，见下），再修码转绿。`todo.md` 未改。
+
+### R2-F1：def 闸判定快照按批次/代际隔离（commit `f504e08`）
+
+- 问题：二轮实现的 `checkedSnapshots` 是「文件 → 内容」共享槽位——两批并发 `check` 共享同一槽位，后判定批覆写先判定批的快照；先批 `commit` 时把**从未通过判定的后批内容**滚进基册（时序绕过：被拦内容借并发批的 commit 入基线，指纹相同即放行）。
+- 修法：每次 `check` 各自持有整批快照记录（代际册，按判定顺序入册）；`commit` 按文件集逐字同序匹配**最早未消费**的判定批、只落自己那批的快照并消费之；匹配不到（该文件集从未判定过）不滚。并发判定互不覆写；被拦批（永不 commit）的快照借别批 commit 入册的通路被切断。记录带上限（64）防泄漏（被拦批只进不出，超限丢最老，判定面按旧基线保守重判不丢正确性）。
+- 回归（新增 `tests/hotReloadDefGateBatchSnapshot.test.ts` 3 条）：两批并发判定互不覆写（先批 commit 后基册=自己批的快照、被拦内容不入册且持续被拦）；同文件先后两批放行按代际各归各（FIFO 消费）；commit 文件集与任何判定批都不匹配时不滚。**red：2 failed | 1 passed**（修码前 448ee6b 独立 worktree 实测，日志 `/tmp/r3-f1-red.log`）→ green 3/3；闸系三套件 21 passed。
+
+### R2-F3：报文下发 sender_digest + 接收端对应用产物核验（commit `c1c1d76`）
+
+- 问题：二轮接收端比较的是**源文件**执行应用命令前后的两次哈希，而协议未把发送方冻结 digest 传给接收端——空操作命令（不改源文件、退出 0）前后哈希恒等，仍能假 applied（二轮的「退出 0 后重算源文件哈希」比对在空操作面前恒真，是协议级假 applied 通路）。
+- 修法：①协议报文增加 `sender_digests` 字段（发送时点冻结的 sha256 随报文下发）：`HttpReloadTransport.send` 对 JSON 对象请求体自动附带（显式已给不覆盖，非 JSON 对象不动），通道发送核心 `sendFilesViaReloadChannel` 把已落台账的冻结 digest 传入；协议定义同步进 `docs/design/hot-reload-design.md`（本仓库无 `docs/BRIDGE_PROTOCOL.md`，设计文档 §4 是协议定义面）与接收端脚本头注释、`roundtripProbe.mjs` wire 样本。②接收端新增 `--artifact-dir`（引擎产物目录，路径以 `KODE_RELOAD_ARTIFACT` 注入应用命令）；应用命令退出 0 后对**应用产物**（引擎目录中的实际文件）重算 sha256，与 `sender_digests[file]` 比对一致才回 applied；缺 `--artifact-dir`/报文缺 `sender_digest`/产物读不到/哈希不一致一律如实 failed（不落应用台账、不自称 applied）；旧「源文件前后哈希」比较废除。
+- 回归（`tests/hotReloadReceiverRoundtrip.test.ts` 改造为双向断言 + 新增 4 条）：真实应用且 digest 一致 → applied（引擎产物逐字一致断言）；**空操作命令（退出 0、不写产物）→ failed 不落台账**；产物内容 ≠ sender_digest → failed；报文缺 sender_digest → failed；发送侧自动附带 sender_digests 断言；applied 升格/digest 不符不升格等既有面全部改走 `--artifact-dir` + 冻结 digest 下发的新协议。`tests/hotReloadAppliedVerifyWiring.test.ts` 真实接收端两例与拉起助手同步接新协议。**red：6 failed | 8 passed**（修码前 f504e08 独立 worktree 实测，日志 `/tmp/r3-f3-red.log`；含空操作假 applied、产物内容不符、缺 sender_digest、发送侧无字段、源锁缺口、二轮漂移断言改口径）→ green；roundtrip 14 passed、appliedVerify+responseReceipt 23 passed。
+
+### 第三轮门禁数字（本机，2026-11-06）
+
+- `npm test`（vitest run + clean + compile + tsc -p tsconfig.mocha.json + VS Code 集成 runTest.js）：**退出 0 一次通过**。Vitest 517 文件 **6357 passed、20 skipped、0 failed**；compile 与 mocha tsc 干净；VS Code 集成冒烟 **12 passing**。日志 `/tmp/r3-npm-test-full.log`。预算型失败隔离复跑协议（3 次取真）本轮**未被触发**——全量首轮即 0 failed，无可隔离复跑项，如实记录。
+- `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r3-cargo-full.log`。
+- `eslint src --ext ts`：退出 0 干净（`/tmp/r3-eslint-src.log`）；`tsc -p tsconfig.json --noEmit` 干净（`/tmp/r3-tsc.log`）。
+- 逐项 red 日志：`/tmp/r3-f1-red.log`（2 failed | 1 passed）、`/tmp/r3-f3-red.log`（6 failed | 8 passed）。
