@@ -79,6 +79,7 @@ telnet 没有独立一套参数,就是上面三层加一个显式设置层,按�
 | `kbengine.spaceNavDiagnostics` | boolean | `true` | 空间/导航语义诊断:setSpaceData/delSpaceData 使用保留键 `_mapping`、调用 navigate/navigatePathPoints 但全文无 canNavigate、addSpaceGeometryMapping params 字典的字符串层键——报 Warning(默认启用) |
 | `kbengine.rpcArgCountDiagnostics` | boolean | `true` | RPC 实参数量诊断:`self.base/cell/client.<method>(...)` 调用点顶层实参数与 .def 该方法(调用所属 section)声明的 `<Arg>` 数明确不符时报 `kbengine.rpcArgCount` Warning(默认启用);星号实参/动态接收者/声明未就绪/段外声明/括号不闭合保留未知一律不报,inlay 提示不替代诊断 |
 | `kbengine.roleMisuseDiagnostics` | boolean | `true` | 角色错用诊断:实体脚本里 `self.<内建属性>` 属于其他角色面(baseapp/cellapp/client)而当前面未注册时报 `kbengine.roleMisuse` Warning 并引注册面引擎源码(默认启用);角色不明与普通 Python 类不猜,属性面表与内建属性 hover 元数据同源 |
+| `kbengine.postDestroyDiagnostics` | boolean | `true` | 销毁后访问诊断:同一函数内可确定的同块 `self.destroy()` 之后直接访问 `self.<成员>`(id/isDestroyed/className/destroy 除外),且两者间无同层无条件早退,报 `kbengine.postDestroy` Warning(默认启用);条件销毁/跨块/跨回调/异常/def 声明 destroy(动态分派)一律不猜 |
 | `kbengine.diagnostics.checkUnknownTypes` | boolean | `true` | 检查未知类型名 |
 | `kbengine.diagnostics.checkUnknownFlags` | boolean | `true` | 检查未知 Flags 值 |
 | `kbengine.diagnostics.checkUnknownDetailLevels` | boolean | `true` | 检查非法 DetailLevel 值 |

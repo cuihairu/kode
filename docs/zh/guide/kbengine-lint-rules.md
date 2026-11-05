@@ -22,7 +22,7 @@
 | KBE-PY-008 | 在错误角色访问引擎 API（方法） | 仅 hover/补全元数据（角色面表未建立）；属性错用已由 KBE-PY-008b 实现 | `kbengine.entity.builtinProperties`；API 保持仅提示 |
 | KBE-PY-008b | 在错误角色访问引擎属性 | 已实现（IDE-LINT-009）：`self.<内建属性>` 注册于其他角色面而当前面没有时报 Warning，引注册面引擎源码取证；角色不明/非实体脚本/非内建属性不报 | `kbengine.roleMisuse`；`roleMisuseDiagnostics.ts`（属性面表取 `entityBuiltinProperties.ts`，与 hover 元数据同源） |
 | KBE-PY-009 | RPC 参数数量/类型与 `.def` 不一致 | 已有实时 Warning（参数数量）；类型不符仍只有签名/提示面 | `kbengine.rpcArgCount`；`rpcArgCountDiagnostics.ts` |
-| KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 生命周期 lint 待设计 | `Entity::pyGetCellEntityCall` 等检查 destroyed；需控制流和生命周期证据，不能见到 destroy 就全文件报错 |
+| KBE-PY-010 | 销毁后或跨异步回调继续访问 Entity | 已实现（IDE-LINT-010）：同函数同块内确定的 `self.destroy()` 之后直接访问 `self.<成员>` 报 Warning；条件销毁/跨块/跨回调/异常/def 声明 destroy（动态分派）不猜 | `kbengine.postDestroy`；`postDestroyDiagnostics.ts`（引擎 `entity_macro.h:20` destroy 宏公共） |
 | KBE-PY-011 | 用户自管 `self.<attr>` 含 None 且未窄化（如构造期赋值被早退绕过） | 已有实时 Warning | `kbengine.attributeNone`；`selfAttributeNoneDiagnostics.ts` |
 | KBE-PY-012 | def 属性访问方向违规（访问位置不在 Flags 域位内） | 已有实时 Warning | `kbengine.propertyDirectionViolation`；`propertyDirectionDiagnostics.ts` |
 | KBE-PY-012b | 属性方向判定文件作用域不足（降级参考信息） | 已有实时 Information | `kbengine.propertyDirectionScopeUnknown`；同上 |
@@ -122,6 +122,12 @@ if self.cell is not None:
 
 已知边界（与同族 self-属性 lint 一致）：嵌套非实体类内的同名 `self.<p>` 不单列（文件级身份判定）；`self.<prop>` 仅单段——`self.cell.position` 等多段访问是 EntityCall 成员面，不参与（由 receiver/段错配负责）；引擎实体 **API**（方法，如 `teleport`/`addTimer`）的角色面表尚未建立，API 错用保持仅 hover/补全元数据，不冒充已实现。开关 `kbengine.roleMisuseDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
 
+## 销毁后访问：同函数同块可确定才判
+
+已实现（IDE-LINT-010，KBE-PY-010）：引擎事实——`destroy` 是各面实体宏公共方法（`entity_macro.h:20` `SCRIPT_METHOD_DECLARE("destroy", pyDestroyEntity, ...)`），`self.destroy()` 销毁自身；销毁后各 getter（如 `Entity::pyGetCellEntityCall`）检查 destroyed，访问即异常。判定：同一函数内同一块（同缩进，中间无 dedent）的销毁语句（整句 `self.destroy()` 或 `x = self.destroy()`）先于访问语句，且两者间无同层 `return`/`break`/`continue`/`raise`（无条件早退，访问为死码）→ 报 `kbengine.postDestroy`（Warning）。成员集：排除 `id`/`isDestroyed`/`className`（销毁后仍可读的身份/状态项，读 `isDestroyed` 正是确认销毁）与 `destroy`（重复销毁非本 lint 面向的访问错用），其余任何成员（属性/方法/EntityCall）访问都报。
+
+已知边界（不冒充已实现）：销毁在访问之后、条件销毁（`if`/`while` 内）、销毁在祖先块而访问在嵌套块（或反之）、跨函数/跨回调（回调里销毁，另一回调访问）、异常路径（销毁抛错未完成）、动态分派（def 声明 `destroy` 方法/属性 → `self.destroy()` 可能非引擎销毁，整文件不分析）——均不报，不做全文件误报；`self.<prop>` 仅 `self.` 单段前缀（`other.destroy`/`self.cell.destroy` 非销毁自身，不参与）。开关 `kbengine.postDestroyDiagnostics=true`（默认开启），关闭只停止提示，不改变引擎行为。
+
 ## .def 检查的触发方式
 
 - 实时结构诊断：`kbengine.enableDiagnostics`、`kbengine.enableStructureDiagnostics` 及 `kbengine.diagnostics.check*` 控制，打开/编辑文件时更新 Problems。
@@ -129,6 +135,7 @@ if self.cell is not None:
 - 只读属性写入诊断：`kbengine.readOnlyWriteDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-readonly-write`）；关闭只停止提示，不改变引擎行为。
 - RPC 实参数量诊断：`kbengine.rpcArgCountDiagnostics=true`，默认开启，与 receiver/attr 同通道（集合 `kbengine`）发布；关闭只停止提示，不改变引擎行为。
 - 角色错用诊断：`kbengine.roleMisuseDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-role-misuse`）；关闭只停止提示，不改变引擎行为。
+- 销毁后访问诊断：`kbengine.postDestroyDiagnostics=true`，默认开启，走现有诊断调度器（独立集合 `kbengine-post-destroy`）；关闭只停止提示，不改变引擎行为。
 - `.def` 优化/继承冲突分析：按需运行分析入口，见 `defAnalyzer.ts` 和[语言能力](./language.md)。按需分析有规则不代表每次输入都会自动 lint。
 - Hover、签名、inlay、CodeLens 是说明或导航界面；有提示内容不代表相应规则已做诊断。
 
