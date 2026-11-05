@@ -1268,6 +1268,7 @@
   验收：cellappIndex 参数 hover 显示语义说明与示例。
   （2026-11-05 完成：`src/languageProviders.ts` 新增 `createCellappIndexHover`（:2632，word=cellappIndex 或 createCellEntityInNewSpace 时返回语义悬停——0/None=负载均衡自动选、N>0=取模轮转 `(N-1)%cellappSize`（cellappmgr.cpp:348-351）、搭配 NOT_PARTCIPATING_LOAD_BALANCING 钉大地图+副本走机动、python 示例块+源码锚点 baseapp.cpp:2462→cellappmgr.cpp:310）；接线于 provideKnownHover hoverShowValueDocs 段首（:1555,先于 SP-2/SP-1,名称无冲突）。prove-red=tests/cellappIndexHover.test.ts 首跑 4/5 挂（参数语义/示例/方法名/def Arg 四正例全空）；修后 5/5 绿（含不劫持无关标识符反例）。门禁：`npx vitest run tests/cellappIndexHover.test.ts` 5/5；SP 全家桶八件套 141/141 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。未 commit。）
 
+<<<<<<< HEAD
 - [x] 审核发现：诊断使用全文偏移作为行内列号，第二行起的空间导航告警会定位到错误位置或行末（src/spaceNavDiagnostics.ts:136）。（67d34aa；`computeSpaceNavFindings` 三类发现统一改 `start/end` 为行内列——新增 `offsetToCol(starts, offset)`（offset 减该行起始偏移），不再把全文偏移当列号；_mapping/引号键/self.navigate 三处均改列口径；tests/spaceNavDiagnostics.test.ts 新增「第二行起的诊断列号是行内列而非全文偏移」「第二行起的 _mapping 键列号是行内列」两例（旧实现全文偏移当列号即红）。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 18/18 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。）
 - [ ] 审核发现：范围历史不检查编辑器未保存内容，直接用磁盘差异映射选区，未保存的插入或删除会查询错误的 HEAD 行（src/extension.ts:4200）。
 - [ ] 审核发现：Git 查询缓存包含工作区 diff 和 HEAD 查询且范围历史未绕过缓存，文件修改或提交后再次查询会使用过期映射与历史（src/gitQueryGate.ts:205）。
@@ -1280,3 +1281,35 @@
 - [ ] 审核发现：派生 scripts 根存在时排除整个外部 assetsRoot，使 scripts 之外的资源和定义文件不再被索引（src/scanRoots.ts:138）。
 - [x] 审核发现：空间导航诊断在注释和字符串中也匹配调用，且把任意对象的 navigate 当作引擎方法，默认启用时会产生无关告警（src/spaceNavDiagnostics.ts:147）。（67d34aa；`computeSpaceNavFindings` 新增 `codeMask(text)` 逐字符词法掩码（行注释 `#`、单/双引号字符串含三引号→非代码区），三类发现只在调用点 `inCode` 才报，注释/字符串里的 navigate/canNavigate/引号键字样不再参与判定与守卫；`NAV_CALL_RE` 由 `\b(?:navigate|navigatePathPoints)\s*\(` 收紧为 `\bself\s*\.\s*(navigate|navigatePathPoints)\s*\(`——只认引擎实体方法调用约定 `self.navigate`，任意对象（avatar.navigate 等）不再误报；`CAN_NAVIGATE_RE` 补 `g` 标志（否则 exec 死循环，测试暴露后修复）；tests/spaceNavDiagnostics.test.ts 新增「注释里的 navigate 与 canNavigate 不参与判定」「字符串里的 navigate 字样不报」「任意对象的 navigate 不当引擎方法」「self.navigate 仍报」四例。门禁：`npx vitest run tests/spaceNavDiagnostics.test.ts` 18/18 绿；`tsc --noEmit` 0 错；eslint 改动 2 文件 0 错。）
 - [ ] 审核发现：共享在途 Git 查询仅使用首个调用方的取消令牌，一个视图取消会终止另一视图的相同查询，而后加入视图的取消不会生效（src/gitQueryGate.ts:200）。
+=======
+## Windows 全量测试对齐（2026-11-05 全量 vitest 分析：6246 测试 194 失败/71 文件；CI=ubuntu 故 Windows 绿从未保证）
+
+- [x] WIN-1 [P1] 真 bug：entityDependency 用 Uri.parse 读 fsPath（18 失败）
+  落点：src/entityDependency.ts:140/185 对 `C:\...` 调 Uri.parse，fake-vscode 把 C 当 scheme 丢盘符 → ENOENT `\Users\...`（Linux `/` 开头不触发）。
+  验收：entityDependency 四测试族 29/29 绿。
+  （2026-11-05 已修：Uri.parse→Uri.file，本地验证 4 文件 29/29。）
+
+- [ ] WIN-2 [P1] 假组件 shebang 与 .exe 后缀（约 50 失败：serverManagerProcesses 18/serverReadiness 8/serverGroupLaunch 6/serverTargets 5/serverManagerRunner 4 等）
+  落点：tests/sim/fakeComponentBin.ts 写 `#!/usr/bin/env node` 脚本，Windows 不能直执 shebang（实测 direct exec FAIL、.cmd 包装 OK）；src/serverManager.ts:508 win32 给 executable 加 `.exe` 后缀，测试断言 `ghost` 实得 `ghost.exe`（消息+existsSync 双失配）。
+  验收：FakeComponentBin win32 产 .cmd 包装（或 spawn 走 node 直调），测试断言按平台取后缀；serverManager* 全族绿。
+
+- [ ] WIN-3 [P1] 测试硬编码 POSIX 路径（约 35 失败：gitHistoryDiff 9/gitRepoLocate 7/pythonTestDiscovery 5/quickActionScanner 5/inferPipeline 6/debugConfig 6/navigationLayoutMatrix 3/pyreflyInfer 2 等）
+  落点：测试断言 `/ws/...`、`/repo/...`，src path.join/dirname 在 win32 产出 `D:\repo\...`、`\ws\...`；gitRepoLocate.ts:62 `w + path.sep` 前缀匹配在混分隔符下必失配。
+  验收：断言侧路径归一化（或 src 双分隔符兼容）；该批测试双平台绿。
+
+- [ ] WIN-4 [P1] 仓库无 .gitattributes + core.autocrlf=true（CRLF 类：configParity/configMergeParity golden 逐字段差 \r，与既有 wire_golden 同根因）
+  落点：tests/fixtures/** 检出 CRLF、golden 按 LF 生成。
+  验收：.gitattributes 强制关键目录 eol=lf（或比对前归一化）；golden 类测试双平台绿且不破坏既有检出。
+
+- [ ] WIN-5 [P2] POSIX 语义依赖（约 15 失败：logCollectorSocket getuid/cov-longtail 信号 exit code/unexecutable chmod 000/schemaCacheCaseSensitivity 大小写盘等）
+  落点：process.getuid 不存在于 win32；Windows 无真 signal，kill 后 code=null 断言失配；chmod 000 不阻止执行/读。
+  验收：平台分支或 describe.skipIf(process.platform==='win32') 带注释；语义测试在两平台各自固化。
+
+- [ ] WIN-6 [P2] 环境缺失（本机安装，非仓库改动）
+  缺口：真实 Python（现为 WindowsApps 别名 exit 9009）+ pytest + ruff；Windows 开发者模式未开（symlink EPERM，2 失败：quickActionRunners/workspaceDiscovery）。
+  验收：python --version/pytest --version 真实可用；symlink 探针 OK；相关测试绿。
+
+- [ ] WIN-7 [P2] 全量并行超时（5 硬超时：debugConfigAttach/extension/processManager/pythonClassIndex 等，单跑绿）
+  落点：499 文件并行在 16C/8GB 挤爆；vitest 默认 maxWorkers 无上限保护。
+  验收：vitest.config 限 maxWorkers（或提供 --maxWorkers 配方）；全量跑超时类清零。
+>>>>>>> 5398ef5 (docs(todo): record Windows full-suite analysis as WIN-1..WIN-7)
