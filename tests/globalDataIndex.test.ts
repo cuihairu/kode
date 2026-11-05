@@ -17,6 +17,7 @@ import {
 import { PythonTypeInlayHintsProvider } from '../src/typeInlayHints';
 import {
   GlobalDataDictIndex,
+  REBUILD_CONCURRENCY,
   extractFunctionReturns,
   findKbeDataDictAccesses,
   findKbeDataDictAccessesSliced,
@@ -3036,6 +3037,58 @@ describe('GLOBDATA-003 函数调用键 provider 导航(定义/引用)', () => {
         expect(files).toEqual(['reader.py', 'writer.py']);
       });
     } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// KR-AUD-35(IDX-11):rebuild(根集失效后整库重扫)曾对全部文件一次性开读,
+// 瞬时句柄/内存峰值无界。修复后与初扫同口径 worker 池限流(上限 8)。
+describe('KR-AUD-35 rebuild 并发上限(IDX-11)', () => {
+  it('invalidate→rebuild 的读盘峰值并发受限且仍并行', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gdi-kraud35-'));
+    const fileCount = 40;
+    const files = Array.from({ length: fileCount }, (_, i) => path.join(root, `f${i}.py`));
+    for (const [i, file] of files.entries()) {
+      fs.writeFileSync(file, `import KBEngine\nKBEngine.globalData["k${i}"] = ${i}\n`);
+    }
+    const savedFind = vscode.workspace.findFiles;
+    const savedRead = vscode.workspace.fs.readFile;
+    vscode.workspace.findFiles = async () => files.map(file => vscode.Uri.file(file));
+    let inFlight = 0;
+    let peak = 0;
+    let reads = 0;
+    vscode.workspace.fs.readFile = async uri => {
+      inFlight += 1;
+      reads += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 2));
+      inFlight -= 1;
+      return fs.readFileSync(uri.fsPath);
+    };
+    const index = new GlobalDataDictIndex();
+    try {
+      await index.ensureStarted();
+      expect(reads).toBe(fileCount);
+      // 初扫已收敛,重置计量窗口只看 rebuild
+      reads = 0;
+      peak = 0;
+      inFlight = 0;
+      index.invalidate();
+      const deadline = Date.now() + 10_000;
+      while (reads < fileCount && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(reads).toBe(fileCount);
+      // 修复前:Promise.all(files.map(...)) 一次性开读 → peak = 40 > 8(红)
+      expect(peak).toBeLessThanOrEqual(REBUILD_CONCURRENCY);
+      expect(REBUILD_CONCURRENCY).toBeLessThan(fileCount);
+      // 限流不等于串行:仍有并行读
+      expect(peak).toBeGreaterThan(1);
+    } finally {
+      index.dispose();
+      vscode.workspace.findFiles = savedFind;
+      vscode.workspace.fs.readFile = savedRead;
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

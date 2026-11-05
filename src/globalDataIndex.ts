@@ -1466,6 +1466,10 @@ export async function replaceFileSitesSliced(
 }
 
 const INITIAL_SCAN_CONCURRENCY = 8;
+// KR-AUD-35(IDX-11):rebuild(根集失效后整库重扫)与初扫同口径限流——
+// 原 `Promise.all(files.map(indexFile))` 对全部文件同时开读,巨仓下瞬时
+// 句柄/内存峰值无界。上限常量与初扫一致(8),测试断言峰值并发。
+export const REBUILD_CONCURRENCY = 8;
 
 /** 单文件的索引缓存项:访问记录 + 该文件调用键引用的函数名集(依赖追踪) */
 interface FileIndexEntry {
@@ -2080,7 +2084,17 @@ export class GlobalDataDictIndex {
     if (this.disposed || this.generation !== generation) {
       return;
     }
-    await Promise.all(files.map(uri => this.indexFile(uri)));
+    // KR-AUD-35:worker 池限流(与初扫同口径),不再对全部文件一次性开读
+    let nextFile = 0;
+    const rebuildWorker = async (): Promise<void> => {
+      while (!this.disposed && this.generation === generation && nextFile < files.length) {
+        const uri = files[nextFile++];
+        await this.indexFile(uri);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(REBUILD_CONCURRENCY, files.length) }, rebuildWorker)
+    );
     await this.drainPendingDependents();
   }
 
