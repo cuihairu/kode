@@ -1289,11 +1289,12 @@
   验收：entityDependency 四测试族 29/29 绿。
   （2026-11-05 已修：Uri.parse→Uri.file，本地验证 4 文件 29/29。）
 
-- [ ] WIN-2 [P1] 假组件 shebang 与 .exe 后缀（约 50 失败：serverManagerProcesses 18/serverReadiness 8/serverGroupLaunch 6/serverTargets 5/serverManagerRunner 4 等）
+- [x] WIN-2 [P1] 假组件 shebang 与 .exe 后缀（约 50 失败：serverManagerProcesses 18/serverReadiness 8/serverGroupLaunch 6/serverTargets 5/serverManagerRunner 4 等）（2026-11-05 关闭：391864f——spawnProcess 经 cmd /d /c 跑 .cmd/.bat、getExecutablePath 存在性探测 .exe→.cmd、FakeComponentBin/writeEngineExecutable win32 产 js+.cmd 转发（复用 node behavior body）、killProcessTree taskkill 失败回落 child.kill、afterEach 树杀防孤儿占盘、chmod-000 与 SIGKILL 阶梯用例 win32 skip（Linux CI 覆盖）。server/process 族基线 33 失败 → 10 文件 148 passed+3 skipped 全绿；全量 167→121、硬超时 6→1。）
   落点：tests/sim/fakeComponentBin.ts 写 `#!/usr/bin/env node` 脚本，Windows 不能直执 shebang（实测 direct exec FAIL、.cmd 包装 OK）；src/serverManager.ts:508 win32 给 executable 加 `.exe` 后缀，测试断言 `ghost` 实得 `ghost.exe`（消息+existsSync 双失配）。
   验收：FakeComponentBin win32 产 .cmd 包装（或 spawn 走 node 直调），测试断言按平台取后缀；serverManager* 全族绿。
 
 - [ ] WIN-3 [P1] 测试硬编码 POSIX 路径（约 35 失败：gitHistoryDiff 9/gitRepoLocate 7/pythonTestDiscovery 5/quickActionScanner 5/inferPipeline 6/debugConfig 6/navigationLayoutMatrix 3/pyreflyInfer 2 等）
+  （2026-11-05 进度：server 族内 WIN-3 已清（占位符归一+平台断言随 391864f）；余 git*9/pythonTestDiscovery5/quickActionScanner5/inferPipeline6/debugConfig6/navigation 等硬断言批未动，全量 121 失败中约 40+ 属本项。）
   （2026-11-05 进度：pythonTestRunner.pathSuffixMatch 双分隔符归一已修（40d0082，pytest 结果条目从全 errored 转绿）；covExtensionCommands 夹具改 REAL_INTERPRETER 平台探测。git*/pythonTestDiscovery/inferPipeline 等硬断言批未动。）
   落点：测试断言 `/ws/...`、`/repo/...`，src path.join/dirname 在 win32 产出 `D:\repo\...`、`\ws\...`；gitRepoLocate.ts:62 `w + path.sep` 前缀匹配在混分隔符下必失配。
   验收：断言侧路径归一化（或 src 双分隔符兼容）；该批测试双平台绿。
@@ -1303,6 +1304,7 @@
   验收：.gitattributes 强制关键目录 eol=lf（或比对前归一化）；golden 类测试双平台绿且不破坏既有检出。
 
 - [ ] WIN-5 [P2] POSIX 语义依赖（约 15 失败：logCollectorSocket getuid/cov-longtail 信号 exit code/unexecutable chmod 000/schemaCacheCaseSensitivity 大小写盘等）
+  （2026-11-05 进度：server 族信号/chmod 用例已 skip 随 391864f；killProcessTree taskkill 失败回落 child.kill 修掉 processManager stop 悬挂；余 logCollectorSocket getuid/cov-longtail/schemaCache 等未动。）
   （2026-11-05 进度：covExtensionCommands「已装 dump」用例 win32 skip 带注释（Node spawn 无 PATHEXT、.cmd 直 spawn EINVAL，Linux CI 保留覆盖）；logCollectorSocket/cov-longtail/schemaCache 等未动。）
   落点：process.getuid 不存在于 win32；Windows 无真 signal，kill 后 code=null 断言失配；chmod 000 不阻止执行/读。
   验收：平台分支或 describe.skipIf(process.platform==='win32') 带注释；语义测试在两平台各自固化。
@@ -1312,7 +1314,7 @@
   缺口：真实 Python（现为 WindowsApps 别名 exit 9009）+ pytest + ruff；Windows 开发者模式未开（symlink EPERM，2 失败：quickActionRunners/workspaceDiscovery）。
   验收：python --version/pytest --version 真实可用；symlink 探针 OK；相关测试绿。
 
-- [ ] WIN-7 [P2] 全量并行超时（5 硬超时：debugConfigAttach/extension/processManager/pythonClassIndex 等，单跑绿）
+- [x] WIN-7 [P2] 全量并行超时（5 硬超时：debugConfigAttach/extension/processManager/pythonClassIndex 等，单跑绿）（2026-11-05 关闭：9b522f3 vitest maxWorkers=8。硬超时 6→1（余1为既有单点）；原「单跑绿全量挂」的 4 个（extension/processManager/pythonClassIndex 等）实为 WIN-2 spawn 失败假象，随 391864f 一并消失。）
   落点：499 文件并行在 16C/8GB 挤爆；vitest 默认 maxWorkers 无上限保护。
   验收：vitest.config 限 maxWorkers（或提供 --maxWorkers 配方）；全量跑超时类清零。
 >>>>>>> 5398ef5 (docs(todo): record Windows full-suite analysis as WIN-1..WIN-7)
