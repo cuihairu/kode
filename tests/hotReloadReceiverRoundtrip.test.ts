@@ -1,7 +1,7 @@
 import * as http from 'http';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -77,10 +77,12 @@ const startReceiver = async (
 describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议证据)', () => {
   let handles: ReceiverHandle[] = [];
   let engineDirs: string[] = [];
+  let outsideDirs: string[] = [];
 
   beforeEach(() => {
     handles = [];
     engineDirs = [];
+    outsideDirs = [];
   });
 
   afterEach(() => {
@@ -91,8 +93,12 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     for (const dir of engineDirs) {
       rmSync(dir, { recursive: true, force: true });
     }
+    for (const dir of outsideDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
     handles = [];
     engineDirs = [];
+    outsideDirs = [];
   });
 
   const start = async (mode: string, scenario: string, extraArgs: string[] = []): Promise<ReceiverHandle> => {
@@ -490,6 +496,31 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(readFileSync(path.join(engineDir, 'subA', 'X.py'), 'utf8')).toBe(contentA);
     expect(readFileSync(path.join(engineDir, 'subB', 'X.py'), 'utf8')).toBe(contentB);
     expect(existsSync(path.join(engineDir, 'X.py'))).toBe(false);
+  });
+
+  // F3 六轮(复审 FAIL-2):字符串检查防不住产物目录内的符号链接——产物落位
+  // 的某级目录是指向引擎目录外的 symlink 时,沿它写入会把产物写到引擎目录外。
+  // 修后:写/unlink 前对目标 realpath 解析,验证仍在 artifact-dir 内,否则拒绝。
+  it('F3 六轮回归:产物目录内符号链接指向目录外 → 拒绝写入不落盘', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const outsideDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-outside-'));
+    outsideDirs.push(outsideDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir]);
+    // 产物子路径 subLink 是指向引擎目录外的 symlink
+    symlinkSync(outsideDir, path.join(engineDir, 'subLink'), 'dir');
+    const file = path.join(receiver.root, 'subLink', 'X.py');
+    const content = 'X_ESCAPE_PROBE = 51\n';
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, content, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(content) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('逃逸');
+    // 绝不沿 symlink 把产物写到引擎目录外,也不在链接处落任何东西
+    expect(existsSync(path.join(outsideDir, 'X.py'))).toBe(false);
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
   // F3 五轮(R2-F3 硬化 3 防线):清洗后仍映射到同一产物位置(同一路径在批

@@ -75,6 +75,7 @@ import {
   copyFileSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   unlinkSync,
   writeFileSync
 } from 'node:fs';
@@ -104,6 +105,11 @@ const sha256Hex = content => createHash('sha256').update(Buffer.from(content, 'u
 // 调用方在回执 rollback_failed 字段上报,绝不吞掉错误再谎称无残留
 const rollbackArtifact = (artifact, originalContent) => {
   try {
+    // F3 六轮:回滚(恢复/unlink)同样先过符号链接逃逸检查——链接指向引擎
+    // 目录外时绝不动外面的真实目标,如实按残留上报
+    if (realPathWithinArtifactDir(artifact) === undefined) {
+      return artifact;
+    }
     if (originalContent !== undefined) {
       writeFileSync(artifact, originalContent, 'utf8');
       return undefined;
@@ -141,6 +147,41 @@ const failedWithRollback = (file, artifact, originalContent, reasonBase) => {
 };
 const APPLIED_LEDGER = path.join(root, 'applied-revisions.jsonl');
 let appliedRevision = 0;
+
+// F3 六轮(2026-11-06 复审 FAIL-2):符号链接逃逸防护——字符串清洗防不住产物
+// 目录内的 symlink 指向目录外(沿它写入/unlink 都作用在引擎目录外的真实目标
+// 上)。写/unlink 前对目标做 realpath 解析(目标未创建时逐级向上找最深已存在
+// 祖先),验证解析结果仍在 artifact-dir(realpath)内,否则返回 undefined 由
+// 调用方拒绝(报错,不写不删)。artifactDir 本身也按 realpath 对齐(目录本身
+// 是合法 symlink 时不误判)。
+const realPathWithinArtifactDir = target => {
+  try {
+    const dirReal = realpathSync(artifactDir);
+    let probe = target;
+    for (;;) {
+      try {
+        probe = realpathSync(probe);
+        break;
+      } catch (error) {
+        if (error && typeof error === 'object' && error.code === 'ENOENT') {
+          const parent = path.dirname(probe);
+          if (parent === probe) {
+            break;
+          }
+          probe = parent;
+          continue;
+        }
+        return undefined;
+      }
+    }
+    // probe 是目标或其最深已存在祖先:等于 artifactDir(直接子文件)或在其内
+    // 都算安全,只有解析到 artifactDir 之外('..' 前缀/绝对路径)才是逃逸
+    const rel = path.relative(dirReal, probe);
+    return !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel) ? probe : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const recordApplied = entry => {
   appendFileSync(APPLIED_LEDGER, `${JSON.stringify(entry)}\n`, 'utf8');
@@ -357,8 +398,20 @@ const server = createServer((request, response) => {
       }
       // 接收端自己写产物:按报文读到的内容直接落盘引擎目录(产物由本进程
       // writeFileSync 写入,应用通路可证明)
-      // F3 五轮:产物路径=按批内相对路径映射的子结构(不再是裸 basename)
+      // F3 五轮:产物路径=按报文内相对路径映射的子结构(不再是裸 basename)
       const artifact = path.join(artifactDir, ...artifactSegmentsByFile.get(file));
+      // F3 六轮:写前先做符号链接逃逸检查——产物落位的任一级是目录外 symlink
+      // 就拒绝写入(报错,不写不删),绝不把产物经链接落到引擎目录外
+      if (realPathWithinArtifactDir(artifact) === undefined) {
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: `产物路径经符号链接解析后逃逸引擎目录(${artifact}):拒绝写入不落盘`
+          })
+        );
+        continue;
+      }
       // F3 五轮(硬化 4):写前读原内容(per-file 状态)——失败回滚按它还原,
       // 绝不误删引擎目录里已有的旧产物;回滚只处理本次失败这一个文件
       let originalContent;
