@@ -339,3 +339,19 @@ fn raise_and_assert_expressions_are_reads_kraud16() {
     let msg = chain(&result, "msg");
     assert_eq!(msg.use_lines, vec![2], "assert msg 应读 msg");
 }
+
+/// KR-AUD-17:except 捕获名的 def 行此前记在 try 语句行,应为 handler 自己的行。
+#[test]
+fn except_capture_def_line_is_handler_line_kraud17() {
+    let src = "def f():\n    try:\n        risky()\n    except ValueError as e:\n        log(e)\n";
+    let ast = ParsedAst::new(src);
+    let parsed = ruff_python_parser::parse_unchecked_source(src, Default::default());
+    let body = match &parsed.syntax().body[0] {
+        ruff_python_ast::Stmt::FunctionDef(f) => f.body.to_vec(),
+        _ => unreachable!(),
+    };
+    let result = dataflow_for_body(&ast, &[], &body);
+    let e = chain(&result, "e");
+    assert_eq!(e.def_line, Some(3), "except 捕获名 def 行应为 handler 行");
+    assert_eq!(e.use_lines, vec![4]);
+}

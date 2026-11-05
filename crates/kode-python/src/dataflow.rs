@@ -203,11 +203,14 @@ fn walk_stmt(ast: &ParsedAst, state: &mut State, stmt: &Stmt) {
             walk_body(ast, state, &t.body);
             for h in &t.handlers {
                 let ast::ExceptHandler::ExceptHandler(inner) = h;
+                // KR-AUD-17:type_ 读与捕获名 def 用 handler 自己的行(旧实现
+                // 全记 try 语句行,def 行定位失真)。
+                let handler_line = ast.line_col(inner.range.start().to_u32()).0;
                 if let Some(typ) = &inner.type_ {
-                    collect_reads(state, typ, line);
+                    collect_reads(state, typ, handler_line);
                 }
                 if let Some(name) = &inner.name {
-                    state.def_var(name.as_str(), line);
+                    state.def_var(name.as_str(), handler_line);
                 }
                 walk_body(ast, state, &inner.body);
             }
