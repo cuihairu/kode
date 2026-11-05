@@ -101,6 +101,35 @@ describe('resolvePytestEntries(输出→逐条目结果)', () => {
     expect(entries[0].message).toBe('assert 2 == 3');
   });
 
+  it('参数化用例名含空格不截断(KR-AUD-06):verbose 与 summary 同键聚合', () => {
+    const file = '/ws/a/test_x.py';
+    const output = [
+      '/ws/a/test_x.py::test_x[param with space] PASSED          [100%]',
+      '',
+      '=========================== short test summary info ============================',
+      'FAILED /ws/a/test_x.py::test_x[param with space] - assert 2 == 3',
+      '============================== 1 failed in 0.03s ==============================='
+    ].join('\n');
+    const entries = resolvePytestEntries(output, [
+      { id: 'f', file, caseName: 'test_x[param with space]' }
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].outcome).toBe('failed');
+    expect(entries[0].message).toBe('assert 2 == 3');
+  });
+
+  it('参数化用例名内含结果字样(如 FAILED)不误截(贪婪取最右结果)', () => {
+    const file = '/ws/a/test_x.py';
+    const output = [
+      '/ws/a/test_x.py::test_x[foo FAILED bar] PASSED          [100%]'
+    ].join('\n');
+    const entries = resolvePytestEntries(output, [
+      { id: 'f', file, caseName: 'test_x[foo FAILED bar]' }
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].outcome).toBe('passed');
+  });
+
   it('pytest 归一相对路径的节点行(实测 rootdir 相对形态)也能匹配', () => {
     const output = [
       'collected 1 item',

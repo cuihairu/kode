@@ -56,8 +56,11 @@ export function buildPytestArgs(item: PythonTestRunItem): string[] {
   return [...PYTEST_ARGS, node];
 }
 
-const VERBOSE_OUTCOME_PATTERN = /^(\S+\.py(?:::\S+)?) (PASSED|FAILED|ERROR|SKIPPED)\b/;
-const SUMMARY_PATTERN = /^(FAILED|ERROR) (\S+) - (.+)$/;
+// 参数化用例名可含空格(如 test_x[param with space]);case 段用贪婪 `\S.*` 回溯到
+// 最右的 ` <OUTCOME>\b`(真实结果恒在参数之后),不因空格截断用例名(原 `\S+` 病)。
+const VERBOSE_OUTCOME_PATTERN = /^(\S+\.py(?:::\S.*)?)\s+(PASSED|FAILED|ERROR|SKIPPED)\b/;
+// summary 行节点同病(`\S+` 截断带空格参数化名):节点 lazy 取到 ` - ` 分隔处。
+const SUMMARY_PATTERN = /^(FAILED|ERROR) (.+?) - (.+)$/;
 const NO_PYTEST_PATTERN = /No module named ['"]?pytest/;
 
 interface PytestNodeResult {
