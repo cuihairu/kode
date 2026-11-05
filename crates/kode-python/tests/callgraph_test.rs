@@ -234,3 +234,22 @@ fn nested_def_in_method_has_no_class_method_edge_kraud20() {
         "外层方法走查保持"
     );
 }
+
+/// KR-AUD-21:口径统一——lambda 体内调用此前归外层 caller,嵌套 def 归自身
+/// (KODE-AUD-008 口径)。统一为 lambda 体同样以自身 "<lambda>" 为 caller,
+/// caller_class=None(与 KR-AUD-20 嵌套 def 不继承 caller_class 同口径)。
+#[test]
+fn lambda_body_calls_recorded_as_own_caller_kraud21() {
+    let src = "def foo():\n    pass\n\ndef outer():\n    f = lambda: foo()\n    return f()\n";
+    let es = edges_of(src);
+    let e = es
+        .iter()
+        .find(|e| e.callee == "foo")
+        .expect("lambda 体内 foo() 应有边");
+    assert_eq!(e.caller, "<lambda>");
+    assert_eq!(e.caller_class, None);
+    assert!(
+        !es.iter().any(|e| e.caller == "outer" && e.callee == "foo"),
+        "lambda 体调用不再归外层 caller: {es:?}"
+    );
+}

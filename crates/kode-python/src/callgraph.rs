@@ -138,6 +138,10 @@ pub fn extract_call_graph_detailed(ast: &ParsedAst, symbols: &AstSymbols) -> Vec
 /// 模块顶层调用边的 caller 占位名。
 pub const MODULE_CALLER: &str = "<module>";
 
+/// lambda 体内调用边的 caller 占位名(KR-AUD-21:与嵌套 def「自身为 caller」
+/// 口径统一;多个 lambda 同名,调用点由 caller_line 区分)。
+pub const LAMBDA_CALLER: &str = "<lambda>";
+
 fn walk_body(
     ast: &ParsedAst,
     ctx: &CallContext,
@@ -314,7 +318,10 @@ fn walk_expr(
             walk_expr(ast, ctx, &b.right, caller_class, caller, out);
         }
         UnaryOp(u) => walk_expr(ast, ctx, &u.operand, caller_class, caller, out),
-        Lambda(l) => walk_expr(ast, ctx, &l.body, caller_class, caller, out),
+        // KR-AUD-21:lambda 体内调用以自身 "<lambda>" 为 caller、caller_class
+        // =None——与嵌套 def(KODE-AUD-008)「独立调用方」口径统一,不再归
+        // 外层 caller。
+        Lambda(l) => walk_expr(ast, ctx, &l.body, None, LAMBDA_CALLER, out),
         If(e) => {
             walk_expr(ast, ctx, &e.test, caller_class, caller, out);
             walk_expr(ast, ctx, &e.body, caller_class, caller, out);
