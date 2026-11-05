@@ -166,6 +166,269 @@ describe('部署通道 applied digest 核验与结算(RT-9 / RT-10 / IDE-HOT-004
     expect(record?.detail).toContain('核验超时');
   });
 
+  it('F4 回归:通道回执带不匹配 targetId → 不升格 applied,状态如实未确认;审计行带目标', async () => {
+    const content = 'print("x")';
+    const { store } = await fire(
+      [
+        {
+          status: 'applied',
+          file: '/ws/a.py',
+          digest: digestOf(content),
+          targetId: 'other-profile'
+        } as ReloadReceipt
+      ],
+      {
+        readFileContent: async () => content
+      }
+    );
+    // F4:回执自称 applied 但 targetId 与通道目标不符 → 绝不升格,
+    // 保持未确认(回执按目标核验,不落入当前目标了事)
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.detail).toContain('targetId');
+    // 状态/审计面区分目标:通道审计行带 目标=profile-1
+    const channel = channels.find(entry => entry.name === 'KBEngine 热更新');
+    const audit = channel?.lines.find(line => line.includes('审计'));
+    expect(audit).toContain('目标=profile-1');
+  });
+
+  it('F2 回归:通道发送在发送时点建立代际,冻结 digest 进台账', async () => {
+    const content = 'print("sent content")';
+    const { store } = await fire([{ status: 'applied', file: '/ws/a.py', digest: digestOf(content) }], {
+      readFileContent: async () => content
+    });
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('applied');
+    // 代际在发送时点建立(不是回执到达时另起新发送):整批一次发送一代
+    expect(record?.attempt).toBe(1);
+    // 发送时点冻结的所发内容 sha256 带进台账(可审计),不是回执后才补
+    expect(record?.sentDigest).toBe(digestOf(content));
+  });
+
+  it('F2 回归:旧发送的晚到 digest 核验不翻新发送的失败(回执绑定代际)', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const content = 'print("v1")';
+    const digest = digestOf(content);
+    // 发送1的冻结基准读取挂起:发送(及其 applied 回执)被推迟到基准冻结后
+    let gatedRead: ((value: string | null) => void) | undefined;
+    let sendIndex = 0;
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_target, files, onReceipt) => {
+        const index = sendIndex++;
+        if (index === 1) {
+          // 第二次真实发起=发送1(冻结基准读取挂起,发送等基准冻结后才发起):
+          // applied 回执到达但核验迟迟不能结算,最后悬挂(响应未收口)
+          onReceipt({ status: 'applied', file: files[0], digest });
+          await new Promise<void>(() => undefined);
+        }
+        // 第一次真实发起=发送2:整组抛错 failed(新代际接管记录)
+        throw new Error('send 2 failed');
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(makeContext(), () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws',
+        readFileContent: async () =>
+          gatedRead === undefined
+            ? new Promise<string | null>(resolve => {
+                gatedRead = resolve;
+              })
+            : content
+      }
+    });
+    // 发送1:applied 回执到达但 digest 核验挂起(冻结基准未决)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    // 发送2:通道抛错整组 failed(新代际接管记录)
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    const afterSend2 = store.get(KEY, '/ws/a.py');
+    expect(afterSend2?.outcome).toBe('failed');
+    // 旧发送的 digest 基准晚到:其核验写回必须被代际守卫拒绝,绝不把
+    // 新发送的失败翻成 applied(旧实现无代际绑定,此处被翻案)
+    gatedRead!(content);
+    await flush();
+    const finalRecord = store.get(KEY, '/ws/a.py');
+    expect(finalRecord?.outcome).toBe('failed');
+    expect(finalRecord?.attempt).toBe(2);
+    expect(finalRecord?.detail).toContain('send 2 failed');
+  });
+
+  it('F2 二轮回归:sent 分支也把冻结 digest 落进台账(不再只有 accepted/applied 记 digest)', async () => {
+    const content = 'print("sent content")';
+    const { store } = await fire([{ status: 'sent', file: '/ws/a.py', detail: '已送达' }], {
+      readFileContent: async () => content
+    });
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.sentDigest).toBe(digestOf(content));
+  });
+
+  it('F2 二轮回归:failed 回执分支也把冻结 digest 落进台账', async () => {
+    const content = 'print("sent content")';
+    const { store } = await fire([{ status: 'failed', file: '/ws/a.py', reason: '引擎拒绝' }], {
+      readFileContent: async () => content
+    });
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('failed');
+    expect(record?.sentDigest).toBe(digestOf(content));
+  });
+
+  it('F2 二轮回归:整组异常分支也把冻结 digest 落进台账', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const content = 'print("boom")';
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async () => {
+        throw new Error('channel exploded');
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(makeContext(), () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws',
+        readFileContent: async () => content
+      }
+    });
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    const record = store.get(KEY, '/ws/a.py');
+    expect(record?.outcome).toBe('failed');
+    expect(record?.detail).toContain('channel exploded');
+    expect(record?.sentDigest).toBe(digestOf(content));
+  });
+
+  it('F2 二轮回归:冻结基准读取 await 到完成,发送不得先于基准冻结发起', async () => {
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const events: string[] = [];
+    let releaseRead: (() => void) | undefined;
+    const readGate = new Promise<void>(resolve => {
+      releaseRead = resolve;
+    });
+    const content = 'print("frozen")';
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async () => {
+        events.push('send');
+        return { kind: 'http', receipts: [] };
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(makeContext(), () => undefined, {
+      timers: clock.timers,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws',
+        readFileContent: async () => {
+          await readGate;
+          events.push('read-done');
+          return content;
+        }
+      }
+    });
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    // 基准未冻结前不得发起发送(旧实现只发起读取不等待,发送先行)
+    expect(events).toEqual([]);
+    releaseRead!();
+    await flush();
+    expect(events[0]).toBe('read-done');
+    expect(events).toContain('send');
+    // 冻结基准=发送前读到的内容
+    expect(store.get(KEY, '/ws/a.py')?.sentDigest).toBe(digestOf(content));
+  });
+
+  it('F2 二轮回归:回执排定的超时结算绑定该发送自己的代际,不以旧发送窗口结算新发送', async () => {
+    let now = 1000;
+    const clock = makeTimers();
+    const store = new HotReloadTargetStateStore({ now: () => 7 });
+    const content = 'print("x")';
+    let releaseReceipt: (() => void) | undefined;
+    const receiptGate = new Promise<void>(resolve => {
+      releaseReceipt = resolve;
+    });
+    let sendIndex = 0;
+    const transport: ReloadTransport = {
+      kind: 'http',
+      probe: async () => ({ ok: true, detail: 'ok' }),
+      send: async (_target, files, onReceipt) => {
+        const index = sendIndex++;
+        if (index === 0) {
+          // 发送1回执悬挂:结算排定被推迟到发送2已接管记录之后
+          await receiptGate;
+          onReceipt({ status: 'sent', file: files[0], detail: '发送1晚到回执' });
+          return { kind: 'http', receipts: [{ status: 'sent', file: files[0], detail: '发送1晚到回执' }] };
+        }
+        onReceipt({ status: 'sent', file: files[0], detail: '发送2回执' });
+        return { kind: 'http', receipts: [{ status: 'sent', file: files[0], detail: '发送2回执' }] };
+      }
+    };
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+    });
+    setupHotReload(makeContext(), () => undefined, {
+      timers: clock.timers,
+      now: () => now,
+      resolveChannelTransport: () => ({ transport, targetId: 'profile-1' }),
+      targetState: {
+        store,
+        resolveTargetId: () => 't1',
+        resolveRootId: () => '/ws',
+        readFileContent: async () => content
+      }
+    });
+    // 发送1:sentAt=1000,回执悬挂
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    // 发送2:sentAt=15000,自己的核验窗口到 25000;记录被 attempt=2 接管
+    now = 15000;
+    lastFileSystemWatcher.current!.fireChange({ fsPath: '/ws/a.py' } as never);
+    clock.tick();
+    await flush();
+    expect(store.get(KEY, '/ws/a.py')?.attempt).toBe(2);
+    // 发送1的晚到回执此刻才排定结算:必须绑定 attempt=1(旧实现取当前记录
+    // 的 attempt=2,以发送1的 sentAt=1000 为窗口基准给新发送排结算)
+    releaseReceipt!();
+    await flush();
+    // 时钟走到 20000:过了发送1的窗口(11000),还没到发送2自己的窗口(25000)
+    now = 20000;
+    clock.tick();
+    const record = store.get(KEY, '/ws/a.py');
+    // 旧实现此刻已按发送1的窗口给发送2的记录注解「核验超时」——发送2的
+    // 窗口明明还没到点;修后发送1的结算绑定 attempt=1,被代际守卫跳过
+    expect(record?.outcome).toBe('sent-unverified');
+    expect(record?.detail ?? '').not.toContain('核验超时');
+  });
+
   it('RT-10:fire 路径核验窗口锚定发送发起时点——响应晚到不后移窗口', async () => {
     // 发送发起时 now=1000;响应在 now=20000 才到达(晚到)。旧实现窗口从响应
     // 时刻起算(deadline=30000),窗口到点结算时(now=20000)仍是 pending 不
