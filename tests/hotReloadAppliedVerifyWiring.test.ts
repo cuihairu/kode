@@ -415,8 +415,11 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
       expect(record?.detail).toContain('digest 一致');
       // 接收端重算的 digest 与所发内容一致(真实 wire 双证)
       expect(record?.sentDigest).toBe(createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex'));
-      // 真实应用证据:引擎目录写入的产物与所发内容逐字一致(不是空操作假应用)
-      expect(readFileSync(path.join(engineDir, 'Avatar.py'), 'utf8')).toBe(CONTENT);
+      // 真实应用证据:引擎目录写入的产物与所发内容逐字一致(不是空操作假应用)。
+      // F3 六轮:产物路径为确定性映射——realFile 在接收端暂存根之外,按绝对
+      // 路径全结构展开落位(与批次组成无关),不再是裸 basename。
+      const artifactPath = path.join(engineDir, ...realFile.split(path.sep).filter(Boolean));
+      expect(readFileSync(artifactPath, 'utf8')).toBe(CONTENT);
       rmSync(path.dirname(realFile), { recursive: true, force: true });
     } finally {
       receiver.dispose();
