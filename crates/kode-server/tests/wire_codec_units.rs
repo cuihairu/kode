@@ -36,7 +36,8 @@ fn wire_golden_matches_regenerated_dump() {
     let golden_path = repo_root().join(GOLDEN_REL_PATH);
     let committed = std::fs::read_to_string(&golden_path)
         .expect("golden 文件缺失: crates/kode-server/tests/golden/wire-parity.json");
-    let committed = committed.trim_end_matches('\n');
+    // Windows autocrlf 会把 golden 检出为 CRLF;dump 输出恒 LF,两侧都剥 \r\n。
+    let committed = committed.trim_end_matches(|c| c == '\r' || c == '\n');
     assert_eq!(
         regenerated, committed,
         "wire golden 与重生成不一致。\n重新运行:\n  cargo run -p kode-server --bin dump-wire-golden > crates/kode-server/tests/golden/wire-parity.json"
@@ -509,12 +510,61 @@ fn method_encoding_rejects_arity_and_identifier_mode_before_writing() {
         (PropertyMode::Alias, MethodRef::Alias(1), vec![], vec![WireLayout::U8]),
         (PropertyMode::Alias, MethodRef::Utype(257), vec![], vec![]),
         (PropertyMode::Utype, MethodRef::Alias(1), vec![], vec![]),
+        // KR-AUD-94 边界:Utype 值 255/256 在 Alias 模式同样必须拒绝(模式不匹配,
+        // 非整数截断)——255 恰好塞进 u8 也不能放行,因为 Utype≠Alias 语义不等价。
+        (PropertyMode::Alias, MethodRef::Utype(255), vec![], vec![]),
+        (PropertyMode::Alias, MethodRef::Utype(256), vec![], vec![]),
+        // 反向:Utype 模式下 Alias(1) 同样拒绝。
+        (PropertyMode::Utype, MethodRef::Alias(255), vec![], vec![]),
     ] {
         let mut output = vec![42];
         let call = MethodCall { component_alias: None, method, args, arg_layouts: layouts };
         assert!(encode_method_args(&call, mode, &mut output).is_err());
         assert_eq!(output, vec![42]);
     }
+}
+
+#[test]
+fn method_encoding_accepts_legal_mode_id_pairs() {
+    // KR-AUD-94 正例:合法模式组合编码成功且不改写输出缓冲前缀。
+    // Utype 模式下 Utype(255/256/257) 全部合法(u16 容纳),写入 u16 LE。
+    for method in [MethodRef::Utype(255), MethodRef::Utype(256), MethodRef::Utype(257)] {
+        let mut output = vec![42];
+        let call = MethodCall {
+            component_alias: None,
+            method,
+            args: vec![],
+            arg_layouts: vec![],
+        };
+        encode_method_args(&call, PropertyMode::Utype, &mut output).unwrap();
+        assert_eq!(&output[..1], &[42], "既有前缀不得被改写");
+        // utype = u16 LE 在前缀之后
+        let u = match method {
+            MethodRef::Utype(u) => u,
+            _ => unreachable!(),
+        };
+        assert_eq!(&output[1..3], &u.to_le_bytes());
+    }
+    // Alias 模式下 Alias(255) 合法(u8 容纳):写 component_alias(0)+alias(255)。
+    let mut output = vec![42];
+    let call = MethodCall {
+        component_alias: None,
+        method: MethodRef::Alias(255),
+        args: vec![],
+        arg_layouts: vec![],
+    };
+    encode_method_args(&call, PropertyMode::Alias, &mut output).unwrap();
+    assert_eq!(output, vec![42, 0, 255]);
+    // 零参零布局:合法且只写方法 id。
+    let mut output = vec![];
+    let call = MethodCall {
+        component_alias: None,
+        method: MethodRef::Alias(1),
+        args: vec![],
+        arg_layouts: vec![],
+    };
+    encode_method_args(&call, PropertyMode::Alias, &mut output).unwrap();
+    assert_eq!(output, vec![0, 1]);
 }
 
 #[test]

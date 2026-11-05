@@ -258,3 +258,107 @@ fn callgraph_keeps_same_named_methods_separate_across_files() {
         assert_eq!(edge["calleeId"], id(path, "target"));
     }
 }
+
+
+// --- KR-AUD-91 验收:跨文件身份(嵌套作用域/同 stem/多工作区) ---
+
+#[test]
+fn kr_aud_91_nested_scope_edges_carry_file_identity() {
+    // 嵌套 def 的调用边两端必须是带文件身份的 sym_ ID;
+    // 两文件中同名嵌套函数 callerId 不混淆。
+    let src = |which: &str| format!(
+        "class Foo:\n def run(self):\n  def inner():\n   helper()\n  inner()\n\ndef helper():\n pass\n# {which}\n"
+    );
+    let result = callgraph(json!({"files": [
+        {"path": "/p/one/A.py", "text": src("one")},
+        {"path": "/p/two/A.py", "text": src("two")}
+    ]}));
+    let edges = result["edges"].as_array().unwrap();
+    let nested_caller_ids: Vec<&str> = edges
+        .iter()
+        .filter(|e| e["caller"] == "inner")
+        .filter_map(|e| e["callerId"].as_str())
+        .collect();
+    assert_eq!(nested_caller_ids.len(), 2, "两文件各一条嵌套调用边");
+    assert_ne!(nested_caller_ids[0], nested_caller_ids[1], "同名嵌套函数必须按文件区分");
+    for e in edges {
+        let caller_id = e["callerId"].as_str().expect("边缺 callerId");
+        let callee_id = e["calleeId"].as_str().expect("边缺 calleeId");
+        assert!(caller_id.starts_with("sym_"), "callerId 非文件身份: {caller_id}");
+        assert!(callee_id.starts_with("sym_"), "calleeId 非文件身份: {callee_id}");
+        assert!(
+            caller_id.contains("2f702f6f6e652f412e7079") || caller_id.contains("2f702f74776f2f412e7079"),
+            "callerId 不含本文件路径 hex: {caller_id}"
+        );
+    }
+}
+
+#[test]
+fn kr_aud_91_same_stem_functions_keep_separate_nodes() {
+    // 不同目录同 stem 文件(/base/scripts/util.py vs /cell/scripts/util.py):
+    // 同名函数独立节点、边指向本文件端点、源码行正确。
+    let util = "def helper():\n pass\n\ndef entry():\n helper()\n";
+    let result = callgraph(json!({"files": [
+        {"path": "/proj/base/scripts/util.py", "text": util},
+        {"path": "/proj/cell/scripts/util.py", "text": util}
+    ]}));
+    let nodes = result["nodes"].as_array().unwrap();
+    let edges = result["edges"].as_array().unwrap();
+    let node_id = |path: &str, name: &str| -> String {
+        let n = nodes
+            .iter()
+            .find(|n| n["filePath"] == path && n["name"] == name)
+            .unwrap_or_else(|| panic!("缺节点 {path}::{name}"));
+        n["id"].as_str().unwrap().to_string()
+    };
+    let base_helper = node_id("/proj/base/scripts/util.py", "helper");
+    let cell_helper = node_id("/proj/cell/scripts/util.py", "helper");
+    assert_ne!(base_helper, cell_helper, "同 stem 同名函数必须独立节点");
+    // 源码位置:helper 行 0,entry 行 3(0-based)。
+    let base_entry_node = nodes
+        .iter()
+        .find(|n| n["filePath"] == "/proj/base/scripts/util.py" && n["name"] == "entry")
+        .unwrap();
+    assert_eq!(base_entry_node["line"], 3);
+    // 每条边的端点必须是本文件节点。
+    for path in ["/proj/base/scripts/util.py", "/proj/cell/scripts/util.py"] {
+        let edge = edges
+            .iter()
+            .find(|e| e["filePath"] == path && e["callee"] == "helper")
+            .unwrap_or_else(|| panic!("{path} 缺 entry->helper 边"));
+        assert_eq!(edge["callerId"], node_id(path, "entry"), "callerId 未指向本文件节点");
+        assert_eq!(edge["calleeId"], node_id(path, "helper"), "calleeId 未指向本文件节点");
+    }
+}
+
+#[test]
+fn kr_aud_91_multi_workspace_same_relative_path_keeps_separate_nodes() {
+    // 多工作区:两个根下相同相对路径的同名符号保持独立节点与边。
+    let util = "def boot():\n pass\n\ndef start():\n boot()\n";
+    let result = callgraph(json!({"files": [
+        {"path": "/wsA/scripts/app.py", "text": util},
+        {"path": "/wsB/scripts/app.py", "text": util}
+    ]}));
+    let nodes = result["nodes"].as_array().unwrap();
+    let edges = result["edges"].as_array().unwrap();
+    let id_of = |path: &str, name: &str| -> String {
+        nodes
+            .iter()
+            .find(|n| n["filePath"] == path && n["name"] == name)
+            .unwrap_or_else(|| panic!("缺节点 {path}::{name}"))["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let a_boot = id_of("/wsA/scripts/app.py", "boot");
+    let b_boot = id_of("/wsB/scripts/app.py", "boot");
+    assert_ne!(a_boot, b_boot, "多工作区同名符号必须独立");
+    for path in ["/wsA/scripts/app.py", "/wsB/scripts/app.py"] {
+        let edge = edges
+            .iter()
+            .find(|e| e["filePath"] == path && e["callee"] == "boot")
+            .unwrap_or_else(|| panic!("{path} 缺 start->boot 边"));
+        assert_eq!(edge["callerId"], id_of(path, "start"));
+        assert_eq!(edge["calleeId"], id_of(path, "boot"));
+    }
+}
