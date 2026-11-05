@@ -92,3 +92,44 @@
 - Vitest 全量共两轮（默认隔离，515 文件）：末轮 **6356 测试，6335 passed、1 failed、20 skipped**（85.6s）；唯一失败为 `tests/typeStorageColdBuildPhased.test.ts` 的 F13 切片预算（负载敏感，首轮全量亦曾孤立失败、与热更改动无关），隔离复跑三次取真 **6/6、6/6、6/6 全过**。首轮全量另见 5 个无关文件的高负载预算/时序失败（load avg ≈130–160），同样隔离复跑三次取真全过：`hoverDeadlineContext`(10/10)、`processTopologyPerf`(5/5)、`serverManagerProcesses`(21/21)、`globalDataIndex`(108/108)、`selfAttributeNoneDiagnosticsPerf`(2/2)。触及面文件（hotReload* 全系）全量与隔离均绿。
 - compile（tsc -p ./）与 tsconfig.mocha.json 干净；`out/test/runTest.js` 冒烟 **12 passing**；`eslint src --ext ts` 干净。
 - 说明：审核时 vitest 全量 0 运行系 node_modules 缺失；本轮 `pnpm install --offline --frozen-lockfile --ignore-scripts` 成功（store 锁已可用），数字为本机实测，非历史数字。
+
+## 第二轮返工记录（2026-11-06，codex 复审残余 F1–F4 + 交叉修复，分支 `feat/kode-fix-f1f4`）
+
+本轮处理 codex 二轮复审指出的残余问题：F1 异步时序绕过、F2 digest 落账不全与结算代际错位、F3 接收端假应用、F4 非字符串 targetId、以及部署通道重试通道错位（交叉修复，记 R1-F5）。每项均先写能复现所指问题的失败测试（red 已在本机逐项实测并留存日志，见下），再修码转绿。`todo.md` 未改。
+
+### R1-F1：def 闸基线前滚绑定判定时内容快照（commit `491c50f`）
+
+- 问题：`check` 读到内容 A 放行后，异步 `commit` **重读文件**——若文件已变为未判定内容 B，B 被写进基线；B 被拦/未被目标应用后再次发送 B 即因指纹相同放行（需重启被绕过）。fire 与重试路径同缺口。
+- 修法：`createDefStructuralGate` 的 `check` 判定时逐文件留内容快照，`commit` **只落快照、绝不重读**；无快照（未判定过）不滚。`confirmLoaded`（用户明确重启确认）语义不变。
+- 回归（`tests/hotReloadRetryDefGate.test.ts`）：闸级「放行→内容变更→commit」时序断言基线仍是判定过的 A、变更内容再次检查被拦；重试级「放行→内容变更→重试」断言第二次重试持续拦下不发送。**red：2 failed | 5 passed**（日志 `/tmp/r2-f1-red.log`，以修码前 gate 源码 + 修码后测试文件在独立 worktree 复现）→ green 7/7。
+
+### R1-F2：通道冻结 digest 全分支落账 + 读取 await 到完成 + 结算绑定自身代际（commit `d9de2a4`）
+
+- 问题：digest 只在 accepted/applied 分支落账，`sent`、`failed`、整组异常分支的台账没有该次所发 digest；旧回执排定超时结算取**当前记录**的 attempt（新发送接管后，旧发送的窗口基准被套到新记录上）；冻结基准读取只发起不等待，证明不了读到的是发送时的内容。
+- 修法：`sendViaChannel` 冻结基准读取 **await 到完成之后**才发起 `transport.send`（冻结 digest=实际发送内容）；冻结完成即整批落账 sentDigest（绑定代际），回执各分支随后更新 outcome；`scheduleUnconfirmedSettle` 改用该发送自己的 attempt（`attemptFor`），无代际不排结算。原「旧发送晚到核验不翻新发送失败」回归按新发送次序重述（发送现在排在其冻结基准之后），断言语义不变。
+- 回归（`tests/hotReloadChannelApplied.test.ts` 新增 5 条）：sent/failed/整组异常三分支 sentDigest 落账；冻结读取 await 时序（事件序 read-done 先于 send）；回执排定结算绑定自身代际（新发送窗口未到点不得被旧窗口注解超时）。**red：5 failed | 10 passed**（日志 `/tmp/r2-f2-red.log`）→ green；`tests/hotReload` 全系 393 passed。
+
+### R1-F3：接收端应用后重算 sha256 才自称 applied + wire 测试真实写文件（commit `3cced86`）
+
+- 问题：接收端仅凭应用命令退出码 0 自称 applied，未核实命令实际应用了发送方 digest 指向的内容；wire 测试应用命令是 `node -e "process.exit(0)"` 空操作假应用。
+- 修法：`referenceReceiver.mjs` 在退出 0 之后对所发文件**重算 sha256**，与收到时算的 digest（发送方内容指纹）比对一致才回 applied；漂移或读不回如实回 failed（不落应用台账）。wire/roundtrip 测试的应用命令全部改为真实写文件进「引擎目录」（copy 到 engine dir），断言同步加引擎侧产物与所发内容逐字一致。
+- 回归（`tests/hotReloadReceiverRoundtrip.test.ts` 新增）：退出 0 但改动了所发内容的命令 → 如实 failed 不自称 applied、不落版本台账。**red：1 failed | 9 passed**（日志 `/tmp/r2-f3-red.log`）→ green；roundtrip+wiring 两套件 23 passed。真实 KBEngine 侧 applied 证据缺口仍在（同上节说明，不据此勾回 todo 条目）。
+
+### R1-F4：非字符串 targetId 拒绝 + 请求体自动附加 targetId（commit `8ec17f7`）
+
+- 问题：回执显式 `targetId: null`/数字/对象被 `typeof` 归一成 undefined 按「未提供」处理，applied 可被接受；请求侧目标透传依赖模板作者记得写 `${targetId}` 占位符。
+- 修法：`parseReloadHttpReceipts` 对「存在但非字符串」的 targetId 字段按畸形回执整条拒绝（字段缺失才是未提供）；`HttpReloadTransport.send` 对 JSON 对象请求体自动附加 `targetId` 字段（已有显式 targetId 不覆盖，非 JSON 对象不动）。
+- 回归（`tests/hotReloadTransport.test.ts` 新增 3 条）：null/42/对象三种畸形 targetId 均拒绝；无占位符模板的请求体自动带目标；显式 targetId 不被覆盖。**red：2 failed | 37 passed**（日志 `/tmp/r2-f4-red.log`）→ green；`tests/hotReload` 393 passed。
+
+### R1-F5（交叉修复）：部署通道失败重试接回同一发送通道（commit `3d2c180`）
+
+- 问题：部署通道目标是 profile ID，失败重试只反查 quick action 动作（`resolveActionNameForTarget`）——通道失败后重试找不到动作（重试失效）或走错发送通道。
+- 修法：通道发送核心从 `setupHotReload` 抽到 `src/hotReloadChannelSend.ts`（fire 与重试共用同一实现：代际建立/冻结 digest/applied 双证核验/代际绑定结算逐字同语义）；`resendHotReloadTarget` 新增 `resolveChannelTransport` 注入，重试目标=当前通道目标时经该通道重发（source=retry），否则回落动作反查路径行为不变；`extension.ts` 把同一解出口接给重试命令。`HOT_RELOAD_APPLIED_SETTLE_MS` 移至 `hotReloadAppliedCheck.ts`（hotReload.ts 原位 re-export，引用方不变）以避免运行时循环依赖。
+- 回归（新增 `tests/hotReloadRetryChannel.test.ts`）：profile ID 目标经原通道重发（不走动作反查、台账 attempt=2/channel=http/source=retry）、目标不符回落动作路径、通道重发失败 ok=false+failed 绑定新代际。**red：2 failed | 1 passed**（日志 `/tmp/r2-f5-red.log`）→ green。
+
+### 第二轮门禁数字（本机，2026-11-06）
+
+- `npm test`（vitest run + clean + compile + tsc -p tsconfig.mocha.json + VS Code 集成 runTest.js）：**退出 0 一次通过**。Vitest 516 文件 **6350 passed、20 skipped、0 failed**（上轮末轮那 1 个负载敏感预算失败本轮未复现）；compile 与 mocha tsc 干净；VS Code 集成测试随链通过。日志 `/tmp/r2-npm-test-full.log`。预算型失败隔离复跑协议（3 次取真）本轮**未被触发**——全量首轮即 0 failed,无可隔离复跑项,如实记录。
+- `cargo test --workspace --exclude kode-scheduler`：退出 0；**525 passed、0 failed、0 ignored**。日志 `/tmp/r2-cargo-full.log`。
+- `eslint src --ext ts`：退出 0 干净（`/tmp/r2-eslint-full.log`）；`tsc -p tsconfig.json --noEmit` 干净。
+- 逐项 red 日志：`/tmp/r2-f1-red.log`、`/tmp/r2-f2-red.log`、`/tmp/r2-f3-red.log`、`/tmp/r2-f4-red.log`、`/tmp/r2-f5-red.log`。
