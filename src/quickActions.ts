@@ -174,6 +174,9 @@ export const terminalScript: ScriptRunner = options => {
   const scriptToken = options.script.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
   const scriptName = baseNameOf(scriptToken?.[1] ?? scriptToken?.[2] ?? scriptToken?.[3] ?? options.script);
   const name = `Kode: ${options.name ?? '快速动作'} · ${scriptName}`;
+  // 复用语义(KR-AUD-52 固化):同名动作终端只复用「仍存活」的实例——
+  // terminal.exitStatus !== undefined 即已退出,绝不复用死终端壳(向死终端
+  // sendText 静默丢弃),按名重建新实例。名字含动作名+脚本名,不同动作互不串。
   let terminal = actionTerminals.get(name);
   if (!terminal || terminal.exitStatus !== undefined) {
     terminal = vscode.window.createTerminal({
@@ -185,8 +188,10 @@ export const terminalScript: ScriptRunner = options => {
     actionTerminals.set(name, terminal);
   }
   const announcement = `即将执行：${options.script}`;
+  // KR-AUD-52:cmd.exe 对 % 成对解析(变量展开),公告里的裸 % 会被吃掉;
+  // Windows 分支 % → %% 转义,&|<>^ 沿用 caret 前缀
   const printCommand = process.platform === 'win32'
-    ? `echo ${announcement.replace(/[&|<>^]/g, '^$&')}`
+    ? `echo ${announcement.replace(/[&|<>^]/g, '^$&').replace(/%/g, '%%')}`
     : `printf '%s\\n' '${announcement.replace(/\\/g, '\\\\').replace(/'/g, "'\\''")}'`;
   terminal.sendText(printCommand, true);
   terminal.sendText(options.script, true);
