@@ -26,6 +26,10 @@ async function main(): Promise<void> {
   // (longSessionResources.test.ts)。
   const attributionMode = process.argv.includes('--attribution');
   const longSessionMode = process.argv.includes('--longsession');
+  // IDE-AUD-017:自然编辑长会话(与 16s 短压力分开)——同一 field 装配,
+  // 过滤切 longnatural(longSessionNatural.test.ts),预设时长+打字粒度
+  // 编辑序列+RSS/worker/缓存趋势预算。
+  const longNaturalMode = process.argv.includes('--longnatural');
   const finalMarksMode = process.argv.includes('--final');
   // IDE-GIT-012 历史宿主影响验收:与 --final 共用 field 装配(demo 资产+5000 外部根),
   // 另把工作区根建成 git 仓库+大历史(history_probe.py),suite 过滤切 history。
@@ -120,7 +124,7 @@ async function main(): Promise<void> {
     process.env.KODE_VSIX_WORKSPACE = workspacePath;
     process.env.KODE_VSIX_EXT_DIR = devPath;
     process.on('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
-  } else if (fieldMode || attributionMode || longSessionMode || finalMarksMode || historyMode) {
+  } else if (fieldMode || attributionMode || longSessionMode || longNaturalMode || finalMarksMode || historyMode) {
     // P0-4b 现场基线:工作区用 demo 资产(含 nav: runtime-damage 符号),
     // 外部资产根用生成器现造 ~5000 文件 large 场景(绝对路径,真扫描外部根)。
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-kbengine-field-'));
@@ -264,11 +268,13 @@ async function main(): Promise<void> {
     );
     process.env.KODE_ELECTRON_SUITE = finalMarksMode
       ? 'final'
-      : attributionMode
-        ? 'attribution'
-        : longSessionMode
-          ? 'longsession'
-          : historyMode ? 'history' : 'field';
+      : longNaturalMode
+        ? 'longnatural'
+        : attributionMode
+          ? 'attribution'
+          : longSessionMode
+            ? 'longsession'
+            : historyMode ? 'history' : 'field';
     process.env.KODE_FIELD_WORKSPACE = workspacePath;
     process.env.KODE_FIELD_MODE = process.env.KODE_FIELD_MODE ?? 'enabled';
     process.env.KODE_FIELD_OUT = process.env.KODE_FIELD_OUT
