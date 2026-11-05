@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { InferredDirEntry, listSourceFiles, mirrorPrefixFor, planInferredMirror } from './inferredCopy';
-import { detectVcs, planExclusion, planGitignoreAdd } from './managedDirExclusions';
+import { detectVcs, planExclusion, planGitignoreAdd, type ManagedExclusionEntry } from './managedDirExclusions';
 import { fileSystemScriptRootDeps, pythonScriptRootCandidates } from './pythonExtraPaths';
 import {
   SOURCE_WRITE_SCOPE_MANAGED,
@@ -177,7 +177,7 @@ export async function applyManagedDirExclusions(
     const workspaceRoot = folder.uri.fsPath;
     const searchScoped = vscode.workspace.getConfiguration('search', folder);
     const searchManagedKey = searchExcludeManagedKey(workspaceRoot);
-    const searchPrev = context.workspaceState?.get<string[]>(searchManagedKey) ?? [];
+    const searchPrev = context.workspaceState?.get<readonly (string | ManagedExclusionEntry)[]>(searchManagedKey) ?? [];
     const searchPlan = planExclusion(searchScoped.get<unknown>('exclude', {}), managedDir, searchPrev, true);
     if (searchPlan.changed) {
       await searchScoped.update('exclude', searchPlan.next, vscode.ConfigurationTarget.WorkspaceFolder);
@@ -186,7 +186,7 @@ export async function applyManagedDirExclusions(
     }
     const watcherScoped = vscode.workspace.getConfiguration('files', folder);
     const watcherManagedKey = watcherExcludeManagedKey(workspaceRoot);
-    const watcherPrev = context.workspaceState?.get<string[]>(watcherManagedKey) ?? [];
+    const watcherPrev = context.workspaceState?.get<readonly (string | ManagedExclusionEntry)[]>(watcherManagedKey) ?? [];
     const watcherPlan = planExclusion(watcherScoped.get<unknown>('watcherExclude', {}), managedDir, watcherPrev, true);
     if (watcherPlan.changed) {
       await watcherScoped.update('watcherExclude', watcherPlan.next, vscode.ConfigurationTarget.WorkspaceFolder);
