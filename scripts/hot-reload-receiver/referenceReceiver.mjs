@@ -22,9 +22,17 @@
  *    引擎 reloadScript 的包装脚本);逐文件执行,退出码 0 才回 applied,
  *    并把 revision/file/digest/命令/输出逐条落 <root>/applied-revisions.jsonl
  *    (应用后证据);非 0 如实回 failed(带退出码与 stderr 尾行),不冒充。
- *  - F3 二轮:退出码 0 之后还要对所发文件重算 sha256,与收到时算的 digest
- *    (发送方内容指纹)比对一致才回 applied——命令中途改动了所发内容即
- *    如实 failed(不落应用台账);读不回所发文件同理。
+ *  - F3 三轮(2026-11-06 复审):协议级残余修复——二轮比较的是「所发源文件」
+ *    应用命令前后两次哈希,而协议没把发送方冻结 digest 传给接收端,空操作
+ *    命令(不改源文件、退出 0)前后哈希相同仍能假 applied。修后:
+ *    ① 请求报文带 sender_digests 字段:{"files":[...],"sender_digests":
+ *       {"<file>":"<发送方冻结 sha256 hex>"}}(发送方冻结 digest 随报文下发);
+ *    ② apply 模式必须配置 --artifact-dir <引擎目录>(应用命令把产物装进
+ *       该目录;命令环境注入 KODE_RELOAD_ARTIFACT=产物绝对路径);退出 0 后
+ *       对应用产物重算 sha256,与 sender_digests[file] 比对一致才回 applied
+ *       ——缺 --artifact-dir / 报文缺 sender_digest / 产物读不到 / 哈希不一致
+ *       一律如实 failed(不落应用台账、不自称 applied)。旧「源文件前后哈希」
+ *       比较废除:它证明不了引擎加载的是发送方冻结的内容。
  *  - 未配置 --apply-command 时如实回 accepted(仅暂存,未应用)+未配置原因,
  *    不落应用台账——没有引擎调用就没有 applied 证据,契约口径见 todo 的
  *    「缺服务端依据时保持开放」。
@@ -32,13 +40,14 @@
  *
  * 用法:
  *   node referenceReceiver.mjs --port 0 --root <暂存目录> --mode stage|apply
- *        [--apply-command <shell 命令>]
+ *        [--apply-command <shell 命令>] [--artifact-dir <引擎产物目录>]
  *        --scenario accepted|applied|digest-mismatch|echo|error500
  * 就绪后向 stdout 打一行 KODE_RECEIVER_PORT=<port>。
  *
- * - POST /reload:body 形如 {"files":[...],"targetId":"..."}(通道 ${files}/
- *   ${targetId} 占位 substitution 产物)或裸 JSON 数组;逐文件读盘、sha256、
- *   暂存副本进 --root,按 mode 回:
+ * - POST /reload:body 形如 {"files":[...],"targetId":"...","sender_digests":
+ *   {"<file>":"<发送方冻结 sha256 hex>"}}(通道 ${files}/${targetId} 占位
+ *   substitution + 发送方冻结 digest 自动附带产物)或裸 JSON 数组;逐文件读盘、
+ *   sha256、暂存副本进 --root,按 mode 回:
  *   - stage:   每文件一条 accepted(暂存=接收端已收下待重载)
  *   - apply:   真实执行 --apply-command 成功后每文件一条 applied
  *              (digest=接收端对所发文件重算的 sha256,revision 递增)
@@ -64,6 +73,8 @@ const port = Number(argValue('--port') ?? 0);
 const root = argValue('--root') ?? process.cwd();
 const mode = argValue('--mode') ?? 'stage';
 const applyCommand = argValue('--apply-command');
+// F3 三轮:引擎产物目录(应用命令把产物装进这里),applied 核验对象
+const artifactDir = argValue('--artifact-dir');
 const scenario = argValue('--scenario') ?? (mode === 'apply' ? 'applied' : 'accepted');
 
 mkdirSync(root, { recursive: true });
@@ -107,11 +118,23 @@ const server = createServer((request, response) => {
     }
     let files;
     let targetId;
+    let senderDigests;
     try {
       const parsed = JSON.parse(raw);
       files = Array.isArray(parsed) ? parsed : parsed.files;
       if (!Array.isArray(parsed) && parsed && typeof parsed === 'object' && typeof parsed.targetId === 'string') {
         targetId = parsed.targetId;
+      }
+      // F3 三轮:发送方冻结 digest 随报文下发(file → sha256 hex 字符串)
+      if (
+        !Array.isArray(parsed) &&
+        parsed &&
+        typeof parsed === 'object' &&
+        parsed.sender_digests &&
+        typeof parsed.sender_digests === 'object' &&
+        !Array.isArray(parsed.sender_digests)
+      ) {
+        senderDigests = parsed.sender_digests;
       }
     } catch {
       files = undefined;
@@ -174,6 +197,14 @@ const server = createServer((request, response) => {
           ...process.env,
           KODE_RELOAD_FILE: file,
           KODE_RELOAD_DIGEST: digest,
+          // F3 三轮:应用产物(引擎目录中的实际文件)与发送方冻结基准,应用
+          // 命令可读;产物路径由接收端按 --artifact-dir + 文件名规约给出
+          ...(artifactDir !== undefined
+            ? { KODE_RELOAD_ARTIFACT: path.join(artifactDir, path.basename(file)) }
+            : {}),
+          ...(senderDigests !== undefined && typeof senderDigests[file] === 'string'
+            ? { KODE_RELOAD_SENDER_DIGEST: senderDigests[file] }
+            : {}),
           ...(targetId !== undefined ? { KODE_RELOAD_TARGET_ID: targetId } : {})
         }
       });
@@ -198,29 +229,54 @@ const server = createServer((request, response) => {
         );
         continue;
       }
-      // F3 二轮(2026-11-05 复审):退出码 0 只证明命令跑完,证明不了应用的
-      // 就是发送方 digest 指向的内容——应用完成后对所发文件重算 sha256,与
-      // 收到时算的 digest(发送方内容指纹)比对一致才回 applied;漂移即如实
-      // failed(不落应用台账、不自称 applied)。
-      let postApplyDigest;
+      // F3 三轮(2026-11-06 复审):退出码 0 只证明命令跑完,证明不了引擎
+      // 加载的是发送方冻结的内容——旧「源文件前后哈希」比较在空操作命令
+      // (不改源文件)面前恒真,是假 applied 通路。修后对应用产物(引擎目录
+      // --artifact-dir 中的实际文件)重算 sha256,与报文下发的 sender_digest
+      // (发送方冻结 digest)比对一致才回 applied;缺目录/缺基准/产物读不到/
+      // 哈希不一致一律如实 failed,不落应用台账、不自称 applied。
+      if (artifactDir === undefined) {
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: '接收端未配置引擎产物目录(--artifact-dir),无法核验应用产物:不自称 applied'
+          })
+        );
+        continue;
+      }
+      const senderDigest =
+        senderDigests !== undefined && typeof senderDigests[file] === 'string' ? senderDigests[file] : undefined;
+      if (senderDigest === undefined) {
+        receipts.push(
+          withTarget({
+            status: 'failed',
+            file,
+            reason: '报文缺 sender_digest(发送方冻结 digest),应用产物无比对基准:不自称 applied'
+          })
+        );
+        continue;
+      }
+      const artifact = path.join(artifactDir, path.basename(file));
+      let artifactDigest;
       try {
-        postApplyDigest = sha256Hex(readFileSync(file, 'utf8'));
+        artifactDigest = sha256Hex(readFileSync(artifact, 'utf8'));
       } catch {
         receipts.push(
           withTarget({
             status: 'failed',
             file,
-            reason: '应用后读不回所发文件,无法核验应用内容(不自称 applied)'
+            reason: `应用后读不到应用产物(${artifact}),无法核验应用内容:不自称 applied`
           })
         );
         continue;
       }
-      if (postApplyDigest !== digest) {
+      if (artifactDigest !== senderDigest) {
         receipts.push(
           withTarget({
             status: 'failed',
             file,
-            reason: '应用后重算 sha256 与发送方内容指纹不一致(应用的不是所发内容):不自称 applied'
+            reason: '应用产物 sha256 与 sender_digest 不一致(应用的不是发送方冻结内容):不自称 applied'
           })
         );
         continue;
@@ -229,7 +285,7 @@ const server = createServer((request, response) => {
       const entry = {
         revision: appliedRevision,
         file,
-        digest: postApplyDigest,
+        digest: artifactDigest,
         command: applyCommand,
         stdout: (result.stdout ?? '').trim(),
         appliedAt: new Date().toISOString()
@@ -243,7 +299,7 @@ const server = createServer((request, response) => {
         withTarget({
           status: 'applied',
           file,
-          digest: scenario === 'digest-mismatch' ? postApplyDigest.replace(/^./, d => (d === '0' ? '1' : '0')) : postApplyDigest,
+          digest: scenario === 'digest-mismatch' ? artifactDigest.replace(/^./, d => (d === '0' ? '1' : '0')) : artifactDigest,
           revision: appliedRevision
         })
       );

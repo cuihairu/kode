@@ -15,15 +15,21 @@ export interface ReferenceReceiver {
 export async function startReferenceReceiver(
   mode: 'stage' | 'apply',
   scenario: 'accepted' | 'applied' | 'digest-mismatch' | 'echo' | 'error500',
-  applyCommand?: string
+  applyCommand?: string,
+  artifactDir?: string
 ): Promise<ReferenceReceiver> {
   const root = mkdtempSync(path.join(os.tmpdir(), 'kode-receiver-wiring-'));
   const script = path.join(__dirname, '..', '..', 'scripts', 'hot-reload-receiver', 'referenceReceiver.mjs');
   // F3:apply 模式必须配真实应用命令(--apply-command)接收端才会回 applied;
   // 未配置时接收端如实回 accepted(仅暂存,未应用)。
+  // F3 三轮:applied 前接收端对 --artifact-dir 引擎产物重算 sha256 与报文
+  // sender_digests 比对一致才回 applied;缺目录一律不自称 applied。
   const args = [script, '--port', '0', '--root', root, '--mode', mode, '--scenario', scenario];
   if (applyCommand !== undefined) {
     args.push('--apply-command', applyCommand);
+  }
+  if (artifactDir !== undefined) {
+    args.push('--artifact-dir', artifactDir);
   }
   const proc = spawn(
     process.execPath,

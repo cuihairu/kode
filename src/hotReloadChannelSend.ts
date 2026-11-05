@@ -196,7 +196,10 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
   await Promise.all(
     [...groups.entries()].map(async ([rootId, groupFiles]) => {
       try {
-        await transport.send({ rootId, targetId }, groupFiles, receipt => {
+        await transport.send(
+          { rootId, targetId },
+          groupFiles,
+          receipt => {
           const receiptFiles = receipt.file !== undefined ? [receipt.file] : groupFiles;
           for (const file of receiptFiles) {
             const scheduleUnconfirmedSettle = (): void => {
@@ -282,7 +285,15 @@ export async function sendFilesViaReloadChannel(deps: ReloadChannelSendDeps): Pr
                 break;
             }
           }
-        });
+          },
+          // F3 三轮:发送时点冻结的 digest 随报文下发(sender_digests),接收端
+          // 对应用产物核验后才回 applied;基准不可读的文件不进下发字段
+          new Map(
+            [...sentDigests.entries()].filter(
+              (entry): entry is [string, string] => entry[1] !== undefined
+            )
+          )
+        );
       } catch (error: unknown) {
         // 单组失败:整组按 failed 落账(不冒充未确认),绑定发送时点代际写回
         failedCount += groupFiles.length;

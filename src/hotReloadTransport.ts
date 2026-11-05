@@ -71,11 +71,15 @@ export interface ReloadTransport {
    * 发送一组文件重载。回执逐条经 onReceipt 推送;返回汇总(同批回执)。
    * 实现保证:官方通道不产生 applied;HTTP 通道仅在回包协议符合时产生
    * accepted/applied,未认到的文件落 'sent'(已送达无协议回执)。
+   * F3 三轮:senderDigests=发送时点冻结的内容 sha256(file → hex,可选)——
+   * 随报文下发(sender_digests 字段),接收端据此对应用产物核验后才能回
+   * applied;不给则接收端无法按发送方冻结基准核验,不会回 applied。
    */
   send(
     target: ReloadTarget,
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary>;
 }
 
@@ -283,7 +287,8 @@ export class HttpReloadTransport implements ReloadTransport {
   async send(
     target: ReloadTarget,
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
     // F4:${targetId} 占位先于变量替换替换为发送目标标识(请求侧区分/寻址
     // 目标实例;未知占位原样保留的批量口径不受影响)
@@ -312,13 +317,45 @@ export class HttpReloadTransport implements ReloadTransport {
       }
       return text;
     };
+    // F3 三轮:JSON 对象请求体自动附带 sender_digests——发送方冻结 digest
+    // 随报文下发,接收端对应用产物核验后才回 applied(协议级防假应用)。
+    // 模板已显式给出 sender_digests 字段则不覆盖;非 JSON 对象(数组/纯文本)
+    // 无处附加,如实保持原样。digest 缺失(基准不可读)的文件不进字段。
+    const autoAttachSenderDigests = (text: string): string => {
+      const entries =
+        senderDigests !== undefined
+          ? [...senderDigests.entries()].filter(
+              ([file, digest]) => fileSet.includes(file) && typeof digest === 'string' && digest.length > 0
+            )
+          : [];
+      if (entries.length === 0) {
+        return text;
+      }
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          !Array.isArray(parsed) &&
+          !('sender_digests' in (parsed as Record<string, unknown>))
+        ) {
+          return JSON.stringify({
+            ...(parsed as Record<string, unknown>),
+            sender_digests: Object.fromEntries(entries)
+          });
+        }
+      } catch {
+        // 非 JSON:无处附加,保持原样
+      }
+      return text;
+    };
     const request: ReloadHttpRequest = {
       url: substitute(this.entry.url),
       method: this.entry.method,
       headers: Object.fromEntries(
         Object.entries(this.entry.headers).map(([key, value]) => [key, substitute(value)])
       ),
-      body: autoAttachTargetId(substitute(this.entry.body))
+      body: autoAttachSenderDigests(autoAttachTargetId(substitute(this.entry.body)))
     };
     let response: ReloadHttpResponse;
     try {
@@ -491,7 +528,9 @@ export class KbengineOfficialTransport implements ReloadTransport {
   async send(
     _target: ReloadTarget,
     fileSet: readonly string[],
-    onReceipt: (receipt: ReloadReceipt) => void
+    onReceipt: (receipt: ReloadReceipt) => void,
+    // F3 三轮:官方通道无回执协议,冻结 digest 不随控制台命令下发(忽略)
+    _senderDigests?: ReadonlyMap<string, string>
   ): Promise<ReloadSendSummary> {
     const conn = this.connector()(this.config);
     try {

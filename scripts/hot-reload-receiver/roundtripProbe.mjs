@@ -77,7 +77,11 @@ const scenarioRun = async (mode, scenario, fileBody, label) => {
   try {
     const probe = await httpRequest(receiver.port, 'GET', '/probe');
     log(`GET /probe -> HTTP ${probe.status} "${probe.body}"(连通性探测面)`);
-    const body = JSON.stringify({ files: [fileBody.path] });
+    // F3 三轮:请求报文带 sender_digests(发送方冻结 digest 随报文下发)
+    const body = JSON.stringify({
+      files: [fileBody.path],
+      sender_digests: { [fileBody.path]: sha256Hex(fileBody.content) }
+    });
     log(`POST /reload`);
     log(`  request body : ${body}`);
     const response = await httpRequest(receiver.port, 'POST', '/reload', body);
@@ -106,6 +110,7 @@ const main = async () => {
   log(`主机: ${os.hostname()} node ${process.version}`);
   log('接收端: scripts/hot-reload-receiver/referenceReceiver.mjs(零依赖 node:http,已记录契约参考实现)');
   log('契约: {"status":"accepted","file":<逐字回显>} / {"status":"applied","file":<逐字回显>,"digest":<sha256 hex>}');
+  log('      请求报文带 sender_digests(F3 三轮:发送方冻结 digest 随报文下发,接收端对引擎应用产物核验后才回 applied)');
   log('背景: 引擎原生重载 KBEngine.reloadScript 无 HTTP 回执(docs/review/2026-10-30-completion-and-lint-audit.md');
   log('      AUD-007 实勘);accepted/applied 契约作用于用户配置 @http: quick action 回包体,本探针提供会说');
   log('      该契约的真实服务端与真实 wire 样本。解析/升格行为由 tests/hotReloadReceiverRoundtrip.test.ts 钉住。');

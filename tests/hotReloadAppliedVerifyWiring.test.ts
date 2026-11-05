@@ -357,13 +357,19 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     receiver: { port: number },
     store: HotReloadTargetStateStore,
     clock: ReturnType<typeof makeTimers>,
-    realFile: string
+    realFile: string,
+    sentDigest?: string
   ): Promise<void> => {
     enableHotReload();
     setupHotReload(
       makeContext(),
       async (_name, sendOptions) => {
-        const response = await realHttpPost(receiver.port, JSON.stringify({ files: [realFile] }));
+        // F3 三轮:发送方冻结 digest 随报文下发(sender_digests)
+        const body: Record<string, unknown> = { files: [realFile] };
+        if (sentDigest !== undefined) {
+          body.sender_digests = { [realFile]: sentDigest };
+        }
+        const response = await realHttpPost(receiver.port, JSON.stringify(body));
         sendOptions?.onHttpResponse?.(response);
         return true;
       },
@@ -395,12 +401,14 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
     // 测试对引擎侧产物断言应用真实发生
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
     const realApply = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
-    const receiver = await startReferenceReceiver('apply', 'applied', realApply);
+    // F3 三轮:接收端对引擎产物重算 sha256 与报文 sender_digests 比对一致才回 applied
+    const receiver = await startReferenceReceiver('apply', 'applied', realApply, engineDir);
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
       const store = new HotReloadTargetStateStore({ now: () => 5 });
-      await wireRealReceiver(receiver, store, makeTimers(), realFile);
+      const sentDigest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+      await wireRealReceiver(receiver, store, makeTimers(), realFile, sentDigest);
       await flush();
       await waitFor(() => store.get(KEY, realFile)?.outcome === 'applied');
 
@@ -421,12 +429,13 @@ describe('setupHotReload applied 核验接线(IDE-REV-023)', () => {
   it('真实接收端 digest 不符回包(真 wire):保持未确认并注解阻塞', async () => {
     const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-engine-'));
     const realApply = `node -e "const fs=require('fs'),p=require('path');const d='${engineDir}';fs.mkdirSync(d,{recursive:true});fs.copyFileSync(process.env.KODE_RELOAD_FILE,p.join(d,p.basename(process.env.KODE_RELOAD_FILE)))"`;
-    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', realApply);
+    const receiver = await startReferenceReceiver('apply', 'digest-mismatch', realApply, engineDir);
     try {
       const realFile = path.join(mkdtempSync(path.join(os.tmpdir(), 'kode-rev023-')), 'Avatar.py');
       writeFileSync(realFile, CONTENT, 'utf8');
       const store = new HotReloadTargetStateStore({ now: () => 5 });
-      await wireRealReceiver(receiver, store, makeTimers(), realFile);
+      const sentDigest = createHash('sha256').update(Buffer.from(CONTENT, 'utf8')).digest('hex');
+      await wireRealReceiver(receiver, store, makeTimers(), realFile, sentDigest);
       await flush();
       await waitFor(() => (store.get(KEY, realFile)?.detail ?? '').includes('digest 与所发内容不符'));
 
