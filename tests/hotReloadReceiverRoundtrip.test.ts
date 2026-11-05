@@ -47,14 +47,24 @@ const RECEIVER_SCRIPT = path.join(
 const startReceiver = async (
   mode: string,
   scenario: string,
-  extraArgs: string[] = []
+  extraArgs: string[] = [],
+  shellPrelude?: string
 ): Promise<ReceiverHandle> => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-receiver-'));
-  const proc = spawn(
-    process.execPath,
-    [RECEIVER_SCRIPT, '--port', '0', '--root', root, '--mode', mode, '--scenario', scenario, ...extraArgs],
-    { stdio: ['ignore', 'pipe', 'inherit'] }
-  );
+  const argv = ['--port', '0', '--root', root, '--mode', mode, '--scenario', scenario, ...extraArgs];
+  // shellPrelude:经 sh 包裹启动(如 ulimit 资源上限注入),仅测试构造资源型
+  // 失败用;默认直接 spawn node。路径均无空格,单引号包裹足够。
+  const proc =
+    shellPrelude === undefined
+      ? spawn(process.execPath, [RECEIVER_SCRIPT, ...argv], { stdio: ['ignore', 'pipe', 'inherit'] })
+      : spawn(
+          'sh',
+          [
+            '-c',
+            `${shellPrelude}; exec '${process.execPath}' '${RECEIVER_SCRIPT}' ${argv.map(arg => `'${arg}'`).join(' ')}`
+          ],
+          { stdio: ['ignore', 'pipe', 'inherit'] }
+        );
   const port = await new Promise<number>((resolve, reject) => {
     let buffer = '';
     const timer = setTimeout(() => reject(new Error('receiver 启动超时')), 5000);
@@ -101,8 +111,8 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     outsideDirs = [];
   });
 
-  const start = async (mode: string, scenario: string, extraArgs: string[] = []): Promise<ReceiverHandle> => {
-    const handle = await startReceiver(mode, scenario, extraArgs);
+  const start = async (mode: string, scenario: string, extraArgs: string[] = [], shellPrelude?: string): Promise<ReceiverHandle> => {
+    const handle = await startReceiver(mode, scenario, extraArgs, shellPrelude);
     handles.push(handle);
     return handle;
   };
@@ -657,6 +667,33 @@ describe('IDE-AUD-007 参考接收端真实回环联调(accepted/applied 协议�
     expect(readFileSync(path.join(engineDir, 'Monster.py'), 'utf8')).toBe(badOld);
     const ledger = readFileSync(path.join(receiver.root, 'applied-revisions.jsonl'), 'utf8');
     expect(JSON.parse(ledger.trim().split('\n')[0])).toMatchObject({ file: good });
+  });
+
+  // F3 六轮(复审 FAIL-4 闭合):部分写入后抛错 → 残留被回滚清理,如实报告
+  // 「无残留」。用 RLIMIT_FSIZE 构造真实的「写一半再抛错」:接收端在
+  // ulimit -f 2(单文件 1024 字节上限)下运行,900B 源文件可暂存,但产物内容
+  // (非法 UTF-8 字节读入后再编码为 1100B)落盘越过上限 → 写入中途 EFBIG,
+  // 留下 1024B 部分写入残留,回滚必须把它清干净。
+  it('F3 六轮回归:部分写入后抛错(RLIMIT_FSIZE)→ 残留被清理,如实「无残留」', async () => {
+    const engineDir = mkdtempSync(path.join(os.tmpdir(), 'kode-aud007-engine-'));
+    engineDirs.push(engineDir);
+    const receiver = await start('apply', 'applied', ['--artifact-dir', engineDir], 'ulimit -f 2');
+    const file = path.join(receiver.root, 'Big.py');
+    // 800×'A' + 100×0x80(非法 UTF-8):接收端 utf8 读入得 100 个 U+FFFD,
+    // 再编码落盘 = 800 + 300 = 1100B > 1024B 上限;暂存副本(原始 900B)可过
+    const raw = Buffer.concat([Buffer.alloc(800, 0x41), Buffer.alloc(100, 0x80)]);
+    writeFileSync(file, raw);
+    const decoded = readFileSync(file, 'utf8');
+
+    const response = await postReload(receiver.port, { files: [file], sender_digests: { [file]: sha256(decoded) } });
+    const receipt = JSON.parse(response.body) as { status: string; reason?: string };
+    expect(receipt.status).toBe('failed');
+    expect(receipt.reason).toContain('落盘失败');
+    // 部分写入残留(1024B 半成品)被回滚清理:引擎目录无残留,如实声明
+    expect(existsSync(path.join(engineDir, 'Big.py'))).toBe(false);
+    expect(receipt).not.toHaveProperty('rollback_failed');
+    expect(receipt.reason).toContain('无残留');
+    expect(existsSync(path.join(receiver.root, 'applied-revisions.jsonl'))).toBe(false);
   });
 
   it('F3 三轮:通道发送自动附带 sender_digests(发送方冻结 digest 随报文下发)', async () => {
