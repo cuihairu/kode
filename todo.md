@@ -1237,3 +1237,28 @@
 - [ ] KR-AUD-94 [P2] 方法编号模式转换禁止整数截断：`crates/kode-server/src/wire_codec.rs:959` Alias 模式把 `MethodRef::Utype(u)` 直接 `as u8`，257 被编码为 1 且返回 Ok。验收：MethodRef 与编码模式不匹配时在写输出前拒绝，或经显式消息表映射后编码，不以整数强转代替 utype→alias 映射；覆盖 255/256/257 边界、两方向模式不匹配及合法模式，错误不得修改原输出缓冲。（2026-11-04：已加入口参数数量及编号模式校验，非法输入写入前拒绝；新增 wire_codec_units 测试，独立源码探针 1/1 通过。完整 server 测试被 message_table.rs 在途修改缺 interface_path 编译错误阻断；边界及完整门禁待补，保持开放。）（后续重验：阻断已解除，cargo test -p kode-server --test wire_codec_units --offline 16/16 通过；其余各条边界与修复前红证据仍待补。）
 - [ ] KR-AUD-95 [P3] 修复 RootRegistry 默认构造保留 ID 冲突：`crates/kode-vfs/src/store.rs:42/49` 派生 Default 使 next_id=0，而 new() 从 1 起；`RootRegistry::default().register("/project")` 返回 UNROOTED 的保留 RootId(0)。验收：Default 委托 new() 或等价初始化，两种构造首根均非 0，重复注册幂等、多根 ID 唯一；当前 server 用 new()，不将此项描述为服务器主路径必现故障。（已实现 Default 委托 new() 并通过 kode-vfs 测试；待补修复前红的证据后验收。）
 - [ ] KR-AUD-96 [P3] 修复文件系统根的 URI 归属边界：`crates/kode-vfs/src/store.rs:121` prefix_len_at_boundary 注册 `/` 后对 `/project/a.py` 的剩余串为 `project/a.py`，因不以 `/` 开头而拒绝，返回 UNROOTED。验收：Unix `/` 与规范化 Windows 卷根的子文件正确归属，根自身、嵌套根最长匹配、兄弟目录隔离均保持正确；与 KR-AUD-95 分别验证构造和前缀匹配。（已修复 Unix 根并通过 kode-vfs 测试；已补 Windows 卷根、嵌套根和跨盘隔离测试，`cargo test -p kode-vfs --offline` 49 项通过；修复前红证据待补，保持开放。）
+
+## 空间/导航引擎功能提示适配（2026-11-05）
+
+背景：kode 作为 KBEngine 配套插件，空间分配/导航加载相关 API 已有类型 stub（`kbengine/typings/_KBEngine_*.pyi`：`addSpaceGeometryMapping`/`navigate`/`setSpaceData`/`CellAppModuleHooks`）与知识库（`docs/knowledge/api-cellapp.md`、`entry-script-spi-methods.md`，含 file:line/签名/回调链），stub 导出经 `src/pythonStubExport.ts` 可被 Pylance 消费；但入口脚本 SPI 与资源路径提示未接入 kode 自有 language service（hover/补全/诊断）。
+
+- [ ] SP-1 [P0] 入口脚本 SPI hooks 接入 hover/补全
+  缺口：`onSpaceGeometryLoaded` / `onAllSpaceGeometryLoaded` / `onSpaceData` 等 kbemain 模块级回调只在 knowledge 文档与 `_KBEngine_hooks.pyi` Protocol 中；`src/hooks.ts` 36 个实体 hooks 仅含 `onEnterSpace`/`onLeaveSpace`/`onSpaceGone`，模块级 SPI 无 hover/文档/源码跳转。
+  落点：`src/hooks.ts` 新增 entry 类（或复用 space 分类），数据源对齐 `docs/knowledge/entry-script-spi-methods.md`（已有宏签名/格式/file:line）；`src/languageProviders.ts` `createHookHover` 按文件路径（`scripts/*/kbemain.py`）作用域过滤，避免污染实体脚本。
+  验收：kbemain.py 中 `onSpace*` 出现补全，hover 显示签名+调用时机+源码位置（如 `spacememory.cpp:308/336/609`）；实体 hooks 既有测试零回归；prove-red=修复前 kbemain 无该补全/hover。
+
+- [ ] SP-2 [P1] KBEngine 模块函数 hover 挂 knowledge 摘要
+  落点：`src/kbeModuleIndex.ts`（38 符号）为 `addSpaceGeometryMapping`/`setSpaceData`/`navigate`/`raycast` 等挂 metadata，hover 附 `api-cellapp.md` 对应行摘要+file:line（模式同 hooks 的 sourceLocation）。
+  验收：`KBEngine.addSpaceGeometryMapping(...)` hover 含层参数语义与回调链说明；未挂符号零回归。
+
+- [ ] SP-3 [P1] 导航资源路径补全
+  落点：`addSpaceGeometryMapping` 第 3 参与 `params` dict 值 → 扫描 assetsRoot 下 `*.navmesh`/`*.tmx` 补全（参考既有 assetsRootScan/listPathRes 面）。
+  验收：路径前缀补全出工作区实际存在的导航文件；无匹配文件时不误报、不阻塞补全。
+
+- [ ] SP-4 [P2] 空间/导航语义诊断
+  落点：DiagnosticScheduler——`navigate`/`canNavigate` 前置条件（几何未加载）、`_mapping` 保留键被脚本覆盖、layer 与 params 不一致。
+  验收：各反例产诊断、正例零误报，接入既有诊断测试口径（prove-red 后修复）。
+
+- [ ] SP-5 [P2] `createCellEntityInNewSpace(cellappIndex)` 语义 hover
+  落点：参数处 hover 说明 0=自动均衡、N=取模轮转（口径=docs/zh/api/kbengine/baseapp/Entity.md:144）。
+  验收：cellappIndex 参数 hover 显示语义说明与示例。
