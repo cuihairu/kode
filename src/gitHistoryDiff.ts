@@ -122,22 +122,31 @@ export async function queryVersionContent(
   return { kind: 'error', message: summarizeVersionError(outcome) };
 }
 
-/** 判父提交:根提交(无父)返回 null,否则首父哈希。 */
+/**
+ * 判父提交结果:区分「确认根提交(无父)」与「判定失败」。
+ * 审核发现:父提交查询失败被当作根提交,会让差异视图错误显示整份文件为新增。
+ */
+export type ParentCommitResult =
+  | { kind: 'parent'; hash: string }
+  | { kind: 'root' }
+  | { kind: 'error'; outcome: GitRunOutcome };
+
+/** 判父提交:根提交(无父)→ root,否则首父哈希 → parent;查询失败 → error。 */
 export async function getParentCommit(
   repoRoot: string,
   commit: string,
   deps: VersionQueryDeps,
   request?: GitQueryRequest
-): Promise<string | null> {
+): Promise<ParentCommitResult> {
   const outcome = await deps.runGit(
     ['rev-list', '--parents', '-n1', commit],
     { cwd: repoRoot, timeoutMs: deps.timeoutMs, maxOutputBytes: 4096 },
     request
   );
-  if (outcome.kind !== 'ok') return null; // 无法判定按无父处理(左侧空)
+  if (outcome.kind !== 'ok') return { kind: 'error', outcome };
   const tokens = outcome.stdout.trim().split(/\s+/);
-  if (tokens.length < 2) return null; // 根提交
-  return tokens[1] ?? null;
+  if (tokens.length < 2) return { kind: 'root' };
+  return { kind: 'parent', hash: tokens[1] ?? '' };
 }
 
 /** git 失败摘要(复用 IDE-GIT-005 风格:结构化结果 → 一行文案)。 */
@@ -181,7 +190,14 @@ export async function openVersionDiff(
   parentFilePath?: string
 ): Promise<void> {
   const parent = await getParentCommit(repoRoot, commit, deps);
-  const left = makeVersionUri(repoRoot, parent ?? 'EMPTY', parentFilePath ?? filePath);
+  if (parent.kind === 'error') {
+    throw new Error(`无法判定父提交(${commit.slice(0, 8)}):${summarizeVersionError(parent.outcome)}`);
+  }
+  const left = makeVersionUri(
+    repoRoot,
+    parent.kind === 'parent' ? parent.hash : 'EMPTY',
+    parentFilePath ?? filePath
+  );
   const right = makeVersionUri(repoRoot, commit, filePath);
   const label = `${path.basename(filePath)} @ ${commit.slice(0, 8)}`;
   await vscode.commands.executeCommand(
