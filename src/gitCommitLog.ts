@@ -232,9 +232,56 @@ function parseFollowStatus(line: string): FollowStatus | null {
   const kind = m[1] as FollowStatus['kind'];
   const parts = m[3].split('\t');
   if ((kind === 'R' || kind === 'C') && parts.length >= 2) {
-    return { kind, oldPath: parts[0], newPath: parts[1] };
+    return { kind, oldPath: unquoteGitPath(parts[0]), newPath: unquoteGitPath(parts[1]) };
   }
-  return { kind, newPath: parts[0] };
+  return { kind, newPath: unquoteGitPath(parts[0]) };
+}
+
+/**
+ * 反解 git `core.quotepath=true` 对非 ASCII/需引号路径的引号转义
+ * (审核发现修复):git 会把中文/空格等路径输出为 `"\\344\\270\\255..."`
+ * (C 风格八进制转义),pathAtCommit 若保留转义串会让 `git show
+ * <commit>:<path>` 取不到版本。仅当整段带引号才反解,普通路径原样返回。
+ */
+function unquoteGitPath(raw: string): string {
+  if (raw.length < 2 || raw[0] !== '"' || raw[raw.length - 1] !== '"') {
+    return raw;
+  }
+  const inner = raw.slice(1, -1);
+  const bytes: number[] = [];
+  let hasBytes = false;
+  let out = '';
+  const flush = (): void => {
+    if (hasBytes) {
+      out += new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+      bytes.length = 0;
+      hasBytes = false;
+    }
+  };
+  for (let i = 0; i < inner.length; i += 1) {
+    const ch = inner[i];
+    if (ch === '\\' && i + 1 < inner.length) {
+      const next = inner[i + 1];
+      if (next === '\\' || next === '"') {
+        flush();
+        out += next;
+        i += 1;
+        continue;
+      }
+      // 八进制转义 \NNN
+      const oct = /^[0-7]{3}/.exec(inner.slice(i + 1));
+      if (oct) {
+        bytes.push(parseInt(oct[0], 8));
+        hasBytes = true;
+        i += oct[0].length;
+        continue;
+      }
+    }
+    flush();
+    out += ch;
+  }
+  flush();
+  return out;
 }
 
 /** 把一条 `--format` 记录片(FS 分隔)解析为提交记录。 */

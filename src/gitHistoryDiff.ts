@@ -64,10 +64,10 @@ export function relativeVersionPath(repoRoot: string, filePath: string): string 
   if (abs === root) return '';
   if (!abs.startsWith(root + P.sep)) return null;
   const rel = P.relative(root, abs);
-  // 父段(逃逸)拒绝先行;win32 的 rel 用 \ 分隔是常态,归一成 `/` 后再查
-  // 残留反斜杠(POSIX 文件名中的字面 \ 维持拒绝口径)——顺序反了会在
-  // Windows 上把一切真实路径判成逃逸(文件历史映射全线失效)。
-  if (rel.includes('..')) return null;
+  // 拒绝确切 `..`/`.` 父段(允许 a..py 等合法文件名);win32 的 rel 用 \ 分隔
+  // 是常态,归一成 `/` 后再查残留反斜杠(POSIX 文件名中的字面 \ 维持拒绝口径)。
+  const segments = rel.split(P.sep);
+  if (segments.some(segment => segment === '..' || segment === '.')) return null;
   const posixRel = rel.split(P.sep).join('/');
   if (posixRel.includes('\\')) return null;
   return posixRel;

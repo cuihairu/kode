@@ -54,6 +54,10 @@ describe('IDE-GIT-006 路径换算与 URI 三键', () => {
     // 仓库外与逃逸都拒绝
     expect(relativeVersionPath('/repo', '/other/a.py')).toBeNull();
     expect(relativeVersionPath('/repo', '/repo/../outside.py')).toBeNull();
+    // 审核发现修复:合法文件名内含 `..` 不拒绝(只拒绝确切父段);
+    // 多级子目录在 POSIX 上不因反斜杠子串误判拒绝
+    expect(relativeVersionPath('/repo', '/repo/src/a..py')).toBe('src/a..py');
+    expect(relativeVersionPath('/repo', '/repo/foo..bar/baz.py')).toBe('foo..bar/baz.py');
   });
 
   it('makeVersionUri/decode:仓库/提交/路径三键独立往返', () => {
