@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use crate::config::parse_config;
+use crate::config::{merge_config_xml, parse_config};
 use crate::model::{parse_alias, parse_entities, parse_types, TypeKind};
 use crate::xml::Document;
 
@@ -435,4 +435,59 @@ pub fn dump_config_node(w: &mut JsonWriter, node: &crate::config::ConfigNode) {
     w.raw("],\"sourceComments\":");
     str_array(w, &node.source_comments);
     w.raw("}");
+}
+
+// --- 配置合并对拍(KODE-CFG-003) ---
+
+/// 合并对拍语料(base, override)XML 对(仓库相对路径;每对先 parse 后 merge,
+/// 输出 merge(base, override) 树记录)。
+pub const CONFIG_MERGE_PAIRS: &[(&str, &str)] = &[
+    // 真实路径:引擎 defaults 为基、元件 kbengine.xml 覆盖(顶层单 `<root>` 递归下钻)
+    ("tests/fixtures/config/kbengine_defaults.xml", "tests/fixtures/config/kbengine.xml"),
+    // 分支覆盖:单名叶子替换 / 仅 base / 仅 override / 双容器递归 / 容器↔叶子双向 /
+    // 重复名整表替换双向 / 注释合并去重与 override 优先 / 名字序 / 深层递归
+    ("tests/fixtures/config/merge/m01_leaf_base.xml", "tests/fixtures/config/merge/m01_leaf_override.xml"),
+    ("tests/fixtures/config/merge/m02_base_only_base.xml", "tests/fixtures/config/merge/m02_base_only_override.xml"),
+    ("tests/fixtures/config/merge/m03_override_only_base.xml", "tests/fixtures/config/merge/m03_override_only_override.xml"),
+    ("tests/fixtures/config/merge/m04_both_containers_base.xml", "tests/fixtures/config/merge/m04_both_containers_override.xml"),
+    ("tests/fixtures/config/merge/m05_container_vs_leaf_base.xml", "tests/fixtures/config/merge/m05_container_vs_leaf_override.xml"),
+    ("tests/fixtures/config/merge/m06_leaf_vs_container_base.xml", "tests/fixtures/config/merge/m06_leaf_vs_container_override.xml"),
+    ("tests/fixtures/config/merge/m07_repeat_base.xml", "tests/fixtures/config/merge/m07_repeat_override.xml"),
+    ("tests/fixtures/config/merge/m08_repeat_override_base.xml", "tests/fixtures/config/merge/m08_repeat_override_override.xml"),
+    ("tests/fixtures/config/merge/m09_comment_base.xml", "tests/fixtures/config/merge/m09_comment_override.xml"),
+    ("tests/fixtures/config/merge/m10_order_base.xml", "tests/fixtures/config/merge/m10_order_override.xml"),
+    ("tests/fixtures/config/merge/m11_nested_base.xml", "tests/fixtures/config/merge/m11_nested_override.xml"),
+];
+
+/// 整个合并语料的 golden JSON(与 tests/configMergeParity.test.ts 的 TS 提取器
+/// 逐字段一致;parse 任一侧失败则 record=null)。
+pub fn dump_config_merge_corpus(repo_root: &Path) -> String {
+    let mut w = JsonWriter::new();
+    w.raw("{\"generator\":\"kode-parser dump-config-merge-golden\",\"pairCount\":");
+    w.num(CONFIG_MERGE_PAIRS.len());
+    w.raw(",\"pairs\":[");
+    for (i, (base_path, override_path)) in CONFIG_MERGE_PAIRS.iter().enumerate() {
+        if i > 0 {
+            w.raw(",");
+        }
+        w.raw("{\"base\":");
+        w.str(base_path);
+        w.raw(",\"override\":");
+        w.str(override_path);
+        w.raw(",\"record\":");
+        let base_text = std::fs::read_to_string(repo_root.join(base_path)).unwrap_or_default();
+        let override_text =
+            std::fs::read_to_string(repo_root.join(override_path)).unwrap_or_default();
+        match (parse_config(&base_text), parse_config(&override_text)) {
+            (Some(base), Some(over)) => {
+                dump_config_node(&mut w, &merge_config_xml(&base, &over));
+            }
+            _ => {
+                w.raw("null");
+            }
+        }
+        w.raw("}");
+    }
+    w.raw("]}");
+    w.buf
 }

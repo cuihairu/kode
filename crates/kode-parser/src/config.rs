@@ -246,3 +246,159 @@ pub fn parse_config(xml: &str) -> Option<ConfigNode> {
     }
     Some(build(0, &arena))
 }
+
+// --- 合并语义(KODE-CFG-003,镜像 TS mergeConfigXml/mergeSourceComments) ---
+
+/// JS `\s` 精确字符集(与 Rust `is_whitespace` 在 `\u{feff}` 等处有出入,
+/// 对拍须逐字节一致,故按 ECMAScript 定义镜像)。
+fn is_js_ws(c: char) -> bool {
+    matches!(
+        c,
+        ' ' | '\t'
+            | '\n'
+            | '\u{0b}'
+            | '\u{0c}'
+            | '\r'
+            | '\u{00a0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200a}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202f}'
+            | '\u{205f}'
+            | '\u{3000}'
+            | '\u{feff}'
+    )
+}
+
+/// 注释内容消毒:镜像 TS `sanitizeXmlComment`(serverConfigCommentText.ts:11)——
+/// 空白串压成单空格并 trim、`-` 连串压成单个、结尾 `-` 补空格(防与 `-->` 拼出
+/// `--`)。合并去重与渲染回写共用此口径。
+pub fn sanitize_xml_comment(text: &str) -> String {
+    // /\s+/g → ' '
+    let mut spaced = String::with_capacity(text.len());
+    let mut in_ws = false;
+    for c in text.chars() {
+        if is_js_ws(c) {
+            if !in_ws {
+                spaced.push(' ');
+            }
+            in_ws = true;
+        } else {
+            spaced.push(c);
+            in_ws = false;
+        }
+    }
+    // trim()(替换后边缘只剩单空格)
+    let trimmed = spaced.trim_matches(' ');
+    // /-+/g → '-'
+    let mut collapsed = String::with_capacity(trimmed.len());
+    let mut prev_dash = false;
+    for c in trimmed.chars() {
+        if c == '-' {
+            if !prev_dash {
+                collapsed.push('-');
+            }
+            prev_dash = true;
+        } else {
+            collapsed.push(c);
+            prev_dash = false;
+        }
+    }
+    if collapsed.ends_with('-') {
+        collapsed.push(' ');
+    }
+    collapsed
+}
+
+/// 两侧源注释合并(override 优先):override 侧在前、defaults 侧在后;规范化
+/// (sanitize)后相同只留首条(保留原文);全空返回 None(不设 sourceComments)。
+/// 镜像 TS `mergeSourceComments`(serverConfigMerge.ts:143)。
+fn merge_source_comments(base: &ConfigNode, over: &ConfigNode) -> Option<Vec<String>> {
+    let mut merged: Vec<String> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for comment in over
+        .source_comments
+        .iter()
+        .chain(base.source_comments.iter())
+    {
+        let normalized = sanitize_xml_comment(comment);
+        if normalized.is_empty() || seen.iter().any(|s| *s == normalized) {
+            continue;
+        }
+        seen.push(normalized);
+        merged.push(comment.clone());
+    }
+    if merged.is_empty() {
+        None
+    } else {
+        Some(merged)
+    }
+}
+
+/// 合并(引擎同键覆盖口径,镜像 TS `mergeConfigXml`,serverConfigMerge.ts:164):
+/// 以 defaults(base)为基、自定义(override)覆盖。子键按名字对齐——自定义没有
+/// 的保留默认;自定义写了的整名替换(叶子取自定义值,重复名列表如 `<item>`
+/// 整表替换,不与默认表交错);两边都是单一容器段则递归下钻。源注释两侧都保留:
+/// override 侧在前(优先),同名单元素的 defaults 侧注释追加其后;重复名列表整表
+/// 替换时只带自定义侧注释。
+pub fn merge_config_xml(base: &ConfigNode, override_node: &ConfigNode) -> ConfigNode {
+    // 名字序:base.children 全序在前,override 新名追加在后(各自保序去重)
+    let mut names: Vec<&str> = Vec::new();
+    for child in base
+        .children
+        .iter()
+        .chain(override_node.children.iter())
+    {
+        if !names.contains(&child.name.as_str()) {
+            names.push(&child.name);
+        }
+    }
+    let mut children: Vec<ConfigNode> = Vec::new();
+    for name in names {
+        let base_ones: Vec<&ConfigNode> = base
+            .children
+            .iter()
+            .filter(|child| child.name == name)
+            .collect();
+        let override_ones: Vec<&ConfigNode> = override_node
+            .children
+            .iter()
+            .filter(|child| child.name == name)
+            .collect();
+        if override_ones.is_empty() {
+            // 自定义没写 → 保留默认(整段原样)
+            children.extend(base_ones.into_iter().cloned());
+        } else if base_ones.is_empty() {
+            // 默认没有 → 自定义整段
+            children.extend(override_ones.into_iter().cloned());
+        } else if base_ones.len() == 1
+            && override_ones.len() == 1
+            && !base_ones[0].children.is_empty()
+            && !override_ones[0].children.is_empty()
+        {
+            // 两边都是单一容器段 → 递归下钻(子键继续对齐)
+            children.push(merge_config_xml(base_ones[0], override_ones[0]));
+        } else if base_ones.len() == 1 && override_ones.len() == 1 {
+            // 同名单元素(叶子/空容器):值取自定义,源注释两侧都留(override 优先)
+            let mut node = override_ones[0].clone();
+            if let Some(comments) = merge_source_comments(base_ones[0], override_ones[0]) {
+                node.source_comments = comments;
+            }
+            children.push(node);
+        } else {
+            // 重复名列表(任一侧多个)→ 整表替换为自定义侧
+            children.extend(override_ones.into_iter().cloned());
+        }
+    }
+    let mut merged = ConfigNode {
+        name: override_node.name.clone(),
+        text: override_node.text.clone(),
+        children,
+        source_comments: Vec::new(),
+    };
+    if let Some(comments) = merge_source_comments(base, override_node) {
+        merged.source_comments = comments;
+    }
+    merged
+}
