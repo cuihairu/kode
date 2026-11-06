@@ -22,6 +22,7 @@ import { EntityDependencyAnalyzer, DependencyGraph } from './entityDependency';
 import { buildDependencyGraphInRust } from './dependencyGraphRust';
 import type { DependencyGraphRust } from './dependencyGraphRust';
 import { buildPythonCallGraphInRust } from './pythonCallGraphRust';
+import { randomNonce, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
 import type {
   PythonCallGraphRustResult,
   PythonCallGraphNode
@@ -120,7 +121,8 @@ const KIND_STYLE: Record<RenderNodeKind, string> = {
 /** Rust 源边 kind → mermaid 箭头;未登记 kind 回落 -->。 */
 const RUST_ARROW: Record<string, string> = {
   inheritance: '-->',
-  registration: '--',
+  // `--` 在 mermaid 12 语法里是断链(必须 `---`/`-->`),整图报语法错
+  registration: '---',
   'is-a': '-.->',
   'has-a': '--o',
   implements: '==>',
@@ -247,9 +249,13 @@ function renderLegacyMermaid(graph: RenderGraph): string {
     mermaid += `  ${node.id}["${node.label}"]\n`;
   }
 
-  // 添加边(继承/组合等一律实线箭头,与迁移前口径一致)
+  // 添加边(继承/组合等一律实线箭头)。空标签不输出管道段:离线打包的
+  // mermaid(@mermaid-js/tiny 12)对 `-->||` 直接报语法错,整图渲染失败。
   for (const edge of graph.edges) {
-    mermaid += `  ${edge.from} -->|${edge.label ?? ''}| ${edge.to}\n`;
+    const label = edge.label ?? '';
+    mermaid += label
+      ? `  ${edge.from} -->|${label}| ${edge.to}\n`
+      : `  ${edge.from} --> ${edge.to}\n`;
   }
 
   // 添加点击跳转
@@ -951,9 +957,11 @@ export class EntityDependencyWebView {
   }
 
   private statCard(label: string, value: string | number): string {
+    // KR-AUD-53:value 面会落到进程角色串/最常引用实体名等来自扫描结果的
+    // 字符串面,与 label 一并转义(标签注入)
     return `      <div class="stat-card">
-        <div class="stat-label">${label}</div>
-        <div class="stat-value">${value}</div>
+        <div class="stat-label">${escapeHtml(String(label))}</div>
+        <div class="stat-value">${escapeHtml(String(value))}</div>
       </div>`;
   }
 
@@ -968,6 +976,17 @@ export class EntityDependencyWebView {
     rustUnavailable: boolean
   ): string {
     const title = this.panelTitle();
+    // KR-AUD-50/53:整页 nonce CSP + mermaid 离线打包(media/mermaid.tiny.js,
+    // 经 asWebviewUri 取与 cspSource 同源的 URI),脚本不再依赖 CDN;
+    // 图片源只给导出用的 data:/blob: 开洞。
+    const nonce = randomNonce();
+    const cspSource = this.panel?.webview.cspSource ?? 'vscode-webview:';
+    const mermaidUri = webviewAssetUri(
+      this.panel?.webview,
+      this.context.extensionUri,
+      'media',
+      'mermaid.tiny.js'
+    );
     const isCallGraph = this.mode === 'callgraph';
     const sourceBadge = isCallGraph
       ? rustUnavailable
@@ -1067,10 +1086,11 @@ ${mermaidGraph}
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- 最小 CSP:default-src 'none' 断掉一切外联/外帧/连接,脚本源钉死 mermaid 固定 CDN 路径。
-       未能收 nonce:mermaid securityLevel=loose 的 SVG 点击回调(openFilePath)与工具栏
-       都走内联事件处理器,需 mermaid 本地化+回调改造后才能收紧(已单独登记 todo)。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js 'unsafe-inline';">
+  <!-- 最小 CSP(KR-AUD-50/53):default-src 'none' 断掉一切外联/外帧/连接,
+       脚本只认本次渲染 nonce + 扩展自带 media/mermaid.tiny.js(离线打包,
+       与 cspSource 同源);mermaid securityLevel=strict 下其自带 click 回调被
+       丢弃,打开文件改由面板脚本按 click 指令自绑(见下方事件委托)。 -->
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [cspSource], ['data:', 'blob:', cspSource])}">
   <title>${title}</title>
   <style>
     body {
@@ -1217,7 +1237,7 @@ ${mermaidGraph}
       font-size: 13px;
     }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="${mermaidUri}"></script>
 </head>
 <body>
   <div class="header">
@@ -1225,13 +1245,13 @@ ${mermaidGraph}
     <div style="display: flex; align-items: center; gap: 10px;">
       <span class="source-badge">${sourceBadge}</span>
       <div class="toolbar">
-        <select id="mode-select" onchange="setMode(this.value)" style="padding: 8px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);">
+        <select id="mode-select" style="padding: 8px; background-color: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border);">
           <option value="dependency" ${isCallGraph ? '' : 'selected'}>实体依赖</option>
           <option value="callgraph" ${isCallGraph ? 'selected' : ''}>调用图</option>
         </select>
-        <button onclick="refreshGraph()">刷新</button>
-        <button onclick="exportGraph('png')">导出 PNG</button>
-        <button onclick="exportGraph('svg')">导出 SVG</button>
+        <button id="refresh-graph-btn">刷新</button>
+        <button id="export-png-btn">导出 PNG</button>
+        <button id="export-svg-btn">导出 SVG</button>
       </div>
     </div>
   </div>
@@ -1250,14 +1270,15 @@ ${graphHtml}
 ${legendHtml}
   </div>
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
-    // 初始化 Mermaid
+    // 初始化 Mermaid(KR-AUD-53:securityLevel=strict——标签经 DOMPurify 清洗,
+    // 自带 click 回调在此级别被 mermaid 丢弃,故下方改为面板自绑)
     mermaid.initialize({
       startOnLoad: true,
       theme: 'default',
-      securityLevel: 'loose',
+      securityLevel: 'strict',
       flowchart: {
         useMaxWidth: true,
         htmlLabels: true,
@@ -1265,13 +1286,80 @@ ${legendHtml}
       }
     });
 
-    // 节点点击 → 打开对应文件(entities.xml / .def / types.xml / python)
+    // click 指令回调名保留(strict 下 mermaid 不再调用,图文本口径不变);
+    // 真正的点击打开走下方事件委托,映射同样来自这些 click 指令。
     window.openFilePath = function(filePath) {
       vscode.postMessage({
         command: 'openNode',
         filePath: filePath
       });
     };
+
+    // 节点 → 文件路径映射:渲染前从 .mermaid 源文本读 click 指令
+    // (mermaid 渲染会替换该元素内容,必须在 DOMContentLoaded 前抓取)
+    const openPaths = new Map();
+    const openLabels = new Map();
+    const mermaidSource = document.querySelector('#graph-container .mermaid');
+    if (mermaidSource) {
+      const text = mermaidSource.textContent || '';
+      const nodeLabelRe = /^\\s*([A-Za-z0-9_]+)\\["((?:[^"\\\\]|\\\\.)*)"\\]/gm;
+      const clickRe = /^\\s*click\\s+([A-Za-z0-9_]+)\\s+openFilePath\\s+"((?:[^"\\\\]|\\\\.)*)"/gm;
+      const labels = new Map();
+      let nodeMatch;
+      while ((nodeMatch = nodeLabelRe.exec(text)) !== null) {
+        labels.set(nodeMatch[1], nodeMatch[2]);
+      }
+      let clickMatch;
+      while ((clickMatch = clickRe.exec(text)) !== null) {
+        const filePath = clickMatch[2].replace(/\\\\"/g, '"');
+        openPaths.set(clickMatch[1], filePath);
+        const label = labels.get(clickMatch[1]);
+        if (label !== undefined && !openLabels.has(label)) {
+          openLabels.set(label, filePath);
+        }
+      }
+    }
+
+    // 事件委托:mermaid 渲染出的 g.node id 形如 <前缀><节点 id>-<序号>
+    // (可带 diagramId 前缀),解析不出时回落节点标签文本
+    function resolveOpenPath(node) {
+      const domId = node.id || '';
+      const idMatch = /(?:^|[^A-Za-z0-9_])([A-Za-z0-9_]+)-\\d+$/.exec(domId);
+      if (idMatch && openPaths.has(idMatch[1])) {
+        return openPaths.get(idMatch[1]);
+      }
+      if (openPaths.has(domId)) {
+        return openPaths.get(domId);
+      }
+      const labelEl = node.querySelector('.label');
+      const label = labelEl ? (labelEl.textContent || '').trim() : '';
+      return openLabels.get(label) || null;
+    }
+
+    const graphContainer = document.getElementById('graph-container');
+    if (graphContainer) {
+      graphContainer.addEventListener('click', event => {
+        const target = event.target;
+        const node = target && typeof target.closest === 'function'
+          ? target.closest('g.node')
+          : null;
+        if (!node) {
+          return;
+        }
+        const filePath = resolveOpenPath(node);
+        if (filePath) {
+          vscode.postMessage({ command: 'openNode', filePath: filePath });
+        }
+      });
+    }
+
+    // 工具栏:nonce CSP 下内联事件处理器不执行,一律脚本绑定
+    document.getElementById('mode-select')?.addEventListener('change', event => {
+      setMode(event.target.value);
+    });
+    document.getElementById('refresh-graph-btn')?.addEventListener('click', refreshGraph);
+    document.getElementById('export-png-btn')?.addEventListener('click', () => exportGraph('png'));
+    document.getElementById('export-svg-btn')?.addEventListener('click', () => exportGraph('svg'));
 
     // 模式切换 → 扩展侧重绘
     function setMode(mode) {

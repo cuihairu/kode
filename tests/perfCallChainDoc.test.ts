@@ -114,6 +114,13 @@ const ANCHORS: Array<[string, number, string]> = [
   ['src/extension.ts', 631, "startLanguageServiceOperation('diagnostics'"],
   ['src/extension.ts', 644, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
+  // 2026-11-06(五):KR-AUD 席 C——languageProviders.ts 悬停面两处改动(数据字典
+  // 落点判定与 definition 同源 + findEventCalls 版本键缓存)使 1134/1516 之后的
+  // 锚点整体 +12(真位重探 1778/1837/1861/1989/4713/5121/5227/7038 →
+  // 1790/1849/1873/2001/4725/5133/5239/7050);extension.ts 本批未改动,其
+  // 2144/2224 两锚点为此前批次的积压位移 +3(→ 2147/2227),一并真位重探。
+  // 出处随 baseline 锁步。
+
   ['src/extension.ts', 2152, 'onDidChangeTextDocument'],
   ['src/extension.ts', 2232, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
@@ -129,18 +136,18 @@ const ANCHORS: Array<[string, number, string]> = [
   // 5001 各 -1,provideCompletionItems 6707→6776(非均匀),出处随 baseline 锁步
   ['src/languageProviders.ts', 849, 'getDocumentLines(document)'],
   ['src/languageProviders.ts', 939, 'provideHover('],
-  ['src/languageProviders.ts', 1778, 'shadowCompareDefinition'],
-  ['src/languageProviders.ts', 1837, 'export function validateDocument('],
-  ['src/languageProviders.ts', 1861, 'shadowObserveDefDocument'],
-  ['src/languageProviders.ts', 1989, 'validateEntitiesXmlDocument'],
-  ['src/languageProviders.ts', 4713, 'provideDefinitionTracedImpl'],
-  ['src/languageProviders.ts', 5121, '层0 接收者段闸'],
-  ['src/languageProviders.ts', 5227, 'withInitialScanTimeout'],
+  ['src/languageProviders.ts', 1790, 'shadowCompareDefinition'],
+  ['src/languageProviders.ts', 1849, 'export function validateDocument('],
+  ['src/languageProviders.ts', 1873, 'shadowObserveDefDocument'],
+  ['src/languageProviders.ts', 2001, 'validateEntitiesXmlDocument'],
+  ['src/languageProviders.ts', 4725, 'provideDefinitionTracedImpl'],
+  ['src/languageProviders.ts', 5133, '层0 接收者段闸'],
+  ['src/languageProviders.ts', 5239, 'withInitialScanTimeout'],
   // 2026-11-06:IDE-LINT-012 快速修复边界——languageProviders.ts 在 receiver
   // 守卫 provider 前新增 receiverFromDiagnosticLine helper(区间归属提取)+
   // 提取块重写,+31 行,7007 后锚点随之 +31(真位重探 7038;其余 languageProviders
   // 锚点均在 helper 之前,不受影响;出处随 baseline 锁步)。
-  ['src/languageProviders.ts', 7038, 'provideCompletionItems('],
+  ['src/languageProviders.ts', 7050, 'provideCompletionItems('],
   // KR-AUD-04(DIA-1,2026-11-04):diagnosticScheduler.ts 统计面新增 errored
   // 字段(+4 行接口 +1 行初始化,全在诊断链锚点之前),本文件两个锚点 +5,
   // 出处随 baseline 锁步(baseline 的 :218/:248 本就指向注释行,越界面不受影响)

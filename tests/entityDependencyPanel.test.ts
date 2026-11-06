@@ -448,12 +448,13 @@ describe('webview 内联脚本 buildExportData 分支', () => {
     posted: Array<Record<string, unknown>>;
     dispatch: (data: Record<string, unknown>) => void;
   } => {
-    const marker = '<script>';
-    const start = html.indexOf(marker);
-    if (start < 0) {
+    // 内联段带 nonce(KR-AUD-50 整页 nonce CSP),head 的 <script src> 不匹配
+    const marker = /<script(?: nonce="[0-9a-f]+")?>/.exec(html);
+    if (!marker) {
       throw new Error('webview html 缺少内联 <script> 段');
     }
-    const body = html.slice(start + marker.length, html.indexOf('</script>', start));
+    const start = marker.index;
+    const body = html.slice(start + marker[0].length, html.indexOf('</script>', start));
 
     const posted: Array<Record<string, unknown>> = [];
     let onMessage: ((event: { data: Record<string, unknown> }) => void) | undefined;
@@ -487,7 +488,8 @@ describe('webview 内联脚本 buildExportData 分支', () => {
           }
         }
       },
-      { querySelector: () => svgStub },
+      // getElementById:工具栏/图容器绑定面在本装置下无元素(返回 null 即跳过)
+      { querySelector: () => svgStub, getElementById: () => null },
       class XMLSerializerStub {
         serializeToString(): string {
           return '<svg xmlns="http://www.w3.org/2000/svg"></svg>';

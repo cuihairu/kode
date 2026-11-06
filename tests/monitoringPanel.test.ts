@@ -240,11 +240,16 @@ describe('MonitoringWebView.show', () => {
     expect(fake.state.started).toEqual([2000, 2000]);
   });
 
-  it('pushes collector updates into the live panel html', () => {
+  it('pushes collector updates into the live panel html after the throttle window (KR-AUD-44)', async () => {
     const panel = show();
     fake.state.metrics = [metric({ component: 'baseapp1', componentType: 'baseapp' })];
+    const htmlBefore = panel.webview.html;
 
+    // 突发更新先合并(窗口内零重渲),窗口结束才渲染一次
     fake.emit();
+    fake.emit();
+    expect(panel.webview.html).toBe(htmlBefore);
+    await new Promise(resolve => setTimeout(resolve, 400));
 
     expect(panel.webview.html).toContain('baseapp1');
   });

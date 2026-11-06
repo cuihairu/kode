@@ -78,9 +78,60 @@ export function findEventCalls(text: string): EventCall[] {
   return result;
 }
 
+/**
+ * KR-AUD-65(UI-16):事件调用扫描按文档版本键记忆化(有界 LRU)。悬停热路径
+ * 此前每次 hover 都全文正则扫描;同文档同版本的多次查询(hover/定义)共享一次
+ * 结果,版本前进或换文档自然换键,旧键靠有界淘汰回收。versionKey 缺省
+ * (纯函数/测试无版本)不读写缓存,行为与 findEventCalls 逐字节一致。
+ */
+const EVENT_CALL_CACHE_LIMIT = 8;
+const eventCallCache = new Map<string, EventCall[]>();
+let eventCallScans = 0;
+
+/** 清缓存并归零扫描计数(测试注入口;生产不用) */
+export function resetEventCallCacheForTests(): void {
+  eventCallCache.clear();
+  eventCallScans = 0;
+}
+
+/** 真实全文扫描次数(缓存命中不计;测试断言「同版本重复悬停只扫一次」用) */
+export function eventCallScanCountForTests(): number {
+  return eventCallScans;
+}
+
+/** 版本键取/建事件调用表;无键 = 每次现扫(纯函数回退) */
+export function findEventCallsCached(text: string, versionKey?: string): EventCall[] {
+  if (versionKey === undefined) {
+    return findEventCalls(text);
+  }
+  const cached = eventCallCache.get(versionKey);
+  if (cached) {
+    // LRU 触碰:移到尾(最近使用)
+    eventCallCache.delete(versionKey);
+    eventCallCache.set(versionKey, cached);
+    return cached;
+  }
+  const calls = findEventCalls(text);
+  eventCallScans += 1;
+  eventCallCache.set(versionKey, calls);
+  if (eventCallCache.size > EVENT_CALL_CACHE_LIMIT) {
+    const oldest = eventCallCache.keys().next().value;
+    if (oldest !== undefined) {
+      eventCallCache.delete(oldest);
+    }
+  }
+  return calls;
+}
+
+/** 文档身份+版本 → 缓存键(版本未知 = 不缓存,防不同文本同键串味) */
+export function documentEventCacheKey(document: { uri: { toString(): string }; version: number }): string | undefined {
+  const version: number | undefined = document.version;
+  return version === undefined ? undefined : `${document.uri.toString()}|${version}`;
+}
+
 export async function eventDefinitionAt(document: vscode.TextDocument, position: vscode.Position, manager?: EntityMappingManager): Promise<vscode.Location | null> {
   const text = document.getText();
-  const calls = findEventCalls(text);
+  const calls = findEventCallsCached(text, documentEventCacheKey(document));
   const offset = document.offsetAt(position);
   const callback = calls.find(c => c.callback && c.callbackOffset !== undefined && offset >= c.callbackOffset && offset <= c.callbackOffset + (c.callback?.length || 0));
   if (callback?.callback) {

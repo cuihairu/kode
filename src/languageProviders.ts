@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { eventDefinitionAt, findEventCalls } from './eventApi';
+import { documentEventCacheKey, eventDefinitionAt, findEventCallsCached } from './eventApi';
 export { EventCodeLensProvider } from './eventApi';
 import { getScanRootForFile, findFilesAcrossRoots } from './scanRoots';
 import {
@@ -1131,15 +1131,26 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // GLOBDATA-002 数据字典键悬停由下方该面专管:本面若不排除 dict 访问位,
     // 会在解析不出时落回 provideKnownHover 短路掉下方数据字典面(丢同键写点
     // 类型)。仅当数据字典索引装配且命中 dict 访问位时不接管(与下方同闸)。
+    // KR-AUD-65(UI-16)口径统一:数据字典落点判定与 definition/references 同源
+    // ——行级快筛(便宜,绝大多数落点在此落空)→ getDataDictAccessInCodeContext
+    // 全文词法上下文复核(贵,只在真命中时才建掩码)。行级口径单独判会把跨行
+    // 三引号/外层字符串里的伪访问当真:同一位置 hover 接管而 F12 不跳。
+    // 一次解析,下方自属性面闸门与数据字典面共用。
+    const dictDocumentText = document.getText();
     const dictLineText = document.lineAt(position.line).text;
-    const isDataDictPosition =
-      !!this.dataDictIndex &&
+    const dictAliases = getKbeAliases(dictDocumentText);
+    const dictAccess =
+      this.dataDictIndex &&
       isPythonDataDictIndexEnabled() &&
-      !!getKbeDataDictAccessAtPosition(
-        dictLineText,
-        position.character,
-        getKbeAliases(document.getText())
-      );
+      getKbeDataDictAccessAtPosition(dictLineText, position.character, dictAliases)
+        ? getDataDictAccessInCodeContext(
+          dictDocumentText,
+          position.line,
+          position.character,
+          dictAliases
+        )
+        : null;
+    const isDataDictPosition = dictAccess !== null;
     if (
       manager &&
       document.languageId === 'python' &&
@@ -1173,13 +1184,9 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     // 同源),后续查询零成本。
     if (document.languageId === 'python' && this.dataDictIndex && isPythonDataDictIndexEnabled()) {
       const dataDictIndex = this.dataDictIndex;
-      const lineText = document.lineAt(position.line).text;
-      const dictAccess = getKbeDataDictAccessAtPosition(
-        lineText,
-        position.character,
-        getKbeAliases(document.getText())
-      );
-      if (dictAccess && !isKeyInsideLineComment(lineText, dictAccess.keyStart)) {
+      // dictAccess 已在上方按 definition 同源口径算好(此处不再行级重判);
+      // 行内注释由 isKeyInsideLineComment 继续排除(与词法掩码双保险)
+      if (dictAccess && !isKeyInsideLineComment(dictLineText, dictAccess.keyStart)) {
         // AUD-073:发布前复核启用代际——等待期间开关被改过则不发布旧结果
         const enabledGeneration = getPythonDataDictIndexGeneration();
         // AUD-075(R4-F10):源文档身份/版本复核(与 definition/references 同口径)
@@ -1509,7 +1516,12 @@ export class KBEngineHoverProvider implements vscode.HoverProvider {
     word: string
   ): vscode.Hover | null {
     if (document.languageId === 'python' && featureConfig.hoverEventStats) {
-      const calls = findEventCalls(document.getText());
+      // KR-AUD-65(UI-16):同文档同版本共享一次全文扫描(此前每次悬停都全扫),
+      // 版本前进/换文档自然换键
+      const calls = findEventCallsCached(
+        document.getText(),
+        documentEventCacheKey(document)
+      );
       const current = calls.find(call => position && document.offsetAt(position) >= call.eventOffset && document.offsetAt(position) <= call.eventOffset + call.event.length);
       if (current) {
         const registrations = calls.filter(call => (call.api === 'addEvent' || call.api === 'registerEvent') && call.event === current.event).length;

@@ -9,6 +9,7 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { randomNonce, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
 import { createDefinitionSemanticsLoader } from './definitionSemantics';
 import { resolveEntityHasCell } from './databaseSchemaCore';
 import { buildSchemaSourcePorts } from './databaseSchemaSource';
@@ -169,7 +170,7 @@ export class EntityFlowWebView {
     const items = graph.blocked
       .map(
         entry =>
-          `<li><code>${this.escapeHtml(entry.method)}</code>（${entry.section}）— ${this.escapeHtml(entry.reason)}（<code>${this.escapeHtml(entry.citation.file)}:${entry.citation.line}</code>）</li>`
+          `<li><code>${this.escapeHtml(entry.method)}</code>（${this.escapeHtml(entry.section)}）— ${this.escapeHtml(entry.reason)}（<code>${this.escapeHtml(entry.citation.file)}:${entry.citation.line}</code>）</li>`
       )
       .join('');
     return `<section class="edge"><h3>客户端调不到的方法</h3><ul>${items}</ul></section>`;
@@ -185,6 +186,7 @@ export class EntityFlowWebView {
 
   private getWebviewContent(graph: EntityFlowGraph): string {
     const stats = graph.stats;
+    // KR-AUD-53:标签面一并转义(标签注入)
     const statCards = [
       ['属性', stats.properties],
       ['方法', stats.methods],
@@ -195,19 +197,29 @@ export class EntityFlowWebView {
     ]
       .map(
         ([label, value]) =>
-          `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value">${value}</div></div>`
+          `<div class="stat-card"><div class="stat-label">${this.escapeHtml(String(label))}</div><div class="stat-value">${this.escapeHtml(String(value))}</div></div>`
       )
       .join('');
+
+    // KR-AUD-50/53:整页 nonce CSP + mermaid 离线打包(与 cspSource 同源);
+    // 图片源只给导出用的 data:/blob: 开洞。
+    const nonce = randomNonce();
+    const cspSource = this.panel?.webview.cspSource ?? 'vscode-webview:';
+    const mermaidUri = webviewAssetUri(
+      this.panel?.webview,
+      this.context.extensionUri,
+      'media',
+      'mermaid.tiny.js'
+    );
 
     return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- 最小 CSP:default-src 'none' 断掉一切外联/外帧/连接,脚本源钉死 mermaid 固定 CDN 路径。
-       未能收 nonce:mermaid securityLevel=loose 渲染与工具栏走内联事件处理器,
-       需 mermaid 本地化+回调改造后才能收紧(已单独登记 todo)。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js 'unsafe-inline';">
+  <!-- 最小 CSP(KR-AUD-50/53):default-src 'none' 断掉一切外联/外帧/连接,
+       脚本只认本次渲染 nonce + 扩展自带 media/mermaid.tiny.js(离线打包)。 -->
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [cspSource], ['data:', 'blob:', cspSource])}">
   <title>KBEngine 实体架构流程</title>
   <style>
     body {
@@ -277,16 +289,16 @@ export class EntityFlowWebView {
     tr.member { cursor: pointer; }
     tr.member:hover { background-color: var(--vscode-list-hoverBackground); }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script src="${mermaidUri}"></script>
 </head>
 <body>
   <div class="header">
     <div class="title">KBEngine 实体架构流程 · ${this.escapeHtml(graph.entityName)}</div>
     <div class="toolbar">
-      <button onclick="refreshFlow()">刷新</button>
-      <button onclick="exportFlow('markdown')">导出 Markdown</button>
-      <button onclick="exportFlow('svg')">导出 SVG</button>
-      <button onclick="exportFlow('png')">导出 PNG</button>
+      <button id="refresh-flow-btn">刷新</button>
+      <button id="export-markdown-btn">导出 Markdown</button>
+      <button id="export-svg-btn">导出 SVG</button>
+      <button id="export-png-btn">导出 PNG</button>
     </div>
   </div>
 
@@ -301,12 +313,13 @@ ${renderEntityFlowMermaid(graph)}
   ${this.renderEdgeDetails(graph.edges)}
   ${this.renderBlocked(graph)}
 
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
+    // KR-AUD-53:securityLevel=strict(标签经 DOMPurify 清洗)
     mermaid.initialize({
       startOnLoad: true,
       theme: 'default',
-      securityLevel: 'loose',
+      securityLevel: 'strict',
       flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
     });
 
@@ -316,6 +329,12 @@ ${renderEntityFlowMermaid(graph)}
     function exportFlow(format) {
       vscode.postMessage({ command: 'export', format: format });
     }
+
+    // 工具栏:nonce CSP 下内联事件处理器不执行,一律脚本绑定
+    document.getElementById('refresh-flow-btn')?.addEventListener('click', refreshFlow);
+    document.getElementById('export-markdown-btn')?.addEventListener('click', () => exportFlow('markdown'));
+    document.getElementById('export-svg-btn')?.addEventListener('click', () => exportFlow('svg'));
+    document.getElementById('export-png-btn')?.addEventListener('click', () => exportFlow('png'));
 
     Array.from(document.querySelectorAll('tr.member')).forEach(row => {
       row.addEventListener('click', () => {

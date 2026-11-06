@@ -10,11 +10,8 @@ import {
   MonitoringDiagnostic,
   SystemOverview
 } from './monitoringCollector';
-import { randomNonce, toJsonForScript, webviewScriptCsp } from './webviewSecurity';
+import { randomNonce, toJsonForScript, webviewAssetUri, webviewScriptCsp } from './webviewSecurity';
 
-// Chart.js 仍走 CDN(本地化打包已单独登记 todo);CSP 把脚本源钉死到该
-// 固定文件路径,除它之外脚本只认本次渲染的 nonce,别的一律不执行。
-const CHARTJS_CDN_SOURCE = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
 
 /**
  * 监控面板 WebView
@@ -27,6 +24,12 @@ export class MonitoringWebView {
   private keywordFilter = '';
   private refreshIntervalMs = 2000;
   private historyWindow = 30;
+  /**
+   * KR-AUD-44 数据更新节流窗口:collector 每拍 onMetricsUpdate 都整页重建
+   * (HTML + JSON 快照 + Chart.js 重建),突发更新按尾沿合并成窗口内至多一次
+   * 渲染;过滤/刷新间隔/显隐等用户与生命周期动作仍走 updateWebView 即时渲。
+   */
+  private static readonly RENDER_THROTTLE_MS = 150;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -34,8 +37,19 @@ export class MonitoringWebView {
   ) {
     // 监听数据更新(updateWebView 自守卫:无面板或隐藏时零渲染)
     collector.onMetricsUpdate(() => {
-      this.updateWebView();
+      this.scheduleUpdate();
     });
+  }
+
+  /** 数据更新入口:窗口内只排一次渲染(尾沿),窗口内突发全部合并 */
+  private scheduleUpdate(): void {
+    if (this.updateTimer !== null) {
+      return;
+    }
+    this.updateTimer = setTimeout(() => {
+      this.updateTimer = null;
+      this.updateWebView();
+    }, MonitoringWebView.RENDER_THROTTLE_MS);
   }
 
   /**
@@ -101,14 +115,11 @@ export class MonitoringWebView {
       () => {
         this.collector.stop();
         this.panel = null;
-        // 不可达(批62 定性):updateTimer 在本类中没有任何赋值点(自动刷新定时器
-        // 未接线,刷新节奏由 collector 的 start(interval) 承担),守卫恒为假。
-        /* istanbul ignore start */
+        // 面板销毁时在排的节流渲染一并作废(KR-AUD-44 接线后可达)
         if (this.updateTimer) {
           clearTimeout(this.updateTimer);
           this.updateTimer = null;
         }
-        /* istanbul ignore stop */
       },
       undefined,
       this.context.subscriptions
@@ -119,6 +130,11 @@ export class MonitoringWebView {
    * 更新 WebView 内容
    */
   private updateWebView(): void {
+    // 即时渲染顶掉在排的节流渲染(用户动作不等窗口)
+    if (this.updateTimer !== null) {
+      clearTimeout(this.updateTimer);
+      this.updateTimer = null;
+    }
     // 隐藏面板不渲染(IDE-RES-007):完整图表快照(historySeries JSON+
     // Chart.js 重建)只发给可见页面;恢复可见由 onDidChangeViewState 补渲。
     if (!this.panel || !this.panel.visible) {
@@ -247,8 +263,8 @@ export class MonitoringWebView {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KBEngine Monitoring</title>
   <!-- 最小 CSP:内联脚本只认本次渲染的 nonce;Chart.js 钉死到固定 CDN 路径(本地化 todo) -->
-  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [CHARTJS_CDN_SOURCE])}">
-  <script src="${CHARTJS_CDN_SOURCE}"></script>
+  <meta http-equiv="Content-Security-Policy" content="${webviewScriptCsp(nonce, [this.panel?.webview.cspSource ?? 'vscode-webview:'])}">
+  <script src="${webviewAssetUri(this.panel?.webview, this.context.extensionUri, 'media', 'chart.min.js')}"></script>
   <style>
     * {
       margin: 0;
@@ -1150,14 +1166,11 @@ export class MonitoringWebView {
       this.panel.dispose();
       this.panel = null;
     }
-    // 不可达(批62 定性):本类没有任何 updateTimer 赋值点(自动刷新定时器未接线),
-    // 字段恒为 null,清理臂无触发路径。
-    /* istanbul ignore start */
+    // 在排的节流渲染一并作废(KR-AUD-44 接线后可达)
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;
     }
-    /* istanbul ignore stop */
     this.collector.dispose();
   }
 }
