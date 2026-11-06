@@ -120,7 +120,17 @@ describe('KBEngineServerManager path resolution', () => {
   let root = '';
   let rootBase = '';
 
+  // 宿主环境隔离:detectKbeRoot 首读 process.env.KBE_ROOT(生产口径:环境变量
+  // 优先),本机若导出过 KBE_ROOT/KBE_RES_PATH/KBE_BIN_PATH,路径派生与
+  // 「无后缀则不设 KBE_ROOT」两条断言都会被环境值污染——先摘后还,测试只验路径派生。
+  const KBE_ENV_KEYS = ['KBE_ROOT', 'KBE_RES_PATH', 'KBE_BIN_PATH'] as const;
+  const savedKbeEnv = new Map<string, string | undefined>();
+
   beforeAll(() => {
+    for (const key of KBE_ENV_KEYS) {
+      savedKbeEnv.set(key, process.env[key]);
+      delete process.env[key];
+    }
     // 私有父目录:第二候选 <ws>/../../kbe/bin/server 落在 base 下(base/kbe
     // 恒不存在),不受共享 /tmp/kbe 瞬时目录影响(与 serverManagerGaps 并行不互踩)
     rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-'));
@@ -136,6 +146,13 @@ describe('KBEngineServerManager path resolution', () => {
   });
 
   afterAll(() => {
+    for (const [key, value] of savedKbeEnv) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     stubWorkspace.workspaceFolders = [];
     fs.rmSync(rootBase, { recursive: true, force: true });
   });

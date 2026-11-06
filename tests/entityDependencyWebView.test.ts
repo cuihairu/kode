@@ -39,7 +39,7 @@ import type { PythonCallGraphRustResult } from '../src/pythonCallGraphRust';
 // 不在纯逻辑测试域。私有方法经实例直调,零 mock。
 //
 // IDE-RUST-007:渲染层两源归一(RenderGraph)。TS 兜底源输出与迁移前逐字节
-// 一致(空图精确相等、Hero -->|| Avatar 空标签管道段);Rust 源按节点 kind
+// 一致(空图精确相等、空标签边省略管道段);Rust 源按节点 kind
 // 分 emoji/classDef、按边 kind 分箭头、id 清洗(entity:Hero→entity_Hero、
 // python 路径整体清洗、撞名消解)、click 跳转、三关键路径与来源徽章。
 
@@ -146,8 +146,9 @@ describe('EntityDependencyWebView.generateMermaidGraph(TS 兜底源)', () => {
     })));
 
     expect(mermaid).toContain('  Hero -->|parent| Avatar');
-    // 空标签渲染为空管道段
-    expect(mermaid).toContain('  Hero -->|| Avatar');
+    // 空标签不输出管道段(mermaid 12 对 `-->||` 报语法错,整图渲染失败)
+    expect(mermaid).toContain('  Hero --> Avatar');
+    expect(mermaid).not.toContain('||');
   });
 
   it('appends class defs and class assignments by entity types', () => {
@@ -205,7 +206,7 @@ describe('EntityDependencyWebView.generateMermaidGraph(Rust 核心源)', () => {
     const impl = internals(makeWebView());
     const mermaid = impl.generateMermaidGraph(normalizeRustGraph(rustGraph()));
 
-    expect(mermaid).toContain('  entity_Hero -- def_Hero');
+    expect(mermaid).toContain('  entity_Hero --- def_Hero');
     expect(mermaid).toContain('  def_Hero --> def_Monster');
     expect(mermaid).toContain('  def_Hero -.-> interface_IMove');
     expect(mermaid).toContain('  def_Hero --o|weapon| component_CWeapon');
