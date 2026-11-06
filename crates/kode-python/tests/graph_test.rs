@@ -251,6 +251,52 @@ fn outer_import_visible_to_nested_call() {
 }
 
 #[test]
+fn param_shadow_blocks_outer_import_vouch() {
+    // 复审第五轮残余:外层 import 不能为内层同名参数作保——inner 的
+    // avatar 是参数遮蔽,不是外层导入的模块。
+    let zcaller = "def outer():\n    import avatar\n\n    def inner(avatar):\n        avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "内层参数遮蔽不应让外层 import 保放实例接收者伪边, got {rev:?}"
+    );
+}
+
+#[test]
+fn local_assign_shadow_blocks_outer_import_vouch() {
+    // 同族:内层局部赋值(Store)同样遮蔽外层 import——局部变量接收者
+    // 不可静态解析,外层导入不作保。
+    let zcaller = "def outer():\n    import avatar\n\n    def inner():\n        avatar = load()\n        avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "内层局部赋值遮蔽不应让外层 import 保放实例接收者伪边, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠

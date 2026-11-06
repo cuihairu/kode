@@ -38,6 +38,10 @@ pub struct ScopeImportBindings {
     pub end_line: usize,
     /// 该函数子树内(含嵌套 def/分支体)import 的绑定名,排序去重。
     pub bindings: std::collections::BTreeSet<String>,
+    /// 该函数直接作用域内被本地绑定的名(参数+Store 赋值目标,含推导式
+    /// 目标,排序去重)——外层解析向内层看时,内层遮蔽即止(复审第五轮
+    /// 残余:同名参数/局部赋值遮蔽外层 import,外层不作保)。
+    pub shadows: std::collections::BTreeSet<String>,
 }
 
 /// 类声明(AST 级)。

@@ -138,20 +138,35 @@ fn resolve_callee_file(
     // KODE-AUD-008 复审残余:接收者首段也可能是实例变量(`avatar.heal()`,
     // avatar 是局部对象而非模块)——不经 import 绑定核验就按 basename 找
     // 文件,会把唯一同名文件误指为被调方(伪跨文件边)。绑定核验按调用点
-    // 可见作用域:模块顶层绑定(imports 表,全文件可见)+调用方函数自身
-    // 子树的 import(函数内 `import avatar` 也是真绑定;文件级合并会让
-    // 无关函数的导入为实例接收者作保,复审第三轮残余)。未绑定 → 静态
-    // 不可解析,宁缺毋滥不产边。
+    // 可见作用域(最近作用域优先+遮蔽即止):模块顶层绑定(imports 表,
+    // 全文件可见)为最外层;函数区间按起始行降序(内层先)走查,先遇遮蔽
+    // (参数/本地赋值)→ 非模块绑定,不产边;先遇 import 绑定 → 模块绑定,
+    // 放行 basename 唯一性核验。任何作用域都没绑过 → 宁缺毋滥不产边。
     if let Some(module) = receiver.split('.').next() {
         let imported = file_symbols
             .get(caller_file)
             .map(|s| {
-                s.imports.iter().any(|i| i.binding == module)
-                    || s.function_import_bindings.iter().any(|scope| {
-                        scope.start_line <= edge.caller_line
-                            && edge.caller_line <= scope.end_line
-                            && scope.bindings.contains(module)
+                if s.imports.iter().any(|i| i.binding == module) {
+                    return true;
+                }
+                let mut in_scope: Vec<&crate::model::ScopeImportBindings> = s
+                    .function_import_bindings
+                    .iter()
+                    .filter(|sc| {
+                        sc.start_line <= edge.caller_line && edge.caller_line <= sc.end_line
                     })
+                    .collect();
+                // 内层(起始行更大)先看;遇遮蔽即止,遇 import 绑定即放行。
+                in_scope.sort_by_key(|sc| std::cmp::Reverse(sc.start_line));
+                for sc in in_scope {
+                    if sc.shadows.contains(module) {
+                        return false;
+                    }
+                    if sc.bindings.contains(module) {
+                        return true;
+                    }
+                }
+                false
             })
             .unwrap_or(false);
         if imported {

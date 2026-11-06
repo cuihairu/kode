@@ -122,6 +122,29 @@ impl<'a> ImportBindingCollector<'a> {
             top.bindings.insert(binding);
         }
     }
+
+    fn push_shadow(&mut self, name: &str) {
+        if let Some(top) = self.scope_stack.last_mut() {
+            top.shadows.insert(name.to_string());
+        }
+    }
+
+    fn collect_param_shadows(&mut self, parameters: &ast::Parameters) {
+        for pwd in parameters
+            .posonlyargs
+            .iter()
+            .chain(parameters.args.iter())
+            .chain(parameters.kwonlyargs.iter())
+        {
+            self.push_shadow(pwd.parameter.name.as_str());
+        }
+        if let Some(p) = &parameters.vararg {
+            self.push_shadow(p.name.as_str());
+        }
+        if let Some(p) = &parameters.kwarg {
+            self.push_shadow(p.name.as_str());
+        }
+    }
 }
 
 impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
@@ -134,12 +157,14 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
                     start_line: start,
                     end_line: end,
                     bindings: Default::default(),
+                    shadows: Default::default(),
                 });
+                self.collect_param_shadows(&f.parameters);
                 ast::visitor::walk_stmt(self, stmt);
+                // 每个函数作用域都保留(无 import 也可能有遮蔽名,阻断
+                // 外层向内的保放)。
                 if let Some(scope) = self.scope_stack.pop() {
-                    if !scope.bindings.is_empty() {
-                        self.collected.push(scope);
-                    }
+                    self.collected.push(scope);
                 }
                 return;
             }
@@ -167,6 +192,17 @@ impl ast::visitor::Visitor<'_> for ImportBindingCollector<'_> {
             _ => {}
         }
         ast::visitor::walk_stmt(self, stmt);
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        // Store 上下文的 Name = 本地绑定(赋值/增强赋值/walrus/for/with/
+        // 推导式目标)——计入遮蔽集,阻断外层 import 对该名的保放。
+        if let Expr::Name(n) = expr {
+            if n.ctx.is_store() {
+                self.push_shadow(n.id.as_str());
+            }
+        }
+        ast::visitor::walk_expr(self, expr);
     }
 }
 
