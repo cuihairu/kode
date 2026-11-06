@@ -34,6 +34,13 @@ export interface EntityTypePropertyEntry {
   sourceLine: number;
   /** 引用 types.xml 自定义类型时的类型节点行(1 起) */
   customTypeLine?: number;
+  /**
+   * GEN-DEF-1(用户令 2026-11-02):容器属性(FIXED_DICT/ARRAY)在生成实体类
+   * __init__ 里的 is None 守卫复位值——FixedArray → '[]'、FixedDict → '{}'
+   * (与新建实体向导 entityWizard.containerGuardProperties 同口径);简单类型
+   * 与落 Any 的 poisoned 名恒 undefined(不守卫、不生成空 __init__)。
+   */
+  guardNoneEmpty?: '[]' | '{}';
 }
 
 export interface EntityTypeStubEntry {
@@ -254,11 +261,13 @@ export function buildEntityTypeStubPlan(
                 customTypeLine: element.customTypeLine
               };
             }
+            const guardNoneEmpty = guardNoneEmptyOf(resolved.annotation, context);
             return {
               name,
               annotation: resolved.annotation,
               customTypeLine: resolved.customTypeLine,
-              sourceLine: location.line
+              sourceLine: location.line,
+              ...(guardNoneEmpty !== undefined ? { guardNoneEmpty } : {})
             };
           })
           .sort((left, right) => left.name.localeCompare(right.name)),
@@ -272,6 +281,30 @@ export function buildEntityTypeStubPlan(
       : buildEntityTypeStubContent(entries, customTypes, context.customTypeModules),
     entries
   };
+}
+
+/**
+ * GEN-DEF-1(用户令 2026-11-02,源码已核实):容器属性的 __init__ is None 守卫
+ * 复位值——仅引用型(FIXED_DICT/ARRAY)生成;简单类型与落 Any 的 poisoned 名
+ * 返回 undefined(不守卫)。判定与注解同链:FixedArray[...] → '[]';注解名恰
+ * 为 kbe_types.pyi 实际发射的 FIXED_DICT 自定义类型 → '{}'。禁 `if not self.`
+ * 形态(falsy 判断会把引擎合法默认 0/""/[] 误判并重建,引用失效)。
+ */
+function guardNoneEmptyOf(
+  annotation: string,
+  context: EntityStubContext
+): '[]' | '{}' | undefined {
+  if (annotation.startsWith('FixedArray[')) {
+    return '[]';
+  }
+  const customType = context.customTypes.get(annotation);
+  if (
+    customType?.aliasType === 'FIXED_DICT' &&
+    context.customTypeModules.has(annotation)
+  ) {
+    return '{}';
+  }
+  return undefined;
 }
 
 function collectEntityTypeMethods(mapping: EntityMapping): EntityTypeMethodEntry[] {
@@ -439,6 +472,19 @@ function renderEntityTypeStub(
       lines.push(`    # source: ${sourceParts.join(' -> ')}`);
       lines.push(`    ${property.name}: ${property.annotation}`);
       recordPropertyLine?.(entry.entity, property.name, lines.length - 1);
+    }
+    // GEN-DEF-1(用户令 2026-11-02):实体类 __init__ 初始化守卫——仅容器属性
+    // (FIXED_DICT/ARRAY)生成 is None 守卫(引擎创建线灌 newDefaultVal 后仍防
+    // 手工改库/迁移缺列/外部 delattr/stub 脱离引擎);简单类型不生成,守卫恒
+    // `if self.<prop> is None:` 形态,绝不 `if not self.`(falsy 误判重建)。
+    // 无容器属性不生成空 __init__;属性面在先,行映射不受守卫段影响。
+    const guardProperties = entry.properties.filter(property => property.guardNoneEmpty !== undefined);
+    if (guardProperties.length > 0) {
+      lines.push('', '    def __init__(self) -> None:');
+      for (const property of guardProperties) {
+        lines.push(`        if self.${property.name} is None:`);
+        lines.push(`            self.${property.name} = ${property.guardNoneEmpty}`);
+      }
     }
     for (const method of entry.methods) {
       lines.push('', ...methodFaceLines(method, customTypes));

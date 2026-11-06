@@ -160,10 +160,22 @@ describe('GEN-DEF-1: entity_types.pyi 实体类 __init__ is None 守卫', () => 
 
   it('守卫不漂移属性行映射', () => {
     const plan = buildEntityTypeStubPlan([avatarMapping], [fixedDictType]);
-    const lineMap = buildEntityTypeStubLineMap(plan.entries, [fixedDictType]);
+    // 行映射与 plan.content 同语境(同 customTypeModules → 同头部导入),索引才可比
+    const modules = new Map([['ITEM_INFO', 'kbe_types']]);
+    const lineMap = buildEntityTypeStubLineMap(plan.entries, [fixedDictType], modules);
     const mapped = lineMap?.propertyLines.get('Avatar')?.profile;
     expect(mapped).toBeDefined();
     expect(plan.content!.split('\n')[mapped!]).toBe('    profile: ITEM_INFO');
+    // 守卫段在属性行之后:属性行索引不受 __init__ 守卫影响(同一渲染内复核)
+    const withoutGuards = plan.entries.map(entry => ({
+      ...entry,
+      properties: entry.properties.map(property => {
+        const { guardNoneEmpty: _dropped, ...rest } = property;
+        return rest;
+      })
+    }));
+    const baselineMap = buildEntityTypeStubLineMap(withoutGuards, [fixedDictType], modules);
+    expect(baselineMap?.propertyLines.get('Avatar')?.profile).toBe(mapped);
   });
 
   it('混合实体:只有容器属性守卫,其余属性不进 __init__', () => {

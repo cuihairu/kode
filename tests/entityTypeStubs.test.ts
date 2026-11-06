@@ -61,7 +61,9 @@ describe('buildEntityTypeStubPlan', () => {
         name: 'profile',
         annotation: 'ITEM_INFO',
         customTypeLine: 8,
-        sourceLine: 24
+        sourceLine: 24,
+        // GEN-DEF-1:FIXED_DICT 容器属性 → __init__ is None 守卫('{}' 复位)
+        guardNoneEmpty: '{}'
       }],
       methods: []
     }]);
@@ -208,10 +210,14 @@ describe('buildEntityTypeStubPlan', () => {
       name: 'foo',
       annotation: 'FixedArray[ITEM_INFO]',
       customTypeLine: 8,
-      sourceLine: 30
+      sourceLine: 30,
+      // GEN-DEF-1:ARRAY 容器属性 → __init__ is None 守卫('[]' 复位)
+      guardNoneEmpty: '[]'
     }]);
     expect(plan.content).toContain('    foo: FixedArray[ITEM_INFO]');
-    expect(plan.content).not.toContain('[]');
+    // 折叠后不再有 foo[] 非法标识符行(GEN-DEF-1 守卫复位值 '[]' 是合法产出,
+    // 故只禁子路径行,不禁 '[]' 字面量)
+    expect(plan.content).not.toContain('foo[]');
   });
 
   it('keeps FixedArray[Any] for bare ARRAY and FixedArray[int] for builtin elements', () => {
