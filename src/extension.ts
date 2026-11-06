@@ -249,6 +249,7 @@ import {
   type HotReloadTargetStateWiring
 } from './hotReload';
 import { HotReloadStatusController } from './hotReloadStatus';
+import { createFileChangeRouter, registerRustFileChangeConsumer } from './fileChangeBypass';
 import { HOT_RELOAD_CHANNEL_STATUS_PRIORITY, HotReloadChannelQuickSwitch, runHotReloadChannelConfigCommand } from './hotReloadChannelConfig';
 import { resolveReloadTransport, type ReloadTransport } from './hotReloadTransport';
 import { runHotReloadBatchSummaryCommand } from './hotReloadBatchSummaryCommand';
@@ -592,8 +593,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.getConfiguration('kbengine.python').get<boolean>('enableDataDictIndex', true)
   );
   // kode2 PR-012:双轨切流门(kill-switch/shadow;kbengine.core.backend 默认 ts,
-  // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)
-  setupKodeCoreGate(context);
+  // Rust 仅影子比对不服务,默认装配下用户可见行为与纯 TS 单轨一致)。
+  // 持有门实例:热更旁路的 rust 投递口(§11.3)要经它的 notifyFileChanged
+  // 走现有 LSP stdio。
+  const kodeCoreGate = setupKodeCoreGate(context);
   const databaseSchemaProvider = new KBEngineDatabaseSchemaProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider('kbengine-db-schema', databaseSchemaProvider),
@@ -5609,7 +5612,14 @@ export function activate(context: vscode.ExtensionContext) {
     const transport = resolveReloadTransport(activeProfile.hotReload);
     return transport ? { transport, targetId: activeProfile.id } : null;
   };
+  // §11.2 非 py 旁路通道的公共扩展口:这里持有路由表并交给装配——默认
+  // 不注册任何消费者(= 只记录不处理);注册口 = activate 返回的
+  // registerFileChangeConsumer(下面),rust 消费者的投递口固定接到
+  // KodeCoreGate.notifyFileChanged(现有 LSP stdio 的 `$/kode/fileChanged`
+  // 通知帧,进程未起/写失败 → false 静默降级)。
+  const fileChangeRouter = createFileChangeRouter();
   setupHotReload(context, runQuickActionForHotReload, {
+    fileChangeRouter,
     status: hotReloadStatus,
     targetState: hotReloadTargetStateWiring,
     defGate: hotReloadDefGate,
@@ -6976,6 +6986,17 @@ export function activate(context: vscode.ExtensionContext) {
     return value === undefined ? String(item) : String(value);
   };
   return {
+    /**
+     * §11.3 非 py 旁路的 rust 消费者注册口(公共 API):按扩展名/路径前缀
+     * 注册即接通 `$/kode/fileChanged` → 现有 LSP stdio(KodeCoreGate);不注册
+     * 任何消费者 = 只记录不投递(设计 §11.2 默认口径)。返回退订口。
+     */
+    registerFileChangeConsumer: (selectors: {
+      readonly id?: string;
+      readonly extensions?: readonly string[];
+      readonly pathPrefixes?: readonly string[];
+    }): { dispose(): void } =>
+      registerRustFileChangeConsumer(fileChangeRouter, kodeCoreGate, selectors),
     probeHover: async (
       target: { file: string; line: number; character: number },
       cancelAfterMs?: number,

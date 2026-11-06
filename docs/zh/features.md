@@ -400,7 +400,7 @@
 | `kbengine.python.callChainView` | `"graph"` | Show Call Chain 面板初始视图：`graph`（打包内嵌 mermaid，离线）或 `text`；面板内 tab 选择持久化到工作区状态并优先于本设置（src/defCallChainViewLogic.ts） |
 | `kbengine.hotReload.enabled` | `true` | 文件变更自动触发热更（**默认开启**）；一键关 = 状态栏点击或 `kbengine.hotReload.toggle`（写回配置）；`actionName` 留空时保存即发 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`，body 同带 `module_name=<模块名>` |
 | `kbengine.hotReload.actionName` | `""` | 要触发的快速动作名（须存在于 .kbengine/debug.json quickActions）；留空 = 走上面的默认热更请求 |
-| `kbengine.hotReload.globs` | `["**/*.py"]` | 监视的文件匹配模式（每模式一个 watcher） |
+| `kbengine.hotReload.globs` | 未设 → 按 `kbengine.assetsRoot` 派生 | 监视的文件匹配模式（每模式一个 watcher）；未设时派生 `<assetsRoot>/**/*.py`，只盯 .py（绝不全工作区扫） |
 | `kbengine.hotReload.debounceMs` | `500` | 触发前去抖毫秒数（0 = 不去抖） |
 | `kbengine.hotReload.tempEdit.enabled` | `false` | 临时编辑热更新 quick action 总开关（默认关；与 `kbengine.hotReload.enabled` 相互独立——后者默认开，本命令默认关）；开启后 `kbengine.hotReload.tempEdit.run` 才会写入临时编辑、触发重载并还原（src/hotReloadTempEdit.ts） |
 | `kbengine.hotReload.tempEdit.actionName` | `""` | 第 3 步 reloadScript 按名触发的 quick action 名（HTTP 或终端动作均可）；留空视为配置错误中止，不编辑不发请求 |

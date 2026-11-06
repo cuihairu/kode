@@ -66,7 +66,7 @@ describe('setupHotReload accepted 回执接线(IDE-REV-022)', () => {
 
   const enableHotReload = (): void => {
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
   };
 

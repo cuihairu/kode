@@ -341,8 +341,8 @@ interface ReloadTransport {
 
 1. **默认开启**：`kbengine.hotReload.enabled` 默认 `true`——`package.json`
    贡献默认值与 `readHotReloadSettings` 的缺省同改，配置缺失时也开；
-   **显式写死 `false` 仍关**（用户显式关要生效）。默认 `globs` 不动
-   （`**/*.py`），默认去抖 `500ms` 不动。
+   **显式写死 `false` 仍关**（用户显式关要生效）。`globs` 不再声明默认值——
+   未设时按 `kbengine.assetsRoot` 派生（见 §11.1），默认去抖 `500ms` 不动。
 2. **零配置开箱即用**：`kbengine.hotReload.actionName` 留空（默认）时，
    保存 .py → 去抖 → 默认热更请求 `POST http://127.0.0.1:8090/hotfix?module_name=<模块名>`，
    body 同带 `module_name=<模块名>`（query 与 body 各带一份，兼容不同服务端
@@ -387,3 +387,106 @@ interface ReloadTransport {
 
 **例外**：将来若需要 rust 常驻长连接/连接池对接引擎（高频批量推送），再评估
 下沉——前提是事件与元信息协议已纯数据化，届时可换实现不改契约。
+
+## 11. 监视面（watcher）口径（任务条目 §11.1–§11.4）
+
+> 本章编号沿用监视面任务条目号（§11.1/§11.4）；§8/§9 已由默认行为批落稿，§10 尚未落稿。
+> 落地面：`src/hotReload.ts`（`planHotReloadWatch`/`deriveHotReloadGlob`/`deriveWatcherPattern`）、
+> `src/fileChangeBypass.ts`、`src/hotReloadStatus.ts`；测试
+> `tests/hotReloadAssetsRootWatch.test.ts`、`tests/fileChangeBypass.test.ts`。
+
+### 11.1 默认 glob 从 assetsRoot 派生（拿不到根显式报错，不回落全扫）
+
+决策表（实现 = `planHotReloadWatch`，逐行有测试）：
+
+| `enabled` | `hotReload.globs` | `assetsRoot` | 结果 |
+| --- | --- | --- | --- |
+| false | 任意 | 任意 | watch-off（`disabled`）；若同时没写 globs 且派生不到根，提示补一句缺根 |
+| true | 显式非空 | 任意 | ready，source=**explicit**，按用户模式各建一个 watcher |
+| true | 显式空数组 `[]` | 任意 | watch-off（`empty-globs`）：显式清空 = 不建监视 |
+| true | 未写 / 类型写坏 | 解析到 | ready，source=**derived**，glob = `<assetsRoot>/**/*.py` |
+| true | 未写 / 类型写坏 | 解析不到 | **ready-with-error** + 诊断，`globs=[]`，不建 watcher |
+
+- 派生形态：工作区内 `${workspaceFolder}/<相对路径>/**/*.py`，工作区外绝对路径，一律正斜杠；
+  热更只处理 `.py`（非 py 走 §11.2 旁路，不进投递）。
+- **热更域（显式 globs 同样受约束）**：投递面只收 `.py`（热更本职）与 `.def`
+  （结构闸 IDE-HOT-005/REV-024，非结构 def 照常放行）；其余扩展即使被显式模式
+  （如全匹配模式）匹配也不进投递——引擎按 python 模块重载，它们没有可发的模块
+  （默认热更 POST 的 `module_name` 同理），只走 §11.2 旁路。否则同一 `.xml` 事件
+  既推状态栏跑动作、又进旁路，同事件双处理。
+- 缺根补救文案（状态栏 tooltip 与 OUTPUT 日志同源）：「未配 `kbengine.assetsRoot`，无法派生监视范围；
+  补救：配置 `kbengine.assetsRoot`，或把工作区设为资产根目录的父目录」。
+- **绝不回落裸 `**/*.py`**：旧默认会把 site-packages/out 一并盯上，正是本节点名的错误回落。
+- 注册形态：派生 glob 里的 `${workspaceFolder}` 变量在 VS Code API 层不展开（`GlobPattern` 无变量
+  替换），故 watcher 按 `RelativePattern` 落地（工作区内锚工作区根 + 相对子路径，工作区外锚资产根
+  本身），监视范围与派生 glob 逐字等价，IDE-ACC-011 同口径。
+- `package.json` 的 `kbengine.hotReload.globs` 不再声明 `default`：声明默认会让 VS Code 把
+  `["**/*.py"]` 填进未设置态，派生永远走不到；未设置 = `undefined` → 派生。
+- watch-off 提示按关因如实区分：`disabled`（没开）/「未配 `kbengine.assetsRoot`」（开了也派生不出）
+  与 `empty-globs`（globs 为空）三种说法不混写。缺根补救只在**真没解析到根**时出现——热更关着
+  但 `assetsRoot` 配着的，不把「未配」当事实写上。
+- 状态面字面量（tooltip 与 OUTPUT 日志同源，测试逐字断言）：
+  ready = `监视就绪: <N> 个模式, 去抖 <ms>ms | 来源=<explicit|derived> | 模式=<glob, …>`；
+  watch-off = `未开启: kbengine.hotReload.enabled=false` 或
+  `未开启: kbengine.hotReload.globs 为空(用户显式清空,不派生、不回落全扫)`；
+  ready-with-error = `监视范围不可用: <缺根补救文案>`，脸面 `$(warning) 热更: 就绪(未监视)`。
+- 同态但**内容变了**（derived→explicit、模式增减）也落日志（§11.4「来源随状态栏与日志上屏」），
+  逐字相同的重复才压掉（防配置抖动刷屏）。
+
+### 11.2 非 py 旁路通道（监视事件不只收 py）
+
+- 事件源唯一：`vscode.workspace.createFileSystemWatcher` + 既有 `sharedFileEvents`（30ms 合并 +
+  version token，KR-AUD-30 同一口径），**不新增任何第三方 watch 依赖**。
+- 派生场景一个 watcher 打两份工：assetsRoot 下全扩展名，`.py` → 热更去抖，非 py → 旁路；
+  显式 globs 场景另挂一个 assetsRoot 全扩展名 watcher 走旁路（显式 globs 与旁路各挂各的）；
+  显式模式命中的事件过 `hotDomainOnly` 才进投递（热更域 `.py`/`.def`，见 §11.1），域外只进旁路。
+- 旁路事件 = 纯数据 `NonPythonChangeEvent`（fsPath/identity/kind/version/fileName/ext/sha256/
+  handledBy），模块零 `vscode` 引用——将来 watch 下沉 rust 时 TS 只是消费者，协议逐字不变。
+- 消费者注册表 `FileChangeRouter`：按扩展名（大小写不敏感）/路径前缀路由；**默认无消费者 =
+  只记录不处理**（日志「非 py 变化待路由（无消费者，未投递）」），不投递、不发帧、不改热更状态栏
+  （ready 不跳 sending/sent，不假装已处理）。
+- 公共订阅口 `router.subscribe(handler)`：观察者只读，拿到与消费者同源的完整元信息。
+- `handledBy` 口径：命中 python 消费者 = `python`，命中 rust 消费者 = `rust`，无命中 = `unrouted`；
+  逐个投递时按**该消费者自己的** kind 盖章。
+
+### 11.3 通知 rust 的通道（按需投递，静默降级）
+
+- 只有 `kind: 'rust'` 的消费者命中才发帧：现有 LSP stdio 上的一个通知帧 `$/kode/fileChanged`
+  （`kode-protocol` 的 `FILE_CHANGED_NOTIFICATION` + `FileChangedParams`，纯数据载荷），
+  **不改任何请求/响应语义**。
+- 按需投递：只有注册了 rust 消费者的扩展名/路径前缀才发，不全量广播。
+- 静默降级：rust 未启动/不可用时，服务器对未知通知按 LSP 规范静默丢弃（`handle_notification`
+  未知分支），投递口异常在路由内收口——不报错、不阻塞热更与其余订阅者。
+- 跨语言对账锁两侧各一把：TS `tests/fileChangeBypass.test.ts` 读
+  `crates/kode-protocol/src/lib.rs`；Rust `file_changed_notification::method_name_matches_ts_constant`
+  读 `src/fileChangeBypass.ts`。
+- 生产接线：`activate` 返回的 `registerFileChangeConsumer({ extensions | pathPrefixes })` →
+  `registerRustFileChangeConsumer(router, KodeCoreGate, …)`，投递口固定 =
+  `KodeCoreGate.notifyFileChanged`（现有 LSP stdio）。**默认不注册任何消费者**（§11.2 口径），
+  注册即接通；端到端用例锁「watcher 事件 → 消费者 → 存活 client 的通知帧」与「进程未起 → 静默
+  false、不拉起进程」。
+
+### 11.4 assetsRoot 变更重建 watcher
+
+- 重建判据不只看 `enabled/globs`：① `onDidChangeConfiguration` 认 `kbengine` 段（含
+  `kbengine.assetsRoot`）一律重建；② 事件不认 kbengine 段时，比对**计划签名**
+  （`enabled + globs + globsSpec + workspaceRoot + assetsRoot`），签名变了同样重建。
+- 重建 = 拆旧 watcher（含旁路面）→ 现算计划 → 按新派生值重挂；去抖中的 pending 一并取消。
+- 每次重建都现算 assetsRoot（选定 profile 根优先链不变），不缓存旧派生值；派生结果标 `derived`、
+  用户写过的标 `explicit`，来源随状态栏与日志上屏。
+
+## 12. 为什么不用 rust/notify 直接监听（定稿）
+
+**结论：用 VS Code 现成 watcher，不重复造轮子**；不为「rust watch」做任何实现或依赖改动。理由：
+
+1. **同为 inotify，底层无速度差**：两边最终落到同一内核机制，省不下事件延迟。
+2. **语义错**：编辑器落盘前就触发、原子写（写临时文件 + 改名）会产出 rename 类事件，直接当
+   「文件变了」会误报；现有链路（`sharedFileEvents` 合并 + version token 核对）已把这些口径打磨过。
+3. **去重/版本逻辑要重写，两边必漂移**：30ms 合并窗口与 `${mtimeMs}:${size}` 版本核对是
+   KR-AUD-30 打磨过的资产，在 rust 侧重写一套 = 两套去重口径。
+4. **rust 挂了事件全丢**：rust 崩溃/未启动时监听随之消失；TS 侧监听对 rust 的存亡零依赖
+   （降级为只记录）。
+5. **性能论据不成立**：此场景事件量是保存级（每秒个位数），不是热路径。
+
+留一句：仅当 headless/CLI 不带 VS Code 独立运行，或事件量需要原生侧过滤时再评估下沉；届时事件
+协议已纯数据化（不绑 vscode），TS 转消费者即可，协议逐字不变。

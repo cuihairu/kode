@@ -152,7 +152,9 @@ describe('package.json configuration prompt contract', () => {
     const expected: Record<string, unknown> = {
       // hotReload.ts readHotReloadSettings:缺省/类型错一律回落「开」
       'kbengine.hotReload.enabled': true,
-      'kbengine.hotReload.globs': ['**/*.py'],
+      // globs 不再声明默认值(声明会让 VS Code 预填 ["**/*.py"],assetsRoot 派生
+      // 永远走不到,见 hot-reload-design.md §11.1);未设 = undefined → 派生
+      'kbengine.hotReload.globs': undefined,
       'kbengine.hotReload.debounceMs': 500,
       // definitionWorkspace.ts getDefinitionWorkspaceLayout 约定链
       'kbengine.entityDefsPath': 'scripts/entity_defs',

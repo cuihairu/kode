@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import {
   HOT_RELOAD_DEFAULT_DEBOUNCE_MS,
-  HOT_RELOAD_DEFAULT_GLOBS,
   HOT_RELOAD_TOGGLE_COMMAND,
   HotReloadTrigger,
   readHotReloadSettings,
@@ -109,18 +108,20 @@ const makeMemento = (): { get: <T>(key: string, defaultValue?: T) => T | undefin
 };
 
 describe('readHotReloadSettings(默认值与畸形值回落)', () => {
-  it('全部缺省:开(用户令 2026-11-06 热更默认开启)、无动作名、默认匹配与去抖', () => {
+  it('全部缺省:开(用户令 2026-11-06 热更默认开启)、无动作名、globs 未写(交派生)与默认去抖', () => {
     expect(readHotReloadSettings(readerOf({}))).toEqual({
       enabled: true,
       actionName: '',
-      globs: ['**/*.py'],
+      globs: [],
+      globsSpec: 'unset',
       debounceMs: 500
     });
-    expect(HOT_RELOAD_DEFAULT_GLOBS).toEqual(['**/*.py']);
+    // §11.1:未写 globs 不再回落裸 `**/*.py`(旧默认会全工作区扫),
+    // 空表 + spec=unset 交给 assetsRoot 派生(见 hotReloadAssetsRootWatch)
     expect(HOT_RELOAD_DEFAULT_DEBOUNCE_MS).toBe(500);
   });
 
-  it('合法值原样回显(多模式与 0 去抖都收)', () => {
+  it('合法值原样回显(多模式与 0 去抖都收,来源标 explicit)', () => {
     expect(
       readHotReloadSettings(
         readerOf({
@@ -130,10 +131,16 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
           debounceMs: 0
         })
       )
-    ).toEqual({ enabled: true, actionName: '热更', globs: ['**/*.py', '**/*.def'], debounceMs: 0 });
+    ).toEqual({
+      enabled: true,
+      actionName: '热更',
+      globs: ['**/*.py', '**/*.def'],
+      globsSpec: 'explicit',
+      debounceMs: 0
+    });
   });
 
-  it('类型错就回落:非布尔 enabled、非数组 globs、坏去抖值', () => {
+  it('类型错就回落:非布尔 enabled、非数组 globs(按未写处理)、坏去抖值', () => {
     expect(
       readHotReloadSettings(
         readerOf({
@@ -143,19 +150,37 @@ describe('readHotReloadSettings(默认值与畸形值回落)', () => {
           debounceMs: -1
         })
       )
-    ).toEqual({ enabled: true, actionName: '', globs: ['**/*.py'], debounceMs: 500 });
+    ).toEqual({
+      enabled: true,
+      actionName: '',
+      globs: [],
+      globsSpec: 'unset',
+      debounceMs: 500
+    });
     // 非数字不硬转:字符串去抖值同样回落默认
     expect(readHotReloadSettings(readerOf({ debounceMs: '500' }))).toMatchObject({
       debounceMs: 500
     });
   });
 
-  it('globs 里的空串与非字符串项被剔除,剔空则回落默认', () => {
+  it('globs 里的空串与非字符串项被剔除,剔空按「显式空数组」处理(watch-off)', () => {
     expect(
       readHotReloadSettings(readerOf({ globs: ['', '  ', 7, '**/*.def'] }))
-    ).toEqual({ enabled: true, actionName: '', globs: ['**/*.def'], debounceMs: 500 });
-    expect(readHotReloadSettings(readerOf({ globs: ['', 7] }))).toMatchObject({
-      globs: ['**/*.py']
+    ).toEqual({
+      enabled: true,
+      actionName: '',
+      globs: ['**/*.def'],
+      globsSpec: 'explicit',
+      debounceMs: 500
+    });
+    // 用户碰过 globs 字段(哪怕全是空项)= 显式空 → 不监视,既不回落旧默认
+    // `**/*.py`,也不交给 assetsRoot 派生(§11.1 empty-globs 关法)
+    expect(readHotReloadSettings(readerOf({ globs: ['', 7] }))).toEqual({
+      enabled: true,
+      actionName: '',
+      globs: [],
+      globsSpec: 'explicit',
+      debounceMs: 500
     });
   });
 });
@@ -241,10 +266,13 @@ describe('setupHotReload(装配)', () => {
   const makeContext = (): vscode.ExtensionContext =>
     ({ subscriptions: [] }) as unknown as vscode.ExtensionContext;
 
-  it('零配置默认开:按默认 glob 建 watcher(复合订阅随装配释放)', () => {
+  it('零热更配置默认开:未写 globs 按 assetsRoot 派生建 watcher(复合订阅随装配释放)', () => {
     const context = makeContext();
     const clock = makeTimers();
     const runCalls: string[] = [];
+    // §11.1:派生需要解析得到的资产根(未写 globs → `<assetsRoot>/**/*.py`),
+    // 不再有裸 `**/*.py` 全工作区默认
+    configurationOverrides.set('kbengine', { assetsRoot: process.cwd() });
 
     setupHotReload(context, name => void runCalls.push(name), {
       timers: clock.timers,
@@ -267,7 +295,7 @@ describe('setupHotReload(装配)', () => {
 
   it('启用即按模式各建一个 watcher,保存事件去抖后按名执行', () => {
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     const context = makeContext();
     const clock = makeTimers();
@@ -286,7 +314,7 @@ describe('setupHotReload(装配)', () => {
   });
 
   it('三种事件通道都触发,连发仍合并成一次', () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' } });
     const context = makeContext();
     const clock = makeTimers();
     const runCalls: string[] = [];
@@ -303,7 +331,7 @@ describe('setupHotReload(装配)', () => {
   });
 
   it('未配动作名:事件到了改走默认热更 POST(不再空转),quick action 通道不触发', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'] } });
     const context = makeContext();
     const clock = makeTimers();
     const runCalls: string[] = [];
@@ -339,7 +367,9 @@ describe('setupHotReload(装配)', () => {
   });
 
   it('默认热更:引擎不可达如实报 failed(不假成功)', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true } });
+    configurationOverrides.set('kbengine', {
+      hotReload: { enabled: true, globs: ['**/*.py'] }
+    });
     const context = makeContext();
     const clock = makeTimers();
     const probe = makeStatusProbe();
@@ -379,7 +409,7 @@ describe('setupHotReload(装配)', () => {
   });
 
   it('触发期同步执行抛错:不外抛并报告错误', () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' } });
     const context = makeContext();
     const clock = makeTimers();
     const errors: unknown[] = [];
@@ -398,7 +428,7 @@ describe('setupHotReload(装配)', () => {
   });
 
   it('触发期异步执行拒绝:捕获并报告,不产生未处理拒绝', async () => {
-    configurationOverrides.set('kbengine', { hotReload: { enabled: true, actionName: '热更' } });
+    configurationOverrides.set('kbengine', { hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' } });
     const context = makeContext();
     const clock = makeTimers();
     const errors: unknown[] = [];
@@ -430,7 +460,7 @@ describe('setupHotReload(装配)', () => {
     expect(lastFileSystemWatcher.current).toBeNull();
 
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更', debounceMs: 100 }
     });
     workspaceEvents.configurationChanged.fire({
       affectsConfiguration: (section: string) => section === 'kbengine'
@@ -462,7 +492,7 @@ describe('setupHotReload(装配)', () => {
 
     // 改回开:重建 watcher
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更' }
+      hotReload: { enabled: true, globs: ['**/*.py'], actionName: '热更' }
     });
     workspaceEvents.configurationChanged.fire({
       affectsConfiguration: (section: string) => section === 'kbengine'
@@ -484,6 +514,8 @@ describe('setupHotReload(装配)', () => {
     const context = makeContext();
     const clock = makeTimers();
     workspaceState.workspaceConfigurationUpdates.length = 0;
+    // 零热更配置(默认开)+ 资产根可解析 → 派生出监视,才有可拆的 watcher
+    configurationOverrides.set('kbengine', { assetsRoot: process.cwd() });
 
     setupHotReload(context, () => undefined, {
       timers: clock.timers,

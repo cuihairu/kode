@@ -139,7 +139,7 @@ describe('fileChangeMeta 消费端①:热更投递审计行', () => {
   it('注入解析器:审计行后逐文件补元信息行(module/process/sha256/version)', async () => {
     const { tmp, scripts, file } = realScriptFile();
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100, globs: ['**/*.py'] }
     });
     const clock = makeTimers();
     const runCalls: string[] = [];
@@ -188,7 +188,7 @@ describe('fileChangeMeta 消费端①:热更投递审计行', () => {
     const clock = makeTimers();
     const { lines, status } = fakeStatus();
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100, globs: ['**/*.py'] }
     });
     const store = new HotReloadTargetStateStore({ now: () => 1 });
     const context = { subscriptions: [] } as unknown as vscode.ExtensionContext;
@@ -215,10 +215,12 @@ describe('fileChangeMeta 消费端①:热更投递审计行', () => {
 
   it('非 py 投递(globs 可配场景):审计元信息行 module=- package=-,不编造模块名', async () => {
     const { tmp, scripts } = realScriptFile();
-    const jsonFile = path.join(scripts, 'cell', 'Avatar.json');
-    fs.writeFileSync(jsonFile, '{"Avatar": {}}', 'utf8');
+    // 热更域内的非 py 扩展 = .def(hot-reload-design.md §11.1:投递面 .py/.def,
+    // 其余扩展只走旁路);显式 globs 把它配进来,锁渲染层不给非 py 编模块名
+    const defFile = path.join(scripts, 'cell', 'Avatar.def');
+    fs.writeFileSync(defFile, '<root/>\n', 'utf8');
     configurationOverrides.set('kbengine', {
-      hotReload: { enabled: true, actionName: '热更', debounceMs: 100 }
+      hotReload: { enabled: true, actionName: '热更', debounceMs: 100, globs: ['**/*.py', '**/*.def'] }
     });
     const clock = makeTimers();
     const { lines, status } = fakeStatus();
@@ -240,15 +242,15 @@ describe('fileChangeMeta 消费端①:热更投递审计行', () => {
       }
     });
 
-    // 默认 globs 是 **/*.py,但 globs 可配置——锁住即便非 py 文件真被投递,
+    // globs 可配置——锁住即便非 py 文件真被投递,
     // 元信息行也不带 module_name(module/package 是 Python 概念,渲染层落 -)
-    lastFileSystemWatcher.current!.fireChange({ fsPath: jsonFile } as never);
+    lastFileSystemWatcher.current!.fireChange({ fsPath: defFile } as never);
     clock.tick();
     await waitFor(() => lines.some(line => line.startsWith('文件元信息: ')));
 
     const metaLine = lines.find(line => line.startsWith('文件元信息: '));
     expect(metaLine, `非 py 投递也应有元信息行: ${JSON.stringify(lines)}`).toBeDefined();
-    expect(metaLine).toContain('Avatar.json');
+    expect(metaLine).toContain('Avatar.def');
     expect(metaLine).toContain('module=-');
     expect(metaLine).toContain('package=-');
     expect(metaLine).toContain('process=cellapp');
