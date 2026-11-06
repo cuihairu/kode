@@ -180,6 +180,48 @@ export const LINT_RULES: readonly LintRuleDescriptor[] = [
     trigger: '实时(open/edit)', quickFix: false,
     status: 'implemented', source: 'src/processTopologyDiagnostics.ts'
   },
+  // ── 工作区配置层实时诊断(implemented,内网开发机环境适配审核
+  // docs/analysis/intranet-env-audit.md §4/§5)────────────────────
+  {
+    id: 'KBE-CFG-001', code: 'kbengine.configContract.debugComponentsEmpty',
+    title: 'debug.json components 空/缺(unparsable/telnet 段整段被注释同族)',
+    severity: 'Warning', roles: '工作区配置(.kbengine/debug.json)',
+    toggles: ['kbengine.configContractDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+  },
+  {
+    id: 'KBE-CFG-002', code: 'kbengine.configContract.debugTelnetPortMismatch',
+    title: '已知组件 telnet 端口缺失或偏离引擎默认(31000/32000/40000/50000 等)',
+    severity: 'Warning', roles: '工作区配置(.kbengine/debug.json)',
+    toggles: ['kbengine.configContractDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+  },
+  {
+    id: 'KBE-CFG-003', code: 'kbengine.configContract.extraPathsDoubleUp',
+    title: 'extraPaths 双层上跳(../..)或指向不存在目录',
+    severity: 'Warning', roles: '工作区配置(.vscode/settings.json)',
+    toggles: ['kbengine.configContractDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+  },
+  {
+    id: 'KBE-CFG-004', code: 'kbengine.configContract.gitignoreMissingKbengine',
+    title: '.gitignore 缺 .kbengine/ 托管目录条目(误提交含密码 debug.json 风险)',
+    severity: 'Warning', roles: '工作区配置(.gitignore)',
+    toggles: ['kbengine.configContractDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+  },
+  {
+    id: 'KBE-CFG-005', code: 'kbengine.configContract.telnetPasswordDocConflict',
+    title: 'CLAUDE.md/README 声明的 telnet 密码/端口与 debug.json 实值冲突',
+    severity: 'Warning', roles: '工作区配置(文档↔debug.json 对账)',
+    toggles: ['kbengine.configContractDiagnostics'],
+    trigger: '实时(open/edit)', quickFix: false,
+    status: 'implemented', source: 'src/configContractDiagnostics.ts'
+  },
   // ── def 按需分析(implemented,非实时)────────────────────────────
   {
     id: 'KBE-DEF-004', code: 'phantom-type',

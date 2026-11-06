@@ -227,27 +227,44 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
     error.length = 0;
   });
 
-  it('rolls back the def file when the python write fails', async () => {
+  it('rolls back the def file and earlier python parts when a later part write fails', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
-    const pyPath = path.join(root, 'scripts', 'base', 'Rollback.py');
+    // KR-AUD-74 引擎布局:python 分段落盘 scripts/base|cell|client/<Name>.py
+    const basePy = path.join(root, 'scripts', 'base', 'Rollback.py');
+    const cellPy = path.join(root, 'scripts', 'cell', 'Rollback.py');
+    const clientPy = path.join(root, 'scripts', 'client', 'Rollback.py');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
-    // 只拦 python 面的写(直写或其临时文件):def 落盘成功后 python 中断
-    interruptState.targets = [pyPath];
+    // 三段实体,只拦最后一段(client)的写:def 与已落盘的 base/cell 段
+    // 都在失败点之前——分段落盘须逐段入账,否则已写段漏回收留半套
+    const savedQuickPick = windowish.showQuickPick;
+    windowish.showQuickPick = async (items: unknown[] | Promise<unknown[]>): Promise<unknown> => {
+      const resolved = await items;
+      const full = (resolved as Array<{ label?: string }>).find(
+        item => item.label === 'Base + Cell + Client'
+      );
+      return full ?? resolved[0];
+    };
+    interruptState.targets = [clientPy];
 
     const generator = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
     await generator.showWizard();
 
     expect(error).toHaveLength(1);
     expect(error[0]).toContain('生成失败');
-    // 第一份新增文件被回收,python 没有半截,entities.xml 无本次注册项
+    // def 与已落盘的 base/cell 段全部回收,client 段无半截,
+    // entities.xml 无本次注册项
     expect(fs.existsSync(defPath)).toBe(false);
-    expect(fs.existsSync(pyPath)).toBe(false);
+    expect(fs.existsSync(basePy)).toBe(false);
+    expect(fs.existsSync(cellPy)).toBe(false);
+    expect(fs.existsSync(clientPy)).toBe(false);
     expect(fs.readFileSync(entitiesXml, 'utf8')).toBe(entitiesBefore);
+    windowish.showQuickPick = savedQuickPick;
   });
 
   it('keeps files and registration when the post-commit open step fails (AUD-064)', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
+    // 首选项 Base 型实体:python 面为 scripts/base/<Name>.py 单段
     const pyPath = path.join(root, 'scripts', 'base', 'Rollback.py');
     const entitiesXml = path.join(root, 'scripts', 'entities.xml');
     const entitiesBefore = fs.readFileSync(entitiesXml, 'utf8');
@@ -322,8 +339,11 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
 
   it('template flow rolls back the same way', async () => {
     const defPath = path.join(root, 'scripts', 'entity_defs', 'Rollback.def');
-    const pyPath = path.join(root, 'scripts', 'base', 'Rollback.py');
-    interruptState.targets = [pyPath];
+    // 首选 Account 模板 = base+client 两段;拦第二段(client):
+    // 第一段已落盘,分段入账须把它随事务回收
+    const basePy = path.join(root, 'scripts', 'base', 'Rollback.py');
+    const clientPy = path.join(root, 'scripts', 'client', 'Rollback.py');
+    interruptState.targets = [clientPy];
     windowish.showInputBox = async (): Promise<string | undefined> => 'Rollback';
 
     const generator = new KBEngineCodeGenerator({} as unknown as vscode.ExtensionContext);
@@ -332,6 +352,7 @@ describe('multi-file rollback (IDE-GEN-006)', () => {
     expect(error).toHaveLength(1);
     expect(error[0]).toContain('生成失败');
     expect(fs.existsSync(defPath)).toBe(false);
-    expect(fs.existsSync(pyPath)).toBe(false);
+    expect(fs.existsSync(basePy)).toBe(false);
+    expect(fs.existsSync(clientPy)).toBe(false);
   });
 });

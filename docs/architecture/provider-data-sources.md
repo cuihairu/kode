@@ -113,9 +113,9 @@
 
 ## 5. watcher 分布
 
-watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher):src/extension.ts=3 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1(合计 14 处调用位)
+watcher 分布(基线 499d34a,按**源码调用位**计,测试逐文件对账;GLOBDATA-001 起 globalDataIndex 增 1 处;AUD-035 起 workspaceIndex 增 1 处=workspace py glob+外部根 RelativePattern;KODE-CFG-017 起 inferPipeline 增 1 处=infer 管道 py watcher;配置契约检查诊断起 extension.ts 增 1 处=.kbengine/debug.json/.gitignore/.vscode/settings.json/CLAUDE.md/README 契约文件 watcher):src/extension.ts=4 src/typeStorageIndexWatchers.ts=1 src/entityMapping.ts=3 src/hotReload.ts=1 src/pythonTypeStubs.ts=1 src/debugConfig.ts=1 src/workspaceIndex.ts=2 src/globalDataIndex.ts=1 src/inferPipeline.ts=1(合计 15 处调用位)
 
-- 装配层自持:extension.ts ×3、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005)。
+- 装配层自持:extension.ts ×4、typeStorageIndexWatchers.ts ×1 调用位(循环建 def/types.xml/entities.xml 3 枚 watcher,ARC-005;另 1 枚为配置契约检查的契约文件 watcher)。
 - 模块自持(见 §6 标注):entityMapping ×3、hotReload ×1(显式 dispose/重建)、pythonTypeStubs ×1、debugConfig ×1。
 - workspaceIndex ×1(py glob)住类内,但 WorkspaceIndex 全仓唯一构造位在装配层,Disposable 随 context.subscriptions 释放——生命周期口径已符合 ARC-005,不算未完成。
 
