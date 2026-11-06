@@ -505,7 +505,7 @@ describe('injectDebugpyAfterStart 默认探测面', () => {
 // processManager:killProcessTree POSIX 回落 + ProcessManager 冒面
 // ---------------------------------------------------------------------------
 
-describe('killProcessTree(POSIX 单 pid 回落)', () => {
+describe('killProcessTree(POSIX 单 pid 回落)', { skip: process.platform === 'win32' ? 'POSIX 进程组信号语义(sleep/ESRCH 回落),win32 无 sleep 且走 taskkill 面' : false }, () => {
   it('非组长真实进程:负 pid 组信号 ESRCH,回落单 pid 击杀', async () => {
     const child = spawn('sleep', ['30'], { stdio: 'ignore' });
     const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));

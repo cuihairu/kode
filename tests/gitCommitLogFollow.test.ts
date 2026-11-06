@@ -9,6 +9,10 @@ import {
   type GitCommitLogDeps,
 } from '../src/gitCommitLog';
 import { runGitReadOnly, type GitRunOutcome } from '../src/gitRunner';
+// WIN-3:真实临时仓库逐个 spawn git,win32(杀软/路径解析)显著慢于 Linux,
+// 并行套件下 5s 默认会超时;仅放宽本文件真实仓库面的单测时限
+vi.setConfig({ testTimeout: 30000 });
+
 
 const realDeps: GitCommitLogDeps = {
   runGit: (args, cwd) => runGitReadOnly(args, { cwd, timeoutMs: 10000, maxOutputBytes: 2097152 }),

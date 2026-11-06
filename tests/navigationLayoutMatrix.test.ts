@@ -345,7 +345,8 @@ describe('根修令落点降级矩阵:实现缺失仍有落点,提示给真实�
     expect(location!.range.start.line).toBe(1);
     // 双根:def 反推根(工作区相对) + 布局根(工作区相对),全是真实路径
     // (反推根列首无前置分隔,布局根条目用分隔边界断言防子串误判)
-    const hint = messages.info.join('\n');
+    // WIN-3:提示里的路径是平台 path.join 产物,归一为 / 后断言内容
+    const hint = messages.info.join('\n').replace(/\\/g, '/');
     expect(hint).toContain('期望位置:nested/server/scripts/base/Boat.py、');
     expect(hint).toContain('、scripts/base/Boat.py、');
     expect(hint, '禁止花括号模板').not.toContain('{base}');
@@ -395,7 +396,7 @@ describe('根修令落点降级矩阵:实现缺失仍有落点,提示给真实�
     expect(location?.uri.fsPath).toBe(p(root, 'scripts', 'entities.xml'));
     expect(location!.range.start.line).toBe(1);
     // 反推失败时提示退到布局根,仍给真实路径
-    expect(messages.info.join('\n')).toContain('scripts/base/Loose.py');
+    expect(messages.info.join('\n').replace(/\\/g, '/')).toContain('scripts/base/Loose.py');
   });
 
   it('M4 悬停段标签且无脚本:附注列期望位置(真实路径)', () => {
@@ -417,7 +418,7 @@ describe('根修令落点降级矩阵:实现缺失仍有落点,提示给真实�
     } | null;
     const rawContents = result?.contents ?? [];
     const contents = Array.isArray(rawContents) ? rawContents : [rawContents];
-    const text = contents.map(part => (part as { value?: string }).value ?? String(part)).join('\n');
+    const text = contents.map(part => (part as { value?: string }).value ?? String(part)).join('\n').replace(/\\/g, '/');
     expect(text).toContain('未找到实体脚本,期望位置:');
     // 悬停时 workspace 在位,路径按工作区相对展示(M2 已验绝对路径形态)
     expect(text).toContain('nows/base/No.py');

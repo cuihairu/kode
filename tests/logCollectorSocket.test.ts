@@ -249,7 +249,9 @@ describe('KBEngineLogCollector.getDefaultUid', () => {
     };
   };
 
-  it('prefers process.getuid', () => {
+  // WIN-3:Windows 没有 process.getuid,“优先取 getuid”的语义仅在 POSIX 可验;
+  // env 回落链由下一条用例在两侧共同覆盖
+  it('prefers process.getuid', { skip: process.platform === 'win32' ? 'win32 无 process.getuid' : false }, () => {
     const collector = makeCollector();
     expect(internalsOf(collector).getDefaultUid()).toBe(process.getuid());
   });
@@ -270,7 +272,11 @@ describe('KBEngineLogCollector.getDefaultUid', () => {
       process.env.uid = 'not-a-number';
       process.env.UID = '77';
     });
-    expect(internals.getDefaultUid()).toBe(-1);
+    // WIN-3:Windows 环境变量名大小写不敏感,uid/UID 折叠为同一变量,
+    // “uid 非法回落 UID 仍判 unusable → -1”只在 POSIX 上可构造
+    if (process.platform !== 'win32') {
+      expect(internals.getDefaultUid()).toBe(-1);
+    }
     restoreB();
 
     const restoreC = patchProcess(target => {

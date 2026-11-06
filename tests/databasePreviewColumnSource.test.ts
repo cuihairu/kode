@@ -181,7 +181,8 @@ describe('反查真链路(真注册表 + 真 schema 快照 + 真 def 文件)', (
     const heroTable = resolve('tbl_Hero', root);
     expect(heroTable).not.toBeNull();
     const lines = renderColumnSourceSection([{ name: 'id' }, { name: 'sm_hp' }], 'tbl_Hero', heroTable);
-    const text = lines.join('\n');
+    // WIN-3:渲染含平台分隔符的绝对路径,归一为 / 后再正则匹配
+    const text = lines.join('\n').replace(/\\/g, '/');
     expect(text).toContain('sm_hp:源自 def 声明');
     expect(text).toMatch(/sm_hp:源自 def 声明 [^\s]*scripts\/entity_defs\/Hero\.def:3\(hp,TypeUINT32\)/);
     expect(text).toContain('id:引擎合成列');
