@@ -436,4 +436,74 @@ mod tests {
         store.open(k.clone(), 1, "hi").unwrap();
         assert!(store.is_open(&k));
     }
+
+    #[test]
+    fn reopen_with_newer_version_replaces_overlay() {
+        let mut store = DocumentStore::new();
+        let k = key(1, "/w/reopen.def");
+        store.open(k.clone(), 1, "v1").unwrap();
+        // 同版本重放被拒(open 只属于未打开文档)。
+        assert!(matches!(
+            store.open(k.clone(), 1, "again"),
+            Err(VersionConflict::Stale {
+                current: 1,
+                incoming: 1
+            })
+        ));
+        // 更新版本重开:overlay 整体替换。
+        store.open(k.clone(), 3, "v3").unwrap();
+        let snap = store.snapshot(&k).unwrap();
+        assert_eq!(snap.version, Some(3));
+        assert_eq!(snap.buffer.text(), "v3");
+    }
+
+    #[test]
+    fn snapshot_of_missing_document_is_none() {
+        let mut store = DocumentStore::new();
+        let k = key(1, "/w/never-writes.def");
+        assert!(store.snapshot(&k).is_none());
+    }
+
+    #[test]
+    fn remove_reports_closed_documents_without_version() {
+        let mut store = DocumentStore::new();
+        let k = key(1, "/w/never-opened-remove.def");
+        let removed = store.remove(&k).unwrap();
+        assert!(!removed.was_open);
+        assert_eq!(removed.last_version, None);
+        assert!(removed.last_buffer.is_none());
+        assert_eq!(removed.key, k);
+    }
+
+    #[test]
+    fn invalidate_root_with_no_documents_is_empty() {
+        let mut store = DocumentStore::new();
+        assert!(store.invalidate_root(RootId(42)).is_empty());
+    }
+
+    #[test]
+    fn disk_cache_is_reachable_and_clearable() {
+        let dir = std::env::temp_dir().join(format!("kode-vfs-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("cache.def");
+        std::fs::write(&p, "from disk").unwrap();
+
+        let mut store = DocumentStore::new();
+        let dk = key(1, &p.to_string_lossy());
+        let snap = store.snapshot(&dk).unwrap();
+        assert_eq!(snap.source, ContentSource::Disk);
+        assert_eq!(snap.buffer.text(), "from disk");
+        // 失效 + 清空面可达(删除/重命名/根切换共用)。
+        store.disk_cache().invalidate(&p);
+        store.disk_cache().clear();
+        // Default 实现与 new 等价(roots 为空,id 从 1 起)。
+        let registry = RootRegistry::default();
+        assert!(registry.roots().is_empty());
+        assert_eq!(
+            registry.root_for(&CanonicalUri::from_path("/w/x.def")),
+            RootId::UNROOTED
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
