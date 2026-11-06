@@ -1,0 +1,33 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede
+# worktree status (git status --porcelain at capture): clean (empty)
+# started: 2026-11-06 16:24:12 +0800  load:10.45 28.41 49.62
+# cmd: node ./out/test/runTest.js
+
+
+[0m[0m
+[0m  compiled language provider smoke[0m
+  [32m  ✔[0m[90m completes the def top-level tags below an open root[0m
+  [32m  ✔[0m[90m hovers tag documentation for a def tag word[0m
+  [32m  ✔[0m[90m renames a def property across the parent chain (compiled module)[0m
+
+[0m  Extension manifest[0m
+  [32m  ✔[0m[90m registers activation events for all contributed commands[0m
+  [32m  ✔[0m[90m contributes hot-reload snippets for the python language[0m
+  [32m  ✔[0m[90m keeps def and types.xml snippet contributions intact[0m
+  [32m  ✔[0m[90m contributes quick actions as an independent view before Entities[0m
+
+[0m  compiled extension activation smoke[0m
+KBEngine Language Extension is now active!
+  [32m  ✔[0m[90m registers exactly the commands contributed by the manifest[0m
+  [32m  ✔[0m[90m registers the tree views declared by the manifest[0m
+  [32m  ✔[0m[90m creates the status bar items with the configured alignment[0m
+  [32m  ✔[0m[90m dispatches a compiled command end to end[0m
+KBEngine Language Extension is now deactivated!
+  [32m  ✔[0m[90m deactivates cleanly and the dispose chain tears registrations down[0m
+
+
+[92m [0m[32m 12 passing[0m[90m (470ms)[0m
+
+
+# finished: 2026-11-06 16:24:12 +0800 exit=0

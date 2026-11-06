@@ -347,8 +347,35 @@
 ### 第九轮门禁数字（2026-11-06，HEAD `735aa4a`，本机负载 19–24）
 
 - `cargo test --workspace`：**退出 0**，94 结果块 **558 passed、0 failed、0 ignored**（`r9-full-cargo.log`）。
-- `cargo fmt --check`：**退出 0**；`cargo clippy --workspace --all-targets -- -D warnings`：**退出 0**（`r9-full-fmt-clippy.log`）。**红→绿**：初跑 fmt=1 / clippy=101——全为分支落后 main 的既有面（41 文件未格式化 + 20 处 lint，R9 未动 Rust），修复**逐字对齐 main 上已有修法**后独立入库 `735aa4a`（红日志 `r9-full-fmt-clippy-red-at-9a5c7ee.log`）；修复本身亦过全量 cargo 测试（上）。
+- `cargo fmt --check`：**退出 0**；`cargo clippy --workspace --all-targets -- -D warnings`：**退出 0**（`r9-full-fmt-clippy.log`）。**红→绿**：初跑 fmt=1 / clippy=101——全为分支落后 main 的既有面（41 文件未格式化 + 20 处 lint，R9 未动 Rust），修复**逐字对齐 main 上已有修法**后独立入库 `735aa4a`（红日志 `r9-full-fmt-clippy-red-at-9a5c7ee.log`）；修复本身亦过全量 cargo 测试（上）。**范围注记（十一轮如实更正）**：十轮复审指出 `735aa4a` **并非纯格式面**——含恒真断言改实断言与 clippy 表达式替换，详见下「第十一轮返工记录」R11-F3，故不声称该提交「仅格式变化」。
 - `eslint src --ext ts`：**退出 0** 干净（`r9-full-eslint.log`）；`pnpm clean && pnpm compile && tsc -p tsconfig.mocha.json`：**退出 0** 干净（`r9-full-tsc.log`）。
 - vitest 全量第 1 轮：**退出 0，514 文件 passed | 4 skipped，6390 passed | 20 skipped（6410），0 failed**（`r9-full-vitest-1.log`）。**预算型失败隔离复跑协议未被触发**——首轮 0 failed 无可隔离复跑项，如实记录。
 - **环境根因处置（上席三轮全量 3–5 failed 的定性）**：`covExtensionCommands` 隔离 3/3 仍挂，根因是本机 PATH 首个 `python3` 为 agent venv（无 pytest 模块），测试 `locateInterpreterOnPath` 取 PATH 首个解释器 → 真跑 pytest 段 0 条目——**环境非回归**（九轮 diff 未触及该面）。处置：门禁 PATH 注入 shim（`python3 → /usr/bin/python3`，pytest 9.1.1），该文件隔离验证 **80/80 过**、随全量绿。上席原始日志（`r9-cargo-full.log`、`r9-vitest-full-1/2/3.log`、`r9-vitest-isolated-x3.log`）一并入库备查。
 - VS Code 集成冒烟 `node ./out/test/runTest.js`：**12 passing**，退出 0（`r9-full-electron.log`）。
+
+## 第十一轮返工记录（2026-11-06，十轮复审唯一遗留：证据绑定 FAIL，分支 `feat/kode-fix-f1f4`）
+
+十轮复审（`docs/review/2026-11-06-f1f4-round10-review.md`，提交 `b5f18bf` 入库）三面判定：`.staged` 隔离 **PASS**、inode 比对清理 **PASS**、**证据绑定 FAIL**——六份九轮门禁日志头部 HEAD 均为 `735aa4a` 而非终态 `46e1bb3`；Windows 回环记录只有手写 commit 行，缺运行时 `git rev-parse HEAD`、工作树状态与所执行字节的哈希，无法证明记录随运行采集。本轮按 codex 报告所列最小修法处理三项，**产品代码（接收端/测试）零改动**，只动证据采集面；`todo.md` 未改。
+
+### R11-F1：终态提交门禁日志（被测提交 `8411a72`，干净检出）
+
+- 采集包装器在**同一原始日志**先记录：分支、`git rev-parse HEAD`、采集时点 `git status --porcelain`（工作树状态）、起始时间+负载、命令，结尾记录结束时间与退出码；日志全部写在**仓库之外**（`$TMPDIR/r11-gates/`），因此采集自身不污染所记录的工作树状态，全部六份状态行均为 `clean (empty)`。包装器为一次性本地脚本（`r11-capture.sh`，未入库——evidence 提交因此只含日志与文档，不含任何代码改动；其头部字段形状与下方日志逐行对应，可复算复现）。
+- 六份日志入 `docs/review/evidence/`，头部一律 `HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede`：
+  - `r11-full-cargo.log`：`cargo test --workspace` **退出 0**，94 结果块 **558 passed、0 failed、0 ignored**。
+  - `r11-full-fmt-clippy.log`：`cargo fmt --check` **0**、`cargo clippy --workspace --all-targets -- -D warnings` **0**（`--- fmt exit=0 ---` / `--- clippy exit=0 ---`）。
+  - `r11-full-eslint.log`：`pnpm lint` **退出 0** 干净。
+  - `r11-full-tsc.log`：`pnpm clean && pnpm compile && tsc -p tsconfig.mocha.json` **退出 0**；`out/buildCommit.json` 记 `build commit 8411a72…`（构建身份与被测提交一致）。
+  - `r11-full-vitest-1.log`：`npx vitest run` **退出 0**，**514 文件 passed | 4 skipped（518），6390 passed | 20 skipped（6410），0 failed**。
+  - `r11-full-electron.log`：`node ./out/test/runTest.js` **12 passing**，退出 0。
+
+### R11-F2：回环记录的运行时采集绑定（探针入库 `scripts/hot-reload-receiver/winRoundtripProbe.mjs`，随 `8411a72` 入库）
+
+- 九轮探针只存在于会话临时目录、不在版本控制内，其 commit 标注是事后手写；本轮把探针**入库**并在头部随运行输出（原始 stdout、不做事后编辑）：`captured-at`、主机/平台/node、`git rev-parse HEAD`、`--abbrev-ref HEAD`、`git status --porcelain`、探针与接收端两个文件的**运行时 sha256**，并各自与 `git show HEAD:<path>` 的 blob sha256 对比给出 `probe bytes == HEAD blob` / `receiver bytes == HEAD blob` 标志——执行字节与记录提交的字节可逐字节互证。
+- 本机 Linux 对拍 `docs/review/evidence/r11-winprobe-local-linux.log`：HEAD `8411a72…`、status 空、`probe bytes == HEAD blob: true`、`receiver bytes == HEAD blob: true`，八场景 **FINAL_VERDICT=PASS**、包装器 `exit=0`。
+- Windows 真机 `docs/perf/2026-11-06-win-roundtrip-r11.txt`（openclaw，Windows Server 2022，node v24.22.1）：被测工作树由 `git bundle`（tip `8411a72`）在真机 `git clone -c core.autocrlf=false -b feat/kode-fix-f1f4` 检出，clone 后 `git rev-parse HEAD` = `8411a72…` 且 `git status --porcelain` 为空；探针运行时输出同一 HEAD、状态空、探针 sha256 `f3d36748e5f95483a2ea87d4c493ed66ad53f38aca079309a7cf5e80de100d75`、接收端 sha256 `b56b7ecae6e206d13019f97587743bc1e90e17dda206fe7823c3c3fe4fc317cd`，两哈希均与 `git show HEAD:` blob 一致，且与 Linux 本机对拍哈希**逐字节相同**（LF/CRLF 未改字节）；八场景 **FINAL_VERDICT=PASS**、包装器 `exit=0`。
+- **被测提交与证据提交的关系（codex 明示「不能要求一个提交内的文件自含该提交自身哈希」）**：被测提交 = `8411a72`（终态代码提交，六份门禁与两端回环全部采于此）；随后的 evidence 提交只新增日志与本文档，**不含代码改动**，故证据所指代码树即 `8411a72` 的代码树，不声称证据提交自身哈希被其自身文件携带。
+
+### R11-F3：`735aa4a` 范围如实注记（十轮复审第 4 项）
+
+- 第九轮曾把 `735aa4a` 记为 fmt/clippy 清理；十轮复审抽查判定**并非纯格式面**，据此如实更正：`crates/kode-mcp/tests/units.rs:60-62` 把恒真断言改为「不包含 `TrainingMonster`」的实断言，**改变了测试行为**；`crates/kode-corpus/src/encoding.rs:239,345-350`（`chunks_exact → as_chunks`、`%2 → is_multiple_of`）、`crates/kode-parser/src/config.rs:199,215,234`（`extend(pending.drain(..)) → append(&mut pending)` 三处）与 `crates/kode-parser/src/config.rs:323`（`seen.iter().any(..) → seen.contains(..)`）为 clippy 驱动的表达式替换。
+- 抽查的生产代码替换语义相当，但**未对全部 44 文件作逻辑等价证明**，故本记录不声称该提交「仅格式变化」；上述更正同时写入第九轮门禁数字小节。该提交本体过全量 cargo 测试（上第九轮、本轮 HEAD 均 558 passed / 0 failed）。

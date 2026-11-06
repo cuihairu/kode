@@ -1,0 +1,9 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede
+# worktree status (git status --porcelain at capture): clean (empty)
+# started: 2026-11-06 16:23:01 +0800  load:7.50 33.24 52.74
+# cmd: pnpm lint
+
+$ eslint src --ext ts
+
+# finished: 2026-11-06 16:23:10 +0800 exit=0

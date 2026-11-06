@@ -1,0 +1,11 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede
+# worktree status (git status --porcelain at capture): clean (empty)
+# started: 2026-11-06 16:22:48 +0800  load:9.25 34.88 53.57
+# cmd: bash -c cargo fmt --check; f=$?; echo "--- fmt exit=$f ---"; cargo clippy --workspace --all-targets -- -D warnings; c=$?; echo "--- clippy exit=$c ---"; [ $f -eq 0 ] && [ $c -eq 0 ]
+
+--- fmt exit=0 ---
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
+--- clippy exit=0 ---
+
+# finished: 2026-11-06 16:22:49 +0800 exit=0

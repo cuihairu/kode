@@ -1,0 +1,42 @@
+# gate evidence — branch feat/kode-fix-f1f4
+# HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede
+# worktree status (git status --porcelain at capture): clean (empty)
+# started: 2026-11-06 16:28:52 +0800  load:14.06 18.63 39.81
+# cmd: timeout -k 5 120 ssh -o ConnectTimeout=10 openclaw cd C:\Users\Administrator\kode-r11; node scripts\hot-reload-receiver\winRoundtripProbe.mjs; exit $LASTEXITCODE
+
+# reference-receiver roundtrip probe — raw probe stdout, no post-editing of these lines
+# captured-at: Fri Nov 06 2026 16:28:57 GMT+0800 (中国标准时间)
+# host: openclaw win32 10.0.20348 node v24.22.1
+# git toplevel: C:/Users/Administrator/kode-r11
+# git rev-parse HEAD: 8411a7279ac6c366ef48a56678e72730cb3c9ede
+# git rev-parse --abbrev-ref HEAD: feat/kode-fix-f1f4
+# git status --porcelain: (empty — clean worktree)
+# probe file: scripts/hot-reload-receiver/winRoundtripProbe.mjs
+# probe sha256 (runtime bytes): f3d36748e5f95483a2ea87d4c493ed66ad53f38aca079309a7cf5e80de100d75
+# probe sha256 (git show HEAD:scripts/hot-reload-receiver/winRoundtripProbe.mjs): f3d36748e5f95483a2ea87d4c493ed66ad53f38aca079309a7cf5e80de100d75
+# probe bytes == HEAD blob: true
+# receiver file: scripts/hot-reload-receiver/referenceReceiver.mjs
+# receiver sha256 (runtime bytes): b56b7ecae6e206d13019f97587743bc1e90e17dda206fe7823c3c3fe4fc317cd
+# receiver sha256 (git show HEAD:scripts/hot-reload-receiver/referenceReceiver.mjs): b56b7ecae6e206d13019f97587743bc1e90e17dda206fe7823c3c3fe4fc317cd
+# receiver bytes == HEAD blob: true
+# scenarios: 1-5 rename overwrite roundtrip, 6 .staged source reject, 7 dangling alias reject, 8 .staged symlink reject
+receiver port: pending
+receiver port: 10340
+platform: win32 10.0.20348 node v24.22.1
+1) fresh apply     -> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-olfgDO\\Avatar.py","digest":"55e7536d201268affc2cc3039cadaa9c3a581d70cb7e41fd38c106e742c6b317","revision":1}
+   artifact bytes  : "class Avatar:\n    HP = 100\n"
+2) overwrite apply -> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-olfgDO\\Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":2}
+   artifact bytes  : "class Avatar:\n    HP = 200\n"
+3) idempotent apply-> HTTP 200 {"status":"applied","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-olfgDO\\Avatar.py","digest":"28c058d4490c9ee7f7bb2140f285839b126f511799dd931efb66df777f6fa8c7","revision":3}
+4) staged copy     : true
+5) symlink parent  -> HTTP 200 {"status":"failed","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-olfgDO\\sub\\X.py","reason":"产物路径经符号链接解析后逃逸引擎目录或最终组件为符号链接(C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root-olfgDO\\engine\\sub\\X.py):拒绝写入不落盘"}
+   leak check      : other/X.py exists = false
+   link intact     : true
+6) .staged source reject -> HTTP 200 all-failed=true sources-intact=true
+7) dangling alias  -> HTTP 200 all-failed=true engine-x=false staged-x=false
+8) .staged symlink -> HTTP 200 {"status":"failed","file":"C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root2-k99jIs\\X.py","reason":"接收端暂存路径经符号链接解析后逃逸暂存根或含符号链接组件(C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\kode-win-probe-root2-k99jIs\\.staged\\X.py):拒绝暂存"}
+   escape dir empty: true
+VERDICT: PASS (rename overwrite + staged namespace isolation + staged symlink rejection + dangling alias rejection hold on this platform)
+FINAL_VERDICT=PASS
+
+# finished: 2026-11-06 16:28:59 +0800 exit=0
