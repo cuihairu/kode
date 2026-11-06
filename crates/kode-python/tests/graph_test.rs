@@ -111,6 +111,54 @@ fn local_bare_name_no_cross_file_pseudo_edge() {
 }
 
 #[test]
+fn receiver_without_import_no_cross_file_pseudo_edge() {
+    // KODE-AUD-008 复审残余:非模块接收者(实例变量 `avatar.heal()`,调用方
+    // 未 `import avatar`)不可静态解析——按模块名找文件会把唯一同名文件
+    // avatar.py 误指为被调方(伪跨文件边)。要求:接收者首段不是调用方
+    // import 绑定 → 不产跨文件边。
+    let zcaller = "def battle():\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        !rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "未 import 的实例接收者不应产生跨文件伪边 afoo→zcaller, got {rev:?}"
+    );
+}
+
+#[test]
+fn imported_module_receiver_resolves_cross_file() {
+    // 同形态但调用方确有 `import avatar` 绑定 → 模块接收者照常解析到
+    // avatar.py(正向回归:修复不得把真模块调用也切断)。
+    let zcaller = "import avatar\n\ndef battle():\n    avatar.heal()\n";
+    let afoo = "def heal():\n    pass\n";
+    let zk = key("scripts/zcaller.py");
+    let ak = key("scripts/avatar.py");
+    let mut file_edges = BTreeMap::new();
+    let mut file_symbols = BTreeMap::new();
+    for (k, src) in [(&zk, zcaller), (&ak, afoo)] {
+        let ast = ParsedAst::new(src);
+        let symbols = parse_ast_symbols(src).symbols;
+        file_edges.insert(k.clone(), extract_call_graph(&ast, &symbols));
+        file_symbols.insert(k.clone(), symbols);
+    }
+    let rev = build_call_reverse_index(&file_edges, &file_symbols);
+    assert!(
+        rev.get(&ak).map(|s| s.contains(&zk)).unwrap_or(false),
+        "已 import 的模块接收者应解析到 avatar.py, got {rev:?}"
+    );
+}
+
+#[test]
 fn rust7_cross_process_edge_marked_uncertain_not_silent() {
     // RUST-7:`self.cell.*`/`self.base.*` 跨进程边被调方文件无法静态解析
     // (实体类在另一进程侧文件里)。旧行为:落进 self.* 分支按「同类」折叠
