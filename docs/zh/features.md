@@ -249,7 +249,7 @@
 | `kbengine.inlayHints.defParams` | `true` | entity 脚本区块内 def 未标注形参内联 def 声明的 `<Arg>` 类型;声明 `<ReturnType>` 时内联 `-> 类型` |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | 实体定义文件默认路径 |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | entities.xml 默认路径 |
-| `kbengine.binPath` | `"${workspaceFolder}/../kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR} |
+| `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine 服务端二进制路径；支持 ${workspaceFolder} 与 ${env:VAR}。未显式配置时（CFG-01）默认值在盘即生效，不在盘回落自动发现扫描，扫描也落空才由启动检查链报警 |
 | `kbengine.assetsRoot` | `""` | KBEngine 资产根（其下应有 res/server/kbengine.xml 与 scripts/）；留空走约定路径与深扫描自动发现 |
 | `kbengine.jumpLog` | `false` | 跳转决策路径日志打到 KBEngine Navigation 输出通道（关 = 零开销） |
 | `kbengine.showFinalConfigOnOpen` | `true` | 激活期能定位引擎默认配置时自动打开合成的只读最终配置视图 |

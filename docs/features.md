@@ -252,7 +252,7 @@ All extension settings (evidence: package.json#contributes.configuration for con
 | `kbengine.inlayHints.defParams` | `true` | Un-annotated `def` parameters in entity script sections get the `.def`-declared `<Arg>` type inline; declared `<ReturnType>` renders `-> type` |
 | `kbengine.entityDefsPath` | `"scripts/entity_defs"` | Default path for entity definition files |
 | `kbengine.entitiesXmlPath` | `"scripts/entities.xml"` | Default path for entities.xml |
-| `kbengine.binPath` | `"${workspaceFolder}/../kbe/bin/server"` | KBEngine server binaries path; supports ${workspaceFolder} and ${env:VAR} |
+| `kbengine.binPath` | `"${workspaceFolder}/kbe/bin/server"` | KBEngine server binaries path; supports ${workspaceFolder} and ${env:VAR}. Unset (CFG-01): the default takes effect when on disk, otherwise the auto-discovery scan runs, and only a full miss warns via the launch check chain |
 | `kbengine.assetsRoot` | `""` | KBEngine assets root (res/server/kbengine.xml + scripts/ underneath); empty = convention-path and deep-scan auto-discovery |
 | `kbengine.jumpLog` | `false` | Navigation decision-path logging to the KBEngine Navigation output channel (off = zero cost) |
 | `kbengine.showFinalConfigOnOpen` | `true` | Auto-open the synthesized read-only final-config view on activation when the engine default config is locatable |

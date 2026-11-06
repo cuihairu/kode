@@ -321,6 +321,64 @@ describe('KBEngineServerManager startup grace guard (批73)', () => {
   }, 10000);
 });
 
+describe('kbengine.binPath 默认值与回退扫描(CFG-01:默认/回退/落空三分支)', () => {
+  let rootBase = '';
+  let ws = '';
+
+  beforeAll(() => {
+    rootBase = fs.mkdtempSync(path.join(os.tmpdir(), 'kode-srv-binpath-'));
+    // ws 与引擎兄弟目录同级:回退扫描命中 <ws>/../kbengine/kbe/bin/server
+    ws = path.join(rootBase, 'proj', 'ws');
+    fs.mkdirSync(ws, { recursive: true });
+    fs.mkdirSync(path.join(rootBase, 'proj', 'kbengine', 'kbe', 'bin', 'server'), { recursive: true });
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: ws }, name: 'ws', index: 0 }];
+  });
+
+  afterAll(() => {
+    stubWorkspace.workspaceFolders = [];
+    fs.rmSync(rootBase, { recursive: true, force: true });
+  });
+
+  it('① 未配置时默认值 ${workspaceFolder}/kbe/bin/server 在盘即直接生效,不回落扫描', () => {
+    configurationOverrides.delete('kbengine');
+    fs.mkdirSync(path.join(ws, 'kbe', 'bin', 'server'), { recursive: true });
+    try {
+      expect(makeManager().getBinPath()).toBe(path.join(ws, 'kbe', 'bin', 'server'));
+    } finally {
+      fs.rmSync(path.join(ws, 'kbe'), { recursive: true, force: true });
+    }
+  });
+
+  it('② 默认值落盘探测失败时回退自动发现(复用 detectBinPath 扫描)', () => {
+    configurationOverrides.delete('kbengine');
+
+    expect(makeManager().getBinPath())
+      .toBe(path.join(rootBase, 'proj', 'kbengine', 'kbe', 'bin', 'server'));
+  });
+
+  it('③ 回退扫描也落空 → 空串,告警口径收窄为既有检查链的「找不到引擎」', () => {
+    const bare = path.join(rootBase, 'bare', 'ws');
+    fs.mkdirSync(bare, { recursive: true });
+    configurationOverrides.delete('kbengine');
+    stubWorkspace.workspaceFolders = [{ uri: { fsPath: bare }, name: 'bare', index: 0 }];
+    try {
+      expect(makeManager().getBinPath()).toBe('');
+    } finally {
+      stubWorkspace.workspaceFolders = [{ uri: { fsPath: ws }, name: 'ws', index: 0 }];
+    }
+  });
+
+  it('显式配置的 binPath 落盘探测失败不覆盖为扫描结果(用户显式值权威)', () => {
+    const explicit = path.join(ws, 'custom', 'bin');
+    configurationOverrides.set('kbengine', { binPath: explicit });
+    try {
+      expect(makeManager().getBinPath()).toBe(explicit);
+    } finally {
+      configurationOverrides.delete('kbengine');
+    }
+  });
+});
+
 describe('detectBinPath kbe 源码根锚点兜底(批125 自动发现)', () => {
   let rootBase = '';
 
