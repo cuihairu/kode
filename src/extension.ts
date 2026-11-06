@@ -254,12 +254,14 @@ import { disableJsoncAssociation, syncJsoncAssociation } from './jsoncAssociatio
 import { exportKbeStubs, fileSystemStubExportDeps, readManagedDirSetting, resolveManagedDirName } from './pythonStubExport';
 import {
   PYTHON_TYPE_STUB_FILE_NAME,
+  buildPythonTypeStubLineMap,
   buildPythonTypeStubPlan,
   exportPythonTypeStubs,
   setupTypeStubRegeneration
 } from './pythonTypeStubs';
 import { GeneratedSourceCodeLensProvider } from './generatedSourceLenses';
 import {
+  buildEntityTypeStubLineMap,
   buildEntityTypeStubPlan,
   exportEntityTypeStubs
 } from './entityTypeStubs';
@@ -1307,7 +1309,13 @@ export function activate(context: vscode.ExtensionContext) {
     buildPythonTypeStubPlan(
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
     ).entries,
-    []
+    [],
+    // KR-AUD-78:来源镜按渲染期记录的真实行映射,不再硬编码 0/2
+    buildPythonTypeStubLineMap(
+      buildPythonTypeStubPlan(
+        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+      ).entries
+    )
   );
   const generatedSourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,
@@ -5381,7 +5389,15 @@ export function activate(context: vscode.ExtensionContext) {
     buildEntityTypeStubPlan(
       entityMappingManager.getAllMappings(),
       getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
-    ).entries
+    ).entries,
+    null,
+    // KR-AUD-78:同 python 侧——渲染期记录的真实行映射
+    buildEntityTypeStubLineMap(
+      buildEntityTypeStubPlan(
+        entityMappingManager.getAllMappings(),
+        getCustomTypeInfos(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '')
+      ).entries
+    )
   );
   const generatedEntitySourceLensProvider = vscode.languages.registerCodeLensProvider(
     pythonDocumentSelector,

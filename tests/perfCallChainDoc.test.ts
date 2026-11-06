@@ -101,16 +101,21 @@ const ANCHORS: Array<[string, number, string]> = [
   // flush 触发 +2 依次累计,onDidChangeTextDocument 锚点 +70、flushQueued
   // 锚点 +72(flush 触发在两者之间):真位重探 629/642/926/1008/1059/1122/
   // 1420/2144/2224,出处随 baseline 锁步。
-  ['src/extension.ts', 1008, "startLanguageServiceOperation('hover'"],
-  ['src/extension.ts', 1059, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 1122, "startLanguageServiceOperation('definition'"],
-  ['src/extension.ts', 926, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 1420, "startLanguageServiceOperation('completion'"],
-  ['src/extension.ts', 629, "startLanguageServiceOperation('diagnostics'"],
-  ['src/extension.ts', 642, "startLanguageServiceOperation('diagnostics'"],
+  // 2026-11-06(五):KR-AUD-78 来源镜真实行映射——extension.ts 顶部 +2 行
+  // import(buildPythonTypeStubLineMap / buildEntityTypeStubLineMap),1309 处
+  // python 来源镜装配块 +6 行,1309 前锚点 +2、其后锚点 +8(5389 处 entity
+  // 来源镜装配块 +8 在全部锚点之后不再位移):真位重探 631/644/928/1010/
+  // 1061/1124/1428/2152/2232,出处随 baseline 锁步。
+  ['src/extension.ts', 1010, "startLanguageServiceOperation('hover'"],
+  ['src/extension.ts', 1061, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 1124, "startLanguageServiceOperation('definition'"],
+  ['src/extension.ts', 928, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 1428, "startLanguageServiceOperation('completion'"],
+  ['src/extension.ts', 631, "startLanguageServiceOperation('diagnostics'"],
+  ['src/extension.ts', 644, "startLanguageServiceOperation('diagnostics'"],
   // KODE-AUD-002:extension.ts C-19 诊断注释 +1 行(1326 后锚点随之 +1)
-  ['src/extension.ts', 2144, 'onDidChangeTextDocument'],
-  ['src/extension.ts', 2224, 'flushQueued()'],
+  ['src/extension.ts', 2152, 'onDidChangeTextDocument'],
+  ['src/extension.ts', 2232, 'flushQueued()'],
   // KODE-AUD-002:languageProviders.ts 顶部 import +1 行 + C-19 code 常量注释块
   // +6 行(6140 后锚点 +7,6140 前锚点 +1)
   // TYP-ARRAY(2026-11-04):languageProviders.ts 新增 def 属性类型推导 hover 面

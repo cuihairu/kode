@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GeneratedSourceCodeLensProvider } from '../src/generatedSourceLenses';
 import { makeTextDocument, Uri, workspace } from './helpers/vscodeStub';
 import type { PythonTypeStubEntry } from '../src/pythonTypeStubs';
+import { buildPythonTypeStubContent, buildPythonTypeStubLineMap } from '../src/pythonTypeStubs';
+import { buildEntityTypeStubContent, buildEntityTypeStubLineMap } from '../src/entityTypeStubs';
+import type { EntityTypeStubEntry } from '../src/entityTypeStubs';
 import { KBENGINE_SOURCE_REVEAL_COMMAND } from '../src/sourceRevealCommand';
 
 // 生成源 CodeLens 提供者:目标文件名/工作区根/types.xml 注册表三重门各
@@ -71,11 +74,17 @@ describe('GeneratedSourceCodeLensProvider', () => {
   });
 
   it('命中:条目源行出「原始定义」镜,command 带源揭示与选中范围', () => {
-    const provider = new GeneratedSourceCodeLensProvider('stub_types.py', pythonEntries, []);
-    const lenses = provider.provideCodeLenses(makeDoc(path.join(root, 'stub_types.py'), 'class ITEM_ID(int):\n    pass\n'));
+    // KR-AUD-78:出镜行来自渲染期记录的真实行映射,文档即真实生成内容
+    const lineMap = buildPythonTypeStubLineMap(pythonEntries)!;
+    const provider = new GeneratedSourceCodeLensProvider(
+      'stub_types.py', pythonEntries, [], lineMap, null
+    );
+    const lenses = provider.provideCodeLenses(
+      makeDoc(path.join(root, 'stub_types.py'), buildPythonTypeStubContent(pythonEntries)!)
+    );
     expect(lenses).toHaveLength(1);
     const lens = lenses[0] as unknown as { range: { start: { line: number } }; command?: { title: string; command: string; arguments: unknown[] } };
-    expect(lens.range.start.line).toBe(0);
+    expect(lens.range.start.line).toBe(lineMap.entryLines.get('ITEM_ID'));
     expect(lens.command?.command).toBe(KBENGINE_SOURCE_REVEAL_COMMAND);
     expect(lens.command?.title).toContain('原始定义: ITEM_ID types.xml:4');
     const [uriArg, optionsArg] = lens.command?.arguments as [{ path: string }, { selection: { start: { line: number } } }];
@@ -90,13 +99,22 @@ describe('GeneratedSourceCodeLensProvider', () => {
       annotation: 'int',
       sourceLine: null
     }];
-    const provider = new GeneratedSourceCodeLensProvider('stub_types.py', noSource, [{
+    const entityEntries: EntityTypeStubEntry[] = [{
       entity: 'Avatar',
+      methods: [],
       properties: [{ name: 'profile', sourceLine: 24, customTypeLine: 30 }]
-    }]);
-    const lenses = provider.provideCodeLenses(makeDoc(path.join(root, 'stub_types.py'), 'class Avatar:\n    pass\n'));
+    }];
+    const pythonLineMap = buildPythonTypeStubLineMap(noSource)!;
+    const entityLineMap = buildEntityTypeStubLineMap(entityEntries);
+    const provider = new GeneratedSourceCodeLensProvider(
+      'stub_types.py', noSource, entityEntries, pythonLineMap, entityLineMap
+    );
+    const lenses = provider.provideCodeLenses(
+      makeDoc(path.join(root, 'stub_types.py'), buildEntityTypeStubContent(entityEntries))
+    );
     expect(lenses).toHaveLength(1);
-    const lens = lenses[0] as { command?: { title: string } };
+    const lens = lenses[0] as { range?: { start: { line: number } }; command?: { title: string } };
+    expect(lens.range?.start.line).toBe(entityLineMap.propertyLines.get('Avatar')!['profile']);
     expect(lens.command?.title).toContain('原始定义: Avatar types.xml:30');
   });
 });
