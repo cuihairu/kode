@@ -45,7 +45,9 @@ export function run(): Promise<void> {
           ? file === 'lintQuickFixBoundaries.test.js'
           : suite === 'panelopen'
             ? file === 'panelOpenSmoke.test.js'
-            : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
+            : suite === 'manifestnls'
+              ? file === 'manifestResolved.test.js'
+              : file !== 'demoNavigation.test.js' && file !== 'vsixSmoke.test.js');
   for (const file of files) {
     mocha.addFile(path.resolve(testsRoot, file));
   }

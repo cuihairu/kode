@@ -24,7 +24,7 @@ interface ConfigProperty {
   markdownDescription?: string;
   markdownEnumDescriptions?: string[];
   enumDescriptions?: string[];
-  items?: { enum?: unknown[] };
+  items?: { enum?: unknown[]; markdownEnumDescriptions?: string[] };
 }
 
 interface ConfigurationEntry {
@@ -32,6 +32,11 @@ interface ConfigurationEntry {
 }
 
 const loadProperties = (): Record<string, ConfigProperty> => {
+  // KODE-I18N-001 起描述文案外置 package.nls*.json,manifest 只留 %key% 占位;
+  // 本契约锁定的是解析后的提示文案(默认包),断言本体不变。
+  const nls = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.nls.json'), 'utf8')) as Record<string, string>;
+  const resolveNls = (value: string): string =>
+    value.replace(/^%([^%]+)%$/, (_m, key: string) => nls[key] ?? key);
   const pkg = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
     contributes: { configuration: ConfigurationEntry | ConfigurationEntry[] };
   };
@@ -39,7 +44,18 @@ const loadProperties = (): Record<string, ConfigProperty> => {
   const entries = Array.isArray(raw) ? raw : [raw];
   const merged: Record<string, ConfigProperty> = {};
   for (const entry of entries) {
-    Object.assign(merged, entry.properties);
+    for (const [key, prop] of Object.entries(entry.properties)) {
+      merged[key] = {
+        ...prop,
+        markdownDescription: typeof prop.markdownDescription === 'string'
+          ? resolveNls(prop.markdownDescription)
+          : prop.markdownDescription,
+        markdownEnumDescriptions: prop.markdownEnumDescriptions?.map(resolveNls),
+        items: prop.items
+          ? { ...prop.items, markdownEnumDescriptions: prop.items.markdownEnumDescriptions?.map(resolveNls) }
+          : undefined
+      };
+    }
   }
   return merged;
 };
