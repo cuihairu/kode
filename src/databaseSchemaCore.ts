@@ -95,7 +95,11 @@ export interface TableFieldDescriptor {
   declaredType?: string;
   sourcePath: string;
   source: DefSourceRef;
+  /** 有效落库长度(STRING/UNICODE 未配置时已折算引擎默认 255) */
   databaseLength?: number;
+  /** 声明处是否显式配置了 DatabaseLength(>0)——容量提示(IDE-DB-001)区分
+   * 「已配置 N」与「未配置→引擎默认 255」;Rust 侧 FieldSchema 同名镜像 */
+  databaseLengthSpecified?: boolean;
   defaultValue?: string;
   indexType?: string;
   identifier: boolean;
@@ -1295,6 +1299,9 @@ function appendPropertyToTable(
       sourcePath: property.source.path,
       source: property.source,
       databaseLength: resolveEffectiveDatabaseLength(property),
+      // IDE-DB-001:有效长度已折算默认 255,声明与否单独留痕(容量提示用)
+      databaseLengthSpecified:
+        property.databaseLength !== undefined && property.databaseLength > 0,
       defaultValue: property.defaultValue,
       indexType: property.indexType,
       identifier: property.identifier,

@@ -96,6 +96,25 @@ describe('IDE-SCH-001:deriveDatabaseTables 纯推导面', () => {
       .toBe(false);
   });
 
+  it('databaseLengthSpecified 留痕声明与否:STRING 已配置/未配置、整型、合成列(IDE-DB-001)', () => {
+    const declared = property('name', 'STRING');
+    declared.databaseLength = 64;
+    const defaulted = property('desc', 'STRING'); // 未配置 → 有效 255 但 specified=false
+    const widthed = property('uid', 'INT64');
+    widthed.databaseLength = 20;
+    const result = deriveDatabaseTables(derivationInput({
+      properties: [declared, defaulted, widthed, property('gold')]
+    }));
+    const fields = result.tables[0].fields;
+    const fieldOf = (name: string) => fields.find(field => field.name === name)!;
+    expect(fieldOf('sm_name')).toMatchObject({ databaseLength: 64, databaseLengthSpecified: true });
+    expect(fieldOf('sm_desc')).toMatchObject({ databaseLength: 255, databaseLengthSpecified: false });
+    expect(fieldOf('sm_uid')).toMatchObject({ databaseLength: 20, databaseLengthSpecified: true });
+    expect(fieldOf('sm_gold').databaseLengthSpecified).toBe(false);
+    // 合成结构列不带该字段(悬停容量说明只面向 def 属性列)
+    expect(fieldOf('id').databaseLengthSpecified).toBeUndefined();
+  });
+
   it('内部不读文件:两次调用之间磁盘内容/配置全变,同输入结果不变', () => {
     const { root, defPath } = makeWorkspace();
     const input = derivationInput({

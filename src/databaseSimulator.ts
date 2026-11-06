@@ -192,6 +192,69 @@ export function describeColumnValueConstraint(field: TableFieldDescriptor): stri
 }
 
 /**
+ * 持久列的数据库容量说明(IDE-DB-001):可指定与否 + 未配置时的引擎默认 +
+ * 上限与谁负责校验。引擎事实(entity_table_mysql.cpp):STRING/UNICODE 未配置
+ * DatabaseLength(或 ≤0)时硬编码 255(:416-418);整型/浮点的 (N) 仅为显示
+ * 宽度,未配置时引擎整段剥掉后缀建裸类型(:1643-1659);blob 族(PYTHON/
+ * PY_DICT/PY_TUPLE/PY_LIST/BLOB/ARRAY/FIXED_DICT/ENTITYCALL/组件槽)一律
+ * blob,DatabaseLength 不参与;VECTOR 合成列恒 float。引擎侧无上限校验,
+ * 超限由 MySQL 在建表时报错(varchar 上限 65535 字节整行共享,utf8mb4 每
+ * 字符最多 4 字节)。
+ */
+export function describeColumnCapacityNote(field: TableFieldDescriptor): string | null {
+  const columnType = resolveColumnValueType(field);
+  const specified =
+    field.databaseLengthSpecified ??
+    (field.databaseLength !== undefined && field.databaseLength > 0);
+
+  if (columnType.kind === 'string') {
+    // databaseLengthSpecified 缺失(直造描述符/旧快照)时按「有效长度」中性表述
+    const head = field.databaseLengthSpecified === undefined
+      ? `长度可配(有效长度 ${columnType.length})`
+      : specified
+        ? `长度可配——已配置 DatabaseLength=${field.databaseLength}`
+        : `长度可配——未配置 DatabaseLength,引擎默认 255`;
+    return `${head},上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错`;
+  }
+  if (columnType.kind === 'blob') {
+    return '不可配——引擎一律建 blob(≤65535 字节),DatabaseLength 不参与建列';
+  }
+  if (field.typeLabel.toLowerCase().startsWith('vector')) {
+    return '不可配——VECTOR 合成列恒 float,无长度参数';
+  }
+  if (columnType.kind === 'float') {
+    return specified
+      ? `显示宽度可配——已配置 DatabaseLength=${field.databaseLength} 落 float(N),显示宽度不改精度,精度由类型本身决定`
+      : '显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 float,精度由类型本身决定';
+  }
+  return specified
+    ? `显示宽度可配——已配置 DatabaseLength=${field.databaseLength} 落 ${field.typeLabel}(N),显示宽度不改取值范围,范围由类型本身决定`
+    : `显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 ${field.typeLabel},取值范围由类型本身决定`;
+}
+
+/**
+ * types.xml 内建类型名的容量说明(IDE-DB-001):按解析后的内建类型分类。
+ * 别名上的 <DatabaseLength> 不生效——引擎 loadTypes 对普通别名只复用目标
+ * 类型实例(datatypes.cpp:174-180),长度只在 def 属性或 FIXED_DICT 子键
+ * 声明处读取;未配置时引擎默认/上限同 describeColumnCapacityNote。
+ */
+export function describeBuiltinTypeCapacity(typeName: string): string | null {
+  if (typeName === 'STRING' || typeName === 'UNICODE') {
+    return '长度可配:<DatabaseLength> 配在使用处(def 属性或 FIXED_DICT 子键),types.xml 别名上不生效;未配置时引擎默认 255,上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错';
+  }
+  if (typeName.startsWith('VECTOR')) {
+    return '容量不可配:VECTOR 合成列恒 float(CLIENT_NO_FLOAT 下为 int),无长度参数';
+  }
+  if (['PYTHON', 'PY_DICT', 'PY_TUPLE', 'PY_LIST', 'BLOB', 'ENTITYCALL'].includes(typeName)) {
+    return '容量不可配:一律落 blob,DatabaseLength 不参与';
+  }
+  if (/^(U?INT(8|16|32|64)|FLOAT|DOUBLE)$/.test(typeName)) {
+    return '显示宽度可配:DatabaseLength 落成 (N) 显示宽度,不改取值范围/精度;未配置时引擎剥掉 (N) 建裸类型';
+  }
+  return null;
+}
+
+/**
  * 按快照生成每张表的模拟行:根表 1 行(默认值行),ARRAY 子表 rowsPerChildTable
  * 行,组件子表 1 行;parentID 取父表首行 id,行 id 全局递增(引擎 AUTO_INCREMENT
  * 起点,真实读 dbInterface autoIncrementInit,serverconfig.cpp:1043-1045)。
@@ -534,8 +597,14 @@ export function buildPropertyDatabaseStorageHover(
     for (const [body, group] of columnsByBody) {
       const names = group.map(column => `\`${column.name}\``).join('、');
       const constraint = describeColumnValueConstraint(group[0]);
+      // IDE-DB-001:取值约束与容量说明(可指定/引擎默认/上限)并在同组括注
+      const capacity = describeColumnCapacityNote(group[0]);
+      const brackets = [
+        ...(constraint ? [`取值 ${constraint}`] : []),
+        ...(capacity ? [`容量: ${capacity}`] : [])
+      ].join('; ');
       parts.push(
-        `${qualifiedTable(tableName)}.${names} = ${body}${constraint ? `(取值 ${constraint})` : ''}`
+        `${qualifiedTable(tableName)}.${names} = ${body}${brackets ? `(${brackets})` : ''}`
       );
     }
   }

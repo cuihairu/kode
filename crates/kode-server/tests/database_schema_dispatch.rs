@@ -328,6 +328,36 @@ fn empty_prefix_uses_entity_name_only() {
 }
 
 #[test]
+fn database_length_specified_marks_declared_vs_engine_default() {
+    // IDE-DB-001:有效长度折算后「已配置 128」与「未配置→引擎默认 255」都是
+    // 数字,声明与否由 databaseLengthSpecified 单独留痕(容量提示用)。
+    let result = build(full_params());
+    let root = table_named(&result, "tbl_Gold");
+    let field = |name: &str| {
+        root.get("fields")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f.get("name").and_then(|v| v.as_str()) == Some(name))
+            .unwrap()
+            .clone()
+    };
+    let title = field("sm_title"); // STRING + DatabaseLength=128
+    assert_eq!(title.get("databaseLength"), Some(&json!(128)));
+    assert_eq!(title.get("databaseLengthSpecified"), Some(&json!(true)));
+    let desc = field("sm_desc"); // STRING 未配置 → 引擎默认 255
+    assert_eq!(desc.get("databaseLength"), Some(&json!(255)));
+    assert_eq!(desc.get("databaseLengthSpecified"), Some(&json!(false)));
+    let uid = field("sm_uid"); // INT64 + DatabaseLength=64
+    assert_eq!(uid.get("databaseLengthSpecified"), Some(&json!(true)));
+    let gold = field("sm_gold"); // UINT32 未配置
+    assert_eq!(gold.get("databaseLengthSpecified"), Some(&json!(false)));
+    let id = field("id"); // 合成结构列不带该字段
+    assert!(id.get("databaseLengthSpecified").is_none());
+}
+
+#[test]
 fn malformed_params_yield_error() {
     let mut state = ServerState::new();
     handle_message(

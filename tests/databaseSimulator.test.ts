@@ -10,6 +10,8 @@ import {
   buildPropertyDatabaseStorageHover,
   createDatabaseSimulationUri,
   defaultRowValue,
+  describeBuiltinTypeCapacity,
+  describeColumnCapacityNote,
   describeColumnValueConstraint,
   getSimulationEntityName,
   isDatabaseSimulationDocument,
@@ -895,6 +897,80 @@ describe('describeColumnValueConstraint(源码限制数值)', () => {
   });
 });
 
+// IDE-DB-001:持久列容量说明——可指定与否 + 未配置时的引擎默认 + 上限与
+// 谁负责校验(引擎不校验上限,建表时 MySQL 才报错)。
+describe('describeColumnCapacityNote(容量说明,IDE-DB-001)', () => {
+  it('varchar:已配置点名 DatabaseLength=N;未配置点明引擎默认 255;均附上限与校验方', () => {
+    expect(
+      describeColumnCapacityNote(field('a', { typeLabel: 'varchar', databaseLength: 64, databaseLengthSpecified: true }))
+    ).toBe(
+      '长度可配——已配置 DatabaseLength=64,上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错'
+    );
+    expect(
+      describeColumnCapacityNote(field('a', { typeLabel: 'varchar', databaseLength: 255, databaseLengthSpecified: false }))
+    ).toBe(
+      '长度可配——未配置 DatabaseLength,引擎默认 255,上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错'
+    );
+  });
+
+  it('varchar 标志缺失(直造描述符/旧快照)按有效长度中性表述,不冒称已配置/未配置', () => {
+    expect(describeColumnCapacityNote(field('a', { typeLabel: 'varchar', databaseLength: 64 }))).toBe(
+      '长度可配(有效长度 64),上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错'
+    );
+  });
+
+  it('blob 族与 VECTOR:容量不可配,DatabaseLength/长度参数不参与', () => {
+    expect(describeColumnCapacityNote(field('a', { typeLabel: 'blob' }))).toBe(
+      '不可配——引擎一律建 blob(≤65535 字节),DatabaseLength 不参与建列'
+    );
+    expect(describeColumnCapacityNote(field('a', { typeLabel: 'vector3' }))).toBe(
+      '不可配——VECTOR 合成列恒 float,无长度参数'
+    );
+  });
+
+  it('整型/浮点:(N) 为显示宽度,不改取值范围/精度;未配置剥掉后缀建裸类型', () => {
+    expect(
+      describeColumnCapacityNote(field('a', { typeLabel: 'bigint unsigned', databaseLength: 32, databaseLengthSpecified: true }))
+    ).toBe(
+      '显示宽度可配——已配置 DatabaseLength=32 落 bigint unsigned(N),显示宽度不改取值范围,范围由类型本身决定'
+    );
+    expect(describeColumnCapacityNote(field('a', { typeLabel: 'int unsigned' }))).toBe(
+      '显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 int unsigned,取值范围由类型本身决定'
+    );
+    expect(
+      describeColumnCapacityNote(field('a', { typeLabel: 'float', databaseLength: 10, databaseLengthSpecified: true }))
+    ).toBe(
+      '显示宽度可配——已配置 DatabaseLength=10 落 float(N),显示宽度不改精度,精度由类型本身决定'
+    );
+    expect(describeColumnCapacityNote(field('a', { typeLabel: 'float' }))).toBe(
+      '显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 float,精度由类型本身决定'
+    );
+  });
+});
+
+// IDE-DB-001:types.xml 内建类型容量说明——别名上的 DatabaseLength 不生效
+// (引擎 loadTypes 普通别名只复用目标类型实例),长度配在使用处。
+describe('describeBuiltinTypeCapacity(types.xml 内建类型,IDE-DB-001)', () => {
+  it('STRING/UNICODE:长度配在使用处,别名不生效,未配置默认 255', () => {
+    for (const typeName of ['STRING', 'UNICODE']) {
+      expect(describeBuiltinTypeCapacity(typeName)).toBe(
+        '长度可配:<DatabaseLength> 配在使用处(def 属性或 FIXED_DICT 子键),types.xml 别名上不生效;未配置时引擎默认 255,上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错'
+      );
+    }
+  });
+
+  it('VECTOR/blob 族/整型浮点各按族说明;未知名不发明', () => {
+    expect(describeBuiltinTypeCapacity('VECTOR3')).toBe(
+      '容量不可配:VECTOR 合成列恒 float(CLIENT_NO_FLOAT 下为 int),无长度参数'
+    );
+    expect(describeBuiltinTypeCapacity('PY_DICT')).toBe('容量不可配:一律落 blob,DatabaseLength 不参与');
+    expect(describeBuiltinTypeCapacity('UINT64')).toBe(
+      '显示宽度可配:DatabaseLength 落成 (N) 显示宽度,不改取值范围/精度;未配置时引擎剥掉 (N) 建裸类型'
+    );
+    expect(describeBuiltinTypeCapacity('WHATEVER')).toBeNull();
+  });
+});
+
 describe('buildPropertyDatabaseStorageHover(属性悬停存储文案,批131)', () => {
   const databaseConfig = {
     host: '127.0.0.1',
@@ -910,14 +986,15 @@ describe('buildPropertyDatabaseStorageHover(属性悬停存储文案,批131)', (
     expect(buildPropertyDatabaseStorageHover({ entityName: 'Hero', targets: [] })).toBeNull();
   });
 
-  it('单标量列:完整 db.table.column + DDL 片段 + 取值区间', () => {
+  it('单标量列:完整 db.table.column + DDL 片段 + 取值区间 + 容量说明(IDE-DB-001)', () => {
     const hover = buildPropertyDatabaseStorageHover({
       entityName: 'Hero',
       database: databaseConfig,
       targets: [{ tableName: 'tbl_Hero', fieldName: 'sm_hp', field: field('sm_hp', { typeLabel: 'int unsigned', defaultValue: '10' }) }]
     });
     expect(hover).toBe(
-      '`game_db`.`tbl_Hero`.`sm_hp` = int unsigned not null DEFAULT 10(取值 0..4294967295)'
+      '`game_db`.`tbl_Hero`.`sm_hp` = int unsigned not null DEFAULT 10'
+        + '(取值 0..4294967295; 容量: 显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 int unsigned,取值范围由类型本身决定)'
     );
   });
 
@@ -926,7 +1003,10 @@ describe('buildPropertyDatabaseStorageHover(属性悬停存储文案,批131)', (
       entityName: 'Hero',
       targets: [{ tableName: 'tbl_Hero', fieldName: 'sm_hp', field: field('sm_hp') }]
     });
-    expect(hover).toBe('`tbl_Hero`.`sm_hp` = int unsigned not null DEFAULT 0(取值 0..4294967295)');
+    expect(hover).toBe(
+      '`tbl_Hero`.`sm_hp` = int unsigned not null DEFAULT 0'
+        + '(取值 0..4294967295; 容量: 显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 int unsigned,取值范围由类型本身决定)'
+    );
   });
 
   it('同 DDL 多列并一条(向量三列),异型列逐条展开', () => {
@@ -940,19 +1020,22 @@ describe('buildPropertyDatabaseStorageHover(属性悬停存储文案,批131)', (
     });
     expect(vector).toBe(
       '`tbl_Hero`.`sm_0_pos`、`sm_1_pos`、`sm_2_pos` = float not null DEFAULT 0'
+        + '(容量: 不可配——VECTOR 合成列恒 float,无长度参数)'
     );
 
     const mixed = buildPropertyDatabaseStorageHover({
       entityName: 'Hero',
       targets: [
-        { tableName: 'tbl_Hero', fieldName: 'sm_name', field: field('sm_name', { typeLabel: 'varchar', databaseLength: 64 }) },
+        { tableName: 'tbl_Hero', fieldName: 'sm_name', field: field('sm_name', { typeLabel: 'varchar', databaseLength: 64, databaseLengthSpecified: true }) },
         { tableName: 'tbl_Hero', fieldName: 'sm_weight', field: field('sm_weight', { typeLabel: 'int unsigned' }) }
       ]
     });
     expect(mixed).toBe(
       [
-        '`tbl_Hero`.`sm_name` = varchar(64) not null DEFAULT \'\'(取值 ≤ 64 字符)',
-        '`tbl_Hero`.`sm_weight` = int unsigned not null DEFAULT 0(取值 0..4294967295)'
+        '`tbl_Hero`.`sm_name` = varchar(64) not null DEFAULT \'\''
+          + '(取值 ≤ 64 字符; 容量: 长度可配——已配置 DatabaseLength=64,上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错)',
+        '`tbl_Hero`.`sm_weight` = int unsigned not null DEFAULT 0'
+          + '(取值 0..4294967295; 容量: 显示宽度可配——未配置 DatabaseLength,引擎剥掉 (N) 建裸 int unsigned,取值范围由类型本身决定)'
       ].join('; ')
     );
   });

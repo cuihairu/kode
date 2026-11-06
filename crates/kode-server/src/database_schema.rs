@@ -108,6 +108,10 @@ struct FieldSchema {
     source: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     database_length: Option<Number>,
+    // 声明处是否显式配置 DatabaseLength(>0)——IDE-DB-001 容量提示区分
+    // 「已配置 N」与「未配置→引擎默认 255」;TS TableFieldDescriptor 同名镜像
+    #[serde(skip_serializing_if = "Option::is_none")]
+    database_length_specified: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     default_value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -441,6 +445,7 @@ fn synthetic_field(
         source_path: source_path.into(),
         source: source.clone(),
         database_length: None,
+        database_length_specified: None,
         default_value: None,
         index_type: index_type.map(str::to_string),
         identifier: false,
@@ -457,6 +462,7 @@ fn leaf_field(property: &PropertyNode, field_name: String) -> FieldSchema {
         source_path: source_path(property),
         source: property.source.clone(),
         database_length: resolve_effective_database_length(property),
+        database_length_specified: Some(declared_database_length(property)),
         default_value: property.default_value.clone(),
         index_type: property.index_type.clone(),
         identifier: property.identifier,
@@ -516,11 +522,7 @@ fn resolve_db_type_label(type_name: &str) -> String {
 // STRING/UNICODE 未声明 DatabaseLength(或声明 ≤0)时按引擎默认 255 落列。
 fn resolve_effective_database_length(property: &PropertyNode) -> Option<Number> {
     if property.type_name == "STRING" || property.type_name == "UNICODE" {
-        let has_declared = property
-            .database_length
-            .as_ref()
-            .and_then(Number::as_f64)
-            .is_some_and(|value| value > 0.0);
+        let has_declared = declared_database_length(property);
         if has_declared {
             property.database_length.clone()
         } else {
@@ -529,4 +531,14 @@ fn resolve_effective_database_length(property: &PropertyNode) -> Option<Number> 
     } else {
         property.database_length.clone()
     }
+}
+
+// 声明处是否显式配置 DatabaseLength(>0):有效长度已折算默认 255,声明
+// 与否单独留痕(IDE-DB-001 容量提示用)。
+fn declared_database_length(property: &PropertyNode) -> bool {
+    property
+        .database_length
+        .as_ref()
+        .and_then(Number::as_f64)
+        .is_some_and(|value| value > 0.0)
 }

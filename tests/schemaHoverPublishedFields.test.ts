@@ -35,6 +35,15 @@ beforeAll(() => {
     '      <Type>ITEM_ID</Type>',
     '      <Persistent>true</Persistent>',
     '    </wallet>',
+    '    <name>',
+    '      <Type>STRING</Type>',
+    '      <Persistent>true</Persistent>',
+    '    </name>',
+    '    <title>',
+    '      <Type>STRING</Type>',
+    '      <DatabaseLength>64</DatabaseLength>',
+    '      <Persistent>true</Persistent>',
+    '    </title>',
     '  </Properties>',
     '</root>'
   ].join('\n'), 'utf8');
@@ -97,5 +106,22 @@ describe('IDE-SCH-007:属性 hover 查询已发布字段结果(IDE-REV-012 冷�
     // 两次查询取到同一张表对象(同一缓存快照的组成部分)
     expect(second?.targets[0].table).toBe(first?.targets[0].table);
     expect(getDatabaseSchemaCacheStatsForTests().misses).toBe(1); // 仍然零重建
+  });
+
+  // IDE-DB-001:持久字段悬停附容量说明——STRING 未配置时点明引擎默认 255
+  // 与上限(引擎不校验,建表时 MySQL 才报错);已配置时点名 DatabaseLength=N,
+  // 不冒称默认。
+  it('STRING 容量说明区分未配置(引擎默认 255)与已配置 DatabaseLength(IDE-DB-001)', async () => {
+    await scheduleDatabaseSchemaSnapshotBuild('Gold', root);
+
+    const nameHover = hoverWord('name', 10, 5);
+    expect(nameHover).toContain('`tbl_Gold`.`sm_name` = varchar(255) not null DEFAULT \'\'(取值 ≤ 255 字符');
+    expect(nameHover).toContain('容量: 长度可配——未配置 DatabaseLength,引擎默认 255');
+    expect(nameHover).toContain('上限 65535 字节/行(utf8mb4 每字符最多 4 字节),引擎不校验,建表时 MySQL 才报错)');
+
+    const titleHover = hoverWord('title', 14, 5);
+    expect(titleHover).toContain('`tbl_Gold`.`sm_title` = varchar(64) not null DEFAULT \'\'(取值 ≤ 64 字符');
+    expect(titleHover).toContain('容量: 长度可配——已配置 DatabaseLength=64');
+    expect(titleHover).not.toContain('引擎默认 255');
   });
 });

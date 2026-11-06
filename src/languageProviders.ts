@@ -77,7 +77,7 @@ import {
 } from './databaseSchema';
 import { createDatabaseSchemaUri, isDatabaseSchemaDocument } from './databaseSchemaPresentation';
 import type { TypeStorageShape, TypeStorageUsage } from './databaseSchema';
-import { buildPropertyDatabaseStorageHover } from './databaseSimulator';
+import { buildPropertyDatabaseStorageHover, describeBuiltinTypeCapacity } from './databaseSimulator';
 import {
   findCustomTypeDeclarationInfo,
   findCustomTypeInfo,
@@ -2761,19 +2761,30 @@ function getTypeStorageShapeMarkdown(document: vscode.TextDocument, word: string
 
 export function describeTypeStorageShape(shape: TypeStorageShape): string[] {
   if (shape.kind === 'builtin') {
-    return [`主表单列${shape.columnType ? `（\`${shape.columnType}\`）` : ''}`];
+    // IDE-DB-001:内建形态附容量说明(可指定与否/引擎默认 255/上限与校验方)
+    const capacity = describeBuiltinTypeCapacity(shape.typeName);
+    return [
+      `主表单列${shape.columnType ? `（\`${shape.columnType}\`）` : ''}`,
+      ...(capacity ? [`容量：${capacity}`] : [])
+    ];
   }
   if (shape.kind === 'fixedDict') {
     const keys = shape.topLevelKeys.length > 0
       ? `；顶层键各占一列：${shape.topLevelKeys.join('、')}`
       : '';
-    return [`平铺成列，不成表${keys}`];
+    return [
+      `平铺成列，不成表${keys}`,
+      '容量：逐键按其键类型——STRING 键可配长度（未配置引擎默认 255），整型/浮点键为显示宽度，blob 族键不可配'
+    ];
   }
   if (shape.kind === 'array') {
     const element = shape.element
       ? `元素落列：${describeTypeStorageElement(shape.element)}`
       : '缺 <of>，元素类型未知';
-    return [`成子表 \`tbl_<实体>_<属性>\`，元素各占一行；${element}`];
+    return [
+      `成子表 \`tbl_<实体>_<属性>\`，元素各占一行；${element}`,
+      '容量：逐元素按其元素类型，规则同主表单列'
+    ];
   }
   return ['未知类型，引擎装载 types.xml 会失败'];
 }
