@@ -1,8 +1,8 @@
 # Player Data Clone — 运维说明、敏感数据处理、归档留存/销毁与已知限制（PDC-0607）
 
 > 本文档面向操作者/维护者，如实描述**当前交付面**已实现的行为与边界。凡设计
-> 中有而生产路径未接线的能力（如归档加密），一律如实记为「已实现能力/未接线」，
-> 不写成已生效。代码依据见 `crates/kode-db-clone/src/` 与 `src/playerDataClone*.ts`、
+> 中有而生产路径未接线的能力，一律如实记为「已实现能力/未接线」，不写成已生效。
+> 代码依据见 `crates/kode-db-clone/src/` 与 `src/playerDataClone*.ts`、
 > `crates/kode-server/src/db_clone.rs`；设计口径见 `docs/design/v0.2.1-player-data-clone-plan.md`。
 
 ---
@@ -58,21 +58,29 @@
 - **密码不入配置文件**：clone profile 账号存 workspaceState，密码只入
   `SecretStorage`（键含角色），UI 明示「只存 SecretStorage，不进配置文件」。
 
-### 2.2 归档加密（**能力已实现，生产路径未接线**）
+### 2.2 归档加密（**已接线，导出默认加密**）
 
-- **已实现并测试**：`ArchiveWriter`/`Archive::open` 支持 chacha20poly1305 AEAD 加密——
-  `FLAG_ENCRYPTED` 位 + 帧头记明文字节长 + 16 字节认证标签 + 头部整体作 AEAD 关联数据；
-  开档要求 key 与加密位一致（无 key 开加密档报错，反之亦然）。密钥存储
-  `FileKeyStore`（独立目录、Unix 强制 0600、拒绝密钥目录落在归档内）已实现并经
-  `crates/kode-db-clone/tests/platform.rs` 验证。
-- **未接线**：生产 export 命令 `runExportCloneCommand` → `writeCloneArchive(savePath, entityName, rows, plan.result)`
-  **不传 `keyHex`**（`src/playerDataCloneRust.ts` 的 `$/kode/dbClone/export` 请求体
-  `{ path, entity, rows, plan, redactSensitive: true }` 无 key 字段；server 侧
-  `ExportParams.key_hex` 默认 `None` → `write_archive(..., key: None)` → `encrypted: false`）。
-  `FileKeyStore` 未接线进 extension 生产路径（仅测试用）。
-- **如实结论**：当前交付面导出归档是**脱敏但未加密**；加密能力与密钥管理已具备
-  （chacha20poly1305 + FileKeyStore 0600）但未接入导出/导入命令。这是本功能的
-  **已知安全缺口**，接线（生成/传递密钥）属后续工作，非当前交付面。
+- **加密机制**：`ArchiveWriter`/`Archive::open` 走 chacha20poly1305 AEAD——
+  `FLAG_ENCRYPTED` 位 + 帧头记明文字节长 + 16 字节认证标签 + 头部整体作 AEAD 关联数据。
+  **帧名（如 `tables/tbl_Avatar.json`）在帧头明文是格式设计**——头部作 AEAD 关联数据
+  （认证不加密），解密前须先按名定位帧；帧名属元数据（类似加密 zip 的文件名），
+  **行值/清单内容才是加密载荷**（Rust 测试断言归档字节无明文行值）。
+- **接线（导出）**：extension 恒传 `keyRoot`（`context.globalStorageUri/clone-keys`，
+  机器域目录，不落工作区/VCS）→ server 侧 `ensure_key_outside_archive`（结构性拒绝
+  密钥目录在归档路径内）+ 密钥 id = 归档绝对路径 SHA-256
+  （`keystore::key_id_for_archive`）+ `FileKeyStore::get_or_create`（不存在则生成，
+  Unix 强制 0600 落盘）→ `ArchiveWriter` 携钥写档，`encrypted: true`。
+  **密钥材料全程留 Rust——TS 只传目录路径，永不接触密钥字节**。
+- **接线（读取）**：`inspectArchive`/`readArchiveRows`/`planImport` 同传 `keyRoot`；
+  server 侧先探头部加密位（`archive::is_encrypted`）——未加密档不取钥，加密档按
+  同 id 取钥；**钥匙缺失如实报错**（话术点名密钥根与 id），**绝不静默生成新钥**
+  （那只会造出永远解不开档的错误钥匙）。
+- **边界（如实）**：
+  - 密钥 id 绑定归档绝对路径——归档移动/改名后 id 变化，读侧按「密钥缺失」如实
+    报错（话术指路：从建档机器拷钥或在该机重导出）。
+  - 归档移到另一台机器：钥匙不跟走（在原机 globalStorage）→ 同上如实报错。
+  - 旧明文归档（接线前导出）仍可开（头部加密位 false，无需钥），向后兼容。
+  - 显式 `keyHex` 参数仍优先于 `keyRoot`（测试/工具面直传钥的旧路径保留）。
 
 ---
 
@@ -89,9 +97,10 @@
   无自动过期、无容量上限回收、无销毁确认。唯一自动清理是写档失败路径删临时文件
   （`ArchiveWriter::finalize` 出错 `fs::remove_file(&self.tmp)`），即**原子写**：先写临时
   文件成功后再落目标名，失败不留半成品。
-- **建议运维口径（非代码强制）**：归档含脱敏后数据（当前未加密），操作者应将其
-  视为敏感文件妥善保管；需要时手动删除归档与对应密钥。自动化留存/销毁策略
-  （过期回收、加密密钥托管、销毁确认）**未实现**，列为已知限制。
+- **建议运维口径（非代码强制）**：归档已默认加密（§2.2），但帧名等头部元数据
+  明文可见（格式设计，见 §2.2）；操作者仍应将归档视为敏感文件妥善保管，需要时
+  手动删除归档文件与密钥目录（globalStorage `clone-keys/`）下对应 `.key` 文件。
+  自动化留存/销毁策略（过期回收、密钥托管轮换、销毁确认）**未实现**，列为已知限制。
 
 ---
 
@@ -122,9 +131,11 @@
     激活事件（venv 域，pre-existing）+ `activationSmoke` 状态栏 3→5（interpreter 栏
     `1a95f5e` + 通道灯 `5347782` hotreload，均非 CLONE-P6 域）。**未**将其加入 per-push
     ci.yml（红则 break 全员推）；per-push 门禁 = ci.yml 的 vitest + cargo test + clippy
-    （clippy 自 PDC-0606 `567a653` 入门禁）。真 `@vscode/test-electron` 宿主
+    （clippy 自 PDC-0606 `87418f3` 入门禁）。真 `@vscode/test-electron` 宿主
     （需 VS Code 下载 + 显示）为本地 xvfb 门禁，不入 CI。
-14. **归档导出当前未加密**（见 §2.2）：脱敏已接线，加密能力未接线——已知安全缺口。
+14. **密钥生命周期无管理面**（见 §2.2/§3）：加密已接线，但密钥 id 绑定归档绝对
+    路径——归档移动/改名/换机即「密钥缺失」如实报错（无导钥/导入钥/轮换命令，
+    需手动拷 `.key` 文件）；无销毁 API，删除即手动清 `clone-keys/`。
 
 ---
 
@@ -133,5 +144,5 @@
 - 本文档为 PDC-0607 交付面；`docs/player-clone/source-evidence.md`（Phase 0 取证）与
   `docs/design/v0.2.1-player-data-clone-plan.md`（设计口径）为并列文档，本文只补
   运维/安全/留存/限制的**现状**，不重复推导细节。
-- 未实现能力（CLI、引擎加载验证、加密接线、自动留存/销毁）均如实标注「未实现/未接线」，
-  不写成已生效。
+- 未实现能力（CLI、引擎加载验证、自动留存/销毁、密钥轮换）均如实标注「未实现/未接线」，
+  不写成已生效；归档加密自 PDC-0608 起已接线（§2.2）。
