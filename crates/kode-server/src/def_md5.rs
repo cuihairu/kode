@@ -374,13 +374,10 @@ impl DataTypesState {
     ///
     /// 别名注册不改类身份(KR-AUD-82)。
     fn is_entitycall(&self, id: u16) -> bool {
-        match self.info.get(&id) {
-            Some(info) => match info.kind {
-                TypeKind::Array => info.element.map(|e| self.is_entitycall(e)).unwrap_or(false),
-                _ => info.alias_name == "ENTITYCALL" && info.kind == TypeKind::Builtin,
-            },
-            None => false,
-        }
+        matches!(
+            self.info.get(&id).map(|info| info.kind),
+            Some(TypeKind::EntityCall)
+        )
     }
 }
 
