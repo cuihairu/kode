@@ -98,6 +98,8 @@ export interface PythonExtraPathsPlan {
   changed: boolean;
   /** 管理段被角色隔离闸剥掉的条目(IDE-PRJ-006;常规为空,守未来段扩员) */
   isolatedRoleRoots: string[];
+  /** KR-AUD-37②:判定为用户段的现值条目(诊断/测试取证差量判定面) */
+  userPaths: string[];
 }
 
 /** extraPaths 条目规范化:空串丢弃标记;只剥尾部分隔符,盘符根剥到 `C:` */
@@ -154,7 +156,15 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
   const rawCurrent = uniquePaths(input.currentPaths.map(normalizeExtraPath));
   const current = uniquePaths(rawCurrent.map(toVar));
   const managedBefore = uniquePaths((input.previouslyManaged ?? []).map(candidate => toVar(normalizeExtraPath(candidate))));
-  const userPaths = current.filter(candidate => !managedBefore.includes(candidate));
+  // KR-AUD-37②:盘符语境(workspaceRoot 或任一现值为盘符路径)下差量比较
+  // 大小写不敏感——用户改写托管条目大小写不得被判成用户段与规范托管条目
+  // 重复共存(Windows 同目录)。POSIX 语境保持大小写敏感(`Scripts` 与
+  // `scripts` 是不同目录,不误吞)。
+  const caseInsensitiveContext = /^[a-z]:/i.test(input.workspaceRoot.replace(/\\/g, '/'))
+    || input.currentPaths.some(p => /^[a-z]:\//i.test(p.replace(/\\/g, '/')));
+  const sameCandidate = (left: string, right: string): boolean =>
+    caseInsensitiveContext ? left.toLowerCase() === right.toLowerCase() : left === right;
+  const userPaths = current.filter(candidate => !managedBefore.some(managed => sameCandidate(candidate, managed)));
   // IDE-PRJ-006 角色隔离闸:管理段经每个发现的 scripts 根逐个过闸,角色
   // 目录(base/cell)剥出合并列表——scripts/base 与 scripts/cell 的同名模块
   // 不会因 extraPaths 顺序跨角色误解析;用户手填段不经闸(只管自己那段)。
@@ -173,7 +183,7 @@ export function planPythonExtraPaths(input: PythonExtraPathsPlanInput): PythonEx
   const nextPaths = uniquePaths([...userPaths, ...managedVar]);
   const sameLength = nextPaths.length === rawCurrent.length;
   const changed = !sameLength || nextPaths.some((candidate, index) => candidate !== rawCurrent[index]);
-  return { nextPaths, managedPaths: managedVar, changed, isolatedRoleRoots };
+  return { nextPaths, managedPaths: managedVar, changed, isolatedRoleRoots, userPaths };
 }
 
 /** 装配层默认注入:真 fs 存在性判定与一级子目录列举 */
