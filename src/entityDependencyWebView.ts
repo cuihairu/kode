@@ -29,6 +29,8 @@ import type {
   PythonCallGraphRustResult,
   PythonCallGraphNode
 } from './pythonCallGraphRust';
+import type { DependencyGraphSource } from './warmupStages';
+import type { PanelWarmupSource } from './backgroundWarmup';
 
 /**
  * 渲染层节点 kind(六员;TS 兜底源归一后全部是 entity)。
@@ -173,6 +175,16 @@ export function normalizeDependencyGraph(graph: DependencyGraph): RenderGraph {
     legacyStats: { ...graph.stats },
     source: 'ts'
   };
+}
+
+/**
+ * BG-WARM:预热产物 → 渲染图。Rust 源走 rust 归一,TS 兜底源走 legacy 归一,
+ * 与现算路径同源同口径(产物只是把同一计算挪到后台提前做)。
+ */
+export function normalizeGraphSource(source: DependencyGraphSource): RenderGraph {
+  return source.kind === 'rust'
+    ? normalizeRustGraph(source.graph as DependencyGraphRust)
+    : normalizeDependencyGraph(source.graph as DependencyGraph);
 }
 
 /**
@@ -633,7 +645,10 @@ export class EntityDependencyWebView {
 
   constructor(
     private context: vscode.ExtensionContext,
-    private outputChannel: vscode.OutputChannel
+    private outputChannel: vscode.OutputChannel,
+    // BG-WARM:后台预热产物源(面板只读缓存)。未注入(既有测试/装配)时
+    // 行为与迁移前逐字节一致——现算路径原样保留。
+    private readonly warmup?: PanelWarmupSource
   ) {
     this.analyzer = new EntityDependencyAnalyzer(context);
   }
@@ -653,6 +668,46 @@ export class EntityDependencyWebView {
   /** 面板标题(双模式)。 */
   private panelTitle(): string {
     return this.mode === 'callgraph' ? 'KBEngine Python 调用图' : 'KBEngine 实体依赖关系';
+  }
+
+  /**
+   * BG-WARM:预热中进度页(部分结果位)。后台管线完成后 refreshGraph 复用
+   * 在跑产物渲染真图;标记类名 kbengine-warmup 供测试与样式锚定。
+   */
+  private getWarmupProgressHtml(): string {
+    const snapshot = this.warmup?.snapshot();
+    const detail = snapshot
+      ? `${snapshot.completedStages}/${snapshot.totalStages}${snapshot.currentLabel ? ` · ${snapshot.currentLabel}` : ''}`
+      : '';
+    return `<!DOCTYPE html>
+<html>
+<body class="kbengine-warmup">
+  <h1>KBEngine 索引预热中</h1>
+  <p>${detail}</p>
+  <p>后台索引完成后,本面板将自动展示依赖图。</p>
+</body>
+</html>`;
+  }
+
+  /**
+   * BG-WARM:预热阶段体的依赖图计算(Rust 优先 TS 兜底)——与 refreshGraph
+   * 现算同一出口(同一 analyzer 实例、同一 buildDependencyGraphInRust),
+   * 只是把计算挪到激活后台;产物经 warmup 产物面发布给面板只读复用。
+   */
+  async buildWarmupGraphSource(): Promise<DependencyGraphSource> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (root) {
+      try {
+        const rust = await buildDependencyGraphInRust(root);
+        if (rust) {
+          return { kind: 'rust', graph: rust };
+        }
+      } catch (rustError) {
+        // 与现算路径同口径:Rust 面异常按不可用处理,回落 TS 兜底
+        this.outputChannel.appendLine(`Rust 依赖图推导失败,回落 TS: ${rustError}`);
+      }
+    }
+    return { kind: 'ts', graph: await this.analyzer.analyze() };
   }
 
   /**
@@ -755,7 +810,30 @@ export class EntityDependencyWebView {
       }
       const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       let render: RenderGraph | null = null;
-      if (root && !cancellation.token.isCancellationRequested) {
+      // BG-WARM 只读缓存:预热产物 done → 直接归一渲染,零 findFiles/零 analyze;
+      // running → 先出进度页,复用在跑任务(同一 Promise,阶段只算一次),完成后
+      // 渲染;missing/failed/cancelled → 回落既有现算路径(不拿失败当结果)。
+      // 失效口径:缓存只服务「面板还空着」这一次打开——已出图后再刷新(源文件
+      // 改动、手动刷新、切模式回切)一律现算,否则激活期快照会永久盖住用户之后
+      // 的修改。
+      const cached =
+        this.currentRender === null
+          ? this.warmup?.peekArtifact<DependencyGraphSource>('dependencyGraph')
+          : undefined;
+      let reuseInFlight: Promise<DependencyGraphSource | undefined> | null = null;
+      if (cached && cached.state === 'done' && cached.value) {
+        render = normalizeGraphSource(cached.value);
+      } else if (cached && cached.state === 'running' && this.warmup) {
+        this.panel.webview.html = this.getWarmupProgressHtml();
+        reuseInFlight = this.warmup.artifact<DependencyGraphSource>('dependencyGraph');
+      }
+      if (!render && reuseInFlight && !cancellation.token.isCancellationRequested) {
+        const reused = await reuseInFlight;
+        if (this.canWriteRefresh(generation, 'dependency') && reused) {
+          render = normalizeGraphSource(reused);
+        }
+      }
+      if (root && !render && !cancellation.token.isCancellationRequested) {
         try {
           const rust = await buildDependencyGraphInRust(root);
           if (rust) {

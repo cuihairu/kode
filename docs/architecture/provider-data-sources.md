@@ -76,6 +76,7 @@
 | ServerControlProvider | explorerProviders.ts:1790 | :1738 | serverManager 状态 | 树刷新 + 用户触发启停命令 |
 | TelnetTreeProvider | telnetTree.ts:1798 | :1746 | telnetService 状态 | 树刷新事件 |
 | RemoteServerTreeProvider | remoteServerTree.ts:1813 | :1761 | ~/.ssh/config 快照 + workspaceState 手动项/选中态(IDE-PDBG-004) | 树刷新事件 |
+| PlayerDataTreeProvider | playerDataPanel.ts:108 | :3454 | configDerive 派生的只读 MySQL 连接档案(Rust `derive_database`,CLONE-P5)+ databaseDrift 只读查询执行器;首帧幂等触发派生,未就绪如实展示「未找到」 | 树刷新事件(查询/刷新命令触发) |
 | KbengineBuildTaskProvider | buildTaskProvider.ts:2146 | :2094 | 构建任务定义(静态) | 无(仅提供任务) |
 | DebugTargetTreeProvider | debugStatusTree.ts:2063 | :2011 | getDebugStatusRows 轮询 | 树刷新事件 |
 | QuickActionTreeProvider | quickActionTree.ts:3092 | :3040 | 快捷动作清单 | 树刷新 + 用户触发命令 |

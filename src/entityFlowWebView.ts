@@ -42,14 +42,58 @@ export class EntityFlowWebView {
   private currentEntityName: string | null = null;
   private currentGraph: EntityFlowGraph | null = null;
   private pendingExport: { format: FlowExportFormat; uri: vscode.Uri } | null = null;
+  // BG-WARM 请求代际:每次 show(含面板关闭)递增,await 之后代际已换即弃——
+  // 等待期间切换实体/关面板,旧请求不再覆盖新视图、不再重开面板。
+  private showGeneration = 0;
+  // 已出过图的实体键:这些键不再吃预热缓存(切走再切回、改完再开都要现算),
+  // 激活期快照只服务每个实体的第一次打开。
+  private readonly servedEntities = new Set<string>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    // BG-WARM:后台预热产物源(面板只读缓存)。未注入时行为与迁移前一致。
+    private readonly warmup?: import('./backgroundWarmup').PanelWarmupSource
+  ) {}
 
   /** 显示流程图:显式实体名优先,否则取活动 .def 编辑器的文件名。 */
   async show(entityName?: string): Promise<void> {
     const resolved = entityName ?? this.activeDefEntityName();
     if (!resolved) {
       vscode.window.showInformationMessage('请先打开一个实体 .def 文件');
+      return;
+    }
+
+    // BG-WARM 只读缓存:预热产物 done → 直接渲染,不进 buildGraph(秒出);
+    // running → 先开面板出进度页,复用在跑任务(同一 Promise 不重算);
+    // missing/failed → 回落既有现算路径。
+    // 失效口径:该实体在本会话已经出过图(重复 show / 切走切回 / 改完再开)
+    // 就不再吃缓存,现算取最新——激活期快照只服务每个实体的第一次打开。
+    const generation = ++this.showGeneration;
+    const artifactKey = `flowGraph:${resolved}`;
+    const cached = this.servedEntities.has(resolved)
+      ? undefined
+      : this.warmup?.peekArtifact<EntityFlowGraph>(artifactKey);
+    if (cached && cached.state === 'done' && cached.value) {
+      this.applyGraph(resolved, cached.value);
+      return;
+    }
+    if (cached && cached.state === 'running' && this.warmup) {
+      this.ensurePanel();
+      this.panel!.title = `KBEngine 实体架构流程 · ${resolved}`;
+      this.panel!.webview.html = this.getWarmupProgressHtml(resolved);
+      this.panel!.reveal();
+      const reused = await this.warmup.artifact<EntityFlowGraph>(artifactKey);
+      // 等待期间被后续 show 取代或面板已关:旧请求整体作废,不覆盖新视图、
+      // 不替已关面板重建空壳。
+      if (generation !== this.showGeneration || !this.panel) {
+        return;
+      }
+      const graph = reused ?? this.buildGraph(resolved);
+      if (!graph) {
+        vscode.window.showWarningMessage(`打开架构流程图失败: ${resolved} (未找到实体定义)`);
+        return;
+      }
+      this.applyGraph(resolved, graph);
       return;
     }
 
@@ -60,6 +104,28 @@ export class EntityFlowWebView {
       return;
     }
 
+    this.ensurePanel();
+    this.applyGraph(resolved, graph);
+  }
+
+  /** BG-WARM:预热中进度页(部分结果位);真图完成后由 applyGraph 替换。 */
+  private getWarmupProgressHtml(entityName: string): string {
+    const snapshot = this.warmup?.snapshot();
+    const detail = snapshot
+      ? `${snapshot.completedStages}/${snapshot.totalStages}${snapshot.currentLabel ? ` · ${snapshot.currentLabel}` : ''}`
+      : '';
+    return `<!DOCTYPE html>
+<html>
+<body class="kbengine-warmup">
+  <h1>KBEngine 索引预热中</h1>
+  <p>实体 ${entityName} 的架构流程图正在后台分析(${detail})。</p>
+  <p>完成后本面板自动展示流程图。</p>
+</body>
+</html>`;
+  }
+
+  /** 面板懒建(幂等);消息接线与既有口径一致。 */
+  private ensurePanel(): vscode.WebviewPanel {
     if (!this.panel) {
       this.panel = vscode.window.createWebviewPanel(
         'kbengine.entityFlow',
@@ -73,6 +139,7 @@ export class EntityFlowWebView {
 
       this.panel.onDidDispose(() => {
         this.panel = null;
+        this.showGeneration += 1; // 关面板作废一切在途 show 请求
       });
 
       this.panel.webview.onDidReceiveMessage(
@@ -98,12 +165,20 @@ export class EntityFlowWebView {
         this.context.subscriptions
       );
     }
+    return this.panel;
+  }
 
-    this.currentEntityName = resolved;
+  /** 渲染当前实体图:记账 + 标题 + HTML + reveal(缓存命中与现算同出口)。 */
+  private applyGraph(entityName: string, graph: EntityFlowGraph): void {
+    this.currentEntityName = entityName;
     this.currentGraph = graph;
-    this.panel.title = `KBEngine 实体架构流程 · ${resolved}`;
-    this.panel.webview.html = this.getWebviewContent(graph);
-    this.panel.reveal();
+    this.servedEntities.add(entityName); // 已出过图:该键此后不再吃预热缓存
+    if (!this.panel) {
+      this.ensurePanel();
+    }
+    this.panel!.title = `KBEngine 实体架构流程 · ${entityName}`;
+    this.panel!.webview.html = this.getWebviewContent(graph);
+    this.panel!.reveal();
   }
 
   private activeDefEntityName(): string | undefined {
@@ -114,8 +189,11 @@ export class EntityFlowWebView {
     return path.basename(editor.document.uri.fsPath, '.def');
   }
 
-  /** 建图:无工作区或实体未注册时返回 null,由调用方如实提示。 */
-  private buildGraph(entityName: string): EntityFlowGraph | null {
+  /**
+   * 建图:无工作区或实体未注册时返回 null,由调用方如实提示。
+   * BG-WARM:对预热管线公开(阶段体与面板现算共用同一建图出口,口径不分叉)。
+   */
+  buildGraph(entityName: string): EntityFlowGraph | null {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const loader = workspaceRoot ? createDefinitionSemanticsLoader(workspaceRoot) : null;
     const semantics = loader?.loadResolved(entityName, 'entity', true);
